@@ -1337,9 +1337,11 @@ export async function enrollStudent(studentId: string, classId: string) {
             if (existingEnrollment?.status === "ACTIVE") return;
 
             const [enrollment] = await tx.$queryRawUnsafe<Array<{ id: string; updatedAt: Date }>>(
-                `INSERT INTO "Enrollment" (id, "studentId", "classId", status, "createdAt", "updatedAt")
-                 VALUES (gen_random_uuid()::text, $1, $2, 'ACTIVE', NOW(), NOW())
-                 ON CONFLICT ("studentId", "classId") DO UPDATE SET status = 'ACTIVE', "updatedAt" = NOW()
+                // 2026-11-14 보안 HIGH: 개시일을 오늘(KST)로 적는다 — 비워 두면 수업 피드에서 입학 전 수업이 열렸다.
+                // 되살리기(그만둔 반 재등록)도 «되살린 날»부터(쉬는 동안의 수업·사진이 열리지 않게). 이미 ACTIVE 면 위에서 끝났다.
+                `INSERT INTO "Enrollment" (id, "studentId", "classId", status, "startsOn", "createdAt", "updatedAt")
+                 VALUES (gen_random_uuid()::text, $1, $2, 'ACTIVE', (NOW() AT TIME ZONE 'Asia/Seoul')::date, NOW(), NOW())
+                 ON CONFLICT ("studentId", "classId") DO UPDATE SET status = 'ACTIVE', "startsOn" = CASE WHEN "Enrollment".status = 'ACTIVE' THEN "Enrollment"."startsOn" ELSE (NOW() AT TIME ZONE 'Asia/Seoul')::date END, "updatedAt" = NOW()
                  RETURNING id,"updatedAt"`,
                 studentId, classId,
             );
@@ -1410,9 +1412,16 @@ export async function updateEnrollmentStatus(
                 return;
             }
 
+            // 2026-11-14 보안 HIGH: 퇴원(WITHDRAWN) → 재원(ACTIVE) 이면 개시일을 효력일로 다시 적는다.
+            // 옛 개시일이 남으면 빠져 있던 몇 달의 수업 사진·소식·영상이 수업 피드에서 열렸다(참여 = 시작일 ≤ 수업일).
+            // 효력일은 위에서 KST 달력·미래 금지를 확인한 값(없으면 오늘 KST). 휴원(PAUSED) → 재원은 그대로 둔다.
+            const rejoin = before.previousStatus === "WITHDRAWN" && status === "ACTIVE";
             const [changed] = await tx.$queryRawUnsafe<Array<{ updatedAt: Date }>>(
-                `UPDATE "Enrollment" SET status=$1,"updatedAt"=NOW() WHERE id=$2 RETURNING "updatedAt"`,
-                status, enrollmentId,
+                `UPDATE "Enrollment" SET status=$1,
+                        "startsOn" = CASE WHEN $3::boolean THEN $4::date ELSE "startsOn" END,
+                        "updatedAt"=NOW()
+                  WHERE id=$2 RETURNING "updatedAt"`,
+                status, enrollmentId, rejoin, effectiveFrom,
             );
             const kind = status === "PAUSED" ? "PAUSE" : status === "WITHDRAWN" ? "WITHDRAW" : "RESUME";
             // 이력 id 를 돌려받아 운영 원장에 연결한다(「수강 변경 신청」 화면의 랠리즈 확인 배지용).
@@ -3294,10 +3303,13 @@ export async function bulkCreateStudents(
                         );
                         if (classRows.length > 0) {
                             // Class를 찾았으면 수강 등록 (ON CONFLICT로 중복 등록 방지)
+                            // 2026-11-14 보안 HIGH: 새 행은 개시일을 비워 둔다 — 가져오기는 «이미 다니던 원생» 이관이라
+                            // NULL(기존 수강 이력 = 청구 시수·출석부 개시 제한 없음) 의미를 지킨다. 수업 피드는 등록일(가져온 날)부터 보인다.
+                            // 그만둔 반을 되살릴 때만 개시일 = 오늘(KST). 이미 ACTIVE 면 기존 개시일을 건드리지 않는다(재실행 안전).
                             await prisma.$executeRawUnsafe(
                                 `INSERT INTO "Enrollment" (id, "studentId", "classId", status, "createdAt", "updatedAt")
                                  VALUES (gen_random_uuid()::text, $1, $2, 'ACTIVE', NOW(), NOW())
-                                 ON CONFLICT ("studentId", "classId") DO UPDATE SET status = 'ACTIVE', "updatedAt" = NOW()`,
+                                 ON CONFLICT ("studentId", "classId") DO UPDATE SET status = 'ACTIVE', "startsOn" = CASE WHEN "Enrollment".status = 'ACTIVE' THEN "Enrollment"."startsOn" ELSE (NOW() AT TIME ZONE 'Asia/Seoul')::date END, "updatedAt" = NOW()`,
                                 finalStudentId,
                                 classRows[0].id,
                             );
@@ -5234,10 +5246,11 @@ export async function processWaitlistResponse(id: string, accepted: boolean) {
             const classId = rows[0].classId ?? rows[0].classid;
 
             // Enrollment 생성 (ON CONFLICT로 이미 있으면 ACTIVE로 업데이트)
+            // 2026-11-14 보안 HIGH: 개시일 = 오늘(KST). 되살리기도 오늘부터, 이미 ACTIVE 면 기존 개시일 유지.
             await prisma.$executeRawUnsafe(
-                `INSERT INTO "Enrollment" (id, "studentId", "classId", status, "createdAt", "updatedAt")
-                 VALUES (gen_random_uuid()::text, $1, $2, 'ACTIVE', NOW(), NOW())
-                 ON CONFLICT ("studentId", "classId") DO UPDATE SET status = 'ACTIVE', "updatedAt" = NOW()`,
+                `INSERT INTO "Enrollment" (id, "studentId", "classId", status, "startsOn", "createdAt", "updatedAt")
+                 VALUES (gen_random_uuid()::text, $1, $2, 'ACTIVE', (NOW() AT TIME ZONE 'Asia/Seoul')::date, NOW(), NOW())
+                 ON CONFLICT ("studentId", "classId") DO UPDATE SET status = 'ACTIVE', "startsOn" = CASE WHEN "Enrollment".status = 'ACTIVE' THEN "Enrollment"."startsOn" ELSE (NOW() AT TIME ZONE 'Asia/Seoul')::date END, "updatedAt" = NOW()`,
                 studentId, classId,
             );
 

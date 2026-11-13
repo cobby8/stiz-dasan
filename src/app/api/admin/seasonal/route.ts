@@ -1732,10 +1732,14 @@ async function convertApprovedItemToEnrollmentAndInvoice(itemId: string, actorId
 
     let enrollmentId = item.enrollmentId || null;
     if (linkedClassId) {
+      // 2026-11-14 보안 HIGH: 새 행은 개시일을 비워 둔다(특강 전환의 기존 청구·출석 의미 유지) — 수업 피드는 등록일(전환한 날)부터.
+      // 그만둔 반을 되살릴 때만 개시일 = 오늘(KST)(쉬는 동안 수업 사진이 열리지 않게). 이미 ACTIVE 면 기존 개시일 유지.
       const enrollments = await tx.$queryRaw<{ id: string }[]>`
         INSERT INTO "Enrollment" (id, "studentId", "classId", status, "createdAt", "updatedAt")
         VALUES (gen_random_uuid()::text, ${studentId}, ${linkedClassId}, 'ACTIVE', NOW(), NOW())
-        ON CONFLICT ("studentId", "classId") DO UPDATE SET status = 'ACTIVE', "updatedAt" = NOW()
+        ON CONFLICT ("studentId", "classId") DO UPDATE SET status = 'ACTIVE',
+          "startsOn" = CASE WHEN "Enrollment".status = 'ACTIVE' THEN "Enrollment"."startsOn" ELSE (NOW() AT TIME ZONE 'Asia/Seoul')::date END,
+          "updatedAt" = NOW()
         RETURNING id
       `;
       enrollmentId = enrollmentId || enrollments[0]?.id || null;

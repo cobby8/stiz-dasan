@@ -1111,8 +1111,6 @@ export default function StudentDetailClient({
         (h) => h.paymentAmount > 0 || h.tuitionAmount > 0 || h.shuttleFee > 0 || h.paymentMethods.length > 0,
     );
 
-    // media-consent 라우트는 그대로 유지 — 헤더 액션으로만 위치 이동
-    const mediaConsentHref = `/admin/students/${studentId ?? student.id}/media-consent`;
 
     // 출석 통계 막대 정의 (present/late/absent/excused)
     const attBars = [
@@ -1238,7 +1236,8 @@ export default function StudentDetailClient({
                         </p>
                     )}
                 </div>
-                {/* 우측 액션: 전화(학부모 계정 번호로 바로 걸기) · 기본 정보(창 — 편집은 창 안 «수정») · 사진 사용 동의(media-consent 라우트 유지).
+                {/* 우측 액션: 전화(학부모 계정 번호로 바로 걸기) · 기본 정보(창 — 편집은 창 안 «수정»).
+                    «사진 사용 동의»는 2026-11-14 원장 결정으로 없앴다(수업 사진은 참여 학생 보호자만 — 동의 화면 불필요).
                     휴대폰에서는 이름 아래 한 줄로 내려온다. 머리 편집 중에는 기본 정보 자리에 저장·취소가 뜬다. */}
                 <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
                     {/* 전화 = 보조 버튼(흰 바탕·테두리·검정 글자) — 이 화면의 주인공이 아니고, 전화 버튼은 어느 화면이든 같은 모양(2026-11-09) */}
@@ -1252,9 +1251,6 @@ export default function StudentDetailClient({
                             기본 정보
                         </button>
                     )}
-                    <Link href={mediaConsentHref} className="academy-button-secondary">
-                        사진 사용 동의
-                    </Link>
                 </div>
             </div>
 

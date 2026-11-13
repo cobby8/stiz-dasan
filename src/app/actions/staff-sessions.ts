@@ -7,6 +7,7 @@ import { syncCreditForRegularSession, syncCreditForSeasonalSeat } from "@/lib/ma
 import { applyMakeupAttendanceInTx, findMakeupBookings, makeupOnClassDateSql } from "@/lib/makeup/makeup-attendance";
 import { requireStaffClassAccess, requireStaffSeasonalSessionAccess, requireStaffSessionAccess } from "@/lib/staff-class-access";
 import { todayKst } from "@/lib/datetime/kst";
+import { canEditFeedLine, feedLineWindowMessage, normalizeFeedLine, sessionKstDateSql, TODAY_KST_SQL } from "@/lib/feed/rules";
 import {
   BULK_ALREADY_RECORDED_MESSAGE,
   BULK_SKIPPED_MESSAGE,
@@ -397,6 +398,41 @@ export async function saveSessionMemo(input: { sessionId: string; notes: string 
 }
 
 /**
+ * «오늘 수업 한 줄»(Session.content — 학부모 소식·홈 카드에 보이는 본문) 저장(2026-11-14 원장 결정).
+ * - 수업 전·중·후 언제든, 단 수업 당일(KST) 자정까지 — canEditFeedLine 과 같은 규칙을 UPDATE 조건에도 건다.
+ * - 예전엔 수업 종료 확인 창에서만 쓸 수 있었다(종료 뒤엔 수업 화면이 닫혀 못 고쳤다).
+ * - 학부모 알림은 보내지 않는다(종료 때 한 번 나간 알림으로 충분 — 고칠 때마다 울리지 않게).
+ */
+export async function saveSessionFeedLine(input: { sessionId: string; content: string }) {
+  const gate = await trySessionAccess(input.sessionId);
+  if (!gate.ok) return gate;
+  // 오늘(KST)은 DB 시계로 — 서버(UTC) 시계를 믿지 않는다. NOW() 는 timestamptz 라 한 번만 변환.
+  // 수업일은 무tz 칼럼 Session.date 라 «두 번» 변환(sessionKstDateSql) — 옛 기록 모양에서도 하루 밀리지 않게.
+  const rows = await prisma.$queryRawUnsafe<{ status: string; sessionYmd: string; todayYmd: string }[]>(
+    `SELECT status, ${sessionKstDateSql('"Session"')}::text AS "sessionYmd", ${TODAY_KST_SQL}::text AS "todayYmd"
+       FROM "Session" WHERE id = $1 LIMIT 1`,
+    input.sessionId,
+  );
+  if (!rows[0]) return { ok: false as const, message: "수업 기록을 찾을 수 없습니다." };
+  const window = canEditFeedLine(rows[0]);
+  if (!window.ok) return { ok: false as const, message: feedLineWindowMessage(window.reason) };
+  const content = normalizeFeedLine(input.content);
+  const updated = await prisma.$queryRawUnsafe<{ id: string }[]>(
+    `UPDATE "Session" SET content = $2, "updatedAt" = NOW()
+      WHERE id = $1
+        AND status IN ('PLANNED', 'IN_PROGRESS', 'COMPLETED')
+        AND ${sessionKstDateSql('"Session"')} = ${TODAY_KST_SQL}
+      RETURNING id`,
+    input.sessionId,
+    content,
+  );
+  if (!updated[0]) return { ok: false as const, message: feedLineWindowMessage("NOT_TODAY") };
+  revalidatePath("/staff");
+  revalidatePath(`/staff/sessions/${input.sessionId}`);
+  return { ok: true as const, content };
+}
+
+/**
  * 체험수업 아이 출결 저장(f1) — 체험 장부(TrialLead)에만 쓴다.
  * - 정규 출석 표(Attendance)·보강권·결석 사유·학부모 출석 알림을 타지 않는다(원생이 아니고 청구·출석률에 섞이면 안 된다).
  * - 이 반·이 날 체험 아이인지 명단 조회와 같은 조건(trialOnClassDateSql)으로 다시 확인한다(다른 날 신청 id 위조 방지).
@@ -702,15 +738,18 @@ export async function completeClassSession(input: {
   // 전용이라(requireAdmin) 선생님이 수업을 마쳐도 원장이 PC 에서 다시 써야 나갔고,
   // 그래서 운영 100회차 동안 발행이 0건이었다. 선생님이 끝내면서 같이 끝내게 한다.
   const report = (input.report ?? "").trim().slice(0, 2000) || null;
+  // 2026-11-14 검수: 종료 창은 이미 저장된 한 줄로 채워져 열린다 → 보낸 값을 그대로 반영(빈 값 = 지움 = NULL).
+  // 값을 아예 안 보낸 옛 화면(report undefined)만 기존 내용을 지킨다.
+  const reportProvided = input.report !== undefined;
   const publish = input.publishReport !== false;
   const ended = await prisma.$queryRawUnsafe<{ id: string }[]>(
     `UPDATE "Session"
         SET status = 'COMPLETED', "endedAt" = NOW(), "endedByUserId" = $2, "updatedAt" = NOW(),
-            content = COALESCE($3, content),
+            content = CASE WHEN $5 THEN $3 ELSE content END,
             published = CASE WHEN $4 THEN true ELSE published END,
             "publishedAt" = CASE WHEN $4 AND NOT published THEN NOW() ELSE "publishedAt" END
       WHERE id = $1 AND status = 'IN_PROGRESS' AND "startedAt" IS NOT NULL RETURNING id`,
-    input.sessionId, access.staff.appUserId, report, publish,
+    input.sessionId, access.staff.appUserId, report, publish, reportProvided,
   );
   if (!ended[0]) return { ok: false as const, message: "수업 종료 상태를 다시 확인해 주세요." };
 

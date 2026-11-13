@@ -17,6 +17,8 @@ import { isPosRequestLocking } from "@/lib/payments/studentBillingRules";
 import { parseNoticeTargetClassIds } from "@/lib/noticeTargets";
 import { notMergedStudent, notMergedStudentOptional } from "@/lib/studentVisibility";
 import { todayKst, kstDow, addMonthsYm } from "@/lib/datetime/kst";
+// 수업 피드 공용 기준(학부모 공개 수업·참여 판정) — 소식 목록이 사진·영상 권한과 같은 문장을 쓰게
+import { feedParticipantSql, feedVisibleSessionSql } from "@/lib/feed/rules";
 // 보강 잔여석 계산은 화면·조회·저장 검증이 같은 식을 쓰도록 공용 모듈로 분리해 둔다.
 import { activeMakeupSql, computeRemainingSeats } from "@/lib/makeup/capacity";
 import type { SheetClassSlot } from "@/lib/googleSheetsSchedule";
@@ -2890,27 +2892,32 @@ export async function getStudentReports(parentId: string, studentId?: string) {
             targetIds = [studentId];
         }
 
-        const placeholders = targetIds.map((_: string, i: number) => `$${i + 1}`).join(",");
+        // 2026-11-14 수업 피드 통일: 사진·영상·소식 상세·홈 카드와 같은 기준(@/lib/feed/rules)
+        //   = 끝났고 발행된 수업 + 내 아이가 «참여»(출결 기록 또는 그 반 ACTIVE 수강·개시일 ≤ 수업일).
+        //   예전엔 출결(Attendance)만 봐서, 사진 권한(수강 기준)과 목록이 갈라져 있었다.
         const rows = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT DISTINCT se.id AS session_id, se.date, se.topic,
+            `SELECT se.id AS session_id, se."classId" AS class_id, se.date, se.topic,
                     se."publishedAt", se."photosJSON",
                     c.name AS class_name, c."dayOfWeek", c."startTime", c."endTime",
                     p.name AS program_name,
                     co.name AS coach_name
              FROM "Session" se
-             JOIN "Attendance" a ON a."sessionId" = se.id
              JOIN "Class" c ON se."classId" = c.id
              LEFT JOIN "Program" p ON c."programId" = p.id
              LEFT JOIN "Coach" co ON se."coachId" = co.id
-             WHERE a."studentId" IN (${placeholders})
-               AND se.published = true
+             WHERE ${feedVisibleSessionSql("se")}
+               AND EXISTS (
+                 SELECT 1 FROM "Student" st
+                  WHERE st.id = ANY($1::text[]) AND ${notMergedStudent("st")} AND ${feedParticipantSql("st", "se")}
+               )
              ORDER BY se.date DESC
              LIMIT 50`,
-            ...targetIds
+            targetIds
         );
 
         return rows.map((r: any) => ({
             sessionId: r.session_id,
+            classId: r.class_id as string,
             date: r.date,
             topic: r.topic ?? null,
             publishedAt: r.publishedAt ?? r.publishedat ?? null,

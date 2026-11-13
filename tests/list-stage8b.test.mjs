@@ -28,6 +28,11 @@ const chips = compileModule("src/components/admin/list/StatusCountChips.tsx");
 // 상태색 공용 지도(2026-11-09 색상 정리) — 학부모 보강·방학특강 배지가 쓴다
 const statusTones = compileModule("src/lib/ui/statusTones.ts");
 const monthGroups = compileModule("src/components/admin/list/monthDateGroups.ts", { "@/lib/datetime/kst": kst });
+// 수업 피드 순수 규칙(소식 목록의 개수 표시) — 실제 모듈을 돌린다
+const feedRules = compileModule("src/lib/feed/rules.ts", {
+  "@/lib/datetime/kst": kst,
+  "@/lib/sessionVideo/rules": compileModule("src/lib/sessionVideo/rules.ts", { "@/lib/datetime/kst": kst }),
+});
 // 취소·거절의 «그 자리 확인» 공용 부품(게슈탈트 C-M1) — 취소 버튼을 쓰는 화면이 함께 불러온다
 const inlineConfirm = compileModule("src/components/parent/InlineConfirm.tsx");
 // 오류 원문 대신 고객용 한국어를 고르는 공용 함수(개발 언어 제거) — 오류를 보여 주는 화면이 함께 불러온다
@@ -234,8 +239,13 @@ test("수업 리포트 목록은 KST 달별 묶음·한 줄 행(주제·날짜 �
     "@/lib/datetime/kst": { ...kst, todayKst: () => "2026-11-09" },
     "@/lib/mypage/parentSchedule": parentSchedule,
     "@/components/admin/list/monthDateGroups": monthGroups,
+    // 2026-11-14 수업 피드: 행마다 «사진 n · 영상 n» — 개수는 공용 조회(상세가 실제로 보여 주는 것과 같은 집합)
+    "@/lib/feed/server": { countSessionFeedMedia: async (sessions) => new Map(sessions.map((s) => [s.sessionId ?? s.id, s.id === "s1" ? { photoCount: 2, videoCount: 1 } : { photoCount: 0, videoCount: 0 }])) },
+    "@/lib/feed/rules": feedRules,
   }).default;
   const html = renderToStaticMarkup(await Page());
+  assert.match(html, /사진 2 · 영상 1/);
+  assert.equal((html.match(/사진 \d+ · 영상|영상 \d+</g) ?? []).length, 1, "사진·영상이 없는 행에는 개수를 쓰지 않는다");
   assert.match(html, /aria-label="2026년 10월"/);
   assert.match(html, /aria-label="2026년 9월"/);
   assert.match(html, /10\/1\(목\)/);

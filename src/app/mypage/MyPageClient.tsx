@@ -18,6 +18,9 @@ import {
 import { formatKstDate } from "@/lib/datetime/kst";
 import { REQUEST_TONE, TONE_BADGE_CLASS } from "@/lib/ui/statusTones";
 import type { ParentClassStatusLine } from "@/lib/enrollment/parent-change-request";
+// «최신 수업 피드» 카드 — 고른 아이의 최신 공개 수업 1건(2026-11-14)
+import LatestFeedCard from "@/components/parent/LatestFeedCard";
+import { pickFeedCard, type FeedCandidate } from "@/lib/feed/rules";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 학부모 홈 = «오늘 할 일» 판 (2026-11-09 원장 결정 D1 안 A)
@@ -146,7 +149,7 @@ export function formatShortDate(value: Date | string): string {
 // «처리할 일» 한 줄 — 왼쪽 제목, 오른쪽 숫자/설명, 끝에 «›». 터치 44px.
 const TODO_ROW = "flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-[var(--color-academy-soft)]";
 
-export default function MyPageClient({ data, notices = [], myRequests = [], parentShuttleOverview = [], shuttleDriverContact = null, pendingSeasonalChildren = [], makeupAvailable = 0, seasonalUpcoming = 0, pendingPayments = null, classStatusLines = [], initialChildId, recordLines }: {
+export default function MyPageClient({ data, notices = [], myRequests = [], parentShuttleOverview = [], shuttleDriverContact = null, pendingSeasonalChildren = [], makeupAvailable = 0, seasonalUpcoming = 0, pendingPayments = null, classStatusLines = [], initialChildId, recordLines, feedCandidates = [] }: {
     data: MyPageData;
     notices?: NoticeItem[];
     myRequests?: RequestItem[];
@@ -166,6 +169,8 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
     initialChildId?: string;
     /** 아이별 «다닌 지 n년 n개월 · 올해 출석 n%» 한 줄(아이 기록 화면 진입) — 조회 실패면 «전체 기록» */
     recordLines?: Record<string, string>;
+    /** 아이마다 최신 공개 수업 후보 — 고른 아이 것 1건만 카드로(없으면 카드 숨김) */
+    feedCandidates?: FeedCandidate[];
 }) {
     // 아이 선택 — 주소(?child=)·기기 기억으로 마지막 선택 유지(다른 화면 갔다 뒤로 와도 그 아이)
     const childIds = data.children.map((c) => c.id);
@@ -451,6 +456,12 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                     )}
                 </ul>
             </section>
+
+            {/* 최신 수업 피드 — «처리할 일» 바로 아래, 고른 아이의 최신 공개 수업 1건. 없으면 칸을 그리지 않는다 */}
+            {(() => {
+                const feedCard = pickFeedCard(feedCandidates, selectedChildId);
+                return feedCard ? <LatestFeedCard card={feedCard} /> : null;
+            })()}
 
             {/* 방학특강 신청 자녀(전환 대기중) — 정식 학생으로 아직 전환되지 않아
                 위 판에 안 뜨는 자녀를 따로 안내한다. 목록이 비면 통째로 숨김. */}

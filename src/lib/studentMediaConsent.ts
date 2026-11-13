@@ -13,12 +13,28 @@ import {
 export { evaluateMediaConsent } from "@/lib/studentMediaConsentPolicy";
 export type { MediaConsentCheck, MediaConsentScope } from "@/lib/studentMediaConsentPolicy";
 
-/** 게시 대상 학생 전원의 최신 동의를 읽으며, 누락이나 조회 오류는 공개 차단합니다. */
+/**
+ * 공개 게시(갤러리·인스타) 전에 사진 공개 동의를 검사할지 — 2026-11-14 원장 결정으로 끔(false).
+ *
+ * 왜: 사진 공개 동의 화면·«나온 학생» 선택을 없앴다(수업 사진은 그 수업 참여 학생 보호자만 본다).
+ *     검사를 켜 둔 채면 새 수업 사진은 학생 태그가 비어 «학생 미지정»으로 공개 게시가 영원히 막힌다.
+ * 대신: 공개 게시는 지금도 사람 손을 거친다 — 갤러리 = 관리자 승인(requireAdmin),
+ *       인스타그램 = 원장 승인(requireOwner), 대기열도 원장이 승인한 건(PUBLISHING)만 처리한다.
+ *       원장이 사진을 보고 올릴지 직접 판단한다.
+ * 되돌리기: true 로 바꾸면 아래 기존 검사(최신 동의·철회·소속 확인)가 그대로 다시 돈다. 동의 기록 표는 지우지 않았다.
+ */
+export const PUBLIC_POST_CONSENT_GATE_ENABLED = false;
+
+/** 게시 대상 학생 전원의 최신 동의를 읽으며, 누락이나 조회 오류는 공개 차단합니다(검사가 켜져 있을 때). */
 export async function checkSocialDraftMediaConsent(
   draft: Pick<SocialPostDraft, "sessionId" | "classId" | "subjectStudentIds">,
   scope: MediaConsentScope,
   db: Pick<Prisma.TransactionClient, "$queryRawUnsafe"> = prisma,
 ): Promise<MediaConsentCheck> {
+  if (!PUBLIC_POST_CONSENT_GATE_ENABLED) {
+    // 동의 검사 없이 통과 — 공개 여부는 관리자·원장 수동 승인이 정한다(위 설명)
+    return { ok: true, scope, studentCount: draft.subjectStudentIds.length, blockedStudents: [] };
+  }
   if ((!draft.sessionId && !draft.classId) || draft.subjectStudentIds.length === 0) {
     return { ok: false, scope, studentCount: 0, blockedStudents: [
       { id: "UNKNOWN", name: "학생 미지정", reason: "수업 연결 정보 없음" },

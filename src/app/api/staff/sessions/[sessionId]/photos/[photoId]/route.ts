@@ -5,15 +5,14 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireStaffClassAccess, requireStaffSessionAccess } from "@/lib/staff-class-access";
 import { isValidPrivateSessionPhotoRef, parseSessionPhotoEntries, parseStoredSessionPhotos } from "@/lib/sessionPhotoStorage";
 import { requireVerifiedParent } from "@/lib/auth-guard";
-import { childAccessSql } from "@/lib/account/child-access";
+import { parentCanViewSession } from "@/lib/feed/server";
+import { canManageSessionMedia, photoWindowMessage, sessionKstDateSql, TODAY_KST_SQL } from "@/lib/feed/rules";
 import {
   findManagedSessionPhoto,
   isEmptyMediaJSON,
   removePhotoFromMediaJSON,
   type SessionPhotoDraftRow,
 } from "@/lib/sessionPhotoManagement";
-import { normalizeSubjectStudentIds } from "@/lib/studentMediaConsentPolicy";
-import { notMergedStudent } from "@/lib/studentVisibility";
 import {
   enqueueSessionPhotoDeletion,
   ensureSessionPhotoDeletionQueue,
@@ -21,27 +20,18 @@ import {
 } from "@/lib/sessionPhotoDeletionQueue";
 import { isSinglePhotoDraft } from "@/lib/sessionPhotoManagementPolicy";
 
-type PhotoViewer = { kind: "STAFF" } | { kind: "PARENT"; studentIds: string[] };
-
-async function requirePhotoViewer(classId: string, sessionStatus: string, sessionDate: string): Promise<PhotoViewer> {
+/**
+ * 사진을 볼 수 있는 사람 — 그 반 선생님(대타 포함) 또는 수업 피드 공용 판정을 통과한 보호자.
+ * 2026-11-14 원장 결정: 사진 공개 동의(StudentMediaConsent)·«나온 학생» 태그는 더 이상 보지 않는다.
+ * 보호자 = 끝났고 발행된 수업 + 그 수업에 참여한 내 아이(출결 기록 또는 ACTIVE 수강) — 영상·소식 상세와 같은 함수.
+ */
+async function requirePhotoViewer(sessionId: string, classId: string, sessionDate: string): Promise<void> {
   try {
     // f4: 그 수업 날짜의 대타 선생님도 출석부에서 사진을 볼 수 있다(출석 저장과 같은 날짜 기준).
     await requireStaffClassAccess(classId, undefined, { substituteDate: sessionDate });
-    return { kind: "STAFF" };
   } catch {
     const parent = await requireVerifiedParent();
-    if (sessionStatus !== "COMPLETED") throw new Error("사진 접근 권한이 없습니다.");
-    const rows = await prisma.$queryRawUnsafe<Array<{ studentId: string }>>(
-      `SELECT DISTINCT s.id AS "studentId"
-       FROM "User" u
-       JOIN "Student" s ON ${await childAccessSql("s", 'u."id"')} AND ${notMergedStudent("s")}
-       JOIN "Enrollment" e ON e."studentId" = s.id
-       WHERE u.id = $1 AND e."classId" = $2 AND e.status = 'ACTIVE'`,
-      parent.appUserId,
-      classId,
-    );
-    if (!rows[0]) throw new Error("사진 접근 권한이 없습니다.");
-    return { kind: "PARENT", studentIds: rows.map((row) => row.studentId) };
+    if (!await parentCanViewSession(parent.appUserId, sessionId)) throw new Error("사진 접근 권한이 없습니다.");
   }
 }
 
@@ -54,44 +44,14 @@ export async function GET(_request: Request, context: { params: Promise<{ sessio
     );
     const session = rows[0];
     if (!session) return NextResponse.json({ error: "수업 기록을 찾을 수 없습니다." }, { status: 404 });
-    const viewer = await requirePhotoViewer(session.classId, session.status, session.date);
-    const drafts = await prisma.$queryRawUnsafe<Array<{ mediaJSON: string; subjectStudentIdsJSON: string }>>(
-      `SELECT "mediaJSON", "subjectStudentIdsJSON" FROM "SocialPostDraft" WHERE "sessionId" = $1 ORDER BY "createdAt" DESC`,
+    await requirePhotoViewer(sessionId, session.classId, session.date);
+    const drafts = await prisma.$queryRawUnsafe<Array<{ mediaJSON: string }>>(
+      `SELECT "mediaJSON" FROM "SocialPostDraft" WHERE "sessionId" = $1 ORDER BY "createdAt" DESC`,
       sessionId,
     );
     const matchedDraft = drafts.find((draft) => parseStoredSessionPhotos(draft.mediaJSON).some((item) => item.id === photoId));
     const photo = matchedDraft && parseStoredSessionPhotos(matchedDraft.mediaJSON).find((item) => item.id === photoId);
     if (!photo) return NextResponse.json({ error: "사진을 찾을 수 없습니다." }, { status: 404 });
-    if (viewer.kind === "PARENT") {
-      let subjectStudentIds: string[] = [];
-      try {
-        const parsed: unknown = JSON.parse(matchedDraft?.subjectStudentIdsJSON || "[]");
-        if (Array.isArray(parsed)) {
-          subjectStudentIds = [...new Set(parsed.filter((id): id is string => typeof id === "string" && id.length > 0))];
-        }
-      } catch {
-        subjectStudentIds = [];
-      }
-      if (subjectStudentIds.length === 0 || !subjectStudentIds.some((id) => viewer.studentIds.includes(id))) {
-        throw new Error("사진 열람 동의를 확인할 수 없습니다.");
-      }
-      const consentRows = await prisma.$queryRawUnsafe<Array<{ studentId: string; internalAllowed: boolean; revokedAt: Date | null }>>(
-        `SELECT subjects.id AS "studentId", latest."internalAllowed", latest."revokedAt"
-           FROM unnest($1::text[]) subjects(id)
-           LEFT JOIN LATERAL (
-             SELECT c."internalAllowed", c."revokedAt"
-               FROM "StudentMediaConsent" c
-              WHERE c."studentId" = subjects.id
-              ORDER BY c."recordedAt" DESC, c.id DESC
-              LIMIT 1
-           ) latest ON true`,
-        subjectStudentIds,
-      );
-      if (consentRows.length !== subjectStudentIds.length
-        || consentRows.some((row) => !row.internalAllowed || row.revokedAt !== null)) {
-        throw new Error("사진 열람 동의를 확인할 수 없습니다.");
-      }
-    }
     if (!isValidPrivateSessionPhotoRef(photo as unknown as Record<string, unknown>, { classId: session.classId, sessionId })) {
       return NextResponse.json({ error: "사진 경로가 올바르지 않습니다." }, { status: 400 });
     }
@@ -110,17 +70,22 @@ export async function GET(_request: Request, context: { params: Promise<{ sessio
   }
 }
 
+/** 사진 관리 가능 시간 판정용 수업 행 — 오늘(KST)은 서버 시계가 아니라 DB 시계로(NOW() 는 timestamptz 라 한 번만 변환) */
+const MEDIA_WINDOW_SQL = `SELECT "classId", status, ${sessionKstDateSql('"Session"')}::text AS "sessionYmd",
+        ${TODAY_KST_SQL}::text AS "todayYmd"
+   FROM "Session" WHERE id = $1`;
+type MediaWindowRow = { classId: string; status: string; sessionYmd: string; todayYmd: string };
+
 async function requireManageablePhoto(sessionId: string, photoId: string) {
-  const sessions = await prisma.$queryRawUnsafe<Array<{ classId: string; status: string }>>(
-    `SELECT "classId", status FROM "Session" WHERE id = $1 LIMIT 1`,
-    sessionId,
-  );
+  const sessions = await prisma.$queryRawUnsafe<MediaWindowRow[]>(`${MEDIA_WINDOW_SQL} LIMIT 1`, sessionId);
   const session = sessions[0];
   if (!session) return { response: NextResponse.json({ error: "수업 기록을 찾을 수 없습니다." }, { status: 404 }) };
   // 사진 등록과 같은 권한 함수(특강 회차면 특강 담당 강사 기준) — 2026-11-13 G11
   await requireStaffSessionAccess(sessionId);
-  if (session.status !== "IN_PROGRESS") {
-    return { response: NextResponse.json({ error: "진행 중인 수업의 사진만 관리할 수 있습니다." }, { status: 409 }) };
+  // 2026-11-14: 영상과 같은 시간 규칙 — 수업 중 또는 끝난 수업의 당일 KST 자정까지
+  const window = canManageSessionMedia(session);
+  if (!window.ok) {
+    return { response: NextResponse.json({ error: photoWindowMessage(window.reason) }, { status: 409 }) };
   }
   const drafts = await prisma.$queryRawUnsafe<SessionPhotoDraftRow[]>(
     `SELECT id, status, "mediaJSON", "subjectStudentIdsJSON", "galleryPostId", "instagramMediaId"
@@ -145,55 +110,7 @@ async function requireManageablePhoto(sessionId: string, photoId: string) {
   return { session, photo };
 }
 
-export async function PATCH(request: Request, context: { params: Promise<{ sessionId: string; photoId: string }> }) {
-  try {
-    const { sessionId, photoId } = await context.params;
-    const manageable = await requireManageablePhoto(sessionId, photoId);
-    if ("response" in manageable) return manageable.response;
-    const body = await request.json().catch(() => null) as { subjectStudentIds?: unknown } | null;
-    const subjectStudentIds = normalizeSubjectStudentIds(body?.subjectStudentIds);
-    if (subjectStudentIds.length === 0) {
-      return NextResponse.json({ error: "사진에 나온 학생을 한 명 이상 선택해 주세요." }, { status: 400 });
-    }
-    const result = await prisma.$transaction(async (tx) => {
-      const sessionRows = await tx.$queryRawUnsafe<Array<{ status: string }>>(
-        `SELECT status FROM "Session" WHERE id = $1 FOR UPDATE`, sessionId,
-      );
-      if (sessionRows[0]?.status !== "IN_PROGRESS") return "SESSION_CHANGED" as const;
-      const draftRows = await tx.$queryRawUnsafe<SessionPhotoDraftRow[]>(
-        `SELECT id, status, "mediaJSON", "subjectStudentIdsJSON", "galleryPostId", "instagramMediaId"
-           FROM "SocialPostDraft" WHERE id = $1 AND "sessionId" = $2 FOR UPDATE`,
-        manageable.photo.draftId,
-        sessionId,
-      );
-      const lockedPhoto = findManagedSessionPhoto(draftRows, photoId);
-      if (!lockedPhoto?.canManage || !isSinglePhotoDraft(parseStoredSessionPhotos(draftRows[0]?.mediaJSON).length)) {
-        return "DRAFT_CHANGED" as const;
-      }
-      const eligible = await tx.$queryRawUnsafe<Array<{ id: string }>>(
-        `SELECT DISTINCT st.id FROM "Student" st
-          JOIN "Enrollment" e ON e."studentId" = st.id
-         WHERE e."classId" = $1 AND e.status = 'ACTIVE' AND st.id = ANY($2::text[])
-           AND ${notMergedStudent("st")}`,
-        manageable.session.classId,
-        subjectStudentIds,
-      );
-      if (eligible.length !== subjectStudentIds.length) return "INVALID_STUDENT" as const;
-      await tx.$executeRawUnsafe(
-        `UPDATE "SocialPostDraft" SET "subjectStudentIdsJSON" = $1, "updatedAt" = NOW() WHERE id = $2`,
-        JSON.stringify(subjectStudentIds),
-        manageable.photo.draftId,
-      );
-      return "UPDATED" as const;
-    });
-    if (result === "INVALID_STUDENT") return NextResponse.json({ error: "현재 수업의 재원 학생만 선택할 수 있습니다." }, { status: 400 });
-    if (result !== "UPDATED") return NextResponse.json({ error: "사진 상태가 변경되어 다시 불러와야 합니다." }, { status: 409 });
-    return NextResponse.json({ ok: true, subjectStudentIds });
-  } catch (error) {
-    const message = userFacingError(error, "사진의 학생 정보를 수정하지 못했습니다.");
-    return NextResponse.json({ error: message }, { status: 403 });
-  }
-}
+// 2026-11-14: «나온 학생» 수정(PATCH)은 없앴다 — 학부모 보기는 수업 참여 기준이라 학생 태그가 필요 없다(원장 결정).
 
 export async function DELETE(_request: Request, context: { params: Promise<{ sessionId: string; photoId: string }> }) {
   try {
@@ -210,11 +127,15 @@ export async function DELETE(_request: Request, context: { params: Promise<{ ses
     await ensureSessionPhotoDeletionQueue();
 
     await prisma.$transaction(async (tx) => {
-      const sessionRows = await tx.$queryRawUnsafe<Array<{ status: string; photosJSON: string | null }>>(
-        `SELECT status, "photosJSON" FROM "Session" WHERE id = $1 FOR UPDATE`,
+      const sessionRows = await tx.$queryRawUnsafe<Array<MediaWindowRow & { photosJSON: string | null }>>(
+        `SELECT "classId", status, "photosJSON", ${sessionKstDateSql('"Session"')}::text AS "sessionYmd",
+                ${TODAY_KST_SQL}::text AS "todayYmd"
+           FROM "Session" WHERE id = $1 FOR UPDATE`,
         sessionId,
       );
-      if (sessionRows[0]?.status !== "IN_PROGRESS") throw new Error("진행 중인 수업의 사진만 삭제할 수 있습니다.");
+      // 잠근 뒤 한 번 더 — 그 사이 자정이 지났거나 수업 상태가 바뀌었으면 지우지 않는다
+      const lockedWindow = sessionRows[0] ? canManageSessionMedia(sessionRows[0]) : null;
+      if (!lockedWindow?.ok) throw new Error(lockedWindow ? photoWindowMessage(lockedWindow.reason) : "수업 기록을 찾을 수 없습니다.");
       const draftRows = await tx.$queryRawUnsafe<SessionPhotoDraftRow[]>(
         `SELECT id, status, "mediaJSON", "subjectStudentIdsJSON", "galleryPostId", "instagramMediaId"
            FROM "SocialPostDraft" WHERE id = $1 AND "sessionId" = $2 FOR UPDATE`,
@@ -263,6 +184,6 @@ export async function DELETE(_request: Request, context: { params: Promise<{ ses
     return NextResponse.json({ ok: true });
   } catch (error) {
     const message = userFacingError(error, "사진을 삭제하지 못했습니다.");
-    return NextResponse.json({ error: message }, { status: error instanceof Error && error.message.includes("대기열") ? 409 : 403 });
+    return NextResponse.json({ error: message }, { status: error instanceof Error && /대기열|자정|시작한 뒤/.test(error.message) ? 409 : 403 });
   }
 }

@@ -34,9 +34,14 @@ test("자정 경계 — 오늘(KST)은 서버(UTC) 날짜가 아니라 한국 �
   const at = (iso) => r.canManageSessionVideo({ status: "COMPLETED", sessionYmd: "2026-11-14", todayYmd: k.todayKst(kst(iso)) }).ok;
   assert.equal(at("2026-11-14T23:59:59"), true);
   assert.equal(at("2026-11-15T00:00:00"), false);
-  // 서버가 SQL 로 오늘을 정한다 — 서버 시계로 «오늘»을 만들지 않는다
-  assert.match(read("src/lib/sessionVideo/server.ts"), /\(NOW\(\) AT TIME ZONE 'Asia\/Seoul'\)::date::text AS "todayYmd"/);
-  assert.match(read("src/lib/sessionVideo/server.ts"), /s\.date::date::text AS "sessionYmd"/);
+  // 서버가 SQL 로 오늘을 정한다 — 서버 시계로 «오늘»을 만들지 않는다.
+  // 2026-11-14: 사진·한 줄 저장과 같은 SQL 조각을 쓴다(수업일 = 무tz 칼럼 «두 번» 변환, 오늘 = timestamptz «한 번»)
+  const videoServer = read("src/lib/sessionVideo/server.ts");
+  assert.match(videoServer, /\$\{TODAY_KST_SQL\}::text AS "todayYmd"/);
+  assert.match(videoServer, /\$\{sessionKstDateSql\("s"\)\}::text AS "sessionYmd"/);
+  const feedRules = read("src/lib/feed/rules.ts");
+  assert.match(feedRules, /export const TODAY_KST_SQL = `\(NOW\(\) AT TIME ZONE 'Asia\/Seoul'\)::date`/);
+  assert.match(feedRules, /return `\(\(\$\{se\}\.date AT TIME ZONE 'UTC'\) AT TIME ZONE 'Asia\/Seoul'\)::date`/);
 });
 
 test("파일 검사: 형식 화이트리스트·크기 상한·친절한 안내", () => {
@@ -228,14 +233,16 @@ test("OAuth 주소·state — offline+consent, 업로드 권한, state 비교", 
 test("학부모 영상 API — 휴대폰 인증 보호자 + 그 수업 참여 학생의 보호자만(IDOR)", () => {
   const route = read("src/app/api/sessions/[sessionId]/videos/route.ts");
   assert.match(route, /requireVerifiedParent\(\)/);
-  assert.match(route, /parentCanViewSessionVideos\(parent\.appUserId, sessionId, session\.classId\)/);
-  assert.match(route, /status !== "COMPLETED"/);
+  // 2026-11-14 수업 피드 통일: 영상도 사진·소식 상세와 같은 판정 하나(끝났고 발행된 수업 + 참여한 내 아이)
+  assert.match(route, /parentCanViewSessionVideos\(parent\.appUserId, sessionId\)/);
   const server = read("src/lib/sessionVideo/server.ts");
-  // 보호자 판정은 childAccessSql(연결 표 포함) + 합쳐진 학생 제외, 참여 = 출결 기록 또는 ACTIVE 수강
-  assert.match(server, /childAccessSql\("st", 'u\."id"'\)/);
-  assert.match(server, /notMergedStudent\("st"\)/);
-  assert.match(server, /"Attendance" a WHERE a\."sessionId" = \$2 AND a\."studentId" = st\.id/);
-  assert.match(server, /e\."classId" = \$3 AND e\.status = 'ACTIVE'/);
+  assert.match(server, /return parentCanViewSession\(appUserId, sessionId\)/);
+  const feed = read("src/lib/feed/server.ts");
+  // 보호자 판정은 childAccessSql(연결 표 포함) + 합쳐진 학생 제외, 참여 = 공용 참여 조각(출결 또는 ACTIVE 수강)
+  assert.match(feed, /childAccessSql\("st", 'u\."id"'\)/);
+  assert.match(feed, /notMergedStudent\("st"\)/);
+  assert.match(feed, /WHERE se\.id = \$1 AND \$\{feedVisibleSessionSql\("se"\)\}/);
+  assert.match(feed, /WHERE u\.id = \$1 AND \$\{feedParticipantSql\("st", "se"\)\}/);
   // 지운·미등록 영상은 목록에서 제외
   assert.match(server, /"registeredAt" IS NOT NULL AND "deletedAt" IS NULL/);
 });

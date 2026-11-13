@@ -23,6 +23,8 @@ export type StaffTodayClass = {
   sessionId: string | null;
   sessionStatus: string | null;
   plannedContent: string | null;
+  /** «오늘 수업 한 줄»(Session.content) — 학부모 소식 본문. 수업 피드 칸에서 당일 자정까지 고친다(2026-11-14) */
+  content: string | null;
   startedAt: string | null;
   kind: "REGULAR" | "SEASONAL";
   scheduleKey: string;
@@ -123,7 +125,7 @@ export async function getTodayStaffClasses(dateKey: string = getKoreaDateKey()):
     `SELECT c.id, c.name, c."startTime", c."endTime", c.location,
             COUNT(DISTINCT e.id)::int AS "studentCount",
             s.id AS "sessionId", s.status AS "sessionStatus",
-            s."plannedContent", s."startedAt"
+            s."plannedContent", s.content, s."startedAt"
      FROM "Class" c
      LEFT JOIN "Enrollment" e ON e."classId" = c.id AND e.status = 'ACTIVE' AND (e."startsOn" IS NULL OR e."startsOn" <= $2::date OR EXISTS (
        SELECT 1 FROM "Attendance" historical JOIN "Session" prior ON prior.id=historical."sessionId"
@@ -188,7 +190,7 @@ export async function getTodayStaffClasses(dateKey: string = getKoreaDateKey()):
             occurrence.location,
             occurrence."studentCount",
             s.id AS "sessionId", s.status AS "sessionStatus",
-            s."plannedContent", s."startedAt",
+            s."plannedContent", s.content, s."startedAt",
             'SEASONAL' AS kind,
             ('seasonal:' || occurrence."sessionDateId") AS "scheduleKey",
             occurrence."sessionDateId"

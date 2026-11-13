@@ -60,20 +60,30 @@
 
 ---
 
-## 구현 기록 (developer) — 11-10 7브랜치 통합 + 신청함 연결 A·B
-📝 통합 순서(각 --no-ff): ①학부모 알림·수업 탭·⚙설정·/api/push 매핑·직원 알림 ②결석 신고 즉시 보강권 ③상담 신청 ④신청함 6탭 ⑤POS 자동 납부 ⑥휴원 시작일·수강료 정산 ⑦체험비 온라인 결제·안내·Meta 픽셀 토큰 차단. 코드 충돌 0 — 충돌은 문서(합집합)·consult-inbox.ts(③ 실제 구현 채택)·ParentMoreMenu.tsx(① 삭제 유지, 상담 링크는 ⚙설정)뿐.
+## 구현 기록 (developer) — 11-14 수업 피드(claude/feed-ui, 원장 결정표)
+📝 사진 공개 동의 제거 + «볼 수 있는가» 판정 하나(src/lib/feed/rules·server: 완료+발행 수업 × 참여=출결 또는 ACTIVE 수강·개시일≤수업일) → 사진 보기·영상·소식 목록/상세·홈 카드 공용. 수업일 SQL = 무tz «두 번» 변환(sessionKstDateSql, 영상도 교체). 선생님 «수업 피드» 칸(한 줄 Session.content 수업 전·중·후 당일 자정까지·음성·사진 태그 없음·실패분만 재업로드·사진 시간=영상 규칙) + 오늘 수업 홈 시트. 학부모 홈 «최신 수업 피드» 카드·소식 상세 재작성(사진 크게 보기·영상)·목록 행 «사진 n · 영상 n». 동의 UI 제거(학생 상세 링크·media-consent 화면·등록 창 질문), 공개 게시 동의 검사는 스위치로 끔(PUBLIC_POST_CONSENT_GATE_ENABLED=false, 관리자/원장 수동 승인 유지). DB 변경 없음.
 
 | 파일 | 변경 | 신규/수정 |
 |------|------|----------|
-| src/app/admin/inbox/InboxClient.tsx | A 상담 버튼(ref.actions 만·취소 확인·메모 초기값 adminNote·tel:) · B 휴원 승인 전 미리보기→방식 필수·{mode, expectedPreviewKey}·환불 확인 실패 경고 · «변경» 탭 남은 일 링크 | 수정 |
-| src/app/admin/inbox/PauseSettlementBox.tsx | 미리보기·방식 고르기(수강 변경 화면과 같은 규칙·문구) | 신규 |
-| src/app/actions/enrollment-changes.ts | getPauseTuitionPreview(관리자 전용, 실패=ok:false) | 수정 |
-| src/app/admin/inbox/page.tsx · src/lib/requests/admin-inbox.ts | 변경 탭 countOpenPauseSettlements · 행 ref.changeKind | 수정 |
-| tests/inbox-consult-pause-wiring.test.mjs · admin-inbox · consult-request | 연결 7건 · 스텁→실제 구현 시그니처 · 상담 링크=설정 화면 | 신규/수정 |
+| src/lib/feed/rules.ts · server.ts | 순수 규칙·공용 판정/조회 | 신규 |
+| api/staff/sessions/[id]/photos(+[photoId]) · api/sessions/[id]/videos · sessionVideo/server | 판정 통일·시간 규칙·PATCH 제거 | 수정 |
+| components/staff/SessionFeedPanel·SessionPhotoUploader · staff/StaffHomeClient · SessionInProgressClient · actions/staff-sessions(saveSessionFeedLine) · staff-session-queries(content) | 선생님 수업 피드 | 신규/수정 |
+| mypage/page·MyPageClient · components/parent/LatestFeedCard·FeedPhotoGallery · mypage/reports(목록·상세) · queries.getStudentReports | 학부모 화면 | 신규/수정 |
+| admin/students([id]/media-consent 삭제·StudentDetailClient·StudentRegisterModal) · actions/student-media-consent(삭제) · lib/studentMediaConsent | 동의 UI 제거·공개 게시 스위치 | 수정/삭제 |
+| tests/feed-rules(신규 14) · parent-report-render(재작성 11) · parent-app-structure(+3) 외 8개 갱신 | 테스트 | 신규/수정 |
 
-⚠️ 배포 전 운영 apply_migration 필요(전부 IF NOT EXISTS 멱등): 20261110150000_trial_fee_online_payment · 20261110160000_consult_request · 20261110170000_parent_notification_preference · 20261110180000_enrollment_pause_settlement (130000 은 적용됨). 선택: prisma/sql/backfill_makeup_credit_for_reported_absences.sql.
-💡 tester: 신청함 상담 탭 → 새 상담 열기 → 메모 칸에 기존 메모·[취소][메모 저장][연락함][상담 완료]·전화 걸기 / 변경 탭 휴원(PENDING) 열기 → «계산하는 중» → 금액 있으면 방식 고르기 전 [승인] 잠김 → 고르면 «승인 · 환불» + 확인창 금액. 실토스 부분 취소는 테스트 키로 1건 확인 필요(⑥). 체험비 결제는 설정 «온라인 결제» 켜기+토스 키 있어야 보임(⑦).
-⚠️ reviewer: 미리보기 지문 불일치로 승인 거절되면 칸을 닫았다 다시 열어야 재계산(자동 재조회 없음) · 신청함 휴원 규칙·문구는 수강 변경 화면과 두 벌(문구 비교 테스트로 묶음) · ②출결 «되살림» 동작 변경 · ⑦이미 확정된 신청에 온 결제 = NEEDS_REFUND.
+💡 tester: 선생님 수업 중 «수업 피드»에 한 줄 저장→종료 창에 같은 글 / 끝난 수업 행→«수업 피드 쓰기·사진 추가»(자정 전만) / 학부모 홈 처리할 일 아래 카드→상세 사진 누르면 크게·영상. 남의 sessionId·photoId 403/404.
+⚠️ reviewer: 공개 게시 동의 검사 끔(법적 판단은 원장) · 참여 기준에 개시일 조건 추가(영상 판정이 조금 엄격해짐) · 영상도 published 필요(종료 때 «바로 보내기» 끄면 숨김) · reports/page.tsx 기존 린트 1건(photoCount 재할당, 손대지 않음).
+
+#### 수정 이력
+| 회차 | 날짜 | 수정 내용 | 수정 파일 | 사유 |
+|------|------|----------|----------|------|
+| 1차 | 11-14 | 참여 시작일 = COALESCE(개시일, 등록일 KST 두 번 변환) · 개시일 없이 ACTIVE 만들던/되살리던 4곳(수강 추가·대기자=새 등록·되살리기 오늘 / 시트·특강=새 행 NULL 유지·되살리기만 오늘, 이미 ACTIVE 면 유지) · 종료 한 줄 그대로 반영(빈 값=NULL) · 대타 날짜 sessionKstDateSql · 운영 ACTIVE 183 중 개시일 빈 것 1건 | feed/rules · actions/admin · api/admin/seasonal · actions/staff-sessions · staff-class-access · tests 2 | security HIGH + reviewer 권장 2 |
+
+### 리뷰 결과 (reviewer · 11-14 ab61a2db) — 📊 통과(필수 0)
+- 검증: tsc 0 · 관련 12개 테스트 111-0 · 운영 DB 읽기 전용 대조: Session.date 1015행 모양 = 00:00(925)/00:30/02:00/04:30 뿐(«전날 15:00» 없음), `::date` 와 두 번 변환 불일치 0 → 영상·사진 시간 판정 변화 없음. 소식 (학생,수업) 쌍 옛 20 → 새 20(손실·추가 0). 미발행 완료 수업의 영상 0건.
+- 동의 제거: 지운 파일·PATCH 참조 0, 공개 게시(갤러리·인스타)는 checkSocialDraftMediaConsent 한 곳 경유 → 스위치로 일괄 통과, 수동 승인 유지.
+- 🟡 권장: ① staff-sessions.ts:745 종료 UPDATE `COALESCE($3, content)` — 종료 창이 이제 저장된 한 줄로 채워지므로 거기서 글을 지워도 옛 글이 남음(수업 피드 칸 «한 줄 저장»으로는 지워짐) ② staff-class-access.ts:272 대타 판정은 여전히 `s.date::date`(운영 데이터상 결과 같음, 조각 통일 권장) ③ 진행 중으로 자정 넘긴 수업은 사진 올리기 막힘(예전엔 허용) — 의도면 OK.
 
 ## 구현 기록 (developer) — 11-12 스태프 관리 추가 기능 s1~s6 (원장 «추천대로 해»)
 📝 직접 추가 메뉴 제거·초대로 전환 / 추가 역할 줄 / 퇴사 처리 / 역할 변경 확인창 / 초대 마지막 문자 / 담당 반. 마이그레이션 없음(전환 초대 = 기존 칸 SIGNUP+targetUserId).
@@ -104,6 +114,8 @@
 
 | 날짜 | 작업 내용 | 상태 |
 | 11-14 | developer(아이 정보+셔틀, claude/child-profile): /mypage/record 위에 아이 정보(생년월일·학년(생일 기준+등록 학년)·학교·성별·등록일·대표 보호자·내 연락처·연결 가족 이름·보강권)·수강 반(수업 탭 칩)·셔틀(요일별 승하차·7일 운행: 휴무·휴원·결석·안 탐·다른 곳, 방학특강·신청 접수, 기사님 전화) 접기 칸 · **버그 수정: 학부모 홈·수업 탭 정규 셔틀이 빈 옛 표(ShuttleRoutePassenger 0행)만 읽어 60명 전원 미표시 → 명단 기준(childShuttleRules) 항목 추가** · 운영 읽기 대조 6명 요일별 불일치 0 · **1차 수정(검수)**: 신청 접수 카드 = 명단 등재 여부(getRosterStudentIds)로 제외 · 일정 탭 명단 항목 요일별 한 줄+«아이 기록 › 셔틀» · 반 없음/못 찾음 = 운행 아님(NO_CLASS·CHECK) · 명단 조회 첫 병렬 묶음·기록은 그 아이만 · 빈 studentId 11행 = 2호점 운영 정차(학생 행 아님, 채울 것 없음) · tests 4583-0·tsc 0 | 검수 대기 |
+| 11-14 | reviewer(수업 피드 ab61a2db): 통과 — 필수 0·권장 3(종료 창 비우기 COALESCE·대타 날짜 조각·자정 넘긴 진행 수업 사진). 운영 대조 날짜 불일치 0·소식 20→20 | 통과 |
+| 11-14 | developer(수업 피드, claude/feed-ui): 동의 제거·볼 수 있는가 판정 통일(feed/rules·server)·선생님 수업 피드 칸·홈 최신 수업 피드 카드·소식 상세 재작성·동의 UI 제거·공개 게시 동의 스위치 끔. tsc 0·tests 4620-0·guards 5-0 | 완료(검수 대기) |
 | 11-14 | developer(아이 기록 w1~w4·q1~q4, claude/child-record): 새 화면 /mypage/record(홈 소속·요약 4칸·청구 이력 연도칩+필터 시트+월 묶음 접기·출석 12개월 막대(기록 없음 «–»)·수강 반 타임라인·특강/유니폼/리포트) · 순수 lib/parent/childRecordRules + 조회 childRecordQuery(첫 SQL 권한 재확인·섹션별 null·무tz 두 번) · 홈 한 줄·청구 탭 요약 줄/형제 칩/월 묶음/납부 완료 한 줄 행·수업 탭 «이번 달 출석 n/m»+«전체 기록»·소식 요약 줄 · 홈 영수증 = 결제 권한자(q3) · BarChart missing/showValues · tests/parent-child-record-rules 15건. tsc 0·tests 4571-0·운영 읽기 대조(납부 합계 SQL 일치) | 검수 대기 |
 |------|----------|------|
 | 11-14 | developer(수업 영상, claude/session-video): SessionVideo·YouTubeConnection 표(마이그레이션 20261114120000, RLS FORCE, 버킷 session-videos 50MB — 운영 미적용) · 선생님 촬영·직접 업로드·삭제(당일 KST 자정까지) · 학부모 재생 API/부품 · /admin/youtube 연결 · cron youtube-upload 15분 · 안드로이드 영상 촬영·선택. tsc 0·전체 테스트 fail 0 | 검수 대기 |

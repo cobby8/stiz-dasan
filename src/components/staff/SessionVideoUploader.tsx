@@ -126,7 +126,7 @@ export function SessionVideoUploader({ sessionId }: { sessionId: string }) {
       const registered = await register.json().catch(() => ({})) as { error?: string };
       if (!register.ok) throw new Error(registered.error || "영상을 등록하지 못했습니다.");
       setProgress(100);
-      setMessage("영상을 올렸습니다. 이 수업 학생의 보호자만 볼 수 있습니다.");
+      setMessage("영상을 올렸습니다. 수업이 끝나면 이 수업 학생의 보호자만 볼 수 있습니다.");
       await load().catch(() => undefined);
     } catch (error) {
       setMessage(userErrorMessage(error, "영상을 올리지 못했습니다. 네트워크를 확인한 뒤 다시 시도해 주세요."));
