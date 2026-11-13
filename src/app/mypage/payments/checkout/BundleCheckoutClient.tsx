@@ -411,6 +411,7 @@ export default function BundleCheckoutClient({
                                                 preferred={preferredMethod}
                                                 amountLabel={won(total)}
                                                 disabled={picked.length === 0 || overLimit}
+                                                showAmount={picked.length > 0}
                                                 loading={loading}
                                                 onPay={(chosen) => {
                                                     setMethod(chosen);

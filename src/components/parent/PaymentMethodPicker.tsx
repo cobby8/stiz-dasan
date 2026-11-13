@@ -20,6 +20,7 @@ export default function PaymentMethodPicker({
     amountLabel,
     disabled = false,
     loading = false,
+    showAmount = true,
     onPay,
 }: {
     /** 지난번(또는 설정에서 고른) 결제 방법 — 없으면 큰 버튼 생략 */
@@ -30,6 +31,8 @@ export default function PaymentMethodPicker({
     disabled?: boolean;
     /** 결제창 여는 중 */
     loading?: boolean;
+    /** 금액 안내를 보일까(묶음 화면에서 청구를 하나도 안 골랐으면 «0원» 줄을 숨긴다) */
+    showAmount?: boolean;
     onPay: (method: PreferredPaymentMethod) => void;
 }) {
     const off = disabled || loading;
@@ -41,16 +44,20 @@ export default function PaymentMethodPicker({
                     type="button"
                     onClick={() => onPay(preferred)}
                     disabled={off}
-                    className="academy-button-primary min-h-12 w-full text-base font-black"
+                    className="academy-button-primary min-h-12 w-full flex-col py-1.5 text-base font-black"
                 >
-                    {loading ? "결제창 여는 중..." : `${quickPayLabel(preferred)} · ${amountLabel}`}
+                    {/* 360px 에서도 한 줄 — 방법 이름이 첫 줄, 금액은 둘째 줄 작은 글자 */}
+                    <span className="block whitespace-nowrap">{loading ? "결제창 여는 중..." : quickPayLabel(preferred)}</span>
+                    {!loading && showAmount && <span className="block whitespace-nowrap text-xs font-bold opacity-90">{amountLabel}</span>}
                 </button>
             )}
 
             {/* 버튼 줄 제목 — 큰 버튼이 있으면 «다른 방법», 없으면 «결제 방법» */}
-            <p className="text-xs font-bold text-[var(--color-academy-muted)]">
-                {preferred ? "다른 방법으로 결제" : `결제 방법을 눌러 주세요 · ${amountLabel}`}
-            </p>
+            {(preferred || showAmount) && (
+                <p className="text-xs font-bold text-[var(--color-academy-muted)]">
+                    {preferred ? "다른 방법으로 결제" : `결제 방법을 눌러 주세요 · ${amountLabel}`}
+                </p>
+            )}
             <div role="group" aria-label="결제 방식" className="grid grid-cols-3 gap-1.5">
                 {PAYMENT_METHOD_OPTIONS.map((option) => (
                     <button

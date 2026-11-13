@@ -81,8 +81,20 @@ export function tossRequestFor(value: PreferredPaymentMethod, forceDefault = fal
     return { method: "CARD", card: { flowMode: "DEFAULT" } };
 }
 
-/** 학부모가 결제창을 스스로 닫은 경우의 코드(SDK 오류 USER_CANCEL · failUrl 의 PAY_PROCESS_CANCELED) */
-const CANCEL_CODES = new Set(["USER_CANCEL", "PAY_PROCESS_CANCELED"]);
+/**
+ * 간편결제 바로가기를 쓸 수 없다는 오류 코드(미계약·미지원) — 이때만 통합창으로 다시 연다.
+ * 카드 거절·한도 초과·취소·모르는 코드는 다시 열지 않는다(같은 결제를 엉뚱하게 반복하지 않게).
+ * ⚠️ src/lib/payments/tossFailMessage.ts 의 EASY_PAY_UNAVAILABLE_CODES 와 같은 목록(테스트가 비교).
+ */
+export const EASY_PAY_UNAVAILABLE_CODES = [
+    "NOT_SUPPORTED_METHOD",
+    "NOT_SUPPORTED",
+    "NOT_SUPPORTED_EASY_PAY",
+    "INVALID_EASY_PAY",
+    "INVALID_FLOW_MODE_PARAMETERS",
+    "UNSUPPORTED_TEST_PHASE_PAYMENT_METHOD",
+    "NOT_AVAILABLE_PAYMENT",
+] as const;
 
 /** SDK 오류에서 code 를 꺼낸다(없으면 빈 글자) */
 export function tossErrorCode(error: unknown): string {
@@ -95,12 +107,12 @@ export function tossErrorCode(error: unknown): string {
 
 /**
  * 간편결제 바로가기가 실패했을 때 통합 결제창으로 다시 열지 판정.
- *  - 간편결제 바로가기였고 · 사용자가 닫은 것(취소)이 아니면 → true(미계약·미지원 코드 등)
- *  - 카드·계좌이체·무통장입금이었거나 · 이미 통합창으로 다시 연 뒤거나 · 취소면 → false(재시도하지 않는다)
+ *  - 간편결제 바로가기였고 · 오류 코드가 미계약·미지원류(EASY_PAY_UNAVAILABLE_CODES)면 → true
+ *  - 그 밖(카드·계좌이체·무통장입금 · 이미 다시 연 뒤 · 취소 · 카드 거절 · 모르는 코드) → false(재시도하지 않는다)
  */
 export function shouldFallbackToDefault(value: PreferredPaymentMethod, error: unknown, alreadyFellBack = false): boolean {
     if (alreadyFellBack || !isEasyPayMethod(value)) return false;
-    return !CANCEL_CODES.has(tossErrorCode(error));
+    return (EASY_PAY_UNAVAILABLE_CODES as readonly string[]).includes(tossErrorCode(error));
 }
 
 export const EASY_PAY_FALLBACK_MESSAGE = "이 결제 방법은 지금 쓸 수 없어요. 카드·간편결제 전체 화면으로 열게요.";

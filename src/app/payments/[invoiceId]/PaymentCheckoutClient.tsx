@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { taxFreeAmountFor } from "@/lib/payments/taxFree";
 import { VIRTUAL_ACCOUNT_VALID_HOURS, type PublicVirtualAccountView } from "@/lib/payments/virtualAccount";
 import VirtualAccountNotice from "@/components/parent/VirtualAccountNotice";
@@ -133,6 +133,19 @@ export default function PaymentCheckoutClient({
 
     // «다른 방법으로 결제» 확인 단계를 펼쳤는가(열린 입금 계좌가 있을 때만 쓴다)
     const [switching, setSwitching] = useState(false);
+    // 연타 잠금 — 결제 방법 버튼이 6~7개라 빠르게 두 번 누르면 서버 결제 준비가 두 번 나갈 수 있었다(묶음 화면과 같은 방식)
+    const sending = useRef(false);
+
+    // 토스 결제창에서 브라우저 «뒤로»로 돌아오면 페이지가 캐시(bfcache)에서 살아나 «여는 중»에 멈춘다 → 풀어 준다(묶음 화면과 같음)
+    useEffect(() => {
+        const onPageShow = (event: PageTransitionEvent) => {
+            if (!event.persisted) return;
+            sending.current = false;
+            setLoading(false);
+        };
+        window.addEventListener("pageshow", onPageShow);
+        return () => window.removeEventListener("pageshow", onPageShow);
+    }, []);
 
     // closeAccount=true: 열린 입금 계좌를 서버가 토스에서 닫은 뒤 새 결제를 연다(확인 단계를 거친 경우만).
     // selected = 학부모가 누른 결제 방법(간편결제 3종·카드·계좌이체·무통장입금)
@@ -141,6 +154,8 @@ export default function PaymentCheckoutClient({
             setError("지금은 온라인 결제를 쓸 수 없어요. 학원에 문의해 주세요.");
             return;
         }
+        if (sending.current) return; // 이미 결제 준비 중
+        sending.current = true;
 
         setLoading(true);
         setError(null);
@@ -215,6 +230,9 @@ export default function PaymentCheckoutClient({
         } catch (err) {
             setError(err instanceof Error ? err.message : "결제를 요청하지 못했어요.");
             setLoading(false);
+        } finally {
+            // 잠금만 푼다 — 결제창으로 넘어가는 중에는 loading 이 버튼을 계속 막는다
+            sending.current = false;
         }
     }
 

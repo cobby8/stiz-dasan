@@ -57,12 +57,15 @@ test("③ 바로가기 실패 → 통합창 전환 판정", () => {
   const s = m.shouldFallbackToDefault;
   assert.equal(s("TOSSPAY", { code: "NOT_SUPPORTED_METHOD" }), true, "미계약·미지원");
   assert.equal(s("KAKAOPAY", { code: "INVALID_EASY_PAY" }), true);
-  assert.equal(s("NAVERPAY", new Error("알 수 없음")), true, "코드 없는 오류도 통합창으로");
+  assert.equal(s("NAVERPAY", { code: "UNSUPPORTED_TEST_PHASE_PAYMENT_METHOD" }), true);
+  assert.equal(s("NAVERPAY", new Error("알 수 없음")), false, "코드 없는·모르는 오류는 재시도 안 함");
+  assert.equal(s("TOSSPAY", { code: "REJECT_CARD_COMPANY" }), false, "카드 거절은 재시도 안 함");
+  assert.equal(s("TOSSPAY", { code: "EXCEED_MAX_PAYMENT_AMOUNT" }), false, "한도 초과는 재시도 안 함");
   assert.equal(s("TOSSPAY", { code: "USER_CANCEL" }), false, "사용자가 닫으면 재시도 안 함");
   assert.equal(s("TOSSPAY", { code: "PAY_PROCESS_CANCELED" }), false);
   assert.equal(s("CARD", { code: "NOT_SUPPORTED_METHOD" }), false, "카드는 이미 통합창");
   assert.equal(s("VIRTUAL_ACCOUNT", { code: "X" }), false);
-  assert.equal(s("TOSSPAY", { code: "X" }, true), false, "한 번만 다시 연다");
+  assert.equal(s("TOSSPAY", { code: "NOT_SUPPORTED_METHOD" }, true), false, "한 번만 다시 연다");
 });
 
 test("③ requestTossWithFallback: 실패하면 안내 후 통합창으로 한 번, 취소는 그대로 던짐", async () => {
@@ -88,8 +91,12 @@ test("③ requestTossWithFallback: 실패하면 안내 후 통합창으로 한 �
 
   // 통합창도 실패하면 그 오류를 화면에 넘긴다(무한 반복 없음)
   const twice = [];
-  await assert.rejects(m.requestTossWithFallback("NAVERPAY", async (part) => { twice.push(part); throw Object.assign(new Error("둘 다 실패"), { code: "X" }); }, () => {}), /둘 다 실패/);
+  await assert.rejects(m.requestTossWithFallback("NAVERPAY", async (part) => { twice.push(part); throw Object.assign(new Error("둘 다 실패"), { code: "NOT_SUPPORTED_METHOD" }); }, () => {}), /둘 다 실패/);
   assert.equal(twice.length, 2);
+  // 카드 거절 같은 오류는 통합창으로 다시 열지 않고 그대로 화면에
+  const rejected = [];
+  await assert.rejects(m.requestTossWithFallback("TOSSPAY", async (part) => { rejected.push(part); throw Object.assign(new Error("거절"), { code: "REJECT_CARD_COMPANY" }); }, () => assert.fail("안내 없음")), /거절/);
+  assert.equal(rejected.length, 1);
 });
 
 test("④ 값 화이트리스트(대소문자·공백 정리, 모르는 값은 null) + DB CHECK 와 같은 집합", () => {
@@ -137,4 +144,27 @@ test("⑤ 승인 완료 지점에서 기억 · 저장 실패는 던지지 않는
   assert.match(read("src/app/mypage/settings/page.tsx"), /<PaymentMethodRow current=\{preferredMethod\} \/>/);
   // 브랜드 로고 이미지는 쓰지 않는다(글자 + Material Symbols)
   assert.doesNotMatch(read("src/components/parent/PaymentMethodPicker.tsx"), /<img|lucide/);
+});
+
+test("검수 권장(11-13): 실패 화면 안내 · 코드 목록 일치 · 단건 연타 잠금 · 0원 줄 숨김", async () => {
+  const fail = await loadTsModule("src/lib/payments/tossFailMessage.ts");
+  assert.deepEqual([...fail.EASY_PAY_UNAVAILABLE_CODES], [...m.EASY_PAY_UNAVAILABLE_CODES], "실패 화면 = 재시도 판정 같은 목록");
+  assert.equal(fail.tossFailMessage("NOT_SUPPORTED_METHOD"), "이 결제 방법은 지금 쓸 수 없어요. 다른 결제 방법(카드)으로 다시 시도해 주세요.");
+  assert.equal(fail.isEasyPayUnavailableCode("invalid_easy_pay"), true);
+  assert.equal(fail.isEasyPayUnavailableCode("REJECT_CARD_COMPANY"), false);
+  assert.equal(fail.isEasyPayUnavailableCode(undefined), false);
+  assert.match(fail.tossFailMessage("REJECT_CARD_COMPANY"), /카드사에서 결제를 거절했어요/, "기존 문장 그대로");
+  const failPage = read("src/app/payments/fail/page.tsx");
+  assert.ok(failPage.includes("isEasyPayUnavailableCode(params.code) && ("));
+  assert.ok(failPage.includes("{EASY_PAY_UNAVAILABLE_MESSAGE}"));
+
+  const single = read("src/app/payments/[invoiceId]/PaymentCheckoutClient.tsx");
+  const start = single.slice(single.indexOf("async function startPayment"));
+  assert.ok(start.indexOf("if (sending.current) return;") > 0 && start.indexOf("if (sending.current) return;") < start.indexOf("fetch(\"/api/payments/checkout\""), "서버 결제 준비 전에 잠금");
+  assert.match(start, /finally \{[\s\S]*?sending\.current = false;/);
+
+  const picker = read("src/components/parent/PaymentMethodPicker.tsx");
+  assert.ok(picker.includes("(preferred || showAmount) && ("));
+  assert.ok(picker.includes('whitespace-nowrap">{loading ? "결제창 여는 중..." : quickPayLabel(preferred)}'), "큰 버튼 첫 줄은 방법 이름만");
+  assert.ok(read("src/app/mypage/payments/checkout/BundleCheckoutClient.tsx").includes("showAmount={picked.length > 0}"));
 });

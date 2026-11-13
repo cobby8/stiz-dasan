@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { EASY_PAY_UNAVAILABLE_MESSAGE, isEasyPayUnavailableCode } from "@/lib/payments/tossFailMessage";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,10 @@ export default async function PaymentFailPage({
                 </div>
                 <h1 className="text-xl font-extrabold">결제가 완료되지 않았습니다</h1>
                 <p className="mt-2 text-sm text-[var(--color-academy-muted)]">{message}</p>
+                {/* 간편결제 바로가기를 쓸 수 없어 돌아온 경우 — 정해 둔 문장만(주소 글은 쓰지 않는다) */}
+                {isEasyPayUnavailableCode(params.code) && (
+                    <p className="mt-2 text-sm font-bold text-[var(--color-academy-ink)]">{EASY_PAY_UNAVAILABLE_MESSAGE}</p>
+                )}
                 {params.code && (
                     <p className="mt-2 text-xs text-[var(--color-academy-faint)]">오류 코드: {params.code}</p>
                 )}
