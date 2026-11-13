@@ -125,6 +125,8 @@ type ParentInvoiceRow = {
     rallyzMirror: boolean;
     /** 마지막 거래를 만든(결제한) 계정 — 영수증을 누구에게 보일지 정한다 */
     transactionParentId?: string | null;
+    /** 학생의 지금 대표 보호자(Student.parentId) — 청구서 parentId 와 다를 수 있다 */
+    studentParentId?: string | null;
 };
 
 /**
@@ -1087,6 +1089,7 @@ export async function getInvoiceForParent(invoiceId: string, owner: PaymentOwner
             p.method,
             p."receiptUrl",
             s.name AS "studentName",
+            s."parentId" AS "studentParentId",
             u.name AS "parentName",
             u.email AS "parentEmail",
             u.phone AS "parentPhone",
@@ -1119,7 +1122,8 @@ export async function getInvoiceForParent(invoiceId: string, owner: PaymentOwner
     // 연결이 없으면 «없는 청구»와 똑같이 null 을 돌려준다(남의 청구서가 있는지조차 알리지 않는다).
     const payer = await resolveLinkedPayer(prisma, owner.authUserId, [row.studentId]);
     if (!payer) return null;
-    const payerIsPrimary = payer.id === row.parentId;
+    // 대표 보호자 = 청구서에 적힌 보호자 또는 학생의 지금 대표 보호자(청구서 발행 뒤 대표가 바뀐 경우 영수증이 숨지 않게)
+    const payerIsPrimary = payer.id === row.parentId || payer.id === (row.studentParentId ?? null);
     return {
         ...row,
         payerId: payer.id,

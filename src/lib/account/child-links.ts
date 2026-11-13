@@ -3,7 +3,7 @@ import { createHmac, randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { childConnectionsAvailable, childAccessSql } from "./child-access";
-import { canConnectSelf, identityName, identityPhone, validBirth, CHILD_LINK_UNAVAILABLE } from "./child-link-policy";
+import { canConnectSelf, identityName, identityPhone, isSerializationConflict, validBirth, CHILD_LINK_UNAVAILABLE } from "./child-link-policy";
 import { fetchPortoneIdentityVerification, getPortoneConfig } from "@/lib/identity/portone";
 // 형제 간편 연결 순수 규칙(2026-11-13 f8)
 import { buildSiblingPlan, hasSiblingWork, isSingleFamily, toPublicSiblings, type SiblingCandidateRow } from "./sibling-link-rules";
@@ -281,7 +281,8 @@ async function oneRequestPerProof(tx: Db): Promise<boolean> {
 export async function linkAllSiblings(actor: ChildActor, sessionHash: string, relationInput: unknown) {
   await requireChildConnections();
   const relation = relationInput === "OTHER" ? "OTHER" : "PARENT";
-  return prisma.$transaction(async tx => {
+  try {
+  return await prisma.$transaction(async tx => {
     await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, `child-request:${actor.id}`);
     const proof = await readSiblingProof(tx, actor, sessionHash, true);
     const plan = buildSiblingPlan(await loadSiblingRows(tx, actor.id, String(proof.phoneLast4)), actor.id, proofMatcher(String(proof.phoneHash)), String(proof.verifiedName));
@@ -305,4 +306,9 @@ export async function linkAllSiblings(actor: ChildActor, sessionHash: string, re
     await tx.$executeRawUnsafe(`UPDATE "ChildIdentityChallenge" SET "proofUsedAt"=NOW(),"verifiedName"=NULL WHERE id=$1`, proof.id);
     return { ok: true as const, linked, requested, deferred };
   }, { isolationLevel: "Serializable" });
+  } catch (error) {
+    // 같은 순간 다른 처리와 겹쳐 DB 가 트랜잭션을 되돌린 경우(직렬화 충돌) — 아무것도 저장되지 않았으니 다시 시도하면 된다
+    if (isSerializationConflict(error)) throw new ChildConnectionError("잠시 후 다시 시도해 주세요.", 409);
+    throw error;
+  }
 }

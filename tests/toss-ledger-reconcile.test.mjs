@@ -126,7 +126,7 @@ function fakeDb(state) {
         if (/FROM "PaymentInvoice" i/.test(s) && /"rallyzMirror"/.test(s)) {
             return [{ invoiceId: state.tx.invoiceId, paymentId: state.tx.paymentId, studentId: "stu-1", parentId: "u1", invoiceNo: "STIZ-202611-x",
                 invoiceStatus: state.invoice.status, amount: state.tx.amount, title: "11월 수강료", paymentStatus: state.payment.status,
-                studentName: "김민준", parentEmail: "parent@example.com", rallyzMirror: false }];
+                studentName: "김민준", parentEmail: "parent@example.com", rallyzMirror: false, ...state.invoiceRowExtra }];
         }
         if (/INSERT INTO "PaymentTransaction"/.test(s)) {
             state.insertedTx = (state.insertedTx ?? 0) + 1;
@@ -734,4 +734,40 @@ test("f8: 주문을 만든 사람이 아닌 다른 연결 보호자는 그 주�
         assert.equal(result.ok, false);
         assert.equal(fetchCalls.length, 0);
     });
+});
+
+test("f8 LOW-2: 토스 승인 원본(DONE)이 남은 주문은 그 사이 연결이 해제돼도 막지 않고 장부에 한 번 반영(돈이 이미 나갔다)", async () => {
+    const state = newState({ tx: { parentId: "u2", status: "IN_PROGRESS", paymentKey: "pk-1", rawResponse: tossDone() } });
+    state.payer = { id: "u2", linked: false };
+    fakeDb(state);
+    await withToss(async () => { throw new Error("토스를 다시 부르면 안 된다"); }, async (fetchCalls) => {
+        const result = await ledger.confirmTossPayment({ paymentKey: "pk-1", orderId: ORDER, amount: AMOUNT, invoiceId: null, owner: { authUserId: "auth-dad", email: null } });
+        assert.equal(result.ok, true);
+        assert.equal(result.recovered, true);
+        assert.equal(fetchCalls.length, 0);
+        assert.equal(state.payment.status, "PAID");
+        assert.equal(markPaidCount(state), 1);
+        const again = await ledger.confirmTossPayment({ paymentKey: "pk-1", orderId: ORDER, amount: AMOUNT, invoiceId: null, owner: { authUserId: "auth-dad", email: null } });
+        assert.equal(again.ok, true);
+        assert.equal(markPaidCount(state), 1, "다시 불러도 납부 기록은 한 번");
+    });
+});
+
+test("f8 LOW-1: 청구서 발행 뒤 대표 보호자가 바뀌어도 지금 대표 보호자는 대표로 보고 영수증을 보인다", async () => {
+    const state = newState();
+    // 청구서에는 옛 대표(u1), 학생의 지금 대표는 u2, 마지막 거래는 다른 사람(u3)이 만들었다
+    state.invoiceRowExtra = { studentParentId: "u2", transactionParentId: "u3" };
+    state.payer = { id: "u2" };
+    fakeDb(state);
+    const now = await ledger.getInvoiceForParent("inv-1", { authUserId: "auth-u2", email: null });
+    assert.equal(now.payerIsPrimary, true);
+    assert.equal(now.canSeeReceipt, true);
+    // 대표도 아니고 그 결제를 한 사람도 아닌 연결 가족은 영수증을 못 본다
+    const family = newState();
+    family.invoiceRowExtra = { studentParentId: "u1", transactionParentId: "u3" };
+    family.payer = { id: "u9" };
+    fakeDb(family);
+    const other = await ledger.getInvoiceForParent("inv-1", { authUserId: "auth-u9", email: null });
+    assert.equal(other.payerIsPrimary, false);
+    assert.equal(other.canSeeReceipt, false);
 });

@@ -291,3 +291,14 @@ test("계약: 인증 1건으로 여러 요청 — 마이그레이션은 UNIQUE �
     assert.doesNotMatch(model.slice(0, model.indexOf("}")), /challengeId\s+String\s+@unique/);
     assert.match(linksSrc, /conname='ChildLinkRequest_challengeId_key'/);
 });
+
+test("f8 LOW-5: «모두 연결» 직렬화 충돌(40001·P2034)은 500 대신 «잠시 후 다시 시도» 안내", async () => {
+    const policy = await loadTsModule("src/lib/account/child-link-policy.ts");
+    assert.equal(policy.isSerializationConflict({ code: "P2034" }), true);
+    assert.equal(policy.isSerializationConflict({ code: "P2010", meta: { code: "40001" } }), true);
+    assert.equal(policy.isSerializationConflict(new Error("could not serialize access due to read/write dependencies")), true);
+    assert.equal(policy.isSerializationConflict(new Error("connection refused")), false);
+    assert.equal(policy.isSerializationConflict(null), false);
+    const linkAll = linksSrc.slice(linksSrc.indexOf("export async function linkAllSiblings("));
+    assert.match(linkAll, /if \(isSerializationConflict\(error\)\) throw new ChildConnectionError\("잠시 후 다시 시도해 주세요\.", 409\);/);
+});
