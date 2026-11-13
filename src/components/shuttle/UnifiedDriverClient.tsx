@@ -276,7 +276,9 @@ export default function UnifiedDriverClient({
       if (!mounted.current) return;
       setBoarding((b) => { const n = { ...b }; if (result.status) n[key] = result.status; else delete n[key]; return n; });
       const time = result.checkedAt ? new Date(result.checkedAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Seoul" }) : null;
-      setSaveStates((states) => ({ ...states, [key]: { state: result.matched ? "saved" : "failed", message: result.matched ? `${verifyOnly ? "저장 상태 확인 완료" : "저장 완료"}${time ? ` · ${time}` : ""}` : "바뀌지 않았습니다 · 지금 저장된 상태를 보여 드려요" } }));
+      // 서버가 거부한 이유(409 — «휴원 학생은 체크하지 않습니다.» 등)가 있으면 그 글자를 그대로 보여 준다.
+      const rejected = "rejectedMessage" in result ? result.rejectedMessage : null;
+      setSaveStates((states) => ({ ...states, [key]: { state: result.matched ? "saved" : "failed", message: result.matched ? `${verifyOnly ? "저장 상태 확인 완료" : "저장 완료"}${time ? ` · ${time}` : ""}` : rejected ? `${rejected} · 지금 저장된 상태를 보여 드려요` : "바뀌지 않았습니다 · 지금 저장된 상태를 보여 드려요" } }));
     } catch {
       if (mounted.current) setSaveStates((states) => ({ ...states, [key]: { state: "unknown", message: "결과 확인 필요 · 저장 상태를 다시 확인해주세요" } }));
     } finally {

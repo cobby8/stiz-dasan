@@ -69,8 +69,15 @@ test("① 승인된 휴원 예약 — 시작일부터 복귀일 전까지만 «�
 });
 
 test("① 퇴원·첫 수업 전·수강 중·모름", () => {
-  // 정규 반이 하나도 없다 = 퇴원
-  assert.equal(rules.rosterRowBlock(THU_ROW, [], "2026-11-19"), "ENDED");
+  // 정규 반이 하나도 없고 실제 퇴원 기록이 있다 = 퇴원
+  assert.equal(rules.rosterRowBlock(THU_ROW, [], "2026-11-19", true), "ENDED");
+  // 반 0개 + 퇴원 기록 없음(체험생·등록 전 신규생) = 모름 → 잠그지 않는다(리뷰 11-14)
+  assert.equal(rules.rosterRowBlock(THU_ROW, [], "2026-11-19"), null);
+  assert.equal(rules.rosterRowBlock(THU_ROW, [], "2026-11-19", false), null);
+  assert.equal(rules.riderBlockOf(THU_ROW, [], "2026-11-19", null), null);
+  assert.equal(rules.riderBlockOf(THU_ROW, [], "2026-11-19", null, true), "ENDED");
+  // 다닌 반이 있으면 퇴원 기록이 있어도(다른 반 퇴원) 그 반 상태로 본다
+  assert.equal(rules.rosterRowBlock(THU_ROW, [cls()], "2026-11-19", true), null);
   // 승인된 퇴원 적용일부터
   const wd = [cls({ scheduled: { kind: "WITHDRAW", effectiveFrom: "2026-11-19", resumeOn: null } })];
   assert.equal(rules.rosterRowBlock(THU_ROW, wd, "2026-11-12"), null);
@@ -133,9 +140,9 @@ test("② 사유: 휴무 일정이 없고 공휴일 이름만 있으면 그 이�
   assert.equal(rules.holidayReason(onlyName, "2026-10-03"), "개천절");
   assert.equal(rules.holidayReason([{ title: "10월 1주차", date: "2026-10-03T00:00:00.000Z" }], "2026-10-03"), "연간일정 수업 없는 날");
   assert.equal(rules.holidayReason(null, "2026-10-03"), "연간일정 수업 없는 날");
-  // 범위 밖 수업 없는 날(종강 뒤) — 사유 일정이 없으면 기본 문구
-  const shortRange = (ym, dow) => schedule.computeClassDatesFromRange("2026-10-01", "2026-10-23", [DOW[dow]], new Set())[DOW[dow]] ?? [];
-  assert.deepEqual(rules.regularRunHoliday("2026-10-27", shortRange, []), { ymd: "2026-10-27", title: "연간일정 수업 없는 날" });
+  // 범위 안의 빈 날(휴무 일정 없이 계획표에서 빠진 날) — 사유 일정이 없으면 기본 문구
+  const gap = (ym, dow) => (ym === "2026-10" && dow === "Tue" ? ["2026-10-06", "2026-10-20", "2026-10-27"] : []);
+  assert.deepEqual(rules.regularRunHoliday("2026-10-13", gap, []), { ymd: "2026-10-13", title: "연간일정 수업 없는 날" });
   // 너무 긴 제목은 자른다
   const long = [{ title: "가".repeat(40) + " 학원 휴무", date: "2026-10-03T00:00:00.000Z" }];
   assert.ok(rules.holidayReason(long, "2026-10-03").endsWith("…"));
@@ -146,6 +153,45 @@ test("② 모르면 안내 없음 — 연간일정 없음·그 달 확정 전·�
   assert.equal(rules.regularRunHoliday("2026-11-19", monthlyDates, EVENTS), null); // 11월 일정 확정 전
   assert.equal(rules.regularRunHoliday("2026-09-27", monthlyDates, EVENTS), null); // 일요일(계획표에 없는 요일)
   assert.equal(rules.regularRunHoliday("2026-9-24", monthlyDates, EVENTS), null); // 날짜 형식 아님
+});
+
+// 리뷰 11-14 [필수]: 11월 수강월만 입력돼 있고 12월 수강월(11/30 시작)은 아직 미입력인 월말
+const NOV_ONLY = { "2026-11": ["2026-11-02", "2026-11-28"] };
+const novOnly = (events) => (ym, dow) => {
+  const range = NOV_ONLY[ym];
+  if (!range) return [];
+  return schedule.computeClassDatesFromRange(range[0], range[1], [DOW[dow]], closedSet(events))[DOW[dow]] ?? [];
+};
+
+test("② 다음 달 수강월 미입력 월말(11/30)은 휴무로 잠그지 않는다 — 범위 밖 = 모름", () => {
+  const md = novOnly([]);
+  assert.equal(rules.regularRunHoliday("2026-11-30", md, []), null); // 월 · 11월 수업일(11/2~11/23) 범위 밖
+  assert.equal(rules.regularRunHoliday("2026-11-01", md, []), null); // 일요일 · 첫 수업 전
+  // 범위 앞(개강 전)도 같다 — 11월 수강월이 11/2 시작
+  assert.equal(rules.regularRunHoliday("2026-11-02", md, []), null); // 수업일
+  // 관리자 «이 달 휴무» 줄도 같은 함수 — 11/30 이 빠진다
+  assert.deepEqual(rules.monthRunHolidays("2026-11", md, []), []);
+  // 단 «학원 휴무» 일정이 그날을 직접 덮으면 범위 밖이어도 휴무
+  const closed = [{ title: "학원 휴무", date: "2026-11-30T00:00:00.000Z" }];
+  assert.deepEqual(rules.regularRunHoliday("2026-11-30", novOnly(closed), closed), { ymd: "2026-11-30", title: "학원 휴무" });
+  assert.deepEqual(rules.monthRunHolidays("2026-11", novOnly(closed), closed).map((h) => h.ymd), ["2026-11-30"]);
+  // 공휴일 이름만 있고 «학원 휴무»가 없으면 범위 밖은 모름
+  assert.equal(rules.regularRunHoliday("2026-11-30", md, [{ title: "어떤 기념일", date: "2026-11-30T00:00:00.000Z" }]), null);
+  // 범위 안의 «학원 휴무»는 그대로 휴무(11/17 화)
+  const mid = [{ title: "학원 휴무", date: "2026-11-17T00:00:00.000Z" }];
+  assert.deepEqual(rules.regularRunHoliday("2026-11-17", novOnly(mid), mid), { ymd: "2026-11-17", title: "학원 휴무" });
+});
+
+test("② 주차 방식도 같은 경계 — 다음 달 주차가 없으면 월말 주는 모름", () => {
+  // 11월 1~4주차만 입력(11/2·9·16·23 주), 12월 1주차(11/30 주) 미입력
+  const weeks = ["2026-11-02", "2026-11-09", "2026-11-16", "2026-11-23"].map((d) => ({ date: `${d}T00:00:00.000Z` }));
+  const md = (ym, dow) => (ym === "2026-11" ? schedule.getMonthClassSchedule(weeks, [DOW[dow]], new Set())[DOW[dow]] ?? [] : []);
+  assert.equal(rules.regularRunHoliday("2026-11-30", md, []), null);
+  assert.equal(rules.regularRunHoliday("2026-11-23", md, []), null);
+  // 주차 사이가 빈 주(예: 2주차 미입력)는 범위 안의 빈 날 → 휴무
+  const gapWeeks = weeks.filter((w) => !w.date.startsWith("2026-11-09"));
+  const md2 = (ym, dow) => (ym === "2026-11" ? schedule.getMonthClassSchedule(gapWeeks, [DOW[dow]], new Set())[DOW[dow]] ?? [] : []);
+  assert.equal(rules.regularRunHoliday("2026-11-10", md2, []).title, "연간일정 수업 없는 날");
 });
 
 test("② 한 달 휴무 목록(관리자 «이 달 휴무») — 요일과 함께", () => {
@@ -334,4 +380,19 @@ test("④ 기사 링크 저장 API 를 실제로 돌려 본다 — 잠긴 줄 40
   failLookup = true;
   assert.equal((await post("paused-row", "BOARDED")).status, 200);
   assert.deepEqual(writes.map((w) => [w.rowId, w.status]), [["paused-row", null], ["ok-row", "BOARDED"], ["paused-row", "BOARDED"]]);
+});
+
+test("④ 화면: 409 거부 이유 글자를 저장 결과로 넘긴다(그 외 실패는 종전대로 null)", async () => {
+  const client = load("src/lib/shuttle/driverStatusClient.ts");
+  const readNone = async () => ({ status: null, checkedAt: null });
+  const res409 = async () => new Response(JSON.stringify({ error: "휴원 학생은 체크하지 않습니다." }), { status: 409 });
+  const r1 = await client.saveAndVerifyBoarding("/fake", { status: "BOARDED" }, readNone, res409);
+  assert.equal(r1.matched, false);
+  assert.equal(r1.rejectedMessage, "휴원 학생은 체크하지 않습니다.");
+  const res500 = async () => new Response(JSON.stringify({ error: "저장하지 못했습니다." }), { status: 500 });
+  assert.equal((await client.saveAndVerifyBoarding("/fake", { status: "BOARDED" }, readNone, res500)).rejectedMessage, null);
+  const ok = async () => new Response(JSON.stringify({ ok: true }), { status: 200 });
+  assert.equal((await client.saveAndVerifyBoarding("/fake", { status: null }, readNone, ok)).rejectedMessage, null);
+  // 기사님 화면이 그 글자를 저장 상태 줄에 쓴다
+  assert.match(read("src/components/shuttle/UnifiedDriverClient.tsx"), /rejected \? `\$\{rejected\} · 지금 저장된 상태를 보여 드려요`/);
 });

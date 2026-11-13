@@ -43,20 +43,29 @@ const DOW_NAME = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 /**
  * 명단 한 줄(요일·수업시간)의 그날 수강 상태로 잠글지.
  * classes: 그 학생의 정규 반(수강 중·휴원 중). undefined = 학생 id 가 없거나 못 읽음 → 모름(안 잠금).
- *   - 반이 하나도 없다(퇴원해 수강 중·휴원 중 반 없음) → ENDED
+ * hasWithdrawn: 그 학생에게 실제 퇴원(WITHDRAWN) 정규 수강 기록이 있는가.
+ *   - 반이 하나도 없고 퇴원 기록이 있다 → ENDED
+ *   - 반이 하나도 없고 퇴원 기록도 없다(체험생·등록 전 신규생) → 모름(안 잠금) — 리뷰 11-14: «퇴원»으로 막으면 체크를 못 한다
+ *   - 승인된 퇴원의 적용일부터 → ENDED(enrollmentStateOn)
  *   - 그 요일·시간 반을 못 찾았다(반 이동 등) → 모름(안 잠금) — 학부모 쪽 «확인 필요»와 같은 경우
  */
 export function rosterRowBlock(
   row: { weekday: number; classTime: string | null },
   classes: readonly ShuttleClassRef[] | undefined,
   ymd: string,
+  hasWithdrawn = false,
 ): Exclude<RiderBlockKind, "HOLIDAY"> | null {
   if (!classes) return null;
-  if (classes.length === 0) return "ENDED";
+  if (classes.length === 0) return hasWithdrawn ? "ENDED" : null;
   const cls = matchRosterClass(row.weekday, row.classTime, classes);
   if (!cls) return null;
   const state = enrollmentStateOn(cls, ymd);
   return state === "ACTIVE" ? null : state;
+}
+
+/** 그날을 직접 덮는 «학원 휴무·휴강» 일정이 있는가 */
+function closedEventCovers(events: readonly PlanEvent[] | null | undefined, ymd: string): boolean {
+  return (events ?? []).some((e) => typeof e?.title === "string" && CLOSED_RE.test(e.title) && coversDay(e, ymd));
 }
 
 /** 이벤트가 덮는 날(UTC 날짜 칸 기준) — monthlyClassDates 의 휴무일 모으기와 같은 방식이라 같은 날을 가리킨다 */
@@ -91,6 +100,9 @@ export type RunHoliday = { ymd: string; title: string };
 /**
  * 그날이 정규 수업 없는 날(휴무)인가. 학부모 셔틀 «휴무»와 같은 계산(classDatesForCalendarMonth).
  * 연간일정을 못 읽었거나(monthlyDates=null) 그 달·요일 수업일이 아직 없으면(확정 전) null — 안내 없이 기존대로.
+ * 그 달 수업일 목록의 처음~끝 «범위 밖»도 모름(null) — 다음 달 수강월이 아직 입력 안 된 월말(예: 12월 수강월이
+ * 11/30 시작인데 미입력)을 휴무로 잠그지 않게(리뷰 11-14). 개강~종강 방식·주차 방식 모두 같은 범위로 본다.
+ * 단 «학원 휴무» 일정이 그날을 직접 덮으면 범위 밖이어도 휴무.
  */
 export function regularRunHoliday(
   ymd: string,
@@ -103,6 +115,10 @@ export function regularRunHoliday(
   const dates = classDatesForCalendarMonth(ymd.slice(0, 7), dow, null, monthlyDates);
   if (dates.length === 0) return null; // 그 달 일정 확정 전(또는 일요일처럼 계획표에 없는 요일) → 모름
   if (dates.includes(ymd)) return null;
+  const sorted = [...dates].sort();
+  const inRange = ymd >= sorted[0] && ymd <= sorted[sorted.length - 1];
+  // 범위 밖 = 다른 달 수강월 일정이 아직 없을 수 있다 → «학원 휴무» 일정이 직접 덮을 때만 휴무
+  if (!inRange && !closedEventCovers(events, ymd)) return null;
   return { ymd, title: holidayReason(events, ymd) };
 }
 
@@ -133,8 +149,9 @@ export function riderBlockOf(
   classes: readonly ShuttleClassRef[] | undefined,
   ymd: string,
   holiday: RunHoliday | null,
+  hasWithdrawn = false,
 ): RiderBlockKind | null {
-  return rosterRowBlock(row, classes, ymd) ?? (holiday ? "HOLIDAY" : null);
+  return rosterRowBlock(row, classes, ymd, hasWithdrawn) ?? (holiday ? "HOLIDAY" : null);
 }
 
 /** 서버 저장 거부 판정 — 잠긴 줄에는 «대기로 되돌리기»(null)만 받는다(예전에 잘못 남은 기록을 지울 수 있게). */

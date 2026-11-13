@@ -71,6 +71,23 @@ export async function loadRosterClassesByStudent(db: Reader, studentIds: readonl
   return out;
 }
 
+/**
+ * 실제 퇴원(WITHDRAWN) 정규 수강 기록이 있는 학생 id — 반 0개인 학생을 «퇴원»으로 볼지 가른다
+ * (체험생·등록 전 신규생은 기록이 없어 «모름»으로 둔다). 학생 id 외의 칸은 고르지 않는다.
+ */
+export async function loadWithdrawnStudentIds(db: Reader, studentIds: readonly string[]): Promise<Set<string>> {
+  const ids = [...new Set(studentIds.filter((id) => typeof id === "string" && id !== ""))];
+  if (ids.length === 0) return new Set();
+  const rows = await db.$queryRawUnsafe<{ studentId: string }[]>(
+    `SELECT DISTINCT e."studentId"
+       FROM "Enrollment" e
+       JOIN "Class" c ON c.id = e."classId" AND c."dayOfWeek" <> 'Seasonal'
+      WHERE e."studentId" = ANY($1::text[]) AND e.status = 'WITHDRAWN'`,
+    ids,
+  );
+  return new Set(rows.map((r) => String(r.studentId)));
+}
+
 /** 연간일정 — 못 읽으면 null(휴무 판정 없이 기존대로). 학부모 셔틀과 같은 함수. */
 export async function loadRegularRunPlan(): Promise<{ events: PlanEvent[]; monthlyDates: MonthlyClassDates } | null> {
   const events = await loadAnnualPlanEvents().catch(() => null);
@@ -89,11 +106,13 @@ export async function getRegularRunDayBlocks(
   ymd: string,
 ): Promise<{ holiday: RunHoliday | null; labelByRowId: Map<string, string> }> {
   const studentIds = rows.map((r) => r.studentId ?? "").filter(Boolean);
-  const [classesByStudent, plan] = await Promise.all([
+  const [classesByStudent, withdrawn, plan] = await Promise.all([
     loadRosterClassesByStudent(prisma, studentIds).catch((e) => {
       console.error("[regularRunDay] 수강 상태 조회 실패 — 휴원 잠금 없이 표시", e);
       return null;
     }),
+    // 실패하면 빈 집합 = 반 0개 학생을 «퇴원»으로 막지 않는다(안전한 쪽)
+    loadWithdrawnStudentIds(prisma, studentIds).catch(() => new Set<string>()),
     loadRegularRunPlan(),
   ]);
   const holiday = plan ? regularRunHoliday(ymd, plan.monthlyDates, plan.events) : null;
@@ -102,7 +121,7 @@ export async function getRegularRunDayBlocks(
     if (!r.id) continue;
     // 학생 id 가 없거나 수강 조회가 실패하면 수강 판정은 «모름»(undefined) — 휴무만 본다.
     const classes = classesByStudent && r.studentId ? classesByStudent.get(r.studentId) : undefined;
-    const kind = riderBlockOf(r, classes, ymd, holiday);
+    const kind = riderBlockOf(r, classes, ymd, holiday, Boolean(r.studentId && withdrawn.has(r.studentId)));
     if (kind) labelByRowId.set(r.id, RIDER_BLOCK_LABEL[kind]);
   }
   return { holiday, labelByRowId };
@@ -120,17 +139,18 @@ export async function getRegularRosterMonthMarks(
   refYmd: string,
 ): Promise<{ labelByRowId: Record<string, string>; holidays: (RunHoliday & { weekday: number })[] }> {
   const studentIds = rows.map((r) => r.studentId ?? "").filter(Boolean);
-  const [classesByStudent, plan] = await Promise.all([
+  const [classesByStudent, withdrawn, plan] = await Promise.all([
     loadRosterClassesByStudent(prisma, studentIds).catch((e) => {
       console.error("[regularRunDay] 수강 상태 조회 실패 — 휴원 뱃지 없이 표시", e);
       return null;
     }),
+    loadWithdrawnStudentIds(prisma, studentIds).catch(() => new Set<string>()),
     loadRegularRunPlan(),
   ]);
   const labelByRowId: Record<string, string> = {};
   for (const r of rows) {
     if (!r.id || !classesByStudent || !r.studentId) continue;
-    const kind = rosterRowBlock(r, classesByStudent.get(r.studentId), refYmd);
+    const kind = rosterRowBlock(r, classesByStudent.get(r.studentId), refYmd, withdrawn.has(r.studentId));
     if (kind) labelByRowId[r.id] = RIDER_BLOCK_LABEL[kind];
   }
   return { labelByRowId, holidays: plan ? monthRunHolidays(month, plan.monthlyDates, plan.events) : [] };
