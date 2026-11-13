@@ -46,9 +46,11 @@ test("안드로이드 카카오톡 등 인앱 브라우저는 intent 버튼(Play
 });
 
 test("아이폰: App Store 번호가 비어 있으면 «곧 출시» 화면, 숫자가 채워지면 App Store 로 바로", () => {
-  assert.equal(L.IOS_APP_STORE_ID, "", "출시 전에는 비워 둔다 — 채우면 이 테스트도 같이 고친다");
+  // 2026-11-13 App Store 공개 — 기본값은 실제 앱 번호(스티즈농구교실)
+  assert.equal(L.IOS_APP_STORE_ID, "6832261596");
   for (const ua of [UA.iphone, UA.iphoneKakao]) {
-    assert.deepEqual(targetFor(ua), { kind: "ios-coming-soon" });
+    assert.deepEqual(targetFor(ua), { kind: "redirect", url: "https://apps.apple.com/kr/app/id6832261596" });
+    assert.deepEqual(targetFor(ua, ""), { kind: "ios-coming-soon" });
     assert.deepEqual(targetFor(ua, "6740000000"), { kind: "redirect", url: "https://apps.apple.com/kr/app/id6740000000" });
   }
   // 숫자가 아닌 값은 엉뚱한 곳으로 보내지 않는다

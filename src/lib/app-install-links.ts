@@ -12,10 +12,9 @@ export const PLAY_STORE_URL = `https://play.google.com/store/apps/details?id=${S
 
 /**
  * App Store 앱 번호(apps.apple.com/kr/app/id«숫자» 의 숫자).
- * ⚠️ 아직 App Store 출시 전이라 비워 둔다 — 출시되면 여기 숫자만 채우면 아이폰도 바로 App Store 로 간다.
- * 비어 있는 동안 아이폰은 «곧 출시» 안내 + 웹으로 쓰기 버튼을 본다.
+ * 2026-11-13 App Store 승인·공개(스티즈농구교실 1.0) → 채웠다. 비우면 아이폰은 «곧 출시» 안내 + 웹으로 쓰기 버튼을 본다.
  */
-export const IOS_APP_STORE_ID = "";
+export const IOS_APP_STORE_ID = "6832261596";
 
 /** 짧은 설치 주소(문자에 넣는 주소). 페이지는 src/app/install/page.tsx */
 export const APP_INSTALL_PATH = "/install";
