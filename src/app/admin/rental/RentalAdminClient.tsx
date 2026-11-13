@@ -31,6 +31,7 @@ import {
   buildRentalApplicantMessage,
   calculateRentalFee,
   formatRentalPhone,
+  isRentalEditable,
   formatWon,
   rentalTimeText,
   rentalTransitionTarget,
@@ -77,8 +78,6 @@ const CONFIRM_TEXT: Partial<Record<RentalAction, { description: string; tone: "d
 const SMS_KIND: Partial<Record<RentalAction, RentalApplicantKind>> = { approve: "approved", reject: "rejected", confirmPayment: "confirmed" };
 const CUSTOM_REASON = "__custom__";
 
-// 내용 수정 — 돈을 받기 전 단계만(서버 RENTAL_EDITABLE_STATUSES 와 같은 목록)
-const EDITABLE: readonly RentalStatus[] = ["REQUESTED", "APPROVED"];
 // 시작 시각 후보(10분 간격) · 이용 시간 후보(30분 간격). 실제로 비어 있는지는 서버가 수업·대관과 다시 맞춰 본다.
 const START_OPTIONS = Array.from({ length: (RENTAL_CLOSE_HOUR - 1 - RENTAL_OPEN_HOUR) * 6 + 1 }, (_, i) => RENTAL_OPEN_HOUR * 60 + i * 10);
 const DURATION_OPTIONS = Array.from(
@@ -231,7 +230,8 @@ export default function RentalAdminClient({ rows, bankAccount, smsOn, embedded =
     // 순서: 진행 버튼 먼저, 거절·취소(위험)는 뒤로. 보증금 0원 건은 «보증금 환불» 단계가 없다(row 를 넘김).
     const actions = allowedRentalActions(row.status, row).sort((a, b) => Number(a === "reject" || a === "cancel") - Number(b === "reject" || b === "cancel"));
     // «내용 수정»은 진행 버튼 뒤에 둔다(위험 버튼은 메뉴가 알아서 맨 아래로 모은다)
-    const edit: AdminQuickAction[] = EDITABLE.includes(row.status)
+    // 수정 가능 기준은 서버와 같은 함수(돈 받기 전 + 무료 확정)
+    const edit: AdminQuickAction[] = isRentalEditable(row)
       ? [{ key: "edit", label: "내용 수정", icon: "edit_calendar", tone: "default", disabled: pending, onSelect: () => openEdit(row) }]
       : [];
     return [...actions.map((action): AdminQuickAction => ({
@@ -622,12 +622,16 @@ export default function RentalAdminClient({ rows, bankAccount, smsOn, embedded =
                   ? `바뀐 금액: 이용료 ${formatWon(editFee.usageFee)} + 보증금 ${formatWon(editFee.deposit)} = ${formatWon(editFee.total)}${amountDiff ? ` (${amountDiff > 0 ? "+" : "-"}${formatWon(Math.abs(amountDiff))})` : ""}`
                   : editFeeError}
               </p>
-              {/* 입금 대기(승인 안내를 이미 보낸) 건만 바뀐 내용으로 다시 안내한다 */}
-              {editRow.status === "APPROVED" && (
+              {/* 안내 문자가 이미 나간 단계만 다시 안내한다: 입금 대기 → 승인 안내, 무료 확정 → 확정 안내 */}
+              {(editRow.status === "APPROVED" || editRow.status === "PAID") && (
                 <label className="flex min-h-11 items-center gap-2 font-bold text-[var(--color-academy-ink)]">
                   <input type="checkbox" checked={editing.notify} onChange={(e) => setEditing({ ...editing, notify: e.target.checked })} className="h-5 w-5" />
-                  바뀐 시간·금액으로 승인 안내 문자 다시 보내기{smsOn.approved ? "" : " (문자 꺼짐 · 보내지 않음)"}
+                  {editRow.status === "PAID" ? "바뀐 시간으로 확정 안내 문자 다시 보내기" : "바뀐 시간·금액으로 승인 안내 문자 다시 보내기"}
+                  {smsOn[editRow.status === "PAID" ? "confirmed" : "approved"] ? "" : " (문자 꺼짐 · 보내지 않음)"}
                 </label>
+              )}
+              {editRow.status === "PAID" && editFee && editFee.total > 0 && (
+                <p role="alert" className="font-bold text-[var(--color-academy-danger)]">무료 확정 건은 0원 안에서만 고칠 수 있어요(재원생 2시간까지 무료). 늘리려면 취소 후 다시 신청받아 주세요.</p>
               )}
               <p className="text-xs text-[var(--color-academy-muted)]">수업·특강·다른 승인 대관과 겹치면 저장되지 않습니다. 바꾼 내용은 메모에 자동으로 남습니다.</p>
             </div>

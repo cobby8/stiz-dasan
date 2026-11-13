@@ -303,13 +303,15 @@ export async function editRentalRequest(id: string, input: RentalEditInput, opti
     if (!result.ok) return { ok: false, error: result.message };
     if (!result.changed) return { ok: true, changed: false, sms: null };
     let sms: RentalSmsOutcome | null = null;
-    if (options.notify === true && result.request.status === "APPROVED") {
+    // 이미 안내 문자가 나간 단계만 다시 안내한다: 입금 대기 → 승인 안내, 무료 확정 → 확정 안내
+    const kind = result.request.status === "APPROVED" ? "approved" : result.request.status === "PAID" ? "confirmed" : null;
+    if (options.notify === true && kind) {
       // 같은 건·같은 종류 문자는 중복 방지로 막히므로 수정마다 새 실행 번호를 붙인다
-      sms = await sendRentalApplicantSms("approved", result.request, `edit-${Date.now()}`);
-      // 문자 꺼짐(OFF)이면 처음 승인 문자 결과 기록을 덮어쓰지 않는다
+      sms = await sendRentalApplicantSms(kind, result.request, `edit-${Date.now()}`);
+      // 문자 꺼짐(OFF)이면 처음 안내 문자 결과 기록을 덮어쓰지 않는다
       if (sms !== "OFF") {
         try {
-          await saveRentalSmsStatus(prisma, result.request.id, `${sms}:approved`);
+          await saveRentalSmsStatus(prisma, result.request.id, `${sms}:${kind}`);
         } catch (error) {
           console.error("[rental] sms status save failed:", (error as Error).message);
         }

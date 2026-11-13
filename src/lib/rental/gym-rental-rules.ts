@@ -119,6 +119,14 @@ export function isRentalAction(value: unknown): value is RentalAction {
 }
 
 /**
+ * 관리자 «내용 수정»을 할 수 있는가 — 서버(editRentalInTx)와 화면이 같은 기준을 쓴다.
+ * 돈을 받기 전(승인 대기·입금 대기) + 0원으로 바로 확정된 재원생 무료 건(원장 2026-11-13).
+ */
+export function isRentalEditable(row: { status: string; totalAmount: number }): boolean {
+  return row.status === "REQUESTED" || row.status === "APPROVED" || (row.status === "PAID" && Number(row.totalAmount) === 0);
+}
+
+/**
  * 지금 상태에서 누를 수 있는 버튼 목록.
  * row 를 넘기면 보증금 0원(재원생 무료) 건은 «보증금 환불» 버튼을 뺀다 — 사용 완료가 마지막 단계다.
  */

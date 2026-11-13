@@ -22,6 +22,7 @@ import {
   formatWon,
   isBookableDate,
   isRentalAction,
+  isRentalEditable,
   isRentalRangeAvailable,
   isValidRentalDuration,
   normalizeRentalPhone,
@@ -493,8 +494,8 @@ export async function transitionRentalInTx(
 }
 
 // ── 관리자: 신청 내용 수정(날짜·시간·인원·냉난방) ─────────────────────────
-// 신청자가 전화로 «시간을 바꿔 달라»고 할 때 쓴다(원장 2026-11-13). 돈을 받기 전 단계만 고친다.
-export const RENTAL_EDITABLE_STATUSES = ["REQUESTED", "APPROVED"] as const;
+// 신청자가 전화로 «시간을 바꿔 달라»고 할 때 쓴다(원장 2026-11-13).
+// 돈을 받기 전 단계 + 0원 확정(재원생 무료)만 고친다 — 기준은 규칙 모듈 isRentalEditable 한 곳.
 export type RentalEditInput = { rentalDate: unknown; startMinute: unknown; durationMinutes: unknown; headcount: unknown; useAircon: unknown };
 export type RentalEditResult =
   | { ok: true; request: RentalRecord; before: RentalRecord; changed: boolean }
@@ -532,8 +533,8 @@ export async function editRentalInTx(
   const locked = await tx.$queryRawUnsafe<RentalRecord[]>(`SELECT ${RECORD_COLUMNS} FROM "GymRentalRequest" WHERE id = $1 FOR UPDATE`, id);
   const before = locked[0];
   if (!before) return { ok: false, message: "대관 신청을 찾을 수 없습니다." };
-  if (!(RENTAL_EDITABLE_STATUSES as readonly string[]).includes(before.status)) {
-    return { ok: false, message: "승인 대기·입금 대기 신청만 고칠 수 있습니다. 확정된 대관은 취소 후 다시 신청받아 주세요." };
+  if (!isRentalEditable(before)) {
+    return { ok: false, message: "승인 대기·입금 대기·무료 확정 신청만 고칠 수 있습니다. 입금받은 대관은 취소 후 다시 신청받아 주세요." };
   }
 
   let fee;
@@ -545,6 +546,10 @@ export async function editRentalInTx(
   // 입금 대기 건이 0원이 되면 «입금 대기» 상태가 뜻이 없어진다(승인은 0원이면 바로 확정) — 이 경우는 막고 안내한다
   if (before.status === "APPROVED" && fee.total === 0) {
     return { ok: false, message: "입금할 금액이 0원이 됩니다. 이 신청을 취소하고 새로 신청받은 뒤 승인해 주세요." };
+  }
+  // 무료로 확정된 건에 돈이 생기면(2시간 초과·냉난방·인원 추가) 입금 절차가 필요하다 — 막고 안내한다
+  if (before.status === "PAID" && fee.total > 0) {
+    return { ok: false, message: `바꾸면 ${formatWon(fee.total)}을 받아야 합니다. 무료 확정 건은 0원 안에서만 고칠 수 있어요. 취소 후 다시 신청받아 주세요.` };
   }
   const endMinute = startMinute + durationMinutes;
   const changed = rentalDate !== before.rentalDate || startMinute !== Number(before.startMinute) || endMinute !== Number(before.endMinute)

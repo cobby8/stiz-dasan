@@ -90,6 +90,16 @@ test("바뀐 게 없으면 저장하지 않고, 입금 대기 건도 고칠 수 
   assert.equal((await service.editRentalInTx(zero, ID, edit(), "a", NOW)).ok, false);
   assert.equal(updateOf(zero), undefined);
 
+  // 무료 확정(PAID·0원) 건: 0원 안에서는 고칠 수 있고(상태 PAID 유지), 돈이 생기면 막는다
+  const freePaid = () => fakeTx({ row: current({ status: "PAID", memberFree: true, usageFee: 0, deposit: 0, totalAmount: 0 }) });
+  const movedTx = freePaid();
+  assert.equal((await service.editRentalInTx(movedTx, ID, edit({ startMinute: 660 }), "a", NOW)).ok, true); // 11:00~13:00 · 0원
+  assert.equal(updateOf(movedTx).values[15], "PAID");
+  assert.deepEqual(updateOf(movedTx).values.slice(10, 13), [0, 0, 0]);
+  const overTx = freePaid();
+  assert.equal((await service.editRentalInTx(overTx, ID, edit({ durationMinutes: 150 }), "a", NOW)).ok, false); // 2시간 30분 → 15,000원
+  assert.equal(updateOf(overTx), undefined);
+
   const member = fakeTx({ row: current({ memberFree: true, usageFee: 0, deposit: 0, totalAmount: 0 }) });
   assert.equal((await service.editRentalInTx(member, ID, edit({ durationMinutes: 180 }), "a", NOW)).ok, true);
   assert.deepEqual(updateOf(member).values.slice(10, 13), [30_000, 0, 30_000]); // 3시간 중 2시간분(70,000)만 무료
