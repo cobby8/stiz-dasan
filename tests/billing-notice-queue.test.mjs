@@ -281,7 +281,7 @@ test("결과 문구: 알림톡 N통·문자 N통·앱 알림만 N건·대상 아
   const p = q.summarizeNoticeProgress([
     { channel: "SMS", status: "QUEUED" }, { channel: "SMS", status: "SENT" }, { channel: "ALIMTALK", status: "FAILED" }, { channel: "APP_ONLY", status: "APP_ONLY" },
   ]);
-  assert.deepEqual(p, { total: 4, queued: 1, sent: 1, failed: 1, uncertain: 0, appOnly: 1, alimtalk: 1, sms: 2 });
+  assert.deepEqual(p, { total: 4, queued: 1, sent: 1, failed: 1, uncertain: 0, appOnly: 1, settled: 0, alimtalk: 1, sms: 2 });
 });
 
 // ── 6) 연결: 마이그레이션 = 코드 상수, 대기열 연결, 화면 ──────────────────────

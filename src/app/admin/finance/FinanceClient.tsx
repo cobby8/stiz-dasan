@@ -132,6 +132,8 @@ type NoticeProgressView = {
     failed: number;
     uncertain: number;
     appOnly: number;
+    /** 보내기 직전에 이미 납부·취소돼 보내지 않은 건 */
+    settled: number;
     alimtalk: number;
     sms: number;
     failedNames: string[];
@@ -143,6 +145,7 @@ function noticeProgressLine(label: string, p: NoticeProgressView): string | null
     const parts = [`예약 ${p.queued}`, `발송 ${p.sent}`, `실패 ${p.failed}`];
     if (p.uncertain > 0) parts.push(`결과 확인 필요 ${p.uncertain}`);
     if (p.appOnly > 0) parts.push(`앱 알림만 ${p.appOnly}`);
+    if (p.settled > 0) parts.push(`납부돼 생략 ${p.settled}`);
     const names = p.failedNames.length > 0 ? ` (${p.failedNames.slice(0, 5).join(", ")}${p.failedNames.length > 5 ? " 외" : ""})` : "";
     return `${label}: ${parts.join(" · ")}${names}`;
 }

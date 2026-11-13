@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import InlineConfirm from "@/components/parent/InlineConfirm";
 import { customerMessage } from "@/components/parent/customerMessage";
 // 남은 자리는 숫자 대신 3단계(여유/임박/마감)로(재원생 수 비공개 · 2026-11-13 f9)
-import { SEAT_LEVEL_LABEL, SEAT_LEVEL_TEXT_CLASS, seatLevel } from "@/lib/seats/seatLevel";
+import { SEAT_LEVEL_LABEL, SEAT_LEVEL_TEXT_CLASS } from "@/lib/seats/seatLevel";
 import { REQUEST_TONE, TONE_BADGE_CLASS, toneFor } from "@/lib/ui/statusTones";
 
 const STATUS_LABEL: Record<string, string> = { REQUESTED: "신청 접수 (승인 대기)", SCHEDULED: "보강 확정", ATTENDED: "보강 완료", NO_SHOW: "미출석" };
@@ -126,7 +126,7 @@ export default function SeasonalMakeupClient({ initial }: { initial: any }) {
                   <div className="mb-2 flex flex-wrap gap-2">
                     {ab.seasonalCandidates.map((s: any) => (
                       <button key={s.sessionDateId} disabled={busy} onClick={() => request(ab.enrollmentDateId, "SEASONAL", s)}
-                        className="min-h-11 rounded-lg border border-[var(--color-academy-line)] px-3 text-xs font-black tabular-nums hover:border-[var(--brand-accent)] disabled:opacity-50">{s.label} <span className={s.remaining == null ? SEAT_LEVEL_TEXT_CLASS.AVAILABLE : SEAT_LEVEL_TEXT_CLASS[seatLevel(s.remaining)]}>{s.remaining == null ? "여유" : SEAT_LEVEL_LABEL[seatLevel(s.remaining)]}</span></button>
+                        className="min-h-11 rounded-lg border border-[var(--color-academy-line)] px-3 text-xs font-black tabular-nums hover:border-[var(--brand-accent)] disabled:opacity-50">{s.label} <span className={SEAT_LEVEL_TEXT_CLASS[s.seatLevel as keyof typeof SEAT_LEVEL_TEXT_CLASS] ?? SEAT_LEVEL_TEXT_CLASS.AVAILABLE}>{SEAT_LEVEL_LABEL[s.seatLevel as keyof typeof SEAT_LEVEL_LABEL] ?? "여유"}</span></button>
                     ))}
                   </div>
                   {ab.regularCandidates.length > 0 && <>

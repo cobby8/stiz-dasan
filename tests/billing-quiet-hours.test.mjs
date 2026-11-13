@@ -44,8 +44,8 @@ test("대기열 꺼내기 — 야간엔 연결표에 묶인 청구 안내만 건
   // «다음 묶음 고르기»와 «행 꺼내기» 두 곳 모두 — 한 곳만 있으면 청구 묶음이 맨 앞에서 다른 묶음을 막는다
   assert.equal(claim.split(filter).length - 1, 2);
   assert.match(claim, /token, billingQuiet,/);
-  // 지우지 않는다 — 꺼낸 행을 되돌릴 때도 PENDING 으로(실패·삭제 아님)
-  assert.match(claim, /if \(billingQuiet\) \{[\s\S]*?status='PENDING'/);
+  // 연결표 없는 청구 안내(이론상 없음)가 야간에 꺼내지면 실패로 닫는다 — 되돌리면 매분 같은 묶음이 다른 묶음을 막는다(LOW-1)
+  assert.match(claim, /if \(billingQuiet\) \{[\s\S]*?status='FAILED', "errorCode"='BILLING_QUIET_HOURS_UNLINKED'[\s\S]*?finalizeBatchIds\.add\(item\.batchId\)/);
   assert.doesNotMatch(claim, /DELETE FROM "NotificationDelivery"/);
 });
 

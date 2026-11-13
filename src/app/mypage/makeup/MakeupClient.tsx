@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ParentMakeupOverview, ParentCredit, MakeupOption } from "@/lib/makeup/parent-makeup";
 // 남은 자리는 숫자 대신 3단계(여유/임박/마감)로(재원생 수 비공개 · 2026-11-13 f9)
-import { SEAT_LEVEL_LABEL, SEAT_LEVEL_TEXT_CLASS, seatLevel } from "@/lib/seats/seatLevel";
+import { SEAT_LEVEL_LABEL, SEAT_LEVEL_TEXT_CLASS } from "@/lib/seats/seatLevel";
 import { fetchMakeupOptions, bookMakeupAction, cancelMakeupAction } from "@/app/actions/parent-makeup";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
 import { todayKst } from "@/lib/datetime/kst";
@@ -229,8 +229,8 @@ export default function MakeupClient({ initial, presetStudentId = null }: { init
                                   {o.endTime ? `~${o.endTime}` : ""}
                                 </span>
                               </div>
-                              <span className={`text-xs font-black ${SEAT_LEVEL_TEXT_CLASS[seatLevel(o.remaining)]}`}>
-                                {SEAT_LEVEL_LABEL[seatLevel(o.remaining)]}
+                              <span className={`text-xs font-black ${SEAT_LEVEL_TEXT_CLASS[o.seatLevel]}`}>
+                                {SEAT_LEVEL_LABEL[o.seatLevel]}
                               </span>
                             </div>
                             <div className="mt-1 text-xs text-[var(--color-academy-faint)]">
