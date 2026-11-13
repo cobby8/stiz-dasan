@@ -36,6 +36,16 @@ export function nativeError(error: unknown) {
   const known = error instanceof NativeAuthError;
   return NextResponse.json({error:known ? error.message : "로그인을 완료하지 못했습니다. 앱에서 다시 시도해 주세요."},{status:known?error.status:503,headers:noStoreHeaders});
 }
+/**
+ * 시스템 브라우저(크롬 탭·사파리 인증창)에서 보이는 오류 — JSON 대신 읽을 수 있는 한 줄 안내.
+ * 앱으로 돌려보낼 수 없는 단계(요청 확인 전)에서만 쓴다.
+ */
+export function nativeBrowserError(error: unknown) {
+  const known = error instanceof NativeAuthError;
+  const message = known ? error.message : "로그인을 완료하지 못했습니다. 앱에서 다시 시도해 주세요.";
+  return new NextResponse(`${message}
+이 창을 닫고 앱으로 돌아가 주세요.`, { status: known ? error.status : 503, headers: { ...noStoreHeaders, "Content-Type": "text/plain; charset=utf-8" } });
+}
 export async function nativeBody(request: NextRequest) {
   if (Number(request.headers.get("content-length") || 0)>4096) throw new NativeAuthError(413);
   const reader=request.body?.getReader(); if(!reader) throw new NativeAuthError();

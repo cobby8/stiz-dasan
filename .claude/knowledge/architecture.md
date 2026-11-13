@@ -3,6 +3,12 @@
 <!-- 프로젝트의 폴더 구조, 파일 역할, 핵심 패턴을 기록 -->
 <!-- 2026-11-10 정리: 48항목 → 주제별 19묶음. 원래 항목은 묶음 안 하위 항목(원래 날짜·제목)으로 내용 그대로 보존. 새 항목은 맞는 묶음에 하위 항목으로 넣는다 -->
 
+### [2026-11-13] 앱 간편로그인(a1) = 시스템 브라우저 + 1회용 code 복귀 + 서버 스위치
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 웹 `src/lib/native-auth/*`(policy=스위치·복귀 주소, service=start/browser/finish/failBrowser/consume/cancel, store=`NativeAuthFlow` raw SQL) + `/auth/native/{start,browser,callback,consume,cancel,return}`. 켜짐 = `NATIVE_AUTH_ENABLED=true` + 32바이트 `NATIVE_AUTH_ENCRYPTION_KEY`(`nativeAuthEnabled`, `/api/auth/providers` 의 `nativeApp`). 복귀 주소 운영=`kr.co.upturnlabs.stizdasan://auth/return`, 개발=`stiz-academy(-android)-dev`(개발 서버+개발 스위치일 때만). 복귀 URL 엔 flow·code·state(또는 실패 시 error=no_account/cancelled/failed)만 — 이름 목록은 서버 `NATIVE_BROWSER_FAILURES`·Android `NativeAuthPolicy.FAILURES`·iOS `failures` 세 곳 같게(테스트 고정). Android: `NativeAuthController`(링크 가로채기) → `NativeAuthBrowser`(맞춤 탭, 라이브러리 없이 extra) → `NativeAuthReturnActivity`(release/debug 매니페스트, CLEAR_TOP 으로 탭 닫고 onNewIntent). iOS: `NativeAuthCoordinator`(ASWebAuthenticationSession, Info.plist 등록 불필요). 앱은 기능 든 빌드만 UA 끝에 ` STIZNativeLogin/1` → 웹 `storeAppSocialLogin`(storeApp.ts) 이 버튼/«비밀번호 만들기(/login/forgot)» 안내를 고른다. 아이폰은 Apple 켜져 있을 때만 버튼(4.8). 앱이 가로채는 링크는 정확히 `?intent=login` 하나 — 다른 쿼리를 붙이면 «준비 중»으로 막힌다. 테스트 `tests/native-app-login-production.test.mjs`.
+- **참조횟수**: 0
+
 ### [2026-11-13] 학부모 아이디 규칙 한 곳(parent-username) · 앱 설치 짧은 주소 /install
 - **분류**: architecture
 - **발견자**: developer

@@ -12,7 +12,8 @@ final class NativeAuthCoordinator: NSObject, ASWebAuthenticationPresentationCont
         var flow: String?
         let page: URL
         let currentPage: () -> URL?
-        let completion: (URLRequest?) -> Void
+        // 성공이면 consume 요청, 실패면 nil + 안내 문구(없으면 기본 안내)
+        let completion: (URLRequest?, String?) -> Void
     }
     private weak var owner: UIViewController?
     private var pending: Pending?
@@ -28,12 +29,15 @@ final class NativeAuthCoordinator: NSObject, ASWebAuthenticationPresentationCont
     }()
 
     static var enabled: Bool {
-        // 개발용 복귀 주소는 출시 빌드에서 켜지 않는다. 정식 서명·HTTPS 복귀는 별도 출시 준비다.
+        // 앱 간편로그인(a1, 2026-11-13 운영 전환).
+        // 출시 빌드: 기능을 넣어 두고(복귀 주소 kr.co.upturnlabs.stizdasan) 실제 허용은 서버 스위치(NATIVE_AUTH_ENABLED)가 정한다.
+        //           서버가 꺼져 있으면 시작 요청이 503 으로 막혀 안내만 뜬다. 웹도 그때는 버튼을 보이지 않는다.
+        // 개발 빌드: 기존처럼 Info-Debug 의 STIZNativeAuthDevelopmentEnabled 를 직접 켤 때만(개발 복귀 주소).
         #if DEBUG
         guard !NavigationPolicy.sandbox.isRequested else { return false }
         return Bundle.main.object(forInfoDictionaryKey: "STIZNativeAuthDevelopmentEnabled") as? Bool == true
         #else
-        return false
+        return true
         #endif
     }
 
@@ -52,10 +56,10 @@ final class NativeAuthCoordinator: NSObject, ASWebAuthenticationPresentationCont
             .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
     }
 
-    func start(provider: String, page: URL, currentPage: @escaping () -> URL?, completion: @escaping (URLRequest?) -> Void) {
+    func start(provider: String, page: URL, currentPage: @escaping () -> URL?, completion: @escaping (URLRequest?, String?) -> Void) {
         guard Self.enabled, pending == nil, NativeAuthPolicy.providers.contains(provider),
               NavigationPolicy.decide(page, userInitiated: false) == .website,
-              let verifier = randomToken(), let state = randomToken() else { completion(nil); return }
+              let verifier = randomToken(), let state = randomToken() else { completion(nil, nil); return }
         let id = UUID()
         pending = Pending(id: id, verifier: verifier, state: state, flow: nil, page: page, currentPage: currentPage, completion: completion)
         timeout = Timer.scheduledTimer(withTimeInterval: 300, repeats: false) { [weak self] _ in self?.cancel() }
@@ -72,7 +76,12 @@ final class NativeAuthCoordinator: NSObject, ASWebAuthenticationPresentationCont
                   let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
                   let flow = body["flowId"] as? String, NativeAuthPolicy.isToken(flow, min: 43, max: 43),
                   let address = body["browserUrl"] as? String, let url = URL(string: address),
-                  NativeAuthPolicy.isBrowserURL(url, flow: flow) else { self.cancel(); return }
+                  NativeAuthPolicy.isBrowserURL(url, flow: flow) else {
+                // 서버 스위치가 꺼져 있으면(503) 준비 중 안내
+                let unavailable = (response as? HTTPURLResponse)?.statusCode == 503
+                self.cancel(notice: unavailable ? "앱 간편로그인을 준비 중입니다. 아이디·비밀번호로 로그인해 주세요." : nil)
+                return
+            }
             self.pending?.flow = flow
             let session = ASWebAuthenticationSession(url: url, callbackURLScheme: NativeAuthPolicy.callbackScheme) { [weak self] callback, error in
                 DispatchQueue.main.async { self?.returned(id: id, callback: error == nil ? callback : nil) }
@@ -89,7 +98,12 @@ final class NativeAuthCoordinator: NSObject, ASWebAuthenticationPresentationCont
         guard let current = pending, current.id == id else { return }
         guard current.currentPage() == current.page,
               let callback = callback, let flow = current.flow,
-              let code = NativeAuthPolicy.callbackCode(callback, flow: flow, state: current.state) else { cancel(); return }
+              let code = NativeAuthPolicy.callbackCode(callback, flow: flow, state: current.state) else {
+            // 서버가 «실패 이유»만 실어 돌려보낸 경우(학원 계정 없음·취소 등) 그에 맞는 안내
+            let reason = callback.flatMap { url in current.flow.flatMap { NativeAuthPolicy.callbackFailure(url, flow: $0, state: current.state) } }
+            cancel(notice: reason.map { NativeAuthPolicy.failureMessage($0) })
+            return
+        }
         var request = URLRequest(url: URL(string: "https://www.stiz-dasan.kr/auth/native/consume")!)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
@@ -102,12 +116,12 @@ final class NativeAuthCoordinator: NSObject, ASWebAuthenticationPresentationCont
         if let current = pending, page != current.page { cancel() }
     }
 
-    func cancel() {
+    func cancel(notice: String? = nil) {
         guard let current = pending else { return }
         let activeSession = authentication
         let activeTask = task
         // 먼저 대기를 해제해 늦게 도착한 브라우저 결과가 다시 처리되지 않게 한다.
-        finish(nil)
+        finish(nil, notice: notice)
         activeTask?.cancel()
         activeSession?.cancel()
         if let flow = current.flow {
@@ -125,13 +139,13 @@ final class NativeAuthCoordinator: NSObject, ASWebAuthenticationPresentationCont
         transport.invalidateAndCancel()
     }
 
-    private func finish(_ request: URLRequest?) {
+    private func finish(_ request: URLRequest?, notice: String? = nil) {
         guard let current = pending else { return }
         pending = nil
         timeout?.invalidate()
         timeout = nil
         authentication = nil
-        current.completion(request)
+        current.completion(request, notice)
     }
 
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {

@@ -10,6 +10,7 @@ export const SOURCE_FILES = Object.freeze({
   android: 'apps/driver-android/app/build.gradle',
   manifest: 'apps/driver-android/app/src/main/AndroidManifest.xml',
   debugManifest: 'apps/driver-android/app/src/debug/AndroidManifest.xml',
+  releaseManifest: 'apps/driver-android/app/src/release/AndroidManifest.xml',
   iosInfo: 'apps/stiz-ios/STIZ/Info.plist',
   iosProject: 'apps/stiz-ios/STIZ.xcodeproj/project.pbxproj',
   authPolicy: 'src/lib/native-auth/policy.ts',
@@ -139,14 +140,16 @@ export function inspectReadiness(root) {
   const info = withoutXmlComments(files.iosInfo);
   const mainManifest = withoutXmlComments(files.manifest);
   const debugManifest = withoutXmlComments(files.debugManifest);
+  const releaseManifest = withoutXmlComments(files.releaseManifest);
   guard('verification-branch-deploy', deploymentBlocked, '검증 브랜치 자동 배포 차단값의 정적 확인. 현재 운영 배포 상태는 조회하지 않음.');
   guard('codemagic-manual-unsigned', expectedWorkflows && manualOnly && noPublishing && scriptsUnchanged && signingLines.length === 1 && signingLines[0][1] === 'NO' && /-sdk iphonesimulator/.test(simulator) && !/ios_signing:/.test(simulator), '세 수동 작업 중 시뮬레이터는 무서명 유지. 추가·자동·모호한 작업과 스토어 작업 밖의 업로드 설정은 차단. 전체 YAML 실행 검증은 아님.');
   guard('codemagic-store-upload', storeWorkflow, '스토어 작업은 수동 실행·승인된 블록 지문·업턴랩스 키 이름 참조·TestFlight 업로드만(심사 제출 false)·비밀값 없음. 실제 실행·업로드 완료 의미 아님.');
   guard('codemagic-signed-sandbox', signedSandbox, '기기 서명은 전용 프로파일·명시 격리 주소·검증 도구 경로·IPA/결과 JSON만 보관하는 별도 수동 작업. 실제 서명·설치 완료 의미 아님.');
-  guard('android-auth-default-off', occurrences(android, /'STIZ_NATIVE_AUTH'/g) === 2 && occurrences(android, /'stizNativeAuth'/g) === 1 && /stizNativeAuth'\)\.getOrElse\('false'\)/.test(android) && /release\s*\{[^}]*'STIZ_NATIVE_AUTH',\s*'false'/.test(android), '주석 제외 후 Android 개발 인증 기본 비활성·release 비활성 소스 확인. 실제 APK 설정은 미검증.');
+  // 앱 간편로그인 운영 전환(a1, 2026-11-13): 개발 빌드는 기본 꺼짐, 출시 빌드는 기능 포함·실제 허용은 서버 스위치.
+  guard('android-auth-build-gates', occurrences(android, /'STIZ_NATIVE_AUTH'/g) === 2 && occurrences(android, /'stizNativeAuth'/g) === 1 && /stizNativeAuth'\)\.getOrElse\('false'\)/.test(android) && /release\s*\{[^}]*'STIZ_NATIVE_AUTH',\s*\(providers\.gradleProperty\('stizReleaseNativeAuth'\)\.getOrElse\('true'\)/.test(android), '주석 제외 후 Android 개발 인증 기본 비활성·출시 빌드 기능 포함(끄기 옵션 stizReleaseNativeAuth) 소스 확인. 실제 허용은 서버 스위치. 실제 APK 설정은 미검증.');
   guard('ios-auth-default-off', occurrences(info, /<key>\s*STIZNativeAuthDevelopmentEnabled\s*<\/key>/g) === 1 && /<key>\s*STIZNativeAuthDevelopmentEnabled\s*<\/key>\s*<false\s*\/>/.test(info) && !/<!--|-->/.test(info), 'XML 주석 제외·해당 키 유일성·false 값 확인. 설치 앱 상태는 미검증.');
-  guard('server-production-auth-block', occurrences(auth, /env\.NODE_ENV/g) === 1 && /if\s*\(\s*env\.NATIVE_AUTH_ENABLED\s*!==\s*["']true["']\s*\|\|\s*env\.NATIVE_AUTH_DEVELOPMENT_CALLBACKS_ENABLED\s*!==\s*["']true["']\s*\|\|\s*env\.NODE_ENV\s*===\s*["']production["']\s*\)\s*(?:\{\s*)?throw\s+new\s+\w+/.test(auth), '주석 제외 후 세 차단 조건이 같은 if에서 거부하는지 정적 확인. 서버 코드를 실행하거나 환경 값을 읽지 않음.');
-  guard('debug-callback-isolation', /<manifest\b/.test(mainManifest) && /<application\b/.test(mainManifest) && /<\/manifest>/.test(mainManifest) && /<manifest\b/.test(debugManifest) && /<application\b/.test(debugManifest) && /<\/manifest>/.test(debugManifest) && /stiz-academy-android-dev/.test(debugManifest) && !/stiz-academy-android-dev|AttachmentFixtureActivity/.test(mainManifest), 'main·debug 매니페스트 기본 구조와 개발 복귀 주소·시험 화면의 main 제외 확인. 최종 패키지 검사는 별도.');
+  guard('server-auth-switch', occurrences(auth, /env\.NODE_ENV/g) === 1 && /if\s*\(\s*env\.NATIVE_AUTH_ENABLED\s*!==\s*["']true["']\s*\)\s*(?:\{\s*)?throw\s+new\s+\w+/.test(auth) && /env\.NATIVE_AUTH_DEVELOPMENT_CALLBACKS_ENABLED\s*===\s*["']true["']\s*&&\s*env\.NODE_ENV\s*!==\s*["']production["']/.test(auth), '주석 제외 후 운영 스위치 꺼짐이면 거부·개발 복귀 주소는 운영(production)에서 열리지 않는지 정적 확인. 서버 코드를 실행하거나 환경 값을 읽지 않음.');
+  guard('debug-callback-isolation', /<manifest\b/.test(mainManifest) && /<application\b/.test(mainManifest) && /<\/manifest>/.test(mainManifest) && /<manifest\b/.test(debugManifest) && /<application\b/.test(debugManifest) && /<\/manifest>/.test(debugManifest) && /stiz-academy-android-dev/.test(debugManifest) && !/stiz-academy-android-dev|AttachmentFixtureActivity|kr\.co\.upturnlabs\.stizdasan"/.test(mainManifest) && !/kr\.co\.upturnlabs\.stizdasan/.test(debugManifest) && /<manifest\b/.test(releaseManifest) && /android:scheme="kr\.co\.upturnlabs\.stizdasan"/.test(releaseManifest) && !/stiz-academy-android-dev|AttachmentFixtureActivity/.test(releaseManifest), 'main·debug·release 매니페스트 기본 구조, 개발 복귀 주소·시험 화면은 debug 에만, 운영 복귀 주소는 release 에만 있는지 확인. 최종 패키지 검사는 별도.');
   add('android-target', occurrences(android, /targetSdk\b/g) === 1 && /targetSdk\s+36\b/.test(android) ? 'PASS' : 'UNVERIFIED', 'targetSdk 36 선언의 정적 확인만 수행. 스토어 전체 요구 충족 의미 아님.', 'source');
   add('android-install-artifact', present.androidDebug ? 'UNVERIFIED' : 'BLOCKED', present.androidDebug ? 'debug APK 파일 존재만 확인. 무결성·서명·설치·실기기 동작 미검증.' : '예정 경로에 debug APK 없음. 이 도구는 빌드하지 않음.');
   add('android-release-package', 'UNVERIFIED', `배포용 최종 앱 ID·서명 확인 필요. unsigned APK 파일 ${present.androidUnsigned ? '존재' : '없음'}; 내용은 열지 않음.`);

@@ -3564,3 +3564,24 @@ model ClassSubstitute {
   @@unique([date, classId], map: "ClassSubstitute_date_classId_key")
   @@index([substituteUserId, date], map: "ClassSubstitute_substituteUserId_date_idx")
 }
+
+/// 앱 간편로그인 인계 원장(a1, 2026-11-13) — 1회용 앱 로그인 요청(5분)과 암호화 세션(소비 즉시 삭제).
+/// 서버 raw SQL(src/lib/native-auth/store.ts)만 사용한다. RLS 켜짐·anon/authenticated 권한 회수.
+/// CHECK 제약(platform·provider·status 값 목록)은 migration 20261114000000_native_auth_flow 에 있다.
+model NativeAuthFlow {
+  id            String    @id
+  platform      String
+  provider      String
+  challenge     String
+  state         String
+  status        String
+  expiresAt     DateTime  @db.Timestamptz(6)
+  browserHash   String?
+  codeHash      String?
+  codeExpiresAt DateTime? @db.Timestamptz(6)
+  sealedSession String?
+  consumedAt    DateTime? @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([expiresAt], map: "NativeAuthFlow_expiry")
+}

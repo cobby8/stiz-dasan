@@ -140,11 +140,28 @@ struct NavigationPolicyTests {
         let state = String(repeating: "s", count: 43)
         let code = String(repeating: "c", count: 43)
         let flow = String(repeating: "f", count: 43)
-        let callback = "stiz-academy-dev://auth/return?flow=\(flow)&state=\(state)&code=\(code)"
-        precondition(NativeAuthPolicy.callbackCode(URL(string: callback)!, flow: flow, state: state) == code)
-        precondition(NativeAuthPolicy.callbackCode(URL(string: callback + "&code=bad")!, flow: flow, state: state) == nil)
-        precondition(NativeAuthPolicy.callbackCode(URL(string: callback)!, flow: flow, state: "wrong") == nil)
-        precondition(NativeAuthPolicy.callbackCode(URL(string: callback.replacingOccurrences(of: "stiz-academy-dev", with: "stiz-academy-android-dev"))!, flow: flow, state: state) == nil)
+        // 출시(스토어 앱 ID)·개발 복귀 주소 모두 같은 규칙. 각 빌드는 자기 주소만 받는다(a1, 2026-11-13).
+        precondition(NativeAuthPolicy.callbackScheme(debug: false) == "kr.co.upturnlabs.stizdasan")
+        precondition(NativeAuthPolicy.callbackScheme(debug: true) == "stiz-academy-dev")
+        for debug in [false, true] {
+            let scheme = NativeAuthPolicy.callbackScheme(debug: debug)
+            let other = NativeAuthPolicy.callbackScheme(debug: !debug)
+            let callback = "\(scheme)://auth/return?flow=\(flow)&state=\(state)&code=\(code)"
+            precondition(NativeAuthPolicy.callbackCode(URL(string: callback)!, flow: flow, state: state, scheme: scheme) == code)
+            precondition(NativeAuthPolicy.callbackCode(URL(string: callback + "&code=bad")!, flow: flow, state: state, scheme: scheme) == nil)
+            precondition(NativeAuthPolicy.callbackCode(URL(string: callback)!, flow: flow, state: "wrong", scheme: scheme) == nil)
+            precondition(NativeAuthPolicy.callbackCode(URL(string: callback)!, flow: "wrong", state: state, scheme: scheme) == nil)
+            precondition(NativeAuthPolicy.callbackCode(URL(string: callback.replacingOccurrences(of: scheme + "://", with: other + "://"))!, flow: flow, state: state, scheme: scheme) == nil)
+            precondition(NativeAuthPolicy.callbackCode(URL(string: callback.replacingOccurrences(of: scheme + "://", with: "stiz-academy-android-dev://"))!, flow: flow, state: state, scheme: scheme) == nil)
+            // 실패 이유만 실린 복귀: code 가 없으니 로그인은 안 되고 이유만 읽는다
+            let failed = "\(scheme)://auth/return?flow=\(flow)&state=\(state)&error=no_account"
+            precondition(NativeAuthPolicy.callbackCode(URL(string: failed)!, flow: flow, state: state, scheme: scheme) == nil)
+            precondition(NativeAuthPolicy.callbackFailure(URL(string: failed)!, flow: flow, state: state, scheme: scheme) == "no_account")
+            precondition(NativeAuthPolicy.callbackFailure(URL(string: failed.replacingOccurrences(of: "no_account", with: "evil"))!, flow: flow, state: state, scheme: scheme) == nil)
+            precondition(NativeAuthPolicy.callbackFailure(URL(string: failed)!, flow: flow, state: "wrong", scheme: scheme) == nil)
+            precondition(NativeAuthPolicy.callbackFailure(URL(string: failed + "&code=\(code)")!, flow: flow, state: state, scheme: scheme) == nil)
+            precondition(NativeAuthPolicy.callbackFailure(URL(string: callback)!, flow: flow, state: state, scheme: scheme) == nil)
+        }
         precondition(NativeAuthPolicy.isBrowserURL(URL(string: "https://www.stiz-dasan.kr/auth/native/browser?flow=\(flow)")!, flow: flow))
         precondition(!NativeAuthPolicy.isBrowserURL(URL(string: "https://www.stiz-dasan.kr/auth/native/browser?flow=\(flow)&next=https://fake.example")!, flow: flow))
         // 같은 코드가 Release에서는 시험 주소를 무시하고 기존 운영 정책을 사용해야 한다.

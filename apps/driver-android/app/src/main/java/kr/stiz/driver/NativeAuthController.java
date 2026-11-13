@@ -20,7 +20,12 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import javax.net.ssl.HttpsURLConnection;
 
-/** Disabled by default, and always disabled in release builds until verified App Links are configured. */
+/**
+ * 앱 간편로그인(a1, 2026-11-13 운영 전환).
+ * 웹뷰의 «/auth/oauth/<제공자>?intent=login» 링크를 가로채 시스템 브라우저(크롬 맞춤 탭)에서 로그인하고,
+ * 돌아온 1회용 code 를 앱 메모리의 PKCE 비밀값과 함께 서버에 내 웹뷰 로그인 쿠키를 받는다.
+ * 켜고 끄기: 앱 빌드 플래그(STIZ_NATIVE_AUTH) + 서버 스위치(NATIVE_AUTH_ENABLED). 서버가 꺼져 있으면 시작이 503 으로 막힌다.
+ */
 final class NativeAuthController {
     private final Activity activity;
     private final WebView web;
@@ -43,7 +48,10 @@ final class NativeAuthController {
         Attempt(String page) { this.page = page; }
     }
     NativeAuthController(Activity activity, WebView web) { this.activity = activity; this.web = web; }
-    static boolean enabled() { return BuildConfig.DEBUG && !BuildConfig.STIZ_SANDBOX && BuildConfig.STIZ_UNIFIED_APP && BuildConfig.STIZ_NATIVE_AUTH; }
+    // 격리 시험 앱(sandbox)·기사님 전용 앱에서는 쓰지 않는다. 운영 허용 여부는 서버 스위치가 최종 판단한다.
+    static boolean enabled() { return !BuildConfig.STIZ_SANDBOX && BuildConfig.STIZ_UNIFIED_APP && BuildConfig.STIZ_NATIVE_AUTH; }
+    /** 이 빌드가 받는 복귀 주소 이름(출시 = 스토어 앱 ID, 개발 = 개발 주소) */
+    private static String scheme() { return NativeAuthPolicy.callbackScheme(BuildConfig.DEBUG); }
 
     boolean begin(Uri uri, boolean userGesture) {
         if (!enabled() || destroyed || pending != null || consumePage != null || uri == null) return false;
@@ -70,22 +78,30 @@ final class NativeAuthController {
                 attempt.flow = flow;
                 main.post(() -> {
                     if (pending != attempt || destroyed || !attempt.page.equals(web.getUrl())) { abort(attempt); return; }
-                    try { activity.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(browser)).addCategory(Intent.CATEGORY_BROWSABLE)); }
-                    catch (RuntimeException failure) { cancel(); message("로그인에 사용할 브라우저를 열지 못했습니다."); }
+                    // 웹뷰가 아니라 시스템 브라우저(크롬 맞춤 탭)에서 연다 — 구글은 웹뷰 로그인을 막는다.
+                    if (!NativeAuthBrowser.open(activity, Uri.parse(browser))) { cancel(); message("로그인에 사용할 브라우저를 열지 못했습니다."); }
                 });
             } catch (Exception failure) {
-                main.post(() -> { if (pending == attempt) { cancel(); message("앱 로그인을 시작하지 못했습니다. 이메일·비밀번호로 로그인하거나 잠시 뒤 다시 시도해 주세요."); } });
+                main.post(() -> { if (pending == attempt) { cancel(); message("앱 간편로그인을 시작하지 못했습니다. 아이디·비밀번호로 로그인하거나 잠시 뒤 다시 시도해 주세요."); } });
             }
         });
         return true;
     }
 
     boolean callback(Uri uri) {
-        if (uri == null || !NativeAuthPolicy.isCallback(uri.toString())) return false;
+        if (uri == null || !NativeAuthPolicy.isCallback(uri.toString(), scheme())) return false;
         Attempt attempt = pending;
         if (!enabled() || attempt == null || attempt.flow == null || destroyed) { message("진행 중인 앱 로그인이 없습니다. 다시 시작해 주세요."); return true; }
-        String code = NativeAuthPolicy.returnCode(uri.toString(), attempt.flow, attempt.state, SystemClock.elapsedRealtime() - attempt.started);
-        if (code == null || !attempt.page.equals(web.getUrl())) { cancel(); message("로그인 요청을 확인하지 못했습니다. 다시 시작해 주세요."); return true; }
+        long elapsed = SystemClock.elapsedRealtime() - attempt.started;
+        String code = NativeAuthPolicy.returnCode(uri.toString(), scheme(), attempt.flow, attempt.state, elapsed);
+        if (code == null) {
+            // 서버가 «실패 이유»만 실어 돌려보낸 경우(학원 계정 없음·취소 등) — 이유에 맞는 안내를 띄운다
+            String failure = NativeAuthPolicy.returnFailure(uri.toString(), scheme(), attempt.flow, attempt.state, elapsed);
+            cancel();
+            message(failureMessage(failure));
+            return true;
+        }
+        if (!attempt.page.equals(web.getUrl())) { cancel(); message("로그인 요청을 확인하지 못했습니다. 다시 시작해 주세요."); return true; }
         pending = null;
         stopTimer();
         dismiss();
@@ -124,7 +140,7 @@ final class NativeAuthController {
         web.stopLoading();
         // Failed native exchange must not leave the user on a JSON error response.
         web.loadUrl(MainActivity.trustedAppPage(Uri.parse(fallback)) ? fallback : BuildConfig.STIZ_ORIGIN + "/login");
-        message("앱 로그인을 완료하지 못했습니다. 기존 로그인 화면에서 다시 시도해 주세요.");
+        message("앱 로그인을 완료하지 못했습니다. 로그인 화면에서 다시 시도해 주세요.");
     }
     private void clearConsume() {
         consumeUntil = 0; consumePage = null; consumeNavigationStarted = false;
@@ -135,6 +151,12 @@ final class NativeAuthController {
     private void abort(Attempt attempt) {
         if (attempt.flow == null || network.isShutdown()) return;
         network.execute(() -> { try { post("/auth/native/cancel", new JSONObject().put("flowId", attempt.flow).put("state", attempt.state).put("codeVerifier", attempt.verifier)); } catch (Exception ignored) { } });
+    }
+    /** 실패 이유별 안내(이유를 모르면 일반 안내) */
+    static String failureMessage(String failure) {
+        if ("no_account".equals(failure)) return "이 간편로그인으로 가입된 학원 계정이 없습니다. 아이디·비밀번호로 로그인하거나 회원가입을 해 주세요.";
+        if ("cancelled".equals(failure)) return "간편로그인을 취소했습니다.";
+        return "로그인 요청을 확인하지 못했습니다. 다시 시작해 주세요.";
     }
     private void dismiss() { if (dialog != null) { dialog.dismiss(); dialog = null; } }
     private void stopTimer() { if (timeout != null) { main.removeCallbacks(timeout); timeout = null; } }

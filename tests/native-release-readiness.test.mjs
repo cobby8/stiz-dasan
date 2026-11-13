@@ -13,11 +13,12 @@ function fixture(t) {
   const sources = {
     vercel: JSON.stringify({ git: { deploymentEnabled: { 'codex/stiz-app-codemagic': false } } }),
     codemagic: approvedWorkflow,
-    android: "targetSdk 36\ndebug { buildConfigField 'boolean', 'STIZ_NATIVE_AUTH', providers.gradleProperty('stizNativeAuth').getOrElse('false') }\nrelease { buildConfigField 'boolean', 'STIZ_NATIVE_AUTH', 'false' }",
+    android: "targetSdk 36\ndebug { buildConfigField 'boolean', 'STIZ_NATIVE_AUTH', providers.gradleProperty('stizNativeAuth').getOrElse('false') }\nrelease { buildConfigField 'boolean', 'STIZ_NATIVE_AUTH', (providers.gradleProperty('stizReleaseNativeAuth').getOrElse('true') == 'true').toString() }",
     manifest: '<manifest><application/></manifest>', debugManifest: '<manifest><application>stiz-academy-android-dev</application></manifest>',
+    releaseManifest: '<manifest><application><data android:scheme="kr.co.upturnlabs.stizdasan" /></application></manifest>',
     iosInfo: '<key>STIZNativeAuthDevelopmentEnabled</key><false/>',
     iosProject: 'PRODUCT_BUNDLE_IDENTIFIER = kr.stiz.academy.dev; CODE_SIGNING_ALLOWED = NO;',
-    authPolicy: 'if (env.NATIVE_AUTH_ENABLED !== "true" || env.NATIVE_AUTH_DEVELOPMENT_CALLBACKS_ENABLED !== "true" || env.NODE_ENV === "production") throw new Error();',
+    authPolicy: 'if (env.NATIVE_AUTH_ENABLED !== "true") throw new Error();\nconst development = env.NATIVE_AUTH_DEVELOPMENT_CALLBACKS_ENABLED === "true" && env.NODE_ENV !== "production";',
   };
   for (const [key, value] of Object.entries(sources)) put(SOURCE_FILES[key], value);
   return { root, put };
@@ -50,8 +51,25 @@ test('자동 배포·원격 발행·인증 기본 활성 변경은 로컬 안전
 });
 test('시험 activity나 개발 복귀 주소가 main에 들어오면 경고한다', t => {
   const { root, put } = fixture(t);
+  assert.equal(item(inspectReadiness(root), 'debug-callback-isolation').status, 'PASS');
   put(SOURCE_FILES.manifest, '<activity android:name=".AttachmentFixtureActivity"/>');
   assert.equal(item(inspectReadiness(root), 'debug-callback-isolation').status, 'BLOCKED');
+});
+test('운영 복귀 주소는 release 매니페스트에만, 개발 복귀 주소는 release 에 들어오면 안 된다(a1)', t => {
+  const { root, put } = fixture(t);
+  put(SOURCE_FILES.releaseManifest, '<manifest><application><data android:scheme="stiz-academy-android-dev" /></application></manifest>');
+  assert.equal(item(inspectReadiness(root), 'debug-callback-isolation').status, 'BLOCKED');
+  put(SOURCE_FILES.releaseManifest, '<manifest><application/></manifest>');
+  assert.equal(item(inspectReadiness(root), 'debug-callback-isolation').status, 'BLOCKED');
+  put(SOURCE_FILES.releaseManifest, '<manifest><application><data android:scheme="kr.co.upturnlabs.stizdasan" /></application></manifest>');
+  put(SOURCE_FILES.debugManifest, '<manifest><application>stiz-academy-android-dev kr.co.upturnlabs.stizdasan</application></manifest>');
+  assert.equal(item(inspectReadiness(root), 'debug-callback-isolation').status, 'BLOCKED');
+});
+test('운영에서 개발 복귀 주소를 여는 서버 정책은 통과하지 않는다(a1)', t => {
+  const { root, put } = fixture(t);
+  assert.equal(item(inspectReadiness(root), 'server-auth-switch').status, 'PASS');
+  put(SOURCE_FILES.authPolicy, 'if (env.NATIVE_AUTH_ENABLED !== "true") throw new Error();\nconst development = env.NATIVE_AUTH_DEVELOPMENT_CALLBACKS_ENABLED === "true";');
+  assert.equal(item(inspectReadiness(root), 'server-auth-switch').status, 'BLOCKED');
 });
 test('APK 내용·임의 비밀 파일을 읽거나 결과로 내보내지 않는다', t => {
   const { root, put } = fixture(t); const secret = 'TEST_ONLY_DO_NOT_REPORT_51';
@@ -106,10 +124,10 @@ test('주석으로만 남은 Android·서버 차단 조건은 통과하지 않�
   const { root, put } = fixture(t);
   const original = readFileSync(join(root, SOURCE_FILES.android), 'utf8');
   put(SOURCE_FILES.android, `/* ${original} */\nrelease { buildConfigField 'boolean', 'STIZ_NATIVE_AUTH', 'true' }`);
-  put(SOURCE_FILES.authPolicy, '// if (env.NATIVE_AUTH_ENABLED !== "true" || env.NATIVE_AUTH_DEVELOPMENT_CALLBACKS_ENABLED !== "true" || env.NODE_ENV === "production") throw new Error();\nreturn {};');
+  put(SOURCE_FILES.authPolicy, '// if (env.NATIVE_AUTH_ENABLED !== "true") throw new Error();\n// const development = env.NATIVE_AUTH_DEVELOPMENT_CALLBACKS_ENABLED === "true" && env.NODE_ENV !== "production";\nreturn {};');
   const report = inspectReadiness(root);
-  assert.equal(item(report, 'android-auth-default-off').status, 'BLOCKED');
-  assert.equal(item(report, 'server-production-auth-block').status, 'BLOCKED');
+  assert.equal(item(report, 'android-auth-build-gates').status, 'BLOCKED');
+  assert.equal(item(report, 'server-auth-switch').status, 'BLOCKED');
 });
 test('중복 JSON 차단 키와 주석에만 있는 수동 실행 설정은 통과하지 않는다', t => {
   const { root, put } = fixture(t);

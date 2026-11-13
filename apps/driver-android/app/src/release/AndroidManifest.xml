@@ -1,0 +1,15 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- 앱 간편로그인 복귀 주소(a1, 2026-11-13) — 출시(스토어) 빌드 전용. 개발 주소는 src/debug 에만 있다.
+             이 주소에는 토큰·쿠키가 없고 flow·state·1회용 code 만 실린다. code 는 앱 메모리의 PKCE 비밀값 없이는 교환할 수 없다.
+             투명 화면이 받아 맞춤 탭을 닫고 MainActivity 로 넘긴다(NativeAuthReturnActivity 설명 참고). -->
+        <activity android:name=".NativeAuthReturnActivity" android:exported="true" android:noHistory="true" android:excludeFromRecents="true" android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="kr.co.upturnlabs.stizdasan" android:host="auth" android:path="/return" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

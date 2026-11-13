@@ -50,7 +50,7 @@ if (localTlsDirectory != null) {
             new File(output, 'AndroidManifest.xml').text = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
     <application android:label="''' + (sandbox ? 'STIZ 격리시험' : 'STIZ 기사님 기기검증') + '''" tools:replace="android:label" android:networkSecurityConfig="@xml/local_test_network_security">
         <activity android:name=".AttachmentFixtureActivity" android:exported="false" />
-        <activity android:name=".MainActivity" android:exported="true">
+        <activity android:name=".NativeAuthReturnActivity" android:exported="true" android:noHistory="true" android:excludeFromRecents="true" android:theme="@android:style/Theme.Translucent.NoTitleBar">
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -100,7 +100,9 @@ android {
             else if (unifiedApp) applicationIdSuffix '.unified'
             buildConfigField 'String', 'STIZ_ORIGIN', '"' + configuredOrigin + '"'
         }
-        release { minifyEnabled false; if (uploadPropsFile.exists()) signingConfig signingConfigs.upload;buildConfigField 'boolean', 'STIZ_SANDBOX', 'false'; buildConfigField 'boolean', 'STIZ_NATIVE_AUTH', 'false'; buildConfigField 'String', 'STIZ_ORIGIN', '"https://www.stiz-dasan.kr"' }
+        // 앱 간편로그인(a1, 2026-11-13): 출시 빌드는 기능을 넣어 두고(복귀 주소 kr.co.upturnlabs.stizdasan, src/release 매니페스트),
+        // 실제 사용 허용은 서버 스위치(NATIVE_AUTH_ENABLED)가 정한다. 기능 자체를 빼고 만들려면 -PstizReleaseNativeAuth=false.
+        release { minifyEnabled false; if (uploadPropsFile.exists()) signingConfig signingConfigs.upload;buildConfigField 'boolean', 'STIZ_SANDBOX', 'false'; buildConfigField 'boolean', 'STIZ_NATIVE_AUTH', (providers.gradleProperty('stizReleaseNativeAuth').getOrElse('true') == 'true').toString(); buildConfigField 'String', 'STIZ_ORIGIN', '"https://www.stiz-dasan.kr"' }
     }
     if (localTlsDirectory != null) {
         sourceSets {
