@@ -53,7 +53,7 @@ export default function DriverRunLinkControls({ initialEnabled }: { initialEnabl
   async function rotate() {
     const ok = await confirm({
       title: "운행 링크를 새로 만들까요?",
-      description: "지금까지 보낸 운행 주소는 모두 바로 못 쓰게 됩니다(특강 날짜별 주소 포함).\n운행 중인 기사님 앱의 위치 전송도 끊깁니다.\n새 주소는 «기사님 운행 링크 복사»로 받아 기사님께 다시 보내 주세요.",
+      description: "지금까지 보낸 운행 주소는 모두 바로 못 쓰게 됩니다(특강 날짜별 주소 포함).\n운행 중인 기사님 앱의 위치 전송도 끊깁니다.\n열어 둔 기사님 화면은 새로고침이 필요합니다.\n새 주소는 «기사님 운행 링크 복사»로 받아 기사님께 다시 보내 주세요.",
       confirmLabel: "새로 만들기",
       acknowledgeLabel: "이전 주소가 바로 막히는 것을 확인했습니다",
     });

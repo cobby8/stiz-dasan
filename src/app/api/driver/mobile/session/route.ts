@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { assertMobileSchema, hashSecret, locationInput, lockTrackingToken, mobileTrackingEnabled, MobileTrackingError, SECRET, secretMatches, SESSION_LIFETIME_MS, UUID, type MobileSession } from "@/lib/shuttle/mobileTracking";
-// 운행 링크 스위치 — 기사님 앱(안드로이드)은 로그인 쿠키 없이 링크 열쇠로만 위치를 보내므로, 링크를 끄면 시작·위치 전송도 막는다.
-import { driverLinkBlocked, DRIVER_LINK_DISABLED_CODE } from "@/lib/shuttle/driverLinkAccess";
+// 운행 링크 스위치(driverLinkAccess)는 여기에 걸지 않는다 — 이 경로는 위치 «쓰기» 전용이라 명단·연락처를 내보내지 않고,
+// 안드로이드 기사님 앱은 로그인 쿠키 없이 Bearer 비밀값으로 부르므로 스위치를 걸면 로그인한 기사님의 위치 전송까지 멈춘다.
+// 옛 열쇠 차단은 «링크 새로 만들기»(rotateDriverRunLinks: 세션 삭제 + 열쇠 교체 → 아래 RUN_REVOKED)가 담당한다.
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -18,8 +19,6 @@ export async function POST(request: Request) {
     if (!["start", "location", "stop", "status"].includes(String(action))) return reply({ error: "INVALID_ACTION" }, 400);
     const secret = action === "start" ? body.secret : request.headers.get("authorization")?.match(/^Bearer ([0-9a-f]{64})$/i)?.[1];
     if (typeof secret !== "string" || !SECRET.test(secret)) return reply({ error: "INVALID_CREDENTIAL" }, 403);
-    // 종료(stop)·상태(status)는 그대로 둔다 — 링크를 꺼도 켜져 있던 위치 공유를 끄고 정리할 수 있어야 한다.
-    if ((action === "start" || action === "location") && await driverLinkBlocked()) return reply({ error: DRIVER_LINK_DISABLED_CODE }, 410);
     return await prisma.$transaction(async (db) => {
       await assertMobileSchema(db);
       let token: string;

@@ -226,7 +226,11 @@ test("토큰으로 인증하는 API 는 전부 운행 링크 문지기를 거친
     .filter((f) => !f.startsWith("src/app/api/admin/"))
     .filter((f) => /isAnyDriverRunToken|isRegularRunToken|resolveRunToken|FROM "ShuttleRunLink"/.test(fs.readFileSync(f, "utf8")));
   assert.ok(tokenApis.length >= 6, `토큰 API 목록이 비정상적으로 적다: ${tokenApis.join(", ")}`);
-  const missing = tokenApis.filter((f) => !/driverLinkBlocked\(\)/.test(fs.readFileSync(f, "utf8")));
+  // 예외 한 곳: 앱 위치 세션은 위치 «쓰기» 전용(명단·연락처 미노출)이고, 안드로이드 기사님 앱이 쿠키 없이 부르므로
+  // 스위치를 걸면 로그인 기사님의 위치 전송이 멈춘다. 옛 열쇠 차단은 «링크 새로 만들기»가 맡는다.
+  const EXEMPT = ["src/app/api/driver/mobile/session/route.ts"];
+  for (const f of EXEMPT) assert.doesNotMatch(fs.readFileSync(f, "utf8"), /driverLinkBlocked\(\)/, "예외 파일에 스위치가 다시 걸렸다 — 기사님 앱 위치 전송이 멈춘다");
+  const missing = tokenApis.filter((f) => !EXEMPT.includes(f)).filter((f) => !/driverLinkBlocked\(\)/.test(fs.readFileSync(f, "utf8")));
   assert.deepEqual(missing, [], `운행 링크 스위치를 확인하지 않는 토큰 API: ${missing.join(", ")}`);
 });
 
