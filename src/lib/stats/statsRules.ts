@@ -120,12 +120,13 @@ export function normalizeGender(value: string | null | undefined): GenderLabel {
 
 // ── 지점 ────────────────────────────────────────────────────────────────
 
-/** 필터에 쓰는 지점 열쇠 — 전체·다산2·평내호평·미지정(원장 결정표) */
+/**
+ * 지점 열쇠 — 2026-11-14 원장 결정: 이 사이트는 다산2호점만 관리한다(평내호평점은 앞으로 없다).
+ * 통계 화면의 지점 고르기는 없앴다. 열쇠는 옛 주소(?branch=)와 내부 계산이 깨지지 않게 두 개만 남긴다.
+ */
 export const STATS_BRANCHES = [
     { key: "all", label: "전체" },
     { key: "dasan2", label: "다산2호점" },
-    { key: "pyeongnae", label: "평내호평점" },
-    { key: "none", label: "미지정" },
 ] as const;
 export type StatsBranchKey = (typeof STATS_BRANCHES)[number]["key"];
 
@@ -135,13 +136,12 @@ export function isStatsBranchKey(value: unknown): value is StatsBranchKey {
 
 /**
  * 지점 화면 이름(branchLabel 결과, 비면 "") → 묶음 이름·열쇠.
- * 다산1호점(2026-02-28 폐점)처럼 필터에 없는 지점은 이름은 그대로 두고 열쇠는 "other"(전체에서만 보인다).
+ * 지점이 비어 있으면 다산2호점이다(이 사이트는 다산2호점만 관리 — «미지정»은 없다).
+ * 다산1호점(2026-02-28 폐점)·평내호평점처럼 옛 기록에만 남은 지점은 이름은 그대로 두고 열쇠는 "other"(전체에서만 보인다).
  */
 export function branchGroup(label: string | null | undefined): { key: StatsBranchKey | "other"; label: string } {
     const text = String(label ?? "").trim();
-    if (!text) return { key: "none", label: "미지정" };
-    if (text === "다산2호점") return { key: "dasan2", label: text };
-    if (text === "평내호평점") return { key: "pyeongnae", label: text };
+    if (!text || text === "다산2호점") return { key: "dasan2", label: "다산2호점" };
     return { key: "other", label: text };
 }
 

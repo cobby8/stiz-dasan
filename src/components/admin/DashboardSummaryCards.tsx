@@ -32,9 +32,6 @@ export default function DashboardSummaryCards({ summary }: { summary: DashboardS
             {/* ① 재원생 — 이 화면의 주인공(유일한 큰 숫자) */}
             <Card title="재원생" href="/admin/stats?tab=students">
                 <span className="text-3xl font-bold leading-tight tabular-nums text-[var(--color-academy-ink)]">{students.active}<span className="ml-0.5 text-base font-semibold">명</span></span>
-                <span className="flex flex-wrap gap-x-2 text-xs text-[var(--color-academy-muted)] tabular-nums">
-                    {students.byBranch.map((b) => <span key={b.label}>{b.label} {b.count}</span>)}
-                </span>
             </Card>
 
             {/* ② 이번 달 수납률 — 금액 기준, 미납은 빨강 */}

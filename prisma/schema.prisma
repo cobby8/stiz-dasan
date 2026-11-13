@@ -190,7 +190,7 @@ model Student {
   gender                   String?
   memo                     String?
   parentId                 String
-  branch                   String? // 지점 원본값 (예: "2호점 : 행정복지센터...")
+  branch                   String?   @default("2호점 : 행정복지센터(다산아트홀) 앞") // 지점 원본값. 2026-11-14 이 사이트는 다산2호점만 관리 — 새 원생 기본값
   phone                    String? // 학생 휴대폰번호
   school                   String? // 학교명
   grade                    String? // 학년 (예: "2026년 초등 5학년")

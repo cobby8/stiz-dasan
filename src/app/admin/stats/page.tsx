@@ -1,7 +1,7 @@
 import { requireAdmin } from "@/lib/auth-guard";
 import StatsClient from "./StatsClient";
 import { getCachedAdminStatsTab } from "@/lib/adminReadPayloads";
-import { isStatsBranchKey, isStatsTabKey, normalizeStatsPeriod } from "@/lib/stats/statsRules";
+import { isStatsTabKey, normalizeStatsPeriod } from "@/lib/stats/statsRules";
 import type { StatsPageData } from "@/lib/stats/statsTypes";
 
 // 2026-11-13 통계 개편: 탭·지점·기간이 주소(?tab=&branch=&period=)에 있다 → 요청마다 그 탭만 읽는다.
@@ -18,8 +18,8 @@ export default async function StatsPage({ searchParams }: { searchParams: Search
     // 모르는 값은 기본값으로(주소를 손으로 고쳐도 화면이 깨지지 않게)
     const tabParam = first(params.tab);
     const tab = isStatsTabKey(tabParam) ? tabParam : "students";
-    const branchParam = first(params.branch);
-    const branch = isStatsBranchKey(branchParam) ? branchParam : "all";
+    // 2026-11-14: 이 사이트는 다산2호점만 관리 — 지점 고르기가 없으니 옛 주소의 ?branch= 는 무시한다(보이지 않는 필터가 남지 않게)
+    const branch = "all" as const;
     const period = normalizeStatsPeriod(tab, first(params.period));
 
     let data: StatsPageData["data"] = null;

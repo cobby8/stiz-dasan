@@ -155,7 +155,7 @@ export async function loadStudentStatRows(todayYmd = todayKst()): Promise<Studen
 
     return rows.map((row) => {
         const grade = schoolGradeFromBirth(row.birth_ymd, todayYmd);
-        // 지점: 원생에 적힌 값 → 없으면 반 장소에서 → 그래도 없으면 미지정
+        // 지점: 원생에 적힌 값 → 없으면 반 장소에서 → 그래도 없으면 다산2호점(branchGroup — 이 사이트는 다산2호점만 관리)
         const label = branchLabel(row.branch) || branchLabel(branchFromClassLocations(row.locations ?? []));
         const group = branchGroup(label);
         const isActive = Boolean(row.has_active);
@@ -560,7 +560,7 @@ export async function loadDashboardSummary(): Promise<DashboardSummary> {
 
     return {
         currentYm,
-        students: { active: active.length, byBranch: countBy(active.map((s) => s.branchLabel), ["다산2호점", "평내호평점"]) },
+        students: { active: active.length, byBranch: countBy(active.map((s) => s.branchLabel), ["다산2호점"]) },
         billing: { rateAmount: rate(paid, billed), paidAmount: paid, billedAmount: billed, unpaidCount: num(raw.bill?.unpaid_count), unpaidAmount: num(raw.bill?.unpaid_amount) },
         attendance: { rate: thisAtt, prevRate: prevAtt, diff: diffPoint(thisAtt, prevAtt), series: attSeries },
         flow: { newCount: flow[flow.length - 1]?.newCount ?? 0, leftCount: flow[flow.length - 1]?.leftCount ?? 0, series: flow },
@@ -608,7 +608,7 @@ async function loadStudentsTab(branch: StatsBranchKey, period: string): Promise<
             unknown: active.filter((s) => s.gender === "미입력").length,
         },
         genderByBand,
-        branches: countBy(active.map((s) => s.branchLabel), ["다산2호점", "평내호평점"]),
+        branches: countBy(active.map((s) => s.branchLabel), ["다산2호점"]),
         flow,
         flowSince: firstYms[0] ?? null,
         programs: countBy(active.flatMap((s) => s.programs)),
@@ -772,7 +772,7 @@ async function loadUniformTab(branch: StatsBranchKey): Promise<StatsUniformTab> 
         owned,
         rate: rate(owned, active.length),
         segments: countBy(active.map((s) => s.uniformGroup), UNIFORM_GROUPS),
-        byBranch: ratioBy((s) => s.branchLabel, ["다산2호점", "평내호평점"]),
+        byBranch: ratioBy((s) => s.branchLabel, ["다산2호점"]),
         byGrade: ratioBy((s) => s.grade, GRADE_LABELS),
         grants: { issued: grantCount("ISSUED"), used: grantCount("USED"), revoked: grantCount("REVOKED") },
         list: active

@@ -68,7 +68,9 @@ export default function DriverRunLinkControls({ initialEnabled }: { initialEnabl
   }
 
   return (
-    <section aria-label="기사님 운행 링크 관리" className="mb-3 rounded-xl border border-[var(--color-academy-line)] bg-white px-3 py-2">
+    // 탭 줄·명단과 같은 틀(가운데 정렬·최대 폭·좌우 여백) 안에 둔다 — 틀 밖에 있으면 이 줄만 화면 끝까지 늘어나 왼쪽에 붙는다(2026-11-14)
+    <div className="mx-auto max-w-6xl px-4 pt-3">
+    <section aria-label="기사님 운행 링크 관리" className="rounded-xl border border-[var(--color-academy-line)] bg-white px-3 py-2">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm font-semibold text-[var(--color-academy-ink)]">운행 링크(문자 주소) 사용</span>
         {/* 스위치 — role=switch 로 화면읽기에서도 켜짐/꺼짐을 읽는다. 터치 44px */}
@@ -93,5 +95,6 @@ export default function DriverRunLinkControls({ initialEnabled }: { initialEnabl
       {msg && <p className="mt-2 rounded-lg bg-[var(--color-academy-success-soft)] px-3 py-2 text-xs text-[var(--color-academy-success)]">{msg}</p>}
       {confirmDialog}
     </section>
+    </div>
   );
 }

@@ -16,7 +16,6 @@ import AdminModal from "@/components/admin/AdminModal";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { GENDER_COLORS, HBarList, KpiCell, StatPanel, UNIFORM_COLORS } from "@/components/admin/stats/StatsBits";
 import {
-    STATS_BRANCHES,
     STATS_PERIODS,
     STATS_TABS,
     UNIFORM_GROUPS,
@@ -62,8 +61,8 @@ export default function StatsClient({
     const [filterOpen, setFilterOpen] = useState(false);
     const defaultPeriod = STATS_PERIODS[tab][0]?.key ?? "";
     // 필터 버튼 숫자 = 기본값과 다른 항목 수
-    const filterCount = (branch !== "all" ? 1 : 0) + (period && period !== defaultPeriod ? 1 : 0);
-    const branchName = STATS_BRANCHES.find((b) => b.key === branch)?.label ?? "전체";
+    // 2026-11-14: 이 사이트는 다산2호점만 관리 — 지점 고르기를 없앴다(필터는 기간만)
+    const filterCount = period && period !== defaultPeriod ? 1 : 0;
     const periodName = STATS_PERIODS[tab].find((p) => p.key === period)?.label ?? "";
 
     // 탭·필터를 바꿀 때 «불러오는 중»을 보이려고 router.push 를 transition 안에서 부른다(가운데 클릭은 그대로 새 탭)
@@ -80,7 +79,7 @@ export default function StatsClient({
                 title="통계"
                 description={(
                     <>
-                        {branchName}{periodName ? ` · ${periodName}` : ""}
+                        {periodName}
                         {pending && <span role="status" className="ml-2 font-medium text-[var(--color-academy-info)]">불러오는 중…</span>}
                     </>
                 )}
@@ -174,17 +173,6 @@ function FilterSheet({
                 <button type="button" onClick={onClose} className="academy-button-text academy-button-sm">닫기</button>
             </div>
             <div className="space-y-5 px-4 py-4">
-                <fieldset>
-                    <legend className="mb-2 text-sm font-semibold text-[var(--color-academy-ink)]">지점</legend>
-                    <div className="flex flex-wrap gap-2">
-                        {STATS_BRANCHES.map((b) => (
-                            <button key={b.key} type="button" aria-pressed={nextBranch === b.key} onClick={() => setNextBranch(b.key)} className={chip(nextBranch === b.key)}>
-                                {b.label}
-                            </button>
-                        ))}
-                    </div>
-                    {tab === "funnel" && <p className="mt-2 text-xs text-[var(--color-academy-muted)]">체험 문의·신청서에는 지점이 없어, 지점은 «재원생 가입경로»에만 적용돼요.</p>}
-                </fieldset>
                 {periods.length > 0 && (
                     <fieldset>
                         <legend className="mb-2 text-sm font-semibold text-[var(--color-academy-ink)]">기간</legend>
@@ -252,7 +240,7 @@ function FlowChart({ rows }: { rows: { label: string; newCount: number; leftCoun
     );
 }
 
-/** 비율 줄(이름 · 막대 · 정수% (분자/분모)) — 지점별·학년별 보유율 */
+/** 비율 줄(이름 · 막대 · 정수% (분자/분모)) — 학년별 보유율 */
 function RateRows({ rows }: { rows: { label: string; owned: number; total: number; rate: number | null }[] }) {
     if (rows.length === 0) return <p className="py-3 text-sm text-[var(--color-academy-muted)]">자료가 없습니다</p>;
     return (
@@ -313,12 +301,6 @@ function StudentsView({ d }: { d: StatsStudentsTab }) {
                             </li>
                         ))}
                     </ul>
-                </StatPanel>
-                <StatPanel title="지점별 재원생" note="지점 = 원생 칸 «지점» → 비어 있으면 수강 반 장소 → 그래도 없으면 미지정">
-                    <StackedBar
-                        segments={d.branches.map((b, i) => ({ label: `${b.label} ${formatRate(rate(b.count, d.active))}`, value: b.count, color: [CHART_COLORS.series, CHART_COLORS.bar, "var(--color-academy-line)", "var(--color-academy-faint)"][i] ?? CHART_COLORS.bar }))}
-                        ariaLabel="지점별 재원생"
-                    />
                 </StatPanel>
                 <StatPanel title="신규·퇴원 (월별)" note={`원생 단위 · 신규 = 첫 수강 달, 퇴원 = 수강이 모두 끝난 달 · 사이트 기록 시작${d.flowSince ? `(${ymText(d.flowSince)})` : ""} 이후`}>
                     <FlowChart rows={d.flow} />
@@ -458,14 +440,14 @@ function AttendanceView({ d, branchFiltered }: { d: StatsAttendanceTab; branchFi
                 <StatPanel title="출석률 추이" note={`출석률 = (출석 + 지각) ÷ 출결 기록 전체(결석·사유결석 포함) · 수업 날짜(KST) 기준${branchFiltered ? " · 지점 필터 = 원생 지점" : ""}`}>
                     <LineChart data={trend} unit="%" color={CHART_COLORS.success} height={180} />
                 </StatPanel>
-                <StatPanel title="운영 규모" note="지점 구분 없음 · 프로그램은 삭제한 것 제외">
+                <StatPanel title="운영 규모" note="프로그램은 삭제한 것 제외">
                     <div className="grid grid-cols-3 gap-2">
                         <KpiCell label="운영 프로그램" value={`${d.scale.programs}개`} />
                         <KpiCell label="개설 반" value={`${d.scale.classes}개`} />
                         <KpiCell label="코치/강사진" value={`${d.scale.coaches}명`} />
                     </div>
                 </StatPanel>
-                <StatPanel title="반별 정원 대비 인원" note="수강 중 인원 ÷ 반 정원 · 꽉 찬 반은 빨강 · 지점 = 반 장소">
+                <StatPanel title="반별 정원 대비 인원" note="수강 중 인원 ÷ 반 정원 · 꽉 찬 반은 빨강">
                     {classes.length === 0 ? <p className="py-2 text-sm text-[var(--color-academy-muted)]">반이 없습니다.</p> : (
                         <ul className="max-h-[28rem] space-y-1 overflow-y-auto pr-1">
                             {classes.map((c) => {
@@ -488,7 +470,7 @@ function AttendanceView({ d, branchFiltered }: { d: StatsAttendanceTab; branchFi
                         </ul>
                     )}
                 </StatPanel>
-                <StatPanel title="코치별 담당" note="시간표에 배정된 반·그 반의 수강 중 원생 · 지점 구분 없음">
+                <StatPanel title="코치별 담당" note="시간표에 배정된 반·그 반의 수강 중 원생">
                     {d.coaches.length === 0 ? <p className="py-2 text-sm text-[var(--color-academy-muted)]">코치가 없습니다.</p> : (
                         <ul className="divide-y divide-[var(--color-academy-line)] text-sm">
                             {d.coaches.map((c) => (
@@ -585,9 +567,6 @@ function UniformView({ d }: { d: StatsUniformTab }) {
                         <KpiCell label="회수" value={`${d.grants.revoked}건`} />
                     </div>
                 </StatPanel>
-                <StatPanel title="지점별 보유율">
-                    <RateRows rows={d.byBranch} />
-                </StatPanel>
                 <StatPanel title="학년별 보유율" note="학년 = 생년월일·3월 학년도 기준">
                     <RateRows rows={d.byGrade} />
                 </StatPanel>
@@ -613,7 +592,7 @@ function UniformView({ d }: { d: StatsUniformTab }) {
                                 <Link href={`/admin/students/${s.id}#student-uniform`} prefetch={false} className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-0.5 rounded-lg px-1 py-1 hover:bg-[var(--color-academy-soft)]">
                                     <span className="w-20 shrink-0 font-semibold text-[var(--color-academy-ink)]">{s.name}</span>
                                     <span className="rounded px-1.5 py-0.5 text-xs" style={{ color: UNIFORM_COLORS[s.group] ?? "var(--color-academy-muted)", background: "var(--color-academy-soft)" }}>{s.status}</span>
-                                    <span className="min-w-0 flex-1 text-xs text-[var(--color-academy-muted)]">{s.classes || "반 없음"} · {s.branch}</span>
+                                    <span className="min-w-0 flex-1 text-xs text-[var(--color-academy-muted)]">{s.classes || "반 없음"}</span>
                                     <span className="text-xs tabular-nums text-[var(--color-academy-muted)]">{s.receivedYmd ? `수령 ${s.receivedYmd.slice(2).replace(/-/g, ".")}` : ""}</span>
                                 </Link>
                             </li>

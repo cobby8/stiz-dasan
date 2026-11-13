@@ -65,14 +65,19 @@ test("성별 표기 다섯 가지를 남·여·미입력으로", () => {
   for (const v of [null, "", "  ", "기타"]) assert.equal(r.normalizeGender(v), "미입력", String(v));
 });
 
-test("지점 묶음 — 다산2·평내호평·미지정, 폐점 지점은 이름 유지·열쇠 other", () => {
+// 2026-11-14 원장 결정: 이 사이트는 다산2호점만 관리한다(평내호평점은 앞으로 없다). «미지정»은 없다 — 비어 있으면 다산2호점.
+test("지점 묶음 — 비어 있으면 다산2호점, 옛 기록의 지점(다산1·평내호평)은 이름 유지·열쇠 other", () => {
   assert.deepEqual(r.branchGroup("다산2호점"), { key: "dasan2", label: "다산2호점" });
-  assert.deepEqual(r.branchGroup("평내호평점"), { key: "pyeongnae", label: "평내호평점" });
-  assert.deepEqual(r.branchGroup(""), { key: "none", label: "미지정" });
-  assert.deepEqual(r.branchGroup(null), { key: "none", label: "미지정" });
+  assert.deepEqual(r.branchGroup(""), { key: "dasan2", label: "다산2호점" });
+  assert.deepEqual(r.branchGroup(null), { key: "dasan2", label: "다산2호점" });
   assert.deepEqual(r.branchGroup("다산1호점"), { key: "other", label: "다산1호점" });
+  assert.deepEqual(r.branchGroup("평내호평점"), { key: "other", label: "평내호평점" });
   assert.equal(r.isStatsBranchKey("dasan2"), true);
   assert.equal(r.isStatsBranchKey("other"), false);
+  // 고를 수 있는 지점은 없다 — 평내호평·미지정 열쇠가 다시 생기면 실패
+  assert.deepEqual(r.STATS_BRANCHES.map((b) => b.key), ["all", "dasan2"]);
+  assert.equal(r.isStatsBranchKey("pyeongnae"), false);
+  assert.equal(r.isStatsBranchKey("none"), false);
 });
 
 test("유니폼 상태 9종 → 보유/진행 중/없음/확인 필요/해당없음", () => {

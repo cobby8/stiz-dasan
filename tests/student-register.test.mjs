@@ -366,13 +366,16 @@ test("[규칙] 유니폼 허용값은 학생 상세 저장(updateStudentUniform)
   assert.match(fnBlock(admin, "updateStudentUniform"), /new Set<string>\(UNIFORM_STATUS_VALUES\)/);
 });
 
-test("[규칙] 지점은 반 장소에서 자동(원본 문장 형식 그대로), 모르면 null — 1호점(폐점)은 새 선택지에 없다", () => {
-  assert.equal(rules.branchFromClassLocation("평내호평 체육관"), "평내호평점");
+// 2026-11-14 원장 결정: 이 사이트는 다산2호점만 관리한다 — 평내호평점 판정·선택지를 없앴다
+test("[규칙] 지점은 다산2호점 하나 — 반 장소로 알아내고 모르면 null(서버가 다산2호점으로 채움), 1호점·평내호평은 선택지에 없다", () => {
+  assert.equal(rules.branchFromClassLocation("평내호평 체육관"), null);
   assert.equal(rules.branchFromClassLocation("다산 아트홀"), "2호점 : 행정복지센터(다산아트홀) 앞");
   assert.equal(rules.branchFromClassLocation("2호점"), "2호점 : 행정복지센터(다산아트홀) 앞");
   assert.equal(rules.branchFromClassLocation("체육관 B"), null);
   assert.equal(rules.branchFromClassLocation(null), null);
-  assert.equal(rules.branchFromClassLocations([null, "체육관", "호평"]), "평내호평점");
+  assert.equal(rules.branchFromClassLocations([null, "체육관", "호평"]), null);
+  assert.deepEqual(rules.REGISTER_BRANCH_OPTIONS.map((o) => o.label), ["다산2호점"]);
+  assert.equal(rules.DEFAULT_BRANCH_VALUE, "2호점 : 행정복지센터(다산아트홀) 앞");
   // POS 대사(classifyBranch)는 «2호점»으로 시작해야 다산2호점으로 본다
   assert.ok(rules.REGISTER_BRANCH_OPTIONS[0].value.startsWith("2호점"));
   assert.equal(rules.REGISTER_BRANCH_OPTIONS.some((o) => o.value.startsWith("1호점")), false);
@@ -526,4 +529,22 @@ test("[화면] 등록 창: 3단계·학원 색 토큰·서버와 같은 1단계 
 test("[화면] 체험 ⚡ «원생 등록»은 체험을 마쳤고 원생·신청서가 없을 때만", () => {
   assert.match(trialClient, /\(lead\.status === "ATTENDED" \|\| lead\.status === "CONVERTED"\) && !lead\.convertedStudentId && !lead\.enrollApplicationReceivedAt/);
   assert.match(trialClient, /key: "register-student", label: "원생 등록"[^}]*onSelect: \(\) => setShowConvertModal\(lead\)/);
+});
+
+// 2026-11-14 원장 결정: 이 사이트는 다산2호점만 관리한다 — 통계의 «지점 미지정»이 다시 생기지 않게 못박는다.
+// 등록 서버는 기본값으로 채우고, 지점을 안 넣는 나머지 학생 INSERT(신청 승인·특강 등)는 DB 기본값에 기댄다.
+test("[지점] 새 원생의 지점은 항상 다산2호점 — 등록 서버 채움 + DB 기본값이 규칙과 같은 문장", async () => {
+  const rules = await loadTsModule("src/lib/students/student-register-rules.ts");
+  const value = rules.DEFAULT_BRANCH_VALUE;
+  assert.equal(value, "2호점 : 행정복지센터(다산아트홀) 앞");
+  const action = await readFile("src/app/actions/student-register.ts", "utf8");
+  assert.match(action, /\?\? data\.branch \?\? DEFAULT_BRANCH_VALUE/);
+  const schema = await readFile("prisma/schema.prisma", "utf8");
+  assert.ok(schema.includes(`@default("${value}")`), "schema.prisma 의 Student.branch 기본값이 규칙과 같은 문장이어야 한다");
+  const sql = await readFile("prisma/migrations/20261114010000_student_branch_default_dasan2/migration.sql", "utf8");
+  assert.ok(sql.includes(`SET DEFAULT '${value}'`));
+  // 통계 화면은 지점을 고르지 않는다(옛 주소의 ?branch= 도 무시)
+  const page = await readFile("src/app/admin/stats/page.tsx", "utf8");
+  assert.match(page, /const branch = "all" as const;/);
+  assert.doesNotMatch(await readFile("src/app/admin/stats/StatsClient.tsx", "utf8"), /지점별 재원생|지점별 보유율|평내/);
 });

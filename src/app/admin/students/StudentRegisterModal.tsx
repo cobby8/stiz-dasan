@@ -26,11 +26,10 @@ import {
     type StudentRegisterPreview,
 } from "@/app/actions/student-register";
 import {
-    branchFromClassLocations,
     branchLabel,
+    DEFAULT_BRANCH_VALUE,
     GUARDIAN_RELATION_CHOICES,
     REFERRAL_SOURCE_OPTIONS,
-    REGISTER_BRANCH_OPTIONS,
     REGISTER_MEDIA_CONSENT_METHOD,
     SHUTTLE_PLACE_NAME_REQUIRED_MESSAGE,
     validateRegisterStep1,
@@ -142,7 +141,6 @@ export default function StudentRegisterModal({
     const [classIds, setClassIds] = useState<string[]>([]);
     const [assignLater, setAssignLater] = useState(false);
     const [startOn, setStartOn] = useState("");
-    const [manualBranch, setManualBranch] = useState("");
     const [shuttleNeeded, setShuttleNeeded] = useState(false);
     const [pickup, setPickup] = useState<MapLocationData | null>(null);
     const [dropoff, setDropoff] = useState<MapLocationData | null>(null);
@@ -201,7 +199,6 @@ export default function StudentRegisterModal({
     const classesById = useMemo(() => new Map((options?.classes ?? []).map((c) => [c.id, c])), [options]);
     const selectedClasses = classIds.map((id) => classesById.get(id)).filter((c): c is RegisterClassOption => Boolean(c));
     const dayClasses = (options?.classes ?? []).filter((c) => c.dayOfWeek === dayTab);
-    const autoBranch = branchFromClassLocations(selectedClasses.map((c) => c.location));
     const tuition = useMemo(
         // 청구 제안값과 같은 계산(청구 모듈 함수 호출) — 반 요일·슬롯을 넘겨 주말·대표팀 면제도 같게
         () => previewRegularTuition(
@@ -264,7 +261,8 @@ export default function StudentRegisterModal({
                 classIds: assignLater ? [] : classIds,
                 assignLater,
                 // 반 장소로 지점을 알 수 있으면 서버가 그 값을 쓴다 — 모를 때만 직접 고른 값
-                branch: autoBranch ? null : manualBranch || null,
+                // 2026-11-14: 이 사이트는 다산2호점만 관리 — 지점을 고르지 않고 서버가 다산2호점으로 넣는다
+                branch: null,
                 startOn,
                 shuttle: {
                     needed: shuttleNeeded,
@@ -561,16 +559,8 @@ export default function StudentRegisterModal({
                             </label>
                             <div className="min-w-0">
                                 <span className={LABEL}>지점</span>
-                                {autoBranch ? (
-                                    <p className="flex min-h-11 items-center text-sm font-medium text-[var(--color-academy-ink)]">
-                                        {branchLabel(autoBranch)} <span className="ml-1 text-xs font-normal text-[var(--color-academy-muted)]">반에서 자동</span>
-                                    </p>
-                                ) : (
-                                    <select aria-label="지점" value={manualBranch} onChange={(e) => setManualBranch(e.target.value)} className={INPUT}>
-                                        <option value="">선택 안함</option>
-                                        {REGISTER_BRANCH_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                                    </select>
-                                )}
+                                {/* 2026-11-14 원장 결정: 이 사이트는 다산2호점만 관리 — 고르지 않고 그대로 보여 준다 */}
+                                <p className="flex min-h-11 items-center text-sm font-medium text-[var(--color-academy-ink)]">{branchLabel(DEFAULT_BRANCH_VALUE)}</p>
                             </div>
                         </div>
 

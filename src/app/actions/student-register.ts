@@ -40,6 +40,7 @@ import {
     branchFromClassLocations,
     buildAdminRegisterAgreements,
     decideUniformFromOrders,
+    DEFAULT_BRANCH_VALUE,
     findDuplicateSuspects,
     normalizeRegisterClassIds,
     STUDENT_BIRTH_KST_YMD_SQL,
@@ -353,7 +354,8 @@ export async function registerStudent(input: StudentRegisterInput): Promise<Regi
             }
 
             // (d) 학생 — 지점은 반 장소에서 자동, 모르면 직접 고른 값(원장 결정 s-branch)
-            const branch = branchFromClassLocations(locked.map((c) => c.location)) ?? data.branch;
+            // 2026-11-14: 이 사이트는 다산2호점만 관리 — 반 장소로도 직접 고른 값으로도 알 수 없으면 다산2호점(«미지정»을 만들지 않는다)
+            const branch = branchFromClassLocations(locked.map((c) => c.location)) ?? data.branch ?? DEFAULT_BRANCH_VALUE;
             const agreements = buildAdminRegisterAgreements(admin.appUserId, new Date().toISOString(), today);
             // 유니폼 — 창에서 고르지 않고, 같은 보호자 번호·학생 이름의 기존 주문 내역으로 채운다(없으면 비워 둔다).
             // 시각 칸은 학생 상세 «유니폼» 저장(updateStudentUniform)과 같은 «ISO → ::timestamptz» 방식

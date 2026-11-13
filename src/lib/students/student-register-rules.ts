@@ -52,11 +52,15 @@ export const REFERRAL_SOURCE_OPTIONS = ["지인소개", "네이버", "인스타�
  * 지점 선택지 — 저장값은 기존 DB 원본 문장 그대로다.
  * POS 대사(classifyBranch: startsWith("2호점"))·시트 이관(includes("2"))이 원본 문장에 의존하므로 짧게 바꾸지 않는다.
  * 다산1호점은 2026-02-28 폐점이라 새 등록 선택지에 없다.
+ * 2026-11-14 원장 결정: 이 사이트는 **다산2호점만** 관리한다(평내호평점은 앞으로 없다) → 선택지는 하나뿐이고 고르게 하지 않는다.
+ * 옛 원생에 남은 «평내호평점»·«1호점 …» 값은 기록이라 그대로 두고 이름만 그대로 보여 준다(branchLabel).
  */
 export const REGISTER_BRANCH_OPTIONS = [
     { value: "2호점 : 행정복지센터(다산아트홀) 앞", label: "다산2호점" },
-    { value: "평내호평점", label: "평내호평점" },
 ] as const;
+
+/** 새 원생의 지점 저장값 — 항상 다산2호점(DB 기본값 Student.branch 와 같은 문장) */
+export const DEFAULT_BRANCH_VALUE = REGISTER_BRANCH_OPTIONS[0].value;
 
 /** 보호자 관계 선택지(Guardian.relation 에 그대로 저장) */
 export const GUARDIAN_RELATION_CHOICES = ["엄마", "아빠", "할머니", "할아버지", "기타 보호자"] as const;
@@ -78,12 +82,11 @@ export function branchLabel(value: string | null | undefined): string {
 
 /**
  * 반 장소(Class.location) → 지점 저장값. 알 수 없으면 null(지어내지 않는다 — 직접 고르게 한다).
- * 평내·호평 → 평내호평점, 다산·2호점·아트홀·행정복지센터 → 다산2호점.
+ * 다산·2호점·아트홀·행정복지센터 → 다산2호점. (2026-11-14 평내호평점 판정 삭제 — 이 사이트는 다산2호점만 관리)
  */
 export function branchFromClassLocation(location: string | null | undefined): string | null {
     const text = String(location ?? "").replace(/\s+/g, "");
     if (!text) return null;
-    if (text.includes("평내") || text.includes("호평")) return REGISTER_BRANCH_OPTIONS[1].value;
     if (text.includes("다산") || text.includes("2호점") || text.includes("아트홀") || text.includes("행정복지")) {
         return REGISTER_BRANCH_OPTIONS[0].value;
     }
