@@ -9,6 +9,12 @@
 - **내용**: ① 아이디 정규식·정규화·로그인 메일 매핑(`아이디@member.stiz.kr`)·문구는 `src/lib/parent-username.ts`(import 없는 순수 모듈) 한 곳. 신규 가입(parent-signup-verification, 예전 import 위해 re-export)과 기존 학부모 계정 활성화(parent-account-claim)가 같이 쓴다 — 두 서버 모듈이 서로 import 하면 순환이라 따로 뺐다. 활성화는 User 에 `email`=매핑 메일 + `username` 을 함께 적고, 서버 액션은 결과의 `loginEmail` 로 바로 로그인. 예전 이메일 활성화 계정은 로그인 화면이 «@» 든 값을 그대로 써서 하위호환. 이 모듈을 import 하는 서버 파일을 data: URL 로 올리는 테스트는 `"@/lib/parent-username"` 도 바꿔 끼워야 한다(tests/parent-signup-existing-claim). ② 스토어 링크는 `src/lib/app-install-links.ts` 한 곳(PLAY_STORE_URL, `IOS_APP_STORE_ID` 빈 값 = 아이폰 «곧 출시»). `/install` 페이지가 `detectInstallEnvironment` 의 platform 으로 스토어에 바로 redirect. ⚠️ `/app` 은 next.config redirect → `/mypage/install`(홈 화면 바로가기) 짧은 주소라 별개.
 - **참조횟수**: 0
 
+### [2026-11-13] 대타 선생님 지정(f4) — ClassSubstitute(날짜·반) + 출석부 경로만 opt-in
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 표 `ClassSubstitute`(date TEXT "YYYY-MM-DD"·classId·substituteUserId, 유니크(date,classId), RLS). 판정은 `requireStaffClassAccess(classId, ctx, { substituteDate })` 한 곳 — **substituteDate 를 넘긴 경로만** 대타를 본다(수업 시작=date·계획=input.date·requireStaffSessionAccess=기록 날짜·출석부 상세/명단·학생 정보 시트·사진 보기). 공지·연락처·청구는 넘기지 않아 대타에게 안 열린다(테스트로 고정). 홈 목록은 `getSubstituteClassIds(access, dateKey)` 를 합치고 `substitute: true` 행은 «대타» 배지·수업 공지 숨김. 날짜 규칙=`src/lib/staff/classSubstitute.ts`(순수). 관리자 UI=스태프 관리 아래 `ClassSubstitutePanel`(액션 `class-substitute-admin.ts`, requireAdmin+선생님 역할 SQL 재확인). 새 출석부 경로를 만들면 substituteDate 를 같이 넘길 것 — 빠뜨리면 «화면은 보이는데 저장 막힘».
+- **참조횟수**: 0
+
 ### [2026-11-13] 선생님 출석부 — 체험 아이(trial: 키)·결석 학부모 알림(매분 훑기)·수강료는 원장만
 - **분류**: architecture
 - **발견자**: developer

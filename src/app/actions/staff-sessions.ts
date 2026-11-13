@@ -317,7 +317,8 @@ export async function savePlannedClassContent(input: {
   let access: Awaited<ReturnType<typeof requireStaffClassAccess>>;
   try {
     seasonal = sessionDateId ? await requireStaffSeasonalSessionAccess(sessionDateId) : null;
-    access = seasonal?.access ?? await requireStaffClassAccess(input.classId);
+    // f4: 대타 선생님은 지정된 그 날짜의 수업 계획만 적을 수 있다.
+    access = seasonal?.access ?? await requireStaffClassAccess(input.classId, undefined, { substituteDate: input.date });
   } catch (error) {
     const failure = staffAccessFailure(error);
     if (failure) return failure;
@@ -889,7 +890,8 @@ export async function startClassSession(input: {
     // 화면에서 다른 수업 ID를 보내더라도 서버에서 담당 수업인지 다시 검사합니다.
     const sessionDateId = input.sessionDateId?.trim() || null;
     const seasonal = sessionDateId ? await requireStaffSeasonalSessionAccess(sessionDateId) : null;
-    const access = seasonal?.access ?? await requireStaffClassAccess(classId);
+    // f4: 정규 수업은 위에서 date = 오늘(KST)로 확인했다 → 오늘 대타 지정이 있으면 시작할 수 있다.
+    const access = seasonal?.access ?? await requireStaffClassAccess(classId, undefined, { substituteDate: date });
     if (seasonal) {
       if (seasonal.seasonal.linkedClassId !== classId) {
         return { ok: false, code: "INVALID_INPUT", message: "특강과 연결된 수업 정보가 일치하지 않습니다." };

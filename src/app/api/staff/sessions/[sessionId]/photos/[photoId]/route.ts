@@ -23,9 +23,10 @@ import { isSinglePhotoDraft } from "@/lib/sessionPhotoManagementPolicy";
 
 type PhotoViewer = { kind: "STAFF" } | { kind: "PARENT"; studentIds: string[] };
 
-async function requirePhotoViewer(classId: string, sessionStatus: string): Promise<PhotoViewer> {
+async function requirePhotoViewer(classId: string, sessionStatus: string, sessionDate: string): Promise<PhotoViewer> {
   try {
-    await requireStaffClassAccess(classId);
+    // f4: 그 수업 날짜의 대타 선생님도 출석부에서 사진을 볼 수 있다(출석 저장과 같은 날짜 기준).
+    await requireStaffClassAccess(classId, undefined, { substituteDate: sessionDate });
     return { kind: "STAFF" };
   } catch {
     const parent = await requireVerifiedParent();
@@ -47,13 +48,13 @@ async function requirePhotoViewer(classId: string, sessionStatus: string): Promi
 export async function GET(_request: Request, context: { params: Promise<{ sessionId: string; photoId: string }> }) {
   try {
     const { sessionId, photoId } = await context.params;
-    const rows = await prisma.$queryRawUnsafe<Array<{ classId: string; status: string }>>(
-      `SELECT "classId", status FROM "Session" WHERE id = $1 LIMIT 1`,
+    const rows = await prisma.$queryRawUnsafe<Array<{ classId: string; status: string; date: string }>>(
+      `SELECT "classId", status, date::date::text AS date FROM "Session" WHERE id = $1 LIMIT 1`,
       sessionId,
     );
     const session = rows[0];
     if (!session) return NextResponse.json({ error: "수업 기록을 찾을 수 없습니다." }, { status: 404 });
-    const viewer = await requirePhotoViewer(session.classId, session.status);
+    const viewer = await requirePhotoViewer(session.classId, session.status, session.date);
     const drafts = await prisma.$queryRawUnsafe<Array<{ mediaJSON: string; subjectStudentIdsJSON: string }>>(
       `SELECT "mediaJSON", "subjectStudentIdsJSON" FROM "SocialPostDraft" WHERE "sessionId" = $1 ORDER BY "createdAt" DESC`,
       sessionId,

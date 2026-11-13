@@ -1,6 +1,7 @@
 import { unstable_noStore as noStore } from "next/cache";
 
 import { prisma } from "@/lib/prisma";
+import { todayKst } from "@/lib/datetime/kst";
 import {
   requireStaffClassAccess,
   requireStaffSeasonalSessionAccess,
@@ -52,6 +53,17 @@ type StaffClassPersonRow = Omit<
   billing: StaffClassBillingSummary | null;
 };
 
+/** 정규 수업 기록의 날짜("YYYY-MM-DD"). 기록이 없거나 다른 반 기록이면 오늘(KST) — 대타 판정 기준 날짜(f4). */
+async function regularSessionDateOrToday(classId: string, sessionId?: string | null): Promise<string> {
+  if (!sessionId) return todayKst();
+  const rows = await prisma.$queryRawUnsafe<Array<{ date: string }>>(
+    `SELECT to_char(date,'YYYY-MM-DD') AS date FROM "Session" WHERE id = $1 AND "classId" = $2 LIMIT 1`,
+    sessionId,
+    classId,
+  );
+  return rows[0]?.date ?? todayKst();
+}
+
 async function resolveSessionDateId(sessionId?: string | null) {
   if (!sessionId) return null;
   const rows = await prisma.$queryRawUnsafe<Array<{ sessionDateId: string | null; classId: string | null; date: string | null }>>(
@@ -94,7 +106,9 @@ export async function getStaffClassPeople(
   if (effectiveSessionDateId) {
     await requireStaffSeasonalSessionAccess(effectiveSessionDateId);
   } else {
-    await requireStaffClassAccess(classId);
+    // f4 대타: 그 수업 기록의 날짜(기록 전이면 오늘 KST)에 대타 지정이 있으면 명단을 연다.
+    //   기록 날짜는 classId 까지 함께 맞춰 찾는다 — 다른 반 기록 ID 를 섞어 날짜를 바꿔 끼우지 못하게.
+    await requireStaffClassAccess(classId, undefined, { substituteDate: await regularSessionDateOrToday(classId, sessionId) });
   }
 
   const rows = effectiveSessionDateId

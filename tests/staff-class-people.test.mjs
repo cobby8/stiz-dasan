@@ -13,7 +13,8 @@ const action = readFileSync(
 
 test("담당 수업 권한을 확인하고 개인정보를 캐시하지 않는다", () => {
   assert.match(source, /noStore\(\)/);
-  assert.match(source, /requireStaffClassAccess\(classId\)/);
+  // f4: 대타 판정 날짜(substituteDate)를 함께 넘길 수 있다 — 권한 확인 자체는 그대로 반드시 거친다.
+  assert.match(source, /requireStaffClassAccess\(classId[,)]/);
   assert.doesNotMatch(source, /console\.(?:log|error)/);
 });
 

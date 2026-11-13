@@ -2,8 +2,10 @@ import { prisma } from "@/lib/prisma";
 import {
   getAccessibleClassIds,
   getStaffClassAccessContext,
+  getSubstituteClassIds,
   requireStaffClassAccess,
   requireStaffSeasonalSessionAccess,
+  requireStaffSessionAccess,
 } from "@/lib/staff-class-access";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import { makeupOnClassDateSql } from "@/lib/makeup/makeup-attendance";
@@ -24,6 +26,8 @@ export type StaffTodayClass = {
   kind: "REGULAR" | "SEASONAL";
   scheduleKey: string;
   sessionDateId: string | null;
+  /** f4 대타: 담당 반이 아니라 이 날짜 대타로만 보이는 반이면 true(화면에 «대타» 표시·수업 공지 숨김). */
+  substitute: boolean;
 };
 
 export type StaffSessionDetail = {
@@ -105,7 +109,12 @@ function toIso(value: Date | string | null) {
 // 기본값은 오늘(getKoreaDateKey)이라 기존 홈 호출부(인자 없음)는 동작이 그대로 유지된다.
 export async function getTodayStaffClasses(dateKey: string = getKoreaDateKey()): Promise<StaffTodayClass[]> {
   const access = await getStaffClassAccessContext();
-  const classIds = await getAccessibleClassIds(access);
+  // f4 대타: 그 날짜(dateKey)에 대타로 지정된 반도 함께 띄운다. 다른 날짜엔 안 뜬다.
+  const [assignedIds, substituteIds] = await Promise.all([
+    getAccessibleClassIds(access),
+    getSubstituteClassIds(access, dateKey),
+  ]);
+  const classIds = Array.from(new Set([...assignedIds, ...substituteIds]));
 
   const koreaDay = new Date(`${dateKey}T12:00:00+09:00`).getDay();
   const regularRows = classIds.length === 0 ? [] : await prisma.$queryRawUnsafe<TodayClassRow[]>(
@@ -189,8 +198,10 @@ export async function getTodayStaffClasses(dateKey: string = getKoreaDateKey()):
     access.coachId,
   );
 
+  const assignedSet = new Set(assignedIds);
   const normalizedRegular = regularRows.map((row) => ({
     ...row,
+    substitute: !assignedSet.has(row.id),
     kind: "REGULAR" as const,
     scheduleKey: `regular:${row.id}`,
     sessionDateId: null,
@@ -198,6 +209,7 @@ export async function getTodayStaffClasses(dateKey: string = getKoreaDateKey()):
   }));
   const normalizedSeasonal = seasonalRows.map((row) => ({
     ...row,
+    substitute: false,
     kind: "SEASONAL" as const,
     scheduleKey: row.scheduleKey ?? `seasonal:${row.sessionDateId}`,
     sessionDateId: row.sessionDateId ?? null,
@@ -254,7 +266,8 @@ export async function getStaffSessionDetail(sessionId: string): Promise<StaffSes
   if (!row) return null;
 
   if (row.sessionDateId) await requireStaffSeasonalSessionAccess(row.sessionDateId);
-  else await requireStaffClassAccess(row.classId);
+  // 정규 수업은 수업 시작·출석 저장과 같은 판정(requireStaffSessionAccess) — 그 기록 날짜의 대타 지정까지 함께 본다(f4).
+  else await requireStaffSessionAccess(sessionId);
   let photos: string[] = [];
   try {
     const parsed = JSON.parse(row.photosJSON || "[]");
@@ -366,7 +379,8 @@ export async function getStaffSessionStudents(
     }));
   }
 
-  await requireStaffClassAccess(classId);
+  // f4: 그 수업 기록 날짜에 대타 지정이 있으면 명단도 연다(출석 저장과 같은 날짜 기준).
+  await requireStaffClassAccess(classId, undefined, { substituteDate: sessionKinds[0]?.date ?? undefined });
   const rows = await prisma.$queryRawUnsafe<
     Array<{
       id: string;

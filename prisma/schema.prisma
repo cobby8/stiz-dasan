@@ -45,6 +45,7 @@ model User {
   roleGrantsDecided           UserRoleGrant[]               @relation("UserRoleGrantDecider")
   shuttleReviewsAssigned      EnrollmentShuttleReview[]      @relation("ShuttleReviewDriver")
   shuttleReviewsRequested     EnrollmentShuttleReview[]      @relation("ShuttleReviewRequester")
+  classSubstitutes            ClassSubstitute[]             @relation("ClassSubstituteUser")
 }
 
 /// 추가 역할 + 직원 역할 승인 신청. migration 20261025120000_add_user_role_grants 의 사본이다.
@@ -398,6 +399,7 @@ model Class {
   enrollments        Enrollment[]
   sessions           Session[]
   regularAbsences    RegularAbsence[] // 정규 수업 사전 결석 신고(back-relation)
+  substitutes        ClassSubstitute[] // 날짜별 대타 선생님 지정(f4)
   changeRequestsFrom EnrollmentChangeRequest[] @relation("EnrollmentChangeFromClass")
   changeRequestsTo   EnrollmentChangeRequest[] @relation("EnrollmentChangeToClass")
 
@@ -3539,4 +3541,21 @@ model ChildLinkRequest {
 
   @@index([approverId, status], map: "ChildLinkRequest_approver_status_idx")
   @@index([requesterId, createdAt], map: "ChildLinkRequest_requester_created_idx")
+}
+
+// 대타 선생님 지정(f4, 2026-11-13) — 그 날짜(KST "YYYY-MM-DD")에만 대타 선생님이 그 반 출석부를 연다.
+// 판정: src/lib/staff-class-access.ts(requireStaffClassAccess 의 substituteDate) · 규칙: src/lib/staff/classSubstitute.ts
+// migration 20261113230000_class_substitute (RLS ENABLE+FORCE, anon/authenticated REVOKE)
+model ClassSubstitute {
+  id               String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  date             String // KST 달력 날짜 "YYYY-MM-DD" (DB CHECK)
+  classId          String
+  substituteUserId String
+  createdBy        String? // 지정한 원장·부원장 User.id
+  createdAt        DateTime @default(now()) @db.Timestamptz(6)
+  class            Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  substituteUser   User     @relation("ClassSubstituteUser", fields: [substituteUserId], references: [id], onDelete: Cascade)
+
+  @@unique([date, classId], map: "ClassSubstitute_date_classId_key")
+  @@index([substituteUserId, date], map: "ClassSubstitute_substituteUserId_date_idx")
 }

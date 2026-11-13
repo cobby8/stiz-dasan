@@ -300,6 +300,7 @@ export default function StaffHomeClient({
                     <div className="mt-1 flex flex-wrap items-center gap-2">
                       <h2 className="text-xl font-black">{focusClass.name}</h2>
                       {isSeasonalLesson(focusClass) && <SeasonalBadge />}
+                      {focusClass.substitute && <SubstituteBadge />}
                     </div>
                   </div>
                   <StatusBadge status={focusClass.sessionStatus} />
@@ -328,7 +329,8 @@ export default function StaffHomeClient({
                       <SecondaryButton icon="edit_note" label="수업 내용" onClick={() => openContent(focusClass)} disabled={focusClass.sessionStatus === "IN_PROGRESS"} />
                       <SecondaryButton icon="groups" label="학생 정보" onClick={() => setPeopleTarget(focusClass)} />
                       {showFees && <SecondaryButton icon="receipt_long" label="청구 확인" onClick={() => setBillingTarget({ lesson: focusClass })} />}
-                      <SecondaryButton icon="campaign" label="수업 공지" onClick={() => { setError(null); setNoticeTarget(focusClass); }} />
+                      {/* f4: 대타로만 보이는 반은 수업 공지를 숨긴다 — 서버도 대타에게는 공지 권한을 주지 않는다. */}
+                      {!focusClass.substitute && <SecondaryButton icon="campaign" label="수업 공지" onClick={() => { setError(null); setNoticeTarget(focusClass); }} />}
                     </div>
                   </details>
                 </div>
@@ -438,6 +440,11 @@ function SeasonalBadge({ inverted = false }: { inverted?: boolean }) {
   return <span className={`rounded-full px-2.5 py-1 text-xs font-black ${inverted ? "bg-white/10 text-white" : "bg-[var(--color-academy-info-soft)] text-[var(--color-academy-info)]"}`}>특강</span>;
 }
 
+// f4: 오늘 하루 대타로 맡은 반 표시(담당 반과 구분)
+function SubstituteBadge() {
+  return <span className="rounded-full bg-[var(--color-academy-surface)] px-2.5 py-1 text-xs font-black text-[var(--color-academy-muted)] ring-1 ring-[var(--color-academy-line)]">대타</span>;
+}
+
 function SecondaryButton({ icon, label, onClick, disabled = false }: { icon: string; label: string; onClick: () => void; disabled?: boolean }) {
   return <button type="button" disabled={disabled} onClick={onClick} className="academy-button-secondary flex min-h-11 items-center justify-center gap-1 rounded-xl px-2 text-sm font-bold disabled:opacity-40"><span aria-hidden="true" className="material-symbols-outlined text-lg">{icon}</span>{label}</button>;
 }
@@ -460,7 +467,7 @@ function ClassRow({ lesson, startLocked, onOpen, onStart }: { lesson: StaffToday
   >
     <span className="shrink-0 text-xs font-black tabular-nums text-[var(--color-academy-ink)]">{lesson.startTime}–{lesson.endTime}</span>
     {/* 반 이름은 자르지 않고 줄바꿈 허용(말줄임 금지) */}
-    <span className="flex min-w-0 flex-1 flex-wrap items-center gap-1"><span className="break-keep font-black text-[var(--color-academy-ink)]">{lesson.name}</span>{isSeasonalLesson(lesson) && <SeasonalBadge />}</span>
+    <span className="flex min-w-0 flex-1 flex-wrap items-center gap-1"><span className="break-keep font-black text-[var(--color-academy-ink)]">{lesson.name}</span>{isSeasonalLesson(lesson) && <SeasonalBadge />}{lesson.substitute && <SubstituteBadge />}</span>
     <span className="shrink-0 text-right text-xs font-bold tabular-nums text-[var(--color-academy-muted)]">{lesson.studentCount}명</span>
     {completed ? <StatusBadge status={lesson.sessionStatus} /> : (
       <button
@@ -487,7 +494,7 @@ function ClassDetailSheet({ lesson, startLocked, showFees, onClose, onAction }: 
     <div className="flex items-start justify-between gap-3 border-b border-[var(--color-academy-line)] px-4 py-3">
       <div className="min-w-0">
         <p className="text-sm font-black tabular-nums text-[var(--color-academy-ink)]">{lesson.startTime}–{lesson.endTime}</p>
-        <div className="flex flex-wrap items-center gap-2"><h2 id="staff-class-detail-title" className="text-lg font-black text-[var(--color-academy-ink)]">{lesson.name}</h2>{isSeasonalLesson(lesson) && <SeasonalBadge />}<StatusBadge status={lesson.sessionStatus} /></div>
+        <div className="flex flex-wrap items-center gap-2"><h2 id="staff-class-detail-title" className="text-lg font-black text-[var(--color-academy-ink)]">{lesson.name}</h2>{isSeasonalLesson(lesson) && <SeasonalBadge />}{lesson.substitute && <SubstituteBadge />}<StatusBadge status={lesson.sessionStatus} /></div>
       </div>
       <button type="button" aria-label="닫기" onClick={onClose} className="grid size-11 shrink-0 place-items-center rounded-full"><span aria-hidden="true" className="material-symbols-outlined">close</span></button>
     </div>
@@ -502,7 +509,7 @@ function ClassDetailSheet({ lesson, startLocked, showFees, onClose, onAction }: 
           <SecondaryButton icon="edit_note" label="수업 내용" onClick={() => onAction("content")} />
           <SecondaryButton icon="groups" label="학생 정보" onClick={() => onAction("contacts")} />
           {showFees && <SecondaryButton icon="receipt_long" label="청구 확인" onClick={() => onAction("billing")} />}
-          <SecondaryButton icon="campaign" label="수업 공지" onClick={() => onAction("notice")} />
+          {!lesson.substitute && <SecondaryButton icon="campaign" label="수업 공지" onClick={() => onAction("notice")} />}
         </div>
         <button type="button" disabled={startLocked} title={startLocked ? "진행 중인 수업을 먼저 종료해 주세요." : undefined} onClick={() => onAction("start")} className="academy-button-primary flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl px-4 text-base font-black disabled:cursor-not-allowed disabled:opacity-50">
           <span aria-hidden="true" className="material-symbols-outlined">{lesson.sessionStatus === "IN_PROGRESS" ? "arrow_forward" : "play_arrow"}</span>

@@ -1,5 +1,7 @@
 import { requireStaff, type StaffAuthUser } from "@/lib/auth-guard";
 import { prisma } from "@/lib/prisma";
+import { isKstYmd } from "@/lib/datetime/kst";
+import { substituteGrantsAccess } from "@/lib/staff/classSubstitute";
 
 type CoachLinkRow = {
   coachId: string;
@@ -98,6 +100,51 @@ export async function getAccessibleClassIds(
   return rows.map((row) => row.id);
 }
 
+export type StaffClassAccessOptions = {
+  /**
+   * 대타 지정(f4)을 함께 볼 날짜("YYYY-MM-DD", KST). 출석부 경로(수업 시작·출석·종료·사진·명단)만 넘긴다.
+   * 넘기지 않으면 대타 지정은 보지 않는다 — 공지 발송·연락처·청구처럼 하루 대타에게 줄 필요 없는 기능은 막힌 그대로다.
+   */
+  substituteDate?: string;
+};
+
+/**
+ * 그 날짜에 이 선생님이 이 반의 대타로 지정됐는가(f4).
+ * 날짜 비교는 순수 규칙(substituteGrantsAccess)과 같은 기준 — 정확히 같은 "YYYY-MM-DD" 일 때만.
+ * 형식이 틀린 날짜는 DB 에 묻기 전에 거른다.
+ */
+async function hasClassSubstitute(classId: string, userId: string, onDate: string): Promise<boolean> {
+  if (!isKstYmd(onDate)) return false;
+  const rows = await prisma.$queryRawUnsafe<Array<{ date: string }>>(
+    `SELECT date FROM "ClassSubstitute"
+     WHERE "classId" = $1 AND "substituteUserId" = $2 AND date = $3
+     LIMIT 1`,
+    classId,
+    userId,
+    onDate,
+  );
+  return substituteGrantsAccess(rows[0]?.date, onDate);
+}
+
+/**
+ * 그 날짜에 이 선생님이 대타로 지정된 반 ID 목록(f4) — 홈 «오늘 수업» 목록에 그 반을 끼워 넣을 때 쓴다.
+ * 원장·부원장은 이미 모든 반을 보므로 빈 목록.
+ */
+export async function getSubstituteClassIds(
+  access: StaffClassAccessContext,
+  onDate: string,
+): Promise<string[]> {
+  if (access.canAccessAllClasses || !isKstYmd(onDate)) return [];
+  const rows = await prisma.$queryRawUnsafe<Array<{ classId: string }>>(
+    `SELECT "classId" FROM "ClassSubstitute"
+     WHERE "substituteUserId" = $1 AND date = $2
+     ORDER BY "classId"`,
+    access.staff.appUserId,
+    onDate,
+  );
+  return rows.map((row) => row.classId);
+}
+
 /**
  * 특정 수업에 접근할 권한이 없으면 즉시 중단합니다.
  * 화면에서 메뉴를 숨기는 것과 별개로 서버에서도 반드시 이 검사를 사용해야 합니다.
@@ -105,11 +152,18 @@ export async function getAccessibleClassIds(
 export async function requireStaffClassAccess(
   classId: string,
   context?: StaffClassAccessContext,
+  options?: StaffClassAccessOptions,
 ): Promise<StaffClassAccessContext> {
   if (!classId) throw new Error("수업 정보가 필요합니다.");
 
   const access = context ?? (await getStaffClassAccessContext());
   if (access.canAccessAllClasses) return access;
+
+  // f4 대타: 출석부 경로(substituteDate 를 넘긴 곳)만, 그 날짜에 이 반 대타로 지정됐으면 담당 배정과 무관하게 통과.
+  //   코치 연결이 없는 선생님도 대타로는 들어올 수 있게 코치 확인보다 먼저 본다.
+  if (options?.substituteDate && (await hasClassSubstitute(classId, access.staff.appUserId, options.substituteDate))) {
+    return access;
+  }
 
   if (!access.coachId) {
     throw new Error("선생님 계정에 연결된 코치 정보가 없습니다.");
@@ -214,7 +268,8 @@ export async function requireStaffSessionAccess(
   if (!rows[0]) throw new Error("수업 기록을 찾을 수 없습니다.");
   const access = rows[0].sessionDateId
     ? (await requireStaffSeasonalSessionAccess(rows[0].sessionDateId, context)).access
-    : await requireStaffClassAccess(rows[0].classId, context);
+    // 정규 수업은 «그 수업 기록의 날짜»에 대타 지정이 있으면 통과(f4) — 오늘 대타라도 다른 날 기록은 못 고친다.
+    : await requireStaffClassAccess(rows[0].classId, context, { substituteDate: String(rows[0].date) });
   return { session: rows[0], access };
 }
 
