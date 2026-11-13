@@ -30,6 +30,9 @@ function fixture({ regular = true, seasonal = false, failRead = false } = {}) {
     '@/lib/shuttle/driverStatusRead': reader,
     // 운행 링크 스위치 켜짐(기존 동작) — 스위치 자체는 driver-link-toggle.test.mjs 가 검사한다.
     '@/lib/shuttle/driverLinkAccess': { async driverLinkBlocked() { return false; }, driverLinkDisabledResponse() { return new Response('{}', { status: 410 }); } },
+    // 휴원·휴무 줄 잠금 확인(POST 전용) — GET 검사에서는 쓰이지 않는다. 판정 자체는 driver-paused-holiday.test.mjs 가 검사한다.
+    '@/lib/shuttle/regularDriverRoute': { async getRegularDriverClasses() { return []; } },
+    '@/lib/shuttle/regularRunDayRules': { boardingRejectedForBlock: (label, status) => Boolean(label) && status !== null },
   };
   const regularApi = load('src/app/api/shuttle/regular-boarding/route.ts', dependencies);
   const seasonalApi = load('src/app/api/shuttle/boarding/route.ts', dependencies);

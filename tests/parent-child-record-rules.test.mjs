@@ -289,7 +289,7 @@ test("③ 빈 데이터: 요약 4칸·옛 기록 안내·빈 칸 문구, 0% 대�
   assert.doesNotMatch(html, /material-symbols/, "아이콘 대신 글자");
 });
 
-test("③ 형제 + 미납 있음: 아이 칩(지금 아이 표시)·미납 칸 경고·이번 달 묶음 펼침·영수증 링크·막대", () => {
+test("③ 형제 + 미납 있음: 아이 칩(지금 아이 표시)·미납 칸 경고·월 카드(청구월·합계·상태)·영수증은 시트·막대", () => {
   const ym = `${thisYear}-${String(thisMonth).padStart(2, "0")}`;
   const record = baseRecord({
     payments: [
@@ -310,15 +310,16 @@ test("③ 형제 + 미납 있음: 아이 칩(지금 아이 표시)·미납 칸 �
   assert.match(html, /첫 등록 2025\.03/);
   assert.match(html, /100%/, "올해 출석률(출석3+지각1 / 4)");
   assert.match(html, /href="\/mypage\/payments"/, "미납 칸은 청구 탭으로");
-  assert.match(html, new RegExp(`${thisMonth}월 · 2건 · 295,000원`), "월 묶음 머리줄");
-  assert.match(html, /aria-expanded="true"/, "이번 달은 펼침");
-  assert.match(html, /href="https:\/\/r\.example\/2"[^>]*>영수증/);
+  // 2026-11-14 월 카드: 한 달 = 한 줄 «11월 · 295,000원 · 일부 납부» — 세부(항목·영수증)는 누르면 시트
+  assert.match(html, new RegExp(`data-month-bill="${ym}"[^>]*>[^]*?${thisMonth}월[^]*?295,000원[^]*?일부 납부`), "월 카드");
+  assert.doesNotMatch(html, /r\.example\/2/, "영수증은 세부 시트에서");
+  assert.doesNotMatch(html, /이번 달 수강료/, "항목 줄은 카드에 없다");
   assert.match(html, /입반/);
   assert.match(html, new RegExp(`href="/mypage/classes\\?child=kid&amp;month=${ym}"`), "달력 보기 ▸");
   assert.match(html, /<svg/, "출석 막대");
 });
 
-test("③ 청구 탭: 요약 줄(올해 납부·미납·연도별 보기)·형제 칩·월 묶음 머리줄·납부 완료 한 줄 행, 미납은 기존 카드", () => {
+test("③ 청구 탭: 요약 줄(올해 납부·미납·연도별 보기)·형제 칩·월 카드 한 줄, 누르면 시트에 결제하기·입금·영수증", () => {
   const Client = load("src/app/mypage/payments/PaymentRequestClient.tsx", {
     "next/link": link,
     "next/navigation": { useRouter: () => ({ refresh() {} }) },
@@ -326,21 +327,26 @@ test("③ 청구 탭: 요약 줄(올해 납부·미납·연도별 보기)·형�
   }).default;
   const ym = `${thisYear}-${String(thisMonth).padStart(2, "0")}`;
   const row = (id, extra = {}) => ({ paymentId: id, studentId: "s1", studentName: "첫째", description: "수강료", amount: 100000, status: "PAID", dueDate: `${ym}-10`, paidDate: `${ym}-03`, invoiceNo: null, invoiceId: `i-${id}`, canCheckout: true, receiptUrl: null, virtualAccount: null, pending: [], resolved: [], ...extra });
-  const html = renderToStaticMarkup(React.createElement(Client, {
-    payReady: true,
-    rows: [row("a", { status: "PENDING", paidDate: null }), row("b", { receiptUrl: "https://r.example/b" }), row("c", { studentId: "s2", studentName: "둘째" })],
-  }));
+  const rows = [row("a", { status: "PENDING", paidDate: null }), row("b", { receiptUrl: "https://r.example/b" }), row("c", { studentId: "s2", studentName: "둘째" })];
+  const html = renderToStaticMarkup(React.createElement(Client, { payReady: true, rows }));
   assert.match(html, /올해 납부 <b class="font-semibold">200,000원<\/b>/);
   assert.match(html, /미납 1건/);
   assert.match(html, /href="\/mypage\/record\?child=s1"[\s\S]*연도별 보기 ▸/);
   assert.match(html, /aria-label="자녀 선택"[\s\S]*전체[\s\S]*첫째[\s\S]*둘째/);
-  assert.match(html, new RegExp(`${thisMonth}월 · 3건 · 300,000원`));
-  assert.match(html, /href="\/payments\/i-a"/, "미납 카드의 결제하기 그대로");
-  assert.match(html, /입금했어요|이미 계좌로 입금했어요/);
-  assert.match(html, /href="https:\/\/r\.example\/b"[^>]*>영수증</, "납부 완료 한 줄 행의 영수증");
-  assert.match(html, />영수증 요청</, "영수증이 없으면 요청 버튼");
-  // 이전 카드형의 «영수증 요청하기» 큰 버튼은 납부 완료 행에서 사라졌다(한 줄 행)
-  assert.doesNotMatch(html, /영수증 요청하기/);
+  // 형제·종류가 섞여도 한 달 = 카드 한 줄(청구월·합계·상태) — 세부는 시트
+  assert.equal((html.match(/data-month-bill=/g) || []).length, 1, "한 달에 카드 하나");
+  assert.match(html, new RegExp(`${thisMonth}월[^]*?300,000원[^]*?일부 납부`));
+  assert.doesNotMatch(html, /href="\/payments\/i-a"/, "결제하기는 카드가 아니라 시트 안");
+  // 시트를 연 상태: 아이별 항목 · 기존 결제하기 링크 그대로 · 입금 알림 · 영수증 보기/요청
+  const sheet = renderToStaticMarkup(React.createElement(Client, { payReady: true, rows, initialOpenYm: ym }));
+  assert.match(sheet, /role="dialog"/);
+  assert.match(sheet, new RegExp(`${thisMonth}월 청구`));
+  assert.match(sheet, /<h3[^>]*>첫째<\/h3>[\s\S]*<h3[^>]*>둘째<\/h3>/, "형제면 아이별로 나눈다");
+  assert.match(sheet, /href="\/payments\/i-a"[^>]*>결제하기</, "미납 항목의 결제하기 그대로");
+  assert.match(sheet, /이미 계좌로 입금했어요/);
+  assert.match(sheet, /href="https:\/\/r\.example\/b"[^>]*>영수증 보기</, "납부 완료 항목의 영수증");
+  assert.match(sheet, />영수증 요청</, "영수증이 없으면 요청 버튼");
+  assert.doesNotMatch(sheet, /영수증 요청하기/);
 });
 
 // ── ④ 소스 가드 ─────────────────────────────────────────────────────────────

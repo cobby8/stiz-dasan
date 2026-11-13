@@ -21,7 +21,9 @@ export type DriverRow = { rowId: string; name: string; parentPhone: string | nul
   /** 결석 뱃지 문구(항상 «결석» — 사유는 민감정보라 싣지 않는다). absent 일 때만 붙는다. */
   absentLabel?: string | null;
   /** "오늘만" 셔틀 변경(안 탐·다른 곳에서 탐). 결석과 다르다 — 아이는 수업에 온다. */
-  shuttleNote?: string | null };
+  shuttleNote?: string | null;
+  /** 잠긴 줄의 뱃지(휴원·퇴원·첫 수업 전·휴무). 명단에서 빼지 않고 뱃지 + 탑승·미탑승 버튼 잠금(원장 지시 2026-11-14). */
+  blockedLabel?: string | null };
 export type DriverStop = { label: string; arriveTime: string | null; lat: number | null; lng: number | null; direction: "BOARD" | "ALIGHT"; rows: DriverRow[] };
 /** classTime: 섹션 구분 키(=React key). title 이 있으면 화면 제목으로 그것을 쓴다. pending=확정 전(임시 순서). */
 export type DriverClass = { classTime: string; title?: string; pending?: boolean; board: DriverStop[]; alight: DriverStop[] };
@@ -100,6 +102,25 @@ export function attachAbsenceLabels(
       ),
     }));
   return classes.map((item) => ({ ...item, board: withLabels(item.board), alight: withLabels(item.alight) }));
+}
+
+/**
+ * 잠긴 줄(휴원·퇴원·첫 수업 전·휴무)에 뱃지 글자를 덧붙인다 — 판정(regularRunDayRules)은 호출부가 주입한다.
+ * 결석 뱃지와 같은 이유로 조립 뒤에서 덧붙이고, 줄은 **지우지 않는다**(원장 지시 2026-11-14). 키는 명단 정차행 id.
+ */
+export function attachRiderBlocks(
+  classes: DriverClass[],
+  blockOf: (rowId: string) => string | null,
+): DriverClass[] {
+  const withBlocks = (stops: DriverStop[]): DriverStop[] =>
+    stops.map((stop) => ({
+      ...stop,
+      rows: stop.rows.map((row) => {
+        const label = blockOf(row.rowId);
+        return label ? { ...row, blockedLabel: label } : row;
+      }),
+    }));
+  return classes.map((item) => ({ ...item, board: withBlocks(item.board), alight: withBlocks(item.alight) }));
 }
 
 // 저장 payload 는 JSON 이라 타입이 없다. 읽는 필드만 느슨하게 선언한다(없어도 안전하게 동작).

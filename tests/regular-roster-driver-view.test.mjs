@@ -18,7 +18,7 @@ test("관리자 기사님 화면 보기는 기사님 화면과 같은 순수 함
   // 자체 정류장 묶음 함수를 새로 만들지 않는다(RegularRouteSection 의 groupStops 같은 사본 금지).
   assert.doesNotMatch(view, /function group\w*\(/);
   // 기사님 화면 서버도 같은 요일 행 선택 함수를 쓴다(조립은 순수 함수 regularRunRows 로 옮겼다).
-  assert.match(driverRoute, /return buildRegularRunClasses\(\{/);
+  assert.match(driverRoute, /= buildRegularRunClasses\(\{/); // 2026-11-14: 휴무 안내와 함께 돌려주려고 변수에 담는다
   assert.match(read("src/lib/shuttle/regularRunRows.ts"), /selectDriverDayRows\(input\.stops, input\.weekday\)/);
   // 셔틀 명단 화면에 보기 전환이 붙어 있다.
   assert.match(client, /<DriverOrderView/);
@@ -76,7 +76,8 @@ test("정규 운행표(관리자): 기사님과 같은 조립 함수·카드 틀
   const page = read("src/app/admin/shuttle/regular-dispatch/page.tsx");
   assert.match(editor, /import RunBoard from "@\/components\/shuttle\/run\/RunBoard"/);
   assert.match(editor, /import \{ buildRegularRunRows \} from "@\/lib\/shuttle\/regularRunRows"/);
-  assert.match(editor, /buildRegularRunRows\(\{ stops, weekday \}\)/);
+  // 2026-11-14: 휴원 뱃지(blockOf)를 같은 조립 단계로 붙인다 — 조립 함수는 그대로 하나.
+  assert.match(editor, /buildRegularRunRows\(\{ stops, weekday, blockOf: \(rowId\) => riderBlocks\[rowId\] \?\? null \}\)/);
   assert.match(editor, /<RunBoard[\s\S]*mode="admin"[\s\S]*renderRider=\{renderRider\}/);
   assert.match(editor, /styles\.workspace/);
   // 자체 묶음 함수·옛 배차 부품·자동 제안 없음

@@ -5,7 +5,7 @@ import { shuttleScope } from "@/lib/account/roles";
 import { addDaysKst, isKstYmd, todayKst } from "@/lib/datetime/kst";
 import { getStaffShuttleDashboard } from "@/lib/shuttle/service";
 import { authorizeAssign, DriverAssignError } from "@/lib/shuttle/driverAssign";
-import { getRegularDriverClasses } from "@/lib/shuttle/regularDriverRoute";
+import { getRegularDriverDay } from "@/lib/shuttle/regularDriverRoute";
 import { readDriverBoarding } from "@/lib/shuttle/driverStatusRead";
 import { buildUnifiedRun } from "@/lib/shuttle/unifiedDriverRunLogic";
 import UnifiedDriverClient from "@/components/shuttle/UnifiedDriverClient";
@@ -43,8 +43,9 @@ export default async function StaffShuttlePage({ searchParams }: {
   const today = todayKst();
   const date = params.date && isKstYmd(params.date) ? params.date : today;
   const focusDirection = params.focus === "BOARD" ? "PICKUP" : params.focus === "ALIGHT" ? "DROPOFF" : null;
-  const [classes, boarding] = await Promise.all([
-    getRegularDriverClasses(date),
+  // 그날 섹션 + 휴무 안내(기사님 운행 화면과 같은 함수 — 휴원·휴무 줄 잠금도 같이 붙어 온다)
+  const [{ classes, holiday }, boarding] = await Promise.all([
+    getRegularDriverDay(date),
     readDriverBoarding(date, "REGULAR").catch(() => null),
   ]);
   const initialBoarding = Object.fromEntries(Object.entries(boarding?.boarding ?? {}).map(([id, status]) => ["R:" + id, status]));
@@ -73,6 +74,7 @@ export default async function StaffShuttlePage({ searchParams }: {
         today={today}
         driverLabel="정규 셔틀 기사님"
         focusDirection={focusDirection}
+        holiday={holiday}
       />
     </>
   );

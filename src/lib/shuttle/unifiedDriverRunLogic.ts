@@ -34,6 +34,8 @@ export type UnifiedRider = {
   absentLabel?: string | null;
   /** "오늘만" 셔틀 변경(안 탐·다른 곳에서 탐). 결석과 다르다 — 아이는 수업에 온다. */
   shuttleNote?: string | null;
+  /** 잠긴 줄 뱃지(정규 휴원·퇴원·첫 수업 전·휴무). 있으면 탑승·미탑승 버튼을 잠그고 체크 대상에서 뺀다. */
+  blockedLabel?: string | null;
 };
 
 /** 목록의 한 줄 = 한 정차(또는 차고지 출발/학원 도착 같은 안내 줄). */
@@ -229,6 +231,8 @@ export function buildRegularRows(classes: DriverClass[]): UnifiedRow[] {
             absent: Boolean(r.absent),
             absentLabel: r.absentLabel ?? null,
             shuttleNote: r.shuttleNote ?? null,
+            // 잠긴 줄만 칸을 붙인다(잠금이 없으면 종전 모양 그대로 — 기존 비교 테스트 보존).
+            ...(r.blockedLabel ? { blockedLabel: r.blockedLabel } : {}),
           })),
         });
       }
@@ -266,22 +270,25 @@ export type BoardingStatus = "BOARDED" | "NOSHOW" | "SELF";
  *   - dimmed: 행을 흐리게 할지(결석 신고 + 탑승·자차로 바뀌지 않음)
  */
 export function riderBoardingView(
-  rider: Pick<UnifiedRider, "kind" | "absent">,
+  rider: Pick<UnifiedRider, "kind" | "absent" | "blockedLabel">,
   stored: BoardingStatus | null | undefined,
-): { absentReported: boolean; status: BoardingStatus | null; absentDefault: boolean; dimmed: boolean } {
-  const absentReported = rider.kind === "REGULAR" && Boolean(rider.absent);
+): { absentReported: boolean; status: BoardingStatus | null; absentDefault: boolean; dimmed: boolean; blocked: boolean } {
+  // 원장 지시(2026-11-14): 휴원·퇴원·첫 수업 전·휴무 줄은 명단에 남기되 버튼을 잠근다 — 흐린 행, 기본 상태 없음, 체크 대상 아님.
+  const blocked = rider.kind === "REGULAR" && Boolean(rider.blockedLabel);
+  const absentReported = !blocked && rider.kind === "REGULAR" && Boolean(rider.absent);
   const saved = stored ?? null;
   const status: BoardingStatus | null = saved ?? (absentReported ? "NOSHOW" : null);
   return {
     absentReported,
     status,
     absentDefault: absentReported && saved == null,
-    dimmed: absentReported && status !== "BOARDED" && status !== "SELF",
+    dimmed: blocked || (absentReported && status !== "BOARDED" && status !== "SELF"),
+    blocked,
   };
 }
 
 /** 결석 학생 저장 기록이 없을 때 보일 기본 상태(정규 결석 = NOSHOW, 그 외 = 없음). */
-export function riderDefaultStatus(rider: Pick<UnifiedRider, "kind" | "absent">): BoardingStatus | null {
+export function riderDefaultStatus(rider: Pick<UnifiedRider, "kind" | "absent" | "blockedLabel">): BoardingStatus | null {
   return riderBoardingView(rider, null).status;
 }
 
@@ -312,6 +319,8 @@ export function countProgress(
     for (const rider of row.riders) {
       if (seen.has(rider.key)) continue;
       seen.add(rider.key);
+      // 잠긴 줄(휴원·휴무 등)은 체크 대상이 아니라 분모에서 뺀다 — «체크 완료»가 영영 안 되는 일을 막는다.
+      if (riderBoardingView(rider, boarding[rider.key]).blocked) continue;
       total += 1;
       // 정규 결석 신고 학생은 저장 기록이 없어도 기본 «결석»으로 센다(명단에 남아 있으니 분모에도 들어간다).
       const st = riderBoardingView(rider, boarding[rider.key]).status;

@@ -8,6 +8,10 @@ import { DRIVER_ABSENCE_LABEL, matchAbsentee } from "@/lib/regular/regularAbsenc
 import type { DriverClass } from "./regularDriverRouteLogic";
 // 운행표 조립(묶음·결석 뱃지·«오늘만» 변경)은 관리자 운행표와 같은 순수 함수 한 곳에서 한다.
 import { buildRegularRunClasses } from "./regularRunRows";
+import { selectDriverDayRows } from "./regularDriverRouteLogic";
+// 휴원·퇴원·첫 수업 전·휴무 잠금 — 학부모 셔틀과 같은 규칙(regularRunDayRules)으로 판정한다.
+import { getRegularRunDayBlocks } from "./regularRunDay";
+import type { RunHoliday } from "./regularRunDayRules";
 
 /**
  * 정규 셔틀 기사님 화면의 "그날 무엇을 보여 줄지"를 한곳에서 만든다(서버 전용).
@@ -27,6 +31,14 @@ function weekdayOf(dateIso: string): number {
 
 /** 기사님 화면(정규)의 그날 섹션 목록. 두 기사님 화면(/driver/[token], /shuttle/regular/[token])이 공유한다. */
 export async function getRegularDriverClasses(viewDate: string): Promise<DriverClass[]> {
+  return (await getRegularDriverDay(viewDate)).classes;
+}
+
+/**
+ * 그날 섹션 + 휴무 안내. 화면 맨 위 «오늘은 휴무(사유)»가 필요한 곳(기사님 화면·계정 운행표)은 이걸 쓴다.
+ * 탑승 저장 API 도 같은 함수 결과(줄의 blockedLabel)로 잠긴 줄의 체크를 거부한다 — 화면과 서버가 같은 판정.
+ */
+export async function getRegularDriverDay(viewDate: string): Promise<{ classes: DriverClass[]; holiday: RunHoliday | null }> {
   const weekday = weekdayOf(viewDate);
 
   // 그날이 속한 달 "이하"의 최신 명단 달을 한 번만 정해 명단 조회에 넘긴다.
@@ -39,6 +51,12 @@ export async function getRegularDriverClasses(viewDate: string): Promise<DriverC
     getRegularAbsentPeople(viewDate),
     getShuttleExceptionsForDate(viewDate),
   ]);
+  // 그 요일 학생 행만 잠금 판정(휴원·퇴원·첫 수업 전 + 그날 휴무). 실패해도 화면은 잠금 없이 뜬다.
+  const { holiday, labelByRowId } = await getRegularRunDayBlocks(selectDriverDayRows(stops, weekday), viewDate)
+    .catch((e) => {
+      console.error("[regularDriverRoute] 잠금 판정 실패 — 잠금 없이 표시", e);
+      return { holiday: null, labelByRowId: new Map<string, string>() };
+    });
 
   // 결석 매칭: 이름(+가능하면 학부모 전화)으로 그날 결석자와 이어 붙인다(best-effort) — 종전과 동일.
   // ⚠️ 결석 학생은 명단에서 빼지 않는다(원장 지시 2026-11-09). absent 표시 + 아래에서 뱃지 문구만 붙인다.
@@ -49,7 +67,7 @@ export async function getRegularDriverClasses(viewDate: string): Promise<DriverC
   // 조립은 순수 함수(buildRegularRunClasses)에 맡긴다 — 종전과 같은 순서:
   // 묶음(명단 순서 그대로) → 결석 뱃지 → "오늘만" 셔틀 변경. 관리자 운행표도 같은 함수를 쓴다.
   // "오늘만" 변경은 결석과 같은 이름·전화 매칭을 쓴다(명단 행에는 학생 id 가 없을 수 있다).
-  return buildRegularRunClasses({
+  const classes = buildRegularRunClasses({
     stops,
     weekday,
     isAbsent,
@@ -59,5 +77,7 @@ export async function getRegularDriverClasses(viewDate: string): Promise<DriverC
       matches: (row, entry) => matchAbsentee(row, [{ name: entry.name, phone: entry.phone }]) !== null,
       describe: describeException,
     },
+    blockOf: (rowId) => labelByRowId.get(rowId) ?? null,
   });
+  return { classes, holiday };
 }

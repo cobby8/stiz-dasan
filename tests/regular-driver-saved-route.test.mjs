@@ -170,7 +170,8 @@ test("기사님 화면이 저장 노선 게이트웨이를 쓰고, 탑승 체크
   }
   // 그날 무엇을 띄울지는 게이트웨이 한곳에서만 만든다.
   const loader = await readFile("src/lib/shuttle/unifiedDriverRun.ts", "utf8");
-  assert.match(loader, /getRegularDriverClasses/);
+  // 2026-11-14: 휴무 안내까지 함께 받는 getRegularDriverDay(내부에서 같은 조립) 로 바뀌었다.
+  assert.match(loader, /getRegularDriverDay\(viewDate\)/);
   // 조회 실패를 빈 미체크로 숨기지 않는 공통 reader로 이미 전환되었다.
   assert.match(loader, /readDriverBoarding\(viewDate, "REGULAR"\)/);
   assert.match(loader, /boardingReliable = reads\.every\(\(read\) => read\.status === "fulfilled"\)/);

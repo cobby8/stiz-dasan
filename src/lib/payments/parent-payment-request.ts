@@ -36,6 +36,14 @@ export type ParentPaymentRow = {
   description: string | null;
   amount: number;
   status: string;
+  /** 청구 종류(MONTHLY·SHUTTLE·SPECIAL…) — 세부 시트 항목 이름 */
+  type?: string | null;
+  /** 청구 대상 연·월 — 월 카드 묶음 기준(없으면 납기일의 달) */
+  year?: number | null;
+  month?: number | null;
+  /** 결제수단(납부 완료 건) — 세부 시트에 «카드»·«현장 카드» 등으로 */
+  method?: string | null;
+  paidProvider?: string | null;
   dueDate: string | null;
   paidDate: string | null;
   invoiceNo: string | null;
@@ -70,8 +78,11 @@ export async function getParentPaymentRequests(parentUserId: string): Promise<Pa
   const rows = await prisma.$queryRawUnsafe<any[]>(
     `SELECT p.id AS "paymentId", s.id AS "studentId", s.name AS "studentName",
             p.description, p.amount, p.status, p."receiptUrl",
-            to_char(p."dueDate",'YYYY-MM-DD') AS "dueDate",
-            to_char(p."paidDate",'YYYY-MM-DD') AS "paidDate",
+            -- 월 카드·세부 시트(2026-11-14): 종류·청구 달·결제수단
+            p.type, p.year, p.month, p.method, p."paidProvider",
+            -- 시간대 없는 칸 → «두 번» 바꿔 KST 날짜(아이 기록 childRecordQuery 와 같은 식. 한 번이면 9시간 밀린다)
+            to_char(((p."dueDate" AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Seoul'),'YYYY-MM-DD') AS "dueDate",
+            to_char(((p."paidDate" AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Seoul'),'YYYY-MM-DD') AS "paidDate",
             i."invoiceNo", i.id AS "invoiceId",
             -- 결제 버튼 = 결제 권한(대표 보호자 + 승인된 가족, payerAccess 한 곳 — 2026-11-13 f8)
             (${await payerAccessSql("s", "$1")}) AS "canCheckout",
@@ -106,6 +117,11 @@ export async function getParentPaymentRequests(parentUserId: string): Promise<Pa
     description: row.description ?? null,
     amount: Number(row.amount ?? 0),
     status: row.status,
+    type: row.type ?? null,
+    year: row.year === null || row.year === undefined ? null : Number(row.year),
+    month: row.month === null || row.month === undefined ? null : Number(row.month),
+    method: row.method ?? null,
+    paidProvider: row.paidProvider ?? null,
     dueDate: row.dueDate ?? null,
     paidDate: row.paidDate ?? null,
     invoiceNo: row.invoiceNo ?? null,

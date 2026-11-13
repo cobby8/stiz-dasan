@@ -74,6 +74,9 @@ export type RecordPaymentRow = {
   paidYmd: string | null;
   description: string | null;
   receiptUrl: string | null;
+  /** 결제수단(납부 완료 건 세부 시트) — 없으면 안 보인다 */
+  method?: string | null;
+  paidProvider?: string | null;
 };
 
 /** 청구가 속한 달 "YYYY-MM": 청구 대상 연·월이 맞으면 그것, 아니면 납기일의 달, 둘 다 없으면 null */
@@ -176,14 +179,21 @@ export type PaymentMonthGroup = {
   rows: RecordPaymentRow[];
 };
 
+/** 그해 청구만(취소 제외) — 청구 달이 그해인 것, 날짜 없는 청구는 올해 칸에만. 월 카드(groupBillsByMonth)와 옛 월 묶음이 같이 쓴다 */
+export function paymentsOfYear<T extends RecordPaymentRow>(rows: readonly T[], year: number, currentYm: string): T[] {
+  return rows.filter((row) => {
+    if (!isShownPayment(row.status)) return false;
+    const ym = billingYm(row) ?? "";
+    if (ym) return Number(ym.slice(0, 4)) === year;
+    return year === Number(currentYm.slice(0, 4));
+  });
+}
+
 /** 그해 청구를 «청구 달» 묶음으로(최신 달부터). 이번 달·미납 달만 처음에 펼친다 */
 export function groupPaymentsByMonth(rows: readonly RecordPaymentRow[], year: number, currentYm: string): PaymentMonthGroup[] {
   const map = new Map<string, RecordPaymentRow[]>();
-  for (const row of rows) {
-    if (!isShownPayment(row.status)) continue;
+  for (const row of paymentsOfYear(rows, year, currentYm)) {
     const ym = billingYm(row) ?? "";
-    if (ym && Number(ym.slice(0, 4)) !== year) continue;
-    if (!ym && year !== Number(currentYm.slice(0, 4))) continue; // 날짜 없는 청구는 올해 칸에만
     const list = map.get(ym) ?? [];
     list.push(row);
     map.set(ym, list);

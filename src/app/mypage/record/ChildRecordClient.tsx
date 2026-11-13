@@ -1,12 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import BarChart from "@/components/charts/BarChart";
 import StackedBar from "@/components/charts/StackedBar";
 import { CHART_COLORS } from "@/components/charts/chartColors";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
-import { PAYMENT_TONE, TONE_BADGE_CLASS, TONE_TEXT_CLASS, toneFor } from "@/lib/ui/statusTones";
+import { TONE_BADGE_CLASS } from "@/lib/ui/statusTones";
+// 청구 이력 = 청구 탭과 같은 «월 카드 + 세부 시트» 부품(2026-11-14 원장 지시 — 청구 관련 모든 화면에 똑같이)
+import MonthBillCard from "@/components/parent/billing/MonthBillCard";
+import BillDetailSheet from "@/components/parent/billing/BillDetailSheet";
+import { groupBillsByMonth } from "@/lib/payments/monthBills";
 import type { ChildRecord } from "@/lib/parent/childRecordQuery";
 // 아이 정보·수강 반·셔틀 칸(2026-11-14 «아이 정보 + 기록» 한 장)
 import { ChildClassesSection, ChildInfoSection, ChildShuttleSection } from "./ChildProfileSections";
@@ -19,11 +23,8 @@ import {
   buildTimeline,
   filterPayments,
   freeUniformText,
-  groupPaymentsByMonth,
-  isUnpaid,
   missingMonthsText,
-  paymentKind,
-  paymentStatusLabel,
+  paymentsOfYear,
   pickRecordYear,
   recentAttendanceBars,
   recordYears,
@@ -93,11 +94,18 @@ export default function ChildRecordClient({
   const [filter, setFilter] = useState<PaymentFilter>(EMPTY_PAYMENT_FILTER);
   const [draft, setDraft] = useState<PaymentFilter>(EMPTY_PAYMENT_FILTER);
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [openMonths, setOpenMonths] = useState<Record<string, boolean>>({});
+  // 열려 있는 청구 세부 시트의 달 "YYYY-MM"
+  const [openYm, setOpenYm] = useState<string | null>(null);
 
   const summary = summarizePayments(payments, year);
   const yearAtt = yearAttendance(months, year);
-  const groups = useMemo(() => groupPaymentsByMonth(filterPayments(payments, filter), year, currentYm), [payments, filter, year, currentYm]);
+  // 그해 청구(필터 적용)를 청구 달 하나에 카드 하나로 — 연도 칩으로 해를 고르므로 달 이름은 «12월»처럼 짧게
+  //  (계산이 가벼워 그냥 매번 — React Compiler 가 알아서 기억한다)
+  const monthBills = groupBillsByMonth(
+    paymentsOfYear(filterPayments(payments, filter), year, currentYm).map((p) => ({ ...p, studentId: record.student.id, studentName: record.student.name })),
+    String(year),
+  );
+  const openBill = openYm === null ? null : monthBills.find((bill) => bill.ym === openYm) ?? null;
   const bars = recentAttendanceBars(months, currentYm, 12);
   const missing = missingMonthsText(bars);
   const timeline = record.timeline ? buildTimeline({ ...record.timeline, today }) : null;
@@ -109,7 +117,7 @@ export default function ChildRecordClient({
   // 연도 칩 — 화면 안에서 바로 바꾸고 주소(?year=)도 고친다(뒤로 가기·새로고침 때 같은 해)
   function chooseYear(y: number) {
     setYear(y);
-    setOpenMonths({});
+    setOpenYm(null);
     try {
       const url = new URL(window.location.href);
       url.searchParams.set("year", String(y));
@@ -208,63 +216,16 @@ export default function ChildRecordClient({
                 />
               </div>
             )}
-            {groups.length === 0 ? (
+            {monthBills.length === 0 ? (
               <p className="border-t border-[var(--color-academy-line)] px-3 py-3 text-sm text-[var(--color-academy-muted)]">
                 {filterCount > 0 ? "고른 조건에 맞는 청구가 없어요." : `${year}년 청구가 없어요.`}
               </p>
             ) : (
-              <ul className="divide-y divide-[var(--color-academy-line)] border-t border-[var(--color-academy-line)]">
-                {groups.map((g) => {
-                  const open = openMonths[g.ym] ?? g.defaultOpen;
-                  return (
-                    <li key={g.ym || "none"}>
-                      {/* 월 묶음 머리줄 «11월 · 2건 · 255,000원» — 누르면 접기/펼치기 */}
-                      <button
-                        type="button"
-                        aria-expanded={open}
-                        onClick={() => setOpenMonths((prev) => ({ ...prev, [g.ym]: !open }))}
-                        className="flex min-h-11 w-full items-center gap-2 bg-[var(--color-academy-soft)] px-3 py-1.5 text-left"
-                      >
-                        <span className="min-w-0 flex-1 text-sm font-semibold tabular-nums text-[var(--color-academy-ink)]">
-                          {g.label} · {g.count}건{record.student.canPay ? ` · ${won(g.total)}` : ""}
-                        </span>
-                        {g.unpaidCount > 0 && <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs ${TONE_BADGE_CLASS.warning}`}>미납 {g.unpaidCount}</span>}
-                        <span aria-hidden="true" className="shrink-0 text-[var(--color-academy-muted)]">{open ? "▴" : "▾"}</span>
-                      </button>
-                      {open && (
-                        <ul className="divide-y divide-[var(--color-academy-line)]">
-                          {g.rows.map((p) => {
-                            const kind = paymentKind(p.type);
-                            const tone = toneFor(PAYMENT_TONE, p.status, isUnpaid(p.status) ? "warning" : "neutral");
-                            return (
-                              // 한 줄 행(48px) — 종류 배지 · 항목 · 금액 · 상태 · 영수증
-                              <li key={p.id} className="flex min-h-12 items-center gap-2 px-3 py-1">
-                                <span className="shrink-0 rounded bg-[var(--color-academy-soft)] px-1.5 py-0.5 text-xs text-[var(--color-academy-muted)]">{PAYMENT_KIND_LABEL[kind]}</span>
-                                <span className="min-w-0 flex-1">
-                                  <span className="block break-keep text-sm text-[var(--color-academy-ink)]">{p.description || PAYMENT_KIND_LABEL[kind]}</span>
-                                  {p.paidYmd && p.status === "PAID" && <span className="block text-xs tabular-nums text-[var(--color-academy-muted)]">{shortYmd(p.paidYmd)} 납부</span>}
-                                </span>
-                                {p.amount !== null && <span className="shrink-0 text-sm font-semibold tabular-nums text-[var(--color-academy-ink)]">{won(p.amount)}</span>}
-                                <span className={`shrink-0 text-xs font-medium ${TONE_TEXT_CLASS[tone]}`}>{paymentStatusLabel(p.status)}</span>
-                                {p.receiptUrl ? (
-                                  <a
-                                    href={p.receiptUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    data-outside-link
-                                    className="academy-button-text shrink-0 whitespace-nowrap !px-1"
-                                  >
-                                    영수증
-                                  </a>
-                                ) : null}
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      )}
-                    </li>
-                  );
-                })}
+              // 한 달 = 한 줄(청구월 · 합계 · 상태) — 청구 탭과 같은 부품. 누르면 세부 시트(항목·할인·영수증)
+              <ul aria-label={`${year}년 월별 청구`} className="divide-y divide-[var(--color-academy-line)] border-t border-[var(--color-academy-line)]">
+                {monthBills.map((bill) => (
+                  <MonthBillCard key={bill.ym || "none"} bill={bill} onOpen={setOpenYm} />
+                ))}
               </ul>
             )}
           </>
@@ -390,9 +351,22 @@ export default function ChildRecordClient({
           </div>
           <div className="grid grid-cols-2 gap-2">
             <button type="button" onClick={() => setDraft(EMPTY_PAYMENT_FILTER)} className="academy-button-secondary">초기화</button>
-            <button type="button" onClick={() => { setFilter(draft); setOpenMonths({}); setSheetOpen(false); }} className="academy-button-primary">적용</button>
+            <button type="button" onClick={() => { setFilter(draft); setOpenYm(null); setSheetOpen(false); }} className="academy-button-primary">적용</button>
           </div>
         </ListDetailPanel>
+      )}
+
+      {/* 청구 세부 시트 — 항목·원래 금액·할인·낼 금액·상태·납기·납부일·결제수단·영수증. 결제는 청구 탭에서(기존 결제 흐름 한 곳) */}
+      {openBill && (
+        <BillDetailSheet
+          bill={openBill}
+          onClose={() => setOpenYm(null)}
+          footer={
+            record.student.canPay && openBill.unpaidCount > 0 ? (
+              <Link href="/mypage/payments" className="academy-button-primary w-full">청구 탭에서 결제</Link>
+            ) : null
+          }
+        />
       )}
     </div>
   );

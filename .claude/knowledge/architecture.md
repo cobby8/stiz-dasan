@@ -144,6 +144,8 @@
 - **내용**: (묶음 — 아래 하위 항목이 원래 항목, 최신순)
   - **[2026-11-13] 기사님 운행 링크 스위치·링크 새로 만들기 (f5)**
     토큰 = `ShuttleRunLink.token`(정규 ROLLING/REGULAR·특강 ROLLING/ALL·특강 날짜별, 32자 16진수). 스위치 `AcademySettings.driverRunLinkEnabled`(기본 true, 마이그레이션 20261113220000). 판정 한 곳 `src/lib/shuttle/driverLinkAccess.ts`: 토큰 API 는 토큰 확인 **다음에** `driverLinkBlocked()`(꺼짐 + 셔틀 권한 로그인 아님 → 410 `DRIVER_LINK_DISABLED`), 화면은 `UnifiedDriverRunPage` 가 명단 읽기 전 확인(`viaAccount` 는 권한 확인한 `/staff/run` 만). 로그인 계정 화면도 같은 토큰으로 API 를 부르므로 «로그인 셔틀 권한이면 통과»가 필수 — 빼면 링크를 끄는 순간 계정 운행표의 탑승 체크가 깨진다. 재발급 `rotateDriverRunLinks` = 앱 세션 삭제(외래키 ON UPDATE 없음) → 옛 위치 공유 끔 → 모든 행 토큰 교체(한 트랜잭션). 예외 = `/api/driver/mobile/session`(위치 쓰기 전용·안드로이드 앱이 쿠키 없이 Bearer 로 부름 → 걸면 로그인 기사님 위치 전송이 멈춤, 옛 열쇠 차단은 재발급이 담당). 새 토큰 API 를 만들면 `driverLinkBlocked()` 를 넣어야 한다(가드: tests/driver-link-toggle.test.mjs 가 `src/app/api` 를 훑는다).
+  - **[2026-11-14] 기사님 운행표 잠금 = 학부모 셔틀과 같은 규칙(regularRunDayRules)** (참조횟수 0, developer)
+    휴원·퇴원·첫 수업 전·휴무 줄은 명단에서 빼지 않고 회색 뱃지 + 탑승·미탑승 disabled. 순수 `src/lib/shuttle/regularRunDayRules.ts`(childShuttleRules 의 enrollmentStateOn·matchRosterClass + parentSchedule.classDatesForCalendarMonth 재사용) → 서버 재료 `regularRunDay.ts`(명단 학생 반 일괄 조회 · loadAnnualPlanEvents) → `getRegularDriverDay`(섹션 + holiday) → 줄 `blockedLabel`(attachRiderBlocks). 진행률·«정차 안 해도 됨»에서 잠긴 줄 제외(riderBoardingView.blocked). 저장 API 2곳(토큰·직원)은 `boardingRejectedForBlock` 로 409(null 되돌리기만 허용, 토큰 쪽은 명단 확인 실패 시 종전대로 저장). 관리자 운행표는 같은 blockOf 로 뱃지만 + 요일 탭 아래 «이 달 휴무». 휴무 필드는 `title`(«reason» 은 결석 사유 가드 테스트가 막는 단어). 모르면(일정 확정 전·반 못 찾음·학생 id 없음) 잠그지 않는다. 테스트 tests/driver-paused-holiday.test.mjs.
   - **[2026-11-09] 정규 셔틀 «하나의 운행표» — 명단 정본·관리자=기사님 같은 부품**
     운행 정본은 `RegularShuttleStop`(명단) 하나. 기사님(`regularDriverRoute.ts`)·관리자(`admin/shuttle/regular-dispatch/RegularRunEditor.tsx`)가 같은 순수 조립 `buildRegularRunRows`(lib/shuttle/regularRunRows.ts)와 같은 카드 틀 `RunBoard`(mode driver|admin)·같은 CSS(DriverWorkspace)를 쓴다. 저장 노선(`RegularDispatchRoute`)은 읽지 않음(테이블은 남김, 흡수 SQL 은 PM). 관리자 편집은 모두 `/api/admin/shuttle/regular-roster`(reorder 묶음별·editStop·editStudent·DELETE 범위), 반 이동 재배정은 배정 보드(`/api/staff/shuttle/assign` reassign:true). 바뀌면 서버가 기사님께 «노선 확인하기»(`/staff/run?date=&focus=BOARD|ALIGHT`) 알림. 관리자 화면에 자체 묶음·자동 제안을 다시 만들지 말 것(가드: tests/regular-roster-driver-view.test.mjs). **11-09 2차**: 화면 묶음(블록 머리 «16:00~17:00 수업 · 등원»)은 RunBoard 안에서 순수 `lib/shuttle/runBlocks.ts`(groupRunBlocks = 이어지는 같은 groupKey 만 자름·순서 불변, 끊기면 «이어서»)로 — 기사님·관리자 공통이고 정렬은 건드리지 않는다. 관리자 편집 카드는 한 줄(styles.stop 2칸 격자 안 씀)·끌기는 떠다니는 카드+삽입선(`data-drop-line`)+놓을 때 한 번 onDropOn+FLIP 애니메이션, PC(≥1024) 오른쪽 sticky 지도 = `RouteMapCanvas` 재사용(블록 머리로 묶음 선택, 마커 번호 = 카드 순번). 가드: tests/shuttle-run-blocks.test.mjs.
   - **[2026-11-09] 정규 셔틀 정본 = 명단 — 저장 노선 읽기 지점 0 (통합 6단계)**
@@ -296,4 +298,10 @@
     공개 페이지는 (1) PublicPageLayout 래퍼, (2) 히어로 섹션 (gradient + 장식도형 + AnimateOnScroll), (3) 본문 섹션, (4) CTABanner 하단 CTA 구조를 따른다. ISR 캐싱 적용 (공개=300초, 관리자=30초). 서버 컴포넌트에서 queries.ts 함수로 데이터 조회 후 클라이언트 컴포넌트에 props로 전달하는 패턴.
   - **[2026-03-22] 학년 체계 (GRADE_ORDER)**
     googleSheetsSchedule.ts에 GRADE_ORDER 배열이 정의됨: ["6세","7세","초1"~"초6","중1"~"중3","고1"~"고3","성인"]. MergedSlot.gradeRange는 "초4~중1" 형태의 문자열. formatGradeRange() 함수로 생성. 학년 범위 판별 시 GRADE_ORDER 인덱스 비교 방식 사용.
+- **참조횟수**: 0
+
+### [2026-11-14] 학부모 청구 = 월 카드 + 세부 시트 (공용 부품 한 벌)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 학부모 청구가 보이는 화면(청구 탭 `/mypage/payments`, 아이 기록 `/mypage/record` 청구 이력)은 `src/lib/payments/monthBills.ts`(순수 규칙: 청구 달 = year/month 먼저·없으면 납기 KST 달, 상태 한 단어, 환불 제외 합계, 할인 해석) + `components/parent/billing/MonthBillCard`·`BillDetailSheet` 를 같이 쓴다. 결제 버튼은 화면이 `renderItemActions` 로 넘긴다(청구 탭의 기존 결제하기·입금했어요 핸들러 그대로). **Payment 에는 할인 칸이 없다** — amount = 할인 뒤 낼 금액, 할인은 description 글 안에만(작업대 «· 수강료 N · 할인 N · 기간조정 · 이월 · 셔틀», 옛 장부 «(할인 N, …)» 등). 해석값으로 계산한 금액이 amount 와 같을 때만 보인다. 새 청구 글 형식을 만들면 parseBillBreakdown 과 tests/parent-month-bills 를 같이 고칠 것(사유는 작업대 payload 에도 저장 안 됨).
 - **참조횟수**: 0

@@ -85,7 +85,7 @@ export default async function UnifiedDriverRunPage({ token, searchDate, remember
   const prevDate = addDays(viewDate, -1);
   const nextDate = addDays(viewDate, 1);
 
-  const [{ rows, boarding, boardingReliable, driverLabel }, settings] = await Promise.all([
+  const [{ rows, boarding, boardingReliable, driverLabel, holiday }, settings] = await Promise.all([
     loadUnifiedDriverRun(viewDate),
     getSettings().catch(() => null), // 학원 좌표 — 순서를 옮길 때 시각 다시 계산용(없으면 학원 구간 없이 계산)
   ]);
@@ -107,6 +107,7 @@ export default async function UnifiedDriverRunPage({ token, searchDate, remember
         driverLabel={driverLabel}
         focusDirection={focusDirection}
         academy={academy}
+        holiday={holiday}
       />
       {/* 토큰 검증을 통과한 뒤에만 기억한다. 만료된 링크를 기억하면 홈 화면
           아이콘이 매번 "유효하지 않은 링크" 화면을 여는 꼴이 된다.

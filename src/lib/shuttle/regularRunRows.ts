@@ -15,6 +15,7 @@
 
 import {
   attachAbsenceLabels,
+  attachRiderBlocks,
   buildFallbackClasses,
   attachShuttleDayNotes,
   selectDriverDayRows,
@@ -44,6 +45,8 @@ export type RegularRunInput = {
     matches: (row: { name: string | null; phone: string | null }, entry: ShuttleDayExceptionEntry) => boolean;
     describe: (entry: { kind: string; location: string | null }) => string;
   };
+  /** 잠긴 줄 뱃지(휴원·퇴원·첫 수업 전·휴무 — regularRunDayRules 판정). 명단 정차행 id → 글자, 없으면 null. */
+  blockOf?: (rowId: string) => string | null;
 };
 
 /**
@@ -62,8 +65,10 @@ export function buildRegularRunClasses(input: RegularRunInput): DriverClass[] {
 
   // 결석 뱃지·«오늘만» 변경은 묶음을 다 만든 뒤 덧붙인다.
   const labeled = attachAbsenceLabels(classes, absentLabelOf);
-  if (!input.dayNotes) return labeled;
-  return attachShuttleDayNotes(labeled, input.dayNotes.exceptions, input.dayNotes.matches, input.dayNotes.describe);
+  // 잠긴 줄(휴원·휴무 등) 뱃지 — 줄은 그대로 두고 표시만 붙인다(없으면 종전 결과와 글자 그대로 같다).
+  const blocked = input.blockOf ? attachRiderBlocks(labeled, input.blockOf) : labeled;
+  if (!input.dayNotes) return blocked;
+  return attachShuttleDayNotes(blocked, input.dayNotes.exceptions, input.dayNotes.matches, input.dayNotes.describe);
 }
 
 /**
