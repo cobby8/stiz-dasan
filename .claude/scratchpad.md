@@ -85,34 +85,30 @@
 - 동의 제거: 지운 파일·PATCH 참조 0, 공개 게시(갤러리·인스타)는 checkSocialDraftMediaConsent 한 곳 경유 → 스위치로 일괄 통과, 수동 승인 유지.
 - 🟡 권장: ① staff-sessions.ts:745 종료 UPDATE `COALESCE($3, content)` — 종료 창이 이제 저장된 한 줄로 채워지므로 거기서 글을 지워도 옛 글이 남음(수업 피드 칸 «한 줄 저장»으로는 지워짐) ② staff-class-access.ts:272 대타 판정은 여전히 `s.date::date`(운영 데이터상 결과 같음, 조각 통일 권장) ③ 진행 중으로 자정 넘긴 수업은 사진 올리기 막힘(예전엔 허용) — 의도면 OK.
 
-## 구현 기록 (developer) — 11-12 스태프 관리 추가 기능 s1~s6 (원장 «추천대로 해»)
-📝 직접 추가 메뉴 제거·초대로 전환 / 추가 역할 줄 / 퇴사 처리 / 역할 변경 확인창 / 초대 마지막 문자 / 담당 반. 마이그레이션 없음(전환 초대 = 기존 칸 SIGNUP+targetUserId).
+## 구현 기록 (developer) — 11-14 청구 월 카드 + 세부 시트 (claude/billing-cards, 원장 지시)
+📝 학부모 청구 = 한 달 한 줄(청구월·합계·상태 한 단어), 누르면 세부 시트(아이별 항목·원래−할인(사유)=낼 금액·상태·납기·납부일·결제수단·영수증·기존 결제 버튼). 청구 탭·아이 기록 같은 부품. 홈은 원래 합계 한 줄(카드 없음)이라 그대로. 결제 화면 /payments/[id]·묶음 결제 화면 무변경.
 
 | 파일 | 변경 | 신규/수정 |
 |------|------|----------|
-| src/lib/staff/staffAccountLink.ts | 로그인 종류 판정(none/staffLogin/other)·로그인 id·퇴사 시 차단 여부 | 신규 |
-| src/lib/staff/staffPanelData.ts | 추가 역할 직원·초대 문자 마지막 발송(NotificationDelivery)·담당 반 조회 | 신규 |
-| src/lib/staff/staffRoster.ts | grant 줄·전환 초대는 직원 줄에 붙임·targetUserId 초대 코치 짝짓기 제외·classesForStaff | 수정 |
-| src/app/actions/admin.ts | convertDirectStaffToInvite·retireStaffMember(requireOwner) · inviteStaff 퇴사자 재초대 targetUserId · 전환 문자 문구 | 수정 |
-| src/app/actions/invite.ts | targetUserId 초대 수락: 직접 추가 기록에 로그인 붙임 / 퇴사 직원 로그인 다시 열기(ban 해제)+역할 복구 | 수정 |
-| src/lib/auth-guard.ts | 역할 캐시 적중 때도 역할을 다시 읽음 + forgetAppUserRoleCache | 수정 |
-| src/app/admin/staff/StaffClient.tsx · page.tsx · lib/queries.ts · lib/adminReadPayloads.ts | 화면·데이터 연결 | 수정 |
-| tests/staff-management-additions.test.mjs · staff-roster.test.mjs | 16건 신규 · 직접 추가 제거 반영 | 신규/수정 |
+| src/lib/payments/monthBills.ts | 순수 규칙: 청구 달·상태 한 단어·월 묶음·할인 해석(운영 글 5형식, 실제 금액과 같을 때만)·항목 이름(장부 글 숨김)·결제수단 | 신규 |
+| src/components/parent/billing/MonthBillCard.tsx · BillDetailSheet.tsx | 월 카드 52px · 세부 시트(ListDetailPanel, 뒤로가기 닫힘) | 신규 |
+| src/app/mypage/payments/PaymentRequestClient.tsx | 월 카드 목록 + 시트 안에 기존 결제하기·입금했어요·가상계좌·영수증 요청(itemActions, 같은 핸들러) · 달에 미납 2건↑이면 시트 맨 아래 «한 번에 결제» | 수정 |
+| src/lib/payments/parent-payment-request.ts | type·year·month·method·paidProvider 추가 · dueDate/paidDate 무tz 두 번 변환 | 수정 |
+| src/app/mypage/record/ChildRecordClient.tsx · lib/parent/childRecordRules.ts(paymentsOfYear) · childRecordQuery.ts(method, 결제 권한자만) | 청구 이력 = 같은 월 카드·시트 | 수정 |
+| tests/parent-month-bills.test.mjs(9건) · parent-child-record-rules · payment-bundle-ui | 규칙·렌더·소스 가드 / 새 모양 반영 | 신규/수정 |
 
-💡 tester: 원장 로그인 → 직접 추가 직원 줄(«로그인 없음») → 패널 [초대로 전환] → «가입 대기» + [링크 복사][문자 보내기] → 링크로 가입하면 같은 직원 기록(코치 연결 유지)으로 로그인. [퇴사 처리] → 확인창 나열·체크 → 목록에서 빠짐·로그인 차단. 부원장은 패널 버튼 없음.
-⚠️ reviewer: auth-guard 캐시 변경(모든 권한 판정 경로) · Supabase ban(876000h) 사용 · 퇴사 후 Class.instructorId(슬롯 없는 반 담당자)는 그대로 둠.
+💡 tester: 학부모 로그인 → 청구 탭: 달마다 한 줄 → 눌러 시트(12월분 형제할인 «원래 80,000원 − 할인 8,000원 = 72,000원») → 결제하기가 /payments/<청구서> 로 · 뒤로가기로 시트만 닫힘 · 아이 기록 › 청구 이력 같은 모양. 주의: 12월분(납기 11/30)은 이제 «12월» 카드(예전엔 납기일로 11월).
+⚠️ reviewer: 할인은 DB 칸이 없어 description 해석(틀리면 안 보임) · 시트 pushState(Next 라우터 state 보존) · 아이 기록 시트의 결제는 «청구 탭에서 결제» 링크.
 
 #### 수정 이력
 | 회차 | 날짜 | 수정 내용 | 수정 파일 | 사유 |
 |------|------|----------|----------|------|
-| 1차 | 11-12 | 역할 변경·퇴사 시 대상 초대(PENDING·PROCESSING) 취소 + 가입 거래가 직원 기록→초대 순서로 잠그고 PROCESSING·역할 재확인 · 재입사 거래 실패 시 로그인 다시 차단 · 퇴사자 재초대 이름 일치만 연결(직원 전용 로그인+이름 다름=거절, 그 밖=안내) · 직접 추가 재초대 시 [초대로 전환] 안내 · 로그인 차단 실패 다시 시도(⋯ 더보기) · createStaffUser·AddStaffModal 삭제 | admin.ts · invite.ts · staffAccountLink.ts · staffPanelData.ts · adminReadPayloads.ts · StaffClient.tsx · InviteStaffModal.tsx · page.tsx · 테스트 4개 | 정확성 검수: 필수1·권장2~5·사소 |
-| 2차 | 11-12 | 복구가 대상 초대(targetUserId)를 대기로 되돌리지 않고 취소로 끝냄(감사 STAFF_INVITE_RECOVERY_CANCELLED, 목록 «정리 후 취소») · 전환 가입은 지금도 코치/기사일 때만·역할 변경 없음(CASE 제거) · 로그인 없던 퇴사자는 재초대 자동 연결 안 함 · 처리 중 취소된 대상 초대도 계정 정리 필요 시 RECOVERY_REQUIRED 로 올림 | staff-invite-recovery.ts · invite.ts · staffAccountLink.ts · StaffInviteRecoveryClient.tsx · 테스트 | 재검수 HIGH·메모 |
-| 3차 | 11-12 | 원장·부원장 «로그인 연결»(linkOwnerStaffLogin 원장 전용·24h·자동 발송 없음, 가입은 초대 역할=대상 지금 역할일 때만·감사 STAFF_LOGIN_LINKED·다른 원장·부원장 알림) · 역할 선택칸 → [역할 변경] 버튼+RoleChangeModal(«바뀌는 것» 미리보기) | admin.ts · invite.ts · inviteAuthFailure.ts · staffAccountLink.ts · roleChange.ts(신규) · RoleChangeModal.tsx(신규) · StaffClient.tsx · 테스트 4개(1 신규) | 원장 지시(권혜미 대표원장) |
-| 4차 | 11-13 | 부원장 화면 데이터에서 원장·부원장 초대 토큰 제거(page·API) · 받을 번호 끝 4자리 표시 · 만료 시각 · 역할 미리보기를 서버 조건과 일치(선생님 추가 역할·코치 연결·재설정 링크) · 원장·부원장 비밀번호 재설정(sendStaffPasswordReset userId 경로, 24h·자동 문자 없음·감사·알림) · 마우스 올림 테두리 | admin.ts · invite.ts · inviteAuthFailure.ts · roleChange.ts · staffRoster.ts · queries.ts · page.tsx · api/admin/staff · StaffClient · RoleChangeModal · 테스트 3개 | 보안·정확성 검수 |
+| 1차 | 11-14 | 기록 칸 관리 sheetHistory.ts 분리(state 표시 대신 직접 기억·시트 안 내부 링크는 칸 되돌린 뒤 이동·저절로 사라지면 정리·StrictMode 이어 쓰기) · 시트 안 «한 번에 결제» 제거 · 할인 금액 색 muted · 가짜 history 실행 테스트 | sheetHistory.ts(신규) · BillDetailSheet.tsx · PaymentRequestClient.tsx · tests 2개 | reviewer 권장 3건 |
 
 ## 작업 로그 (최근 10건)
 
 | 날짜 | 작업 내용 | 상태 |
+| 11-14 | developer(청구 월 카드, claude/billing-cards): 학부모 청구 탭·아이 기록 = 한 달 한 줄(청구월·합계·상태) + 세부 시트(할인 «원래−할인=낼 금액»·기존 결제 버튼 그대로 시트 안) · 할인 원인 = Payment 에 할인 칸 없음, 글(description) 안에만 있어 카드가 원문을 통째로 보였음 → 해석 156/157건 · 청구 탭 날짜 두 번 변환 · tests 4661-0·guards 5-0·tsc 0 | 검수 대기 |
 | 11-14 | developer(아이 정보+셔틀, claude/child-profile): /mypage/record 위에 아이 정보(생년월일·학년(생일 기준+등록 학년)·학교·성별·등록일·대표 보호자·내 연락처·연결 가족 이름·보강권)·수강 반(수업 탭 칩)·셔틀(요일별 승하차·7일 운행: 휴무·휴원·결석·안 탐·다른 곳, 방학특강·신청 접수, 기사님 전화) 접기 칸 · **버그 수정: 학부모 홈·수업 탭 정규 셔틀이 빈 옛 표(ShuttleRoutePassenger 0행)만 읽어 60명 전원 미표시 → 명단 기준(childShuttleRules) 항목 추가** · 운영 읽기 대조 6명 요일별 불일치 0 · **1차 수정(검수)**: 신청 접수 카드 = 명단 등재 여부(getRosterStudentIds)로 제외 · 일정 탭 명단 항목 요일별 한 줄+«아이 기록 › 셔틀» · 반 없음/못 찾음 = 운행 아님(NO_CLASS·CHECK) · 명단 조회 첫 병렬 묶음·기록은 그 아이만 · 빈 studentId 11행 = 2호점 운영 정차(학생 행 아님, 채울 것 없음) · tests 4583-0·tsc 0 | 검수 대기 |
 | 11-14 | reviewer(수업 피드 ab61a2db): 통과 — 필수 0·권장 3(종료 창 비우기 COALESCE·대타 날짜 조각·자정 넘긴 진행 수업 사진). 운영 대조 날짜 불일치 0·소식 20→20 | 통과 |
 | 11-14 | developer(수업 피드, claude/feed-ui): 동의 제거·볼 수 있는가 판정 통일(feed/rules·server)·선생님 수업 피드 칸·홈 최신 수업 피드 카드·소식 상세 재작성·동의 UI 제거·공개 게시 동의 스위치 끔. tsc 0·tests 4620-0·guards 5-0 | 완료(검수 대기) |
@@ -125,5 +121,3 @@
 | 11-14 | 비회원 결제 링크 /pay/<토큰>: PaymentInvoiceAccessToken(운영 적용)·미가입자 안내 자동 링크·⚡ 링크 복사/닫기. reviewer·security 통과(권장 5 반영), 전체 4462-0 | 완료 |
 | 11-13 | developer(a1 앱 간편로그인 운영 전환, claude/l3-applogin): 복귀 주소 운영=kr.co.upturnlabs.stizdasan(개발 주소는 개발 서버만)·서버 스위치 NATIVE_AUTH_ENABLED+키·실패 복귀(no_account/cancelled)·Android 맞춤 탭+NativeAuthReturnActivity·iOS 실패 안내·웹 앱 버튼/비밀번호 만들기 안내·NativeAuthFlow 마이그레이션(운영 미적용) — tests 4454-0·tsc 0·Java 85 | 검수 대기 |
 | 11-14 | developer(e2·d2 스토어 앱 알림 FCM, claude/l3-push): NativePushToken 표(마이그레이션 20261114000001, RLS) · 발송 함수 2개가 웹푸시+앱 토큰(FCM v1, FCM_SERVICE_ACCOUNT_JSON 없으면 건너뜀·죽은 토큰 정리·재시도 native:id) · /api/push/native(본인만)·로그아웃 이 기기 토큰·탈퇴 정리 · 안드로이드 NativePush/StizMessagingService(json 없으면 꺼짐, gradle 빌드·lint 통과) · iOS NativePush.swift+SPM FirebaseMessaging(Xcode 빌드 미검증) · 설정 화면 앱 상태 문구 · 문서 docs/native-push.md | 구현 완료·검수 대기 |
-| 11-13 | developer(l2 가입 f7·a6·f10, 브랜치 claude/l2-signup): 기존 학부모 활성화 «이메일+10자»→신규 가입과 같은 «아이디+8자»(공용 lib/parent-username, User.username 기록, 이메일 계정 하위호환) · 인증번호 IP 한도 시간당 100·하루 500 · 가입 안내 문자에 «▶ 앱 설치: …/install»(459→548바이트, 원래 LMS) + /install 페이지(안드로이드 Play 바로·아이폰 App Store ID 비어 «곧 출시»+웹) · 마이그레이션 없음 · tsc 0·tests 4293-0 | 커밋(push 안 함) |
-| 11-13 | developer(f12 백업 확대, claude/l2-backup 2커밋): 설정 파일(복원)+업무 자료 gzip 짝 파일(DB 전체 표, 제외 15표 이유 명시·비밀 칸 가림·id::text 5000줄 키셋·큰 표부터 SIZE_LIMIT·300초), 복원 범위 그대로·목록 files/archives 분리·업무 자료 서명 주소 내려받기, 대시보드 표·행 수, tests/backup-archive | 완료(push 전) |
