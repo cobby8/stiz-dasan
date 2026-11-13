@@ -5,7 +5,6 @@ import Link from "next/link";
 import { logout } from "@/app/actions/auth";
 import { defaultPathForRole, type AppRole } from "@/lib/auth-routes";
 import { createClient } from "@/lib/supabase/client";
-import FontFreeIcon from "./ui/FontFreeIcon";
 import AccountViewSwitcher from "./AccountViewSwitcher";
 import type { AccountViewOption } from "@/lib/account-views";
 
@@ -27,7 +26,7 @@ const MOBILE_SECONDARY_ACTION_CLASS = [
 ].join(" ");
 
 const HEADER_ICON_ACTION_CLASS = [
-  "inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[var(--color-public-line)]",
+  "inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap rounded-xl border border-[var(--color-public-line)] px-3 text-sm font-medium",
   "bg-white text-[var(--color-public-muted)] transition-colors hover:border-gray-300 hover:bg-[var(--color-public-tint)] hover:text-[var(--color-public-ink)]",
   "dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-[var(--color-public-ink)] dark:hover:bg-[var(--color-public-tint)] dark:hover:text-white",
 ].join(" ");
@@ -128,8 +127,7 @@ export function DesktopAccountControls({ initialRole = null }: AccountControlsPr
 
       {canAccessAdmin && (
         <Link href="/staff/quick-post" aria-label="사진 올리기" title="사진 올리기" className={HEADER_ICON_ACTION_CLASS}>
-          <FontFreeIcon name="camera_alt" size={19} />
-          <span className="sr-only">사진 올리기</span>
+          사진 올리기
         </Link>
       )}
 
@@ -184,8 +182,7 @@ export function MobileAccountControls({
           title="사진 올리기"
           className={MOBILE_SECONDARY_ACTION_CLASS}
         >
-          <FontFreeIcon name="camera_alt" size={20} />
-          <span className="sr-only">사진 올리기</span>
+          사진 올리기
         </Link>
       ) : isLoggedIn ? null : (
         <Link
@@ -195,8 +192,7 @@ export function MobileAccountControls({
           title="사진 올리기"
           className={MOBILE_SECONDARY_ACTION_CLASS}
         >
-          <FontFreeIcon name="camera_alt" size={20} />
-          <span className="sr-only">사진 올리기</span>
+          사진 올리기
         </Link>
       )}
 

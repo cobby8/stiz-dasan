@@ -20,8 +20,8 @@
 
 import { useEffect, useState, useCallback, useRef, Suspense } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import FontFreeIcon from "../ui/FontFreeIcon";
 import type { Driver } from "driver.js";
+import { GUIDE_FLOATING_STYLE } from "../public-floating";
 
 // 투어 완료 여부를 localStorage에 저장하는 키
 const STORAGE_KEY = "stiz_tour_completed";
@@ -1190,11 +1190,12 @@ function TourTriggerInner({ autoStart = false }: { autoStart?: boolean }) {
       {/* 플로팅 입학 가이드 버튼 — 챗봇 버튼 바로 위, 같은 열. 위치는 public-floating-btn--guide(CSS) */}
       <button
         onClick={startTour}
-        className="public-floating-btn public-floating-btn--guide fixed right-4 z-50 h-12 w-12 rounded-full bg-[var(--color-public-paper)] dark:bg-black text-[var(--color-public-accent)] dark:text-brand-neon-lime shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200 flex items-center justify-center border-2 border-[var(--color-public-accent)] dark:border-brand-neon-lime sm:right-6 sm:h-14 sm:w-14"
+        style={GUIDE_FLOATING_STYLE}
+        className="public-floating-btn public-floating-btn--guide fixed right-4 z-50 h-11 px-[14px] text-sm font-medium whitespace-nowrap rounded-full bg-[var(--color-public-paper)] dark:bg-black text-[var(--color-public-accent)] dark:text-brand-neon-lime shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200 flex items-center justify-center border-2 border-[var(--color-public-accent)] dark:border-brand-neon-lime sm:right-6"
         aria-label="입학 가이드 시작"
         title="입학 가이드"
       >
-        <FontFreeIcon name="school" size={26} />
+        둘러보기
       </button>
 
       {/* 첫 방문 자동 제안 토스트 -- 메인 페이지에서만, 3초 후 표시.

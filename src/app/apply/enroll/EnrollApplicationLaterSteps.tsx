@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import FontFreeIcon from "@/components/ui/FontFreeIcon";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
 import { nextPlaceNameAfterRepick } from "@/lib/enrollment/shuttle-place-name";
 // 잔여 인원은 숫자 대신 3단계(여유/임박/마감)로만 보인다(재원생 수 비공개 · 2026-11-13 f9)
@@ -406,8 +405,8 @@ function TermsAccordion({ title, required, checked, onCheck, children }: { title
                     <input type="checkbox" checked={checked} onChange={(event) => onCheck(event.target.checked)} className="h-5 w-5 rounded border-gray-300 text-[var(--color-public-accent)] focus:ring-[var(--color-public-accent)] dark:text-brand-neon-lime dark:focus:ring-brand-neon-lime/50" />
                     <span className="text-sm font-medium text-[var(--color-public-ink)] dark:text-white">{title} {required && <span className="text-red-500">*</span>}</span>
                 </label>
-                <button type="button" onClick={() => setIsOpen(!isOpen)} aria-expanded={isOpen} aria-label={`${title} ${isOpen ? "접기" : "펼쳐 보기"}`} className="p-1 text-[var(--color-public-muted)] hover:text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
-                    <FontFreeIcon name="expand_more" size={18} className={`transition-transform ${isOpen ? "rotate-180" : ""}`} />
+                <button type="button" onClick={() => setIsOpen(!isOpen)} aria-expanded={isOpen} aria-label={`${title} ${isOpen ? "접기" : "펼쳐 보기"}`} className="flex min-h-11 shrink-0 items-center px-2 text-sm font-medium text-[var(--color-public-muted)] hover:text-[var(--color-public-ink)] dark:text-[var(--color-public-muted)]">
+                    {isOpen ? "접기" : "펼치기"}
                 </button>
             </div>
             {isOpen && <div className="max-h-48 overflow-y-auto border-t border-[var(--color-public-line)] px-4 py-3 text-xs leading-relaxed text-[var(--color-public-muted)] dark:border-[var(--color-public-line)] dark:text-[var(--color-public-muted)]">{children}</div>}

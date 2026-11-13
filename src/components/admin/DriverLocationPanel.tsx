@@ -70,7 +70,7 @@ export default function DriverLocationPanel({ onClose }: { onClose: () => void }
         <div className="flex items-center justify-between border-b border-[var(--color-academy-line)] px-5 py-4">
           <div>
             <h2 className="text-[17px] font-bold text-[var(--color-academy-ink)]">
-              🚌 차량 마지막 위치
+              차량 마지막 위치
             </h2>
             {lastRefresh && (
               <p className="text-[12px] text-[var(--color-academy-faint)] mt-0.5">
@@ -78,7 +78,7 @@ export default function DriverLocationPanel({ onClose }: { onClose: () => void }
               </p>
             )}
           </div>
-          <button type="button" onClick={onClose} className="text-[22px] text-[var(--color-academy-faint)] hover:text-[var(--color-academy-muted)]">✕</button>
+          <button type="button" onClick={onClose} className="academy-button-text academy-button-sm shrink-0">닫기</button>
         </div>
 
         {/* 본문 */}
@@ -124,7 +124,7 @@ export default function DriverLocationPanel({ onClose }: { onClose: () => void }
                     rel="noopener noreferrer"
                     className="shrink-0 rounded-lg bg-[var(--color-academy-primary-soft)] px-3 py-2 text-[13px] font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-line)]"
                   >
-                    지도↗
+                    지도
                   </a>
                 )}
               </div>

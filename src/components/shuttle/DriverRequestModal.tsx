@@ -67,7 +67,7 @@ export default function DriverRequestModal({
               <p className="text-lg font-semibold text-[var(--color-academy-ink)]">
                 관리자에게 요청{targetName ? ` — ${targetName}` : ""}
               </p>
-              <button type="button" onClick={onClose} aria-label="닫기" className="grid h-11 w-11 place-items-center text-xl text-[var(--color-academy-muted)]">✕</button>
+              <button type="button" onClick={onClose} aria-label="닫기" className="academy-button-text academy-button-sm shrink-0">닫기</button>
             </div>
 
             {/* 요청 종류 선택 */}

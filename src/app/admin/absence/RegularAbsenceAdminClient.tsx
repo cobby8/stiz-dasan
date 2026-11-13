@@ -50,8 +50,8 @@ const ABSENCE_VIEW_STORAGE_KEY = "admin-regular-absence-view-mode";
 const ABSENCE_VIEW_VALUES = ["date", "list"] as const;
 type AbsenceViewMode = (typeof ABSENCE_VIEW_VALUES)[number];
 const ABSENCE_VIEW_OPTIONS = [
-  { value: "date", label: "날짜별", icon: "calendar_view_week" },
-  { value: "list", label: "목록", icon: "view_list" },
+  { value: "date", label: "날짜별" },
+  { value: "list", label: "목록" },
 ] as const;
 
 const ABSENCE_DATE_GROUP_LABELS: Record<UpcomingDateGroupKey, string> = {
@@ -428,9 +428,9 @@ export default function RegularAbsenceAdminClient({
                 type="button"
                 onClick={() => setDetailId("")}
                 aria-label="닫기"
-                className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
+                className="ml-auto academy-button-text academy-button-sm shrink-0"
               >
-                <span className="material-symbols-outlined" aria-hidden="true">close</span>
+                닫기
               </button>
             </div>
             <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">

@@ -335,8 +335,8 @@ export default function LocationPickerModal({
             <p className="text-xs font-medium text-brand-orange-500 dark:text-brand-neon-lime">셔틀 위치 선택</p>
             <h2 id={titleId} className="text-lg font-bold text-gray-900 dark:text-white">{title}</h2>
           </div>
-          <button type="button" onClick={onClose} aria-label="지도 닫기" className="flex size-11 items-center justify-center rounded-full text-gray-600 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700">
-            <span className="material-symbols-outlined" aria-hidden="true">close</span>
+          <button type="button" onClick={onClose} aria-label="지도 닫기" className="flex h-11 shrink-0 items-center justify-center rounded-full px-3 text-sm font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700">
+            닫기
           </button>
         </header>
 
@@ -384,7 +384,11 @@ export default function LocationPickerModal({
               <div className="relative h-[45dvh] min-h-72 overflow-hidden rounded-2xl bg-gray-100 dark:bg-gray-900">
                 <div ref={mapElementRef} className="absolute inset-0" aria-label="승하차 위치 지도" />
                 {status === "loading" && <div className="absolute inset-0 grid place-items-center text-sm text-gray-500">지도를 불러오는 중...</div>}
-                <span className="material-symbols-outlined pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-full text-5xl text-brand-orange-500 drop-shadow" aria-hidden="true">location_on</span>
+                {/* 지도 가운데 핀 — 2026-11-14 아이콘 글꼴을 쓰지 않고 도형(둥근 머리 + 꼬리)으로 그린다. 꼬리 끝이 고르는 지점이다 */}
+                <span className="pointer-events-none absolute left-1/2 top-1/2 z-10 flex -translate-x-1/2 -translate-y-full flex-col items-center text-brand-orange-500 drop-shadow" aria-hidden="true">
+                  <span className="size-7 rounded-full border-[7px] border-current" />
+                  <span className="h-4 w-1 rounded-b-full bg-current" />
+                </span>
                 {!appLacksGeolocation && <button type="button" onClick={useCurrentLocation} disabled={confirmPending || isLocating} className="absolute bottom-3 right-3 z-10 flex min-h-11 items-center gap-1 rounded-xl bg-white px-3 text-sm font-medium text-gray-800 shadow-lg disabled:opacity-60 dark:bg-gray-800 dark:text-white">
                   {isLocating ? "확인 중" : "현재 위치"}
                 </button>}

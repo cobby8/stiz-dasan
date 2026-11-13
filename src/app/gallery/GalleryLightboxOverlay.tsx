@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect } from "react";
-import FontFreeIcon from "@/components/ui/FontFreeIcon";
 import { type GalleryLightboxItem } from "./GalleryLightboxController";
 import { formatKstDate } from "@/lib/datetime/kst";
 
@@ -59,10 +58,10 @@ export default function GalleryLightboxOverlay({
             <button
                 type="button"
                 onClick={onClose}
-                className="fixed top-[max(12px,env(safe-area-inset-top))] right-[max(12px,env(safe-area-inset-right))] z-20 flex h-12 w-12 items-center justify-center rounded-full bg-black/70 text-white hover:bg-white/10 transition-colors"
+                className="fixed top-[max(12px,env(safe-area-inset-top))] right-[max(12px,env(safe-area-inset-right))] z-20 flex min-h-11 items-center justify-center rounded-full bg-black/70 px-4 text-sm font-medium text-white hover:bg-white/10 transition-colors"
                 aria-label="닫기"
             >
-                <FontFreeIcon name="close" size={28} />
+                닫기
             </button>
 
             {/* 카운터 — 현재 위치 / 전체 개수 */}
@@ -78,10 +77,10 @@ export default function GalleryLightboxOverlay({
                         event.stopPropagation();
                         goPrev();
                     }}
-                    className="absolute left-2 md:left-6 flex h-11 w-11 items-center justify-center rounded-full bg-black/70 text-white/80 hover:bg-white/10 hover:text-white z-10 transition-colors"
+                    className="absolute left-2 md:left-6 flex min-h-11 items-center justify-center rounded-full bg-black/70 px-3 text-sm font-medium text-white/80 hover:bg-white/10 hover:text-white z-10 transition-colors"
                     aria-label="이전 사진"
                 >
-                    <FontFreeIcon name="chevron_left" size={28} />
+                    이전
                 </button>
             )}
 
@@ -93,10 +92,10 @@ export default function GalleryLightboxOverlay({
                         event.stopPropagation();
                         goNext();
                     }}
-                    className="absolute right-2 md:right-6 flex h-11 w-11 items-center justify-center rounded-full bg-black/70 text-white/80 hover:bg-white/10 hover:text-white z-10 transition-colors"
+                    className="absolute right-2 md:right-6 flex min-h-11 items-center justify-center rounded-full bg-black/70 px-3 text-sm font-medium text-white/80 hover:bg-white/10 hover:text-white z-10 transition-colors"
                     aria-label="다음 사진"
                 >
-                    <FontFreeIcon name="chevron_right" size={28} />
+                    다음
                 </button>
             )}
 

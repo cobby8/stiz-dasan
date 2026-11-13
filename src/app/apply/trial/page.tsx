@@ -5,6 +5,7 @@ import AnimateOnScroll from "@/components/ui/AnimateOnScroll";
 import TrialApplicationForm from "./TrialApplicationForm";
 import { buildPublicMetadata } from "@/lib/publicMetadata";
 import { getTrialFeePublicInfo } from "@/lib/trial-fee/trialFeePaymentService";
+import { initialTrialScheduleFromQuery } from "./trialScheduleSelection";
 
 export const revalidate = 60;
 
@@ -15,7 +16,7 @@ export const metadata = buildPublicMetadata({
     imageAlt: "STIZ 농구교실 다산2호점 체험수업 신청 미리보기",
 });
 
-export default async function TrialApplyPage({ searchParams }: { searchParams: Promise<{ utm_source?: string; utm_medium?: string }> }) {
+export default async function TrialApplyPage({ searchParams }: { searchParams: Promise<{ utm_source?: string; utm_medium?: string; day?: string; slot?: string }> }) {
     const params = await searchParams;
     const initialSource = params.utm_source?.toLowerCase() === "naver" && params.utm_medium?.toLowerCase() === "cpc" ? "NAVER_AD" : "";
     const [slots, settings, trialFee] = await Promise.all([
@@ -27,6 +28,8 @@ export default async function TrialApplyPage({ searchParams }: { searchParams: P
 
     // 체험수업은 항상 자체 신청 폼을 사용한다(외부 폼으로 리다이렉트하지 않는다).
     const phone = settings?.contactPhone || "010-0000-0000";
+    // 시간표 카드의 «체험 신청»으로 들어오면 그 수업의 요일·교시를 초기값으로 넘긴다(없는 수업·마감이면 무시).
+    const initialSchedule = initialTrialScheduleFromQuery(params.day, params.slot, slots);
 
     return (
         <PublicPageLayout>
@@ -41,7 +44,7 @@ export default async function TrialApplyPage({ searchParams }: { searchParams: P
 
             <section className="public-content-section bg-[var(--color-public-tint)] py-8 dark:bg-[var(--color-public-paper)] md:py-12">
                 <div className="mx-auto max-w-2xl px-4">
-                    <TrialApplicationForm availableSlots={slots} contactPhone={phone} initialSource={initialSource} trialFee={trialFee} />
+                    <TrialApplicationForm availableSlots={slots} contactPhone={phone} initialSource={initialSource} trialFee={trialFee} initialSchedule={initialSchedule} />
                 </div>
             </section>
         </PublicPageLayout>

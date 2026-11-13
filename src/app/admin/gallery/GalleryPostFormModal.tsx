@@ -4,7 +4,6 @@ import { adminErrorText } from "@/components/admin/adminDisplayText";
 import { useState, useTransition } from "react";
 import { createGalleryPost, updateGalleryPost } from "@/app/actions/admin";
 import { uploadImagesWithProgress } from "@/lib/clientImageUpload";
-import FontFreeIcon from "@/components/ui/FontFreeIcon";
 import AdminModal from "@/components/admin/AdminModal";
 
 type MediaItem = { url: string; type: "image" | "video" };
@@ -122,8 +121,8 @@ export default function GalleryPostFormModal({
     <AdminModal onClose={onClose} titleId="gallery-post-form-modal-title" panelClassName="max-w-2xl rounded-lg">
         <div className="flex items-center justify-between border-b border-[var(--color-academy-line)] p-6">
           <h2 id="gallery-post-form-modal-title" className="text-lg font-bold text-[var(--color-academy-ink)]">{post ? "게시물 수정" : "새 게시물"}</h2>
-          <button type="button" onClick={onClose} aria-label="닫기" className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
-            <FontFreeIcon name="close" size={20} />
+          <button type="button" onClick={onClose} aria-label="닫기" className="academy-button-text academy-button-sm shrink-0">
+            닫기
           </button>
         </div>
         <div className="space-y-4 p-6">
@@ -219,9 +218,9 @@ export default function GalleryPostFormModal({
                       type="button"
                       aria-label="사진 빼기"
                       onClick={() => removeMedia(index)}
-                      className="absolute right-1 top-1 rounded-full bg-[var(--color-academy-danger)] p-1 text-white opacity-0 transition group-hover:opacity-100"
+                      className="absolute right-1 top-1 rounded bg-[var(--color-academy-danger)] px-1.5 py-0.5 text-xs text-white opacity-0 transition group-hover:opacity-100 focus-visible:opacity-100"
                     >
-                      <FontFreeIcon name="close" size={12} />
+                      빼기
                     </button>
                   </div>
                 ))}

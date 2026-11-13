@@ -161,7 +161,7 @@ export default function NewStudentDispatchPanel({ month, selectedWeekday, onAssi
           <span className="text-[var(--color-academy-muted)]">· 신규 <span className="font-semibold tabular-nums text-[var(--color-academy-warning)]">{Math.max(0, freshLegCount)}</span>칸</span>
           {reassignLegCount > 0 && <span className="text-[var(--color-academy-muted)]">· 반 이동 <span className="font-semibold tabular-nums text-[var(--color-academy-warning)]">{reassignLegCount}</span>칸</span>}
           {selectedWeekday != null && dayLegCount > 0 && <span className="text-[var(--color-academy-muted)]">· 이 요일 {dayLegCount}칸</span>}
-          <span className="material-symbols-outlined ml-auto text-lg text-[var(--color-academy-muted)]" aria-hidden="true">{expanded ? "expand_less" : "expand_more"}</span>
+          <span className="ml-auto shrink-0 text-xs text-[var(--color-academy-muted)]">{expanded ? "접기" : "펼치기"}</span>
         </button>
       )}
       {notice && !target && <p role="status" className="mt-2 rounded-lg bg-[var(--color-academy-success-soft)] px-3 py-2 text-sm text-[var(--color-academy-success)]">{notice}</p>}

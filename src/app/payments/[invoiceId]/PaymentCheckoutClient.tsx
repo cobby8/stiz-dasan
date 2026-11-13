@@ -65,11 +65,10 @@ type CheckoutResponse = {
 const PAYMENT_METHODS: {
     value: TossPaymentMethod;
     label: string;
-    icon: string;
 }[] = [
-        { value: "CARD", label: "카드·간편결제", icon: "credit_card" },
-        { value: "TRANSFER", label: "계좌이체", icon: "account_balance" },
-        { value: "VIRTUAL_ACCOUNT", label: "무통장입금", icon: "savings" },
+        { value: "CARD", label: "카드·간편결제" },
+        { value: "TRANSFER", label: "계좌이체" },
+        { value: "VIRTUAL_ACCOUNT", label: "무통장입금" },
     ];
 
 type ReadyCheckout = CheckoutResponse & { amount: number; orderId: string; orderName: string; successUrl: string; failUrl: string };

@@ -12,7 +12,6 @@ import LineChart from "@/components/charts/LineChart";
 import DonutChart from "@/components/charts/DonutChart";
 import StackedBar from "@/components/charts/StackedBar";
 import { CHART_COLORS } from "@/components/charts/chartColors";
-import AdminModal from "@/components/admin/AdminModal";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { GENDER_COLORS, HBarList, KpiCell, StatPanel, UNIFORM_COLORS } from "@/components/admin/stats/StatsBits";
 import {
@@ -58,11 +57,11 @@ export default function StatsClient({
 }) {
     const router = useRouter();
     const [pending, startTransition] = useTransition();
-    const [filterOpen, setFilterOpen] = useState(false);
     const defaultPeriod = STATS_PERIODS[tab][0]?.key ?? "";
     // 필터 버튼 숫자 = 기본값과 다른 항목 수
-    // 2026-11-14: 이 사이트는 다산2호점만 관리 — 지점 고르기를 없앴다(필터는 기간만)
-    const filterCount = period && period !== defaultPeriod ? 1 : 0;
+    // 2026-11-14: 이 사이트는 다산2호점만 관리 — 지점 고르기를 없앴다. 남은 조건은 기간 하나라
+    //   필터 창에 숨기지 않고 탭 아래에 바로 보이는 칩으로 둔다(원장 점검표 «기간 설정이 있어야 해»).
+    const periods = STATS_PERIODS[tab];
     const periodName = STATS_PERIODS[tab].find((p) => p.key === period)?.label ?? "";
 
     // 탭·필터를 바꿀 때 «불러오는 중»을 보이려고 router.push 를 transition 안에서 부른다(가운데 클릭은 그대로 새 탭)
@@ -82,11 +81,6 @@ export default function StatsClient({
                         {periodName}
                         {pending && <span role="status" className="ml-2 font-medium text-[var(--color-academy-info)]">불러오는 중…</span>}
                     </>
-                )}
-                actions={(
-                    <button type="button" onClick={() => setFilterOpen(true)} className="academy-button-secondary" aria-haspopup="dialog">
-                        필터{filterCount > 0 ? ` ${filterCount}` : ""}
-                    </button>
                 )}
             />
 
@@ -110,6 +104,22 @@ export default function StatsClient({
                 })}
             </nav>
 
+            {/* 기간 — 누르면 바로 바뀐다(주소 ?period=). 기간이 없는 탭(유니폼)은 지금 시점 기준이라 칩이 없다 */}
+            {periods.length > 0 && (
+                <div role="group" aria-label="기간" className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm text-[var(--color-academy-muted)]">기간</span>
+                    {periods.map((p) => {
+                        const on = p.key === (period || defaultPeriod);
+                        const href = statsHref(tab, branch, p.key === defaultPeriod ? "" : p.key);
+                        return (
+                            <a key={p.key} href={href} aria-current={on ? "true" : undefined} onClick={(e) => go(href, e)} className={`academy-choice is-tab${on ? " is-selected" : ""}`}>
+                                {p.label}
+                            </a>
+                        );
+                    })}
+                </div>
+            )}
+
             <div className={pending ? "opacity-60 transition-opacity" : ""}>
                 {!data ? (
                     <div role="alert" className="academy-panel p-6 text-center text-sm font-medium text-[var(--color-academy-danger)]">
@@ -129,74 +139,10 @@ export default function StatsClient({
                 )}
             </div>
 
-            {filterOpen && (
-                <FilterSheet
-                    tab={tab}
-                    branch={branch}
-                    period={period}
-                    onClose={() => setFilterOpen(false)}
-                    onApply={(nextBranch, nextPeriod) => {
-                        setFilterOpen(false);
-                        go(statsHref(tab, nextBranch, nextPeriod));
-                    }}
-                />
-            )}
         </div>
     );
 }
 
-// ── 필터 창(모바일 아래 시트) ────────────────────────────────────────────
-
-function FilterSheet({
-    tab,
-    branch,
-    period,
-    onClose,
-    onApply,
-}: {
-    tab: StatsTabKey;
-    branch: StatsBranchKey;
-    period: string;
-    onClose: () => void;
-    onApply: (branch: StatsBranchKey, period: string) => void;
-}) {
-    const [nextBranch, setNextBranch] = useState<StatsBranchKey>(branch);
-    const [nextPeriod, setNextPeriod] = useState(period);
-    const periods = STATS_PERIODS[tab];
-    // 고른 칩 = 보조 색(테마 academy-choice is-tab — 꽉 찬 검정 금지)
-    const chip = (on: boolean) => `academy-choice is-tab${on ? " is-selected" : ""}`;
-
-    return (
-        <AdminModal onClose={onClose} titleId="stats-filter-title" panelClassName="max-w-md">
-            <div className="flex items-center justify-between border-b border-[var(--color-academy-line)] px-4 py-3">
-                <h2 id="stats-filter-title" className="academy-section-title">필터</h2>
-                <button type="button" onClick={onClose} className="academy-button-text academy-button-sm">닫기</button>
-            </div>
-            <div className="space-y-5 px-4 py-4">
-                {periods.length > 0 && (
-                    <fieldset>
-                        <legend className="mb-2 text-sm font-semibold text-[var(--color-academy-ink)]">기간</legend>
-                        <div className="flex flex-wrap gap-2">
-                            {periods.map((p) => (
-                                <button key={p.key} type="button" aria-pressed={nextPeriod === p.key} onClick={() => setNextPeriod(p.key)} className={chip(nextPeriod === p.key)}>
-                                    {p.label}
-                                </button>
-                            ))}
-                        </div>
-                    </fieldset>
-                )}
-            </div>
-            <div className="flex gap-2 border-t border-[var(--color-academy-line)] px-4 py-3">
-                <button type="button" onClick={() => { setNextBranch("all"); setNextPeriod(periods[0]?.key ?? ""); }} className="academy-button-secondary">
-                    초기화
-                </button>
-                <button type="button" onClick={() => onApply(nextBranch, nextPeriod)} className="academy-button-primary flex-1">
-                    적용
-                </button>
-            </div>
-        </AdminModal>
-    );
-}
 
 // ── 작은 그림들 ────────────────────────────────────────────────────────
 

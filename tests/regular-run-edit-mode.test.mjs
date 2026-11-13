@@ -48,7 +48,7 @@ test("관리자 보기 모드: 시각·번호만 보이고 편집 손잡이·시
   const html = render({ mode: "admin", editing: false });
   assert.match(html, /16:10/);
   assert.match(html, /시간 미정/);
-  assert.doesNotMatch(html, /type="time"|drag_indicator|순서 위로|data-run-key/);
+  assert.doesNotMatch(html, /type="time"|⠿|순서 위로|data-run-key/);
   // 길안내는 기사님 화면에만
   assert.doesNotMatch(html, /길안내/);
 });
@@ -57,7 +57,8 @@ test("관리자 편집 모드: 카드마다 시각 칸 + 끌기 손잡이 + ▲�
   const html = render({ mode: "admin", editing: true });
   assert.equal((html.match(/type="time"/g) ?? []).length, 2);
   assert.match(html, /aria-label="A아파트 정문 정차 시간"/);
-  assert.equal((html.match(/drag_indicator/g) ?? []).length, 2);
+  // 2026-11-14 아이콘 완전 제거: 끌기 손잡이는 아이콘 이름(drag_indicator) 대신 글자 기호 ⠿ — 이 파일의 손잡이 개수·없음 단언 전부 같은 기호로 센다.
+  assert.equal((html.match(/⠿/g) ?? []).length, 2);
   // 리뷰 반영: 손잡이는 탭 순서에서 빼고(▲▼ 가 키보드 대안) 이름표로 안내
   assert.match(html, /tabindex="-1" aria-label="A아파트 정문 끌어서 순서 옮기기 · ▲▼ 버튼으로도 옮길 수 있어요"/);
   assert.match(html, /aria-label="B초등학교 후문 순서 아래로"/);
@@ -85,14 +86,14 @@ test("기사님 모드: 보기 화면은 그대로, 편집 때 카드 전체 끌
   assert.match(view, /<h3[^>]*>[\s\S]*16:30 수업 · 등원[\s\S]*정류장 2곳 · 학생 2명 · 16:10<\/span><\/h3>/);
   assert.doesNotMatch(view, /aria-pressed|지도 보기|data-drop-line/);
   assert.match(view, /길안내/);
-  assert.doesNotMatch(view, /drag_indicator|data-run-key/);
+  assert.doesNotMatch(view, /⠿|data-run-key/);
   const edit = render({ mode: "driver", editing: true });
   // 2026-11-09 3차: 브라우저 기본 끌기(draggable) 대신 관리자와 같은 포인터 끌기 — 묶음 계산용 data-run-key/group 이 붙는다.
   assert.doesNotMatch(edit, /draggable="true"/);
   assert.match(edit, /<li[^>]*touch-none cursor-grab/);
   assert.equal((edit.match(/<li[^>]*data-run-key="[^"]+" data-run-group="g1"[^>]*style="touch-action:none"/g) ?? []).length, 2);
   assert.match(edit, /col-span-3 mt-2 h-12 w-full/);
-  assert.doesNotMatch(edit, /drag_indicator/);
+  assert.doesNotMatch(edit, /⠿/);
 });
 
 test("관리자 묶음 편집(2026-11-10): 머리마다 작은 연필 · 고른 묶음만 편집 카드 · 그 머리 줄에 [취소][저장]·아래 적용 범위", () => {
@@ -108,10 +109,10 @@ test("관리자 묶음 편집(2026-11-10): 머리마다 작은 연필 · 고른 
   // 2026-11-13 UI 통일(원장 «아이콘 빼고 글자로»): 연필 아이콘 원 → 글자 «수정» 작은 보조 버튼(PC 36px · 터치 44px). 이름표는 위 단언 그대로.
   assert.match(view, /<button type="button" aria-label="16:30 등원 묶음 수정"[^>]*class="academy-button-secondary academy-button-sm shrink-0">수정<\/button>/);
   assert.doesNotMatch(view, />edit<\/span>/);
-  assert.doesNotMatch(view, /drag_indicator|type="time"|data-edit-bar|>저장</);
+  assert.doesNotMatch(view, /⠿|type="time"|data-edit-bar|>저장</);
   // g1 편집 = g1 카드 2장만 손잡이·시각 칸, g1 머리에는 연필 대신 [저장]·아래 줄, g2 는 연필 그대로
   const edit = render({ ...base, editing: true, editingGroupKey: "g1" });
-  assert.equal((edit.match(/drag_indicator/g) ?? []).length, 2);
+  assert.equal((edit.match(/⠿/g) ?? []).length, 2);
   assert.equal((edit.match(/type="time"/g) ?? []).length, 2);
   assert.equal((edit.match(/data-run-group="g2"/g) ?? []).length, 0);
   assert.equal((edit.match(/묶음 수정"/g) ?? []).length, 1);

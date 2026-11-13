@@ -36,11 +36,13 @@ function render(name, state, { storeAppLacksPush = false, appView = "unavailable
   return renderToStaticMarkup(React.createElement(mod[name]));
 }
 
-test("머리줄 토글: 켜짐/꺼짐이 보이고 44×44, 웹푸시 못 받는 기기·확인 전에는 안 그린다", () => {
+test("머리줄 토글: 켜짐/꺼짐이 글자로 보이고 높이 44, 웹푸시 못 받는 기기·확인 전에는 안 그린다", () => {
   const off = render("StaffPushToggle", { pushSupported: true, pushEnabled: false });
   assert.match(off, /role="switch" aria-checked="false" aria-label="휴대폰 알림 켜기"/);
-  assert.match(off, /inline-flex size-11/);
-  assert.match(off, /notifications_off/);
+  // 2026-11-14 아이콘 완전 제거: 종 아이콘 → 글자 «알림 꺼짐/켜짐»(높이 44px 유지)
+  assert.match(off, /inline-flex min-h-11/);
+  assert.match(off, />알림 꺼짐</);
+  assert.doesNotMatch(off, /material-symbols/);
   const on = render("StaffPushToggle", { pushSupported: true, pushEnabled: true });
   assert.match(on, /aria-checked="true" aria-label="휴대폰 알림 켜짐"/);
   assert.equal(render("StaffPushToggle", { pushSupported: false, pushEnabled: false }), "");

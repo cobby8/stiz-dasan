@@ -432,7 +432,7 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
                 <AdminModal onClose={() => setShowAddModal(false)} titleId="add-coach-modal-title" panelClassName="max-w-xl">
                         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-academy-line)]">
                             <span id="add-coach-modal-title" className="academy-section-title">강사 추가</span>
-                            <button onClick={() => setShowAddModal(false)} aria-label="닫기" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-xl leading-none text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">✕</button>
+                            <button onClick={() => setShowAddModal(false)} aria-label="닫기" className="academy-button-text academy-button-sm shrink-0">닫기</button>
                         </div>
                         <div className="p-6 space-y-4">
                             {addError && (
@@ -558,7 +558,7 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
                                         >
                                             {/* 드래그 핸들 */}
                                             <td className="admin-cell-center px-1 py-1.5">
-                                                <span className="material-symbols-outlined cursor-grab select-none text-lg text-[var(--color-academy-muted)] active:cursor-grabbing" title="드래그하여 순서 변경" aria-hidden="true">drag_indicator</span>
+                                                <span className="cursor-grab select-none text-lg leading-none text-[var(--color-academy-muted)] active:cursor-grabbing" title="드래그하여 순서 변경" aria-hidden="true">⠿</span>
                                             </td>
                                             {/* 사진 — 행 높이를 지키려고 작은 원(큰 사진은 상세 패널) */}
                                             <td className="admin-cell-center px-2 py-1">
@@ -683,8 +683,8 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
                             <h3 id="coach-detail-panel-title" className="academy-section-title break-keep">{detail.name}</h3>
                             <span className="academy-status">{detail.role}</span>
                         </div>
-                        <button type="button" onClick={() => setDetailId(null)} aria-label="닫기" className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
-                            <span className="material-symbols-outlined" aria-hidden="true">close</span>
+                        <button type="button" onClick={() => setDetailId(null)} aria-label="닫기" className="ml-auto academy-button-text academy-button-sm shrink-0">
+                            닫기
                         </button>
                     </div>
                     <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">

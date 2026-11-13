@@ -50,8 +50,8 @@ const CLASS_VIEW_STORAGE_KEY = "admin-classes-view-mode";
 const CLASS_VIEW_VALUES = ["day", "list"] as const;
 type ClassViewMode = (typeof CLASS_VIEW_VALUES)[number];
 const CLASS_VIEW_OPTIONS = [
-    { value: "day", label: "요일별", icon: "calendar_view_week" },
-    { value: "list", label: "목록", icon: "view_list" },
+    { value: "day", label: "요일별" },
+    { value: "list", label: "목록" },
 ] as const;
 
 function getErrorMessage(error: unknown, fallback: string): string {
@@ -380,9 +380,9 @@ export default function ClassManagementClient({
                                 type="button"
                                 onClick={() => setDetailClassId(null)}
                                 aria-label="닫기"
-                                className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)]"
+                                className="ml-auto academy-button-text academy-button-sm shrink-0"
                             >
-                                <span className="material-symbols-outlined" aria-hidden="true">close</span>
+                                닫기
                             </button>
                         </div>
                         <dl className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">

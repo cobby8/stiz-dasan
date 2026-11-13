@@ -66,8 +66,7 @@ export default async function PaymentPage({ params }: { params: Promise<{ invoic
     return (
         <main className="mx-auto max-w-lg space-y-3 px-4 py-4">
             <Link href="/mypage" className="academy-button-text">
-                <span className="material-symbols-outlined text-lg leading-none" aria-hidden="true">chevron_left</span>
-                마이페이지
+                ← 마이페이지
             </Link>
 
             {/* 청구 정보 한 덩어리: 항목·상태 / 아이·납기 / 금액(주인공 숫자) / 청구 내용 / 번호·발행일(작게) */}

@@ -17,6 +17,9 @@ import {
 import type { ParentPaymentRow } from "@/lib/payments/parent-payment-request";
 import VirtualAccountNotice from "@/components/parent/VirtualAccountNotice";
 import { PAYMENT_TONE, TONE_TEXT_CLASS, toneFor } from "@/lib/ui/statusTones";
+// 월 묶음 — 리포트·출결 목록과 같은 공용 함수(KST 달력 기준). 오늘(KST)은 시간대 모듈에서만
+import { groupByKstMonth } from "@/components/admin/list/monthDateGroups";
+import { todayKst } from "@/lib/datetime/kst";
 
 const STATUS_LABEL: Record<string, string> = {
   PENDING: "미납", OVERDUE: "연체", PAID: "납부 완료", REFUNDED: "환불",
@@ -116,6 +119,130 @@ export default function PaymentRequestClient({
   const bundleRows = rows.filter((row) => isUnpaidStatus(row.status) && row.canCheckout);
   const bundleTotal = bundleRows.reduce((sum, row) => sum + row.amount, 0);
 
+  // ── 2026-11-14 원장 결정 w3: 맨 위 요약 줄 · 형제 칩 · 월 묶음 · 납부 완료는 한 줄 행 ──
+  // 형제면 아이 칩(«전체» + 이름) — 목록만 거른다. «한 번에 결제» 묶음은 아이와 상관없이 그대로
+  const [childFilter, setChildFilter] = useState<string | null>(null);
+  const childChips = [...new Map(rows.map((row) => [row.studentId, row.studentName])).entries()];
+  const shownRows = childFilter ? rows.filter((row) => row.studentId === childFilter) : rows;
+  // 올해 납부 = 납기일이 올해(KST)인 납부 완료 합계 · 미납 = 미납·연체 건수(이 목록 기준 — 최근 60건)
+  const thisYear = todayKst().slice(0, 4);
+  const paidThisYear = shownRows
+    .filter((row) => row.status === "PAID" && (row.dueDate ?? row.paidDate ?? "").startsWith(thisYear))
+    .reduce((sum, row) => sum + row.amount, 0);
+  const unpaidCount = shownRows.filter((row) => isUnpaidStatus(row.status)).length;
+  const recordChild = childFilter ?? rows[0]?.studentId ?? null;
+  const recordHref = recordChild ? `/mypage/record?child=${encodeURIComponent(recordChild)}` : "/mypage/record";
+  // 납기일(KST) 달로 묶는다 — 목록은 서버가 납기일 최신순으로 준다
+  const monthGroups = groupByKstMonth(shownRows, (row) => row.dueDate ?? "");
+
+  // 영수증 요청 폼(종류·번호) — 납부 완료 한 줄 행과 기존 카드가 같이 쓴다(폼 한 벌)
+  function receiptForm(row: ParentPaymentRow) {
+    return (
+      <div className="mt-2 space-y-3 rounded-lg border border-[var(--color-academy-line)] p-3">
+        <div>
+          <p className="mb-1 text-xs font-medium text-[var(--color-academy-muted)]">영수증 종류</p>
+          <div className="grid grid-cols-2 gap-1.5">
+            {RECEIPT_TYPES.map((value) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={receiptType === value}
+                onClick={() => setReceiptType(value)}
+                className={`min-h-11 whitespace-nowrap rounded-md border px-1 text-xs ${
+                  receiptType === value
+                    ? "border-[var(--color-academy-secondary-strong)] bg-[var(--color-academy-secondary-soft)] font-semibold text-[var(--color-academy-secondary-ink)]"
+                    : "border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] font-medium text-[var(--color-academy-ink)]"
+                }`}
+              >
+                {RECEIPT_TYPE_LABEL[value]}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label htmlFor={`receipt-target-${row.paymentId}`} className="mb-1 block text-xs font-medium text-[var(--color-academy-muted)]">
+            {receiptType === "CASH_RECEIPT" ? "휴대폰 번호" : "사업자등록번호"}
+          </label>
+          {/* 번호를 안 받으면 원장이 발급을 못 해 다시 물어봐야 한다. */}
+          <input
+            id={`receipt-target-${row.paymentId}`}
+            value={receiptTarget}
+            onChange={(event) => setReceiptTarget(event.target.value)}
+            inputMode="numeric"
+            maxLength={60}
+            placeholder={receiptType === "CASH_RECEIPT" ? "010-0000-0000" : "000-00-00000"}
+            className="academy-input"
+          />
+        </div>
+        <button
+          type="button"
+          disabled={pending || uncertain || !receiptTarget.trim()}
+          onClick={() => submitReceipt(row.paymentId)}
+          className="academy-button-primary w-full"
+        >
+          {pending ? "보내는 중..." : "영수증 요청 보내기"}
+        </button>
+      </div>
+
+    );
+  }
+
+  /** 납부 완료·환불 한 줄 행 — 항목·아이·납부일 / 금액·상태 / 영수증 보기 또는 요청. 진행 중 요청·처리 결과·요청 폼은 행 아래 */
+  function doneRow(row: ParentPaymentRow) {
+    const receiptPending = row.pending.find((item) => item.kind === "RECEIPT");
+    const open = openId === row.paymentId;
+    return (
+      <li key={row.paymentId} className="px-3 py-1">
+        <div className="flex min-h-12 items-center gap-2">
+          <div className="min-w-0 flex-1">
+            <p className="break-keep text-sm font-medium text-[var(--color-academy-ink)]">{row.description || "수강료"}</p>
+            <p className="text-xs tabular-nums text-[var(--color-academy-muted)]">
+              {row.studentName}
+              {row.paidDate ? ` · ${row.paidDate} 납부` : row.dueDate ? ` · ${row.dueDate}` : ""}
+            </p>
+          </div>
+          <div className="shrink-0 text-right">
+            <p className="text-sm font-semibold tabular-nums text-[var(--color-academy-ink)]">{row.amount.toLocaleString()}원</p>
+            <p className={`text-xs font-medium ${TONE_TEXT_CLASS[toneFor(PAYMENT_TONE, row.status, "neutral")]}`}>
+              {STATUS_LABEL[row.status] ?? "확인 중"}
+            </p>
+          </div>
+          {row.receiptUrl ? (
+            <a
+              href={row.receiptUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-outside-link
+              className="academy-button-text shrink-0 whitespace-nowrap"
+            >
+              영수증
+            </a>
+          ) : row.status === "PAID" && !receiptPending ? (
+            <button type="button" onClick={() => setOpenId(open ? null : row.paymentId)} aria-expanded={open} className="academy-button-text shrink-0 whitespace-nowrap">
+              영수증 요청
+            </button>
+          ) : null}
+        </div>
+        {row.resolved.map((item) => (
+          <p key={item.id} className="mb-1 rounded-lg bg-[var(--color-academy-soft)] p-2 text-xs text-[var(--color-academy-muted)]">
+            {PAYMENT_REQUEST_KIND_LABEL[item.kind as "PAYMENT_CLAIM" | "RECEIPT"] ?? "요청"} ·{" "}
+            {PAYMENT_REQUEST_STATUS_LABEL[item.status] ?? "처리 중"}
+            {item.decisionNote ? ` · ${item.decisionNote}` : ""}
+          </p>
+        ))}
+        {receiptPending && (
+          <div className="mb-1 flex items-center justify-between gap-2 rounded-lg bg-[var(--color-academy-info-soft)] py-1 pl-2 pr-1">
+            <p className="text-xs font-medium text-[var(--color-academy-ink)]">{PAYMENT_REQUEST_KIND_LABEL.RECEIPT} 확인 중</p>
+            <button type="button" disabled={pending || uncertain} onClick={() => cancel(receiptPending.id)} className="academy-button-text shrink-0">
+              취소
+            </button>
+          </div>
+        )}
+        {open && row.status === "PAID" && <div className="mb-2">{receiptForm(row)}</div>}
+      </li>
+    );
+  }
+
   return (
     <main className="mx-auto max-w-lg space-y-3 px-4 py-4">
       <div>
@@ -123,6 +250,33 @@ export default function PaymentRequestClient({
         {/* 왜 바로 안 바뀌는지 먼저 알린다. 이걸 모르면 "입금했는데요" 문자가 계속 온다. — 한 줄로 줄였다 */}
         <p className="mt-0.5 text-xs text-[var(--color-academy-muted)]">계좌 입금은 학원 확인 뒤 완료돼요. «입금했어요»로 알려 주면 빨라요.</p>
       </div>
+
+      {/* 요약 한 줄 «올해 납부 · 미납 n건 · 연도별 보기 ▸» — 연도별 전체는 «아이 기록» 화면 */}
+      {rows.length > 0 && (
+        <Link
+          href={recordHref}
+          className="flex min-h-11 items-center gap-2 rounded-xl bg-[var(--color-academy-surface)] px-3 py-1.5 text-sm ring-1 ring-inset ring-[var(--color-academy-line)] hover:bg-[var(--color-academy-soft)]"
+        >
+          <span className="min-w-0 flex-1 break-keep tabular-nums text-[var(--color-academy-ink)]">
+            올해 납부 <b className="font-semibold">{paidThisYear.toLocaleString("ko-KR")}원</b>
+            <span className="mx-1 text-[var(--color-academy-muted)]">·</span>
+            <span className={unpaidCount > 0 ? "font-semibold text-[var(--color-academy-warning)]" : ""}>미납 {unpaidCount}건</span>
+          </span>
+          <span className="shrink-0 whitespace-nowrap font-medium text-[var(--color-academy-secondary-ink)]">연도별 보기 ▸</span>
+        </Link>
+      )}
+
+      {/* 형제면 아이 칩 — 목록만 거른다 */}
+      {childChips.length > 1 && (
+        <div role="group" aria-label="자녀 선택" className="flex flex-wrap gap-1.5">
+          <button type="button" aria-pressed={childFilter === null} onClick={() => setChildFilter(null)} className="academy-choice">전체</button>
+          {childChips.map(([id, name]) => (
+            <button key={id} type="button" aria-pressed={childFilter === id} onClick={() => setChildFilter(id)} className="academy-choice">
+              {name}
+            </button>
+          ))}
+        </div>
+      )}
 
       {payReady && bundleRows.length > 0 && (
         <section aria-label="한 번에 결제" className="academy-panel flex flex-wrap items-center gap-x-3 gap-y-2 p-3">
@@ -155,8 +309,23 @@ export default function PaymentRequestClient({
           청구서가 없어요
         </p>
       ) : (
+        <div className="space-y-3">
+          {monthGroups.map((group) => {
+            const unpaidItems = group.items.map(({ item }) => item).filter((row) => isUnpaidStatus(row.status));
+            const doneItems = group.items.map(({ item }) => item).filter((row) => !isUnpaidStatus(row.status));
+            // 머리줄 합계는 환불 제외
+            const groupTotal = group.items.reduce((sum, { item }) => sum + (item.status === "REFUNDED" ? 0 : item.amount), 0);
+            const label = group.month.startsWith(thisYear) ? `${Number(group.month.slice(5, 7))}월` : group.label;
+            return (
+              <section key={group.month || "none"} aria-label={`${label} 청구`}>
+                {/* 월 묶음 머리줄 «11월 · 2건 · 255,000원» */}
+                <h2 className="mb-1.5 px-1 text-sm font-semibold tabular-nums text-[var(--color-academy-ink)]">
+                  {label} · {group.items.length}건 · {groupTotal.toLocaleString("ko-KR")}원
+                </h2>
+                {/* 미납·연체 = 기존 카드 그대로(결제하기·입금했어요 흐름 보존) */}
+                {unpaidItems.length > 0 && (
         <ul className="space-y-2">
-          {rows.map((row) => {
+          {unpaidItems.map((row) => {
             const unpaid = isUnpaidStatus(row.status);
             const claimPending = row.pending.find((item) => item.kind === "PAYMENT_CLAIM");
             const receiptPending = row.pending.find((item) => item.kind === "RECEIPT");
@@ -395,57 +564,22 @@ export default function PaymentRequestClient({
                   </div>
                 )}
 
-                {open && row.status === "PAID" && (
-                  <div className="mt-2 space-y-3 rounded-lg border border-[var(--color-academy-line)] p-3">
-                    <div>
-                      <p className="mb-1 text-xs font-medium text-[var(--color-academy-muted)]">영수증 종류</p>
-                      <div className="grid grid-cols-2 gap-1.5">
-                        {RECEIPT_TYPES.map((value) => (
-                          <button
-                            key={value}
-                            type="button"
-                            aria-pressed={receiptType === value}
-                            onClick={() => setReceiptType(value)}
-                            className={`min-h-11 whitespace-nowrap rounded-md border px-1 text-xs ${
-                              receiptType === value
-                                ? "border-[var(--color-academy-secondary-strong)] bg-[var(--color-academy-secondary-soft)] font-semibold text-[var(--color-academy-secondary-ink)]"
-                                : "border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] font-medium text-[var(--color-academy-ink)]"
-                            }`}
-                          >
-                            {RECEIPT_TYPE_LABEL[value]}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <label htmlFor={`receipt-target-${row.paymentId}`} className="mb-1 block text-xs font-medium text-[var(--color-academy-muted)]">
-                        {receiptType === "CASH_RECEIPT" ? "휴대폰 번호" : "사업자등록번호"}
-                      </label>
-                      {/* 번호를 안 받으면 원장이 발급을 못 해 다시 물어봐야 한다. */}
-                      <input
-                        id={`receipt-target-${row.paymentId}`}
-                        value={receiptTarget}
-                        onChange={(event) => setReceiptTarget(event.target.value)}
-                        inputMode="numeric"
-                        maxLength={60}
-                        placeholder={receiptType === "CASH_RECEIPT" ? "010-0000-0000" : "000-00-00000"}
-                        className="academy-input"
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      disabled={pending || uncertain || !receiptTarget.trim()}
-                      onClick={() => submitReceipt(row.paymentId)}
-                      className="academy-button-primary w-full"
-                    >
-                      {pending ? "보내는 중..." : "영수증 요청 보내기"}
-                    </button>
-                  </div>
-                )}
+                {open && row.status === "PAID" && receiptForm(row)}
               </li>
             );
           })}
         </ul>
+                )}
+                {/* 납부 완료·환불 = 한 줄 행 */}
+                {doneItems.length > 0 && (
+                  <ul className={`academy-panel divide-y divide-[var(--color-academy-line)] overflow-hidden ${unpaidItems.length > 0 ? "mt-2" : ""}`}>
+                    {doneItems.map((row) => doneRow(row))}
+                  </ul>
+                )}
+              </section>
+            );
+          })}
+        </div>
       )}
     </main>
   );

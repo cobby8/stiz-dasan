@@ -37,7 +37,7 @@ const ACADEMY_DIRS = [
 // 남은 아이콘 = 닫기·뒤로·펼침·정렬·끌기 손잡이·지도/GPS·출결 상태처럼 글자를 둘 자리가 없거나 뜻을 전하는 기호.
 const DEBT = {
   heavyWeight: 0, // font-black · font-extrabold · font-[800] · fontWeight: 800 — 화면에서는 테마가 700 으로 낮춰 그리지만 코드에서도 걷어낸다
-  icons: 127, // material-symbols-outlined · <FontFreeIcon · <SymbolIcon(파일마다 따로 만든 아이콘 부품) — 글자를 둘 자리가 없는 조작만 남긴다
+  icons: 1, // 2026-11-14 아이콘 완전 제거 — 남는 것은 관리자 «빠른작업» ⚡ 버튼 하나(원장 지정 예외). 늘리지 않는다
   adminRawH1: 6, // 관리자 화면의 직접 쓴 <h1> — AdminPageHeader 로 옮긴다
 };
 
@@ -48,7 +48,7 @@ test("굵은 글자(font-black·font-extrabold)가 늘지 않는다", () => {
 
 test("아이콘이 늘지 않는다 — 메뉴·버튼·탭은 글자로 말한다", () => {
   const n = count(ACADEMY_DIRS, /material-symbols-outlined|<FontFreeIcon\b|<SymbolIcon\b/g);
-  assert.ok(n <= DEBT.icons, `아이콘 ${n}개 — 기준 ${DEBT.icons}개보다 늘었다. 닫기·뒤로·펼침처럼 글자를 둘 자리가 없는 조작만 아이콘을 쓴다.`);
+  assert.ok(n <= DEBT.icons, `아이콘 ${n}개 — 기준 ${DEBT.icons}개보다 늘었다. 사이트 전체에 아이콘을 쓰지 않는다(닫기·뒤로·펼침·상태 표시도 글자). 예외는 원장이 지정한 «빠른작업» ⚡ 뿐.`);
 });
 
 test("관리자 화면에 직접 쓴 <h1> 이 늘지 않는다 — AdminPageHeader 를 쓴다", () => {

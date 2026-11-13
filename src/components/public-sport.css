@@ -21,7 +21,7 @@
   --color-public-secondary-strong: #0284c7;
   --color-public-secondary-ink: #0c4a6e;
   --color-public-white: #ffffff;
-  --color-public-dark-muted: #c0c5ca;
+  --color-public-dark-muted: #d5d9df;
   --color-public-dark-line: #383c42;
   --color-public-focus: #c6471c;
   --color-public-radius: 4px;
@@ -61,8 +61,12 @@
 }
 .dark .stiz-public-sport {
   --color-public-paper: #1d2025;
-  --color-public-ink: #f4f4f5;
-  --color-public-muted: #bdc2c9;
+  /* 2026-11-14 원장 «다크 모드 글자가 조금 더 밝으면 좋겠다» — 본문 #f4f4f5→#fafafa, 보조 #bdc2c9→#d9dde3(바탕 #1d2025 위 약 12:1) */
+  --color-public-ink: #fafafa;
+  --color-public-muted: #d9dde3;
+  /* 화면 곳곳의 dark:text-gray-400·500(흐린 회색 글자)이 어두운 바탕에서 안 읽혀, 다크에서는 그 두 단계를 밝게 올린다 */
+  --color-gray-400: #c9ced6;
+  --color-gray-500: #b9bfc8;
   --color-public-tint: #262a30;
   --color-public-line: #41464e;
   --color-public-accent: #f4753a;

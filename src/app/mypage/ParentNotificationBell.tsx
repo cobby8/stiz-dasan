@@ -139,9 +139,9 @@ export default function ParentNotificationBell({ notifications, unreadCount }: {
                                 type="button"
                                 aria-label="알림 닫기"
                                 onClick={() => setOpen(false)}
-                                className="inline-flex size-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
+                                className="academy-button-text academy-button-sm shrink-0"
                             >
-                                <span className="material-symbols-outlined leading-none" style={{ fontSize: "20px" }} aria-hidden="true">close</span>
+                                닫기
                             </button>
                         </div>
 

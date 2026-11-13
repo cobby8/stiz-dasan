@@ -29,7 +29,8 @@ test("C-T1 공용 상태 버튼: 의미색 토큰·44px·눌림 표시·안 눌�
   }
   assert.match(statusButton, /aria-pressed=\{active\}/);
   assert.match(statusButton, /min-h-11/);
-  assert.match(statusButton, /material-symbols-outlined/);
+  // 2026-11-14 아이콘 완전 제거(원장 재지시): 상태 버튼·알약은 ✓·시계·✕ 아이콘 없이 글자만 — 아이콘 글꼴도 icon 인자도 없다.
+  assert.doesNotMatch(statusButton, /material-symbols-outlined|\bicon\b/);
   // 되돌리기는 별도 글자 버튼(44px 터치)
   // 2026-11-13 UI 통일: 되돌리기 버튼의 undo 아이콘을 뺐다(글자가 말한다) — 글자 버튼·44px 은 그대로 지킨다
   assert.match(statusButton, /export function StatusUndoButton[\s\S]*대기로 되돌리기[\s\S]*min-h-11[\s\S]*underline/);
@@ -39,8 +40,8 @@ test("C-T1 공용 상태 버튼: 의미색 토큰·44px·눌림 표시·안 눌�
 
 test("T-02 선생님 탑승: 탑승(넓게)|미탑승 12px, 대기는 아래 되돌리기, 저장 흐름 그대로", () => {
   assert.match(rideButtons, /grid grid-cols-\[2fr_1fr\] gap-3/);
-  assert.match(rideButtons, /<StatusChoiceButton tone="success" icon="check" active=\{status === primaryStatus\}/);
-  assert.match(rideButtons, /<StatusChoiceButton tone="danger" icon="close" active=\{status === "NO_SHOW"\}/);
+  assert.match(rideButtons, /<StatusChoiceButton tone="success" active=\{status === primaryStatus\}/); // 2026-11-14 아이콘 완전 제거: icon 인자 없음
+  assert.match(rideButtons, /<StatusChoiceButton tone="danger" active=\{status === "NO_SHOW"\}/);
   assert.match(rideButtons, /status !== "PENDING" && <StatusUndoButton disabled=\{isPending\} onClick=\{\(\) => update\("PENDING"\)\} \/>/);
   assert.doesNotMatch(rideButtons, /text-\[11px\]|bg-red-500|bg-emerald-500|bg-gray-900/);
   // 상태 알약도 같은 의미색
@@ -50,7 +51,9 @@ test("T-02 선생님 탑승: 탑승(넓게)|미탑승 12px, 대기는 아래 되
 
 test("T-03 출석부: 출석 success·지각 warning·결석 danger + 아이콘, 12px 간격, 이름 옆 같은 색 알약", () => {
   assert.match(session, /PRESENT: "success",\s*LATE: "warning",\s*ABSENT: "danger"/);
-  assert.match(session, /PRESENT: "check",\s*LATE: "schedule",\s*ABSENT: "close"/);
+  // 2026-11-14 아이콘 완전 제거: 아이콘 이름 표(STATUS_ICON)를 없앴다 — 버튼·알약은 글자(출석·지각·결석·미확인)만 보인다.
+  assert.doesNotMatch(session, /STATUS_ICON|icon=|material-symbols-outlined/);
+  assert.match(session, /<StatusPill tone="neutral">미확인<\/StatusPill>/);
   assert.match(session, /grid grid-cols-3 gap-3">\s*\{\(\["PRESENT", "LATE", "ABSENT"\] as AttendanceStatus\[\]\)\.map\(\(status\) => \(\s*<StatusChoiceButton/);
   assert.match(session, /<StatusPill tone=\{STATUS_TONE\[student\.status\]\}/);
   // 저장 함수는 그대로
@@ -62,7 +65,7 @@ test("T-04 기사님 탑승: 같은 버튼 재탭은 무시, 되돌리기는 별
   assert.match(driver, /if \(!verifyOnly && cur === next\) return;/);
   assert.doesNotMatch(driver, /cur === next \? null : next/);
   assert.match(driver, /<StatusUndoButton[^>]*onClick=\{\(\) => \{ setMenuKey\(null\); void setStatus\(rider, null\); \}\}/);
-  assert.match(driver, /<StatusChoiceButton tone="danger" icon="close"[^>]*active=\{status === "NOSHOW" \|\| status === "SELF"\}/);
+  assert.match(driver, /<StatusChoiceButton tone="danger"[^>]*active=\{status === "NOSHOW" \|\| status === "SELF"\}/);
   assert.match(driverCss, /\.boardingActions \{[^}]*gap: 12px/);
   // 저장 경로·파라미터는 그대로
   assert.match(driver, /shuttleRequestId: rider\.checkId, status: target/);
@@ -122,8 +125,9 @@ test("T-09 행 안 반복 버튼은 tonal, 하나뿐인 이어하기만 primary"
 });
 
 test("T-10 사진: 삭제는 오른쪽 휴지통 아이콘(확인 창 유지), 버튼·칩 44px", () => {
-  assert.match(photo, /aria-label="사진 삭제"[^>]*onClick=\{\(\) => void deletePhoto\(photo\)\}[^>]*size-11/);
-  assert.match(photo, />delete<\/span>/);
+  // 2026-11-14 아이콘 완전 제거: 휴지통 아이콘 → 글자 «삭제» 위험 버튼(터치 화면 44px 은 테마 academy-button-sm 이 지킨다). 떨어진 자리·확인 창은 그대로.
+  assert.match(photo, /aria-label="사진 삭제"[^>]*onClick=\{\(\) => void deletePhoto\(photo\)\}[^>]*academy-button-danger academy-button-sm shrink-0">\s*삭제\s*</);
+  assert.doesNotMatch(photo, /material-symbols-outlined/);
   assert.match(photo, /window\.confirm\("이 사진을 수업 기록과 관리자 검토 목록에서 삭제할까요\?"\)/);
   assert.doesNotMatch(photo, /min-h-(8|9|10)\b/);
 });

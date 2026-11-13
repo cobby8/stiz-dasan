@@ -9,7 +9,6 @@
 
 import { useState } from "react";
 import dynamic from "next/dynamic";
-import FontFreeIcon from "../ui/FontFreeIcon";
 import { usePublicOverlayOpen } from "../public-floating";
 
 const ChatPanel = dynamic(() => import("./ChatPanel"), {
@@ -30,14 +29,14 @@ export default function ChatBotButton() {
 
       {/* 플로팅 말풍선 버튼 — 패널이 닫혀 있을 때만 표시.
           위치(bottom)는 public-sport.css 의 public-floating-btn 이 정한다(하단 고정 바 높이만큼 위로).
-          좁은 화면에서는 48px·오른쪽 16px — 홈 첫 화면 버튼과 겹치지 않게. 글자를 둘 자리가 없어 아이콘 + aria-label. */}
+          2026-11-14 아이콘 완전 제거: 말풍선 원 → 글자 알약 «상담»(높이 44px·좌우 14px). */}
       {!isOpen && (
         <button
           onClick={() => setIsOpen(true)}
           className="
             public-floating-btn public-floating-btn--chat
             fixed right-4 sm:right-6 z-50
-            w-12 h-12 sm:w-14 sm:h-14 rounded-full
+            h-11 px-[14px] rounded-full text-sm font-medium whitespace-nowrap
             bg-[var(--color-public-accent)] dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white dark:text-black
             shadow-lg hover:bg-[var(--color-public-strong)] dark:hover:bg-lime-400
             transition-all duration-200 hover:scale-105
@@ -45,7 +44,7 @@ export default function ChatBotButton() {
           "
           aria-label="상담 챗봇 열기"
         >
-          <FontFreeIcon name="chat_bubble" size={28} />
+          상담
         </button>
       )}
     </>

@@ -494,7 +494,7 @@ function ClassDetailSheet({ lesson, startLocked, showFees, onClose, onAction }: 
         <p className="text-sm font-medium tabular-nums text-[var(--color-academy-ink)]">{lesson.startTime}–{lesson.endTime}</p>
         <div className="flex flex-wrap items-center gap-2"><h2 id="staff-class-detail-title" className="text-lg font-bold text-[var(--color-academy-ink)]">{lesson.name}</h2>{isSeasonalLesson(lesson) && <SeasonalBadge />}{lesson.substitute && <SubstituteBadge />}<StatusBadge status={lesson.sessionStatus} /></div>
       </div>
-      <button type="button" aria-label="닫기" onClick={onClose} className="grid size-11 shrink-0 place-items-center rounded-full"><span aria-hidden="true" className="material-symbols-outlined">close</span></button>
+      <button type="button" aria-label="닫기" onClick={onClose} className="academy-button-text academy-button-sm shrink-0">닫기</button>
     </div>
     <div className="space-y-3 px-4 pb-4 pt-3">
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-[var(--color-academy-muted)]">
@@ -525,7 +525,7 @@ function Modal({ title, subtitle, onClose, labelledBy, children }: { title: stri
   }, [onClose]);
   const closeDialog = useCallback(() => onCloseRef.current(), []);
   useStaffDialog(true, dialogRef, closeDialog);
-  return <div className="fixed inset-0 z-50 flex items-end bg-black/50 p-4 sm:items-center sm:justify-center" role="dialog" aria-modal="true" aria-labelledby={labelledBy}><div ref={dialogRef} className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"><div className="flex items-start justify-between gap-3"><div><h2 id={labelledBy} className="text-xl font-bold">{title}</h2><p className="mt-1 text-sm text-[var(--color-academy-muted)]">{subtitle}</p></div><button type="button" aria-label="닫기" data-dialog-initial-focus onClick={onClose} className="min-h-11 min-w-11 rounded-full p-2"><span className="material-symbols-outlined">close</span></button></div>{children}</div></div>;
+  return <div className="fixed inset-0 z-50 flex items-end bg-black/50 p-4 sm:items-center sm:justify-center" role="dialog" aria-modal="true" aria-labelledby={labelledBy}><div ref={dialogRef} className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"><div className="flex items-start justify-between gap-3"><div><h2 id={labelledBy} className="text-xl font-bold">{title}</h2><p className="mt-1 text-sm text-[var(--color-academy-muted)]">{subtitle}</p></div><button type="button" aria-label="닫기" data-dialog-initial-focus onClick={onClose} className="academy-button-text academy-button-sm shrink-0">닫기</button></div>{children}</div></div>;
 }
 
 function ModalActions({ pending, onCancel, onConfirm, confirmLabel, disabled = false }: { pending: boolean; onCancel: () => void; onConfirm: () => void; confirmLabel: string; disabled?: boolean }) { return <div className="mt-5 grid grid-cols-2 gap-2"><button type="button" disabled={pending} onClick={onCancel} className="academy-button-secondary">취소</button><button type="button" disabled={pending || disabled} onClick={onConfirm} className="academy-button-primary">{confirmLabel}</button></div>; }

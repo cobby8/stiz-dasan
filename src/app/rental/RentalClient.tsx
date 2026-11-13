@@ -11,7 +11,6 @@
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import Link from "next/link";
-import FontFreeIcon from "@/components/ui/FontFreeIcon";
 import { publicErrorText } from "@/components/ui/public-error-text";
 import { addDaysKst, kstDow, todayKst } from "@/lib/datetime/kst";
 import {
@@ -383,9 +382,9 @@ export default function RentalClient() {
             onClick={() => setPickedYm(shiftYm(viewYm, -1))}
             disabled={viewYm <= firstYm}
             aria-label="이전 달"
-            className="flex h-11 w-11 items-center justify-center rounded-[var(--color-public-radius)] border border-[var(--color-public-line)] text-[var(--color-public-ink)] disabled:opacity-40"
+            className="flex h-11 shrink-0 items-center justify-center rounded-[var(--color-public-radius)] border border-[var(--color-public-line)] px-3 text-sm font-medium text-[var(--color-public-ink)] disabled:opacity-40"
           >
-            <FontFreeIcon name="chevron_left" size={20} />
+            이전
           </button>
           <p className="text-sm font-semibold tabular-nums text-[var(--color-public-ink)]" aria-live="polite">{monthTitle(viewYm)}</p>
           <button
@@ -393,9 +392,9 @@ export default function RentalClient() {
             onClick={() => setPickedYm(shiftYm(viewYm, 1))}
             disabled={viewYm >= lastYm}
             aria-label="다음 달"
-            className="flex h-11 w-11 items-center justify-center rounded-[var(--color-public-radius)] border border-[var(--color-public-line)] text-[var(--color-public-ink)] disabled:opacity-40"
+            className="flex h-11 shrink-0 items-center justify-center rounded-[var(--color-public-radius)] border border-[var(--color-public-line)] px-3 text-sm font-medium text-[var(--color-public-ink)] disabled:opacity-40"
           >
-            <FontFreeIcon name="chevron_right" size={20} />
+            다음
           </button>
         </div>
         <div className="mt-1 grid grid-cols-7 gap-1 text-center text-xs font-medium text-[var(--color-public-muted)]" aria-hidden="true">

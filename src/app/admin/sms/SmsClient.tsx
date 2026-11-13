@@ -75,17 +75,17 @@ interface ManualBatchStatus {
     }>;
 }
 
-const TABS: Array<{ id: CenterTab; label: string; icon: string }> = [
-    { id: "automation", label: "자동 발송", icon: "automation" },
-    { id: "templates", label: "템플릿", icon: "edit_note" },
-    { id: "history", label: "발송 이력", icon: "history" },
-    { id: "manual", label: "수동 발송", icon: "send" },
+const TABS: Array<{ id: CenterTab; label: string }> = [
+    { id: "automation", label: "자동 발송" },
+    { id: "templates", label: "템플릿" },
+    { id: "history", label: "발송 이력" },
+    { id: "manual", label: "수동 발송" },
 ];
 
-const AUDIENCE_META: Record<Audience, { label: string; icon: string; className: string }> = {
-    INTERNAL: { label: "학원 내부", icon: "badge", className: "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]" },
-    EXTERNAL: { label: "학원 외부", icon: "family_restroom", className: "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]" },
-    SECURITY: { label: "인증·보안", icon: "shield_lock", className: "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]" },
+const AUDIENCE_META: Record<Audience, { label: string; className: string }> = {
+    INTERNAL: { label: "학원 내부", className: "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]" },
+    EXTERNAL: { label: "학원 외부", className: "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]" },
+    SECURITY: { label: "인증·보안", className: "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]" },
 };
 
 const CHANNEL_LABELS: Record<Channel, string> = {

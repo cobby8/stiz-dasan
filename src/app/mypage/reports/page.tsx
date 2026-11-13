@@ -79,9 +79,12 @@ export default async function ParentReportsPage() {
     const notices = recentNotices(allNotices, todayKst());
     const NOTICE_FIRST = 3;
     // 사진 묶음마다 첫 장만 타일로(홈에서 쓰던 방식 그대로)
+    // 위 요약 줄 «사진 n장»은 이 화면이 읽은 사진 묶음 안의 전체 장 수(2026-11-14 w4)
+    let photoCount = 0;
     const photos = gallery.flatMap((g: { id: string; title: string | null; mediaJSON: string }) => {
         let media: { url: string; type: string }[] = [];
         try { media = JSON.parse(g.mediaJSON); } catch {}
+        if (Array.isArray(media)) photoCount += media.length;
         return media[0] ? [{ id: g.id, title: g.title, first: media[0] }] : [];
     });
 
@@ -116,6 +119,8 @@ export default async function ParentReportsPage() {
         <div className="space-y-4">
             <div>
                 <h1 className="academy-heading">소식</h1>
+                {/* 요약 한 줄 «리포트 n건 · 사진 n장»(2026-11-14 w4) */}
+                <p className="mt-0.5 text-xs tabular-nums text-[var(--color-academy-muted)]">리포트 {reports.length}건 · 사진 {photoCount}장</p>
                 <nav aria-label="소식 종류" className="mt-2 flex flex-wrap gap-1.5">
                     {sections.map((s) => (
                         <a key={s.id} href={`#${s.id}`}
@@ -143,7 +148,7 @@ export default async function ParentReportsPage() {
                         <details className="group border-t border-[var(--color-academy-line)]">
                             <summary className="flex min-h-11 cursor-pointer list-none items-center justify-center gap-1 text-sm font-medium text-[var(--color-academy-ink)] group-open:hidden">
                                 더보기 <span className="tabular-nums">{notices.length - NOTICE_FIRST}</span>
-                                <span className="material-symbols-outlined leading-none" style={{ fontSize: "18px" }} aria-hidden="true">expand_more</span>
+                                <span aria-hidden="true">▾</span>
                             </summary>
                             <ul className="divide-y divide-[var(--color-academy-line)]">
                                 {notices.slice(NOTICE_FIRST).map((n) => noticeRow(n))}
@@ -224,7 +229,7 @@ export default async function ParentReportsPage() {
                                                 )}
                                             </div>
                                         </div>
-                                        <span className="material-symbols-outlined shrink-0 text-[var(--color-academy-faint)] transition-transform group-open:rotate-90" aria-hidden="true">chevron_right</span>
+                                        <span className="shrink-0 text-[var(--color-academy-faint)] transition-transform group-open:rotate-90" aria-hidden="true">›</span>
                                     </summary>
                                     <p className="whitespace-pre-wrap border-t border-[var(--color-academy-line)] px-3 py-2 text-sm text-[var(--color-academy-muted)]">{fb.content}</p>
                                 </details>

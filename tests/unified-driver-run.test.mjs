@@ -287,7 +287,8 @@ test("기사님 카드의 시간·길안내와 이름 옆 연락처 배치를 �
   assert.match(src, /className=\{styles\.timeNavigation\}/);
   assert.match(src, /className=\{styles\.navigation\}/);
   assert.match(css, /\.timeNavigation\s*\{[^}]*display:\s*flex/);
-  assert.match(src, /near_me<\/span> 길안내/);
+  // 2026-11-14 아이콘 완전 제거: 길안내 링크는 아이콘 없이 글자만
+  assert.match(src, /className=\{styles\.navigation\}>\s*길안내\s*<\/a>/);
   assert.doesNotMatch(src, /flex h-12 items-center justify-center gap-1\.5 rounded-xl bg-blue-600/);
   assert.match(src, /className=\{styles\.contacts\}/);
   assert.match(src, /className=\{styles\.riderMain\}/);

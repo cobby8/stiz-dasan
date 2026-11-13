@@ -204,17 +204,17 @@ const OTHER_STATUS_GROUP = "OTHER";
 const TRIAL_VIEW_STORAGE_KEY = "stiz-admin-trial-view";
 const TRIAL_VIEW_VALUES = ["list", "status"] as const;
 const TRIAL_VIEW_OPTIONS = [
-    { value: "list", label: "목록", icon: "view_list" },
-    { value: "status", label: "상태별", icon: "view_agenda" },
+    { value: "list", label: "목록" },
+    { value: "status", label: "상태별" },
 ] as const;
 
-const TRIAL_WORK_FILTERS: Array<{ value: TrialWorkFilter; label: string; icon: string }> = [
-    { value: "ALL", label: "운영 전체", icon: "view_list" },
-    { value: "NEEDS_CONTACT", label: "연락 필요", icon: "call" },
-    { value: "SCHEDULED", label: "체험 예정", icon: "event_available" },
-    { value: "AFTER_TRIAL", label: "상담/안내 필요", icon: "sms" },
-    { value: "COACH_NOTICE", label: "쌤 알림 필요", icon: "school" },
-    { value: "ENROLL_RECEIVED", label: "수강신청 접수", icon: "assignment_turned_in" },
+const TRIAL_WORK_FILTERS: Array<{ value: TrialWorkFilter; label: string }> = [
+    { value: "ALL", label: "운영 전체" },
+    { value: "NEEDS_CONTACT", label: "연락 필요" },
+    { value: "SCHEDULED", label: "체험 예정" },
+    { value: "AFTER_TRIAL", label: "상담/안내 필요" },
+    { value: "COACH_NOTICE", label: "쌤 알림 필요" },
+    { value: "ENROLL_RECEIVED", label: "수강신청 접수" },
 ];
 
 const TRIAL_DATE_FILTERS: Array<{ value: TrialDateFilter; label: string }> = [
@@ -1240,7 +1240,7 @@ export default function TrialCrmClient({
                 onReset={() => { setFilter("ALL"); setDateFilter("ALL"); setWorkFilter("ALL"); }}
                 search={<label className="flex min-h-11 min-w-0 items-center gap-1 rounded-md border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-2 sm:gap-2 sm:px-3">
                     <input type="search" aria-label="학생, 보호자, 전화번호, 학교, 메모로 검색" value={searchQuery} onChange={event => setSearchQuery(event.target.value)} placeholder="신청 검색" className="min-w-0 flex-1 bg-transparent py-2 text-sm text-[var(--color-academy-ink)] outline-none [&::-webkit-search-cancel-button]:appearance-none" />
-                    {searchQuery && <button type="button" onClick={() => setSearchQuery("")} title="검색어 지우기" className="-mr-2 inline-flex min-h-11 w-11 shrink-0 items-center justify-center text-[var(--color-academy-muted)] sm:-mr-3"><span className="material-symbols-outlined text-lg" aria-hidden="true">close</span></button>}
+                    {searchQuery && <button type="button" onClick={() => setSearchQuery("")} title="검색어 지우기" className="-mr-1 academy-button-text academy-button-sm shrink-0 whitespace-nowrap">지우기</button>}
                 </label>}
                 // 이 화면의 주 버튼. 아이콘 대신 글자 — 좁은 화면에서는 줄이 찌그러지지 않게 «등록» 두 글자만(2026-11-13 UI 통일)
                 actions={<button type="button" onClick={() => setShowAddModal(true)} aria-label="체험 신청 등록" title="체험 신청 등록" className="academy-button-primary shrink-0 whitespace-nowrap"><span className="sm:hidden">등록</span><span className="hidden sm:inline">체험 신청 등록</span></button>}
@@ -1565,8 +1565,8 @@ function TrialLeadDetailModal({
                             전화
                         </a>
                         {/* 패널이 길어도 위에서 바로 닫을 수 있게 */}
-                        <button type="button" onClick={onClose} aria-label="상세 닫기" className="inline-flex size-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
-                            <span className="material-symbols-outlined text-xl" aria-hidden="true">close</span>
+                        <button type="button" onClick={onClose} aria-label="상세 닫기" className="academy-button-text academy-button-sm shrink-0">
+                            닫기
                         </button>
                     </div>
                 </div>

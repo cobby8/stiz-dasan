@@ -11,7 +11,6 @@ import {
   saveSocialPostDraft,
 } from "@/app/actions/social-posts";
 import InstagramFeedPreview from "@/components/instagram/InstagramFeedPreview";
-import FontFreeIcon from "@/components/ui/FontFreeIcon";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { toKstYmd } from "@/lib/datetime/kst";
 import type { SocialPostDraft } from "@/lib/socialDrafts";
@@ -379,10 +378,10 @@ export default function GalleryAdminClient({
           <button
             type="button"
             onClick={() => setPageMessage(null)}
-            className="rounded p-0.5 opacity-70 transition hover:opacity-100"
+            className="academy-button-text academy-button-sm shrink-0"
             aria-label="메시지 닫기"
           >
-            <FontFreeIcon name="close" size={16} />
+            닫기
           </button>
         </div>
       )}

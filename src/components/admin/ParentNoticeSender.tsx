@@ -220,7 +220,6 @@ export default function ParentNoticeSender() {
           onClick={openPreview}
           className="academy-button-secondary inline-flex min-h-11 items-center gap-1 disabled:opacity-40"
         >
-          <span className="material-symbols-outlined text-[18px]" aria-hidden="true">preview</span>
           {pending ? "받는 사람 계산 중…" : "공지 미리보기"}
         </button>
       )}

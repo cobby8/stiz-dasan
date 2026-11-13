@@ -269,11 +269,9 @@ export default function AnnualEventsClient({ allEvents, yearlySchedules, default
                                             {view === "list" && <span className="annual-event-count">일정 {eventCount}개</span>}
                                             <div className={`annual-view-toggle${view === "calendar" ? " ml-auto" : ""}`} role="group" aria-label="보기 방식">
                                                 <button type="button" aria-pressed={view === "calendar"} onClick={() => changeView("calendar")}>
-                                                    <span className="material-symbols-outlined" aria-hidden="true">calendar_month</span>
                                                     달력
                                                 </button>
                                                 <button type="button" aria-pressed={view === "list"} onClick={() => changeView("list")}>
-                                                    <span className="material-symbols-outlined" aria-hidden="true">view_list</span>
                                                     목록
                                                 </button>
                                             </div>

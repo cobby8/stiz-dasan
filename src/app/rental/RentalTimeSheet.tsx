@@ -10,7 +10,6 @@
  *    — 서버 검증도 같은 함수라 «화면에선 되는데 신청하면 거절» 이 생기지 않는다.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import FontFreeIcon from "@/components/ui/FontFreeIcon";
 import { usePublicOverlayOpen } from "@/components/public-floating";
 import {
   RENTAL_DURATION_STEP_MINUTES,
@@ -154,9 +153,9 @@ export default function RentalTimeSheet({ open, day, dateLabel, initialStart, in
             type="button"
             onClick={onClose}
             aria-label="닫기"
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--color-public-radius)] text-[var(--color-public-muted)]"
+            className="flex h-11 shrink-0 items-center justify-center rounded-[var(--color-public-radius)] px-3 text-sm font-medium text-[var(--color-public-muted)]"
           >
-            <FontFreeIcon name="close" size={22} />
+            닫기
           </button>
         </div>
 

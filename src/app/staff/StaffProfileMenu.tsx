@@ -126,8 +126,8 @@ export default function StaffProfileMenu({ staffName, staffRole, accountViews = 
               <div>
                 <h2 id={titleId} className="text-lg font-bold text-[var(--color-academy-ink)]">선생님 메뉴</h2>
               </div>
-              <button type="button" onClick={closeAndRestoreFocus} aria-label="선생님 메뉴 닫기" className="grid size-12 shrink-0 place-items-center rounded-full bg-[var(--color-academy-soft)] text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-line)]">
-                <span className="material-symbols-outlined" aria-hidden="true">close</span>
+              <button type="button" onClick={closeAndRestoreFocus} aria-label="선생님 메뉴 닫기" className="academy-button-text academy-button-sm shrink-0">
+                닫기
               </button>
             </div>
 

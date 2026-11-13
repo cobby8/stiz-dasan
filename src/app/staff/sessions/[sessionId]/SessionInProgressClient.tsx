@@ -53,16 +53,11 @@ const STATUS_LABEL: Record<AttendanceStatus, string> = {
   ABSENT: "결석",
 };
 
-// 게슈탈트 T-03: 출석=초록(success)·지각=노랑(warning)·결석=빨강(danger) + 아이콘. 탑승 체크와 같은 약속.
+// 게슈탈트 T-03: 출석=초록(success)·지각=노랑(warning)·결석=빨강(danger) + 글자(2026-11-14 아이콘 완전 제거). 탑승 체크와 같은 약속.
 const STATUS_TONE: Record<AttendanceStatus, StatusTone> = {
   PRESENT: "success",
   LATE: "warning",
   ABSENT: "danger",
-};
-const STATUS_ICON: Record<AttendanceStatus, string> = {
-  PRESENT: "check",
-  LATE: "schedule",
-  ABSENT: "close",
 };
 
 // 출결 저장 결과의 결석 사유 부분(정규 수강생만 값이 온다. 방학특강·보강 저장 결과엔 없다).
@@ -614,8 +609,8 @@ export default function SessionInProgressClient({
                   )}
                 </span>
                 {student.status
-                  ? <StatusPill tone={STATUS_TONE[student.status]} icon={STATUS_ICON[student.status]}>{STATUS_LABEL[student.status]}</StatusPill>
-                  : <StatusPill tone="neutral" icon="help">미확인</StatusPill>}
+                  ? <StatusPill tone={STATUS_TONE[student.status]}>{STATUS_LABEL[student.status]}</StatusPill>
+                  : <StatusPill tone="neutral">미확인</StatusPill>}
               </div>
               {/* 보강 온 아이·체험 아이는 이 반 수강생이 아니라 수강료를 보여주지 않는다.
                   선생님 화면(showFees=false)은 수강료·미납 줄 자체를 숨긴다(f3). */}
@@ -643,7 +638,7 @@ export default function SessionInProgressClient({
               )}
               <div className="mt-2 grid grid-cols-3 gap-3">
                 {(["PRESENT", "LATE", "ABSENT"] as AttendanceStatus[]).map((status) => (
-                  <StatusChoiceButton key={status} tone={STATUS_TONE[status]} icon={STATUS_ICON[status]} ariaLabel={`${student.name} ${STATUS_LABEL[status]}`} active={student.status === status} disabled={bulkBusy || Boolean(savingRows[student.id])} onClick={() => void updateAttendance(student.id, status)}>
+                  <StatusChoiceButton key={status} tone={STATUS_TONE[status]} ariaLabel={`${student.name} ${STATUS_LABEL[status]}`} active={student.status === status} disabled={bulkBusy || Boolean(savingRows[student.id])} onClick={() => void updateAttendance(student.id, status)}>
                     {STATUS_LABEL[status]}
                   </StatusChoiceButton>
                 ))}
@@ -728,7 +723,7 @@ export default function SessionInProgressClient({
       <details className="rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-4">
         <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between text-sm font-medium">
           학생 정보·수업 관리
-          <span className="material-symbols-outlined text-[var(--color-academy-muted)]" aria-hidden="true">expand_more</span>
+          <span className="text-[var(--color-academy-muted)]" aria-hidden="true">▾</span>
         </summary>
         <div className="grid gap-1 border-t border-[var(--color-academy-line)] py-2">
           <button type="button" onClick={() => setShowPeople(true)} className="flex min-h-11 items-center gap-2 rounded-lg px-2 text-left text-sm font-medium">
@@ -748,7 +743,7 @@ export default function SessionInProgressClient({
       <section className="overflow-hidden rounded-2xl border border-[var(--color-academy-line)] bg-white">
         <button type="button" onClick={() => setShowPlan((current) => !current)} aria-expanded={showPlan} aria-controls="session-plan" className="flex min-h-14 w-full items-center justify-between px-5 text-left font-semibold">
           <span>오늘 수업 내용</span>
-          <span className="material-symbols-outlined" aria-hidden="true">{showPlan ? "expand_less" : "expand_more"}</span>
+          <span className="shrink-0 text-sm font-normal text-[var(--color-academy-muted)]">{showPlan ? "접기" : "펼치기"}</span>
         </button>
         {showPlan && <p id="session-plan" className="border-t border-[var(--color-academy-line)] px-5 py-4 whitespace-pre-wrap text-sm leading-7 text-[var(--color-academy-muted)]">{session.plannedContent || "미리 등록한 수업 내용이 없습니다."}</p>}
       </section>

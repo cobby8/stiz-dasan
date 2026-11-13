@@ -87,11 +87,11 @@ export default function StaffSeasonalClient({ initial }: { initial: { ymd: strin
       {/* 날짜 네비(정규와 동일하게 유지, 오늘 기본) — 이동 버튼은 44px 터치 */}
       <div className="mb-3 flex items-center justify-between rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-1">
         <button type="button" aria-label="이전 날짜" onClick={() => shiftDay(-1)} className="grid size-11 place-items-center text-[var(--color-academy-muted)]">
-          <span className="material-symbols-outlined" aria-hidden="true">chevron_left</span>
+          <span className="text-xl leading-none" aria-hidden="true">‹</span>
         </button>
         <span className="text-sm font-semibold tabular-nums">{ymd}</span>
         <button type="button" aria-label="다음 날짜" onClick={() => shiftDay(1)} className="grid size-11 place-items-center text-[var(--color-academy-muted)]">
-          <span className="material-symbols-outlined" aria-hidden="true">chevron_right</span>
+          <span className="text-xl leading-none" aria-hidden="true">›</span>
         </button>
       </div>
 

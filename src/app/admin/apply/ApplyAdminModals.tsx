@@ -1160,8 +1160,8 @@ function DetailModal({
                             {cfg.label}
                         </span>
                         {/* 패널이 길어도 위에서 바로 닫을 수 있게 */}
-                        <button type="button" onClick={onClose} aria-label="상세 닫기" className="inline-flex size-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
-                            <span className="material-symbols-outlined text-xl" aria-hidden="true">close</span>
+                        <button type="button" onClick={onClose} aria-label="상세 닫기" className="academy-button-text academy-button-sm shrink-0">
+                            닫기
                         </button>
                     </div>
                 </div>

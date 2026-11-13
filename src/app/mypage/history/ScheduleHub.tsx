@@ -33,14 +33,11 @@ export type ScheduleChild = {
     }[];
 };
 
-function Icon({ name, size = 20, className = "" }: { name: string; size?: number; className?: string }) {
-    return <span className={`material-symbols-outlined leading-none ${className}`} style={{ fontSize: `${size}px` }} aria-hidden="true">{name}</span>;
-}
-
 // 달력 표시 — 색만으로 구분하지 않는다(색약·작은 화면). 상태마다 «모양»이 다르다 (2026-11-09 원장 «색상 구분이 잘 안 돼»).
 //   출석 = 초록 채운 점 · 지각 = 주황 빈 고리 · 결석 = 빨강 × · 행사 = 파랑 별
 //   수업 예정 = 연한 청회색 칸 · 휴무 = 회색 칸 + «휴» · 오늘 = 굵은 검정 테두리
 // 색은 academy-theme.css 의 --color-academy-cal-* 토큰만 쓴다(하드코딩 색 없음).
+// 2026-11-14 아이콘 완전 제거: ×·별은 아이콘 글꼴이 아니라 글자 기호(×·★)로 그린다(모양·색은 그대로).
 type MarkKind = "PRESENT" | "LATE" | "ABSENT" | "EVENT";
 
 const MARK_LABEL: Record<MarkKind, string> = { PRESENT: "출석", LATE: "지각", ABSENT: "결석", EVENT: "행사" };
@@ -57,10 +54,10 @@ function Mark({ kind }: { kind: MarkKind }) {
     }
     if (kind === "ABSENT") {
         // 굵은 × — 점이 아니라 선이라 빨강·초록을 못 가려도 구분된다
-        return <span aria-hidden="true" className="material-symbols-outlined shrink-0 font-bold leading-none text-[var(--color-academy-cal-absent)]" style={{ fontSize: "16px", fontVariationSettings: "'wght' 700" }}>close</span>;
+        return <span aria-hidden="true" className="shrink-0 text-base font-bold leading-none text-[var(--color-academy-cal-absent)]">×</span>;
     }
     // 행사 = 채운 별
-    return <span aria-hidden="true" className="material-symbols-outlined shrink-0 leading-none text-[var(--color-academy-cal-event)]" style={{ fontSize: "13px", fontVariationSettings: "'FILL' 1" }}>star</span>;
+    return <span aria-hidden="true" className="shrink-0 text-sm leading-none text-[var(--color-academy-cal-event)]">★</span>;
 }
 
 /** 달력 한 칸 — 날짜 숫자 + 아래 표시(출결 · 행사). 수업일은 칸 바탕, 휴무는 회색 칸 «휴» */
@@ -147,11 +144,11 @@ export function MonthCalendar({
                     <div className="flex flex-wrap items-center justify-between gap-x-2 border-b border-[var(--color-academy-line)] pr-3">
                         <nav aria-label="달 이동" className="flex items-center">
                             <Link href={monthNav.prevHref} scroll={false} aria-label="이전 달" className="inline-flex size-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
-                                <Icon name="chevron_left" size={22} />
+                                <span aria-hidden="true" className="text-xl leading-none">‹</span>
                             </Link>
                             <span className="whitespace-nowrap text-sm font-semibold tabular-nums text-[var(--color-academy-ink)]">{monthTitle(view.month)}</span>
                             <Link href={monthNav.nextHref} scroll={false} aria-label="다음 달" className="inline-flex size-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
-                                <Icon name="chevron_right" size={22} />
+                                <span aria-hidden="true" className="text-xl leading-none">›</span>
                             </Link>
                         </nav>
                         <h2 id="schedule-records-heading" className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">{summaryLine}</h2>
@@ -218,11 +215,11 @@ export default function ScheduleHub({
                 <h1 className="academy-heading">일정</h1>
                 <nav aria-label="달 이동" className="flex items-center">
                     <Link href={hrefFor(shiftMonth(view.month, -1))} aria-label="이전 달" className="inline-flex size-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
-                        <Icon name="chevron_left" size={24} />
+                        <span aria-hidden="true" className="text-2xl leading-none">‹</span>
                     </Link>
                     <span className="whitespace-nowrap px-1 text-base font-semibold tabular-nums text-[var(--color-academy-ink)]">{monthTitle(view.month)}</span>
                     <Link href={hrefFor(shiftMonth(view.month, 1))} aria-label="다음 달" className="inline-flex size-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
-                        <Icon name="chevron_right" size={24} />
+                        <span aria-hidden="true" className="text-2xl leading-none">›</span>
                     </Link>
                 </nav>
             </div>

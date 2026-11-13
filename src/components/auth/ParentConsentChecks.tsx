@@ -140,8 +140,8 @@ function PolicySheet({
       >
         <div className={`flex items-center justify-between border-b px-4 py-2 ${t.line}`}>
           <h2 id="parent-policy-title" className="text-base font-bold">{title}</h2>
-          <button ref={closeRef} type="button" onClick={onClose} aria-label="닫기" className="flex h-11 w-11 items-center justify-center rounded-full">
-            <span className="material-symbols-outlined" aria-hidden="true">close</span>
+          <button ref={closeRef} type="button" onClick={onClose} aria-label="닫기" className="flex h-11 shrink-0 items-center justify-center rounded-full px-3 text-sm font-medium">
+            닫기
           </button>
         </div>
         <div className="overflow-y-auto px-4 py-3 text-sm leading-6 whitespace-pre-line">

@@ -291,8 +291,8 @@ const NO_CLASS_KEY = "__none__";
 const STUDENT_VIEW_STORAGE_KEY = "admin-students-view-mode";
 const STUDENT_VIEW_VALUES = ["list", "class"] as const;
 const STUDENT_VIEW_OPTIONS = [
-    { value: "list", label: "목록", icon: "view_list" },
-    { value: "class", label: "반별", icon: "groups" },
+    { value: "list", label: "목록" },
+    { value: "class", label: "반별" },
 ] as const;
 // 상태 칩 순서와 이름. 값은 필터 모달 «수강 상태» select 의 값과 같다(칩·select 가 한 상태를 공유)
 const STUDENT_STATUS_CHIPS = [
@@ -976,9 +976,9 @@ export default function StudentManagementClient({
                         type="button"
                         onClick={() => setFormNotice(null)}
                         aria-label="안내 닫기"
-                        className="-my-2 -mr-2 inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)]"
+                        className="-my-2 -mr-2 academy-button-text academy-button-sm shrink-0"
                     >
-                        <span className="material-symbols-outlined text-lg" aria-hidden="true">close</span>
+                        닫기
                     </button>
                 </div>
             )}
@@ -1152,9 +1152,7 @@ export default function StudentManagementClient({
                                     <span className="ml-auto text-xs tabular-nums text-[var(--color-academy-ink)]">
                                         {`${group.students.length}명`}
                                     </span>
-                                    <span className="material-symbols-outlined text-lg text-[var(--color-academy-muted)]" aria-hidden="true">
-                                        {collapsed ? "expand_more" : "expand_less"}
-                                    </span>
+                                    <span className="text-[var(--color-academy-muted)]" aria-hidden="true">{collapsed ? "▾" : "▴"}</span>
                                 </button>
                                 {/* 학생 한 줄 행: 이름 · 학년 · 학교 · 학부모 연락처. 행을 누르면 목록과 같은 상세 패널 */}
                                 {!collapsed && (
@@ -1344,9 +1342,9 @@ export default function StudentManagementClient({
                                 type="button"
                                 onClick={() => setDetailStudentId(null)}
                                 aria-label="닫기"
-                                className="ml-auto inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
+                                className="ml-auto academy-button-text academy-button-sm shrink-0"
                             >
-                                <span className="material-symbols-outlined" aria-hidden="true">close</span>
+                                닫기
                             </button>
                         </div>
                         {/* 요약: 왼쪽 이름표 / 오른쪽 값(긴 반 이름·주소도 말줄임 없이 전부) */}

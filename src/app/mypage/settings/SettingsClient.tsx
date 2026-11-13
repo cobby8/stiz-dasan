@@ -29,12 +29,9 @@ import {
 // 한 줄 행 공통 모양 — 높이 44px 이상, 왼쪽 이름, 오른쪽 값/버튼(2026-11-13 UI 통일: 줄 앞 장식 아이콘을 뺐다. 펼침 화살표만 남긴다)
 const ROW = "flex min-h-12 w-full items-center gap-3 px-4 py-1.5 text-left text-sm";
 
-function RowIcon({ name }: { name: string }) {
-    return (
-        <span className="material-symbols-outlined shrink-0 leading-none text-[var(--color-academy-muted)]" style={{ fontSize: "20px" }} aria-hidden="true">
-            {name}
-        </span>
-    );
+/** 펼침 줄 오른쪽 끝 글자 — 아이콘 대신 «펼치기»/«접기»(2026-11-14 아이콘 완전 제거) */
+function RowToggleLabel({ open }: { open: boolean }) {
+    return <span className="shrink-0 text-xs text-[var(--color-academy-muted)]">{open ? "접기" : "펼치기"}</span>;
 }
 
 function Message({ text, tone }: { text: string; tone: "ok" | "error" }) {
@@ -170,7 +167,7 @@ export function PasswordRow() {
         <li>
             <button type="button" aria-expanded={open} onClick={() => { setOpen((v) => !v); setMsg({ text: "", tone: "ok" }); }} className={`${ROW} hover:bg-[var(--color-academy-soft)]`}>
                 <span className="flex-1 font-medium text-[var(--color-academy-ink)]">비밀번호 바꾸기</span>
-                <RowIcon name={open ? "expand_less" : "expand_more"} />
+                <RowToggleLabel open={open} />
             </button>
             {open && (
                 <div className="grid gap-2 px-4 pb-3">
@@ -365,7 +362,7 @@ export function FeedbackRow({ childList }: { childList: ChildLite[] }) {
         <li>
             <button type="button" aria-expanded={open} onClick={() => { setOpen((v) => !v); setMsg({ text: "", tone: "ok" }); }} className={`${ROW} hover:bg-[var(--color-academy-soft)]`}>
                 <span className="flex-1 font-medium text-[var(--color-academy-ink)]">문제 신고·문의</span>
-                <RowIcon name={open ? "expand_less" : "expand_more"} />
+                <RowToggleLabel open={open} />
             </button>
             {open && (
                 childList.length === 0 ? (

@@ -146,7 +146,7 @@ export function formatShortDate(value: Date | string): string {
 // «처리할 일» 한 줄 — 왼쪽 제목, 오른쪽 숫자/설명, 끝에 «›». 터치 44px.
 const TODO_ROW = "flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-[var(--color-academy-soft)]";
 
-export default function MyPageClient({ data, notices = [], myRequests = [], parentShuttleOverview = [], shuttleDriverContact = null, pendingSeasonalChildren = [], makeupAvailable = 0, seasonalUpcoming = 0, pendingPayments = null, classStatusLines = [], initialChildId }: {
+export default function MyPageClient({ data, notices = [], myRequests = [], parentShuttleOverview = [], shuttleDriverContact = null, pendingSeasonalChildren = [], makeupAvailable = 0, seasonalUpcoming = 0, pendingPayments = null, classStatusLines = [], initialChildId, recordLines }: {
     data: MyPageData;
     notices?: NoticeItem[];
     myRequests?: RequestItem[];
@@ -164,6 +164,8 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
     classStatusLines?: ParentClassStatusLine[];
     /** 주소 ?child= 로 서버가 고른 아이(내 자녀일 때만). 없으면 첫째 */
     initialChildId?: string;
+    /** 아이별 «다닌 지 n년 n개월 · 올해 출석 n%» 한 줄(아이 기록 화면 진입) — 조회 실패면 «전체 기록» */
+    recordLines?: Record<string, string>;
 }) {
     // 아이 선택 — 주소(?child=)·기기 기억으로 마지막 선택 유지(다른 화면 갔다 뒤로 와도 그 아이)
     const childIds = data.children.map((c) => c.id);
@@ -392,6 +394,15 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                     </div>
                 )}
             </section>
+
+            {/* ②-1 아이 기록 한 줄(2026-11-14 원장 결정 w1) — 다닌 기간·올해 출석률. 누르면 «아이 기록» 화면 */}
+            <Link
+                href={`/mypage/record?child=${encodeURIComponent(child.id)}`}
+                className="flex min-h-11 w-full items-center justify-between gap-2 rounded-xl bg-[var(--color-academy-surface)] px-3 py-1.5 text-sm ring-1 ring-inset ring-[var(--color-academy-line)] transition hover:bg-[var(--color-academy-soft)]"
+            >
+                <span className="min-w-0 break-keep tabular-nums text-[var(--color-academy-ink)]"><b className="font-bold">우리 아이 기록</b>{recordLines?.[child.id] && recordLines[child.id] !== "전체 기록" ? <span className="text-[var(--color-academy-muted)]"> · {recordLines[child.id]}</span> : null}</span>
+                <span aria-hidden="true" className="shrink-0 text-[var(--color-academy-faint)]">▸</span>
+            </Link>
 
             {/* ③ 처리할 일 — 해야 할 일이 있는 줄만 보인다. 알림·설정은 머리줄의 «알림»·«설정»으로 옮겼다 */}
             <section aria-labelledby="parent-todo-heading" className="academy-panel overflow-hidden">

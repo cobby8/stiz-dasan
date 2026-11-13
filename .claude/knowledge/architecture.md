@@ -9,6 +9,12 @@
 - **내용**: 영상은 Vercel 함수(본문 4.5MB 한계)를 거치지 않는다 — `POST …/videos/upload-url` 이 권한·시간·형식·크기 확인 후 `SessionVideo` «예약 행»(registeredAt NULL)+서명 업로드 주소 발급 → 브라우저 XHR PUT(진행률) → `POST …/videos` 가 저장소 `info()` 로 크기·형식 재확인 후 등록. 규칙은 `lib/sessionVideo/rules.ts`(순수, 테스트 session-video-rules), 서버 공용 `server.ts`(오늘 = SQL `NOW() AT TIME ZONE` 한 번, 보호자 = 출결 또는 ACTIVE 수강 + childAccessSql), cron `/api/cron/youtube-upload`(15분, 예약 3시간 만료·사본 삭제·UPLOADING 20분 복구·유튜브 삭제·하루 KST 5건 `YouTubeConnection.quotaUsed` 선점 UPDATE). 유튜브 토큰은 `lib/youtube/tokenCrypto.ts` AES-GCM, 백업에서 가림(archiveCore SECRET_COLUMNS_BY_TABLE). 재생 = UPLOADED+unlisted 만 youtube-nocookie, 나머지 10분 서명 주소.
 - **참조횟수**: 0
 
+### [2026-11-14] 학부모 «아이 기록»(/mypage/record) = 순수 규칙 + 첫 SQL 권한 재확인 조회
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 규칙 `src/lib/parent/childRecordRules.ts`(청구 달=year/month 없으면 납기일 달·환불/취소 제외 합계·월 묶음 펼침·출석률 (출석+지각)÷(출석+지각+결석−보강 대체)·분모 0=null·타임라인) + 조회 `childRecordQuery.ts`(`getChildRecord(parent, student, db=prisma)` 첫 SQL `s.id=$2 AND childAccessSql AND notMerged`, 0행이면 다른 조회·getStudentTenure 안 돔, 섹션별 실패 null, 금액·영수증은 payerAccess). 보강 대체 판정 = ABSENT + 같은 반·KST 날짜 RegularAbsence(취소 아님) + MakeupCredit `REGULAR:{반}:{날짜}` USED. 화면은 홈 소속(PARENT_TABS 홈 also — isParentTabActive 홈도 also 를 본다). 시험은 db 를 가짜로 바꿔 끼워 IDOR 경로를 실행한다(tests/parent-child-record-rules). 아이콘은 UI 통일 가드(127개 상한) 때문에 글자(▾·영수증)로.
+- **참조횟수**: 0
+
 ### [2026-11-14] 비회원 결제 링크 /pay/<토큰> = 결제 장부의 «소유자» 갈래 하나 추가
 - **분류**: architecture
 - **발견자**: developer

@@ -499,7 +499,7 @@ export default function SeasonalApplyClient({ slug }: { slug: string }) {
                         {shuttle[item.id]?.useFreeHub ? (
                           // 무료 거점 모드 — 탑승/하차 거점 위치를 안내하고, 셔틀비 무료를 표시한다.
                           <div className="sm:col-span-2 rounded-xl border border-green-200 bg-[var(--color-academy-success-soft)] p-3 dark:border-green-800 dark:bg-green-950/30">
-                            <p className="text-sm font-semibold text-[var(--color-academy-success)] dark:text-green-200">🆓 무료 탑승 거점 이용 · 셔틀비 무료</p>
+                            <p className="text-sm font-semibold text-[var(--color-academy-success)] dark:text-green-200">무료 탑승 거점 이용 · 셔틀비 무료</p>
                             <div className="mt-2 grid gap-2 sm:grid-cols-2">
                               {program?.shuttleHub?.pickup && <HubPointCard label="등원 탑승" point={program.shuttleHub.pickup} />}
                               {(program?.shuttleHub?.dropoff ?? program?.shuttleHub?.pickup) && <HubPointCard label="하원 하차" point={(program?.shuttleHub?.dropoff ?? program?.shuttleHub?.pickup)!} />}

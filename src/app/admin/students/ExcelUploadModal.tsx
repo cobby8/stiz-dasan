@@ -298,13 +298,9 @@ export default function ExcelUploadModal({
                         type="button"
                         onClick={handleClose}
                         aria-label="닫기"
-                        className="-my-2 -mr-2 inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
+                        className="-my-2 -mr-2 academy-button-text academy-button-sm shrink-0"
                     >
-                        {/* X 아이콘 (SVG) */}
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <line x1="18" y1="6" x2="6" y2="18" />
-                            <line x1="6" y1="6" x2="18" y2="18" />
-                        </svg>
+                        닫기
                     </button>
                 </div>
 
@@ -339,20 +335,6 @@ export default function ExcelUploadModal({
                                     </div>
                                 ) : (
                                     <>
-                                        {/* 업로드 아이콘 */}
-                                        <svg
-                                            className="w-10 h-10 text-[var(--color-academy-faint)] mb-3"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            viewBox="0 0 24 24"
-                                            strokeWidth="1.5"
-                                        >
-                                            <path
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                                d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"
-                                            />
-                                        </svg>
                                         <span className="text-sm font-medium text-[var(--color-academy-muted)]">
                                             엑셀 파일을 여기에 끌어다 놓거나 클릭하여 선택
                                         </span>

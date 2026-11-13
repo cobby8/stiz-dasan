@@ -44,19 +44,20 @@
 .upcomingBadge { display: inline-flex; align-items: center; min-height: 30px; margin-inline-start: 2px; padding: 4px 10px; border-radius: 9px; color: var(--color-academy-surface); background: var(--color-academy-secondary-ink); font-size: 14px; font-weight: 600; }
 .riders { margin-top: 8px; min-width: 0; }
 .rider { padding: 6px 8px; min-width: 0; }
-.riderMain { display: flex; align-items: center; justify-content: space-between; gap: 4px 3px; min-height: 44px; flex-wrap: wrap; }
-/* 좁은 화면에서는 긴 이름만 줄바꿈하고, 전화 두 개는 이름 오른쪽에 함께 둔다. */
-.riderInfo { display: flex; align-items: center; gap: 0 2px; min-width: 0; max-width: 100%; flex: 1 0 auto; }
+/* 2026-11-14 원장 점검표 «좁은 폰에서 이름과 탑승·미탑승 버튼이 두 줄» — 이 줄은 줄바꿈하지 않는다(nowrap).
+   이름 칸(.riderInfo)이 남는 폭을 쓰며 줄어들고(min-width: 0), 긴 이름·전화 버튼만 그 칸 안에서 아래로 내려간다.
+   탑승/미탑승 묶음은 줄지 않고(flex-shrink: 0) 항상 이름과 같은 줄에 남는다. */
+.riderMain { display: flex; align-items: center; justify-content: space-between; gap: 4px 6px; min-height: 44px; flex-wrap: nowrap; }
+.riderInfo { display: flex; flex-wrap: wrap; align-items: center; gap: 0 2px; min-width: 0; flex: 1 1 0; }
 .identity { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
 .identity > :first-child { min-width: 0; max-width: 100%; }
 .identity > :nth-child(2) { flex-shrink: 0; white-space: nowrap; }
 .contacts { display: flex; flex-shrink: 0; align-items: center; gap: 0 2px; }
 .contacts a { display: inline-flex; align-items: center; justify-content: center; gap: 3px; min-width: 44px; min-height: 44px; color: var(--color-academy-primary); font-size: 14px; font-weight: 700; white-space: nowrap; }
-.contacts a span { font-size: 18px; }
 .riderMain > :last-child { flex-shrink: 0; }
 /* 게슈탈트 T-04: 탑승 | 미탑승 사이 12px — 운전 중 옆 버튼을 잘못 누르지 않게. */
-.boardingActions { display: flex; align-items: center; gap: 12px; margin-inline-start: auto; }
-.boardingActions button { min-width: 52px; }
+.boardingActions { display: flex; flex-shrink: 0; flex-wrap: nowrap; align-items: center; gap: 12px; margin-inline-start: auto; }
+.boardingActions button { min-width: 52px; white-space: nowrap; }
 /* 저장 결과(왼쪽)와 «대기로 되돌리기»(오른쪽) 한 줄 */
 .riderStatusLine { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 8px; min-width: 0; }
 .riderNotes { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 2px; }
@@ -68,7 +69,6 @@
   .identity > :first-child { font-size: 18px; }
   .identity > :nth-child(2) { font-size: 12px; }
   .contacts a { font-size: 12px; gap: 2px; }
-  .contacts a span { font-size: 14px; }
 }
 
 /* 매우 긴 명칭만 넓은 행을 확보하고, 짧은 정류장과 시간은 기존 한 행을 유지한다. */

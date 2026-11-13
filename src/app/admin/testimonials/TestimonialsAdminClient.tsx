@@ -39,15 +39,6 @@ type TestimonialsPayload = {
     naverPlaceUrl: string;
 };
 
-// Material Symbols 아이콘 헬퍼 — 닫기·순서 화살표처럼 글자를 둘 자리가 없는 조작에만 쓴다(2026-11-13 UI 통일)
-function MIcon({ name, className = "" }: { name: string; className?: string }) {
-    return (
-        <span className={`material-symbols-outlined ${className}`} style={{ fontSize: "inherit" }} aria-hidden="true">
-            {name}
-        </span>
-    );
-}
-
 // 공개/비공개 배지(목록 행·상세 패널 공용)
 function TestimonialVisibilityBadge({ isPublic }: { isPublic: boolean }) {
     return (
@@ -333,8 +324,8 @@ export default function TestimonialsAdminClient({
                         {/* 모달 헤더 */}
                         <div className="p-6 border-b border-[var(--color-academy-line)] flex items-center justify-between">
                             <h2 id="testimonial-form-modal-title" className="text-lg font-bold text-[var(--color-academy-ink)]">{editId ? "후기 수정" : "새 후기"}</h2>
-                            <button type="button" onClick={resetForm} aria-label="닫기" className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-xl text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
-                                <MIcon name="close" />
+                            <button type="button" onClick={resetForm} aria-label="닫기" className="academy-button-text academy-button-sm shrink-0">
+                                닫기
                             </button>
                         </div>
                         <div className="p-6 space-y-4">
@@ -440,15 +431,15 @@ export default function TestimonialsAdminClient({
                                             <div className="inline-flex items-center gap-1">
                                                 <button type="button" onClick={() => handleReorder(idx, "up")}
                                                     disabled={idx === 0 || isPending}
-                                                    className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-lg text-[var(--color-academy-muted)] transition hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)] disabled:opacity-30"
+                                                    className="academy-button-text academy-button-sm whitespace-nowrap"
                                                     title="위로" aria-label={`${t.name} 후기 위로`}>
-                                                    <MIcon name="arrow_upward" />
+                                                    위로
                                                 </button>
                                                 <button type="button" onClick={() => handleReorder(idx, "down")}
                                                     disabled={idx === testimonials.length - 1 || isPending}
-                                                    className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-lg text-[var(--color-academy-muted)] transition hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)] disabled:opacity-30"
+                                                    className="academy-button-text academy-button-sm whitespace-nowrap"
                                                     title="아래로" aria-label={`${t.name} 후기 아래로`}>
-                                                    <MIcon name="arrow_downward" />
+                                                    아래로
                                                 </button>
                                                 <button type="button" onClick={() => startEdit(t)}
                                                     className="academy-button-tonal academy-button-sm"
@@ -480,9 +471,9 @@ export default function TestimonialsAdminClient({
                             type="button"
                             onClick={() => setDetailTestimonialId(null)}
                             aria-label="닫기"
-                            className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
+                            className="ml-auto academy-button-text academy-button-sm shrink-0"
                         >
-                            <span className="material-symbols-outlined" aria-hidden="true">close</span>
+                            닫기
                         </button>
                     </div>
                     <dl className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">

@@ -155,10 +155,9 @@ export function AndroidInstallSteps({ androidBrowser }: AndroidInstallStepsProps
       )}
 
       <ol className="mt-5 space-y-3" aria-label={`${getAndroidBrowserLabel(androidBrowser)} 설치 순서`}>
-        {steps.map(({ icon, label }, index) => (
+        {steps.map(({ label }, index) => (
           <li key={label} className="flex min-h-11 items-center gap-3 rounded-2xl bg-gray-50 px-3 py-2 dark:bg-gray-800">
             <span className="grid size-8 shrink-0 place-items-center rounded-full bg-brand-navy-900 text-sm font-semibold text-white">{index + 1}</span>
-            <span className="material-symbols-outlined text-[var(--brand-accent)]" aria-hidden="true">{icon}</span>
             <span className="text-sm font-medium text-gray-800 dark:text-gray-100">{label}</span>
           </li>
         ))}

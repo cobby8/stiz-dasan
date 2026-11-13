@@ -91,8 +91,9 @@ test("일정 탭 달력: 출결은 KST 날짜 칸에 찍히고, 수업일·휴�
   assert.match(html, /ring-\[var\(--color-academy-cal-today\)\]/, "오늘 = 굵은 테두리");
   assert.match(html, /rounded-full bg-\[var\(--color-academy-cal-present\)\]/, "출석 = 채운 점");
   assert.match(html, /border-2 border-\[var\(--color-academy-cal-late\)\]/, "지각 = 빈 고리(범례)");
-  assert.match(html, /text-\[var\(--color-academy-cal-absent\)\][^>]*>close</, "결석 = ×");
-  assert.match(html, /text-\[var\(--color-academy-cal-event\)\][^>]*>star</, "행사 = 별");
+  // 2026-11-14 아이콘 완전 제거: ×·별을 아이콘 글꼴 이름(close·star)이 아니라 글자 기호로 그린다 — 모양·색 토큰은 그대로.
+  assert.match(html, /text-\[var\(--color-academy-cal-absent\)\][^>]*>×</, "결석 = ×");
+  assert.match(html, /text-\[var\(--color-academy-cal-event\)\][^>]*>★</, "행사 = 별");
   for (const token of ["present", "late", "absent", "event", "closed", "closed-soft", "class-soft", "class-line", "today"]) {
     assert.match(read("src/app/academy-theme.css"), new RegExp(`--color-academy-cal-${token}:`), `토큰 ${token} 정의`);
   }

@@ -67,7 +67,7 @@ export default function ParentRequestLinkPanel({ studentId, studentName }: { stu
       <div className="flex items-center justify-between gap-3">
         <h3 className="academy-section-title flex min-w-0 items-center gap-1">
           학부모 요청 링크
-          <span role="img" title="학부모가 이 링크로 보낸 요청은 관리자가 승인해야 반영됩니다" aria-label="학부모가 이 링크로 보낸 요청은 관리자가 승인해야 반영됩니다" className="material-symbols-outlined cursor-help leading-none text-[var(--color-academy-faint)]" style={{ fontSize: 15 }}>info</span>
+          <span role="img" title="학부모가 이 링크로 보낸 요청은 관리자가 승인해야 반영됩니다" aria-label="학부모가 이 링크로 보낸 요청은 관리자가 승인해야 반영됩니다" className="cursor-help text-xs font-normal text-[var(--color-academy-faint)] underline decoration-dotted underline-offset-2">안내</span>
         </h3>
         <button type="button" disabled={isPending} onClick={createLink} className="academy-button-secondary academy-button-sm shrink-0">
           {isPending ? "처리 중…" : "링크 생성"}

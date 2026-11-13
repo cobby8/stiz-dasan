@@ -395,7 +395,7 @@ export default function RunBoard({
             //    인라인 style 은 그 규칙보다 우선한다.
             style={{ touchAction: "none" }}
             className="grid h-11 w-11 shrink-0 touch-none cursor-grab place-items-center rounded-lg border border-[var(--color-academy-line-input)] bg-white text-[var(--color-academy-muted)] active:cursor-grabbing">
-            <span aria-hidden="true" className="material-symbols-outlined text-[24px]">drag_indicator</span>
+            <span aria-hidden="true" className="text-2xl leading-none">⠿</span>
           </button>
           <span className={`${styles.sequence} shrink-0`}>{seq}</span>
           <span className="min-w-0 flex-1 text-[15px] font-semibold leading-tight text-[var(--color-academy-ink)] lg:w-36 lg:flex-none">{row.label}</span>
@@ -469,7 +469,7 @@ export default function RunBoard({
               <span className={displayTime(row) ? styles.time : styles.unknownTime}>{displayTime(row) ?? "시간 미정"}</span>
               {url && (
                 <a href={url} className={styles.navigation}>
-                  <span aria-hidden="true" className="material-symbols-outlined text-[17px]">near_me</span> 길안내
+                  길안내
                 </a>
               )}
             </div>

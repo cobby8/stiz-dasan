@@ -23,10 +23,6 @@ export type AbsencePeriodClassOption = { classId: string; className: string; day
 // 입력칸은 테마 공용 모양(academy-input)
 const INPUT_CLASS = "academy-input mt-1";
 
-function Icon({ name, size = 17 }: { name: string; size?: number }) {
-    return <span className="material-symbols-outlined leading-none" style={{ fontSize: `${size}px` }} aria-hidden="true">{name}</span>;
-}
-
 /** 복귀일이 이미 지났는가(KST 오늘 기준) — 복귀일을 정해 등록한 진행 중 기간도 그날이 지나면 «복귀함» */
 function hasReturned(p: AbsencePeriodView, today: string): boolean {
     return p.status === "ENDED" || Boolean(p.returnDate && p.returnDate <= today);
@@ -151,7 +147,7 @@ export default function AbsencePeriodPanel({
                                         <span className="text-[var(--color-academy-muted)]"> · {returnText} · {REASON_LABEL[p.reason] ?? p.reason} · 결석 {live.length}회</span>
                                     </span>
                                     <span className={`shrink-0 rounded px-2 py-0.5 text-xs font-medium ${chip.className}`}>{chip.label}</span>
-                                    <Icon name={open ? "expand_less" : "expand_more"} size={18} />
+                                    <span aria-hidden="true" className="shrink-0 text-[var(--color-academy-muted)]">{open ? "▴" : "▾"}</span>
                                 </button>
 
                                 {open && (

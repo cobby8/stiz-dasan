@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { childAccessSql } from "@/lib/account/child-access";
 import { notMergedStudent } from "@/lib/studentVisibility";
-import { todayKst } from "@/lib/datetime/kst";
+import { addMonthsYm, todayKst } from "@/lib/datetime/kst";
 import { commencementYmd } from "@/lib/enrollment/commencement";
 import { getMonthlyClassDates, loadAnnualPlanEvents } from "@/lib/enrollment/monthlyClassDates";
 import { classDatesForCalendarMonth, shiftMonth } from "@/lib/mypage/parentSchedule";
@@ -48,6 +48,8 @@ export type ParentClassCard = {
   /** 첫 수업 전이면 개시일 */
   startsOn: string | null;
   attendance: AttendanceCell[];
+  /** 이번 달(KST) 출석 «n/m회» — n = 출석+지각, m = 출석+지각+결석. 기록이 없으면 null(2026-11-14 w4) */
+  monthAttendance: { ok: number; total: number } | null;
   shuttle: ClassShuttleLine[];
   actions: ClassCardAction[];
 };
@@ -61,7 +63,11 @@ export async function getParentClassesOverview(parentUserId: string): Promise<Pa
   const today = todayKst();
   const access = await childAccessSql("s", "$1");
 
-  const [students, enrollments, attendance, shuttleItems, planEvents] = await Promise.all([
+  // 이번 달 범위(KST 달력) — Session.date 는 시간대 없는 칸이라 두 번 변환한 값과 비교한다
+  const monthFrom = `${today.slice(0, 7)}-01`;
+  const monthTo = `${addMonthsYm(today.slice(0, 7), 1)}-01`;
+
+  const [students, enrollments, attendance, shuttleItems, planEvents, monthCounts] = await Promise.all([
     // 자녀 목록(반이 없는 아이도 칩에 보인다)
     prisma.$queryRawUnsafe<{ id: string; name: string }[]>(
       `SELECT s.id, s.name FROM "Student" s
@@ -122,6 +128,20 @@ export async function getParentClassesOverview(parentUserId: string): Promise<Pa
     // 셔틀 배정(일정 탭과 같은 조회). 실패해도 카드는 열리게 빈 목록.
     getParentShuttleOverview(parentUserId).catch(() => []),
     loadAnnualPlanEvents().catch(() => []),
+    // 반별 이번 달 출석 수(SQL 에서 센다). 실패해도 카드는 열리게 빈 목록(«이번 달 출석» 줄만 빠진다)
+    prisma.$queryRawUnsafe<{ studentId: string; classId: string; ok: number; total: number }[]>(
+      `SELECT a."studentId", se."classId",
+              COUNT(*) FILTER (WHERE a.status IN ('PRESENT','LATE'))::int AS ok,
+              COUNT(*) FILTER (WHERE a.status IN ('PRESENT','LATE','ABSENT'))::int AS total
+         FROM "Attendance" a
+         JOIN "Session" se ON se.id = a."sessionId"
+         JOIN "Student" s ON s.id = a."studentId" AND ${notMergedStudent("s")}
+        WHERE ${access}
+          AND ((se.date AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Seoul') >= $2::timestamp
+          AND ((se.date AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Seoul') < $3::timestamp
+        GROUP BY a."studentId", se."classId"`,
+      parentUserId, monthFrom, monthTo,
+    ).catch(() => []),
   ]);
 
   // 다음 수업일 = 이번 달·다음 달 수업일(공개 연간일정·청구와 같은 계산) 중 오늘 이후 첫날
@@ -165,6 +185,10 @@ export async function getParentClassesOverview(parentUserId: string): Promise<Pa
       attendance: recentAttendanceCells(
         attendance.filter((a) => a.studentId === row.studentId && a.classId === row.classId),
       ),
+      monthAttendance: (() => {
+        const m = monthCounts.find((x) => x.studentId === row.studentId && x.classId === row.classId);
+        return m && Number(m.total) > 0 ? { ok: Number(m.ok), total: Number(m.total) } : null;
+      })(),
       shuttle: classShuttleLines(shuttleItems, { studentId: row.studentId, classId: row.classId, className: row.className }, today),
       actions: classCardActions({ studentId: row.studentId, enrollmentId: row.enrollmentId, paused }),
     };

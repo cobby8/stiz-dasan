@@ -352,9 +352,9 @@ export default function RichTextEditor({
         );
     }
 
-    // 새 아이콘 버튼 공통 클래스 (기존 정렬 버튼과 동일 스타일)
+    // 도구 막대 글자 버튼 공통 클래스 — 2026-11-14 아이콘 완전 제거(그림 대신 «왼쪽»·«목록»·«링크» 같은 글자)
     const iconBtn = (active: boolean) =>
-        `p-1.5 rounded hover:bg-gray-200 ${active ? 'bg-gray-200' : ''}`;
+        `h-7 px-1.5 inline-flex items-center rounded text-xs whitespace-nowrap hover:bg-gray-200 ${active ? 'bg-gray-200 font-semibold text-black' : ''}`;
 
     return (
         <div className="border border-gray-300 rounded-md overflow-hidden bg-white dark:bg-gray-800 focus-within:ring-2 focus-within:ring-brand-orange-500 dark:focus:ring-brand-neon-lime focus-within:border-brand-orange-500 dark:border-brand-neon-lime transition">
@@ -423,9 +423,7 @@ export default function RichTextEditor({
                     className={iconBtn(editor.isActive({ textAlign: 'left' }))}
                     title="왼쪽 정렬"
                 >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h10M4 18h16" />
-                    </svg>
+                    왼쪽
                 </button>
                 <button
                     type="button"
@@ -433,9 +431,7 @@ export default function RichTextEditor({
                     className={iconBtn(editor.isActive({ textAlign: 'center' }))}
                     title="가운데 정렬"
                 >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M7 12h10M4 18h16" />
-                    </svg>
+                    가운데
                 </button>
                 <button
                     type="button"
@@ -443,9 +439,7 @@ export default function RichTextEditor({
                     className={iconBtn(editor.isActive({ textAlign: 'right' }))}
                     title="오른쪽 정렬"
                 >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M10 12h10M4 18h16" />
-                    </svg>
+                    오른쪽
                 </button>
 
                 <div className="w-px h-5 bg-gray-300 mx-0.5" />
@@ -457,12 +451,7 @@ export default function RichTextEditor({
                     className={iconBtn(editor.isActive('bulletList'))}
                     title="글머리표 목록"
                 >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <circle cx="4" cy="6" r="1.4" fill="currentColor" stroke="none" />
-                        <circle cx="4" cy="12" r="1.4" fill="currentColor" stroke="none" />
-                        <circle cx="4" cy="18" r="1.4" fill="currentColor" stroke="none" />
-                        <path strokeLinecap="round" strokeWidth={2} d="M9 6h11M9 12h11M9 18h11" />
-                    </svg>
+                    목록
                 </button>
                 <button
                     type="button"
@@ -470,12 +459,7 @@ export default function RichTextEditor({
                     className={iconBtn(editor.isActive('orderedList'))}
                     title="순서 목록"
                 >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <text x="1" y="8" fontSize="7" fill="currentColor" stroke="none">1</text>
-                        <text x="1" y="15" fontSize="7" fill="currentColor" stroke="none">2</text>
-                        <text x="1" y="22" fontSize="7" fill="currentColor" stroke="none">3</text>
-                        <path strokeLinecap="round" strokeWidth={2} d="M9 6h11M9 12h11M9 18h11" />
-                    </svg>
+                    번호
                 </button>
                 <button
                     type="button"
@@ -483,9 +467,7 @@ export default function RichTextEditor({
                     className={iconBtn(editor.isActive('blockquote'))}
                     title="인용구"
                 >
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" stroke="none">
-                        <path d="M7 7H4v6h3v-2H6V9h1V7zm7 0h-3v6h3v-2h-1V9h1V7z" />
-                    </svg>
+                    인용
                 </button>
                 <button
                     type="button"
@@ -493,9 +475,7 @@ export default function RichTextEditor({
                     className={iconBtn(false)}
                     title="가로 구분선"
                 >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeWidth={2} d="M4 12h16" />
-                    </svg>
+                    구분선
                 </button>
 
                 <div className="w-px h-5 bg-gray-300 mx-0.5" />
@@ -507,9 +487,7 @@ export default function RichTextEditor({
                     className={iconBtn(editor.isActive('link'))}
                     title="링크 삽입"
                 >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 010 5.656l-3 3a4 4 0 01-5.656-5.656l1.5-1.5M10.172 13.828a4 4 0 010-5.656l3-3a4 4 0 015.656 5.656l-1.5 1.5" />
-                    </svg>
+                    링크
                 </button>
                 <button
                     type="button"
@@ -517,21 +495,19 @@ export default function RichTextEditor({
                     className={iconBtn(false)}
                     title="이미지 삽입 (드래그·붙여넣기도 가능)"
                 >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
+                    사진
                 </button>
 
                 <div className="w-px h-5 bg-gray-300 mx-0.5" />
 
-                {/* 표 / 유튜브 (Material Symbols 아이콘) */}
+                {/* 표 / 유튜브 */}
                 <button
                     type="button"
                     onClick={insertTable}
                     className={iconBtn(editor.isActive('table'))}
                     title="표 삽입 (3x3)"
                 >
-                    <span className="material-symbols-outlined text-[18px] leading-none">grid_on</span>
+                    표
                 </button>
                 <button
                     type="button"
@@ -539,7 +515,7 @@ export default function RichTextEditor({
                     className={iconBtn(false)}
                     title="유튜브 영상 삽입"
                 >
-                    <span className="material-symbols-outlined text-[18px] leading-none">smart_display</span>
+                    영상
                 </button>
 
                 {/* 표 편집 도구 — 커서가 표 안에 있을 때만 노출 */}

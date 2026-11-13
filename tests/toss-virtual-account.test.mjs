@@ -302,7 +302,7 @@ test("마이페이지: 납부·환불·취소된 청구에는 계좌를 보이�
 test("결제창: 무통장입금은 VIRTUAL_ACCOUNT + 90일 + 현금영수증 소득공제 + 에스크로 끔 + 면세 금액", () => {
     assert.equal(va.VIRTUAL_ACCOUNT_VALID_HOURS, 2160);
     // 결제 방식 이름은 한 줄 3칸에 맞춘 짧은 이름(2026-11-09 결제 화면 정리 — 설명 줄 삭제, 묶음 화면과 같은 이름)
-    assert.match(checkoutClient, /value: "VIRTUAL_ACCOUNT", label: "무통장입금", icon: "savings"/);
+    assert.match(checkoutClient, /value: "VIRTUAL_ACCOUNT", label: "무통장입금" \}/); // 2026-11-14 아이콘 완전 제거: 그려지지 않던 icon 필드 삭제
     assert.match(checkoutClient, /validHours: VIRTUAL_ACCOUNT_VALID_HOURS/);
     assert.match(checkoutClient, /cashReceipt: \{ type: "소득공제" as const \}/);
     assert.match(checkoutClient, /useEscrow: false/);

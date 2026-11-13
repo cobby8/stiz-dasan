@@ -1,31 +1,11 @@
-import Link from "next/link";
-import PublicSiteTheme from "@/components/PublicSiteTheme";
+import { redirect } from "next/navigation";
 
-export const dynamic = "force-dynamic";
-
-/** 가맹 심사용 테스트 결제 — 결제창에서 취소·실패하고 돌아온 화면. */
-export default async function ReviewPaymentFailPage({
-    searchParams,
-}: {
-    searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
-    const params = await searchParams;
-    const message = typeof params.message === "string" && params.message ? params.message.slice(0, 200) : "결제가 취소되었습니다.";
-
-    return (
-        <PublicSiteTheme publicScope>
-        <main className="min-h-screen bg-[var(--color-public-tint)] px-4 py-12 text-[var(--color-public-ink)]">
-            <div className="mx-auto max-w-lg rounded-2xl border border-[var(--color-public-line)] bg-[var(--color-public-paper)] p-8 text-center shadow-sm">
-                <h1 className="text-xl font-bold">결제가 완료되지 않았습니다</h1>
-                <p className="mt-4 break-keep text-sm text-[var(--color-public-muted)]">{message}</p>
-                <Link
-                    href="/programs"
-                    className="public-btn-primary mt-6 text-sm"
-                >
-                    프로그램 안내로 돌아가기
-                </Link>
-            </div>
-        </main>
-        </PublicSiteTheme>
-    );
+/**
+ * 옛 주소 넘김 — 토스페이먼츠 가맹 심사용 테스트 결제 화면이 있던 자리다.
+ * 심사가 끝나(2026-11-07 승인) 2026-11-14 에 심사용 결제 흐름(주문서·결과 화면·심사용 API)을 지웠다.
+ * 즐겨찾기·검색 결과로 들어온 사람이 «없는 페이지»를 보지 않게 프로그램 안내로 보낸다.
+ * (실제 수강료 결제는 학부모 청구서 결제 /payments/<청구서> · /pay/<토큰> 이 맡는다 — 이 파일과 무관)
+ */
+export default function RetiredReviewPaymentPage() {
+    redirect("/programs");
 }

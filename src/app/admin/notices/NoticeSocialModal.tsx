@@ -97,8 +97,8 @@ export default function NoticeSocialModal({
                         <h2 id="notice-social-modal-title" className="text-lg font-bold text-[var(--color-academy-ink)]">소셜 발행</h2>
                         <p className="text-sm text-[var(--color-academy-muted)] mt-1">{notice.title}</p>
                     </div>
-                    <button type="button" onClick={onClose} aria-label="닫기" className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
-                        <span className="material-symbols-outlined" aria-hidden="true">close</span>
+                    <button type="button" onClick={onClose} aria-label="닫기" className="academy-button-text academy-button-sm shrink-0">
+                        닫기
                     </button>
                 </div>
 
