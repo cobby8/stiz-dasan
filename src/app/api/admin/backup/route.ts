@@ -13,7 +13,9 @@ async function requiredQuery(sql: string): Promise<Record<string, unknown>[]> {
     return prisma.$queryRawUnsafe<Record<string, unknown>[]>(sql);
 }
 
-// GET /api/admin/backup - 설정 7개 테이블만 다운로드 (전체 DB 백업 아님)
+// GET /api/admin/backup - 설정 7개 테이블만 다운로드 (복원 대상)
+// 업무 자료(학생·출결·청구·결제 등)는 응답 상한(4.5MB)을 넘어 여기서 내려주지 않는다 —
+// 클라우드 백업의 짝 파일(stiz-archive-<시각>.json.gz)에 있고, «업무 자료 내려받기» 버튼으로 받는다.
 export async function GET() {
     // 원장 권한이 있는 사용자만 백업을 다운로드할 수 있다.
     try {
@@ -53,6 +55,7 @@ export async function GET() {
                 scope: "SETTINGS_ONLY",
                 exportedAt: new Date().toISOString(),
                 tables: ["AcademySettings", "Program", "Coach", "ClassSlotOverride", "CustomClassSlot", "Route/Stop"],
+                archiveNote: "학생·출결·청구·결제 등 업무 자료는 클라우드 백업의 stiz-archive-*.json.gz 파일에 있습니다(보관용).",
             },
             academySettings: academySettingsRows[0] ?? null,
             programs,
@@ -97,6 +100,9 @@ export async function POST(req: NextRequest) {
     }
 
     const results: Record<string, string> = {};
+
+    // ⚠️ 복원 범위는 설정 4개 칸(programs·coaches·classSlotOverrides·customClassSlots)뿐이다.
+    // 업무 자료(archive)는 일부러 읽지 않는다 — 운영 자료를 통째로 덮어쓰면 그 사이 쌓인 출결·결제가 사라진다.
 
     // Restore Programs
     if (Array.isArray(backup.programs)) {

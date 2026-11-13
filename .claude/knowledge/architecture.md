@@ -171,6 +171,12 @@
     자체 package.json·tsconfig·node_modules. 루트 `tsconfig.json` exclude·`eslint.config.mjs` ignore 에 `apps/toss-pos-plugin` 이 빠지면 루트 `**/*.ts` 포함 때문에 next build(Vercel)가 깨진다. 핵심 로직은 `src/core/*`(SDK 를 import 하지 않고 pos-types.ts 최소 모양을 인자로 받음 → node --test 가짜 SDK), 실제 SDK 와 맞는지는 `tests/sdk-compat.typecheck.ts` 가 tsc 로 확인. 서버 API 주소·응답 해석은 `src/core/contract.ts` 한 곳(camel/snake 둘 다 읽음). SDK 0.0.31 은 **주문 전체 메모를 넣는 함수가 없어** `STIZ:S-xxxx` 를 항목 메모+item.code 에 넣는다 → 서버 웹훅 매칭은 lineItems[].memo·item.code 도 봐야 한다. 요청 제한은 http 포함 60초 100·30분 200번. 운영 매장 배포 = 라이브 검수(월·목)+VAN 대리점 활성화, 개발 배포는 테스트 단말기 5대.
 - **참조횟수**: 0
 
+### [2026-11-13] 백업 = 설정 파일(복원) + 업무 자료 gzip 짝 파일(보관용, 자동 복원 안 함)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 규칙은 `src/lib/backup/archiveCore.ts` 한 곳(순수), DB 연결은 `lib/backup/archive.ts`. 같은 시각에 `stiz-backup-<시각>.json`(설정 7표, 복원 3경로가 읽는 유일한 파일, `_meta.archiveFile` 에 짝 경로) + `stiz-archive-<시각>.json.gz`(업무 자료). 담을 표 = information_schema public 표 전체 − `ARCHIVE_EXCLUDED_TABLES`(캐시·시트 가져오기 원본/오류·OTP 로그·짧은 인증 세션·푸시 키, 이유 필수) − 설정 7표 → **새 표·스키마에 없는 DB 표도 자동 포함**. 비밀 칸은 이름 규칙(…Hash·…Token·secret 등, JSON 속 키까지) + 표별 지정(`SECRET_COLUMNS_BY_TABLE`, 예 EnrollmentShortLink.code). 키셋 페이지는 `"id"::text`(uuid 표 대비) 5000줄씩, 페이지마다 gzip 조각으로 바로 압축(gzip 멤버 이어붙이기 = 하나로 풀림). 45MB 넘으면 큰 표부터 SIZE_LIMIT. 실패는 설정 저장 후 500 ARCHIVE_INCOMPLETE(슬랙). 함수 300초(vercel.json 개별 지정+route maxDuration). 클라우드 목록은 files(복원용)/archives 로 분리 — «최신 자동백업 복원»이 files[0] 을 쓰기 때문. 업무 자료는 `GET cloud-backups?archive=` 1분 서명 주소(원장·이름 규칙). 검사 `tests/backup-archive.test.mjs`.
+- **참조횟수**: 0
+
 ### [2026-11-08] 청구 준비 제안값 = 순수 workbench-pricing
 - **분류**: architecture
 - **발견자**: developer

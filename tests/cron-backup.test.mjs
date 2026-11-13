@@ -3,6 +3,8 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
+import { gunzipSync } from 'node:zlib';
+import * as archiveCore from '../src/lib/backup/archiveCore.ts';
 import { NextRequest, NextResponse } from 'next/server.js';
 
 const source = readFileSync(new URL('../src/app/api/cron/backup/route.ts', import.meta.url), 'utf8');
@@ -12,9 +14,25 @@ const compiled = ts.transpileModule(source, { compilerOptions: {
 const old = { name: 'stiz-backup-2020-01-01T00-00-00.json', created_at: '2020-01-01T00:00:00Z' };
 const sensitive = 'SYNTHETIC_PRIVATE_CONNECTION_AND_STUDENT';
 
+// 업무 자료 수집은 실제 collectArchive 를 가짜 DB(학생 1줄·출결 2줄)로 돌린다 — 운영 DB 는 쓰지 않는다.
+async function fakeArchive(options) {
+  if (options.archive) return options.archive;
+  const tables = { Student: [{ id: 'st1', tokenHash: 'h' }], Attendance: [{ id: 'a1' }, { id: 'a2' }] };
+  return archiveCore.collectArchive(async (sql) => {
+    if (/information_schema\.tables/.test(sql)) return Object.keys(tables).map(tableName => ({ tableName }));
+    if (/information_schema\.columns/.test(sql)) return Object.keys(tables).flatMap(tableName => ['id', 'tokenHash'].map(columnName => ({ tableName, columnName })));
+    return tables[sql.match(/FROM "([^"]+)"/)[1]];
+  });
+}
+const archiveModule = (calls, options) => ({
+  async collectBackupArchive() { calls.archive = (calls.archive ?? 0) + 1; return fakeArchive(options); },
+  packArchive: archiveCore.packArchive, archiveFilenameFor: archiveCore.archiveFilenameFor, backupReplacer: archiveCore.backupReplacer,
+  ARCHIVE_BACKUP_NAME: archiveCore.ARCHIVE_BACKUP_NAME, SETTINGS_BACKUP_NAME: archiveCore.SETTINGS_BACKUP_NAME,
+});
+
 // 실제 라우트만 실행하고 운영 인증·DB·Storage 모듈은 가져오지 않는다.
 function fixture(options = {}) {
-  const calls = { query: 0, bucket: 0, create: 0, upload: [], list: 0, remove: [], logs: [] };
+  const calls = { archiveUpload: [], query: 0, bucket: 0, create: 0, upload: [], list: 0, remove: [], logs: [] };
   const result = (key, data) => options.fail === key ? { data: null, error: { message: sensitive } } : { data, error: null };
   const storage = {
     async listBuckets() { calls.bucket++; return result('bucket', options.missingBucket ? [] : [{ name: 'backups' }]); },
@@ -23,6 +41,11 @@ function fixture(options = {}) {
       assert.equal(name, 'backups');
       return {
         async upload(filename, body, config) {
+          if (filename.endsWith('.gz')) {
+            calls.archiveUpload.push({ filename, archive: JSON.parse(gunzipSync(body).toString('utf8')), config });
+            if (options.fail === 'archive-upload-lost') throw new Error(sensitive);
+            return result('archive-upload', {});
+          }
           calls.upload.push({ filename, snapshot: JSON.parse(body), config });
           if (options.fail === 'upload-response-lost') throw new Error(sensitive);
           return result('upload', {});
@@ -40,6 +63,7 @@ function fixture(options = {}) {
       return options.rows?.[sql.match(/FROM "([^"]+)"/)[1]] ?? [];
     } } },
     '@/lib/cron/withCronAlert': { withCronAlert: (_name, handler) => handler }, // 실패 알림 래퍼(d4)는 cron-alert.test 에서 따로 검사
+    '@/lib/backup/archive': archiveModule(calls, options),
     '@/lib/supabase/admin': { createAdminClient: () => ({ storage }) },
   };
   const exports = {};
@@ -154,3 +178,63 @@ test('삭제 응답에서 확인되지 않은 항목을 삭제 완료로 만들�
   assert.equal(body.backupSaved, true);
   assert.deepEqual(body.deleted, []);
 });
+
+// 2026-11-13 f12 — 업무 자료는 같은 시각의 별도 gzip 파일(stiz-archive-*.json.gz)로 저장한다.
+test('설정 파일 다음에 업무 자료 압축 파일을 짝으로 저장하고 설정 _meta 에 경로를 적는다', async () => {
+  const f = fixture();
+  const { status, body } = await f.run();
+  assert.equal(status, 200);
+  const settings = f.calls.upload[0];
+  const archive = f.calls.archiveUpload[0];
+  assert.equal(archive.filename, settings.filename.replace('stiz-backup-', 'stiz-archive-').replace('.json', '.json.gz'));
+  assert.equal(settings.snapshot._meta.archiveFile, archive.filename);
+  assert.equal(settings.snapshot._meta.scope, 'SETTINGS_ONLY');
+  assert.equal(settings.snapshot.archive, undefined); // 설정 파일에는 업무 자료가 없다(복원 경로가 읽는 파일)
+  assert.deepEqual(archive.archive.tables.Attendance, [{ id: 'a1' }, { id: 'a2' }]);
+  assert.deepEqual(archive.archive.tables.Student, [{ id: 'st1', tokenHash: '[가림]' }]);
+  assert.equal(archive.archive.restore, 'MANUAL_ONLY');
+  assert.equal(archive.archive.settingsFile, settings.filename);
+  assert.equal(archive.config.contentType, 'application/gzip');
+  assert.equal(archive.config.upsert, false);
+  assert.deepEqual(archive.config.metadata, { archiveTables: 2, archiveRows: 3, archiveComplete: true });
+  assert.equal(body.archive.filename, archive.filename);
+  assert.equal(body.archive.saved, true);
+  assert.equal(body.archive.rows, 3);
+});
+
+test('설정 조회가 실패하면 업무 자료를 모으지 않는다', async () => {
+  const f = fixture({ failQuery: 'Program' });
+  assert.equal((await f.run()).status, 500);
+  assert.equal(f.calls.archive, undefined);
+  assert.equal(f.calls.archiveUpload.length, 0);
+});
+
+test('업무 자료 일부 표 실패는 설정·나머지를 저장하고 정리한 뒤 500 으로 알린다(슬랙 알림)', async () => {
+  const archive = await archiveCore.collectArchive(async (sql) => {
+    if (/information_schema\.tables/.test(sql)) return [{ tableName: 'Student' }, { tableName: 'Attendance' }];
+    if (/information_schema\.columns/.test(sql)) return [{ tableName: 'Student', columnName: 'id' }, { tableName: 'Attendance', columnName: 'id' }];
+    if (sql.includes('"Attendance"')) throw new Error(sensitive);
+    return [{ id: 's1' }];
+  });
+  const f = fixture({ archive, files: [old, { name: 'stiz-archive-2020-01-01T00-00-00.json.gz', created_at: old.created_at }] });
+  const { status, body } = await f.run();
+  assert.equal(status, 500);
+  assert.equal(body.stage, 'ARCHIVE_INCOMPLETE');
+  assert.equal(body.backupSaved, true);
+  assert.deepEqual(body.archive.failedTables, ['Attendance']);
+  assert.deepEqual(f.calls.archiveUpload[0].archive.tables.Student, [{ id: 's1' }]);
+  // 30일 지난 설정·업무 자료 파일 둘 다 정리
+  assert.deepEqual(f.calls.remove, [[old.name, 'stiz-archive-2020-01-01T00-00-00.json.gz']]);
+});
+
+for (const fail of ['archive-upload', 'archive-upload-lost']) {
+  test(`업무 자료 파일 저장 실패(${fail})도 설정 저장은 유지하고 500 으로 알린다`, async () => {
+    const f = fixture({ fail });
+    const { status, body } = await f.run();
+    assert.equal(status, 500);
+    assert.equal(body.stage, 'ARCHIVE_INCOMPLETE');
+    assert.equal(body.backupSaved, true);
+    assert.equal(body.archive.saved, fail === 'archive-upload' ? false : null);
+    assert.equal(f.calls.upload.length, 1);
+  });
+}

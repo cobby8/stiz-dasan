@@ -1,15 +1,17 @@
-/** 원장 전용 수동 설정 백업. 학생·청구·월 장부 전체 백업은 아닙니다. */
+/** 원장 전용 즉시 백업. 설정 7개 표(복원 대상, .json) + 업무 자료 전체(보관용 .json.gz, 자동 복원 안 함). */
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+    ARCHIVE_BACKUP_NAME, SETTINGS_BACKUP_NAME, archiveFilenameFor, backupReplacer, collectBackupArchive, packArchive,
+} from "@/lib/backup/archive";
 import { requireOwner } from "@/lib/auth-guard";
 
 export const dynamic = "force-dynamic";
+// 업무 자료 전체(수만 줄)를 읽고 압축한다 — 300초(Pro 상한). vercel.json 에도 같은 값.
+export const maxDuration = 300;
 const BUCKET = "backups";
 const KEEP_DAYS = 30;
-function replacer(_: string, v: unknown) {
-    return typeof v === "bigint" ? Number(v) : v;
-}
 async function requiredQuery(sql: string): Promise<Record<string, unknown>[]> {
     return prisma.$queryRawUnsafe<Record<string, unknown>[]>(sql);
 }
@@ -37,18 +39,36 @@ export async function POST() {
                 requiredQuery(`SELECT * FROM "Stop" ORDER BY "createdAt" ASC`),
             ]);
 
+        // 설정 조회가 모두 성공한 뒤 업무 자료(학생·수강·출결·청구·결제 등)를 보관용으로 모은다.
+        // 예외를 던지지 않는다 — 실패한 표는 archive.failed 에 남고, 설정 백업은 그대로 저장한다.
+        stage = "ARCHIVE";
+        const archive = await collectBackupArchive();
+
         const routesWithStops = routes.map((r) => ({
             ...r,
             stops: stops.filter((s) => s.routeId === r.id),
         }));
 
+        // 3. 파일 이름 — 설정 파일과 같은 시각의 업무 자료 파일(.json.gz)을 짝으로 둔다
+        const now = new Date();
+        const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+        const filename = `stiz-backup-${kstNow.toISOString().slice(0, 19).replace(/:/g, "-")}.json`;
+        const archiveFilename = archiveFilenameFor(filename);
+        const exportedAt = now.toISOString();
+
+        // 업무 자료 파일(gzip) — 상한을 넘으면 큰 표부터 빼고 나머지를 담는다(빠진 표 = SIZE_LIMIT)
+        const { body: archiveBody, summary } = packArchive(archive, { exportedAt, source: "manual", settingsFile: filename });
+
         const snapshot = {
             _meta: {
                 version: 1,
-                exportedAt: new Date().toISOString(),
+                exportedAt,
                 source: "manual",
+                // 이 파일은 설정 7개 표뿐(복원 대상). 업무 자료는 짝 파일 archiveFile 에 있다(보관용·자동 복원 안 함).
                 scope: "SETTINGS_ONLY",
                 tables: ["AcademySettings", "Program", "Coach", "ClassSlotOverride", "CustomClassSlot", "Route/Stop"],
+                archiveFile: archiveFilename,
+                archive: { tables: summary.tables, rows: summary.rows, complete: summary.complete },
             },
             academySettings: academyRows[0] ?? null,
             programs,
@@ -58,12 +78,7 @@ export async function POST() {
             routes: routesWithStops,
         };
 
-        // 3. Supabase Storage에 업로드
-        const now = new Date();
-        const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-        const filename = `stiz-backup-${kstNow.toISOString().slice(0, 19).replace(/:/g, "-")}.json`;
-
-        const body = JSON.stringify(snapshot, replacer, 2);
+        const body = JSON.stringify(snapshot, backupReplacer, 2);
         stage = "BUCKET";
         const supabase = createAdminClient();
         const { data: buckets, error: bucketError } = await supabase.storage.listBuckets();
@@ -81,15 +96,30 @@ export async function POST() {
         if (uploadError) throw new Error("UPLOAD_FAILED");
         savedFilename = filename;
 
-        // 4. 30일 이상 된 파일 삭제
+        // 3-2. 업무 자료 파일 — 실패해도 설정 파일은 이미 저장됐다. 결과만 기록하고 정리까지 진행한다.
+        stage = "ARCHIVE_UPLOAD";
+        let archiveSaved: boolean | null = false;
+        try {
+            const { error: archiveError } = await supabase.storage.from(BUCKET).upload(archiveFilename, archiveBody, {
+                contentType: "application/gzip",
+                upsert: false,
+                // 대시보드 «시스템 상태»가 파일을 내려받지 않고 담긴 표·행 수를 보도록 파일 정보에 적는다.
+                metadata: { archiveTables: summary.tables, archiveRows: summary.rows, archiveComplete: summary.complete },
+            });
+            archiveSaved = !archiveError;
+        } catch {
+            archiveSaved = null; // 응답 유실 — 저장됐을 수도 있다
+        }
+
+        // 4. 30일 이상 된 파일 삭제 (설정 파일·업무 자료 파일 둘 다)
         stage = "CLEANUP_LIST";
         const { data: files, error: listError } = await supabase.storage.from(BUCKET).list("", { limit: 200 });
         if (listError || !files) throw new Error("CLEANUP_LIST_FAILED");
         const cutoff = new Date(Date.now() - KEEP_DAYS * 24 * 60 * 60 * 1000);
         const toDelete = files.filter((f) => {
             const created = f.created_at ? new Date(f.created_at) : null;
-            return /^stiz-backup-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.json$/.test(f.name)
-                && f.name !== filename && created !== null && created < cutoff;
+            return (SETTINGS_BACKUP_NAME.test(f.name) || ARCHIVE_BACKUP_NAME.test(f.name))
+                && f.name !== filename && f.name !== archiveFilename && created !== null && created < cutoff;
         });
         if (toDelete.length > 0) {
             stage = "CLEANUP_REMOVE";
@@ -100,10 +130,21 @@ export async function POST() {
             if (deleted.length !== names.length) throw new Error("CLEANUP_REMOVE_INCOMPLETE");
         }
 
+        const archiveResult = { filename: archiveFilename, saved: archiveSaved, tables: summary.tables, rows: summary.rows,
+            bytes: summary.bytes, complete: summary.complete, failedTables: summary.failedTables };
+        if (!summary.complete || archiveSaved !== true) {
+            // 설정은 저장됐지만 업무 자료 일부(또는 파일)를 못 담았다 — 500 으로 알려 원장 슬랙 알림이 가게 한다.
+            console.error("[backup-now] archive incomplete:", summary.failedTables.length, archiveSaved);
+            return NextResponse.json({ success: false, scope: "SETTINGS_ONLY", stage: "ARCHIVE_INCOMPLETE",
+                backupSaved: true, filename, deleted, archive: archiveResult,
+                error: "설정은 저장했지만 업무 자료 일부를 백업하지 못했습니다." }, { status: 500 });
+        }
+
         return NextResponse.json({
             success: true,
             scope: "SETTINGS_ONLY",
             filename,
+            archive: archiveResult,
             rows: {
                 programs: programs.length,
                 coaches: coaches.length,
@@ -119,6 +160,6 @@ export async function POST() {
             // 응답 유실은 미저장으로 확정하지 않는다. 후보 파일을 재조회해야 한다.
             backupSaved: savedFilename !== null ? true : intendedFilename !== null ? null : false,
             filename: savedFilename ?? intendedFilename, deleted,
-            error: "설정 백업 작업을 완료하지 못했습니다." }, { status: 500 });
+            error: "백업 작업을 완료하지 못했습니다." }, { status: 500 });
     }
 }

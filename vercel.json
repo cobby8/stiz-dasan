@@ -11,6 +11,12 @@
   "fluid": true,
   "regions": ["icn1"],
   "functions": {
+    "src/app/api/cron/backup/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/admin/backup-now/route.ts": {
+      "maxDuration": 300
+    },
     "src/app/**/*": {
       "maxDuration": 60
     }
