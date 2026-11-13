@@ -176,7 +176,7 @@ export default function SeasonalAttendanceClient({ initial }: { initial: { seaso
     const over = court != null && court > cap;   // 정원 초과 여부(정원과 비교되는 값은 코트 전체다)
     const pending = d.unchecked > 0 && d.state !== "PLANNED"; // 출결 체크가 덜 끝난 날
     const title = `${d.dateLabel}(${d.dayLabel}) · ${d.round}일차 · ${d.startTime}~${d.endTime}`
-      + ` · 이 반 ${d.scheduled}명${court != null ? ` · 코트 전체 ${court}/${cap}${over ? " ⚠ 정원 초과" : ""}` : ""}`
+      + ` · 이 반 ${d.scheduled}명${court != null ? ` · 코트 전체 ${court}/${cap}${over ? " 정원 초과" : ""}` : ""}`
       + ` · 출${d.present}/지${d.late}/결${d.absent}/보${d.makeup}${pending ? ` · 미확인 ${d.unchecked}` : ""}`;
     return (
       <button key={d.sessionDateId} type="button" aria-pressed={selDate === d.sessionDateId} onClick={() => setSelDate(d.sessionDateId)} title={title}
@@ -192,7 +192,7 @@ export default function SeasonalAttendanceClient({ initial }: { initial: { seaso
           <span className="text-[var(--color-academy-muted)]">{d.scheduled}</span>
           {court != null && <> · <span className={over ? "text-[var(--color-academy-danger)]" : ""}>{court}/{cap}</span></>}
         </div>
-        {over && <div className="mt-0.5 text-xs font-medium leading-none text-[var(--color-academy-danger)]">⚠ 초과</div>}
+        {over && <div className="mt-0.5 text-xs font-medium leading-none text-[var(--color-academy-danger)]">초과</div>}
         <div className="mt-1 h-1 overflow-hidden rounded-full bg-[var(--color-academy-line)]">
           <div className={`h-full rounded-full ${barColor(d)}`} style={{ width: `${Math.min(100, cap ? (gaugeOf(d) / cap) * 100 : 0)}%` }} />
         </div>
@@ -292,7 +292,7 @@ export default function SeasonalAttendanceClient({ initial }: { initial: { seaso
                     rosterMeta.courtOccupied > (rosterMeta.courtCapacity ?? rosterMeta.capacity ?? 12)
                       ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-muted)]"}`}>
                     · 이 날 코트 전체 {rosterMeta.courtOccupied}/{rosterMeta.courtCapacity ?? rosterMeta.capacity ?? 12}
-                    {rosterMeta.courtOccupied > (rosterMeta.courtCapacity ?? rosterMeta.capacity ?? 12) ? " ⚠ 정원 초과" : ""}
+                    {rosterMeta.courtOccupied > (rosterMeta.courtCapacity ?? rosterMeta.capacity ?? 12) ? " 정원 초과" : ""}
                   </span>
                 )}
               </div>
@@ -440,7 +440,7 @@ function MakeupModal({ modal, onClose, onSeasonal, onRegular }: { modal: any; on
           <span className="academy-section-title">보강 배정</span>
           <span className="text-xs text-[var(--color-academy-muted)]">· {a.childName} ({a.childGrade || "-"}) · {a.absentLabel} 결석</span>
           <div className="flex-1" />
-          <button type="button" onClick={onClose} aria-label="닫기" className="academy-button-text academy-button-sm">✕</button>
+          <button type="button" onClick={onClose} aria-label="닫기" className="academy-button-text academy-button-sm shrink-0">닫기</button>
         </div>
         <div className="p-5">
           {modal.alreadyAssigned ? (

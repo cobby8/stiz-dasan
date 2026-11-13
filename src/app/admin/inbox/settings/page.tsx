@@ -14,8 +14,8 @@ export default async function InboxSettingsPage() {
     <div className="space-y-3">
       {/* 머리 한 줄: 신청함으로 돌아가기 + 제목 + 입학 점검 */}
       <div className="flex flex-wrap items-center gap-2">
-        <Link href="/admin/inbox" prefetch={false} aria-label="신청함으로 돌아가기" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
-          <span className="material-symbols-outlined" aria-hidden="true">arrow_back</span>
+        <Link href="/admin/inbox" prefetch={false} aria-label="신청함으로 돌아가기" className="academy-button-text academy-button-sm shrink-0 whitespace-nowrap">
+          ← 신청함
         </Link>
         <AdminPageHeader
           className="min-w-0 flex-1"

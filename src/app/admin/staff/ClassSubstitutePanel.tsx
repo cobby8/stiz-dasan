@@ -121,8 +121,8 @@ export default function ClassSubstitutePanel({ data }: { data: ClassSubstituteAd
                         <h2 id="class-substitute-modal-title" className="academy-section-title">
                             대타 선생님 지정
                         </h2>
-                        <button type="button" onClick={() => setOpen(false)} aria-label="닫기" className="grid size-11 place-items-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)]">
-                            <span className="material-symbols-outlined" aria-hidden="true">close</span>
+                        <button type="button" onClick={() => setOpen(false)} aria-label="닫기" className="academy-button-text academy-button-sm shrink-0">
+                            닫기
                         </button>
                     </div>
                     <div className="space-y-3 px-5 py-4">

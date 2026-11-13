@@ -16,16 +16,12 @@ import { useRememberedChild } from "../useRememberedChild";
 // 학부모 «수업» 탭 화면 (2026-11-10 설계 B). 계산은 lib/parent/classCards.ts, 여기는 그리기만.
 // 컴팩트 규칙: 카드 안쪽 여백 작게·정보는 적은 줄로·터치 44px·글자 12px 이상·색은 토큰만.
 
-function Icon({ name, size = 18, className = "" }: { name: string; size?: number; className?: string }) {
-  return <span className={`material-symbols-outlined leading-none ${className}`} style={{ fontSize: `${size}px` }} aria-hidden="true">{name}</span>;
-}
-
 /** 출결 한 칸의 모양 — 색만으로 구분하지 않는다(일정 탭 달력과 같은 모양: 출석 채운 점·지각 빈 고리·결석 ×) */
 function AttendanceMark({ status }: { status: AttendanceCell["status"] }) {
   if (status === "PRESENT") return <span aria-hidden="true" className="inline-block size-2.5 shrink-0 rounded-full bg-[var(--color-academy-cal-present)]" />;
   if (status === "LATE") return <span aria-hidden="true" className="inline-block size-2.5 shrink-0 rounded-full border-2 border-[var(--color-academy-cal-late)]" />;
   if (status === "ABSENT" || status === "EXCUSED") {
-    return <span aria-hidden="true" className="material-symbols-outlined shrink-0 font-bold leading-none text-[var(--color-academy-cal-absent)]" style={{ fontSize: "14px", fontVariationSettings: "'wght' 700" }}>close</span>;
+    return <span aria-hidden="true" className="shrink-0 text-sm font-bold leading-none text-[var(--color-academy-cal-absent)]">×</span>;
   }
   return <span aria-hidden="true" className="inline-block size-2.5 shrink-0 rounded-full border border-[var(--color-academy-line-input)]" />;
 }
@@ -57,7 +53,7 @@ function ChangeMenu({ action }: { action: Extract<ClassCardAction, { key: "chang
         className="academy-button-secondary w-full !gap-0.5 !px-1 text-sm leading-tight"
       >
         <span className="whitespace-nowrap">{action.label}</span>
-        <Icon name="expand_more" size={16} />
+        <span aria-hidden="true">▾</span>
       </button>
       {open && (
         <div role="menu" className="absolute right-0 top-12 z-30 w-36 overflow-hidden rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] py-1 shadow-lg">

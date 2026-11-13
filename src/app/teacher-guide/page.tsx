@@ -119,7 +119,7 @@ export default function TeacherGuidePage() {
           </Card>
 
           <Card title="3. 휴대폰 알림 켜기">
-            {lineList(["로그인 후 위쪽 종(🔔) 아이콘을 눌러 알림을 켜 주세요. 휴대폰이 알림을 지원하지 않으면 아이콘이 보이지 않아요."])}
+            {lineList(["로그인 후 위쪽 «알림» 버튼을 눌러 알림을 켜 주세요. 휴대폰이 알림을 지원하지 않으면 버튼이 보이지 않아요."])}
           </Card>
 
           <Card title="4. 수업 하나 끝내기">

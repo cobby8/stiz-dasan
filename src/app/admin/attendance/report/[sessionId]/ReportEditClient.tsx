@@ -555,21 +555,11 @@ function ReportEditForm({
                                                     )}
                                                     className="focus:outline-none"
                                                 >
-                                                    <span
-                                                        className={`material-symbols-outlined text-lg ${
+                                                    <span aria-hidden="true" className={`text-lg leading-none ${
                                                             noteData.rating && noteData.rating >= star
                                                                 ? "text-[var(--color-academy-warning)]"
                                                                 : "text-[var(--color-academy-faint)]"
-                                                        }`}
-                                                        style={{
-                                                            fontVariationSettings:
-                                                                noteData.rating && noteData.rating >= star
-                                                                    ? "'FILL' 1"
-                                                                    : "'FILL' 0",
-                                                        }}
-                                                    >
-                                                        star
-                                                    </span>
+                                                        }`}>{noteData.rating && noteData.rating >= star ? "★" : "☆"}</span>
                                                 </button>
                                             ))}
                                         </div>

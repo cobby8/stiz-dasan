@@ -141,7 +141,9 @@ test("현황판은 달력 배치 순수 함수를 그대로 쓴다(화면에서 
 
 test("셀은 정원 초과를 빨강 + '초과'로 알린다 — 코트 전체 기준", () => {
   assert.match(client, /const over = court != null && court > cap;/);
-  assert.match(client, /⚠ 초과/);
+  // 2026-11-14 아이콘 완전 제거: 경고 기호(⚠) 없이 글자 «초과»만(위험색은 아래 단언이 지킨다)
+  assert.match(client, />초과<\/div>/);
+  assert.doesNotMatch(client, /⚠/);
   // 초과 = 위험색 토큰(색상 6단계 — 하드코딩 빨강·dark: 대신)
   assert.match(client, /over \? "text-\[var\(--color-academy-danger\)\]"/);
 });

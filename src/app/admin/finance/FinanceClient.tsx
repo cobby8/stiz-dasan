@@ -264,8 +264,8 @@ const SHEET_RECONCILE_ACTION_LABELS: Record<string, string> = {
 const FINANCE_VIEW_STORAGE_KEY = "admin-finance-view-mode";
 const FINANCE_VIEW_VALUES = ["list", "status"] as const;
 const FINANCE_VIEW_OPTIONS = [
-    { value: "list", label: "목록", icon: "view_list" },
-    { value: "status", label: "상태별", icon: "view_agenda" },
+    { value: "list", label: "목록" },
+    { value: "status", label: "상태별" },
 ] as const;
 // 상태 칩·상태별 묶음 순서. 값은 필터 모달 «납부 상태» select 의 값과 같다(칩·select 가 한 상태를 공유)
 const PAYMENT_STATUS_ORDER = ["PENDING", "OVERDUE", "PAID", "REFUNDED", "CANCELED"] as const;
@@ -1724,19 +1724,19 @@ export default function FinanceClient({
                         <button
                             type="button"
                             onClick={prevMonth}
-                            className="inline-flex h-11 w-11 items-center justify-center rounded-full text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)]"
+                            className="inline-flex h-11 min-w-11 items-center justify-center rounded-full px-3 text-sm font-medium text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)]"
                             aria-label="이전 달"
                         >
-                            <span className="material-symbols-outlined text-xl" aria-hidden="true">chevron_left</span>
+                            이전
                         </button>
                         <span className="min-w-20 text-center tabular-nums">{year}.{String(month).padStart(2, "0")}</span>
                         <button
                             type="button"
                             onClick={nextMonth}
-                            className="inline-flex h-11 w-11 items-center justify-center rounded-full text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)]"
+                            className="inline-flex h-11 min-w-11 items-center justify-center rounded-full px-3 text-sm font-medium text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)]"
                             aria-label="다음 달"
                         >
-                            <span className="material-symbols-outlined text-xl" aria-hidden="true">chevron_right</span>
+                            다음
                         </button>
                     </div>
                 </div>
@@ -1824,8 +1824,8 @@ export default function FinanceClient({
                     <div className="grid gap-0.5">
                         {bulkRefundNotice.lines.map((line, index) => <p key={index}>{line}</p>)}
                     </div>
-                    <button type="button" onClick={() => setBulkRefundNotice(null)} aria-label="환불 결과 닫기" className="min-h-11 min-w-11 shrink-0 rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
-                        <span className="material-symbols-outlined text-base" aria-hidden="true">close</span>
+                    <button type="button" onClick={() => setBulkRefundNotice(null)} aria-label="환불 결과 닫기" className="academy-button-text academy-button-sm shrink-0">
+                        닫기
                     </button>
                 </div>
             )}
@@ -1933,9 +1933,9 @@ export default function FinanceClient({
                                 type="button"
                                 onClick={() => setDetailPaymentId(null)}
                                 aria-label="닫기"
-                                className="ml-auto inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
+                                className="ml-auto academy-button-text academy-button-sm shrink-0"
                             >
-                                <span className="material-symbols-outlined" aria-hidden="true">close</span>
+                                닫기
                             </button>
                         </div>
                         {/* 요약: 왼쪽 이름표 / 오른쪽 값 */}

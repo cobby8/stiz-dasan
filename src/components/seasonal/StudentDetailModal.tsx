@@ -132,7 +132,7 @@ export default function StudentDetailModal({ applicationId, onClose, save, onCha
             <p className="text-xs text-[var(--color-academy-muted)]">수강생 상세</p>
             <h2 className="text-lg font-bold text-[var(--color-academy-ink)]">{c?.name ?? "학생"} {c?.grade ? <span className="text-sm font-normal text-[var(--color-academy-muted)]">· {c.grade}{c.gender ? ` · ${c.gender}` : ""}</span> : null}</h2>
           </div>
-          <button type="button" onClick={onClose} aria-label="닫기" className="grid size-11 shrink-0 place-items-center rounded-md text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">✕</button>
+          <button type="button" onClick={onClose} aria-label="닫기" className="academy-button-text academy-button-sm shrink-0">닫기</button>
         </header>
 
         <div className="flex-1 space-y-4 overflow-y-auto p-5">

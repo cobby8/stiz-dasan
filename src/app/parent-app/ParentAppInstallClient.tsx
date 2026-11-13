@@ -198,9 +198,6 @@ export default function ParentAppInstallClient() {
             className="mt-4 flex min-h-11 items-center gap-3 rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900"
             aria-live="polite"
           >
-            <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-[var(--brand-accent-soft)] text-[var(--brand-accent)]" aria-hidden="true">
-              <span className="material-symbols-outlined animate-spin">progress_activity</span>
-            </span>
             <p className="text-sm font-medium text-gray-600 dark:text-gray-300">설치 방법을 확인하고 있어요</p>
           </section>
         )}
@@ -249,13 +246,12 @@ export default function ParentAppInstallClient() {
                 <SafariShareIllustration />
                 <ol className="mt-4 space-y-3" aria-label="iPhone 설치 순서">
                   {[
-                    ["ios_share", "Safari의 공유 버튼 누르기", "화면 아래쪽(또는 위쪽)에 있어요"],
-                    ["add_box", "‘홈 화면에 추가’ 선택하기", "목록을 조금 내리면 보여요"],
-                    ["add", "오른쪽 위 ‘추가’ 누르기", ""],
-                  ].map(([icon, label, hint], index) => (
+                    ["Safari의 공유 버튼 누르기", "화면 아래쪽(또는 위쪽)에 있어요"],
+                    ["‘홈 화면에 추가’ 선택하기", "목록을 조금 내리면 보여요"],
+                    ["오른쪽 위 ‘추가’ 누르기", ""],
+                  ].map(([label, hint], index) => (
                     <li key={label} className="flex min-h-11 items-center gap-3 rounded-2xl bg-gray-50 px-3 py-2 dark:bg-gray-800">
                       <span className="grid size-8 shrink-0 place-items-center rounded-full bg-brand-navy-900 text-sm font-semibold text-white">{index + 1}</span>
-                      <span className="material-symbols-outlined text-[var(--brand-accent)]" aria-hidden="true">{icon}</span>
                       <span className="min-w-0">
                         <span className="block text-sm font-medium text-gray-800 dark:text-gray-100">{label}</span>
                         {hint && <span className="block text-xs text-gray-500 dark:text-gray-400">{hint}</span>}

@@ -10,11 +10,11 @@ import { userErrorMessage } from "@/components/staff/userErrorMessage";
 type Geo = { lat: number; lng: number; name: string } | null;
 type GeoKind = "academy" | "depot" | "hub" | "hubDropoff";
 type GeoState = Record<GeoKind, Geo>;
-const GEO_META: Record<GeoKind, { title: string; icon: string }> = {
-  academy: { title: "학원", icon: "🏫" },
-  depot: { title: "차고지", icon: "🚏" },
-  hub: { title: "1호점 거점(탑승)", icon: "🆓" },
-  hubDropoff: { title: "거점 하차(길 건너)", icon: "🚏" },
+const GEO_META: Record<GeoKind, { title: string }> = {
+  academy: { title: "학원" },
+  depot: { title: "차고지" },
+  hub: { title: "1호점 거점(탑승)" },
+  hubDropoff: { title: "거점 하차(길 건너)" },
 };
 
 export default function ShuttleGeoEditor({ initial }: { initial: GeoState }) {

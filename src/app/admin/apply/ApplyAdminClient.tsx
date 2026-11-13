@@ -275,17 +275,17 @@ const OTHER_STATUS_GROUP = "OTHER";
 const APPLY_VIEW_STORAGE_KEY = "stiz-admin-apply-view";
 const APPLY_VIEW_VALUES = ["list", "status"] as const;
 const APPLY_VIEW_OPTIONS = [
-    { value: "list", label: "목록", icon: "view_list" },
-    { value: "status", label: "상태별", icon: "view_agenda" },
+    { value: "list", label: "목록" },
+    { value: "status", label: "상태별" },
 ] as const;
 
-const APPLICATION_WORK_FILTERS: Array<{ value: ApplicationWorkFilter; label: string; icon: string }> = [
-    { value: "ALL", label: "운영 전체", icon: "view_list" },
-    { value: "NEEDS_ACTION", label: "처리 필요", icon: "priority_high" },
-    { value: "CLASS_ASSIGNMENT", label: "반 배정", icon: "edit_calendar" },
-    { value: "SHUTTLE", label: "셔틀 미완료", icon: "directions_bus" },
-    { value: "TRIAL_LINKED", label: "체험 후 신청", icon: "link" },
-    { value: "TIME_CHECK", label: "희망시간 확인", icon: "schedule" },
+const APPLICATION_WORK_FILTERS: Array<{ value: ApplicationWorkFilter; label: string }> = [
+    { value: "ALL", label: "운영 전체" },
+    { value: "NEEDS_ACTION", label: "처리 필요" },
+    { value: "CLASS_ASSIGNMENT", label: "반 배정" },
+    { value: "SHUTTLE", label: "셔틀 미완료" },
+    { value: "TRIAL_LINKED", label: "체험 후 신청" },
+    { value: "TIME_CHECK", label: "희망시간 확인" },
 ];
 
 const CONTACT_ACTION_LABELS: Record<string, string> = {
@@ -1095,7 +1095,7 @@ export default function ApplyAdminClient({
                         onReset={() => { setFilter("ALL"); setWorkFilter("ALL"); }}
                         search={<label className="flex min-h-11 min-w-0 items-center gap-2 rounded-md border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3">
                             <input type="search" value={searchQuery} onChange={event => setSearchQuery(event.target.value)} placeholder="학생, 보호자, 전화번호로 검색" className="min-w-0 flex-1 bg-transparent py-2 text-sm text-[var(--color-academy-ink)] outline-none [&::-webkit-search-cancel-button]:appearance-none" />
-                            {searchQuery && <button type="button" onClick={() => setSearchQuery("")} title="검색어 지우기" className="inline-flex min-h-11 w-11 shrink-0 items-center justify-center text-[var(--color-academy-muted)]"><span className="material-symbols-outlined text-lg" aria-hidden="true">close</span></button>}
+                            {searchQuery && <button type="button" onClick={() => setSearchQuery("")} title="검색어 지우기" className="academy-button-text academy-button-sm shrink-0 whitespace-nowrap">지우기</button>}
                         </label>}
                     >
                         <label className="min-w-0 space-y-1 text-xs font-medium text-[var(--color-academy-muted)]">신청 상태

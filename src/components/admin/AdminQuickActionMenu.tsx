@@ -165,11 +165,10 @@ export default function AdminQuickActionMenu({
 
     return (
         <div className={`relative inline-flex justify-center ${className}`}>
-            {/* 2026-11-13 UI 통일 2단계(원장 승인 예시): ⚡ 아이콘 원 → «빠른작업» 글자 버튼.
-                모양 = 흰 바탕 + 중립 테두리(academy-button-secondary) — 행마다 반복되는 버튼이라 위험색을 쓰지 않는다(2026-11-09 원장 «퀵버튼 빨강 보기 싫다» 유지). 위험한 항목은 메뉴 안에서만 빨강. 행 안 작은 크기(academy-button-sm: PC 36px · 터치 44px).
-                PC 에서도 누르는 영역은 before 로 위아래 4px 넓혀 44px. 열린 동안(aria-expanded)은 옅은 회색 바탕
-                (테마 버튼 클래스가 유틸리티보다 우선이라 바탕색은 끝의 ! 로 강제한다).
-                icon 값은 글자를 고르는 데만 쓴다(more_horiz = 화면 «더보기» 메뉴). 부르는 쪽 props 는 그대로다. */}
+            {/* 2026-11-14 원장 점검표 «빠른 작업 버튼은 그대로 아이콘으로 쓰자» — 사이트에서 아이콘을 쓰는 유일한 버튼.
+                겉모습은 36px 원, 누르는 영역은 before 로 사방 4px 넓혀 44px.
+                색은 중립(2026-11-09 원장 «퀵버튼 빨강 보기 싫다»): 흰 바탕 + 입력선 테두리 + 본문색 아이콘.
+                열린 동안(aria-expanded)은 «지금 열린 것» = 보조 색(하늘색) 바탕 + 테두리. 메뉴 항목은 글자만. */}
             <button
                 ref={buttonRef}
                 type="button"
@@ -180,9 +179,9 @@ export default function AdminQuickActionMenu({
                     if (!open) placeMenu();
                     setOpen((current) => !current);
                 }}
-                className="academy-button-secondary academy-button-sm relative whitespace-nowrap before:absolute before:-inset-y-1 before:inset-x-0 before:content-[''] aria-expanded:bg-[var(--color-academy-soft)]!"
+                className="relative inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)] transition before:absolute before:-inset-1 before:content-[''] hover:bg-[var(--color-academy-soft)] aria-expanded:border-[var(--color-academy-secondary-strong)] aria-expanded:bg-[var(--color-academy-secondary-soft)]"
             >
-                {icon === "more_horiz" ? "더보기" : "빠른작업"}
+                <span className="material-symbols-outlined text-xl" aria-hidden="true">{icon}</span>
             </button>
 
             {open && (

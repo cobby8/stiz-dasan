@@ -569,7 +569,7 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
       {isRowsTab && kind && (
         <button type="button" onClick={() => go({ kind: null, sub: null })} className="inline-flex min-h-11 items-center gap-1 rounded-full border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 text-sm font-medium text-[var(--color-academy-ink)]">
           {kindLabel(kind)}만 보기
-          <span className="material-symbols-outlined text-lg" aria-hidden="true">close</span>
+          <span aria-hidden="true">×</span>
           <span className="sr-only">— 눌러서 {tabLabel(tab)} 전체 보기</span>
         </button>
       )}
@@ -681,7 +681,7 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
           ) : null}
           <button type="button" onClick={() => go({ done: !showDone })} aria-expanded={showDone} className="academy-button-text">
             {showDone ? "완료 접기" : "완료 보기"}
-            <span className="material-symbols-outlined text-lg" aria-hidden="true">{showDone ? "expand_less" : "expand_more"}</span>
+            <span aria-hidden="true">{showDone ? "▴" : "▾"}</span>
           </button>
         </>
       )}
@@ -697,8 +697,8 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
               </h2>
               {freshOpen && <span className={`mt-1 inline-block rounded px-2 py-0.5 text-xs ${badgeClass(open)}`}>{open.statusLabel}</span>}
             </div>
-            <button type="button" onClick={() => setOpenSelection(null)} aria-label="닫기" className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
-              <span className="material-symbols-outlined" aria-hidden="true">close</span>
+            <button type="button" onClick={() => setOpenSelection(null)} aria-label="닫기" className="academy-button-text academy-button-sm shrink-0">
+              닫기
             </button>
           </div>
           {open.kind === "ENROLLMENT_CHANGE" ? (

@@ -48,7 +48,8 @@ export default function DriverGpsIndicator(props: DriverGpsIndicatorProps) {
     gpsState === "denied" ? "권한 확인" :
     gpsState === "error" ? "위치 확인" :
     delayed ? "위치 지연" : waiting ? "위치 대기" : "";
-  const icon = failed ? "location_disabled" : stopping ? "location_off" : attention ? "location_searching" : gpsState === "active" ? "my_location" : "location_off";
+  // 2026-11-14 아이콘 완전 제거: 위치 아이콘 대신 상태색 점(도형) + 글자. 짧은 문구가 없는 상태(정상 공유·꺼짐)도 글자로 말한다.
+  const triggerLabel = shortLabel || (gpsState === "active" && !stopping ? "위치 공유 중" : "위치 꺼짐");
   const tone = failed ? styles.error : attention ? styles.warning : gpsState === "active" && !stopping ? styles.active : styles.neutral;
 
   return (
@@ -56,8 +57,8 @@ export default function DriverGpsIndicator(props: DriverGpsIndicatorProps) {
       <button ref={trigger} type="button" className={`${styles.trigger} ${tone}`}
         aria-label={`${title} · 위치 공유 상세 보기`} aria-haspopup="dialog"
         title={title} onClick={() => dialog.current?.showModal()}>
-        <span className="material-symbols-outlined" aria-hidden="true">{icon}</span>
-        {shortLabel && <span>{shortLabel}</span>}
+        <span aria-hidden="true" className="inline-block size-2 shrink-0 rounded-full bg-current" />
+        <span>{triggerLabel}</span>
       </button>
       <span className={styles.srOnly} role={failed ? "alert" : "status"}>{title}</span>
       <dialog ref={dialog} className={styles.dialog} aria-labelledby={titleId}
@@ -66,7 +67,7 @@ export default function DriverGpsIndicator(props: DriverGpsIndicatorProps) {
           <h2 id={titleId}>위치 공유 상태</h2>
           <button type="button" autoFocus className={styles.close} aria-label="위치 공유 상세 닫기"
             onClick={() => dialog.current?.close()}>
-            <span className="material-symbols-outlined" aria-hidden="true">close</span>
+            닫기
           </button>
         </header>
         <div className={styles.details}>

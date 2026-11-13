@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import FontFreeIcon from "@/components/ui/FontFreeIcon";
 import HqSellerNotice from "@/components/HqSellerNotice";
 import { useStoreAppLacks } from "@/components/storeApp/useStoreAppLacks";
 import { copyInsteadOfOpening } from "@/lib/outsideLink";
@@ -100,9 +99,9 @@ export default function ShopProductFrame({ productNo }: { productNo: string }) {
           href="/shop"
           title="클럽샵으로 돌아가기"
           aria-label="클럽샵으로 돌아가기"
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-gray-800 transition hover:bg-gray-100 dark:border-gray-700 dark:text-white dark:hover:bg-gray-800"
+          className="flex h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-lg border border-gray-200 px-3 text-sm font-medium text-gray-800 transition hover:bg-gray-100 dark:border-gray-700 dark:text-white dark:hover:bg-gray-800"
         >
-          <FontFreeIcon name="arrow_back" size={21} />
+          ← 클럽샵
         </Link>
 
         <div className="min-w-0 flex-1">
@@ -126,9 +125,9 @@ export default function ShopProductFrame({ productNo }: { productNo: string }) {
             rel="noreferrer"
             title="외부 브라우저에서 열기"
             aria-label="외부 브라우저에서 열기"
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-gray-700 transition hover:bg-gray-100 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-800"
+            className="flex h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-lg border border-gray-200 px-3 text-sm font-medium text-gray-700 transition hover:bg-gray-100 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-800"
           >
-            <FontFreeIcon name="open_in_new" size={20} />
+            새 창
           </a>
         )}
       </header>
@@ -195,7 +194,6 @@ function ProductLoading() {
   return (
     <div className="absolute inset-0 z-10 flex items-center justify-center bg-white dark:bg-gray-950">
       <div className="flex items-center gap-3 text-sm font-medium text-gray-600 dark:text-gray-300">
-        <FontFreeIcon name="progress_activity" size={24} className="animate-spin text-[var(--color-public-muted)] dark:text-brand-neon-lime" />
         상품을 불러오고 있습니다
       </div>
     </div>

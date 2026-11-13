@@ -11,7 +11,6 @@
 import { publicErrorText } from "@/components/ui/public-error-text";
 import { useState, useRef, useEffect, useCallback } from "react";
 import ChatMessage from "./ChatMessage";
-import FontFreeIcon from "../ui/FontFreeIcon";
 
 interface ChatPanelProps {
   onClose: () => void; // 닫기 버튼 클릭 시 부모(ChatBotButton)에 알림
@@ -23,16 +22,6 @@ const WELCOME_MESSAGE = {
   content:
     "안녕하세요! STIZ 농구교실입니다.\n수업에 대해 궁금한 점을 편하게 물어보세요.",
 };
-
-function SymbolIcon({
-  name,
-  size = 18,
-}: {
-  name: "close";
-  size?: number;
-}) {
-  return <FontFreeIcon name={name} size={size} />;
-}
 
 export default function ChatPanel({ onClose }: ChatPanelProps) {
   // 대화 히스토리 (인사 메시지로 시작)
@@ -165,10 +154,10 @@ export default function ChatPanel({ onClose }: ChatPanelProps) {
           <button
             onClick={onClose}
             // 터치 영역 44px(게슈탈트 P-13)
-            className="flex h-11 w-11 items-center justify-center hover:bg-white/10 rounded-full transition-colors"
+            className="flex h-11 shrink-0 items-center justify-center px-3 text-sm font-medium hover:bg-white/10 rounded-full transition-colors"
             aria-label="채팅 닫기"
           >
-            <SymbolIcon name="close" size={20} />
+            닫기
           </button>
         </div>
 

@@ -224,9 +224,7 @@ export default function StaffShuttleDashboardClient({
         <ListDetailPanel onClose={() => setDetailRouteId(null)} titleId="staff-route-detail-title">
           <div className="flex items-center justify-between gap-3 border-b border-[var(--color-academy-line)] px-4 py-2">
             <h2 id="staff-route-detail-title" className="academy-section-title">노선 상세</h2>
-            <button type="button" aria-label="닫기" onClick={() => setDetailRouteId(null)} className="grid size-11 shrink-0 place-items-center rounded-full">
-              <span aria-hidden="true" className="material-symbols-outlined">close</span>
-            </button>
+            <button type="button" aria-label="닫기" onClick={() => setDetailRouteId(null)} className="academy-button-text academy-button-sm shrink-0">닫기</button>
           </div>
           {/* 오늘이 아닌 노선이라 탑승 체크 없이(기존과 같게) 보기만 */}
           <div className="p-3">
@@ -294,8 +292,8 @@ function RouteCard({
                             <p className="mt-1 break-words text-xs leading-5 text-[var(--color-academy-muted)]">{stop.roadAddress || stop.address}</p>
                           </div>
                           {url && (
-                            <a href={url} target="_blank" rel="noreferrer" aria-label={`${stop.name} 지도에서 열기`} className="grid size-11 shrink-0 place-items-center rounded-xl bg-white text-[var(--color-academy-ink)] shadow-sm">
-                              <span className="material-symbols-outlined" aria-hidden="true">map</span>
+                            <a href={url} target="_blank" rel="noreferrer" aria-label={`${stop.name} 지도에서 열기`} className="academy-button-tonal academy-button-sm shrink-0">
+                              지도
                             </a>
                           )}
                         </div>
@@ -402,10 +400,9 @@ function mapUrl(lat: number | string | null | undefined, lng: number | string | 
 
 function RideStatusPill({ status }: { status: RideStatus }) {
   const label = status === "BOARDED" ? "탑승" : status === "DROPPED_OFF" ? "하차" : status === "NO_SHOW" ? "미탑승" : "대기";
-  // 게슈탈트 T-02/T-11: 탑승 버튼과 같은 의미색·아이콘(탑승·하차=success, 미탑승=danger, 대기=warning), 글자 12px
+  // 게슈탈트 T-02/T-11: 탑승 버튼과 같은 의미색·글자(탑승·하차=success, 미탑승=danger, 대기=warning), 글자 12px
   const tone = status === "BOARDED" || status === "DROPPED_OFF" ? "success" : status === "NO_SHOW" ? "danger" : "warning";
-  const icon = tone === "success" ? "check" : tone === "danger" ? "close" : "schedule";
-  return <StatusPill tone={tone} icon={icon} className="py-1">{label}</StatusPill>;
+  return <StatusPill tone={tone} className="py-1">{label}</StatusPill>;
 }
 
 // 예정·확인 필요 노선 한 줄 행: (날짜) | 등원/하원 | 노선 이름 | 인원(오른쪽)

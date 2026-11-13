@@ -17,7 +17,6 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import Image from "next/image";
 import { ThemeToggle } from "./ThemeToggle";
-import FontFreeIcon from "./ui/FontFreeIcon";
 import type { AppRole } from "@/lib/auth-routes";
 import AppBackButton from "@/components/AppBackButton";
 import { useHeaderMenuFit } from "./useHeaderMenuFit";
@@ -116,8 +115,7 @@ function MobileAccountFallback() {
         title="사진 올리기"
         className={MOBILE_ACCOUNT_FALLBACK_ACTION_CLASS}
       >
-        <FontFreeIcon name="camera_alt" size={20} />
-        <span className="sr-only">사진 올리기</span>
+        사진 올리기
       </Link>
     </div>
   );
@@ -298,7 +296,7 @@ export default function PublicHeader({
                 >
                   {group.label}
                   {/* 화살표 — hover 시 회전 */}
-                  <FontFreeIcon name="expand_more" size={18} className="transition-transform duration-200 group-hover:rotate-180" />
+                  <span aria-hidden="true" className="inline-flex items-center justify-center leading-none transition-transform duration-200 group-hover:rotate-180">▾</span>
                 </button>
 
                 {/* 드롭다운 패널 — group-hover로 보이기/숨기기 */}
@@ -416,10 +414,10 @@ export default function PublicHeader({
           <button
             ref={mobileMenuCloseRef}
             onClick={() => setIsMobileMenuOpen(false)}
-            className="p-2 rounded-lg hover:bg-[var(--color-public-tint)] dark:hover:bg-[var(--color-public-tint)] transition-colors text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]"
+            className="flex min-h-11 items-center justify-center px-3 text-sm font-medium rounded-lg hover:bg-[var(--color-public-tint)] dark:hover:bg-[var(--color-public-tint)] transition-colors text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]"
             aria-label="메뉴 닫기"
           >
-            <FontFreeIcon name="close" size={22} />
+            닫기
           </button>
         </div>
 

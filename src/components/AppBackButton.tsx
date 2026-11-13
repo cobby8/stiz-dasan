@@ -1,7 +1,6 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import FontFreeIcon from "@/components/ui/FontFreeIcon";
 // 어디로 갈지 정하는 규칙은 순수 모듈 한 곳에서만 판단한다(분기가 네 갈래라 눈으로 못 잡는다).
 import { resolveBackAction } from "@/lib/navigation/backAction";
 import { useInstalledApp } from "@/components/pwa/useInstalledApp";
@@ -64,7 +63,8 @@ export default function AppBackButton({
       scopeHref,
       isInstalledApp,
     }).type === "none";
-  const sizeClass = size === "sm" ? "h-9 w-9 rounded-lg" : "h-10 w-10 rounded-xl";
+  // 2026-11-14 아이콘 완전 제거: 화살표 아이콘 → 글자 기호 «←». 누르는 영역은 두 크기 모두 44px(글자 크기만 다르다).
+  const sizeClass = size === "sm" ? "h-11 w-11 rounded-lg text-lg" : "h-11 w-11 rounded-xl text-xl";
   const variantClass =
     variant === "floating"
       ? "border-gray-200 bg-white/95 text-gray-800 shadow-lg backdrop-blur hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900/95 dark:text-gray-100 dark:hover:bg-gray-800"
@@ -99,7 +99,7 @@ export default function AppBackButton({
         className,
       ].join(" ")}
     >
-      <FontFreeIcon name="arrow_back" size={size === "sm" ? 18 : 20} />
+      <span aria-hidden="true" className="leading-none">←</span>
     </button>
   );
 }

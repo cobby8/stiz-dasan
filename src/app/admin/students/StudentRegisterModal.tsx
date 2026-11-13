@@ -321,8 +321,8 @@ export default function StudentRegisterModal({
                     <h2 id="student-register-title" className="min-w-0 flex-1 truncate text-base font-bold text-[var(--color-academy-ink)]">
                         {prefill?.trialLeadId ? "체험 → 원생 등록" : "원생 등록"}
                     </h2>
-                    <button type="button" onClick={onClose} aria-label="닫기" className="-mr-2 inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
-                        <span className="material-symbols-outlined" aria-hidden="true">close</span>
+                    <button type="button" onClick={onClose} aria-label="닫기" className="-mr-2 academy-button-text academy-button-sm shrink-0">
+                        닫기
                     </button>
                 </div>
                 <ol className="flex gap-1 pb-2" aria-label="등록 단계">
@@ -382,7 +382,7 @@ export default function StudentRegisterModal({
                             </label>
                         </div>
                         <button type="button" onClick={() => setShowMore((v) => !v)} aria-expanded={showMore} className="academy-button-text">
-                            <span className="material-symbols-outlined text-lg" aria-hidden="true">{showMore ? "expand_less" : "expand_more"}</span>
+                            <span aria-hidden="true">{showMore ? "▴" : "▾"}</span>
                             더 입력(학생 휴대폰·주소·가입 경로)
                         </button>
                         {showMore && (

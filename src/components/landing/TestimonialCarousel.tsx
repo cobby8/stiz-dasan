@@ -77,9 +77,7 @@ export default function TestimonialCarousel({
               className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-3 z-10 w-10 h-10 bg-white dark:bg-[var(--color-public-tint)] rounded-full shadow-md flex items-center justify-center hover:shadow-lg dark:hover:bg-[var(--color-public-line)] dark:border dark:border-[var(--color-public-line)] transition-all cursor-pointer hidden md:flex"
               aria-label="이전 후기"
             >
-              <svg className="w-5 h-5 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
+              <span aria-hidden="true" className="text-xl leading-none text-[var(--color-public-muted)]">‹</span>
             </button>
 
             {/* 캐러셀 스크롤 컨테이너 — CSS scroll-snap으로 카드 정렬 */}
@@ -120,9 +118,7 @@ export default function TestimonialCarousel({
               className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-3 z-10 w-10 h-10 bg-white dark:bg-[var(--color-public-tint)] rounded-full shadow-md flex items-center justify-center hover:shadow-lg dark:hover:bg-[var(--color-public-line)] dark:border dark:border-[var(--color-public-line)] transition-all cursor-pointer hidden md:flex"
               aria-label="다음 후기"
             >
-              <svg className="w-5 h-5 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
+              <span aria-hidden="true" className="text-xl leading-none text-[var(--color-public-muted)]">›</span>
             </button>
           </div>
         </AnimateOnScroll>

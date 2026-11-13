@@ -301,13 +301,9 @@ export default function SessionLogModal({
                         type="button"
                         aria-label="닫기"
                         onClick={handleClose}
-                        className="inline-flex min-h-11 min-w-11 items-center justify-center hover:bg-[var(--color-academy-soft)] rounded-lg transition text-[var(--color-academy-muted)] hover:text-[var(--color-academy-ink)]"
+                        className="academy-button-text academy-button-sm shrink-0"
                     >
-                        {/* X 아이콘 (인라인 SVG — lucide-react 대신) */}
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <line x1="18" y1="6" x2="6" y2="18" />
-                            <line x1="6" y1="6" x2="18" y2="18" />
-                        </svg>
+                        닫기
                     </button>
                 </div>
 
@@ -398,13 +394,9 @@ export default function SessionLogModal({
                                         <button
                                             type="button"
                                             onClick={() => removePhoto(idx)}
-                                            className="absolute top-1 right-1 w-6 h-6 bg-[var(--color-academy-danger)] text-white rounded-full flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition"
+                                            className="absolute top-1 right-1 rounded bg-[var(--color-academy-danger)] px-1.5 py-0.5 text-xs text-white opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition"
                                         >
-                                            {/* X 표시 */}
-                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
-                                                <line x1="18" y1="6" x2="6" y2="18" />
-                                                <line x1="6" y1="6" x2="18" y2="18" />
-                                            </svg>
+                                            삭제
                                         </button>
                                     </div>
                                 ))}
@@ -420,11 +412,6 @@ export default function SessionLogModal({
                         >
                             {uploading ? (
                                 <>
-                                    {/* 로딩 스피너 */}
-                                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                                        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25" />
-                                        <path d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" fill="currentColor" className="opacity-75" />
-                                    </svg>
                                     업로드 중...
                                 </>
                             ) : (
@@ -549,11 +536,6 @@ export default function SessionLogModal({
                     >
                         {saving ? (
                             <>
-                                {/* 저장 중 스피너 */}
-                                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25" />
-                                    <path d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" fill="currentColor" className="opacity-75" />
-                                </svg>
                                 저장 중...
                             </>
                         ) : (

@@ -48,9 +48,9 @@ export default function RoleChangeModal({
                     type="button"
                     onClick={onClose}
                     aria-label="닫기"
-                    className="ml-auto inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
+                    className="ml-auto academy-button-text academy-button-sm shrink-0"
                 >
-                    <span className="material-symbols-outlined" aria-hidden="true">close</span>
+                    닫기
                 </button>
             </div>
 

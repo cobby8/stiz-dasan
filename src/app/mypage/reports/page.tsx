@@ -143,7 +143,7 @@ export default async function ParentReportsPage() {
                         <details className="group border-t border-[var(--color-academy-line)]">
                             <summary className="flex min-h-11 cursor-pointer list-none items-center justify-center gap-1 text-sm font-medium text-[var(--color-academy-ink)] group-open:hidden">
                                 더보기 <span className="tabular-nums">{notices.length - NOTICE_FIRST}</span>
-                                <span className="material-symbols-outlined leading-none" style={{ fontSize: "18px" }} aria-hidden="true">expand_more</span>
+                                <span aria-hidden="true">▾</span>
                             </summary>
                             <ul className="divide-y divide-[var(--color-academy-line)]">
                                 {notices.slice(NOTICE_FIRST).map((n) => noticeRow(n))}
@@ -224,7 +224,7 @@ export default async function ParentReportsPage() {
                                                 )}
                                             </div>
                                         </div>
-                                        <span className="material-symbols-outlined shrink-0 text-[var(--color-academy-faint)] transition-transform group-open:rotate-90" aria-hidden="true">chevron_right</span>
+                                        <span className="shrink-0 text-[var(--color-academy-faint)] transition-transform group-open:rotate-90" aria-hidden="true">›</span>
                                     </summary>
                                     <p className="whitespace-pre-wrap border-t border-[var(--color-academy-line)] px-3 py-2 text-sm text-[var(--color-academy-muted)]">{fb.content}</p>
                                 </details>

@@ -212,11 +212,13 @@ test("P-11 하위 페이지 배너: 영문 라벨·장식 원 없음, 제목 cla
 });
 
 test("토스 심사 중 /programs·결제·푸터는 이번 작업에서 바뀌지 않았다", () => {
-  // /programs 배너는 컴팩트 클래스를 달지 않아 기존 모양(영문 라벨·장식 원·큰 제목) 그대로다.
+  // 2026-11-14: 토스 가맹 심사가 2026-11-07 에 승인돼 «/programs 옛 모양을 그대로 둔다»는 근거가 사라졌다.
+  // 모양을 못박던 단언(컴팩트 배너 금지·public-btn- 금지·영문 라벨)은 걷어내고, 가격표·환불 안내가 남아 있는지만 지킨다.
   const programs = read("src/app/programs/page.tsx");
-  assert.doesNotMatch(programs, /public-page-hero--compact|compactHeading|public-btn-|public-floating/);
-  assert.match(programs, /className="public-page-hero relative overflow-hidden/);
-  assert.match(programs, /uppercase tracking-widest/);
+  assert.match(programs, /public-fee-table/);
+  assert.match(programs, /월 수강료는 <strong>4주\(1개월\) 단위<\/strong>로 결제하며/);
+  assert.match(programs, /「학원법 시행령」 교습비 반환기준에 따릅니다/);
+  assert.match(programs, /<a href="\/terms"[^>]*>환불 규정 보기<\/a>/);
   // 공용 규칙 중 /programs 에도 닿는 .public-page-hero 기본 규칙은 그대로 둔다.
   assert.match(sportCss, /\.stiz-public-sport \.public-page-hero :is\(h1, h2\) \{[^}]*font-size: clamp\(26px, 4vw, 42px\)/);
   assert.match(sportCss, /\.stiz-public-sport \.public-page-hero \{[^}]*padding-block: clamp\(24px, 4vw, 44px\)/);
@@ -235,16 +237,20 @@ test("토스 심사 중 /programs·결제·푸터는 이번 작업에서 바뀌�
 test("P-13 작은 글자 12px·닫기/글씨 버튼 44px", () => {
   assert.match(read("src/app/annual/AnnualEventsClient.tsx"), /<span className="text-xs">\{isScheduleOpen \? "▲" : "▼"\}<\/span>/);
   assert.match(read("src/components/PublicHeader.tsx"), /"public-mobile-font md:hidden flex h-11 w-11 /);
-  assert.match(read("src/app/annual/EventDetailPanel.tsx"), /className="shrink-0 w-11 h-11 flex items-center justify-center rounded-full[^"]*"\s*aria-label="닫기"/);
+  // 2026-11-14 아이콘 완전 제거: ✕ → 글자 «닫기». 폭 고정(w-11)만 풀고 높이 44px(min-h-11)는 그대로 지킨다.
+  assert.match(read("src/app/annual/EventDetailPanel.tsx"), /className="shrink-0 min-h-11 px-3 flex items-center justify-center rounded-full[^"]*"\s*aria-label="닫기"\s*>\s*닫기/);
   // 2026-11-13 UI 통일: 챗봇 머리띠가 주황 → 어두운 띠(--color-public-dark)라 올림색만 바뀌었다. 44px 는 그대로 지킨다.
-  assert.match(read("src/components/chat/ChatPanel.tsx"), /className="flex h-11 w-11 items-center justify-center hover:bg-white\/10 rounded-full transition-colors"\s*aria-label="채팅 닫기"/);
+  // 2026-11-14 아이콘 완전 제거: 닫기 아이콘 → 글자 «닫기»(높이 44px 유지)
+  assert.match(read("src/components/chat/ChatPanel.tsx"), /className="flex h-11 shrink-0 items-center justify-center px-3 text-sm font-medium hover:bg-white\/10 rounded-full transition-colors"\s*aria-label="채팅 닫기"\s*>\s*닫기/);
 });
 
 test("P-14 갤러리 좌우 화살표는 닫기와 같은 반투명 검은 원 44px + 80% 흰색", () => {
   const src = read("src/app/gallery/GalleryLightboxOverlay.tsx");
-  assert.equal(src.match(/flex h-11 w-11 items-center justify-center rounded-full bg-black\/70 text-white\/80/g)?.length, 2);
+  // 2026-11-14 아이콘 완전 제거: 화살표 원 → 글자 «이전»·«다음» 알약(높이 44px·반투명 검정·80% 흰색은 그대로)
+  assert.equal(src.match(/flex min-h-11 items-center justify-center rounded-full bg-black\/70 px-3 text-sm font-medium text-white\/80/g)?.length, 2);
+  assert.doesNotMatch(src, /FontFreeIcon/);
   assert.doesNotMatch(src, /text-white\/40/);
   assert.match(src, /aria-label="이전 사진"/);
   assert.match(src, /aria-label="다음 사진"/);
-  assert.match(src, /rounded-full bg-black\/70 text-white hover:bg-white\/10 transition-colors"\s*aria-label="닫기"/); // 닫기 버튼 기준 모양
+  assert.match(src, /flex min-h-11 items-center justify-center rounded-full bg-black\/70 px-4 text-sm font-medium text-white hover:bg-white\/10 transition-colors"\s*aria-label="닫기"\s*>\s*닫기/); // 닫기 버튼 기준 모양(2026-11-14 글자 «닫기»)
 });

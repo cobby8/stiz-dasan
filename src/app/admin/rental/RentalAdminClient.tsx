@@ -378,7 +378,7 @@ export default function RentalAdminClient({ rows, bankAccount, smsOn, embedded =
       {embedded && doneRows.length > 0 && (
         <button type="button" onClick={() => setShowDone((value) => !value)} aria-expanded={showDone} className="academy-button-text">
           {showDone ? "완료 접기" : `완료 보기 ${doneRows.length}`}
-          <span className="material-symbols-outlined text-lg" aria-hidden="true">{showDone ? "expand_less" : "expand_more"}</span>
+          <span aria-hidden="true">{showDone ? "▴" : "▾"}</span>
         </button>
       )}
 
@@ -392,9 +392,9 @@ export default function RentalAdminClient({ rows, bankAccount, smsOn, embedded =
               type="button"
               onClick={() => setDetailId(null)}
               aria-label="닫기"
-              className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
+              className="ml-auto academy-button-text academy-button-sm shrink-0"
             >
-              <span className="material-symbols-outlined" aria-hidden="true">close</span>
+              닫기
             </button>
           </div>
           <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">

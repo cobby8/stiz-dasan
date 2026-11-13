@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import FontFreeIcon from "../ui/FontFreeIcon";
+import { GUIDE_FLOATING_STYLE } from "../public-floating";
 
 const LazyGuideTourTrigger = dynamic(() => import("./GuideTourTrigger"), {
   ssr: false,
@@ -46,13 +46,15 @@ export default function GuideTourLazyTrigger() {
   return (
     <button
       onClick={() => setLoadMode("autoStart")}
-      // 위치(bottom)는 public-floating-btn--guide(챗봇 버튼 바로 위 88px + 하단 고정 바 높이)
-      // 좁은 화면에서는 48px·오른쪽 16px — 홈 첫 화면 버튼과 겹치지 않게(GuideTourTrigger 의 같은 버튼과 모양을 맞춘다)
-      className="public-floating-btn public-floating-btn--guide fixed right-4 z-50 flex h-12 w-12 items-center justify-center rounded-full border-2 border-[var(--color-public-accent)] bg-[var(--color-public-paper)] text-[var(--color-public-accent)] shadow-lg transition-all duration-200 hover:scale-105 hover:shadow-xl dark:border-brand-neon-lime dark:bg-black dark:text-brand-neon-lime sm:right-6 sm:h-14 sm:w-14"
+      // 위치(bottom)는 public-floating-btn--guide(«상담» 버튼 바로 위 + 하단 고정 바 높이)
+      // 2026-11-14 아이콘 완전 제거: 학사모 원 → 글자 알약 «둘러보기»(높이 44px·좌우 14px, GuideTourTrigger 의 같은 버튼과 모양을 맞춘다).
+      // 알약이 44px 로 낮아져 «상담»(아래 24px + 44px) 바로 위 8px 에 오도록 76px 로 내린다 — 88px 그대로면 홈 첫 화면 버튼 줄 아래쪽을 4px 덮는다.
+      style={GUIDE_FLOATING_STYLE}
+      className="public-floating-btn public-floating-btn--guide fixed right-4 z-50 flex h-11 items-center justify-center whitespace-nowrap rounded-full border-2 px-[14px] text-sm font-medium border-[var(--color-public-accent)] bg-[var(--color-public-paper)] text-[var(--color-public-accent)] shadow-lg transition-all duration-200 hover:scale-105 hover:shadow-xl dark:border-brand-neon-lime dark:bg-black dark:text-brand-neon-lime sm:right-6"
       aria-label="입학 가이드 시작"
       title="입학 가이드"
     >
-      <FontFreeIcon name="school" size={26} />
+      둘러보기
     </button>
   );
 }

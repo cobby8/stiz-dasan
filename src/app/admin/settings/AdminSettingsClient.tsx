@@ -245,13 +245,13 @@ export default function AdminSettingsClient({
             {saveSuccess && (
                 <div className="bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)] p-4 rounded-lg font-medium border border-[var(--color-academy-success)] mb-4 text-sm flex justify-between items-center">
                     <span>저장되었습니다. 폰트 변경은 새로고침 후 반영됩니다.</span>
-                    <button onClick={() => setSaveSuccess(false)} aria-label="닫기" className="ml-2 inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-success)]">✕</button>
+                    <button onClick={() => setSaveSuccess(false)} aria-label="닫기" className="ml-2 academy-button-text academy-button-sm shrink-0">닫기</button>
                 </div>
             )}
             {actionError && (
                 <div className="bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)] p-4 rounded-lg font-medium border border-[var(--color-academy-danger)] mb-4 text-sm flex justify-between items-center">
                     <span>{actionError}</span>
-                    <button onClick={() => setActionError(null)} aria-label="닫기" className="ml-2 inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-danger)]">✕</button>
+                    <button onClick={() => setActionError(null)} aria-label="닫기" className="ml-2 academy-button-text academy-button-sm shrink-0">닫기</button>
                 </div>
             )}
 

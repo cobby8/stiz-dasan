@@ -169,8 +169,8 @@ export default function VehicleManagerClient({ initialVehicles }: { initialVehic
             <div className="mb-4 flex items-center gap-2">
               <h3 id="vehicle-detail-panel-title" className="min-w-0 break-keep text-lg font-bold text-[var(--color-academy-ink)]">{d.name}</h3>
               <button type="button" onClick={() => setDetailId(null)} aria-label="닫기"
-                className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
-                <span className="material-symbols-outlined" aria-hidden="true">close</span>
+                className="ml-auto academy-button-text academy-button-sm shrink-0">
+                닫기
               </button>
             </div>
             <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">

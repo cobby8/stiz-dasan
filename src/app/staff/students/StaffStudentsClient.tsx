@@ -78,9 +78,7 @@ export default function StaffStudentsClient({ students }: { students: StaffStude
               <h2 id="staff-student-detail-title" className="text-lg font-bold text-[var(--color-academy-ink)]">{detail.name}</h2>
               <p className="text-sm text-[var(--color-academy-muted)]">{[detail.school, detail.grade].filter(Boolean).join(" ") || "학교·학년 미등록"}</p>
             </div>
-            <button type="button" aria-label="닫기" onClick={() => setDetailId(null)} className="grid size-11 shrink-0 place-items-center rounded-full">
-              <span aria-hidden="true" className="material-symbols-outlined">close</span>
-            </button>
+            <button type="button" aria-label="닫기" onClick={() => setDetailId(null)} className="academy-button-text academy-button-sm shrink-0">닫기</button>
           </div>
           <div className="px-4 pb-4 pt-2">
             <div className="flex flex-wrap gap-1">{detail.classNames.map((name) => <span key={name} className="rounded-full bg-[var(--color-academy-soft)] px-2 py-1 text-xs text-[var(--color-academy-muted)]">{name}</span>)}</div>

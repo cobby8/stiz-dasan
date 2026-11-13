@@ -27,10 +27,14 @@ test("C-A1 ⚡ 메뉴: primary 는 흰 글씨, 항목 44px, 대상 이름 줄, �
   assert.match(quickMenu, /min-h-11/);
   assert.doesNotMatch(quickMenu, /flex h-9 w-full/);
   assert.match(quickMenu, /title=\{label\}>\{label\}<\/p>/);
-  // 2026-11-13 UI 통일 2단계: 36px 원 → «빠른작업» 글자 버튼(중립 테두리·작은 크기 — 11-09 원장 «퀵버튼 빨강 보기 싫다» 유지). 누르는 영역 44px 은 그대로 지킨다
-  // (터치 화면은 academy-button-sm 이 44px, PC 는 before 로 위아래 4px 넓힘)
-  assert.match(quickMenu, /className="academy-button-secondary academy-button-sm[^"]*before:-inset-y-1/);
-  assert.doesNotMatch(quickMenu.slice(quickMenu.indexOf("ref={buttonRef}"), quickMenu.indexOf("{open && (")), /material-symbols-outlined/, "트리거는 아이콘이 아니라 글자다");
+  // 2026-11-14 원장 점검표 «빠른 작업 버튼은 그대로 아이콘으로 쓰자» — 사이트에서 아이콘을 쓰는 유일한 버튼
+  // (36px 원, 누르는 영역은 before 로 사방 4px 넓혀 44px, 색은 중립 — 11-09 원장 «퀵버튼 빨강 보기 싫다» 유지)
+  assert.match(quickMenu, /className="relative inline-flex h-9 w-9 items-center justify-center rounded-full border border-\[var\(--color-academy-line-input\)\][^"]*before:-inset-1/);
+  const trigger = quickMenu.slice(quickMenu.indexOf("ref={buttonRef}"), quickMenu.indexOf("{open && ("));
+  assert.match(trigger, /<span className="material-symbols-outlined text-xl" aria-hidden="true">\{icon\}<\/span>/);
+  assert.doesNotMatch(trigger, /color-academy-danger/, "빠른작업 버튼에 위험색을 쓰지 않는다(11-09)");
+  // 메뉴 항목은 글자만 — 아이콘은 트리거 한 곳뿐
+  assert.equal((quickMenu.match(/material-symbols-outlined/g) ?? []).length, 1);
   // 위치 계산이 44px 항목·머리줄·구분선을 반영한다
   assert.match(quickMenu, /ACTION_HEIGHT = 48/);
   assert.match(quickMenu, /HEADER_HEIGHT \+ actionCount \* ACTION_HEIGHT/);
@@ -177,7 +181,10 @@ test("A-11·A-12 사이드바: 상세 메뉴 3묶음, 아이콘 겹침 해소, �
   // 2026-11-13 원장 «아이콘 빼고 글자 깔끔하게» — 이모지→아이콘 표(NAV_SYMBOLS)를 없애고 메뉴는 글자만 그린다
   assert.doesNotMatch(shell, /NAV_SYMBOLS|material-symbols-outlined/);
   assert.match(shell, /홈페이지 보기/);
-  assert.match(shell, /title="로그아웃"\s*aria-label="로그아웃"\s*className="inline-flex h-11 w-11/);
+  // 2026-11-14 아이콘 완전 제거: 로그아웃은 아이콘 칸(44×44) 대신 글자 버튼 «로그아웃» — 높이 44px(min-h-11)은 그대로
+  assert.match(shell, /aria-label="로그아웃" className="academy-button-text academy-button-sm min-h-11!/);
+  assert.match(shell, />\s*로그아웃\s*<\/button>/);
+  assert.doesNotMatch(shell, /FontFreeIcon/);
 });
 
 // 2026-11-13 대시보드·통계 개편: 접힌 «운영 현황»(운영 규모·매출·출석·미납)은 통계 탭으로 옮겼다.

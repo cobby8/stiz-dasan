@@ -83,7 +83,6 @@ export default function ParentSignupGuideSender() {
 
       {!preview && (
         <button type="button" disabled={pending} onClick={openPreview} className="academy-button-secondary inline-flex min-h-11 items-center gap-1 disabled:opacity-40">
-          <span className="material-symbols-outlined text-[18px]" aria-hidden="true">group_add</span>
           {pending ? "받는 사람 계산 중…" : "가입 안내 미리보기"}
         </button>
       )}

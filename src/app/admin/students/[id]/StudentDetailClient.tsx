@@ -141,26 +141,6 @@ function getErrorMessage(error: unknown, fallback: string) {
     return adminErrorText(error, fallback);
 }
 
-function SymbolIcon({
-    name,
-    size = 18,
-    className = "",
-}: {
-    name: string;
-    size?: number;
-    className?: string;
-}) {
-    return (
-        <span
-            className={`material-symbols-outlined leading-none ${className}`}
-            style={{ fontSize: `${size}px` }}
-            aria-hidden="true"
-        >
-            {name}
-        </span>
-    );
-}
-
 // 미니 도넛 — KPI 출석률 표시용. 하드코딩 hex 없이 currentColor + Tailwind 색으로 그린다.
 // pathLength=100 을 써서 stroke-dasharray 를 퍼센트 단위로 다룬다.
 function MiniDonut({ rate, className = "text-[var(--color-academy-success)]" }: { rate: number; className?: string }) {
@@ -427,8 +407,8 @@ function DetailModal({ titleId, title, sub, onClose, children }: {
                     <h2 id={titleId} className="text-base font-bold text-[var(--color-academy-ink)]">{title}</h2>
                     {sub && <p className="mt-0.5 text-xs text-[var(--color-academy-muted)]">{sub}</p>}
                 </div>
-                <button type="button" onClick={onClose} aria-label="닫기" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-[var(--color-academy-muted)] transition hover:bg-[var(--color-academy-soft)]">
-                    <SymbolIcon name="close" size={20} />
+                <button type="button" onClick={onClose} aria-label="닫기" className="academy-button-text academy-button-sm shrink-0">
+                    닫기
                 </button>
             </div>
             <div className="space-y-4 px-5 py-4">{children}</div>
@@ -1195,8 +1175,8 @@ export default function StudentDetailClient({
             {/* 2차 정리(2026-11-09 원장): 머리 = 이름·상태 + 한 줄 사실 + [전화][기본 정보][사진 사용 동의].
                 «N개 반» 칩은 아래 «수강 반» 카드 제목과 겹쳐 뺐고, 생년월일·등록일·재원 상세는 «기본 정보» 창으로 옮겼다. */}
             <div className="academy-hero flex flex-wrap items-center gap-3 p-4 md:p-5">
-                <Link href="/admin/students" prefetch={false} aria-label="원생 목록으로" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-[var(--color-academy-line)] bg-white text-[var(--color-academy-muted)] shadow-sm transition hover:bg-[var(--color-academy-soft)]">
-                    <SymbolIcon name="arrow_back" size={20} />
+                <Link href="/admin/students" prefetch={false} aria-label="원생 목록으로" className="academy-button-secondary academy-button-sm shrink-0 whitespace-nowrap">
+                    ← 목록
                 </Link>
                 <div className="min-w-0 basis-52 flex-1">
                     {/* 페이지 제목은 공용 머리말 부품(모양 한 가지). 상태 배지·저장 표시는 제목 옆 설명 자리에 둔다 */}
@@ -1367,8 +1347,7 @@ export default function StudentDetailClient({
                                 <label className="block">
                                     <span className="mb-1 flex items-center gap-1 text-xs font-medium text-[var(--color-academy-faint)]">
                                         학부모 이름
-                                        <span role="img" aria-label="학원이 만든 계정(학부모 가입 전)일 때만 바뀌어요. 로그인하는 학부모 계정은 «보호자» 카드에서 고쳐 주세요." title="학원이 만든 계정(학부모 가입 전)일 때만 바뀌어요. 로그인하는 학부모 계정은 «보호자» 카드에서 고쳐 주세요." className="inline-flex cursor-help">
-                                            <SymbolIcon name="info" size={14} />
+                                        <span role="img" aria-label="학원이 만든 계정(학부모 가입 전)일 때만 바뀌어요. 로그인하는 학부모 계정은 «보호자» 카드에서 고쳐 주세요." title="학원이 만든 계정(학부모 가입 전)일 때만 바뀌어요. 로그인하는 학부모 계정은 «보호자» 카드에서 고쳐 주세요." className="cursor-help text-xs font-normal text-[var(--color-academy-faint)] underline decoration-dotted underline-offset-2">안내
                                         </span>
                                     </span>
                                     <input type="text" value={editForm.parentName} onChange={(e) => setField("parentName", e.target.value)} className={EDIT_INPUT_CLASS} />
@@ -1695,7 +1674,7 @@ export default function StudentDetailClient({
                                                                 rel="noreferrer"
                                                                 className="mt-1 inline-flex text-xs font-medium text-[var(--color-academy-ink)] hover:underline"
                                                             >
-                                                                납부 링크 열기 ↗
+                                                                납부 링크 열기
                                                             </a>
                                                         )}
                                                     </div>
@@ -1872,7 +1851,7 @@ export default function StudentDetailClient({
                                                         ))}
                                                     </div>
                                                     <span className="shrink-0 text-right text-sm font-semibold tabular-nums text-[var(--color-academy-ink)]">{formatKRW(history.paymentAmount)}</span>
-                                                    <SymbolIcon name="chevron_right" size={18} className="shrink-0 text-[var(--color-academy-faint)] transition-transform group-open:rotate-90" />
+                                                    <span aria-hidden="true" className="inline-block shrink-0 text-[var(--color-academy-faint)] transition-transform group-open:rotate-90">›</span>
                                                 </summary>
                                                 <div className="space-y-2.5 border-t border-dashed border-[var(--color-academy-line)] p-3.5">
                                                     <div className="grid gap-3 sm:grid-cols-2">
@@ -2138,8 +2117,7 @@ export default function StudentDetailClient({
                             <span className="flex items-center gap-1">
                                 상태
                                 {/* 운영 설명 문장 대신 ⓘ */}
-                                <span role="img" aria-label="모르면 추측하지 말고 «확인보류»로 남겨요" title="모르면 추측하지 말고 «확인보류»로 남겨요" className="inline-flex cursor-help text-[var(--color-academy-faint)]">
-                                    <SymbolIcon name="info" size={14} />
+                                <span role="img" aria-label="모르면 추측하지 말고 «확인보류»로 남겨요" title="모르면 추측하지 말고 «확인보류»로 남겨요" className="cursor-help text-xs font-normal text-[var(--color-academy-faint)] underline decoration-dotted underline-offset-2">안내
                                 </span>
                             </span>
                             <select value={uniformForm.status} onChange={(e) => setUniformForm((v) => ({ ...v, status: e.target.value }))} className={`${EDIT_INPUT_CLASS} mt-1 min-h-11`}>

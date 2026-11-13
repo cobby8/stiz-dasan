@@ -7,8 +7,7 @@ import Badge from "@/components/ui/Badge";
 import AnimateOnScroll from "@/components/ui/AnimateOnScroll";
 import CTABanner from "@/components/landing/CTABanner";
 import { buildPublicMetadata } from "@/lib/publicMetadata";
-import { hasSellablePrice, listReviewTierOptions, readTossReviewConfig } from "@/lib/payments/tossReview";
-import ProgramPayButton from "./ProgramPayButton";
+import { hasSellablePrice } from "@/lib/payments/tossReview";
 
 export const revalidate = 60;
 export const metadata = buildPublicMetadata({
@@ -85,12 +84,10 @@ export default async function ProgramsPage() {
         getPrograms() as Promise<Program[]>,
         getAcademySettings() as Promise<any>,
     ]);
-    // 0원 프로그램 숨김 — 가격 칸이 모두 0/빈 값이면 공개 화면에서 뺀다(토스 심사 기준: 0원 상품 노출 불가).
+    // 0원 프로그램 숨김 — 가격 칸이 모두 0/빈 값이면 공개 화면에서 뺀다(0원 상품은 내놓지 않는다).
     // getPrograms 자체는 관리자 화면 등도 쓰므로 여기서만 거른다.
     const programs = allPrograms.filter((program) => hasSellablePrice(program));
     const phone = settings.contactPhone || "010-0000-0000";
-    // 토스페이먼츠 가맹 심사용 결제 버튼 — 테스트 키가 있을 때만 보인다(라이브 키·미설정이면 숨김).
-    const reviewPayEnabled = readTossReviewConfig(process.env) !== null;
     return (
         <PublicPageLayout>
             {/* 페이지 히어로 — 그라데이션 배경 + 장식 요소 */}
@@ -248,13 +245,6 @@ export default async function ProgramsPage() {
                                                 </a>
                                             </div>
 
-                                            {reviewPayEnabled && (
-                                                <ProgramPayButton
-                                                    programId={program.id}
-                                                    // 주문서와 같은 규칙으로 빈도 목록을 만든다(공용 함수 — 사본 금지)
-                                                    tiers={listReviewTierOptions(program)}
-                                                />
-                                            )}
                                         </div>
                                     </Card>
                                 </AnimateOnScroll>

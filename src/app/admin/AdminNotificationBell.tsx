@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import FontFreeIcon from "@/components/ui/FontFreeIcon";
 
 const NOTIFICATION_CACHE_MS = 60_000;
 
@@ -114,13 +113,14 @@ export default function AdminNotificationBell() {
             <button
                 type="button"
                 onClick={handleToggle}
-                className="relative rounded-lg p-2 text-[var(--color-academy-muted)] transition-colors hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-muted)]"
-                title="알림"
-                aria-label="알림"
+                aria-expanded={open}
+                // 글자 버튼 «알림» + 안 읽은 건수(2026-11-14 아이콘 완전 제거). 건수는 글자 옆에 나란히 둔다
+                className="academy-button-text academy-button-sm min-h-11! shrink-0 whitespace-nowrap"
+                aria-label={unreadCount > 0 ? `알림, 안 읽은 알림 ${unreadCount}건` : "알림"}
             >
-                <FontFreeIcon name="notifications" size={22} />
+                알림
                 {unreadCount > 0 && (
-                    <span className="absolute -right-0.5 -top-0.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[var(--color-academy-danger)] px-1 text-xs font-semibold text-white">
+                    <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[var(--color-academy-danger)] px-1 text-xs font-semibold tabular-nums text-white">
                         {unreadCount > 99 ? "99+" : unreadCount}
                     </span>
                 )}

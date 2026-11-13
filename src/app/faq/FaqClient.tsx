@@ -81,20 +81,9 @@ function FAQItem({ question, answer }: { question: string; answer: string }) {
         className="w-full flex items-center justify-between gap-2 py-4 px-1 text-left hover:text-[var(--color-public-accent)] dark:hover:text-brand-neon-lime transition-colors cursor-pointer"
       >
         <span className="font-semibold text-[var(--color-public-ink)] dark:text-white pr-4">{question}</span>
-        {/* 화살표 아이콘 — 열림/닫힘 상태에 따라 회전 */}
-        <svg
-          className="w-5 h-5 text-[var(--color-public-muted)] shrink-0 transition-transform duration-200 group-open:rotate-180"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M19 9l-7 7-7-7"
-          />
-        </svg>
+        {/* 2026-11-14 아이콘 완전 제거: 화살표 대신 글자로 상태를 말한다(details 가 열리면 «접기») */}
+        <span aria-hidden="true" className="shrink-0 text-sm text-[var(--color-public-muted)] group-open:hidden">펼치기</span>
+        <span aria-hidden="true" className="hidden shrink-0 text-sm text-[var(--color-public-muted)] group-open:inline">접기</span>
       </summary>
       <div className="pb-5 px-1">
         <p className="text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] text-base leading-relaxed">{answer}</p>

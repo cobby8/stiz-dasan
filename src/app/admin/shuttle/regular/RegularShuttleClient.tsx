@@ -81,8 +81,8 @@ type RosterView = "students" | "driver";
 const ROSTER_VIEW_STORAGE_KEY = "admin-shuttle-roster-view";
 const ROSTER_VIEW_VALUES: readonly RosterView[] = ["students", "driver"];
 const ROSTER_VIEW_OPTIONS: ReadonlyArray<ListViewOption<RosterView>> = [
-  { value: "students", label: "학생 목록", icon: "list" },
-  { value: "driver", label: "기사님 화면(운행 순서)", icon: "directions_bus" },
+  { value: "students", label: "학생 목록" },
+  { value: "driver", label: "기사님 화면(운행 순서)" },
 ];
 const EMPTY_DRAFT: StopDraft = { stopName: "", arriveTime: "", latitude: null, longitude: null };
 // 2026-11-13 UI 통일: 입력칸은 테마 공용 모양(academy-input), 라벨 굵기는 500.
@@ -1190,8 +1190,8 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
             <div className="mb-4 flex items-center gap-2">
               <h3 id="roster-detail-panel-title" className="min-w-0 break-keep text-lg font-bold text-[var(--color-academy-ink)]">{d.studentName}</h3>
               <button type="button" onClick={() => setDetail(null)} aria-label="닫기"
-                className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
-                <span className="material-symbols-outlined" aria-hidden="true">close</span>
+                className="ml-auto academy-button-text academy-button-sm shrink-0">
+                닫기
               </button>
             </div>
             <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">

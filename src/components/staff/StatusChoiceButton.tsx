@@ -3,10 +3,11 @@ import { TONE_BADGE_CLASS, type StatusTone } from "@/lib/ui/statusTones";
 
 /**
  * 현장 «상태 버튼» 공용 부품 — 출석부(선생님)·탑승 체크(선생님·기사님)가 같은 약속을 쓴다.
- * (게슈탈트 «유사성»: 같은 뜻 = 같은 색·같은 아이콘·같은 글자)
+ * (게슈탈트 «유사성»: 같은 뜻 = 같은 색·같은 글자)
+ * 2026-11-14 아이콘 완전 제거(원장 재지시) — ✓·시계·✕ 아이콘 없이 글자만. 색·테두리·눌린 채움·크기는 그대로.
  *
  * - success = 출석 / 탑승·하차, warning = 지각 / 대기, danger = 결석 / 미탑승, info = 보강·오늘만 변경, neutral = 자차·기타
- * - 눌린 상태 = 그 의미색으로 꽉 채움 + 아이콘 + 글자
+ * - 눌린 상태 = 그 의미색으로 꽉 채움 + 글자
  * - 안 눌린 상태 = 그 의미색 테두리(바탕은 흰색) — 무엇을 누르면 어떤 색이 되는지 미리 보인다
  * - 높이 44px 이상(수업 중·운전 중 손가락 실수 방지)
  *
@@ -38,7 +39,6 @@ const PILL = TONE_BADGE_CLASS;
 
 export function StatusChoiceButton({
   tone,
-  icon,
   active,
   disabled = false,
   onClick,
@@ -48,8 +48,6 @@ export function StatusChoiceButton({
   children,
 }: {
   tone: StatusTone;
-  /** Material Symbols 아이콘 이름 (check / schedule / close 등) */
-  icon: string;
   active: boolean;
   disabled?: boolean;
   onClick: () => void;
@@ -68,18 +66,16 @@ export function StatusChoiceButton({
       aria-expanded={ariaExpanded}
       className={`inline-flex min-h-11 items-center justify-center gap-1 rounded-xl border-2 px-2 text-sm font-semibold disabled:opacity-55 ${active ? FILLED[tone] : OUTLINED[tone]} ${className}`}
     >
-      <span aria-hidden="true" className="material-symbols-outlined text-[18px] leading-none">{icon}</span>
       {children}
     </button>
   );
 }
 
-/** 이름 옆 현재 상태 표시 — 버튼과 같은 색·아이콘으로 «지금 어떤 상태인지»를 보여준다.
+/** 이름 옆 현재 상태 표시 — 버튼과 같은 색·글자로 «지금 어떤 상태인지»를 보여준다(아이콘 없음).
  *  누르는 버튼(둥근 모서리)과 헷갈리지 않게 상태 표시 모양(모서리 4px)이다. */
-export function StatusPill({ tone, icon, children, className = "" }: { tone: StatusTone; icon?: string; children: ReactNode; className?: string }) {
+export function StatusPill({ tone, children, className = "" }: { tone: StatusTone; children: ReactNode; className?: string }) {
   return (
     <span className={`inline-flex shrink-0 items-center gap-0.5 rounded px-2 py-0.5 text-xs font-medium ${PILL[tone]} ${className}`}>
-      {icon && <span aria-hidden="true" className="material-symbols-outlined text-[14px] leading-none">{icon}</span>}
       {children}
     </span>
   );

@@ -227,8 +227,8 @@ export default function FaqAdminClient({ faqs: initialFaqs }: { faqs?: FaqData[]
                 <AdminModal onClose={resetForm} titleId="faq-form-modal-title" panelClassName="max-w-2xl">
                         <div className="p-6 border-b border-[var(--color-academy-line)] flex items-center justify-between">
                             <h2 id="faq-form-modal-title" className="text-lg font-bold text-[var(--color-academy-ink)]">{editId ? "FAQ 수정" : "새 FAQ"}</h2>
-                            <button type="button" onClick={resetForm} aria-label="닫기" className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
-                                <span className="material-symbols-outlined" aria-hidden="true">close</span>
+                            <button type="button" onClick={resetForm} aria-label="닫기" className="academy-button-text academy-button-sm shrink-0">
+                                닫기
                             </button>
                         </div>
                         <div className="p-6 space-y-4">
@@ -354,9 +354,9 @@ export default function FaqAdminClient({ faqs: initialFaqs }: { faqs?: FaqData[]
                             type="button"
                             onClick={() => setDetailFaqId(null)}
                             aria-label="닫기"
-                            className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
+                            className="ml-auto academy-button-text academy-button-sm shrink-0"
                         >
-                            <span className="material-symbols-outlined" aria-hidden="true">close</span>
+                            닫기
                         </button>
                     </div>
                     <dl className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">

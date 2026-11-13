@@ -32,10 +32,12 @@ function render(values = {}) {
 function headerButton(html) { return html.match(/<button\b[^>]*>[\s\S]*?<\/button>/)?.[0] ?? ''; }
 function buttonText(html) { return headerButton(html).replace(/<[^>]*>/g, ''); }
 
+// 2026-11-14 아이콘 완전 제거: 위치 아이콘 이름 대신 상태색 점(도형) + 글자. 상태 구분·문구·aria 단언은 그대로다.
 test('정상 위치 공유는 한 개의 작은 아이콘과 접근 가능한 상태 설명을 표시한다', () => {
   const html = render();
   assert.match(headerButton(html), /class="trigger active"/);
-  assert.equal(buttonText(html), 'my_location');
+  assert.equal(buttonText(html), '위치 공유 중');
+  assert.doesNotMatch(html, /material-symbols-outlined/);
   assert.match(headerButton(html), /aria-label="위치 공유 중 · 위치 공유 상세 보기"/);
   assert.match(html, /class="srOnly" role="status">위치 공유 중/);
   assert.doesNotMatch(html, /role="alert"/);
@@ -43,7 +45,7 @@ test('정상 위치 공유는 한 개의 작은 아이콘과 접근 가능한 �
 test('권한 거부는 정상 아이콘 대신 권한 확인과 경고를 표시한다', () => {
   const html = render({ gpsState: 'denied', onRetry() {} });
   assert.match(headerButton(html), /trigger error/);
-  assert.match(buttonText(html), /location_disabled권한 확인/);
+  assert.equal(buttonText(html), '권한 확인');
   assert.match(html, /role="alert">위치 권한을 허용해 주세요/);
   assert.match(html, /위치 연결 다시 시도/);
 });
@@ -63,9 +65,9 @@ test('전송 실패는 마지막 정상 접수를 보존하고 전송 확인을 
 });
 test('접수 29초는 정상이고 31초는 위치 지연으로 표시한다', () => {
   const now = Date.now();
-  assert.equal(buttonText(render({ lastSentAt: new Date(now - 29_000) })), 'my_location');
+  assert.equal(buttonText(render({ lastSentAt: new Date(now - 29_000) })), '위치 공유 중');
   const stale = render({ lastSentAt: new Date(now - 31_000) });
-  assert.match(buttonText(stale), /location_searching위치 지연/);
+  assert.equal(buttonText(stale), '위치 지연');
   assert.match(headerButton(stale), /trigger warning/);
   assert.match(stale, /30초 이상 새 위치를 받지 못했습니다/);
   assert.doesNotMatch(stale, /role="alert"/);
@@ -84,28 +86,28 @@ test('기기 위치를 얻어도 서버 최초 접수 전에는 정상 공유로
 });
 test('오래된 접수가 있어도 공유 꺼짐은 지연으로 표시하지 않는다', () => {
   const html = render({ gpsState: 'off', transmission: 'idle', lastSentAt: new Date(Date.now() - 90_000) });
-  assert.equal(buttonText(html), 'location_off');
+  assert.equal(buttonText(html), '위치 꺼짐');
   assert.match(headerButton(html), /trigger neutral/);
   assert.match(headerButton(html), /위치 공유 꺼짐/);
   assert.doesNotMatch(html, /30초 이상|위치 지연/);
 });
 test('수집 중단 후 서버 확인 중인 상태는 위치 대기·지연과 구분한다', () => {
   const html = render({ gpsState: 'off', transmission: 'stopping', lastSentAt: new Date(Date.now() - 90_000) });
-  assert.match(buttonText(html), /location_off중단 중/);
+  assert.equal(buttonText(html), '중단 중');
   assert.match(headerButton(html), /위치 공유 중단 확인 중/);
   assert.match(html, /공유 종료 확인 중/);
   assert.doesNotMatch(html, /30초 이상|위치 대기/);
 });
 test('중단 완료는 이전 active 상태가 남아도 정상 공유 아이콘을 표시하지 않는다', () => {
   const html = render({ transmission: 'stopped' });
-  assert.equal(buttonText(html), 'location_off');
+  assert.equal(buttonText(html), '위치 꺼짐');
   assert.match(headerButton(html), /trigger neutral/);
   assert.match(headerButton(html), /위치 공유 중단 완료/);
   assert.match(html, /공유 종료 확인 완료/);
 });
 test('중단 미확인은 수집 중단과 서버 확인 필요를 동시에 보존한다', () => {
   const html = render({ gpsState: 'off', transmission: 'stop-unknown', lastSentAt: new Date(Date.now() - 90_000) });
-  assert.match(buttonText(html), /location_disabled중단 확인/);
+  assert.equal(buttonText(html), '중단 확인');
   assert.match(html, /role="alert">공유 중단 확인 필요/);
   assert.match(html, /위치 수집은 중단됨 · 공유 종료 확인 필요/);
   assert.doesNotMatch(html, /30초 이상/);

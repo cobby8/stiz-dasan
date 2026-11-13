@@ -21,6 +21,23 @@ export function trialScheduleForDate(previous: TrialScheduleSelection, date: str
   return { trialDate: date, trialDay: day, trialPeriod: keepPeriod ? previous.trialPeriod : "" };
 }
 
+/**
+ * 시간표 카드의 «체험 신청»(/apply/trial?day=Mon&slot=4)으로 들어왔을 때 쓸 초기값.
+ * 지금 시간표에 있고 마감이 아닌 수업일 때만 요일·교시를 돌려준다(그 밖의 값은 무시 = null).
+ * 날짜는 비워 둔다 — 학부모가 그 요일의 날짜를 고르면 trialScheduleForDate 가 이 교시를 그대로 살린다.
+ * 검증·제출 기준(trialScheduleError)은 건드리지 않는다. 초기값일 뿐이다.
+ */
+export function initialTrialScheduleFromQuery(
+  day: string | undefined,
+  period: string | undefined,
+  slots: (TrialSelectionSlot & { dayOfWeek: string })[],
+): { trialDay: string; trialPeriod: string } | null {
+  if (!day || !period) return null;
+  const slot = slots.find((item) => item.dayOfWeek === day && trialSlotPeriod(item.slotKey) === period);
+  if (!slot || slot.seatLevel === "FULL") return null;
+  return { trialDay: slot.dayLabel, trialPeriod: period };
+}
+
 /** 화면 단계 이동·기존 신청 로드·최종 제출에서 같은 일정 기준을 사용한다. */
 export function trialScheduleError(selection: TrialScheduleSelection, slots: TrialSelectionSlot[], nowMs = Date.now()): string {
   if (!selection.trialDate) return "체험수업 희망일을 선택해주세요.";

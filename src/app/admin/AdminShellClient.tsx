@@ -7,7 +7,6 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { logout } from "@/app/actions/auth";
 import AcademyTheme from "@/components/academy/AcademyTheme";
-import FontFreeIcon from "@/components/ui/FontFreeIcon";
 import AppBackButton from "@/components/AppBackButton";
 import AccountViewSwitcher from "@/components/AccountViewSwitcher";
 import SectionTabs from "@/components/admin/SectionTabs";
@@ -45,24 +44,25 @@ const INBOX_LEGACY_PATHS = ["/admin/requests", "/admin/enrollment-changes", "/ad
 //   - section 이 있는 메뉴 = 그 묶음(src/lib/admin-sections.ts)의 어느 화면에 있어도 켜진다
 //   - 메뉴에서만 뺀 화면(주소·화면은 산다): 유니폼 주문(/admin/uniform) · 사진 빠른 업로드(/staff/quick-post → 갤러리 «빠른 업로드» 버튼)
 //   - 수강생 이관(/admin/import)은 원장 지시로 화면·API 를 삭제했다(가져온 자료는 DB 에 그대로)
-type ExtraNavItem = { href: string; label: string; icon: string; section?: AdminSectionKey };
-const EXTRA_GROUPS: ReadonlyArray<{ label: string; icon: string; items: readonly ExtraNavItem[] }> = [
-    { label: "수업", icon: "event_note", items: [
-        { href: "/admin/schedule", label: "수업시간표 관리", icon: "📅" },
-        { href: "/admin/seasonal", label: "방학특강", icon: "🏀" },
+// 2026-11-14 아이콘 완전 제거: 메뉴 정의에서 icon 값을 없앴다(어디에서도 그리지 않는다)
+type ExtraNavItem = { href: string; label: string; section?: AdminSectionKey };
+const EXTRA_GROUPS: ReadonlyArray<{ label: string; items: readonly ExtraNavItem[] }> = [
+    { label: "수업", items: [
+        { href: "/admin/schedule", label: "수업시간표 관리" },
+        { href: "/admin/seasonal", label: "방학특강" },
     ] },
-    { label: "홈페이지", icon: "web", items: [
-        { href: "/admin/notices", label: "공지사항 관리", icon: "📢" },
+    { label: "홈페이지", items: [
+        { href: "/admin/notices", label: "공지사항 관리" },
         // 학원 소개·코치·프로그램·갤러리·사진 공개 회수·FAQ·후기 탭
-        { href: "/admin/settings", label: "홈페이지 관리", icon: "🏫", section: "homepage" },
+        { href: "/admin/settings", label: "홈페이지 관리", section: "homepage" },
     ] },
-    { label: "설정", icon: "settings", items: [
-        { href: "/admin/staff", label: "스태프", icon: "👥" },
+    { label: "설정", items: [
+        { href: "/admin/staff", label: "스태프" },
         // 문자/템플릿·담당자 전달 장부·카카오 정책 답변 탭
-        { href: "/admin/sms", label: "문자·알림", icon: "💬", section: "messaging" },
+        { href: "/admin/sms", label: "문자·알림", section: "messaging" },
         // 이용약관·개인정보처리방침 탭
-        { href: "/admin/terms", label: "약관·방침", icon: "📜", section: "policy" },
-        { href: "/admin/pos-plugin", label: "POS 연결", icon: "🔌" },
+        { href: "/admin/terms", label: "약관·방침", section: "policy" },
+        { href: "/admin/pos-plugin", label: "POS 연결" },
     ] },
 ];
 
@@ -139,31 +139,31 @@ export default function AdminShellClient({
                 </div>
                 <nav aria-label="관리자 업무 메뉴" className="min-h-0 p-3 space-y-1 flex-1 overflow-y-auto [@media(max-height:500px)]:p-2">
                     {/* 2026-11-13 «오늘 업무» → «대시보드»(원장 점검표) */}
-                    <NavItem href="/admin" active={pathname === "/admin"} icon="📊" label="대시보드" />
+                    <NavItem href="/admin" active={pathname === "/admin"} label="대시보드" />
                     {/* 2026-11-13 통계 개편(원장 결정표): «통계»는 설정 묶음에서 빼 대시보드 바로 아래로 — 카드 «자세히 →»가 가는 곳 */}
-                    <NavItem href="/admin/stats" active={matchesNavPath(pathname, "/admin/stats")} icon="📈" label="통계" />
+                    <NavItem href="/admin/stats" active={matchesNavPath(pathname, "/admin/stats")} label="통계" />
                     {/* 신청함 — 체험·수강·상담·대관·변경·기타 6탭. 배지 = 처리 필요 건수 */}
-                    <NavItem href="/admin/inbox" active={matchesNavPath(pathname, "/admin/inbox") || INBOX_LEGACY_PATHS.some((path) => matchesNavPath(pathname, path))} icon="📨" label="신청함" badge={inboxCount ?? undefined} />
-                    <NavItem href="/admin/students" active={matchesNavPath(pathname, "/admin/students")} icon="🧑‍🎓" label="원생" />
+                    <NavItem href="/admin/inbox" active={matchesNavPath(pathname, "/admin/inbox") || INBOX_LEGACY_PATHS.some((path) => matchesNavPath(pathname, path))} label="신청함" badge={inboxCount ?? undefined} />
+                    <NavItem href="/admin/students" active={matchesNavPath(pathname, "/admin/students")} label="원생" />
                     {/* 출결·정규 결석 신고·보강·수업 리포트 탭 묶음 어디서든 켜진다 */}
-                    <NavItem href="/admin/attendance" active={isInAdminSection(pathname, "attendance")} icon="✅" label="수업·출결" />
+                    <NavItem href="/admin/attendance" active={isInAdminSection(pathname, "attendance")} label="수업·출결" />
                     {/* 청구·수납·입금 확인·현장 수납 승인·POS 결제 대사 탭 묶음 */}
-                    <NavItem href="/admin/finance" active={isInAdminSection(pathname, "finance")} icon="💳" label="청구·수납" />
-                    <NavItem href="/admin/shuttle/regular-dispatch" active={isShuttlePath(pathname)} icon="🚌" label="셔틀" />
+                    <NavItem href="/admin/finance" active={isInAdminSection(pathname, "finance")} label="청구·수납" />
+                    <NavItem href="/admin/shuttle/regular-dispatch" active={isShuttlePath(pathname)} label="셔틀" />
                     {EXTRA_GROUPS.map((group) => (
                         <details key={`${group.label}-${pathname}`} className="group border-t border-[var(--color-academy-line)] pt-1" open={group.items.some((item) => isExtraItemActive(pathname, item))}>
-                            {/* 묶음 이름 — 아이콘 없이 글자만. 펼침 화살표는 «열고 닫는다»는 조작 표시라 남긴다 */}
+                            {/* 묶음 이름 — 글자만. 펼침 표시는 글자 기호 ▾(열리면 뒤집힌다) */}
                             <summary className="flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-lg px-4 py-2 text-xs font-medium text-[var(--color-academy-faint)] hover:bg-[var(--color-academy-soft)]">
                                 <span className="min-w-0 flex-1">{group.label}</span>
-                                <FontFreeIcon name="expand_more" size={18} className="transition-transform group-open:rotate-180" />
+                                <span aria-hidden="true" className="inline-block transition-transform group-open:rotate-180">▾</span>
                             </summary>
                             <div className="space-y-1 border-l border-[var(--color-academy-line)] pl-2">
                                 {group.items.map((item) => (
-                                    <NavItem key={item.href} href={item.href} label={item.label} icon={item.icon} compact active={isExtraItemActive(pathname, item)} />
+                                    <NavItem key={item.href} href={item.href} label={item.label} compact active={isExtraItemActive(pathname, item)} />
                                 ))}
                                 {group.label === "설정" && <>
                                     <button type="button" aria-controls="admin-system-tools" aria-expanded={systemToolsOpen} onClick={() => setSystemToolsOpen((current) => !current)} className="flex min-h-11 w-full items-center gap-3 rounded-lg px-4 py-2 text-left text-sm text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
-                                        <span className="flex-1">시스템 도구</span><FontFreeIcon name="expand_more" size={18} />
+                                        <span className="flex-1">시스템 도구</span><span aria-hidden="true">{systemToolsOpen ? "▴" : "▾"}</span>
                                     </button>
                                     {systemToolsOpen && <div id="admin-system-tools"><LazyBackupButtons sheetRetired={sheetRetired} /></div>}
                                 </>}
@@ -186,14 +186,9 @@ export default function AdminShellClient({
                             <p className="text-xs text-[var(--color-academy-faint)] truncate">{userEmail}</p>
                         </div>
                         <form action={logout} className="flex-shrink-0">
-                            {/* 누르는 영역 44px(A-12) */}
-                            <button
-                                type="submit"
-                                title="로그아웃"
-                                aria-label="로그아웃"
-                                className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] transition-colors hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-primary)]"
-                            >
-                                <FontFreeIcon name="logout" size={18} />
+                            {/* 글자 버튼(2026-11-14 아이콘 완전 제거). 누르는 영역 44px(A-12)은 min-h-11 로 지킨다 */}
+                            <button type="submit" aria-label="로그아웃" className="academy-button-text academy-button-sm min-h-11! whitespace-nowrap">
+                                로그아웃
                             </button>
                         </form>
                     </div>
@@ -211,14 +206,15 @@ export default function AdminShellClient({
             {/* Main Content */}
             <main className="flex min-h-screen w-full min-w-0 flex-1 flex-col md:ml-64">
                 <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-3 border-b border-[var(--color-academy-line)] bg-white px-4 md:px-6">
-                    <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex min-w-0 items-center gap-2 md:gap-3">
+                        {/* 휴대폰 머리줄: «메뉴» 글자 버튼(2026-11-14 아이콘 완전 제거). 테마 버튼이 display 를 정해 md:hidden 에 ! 를 붙인다 */}
                         <button
                             type="button"
                             aria-label="관리자 메뉴 열기"
-                            className="inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border border-[var(--color-academy-line)] text-[var(--color-academy-muted)] transition-colors hover:bg-[var(--color-academy-line)] md:hidden"
+                            className="academy-button-secondary academy-button-sm shrink-0 whitespace-nowrap md:hidden!"
                             onClick={() => setMobileMenuOpen(true)}
                         >
-                            <FontFreeIcon name="menu" size={22} />
+                            메뉴
                         </button>
                         <AppBackButton fallbackHref="/admin" />
                         <h2 className="truncate font-bold text-[var(--color-academy-muted)]">학원 관리</h2>
@@ -239,9 +235,8 @@ export default function AdminShellClient({
 }
 
 // 메뉴는 아이콘 없이 글자만 쓴다(2026-11-13 원장 «아이콘이 어설퍼 보인다 — 빼고 글자 깔끔하게»).
-// icon 값은 메뉴 정의(EXTRA_GROUPS)와 테스트가 아직 들고 있어 받기만 하고 그리지 않는다.
 // 지금 있는 메뉴 = 보조 색(하늘색) 바탕 + 강조 굵기. 주 색(네이비)은 누르는 주 버튼 몫이다.
-function NavItem({ href, active, label, badge, compact = false }: { href: string; active?: boolean; icon?: string; label: string; badge?: number; compact?: boolean }) {
+function NavItem({ href, active, label, badge, compact = false }: { href: string; active?: boolean; label: string; badge?: number; compact?: boolean }) {
     return (
         <Link
             href={href}

@@ -105,8 +105,8 @@ const MAKEUP_VIEW_STORAGE_KEY = "admin-makeup-view-mode";
 const MAKEUP_VIEW_VALUES = ["date", "list"] as const;
 type MakeupViewMode = (typeof MAKEUP_VIEW_VALUES)[number];
 const MAKEUP_VIEW_OPTIONS = [
-    { value: "date", label: "날짜별", icon: "calendar_view_week" },
-    { value: "list", label: "목록", icon: "view_list" },
+    { value: "date", label: "날짜별" },
+    { value: "list", label: "목록" },
 ] as const;
 
 // 보강일 묶음 이름: 오늘 / 이번 주 / 다음 주 / 이후 / 지난 보강 (앞으로 할 보강이 먼저 보이게)
@@ -492,9 +492,9 @@ export default function MakeupClient({
                                 type="button"
                                 onClick={() => setDetailId(null)}
                                 aria-label="닫기"
-                                className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
+                                className="ml-auto academy-button-text academy-button-sm shrink-0"
                             >
-                                <span className="material-symbols-outlined" aria-hidden="true">close</span>
+                                닫기
                             </button>
                         </div>
                         <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
@@ -692,8 +692,8 @@ function BookMakeupModal({
                     <h2 id="book-makeup-title" className="text-lg font-bold text-[var(--color-academy-ink)]">
                         {step === 1 ? "보강 예약 - 원생/결석 정보" : "보강 예약 - 보강 반 선택"}
                     </h2>
-                    <button type="button" aria-label="닫기" onClick={onClose} className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
-                        <span className="material-symbols-outlined" aria-hidden="true">close</span>
+                    <button type="button" aria-label="닫기" onClick={onClose} className="academy-button-text academy-button-sm shrink-0">
+                        닫기
                     </button>
                 </div>
 

@@ -34,7 +34,7 @@ test("금액을 못 읽으면 판단하지 않는다(다른 검증이 막는다)
 
 const REQUEST_FILES = [
     "src/app/payments/[invoiceId]/PaymentCheckoutClient.tsx",
-    "src/lib/payments/tossReviewClient.ts",
+    // 2026-11-14: 심사용 결제창(tossReviewClient.ts)은 심사 종료로 삭제 — tests/toss-review-checkout.test.mjs
 ];
 
 for (const file of REQUEST_FILES) {
@@ -46,10 +46,9 @@ for (const file of REQUEST_FILES) {
     });
 }
 
-// 승인 쪽: 청구서 결제(승인·복구·웹훅 공통 마무리)와 심사용 결제 승인이 면세 확인을 부른다.
+// 승인 쪽: 청구서 결제(승인·복구·웹훅 공통 마무리)가 면세 확인을 부른다. (심사용 결제 승인 화면은 2026-11-14 삭제)
 const CONFIRM_FILES = [
     "src/lib/payment-ledger.ts",
-    "src/app/payments/review/success/page.tsx",
 ];
 
 for (const file of CONFIRM_FILES) {

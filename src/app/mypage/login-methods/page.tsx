@@ -58,7 +58,7 @@ export default async function LoginMethodsPage({
       <div className="mb-2 flex items-center gap-2">
         {/* 뒤로가기 = 누르는 영역 44×44(academy-back-link) */}
         <Link href="/mypage" aria-label="마이페이지로" className="academy-back-link">
-          <span className="material-symbols-outlined" aria-hidden="true">arrow_back</span>
+          <span aria-hidden="true">←</span>
         </Link>
         <h1 className="academy-heading">
           간편로그인 연결

@@ -12,13 +12,10 @@ import { customerMessage } from "@/components/parent/customerMessage";
 // 신청 내역 타임라인(최근 3개월) — 한 줄 행, 누르면 하단 시트(PC 는 오른쪽 칸).
 // 이름·상태·단계·버튼 여부는 서버가 parent-timeline-rules 로 정해서 보낸다. 여기는 그리기 + 버튼 호출만.
 
-function Icon({ name, size = 16, className = "" }: { name: string; size?: number; className?: string }) {
-  return <span className={`material-symbols-outlined leading-none ${className}`} style={{ fontSize: `${size}px` }} aria-hidden="true">{name}</span>;
-}
-
 /** 단계 한 칸 — 모양(✓·●·○·×)과 글자로 구분(색만으로 구분하지 않는다) */
 function Step({ step }: { step: TimelineStep }) {
-  const mark = step.state === "done" ? "check_circle" : step.state === "current" ? "radio_button_checked" : step.state === "stopped" ? "cancel" : "radio_button_unchecked";
+  // 2026-11-14 아이콘 완전 제거: 아이콘 글꼴 대신 글자 기호(✓·●·○·×)로 같은 모양을 그린다.
+  const mark = step.state === "done" ? "✓" : step.state === "current" ? "●" : step.state === "stopped" ? "×" : "○";
   const tone = step.state === "current"
     ? "text-[var(--color-academy-info)] font-semibold"
     : step.state === "stopped"
@@ -28,7 +25,7 @@ function Step({ step }: { step: TimelineStep }) {
         : "text-[var(--color-academy-muted)]";
   return (
     <li className={`inline-flex items-center gap-1 text-sm ${tone}`}>
-      <Icon name={mark} size={18} />
+      <span aria-hidden="true" className="w-4 shrink-0 text-center leading-none">{mark}</span>
       <span>{step.label}</span>
       <span className="sr-only">{step.state === "done" ? "완료" : step.state === "current" ? "진행 중" : step.state === "stopped" ? "멈춤" : "남음"}</span>
     </li>
@@ -125,9 +122,9 @@ export default function RequestTimeline({ rows }: { rows: ParentTimelineView[] }
               type="button"
               onClick={() => setOpenKey(null)}
               aria-label="닫기"
-              className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
+              className="academy-button-text academy-button-sm ml-auto shrink-0"
             >
-              <Icon name="close" size={22} />
+              닫기
             </button>
           </div>
           <p className="break-keep text-sm font-semibold text-[var(--color-academy-ink)]">{row.title}</p>

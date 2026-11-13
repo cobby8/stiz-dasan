@@ -33,8 +33,8 @@ const REPORT_VIEW_STORAGE_KEY = "admin-report-list-view-mode";
 const REPORT_VIEW_VALUES = ["date", "list"] as const;
 type ReportViewMode = (typeof REPORT_VIEW_VALUES)[number];
 const REPORT_VIEW_OPTIONS = [
-    { value: "date", label: "날짜별", icon: "calendar_view_week" },
-    { value: "list", label: "목록", icon: "view_list" },
+    { value: "date", label: "날짜별" },
+    { value: "list", label: "목록" },
 ] as const;
 
 // 발행 상태 칩(이미 받아오는 published 값만으로 센다)
@@ -327,9 +327,9 @@ export default function ReportListClient({ sessions: initialSessions }: { sessio
                                 type="button"
                                 onClick={() => setDetailSessionId(null)}
                                 aria-label="닫기"
-                                className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)]"
+                                className="ml-auto academy-button-text academy-button-sm shrink-0"
                             >
-                                <span className="material-symbols-outlined" aria-hidden="true">close</span>
+                                닫기
                             </button>
                         </div>
                         <dl className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">

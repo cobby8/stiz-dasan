@@ -118,7 +118,7 @@ export default function StaffBillingClient({ bills }: { bills: StaffBillingListI
                 </span>
                 <span className="shrink-0 text-right font-semibold tabular-nums text-[var(--color-academy-ink)]">
                   {bill.amount.toLocaleString("ko-KR")}원
-                  {(bill.amountMismatch || blocked) && <span role="img" className="material-symbols-outlined ml-0.5 align-middle text-base text-[var(--color-academy-warning)]" aria-label={blocked ? "수납 확인 불가 — 상세에서 사유 확인" : "청구서 금액 다름"}>warning</span>}
+                  {(bill.amountMismatch || blocked) && <span className="ml-1 text-xs font-normal text-[var(--color-academy-warning)]" title={blocked ? "수납 확인 불가 — 상세에서 사유 확인" : "청구서 금액 다름"}>{blocked ? "확인 불가" : "금액 다름"}</span>}
                 </span>
                 {/* 게슈탈트 T-09: 행마다 반복되는 작은 작업은 옅은 tonal(꽉 찬 색은 화면의 주인공 하나만) */}
                 {canRequest(bill) && (
@@ -138,9 +138,7 @@ export default function StaffBillingClient({ bills }: { bills: StaffBillingListI
               <h2 id="staff-bill-detail-title" className="text-lg font-bold text-[var(--color-academy-ink)]">{detail.studentName}</h2>
               <p className="text-sm text-[var(--color-academy-muted)]">{detail.className}</p>
             </div>
-            <button type="button" aria-label="닫기" onClick={() => setDetailId(null)} className="grid size-11 shrink-0 place-items-center rounded-full">
-              <span aria-hidden="true" className="material-symbols-outlined">close</span>
-            </button>
+            <button type="button" aria-label="닫기" onClick={() => setDetailId(null)} className="academy-button-text academy-button-sm shrink-0">닫기</button>
           </div>
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 px-4 py-3 text-sm">
             <dt className="text-[var(--color-academy-muted)]">청구</dt><dd className="font-medium">{detail.title}</dd>

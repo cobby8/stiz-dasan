@@ -344,23 +344,23 @@ export default function UnifiedDriverClient({
                   실외 가독성 때문에 채움은 유지하고, 색만 꽉 찬 위험색 토큰(danger-fill)으로 통일(2026-11-09). */}
               {view.absentReported && (
                 <span className="inline-flex items-center gap-0.5 rounded-md bg-[var(--color-academy-danger-fill)] px-2 py-0.5 text-sm font-semibold text-[var(--color-academy-on-primary)]">
-                  <span aria-hidden="true" className="material-symbols-outlined text-[16px] leading-none">event_busy</span>{rider.absentLabel || "결석"}
+                  {rider.absentLabel || "결석"}
                 </span>
               )}
               {rider.grade && <span className="text-sm text-[var(--color-academy-muted)]">{rider.grade}</span>}
             </div>
             {(parent || child) && <div className={styles.contacts}>
-              {parent && <a href={`tel:${parent}`} aria-label={`${rider.name} 학부모 전화`}><span aria-hidden="true" className="material-symbols-outlined">call</span>학부모</a>}
-              {child && <a href={`tel:${child}`} aria-label={`${rider.name} 학생 전화`}><span aria-hidden="true" className="material-symbols-outlined">call</span>학생</a>}
+              {parent && <a href={`tel:${parent}`} aria-label={`${rider.name} 학부모 전화`}>학부모 전화</a>}
+              {child && <a href={`tel:${child}`} aria-label={`${rider.name} 학생 전화`}>학생 전화</a>}
             </div>}
           </div>
           <div className={styles.boardingActions}>
             {/* 게슈탈트 T-04: 선생님 탑승 체크와 같은 상태 버튼(탑승=success, 미탑승=danger), 간격 12px */}
-            <StatusChoiceButton tone="success" icon="check" disabled={isBusy} active={status === "BOARDED"} onClick={() => { setMenuKey(null); void setStatus(rider, "BOARDED"); }}
+            <StatusChoiceButton tone="success" disabled={isBusy} active={status === "BOARDED"} onClick={() => { setMenuKey(null); void setStatus(rider, "BOARDED"); }}
               className="text-[15px]">
               {isPickup ? "탑승" : "하차"}
             </StatusChoiceButton>
-            <StatusChoiceButton tone="danger" icon="close" disabled={isBusy} active={status === "NOSHOW" || status === "SELF"} ariaExpanded={menuKey === rowKey}
+            <StatusChoiceButton tone="danger" disabled={isBusy} active={status === "NOSHOW" || status === "SELF"} ariaExpanded={menuKey === rowKey}
               onClick={() => setMenuKey(menuKey === rowKey ? null : rowKey)} className="text-[15px]">
               미{isPickup ? "탑승" : "하차"}
             </StatusChoiceButton>
@@ -386,11 +386,11 @@ export default function UnifiedDriverClient({
         </div>}
         {menuKey === rowKey && (
           <div className="mt-2 flex gap-3">
-            <StatusChoiceButton tone="danger" icon="close" disabled={isBusy} active={status === "NOSHOW"} onClick={() => { void setStatus(rider, "NOSHOW"); setMenuKey(null); }}
+            <StatusChoiceButton tone="danger" disabled={isBusy} active={status === "NOSHOW"} onClick={() => { void setStatus(rider, "NOSHOW"); setMenuKey(null); }}
               className="min-h-12 flex-1 text-base">결석(안 옴)</StatusChoiceButton>
             {/* 자차는 결석과 다른 «자차 색»(이 화면 CSS 변수 --color-driver-self) */}
             <button type="button" disabled={isBusy} aria-pressed={status === "SELF"} onClick={() => { void setStatus(rider, "SELF"); setMenuKey(null); }}
-              className={`inline-flex min-h-12 flex-1 items-center justify-center gap-1 rounded-xl border-2 border-[var(--color-driver-self)] text-base font-medium ${status === "SELF" ? "bg-[var(--color-driver-self)] text-[var(--color-academy-on-primary)]" : "bg-[var(--color-academy-surface)] text-[var(--color-driver-self)]"}`}><span aria-hidden="true" className="material-symbols-outlined text-[18px] leading-none">directions_car</span>{selfLabel}</button>
+              className={`inline-flex min-h-12 flex-1 items-center justify-center gap-1 rounded-xl border-2 border-[var(--color-driver-self)] text-base font-medium ${status === "SELF" ? "bg-[var(--color-driver-self)] text-[var(--color-academy-on-primary)]" : "bg-[var(--color-academy-surface)] text-[var(--color-driver-self)]"}`}>{selfLabel}</button>
           </div>
         )}
       </div>
@@ -444,7 +444,7 @@ export default function UnifiedDriverClient({
           <p className="min-w-0 flex-1 text-sm font-medium text-[var(--color-academy-ink)]">홈 화면에서 빠르게 열기</p>
           <button type="button" onClick={installPwa}
             className="min-h-11 min-w-11 text-sm font-medium text-[var(--color-academy-primary)]">설치</button>
-          <button type="button" onClick={() => setShowInstallBanner(false)} aria-label="설치 안내 닫기" className="h-11 w-11 shrink-0 text-xl text-[var(--color-academy-primary)]">×</button>
+          <button type="button" onClick={() => setShowInstallBanner(false)} aria-label="설치 안내 닫기" className="min-h-11 min-w-11 shrink-0 text-sm font-medium text-[var(--color-academy-muted)]">닫기</button>
         </div>
       )}
 

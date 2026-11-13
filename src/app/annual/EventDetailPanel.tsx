@@ -94,10 +94,10 @@ export default function EventDetailPanel({ event, onClose }: Props) {
                     {/* 닫기 — 터치 영역 44px(게슈탈트 P-13) */}
                     <button
                         onClick={onClose}
-                        className="shrink-0 w-11 h-11 flex items-center justify-center rounded-full hover:bg-[var(--color-public-tint)] dark:hover:bg-[var(--color-public-tint)] text-[var(--color-public-muted)] hover:text-[var(--color-public-muted)] dark:hover:text-[var(--color-public-ink)] transition text-lg"
+                        className="shrink-0 min-h-11 px-3 flex items-center justify-center rounded-full text-sm font-medium hover:bg-[var(--color-public-tint)] dark:hover:bg-[var(--color-public-tint)] text-[var(--color-public-muted)] hover:text-[var(--color-public-muted)] dark:hover:text-[var(--color-public-ink)] transition"
                         aria-label="닫기"
                     >
-                        ✕
+                        닫기
                     </button>
                 </div>
 
@@ -105,7 +105,6 @@ export default function EventDetailPanel({ event, onClose }: Props) {
                 <div className="px-6 py-5 space-y-5 overflow-y-auto">
                     {/* 날짜/시간 */}
                     <div className="flex items-start gap-3">
-                        <span className="text-xl mt-0.5">📅</span>
                         <div>
                             <p className="font-bold text-[var(--color-public-ink)] dark:text-white text-sm">
                                 {formatDate(event.date, event.isAllDay)}
@@ -126,14 +125,12 @@ export default function EventDetailPanel({ event, onClose }: Props) {
                     {/* 설명 */}
                     {event.description ? (
                         <div className="flex items-start gap-3">
-                            <span className="text-xl mt-0.5">📝</span>
                             <p className="text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)] leading-relaxed whitespace-pre-line">
                                 {event.description}
                             </p>
                         </div>
                     ) : (
                         <div className="flex items-start gap-3">
-                            <span className="text-xl mt-0.5">📝</span>
                             <p className="text-sm text-[var(--color-public-muted)] italic">설명 없음</p>
                         </div>
                     )}
@@ -147,9 +144,6 @@ export default function EventDetailPanel({ event, onClose }: Props) {
                                 rel="noopener noreferrer"
                                 className="inline-flex items-center gap-2 text-sm font-bold text-[var(--color-public-muted)] hover:text-[var(--color-public-ink)] hover:underline transition"
                             >
-                                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-                                    <path d="M19 3h-1V1h-2v2H8V1H6v2H5C3.89 3 3 3.9 3 5v14a2 2 0 002 2h14a2 2 0 002-2V5a2 2 0 00-2-2zm0 16H5V8h14v11z"/>
-                                </svg>
                                 구글 캘린더에서 보기
                             </a>
                         </div>

@@ -1,6 +1,6 @@
 {
   "note": "갚아야 할 빚 — 늘리지 말 것. 줄였으면 UPDATE_COLOR_BASELINE=1 로 낮춘다.",
-  "total": 1330,
+  "total": 1327,
   "files": {
     "src/app/about/loading.tsx": 7,
     "src/app/about/page.tsx": 2,
@@ -32,8 +32,6 @@
     "src/app/privacy/page.tsx": 1,
     "src/app/programs/ProgramAccordionTerms.tsx": 2,
     "src/app/programs/loading.tsx": 4,
-    "src/app/programs/order/OrderForm.tsx": 2,
-    "src/app/programs/order/page.tsx": 1,
     "src/app/programs/page.tsx": 21,
     "src/app/schedule/ScheduleClient.tsx": 17,
     "src/app/schedule/loading.tsx": 8,

@@ -21,6 +21,8 @@ interface Props {
     initialSource: string;
     /** 체험비(설정값)·온라인 결제 가능 여부 — 온라인이면 계좌 안내 대신 신청 직후 결제 링크(2026-11-10) */
     trialFee?: { amount: number; amountLabel: string; onlinePayment: boolean };
+    /** 시간표 카드 «체험 신청»에서 고른 수업의 요일·교시 — «희망 교시» 초기값으로만 쓴다(검증·제출은 그대로) */
+    initialSchedule?: { trialDay: string; trialPeriod: string } | null;
 }
 
 interface FormData {
@@ -81,12 +83,18 @@ const INITIAL_FORM: FormData = {
     honeypot: "",
 };
 
-export default function TrialApplicationForm({ availableSlots, contactPhone, initialSource, trialFee }: Props) {
+export default function TrialApplicationForm({ availableSlots, contactPhone, initialSource, trialFee, initialSchedule = null }: Props) {
     // 온라인 결제가 켜져 있으면 계좌 입금 안내 대신 «신청 후 바로 결제». 꺼져 있으면 예전 계좌 안내 그대로.
     const onlinePayment = Boolean(trialFee?.onlinePayment);
     const feeLabel = trialFee?.amountLabel ?? TRIAL_FEE_PAYMENT_INFO.amountLabel;
     const [step, setStep] = useState(1);
-    const [form, setForm] = useState<FormData>({ ...INITIAL_FORM, source: initialSource });
+    const [form, setForm] = useState<FormData>({
+        ...INITIAL_FORM,
+        source: initialSource,
+        // 날짜는 비워 둔다 — 같은 요일의 날짜를 고르면 이 교시가 그대로 선택된다(trialScheduleForDate)
+        trialDay: initialSchedule?.trialDay ?? "",
+        trialPeriod: initialSchedule?.trialPeriod ?? "",
+    });
     const [error, setErrorMessage] = useState("");
     const [completed, setCompleted] = useState(false);
     const [existingLeadId, setExistingLeadId] = useState<string | null>(null);
@@ -386,6 +394,12 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
                         </h2>
                         <Field label="체험수업 희망일" required type="date" min={todayKst()} value={form.trialDate} onChange={selectTrialDate} placeholder="연도-월-일" />
                         {dateDay ? <ButtonGroup label="희망 요일" required options={dayOptions} value={form.trialDay} onChange={selectTrialDay} /> : <p className="text-sm text-[var(--color-public-muted)]">날짜를 선택하면 요일이 자동으로 정해집니다.</p>}
+                        {/* 시간표 카드에서 넘어온 경우: 무엇을 골랐는지와 다음에 할 일을 한 줄로 알린다 */}
+                        {initialSchedule && !form.trialDate && (
+                            <p className="text-sm text-[var(--color-public-ink)] dark:text-white">
+                                시간표에서 고른 수업: {initialSchedule.trialDay}요일 {initialSchedule.trialPeriod}교시 — {initialSchedule.trialDay}요일 날짜를 고르면 이 교시가 선택됩니다.
+                            </p>
+                        )}
                         <div>
                             <label className="mb-2 block text-sm font-medium text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
                                 희망 교시 <span className="text-red-500">*</span>

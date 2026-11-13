@@ -41,7 +41,7 @@ export default function GpsShareBar({
   return (
     <div className={`mb-2 rounded-xl border px-4 py-2.5 ${needsAttention ? "border-[var(--color-amber-300)] bg-[var(--color-amber-50)]" : "border-[var(--color-green-300)] bg-[var(--color-green-50)]"}`}>
       <p role={failed ? "alert" : "status"} className={`text-sm font-semibold ${needsAttention ? "text-[var(--color-amber-800)]" : "text-[var(--color-green-800)]"}`}>
-        📍 {title}
+        {title}
       </p>
       {lastSentAt && <p className="mt-0.5 text-sm font-semibold text-[var(--color-slate-700)]">{`마지막 위치 수신 · ${elapsedLabel(lastSentAt, clock)}${accuracy != null ? ` · 정확도 ${Math.round(accuracy)}m` : ""}`}</p>}
       {(gpsState === "denied" || gpsState === "error") && onRetry && <button type="button" className="text-xs font-medium underline" onClick={onRetry}>위치 연결 다시 시도</button>}
@@ -55,7 +55,7 @@ export default function GpsShareBar({
       </p>
       {(gpsState === "active" || gpsState === "requesting") && (
         <p className="mt-0.5 text-xs font-semibold text-[var(--color-amber-700)]">
-          {mode === "native" ? "운행 중에는 화면을 끄거나 길안내 앱으로 이동해도 위치 공유를 계속합니다. 운행 종료 시 수집을 멈춥니다." : "⚠️ 웹에서는 화면 잠금·다른 앱 이동 시 위치 공유가 멈출 수 있습니다"}
+          {mode === "native" ? "운행 중에는 화면을 끄거나 길안내 앱으로 이동해도 위치 공유를 계속합니다. 운행 종료 시 수집을 멈춥니다." : "웹에서는 화면 잠금·다른 앱 이동 시 위치 공유가 멈출 수 있습니다"}
         </p>
       )}
     </div>

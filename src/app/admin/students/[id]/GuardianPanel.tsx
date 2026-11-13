@@ -43,14 +43,6 @@ const RELATION_PRESETS = ["모", "부", "조모", "조부", "외조모", "외조
 type FormState = { relation: string; name: string; phone: string; makePrimary: boolean };
 const EMPTY_FORM: FormState = { relation: "", name: "", phone: "", makePrimary: false };
 
-function Icon({ name, size = 14 }: { name: string; size?: number }) {
-    return (
-        <span aria-hidden="true" className="material-symbols-outlined leading-none" style={{ fontSize: size }}>
-            {name}
-        </span>
-    );
-}
-
 /** 앱 가족 연결이 어떻게 생겼는지 — 관리자 화면 표시용 */
 const FAMILY_SOURCE_LABEL: Record<FamilyAccessRow["source"], string> = {
     REGISTERED_CONTACT: "등록 연락처",
@@ -287,9 +279,9 @@ export default function GuardianPanel({
                                     title="로그인 계정 전화는 여기서 바뀌지 않습니다 — «연락처 · 프로필»에서 수정"
                                     aria-label="로그인 계정 전화는 여기서 바뀌지 않습니다. 연락처 · 프로필에서 수정"
                                     role="img"
-                                    className="inline-flex cursor-help text-[var(--color-academy-faint)]"
+                                    className="cursor-help text-xs font-normal text-[var(--color-academy-faint)] underline decoration-dotted underline-offset-2"
                                 >
-                                    <Icon name="info" size={14} />
+                                    안내
                                 </span>
                             </p>
                             <a href={`tel:${accountDigits}`} className="shrink-0 text-sm tabular-nums text-[var(--color-academy-ink)] hover:underline">
@@ -335,8 +327,8 @@ export default function GuardianPanel({
                         <h2 id="guardian-form-title" className="text-base font-bold text-[var(--color-academy-ink)]">
                             {editingId === "new" ? "보호자 추가" : `보호자 수정 — ${editingGuardian?.relation ?? ""}`}
                         </h2>
-                        <button type="button" onClick={closeForm} disabled={isPending} aria-label="닫기" className="grid h-11 w-11 place-items-center rounded-xl text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
-                            <Icon name="close" size={20} />
+                        <button type="button" onClick={closeForm} disabled={isPending} aria-label="닫기" className="academy-button-text academy-button-sm shrink-0">
+                            닫기
                         </button>
                     </div>
                     {formView}

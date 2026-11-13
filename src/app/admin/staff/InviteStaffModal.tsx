@@ -121,8 +121,8 @@ export default function InviteStaffModal({
                     <h2 id="invite-staff-modal-title" className="academy-section-title">
                         새 스태프 초대·가입
                     </h2>
-                    <button type="button" onClick={onClose} className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]" aria-label="닫기">
-                        <span className="material-symbols-outlined" aria-hidden="true">close</span>
+                    <button type="button" onClick={onClose} className="academy-button-text academy-button-sm shrink-0" aria-label="닫기">
+                        닫기
                     </button>
                 </div>
 

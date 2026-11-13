@@ -184,7 +184,9 @@ test("B9 로그인 화면: 실제 비밀번호 규칙 안내·보기 버튼 44px
   assert.doesNotMatch(login, /placeholder="6자 이상"/);
   assert.match(login, /비밀번호 \(10자 이상\)/);
   assert.match(login, /비밀번호 \(8자 이상\)/);
-  assert.match(login, /absolute right-0 top-1\/2 flex h-11 w-11/);
+  // 2026-11-14 아이콘 완전 제거: 눈 아이콘 → 글자 «보기»/«숨기기». 폭 고정만 풀고 높이 44px(h-11)는 그대로.
+  assert.match(login, /absolute right-0 top-1\/2 flex h-11 -translate-y-1\/2 items-center justify-center px-3/);
+  assert.match(login, /\{showPassword \? "숨기기" : "보기"\}/);
   assert.equal((login.match(/className="min-h-11 w-full px-4 py-2\.5/g) || []).length, 3, "이름·아이디·비밀번호 입력칸");
   assert.match(login, /className="h-5 w-5 shrink-0 rounded/);
   const auth = await read("src/app/actions/auth.ts");

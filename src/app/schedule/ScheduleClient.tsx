@@ -50,6 +50,16 @@ export type PublicScheduleSlot = Omit<MergedSlot, "enrolled" | "capacity"> & { s
 
 type Program = { id: string; name: string };
 
+/**
+ * 수업 카드의 «체험 신청» 주소 — 체험 신청 폼이 이 요일·교시를 «희망 교시» 초기값으로 읽는다.
+ * 교시는 슬롯 열쇠의 마지막 토막(예: "Mon-4" → "4") — 체험 폼(trialSlotPeriod)과 같은 규칙이다.
+ */
+function trialApplyHref(slot: Pick<PublicScheduleSlot, "dayKey" | "slotKey">): string {
+    const period = slot.slotKey.split("-").at(-1) || "";
+    if (!slot.dayKey || !period) return "/apply/trial";
+    return `/apply/trial?day=${encodeURIComponent(slot.dayKey)}&slot=${encodeURIComponent(period)}`;
+}
+
 function ScheduleFilter({ programs, allSlots, phone }: {
     programs: Program[];
     allSlots: PublicScheduleSlot[];
@@ -153,7 +163,7 @@ function ScheduleFilter({ programs, allSlots, phone }: {
                     <div className="relative flex max-h-[85vh] w-full flex-col rounded-t-2xl bg-white shadow-2xl dark:bg-[var(--color-public-tint)] sm:mx-4 sm:max-w-md sm:rounded-2xl">
                         <div className="flex items-center justify-between border-b border-[var(--color-public-line)] px-5 py-1 dark:border-[var(--color-public-line)]">
                             <h2 className="text-base font-black text-[var(--color-public-ink)] dark:text-white">프로그램 필터</h2>
-                            <button type="button" onClick={() => setFilterOpen(false)} aria-label="닫기" className="flex h-11 w-11 items-center justify-center rounded-full text-lg text-[var(--color-public-muted)] hover:bg-[var(--color-public-tint)] dark:text-[var(--color-public-muted)] dark:hover:bg-[var(--color-public-line)]">✕</button>
+                            <button type="button" onClick={() => setFilterOpen(false)} aria-label="닫기" className="flex h-11 shrink-0 items-center justify-center rounded-full px-3 text-sm font-medium text-[var(--color-public-muted)] hover:bg-[var(--color-public-tint)] dark:text-[var(--color-public-muted)] dark:hover:bg-[var(--color-public-line)]">닫기</button>
                         </div>
                         <div className="overflow-y-auto px-5 py-2">
                             {[{ id: "", name: "전체" }, ...programs].map((p) => (
@@ -223,13 +233,6 @@ function ScheduleFilter({ programs, allSlots, phone }: {
                                                                     <span>{slot.gradeRange}</span>
                                                                 </div>
                                                             )}
-                                                            {/* 수강 현황 — 인원 막대(비율이 곧 인원수) 대신 3단계 배지 한 줄(재원생 수 비공개 · 2026-11-13 f9) */}
-                                                            <div className="mt-3 pt-2 border-t border-[var(--color-public-line)] flex justify-between items-center gap-2">
-                                                                <span className="text-xs text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] font-medium">수강 현황</span>
-                                                                <span className={`text-xs leading-none font-semibold px-2 py-1 rounded ${SEAT_LEVEL_BADGE_CLASS[slot.seatLevel]}`}>
-                                                                    {SEAT_LEVEL_LABEL[slot.seatLevel]}
-                                                                </span>
-                                                            </div>
                                                         </div>
 
                                                         {/* 우측: 코치 프로필 — 있을 때만 표시 */}
@@ -249,6 +252,24 @@ function ScheduleFilter({ programs, allSlots, phone }: {
                                                                 <p className="text-xs font-medium text-[var(--color-public-ink)] dark:text-[var(--color-public-ink)] text-center leading-tight break-keep w-full">{slot.coach.name}</p>
                                                                 <p className="text-xs text-[var(--color-public-muted)] text-center leading-tight break-words w-full">{slot.coach.role}</p>
                                                             </div>
+                                                        )}
+                                                    </div>
+                                                    {/* 수강 현황 — 인원 막대(비율이 곧 인원수) 대신 3단계 배지 한 줄(재원생 수 비공개 · 2026-11-13 f9).
+                                                        2026-11-14 원장 점검표: 카드마다 «체험 신청» — 이 줄 오른쪽에 테두리 버튼(카드마다 반복되므로 꽉 찬 주 버튼은 쓰지 않는다).
+                                                        마감인 수업은 버튼 없이 «마감» 표시만 둔다. */}
+                                                    <div className="mt-3 flex min-h-11 flex-wrap items-center gap-2 border-t border-[var(--color-public-line)] pt-2">
+                                                        <span className="text-xs text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] font-medium">수강 현황</span>
+                                                        <span className={`text-xs leading-none font-semibold px-2 py-1 rounded ${SEAT_LEVEL_BADGE_CLASS[slot.seatLevel]}`}>
+                                                            {SEAT_LEVEL_LABEL[slot.seatLevel]}
+                                                        </span>
+                                                        {slot.seatLevel !== "FULL" && (
+                                                            <a
+                                                                href={trialApplyHref(slot)}
+                                                                aria-label={`${slot.displayLabel} 체험 신청`}
+                                                                className="public-btn-secondary ml-auto shrink-0 text-sm"
+                                                            >
+                                                                체험 신청
+                                                            </a>
                                                         )}
                                                     </div>
                                                 </div>

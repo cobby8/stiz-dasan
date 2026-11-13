@@ -166,11 +166,11 @@ export function SessionPhotoUploader({
                   <p className="rounded-lg bg-[var(--color-academy-warning-soft)] p-2 text-xs font-medium text-[var(--color-academy-warning)]">공개된 사진 · 관리자 회수 필요</p>
                 ) : (
                   // 게슈탈트 T-10: «학생 수정»과 «삭제»가 나란히 붙어 있으면 잘못 누르기 쉽다.
-                  // 삭제는 오른쪽 끝 휴지통 아이콘으로 떼어 두고(간격 12px), 확인 창(deletePhoto)은 그대로 둔다.
+                  // 삭제는 오른쪽 끝 «삭제» 글자 버튼으로 떼어 두고(간격 12px), 확인 창(deletePhoto)은 그대로 둔다.
                   <div className="flex items-center justify-between gap-3">
                     <button type="button" disabled={busy} onClick={() => setEditingPhotoId(editingPhotoId === photo.id ? null : photo.id)} className="academy-button-tonal academy-button-sm min-w-0 flex-1">학생 수정</button>
-                    <button type="button" disabled={busy} aria-label="사진 삭제" title="사진 삭제" onClick={() => void deletePhoto(photo)} className="grid size-11 shrink-0 place-items-center rounded-lg border border-[var(--color-academy-danger)] text-[var(--color-academy-danger)] disabled:opacity-50">
-                      <span aria-hidden="true" className="material-symbols-outlined text-xl">delete</span>
+                    <button type="button" disabled={busy} aria-label="사진 삭제" title="사진 삭제" onClick={() => void deletePhoto(photo)} className="academy-button-danger academy-button-sm shrink-0">
+                      삭제
                     </button>
                   </div>
                 )}

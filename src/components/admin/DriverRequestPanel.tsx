@@ -75,7 +75,7 @@ export default function DriverRequestPanel({ onClose }: { onClose: () => void })
         <div className="flex items-center justify-between border-b border-[var(--color-academy-line)] px-5 py-4">
           <div>
             <h2 className="text-[17px] font-bold text-[var(--color-academy-ink)]">
-              📥 기사 요청 수신함
+              기사 요청 수신함
               {pending.length > 0 && (
                 <span className="ml-2 rounded-full bg-[var(--color-academy-danger)] px-2 py-0.5 text-[12px] font-bold text-white">
                   {pending.length}
@@ -84,7 +84,7 @@ export default function DriverRequestPanel({ onClose }: { onClose: () => void })
             </h2>
             <p className="text-[12px] text-[var(--color-academy-faint)] mt-0.5">최근 7일 · 승인 시 자동 처리됩니다</p>
           </div>
-          <button type="button" onClick={onClose} className="text-[22px] text-[var(--color-academy-faint)] hover:text-[var(--color-academy-muted)]">✕</button>
+          <button type="button" onClick={onClose} className="academy-button-text academy-button-sm shrink-0">닫기</button>
         </div>
 
         <div className="max-h-[65vh] overflow-y-auto p-4 space-y-3">
@@ -120,12 +120,12 @@ export default function DriverRequestPanel({ onClose }: { onClose: () => void })
                 <button type="button" disabled={busy[req.id]}
                   onClick={() => resolve(req.id, "approve")}
                   className="flex-1 h-11 rounded-xl bg-[var(--color-academy-primary)] text-[15px] font-bold text-[var(--color-academy-on-primary)] disabled:opacity-60 active:bg-[var(--color-academy-primary-hover)]">
-                  {busy[req.id] ? "처리 중…" : "✅ 승인"}
+                  {busy[req.id] ? "처리 중…" : "승인"}
                 </button>
                 <button type="button" disabled={busy[req.id]}
                   onClick={() => resolve(req.id, "reject")}
                   className="h-11 min-w-[80px] rounded-xl border-2 border-[var(--color-academy-line-input)] text-[15px] font-bold text-[var(--color-academy-muted)] disabled:opacity-60">
-                  ❌ 거절
+                  거절
                 </button>
               </div>
             </div>

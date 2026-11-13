@@ -153,17 +153,19 @@ function ImageNodeView(props: ReactNodeViewProps) {
                                         display: 'inline-flex',
                                         alignItems: 'center',
                                         justifyContent: 'center',
-                                        width: 26,
+                                        minWidth: 26,
                                         height: 26,
+                                        padding: '0 6px',
+                                        fontSize: 12,
+                                        whiteSpace: 'nowrap',
                                         borderRadius: 4,
                                         color: '#fff',
                                         // 현재 정렬과 같으면 눌린 느낌으로 강조
                                         background: align === a ? 'rgba(255,255,255,0.35)' : 'transparent',
                                     }}
                                 >
-                                    <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
-                                        {a === 'left' ? 'format_align_left' : a === 'center' ? 'format_align_center' : 'format_align_right'}
-                                    </span>
+                                    {/* 글자 라벨(2026-11-14 아이콘 완전 제거) */}
+                                    {a === 'left' ? '왼쪽' : a === 'center' ? '가운데' : '오른쪽'}
                                 </button>
                             ))}
                         </span>

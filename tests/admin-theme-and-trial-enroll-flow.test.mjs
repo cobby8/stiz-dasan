@@ -16,7 +16,9 @@ test("관리자 헤더는 알림을 유지하고 승인된 라이트 테마를 �
   assert.match(themeToggle, /resolvedTheme/);
   assert.match(themeToggle, /라이트 모드로 변경/);
   assert.match(themeToggle, /다크 모드로 변경/);
-  assert.match(themeToggle, /isDark \? "light_mode" : "dark_mode"/);
+  // 2026-11-14 아이콘 완전 제거: 달·해 아이콘 → 글자 «어둡게»/«밝게»(누르면 일어날 일을 말한다)
+  assert.match(themeToggle, /\{isDark \? "밝게" : "어둡게"\}/);
+  assert.doesNotMatch(themeToggle, /FontFreeIcon|light_mode|dark_mode/);
 });
 
 test("체험 완료 후 수강신청서 링크는 관리자 주요 액션으로 노출된다", () => {

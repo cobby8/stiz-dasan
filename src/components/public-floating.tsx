@@ -13,7 +13,14 @@
  * 2) 모달이 열리면 <body data-public-overlay="개수"> 를 달고, CSS 가 플로팅 버튼을 숨긴다.
  *    모달이 여러 개 겹쳐도 개수로 세어 마지막 것이 닫힐 때만 지운다.
  */
-import { useEffect, useRef, type ReactNode, type RefObject } from "react";
+import { useEffect, useRef, type CSSProperties, type ReactNode, type RefObject } from "react";
+
+/**
+ * «둘러보기» 알약의 아래 여백 — «상담» 알약(아래 24px + 높이 44px) 바로 위 8px.
+ * public-sport.css 의 --guide 기본값은 옛 원 버튼(56px) 기준 88px 이라, 44px 알약에 그대로 쓰면
+ * 홈 첫 화면 버튼 줄을 살짝 덮는다. 변수만 덮어쓰므로 하단 고정 바 높이 계산은 CSS 그대로다.
+ */
+export const GUIDE_FLOATING_STYLE = { "--public-floating-offset": "76px" } as CSSProperties;
 
 /** 모달·하단 시트가 열려 있는 동안 플로팅 버튼을 숨긴다. */
 export function usePublicOverlayOpen(open: boolean) {

@@ -121,7 +121,6 @@ const DAY_OPTIONS = [
 const INPUT = "academy-input";
 const TIME_INPUT = "academy-input";
 // 닫기·지우기(✕) 버튼 — 글자를 둘 자리가 없는 조작이라 기호를 남기되, 누르는 영역은 44px
-const ICON_BUTTON = "inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]";
 
 export default function ScheduleAdminModals({
     editingSheetSlot,
@@ -181,9 +180,7 @@ export default function ScheduleAdminModals({
                                     </span>
                                 )}
                             </div>
-                            <button type="button" aria-label="닫기" onClick={onCloseSheetSlot} className={ICON_BUTTON}>
-                                <span className="material-symbols-outlined" style={{ fontSize: "22px" }} aria-hidden="true">close</span>
-                            </button>
+                            <button type="button" aria-label="닫기" onClick={onCloseSheetSlot} className="academy-button-text academy-button-sm shrink-0">닫기</button>
                         </div>
 
                         <div className="p-6 space-y-4">
@@ -227,9 +224,7 @@ export default function ScheduleAdminModals({
                                             className={TIME_INPUT + " flex-1"}
                                         />
                                         {editingSheetState.startTimeOverride && (
-                                            <button type="button" aria-label="시작 시간 조정 지우기" onClick={() => onUpdateSlot(editingSheetSlot.slotKey, { startTimeOverride: "" })} className={ICON_BUTTON}>
-                                                <span className="material-symbols-outlined" style={{ fontSize: "18px" }} aria-hidden="true">close</span>
-                                            </button>
+                                            <button type="button" aria-label="시작 시간 조정 지우기" onClick={() => onUpdateSlot(editingSheetSlot.slotKey, { startTimeOverride: "" })} className="academy-button-text academy-button-sm shrink-0 whitespace-nowrap">지우기</button>
                                         )}
                                     </div>
                                 </div>
@@ -246,9 +241,7 @@ export default function ScheduleAdminModals({
                                             className={TIME_INPUT + " flex-1"}
                                         />
                                         {editingSheetState.endTimeOverride && (
-                                            <button type="button" aria-label="종료 시간 조정 지우기" onClick={() => onUpdateSlot(editingSheetSlot.slotKey, { endTimeOverride: "" })} className={ICON_BUTTON}>
-                                                <span className="material-symbols-outlined" style={{ fontSize: "18px" }} aria-hidden="true">close</span>
-                                            </button>
+                                            <button type="button" aria-label="종료 시간 조정 지우기" onClick={() => onUpdateSlot(editingSheetSlot.slotKey, { endTimeOverride: "" })} className="academy-button-text academy-button-sm shrink-0 whitespace-nowrap">지우기</button>
                                         )}
                                     </div>
                                 </div>
@@ -346,9 +339,7 @@ export default function ScheduleAdminModals({
                                 <span className="bg-[var(--color-academy-neutral-soft)] text-[var(--color-academy-neutral)] text-xs px-2.5 py-1 rounded-full">커스텀</span>
                                 <span className="font-bold text-[var(--color-academy-ink)]">수업 수정</span>
                             </div>
-                            <button type="button" aria-label="닫기" onClick={onCloseCustomEdit} className={ICON_BUTTON}>
-                                <span className="material-symbols-outlined" style={{ fontSize: "22px" }} aria-hidden="true">close</span>
-                            </button>
+                            <button type="button" aria-label="닫기" onClick={onCloseCustomEdit} className="academy-button-text academy-button-sm shrink-0">닫기</button>
                         </div>
 
                         <div className="p-6">
@@ -392,9 +383,7 @@ export default function ScheduleAdminModals({
                     <span id="sheet-url-title" className="sr-only">구글 시트 연동 관리</span>
                         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-academy-line)]">
                             <span className="academy-section-title">구글시트 연동관리</span>
-                            <button type="button" aria-label="닫기" onClick={onCloseSheetUrl} className={ICON_BUTTON}>
-                                <span className="material-symbols-outlined" style={{ fontSize: "22px" }} aria-hidden="true">close</span>
-                            </button>
+                            <button type="button" aria-label="닫기" onClick={onCloseSheetUrl} className="academy-button-text academy-button-sm shrink-0">닫기</button>
                         </div>
                         <div className="p-6 space-y-4">
                             <div className="bg-[var(--color-academy-success-soft)] border border-[var(--color-academy-line)] rounded-lg p-3 text-xs text-[var(--color-academy-success)]">
@@ -463,9 +452,7 @@ export default function ScheduleAdminModals({
                     <span id="custom-slot-add-title" className="sr-only">커스텀 수업 추가</span>
                         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-academy-line)]">
                             <span className="academy-section-title">새 수업 추가</span>
-                            <button type="button" aria-label="닫기" onClick={onCloseAddCustom} className={ICON_BUTTON}>
-                                <span className="material-symbols-outlined" style={{ fontSize: "22px" }} aria-hidden="true">close</span>
-                            </button>
+                            <button type="button" aria-label="닫기" onClick={onCloseAddCustom} className="academy-button-text academy-button-sm shrink-0">닫기</button>
                         </div>
                         <div className="p-6">
                             <CustomSlotFormFields form={newCustomForm} onChange={onNewCustomFormChange} coaches={coaches} programs={programs} />

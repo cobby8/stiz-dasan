@@ -64,10 +64,10 @@ export default function ShuttleRideStatusButtons({
       {/* 게슈탈트 T-02: 주인공(탑승/하차)은 넓게, 위험 쪽(미탑승)은 12px 떼어 오른쪽 좁게.
           «대기»는 상태 버튼 줄에서 빼고 아래 작은 글자 버튼으로 둬서 실수로 누르지 않게 한다. */}
       <div className="grid grid-cols-[2fr_1fr] gap-3">
-        <StatusChoiceButton tone="success" icon="check" active={status === primaryStatus} disabled={isPending} onClick={() => update(primaryStatus)}>
+        <StatusChoiceButton tone="success" active={status === primaryStatus} disabled={isPending} onClick={() => update(primaryStatus)}>
           {STATUS_LABEL[primaryStatus]}
         </StatusChoiceButton>
-        <StatusChoiceButton tone="danger" icon="close" active={status === "NO_SHOW"} disabled={isPending} onClick={() => update("NO_SHOW")}>
+        <StatusChoiceButton tone="danger" active={status === "NO_SHOW"} disabled={isPending} onClick={() => update("NO_SHOW")}>
           미탑승
         </StatusChoiceButton>
       </div>

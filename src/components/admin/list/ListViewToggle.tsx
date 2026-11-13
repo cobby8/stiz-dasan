@@ -4,9 +4,8 @@ import { useEffect, useState } from "react";
 
 export type ListViewOption<T extends string> = {
     value: T;
+    // 2026-11-14 아이콘 완전 제거: icon 값은 부르는 곳이 없어 타입에서도 뺐다
     label: string;
-    /** 옛 아이콘 이름 — 2026-11-13 부터 그리지 않는다(부르는 쪽 호환용으로만 받는다) */
-    icon?: string;
 };
 
 interface ListViewToggleProps<T extends string> {

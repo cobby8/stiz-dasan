@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import GalleryLightboxController, { type GalleryLightboxItem } from "./GalleryLightboxController";
-import FontFreeIcon from "@/components/ui/FontFreeIcon";
 import { isDurableGalleryMediaUrl, parseGalleryMediaJSON } from "@/lib/galleryMedia";
 import { formatKstDate, toKstYmd } from "@/lib/datetime/kst";
 
@@ -58,11 +57,9 @@ export default function GalleryPublicClient({ posts }: { posts: GalleryPost[] })
                         ) : (
                             <>
                                 <video src={item.url} className="w-full h-full object-cover" muted preload="metadata" />
-                                {/* 동영상 재생 아이콘 표시 */}
+                                {/* 동영상 표시 — 2026-11-14 아이콘 완전 제거: 재생 아이콘 대신 글자 «영상» */}
                                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                    <div className="w-12 h-12 rounded-full bg-black/50 flex items-center justify-center">
-                                        <FontFreeIcon name="play_arrow" size={20} className="ml-1 text-white" />
-                                    </div>
+                                    <span className="rounded-full bg-black/60 px-3 py-1 text-xs font-medium text-white">영상</span>
                                 </div>
                             </>
                         )}

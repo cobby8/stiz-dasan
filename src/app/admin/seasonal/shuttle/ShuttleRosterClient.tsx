@@ -356,7 +356,7 @@ export default function ShuttleRosterClient({
 
   const cell = "w-full rounded-lg border border-transparent bg-transparent px-2 py-1.5 text-xs hover:border-[var(--color-academy-line)] focus:border-[var(--brand-accent)] focus:bg-white focus:outline-none";
   const dot = (pinned: boolean, approx: boolean) => `h-2.5 w-2.5 shrink-0 rounded-full ${pinned ? "bg-[var(--color-academy-success)]" : approx ? "bg-[var(--color-academy-warning)]" : "bg-[var(--color-academy-line-input)]"}`;
-  const pinBtn = (pinned: boolean) => `grid h-7 w-7 shrink-0 place-items-center rounded-lg border text-sm ${pinned ? "border-[var(--color-academy-success)] text-[var(--color-academy-success)]" : "border-[var(--color-academy-line)] text-[var(--color-academy-muted)]"}`;
+  const pinBtn = (pinned: boolean) => `grid h-7 min-w-7 shrink-0 place-items-center whitespace-nowrap rounded-lg border px-1.5 text-xs ${pinned ? "border-[var(--color-academy-success)] text-[var(--color-academy-success)]" : "border-[var(--color-academy-line)] text-[var(--color-academy-muted)]"}`;
   const colCount = confirmed ? 6 : 5;
 
   // 한 학생 행. 일반 명단과 1호점 폴더 안에서 똑같이 쓴다(두 벌로 갈리면 유지보수 사고).
@@ -383,7 +383,7 @@ export default function ShuttleRosterClient({
             placeholder={r.ride ? "예: 다산이편한세상자이 정문" : "미탑승"} className={cell} />
           <button type="button" onClick={() => setPinEdit({ requestId: r.requestId, kind: "pickup" })}
             title="지도에서 핀 찍기" aria-label="승차 위치 지도에서 핀 찍기"
-            className={pinBtn(r.pickupPinned)}>📍</button>
+            className={pinBtn(r.pickupPinned)}>지도</button>
           <span title={r.pickupPinned ? "정밀 핀" : r.pickupApprox ? "자동추정(재확인)" : "미지정"} className={dot(r.pickupPinned, r.pickupApprox)} />
         </div>
       </td>
@@ -401,7 +401,7 @@ export default function ShuttleRosterClient({
               placeholder="예: 힐스테이트다산 정문" className={cell} />
             <button type="button" onClick={() => setPinEdit({ requestId: r.requestId, kind: "dropoff" })}
               title="지도에서 핀 찍기" aria-label="하차 위치 지도에서 핀 찍기"
-              className={pinBtn(r.dropoffPinned)}>📍</button>
+              className={pinBtn(r.dropoffPinned)}>지도</button>
             <span title={r.dropoffPinned ? "정밀 핀" : r.dropoffApprox ? "자동추정(재확인)" : "미지정"} className={dot(r.dropoffPinned, r.dropoffApprox)} />
           </div>
         )}
@@ -473,7 +473,7 @@ export default function ShuttleRosterClient({
               좌표 없는 탑승자 {missingCoordCount}명 — 자동 배차에서 제외됩니다.
             </p>
             <p className="mt-0.5 text-xs text-[var(--color-academy-danger)]">
-              해당 학생의 승·하차 위치를 지도 핀(📍)으로 지정하면 자동 배차에 포함됩니다.
+              해당 학생의 승·하차 위치를 «지도» 버튼으로 지정하면 자동 배차에 포함됩니다.
             </p>
           </div>
         )}
@@ -528,7 +528,7 @@ export default function ShuttleRosterClient({
                     <td colSpan={colCount} className="bg-[var(--color-academy-success-soft)]/70 p-0">
                       <button type="button" onClick={() => setHubOpen((v) => !v)}
                         className="flex w-full items-center gap-2 px-3 py-2 text-left">
-                        <span className="text-xs text-[var(--color-academy-success)]">{hubOpen ? "▼" : "▶"}</span>
+                        <span className="text-xs text-[var(--color-academy-success)]">{hubOpen ? "▴" : "▾"}</span>
                         <span className="text-sm font-semibold text-[var(--color-academy-success)]">1호점(무료탑승)</span>
                         <span className="rounded bg-[var(--color-academy-surface)] px-2 py-0.5 text-xs tabular-nums text-[var(--color-academy-success)]">{hubRows.length}명</span>
                         <span className="text-xs text-[var(--color-academy-success)]">1호점 거점에서 무료로 탑승하는 학생</span>
