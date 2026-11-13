@@ -8,6 +8,8 @@ import { CHART_COLORS } from "@/components/charts/chartColors";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import { PAYMENT_TONE, TONE_BADGE_CLASS, TONE_TEXT_CLASS, toneFor } from "@/lib/ui/statusTones";
 import type { ChildRecord } from "@/lib/parent/childRecordQuery";
+// 아이 정보·수강 반·셔틀 칸(2026-11-14 «아이 정보 + 기록» 한 장)
+import { ChildClassesSection, ChildInfoSection, ChildShuttleSection } from "./ChildProfileSections";
 import {
   EMPTY_PAYMENT_FILTER,
   PAYMENT_KIND_LABEL,
@@ -34,7 +36,8 @@ import {
   type RecordPaymentKind,
 } from "@/lib/parent/childRecordRules";
 
-// 학부모 «아이 기록» 화면 (2026-11-14 원장 결정 w2) — 컴팩트 UI 규칙(아이콘 없이 글자로 — UI 통일 가드):
+// 학부모 «아이 기록» 화면 (2026-11-14 원장 결정 w2 · 같은 날 «아이 정보 + 셔틀» 확장) — 컴팩트 UI 규칙(아이콘 없이 글자로 — UI 통일 가드):
+//  순서: 아이 정보 → 요약 4칸 → 수강 반 → 셔틀 → 청구 이력 → 출석 → 수강 반 이력 → 특강·유니폼·리포트
 //  히어로 없음 · 요약 4칸(2×2) · 한 줄 행(48px) · 필터는 버튼 하나 + 하단 시트 · 터치 44px · 글자 12px 이상.
 // 계산은 전부 childRecordRules(순수 함수, 실행 테스트 있음)에서. 여기는 그리기와 펼치기·필터 상태만.
 
@@ -139,6 +142,9 @@ export default function ChildRecordClient({
         )}
       </div>
 
+      {/* 아이 정보 — 관리자 원생 상세 중 학부모에게 보여도 되는 것만(맨 위) */}
+      <ChildInfoSection profile={record.profile} today={today} studentId={childId} />
+
       {/* 요약 4칸(2×2) — 다닌 기간 · 출석률 · 납부 · 미납 */}
       <section aria-label="요약" className="grid grid-cols-2 gap-2">
         <SummaryCell label="다닌 기간" value={tenure?.main ?? "기록 없음"} sub={tenure?.sub} />
@@ -162,6 +168,10 @@ export default function ChildRecordClient({
       </section>
       {/* 옛 기록 안내(q4) — 한 줄 */}
       <p className="text-xs text-[var(--color-academy-muted)]">2026년 4월 이전 출석·일부 청구는 기록이 없어요.</p>
+
+      {/* 수강 반 · 셔틀(명단 기준 — 기사님·관리자 운행표와 같은 정본) */}
+      <ChildClassesSection profile={record.profile} studentId={childId} />
+      <ChildShuttleSection shuttle={record.shuttle} studentId={childId} />
 
       {/* 청구 이력 */}
       <section aria-labelledby="record-pay-heading" className="academy-panel overflow-hidden">

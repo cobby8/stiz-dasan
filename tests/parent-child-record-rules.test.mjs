@@ -213,6 +213,9 @@ function loadQuery(fakeRows, tenureCalls) {
     "@/lib/account/child-access": { childAccessSql: async (alias, expr) => `${alias}."parentId" = ${expr}` },
     "@/lib/payments/payerAccess": { payerAccessSql: async (alias, expr) => `${alias}."parentId" = ${expr}` },
     "@/lib/student-tenure-query": { getStudentTenure: async (id) => { tenureCalls.push(id); return { label: "1년", firstMonth: "2025-11", actualMonths: 12, spanMonths: 13, spanLabel: "1년 1개월" }; } },
+    // 2026-11-14 아이 정보·셔틀 칸 — 서버 전용 셔틀 조회·연간일정은 가짜로(셔틀 상세는 parent-child-profile-shuttle 테스트)
+    "@/lib/shuttle/parent": { getParentShuttleOverview: async () => [], getShuttleDriverContact: async () => null },
+    "@/lib/enrollment/monthlyClassDates": { loadAnnualPlanEvents: async () => [], getMonthlyClassDates: () => [] },
   });
   return { q, db, calls };
 }

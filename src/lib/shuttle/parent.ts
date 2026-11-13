@@ -8,6 +8,12 @@ import { getConfirmedDispatchEtas } from "@/lib/seasonal/dispatchRoute";
 // 정규 셔틀의 확정 승/하차 시각은 셔틀 명단(RegularShuttleStop.arriveTime)에서 읽는다(6단계 — 기사님 화면과 같은 정본).
 import { getConfirmedRegularRosterEtas } from "@/lib/shuttle/regularRosterEta";
 import { regularEtaKey } from "@/lib/shuttle/regularRosterEtaLogic";
+// 정규 셔틀 «운행 일정»은 셔틀 명단(기사님·관리자 운행표의 정본)에서 만든다(2026-11-14 — 노선 승객 표는 운영 0행이었다).
+import { loadChildRegularShuttle } from "@/lib/shuttle/childShuttleQuery";
+import { rosterOverviewItems } from "@/lib/shuttle/childShuttleRules";
+import { loadChildClasses } from "@/lib/parent/childClassesQuery";
+import { getMonthlyClassDates, loadAnnualPlanEvents } from "@/lib/enrollment/monthlyClassDates";
+import { todayKst } from "@/lib/datetime/kst";
 
 export type ParentShuttleOverviewItem = {
   id: string;
@@ -75,7 +81,11 @@ function preferRouteVersion<T extends { routePlan: { status: string; version: nu
  * 인증된 학부모의 앱 계정 ID만 사용해 자녀 셔틀 현황을 조회한다.
  * 전화번호 기반 매칭과 기사·다른 승객·좌표 조회는 의도적으로 하지 않는다.
  */
-export async function getParentShuttleOverview(appUserId: string): Promise<ParentShuttleOverviewItem[]> {
+export async function getParentShuttleOverview(
+  appUserId: string,
+  // includeRoster=false: 명단 기준 정규 항목을 빼고 돌려준다(«아이 기록»이 명단을 직접 계산해 두 번 돌지 않게)
+  options: { includeRoster?: boolean } = {},
+): Promise<ParentShuttleOverviewItem[]> {
   const students = await prisma.student.findMany({
     // 병합으로 흡수된 학생은 학부모 마이페이지에서도 보이지 않아야 한다
     where: { ...await childAccessWhere(appUserId), ...NOT_MERGED_STUDENT },
@@ -283,6 +293,16 @@ export async function getParentShuttleOverview(appUserId: string): Promise<Paren
     });
   });
 
+  // 정규 셔틀(명단 기준) — 오늘부터 7일, 실제로 타는 칸만(휴무·휴원·결석·«안 탐» 신청 제외).
+  // 같은 학생·날짜·방향의 노선 승객 항목이 이미 있으면 그쪽을 남긴다(겹쳐 두 번 보이지 않게).
+  // 실패하면 빈 목록 — 홈·수업 탭 전체가 오류로 바뀌지 않게.
+  const rosterItems = options.includeRoster === false ? [] : await rosterOverviewForStudents(students).catch((error) => {
+    console.error("[parent shuttle] 명단 기준 셔틀 조회 실패", error instanceof Error ? error.name : "");
+    return [] as ParentShuttleOverviewItem[];
+  });
+  const passengerKeys = new Set(regularItems.map((item) => `${item.studentId}:${item.serviceDate}:${item.direction}`));
+  const rosterOnly = rosterItems.filter((item) => !passengerKeys.has(`${item.studentId}:${item.serviceDate}:${item.direction}`));
+
   const studentByIdentity = new Map<string, string | null>();
   for (const student of students) {
     const key = studentIdentity(student.name, student.birthDate);
@@ -293,6 +313,8 @@ export async function getParentShuttleOverview(appUserId: string): Promise<Paren
       .filter((passenger) => passenger.studentId && passenger.session?.classId)
       .map((passenger) => `${passenger.studentId}:${passenger.session!.classId}`),
   );
+  // 명단에 이미 오른 반도 «신청 접수» 카드를 또 만들지 않는다
+  for (const item of rosterItems) if (item.classId) assignedClassKeys.add(`${item.studentId}:${item.classId}`);
   const regularRequestItems = regularApplications.flatMap<ParentShuttleOverviewItem>((application) => {
     const studentId = application.convertedStudentId
       ? (studentIds.includes(application.convertedStudentId) ? application.convertedStudentId : null)
@@ -318,9 +340,27 @@ export async function getParentShuttleOverview(appUserId: string): Promise<Paren
     }];
   });
 
-  return [...regularItems, ...specialItems, ...regularRequestItems].sort((left, right) => {
+  return [...regularItems, ...rosterOnly, ...specialItems, ...regularRequestItems].sort((left, right) => {
     return (right.serviceDate ?? "").localeCompare(left.serviceDate ?? "") || left.label.localeCompare(right.label, "ko");
   });
+}
+
+/**
+ * 자녀들의 명단 기준 정규 셔틀 항목. students 는 getParentShuttleOverview 가 childAccessWhere 로 고른 내 자녀뿐이다(IDOR 안전).
+ * 연간일정을 못 읽으면 휴무 판정 없이(명단대로) 만든다.
+ */
+async function rosterOverviewForStudents(students: { id: string; name: string }[]): Promise<ParentShuttleOverviewItem[]> {
+  const today = todayKst();
+  const planEvents = await loadAnnualPlanEvents().catch(() => null);
+  const monthlyDates = planEvents ? (ym: string, dow: string) => getMonthlyClassDates(planEvents, ym, dow) : null;
+  const perStudent = await Promise.all(
+    students.map(async (student) => {
+      const classes = await loadChildClasses(prisma, student.id, today);
+      const shuttle = await loadChildRegularShuttle(prisma, { studentId: student.id, today, classes, monthlyDates });
+      return rosterOverviewItems(student.id, student.name, shuttle.days);
+    }),
+  );
+  return perStudent.flat();
 }
 
 // 학부모에게 제공하는 셔틀 기사님 연락처. 공용 DRIVER 계정의 이름·전화만 노출한다(민감정보 최소화).
