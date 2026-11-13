@@ -85,7 +85,14 @@ test("학년이 맞는 반만 추천한다", () => {
   const ids = r.map((c) => c.classId);
   assert.ok(ids.includes("mon5") && ids.includes("tue4"));
   assert.ok(!ids.includes("fri7"), "중1~중2 반은 초5에게 추천되면 안 된다");
-  assert.ok(!ids.includes("sat1"), "초5가 학년 구성에 없다");
+  // 2026-11-14 결석 당일 취소·보강 연결: «학년이 맞는» = 학년 구성에 글자가 똑같이 있어야 → 반의 대상 학년 범위 ±1학년.
+  // sat1(7세~초4)은 초5 가 구성에 없어도 범위 끝(초4)에서 1학년 차이라 학년으로는 후보다. 여기서 빠지는 이유는 자리(14/12)다.
+  assert.ok(!ids.includes("sat1"), "정원 +2 를 넘겨 자리가 없다");
+  const sat1Open = recommendClasses([{ ...CLASSES[3], enrolled: 5 }], "초5");
+  assert.equal(sat1Open.length, 1, "자리가 있으면 ±1학년 반도 후보가 된다");
+  // 2학년 이상 떨어진 학년은 여전히 후보가 아니다
+  assert.equal(recommendClasses([{ ...CLASSES[3], enrolled: 5 }], "초6").length, 0);
+  assert.equal(recommendClasses(CLASSES, "초4").some((c) => c.classId === "fri7"), false);
 });
 
 test("정원 +2 까지 받는다 (약관)", () => {

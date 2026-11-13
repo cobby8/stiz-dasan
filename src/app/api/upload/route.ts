@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 import { writeFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { requireStaff } from "@/lib/auth-guard";
+import { canUseSharedUpload, resolveUploadFolder } from "@/lib/uploadFolders";
 
 // 허용 파일 타입 화이트리스트 — 이미지만 허용
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+const EXTENSION_BY_TYPE: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif" };
 // 최대 파일 크기 5MB (바이트 단위)
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 
@@ -37,7 +39,12 @@ async function trySupabaseUpload(buffer: Buffer, folder: string, filename: strin
 
 export async function POST(req: Request) {
     try {
-        await requireStaff();
+        const staff = await requireStaff();
+        // 2026-11-14 사진·인스타 점검: 기사님 전용 계정은 사진을 올리는 화면이 없다 — 거절한다.
+        // (선생님 역할을 함께 승인받은 기사님은 roles.teacher 가 켜져 있어 그대로 쓸 수 있다)
+        if (!canUseSharedUpload(staff.roles)) {
+            return NextResponse.json({ error: "사진 업로드는 선생님·관리자 계정에서만 할 수 있습니다." }, { status: 403 });
+        }
     } catch (error) {
         const message = error instanceof Error ? error.message : "업로드 권한이 필요합니다.";
         const status = message.includes("인증") ? 401 : 403;
@@ -65,11 +72,16 @@ export async function POST(req: Request) {
             );
         }
 
-        // folder: "coaches" | "gallery" | "notices" (default: "coaches" for backward compat)
-        const folder = (formData.get("folder") as string) || "coaches";
+        // folder 는 허용 목록(src/lib/uploadFolders.ts)에 있는 값만 받는다. 안 보내면 기존처럼 "coaches".
+        // 예전에는 보낸 값을 그대로 경로에 붙여 "../" 같은 값으로 다른 위치에 쓸 수 있었다.
+        const folder = resolveUploadFolder(formData.get("folder"));
+        if (!folder) {
+            return NextResponse.json({ error: "사진을 저장할 위치가 올바르지 않습니다." }, { status: 400 });
+        }
 
         const buffer = Buffer.from(await file.arrayBuffer());
-        const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
+        // 확장자는 파일 이름이 아니라 검사를 통과한 형식에서 정한다 — 이름에 "/../" 같은 글자를 넣어 저장 위치를 바꾸지 못하게(2026-11-14 보안 검수)
+        const ext = EXTENSION_BY_TYPE[file.type] ?? "jpg";
         const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
         // Try Supabase Storage first

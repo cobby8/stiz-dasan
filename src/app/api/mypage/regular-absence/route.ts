@@ -5,6 +5,7 @@ import {
   reportRegularAbsence,
   cancelRegularAbsence,
 } from "@/lib/regular/parent-regular-absence";
+import { ABSENCE_CHANGE_CLOSED_MESSAGE } from "@/lib/regular/regularAbsenceRules";
 
 export const dynamic = "force-dynamic";
 
@@ -69,9 +70,11 @@ export async function POST(request: NextRequest) {
       INVALID_REASON: "결석 사유를 선택해 주세요.",
       INVALID_DATE: "날짜 형식이 올바르지 않습니다.",
       STUDENT_OR_CLASS_MISSING: "자녀와 반을 선택해 주세요.",
-      NOT_REPORTABLE_DATE: "미래의 수업 날짜만 신고할 수 있습니다.",
+      NOT_REPORTABLE_DATE: "지난 날짜이거나 그 반 수업 요일이 아니라 신고할 수 없습니다.",
+      // 2026-11-14: 신고·취소·사유 변경은 수업 시작 1시간 전까지(서버가 강제 — regularAbsenceRules.isAbsenceChangeOpen)
+      ABSENCE_CHANGE_CLOSED: ABSENCE_CHANGE_CLOSED_MESSAGE,
       ABSENCE_NOT_FOUND: "결석 신고를 찾을 수 없습니다.",
-      ABSENCE_NOT_CANCELABLE: "이미 학원에서 확정된 신고라 취소할 수 없습니다.",
+      ABSENCE_NOT_CANCELABLE: "이미 학원에서 확정된 신고라 바꾸거나 취소할 수 없습니다.",
       // 보강권(2026-11-10): 신고 취소 시 보강권 되돌리기에서 막힌 경우
       MAKEUP_BOOKING_CONFIRM_REQUIRED: "이 결석의 보강권으로 보강이 예약돼 있어요. 보강 예약도 함께 취소돼요.",
       MAKEUP_ALREADY_USED: "이 결석의 보강을 이미 들어서 결석 신고를 취소할 수 없어요. 학원으로 문의해 주세요.",

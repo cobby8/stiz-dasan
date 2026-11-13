@@ -65,7 +65,7 @@ export async function getRegularMakeupsForParent(
          LEFT JOIN "Class" mc ON mc.id = ms."makeupClassId"
         WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")}
           AND ms.status <> 'CANCELLED'
-          AND ms."makeupDate"::date >= $2::date
+          AND (ms."makeupDate" AT TIME ZONE 'Asia/Seoul')::date >= $2::date
         ORDER BY ms."makeupDate" ASC`,
       parentUserId, today,
     );

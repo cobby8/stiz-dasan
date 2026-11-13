@@ -8,6 +8,7 @@ import {
   cancelMakeupBooking,
   type MakeupOption,
 } from "@/lib/makeup/parent-makeup";
+import type { MakeupEmptyReason } from "@/lib/makeup/credit-rules";
 
 // 학부모 보강 예약 서버 액션.
 //
@@ -16,13 +17,14 @@ import {
 
 export async function fetchMakeupOptions(
   creditId: string,
-): Promise<{ ok: boolean; message?: string; options?: MakeupOption[] }> {
+): Promise<{ ok: boolean; message?: string; options?: MakeupOption[]; emptyReason?: MakeupEmptyReason | null }> {
   const parent = await requireVerifiedParent().catch(() => null);
   if (!parent) return { ok: false, message: "로그인이 필요합니다." };
 
   const r = await getMakeupOptionsForCredit(parent.appUserId, creditId);
   if (!r.ok) return { ok: false, message: r.message };
-  return { ok: true, options: r.options };
+  // emptyReason: 후보가 0건일 때 화면이 이유(학년 정보 없음 / 맞는 반 없음 / 자리 없음)를 나눠 보인다
+  return { ok: true, options: r.options, emptyReason: r.emptyReason };
 }
 
 export async function bookMakeupAction(input: {

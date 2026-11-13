@@ -5,6 +5,12 @@ import type { SocialMediaItem } from "@/lib/socialCaptionAI";
 import { normalizeSubjectStudentIds } from "@/lib/studentMediaConsentPolicy";
 import { createHash } from "node:crypto";
 import { collectPublishedMediaCopyPaths, PUBLIC_GALLERY_BUCKET } from "@/lib/sessionPhotoStorage";
+import {
+  ARM_INSTAGRAM_QUEUE_SQL,
+  CLAIM_INSTAGRAM_ATTEMPT_SQL,
+  MARK_GALLERY_PUBLISHING_SQL,
+  QUEUED_INSTAGRAM_DRAFTS_SQL,
+} from "./socialPublishQueueRules";
 
 export { normalizeSubjectStudentIds } from "@/lib/studentMediaConsentPolicy";
 
@@ -270,14 +276,9 @@ export async function getSocialPostDraftById(id: string) {
 export async function getQueuedSocialPostDrafts(limit = 1) {
   await ensureSocialPostDraftTable();
 
-  const rows = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT * FROM "SocialPostDraft"
-     WHERE status = 'PUBLISHING'
-       AND COALESCE("instagramNextRetryAt", "updatedAt") <= NOW()
-     ORDER BY COALESCE("instagramNextRetryAt", "updatedAt") ASC, "createdAt" ASC
-     LIMIT $1`,
-    limit,
-  );
+  // 2026-11-14 사진·인스타 점검: 대기열이 켜진(원장이 인스타 게시를 누른) 초안만 집는다.
+  // 예전에는 COALESCE(다음 시도 시각, 수정 시각)이라 꺼진 초안도 5분마다 집어 «건너뜀»만 반복했다.
+  const rows = await prisma.$queryRawUnsafe<any[]>(QUEUED_INSTAGRAM_DRAFTS_SQL, limit);
 
   return rows.map(mapDraft);
 }
@@ -429,40 +430,32 @@ export async function markSocialPostDraftPublishing(
 ) {
   await ensureSocialPostDraftTable();
 
-  const rows = await prisma.$queryRawUnsafe<any[]>(
-    `UPDATE "SocialPostDraft"
-     SET status = 'PUBLISHING',
-         "galleryPostId" = $1,
-         "instagramPublishError" = NULL,
-         "instagramPublishAttempts" = CASE WHEN status = 'PUBLISHING' THEN "instagramPublishAttempts" ELSE 0 END,
-         "instagramLastAttemptAt" = CASE WHEN status = 'PUBLISHING' THEN "instagramLastAttemptAt" ELSE NULL END,
-         "instagramNextRetryAt" = CASE WHEN status = 'PUBLISHING' THEN "instagramNextRetryAt" ELSE NOW() END,
-         "updatedAt" = NOW()
-     WHERE id = $2
-     RETURNING *`,
-    data.galleryPostId,
-    id,
-  );
+  // 2026-11-14 검수 필수 1: 게시할 수 있는 상태일 때만 바꾸고, 여기서는 대기열을 켜지 않는다.
+  const rows = await prisma.$queryRawUnsafe<any[]>(MARK_GALLERY_PUBLISHING_SQL, data.galleryPostId, id);
+  if (rows[0]) return mapDraft(rows[0]);
 
-  return mapDraft(rows[0]);
+  // 바뀐 행이 없다 = 그 사이에 다른 처리가 게시를 끝냈거나(PUBLISHED) 반려했다. 되돌리지 않고 지금 상태를 돌려준다.
+  const current = await getSocialPostDraftById(id);
+  if (!current) throw new Error("게시할 초안을 찾지 못했습니다.");
+  return current;
+}
+
+/**
+ * 원장이 인스타 게시를 눌렀을 때만 부른다 — 꺼져 있던 인스타 대기열을 켠다.
+ * 2026-11-14 사진·인스타 점검: 이 단계가 없어 초안이 «게시 처리 중»에 멈췄다(규칙은 socialPublishQueueRules.ts).
+ * 이미 켜져 있으면(다른 처리가 시도를 잡았으면) 아무것도 바꾸지 않고 null 을 돌려준다.
+ */
+export async function armSocialPostDraftInstagramQueue(id: string) {
+  await ensureSocialPostDraftTable();
+
+  const rows = await prisma.$queryRawUnsafe<any[]>(ARM_INSTAGRAM_QUEUE_SQL, id);
+  return rows[0] ? mapDraft(rows[0]) : null;
 }
 
 export async function markSocialPostDraftPublishAttempt(id: string) {
   await ensureSocialPostDraftTable();
 
-  const rows = await prisma.$queryRawUnsafe<any[]>(
-    `UPDATE "SocialPostDraft"
-     SET "instagramPublishAttempts" = COALESCE("instagramPublishAttempts", 0) + 1,
-         "instagramLastAttemptAt" = NOW(),
-         "instagramNextRetryAt" = NOW() + INTERVAL '5 minutes',
-         "updatedAt" = NOW()
-     WHERE id = $1
-       AND status = 'PUBLISHING'
-       AND "instagramNextRetryAt" IS NOT NULL
-       AND "instagramNextRetryAt" <= NOW()
-     RETURNING *`,
-    id,
-  );
+  const rows = await prisma.$queryRawUnsafe<any[]>(CLAIM_INSTAGRAM_ATTEMPT_SQL, id);
 
   return rows[0] ? mapDraft(rows[0]) : null;
 }

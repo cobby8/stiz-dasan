@@ -3,6 +3,9 @@ import GalleryAdminClient from "./GalleryAdminClient";
 import { getCachedAdminGalleryPayload } from "@/lib/adminReadPayloads";
 
 export const revalidate = 30;
+// 2026-11-14 검수: 이 화면의 «게시» 서버 액션이 인스타를 부른다. 실행 시간 제한을 명시한다(vercel.json 기본값과 같은 60초,
+// 인스타 «시도 잡기» 5분보다 짧아야 한다 — src/lib/socialPublishQueueRules.ts).
+export const maxDuration = 60;
 
 export default async function AdminGalleryPage() {
     // 레이아웃 검사만 믿지 않고 화면마다 관리자 확인(d3 — 레이아웃이 바뀌거나 우회돼도 데이터가 새지 않게)

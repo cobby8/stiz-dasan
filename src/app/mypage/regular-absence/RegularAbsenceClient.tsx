@@ -23,8 +23,8 @@ const REASONS: { value: string; label: string }[] = [
 ];
 
 // 결석 신고의 보강권 상태 → 행에 붙는 짧은 글(2026-11-10: 신고 즉시 보강권 발급)
+// AVAILABLE(보강권 1장)은 글자가 아니라 «보강 예약하기» 버튼으로 보인다(2026-11-14 — 보강 화면으로 바로 이어지게)
 const CREDIT_NOTE: Record<string, string> = {
-  AVAILABLE: "보강권 1장",
   RESERVED: "보강 예약됨",
   USED: "보강 완료",
   NO_SHOW: "보강 불참",
@@ -33,6 +33,15 @@ const CREDIT_NOTE: Record<string, string> = {
 // 이미 보강을 들었거나(무단 불참 포함) — 신고 취소를 막는 상태(서버도 같은 규칙으로 막는다)
 function creditBlocksCancel(d: UpcomingClassDate) {
   return d.makeupCredit === "USED" || d.makeupCredit === "NO_SHOW";
+}
+
+// 수업 시작 1시간 전이 지난 줄에 보이는 글 — 서버 오류 문구(regularAbsenceRules.ABSENCE_CHANGE_CLOSED_MESSAGE)와 같은 글
+const CHANGE_CLOSED_TEXT = "수업 1시간 전이 지나 여기서 바꿀 수 없습니다. 학원으로 연락해 주세요.";
+
+// 지금 신고·취소·사유 변경을 받을 수 있는 줄인가(서버가 준 값 — 서버도 같은 규칙으로 다시 막는다).
+// 값이 없으면(옛 응답) 열린 것으로 본다: 막는 쪽은 서버다.
+function changeOpen(d: UpcomingClassDate) {
+  return d.changeOpen !== false;
 }
 
 // 다가오는 날짜 하나를 나타내는 카드용 키(자녀·반·날짜 조합).
@@ -68,7 +77,7 @@ export default function RegularAbsenceClient({
     }
   }, []);
 
-  // 결석 신고.
+  // 결석 신고 · 사유 변경(신고된 줄에서 다른 사유로 다시 보내면 서버가 사유만 바꾼다 — 보강권은 다시 생기지 않는다).
   const report = useCallback(
     async (d: UpcomingClassDate) => {
       const key = dateKey(d);
@@ -92,9 +101,19 @@ export default function RegularAbsenceClient({
           }),
         });
         const j = await res.json();
-        if (!res.ok) throw new Error(j?.error || "신고에 실패했습니다.");
-        // 신고 즉시 보강권이 나갔으면 그 사실을 한 줄로 알린다
-        setMsg(j?.makeupCreditIssued ? "결석을 신고했어요. 보강권 1장이 생겼어요." : "결석을 신고했어요. 학원에서 확인합니다.");
+        if (!res.ok) {
+          // 화면을 연 뒤 마감(수업 1시간 전)이 지난 경우 — 다시 읽어 그 줄이 «학원으로 연락» 글로 바뀌게 한다
+          if (j?.code === "ABSENCE_CHANGE_CLOSED") await reload();
+          throw new Error(j?.error || "신고에 실패했습니다.");
+        }
+        // 사유 변경이면 그 사실만, 새 신고면 보강권이 나갔는지를 한 줄로 알린다
+        setMsg(
+          d.reported
+            ? "결석 사유를 바꿨어요."
+            : j?.makeupCreditIssued
+              ? "결석을 신고했어요. 보강권 1장이 생겼어요."
+              : "결석을 신고했어요. 학원에서 확인합니다.",
+        );
         setOpenKey("");
         await reload();
       } catch (e) {
@@ -130,6 +149,8 @@ export default function RegularAbsenceClient({
         if (!res.ok) {
           // 화면을 연 뒤 보강 예약이 생긴 경우 — 최신 상태를 다시 읽어 «보강 예약도 함께 취소돼요» 확인 문구가 뜨게 한다
           if (j?.code === "MAKEUP_BOOKING_CONFIRM_REQUIRED") await reload();
+          // 화면을 연 뒤 마감(수업 1시간 전)이 지난 경우도 다시 읽는다
+          if (j?.code === "ABSENCE_CHANGE_CLOSED") await reload();
           throw new Error(j?.error || "취소에 실패했습니다.");
         }
         setMsg(
@@ -181,7 +202,7 @@ export default function RegularAbsenceClient({
       </div>
       {/* 화면 맨 위 설명 한 줄 = 본문 14px */}
       <p className="mb-4 text-sm text-[var(--color-academy-muted)]">
-        신고한 결석은 선생님과 기사님에게 표시됩니다.
+        신고한 결석은 선생님과 기사님에게 표시됩니다. 신고·취소·사유 변경은 수업 시작 1시간 전까지 할 수 있습니다.
       </p>
 
       {/* 예정 보강(읽기 전용) — 관리자가 지정한 자녀의 보강 일정 */}
@@ -214,7 +235,7 @@ export default function RegularAbsenceClient({
             ))}
           </ul>
           <p className="mt-2 text-xs text-[var(--color-academy-muted)]">
-            보강 일정은 학원에서 지정합니다. 변경이 필요하면 학원으로 문의해 주세요.
+            보강권으로 비슷한 학년 반의 빈자리를 골라 예약할 수 있습니다.
           </p>
         </div>
       )}
@@ -279,7 +300,7 @@ export default function RegularAbsenceClient({
                                       결석 신고됨
                                     </span>
                                     {d.reasonLabel && <span className="text-xs text-[var(--color-academy-muted)]">{d.reasonLabel}</span>}
-                                    {/* 신고 즉시 발급된 보강권 상태(짧게) */}
+                                    {/* 보강권 상태(짧게) — 사용 가능(AVAILABLE)은 아래 «보강 예약하기» 버튼으로 보인다 */}
                                     {d.makeupCredit && CREDIT_NOTE[d.makeupCredit] && (
                                       <span className="text-xs text-[var(--color-academy-info)]">{CREDIT_NOTE[d.makeupCredit]}</span>
                                     )}
@@ -288,20 +309,52 @@ export default function RegularAbsenceClient({
                               </div>
                               <span className="shrink-0 text-right text-sm tabular-nums text-[var(--color-academy-ink)]">{d.dateLabel}</span>
 
-                              {/* 액션 — 기존과 같은 조건·같은 함수(신고 취소 / 결석 신고 폼 열기) */}
-                              {d.locked ? null : d.reported && creditBlocksCancel(d) ? (
+                              {/* 동작 버튼은 한 묶음으로 다음 줄에 — 좁은 화면(360px)에서 반 이름 칸이 눌리지 않게(2026-11-14 검수) */}
+                              <div className="flex basis-full flex-wrap items-center justify-end gap-2">
+                              {/* 보강권이 있으면 보강 예약 화면으로(그 아이 보강권이 맨 위에 오게 studentId 를 붙인다).
+                                  마감·확정과 상관없이 보인다 — 보강권은 결석 신고를 못 바꿔도 쓸 수 있다 */}
+                              {d.reported && d.makeupCredit === "AVAILABLE" && (
+                                <Link
+                                  href={`/mypage/makeup?studentId=${encodeURIComponent(d.studentId)}`}
+                                  className="academy-button-tonal shrink-0"
+                                >
+                                  보강 예약하기
+                                </Link>
+                              )}
+
+                              {/* 액션 — 신고 취소 · 사유 변경 / 결석 신고 폼 열기. 수업 1시간 전이 지나면 글로 바뀐다 */}
+                              {d.locked ? null : !changeOpen(d) ? (
+                                // 마감 뒤 — 버튼 대신 안내 글(서버도 같은 규칙으로 막는다)
+                                <span className="basis-full text-xs text-[var(--color-academy-muted)]">{CHANGE_CLOSED_TEXT}</span>
+                              ) : d.reported && creditBlocksCancel(d) ? (
                                 // 이미 그 결석의 보강을 들었다 — 신고 취소 불가(서버도 막는다)
                                 <span className="basis-full text-xs text-[var(--color-academy-muted)]">보강을 이미 들어 취소할 수 없어요 (학원 문의)</span>
                               ) : d.reported ? (
-                                // 신고 취소 = 그 자리 확인(C-M1) 후 기존 cancel(d) 그대로
-                                <InlineConfirm
-                                  label="신고 취소"
-                                  question={d.makeupCredit === "RESERVED" ? "보강 예약도 함께 취소돼요. 이 결석 신고를 취소할까요?" : "이 결석 신고를 취소할까요?"}
-                                  confirmLabel="신고 취소하기"
-                                  onConfirm={() => cancel(d)}
-                                  pending={busy}
-                                  openClassName="basis-full"
-                                />
+                                <>
+                                  {/* 사유 변경 = 아래 사유 칸을 지금 사유로 채워 연다(글자 버튼 — 꽉 찬 색은 폼 안 최종 버튼만) */}
+                                  {openKey !== key && (
+                                    <button
+                                      type="button"
+                                      disabled={busy}
+                                      onClick={() => {
+                                        setReason((prev) => ({ ...prev, [key]: d.reason || "" }));
+                                        setOpenKey(key);
+                                      }}
+                                      className="academy-button-text shrink-0"
+                                    >
+                                      사유 변경
+                                    </button>
+                                  )}
+                                  {/* 신고 취소 = 그 자리 확인(C-M1) 후 기존 cancel(d) 그대로 */}
+                                  <InlineConfirm
+                                    label="신고 취소"
+                                    question={d.makeupCredit === "RESERVED" ? "보강 예약도 함께 취소돼요. 이 결석 신고를 취소할까요?" : "이 결석 신고를 취소할까요?"}
+                                    confirmLabel="신고 취소하기"
+                                    onConfirm={() => cancel(d)}
+                                    pending={busy}
+                                    openClassName="basis-full"
+                                  />
+                                </>
                               ) : openKey === key ? null : (
                                 <button
                                   type="button"
@@ -313,10 +366,11 @@ export default function RegularAbsenceClient({
                                   결석 신고
                                 </button>
                               )}
+                              </div>
                             </div>
 
-                            {/* 신고 폼(사유 선택) — 기존 그대로: 사유 고르고 «신고하기» */}
-                            {openKey === key && !d.reported && (
+                            {/* 사유 칸 — 새 신고: 사유 고르고 «신고하기» / 신고된 줄: 다른 사유를 골라 «사유 바꾸기»(같은 report 길) */}
+                            {openKey === key && !d.locked && changeOpen(d) && !(d.reported && creditBlocksCancel(d)) && (
                               <div className="mb-1.5 mt-1 flex flex-wrap items-center gap-2">
                                 <select
                                   value={reason[key] || ""}
@@ -333,11 +387,12 @@ export default function RegularAbsenceClient({
                                 </select>
                                 <button
                                   type="button"
-                                  disabled={busy}
+                                  // 사유 변경인데 같은 사유면 보낼 것이 없다
+                                  disabled={busy || (d.reported && (reason[key] || "") === (d.reason || ""))}
                                   onClick={() => report(d)}
                                   className="academy-button-primary"
                                 >
-                                  신고하기
+                                  {d.reported ? "사유 바꾸기" : "신고하기"}
                                 </button>
                                 <button
                                   type="button"
@@ -347,6 +402,12 @@ export default function RegularAbsenceClient({
                                 >
                                   닫기
                                 </button>
+                                {/* 날짜 변경은 따로 없다 — 취소 후 다시 신고 */}
+                                {d.reported && (
+                                  <p className="basis-full text-xs text-[var(--color-academy-muted)]">
+                                    날짜를 바꾸려면 취소한 뒤 다시 신고해 주세요.
+                                  </p>
+                                )}
                               </div>
                             )}
                           </li>

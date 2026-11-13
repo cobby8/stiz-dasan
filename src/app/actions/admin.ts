@@ -5353,7 +5353,8 @@ async function assertMakeupSeatAvailable(makeupClassId: string, makeupDate: stri
             `SELECT COUNT(*)::int AS booked
                FROM "MakeupSession" ms
               WHERE ms."makeupClassId" = $1
-                AND ms."makeupDate"::date = $2::date
+                -- makeupDate 는 timestamptz, DB 는 UTC — 한국 날짜로 바꿔 센다(학부모 예약은 KST 자정 = 전날 15:00Z 로 저장된다. 2026-11-14)
+                AND (ms."makeupDate" AT TIME ZONE 'Asia/Seoul')::date = $2::date
                 AND ${activeMakeupSql("ms")}`,
             makeupClassId,
             makeupDate,

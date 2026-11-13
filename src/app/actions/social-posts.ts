@@ -19,6 +19,7 @@ import {
   normalizeSubjectStudentIds,
 } from "@/lib/socialDrafts";
 import { assertSocialDraftMediaConsent } from "@/lib/studentMediaConsent";
+import { SUBJECT_UNASSIGNED_PUBLISH_MESSAGE } from "@/lib/socialPostMessages";
 
 type SaveDraftInput = {
   title?: string | null;
@@ -88,7 +89,8 @@ export async function createSocialPostDraft(data: {
   });
 
   revalidateSocialPostPaths();
-  return { ok: true, draft };
+  // captionSource: "AI" = AI 가 쓴 초안, "FALLBACK" = AI 연결이 안 돼 준비된 기본 문구(화면이 구분해 알린다).
+  return { ok: true, draft, captionSource: aiDraft.source };
 }
 
 /**
@@ -123,6 +125,15 @@ export async function rejectSocialPostDraft(id: string) {
   const result = await rejectSocialPostDraftRecord(id);
   revalidateSocialPostPaths();
   return { ok: true, ...result };
+}
+
+/**
+ * 학생이 지정되지 않은 초안인가 — 동의 검사(studentMediaConsent)가 «학생 미지정»으로 막는 것과 같은 조건.
+ * 여기서는 규칙을 바꾸지 않는다. 같은 조건을 먼저 보고 알아듣기 쉬운 안내로 바꿀 뿐이며,
+ * 이 함수를 지나쳐도 갤러리·인스타 단계의 동의 검사가 그대로 다시 막는다.
+ */
+function isSubjectUnassignedDraft(draft: Pick<SocialPostDraft, "sessionId" | "classId" | "subjectStudentIds">) {
+  return (!draft.sessionId && !draft.classId) || draft.subjectStudentIds.length === 0;
 }
 
 function canPublishDraftStatus(status: SocialPostDraft["status"]) {
@@ -185,7 +196,8 @@ export async function publishSocialPostDraftToInstagram(id: string) {
     throw new Error("인스타그램 자동 게시에는 사진이 최소 1장 필요합니다.");
   }
 
-  const result = await publishSocialDraftToInstagramNow(id, { queueMode: true });
+  // ownerApproved: 원장 확인(requireOwner)을 통과한 이 경로에서만 인스타 대기열을 켠다.
+  const result = await publishSocialDraftToInstagramNow(id, { queueMode: true, ownerApproved: true });
   console.info("[media-consent] instagram-approved", {
     draftId: id,
     approvedByAuthUserId: owner.id,
@@ -196,7 +208,31 @@ export async function publishSocialPostDraftToInstagram(id: string) {
   return { ...result, consent };
 }
 
+/**
+ * 화면의 «게시» 버튼이 부르는 한 묶음: 홈페이지 갤러리 → 인스타그램.
+ *
+ * 2026-11-14 사진·인스타 점검:
+ * - 학생이 지정되지 않은 초안(빠른 업로드)은 공개 동의를 확인할 수 없어 게시할 수 없다. 규칙은 그대로 두고,
+ *   오류를 던지는 대신 «다음에 할 일»이 담긴 안내를 값으로 돌려준다(던진 오류 문구는 운영 화면에서 가려질 수 있다).
+ * - 부원장은 갤러리까지만 된다. 예전에는 갤러리가 올라간 뒤 인스타 단계에서 권한 오류가 나 «게시 실패»로만 보였다.
+ *   서버 권한(인스타 = 원장)은 그대로이고, 결과에 그 사실을 담아 화면이 정확히 말하게 한다.
+ */
 export async function publishSocialPostDraft(id: string) {
-  await publishSocialPostDraftToGallery(id);
+  const staff = await requireAdmin();
+
+  const currentDraft = await getSocialPostDraftById(id);
+  if (currentDraft && canPublishDraftStatus(currentDraft.status) && isSubjectUnassignedDraft(currentDraft)) {
+    return {
+      ok: false as const,
+      draft: currentDraft,
+      blocked: true as const,
+      error: SUBJECT_UNASSIGNED_PUBLISH_MESSAGE,
+    };
+  }
+
+  const gallery = await publishSocialPostDraftToGallery(id);
+  if (staff.appUserRole !== "ADMIN") {
+    return { ok: false as const, draft: gallery.draft, instagramOwnerOnly: true as const };
+  }
   return publishSocialPostDraftToInstagram(id);
 }

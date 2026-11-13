@@ -3,6 +3,7 @@ import { publishGalleryPostToInstagram } from "@/lib/instagram";
 import { ensureGalleryPostInstagramColumns } from "@/lib/instagramGallerySync";
 import { getAcademySettings } from "@/lib/queries";
 import {
+  armSocialPostDraftInstagramQueue,
   getQueuedSocialPostDrafts,
   getSocialPostDraftById,
   markSocialPostDraftFailed,
@@ -16,6 +17,22 @@ import {
 } from "@/lib/socialDrafts";
 import { materializePrivateMediaJSON, plannedPublishedMediaCopyPaths, PUBLIC_GALLERY_BUCKET } from "@/lib/sessionPhotoStorage";
 import { assertSocialDraftMediaConsent, withSocialDraftPublicationReservation } from "@/lib/studentMediaConsent";
+import {
+  CLOSE_ATTEMPT_BEFORE_PROVIDER_CALL_SQL,
+  FAIL_DRAFT_BEFORE_PROVIDER_CALL_SQL,
+  HALT_AMBIGUOUS_INSTAGRAM_DRAFT_SQL,
+  MARK_ATTEMPT_PROVIDER_CALL_STARTED_SQL,
+  PRIOR_UNRESOLVED_INSTAGRAM_ATTEMPT_SQL,
+} from "@/lib/socialPublishQueueRules";
+
+/**
+ * 인스타 게시 실행 옵션.
+ * - queueMode: 실패하면 재시도 대기열에 넣는다(원장 버튼·5분 크론 모두 켠다).
+ * - ownerApproved: «원장이 방금 인스타 게시를 눌렀다» — 이때만 꺼져 있던 인스타 대기열을 켠다.
+ *   5분 크론은 이 값을 주지 않는다. 그래서 부원장이 갤러리만 올린 초안을 크론이 원장 승인 없이
+ *   인스타에 올리는 일이 없다(2026-11-14 사진·인스타 점검).
+ */
+type InstagramPublishOptions = { queueMode?: boolean; ownerApproved?: boolean };
 
 const MAX_QUEUE_ATTEMPTS = 3;
 const RETRY_DELAYS_MINUTES = [1, 5];
@@ -142,14 +159,24 @@ async function updateGalleryInstagramError(galleryPostId: string, error: string 
 
 export async function publishSocialDraftToInstagramNow(
   id: string,
-  options: { queueMode?: boolean } = {},
+  options: InstagramPublishOptions = {},
 ) {
   return withSocialDraftPublicationReservation(id, "INSTAGRAM", async (snapshot, attemptId) => {
-    await prisma.$executeRawUnsafe(`UPDATE "SocialPublishAttempt" SET state='AMBIGUOUS', "updatedAt"=NOW() WHERE id=$1`, attemptId);
+    // 2026-11-14 검수 권장 1: «결과 불명확(AMBIGUOUS)» 표시는 여기서 하지 않고 인스타를 부르기 직전에 한다.
     try {
       return await publishSocialDraftToInstagramNowLocked(snapshot, attemptId, options);
     } catch (error) {
-      await prisma.$executeRawUnsafe(`UPDATE "SocialPublishAttempt" SET "lastError"=$2, "updatedAt"=NOW() WHERE id=$1`, attemptId, error instanceof Error ? error.message.slice(0, 1000) : "Instagram result unknown");
+      const message = error instanceof Error ? error.message.slice(0, 1000) : "Instagram result unknown";
+      // 인스타를 부르기 전에 난 실패(동의 철회·사진 0장·사본 실패 등)는 일반 실패다.
+      // 시도가 아직 «예약됨»이면 닫히고(행이 돌아온다), 이미 호출을 시작했으면 아래 «결과 불명확» 처리로 간다.
+      const closedBeforeCall = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
+        CLOSE_ATTEMPT_BEFORE_PROVIDER_CALL_SQL, attemptId, message,
+      );
+      if (closedBeforeCall[0]) {
+        await prisma.$executeRawUnsafe(FAIL_DRAFT_BEFORE_PROVIDER_CALL_SQL, id, message);
+        throw error;
+      }
+      await prisma.$executeRawUnsafe(`UPDATE "SocialPublishAttempt" SET "lastError"=$2, "updatedAt"=NOW() WHERE id=$1`, attemptId, message);
       await prisma.$executeRawUnsafe(`
         WITH attempt AS (SELECT * FROM "SocialPublishAttempt" WHERE id=$1), subjects AS (
           SELECT jsonb_array_elements_text(stiz_try_jsonb(a."subjectSnapshotJSON")) AS "studentId", a.* FROM attempt a
@@ -163,18 +190,27 @@ export async function publishSocialDraftToInstagramNow(
         FROM attempt a CROSS JOIN latest l
         ON CONFLICT ("consentId","draftId",channel) DO UPDATE SET status='MANUAL_REQUIRED', "resourceId"=EXCLUDED."resourceId", "resourceUrl"=EXCLUDED."resourceUrl", "lastError"=EXCLUDED."lastError", "updatedAt"=NOW()
       `, attemptId);
+      // 2026-11-14 사진·인스타 점검: 결과가 불명확하면 대기열을 꺼서 5분 크론이 다시 발행하지 않게 한다.
+      // 예전에는 크론 경로만 이렇게 멈췄고, 원장 버튼 경로는 «5분 뒤 재시도»가 남아 중복 게시가 될 수 있었다.
+      await prisma.$executeRawUnsafe(HALT_AMBIGUOUS_INSTAGRAM_DRAFT_SQL, id);
       throw error;
     }
   });
 }
 
+/** 인스타를 호출하지 않고 끝난 시도는 «결과 불명확»으로 남기지 않는다(원장에게 «직접 확인» 일이 헛되이 생긴다). */
+async function closeAttemptWithoutProviderCall(attemptId: string, reason: string) {
+  await prisma.$queryRawUnsafe(CLOSE_ATTEMPT_BEFORE_PROVIDER_CALL_SQL, attemptId, reason);
+}
+
 async function publishSocialDraftToInstagramNowLocked(
   currentDraft: SocialPostDraft,
   attemptId: string,
-  options: { queueMode?: boolean } = {},
+  options: InstagramPublishOptions = {},
 ) {
   const id = currentDraft.id;
   if (currentDraft?.status === "PUBLISHED") {
+    await closeAttemptWithoutProviderCall(attemptId, "이미 게시된 초안이라 인스타그램을 호출하지 않았습니다.");
     return { ok: true as const, draft: currentDraft, skipped: true as const };
   }
 
@@ -198,17 +234,50 @@ async function publishSocialDraftToInstagramNowLocked(
     workingDraft = await markSocialPostDraftPublishing(id, { galleryPostId });
   }
 
+  // 2026-11-14 검수 필수 2: 5분 크론(원장이 방금 누른 것이 아닌 자동 재시도)은 인스타를 부르기 전에
+  // 이 초안의 이전 시도를 본다. 결과 불명확(서버 함수가 호출 도중 시간 초과로 죽은 경우 포함)이거나
+  // 이미 게시됨으로 기록된 시도가 있으면 인스타에 올라가 있을 수 있다 — 다시 올리지 않고 사람이 확인하게 멈춘다.
+  if (options.queueMode && !options.ownerApproved) {
+    const prior = await prisma.$queryRawUnsafe<Array<{ id: string; state: string }>>(
+      PRIOR_UNRESOLVED_INSTAGRAM_ATTEMPT_SQL, id, attemptId,
+    );
+    if (prior[0]) {
+      await closeAttemptWithoutProviderCall(attemptId, "이전 게시 시도의 결과가 확인되지 않아 인스타그램을 호출하지 않았습니다.");
+      await prisma.$executeRawUnsafe(HALT_AMBIGUOUS_INSTAGRAM_DRAFT_SQL, id);
+      const halted = (await getSocialPostDraftById(id)) ?? currentDraft;
+      return {
+        ok: false as const,
+        draft: halted,
+        error: "Instagram 게시 결과가 불명확하여 자동 재발행을 중단했습니다.",
+        halted: true as const,
+      };
+    }
+  }
+
+  // 2026-11-14 사진·인스타 점검: 원장이 누른 경우에만 꺼져 있던 대기열을 켠다.
+  // 이 줄이 없으면 «다음 시도 시각»이 비어 있어 아래 «시도 잡기»가 항상 실패하고,
+  // 인스타 호출 없이 «건너뜀»이 성공으로 돌아와 초안이 «게시 처리 중»에 멈춘다.
+  if (options.queueMode && options.ownerApproved) {
+    await armSocialPostDraftInstagramQueue(id);
+  }
+
   const attemptDraft = options.queueMode
     ? await markSocialPostDraftPublishAttempt(id)
     : workingDraft;
 
   if (options.queueMode && !attemptDraft) {
+    // 시도를 잡지 못했다 = 다른 처리가 이미 진행 중이거나 대기열이 꺼져 있다. 인스타를 호출하지 않는다.
+    await closeAttemptWithoutProviderCall(attemptId, "다른 게시 처리가 진행 중이라 인스타그램을 호출하지 않았습니다.");
     const latest = await getSocialPostDraftById(id);
-    return { ok: true as const, draft: latest ?? currentDraft, skipped: true as const };
+    // ok 는 «실제로 게시됐는가»다. 예전에는 건너뛰어도 true 라 화면이 «게시 완료»로 잘못 알렸다.
+    const skippedDraft = latest ?? currentDraft;
+    return { ok: skippedDraft.status === "PUBLISHED", draft: skippedDraft, skipped: true as const };
   }
 
   const settings = await getAcademySettings();
   const caption = fullSocialCaption(currentDraft.caption, currentDraft.hashtags);
+  // 여기부터 «인스타를 불렀다». 이 표시가 남은 채로 끝나면(예외·시간 초과) 결과를 모르는 시도다.
+  await prisma.$executeRawUnsafe(MARK_ATTEMPT_PROVIDER_CALL_STARTED_SQL, attemptId);
   const result = await publishGalleryPostToInstagram({
     businessAccountId: settings.instagramBusinessAccountId,
     caption,
@@ -276,7 +345,8 @@ export async function processSocialPostPublishQueue(limit = 1) {
       const result = await publishSocialDraftToInstagramNow(draft.id, { queueMode: true });
       results.push({
         id: draft.id,
-        ok: result.ok,
+        // 다른 처리가 먼저 잡아 건너뛴 것은 실패가 아니다(그쪽이 결과를 남긴다).
+        ok: result.ok || ("skipped" in result && result.skipped === true),
         status: result.draft.status,
         retryScheduled: "retryScheduled" in result ? result.retryScheduled === true : false,
         error: "error" in result ? result.error : null,
@@ -292,6 +362,14 @@ export async function processSocialPostPublishQueue(limit = 1) {
             "instagramPublishError"='Instagram 게시 결과 확인 필요', "updatedAt"=NOW() WHERE id=$1
         `, draft.id);
         results.push({ id: draft.id, ok: false, status: "FAILED", retryScheduled: false, error: "Instagram 게시 결과가 불명확하여 자동 재발행을 중단했습니다." });
+        continue;
+      }
+      // 호출 전 실패(예약 단계의 동의 확인 실패 포함)는 일반 실패로 둔다. 자동으로 계속 다시 돌리지 않는다.
+      // 우리가 방금 잡은 시도가 있으면(다음 시도 시각이 미래) 이 SQL 은 아무것도 바꾸지 않고 아래 재시도 예약으로 간다.
+      await prisma.$executeRawUnsafe(FAIL_DRAFT_BEFORE_PROVIDER_CALL_SQL, draft.id, message.slice(0, 1000));
+      const latest = await getSocialPostDraftById(draft.id);
+      if (latest && latest.status !== "PUBLISHING") {
+        results.push({ id: draft.id, ok: false, status: latest.status, retryScheduled: false, error: message });
         continue;
       }
       const attempts = draft.instagramPublishAttempts + 1;

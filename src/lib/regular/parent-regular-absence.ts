@@ -6,7 +6,7 @@ import {
   regularAbsenceSourceKey,
   settleCreditOnAbsenceCancel,
 } from "@/lib/makeup/absence-report-credit";
-import { kstAt } from "@/lib/datetime/kst";
+import { kstAt, kstHm, todayKst } from "@/lib/datetime/kst";
 import { lockCompensation } from "@/lib/billing/absence-compensation-guard";
 import { createHash } from "node:crypto";
 import { notMergedStudent } from "@/lib/studentVisibility";
@@ -15,7 +15,8 @@ import {
   DAY_KO,
   isValidReason,
   isYmd,
-  isReportableDate,
+  isReportableAt,
+  isAbsenceChangeOpen,
   computeUpcomingDates,
   ymdToDayIndex,
 } from "@/lib/regular/regularAbsenceRules";
@@ -32,14 +33,17 @@ import {
 //      ACTIVE Enrollment 인지 SQL 로 재검증. 클라이언트가 보낸 값 자체를 신뢰하지 않는다.
 //   2) 확정건 보호 — 관리자가 확정(CONFIRMED)한 건은 학부모가 덮어쓰거나 취소하지 못한다
 //      (INSERT ... ON CONFLICT DO UPDATE WHERE status<>'CONFIRMED', UPDATE WHERE status='REPORTED').
-//   3) 미래 + 요일 일치 — 지난 날짜, 그 반 요일과 맞지 않는 날짜는 신고 불가.
+//   3) 마감 전 + 요일 일치 — 지난 날짜, 그 반 요일과 맞지 않는 날짜는 신고 불가.
+//      (2026-11-14 결석 당일 취소·보강 연결) 오늘 수업도 «시작 1시간 전»까지 신고·취소·사유 변경을 받는다.
+//      마감 판정은 regularAbsenceRules.isAbsenceChangeOpen 하나 — 신고·취소 양쪽에서 서버가 강제한다.
 
 // 향후 몇 주치 수업일을 보여줄지(기본 4주).
 const DEFAULT_WEEKS = 4;
 
-// KST 기준 오늘 날짜(YYYY-MM-DD). 마이페이지 다른 곳과 동일하게 Asia/Seoul 고정.
-function kstTodayYmd(): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" }).format(new Date());
+// «지금»을 KST 글자(날짜·시각)로 — 달력 값은 공용 모듈(kst.ts)에서만 만든다(서버는 UTC 로 돈다).
+function kstNow(): { ymd: string; hm: string } {
+  const nowMs = Date.now();
+  return { ymd: todayKst(nowMs), hm: kstHm(nowMs) };
 }
 
 // "8/5(화)" 라벨 만들기(표시용).
@@ -65,6 +69,9 @@ export type UpcomingClassDate = {
   status: string | null; // REPORTED | CONFIRMED | (CANCELLED 는 조회에서 제외)
   reported: boolean;
   locked: boolean; // 관리자 확정(CONFIRMED)이면 학부모가 못 건드림
+  // 지금 신고·취소·사유 변경을 받을 수 있나(수업 시작 1시간 전까지). false 면 화면이 «학원으로 연락» 글을 보인다.
+  // 서버도 같은 함수로 다시 막는다 — 이 값은 화면 표시용일 뿐이다.
+  changeOpen: boolean;
   // 이 결석의 보강권 상태(AVAILABLE·RESERVED·USED·NO_SHOW, 없으면 null) — 신고 취소 확인 문구·막기에 쓴다
   makeupCredit: string | null;
 };
@@ -88,7 +95,8 @@ export async function getUpcomingRegularClassDates(
   parentUserId: string,
   weeks: number = DEFAULT_WEEKS,
 ): Promise<UpcomingChild[]> {
-  const today = kstTodayYmd();
+  const now = kstNow();
+  const today = now.ymd;
 
   // 부모 자녀의 ACTIVE 수강 반(IDOR: Student.parentId = 로그인 부모).
   const enrollRows = await prisma.$queryRawUnsafe<any[]>(
@@ -145,7 +153,8 @@ export async function getUpcomingRegularClassDates(
     }
     const child = childMap.get(r.studentId)!;
 
-    const dates = computeUpcomingDates(today, r.dayOfWeek, weeks).map((ymd) => {
+    // 오늘 수업도 목록에 넣는다(2026-11-14) — 마감 여부는 줄마다 changeOpen 으로 알려 준다
+    const dates = computeUpcomingDates(today, r.dayOfWeek, weeks, true).map((ymd) => {
       const found = absByKey.get(`${r.studentId}|${r.classId}|${ymd}`);
       const status = found?.status ?? null;
       const reason = found?.reason ?? null;
@@ -162,6 +171,7 @@ export async function getUpcomingRegularClassDates(
         status,
         reported: status === "REPORTED" || status === "CONFIRMED",
         locked: status === "CONFIRMED",
+        changeOpen: isAbsenceChangeOpen(ymd, r.startTime, now.ymd, now.hm),
         makeupCredit: status ? creditByKey.get(`${r.studentId}|${regularAbsenceSourceKey(r.classId, ymd)}`) ?? null : null,
       } as UpcomingClassDate;
     });
@@ -179,15 +189,15 @@ export async function getUpcomingRegularClassDates(
 }
 
 // 소유권 재검증: studentId 가 부모 자녀이고 classId 가 그 학생 ACTIVE 수강인지.
-// 통과하면 그 반의 dayOfWeek 를 돌려준다(요일 검증에 사용). 아니면 null.
+// 통과하면 그 반의 dayOfWeek·startTime 을 돌려준다(요일·마감 검증에 사용). 아니면 null.
 async function verifyOwnershipAndClass(
   parentUserId: string,
   studentId: string,
   classId: string,
-): Promise<{ dayOfWeek: string; studentName: string; className: string } | null> {
+): Promise<{ dayOfWeek: string; startTime: string | null; studentName: string; className: string } | null> {
   const rows = await prisma.$queryRawUnsafe<any[]>(
     // 이름은 알림 문구에만 쓴다(원장이 누구 결석인지 바로 알아야 한다).
-    `SELECT c."dayOfWeek" AS "dayOfWeek", s.name AS "studentName", c.name AS "className"
+    `SELECT c."dayOfWeek" AS "dayOfWeek", c."startTime" AS "startTime", s.name AS "studentName", c.name AS "className"
        FROM "Enrollment" e
        JOIN "Student" s ON s.id = e."studentId"
        JOIN "Class" c ON c.id = e."classId"
@@ -201,6 +211,7 @@ async function verifyOwnershipAndClass(
   return rows[0]
     ? {
         dayOfWeek: rows[0].dayOfWeek,
+        startTime: rows[0].startTime ?? rows[0].starttime ?? null,
         studentName: rows[0].studentName ?? rows[0].studentname ?? "",
         className: rows[0].className ?? rows[0].classname ?? "",
       }
@@ -272,9 +283,13 @@ export async function reportRegularAbsence(
   const owned = await verifyOwnershipAndClass(parentUserId, studentId, classId);
   if (!owned) throw new Error("NOT_OWNER");
 
-  // 가드3: 미래 + 그 반 요일과 일치하는 날짜만.
-  const today = kstTodayYmd();
-  if (!isReportableDate(date, owned.dayOfWeek, today)) throw new Error("NOT_REPORTABLE_DATE");
+  // 가드3: 그 반 요일과 일치 + 마감 전(수업 시작 1시간 전까지 — 오늘 수업 포함).
+  // 새 신고와 사유 변경(재신고)이 모두 이 길을 지나므로 여기 한 곳에서 막으면 둘 다 막힌다.
+  const now = kstNow();
+  if (!isReportableAt(date, owned.dayOfWeek, owned.startTime, now.ymd, now.hm)) {
+    // 오늘 수업인데 1시간 전이 지난 경우는 «학원으로 연락» 안내가 따로 나가게 코드를 나눈다
+    throw new Error(date === now.ymd && ymdToDayIndex(date) != null ? "ABSENCE_CHANGE_CLOSED" : "NOT_REPORTABLE_DATE");
+  }
 
   // 결석 신고 저장 + 보강권 발급을 한 트랜잭션으로(2026-11-10 원장 결정 k4 — 신고 즉시 보강권).
   // 둘 중 하나만 남는 반쪽 상태(신고는 됐는데 보강권 없음 / 그 반대)를 만들지 않는다.
@@ -282,7 +297,9 @@ export async function reportRegularAbsence(
     // 잠금 순서 통일(교착 방지): 작업대 잠금 → 결석 행. 관리자 취소(cancelRegularAbsenceByAdmin)와 같은 순서
     await lockCompensation(tx);
     // INSERT ... ON CONFLICT — 학생·반·날짜당 1건. 관리자 확정(CONFIRMED)건은 학부모가 못 덮게.
-    // (가드2: WHERE status<>'CONFIRMED')
+    // (가드2) 덮어쓰는 경우는 둘뿐: 취소됐던 신고를 다시 신고 / 신고 상태(REPORTED)에서 «사유 변경».
+    //   2026-11-14: 예전 조건은 «사유가 다르면» 만 봐서 확정건도 사유가 다르면 REPORTED 로 되돌아갔다 —
+    //   화면에 «사유 변경»이 생기면서 그 구멍이 실제 길이 되므로 REPORTED 조건을 붙였다.
     const saved = await tx.$queryRawUnsafe<{ id: string; eventVersion: string }[]>(
       `INSERT INTO "RegularAbsence"
           ("studentId","classId","date","reason","status","reportedByUserId")
@@ -293,7 +310,7 @@ export async function reportRegularAbsence(
               "reportedByUserId" = EXCLUDED."reportedByUserId",
               "updatedAt" = now()
         WHERE "RegularAbsence".status = 'CANCELLED'
-           OR "RegularAbsence".reason IS DISTINCT FROM EXCLUDED.reason
+           OR ("RegularAbsence".status = 'REPORTED' AND "RegularAbsence".reason IS DISTINCT FROM EXCLUDED.reason)
        RETURNING id, to_char("updatedAt", 'YYYYMMDDHH24MISSUS') AS "eventVersion"`,
       studentId, classId, date, reason, parentUserId,
     );
@@ -351,9 +368,9 @@ export async function cancelRegularAbsence(
 
   // 취소 상태와 알림 근거를 같은 행에 남겨 나중에도 전달 실패를 재조정할 수 있게 한다.
   const returning = `RETURNING s.name AS "studentName", c.name AS "className", ra.id, c.id AS "classId", ra."studentId" AS "studentId",
-                              to_char(ra.date,'YYYY-MM-DD') AS "date",
+                              to_char(ra.date,'YYYY-MM-DD') AS "date", c."startTime" AS "startTime",
                               to_char(ra."updatedAt",'YYYYMMDDHH24MISSUS') AS "eventVersion"`;
-  type CanceledRow = { id: string; studentName: string; className: string; classId: string; studentId: string; date: string; eventVersion: string };
+  type CanceledRow = { id: string; studentName: string; className: string; classId: string; studentId: string; date: string; startTime: string | null; eventVersion: string };
   if (!id && (!studentId || !classId || !isYmd(date || ""))) throw new Error("ABSENCE_NOT_FOUND");
   // 권한 조건(그 부모의 자녀만)은 기존 그대로 — 트랜잭션 밖에서 SQL 조각만 미리 만든다
   const access = await childAccessSql("s", "$1");
@@ -393,6 +410,13 @@ export async function cancelRegularAbsence(
       );
     }
     if (canceled.length === 0) throw new Error("ABSENCE_NOT_CANCELABLE");
+
+    // 마감 강제(2026-11-14): 수업 시작 1시간 전이 지났으면 취소를 받지 않는다 — 신고와 같은 함수.
+    // 트랜잭션 안에서 던지므로 위 UPDATE 도 함께 되돌려진다(화면에서 버튼을 숨기는 것만으로 끝내지 않는다).
+    const now = kstNow();
+    if (!isAbsenceChangeOpen(canceled[0].date, canceled[0].startTime, now.ymd, now.hm)) {
+      throw new Error("ABSENCE_CHANGE_CLOSED");
+    }
 
     // 보강권 되돌리기 — 막아야 하면 오류를 던져 위 취소까지 함께 되돌린다
     const settled = await settleCreditOnAbsenceCancel(tx, {

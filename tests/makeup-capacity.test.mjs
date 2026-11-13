@@ -95,7 +95,9 @@ test("② 모달이 remaining 에 총정원을 넣던 코드가 남아 있지 �
 test("② 날짜 기준으로 잔여석을 다시 조회한다", () => {
   assert.match(makeupClient, /loadMakeupSlotAvailability\(/);
   // 그 날의 보강만 세도록 makeupDate 로 필터한다.
-  assert.match(queries, /ms\."makeupDate"::date = \$1::date/);
+  // 2026-11-14 검수: makeupDate 는 timestamptz, DB 는 UTC — 한국 날짜로 바꿔 센다(학부모 예약은 KST 자정 = 전날 15:00Z 로 저장된다)
+  assert.match(queries, /\(ms\."makeupDate" AT TIME ZONE 'Asia\/Seoul'\)::date = \$1::date/);
+  assert.doesNotMatch(queries, /ms\."makeupDate"::date/, "UTC 날짜로 세면 학부모 예약이 하루 앞 날짜로 잡힌다");
 });
 
 // ── ③ 저장 시점 서버 재검증 ─────────────────────────────────────────────────

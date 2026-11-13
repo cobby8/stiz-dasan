@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { requireStaffClassAccess } from "@/lib/staff-class-access";
+import { getAccessibleClassIds, requireStaffClassAccess } from "@/lib/staff-class-access";
+import { unlinkedMonthlyBillScopeSql } from "@/lib/staff-billing-lookup";
 import { resolveStaffBillingGuard } from "@/lib/staff-billing-policy";
 
 export type StaffClassBillingStatus = "UNPAID" | "PENDING_CONFIRMATION" | "PAID";
@@ -58,7 +59,9 @@ export async function getStaffClassBilling(
 ): Promise<StaffClassBillingItem[]> {
   const normalizedClassId = classId.trim();
   const normalizedStudentId = studentId?.trim() || null;
-  await requireStaffClassAccess(normalizedClassId);
+  const access = await requireStaffClassAccess(normalizedClassId);
+  // 반 정보 없는 옛 월 청구를 걸러 내려면 «내 담당 반 전부»가 필요하다(청구 탭과 같은 판정)
+  const accessibleClassIds = await getAccessibleClassIds(access);
 
   const rows = await prisma.$queryRawUnsafe<StaffClassBillingRow[]>(
     `SELECT p.id, e."classId", p."classId" AS "paymentClassId",
@@ -90,6 +93,9 @@ export async function getStaffClassBilling(
               p."classId" = $1
               OR (p."classId" IS NULL AND p.type = 'MONTHLY')
             )
+        -- 반 정보 없는 옛 월 청구는 «학생의 활성 수강 반이 전부 내 담당 반»일 때만 선생님에게 보인다.
+        -- (두 선생님 반을 같이 듣는 학생의 청구가 양쪽에 보이던 구멍. 원장·부원장($4)은 전부)
+        AND ${unlinkedMonthlyBillScopeSql("$3", "$4")}
         AND ($2::text IS NULL OR p."studentId" = $2)
         AND p.status IN ('PENDING', 'OVERDUE', 'PAID')
         AND i.status <> 'CANCELED'
@@ -100,6 +106,8 @@ export async function getStaffClassBilling(
       END, p."dueDate" DESC, s.name`,
     normalizedClassId,
     normalizedStudentId,
+    accessibleClassIds,
+    access.canAccessAllClasses,
   );
 
   return rows.map((row) => ({

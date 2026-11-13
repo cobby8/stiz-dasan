@@ -89,7 +89,10 @@ test("학부모 응답 — 보강·방학특강 보강·수강 변경 후보에 
   const makeup = read("src/lib/makeup/parent-makeup.ts");
   const type = makeup.slice(makeup.indexOf("export type MakeupOption"), makeup.indexOf("export async function getMakeupOptionsForCredit"));
   assert.doesNotMatch(type, /remaining/);
-  assert.match(makeup, /seatLevel: seatLevel\(c\.remaining\)/);
+  // 2026-11-14 결석 당일 취소·보강 연결: 남은 자리를 날짜별로 세게 되어, 단계도 날짜별(d.remaining)·반 대표값(best)에서 만든다.
+  // 숫자를 응답에 싣지 않는 것은 그대로(위 doesNotMatch) — 단계 글자로만 나간다.
+  assert.match(makeup, /seatLevel: seatLevel\(best\)/);
+  assert.match(makeup, /seatLevel: seatLevel\(d\.remaining\)/);
   const change = read("src/lib/enrollment/parent-change-request.ts");
   const cls = change.slice(change.indexOf("export type ChangeableClass"), change.indexOf("export type ChildChangeOption"));
   assert.doesNotMatch(cls, /capacity|enrolled/);

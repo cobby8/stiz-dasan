@@ -61,15 +61,10 @@ function cleanText(value: string) {
   return value.replace(/\s+/g, " ").trim();
 }
 
+// 2026-11-14 사진·인스타 점검: 예전에는 모든 공지에 «#방학특강»과 방학특강 문구가 박혀 나왔다
+// (개학 안내·휴무 공지에도). 공지 내용과 무관한 말은 넣지 않고 학원 이름 해시태그만 둔다.
 function hashtags() {
-  return [
-    "#스티즈농구교실",
-    "#스티즈농구교실다산점",
-    "#다산농구",
-    "#남양주농구",
-    "#방학특강",
-    "#유소년농구",
-  ].join(" ");
+  return ["#스티즈농구교실", "#스티즈농구교실다산점"].join(" ");
 }
 
 function extractHtmlImageUrls(content: string) {
@@ -203,12 +198,13 @@ function buildPreview(notice: NoticeRow): NoticeSocialPreview {
     landingUrl,
     mediaItems,
     feedCaption:
-      `${notice.title}\n\n${trimmedSummary}\n\n자세한 안내와 신청은 공지사항에서 확인해주세요.\n${landingUrl}\n\n${hashtags()}`,
-    storyText: `${notice.title}\n방학특강 안내는 프로필/공지사항에서 확인해주세요.`,
+      `${notice.title}\n\n${trimmedSummary}\n\n자세한 내용은 공지사항에서 확인해주세요.\n${landingUrl}\n\n${hashtags()}`,
+    // 공지 제목·본문만으로 만든 중립 문구 — 어떤 공지에도 맞는다. 원장이 게시 전에 화면에서 고칠 수 있다.
+    storyText: `${notice.title}\n자세한 내용은 프로필/공지사항에서 확인해주세요.`,
     adPrimaryText:
-      `${notice.title}\n\n${trimmedSummary}\n\n아이의 방학을 운동 루틴과 성장 경험으로 채워보세요.`,
+      `${notice.title}\n\n${trimmedSummary}\n\n자세한 내용은 공지사항에서 확인해주세요.`,
     adHeadline: notice.title.slice(0, 80),
-    adDescription: "STIZ 농구교실 다산점 방학특강 안내",
+    adDescription: "STIZ 농구교실 다산점 안내",
   };
 }
 

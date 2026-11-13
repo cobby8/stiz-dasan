@@ -294,7 +294,10 @@ async function checkInstagram(checks: SiteOpsCheck[], settings: any) {
     `SELECT COUNT(*)::int AS count
      FROM "SocialPostDraft"
      WHERE status = 'PUBLISHING'
-       AND COALESCE("instagramNextRetryAt", "updatedAt") < NOW() - INTERVAL '2 hours'`,
+       -- 2026-11-14: 대기열이 켜진 것만 센다. 홈페이지만 올리고 원장의 인스타 게시를 기다리는 초안
+       -- ("instagramNextRetryAt" IS NULL)은 멈춘 것이 아니라 사람을 기다리는 중이다.
+       AND "instagramNextRetryAt" IS NOT NULL
+       AND "instagramNextRetryAt" < NOW() - INTERVAL '2 hours'`,
   ).catch(() => 0);
 
   checks.push({

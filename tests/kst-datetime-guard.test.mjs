@@ -122,9 +122,8 @@ const R4 = /function\s+(?:kstYmd|seoulYmd|todayStr|kstDow|seoulDow|toKstDate)\s*
 const R4_ALLOW = [
   "src/lib/datetime/kst.ts", // 여기가 원본이다
   "src/app/admin/classes/[id]/SessionLogModal.tsx",
-  "src/lib/makeup/credit-service.ts",
-  "src/lib/makeup/parent-makeup.ts",
 ];
+// 2026-11-14 정리: src/lib/makeup/credit-service.ts · parent-makeup.ts 의 kstYmd·dayLabel → toKstYmd·kstLabel·kstAt 로 교체.
 
 test("규칙 4 — KST 헬퍼는 한 곳에만 둔다", () => {
   const bad = violations(scan(R4), R4_ALLOW);
@@ -147,5 +146,6 @@ test("빚 목록은 줄어들기만 한다", () => {
   assert.ok(R1_ALLOW.length <= 19, `R1 미정리 ${R1_ALLOW.length}개 — 새로 추가하지 말 것`);
   // 2026-10-06: queries.ts 정리로 2 → 1 로 내림.
   assert.ok(R3_ALLOW.length <= 1, `R3 미정리 ${R3_ALLOW.length}개 — 새로 추가하지 말 것`);
-  assert.ok(R4_ALLOW.length <= 5, `R4 미정리 ${R4_ALLOW.length}개 — 새로 추가하지 말 것`);
+  // 2026-11-14: 보강 credit-service·parent-makeup 정리로 5 → 2 로 내림.
+  assert.ok(R4_ALLOW.length <= 2, `R4 미정리 ${R4_ALLOW.length}개 — 새로 추가하지 말 것`);
 });

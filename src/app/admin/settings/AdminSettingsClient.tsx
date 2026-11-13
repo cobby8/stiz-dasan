@@ -623,7 +623,7 @@ export default function AdminSettingsClient({
                                 />
                                 <span>
                                     <span className="block font-medium text-[var(--color-academy-muted)]">갤러리 새 게시물 인스타그램 자동 업로드</span>
-                                    <span className="block text-xs text-[var(--color-academy-faint)] mt-1">켜면 관리자 갤러리에 새 공개 게시물을 만들 때 첫 번째 이미지를 인스타그램에도 발행합니다.</span>
+                                    <span className="block text-xs text-[var(--color-academy-faint)] mt-1">켜면 관리자 갤러리에 새 공개 게시물을 만들 때 사진을 인스타그램에도 발행합니다(여러 장이면 최대 10장을 한 게시물로 묶어 올립니다).</span>
                                 </span>
                             </label>
                         </div>

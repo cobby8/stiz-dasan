@@ -4,6 +4,9 @@ import { processSocialPostPublishQueue } from "@/lib/socialPostPublishing";
 import { withCronAlert } from "@/lib/cron/withCronAlert";
 
 export const dynamic = "force-dynamic";
+// 2026-11-14 검수: 실행 시간 제한을 명시한다(vercel.json 의 기본값과 같은 60초).
+// «시도 잡기»가 5분 동안 유효하므로 이 값은 반드시 5분보다 짧아야 한다 — 길어지면 한 초안을 두 실행이 동시에 잡을 수 있다.
+export const maxDuration = 60;
 
 async function handleGet(req: NextRequest) {
   const cronSecret = process.env.CRON_SECRET;

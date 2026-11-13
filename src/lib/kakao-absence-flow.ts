@@ -1,8 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { classifyParentUtterance, type KakaoQuickReply } from "@/lib/kakao-chatbot-contract";
 import { cancelRegularAbsence, getUpcomingRegularClassDates, reportRegularAbsence } from "@/lib/regular/parent-regular-absence";
-import { REASON_LABEL, VALID_REASONS, type AbsenceReason } from "@/lib/regular/regularAbsenceRules";
-import { kstLabel, todayKst } from "@/lib/datetime/kst";
+import { isAbsenceChangeOpen, REASON_LABEL, VALID_REASONS, type AbsenceReason } from "@/lib/regular/regularAbsenceRules";
+import { kstHm, kstLabel, todayKst } from "@/lib/datetime/kst";
 import {
   answerOf, clipText, createFlowStore, FLOW_MENU_TEXT, flowReply, MAIN_MENU, numberQuickReplies,
   parseKoreanDateYmd, parseNumberPick, pickChild, YES,
@@ -21,7 +21,8 @@ import {
 //   parent-regular-absence.ts(웹과 같은 함수)가 한다. 그래서 웹과 결과가 같다.
 // ★ IDOR: 학부모는 번호만 보낸다. 반 id·결석 id 는 서버가 만든 목록(대화 상태)에서만 꺼내고,
 //   저장 함수가 다시 "이 보호자 자녀의 ACTIVE 수강인가"를 SQL 로 확인한다(이중 방어).
-// ★ 오늘 결석은 이 흐름에서 받지 않는다(웹과 같은 규칙 — 미래 수업일만). 원장님께 바로 알리는 버튼을 준다.
+// ★ 오늘 수업은 «시작 1시간 전»까지만 이 흐름에서 받는다(2026-11-14 결석 당일 취소·보강 연결 — 웹과 같은 함수
+//   regularAbsenceRules.isAbsenceChangeOpen). 그 뒤의 오늘 결석은 원장님께 바로 알리는 버튼을 준다.
 
 export const ABSENCE_FLOW_STATUS = "ABSENCE_FLOW";
 /** 수업일 목록을 계산할 주 수, 한 번에 보여 주는 후보 수(바로가기 10개 = 번호 8 + 오늘 결석 + 그만) */
@@ -29,7 +30,8 @@ export const ABSENCE_WEEKS = 4;
 export const ABSENCE_MAX_CANDIDATES = 8;
 
 export type AbsenceCandidate = { classId: string; date: string; label: string };
-type AbsenceRecord = { id: string; studentName: string; date: string; label: string };
+// startTime: 확정 순간에 마감(수업 1시간 전)을 다시 보려고 대화 상태에 함께 둔다(없으면 «시각 모름» = 당일 마감)
+type AbsenceRecord = { id: string; studentName: string; date: string; label: string; startTime?: string | null };
 
 type AbsenceState = BaseFlowState & {
   mode: "REPORT" | "CANCEL";
@@ -85,14 +87,14 @@ export function parseAbsenceReason(text: string): AbsenceReason | null {
 
 /**
  * parent-regular-absence 가 준 반별 수업일을 「날짜·시간 순 후보」로 펼친다(순수 함수 — 테스트 대상).
- * 이미 결석 신청된 날은 뺀다. 최대 8개.
+ * 이미 결석 신청된 날, 마감(수업 1시간 전)이 지난 날(changeOpen=false)은 뺀다. 최대 8개.
  */
 export function buildAbsenceCandidates(
-  classes: Array<{ classId: string; className: string; startTime: string; dates: Array<{ date: string; reported: boolean }> }>,
+  classes: Array<{ classId: string; className: string; startTime: string; dates: Array<{ date: string; reported: boolean; changeOpen?: boolean }> }>,
   limit = ABSENCE_MAX_CANDIDATES,
 ): AbsenceCandidate[] {
   const flat = classes.flatMap((item) => item.dates
-    .filter((date) => !date.reported)
+    .filter((date) => !date.reported && date.changeOpen !== false)
     .map((date) => ({
       classId: item.classId,
       date: date.date,
@@ -107,6 +109,7 @@ export function buildAbsenceCandidates(
 function absenceErrorMessage(error: unknown): string {
   const code = error instanceof Error ? error.message : "";
   if (code === "NOT_REPORTABLE_DATE") return "지난 날짜이거나 그 반 수업 요일이 아니에요.";
+  if (code === "ABSENCE_CHANGE_CLOSED") return "수업 시작 1시간 전이 지나 카톡으로는 바꿀 수 없어요. 원장님께 알려 주세요.";
   if (code === "NOT_OWNER") return "지금 다니는 반의 수업이 아니에요.";
   if (code === "ABSENCE_NOT_CANCELABLE") return "원장님이 이미 확인(확정)한 결석이라 카톡으로는 바꿀 수 없어요.";
   // 보강권(2026-11-10): 카톡 취소는 «보강 예약도 함께 취소» 확인 단계가 없다 — 앱 결석 화면으로 안내
@@ -117,21 +120,32 @@ function absenceErrorMessage(error: unknown): string {
 
 // ── DB 읽기(모두 보호자 소유 조건 포함) ─────────────────────────────────────
 
-/** 이 보호자 자녀의 예정 결석(REPORTED, 내일 이후). 오늘 결석은 원장님께 직접 연락하도록 뺀다. */
+/** 지금(KST)을 마감 판정에 넣을 글자(날짜·시각)로 */
+function kstNow(): { ymd: string; hm: string } {
+  const nowMs = Date.now();
+  return { ymd: todayKst(nowMs), hm: kstHm(nowMs) };
+}
+
+/**
+ * 이 보호자 자녀의 예정 결석(REPORTED, 오늘 이후) 중 아직 취소할 수 있는 것.
+ * 오늘 결석은 수업 시작 1시간 전까지만 남긴다(웹과 같은 isAbsenceChangeOpen) — 그 뒤는 원장님께 직접 연락.
+ */
 async function upcomingAbsences(parentUserId: string, studentId: string | null, today: string): Promise<AbsenceRecord[]> {
   const rows = await prisma.$queryRawUnsafe<Array<{ id: string; studentName: string; date: string; className: string | null; startTime: string | null }>>(
     `SELECT ra.id, s.name AS "studentName", to_char(ra.date,'YYYY-MM-DD') AS "date", c.name AS "className", c."startTime"
        FROM "RegularAbsence" ra
        JOIN "Student" s ON s.id=ra."studentId" AND s."parentId"=$1 AND s."mergedIntoStudentId" IS NULL
        LEFT JOIN "Class" c ON c.id=ra."classId"
-      WHERE ra.status='REPORTED' AND ra.date>$2::date AND ($3::text IS NULL OR ra."studentId"=$3)
+      WHERE ra.status='REPORTED' AND ra.date>=$2::date AND ($3::text IS NULL OR ra."studentId"=$3)
       ORDER BY ra.date ASC, c."startTime" ASC LIMIT ${ABSENCE_MAX_CANDIDATES}`,
     parentUserId, today, studentId,
   );
-  return rows.map((row) => ({
+  const now = kstNow();
+  return rows.filter((row) => isAbsenceChangeOpen(row.date, row.startTime, now.ymd, now.hm)).map((row) => ({
     id: row.id,
     studentName: row.studentName,
     date: row.date,
+    startTime: row.startTime ?? null,
     label: `${kstLabel(row.date)} ${row.startTime ?? ""} ${clipText(row.className)}`.replace(/\s+/g, " ").trim(),
   }));
 }
@@ -142,7 +156,7 @@ function dateListReply(state: AbsenceState, webLink: WebLink | null, lead = ""):
   const dates = state.dates ?? [];
   const lines = dates.map((item, index) => `${index + 1}. ${item.label}`).join("\n");
   return flowReply(
-    `${lead}${state.studentName} 학생의 다가오는 수업이에요. 결석할 날 번호를 골라 주세요.\n\n${lines}\n\n오늘 수업 결석은 「오늘 결석 알리기」로 원장님께 바로 알려 주세요.`,
+    `${lead}${state.studentName} 학생의 다가오는 수업이에요. 결석할 날 번호를 골라 주세요.\n\n${lines}\n\n수업 시작 1시간 전이 지난 오늘 수업은 「오늘 결석 알리기」로 원장님께 바로 알려 주세요.`,
     [...numberQuickReplies(dates.length, PICK_DATE), TODAY_ABSENCE, STOP_REPLY],
     webLink,
   );
@@ -210,7 +224,7 @@ async function startReport(input: AbsenceFlowInput, child: FlowChild, lead: stri
   if (dates.length === 0) {
     await store.open(input.identityId, input.text, null);
     return flowReply(
-      `${lead}${child.name} 학생은 앞으로 ${ABSENCE_WEEKS}주 안에 결석 신청할 수 있는 정규 수업이 없어요(이미 신청했거나 수강 중인 반이 없어요). 오늘 수업 결석이면 원장님께 바로 알려 주세요.`,
+      `${lead}${child.name} 학생은 앞으로 ${ABSENCE_WEEKS}주 안에 결석 신청할 수 있는 정규 수업이 없어요(이미 신청했거나 수강 중인 반이 없어요). 수업 시작 1시간 전이 지난 오늘 수업이면 원장님께 바로 알려 주세요.`,
       [TODAY_ABSENCE, "결석 취소", "메뉴"],
       input.webLink,
     );
@@ -223,7 +237,8 @@ async function startReport(input: AbsenceFlowInput, child: FlowChild, lead: stri
   const flowId = await store.open(input.identityId, input.text, state);
   if (!flowId) return flowReply("결석 신청을 시작하지 못했어요. 잠시 후 다시 시도해 주세요.", ["결석 신청"]);
   if (state.step === "REASON") return reasonReply(state, lead);
-  const todayLead = said === today ? "오늘 수업은 여기서 신청할 수 없어요(내일 수업부터). 오늘 결석은 「오늘 결석 알리기」를 눌러 주세요.\n\n" : "";
+  // 「오늘 결석」이라고 했는데 오늘 후보가 없다 = 오늘 수업이 없거나 시작 1시간 전이 지났다
+  const todayLead = said === today && sameDay.length === 0 ? "오늘 수업은 시작 1시간 전이 지나 여기서 신청할 수 없어요. 오늘 결석은 「오늘 결석 알리기」를 눌러 주세요.\n\n" : "";
   return dateListReply(state, input.webLink, `${lead}${todayLead}`);
 }
 
@@ -232,7 +247,7 @@ async function startCancel(input: AbsenceFlowInput, child: FlowChild | null, lea
   const records = await upcomingAbsences(input.parentUserId, child?.id ?? null, today);
   if (records.length === 0) {
     await store.open(input.identityId, input.text, null);
-    return flowReply(`${lead}${child ? `${child.name} 학생은 ` : ""}취소할 수 있는 결석 신청이 없어요(내일 이후 신청분만 카톡으로 취소돼요). 오늘 결석을 취소하려면 원장님께 알려 주세요.`, ["결석 신청", "메뉴"]);
+    return flowReply(`${lead}${child ? `${child.name} 학생은 ` : ""}취소할 수 있는 결석 신청이 없어요(수업 시작 1시간 전까지만 카톡으로 취소돼요). 그 뒤에 취소하려면 원장님께 알려 주세요.`, ["결석 신청", "메뉴"]);
   }
   const state: AbsenceState = { v: 1, parentUserId: input.parentUserId, mode: "CANCEL", step: "CANCEL_PICK", studentId: child?.id ?? null, studentName: child?.name ?? null, records };
   const flowId = await store.open(input.identityId, input.text, state);
@@ -251,7 +266,7 @@ async function confirmReport(flow: FlowRow<AbsenceState>): Promise<Reply> {
   }
   let creditIssued = false;
   try {
-    // ★ 서버 재검증: 소유권·ACTIVE 수강·미래·요일은 reportRegularAbsence 가 다시 본다(대화 상태를 믿지 않는다).
+    // ★ 서버 재검증: 소유권·ACTIVE 수강·요일·마감(수업 1시간 전)은 reportRegularAbsence 가 다시 본다(대화 상태를 믿지 않는다).
     const result = await reportRegularAbsence(state.parentUserId, { studentId: state.studentId, classId: chosen.classId, date: chosen.date, reason: state.reason });
     creditIssued = Boolean(result?.makeupCreditIssued);
   } catch (error) {
@@ -269,10 +284,12 @@ async function confirmReport(flow: FlowRow<AbsenceState>): Promise<Reply> {
 async function confirmCancel(flow: FlowRow<AbsenceState>, today: string): Promise<Reply> {
   const item = flow.state.record;
   if (!item) return renderStep({ ...flow.state, step: "CANCEL_PICK" }, null);
-  // 날짜가 바뀌어 오늘이 됐을 수 있다 — 확정 순간에도 다시 본다.
-  if (item.date <= today) {
+  // 목록을 본 뒤 시간이 흘러 마감(수업 1시간 전)이 지났을 수 있다 — 확정 순간에도 같은 함수로 다시 본다.
+  // (cancelRegularAbsence 도 서버에서 한 번 더 막는다. 여기서는 안내 문구와 「원장님께 알리기」 버튼을 주려고 먼저 본다)
+  const now = kstNow();
+  if (item.date < today || !isAbsenceChangeOpen(item.date, item.startTime, now.ymd, now.hm)) {
     await store.close(flow.id, "CANCELED");
-    return flowReply(`${item.label} 결석은 오늘이라 카톡으로 취소할 수 없어요. 오시게 되면 원장님께 알려 주세요.`, [{ label: "원장님께 알리기", messageText: "원장님께 오늘 결석 취소 알릴게요" }, "메뉴"]);
+    return flowReply(`${item.label} 결석은 수업 시작 1시간 전이 지나 카톡으로 취소할 수 없어요. 오시게 되면 원장님께 알려 주세요.`, [{ label: "원장님께 알리기", messageText: "원장님께 오늘 결석 취소 알릴게요" }, "메뉴"]);
   }
   if (!(await store.advance(flow.id, "CANCEL_CONFIRM", { ...flow.state, step: "CANCELING" }))) {
     return flowReply("이미 처리 중이거나 처리된 취소예요.", ["결석 취소", "메뉴"]);
@@ -324,7 +341,8 @@ async function continueFlow(input: AbsenceFlowInput, flow: FlowRow<AbsenceState>
       const byDate = said ? (state.dates ?? []).filter((item) => item.date === said) : [];
       const chosen = pick !== null ? state.dates?.[pick - 1] : byDate.length === 1 ? byDate[0] : undefined;
       if (pick === null && !said) break;
-      if (!chosen) return dateListReply(state, webLink, said === today ? "오늘 수업은 「오늘 결석 알리기」로 알려 주세요.\n\n" : "목록에 있는 번호를 골라 주세요.\n\n");
+      // 「오늘」이라고 했는데 오늘 후보가 없으면(시작 1시간 전이 지남) 원장님께 알리는 길을 안내한다
+      if (!chosen) return dateListReply(state, webLink, said === today && byDate.length === 0 ? "오늘 수업은 시작 1시간 전이 지났어요. 「오늘 결석 알리기」로 알려 주세요.\n\n" : "목록에 있는 번호를 골라 주세요.\n\n");
       const next: AbsenceState = { ...state, step: "REASON", chosen };
       if (!(await store.advance(flow.id, "DATE", next))) return flowReply("방금 다른 선택이 먼저 처리됐어요. 「결석 신청」으로 다시 시작해 주세요.", ["결석 신청"]);
       return reasonReply(next);

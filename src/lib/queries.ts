@@ -3455,7 +3455,7 @@ export const getMakeupSlotAvailability = cache(
                 const makeupRows = await prisma.$queryRawUnsafe<any[]>(
                     `SELECT ms."makeupClassId" AS "classId", COUNT(*)::int AS booked
                        FROM "MakeupSession" ms
-                      WHERE ms."makeupDate"::date = $1::date AND ${activeMakeupSql("ms")}
+                      WHERE (ms."makeupDate" AT TIME ZONE 'Asia/Seoul')::date = $1::date AND ${activeMakeupSql("ms")}
                       GROUP BY ms."makeupClassId"`,
                     makeupDate,
                 );

@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { calcExpiry, makeSourceKey } from "./credit-rules";
 import { assertRegularMakeupAllowed, lockCompensation } from "@/lib/billing/absence-compensation-guard";
+import { kstAt, toKstYmd } from "@/lib/datetime/kst";
 
 // 보강권 발급·회수 — 출결이 바뀔 때 호출된다.
 //
@@ -12,14 +13,12 @@ import { assertRegularMakeupAllowed, lockCompensation } from "@/lib/billing/abse
 //   ② **한 결석에 한 장.** sourceKey 유니크 인덱스가 최종 방어선이고,
 //      코드에서는 ON CONFLICT 로 조용히 넘어간다(출결을 여러 번 눌러도 안전).
 
-/** KST 기준 YYYY-MM-DD. 결석일은 날짜 단위로 다룬다. */
-function kstYmd(d: Date): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" }).format(d);
-}
-
-/** YYYY-MM-DD → 그 날 KST 자정의 UTC 시각. 만료 계산 기준점을 날짜로 고정한다. */
+/**
+ * YYYY-MM-DD → 그 날 KST 자정의 UTC 시각. 만료 계산 기준점을 날짜로 고정한다.
+ * 2026-11-14: `T00:00:00+09:00` 손 조립과 이 파일의 kstYmd 를 공용 모듈(kstAt·toKstYmd)로 옮겼다(같은 시각·같은 글자).
+ */
 function ymdToUtc(ymd: string): Date {
-  return new Date(`${ymd}T00:00:00+09:00`);
+  return new Date(kstAt(ymd));
 }
 
 // ── 발급 시작일 판정(외부 의존 없는 순수 블록 — 테스트가 이 구간만 잘라 실행한다) ──
@@ -249,7 +248,7 @@ export async function syncCreditForSeasonalSeat(input: {
   const row = rows[0];
   if (!row) return { action: "none" };
 
-  const absenceYmd = kstYmd(row.startsAt instanceof Date ? row.startsAt : new Date(row.startsAt));
+  const absenceYmd = toKstYmd(row.startsAt);
   return syncMakeupCreditForAttendance({
     studentId: input.studentId,
     status: input.status,

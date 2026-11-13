@@ -9,6 +9,12 @@ export type SocialCaptionDraft = {
   title: string;
   caption: string;
   hashtags: string;
+  /**
+   * 문구가 어디서 왔는가(2026-11-14 사진·인스타 점검).
+   * "AI" = AI 가 사진을 보고 쓴 초안 · "FALLBACK" = AI 연결이 안 됐거나 실패해 준비된 기본 문구.
+   * 예전에는 구분이 없어 기본 문구도 화면에 «AI 초안»으로 보였다.
+   */
+  source: "AI" | "FALLBACK";
 };
 
 const DEFAULT_HASHTAGS = [
@@ -147,6 +153,7 @@ function fallbackDraft(lessonType?: string | null, memo?: string | null): Social
     title,
     caption: `${selected.caption}${memoLine}\n\n${selected.closing}`,
     hashtags: normalizeHashtags(""),
+    source: "FALLBACK",
   };
 }
 
@@ -248,6 +255,7 @@ Variation seed: ${variationSeed}
       title: compactText(parsed.title, fallback.title).slice(0, 80),
       caption: compactText(parsed.caption, fallback.caption).slice(0, 1800),
       hashtags: normalizeHashtags(parsed.hashtags || fallback.hashtags),
+      source: "AI",
     };
   } catch (error) {
     console.warn("[social-caption-ai] fallback used:", error);

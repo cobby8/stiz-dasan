@@ -152,12 +152,38 @@ function makeDb({ credits = null, students = null } = {}) {
       const row = credit(args[0]);
       return owns(row, args[1]) ? [{ ...row, studentGrade: student(row.studentId).grade }] : [];
     }
-    if (/JOIN "ScheduleSlot" ss ON ss\."slotKey" = c\."slotKey"/.test(sql)) {
+    // 2026-11-14 결석 당일 취소·보강 연결: 시간표 슬롯이 없는 반도 읽게 LEFT JOIN, 보강 예약 수는 날짜별로 따로 센다
+    if (/LEFT JOIN "ScheduleSlot" ss ON ss\."slotKey" = c\."slotKey"/.test(sql)) {
+      assert.match(sql, /"CustomClassSlot" cs/, "직접 만든 슬롯의 대상 학년 글자를 보조로 읽는다");
       return db.classes.map((c) => ({
         classId: c.id, className: c.name, dayOfWeek: c.dayOfWeek, startTime: c.startTime, endTime: c.endTime, capacity: c.capacity,
-        gradesJson: JSON.stringify(c.grades), enrolled: c.enrolled,
-        booked: db.sessions.filter((s) => s.makeupClassId === c.id && s.status === "BOOKED").length,
+        gradesJson: c.grades ? JSON.stringify(c.grades) : null, gradeRangeText: c.gradeRangeText ?? null, enrolled: c.enrolled,
       }));
+    }
+    // 그 학생이 이미 다니는 반
+    if (/SELECT e\."classId" AS "classId" FROM "Enrollment" e WHERE e\."studentId" = \$1 AND e\.status = 'ACTIVE'/.test(sql)) {
+      return (db.enrollments ?? []).filter((row) => row.studentId === args[0]).map((row) => ({ classId: row.classId }));
+    }
+    // 반·날짜별 보강 예약 수(취소 제외, 오늘 KST 자정 이후) — makeupDate 는 timestamptz 라 KST 변환 한 번
+    if (/FROM "MakeupSession" m/.test(sql) && /GROUP BY 1, 2/.test(sql)) {
+      assert.match(sql, /to_char\(m\."makeupDate" AT TIME ZONE 'Asia\/Seoul', 'YYYY-MM-DD'\) AS ymd/);
+      assert.match(sql, /m\.status <> 'CANCELLED'/);
+      const counts = new Map();
+      for (const row of db.sessions) {
+        if (row.status === "CANCELLED" || row.makeupDate.getTime() < new Date(args[0]).getTime()) continue;
+        const key = `${row.makeupClassId}|${kst.toKstYmd(row.makeupDate)}`;
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+      return [...counts].map(([key, booked]) => ({ classId: key.split("|")[0], ymd: key.split("|")[1], booked }));
+    }
+    // 예약 트랜잭션 안의 정원 재확인(그 반·그 날짜)
+    if (/FROM "Class" c WHERE c\.id = \$1 LIMIT 1/.test(sql)) {
+      db.seatRechecks = (db.seatRechecks ?? 0) + 1;
+      const c = db.classes.find((row) => row.id === args[0]);
+      if (!c) return [];
+      const booked = db.sessions.filter((row) => row.makeupClassId === c.id && row.status !== "CANCELLED" && kst.toKstYmd(row.makeupDate) === args[1]).length
+        + (db.raceBooked?.[`${c.id}|${args[1]}`] ?? 0);
+      return [{ capacity: c.capacity, enrolled: c.enrolled, booked }];
     }
     // 결석 보상(이월) 가드 — main 의 absence-compensation-guard 를 진짜로 올린다. db.carry 면 이월 정산된 결석
     if (/to_regclass\('public\."BillingAbsenceResolution"'\)/.test(sql)) return [{ found: db.carry ? "BillingAbsenceResolution" : null }];
@@ -353,7 +379,10 @@ test("정원 마감 경합: 확인 사이에 자리가 차면 사유를 알리�
   const res = await say("보강 신청 확정");
   assertKakaoFormat(res);
   assert.match(textOf(res), /^보강 신청을 못 했어요: 방금 정원이 마감됐거나/);
-  assert.doesNotMatch(textOf(res), /주말기본반/, "마감된 반은 다시 보여 주지 않는다");
+  // 2026-11-14 결석 당일 취소·보강 연결: 보강 예약 수를 «날짜별»로 센다. 마감된 것은 그 날짜뿐이라
+  // 같은 반의 다음 주 날짜는 후보에 남는다(예전에는 반 전체로 세어 반이 통째로 빠졌다).
+  assert.doesNotMatch(textOf(res), new RegExp(`${kst.kstLabel(day(2)).replace(/[()\/]/g, "\\$&")} 10:00 주말기본반`), "마감된 날짜는 다시 보여 주지 않는다");
+  assert.match(textOf(res), new RegExp(`${kst.kstLabel(day(9)).replace(/[()\/]/g, "\\$&")} 10:00 주말기본반`), "같은 반의 다른 날짜는 그대로 고를 수 있다");
   assert.equal(db.credits.find((row) => row.id === "mc1").status, "AVAILABLE", "보강권은 그대로");
   assert.equal(db.sessions.length, 1);
   // 다시 고르면 정상 예약

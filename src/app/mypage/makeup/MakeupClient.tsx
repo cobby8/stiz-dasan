@@ -18,6 +18,16 @@ const DOW_KO: Record<string, string> = {
   Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금", Sat: "토", Sun: "일",
 };
 
+// 후보가 0건일 때 이유별 안내(2026-11-14) — 서버(parent-makeup)가 준 emptyReason 을 그대로 글로 바꾼다.
+// 이유를 모르는 옛 응답은 기본 글로.
+const EMPTY_REASON_TEXT: Record<string, string> = {
+  NO_GRADE: "학년 정보가 없어 수업을 고를 수 없습니다. 학원으로 문의해 주세요.",
+  NO_MATCH: "학년대가 맞는 다른 수업이 없습니다. 학원으로 문의해 주세요.",
+  NO_DATE: "사용 기한 안에 열리는 수업 날짜가 없습니다. 학원으로 문의해 주세요.",
+  FULL: "학년대가 맞는 수업이 지금은 모두 마감입니다. 며칠 뒤 다시 확인하거나 학원으로 문의해 주세요.",
+};
+const EMPTY_DEFAULT_TEXT = "지금 예약할 수 있는 수업이 없습니다. 학원으로 문의해 주세요.";
+
 /** 상태 뱃지 — 학부모가 한눈에 "쓸 수 있나"를 알아야 한다. */
 function statusBadge(c: ParentCredit, expired: boolean) {
   // 색 = 공용 지도(statusTones): 사용 가능 정상 · 예약(진행 중) 정보 · 무단 불참 위험 · 끝난 것 중립
@@ -53,6 +63,7 @@ export default function MakeupClient({ initial, presetStudentId = null }: { init
   const router = useRouter();
   const [openId, setOpenId] = useState("");            // 반 선택이 열린 보강권
   const [options, setOptions] = useState<MakeupOption[]>([]);
+  const [emptyReason, setEmptyReason] = useState("");   // 후보 0건인 이유(서버가 준 값)
   const [pick, setPick] = useState<{ classId: string; ymd: string } | null>(null);
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
@@ -66,13 +77,14 @@ export default function MakeupClient({ initial, presetStudentId = null }: { init
   // 보강권을 펼치면서 그 학생이 갈 수 있는 반을 불러온다.
   const open = useCallback(async (credit: ParentCredit) => {
     if (openId === credit.id) { setOpenId(""); return; }
-    setErr(""); setMsg(""); setPick(null); setOptions([]);
+    setErr(""); setMsg(""); setPick(null); setOptions([]); setEmptyReason("");
     setOpenId(credit.id);
     setBusy(credit.id);
     try {
       const r = await fetchMakeupOptions(credit.id);
       if (!r.ok) { setErr(customerMessage(r.message, "불러오지 못했습니다.")); setOpenId(""); return; }
       setOptions(r.options || []);
+      setEmptyReason(r.emptyReason || "");
     } catch {
       setErr("불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
       setOpenId("");
@@ -215,27 +227,28 @@ export default function MakeupClient({ initial, presetStudentId = null }: { init
                         )}
                         {busy !== c.id && options.length === 0 && (
                           <p className="rounded-xl bg-[var(--color-academy-soft)] px-3 py-4 text-center text-xs text-[var(--color-academy-muted)]">
-                            지금 예약할 수 있는 수업이 없습니다. 학원으로 문의해 주세요.
+                            {EMPTY_REASON_TEXT[emptyReason] ?? EMPTY_DEFAULT_TEXT}
                           </p>
                         )}
                         {options.map((o) => (
-                          <div key={o.classId} className="rounded-xl border border-[var(--color-academy-line)] p-3">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div className="text-sm font-semibold text-[var(--color-academy-ink)]">
-                                {o.className}
-                                <span className="ml-2 text-xs font-normal tabular-nums text-[var(--color-academy-muted)]">
-                                  {DOW_KO[o.dayOfWeek] ?? o.dayOfWeek} {o.startTime}
-                                  {o.endTime ? `~${o.endTime}` : ""}
+                          // 후보 한 줄 행: 반 이름 · 요일 시간 · 대상 학년 · 남은 자리(글자 — 학생 수 숫자는 싣지 않는다) / 아래에 날짜 칩
+                          <div key={o.classId} className="rounded-xl border border-[var(--color-academy-line)] px-3 py-2">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                              <span className="break-keep text-sm font-semibold text-[var(--color-academy-ink)]">{o.className}</span>
+                              <span className="text-xs tabular-nums text-[var(--color-academy-muted)]">
+                                {DOW_KO[o.dayOfWeek] ?? o.dayOfWeek} {o.startTime}
+                                {o.endTime ? `~${o.endTime}` : ""}
+                              </span>
+                              {(o.gradeLabel || o.grades.length > 0) && (
+                                <span className="text-xs text-[var(--color-academy-muted)]">
+                                  대상 {o.gradeLabel || o.grades.join("·")}
                                 </span>
-                              </div>
-                              <span className={`text-xs font-semibold ${SEAT_LEVEL_TEXT_CLASS[o.seatLevel]}`}>
+                              )}
+                              <span className={`ml-auto shrink-0 text-xs font-medium ${SEAT_LEVEL_TEXT_CLASS[o.seatLevel]}`}>
                                 {SEAT_LEVEL_LABEL[o.seatLevel]}
                               </span>
                             </div>
-                            <div className="mt-1 text-xs text-[var(--color-academy-faint)]">
-                              대상 학년 {o.grades.join("·")}
-                            </div>
-                            <div className="mt-2 flex flex-wrap gap-1.5">
+                            <div className="mt-1.5 flex flex-wrap gap-1.5">
                               {o.dates.map((d) => {
                                 const on = pick?.classId === o.classId && pick?.ymd === d.ymd;
                                 return (
@@ -275,7 +288,7 @@ export default function MakeupClient({ initial, presetStudentId = null }: { init
       )}
 
       <p className="mt-5 text-xs leading-relaxed text-[var(--color-academy-faint)]">
-        · 보강은 학년이 맞는 다른 수업으로만 예약할 수 있습니다.<br />
+        · 보강은 학년대가 비슷한(대상 학년 앞뒤 1학년까지) 다른 수업의 빈자리로 예약할 수 있습니다.<br />
         · 예약을 미리 취소하면 보강권은 그대로 유지됩니다.<br />
         · 예약 후 알리지 않고 오지 않으면 보강권을 사용한 것으로 처리됩니다.
       </p>

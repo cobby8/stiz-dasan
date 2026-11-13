@@ -72,7 +72,9 @@ function makeDb() {
     absences: [
       { id: "ra1", parentId: "p1", studentId: "s1", studentName: "지유", date: day(2), status: "REPORTED", className: "주중경기반", startTime: "18:00" },
       { id: "ra-other", parentId: "p9", studentId: "s9", studentName: "남의집", date: day(2), status: "REPORTED", className: "주중경기반", startTime: "18:00" },
-      { id: "ra-past", parentId: "p1", studentId: "s1", studentName: "지유", date: TODAY, status: "REPORTED", className: "주중경기반", startTime: "18:00" },
+      // 2026-11-14 결석 당일 취소·보강 연결: 오늘 결석도 «수업 시작 1시간 전»까지는 취소 목록에 나온다.
+      // 이 줄은 00:30 수업이라 하루 중 언제 돌려도 이미 마감(1시간 전 = 전날 23:30)이다 → 목록에 없어야 한다.
+      { id: "ra-past", parentId: "p1", studentId: "s1", studentName: "지유", date: TODAY, status: "REPORTED", className: "주중경기반", startTime: "00:30" },
     ],
     exceptions: [],
     intakes: [],
@@ -97,11 +99,12 @@ function makeDb() {
       return [{ id: row.id }];
     }
     if (/FROM "RegularAbsence" ra/.test(sql)) {
-      // 보호자 조건(s."parentId"=$1)·REPORTED·내일 이후(ra.date>$2)·자녀 조건을 SQL 그대로 흉내 낸다
+      // 보호자 조건(s."parentId"=$1)·REPORTED·오늘 이후(ra.date>=$2)·자녀 조건을 SQL 그대로 흉내 낸다
+      // 2026-11-14 결석 당일 취소·보강 연결: 예전 «내일 이후(>)» → «오늘 이후(>=)». 오늘 것은 앱이 마감(1시간 전)으로 다시 거른다.
       assert.match(sql, /s\."parentId"=\$1/);
-      assert.match(sql, /ra\.date>\$2::date/);
+      assert.match(sql, /ra\.date>=\$2::date/);
       return db.absences
-        .filter((row) => row.parentId === args[0] && row.status === "REPORTED" && row.date > args[1] && (args[2] === null || row.studentId === args[2]))
+        .filter((row) => row.parentId === args[0] && row.status === "REPORTED" && row.date >= args[1] && (args[2] === null || row.studentId === args[2]))
         .map(({ id, studentName, date, className, startTime }) => ({ id, studentName, date, className, startTime }));
     }
     if (/FROM "ShuttleDayException" x/.test(sql)) {
@@ -201,6 +204,27 @@ test("결석 후보: 이미 신청된 날은 빼고 날짜·시간 순", () => {
   assert.match(list[0].label, /18:00 주중경기반$/);
 });
 
+// 2026-11-14 결석 당일 취소·보강 연결
+test("결석 후보: 마감(수업 1시간 전)이 지난 날(changeOpen=false)은 빼고, 열린 오늘 수업은 후보에 넣는다", () => {
+  const list = absenceFlow.buildAbsenceCandidates([
+    { classId: "cA", className: "주중경기반", startTime: "18:00", dates: [
+      { date: TODAY, reported: false, changeOpen: false },
+      { date: day(7), reported: false, changeOpen: true },
+    ] },
+    { classId: "cB", className: "주말기본반", startTime: "20:00", dates: [{ date: TODAY, reported: false, changeOpen: true }] },
+  ]);
+  assert.deepEqual(list.map((item) => [item.classId, item.date]), [["cB", TODAY], ["cA", day(7)]]);
+});
+
+test("결석 대화의 마감 판정은 웹과 같은 함수(isAbsenceChangeOpen) — 날짜 비교를 따로 만들지 않는다", () => {
+  const source = readFileSync("src/lib/kakao-absence-flow.ts", "utf8");
+  assert.match(source, /import \{ isAbsenceChangeOpen,[^}]*\} from "@\/lib\/regular\/regularAbsenceRules"/);
+  // 취소 목록·취소 확정 두 곳 모두
+  assert.equal((source.match(/isAbsenceChangeOpen\(/g) || []).length, 2);
+  assert.doesNotMatch(source, /item\.date <= today/, "옛 «오늘이면 무조건 거절» 판정은 없다");
+  assert.match(source, /code === "ABSENCE_CHANGE_CLOSED"/);
+});
+
 // ── 결석 신청 ────────────────────────────────────────────────────────────
 test("결석 신청: 날짜 → 사유 → 확정 → reportRegularAbsence 한 번, 두 번 눌러도 한 번", async () => {
   const db = makeDb();
@@ -241,7 +265,9 @@ test("「내일 결석할게요」는 내일 수업이 하나면 날짜를 건�
 test("「오늘 결석」은 목록 + 원장님께 알리기, 그 버튼은 결석 흐름이 붙잡지 않는다", async () => {
   const db = makeDb();
   const res = await absenceSay("오늘 결석할게요");
-  assert.match(textOf(res), /오늘 수업은 여기서 신청할 수 없어요/);
+  // 2026-11-14 결석 당일 취소·보강 연결: 오늘 수업도 1시간 전까지는 받는다. 이 가짜 목록에는 오늘 후보가 없으므로
+  // (= 오늘 수업이 없거나 마감) «1시간 전이 지나» 안내가 나온다.
+  assert.match(textOf(res), /오늘 수업은 시작 1시간 전이 지나 여기서 신청할 수 없어요/);
   const pass = await absenceSay("원장님께 오늘 결석 알릴게요");
   assert.equal(pass, null, "원장님 접수(기존 흐름)로 넘어간다");
   assert.ok(db.intakes.every((row) => row.status !== "ABSENCE_FLOW"), "결석 대화는 닫힌다");
@@ -290,12 +316,12 @@ test("다른 보호자로 다시 연결되면 이전 대화 상태를 쓰지 않
 });
 
 // ── 결석 취소 ────────────────────────────────────────────────────────────
-test("결석 취소: 내 자녀의 내일 이후 신청분만 → 확정 → cancelRegularAbsence(id)", async () => {
+test("결석 취소: 내 자녀의 마감 전(수업 1시간 전까지) 신청분만 → 확정 → cancelRegularAbsence(id)", async () => {
   const db = makeDb();
   const list = await absenceSay("결석 취소할게요");
   assert.match(textOf(list), /취소할 번호/);
   assert.doesNotMatch(textOf(list), /남의집/);
-  assert.equal(sends(list).filter((s) => /^결석 취소 \d번$/.test(s)).length, 1, "오늘 결석·남의 결석은 목록에 없다");
+  assert.equal(sends(list).filter((s) => /^결석 취소 \d번$/.test(s)).length, 1, "마감이 지난 오늘 결석·남의 결석은 목록에 없다");
   const confirm = await absenceSay("결석 취소 1번");
   assert.match(textOf(confirm), /취소할까요/);
   // 「취소」 한 마디는 그만두기가 아니라 다시 묻기
