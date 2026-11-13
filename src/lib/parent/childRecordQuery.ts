@@ -254,7 +254,7 @@ export async function getChildRecord(parentUserId: string, studentId: string, db
         `SELECT p.id, p.type, p.status, p.amount, p.year, p.month,
                 to_char(${kstNaive(`p."dueDate"`)}, 'YYYY-MM-DD') AS "dueYmd",
                 to_char(${kstNaive(`p."paidDate"`)}, 'YYYY-MM-DD') AS "paidYmd",
-                p.description, p."receiptUrl"
+                p.description, p."receiptUrl", p.method, p."paidProvider"
            FROM "Payment" p
           WHERE p."studentId" = $1 AND p.status NOT IN ('CANCELED', 'CANCELLED')
           ORDER BY p."dueDate" DESC NULLS LAST
@@ -272,6 +272,9 @@ export async function getChildRecord(parentUserId: string, studentId: string, db
         paidYmd: p.paidYmd ?? null,
         description: p.description ?? null,
         receiptUrl: canPay ? (p.receiptUrl ?? null) : null,
+        // 결제수단도 금액처럼 결제 권한자에게만
+        method: canPay ? (p.method ?? null) : null,
+        paidProvider: canPay ? (p.paidProvider ?? null) : null,
       }));
     }),
     section("attendance", () => attendanceByMonth(db, sid)),

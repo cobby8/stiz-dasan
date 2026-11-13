@@ -297,3 +297,9 @@
   - **[2026-03-22] 학년 체계 (GRADE_ORDER)**
     googleSheetsSchedule.ts에 GRADE_ORDER 배열이 정의됨: ["6세","7세","초1"~"초6","중1"~"중3","고1"~"고3","성인"]. MergedSlot.gradeRange는 "초4~중1" 형태의 문자열. formatGradeRange() 함수로 생성. 학년 범위 판별 시 GRADE_ORDER 인덱스 비교 방식 사용.
 - **참조횟수**: 0
+
+### [2026-11-14] 학부모 청구 = 월 카드 + 세부 시트 (공용 부품 한 벌)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 학부모 청구가 보이는 화면(청구 탭 `/mypage/payments`, 아이 기록 `/mypage/record` 청구 이력)은 `src/lib/payments/monthBills.ts`(순수 규칙: 청구 달 = year/month 먼저·없으면 납기 KST 달, 상태 한 단어, 환불 제외 합계, 할인 해석) + `components/parent/billing/MonthBillCard`·`BillDetailSheet` 를 같이 쓴다. 결제 버튼은 화면이 `renderItemActions` 로 넘긴다(청구 탭의 기존 결제하기·입금했어요 핸들러 그대로). **Payment 에는 할인 칸이 없다** — amount = 할인 뒤 낼 금액, 할인은 description 글 안에만(작업대 «· 수강료 N · 할인 N · 기간조정 · 이월 · 셔틀», 옛 장부 «(할인 N, …)» 등). 해석값으로 계산한 금액이 amount 와 같을 때만 보인다. 새 청구 글 형식을 만들면 parseBillBreakdown 과 tests/parent-month-bills 를 같이 고칠 것(사유는 작업대 payload 에도 저장 안 됨).
+- **참조횟수**: 0

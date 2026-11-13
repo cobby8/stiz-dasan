@@ -33,6 +33,20 @@ const virtualAccount = load("src/lib/payments/virtualAccount.ts", { "@/lib/payme
 const preferredMethod = load("src/lib/payments/preferredMethod.ts");
 const picker = load("src/components/parent/PaymentMethodPicker.tsx", { "@/lib/payments/preferredMethod": preferredMethod });
 const vaNotice = { __esModule: true, default: ({ account }) => React.createElement("p", null, `계좌 ${account.accountNumber} ${account.amount}`) };
+// 청구 «월 카드 + 세부 시트» 공용 부품(2026-11-14) — 이 파일의 load 는 «@/» 를 못 따라가서 진짜 파일을 하나씩 엮는다
+const monthBills = load("src/lib/payments/monthBills.ts", {
+  "@/lib/parent/childRecordRules": load("src/lib/parent/childRecordRules.ts", { "@/lib/datetime/kst": kst }),
+});
+const adminModal = load("src/components/admin/AdminModal.tsx");
+const billingMocks = {
+  "@/lib/payments/monthBills": monthBills,
+  "@/components/parent/billing/MonthBillCard": load("src/components/parent/billing/MonthBillCard.tsx", { "@/lib/ui/statusTones": statusTones, "@/lib/payments/monthBills": monthBills }),
+  "@/components/parent/billing/BillDetailSheet": load("src/components/parent/billing/BillDetailSheet.tsx", {
+    "@/lib/ui/statusTones": statusTones,
+    "@/lib/payments/monthBills": monthBills,
+    "@/components/admin/list/ListDetailPanel": load("src/components/admin/list/ListDetailPanel.tsx", { "@/components/admin/AdminModal": adminModal }),
+  }),
+};
 
 const Checkout = load("src/app/mypage/payments/checkout/BundleCheckoutClient.tsx", {
   "next/link": link,
@@ -144,10 +158,13 @@ test("④ 청구 탭: 대표 보호자 미납이 있으면 «한 번에 결제»
     // 2026-11-14 w3: 월 묶음(공용 함수)·올해(KST) — 진짜 파일로
     "@/components/admin/list/monthDateGroups": load("src/components/admin/list/monthDateGroups.ts", { "@/lib/datetime/kst": kst }),
     "@/lib/datetime/kst": kst,
+    // 2026-11-14 월 카드 + 세부 시트(공용 부품) — 진짜 파일로
+    ...billingMocks,
   }).default;
   const row = (id, extra = {}) => ({ paymentId: id, studentId: "s", studentName: "합성", description: "11월 수강료", amount: 100000, status: "PENDING", dueDate: null, paidDate: null, invoiceNo: null, invoiceId: `i-${id}`, canCheckout: true, receiptUrl: null, virtualAccount: null, pending: [], resolved: [], ...extra });
   const va = { bankName: "합성은행", accountNumber: "777", customerName: null, amount: 250000, dueDate: "2026-11-20", dueLabel: "", expired: false };
-  const html = renderToStaticMarkup(React.createElement(Client, { payReady: true, rows: [row("a", { virtualAccount: va }), row("b", { amount: 150000, virtualAccount: va }), row("c", { status: "PAID" })] }));
+  // 2026-11-14 월 카드: 계좌·단건 결제 버튼은 세부 시트 안 — 청구 달이 없는 행(year/month·납기 없음)은 «날짜 미정» 달("")로 열어 본다
+  const html = renderToStaticMarkup(React.createElement(Client, { payReady: true, initialOpenYm: "", rows: [row("a", { virtualAccount: va }), row("b", { amount: 150000, virtualAccount: va }), row("c", { status: "PAID" })] }));
   assert.match(html, /미납 <span class="tabular-nums">2<\/span>건/);
   assert.match(html, /합계 250,000원/);
   assert.match(html, /href="\/mypage\/payments\/checkout"[^>]*>한 번에 결제/);
