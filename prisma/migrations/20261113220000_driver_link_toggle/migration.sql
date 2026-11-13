@@ -1,0 +1,12 @@
+-- 기사님 운행 링크(문자 주소) 사용 스위치 (2026-11-13 출시 전 점검 f5).
+--
+-- 왜: 운행 링크(/driver/[token])는 학원 공용 하나라, 퇴사한 기사님도 그 주소로 원생 명단·연락처를 계속 볼 수 있었다.
+-- 원장 결정: 기사님이 앱 계정으로 기사님 역할을 받으면 이 스위치를 끈다. 그 뒤엔 셔틀 권한 있는 로그인 계정만 운행표를 본다.
+--
+-- 기본값 true = 지금 동작 그대로(문자 주소로 열림). 기존 행도 true 로 채워져 운영이 끊기지 않는다.
+-- 반복 실행해도 안전(IF NOT EXISTS).
+--
+-- 되돌림:
+--   ALTER TABLE "AcademySettings" DROP COLUMN IF EXISTS "driverRunLinkEnabled";
+--   (칸이 없으면 코드가 «켜짐»으로 보고 기존 동작을 유지한다.)
+ALTER TABLE "AcademySettings" ADD COLUMN IF NOT EXISTS "driverRunLinkEnabled" BOOLEAN NOT NULL DEFAULT true;

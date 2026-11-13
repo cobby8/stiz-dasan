@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { assertMobileSchema, hashSecret, locationInput, lockTrackingToken, mobileTrackingEnabled, MobileTrackingError, SECRET, secretMatches, SESSION_LIFETIME_MS, UUID, type MobileSession } from "@/lib/shuttle/mobileTracking";
+// 운행 링크 스위치(driverLinkAccess)는 여기에 걸지 않는다 — 이 경로는 위치 «쓰기» 전용이라 명단·연락처를 내보내지 않고,
+// 안드로이드 기사님 앱은 로그인 쿠키 없이 Bearer 비밀값으로 부르므로 스위치를 걸면 로그인한 기사님의 위치 전송까지 멈춘다.
+// 옛 열쇠 차단은 «링크 새로 만들기»(rotateDriverRunLinks: 세션 삭제 + 열쇠 교체 → 아래 RUN_REVOKED)가 담당한다.
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

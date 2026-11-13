@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { isAnyDriverRunToken } from "@/lib/shuttle/driverToken";
+// 운행 링크 스위치(원장이 끄면 토큰만으로는 못 연다 — 셔틀 권한 있는 로그인 사용자만 통과)
+import { driverLinkBlocked, driverLinkDisabledResponse } from "@/lib/shuttle/driverLinkAccess";
 import { prisma } from "@/lib/prisma";
 import { kstDow } from "@/lib/datetime/kst";
 import { DriverOrderError, parseDriverOrderUpdates, planDriverOrder } from "@/lib/shuttle/driverOrderPlan";
@@ -24,6 +26,7 @@ export async function POST(request: Request) {
     const date = validDate(body?.date);
     if (!token || !date) throw new DriverOrderError("요청 형식이 올바르지 않습니다.", 400);
     if (!(await isAnyDriverRunToken(token))) return NextResponse.json({ error: "유효하지 않은 링크입니다." }, { status: 403 });
+    if (await driverLinkBlocked()) return driverLinkDisabledResponse();
     const updates = parseDriverOrderUpdates(body?.updates);
     if (!Array.isArray(body?.baseline)) throw new DriverOrderError("화면을 새로고침한 뒤 다시 저장해 주세요.");
     const baseline = parseDriverOrderUpdates(body.baseline);

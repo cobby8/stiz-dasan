@@ -6,6 +6,8 @@ import { getRegularShuttleMonths, getRegularShuttleStops } from "@/lib/shuttle/r
 import { koreaServiceMonth, pickServiceMonthFor, isServiceMonth } from "@/lib/regular/serviceMonth";
 import { ensureRegularRosterMonths } from "@/lib/shuttle/regularRosterEdit";
 import KakaoShuttleRosterTasks from "./KakaoShuttleRosterTasks";
+import DriverRunLinkControls from "./DriverRunLinkControls";
+import { isDriverRunLinkEnabled } from "@/lib/shuttle/driverLinkAccess";
 import { getOpenKakaoShuttleRosterTasks, type KakaoShuttleRosterTaskItem } from "@/lib/kakao-shuttle-roster-task-query";
 
 export const dynamic = "force-dynamic";
@@ -28,11 +30,15 @@ export default async function RegularShuttlePage({ searchParams }: { searchParam
   let rosterTasks: KakaoShuttleRosterTaskItem[] = [];
   try { rosterTasks = await getOpenKakaoShuttleRosterTasks(); } catch (e) { console.error("[admin/shuttle/regular] 카카오 셔틀 신청 할 일 조회 실패", e); }
 
+  // 기사님 운행 링크(문자 주소) 스위치 — 서버가 실제로 막는 값과 같은 함수로 읽는다.
+  const driverRunLinkEnabled = await isDriverRunLinkEnabled();
+
   return (
     <>
       <SeasonalHeader eyebrow="SHUTTLE" title="셔틀 관리" subtitle="정규 수업 셔틀 이용 학생 명단을 요일·수업별로 관리합니다." />
       <ShuttleSectionTabs />
       <KakaoShuttleRosterTasks tasks={rosterTasks} />
+      <DriverRunLinkControls initialEnabled={driverRunLinkEnabled} />
       <RegularShuttleClient initialStops={initial.stops} initialMonth={initialMonth} months={initial.months} currentMonth={currentMonth} initialStudentId={requested.studentId?.slice(0,64)} initialWeekday={/^[0-6]$/.test(requested.weekday ?? "") ? Number(requested.weekday) : undefined} initialAdd={requested.add === "1"} />
     </>
   );

@@ -1112,6 +1112,9 @@ model AcademySettings {
   trialOnlinePaymentEnabled   Boolean  @default(false)
   trialGuideAutoSend          Boolean  @default(false)
   enrollGuideAutoSend         Boolean  @default(false)
+  // 기사님 운행 링크(문자 주소 /driver/[token]) 사용 스위치(마이그레이션 20261113220000). 기본 true = 기존 동작 유지.
+  // false 면 토큰 주소 화면·토큰 API 가 거부하고, 셔틀 권한 있는 로그인 계정만 운행표를 본다(src/lib/shuttle/driverLinkAccess.ts).
+  driverRunLinkEnabled        Boolean  @default(true)
 }
 
 model ClassSlotOverride {

@@ -4,6 +4,8 @@ import { setRegularBoarding, type BoardingStatus } from "@/lib/shuttle/regularRu
 // 판정 함수 자체는 기존 것(isRegularRunToken / resolveRunToken)을 그대로 쓴다.
 import { isAnyDriverRunToken } from "@/lib/shuttle/driverToken";
 import { readDriverBoarding } from "@/lib/shuttle/driverStatusRead";
+// 운행 링크 스위치(원장이 끄면 토큰만으로는 못 연다 — 셔틀 권한 있는 로그인 사용자만 통과)
+import { driverLinkBlocked, driverLinkDisabledResponse } from "@/lib/shuttle/driverLinkAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +27,7 @@ function validDate(s: unknown): string | null {
 export async function GET(request: Request) {
   const url = new URL(request.url);
   if (!(await isAnyDriverRunToken(url.searchParams.get("token") ?? ""))) return NextResponse.json({ error: "유효하지 않은 링크입니다." }, { status: 403 });
+  if (await driverLinkBlocked()) return driverLinkDisabledResponse();
   const date = validDate(url.searchParams.get("date"));
   if (!date) return NextResponse.json({ error: "날짜를 확인해주세요." }, { status: 400 });
   try {
@@ -43,6 +46,7 @@ export async function POST(request: Request) {
     const rowId = typeof body?.rowId === "string" ? body.rowId : "";
     if (!token || !rowId) return NextResponse.json({ error: "요청 형식이 올바르지 않습니다." }, { status: 400 });
     if (!(await isAnyDriverRunToken(token))) return NextResponse.json({ error: "유효하지 않은 링크입니다." }, { status: 403 });
+    if (await driverLinkBlocked()) return driverLinkDisabledResponse();
     // 허용값 확장: BOARDED/NOSHOW/SELF(자차) + null(대기). 그 외는 null로 수렴.
     const status =
       body?.status === "BOARDED" || body?.status === "NOSHOW" || body?.status === "SELF" ? body.status : null;

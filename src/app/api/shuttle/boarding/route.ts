@@ -3,6 +3,8 @@ import { resolveRunToken, setBoarding, type BoardingStatus } from "@/lib/seasona
 import { readDriverBoarding } from "@/lib/shuttle/driverStatusRead";
 // 기사님 화면이 하나로 합쳐져(그날 특강+정규 한 목록), 정규 링크로 열어도 특강 행을 체크할 수 있어야 한다.
 import { isRegularRunToken } from "@/lib/shuttle/regularRun";
+// 운행 링크 스위치(원장이 끄면 토큰만으로는 못 연다 — 셔틀 권한 있는 로그인 사용자만 통과)
+import { driverLinkBlocked, driverLinkDisabledResponse } from "@/lib/shuttle/driverLinkAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +30,7 @@ export async function GET(request: Request) {
   const run = await resolveRunToken(url.searchParams.get("token") ?? "");
   const regularOk = run ? false : await isRegularRunToken(url.searchParams.get("token") ?? "");
   if (!run && !regularOk) return NextResponse.json({ error: "유효하지 않은 링크입니다." }, { status: 404 });
+  if (await driverLinkBlocked()) return driverLinkDisabledResponse();
   // 화면이 표시하는 날짜(effectiveDate)로 조회한다. date 쿼리가 유효하면 그 날, 없으면 링크 날짜(run.date)로 폴백(하위호환).
   const date = validDate(url.searchParams.get("date")) ?? run?.date;
   if (!date) return NextResponse.json({ error: "날짜를 확인해주세요." }, { status: 400 });
@@ -49,6 +52,7 @@ export async function POST(request: Request) {
     // 이때는 링크에 날짜가 없으므로(정규는 고정 링크) 화면이 보낸 date 가 반드시 유효해야 한다.
     const regularOk = run ? false : await isRegularRunToken(body?.token ?? "");
     if (!run && !regularOk) return NextResponse.json({ error: "유효하지 않은 링크입니다." }, { status: 404 });
+    if (await driverLinkBlocked()) return driverLinkDisabledResponse();
     const direction = dir(body?.direction);
     if (!direction || !body?.shuttleRequestId) return NextResponse.json({ error: "요청 형식이 올바르지 않습니다." }, { status: 400 });
     // 허용값 확장: BOARDED/NOSHOW/SELF(자차) + null(대기). 그 외는 null로 수렴.
