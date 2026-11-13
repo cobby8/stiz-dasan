@@ -1,7 +1,8 @@
 import { getDispatchForView } from "@/lib/seasonal/shuttle-optimize";
 import { prisma } from "@/lib/prisma";
 // 정규 쪽 "그날 무엇을 띄울지"(확정 저장 노선 우선 · 없으면 셔틀 명단 폴백)는 이 게이트웨이 한곳에서만 만든다.
-import { getRegularDriverClasses } from "./regularDriverRoute";
+import { getRegularDriverDay } from "./regularDriverRoute";
+import type { RunHoliday } from "./regularRunDayRules";
 import { readDriverBoarding } from "./driverStatusRead";
 import {
   buildUnifiedRun,
@@ -127,17 +128,18 @@ export type UnifiedDriverRun = {
   boardingReliable: boolean;
   /** 관리자 지도에 표시되는 기사님 이름표(GPS 공유). 종전 화면과 같은 값을 유지한다. */
   driverLabel: string;
+  /** 그날 정규 수업 휴무(연간일정) — 화면 맨 위 «오늘은 휴무(사유)». 모르면 null. */
+  holiday: RunHoliday | null;
 };
 
 /** 그날 운행 전체(특강+정규)를 시각순 한 줄 목록으로. */
 export async function loadUnifiedDriverRun(viewDate: string): Promise<UnifiedDriverRun> {
   // 정규는 셔틀 명단(DB)을 따로 읽는다. 정규 쪽이 실패해도 **매일 쓰이는 방학특강 화면이 같이 죽으면 안 되므로** 따로 감싼다.
-  const regularSafe = async (): Promise<{ classes: DriverClass[] }> => {
+  const regularSafe = async (): Promise<{ classes: DriverClass[]; holiday: RunHoliday | null }> => {
     try {
-      const classes = await getRegularDriverClasses(viewDate);
-      return { classes };
+      return await getRegularDriverDay(viewDate);
     } catch {
-      return { classes: [] };
+      return { classes: [], holiday: null };
     }
   };
 
@@ -163,5 +165,6 @@ export async function loadUnifiedDriverRun(viewDate: string): Promise<UnifiedDri
     boarding: mergeBoardingMaps({ pickup, dropoff, regular: regularBoarding }),
     boardingReliable,
     driverLabel,
+    holiday: regular.holiday,
   };
 }

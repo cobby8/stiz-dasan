@@ -19,6 +19,7 @@ import { readBoardingResult, saveAndVerifyBoarding } from "@/lib/shuttle/driverS
 import { riderBoardingView, riderDefaultStatus, stopAbsenceSummary, type UnifiedRider, type UnifiedRow } from "@/lib/shuttle/unifiedDriverRunLogic";
 import { userErrorMessage } from "@/components/staff/userErrorMessage";
 import { todayKst } from "@/lib/datetime/kst";
+import type { RunHoliday } from "@/lib/shuttle/regularRunDayRules";
 
 // 기사님 통합 운행 화면 — 그날 방학특강·정규를 **가리지 않고 출발 시각 순서대로 한 줄씩** 나열한다.
 // 기사님은 위에서부터 순서대로 다니면 된다.
@@ -36,7 +37,7 @@ type SortKey = { minutes: number | null; seq: number };
 function digits(p: string | null): string | null { if (!p) return null; const d = p.replace(/[^0-9]/g, ""); return d.length >= 9 ? d : null; }
 
 export default function UnifiedDriverClient({
-  token = "", date, rows, initialBoarding, initialBoardingReliable = true, prevDate, nextDate, today, driverLabel, focusDirection = null, academy = null,
+  token = "", date, rows, initialBoarding, initialBoardingReliable = true, prevDate, nextDate, today, driverLabel, focusDirection = null, academy = null, holiday = null,
 }: {
   token?: string;
   date: string;
@@ -51,6 +52,8 @@ export default function UnifiedDriverClient({
   focusDirection?: "PICKUP" | "DROPOFF" | null;
   /** 학원 좌표 — 순서를 옮길 때 시각 다시 계산(등원 도착·하원 출발 기준). */
   academy?: { lat: number; lng: number } | null;
+  /** 그날 정규 수업 휴무(연간일정) — 맨 위 «오늘은 휴무(사유)». 정규 줄은 서버가 이미 «휴무»로 잠가 보낸다. */
+  holiday?: RunHoliday | null;
 }) {
   const router = useRouter();
   const accountRun = !token;
@@ -254,6 +257,8 @@ export default function UnifiedDriverClient({
     // 게슈탈트 T-04: 이미 그 상태인 버튼을 다시 눌러도 아무 일 없게(운전 중 두 번 눌림으로 체크가 풀리던 문제).
     // 되돌리기는 아래 별도 «대기로 되돌리기» 글자 버튼만 한다.
     if (!verifyOnly && cur === next) return;
+    // 잠긴 줄(휴원·퇴원·첫 수업 전·휴무)은 «대기로 되돌리기»만 — 서버도 같은 이유로 거부한다(버튼이 잠겨 있어 보통 여기 안 온다).
+    if (!verifyOnly && next !== null && riderBoardingView(rider, cur).blocked) return;
     locks.current.add(key);
     const target: Status | null = next;
     setBusy((x) => ({ ...x, [key]: true }));
@@ -271,7 +276,9 @@ export default function UnifiedDriverClient({
       if (!mounted.current) return;
       setBoarding((b) => { const n = { ...b }; if (result.status) n[key] = result.status; else delete n[key]; return n; });
       const time = result.checkedAt ? new Date(result.checkedAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Seoul" }) : null;
-      setSaveStates((states) => ({ ...states, [key]: { state: result.matched ? "saved" : "failed", message: result.matched ? `${verifyOnly ? "저장 상태 확인 완료" : "저장 완료"}${time ? ` · ${time}` : ""}` : "바뀌지 않았습니다 · 지금 저장된 상태를 보여 드려요" } }));
+      // 서버가 거부한 이유(409 — «휴원 학생은 체크하지 않습니다.» 등)가 있으면 그 글자를 그대로 보여 준다.
+      const rejected = "rejectedMessage" in result ? result.rejectedMessage : null;
+      setSaveStates((states) => ({ ...states, [key]: { state: result.matched ? "saved" : "failed", message: result.matched ? `${verifyOnly ? "저장 상태 확인 완료" : "저장 완료"}${time ? ` · ${time}` : ""}` : rejected ? `${rejected} · 지금 저장된 상태를 보여 드려요` : "바뀌지 않았습니다 · 지금 저장된 상태를 보여 드려요" } }));
     } catch {
       if (mounted.current) setSaveStates((states) => ({ ...states, [key]: { state: "unknown", message: "결과 확인 필요 · 저장 상태를 다시 확인해주세요" } }));
     } finally {
@@ -283,7 +290,8 @@ export default function UnifiedDriverClient({
   // 화면 요약만 계산한다. 저장 중이거나 서버 확인이 안 된 기록은 완료로 세지 않는다.
   function checkSummary(riders: UnifiedRider[]) {
     // 결석 학생도 명단에 남아 있으므로 분모에 넣는다(원장 지시 2026-11-09). 기록이 없으면 기본 «결석»이라 체크된 것으로 센다.
-    const targets = [...new Map(riders.map((rider) => [rider.key, rider])).values()];
+    // 잠긴 줄(휴원·휴무 등)은 체크 대상이 아니라 분모에서 뺀다(원장 지시 2026-11-14 — 명단엔 남긴다).
+    const targets = [...new Map(riders.map((rider) => [rider.key, rider])).values()].filter((rider) => !riderBoardingView(rider, boarding[rider.key]).blocked);
     const checked = targets.filter((rider) => {
       const state = saveStates[rider.key]?.state;
       return initialBoardingReliable && (!state || state === "saved") && riderBoardingView(rider, boarding[rider.key]).status != null;
@@ -316,6 +324,8 @@ export default function UnifiedDriverClient({
       <>
         <span>{initialBoardingReliable ? checks.total > 0 ? `체크 ${checks.checked}/${checks.total}${checks.checked === checks.total ? " · 체크 완료" : ""}` : "체크 대상 없음" : "기록 확인 필요"}</span>
         {absence.absentCount > 0 && <span className="font-semibold text-[var(--color-academy-danger)]">결석 {absence.absentCount}명{absence.allSkippable ? " · 정차 안 해도 됨" : ""}</span>}
+        {/* 결석 없이 전원이 잠긴 줄(휴원·휴무 등)이면 같은 안내만 회색으로 */}
+        {absence.absentCount === 0 && absence.allSkippable && <span className="font-semibold text-[var(--color-academy-muted)]">정차 안 해도 됨</span>}
       </>
     );
   }
@@ -334,8 +344,11 @@ export default function UnifiedDriverClient({
     // 탑승 버튼은 그대로 누를 수 있고(실제로 탔으면 체크), 기록이 없으면 기본 «결석»으로 보인다.
     const view = riderBoardingView(rider, stored);
     const rowKey = `${row.key}:${rider.checkId}`;
+    // 원장 지시(2026-11-14): 휴원·퇴원·첫 수업 전·휴무 줄은 명단에 남기고 회색 행 + 뱃지, 탑승·미탑승 버튼은 잠근다.
+    const locked = view.blocked;
+    const rowTone = locked ? "bg-[var(--color-academy-neutral-soft)]" : view.dimmed ? "bg-[var(--color-academy-danger-soft)]" : "bg-[var(--color-academy-soft)]";
     return (
-      <div key={rowKey} className={`${styles.rider} academy-driver-rider rounded-xl ${view.dimmed ? "bg-[var(--color-academy-danger-soft)]" : "bg-[var(--color-academy-soft)]"}`}>
+      <div key={rowKey} data-blocked={locked ? "true" : undefined} className={`${styles.rider} academy-driver-rider rounded-xl ${rowTone}`}>
         <div className={styles.riderMain}>
           <div className={styles.riderInfo}>
             <div className={styles.identity}>
@@ -347,6 +360,12 @@ export default function UnifiedDriverClient({
                   {rider.absentLabel || "결석"}
                 </span>
               )}
+              {/* 잠금 뱃지(휴원·퇴원·첫 수업 전·휴무) — 결석(빨강)과 구분되는 회색 채움 + 흰 글자 14px */}
+              {locked && (
+                <span className="inline-flex items-center rounded-md bg-[var(--color-academy-neutral)] px-2 py-0.5 text-sm font-semibold text-[var(--color-academy-on-primary)]">
+                  {rider.blockedLabel}
+                </span>
+              )}
               {rider.grade && <span className="text-sm text-[var(--color-academy-muted)]">{rider.grade}</span>}
             </div>
             {(parent || child) && <div className={styles.contacts}>
@@ -356,11 +375,11 @@ export default function UnifiedDriverClient({
           </div>
           <div className={styles.boardingActions}>
             {/* 게슈탈트 T-04: 선생님 탑승 체크와 같은 상태 버튼(탑승=success, 미탑승=danger), 간격 12px */}
-            <StatusChoiceButton tone="success" disabled={isBusy} active={status === "BOARDED"} onClick={() => { setMenuKey(null); void setStatus(rider, "BOARDED"); }}
+            <StatusChoiceButton tone="success" disabled={isBusy || locked} active={status === "BOARDED"} onClick={() => { setMenuKey(null); void setStatus(rider, "BOARDED"); }}
               className="text-[15px]">
               {isPickup ? "탑승" : "하차"}
             </StatusChoiceButton>
-            <StatusChoiceButton tone="danger" disabled={isBusy} active={status === "NOSHOW" || status === "SELF"} ariaExpanded={menuKey === rowKey}
+            <StatusChoiceButton tone="danger" disabled={isBusy || locked} active={status === "NOSHOW" || status === "SELF"} ariaExpanded={menuKey === rowKey}
               onClick={() => setMenuKey(menuKey === rowKey ? null : rowKey)} className="text-[15px]">
               미{isPickup ? "탑승" : "하차"}
             </StatusChoiceButton>
@@ -378,13 +397,14 @@ export default function UnifiedDriverClient({
                   기사님이 태우지 않거나 다른 곳으로 가야 한다는 뜻이다. */}
               {rider.shuttleNote && <span className="rounded-md bg-[var(--color-driver-note)] px-2 py-0.5 text-sm font-semibold text-[var(--color-academy-on-primary)]">{rider.shuttleNote}</span>}
         </div>}
-        {(saveState || stored || view.absentDefault) && <div className={styles.riderStatusLine}>
+        {(saveState || stored || view.absentDefault || locked) && <div className={styles.riderStatusLine}>
           {saveState ? <p role="status" className={`text-xs font-semibold ${saveState.state === "failed" || saveState.state === "unknown" ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-muted)]"}`}>{saveState.message}{saveState.state === "unknown" && <button type="button" disabled={busy[rider.key]} onClick={() => void setStatus(rider, "BOARDED", true)} className="ml-2 inline-flex min-h-11 min-w-11 items-center underline">저장 상태 확인</button>}</p>
+            : locked ? <p className="text-sm font-semibold text-[var(--color-academy-muted)]">{rider.blockedLabel === "휴무" ? "오늘은 수업이 없어 체크하지 않아요" : `${rider.blockedLabel}이라 체크하지 않아요`}</p>
             : view.absentDefault ? <p className="text-sm font-semibold text-[var(--color-academy-muted)]">이 아이는 안 태워도 돼요 (탔으면 «{isPickup ? "탑승" : "하차"}»)</p> : <span />}
           {/* 잘못 눌렀을 때만 쓰는 되돌리기 — 상태 버튼과 떨어진 작은 글자 버튼(결석 학생은 기본 «결석»으로 돌아간다) */}
           {stored && <StatusUndoButton disabled={isBusy} ariaLabel={`${rider.name} ${view.absentReported ? "결석으로" : "대기로"} 되돌리기`} onClick={() => { setMenuKey(null); void setStatus(rider, null); }} />}
         </div>}
-        {menuKey === rowKey && (
+        {menuKey === rowKey && !locked && (
           <div className="mt-2 flex gap-3">
             <StatusChoiceButton tone="danger" disabled={isBusy} active={status === "NOSHOW"} onClick={() => { void setStatus(rider, "NOSHOW"); setMenuKey(null); }}
               className="min-h-12 flex-1 text-base">결석(안 옴)</StatusChoiceButton>
@@ -449,6 +469,12 @@ export default function UnifiedDriverClient({
       )}
 
       <DriverDateNav date={date} prevDate={prevDate} nextDate={nextDate} today={today} />
+      {/* 휴무 안내(원장 지시 2026-11-14) — 연간일정상 정규 수업 없는 날. 정규 줄은 회색·버튼 잠금(실수 체크 방지). */}
+      {holiday && (
+        <p role="status" className="mb-2 rounded-xl border border-[var(--color-academy-cal-closed)] bg-[var(--color-academy-cal-closed-soft)] px-3 py-2 text-base font-semibold text-[var(--color-academy-ink)]">
+          {date === today ? "오늘은" : "이날은"} 휴무 ({holiday.title}) <span className="text-sm font-medium text-[var(--color-academy-muted)]">· 정규 셔틀 체크 없음</span>
+        </p>
+      )}
       {!initialBoardingReliable && <p role="alert" className="mb-2 text-sm font-semibold text-[var(--color-academy-danger)]">체크 기록을 불러오지 못했습니다. 미체크로 판단하지 말고 <button type="button" className="inline-flex min-h-11 min-w-11 items-center underline" onClick={() => window.location.reload()}>기록 다시 불러오기</button>를 눌러주세요. 확인 전에는 체크를 잠시 막습니다.</p>}
 
       {/* 순서 편집 */}

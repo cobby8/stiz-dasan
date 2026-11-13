@@ -8,6 +8,9 @@ import { koreaServiceMonth, pickServiceMonthFor, isServiceMonth } from "@/lib/re
 import { ensureRegularRosterMonths } from "@/lib/shuttle/regularRosterEdit";
 import { getSettings } from "@/lib/seasonal/shuttle-optimize";
 import { isKoreanCoordinate } from "@/lib/shuttle/academyLocation";
+// 휴원 뱃지·이 달 휴무 — 기사님 화면과 같은 판정(regularRunDayRules)
+import { getRegularRosterMonthMarks } from "@/lib/shuttle/regularRunDay";
+import { todayKst } from "@/lib/datetime/kst";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +47,17 @@ export default async function RegularDispatchPage({ searchParams }: { searchPara
   const firstDay = [1, 2, 3, 4, 5, 6, 0].find((w) => stops.some((s) => s.weekday === w && s.studentName && (s.direction === "BOARD" || s.direction === "ALIGHT")));
   const initialWeekday = target?.weekday ?? firstDay ?? 1;
   const totalStopCount = new Set(stops.map((s) => s.stopName).filter(Boolean)).size;
+  // 뱃지 기준일: 이번 달이면 오늘, 앞으로의 달이면 그 달 1일, 지난 달이면 오늘(지금 상태). 실패해도 화면은 뜬다.
+  const today = todayKst();
+  const refYmd = serviceMonth > today.slice(0, 7) ? `${serviceMonth}-01` : today;
+  const marks = await getRegularRosterMonthMarks(
+    stops.filter((s) => s.studentName && (s.direction === "BOARD" || s.direction === "ALIGHT")),
+    serviceMonth,
+    refYmd,
+  ).catch((e) => {
+    console.error("[admin/shuttle/regular-dispatch] 휴원·휴무 표시 실패", e);
+    return { labelByRowId: {}, holidays: [] };
+  });
 
   return (
     <>
@@ -59,6 +73,8 @@ export default async function RegularDispatchPage({ searchParams }: { searchPara
         initialStudentId={initialStudentId}
         initialStopId={exactStop?.id}
         academy={academy}
+        riderBlocks={marks.labelByRowId}
+        monthHolidays={marks.holidays}
       />
       <RegularStopGeocodePanel
         stopNames={missingStops}

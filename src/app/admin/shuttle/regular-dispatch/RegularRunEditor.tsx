@@ -43,8 +43,11 @@ type Dialog =
   | { kind: "stop"; rowIds: string[] };
 
 const DOW_ORDER = [1, 2, 3, 4, 5, 6, 0];
+// 기본값을 고정 객체로 — 렌더마다 새 {} 가 생기면 운행표(rows)가 매번 다시 만들어진다.
+const NO_BLOCKS: Record<string, string> = {};
+const NO_HOLIDAYS: { ymd: string; weekday: number; title: string }[] = [];
 
-export default function RegularRunEditor({ stops, serviceMonth, months, currentMonth, initialWeekday, initialStudentId, initialStopId, academy = null }: {
+export default function RegularRunEditor({ stops, serviceMonth, months, currentMonth, initialWeekday, initialStudentId, initialStopId, academy = null, riderBlocks = NO_BLOCKS, monthHolidays = NO_HOLIDAYS }: {
   /** 그 달 셔틀 명단 전체(서버가 읽어 준다 — 저장 뒤 router.refresh 로 다시 받는다). */
   stops: RegularShuttleStop[];
   serviceMonth: string;
@@ -57,6 +60,10 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
   initialStopId?: string;
   /** 학원 좌표(순서를 옮길 때 시각 다시 계산 — 등원 도착·하원 출발 기준). 없으면 학원 구간 없이 계산. */
   academy?: { lat: number; lng: number } | null;
+  /** 명단 정차행 id → 수강 상태 뱃지(휴원·퇴원·첫 수업 전). 기사님 화면과 같은 판정(regularRunDayRules). */
+  riderBlocks?: Record<string, string>;
+  /** 그 달 휴무일(연간일정) — 요일 탭 아래 «이 달 휴무» 한 줄. */
+  monthHolidays?: { ymd: string; weekday: number; title: string }[];
 }) {
   const router = useRouter();
   const laterMonths = useMemo(() => months.filter((m) => m > serviceMonth).sort(), [months, serviceMonth]);
@@ -72,7 +79,10 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
   const [weekday, setWeekday] = useState(initialWeekday);
 
   // 운행표 카드 = 기사님 화면과 같은 함수(결석·오늘만 변경은 날마다 달라 «월+요일» 기본형에선 끈다).
-  const rows = useMemo(() => buildRegularRunRows({ stops, weekday }), [stops, weekday]);
+  // 휴원 등 수강 상태 뱃지는 기사님 화면과 같은 조립 단계(blockOf)로 붙인다 — 관리자 화면엔 탑승 버튼이 없어 표시만.
+  const rows = useMemo(() => buildRegularRunRows({ stops, weekday, blockOf: (rowId) => riderBlocks[rowId] ?? null }), [stops, weekday, riderBlocks]);
+  // 지금 요일 탭의 이 달 휴무일(«11/17 사유» 묶음)
+  const dayHolidays = monthHolidays.filter((h) => h.weekday === weekday);
   const targetRow = rows.find((row) => row.riders.some((rider) => rider.checkId === initialStopId));
   const targetGroup = targetRow?.groupKey ?? null;
   const targetRowKey = targetRow?.key;
@@ -417,6 +427,10 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
           <div className={styles.riderInfo}>
             <div className={styles.identity}>
               <span className="break-all text-lg font-semibold text-[var(--color-academy-ink)]">{rider.name}</span>
+              {/* 휴원·퇴원·첫 수업 전 — 기사님 화면과 같은 회색 뱃지(명단에서 빼지 않는다) */}
+              {rider.blockedLabel && (
+                <span className="inline-flex items-center rounded-md bg-[var(--color-academy-neutral)] px-2 py-0.5 text-sm font-semibold text-[var(--color-academy-on-primary)]">{rider.blockedLabel}</span>
+              )}
               {rider.grade && <span className="text-sm text-[var(--color-academy-muted)]">{rider.grade}</span>}
               {links.map((l) => (
                 <button key={l.legKey} type="button" disabled={savingOrder} onClick={() => openReassign(l)} aria-label={`${rider.name} ${l.label} 재배정`}
@@ -505,6 +519,13 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
           </button>
         ))}
       </div>
+
+      {/* 이 달 이 요일 휴무(연간일정) — 기사님 화면은 그날 «휴무»로 잠긴다. 일정 확정 전이면 표시 없음. */}
+      {dayHolidays.length > 0 && (
+        <p className="mt-2 rounded-lg border border-[var(--color-academy-cal-closed)] bg-[var(--color-academy-cal-closed-soft)] px-3 py-2 text-sm text-[var(--color-academy-ink)]">
+          <span className="font-semibold">이 달 {WEEKDAY_LABELS[weekday]}요일 휴무</span> · {dayHolidays.map((h) => `${Number(h.ymd.slice(5, 7))}/${Number(h.ymd.slice(8, 10))} ${h.title}`).join(" · ")}
+        </p>
+      )}
 
       {/* 배정 필요(신규 + 반 이동) — 한 줄 요약, 누르면 펼침. 넣으면 운행표를 다시 읽는다. */}
       <NewStudentDispatchPanel key={serviceMonth} month={serviceMonth} selectedWeekday={weekday}

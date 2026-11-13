@@ -59,13 +59,13 @@ test("기사님 통합 행까지 결석 표시·뱃지 문구가 이어진다", 
 
 test("탑승자 화면 상태 — 정규 결석은 기본 «결석», 탑승을 누르면 흐림이 풀린다", () => {
   const absent = { kind: "REGULAR", absent: true };
-  assert.deepEqual(riderBoardingView(absent, undefined), { absentReported: true, status: "NOSHOW", absentDefault: true, dimmed: true });
-  assert.deepEqual(riderBoardingView(absent, "BOARDED"), { absentReported: true, status: "BOARDED", absentDefault: false, dimmed: false });
-  assert.deepEqual(riderBoardingView(absent, "SELF"), { absentReported: true, status: "SELF", absentDefault: false, dimmed: false });
-  assert.deepEqual(riderBoardingView(absent, "NOSHOW"), { absentReported: true, status: "NOSHOW", absentDefault: false, dimmed: true });
+  assert.deepEqual(riderBoardingView(absent, undefined), { absentReported: true, status: "NOSHOW", absentDefault: true, dimmed: true, blocked: false });
+  assert.deepEqual(riderBoardingView(absent, "BOARDED"), { absentReported: true, status: "BOARDED", absentDefault: false, dimmed: false, blocked: false });
+  assert.deepEqual(riderBoardingView(absent, "SELF"), { absentReported: true, status: "SELF", absentDefault: false, dimmed: false, blocked: false });
+  assert.deepEqual(riderBoardingView(absent, "NOSHOW"), { absentReported: true, status: "NOSHOW", absentDefault: false, dimmed: true, blocked: false });
   // 결석 아닌 학생·특강 «결석예정»은 종전대로(기본 상태 없음 = 체크 대기)
-  assert.deepEqual(riderBoardingView({ kind: "REGULAR", absent: false }, null), { absentReported: false, status: null, absentDefault: false, dimmed: false });
-  assert.deepEqual(riderBoardingView({ kind: "SEASONAL", absent: true }, null), { absentReported: false, status: null, absentDefault: false, dimmed: false });
+  assert.deepEqual(riderBoardingView({ kind: "REGULAR", absent: false }, null), { absentReported: false, status: null, absentDefault: false, dimmed: false, blocked: false });
+  assert.deepEqual(riderBoardingView({ kind: "SEASONAL", absent: true }, null), { absentReported: false, status: null, absentDefault: false, dimmed: false, blocked: false });
   assert.equal(riderDefaultStatus(absent), "NOSHOW");
   assert.equal(riderDefaultStatus({ kind: "SEASONAL", absent: true }), null);
 });

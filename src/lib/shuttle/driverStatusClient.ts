@@ -16,13 +16,16 @@ export async function readBoardingResult(url: string, token: string, date: strin
 
 /** POST 결과가 불확실해도 다시 토글하지 않고, 목표값과 서버 최종값을 대조한다. */
 export async function saveAndVerifyBoarding(url: string, body: Record<string, unknown>, read: () => Promise<DriverBoardingResult>, request: typeof fetch = fetch) {
+  // 서버가 일부러 거부한 이유(409 — 예: «휴원 학생은 체크하지 않습니다.»). 있으면 화면이 그 글자를 그대로 보여 준다.
+  let rejectedMessage: string | null = null;
   try {
     const response = await request(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(12_000) });
     const data = await response.json();
+    if (response.status === 409 && typeof data?.error === "string" && data.error.trim()) rejectedMessage = data.error.trim().slice(0, 80);
     if (!response.ok || data?.ok !== true) throw new Error("저장 응답 확인 필요");
   } catch {
     // 응답이 없어도 서버에서는 이미 저장됐을 수 있으므로 반드시 읽어서 확인한다.
   }
   const result = await read();
-  return { ...result, matched: result.status === body.status };
+  return { ...result, matched: result.status === body.status, rejectedMessage };
 }

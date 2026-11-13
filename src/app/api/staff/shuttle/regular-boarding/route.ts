@@ -5,6 +5,7 @@ import { authorizeAssign, DriverAssignError } from "@/lib/shuttle/driverAssign";
 import { readDriverBoarding } from "@/lib/shuttle/driverStatusRead";
 import { getRegularDriverClasses } from "@/lib/shuttle/regularDriverRoute";
 import { setRegularBoarding } from "@/lib/shuttle/regularRun";
+import { boardingRejectedForBlock } from "@/lib/shuttle/regularRunDayRules";
 
 export const dynamic = "force-dynamic";
 
@@ -69,6 +70,10 @@ export async function POST(request: NextRequest) {
       .find((row) => row.rowId === rowId);
     if (!rider) {
       return json({ error: "해당 날짜 운행표에서 학생을 찾지 못했습니다. 운행표를 다시 열어 주세요." }, 404);
+    }
+    // 휴원·퇴원·첫 수업 전·휴무 줄은 체크를 받지 않는다(«대기로 되돌리기»=null 만 허용) — 화면 잠금과 같은 판정.
+    if (boardingRejectedForBlock(rider.blockedLabel, status)) {
+      return json({ error: `${rider.blockedLabel} 학생은 체크하지 않습니다.` }, 409);
     }
     const result = await setRegularBoarding({ date, rowId: rider.rowId, status, studentName: rider.name });
     if (result.ok) return json({ ok: true });
