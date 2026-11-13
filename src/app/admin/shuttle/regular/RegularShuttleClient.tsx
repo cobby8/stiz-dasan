@@ -1052,7 +1052,7 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
                 <ul className="mt-2 space-y-1">
                   {issues.map((issue, i) => <li key={`${issue.kind}-${i}`} className={issue.weekday === active ? "font-bold" : ""}>· {issue.message}</li>)}
                 </ul>
-                <p className="mt-2 font-bold">자동으로 고치지 않았습니다. 학생 목록 보기에서 학생 행의 ⚡(반이동·정류장 수정·빼기)로 고쳐 주세요.</p>
+                <p className="mt-2 font-bold">자동으로 고치지 않았습니다. 학생 목록 보기에서 학생 행의 «빠른작업»(반이동·정류장 수정·빼기)로 고쳐 주세요.</p>
               </details>
             )}
 
@@ -1075,7 +1075,7 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
                   {enrollReport.problems.map((r) => <li key={r.key}>· {describeRosterEnrollmentStudent(r)}</li>)}
                   {enrollReport.notes.map((r) => <li key={r.key} className="text-[var(--color-academy-muted)]">· {describeRosterEnrollmentStudent(r)}</li>)}
                 </ul>
-                <p className="mt-2 font-bold">지금 수강 기준입니다. 자동으로 빼지 않았습니다 — 학생 행의 ⚡(반이동·빼기)로 정리해 주세요. «한쪽만»은 직접 데려가는 경우라면 정상입니다.</p>
+                <p className="mt-2 font-bold">지금 수강 기준입니다. 자동으로 빼지 않았습니다 — 학생 행의 «빠른작업»(반이동·빼기)로 정리해 주세요. «한쪽만»은 직접 데려가는 경우라면 정상입니다.</p>
               </details>
             )}
 

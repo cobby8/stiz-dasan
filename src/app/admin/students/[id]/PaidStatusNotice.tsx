@@ -26,7 +26,7 @@ export default function PaidStatusNotice({
     if (lock === "REAL_LOCKED") {
         return (
             <p className="mt-1.5 text-xs text-[var(--color-academy-muted)]">
-                결제 취소·환불은 <Link href="/admin/finance" prefetch={false} className="font-bold text-[var(--color-academy-ink)] underline">수납 관리</Link> ⚡ 메뉴에서 해요.
+                결제 취소·환불은 <Link href="/admin/finance" prefetch={false} className="font-medium text-[var(--color-academy-ink)] underline">수납 관리</Link> «빠른작업» 메뉴에서 해요.
             </p>
         );
     }
@@ -44,7 +44,7 @@ export default function PaidStatusNotice({
                     onConfirm={onRevert}
                 />
                 <p className="text-xs text-[var(--color-academy-muted)]">
-                    돈을 돌려줬다면 <Link href="/admin/finance" prefetch={false} className="font-bold text-[var(--color-academy-ink)] underline">수납 관리</Link> ⚡ 메뉴 «환불»을 쓰세요.
+                    돈을 돌려줬다면 <Link href="/admin/finance" prefetch={false} className="font-medium text-[var(--color-academy-ink)] underline">수납 관리</Link> «빠른작업» 메뉴 «환불»을 쓰세요.
                 </p>
             </div>
         );

@@ -32,11 +32,11 @@ const ACADEMY_DIRS = [
   "src/components/shuttle",
 ];
 
-// 갚아야 할 빚(2026-11-13 1단계 시점). 줄어들기만 해야 한다.
+// 갚아야 할 빚(2026-11-13 1단계 시점 804·645·54 → 2단계 «원생» 화면 정리 뒤 766·612·51). 줄어들기만 해야 한다.
 const DEBT = {
-  heavyWeight: 804, // font-black · font-extrabold · font-[800] · fontWeight: 800 — 화면에서는 테마가 700 으로 낮춰 그리지만 코드에서도 걷어낸다
-  icons: 645, // material-symbols-outlined · <FontFreeIcon · <SymbolIcon(파일마다 따로 만든 아이콘 부품) — 글자를 둘 자리가 없는 조작만 남긴다
-  adminRawH1: 54, // 관리자 화면의 직접 쓴 <h1> — AdminPageHeader 로 옮긴다
+  heavyWeight: 766, // font-black · font-extrabold · font-[800] · fontWeight: 800 — 화면에서는 테마가 700 으로 낮춰 그리지만 코드에서도 걷어낸다
+  icons: 612, // material-symbols-outlined · <FontFreeIcon · <SymbolIcon(파일마다 따로 만든 아이콘 부품) — 글자를 둘 자리가 없는 조작만 남긴다
+  adminRawH1: 51, // 관리자 화면의 직접 쓴 <h1> — AdminPageHeader 로 옮긴다
 };
 
 test("굵은 글자(font-black·font-extrabold)가 늘지 않는다", () => {

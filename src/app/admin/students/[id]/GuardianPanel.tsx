@@ -33,8 +33,9 @@ import {
 } from "@/lib/guardians/guardianLogic";
 
 const CARD_CLASS = "rounded-2xl border border-[var(--color-academy-line)] bg-white p-5 shadow-sm";
-const INPUT_CLASS = "w-full rounded-lg border border-[var(--color-academy-line)] bg-white px-2.5 py-1.5 text-sm text-[var(--color-academy-ink)] focus:ring-2 focus:ring-[var(--color-academy-primary)]";
-const SMALL_BTN = "inline-flex items-center gap-1 rounded-lg border border-[var(--color-academy-line)] px-2 py-1 text-xs font-bold text-[var(--color-academy-muted)] transition hover:bg-[var(--color-academy-soft)] disabled:opacity-50";
+// 입력칸·행 안 작은 버튼은 테마 공용 모양(academy-input · tonal + sm: PC 36px / 터치 44px)
+const INPUT_CLASS = "academy-input";
+const SMALL_BTN = "academy-button-tonal academy-button-sm";
 
 // 관계 빠른 입력 버튼(직접 입력도 가능)
 const RELATION_PRESETS = ["모", "부", "조모", "조부", "외조모", "외조부"];
@@ -194,26 +195,26 @@ export default function GuardianPanel({
     const formView = (
         <form onSubmit={submitForm} className="space-y-3 px-5 py-4">
             <label className="block">
-                <span className="mb-1 block text-xs font-bold text-[var(--color-academy-faint)]">관계 *</span>
-                <input type="text" value={form.relation} maxLength={20} placeholder="예: 모, 조모" onChange={(e) => setForm({ ...form, relation: e.target.value })} className={`${INPUT_CLASS} min-h-11`} data-admin-modal-initial-focus="true" />
+                <span className="mb-1 block text-xs font-medium text-[var(--color-academy-muted)]">관계 *</span>
+                <input type="text" value={form.relation} maxLength={20} placeholder="예: 모, 조모" onChange={(e) => setForm({ ...form, relation: e.target.value })} className={INPUT_CLASS} data-admin-modal-initial-focus="true" />
                 <span className="mt-1.5 flex flex-wrap gap-1.5">
                     {RELATION_PRESETS.map((r) => (
-                        <button key={r} type="button" onClick={() => setForm({ ...form, relation: r })} className="min-h-11 rounded-lg border border-[var(--color-academy-line)] px-3 text-xs text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
+                        <button key={r} type="button" onClick={() => setForm({ ...form, relation: r })} className="academy-button-tonal academy-button-sm">
                             {r}
                         </button>
                     ))}
                 </span>
             </label>
             <label className="block">
-                <span className="mb-1 block text-xs font-bold text-[var(--color-academy-faint)]">이름 (선택)</span>
-                <input type="text" value={form.name} maxLength={40} placeholder="비우면 관계로 표시" onChange={(e) => setForm({ ...form, name: e.target.value })} className={`${INPUT_CLASS} min-h-11`} />
+                <span className="mb-1 block text-xs font-medium text-[var(--color-academy-muted)]">이름 (선택)</span>
+                <input type="text" value={form.name} maxLength={40} placeholder="비우면 관계로 표시" onChange={(e) => setForm({ ...form, name: e.target.value })} className={INPUT_CLASS} />
             </label>
             <label className="block">
-                <span className="mb-1 block text-xs font-bold text-[var(--color-academy-faint)]">전화번호 *</span>
-                <input type="tel" inputMode="tel" value={form.phone} placeholder="010-1234-5678" onChange={(e) => setForm({ ...form, phone: e.target.value })} className={`${INPUT_CLASS} min-h-11`} />
+                <span className="mb-1 block text-xs font-medium text-[var(--color-academy-muted)]">전화번호 *</span>
+                <input type="tel" inputMode="tel" value={form.phone} placeholder="010-1234-5678" onChange={(e) => setForm({ ...form, phone: e.target.value })} className={INPUT_CLASS} />
             </label>
             {editingId === "new" && guardians.length > 0 && (
-                <label className="flex min-h-11 items-center gap-2 text-[13px] text-[var(--color-academy-muted)]">
+                <label className="flex min-h-11 items-center gap-2 text-sm text-[var(--color-academy-muted)]">
                     <input type="checkbox" checked={form.makePrimary} onChange={(e) => setForm({ ...form, makePrimary: e.target.checked })} />
                     주 보호자로 지정
                 </label>
@@ -222,7 +223,7 @@ export default function GuardianPanel({
             <div className="flex justify-end gap-2 pt-1">
                 <button type="button" onClick={closeForm} disabled={isPending} className="academy-button-secondary">닫기</button>
                 <button type="submit" disabled={isPending} className="academy-button-primary">
-                    <Icon name="save" size={15} /> {isPending ? "저장 중…" : "저장"}
+                    {isPending ? "저장 중…" : "저장"}
                 </button>
             </div>
         </form>
@@ -231,13 +232,12 @@ export default function GuardianPanel({
     return (
         <div className={CARD_CLASS}>
             <div className="mb-2 flex items-center justify-between gap-2">
-                <h3 className="flex items-center gap-2 text-sm font-extrabold text-[var(--color-academy-ink)]">
-                    <span className="text-[var(--color-academy-ink)]"><Icon name="family_restroom" size={17} /></span>
+                <h3 className="academy-section-title flex items-center gap-2">
                     보호자
-                    {loaded && <span className="text-xs font-bold text-[var(--color-academy-faint)]">{guardians.length}명</span>}
+                    {loaded && <span className="text-xs font-normal tabular-nums text-[var(--color-academy-faint)]">{guardians.length}명</span>}
                 </h3>
-                <button type="button" onClick={openAdd} disabled={isPending || !canAdd} title={canAdd ? undefined : `최대 ${MAX_GUARDIANS_PER_STUDENT}명`} className={`${SMALL_BTN} min-h-11 lg:min-h-8`}>
-                    <Icon name="add" size={13} /> 추가
+                <button type="button" onClick={openAdd} disabled={isPending || !canAdd} title={canAdd ? undefined : `최대 ${MAX_GUARDIANS_PER_STUDENT}명`} className={SMALL_BTN}>
+                    추가
                 </button>
             </div>
 
@@ -250,16 +250,16 @@ export default function GuardianPanel({
                         return (
                             // 한 줄: [관계] 이름 (주)(로그인) … 전화 ⚡
                             <li key={g.id} className="flex min-h-11 items-center gap-2 py-1">
-                                <p className="flex min-w-0 flex-1 flex-wrap items-center gap-1 text-[13px] font-bold text-[var(--color-academy-ink)]">
+                                <p className="flex min-w-0 flex-1 flex-wrap items-center gap-1 text-sm font-medium text-[var(--color-academy-ink)]">
                                     <span className="rounded-md bg-[var(--color-academy-soft)] px-1.5 py-0.5 text-xs text-[var(--color-academy-muted)]">{g.relation}</span>
                                     {g.name && g.name !== g.relation && <span className="truncate">{g.name}</span>}
-                                    {g.isPrimary && <span className="rounded px-1 text-xs font-bold text-[var(--color-academy-success)] ring-1 ring-[var(--color-academy-line)]">주</span>}
+                                    {g.isPrimary && <span className="rounded px-1 text-xs font-medium text-[var(--color-academy-success)] ring-1 ring-[var(--color-academy-line)]">주</span>}
                                     {isAccount && (
-                                        <span title="로그인 계정 전화와 같은 번호예요(로그인·알림톡 번호)" className="rounded px-1 text-xs font-bold text-[var(--color-academy-muted)] ring-1 ring-[var(--color-academy-line)]">로그인</span>
+                                        <span title="로그인 계정 전화와 같은 번호예요(로그인·알림톡 번호)" className="rounded px-1 text-xs font-medium text-[var(--color-academy-muted)] ring-1 ring-[var(--color-academy-line)]">로그인</span>
                                     )}
                                 </p>
                                 {g.phone ? (
-                                    <a href={`tel:${g.phone.replace(/[^0-9]/g, "")}`} className="shrink-0 text-[13px] text-[var(--color-academy-ink)] hover:underline">
+                                    <a href={`tel:${g.phone.replace(/[^0-9]/g, "")}`} className="shrink-0 text-sm tabular-nums text-[var(--color-academy-ink)] hover:underline">
                                         {formatGuardianPhone(g.phone)}
                                     </a>
                                 ) : (
@@ -280,7 +280,7 @@ export default function GuardianPanel({
                     {/* 로그인 계정 번호가 어느 보호자와도 다르면 한 줄로 따로 — 여기서는 안 바뀐다(«연락처 · 프로필» 연필에서 수정) */}
                     {accountDigits !== "" && !accountMatchesGuardian && (
                         <li className="flex min-h-11 items-center gap-2 py-1">
-                            <p className="flex min-w-0 flex-1 flex-wrap items-center gap-1 text-[13px] font-bold text-[var(--color-academy-ink)]">
+                            <p className="flex min-w-0 flex-1 flex-wrap items-center gap-1 text-sm font-medium text-[var(--color-academy-ink)]">
                                 <span className="rounded-md bg-[var(--color-academy-soft)] px-1.5 py-0.5 text-xs text-[var(--color-academy-muted)]">로그인 계정</span>
                                 {accountName && <span className="truncate">{accountName}</span>}
                                 <span
@@ -292,7 +292,7 @@ export default function GuardianPanel({
                                     <Icon name="info" size={14} />
                                 </span>
                             </p>
-                            <a href={`tel:${accountDigits}`} className="shrink-0 text-[13px] text-[var(--color-academy-ink)] hover:underline">
+                            <a href={`tel:${accountDigits}`} className="shrink-0 text-sm tabular-nums text-[var(--color-academy-ink)] hover:underline">
                                 {formatGuardianPhone(accountPhone ?? "")}
                             </a>
                         </li>
@@ -306,16 +306,16 @@ export default function GuardianPanel({
             {/* 앱 가족 연결 — 대표 보호자 말고 앱에서 이 학생을 보는 계정. 연결이 있을 때만 보인다(2026-11-13). */}
             {familyAccess.length > 0 && (
                 <div className="mt-3 border-t border-[var(--color-academy-line)] pt-2">
-                    <p className="mb-1 text-xs font-bold text-[var(--color-academy-faint)]">앱 가족 연결 {familyAccess.length}명</p>
+                    <p className="mb-1 text-xs font-medium text-[var(--color-academy-muted)]">앱 가족 연결 {familyAccess.length}명</p>
                     <ul className="divide-y divide-[var(--color-academy-line)]">
                         {familyAccess.map((row) => (
                             <li key={row.id} className="flex min-h-11 items-center gap-2 py-1">
-                                <p className="flex min-w-0 flex-1 flex-wrap items-center gap-1 text-[13px] font-bold text-[var(--color-academy-ink)]">
+                                <p className="flex min-w-0 flex-1 flex-wrap items-center gap-1 text-sm font-medium text-[var(--color-academy-ink)]">
                                     <span className="truncate">{row.name}</span>
                                     {row.phoneLast4 && <span className="text-xs font-medium text-[var(--color-academy-muted)]">···{row.phoneLast4}</span>}
                                     <span className="rounded-md bg-[var(--color-academy-soft)] px-1.5 py-0.5 text-xs text-[var(--color-academy-muted)]">{FAMILY_SOURCE_LABEL[row.source] ?? "연결"}</span>
                                 </p>
-                                <button type="button" onClick={() => revokeAccess(row)} disabled={isPending} className={`${SMALL_BTN} min-h-11 lg:min-h-8`}>
+                                <button type="button" onClick={() => revokeAccess(row)} disabled={isPending} className={SMALL_BTN}>
                                     해제
                                 </button>
                             </li>
@@ -332,7 +332,7 @@ export default function GuardianPanel({
             {editingId && (editingId === "new" || editingGuardian) && (
                 <AdminModal titleId="guardian-form-title" panelClassName="max-w-md" onClose={() => { if (!isPending) closeForm(); }} closeOnBackdrop={!isPending}>
                     <div className="flex items-center justify-between gap-2 border-b border-[var(--color-academy-line)] px-5 py-3">
-                        <h2 id="guardian-form-title" className="text-base font-extrabold text-[var(--color-academy-ink)]">
+                        <h2 id="guardian-form-title" className="text-base font-bold text-[var(--color-academy-ink)]">
                             {editingId === "new" ? "보호자 추가" : `보호자 수정 — ${editingGuardian?.relation ?? ""}`}
                         </h2>
                         <button type="button" onClick={closeForm} disabled={isPending} aria-label="닫기" className="grid h-11 w-11 place-items-center rounded-xl text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">

@@ -10,6 +10,7 @@ import {
     enrollStudent,
 } from "@/app/actions/admin";
 import AdminModal from "@/components/admin/AdminModal";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import type { StudentRegistered } from "./StudentRegisterModal";
 import AdminQuickActionMenu from "@/components/admin/AdminQuickActionMenu";
 import { useAdminConfirm } from "@/components/admin/AdminConfirmDialog";
@@ -302,9 +303,8 @@ const STUDENT_STATUS_CHIPS = [
 ] as const;
 // 상태 기본값 — 처음 열 때·필터 초기화·켜진 칩을 다시 누를 때 모두 이 값으로 돌아간다
 const DEFAULT_STATUS_FILTER = "ACTIVE";
-// 수정 폼 입력칸 공통 모양(터치 44px·학원 색 토큰). 새 등록은 StudentRegisterModal(3단계 창)이 맡는다
-const STUDENT_FORM_INPUT_CLASS =
-    "min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2 text-sm text-[var(--color-academy-ink)] focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)]";
+// 수정 폼 입력칸 공통 모양 = 테마 공용 입력칸(academy-input: 44px·입력선 테두리). 새 등록은 StudentRegisterModal(3단계 창)이 맡는다
+const STUDENT_FORM_INPUT_CLASS = "academy-input min-w-0";
 
 // 요일 → 시작시간 순으로 정렬한 활성 수강 목록(목록 칸·상세 패널이 같은 순서를 쓰게)
 function sortEnrollmentsByDay(enrollments: Student["enrollments"]) {
@@ -790,13 +790,13 @@ export default function StudentManagementClient({
         const status = studentStatusById.get(s.id) ?? null;
         if (status === "ACTIVE") {
             return (
-                <span className="inline-flex rounded-full bg-[var(--color-academy-warning-soft)] px-2 py-0.5 text-xs font-bold text-[var(--color-academy-warning)]">
+                <span className="inline-flex rounded-full bg-[var(--color-academy-warning-soft)] px-2 py-0.5 text-xs font-medium text-[var(--color-academy-warning)]">
                     반 없음
                 </span>
             );
         }
         return (
-            <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ring-1 ${getStatusPillClass(status)}`}>
+            <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${getStatusPillClass(status)}`}>
                 {getStatusLabel(status)}
             </span>
         );
@@ -828,11 +828,11 @@ export default function StudentManagementClient({
     if (dataError && students.length === 0) {
         return (
             <div className="mx-auto max-w-5xl rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-danger-soft)] p-8 text-center">
-                <p className="font-bold text-[var(--color-academy-danger)]">{dataError}</p>
+                <p className="font-semibold text-[var(--color-academy-danger)]">{dataError}</p>
                 <button
                     type="button"
                     onClick={() => void loadData()}
-                    className="mt-4 rounded-lg bg-[var(--color-academy-primary)] px-4 py-2 text-sm font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)]"
+                    className="academy-button-primary mt-4"
                 >
                     다시 불러오기
                 </button>
@@ -842,13 +842,12 @@ export default function StudentManagementClient({
 
     return (
         <div className="max-w-5xl mx-auto">
-            <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <h1 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">원생 관리</h1>
-                <p className="text-xs text-[var(--color-academy-muted)]">
-                    {/* 상태별 숫자는 아래 상태 칩으로 옮겼다(누르면 그 상태만 보기) */}
-                    {sheetImportSummary?.studentStatusCounts ? "전체" : allStudentsLoaded ? "전체 목록" : "불러온 목록"} <span className="tabular-nums">{statusCounts.total}</span>명
-                </p>
-            </div>
+            {/* 페이지 제목은 공용 머리말 부품(모양 한 가지). 상태별 숫자는 아래 상태 칩으로 옮겼다(누르면 그 상태만 보기) */}
+            <AdminPageHeader
+                className="mb-3"
+                title="원생 관리"
+                description={<>{sheetImportSummary?.studentStatusCounts ? "전체" : allStudentsLoaded ? "전체 목록" : "불러온 목록"} <span className="tabular-nums">{statusCounts.total}</span>명</>}
+            />
 
             <CompactListFilters
                 activeCount={activeFilterCount}
@@ -871,7 +870,7 @@ export default function StudentManagementClient({
                             setSearch(e.target.value);
                             if (e.target.value.trim()) requestFullStudentLoad();
                         }}
-                        className="min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2 text-[17px] text-[var(--color-academy-ink)] focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                        className="academy-input min-w-0"
                     />
                 }
                 actions={
@@ -881,22 +880,24 @@ export default function StudentManagementClient({
                                 type="button"
                                 onClick={() => void loadData({ background: true })}
                                 disabled={backgroundLoading}
-                                className="min-h-11 rounded-lg border border-[var(--color-academy-line-input)] px-3 py-2 text-sm font-bold text-[var(--color-academy-muted)] transition hover:bg-[var(--color-academy-line)] disabled:cursor-wait disabled:opacity-60"
+                                className="academy-button-secondary"
                             >
                                 {backgroundLoading ? "전체 불러오는 중" : "전체 목록 불러오기"}
                             </button>
                         )}
                         {/* 엑셀 일괄 업로드 버튼 — 랠리즈 다운로드 파일용 */}
                         <button
+                            type="button"
                             onClick={() => setShowExcelUpload(true)}
-                            className="min-h-11 border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)] px-3 py-2 rounded-lg font-bold transition"
+                            className="academy-button-secondary"
                         >
                             엑셀 업로드
                         </button>
                         {/* 기존 1명씩 수동 등록 버튼 */}
                         <button
+                            type="button"
                             onClick={() => { resetForm(); setFormNotice(null); setShowRegister(true); }}
-                            className="bg-[var(--color-academy-primary)] text-white min-h-11 px-3 py-2 rounded-lg font-bold hover:bg-[var(--color-academy-primary-hover)] transition"
+                            className="academy-button-primary"
                         >
                             + 원생 등록
                         </button>
@@ -912,7 +913,7 @@ export default function StudentManagementClient({
                             setFilterClass(e.target.value);
                             if (e.target.value) requestFullStudentLoad();
                         }}
-                        className="min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2 text-[17px] text-[var(--color-academy-ink)] focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                        className="academy-input min-w-0"
                     >
                         <option value="">전체 반</option>
                         {classes.map((c) => (
@@ -929,7 +930,7 @@ export default function StudentManagementClient({
                             setFilterGrade(e.target.value);
                             if (e.target.value) requestFullStudentLoad();
                         }}
-                        className="min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2 text-[17px] text-[var(--color-academy-ink)] focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                        className="academy-input min-w-0"
                     >
                         <option value="">전체 학년</option>
                         {gradeOptions.map((g) => (
@@ -944,7 +945,7 @@ export default function StudentManagementClient({
                             setFilterSchool(e.target.value);
                             if (e.target.value) requestFullStudentLoad();
                         }}
-                        className="min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2 text-[17px] text-[var(--color-academy-ink)] focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                        className="academy-input min-w-0"
                     >
                         <option value="">전체 학교</option>
                         {schoolOptions.map((sc) => (
@@ -956,7 +957,7 @@ export default function StudentManagementClient({
                         aria-label="수강 상태"
                         value={filterStatus}
                         onChange={(e) => applyStatusFilter(e.target.value)}
-                        className="min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2 text-[17px] text-[var(--color-academy-ink)] focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                        className="academy-input min-w-0"
                     >
                         <option value="">전체 상태</option>
                         <option value="ACTIVE">활성</option>
@@ -970,7 +971,6 @@ export default function StudentManagementClient({
             {/* 저장 뒤 안내 한 줄(등록 결과·학부모 계정 연결 결과) */}
             {formNotice && (
                 <div role="status" className="mb-2 flex items-start gap-2 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] px-3 py-2 text-sm text-[var(--color-academy-ink)]">
-                    <span className="material-symbols-outlined text-lg text-[var(--color-academy-ink)]" aria-hidden="true">check_circle</span>
                     <p className="min-w-0 flex-1 break-keep">{formNotice}</p>
                     <button
                         type="button"
@@ -985,12 +985,12 @@ export default function StudentManagementClient({
             {/* 인라인 폼 = «수정» 전용(목록 ⚡ 수정). 새 등록은 3단계 창 */}
             {showForm && editingId && (
                 <form onSubmit={handleSubmit} className="mb-3 space-y-3 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-4">
-                    <h3 className="text-base font-black text-[var(--color-academy-ink)]">원생 수정</h3>
+                    <h3 className="academy-section-title">원생 수정</h3>
 
                     {/* 학생 3칸 + 학부모 2칸 — PC 3열·태블릿 2열·모바일 1열 */}
                     <div className="grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
                         <label className="block min-w-0">
-                            <span className="mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">이름 *</span>
+                            <span className="mb-1 block text-xs font-medium text-[var(--color-academy-muted)]">이름 *</span>
                             <input
                                 value={name}
                                 onChange={(e) => setName(e.target.value)}
@@ -1000,7 +1000,7 @@ export default function StudentManagementClient({
                             />
                         </label>
                         <label className="block min-w-0">
-                            <span className="mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">생년월일 *</span>
+                            <span className="mb-1 block text-xs font-medium text-[var(--color-academy-muted)]">생년월일 *</span>
                             <input
                                 type="text"
                                 inputMode="numeric"
@@ -1023,7 +1023,7 @@ export default function StudentManagementClient({
                             />
                         </label>
                         <label className="block min-w-0">
-                            <span className="mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">성별</span>
+                            <span className="mb-1 block text-xs font-medium text-[var(--color-academy-muted)]">성별</span>
                             <select
                                 value={gender}
                                 onChange={(e) => setGender(e.target.value)}
@@ -1035,7 +1035,7 @@ export default function StudentManagementClient({
                             </select>
                         </label>
                         <label className="block min-w-0">
-                            <span className="mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">학부모 이름 *</span>
+                            <span className="mb-1 block text-xs font-medium text-[var(--color-academy-muted)]">학부모 이름 *</span>
                             <input
                                 value={parentName}
                                 onChange={(e) => setParentName(e.target.value)}
@@ -1045,7 +1045,7 @@ export default function StudentManagementClient({
                             />
                         </label>
                         <label className="block min-w-0">
-                            <span className="mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">학부모 연락처</span>
+                            <span className="mb-1 block text-xs font-medium text-[var(--color-academy-muted)]">학부모 연락처</span>
                             <input
                                 type="tel"
                                 inputMode="tel"
@@ -1061,7 +1061,7 @@ export default function StudentManagementClient({
                     </p>
 
                     {formError && (
-                        <p role="alert" className="rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-warning)]">
+                        <p role="alert" className="rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm font-medium text-[var(--color-academy-warning)]">
                             {formError}
                         </p>
                     )}
@@ -1070,14 +1070,14 @@ export default function StudentManagementClient({
                         <button
                             type="button"
                             onClick={resetForm}
-                            className="inline-flex min-h-11 items-center rounded-lg border border-[var(--color-academy-line)] px-4 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-line)]"
+                            className="academy-button-secondary"
                         >
                             취소
                         </button>
                         <button
                             type="submit"
                             disabled={busy}
-                            className="inline-flex min-h-11 items-center rounded-lg bg-[var(--color-academy-primary)] px-5 text-sm font-bold text-[var(--color-academy-on-primary)] hover:bg-[var(--color-academy-primary-hover)] disabled:opacity-50"
+                            className="academy-button-primary"
                         >
                             {busy ? "저장 중..." : "수정"}
                         </button>
@@ -1145,11 +1145,11 @@ export default function StudentManagementClient({
                                     title={group.fullName}
                                     className="flex min-h-11 w-full items-center gap-2 bg-[var(--color-academy-soft)] px-3 text-left text-sm"
                                 >
-                                    <span className="font-extrabold text-[var(--color-academy-ink)]">{group.label}</span>
+                                    <span className="font-bold text-[var(--color-academy-ink)]">{group.label}</span>
                                     {group.startTime && (
                                         <span className="text-xs text-[var(--color-academy-muted)]">{group.startTime}</span>
                                     )}
-                                    <span className="ml-auto text-xs font-bold text-[var(--color-academy-ink)]">
+                                    <span className="ml-auto text-xs tabular-nums text-[var(--color-academy-ink)]">
                                         {`${group.students.length}명`}
                                     </span>
                                     <span className="material-symbols-outlined text-lg text-[var(--color-academy-muted)]" aria-hidden="true">
@@ -1173,7 +1173,7 @@ export default function StudentManagementClient({
                                                     href={`/admin/students/${s.id}`}
                                                     prefetch={false}
                                                     onClick={(event) => event.stopPropagation()}
-                                                    className="block whitespace-nowrap leading-[2.75rem] font-bold text-[var(--color-academy-ink)] hover:text-[var(--color-academy-ink)]"
+                                                    className="block whitespace-nowrap leading-[2.75rem] font-semibold text-[var(--color-academy-ink)] hover:text-[var(--color-academy-primary)]"
                                                 >
                                                     {s.name}
                                                     {s.enrollments.some((enrollment) => enrollment.classId === group.key && enrollment.startsLater) && <span className="ml-1 text-xs font-normal text-[var(--color-academy-ink)]">개시 전</span>}
@@ -1199,7 +1199,7 @@ export default function StudentManagementClient({
                     <div className="overflow-x-auto">
                         {/* admin-list-table: 글자 칸 왼쪽 정렬·한 줄(말줄임 없음)·칸 폭은 내용에 맞춤(좁으면 가로 스크롤) */}
                         <table className="admin-list-table w-full border-collapse text-sm">
-                            <thead className="bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]">
+                            <thead className="bg-[var(--color-academy-soft)] text-xs font-semibold text-[var(--color-academy-muted)]">
                                 <tr>
                                     <th className="px-2 py-2">이름</th>
                                     <th className="px-2 py-2">학년</th>
@@ -1226,7 +1226,7 @@ export default function StudentManagementClient({
                                                 href={`/admin/students/${s.id}`}
                                                 prefetch={false}
                                                 onClick={(event) => event.stopPropagation()}
-                                                className="font-bold text-[var(--color-academy-ink)] hover:text-[var(--color-academy-ink)] transition-colors"
+                                                className="font-semibold text-[var(--color-academy-ink)] hover:text-[var(--color-academy-primary)] transition-colors"
                                             >
                                                 {s.name}
                                             </Link>
@@ -1240,7 +1240,7 @@ export default function StudentManagementClient({
                                             {s.school || "-"}
                                         </td>
                                         {/* 수강 반: «월4, 수4» / 반 없음 / 상태 배지 */}
-                                        <td className="px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">
+                                        <td className="px-2 py-1.5 text-[var(--color-academy-ink)]">
                                             {renderClassCell(s)}
                                         </td>
                                         {/* 학부모: 모바일 숨김, shortenParentName으로 간결화 */}
@@ -1272,7 +1272,7 @@ export default function StudentManagementClient({
                             <button
                                 type="button"
                                 onClick={() => setVisibleLimit((current) => current + STUDENT_PAGE_SIZE)}
-                                className="rounded-lg border border-[var(--color-academy-line)] px-4 py-2 font-bold text-[var(--color-academy-muted)] transition hover:bg-[var(--color-academy-soft)]"
+                                className="academy-button-secondary"
                             >
                                 50명 더 보기
                             </button>
@@ -1336,8 +1336,8 @@ export default function StudentManagementClient({
                 return (
                     <ListDetailPanel onClose={() => setDetailStudentId(null)} titleId="student-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
                         <div className="mb-4 flex items-center gap-2">
-                            <h3 id="student-detail-panel-title" className="text-lg font-black text-[var(--color-academy-ink)]">{s.name}</h3>
-                            <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ring-1 ${getStatusPillClass(status)}`}>
+                            <h3 id="student-detail-panel-title" className="text-lg font-bold text-[var(--color-academy-ink)]">{s.name}</h3>
+                            <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${getStatusPillClass(status)}`}>
                                 {getStatusLabel(status)}
                             </span>
                             <button
@@ -1353,7 +1353,7 @@ export default function StudentManagementClient({
                         <dl className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
                             {rows.map((row) => (
                                 <div key={row.label} className="contents">
-                                    <dt className="font-bold text-[var(--color-academy-muted)]">{row.label}</dt>
+                                    <dt className="font-medium text-[var(--color-academy-muted)]">{row.label}</dt>
                                     <dd className="min-w-0 break-keep text-[var(--color-academy-ink)]">{row.value}</dd>
                                 </div>
                             ))}
@@ -1363,9 +1363,8 @@ export default function StudentManagementClient({
                             <Link
                                 href={`/admin/students/${s.id}`}
                                 prefetch={false}
-                                className="inline-flex min-h-11 items-center gap-1 rounded-lg bg-[var(--color-academy-primary)] px-4 text-sm font-bold text-[var(--color-academy-on-primary)] hover:bg-[var(--color-academy-primary-hover)]"
+                                className="academy-button-primary"
                             >
-                                <span className="material-symbols-outlined text-lg" aria-hidden="true">open_in_new</span>
                                 상세 페이지 열기
                             </Link>
                             <button
@@ -1374,9 +1373,8 @@ export default function StudentManagementClient({
                                     setDetailStudentId(null);
                                     setEnrollModal(s.id);
                                 }}
-                                className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-[var(--color-academy-line)] px-4 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"
+                                className="academy-button-secondary"
                             >
-                                <span className="material-symbols-outlined text-lg" aria-hidden="true">how_to_reg</span>
                                 수강등록
                             </button>
                             <button
@@ -1385,9 +1383,8 @@ export default function StudentManagementClient({
                                     setDetailStudentId(null);
                                     startEdit(s);
                                 }}
-                                className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-[var(--color-academy-line)] px-4 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"
+                                className="academy-button-secondary"
                             >
-                                <span className="material-symbols-outlined text-lg" aria-hidden="true">edit</span>
                                 수정
                             </button>
                         </div>
@@ -1410,7 +1407,7 @@ export default function StudentManagementClient({
                                     <div key={group.programName}>
                                         {/* 프로그램명 헤더 */}
                                         <div className="bg-[var(--color-academy-soft)] rounded-lg px-3 py-1.5 mb-2">
-                                            <span className="text-sm font-bold text-[var(--color-academy-muted)]">
+                                            <span className="text-sm font-semibold text-[var(--color-academy-muted)]">
                                                 {group.programName}
                                             </span>
                                             <span className="text-xs text-[var(--color-academy-faint)] ml-2">
@@ -1422,16 +1419,17 @@ export default function StudentManagementClient({
                                             {group.classes.map((c) => (
                                                 <button
                                                     key={c.id}
+                                                    type="button"
                                                     onClick={() => handleEnroll(enrollModal!, c.id)}
                                                     disabled={busy}
-                                                    className="w-full text-left px-3 py-2 rounded-lg border border-[var(--color-academy-line)] hover:border-[var(--color-academy-primary)] hover:bg-[var(--color-academy-primary-soft)] transition disabled:opacity-50"
+                                                    className="academy-button-secondary w-full"
                                                 >
                                                     {/* 요일 + 교시명 + 시간 표시 */}
-                                                    <div className="flex items-center justify-between">
+                                                    <div className="flex w-full items-center justify-between gap-2 text-left">
                                                         <span className="font-medium text-[var(--color-academy-ink)] text-sm">
                                                             {c.name}
                                                         </span>
-                                                        <span className="text-xs text-[var(--color-academy-faint)]">
+                                                        <span className="whitespace-nowrap text-xs tabular-nums text-[var(--color-academy-faint)]">
                                                             {c.startTime}~{c.endTime}
                                                         </span>
                                                     </div>
@@ -1444,8 +1442,9 @@ export default function StudentManagementClient({
                         )}
                         <div className="mt-4 text-right">
                             <button
+                                type="button"
                                 onClick={() => setEnrollModal(null)}
-                                className="px-4 py-2 text-sm text-[var(--color-academy-muted)] hover:text-[var(--color-academy-ink)]"
+                                className="academy-button-text"
                             >
                                 닫기
                             </button>

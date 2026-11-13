@@ -20,7 +20,8 @@ import {
 
 export type AbsencePeriodClassOption = { classId: string; className: string; dayLabel: string; startTime: string };
 
-const INPUT_CLASS = "mt-1 min-h-11 w-full rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-sm text-[var(--color-academy-ink)]";
+// 입력칸은 테마 공용 모양(academy-input)
+const INPUT_CLASS = "academy-input mt-1";
 
 function Icon({ name, size = 17 }: { name: string; size?: number }) {
     return <span className="material-symbols-outlined leading-none" style={{ fontSize: `${size}px` }} aria-hidden="true">{name}</span>;
@@ -95,20 +96,16 @@ export default function AbsencePeriodPanel({
     return (
         <div className="academy-panel p-5">
             <div className="mb-3 flex items-center justify-between gap-2">
-                <h3 className="flex items-center gap-2 text-sm font-extrabold text-[var(--color-academy-ink)]">
-                    <Icon name="healing" />
-                    기간 결석
-                </h3>
+                <h3 className="academy-section-title">기간 결석</h3>
                 {available && (
                     <button
                         type="button"
                         onClick={() => { setFeedback(null); setShowCreate(true); }}
                         disabled={activeClasses.length === 0}
                         title={activeClasses.length === 0 ? "수강 중인 반이 없습니다" : undefined}
-                        className="academy-button-secondary min-h-11"
+                        className="academy-button-secondary"
                     >
-                        <Icon name="add" size={18} />
-                        기간 결석
+                        기간 결석 등록
                     </button>
                 )}
             </div>
@@ -116,7 +113,7 @@ export default function AbsencePeriodPanel({
             {feedback && (
                 <p
                     role={feedback.type === "error" ? "alert" : "status"}
-                    className={`mb-2 rounded-lg px-3 py-2 text-sm font-bold ${feedback.type === "error"
+                    className={`mb-2 rounded-lg px-3 py-2 text-sm font-medium ${feedback.type === "error"
                         ? "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]"
                         : "bg-[var(--color-academy-soft)] text-[var(--color-academy-ink)]"}`}
                 >
@@ -124,7 +121,7 @@ export default function AbsencePeriodPanel({
                 </p>
             )}
 
-            {loadError && <p role="alert" className="text-sm font-bold text-[var(--color-academy-danger)]">{loadError}</p>}
+            {loadError && <p role="alert" className="text-sm font-medium text-[var(--color-academy-danger)]">{loadError}</p>}
             {!available && <p className="text-sm text-[var(--color-academy-muted)]">기간 결석은 아직 준비 중입니다. 잠시 후 다시 열어 주세요.</p>}
             {available && !periods && !loadError && <p className="text-sm text-[var(--color-academy-muted)]">불러오는 중…</p>}
             {available && periods && periods.length === 0 && (
@@ -153,7 +150,7 @@ export default function AbsencePeriodPanel({
                                         <b>{shortDateLabel(p.startDate)}~</b>
                                         <span className="text-[var(--color-academy-muted)]"> · {returnText} · {REASON_LABEL[p.reason] ?? p.reason} · 결석 {live.length}회</span>
                                     </span>
-                                    <span className={`shrink-0 rounded px-2 py-0.5 text-xs font-bold ${chip.className}`}>{chip.label}</span>
+                                    <span className={`shrink-0 rounded px-2 py-0.5 text-xs font-medium ${chip.className}`}>{chip.label}</span>
                                     <Icon name={open ? "expand_less" : "expand_more"} size={18} />
                                 </button>
 
@@ -169,7 +166,7 @@ export default function AbsencePeriodPanel({
                                                         key={a.id}
                                                         className={`rounded-md border border-[var(--color-academy-line)] px-2 py-1 text-xs ${a.status === "CANCELLED"
                                                             ? "text-[var(--color-academy-faint)] line-through"
-                                                            : "font-bold text-[var(--color-academy-ink)]"}`}
+                                                            : "text-[var(--color-academy-ink)]"}`}
                                                         title={a.status === "CANCELLED" ? "취소됨" : "결석(확정)"}
                                                     >
                                                         {shortDateLabel(a.date)} {a.className}
@@ -195,7 +192,7 @@ export default function AbsencePeriodPanel({
                                                     type="button"
                                                     onClick={() => void cancelPeriod(p)}
                                                     disabled={busyId === p.id}
-                                                    className="ml-auto academy-button-text min-h-11 text-[var(--color-academy-danger)]"
+                                                    className="ml-auto academy-button-danger"
                                                 >
                                                     등록 취소
                                                 </button>
@@ -298,16 +295,16 @@ function CreatePeriodModal({
             closeOnBackdrop={!saving}
         >
             <div className="space-y-3">
-                <h2 id="absence-period-create-title" className="text-lg font-extrabold text-[var(--color-academy-ink)]">기간 결석 등록</h2>
+                <h2 id="absence-period-create-title" className="text-lg font-bold text-[var(--color-academy-ink)]">기간 결석 등록</h2>
                 <p className="text-sm text-[var(--color-academy-muted)]">
                     {studentName} · 그 기간 수업일을 결석(확정)으로 남깁니다. 반 자리·셔틀 명단·청구는 그대로이고 알림은 보내지 않아요.
                 </p>
                 <div className="grid grid-cols-2 gap-3">
-                    <label className="block text-sm font-bold text-[var(--color-academy-ink)]">
+                    <label className="block text-sm font-medium text-[var(--color-academy-ink)]">
                         시작일
                         <input type="date" required value={startDate} onChange={(e) => setStartDate(e.target.value)} className={INPUT_CLASS} data-admin-modal-initial-focus />
                     </label>
-                    <label className="block text-sm font-bold text-[var(--color-academy-ink)]">
+                    <label className="block text-sm font-medium text-[var(--color-academy-ink)]">
                         복귀일 (비우면 미정)
                         <input type="date" value={returnDate} min={startDate ? addDaysKst(startDate, 1) : undefined} onChange={(e) => setReturnDate(e.target.value)} className={INPUT_CLASS} />
                     </label>
@@ -315,31 +312,31 @@ function CreatePeriodModal({
                 <p className="text-xs text-[var(--color-academy-muted)]">
                     복귀일 = 다시 나오는 첫날(그날은 결석이 아닙니다). 미정이면 다음 달 말일까지 만들고 매일 자동으로 늘립니다.
                 </p>
-                <label className="block text-sm font-bold text-[var(--color-academy-ink)]">
+                <label className="block text-sm font-medium text-[var(--color-academy-ink)]">
                     사유
                     <select value={reason} onChange={(e) => setReason(e.target.value)} className={INPUT_CLASS}>
                         {VALID_REASONS.map((r) => <option key={r} value={r}>{REASON_LABEL[r]}</option>)}
                     </select>
                 </label>
                 <fieldset>
-                    <legend className="text-sm font-bold text-[var(--color-academy-ink)]">대상 반</legend>
+                    <legend className="text-sm font-medium text-[var(--color-academy-ink)]">대상 반</legend>
                     <ul className="mt-1 divide-y divide-[var(--color-academy-line)] rounded-lg border border-[var(--color-academy-line)]">
                         {activeClasses.map((c) => (
                             <li key={c.classId}>
                                 <label className="flex min-h-11 cursor-pointer items-center gap-2 px-3 py-1.5 text-sm">
                                     <input type="checkbox" checked={picked.includes(c.classId)} onChange={() => toggle(c.classId)} className="h-5 w-5 shrink-0 accent-[var(--color-academy-primary)]" />
-                                    <span className="min-w-0 flex-1 truncate font-bold text-[var(--color-academy-ink)]">{c.className}</span>
+                                    <span className="min-w-0 flex-1 truncate font-medium text-[var(--color-academy-ink)]">{c.className}</span>
                                     <span className="shrink-0 text-xs text-[var(--color-academy-muted)]">{c.dayLabel} {c.startTime}</span>
                                 </label>
                             </li>
                         ))}
                     </ul>
                 </fieldset>
-                <label className="block text-sm font-bold text-[var(--color-academy-ink)]">
+                <label className="block text-sm font-medium text-[var(--color-academy-ink)]">
                     메모 (선택)
                     <input value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} placeholder="예: 발목 골절, 깁스 4주" className={INPUT_CLASS} />
                 </label>
-                {error && <p role="alert" className="rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-danger)]">{error}</p>}
+                {error && <p role="alert" className="rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-medium text-[var(--color-academy-danger)]">{error}</p>}
                 <div className="flex items-center gap-3 pt-1">
                     <button type="button" onClick={onClose} disabled={saving} className="academy-button-text min-h-11">그만</button>
                     <button type="button" onClick={() => void submit()} disabled={saving} className="ml-auto academy-button-primary min-h-11">
@@ -391,15 +388,15 @@ function ReturnModal({
             closeOnBackdrop={!saving}
         >
             <div className="space-y-3">
-                <h2 id="absence-period-return-title" className="text-lg font-extrabold text-[var(--color-academy-ink)]">복귀 처리</h2>
-                <label className="block text-sm font-bold text-[var(--color-academy-ink)]">
+                <h2 id="absence-period-return-title" className="text-lg font-bold text-[var(--color-academy-ink)]">복귀 처리</h2>
+                <label className="block text-sm font-medium text-[var(--color-academy-ink)]">
                     복귀일 (다시 나오는 첫날)
                     <input type="date" required value={returnDate} min={addDaysKst(period.startDate, 1)} onChange={(e) => setReturnDate(e.target.value)} className={INPUT_CLASS} data-admin-modal-initial-focus />
                 </label>
                 <p className="text-xs text-[var(--color-academy-muted)]">
                     {returnDate ? `이 날부터의 결석 ${after}회를 취소합니다.` : "복귀일을 골라 주세요."} 청구 정산·보강이 잡힌 결석은 남깁니다.
                 </p>
-                {error && <p role="alert" className="rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-danger)]">{error}</p>}
+                {error && <p role="alert" className="rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-medium text-[var(--color-academy-danger)]">{error}</p>}
                 <div className="flex items-center gap-3 pt-1">
                     <button type="button" onClick={onClose} disabled={saving} className="academy-button-text min-h-11">그만</button>
                     <button type="button" onClick={() => void submit()} disabled={saving} className="ml-auto academy-button-primary min-h-11">

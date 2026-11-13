@@ -23,9 +23,8 @@ import {
 } from "@/lib/payments/studentBillingRules";
 
 // 입력칸 공통 모양 — 터치 44px, 글자 14px, 색은 토큰만
-const FIELD_CLASS =
-    "mt-1 min-h-11 w-full rounded-lg border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 text-sm text-[var(--color-academy-ink)] focus:ring-2 focus:ring-[var(--color-academy-primary)]";
-const LABEL_CLASS = "block text-xs font-bold text-[var(--color-academy-muted)]";
+const FIELD_CLASS = "academy-input mt-1";
+const LABEL_CLASS = "block text-xs font-medium text-[var(--color-academy-muted)]";
 
 const STATUS_LABEL: Record<string, string> = { PENDING: "미납", OVERDUE: "연체", PAID: "완납" };
 
@@ -137,7 +136,7 @@ export function IssueInvoiceModal({
         <AdminModal titleId="issue-invoice-title" panelClassName="max-w-md p-5" onClose={() => { if (!busy) onClose(); }} closeOnBackdrop={!busy}>
             <form onSubmit={(e) => void submit(e)} className="space-y-3">
                 <div>
-                    <h2 id="issue-invoice-title" className="text-lg font-black text-[var(--color-academy-ink)]">청구서 발행</h2>
+                    <h2 id="issue-invoice-title" className="text-lg font-bold text-[var(--color-academy-ink)]">청구서 발행</h2>
                     <p className="text-xs text-[var(--color-academy-muted)]">{studentName} · 미납 상태로 발행돼요</p>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
@@ -194,7 +193,7 @@ export function IssueInvoiceModal({
                 {duplicates && (
                     // 중복 경고 — 같은 학생·반·월·유형에 살아 있는 청구. «그래도 발행»을 눌러야만 하나 더 만든다
                     <div role="alert" className="rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-xs text-[var(--color-academy-ink)]">
-                        <p className="font-bold">같은 달 같은 청구가 이미 있어요</p>
+                        <p className="font-semibold">같은 달 같은 청구가 이미 있어요</p>
                         <ul className="mt-1 space-y-0.5">
                             {duplicates.map((d) => (
                                 <li key={d.id}>{d.description || BILLING_TYPE_LABELS[type as keyof typeof BILLING_TYPE_LABELS]} · {formatWon(d.amount)} · {STATUS_LABEL[d.status] ?? d.status}</li>
@@ -203,7 +202,7 @@ export function IssueInvoiceModal({
                         <p className="mt-1">그래도 하나 더 발행하려면 아래 «그래도 발행»을 눌러 주세요.</p>
                     </div>
                 )}
-                {error && <p role="alert" className="text-sm font-bold text-[var(--color-academy-danger)]">{error}</p>}
+                {error && <p role="alert" className="text-sm font-medium text-[var(--color-academy-danger)]">{error}</p>}
                 <div className="flex items-center gap-3">
                     <button type="button" disabled={busy} onClick={onClose} className="academy-button-text">닫기</button>
                     <button type="submit" disabled={busy} className="academy-button-primary ml-auto">
@@ -267,7 +266,7 @@ export function EditInvoiceModal({
         <AdminModal titleId="edit-invoice-title" panelClassName="max-w-md p-5" onClose={() => { if (!busy) onClose(); }} closeOnBackdrop={!busy}>
             <form onSubmit={(e) => void submit(e)} className="space-y-3">
                 <div>
-                    <h2 id="edit-invoice-title" className="text-lg font-black text-[var(--color-academy-ink)]">청구서 수정</h2>
+                    <h2 id="edit-invoice-title" className="text-lg font-bold text-[var(--color-academy-ink)]">청구서 수정</h2>
                     <p className="text-xs text-[var(--color-academy-muted)]">{payment.periodLabel} · 지금 {formatWon(payment.amount)}</p>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
@@ -286,7 +285,7 @@ export function EditInvoiceModal({
                 </div>
                 {duePast && <p className="text-xs font-medium text-[var(--color-academy-warning)]">기한이 이미 지난 날짜예요 — 연체로 보일 수 있어요.</p>}
                 <p className="text-xs text-[var(--color-academy-faint)]">청구서 금액·기한도 같이 바뀌고, 바꾸기 전 값이 수납 이력에 남아요. 학부모 알림은 보내지 않아요.</p>
-                {error && <p role="alert" className="text-sm font-bold text-[var(--color-academy-danger)]">{error}</p>}
+                {error && <p role="alert" className="text-sm font-medium text-[var(--color-academy-danger)]">{error}</p>}
                 <div className="flex items-center gap-3">
                     <button type="button" disabled={busy} onClick={onClose} className="academy-button-text">닫기</button>
                     <button type="submit" disabled={busy} className="academy-button-primary ml-auto">{busy ? "처리 중…" : "저장"}</button>
@@ -334,11 +333,11 @@ export function CancelInvoiceModal({
     return (
         <AdminModal titleId="cancel-invoice-title" panelClassName="max-w-md p-5" onClose={() => { if (!busy) onClose(); }} closeOnBackdrop={!busy}>
             <div className="space-y-3">
-                <h2 id="cancel-invoice-title" className="text-lg font-black text-[var(--color-academy-ink)]">청구서 삭제</h2>
+                <h2 id="cancel-invoice-title" className="text-lg font-bold text-[var(--color-academy-ink)]">청구서 삭제</h2>
                 <p className="text-sm text-[var(--color-academy-muted)]">{studentName} · {payment.periodLabel} · {payment.classLabel}</p>
-                <p className="font-bold text-[var(--color-academy-ink)]">{formatWon(payment.amount)} · {payment.statusLabel} → 취소</p>
+                <p className="font-semibold tabular-nums text-[var(--color-academy-ink)]">{formatWon(payment.amount)} · {payment.statusLabel} → 취소</p>
                 <p className="text-xs text-[var(--color-academy-muted)]">기록은 삭제하지 않고 취소 사유와 담당자를 감사 이력에 남깁니다. 학부모 알림은 보내지 않습니다.</p>
-                <label className="block text-sm font-bold text-[var(--color-academy-muted)]">
+                <label className="block text-sm font-medium text-[var(--color-academy-muted)]">
                     취소 사유
                     <textarea
                         value={reason}
@@ -349,7 +348,7 @@ export function CancelInvoiceModal({
                         className="mt-1 w-full rounded-lg border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] p-3 text-[var(--color-academy-ink)]"
                     />
                 </label>
-                {error && <p role="alert" className="text-sm font-bold text-[var(--color-academy-danger)]">{error}</p>}
+                {error && <p role="alert" className="text-sm font-medium text-[var(--color-academy-danger)]">{error}</p>}
                 {/* 위험 확정은 오른쪽 끝 꽉 찬 위험색, 닫기는 왼쪽 글자 버튼 — 수납 관리와 같은 배치 */}
                 <div className="flex items-center gap-3">
                     <button type="button" disabled={busy} onClick={onClose} className="academy-button-text">닫기</button>

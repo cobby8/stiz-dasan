@@ -27,7 +27,10 @@ test("C-A1 ⚡ 메뉴: primary 는 흰 글씨, 항목 44px, 대상 이름 줄, �
   assert.match(quickMenu, /min-h-11/);
   assert.doesNotMatch(quickMenu, /flex h-9 w-full/);
   assert.match(quickMenu, /title=\{label\}>\{label\}<\/p>/);
-  assert.match(quickMenu, /h-9 w-9[^"]*before:-inset-1/);
+  // 2026-11-13 UI 통일 2단계: 36px 원 → «빠른작업» 글자 버튼(중립 테두리·작은 크기 — 11-09 원장 «퀵버튼 빨강 보기 싫다» 유지). 누르는 영역 44px 은 그대로 지킨다
+  // (터치 화면은 academy-button-sm 이 44px, PC 는 before 로 위아래 4px 넓힘)
+  assert.match(quickMenu, /className="academy-button-secondary academy-button-sm[^"]*before:-inset-y-1/);
+  assert.doesNotMatch(quickMenu.slice(quickMenu.indexOf("ref={buttonRef}"), quickMenu.indexOf("{open && (")), /material-symbols-outlined/, "트리거는 아이콘이 아니라 글자다");
   // 위치 계산이 44px 항목·머리줄·구분선을 반영한다
   assert.match(quickMenu, /ACTION_HEIGHT = 48/);
   assert.match(quickMenu, /HEADER_HEIGHT \+ actionCount \* ACTION_HEIGHT/);

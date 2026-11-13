@@ -51,6 +51,8 @@ test("관리자 원생 상세는 개시일이 미래인 ACTIVE 반을 «수강 �
     "@/app/actions/enrollment-admin-edit": {}, "./EnrollmentMoveModal": nullComponent,
     "@/app/actions/guest-pay-link": {},
     "@/components/maps/LocationPickerModal": nullComponent, "@/components/admin/AdminModal": nullComponent,
+    // 2026-11-13 UI 통일 2단계: 페이지 제목이 공용 부품(AdminPageHeader)으로 옮겨져 가짜 부품 목록에 추가(단언은 그대로)
+    "@/components/admin/AdminPageHeader": nullComponent,
     "@/components/admin/StatusBadge": { statusToneClass: () => "" },
     "./ParentRequestLinkPanel": nullComponent, "./GuardianPanel": nullComponent, "./AbsencePeriodPanel": nullComponent,
     "@/components/admin/CustomerNoticeSender": nullComponent,
@@ -84,6 +86,8 @@ test("관리자 원생 목록 «활성» 필터·반별 인원은 개시일 미�
     "@/components/admin/adminDisplayText": {}, "next/link": link,
     "next/dynamic": { __esModule: true, default: () => () => null },
     "@/app/actions/admin": {}, "@/components/admin/AdminModal": nullComponent,
+    // 2026-11-13 UI 통일 2단계: 페이지 제목이 공용 부품(AdminPageHeader)으로 옮겨져 가짜 부품 목록에 추가(단언은 그대로)
+    "@/components/admin/AdminPageHeader": nullComponent,
     "@/components/admin/AdminQuickActionMenu": nullComponent,
     "@/components/admin/AdminConfirmDialog": { useAdminConfirm: () => ({ confirm: async () => false, confirmDialog: null }) },
     "@/components/academy/CompactListFilters": { __esModule: true, default: ({ children }) => React.createElement("div", {}, children) },

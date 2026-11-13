@@ -420,7 +420,7 @@ export default function StaffClient({
                     return;
                 }
                 const masked = "phoneMasked" in result && result.phoneMasked ? result.phoneMasked : maskedPhoneLast4(user.phone);
-                setMessage({ text: `${user.name}님의 비밀번호 재설정 링크를 만들었습니다(24시간 유효). ${masked} 로 인증번호가 가요. 목록의 «재설정 대기» 줄 ⚡에서 링크를 전해 주세요.`, ok: true });
+                setMessage({ text: `${user.name}님의 비밀번호 재설정 링크를 만들었습니다(24시간 유효). ${masked} 로 인증번호가 가요. 목록의 «재설정 대기» 줄 «빠른작업»에서 링크를 전해 주세요.`, ok: true });
                 await loadStaffData();
             } catch (error: unknown) {
                 setMessage({ text: errorMessage(error, "재설정 링크를 만들지 못했습니다."), ok: false });

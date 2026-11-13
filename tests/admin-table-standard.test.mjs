@@ -38,7 +38,9 @@ test("관리자 전역 테이블은 콤팩트 중앙 정렬 규칙을 공유한�
 
 test("관리자 퀵액션 메뉴는 표 박스에 잘리지 않는 fixed floating 메뉴다", () => {
   assert.match(quickActionMenu, /fixed z-\[90\]/);
-  assert.match(quickActionMenu, /flash_on/);
+  // 2026-11-13 UI 통일 2단계: 트리거가 ⚡ 아이콘(flash_on) 대신 «빠른작업» 글자 버튼이다(옛 모양 단언을 새 결정으로 교체)
+  assert.match(quickActionMenu, /\{icon === "more_horiz" \? "더보기" : "빠른작업"\}/);
+  assert.match(quickActionMenu, /aria-label=\{label\}\s+title=\{label\}\s+aria-expanded=\{open\}/, "글자 버튼이어도 대상 이름·열림 상태를 그대로 알린다");
   assert.match(quickActionMenu, /pointerdown/);
   assert.match(quickActionMenu, /scroll", placeMenu, true/);
 });

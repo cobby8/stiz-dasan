@@ -322,7 +322,8 @@ function loadNotice() {
 test("화면: 실제 결제 납부완료 = 잠금 안내 한 줄 + 수납 관리 링크, 되돌리기 버튼 없음", () => {
     const { Notice, confirmProps } = loadNotice();
     const html = renderToStaticMarkup(jsx.jsx(Notice, { lock: "REAL_LOCKED", updating: false, onRevert: () => assert.fail("부르면 안 된다") }));
-    assert.match(html, /결제 취소·환불은 <a href="\/admin\/finance"[^>]*>수납 관리<\/a> ⚡ 메뉴에서 해요\./);
+    // 2026-11-13 UI 통일 2단계: ⚡ 아이콘 버튼이 «빠른작업» 글자 버튼이 되어 안내 문구도 그 이름으로 부른다(가는 곳·뜻은 같다)
+    assert.match(html, /결제 취소·환불은 <a href="\/admin\/finance"[^>]*>수납 관리<\/a> «빠른작업» 메뉴에서 해요\./);
     assert.doesNotMatch(html, /대기로 되돌리기/);
     assert.equal(confirmProps.length, 0);
 });
@@ -332,7 +333,7 @@ test("화면: 수기 납부완료 = «대기로 되돌리기» 그 자리 확인
     let reverted = 0;
     const html = renderToStaticMarkup(jsx.jsx(Notice, { lock: "MANUAL_REVERT", updating: false, onRevert: () => { reverted++; } }));
     assert.match(html, /대기로 되돌리기/);
-    assert.match(html, /돈을 돌려줬다면 <a href="\/admin\/finance"[^>]*>수납 관리<\/a> ⚡ 메뉴 «환불»을 쓰세요/);
+    assert.match(html, /돈을 돌려줬다면 <a href="\/admin\/finance"[^>]*>수납 관리<\/a> «빠른작업» 메뉴 «환불»을 쓰세요/);
     assert.equal(confirmProps.length, 1);
     const p = confirmProps[0];
     assert.match(p.question, /실제로 돈을 받지 않았을 때만 쓰세요/);
@@ -371,7 +372,8 @@ test("화면 연결: 학생 상세 — 납부완료면 묶음 버튼 전부 잠�
     assert.match(detail, /disabled=\{updating \|\| selected \|\| paidLock !== "NONE"\}/);
     assert.match(detail, /<PaidStatusNotice\s+lock=\{paidLock\}\s+updating=\{updating\}\s+onRevert=\{\(\) => changePaymentStatus\(p\.id, p\.status, "PENDING"\)\}/);
     assert.match(detail, /if \(currentStatus === "PAID" && nextStatus !== "PENDING"\) return;/);
-    assert.match(detail, /paidLock === "REAL_LOCKED" \? "lock" : "edit"/);
+    // 2026-11-13 UI 통일 2단계: 아이콘만 있던 버튼(자물쇠·연필)을 글자로 — 실제 결제 납부완료면 «잠김», 아니면 «상태 변경»(구분은 그대로)
+    assert.match(detail, /paidLock === "REAL_LOCKED" \? "잠김 안내" : "상태 변경"/);
     // 조회가 결제 경로를 화면에 넘긴다
     const activity = queries.slice(queries.indexOf("export async function getStudentActivity"));
     assert.match(activity, /p\.month, p\."paidProvider",/);

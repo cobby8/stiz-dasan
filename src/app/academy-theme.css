@@ -302,6 +302,15 @@
   font-weight: 700;
 }
 
+/* 탭처럼 «지금 보고 있는 것»을 가리키는 칩 — 체크(✓)는 «골랐다»는 뜻이라 붙이지 않고, 테두리 굵기도 그대로 둬 흔들리지 않게 한다 */
+.academy-app .academy-choice.is-tab.is-selected {
+  border-width: 1px;
+}
+
+.academy-app .academy-choice.is-tab.is-selected::before {
+  content: none;
+}
+
 /* 뒤로가기 — 누르는 영역 44×44 */
 .academy-app .academy-back-link {
   display: inline-flex;

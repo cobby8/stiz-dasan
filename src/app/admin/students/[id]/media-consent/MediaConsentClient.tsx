@@ -33,7 +33,7 @@ export default function MediaConsentClient({ data }: { data: StudentMediaConsent
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
       <section className="rounded-2xl border border-[var(--color-academy-line)] bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-extrabold text-[var(--color-academy-ink)]">현재 동의 범위</h2>
+        <h2 className="academy-section-title">현재 동의 범위</h2>
         <p className="mt-1 text-sm text-[var(--color-academy-muted)]">넓은 공개 범위는 아래 단계의 동의를 모두 포함해야 합니다.</p>
         <div className="mt-5 space-y-3">
           <ConsentCheck label="학원 내부 보관" description="수업 기록과 관리자 확인용으로 보관" checked={internalAllowed}
@@ -44,33 +44,33 @@ export default function MediaConsentClient({ data }: { data: StudentMediaConsent
             onChange={(value) => { setInstagramAllowed(value); if (value) { setInternalAllowed(true); setGalleryAllowed(true); } }} />
         </div>
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          <label className="text-sm font-bold text-[var(--color-academy-muted)]">확인 방법
-            <select value={method} onChange={(event) => setMethod(event.target.value)} className="mt-1 w-full rounded-xl border border-[var(--color-academy-line)] bg-white px-3 py-2.5">
+          <label className="text-sm font-medium text-[var(--color-academy-muted)]">확인 방법
+            <select value={method} onChange={(event) => setMethod(event.target.value)} className="academy-input mt-1">
               <option value="PHONE">전화 확인</option><option value="WRITTEN">서면 동의서</option><option value="IN_PERSON">대면 확인</option><option value="DIGITAL">전자 동의</option>
             </select>
           </label>
-          <label className="text-sm font-bold text-[var(--color-academy-muted)]">확인한 보호자
-            <input value={guardianName} onChange={(event) => setGuardianName(event.target.value)} maxLength={60} className="mt-1 w-full rounded-xl border border-[var(--color-academy-line)] bg-white px-3 py-2.5" />
+          <label className="text-sm font-medium text-[var(--color-academy-muted)]">확인한 보호자
+            <input value={guardianName} onChange={(event) => setGuardianName(event.target.value)} maxLength={60} className="academy-input mt-1" />
           </label>
         </div>
-        <label className="mt-4 block text-sm font-bold text-[var(--color-academy-muted)]">증빙 메모
-          <textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={500} rows={3} placeholder="확인 일시, 동의서 보관 위치 등" className="mt-1 w-full resize-none rounded-xl border border-[var(--color-academy-line)] bg-white px-3 py-2.5" />
+        <label className="mt-4 block text-sm font-medium text-[var(--color-academy-muted)]">증빙 메모
+          <textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={500} rows={3} placeholder="확인 일시, 동의서 보관 위치 등" className="academy-input mt-1 resize-none" />
         </label>
-        {feedback && <p className={`mt-4 rounded-xl px-3 py-2 text-sm font-bold ${feedback.ok ? "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]" : "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]"}`}>{feedback.message}</p>}
+        {feedback && <p className={`mt-4 rounded-xl px-3 py-2 text-sm font-medium ${feedback.ok ? "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]" : "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]"}`}>{feedback.message}</p>}
         <div className="mt-5 flex flex-wrap gap-2">
-          <button type="button" onClick={save} disabled={pending} className="rounded-xl bg-[var(--color-academy-primary)] px-4 py-2.5 font-bold text-white disabled:opacity-50">{pending ? "처리 중..." : "새 동의 이력 저장"}</button>
-          <button type="button" onClick={revoke} disabled={pending || !data.latest} className="rounded-xl border border-[var(--color-academy-line)] px-4 py-2.5 font-bold text-[var(--color-academy-danger)] disabled:opacity-40">전체 동의 철회</button>
+          <button type="button" onClick={save} disabled={pending} className="academy-button-primary">{pending ? "처리 중..." : "새 동의 이력 저장"}</button>
+          <button type="button" onClick={revoke} disabled={pending || !data.latest} className="academy-button-danger">전체 동의 철회</button>
         </div>
       </section>
 
       <aside className="rounded-2xl border border-[var(--color-academy-line)] bg-white p-5 shadow-sm">
-        <h2 className="font-extrabold text-[var(--color-academy-ink)]">변경 이력</h2>
+        <h2 className="academy-section-title">변경 이력</h2>
         <div className="mt-4 space-y-3">
           {data.history.length === 0 ? <p className="text-sm text-[var(--color-academy-muted)]">아직 기록된 동의가 없습니다.</p> : data.history.map((item, index) => (
             <div key={item.id} className="rounded-xl bg-[var(--color-academy-soft)] p-3 text-sm">
               <div className="flex justify-between gap-2"><strong>{index === 0 ? "현재 기록" : "이전 기록"}</strong><span className="text-xs text-[var(--color-academy-muted)]">{new Date(item.recordedAt).toLocaleString("ko-KR")}</span></div>
               <p className="mt-2 text-[var(--color-academy-muted)]">내부 {item.internalAllowed ? "허용" : "차단"} · 갤러리 {item.galleryAllowed ? "허용" : "차단"} · SNS {item.instagramAllowed ? "허용" : "차단"}</p>
-              {item.revokedAt && <p className="mt-1 font-bold text-[var(--color-academy-danger)]">철회 기록</p>}
+              {item.revokedAt && <p className="mt-1 font-medium text-[var(--color-academy-danger)]">철회 기록</p>}
               {item.evidence?.note && <p className="mt-1 text-xs text-[var(--color-academy-muted)]">{item.evidence.note}</p>}
             </div>
           ))}

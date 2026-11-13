@@ -295,8 +295,10 @@ export default function ExcelUploadModal({
                         {step === "result" && "등록 결과"}
                     </h2>
                     <button
+                        type="button"
                         onClick={handleClose}
-                        className="p-1 hover:bg-[var(--color-academy-soft)] rounded-lg text-[var(--color-academy-faint)] hover:text-[var(--color-academy-muted)] transition"
+                        aria-label="닫기"
+                        className="-my-2 -mr-2 inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
                     >
                         {/* X 아이콘 (SVG) */}
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -457,22 +459,22 @@ export default function ExcelUploadModal({
                                     <table className="min-w-full divide-y divide-[var(--color-academy-line)] text-sm">
                                         <thead className="bg-[var(--color-academy-soft)] sticky top-0">
                                             <tr>
-                                                <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-academy-muted)] uppercase">행</th>
-                                                <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-academy-muted)] uppercase">이름</th>
-                                                <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-academy-muted)] uppercase">클래스</th>
-                                                <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-academy-muted)] uppercase">생년월일</th>
-                                                <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-academy-muted)] uppercase">성별</th>
-                                                <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-academy-muted)] uppercase">학교</th>
-                                                <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-academy-muted)] uppercase">학년</th>
-                                                <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-academy-muted)] uppercase">보호자1</th>
-                                                <th className="px-3 py-2 text-left text-xs font-medium text-[var(--color-academy-muted)] uppercase">전화번호</th>
+                                                <th className="px-3 py-2 text-left text-xs font-semibold text-[var(--color-academy-muted)]">행</th>
+                                                <th className="px-3 py-2 text-left text-xs font-semibold text-[var(--color-academy-muted)]">이름</th>
+                                                <th className="px-3 py-2 text-left text-xs font-semibold text-[var(--color-academy-muted)]">클래스</th>
+                                                <th className="px-3 py-2 text-left text-xs font-semibold text-[var(--color-academy-muted)]">생년월일</th>
+                                                <th className="px-3 py-2 text-left text-xs font-semibold text-[var(--color-academy-muted)]">성별</th>
+                                                <th className="px-3 py-2 text-left text-xs font-semibold text-[var(--color-academy-muted)]">학교</th>
+                                                <th className="px-3 py-2 text-left text-xs font-semibold text-[var(--color-academy-muted)]">학년</th>
+                                                <th className="px-3 py-2 text-left text-xs font-semibold text-[var(--color-academy-muted)]">보호자1</th>
+                                                <th className="px-3 py-2 text-left text-xs font-semibold text-[var(--color-academy-muted)]">전화번호</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-[var(--color-academy-line)]">
                                             {parsedStudents.map((s, i) => (
                                                 <tr key={i} className="hover:bg-[var(--color-academy-line)]">
                                                     <td className="px-3 py-2 text-[var(--color-academy-faint)]">{s.rowNumber}</td>
-                                                    <td className="px-3 py-2 font-medium text-[var(--color-academy-ink)]">{s.name}</td>
+                                                    <td className="px-3 py-2 text-[var(--color-academy-ink)]">{s.name}</td>
                                                     {/* 클래스 매칭 상태: 매칭 성공=초록, 실패=회색 */}
                                                     <td className="px-3 py-2">
                                                         {s.className ? (
@@ -523,11 +525,11 @@ export default function ExcelUploadModal({
                             {/* 결과 요약 카드 */}
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                                 <div className="bg-[var(--color-academy-success-soft)] rounded-lg p-4 text-center">
-                                    <div className="text-2xl font-bold text-[var(--color-academy-success)]">{result.created}</div>
+                                    <div className="text-2xl font-semibold tabular-nums text-[var(--color-academy-success)]">{result.created}</div>
                                     <div className="text-sm text-[var(--color-academy-success)]">신규 등록</div>
                                 </div>
                                 <div className="bg-[var(--color-academy-warning-soft)] rounded-lg p-4 text-center">
-                                    <div className="text-2xl font-bold text-[var(--color-academy-warning)]">
+                                    <div className="text-2xl font-semibold tabular-nums text-[var(--color-academy-warning)]">
                                         {duplicateMode === "skip" ? result.skipped : result.updated}
                                     </div>
                                     <div className="text-sm text-[var(--color-academy-warning)]">
@@ -536,11 +538,11 @@ export default function ExcelUploadModal({
                                 </div>
                                 {/* 자동 수강 등록 결과 카드 */}
                                 <div className="bg-[var(--color-academy-soft)] rounded-lg p-4 text-center">
-                                    <div className="text-2xl font-bold text-[var(--color-academy-muted)]">{result.enrolled}</div>
+                                    <div className="text-2xl font-semibold tabular-nums text-[var(--color-academy-muted)]">{result.enrolled}</div>
                                     <div className="text-sm text-[var(--color-academy-muted)]">수강 등록</div>
                                 </div>
                                 <div className="bg-[var(--color-academy-danger-soft)] rounded-lg p-4 text-center">
-                                    <div className="text-2xl font-bold text-[var(--color-academy-danger)]">{result.errors.length}</div>
+                                    <div className="text-2xl font-semibold tabular-nums text-[var(--color-academy-danger)]">{result.errors.length}</div>
                                     <div className="text-sm text-[var(--color-academy-danger)]">오류</div>
                                 </div>
                             </div>
@@ -605,8 +607,9 @@ export default function ExcelUploadModal({
                     {/* 화면 1: 업로드 — 취소 버튼만 */}
                     {step === "upload" && (
                         <button
+                            type="button"
                             onClick={handleClose}
-                            className="px-4 py-2 text-sm text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)] rounded-xl transition"
+                            className="academy-button-secondary"
                         >
                             취소
                         </button>
@@ -616,20 +619,22 @@ export default function ExcelUploadModal({
                     {step === "preview" && (
                         <>
                             <button
+                                type="button"
                                 onClick={handleClose}
                                 disabled={loading}
-                                className="px-4 py-2 text-sm text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)] rounded-xl transition disabled:opacity-50"
+                                className="academy-button-secondary"
                             >
                                 취소
                             </button>
                             <button
+                                type="button"
                                 onClick={handleBulkCreate}
                                 disabled={loading || parsedStudents.length === 0}
-                                className="px-6 py-2 bg-[var(--color-academy-primary)] text-white font-bold rounded-xl hover:bg-[var(--color-academy-primary-hover)] transition disabled:opacity-50"
+                                className="academy-button-primary"
                             >
                                 {loading ? (
                                     <span className="flex items-center gap-2">
-                                        <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                        <span className="w-4 h-4 border-2 border-[var(--color-academy-on-primary)] border-t-transparent rounded-full animate-spin" />
                                         등록 중...
                                     </span>
                                 ) : (
@@ -642,8 +647,9 @@ export default function ExcelUploadModal({
                     {/* 화면 3: 결과 — 확인 버튼 */}
                     {step === "result" && (
                         <button
+                            type="button"
                             onClick={handleFinish}
-                            className="px-6 py-2 bg-[var(--color-academy-primary)] text-white font-bold rounded-xl hover:bg-[var(--color-academy-primary-hover)] transition"
+                            className="academy-button-primary"
                         >
                             확인
                         </button>
