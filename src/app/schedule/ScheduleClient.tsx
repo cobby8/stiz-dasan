@@ -104,7 +104,6 @@ function ScheduleFilter({ programs, allSlots, phone }: {
                             aria-haspopup="dialog"
                             className={selectedProgram ? "public-btn-primary shrink-0 px-4 text-sm" : "public-btn-secondary shrink-0 px-4 text-sm"}
                         >
-                            <span className="material-symbols-outlined" style={{ fontSize: "18px" }} aria-hidden="true">tune</span>
                             {/* 적용 개수 표시 — 프로그램은 하나만 고르므로 0 또는 1 */}
                             {selectedProgram ? "필터 1" : "필터"}
                         </button>
@@ -123,26 +122,24 @@ function ScheduleFilter({ programs, allSlots, phone }: {
                             type="button"
                             onClick={() => setViewMode("card")}
                             aria-pressed={viewMode === "card"}
-                            className={`flex min-h-11 items-center gap-1 px-4 text-xs font-bold transition-colors ${
+                            className={`flex min-h-11 items-center gap-1 px-4 text-xs font-medium transition-colors ${
                                 viewMode === "card"
-                                    ? "bg-[var(--color-public-dark)] text-white dark:bg-[var(--color-public-orange)] dark:text-[var(--color-public-dark)]"
+                                    ? "bg-[var(--color-public-secondary-soft)] text-[var(--color-public-secondary-ink)] ring-1 ring-inset ring-[var(--color-public-secondary-strong)] dark:ring-0 dark:bg-[var(--color-public-orange)] dark:text-[var(--color-public-dark)]"
                                     : "bg-white dark:bg-[var(--color-public-tint)] text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] hover:bg-[var(--color-public-tint)] dark:hover:bg-[var(--color-public-paper)]"
                             }`}
                         >
-                            <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>grid_view</span>
                             카드
                         </button>
                         <button
                             type="button"
                             onClick={() => setViewMode("table")}
                             aria-pressed={viewMode === "table"}
-                            className={`flex min-h-11 items-center gap-1 px-4 text-xs font-bold transition-colors ${
+                            className={`flex min-h-11 items-center gap-1 px-4 text-xs font-medium transition-colors ${
                                 viewMode === "table"
-                                    ? "bg-[var(--color-public-dark)] text-white dark:bg-[var(--color-public-orange)] dark:text-[var(--color-public-dark)]"
+                                    ? "bg-[var(--color-public-secondary-soft)] text-[var(--color-public-secondary-ink)] ring-1 ring-inset ring-[var(--color-public-secondary-strong)] dark:ring-0 dark:bg-[var(--color-public-orange)] dark:text-[var(--color-public-dark)]"
                                     : "bg-white dark:bg-[var(--color-public-tint)] text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] hover:bg-[var(--color-public-tint)] dark:hover:bg-[var(--color-public-paper)]"
                             }`}
                         >
-                            <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>table_chart</span>
                             표
                         </button>
                     </div>
@@ -160,7 +157,7 @@ function ScheduleFilter({ programs, allSlots, phone }: {
                         </div>
                         <div className="overflow-y-auto px-5 py-2">
                             {[{ id: "", name: "전체" }, ...programs].map((p) => (
-                                <label key={p.id || "all"} className="flex min-h-11 cursor-pointer items-center gap-3 border-b border-[var(--color-public-line)] text-sm font-bold text-[var(--color-public-ink)] last:border-b-0 dark:border-[var(--color-public-line)] dark:text-[var(--color-public-ink)]">
+                                <label key={p.id || "all"} className="flex min-h-11 cursor-pointer items-center gap-3 border-b border-[var(--color-public-line)] text-sm font-medium text-[var(--color-public-ink)] last:border-b-0 dark:border-[var(--color-public-line)] dark:text-[var(--color-public-ink)]">
                                     <input
                                         type="radio"
                                         name="schedule-program"
@@ -200,7 +197,7 @@ function ScheduleFilter({ programs, allSlots, phone }: {
                                 <div key={dayKey} className={`rounded-2xl border ${DAY_CARD_BG[dayKey]} dark:bg-[var(--color-public-paper)] dark:border-[var(--color-public-line)] overflow-hidden shadow-sm transition-colors`}>
                                     {/* 요일 헤더 — 색상 바 + 클래스 수 표시 */}
                                     <div className={`${DAY_BG[dayKey]} text-white px-6 py-3.5 flex items-center gap-3`}>
-                                        <span className="font-black text-lg">{byDay[dayKey][0].dayLabel}</span>
+                                        <span className="font-bold text-lg">{byDay[dayKey][0].dayLabel}</span>
                                         <span className="text-white/70 text-sm font-medium">{byDay[dayKey].length}개 클래스</span>
                                     </div>
 
@@ -218,20 +215,18 @@ function ScheduleFilter({ programs, allSlots, phone }: {
                                                             <h4 className="font-bold text-[var(--color-public-ink)] dark:text-white mb-2 text-base">{slot.displayLabel}</h4>
                                                             {/* 시간 표시 */}
                                                             <div className="flex items-center gap-1.5 text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] mb-1">
-                                                                <span className="text-[var(--color-public-muted)]">⏰</span>
-                                                                <span className="font-semibold">{slot.startTime} ~ {slot.endTime}</span>
+                                                                <span className="font-medium">{slot.startTime} ~ {slot.endTime}</span>
                                                             </div>
                                                             {/* 대상 학년 */}
                                                             {slot.gradeRange && (
                                                                 <div className="flex items-center gap-1.5 text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] mb-1">
-                                                                    <span className="text-[var(--color-public-muted)]">🎓</span>
                                                                     <span>{slot.gradeRange}</span>
                                                                 </div>
                                                             )}
                                                             {/* 수강 현황 — 인원 막대(비율이 곧 인원수) 대신 3단계 배지 한 줄(재원생 수 비공개 · 2026-11-13 f9) */}
                                                             <div className="mt-3 pt-2 border-t border-[var(--color-public-line)] flex justify-between items-center gap-2">
                                                                 <span className="text-xs text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] font-medium">수강 현황</span>
-                                                                <span className={`text-xs leading-none font-black px-2 py-1 rounded ${SEAT_LEVEL_BADGE_CLASS[slot.seatLevel]}`}>
+                                                                <span className={`text-xs leading-none font-semibold px-2 py-1 rounded ${SEAT_LEVEL_BADGE_CLASS[slot.seatLevel]}`}>
                                                                     {SEAT_LEVEL_LABEL[slot.seatLevel]}
                                                                 </span>
                                                             </div>
@@ -249,9 +244,9 @@ function ScheduleFilter({ programs, allSlots, phone }: {
                                                                         className="w-11 h-11 rounded-full object-cover border-2 border-[var(--color-public-line)] dark:border-[var(--color-public-line)]"
                                                                     />
                                                                 ) : (
-                                                                    <div className="w-11 h-11 rounded-full bg-[var(--color-public-line)] flex items-center justify-center text-lg">🏀</div>
+                                                                    <div className="w-11 h-11 rounded-full bg-[var(--color-public-line)] flex items-center justify-center text-sm font-semibold text-[var(--color-public-muted)]" aria-hidden="true">{slot.coach.name.slice(0, 1)}</div>
                                                                 )}
-                                                                <p className="text-xs font-bold text-[var(--color-public-ink)] dark:text-[var(--color-public-ink)] text-center leading-tight break-keep w-full">{slot.coach.name}</p>
+                                                                <p className="text-xs font-medium text-[var(--color-public-ink)] dark:text-[var(--color-public-ink)] text-center leading-tight break-keep w-full">{slot.coach.name}</p>
                                                                 <p className="text-xs text-[var(--color-public-muted)] text-center leading-tight break-words w-full">{slot.coach.role}</p>
                                                             </div>
                                                         )}
@@ -274,7 +269,6 @@ export default function ScheduleClient(props: { programs: Program[]; allSlots: P
     return (
         <Suspense fallback={
             <div className="py-20 text-center text-[var(--color-public-muted)]">
-                <div className="text-4xl mb-3">🏀</div>
                 <p>시간표 불러오는 중...</p>
             </div>
         }>

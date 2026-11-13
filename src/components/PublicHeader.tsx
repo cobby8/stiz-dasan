@@ -235,13 +235,13 @@ export default function PublicHeader({
               className={[
                 "flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold transition-colors",
                 isLargeFont
-                  ? "bg-[var(--color-public-accent)] dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white"
+                  ? "bg-[var(--color-public-dark)] dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white"
                   : "bg-gray-700 text-[var(--color-public-dark-muted)] hover:bg-gray-600",
               ].join(" ")}
               aria-label={isLargeFont ? "기본 글씨 크기로 변경" : "큰 글씨 모드로 변경"}
               title={isLargeFont ? "기본 글씨" : "큰 글씨"}
             >
-              <span className="text-sm font-black leading-none">가</span>
+              <span className="text-sm font-bold leading-none">가</span>
               <span className="leading-none">{isLargeFont ? "크게" : "보통"}</span>
             </button>
           </div>
@@ -271,7 +271,7 @@ export default function PublicHeader({
                 className="h-10 sm:h-12 w-auto object-contain dark:brightness-0 dark:invert"
                 priority
               />
-              <span className="hidden font-extrabold text-lg text-[var(--color-public-ink)] dark:text-white sm:inline sm:text-xl">
+              <span className="hidden font-bold text-lg text-[var(--color-public-ink)] dark:text-white sm:inline sm:text-xl">
                 다산2호점
               </span>
             </Link>
@@ -279,7 +279,7 @@ export default function PublicHeader({
 
           {/* ===== 데스크탑 네비게이션 ===== */}
           {/* 순서: 학원 소개 | 수업 안내 v | 소식/안내 v | SHOP | 수업찾기 | [신청하기] */}
-          <nav ref={navRef} inert={collapsed} aria-hidden={collapsed} aria-label="주요 메뉴" className="public-desktop-nav hidden md:flex items-center gap-1 font-bold text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
+          <nav ref={navRef} inert={collapsed} aria-hidden={collapsed} aria-label="주요 메뉴" className="public-desktop-nav hidden md:flex items-center gap-1 font-medium text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
             {/* 학원 소개 — 독립 링크, 맨 앞 배치 */}
             <Link
               href="/about"
@@ -352,7 +352,7 @@ export default function PublicHeader({
               ].join(" ")}
               aria-label={isLargeFont ? "기본 글씨 크기로 변경" : "큰 글씨 모드로 변경"}
             >
-              <span className="text-sm font-black leading-none">가</span>
+              <span className="text-sm font-bold leading-none">가</span>
             </button>
 
             <div ref={accountsRef} className="public-desktop-accounts flex items-center gap-1 sm:gap-2" inert={collapsed} aria-hidden={collapsed}>
@@ -381,8 +381,7 @@ export default function PublicHeader({
               aria-label="메뉴 열기"
               aria-expanded={isMobileMenuOpen}
             >
-              <FontFreeIcon name="menu" size={24} />
-              <span className="public-menu-label text-sm font-bold"><span className="public-menu-prefix">전체 </span>메뉴</span>
+              <span className="public-menu-label text-sm font-medium"><span className="public-menu-prefix">전체 </span>메뉴</span>
             </button>
           </div>
         </div>
@@ -517,7 +516,7 @@ export default function PublicHeader({
                 : "bg-[var(--color-public-tint)] dark:bg-[var(--color-public-tint)] text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] border border-[var(--color-public-line)] dark:border-[var(--color-public-line)]",
             ].join(" ")}
           >
-            <span className="text-base font-black">가</span>
+            <span className="text-base font-bold">가</span>
             <span>{isLargeFont ? "큰글씨 모드 켜짐" : "큰글씨 모드"}</span>
           </button>
         </div>

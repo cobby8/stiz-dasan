@@ -66,7 +66,7 @@ export function TrialVirtualAccountBox({ account }: { account: TrialVirtualAccou
     }
     return (
         <div className="rounded-lg border border-[var(--color-public-line)] bg-[var(--color-public-tint)] p-3 text-sm text-[var(--color-public-ink)]">
-            <p className="font-extrabold">아래 계좌로 {account.amount.toLocaleString("ko-KR")}원을 입금해 주세요</p>
+            <p className="font-semibold">아래 계좌로 {account.amount.toLocaleString("ko-KR")}원을 입금해 주세요</p>
             <div className="mt-2 flex items-center justify-between gap-2">
                 <span className="min-w-0 break-all font-bold">{account.bankName} {account.accountNumber}</span>
                 <button
@@ -167,7 +167,7 @@ export default function TrialFeeCheckoutClient({ token, amountLabel }: { token: 
                 type="button"
                 onClick={() => void start()}
                 disabled={loading}
-                className="min-h-12 w-full rounded-xl bg-[var(--color-public-trial)] text-base font-black text-[var(--color-public-white)] hover:bg-[var(--color-public-trial-hover)] disabled:opacity-60"
+                className="min-h-12 w-full rounded-xl bg-[var(--color-public-trial)] text-base font-semibold text-[var(--color-public-white)] hover:bg-[var(--color-public-trial-hover)] disabled:opacity-60"
             >
                 {loading ? "결제창 여는 중..." : `체험수업비 ${amountLabel} 결제하기`}
             </button>

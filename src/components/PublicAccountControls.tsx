@@ -10,19 +10,19 @@ import AccountViewSwitcher from "./AccountViewSwitcher";
 import type { AccountViewOption } from "@/lib/account-views";
 
 const DESKTOP_ACCOUNT_CLASS = [
-  "hidden md:inline-flex items-center rounded-xl border border-[var(--color-public-line)] px-3 py-2 text-sm font-bold",
+  "hidden md:inline-flex items-center rounded-xl border border-[var(--color-public-line)] px-3 py-2 text-sm font-medium",
   "text-[var(--color-public-muted)] transition-colors hover:border-[var(--color-public-muted)] hover:bg-[var(--color-public-tint)] hover:text-[var(--color-public-strong)]",
   "dark:border-[var(--color-public-line)] dark:text-[var(--color-public-ink)] dark:hover:border-brand-neon-lime/40 dark:hover:bg-brand-neon-lime/10 dark:hover:text-brand-neon-lime",
 ].join(" ");
 
 const DESKTOP_LOGOUT_CLASS = [
-  "inline-flex items-center rounded-xl border border-[var(--color-public-line)] px-3 py-2 text-sm font-bold",
+  "inline-flex items-center rounded-xl border border-[var(--color-public-line)] px-3 py-2 text-sm font-medium",
   "text-[var(--color-public-muted)] transition-colors hover:border-gray-300 hover:bg-[var(--color-public-tint)] hover:text-[var(--color-public-ink)]",
   "dark:border-[var(--color-public-line)] dark:text-[var(--color-public-muted)] dark:hover:bg-[var(--color-public-tint)] dark:hover:text-white",
 ].join(" ");
 
 const MOBILE_SECONDARY_ACTION_CLASS = [
-  "flex min-h-11 items-center justify-center rounded-xl border border-[var(--color-public-line)] bg-white text-sm font-bold",
+  "flex min-h-11 items-center justify-center rounded-xl border border-[var(--color-public-line)] bg-white text-sm font-medium",
   "text-[var(--color-public-muted)] transition-colors hover:bg-[var(--color-public-tint)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-[var(--color-public-ink)]",
 ].join(" ");
 
@@ -119,8 +119,7 @@ export function DesktopAccountControls({ initialRole = null }: AccountControlsPr
       >
         {isStaffPrimary ? (
           <>
-            <FontFreeIcon name="school" size={19} />
-            <span className="ml-1">선생님 앱</span>
+            <span>선생님 앱</span>
           </>
         ) : (
           accountLabel
@@ -170,8 +169,7 @@ export function MobileAccountControls({
       >
         {isStaffPrimary ? (
           <>
-            <FontFreeIcon name="school" size={20} />
-            <span className="ml-1">선생님 앱</span>
+            <span>선생님 앱</span>
           </>
         ) : (
           accountLabel

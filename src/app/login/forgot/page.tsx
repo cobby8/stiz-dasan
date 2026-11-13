@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 // 학부모 아이디·비밀번호 찾기 — 회원가입 화면과 같은 틀(로고 + 카드)을 쓴다.
 export default function ParentPasswordResetPage() {
   return (
-    <PublicSiteTheme className="public-auth-page">
+    <PublicSiteTheme className="public-auth-page" publicScope>
       <main className="min-h-screen bg-surface-warm px-4 py-10 dark:bg-[var(--color-public-paper)]">
         <div className="mx-auto w-full max-w-md">
           <div className="mb-6 text-center">
@@ -24,9 +24,9 @@ export default function ParentPasswordResetPage() {
             <ParentPasswordResetClient />
           </section>
           <p className="mt-6 text-center text-sm text-[var(--color-public-muted)]">
-            <Link href="/login" className="font-bold text-[var(--color-public-accent)]">로그인</Link>
+            <Link href="/login" className="font-medium text-[var(--color-public-accent)]">로그인</Link>
             <span className="mx-2" aria-hidden="true">·</span>
-            <Link href="/signup/parent" className="font-bold text-[var(--color-public-accent)]">회원가입</Link>
+            <Link href="/signup/parent" className="font-medium text-[var(--color-public-accent)]">회원가입</Link>
           </p>
         </div>
       </main>

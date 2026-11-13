@@ -16,8 +16,8 @@ export default function TrialVisitGuide({ feeLabel, onlinePayment }: { feeLabel:
         <dl className="grid gap-1.5 rounded-xl border border-[var(--color-public-line)] bg-[var(--color-public-paper)] p-3 text-left text-sm">
             {rows.map(([label, value]) => (
                 <div key={label} className="flex gap-3">
-                    <dt className="w-14 shrink-0 font-bold text-[var(--color-public-muted)]">{label}</dt>
-                    <dd className="min-w-0 break-keep font-semibold text-[var(--color-public-ink)]">{value}</dd>
+                    <dt className="w-14 shrink-0 text-[var(--color-public-muted)]">{label}</dt>
+                    <dd className="min-w-0 break-keep font-medium text-[var(--color-public-ink)]">{value}</dd>
                 </div>
             ))}
             <p className="mt-1 text-xs text-[var(--color-public-muted)]">수업 시간과 반은 담당자가 한 번 더 안내드려요.</p>

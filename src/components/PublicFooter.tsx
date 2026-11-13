@@ -144,7 +144,7 @@ export default function PublicFooter({
                     href={link.href} data-outside-link
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="rounded-full border border-[var(--color-public-dark-line)] dark:border-[var(--color-public-line)] px-3 py-1 text-xs font-bold text-[var(--color-public-dark-muted)] dark:text-[var(--color-public-muted)] hover:border-[var(--color-public-accent)] hover:text-[var(--color-public-accent)] dark:hover:border-brand-neon-lime dark:hover:text-brand-neon-lime transition"
+                    className="rounded-full border border-[var(--color-public-dark-line)] dark:border-[var(--color-public-line)] px-3 py-1 text-xs font-bold text-[var(--color-public-dark-muted)] dark:text-[var(--color-public-muted)] hover:border-[var(--color-public-orange)] hover:text-[var(--color-public-orange)] dark:hover:border-brand-neon-lime dark:hover:text-brand-neon-lime transition"
                   >
                     {link.label}
                   </a>
@@ -161,7 +161,7 @@ export default function PublicFooter({
                 <li key={link.href}>
                   <Link
                     href={link.href} data-outside-link
-                    className="hover:text-[var(--color-public-accent)] dark:text-brand-neon-lime dark:hover:text-white transition-colors"
+                    className="hover:text-[var(--color-public-orange)] dark:text-brand-neon-lime dark:hover:text-white transition-colors"
                   >
                     {link.label}
                   </Link>

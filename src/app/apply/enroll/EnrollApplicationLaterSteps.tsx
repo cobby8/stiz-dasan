@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import FontFreeIcon, { type FontFreeIconName } from "@/components/ui/FontFreeIcon";
+import FontFreeIcon from "@/components/ui/FontFreeIcon";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
 import { nextPlaceNameAfterRepick } from "@/lib/enrollment/shuttle-place-name";
 // 잔여 인원은 숫자 대신 3단계(여유/임박/마감)로만 보인다(재원생 수 비공개 · 2026-11-13 f9)
@@ -101,7 +101,6 @@ export default function EnrollApplicationLaterSteps({ step, form, availableSlots
             {step === 2 && (
                 <div className="space-y-5">
                     <h2 className="flex items-center gap-2 text-lg font-bold text-[var(--color-public-ink)] dark:text-white">
-                        <FontFreeIcon name="person" size={20} className="text-[var(--color-public-accent)] dark:text-brand-neon-lime" />
                         보호자 정보
                     </h2>
                     <TextInput label="보호자 이름" required value={form.parentName} onChange={(value) => update("parentName", value)} placeholder="보호자 성함" />
@@ -113,7 +112,6 @@ export default function EnrollApplicationLaterSteps({ step, form, availableSlots
             {step === 3 && (
                 <div className="space-y-5">
                     <h2 className="flex items-center gap-2 text-lg font-bold text-[var(--color-public-ink)] dark:text-white">
-                        <FontFreeIcon name="sports_basketball" size={20} className="text-[var(--color-public-accent)] dark:text-brand-neon-lime" />
                         수강 정보
                     </h2>
 
@@ -246,23 +244,22 @@ export default function EnrollApplicationLaterSteps({ step, form, availableSlots
             {step === 4 && (
                 <div className="space-y-5">
                     <h2 className="flex items-center gap-2 text-lg font-bold text-[var(--color-public-ink)] dark:text-white">
-                        <FontFreeIcon name="check_circle" size={20} className="text-[var(--color-public-accent)] dark:text-brand-neon-lime" />
                         확인 및 동의
                     </h2>
                     <div className="space-y-4 rounded-xl bg-[var(--color-public-tint)] p-4 text-sm dark:bg-[var(--color-public-paper)]">
-                        <SummarySection title="아이 정보" icon="child_care">
+                        <SummarySection title="아이 정보">
                             <SummaryRow label="이름" value={form.childName} strong />
                             <SummaryRow label="생년월일" value={form.childBirthDate} />
                             <SummaryRow label="성별/학년" value={`${form.childGender} · ${form.childGrade}`} />
                             <SummaryRow label="학교" value={form.childSchool} />
                             <SummaryRow label="학생 연락처" value={form.childPhone} />
                         </SummarySection>
-                        <SummarySection title="보호자 정보" icon="person">
+                        <SummarySection title="보호자 정보">
                             <SummaryRow label="이름" value={form.parentName} strong />
                             <SummaryRow label="연락처" value={form.parentPhone} />
                             {form.address && <SummaryRow label="주소" value={form.address} />}
                         </SummarySection>
-                        <SummarySection title="수강 정보" icon="sports_basketball">
+                        <SummarySection title="수강 정보">
                             <SummaryRow label="수강 개시일" value={form.requestedStartOn || "선택 필요"} strong />
                             <SummaryRow label="희망 수업" value={selectedSlotsLabel || "담당자 상담 후 결정"} />
                             <SummaryRow label="셔틀" value={form.shuttleChoice} />
@@ -324,14 +321,12 @@ function ShuttleLocationField({ label, nameLabel, value, location, onChange, onO
             {!location ? (
                 // 아직 위치를 안 골랐으면 지도 버튼 하나만 크게 보인다
                 <button type="button" onClick={onOpenMap} className="flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-[var(--color-academy-primary)] px-3 py-2 text-sm font-bold text-[var(--color-academy-primary)] hover:bg-[var(--color-academy-primary-soft)]">
-                    <FontFreeIcon name="location_on" size={18} />
                     지도에서 위치 고르기
                 </button>
             ) : (
                 <div className="space-y-2">
                     {/* 고른 주소(읽기 전용) + 다시 고르기 */}
                     <div className="flex items-center gap-2 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] px-3 py-2">
-                        <FontFreeIcon name="location_on" size={16} className="shrink-0 text-[var(--color-academy-success)]" />
                         <span className="min-w-0 flex-1 break-keep text-sm text-[var(--color-academy-ink)]">{shownAddress}</span>
                         <button type="button" onClick={onOpenMap} className="min-h-11 shrink-0 rounded-lg px-2 text-sm font-bold text-[var(--color-academy-primary)] hover:bg-[var(--color-academy-primary-soft)]">
                             다시 고르기
@@ -382,14 +377,13 @@ function TextArea({ label, labelSuffix, value, onChange, placeholder }: { label:
     );
 }
 
-function SummarySection({ title, icon, children }: { title: string; icon: FontFreeIconName; children: ReactNode }) {
+function SummarySection({ title, children }: { title: string; children: ReactNode }) {
     return (
         <div>
             <h3 className="mb-1.5 flex items-center gap-1 font-semibold text-[var(--color-public-ink)] dark:text-white">
-                <FontFreeIcon name={icon} size={14} className="text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]" />
                 {title}
             </h3>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1 pl-5">{children}</div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1">{children}</div>
         </div>
     );
 }
@@ -412,7 +406,7 @@ function TermsAccordion({ title, required, checked, onCheck, children }: { title
                     <input type="checkbox" checked={checked} onChange={(event) => onCheck(event.target.checked)} className="h-5 w-5 rounded border-gray-300 text-[var(--color-public-accent)] focus:ring-[var(--color-public-accent)] dark:text-brand-neon-lime dark:focus:ring-brand-neon-lime/50" />
                     <span className="text-sm font-medium text-[var(--color-public-ink)] dark:text-white">{title} {required && <span className="text-red-500">*</span>}</span>
                 </label>
-                <button type="button" onClick={() => setIsOpen(!isOpen)} className="p-1 text-[var(--color-public-muted)] hover:text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
+                <button type="button" onClick={() => setIsOpen(!isOpen)} aria-expanded={isOpen} aria-label={`${title} ${isOpen ? "접기" : "펼쳐 보기"}`} className="p-1 text-[var(--color-public-muted)] hover:text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
                     <FontFreeIcon name="expand_more" size={18} className={`transition-transform ${isOpen ? "rotate-180" : ""}`} />
                 </button>
             </div>

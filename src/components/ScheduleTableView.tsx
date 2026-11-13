@@ -63,7 +63,7 @@ export default function ScheduleTableView({ slots }: { slots: PublicScheduleSlot
                         {activeDays.map((day) => (
                             <th
                                 key={day}
-                                className={`${DAY_HEADER_BG[day]} text-white text-sm font-black px-3 py-3 border-b border-gray-200 dark:border-gray-700 text-center min-w-[140px]`}
+                                className={`${DAY_HEADER_BG[day]} text-white text-sm font-bold px-3 py-3 border-b border-gray-200 dark:border-gray-700 text-center min-w-[140px]`}
                             >
                                 {DAY_LABEL[day]}
                             </th>
@@ -113,16 +113,13 @@ export default function ScheduleTableView({ slots }: { slots: PublicScheduleSlot
                                                         <div className="flex items-center gap-1 mb-1">
                                                             <span className={`inline-block w-2 h-2 rounded-full ${SEAT_LEVEL_DOT_CLASS[slot.seatLevel]}`} />
                                                             {/* 글자 최소 12px(컴팩트 규칙) */}
-                                                            <span className={`text-[12px] font-bold ${SEAT_LEVEL_TEXT_CLASS[slot.seatLevel]}`}>
+                                                            <span className={`text-[12px] font-semibold ${SEAT_LEVEL_TEXT_CLASS[slot.seatLevel]}`}>
                                                                 {SEAT_LEVEL_LABEL[slot.seatLevel]}
                                                             </span>
                                                         </div>
                                                         {/* 코치명 — 있을 때만 표시 */}
                                                         {slot.coach && (
                                                             <div className="flex items-center gap-1">
-                                                                <span className="material-symbols-outlined text-gray-400" style={{ fontSize: "14px" }}>
-                                                                    person
-                                                                </span>
                                                                 <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
                                                                     {slot.coach.name}
                                                                 </span>

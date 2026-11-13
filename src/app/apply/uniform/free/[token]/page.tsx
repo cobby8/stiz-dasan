@@ -4,7 +4,6 @@
 // 에만 걸린다. 이 하위 경로(/apply/uniform/free/<토큰>)는 별도 페이지라 영향을 받지 않는다.
 import type { Metadata } from "next";
 import PublicPageLayout from "@/components/PublicPageLayout";
-import FontFreeIcon from "@/components/ui/FontFreeIcon";
 import { prisma } from "@/lib/prisma";
 import { getAcademySettings } from "@/lib/queries";
 import { getFreeGrantView, type FreeGrantView } from "@/lib/uniform-free-grant";
@@ -48,8 +47,7 @@ export default async function FreeUniformApplyPage({ params }: { params: Promise
           ) : (
             // 쓸 수 없는 링크: 이유 한 줄 + 학원 연락처
             <div className="public-card rounded-2xl bg-white p-6 text-center shadow-lg dark:bg-[var(--color-public-tint)]">
-              <FontFreeIcon name="error" size={32} className="mx-auto text-[var(--color-public-accent)] dark:text-brand-neon-lime" />
-              <h1 className="mt-3 break-keep text-lg font-black text-[var(--color-public-ink)] dark:text-white">{view.message}</h1>
+              <h1 className="break-keep text-lg font-black text-[var(--color-public-ink)] dark:text-white">{view.message}</h1>
               <p className="mt-2 break-keep text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
                 궁금한 점은 학원으로 연락해 주세요.
               </p>
@@ -58,7 +56,6 @@ export default async function FreeUniformApplyPage({ params }: { params: Promise
                   href={`tel:${contactPhone.replace(/[^0-9+]/g, "")}`}
                   className="mt-4 inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-[var(--color-public-line)] bg-white px-5 text-base font-bold text-[var(--color-public-ink)] hover:bg-[var(--color-public-tint)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-[var(--color-public-ink)]"
                 >
-                  <FontFreeIcon name="call" size={18} />
                   {contactPhone}
                 </a>
               )}

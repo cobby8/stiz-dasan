@@ -39,7 +39,9 @@ export default async function PublicPageLayout({
   const kakaoChannelUrl = (settings as any).kakaoChannelUrl || "";
 
   return (
-    <PublicSiteTheme className="min-h-screen bg-white dark:bg-black text-[var(--color-public-ink)] dark:text-[var(--color-public-ink)] flex flex-col transition-colors duration-300">
+    // publicScope: 이 틀을 쓰는 화면은 모두 공개 화면이다. 주소 목록(isPublicSitePath)에만 맡기면
+    // 목록에 없는 주소(/account-deletion)에서 테마 클래스가 빠져 색 토큰·굵기 규칙이 통째로 적용되지 않았다(2026-11-13).
+    <PublicSiteTheme publicScope className="min-h-screen bg-white dark:bg-black text-[var(--color-public-ink)] dark:text-[var(--color-public-ink)] flex flex-col transition-colors duration-300">
       {/* 통합 헤더 — Client Component (모바일 햄버거 메뉴 때문) */}
       <PublicHeader
         phone={phone}

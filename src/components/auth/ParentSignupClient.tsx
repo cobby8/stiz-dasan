@@ -233,13 +233,13 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
       {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
       {/* 간편가입 세션이 끊긴 경우(카카오톡 안 브라우저에서 잦다) — 휴대폰 인증 방식으로 바로 이어 간다 */}
       {socialSignup && socialSessionMissing && (
-        <a href={parentAuthEntryHref("signup", searchParams, { existing: true })} className="flex min-h-12 w-full items-center justify-center rounded-xl border border-[var(--color-public-accent)] px-4 text-sm font-bold text-[var(--color-public-accent)]">
+        <a href={parentAuthEntryHref("signup", searchParams, { existing: true })} className="flex min-h-12 w-full items-center justify-center rounded-xl border border-[var(--color-public-accent)] px-4 text-sm font-medium text-[var(--color-public-accent)]">
           아이디·휴대폰 인증으로 계속
         </a>
       )}
       {socialSignup && phoneRegistered && <IdentityLinkButton />}
       {registeredPhone && (
-        <Link href="/login/forgot" className="flex min-h-12 w-full items-center justify-center rounded-xl border border-[var(--color-public-accent)] px-4 text-sm font-bold text-[var(--color-public-accent)]">
+        <Link href="/login/forgot" className="flex min-h-12 w-full items-center justify-center rounded-xl border border-[var(--color-public-accent)] px-4 text-sm font-medium text-[var(--color-public-accent)]">
           아이디·비밀번호 찾기
         </Link>
       )}
@@ -253,18 +253,17 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
           </div>
           <div className="grid grid-cols-3 gap-2" role="group" aria-label="이용 역할">
             {[
-              { key: "PARENT", label: "학부모", icon: "family_restroom", on: wantsParent, toggle: () => setWantsParent((value) => !value) },
-              { key: "INSTRUCTOR", label: "선생님", icon: "sports", on: staffRoles.includes("INSTRUCTOR"), toggle: () => toggleStaffRole("INSTRUCTOR") },
-              { key: "DRIVER", label: "기사님", icon: "airport_shuttle", on: staffRoles.includes("DRIVER"), toggle: () => toggleStaffRole("DRIVER") },
+              { key: "PARENT", label: "학부모", on: wantsParent, toggle: () => setWantsParent((value) => !value) },
+              { key: "INSTRUCTOR", label: "선생님", on: staffRoles.includes("INSTRUCTOR"), toggle: () => toggleStaffRole("INSTRUCTOR") },
+              { key: "DRIVER", label: "기사님", on: staffRoles.includes("DRIVER"), toggle: () => toggleStaffRole("DRIVER") },
             ].map((option) => (
               <button
                 key={option.key}
                 type="button"
                 aria-pressed={option.on}
                 onClick={option.toggle}
-                className={`flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl border text-sm font-bold transition ${option.on ? "border-[var(--color-public-accent)] bg-[var(--color-public-tint)] text-[var(--color-public-strong)] dark:border-brand-neon-lime dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime" : "border-gray-300 text-[var(--color-public-muted)] dark:border-[var(--color-public-line)] dark:text-[var(--color-public-muted)]"}`}
+                className={`flex min-h-12 items-center justify-center rounded-xl border text-sm font-medium transition ${option.on ? "border-[var(--color-public-accent)] bg-[var(--color-public-tint)] text-[var(--color-public-strong)] dark:border-brand-neon-lime dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime" : "border-gray-300 text-[var(--color-public-muted)] dark:border-[var(--color-public-line)] dark:text-[var(--color-public-muted)]"}`}
               >
-                <span className="material-symbols-outlined text-xl" aria-hidden="true">{option.icon}</span>
                 {option.label}
               </button>
             ))}
@@ -291,7 +290,7 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
                   <a
                     key={option.provider}
                     href={`/auth/oauth/${option.provider}?intent=parent-signup&${continueParams.toString()}`}
-                    className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white font-semibold text-[var(--color-public-ink)]"
+                    className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-4 text-sm font-medium text-[var(--color-public-ink)]"
                   >
                     {/* 흰색 테두리 버튼은 애플 가이드라인의 「White Outline」 스타일과 맞는다 */}
                     {option.provider === "apple" && <AppleLogo />}
@@ -350,7 +349,6 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
 
       {step === "existing" && (
         <div className="space-y-4 py-2 text-center">
-          <span className="material-symbols-outlined text-5xl text-[var(--color-public-accent)]" aria-hidden="true">how_to_reg</span>
           <h2 className="text-xl font-bold">이미 학원에 등록된 보호자입니다</h2>
           <p className="text-sm leading-6 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">문자 인증이 끝났어요. 로그인에 쓸 아이디와 비밀번호만 정하면 바로 쓸 수 있어요. 자녀 정보는 학원에 등록된 그대로 연결됩니다.</p>
           <button type="button" onClick={() => window.location.assign(activationUrl)} className="min-h-12 w-full rounded-xl bg-brand-orange-500 font-bold text-white">
@@ -362,8 +360,7 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
 
       {step === "done" && (
         <div className="py-6 text-center">
-          <span className="material-symbols-outlined text-5xl text-[var(--color-public-accent)]" aria-hidden="true">check_circle</span>
-          <h2 className="mt-3 text-xl font-bold">가입이 완료됐습니다</h2>
+          <h2 className="text-xl font-bold">가입이 완료됐습니다</h2>
           <p className="mt-2 text-sm text-[var(--color-public-muted)]">
             {socialSignup
               ? (enrollmentHandoff ? "수강신청서가 계정에 연결되었습니다." : "간편로그인으로 바로 이용할 수 있어요.")

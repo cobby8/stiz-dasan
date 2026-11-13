@@ -165,9 +165,6 @@ function LoginContent() {
           {isStaffMode && (
             <div className="mb-6 rounded-xl border border-[var(--color-public-line)] bg-orange-50 p-4 text-sm text-[var(--color-public-ink)] dark:border-brand-neon-lime/30 dark:bg-brand-neon-lime/10 dark:text-[var(--color-public-ink)]">
               <div className="flex items-start gap-3">
-                <span className="material-symbols-outlined text-[var(--color-public-accent)] dark:text-brand-neon-lime" aria-hidden="true">
-                  person_add
-                </span>
                 <div>
                   <p className="font-bold">처음 이용하시나요?</p>
                   <p className="mt-1 leading-6">원장님이 보내드린 <strong>개인 초대 링크</strong>에서 먼저 가입해 주세요. 이 화면에서는 관리자·선생님 계정을 새로 만들 수 없습니다.</p>
@@ -175,9 +172,8 @@ function LoginContent() {
               </div>
               <Link
                 href="/about"
-                className="mt-3 flex min-h-11 w-full items-center justify-center gap-1 rounded-lg border border-[var(--color-public-line)] bg-white px-3 font-bold text-[var(--color-public-ink)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-white"
+                className="mt-3 flex min-h-11 w-full items-center justify-center gap-1 rounded-lg border border-[var(--color-public-line)] bg-white px-3 font-medium text-[var(--color-public-ink)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-white"
               >
-                <span className="material-symbols-outlined text-lg" aria-hidden="true">support_agent</span>
                 초대 링크가 없다면 학원에 문의하기
               </Link>
             </div>
@@ -349,7 +345,7 @@ function LoginContent() {
                 loading ||
                 (mode === "signup" && (!agreePrivacy || !agreeTerms))
               }
-              className="flex min-h-11 w-full items-center justify-center gap-2 py-2.5 bg-[var(--color-public-accent)] dark:bg-brand-neon-lime dark:text-brand-navy-900 hover:bg-[var(--color-public-strong)] dark:hover:opacity-90 text-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex min-h-11 w-full items-center justify-center gap-2 py-2.5 bg-[var(--color-public-accent)] dark:bg-brand-neon-lime dark:text-brand-navy-900 hover:bg-[var(--color-public-strong)] dark:hover:opacity-90 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading && (
                 <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden="true" />
@@ -381,7 +377,7 @@ function LoginContent() {
               {/* 간편로그인으로만 가입한 학부모는 문자 인증으로 비밀번호를 만들 수 있다(/login/forgot, 2026-11-13) */}
               <p>
                 간편로그인으로만 가입하셨나요?{" "}
-                <Link href="/login/forgot" className="inline-flex min-h-11 items-center font-bold text-[var(--color-public-accent)] underline">
+                <Link href="/login/forgot" className="inline-flex min-h-11 items-center font-medium text-[var(--color-public-accent)] underline">
                   문자 인증으로 비밀번호 만들기
                 </Link>
               </p>
@@ -401,7 +397,7 @@ function LoginContent() {
                   <a
                     key={option.provider}
                     href={storeAppSocialLoginHref(option.provider)}
-                    className={`flex min-h-11 items-center justify-center gap-2 rounded-xl border px-4 text-sm font-bold transition ${option.tone}`}
+                    className={`flex min-h-11 items-center justify-center gap-2 rounded-lg border px-4 text-sm font-medium transition ${option.tone}`}
                   >
                     {option.provider === "apple" && <AppleLogo />}
                     {option.label}
@@ -427,7 +423,7 @@ function LoginContent() {
                   <a
                     key={option.provider}
                     href={`/auth/oauth/${option.provider}?${socialLoginQuery}`}
-                    className={`flex min-h-11 items-center justify-center gap-2 rounded-xl border px-4 text-sm font-bold transition ${option.tone}`}
+                    className={`flex min-h-11 items-center justify-center gap-2 rounded-lg border px-4 text-sm font-medium transition ${option.tone}`}
                   >
                     {option.provider === "apple" && <AppleLogo />}
                     {option.label}

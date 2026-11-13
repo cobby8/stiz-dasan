@@ -46,10 +46,16 @@
     font-size: .875rem;
     white-space: nowrap;
 }
+/* 고른 달 = 보조 색(하늘색) — 위의 연도·수업일자 칩과 같은 «고른 것» 표시(2026-11-13). 다크 모드는 아래 규칙이 주황으로 덮는다 */
 .stiz-public-sport .annual-month-tab[aria-selected="true"] {
-    background: var(--color-public-dark);
-    color: var(--color-public-white);
-    border-color: var(--color-public-dark);
+    background: var(--color-public-secondary-soft);
+    color: var(--color-public-secondary-ink);
+    border-color: var(--color-public-secondary-strong);
+}
+.dark .stiz-public-sport .annual-month-tab[aria-selected="true"] {
+    background: var(--color-public-orange);
+    color: var(--color-public-dark);
+    border-color: var(--color-public-orange);
 }
 .stiz-public-sport .annual-month-tab:hover { border-color: var(--color-public-accent); }
 .stiz-public-sport .annual-month-current-dot {
@@ -67,7 +73,7 @@
 }
 .stiz-public-sport .annual-selected-heading h2 {
     font-size: 1.25rem;
-    font-weight: 900;
+    font-weight: 700;
     color: var(--color-public-ink);
 }
 .stiz-public-sport :is(.annual-current-label, .annual-next-label) {
@@ -111,10 +117,13 @@
     font-size: .75rem;
     font-weight: 700;
 }
+/* 고른 보기 = 보조 색(하늘색) — 연도·월 탭과 같은 «고른 것» 표시(2026-11-13). 다크 모드는 아래 규칙이 주황으로 덮는다 */
 .stiz-public-sport .annual-view-toggle button[aria-pressed="true"] {
-    background: var(--color-public-dark);
-    color: var(--color-public-white);
+    background: var(--color-public-secondary-soft);
+    color: var(--color-public-secondary-ink);
+    box-shadow: inset 0 0 0 1px var(--color-public-secondary-strong);
 }
+.dark .stiz-public-sport .annual-view-toggle button[aria-pressed="true"] { box-shadow: none; }
 .stiz-public-sport .annual-view-toggle .material-symbols-outlined { font-size: 16px; }
 
 /* ── 달력형 ── */
@@ -138,7 +147,7 @@
     color: var(--color-public-muted);
 }
 .stiz-public-sport .annual-calendar-dow.is-sunday,
-.stiz-public-sport .annual-calendar-cell.is-sunday .annual-calendar-day { color: var(--color-public-accent); }
+.stiz-public-sport .annual-calendar-cell.is-sunday .annual-calendar-day { color: var(--color-public-rest); }
 .stiz-public-sport .annual-calendar-cell {
     display: flex;
     flex-direction: column;
@@ -153,8 +162,9 @@
 }
 .stiz-public-sport .annual-calendar-cell + .annual-calendar-cell { border-left: 1px solid var(--color-public-line); }
 .stiz-public-sport .annual-calendar-cell.is-outside { opacity: .35; cursor: default; }
-/* 학원 휴무 = 옅은 바탕으로 «쉬는 날» 이 한눈에 */
-.stiz-public-sport .annual-calendar-cell.is-closed { background: color-mix(in srgb, var(--color-public-accent) 10%, var(--color-public-paper)); }
+/* 학원 휴무 = 옅은 바탕으로 «쉬는 날» 이 한눈에.
+   2026-11-13: 일요일·휴무 표시는 누르는 것이 아니라서 주 색(네이비 accent)이 아닌 --color-public-rest(밝은 화면 = 본문색, 예전 모습 그대로)를 쓴다. */
+.stiz-public-sport .annual-calendar-cell.is-closed { background: color-mix(in srgb, var(--color-public-rest) 10%, var(--color-public-paper)); }
 .stiz-public-sport .annual-calendar-cell.is-selected { box-shadow: inset 0 0 0 2px var(--color-public-accent); }
 .stiz-public-sport .annual-calendar-cell:not(:disabled):hover { box-shadow: inset 0 0 0 1px var(--color-public-accent); }
 .stiz-public-sport .annual-calendar-cell.is-selected:hover { box-shadow: inset 0 0 0 2px var(--color-public-accent); }
@@ -184,7 +194,7 @@
     white-space: nowrap;
     color: var(--color-public-ink);
 }
-.stiz-public-sport .annual-calendar-short.is-closed { color: var(--color-public-accent); }
+.stiz-public-sport .annual-calendar-short.is-closed { color: var(--color-public-rest); }
 .stiz-public-sport .annual-calendar-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 .stiz-public-sport .annual-calendar-more { font-size: .75rem; font-weight: 700; color: var(--color-public-muted); line-height: 1; }
 .stiz-public-sport .annual-calendar-titles { display: none; }
@@ -204,7 +214,7 @@
     .stiz-public-sport .annual-calendar-titles { display: flex; flex-direction: column; gap: 2px; }
 }
 .stiz-public-sport .annual-calendar-detail { margin-top: 12px; }
-.stiz-public-sport .annual-calendar-detail-date { margin-bottom: 6px; font-size: .875rem; font-weight: 900; color: var(--color-public-ink); }
+.stiz-public-sport .annual-calendar-detail-date { margin-bottom: 6px; font-size: .875rem; font-weight: 600; color: var(--color-public-ink); }
 .stiz-public-sport .annual-calendar-hint { font-size: .875rem; color: var(--color-public-muted); }
 .stiz-public-sport .annual-calendar-detail-list {
     border: 1px solid var(--color-public-line);

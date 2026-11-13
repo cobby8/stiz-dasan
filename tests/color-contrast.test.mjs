@@ -102,11 +102,24 @@ const publicPairs = [
   ["홈페이지 본문 / 종이", P("ink"), P("paper"), TEXT],
   ["홈페이지 보조 글자 / 종이", P("muted"), P("paper"), TEXT],
   ["홈페이지 보조 글자 / 옅은 띠", P("muted"), P("tint"), TEXT],
-  ["홈페이지 주 버튼 글자 / 주 버튼(검정)", P("white"), P("accent"), TEXT],
+  // 2026-11-13 원장 «사이트도 글자 두께 조정하고 깔끔하게» — 공개 주 버튼도 학원 앱과 같은 네이비(검정 #15181c 폐기)
+  ["홈페이지 주 버튼 글자 / 주 버튼(네이비)", P("white"), P("accent"), TEXT],
+  // accent 는 밝은 바탕 위 링크 글자로도 쓴다(어두운 띠·푸터 위에는 쓰지 않는다 — 그 자리는 주황·흰색)
+  ["홈페이지 링크 글자(네이비) / 종이", P("accent"), P("paper"), TEXT],
+  ["홈페이지 링크 글자(네이비) / 옅은 띠", P("accent"), P("tint"), TEXT],
+  ["홈페이지 링크 글자 올림 / 종이", P("strong"), P("paper"), TEXT],
+  // 어두운 띠·푸터 바탕은 accent 가 아니라 dark(차콜) — 그 위 글자
+  ["어두운 띠 흰 글자 / 차콜", P("white"), P("dark"), TEXT],
+  ["푸터 흐린 글자 / 차콜", P("dark-muted"), P("dark"), TEXT],
+  ["푸터 올림 글자(주황) / 차콜", P("orange"), P("dark"), TEXT],
   ["홈페이지 주 버튼 글자 / 주 버튼 올림", P("white"), P("strong"), TEXT],
   ["체험 신청 글자 / STIZ 주황", P("white"), P("trial"), TEXT],
   ["체험 신청 글자 / STIZ 주황 올림", P("white"), P("trial-hover"), TEXT],
   ["보조 버튼 테두리 / 종이", P("muted"), P("paper"), LINE],
+  // 2026-11-13 보조 색(하늘색) — 고른 것(보기 전환·월 탭). strong 은 선 전용(글자로 쓰면 4.1 로 미달)
+  ["고른 것 글자 / 보조 색 연한 바탕", P("secondary-ink"), P("secondary-soft"), TEXT],
+  ["고른 것 테두리 / 종이", P("secondary-strong"), P("paper"), LINE],
+  ["고른 것 테두리 / 보조 색 연한 바탕", P("secondary-strong"), P("secondary-soft"), LINE],
 ];
 
 test("학원 앱 색 토큰 — 글자/바탕 4.5:1, 선 3:1 이상", () => {
@@ -117,7 +130,7 @@ test("학원 앱 색 토큰 — 글자/바탕 4.5:1, 선 3:1 이상", () => {
   assert.deepEqual(fails, [], `대비 미달:\n${fails.join("\n")}`);
 });
 
-test("홈페이지 색 토큰 — 주 버튼 검정·체험 신청 주황 포함 대비 기준 통과", () => {
+test("홈페이지 색 토큰 — 주 버튼 네이비·체험 신청 주황 포함 대비 기준 통과", () => {
   const fails = publicPairs
     .map(([label, fg, bg, min]) => ({ label, fg, bg, min, ratio: contrast(fg, bg) }))
     .filter((p) => p.ratio < p.min)
@@ -134,7 +147,12 @@ test("원장 결정 값이 토큰에 그대로 있다 — 주 색 네이비·보
     ["#38bdf8", "#0284c7", "#dff2fe", "#0c4a6e"],
   );
   assert.equal(A("canvas"), "#f6f7f9");
-  assert.equal(P("accent"), "#15181c");
+  // 2026-11-13 원장 재결정: 공개 주 버튼·링크도 네이비(옛 검정 #15181c 는 «검정·회색 주 버튼 금지»로 폐기). 학원 앱 주 색과 같은 값이어야 한다.
+  assert.equal(P("accent"), "#1e3a8a");
+  assert.equal(P("strong"), "#1e40af");
+  assert.deepEqual([P("accent"), P("strong")], [A("primary"), A("primary-hover")]);
+  // 어두운 띠·푸터 바탕은 그대로 차콜 — 네이비로 물들이지 않는다
+  assert.equal(P("dark"), "#15181c");
   assert.equal(P("trial"), "#b94118");
   // 상태 다섯 갈래 — 같은 뜻은 어디서나 같은 색. 정보(info)는 11-13 에 파랑 → 보라(주 색 네이비와 구분)
   assert.deepEqual(

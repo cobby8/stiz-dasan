@@ -6,7 +6,6 @@
 // - 입력칸 글씨는 text-base(16px 이상) — 아이폰이 16px 미만 입력칸을 누르면 화면을 확대해 버린다
 import { useState, useTransition } from "react";
 import { submitFreeUniformOrder } from "@/app/actions/uniform-free";
-import FontFreeIcon from "@/components/ui/FontFreeIcon";
 import {
   DESIGN_OPTIONS,
   SIZE_OPTIONS,
@@ -80,8 +79,7 @@ export default function FreeUniformForm({ token, studentName, initialParentName,
   if (done) {
     return (
       <div className="public-card rounded-2xl bg-white p-6 text-center shadow-lg dark:bg-[var(--color-public-tint)]">
-        <FontFreeIcon name="check_circle" size={36} className="mx-auto text-[var(--color-academy-success)] dark:text-brand-neon-lime" />
-        <h1 className="mt-3 break-keep text-lg font-black text-[var(--color-public-ink)] dark:text-white">{done.title}</h1>
+        <h1 className="break-keep text-lg font-black text-[var(--color-public-ink)] dark:text-white">{done.title}</h1>
         <p className="mt-2 break-keep text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">{done.body}</p>
         {contactPhone && <p className="mt-3 text-sm font-bold text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">학원 {contactPhone}</p>}
       </div>
@@ -93,7 +91,6 @@ export default function FreeUniformForm({ token, studentName, initialParentName,
       {/* 머리: 아이 이름 + 감사 한 줄(컴팩트) */}
       <div className="border-b border-[var(--color-public-line)] bg-[var(--color-public-tint)] px-4 py-3 dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)]">
         <h1 className="flex items-center gap-2 text-lg font-black text-[var(--color-public-ink)] dark:text-white">
-          <FontFreeIcon name="checkroom" size={22} className="text-[var(--color-public-accent)] dark:text-brand-neon-lime" />
           {studentName} 유니폼 무료 신청
         </h1>
         <p className="mt-1 break-keep text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
@@ -104,7 +101,6 @@ export default function FreeUniformForm({ token, studentName, initialParentName,
       <div className="space-y-4 p-4">
         {error && (
           <div role="alert" className="flex items-center gap-2 rounded-xl border border-red-200 bg-[var(--color-academy-danger-soft)] px-3 py-2.5 text-sm font-bold text-[var(--color-academy-danger)] dark:border-red-800 dark:bg-red-950/40 dark:text-red-200">
-            <FontFreeIcon name="error" size={18} />
             {error}
           </div>
         )}
@@ -188,9 +184,8 @@ export default function FreeUniformForm({ token, studentName, initialParentName,
           type="button"
           onClick={handleSubmit}
           disabled={isPending}
-          className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[var(--color-public-accent)] px-6 text-base font-black text-white transition hover:bg-[var(--color-public-strong)] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900"
+          className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[var(--color-public-accent)] px-6 text-base font-semibold text-white transition hover:bg-[var(--color-public-strong)] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900"
         >
-          <FontFreeIcon name={isPending ? "progress_activity" : "send"} size={20} className={isPending ? "animate-spin" : ""} />
           {isPending ? "접수 중..." : "무료 유니폼 신청하기"}
         </button>
       </div>

@@ -210,7 +210,7 @@ export default function AnnualEventsClient({ allEvents, yearlySchedules, default
                                     onClick={() => selectPeriod({ year, month: year === currentYear ? thisMonth : selectedMonth })}
                                     className={`px-5 py-2 rounded-full text-sm font-bold transition-all duration-200 shrink-0 whitespace-nowrap ${
                                         selectedYear === year
-                                            ? "bg-[var(--color-public-dark)] text-white shadow-md dark:bg-[var(--color-public-orange)] dark:text-[var(--color-public-dark)]"
+                                            ? "bg-[var(--color-public-secondary-soft)] text-[var(--color-public-secondary-ink)] ring-1 ring-inset ring-[var(--color-public-secondary-strong)] dark:ring-0 dark:bg-[var(--color-public-orange)] dark:text-[var(--color-public-dark)]"
                                             : "bg-white dark:bg-[var(--color-public-tint)] text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] border border-[var(--color-public-line)] dark:border-[var(--color-public-line)] hover:border-gray-300 dark:hover:border-[var(--color-public-line)] hover:shadow-sm"
                                     }`}
                                 >
@@ -293,7 +293,7 @@ export default function AnnualEventsClient({ allEvents, yearlySchedules, default
                                                     onClick={e => { e.stopPropagation(); toggleSchedule(mon); }}
                                                     className={`flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-full border transition-all duration-200 ${
                                                         isScheduleOpen
-                                                            ? "bg-[var(--color-public-dark)] text-white border-[var(--color-public-dark)] shadow-md dark:bg-[var(--color-public-orange)] dark:text-[var(--color-public-dark)] dark:border-[var(--color-public-orange)]"
+                                                            ? "bg-[var(--color-public-secondary-soft)] text-[var(--color-public-secondary-ink)] border-[var(--color-public-secondary-strong)] dark:bg-[var(--color-public-orange)] dark:text-[var(--color-public-dark)] dark:border-[var(--color-public-orange)]"
                                                             : "bg-white dark:bg-[var(--color-public-tint)] text-[var(--color-public-ink)] dark:text-[var(--color-public-muted)] border-[var(--color-public-dark)]/30 dark:border-[var(--color-public-line)] hover:border-[var(--color-public-dark)] hover:shadow-sm"
                                                     }`}
                                                 >

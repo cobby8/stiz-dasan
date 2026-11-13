@@ -144,9 +144,8 @@ export default function IdentityLinkButton() {
         type="button"
         onClick={start}
         disabled={busy}
-        className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[var(--color-public-dark)] px-4 text-sm font-bold text-white disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900"
+        className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[var(--color-public-accent)] px-4 text-sm font-semibold text-white hover:bg-[var(--color-public-strong)] disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900"
       >
-        <span className="material-symbols-outlined text-lg" aria-hidden="true">verified_user</span>
         {busy ? "확인 중..." : "본인인증으로 기존 계정에 연결"}
       </button>
       <p className="text-xs leading-5 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">

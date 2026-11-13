@@ -4,24 +4,24 @@
 /* 메인 사진과 제목이 충분히 보이도록 높이를 복원하고, 버튼은 글 아래에 배치한다. */
 .stiz-public-sport .public-home-hero__content{width:min(100% - 3rem,72rem);margin-inline:auto;min-height:27rem;padding-block:3rem;display:flex;flex-direction:column;justify-content:center;align-items:flex-start}
 .stiz-public-sport .public-home-hero__text{min-width:0;max-width:100%}
-.stiz-public-sport .public-home-hero h1{font-size:clamp(2rem,4vw,3.4rem);font-weight:900;letter-spacing:-.055em;line-height:1.24;max-width:38rem;margin:0;text-wrap:balance;word-break:keep-all;overflow-wrap:anywhere;color:var(--color-public-hero-ink)}
+.stiz-public-sport .public-home-hero h1{font-size:clamp(2rem,4vw,3.4rem);font-weight:700;letter-spacing:-.055em;line-height:1.24;max-width:38rem;margin:0;text-wrap:balance;word-break:keep-all;overflow-wrap:anywhere;color:var(--color-public-hero-ink)}
 .stiz-public-sport .public-home-lead{font-size:.94rem;line-height:1.85;margin-top:1.3rem;word-break:keep-all}
 .stiz-public-sport .public-home-hero__actions{display:flex;flex-wrap:wrap;gap:.65rem;flex-shrink:0;max-width:100%;margin-top:1.6rem}
-.stiz-public-sport .public-home-hero__actions a{display:inline-flex;align-items:center;justify-content:center;gap:1.4rem;min-height:2.8rem;padding:.72rem 1.15rem;font-size:.82rem;font-weight:800;background:var(--color-public-orange);color:var(--color-public-dark);border-radius:var(--color-public-radius);border:1px solid transparent;text-decoration:none}
+.stiz-public-sport .public-home-hero__actions a{display:inline-flex;align-items:center;justify-content:center;gap:1.4rem;min-height:2.8rem;padding:.72rem 1.15rem;font-size:.82rem;font-weight:600;background:var(--color-public-orange);color:var(--color-public-dark);border-radius:var(--color-public-radius);border:1px solid transparent;text-decoration:none}
 /* 게슈탈트 P-02: 주인공은 첫 버튼 하나. 두 번째는 사진 위 보조(투명+흰 테두리) */
 .stiz-public-sport .public-home-hero__actions a+a{background:rgba(12,14,17,.45);color:var(--color-public-white);border:1px solid var(--color-public-white)}
 .stiz-public-sport .public-home-hero__actions a+a:hover{background:var(--color-public-on-dark-hover)}
 .stiz-public-sport .public-home-updates{width:min(100% - 3rem,72rem);margin-inline:auto}
 /* 철학 한 줄: 넓은 여백 가운데 큰 글씨 하나가 주인공(2단계 2026-11-07) */
 .stiz-public-sport .public-home-philosophy{width:min(100% - 3rem,48rem);margin-inline:auto;padding-block:clamp(2.5rem,6vw,4rem);text-align:center;border-bottom:1px solid var(--color-public-line)}
-.stiz-public-sport .public-home-philosophy h2{margin:0;font-size:clamp(1.45rem,3.2vw,2.2rem);font-weight:900;letter-spacing:-.045em;line-height:1.35;text-wrap:balance;word-break:keep-all}
+.stiz-public-sport .public-home-philosophy h2{margin:0;font-size:clamp(1.45rem,3.2vw,2.2rem);font-weight:700;letter-spacing:-.045em;line-height:1.35;text-wrap:balance;word-break:keep-all}
 .stiz-public-sport .public-home-philosophy p{margin:1rem 0 0;font-size:.92rem;line-height:1.85;color:var(--color-public-muted);word-break:keep-all}
-.stiz-public-sport .public-home-philosophy>a{display:inline-flex;align-items:center;min-height:2.75rem;gap:.6rem;margin-top:.9rem;font-size:.84rem;font-weight:700;color:var(--color-public-accent)}
+.stiz-public-sport .public-home-philosophy>a{display:inline-flex;align-items:center;min-height:2.75rem;gap:.6rem;margin-top:.9rem;font-size:.84rem;font-weight:500;color:var(--color-public-accent)}
 /* 프로그램 사진 타일(3단계 2026-11-07): PC 5칸 한 줄, 휴대폰 2칸(홀수면 마지막이 한 줄 전체) */
 .stiz-public-sport .public-home-programs{width:min(100% - 3rem,72rem);margin-inline:auto;padding-block:1.6rem;border-bottom:1px solid var(--color-public-line)}
 .stiz-public-sport .public-home-programs__heading{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:.8rem}
-.stiz-public-sport .public-home-programs__heading h2{margin:0;font-size:1.05rem;font-weight:900;letter-spacing:-.03em}
-.stiz-public-sport .public-home-programs__heading>a{display:inline-flex;align-items:center;gap:.5rem;min-height:2.75rem;font-size:.8rem;font-weight:700;color:var(--color-public-accent)}
+.stiz-public-sport .public-home-programs__heading h2{margin:0;font-size:1.05rem;font-weight:700;letter-spacing:-.03em}
+.stiz-public-sport .public-home-programs__heading>a{display:inline-flex;align-items:center;gap:.5rem;min-height:2.75rem;font-size:.8rem;font-weight:500;color:var(--color-public-accent)}
 .stiz-public-sport .public-home-programs ul{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:.75rem;list-style:none;margin:0;padding:0}
 .stiz-public-sport .public-home-programs li{min-width:0}
 .stiz-public-sport .public-home-programs li a{position:relative;isolation:isolate;display:flex;align-items:flex-end;aspect-ratio:4/5;overflow:hidden;border-radius:var(--color-public-radius);background:var(--color-public-dark);color:var(--color-public-hero-ink);text-decoration:none}
@@ -29,7 +29,7 @@
 .stiz-public-sport .public-home-programs img{position:absolute;inset:0;z-index:-2;width:100%;height:100%;object-fit:cover;transition:transform .4s ease}
 .stiz-public-sport .public-home-programs li a:hover img,.stiz-public-sport .public-home-programs li a:focus-visible img{transform:scale(1.04)}
 .stiz-public-sport .public-home-programs__text{display:flex;flex-direction:column;gap:.2rem;padding:.85rem;min-width:0}
-.stiz-public-sport .public-home-programs__text strong{font-size:.95rem;font-weight:800;line-height:1.35;word-break:keep-all}
+.stiz-public-sport .public-home-programs__text strong{font-size:.95rem;font-weight:600;line-height:1.35;word-break:keep-all}
 .stiz-public-sport .public-home-programs__text span{font-size:.75rem;opacity:.88;word-break:keep-all}
 @media (prefers-reduced-motion:reduce){.stiz-public-sport .public-home-programs img{transition:none}}
 @media (max-width:767px){
@@ -39,21 +39,21 @@
 .stiz-public-sport .public-home-programs li:last-child:nth-child(odd) a{aspect-ratio:2/1}
 }
 .stiz-public-sport .public-home-notices{display:grid;grid-template-columns:7rem 1fr;gap:1rem;padding-block:1.1rem;border-bottom:1px solid var(--color-public-line)}
-.stiz-public-sport .public-home-notices__heading h2{font-size:.9rem;font-weight:800;margin:0}
+.stiz-public-sport .public-home-notices__heading h2{font-size:.9rem;font-weight:700;margin:0}
 .stiz-public-sport .public-home-notices__heading>a{font-size:.7rem;min-height:2.75rem;display:inline-flex;align-items:center;gap:.5rem;color:var(--color-public-accent)}
 .stiz-public-sport .public-home-notices ul{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.3rem 1.4rem;list-style:none;padding:0;margin:0}
 .stiz-public-sport .public-home-notices li{min-width:0}
 .stiz-public-sport .public-home-notices li a{display:flex;gap:.55rem;align-items:center;min-height:2.75rem;font-size:.8rem;text-decoration:none}
 .stiz-public-sport .public-home-notices__title{flex:1;min-width:0;overflow-wrap:anywhere}
 .stiz-public-sport .public-home-notices time{font-size:.68rem;color:var(--color-public-muted);white-space:nowrap}
-.stiz-public-sport .public-home-notices__pin{color:var(--color-public-accent);font-size:.65rem;font-weight:700;flex-shrink:0}
+.stiz-public-sport .public-home-notices__pin{color:var(--color-public-accent);font-size:.65rem;font-weight:600;flex-shrink:0}
 /* 검정 숫자 띠(4단계 2026-11-07): 큰 숫자는 이 띠의 주인공. PC 4칸 · 휴대폰 2칸 */
 .stiz-public-sport .public-home-stats{background:var(--color-public-dark);color:var(--color-public-hero-ink)}
 .stiz-public-sport .public-home-stats__inner{width:min(100% - 3rem,72rem);margin-inline:auto;padding-block:1.8rem 1.4rem}
 .stiz-public-sport .public-home-stats ul{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1rem;list-style:none;margin:0;padding:0}
 .stiz-public-sport .public-home-stats li{display:flex;flex-direction:column;gap:.2rem;min-width:0;padding-inline-start:1rem;border-inline-start:2px solid var(--color-public-orange)}
-.stiz-public-sport .public-home-stats strong{font-size:clamp(1.7rem,3.4vw,2.5rem);font-weight:900;letter-spacing:-.04em;line-height:1.1;color:var(--color-public-hero-ink)}
-.stiz-public-sport .public-home-stats strong small{margin-inline-start:.15rem;font-size:.5em;font-weight:800}
+.stiz-public-sport .public-home-stats strong{font-size:clamp(1.7rem,3.4vw,2.5rem);font-weight:700;letter-spacing:-.04em;line-height:1.1;color:var(--color-public-hero-ink)}
+.stiz-public-sport .public-home-stats strong small{margin-inline-start:.15rem;font-size:.5em;font-weight:600}
 .stiz-public-sport .public-home-stats li span{font-size:.78rem;opacity:.8}
 .stiz-public-sport .public-home-stats p{margin:1.3rem 0 0;padding-top:1rem;border-top:1px solid color-mix(in srgb,var(--color-public-hero-ink) 14%,transparent);font-size:.8rem;line-height:1.7;opacity:.78;word-break:keep-all}
 @media (max-width:767px){
@@ -64,14 +64,14 @@
 .stiz-public-sport .public-home-facts li{display:flex;flex-direction:column;gap:.25rem;padding-inline:.75rem;border-inline-end:1px solid var(--color-public-line);min-width:0}
 .stiz-public-sport .public-home-facts li:first-child{padding-inline-start:0}
 .stiz-public-sport .public-home-facts li:last-child{border:0}
-.stiz-public-sport .public-home-facts strong{font-size:.92rem;font-weight:800}
+.stiz-public-sport .public-home-facts strong{font-size:.92rem;font-weight:600}
 .stiz-public-sport .public-home-facts span{font-size:.7rem;line-height:1.7;color:var(--color-public-muted);word-break:keep-all}
 .stiz-public-sport .public-process{width:min(100% - 3rem,72rem);margin-inline:auto;padding-block:2rem}
-.stiz-public-sport .public-process h2{font-size:1.375rem;font-weight:800;letter-spacing:-.035em;margin-bottom:1rem}
+.stiz-public-sport .public-process h2{font-size:1.375rem;font-weight:700;letter-spacing:-.035em;margin-bottom:1rem}
 .stiz-public-sport .public-process ol{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1.3rem;margin:0;padding:0;list-style:none}
 .stiz-public-sport .public-process li{display:flex;align-items:flex-start;gap:.65rem;min-width:0}
-.stiz-public-sport .public-process__number{width:1.8rem;height:1.8rem;flex-shrink:0;display:grid;place-items:center;font-size:.78rem;font-weight:800;background:var(--color-public-tint);color:var(--color-public-accent);border-radius:var(--color-public-radius)}
-.stiz-public-sport .public-process h3{font-size:.92rem;font-weight:700;line-height:1.8;margin-bottom:.2rem}
+.stiz-public-sport .public-process__number{width:1.8rem;height:1.8rem;flex-shrink:0;display:grid;place-items:center;font-size:.78rem;font-weight:600;background:var(--color-public-tint);color:var(--color-public-accent);border-radius:var(--color-public-radius)}
+.stiz-public-sport .public-process h3{font-size:.92rem;font-weight:600;line-height:1.8;margin-bottom:.2rem}
 .stiz-public-sport .public-process p{font-size:.78rem;line-height:1.75;color:var(--color-public-muted);word-break:keep-all}
 .stiz-public-sport .public-home-video{max-width:60rem;margin:0 auto;aspect-ratio:16/9;background:var(--color-public-dark);border-radius:var(--color-public-radius);overflow:hidden}
 .stiz-public-sport .public-home-video iframe{width:100%;height:100%;border:0}
@@ -79,14 +79,14 @@
 .stiz-public-sport .public-home-gallery a{aspect-ratio:4/3;overflow:hidden;display:block;border-radius:var(--color-public-radius);background:var(--color-public-tint)}
 .stiz-public-sport .public-home-gallery img{width:100%;height:100%;object-fit:cover}
 .stiz-public-sport .public-home-gallery__more{margin-top:1rem;text-align:right}
-.stiz-public-sport .public-home-gallery__more a{display:inline-flex;min-height:2.75rem;align-items:center;gap:.75rem;color:var(--color-public-accent);font-size:.85rem;font-weight:700}
+.stiz-public-sport .public-home-gallery__more a{display:inline-flex;min-height:2.75rem;align-items:center;gap:.75rem;color:var(--color-public-accent);font-size:.85rem;font-weight:500}
 .stiz-public-sport .public-cta{background:var(--color-public-dark);color:var(--color-public-white);padding:1.7rem 0}
 .stiz-public-sport .public-cta__inner{width:min(100% - 3rem,72rem);margin-inline:auto;display:flex;align-items:center;justify-content:space-between;gap:1.5rem}
 .stiz-public-sport .public-cta__content{min-width:0}
-.stiz-public-sport .public-cta h2{font-size:1.4rem;font-weight:800;letter-spacing:-.035em;line-height:1.5;word-break:keep-all}
+.stiz-public-sport .public-cta h2{font-size:1.4rem;font-weight:700;letter-spacing:-.035em;line-height:1.5;word-break:keep-all}
 .stiz-public-sport .public-cta p{font-size:.8rem;line-height:1.8;margin-top:.5rem}
 .stiz-public-sport .public-cta__actions{display:flex;flex-wrap:wrap;gap:.6rem;flex-shrink:0;align-items:center}
-.stiz-public-sport .public-cta__actions>*{display:inline-flex;align-items:center;justify-content:center;min-height:2.8rem;padding:.7rem 1rem;border-radius:var(--color-public-radius);font-size:.78rem;font-weight:700;text-decoration:none;gap:.9rem;background:var(--color-public-orange);color:var(--color-public-dark)}
+.stiz-public-sport .public-cta__actions>*{display:inline-flex;align-items:center;justify-content:center;min-height:2.8rem;padding:.7rem 1rem;border-radius:var(--color-public-radius);font-size:.78rem;font-weight:500;text-decoration:none;gap:.9rem;background:var(--color-public-orange);color:var(--color-public-dark)}
 .stiz-public-sport .public-cta__actions>*+*{background:var(--color-public-white);color:var(--color-public-dark)}
 /* 게슈탈트 P-02·P-06: variant="outline" 일 때만 두 번째 버튼을 보조(투명+흰 테두리)로, 제목 22px.
    기본 모양은 그대로 둔다 — /programs(토스 카드사 심사 중 수정 금지)가 같은 CTABanner 를 쓴다. */

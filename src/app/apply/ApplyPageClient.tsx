@@ -127,7 +127,7 @@ export default function ApplyPageClient({
                             {/* 카드 헤더 — 게슈탈트 P-05: 두 카드 머리를 같은 중립색으로 맞춘다(유사성).
                                 옛 네이비 머리는 다크 모드 배경과 거의 같은 색이라 묻혔다. */}
                             <div className="border-b border-[var(--color-public-line)] bg-[var(--color-public-tint)] px-6 py-4">
-                                <p className="mb-1 text-xs font-bold text-[var(--color-public-accent)]">체험수업</p>
+                                <p className="mb-1 text-xs font-medium text-[var(--color-public-muted)]">체험수업</p>
                                 <h3 className="text-xl font-black text-[var(--color-public-ink)]">{trialTitle}</h3>
                             </div>
                             {/* 카드 본문 */}
@@ -175,7 +175,7 @@ export default function ApplyPageClient({
                         <Card id="enroll" variant="default" className="public-card overflow-hidden !p-0 h-full">
                             {/* 카드 헤더 — 체험 카드와 같은 중립색(게슈탈트 P-05) */}
                             <div className="border-b border-[var(--color-public-line)] bg-[var(--color-public-tint)] px-6 py-4">
-                                <p className="mb-1 text-xs font-bold text-[var(--color-public-accent)]">정규 수강</p>
+                                <p className="mb-1 text-xs font-medium text-[var(--color-public-muted)]">정규 수강</p>
                                 <h3 className="text-xl font-black text-[var(--color-public-ink)]">{enrollTitle}</h3>
                             </div>
                             {/* 카드 본문 */}
@@ -203,7 +203,7 @@ export default function ApplyPageClient({
                         주인공은 위 두 신청 버튼이라 여기는 보조 버튼(public-btn-secondary). 앵커 id="consult" */}
                     <div id="consult" className="public-card flex flex-wrap items-center gap-3 px-6 py-4 md:col-span-2">
                         <div className="min-w-0 flex-1">
-                            <p className="text-xs font-bold text-[var(--color-public-accent)]">상담 신청</p>
+                            <p className="text-xs font-medium text-[var(--color-public-muted)]">상담 신청</p>
                             <p className="font-bold break-keep text-[var(--color-public-ink)]">어떤 반이 맞을지 고민되세요? 아이 정보를 남겨 주시면 전화로 안내해 드려요.</p>
                         </div>
                         <Link href="/apply/consult" className="public-btn-secondary shrink-0 px-5 text-base">

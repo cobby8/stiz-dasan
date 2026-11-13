@@ -4,7 +4,6 @@ import { publicErrorText } from "@/components/ui/public-error-text";
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { submitUniformOrder } from "@/app/actions/uniform";
-import FontFreeIcon from "@/components/ui/FontFreeIcon";
 import { DESIGN_OPTIONS, SIZE_OPTIONS, formatUniformPhone } from "@/lib/uniform-options";
 
 type StudentForm = {
@@ -162,9 +161,6 @@ export default function UniformApplicationForm() {
     const acceptedByStiz = result.syncStatus === "SENT" || result.syncStatus === "DUPLICATE";
     return (
       <div className="rounded-2xl bg-white p-8 text-center shadow-lg dark:bg-[var(--color-public-tint)]">
-        <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-[var(--color-academy-success-soft)] dark:bg-brand-neon-lime/15">
-          <FontFreeIcon name="check_circle" size={40} className="text-[var(--color-academy-success)] dark:text-brand-neon-lime" />
-        </div>
         <h2 className="mb-3 text-2xl font-black text-[var(--color-public-ink)] dark:text-white">
           {result.mode === "existing" ? "이미 접수된 유니폼 신청이 있습니다" : "유니폼 신청 완료!"}
         </h2>
@@ -176,14 +172,14 @@ export default function UniformApplicationForm() {
         {result.orderNumber && (
           <div className="mx-auto mt-5 max-w-sm rounded-2xl border border-[var(--color-public-line)] bg-[var(--color-public-tint)] p-4 text-left dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)]">
             <p className="text-xs font-bold text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">본사 접수번호</p>
-            <p className="mt-1 text-lg font-black text-[var(--color-public-ink)] dark:text-white">{result.orderNumber}</p>
+            <p className="mt-1 text-lg font-semibold text-[var(--color-public-ink)] dark:text-white">{result.orderNumber}</p>
           </div>
         )}
         <div className="mt-7 flex flex-wrap justify-center gap-2">
           <Link href="/apply" className="inline-flex min-h-11 items-center justify-center rounded-xl border border-[var(--color-public-line)] bg-white px-5 text-sm font-bold text-[var(--color-public-muted)] hover:bg-[var(--color-public-tint)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-[var(--color-public-ink)]">
             신청 페이지로 돌아가기
           </Link>
-          <Link href="/" className="inline-flex min-h-11 items-center justify-center rounded-xl bg-[var(--color-public-dark)] px-5 text-sm font-bold text-white hover:bg-[var(--color-public-dark)] dark:bg-brand-neon-lime dark:text-brand-navy-900">
+          <Link href="/" className="public-btn-secondary">
             홈으로 돌아가기
           </Link>
         </div>
@@ -195,7 +191,6 @@ export default function UniformApplicationForm() {
     <div className="public-form-card public-card min-w-0 overflow-hidden rounded-2xl bg-white shadow-lg dark:bg-[var(--color-public-tint)]">
       <div className="public-stepper border-b border-[var(--color-public-line)] bg-[var(--color-public-tint)] px-4 sm:px-6 py-4 dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)]">
         <h2 className="flex items-center gap-2 text-xl font-black text-[var(--color-public-ink)] dark:text-white">
-          <FontFreeIcon name="checkroom" size={22} className="text-[var(--color-public-accent)] dark:text-brand-neon-lime" />
           유니폼 추가주문 정보
         </h2>
         <p className="mt-1 text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
@@ -206,7 +201,6 @@ export default function UniformApplicationForm() {
       <div className="space-y-5 p-4 sm:p-6">
         {error && (
           <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-[var(--color-academy-danger-soft)] px-4 py-3 text-sm font-bold text-[var(--color-academy-danger)] dark:border-red-800 dark:bg-red-950/40 dark:text-red-200">
-            <FontFreeIcon name="error" size={18} />
             {error}
           </div>
         )}
@@ -245,7 +239,6 @@ export default function UniformApplicationForm() {
               onClick={addStudent}
               className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-[var(--color-public-line)] bg-white px-3 text-sm font-bold text-[var(--color-public-strong)] hover:bg-orange-50 dark:border-brand-neon-lime/40 dark:bg-[var(--color-public-paper)] dark:text-brand-neon-lime"
             >
-              <FontFreeIcon name="add" size={18} />
               학생 추가
             </button>
           </div>
@@ -253,7 +246,7 @@ export default function UniformApplicationForm() {
           {form.students.map((student, index) => (
             <div key={index} className="rounded-2xl border border-[var(--color-public-line)] bg-[var(--color-public-tint)] p-4 dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)]">
               <div className="mb-3 flex items-center justify-between">
-                <p className="text-sm font-black text-[var(--color-public-ink)] dark:text-white">학생 {index + 1}</p>
+                <p className="text-sm font-semibold text-[var(--color-public-ink)] dark:text-white">학생 {index + 1}</p>
                 <button
                   type="button"
                   onClick={() => removeStudent(index)}
@@ -347,9 +340,8 @@ export default function UniformApplicationForm() {
             type="button"
             onClick={handleSubmit}
             disabled={isPending}
-            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[var(--color-public-accent)] px-6 text-base font-black text-white transition hover:bg-[var(--color-public-strong)] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900 dark:hover:bg-lime-400"
+            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[var(--color-public-accent)] px-6 text-base font-semibold text-white transition hover:bg-[var(--color-public-strong)] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900 dark:hover:bg-lime-400"
           >
-            <FontFreeIcon name={isPending ? "progress_activity" : "send"} size={20} className={isPending ? "animate-spin" : ""} />
             {isPending ? "접수 중..." : "유니폼 신청하기"}
           </button>
         </div>

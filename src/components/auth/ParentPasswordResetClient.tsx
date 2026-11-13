@@ -191,8 +191,7 @@ export default function ParentPasswordResetClient() {
 
       {step === "done" && (
         <div className="py-6 text-center">
-          <span className="material-symbols-outlined text-5xl text-[var(--color-public-accent)]" aria-hidden="true">check_circle</span>
-          <h1 className="mt-3 text-xl font-bold">비밀번호를 새로 정했어요</h1>
+          <h1 className="text-xl font-bold">비밀번호를 새로 정했어요</h1>
           {loginId && <p className="mt-2 text-sm text-[var(--color-public-muted)]">로그인 아이디 <strong className="break-all text-[var(--color-public-ink)]">{loginId}</strong></p>}
           <Link href="/login" className="mt-6 flex min-h-12 items-center justify-center rounded-xl bg-[var(--color-public-accent)] font-bold text-white hover:bg-[var(--color-public-strong)]">로그인하기</Link>
         </div>

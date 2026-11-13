@@ -11,7 +11,6 @@ import {
     type TrialLeadForEnroll,
 } from "@/app/actions/public";
 import { trackMetaEvent } from "@/components/MetaPixel";
-import FontFreeIcon from "@/components/ui/FontFreeIcon";
 import type { MapLocationData } from "@/components/maps/LocationPickerModal";
 import { SHUTTLE_LOCATION_CONSENT_VERSION } from "@/lib/seasonal/contracts";
 import { requireCommencement } from "@/lib/enrollment/commencement";
@@ -308,9 +307,6 @@ export default function EnrollApplicationForm({ availableSlots, contactPhone, tr
     if (completed) {
         return (
             <div className="rounded-2xl bg-white p-8 text-center shadow-lg dark:bg-[var(--color-public-tint)]">
-                <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-green-100">
-                    <FontFreeIcon name="check_circle" size={40} className="text-green-600" />
-                </div>
                 <h2 className="mb-3 text-2xl font-black text-[var(--color-public-ink)] dark:text-white">
                     {completionMode === "updated" ? "수강신청서 수정 완료!" : completionMode === "existing" ? "이미 접수된 수강신청서가 있습니다" : "수강신청 완료!"}
                 </h2>
@@ -334,8 +330,7 @@ export default function EnrollApplicationForm({ availableSlots, contactPhone, tr
                 {accountHandoff?.alreadyLinked && (
                     <div className="mb-6 rounded-xl border border-green-200 bg-[var(--color-academy-success-soft)] px-4 py-3 text-sm font-semibold text-[var(--color-academy-success)] dark:border-green-800 dark:bg-green-950/30 dark:text-green-200">현재 로그인한 학부모 계정에 신청서가 연결되었습니다.</div>
                 )}
-                <Link href="/" className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-public-dark)] px-6 py-3 font-medium text-white transition-colors hover:bg-[var(--color-public-dark)]">
-                    <FontFreeIcon name="home" size={18} />
+                <Link href="/" className="public-btn-secondary">
                     홈으로 돌아가기
                 </Link>
             </div>
@@ -349,7 +344,7 @@ export default function EnrollApplicationForm({ availableSlots, contactPhone, tr
                     {Array.from({ length: TOTAL_STEPS }, (_, index) => index + 1).map((number) => (
                         <div key={number} className="flex items-center">
                             <div className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold transition-colors ${number < step ? "bg-green-500 text-white" : number === step ? "bg-[var(--color-public-accent)] text-white dark:bg-brand-neon-lime dark:text-brand-navy-900" : "bg-[var(--color-public-line)] text-[var(--color-public-muted)]"}`}>
-                                {number < step ? <FontFreeIcon name="check" size={18} /> : number}
+                                {number < step ? "✓" : number}
                             </div>
                             <span className={`ml-1.5 hidden text-xs font-medium sm:inline ${number === step ? "text-[var(--color-public-ink)] dark:text-white" : "text-[var(--color-public-muted)]"}`}>{STEP_LABELS[number - 1]}</span>
                             {number < TOTAL_STEPS && <div className={`mx-1.5 h-0.5 w-6 sm:w-8 ${number < step ? "bg-green-500" : "bg-[var(--color-public-line)]"}`} />}
@@ -360,7 +355,6 @@ export default function EnrollApplicationForm({ availableSlots, contactPhone, tr
 
             {trialData && step === 1 && (
                 <div className="mx-6 mt-4 flex items-center gap-2 rounded-xl border border-[var(--color-public-line)] bg-[var(--color-public-tint)] px-4 py-3 text-sm text-[var(--color-public-muted)]">
-                    <FontFreeIcon name="auto_fix_high" size={18} />
                     체험수업 정보가 자동으로 입력되었습니다. 필요하면 수정할 수 있습니다.
                 </div>
             )}
@@ -368,13 +362,11 @@ export default function EnrollApplicationForm({ availableSlots, contactPhone, tr
             <div className="p-4 sm:p-6">
                 {error && (
                     <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                        <FontFreeIcon name="error" size={18} />
                         {error}
                     </div>
                 )}
                 {existingNotice && (
                     <div className="mb-4 flex items-center gap-2 rounded-xl border border-[var(--color-public-line)] bg-[var(--color-public-tint)] px-4 py-3 text-sm font-semibold text-[var(--color-public-ink)] dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-100">
-                        <FontFreeIcon name="edit" size={18} />
                         {existingNotice}
                     </div>
                 )}
@@ -382,7 +374,6 @@ export default function EnrollApplicationForm({ availableSlots, contactPhone, tr
                 {step === 1 && (
                     <div className="space-y-5">
                         <h2 className="flex items-center gap-2 text-lg font-bold text-[var(--color-public-ink)] dark:text-white">
-                            <FontFreeIcon name="child_care" size={20} className="text-[var(--color-public-accent)] dark:text-brand-neon-lime" />
                             아이 정보
                         </h2>
                         <Field label="아이 이름" required value={form.childName} onChange={(value) => update("childName", value)} placeholder="아이 이름" />
@@ -418,7 +409,6 @@ export default function EnrollApplicationForm({ availableSlots, contactPhone, tr
                 <div className="mt-8 flex justify-between">
                     {step > 1 ? (
                         <button type="button" onClick={goBack} className="inline-flex items-center gap-2 rounded-xl border border-gray-300 px-5 py-3 font-medium text-[var(--color-public-muted)] transition-colors hover:bg-[var(--color-public-tint)] dark:border-[var(--color-public-line)] dark:text-[var(--color-public-ink)]">
-                            <FontFreeIcon name="arrow_back" size={18} />
                             이전
                         </button>
                     ) : <div />}
@@ -426,18 +416,15 @@ export default function EnrollApplicationForm({ availableSlots, contactPhone, tr
                     {step < TOTAL_STEPS ? (
                         <button type="button" onClick={goNext} className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-public-accent)] px-6 py-3 font-bold text-white transition-colors hover:bg-[var(--color-public-strong)] dark:bg-brand-neon-lime dark:text-brand-navy-900">
                             다음
-                            <FontFreeIcon name="arrow_forward" size={18} />
                         </button>
                     ) : (
                         <button type="button" onClick={handleSubmit} disabled={isPending} className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-public-accent)] px-6 py-3 font-bold text-white transition-colors hover:bg-[var(--color-public-strong)] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900">
                             {isPending ? (
                                 <>
-                                    <FontFreeIcon name="progress_activity" size={18} className="animate-spin" />
                                     제출 중...
                                 </>
                             ) : (
                                 <>
-                                    <FontFreeIcon name="send" size={18} />
                                     수강신청 제출
                                 </>
                             )}

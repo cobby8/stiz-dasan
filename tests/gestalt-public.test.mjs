@@ -159,7 +159,8 @@ test("P-12·P-13 /schedule 빈 상태는 한 줄 + 전화 링크, 마감 배지�
   assert.doesNotMatch(src, /py-20 text-gray-400 bg-white/);
   assert.doesNotMatch(src, /text-\[10px\][^"]*">마감/);
   // 2026-11-13 f9: 마감 배지 → 3단계 배지(여유/임박/마감) 한 줄 — 글자는 여전히 12px(text-xs)
-  assert.match(src, /text-xs leading-none font-black px-2 py-1 rounded \$\{SEAT_LEVEL_BADGE_CLASS\[slot\.seatLevel\]\}/);
+  // 2026-11-13 원장 «사이트도 글자 두께 조정» — 배지 굵기만 font-black → font-semibold(강조 600). 크기(12px)·3단계 배지 단언은 그대로.
+  assert.match(src, /text-xs leading-none font-semibold px-2 py-1 rounded \$\{SEAT_LEVEL_BADGE_CLASS\[slot\.seatLevel\]\}/);
 });
 
 test("P-09·P-12 /notices 목록은 한 줄 행(약 52px), 미리보기·썸네일 없음, 빈 상태 한 줄 + 전화", () => {

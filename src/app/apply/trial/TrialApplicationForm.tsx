@@ -9,7 +9,6 @@ import {
     type AvailableSlot,
 } from "@/app/actions/public";
 import { trackMetaEvent } from "@/components/MetaPixel";
-import FontFreeIcon from "@/components/ui/FontFreeIcon";
 import { isKstYmd, todayKst } from "@/lib/datetime/kst";
 // 잔여 인원은 숫자 대신 3단계(여유/임박/마감)로만(재원생 수 비공개 · 2026-11-13 f9)
 import { SEAT_LEVEL_LABEL, SEAT_LEVEL_TEXT_CLASS } from "@/lib/seats/seatLevel";
@@ -301,9 +300,6 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
     if (completed) {
         return (
             <div className="rounded-2xl bg-white p-8 text-center shadow-lg dark:bg-[var(--color-public-tint)]">
-                <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-green-100">
-                    <FontFreeIcon name="check_circle" size={40} className="text-green-600" />
-                </div>
                 <h2 className="mb-3 text-2xl font-black text-[var(--color-public-ink)] dark:text-white">
                     {completionMode === "updated" ? "체험수업 신청서 수정 완료!" : "체험수업 신청 완료!"}
                 </h2>
@@ -316,7 +312,7 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
                 {paymentToken ? (
                     // 온라인 결제: 이 신청에 묶인 결제 링크로 바로 결제 → 결제 확인 = 체험 확정
                     <div className="mb-6 space-y-3 text-left">
-                        <a href={`/apply/trial/pay/${encodeURIComponent(paymentToken)}`} className="flex min-h-12 w-full items-center justify-center rounded-xl bg-[var(--color-public-trial)] px-4 text-base font-black text-[var(--color-public-white)] hover:bg-[var(--color-public-trial-hover)]">
+                        <a href={`/apply/trial/pay/${encodeURIComponent(paymentToken)}`} className="flex min-h-12 w-full items-center justify-center rounded-xl bg-[var(--color-public-trial)] px-4 text-base font-semibold text-[var(--color-public-white)] hover:bg-[var(--color-public-trial-hover)]">
                             체험수업비 {feeLabel} 결제하기
                         </a>
                         <p className="text-xs text-[var(--color-public-muted)]">카드·계좌이체·무통장입금으로 결제할 수 있어요. 결제가 확인되면 체험수업이 확정돼요.</p>
@@ -346,8 +342,7 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
                 </div>
                 </>
                 )}
-                <Link href="/" className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-public-dark)] px-6 py-3 font-medium text-white transition-colors hover:bg-[var(--color-public-dark)]">
-                    <FontFreeIcon name="home" size={18} />
+                <Link href="/" className="public-btn-secondary">
                     홈으로 돌아가기
                 </Link>
             </div>
@@ -361,7 +356,7 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
                     {[1, 2, 3].map((number) => (
                         <div key={number} className="flex items-center">
                             <div className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold transition-colors ${number < step ? "bg-green-500 text-white" : number === step ? "bg-[var(--color-public-accent)] text-white dark:bg-brand-neon-lime dark:text-brand-navy-900" : "bg-[var(--color-public-line)] text-[var(--color-public-muted)]"}`}>
-                                {number < step ? <FontFreeIcon name="check" size={18} /> : number}
+                                {number < step ? "✓" : number}
                             </div>
                             <span className={`ml-1.5 hidden text-xs font-medium sm:inline ${number === step ? "text-[var(--color-public-ink)] dark:text-white" : "text-[var(--color-public-muted)]"}`}>
                                 {number === 1 ? "체험 일정" : number === 2 ? "신청 정보" : "비용 확인"}
@@ -375,13 +370,11 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
             <div className="p-4 sm:p-6">
                 {error && (
                     <div ref={errorRef} role="alert" className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                        <FontFreeIcon name="error" size={18} />
                         {error}
                     </div>
                 )}
                 {existingNotice && (
                     <div className="mb-4 flex items-center gap-2 rounded-xl border border-[var(--color-public-line)] bg-[var(--color-public-tint)] px-4 py-3 text-sm font-semibold text-[var(--color-public-ink)] dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-100">
-                        <FontFreeIcon name="edit" size={18} />
                         {existingNotice}
                     </div>
                 )}
@@ -389,7 +382,6 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
                 {step === 1 && (
                     <div className="space-y-5">
                         <h2 className="flex items-center gap-2 text-lg font-bold text-[var(--color-public-ink)] dark:text-white">
-                            <FontFreeIcon name="calendar_today" size={20} className="text-[var(--color-public-accent)] dark:text-brand-neon-lime" />
                             체험 일정
                         </h2>
                         <Field label="체험수업 희망일" required type="date" min={todayKst()} value={form.trialDate} onChange={selectTrialDate} placeholder="연도-월-일" />
@@ -419,7 +411,6 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
                 {step === 2 && (
                     <div className="space-y-5">
                         <h2 className="flex items-center gap-2 text-lg font-bold text-[var(--color-public-ink)] dark:text-white">
-                            <FontFreeIcon name="child_care" size={20} className="text-[var(--color-public-accent)] dark:text-brand-neon-lime" />
                             아이 정보 / 연락처
                         </h2>
                         <Field label="아이 이름" required value={form.childName} onChange={(value) => update("childName", value)} placeholder="아이 이름" />
@@ -434,7 +425,6 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
                 {step === 3 && (
                     <div className="space-y-5">
                         <h2 className="flex items-center gap-2 text-lg font-bold text-[var(--color-public-ink)] dark:text-white">
-                            <FontFreeIcon name="payments" size={20} className="text-[var(--color-public-accent)] dark:text-brand-neon-lime" />
                             비용 확인
                         </h2>
                         {onlinePayment ? (
@@ -476,7 +466,6 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
                 <div className="mt-8 flex justify-between">
                     {step > 1 ? (
                         <button type="button" onClick={goBack} className="inline-flex items-center gap-2 rounded-xl border border-gray-300 px-5 py-3 font-medium text-[var(--color-public-muted)] transition-colors hover:bg-[var(--color-public-tint)] dark:border-[var(--color-public-line)] dark:text-[var(--color-public-ink)]">
-                            <FontFreeIcon name="arrow_back" size={18} />
                             이전
                         </button>
                     ) : <div />}
@@ -484,18 +473,15 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
                     {step < 3 ? (
                         <button type="button" onClick={goNext} className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-public-accent)] px-6 py-3 font-bold text-white transition-colors hover:bg-[var(--color-public-strong)] dark:bg-brand-neon-lime dark:text-brand-navy-900">
                             다음
-                            <FontFreeIcon name="arrow_forward" size={18} />
                         </button>
                     ) : (
                         <button type="button" onClick={handleSubmit} disabled={isPending} className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-public-accent)] px-6 py-3 font-bold text-white transition-colors hover:bg-[var(--color-public-strong)] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900">
                             {isPending ? (
                                 <>
-                                    <FontFreeIcon name="progress_activity" size={18} className="animate-spin" />
                                     제출 중...
                                 </>
                             ) : (
                                 <>
-                                    <FontFreeIcon name="send" size={18} />
                                     체험수업 신청하기
                                 </>
                             )}
@@ -555,7 +541,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
     return (
         <div className="flex items-center justify-between gap-4">
             <span className="text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">{label}</span>
-            <span className="font-bold text-[var(--color-public-ink)] dark:text-white">{value}</span>
+            <span className="font-medium text-[var(--color-public-ink)] dark:text-white">{value}</span>
         </div>
     );
 }
