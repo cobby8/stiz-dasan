@@ -146,7 +146,9 @@ async function deleteExpiredCopies(accessToken: string): Promise<{ deleted: numb
     await prisma.$executeRawUnsafe(
       `UPDATE "SessionVideo"
           SET "youtubeStatus" = 'PRIVATE_LOCKED', "youtubePrivacy" = $2,
-              "youtubeLastError" = $3, "updatedAt" = NOW()
+              "youtubeLastError" = $3, "updatedAt" = NOW(),
+              -- 유튜브에서 영상이 사라졌으면 ID 를 비워 «다시 시도» 때 새로 올리게 한다(없는 ID 로 공개 변경 → 404 반복 방지)
+              "youtubeVideoId" = CASE WHEN $2 = 'missing' THEN NULL ELSE "youtubeVideoId" END
         WHERE id = $1 AND "youtubeStatus" = 'UPLOADED' AND "storageDeletedAt" IS NULL`,
       row.id,
       actual ?? "missing",
