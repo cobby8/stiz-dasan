@@ -13,6 +13,7 @@
 /** 주소 «경로»에 열쇠가 들어가는 화면 — 이 접두어로 시작하는 경로(하위 포함) 전부 */
 export const TOKEN_PATH_PREFIXES = [
     "/apply/trial/pay", // 체험비 결제 링크 /apply/trial/pay/[token] · 완료 /apply/trial/pay/done?t=
+    "/pay/", // 비회원 결제 링크 /pay/[token] · 복귀 /pay/[token]/success (청구서 한 장 결제 열쇠)
     "/apply/uniform/free/", // 무료 유니폼 신청 링크 /apply/uniform/free/[token]
     "/driver/", // 기사님 운행 화면 /driver/[token]
     "/shuttle/run/", // 셔틀 운행 /shuttle/run/[token]

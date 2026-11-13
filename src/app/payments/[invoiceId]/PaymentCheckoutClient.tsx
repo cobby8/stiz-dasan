@@ -111,6 +111,7 @@ export default function PaymentCheckoutClient({
     amount,
     virtualAccount = null,
     preferredMethod = null,
+    guestToken = null,
 }: {
     invoiceId: string;
     providerReady: boolean;
@@ -122,6 +123,11 @@ export default function PaymentCheckoutClient({
     virtualAccount?: PublicVirtualAccountView | null;
     /** 지난번(또는 설정에서 고른) 결제 방법 — 서버가 본인 계정에서 읽어 넘긴다. 없으면 null */
     preferredMethod?: PreferredPaymentMethod | null;
+    /**
+     * 비회원 결제 링크(/pay/<토큰>)에서 쓸 때만 — 로그인 결제 API 대신 토큰 결제 API 로 보낸다.
+     * 이때 청구서 id 는 보내지 않는다(서버가 토큰의 청구서만 결제한다).
+     */
+    guestToken?: string | null;
 }) {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -161,12 +167,20 @@ export default function PaymentCheckoutClient({
         setError(null);
 
         try {
-            const response = await fetch("/api/payments/checkout", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                // 간편결제는 토스에서 카드 결제라 서버에는 CARD 로 보낸다(금액·주문은 서버가 정한다)
-                body: JSON.stringify({ invoiceId, method: serverMethodFor(selected), closeOpenVirtualAccount: closeAccount }),
-            });
+            // 간편결제는 토스에서 카드 결제라 서버에는 CARD 로 보낸다(금액·주문은 서버가 정한다)
+            const method = serverMethodFor(selected);
+            const response = guestToken
+                // 비회원 링크: 토큰만 보낸다(어느 청구서인지는 서버가 토큰으로 정한다)
+                ? await fetch("/api/pay/checkout", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ token: guestToken, method, closeOpenVirtualAccount: closeAccount }),
+                })
+                : await fetch("/api/payments/checkout", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ invoiceId, method, closeOpenVirtualAccount: closeAccount }),
+                });
             const data = (await response.json()) as CheckoutResponse;
 
             if (!response.ok || !data.ok) {
@@ -349,7 +363,8 @@ export default function PaymentCheckoutClient({
                         <li>· 카드·계좌이체는 결제하면 바로 납부 완료돼요.</li>
                         <li>· 무통장입금은 받은 계좌로 90일 안에 아무 은행에서 입금해요.</li>
                         <li>· 현금영수증은 결제창에서 번호를 넣으면 발급돼요.</li>
-                        <li>· 영수증은 납부 후 이 화면과 청구 탭에서 볼 수 있어요.</li>
+                        {/* 비회원 링크 화면에는 영수증 링크를 두지 않는다(링크를 받은 다른 사람에게 카드 영수증 노출 방지) */}
+                        {!guestToken && <li>· 영수증은 납부 후 이 화면과 청구 탭에서 볼 수 있어요.</li>}
                     </ul>
                 </details>
             )}

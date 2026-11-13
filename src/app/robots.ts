@@ -8,7 +8,8 @@ export default function robots(): MetadataRoute.Robots {
         rules: {
             userAgent: "*",
             allow: "/",
-            disallow: ["/admin/", "/api/", "/login", "/setup"],
+            // /pay/ = 비회원 결제 링크(청구서 한 장 전용 비밀 주소)
+            disallow: ["/admin/", "/api/", "/login", "/setup", "/pay/"],
         },
         // 검색엔진이 사이트맵을 자동으로 찾을 수 있도록 경로 명시
         sitemap: `${PUBLIC_SITE_URL}/sitemap.xml`,

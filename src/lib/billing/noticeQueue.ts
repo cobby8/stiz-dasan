@@ -137,6 +137,11 @@ export type InvoiceNoticeRow = {
     amount: number | string | null;
     dueYmd: string | null;
     hadPriorNotice?: boolean | null;
+    /**
+     * 비회원 결제 링크 경로(pay/<토큰>) — 학부모가 가입하지 않았을 때 연결부가 발급해 넣는다(2026-11-14).
+     * 비어 있으면 예전처럼 로그인 결제 화면(payments/<청구서>)으로 보낸다.
+     */
+    payPath?: string | null;
 };
 
 /**
@@ -176,7 +181,7 @@ export function planInvoiceNotices(
                 amount: base.amount.toLocaleString("ko-KR"),
                 dueDate: formatBillingDueDate(row.dueYmd),
                 academyPhone: opts.academyPhone,
-            }, `payments/${row.invoiceId}`);
+            }, row.payPath || `payments/${row.invoiceId}`);
         } catch {
             // 학생명·납부기한이 비어 빈칸 문장이 될 때 — 문자는 보내지 않고 앱 알림만
             notices.push({ ...base, parentId, channel: "APP_ONLY", reason: "TEMPLATE_VALUES_MISSING" });
@@ -208,6 +213,8 @@ export type UnpaidNoticeRow = {
     parentId: string | null;
     phone: string | null;
     amount: number | string | null;
+    /** 비회원 결제 링크 경로(pay/<토큰>) — 이 학생의 미납이 «청구서 한 장»일 때만 쓰인다 */
+    payPath?: string | null;
 };
 
 /**
@@ -225,15 +232,16 @@ export function planUnpaidNotices(
         renderSms: (variables: Record<string, string>) => string;
     },
 ): { notices: PlannedNotice[]; unlinked: UnlinkedNotice[] } {
-    const byStudent = new Map<string, { studentName: string; parentId: string | null; phone: string | null; paymentIds: string[]; invoiceIds: Array<string | null>; total: number }>();
+    const byStudent = new Map<string, { studentName: string; parentId: string | null; phone: string | null; paymentIds: string[]; invoiceIds: Array<string | null>; payPath: string | null; total: number }>();
     for (const row of rows) {
         let group = byStudent.get(row.studentId);
         if (!group) {
-            group = { studentName: String(row.studentName ?? "").trim(), parentId: row.parentId, phone: row.phone, paymentIds: [], invoiceIds: [], total: 0 };
+            group = { studentName: String(row.studentName ?? "").trim(), parentId: row.parentId, phone: row.phone, paymentIds: [], invoiceIds: [], payPath: null, total: 0 };
             byStudent.set(row.studentId, group);
         }
         group.paymentIds.push(row.paymentId);
         group.invoiceIds.push(row.invoiceId);
+        if (row.payPath) group.payPath = row.payPath;
         group.total += Number(row.amount ?? 0) || 0;
     }
     const notices: PlannedNotice[] = [];
@@ -245,7 +253,9 @@ export function planUnpaidNotices(
             unlinked.push({ studentId, studentName: group.studentName, invoiceIds, paymentIds });
             continue;
         }
-        const path = billingPathForInvoices(group.invoiceIds);
+        // 비회원 링크는 청구서 한 장 전용 — 미납이 정확히 한 장일 때만 쓴다(여러 장이면 예전처럼 마이페이지 결제 화면)
+        const loginPath = billingPathForInvoices(group.invoiceIds);
+        const path = group.payPath && loginPath.startsWith("payments/") ? group.payPath : loginPath;
         const link = `${BILLING_LINK_BASE}${path}`;
         const base = {
             noticeKey: unpaidNoticeKey(opts.kstYmd, paymentIds),

@@ -19,6 +19,8 @@ import AdminModal from "@/components/admin/AdminModal";
 import AdminQuickActionMenu from "@/components/admin/AdminQuickActionMenu";
 import { useAdminConfirm } from "@/components/admin/AdminConfirmDialog";
 import { removeMistakenEnrollment } from "@/app/actions/enrollment-admin-edit";
+// 비회원 결제 링크 발급(원장 전용 — 서버가 권한·학생·미납을 다시 확인한다)
+import { createGuestPayLinkForPayment, revokeGuestPayLinksForPayment } from "@/app/actions/guest-pay-link";
 import EnrollmentMoveModal, { type EnrollmentMoveSource } from "./EnrollmentMoveModal";
 import { statusToneClass } from "@/components/admin/StatusBadge";
 import { PAYMENT_TONE, TONE_SELECTED_CLASS } from "@/lib/ui/statusTones";
@@ -561,6 +563,8 @@ export default function StudentDetailClient({
     const [payUpdatingId, setPayUpdatingId] = useState<string | null>(null);
     const [payChangedId, setPayChangedId] = useState<string | null>(null);
     const [payError, setPayError] = useState<{ id: string; message: string } | null>(null);
+    // «결제 링크 복사» 결과 한 줄(복사됨 또는 복사 실패 시 주소 자체) — 그 청구 행 아래에 보인다
+    const [payLinkNotice, setPayLinkNotice] = useState<{ id: string; message: string; url?: string } | null>(null);
     // 우측 본문 탭 상태 (UI 전용 — 데이터/로직 무관)
     const [activeTab, setActiveTab] = useState<TabKey>("overview");
     const [uniformForm, setUniformForm] = useState(() => uniformFromStudent(initialData?.student));
@@ -945,6 +949,47 @@ export default function StudentDetailClient({
         } finally {
             setEnrollingClassId(null);
         }
+    }
+
+    // «결제 링크 복사»(원장) — 서버가 청구서 한 장 전용 비회원 링크를 새로 만들고, 여기서 클립보드에 넣는다.
+    // 복사가 막힌 환경(권한·http)이면 주소를 화면에 보여 직접 복사하게 한다(조용한 실패 금지).
+    async function copyGuestPayLink(paymentId: string) {
+        setPayError(null);
+        setPayLinkNotice({ id: paymentId, message: "결제 링크를 만드는 중…" });
+        const result = await createGuestPayLinkForPayment({ studentId: studentId ?? student.id, paymentId }).catch(() => null);
+        if (!result || !result.ok) {
+            setPayLinkNotice(null);
+            setPayError({ id: paymentId, message: result && !result.ok ? result.message : "결제 링크를 만들지 못했습니다." });
+            return;
+        }
+        // 마지막 유효일(YYYY-MM-DD) → «12월 24일까지»
+        const [, mm, dd] = result.lastYmd.split("-");
+        const until = mm && dd ? `${Number(mm)}월 ${Number(dd)}일까지` : "";
+        try {
+            await navigator.clipboard.writeText(result.url);
+            setPayLinkNotice({ id: paymentId, message: `결제 링크를 복사했어요(${until} 유효). 카톡에 붙여 보내 주세요.` });
+        } catch {
+            setPayLinkNotice({ id: paymentId, message: `복사가 막혀 있어요. 아래 주소를 길게 눌러 복사해 주세요(${until} 유효).`, url: result.url });
+        }
+    }
+
+    // «결제 링크 모두 닫기»(원장) — 이미 보낸 비회원 결제 링크를 전부 무효로. 되돌릴 수 없어 확인창을 거친다.
+    async function revokeGuestPayLinks(paymentId: string, label: string) {
+        const ok = await confirmDanger({
+            title: `«${label}» 결제 링크 모두 닫기`,
+            description: "이 청구로 보낸 비회원 결제 링크(알림톡·문자·카톡)가 전부 열리지 않게 됩니다.\n로그인 결제와 이미 받은 입금 계좌는 그대로예요. 다시 보내려면 «결제 링크 복사»로 새 링크를 만드세요.",
+            confirmLabel: "모두 닫기",
+            tone: "danger",
+        });
+        if (!ok) return;
+        setPayError(null);
+        const result = await revokeGuestPayLinksForPayment({ studentId: studentId ?? student.id, paymentId }).catch(() => null);
+        if (!result || !result.ok) {
+            setPayLinkNotice(null);
+            setPayError({ id: paymentId, message: result && !result.ok ? result.message : "결제 링크를 닫지 못했습니다." });
+            return;
+        }
+        setPayLinkNotice({ id: paymentId, message: result.count > 0 ? `결제 링크 ${result.count}개 닫음` : "닫을 결제 링크가 없어요" });
     }
 
     // 결제 상태 변경 — 취소(CANCELED)만 되돌리기 어려우므로 window.confirm 한 번, 나머지는 바로 실행
@@ -1698,6 +1743,23 @@ export default function StudentDetailClient({
                                                                     label={`${periodLabel} ${p.description || "청구"} 작업`}
                                                                     actions={[
                                                                         {
+                                                                            // 가입 안 한 학부모에게 카톡으로 붙여 보낼 «청구서 한 장 전용» 결제 링크
+                                                                            key: "guest-link",
+                                                                            label: "결제 링크 복사",
+                                                                            icon: "link",
+                                                                            disabled: updating,
+                                                                            onSelect: () => void copyGuestPayLink(p.id),
+                                                                        },
+                                                                        {
+                                                                            // 보낸 결제 링크를 모두 무효로(위험 — 확인창에서 확정, 구분선 밑으로 모인다)
+                                                                            key: "guest-link-revoke",
+                                                                            label: "결제 링크 모두 닫기",
+                                                                            icon: "link_off",
+                                                                            tone: "danger",
+                                                                            disabled: updating,
+                                                                            onSelect: () => void revokeGuestPayLinks(p.id, `${periodLabel} ${p.description || "청구"}`),
+                                                                        },
+                                                                        {
                                                                             key: "edit",
                                                                             label: "청구서 수정",
                                                                             icon: "edit_note",
@@ -1766,6 +1828,13 @@ export default function StudentDetailClient({
                                                   {/* 수정할 수 없는 미납 건은 이유를 한 줄로(POS 요청·학부모 결제 진행 등) */}
                                                   {editBlocked && unpaidRow && canManageFinance && (
                                                     <p className="mt-1 pl-[76px] text-xs text-[var(--color-academy-faint)]">수정 불가 — {editBlocked}</p>
+                                                  )}
+                                                  {/* «결제 링크 복사» 결과 — 복사가 막힌 브라우저면 주소를 그대로 보여 직접 복사하게 */}
+                                                  {payLinkNotice?.id === p.id && (
+                                                    <p role="status" className="mt-1 break-all pl-[76px] text-xs font-bold text-[var(--color-academy-ink)]">
+                                                        {payLinkNotice.message}
+                                                        {payLinkNotice.url && <span className="block select-all font-normal text-[var(--color-academy-muted)]">{payLinkNotice.url}</span>}
+                                                    </p>
                                                   )}
                                                   {/* 실패 사유(권한 없음 등) 표면화 — 조용한 실패 금지 */}
                                                   {rowError && (

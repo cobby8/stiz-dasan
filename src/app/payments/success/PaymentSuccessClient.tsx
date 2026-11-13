@@ -18,14 +18,20 @@ type ConfirmResult = {
 
 const MAX_CONFIRM_RETRIES = 4;
 
-export default function PaymentSuccessClient() {
+/**
+ * @param guestToken 비회원 결제 링크(/pay/<토큰>/success)에서 쓸 때만 — 토큰 승인 API 로 보내고,
+ *   «청구서 확인»은 같은 토큰 화면으로, 마이페이지 안내는 숨긴다(로그인 계정이 없을 수 있다).
+ */
+export default function PaymentSuccessClient({ guestToken = null }: { guestToken?: string | null } = {}) {
     const searchParams = useSearchParams();
     const paymentKey = searchParams.get("paymentKey");
     const orderId = searchParams.get("orderId");
     const amount = searchParams.get("amount");
-    const invoiceId = searchParams.get("invoiceId");
+    // 비회원: 청구서 id 는 주소에서 받지 않는다(서버가 토큰으로 정한다)
+    const invoiceId = guestToken ? null : searchParams.get("invoiceId");
     const missingParams = !paymentKey || !orderId || !amount;
-    const invoiceHref = invoiceId ? `/payments/${encodeURIComponent(invoiceId)}` : "/mypage";
+    const guestHref = guestToken ? `/pay/${encodeURIComponent(guestToken)}` : null;
+    const invoiceHref = guestHref ?? (invoiceId ? `/payments/${encodeURIComponent(invoiceId)}` : "/mypage");
 
     const [result, setResult] = useState<ConfirmResult>({
         state: "loading",
@@ -39,10 +45,12 @@ export default function PaymentSuccessClient() {
             message: attempt > 0 ? "결제 승인 상태를 다시 확인하고 있습니다." : "결제 승인 상태를 확인하고 있습니다.",
         });
 
-        fetch("/api/payments/toss/confirm", {
+        fetch(guestToken ? "/api/pay/confirm" : "/api/payments/toss/confirm", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ paymentKey, orderId, amount: Number(amount), invoiceId }),
+            body: JSON.stringify(guestToken
+                ? { token: guestToken, paymentKey, orderId, amount: Number(amount) }
+                : { paymentKey, orderId, amount: Number(amount), invoiceId }),
         })
             .then(async (response) => {
                 const data = await response.json();
@@ -86,7 +94,7 @@ export default function PaymentSuccessClient() {
         return () => {
             canceled = true;
         };
-    }, [amount, invoiceId, orderId, paymentKey]);
+    }, [amount, guestToken, invoiceId, orderId, paymentKey]);
 
     useEffect(() => {
         if (missingParams) return;
@@ -128,9 +136,13 @@ export default function PaymentSuccessClient() {
             )}
             <p className="mt-2 text-sm text-[var(--color-academy-muted)]">
                 {isDeposit
-                    ? "입금하면 자동으로 납부 완료됩니다. 계좌는 청구서와 마이페이지에서 다시 볼 수 있습니다."
+                    ? guestToken
+                        ? "입금하면 자동으로 납부 완료됩니다. 계좌는 받은 링크에서 다시 볼 수 있습니다."
+                        : "입금하면 자동으로 납부 완료됩니다. 계좌는 청구서와 마이페이지에서 다시 볼 수 있습니다."
                     : isSuccess
-                    ? "청구서와 마이페이지에서 납부 내역을 확인할 수 있습니다."
+                    ? guestToken
+                        ? "받은 링크에서 납부 상태를 다시 확인할 수 있습니다."
+                        : "청구서와 마이페이지에서 납부 내역을 확인할 수 있습니다."
                     : isPending
                         ? "중복 결제를 막기 위해 새 결제보다 먼저 이 청구서를 다시 확인해 주세요."
                         : "결제가 실제로 완료되었는데 오류가 보이면 학원으로 문의해 주세요."}
@@ -149,9 +161,9 @@ export default function PaymentSuccessClient() {
                     href={invoiceHref}
                     className="inline-flex rounded-xl bg-[var(--color-academy-primary)] px-5 py-3 text-sm font-bold text-white"
                 >
-                    {invoiceId ? "청구서 확인" : "마이페이지로 이동"}
+                    {guestHref || invoiceId ? "청구서 확인" : "마이페이지로 이동"}
                 </Link>
-                {invoiceId && (
+                {invoiceId && !guestHref && (
                     <Link
                         href="/mypage"
                         className="inline-flex rounded-xl border border-[var(--color-academy-line)] px-5 py-3 text-sm font-bold text-[var(--color-academy-muted)]"

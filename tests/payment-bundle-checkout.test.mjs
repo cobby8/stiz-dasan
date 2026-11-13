@@ -811,7 +811,10 @@ test("계약(이중 납부): 단건 경로의 열린 계좌 조회·닫기·마�
     const single = fnBody(ledgerSrc, "export async function createCheckoutSession(");
     assert.match(single, /getVirtualAccountState\(invoice\.invoiceId\)/);
     assert.match(single, /invoice\.rallyzMirror === true/);
-    assert.match(fnBody(ledgerSrc, "export async function getInvoiceForParent("), /rallyzMirrorExclusionSql\("p"\)/);
+    // 청구서 한 장 SQL 은 학부모·비회원 링크 공용 함수 한 곳(2026-11-14) — 두 경로가 같은 칸(랠리즈 사본 표시 포함)을 본다
+    assert.match(fnBody(ledgerSrc, "async function loadParentInvoiceRow("), /rallyzMirrorExclusionSql\("p"\)/);
+    assert.match(fnBody(ledgerSrc, "export async function getInvoiceForParent("), /await loadParentInvoiceRow\(invoiceId\)/);
+    assert.match(fnBody(ledgerSrc, "export async function getInvoiceForGuest("), /await loadParentInvoiceRow\(invoiceId\)/);
     // 무통장 입금 판정은 묶인 청구 중 하나라도 납부면 «확인 필요»
     assert.match(fnBody(ledgerSrc, "async function payVerifiedVirtualAccount("), /TX_PAYMENT_STATUS_SQL,\s*tx\.paymentId,\s*tx\.id/);
     assert.match(fnBody(ledgerSrc, "async function applyVirtualAccountWebhook("), /TX_PAYMENT_STATUS_SQL,\s*tx\.paymentId,\s*tx\.id/);

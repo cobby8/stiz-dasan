@@ -896,6 +896,7 @@ model PaymentInvoice {
   payment        Payment              @relation(fields: [paymentId], references: [id])
   transactions   PaymentTransaction[]
   auditLogs      PaymentAuditLog[]
+  accessTokens   PaymentInvoiceAccessToken[]
 
   @@index([parentId, status])
   @@index([studentId, dueDate])
@@ -984,6 +985,25 @@ model PaymentAuditLog {
   transaction   PaymentTransaction? @relation(fields: [transactionId], references: [id])
 
   @@index([paymentId, createdAt])
+}
+
+// 비회원 결제 링크(/pay/<토큰>) — 청구서 한 장만 여는 비밀 링크. 토큰 원문은 저장하지 않고 SHA-256 해시만.
+// 만료 = max(납부기한, 발급일) + 14일 하루 끝(KST). source 는 DB CHECK(ADMIN_COPY·INVOICE_NOTICE·UNPAID_NOTICE).
+// migration 20261114000000_payment_invoice_access_token · 읽기/쓰기는 src/lib/payments/guestPayLink.ts 한 곳
+model PaymentInvoiceAccessToken {
+  id              String         @id @default(dbgenerated("(gen_random_uuid())::text"))
+  invoiceId       String
+  tokenHash       String         @unique
+  expiresAt       DateTime       @db.Timestamptz(6)
+  revokedAt       DateTime?      @db.Timestamptz(6)
+  source          String
+  createdByUserId String?
+  createdAt       DateTime       @default(now()) @db.Timestamptz(6)
+  lastUsedAt      DateTime?      @db.Timestamptz(6)
+  useCount        Int            @default(0)
+  invoice         PaymentInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId, createdAt])
 }
 
 model StaffPaymentConfirmationRequest {

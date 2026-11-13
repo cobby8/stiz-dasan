@@ -75,6 +75,8 @@ import { postMessage } from "@/lib/slack/client";
 import { rememberPaymentMethodFromToss } from "@/lib/payments/preferredMethodStore";
 // 결제 권한 판정 한 곳(주 보호자 + 승인된 가족 연결) — 결제 시작·승인 직전·묶음 후보가 같이 쓴다(2026-11-13 f8)
 import { payerAccessSql, resolveLinkedPayer } from "@/lib/payments/payerAccess";
+// 비회원 결제 링크(/pay/<토큰>, 2026-11-14) — 토스 고객 키(회원 키와 섞이지 않게 청구서 기반)
+import { guestCustomerKey } from "@/lib/payments/guestPayToken";
 import {
     CAFE24_PAYMENT_PROVIDER,
     Cafe24PaymentBridgeError,
@@ -148,6 +150,22 @@ export type PaymentOwnerIdentity = {
     authUserId: string;
     email: string | null;
 };
+
+/**
+ * 비회원 결제 링크(/pay/<토큰>)로 확인된 청구서 한 장 — 로그인 사용자 대신 «이 청구서»가 소유 근거다(2026-11-14).
+ * 토큰 검증(guestPayLink.resolveGuestPayToken)은 부르는 API 가 먼저 한다. 여기서는 invoiceId 가 같은지만 다시 본다
+ * (다른 청구서 id 를 섞어 보내도 결제·승인되지 않게).
+ */
+export type GuestInvoiceOwner = {
+    kind: "GUEST_INVOICE";
+    invoiceId: string;
+    /** 결제창 복귀 주소(/pay/<토큰>/success)에 쓴다 — 저장하지 않는다 */
+    token: string;
+};
+
+function isGuestInvoiceOwner(owner: PaymentOwnerIdentity | GuestInvoiceOwner): owner is GuestInvoiceOwner {
+    return (owner as GuestInvoiceOwner).kind === "GUEST_INVOICE";
+}
 
 type CheckoutTransactionRow = {
     id: string;
@@ -1064,9 +1082,8 @@ export function getPaymentProviderPublicStatus() {
     };
 }
 
-export async function getInvoiceForParent(invoiceId: string, owner: PaymentOwnerIdentity): Promise<ParentInvoiceView | null> {
-    await ensurePaymentInfrastructure();
-
+/** 청구서 한 장(학부모 화면용 칸) — 소유권 확인 전. 학부모(getInvoiceForParent)·비회원 링크(getInvoiceForGuest) 공용 */
+async function loadParentInvoiceRow(invoiceId: string): Promise<ParentInvoiceRow | null> {
     const rows = await prisma.$queryRawUnsafe<ParentInvoiceRow[]>(
         `
         SELECT
@@ -1115,7 +1132,33 @@ export async function getInvoiceForParent(invoiceId: string, owner: PaymentOwner
         `,
         invoiceId,
     );
-    const row = rows[0];
+    return rows[0] ?? null;
+}
+
+/**
+ * 비회원 결제 링크용 청구서 — 토큰이 가리키는 청구서 한 장. 결제하는 사람 = 청구서의 대표 보호자(거래 parentId 도 이 값).
+ * 영수증 링크는 보이지 않는다(canSeeReceipt=false — 링크를 받은 다른 사람에게 카드 영수증이 보이지 않게).
+ * ⚠️ 토큰 검증은 부르는 쪽이 먼저 한다. 이 함수는 소유권을 판정하지 않는다.
+ */
+export async function getInvoiceForGuest(invoiceId: string): Promise<ParentInvoiceView | null> {
+    await ensurePaymentInfrastructure();
+    const row = await loadParentInvoiceRow(invoiceId);
+    if (!row || !row.parentId) return null;
+    return {
+        ...row,
+        payerId: row.parentId,
+        payerName: row.parentName,
+        payerEmail: row.parentEmail ?? "",
+        payerPhone: row.parentPhone,
+        payerIsPrimary: true,
+        canSeeReceipt: false,
+    };
+}
+
+export async function getInvoiceForParent(invoiceId: string, owner: PaymentOwnerIdentity): Promise<ParentInvoiceView | null> {
+    await ensurePaymentInfrastructure();
+
+    const row = await loadParentInvoiceRow(invoiceId);
     if (!row) return null;
 
     // 소유권(IDOR): 로그인한 사람이 이 학생과 연결돼 있어야 한다 — 대표 보호자 또는 승인된 가족(payerAccess 한 곳).
@@ -1137,7 +1180,8 @@ export async function getInvoiceForParent(invoiceId: string, owner: PaymentOwner
 
 export async function createCheckoutSession(input: {
     invoiceId: string;
-    owner: PaymentOwnerIdentity;
+    /** 로그인 학부모 또는 비회원 결제 링크로 확인된 청구서 한 장 */
+    owner: PaymentOwnerIdentity | GuestInvoiceOwner;
     origin: string;
     /** 학부모가 고른 결제 수단(CARD·TRANSFER·VIRTUAL_ACCOUNT). 없으면 예전처럼 동작. */
     method?: string | null;
@@ -1146,7 +1190,14 @@ export async function createCheckoutSession(input: {
 }) {
     await ensurePaymentInfrastructure();
 
-    const invoice = await getInvoiceForParent(input.invoiceId, input.owner);
+    // 비회원 링크: 토큰이 가리키는 청구서와 요청한 청구서가 같을 때만(다른 청구서 id 섞기 차단)
+    const guest = isGuestInvoiceOwner(input.owner) ? input.owner : null;
+    if (guest && guest.invoiceId !== input.invoiceId) {
+        return { ok: false as const, error: "청구서를 찾을 수 없습니다." };
+    }
+    const invoice = guest
+        ? await getInvoiceForGuest(input.invoiceId)
+        : await getInvoiceForParent(input.invoiceId, input.owner as PaymentOwnerIdentity);
     if (!invoice) {
         return { ok: false as const, error: "청구서를 찾을 수 없습니다." };
     }
@@ -1173,6 +1224,15 @@ export async function createCheckoutSession(input: {
         return {
             ok: false as const,
             error: "온라인 결제 설정이 아직 완료되지 않았습니다.",
+            providerReady: false,
+            configurationMissing: true,
+        };
+    }
+    // 비회원 링크는 토스 결제창만 — 카페24 연동은 결제자 이름·연락처를 주고받는 구조라 이번 범위 밖
+    if (guest && config.provider !== "TOSS") {
+        return {
+            ok: false as const,
+            error: "지금은 링크로 결제할 수 없어요. 학원에 문의해 주세요.",
             providerReady: false,
             configurationMissing: true,
         };
@@ -1215,12 +1275,17 @@ export async function createCheckoutSession(input: {
     }
 
     const cleanOrigin = input.origin.replace(/\/$/, "");
-    const successUrl = makePaymentReturnUrl(
-        cleanOrigin,
-        config.provider === CAFE24_PAYMENT_PROVIDER ? "/payments/cafe24/success" : "/payments/success",
-        invoice.invoiceId,
-    );
-    const failUrl = makePaymentReturnUrl(cleanOrigin, "/payments/fail", invoice.invoiceId);
+    // 비회원 링크는 결제 뒤에도 로그인 없이 결과를 보게 같은 토큰 주소로 돌아온다(실패는 결제 화면에 안내 한 줄)
+    const successUrl = guest
+        ? new URL(`/pay/${encodeURIComponent(guest.token)}/success`, cleanOrigin).toString()
+        : makePaymentReturnUrl(
+            cleanOrigin,
+            config.provider === CAFE24_PAYMENT_PROVIDER ? "/payments/cafe24/success" : "/payments/success",
+            invoice.invoiceId,
+        );
+    const failUrl = guest
+        ? new URL(`/pay/${encodeURIComponent(guest.token)}?failed=1`, cleanOrigin).toString()
+        : makePaymentReturnUrl(cleanOrigin, "/payments/fail", invoice.invoiceId);
     const cafe24WebhookUrl = new URL("/api/payments/cafe24/webhook", cleanOrigin).toString();
     const provider = config.provider;
 
@@ -1408,6 +1473,24 @@ export async function createCheckoutSession(input: {
                 retryable: Boolean(bridgeError?.retryable),
             };
         }
+    }
+
+    if (guest) {
+        // 비회원 링크: 학부모 이름·이메일·연락처를 브라우저로 보내지 않는다(링크를 받은 다른 사람에게 노출 방지).
+        // 고객 키는 청구서 기반 고정 키(stiz_g_…) — 회원 결제수단과 섞이지 않는다.
+        return {
+            ok: true as const,
+            provider,
+            providerLabel: config.providerLabel,
+            providerReady: config.providerReady,
+            clientKey: config.clientKey,
+            customerKey: guestCustomerKey(invoice.invoiceId),
+            orderId,
+            amount: Number(invoice.amount),
+            orderName,
+            successUrl,
+            failUrl,
+        };
     }
 
     return {
@@ -2385,27 +2468,52 @@ export async function confirmTossPayment(input: {
     orderId: string;
     amount: number;
     invoiceId?: string | null;
-    owner: PaymentOwnerIdentity;
+    /** 로그인 학부모 또는 비회원 결제 링크로 확인된 청구서 한 장 */
+    owner: PaymentOwnerIdentity | GuestInvoiceOwner;
 }) {
     await ensurePaymentInfrastructure();
 
-    const txRows = await prisma.$queryRawUnsafe<PaymentTransactionRow[]>(
-        `SELECT tx.*, i.status AS "invoiceStatus", p.status AS "paymentStatus"
-         FROM "PaymentTransaction" tx
-         JOIN "PaymentInvoice" i ON i.id = tx."invoiceId"
-         JOIN "Payment" p ON p.id = tx."paymentId"
-         JOIN "User" u ON u.id = tx."parentId"
-         WHERE tx."orderId" = $1
-           AND ($3::text IS NULL OR tx."invoiceId" = $3)
-           AND (
-             u."authUserId" = $2
-             OR (u."authUserId" IS NULL AND u.id = $2)
-           )
-         LIMIT 1`,
-        input.orderId,
-        input.owner.authUserId,
-        input.invoiceId ?? null,
-    );
+    const guest = isGuestInvoiceOwner(input.owner) ? input.owner : null;
+    if (guest && input.invoiceId && input.invoiceId !== guest.invoiceId) {
+        return { ok: false as const, error: "결제 주문을 찾을 수 없습니다." };
+    }
+    const txRows = guest
+        // 비회원 링크: 토큰의 청구서 «한 장짜리» 주문만(묶음 주문 제외) · 거래 학부모 = 청구서 대표 보호자
+        // (비회원 결제 시작이 만든 주문, 또는 대표 보호자가 로그인해 연 같은 청구서 주문)
+        ? await prisma.$queryRawUnsafe<PaymentTransactionRow[]>(
+            `SELECT tx.*, i.status AS "invoiceStatus", p.status AS "paymentStatus"
+             FROM "PaymentTransaction" tx
+             JOIN "PaymentInvoice" i ON i.id = tx."invoiceId"
+             JOIN "Payment" p ON p.id = tx."paymentId"
+             WHERE tx."orderId" = $1
+               AND tx."invoiceId" = $2
+               AND tx."parentId" IS NOT NULL
+               AND tx."parentId" = i."parentId"
+               AND NOT EXISTS (
+                 SELECT 1 FROM "PaymentTransactionItem" it
+                  WHERE it."transactionId" = tx.id AND it."paymentId" <> tx."paymentId"
+               )
+             LIMIT 1`,
+            input.orderId,
+            guest.invoiceId,
+        )
+        : await prisma.$queryRawUnsafe<PaymentTransactionRow[]>(
+            `SELECT tx.*, i.status AS "invoiceStatus", p.status AS "paymentStatus"
+             FROM "PaymentTransaction" tx
+             JOIN "PaymentInvoice" i ON i.id = tx."invoiceId"
+             JOIN "Payment" p ON p.id = tx."paymentId"
+             JOIN "User" u ON u.id = tx."parentId"
+             WHERE tx."orderId" = $1
+               AND ($3::text IS NULL OR tx."invoiceId" = $3)
+               AND (
+                 u."authUserId" = $2
+                 OR (u."authUserId" IS NULL AND u.id = $2)
+               )
+             LIMIT 1`,
+            input.orderId,
+            (input.owner as PaymentOwnerIdentity).authUserId,
+            input.invoiceId ?? null,
+        );
     const tx = txRows[0];
     if (!tx) return { ok: false as const, error: "결제 주문을 찾을 수 없습니다." };
 
@@ -2444,21 +2552,24 @@ export async function confirmTossPayment(input: {
     // 결제 권한 재확인(f8) — 돈이 나가기 «전»에, 결제 시작과 같은 판정(payerAccess)으로 «이 사람이 지금도 주문에 든 학생 전부와
     // 연결돼 있는가»를 본다. 결제창을 연 뒤 가족 연결이 해제됐으면 승인하지 않는다(결제창 인증은 자동 소멸 — 돈 안 나감).
     // ※ 이미 승인된 주문(위 storedApproval)은 돈이 나갔으므로 여기서 막지 않고 장부에 반영한다.
-    const orderStudents = await prisma.$queryRawUnsafe<Array<{ studentId: string }>>(
-        `SELECT p."studentId" FROM "Payment" p WHERE p.id = $1
-         UNION
-         SELECT p."studentId" FROM "PaymentTransactionItem" it JOIN "Payment" p ON p.id = it."paymentId"
-          WHERE it."transactionId" = $2`,
-        tx.paymentId,
-        tx.id,
-    );
-    const confirmPayer = await resolveLinkedPayer(
-        prisma,
-        input.owner.authUserId,
-        [tx.studentId, ...orderStudents.map((row) => row.studentId)],
-    );
-    if (!confirmPayer || confirmPayer.id !== tx.parentId) {
-        return { ok: false as const, error: "결제 주문을 찾을 수 없습니다." };
+    // 비회원 링크는 로그인 계정이 없다 — 소유 근거는 «방금 다시 확인한 토큰의 청구서 = 이 주문의 청구서»(위 SQL)다.
+    if (!isGuestInvoiceOwner(input.owner)) {
+        const orderStudents = await prisma.$queryRawUnsafe<Array<{ studentId: string }>>(
+            `SELECT p."studentId" FROM "Payment" p WHERE p.id = $1
+             UNION
+             SELECT p."studentId" FROM "PaymentTransactionItem" it JOIN "Payment" p ON p.id = it."paymentId"
+              WHERE it."transactionId" = $2`,
+            tx.paymentId,
+            tx.id,
+        );
+        const confirmPayer = await resolveLinkedPayer(
+            prisma,
+            input.owner.authUserId,
+            [tx.studentId, ...orderStudents.map((row) => row.studentId)],
+        );
+        if (!confirmPayer || confirmPayer.id !== tx.parentId) {
+            return { ok: false as const, error: "결제 주문을 찾을 수 없습니다." };
+        }
     }
 
     const { secretKey, productionTestKeyBlocked } = getPaymentProviderConfig();

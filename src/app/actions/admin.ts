@@ -131,6 +131,8 @@ import { findParentCheckoutActivePaymentIds, lockPaymentsForCheckout, txCoversPa
 // 납부완료(PAID) 청구의 상태 변경·영구 삭제 규칙 — 실제 결제는 잠금, 수기는 «대기로 되돌리기»만(화면과 같은 함수 · 2026-11-10)
 import { judgePaymentStatusChange, paymentDeleteBlockReason, type PaymentStatusDecision } from "@/lib/payments/paidStatusGuard";
 import { isMonthlyInvoiceNotificationEligible } from "@/lib/billing/notification-policy";
+// 비회원 결제 링크(2026-11-14) — 가입하지 않은 학부모의 청구 안내 링크를 /pay/<토큰> 으로
+import { issueGuestPayPathsForNotices } from "@/lib/payments/guestPayLinkService";
 import {
     BILLING_PARENT_SEND_LOCKED_MESSAGE,
     isBillingParentSendEnabled,
@@ -4014,6 +4016,7 @@ export async function sendInvoiceLinksForMonth(year: number, month: number, forc
             id: string;
             amount: number;
             notificationHeld: boolean;
+            parentHasAccount: boolean | null;
         }>>(
             `
             SELECT
@@ -4024,6 +4027,8 @@ export async function sendInvoiceLinksForMonth(year: number, month: number, forc
               s.name AS "studentName",
               i."parentId",
               u.phone,
+              -- 가입(로그인 계정 연결) 여부 — 가입 안내 발송과 같은 기준. 없으면 비회원 결제 링크로 보낸다
+              (u."authUserId" IS NOT NULL) AS "parentHasAccount",
               p.amount::int AS amount,
               -- dueDate(청구서)는 timestamptz 라 AT TIME ZONE 을 «한 번»만 건다(한국 달력 날짜)
               TO_CHAR(i."dueDate" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "dueYmd",
@@ -4068,6 +4073,9 @@ export async function sendInvoiceLinksForMonth(year: number, month: number, forc
 
         // 알림톡 틀 id 가 있으면 알림톡(거절되면 cron 이 같은 본문+링크를 문자로), 없으면 같은 본문+링크를 문자(LMS)로
         const templateId = alimtalkTemplateIdForEnv(BILLING_ALIMTALK_TEMPLATES.BILLING_INVOICE_PARENT.envKey);
+        // 가입하지 않은 학부모 → 청구서 한 장 전용 비회원 링크(pay/<토큰>). 발급 실패한 건은 예전 로그인 링크로 나간다
+        const guestPaths = await issueGuestPayPathsForNotices(invoices, { source: "INVOICE_NOTICE", createdByUserId: admin.appUserId });
+        for (const row of invoices) row.payPath = guestPaths.get(row.invoiceId) ?? null;
         const plan = planInvoiceNotices(invoices, {
             month,
             academyPhone: await billingAcademyPhone(),
@@ -4132,6 +4140,8 @@ export async function sendInvoiceLinksForMonth(year: number, month: number, forc
                 year, month, batchId: reserved.batchId, queueFailed: reserved.queueFailed,
                 invoiceIds: reserved.queued.flatMap((notice) => notice.invoiceIds),
                 unlinkedInvoiceIds: plan.unlinked.flatMap((item) => item.invoiceIds),
+                // 비회원 결제 링크로 보낸 청구서(토큰 원문은 남기지 않는다)
+                guestLinkInvoiceIds: [...guestPaths.keys()],
             },
         }).catch(() => undefined);
 
@@ -4182,9 +4192,13 @@ export async function sendUnpaidReminders() {
         //    한국 날짜로 기한이 지난 PENDING 을 OVERDUE 로 바꿔 두었다(검수 H2 · 2026-11-13)
         //  - 예약 중·결과 확인 필요(UNCERTAIN)·최근 3일 안에 나간 안내에 들어 있는 결제도 빼서 두 번 나가지 않게
         //  - 랠리즈 청구서의 장부용 사본은 랠리즈가 이미 안내하므로 뺀다
-        const unpaid = await prisma.$queryRawUnsafe<UnpaidNoticeRow[]>(
+        const unpaid = await prisma.$queryRawUnsafe<Array<UnpaidNoticeRow & { parentHasAccount: boolean | null; invoiceParentId: string | null }>>(
             `SELECT p.id AS "paymentId", i.id AS "invoiceId", p."studentId", s.name AS "studentName",
-                    s."parentId", u.phone, p.amount
+                    s."parentId", u.phone, p.amount,
+                    -- 가입 여부(가입 안내와 같은 기준) — 미가입 + 미납 한 장이면 비회원 결제 링크
+                    (u."authUserId" IS NOT NULL) AS "parentHasAccount",
+                    -- 청구서의 대표 보호자 — 받는 사람(학생의 지금 보호자)과 다르면 비회원 링크를 쓰지 않는다
+                    i."parentId" AS "invoiceParentId"
                FROM "Payment" p
                -- 학부모 묶음용 parentId 만 붙인다. 병합 필터를 ON 절에 걸어 결제 행(안내 대상)은 숨기지 않는다
                LEFT JOIN "Student" s ON s.id = p."studentId" AND ${notMergedStudent("s")}
@@ -4215,6 +4229,16 @@ export async function sendUnpaidReminders() {
         if (!smsTemplateBody) {
             return { sent: 0, failed: 0, smsSent: 0, errors: ["미납 문자 틀이 꺼져 있습니다."], ok: false, message: "/admin/sms 에서 미납 문자 틀이 꺼져 있습니다. 켠 뒤 다시 눌러 주세요." };
         }
+        // 미가입 학부모 + 그 학생의 미납이 «청구서 한 장»이면 비회원 결제 링크(여러 장 묶음은 이번 범위 밖 — 예전 경로)
+        const unpaidRowsByStudent = new Map<string, number>();
+        for (const row of unpaid) unpaidRowsByStudent.set(row.studentId, (unpaidRowsByStudent.get(row.studentId) ?? 0) + 1);
+        const unpaidGuestPaths = await issueGuestPayPathsForNotices(
+            // 받는 사람(학생의 지금 보호자 s.parentId)과 청구서 대표 보호자(i.parentId)가 같을 때만 — 엇갈리면 예전 링크
+            unpaid.filter((row) => unpaidRowsByStudent.get(row.studentId) === 1
+                && Boolean(row.invoiceParentId) && row.invoiceParentId === row.parentId),
+            { source: "UNPAID_NOTICE", createdByUserId: admin.appUserId },
+        );
+        for (const row of unpaid) row.payPath = row.invoiceId ? unpaidGuestPaths.get(row.invoiceId) ?? null : null;
         const plan = planUnpaidNotices(unpaid, {
             kstYmd,
             academyPhone: await billingAcademyPhone(),

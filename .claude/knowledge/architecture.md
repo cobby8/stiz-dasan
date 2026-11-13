@@ -3,6 +3,12 @@
 <!-- 프로젝트의 폴더 구조, 파일 역할, 핵심 패턴을 기록 -->
 <!-- 2026-11-10 정리: 48항목 → 주제별 19묶음. 원래 항목은 묶음 안 하위 항목(원래 날짜·제목)으로 내용 그대로 보존. 새 항목은 맞는 묶음에 하위 항목으로 넣는다 -->
 
+### [2026-11-14] 비회원 결제 링크 /pay/<토큰> = 결제 장부의 «소유자» 갈래 하나 추가
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 결제 시작·승인(`createCheckoutSession`·`confirmTossPayment`)의 owner 가 `PaymentOwnerIdentity | GuestInvoiceOwner`. 비회원은 API(`/api/pay/checkout`·`confirm`)가 토큰을 먼저 확인(`guestPayLinkService.resolveGuestPayLink`)하고 «토큰의 청구서 id»만 넘긴다(본문 invoiceId 무시). 승인 SQL 은 그 청구서의 한 장짜리 주문(묶음 제외·거래 parentId=청구서 parentId)만 찾고 금액 비교·`claimTossConfirmInTx` 잠금은 그대로. 청구서 한 장 SQL 은 `loadParentInvoiceRow` 공용(로그인·비회원). 토큰은 해시만 저장(`PaymentInvoiceAccessToken`)이라 재발급만 가능 — 이전 링크는 폐기하지 않는다. 납부·취소·환불은 쓰는 순간 청구 상태로 판정(`judgeGuestPayLink`). 새 «토큰 주소»는 next.config 전용 머리글 + 공통 규칙 제외 정규식 + `trackingExclusion.TOKEN_PATH_PREFIXES`(픽셀) 세 곳을 같이 고친다(가드 테스트가 마지막 것을 잡는다).
+- **참조횟수**: 0
+
 ### [2026-11-13] 학부모 아이디 규칙 한 곳(parent-username) · 앱 설치 짧은 주소 /install
 - **분류**: architecture
 - **발견자**: developer

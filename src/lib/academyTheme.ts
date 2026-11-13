@@ -8,7 +8,9 @@ export function isAcademyPath(pathname: string | null | undefined): boolean {
     || /^\/(?:admin|mypage|staff|driver|invite|request)(?:\/|$)/.test(path)
     || /^\/shuttle\/(?:run|regular|location)(?:\/|$)/.test(path)
     // 학부모 납부 화면(심사용 /payments/review 는 카드사 심사 중이라 그대로 둔다)
-    || /^\/payments\/(?!review(?:\/|$))/.test(path);
+    || /^\/payments\/(?!review(?:\/|$))/.test(path)
+    // 비회원 결제 링크(/pay/<토큰>) — 학부모 납부 화면과 같은 색
+    || /^\/pay(?:\/|$)/.test(path);
 }
 
 export const ACADEMY_THEME_COLOR = THEME_COLORS.academy;
