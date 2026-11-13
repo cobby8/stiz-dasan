@@ -151,7 +151,7 @@ export default async function PaymentConfirmationsPage({
                   >
                     <button
                       type="submit"
-                      className="academy-button-secondary"
+                      className="academy-button-danger"
                     >
                       반려
                     </button>

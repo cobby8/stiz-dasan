@@ -525,7 +525,7 @@ export default function GalleryAdminClient({
                         disabled={isEditLocked}
                         className="academy-button-primary"
                       >
-                        {hasPublishingStatus ? "처리 중" : draft.status === "FAILED" ? "다시 게시" : "게시"}
+                        {isPublishingDraft || hasPublishingStatus ? "처리 중" : draft.status === "FAILED" ? "다시 게시" : "게시"}
                       </button>
                       <button
                         type="button"

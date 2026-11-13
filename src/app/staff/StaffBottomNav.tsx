@@ -43,7 +43,7 @@ export default function StaffBottomNav({ canTeach, canShuttle }: { canTeach: boo
   };
 
   // 공통 표면을 사용하되 현재 메뉴의 접근성·이동 규칙은 유지합니다.
-  return <nav aria-label="교사용 주요 메뉴" className="academy-staff-nav fixed inset-x-0 bottom-0 z-30 border-t px-3 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur-xl">
+  return <nav aria-label="교사용 주요 메뉴" className="academy-staff-nav fixed inset-x-0 bottom-0 z-30 border-t px-3 pb-[max(0.625rem,env(safe-area-inset-bottom))] backdrop-blur-xl">
     <div className={`mx-auto grid max-w-lg ${gridClass} gap-2`}>{items.map((item) => {
       const active = isActive(item);
       // 2026-11-13 UI 통일: 아이콘 없이 글자만. 지금 있는 탭 = 보조 색(하늘색) 글자 + 위쪽 띠 + 조금 굵게. 누르는 높이(56px)는 그대로.

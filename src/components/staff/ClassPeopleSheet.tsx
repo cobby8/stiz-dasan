@@ -44,7 +44,7 @@ export function ClassPeopleSheet({ open, classId, sessionId, sessionDateId, clas
       <header className="border-b border-[var(--color-academy-line)] px-5 pb-4 pt-3">
         <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-[var(--color-academy-line-input)]" />
         <div className="flex items-start justify-between gap-3"><div><p className="text-xs text-[var(--color-academy-muted)]">{className}</p><h2 id="class-people-title" className="mt-0.5 text-xl font-bold">학생 정보 · 연락</h2></div><button type="button" data-dialog-initial-focus onClick={onClose} aria-label="닫기" className="flex min-h-11 min-w-11 items-center justify-center rounded-full bg-[var(--color-academy-soft)]"><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>
-        <label className="mt-4 flex min-h-12 items-center gap-2 rounded-xl bg-[var(--color-academy-soft)] px-3"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="학생·학부모 이름 검색" className="w-full bg-transparent text-sm outline-none" /></label>
+        <label className="mt-4 flex min-h-12 items-center gap-2 rounded-xl bg-[var(--color-academy-soft)] px-3"><input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="학생·학부모 이름 검색" placeholder="학생·학부모 이름 검색" className="w-full bg-transparent text-sm outline-none" /></label>
       </header>
       <div className="max-h-[calc(92dvh-10.5rem)] overflow-y-auto overscroll-contain px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4">
         {loading && people.length === 0 && <SheetMessage text="학생 정보를 불러오는 중입니다." />}{error && <SheetMessage text={error} />}{!loading && !error && visible.length === 0 && <SheetMessage text="표시할 학생이 없습니다." />}

@@ -106,7 +106,7 @@ export default function ClassSubstitutePanel({ data }: { data: ClassSubstituteAd
                                 disabled={pending}
                                 onClick={() => cancel(item)}
                                 aria-label={`${dateLabel(item.date)} ${item.className} 대타 취소`}
-                                className="academy-button-text academy-button-sm shrink-0"
+                                className="academy-button-danger academy-button-sm shrink-0"
                             >
                                 취소
                             </button>

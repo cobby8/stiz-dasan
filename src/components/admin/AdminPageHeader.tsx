@@ -28,7 +28,7 @@ export default function AdminPageHeader({
                 <h1 className="academy-page-title">{title}</h1>
                 {description != null && <p className="academy-page-description">{description}</p>}
             </div>
-            {actions != null && <div className="flex flex-shrink-0 flex-wrap items-center gap-2">{actions}</div>}
+            {actions != null && <div className="flex min-w-0 flex-wrap items-center gap-2">{actions}</div>}
         </div>
     );
 }
