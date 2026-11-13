@@ -1,9 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { INBOX_TABS } from "@/lib/requests/catalog";
 import type { InboxCounts } from "@/lib/requests/admin-inbox";
+import type { DashboardSummary } from "@/lib/stats/statsTypes";
+// 2026-11-13 대시보드 개편: 맨 위 카드 6개(재원생·수납률·출석률·신규/퇴원·체험→등록·유니폼).
+// 예전에 접혀 있던 상세 칸(운영 규모·매출·출석 추이·프로그램별 원생·최근 7일 신규)은 통계 탭(/admin/stats)으로 옮겼다.
+import DashboardSummaryCards from "@/components/admin/DashboardSummaryCards";
 
 type DashboardStats = {
     studentCount: number;
@@ -119,14 +123,9 @@ function SymbolIcon({
     );
 }
 
-function formatKRW(n: number): string {
-    if (n >= 10000) return `${(n / 10000).toFixed(n % 10000 === 0 ? 0 : 1)}만원`;
-    return n.toLocaleString("ko-KR") + "원";
-}
-
 function DashboardPrimarySkeleton() {
     return (
-        <div className="grid gap-4 lg:grid-cols-2" aria-label="오늘 업무 불러오는 중" role="status">
+        <div className="grid gap-4 lg:grid-cols-2" aria-label="대시보드 불러오는 중" role="status">
             {[0, 1].map((item) => (
                 <div key={item} className="academy-panel p-5 animate-pulse">
                     <div className="mb-5 h-4 w-28 rounded bg-[var(--color-academy-line)]" />
@@ -158,18 +157,19 @@ export default function AdminDashboardClient({
     initialData,
     hydrateFullData = false,
     inboxCounts = null,
+    summary = null,
 }: {
     initialData?: DashboardData;
     hydrateFullData?: boolean;
     /** 신청함 개수(getInboxCounts) — 없으면 옛 숫자(문의 대기)로 */
     inboxCounts?: InboxCounts | null;
+    /** 맨 위 카드 6개 숫자(getCachedAdminDashboardSummary) — 못 읽었으면 카드 칸을 그리지 않는다 */
+    summary?: DashboardSummary | null;
 }) {
     const hasInitialData = initialData !== undefined;
     const [data, setData] = useState<DashboardData | null>(initialData ?? null);
     const [loading, setLoading] = useState(!hasInitialData);
     const [error, setError] = useState<string | null>(null);
-    const [detailsLoaded, setDetailsLoaded] = useState(!hasInitialData);
-    const [detailsLoading, setDetailsLoading] = useState(false);
     const [systemStatus, setSystemStatus] = useState<SystemStatusData | null>(null);
     const [systemLoading, setSystemLoading] = useState(false);
     const [systemError, setSystemError] = useState(false);
@@ -177,21 +177,19 @@ export default function AdminDashboardClient({
     const [siteOpsLoading, setSiteOpsLoading] = useState(false);
     const [siteOpsError, setSiteOpsError] = useState(false);
 
-    const loadDashboard = useCallback(async (showSkeleton = true) => {
-        if (showSkeleton) setLoading(true);
-        else setDetailsLoading(true);
+    // 첫 응답이 없을 때(다른 화면에 끼워 쓸 때)만 API 로 한 번 읽는다
+    const loadDashboard = useCallback(async () => {
+        setLoading(true);
         setError(null);
 
         try {
             const res = await fetch("/api/admin/dashboard");
             if (!res.ok) throw new Error("Dashboard request failed");
             setData((await res.json()) as DashboardData);
-            setDetailsLoaded(true);
         } catch {
             setError("failed");
         } finally {
-            if (showSkeleton) setLoading(false);
-            else setDetailsLoading(false);
+            setLoading(false);
         }
     }, []);
 
@@ -229,17 +227,7 @@ export default function AdminDashboardClient({
     }, []);
 
     useEffect(() => {
-        if (!hasInitialData) {
-            void loadDashboard(true);
-            return;
-        }
-        if (!hydrateFullData) return;
-
-        const timer = window.setTimeout(() => {
-            void loadDashboard(false);
-        }, 1200);
-
-        return () => window.clearTimeout(timer);
+        if (!hasInitialData || hydrateFullData) void loadDashboard();
     }, [hasInitialData, hydrateFullData, loadDashboard]);
 
     return (
@@ -247,7 +235,7 @@ export default function AdminDashboardClient({
             {/* 반복 방문에서는 설명보다 업무 제목과 바로 쓰는 두 동선이 먼저 보이게 한다. */}
             <header className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                    <h1 className="academy-heading">오늘의 업무</h1>
+                    <h1 className="academy-heading">대시보드</h1>
                     {data?.todayLabel && <p className="text-sm text-[var(--color-academy-muted)]">{data.todayLabel}</p>}
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -256,8 +244,9 @@ export default function AdminDashboardClient({
                 </div>
             </header>
 
+            {summary && <DashboardSummaryCards summary={summary} />}
             {loading && !data && <DashboardPrimarySkeleton />}
-            {!loading && !data && error && <ErrorState onRetry={() => void loadDashboard(true)} />}
+            {!loading && !data && error && <ErrorState onRetry={() => void loadDashboard()} />}
             {data && (
                 <DashboardContent
                     data={data}
@@ -268,10 +257,6 @@ export default function AdminDashboardClient({
                     siteOpsResult={siteOpsResult}
                     siteOpsLoading={siteOpsLoading}
                     siteOpsError={siteOpsError}
-                    detailsLoaded={detailsLoaded}
-                    detailsLoading={detailsLoading}
-                    detailsError={Boolean(error)}
-                    onLoadDetails={() => void loadDashboard(false)}
                     onRetrySystem={loadSystemStatus}
                     onRunSiteOpsBot={runSiteOpsBot}
                 />
@@ -289,10 +274,6 @@ function DashboardContent({
     siteOpsResult,
     siteOpsLoading,
     siteOpsError,
-    detailsLoaded,
-    detailsLoading,
-    detailsError,
-    onLoadDetails,
     onRetrySystem,
     onRunSiteOpsBot,
 }: {
@@ -304,24 +285,16 @@ function DashboardContent({
     siteOpsResult: SiteOpsBotResult | null;
     siteOpsLoading: boolean;
     siteOpsError: boolean;
-    detailsLoaded: boolean;
-    detailsLoading: boolean;
-    detailsError: boolean;
-    onLoadDetails: () => void;
     onRetrySystem: () => void;
     onRunSiteOpsBot: () => void;
 }) {
-    const { stats, pendingRequests, enrollStats, extendedStats, todayClasses, recentStudents } = data;
+    const { pendingRequests, enrollStats, todayClasses } = data;
     // «처리할 신청» 숫자 = 신청함 «처리 필요»와 같은 숫자(메뉴 배지와 일치). 못 읽었으면 옛 숫자(문의 대기)
     const pendingCount = inboxCounts ? inboxCounts.action : data.pendingCount;
     // 칩 = 신청함 6탭 배지 그대로(칩 합 = «처리할 신청» 숫자). 누르면 그 탭이 열린다
     const inboxTabs = inboxCounts ? INBOX_TABS.filter((entry) => inboxCounts.byTab[entry.tab] > 0) : [];
-    const revDiff = extendedStats.lastMonthRevenue > 0
-        ? Math.round(((extendedStats.thisMonthRevenue - extendedStats.lastMonthRevenue) / extendedStats.lastMonthRevenue) * 100)
-        : extendedStats.thisMonthRevenue > 0 ? 100 : 0;
-    const maxRevenue = Math.max(...extendedStats.monthlyRevenue.map((m) => m.amount), 1);
-    const dayLabels: Record<string, string> = { Sun: "일", Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금", Sat: "토" };
-    const todayLabel = data.todayLabel ?? `${dayLabels[["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][new Date().getDay()]]}요일`;
+    // 요일 글은 서버가 KST 로 만들어 준다(브라우저 시계로 다시 계산하지 않는다)
+    const todayLabel = data.todayLabel ?? "";
 
     return (
         <>
@@ -342,7 +315,7 @@ function DashboardContent({
                         ))}
                     </div>
                 )}
-                {detailsLoaded && pendingRequests.length > 0 ? (
+                {pendingRequests.length > 0 ? (
                     <div className="divide-y divide-[var(--color-academy-line)]">
                         {pendingRequests.map((request) => (
                             <Link key={request.id} href="/admin/inbox?kind=PARENT_REQUEST" prefetch={false} className="flex items-center gap-3 px-5 py-4 transition hover:bg-[var(--color-academy-soft)]">
@@ -359,155 +332,15 @@ function DashboardContent({
                 <TodayClassesCard todayClasses={todayClasses} todayLabel={todayLabel} />
             </div>
 
-            <div className="grid items-start gap-2 sm:grid-cols-2">
-            <details className="academy-panel px-4 py-2 [&[open]]:col-span-full">
-                <summary className="min-h-11 cursor-pointer content-center text-sm font-bold text-[var(--color-academy-ink)]">
-                    운영 현황
-                    {/* 게슈탈트 A-13: 접힌 채로도 미납 건수가 보이게(상세를 불러온 뒤에만 — 첫 응답엔 값이 없다) */}
-                    {detailsLoaded && extendedStats.unpaidCount > 0 && (
-                        <span className="ml-2 rounded-full bg-[var(--color-academy-danger-soft)] px-2 py-0.5 text-xs font-bold tabular-nums text-[var(--color-academy-danger)]">미납 {extendedStats.unpaidCount}건</span>
-                    )}
-                </summary>
-                <div className="mt-5 space-y-5">
-                    {/* 미조회 값의 0과 빈 배열은 실제 현황으로 보여주지 않는다. */}
-                    {detailsError && <p role="alert" className="rounded-xl bg-[var(--color-academy-danger-soft)] px-4 py-3 text-sm text-[var(--color-academy-danger)]">상세 운영 현황을 불러오지 못했습니다. 현재 표시 중인 정보는 유지됩니다. 다시 불러와 주세요.</p>}
-                    {(!detailsLoaded || detailsError) && <DeferredDetailsCard loading={detailsLoading} onLoad={onLoadDetails} retry={detailsError} />}
-                    {detailsLoaded && <>
-            {/* 게슈탈트 A-14: 두 카드 줄이 한 덩어리로 읽히지 않게 줄마다 소제목을 단다. 아이콘 색은 한 가지(muted) */}
-            <h3 className="mb-2 text-xs font-bold text-[var(--color-academy-muted)]">운영 규모</h3>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <StatCard title="등록 원생" value={`${stats.studentCount}명`}
-                    icon={<SymbolIcon name="groups" size={20} className="text-[var(--color-academy-muted)]" />} href="/admin/students" />
-                <StatCard title="운영 프로그램" value={`${stats.programCount}개`}
-                    icon={<SymbolIcon name="menu_book" size={20} className="text-[var(--color-academy-muted)]" />} href="/admin/programs" />
-                <StatCard title="코치/강사진" value={`${stats.coachCount}명`}
-                    icon={<SymbolIcon name="person_check" size={20} className="text-[var(--color-academy-muted)]" />} href="/admin/coaches" />
-                <StatCard title="개설 반" value={`${stats.classCount}개`}
-                    icon={<SymbolIcon name="layers" size={20} className="text-[var(--color-academy-muted)]" />} href="/admin/classes" />
-            </div>
-
-            <h3 className="mb-2 mt-6 text-xs font-bold text-[var(--color-academy-muted)]">이번 달 매출·출석·미납</h3>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="academy-panel p-4">
-                    <p className="text-xs font-medium text-[var(--color-academy-muted)] mb-1">이번 달 매출</p>
-                    <h3 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">{formatKRW(extendedStats.thisMonthRevenue)}</h3>
-                    {extendedStats.lastMonthRevenue > 0 && (
-                        <div className={`flex items-center gap-1 mt-1 text-xs font-medium ${revDiff >= 0 ? "text-[var(--color-academy-success)]" : "text-[var(--color-academy-danger)]"}`}>
-                            <SymbolIcon name={revDiff > 0 ? "trending_up" : revDiff < 0 ? "trending_down" : "remove"} size={14} />
-                            전월 대비 {revDiff > 0 ? "+" : ""}{revDiff}%
-                        </div>
-                    )}
-                </div>
-                <div className="academy-panel p-4">
-                    <p className="text-xs font-medium text-[var(--color-academy-muted)] mb-1">이번 달 출석률</p>
-                    <h3 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">{extendedStats.attendanceRate}%</h3>
-                </div>
-                <Link href="/admin/finance" prefetch={false} className="academy-panel p-4 hover:border-[var(--color-academy-danger)] transition">
-                    <p className="text-xs font-medium text-[var(--color-academy-muted)] mb-1">미납 현황</p>
-                    <h3 className={`text-2xl font-extrabold ${extendedStats.unpaidCount > 0 ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-ink)]"}`}>
-                        {extendedStats.unpaidCount}건
-                    </h3>
-                    {extendedStats.unpaidAmount > 0 && (
-                        <p className="text-xs text-[var(--color-academy-danger)] mt-1 flex items-center gap-1">
-                            <SymbolIcon name="warning" size={12} /> {formatKRW(extendedStats.unpaidAmount)}
-                        </p>
-                    )}
-                </Link>
-                <div className="academy-panel p-4">
-                    <p className="text-xs font-medium text-[var(--color-academy-muted)] mb-1">전월 매출</p>
-                    <h3 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">{formatKRW(extendedStats.lastMonthRevenue)}</h3>
-                </div>
-            </div>
-
-            <Link href="/admin/stats" prefetch={false} className="flex items-center justify-between bg-[var(--color-academy-primary-soft)] border border-[var(--color-academy-line)] rounded-2xl p-4 hover:opacity-90 transition shadow-sm">
-                <div className="flex items-center gap-3">
-                    <SymbolIcon name="monitoring" size={28} className="text-[var(--color-academy-primary)]" />
-                    <div>
-                        <p className="font-bold text-[var(--color-academy-primary)]">상세 운영 통계</p>
-                    </div>
-                </div>
-                <span className="text-[var(--color-academy-primary)] text-sm font-bold">보러가기 &rarr;</span>
-            </Link>
-
-            <ChartsSection extendedStats={extendedStats} maxRevenue={maxRevenue} />
-
-
-                        <div className="grid items-start gap-4 lg:grid-cols-2">
-                            <ProgramStudentsCard programStudents={extendedStats.programStudents} />
-                            <RecentStudentsCard recentStudents={recentStudents} />
-                        </div>
-                    </>}
-                </div>
-            </details>
-
             {/* 펼치기는 표시만 바꾼다. 조회와 조치는 각 도구의 명시적 버튼에서만 실행한다. */}
-            <details className="academy-panel px-4 py-2 [&[open]]:col-span-full">
+            <details className="academy-panel px-4 py-2">
                 <summary className="min-h-11 cursor-pointer content-center text-sm font-bold text-[var(--color-academy-ink)]">관리 도구</summary>
                 <div className="mt-5 grid items-start gap-4 lg:grid-cols-2">
                     <SiteOpsBotCard result={siteOpsResult} loading={siteOpsLoading} error={siteOpsError} onRun={onRunSiteOpsBot} />
                     <SystemStatusCard systemStatus={systemStatus} systemLoading={systemLoading} systemError={systemError} onRetry={onRetrySystem} />
                 </div>
             </details>
-            </div>
         </>
-    );
-}
-
-function DeferredDetailsCard({ loading, onLoad, retry }: { loading: boolean; onLoad: () => void; retry: boolean }) {
-    return (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-[var(--color-academy-muted)]">매출·출석 추이와 최근 등록 원생은 조회 후 표시합니다.</p>
-            <button type="button" onClick={onLoad} disabled={loading} className="academy-button-secondary disabled:cursor-wait disabled:opacity-60">
-                <SymbolIcon name={loading ? "sync" : "download"} size={18} />
-                {loading ? "불러오는 중" : retry ? "상세 데이터 다시 불러오기" : "상세 데이터 불러오기"}
-            </button>
-        </div>
-    );
-}
-
-function ChartsSection({ extendedStats, maxRevenue }: { extendedStats: ExtendedStats; maxRevenue: number }) {
-    return (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="academy-panel p-5">
-                <h3 className="font-bold text-[var(--color-academy-ink)] mb-4">매출 추이 (최근 6개월)</h3>
-                <div className="flex items-end gap-2 h-40">
-                    {extendedStats.monthlyRevenue.map((m, i) => (
-                        <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                            <span className="text-xs text-[var(--color-academy-muted)] font-medium">
-                                {m.amount > 0 ? formatKRW(m.amount) : ""}
-                            </span>
-                            <div className="w-full bg-[var(--color-academy-soft)] rounded-t-lg relative" style={{ height: "120px" }}>
-                                <div
-                                    className="absolute bottom-0 left-0 right-0 bg-[var(--color-academy-primary)] rounded-t-lg transition-all duration-500"
-                                    style={{ height: `${maxRevenue > 0 ? (m.amount / maxRevenue) * 100 : 0}%` }}
-                                />
-                            </div>
-                            <span className="text-xs text-[var(--color-academy-faint)]">{m.month}</span>
-                        </div>
-                    ))}
-                </div>
-            </div>
-
-            <div className="academy-panel p-5">
-                <h3 className="font-bold text-[var(--color-academy-ink)] mb-4">출석률 추이 (최근 6개월)</h3>
-                <div className="flex items-end gap-2 h-40">
-                    {extendedStats.monthlyAttendance.map((m, i) => (
-                        <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                            <span className="text-xs text-[var(--color-academy-muted)] font-medium">
-                                {m.rate > 0 ? `${m.rate}%` : ""}
-                            </span>
-                            <div className="w-full bg-[var(--color-academy-soft)] rounded-t-lg relative" style={{ height: "120px" }}>
-                                <div
-                                    className="absolute bottom-0 left-0 right-0 bg-[var(--color-academy-primary)] rounded-t-lg transition-all duration-500"
-                                    style={{ height: `${m.rate}%` }}
-                                />
-                            </div>
-                            <span className="text-xs text-[var(--color-academy-faint)]">{m.month}</span>
-                        </div>
-                    ))}
-                </div>
-            </div>
-        </div>
     );
 }
 
@@ -532,54 +365,6 @@ function TodayClassesCard({ todayClasses, todayLabel }: { todayClasses: TodayCla
                 </div>
             )}
         </section>
-    );
-}
-
-function RecentStudentsCard({ recentStudents }: { recentStudents: RecentStudent[] }) {
-    return (
-        <div className="academy-panel p-5">
-            <h3 className="academy-section-title mb-4">신규 원생 (최근 7일)</h3>
-            {recentStudents.length === 0 ? <p className="text-sm text-[var(--color-academy-muted)]">최근 등록된 원생이 없습니다.</p> : (
-                <div className="divide-y divide-[var(--color-academy-line)]">
-                    {recentStudents.map((student) => (
-                        <Link key={student.id} href={`/admin/students/${student.id}`} prefetch={false} className="flex items-center justify-between gap-3 rounded-lg py-3 transition hover:bg-[var(--color-academy-soft)]">
-                            <div className="min-w-0"><p className="break-words text-sm font-bold">{student.name}</p><p className="text-xs text-[var(--color-academy-muted)]">학부모: {student.parentName ?? "-"}</p></div>
-                            <span className="shrink-0 text-xs text-[var(--color-academy-muted)]">{new Date(student.createdAt).toLocaleDateString("ko-KR", { month: "short", day: "numeric" })}</span>
-                        </Link>
-                    ))}
-                </div>
-            )}
-        </div>
-    );
-}
-
-function ProgramStudentsCard({ programStudents }: { programStudents: { name: string; count: number }[] }) {
-    const maxCnt = Math.max(...programStudents.map((item) => item.count), 1);
-
-    return (
-        <div className="academy-panel p-5">
-            <h3 className="font-bold text-[var(--color-academy-ink)] mb-4">프로그램별 원생 수</h3>
-            {programStudents.length === 0 ? (
-                <p className="text-sm text-[var(--color-academy-faint)]">프로그램을 추가하세요</p>
-            ) : (
-                <div className="space-y-3">
-                    {programStudents.map((program, index) => (
-                        <div key={index}>
-                            <div className="flex justify-between text-sm mb-1">
-                                <span className="text-[var(--color-academy-muted)] font-medium truncate">{program.name}</span>
-                                <span className="text-[var(--color-academy-muted)] font-bold">{program.count}명</span>
-                            </div>
-                            <div className="w-full bg-[var(--color-academy-soft)] rounded-full h-2">
-                                <div
-                                    className="bg-[var(--color-academy-primary)] h-2 rounded-full transition-all duration-500"
-                                    style={{ width: `${(program.count / maxCnt) * 100}%` }}
-                                />
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            )}
-        </div>
     );
 }
 
@@ -789,25 +574,4 @@ function SystemStatusCard({
             </div>
         </div>
     );
-}
-
-function StatCard({ title, value, icon, href }: {
-    title: string;
-    value: string;
-    icon: ReactNode;
-    href?: string;
-}) {
-    const content = (
-        <div className={`academy-panel p-4 ${href ? "hover:border-[var(--color-academy-primary)] transition-colors cursor-pointer" : ""}`}>
-            <div className="flex justify-between items-start">
-                <div>
-                    <p className="text-xs font-medium text-[var(--color-academy-muted)] mb-1">{title}</p>
-                    <h3 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">{value}</h3>
-                </div>
-                <div className="p-2.5 bg-[var(--color-academy-soft)] rounded-xl">{icon}</div>
-            </div>
-        </div>
-    );
-    if (href) return <Link href={href} prefetch={false}>{content}</Link>;
-    return content;
 }

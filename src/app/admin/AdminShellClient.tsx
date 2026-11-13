@@ -63,8 +63,6 @@ const EXTRA_GROUPS: ReadonlyArray<{ label: string; icon: string; items: readonly
         // 이용약관·개인정보처리방침 탭
         { href: "/admin/terms", label: "약관·방침", icon: "📜", section: "policy" },
         { href: "/admin/pos-plugin", label: "POS 연결", icon: "🔌" },
-        // 화면은 다른 작업이 다시 만든다 — 메뉴 이름만 «통계»
-        { href: "/admin/stats", label: "통계", icon: "📈" },
     ] },
 ];
 
@@ -142,6 +140,8 @@ export default function AdminShellClient({
                 <nav aria-label="관리자 업무 메뉴" className="min-h-0 p-3 space-y-1 flex-1 overflow-y-auto [@media(max-height:500px)]:p-2">
                     {/* 2026-11-13 «오늘 업무» → «대시보드»(원장 점검표) */}
                     <NavItem href="/admin" active={pathname === "/admin"} icon="📊" label="대시보드" />
+                    {/* 2026-11-13 통계 개편(원장 결정표): «통계»는 설정 묶음에서 빼 대시보드 바로 아래로 — 카드 «자세히 →»가 가는 곳 */}
+                    <NavItem href="/admin/stats" active={matchesNavPath(pathname, "/admin/stats")} icon="📈" label="통계" />
                     {/* 신청함 — 체험·수강·상담·대관·변경·기타 6탭. 배지 = 처리 필요 건수 */}
                     <NavItem href="/admin/inbox" active={matchesNavPath(pathname, "/admin/inbox") || INBOX_LEGACY_PATHS.some((path) => matchesNavPath(pathname, path))} icon="📨" label="신청함" badge={inboxCount ?? undefined} />
                     <NavItem href="/admin/students" active={matchesNavPath(pathname, "/admin/students")} icon="🧑‍🎓" label="원생" />

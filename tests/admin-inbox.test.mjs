@@ -184,12 +184,15 @@ test('진행 중 건 상세 칸 처리(k3) — 보강 예약·결석 신고의 �
   }
 });
 
-test('신청 설정(⚙, k4) — 유입 통계·안내 설정·입학 점검, 메뉴의 «신청·상담»은 빠지고 주소는 산다', () => {
+test('신청 설정(⚙, k4) — 안내 설정·입학 점검, 메뉴의 «신청·상담»은 빠지고 주소는 산다', () => {
   assert.match(client, /href="\/admin\/inbox\/settings"/);
   assert.match(settingsPage, /await requireAdmin\(\);/);
   assert.match(settingsPage, /<ApplyAdminClient mode="settings" \/>/);
   assert.match(settingsPage, /href="\/admin\/registration-readiness"/);
-  assert.match(applyClient, /mode !== "settings" \|\| tab\.key === "sources" \|\| tab\.key === "settings"/);
+  // 2026-11-13: 신청 설정에 «유입 통계» 없음 — 통계 «유입·전환» 탭으로 옮겼다(옛 /admin/apply 전체 화면엔 남는다)
+  assert.match(applyClient, /\.filter\(tab => mode !== "settings" \|\| tab\.key === "settings"\)/);
+  assert.doesNotMatch(applyClient, /mode !== "settings" \|\| tab\.key === "sources"/);
+  assert.match(applyClient, /mode === "settings" \? "settings" : "trial"/);
   assert.doesNotMatch(shell, /label="신청·상담"/);
   assert.match(shell, /"\/admin\/apply"\] as const/); // 옛 주소로 들어와도 메뉴 «신청함»이 켜진다
   assert.ok(fs.existsSync('src/app/admin/apply/page.tsx'));

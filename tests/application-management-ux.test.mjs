@@ -11,6 +11,8 @@ const applyModals = readFileSync(new URL("../src/app/admin/apply/ApplyAdminModal
 const applySourceStatsRoute = readFileSync(new URL("../src/app/api/admin/apply/source-stats/route.ts", import.meta.url), "utf8");
 const adminShell = readFileSync(new URL("../src/app/admin/AdminShellClient.tsx", import.meta.url), "utf8");
 const adminReadPayloads = readFileSync(new URL("../src/lib/adminReadPayloads.ts", import.meta.url), "utf8");
+// 2026-11-13: 유입 통계 쿼리 본문은 통계 «유입·전환» 탭과 같은 함수(statsQueries.loadApplySourceStats)로 옮겼다
+const statsQueries = readFileSync(new URL("../src/lib/stats/statsQueries.ts", import.meta.url), "utf8");
 const queries = readFileSync(new URL("../src/lib/queries.ts", import.meta.url), "utf8");
 const contactActions = readFileSync(new URL("../src/lib/application-contact-actions.ts", import.meta.url), "utf8");
 
@@ -296,9 +298,13 @@ test("신청 관리에는 유입경로 통계를 탭에서 지연 로딩한다",
   assert.doesNotMatch(applyClient, /체험 문의와 수강신청이 어떤 경로에서 들어오는지 확인합니다/);
   assert.match(applyClient, /activeTab === "sources" \?[\s\S]*renderSourceStats\(\)/);
   assert.match(adminReadPayloads, /getCachedAdminApplySourceStatsPayload/);
-  assert.match(adminReadPayloads, /FROM "TrialLead"/);
-  assert.match(adminReadPayloads, /FROM "EnrollmentApplication"/);
-  assert.match(adminReadPayloads, /COALESCE\(NULLIF\(TRIM\(source\), ''\), 'UNKNOWN'\)/);
+  assert.match(adminReadPayloads, /\(\) => loadApplySourceStats\(normalizedRange\)/);
+  assert.match(statsQueries, /FROM "TrialLead"/);
+  assert.match(statsQueries, /FROM "EnrollmentApplication"/);
+  assert.match(statsQueries, /COALESCE\(NULLIF\(TRIM\(source\), ''\), 'UNKNOWN'\)/);
+  // «이번 달» 시작은 KST 1일 0시(서버 시계 getMonth 로 자르면 매달 1일 00~09시에 지난달이 된다)
+  assert.match(statsQueries, /if \(range === "THIS_MONTH"\) return `\$\{todayKst\(nowMs\)\.slice\(0, 7\)\}-01T00:00:00\+09:00`;/);
+  assert.doesNotMatch(adminReadPayloads, /function sourceStatsStartIso/);
   assert.match(applySourceStatsRoute, /requireTimedAdmin/);
   assert.match(applySourceStatsRoute, /getCachedAdminApplySourceStatsPayload\(range\)/);
   assert.match(applySourceStatsRoute, /private, max-age=60/);

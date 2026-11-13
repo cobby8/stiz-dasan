@@ -52,9 +52,11 @@ test('주요 업무 일곱 개는 탭 전환 없이 렌더링되고 셔틀은 �
   const primary = mainLinks(html);
   // 2026-11-10 신청함 통합: «오늘 업무» 바로 아래 «신청함»이 최상위 메뉴로 들어왔다
   // 2026-11-10 원장 결정 k4: «신청·상담»은 신청함 체험·수강 탭과 ⚙ 신청 설정으로 옮겨 메뉴에서 빠졌다(주소는 산다)
-  assert.equal((primary.match(/<a /g) ?? []).length, 6);
+  // 2026-11-13 통계 개편: «통계»가 «대시보드» 바로 아래 맨 위 메뉴로 올라왔다(설정 묶음에서 빠짐)
+  assert.equal((primary.match(/<a /g) ?? []).length, 7);
   // 2026-11-13 메뉴 정리: «오늘 업무» → «대시보드»
-  for (const label of ['대시보드', '신청함', '원생', '수업·출결', '청구·수납', '셔틀']) assert.ok(primary.includes(label));
+  for (const label of ['대시보드', '통계', '신청함', '원생', '수업·출결', '청구·수납', '셔틀']) assert.ok(primary.includes(label));
+  assert.ok(primary.indexOf('href="/admin/stats"') < primary.indexOf('href="/admin/inbox"'), '통계는 대시보드 바로 아래');
   assert.ok(!primary.includes('오늘 업무'));
   assert.ok(!primary.includes('신청·상담'));
   assert.ok(primary.includes('href="/admin/inbox"'));

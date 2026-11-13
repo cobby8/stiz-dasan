@@ -176,16 +176,24 @@ test("A-11·A-12 사이드바: 상세 메뉴 3묶음, 아이콘 겹침 해소, �
   assert.match(shell, /title="로그아웃"\s*aria-label="로그아웃"\s*className="inline-flex h-11 w-11/);
 });
 
-test("A-14 대시보드: 카드 두 줄에 소제목, 아이콘 색 muted 통일", () => {
+// 2026-11-13 대시보드·통계 개편: 접힌 «운영 현황»(운영 규모·매출·출석·미납)은 통계 탭으로 옮겼다.
+//   대시보드는 맨 위 카드 6개(큰 숫자는 재원생 하나), 통계는 칸마다 제목 + «기준 한 줄».
+test("A-14 대시보드·통계: 카드는 묶음마다 제목, 큰 숫자는 주인공 하나, 장식 색 없음", () => {
   const dash = read("../src/app/admin/AdminDashboardClient.tsx");
-  assert.match(dash, />운영 규모<\/h3>/);
-  assert.match(dash, />이번 달 매출·출석·미납<\/h3>/);
-  for (const name of ["groups", "menu_book", "person_check", "layers"]) {
-    assert.ok(dash.includes(`<SymbolIcon name="${name}" size={20} className="text-[var(--color-academy-muted)]" />`), name);
+  const cards = read("../src/components/admin/DashboardSummaryCards.tsx");
+  const stats = read("../src/app/admin/stats/StatsClient.tsx");
+  assert.doesNotMatch(dash, /운영 현황|상세 데이터 불러오기/);
+  assert.match(dash, /<DashboardSummaryCards summary=\{summary\} \/>/);
+  for (const title of ["재원생", "이번 달 수납률", "이번 달 출석률", "이번 달 신규·퇴원", "체험 → 등록 (30일)", "유니폼 보유율"]) {
+    assert.ok(cards.includes(`title="${title}"`), title);
   }
-  // 운영 현황 카드 구역만(백업 상태 아이콘의 의미색은 그대로 둔다)
-  const cards = dash.slice(dash.indexOf(">운영 규모</h3>"), dash.indexOf(">이번 달 매출·출석·미납</h3>"));
-  assert.doesNotMatch(cards, /text-blue-500|text-emerald-500|text-purple-500/);
+  assert.equal((cards.match(/text-3xl/g) ?? []).length, 1, "큰 숫자는 재원생 하나");
+  // 옛 운영 현황 내용(운영 규모·매출·미납·프로그램별·최근 7일 신규)은 통계 탭에 있다
+  for (const title of ["운영 규모", "매출 추이", "미납 상위", "프로그램별 원생", "최근 7일 신규 원생", "출석률 추이"]) {
+    assert.ok(stats.includes(`title="${title}"`) || stats.includes(`title={`), title);
+    assert.ok(stats.includes(title), title);
+  }
+  for (const src of [cards, stats]) assert.doesNotMatch(src, /text-blue-500|text-emerald-500|text-purple-500|#[0-9a-fA-F]{6}/);
 });
 
 test("A-15 12px 미만 글자 제거(우선 화면) + 특강 셔틀 취소 44px·위험색", () => {
