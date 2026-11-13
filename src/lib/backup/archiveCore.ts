@@ -33,8 +33,9 @@ export const ARCHIVE_EXCLUDED_TABLES: Readonly<Record<string, string>> = {
     SheetSlotCache: "구글 시트 시간표 캐시 — 시트에서 다시 가져오면 된다",
     // 운영 실측 2026-11-13: 65,935줄/110MB. 학생 시트 가져오기(api/admin/import-students)가 시트 행을 rawJSON 으로 그대로 복사해 둔 원본.
     // 업무 결과(StudentRegistrationLedger·StudentShuttleRide 등)는 따로 백업된다. 그 표의 rawRowId 는 이 표를 가리키는 참조일 뿐이다.
-    StudentSheetRawRow: "구글 시트 가져오기 원본 행 복사본 — 시트에서 다시 가져오면 된다(가져온 결과 표는 백업됨)",
-    StudentSheetImportIssue: "구글 시트 가져오기 오류 기록 — 가져오기를 다시 돌리면 다시 생긴다",
+    // 2026-11-13 이관 도구 삭제 — 사이트에서 다시 가져올 수 없다. 원본은 구글 시트에 남아 있고, 이 원본 행 복사본은 DB 에만 있으며 백업되지 않는다.
+    StudentSheetRawRow: "구글 시트 가져오기 원본 행 복사본(이관 도구 삭제됨) — 원본은 구글 시트에 남음, 가져온 결과 표는 백업됨",
+    StudentSheetImportIssue: "구글 시트 가져오기 오류 기록(이관 도구 삭제됨) — 지난 가져오기의 참고 기록",
     PushSubscription: "브라우저 푸시 구독 키(비밀값) — 앱을 다시 열면 재구독된다",
     DriverLocation: "기사 실시간 위치 한 칸 덮어쓰기 — 기록이 아니고 위치 개인정보다",
     ParentSignupOtpSend: "가입 인증번호 발송 횟수 제한 로그",

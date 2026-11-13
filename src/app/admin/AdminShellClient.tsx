@@ -64,7 +64,7 @@ const EXTRA_GROUPS: ReadonlyArray<{ label: string; icon: string; items: readonly
         { href: "/admin/terms", label: "약관·방침", icon: "📜", section: "policy" },
         { href: "/admin/pos-plugin", label: "POS 연결", icon: "🔌" },
         // 화면은 다른 작업이 다시 만든다 — 메뉴 이름만 «통계»
-        { href: "/admin/stats", label: "통계", icon: "📊" },
+        { href: "/admin/stats", label: "통계", icon: "📈" },
     ] },
 ];
 
@@ -240,7 +240,7 @@ export default function AdminShellClient({
 }
 
 // 메뉴는 기능을 유지하고 공통 심볼로 바꿔 작은 화면에서도 같은 굵기로 읽히게 한다.
-const NAV_SYMBOLS: Record<string, string> = {"🏫": "school", "👤": "person", "🧑\u200d🏫": "sports", "📋": "assignment", "📅": "calendar_month", "📢": "campaign", "📸": "photo_library", "⚡": "bolt", "❓": "help", "⭐": "star", "📜": "description", "🔐": "lock", "📊": "dashboard", "📝": "edit_document", "🧑\u200d🎓": "groups", "✅": "fact_check", "🙅": "event_busy", "🔁": "swap_horiz", "🧾": "receipt_long", "💳": "payments", "👕": "checkroom", "🏀": "sports_basketball", "🚌": "directions_bus", "📩": "inbox", "💬": "chat", "📘": "menu_book", "🔔": "notifications", "🔄": "event_repeat", "📥": "download", "👥": "badge", "💵": "account_balance_wallet", "🧮": "calculate", "🗨️": "forum", "🚫": "hide_image", "🌐": "public", "🏟️": "stadium", "📨": "move_to_inbox", "🔌": "power"};
+const NAV_SYMBOLS: Record<string, string> = {"🏫": "school", "👤": "person", "🧑\u200d🏫": "sports", "📋": "assignment", "📅": "calendar_month", "📢": "campaign", "📸": "photo_library", "⚡": "bolt", "❓": "help", "⭐": "star", "📜": "description", "🔐": "lock", "📊": "dashboard", "📝": "edit_document", "🧑\u200d🎓": "groups", "✅": "fact_check", "🙅": "event_busy", "🔁": "swap_horiz", "🧾": "receipt_long", "💳": "payments", "👕": "checkroom", "🏀": "sports_basketball", "🚌": "directions_bus", "📩": "inbox", "💬": "chat", "📘": "menu_book", "🔔": "notifications", "🔄": "event_repeat", "📥": "download", "👥": "badge", "💵": "account_balance_wallet", "🧮": "calculate", "🗨️": "forum", "🚫": "hide_image", "🌐": "public", "🏟️": "stadium", "📨": "move_to_inbox", "🔌": "power", "📈": "bar_chart"};
 
 function NavItem({ href, active, icon, label, badge, compact = false }: { href: string; active?: boolean; icon: string; label: string; badge?: number; compact?: boolean }) {
     return (
