@@ -12,10 +12,9 @@ import {
   type AuthFailureLike,
 } from "@/lib/staff/inviteAuthFailure";
 
-/** 아이디 가입·비밀번호 찾기 최소 길이 */
+/** 아이디 가입·기존 학부모 계정 활성화·비밀번호 찾기 최소 길이
+ *  (2026-11-13 f7: 활성화도 «이메일 + 10자» → 신규 가입과 같은 «아이디 + 8자»로 통일, 활성화 전용 10자 상수는 없앴다) */
 export const PARENT_PASSWORD_MIN = 8;
-/** 기존 학부모 계정 활성화(이메일 로그인) 최소 길이 — 활성화는 예전부터 10자 */
-export const PARENT_ACTIVATION_PASSWORD_MIN = 10;
 
 /** Supabase 가 약한 비밀번호로 거절했을 때 화면에 보이는 문장(user-facing-error 허용 목록에도 같은 문장) */
 export const PARENT_WEAK_PASSWORD_MESSAGE = "쉽게 추측할 수 있는 비밀번호라 쓸 수 없어요. 더 길거나 복잡한 비밀번호로 정해 주세요.";

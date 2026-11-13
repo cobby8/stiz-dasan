@@ -153,7 +153,7 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
         window.location.assign(data.redirectPath || "/mypage");
         return;
       }
-      // 학원에 이미 등록된 보호자: 문자 인증은 끝났으니 이메일·비밀번호만 정하는 활성화 화면으로 안내한다.
+      // 학원에 이미 등록된 보호자: 문자 인증은 끝났으니 아이디·비밀번호만 정하는 활성화 화면으로 안내한다.
       if (data.existingParent === "ACTIVATE" && data.activationUrl) {
         setActivationUrl(data.activationUrl);
         setStep("existing");
@@ -352,7 +352,7 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
         <div className="space-y-4 py-2 text-center">
           <span className="material-symbols-outlined text-5xl text-[var(--color-public-accent)]" aria-hidden="true">how_to_reg</span>
           <h2 className="text-xl font-bold">이미 학원에 등록된 보호자입니다</h2>
-          <p className="text-sm leading-6 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">문자 인증이 끝났어요. 로그인에 쓸 이메일과 비밀번호만 정하면 바로 쓸 수 있어요. 자녀 정보는 학원에 등록된 그대로 연결됩니다.</p>
+          <p className="text-sm leading-6 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">문자 인증이 끝났어요. 로그인에 쓸 아이디와 비밀번호만 정하면 바로 쓸 수 있어요. 자녀 정보는 학원에 등록된 그대로 연결됩니다.</p>
           <button type="button" onClick={() => window.location.assign(activationUrl)} className="min-h-12 w-full rounded-xl bg-brand-orange-500 font-bold text-white">
             비밀번호 정하러 가기
           </button>
