@@ -73,6 +73,8 @@ import {
 import { postMessage } from "@/lib/slack/client";
 // 승인 완료 때 «지난번 결제 방법» 기억(실패해도 결제에는 영향 없음 — 로그만)
 import { rememberPaymentMethodFromToss } from "@/lib/payments/preferredMethodStore";
+// 결제 권한 판정 한 곳(주 보호자 + 승인된 가족 연결) — 결제 시작·승인 직전·묶음 후보가 같이 쓴다(2026-11-13 f8)
+import { payerAccessSql, resolveLinkedPayer } from "@/lib/payments/payerAccess";
 import {
     CAFE24_PAYMENT_PROVIDER,
     Cafe24PaymentBridgeError,
@@ -121,6 +123,23 @@ type ParentInvoiceRow = {
     transactionReceiptUrl: string | null;
     /** 랠리즈 청구서의 장부 사본인가 — 사이트 결제(단건·묶음) 막음(원장 결정 D4, 2026-11-09) */
     rallyzMirror: boolean;
+    /** 마지막 거래를 만든(결제한) 계정 — 영수증을 누구에게 보일지 정한다 */
+    transactionParentId?: string | null;
+};
+
+/**
+ * 학부모 화면·결제 시작이 받는 청구 1건 = 청구 정보 + «결제하는 사람»(로그인한 보호자).
+ * parentId/parentName… 는 청구서의 대표 보호자, payer… 는 지금 결제하는 사람(대표 보호자 또는 승인된 가족).
+ */
+export type ParentInvoiceView = ParentInvoiceRow & {
+    payerId: string;
+    payerName: string | null;
+    payerEmail: string;
+    payerPhone: string | null;
+    /** 결제하는 사람이 대표 보호자인가(아니면 가족 승인으로 연결된 두 번째 보호자) */
+    payerIsPrimary: boolean;
+    /** 영수증 링크를 보여도 되는가 — 대표 보호자이거나 그 결제를 직접 한 사람만(남의 카드 영수증 노출 방지) */
+    canSeeReceipt: boolean;
 };
 
 export type PaymentOwnerIdentity = {
@@ -1043,7 +1062,7 @@ export function getPaymentProviderPublicStatus() {
     };
 }
 
-export async function getInvoiceForParent(invoiceId: string, owner: PaymentOwnerIdentity) {
+export async function getInvoiceForParent(invoiceId: string, owner: PaymentOwnerIdentity): Promise<ParentInvoiceView | null> {
     await ensurePaymentInfrastructure();
 
     const rows = await prisma.$queryRawUnsafe<ParentInvoiceRow[]>(
@@ -1075,30 +1094,41 @@ export async function getInvoiceForParent(invoiceId: string, owner: PaymentOwner
             tx."orderId",
             tx.status AS "transactionStatus",
             tx."receiptUrl" AS "transactionReceiptUrl",
+            tx."parentId" AS "transactionParentId",
             (NOT (${rallyzMirrorExclusionSql("p")})) AS "rallyzMirror"
         FROM "PaymentInvoice" i
         JOIN "Payment" p ON p.id = i."paymentId"
         JOIN "Student" s ON s.id = i."studentId"
         JOIN "User" u ON u.id = i."parentId"
         LEFT JOIN LATERAL (
-            SELECT id, "orderId", status, "receiptUrl"
+            SELECT id, "orderId", status, "receiptUrl", "parentId"
             FROM "PaymentTransaction"
             WHERE "invoiceId" = i.id
             ORDER BY "createdAt" DESC
             LIMIT 1
         ) tx ON true
         WHERE i.id = $1
-          AND (
-            u."authUserId" = $2
-            OR (u."authUserId" IS NULL AND u.id = $2)
-          )
         LIMIT 1
         `,
         invoiceId,
-        owner.authUserId,
     );
+    const row = rows[0];
+    if (!row) return null;
 
-    return rows[0] ?? null;
+    // 소유권(IDOR): 로그인한 사람이 이 학생과 연결돼 있어야 한다 — 대표 보호자 또는 승인된 가족(payerAccess 한 곳).
+    // 연결이 없으면 «없는 청구»와 똑같이 null 을 돌려준다(남의 청구서가 있는지조차 알리지 않는다).
+    const payer = await resolveLinkedPayer(prisma, owner.authUserId, [row.studentId]);
+    if (!payer) return null;
+    const payerIsPrimary = payer.id === row.parentId;
+    return {
+        ...row,
+        payerId: payer.id,
+        payerName: payer.name,
+        payerEmail: payer.email ?? "",
+        payerPhone: payer.phone,
+        payerIsPrimary,
+        canSeeReceipt: payerIsPrimary || (row.transactionParentId ?? null) === payer.id,
+    };
 }
 
 export async function createCheckoutSession(input: {
@@ -1217,11 +1247,15 @@ export async function createCheckoutSession(input: {
                AND provider = $3
                AND status IN ('READY', 'IN_PROGRESS')
                AND "requestedAt" > NOW() - INTERVAL '30 minutes'
+               AND "parentId" IS NOT DISTINCT FROM $4
              ORDER BY "createdAt" DESC
              LIMIT 1`,
             input.invoiceId,
             Number(invoice.amount),
             provider,
+            // 재사용은 «같은 사람»이 만든 주문만 — 엄마가 열어 둔 주문 번호를 아빠에게 돌려주면 아빠 승인이 소유권에서 막힌다(f8).
+            // 두 사람의 주문이 따로 있어도 이중 결제는 승인 직전 잠금(claimTossConfirmInTx — 청구 단위)이 막는다.
+            invoice.payerId,
         );
         const found = recentRows[0];
         if (found) return { openDeposit: false as const, existing: found, transactionId: found.id, orderId: found.orderId };
@@ -1239,7 +1273,8 @@ export async function createCheckoutSession(input: {
             invoice.paymentId,
             invoice.invoiceId,
             invoice.studentId,
-            invoice.parentId,
+            // 거래의 학부모 = 결제하는 사람(승인 소유권·«지난번 결제 방법»·영수증 노출이 이 값을 본다)
+            invoice.payerId,
             provider,
             newOrderId,
             orderName,
@@ -1290,8 +1325,8 @@ export async function createCheckoutSession(input: {
                 orderId,
                 amount: Number(invoice.amount),
                 orderName,
-                customerName: invoice.parentName || invoice.studentName || "STIZ 학부모",
-                customerEmail: invoice.parentEmail,
+                customerName: invoice.payerName || invoice.studentName || "STIZ 학부모",
+                customerEmail: invoice.payerEmail,
                 successUrl,
                 failUrl,
             };
@@ -1304,9 +1339,9 @@ export async function createCheckoutSession(input: {
             paymentId: invoice.paymentId,
             amount: Number(invoice.amount),
             orderName,
-            customerName: invoice.parentName || invoice.studentName || "STIZ 학부모",
-            customerPhone: invoice.parentPhone,
-            customerEmail: invoice.parentEmail,
+            customerName: invoice.payerName || invoice.studentName || "STIZ 학부모",
+            customerPhone: invoice.payerPhone,
+            customerEmail: invoice.payerEmail,
             studentName: invoice.studentName,
             successUrl,
             failUrl,
@@ -1342,8 +1377,8 @@ export async function createCheckoutSession(input: {
                 orderId,
                 amount: Number(invoice.amount),
                 orderName,
-                customerName: invoice.parentName || invoice.studentName || "STIZ 학부모",
-                customerEmail: invoice.parentEmail,
+                customerName: invoice.payerName || invoice.studentName || "STIZ 학부모",
+                customerEmail: invoice.payerEmail,
                 successUrl,
                 failUrl,
             };
@@ -1377,14 +1412,15 @@ export async function createCheckoutSession(input: {
         providerLabel: config.providerLabel,
         providerReady: config.providerReady,
         clientKey: config.clientKey,
-        customerKey: makeTossCustomerKey(invoice),
+        // 결제창 고객 = 지금 결제하는 사람(두 번째 보호자면 그 사람) — 영수증·입금 안내도 결제한 사람에게 간다(f8)
+        customerKey: makeTossCustomerKey({ parentId: invoice.payerId, parentEmail: invoice.payerEmail }),
         orderId,
         amount: Number(invoice.amount),
         orderName,
-        customerName: invoice.parentName || invoice.studentName || "STIZ 학부모",
-        customerEmail: invoice.parentEmail,
+        customerName: invoice.payerName || invoice.studentName || "STIZ 학부모",
+        customerEmail: invoice.payerEmail,
         // 가상계좌 발급·입금 안내 문자를 토스가 보낼 번호. 형식이 확실할 때만 넘긴다(틀리면 결제창 오류).
-        customerMobilePhone: toTossMobilePhone(invoice.parentPhone),
+        customerMobilePhone: toTossMobilePhone(invoice.payerPhone),
         successUrl,
         failUrl,
     };
@@ -2401,6 +2437,26 @@ export async function confirmTossPayment(input: {
     const storedApproval = readStoredTossApproval(tx, input.paymentKey);
     if (storedApproval) return finalizeApprovedTossPayment(tx, storedApproval, true);
 
+    // 결제 권한 재확인(f8) — 돈이 나가기 «전»에, 결제 시작과 같은 판정(payerAccess)으로 «이 사람이 지금도 주문에 든 학생 전부와
+    // 연결돼 있는가»를 본다. 결제창을 연 뒤 가족 연결이 해제됐으면 승인하지 않는다(결제창 인증은 자동 소멸 — 돈 안 나감).
+    // ※ 이미 승인된 주문(위 storedApproval)은 돈이 나갔으므로 여기서 막지 않고 장부에 반영한다.
+    const orderStudents = await prisma.$queryRawUnsafe<Array<{ studentId: string }>>(
+        `SELECT p."studentId" FROM "Payment" p WHERE p.id = $1
+         UNION
+         SELECT p."studentId" FROM "PaymentTransactionItem" it JOIN "Payment" p ON p.id = it."paymentId"
+          WHERE it."transactionId" = $2`,
+        tx.paymentId,
+        tx.id,
+    );
+    const confirmPayer = await resolveLinkedPayer(
+        prisma,
+        input.owner.authUserId,
+        [tx.studentId, ...orderStudents.map((row) => row.studentId)],
+    );
+    if (!confirmPayer || confirmPayer.id !== tx.parentId) {
+        return { ok: false as const, error: "결제 주문을 찾을 수 없습니다." };
+    }
+
     const { secretKey, productionTestKeyBlocked } = getPaymentProviderConfig();
     if (!secretKey) {
         return { ok: false as const, error: "Toss Payments 서버 키가 설정되어 있지 않습니다." };
@@ -2745,7 +2801,8 @@ async function loadBundleCandidateRows(parentUserId: string, paymentIds: string[
                 COALESCE(i.title, p.description, p.type, '수강료') AS title,
                 p.status AS "paymentStatus", i.status AS "invoiceStatus",
                 p.amount, i.amount AS "invoiceAmount",
-                (s."parentId" = $1) AS "isPayer",
+                -- 결제 가능 = 대표 보호자 또는 승인된 가족 연결(payerAccess 한 곳, 2026-11-13 f8 — 예전엔 대표 보호자만)
+                (${await payerAccessSql("s", "$1")}) AS "isPayer",
                 (NOT (${rallyzMirrorExclusionSql("p")})) AS "rallyzMirror"
            FROM "Payment" p
            JOIN "Student" s ON s.id = p."studentId"
@@ -2839,7 +2896,7 @@ export type BundleCheckoutCandidate = {
 
 /**
  * 학부모 «묶음 결제» 후보 — 내 자녀(가족 연결 포함)의 미납 청구 전부와 선택 가능 여부.
- * 결제는 대표 보호자만(NOT_PAYER), 랠리즈 사본은 막음(RALLYZ_MIRROR). 화면 표시용이고 결제 시작 때 서버가 다시 검사한다.
+ * 결제는 연결된 보호자(대표 + 승인된 가족, payerAccess)만(NOT_PAYER), 랠리즈 사본은 막음(RALLYZ_MIRROR). 화면 표시용이고 결제 시작 때 서버가 다시 검사한다.
  */
 export async function getBundleCheckoutCandidates(parentUserId: string) {
     await ensurePaymentInfrastructure();

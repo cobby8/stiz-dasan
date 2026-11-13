@@ -1,6 +1,7 @@
 import { commencementYmd, currentEnrollmentSql, enrollmentDisplayStatus, enrollmentStartsLater } from "@/lib/enrollment/commencement";
 import { getEnrollmentShuttleProgress } from "@/lib/enrollment/shuttle-progress-query";
 import { childAccessSql } from "@/lib/account/child-access";
+import { payerAccessSql } from "@/lib/payments/payerAccess";
 /**
  * 순수 DB 조회 함수들 (mutations 제외)
  * react.cache() 로 감싸 동일 요청 내 중복 DB 호출을 자동 제거 (request-level memoization)
@@ -1179,7 +1180,10 @@ export async function getMyPageData(parentUserId: string) {
 
         // 자녀 목록
         const students = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT id, name, "birthDate", gender, "parentId" FROM "Student" s
+            `SELECT id, name, "birthDate", gender, "parentId",
+                    -- 결제 권한(대표 보호자 + 승인된 가족, payerAccess 한 곳 — 2026-11-13 f8)
+                    (${await payerAccessSql("s", "$1")}) AS "canPay"
+               FROM "Student" s
              WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")}
              ORDER BY s."createdAt" ASC`,
             parent.id
@@ -1257,7 +1261,7 @@ export async function getMyPageData(parentUserId: string) {
                         })),
                     },
                     payments: payments.map((p: any) => ({
-                        canCheckout: s.parentId === parent.id,
+                        canCheckout: s.canPay === true,
                         id: p.id,
                         amount: Number(p.amount),
                         status: p.status,
@@ -1270,9 +1274,9 @@ export async function getMyPageData(parentUserId: string) {
                         invoiceId: p.invoice_id ?? null,
                         invoiceNo: p.invoiceNo ?? p.invoiceno ?? null,
                         invoiceStatus: p.invoice_status ?? null,
-                        invoiceCheckoutUrl: s.parentId === parent.id ? (p.invoice_checkout_url ?? null) : null,
-                        // 무통장입금 계좌 — 결제 담당(대표) 보호자에게만. secret 은 SQL 에서 아예 고르지 않는다.
-                        virtualAccount: s.parentId === parent.id
+                        invoiceCheckoutUrl: s.canPay === true ? (p.invoice_checkout_url ?? null) : null,
+                        // 무통장입금 계좌 — 결제할 수 있는 보호자(대표 + 승인된 가족)에게만. secret 은 SQL 에서 아예 고르지 않는다.
+                        virtualAccount: s.canPay === true
                             ? parentVirtualAccountView(p.status, p.va_status, p.va_issue, Date.now())
                             : null,
                     })),
@@ -1314,7 +1318,10 @@ export async function getMyPageHistory(parentUserId: string) {
 
         // 자녀 목록 (부모 소유 자녀만)
         const students = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT id, name, "birthDate", gender, "parentId" FROM "Student" s
+            `SELECT id, name, "birthDate", gender, "parentId",
+                    -- 결제 권한(대표 보호자 + 승인된 가족, payerAccess 한 곳 — 2026-11-13 f8)
+                    (${await payerAccessSql("s", "$1")}) AS "canPay"
+               FROM "Student" s
              WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")}
              ORDER BY s."createdAt" ASC`,
             parent.id
@@ -1373,7 +1380,7 @@ export async function getMyPageHistory(parentUserId: string) {
                         })),
                     },
                     payments: payments.map((p: any) => ({
-                        canCheckout: s.parentId === parent.id,
+                        canCheckout: s.canPay === true,
                         id: p.id,
                         amount: Number(p.amount),
                         status: p.status,
@@ -1386,9 +1393,9 @@ export async function getMyPageHistory(parentUserId: string) {
                         invoiceId: p.invoice_id ?? null,
                         invoiceNo: p.invoiceNo ?? p.invoiceno ?? null,
                         invoiceStatus: p.invoice_status ?? null,
-                        invoiceCheckoutUrl: s.parentId === parent.id ? (p.invoice_checkout_url ?? null) : null,
-                        // 무통장입금 계좌 — 결제 담당(대표) 보호자에게만. secret 은 SQL 에서 아예 고르지 않는다.
-                        virtualAccount: s.parentId === parent.id
+                        invoiceCheckoutUrl: s.canPay === true ? (p.invoice_checkout_url ?? null) : null,
+                        // 무통장입금 계좌 — 결제할 수 있는 보호자(대표 + 승인된 가족)에게만. secret 은 SQL 에서 아예 고르지 않는다.
+                        virtualAccount: s.canPay === true
                             ? parentVirtualAccountView(p.status, p.va_status, p.va_issue, Date.now())
                             : null,
                     })),

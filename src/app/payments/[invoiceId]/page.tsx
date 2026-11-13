@@ -32,7 +32,7 @@ export default async function PaymentPage({ params }: { params: Promise<{ invoic
             <main className="mx-auto max-w-lg px-4 py-8">
                 <div className="academy-panel p-4 text-center">
                     <p className="font-bold text-[var(--color-academy-ink)]">청구서를 찾을 수 없어요</p>
-                    <p className="mt-1 text-xs text-[var(--color-academy-muted)]">이 계정에 연결된 청구서만 볼 수 있어요.</p>
+                    <p className="mt-1 text-xs text-[var(--color-academy-muted)]">이 계정에 연결된 자녀의 청구서만 볼 수 있어요.</p>
                     <Link href="/mypage" className="academy-button-primary mt-3 min-h-11 px-5 text-sm">
                         마이페이지
                     </Link>
@@ -43,7 +43,8 @@ export default async function PaymentPage({ params }: { params: Promise<{ invoic
 
     const isPaid = invoice.paymentStatus === "PAID" || invoice.invoiceStatus === "PAID";
     const isClosed = ["REFUNDED", "CANCELED"].includes(invoice.paymentStatus) || invoice.invoiceStatus === "CANCELED";
-    const receiptHref = invoice.receiptUrl || invoice.transactionReceiptUrl || undefined;
+    // 영수증은 대표 보호자 또는 그 결제를 직접 한 사람에게만(두 번째 보호자에게 다른 사람의 카드 영수증을 보이지 않는다 — f8)
+    const receiptHref = invoice.canSeeReceipt ? (invoice.receiptUrl || invoice.transactionReceiptUrl || undefined) : undefined;
     const isOverdue = !isPaid && !isClosed && invoice.paymentStatus === "OVERDUE";
     // 무통장입금 계좌(입금 대기·만료) — 소유권 확인(getInvoiceForParent) 뒤에만 읽는다. 학부모 화면용 칸만 온다.
     const virtualAccount = !isPaid && !isClosed ? await getVirtualAccountState(invoice.invoiceId) : null;

@@ -20,8 +20,8 @@ test("결제 가능 판정은 결제 화면과 같은 함수", () => {
   assert.match(page, /getPaymentProviderConfig\(\)\.providerReady/);
 });
 
-test("대표 보호자 판정은 마이페이지 홈과 같은 기준(parentId 본인)", () => {
-  assert.match(query, /\(s\."parentId" = \$1\) AS "canCheckout"/);
+test("결제 버튼 판정은 마이페이지 홈·결제 서버와 같은 기준(payerAccess — 대표 보호자 + 승인된 가족, f8)", () => {
+  assert.match(query, /\(\$\{await payerAccessSql\("s", "\$1"\)\}\) AS "canCheckout"/);
   assert.match(query, /i\.id AS "invoiceId"/);
 });
 
