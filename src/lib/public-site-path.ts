@@ -3,6 +3,9 @@ const PUBLIC_SECTIONS = [
   "/about", "/programs", "/schedule", "/annual", "/gallery", "/notices",
   "/faq", "/terms", "/privacy", "/apply", "/seasonal", "/shop", "/simulator",
   "/rental", // 체육관 대관 신청(2026-11-07)
+  // 공개 안내 페이지 — 빠지면 공개 색 토큰(--color-public-*)이 비어 버튼이 투명해진다(2026-11-13 실측)
+  "/account-deletion", // 계정 삭제 안내(스토어 심사용)
+  "/teacher-guide", // 선생님 앱 사용 설명
 ];
 const PUBLIC_ENTRIES = [
   "/", "/login", "/signup", "/signup/parent", "/parent", "/parent-app", "/teacher-app",
