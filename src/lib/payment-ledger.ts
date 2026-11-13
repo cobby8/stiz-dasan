@@ -33,6 +33,7 @@ import {
     TX_PAYMENT_STATUS_SQL,
     claimTossConfirmInTx,
     finalizeBundleInTx,
+    findApprovedPendingTxIds,
     findOpenDepositTxIds,
     lockPaymentsForCheckout,
     readCheckoutAmounts,
@@ -187,6 +188,10 @@ const SWEEP_TIME_BUDGET_MS = 45_000;
 // 토스 승인(confirm) 응답 대기 한도 — 서버 함수 60초 안에서 조회·장부 반영까지 끝내려고 30초에 끊는다.
 // 끊겨도 돈이 나갔을 수 있으니 «다시 확인 중»으로 돌려주고, 토스 조회·주기 점검(cron)이 결과를 맞춘다.
 const TOSS_CONFIRM_TIMEOUT_MS = 30_000;
+// 승인 실패 기록(FAILED·rawResponse 덮어쓰기)이 «승인 원본(DONE)이 남은 반영 전 거래»를 지우지 않게 하는 조건(2026-11-13 c5)
+const KEEP_APPROVED_PENDING_SQL = `NOT (status = 'IN_PROGRESS' AND COALESCE("rawResponse"->>'status', '') = 'DONE')`;
+// 승인됐는데 장부 반영 전인 주문이 있는 청구로 결제를 다시 시작할 때 학부모가 보는 문구(이중 결제 방지)
+const APPROVED_PENDING_CHECKOUT_MESSAGE = "이전 결제가 승인되어 납부 반영을 확인하고 있습니다. 잠시 후 다시 확인해 주세요(다시 결제하지 않으셔도 됩니다).";
 
 export function makeUuidFromSeed(seed: string) {
     const hex = createHash("sha256").update(seed).digest("hex");
@@ -1193,6 +1198,11 @@ export async function createCheckoutSession(input: {
         if (provider === "TOSS" && (await findOpenDepositTxIds(db, [invoice.paymentId], null, Date.now())).length > 0) {
             return { openDeposit: true as const };
         }
+        // 토스 승인은 끝났는데 장부 반영 전인 주문(승인 원본 DONE)이 이 청구를 품고 있다 — 새 결제를 열면 이중 결제.
+        // 30분 재사용 주문으로 돌려주지도 않는다(이미 승인된 주문 번호로 결제창을 다시 열 수 없다). 2026-11-13 c5
+        if (provider === "TOSS" && (await findApprovedPendingTxIds(db, [invoice.paymentId], null)).length > 0) {
+            return { approvedPending: true as const };
+        }
         // 금액은 잠금 «밖»에서 읽었다. 그 사이 관리자가 «청구서 수정»(같은 잠금)으로 금액을 바꿨으면
         // 옛 금액으로 주문을 만들지 않고 멈춘다(금액이 같으면 예전 흐름 그대로)
         const freshAmounts = await readCheckoutAmounts(db, [invoice.paymentId]);
@@ -1237,6 +1247,9 @@ export async function createCheckoutSession(input: {
         );
         return { openDeposit: false as const, existing: undefined, transactionId: inserted[0]?.id ?? null, orderId: newOrderId };
     });
+    if ("approvedPending" in reserved) {
+        return { ok: false as const, error: APPROVED_PENDING_CHECKOUT_MESSAGE, approvedPending: true as const, retryable: true };
+    }
     if ("amountChanged" in reserved) {
         return { ok: false as const, error: CHECKOUT_AMOUNT_CHANGED_MESSAGE, amountChanged: true as const };
     }
@@ -2419,7 +2432,7 @@ export async function confirmTossPayment(input: {
     // 웹훅·주기 점검이 같은 거래를 찾는다. 실패해도 승인은 그대로 진행한다(점검은 주문 번호로도 찾는다).
     await prisma.$executeRawUnsafe(
         `UPDATE "PaymentTransaction" SET "paymentKey" = $2
-          WHERE id = $1 AND status = 'IN_PROGRESS' AND "paymentKey" IS DISTINCT FROM $2`,
+          WHERE id = $1 AND status = 'IN_PROGRESS' AND "paymentKey" IS DISTINCT FROM $2 AND ${KEEP_APPROVED_PENDING_SQL}`,
         tx.id,
         input.paymentKey,
     ).catch((error: unknown) => {
@@ -2483,7 +2496,7 @@ export async function confirmTossPayment(input: {
                  "failureMessage" = $4,
                  "rawResponse" = $5::jsonb,
                  "updatedAt" = NOW()
-             WHERE id = $1`,
+             WHERE id = $1 AND ${KEEP_APPROVED_PENDING_SQL}`,
             tx.id,
             input.paymentKey,
             result.code ?? "TOSS_CONFIRM_FAILED",
@@ -2522,17 +2535,21 @@ export async function confirmTossPayment(input: {
                  "failureMessage" = 'Toss confirm response did not match the stored invoice transaction',
                  "rawResponse" = $3::jsonb,
                  "updatedAt" = NOW()
-             WHERE id = $1`,
+             WHERE id = $1 AND ${KEEP_APPROVED_PENDING_SQL}`,
             tx.id,
             input.paymentKey,
             JSON.stringify(stripPaymentSecret(result)),
         );
-        // 토스는 «완료»라고 했는데 금액·주문이 장부와 다르다 = 돈은 나갔는데 반영하면 안 되는 결제 → 원장 확인(한 번만)
+        // 토스는 «완료»라고 했는데 금액·주문이 장부와 다르다 = 돈은 나갔는데 반영하면 안 되는 결제 → 원장 확인(한 번만).
+        // 금액 불일치와 주문·결제 번호 불일치는 원장이 할 일이 달라 사유·문구를 나눈다.
         if (result.status === "DONE") {
+            const amountMismatch = Number(result.totalAmount) !== Number(tx.amount);
             await recordTossLedgerReview(
                 tx,
-                "TOSS_CONFIRM_VERIFICATION_FAILED",
-                `[결제 확인 필요] 토스 승인 결과(금액 ${Number(result.totalAmount).toLocaleString("ko-KR")}원)가 청구와 달라 장부에 반영하지 않았습니다. 환불 여부를 확인해 주세요.`,
+                amountMismatch ? "TOSS_AMOUNT_MISMATCH" : "TOSS_CONFIRM_ORDER_MISMATCH",
+                amountMismatch
+                    ? `[결제 확인 필요] 토스 결제 금액(${Number(result.totalAmount).toLocaleString("ko-KR")}원)이 청구 금액과 달라 장부에 반영하지 않았습니다. 환불 여부를 확인해 주세요.`
+                    : "[결제 확인 필요] 토스 승인 결과의 주문 번호·결제 번호가 장부 거래와 달라 반영하지 않았습니다. 토스 상점관리자에서 결제를 확인해 주세요.",
                 readString(result.paymentKey) ?? input.paymentKey,
             ).catch((error) => {
                 console.error("[payment-ledger] 승인 불일치 검토 기록 실패:", error instanceof Error ? error.message : error);
@@ -2557,11 +2574,15 @@ export async function confirmTossPayment(input: {
     return finalizeApprovedTossPayment(tx, result, false);
 }
 
-/** 승인 원본이 남아 있으면 그 원본(같은 결제 번호·주문·금액·DONE 일 때만). 장부 반영 전(IN_PROGRESS) 토스 거래에서만 쓴다. */
-function readStoredTossApproval(tx: PaymentTransactionRow, paymentKey: string): TossPaymentResult | null {
+/**
+ * 승인 원본이 남아 있으면 그 원본(주문·금액 일치·DONE·결제 번호 있음). 장부 반영 전(IN_PROGRESS) 토스 거래에서만 쓴다.
+ * 학부모가 보낸 결제 번호가 원본과 달라도(같은 주문으로 결제창을 다시 연 경우) 원본을 쓴다 — 원본은 서버가 토스에서
+ * 직접 받아 적은 값이고, 이 주문은 이미 승인돼 다른 결제 번호로 다시 승인할 수 없다(토스 재호출·FAILED 덮어쓰기 방지, 검수 MED-1).
+ */
+function readStoredTossApproval(tx: PaymentTransactionRow, _paymentKey: string): TossPaymentResult | null {
     if (tx.status !== "IN_PROGRESS" || (tx.provider ?? "TOSS") !== "TOSS") return null;
     const raw = asRecord(tx.rawResponse);
-    if (raw.status !== "DONE" || raw.paymentKey !== paymentKey || raw.orderId !== tx.orderId) return null;
+    if (raw.status !== "DONE" || !readString(raw.paymentKey) || raw.orderId !== tx.orderId) return null;
     if (Number(raw.totalAmount) !== Number(tx.amount)) return null;
     return raw as TossPaymentResult;
 }
@@ -2638,16 +2659,29 @@ export async function reconcileTossPayments(limit = 50, budgetMs = SWEEP_TIME_BU
         result.checked += 1;
         try {
             // 주문 번호로 조회 — 주문 번호는 서버가 만든 값이고 토스에서도 유일하다
+            const reconcileTx = { orderId: tx.orderId, amount: Number(tx.amount), ageMinutes: Number(tx.ageMinutes) };
             const lookup = await getVerifiedTossPayment(null, tx.orderId);
-            const step = decideTossReconcile(
-                { orderId: tx.orderId, amount: Number(tx.amount), ageMinutes: Number(tx.ageMinutes) },
-                lookup,
-            );
-            const payment = lookup.kind === "verified" ? lookup.payment : null;
+            let step = decideTossReconcile(reconcileTx, lookup);
+            let payment = lookup.kind === "verified" ? lookup.payment : null;
+            // 닫기 전 한 번 더: 거래에 결제 번호가 있으면 그 번호로도 물어, 둘 다 «승인 아님»일 때만 닫는다(L2).
+            // 같은 주문 번호로 결제창을 다시 연 경우 주문 번호 조회가 다른 시도를 돌려줄 수 있기 때문이다.
+            if (step.action === "CLOSE" && tx.paymentKey) {
+                const byKey = await getVerifiedTossPayment(tx.paymentKey, null);
+                if (byKey.kind === "verified") {
+                    step = decideTossReconcile(reconcileTx, byKey);
+                    payment = byKey.payment;
+                } else if (byKey.kind === "retryable" || byKey.status !== 404) {
+                    step = { action: "WAIT", reason: "결제 번호 조회 확인 못 함" };
+                }
+            }
             if (step.action === "FINALIZE" && payment) {
                 const finalized = await finalizeVerifiedTossPayment({ tx, payment, actorType: "SYSTEM" });
-                // 반영 못 함(이미 납부·취소·변경) = 반영 함수가 «확인 필요» 기록 + 원장 알림을 이미 남겼다
-                if (!finalized.ok) result.reviewed += 1;
+                if (!finalized.ok) {
+                    result.reviewed += 1;
+                    // 카드·계좌이체는 반영 함수가 «확인 필요» 기록 + 원장 알림을 이미 남겼다.
+                    // 무통장입금(가상계좌) 완료 건은 반영 함수가 부른 쪽에 맡기므로 여기서 남긴다(L5).
+                    if (payment.method === VA_METHOD) await recordVirtualAccountReview(tx, finalized.error, true);
+                }
                 else if (finalized.alreadyConfirmed) result.alreadyDone += 1;
                 else {
                     result.recovered += 1;
@@ -2656,17 +2690,25 @@ export async function reconcileTossPayments(limit = 50, budgetMs = SWEEP_TIME_BU
                 }
             } else if (step.action === "VA_ISSUED" && payment) {
                 const view = await recordVirtualAccountIssued({ tx, payment, actorType: "SYSTEM" });
-                if (view) result.vaIssued += 1; else result.failed += 1;
+                if (view) result.vaIssued += 1;
+                else {
+                    // 발급 정보를 못 읽었다 — 계좌는 있는데 장부엔 «입금 대기»가 없다 → 원장 확인(같은 사유는 한 번만)
+                    result.failed += 1;
+                    await recordVirtualAccountReview(tx, "VIRTUAL_ACCOUNT_ISSUE_UNREADABLE", true);
+                }
             } else if (step.action === "CLOSE") {
                 // 토스에서 승인되지 않은 것이 확실 — 실패로 닫는다(돈 안 나감). 그 사이 바뀌었으면(IN_PROGRESS 아님) 건드리지 않는다.
-                await prisma.$executeRawUnsafe(
+                const closedRows = await prisma.$executeRawUnsafe(
                     `UPDATE "PaymentTransaction"
                         SET status = 'FAILED', "failureCode" = $2, "failureMessage" = 'Toss payment was not approved (reconcile)', "updatedAt" = NOW()
-                      WHERE id = $1 AND status = 'IN_PROGRESS'`,
+                      WHERE id = $1 AND status = 'IN_PROGRESS'
+                        AND "updatedAt" < NOW() - ($3::int * INTERVAL '1 minute')`,
                     tx.id,
                     step.code,
+                    // 조회하는 사이 학부모 승인이 다시 시작됐으면(updatedAt 갱신) 닫지 않는다(L1)
+                    TOSS_RECONCILE_QUIET_MINUTES,
                 );
-                result.closed += 1;
+                if (closedRows > 0) result.closed += 1; else result.waiting += 1;
             } else if (step.action === "REVIEW") {
                 await recordTossLedgerReview(tx, step.code, step.headline, payment ? readString(payment.paymentKey) : null);
                 result.reviewed += 1;
@@ -2943,6 +2985,10 @@ export async function createBundleCheckoutSession(input: {
         if ((await findOpenDepositTxIds(db, paymentIds, null, Date.now())).length > 0) {
             return { openDeposit: true as const, orderId: null };
         }
+        // 묶인 청구 중 하나라도 «승인됐는데 장부 반영 전» 주문에 들어 있으면 새 묶음 결제를 열지 않는다(이중 결제 방지, 단건과 같은 규칙)
+        if ((await findApprovedPendingTxIds(db, paymentIds, null)).length > 0) {
+            return { approvedPending: true as const };
+        }
         // 항목 금액은 잠금 «밖»에서 읽었다 — 관리자가 그 사이 금액을 고쳤으면 옛 금액 묶음을 만들지 않는다
         const freshAmounts = await readCheckoutAmounts(db, paymentIds);
         if (checkoutAmountsStale(items.map((item) => ({ paymentId: item.paymentId, amount: item.amount })), freshAmounts)) {
@@ -2989,6 +3035,9 @@ export async function createBundleCheckoutSession(input: {
         }
         return { openDeposit: false as const, orderId: newOrderId };
     });
+    if ("approvedPending" in reserved) {
+        return { ok: false as const, error: APPROVED_PENDING_CHECKOUT_MESSAGE, blocked: "CONFIRM_IN_PROGRESS" as const, approvedPending: true as const };
+    }
     if ("amountChanged" in reserved) {
         return { ok: false as const, error: CHECKOUT_AMOUNT_CHANGED_MESSAGE, blocked: "AMOUNT_CHANGED" as const, amountChanged: true as const };
     }

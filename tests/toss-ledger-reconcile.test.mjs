@@ -95,8 +95,34 @@ function fakeDb(state) {
             if (["READY", "IN_PROGRESS", "FAILED"].includes(state.tx.status)) { state.tx.status = "IN_PROGRESS"; return 1; }
             return 0;
         }
+        // 승인 원본(DONE)이 남은 반영 전 거래는 실패 기록·결제 번호 덮어쓰기에서 지킨다(KEEP_APPROVED_PENDING_SQL)
+        const keepApproved = () => {
+            assert.match(s, /NOT \(status = 'IN_PROGRESS' AND COALESCE\("rawResponse"->>'status', ''\) = 'DONE'\)/);
+            return state.tx.status === "IN_PROGRESS" && state.tx.rawResponse?.status === "DONE";
+        };
+        // 승인됐는데 장부 반영 전인 주문(결제 시작이 막는다) — 승인 직전 busy 검사와 구분: busy 는 t.id <> $1
+        if (/"rawResponse"->>'status' = 'DONE'/.test(s) && /\$2::text IS NULL OR t\.id <> \$2/.test(s)) {
+            state.approvedPendingQueries = (state.approvedPendingQueries ?? 0) + 1;
+            return state.tx.status === "IN_PROGRESS" && state.tx.rawResponse?.status === "DONE" && args[0].includes(state.tx.paymentId)
+                ? [{ id: state.tx.id }] : [];
+        }
+        if (/AND t\.status = 'IN_PROGRESS'/.test(s) && /t\.id <> \$1/.test(s)) {
+            state.busySql = s;
+            return [];
+        }
+        // 결제 시작(createCheckoutSession) — 청구서 조회
+        if (/FROM "PaymentInvoice" i/.test(s) && /"rallyzMirror"/.test(s)) {
+            return [{ invoiceId: state.tx.invoiceId, paymentId: state.tx.paymentId, studentId: "stu-1", parentId: "u1", invoiceNo: "STIZ-202611-x",
+                invoiceStatus: state.invoice.status, amount: state.tx.amount, title: "11월 수강료", paymentStatus: state.payment.status,
+                studentName: "김민준", parentEmail: "parent@example.com", rallyzMirror: false }];
+        }
+        if (/INSERT INTO "PaymentTransaction"/.test(s)) {
+            state.insertedTx = (state.insertedTx ?? 0) + 1;
+            return [{ id: "tx-new" }];
+        }
         // 승인 전 결제 번호 기록
         if (/"paymentKey" IS DISTINCT FROM \$2/.test(s)) {
+            if (keepApproved()) return 0;
             if (state.tx.status === "IN_PROGRESS") { state.tx.paymentKey = args[1]; return 1; }
             return 0;
         }
@@ -108,6 +134,7 @@ function fakeDb(state) {
         }
         // 승인 실패·확인 중 기록
         if (/status = CASE WHEN \$6::boolean THEN status ELSE 'FAILED' END/.test(s)) {
+            if (keepApproved()) return 0;
             state.tx.paymentKey = args[1];
             if (!args[5]) state.tx.status = "FAILED";
             state.tx.rawResponse = JSON.parse(args[4]);
@@ -139,9 +166,10 @@ function fakeDb(state) {
             return 1;
         }
         // «결제 확인 필요» 기록(같은 거래·같은 사유는 한 번만)
-        if (/'PAYMENT_SINGLE_REVIEW'/.test(s)) {
-            if (state.reviews.some((r) => r.tx === args[2] && r.code === args[3])) return [];
-            state.reviews.push({ tx: args[2], code: args[3] });
+        if (/'PAYMENT_SINGLE_REVIEW'|'VIRTUAL_ACCOUNT_REVIEW'/.test(s)) {
+            const action = /'VIRTUAL_ACCOUNT_REVIEW'/.test(s) ? "VIRTUAL_ACCOUNT_REVIEW" : "PAYMENT_SINGLE_REVIEW";
+            if (state.reviews.some((r) => r.tx === args[2] && r.code === args[3] && r.action === action)) return [];
+            state.reviews.push({ tx: args[2], code: args[3], action });
             return [{ id: `rv-${state.reviews.length}` }];
         }
         // 주기 점검 대상
@@ -150,7 +178,15 @@ function fakeDb(state) {
             assert.match(s, /tx\.status = 'IN_PROGRESS'/);
             return state.tx.status === "IN_PROGRESS" ? [{ ...state.tx, ageMinutes: state.ageMinutes }] : [];
         }
+        if (/'TOSS_CONFIRM_VERIFICATION_FAILED'/.test(s)) {
+            if (keepApproved()) return 0;
+            if (state.tx.status !== "DONE") state.tx.status = "FAILED";
+            return 1;
+        }
         if (/Toss payment was not approved \(reconcile\)/.test(s)) {
+            // 조회하는 사이 학부모 승인이 다시 시작됐으면(updatedAt 이 10분 안) 닫지 않는다
+            assert.match(s, /"updatedAt" < NOW\(\) - \(\$3::int \* INTERVAL '1 minute'\)/);
+            if (state.ageMinutes < args[2]) return 0;
             if (state.tx.status === "IN_PROGRESS") { state.tx.status = "FAILED"; state.tx.failureCode = args[1]; return 1; }
             return 0;
         }
@@ -431,4 +467,163 @@ test("주기 점검 cron: 10분마다 vercel.json 등록 + CRON_SECRET + withCro
     assert.match(route, /CRON_SECRET/);
     assert.match(route, /reconcileTossPayments\(\)/);
     assert.match(route, /maxDuration = 60/);
+});
+
+// ───────────────────────────── 7. 검수 보완(2026-11-13 PM: MED-1·MED-2·L1·L2·L3·L5·L7) ─────────────────────────────
+
+test("MED-1: 승인 실패 기록이 그 사이 남은 승인 원본(DONE)을 FAILED·다른 응답으로 덮어쓰지 않는다", async () => {
+    for (const lookupStatus of [503, 404]) {
+        const state = newState();
+        fakeDb(state);
+        await withToss(async (url) => {
+            if (url.endsWith("/v1/payments/confirm")) {
+                // 이 요청이 토스를 기다리는 사이, 다른 탭의 승인이 승인 원본을 남겼다
+                state.tx.rawResponse = tossDone();
+                state.tx.paymentKey = "pk-1";
+                return json({ code: "ALREADY_PROCESSED_PAYMENT", message: "이미 처리된 결제" }, 400);
+            }
+            return json({ code: "X" }, lookupStatus);
+        }, async () => {
+            await ledger.confirmTossPayment({ paymentKey: "pk-1", orderId: ORDER, amount: AMOUNT, invoiceId: null, owner });
+            assert.equal(state.tx.status, "IN_PROGRESS", `조회 ${lookupStatus}: FAILED 로 닫지 않는다`);
+            assert.equal(state.tx.rawResponse?.status, "DONE", "승인 원본이 남아 있다");
+        });
+    }
+});
+
+test("MED-1: 승인 원본이 남은 주문은 다른 결제 번호로 와도 토스를 다시 부르지 않고 원본으로 반영", async () => {
+    const state = newState({ tx: { status: "IN_PROGRESS", paymentKey: "pk-1", rawResponse: tossDone() } });
+    fakeDb(state);
+    await withToss(async () => { throw new Error("토스를 부르면 안 된다"); }, async (fetchCalls) => {
+        const result = await ledger.confirmTossPayment({ paymentKey: "pk-other", orderId: ORDER, amount: AMOUNT, invoiceId: null, owner });
+        assert.equal(result.ok, true);
+        assert.equal(fetchCalls.length, 0);
+        assert.equal(state.payment.providerPaymentKey, "pk-1", "실제 승인된 결제 번호로 기록");
+        assert.equal(markPaidCount(state), 1);
+    });
+});
+
+test("MED-1·MED-2: 승인됐는데 장부 반영 전인 청구로 결제를 다시 시작하면 새 주문 없이 «결제 확인 중»", async () => {
+    const state = newState({ tx: { status: "IN_PROGRESS", paymentKey: "pk-1", rawResponse: tossDone() }, ageMinutes: 45 });
+    fakeDb(state);
+    await withToss(async () => { throw new Error("토스를 부르면 안 된다"); }, async () => {
+        const result = await ledger.createCheckoutSession({ invoiceId: "inv-1", owner, origin: "https://stiz.example", method: "CARD" });
+        assert.equal(result.ok, false);
+        assert.equal(result.approvedPending, true);
+        assert.match(result.error, /승인되어 납부 반영을 확인/);
+        assert.equal(state.insertedTx ?? 0, 0, "새 결제 주문을 만들지 않는다");
+        assert.ok(state.approvedPendingQueries >= 1);
+    });
+    // 승인 원본이 없는 평범한 진행 중 주문은 막지 않는다(예전 흐름: 30분 재사용 또는 새 주문)
+    const plain = newState({ tx: { status: "IN_PROGRESS", paymentKey: "pk-1", rawResponse: null } });
+    fakeDb(plain);
+    await withToss(async () => { throw new Error("토스를 부르면 안 된다"); }, async () => {
+        const result = await ledger.createCheckoutSession({ invoiceId: "inv-1", owner, origin: "https://stiz.example", method: "CARD" });
+        assert.notEqual(result.approvedPending, true);
+    });
+});
+
+test("MED-2: 승인 직전 검사는 승인 원본이 남은 다른 주문을 시간과 무관하게 «승인 진행 중»으로 본다", async () => {
+    const bundleLedger = await import(await moduleUrl("src/lib/payments/bundleLedger.ts"));
+    assert.equal(bundleLedger.APPROVED_PENDING_SQL, `(t.status = 'IN_PROGRESS' AND t."rawResponse"->>'status' = 'DONE')`);
+    const state = newState();
+    fakeDb(state);
+    await withToss(async () => json(tossDone()), async () => {
+        await ledger.confirmTossPayment({ paymentKey: "pk-1", orderId: ORDER, amount: AMOUNT, invoiceId: null, owner });
+    });
+    assert.ok(state.busySql, "승인 직전 busy 검사를 거친다");
+    assert.ok(
+        state.busySql.includes(`(t."updatedAt" > NOW() - ($3::int * INTERVAL '1 minute') OR ${bundleLedger.APPROVED_PENDING_SQL})`),
+        "10분 안 진행 중 «또는» 승인 원본 있음",
+    );
+    // 결제 시작은 단건·묶음 둘 다 같은 보호를 지난다(같은 규칙의 두 경로는 같은 커밋에서)
+    const src = readFileSync(new URL("../src/lib/payment-ledger.ts", import.meta.url), "utf8");
+    const single = src.slice(src.indexOf("export async function createCheckoutSession("), src.indexOf("export async function getVirtualAccountState("));
+    const bundle = src.slice(src.indexOf("export async function createBundleCheckoutSession("), src.indexOf("export async function getBundleOrderForParent("));
+    assert.match(single, /findApprovedPendingTxIds\(db, \[invoice\.paymentId\], null\)/);
+    assert.match(bundle, /findApprovedPendingTxIds\(db, paymentIds, null\)/);
+    assert.match(bundle, /approvedPending: true as const/);
+});
+
+test("L1: 토스 조회 사이 학부모 승인이 다시 시작되면(updatedAt 갱신) 실패로 닫지 않는다", async () => {
+    const state = newState({ tx: { status: "IN_PROGRESS", paymentKey: null }, ageMinutes: 90 });
+    fakeDb(state);
+    await withToss(async () => {
+        state.ageMinutes = 0; // 조회하는 동안 다른 요청이 거래를 만졌다
+        return json({ code: "NOT_FOUND_PAYMENT" }, 404);
+    }, async () => {
+        const swept = await ledger.reconcileTossPayments();
+        assert.equal(swept.closed, 0);
+        assert.equal(state.tx.status, "IN_PROGRESS");
+    });
+});
+
+test("L2: 주문 번호 조회가 중단(ABORTED)이어도 결제 번호 조회가 완료면 닫지 않고 반영, 둘 다 승인 아님일 때만 닫기", async () => {
+    const approved = newState({ tx: { status: "IN_PROGRESS", paymentKey: "pk-1" }, ageMinutes: 90 });
+    fakeDb(approved);
+    await withToss(async (url) => (url.includes("/orders/")
+        ? json(tossDone({ status: "ABORTED", paymentKey: "pk-0" }))
+        : json(tossDone())), async (fetchCalls) => {
+        const swept = await ledger.reconcileTossPayments();
+        assert.equal(swept.recovered, 1);
+        assert.equal(approved.tx.status, "DONE");
+        assert.equal(fetchCalls.length, 2);
+        assert.ok(fetchCalls[1].url.endsWith("/v1/payments/pk-1"));
+    });
+    const both = newState({ tx: { status: "IN_PROGRESS", paymentKey: "pk-1" }, ageMinutes: 90 });
+    fakeDb(both);
+    await withToss(async (url) => (url.includes("/orders/") ? json(tossDone({ status: "ABORTED" })) : json({ code: "NOT_FOUND" }, 404)), async () => {
+        await ledger.reconcileTossPayments();
+        assert.equal(both.tx.status, "FAILED");
+    });
+    const unknown = newState({ tx: { status: "IN_PROGRESS", paymentKey: "pk-1" }, ageMinutes: 90 });
+    fakeDb(unknown);
+    await withToss(async (url) => (url.includes("/orders/") ? json(tossDone({ status: "EXPIRED" })) : json({}, 503)), async () => {
+        const swept = await ledger.reconcileTossPayments();
+        assert.equal(swept.waiting, 1);
+        assert.equal(unknown.tx.status, "IN_PROGRESS", "결제 번호 조회를 확인 못 하면 닫지 않는다");
+    });
+});
+
+test("L3: 부분 취소와 전액 취소는 사유·문구가 다르다", () => {
+    const tx = { orderId: ORDER, amount: AMOUNT, ageMinutes: 30 };
+    const partial = rule.decideTossReconcile(tx, { kind: "verified", payment: { orderId: ORDER, status: "PARTIAL_CANCELED", totalAmount: AMOUNT } });
+    const full = rule.decideTossReconcile(tx, { kind: "verified", payment: { orderId: ORDER, status: "CANCELED", totalAmount: AMOUNT } });
+    assert.equal(partial.code, "TOSS_PARTIAL_CANCELED_BEFORE_LEDGER");
+    assert.match(partial.headline, /일부만/);
+    assert.equal(full.code, "TOSS_CANCELED_BEFORE_LEDGER");
+    assert.match(full.headline, /전액 취소/);
+    assert.notEqual(partial.headline, full.headline);
+});
+
+test("L7: 승인 응답의 주문·결제 번호 불일치와 금액 불일치는 사유·문구가 다르다", async () => {
+    const cases = [
+        { reply: tossDone({ orderId: "STIZ-OTHER" }), code: "TOSS_CONFIRM_ORDER_MISMATCH", text: /주문 번호·결제 번호가 장부 거래와 달라/ },
+        { reply: tossDone({ totalAmount: 1000 }), code: "TOSS_AMOUNT_MISMATCH", text: /금액\(1,000원\)이 청구 금액과 달라/ },
+    ];
+    for (const c of cases) {
+        const state = newState();
+        const { slack } = fakeDb(state);
+        await withToss(async () => json(c.reply), async () => {
+            const result = await ledger.confirmTossPayment({ paymentKey: "pk-1", orderId: ORDER, amount: AMOUNT, invoiceId: null, owner });
+            assert.equal(result.ok, false);
+            assert.deepEqual(state.reviews.map((r) => r.code), [c.code]);
+            assert.match(slack()[0].text, c.text);
+            assert.equal(state.payment.status, "PENDING");
+        });
+    }
+    const rec = rule.decideTossReconcile({ orderId: ORDER, amount: AMOUNT, ageMinutes: 30 }, { kind: "verified", payment: { orderId: "X", status: "DONE", totalAmount: AMOUNT } });
+    assert.doesNotMatch(rec.headline, /금액/);
+});
+
+test("L5: 점검이 찾은 무통장 입금 완료 건을 반영 못 하면(이미 납부 등) «가상계좌 확인 필요» 기록 + 원장 알림 한 번", async () => {
+    const state = newState({ tx: { status: "IN_PROGRESS", paymentKey: "pk-1" }, payment: { status: "PAID" }, invoice: { status: "PAID" } });
+    const { slack } = fakeDb(state);
+    await withToss(async () => json(tossDone({ method: "가상계좌" })), async () => {
+        await ledger.reconcileTossPayments();
+        await ledger.reconcileTossPayments();
+        assert.deepEqual(state.reviews.map((r) => [r.action, r.code]), [["VIRTUAL_ACCOUNT_REVIEW", "VIRTUAL_ACCOUNT_ALREADY_PAID"]]);
+        assert.equal(slack().length, 1);
+        assert.equal(markPaidCount(state), 0);
+    });
 });

@@ -115,12 +115,20 @@ export function decideTossReconcile(tx: ReconcileTx, lookup: ReconcileLookup): R
         return status === "DONE" ? { action: "FINALIZE" } : { action: "VA_ISSUED" };
     }
     if (NOT_APPROVED_STATUSES.has(status)) return { action: "CLOSE", code: `TOSS_${status}` };
+    if (status === "PARTIAL_CANCELED") {
+        // 일부만 취소 = 남은 금액은 결제된 상태 — 장부는 자동으로 못 맞춘다(어느 몫이 남았는지 모름). 전액 취소와 할 일이 달라 문구를 나눈다.
+        return {
+            action: "REVIEW",
+            code: "TOSS_PARTIAL_CANCELED_BEFORE_LEDGER",
+            headline: "[결제 확인 필요] 장부에 반영되기 전에 토스에서 «일부만» 취소된 결제가 있습니다. 남은 금액은 결제된 상태라 청구에 직접 반영하거나 나머지를 환불해 주세요.",
+        };
+    }
     if (CANCELED_STATUSES.has(status)) {
-        // 승인됐다가 장부 반영 전에 취소된 결제 — 장부는 미납 그대로가 맞지만, 사람이 한 번 확인하게 알린다
+        // 승인됐다가 장부 반영 전에 전액 취소된 결제 — 장부는 미납 그대로가 맞지만, 사람이 한 번 확인하게 알린다
         return {
             action: "REVIEW",
             code: "TOSS_CANCELED_BEFORE_LEDGER",
-            headline: "[결제 확인 필요] 장부에 반영되기 전에 토스에서 취소된 결제가 있습니다. 청구는 미납 그대로입니다 — 환불이 끝났는지 확인해 주세요.",
+            headline: "[결제 확인 필요] 장부에 반영되기 전에 토스에서 전액 취소된 결제가 있습니다. 청구는 미납 그대로입니다 — 환불이 끝났는지 확인해 주세요.",
         };
     }
     if (PENDING_STATUSES.has(status)) return waitOrAlert(tx, `토스 상태 ${status}`);
