@@ -255,7 +255,9 @@ export async function claimManualMessageQueue(limit = 10, nowMs: number = Date.n
       try {
         settledIds = await billing.findSettledBillingDeliveries(tx, stillGuarded.map((item) => item.id));
         await tx.$executeRawUnsafe(`RELEASE SAVEPOINT billing_settled_check`);
-      } catch {
+      } catch (error) {
+        // 조회 오류면 예전처럼 그대로 보낸다 — 대신 «납부 확인이 꺼졌다»는 것을 로그로 남긴다(검수 LOW-b).
+        console.warn("[message-ledger] 청구 안내 납부 확인 실패 — 확인 없이 발송", error instanceof Error ? error.name : "unknown");
         await tx.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT billing_settled_check`);
       }
       const settled = new Set(settledIds);
