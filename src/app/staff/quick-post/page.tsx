@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PUBLIC_POST_CONSENT_GATE_ENABLED } from "@/lib/studentMediaConsent";
 import { requireStaff } from "@/lib/auth-guard";
 import QuickPostClient from "./QuickPostClient";
 
@@ -39,6 +40,8 @@ export default async function StaffQuickPostPage() {
           canPublishGallery: staff.appUserRole === "ADMIN" || staff.appUserRole === "VICE_ADMIN",
           canPublishInstagram: staff.appUserRole === "ADMIN",
         }}
+        // 공개 게시 동의 검사가 켜져 있을 때만 «학생 미지정 사진은 게시할 수 없다»는 안내를 보인다(지금은 꺼짐)
+        consentGateEnabled={PUBLIC_POST_CONSENT_GATE_ENABLED}
       />
     );
   } catch {

@@ -18,7 +18,7 @@ import {
   type SocialPostDraft,
   normalizeSubjectStudentIds,
 } from "@/lib/socialDrafts";
-import { assertSocialDraftMediaConsent } from "@/lib/studentMediaConsent";
+import { assertSocialDraftMediaConsent, PUBLIC_POST_CONSENT_GATE_ENABLED } from "@/lib/studentMediaConsent";
 import { SUBJECT_UNASSIGNED_PUBLISH_MESSAGE } from "@/lib/socialPostMessages";
 
 type SaveDraftInput = {
@@ -133,6 +133,8 @@ export async function rejectSocialPostDraft(id: string) {
  * 이 함수를 지나쳐도 갤러리·인스타 단계의 동의 검사가 그대로 다시 막는다.
  */
 function isSubjectUnassignedDraft(draft: Pick<SocialPostDraft, "sessionId" | "classId" | "subjectStudentIds">) {
+  // 공개 게시 동의 검사가 꺼져 있으면(원장 결정 2026-11-14 — 관리자·원장이 사진을 보고 직접 승인) 학생 미지정으로 막지 않는다.
+  if (!PUBLIC_POST_CONSENT_GATE_ENABLED) return false;
   return (!draft.sessionId && !draft.classId) || draft.subjectStudentIds.length === 0;
 }
 

@@ -73,5 +73,9 @@ test("공개 게시 동의 검사는 꺼졌지만(되돌릴 스위치 유지) �
   assert.match(actions, /export async function publishSocialPostDraftToGallery\(id: string\) \{\s*const staff = await requireAdmin\(\);/);
   assert.match(actions, /export async function publishSocialPostDraftToInstagram\(id: string\) \{[\s\S]*?const owner = await requireOwner\(\);/);
   // 대기열은 원장이 승인해 PUBLISHING 이 된 초안만 처리한다
-  assert.match(readSrc("src/lib/socialDrafts.ts"), /WHERE status = 'PUBLISHING'/);
+  // 2026-11-14 사진·인스타 점검: 대기열 SQL 은 socialPublishQueueRules.ts 로 모였고, 원장이 켠 초안(다음 시도 시각 있음)만 집는다
+  assert.match(readSrc("src/lib/socialPublishQueueRules.ts"), /WHERE status = 'PUBLISHING'\s+AND "instagramNextRetryAt" IS NOT NULL/);
+  // 동의 검사가 꺼져 있으면 «학생 미지정» 사전 차단·안내도 같이 꺼진다(스위치 하나를 따른다)
+  assert.match(actions, /if \(!PUBLIC_POST_CONSENT_GATE_ENABLED\) return false;/);
+  assert.match(readSrc("src/app/staff/quick-post/QuickPostClient.tsx"), /\{consentGateEnabled && \(/);
 });

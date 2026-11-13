@@ -44,9 +44,12 @@ const INSTAGRAM_OWNER_ONLY_TEXT = "인스타그램 게시는 원장님 계정에
 export default function QuickPostClient({
   currentUser,
   permissions,
+  consentGateEnabled = false,
 }: {
   currentUser: { name: string; role: string };
   permissions: QuickPostPermissions;
+  /** 공개 게시 동의 검사가 켜져 있는가(서버가 내려 준다). 켜져 있을 때만 «학생 미지정 사진은 게시 불가» 안내를 보인다. */
+  consentGateEnabled?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [lessonType, setLessonType] = useState(LESSON_TYPES[0]);
@@ -286,12 +289,14 @@ export default function QuickPostClient({
         </header>
 
         {/* 2026-11-14 사진·인스타 점검: 올린 뒤에야 막히지 않게, 이 화면 사진은 게시할 수 없다는 사실을 먼저 알린다. */}
+        {consentGateEnabled && (
         <p
           role="note"
           className="rounded-lg border border-[var(--color-academy-info)] bg-[var(--color-academy-info-soft)] px-3 py-2 text-xs leading-5 text-[var(--color-academy-info)]"
         >
           {QUICK_UPLOAD_CONSENT_NOTICE}
         </p>
+        )}
 
         <section className="rounded-lg border border-[var(--color-academy-line)] bg-white p-4 shadow-sm">
           <div className="grid grid-cols-2 gap-2">
