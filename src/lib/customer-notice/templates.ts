@@ -157,6 +157,9 @@ export function maskPhone(phone: string) {
 // ───────────────────────── ④ 학부모 가입 안내(여러 명에게 한 번에) ─────────────────────────
 
 export const PARENT_SIGNUP_URL = "https://www.stiz-dasan.kr/signup/parent";
+// 앱 설치 짧은 주소(2026-11-13 f10) — 기기를 보고 Play 스토어/App Store 로 나눠 보낸다(src/app/install/page.tsx).
+// 경로는 @/lib/app-install-links 의 APP_INSTALL_PATH 와 같아야 한다(이 파일은 import 없는 순수 모듈이라 테스트가 대조한다).
+export const PARENT_APP_INSTALL_URL = "https://www.stiz-dasan.kr/install";
 
 /**
  * ④ 학부모 가입 안내 (2026-11-09 원장 승인 문구)
@@ -166,6 +169,7 @@ export const PARENT_SIGNUP_URL = "https://www.stiz-dasan.kr/signup/parent";
  *   - 🏀 (이모지) → 뺐다 ("재원생 가족 혜택" 제목만 남김)
  *   - 결석 신고·스티즈농구교실을 감싼 꺾쇠 따옴표 → ‘ ’ (기존 카카오채널 안내와 같은 따옴표)
  * 테스트(tests/parent-signup-guide.test.mjs)가 «완성형 밖 글자 없음»을 못박는다.
+ * 2026-11-13 f10: «▶ 앱 설치» 두 줄 추가(원장 점검표 지시). 원래부터 LMS(90바이트 초과)라 요금 구간은 같다.
  */
 export function buildParentSignupGuideMessage() {
   return [
@@ -176,6 +180,10 @@ export function buildParentSignupGuideMessage() {
     "",
     `▶ 가입하기: ${PARENT_SIGNUP_URL}`,
     "학원에 등록하신 휴대폰 번호로 가입하시면 자녀가 자동으로 연결돼요.",
+    "",
+    // 2026-11-13 f10(원장 점검표): 앱 설치 링크 한 줄 + 같은 아이디로 쓴다는 안내
+    `▶ 앱 설치: ${PARENT_APP_INSTALL_URL}`,
+    "앱에서도 같은 아이디로 로그인하시면 돼요.",
     "",
     "▶ 결석은 가입 후 ‘결석 신고’로 알려 주세요.",
     "",
