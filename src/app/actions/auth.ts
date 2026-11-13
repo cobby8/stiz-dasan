@@ -53,7 +53,10 @@ export async function login(formData: FormData) {
       `SELECT email FROM "User" WHERE LOWER(username) = LOWER($1) AND role = 'PARENT' LIMIT 1`,
       identifier,
     );
-    authEmail = rows[0]?.email || `${identifier.toLowerCase()}@member.stiz.kr`;
+    // 학부모 아이디가 아니고 휴대폰 번호 모양이면 선생님·기사님 계정(«번호@staff.stiz.kr»)으로 본다.
+    // 로그인 화면은 하나 — 로그인한 뒤 역할에 맞는 화면으로 간다(원장 2026-11-13). 학부모 아이디가 먼저라 학부모 로그인은 그대로.
+    const staffEmail = staffLoginEmail(identifier);
+    authEmail = rows[0]?.email || (staffEmail !== identifier ? staffEmail : `${identifier.toLowerCase()}@member.stiz.kr`);
   }
 
   const { data, error } = await supabase.auth.signInWithPassword({
