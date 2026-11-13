@@ -19,6 +19,7 @@ import {
   calculateRentalFee,
   checkRentalRefundAccount,
   cleanRentalText,
+  formatWon,
   isBookableDate,
   isRentalAction,
   isRentalRangeAvailable,
@@ -27,6 +28,7 @@ import {
   parseCancelRefund,
   rentalHourColumns,
   rentalInstantMs,
+  rentalTimeText,
   rentalTransitionTarget,
   type RentalAction,
   type RentalBusyRange,
@@ -56,7 +58,7 @@ function toDayMinutes(rows: InstantRow[], dayStartMs: number): RentalBusyRange[]
 }
 
 /** 그날의 시작 후보(10분 간격) — 정규 수업·특강 회차·승인된 대관을 빼고 계산 */
-export async function loadRentalDay(db: RawSqlClient, date: string, nowMs: number): Promise<RentalDay | null> {
+export async function loadRentalDay(db: RawSqlClient, date: string, nowMs: number, excludeId: string | null = null): Promise<RentalDay | null> {
   if (!isKstYmd(date)) return null;
   const dayStartMs = kstAt(date);
   const dayEndMs = kstAt(addDaysKst(date, 1));
@@ -87,9 +89,11 @@ export async function loadRentalDay(db: RawSqlClient, date: string, nowMs: numbe
     `SELECT "startAt" AS "startsAt", "endAt" AS "endsAt"
        FROM "GymRentalRequest"
       WHERE status IN (${HOLDING_SQL})
-        AND "startAt" < $2::timestamptz AND "endAt" > $1::timestamptz`,
+        AND "startAt" < $2::timestamptz AND "endAt" > $1::timestamptz
+        AND ($3::text IS NULL OR id <> $3::text)`, // 관리자 수정 때는 자기 자신을 빼고 본다
     dayStart,
     dayEnd,
+    excludeId,
   );
 
   const booked = toDayMinutes(rentals, dayStartMs);
@@ -486,6 +490,94 @@ export async function transitionRentalInTx(
   );
   if (!updated[0]) return { ok: false, message: "이미 다른 상태로 바뀐 신청입니다. 새로고침 후 다시 확인해 주세요." };
   return { ok: true, request: updated[0], previousStatus: row.status };
+}
+
+// ── 관리자: 신청 내용 수정(날짜·시간·인원·냉난방) ─────────────────────────
+// 신청자가 전화로 «시간을 바꿔 달라»고 할 때 쓴다(원장 2026-11-13). 돈을 받기 전 단계만 고친다.
+export const RENTAL_EDITABLE_STATUSES = ["REQUESTED", "APPROVED"] as const;
+export type RentalEditInput = { rentalDate: unknown; startMinute: unknown; durationMinutes: unknown; headcount: unknown; useAircon: unknown };
+export type RentalEditResult =
+  | { ok: true; request: RentalRecord; before: RentalRecord; changed: boolean }
+  | { ok: false; message: string };
+
+/** 메모에 남길 한 줄 요약 — «11/14 14:30~15:30 · 6명 · 60,000원» */
+function rentalSummary(row: Pick<RentalRecord, "rentalDate" | "startHour" | "endHour" | "startMinute" | "endMinute" | "headcount" | "useAircon" | "totalAmount">): string {
+  const [, m, d] = row.rentalDate.split("-");
+  return `${Number(m)}/${Number(d)} ${rentalTimeText(row)} · ${row.headcount}명${row.useAircon ? "·냉난방" : ""} · ${formatWon(row.totalAmount)}`;
+}
+
+/**
+ * 반드시 트랜잭션의 tx 로 부른다. 금액은 화면 값을 믿지 않고 다시 계산한다(재원생 무료 여부는 그대로 유지).
+ * 겹침은 «자기 자신을 뺀» 그날 수업·특강·승인 대관으로 다시 본다. 그래도 새면 DB EXCLUDE 제약이 막는다.
+ */
+export async function editRentalInTx(
+  tx: RawSqlClient,
+  id: string,
+  input: RentalEditInput,
+  actorUserId: string,
+  nowMs: number,
+): Promise<RentalEditResult> {
+  if (typeof id !== "string" || !/^[0-9a-f-]{36}$/i.test(id)) return { ok: false, message: "대관 신청을 찾을 수 없습니다." };
+  const rentalDate = String(input.rentalDate ?? "");
+  const startMinute = Number(input.startMinute);
+  const durationMinutes = Number(input.durationMinutes);
+  const headcount = Number(input.headcount);
+  const useAircon = input.useAircon === true;
+
+  if (!isBookableDate(rentalDate, todayKst(nowMs))) return { ok: false, message: "바꿀 수 없는 날짜입니다. 오늘 이후 날짜를 골라 주세요." };
+  if (!Number.isInteger(startMinute) || startMinute < 0 || startMinute % RENTAL_START_STEP_MINUTES !== 0 || !isValidRentalDuration(durationMinutes)) {
+    return { ok: false, message: "시작 시간(10분 단위)과 이용 시간(30분 단위)을 다시 골라 주세요." };
+  }
+
+  const locked = await tx.$queryRawUnsafe<RentalRecord[]>(`SELECT ${RECORD_COLUMNS} FROM "GymRentalRequest" WHERE id = $1 FOR UPDATE`, id);
+  const before = locked[0];
+  if (!before) return { ok: false, message: "대관 신청을 찾을 수 없습니다." };
+  if (!(RENTAL_EDITABLE_STATUSES as readonly string[]).includes(before.status)) {
+    return { ok: false, message: "승인 대기·입금 대기 신청만 고칠 수 있습니다. 확정된 대관은 취소 후 다시 신청받아 주세요." };
+  }
+
+  let fee;
+  try {
+    fee = calculateRentalFee({ durationMinutes, headcount, useAircon, memberFree: before.memberFree });
+  } catch (error) {
+    return { ok: false, message: (error as Error).message };
+  }
+  // 입금 대기 건이 0원이 되면 «입금 대기» 상태가 뜻이 없어진다(승인은 0원이면 바로 확정) — 이 경우는 막고 안내한다
+  if (before.status === "APPROVED" && fee.total === 0) {
+    return { ok: false, message: "입금할 금액이 0원이 됩니다. 이 신청을 취소하고 새로 신청받은 뒤 승인해 주세요." };
+  }
+  const endMinute = startMinute + durationMinutes;
+  const changed = rentalDate !== before.rentalDate || startMinute !== Number(before.startMinute) || endMinute !== Number(before.endMinute)
+    || fee.headcount !== Number(before.headcount) || useAircon !== before.useAircon;
+  if (!changed) return { ok: true, request: before, before, changed: false };
+
+  // 승인과 같은 줄에 선다(그날 대관을 동시에 승인·수정해도 겹치지 않게). 날짜를 옮기면 새 날짜 줄.
+  await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, `gym-rental:${rentalDate}`);
+  const day = await loadRentalDay(tx, rentalDate, nowMs, id);
+  if (!isRentalRangeAvailable(day, startMinute, durationMinutes)) {
+    return { ok: false, message: "그 시간에 수업·특강·다른 승인 대관이 있거나 이용 가능 시간이 아닙니다. 다른 시간을 골라 주세요." };
+  }
+
+  const { startHour, endHour } = rentalHourColumns(startMinute, endMinute);
+  const after = { rentalDate, startHour, endHour, startMinute, endMinute, headcount: fee.headcount, useAircon, totalAmount: fee.total };
+  const memo = `${rentalSummary(before)} → ${rentalSummary(after)}`;
+  const updated = await tx.$queryRawUnsafe<RentalRecord[]>(
+    `UPDATE "GymRentalRequest"
+        SET "rentalDate" = $2, "startHour" = $3, "endHour" = $4, "startMinute" = $5, "endMinute" = $6,
+            "startAt" = $7::timestamptz, "endAt" = $8::timestamptz, headcount = $9, "useAircon" = $10,
+            "usageFee" = $11, deposit = $12, "totalAmount" = $13, "decidedByUserId" = $14,
+            -- 메모는 덮어쓰지 않고 한 줄씩 덧붙인다(무엇을 언제 바꿨는지 남게)
+            "adminMemo" = left(concat_ws(E'\\n', "adminMemo", '내용 수정: ' || $15::text), 500),
+            "updatedAt" = now()
+      WHERE id = $1 AND status = $16
+      RETURNING ${RECORD_COLUMNS}`,
+    id, rentalDate, startHour, endHour, startMinute, endMinute,
+    new Date(rentalInstantMs(rentalDate, startMinute)).toISOString(),
+    new Date(rentalInstantMs(rentalDate, endMinute)).toISOString(),
+    fee.headcount, useAircon, fee.usageFee, fee.deposit, fee.total, actorUserId, memo, before.status,
+  );
+  if (!updated[0]) return { ok: false, message: "이미 다른 상태로 바뀐 신청입니다. 새로고침 후 다시 확인해 주세요." };
+  return { ok: true, request: updated[0], before, changed: true };
 }
 
 /** DB 겹침 제약(EXCLUDE) 위반인가 — 동시에 두 건을 승인했을 때 마지막 방어선 */
