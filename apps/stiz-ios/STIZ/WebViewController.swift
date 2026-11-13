@@ -30,6 +30,9 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         // 시험 앱은 운영 로그인 쿠키·저장소를 공유하지 않는다.
         configuration.websiteDataStore = NavigationPolicy.sandbox.isRequested ? .nonPersistent() : .default()
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+        // 수업 영상(2026-11-14): 웹의 <video playsinline>·유튜브 임베드(playsinline=1)가 전체 화면으로 강제되지 않고
+        // 화면 안에서 재생되게 한다. 재생은 여전히 사용자가 눌러야 시작된다(자동 재생 허용 아님). 전체 화면 버튼은 그대로 쓸 수 있다.
+        configuration.allowsInlineMediaPlayback = true
         // 앱 버전 표시: 기존 브라우저 식별 문자열(기본 «Mobile/15E148») 끝에 « STIZApp/버전 (ios)» 를 덧붙인다.
         // 웹은 이 표시로 «앱에서 열렸는지·어느 버전인지» 알 수 있다. 기존 문자열은 지우지 않는다.
         let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"

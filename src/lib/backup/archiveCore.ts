@@ -73,6 +73,8 @@ export function isSecretColumnName(name: string): boolean {
 // (code 칸 전체를 가리면 SpecialProgramOffering.code 같은 분류용 코드까지 사라진다)
 export const SECRET_COLUMNS_BY_TABLE: Readonly<Record<string, readonly string[]>> = {
     EnrollmentShortLink: ["code"], // 짧은 링크 코드 = 아는 사람은 신청 링크로 바로 들어간다
+    // 유튜브 refresh token(암호문) — 키와 함께 새면 원장 채널을 쓸 수 있다. 백업에서 빼고, 복원하면 «다시 연결»한다.
+    YouTubeConnection: ["refreshTokenEncrypted"],
 };
 
 /** 이 표의 이 칸을 가려야 하나 — 이름 규칙 또는 표별 지정 목록 */

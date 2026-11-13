@@ -72,7 +72,7 @@ test('이전 보조 기능의 진입이 남고 실제 페이지 파일이 존재
   // 옛 «요청·신청함» 화면(학부모 요청·수강 변경·카카오 등)은 신청함 상세 칸에서 연다 — 아래 별도 시험
   // 2026-11-13 메뉴 정리: 묶인 화면(결석 신고·입금 확인·코치 …)은 사이드바가 아니라 그 묶음 화면 위 탭 줄에서 들어간다
   //   → 탭 연결은 tests/admin-menu-sections.test.mjs 가 화면별로 검사한다
-  for (const route of ['/admin/inbox', '/admin/attendance', '/admin/finance', '/admin/seasonal', '/admin/pos-plugin', '/admin/settings', '/admin/schedule', '/admin/notices', '/admin/terms', '/admin/stats', '/admin/sms', '/admin/staff']) {
+  for (const route of ['/admin/inbox', '/admin/attendance', '/admin/finance', '/admin/seasonal', '/admin/pos-plugin', '/admin/settings', '/admin/schedule', '/admin/notices', '/admin/terms', '/admin/stats', '/admin/sms', '/admin/staff', '/admin/youtube']) {
     assert.ok(paths.includes(route), `${route} 진입 누락`);
   }
   // 메뉴에서만 뺀 화면(주소는 산다) · 삭제한 수강생 이관

@@ -42,6 +42,9 @@ final class WebFileChooser {
         ValueCallback<Uri[]> callback;
         File camera;
         Uri cameraUri;
+        // 촬영 결과의 형식·이름 — 사진은 image/jpeg·capture.jpg, 영상은 video/mp4·capture.mp4 (2026-11-14 수업 영상)
+        String cameraMime = "image/jpeg";
+        String cameraName = "capture.jpg";
         boolean delivered;
         boolean processing;
         Request(int code, String page, String[] accepted, boolean multiple, ValueCallback<Uri[]> callback) {
@@ -78,6 +81,21 @@ final class WebFileChooser {
                 camera.setClipData(ClipData.newRawUri("사진 촬영", request.cameraUri));
                 camera.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
                 activity.startActivityForResult(camera, request.code);
+            } else if (params.isCaptureEnabled() && FileSelectionPolicy.videosOnly(accepted)
+                && FileSelectionPolicy.accepts(accepted, "video/mp4", "capture.mp4")) {
+                // 수업 영상 촬영(2026-11-14): accept="video/*" capture 이면 동영상 카메라를 연다.
+                // 길이 60초·크기 50MB 상한을 카메라 앱에 알려 준다(지키는 앱이면 그 자리에서 녹화가 멈춘다).
+                request.camera = File.createTempFile("capture-", ".mp4", directory());
+                request.cameraUri = FileProvider.getUriForFile(activity, authority, request.camera);
+                request.cameraMime = "video/mp4";
+                request.cameraName = "capture.mp4";
+                Intent camera = new Intent(MediaStore.ACTION_VIDEO_CAPTURE);
+                camera.putExtra(MediaStore.EXTRA_OUTPUT, request.cameraUri);
+                camera.putExtra(MediaStore.EXTRA_DURATION_LIMIT, FileSelectionPolicy.VIDEO_CAPTURE_SECONDS);
+                camera.putExtra(MediaStore.EXTRA_SIZE_LIMIT, FileSelectionPolicy.VIDEO_CAPTURE_SIZE_LIMIT);
+                camera.setClipData(ClipData.newRawUri("영상 촬영", request.cameraUri));
+                camera.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                activity.startActivityForResult(camera, request.code);
             } else {
                 Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE);
                 picker.setType(accepted.length == 1 ? accepted[0] : "*/*");
@@ -99,8 +117,11 @@ final class WebFileChooser {
         if (request == null || request.code != code || request.delivered || request.processing) return true;
         if (resultCode != Activity.RESULT_OK || !samePage(request)) { finish(request, null); return true; }
         ArrayList<Uri> selected = new ArrayList<>();
-        if (request.cameraUri != null) selected.add(request.cameraUri);
-        else if (data != null) {
+        if (request.cameraUri != null) {
+            // 일부 동영상 카메라 앱은 EXTRA_OUTPUT(우리 파일)을 무시하고 자기 갤러리 주소만 돌려준다 → 그 주소를 쓴다
+            if (request.camera != null && request.camera.length() > 0) selected.add(request.cameraUri);
+            else if (data != null && data.getData() != null && FileSelectionPolicy.externalContent(data.getData().toString(), authority)) selected.add(data.getData());
+        } else if (data != null) {
             LinkedHashSet<Uri> unique = new LinkedHashSet<>();
             if (data.getData() != null) unique.add(data.getData());
             ClipData clip = data.getClipData();
@@ -142,7 +163,7 @@ final class WebFileChooser {
                 if (Thread.currentThread().isInterrupted()) throw new java.io.IOException("Cancelled");
                 boolean camera = request.cameraUri != null && request.cameraUri.equals(uri);
                 if (!camera && !FileSelectionPolicy.externalContent(uri.toString(), authority)) throw new java.io.IOException("Unsupported selection");
-                String name = camera ? "capture.jpg" : "";
+                String name = camera ? request.cameraName : "";
                 long declared = -1;
                 if (!camera) try (Cursor cursor = activity.getContentResolver().query(uri,
                     new String[]{OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE}, null, null, null)) {
@@ -153,9 +174,11 @@ final class WebFileChooser {
                         if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) declared = cursor.getLong(sizeIndex);
                     }
                 }
-                String mime = camera ? "image/jpeg" : activity.getContentResolver().getType(uri);
+                String mime = camera ? request.cameraMime : activity.getContentResolver().getType(uri);
                 if (mime != null) mime = mime.toLowerCase(java.util.Locale.ROOT).split(";", 2)[0].trim();
-                if (!FileSelectionPolicy.accepts(request.accepted, mime, name) || declared > FileSelectionPolicy.MAX_FILE_BYTES) throw new java.io.IOException("Unsupported file");
+                // 파일 한 개 상한은 형식별(영상은 더 크게) — FileSelectionPolicy.maxFileBytes
+                long maxBytes = FileSelectionPolicy.maxFileBytes(mime, name);
+                if (!FileSelectionPolicy.accepts(request.accepted, mime, name) || declared > maxBytes) throw new java.io.IOException("Unsupported file");
                 String extension = safeExtension(name);
                 if (extension.isEmpty() && mime != null) {
                     String inferred = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(mime);
@@ -172,12 +195,12 @@ final class WebFileChooser {
                     while ((count = input.read(buffer)) != -1) {
                         if (Thread.currentThread().isInterrupted()) throw new java.io.IOException("Cancelled");
                         bytes += count;
-                        if (bytes > FileSelectionPolicy.MAX_FILE_BYTES || total + bytes > FileSelectionPolicy.MAX_TOTAL_BYTES) throw new java.io.IOException("File too large");
+                        if (bytes > maxBytes || total + bytes > FileSelectionPolicy.MAX_TOTAL_BYTES) throw new java.io.IOException("File too large");
                         output.write(buffer, 0, count);
                     }
                 }
                 total += bytes;
-                if (!FileSelectionPolicy.bounded(selected.size(), request.multiple, bytes, total)) throw new java.io.IOException("File limit exceeded");
+                if (!FileSelectionPolicy.bounded(selected.size(), request.multiple, bytes, total, maxBytes)) throw new java.io.IOException("File limit exceeded");
                 if ((mime != null && mime.startsWith("image/")) || FileSelectionPolicy.typeForName(name).startsWith("image/")) verifyImage(copy, mime, name);
                 result.add(FileProvider.getUriForFile(activity, authority, copy));
             }
