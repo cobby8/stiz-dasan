@@ -83,10 +83,13 @@ export default function SessionInProgressClient({
   session,
   initialStudents,
   initialView,
+  showFees,
 }: {
   session: StaffSessionDetail;
   initialStudents: StaffSessionStudent[];
   initialView: View;
+  /** f3: 출석부에 수강료·미납 줄을 보일지 — 원장·부원장만 true(선생님은 조회 자체를 하지 않는다). */
+  showFees: boolean;
 }) {
   const router = useRouter();
   const [view, setView] = useState<View>(initialView);
@@ -129,7 +132,9 @@ export default function SessionInProgressClient({
   useStaffDialog(showEndConfirm, endDialogRef, closeEndDialog, !pending);
 
   // 수강료 조회가 늦거나 실패해도 출석 버튼과 수업 저장은 계속 사용할 수 있습니다.
+  // 선생님 화면(showFees=false)은 수강료를 아예 부르지 않는다(f3).
   useEffect(() => {
+    if (!showFees) return;
     let active = true;
     queueMicrotask(() => {
       if (active) { setFeeLoading(true); setFeeError(""); setFeeData(null); }
@@ -141,7 +146,7 @@ export default function SessionInProgressClient({
       })
       .finally(() => { if (active) setFeeLoading(false); });
     return () => { active = false; };
-  }, [feeReload, session.id]);
+  }, [feeReload, session.id, showFees]);
 
   const feesByRoster = useMemo(() => new Map(feeData?.items.map((item) => [item.rosterId, item]) ?? []), [feeData]);
   const closeAttendanceBilling = useCallback(() => setAttendanceBillingTarget(null), []);
@@ -573,12 +578,12 @@ export default function SessionInProgressClient({
         <p className="text-xs font-bold text-[var(--color-academy-muted)]">잘못 찍었으면 다른 버튼을 눌러 바로 고칠 수 있어요. 보강권도 함께 맞춰집니다.</p>
         {message && <p role="alert" aria-live="assertive" className="rounded-xl bg-[var(--color-academy-warning-soft)] p-3 text-sm font-bold text-[var(--color-academy-warning)]">{message}</p>}
 
-        <div aria-live="polite" className="text-xs font-bold text-[var(--color-academy-muted)]">
-          {feeLoading ? "수강료 조회 중 · 출석 확인은 바로 할 수 있습니다." : feeError ? <div role="alert" className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-3">
+        {showFees && <div aria-live="polite" className="text-xs font-bold text-[var(--color-academy-muted)]">
+          {feeLoading ?"수강료 조회 중 · 출석 확인은 바로 할 수 있습니다." : feeError ? <div role="alert" className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-3">
             <p>{feeError}</p>
             <button type="button" onClick={() => setFeeReload((value) => value + 1)} className="mt-1 min-h-11 text-[var(--brand-accent)]">수강료 다시 불러오기</button>
           </div> : feeData ? `${feeData.month.replace("-", "년 ")}월 기준 · 발행된 청구 또는 수강 정보` : "수강료 확인 필요"}
-        </div>
+        </div>}
 
         <section aria-label="학생 출결 명단" className="overflow-hidden rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
           {students.map((student) => {
@@ -591,13 +596,22 @@ export default function SessionInProgressClient({
                   {student.makeup && (
                     <span className={`rounded px-1.5 py-0.5 text-xs font-black ${TONE_BADGE_CLASS[ATTENDANCE_TONE.MAKEUP]}`}>보강</span>
                   )}
+                  {/* 체험수업 온 아이(f1). 출결은 체험 기록에만 남고 정규 출석·청구에는 섞이지 않는다. */}
+                  {student.trial && (
+                    // 보강(정보색)과 헷갈리지 않게 브랜드 색으로 구분한다.
+                    <span className="rounded bg-[var(--color-academy-primary-soft)] px-1.5 py-0.5 text-xs font-black text-[var(--brand-accent)]">체험</span>
+                  )}
+                  {student.trial && student.grade && (
+                    <span className="text-xs font-bold text-[var(--color-academy-muted)]">{student.grade}</span>
+                  )}
                 </span>
                 {student.status
                   ? <StatusPill tone={STATUS_TONE[student.status]} icon={STATUS_ICON[student.status]}>{STATUS_LABEL[student.status]}</StatusPill>
                   : <StatusPill tone="neutral" icon="help">미확인</StatusPill>}
               </div>
-              {/* 보강 온 아이는 이 반 수강생이 아니라 이 반 수강료를 보여주지 않는다. */}
-              {!student.makeup && <button type="button" aria-label={`${student.name} 수강료·청구 확인`} onClick={() => setAttendanceBillingTarget(student)} className="mt-1 flex min-h-11 w-full flex-wrap items-center justify-between gap-x-2 gap-y-1 rounded-lg bg-[var(--color-academy-primary-soft)] px-2 py-2 text-left">
+              {/* 보강 온 아이·체험 아이는 이 반 수강생이 아니라 수강료를 보여주지 않는다.
+                  선생님 화면(showFees=false)은 수강료·미납 줄 자체를 숨긴다(f3). */}
+              {showFees && !student.makeup && !student.trial && <button type="button" aria-label={`${student.name} 수강료·청구 확인`} onClick={() => setAttendanceBillingTarget(student)} className="mt-1 flex min-h-11 w-full flex-wrap items-center justify-between gap-x-2 gap-y-1 rounded-lg bg-[var(--color-academy-primary-soft)] px-2 py-2 text-left">
                 <span className="text-xs font-bold text-[var(--color-academy-ink)]">
                   {feeLoading ? "수강료 조회 중…" : feeError ? "수강료 확인 필요" : <>
                     <span className="text-[var(--color-academy-muted)]">{feeData ? monthlyFeeLabel(feeData.month, fee?.period, fee?.sourceLabel) : "수강료"} </span>
@@ -630,7 +644,7 @@ export default function SessionInProgressClient({
               </div>
               {/* 결석일 때만: 질병·부상 표시 → 청구 작업대 «이월 검토» 후보가 된다(이월 적용은 원장이 증빙 확인 후).
                   정규 수강생만(보강 온 아이·방학특강은 대상 아님). 학부모가 이미 신고한 날은 그 사유를 따른다. */}
-              {student.status === "ABSENT" && !student.makeup && !session.sessionDateId && (() => {
+              {student.status === "ABSENT" && !student.makeup && !student.trial && !session.sessionDateId && (() => {
                 const illness = student.absenceReport?.reason === "ILLNESS_INJURY";
                 const parentLocked = student.absenceReport?.source === "PARENT";
                 return <button

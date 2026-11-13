@@ -3,6 +3,11 @@
 <!-- 프로젝트의 폴더 구조, 파일 역할, 핵심 패턴을 기록 -->
 <!-- 2026-11-10 정리: 48항목 → 주제별 19묶음. 원래 항목은 묶음 안 하위 항목(원래 날짜·제목)으로 내용 그대로 보존. 새 항목은 맞는 묶음에 하위 항목으로 넣는다 -->
 
+### [2026-11-13] 선생님 출석부 — 체험 아이(trial: 키)·결석 학부모 알림(매분 훑기)·수강료는 원장만
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: ① 체험 아이는 `getStaffSessionStudents` 정규 명단 뒤에 `trial:true`·키 `trial:<TrialLead.id>`(`trialRosterKey`) — 저장은 `saveTrialAttendance` 가 `TrialLead.staffAttendanceStatus` 에만(정규 Attendance·보강권·청구와 분리), 조건은 `trialOnClassDateSql` 하나를 조회·저장이 공유. 출석·지각이면 단계 SCHEDULED→ATTENDED(`trialLeadStatusAfterStaffMark`). 명단 소비처(staff-monthly-fees 등)는 `!s.trial` 로 거른다. ② 결석 알림은 저장 때 보내지 않고 push-outbox 크론이 `sweepAbsenceParentNotices` 로 «결석으로 바뀐 지 3분 지난(Attendance.updatedAt, UTC 칸) 오늘 정규 수강생 · RegularAbsence 없음» 만 골라 `deliverParentNotification`(앱 알림+웹푸시, 문자 없음). 어느 경로로 찍혀도 Attendance 기준이라 bulk 도 자동 포함. ③ 출석부 수강료는 `canSeeStaffFees`(ADMIN·VICE_ADMIN) — 화면 `showFees` + 서버 `getStaffSessionMonthlyFees`(빈 목록)·`getStaffAttendanceBilling`(거부). 강제 `tests/staff-attendance-trial-absence-fees.test.mjs`.
+- **참조횟수**: 0
 ### [2026-11-13] 출시 전 안전장치 — 관리자 화면 가드·cron 실패 알림·스토어 앱 우회 한 곳
 - **분류**: architecture
 - **발견자**: developer

@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { getStaffSessionDetail, getStaffSessionStudents } from '@/lib/staff-session-queries';
-import { requireStaffStudentAccess } from '@/lib/staff-class-access';
+import { getStaffClassAccessContext, requireStaffStudentAccess } from '@/lib/staff-class-access';
+import { canSeeStaffFees } from '@/lib/staff-session-rules';
 import { resolveStaffBillingGuard } from '@/lib/staff-billing-policy';
 import { resolveMonthlyFee, type MonthlyFeePayment, type MonthlyFeeRegister } from './staff-monthly-fee-policy';
 import type { StaffMonthlyFeeSummary, StaffSessionMonthlyFees } from './staff-monthly-fee-types';
@@ -32,7 +33,8 @@ type SeatFee = { rosterId: string; tuition: number; discount: number; price: num
 async function readContext(sessionId: string) {
   const { session, students: roster } = await authorizedRoster(sessionId);
   // 보강 온 아이는 이 반 수강생이 아니다 — 다른 반 청구 자료가 이 반 코치 화면으로 내려가지 않게 수강료 확인에서 뺀다.
-  const students = roster.filter(s => !s.makeup);
+  // 체험 아이(f1)도 원생이 아니라 청구가 없다 — 빼지 않으면 «id ≠ studentId» 라 특강 좌석으로 잘못 읽힌다.
+  const students = roster.filter(s => !s.makeup && !s.trial);
   const month = staffFeeMonth();
   const [yearNumber, monthNumber] = month.split('-').map(Number);
   const seatIds = students.filter(s => s.id !== s.studentId).map(s => s.attendanceKey);
@@ -93,12 +95,26 @@ async function readContext(sessionId: string) {
   return { session, students, month, items };
 }
 
+/**
+ * 선생님(INSTRUCTOR 등)은 출석부에서 수강료·미납 값을 받지 않는다(f3, 2026-11-13 원장 지시).
+ * 화면만 숨기면 응답에 금액이 그대로 남으므로 서버에서 먼저 막는다. 원장·부원장은 그대로.
+ */
+async function canViewFees(): Promise<boolean> {
+  const access = await getStaffClassAccessContext();
+  return canSeeStaffFees(access.staff.appUserRole);
+}
+
+export const STAFF_FEES_HIDDEN_MESSAGE = '수강료·청구 정보는 원장님 화면에서 확인할 수 있습니다.';
+
 export async function getStaffSessionMonthlyFees(sessionId: string): Promise<StaffSessionMonthlyFees> {
+  // 선생님: 금액·미납이 담긴 항목을 아예 만들지 않고 빈 목록을 돌려준다.
+  if (!(await canViewFees())) return { month: staffFeeMonth(), items: [] };
   const { month, items } = await readContext(sessionId);
   return { month, items };
 }
 
 export async function getStaffAttendanceBilling(sessionId: string, rosterId: string) {
+  if (!(await canViewFees())) throw new Error(STAFF_FEES_HIDDEN_MESSAGE);
   const { month, items, session, students } = await readContext(sessionId);
   const summary = items.find(i => i.rosterId === rosterId);
   if (!summary || !students.some(s => s.id === rosterId)) throw new Error('이 출석 명단의 학생만 확인할 수 있습니다.');

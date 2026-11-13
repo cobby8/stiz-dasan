@@ -227,8 +227,8 @@ test("전체 출석은 미확인이면 보강 아이도 포함하고, 수업 중
   assert.doesNotMatch(rules.slice(rules.indexOf("export function splitBulkPresent")), /makeup/);
   // 출결 버튼은 이미 찍힌 상태여도 막지 않는다(저장 중인 그 줄·전체 출석 중에만 잠금 — b5)
   assert.match(client, /active=\{student\.status === status\} disabled=\{bulkBusy \|\| Boolean\(savingRows\[student\.id\]\)\} onClick=\{\(\) => void updateAttendance\(student\.id, status\)\}/);
-  // 질병·부상 버튼: 결석일 때만·정규만·44px
-  assert.match(client, /student\.status === "ABSENT" && !student\.makeup && !session\.sessionDateId/);
+  // 질병·부상 버튼: 결석일 때만·정규만(보강·체험 아이 제외)·44px
+  assert.match(client, /student\.status === "ABSENT" && !student\.makeup && !student\.trial && !session\.sessionDateId/);
   assert.match(client, /aria-pressed=\{illness\}[\s\S]*?min-h-11/);
 });
 

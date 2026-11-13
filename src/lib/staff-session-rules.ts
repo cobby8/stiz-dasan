@@ -150,3 +150,57 @@ export function shouldShowIosDriverNotice(storeApp: boolean, userAgent: string |
 export const DRIVER_ENTRY_PATH = "/staff/driver";
 /** 위치 전송(운행 시작)이 되는 기사님 운행 화면. */
 export const DRIVER_RUN_PATH = "/staff/run";
+
+// ── f1. 체험수업 아이(출시 전 수정 2026-11-13 원장 지시) ─────────────────
+
+/**
+ * 체험 아이의 출석부 키 — 정규 학생 ID·특강 좌석 ID 와 겹치지 않게 앞에 «trial:» 을 붙인다.
+ * 서버 저장(saveStaffAttendance)은 이 표시를 보고 체험 장부(TrialLead)로 보낸다 —
+ * 정규 출석 표(Attendance)에 섞이면 청구·출석률·보강권이 틀어진다.
+ */
+export const TRIAL_ROSTER_PREFIX = "trial:";
+export function trialRosterKey(trialLeadId: string): string {
+  return `${TRIAL_ROSTER_PREFIX}${trialLeadId}`;
+}
+/** «trial:<id>» 이면 체험 신청 id, 아니면 null. */
+export function parseTrialRosterKey(key: string | null | undefined): string | null {
+  const value = String(key ?? "");
+  if (!value.startsWith(TRIAL_ROSTER_PREFIX)) return null;
+  const id = value.slice(TRIAL_ROSTER_PREFIX.length).trim();
+  return id && id.length <= 128 ? id : null;
+}
+
+/** 선생님 출석부에 체험 아이로 띄우는 체험 신청 상태 — 일정 확정(SCHEDULED)·체험 완료(ATTENDED). */
+export const TRIAL_ROSTER_STATUSES = ["SCHEDULED", "ATTENDED"] as const;
+
+type StaffMark = "PRESENT" | "LATE" | "ABSENT";
+
+/**
+ * 선생님이 체험 아이 출결을 찍은 뒤 체험 신청 상태(CRM 단계)를 어떻게 둘지.
+ * - 출석·지각: 일정 확정(SCHEDULED)이면 «체험 완료(ATTENDED)»로 올린다 — 관리자가 누르던 «체험 완료»와 같은 값.
+ * - 결석: 선생님이 앞서 출석·지각을 찍어 올린 것(이전 표시가 PRESENT/LATE)만 SCHEDULED 로 되돌린다.
+ *   관리자가 직접 바꾼 단계(상담·등록 등)는 건드리지 않는다.
+ * 체험 신청에는 «불참» 단계가 없어서, 결석 자체는 별도 칸(staffAttendanceStatus)에만 남긴다.
+ */
+export function trialLeadStatusAfterStaffMark(input: {
+  currentStatus: string;
+  previousMark: StaffMark | null;
+  nextMark: StaffMark;
+}): string {
+  const { currentStatus, previousMark, nextMark } = input;
+  if (nextMark === "PRESENT" || nextMark === "LATE") {
+    return currentStatus === "SCHEDULED" ? "ATTENDED" : currentStatus;
+  }
+  if (currentStatus === "ATTENDED" && (previousMark === "PRESENT" || previousMark === "LATE")) return "SCHEDULED";
+  return currentStatus;
+}
+
+// ── f3. 수강료·미납 표시 ─────────────────────────────────────
+
+/**
+ * 선생님 출석부에서 수강료·미납을 볼 수 있는 역할 — 원장(ADMIN)·부원장(VICE_ADMIN)만.
+ * 선생님(INSTRUCTOR)·기사님은 화면에서도, 서버 응답에서도 금액·미납 값을 받지 않는다(2026-11-13 원장 지시).
+ */
+export function canSeeStaffFees(role: string | null | undefined): boolean {
+  return role === "ADMIN" || role === "VICE_ADMIN";
+}

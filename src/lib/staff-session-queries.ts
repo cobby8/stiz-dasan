@@ -8,6 +8,7 @@ import {
 import { notMergedStudent } from "@/lib/studentVisibility";
 import { makeupOnClassDateSql } from "@/lib/makeup/makeup-attendance";
 import { absenceReportOf } from "@/lib/regular/attendance-absence-reason";
+import { TRIAL_ROSTER_STATUSES, trialRosterKey } from "@/lib/staff-session-rules";
 
 export type StaffTodayClass = {
   id: string;
@@ -67,6 +68,10 @@ export type StaffSessionStudent = {
   absenceReport: { reason: string; status: string; source: "SHEET" | "PARENT" } | null;
   // 다른 반 아이가 이 수업에 보강 온 경우 true(정규 수업만). 출석 처리하면 보강 예약이 «참석»·보강권 «사용»이 된다.
   makeup: boolean;
+  // 그날 이 수업으로 잡힌 체험수업 아이(정규 수업만). id·attendanceKey = «trial:<체험신청 id>».
+  // 출결은 체험 장부(TrialLead.staffAttendanceStatus)에만 남고 정규 출석 표·청구·보강권과 섞이지 않는다.
+  // 선생님에게는 이름·학년만 보인다(학부모 연락처 등은 내려보내지 않는다).
+  trial: boolean;
 };
 
 type TodayClassRow = Omit<StaffTodayClass, "startedAt" | "kind" | "scheduleKey" | "sessionDateId"> & {
@@ -357,6 +362,7 @@ export async function getStaffSessionStudents(
       // 방학특강은 좌석(SpecialProgramAbsence) 기준의 별도 결석 흐름을 쓴다.
       absenceReport: null,
       makeup: false,
+      trial: false,
     }));
   }
 
@@ -409,6 +415,7 @@ export async function getStaffSessionStudents(
       ? absenceReportOf({ reason: row.absenceReason, status: row.absenceStatus ?? "REPORTED", note: row.absenceNote, reportedByUserId: row.absenceReportedBy })
       : null,
     makeup: false,
+    trial: false,
   }));
 
   // 보강 온 아이 — 이 반·이 날(KST)에 보강 예약(예약됨·참석)된 다른 반 학생을 명단 뒤에 «보강»으로 붙인다.
@@ -444,6 +451,69 @@ export async function getStaffSessionStudents(
       arrivedAt: toIso(row.arrivedAt),
       absenceReport: null,
       makeup: true,
+      trial: false,
     }));
-  return [...regular, ...makeup];
+
+  // 체험수업 아이(f1) — 이 반·이 날(KST)로 체험 일정이 잡힌 신청을 명단 맨 뒤에 «체험»으로 붙인다.
+  // 이미 원생으로 전환돼 정규·보강 명단에 있는 아이는 두 번 띄우지 않는다.
+  const shownIds = new Set([...regularIds, ...makeup.map((row) => row.id)]);
+  const trial = (await getTrialRosterRows(classId, sessionYmd))
+    .filter((row) => !row.convertedStudentId || !shownIds.has(row.convertedStudentId))
+    .map((row): StaffSessionStudent => ({
+      id: trialRosterKey(row.id),
+      attendanceKey: trialRosterKey(row.id),
+      // 체험 아이는 원생이 아니다 — 사진 태깅·보강권·청구 대상에서 빠지도록 studentId 는 비운다.
+      studentId: null,
+      name: row.childName,
+      grade: row.childGrade ?? null,
+      // 학부모 연락처는 선생님 출석부에 내려보내지 않는다.
+      phone: null,
+      status: row.staffAttendanceStatus,
+      attendanceNote: null,
+      arrivedAt: null,
+      absenceReport: null,
+      makeup: false,
+      trial: true,
+    }));
+  return [...regular, ...makeup, ...trial];
+}
+
+/**
+ * «이 반·이 날 체험 아이» 조건 — 명단 조회와 출결 저장(saveStaffAttendance)이 같은 조건을 쓴다
+ * (한쪽만 바뀌면 «보이는데 저장 거부»가 된다).
+ * scheduledDate 는 timestamptz 라 KST 변환을 한 번만 건다.
+ */
+export function trialOnClassDateSql(alias: string, classParam: string, dateParam: string) {
+  return `${alias}."scheduledClassId" = ${classParam}
+     AND ${alias}."scheduledDate" IS NOT NULL
+     AND (${alias}."scheduledDate" AT TIME ZONE 'Asia/Seoul')::date = ${dateParam}::date
+     AND ${alias}.status IN (${TRIAL_ROSTER_STATUSES.map((status) => `'${status}'`).join(", ")})`;
+}
+
+type TrialRosterRow = {
+  id: string;
+  childName: string;
+  childGrade: string | null;
+  convertedStudentId: string | null;
+  staffAttendanceStatus: StaffSessionStudent["status"];
+};
+
+/**
+ * 체험 아이 명단. 조회가 실패해도(예: 체험 출결 칸 마이그레이션 전) 정규 출석부는 열려야 하므로 빈 목록으로 넘긴다.
+ * 선생님에게 필요한 값(이름·학년·출결)만 고른다 — 연락처·메모·체험비는 SELECT 하지 않는다.
+ */
+async function getTrialRosterRows(classId: string, sessionYmd: string): Promise<TrialRosterRow[]> {
+  try {
+    return await prisma.$queryRawUnsafe<TrialRosterRow[]>(
+      `SELECT tl.id, tl."childName", tl."childGrade", tl."convertedStudentId", tl."staffAttendanceStatus"
+         FROM "TrialLead" tl
+        WHERE ${trialOnClassDateSql("tl", "$1", "$2")}
+        ORDER BY tl."childName"`,
+      classId,
+      sessionYmd,
+    );
+  } catch (error) {
+    console.error("[getStaffSessionStudents] 체험 아이 명단 조회 실패(정규 명단은 그대로)", error);
+    return [];
+  }
 }
