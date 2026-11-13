@@ -6,6 +6,8 @@ import { getRegularShuttleMonths, getRegularShuttleStops, getRegularStopsWithout
 import RegularStopGeocodePanel from "@/components/shuttle/RegularStopGeocodePanel";
 import { koreaServiceMonth, pickServiceMonthFor, isServiceMonth } from "@/lib/regular/serviceMonth";
 import { ensureRegularRosterMonths } from "@/lib/shuttle/regularRosterEdit";
+import { getSettings } from "@/lib/seasonal/shuttle-optimize";
+import { isKoreanCoordinate } from "@/lib/shuttle/academyLocation";
 
 export const dynamic = "force-dynamic";
 
@@ -27,10 +29,13 @@ export default async function RegularDispatchPage({ searchParams }: { searchPara
     ? requested.month
     : (pickServiceMonthFor(months, currentMonth) ?? months[0] ?? currentMonth);
 
-  const [{ stops }, missingStops] = await Promise.all([
+  const [{ stops }, missingStops, settings] = await Promise.all([
     getRegularShuttleStops(serviceMonth),
     getRegularStopsWithoutCoords(serviceMonth), // 좌표 없는 정류장(1회용 좌표 채우기 패널)
+    getSettings().catch(() => null), // 학원 좌표 — 순서를 옮길 때 시각 다시 계산(없으면 학원 구간 없이 계산)
   ]);
+  const academy = settings?.academy && isKoreanCoordinate(settings.academy.lat, settings.academy.lng)
+    ? { lat: settings.academy.lat, lng: settings.academy.lng } : null;
   // 처음 보여 줄 요일 = 신청 학생이 타는 요일 → 없으면 학생이 있는 첫 요일(월→토→일) → 월.
   const exactStop = requested.stopId
     ? stops.find((s) => s.id === requested.stopId && (!initialStudentId || s.studentId === initialStudentId) && (s.direction === "BOARD" || s.direction === "ALIGHT"))
@@ -53,6 +58,7 @@ export default async function RegularDispatchPage({ searchParams }: { searchPara
         initialWeekday={initialWeekday}
         initialStudentId={initialStudentId}
         initialStopId={exactStop?.id}
+        academy={academy}
       />
       <RegularStopGeocodePanel
         stopNames={missingStops}

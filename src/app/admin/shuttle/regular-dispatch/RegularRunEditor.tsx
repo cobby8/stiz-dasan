@@ -12,6 +12,7 @@ import RunBoard from "@/components/shuttle/run/RunBoard";
 import { RouteMapCanvas, type RouteMapStop } from "@/components/seasonal/DispatchRouteMap";
 import styles from "@/components/shuttle/DriverWorkspace.module.css";
 import NewStudentDispatchPanel from "@/components/shuttle/assign/NewStudentDispatchPanel";
+import { useRouteRetime } from "@/components/shuttle/run/useRouteRetime";
 import type { DriverAssignBoard } from "@/lib/shuttle/driverAssign";
 import { buildRegularRunRows } from "@/lib/shuttle/regularRunRows";
 import { placeUntimedRegularStops, runBlockLabel } from "@/lib/shuttle/runBlocks";
@@ -43,7 +44,7 @@ type Dialog =
 
 const DOW_ORDER = [1, 2, 3, 4, 5, 6, 0];
 
-export default function RegularRunEditor({ stops, serviceMonth, months, currentMonth, initialWeekday, initialStudentId, initialStopId }: {
+export default function RegularRunEditor({ stops, serviceMonth, months, currentMonth, initialWeekday, initialStudentId, initialStopId, academy = null }: {
   /** 그 달 셔틀 명단 전체(서버가 읽어 준다 — 저장 뒤 router.refresh 로 다시 받는다). */
   stops: RegularShuttleStop[];
   serviceMonth: string;
@@ -54,6 +55,8 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
   /** 신청 학생 바로 보기(?studentId=) — 그 학생 셔틀 정보 창을 바로 연다. */
   initialStudentId?: string;
   initialStopId?: string;
+  /** 학원 좌표(순서를 옮길 때 시각 다시 계산 — 등원 도착·하원 출발 기준). 없으면 학원 구간 없이 계산. */
+  academy?: { lat: number; lng: number } | null;
 }) {
   const router = useRouter();
   const laterMonths = useMemo(() => months.filter((m) => m > serviceMonth).sort(), [months, serviceMonth]);
@@ -91,6 +94,8 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
   const [savingOrder, setSavingOrder] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 순서를 옮기면 그 묶음 시각을 지도 이동 시간으로 다시 계산한다(useRouteRetime).
+  const { retime, note: retimeNote, cancelPending: cancelRetime, clearNote: clearRetimeNote } = useRouteRetime({ academy });
 
   function displayTime(row: UnifiedRow): string | null {
     return editing && timeOverride[row.key] !== undefined ? timeOverride[row.key] || null : row.time;
@@ -111,15 +116,37 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
     return placeUntimedRegularStops(sorted, (row) => keyOf(row).minutes != null);
   }, [rows, sourceRows, editing, sortOverride, timeOverride]);
 
+  // 순서를 옮기면 그 묶음 시각을 다시 계산한다(2026-11-13 원장 결정 — routeRetime.ts):
+  //   등원은 첫 탑승 시각 고정, 하원은 학원 출발 시각 고정 → 지도 이동 시간 × 기사님 속도 배율을 쌓는다.
+  //   좌표가 없는 정류장이 있는 등 계산할 수 없을 때만 예전처럼 «시각 칸은 자리에 두고 정류장만 바꾼다».
+  function reorderGroup(same: UnifiedRow[], next: UnifiedRow[]) {
+    const groupKey = next[0]?.groupKey;
+    if (!groupKey) return;
+    // 정렬 칸(seq)은 자리 그대로 — 같은 시각이 나와도 새 순서가 유지된다.
+    const slotSeq = same.map((slot) => sortOverride[slot.key]?.seq ?? slot.seq);
+    const saved = sourceRows.filter((r) => r.groupKey === groupKey && !r.isTerminal);
+    const done = retime(groupKey, saved, same, next, displayTime, (times) => {
+      const nextSort: Record<string, SortKey> = {};
+      next.forEach((row, i) => { nextSort[row.key] = { minutes: parseDriverScheduleTime(times[row.key] ?? null), seq: slotSeq[i] }; });
+      setSortOverride((o) => ({ ...o, ...nextSort }));
+      setTimeOverride((t) => ({ ...t, ...times }));
+    });
+    if (done) return;
+    const nextSort: Record<string, SortKey> = {}, nextTimes: Record<string, string> = {};
+    same.forEach((slot, i) => {
+      nextSort[next[i].key] = { minutes: parseDriverScheduleTime(displayTime(slot)), seq: slotSeq[i] };
+      nextTimes[next[i].key] = displayTime(slot) ?? "";
+    });
+    setSortOverride((o) => ({ ...o, ...nextSort }));
+    setTimeOverride((t) => ({ ...t, ...nextTimes }));
+  }
   function moveRow(row: UnifiedRow, dir: -1 | 1) {
     const same = ordered.filter((r) => r.groupKey === row.groupKey && !r.isTerminal);
-    const other = same[same.findIndex((r) => r.key === row.key) + dir];
-    if (!other) return;
-    const keyOf = (r: UnifiedRow): SortKey => ({ minutes: parseDriverScheduleTime(displayTime(r)), seq: sortOverride[r.key]?.seq ?? r.seq });
-    const a = keyOf(row), b = keyOf(other);
-    setSortOverride((o) => ({ ...o, [row.key]: b, [other.key]: a }));
-    const rowTime = displayTime(row), otherTime = displayTime(other);
-    setTimeOverride((t) => ({ ...t, [row.key]: otherTime ?? "", [other.key]: rowTime ?? "" }));
+    const idx = same.findIndex((r) => r.key === row.key);
+    if (idx < 0 || !same[idx + dir]) return;
+    const next = [...same];
+    [next[idx], next[idx + dir]] = [next[idx + dir], next[idx]];
+    reorderGroup(same, next);
   }
   function moveDragged(target: UnifiedRow) {
     if (!dragKey || dragKey === target.key) return;
@@ -131,13 +158,7 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
     const next = [...same];
     next.splice(fromIdx, 1);
     next.splice(toIdx, 0, from);
-    const nextSort: Record<string, SortKey> = {}, nextTimes: Record<string, string> = {};
-    same.forEach((slot, i) => {
-      nextSort[next[i].key] = { minutes: parseDriverScheduleTime(displayTime(slot)), seq: sortOverride[slot.key]?.seq ?? slot.seq };
-      nextTimes[next[i].key] = displayTime(slot) ?? "";
-    });
-    setSortOverride((o) => ({ ...o, ...nextSort }));
-    setTimeOverride((t) => ({ ...t, ...nextTimes }));
+    reorderGroup(same, next);
   }
 
   // 묶음 머리 연필 → 그 묶음만 편집. 다른 묶음을 편집하다 저장 안 한 변경이 있으면 버릴지 먼저 묻는다.
@@ -145,11 +166,11 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
   function startEditing(groupKey: string) {
     if (savingOrder || groupKey === editingGroup) return;
     if (orderDirty && !window.confirm("저장하지 않은 순서·시각 수정이 있습니다. 버리고 이 묶음을 수정할까요?")) return;
-    setSourceRows(rows); setSortOverride({}); setTimeOverride({}); setOrderScope(defaultScope); setMessage(null); setError(null);
+    setSourceRows(rows); setSortOverride({}); setTimeOverride({}); setOrderScope(defaultScope); setMessage(null); setError(null); clearRetimeNote();
     setEditingGroup(groupKey);
     setPickedGroup(groupKey);
   }
-  function cancelEditing() { setEditingGroup(null); setSortOverride({}); setTimeOverride({}); }
+  function cancelEditing() { setEditingGroup(null); setSortOverride({}); setTimeOverride({}); clearRetimeNote(); }
 
   // 바뀐 묶음(수업시간 × 등/하원) 목록 — 저장할 때 보낼 것이자 «저장 안 한 변경이 있나» 판정.
   // 수업시간 글자는 명단 행 그대로(공백까지 — 서버가 글자 그대로 비교한다).
@@ -211,12 +232,12 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
       } else {
         setEditingGroup(null);
       }
-      setSortOverride({}); setTimeOverride({});
+      setSortOverride({}); setTimeOverride({}); clearRetimeNote();
       return true;
     } catch (e) {
       // 앞 묶음은 이미 저장됐을 수 있다 — 몇 묶음이 저장됐는지 알리고 화면을 새로 읽는다.
       setError(`${done > 0 ? `${done}묶음은 저장됐고, ` : ""}${adminErrorText(e, "저장하지 못했습니다.")}`);
-      setEditingGroup(null); setSortOverride({}); setTimeOverride({});
+      setEditingGroup(null); setSortOverride({}); setTimeOverride({}); clearRetimeNote();
       return false;
     } finally {
       setSavingOrder(false);
@@ -338,6 +359,12 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
     return (
       <>
         {!rowEditing && <span>{row.riders.length}명</span>}
+        {rowEditing && (() => {
+          // 다시 계산으로 바뀐 시각은 «이전 시각»을 작게 함께 보여 준다(무엇이 바뀌었는지 저장 전에 확인).
+          const before = sourceRows.find((r) => r.key === row.key)?.time ?? null;
+          const now = displayTime(row);
+          return before && now && before !== now ? <span className="text-xs text-[var(--color-academy-muted)]">이전 {before}</span> : null;
+        })()}
         {recommendation && (
           <button type="button" disabled={savingOrder} onClick={() => setTimeOverride((values) => ({ ...values, [row.key]: recommendation }))}
             className="min-h-11 px-1 text-xs font-bold text-[var(--color-academy-primary)] underline">
@@ -418,6 +445,12 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
           {orderDirty && <span className="mr-1 text-[13px] font-black text-[var(--color-academy-warning)]">저장 안 됨 ·</span>}
           ⠿ 끌어서 순서 변경
         </p>
+        {retimeNote && retimeNote.groupKey === editingGroup && (
+          // 순서를 옮긴 뒤 시각 다시 계산 결과 — 학원 도착이 수업 시작보다 늦거나 계산을 못 했으면 경고색.
+          <p role="status" className={`basis-full text-[12px] font-bold ${retimeNote.warn ? "text-[var(--color-academy-warning)]" : "text-[var(--color-academy-muted)]"}`}>
+            {retimeNote.text}
+          </p>
+        )}
         <label className="flex items-center gap-1 text-[13px] font-bold text-[var(--color-academy-muted)]">
           적용
           <select value={orderScope} onChange={(e) => setOrderScope(e.target.value as RosterScope)} aria-label="순서·시각 적용 범위"
@@ -522,7 +555,7 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
           onDropOn={moveDragged}
           onMove={moveRow}
           displayTime={displayTime}
-          onTimeChange={(row, value) => setTimeOverride((t) => ({ ...t, [row.key]: value }))}
+          onTimeChange={(row, value) => { cancelRetime(); setTimeOverride((t) => ({ ...t, [row.key]: value })); }}
           renderStopMeta={renderStopMeta}
           renderRider={renderRider}
           selectedGroupKey={wide ? mapGroupKey : null}

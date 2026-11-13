@@ -93,9 +93,25 @@ test("정규 운행표(관리자): 기사님과 같은 조립 함수·카드 틀
   assert.doesNotMatch(editor + dialogs, /\/api\/shuttle\/regular-boarding|\/api\/shuttle\/regular-order/);
 });
 
-test("정규 운행표(관리자) 순서 편집은 기사님 화면과 같은 규칙(같은 묶음 안에서만·옮기면 시각 칸도 함께)", () => {
+// 2026-11-13 원장 결정: 옛 규칙(«옮기면 시각 칸은 자리에 남고 정류장만 바뀜»)을 바꿨다.
+// 이제 순서를 옮기면 그 묶음 시각을 다시 계산한다(등원 첫 탑승·하원 학원 출발 고정 + 지도 이동 시간 — routeRetime.ts).
+// 관리자 운행표와 기사님 화면이 같은 부품(useRouteRetime)을 쓰고, 계산할 수 없을 때만 옛 방식으로 둔다.
+test("정규 운행표 순서 편집(관리자·기사님) = 같은 묶음 안에서만 · 옮기면 시각 다시 계산(같은 부품)", () => {
   const editor = read("src/app/admin/shuttle/regular-dispatch/RegularRunEditor.tsx");
+  const driver = read("src/components/shuttle/UnifiedDriverClient.tsx");
   assert.match(editor, /const same = ordered\.filter\(\(r\) => r\.groupKey === row\.groupKey && !r\.isTerminal\);/);
   assert.match(editor, /if \(!from \|\| from\.groupKey !== target\.groupKey \|\| from\.isTerminal \|\| target\.isTerminal\) return;/);
-  assert.match(editor, /setTimeOverride\(\(t\) => \(\{ \.\.\.t, \[row\.key\]: otherTime \?\? "", \[other\.key\]: rowTime \?\? "" \}\)\);/);
+  for (const src of [editor, driver]) {
+    assert.match(src, /import \{ useRouteRetime \} from "@\/components\/shuttle\/run\/useRouteRetime";/);
+    // 위·아래 이동과 끌어 옮기기 둘 다 같은 reorderGroup 을 거친다.
+    assert.equal((src.match(/reorderGroup\((same|sameGroup), next\);/g) ?? []).length, 2);
+    // 계산이 되면 거기서 끝, 못 하면(좌표 없음 등) 옛 방식으로 둔다.
+    assert.match(src, /const done = retime\(groupKey, saved, (same|sameGroup), next, displayTime,/);
+    // 손으로 시각을 고치면 늦게 온 지도 계산이 덮어쓰지 않게 막는다.
+    assert.match(src, /onTimeChange=\{\(row, value\) => \{ cancelRetime\(\);/);
+    // 옛 «시각 칸 맞바꾸기»는 남아 있지 않다.
+    assert.doesNotMatch(src, /\[row\.key\]: otherTime \?\? "", \[other\.key\]: rowTime \?\? ""/);
+  }
+  // 방학특강 행은 다시 계산하지 않는다(정규만 저장되는 화면).
+  assert.match(driver, /if \(next\[0\]\.kind === "REGULAR"\) \{/);
 });
