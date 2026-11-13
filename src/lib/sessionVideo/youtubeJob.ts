@@ -3,9 +3,10 @@
  *
  * 한 번 돌 때 하는 일(순서대로):
  *  1) 등록 안 된 예약(업로드 중단)을 3시간 뒤 «지움»으로 바꾼다
- *  2) 저장소 사본 지우기: 지운 영상 · 유튜브 일부공개 7일 지난 영상
+ *  2) 지운 영상의 저장소 사본 지우기
  *  3) 오래 멈춘 UPLOADING(20분)을 대기로 되돌린다(실패 1회로 센다)
- *  4) 유튜브 연결이 있으면: 지운 영상의 유튜브 사본 삭제 → 대기 영상을 오래된 순으로 업로드
+ *  4) 유튜브 연결이 있으면: 지운 영상의 유튜브 사본 삭제(시도 횟수·간격 상한) →
+ *     일부공개 7일 지난 영상의 사본 삭제(직전에 유튜브 공개 범위 재확인) → 대기 영상을 오래된 순으로 업로드
  *     (하루 KST 5건 한도, 할당량 초과 응답이면 다음 KST 자정까지 멈춤)
  *
  * 1~3 은 유튜브 연결이 없어도 돈다(저장소 정리는 유튜브와 무관).
@@ -18,8 +19,11 @@ import {
   isValidSessionVideoRef,
   nextStatusAfterFailure,
   quotaBlockedUntil,
+  retentionDecision,
   STORAGE_COPY_RETENTION_DAYS,
+  YOUTUBE_DELETE_RETRY_HOURS,
   YOUTUBE_MAX_ATTEMPTS,
+  YOUTUBE_MAX_DELETE_ATTEMPTS,
   youtubeVideoTitle,
 } from "@/lib/sessionVideo/rules";
 import { readYoutubeConfig } from "@/lib/youtube/config";
@@ -30,7 +34,7 @@ import {
   recordYoutubeConnectionError,
   reserveYoutubeQuotaSlot,
 } from "@/lib/youtube/connection";
-import { deleteYoutubeVideo, setYoutubeVideoUnlisted, uploadYoutubeVideo, YoutubeApiError } from "@/lib/youtube/api";
+import { deleteYoutubeVideo, fetchYoutubePrivacy, setYoutubeVideoUnlisted, uploadYoutubeVideo, YoutubeApiError } from "@/lib/youtube/api";
 
 const RESERVATION_TTL_HOURS = 3;
 const STALE_UPLOADING_MINUTES = 20;
@@ -44,6 +48,7 @@ export type YoutubeJobResult = {
   storageFailed: number;
   staleRecovered: number;
   youtubeDeleted: number;
+  expiredCopiesLocked: number;
   uploaded: number;
   privateLocked: number;
   failed: number;
@@ -78,19 +83,10 @@ async function expireReservations(): Promise<number> {
   );
 }
 
-/** 2) 저장소 사본 지우기 */
-async function deleteStorageCopies(): Promise<{ deleted: number; failed: number }> {
-  const rows = await prisma.$queryRawUnsafe<Array<{ id: string; classId: string; sessionId: string; storageBucket: string; storagePath: string }>>(
-    `SELECT v.id, s."classId", v."sessionId", v."storageBucket", v."storagePath"
-       FROM "SessionVideo" v JOIN "Session" s ON s.id = v."sessionId"
-      WHERE v."storageDeletedAt" IS NULL AND v."youtubeStatus" <> 'UPLOADING'
-        AND (v."deletedAt" IS NOT NULL
-          OR (v."youtubeStatus" = 'UPLOADED' AND v."youtubeUploadedAt" < NOW() - ($1 * INTERVAL '1 day')))
-      ORDER BY v."updatedAt" ASC
-      LIMIT 50`,
-    STORAGE_COPY_RETENTION_DAYS,
-  );
-  // 우리가 만든 경로 모양만 지운다(다른 파일을 건드리지 않게)
+type CopyRow = { id: string; classId: string; sessionId: string; storageBucket: string; storagePath: string };
+
+/** 저장소 사본 여러 개를 지우고 storageDeletedAt 을 찍는다(우리가 만든 경로 모양만) */
+async function removeStorageCopies(rows: CopyRow[]): Promise<{ deleted: number; failed: number }> {
   const valid = rows.filter((row) => isValidSessionVideoRef({ ...row, videoId: row.id }));
   const invalid = rows.filter((row) => !valid.includes(row));
   if (invalid.length > 0) {
@@ -102,15 +98,65 @@ async function deleteStorageCopies(): Promise<{ deleted: number; failed: number 
     );
   }
   if (valid.length === 0) return { deleted: 0, failed: invalid.length };
-  const supabase = createAdminClient();
-  const bucket = valid[0].storageBucket;
-  const { error } = await supabase.storage.from(bucket).remove(valid.map((row) => row.storagePath));
+  const { error } = await createAdminClient().storage.from(valid[0].storageBucket).remove(valid.map((row) => row.storagePath));
   if (error) return { deleted: 0, failed: rows.length };
   await prisma.$executeRawUnsafe(
     `UPDATE "SessionVideo" SET "storageDeletedAt" = NOW(), "updatedAt" = NOW() WHERE id = ANY($1::text[]) AND "storageDeletedAt" IS NULL`,
     valid.map((row) => row.id),
   );
-  return { deleted: valid.length, failed: rows.length - valid.length };
+  return { deleted: valid.length, failed: invalid.length };
+}
+
+/** 2) 지운 영상(선생님 삭제·만료된 예약)의 저장소 사본 지우기 — 유튜브와 무관 */
+async function deleteRemovedVideoCopies(): Promise<{ deleted: number; failed: number }> {
+  const rows = await prisma.$queryRawUnsafe<CopyRow[]>(
+    `SELECT v.id, s."classId", v."sessionId", v."storageBucket", v."storagePath"
+       FROM "SessionVideo" v JOIN "Session" s ON s.id = v."sessionId"
+      WHERE v."storageDeletedAt" IS NULL AND v."youtubeStatus" <> 'UPLOADING' AND v."deletedAt" IS NOT NULL
+      ORDER BY v."updatedAt" ASC
+      LIMIT 50`,
+  );
+  return removeStorageCopies(rows);
+}
+
+/**
+ * 4-2) 유튜브 일부공개 7일 지난 영상의 저장소 사본 지우기 — 지우기 «직전»에 유튜브에서 아직 일부공개인지 다시 본다.
+ * 원장이 유튜브 스튜디오에서 비공개로 바꾸거나 지웠으면 사본을 지키고 PRIVATE_LOCKED 로 되돌린다
+ * (학부모는 사이트 사본으로 계속 본다). 확인 비용 = videos.list 1 unit.
+ */
+async function deleteExpiredCopies(accessToken: string): Promise<{ deleted: number; failed: number; locked: number }> {
+  const rows = await prisma.$queryRawUnsafe<Array<CopyRow & { youtubeVideoId: string }>>(
+    `SELECT v.id, s."classId", v."sessionId", v."storageBucket", v."storagePath", v."youtubeVideoId"
+       FROM "SessionVideo" v JOIN "Session" s ON s.id = v."sessionId"
+      WHERE v."storageDeletedAt" IS NULL AND v."deletedAt" IS NULL
+        AND v."youtubeStatus" = 'UPLOADED' AND v."youtubeVideoId" IS NOT NULL
+        AND v."youtubeUploadedAt" < NOW() - ($1 * INTERVAL '1 day')
+      ORDER BY v."youtubeUploadedAt" ASC
+      LIMIT 50`,
+    STORAGE_COPY_RETENTION_DAYS,
+  );
+  if (rows.length === 0) return { deleted: 0, failed: 0, locked: 0 };
+  const privacy = await fetchYoutubePrivacy(accessToken, rows.map((row) => row.youtubeVideoId));
+  const toDelete: CopyRow[] = [];
+  let locked = 0;
+  for (const row of rows) {
+    const actual = privacy.get(row.youtubeVideoId) ?? null;
+    if (retentionDecision(actual) === "DELETE_COPY") { toDelete.push(row); continue; }
+    locked += 1;
+    await prisma.$executeRawUnsafe(
+      `UPDATE "SessionVideo"
+          SET "youtubeStatus" = 'PRIVATE_LOCKED', "youtubePrivacy" = $2,
+              "youtubeLastError" = $3, "updatedAt" = NOW()
+        WHERE id = $1 AND "youtubeStatus" = 'UPLOADED' AND "storageDeletedAt" IS NULL`,
+      row.id,
+      actual ?? "missing",
+      actual === null
+        ? "유튜브에서 영상을 찾지 못해 사이트 사본을 지우지 않았습니다."
+        : `유튜브 공개 범위가 «${actual}»(으)로 바뀌어 사이트 사본을 지우지 않았습니다.`,
+    );
+  }
+  const removed = await removeStorageCopies(toDelete);
+  return { ...removed, locked };
 }
 
 /** 3) 멈춘 업로드 되살리기 — 함수가 시간 초과로 죽으면 UPLOADING 에 남는다 */
@@ -126,16 +172,30 @@ async function recoverStaleUploading(): Promise<number> {
   );
 }
 
-/** 4-1) 지운 영상의 유튜브 사본 삭제(한 번에 5건 — 건당 50 units) */
+/**
+ * 4-1) 지운 영상의 유튜브 사본 삭제(한 번에 5건 — 건당 50 units).
+ * 마지막 시도가 오래된 순으로 고르고, 실패하면 1시간 뒤에·최대 5번까지만 다시 시도한다
+ * (계속 실패하는 영상이 줄 앞자리를 막아 다른 영상 삭제가 멈추지 않게 — 검수 2026-11-14).
+ */
 async function deleteYoutubeCopies(accessToken: string): Promise<number> {
   const rows = await prisma.$queryRawUnsafe<Array<{ id: string; youtubeVideoId: string }>>(
     `SELECT id, "youtubeVideoId" FROM "SessionVideo"
       WHERE "deletedAt" IS NOT NULL AND "youtubeVideoId" IS NOT NULL AND "youtubeDeletedAt" IS NULL
         AND "youtubeStatus" <> 'UPLOADING'
-      ORDER BY "deletedAt" ASC LIMIT 5`,
+        AND "youtubeDeleteAttempts" < $1
+        AND ("youtubeDeleteLastAttemptAt" IS NULL OR "youtubeDeleteLastAttemptAt" < NOW() - ($2 * INTERVAL '1 hour'))
+      ORDER BY "youtubeDeleteLastAttemptAt" ASC NULLS FIRST, "deletedAt" ASC
+      LIMIT 5`,
+    YOUTUBE_MAX_DELETE_ATTEMPTS, YOUTUBE_DELETE_RETRY_HOURS,
   );
   let deleted = 0;
   for (const row of rows) {
+    // 시도 기록을 «먼저» 남긴다 — 함수가 도중에 죽어도 같은 영상만 계속 붙잡지 않게
+    await prisma.$executeRawUnsafe(
+      `UPDATE "SessionVideo" SET "youtubeDeleteAttempts" = "youtubeDeleteAttempts" + 1,
+              "youtubeDeleteLastAttemptAt" = NOW(), "updatedAt" = NOW() WHERE id = $1`,
+      row.id,
+    );
     try {
       await deleteYoutubeVideo(accessToken, row.youtubeVideoId);
       await prisma.$executeRawUnsafe(
@@ -233,10 +293,10 @@ export async function processYoutubeVideoQueue(options: { deadlineMs: number; no
   const now = options.nowMs ?? (() => Date.now());
   const result: YoutubeJobResult = {
     expiredReservations: 0, storageDeleted: 0, storageFailed: 0, staleRecovered: 0,
-    youtubeDeleted: 0, uploaded: 0, privateLocked: 0, failed: 0, skippedReason: null,
+    youtubeDeleted: 0, expiredCopiesLocked: 0, uploaded: 0, privateLocked: 0, failed: 0, skippedReason: null,
   };
   result.expiredReservations = await expireReservations();
-  const storage = await deleteStorageCopies();
+  const storage = await deleteRemovedVideoCopies();
   result.storageDeleted = storage.deleted;
   result.storageFailed = storage.failed;
   result.staleRecovered = await recoverStaleUploading();
@@ -247,6 +307,14 @@ export async function processYoutubeVideoQueue(options: { deadlineMs: number; no
   if (!token) { result.skippedReason = "TOKEN_UNAVAILABLE"; return result; }
 
   result.youtubeDeleted = await deleteYoutubeCopies(token.accessToken);
+  try {
+    const expired = await deleteExpiredCopies(token.accessToken);
+    result.storageDeleted += expired.deleted;
+    result.storageFailed += expired.failed;
+    result.expiredCopiesLocked = expired.locked;
+  } catch {
+    // 공개 범위 확인이 실패하면 이번엔 사본을 지우지 않는다(다음 회차에 다시) — 업로드는 계속
+  }
 
   while (options.deadlineMs - now() > MIN_TIME_FOR_UPLOAD_MS) {
     const row = await claimNext();
@@ -304,12 +372,17 @@ export async function retryLockedYoutubeVideos(): Promise<number> {
   );
 }
 
-/** 관리자 화면 요약(상태별 건수) */
+/** 관리자 화면 요약(상태별 건수 + 유튜브 삭제를 포기한 건수 DELETE_GAVE_UP) */
 export async function youtubeQueueSummary(): Promise<Record<string, number>> {
   try {
     const rows = await prisma.$queryRawUnsafe<Array<{ status: string; count: number }>>(
       `SELECT "youtubeStatus" AS status, COUNT(*)::int AS count FROM "SessionVideo"
-        WHERE "registeredAt" IS NOT NULL AND "deletedAt" IS NULL GROUP BY "youtubeStatus"`,
+        WHERE "registeredAt" IS NOT NULL AND "deletedAt" IS NULL GROUP BY "youtubeStatus"
+       UNION ALL
+       SELECT 'DELETE_GAVE_UP', COUNT(*)::int FROM "SessionVideo"
+        WHERE "deletedAt" IS NOT NULL AND "youtubeVideoId" IS NOT NULL AND "youtubeDeletedAt" IS NULL
+          AND "youtubeDeleteAttempts" >= $1`,
+      YOUTUBE_MAX_DELETE_ATTEMPTS,
     );
     return Object.fromEntries(rows.map((row) => [row.status, row.count]));
   } catch {

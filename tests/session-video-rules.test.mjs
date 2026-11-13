@@ -47,7 +47,9 @@ test("파일 검사: 형식 화이트리스트·크기 상한·친절한 안내"
   assert.equal(r.checkSessionVideoFile({ mimeType: "image/jpeg", fileName: "a.mp4", sizeBytes: 10, maxBytes: max }).ok, false);
   const big = r.checkSessionVideoFile({ mimeType: "video/webm", sizeBytes: max + 1, maxBytes: max });
   assert.equal(big.ok, false);
-  assert.match(big.message, /1분 이내/);
+  assert.match(big.message, /30초 이내/);
+  assert.match(r.uploadHintMessage(max), /30초 이내로 짧게\(최대 50MB\)/);
+  assert.match(r.uploadHintMessage(max), /당일 자정 전에 올려 주세요/);
   assert.match(big.message, /50MB/);
   assert.equal(r.checkSessionVideoFile({ mimeType: "video/mp4", sizeBytes: 0, maxBytes: max }).ok, false);
 });
@@ -84,6 +86,8 @@ test("상태 전이표", () => {
   assert.equal(r.canTransitionYoutubeStatus("UPLOADING", "PRIVATE_LOCKED"), true);
   assert.equal(r.canTransitionYoutubeStatus("PRIVATE_LOCKED", "PENDING"), true);
   assert.equal(r.canTransitionYoutubeStatus("UPLOADED", "PENDING"), false);
+  // 사본 삭제 전 재확인에서 일부공개가 아니면 잠금으로 되돌린다
+  assert.equal(r.canTransitionYoutubeStatus("UPLOADED", "PRIVATE_LOCKED"), true);
   assert.equal(r.canTransitionYoutubeStatus("SKIPPED", "PENDING"), false);
   assert.equal(r.canTransitionYoutubeStatus("NOPE", "PENDING"), false);
 });
@@ -144,6 +148,35 @@ test("저장소 사본 삭제 시점 — 일부공개 성공 7일 뒤만", () =>
   assert.equal(r.storageCopyExpired({ youtubeStatus: "PRIVATE_LOCKED", youtubeUploadedAtMs: up, nowMs: up + 30 * 86_400_000 }), false);
 });
 
+test("사본 삭제 직전 재확인 — 아직 일부공개일 때만 지운다, 비공개·삭제됨이면 사본 유지", () => {
+  assert.equal(r.retentionDecision("unlisted"), "DELETE_COPY");
+  assert.equal(r.retentionDecision("private"), "LOCK");
+  assert.equal(r.retentionDecision("public"), "LOCK");
+  assert.equal(r.retentionDecision(null), "LOCK");
+  const job = read("src/lib/sessionVideo/youtubeJob.ts");
+  // 보관 기간 사본 삭제는 videos.list 확인을 거친 뒤에만
+  const expired = job.slice(job.indexOf("async function deleteExpiredCopies"), job.indexOf("/** 3) 멈춘 업로드"));
+  assert.ok(expired.indexOf("fetchYoutubePrivacy") > 0 && expired.indexOf("fetchYoutubePrivacy") < expired.indexOf("removeStorageCopies(toDelete)"));
+  assert.match(expired, /retentionDecision\(actual\)/);
+  // 유튜브와 무관한 사본 삭제는 «지운 영상»만(보관 기간 조건 없음)
+  const removed = job.slice(job.indexOf("async function deleteRemovedVideoCopies"), job.indexOf("async function deleteExpiredCopies"));
+  assert.doesNotMatch(removed, /youtubeUploadedAt/);
+});
+
+test("유튜브 삭제 줄 — 실패 행이 앞자리를 막지 않게: 시도 횟수 상한·간격·마지막 시도 오래된 순", () => {
+  const job = read("src/lib/sessionVideo/youtubeJob.ts");
+  const del = job.slice(job.indexOf("async function deleteYoutubeCopies"), job.indexOf("async function claimNext"));
+  assert.match(del, /"youtubeDeleteAttempts" < \$1/);
+  assert.match(del, /"youtubeDeleteLastAttemptAt" < NOW\(\) - \(\$2 \* INTERVAL '1 hour'\)/);
+  assert.match(del, /ORDER BY "youtubeDeleteLastAttemptAt" ASC NULLS FIRST/);
+  // 시도 기록은 구글을 부르기 «전에»
+  assert.ok(del.indexOf('"youtubeDeleteAttempts" = "youtubeDeleteAttempts" + 1') < del.indexOf("deleteYoutubeVideo("));
+  assert.equal(r.YOUTUBE_MAX_DELETE_ATTEMPTS, 5);
+  const sql = read("prisma/migrations/20261114120000_session_video/migration.sql");
+  assert.match(sql, /"youtubeDeleteAttempts" INTEGER NOT NULL DEFAULT 0/);
+  assert.match(sql, /"youtubeDeleteLastAttemptAt" TIMESTAMPTZ\(6\)/);
+});
+
 test("유튜브 제목 «[반이름] YYYY-MM-DD 수업» — < > 제거·100자", () => {
   assert.equal(r.youtubeVideoTitle("화목 초등 A", "2026-11-14"), "[화목 초등 A] 2026-11-14 수업");
   assert.equal(r.youtubeVideoTitle("<b>반</b>", "2026-11-14"), "[b반/b] 2026-11-14 수업");
@@ -178,13 +211,16 @@ test("OAuth 주소·state — offline+consent, 업로드 권한, state 비교", 
   assert.equal(url.searchParams.get("access_type"), "offline");
   assert.equal(url.searchParams.get("prompt"), "consent");
   assert.equal(url.searchParams.get("state"), "s".repeat(43));
-  assert.ok(url.searchParams.get("scope").split(" ").includes("https://www.googleapis.com/auth/youtube.upload"));
+  // 권한 = youtube.force-ssl 하나(업로드·조회·변경·삭제). upload/readonly 로는 videos.update·delete 가 403
+  assert.deepEqual(url.searchParams.get("scope").split(" "), ["https://www.googleapis.com/auth/youtube.force-ssl"]);
   assert.equal(cfg.youtubeStateMatches("a".repeat(43), "a".repeat(43)), true);
   assert.equal(cfg.youtubeStateMatches("a".repeat(43), "b".repeat(43)), false);
   assert.equal(cfg.youtubeStateMatches("a".repeat(43), null), false);
   assert.equal(cfg.youtubeStateMatches("short", "short"), false);
   assert.equal(cfg.grantedUploadScope("https://www.googleapis.com/auth/youtube.readonly"), false);
-  assert.equal(cfg.grantedUploadScope("https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly"), true);
+  assert.equal(cfg.grantedUploadScope("https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly"), false);
+  assert.equal(cfg.grantedUploadScope("https://www.googleapis.com/auth/youtube.force-ssl"), true);
+  assert.equal(cfg.grantedUploadScope("https://www.googleapis.com/auth/youtube"), true);
 });
 
 // ── API 권한(IDOR) 소스 검사 ─────────────────────────────────────────

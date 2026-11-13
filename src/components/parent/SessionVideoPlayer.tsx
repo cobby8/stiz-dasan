@@ -44,7 +44,7 @@ export function SessionVideoPlayer({ video, onPlaybackError }: { video: SessionV
             <img src={youtubeThumbnailUrl(video.youtubeId)} alt="" loading="lazy" className="size-full object-cover opacity-90 group-hover:opacity-100" />
             {/* 버튼은 글자로 말한다(아이콘 대신 «재생») */}
             <span className="absolute inset-0 grid place-items-center">
-              <span aria-hidden="true" className="grid min-h-11 min-w-20 place-items-center rounded-full bg-[var(--color-academy-surface)] px-4 text-sm font-semibold text-[var(--color-academy-ink)]">▶ 재생</span>
+              <span aria-hidden="true" className="grid min-h-11 min-w-20 place-items-center rounded-full bg-[var(--color-academy-surface)] px-4 text-sm font-semibold text-[var(--color-academy-ink)]">재생</span>
             </span>
             {duration && <span className="absolute bottom-2 right-2 rounded bg-[var(--color-academy-ink)] px-1.5 py-0.5 text-xs text-[var(--color-academy-on-primary)]">{duration}</span>}
           </button>

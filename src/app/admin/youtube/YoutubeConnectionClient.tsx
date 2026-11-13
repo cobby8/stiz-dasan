@@ -20,6 +20,8 @@ const STATUS_LABELS: Array<[string, string]> = [
   ["UPLOADED", "일부공개 완료"],
   ["PRIVATE_LOCKED", "비공개로 잠김(심사 전)"],
   ["FAILED", "실패"],
+  // 지운 영상인데 유튜브 사본을 5번 지우지 못한 것 — 유튜브 스튜디오에서 직접 지워 주세요
+  ["DELETE_GAVE_UP", "유튜브 삭제 실패"],
 ];
 
 /**
@@ -143,6 +145,9 @@ export default function YoutubeConnectionClient({
         )}
 
         <p className="mt-3 text-xs text-[var(--color-academy-muted)]">
+          요청하는 권한: «YouTube 동영상·채널 관리»(youtube.force-ssl) — 영상 올리기·공개 범위 바꾸기·지우기에 씁니다.
+        </p>
+        <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
           구글 콘솔 «승인된 리디렉션 URI»: <span className="break-all font-mono">{redirectUri}</span>
         </p>
       </section>
@@ -156,7 +161,7 @@ export default function YoutubeConnectionClient({
             </button>
           )}
         </div>
-        <dl className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-5">
+        <dl className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-6">
           {STATUS_LABELS.map(([key, label]) => (
             <div key={key} className="rounded-xl bg-[var(--color-academy-soft)] px-3 py-2">
               <dt className="text-xs text-[var(--color-academy-muted)]">{label}</dt>

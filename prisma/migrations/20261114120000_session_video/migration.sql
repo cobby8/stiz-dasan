@@ -34,6 +34,9 @@ CREATE TABLE IF NOT EXISTS public."SessionVideo" (
   "youtubeLockedAt" TIMESTAMPTZ(6),
   "youtubeUploadedAt" TIMESTAMPTZ(6),
   "youtubeDeletedAt" TIMESTAMPTZ(6),
+  -- 유튜브 사본 삭제 시도 횟수·마지막 시도 시각 — 계속 실패하는 영상이 삭제 줄 앞자리를 막지 않게(검수 2026-11-14)
+  "youtubeDeleteAttempts" INTEGER NOT NULL DEFAULT 0,
+  "youtubeDeleteLastAttemptAt" TIMESTAMPTZ(6),
   "storageDeletedAt" TIMESTAMPTZ(6),
   "deletedAt" TIMESTAMPTZ(6),
   "updatedAt" TIMESTAMPTZ(6) NOT NULL DEFAULT NOW(),
@@ -51,6 +54,10 @@ CREATE TABLE IF NOT EXISTS public."SessionVideo" (
 -- 수업 하나의 영상 목록(선생님·학부모 화면)
 CREATE INDEX IF NOT EXISTS "SessionVideo_sessionId_createdAt_idx"
   ON public."SessionVideo" ("sessionId", "createdAt");
+-- cron: 지운 영상의 유튜브 사본 삭제 대기(마지막 시도가 오래된 순)
+CREATE INDEX IF NOT EXISTS "SessionVideo_youtube_delete_idx"
+  ON public."SessionVideo" ("youtubeDeleteLastAttemptAt")
+  WHERE "deletedAt" IS NOT NULL AND "youtubeVideoId" IS NOT NULL AND "youtubeDeletedAt" IS NULL;
 -- cron: 유튜브로 옮길 영상(오래된 순)
 CREATE INDEX IF NOT EXISTS "SessionVideo_youtube_queue_idx"
   ON public."SessionVideo" ("youtubeStatus", "registeredAt");

@@ -27,6 +27,10 @@ export const SESSION_VIDEO_DEFAULT_MAX_BYTES = 50 * 1024 * 1024;
 export const YOUTUBE_DAILY_UPLOAD_LIMIT = 5;
 /** 유튜브 업로드 실패 허용 횟수 — 넘으면 FAILED(관리자 «다시 시도»로만 되살린다) */
 export const YOUTUBE_MAX_ATTEMPTS = 3;
+/** 지운 영상의 유튜브 사본 삭제 시도 상한 — 넘으면 더 시도하지 않는다(관리자 화면에 «유튜브 삭제 실패» 건수로 보이고, 원장이 유튜브 스튜디오에서 직접 지운다) */
+export const YOUTUBE_MAX_DELETE_ATTEMPTS = 5;
+/** 유튜브 사본 삭제 실패 뒤 다시 시도하기까지(시간) */
+export const YOUTUBE_DELETE_RETRY_HOURS = 1;
 /** 유튜브 일부공개 성공 뒤 저장소 사본을 지우기까지의 날수 */
 export const STORAGE_COPY_RETENTION_DAYS = 7;
 /** 학부모에게 주는 저장소 재생 주소의 수명(초) — 짧게 */
@@ -99,9 +103,14 @@ export function bytesToMb(bytes: number): number {
   return Math.floor(bytes / (1024 * 1024));
 }
 
-/** 크기 초과 안내 — 원장 지시: «1분 이내로 찍어 주세요» */
+/** 크기 초과 안내 — 휴대폰 1080p 영상은 1분에 60MB 를 넘기 쉬워 «30초»로 안내한다(검수 2026-11-14) */
 export function oversizeMessage(maxBytes: number): string {
-  return `영상이 너무 큽니다(최대 ${bytesToMb(maxBytes)}MB). 1분 이내로 짧게 찍어 주세요.`;
+  return `영상이 너무 큽니다(최대 ${bytesToMb(maxBytes)}MB). 30초 이내로 짧게 찍어 주세요.`;
+}
+
+/** 업로드 칸 안내 한 줄 */
+export function uploadHintMessage(maxBytes: number): string {
+  return `30초 이내로 짧게(최대 ${bytesToMb(maxBytes)}MB) 찍어 주세요. 수업 당일 자정 전에 올려 주세요.`;
 }
 
 export type VideoFileCheck = { ok: true; mimeType: SessionVideoMimeType } | { ok: false; message: string };
@@ -226,13 +235,15 @@ export function nextStatusAfterFailure(input: { attempts: number; kind: YoutubeE
  * 상태 전이 허용표 — 이 표에 없는 전이는 코드 버그다.
  *  PENDING → UPLOADING(cron 이 잡음) · SKIPPED(삭제됨)
  *  UPLOADING → UPLOADED · PRIVATE_LOCKED · PENDING(실패·재시도) · FAILED
+ *  UPLOADED → PRIVATE_LOCKED(사본 삭제 전 재확인에서 일부공개가 아님) · SKIPPED(삭제됨)
  *  PRIVATE_LOCKED → PENDING(심사 통과 뒤 관리자 «다시 시도»)
  *  FAILED → PENDING(관리자 «다시 시도»)
  */
 const TRANSITIONS: Record<SessionVideoYoutubeStatus, readonly SessionVideoYoutubeStatus[]> = {
   PENDING: ["UPLOADING", "SKIPPED"],
   UPLOADING: ["UPLOADED", "PRIVATE_LOCKED", "PENDING", "FAILED"],
-  UPLOADED: ["SKIPPED"],
+  // 사본 삭제 전 재확인에서 유튜브가 일부공개가 아니면(비공개로 바뀜·삭제됨) 사본을 지키고 잠금으로 되돌린다
+  UPLOADED: ["PRIVATE_LOCKED", "SKIPPED"],
   PRIVATE_LOCKED: ["PENDING", "SKIPPED"],
   FAILED: ["PENDING", "SKIPPED"],
   SKIPPED: [],
@@ -241,6 +252,15 @@ const TRANSITIONS: Record<SessionVideoYoutubeStatus, readonly SessionVideoYoutub
 export function canTransitionYoutubeStatus(from: string, to: string): boolean {
   if (!(SESSION_VIDEO_YOUTUBE_STATUSES as readonly string[]).includes(from)) return false;
   return (TRANSITIONS[from as SessionVideoYoutubeStatus] as readonly string[]).includes(to);
+}
+
+/**
+ * 보관 기간이 지난 UPLOADED 영상의 사본을 지우기 직전, 유튜브에 지금 «일부공개»로 살아 있는지 다시 본다.
+ * privacy = videos.list 의 status.privacyStatus(목록에 없으면 null = 유튜브에서 지워짐).
+ * 일부공개일 때만 사본을 지운다. 아니면 사본을 지키고 PRIVATE_LOCKED 로 되돌린다(학부모는 사이트 사본으로 계속 본다).
+ */
+export function retentionDecision(privacy: string | null | undefined): "DELETE_COPY" | "LOCK" {
+  return privacy === "unlisted" ? "DELETE_COPY" : "LOCK";
 }
 
 /** 저장소 사본을 지워도 되나 — 유튜브 일부공개 성공 후 보관 기간이 지났을 때만 */

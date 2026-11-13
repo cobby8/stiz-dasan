@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { userErrorMessage } from "@/components/staff/userErrorMessage";
 import { SessionVideoPlayer } from "@/components/parent/SessionVideoPlayer";
-import { checkSessionVideoFile, SESSION_VIDEO_DEFAULT_MAX_BYTES, type SessionVideoPlayback } from "@/lib/sessionVideo/rules";
+import { checkSessionVideoFile, SESSION_VIDEO_DEFAULT_MAX_BYTES, uploadHintMessage, type SessionVideoPlayback } from "@/lib/sessionVideo/rules";
 
 type VideoListResponse = {
   videos?: SessionVideoPlayback[];
@@ -47,7 +47,7 @@ function putWithProgress(url: string, file: File, mimeType: string, onProgress: 
       if (event.lengthComputable) onProgress(Math.min(99, Math.round((event.loaded / event.total) * 100)));
     };
     xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(xhr.status === 413
-      ? "영상이 너무 큽니다. 1분 이내로 짧게 찍어 주세요."
+      ? "영상이 너무 큽니다. 30초 이내로 짧게 찍어 주세요."
       : "영상 업로드에 실패했습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.")));
     xhr.onerror = () => reject(new Error("영상 업로드에 실패했습니다. 네트워크를 확인한 뒤 다시 시도해 주세요."));
     xhr.onabort = () => reject(new Error("영상 업로드가 취소되었습니다."));
@@ -192,9 +192,7 @@ export function SessionVideoUploader({ sessionId }: { sessionId: string }) {
               영상 선택
             </button>
           </div>
-          <p className="text-xs text-[var(--color-academy-muted)]">
-            1분 이내로 짧게 찍어 주세요(최대 {Math.floor(maxBytes / (1024 * 1024))}MB). 수업 당일 자정까지 올릴 수 있습니다.
-          </p>
+          <p className="text-xs text-[var(--color-academy-muted)]">{uploadHintMessage(maxBytes)}</p>
         </>
       ) : (
         windowMessage && <p className="text-sm text-[var(--color-academy-muted)]">{windowMessage}</p>

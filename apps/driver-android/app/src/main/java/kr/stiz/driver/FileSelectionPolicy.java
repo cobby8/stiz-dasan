@@ -11,7 +11,7 @@ final class FileSelectionPolicy {
     static final long MAX_FILE_BYTES = 25L * 1024 * 1024;
     static final long MAX_TOTAL_BYTES = 100L * 1024 * 1024;
     // 수업 영상(2026-11-14): 영상 한 개는 사진보다 크다. 서버 버킷 상한(50MB)보다 넉넉히 받아
-    // 너무 큰 영상은 웹 화면이 «1분 이내로 찍어 주세요»로 안내하게 한다(앱이 조용히 거절하지 않게).
+    // 너무 큰 영상은 웹 화면이 «30초 이내로 짧게 찍어 주세요»로 안내하게 한다(앱이 조용히 거절하지 않게).
     static final long MAX_VIDEO_BYTES = 100L * 1024 * 1024;
     // 동영상 촬영 앱에 주는 상한(카메라 앱이 지키면 이 크기에서 녹화를 멈춘다) — 서버 버킷 상한과 같다
     static final long VIDEO_CAPTURE_SIZE_LIMIT = 50L * 1024 * 1024;

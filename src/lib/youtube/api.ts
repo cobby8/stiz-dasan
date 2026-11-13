@@ -169,6 +169,25 @@ export async function setYoutubeVideoUnlisted(accessToken: string, videoId: stri
   return body.status?.privacyStatus || null;
 }
 
+/**
+ * 영상들의 지금 공개 범위(videos.list part=status, 1 unit). 목록에 없는 ID 는 결과에서 빠진다(유튜브에서 지워짐).
+ * 한 번에 50개까지.
+ */
+export async function fetchYoutubePrivacy(accessToken: string, videoIds: string[]): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  if (videoIds.length === 0) return result;
+  const response = await fetch(`${API}/videos?part=status&id=${videoIds.slice(0, 50).map(encodeURIComponent).join(",")}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    cache: "no-store",
+  });
+  if (!response.ok) throw await readGoogleError(response, "유튜브 공개 범위 확인 실패");
+  const body = await response.json() as { items?: Array<{ id?: string; status?: { privacyStatus?: string } }> };
+  for (const item of body.items ?? []) {
+    if (item.id) result.set(item.id, item.status?.privacyStatus || "unknown");
+  }
+  return result;
+}
+
 /** 유튜브 영상 삭제 — 이미 없으면(404) 성공으로 본다 */
 export async function deleteYoutubeVideo(accessToken: string, videoId: string): Promise<void> {
   const response = await fetch(`${API}/videos?id=${encodeURIComponent(videoId)}`, {

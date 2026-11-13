@@ -3644,6 +3644,8 @@ model SessionVideo {
   youtubeLockedAt   DateTime? @db.Timestamptz(6)
   youtubeUploadedAt DateTime? @db.Timestamptz(6)
   youtubeDeletedAt  DateTime? @db.Timestamptz(6)
+  youtubeDeleteAttempts      Int       @default(0) // 유튜브 사본 삭제 시도 횟수(상한 넘으면 더 시도하지 않음)
+  youtubeDeleteLastAttemptAt DateTime? @db.Timestamptz(6)
   storageDeletedAt  DateTime? @db.Timestamptz(6)
   deletedAt         DateTime? @db.Timestamptz(6)
   updatedAt         DateTime  @default(now()) @db.Timestamptz(6)

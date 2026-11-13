@@ -10,11 +10,13 @@
  */
 import { readYoutubeTokenKey } from "@/lib/youtube/tokenCrypto";
 
-/** 업로드 + 채널 확인(내 채널 이름 읽기)만. 그 밖의 권한은 받지 않는다. */
-export const YOUTUBE_OAUTH_SCOPES = [
-  "https://www.googleapis.com/auth/youtube.upload",
-  "https://www.googleapis.com/auth/youtube.readonly",
-] as const;
+/**
+ * 유튜브 권한 = youtube.force-ssl 하나(업로드·조회·공개 범위 변경·삭제 포함).
+ * 2026-11-14 검수: youtube.upload + youtube.readonly 로는 videos.update(심사 뒤 일부공개로 변경)·
+ * videos.delete(선생님이 지운 영상)가 403 으로 막힌다. 그래서 이 권한 하나로 바꿨다.
+ */
+export const YOUTUBE_FORCE_SSL_SCOPE = "https://www.googleapis.com/auth/youtube.force-ssl";
+export const YOUTUBE_OAUTH_SCOPES = [YOUTUBE_FORCE_SSL_SCOPE] as const;
 
 export const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 export const YOUTUBE_STATE_COOKIE = "stiz_yt_oauth_state";
@@ -75,7 +77,11 @@ export function youtubeStateMatches(fromQuery: string | null, fromCookie: string
   return diff === 0;
 }
 
-/** 받은 권한에 업로드 권한이 들어 있나(사용자가 체크를 빼고 동의할 수 있다) */
+/**
+ * 받은 권한으로 업로드·변경·삭제를 다 할 수 있나(사용자가 체크를 빼고 동의할 수 있다).
+ * youtube.force-ssl(또는 그보다 넓은 youtube 전체 권한)만 인정한다 — upload 만으로는 삭제·변경이 막힌다.
+ */
 export function grantedUploadScope(scope: string | null | undefined): boolean {
-  return (scope || "").split(/\s+/).includes("https://www.googleapis.com/auth/youtube.upload");
+  const granted = (scope || "").split(/\s+/);
+  return granted.includes(YOUTUBE_FORCE_SSL_SCOPE) || granted.includes("https://www.googleapis.com/auth/youtube");
 }

@@ -32,6 +32,10 @@ assert info["STIZSandboxOrigin"] == "$(STIZ_SANDBOX_ORIGIN)", "시험 주소는 
 assert debug_info["NSLocalNetworkUsageDescription"], "개발용 로컬 서버 접근 안내(Debug 전용)"
 assert project.count('STIZ_SANDBOX_ORIGIN = "";') == 2, "Debug/Release 기본 시험 주소는 비어 있어야 함"
 assert info["NSCameraUsageDescription"] and info["NSPhotoLibraryUsageDescription"]
+# 수업 영상(2026-11-14): 웹의 accept="video/*" capture 로 영상을 찍으면 마이크도 쓴다 — 설명이 없으면 iOS 가 앱을 종료한다.
+assert info["NSMicrophoneUsageDescription"] and "영상" in info["NSCameraUsageDescription"], "영상 촬영용 카메라·마이크 설명"
+web_view = (root / "STIZ/WebViewController.swift").read_text(encoding="utf-8")
+assert "configuration.allowsInlineMediaPlayback = true" in web_view, "수업 영상은 화면 안에서 재생(playsinline)"
 assert debug_info["CFBundleURLTypes"][0]["CFBundleURLSchemes"] == ["stiz-academy-dev"]
 assert "UIInterfaceOrientationLandscapeLeft" in info["UISupportedInterfaceOrientations"]
 scheme = ET.parse(root / "STIZ.xcodeproj/xcshareddata/xcschemes/STIZ.xcscheme")
