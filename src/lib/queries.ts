@@ -1270,7 +1270,8 @@ export async function getMyPageData(parentUserId: string) {
                         type: p.type ?? "MONTHLY",
                         description: p.description ?? null,
                         method: p.method ?? null,
-                        receiptUrl: s.parentId === parent.id ? (p.receiptUrl ?? p.receipturl ?? null) : null,
+                        // 영수증 = 결제 권한자(대표 보호자 + 승인된 가족, payerAccess) 모두에게 — 청구 탭·아이 기록과 같은 기준(2026-11-14 원장 결정 q3)
+                        receiptUrl: s.canPay === true ? (p.receiptUrl ?? p.receipturl ?? null) : null,
                         invoiceId: p.invoice_id ?? null,
                         invoiceNo: p.invoiceNo ?? p.invoiceno ?? null,
                         invoiceStatus: p.invoice_status ?? null,
@@ -1389,7 +1390,8 @@ export async function getMyPageHistory(parentUserId: string) {
                         type: p.type ?? "MONTHLY",
                         description: p.description ?? null,
                         method: p.method ?? null,
-                        receiptUrl: s.parentId === parent.id ? (p.receiptUrl ?? p.receipturl ?? null) : null,
+                        // 영수증 = 결제 권한자(대표 보호자 + 승인된 가족, payerAccess) 모두에게 — 청구 탭·아이 기록과 같은 기준(2026-11-14 원장 결정 q3)
+                        receiptUrl: s.canPay === true ? (p.receiptUrl ?? p.receipturl ?? null) : null,
                         invoiceId: p.invoice_id ?? null,
                         invoiceNo: p.invoiceNo ?? p.invoiceno ?? null,
                         invoiceStatus: p.invoice_status ?? null,

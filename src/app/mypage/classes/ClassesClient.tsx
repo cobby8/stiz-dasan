@@ -105,6 +105,13 @@ function ClassCard({ card }: { card: ParentClassCard }) {
             <span className="font-semibold tabular-nums text-[var(--color-academy-ink)]">{next}</span>
           </span>
         )}
+        {/* 이번 달 출석 n/m회(2026-11-14 w4) — 기록이 없으면 줄을 빼고 최근 출결 칸만 */}
+        {card.monthAttendance && (
+          <span className="inline-flex items-center gap-1 whitespace-nowrap">
+            <span className="text-[var(--color-academy-muted)]">이번 달 출석</span>
+            <span className="font-semibold tabular-nums text-[var(--color-academy-ink)]">{card.monthAttendance.ok}/{card.monthAttendance.total}회</span>
+          </span>
+        )}
         {card.attendance.length > 0 && (
           <span className="inline-flex items-center gap-2" aria-label="최근 출결">
             {card.attendance.map((cell) => (
@@ -202,6 +209,14 @@ export default function ClassesClient({
             {child.classes.map((card) => <ClassCard key={card.enrollmentId} card={card} />)}
           </div>
         )}
+        {/* 반 카드 아래 «전체 기록» — 다닌 기간·출석·청구·반 이력을 한 장에(2026-11-14 w1) */}
+        <Link
+          href={`/mypage/record?child=${encodeURIComponent(child.id)}`}
+          className="flex min-h-11 items-center justify-between gap-2 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-sm font-medium text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"
+        >
+          <span>전체 기록</span>
+          <span aria-hidden="true" className="text-[var(--color-academy-faint)]">▸</span>
+        </Link>
       </section>
 
       {/* 한 달 달력 — 일정 탭과 같은 부품. 달 이동은 주소(?child=&month=)로 서버가 다시 그린다 */}

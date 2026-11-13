@@ -9,7 +9,8 @@ import { usePathname } from "next/navigation";
 // 일정 달력(/mypage/history)은 주소를 그대로 두고 «수업» 탭 안 «달력 ▸»로 들어간다 — 그래서 수업 탭에 속한다.
 // also = 이 탭에 속하는 하위 화면. 그 화면에 있을 때도 탭이 켜져 «지금 어디 있는지» 알 수 있다.
 export const PARENT_TABS = [
-    { href: "/mypage", label: "홈", also: [] as string[] },
+    // 아이 기록(/mypage/record)은 홈 소속 — 홈 히어로 아래 한 줄에서 들어간다(2026-11-14 원장 결정 w1, 탭은 4개 그대로)
+    { href: "/mypage", label: "홈", also: ["/mypage/record"] as string[] },
     {
         href: "/mypage/classes",
         label: "수업",
@@ -19,10 +20,10 @@ export const PARENT_TABS = [
     { href: "/mypage/reports", label: "소식", also: ["/mypage/news"] },
 ] as const;
 
-/** 현재 경로에서 이 탭이 켜져야 하는지. 홈은 정확히 /mypage 일 때만. */
+/** 현재 경로에서 이 탭이 켜져야 하는지. 홈은 정확히 /mypage 이거나 홈 소속 화면(also)일 때만(모든 /mypage/* 를 먹지 않게). */
 export function isParentTabActive(tab: (typeof PARENT_TABS)[number], pathname: string): boolean {
-    if (tab.href === "/mypage") return pathname === "/mypage";
     const under = (base: string) => pathname === base || pathname.startsWith(`${base}/`);
+    if (tab.href === "/mypage") return pathname === "/mypage" || tab.also.some(under);
     return under(tab.href) || tab.also.some(under);
 }
 
