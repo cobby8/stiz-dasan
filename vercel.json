@@ -17,6 +17,9 @@
     "src/app/api/admin/backup-now/route.ts": {
       "maxDuration": 300
     },
+    "src/app/api/cron/youtube-upload/route.ts": {
+      "maxDuration": 300
+    },
     "src/app/**/*": {
       "maxDuration": 60
     }
@@ -113,6 +116,10 @@
     {
       "path": "/api/cron/toss-payment-reconcile",
       "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/youtube-upload",
+      "schedule": "*/15 * * * *"
     }
   ]
 }
