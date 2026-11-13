@@ -28,12 +28,35 @@ export const metadata: Metadata = {
 export default async function AppInstallPage() {
   // 기기 판별은 설치 안내 화면들이 같이 쓰는 순수 모듈 한 곳에서만 한다
   const env = detectInstallEnvironment({ userAgent: (await headers()).get("user-agent") || "" });
-  const target = resolveAppInstallTarget(env.platform);
+  const target = resolveAppInstallTarget(env.platform, undefined, { inAppBrowser: env.inAppBrowser });
   // 스토어로 바로 보낼 수 있으면 화면을 거치지 않는다(문자 링크 → 한 번에 스토어)
   if (target.kind === "redirect") redirect(target.url);
 
   const iosUrl = appStoreUrl();
   const isIphone = target.kind === "ios-coming-soon";
+
+  // 안드로이드 + 카카오톡 등 인앱 브라우저: 버튼(intent)으로 Play 스토어 앱을 연다. 못 열면 https Play 주소로 넘어간다.
+  if (target.kind === "android-in-app") {
+    return (
+      <PublicSiteTheme publicScope>
+        <main className="mx-auto flex min-h-[70vh] max-w-md items-center px-4 py-8">
+          <section className="w-full rounded-2xl border border-[var(--color-public-line)] bg-[var(--color-public-paper)] p-5" aria-labelledby="install-title">
+            <div className="flex items-center gap-3">
+              <span className="material-symbols-outlined text-3xl text-[var(--color-public-accent)]" aria-hidden="true">install_mobile</span>
+              <h1 id="install-title" className="text-lg font-black text-[var(--color-public-ink)]">스티즈 농구교실 앱</h1>
+            </div>
+            <div className="mt-4 space-y-2">
+              <a href={target.intentUrl} className={PRIMARY_BUTTON}>
+                <span className="material-symbols-outlined text-xl" aria-hidden="true">shop</span>
+                Play 스토어에서 설치하기
+              </a>
+              <a href={target.url} className={SECONDARY_BUTTON} rel="noopener">스토어가 안 열리면 여기를 눌러 주세요</a>
+            </div>
+          </section>
+        </main>
+      </PublicSiteTheme>
+    );
+  }
 
   return (
     <PublicSiteTheme publicScope>

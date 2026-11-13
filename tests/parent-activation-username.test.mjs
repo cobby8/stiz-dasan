@@ -61,7 +61,11 @@ async function load(state) {
     const st = () => globalThis.__claimState;
     export function createAdminClient() {
       return { auth: { admin: {
-        createUser: async (input) => { st().created.push(input); return { data: { user: { id: "auth-new" } }, error: null }; },
+        createUser: async (input) => {
+          st().created.push(input);
+          if (st().authAlready) return { data: { user: null }, error: { message: "A user with this email address has already been registered", status: 422 } };
+          return { data: { user: { id: "auth-new" } }, error: null };
+        },
         deleteUser: async () => ({ error: null }),
         listUsers: async () => ({ data: { users: [] }, error: null }),
         updateUserById: async () => ({ error: null }),
@@ -140,6 +144,15 @@ test("f7 활성화: 다른 계정이 쓰는 아이디면 «이미 사용 중인 
   const check = state.calls.find((c) => /LOWER\(COALESCE\(username, ''\)\) = LOWER\(\$1\)/.test(c.sql));
   assert.deepEqual(check.args, ["kimmom", "kimmom@member.stiz.kr", "parent-1"]);
   assert.match(check.sql, /id <> \$3/);
+});
+
+test("f7 활성화: 중단된 이전 시도 없이 Supabase 가 «이미 있음»이면 «이미 사용 중인 로그인 아이디»로 안내하고 인증 상태로 되돌린다", async () => {
+  const state = { claim: claimRow(), authAlready: true };
+  const result = await (await load(state)).consumeParentAccountClaim(TOKEN, PROOF, "kimmom", "abcd1234!", ALL_CONSENTS);
+  assert.equal(result.error, "이미 사용 중인 로그인 아이디입니다.");
+  assert.equal(userUpdate(state), undefined, "앱 계정은 바꾸지 않는다");
+  const rollback = state.calls.find((c) => c.kind === "execute" && /SET status = \$1, "processingAt" = NULL/.test(c.sql));
+  assert.equal(rollback.args[0], "VERIFIED", "같은 인증으로 다른 아이디를 다시 정할 수 있다");
 });
 
 test("f7 활성화: 동의가 빠지면 아이디가 맞아도 만들지 않는다(기존 단계 유지)", async () => {

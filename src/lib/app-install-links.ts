@@ -27,20 +27,35 @@ export function appStoreUrl(appStoreId: string = IOS_APP_STORE_ID): string | nul
   return /^\d+$/.test(id) ? `https://apps.apple.com/kr/app/id${id}` : null;
 }
 
+/**
+ * 안드로이드 Play 스토어 «앱»을 직접 여는 intent 주소.
+ * 카카오톡 등 인앱 브라우저는 https Play 주소를 자기 창 안의 웹 페이지로 열어 버려 설치 버튼이 안 먹는 경우가 있다.
+ * intent 로 Play 스토어 앱(com.android.vending)을 열고, 못 열면 https Play 주소로 돌아간다(browser_fallback_url).
+ */
+export const PLAY_STORE_INTENT_URL =
+  `intent://details?id=${STORE_APP_PACKAGE}#Intent;scheme=market;package=com.android.vending;`
+  + `S.browser_fallback_url=${encodeURIComponent(PLAY_STORE_URL)};end`;
+
 export type AppInstallTarget =
   | { kind: "redirect"; url: string } // 바로 스토어로 보낸다
+  | { kind: "android-in-app"; intentUrl: string; url: string } // 안드로이드 인앱 브라우저 → 버튼(intent)으로 Play 스토어 앱 열기
   | { kind: "ios-coming-soon" } // 아이폰인데 App Store 출시 전 → 안내 화면
   | { kind: "choose" }; // PC 등 기기를 모름 → 두 스토어 버튼을 보여 준다
 
 /**
  * 기기 종류(platform)로 갈 곳을 정한다. 기기 판별 자체는 @/lib/pwa/installEnvironment 한 곳에서 하고
- * 그 결과(platform)만 받는다 — 판별 규칙이 두 군데로 갈라지지 않게.
+ * 그 결과(platform·인앱 브라우저 여부)만 받는다 — 판별 규칙이 두 군데로 갈라지지 않게.
  */
 export function resolveAppInstallTarget(
   platform: "ios" | "android" | "other",
   appStoreId: string = IOS_APP_STORE_ID,
+  options: { inAppBrowser?: string | null } = {},
 ): AppInstallTarget {
-  if (platform === "android") return { kind: "redirect", url: PLAY_STORE_URL };
+  if (platform === "android") {
+    // 인앱 브라우저는 서버 리다이렉트로 intent 를 보내면 무시되는 경우가 있어, 사람이 누르는 버튼으로 연다(확실한 쪽)
+    if (options.inAppBrowser) return { kind: "android-in-app", intentUrl: PLAY_STORE_INTENT_URL, url: PLAY_STORE_URL };
+    return { kind: "redirect", url: PLAY_STORE_URL };
+  }
   if (platform === "ios") {
     const url = appStoreUrl(appStoreId);
     return url ? { kind: "redirect", url } : { kind: "ios-coming-soon" };

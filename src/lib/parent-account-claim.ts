@@ -523,6 +523,10 @@ export async function consumeParentAccountClaim(
         user_metadata: { role: "PARENT", username, parentAccountClaimId: claim.id, parentAccountClaimAttemptId: processingAttemptId },
       });
       if (recovered.error) throw new Error("중단된 계정 활성화를 복구하지 못했습니다.");
+    } else if (created.error?.message?.toLowerCase().includes("already")) {
+      // 중단된 이전 시도가 없는데 «이미 있음» — 그 로그인 메일(아이디@member.stiz.kr)을 다른 계정이 이미 쓴다.
+      // DB 아이디 검사를 통과했어도 Supabase 쪽에만 남은 계정이 있을 수 있어, 아이디를 바꾸라고 안내한다.
+      throw new Error(PARENT_USERNAME_TAKEN_MESSAGE);
     } else if (isWeakPasswordRejection(created.error)) {
       // 약한 비밀번호 거절 — 계정은 만들어지지 않았다. 이유를 알려 주고 같은 인증으로 다시 정하게 한다.
       throw new Error(PARENT_WEAK_PASSWORD_MESSAGE);

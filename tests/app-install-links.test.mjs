@@ -26,11 +26,23 @@ const UA = {
   iphoneKakao: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 KAKAOTALK 10.4.5",
   pc: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36",
 };
-const targetFor = (ua, id) => L.resolveAppInstallTarget(ENV.detectInstallEnvironment({ userAgent: ua }).platform, id);
+const targetFor = (ua, id) => {
+  const env = ENV.detectInstallEnvironment({ userAgent: ua });
+  return L.resolveAppInstallTarget(env.platform, id, { inAppBrowser: env.inAppBrowser });
+};
 
-test("안드로이드(카카오톡 안 포함)는 Play 스토어 앱 상세로 바로 보낸다", () => {
+test("안드로이드 일반 브라우저는 Play 스토어 앱 상세로 바로 보낸다", () => {
   assert.equal(L.PLAY_STORE_URL, "https://play.google.com/store/apps/details?id=kr.co.upturnlabs.stizdasan");
-  for (const ua of [UA.android, UA.androidKakao]) assert.deepEqual(targetFor(ua), { kind: "redirect", url: L.PLAY_STORE_URL });
+  assert.deepEqual(targetFor(UA.android), { kind: "redirect", url: L.PLAY_STORE_URL });
+});
+
+test("안드로이드 카카오톡 등 인앱 브라우저는 intent 버튼(Play 스토어 앱) + https 대체 주소", () => {
+  assert.equal(
+    L.PLAY_STORE_INTENT_URL,
+    "intent://details?id=kr.co.upturnlabs.stizdasan#Intent;scheme=market;package=com.android.vending;"
+      + `S.browser_fallback_url=${encodeURIComponent("https://play.google.com/store/apps/details?id=kr.co.upturnlabs.stizdasan")};end`,
+  );
+  assert.deepEqual(targetFor(UA.androidKakao), { kind: "android-in-app", intentUrl: L.PLAY_STORE_INTENT_URL, url: L.PLAY_STORE_URL });
 });
 
 test("아이폰: App Store 번호가 비어 있으면 «곧 출시» 화면, 숫자가 채워지면 App Store 로 바로", () => {
@@ -62,8 +74,10 @@ test("설치 화면: 기기 판별 공용 모듈 → 스토어로 바로 이동,
   const page = await readFile("src/app/install/page.tsx", "utf8");
   assert.match(page, /export const dynamic = "force-dynamic"/);
   assert.match(page, /detectInstallEnvironment\(\{ userAgent: \(await headers\(\)\)\.get\("user-agent"\) \|\| "" \}\)/);
-  assert.match(page, /resolveAppInstallTarget\(env\.platform\)/);
+  assert.match(page, /resolveAppInstallTarget\(env\.platform, undefined, \{ inAppBrowser: env\.inAppBrowser \}\)/);
   assert.match(page, /if \(target\.kind === "redirect"\) redirect\(target\.url\)/);
+  // 인앱 브라우저는 리다이렉트가 아니라 사람이 누르는 intent 버튼 + https 대체 버튼
+  assert.match(page, /target\.kind === "android-in-app"[\s\S]*href=\{target\.intentUrl\}[\s\S]*href=\{target\.url\}/);
   // 아이폰 출시 전 안내 + 웹으로 쓰기 버튼
   assert.match(page, /아이폰 앱은 곧 출시돼요/);
   assert.match(page, /href="\/mypage"/);
