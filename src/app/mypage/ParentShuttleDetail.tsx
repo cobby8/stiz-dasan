@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ParentShuttleOverviewItem } from "@/lib/shuttle/parent";
-import { formatKstDate } from "@/lib/datetime/kst";
+import { formatKstDate, kstDow } from "@/lib/datetime/kst";
 
 // 학부모 «셔틀 배정 상세» 한 칸 (2026-11-09 홈에서 «일정» 탭으로 옮김).
 // 예전엔 홈의 접힌 칸(details) 안에 있어 «안에 뭐가 있는지» 안 보였다. 일정 탭에서는 펼친 채로 보인다.
@@ -45,6 +45,41 @@ function formatShuttleTime(value: string | null): string {
     return date.toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" });
 }
 
+const DOW_KO = ["일", "월", "화", "수", "목", "금", "토"];
+/** 월요일부터(일요일은 맨 뒤) */
+const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
+
+export type RosterWeekLine = { key: string; studentId: string; dayLabel: string; title: string; text: string };
+
+/**
+ * 명단에서 만든 7일 운행 항목(fromRoster)을 «아이 × 요일 × 반» 한 줄로 줄인다(2026-11-14 검수 — 날마다 카드가 늘어지던 것).
+ * 줄 글자 «등원 17:45 승차 다산푸르지오 · 하원 19:35 하차 다산푸르지오». 같은 요일이 7일 안에 두 번이면 가까운 날 것.
+ */
+export function rosterWeekLines(items: ParentShuttleOverviewItem[]): RosterWeekLine[] {
+    const groups = new Map<string, { studentId: string; dow: number; title: string; pickup?: ParentShuttleOverviewItem; dropoff?: ParentShuttleOverviewItem }>();
+    const sorted = items.filter((i) => i.fromRoster && i.serviceDate).sort((a, b) => String(a.serviceDate).localeCompare(String(b.serviceDate)));
+    for (const item of sorted) {
+        const dow = kstDow(item.serviceDate!);
+        if (!Number.isInteger(dow)) continue;
+        const key = `${item.studentId}|${dow}|${item.title}`;
+        const g = groups.get(key) ?? { studentId: item.studentId, dow, title: item.title };
+        if (item.direction === "PICKUP" && !g.pickup) g.pickup = item;
+        if (item.direction === "DROPOFF" && !g.dropoff) g.dropoff = item;
+        groups.set(key, g);
+    }
+    const leg = (name: string, item: ParentShuttleOverviewItem | undefined, eta: string | null | undefined) =>
+        item ? [name, eta, item.stopName].filter(Boolean).join(" ") : null;
+    return [...groups.entries()]
+        .sort(([, a], [, b]) => a.studentId.localeCompare(b.studentId) || WEEK_ORDER.indexOf(a.dow) - WEEK_ORDER.indexOf(b.dow))
+        .map(([key, g]) => ({
+            key,
+            studentId: g.studentId,
+            dayLabel: DOW_KO[g.dow],
+            title: g.title,
+            text: [leg("등원", g.pickup, g.pickup?.pickupEtaLabel), leg("하원", g.dropoff, g.dropoff?.dropoffEtaLabel)].filter(Boolean).join(" · "),
+        }));
+}
+
 export default function ParentShuttleDetail({
     items,
     driverContact = null,
@@ -56,12 +91,16 @@ export default function ParentShuttleDetail({
     childNames?: Record<string, string>;
 }) {
     const showChild = new Set(items.map((item) => item.studentId)).size > 1;
+    // 명단 항목(7일 운행)은 요일별 한 줄로 줄이고, 자세한 날짜별 일정은 «아이 기록 › 셔틀»에서 본다
+    const weekLines = rosterWeekLines(items);
+    const rosterChildren = [...new Set(weekLines.map((line) => line.studentId))];
+    const cards = items.filter((item) => !item.fromRoster);
     return (
         <section id="mypage-shuttle" aria-labelledby="parent-shuttle-heading" className="academy-panel scroll-mt-24 p-4">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <h2 id="parent-shuttle-heading" className="academy-section-title flex items-center gap-2">
                     셔틀 배정
-                    <span className="text-sm font-normal tabular-nums text-[var(--color-academy-muted)]">{items.length}건</span>
+                    <span className="text-sm font-normal tabular-nums text-[var(--color-academy-muted)]">{weekLines.length + cards.length}건</span>
                 </h2>
                 <div className="flex flex-wrap items-stretch gap-2">
                     {driverContact?.phone && (
@@ -81,8 +120,33 @@ export default function ParentShuttleDetail({
                 </div>
             </div>
 
+            {weekLines.length > 0 && (
+                <div className="mb-2 overflow-hidden rounded-xl bg-[var(--color-academy-soft)]">
+                    <p className="px-3 pt-2 text-xs font-medium text-[var(--color-academy-muted)]">정규 셔틀 · 요일별(다가오는 7일)</p>
+                    <ul className="divide-y divide-[var(--color-academy-line)]">
+                        {weekLines.map((line) => (
+                            <li key={line.key} className="flex min-h-11 items-center gap-2 px-3 py-1.5 text-sm">
+                                <span className="w-8 shrink-0 text-xs text-[var(--color-academy-muted)]">{line.dayLabel}</span>
+                                <span className="min-w-0 flex-1 break-keep tabular-nums text-[var(--color-academy-ink)]">
+                                    {showChild && childNames[line.studentId] && <span className="mr-1 font-semibold">{childNames[line.studentId]}</span>}
+                                    {line.text}
+                                    <span className="block text-xs text-[var(--color-academy-muted)]">{line.title}</span>
+                                </span>
+                            </li>
+                        ))}
+                    </ul>
+                    <div className="flex flex-wrap gap-x-1 px-1.5 pb-1">
+                        {rosterChildren.map((id) => (
+                            <Link key={id} href={`/mypage/record?child=${encodeURIComponent(id)}#record-shuttle-heading`} className="academy-button-text whitespace-nowrap">
+                                {showChild && childNames[id] ? `${childNames[id]} ` : ""}아이 기록 › 셔틀 ▸
+                            </Link>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             <div className="space-y-2">
-                {items.map((item) => {
+                {cards.map((item) => {
                     const status = SHUTTLE_STATUS[item.status];
                     const showDetails = item.status === "CONFIRMED" || item.status === "COMPLETED";
                     return (

@@ -149,6 +149,8 @@ const DAY_TONE: Record<ShuttleDayStatus, StatusTone> = {
   ENDED: "neutral",
   NOT_STARTED: "info",
   ABSENT: "warning",
+  NO_CLASS: "neutral",
+  CHECK: "warning",
 };
 
 /** 운행 일정 한 다리 «등원 17:45 다산푸르지오» / «등원 안 탐(신청)» / «등원 다른 곳: 학교 정문» */
@@ -160,6 +162,9 @@ function legText(name: "등원" | "하원", leg: ShuttleDayLeg | null): string |
 }
 
 function dayDetail(d: ShuttleDayRow): string {
+  // 명단 요일·시간에 맞는 반이 없다 — 운행으로 치지 않고 학원 확인을 안내한다
+  if (d.status === "CHECK") return "명단과 수강 반이 맞지 않아요 · 학원에 확인해 주세요";
+  if (d.status === "NO_CLASS") return "다니는 반이 없어요";
   if (d.status !== "RUN") return d.className ?? "";
   return [legText("등원", d.board), legText("하원", d.alight)].filter(Boolean).join(" · ");
 }

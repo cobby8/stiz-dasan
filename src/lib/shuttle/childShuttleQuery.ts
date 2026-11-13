@@ -107,3 +107,23 @@ export async function loadChildRegularShuttle(
   });
   return { rosterMonth: usedMonth ? String(usedMonth) : null, weekly, days };
 }
+
+/**
+ * 셔틀 명단(그 달 이하 최신 명단 달)에 이름이 올라 있는 학생 id — «정규 셔틀 신청 접수» 카드를 뺄 때 쓴다.
+ * 운행 일정(7일)과 무관하게 «명단에 있는가»만 본다(휴원·방학·명절 주에도 카드가 다시 뜨지 않게).
+ * ★ 호출부가 확인한 내 자녀 id 만 넘긴다. 학생 id 외의 칸은 고르지 않는다.
+ */
+export async function getRosterStudentIds(db: Reader, studentIds: readonly string[], month: string): Promise<Set<string>> {
+  const ids = [...new Set(studentIds.filter((id) => typeof id === "string" && id !== ""))];
+  if (ids.length === 0) return new Set();
+  const rows = await db.$queryRawUnsafe<{ studentId: string }[]>(
+    `SELECT DISTINCT r."studentId"
+       FROM "RegularShuttleStop" r
+      WHERE r."studentId" = ANY($1::text[])
+        AND r.direction IN ('BOARD','ALIGHT')
+        AND r."serviceMonth" = (SELECT max(m."serviceMonth") FROM "RegularShuttleStop" m WHERE m."serviceMonth" <= $2)`,
+    ids,
+    month,
+  );
+  return new Set(rows.map((r) => String(r.studentId)));
+}

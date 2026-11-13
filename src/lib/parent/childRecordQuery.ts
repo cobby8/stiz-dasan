@@ -239,7 +239,8 @@ export async function getChildRecord(parentUserId: string, studentId: string, db
     const monthlyDates = planEvents ? (ym: string, dow: string) => getMonthlyClassDates(planEvents, ym, dow) : null;
     const [regular, all] = await Promise.all([
       loadChildRegularShuttle(db, { studentId: sid, today, classes, monthlyDates }),
-      getParentShuttleOverview(parentUserId, { includeRoster: false }).catch(() => [] as ParentShuttleOverviewItem[]),
+      // 보는 아이 하나만(형제 셔틀 현황을 다시 돌지 않게) — 내 자녀 범위 확인은 함수 안에서 그대로 한다
+      getParentShuttleOverview(parentUserId, { includeRoster: false, studentIds: [sid] }).catch(() => [] as ParentShuttleOverviewItem[]),
     ]);
     const others = all.filter((item) => item.studentId === sid);
     const rides = regular.weekly.length > 0 || others.some((item) => item.status === "CONFIRMED" || item.status === "COMPLETED");

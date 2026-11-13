@@ -57,7 +57,8 @@ export type WeeklyShuttleRow = {
   alight: ShuttleLeg | null;
 };
 
-export type ShuttleDayStatus = "RUN" | "HOLIDAY" | "PAUSED" | "ENDED" | "NOT_STARTED" | "ABSENT";
+// NO_CLASS: 다니는 정규 반이 하나도 없다(퇴원) · CHECK: 명단 요일·시간에 맞는 반을 못 찾았다 — 둘 다 «운행»으로 치지 않는다(안전한 쪽)
+export type ShuttleDayStatus = "RUN" | "HOLIDAY" | "PAUSED" | "ENDED" | "NOT_STARTED" | "ABSENT" | "NO_CLASS" | "CHECK";
 export type ShuttleDayLeg = ShuttleLeg & {
   /** RUN 운행 · SKIP 안 탐(«오늘만» 신청) · CHANGED 다른 곳에서 탐 */
   state: "RUN" | "SKIP" | "CHANGED";
@@ -89,6 +90,8 @@ export const SHUTTLE_DAY_STATUS_TEXT: Record<ShuttleDayStatus, string> = {
   ENDED: "퇴원",
   NOT_STARTED: "첫 수업 전",
   ABSENT: "결석",
+  NO_CLASS: "수강 반 없음",
+  CHECK: "확인 필요",
 };
 
 const DAY_KO = ["일", "월", "화", "수", "목", "금", "토"];
@@ -190,7 +193,8 @@ export function buildShuttleDays(input: {
       const cls = p.classId ? input.classes.find((c) => c.classId === p.classId) ?? null : null;
       let status: ShuttleDayStatus = "RUN";
       let planMissing = false;
-      const state = cls ? enrollmentStateOn(cls, ymd) : "ACTIVE";
+      // 반이 없거나(퇴원) 못 찾으면 운행으로 치지 않는다 — 홈 «오늘 셔틀»에 잘못 뜨지 않게, 기록 화면엔 «확인 필요»로 보인다
+      const state = cls ? enrollmentStateOn(cls, ymd) : input.classes.length === 0 ? "NO_CLASS" : "CHECK";
       if (state !== "ACTIVE") {
         status = state;
       } else {
@@ -235,6 +239,8 @@ export function buildShuttleDays(input: {
 /** 학부모 홈·수업·일정 탭이 쓰는 셔틀 항목 모양(ParentShuttleOverviewItem 과 같은 칸) */
 export type RosterOverviewItem = {
   id: string;
+  /** 명단에서 만든 항목 — 일정 탭은 이걸 요일별 한 줄로 줄여 보인다(노선·차량 칸이 없다) */
+  fromRoster: true;
   studentId: string;
   sourceType: "REGULAR_CLASS";
   classId: string | null;
@@ -265,6 +271,7 @@ export function rosterOverviewItems(studentId: string, studentName: string, days
       if (!leg || leg.state === "SKIP") continue;
       items.push({
         id: `roster:${studentId}:${d.ymd}:${direction}:${d.classTime ?? ""}`,
+        fromRoster: true,
         studentId,
         sourceType: "REGULAR_CLASS",
         classId: d.classId,

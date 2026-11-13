@@ -278,7 +278,7 @@ test("③ 내 아이 → 아이 정보·반·보강권·셔틀(명단 제외 옵
   assert.equal(r.profile.classes[0].chip.text, "수강 중");
   assert.equal(r.shuttle.regular.weekly[0].board.stopName, "푸르지오");
   assert.deepEqual(r.shuttle.others.map((o) => o.id), ["s1"], "형제 항목은 거른다");
-  assert.deepEqual(spies.overview, [["parent-me", { includeRoster: false }]]);
+  assert.deepEqual(spies.overview, [["parent-me", { includeRoster: false, studentIds: ["kid"] }]]);
   assert.equal(r.shuttle.driver.phone, "010-0000-0000");
   // 권한 확인 뒤 모든 학생 조회는 확인된 id 를 쓴다
   for (const c of calls.slice(1)) assert.ok(c.values.includes("kid"), c.sql.slice(0, 60));
@@ -379,4 +379,68 @@ test("⑤ 숨길 칸은 조회하지 않는다 · 기록 화면 캐시 금지 �
   const shuttleQuery = read("src/lib/shuttle/childShuttleQuery.ts");
   assert.doesNotMatch(shuttleQuery, /studentPhone|parentPhone/);
   assert.doesNotMatch(shuttleQuery, /findMany|findFirst|upsert|\.create\(/, "PgBouncer — $queryRawUnsafe 만");
+});
+
+// ── ⑥ 검수 보완(2026-11-14 코드 검수 필수 2 + 권장 3·4) ─────────────────────
+
+test("⑥ 반을 못 찾거나(확인 필요) 다니는 반이 없으면(퇴원) 운행으로 치지 않는다 — 홈 항목도 없음", () => {
+  const check = rules.buildShuttleDays({ today: "2026-11-16", days: 1, rowsForDate: () => ROWS, classes: [thu()], isClassDay: always, absences: [], exceptions: [] });
+  assert.equal(check[0].status, "CHECK");
+  assert.equal(check[0].statusText, "확인 필요");
+  const none = rules.buildShuttleDays({ today: "2026-11-16", days: 1, rowsForDate: () => ROWS, classes: [], isClassDay: always, absences: [], exceptions: [] });
+  assert.equal(none[0].status, "NO_CLASS");
+  assert.deepEqual(rules.rosterOverviewItems("kid", "합성", [...check, ...none]), []);
+  const ok = rules.rosterOverviewItems("kid", "합성", rules.buildShuttleDays({ today: "2026-11-16", days: 1, rowsForDate: () => ROWS, classes: [cls()], isClassDay: always, absences: [], exceptions: [] }));
+  assert.ok(ok.length === 2 && ok.every((i) => i.fromRoster === true), "명단 항목 표시");
+});
+
+test("⑥ 명단 등재 학생 조회: 내 자녀 id 만 넘기고 학생 id 만 고른다, 빈 목록이면 조회 안 함", async () => {
+  const q = load("src/lib/shuttle/childShuttleQuery.ts");
+  const calls = [];
+  const db = { async $queryRawUnsafe(sql, ...values) { calls.push({ sql, values }); return [{ studentId: "kid" }]; } };
+  const set = await q.getRosterStudentIds(db, ["kid", "kid", ""], "2026-11");
+  assert.deepEqual([...set], ["kid"]);
+  assert.deepEqual(calls[0].values, [["kid"], "2026-11"]);
+  assert.match(calls[0].sql, /SELECT DISTINCT r\."studentId"\s+FROM "RegularShuttleStop" r/);
+  assert.match(calls[0].sql, /max\(m\."serviceMonth"\)[\s\S]*<= \$2/);
+  assert.equal((await q.getRosterStudentIds(db, [], "2026-11")).size, 0);
+  assert.equal(calls.length, 1);
+});
+
+test("⑥ 소스 가드: «신청 접수» 카드는 명단 등재 여부로 빼고(배정 반·운행 일정·includeRoster 무관), 명단 조회는 처음 병렬 묶음에", () => {
+  const parent = read("src/lib/shuttle/parent.ts");
+  const cardIdx = parent.indexOf("if (rosterStudents.has(studentId)) return [];");
+  assert.ok(cardIdx > 0 && cardIdx < parent.indexOf("if (application.assignedClassId && assignedClassKeys"), "배정 반 판정보다 먼저");
+  assert.doesNotMatch(parent, /for \(const item of rosterItems\) if \(item\.classId\) assignedClassKeys/, "7일 운행 항목 기준 판정은 없앴다");
+  assert.match(parent, /const \[regularPassengers, seasonalRoster, regularApplications, rosterItems, rosterStudents\] = await Promise\.all/);
+  assert.match(parent, /getRosterStudentIds\(prisma, studentIds,/);
+  // 대상 좁히기는 내 자녀 범위 안에서만
+  assert.match(parent, /const students = only \? accessible\.filter\(\(student\) => only\.has\(student\.id\)\) : accessible;/);
+  assert.match(read("src/lib/parent/childRecordQuery.ts"), /getParentShuttleOverview\(parentUserId, \{ includeRoster: false, studentIds: \[sid\] \}\)/);
+});
+
+test("⑥ 일정 탭: 명단 항목은 요일별 한 줄 + «아이 기록 › 셔틀» 링크, 노선·시간·차량 «확인 중» 줄 없음, 다른 카드는 그대로", () => {
+  const Detail = load("src/app/mypage/ParentShuttleDetail.tsx", { "next/link": link });
+  const roster = (date, direction, eta, extra = {}) => ({
+    id: `roster:kid:${date}:${direction}`, fromRoster: true, studentId: "kid", sourceType: "REGULAR_CLASS", classId: "MON", direction, status: "CONFIRMED",
+    label: "합성", title: "월 6시", serviceDate: date, routeName: null, stopName: "푸르지오", stopAddress: null, plannedAt: null, vehicleName: null, rideStatus: null,
+    pickupEtaLabel: direction === "PICKUP" ? eta : null, dropoffEtaLabel: direction === "DROPOFF" ? eta : null, ...extra,
+  });
+  const items = [
+    roster("2026-11-16", "PICKUP", "17:45 승차"), roster("2026-11-16", "DROPOFF", "19:35 하차"),
+    roster("2026-11-19", "PICKUP", "16:45 승차", { title: "목 5시" }),
+    { id: "s1", studentId: "kid", sourceType: "SPECIAL_PROGRAM", direction: "PICKUP", status: "REQUESTED", label: "합성", title: "겨울특강", serviceDate: null, routeName: null, stopName: null, stopAddress: null, plannedAt: null, vehicleName: null, rideStatus: null },
+  ];
+  const lines = Detail.rosterWeekLines(items);
+  assert.deepEqual(lines.map((l) => [l.dayLabel, l.text]), [
+    ["월", "등원 17:45 승차 푸르지오 · 하원 19:35 하차 푸르지오"],
+    ["목", "등원 16:45 승차 푸르지오"],
+  ]);
+  const html = renderToStaticMarkup(React.createElement(Detail.default, { items }));
+  assert.match(html, /정규 셔틀 · 요일별/);
+  assert.match(html, /href="\/mypage\/record\?child=kid#record-shuttle-heading"/);
+  assert.match(html, /아이 기록 › 셔틀/);
+  assert.doesNotMatch(html, /노선 확인 중|차량 확인 중|시간 확인 중/, "명단 항목에 빈 칸 줄 없음");
+  assert.match(html, /겨울특강/, "방학특강 카드는 그대로");
+  assert.match(html, />3건</, "요약 2줄 + 카드 1장");
 });
