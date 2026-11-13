@@ -1,4 +1,6 @@
 import { isAnyDriverRunToken } from "@/lib/shuttle/driverToken";
+import { getSettings } from "@/lib/seasonal/shuttle-optimize";
+import { isKoreanCoordinate } from "@/lib/shuttle/academyLocation";
 import RememberDriverToken from "./RememberDriverToken";
 import { loadUnifiedDriverRun } from "@/lib/shuttle/unifiedDriverRun";
 import UnifiedDriverClient from "./UnifiedDriverClient";
@@ -55,7 +57,12 @@ export default async function UnifiedDriverRunPage({ token, searchDate, remember
   const prevDate = addDays(viewDate, -1);
   const nextDate = addDays(viewDate, 1);
 
-  const { rows, boarding, boardingReliable, driverLabel } = await loadUnifiedDriverRun(viewDate);
+  const [{ rows, boarding, boardingReliable, driverLabel }, settings] = await Promise.all([
+    loadUnifiedDriverRun(viewDate),
+    getSettings().catch(() => null), // 학원 좌표 — 순서를 옮길 때 시각 다시 계산용(없으면 학원 구간 없이 계산)
+  ]);
+  const academy = settings?.academy && isKoreanCoordinate(settings.academy.lat, settings.academy.lng)
+    ? { lat: settings.academy.lat, lng: settings.academy.lng } : null;
 
   return (
     <AcademyTheme role="driver" className="min-h-screen py-2">
@@ -71,6 +78,7 @@ export default async function UnifiedDriverRunPage({ token, searchDate, remember
         today={today}
         driverLabel={driverLabel}
         focusDirection={focusDirection}
+        academy={academy}
       />
       {/* 토큰 검증을 통과한 뒤에만 기억한다. 만료된 링크를 기억하면 홈 화면
           아이콘이 매번 "유효하지 않은 링크" 화면을 여는 꼴이 된다.

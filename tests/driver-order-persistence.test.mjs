@@ -57,3 +57,17 @@ test('원본 baseline 없는 이전 화면은 새로고침 안내 후 쓰기 없
 test('첫 저장이 끝난 뒤 도착한 오래된 두 번째 탭은 baseline 비교로 거절',async()=>{const f=setup();assert.equal((await f.post()).status,200);const after=JSON.stringify(f.state);const writes=f.stats.writes;const response=await f.post();assert.equal(response.status,409);assert.equal(JSON.stringify(f.state),after);assert.equal(f.stats.writes,writes)});
 test('오래된 baseline이 시각만 다르더라도 저장 전 거절',async()=>{const f=setup();f.state.rows[0].arriveTime='14:39';const before=JSON.stringify(f.state);assert.equal((await f.post()).status,409);assert.equal(f.stats.writes,0);assert.equal(JSON.stringify(f.state),before)});
 test('같은 정류장 두 학생은 하나의 정차로 묶어 두 행을 함께 저장',async()=>{const f=setup();for(const row of f.state.rows){row.stopName='공용 정류장';row.arriveTime='14:38';}const response=await f.post({baseline:[{rowIds:[id(1),id(2)],sortOrder:0,arriveTime:'14:38'}],updates:[{rowIds:[id(1),id(2)],sortOrder:0,arriveTime:'14:40'}]});assert.equal(response.status,200);assert.equal((await response.json()).updated,2);assert.ok(f.state.rows.every(row=>row.arriveTime==='14:40'))});
+// 2026-11-13: 순서 번호는 묶음(수업시간 × 방향)마다 그 묶음이 쓰던 번호를 돌려 쓴다.
+// 예전엔 0,1,2…로 새로 매겨 2호점 경유·복귀 행(학생 없는 행, 번호 7·17 등)과 뒤섞였다.
+test('순서 번호는 묶음이 쓰던 번호를 돌려 쓴다(0,1,2…로 새로 매기지 않음)',async()=>{const f=setup();f.state.rows[0].sortOrder=18;f.state.rows[1].sortOrder=25;const response=await f.post();assert.equal(response.status,200);
+ assert.equal(f.state.rows.find(r=>r.id===id(2)).sortOrder,18);assert.equal(f.state.rows.find(r=>r.id===id(1)).sortOrder,25)});
+test('planDriverRowSlots — 묶음별로 따로 돌려 쓰고 다른 묶음 번호는 건드리지 않는다',()=>{
+ const rows=[{id:'a',classTime:'15:00~16:00',direction:'BOARD',sortOrder:5},{id:'b',classTime:'15:00~16:00',direction:'BOARD',sortOrder:6},{id:'c',classTime:'18:00~19:20',direction:'BOARD',sortOrder:18},{id:'d',classTime:'18:00~19:20',direction:'BOARD',sortOrder:25}];
+ const out=plan.planDriverRowSlots(rows,[{rowIds:['b'],sortOrder:0,arriveTime:'14:40'},{rowIds:['a'],sortOrder:1,arriveTime:'14:45'},{rowIds:['d'],sortOrder:2,arriveTime:'17:30'},{rowIds:['c'],sortOrder:3,arriveTime:'17:55'}]);
+ const by=Object.fromEntries(out.map(o=>[o.id,o.sortOrder]));assert.deepEqual(by,{b:5,a:6,d:18,c:25});
+});
+test('planDriverRowSlots — 같은 번호가 겹쳐 있으면 1씩 올려 순서를 지킨다',()=>{
+ const rows=[{id:'a',classTime:'x',direction:'BOARD',sortOrder:3},{id:'b',classTime:'x',direction:'BOARD',sortOrder:3}];
+ const out=plan.planDriverRowSlots(rows,[{rowIds:['b','a'],sortOrder:0,arriveTime:'14:40'}]);
+ assert.equal(JSON.stringify(out.map(o=>[o.id,o.sortOrder])),JSON.stringify([['b',3],['a',4]]));
+});
