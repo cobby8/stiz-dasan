@@ -25,6 +25,7 @@ import {
 import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { deleteNativePushTokensOfUser } from "@/lib/push/nativePushStore";
 
 export async function getParentAccountClaim(token: string) {
   return readParentAccountClaim(token.trim());
@@ -275,6 +276,8 @@ export async function executeAccountWithdrawal(userId: string) {
           `DELETE FROM "PushSubscription" WHERE "userId" = $1`,
           target,
         );
+        // 스토어 앱 푸시 토큰도 함께 지운다(e2) — 표가 없는 DB 에서는 건너뛴다
+        await deleteNativePushTokensOfUser(tx, target);
         await tx.$executeRawUnsafe(
           `UPDATE "UserRoleGrant"
         SET status = 'REVOKED', "decidedAt" = NOW(), note = COALESCE(note, '회원 탈퇴'), "updatedAt" = NOW()

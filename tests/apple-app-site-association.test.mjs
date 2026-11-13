@@ -40,6 +40,8 @@ test("팀 ID 가 있으면 업턴랩스 정식 앱 하나와 정해진 좁은 �
 });
 
 test("유니버설 링크 준비가 운영 간편로그인을 켜지 않는다", () => {
+  // 2026-11-13 a1: 운영 간편로그인은 서버 스위치(NATIVE_AUTH_ENABLED)로만 켜진다. 개발 복귀 주소는 운영에서 열리지 않는다.
   const policy = fs.readFileSync("src/lib/native-auth/policy.ts", "utf8");
-  assert.match(policy, /env\.NODE_ENV === "production"\) \{\s*throw new NativeAuthError\(503/);
+  assert.match(policy, /if \(env\.NATIVE_AUTH_ENABLED !== "true"\) \{\s*throw new NativeAuthError\(503/);
+  assert.match(policy, /env\.NATIVE_AUTH_DEVELOPMENT_CALLBACKS_ENABLED === "true" && env\.NODE_ENV !== "production"/);
 });

@@ -5,23 +5,50 @@ export type NativeProvider = "google" | "kakao" | "naver" | "apple";
 export const FLOW_TTL_MS = 5 * 60_000;
 export const CODE_TTL_MS = 60_000;
 export const NATIVE_ORIGIN = "https://www.stiz-dasan.kr";
-const callbacks = { ios: "stiz-academy-dev://auth/return", android: "stiz-academy-android-dev://auth/return" } as const;
+/**
+ * 앱 복귀 주소(2026-11-13 운영 전환).
+ * - 운영: 스토어 앱 ID(도메인을 거꾸로 쓴 이름)를 그대로 쓴 전용 주소(RFC 8252 권장 형식). 안드로이드·아이폰 모두 같은 이름이다.
+ *   이 주소에는 토큰·쿠키가 없고 1회용 code+state 만 실린다. code 는 앱 메모리의 PKCE 비밀값(verifier)
+ *   없이는 교환할 수 없어, 다른 앱이 주소를 가로채도 로그인할 수 없다.
+ * - 개발: 기존 개발 주소. 개발 서버(NODE_ENV≠production)에서 개발 스위치를 켤 때만 쓴다.
+ */
+export const PRODUCTION_CALLBACK_SCHEME = "kr.co.upturnlabs.stizdasan";
+const productionCallbacks = { ios: `${PRODUCTION_CALLBACK_SCHEME}://auth/return`, android: `${PRODUCTION_CALLBACK_SCHEME}://auth/return` } as const;
+const developmentCallbacks = { ios: "stiz-academy-dev://auth/return", android: "stiz-academy-android-dev://auth/return" } as const;
 
 export class NativeAuthError extends Error {
   constructor(public status = 400, message = "로그인을 완료하지 못했습니다. 앱에서 다시 시도해 주세요.") { super(message); }
 }
-export type NativeConfig = { origin: string; encryptionKey: Buffer; callback(platform: NativePlatform): string };
+export type NativeConfig = { origin: string; encryptionKey: Buffer; development: boolean; callback(platform: NativePlatform): string };
 
-/** 개발 복귀 주소는 정식 앱 소유권 검증을 대신하지 않는다. 운영에서는 반드시 닫는다. */
+/** 암호화 키 형식 확인(32바이트 base64url). 값 자체는 어디에도 남기지 않는다. */
+function readEncryptionKey(encoded: string): Buffer | null {
+  if (!/^[A-Za-z0-9_-]{43}$/.test(encoded)) return null;
+  const key = Buffer.from(encoded, "base64url");
+  return key.length === 32 && key.toString("base64url") === encoded ? key : null;
+}
+
+/**
+ * 앱 간편로그인 켜짐 여부 — 웹 화면(앱 안 간편로그인 버튼 표시)과 서버 경로가 같은 판정을 쓴다.
+ * 켜는 조건: NATIVE_AUTH_ENABLED=true + 올바른 암호화 키. 외부 설정(Supabase 제공자·허용 주소) 전에는 꺼 둔다.
+ */
+export function nativeAuthEnabled(env: Record<string, string | undefined> = process.env): boolean {
+  return env.NATIVE_AUTH_ENABLED === "true" && readEncryptionKey(env.NATIVE_AUTH_ENCRYPTION_KEY || "") !== null;
+}
+
+/**
+ * 운영 스위치(NATIVE_AUTH_ENABLED)가 꺼져 있으면 모든 앱 로그인 경로를 503 으로 닫는다.
+ * 개발 복귀 주소는 개발 서버에서 개발 스위치를 켤 때만 — 운영(production)에서는 스위치가 있어도 항상 운영 주소다.
+ */
 export function nativeConfig(env: Record<string, string | undefined> = process.env): NativeConfig {
-  if (env.NATIVE_AUTH_ENABLED !== "true" || env.NATIVE_AUTH_DEVELOPMENT_CALLBACKS_ENABLED !== "true" || env.NODE_ENV === "production") {
-    throw new NativeAuthError(503, "앱 간편로그인을 준비 중입니다. 이메일·비밀번호 로그인을 이용해 주세요.");
+  if (env.NATIVE_AUTH_ENABLED !== "true") {
+    throw new NativeAuthError(503, "앱 간편로그인을 준비 중입니다. 아이디·비밀번호로 로그인해 주세요.");
   }
-  const encoded = env.NATIVE_AUTH_ENCRYPTION_KEY || "";
-  if (!/^[A-Za-z0-9_-]{43}$/.test(encoded)) throw new NativeAuthError(503);
-  const encryptionKey = Buffer.from(encoded, "base64url");
-  if (encryptionKey.length !== 32 || encryptionKey.toString("base64url") !== encoded) throw new NativeAuthError(503);
-  return { origin: NATIVE_ORIGIN, encryptionKey, callback: platform => callbacks[platform] };
+  const encryptionKey = readEncryptionKey(env.NATIVE_AUTH_ENCRYPTION_KEY || "");
+  if (!encryptionKey) throw new NativeAuthError(503);
+  const development = env.NATIVE_AUTH_DEVELOPMENT_CALLBACKS_ENABLED === "true" && env.NODE_ENV !== "production";
+  const callbacks = development ? developmentCallbacks : productionCallbacks;
+  return { origin: NATIVE_ORIGIN, encryptionKey, development, callback: platform => callbacks[platform] };
 }
 export function opaqueToken() { return randomBytes(32).toString("base64url"); }
 export function digest(value: string) { return createHash("sha256").update(value).digest("base64url"); }

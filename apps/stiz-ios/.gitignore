@@ -6,3 +6,5 @@ xcuserdata/
 *.p8
 *.p12
 *.mobileprovision
+# 앱 알림(FCM) Firebase 설정 파일 — 저장소에 넣지 않는다(빌드 직전에 주입, docs/native-push.md)
+STIZ/Firebase/GoogleService-Info.plist

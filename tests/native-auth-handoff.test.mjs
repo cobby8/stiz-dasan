@@ -26,8 +26,14 @@ function harness() {
 async function ready(h,platform='ios') {const started=await h.service.start({platform,provider:'google',codeChallenge:policy.digest(verifier),state});const browser=await h.service.beginBrowser(started.flowId);const row=await h.service.browserFlow(started.flowId,browser.binding);const callback=new URL(await h.service.finishBrowser(row,browser.binding,session));return {...started,browser,callback,proof:{flowId:started.flowId,codeVerifier:verifier,state,code:callback.searchParams.get('code')}};}
 
 test('네이티브 인증은 기본 비활성이고 운영에서 개발 scheme을 활성화할 수 없다',()=>{
-  for(const change of [{},{...env,NATIVE_AUTH_ENABLED:'false'},{...env,NATIVE_AUTH_DEVELOPMENT_CALLBACKS_ENABLED:'false'},{...env,NODE_ENV:'production'},{...env,NATIVE_AUTH_ENCRYPTION_KEY:'bad'}])assert.throws(()=>policy.nativeConfig(change));
+  // 운영 스위치(NATIVE_AUTH_ENABLED)·올바른 암호화 키가 없으면 닫힌다(2026-11-13 운영 전환 a1)
+  for(const change of [{},{...env,NATIVE_AUTH_ENABLED:'false'},{...env,NATIVE_AUTH_ENABLED:'TRUE'},{...env,NATIVE_AUTH_ENCRYPTION_KEY:'bad'},{...env,NATIVE_AUTH_ENCRYPTION_KEY:undefined}])assert.throws(()=>policy.nativeConfig(change));
   assert.equal(config.callback('ios'),'stiz-academy-dev://auth/return');assert.equal(config.callback('android'),'stiz-academy-android-dev://auth/return');
+  // 운영(production)에서는 개발 스위치를 켜도 항상 운영 복귀 주소다
+  for(const change of [{...env,NODE_ENV:'production'},{...env,NATIVE_AUTH_DEVELOPMENT_CALLBACKS_ENABLED:'false'},{...env,NATIVE_AUTH_DEVELOPMENT_CALLBACKS_ENABLED:undefined}]){
+    const production=policy.nativeConfig(change);assert.equal(production.development,false);
+    for(const platform of ['ios','android'])assert.equal(production.callback(platform),'kr.co.upturnlabs.stizdasan://auth/return');
+  }
 });
 test('start는 고정 브라우저 주소·5분 만료만 발급하고 redirect·가입·연결 우회는 거부한다',async()=>{
   const h=harness();const input={platform:'ios',provider:'google',codeChallenge:policy.digest(verifier),state};

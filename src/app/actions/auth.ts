@@ -13,6 +13,8 @@ import {
 import { linkEnrollmentAccount } from "@/lib/enrollment-account-handoff";
 import { getParentViewAccessForAuthUser } from "@/lib/account-view-access";
 import { staffLoginEmail } from "@/lib/staff-login-id";
+// 로그아웃 때 이 기기의 앱 푸시 토큰을 지운다(e2) — 다음 사람이 이 휴대폰에 로그인하기 전까지 옛 계정 알림이 오지 않게
+import { forgetNativePushOnThisDevice } from "@/lib/push/nativePushDevice";
 
 async function getRoleForAuthUser(user?: { id?: string | null; email?: string | null }): Promise<AppRole | null> {
   if (!user?.id && !user?.email) return null;
@@ -132,6 +134,7 @@ export async function signup(formData: FormData) {
 }
 
 export async function logout() {
+  await forgetNativePushOnThisDevice();
   const supabase = await createClient();
   await supabase.auth.signOut();
   revalidatePath("/", "layout");
@@ -139,6 +142,7 @@ export async function logout() {
 }
 
 export async function logoutStaff() {
+  await forgetNativePushOnThisDevice();
   const supabase = await createClient();
   await supabase.auth.signOut();
   revalidatePath("/", "layout");

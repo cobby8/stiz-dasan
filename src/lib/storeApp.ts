@@ -113,3 +113,38 @@ export function storeAppLacks(cap: StoreAppCapability): boolean {
     return true;
   }
 }
+
+/**
+ * 앱 간편로그인(a1, 2026-11-13) — 앱이 «시스템 브라우저 로그인 → 1회용 code 로 복귀»를 할 줄 아는지.
+ * 그 기능이 들어간 앱 빌드만 사용자 에이전트 끝에 이 표식을 붙인다(안드로이드 MainActivity·아이폰 WebViewController).
+ * 표식이 없는 옛 앱(1.0.1 이하)에서 간편로그인 버튼을 누르면 «준비 중» 안내만 뜨므로 버튼을 보이지 않는다.
+ */
+export const NATIVE_LOGIN_USER_AGENT_MARK = " STIZNativeLogin/1";
+
+export function appSupportsNativeLogin(userAgent: string | null | undefined): boolean {
+  return String(userAgent ?? "").includes(NATIVE_LOGIN_USER_AGENT_MARK);
+}
+
+/**
+ * 스토어 앱 로그인 화면의 간편로그인 표시 방법(순수 판정 — 테스트로 못박는다).
+ * - "unknown"      : 아직 서버 답을 모름 → 아무것도 그리지 않는다(눌러도 안 되는 버튼 방지)
+ * - "buttons"      : 앱이 기능을 갖췄고 + 서버 스위치가 켜졌고 + Supabase 에서 켜진 제공자가 있음
+ * - "password-only": 그 밖 전부 → 버튼 숨김, 아이디·비밀번호 로그인 안내 + 문자 인증으로 비밀번호 만들기 연결
+ * 아이폰 앱은 Apple 로그인이 켜져 있을 때만 간편로그인을 보인다 — 앱스토어 심사지침 4.8(다른 간편로그인을
+ * 앱에서 제공하면 Apple 로그인도 함께 제공해야 한다). 카카오·구글만 켜고 Apple 을 빠뜨려 심사에서 거절되는 일을 막는다.
+ */
+export type StoreAppSocialLogin = "unknown" | "buttons" | "password-only";
+
+export function storeAppSocialLogin(input: { userAgent: string | null | undefined; nativeApp: boolean | null | undefined; providers: readonly string[] | null | undefined }): StoreAppSocialLogin {
+  if (input.nativeApp === null || input.nativeApp === undefined || !input.providers) return "unknown";
+  const userAgent = String(input.userAgent ?? "");
+  if (input.nativeApp !== true || input.providers.length === 0 || !appSupportsNativeLogin(userAgent)) return "password-only";
+  const iosApp = userAgent.includes(" (ios)");
+  if (iosApp && !input.providers.includes("apple")) return "password-only";
+  return "buttons";
+}
+
+/** 앱 안 간편로그인 링크 — 앱이 정확히 «/auth/oauth/<제공자>?intent=login» 만 가로채므로 다른 값을 붙이지 않는다. */
+export function storeAppSocialLoginHref(provider: string): string {
+  return `/auth/oauth/${provider}?intent=login`;
+}

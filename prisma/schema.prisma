@@ -1777,6 +1777,20 @@ model PushSubscription {
   @@index([userId])
 }
 
+// 스토어 앱(안드로이드·아이폰) 네이티브 푸시 토큰 — 기기 하나에 한 줄(2026-11-14, e2).
+// 발송 함수(pushNotification.ts)가 웹푸시 구독(PushSubscription)에 더해 여기에도 FCM 으로 보낸다.
+// PushSubscription 과 같이 User FK 없이 둔다(탈퇴 시 코드가 지운다). DB: RLS ENABLE+FORCE, anon·authenticated 권한 없음.
+model NativePushToken {
+  id         String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  userId     String
+  platform   String // 'android' | 'ios' (DB CHECK)
+  token      String   @unique(map: "NativePushToken_token_key")
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+  lastSeenAt DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([userId], map: "NativePushToken_userId_idx")
+}
+
 // 학부모 앱 알림(웹푸시) 종류별 받기 — 학부모 한 명당 한 줄(2026-11-10 원장 결정 k7).
 // 줄이 없으면 전부 받기. 끄는 건 휴대폰 울림만이고 종 목록(Notification)에는 그대로 쌓인다.
 // 발송 쪽 거르기: src/lib/pushNotification.ts → src/lib/parent-notification-preferences.ts
@@ -3564,4 +3578,25 @@ model ClassSubstitute {
 
   @@unique([date, classId], map: "ClassSubstitute_date_classId_key")
   @@index([substituteUserId, date], map: "ClassSubstitute_substituteUserId_date_idx")
+}
+
+/// 앱 간편로그인 인계 원장(a1, 2026-11-13) — 1회용 앱 로그인 요청(5분)과 암호화 세션(소비 즉시 삭제).
+/// 서버 raw SQL(src/lib/native-auth/store.ts)만 사용한다. RLS 켜짐·anon/authenticated 권한 회수.
+/// CHECK 제약(platform·provider·status 값 목록)은 migration 20261114000000_native_auth_flow 에 있다.
+model NativeAuthFlow {
+  id            String    @id
+  platform      String
+  provider      String
+  challenge     String
+  state         String
+  status        String
+  expiresAt     DateTime  @db.Timestamptz(6)
+  browserHash   String?
+  codeHash      String?
+  codeExpiresAt DateTime? @db.Timestamptz(6)
+  sealedSession String?
+  consumedAt    DateTime? @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([expiresAt], map: "NativeAuthFlow_expiry")
 }

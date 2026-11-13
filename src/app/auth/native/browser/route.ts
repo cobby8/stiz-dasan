@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getEnabledParentOAuthProviders } from "@/lib/auth-providers";
 import { toSupabaseProvider } from "@/lib/parent-oauth";
 import { NativeAuthError } from "@/lib/native-auth/policy";
-import { bindingCookie, nativeBrowserClient, nativeContext, nativeError, noStoreHeaders } from "@/lib/native-auth/http";
+import { bindingCookie, nativeBrowserClient, nativeBrowserError, nativeContext, noStoreHeaders } from "@/lib/native-auth/http";
 export const runtime = "nodejs";
 export async function GET(request:NextRequest) {
   try {
@@ -21,5 +21,5 @@ export async function GET(request:NextRequest) {
     for(const [key,value]of Object.entries(noStoreHeaders))response.headers.set(key,value);
     response.cookies.set(bindingCookie(row.id),binding,{secure:true,httpOnly:true,sameSite:"lax",path:"/auth/native",maxAge:300});
     return browser.apply(response);
-  }catch(error){return nativeError(error);}
+  }catch(error){return nativeBrowserError(error);}
 }

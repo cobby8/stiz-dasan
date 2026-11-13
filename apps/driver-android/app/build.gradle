@@ -22,6 +22,34 @@ def localTlsDirectory = providers.gradleProperty('stizLocalTlsDir').orNull
 if (sandbox && localTlsDirectory == null) throw new GradleException('Sandbox requires an explicit new sandbox public ca.crt directory via stizLocalTlsDir')
 if (localTlsDirectory != null && !(sandboxPort || (originUri.host == 'localhost' && deviceTest))) throw new GradleException('Local TLS requires an explicit sandbox/private origin or localhost driver device test')
 def localTlsOutput = layout.buildDirectory.dir('generated/localTlsDebug')
+// ── 앱 알림(FCM, 2026-11-14 e2) ──────────────────────────────────────────────
+// Firebase 콘솔에서 받은 app/google-services.json 이 «있을 때만» 알림을 켠다(파일은 git 에 넣지 않는다 — .gitignore).
+// google-services 플러그인 대신 여기서 직접 읽어 BuildConfig 에 넣는 이유:
+//  ① 파일이 없는 PC·CI 에서도 빌드가 깨지지 않는다(그때는 값이 비어 앱이 «알림 미지원»으로 동작)
+//  ② 플러그인은 개발 빌드(kr.stiz.driver.unified 등) 패키지가 파일에 없으면 빌드를 멈춘다 — 여기서는 그 빌드만 알림이 꺼진다.
+// 시험 앱(sandbox)·기사님 기기검증(deviceTest)은 바깥 통신을 하지 않으므로 항상 끈다.
+def firebaseFile = file('google-services.json')
+def firebaseClients = [:]
+def firebaseProjectId = ''
+def firebaseSenderId = ''
+if (firebaseFile.exists()) {
+    def parsed = new groovy.json.JsonSlurper().parse(firebaseFile)
+    firebaseProjectId = (parsed.project_info?.project_id ?: '').toString()
+    firebaseSenderId = (parsed.project_info?.project_number ?: '').toString()
+    parsed.client?.each { client ->
+        def pkg = client.client_info?.android_client_info?.package_name
+        def appId = client.client_info?.mobilesdk_app_id
+        def apiKey = client.api_key?.find { it.current_key }?.current_key
+        if (pkg && appId && apiKey) firebaseClients[pkg.toString()] = [appId: appId.toString(), apiKey: apiKey.toString()]
+    }
+}
+def firebaseField = { String packageName, String key ->
+    def client = (sandbox || deviceTest || !unifiedApp) ? null : firebaseClients[packageName]
+    def value = client == null ? '' : client[key]
+    if (!(value ==~ /[A-Za-z0-9:_\-.]*/)) throw new GradleException('google-services.json 값 형식이 올바르지 않습니다')
+    return '"' + value + '"'
+}
+def debugApplicationId = 'kr.stiz.driver' + (sandbox ? '.sandbox' : deviceTest ? '.devicetest' : unifiedApp ? '.unified' : '')
 def generateLocalTls = null
 if (localTlsDirectory != null) {
     def caFile = rootProject.file(localTlsDirectory).toPath().resolve('ca.crt').toFile()
@@ -50,7 +78,7 @@ if (localTlsDirectory != null) {
             new File(output, 'AndroidManifest.xml').text = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
     <application android:label="''' + (sandbox ? 'STIZ 격리시험' : 'STIZ 기사님 기기검증') + '''" tools:replace="android:label" android:networkSecurityConfig="@xml/local_test_network_security">
         <activity android:name=".AttachmentFixtureActivity" android:exported="false" />
-        <activity android:name=".MainActivity" android:exported="true">
+        <activity android:name=".NativeAuthReturnActivity" android:exported="true" android:noHistory="true" android:excludeFromRecents="true" android:theme="@android:style/Theme.Translucent.NoTitleBar">
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -74,6 +102,9 @@ android {
     defaultConfig {
         buildConfigField 'boolean', 'STIZ_UNIFIED_APP', unifiedApp.toString()
         resValue 'string', 'app_name', unifiedApp ? 'STIZ 농구교실' : 'STIZ 기사님'
+        // 앱 알림(FCM) 프로젝트 값 — 설정 파일이 없으면 빈 값
+        buildConfigField 'String', 'FCM_PROJECT_ID', '"' + (firebaseProjectId ==~ /[a-z0-9-]*/ ? firebaseProjectId : '') + '"'
+        buildConfigField 'String', 'FCM_SENDER_ID', '"' + (firebaseSenderId ==~ /[0-9]*/ ? firebaseSenderId : '') + '"'
     }
     // 스토어 업로드 키(업턴랩스): 저장소 밖 파일에서만 읽는다(키·비밀번호를 git 에 넣지 않는다).
     // 파일이 없는 PC·CI 에서는 기존처럼 서명 없는 release 를 만든다.
@@ -99,8 +130,16 @@ android {
             else if (deviceTest) applicationIdSuffix '.devicetest'
             else if (unifiedApp) applicationIdSuffix '.unified'
             buildConfigField 'String', 'STIZ_ORIGIN', '"' + configuredOrigin + '"'
+            // 개발 빌드는 그 패키지 이름이 google-services.json 에 등록돼 있을 때만 알림이 켜진다
+            buildConfigField 'String', 'FCM_APP_ID', firebaseField(debugApplicationId, 'appId')
+            buildConfigField 'String', 'FCM_API_KEY', firebaseField(debugApplicationId, 'apiKey')
         }
-        release { minifyEnabled false; if (uploadPropsFile.exists()) signingConfig signingConfigs.upload;buildConfigField 'boolean', 'STIZ_SANDBOX', 'false'; buildConfigField 'boolean', 'STIZ_NATIVE_AUTH', 'false'; buildConfigField 'String', 'STIZ_ORIGIN', '"https://www.stiz-dasan.kr"' }
+        // 앱 간편로그인(a1, 2026-11-13): 출시 빌드는 기능을 넣어 두고(복귀 주소 kr.co.upturnlabs.stizdasan, src/release 매니페스트),
+        // 실제 사용 허용은 서버 스위치(NATIVE_AUTH_ENABLED)가 정한다. 기능 자체를 빼고 만들려면 -PstizReleaseNativeAuth=false.
+        release { minifyEnabled false; if (uploadPropsFile.exists()) signingConfig signingConfigs.upload;buildConfigField 'boolean', 'STIZ_SANDBOX', 'false'; buildConfigField 'boolean', 'STIZ_NATIVE_AUTH', (providers.gradleProperty('stizReleaseNativeAuth').getOrElse('true') == 'true').toString(); buildConfigField 'String', 'STIZ_ORIGIN', '"https://www.stiz-dasan.kr"'
+            // 스토어 앱(kr.co.upturnlabs.stizdasan)의 Firebase 앱 값 — Firebase 콘솔에 이 패키지 이름으로 등록해야 켜진다
+            buildConfigField 'String', 'FCM_APP_ID', firebaseField('kr.co.upturnlabs.stizdasan', 'appId')
+            buildConfigField 'String', 'FCM_API_KEY', firebaseField('kr.co.upturnlabs.stizdasan', 'apiKey') }
     }
     if (localTlsDirectory != null) {
         sourceSets {
@@ -113,7 +152,8 @@ android {
 }
 if (generateLocalTls != null) tasks.configureEach { task -> if (task.name == 'preDebugBuild') task.dependsOn generateLocalTls }
 // swiperefreshlayout: 화면을 아래로 당겨 새로고침(2026-11-13, 1.0.1)
-dependencies { implementation 'androidx.webkit:webkit:1.14.0'; implementation 'androidx.core:core:1.16.0'; implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0' }
+// firebase-messaging: 앱 알림(FCM, 2026-11-14 e2) — 설정 파일이 없으면 들어만 있고 쓰이지 않는다
+dependencies { implementation 'androidx.webkit:webkit:1.14.0'; implementation 'androidx.core:core:1.16.0'; implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'; implementation 'com.google.firebase:firebase-messaging:24.1.0' }
 // 스토어에 올리는 release 만 iOS 와 같은 정식 ID 를 쓴다(2026-11-05 원장님 결정).
 // 기존 release(kr.stiz.driver)는 서명 없이 만들어져 어느 기기에도 설치된 적이 없으므로 바꿔도 기존 설치에 영향이 없다.
 androidComponents {

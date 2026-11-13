@@ -3,3 +3,5 @@ local.properties
 **/build/
 *.jks
 *.keystore
+# 앱 알림(FCM) Firebase 설정 파일 — 저장소에 넣지 않는다(빌드 PC·CI 에만 둔다, README «앱 알림»)
+app/google-services.json

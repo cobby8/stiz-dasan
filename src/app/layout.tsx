@@ -12,6 +12,7 @@ import { THEME_COLORS } from "@/lib/ui/colorValues";
 import { buildPublicMetadata } from "@/lib/publicMetadata";
 import StandaloneBackButton from "@/components/StandaloneBackButton";
 import OutsideLinkListener from "@/components/storeApp/OutsideLinkListener";
+import NativePushRegistrar from "@/components/push/NativePushRegistrar";
 
 export const metadata: Metadata = {
     ...buildPublicMetadata({
@@ -94,6 +95,8 @@ export default async function RootLayout({
                     <StandaloneBackButton />
                     {/* 스토어 앱에서 못 여는 바깥 주소(data-outside-link)를 «주소 복사 + 안내»로 바꾼다(d2) */}
                     <OutsideLinkListener />
+                    {/* 스토어 앱 알림: 알림이 켜진 앱이면 토큰을 로그인한 사람에게 등록한다(e2) */}
+                    <NativePushRegistrar />
                     {children}
                 </ThemeProvider>
             </body>
