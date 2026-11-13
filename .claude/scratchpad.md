@@ -75,6 +75,16 @@
 💡 tester: 선생님 수업 중 «수업 피드»에 한 줄 저장→종료 창에 같은 글 / 끝난 수업 행→«수업 피드 쓰기·사진 추가»(자정 전만) / 학부모 홈 처리할 일 아래 카드→상세 사진 누르면 크게·영상. 남의 sessionId·photoId 403/404.
 ⚠️ reviewer: 공개 게시 동의 검사 끔(법적 판단은 원장) · 참여 기준에 개시일 조건 추가(영상 판정이 조금 엄격해짐) · 영상도 published 필요(종료 때 «바로 보내기» 끄면 숨김) · reports/page.tsx 기존 린트 1건(photoCount 재할당, 손대지 않음).
 
+#### 수정 이력
+| 회차 | 날짜 | 수정 내용 | 수정 파일 | 사유 |
+|------|------|----------|----------|------|
+| 1차 | 11-14 | 참여 시작일 = COALESCE(개시일, 등록일 KST 두 번 변환) · 개시일 없이 ACTIVE 만들던/되살리던 4곳(수강 추가·대기자=새 등록·되살리기 오늘 / 시트·특강=새 행 NULL 유지·되살리기만 오늘, 이미 ACTIVE 면 유지) · 종료 한 줄 그대로 반영(빈 값=NULL) · 대타 날짜 sessionKstDateSql · 운영 ACTIVE 183 중 개시일 빈 것 1건 | feed/rules · actions/admin · api/admin/seasonal · actions/staff-sessions · staff-class-access · tests 2 | security HIGH + reviewer 권장 2 |
+
+### 리뷰 결과 (reviewer · 11-14 ab61a2db) — 📊 통과(필수 0)
+- 검증: tsc 0 · 관련 12개 테스트 111-0 · 운영 DB 읽기 전용 대조: Session.date 1015행 모양 = 00:00(925)/00:30/02:00/04:30 뿐(«전날 15:00» 없음), `::date` 와 두 번 변환 불일치 0 → 영상·사진 시간 판정 변화 없음. 소식 (학생,수업) 쌍 옛 20 → 새 20(손실·추가 0). 미발행 완료 수업의 영상 0건.
+- 동의 제거: 지운 파일·PATCH 참조 0, 공개 게시(갤러리·인스타)는 checkSocialDraftMediaConsent 한 곳 경유 → 스위치로 일괄 통과, 수동 승인 유지.
+- 🟡 권장: ① staff-sessions.ts:745 종료 UPDATE `COALESCE($3, content)` — 종료 창이 이제 저장된 한 줄로 채워지므로 거기서 글을 지워도 옛 글이 남음(수업 피드 칸 «한 줄 저장»으로는 지워짐) ② staff-class-access.ts:272 대타 판정은 여전히 `s.date::date`(운영 데이터상 결과 같음, 조각 통일 권장) ③ 진행 중으로 자정 넘긴 수업은 사진 올리기 막힘(예전엔 허용) — 의도면 OK.
+
 ## 구현 기록 (developer) — 11-12 스태프 관리 추가 기능 s1~s6 (원장 «추천대로 해»)
 📝 직접 추가 메뉴 제거·초대로 전환 / 추가 역할 줄 / 퇴사 처리 / 역할 변경 확인창 / 초대 마지막 문자 / 담당 반. 마이그레이션 없음(전환 초대 = 기존 칸 SIGNUP+targetUserId).
 
@@ -103,6 +113,7 @@
 ## 작업 로그 (최근 10건)
 
 | 날짜 | 작업 내용 | 상태 |
+| 11-14 | reviewer(수업 피드 ab61a2db): 통과 — 필수 0·권장 3(종료 창 비우기 COALESCE·대타 날짜 조각·자정 넘긴 진행 수업 사진). 운영 대조 날짜 불일치 0·소식 20→20 | 통과 |
 | 11-14 | developer(수업 피드, claude/feed-ui): 동의 제거·볼 수 있는가 판정 통일(feed/rules·server)·선생님 수업 피드 칸·홈 최신 수업 피드 카드·소식 상세 재작성·동의 UI 제거·공개 게시 동의 스위치 끔. tsc 0·tests 4620-0·guards 5-0 | 완료(검수 대기) |
 | 11-14 | developer(아이 기록 w1~w4·q1~q4, claude/child-record): 새 화면 /mypage/record(홈 소속·요약 4칸·청구 이력 연도칩+필터 시트+월 묶음 접기·출석 12개월 막대(기록 없음 «–»)·수강 반 타임라인·특강/유니폼/리포트) · 순수 lib/parent/childRecordRules + 조회 childRecordQuery(첫 SQL 권한 재확인·섹션별 null·무tz 두 번) · 홈 한 줄·청구 탭 요약 줄/형제 칩/월 묶음/납부 완료 한 줄 행·수업 탭 «이번 달 출석 n/m»+«전체 기록»·소식 요약 줄 · 홈 영수증 = 결제 권한자(q3) · BarChart missing/showValues · tests/parent-child-record-rules 15건. tsc 0·tests 4571-0·운영 읽기 대조(납부 합계 SQL 일치) | 검수 대기 |
 |------|----------|------|

@@ -40,14 +40,22 @@ export function sessionKstDateSql(se: string): string {
   return `((${se}.date AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Seoul')::date`;
 }
 
+/** 수강 등록일(KST date, SQL) — Enrollment.createdAt 은 무tz(UTC 벽시계)라 «두 번» 변환 */
+export function enrollmentCreatedKstDateSql(e: string): string {
+  return `((${e}."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Seoul')::date`;
+}
+
 /** 오늘(KST, SQL) — NOW() 는 timestamptz 라 «한 번»만 변환한다. 서버(UTC) 시계를 믿지 않는다 */
 export const TODAY_KST_SQL = `(NOW() AT TIME ZONE 'Asia/Seoul')::date`;
 
 /**
- * «이 학생이 이 수업에 참여했다»(SQL) — 출결 기록 또는 그 반 ACTIVE 수강(개시일 ≤ 수업일).
- * 개시일 조건은 수업 종료 검사(completeClassSession 의 출결 미확인 학생 수)와 같은 기준이다 —
- * 이번 주에 새로 들어온 아이의 보호자가 지난달 수업 사진까지 보지 않게.
- * 수업일은 sessionKstDateSql(두 번 변환), Enrollment.startsOn 은 @db.Date(달력 날짜 그대로).
+ * «이 학생이 이 수업에 참여했다»(SQL) — 출결 기록 또는 그 반 ACTIVE 수강(시작일 ≤ 수업일).
+ * 시작일 = 개시일(startsOn), 비어 있으면 등록일(createdAt 의 KST 날짜) — 2026-11-14 보안 검수 HIGH:
+ *   개시일이 빈 수강(관리자 «수강 추가»·대기자 등록·시트 가져오기·특강 전환이 예전에 비워 두던 것)을
+ *   «처음부터 참여»로 보면 입학 전 수업의 사진·소식·영상이 열렸다. 그래서 비면 등록일로 막는다.
+ *   되살린 수강(그만둔 반에 다시 등록)은 등록일이 옛날이라, 되살리는 4곳이 개시일을 «되살린 날»로 적는다.
+ * 수업일은 sessionKstDateSql(두 번 변환), Enrollment.startsOn 은 @db.Date(달력 날짜 그대로),
+ * Enrollment.createdAt 은 시간대 없는 timestamp(Prisma 기본 = UTC 벽시계)라 «두 번» 변환.
  * @param st Student 별칭(또는 학생 id 를 담은 SQL 식의 테이블 별칭)
  * @param se Session 별칭
  */
@@ -57,7 +65,7 @@ export function feedParticipantSql(st: string, se: string): string {
     OR EXISTS (
       SELECT 1 FROM "Enrollment" fe
        WHERE fe."studentId" = ${st}.id AND fe."classId" = ${se}."classId" AND fe.status = 'ACTIVE'
-         AND (fe."startsOn" IS NULL OR fe."startsOn" <= ${sessionKstDateSql(se)})
+         AND COALESCE(fe."startsOn", ${enrollmentCreatedKstDateSql("fe")}) <= ${sessionKstDateSql(se)}
     )
   )`;
 }
@@ -65,15 +73,17 @@ export function feedParticipantSql(st: string, se: string): string {
 /** 참여 판정(순수판) — feedParticipantSql 과 같은 규칙. 테스트·문서용 */
 export function isFeedParticipant(input: {
   hasAttendance: boolean;
-  enrollment: { status: string; startsOnYmd: string | null } | null;
+  /** startsOnYmd = 개시일(없으면 null), createdYmd = 등록일(KST) — 개시일이 비면 등록일이 시작일 */
+  enrollment: { status: string; startsOnYmd: string | null; createdYmd: string | null } | null;
   sessionYmd: string;
 }): boolean {
   if (input.hasAttendance) return true;
   const e = input.enrollment;
   if (!e || e.status !== "ACTIVE") return false;
-  if (e.startsOnYmd === null) return true;
-  if (!isKstYmd(e.startsOnYmd) || !isKstYmd(input.sessionYmd)) return false;
-  return e.startsOnYmd <= input.sessionYmd;
+  const start = e.startsOnYmd ?? e.createdYmd;
+  // 시작일을 모르면 닫는다(입학 전 수업이 열리지 않게)
+  if (!start || !isKstYmd(start) || !isKstYmd(input.sessionYmd)) return false;
+  return start <= input.sessionYmd;
 }
 
 // ── 선생님: 사진·영상·한 줄 가능 시간 ──────────────────────────────────

@@ -2,6 +2,7 @@ import { requireStaff, type StaffAuthUser } from "@/lib/auth-guard";
 import { prisma } from "@/lib/prisma";
 import { SUBSTITUTE_TEACHER_SQL, substituteAllowedNow } from "@/lib/staff/classSubstitute";
 import { isKstYmd, todayKst } from "@/lib/datetime/kst";
+import { sessionKstDateSql } from "@/lib/feed/rules";
 
 type CoachLinkRow = {
   coachId: string;
@@ -269,7 +270,8 @@ export async function requireStaffSessionAccess(
   context?: StaffClassAccessContext,
 ): Promise<{ session: StaffSessionAccessRow; access: StaffClassAccessContext }> {
   const rows = await prisma.$queryRawUnsafe<StaffSessionAccessRow[]>(
-    `SELECT s.id, s."classId", s.date::date::text AS date, s.status, c.name AS "className", s."specialProgramSessionDateId" AS "sessionDateId"
+    // 수업일 = 무tz 칼럼 «두 번» 변환(수업 피드·영상과 같은 조각 — 옛 «전날 15:00» 기록도 같은 날)
+    `SELECT s.id, s."classId", ${sessionKstDateSql("s")}::text AS date, s.status, c.name AS "className", s."specialProgramSessionDateId" AS "sessionDateId"
      FROM "Session" s JOIN "Class" c ON c.id = s."classId" WHERE s.id = $1 LIMIT 1`,
     sessionId,
   );

@@ -738,15 +738,18 @@ export async function completeClassSession(input: {
   // 전용이라(requireAdmin) 선생님이 수업을 마쳐도 원장이 PC 에서 다시 써야 나갔고,
   // 그래서 운영 100회차 동안 발행이 0건이었다. 선생님이 끝내면서 같이 끝내게 한다.
   const report = (input.report ?? "").trim().slice(0, 2000) || null;
+  // 2026-11-14 검수: 종료 창은 이미 저장된 한 줄로 채워져 열린다 → 보낸 값을 그대로 반영(빈 값 = 지움 = NULL).
+  // 값을 아예 안 보낸 옛 화면(report undefined)만 기존 내용을 지킨다.
+  const reportProvided = input.report !== undefined;
   const publish = input.publishReport !== false;
   const ended = await prisma.$queryRawUnsafe<{ id: string }[]>(
     `UPDATE "Session"
         SET status = 'COMPLETED', "endedAt" = NOW(), "endedByUserId" = $2, "updatedAt" = NOW(),
-            content = COALESCE($3, content),
+            content = CASE WHEN $5 THEN $3 ELSE content END,
             published = CASE WHEN $4 THEN true ELSE published END,
             "publishedAt" = CASE WHEN $4 AND NOT published THEN NOW() ELSE "publishedAt" END
       WHERE id = $1 AND status = 'IN_PROGRESS' AND "startedAt" IS NOT NULL RETURNING id`,
-    input.sessionId, access.staff.appUserId, report, publish,
+    input.sessionId, access.staff.appUserId, report, publish, reportProvided,
   );
   if (!ended[0]) return { ok: false as const, message: "수업 종료 상태를 다시 확인해 주세요." };
 

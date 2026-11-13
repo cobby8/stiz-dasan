@@ -25,20 +25,58 @@ test("학부모 공개 수업 = 끝났고(COMPLETED) 발행된(published) 수업
   assert.equal(r.feedVisibleSessionSql("se"), "se.status = 'COMPLETED' AND se.published = true");
 });
 
-test("참여 판정 — 출결 기록 또는 ACTIVE 수강(개시일 ≤ 수업일). 동의는 보지 않는다", () => {
+test("참여 판정 — 출결 기록 또는 ACTIVE 수강(시작일 ≤ 수업일, 시작일 = 개시일 없으면 등록일). 동의는 보지 않는다", () => {
   const base = { hasAttendance: false, enrollment: null, sessionYmd: "2026-11-14" };
+  const en = (startsOnYmd, createdYmd = "2026-03-02", status = "ACTIVE") => ({ status, startsOnYmd, createdYmd });
   assert.equal(r.isFeedParticipant({ ...base, hasAttendance: true }), true, "출결 기록이 있으면 참여");
   assert.equal(r.isFeedParticipant(base), false, "출결도 수강도 없으면 아님");
-  assert.equal(r.isFeedParticipant({ ...base, enrollment: { status: "ACTIVE", startsOnYmd: null } }), true, "개시일 없는 기존 수강");
-  assert.equal(r.isFeedParticipant({ ...base, enrollment: { status: "ACTIVE", startsOnYmd: "2026-11-14" } }), true, "개시일 = 수업일");
-  assert.equal(r.isFeedParticipant({ ...base, enrollment: { status: "ACTIVE", startsOnYmd: "2026-11-15" } }), false, "수업 뒤에 들어온 아이는 지난 수업을 못 본다");
-  assert.equal(r.isFeedParticipant({ ...base, enrollment: { status: "PAUSED", startsOnYmd: null } }), false);
-  assert.equal(r.isFeedParticipant({ ...base, enrollment: { status: "ACTIVE", startsOnYmd: "2026-02-30" } }), false, "잘못된 날짜는 닫는다");
+  assert.equal(r.isFeedParticipant({ ...base, enrollment: en(null) }), true, "개시일 없는 기존 수강 — 등록일(3/2) 이후 수업");
+  assert.equal(r.isFeedParticipant({ ...base, enrollment: en("2026-11-14") }), true, "개시일 = 수업일");
+  assert.equal(r.isFeedParticipant({ ...base, enrollment: en("2026-11-15") }), false, "수업 뒤에 들어온 아이는 지난 수업을 못 본다");
+  assert.equal(r.isFeedParticipant({ ...base, enrollment: en(null, null, "PAUSED") }), false);
+  assert.equal(r.isFeedParticipant({ ...base, enrollment: en("2026-02-30") }), false, "잘못된 날짜는 닫는다");
+  assert.equal(r.isFeedParticipant({ ...base, enrollment: en(null, null) }), false, "시작일을 모르면 닫는다");
+});
+
+test("보안 HIGH — 개시일 없음 + 수업일 < 등록일 → 거부(입학 전 수업 사진·소식·영상이 열리지 않는다)", () => {
+  const en = { status: "ACTIVE", startsOnYmd: null, createdYmd: "2026-11-10" };
+  assert.equal(r.isFeedParticipant({ hasAttendance: false, enrollment: en, sessionYmd: "2026-11-07" }), false, "등록 전 수업");
+  assert.equal(r.isFeedParticipant({ hasAttendance: false, enrollment: en, sessionYmd: "2026-11-10" }), true, "등록한 날 수업");
+  assert.equal(r.isFeedParticipant({ hasAttendance: false, enrollment: en, sessionYmd: "2026-11-12" }), true);
+  // SQL: 개시일이 비면 등록일(무tz createdAt «두 번» 변환)로 막는다 — «IS NULL 이면 통과» 문장이 없어야 한다
+  const sql = r.feedParticipantSql("st", "se");
+  assert.match(sql, /COALESCE\(fe\."startsOn", \(\(fe\."createdAt" AT TIME ZONE 'UTC'\) AT TIME ZONE 'Asia\/Seoul'\)::date\) <= \(\(se\.date AT TIME ZONE 'UTC'\) AT TIME ZONE 'Asia\/Seoul'\)::date/);
+  assert.doesNotMatch(sql, /"startsOn" IS NULL OR/);
+  // createdAt 은 UTC 벽시계 — KST 자정 직후(UTC 전날 15:xx) 등록도 KST 날짜로
+  assert.equal(k.toKstYmd(new Date("2026-11-09T15:30:00Z")), "2026-11-10");
+});
+
+test("보안 HIGH — 되살린 수강 → 쉬는 동안 수업 거부(되살리는 곳이 개시일을 «되살린 날»로 적는다)", () => {
+  // 3월 등록 → 6월 그만둠 → 11/10 되살림: 개시일 = 11/10
+  const revived = { status: "ACTIVE", startsOnYmd: "2026-11-10", createdYmd: "2026-03-02" };
+  assert.equal(r.isFeedParticipant({ hasAttendance: false, enrollment: revived, sessionYmd: "2026-09-15" }), false, "쉬는 동안 수업");
+  assert.equal(r.isFeedParticipant({ hasAttendance: false, enrollment: revived, sessionYmd: "2026-11-10" }), true);
+  // 다닐 때(출결 기록 있음) 수업은 그대로 본다
+  assert.equal(r.isFeedParticipant({ hasAttendance: true, enrollment: revived, sessionYmd: "2026-04-06" }), true);
+  // 개시일 없이 ACTIVE 를 만들던/되살리던 4곳 — 되살리기는 개시일 = 오늘(KST), 이미 ACTIVE 면 유지
+  const revive = /"startsOn" = CASE WHEN "Enrollment"\.status = 'ACTIVE' THEN "Enrollment"\."startsOn" ELSE \(NOW\(\) AT TIME ZONE 'Asia\/Seoul'\)::date END/g;
+  const admin = read("src/app/actions/admin.ts");
+  assert.equal((admin.match(revive) ?? []).length, 3, "enrollStudent·대기자 등록·시트 가져오기");
+  assert.equal((read("src/app/api/admin/seasonal/route.ts").match(revive) ?? []).length, 1, "특강 전환");
+  // 새 등록: 수강 추가·대기자 등록은 오늘(KST)부터
+  assert.equal((admin.match(/VALUES \(gen_random_uuid\(\)::text, \$1, \$2, 'ACTIVE', \(NOW\(\) AT TIME ZONE 'Asia\/Seoul'\)::date, NOW\(\), NOW\(\)\)/g) ?? []).length, 2);
+  // 개시일 없이 ACTIVE 로 되살리는 문장이 남아 있지 않다
+  for (const file of ["src/app/actions/admin.ts", "src/app/api/admin/seasonal/route.ts"]) {
+    assert.doesNotMatch(read(file), /DO UPDATE SET status = 'ACTIVE', "updatedAt" = NOW\(\)/, file);
+  }
+});
+
+test("참여 SQL 조각 모양", () => {
   // SQL 조각: 출결 EXISTS 또는 ACTIVE 수강 + 개시일 ≤ 수업일(두 번 변환), 동의 표는 없다
   const sql = r.feedParticipantSql("st", "se");
   assert.match(sql, /"Attendance" fa WHERE fa\."sessionId" = se\.id AND fa\."studentId" = st\.id/);
   assert.match(sql, /fe\."classId" = se\."classId" AND fe\.status = 'ACTIVE'/);
-  assert.match(sql, /fe\."startsOn" <= \(\(se\.date AT TIME ZONE 'UTC'\) AT TIME ZONE 'Asia\/Seoul'\)::date/);
+  assert.match(sql, /::date\) <= \(\(se\.date AT TIME ZONE 'UTC'\) AT TIME ZONE 'Asia\/Seoul'\)::date/);
   assert.doesNotMatch(sql, /StudentMediaConsent|subjectStudentIds/);
 });
 
