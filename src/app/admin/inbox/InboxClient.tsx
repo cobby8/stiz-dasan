@@ -42,6 +42,7 @@ import { cancelMakeupSession, deleteParentRequest, updateMakeupStatus, updateReq
 import { decidePaymentRequest } from "@/app/actions/payment-requests";
 import { approveRoleRequest, rejectRoleRequest, revokeRoleGrant } from "@/app/actions/role-requests-admin";
 import { reviewStaffPaymentConfirmation } from "@/app/actions/staff-billing";
+import { confirmEnrollmentChangesRallyzBulk } from "@/app/actions/enrollment-changes";
 
 // 체험·수강·대관 탭은 기존 화면 컴포넌트를 그 탭을 열 때만 내려받는다(다른 탭 첫 화면을 무겁게 하지 않게)
 const ApplyAdminClient = dynamic(() => import("@/app/admin/apply/ApplyAdminClient"), { loading: () => <TabLoading /> });
@@ -236,8 +237,19 @@ function wantsNote(row: InboxRow, actions: PanelAction[]): boolean {
     && !(row.kind === "ROLE_GRANT" && row.rawStatus !== "PENDING");
 }
 
-/** 일괄 처리는 결석 신고와 새 문의에서만 가능하다. */
+/**
+ * 랠리즈 반영 확인을 기다리는 수강 변경 신청 id(«외부 반영 확인 필요» 반만).
+ * 여러 반 휴원 묶음 줄이면 그중 확인이 남은 반만 고른다. 빈 배열이면 일괄 확인 대상이 아니다.
+ */
+export function rallyzCheckIds(row: InboxRow): string[] {
+  if (row.kind !== "ENROLLMENT_CHANGE") return [];
+  const members = row.members?.length ? row.members : [{ id: row.id, rawStatus: row.rawStatus }];
+  return members.filter((member) => member.rawStatus === "SYNC_CHECK").map((member) => member.id);
+}
+
+/** 일괄 처리는 결석 신고·새 문의, 그리고 랠리즈 반영 확인이 남은 수강 변경에서만 가능하다. */
 function isBulkable(row: InboxRow): boolean {
+  if (rallyzCheckIds(row).length > 0) return true;
   return (BULK_ACTION_KINDS as readonly string[]).includes(row.kind)
     && ((row.kind === "REGULAR_ABSENCE" && row.rawStatus === "REPORTED") || (row.kind === "PARENT_REQUEST" && row.rawStatus === "PENDING"));
 }
@@ -324,6 +336,10 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
   const filterCount = from || to ? 1 : 0;
   const bulkRows = actionRows.filter(isBulkable);
   const selectedRows = bulkRows.filter((row) => selected.has(keyOf(row)));
+  // 고른 줄을 처리 종류별로 나눈다 — 각자 자기 버튼으로 처리(서로 섞어 부르지 않는다)
+  const selectedRallyz = selectedRows.filter((row) => rallyzCheckIds(row).length > 0);
+  const selectedOther = selectedRows.filter((row) => rallyzCheckIds(row).length === 0);
+  const bulkRallyzCount = bulkRows.filter((row) => rallyzCheckIds(row).length > 0).length;
   const subs = TAB_SUBS[tab] ?? [];
   const isRowsTab = data.type === "ROWS";
 
@@ -349,10 +365,10 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
 
   // 일괄 처리(d4) — 결석 확정·문의 «확인함»만. 한 건씩 기존 함수로 처리하고 결과를 센다.
   async function runBulk() {
-    const absences = selectedRows.filter((row) => row.kind === "REGULAR_ABSENCE").length;
-    const asks = selectedRows.length - absences;
+    const absences = selectedOther.filter((row) => row.kind === "REGULAR_ABSENCE").length;
+    const asks = selectedOther.length - absences;
     const ok = await confirm({
-      title: `${selectedRows.length}건 한 번에 처리`,
+      title: `${selectedOther.length}건 한 번에 처리`,
       description: [absences ? `결석 ${absences}건 확정` : "", asks ? `문의 ${asks}건 «확인함»` : ""].filter(Boolean).join(" · "),
       confirmLabel: "처리",
       tone: "primary",
@@ -361,7 +377,7 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
     startTransition(async () => {
       let done = 0;
       const failed: string[] = [];
-      for (const row of selectedRows) {
+      for (const row of selectedOther) {
         try {
           const result = row.kind === "REGULAR_ABSENCE"
             ? await confirmRegularAbsence({ id: row.id })
@@ -376,6 +392,51 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
         ? { tone: "error", text: `${done}건 처리 · ${failed.length}건 실패(${failed.slice(0, 3).join(", ")}${failed.length > 3 ? " 외" : ""}) — 목록을 다시 확인해 주세요.` }
         : { tone: "ok", text: `${done}건 처리했습니다.` });
       router.refresh();
+    });
+  }
+
+  // 랠리즈 반영 일괄 확인 — 서버가 건마다 단건과 같은 검증·감사 기록을 한다. 확인 창에 대상 이름을 모두 보인다.
+  async function runBulkRallyz() {
+    const targets = selectedRallyz;
+    const requestIds = [...new Set(targets.flatMap(rallyzCheckIds))];
+    if (requestIds.length === 0) return;
+    if (requestIds.length > 100) {
+      setMessage({ tone: "error", text: "랠리즈 반영 확인은 한 번에 100건(반 기준)까지 할 수 있습니다. 나눠서 골라 주세요." });
+      return;
+    }
+    const ok = await confirm({
+      title: `선택 ${targets.length}건 랠리즈 반영 확인`,
+      description: (
+        <div className="space-y-2">
+          <p>랠리즈에 직접 반영을 마친 건만 확인해 주세요. 확인하면 «반영 완료»로 기록됩니다.</p>
+          <ul className="max-h-48 list-disc overflow-y-auto pl-5 text-sm">
+            {targets.map((row) => (
+              <li key={keyOf(row)}>{row.studentName ?? row.title}{row.summary ? ` · ${row.summary}` : ""}</li>
+            ))}
+          </ul>
+        </div>
+      ),
+      confirmLabel: "확인 처리",
+      tone: "primary",
+    });
+    if (!ok) return;
+    startTransition(async () => {
+      try {
+        const result = await confirmEnrollmentChangesRallyzBulk(requestIds);
+        const parts = [`${result.done}건 확인`];
+        if (result.skipped.length) parts.push(`${result.skipped.length}건 건너뜀`);
+        if (result.failed.length) parts.push(`${result.failed.length}건 실패`);
+        const reasons = [...result.failed, ...result.skipped].slice(0, 3).map((item) => `${item.name}: ${item.reason}`);
+        const more = result.failed.length + result.skipped.length > 3 ? " 외" : "";
+        setSelected(new Set());
+        setMessage({
+          tone: result.failed.length ? "error" : "ok",
+          text: `랠리즈 반영 ${parts.join(" · ")}${reasons.length ? ` — ${reasons.join(" / ")}${more}` : ""}`,
+        });
+        router.refresh();
+      } catch (error) {
+        setMessage({ tone: "error", text: adminErrorText(error, "랠리즈 반영 확인을 처리하지 못했습니다. 목록을 새로고침한 뒤 다시 확인해 주세요.") });
+      }
     });
   }
 
@@ -565,7 +626,14 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
             <div className="sticky top-14 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2">
               <span className="text-sm font-bold text-[var(--color-academy-ink)]">{selectedRows.length}건 선택</span>
               <button type="button" onClick={() => setSelected(new Set())} className="academy-button-text">선택 풀기</button>
-              <button type="button" disabled={pending} onClick={() => void runBulk()} className="academy-button-primary ml-auto">결석 확정·문의 확인함</button>
+              <span className="ml-auto flex flex-wrap gap-2">
+                {selectedOther.length > 0 && (
+                  <button type="button" disabled={pending} onClick={() => void runBulk()} className={selectedRallyz.length > 0 ? "academy-button-secondary" : "academy-button-primary"}>결석 확정·문의 확인함</button>
+                )}
+                {selectedRallyz.length > 0 && (
+                  <button type="button" disabled={pending} onClick={() => void runBulkRallyz()} className="academy-button-primary">선택 {selectedRallyz.length}건 랠리즈 반영 확인</button>
+                )}
+              </span>
             </div>
           )}
 
@@ -581,7 +649,11 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
                     onChange={(event) => setSelected(event.target.checked ? new Set(bulkRows.map(keyOf)) : new Set())}
                   />
                 </span>
-                결석 신고·새 문의 {bulkRows.length}건 모두 고르기
+                {bulkRallyzCount === bulkRows.length
+                  ? `랠리즈 확인 필요 ${bulkRows.length}건 모두 고르기`
+                  : bulkRallyzCount > 0
+                    ? `일괄 처리 가능 ${bulkRows.length}건 모두 고르기`
+                    : `결석 신고·새 문의 ${bulkRows.length}건 모두 고르기`}
               </label>
             )}
             {visibleOpen.length === 0 ? (

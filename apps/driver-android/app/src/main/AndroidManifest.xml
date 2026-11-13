@@ -35,5 +35,9 @@
             </intent-filter>
         </activity>
         <service android:name=".DriverLocationService" android:exported="false" android:foregroundServiceType="location" android:stopWithTask="false" />
+        <!-- 앱 알림(FCM, 2026-11-14 e2): 학원 알림을 받아 알림줄에 띄운다. Firebase 설정 없이 빌드하면 아무것도 받지 않는다. -->
+        <service android:name=".StizMessagingService" android:exported="false">
+            <intent-filter><action android:name="com.google.firebase.MESSAGING_EVENT" /></intent-filter>
+        </service>
     </application>
 </manifest>

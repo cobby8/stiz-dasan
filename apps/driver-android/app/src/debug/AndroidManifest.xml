@@ -1,8 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
         <activity android:name=".AttachmentFixtureActivity" android:exported="false" />
-        <activity android:name=".MainActivity" android:exported="true">
-            <!-- Development callback only. Release requires separately verified HTTPS App Links. -->
+        <!-- Development callback only (stiz-academy-android-dev). Release uses kr.co.upturnlabs.stizdasan in src/release.
+             복귀 주소는 투명 화면이 받아 맞춤 탭을 닫고 MainActivity 로 넘긴다(NativeAuthReturnActivity 설명 참고). -->
+        <activity android:name=".NativeAuthReturnActivity" android:exported="true" android:noHistory="true" android:excludeFromRecents="true" android:theme="@android:style/Theme.Translucent.NoTitleBar">
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />

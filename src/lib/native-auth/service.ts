@@ -5,6 +5,14 @@ export type NativeFlow = {
   expiresAt: Date; status: "CREATED" | "BROWSER" | "READY" | "CONSUMED" | "CANCELLED";
   browserHash: string | null; codeHash: string | null; codeExpiresAt: Date | null; sealedSession: string | null;
 };
+/**
+ * 브라우저 로그인이 실패했을 때 앱에 알려 줄 이유(토큰·개인정보 없음).
+ * - no_account: 간편로그인은 됐지만 학원 계정과 연결돼 있지 않음(처음 쓰는 학부모 등)
+ * - cancelled : 카카오·구글 화면에서 사용자가 취소함
+ * - failed    : 그 밖의 실패
+ */
+export type NativeBrowserFailure = "no_account" | "cancelled" | "failed";
+export const NATIVE_BROWSER_FAILURES: readonly NativeBrowserFailure[] = ["no_account", "cancelled", "failed"];
 export type NativeSession = { access_token: string; refresh_token: string; authUserId: string };
 export interface NativeFlowStore {
   purgeExpired?(now: Date): Promise<void>;
@@ -48,6 +56,17 @@ export function createNativeAuthService(store: NativeFlowStore, config: NativeCo
       if (!await store.ready(row.id, digest(binding), digest(code), codeExpiresAt, sealSession(session, row.id, config.encryptionKey), now())) throw new NativeAuthError();
       const callback = new URL(config.callback(row.platform));
       callback.searchParams.set("flow", row.id); callback.searchParams.set("code", code); callback.searchParams.set("state", row.state);
+      return callback.toString();
+    },
+    /**
+     * 이 브라우저가 묶인 요청이 실패하면 JSON 오류 화면에 머무르지 않고 앱으로 돌려보낸다.
+     * 복귀 주소에는 flow·state·이유만 싣는다(code 없음 → 로그인 불가). 요청은 바로 취소해 다시 쓰지 못하게 한다.
+     */
+    async failBrowser(row: NativeFlow, reason: NativeBrowserFailure) {
+      await store.cancel(row.id, row.challenge, row.state, now());
+      const callback = new URL(config.callback(row.platform));
+      callback.searchParams.set("flow", row.id); callback.searchParams.set("state", row.state);
+      callback.searchParams.set("error", NATIVE_BROWSER_FAILURES.includes(reason) ? reason : "failed");
       return callback.toString();
     },
     async consume(input: Record<string, unknown>): Promise<NativeSession> {

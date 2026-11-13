@@ -7,6 +7,14 @@
 - **분류**: architecture
 - **발견자**: developer
 - **내용**: 결제 시작·승인(`createCheckoutSession`·`confirmTossPayment`)의 owner 가 `PaymentOwnerIdentity | GuestInvoiceOwner`. 비회원은 API(`/api/pay/checkout`·`confirm`)가 토큰을 먼저 확인(`guestPayLinkService.resolveGuestPayLink`)하고 «토큰의 청구서 id»만 넘긴다(본문 invoiceId 무시). 승인 SQL 은 그 청구서의 한 장짜리 주문(묶음 제외·거래 parentId=청구서 parentId)만 찾고 금액 비교·`claimTossConfirmInTx` 잠금은 그대로. 청구서 한 장 SQL 은 `loadParentInvoiceRow` 공용(로그인·비회원). 토큰은 해시만 저장(`PaymentInvoiceAccessToken`)이라 재발급만 가능 — 이전 링크는 폐기하지 않는다. 납부·취소·환불은 쓰는 순간 청구 상태로 판정(`judgeGuestPayLink`). 새 «토큰 주소»는 next.config 전용 머리글 + 공통 규칙 제외 정규식 + `trackingExclusion.TOKEN_PATH_PREFIXES`(픽셀) 세 곳을 같이 고친다(가드 테스트가 마지막 것을 잡는다).
+### [2026-11-13] 앱 간편로그인(a1) = 시스템 브라우저 + 1회용 code 복귀 + 서버 스위치
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 웹 `src/lib/native-auth/*`(policy=스위치·복귀 주소, service=start/browser/finish/failBrowser/consume/cancel, store=`NativeAuthFlow` raw SQL) + `/auth/native/{start,browser,callback,consume,cancel,return}`. 켜짐 = `NATIVE_AUTH_ENABLED=true` + 32바이트 `NATIVE_AUTH_ENCRYPTION_KEY`(`nativeAuthEnabled`, `/api/auth/providers` 의 `nativeApp`). 복귀 주소 운영=`kr.co.upturnlabs.stizdasan://auth/return`, 개발=`stiz-academy(-android)-dev`(개발 서버+개발 스위치일 때만). 복귀 URL 엔 flow·code·state(또는 실패 시 error=no_account/cancelled/failed)만 — 이름 목록은 서버 `NATIVE_BROWSER_FAILURES`·Android `NativeAuthPolicy.FAILURES`·iOS `failures` 세 곳 같게(테스트 고정). Android: `NativeAuthController`(링크 가로채기) → `NativeAuthBrowser`(맞춤 탭, 라이브러리 없이 extra) → `NativeAuthReturnActivity`(release/debug 매니페스트, CLEAR_TOP 으로 탭 닫고 onNewIntent). iOS: `NativeAuthCoordinator`(ASWebAuthenticationSession, Info.plist 등록 불필요). 앱은 기능 든 빌드만 UA 끝에 ` STIZNativeLogin/1` → 웹 `storeAppSocialLogin`(storeApp.ts) 이 버튼/«비밀번호 만들기(/login/forgot)» 안내를 고른다. 아이폰은 Apple 켜져 있을 때만 버튼(4.8). 앱이 가로채는 링크는 정확히 `?intent=login` 하나 — 다른 쿼리를 붙이면 «준비 중»으로 막힌다. 테스트 `tests/native-app-login-production.test.mjs`.
+### [2026-11-14] 스토어 앱 알림(FCM) = 기존 발송 함수 2개에 앱 토큰을 «더한다» · 웹이 쿠키로 등록
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 모든 푸시는 `sendPushToUser`·`sendPushToAllParents`(pushNotification.ts)를 지난다 → 여기서 웹푸시 구독 + `NativePushToken`(FCM, `lib/push/fcm.ts` JWT 직접 서명)을 함께 보낸다. 재시도 id 는 웹=그대로, 앱=`native:<id>`. 키(`FCM_SERVICE_ACCOUNT_JSON`) 없으면 앱 토큰 조회 자체를 안 한다. 앱은 웹 화면에 창구(안드로이드 `StizPushTransport`·iOS `stizPush`)만 열고, 등록은 웹(`NativePushRegistrar`)이 로그인 쿠키로 `/api/push/native`. 로그아웃은 쿠키 `stiz_np`(줄 id)로 이 기기 토큰만. 안드로이드는 google-services 플러그인 없이 build.gradle 이 json 을 읽어 BuildConfig(파일 없으면 알림만 꺼짐), iOS 는 `STIZ/Firebase/` 폴더 참조. 테스트에서 pushNotification.ts 를 불러오면 `@/lib/push/fcm`·`nativePushStore`·`nativePushPolicy` 대역이 필요하다. 상세: docs/native-push.md
 - **참조횟수**: 0
 
 ### [2026-11-13] 학부모 아이디 규칙 한 곳(parent-username) · 앱 설치 짧은 주소 /install

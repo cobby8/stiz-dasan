@@ -10,8 +10,9 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { parentAuthEntryHref } from "@/lib/auth-entry-navigation";
 import AppleLogo from "@/components/auth/AppleLogo";
-import { useEnabledOAuthProviders } from "@/hooks/useEnabledOAuthProviders";
+import { useOAuthAvailability } from "@/hooks/useEnabledOAuthProviders";
 import { useStoreApp, STORE_APP_PASSWORD_LOGIN_NOTICE } from "@/hooks/useStoreApp";
+import { storeAppSocialLogin, storeAppSocialLoginHref } from "@/lib/storeApp";
 
 function LoginContent() {
   const searchParams = useSearchParams();
@@ -34,12 +35,24 @@ function LoginContent() {
   ];
   // 표에 있어도 Supabase 에서 켜진 것만 보인다. 꺼진 버튼을 누르면 Supabase 의 JSON 오류 화면이
   // 그대로 떴다(2026-10-25 운영: 구글·카카오). 모르는 동안(null)은 아무것도 그리지 않는다.
-  const enabledProviders = useEnabledOAuthProviders();
-  // 스토어 앱에서는 간편로그인을 숨긴다(앱 밖 브라우저로 나가 로그인 결과가 돌아오지 않는다, a1). null = 아직 모름
+  const oauthAvailability = useOAuthAvailability();
+  const enabledProviders = oauthAvailability?.providers ?? null;
+  // 스토어 앱 여부. null = 아직 모름
   const storeApp = useStoreApp();
   const visibleSocialLoginOptions = parentSocialLoginOptions.filter((option) =>
     enabledProviders?.includes(option.provider as (typeof enabledProviders)[number]),
   );
+  // 스토어 앱의 간편로그인(a1, 2026-11-13): 앱이 시스템 브라우저 로그인 기능을 갖췄고(사용자 에이전트 표식)
+  // 서버 스위치가 켜졌을 때만 버튼을 보인다. 아니면 버튼을 숨기고 아이디·비밀번호 + 문자 인증 비밀번호 만들기로 안내.
+  // storeApp === true 일 때만 계산한다(브라우저 전용 navigator 를 서버 그림에서 읽지 않게).
+  const appSocialLogin =
+    storeApp === true
+      ? storeAppSocialLogin({
+          userAgent: typeof navigator === "undefined" ? "" : navigator.userAgent,
+          nativeApp: oauthAvailability?.nativeApp,
+          providers: enabledProviders === null ? null : visibleSocialLoginOptions.map((option) => option.provider),
+        })
+      : null;
   const [mode, setMode] = useState<"login" | "signup">("login");
   // 주소창 ?error= 값은 누구나 바꿀 수 있어 한국어 안내만 보여 준다(영어·개발 원문은 쉬운 안내로)
   const [error, setError] = useState<string | null>(searchParams.get("error") ? publicErrorText(searchParams.get("error"), "로그인하지 못했습니다. 다시 시도해 주세요.") : null);
@@ -360,9 +373,44 @@ function LoginContent() {
             )}
           </form>
 
-          {/* 스토어 앱: 간편로그인 대신 한 줄 안내 */}
-          {!isStaffMode && mode === "login" && storeApp === true && (
-            <p className="mt-6 text-center text-xs leading-5 text-[var(--color-public-muted)]">{STORE_APP_PASSWORD_LOGIN_NOTICE}</p>
+          {/* 스토어 앱 + 앱 간편로그인 꺼짐(또는 옛 앱·켜진 제공자 없음): 간편로그인 대신 안내 + 비밀번호 만들기 연결 */}
+          {!isStaffMode && mode === "login" && storeApp === true && appSocialLogin === "password-only" && (
+            <div className="mt-6 space-y-1 text-center text-xs leading-5 text-[var(--color-public-muted)]">
+              <p>{STORE_APP_PASSWORD_LOGIN_NOTICE}</p>
+              {/* 간편로그인으로만 가입한 학부모는 문자 인증으로 비밀번호를 만들 수 있다(/login/forgot, 2026-11-13) */}
+              <p>
+                간편로그인으로만 가입하셨나요?{" "}
+                <Link href="/login/forgot" className="inline-flex min-h-11 items-center font-bold text-[var(--color-public-accent)] underline">
+                  문자 인증으로 비밀번호 만들기
+                </Link>
+              </p>
+            </div>
+          )}
+          {/* 스토어 앱 + 앱 간편로그인 켜짐: 누르면 앱이 가로채 시스템 브라우저(크롬 탭·사파리 인증창)에서 로그인한다.
+              링크는 정확히 «?intent=login» 만 — 앱이 이 모양만 가로챈다(다른 값이 붙으면 «준비 중»으로 막힌다). */}
+          {!isStaffMode && mode === "login" && storeApp === true && appSocialLogin === "buttons" && (
+            <div className="mt-6 space-y-4">
+              <div className="flex items-center gap-3 text-xs font-semibold text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
+                <span className="h-px flex-1 bg-[var(--color-public-line)] dark:bg-[var(--color-public-line)]" />
+                간편 로그인
+                <span className="h-px flex-1 bg-[var(--color-public-line)] dark:bg-[var(--color-public-line)]" />
+              </div>
+              <div className="grid gap-2">
+                {visibleSocialLoginOptions.map((option) => (
+                  <a
+                    key={option.provider}
+                    href={storeAppSocialLoginHref(option.provider)}
+                    className={`flex min-h-11 items-center justify-center gap-2 rounded-xl border px-4 text-sm font-bold transition ${option.tone}`}
+                  >
+                    {option.provider === "apple" && <AppleLogo />}
+                    {option.label}
+                  </a>
+                ))}
+              </div>
+              <p className="text-center text-xs leading-5 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
+                로그인 창에서 인증을 마치면 앱으로 돌아옵니다. 처음 이용하는 학부모님은 회원가입을 먼저 해 주세요.
+              </p>
+            </div>
           )}
           {!isStaffMode && mode === "login" && storeApp === false && visibleSocialLoginOptions.length > 0 && (
             <div className="mt-6 space-y-4">

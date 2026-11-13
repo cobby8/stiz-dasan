@@ -119,7 +119,9 @@ test("두 화면 모두 켜진 것만 그리고, 모르는 동안은 그리지 �
   // 서버가 준 값 중 우리가 아는 이름만 받는다(엉뚱한 /auth/oauth/<값> 링크 방지).
   assert.match(hook, /PARENT_OAUTH_PROVIDERS\.filter\(\(provider\) => list\.includes\(provider\)\)/);
 
-  assert.match(loginPage, /useEnabledOAuthProviders\(\)/);
+  // 로그인 화면은 앱 간편로그인 스위치(nativeApp)도 함께 받는 useOAuthAvailability 를 쓴다(a1, 2026-11-13)
+  assert.match(loginPage, /useOAuthAvailability\(\)/);
+  assert.match(hook, /export function useEnabledOAuthProviders\(\)[\s\S]*useOAuthAvailability\(\)\?\.providers \?\? null/);
   assert.match(loginPage, /visibleSocialLoginOptions\.map/);
   assert.doesNotMatch(loginPage, /parentSocialLoginOptions\.map/, "거르지 않은 표를 그대로 그리고 있다");
 

@@ -218,6 +218,19 @@ enum NavigationPolicy {
         return url.host?.lowercased() == "www.stiz-dasan.kr" && (url.port == nil || url.port == 443)
     }
 
+    // 앱 알림(FCM)을 눌렀을 때 열 주소(2026-11-14, e2). 서버는 우리 사이트 «경로»(예: /mypage/attendance)만 보낸다.
+    // 경로가 아니거나(바깥 주소·"//evil"·역슬래시·공백) 앱이 여는 우리 화면(.website)이 아니면 nil → 지금 화면을 유지한다.
+    // 최종 판정은 위의 decide 를 그대로 쓴다(유니버설 링크와 같은 기준).
+    static func pushTarget(_ raw: Any?, configuration: SandboxConfiguration = sandbox) -> URL? {
+        guard !configuration.isRequested, let text = raw as? String else { return nil }
+        let path = text.trimmingCharacters(in: .whitespaces)
+        guard path.hasPrefix("/"), !path.hasPrefix("//"), path.count <= 1024, !path.contains("\\"),
+              path.unicodeScalars.allSatisfy({ $0.value > 32 && $0.value != 127 }),
+              let url = URL(string: "https://www.stiz-dasan.kr" + path),
+              decide(url, userInitiated: false, configuration: configuration) == .website else { return nil }
+        return url
+    }
+
     private static func canonicalPath(_ url: URL) -> String? {
         guard let encoded = URLComponents(url: url, resolvingAgainstBaseURL: false)?.percentEncodedPath,
               let decoded = encoded.removingPercentEncoding,

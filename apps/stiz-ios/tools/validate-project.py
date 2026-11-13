@@ -12,7 +12,7 @@ defined = re.findall(r"^\s*(A[0-9A-F]{23}) =", project, re.M)
 references = set(re.findall(r"\bA[0-9A-F]{23}\b", project))
 assert len(defined) == len(set(defined)), "프로젝트 ID 중복"
 assert references == set(defined), "프로젝트 파일 참조 누락"
-for file in ["AppDelegate.swift", "NavigationPolicy.swift", "NativeAuthPolicy.swift", "NativeAuthCoordinator.swift", "WebViewController.swift", "Info.plist", "Assets.xcassets", "PrivacyInfo.xcprivacy"]:
+for file in ["AppDelegate.swift", "NavigationPolicy.swift", "NativeAuthPolicy.swift", "NativeAuthCoordinator.swift", "WebViewController.swift", "NativePush.swift", "Info.plist", "Assets.xcassets", "PrivacyInfo.xcprivacy", "Firebase"]:
     assert (root / "STIZ" / file).exists(), file
     assert f"path = {file};" in project, file
 for path in (root / "STIZ").rglob("*.json"):
@@ -47,7 +47,17 @@ assert "INFOPLIST_FILE = STIZ/Info.plist;" in release_settings and 'INFOPLIST_FI
 assert "CODE_SIGN_ENTITLEMENTS" not in project, "프로파일 준비 전에는 권한 파일을 서명에 붙이지 않는다"
 with (root / "STIZ/STIZ.entitlements").open("rb") as handle:
     entitlements = plistlib.load(handle)
-assert entitlements == {"com.apple.developer.associated-domains": ["applinks:www.stiz-dasan.kr", "webcredentials:www.stiz-dasan.kr"]}
+# 앱 알림(FCM→APNs, 2026-11-14 e2): aps-environment 도 준비만 — 애플 포털에서 Push Notifications 를 켠 프로파일과 함께 연결한다.
+assert entitlements == {"aps-environment": "production", "com.apple.developer.associated-domains": ["applinks:www.stiz-dasan.kr", "webcredentials:www.stiz-dasan.kr"]}
+# 앱 알림: Firebase 패키지(FirebaseMessaging)·설정 폴더(폴더 참조 — 파일이 없으면 알림만 꺼지고 빌드는 된다).
+assert 'repositoryURL = "https://github.com/firebase/firebase-ios-sdk";' in project and "productName = FirebaseMessaging;" in project
+assert "lastKnownFileType = folder; path = Firebase;" in project, "설정 파일은 폴더 참조로만(파일 참조면 없을 때 빌드가 깨진다)"
+assert "GoogleService-Info.plist" not in project, "설정 파일을 프로젝트에 직접 연결하지 않는다"
+assert "STIZ/Firebase/GoogleService-Info.plist" in (root / ".gitignore").read_text(encoding="utf-8"), "설정 파일은 저장소에 넣지 않는다"
+native_push = (root / "STIZ/NativePush.swift").read_text(encoding="utf-8")
+assert 'inDirectory: "Firebase"' in native_push and "guard !NavigationPolicy.sandbox.isRequested" in native_push, "시험 앱·설정 없는 빌드는 Firebase 를 켜지 않는다"
+assert "message.frameInfo.isMainFrame" in native_push and 'origin.host.lowercased() == "www.stiz-dasan.kr"' in native_push, "알림 창구는 우리 사이트 맨 위 화면에만"
+assert "NavigationPolicy.pushTarget(" in native_push, "알림을 눌러 여는 주소는 주소 정책으로 거른다"
 assert info["CFBundleDisplayName"] == "STIZ 농구교실"
 # 스토어 아이콘: 1024 한 장(투명 없음)과 빌드 설정. 개인정보 명세: 앱 리소스로 포함·추적 없음.
 assert project.count("ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;") == 2, "Debug/Release 모두 AppIcon 사용"

@@ -24,11 +24,14 @@ function load(path, mocks = {}) {
 }
 
 /** 훅 상태를 정해 두고 그려 본다 */
-function render(name, state, { storeAppLacksPush = false } = {}) {
+function render(name, state, { storeAppLacksPush = false, appView = "unavailable" } = {}) {
   const mod = load("src/components/push/StaffPushControls.tsx", {
     "@/lib/push/usePushSubscription": { usePushSubscription: () => ({ pushLoading: false, checked: true, togglePush() {}, ...state }) },
     // 스토어 앱 판정(d2) — 기본은 브라우저
     "@/components/storeApp/useStoreAppLacks": { useStoreAppLacks: () => storeAppLacksPush },
+    // 앱 알림 상태(e2) — 브라우저에서는 늘 unavailable
+    "@/lib/push/useNativePush": { useNativePush: () => ({ view: appView, busy: false, request: async () => {} }) },
+    "@/lib/push/nativePushBridge": load("src/lib/push/nativePushBridge.ts"),
   });
   return renderToStaticMarkup(React.createElement(mod[name]));
 }
@@ -67,9 +70,18 @@ test("직원 layout: 토글은 선생님·기사님 공통 머리줄, 상단 한
   assert.equal((hook.match(/window\.dispatchEvent\(new CustomEvent\(PUSH_CHANGED_EVENT/g) || []).length, 2);
 });
 
-test("스토어 앱(앱 알림 못 받음): 토글은 숨기고, 상단 한 줄은 «준비 중» 안내만(켜기 버튼 없음) — d2", () => {
-  assert.equal(render("StaffPushToggle", { pushSupported: true, pushEnabled: false }, { storeAppLacksPush: true }), "");
-  const banner = render("StaffPushBanner", { pushSupported: true, pushEnabled: false }, { storeAppLacksPush: true });
-  assert.match(banner, /앱 알림은 준비 중이에요/);
-  assert.doesNotMatch(banner, /켜기/);
+test("스토어 앱: 토글은 숨기고, 상단 한 줄은 앱 알림의 실제 상태대로 — d2·e2", () => {
+  const inApp = (appView) => render("StaffPushBanner", { pushSupported: true, pushEnabled: false }, { storeAppLacksPush: true, appView });
+  assert.equal(render("StaffPushToggle", { pushSupported: true, pushEnabled: false }, { storeAppLacksPush: true, appView: "default" }), "");
+  // 못 받는 앱(옛 앱·Firebase 설정 없음): 문자·카카오톡 안내, 켜기 버튼 없음
+  assert.match(inApp("unavailable"), /중요한 안내는 문자·카카오톡으로 보내드려요/);
+  assert.doesNotMatch(inApp("unavailable"), /켜기/);
+  // 권한을 거절함: 휴대폰 설정으로 안내
+  assert.match(inApp("denied"), /휴대폰 설정에서 알림을 켜 주세요/);
+  assert.doesNotMatch(inApp("denied"), /<button/);
+  // 아직 안 물어봄: 켜기(누르면 휴대폰이 권한을 묻는다)
+  assert.match(inApp("default"), /class="academy-button-primary min-h-11 shrink-0">켜기</);
+  // 켜짐·확인 중: 안 그림
+  assert.equal(inApp("granted"), "");
+  assert.equal(inApp("checking"), "");
 });

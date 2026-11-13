@@ -90,7 +90,9 @@ test("a1 스토어 앱: 로그인·가입·연결 화면 모두 브라우저로 
   assert.match(hook, /useSyncExternalStore<boolean \| null>\(subscribe, isStoreApp, \(\) => null\)/, "서버 그림·첫 하이드레이션은 null(불일치 없음)");
   assert.match(hook, /앱에서는 아이디·비밀번호로 로그인해 주세요\./);
   const login = await read("src/app/login/page.tsx");
-  assert.match(login, /storeApp === true && \(\s*<p[^>]*>\{STORE_APP_PASSWORD_LOGIN_NOTICE\}/);
+  // 2026-11-13 a1 운영 전환: 스토어 앱은 앱 간편로그인이 켜졌을 때만 버튼(앱 전용 링크), 아니면 안내 + 비밀번호 만들기
+  assert.match(login, /storeApp === true && appSocialLogin === "password-only" && \(\s*<div[^>]*>\s*<p>\{STORE_APP_PASSWORD_LOGIN_NOTICE\}/);
+  assert.match(login, /storeApp === true && appSocialLogin === "buttons"/);
   assert.match(login, /storeApp === false && visibleSocialLoginOptions\.length > 0/);
   const signup = await read("src/components/auth/ParentSignupClient.tsx");
   assert.match(signup, /storeApp === false && visibleSignupOptions\.length > 0/);

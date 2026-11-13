@@ -24,18 +24,20 @@
 
 flow는 5분, 최종 code는 60초다. 앱·브라우저·URL·JavaScript 사이에서 로그인 토큰이나 쿠키를 복사하지 않는다. 로그인 후 복귀는 기본 역할 홈만 지원한다. 청구서·수업의 상세 주소 복귀, 간편가입·로그인 수단 추가는 후속 범위이며 기존 웹 흐름으로 계속 제공한다.
 
-## 활성화 보호와 개발 식별자
+## 활성화 보호와 복귀 주소 (2026-11-13 운영 전환, a1)
 
-- `NATIVE_AUTH_ENABLED`와 `NATIVE_AUTH_DEVELOPMENT_CALLBACKS_ENABLED`가 모두 정확히 `true`이고 32바이트 base64url `NATIVE_AUTH_ENCRYPTION_KEY`가 있을 때만 개발 경로를 연다. 키 값은 Git·문서·로그에 기록하지 않는다.
-- `NODE_ENV=production`에서는 위 설정이 있어도 **항상 차단**한다. 현재 코드는 개발 scheme 검증용이며 운영 간편로그인 활성화 코드가 아니다.
-- iOS 고정 개발 복귀: `stiz-academy-dev://auth/return`.
-- Android 고정 개발 복귀: `stiz-academy-android-dev://auth/return`.
-- 요청자가 callback 주소나 호스트를 정할 수 없다. HTTPS 서버 주소는 공식 호스트 하나만 허용한다. 테스트는 이 주소를 요청 객체로 만든 모의 서버에서 수행하며 실제 운영 호스트로 접속하지 않는다.
-- 정식 출시는 STIZ 식별자·서명과 결합한 검증 HTTPS App Link/Universal Link, 공급자 callback 등록, 원장 권한/만료 정리·시도 제한 운영 구성을 갖춘 뒤 별도로 승인한다. 개발 scheme은 정식 앱 소유권 검증을 대신하지 않는다.
+- **운영 스위치**: `NATIVE_AUTH_ENABLED=true` + 32바이트 base64url `NATIVE_AUTH_ENCRYPTION_KEY`가 모두 있어야 열린다. 하나라도 없으면 모든 `/auth/native/*`가 503이고, 웹 로그인 화면(`/api/auth/providers`의 `nativeApp=false`)은 앱에서 간편로그인 버튼을 숨기고 «아이디·비밀번호 + 문자 인증으로 비밀번호 만들기(/login/forgot)»로 안내한다. 키 값은 Git·문서·로그에 기록하지 않는다.
+- **운영 복귀 주소**: `kr.co.upturnlabs.stizdasan://auth/return`(안드로이드·아이폰 공통, 스토어 앱 ID). 운영(`NODE_ENV=production`)에서는 개발 스위치를 켜도 항상 이 주소다.
+- **개발 복귀 주소**: iOS `stiz-academy-dev://auth/return`, Android `stiz-academy-android-dev://auth/return` — 개발 서버에서 `NATIVE_AUTH_DEVELOPMENT_CALLBACKS_ENABLED=true`일 때만. 개발 빌드 앱은 개발 주소만, 출시 빌드 앱은 운영 주소만 받는다.
+- **왜 HTTPS App Link/Universal Link 가 아니라 전용 주소인가**: 로그인 마지막 이동이 같은 사이트 안의 서버 이동(`/auth/native/callback` → 복귀)이라, 크롬·사파리가 같은 도메인 이동에서는 앱 링크를 앱으로 넘기지 않는다. `ASWebAuthenticationSession`도 전용 주소로 받는 것이 기본이다. 다른 앱이 안드로이드 전용 주소를 가로채도 code 는 앱 메모리의 PKCE 비밀값(verifier) 없이 교환할 수 없고(RFC 8252), 아이폰은 인증 세션이 직접 받아 가로챌 수 없다.
+- **실패 복귀**: 브라우저가 묶인 뒤 학원 계정이 없거나(no_account) 공급자 화면에서 취소하면(cancelled) code 없이 `flow·state·error`만 실어 앱으로 돌려보내고 요청을 바로 취소한다. 브라우저에 JSON 오류를 남기지 않는다.
+- **앱 쪽**: Android = 맞춤 탭(`NativeAuthBrowser`) + 복귀 받는 투명 화면(`NativeAuthReturnActivity`, release/debug 매니페스트에 각각 주소 1개). iOS = `ASWebAuthenticationSession`(Info.plist 등록 불필요). 기능이 든 빌드는 사용자 에이전트 끝에 ` STIZNativeLogin/1`을 붙이고, 웹은 이 표시가 있을 때만 앱에서 버튼을 보인다(옛 앱 1.0.1 은 계속 숨김). 아이폰 앱은 Apple 로그인이 켜져 있어야 버튼을 보인다(심사지침 4.8).
+- 요청자가 callback 주소나 호스트를 정할 수 없다. HTTPS 서버 주소는 공식 호스트 하나만 허용한다.
+- 만료 정리: start 때 100행 + 매일 `data-retention` 크론이 하루 지난 행을 지운다. 운영 표는 `prisma/migrations/20261114000000_native_auth_flow`.
 
 ## 로컬 DB와 개인정보 보관
 
-`src/lib/native-auth/schema.sql`은 로컬 합성 DB용 준비 SQL이다. Prisma 기존 schema와 운영 테이블은 변경하지 않았다. `NativeAuthFlow`에 RLS를 켜고 PUBLIC/anon/authenticated의 접근을 회수한다. 서버 소유 연결만 사용한다.
+`src/lib/native-auth/schema.sql`은 로컬 합성 DB용 준비 SQL이다. 운영 표는 같은 내용의 마이그레이션(`20261114000000_native_auth_flow`, 2026-11-13)과 `schema.prisma`의 `NativeAuthFlow` 모델로 추가한다. `NativeAuthFlow`에 RLS를 켜고 PUBLIC/anon/authenticated의 접근을 회수한다. 서버 소유 연결만 사용한다.
 
 암호문은 flow ID를 추가 인증 정보로 결합해 다른 행과 교체할 수 없다. 정상 소비·취소 때 바로 지운다. 새 start 때 기한 만료 flow나 만료 READY code를 최대 100행 정리한다. 이는 **기한이 되면 반드시 지워지는 예약 작업이 아니다**. 새 요청이 없으면 만료된 암호문이 DB에 남을 수 있으므로 정식 활성화 전에 별도 보존 기간·정기 정리 실행기를 확정해야 한다. 운영 정리·삭제는 이 작업에서 실행하지 않는다.
 

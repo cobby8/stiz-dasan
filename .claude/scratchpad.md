@@ -61,40 +61,52 @@
 ---
 
 ## 구현 기록 (developer) — 11-10 7브랜치 통합 + 신청함 연결 A·B
-(완료·커밋됨 — 11-14 정리로 요약: 신청함 상담 버튼·휴원 승인 미리보기 PauseSettlementBox, 마이그레이션 4건 IF NOT EXISTS)
+📝 통합 순서(각 --no-ff): ①학부모 알림·수업 탭·⚙설정·/api/push 매핑·직원 알림 ②결석 신고 즉시 보강권 ③상담 신청 ④신청함 6탭 ⑤POS 자동 납부 ⑥휴원 시작일·수강료 정산 ⑦체험비 온라인 결제·안내·Meta 픽셀 토큰 차단. 코드 충돌 0 — 충돌은 문서(합집합)·consult-inbox.ts(③ 실제 구현 채택)·ParentMoreMenu.tsx(① 삭제 유지, 상담 링크는 ⚙설정)뿐.
 
-## 구현 기록 (developer) — 11-14 비회원 결제 링크 /pay/<토큰> (브랜치 claude/guest-pay-link · 미커밋)
-📝 가입 안 한 학부모가 받은 링크로 청구서 한 장만 보고 결제. 토큰 32바이트 base64url, DB엔 SHA-256 해시만(새 표 PaymentInvoiceAccessToken · migration 20261114000000 **운영 미적용**). 만료 = max(납부기한, 발급일)+14일 하루 끝(KST). 토스 customerKey = 청구서 기반 stiz_g_…
 | 파일 | 변경 | 신규/수정 |
 |------|------|----------|
-| lib/payments/guestPayLinkRules.ts · guestPayToken.ts · guestPayLink.ts · guestPayLinkService.ts | 규칙(모양·만료·마스킹·상태·가입 판정)·토큰·DB 연결부(가짜 DB 테스트)·prisma 연결부(getOrCreateInvoiceGuestLink·안내용 일괄 발급·IP 제한) | 신규 |
-| lib/payment-ledger.ts | GuestInvoiceOwner · loadParentInvoiceRow 공용화 · getInvoiceForGuest · checkout/confirm 비회원 갈래(청구서 일치·한 장 주문만·개인정보 미전송) | 수정 |
-| app/pay/** · api/pay/checkout · api/pay/confirm | 화면(마스킹·납부 완료 표시·가입 안내 한 줄)·성공 화면·토큰 API(no-store·실패 지연) | 신규 |
-| payments/[invoiceId]/PaymentCheckoutClient · payments/success/PaymentSuccessClient | guestToken 선택 속성(기존 동작 그대로) | 수정 |
-| actions/admin.ts · lib/billing/noticeQueue.ts | 청구·미납 안내: authUserId 없는 학부모 → pay 링크(미납은 한 장일 때만) | 수정 |
-| actions/guest-pay-link.ts · admin/students/[id]/StudentDetailClient.tsx | ⚡ «결제 링크 복사»(원장·감사 GUEST_PAY_LINK_ISSUED) | 신규/수정 |
-| next.config.ts · robots.ts · academyTheme.ts · privacy/trackingExclusion.ts | /pay 머리글(no-referrer·noindex·no-store)·픽셀 제외 | 수정 |
-| tests/guest-pay-link.test.mjs(22) · payment-bundle-checkout · scheduled-enrollment-ui | 신규 · SQL 위치 이동·모의 모듈 추가 | 신규/수정 |
-💡 tester: 미가입 학부모 청구 → 학생 상세 ⚡ 결제 링크 복사 → 시크릿 창에서 열기(로그인 없이 권○호·금액) → 카드 테스트 결제 → /pay/<토큰>/success 납부 완료 → 같은 링크 다시 열면 «납부 완료»만. 토큰 한 글자 바꾸면 «링크가 만료됐거나…».
-⚠️ reviewer: confirmTossPayment 비회원 갈래(가족 연결 재확인 생략 — 근거는 토큰 청구서=주문 청구서 SQL) · 이전 링크 폐기 안 함(해시만 저장이라 재발급 불가) · 학부모 미연결 청구서는 이번에도 제외.
+| src/app/admin/inbox/InboxClient.tsx | A 상담 버튼(ref.actions 만·취소 확인·메모 초기값 adminNote·tel:) · B 휴원 승인 전 미리보기→방식 필수·{mode, expectedPreviewKey}·환불 확인 실패 경고 · «변경» 탭 남은 일 링크 | 수정 |
+| src/app/admin/inbox/PauseSettlementBox.tsx | 미리보기·방식 고르기(수강 변경 화면과 같은 규칙·문구) | 신규 |
+| src/app/actions/enrollment-changes.ts | getPauseTuitionPreview(관리자 전용, 실패=ok:false) | 수정 |
+| src/app/admin/inbox/page.tsx · src/lib/requests/admin-inbox.ts | 변경 탭 countOpenPauseSettlements · 행 ref.changeKind | 수정 |
+| tests/inbox-consult-pause-wiring.test.mjs · admin-inbox · consult-request | 연결 7건 · 스텁→실제 구현 시그니처 · 상담 링크=설정 화면 | 신규/수정 |
+
+⚠️ 배포 전 운영 apply_migration 필요(전부 IF NOT EXISTS 멱등): 20261110150000_trial_fee_online_payment · 20261110160000_consult_request · 20261110170000_parent_notification_preference · 20261110180000_enrollment_pause_settlement (130000 은 적용됨). 선택: prisma/sql/backfill_makeup_credit_for_reported_absences.sql.
+💡 tester: 신청함 상담 탭 → 새 상담 열기 → 메모 칸에 기존 메모·[취소][메모 저장][연락함][상담 완료]·전화 걸기 / 변경 탭 휴원(PENDING) 열기 → «계산하는 중» → 금액 있으면 방식 고르기 전 [승인] 잠김 → 고르면 «승인 · 환불» + 확인창 금액. 실토스 부분 취소는 테스트 키로 1건 확인 필요(⑥). 체험비 결제는 설정 «온라인 결제» 켜기+토스 키 있어야 보임(⑦).
+⚠️ reviewer: 미리보기 지문 불일치로 승인 거절되면 칸을 닫았다 다시 열어야 재계산(자동 재조회 없음) · 신청함 휴원 규칙·문구는 수강 변경 화면과 두 벌(문구 비교 테스트로 묶음) · ②출결 «되살림» 동작 변경 · ⑦이미 확정된 신청에 온 결제 = NEEDS_REFUND.
+
+## 구현 기록 (developer) — 11-12 스태프 관리 추가 기능 s1~s6 (원장 «추천대로 해»)
+📝 직접 추가 메뉴 제거·초대로 전환 / 추가 역할 줄 / 퇴사 처리 / 역할 변경 확인창 / 초대 마지막 문자 / 담당 반. 마이그레이션 없음(전환 초대 = 기존 칸 SIGNUP+targetUserId).
+
+| 파일 | 변경 | 신규/수정 |
+|------|------|----------|
+| src/lib/staff/staffAccountLink.ts | 로그인 종류 판정(none/staffLogin/other)·로그인 id·퇴사 시 차단 여부 | 신규 |
+| src/lib/staff/staffPanelData.ts | 추가 역할 직원·초대 문자 마지막 발송(NotificationDelivery)·담당 반 조회 | 신규 |
+| src/lib/staff/staffRoster.ts | grant 줄·전환 초대는 직원 줄에 붙임·targetUserId 초대 코치 짝짓기 제외·classesForStaff | 수정 |
+| src/app/actions/admin.ts | convertDirectStaffToInvite·retireStaffMember(requireOwner) · inviteStaff 퇴사자 재초대 targetUserId · 전환 문자 문구 | 수정 |
+| src/app/actions/invite.ts | targetUserId 초대 수락: 직접 추가 기록에 로그인 붙임 / 퇴사 직원 로그인 다시 열기(ban 해제)+역할 복구 | 수정 |
+| src/lib/auth-guard.ts | 역할 캐시 적중 때도 역할을 다시 읽음 + forgetAppUserRoleCache | 수정 |
+| src/app/admin/staff/StaffClient.tsx · page.tsx · lib/queries.ts · lib/adminReadPayloads.ts | 화면·데이터 연결 | 수정 |
+| tests/staff-management-additions.test.mjs · staff-roster.test.mjs | 16건 신규 · 직접 추가 제거 반영 | 신규/수정 |
+
+💡 tester: 원장 로그인 → 직접 추가 직원 줄(«로그인 없음») → 패널 [초대로 전환] → «가입 대기» + [링크 복사][문자 보내기] → 링크로 가입하면 같은 직원 기록(코치 연결 유지)으로 로그인. [퇴사 처리] → 확인창 나열·체크 → 목록에서 빠짐·로그인 차단. 부원장은 패널 버튼 없음.
+⚠️ reviewer: auth-guard 캐시 변경(모든 권한 판정 경로) · Supabase ban(876000h) 사용 · 퇴사 후 Class.instructorId(슬롯 없는 반 담당자)는 그대로 둠.
+
 #### 수정 이력
 | 회차 | 날짜 | 수정 내용 | 수정 파일 | 사유 |
 |------|------|----------|----------|------|
-| 1차 | 11-14 | 미연결 청구서 발급 안 함·미납 안내는 받는 사람=청구서 대표 보호자일 때만 · ⚡ «결제 링크 모두 닫기»(확인창·감사 GUEST_PAY_LINK_REVOKED) · 비회원 계좌 칸 고르기(예금주 이름 제거, 화면+API 2곳) · 주석 정정(발송 기록엔 링크 원문 남음) · bg-white→토큰 | guestPayLink · admin.ts · guest-pay-link 액션 · StudentDetailClient · pay 화면·API · guestPayToken · migration 주석 | 검수 권장 1~5 |
-
-### 리뷰 결과 (reviewer 11-14) — 📊 통과(필수 0 · 권장 5) · tsc 0 · 지정 테스트 189/189
-✅ 회원 흐름 불변(guest 없으면 기존 SQL·f8 재확인·주소 그대로) · 비회원 승인 SQL 이 «토큰 청구서·한 장 주문·대표 보호자»로 묶임 · 웹훅·환불·가상계좌 입금은 customerKey 를 안 봐 stiz_g_ 충돌 없음 · 안내 발급 실패는 건별 try/catch 로 payments/<id> 로 떨어짐 · 만료 kstAt/addDaysKst·dueDate(timestamptz) 한 번 · 마이그레이션 재실행 안전·Prisma 이름 일치 · 개인정보 미전송·이름 가림·no-referrer/noindex/픽셀 제외.
-🟡 권장: ①발급 시 i."parentId" 확인 없음 → 학부모 미연결 청구서도 ⚡ 복사 «성공» 후 화면은 «만료» (guestPayLink.ts:47 issueGuestPayLink SELECT 에 i."parentId" IS NOT NULL) ②미납 안내는 s."parentId"(학생 보호자)로 가입 판정·번호를 고르나 결제 화면은 i."parentId" 기준 — 둘이 다르면 엇갈림(admin.ts sendUnpaidReminders, 같은 조건 추가로 해결) ③안내 대기열 body 에 토큰 원문이 남음(BillingNoticeDelivery) — «해시만 저장» 주석 정정 ④발급이 행마다 순차 2쿼리(guestPayLinkService.ts:44) — 100건대면 수 초, 지금은 허용 ⑤마이그레이션 FK 에 ON UPDATE CASCADE 없음(Prisma 기본과 drift, 동작 무관) · 성공 화면 fallback bg-white(success/page.tsx:37).
-
-## 구현 기록 (developer) — 11-12 스태프 관리 추가 기능 s1~s6
-(완료·커밋됨 — 11-14 정리로 요약: 초대로 전환·추가 역할·퇴사·역할 변경 확인창·담당 반, 수정 4차까지. 상세는 작업 로그·git log)
+| 1차 | 11-12 | 역할 변경·퇴사 시 대상 초대(PENDING·PROCESSING) 취소 + 가입 거래가 직원 기록→초대 순서로 잠그고 PROCESSING·역할 재확인 · 재입사 거래 실패 시 로그인 다시 차단 · 퇴사자 재초대 이름 일치만 연결(직원 전용 로그인+이름 다름=거절, 그 밖=안내) · 직접 추가 재초대 시 [초대로 전환] 안내 · 로그인 차단 실패 다시 시도(⋯ 더보기) · createStaffUser·AddStaffModal 삭제 | admin.ts · invite.ts · staffAccountLink.ts · staffPanelData.ts · adminReadPayloads.ts · StaffClient.tsx · InviteStaffModal.tsx · page.tsx · 테스트 4개 | 정확성 검수: 필수1·권장2~5·사소 |
+| 2차 | 11-12 | 복구가 대상 초대(targetUserId)를 대기로 되돌리지 않고 취소로 끝냄(감사 STAFF_INVITE_RECOVERY_CANCELLED, 목록 «정리 후 취소») · 전환 가입은 지금도 코치/기사일 때만·역할 변경 없음(CASE 제거) · 로그인 없던 퇴사자는 재초대 자동 연결 안 함 · 처리 중 취소된 대상 초대도 계정 정리 필요 시 RECOVERY_REQUIRED 로 올림 | staff-invite-recovery.ts · invite.ts · staffAccountLink.ts · StaffInviteRecoveryClient.tsx · 테스트 | 재검수 HIGH·메모 |
+| 3차 | 11-12 | 원장·부원장 «로그인 연결»(linkOwnerStaffLogin 원장 전용·24h·자동 발송 없음, 가입은 초대 역할=대상 지금 역할일 때만·감사 STAFF_LOGIN_LINKED·다른 원장·부원장 알림) · 역할 선택칸 → [역할 변경] 버튼+RoleChangeModal(«바뀌는 것» 미리보기) | admin.ts · invite.ts · inviteAuthFailure.ts · staffAccountLink.ts · roleChange.ts(신규) · RoleChangeModal.tsx(신규) · StaffClient.tsx · 테스트 4개(1 신규) | 원장 지시(권혜미 대표원장) |
+| 4차 | 11-13 | 부원장 화면 데이터에서 원장·부원장 초대 토큰 제거(page·API) · 받을 번호 끝 4자리 표시 · 만료 시각 · 역할 미리보기를 서버 조건과 일치(선생님 추가 역할·코치 연결·재설정 링크) · 원장·부원장 비밀번호 재설정(sendStaffPasswordReset userId 경로, 24h·자동 문자 없음·감사·알림) · 마우스 올림 테두리 | admin.ts · invite.ts · inviteAuthFailure.ts · roleChange.ts · staffRoster.ts · queries.ts · page.tsx · api/admin/staff · StaffClient · RoleChangeModal · 테스트 3개 | 보안·정확성 검수 |
 
 ## 작업 로그 (최근 10건)
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
-| 11-14 | reviewer(비회원 결제 링크 검수): 필수 0·권장 5(미연결 청구서 발급·미납 안내 보호자 기준·대기열 본문 토큰·순차 발급·FK onUpdate). tsc 0·테스트 189-0 | 통과 |
-| 11-14 | developer(비회원 결제 링크 /pay/<토큰>, claude/guest-pay-link 미커밋): 청구서 한 장 전용 토큰 링크(해시만 저장·KST 만료·마스킹)·결제/승인 비회원 갈래·안내 발송 미가입자 링크·⚡ 결제 링크 복사·픽셀 제외. tsc 0 · 전체 4459/4459 · 임시 PG 마이그레이션 2회 OK. **운영 apply_migration 20261114000000 필요** | 구현 완료(검수 대기) |
+| 11-14 | 비회원 결제 링크 /pay/<토큰>: PaymentInvoiceAccessToken(운영 적용)·미가입자 안내 자동 링크·⚡ 링크 복사/닫기. reviewer·security 통과(권장 5 반영), 전체 4462-0 | 완료 |
+| 11-13 | developer(a1 앱 간편로그인 운영 전환, claude/l3-applogin): 복귀 주소 운영=kr.co.upturnlabs.stizdasan(개발 주소는 개발 서버만)·서버 스위치 NATIVE_AUTH_ENABLED+키·실패 복귀(no_account/cancelled)·Android 맞춤 탭+NativeAuthReturnActivity·iOS 실패 안내·웹 앱 버튼/비밀번호 만들기 안내·NativeAuthFlow 마이그레이션(운영 미적용) — tests 4454-0·tsc 0·Java 85 | 검수 대기 |
+| 11-14 | developer(e2·d2 스토어 앱 알림 FCM, claude/l3-push): NativePushToken 표(마이그레이션 20261114000001, RLS) · 발송 함수 2개가 웹푸시+앱 토큰(FCM v1, FCM_SERVICE_ACCOUNT_JSON 없으면 건너뜀·죽은 토큰 정리·재시도 native:id) · /api/push/native(본인만)·로그아웃 이 기기 토큰·탈퇴 정리 · 안드로이드 NativePush/StizMessagingService(json 없으면 꺼짐, gradle 빌드·lint 통과) · iOS NativePush.swift+SPM FirebaseMessaging(Xcode 빌드 미검증) · 설정 화면 앱 상태 문구 · 문서 docs/native-push.md | 구현 완료·검수 대기 |
 | 11-13 | developer(l2 가입 f7·a6·f10, 브랜치 claude/l2-signup): 기존 학부모 활성화 «이메일+10자»→신규 가입과 같은 «아이디+8자»(공용 lib/parent-username, User.username 기록, 이메일 계정 하위호환) · 인증번호 IP 한도 시간당 100·하루 500 · 가입 안내 문자에 «▶ 앱 설치: …/install»(459→548바이트, 원래 LMS) + /install 페이지(안드로이드 Play 바로·아이폰 App Store ID 비어 «곧 출시»+웹) · 마이그레이션 없음 · tsc 0·tests 4293-0 | 커밋(push 안 함) |
 | 11-13 | developer(f12 백업 확대, claude/l2-backup 2커밋): 설정 파일(복원)+업무 자료 gzip 짝 파일(DB 전체 표, 제외 15표 이유 명시·비밀 칸 가림·id::text 5000줄 키셋·큰 표부터 SIZE_LIMIT·300초), 복원 범위 그대로·목록 files/archives 분리·업무 자료 서명 주소 내려받기, 대시보드 표·행 수, tests/backup-archive | 완료(push 전) |
 | 11-13 | reviewer(2ba1960c 자주 쓰는 결제 방법): HIGH 없음 · 금액·orderId·면세·주소·customerKey·계좌 흐름 동일, 저장은 승인 확정 뒤·소유자 조회 통과한 본인만·실패 로그만 · 권장: 단건 화면 연타 ref 가드, 모바일 리디렉트에선 바로가기 실패가 failUrl 로 가 재시도 안 됨(실패 문구에 «카드» 안내), 카드 거절 등도 통합창 재오픈, 가상계좌 복구 경로 미기억. tsc 0·결제 테스트 396-0 | 통과 |
@@ -104,6 +116,3 @@
 | 11-13 | developer(12월 청구 안내·결제 c1~c5·d4·d5·10번): 청구서·미납 안내 = 발송 대기열(lib/billing/noticeQueue.ts + BillingNoticeDelivery 마이그레이션 20261113140000 **미적용** — 코드보다 먼저) · 성공한 건만 sentAt · 미납 3일 간격·KST 날짜 열쇠·링크 포함 · 템플릿 없으면 같은 본문 LMS · 이메일 거절 제거 · 단건 반영 실패 검토+슬랙 · 결제 DDL 한 번만 · 연체 KST+cron payment-overdue(UTC 15:10) · 운영 test_ 키 차단. tests 4194-0·tsc 0 | 검수 대기 |
 | 11-12 | developer(원장 로그인 연결+역할 변경 창): 로그인 없는 원장·부원장 패널 [로그인 연결] → 24시간 전용 링크([링크 복사]·[문자 보내기]) · 받는 역할 판정 invitationRoleAccepted · 붙이기 targetedSignupAllowed · 역할 선택칸 → 버튼+창. «선생님 역할»은 원장이면 이미 teacher·전 반(부여 불필요). tsc 0·tests fail 0 | 완료(커밋, push 안 함) |
 | 11-12 | developer(스태프 관리 s1~s6): 직접 추가 메뉴 제거·[초대로 전환](SIGNUP+targetUserId, 가입 시 기존 기록에 로그인 붙임·코치 승계, 문자는 원장이 누름) · 추가 역할 보기 전용 줄(신청함 링크) · [퇴사 처리](한 거래: 학부모·코치 해제·추가 역할 회수·대기 초대 취소·감사 STAFF_RETIRED, 직원 전용 로그인 ban, 역할 캐시 즉시) · 퇴사자 재초대=로그인 다시 열기 · 역할 변경 공용 확인창 · 초대 마지막 문자 · 담당 반. 마이그레이션 없음. tsc 0·tests 4093-0·studentVisibility 5-0 | 커밋(미푸시) |
-
-### 보안 리뷰 결과 (security-reviewer) — 비회원 결제 링크
-📊 판정: 통과 (CRITICAL 0 / HIGH 0) · 낮음 3건(링크 회수 수단 없음 · 입금계좌 customerName 이 화면 데이터에 실림 · 묶음 계좌 합계 노출)

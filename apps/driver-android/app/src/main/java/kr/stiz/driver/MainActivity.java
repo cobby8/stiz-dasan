@@ -19,6 +19,7 @@ public final class MainActivity extends Activity {
     private WebView web;
     private WebFileChooser fileChooser;
     private NativeAuthController nativeAuth;
+    private NativePush nativePush; // 앱 알림(FCM) 창구 — 로직은 NativePush.java(e2)
     private boolean visible;
     private final PendingRunStart pendingStart = new PendingRunStart();
     private boolean consentDialogOpen;
@@ -132,13 +133,15 @@ public final class MainActivity extends Activity {
         }
         fileChooser = new WebFileChooser(this, web);
         nativeAuth = new NativeAuthController(this, web);
+        nativePush = NativePush.install(this, web);
         web.getSettings().setJavaScriptEnabled(true); web.getSettings().setDomStorageEnabled(true);
         web.getSettings().setAllowFileAccess(false); web.getSettings().setAllowContentAccess(false);
         web.getSettings().setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         web.getSettings().setGeolocationEnabled(false); // Only native service may obtain and send locations.
         web.getSettings().setSupportMultipleWindows(false);
         // 앱 버전 표시: 기존 브라우저 식별 문자열 끝에 « STIZApp/버전 (android)» 를 덧붙인다(기존 문자열은 그대로 둔다).
-        web.getSettings().setUserAgentString(web.getSettings().getUserAgentString() + " STIZApp/" + BuildConfig.VERSION_NAME + " (android)");
+        // « STIZNativeLogin/1»: 앱 간편로그인 기능이 든 빌드 표시 — 웹이 이 표시가 있을 때만 앱 화면에 간편로그인 버튼을 보인다(a1).
+        web.getSettings().setUserAgentString(web.getSettings().getUserAgentString() + " STIZApp/" + BuildConfig.VERSION_NAME + " (android)" + (NativeAuthController.enabled() ? " STIZNativeLogin/1" : ""));
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, false);
         WebViewCompat.addWebMessageListener(web, "StizDriverGpsTransport", Collections.singleton(BuildConfig.STIZ_ORIGIN),
             (view, message, origin, mainFrame, reply) -> {
@@ -587,6 +590,7 @@ public final class MainActivity extends Activity {
     }
     @Override public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(request, permissions, results);
+        if (nativePush != null && nativePush.onPermissionResult(request)) return;
         if (request == 10) {
             boolean granted = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
             pendingStart.permissionResult(granted);

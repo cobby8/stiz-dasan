@@ -34,7 +34,11 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         // 웹은 이 표시로 «앱에서 열렸는지·어느 버전인지» 알 수 있다. 기존 문자열은 지우지 않는다.
         let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
         let baseName = configuration.applicationNameForUserAgent.flatMap { $0.isEmpty ? nil : $0 } ?? "Mobile/15E148"
-        configuration.applicationNameForUserAgent = "\(baseName) STIZApp/\(appVersion) (ios)"
+        // « STIZNativeLogin/1»: 앱 간편로그인 기능이 켜진 빌드 표시 — 웹이 이 표시가 있을 때만 앱 화면에 간편로그인 버튼을 보인다(a1).
+        let nativeLogin = NativeAuthCoordinator.enabled ? " STIZNativeLogin/1" : ""
+        configuration.applicationNameForUserAgent = "\(baseName) STIZApp/\(appVersion) (ios)\(nativeLogin)"
+        // 앱 알림(FCM) 창구 — 웹이 알림 권한·토큰을 묻는다(e2, 시험 앱에는 열지 않음)
+        NativePush.shared.attach(to: configuration.userContentController)
         webView = WKWebView(frame: .zero, configuration: configuration)
         if #available(iOS 16.4, *) {
             // 운영 화면은 검사 연결을 열지 않고, 유효한 격리 시험 주소에서만 허용한다.
@@ -223,10 +227,10 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
                action.navigationType == .linkActivated, let page = webView.url,
                let provider = NativeAuthPolicy.provider(from: url) {
                 if !nativeAuth.isActive && !nativeAwaitingResponse {
-                    nativeAuth.start(provider: provider, page: page, currentPage: { [weak self] in self?.webView.url }) { [weak self] request in
+                    nativeAuth.start(provider: provider, page: page, currentPage: { [weak self] in self?.webView.url }) { [weak self] request, notice in
                         guard let self = self else { return }
                         guard let request = request else {
-                            self.alert("로그인이 취소되었거나 완료되지 않았습니다. 다시 시도해 주세요.")
+                            self.alert(notice ?? NativeAuthPolicy.failureMessage(nil))
                             return
                         }
                         self.nativeConsumePending = true

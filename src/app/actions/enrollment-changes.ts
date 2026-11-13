@@ -18,7 +18,7 @@ import { markCarryHandledManually, markSettlementLineDone } from "@/lib/enrollme
 import { prisma } from "@/lib/prisma";
 import { revalidateEnrollmentStatusCaches } from "@/lib/enrollment/change-cache";
 import { applyOperationsSheet, recordOperationsExternalCheck, recordOperationsSheetManualCheck } from "@/app/actions/operations-sync";
-import { isSheetSyncRetired } from "@/lib/operations-sync/sheetRetirement";
+import { isSheetSyncRetired, isSheetTargetDone } from "@/lib/operations-sync/sheetRetirement";
 
 /** 신청함에서 열어 본 반만 조회한다. 기존 수강 변경 화면과 같은 금액·처리 상태를 사용한다. */
 export async function readEnrollmentChangesForInbox(requestIds: string[]) {
@@ -195,6 +195,49 @@ export async function applyEnrollmentChangeSheet(commandId: string) {
 /** 원장이 랠리즈에서 직접 처리했음을 기록(시트 확인이 먼저 끝나야 한다) */
 export async function confirmEnrollmentChangeRallyz(commandId: string) {
   return runEnrollmentSyncAction("랠리즈 반영 확인", () => recordOperationsExternalCheck(commandId, "RALLYZ", true));
+}
+
+export type BulkRallyzItem = { requestId: string; name: string; reason: string };
+export type BulkRallyzResult = { done: number; skipped: BulkRallyzItem[]; failed: BulkRallyzItem[] };
+
+/**
+ * 신청함 «선택 N건 랠리즈 반영 확인» — 고른 수강 변경 신청을 한 건씩 단건과 같은 함수로 확인한다.
+ * 검증(시트 선행·적용일·보류)과 감사 기록은 recordOperationsExternalCheck 가 건마다 그대로 한다.
+ * 이미 확인됐거나 확인 대상이 아닌 건은 건너뛰고, 실패는 이름·사유와 함께 돌려준다(한 건 실패가 나머지를 막지 않는다).
+ */
+export async function confirmEnrollmentChangesRallyzBulk(requestIds: string[]): Promise<BulkRallyzResult> {
+  await requireAdmin();
+  if (!Array.isArray(requestIds) || requestIds.length === 0 || requestIds.length > 100
+      || requestIds.some((id) => typeof id !== "string" || !id.trim() || id.length > 128)) {
+    throw new Error("신청을 다시 선택해 주세요.");
+  }
+  const ids = [...new Set(requestIds)];
+  const rows = await getEnrollmentChangeRequests("ALL", ids);
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const result: BulkRallyzResult = { done: 0, skipped: [], failed: [] };
+  for (const id of ids) {
+    const row = byId.get(id);
+    const name = row ? `${row.studentName} · ${row.fromClassName ?? row.kindLabel}` : "알 수 없는 신청";
+    const skip = (reason: string) => result.skipped.push({ requestId: id, name, reason });
+    // 단건 버튼이 켜지는 조건과 같다(적용일 등 나머지 검증은 서버 함수가 건마다 다시 한다)
+    if (!row) { skip("신청을 찾지 못했습니다."); continue; }
+    if (row.status !== "APPLIED") { skip("이미 처리됐거나 확인 대상이 아닙니다."); continue; }
+    if (!row.syncCommandId || !row.rallyzStatus) { skip("랠리즈 확인 대상이 아닙니다."); continue; }
+    if (row.rallyzStatus === "SUCCEEDED") { skip("이미 랠리즈 반영이 확인됐습니다."); continue; }
+    if (row.syncCommandStatus === "HELD") { skip("보류된 변경입니다. 상세에서 확인해 주세요."); continue; }
+    if (!isSheetTargetDone(row.sheetStatus)) { skip("시트 반영이 먼저 필요합니다. 상세에서 처리해 주세요."); continue; }
+    try {
+      const outcome = await recordOperationsExternalCheck(row.syncCommandId, "RALLYZ", true);
+      if (outcome.skipped) skip("이미 랠리즈 반영이 확인됐습니다.");
+      else result.done += 1;
+    } catch (error) {
+      console.error("[enrollment-changes] 랠리즈 반영 일괄 확인 실패", id, error);
+      result.failed.push({ requestId: id, name, reason: userFacingError(error, "랠리즈 반영 확인을 저장하지 못했습니다.") });
+    }
+  }
+  revalidatePath("/admin/enrollment-changes");
+  revalidatePath("/admin/inbox");
+  return result;
 }
 
 /** 자동 시트 반영이 끝내 안 되는 건: 원장이 시트를 직접 고쳤음을 기록(수동 확인) */
