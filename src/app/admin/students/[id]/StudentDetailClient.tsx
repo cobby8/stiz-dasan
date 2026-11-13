@@ -1002,7 +1002,7 @@ export default function StudentDetailClient({
         if (statusUpdatingId) return;
         const ok = await confirmDanger({
             title: `"${student.name}" 학생의 «${enrollment.className}» 수강 삭제`,
-            description: "잘못 등록한 수강 기록을 없앱니다.\n출석·청구·보강·결석·셔틀 기록이 하나라도 있으면 삭제되지 않아요 — 그만두는 반이면 «수강 종료»를 쓰세요.\n시트·랠리즈에 이미 등록된 경우 그쪽은 직접 정리해 주세요.",
+            description: "잘못 등록한 수강 기록을 없앱니다.\n출석·청구·보강·결석·셔틀 기록이 하나라도 있으면 삭제되지 않아요 — 그만두는 반이면 «수강 종료»를 쓰세요.",
             confirmLabel: "삭제",
             tone: "danger",
         });
@@ -1012,8 +1012,9 @@ export default function StudentDetailClient({
             const result = await removeMistakenEnrollment(enrollment.id);
             if (result.ok) {
                 await loadData();
-                // 이미 랠리즈(시트)에 반영 확인된 등록이었다면 그쪽은 직접 지워야 한다 — 안내를 닫지 않고 남긴다
-                const synced = result.alreadySyncedTargets.map((t) => (t === "RALLYZ" ? "랠리즈" : t === "SHEET" ? "시트" : t));
+                // 이미 시트에 반영 확인된 등록이었다면 그쪽은 직접 지워야 한다 — 안내를 닫지 않고 남긴다
+                // 2026-11-14 랠리즈 은퇴: 랠리즈는 더 쓰지 않으므로 «랠리즈에서 직접 정리» 안내는 하지 않는다.
+                const synced = result.alreadySyncedTargets.filter((t) => t !== "RALLYZ").map((t) => (t === "SHEET" ? "시트" : t));
                 setStatusFeedback({ type: "success", message: synced.length > 0
                     ? `«${enrollment.className}» 수강 기록을 삭제했습니다. ${synced.join("·")}에는 이미 등록돼 있어 직접 정리해 주세요.`
                     : `«${enrollment.className}» 수강 기록을 삭제했습니다.` });

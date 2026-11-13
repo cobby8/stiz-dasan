@@ -45,7 +45,8 @@ export function syncCheckBadge(sheetStatus: string | null | undefined, rallyzSta
   // 시트 은퇴(2026-10~)로 건너뛴 SKIPPED 도 시트 확인 완료로 본다 → "랠리즈 확인 필요" / "반영 완료" 만 남는다.
   // (이 파일은 테스트가 단독으로 불러오므로 import 없이 적는다. 공용 isSheetTargetDone 과 같은 규칙인지 tests/sheet-retirement.test.mjs 가 대조한다.)
   const sheetDone = sheetStatus === "SUCCEEDED" || sheetStatus === "SKIPPED";
-  const rallyzDone = rallyzStatus === "SUCCEEDED";
+  // 2026-11-14 랠리즈 은퇴: 랠리즈 칸도 건너뜀(SKIPPED)이면 확인할 것이 없다(공용 isRallyzTargetDone 과 같은 규칙 — tests/rallyz-retirement.test.mjs 가 대조).
+  const rallyzDone = rallyzStatus === "SUCCEEDED" || rallyzStatus === "SKIPPED";
   if (sheetDone && rallyzDone) return { label: "반영 완료", needsCheck: false };
   if (!sheetDone && !rallyzDone) return { label: "사이트 반영됨 · 시트·랠리즈 확인 필요", needsCheck: true };
   if (!rallyzDone) return { label: "사이트 반영됨 · 랠리즈 확인 필요", needsCheck: true };

@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "../prisma";
 import { SYNC_TARGETS } from "../operationsSync";
 import { initialSyncAttempt, isSheetSyncRetired } from "../operations-sync/sheetRetirement";
+import { isRallyzSyncRetired, websiteDoneLedgerStatus } from "../operations-sync/rallyzRetirement";
 import { assertOperationsEventPayloadMatch, prepareWebsiteOperationsEvent, type WebsiteOperationsEvent } from "./policy";
 
 export type { WebsiteOperationsEvent } from "./policy";
@@ -16,15 +17,27 @@ export type EnqueuedOperationsEvent = {
 
 /**
  * 사이트에서 이미 확정된 학생·수강 변경을 3중 동기화 원장에 적재합니다.
- * 홈페이지는 완료로, 시트·랠리즈는 대기로 시작하며 청구와 알림은 별도 승인 전까지 잠급니다.
+ * 홈페이지는 완료로 시작합니다. 시트·랠리즈는 은퇴(기본) 상태면 건너뜀(SKIPPED)이라 원장이 처음부터 끝난 상태(SYNCED)이고,
+ * 스위치를 "0" 으로 되돌린 칸만 대기(PENDING)로 시작합니다.
  */
 export async function enqueueWebsiteOperationsEventInTransaction(
   tx: Prisma.TransactionClient,
   input: WebsiteOperationsEvent,
 ): Promise<EnqueuedOperationsEvent> {
-  const { holdReason, idempotencyKey, payloadFingerprint, sourceText, targetMonth } = prepareWebsiteOperationsEvent(input);
+  // 시트·랠리즈 은퇴(기본) 상태면 그 칸은 처음부터 SKIPPED — 넣을 바깥 장부가 없다.
+  const sheetRetired = isSheetSyncRetired(process.env);
+  const rallyzRetired = isRallyzSyncRetired(process.env);
+  const { holdReason, idempotencyKey, payloadFingerprint, sourceText, targetMonth } = prepareWebsiteOperationsEvent(
+    input,
+    // 둘 다 은퇴면 «시트·랠리즈 어댑터 없음» 보류(CLASS_ADD·RESUME 등)를 만들지 않는다.
+    { externalLedgersRetired: sheetRetired && rallyzRetired },
+  );
   const requestId = crypto.randomUUID();
   const commandId = crypto.randomUUID();
+  const initialBy = (target: string) => initialSyncAttempt(target, sheetRetired, rallyzRetired);
+  // 홈페이지는 이미 반영됐다. 시트·랠리즈 칸까지 처음부터 건너뜀이면 남은 확인이 없어 원장을 끝난 상태(SYNCED)로 만든다.
+  // (2026-11-14 랠리즈 은퇴 — 옛 방식에서는 PENDING 으로 남아 사람이 랠리즈 확인을 눌러야 했다.)
+  const openStatus = websiteDoneLedgerStatus([initialBy("SHEET").status, initialBy("RALLYZ").status]);
 
   await tx.$executeRawUnsafe(
     `INSERT INTO "OperationsRequest"
@@ -34,7 +47,7 @@ export async function enqueueWebsiteOperationsEventInTransaction(
     sourceText,
     targetMonth,
     input.actorUserId,
-    holdReason ? "HELD" : "APPROVED",
+    holdReason ? "HELD" : openStatus === "SYNCED" ? "SYNCED" : "APPROVED",
   );
 
   const inserted = await tx.$queryRawUnsafe<Array<{ id: string }>>(
@@ -53,7 +66,7 @@ export async function enqueueWebsiteOperationsEventInTransaction(
     input.kind,
     targetMonth,
     holdReason ? "LOW" : "HIGH",
-    holdReason ? "HELD" : "PENDING",
+    holdReason ? "HELD" : openStatus,
     holdReason,
     JSON.stringify(input.before),
     JSON.stringify({
@@ -81,11 +94,9 @@ export async function enqueueWebsiteOperationsEventInTransaction(
     return { created: false, requestId: existing.requestId, commandId: existing.id, idempotencyKey };
   }
 
-  // 시트 은퇴(기본) 상태면 SHEET 칸은 처음부터 SKIPPED — 만들 시트 원장이 없다.
-  const sheetRetired = isSheetSyncRetired(process.env);
   for (const target of SYNC_TARGETS) {
     const websiteDone = target === "WEBSITE";
-    const initial = initialSyncAttempt(target, sheetRetired);
+    const initial = initialBy(target);
     await tx.$executeRawUnsafe(
       `INSERT INTO "OperationsSyncAttempt"
         (id,"commandId",target,status,attempts,"verifiedAt","externalReference")

@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { operationsRequestKey, SYNC_TARGETS, type OperationsKind } from "@/lib/operationsSync";
 import { ensureOperationsSyncInfrastructure } from "@/lib/operationsSyncInfrastructure";
 import { initialSyncAttempt, isSheetSyncRetired } from "@/lib/operations-sync/sheetRetirement";
+import { isRallyzSyncRetired } from "@/lib/operations-sync/rallyzRetirement";
 
 export type KakaoIntakeDecision = "TRANSFER" | "NEEDS_DETAILS" | "REJECT" | "CONSULTATION" | "CLOSE_CONSULTATION";
 
@@ -296,10 +297,11 @@ export async function decideKakaoParentIntake(input: {
     if (Object.keys(verified.beforeJson).length) {
       await tx.$executeRawUnsafe(`UPDATE "OperationsCommand" SET "beforeJson"=$2::jsonb WHERE id=$1`, commandId, JSON.stringify(verified.beforeJson));
     }
-    // 시트 은퇴(기본) 상태면 SHEET 칸은 처음부터 SKIPPED — 만들 시트 원장이 없다.
+    // 시트·랠리즈 은퇴(기본) 상태면 그 칸은 처음부터 SKIPPED — 넣을 바깥 장부가 없다(랠리즈: 2026-11-14).
     const sheetRetired = isSheetSyncRetired(process.env);
+    const rallyzRetired = isRallyzSyncRetired(process.env);
     for (const target of SYNC_TARGETS) {
-      const initial = initialSyncAttempt(target, sheetRetired);
+      const initial = initialSyncAttempt(target, sheetRetired, rallyzRetired);
       await tx.$executeRawUnsafe(
         `INSERT INTO "OperationsSyncAttempt" (id,"commandId",target,status,"externalReference") VALUES ($1,$2,$3,$4,$5)`,
         crypto.randomUUID(), commandId, target, initial.status, initial.externalReference,

@@ -78,8 +78,9 @@ test('완료 판정 TS·SQL 일치: SUCCEEDED/SKIPPED/PENDING/FAILED × 재조�
     if (ts) trueCount += 1;
   }
   assert.equal(compared, 512);
-  // 끝난 SHEET(SUCCEEDED+재조회 1 · SKIPPED 2) × 끝난 RALLYZ 1 × 끝난 WEBSITE 1 = 3
-  assert.equal(trueCount, 3);
+  // 2026-11-14 랠리즈 은퇴: 랠리즈 칸도 SKIPPED 를 끝난 것으로 본다.
+  // 끝난 SHEET(SUCCEEDED+재조회 1 · SKIPPED 2) × 끝난 RALLYZ(SUCCEEDED+재조회 1 · SKIPPED 2) × 끝난 WEBSITE 1 = 9
+  assert.equal(trueCount, 9);
 });
 
 test('완료 판정 핵심 사례(의도 고정)', () => {
@@ -89,8 +90,9 @@ test('완료 판정 핵심 사례(의도 고정)', () => {
   assert.equal(hasVerifiedSyncTargets([row('SHEET', 'SKIPPED', null), row('RALLYZ', 'SUCCEEDED'), row('WEBSITE', 'SUCCEEDED')]), true);
   // 옛 방식 그대로: 3칸 SUCCEEDED = 완료
   assert.equal(hasVerifiedSyncTargets([row('SHEET', 'SUCCEEDED'), row('RALLYZ', 'SUCCEEDED'), row('WEBSITE', 'SUCCEEDED')]), true);
-  // SKIPPED 는 SHEET 칸만 인정한다 — 랠리즈를 건너뛰면 완료가 아니다
-  assert.equal(hasVerifiedSyncTargets([row('SHEET', 'SKIPPED', null), row('RALLYZ', 'SKIPPED', null), row('WEBSITE', 'SUCCEEDED')]), false);
+  // 2026-11-14 랠리즈 은퇴: 랠리즈 칸도 건너뜀(SKIPPED)이면 끝난 것 → 시트·랠리즈 둘 다 건너뜀 + 홈페이지 확인 = 완료
+  assert.equal(hasVerifiedSyncTargets([row('SHEET', 'SKIPPED', null), row('RALLYZ', 'SKIPPED', null), row('WEBSITE', 'SUCCEEDED')]), true);
+  // 홈페이지(사이트 반영)는 실제 일이라 SKIPPED 를 끝으로 보지 않는다(약해지지 않음)
   assert.equal(hasVerifiedSyncTargets([row('SHEET', 'SKIPPED', null), row('RALLYZ', 'SUCCEEDED'), row('WEBSITE', 'SKIPPED')]), false);
   // 기존 대기 건(시트 PENDING/FAILED)은 코드가 자동으로 완료시키지 않는다
   for (const status of ['PENDING', 'FAILED']) {
@@ -157,10 +159,12 @@ test('SHEET 시도를 만드는 곳은 전부 initialSyncAttempt(은퇴 분기)�
   assert.match(due, /sheet: sheetInitial\.status/);
 });
 
-test('순서 강제·확인 필요 판정: SHEET 만 SKIPPED 를 끝난 것으로 본다', () => {
+// 2026-11-14 랠리즈 은퇴: 바깥 장부(SHEET·RALLYZ)는 둘 다 SKIPPED 를 끝난 것으로 본다. 조건은 공용 externalSyncPendingSql 하나
+// (세부 대조는 tests/rallyz-retirement.test.mjs).
+test('순서 강제·확인 필요 판정: 바깥 장부(SHEET·RALLYZ)만 SKIPPED 를 끝난 것으로 본다', () => {
   const ops = read('src/app/actions/operations-sync.ts');
   // 홈페이지 반영 전 선행 조건
-  assert.match(ops, /\(pending\.target='SHEET' AND pending\.status NOT IN \('SUCCEEDED','SKIPPED'\)\)\s*OR \(pending\.target='RALLYZ' AND pending\.status <> 'SUCCEEDED'\)/);
+  assert.match(ops, /AND \$\{externalSyncPendingSql\("pending"\)\}/);
   // 랠리즈 확인 전 선행 조건
   const rallyz = ops.slice(ops.indexOf('export async function recordOperationsExternalCheck'), ops.indexOf('export async function applyOperationsSheet'));
   assert.match(rallyz, /!isSheetTargetDone\(sheet\[0\]\.status\)/);
@@ -176,7 +180,7 @@ test('순서 강제·확인 필요 판정: SHEET 만 SKIPPED 를 끝난 것으�
   assert.match(ops.slice(ops.indexOf('async function refreshOperationsStatuses')), /hasVerifiedSyncTargets\(attempts\)/);
   // 확인 필요 목록·건수
   const admin = read('src/lib/enrollment/admin-change-request.ts');
-  assert.match(admin, /\(a\.target = 'SHEET' AND a\.status NOT IN \('SUCCEEDED','SKIPPED'\)\)\s*OR \(a\.target = 'RALLYZ' AND a\.status <> 'SUCCEEDED'\)/);
+  assert.match(admin, /AND \$\{externalSyncPendingSql\("a"\)\}\)`;/);
   // 대기열 요약(읽기 전용 워커)
   const worker = read('src/lib/operationsSyncWorker.ts');
   assert.equal((worker.match(/isSheetTargetDone\(row\.sheetStatus\)/g) || []).length, 2);

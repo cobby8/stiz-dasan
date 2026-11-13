@@ -197,7 +197,7 @@ export default function MonthlyRegisterClient({ initialStudentId, initialMonth }
 
   return <section className="space-y-5">
     <Link href="/admin/finance/monthly-ledger" className="underline">월별·반별 장부 점검으로 돌아가기</Link>
-    <header><AdminPageHeader title="학생별 월 운영 장부" /><p className="academy-page-description mt-1">학생·월·반별 금액과 근거를 초안으로 작성하고 확인합니다. 청구·수납·문자·시트·랠리즈에는 반영하지 않습니다.</p></header>
+    <header><AdminPageHeader title="학생별 월 운영 장부" /><p className="academy-page-description mt-1">학생·월·반별 금액과 근거를 초안으로 작성하고 확인합니다. 청구·수납·문자·시트에는 반영하지 않습니다.</p></header>
     <div className="rounded border border-[var(--color-academy-primary)] p-4">이 화면의 확정은 장부 내용 확인입니다. 청구서 발행이나 운영 시스템 전환을 뜻하지 않습니다. 빈 금액과 날짜를 자동으로 채우지 않습니다.</div>
     <form onSubmit={(event) => { event.preventDefault(); chooseTarget(); }} className="flex flex-wrap items-end gap-3">
       <label className="grid gap-1">원생 번호<input value={studentId} disabled={saving || Boolean(preview)} onChange={(event) => setStudentId(event.target.value)} className="academy-input" /></label>

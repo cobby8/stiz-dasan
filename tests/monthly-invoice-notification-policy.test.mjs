@@ -43,7 +43,9 @@ test("청구 생성과 알림 발송은 분리하고, 청구 안내는 랠리즈
   assert.doesNotMatch(financeClient, /링크 발송 \(필수\)/);
   assert.doesNotMatch(financeClient, /링크 발송이 필수|반드시 링크 발송|반드시 발송해야/);
   const workbench = readFileSync('src/app/admin/finance/prepare/BillingWorkbench.tsx', 'utf8');
-  assert.match(workbench, /랠리즈 발행·학부모 전달은 별도로 확인합니다/);
+  // 2026-11-14 랠리즈 은퇴: «랠리즈 발행» 말을 뺐다 — 학부모 전달이 발행과 따로라는 안내는 그대로.
+  assert.match(workbench, /학부모 전달은 별도로 확인합니다/);
+  assert.doesNotMatch(workbench, /랠리즈 발행/);
   assert.match(workbench, /사이트 청구/);
   assert.doesNotMatch(workbench, /sendInvoiceLinksForMonth\(|sendUnpaidReminders\(/);
   assert.match(financeClient, /sendInvoiceLinksForMonth\(year, month\)/);

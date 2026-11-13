@@ -1,6 +1,7 @@
 import { requireAdmin } from "@/lib/auth-guard";
 import { countEnrollmentChangesNeedingCheck, countOpenPauseSettlements, getEnrollmentCancelRequests, getEnrollmentChangeRequests } from "@/lib/enrollment/admin-change-request";
 import { isSheetSyncRetired } from "@/lib/operations-sync/sheetRetirement";
+import { isRallyzSyncRetired } from "@/lib/operations-sync/rallyzRetirement";
 import EnrollmentChangesClient from "./EnrollmentChangesClient";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +14,7 @@ export default async function EnrollmentChangesPage({
   // 레이아웃 검사만 믿지 않고 화면마다 관리자 확인(d3 — 레이아웃이 바뀌거나 우회돼도 데이터가 새지 않게)
   await requireAdmin();
   const params = await searchParams;
-  // NEEDS_CHECK = 사이트에는 자동 반영됐지만 시트·랠리즈 확인이 남은 건
+  // NEEDS_CHECK = 사이트에는 자동 반영됐지만 확인이 남은 건(랠리즈 은퇴 2026-11-14 뒤에는 옛 시트 대기·보류 건만)
   const status = params?.status === "ALL" || params?.status === "APPROVED" || params?.status === "REJECTED"
     || params?.status === "NEEDS_CHECK"
     ? params.status
@@ -30,5 +31,7 @@ export default async function EnrollmentChangesPage({
     countOpenPauseSettlements(),
   ]);
   // 시트 원장 은퇴 여부는 서버 환경변수로만 정해진다 → 화면에 그대로 넘겨 문구·버튼을 맞춘다.
-  return <EnrollmentChangesClient rows={rows} status={status} needsCheckCount={needsCheckCount} sheetRetired={isSheetSyncRetired(process.env)} cancelRequests={cancelRequests} openSettlementCount={openSettlementCount} />;
+  // 랠리즈 은퇴(2026-11-14 원장 결정)도 같다 — 기본 은퇴, STIZ_RALLYZ_SYNC_RETIRED 가 "0" 일 때만 옛 화면.
+  const rallyzRetired = isRallyzSyncRetired(process.env);
+  return <EnrollmentChangesClient rows={rows} status={status} needsCheckCount={needsCheckCount} sheetRetired={isSheetSyncRetired(process.env)} rallyzRetired={rallyzRetired} cancelRequests={cancelRequests} openSettlementCount={openSettlementCount} />;
 }

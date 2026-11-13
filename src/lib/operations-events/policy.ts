@@ -119,8 +119,16 @@ function requiredEnrollmentPayloadReason(event: NormalizedOperationsEvent) {
   return null;
 }
 
-export function operationsEventPayloadHoldReason(event: NormalizedOperationsEvent) {
-  const adapterHoldReason = !["PAUSE", "WITHDRAW", "UNKNOWN"].includes(event.change.kind)
+/**
+ * externalLedgersRetired = 시트·랠리즈가 둘 다 은퇴한 상태(2026-11-14 랠리즈 은퇴).
+ * 바깥 장부에 넣을 일이 없으므로 «시트·랠리즈 어댑터 없음» 보류를 만들지 않는다.
+ * (이 보류가 생기면 그 학생이 청구서 링크 발송에서 조용히 빠진다 — 랠리즈 때문에 새로 생기면 안 된다.)
+ * 안 넘기면 옛 동작 그대로다.
+ */
+export type OperationsEventHoldOptions = { externalLedgersRetired?: boolean };
+
+export function operationsEventPayloadHoldReason(event: NormalizedOperationsEvent, options: OperationsEventHoldOptions = {}) {
+  const adapterHoldReason = !options.externalLedgersRetired && !["PAUSE", "WITHDRAW", "UNKNOWN"].includes(event.change.kind)
     ? `${event.change.kind} 변경은 시트·랠리즈 전용 동기화 어댑터가 아직 없어 확인보류합니다.`
     : null;
   const reasons = [
@@ -170,7 +178,7 @@ export function normalizeOperationsEventPayload(value: unknown): NormalizedOpera
   };
 }
 
-export function prepareWebsiteOperationsEvent(input: WebsiteOperationsEvent) {
+export function prepareWebsiteOperationsEvent(input: WebsiteOperationsEvent, options: OperationsEventHoldOptions = {}) {
   if (!input.eventId.trim() || !input.eventType.trim()) throw new Error("운영 변경의 안정적인 이벤트 ID와 종류가 필요합니다.");
   if (!input.actorUserId.trim() || !input.studentId.trim()) throw new Error("운영 변경의 담당자와 학생 식별값이 필요합니다.");
   if (!isExactOperationsDate(input.effectiveDate)) {
@@ -204,6 +212,6 @@ export function prepareWebsiteOperationsEvent(input: WebsiteOperationsEvent) {
     sourceText: `[사이트 변경] ${input.summary.trim()}`,
     idempotencyKey: operationsEventIdempotencyKey("WEBSITE", input.eventId),
     payloadFingerprint: operationsEventPayloadFingerprint(normalized),
-    holdReason: operationsEventPayloadHoldReason(normalized),
+    holdReason: operationsEventPayloadHoldReason(normalized, options),
   };
 }

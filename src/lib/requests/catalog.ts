@@ -92,7 +92,7 @@ export const REQUEST_KINDS: readonly KindEntry[] = [
       // 파생: APPROVED + cancelRequestStatus='PENDING'(원장 결정 d8 학부모 «취소 요청») — 원장이 [취소 승인]/[요청 거절]을 눌러야 끝난다
       CANCEL_REQUESTED: act("취소 요청 검토 중"),
       APPLY_HELD: act("반영 확인 필요"),
-      SYNC_CHECK: act("외부 반영 확인 필요"),
+      SYNC_CHECK: act("반영 확인 필요"),
       SETTLEMENT_CHECK: act("수강료 처리 확인 필요"),
       APPLIED: ok("적용됨"), // 파생: APPROVED + appliedAt
       REJECTED: no("거절"),

@@ -120,7 +120,8 @@ test("화면: 반 단위는 «수강 종료», 삭제는 빨간 확인 창(학�
   assert.match(detail, /WITHDRAWN: \{ label: "퇴원"/, "학생 대표 상태의 «퇴원»은 그대로");
   assert.match(detail, /title: `"\$\{student\.name\}" 학생의 «\$\{enrollment\.className\}» 수강 삭제`/);
   assert.match(detail, /tone: "danger"/);
-  assert.match(detail, /시트·랠리즈에 이미 등록된 경우 그쪽은 직접 정리/);
+  // 2026-11-14 랠리즈 은퇴: 삭제 확인 창의 «시트·랠리즈에서 직접 정리» 안내를 걷었다(랠리즈를 더 쓰지 않는다).
+  assert.doesNotMatch(detail, /시트·랠리즈에 이미 등록된 경우 그쪽은 직접 정리/);
   const modal = readFileSync("src/app/admin/students/[id]/EnrollmentMoveModal.tsx", "utf8");
   assert.match(modal, /moveEffectiveMinYmd\(/);
   assert.match(modal, /min=\{minDate \?\? undefined\}/);
@@ -186,7 +187,8 @@ test("삭제 서버 동작: 원장 닫기는 같은 트랜잭션에서 DELETE �
   assert.match(detail, /에는 이미 등록돼 있어 직접 정리해 주세요/);
 });
 
-test("삭제로 닫힌 명령은 «확인 필요» 탭·건수(일일 요약)·행 배지에서 빠진다 — RALLYZ SKIPPED 의미는 넓히지 않음", () => {
+// 2026-11-14 랠리즈 은퇴: 랠리즈 칸 SKIPPED 도 끝난 것으로 본다(공용 externalSyncPendingSql). 삭제로 닫힌 명령을 빼는 조건은 그대로 남는다.
+test("삭제로 닫힌 명령은 «확인 필요» 탭·건수(일일 요약)·행 배지에서 빠진다", () => {
   // 조건 문자열 자체: 사유가 정확히 들어가고 따옴표가 안전하게 처리된다
   const cond = edit.notClosedByDeletedEnrollmentSql("c");
   assert.equal(cond, `c."holdReason" IS DISTINCT FROM '${edit.DELETED_ENROLLMENT_CLOSE_REASON}'`);
@@ -194,7 +196,7 @@ test("삭제로 닫힌 명령은 «확인 필요» 탭·건수(일일 요약)·�
   const lib = readFileSync("src/lib/enrollment/admin-change-request.ts", "utf8");
   const needs = lib.slice(lib.indexOf("const NEEDS_CHECK_SQL"), lib.indexOf("export async function countEnrollmentChangesNeedingCheck"));
   assert.match(needs, /AND \$\{notClosedByDeletedEnrollmentSql\("c"\)\}/, "확인 필요 조건이 삭제로 닫힌 명령을 뺀다");
-  assert.match(needs, /a\.target = 'RALLYZ' AND a\.status <> 'SUCCEEDED'/, "랠리즈 SKIPPED 를 완료로 보지 않는 기존 규칙 유지");
+  assert.match(needs, /AND \$\{externalSyncPendingSql\("a"\)\}\)`;/, "확인 필요 조건은 공용 조각 하나를 쓴다");
   // 건수 함수(탭·일일 요약)가 같은 조건 하나를 쓴다
   assert.match(lib, /WHERE r\.status = 'APPLIED' AND \$\{NEEDS_CHECK_SQL\}/);
   assert.match(readFileSync("src/lib/admin-daily-digest-service.ts", "utf8"), /countEnrollmentChangesNeedingCheck\(\)/);

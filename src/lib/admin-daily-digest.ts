@@ -14,7 +14,7 @@ export type UnpaidMonthRow = {
 export type AdminDigestInput = {
   todayYmd: string; // KST 오늘 "YYYY-MM-DD" (todayKst() 결과)
   unpaid: UnpaidMonthRow[];
-  needsCheckCount: number; // 수강 변경: 사이트엔 반영됐지만 시트·랠리즈 확인이 남은 건
+  needsCheckCount: number; // 수강 변경: 사이트엔 반영됐지만 확인이 남은 건(2026-11-14 랠리즈 은퇴 뒤에는 옛 대기·보류 건만)
   pendingChangeCount: number; // 수강 변경: 승인 대기
   kakaoPendingCount?: number; // 카카오 접수: 원장 확인 대기(접수·보류·실패)
 };
@@ -80,7 +80,7 @@ export function buildAdminDailyDigest(input: AdminDigestInput): AdminDigest | nu
 
   if (input.needsCheckCount > 0) {
     titleParts.push(`수강 변경 확인 ${input.needsCheckCount}건`);
-    lines.push(`[수강 변경 확인 필요] ${input.needsCheckCount}건 — 시트·랠리즈 반영 확인`);
+    lines.push(`[수강 변경 확인 필요] ${input.needsCheckCount}건 — 수강 변경 화면에서 확인`);
   }
   if (input.pendingChangeCount > 0) {
     titleParts.push(`변경 승인 대기 ${input.pendingChangeCount}건`);

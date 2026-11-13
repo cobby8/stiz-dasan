@@ -187,7 +187,7 @@ export function IssueInvoiceModal({
                 </label>
                 {notifyDisabled && (
                     <p className="-mt-2 text-xs text-[var(--color-academy-faint)]">
-                        {!parentSendEnabled ? "학부모 청구 안내는 랠리즈에서 보냅니다(사이트 발송 잠금)." : "연결된 학부모 계정이 없어 알림을 보낼 수 없어요."}
+                        {!parentSendEnabled ? "학부모 청구 안내 발송은 잠겨 있습니다(발송 스위치를 켜면 열립니다)." : "연결된 학부모 계정이 없어 알림을 보낼 수 없어요."}
                     </p>
                 )}
                 {duplicates && (

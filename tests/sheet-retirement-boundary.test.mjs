@@ -1,6 +1,7 @@
 // 시트 원장 은퇴(Phase 2-D) 경계값 실행 검증 — tester 작성(2026-10-06).
 // 순수 함수를 실제로 불러 실행해, 스위치 해석·칸별 완료 판정·배지·생성 상태가 표대로인지 못박는다.
-// 핵심 원칙: SHEET 만 SKIPPED 를 «끝남»으로 인정한다. RALLYZ·WEBSITE 는 SUCCEEDED + verifiedAt 이 있어야만 끝.
+// 핵심 원칙: 바깥 장부(SHEET·RALLYZ)만 SKIPPED 를 «끝남»으로 인정한다. WEBSITE 는 SUCCEEDED + verifiedAt 이 있어야만 끝.
+// (2026-11-14 랠리즈 은퇴: RALLYZ 도 SKIPPED 를 끝으로 본다 — 그전에는 SHEET 만이었다.)
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -41,16 +42,22 @@ test('완료 판정 표: SHEET SKIPPED + RALLYZ·WEBSITE SUCCEEDED(verifiedAt) �
   assert.deepEqual(syncCheckBadge('SKIPPED', 'SUCCEEDED'), { label: '반영 완료', needsCheck: false });
 });
 
-test('완료 판정 표: RALLYZ SKIPPED → 절대 완료 아님(시트가 무엇이든)', () => {
+// 2026-11-14 랠리즈 은퇴: 옛 단언은 «RALLYZ SKIPPED → 절대 완료 아님»이었다. 원장 결정으로 랠리즈 확인이 없어져 뒤집는다.
+test('완료 판정 표: RALLYZ SKIPPED → 끝난 칸(시트가 끝났고 홈페이지가 확인됐으면 완료)', () => {
   for (const sheet of [row('SHEET', 'SKIPPED'), row('SHEET', 'SUCCEEDED', AT)]) {
-    assert.equal(hasVerifiedSyncTargets([sheet, row('RALLYZ', 'SKIPPED'), row('WEBSITE', 'SUCCEEDED', AT)]), false);
-    // verifiedAt 이 붙어 있어도 RALLYZ SKIPPED 는 완료가 아니다
-    assert.equal(hasVerifiedSyncTargets([sheet, row('RALLYZ', 'SKIPPED', AT), row('WEBSITE', 'SUCCEEDED', AT)]), false);
+    assert.equal(hasVerifiedSyncTargets([sheet, row('RALLYZ', 'SKIPPED'), row('WEBSITE', 'SUCCEEDED', AT)]), true);
+    assert.equal(hasVerifiedSyncTargets([sheet, row('RALLYZ', 'SKIPPED', AT), row('WEBSITE', 'SUCCEEDED', AT)]), true);
+    // 홈페이지가 안 끝났으면 랠리즈를 건너뛰어도 완료가 아니다
+    assert.equal(hasVerifiedSyncTargets([sheet, row('RALLYZ', 'SKIPPED'), row('WEBSITE', 'PENDING')]), false);
   }
+  // 시트가 안 끝났으면(옛 대기 건) 랠리즈 건너뜀만으로 완료되지 않는다
+  assert.equal(hasVerifiedSyncTargets([row('SHEET', 'PENDING'), row('RALLYZ', 'SKIPPED'), row('WEBSITE', 'SUCCEEDED', AT)]), false);
   for (const sheet of ['SKIPPED', 'SUCCEEDED']) {
-    const badge = syncCheckBadge(sheet, 'SKIPPED');
-    assert.equal(badge?.needsCheck, true, sheet);
-    assert.equal(badge?.label, '사이트 반영됨 · 랠리즈 확인 필요', sheet);
+    assert.deepEqual(syncCheckBadge(sheet, 'SKIPPED'), { label: '반영 완료', needsCheck: false }, sheet);
+  }
+  // 랠리즈 칸이 대기·실패(옛 방식 건)면 여전히 확인 필요
+  for (const rallyz of ['PENDING', 'FAILED']) {
+    assert.equal(syncCheckBadge('SKIPPED', rallyz)?.label, '사이트 반영됨 · 랠리즈 확인 필요', rallyz);
   }
 });
 

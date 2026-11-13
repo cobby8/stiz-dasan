@@ -19,6 +19,7 @@ import { prisma } from "@/lib/prisma";
 import { revalidateEnrollmentStatusCaches } from "@/lib/enrollment/change-cache";
 import { applyOperationsSheet, recordOperationsExternalCheck, recordOperationsSheetManualCheck } from "@/app/actions/operations-sync";
 import { isSheetSyncRetired, isSheetTargetDone } from "@/lib/operations-sync/sheetRetirement";
+import { isRallyzSyncRetired, RALLYZ_RETIRED_MESSAGE } from "@/lib/operations-sync/rallyzRetirement";
 
 /** 신청함에서 열어 본 반만 조회한다. 기존 수강 변경 화면과 같은 금액·처리 상태를 사용한다. */
 export async function readEnrollmentChangesForInbox(requestIds: string[]) {
@@ -40,6 +41,8 @@ export async function readEnrollmentChangesForInbox(requestIds: string[]) {
     rows,
     cancelRequests,
     sheetRetired: isSheetSyncRetired(process.env),
+    // 2026-11-14 랠리즈 은퇴: 화면이 «랠리즈 반영 확인» 버튼·배지를 숨길 때 쓰는 값
+    rallyzRetired: isRallyzSyncRetired(process.env),
   };
 }
 
@@ -192,7 +195,10 @@ export async function applyEnrollmentChangeSheet(commandId: string) {
   return runEnrollmentSyncAction("시트 반영", () => applyOperationsSheet(commandId));
 }
 
-/** 원장이 랠리즈에서 직접 처리했음을 기록(시트 확인이 먼저 끝나야 한다) */
+/**
+ * 원장이 랠리즈에서 직접 처리했음을 기록(시트 확인이 먼저 끝나야 한다).
+ * 2026-11-14 랠리즈 은퇴: 은퇴 상태에서는 recordOperationsExternalCheck 가 아무것도 바꾸지 않고 성공으로 끝난다(삭제는 3단계).
+ */
 export async function confirmEnrollmentChangeRallyz(commandId: string) {
   return runEnrollmentSyncAction("랠리즈 반영 확인", () => recordOperationsExternalCheck(commandId, "RALLYZ", true));
 }
@@ -215,6 +221,14 @@ export async function confirmEnrollmentChangesRallyzBulk(requestIds: string[]): 
   const rows = await getEnrollmentChangeRequests("ALL", ids);
   const byId = new Map(rows.map((row) => [row.id, row]));
   const result: BulkRallyzResult = { done: 0, skipped: [], failed: [] };
+  // 2026-11-14 랠리즈 은퇴: 확인할 랠리즈가 없다 — 아무것도 바꾸지 않고 전부 «필요 없음»으로 돌려준다.
+  if (isRallyzSyncRetired(process.env)) {
+    for (const id of ids) {
+      const row = byId.get(id);
+      result.skipped.push({ requestId: id, name: row ? `${row.studentName} · ${row.fromClassName ?? row.kindLabel}` : "알 수 없는 신청", reason: RALLYZ_RETIRED_MESSAGE });
+    }
+    return result;
+  }
   for (const id of ids) {
     const row = byId.get(id);
     const name = row ? `${row.studentName} · ${row.fromClassName ?? row.kindLabel}` : "알 수 없는 신청";
@@ -228,7 +242,8 @@ export async function confirmEnrollmentChangesRallyzBulk(requestIds: string[]): 
     if (!isSheetTargetDone(row.sheetStatus)) { skip("시트 반영이 먼저 필요합니다. 상세에서 처리해 주세요."); continue; }
     try {
       const outcome = await recordOperationsExternalCheck(row.syncCommandId, "RALLYZ", true);
-      if (outcome.skipped) skip("이미 랠리즈 반영이 확인됐습니다.");
+      if ("retired" in outcome) skip(RALLYZ_RETIRED_MESSAGE);
+      else if (outcome.skipped) skip("이미 랠리즈 반영이 확인됐습니다.");
       else result.done += 1;
     } catch (error) {
       console.error("[enrollment-changes] 랠리즈 반영 일괄 확인 실패", id, error);
@@ -247,7 +262,8 @@ export async function confirmEnrollmentChangeSheetManually(commandId: string) {
 
 /**
  * 시트 은퇴 상태(시트 칸 SKIPPED)의 복귀 보류 해제. 서버 함수는 위와 같다 —
- * SKIPPED 칸은 건드리지 않고 복귀 어댑터 보류만 풀어 랠리즈 확인으로 넘긴다. 오류 문구 이름만 다르다.
+ * SKIPPED 칸은 건드리지 않고 복귀 어댑터 보류만 푼다. 오류 문구 이름만 다르다.
+ * (랠리즈 은퇴 뒤에는 랠리즈 칸도 SKIPPED 라, 보류를 풀면 재집계에서 바로 완료(SYNCED)가 된다.)
  */
 export async function releaseEnrollmentChangeHoldSheetRetired(commandId: string) {
   return runEnrollmentSyncAction("보류 해제", () => recordOperationsSheetManualCheck(commandId));

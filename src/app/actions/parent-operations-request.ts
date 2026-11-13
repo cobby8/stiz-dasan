@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { operationsRequestKey, SYNC_TARGETS } from "@/lib/operationsSync";
 import { ensureOperationsSyncInfrastructure } from "@/lib/operationsSyncInfrastructure";
 import { initialSyncAttempt, isSheetSyncRetired } from "@/lib/operations-sync/sheetRetirement";
+import { isRallyzSyncRetired } from "@/lib/operations-sync/rallyzRetirement";
 import {
   interpretParentOperationsRequest as interpretRequest,
   validateConfirmedParentOperationsDraft,
@@ -206,8 +207,8 @@ export async function submitParentOperationsRequest(token: string, sourceText: s
           }),
         );
         for (const target of SYNC_TARGETS) {
-          // 시트 은퇴(기본) 상태면 SHEET 칸은 처음부터 SKIPPED — 만들 시트 원장이 없다.
-          const initial = initialSyncAttempt(target, isSheetSyncRetired(process.env));
+          // 시트·랠리즈 은퇴(기본) 상태면 그 칸은 처음부터 SKIPPED — 넣을 바깥 장부가 없다(랠리즈: 2026-11-14).
+          const initial = initialSyncAttempt(target, isSheetSyncRetired(process.env), isRallyzSyncRetired(process.env));
           await tx.$executeRawUnsafe(
             `INSERT INTO "OperationsSyncAttempt" (id,"commandId",target,status,"externalReference") VALUES ($1,$2,$3,$4,$5)`,
             crypto.randomUUID(), commandId, target, initial.status, initial.externalReference,

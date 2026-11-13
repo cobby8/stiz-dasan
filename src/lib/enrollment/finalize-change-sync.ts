@@ -4,23 +4,25 @@ type Attempt = { target: string; status: string; verifiedAt: Date | string | nul
  * 한 칸(시도)이 "끝났다"고 볼 SQL 조건(별칭 a). 아래 TS 판정(isAttemptDone)과 **반드시 같은 규칙**이어야 한다.
  * - 보통 칸: 성공(SUCCEEDED) + 재조회 시각(verifiedAt) 있음
  * - SHEET 칸: 위에 더해, 시트 은퇴로 건너뜀(SKIPPED)도 통과(재조회 시각 불필요 — 확인할 시트가 없다)
+ * - RALLYZ 칸: 2026-11-14 랠리즈 은퇴 — 시트와 같이 건너뜀(SKIPPED)도 통과
+ * - WEBSITE 칸: SKIPPED 를 인정하지 않는다(사이트 반영은 실제 일이다)
  * tests/sheet-retirement.test.mjs 가 이 문자열을 실제로 실행해 TS 판정과 같은 결과인지 대조한다.
  */
 export const VERIFIED_SYNC_TARGET_SQL =
-  `((a.status='SUCCEEDED' AND a."verifiedAt" IS NOT NULL) OR (a.target='SHEET' AND a.status='SKIPPED'))`;
+  `((a.status='SUCCEEDED' AND a."verifiedAt" IS NOT NULL) OR (a.target='SHEET' AND a.status='SKIPPED') OR (a.target='RALLYZ' AND a.status='SKIPPED'))`;
 
 /**
- * 한 칸이 끝났는가(TS 판정). SKIPPED 는 SHEET 칸에서만 인정한다.
- * (이 파일은 테스트가 단독으로 불러오므로 import 없이 적는다 — 공용 isSheetTargetDone 과 같은 규칙.)
+ * 한 칸이 끝났는가(TS 판정). SKIPPED 는 바깥 장부(SHEET·RALLYZ) 칸에서만 인정한다.
+ * (이 파일은 테스트가 단독으로 불러오므로 import 없이 적는다 — 공용 isSheetTargetDone·isRallyzTargetDone 과 같은 규칙.)
  */
 function isAttemptDone(attempt: Attempt): boolean {
-  if (attempt.target === "SHEET" && attempt.status === "SKIPPED") return true;
+  if ((attempt.target === "SHEET" || attempt.target === "RALLYZ") && attempt.status === "SKIPPED") return true;
   return attempt.status === "SUCCEEDED"
     && attempt.verifiedAt !== null
     && Number.isFinite(new Date(attempt.verifiedAt).getTime());
 }
 
-/** 세 장부가 모두 끝나야 완료다(시트는 은퇴로 건너뜀도 끝난 것으로 본다). */
+/** 세 장부가 모두 끝나야 완료다(시트·랠리즈는 은퇴로 건너뜀도 끝난 것으로 본다). */
 export function hasVerifiedSyncTargets(attempts: Attempt[]): boolean {
   return attempts.length === 3 && ["SHEET", "RALLYZ", "WEBSITE"].every(target => {
     const matching = attempts.filter(attempt => attempt.target === target);

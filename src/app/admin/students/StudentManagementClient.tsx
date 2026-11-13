@@ -885,7 +885,7 @@ export default function StudentManagementClient({
                                 {backgroundLoading ? "전체 불러오는 중" : "전체 목록 불러오기"}
                             </button>
                         )}
-                        {/* 엑셀 일괄 업로드 버튼 — 랠리즈 다운로드 파일용 */}
+                        {/* 엑셀 일괄 업로드 버튼 — 원생 목록 엑셀 파일용 */}
                         <button
                             type="button"
                             onClick={() => setShowExcelUpload(true)}

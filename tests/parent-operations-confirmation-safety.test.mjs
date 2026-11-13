@@ -22,7 +22,12 @@ test("접수 직후에는 DRAFT이며 청구와 알림은 HELD다", () => {
 test("학부모 제출 경로는 시트·랠리즈·홈페이지 외부 반영 함수를 호출하지 않는다", () => {
   assert.doesNotMatch(action, /applyOperationsWebsite\s*\(/);
   assert.doesNotMatch(action, /send(?:Sms|Notification|Message)\s*\(/i);
-  assert.doesNotMatch(action, /googleapis|sheets\.spreadsheets|rallyz/i);
+  // 2026-11-14 랠리즈 은퇴: 은퇴 스위치(순수 판정 — 외부 호출 없음)를 읽는 두 곳만 빼고 본다. 그 밖의 랠리즈 접근은 여전히 금지.
+  const withoutRetirementSwitch = action
+    .replace('import { isRallyzSyncRetired } from "@/lib/operations-sync/rallyzRetirement";', "")
+    .replace("isRallyzSyncRetired(process.env)", "");
+  assert.notEqual(withoutRetirementSwitch, action);
+  assert.doesNotMatch(withoutRetirementSwitch, /googleapis|sheets\.spreadsheets|rallyz/i);
   assert.match(operations, /if \(!requests\[0\] \|\| !\['APPROVED', 'PARTIAL', 'PENDING'\]\.includes\(requests\[0\]\.status\)\)/);
 });
 

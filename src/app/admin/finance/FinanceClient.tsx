@@ -393,14 +393,14 @@ export default function FinanceClient({
     initialSummary?: Summary;
     initialPaymentProvider?: PaymentProviderStatus;
     currentAdminRole: AdminFinanceRole;
-    // 학부모 청구 안내 사이트 발송 허용 여부(기본 잠금 — 청구 안내는 랠리즈 전담)
+    // 학부모 청구 안내 사이트 발송 허용 여부(기본 잠금 — 발송 스위치 BILLING_PARENT_SEND_ENABLED 를 켜야 열린다)
     billingParentSendEnabled?: boolean;
     // 구글 시트 원장 은퇴 여부 — true 면 「시트 원장 기준 수납 점검」 버튼·패널을 숨긴다(API 는 그대로 둠)
     sheetRetired?: boolean;
 }) {
     // 삭제 확인 = 공용 확인 창(브라우저 기본 confirm 대신) — 대상 이름·위험색 확정
     const { confirm: askConfirm, confirmDialog } = useAdminConfirm();
-    // 잠금이면 「링크 발송」「미납 알림」 버튼을 막고 "랠리즈에서 발송" 으로 안내한다
+    // 잠금이면 「링크 발송」「미납 알림」 버튼을 막고 "발송 잠금" 으로 안내한다(2026-11-14 랠리즈 은퇴 — 문구에서 랠리즈를 뺐다)
     const parentSendLocked = !billingParentSendEnabled;
     const searchParams = useSearchParams();
     const [focusedStudentId, setFocusedStudentId] = useState(searchParams.get("studentId") ?? "");
@@ -1359,14 +1359,14 @@ export default function FinanceClient({
                                 actions={[
                                     {
                                         key: "send-links",
-                                        label: parentSendLocked ? "링크 발송 · 랠리즈에서 발송" : "링크 발송",
+                                        label: parentSendLocked ? "링크 발송 · 발송 잠금" : "링크 발송",
                                         icon: "send",
                                         disabled: parentSendLocked || busy || invoiceGeneratedCount === 0 || invoiceUnsentCount === 0,
                                         onSelect: handleSendInvoiceLinks,
                                     },
                                     {
                                         key: "send-reminders",
-                                        label: parentSendLocked ? "미납 알림 · 랠리즈에서 발송" : "미납 알림",
+                                        label: parentSendLocked ? "미납 알림 · 발송 잠금" : "미납 알림",
                                         icon: "notifications_active",
                                         disabled: parentSendLocked || busy || invoiceOpenCount === 0,
                                         onSelect: handleSendReminders,
@@ -1385,10 +1385,10 @@ export default function FinanceClient({
                                 <p className="mt-2 max-w-[220px] text-xs font-normal leading-snug text-[var(--color-academy-muted)]">{BILLING_QUIET_HINT}</p>
                             )}
                         </div></details>
-                        {/* 잠금 안내: 학부모 청구 안내(링크·미납 알림)는 랠리즈에서 보낸다 */}
+                        {/* 잠금 안내: 학부모 청구 안내(링크·미납 알림) 발송이 잠겨 있다 */}
                         {parentSendLocked && (
                             <span className="text-xs text-[var(--color-academy-muted)]">
-                                학부모 청구 안내는 랠리즈에서 발송
+                                학부모 청구 안내 발송 잠금
                             </span>
                         )}
                         <button
@@ -1681,7 +1681,7 @@ export default function FinanceClient({
                             생성 후 학부모 수납 안내 알림 보내기
                         </label>
                         {parentSendLocked && (
-                            <p className="text-xs text-[var(--color-academy-muted)]">학부모 청구 안내는 랠리즈에서 보냅니다(사이트 발송 잠금).</p>
+                            <p className="text-xs text-[var(--color-academy-muted)]">학부모 청구 안내 발송은 잠겨 있습니다(발송 스위치를 켜면 열립니다).</p>
                         )}
                         {studentId && !selectedStudent?.hasParent && (
                             <p className="text-xs text-[var(--color-academy-warning)]">연결된 학부모가 없어 알림은 선택할 수 없습니다.</p>

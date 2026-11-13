@@ -7,6 +7,7 @@ import { computeClassChangeProration, describeProration, type ProrationResult } 
 import { getMonthlyClassDates, loadAnnualPlanEvents } from "@/lib/enrollment/monthlyClassDates";
 import { DEFAULT_HOLD_REASON, planDueEnrollmentChange } from "@/lib/enrollment/due-change-plan";
 import { initialSyncAttempt, isSheetSyncRetired } from "@/lib/operations-sync/sheetRetirement";
+import { externalSyncPendingSql, isRallyzSyncRetired, websiteDoneLedgerStatus } from "@/lib/operations-sync/rallyzRetirement";
 import { notClosedByDeletedEnrollmentSql } from "@/lib/enrollment/admin-enrollment-edit";
 import { notifyParentOfEnrollmentChange } from "@/lib/enrollment/change-decision-notify";
 import {
@@ -217,7 +218,8 @@ const LINKED_COMMAND_SQL = `(c."idempotencyKey" = 'enrollment-change:' || r.id
 /**
  * 사이트에는 자동 적용됐지만 시트·랠리즈 확인이 안 끝난 건(별칭 r = 신청).
  * 보류(HELD)된 명령은 사람이 다른 경로로 정리해야 하므로 여기서도 "확인 필요"로 센다.
- * 시트 은퇴로 건너뛴 SHEET(SKIPPED)는 확인할 것이 없으므로 "확인 필요"가 아니다(SKIPPED 는 SHEET 칸만 인정).
+ * 은퇴로 건너뛴 SHEET·RALLYZ(SKIPPED)는 확인할 것이 없으므로 "확인 필요"가 아니다.
+ * (2026-11-14 랠리즈 은퇴: 랠리즈 칸 SKIPPED 도 끝난 것으로 본다 — 조건은 공용 externalSyncPendingSql 하나.)
  */
 // 잘못 등록 삭제로 닫은 명령(사유 DELETED_ENROLLMENT_CLOSE_REASON, 칸 SKIPPED)은 할 일이 없으므로 «확인 필요»가 아니다.
 // 화면 탭·건수(countEnrollmentChangesNeedingCheck → 일일 요약 포함)가 모두 이 조건 하나를 쓴다.
@@ -225,8 +227,7 @@ const NEEDS_CHECK_SQL = `EXISTS (SELECT 1 FROM "OperationsCommand" c
     JOIN "OperationsSyncAttempt" a ON a."commandId" = c.id
    WHERE ${LINKED_COMMAND_SQL}
      AND ${notClosedByDeletedEnrollmentSql("c")}
-     AND ((a.target = 'SHEET' AND a.status NOT IN ('SUCCEEDED','SKIPPED'))
-       OR (a.target = 'RALLYZ' AND a.status <> 'SUCCEEDED')))`;
+     AND ${externalSyncPendingSql("a")})`;
 
 /** 확인 필요 건수 — 탭 이름과 상단 경고에 쓴다. 기본 탭이 "검토 중"이어도 놓치지 않게. */
 export async function countEnrollmentChangesNeedingCheck(): Promise<number> {
@@ -533,8 +534,8 @@ export async function applyDueEnrollmentChangesWithSummary(): Promise<DueEnrollm
           afterJson: { enrollmentChangeRequestId: row.id, fromClassId: row.fromClassId,
             toClassId: row.toClassId, parentConfirmed, effectiveDate: row.effectiveDate },
           billingStatus: "HELD", notificationStatus: "HELD",
-          // 시트 은퇴(기본) 상태면 SHEET 칸은 처음부터 SKIPPED(+표식). 나머지는 PENDING.
-          syncAttempts: { create: ["SHEET", "RALLYZ", "WEBSITE"].map(target => ({ target, ...initialSyncAttempt(target, isSheetSyncRetired(process.env)) })) },
+          // 시트·랠리즈 은퇴(기본) 상태면 그 칸은 처음부터 SKIPPED(+표식). 홈페이지는 PENDING(사이트 반영이 남았다).
+          syncAttempts: { create: ["SHEET", "RALLYZ", "WEBSITE"].map(target => ({ target, ...initialSyncAttempt(target, isSheetSyncRetired(process.env), isRallyzSyncRetired(process.env)) })) },
         }},
         auditLogs: { create: { action: "ENROLLMENT_CHANGE_SYNC_HELD", actorType: "ADMIN", actorUserId: actor,
           detailsJson: { enrollmentChangeRequestId: row.id, reason } } },
@@ -567,9 +568,11 @@ type RawTx = {
 
 /**
  * 자동 적용한 휴원·퇴원을 운영 원장에 남긴다.
- * 홈페이지 = 이미 완료(SUCCEEDED), 랠리즈 = 확인 필요(PENDING),
+ * 홈페이지 = 이미 완료(SUCCEEDED),
  * 시트 = 은퇴 상태(기본)면 건너뜀(SKIPPED·SHEET_RETIRED), 스위치를 "0" 으로 되돌리면 확인 필요(PENDING).
- * 요청 APPROVED · 명령 PENDING 이라 기존 서버 액션(applyOperationsSheet → recordOperationsExternalCheck)이 그대로 동작한다.
+ * 랠리즈 = 은퇴 상태(기본, 2026-11-14)면 건너뜀(SKIPPED·RALLYZ_RETIRED), 스위치를 "0" 으로 되돌리면 확인 필요(PENDING).
+ * 둘 다 건너뜀이면 남은 확인이 없으므로 요청·명령을 처음부터 끝난 상태(SYNCED)로 만든다.
+ * 하나라도 PENDING(옛 방식)이면 요청 APPROVED · 명령 PENDING 이라 기존 서버 액션(applyOperationsSheet → recordOperationsExternalCheck)이 그대로 동작하고,
  * 관리자는 「수강 변경 신청」 화면의 "확인 필요" 탭에서 행마다 시트 반영·랠리즈 반영 확인 버튼으로 이어간다.
  * (옛 운영 동기화 화면 /admin/operations-sync 는 폐기돼 /admin 으로 돌려보낸다.)
  * (공용 enqueueWebsiteOperationsEventInTransaction 은 키가 해시라 `enrollment-change:<id>` 를 유지할 수 없어 쓰지 않는다.)
@@ -587,32 +590,36 @@ async function insertAutoAppliedLedger(tx: RawTx, input: {
   const commandId = crypto.randomUUID();
   const month = String(row.effectiveDate).slice(0, 7);
   const sourceText = `수강 변경 신청 ${row.id}`;
+  // 시트·랠리즈 은퇴(기본) 상태면 그 칸은 처음부터 SKIPPED(+표식) → 남는 확인이 없다.
+  const sheetInitial = initialSyncAttempt("SHEET", isSheetSyncRetired(process.env));
+  const rallyzInitial = initialSyncAttempt("RALLYZ", false, isRallyzSyncRetired(process.env));
+  // 두 칸이 모두 건너뜀이면 원장은 처음부터 끝난 상태(SYNCED). 옛 방식(스위치 "0")이면 PENDING 으로 남아 사람이 확인한다.
+  const ledgerStatus = websiteDoneLedgerStatus([sheetInitial.status, rallyzInitial.status]);
   // 시트 반영(applyOperationsSheet)이 읽는 키: fromClassId · effectiveDate · parentConfirmed
   const base = { enrollmentChangeRequestId: row.id, fromClassId: row.fromClassId, toClassId: row.toClassId,
     parentConfirmed: true, effectiveDate: row.effectiveDate };
   await tx.$executeRawUnsafe(
     `INSERT INTO "OperationsRequest"
       (id,"sourceText","targetMonth",status,"requestedByUserId","approvedByUserId","approvedAt","submittedAt")
-     VALUES ($1,$2,$3,'APPROVED',$4,$4,now(),now())`,
-    requestId, sourceText, month, actor,
+     VALUES ($1,$2,$3,$5,$4,$4,now(),now())`,
+    requestId, sourceText, month, actor, ledgerStatus === "SYNCED" ? "SYNCED" : "APPROVED",
   );
   // idempotencyKey 는 `enrollment-change:<id>` 그대로. 유일 제약이 마지막 이중 적용 방어선이다.
   await tx.$executeRawUnsafe(
     `INSERT INTO "OperationsCommand"
       (id,"requestId","idempotencyKey","sourceText","studentId","studentName",kind,"effectiveMonth",confidence,status,
        "holdReason","beforeJson","afterJson","billingStatus","notificationStatus")
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'HIGH','PENDING',NULL,$9::jsonb,$10::jsonb,'HELD','HELD')`,
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'HIGH',$11,NULL,$9::jsonb,$10::jsonb,'HELD','HELD')`,
     commandId, requestId, key, sourceText, row.studentId, input.studentName, row.kind, month,
     JSON.stringify({ ...base, enrollmentId: enrollment.id, classId: enrollment.classId, status: enrollment.status,
       enrollments: [{ id: enrollment.id, status: enrollment.status, className: enrollment.className }] }),
     JSON.stringify({ ...base, autoAppliedWebsite: true,
       enrollments: [{ id: enrollment.id, status: input.nextStatus, className: enrollment.className }] }),
+    ledgerStatus,
   );
-  // 시트 은퇴(기본) 상태면 SHEET 칸은 처음부터 SKIPPED(+표식) → 남는 확인은 랠리즈뿐.
-  const sheetInitial = initialSyncAttempt("SHEET", isSheetSyncRetired(process.env));
   for (const target of ["SHEET", "RALLYZ", "WEBSITE"]) {
     const websiteDone = target === "WEBSITE";
-    const initial = target === "SHEET" ? sheetInitial : initialSyncAttempt(target, false);
+    const initial = target === "SHEET" ? sheetInitial : target === "RALLYZ" ? rallyzInitial : initialSyncAttempt(target, false);
     await tx.$executeRawUnsafe(
       `INSERT INTO "OperationsSyncAttempt" (id,"commandId",target,status,attempts,"verifiedAt","externalReference")
        VALUES ($1,$2,$3,$4,$5,$6,$7)`,
@@ -626,7 +633,7 @@ async function insertAutoAppliedLedger(tx: RawTx, input: {
      VALUES ($1,$2,'ENROLLMENT_CHANGE_AUTO_APPLIED','SYSTEM',$3,$4::jsonb)`,
     crypto.randomUUID(), requestId, actor,
     JSON.stringify({ enrollmentChangeRequestId: row.id, commandId, enrollmentId: enrollment.id,
-      from: enrollment.status, to: input.nextStatus, sheet: sheetInitial.status, rallyz: "PENDING", notificationsSent: false }),
+      from: enrollment.status, to: input.nextStatus, sheet: sheetInitial.status, rallyz: rallyzInitial.status, notificationsSent: false }),
   );
 }
 

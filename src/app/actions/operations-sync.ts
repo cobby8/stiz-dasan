@@ -8,6 +8,7 @@ import { ensureOperationsSyncInfrastructure } from "@/lib/operationsSyncInfrastr
 import { applySheetEnrollmentStatus } from "@/lib/googleSheetsOperations";
 import { sheetHoldReleaseDecision } from "@/lib/enrollment/sheetManualCheckRules";
 import { isSheetTargetDone } from "@/lib/operations-sync/sheetRetirement";
+import { externalSyncPendingSql, isRallyzSyncRetired } from "@/lib/operations-sync/rallyzRetirement";
 
 type OperationsRequestRow = {
   id: string;
@@ -296,9 +297,8 @@ export async function applyOperationsWebsite(requestId: string) {
         AND NOT EXISTS (
           SELECT 1 FROM "OperationsSyncAttempt" pending
           WHERE pending."commandId"=c.id
-            -- 시트는 은퇴로 건너뜀(SKIPPED)도 끝난 것으로 본다. 랠리즈는 실제 확인(SUCCEEDED)만.
-            AND ((pending.target='SHEET' AND pending.status NOT IN ('SUCCEEDED','SKIPPED'))
-              OR (pending.target='RALLYZ' AND pending.status <> 'SUCCEEDED'))
+            -- 시트·랠리즈는 은퇴로 건너뜀(SKIPPED)도 끝난 것으로 본다(랠리즈: 2026-11-14 은퇴 — 공용 조건 하나).
+            AND ${externalSyncPendingSql("pending")}
         )`, requestId,
   );
   if (commands.length === 0) {
@@ -402,6 +402,9 @@ async function markWebsiteConflict(commandId: string, processingToken: string, a
 
 export async function recordOperationsExternalCheck(commandId: string, target: "RALLYZ", succeeded: boolean) {
   const admin = await requireAdmin();
+  // 2026-11-14 랠리즈 은퇴: 확인할 랠리즈가 없다. 옛 화면·옛 탭에서 불려도 아무것도 바꾸지 않고 «할 일 없음»으로 끝낸다.
+  // (스위치 STIZ_RALLYZ_SYNC_RETIRED="0" 일 때만 아래 옛 확인 절차가 돈다. 이 함수 삭제는 3단계.)
+  if (isRallyzSyncRetired(process.env)) return { ok: true as const, skipped: true as const, retired: true as const };
   await ensureOperationsSyncInfrastructure();
   const sheet = await prisma.$queryRawUnsafe<Array<{ status: string; commandStatus: string; effectiveDate: string | null; parentConfirmed: boolean }>>(
     `SELECT a.status, c.status AS "commandStatus", c."afterJson"->>'effectiveDate' AS "effectiveDate",
@@ -419,7 +422,8 @@ export async function recordOperationsExternalCheck(commandId: string, target: "
       `WITH candidate AS (
          SELECT a.id, a.status AS "previousStatus", c."requestId"
            FROM "OperationsSyncAttempt" a JOIN "OperationsCommand" c ON c.id=a."commandId"
-          WHERE a."commandId"=$1 AND a.target=$2 AND a.status <> 'SUCCEEDED'
+          -- 건너뜀(SKIPPED)으로 닫힌 칸은 다시 열지 않는다 — 대기·실패 칸만 사람이 확인한다.
+          WHERE a."commandId"=$1 AND a.target=$2 AND a.status IN ('PENDING','FAILED')
           FOR UPDATE OF a
        ), updated AS (
          UPDATE "OperationsSyncAttempt" a

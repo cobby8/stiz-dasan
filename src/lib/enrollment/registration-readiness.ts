@@ -23,6 +23,8 @@ export type RegistrationEvidence = {
   now?: number;
   /** 시트 원장 은퇴(2026-10~) 여부. true 면 "시트 등록·재조회" 항목을 만들지 않는다(확인할 시트가 없다). 없으면 옛 동작. */
   sheetRetired?: boolean;
+  /** 랠리즈 확인 은퇴(2026-11-14~) 여부. true 면 "Rallyz 등록·재조회"·"Rallyz 보호자 초대" 항목을 만들지 않는다. 없으면 옛 동작. */
+  rallyzRetired?: boolean;
 };
 
 function object(value: unknown): Record<string, unknown> {
@@ -79,6 +81,8 @@ export function registrationReadiness(input: RegistrationEvidence) {
         let issue: string | null = null;
         // 시트 은퇴로 건너뛴 칸은 실패가 아니라 "확인 대상 아님"이다.
         if (target === "SHEET" && attempt.status === "SKIPPED") issue = "시트 운영 종료로 건너뜀";
+        // 2026-11-14 랠리즈 은퇴: 랠리즈 칸도 같다.
+        else if (target === "RALLYZ" && attempt.status === "SKIPPED") issue = "랠리즈 사용 종료로 건너뜀";
         else if (attempt.status !== "SUCCEEDED") issue = "재조회 성공 상태 아님";
         else if (!verifiedAt) issue = "유효한 재조회 시각 없음";
         else if (!createdAt) issue = "명령 생성 시각 확인 필요";
@@ -92,8 +96,9 @@ export function registrationReadiness(input: RegistrationEvidence) {
       effectiveMonth: command.effectiveMonth ?? null, eventDate: text(after.effectiveDate), createdAt,
       reasons, targets };
   });
-  // 시트 은퇴 상태면 시트 항목은 빼고 랠리즈만 확인한다.
-  for (const target of (input.sheetRetired ? ["RALLYZ"] : ["SHEET", "RALLYZ"]) as Array<"SHEET" | "RALLYZ">) {
+  // 은퇴한 바깥 장부(시트·랠리즈)는 확인 항목을 만들지 않는다 — 확인할 곳이 없다.
+  const externalTargets = (["SHEET", "RALLYZ"] as const).filter(target => !(target === "SHEET" ? input.sheetRetired : input.rallyzRetired));
+  for (const target of externalTargets) {
     const linked = evidence.filter(row => row.reasons.every(reason => reason === "확정 수강 시작일 근거 없음")).length;
     const verifiedClasses = input.assignedClassIds.filter(classId => {
       const matches = evidence.filter(row => row.classId === classId && row.reasons.length === 0);
@@ -110,7 +115,11 @@ export function registrationReadiness(input: RegistrationEvidence) {
     ["rallyz-invite", "Rallyz 보호자 초대·연결", "사이트 보호자 연결만으로 Rallyz 연결을 완료 처리하지 않음"],
     ["uniform", "유니폼·제품 안내", "홈페이지 /shop 안내 전달 및 유니폼 신청 여부 확인 필요"],
     ["teacher", "담당 선생님·연간일정 안내", "최종 배정 반의 담당자 및 연간일정 안내 전달 확인 필요"],
-  ]) checks.push({ key, label, detail, status: "CHECK_REQUIRED" });
+  ]) {
+    // 랠리즈 은퇴 뒤에는 랠리즈 보호자 초대도 할 일이 아니다.
+    if (key === "rallyz-invite" && input.rallyzRetired) continue;
+    checks.push({ key, label, detail, status: "CHECK_REQUIRED" });
+  }
   if (input.shuttleNeeded) checks.push({ key: "shuttle", label: "셔틀 배차·기사님 안내", detail: input.shuttleProgress ? `${input.shuttleProgress.label} · ${input.shuttleProgress.detail}` : "승하차 장소·확정 시간·배정 기사 안내 전달 확인 필요", status: input.shuttleProgress?.status === "COMPLETE" ? "VERIFIED" : "CHECK_REQUIRED" });
   return { complete: checks.every((check) => check.status === "VERIFIED"), checks, evidence };
 }

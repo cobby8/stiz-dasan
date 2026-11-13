@@ -152,14 +152,34 @@ test("신청함 휴원 상세에서 반별 사이트 상태와 확인해야 할 
     fromClassName: "월요일 반", effectiveFrom: "2026-11-03", effectiveDateReached: true,
     createdAt: "2026-10-29", enrollmentStatus: "PAUSED",
   };
-  const html = renderAdminChange({ inline: true, rows: [
+  const rows = [
     { ...pause, status: "APPROVED", syncCommandStatus: "HELD", syncHoldReason: "신청 보호자와 현재 학생 연결 재확인 필요" },
     { ...pause, id: "request-b", fromClassName: "수요일 반", status: "APPLIED", appliedAt: "2026-11-03 09:00",
       syncCommandId: "operation-b", sheetStatus: "SKIPPED", rallyzStatus: "PENDING" },
-  ] });
+  ];
+  // 2026-11-14 랠리즈 은퇴: 기본(은퇴) 화면은 랠리즈 대기 칸을 «확인할 일»로 보지 않는다 — 배지는 «반영 완료», 버튼·문구 없음.
+  const html = renderAdminChange({ inline: true, rows });
   assert.match(html, /월요일 반[\s\S]*?반영 확인 필요[\s\S]*?사이트 수강 상태 · 휴원[\s\S]*?신청 보호자와 현재 학생 연결 재확인 필요/);
-  assert.match(html, /수요일 반[\s\S]*?사이트 반영됨 · 랠리즈 확인 필요[\s\S]*?사이트 수강 상태 · 휴원[\s\S]*?>랠리즈 반영 확인</);
+  assert.match(html, /수요일 반[\s\S]*?반영 완료[\s\S]*?사이트 수강 상태 · 휴원/);
+  assert.doesNotMatch(html, /랠리즈/);
   assert.doesNotMatch(html, /href=|수강료 처리 실행/);
+  // 스위치 "0"(옛 방식) = rallyzRetired false → 예전 배지·버튼이 그대로 나온다
+  const legacy = renderAdminChange({ inline: true, rallyzRetired: false, rows });
+  assert.match(legacy, /월요일 반[\s\S]*?반영 확인 필요[\s\S]*?사이트 수강 상태 · 휴원[\s\S]*?신청 보호자와 현재 학생 연결 재확인 필요/);
+  assert.match(legacy, /수요일 반[\s\S]*?사이트 반영됨 · 랠리즈 확인 필요[\s\S]*?사이트 수강 상태 · 휴원[\s\S]*?>랠리즈 반영 확인</);
+  assert.doesNotMatch(legacy, /href=|수강료 처리 실행/);
+});
+
+test("2026-11-14 랠리즈 은퇴: 보류된 반영 건은 랠리즈 말 없이 «보류 확인 필요»로 남는다", () => {
+  const row = {
+    id: "request-c", studentName: "합성 학생", kind: "PAUSE", kindLabel: "휴원", fromClassName: "금요일 반",
+    effectiveFrom: "2026-11-03", createdAt: "2026-10-29", enrollmentStatus: "PAUSED",
+    status: "APPLIED", appliedAt: "2026-11-03 09:00", syncCommandId: "operation-c",
+    sheetStatus: "SKIPPED", rallyzStatus: "PENDING", syncCommandStatus: "HELD", syncHoldReason: "관리자 확인 필요",
+  };
+  const html = renderAdminChange({ inline: true, rows: [row] });
+  assert.match(html, /사이트 반영됨 · 보류 확인 필요[\s\S]*?자동 반영 보류: 관리자 확인 필요/);
+  assert.doesNotMatch(html, /랠리즈/);
 });
 
 test("신청함 휴원 수강료 조회 실패에서는 승인만 막고 재조회와 거절은 가능하다", () => {
@@ -189,6 +209,8 @@ test("신청함 상세는 관리자 확인 후 선택한 신청 ID만 조회한�
     "@/lib/enrollment/change-cache": {},
     "@/app/actions/operations-sync": {},
     "@/lib/operations-sync/sheetRetirement": { isSheetSyncRetired: () => true },
+    // 2026-11-14 랠리즈 은퇴: 서버 액션이 랠리즈 은퇴 스위치도 읽는다
+    "@/lib/operations-sync/rallyzRetirement": { isRallyzSyncRetired: () => true, RALLYZ_RETIRED_MESSAGE: "" },
   });
   await assert.rejects(readEnrollmentChangesForInbox(["request-a"]), /권한 없음/);
   assert.deepEqual(calls, []);

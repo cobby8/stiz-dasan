@@ -362,8 +362,8 @@ export default function ExcelUploadModal({
 
                             {/* 안내 텍스트 */}
                             <div className="bg-[var(--color-academy-soft)] rounded-lg p-4 text-sm text-[var(--color-academy-muted)] space-y-1">
-                                <p className="font-medium text-[var(--color-academy-muted)]">랠리즈 엑셀 파일 형식</p>
-                                <p>랠리즈에서 다운로드한 원생 목록 엑셀 파일을 그대로 업로드하세요.</p>
+                                <p className="font-medium text-[var(--color-academy-muted)]">엑셀 파일 형식</p>
+                                <p>원생 목록 엑셀 파일을 그대로 업로드하세요.</p>
                             </div>
                         </div>
                     )}

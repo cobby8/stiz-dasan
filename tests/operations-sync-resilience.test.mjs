@@ -18,7 +18,10 @@ test("성공 대상은 재호출하지 않고 실패 대상만 재시도한다",
   assert.match(action, /if \(current\[0\]\?\.status === "SUCCEEDED"\) return \{ token: null, skipped: true/);
   assert.match(action, /a\.status IN \('PENDING','FAILED'\)/);
   assert.match(action, /previousStatus === "FAILED" \? "SYNC_TARGET_RETRIED"/);
-  assert.match(action, /a\.status <> 'SUCCEEDED'/);
+  // 2026-11-14 랠리즈 은퇴: 랠리즈 확인은 대기·실패 칸만 바꾼다(건너뜀 SKIPPED 로 닫힌 칸을 다시 열지 않는다).
+  const rallyzCheck = action.slice(action.indexOf("export async function recordOperationsExternalCheck"), action.indexOf("export async function applyOperationsSheet"));
+  assert.match(rallyzCheck, /a\.target=\$2 AND a\.status IN \('PENDING','FAILED'\)/);
+  assert.doesNotMatch(rallyzCheck, /a\.status <> 'SUCCEEDED'/);
 });
 
 test("성공·실패·재시도·상태 변경을 감사로그에 남긴다", () => {

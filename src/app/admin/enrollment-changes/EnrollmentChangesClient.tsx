@@ -48,6 +48,7 @@ export default function EnrollmentChangesClient({
   status,
   needsCheckCount = 0,
   sheetRetired = false,
+  rallyzRetired = true,
   cancelRequests = [],
   openSettlementCount = 0,
   inline = false,
@@ -64,10 +65,27 @@ export default function EnrollmentChangesClient({
   needsCheckCount?: number;
   /** 시트 원장 은퇴(2026-10~) 여부 — 서버(page.tsx)가 환경변수로 판정해 넘긴다. true 면 안내에서 "시트"를 뺀다. */
   sheetRetired?: boolean;
+  /**
+   * 랠리즈 은퇴(2026-11-14 원장 결정) 여부 — 서버(page.tsx)가 환경변수로 판정해 넘긴다.
+   * 기본값 true(은퇴): «랠리즈 반영 확인» 버튼·안내·대기 표시를 그리지 않는다. false 는 스위치 "0"(옛 방식)일 때만.
+   */
+  rallyzRetired?: boolean;
 }) {
   const router = useRouter();
   // 사람이 직접 반영해야 하는 외부 장부 이름. 시트 은퇴 후엔 랠리즈만 남는다.
   const externalLabel = sheetRetired ? "랠리즈" : "시트·랠리즈";
+  // 랠리즈 은퇴 뒤 화면에 쓰는 이름 — 랠리즈를 뺀다. 시트도 은퇴했으면 남는 외부 장부가 없다(null).
+  const externalNote = rallyzRetired ? (sheetRetired ? null : "시트") : externalLabel;
+
+  // 확인 상태 배지. 랠리즈 은퇴 뒤에는 랠리즈 칸을 «확인할 일»로 보지 않는다(끝난 칸으로 취급).
+  // 보류(HELD)된 건은 랠리즈와 무관하게 사람이 봐야 하므로 «보류 확인 필요»로 남긴다.
+  function checkBadge(row: AdminChangeRequestRow) {
+    if (!rallyzRetired) return syncCheckBadge(row.sheetStatus, row.rallyzStatus);
+    if (!row.sheetStatus && !row.rallyzStatus) return null;
+    const badge = syncCheckBadge(row.sheetStatus, row.rallyzStatus ? "SUCCEEDED" : row.rallyzStatus);
+    if (badge && !badge.needsCheck && row.syncCommandStatus === "HELD") return { label: "사이트 반영됨 · 보류 확인 필요", needsCheck: true };
+    return badge;
+  }
   const [pending, startTransition] = useTransition();
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
@@ -81,7 +99,7 @@ export default function EnrollmentChangesClient({
 
   function issueInvoice(requestId: string) {
     const row = rows.find(item => item.id === requestId);
-    if (!row?.proration || !window.confirm(`${row.studentName} · ${row.effectiveFrom}\n${row.fromClassName} → ${row.toClassName}\n차액 ${row.proration.diff.toLocaleString()}원 사이트 청구서 1건을 생성할까요?\n문자·알림 발송과 ${externalLabel} 반영은 포함되지 않습니다.`)) return;
+    if (!row?.proration || !window.confirm(`${row.studentName} · ${row.effectiveFrom}\n${row.fromClassName} → ${row.toClassName}\n차액 ${row.proration.diff.toLocaleString()}원 사이트 청구서 1건을 생성할까요?\n${externalNote ? `문자·알림 발송과 ${externalNote} 반영은 포함되지 않습니다.` : "문자·알림 발송은 포함되지 않습니다."}`)) return;
     setError("");
     startTransition(async () => {
       try {
@@ -117,7 +135,12 @@ export default function EnrollmentChangesClient({
   // 시트 은퇴 상태에서 복귀(RESUME) 보류를 푼다. 풀린 뒤 '랠리즈 반영 확인'을 눌러야 완료된다.
   function releaseRetiredResumeHold(row: AdminChangeRequestRow) {
     if (!row.syncCommandId) return;
-    if (!window.confirm(`${row.studentName} · ${row.fromClassName ?? "-"} · ${row.kindLabel}
+    // 랠리즈 은퇴 뒤에는 이어지는 랠리즈 확인 단계가 없다 — 보류만 푼다.
+    if (!window.confirm(rallyzRetired
+      ? `${row.studentName} · ${row.fromClassName ?? "-"} · ${row.kindLabel}
+구글 시트 운영이 끝나 시트 확인 없이 보류를 풉니다.
+보류를 풀까요?`
+      : `${row.studentName} · ${row.fromClassName ?? "-"} · ${row.kindLabel}
 구글 시트 운영이 끝나 시트 확인 없이 보류를 풉니다.
 보류를 풀고 랠리즈 반영 확인으로 넘어갈까요?`)) return;
     runSyncAction(() => releaseEnrollmentChangeHoldSheetRetired(row.syncCommandId!));
@@ -265,7 +288,7 @@ export default function EnrollmentChangesClient({
   }
 
   function markCarryDone(settlementId: string, amount: number) {
-    if (!window.confirm(`남은 이월 ${amount.toLocaleString()}원을 다음 청구(랠리즈 등)에서 직접 차감했나요?\n확인을 누르면 이월이 끝난 것으로 기록됩니다.`)) return;
+    if (!window.confirm(`남은 이월 ${amount.toLocaleString()}원을 다음 청구에서 직접 차감했나요?\n확인을 누르면 이월이 끝난 것으로 기록됩니다.`)) return;
     setError("");
     startTransition(async () => {
       const result = await markPauseCarryHandled({ settlementId });
@@ -279,7 +302,7 @@ export default function EnrollmentChangesClient({
     if (row.status === "APPROVED" && !row.appliedAt && (row.syncCommandStatus === "HELD" || row.effectiveDateReached)) {
       return <span className="text-xs font-medium text-[var(--color-academy-warning)]">반영 확인 필요</span>;
     }
-    const badge = row.status === "APPLIED" ? syncCheckBadge(row.sheetStatus, row.rallyzStatus) : null;
+    const badge = row.status === "APPLIED" ? checkBadge(row) : null;
     if (badge?.needsCheck) {
       return (
         <span className="rounded-full bg-[var(--color-academy-warning-soft)] px-2 py-0.5 text-xs text-[var(--color-academy-warning)]">
@@ -351,7 +374,10 @@ export default function EnrollmentChangesClient({
         {/* 원장 결정(2026-10-05): 휴원·퇴원은 사이트만 자동. 랠리즈·시트는 사람이 반영하고 확인을 눌러야 끝난다. */}
         {/* 시트 은퇴(2026-10~) 후엔 시트를 언급하지 않는다 — 남은 사람 일은 랠리즈뿐이다. */}
         <p className="mt-1 text-sm text-[var(--color-academy-muted)]">
-          {sheetRetired
+          {/* 랠리즈 은퇴(2026-11-14) 후엔 사람이 따로 반영·확인할 외부 장부가 없다 — 사이트 반영만 안내한다. */}
+          {rallyzRetired
+            ? "적용일이 된 휴원·퇴원은 사이트에 자동 반영됩니다(적용일이 이미 지난 건은 승인 즉시). 반 변경은 적용일에 자동으로 바뀌지 않습니다. 학부모 알림은 별도 승인 후 발송합니다."
+            : sheetRetired
             ? "적용일이 된 휴원·퇴원은 사이트에 자동 반영됩니다. 랠리즈에 직접 반영한 뒤 '랠리즈 반영 확인'을 눌러 주세요. 적용일이 이미 지난 건은 승인 즉시 반영됩니다. 반 변경은 적용일에 자동으로 바뀌지 않습니다. 학부모 알림은 별도 승인 후 발송합니다."
             : "적용일이 된 휴원·퇴원은 사이트에 자동 반영됩니다(적용일이 이미 지난 건은 승인 즉시). 랠리즈·시트는 직접 반영한 뒤 '랠리즈 반영 확인'을 눌러 주세요. 반 변경은 적용일에 자동으로 바뀌지 않습니다. 학부모 알림은 별도 승인 후 발송합니다."}
         </p>
@@ -364,7 +390,9 @@ export default function EnrollmentChangesClient({
           onClick={() => { setDetailId(null); router.push("/admin/enrollment-changes?status=NEEDS_CHECK"); }}
           className="block min-h-11 w-full rounded-xl bg-[var(--color-academy-warning-soft)] p-3 text-left text-sm font-medium text-[var(--color-academy-warning)]"
         >
-          사이트에만 반영되고 {externalLabel} 확인이 남은 건이 {needsCheckCount}건 있습니다. 눌러서 확인하세요.
+          {rallyzRetired
+            ? <>사이트에 반영된 뒤 확인이 남은 건이 {needsCheckCount}건 있습니다. 눌러서 확인하세요.</>
+            : <>사이트에만 반영되고 {externalLabel} 확인이 남은 건이 {needsCheckCount}건 있습니다. 눌러서 확인하세요.</>}
         </button>
       )}
 
@@ -547,7 +575,7 @@ export default function EnrollmentChangesClient({
           </p>
         )}
         {/* 자동 적용 후 남은 확인 단계: 시트 반영(자동 또는 직접 수정 확인) → 랠리즈 반영 확인(서버도 이 순서를 요구한다). */}
-        {row.status === "APPLIED" && row.syncCommandId && syncCheckBadge(row.sheetStatus, row.rallyzStatus)?.needsCheck && (() => {
+        {row.status === "APPLIED" && row.syncCommandId && checkBadge(row)?.needsCheck && (() => {
           // 시트 은퇴로 건너뛴 칸(SKIPPED) = 시트 할 일 없음 → 시트 버튼 둘을 숨기고 랠리즈 잠금을 푼다.
           // 은퇴 전에 만들어진 PENDING/FAILED 시트 칸은 그대로 두어 '시트 직접 수정 완료'로 끝낼 수 있다.
           const sheetSkipped = row.sheetStatus === "SKIPPED";
@@ -563,7 +591,7 @@ export default function EnrollmentChangesClient({
               <p className="rounded-xl bg-[var(--color-academy-warning-soft)] p-2 text-xs font-medium text-[var(--color-academy-warning)]">
                 {/* 영문 종류 코드가 섞인 저장 문구는 화면에서만 한국어로 다듬는다. */}
                 {sheetSkipped
-                  ? <>자동 반영 보류: {sheetHoldDisplayReason(row.kind, row.syncHoldReason)}{retiredResumeHold ? " — 랠리즈에 직접 반영한 뒤 '보류 해제 후 랠리즈 확인 진행'을 눌러 주세요." : ""}</>
+                  ? <>자동 반영 보류: {sheetHoldDisplayReason(row.kind, row.syncHoldReason)}{retiredResumeHold ? (rallyzRetired ? " — '보류 해제'를 눌러 주세요." : " — 랠리즈에 직접 반영한 뒤 '보류 해제 후 랠리즈 확인 진행'을 눌러 주세요.") : ""}</>
                   : <>시트 자동 반영 보류: {sheetHoldDisplayReason(row.kind, row.syncHoldReason)} — 구글 시트를 직접 고친 뒤 '시트 직접 수정 완료'를 눌러 주세요.</>}
               </p>
             )}
@@ -574,11 +602,13 @@ export default function EnrollmentChangesClient({
                   type="button"
                   disabled={pending || row.sheetStatus === "SUCCEEDED" || row.syncCommandStatus === "HELD"}
                   onClick={() => applySheet(row)}
-                  className="academy-button-secondary"
+                  className={`${rallyzRetired ? "col-span-2 " : ""}academy-button-secondary`}
                 >
                   {row.sheetStatus === "SUCCEEDED" ? "시트 반영됨" : "시트에 반영"}
                 </button>
               )}
+              {/* 랠리즈 은퇴(2026-11-14) 뒤에는 «랠리즈 반영 확인» 버튼을 그리지 않는다. */}
+              {!rallyzRetired && (
               <button
                 type="button"
                 disabled={pending || !sheetDone || row.rallyzStatus === "SUCCEEDED" || row.syncCommandStatus === "HELD"}
@@ -588,6 +618,7 @@ export default function EnrollmentChangesClient({
               >
                 랠리즈 반영 확인
               </button>
+              )}
               {/* 자동 시트 반영이 실패·보류된 건의 탈출구(항상 보조로 노출). 시트가 끝났으면 숨긴다. */}
               {!sheetSkipped && (row.sheetStatus !== "SUCCEEDED" || row.syncCommandStatus === "HELD") && (
                 <button
@@ -607,13 +638,15 @@ export default function EnrollmentChangesClient({
                   onClick={() => releaseRetiredResumeHold(row)}
                   className="academy-button-secondary col-span-2"
                 >
-                  보류 해제 후 랠리즈 확인 진행
+                  {rallyzRetired ? "보류 해제" : "보류 해제 후 랠리즈 확인 진행"}
                 </button>
               )}
               {!sheetDone && (
                 <p className="col-span-2 text-xs text-[var(--color-academy-muted)]">{row.kind === "RESUME"
                   ? "복귀는 시트 자동 반영을 지원하지 않습니다 — 시트를 직접 고친 뒤 '시트 직접 수정 완료'를 눌러 주세요."
-                  : "시트 반영을 먼저 하면 '랠리즈 반영 확인'을 누를 수 있습니다. 자동 반영이 안 되면 시트를 직접 고친 뒤 '시트 직접 수정 완료'를 눌러 주세요."}</p>
+                  : rallyzRetired
+                    ? "자동 반영이 안 되면 시트를 직접 고친 뒤 '시트 직접 수정 완료'를 눌러 주세요."
+                    : "시트 반영을 먼저 하면 '랠리즈 반영 확인'을 누를 수 있습니다. 자동 반영이 안 되면 시트를 직접 고친 뒤 '시트 직접 수정 완료'를 눌러 주세요."}</p>
               )}
             </div>
           </div>
@@ -664,7 +697,7 @@ export default function EnrollmentChangesClient({
             )}
             {row.status === "APPROVED" && row.proration.diff > 0 && !row.proration.scheduleUnavailable && (
               row.invoicedPaymentId ? (
-                <p className="mt-2 text-xs font-medium text-[var(--color-academy-warning)]">차액 기록 있음 · 청구서 연결 및 {externalLabel} 반영·알림은 별도 확인 필요</p>
+                <p className="mt-2 text-xs font-medium text-[var(--color-academy-warning)]">{externalNote ? `차액 기록 있음 · 청구서 연결 및 ${externalNote} 반영·알림은 별도 확인 필요` : "차액 기록 있음 · 청구서 연결·알림은 별도 확인 필요"}</p>
               ) : (
                 <button
                   type="button"
@@ -776,7 +809,7 @@ export default function EnrollmentChangesClient({
             />
             {/* 복귀(RESUME)도 승인하면 복귀일에 휴원 → 수강 중으로 자동 반영된다(due-change-plan). */}
             {(row.kind === "PAUSE" || row.kind === "WITHDRAW" || row.kind === "RESUME") && (
-              <p className="text-xs text-[var(--color-academy-muted)]">승인하면 적용일({row.effectiveFrom})에 사이트에 자동 반영됩니다. {sheetRetired ? "랠리즈는" : "랠리즈·시트는"} 직접 반영해 주세요.</p>
+              <p className="text-xs text-[var(--color-academy-muted)]">승인하면 적용일({row.effectiveFrom})에 사이트에 자동 반영됩니다.{rallyzRetired ? "" : ` ${sheetRetired ? "랠리즈는" : "랠리즈·시트는"} 직접 반영해 주세요.`}</p>
             )}
             <div className="grid grid-cols-2 gap-2">
               <button

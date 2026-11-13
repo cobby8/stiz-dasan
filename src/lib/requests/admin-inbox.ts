@@ -15,6 +15,7 @@ import { prisma } from "@/lib/prisma";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import { isKstYmd } from "@/lib/datetime/kst";
 import { notClosedByDeletedEnrollmentSql } from "@/lib/enrollment/admin-enrollment-edit";
+import { externalSyncPendingSql } from "@/lib/operations-sync/rallyzRetirement";
 import { settlementTablesReady } from "@/lib/enrollment/pause-settlement";
 import { groupEnrollmentChangeInboxSql, PAUSE_GROUP_KEY_SQL } from "@/lib/requests/inbox-enrollment-change-group";
 import {
@@ -148,8 +149,8 @@ const enrollmentChangeExtra = `
   'holdReason', CASE WHEN oc.status = 'HELD' THEN oc."holdReason" END,
   'syncPending', EXISTS (
     SELECT 1 FROM "OperationsSyncAttempt" a WHERE a."commandId" = oc.id
-     AND ((a.target = 'SHEET' AND a.status NOT IN ('SUCCEEDED','SKIPPED'))
-       OR (a.target = 'RALLYZ' AND a.status <> 'SUCCEEDED'))
+     -- 2026-11-14 랠리즈 은퇴: 시트·랠리즈 모두 건너뜀(SKIPPED)은 끝난 것(공용 조건 하나)
+     AND ${externalSyncPendingSql("a")}
   )`;
 
 // ── 종류별 어댑터 ──────────────────────────────────────────────────────────

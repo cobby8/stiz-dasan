@@ -16,6 +16,7 @@ import {
 import { getCachedAdminTrialPayload } from "@/lib/adminReadPayloads";
 import { getAdminRentalRequests, getAdminRentalSmsContext } from "@/app/actions/rental";
 import { countOpenPauseSettlements } from "@/lib/enrollment/admin-change-request";
+import { isRallyzSyncRetired } from "@/lib/operations-sync/rallyzRetirement";
 import InboxClient, { type InboxTabData } from "./InboxClient";
 
 // 신청함 — 체험·수강·상담·대관·변경·기타 6탭(2026-11-10 원장 결정 k1~k4). 실시간 처리 화면이라 캐시하지 않는다.
@@ -76,6 +77,8 @@ export default async function AdminInboxPage({ searchParams }: { searchParams?: 
       counts={counts}
       data={data}
       canDecideStaffRoles={admin.appUserRole === "ADMIN"}
+      // 랠리즈 은퇴(2026-11-14 원장 결정) — 기본 은퇴, STIZ_RALLYZ_SYNC_RETIRED 가 "0" 일 때만 옛 «랠리즈 반영 확인» 화면
+      rallyzRetired={isRallyzSyncRetired(process.env)}
     />
   );
 }

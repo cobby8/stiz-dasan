@@ -6,7 +6,8 @@ import EnrollmentChangesClient from "./EnrollmentChangesClient";
 
 type Detail = Awaited<ReturnType<typeof readEnrollmentChangesForInbox>>;
 
-export default function EnrollmentChangeInboxDetail({ requestIds }: { requestIds: string[] }) {
+// rallyzRetired: 랠리즈 은퇴(2026-11-14) 여부 — 신청함(서버 page.tsx)이 판정해 내려 준다. 기본 은퇴(true).
+export default function EnrollmentChangeInboxDetail({ requestIds, rallyzRetired = true }: { requestIds: string[]; rallyzRetired?: boolean }) {
   const idsKey = JSON.stringify(requestIds);
   const readVersion = useRef(0);
   const [result, setResult] = useState<{ key: string; detail: Detail | null }>();
@@ -41,5 +42,5 @@ export default function EnrollmentChangeInboxDetail({ requestIds }: { requestIds
       </div>
     );
   }
-  return <EnrollmentChangesClient key={idsKey} {...result.detail} inline onRefresh={refresh} />;
+  return <EnrollmentChangesClient key={idsKey} {...result.detail} rallyzRetired={rallyzRetired} inline onRefresh={refresh} />;
 }

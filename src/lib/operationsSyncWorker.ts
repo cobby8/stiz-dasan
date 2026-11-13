@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { ensureOperationsSyncInfrastructure } from "@/lib/operationsSyncInfrastructure";
 import { isSheetTargetDone } from "@/lib/operations-sync/sheetRetirement";
+import { isRallyzSyncRetired, isRallyzTargetDone } from "@/lib/operations-sync/rallyzRetirement";
 
 const ACTIVE_LEASE_MINUTES = 10;
 const SUPPORTED_SHEET_KINDS = new Set(["PAUSE", "WITHDRAW"]);
@@ -90,7 +91,12 @@ function isParentConfirmed(row: OperationsSyncWorkerRow) {
   return row.afterJson?.parentConfirmed === true;
 }
 
-export function classifyOperationsSyncWork(row: OperationsSyncWorkerRow, now = new Date()): OperationsSyncWorkItem {
+export function classifyOperationsSyncWork(
+  row: OperationsSyncWorkerRow,
+  now = new Date(),
+  /** 랠리즈 확인 은퇴 여부(2026-11-14). 안 넘기면 옛 동작. */
+  options: { rallyzRetired?: boolean } = {},
+): OperationsSyncWorkItem {
   const effectiveDate = readEffectiveDate(row);
   const base = {
     requestId: row.requestId,
@@ -141,7 +147,9 @@ export function classifyOperationsSyncWork(row: OperationsSyncWorkerRow, now = n
     return item("READY_FOR_RALLYZ_CHECK", "랠리즈 반영 확인이 필요합니다.");
   }
 
-  if (!isSheetTargetDone(row.sheetStatus) || row.rallyzStatus !== "SUCCEEDED") {
+  // 랠리즈는 은퇴로 건너뛴(SKIPPED) 칸도 끝난 것으로 본다. 은퇴 상태면 옛 대기 칸(PENDING·FAILED)도 기다리지 않는다.
+  const rallyzDone = options.rallyzRetired || isRallyzTargetDone(row.rallyzStatus);
+  if (!isSheetTargetDone(row.sheetStatus) || !rallyzDone) {
     return item("WAITING_FOR_EXTERNALS", "시트와 랠리즈가 모두 완료되어야 홈페이지 반영을 진행합니다.", false);
   }
   return item("READY_FOR_WEBSITE_APPLY", "홈페이지 반영 준비가 끝났습니다.");
@@ -150,6 +158,7 @@ export function classifyOperationsSyncWork(row: OperationsSyncWorkerRow, now = n
 export async function getOperationsSyncWorkItems(limit = 20, now = new Date()) {
   await ensureOperationsSyncInfrastructure();
   const safeLimit = Math.min(Math.max(Math.trunc(limit) || 20, 1), 100);
+  const rallyzRetired = isRallyzSyncRetired(process.env);
   const rows = await prisma.$queryRawUnsafe<OperationsSyncWorkerRow[]>(
     `SELECT r.id AS "requestId", r.status AS "requestStatus",
             c.id AS "commandId", c.status AS "commandStatus", c."holdReason",
@@ -163,6 +172,8 @@ export async function getOperationsSyncWorkItems(limit = 20, now = new Date()) {
        LEFT JOIN "OperationsSyncAttempt" rallyz ON rallyz."commandId"=c.id AND rallyz.target='RALLYZ'
        LEFT JOIN "OperationsSyncAttempt" website ON website."commandId"=c.id AND website.target='WEBSITE'
       WHERE a.status = ANY($1::text[])
+        -- 랠리즈 은퇴(2026-11-14) 상태면 랠리즈 칸은 작업 후보에서 뺀다(다시 시도하거나 확인을 요구하지 않는다).
+        AND ($3::boolean = false OR a.target <> 'RALLYZ')
       ORDER BY
             CASE a.target WHEN 'SHEET' THEN 0 WHEN 'RALLYZ' THEN 1 ELSE 2 END,
             r."createdAt" ASC,
@@ -171,8 +182,9 @@ export async function getOperationsSyncWorkItems(limit = 20, now = new Date()) {
       LIMIT $2`,
     [...OPEN_ATTEMPT_STATUSES],
     safeLimit,
+    rallyzRetired,
   );
-  return rows.map((row) => classifyOperationsSyncWork(row, now));
+  return rows.map((row) => classifyOperationsSyncWork(row, now, { rallyzRetired }));
 }
 
 export async function summarizeOperationsSyncQueue(limit = 20, now = new Date()): Promise<OperationsSyncQueueSummary> {

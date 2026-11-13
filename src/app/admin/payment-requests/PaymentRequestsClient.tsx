@@ -84,7 +84,7 @@ export default function PaymentRequestsClient({
       {/* 승인이 곧 납부 처리라는 점을 먼저 알린다. */}
       <AdminPageHeader
         title="입금 확인·영수증 요청"
-        description={<>입금 확인을 승인하면 <b className="font-semibold text-[var(--color-academy-ink)]">바로 납부 처리</b>됩니다. 통장·랠리즈에서 대조한 뒤 눌러 주세요.</>}
+        description={<>입금 확인을 승인하면 <b className="font-semibold text-[var(--color-academy-ink)]">바로 납부 처리</b>됩니다. 통장에서 대조한 뒤 눌러 주세요.</>}
       />
 
       {/* 상태 필터 — 서버가 상태별로 읽어 주므로(다른 상태 건수는 모름) 건수 칩 대신 예전 버튼을 유지 */}

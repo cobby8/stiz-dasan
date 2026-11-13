@@ -39,7 +39,9 @@ test("잠금 판정: BILLING_PARENT_SEND_ENABLED 가 정확히 \"1\" 일 때만 
   assert.equal(isBillingParentSendEnabled({ BILLING_PARENT_SEND_ENABLED: "true" }), false);
   assert.equal(isBillingParentSendEnabled({ BILLING_PARENT_SEND_ENABLED: " 1" }), false);
   assert.equal(isBillingParentSendEnabled({ BILLING_PARENT_SEND_ENABLED: "1" }), true);
-  assert.match(BILLING_PARENT_SEND_LOCKED_MESSAGE, /랠리즈/);
+  // 2026-11-14 랠리즈 은퇴: 잠금 안내에서 «랠리즈»를 뺐다(잠금 동작은 그대로) — 잠겨 있다는 사실만 말한다.
+  assert.match(BILLING_PARENT_SEND_LOCKED_MESSAGE, /잠겨 있습니다/);
+  assert.doesNotMatch(BILLING_PARENT_SEND_LOCKED_MESSAGE, /랠리즈/);
 });
 
 test("학부모별 미납 합계: 그 학부모 자녀의 미납만 센다", () => {
@@ -94,12 +96,15 @@ test("미납 앱 알림은 학원 전체 합계가 아니라 학부모별 건수
   assert.doesNotMatch(sendReminders, /const totalAmount = unpaid\.reduce/);
 });
 
-test("화면: 잠금이면 두 버튼 비활성 + 랠리즈 안내, 기본값은 잠금", () => {
+test("화면: 잠금이면 두 버튼 비활성 + 잠금 안내, 기본값은 잠금", () => {
   assert.match(financeClient, /billingParentSendEnabled = false/);
   assert.match(financeClient, /const parentSendLocked = !billingParentSendEnabled/);
   assert.match(financeClient, /disabled: parentSendLocked \|\| busy \|\| invoiceGeneratedCount === 0/);
   assert.match(financeClient, /disabled: parentSendLocked \|\| busy \|\| invoiceOpenCount === 0/);
-  assert.match(financeClient, /랠리즈에서 발송/);
-  assert.match(financeClient, /학부모 청구 안내는 랠리즈에서 발송/);
+  // 2026-11-14 랠리즈 은퇴: 버튼·안내 문구에서 «랠리즈»를 뺐다(버튼 비활성 조건은 위 단언 그대로).
+  assert.match(financeClient, /링크 발송 · 발송 잠금/);
+  assert.match(financeClient, /미납 알림 · 발송 잠금/);
+  assert.match(financeClient, /학부모 청구 안내 발송 잠금/);
+  assert.doesNotMatch(financeClient, /랠리즈에서 (발송|보냅니다)/);
   assert.match(financePage, /billingParentSendEnabled=\{isBillingParentSendEnabled\(\)\}/);
 });

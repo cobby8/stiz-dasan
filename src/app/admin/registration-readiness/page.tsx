@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/auth-guard";
 import { prisma } from "@/lib/prisma";
 import { registrationReadiness } from "@/lib/enrollment/registration-readiness";
 import { isSheetSyncRetired } from "@/lib/operations-sync/sheetRetirement";
+import { isRallyzSyncRetired } from "@/lib/operations-sync/rallyzRetirement";
 import { getEnrollmentShuttleProgress } from "@/lib/enrollment/shuttle-progress-query";
 
 export const dynamic = "force-dynamic";
@@ -26,14 +27,17 @@ export default async function RegistrationReadinessPage() {
         syncAttempts: { select: { target: true, status: true, verifiedAt: true } } } }),
     prisma.paymentInvoice.findMany({ where: { studentId: { in: studentIds }, canceledAt: null, status: { in: ["ISSUED", "SENT", "OVERDUE", "PAID"] }, amount: { gt: 0 } }, select: { studentId: true } }),
   ]);
+  // 랠리즈 은퇴(2026-11-14 원장 결정) — 기본 은퇴. 은퇴 뒤에는 랠리즈 등록·재조회·보호자 초대 항목을 그리지 않는다.
+  // (STIZ_RALLYZ_SYNC_RETIRED 가 "0" 일 때만 옛 화면. 출처가 «랠리즈»인 과거 기록 표시는 그대로 둔다.)
+  const rallyzRetired = isRallyzSyncRetired(process.env);
   return <main className="p-6 space-y-6">
     <h1 className="academy-page-title">입학 완료 확인</h1>
     <p>최근 승인 신청 100건까지 점검합니다. 승인만으로 등록이 완료되지는 않으며, ‘확인 필요’는 실패를 뜻하지 않습니다.</p>
-    <p>실제 수강 시작일과 외부 등록 기록을 확인하세요. 승인일은 수강 시작일이 아닙니다. 이 화면에서는 발송·청구·장부를 변경하지 않습니다.</p>
+    <p>{rallyzRetired ? "실제 수강 시작일을 확인하세요." : "실제 수강 시작일과 외부 등록 기록을 확인하세요."} 승인일은 수강 시작일이 아닙니다. 이 화면에서는 발송·청구·장부를 변경하지 않습니다.</p>
     <Link className="underline" href="/admin/inbox?tab=ENROLL">수강 신청함으로 이동</Link>
     {applications.length === 0 && <p>승인된 신청이 없습니다.</p>}
     {applications.map((app) => {
-      const result = registrationReadiness({ applicationId: app.id, studentId: app.convertedStudentId,
+      const result = registrationReadiness({ rallyzRetired, applicationId: app.id, studentId: app.convertedStudentId,
         assignedClassIds: [...new Set((app.assignedClassId ?? "").split(",").map((id) => id.trim()).filter(Boolean))],
         activeClassIds: enrollments.filter((row) => row.studentId === app.convertedStudentId).map((row) => row.classId),
         requestedStartOn: app.requestedStartOn,
@@ -45,7 +49,7 @@ export default async function RegistrationReadinessPage() {
       return <section key={app.id} className="border rounded-xl p-4 space-y-3">
         <h2 className="academy-section-title">{app.childName} · 등록 절차 확인 필요</h2>
         <p className="text-sm break-all">신청 번호: {app.id} / 원생 번호: {app.convertedStudentId ?? "미연결"}</p>
-        <ul className="space-y-2">{result.checks.map((check) => <li key={check.key}>
+        <ul className="space-y-2">{result.checks.filter((check) => !(rallyzRetired && (check.key === "RALLYZ" || check.key === "rallyz-invite"))).map((check) => <li key={check.key}>
           <strong>{check.label}: {check.status === "VERIFIED" ? check.key === "site" ? "현재 수강 확인" : check.key === "shuttle" ? "배차·안내 전달 확인" : "등록 재조회 확인" : "확인 필요"}</strong><p className="text-sm">{check.detail}</p>
         </li>)}</ul>
         <details className="space-y-3">
@@ -59,7 +63,7 @@ export default async function RegistrationReadinessPage() {
             <p>출처: {SOURCE_LABELS[item.source ?? ""] ?? "출처 확인 필요"} · 종류: {KIND_LABELS[item.kind ?? ""] ?? "종류 확인 필요"} · 기록 월: {item.effectiveMonth ?? "없음"} · 기록 날짜: {item.eventDate ?? "없음"}</p>
             <p>처리 요청 시각: {item.createdAt ?? "미확인"}</p>
             <p>{item.reasons.length ? `확인 필요: ${item.reasons.join(" · ")}` : "신청·현재 수강·원장의 개시일 일치"}</p>
-            {item.targets.map(target => <div key={target.target}>
+            {item.targets.filter(target => !(rallyzRetired && target.target === "RALLYZ")).map(target => <div key={target.target}>
               <b>{target.target === "SHEET" ? "시트" : "랠리즈"} 재조회 기록</b>
               {target.duplicate && <p>중복된 외부 등록 기록 · 대조 필요</p>}
               {target.attempts.length === 0 && <p>재조회 기록 없음</p>}

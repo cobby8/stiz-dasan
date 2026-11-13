@@ -33,9 +33,13 @@ export function isSheetTargetDone(status: string | null | undefined): boolean {
 /**
  * 새 동기화 시도(OperationsSyncAttempt)를 만들 때의 처음 상태.
  * - 은퇴 상태의 SHEET → SKIPPED + 표식. verifiedAt 은 NULL(실제로 확인한 적이 없으므로 — 판정은 SKIPPED 만 본다).
+ * - 은퇴 상태의 RALLYZ → SKIPPED + 표식 (2026-11-14 랠리즈 은퇴 — rallyzRetirement.ts).
+ *   세 번째 인자를 안 넘기면 옛 동작(랠리즈 PENDING)이라 시트 쪽 동작은 그대로다.
+ *   표식 글자는 RALLYZ_RETIRED_REFERENCE 와 같다(이 파일은 import 를 하지 않아 글자로 적고 테스트가 대조한다).
  * - 그 외 → PENDING (WEBSITE 를 이미 끝낸 경우는 호출하는 쪽이 따로 SUCCEEDED 로 넣는다).
  */
-export function initialSyncAttempt(target: string, retired: boolean): { status: "PENDING" | "SKIPPED"; externalReference: string | null } {
+export function initialSyncAttempt(target: string, retired: boolean, rallyzRetired = false): { status: "PENDING" | "SKIPPED"; externalReference: string | null } {
   if (target === "SHEET" && retired) return { status: "SKIPPED", externalReference: SHEET_RETIRED_REFERENCE };
+  if (target === "RALLYZ" && rallyzRetired) return { status: "SKIPPED", externalReference: "RALLYZ_RETIRED" };
   return { status: "PENDING", externalReference: null };
 }

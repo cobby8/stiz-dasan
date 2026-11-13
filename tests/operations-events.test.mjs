@@ -109,13 +109,19 @@ test("미지원 복귀·셔틀·연락처·청구 이벤트는 명시적으로 H
   }
 });
 
-test("원장은 홈페이지 완료, 시트·랠리즈 대기이며 청구·알림을 보류한다", () => {
+// 2026-11-14 랠리즈 은퇴: 랠리즈 칸도 은퇴 분기를 거친다(은퇴 시 SKIPPED → 원장은 처음부터 SYNCED, 스위치 "0" 이면 PENDING).
+test("원장은 홈페이지 완료, 시트·랠리즈는 은퇴 분기를 거치며 청구·알림을 보류한다", () => {
   const source = fs.readFileSync(new URL("../src/lib/operations-events/index.ts", import.meta.url), "utf8");
   assert.match(source, /'HELD','HELD'/);
   assert.match(source, /target === "WEBSITE"/);
   // 2026-10-06 시트 은퇴: 홈페이지 외 칸은 initialSyncAttempt 가 정한다(시트=은퇴 시 SKIPPED, 랠리즈=PENDING).
   assert.match(source, /websiteDone \? "SUCCEEDED" : initial\.status/);
-  assert.match(source, /initialSyncAttempt\(target, sheetRetired\)/);
+  assert.match(source, /initialSyncAttempt\(target, sheetRetired, rallyzRetired\)/);
+  assert.match(source, /const rallyzRetired = isRallyzSyncRetired\(process\.env\);/);
+  // 둘 다 은퇴일 때만 «어댑터 없음» 보류를 끄고, 남은 확인이 없으면 처음부터 SYNCED
+  assert.match(source, /\{ externalLedgersRetired: sheetRetired && rallyzRetired \}/);
+  assert.match(source, /holdReason \? "HELD" : openStatus,/);
+  assert.match(source, /holdReason \? "HELD" : openStatus === "SYNCED" \? "SYNCED" : "APPROVED"/);
   assert.match(source, /ON CONFLICT \("idempotencyKey"\) DO NOTHING/);
   assert.match(source, /DELETE FROM "OperationsRequest" WHERE id=\$1/);
 });

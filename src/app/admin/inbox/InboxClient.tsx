@@ -62,7 +62,7 @@ export type InboxTabData =
   | { type: "RENTAL"; rows: AdminRentalRow[]; bankAccount: string; smsOn: Record<"approved" | "rejected" | "confirmed", boolean> }
   | {
       type: "ROWS"; open: InboxRow[]; done: InboxRow[]; failedKinds: RequestKind[]; consultFailed: boolean;
-      /** «변경» 탭 — 휴원 수강료 처리에 남은 일(사람 환불·랠리즈 반영·토스 확인 중·남은 이월) 건수. 없으면 0 */
+      /** «변경» 탭 — 휴원 수강료 처리에 남은 일(사람 환불·감액·토스 확인 중·남은 이월) 건수. 없으면 0 */
       openSettlementCount?: number;
     };
 
@@ -77,6 +77,11 @@ type Props = {
   counts: InboxCounts | null;
   data: InboxTabData;
   canDecideStaffRoles?: boolean;
+  /**
+   * 랠리즈 은퇴(2026-11-14 원장 결정) 여부 — 서버(page.tsx)가 환경변수로 판정해 넘긴다.
+   * 기본값 true(은퇴): «랠리즈 반영 확인» 일괄 버튼·고르기 칸을 그리지 않는다. false 는 스위치 "0"(옛 방식)일 때만.
+   */
+  rallyzRetired?: boolean;
 };
 
 type PanelAction = {
@@ -248,9 +253,9 @@ export function rallyzCheckIds(row: InboxRow): string[] {
   return members.filter((member) => member.rawStatus === "SYNC_CHECK").map((member) => member.id);
 }
 
-/** 일괄 처리는 결석 신고·새 문의, 그리고 랠리즈 반영 확인이 남은 수강 변경에서만 가능하다. */
-function isBulkable(row: InboxRow): boolean {
-  if (rallyzCheckIds(row).length > 0) return true;
+/** 일괄 처리는 결석 신고·새 문의에서만 가능하다. 옛 방식(랠리즈 은퇴 전)에서는 랠리즈 반영 확인이 남은 수강 변경도 포함한다. */
+function isBulkable(row: InboxRow, rallyzRetired: boolean): boolean {
+  if (!rallyzRetired && rallyzCheckIds(row).length > 0) return true;
   return (BULK_ACTION_KINDS as readonly string[]).includes(row.kind)
     && ((row.kind === "REGULAR_ABSENCE" && row.rawStatus === "REPORTED") || (row.kind === "PARENT_REQUEST" && row.rawStatus === "PENDING"));
 }
@@ -277,7 +282,7 @@ function GroupHead({ label, count }: { label: string; count: number }) {
   );
 }
 
-export default function InboxClient({ tab, sub, kind, showDone, from, to, counts, data, canDecideStaffRoles = false }: Props) {
+export default function InboxClient({ tab, sub, kind, showDone, from, to, counts, data, canDecideStaffRoles = false, rallyzRetired = true }: Props) {
   const router = useRouter();
   const pathname = usePathname() || "/admin/inbox";
   const [query, setQuery] = useState("");
@@ -335,12 +340,14 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
   ) ? openSelection : null);
   const openActions = open && (open.kind !== "ROLE_GRANT" || canDecideStaffRoles) ? actionsFor(open) : [];
   const filterCount = from || to ? 1 : 0;
-  const bulkRows = actionRows.filter(isBulkable);
+  const bulkRows = actionRows.filter((row) => isBulkable(row, rallyzRetired));
   const selectedRows = bulkRows.filter((row) => selected.has(keyOf(row)));
   // 고른 줄을 처리 종류별로 나눈다 — 각자 자기 버튼으로 처리(서로 섞어 부르지 않는다)
-  const selectedRallyz = selectedRows.filter((row) => rallyzCheckIds(row).length > 0);
-  const selectedOther = selectedRows.filter((row) => rallyzCheckIds(row).length === 0);
-  const bulkRallyzCount = bulkRows.filter((row) => rallyzCheckIds(row).length > 0).length;
+  // 랠리즈 은퇴 뒤에는 랠리즈 확인 대상이 없다(빈 배열) — 일괄 버튼·«랠리즈 확인 필요 N건» 문구가 나오지 않는다.
+  const rallyzIds = (row: InboxRow) => (rallyzRetired ? [] : rallyzCheckIds(row));
+  const selectedRallyz = selectedRows.filter((row) => rallyzIds(row).length > 0);
+  const selectedOther = selectedRows.filter((row) => rallyzIds(row).length === 0);
+  const bulkRallyzCount = bulkRows.filter((row) => rallyzIds(row).length > 0).length;
   const subs = TAB_SUBS[tab] ?? [];
   const isRowsTab = data.type === "ROWS";
 
@@ -399,7 +406,7 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
   // 랠리즈 반영 일괄 확인 — 서버가 건마다 단건과 같은 검증·감사 기록을 한다. 확인 창에 대상 이름을 모두 보인다.
   async function runBulkRallyz() {
     const targets = selectedRallyz;
-    const requestIds = [...new Set(targets.flatMap(rallyzCheckIds))];
+    const requestIds = [...new Set(targets.flatMap(rallyzIds))];
     if (requestIds.length === 0) return;
     if (requestIds.length > 100) {
       setMessage({ tone: "error", text: "랠리즈 반영 확인은 한 번에 100건(반 기준)까지 할 수 있습니다. 나눠서 골라 주세요." });
@@ -444,7 +451,7 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
   /** 한 줄 행(높이 ≈48px). 행 전체가 상세 열기 버튼 */
   const renderRow = (row: InboxRow) => {
     const key = keyOf(row);
-    const bulk = isBulkable(row) && row.bucket === "ACTION";
+    const bulk = isBulkable(row, rallyzRetired) && row.bucket === "ACTION";
     // 고르기 칸이 하나라도 있으면 모든 줄에 같은 폭(48px) 자리를 둔다 — 종류·이름 열이 들쭉날쭉하지 않게
     const gutter = bulkRows.length > 0;
     return (
@@ -702,7 +709,7 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
             </button>
           </div>
           {open.kind === "ENROLLMENT_CHANGE" ? (
-            <EnrollmentChangeInboxDetail key={keyOf(open)} requestIds={open.members?.map(({ id }) => id) ?? [open.id]} />
+            <EnrollmentChangeInboxDetail key={keyOf(open)} requestIds={open.members?.map(({ id }) => id) ?? [open.id]} rallyzRetired={rallyzRetired} />
           ) : (
             <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
               {open.facts.map(([label, value]) => (
