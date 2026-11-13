@@ -1,19 +1,16 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireOwner } from "@/lib/auth-guard";
+import { collectBackupArchive, DOWNLOAD_MAX_BYTES, serializeBackup } from "@/lib/backup/archive";
 
 export const dynamic = "force-dynamic";
-
-function replacer(_: string, v: unknown) {
-    return typeof v === "bigint" ? Number(v) : v;
-}
 
 async function requiredQuery(sql: string): Promise<Record<string, unknown>[]> {
     // 조회 실패를 빈 정상 자료로 바꾸지 않는다. 실패 응답에는 첨부파일을 만들지 않는다.
     return prisma.$queryRawUnsafe<Record<string, unknown>[]>(sql);
 }
 
-// GET /api/admin/backup - 설정 7개 테이블만 다운로드 (전체 DB 백업 아님)
+// GET /api/admin/backup - 설정 7개 표(복원 대상) + 업무 자료 전체(보관용 archive 칸, 자동 복원 안 함) 다운로드
 export async function GET() {
     // 원장 권한이 있는 사용자만 백업을 다운로드할 수 있다.
     try {
@@ -41,6 +38,9 @@ export async function GET() {
             requiredQuery(`SELECT * FROM "Stop" ORDER BY "createdAt" ASC`),
         ]);
 
+        // 업무 자료(학생·수강·출결·청구·결제 등)를 보관용으로 모은다. 실패한 표는 archive.failed 에 남는다.
+        const archive = await collectBackupArchive();
+
         // Attach stops to routes
         const routesWithStops = routes.map((r) => ({
             ...r,
@@ -50,7 +50,9 @@ export async function GET() {
         const backup = {
             _meta: {
                 version: 1,
-                scope: "SETTINGS_ONLY",
+                // 복원(POST)은 그대로 설정 7개 표만. archive 칸은 보관용 — 이 파일로 복원해도 되살리지 않는다.
+                scope: "SETTINGS_AND_ARCHIVE",
+                restoreScope: "SETTINGS_ONLY",
                 exportedAt: new Date().toISOString(),
                 tables: ["AcademySettings", "Program", "Coach", "ClassSlotOverride", "CustomClassSlot", "Route/Stop"],
             },
@@ -60,19 +62,24 @@ export async function GET() {
             classSlotOverrides,
             customClassSlots,
             routes: routesWithStops,
+            archive,
         };
 
         const filename = `stiz-backup-${new Date().toISOString().slice(0, 10)}.json`;
 
-        return new NextResponse(JSON.stringify(backup, replacer, 2), {
+        // Vercel 응답 상한 때문에 다운로드는 4MB 까지 — 넘으면 보관용 표 내용은 빠지고(archive.failed 에 SIZE_LIMIT) 설정은 그대로다.
+        const { body, summary } = serializeBackup(backup, DOWNLOAD_MAX_BYTES);
+        return new NextResponse(body, {
             headers: {
                 "Content-Type": "application/json",
                 "Content-Disposition": `attachment; filename="${filename}"`,
+                // 화면·점검에서 업무 자료가 다 담겼는지 볼 수 있게 요약을 헤더로 알려 준다.
+                "X-Backup-Archive": `tables=${summary.tables}; rows=${summary.rows}; complete=${summary.complete}`,
             },
         });
     } catch {
         console.error("[backup GET] failed: COLLECT_OR_SERIALIZE");
-        return NextResponse.json({ success: false, scope: "SETTINGS_ONLY", error: "설정 백업 자료를 수집하지 못했습니다." }, { status: 500 });
+        return NextResponse.json({ success: false, scope: "SETTINGS_AND_ARCHIVE", error: "백업 자료를 수집하지 못했습니다." }, { status: 500 });
     }
 }
 
@@ -97,6 +104,9 @@ export async function POST(req: NextRequest) {
     }
 
     const results: Record<string, string> = {};
+
+    // ⚠️ 복원 범위는 설정 4개 칸(programs·coaches·classSlotOverrides·customClassSlots)뿐이다.
+    // backup.archive(학생·출결·청구 등 보관용)는 일부러 읽지 않는다 — 운영 자료를 통째로 덮어쓰면 위험하다.
 
     // Restore Programs
     if (Array.isArray(backup.programs)) {

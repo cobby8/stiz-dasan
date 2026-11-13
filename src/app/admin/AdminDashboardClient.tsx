@@ -72,6 +72,9 @@ type SystemStatusData = {
     backup: {
         lastBackupAt: string | null;
         backupCount: number;
+        // 최신 백업 파일 크기·담긴 업무 자료(표·행 수) — 예전 응답·예전 파일이면 없다
+        lastBackupBytes?: number | null;
+        archive?: { tables: number; rows: number; complete: boolean } | null;
     };
 };
 
@@ -766,6 +769,16 @@ function SystemStatusCard({
                     <div className="flex items-center justify-between">
                         <span className="text-sm text-[var(--color-academy-muted)]">저장된 백업</span>
                         <span className="text-xs text-[var(--color-academy-muted)]">{backup.backupCount}개</span>
+                    </div>
+                )}
+                {backup?.archive && (
+                    <div className="flex items-center justify-between">
+                        <span className="text-sm text-[var(--color-academy-muted)]">담긴 업무 자료</span>
+                        <span className={`text-xs ${backup.archive.complete ? "text-[var(--color-academy-muted)]" : "font-bold text-[var(--color-academy-warning)]"}`}>
+                            표 {backup.archive.tables}개 · {backup.archive.rows.toLocaleString("ko-KR")}줄
+                            {typeof backup.lastBackupBytes === "number" ? ` · ${(backup.lastBackupBytes / 1024 / 1024).toFixed(1)}MB` : ""}
+                            {backup.archive.complete ? "" : " · 일부 누락"}
+                        </span>
                     </div>
                 )}
                 {systemStatus && backupDanger && (

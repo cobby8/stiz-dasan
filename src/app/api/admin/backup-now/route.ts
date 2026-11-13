@@ -1,15 +1,13 @@
-/** 원장 전용 수동 설정 백업. 학생·청구·월 장부 전체 백업은 아닙니다. */
+/** 원장 전용 즉시 백업. 설정 7개 표(복원 대상) + 업무 자료 전체(보관용 archive 칸, 자동 복원 안 함). */
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { collectBackupArchive, serializeBackup } from "@/lib/backup/archive";
 import { requireOwner } from "@/lib/auth-guard";
 
 export const dynamic = "force-dynamic";
 const BUCKET = "backups";
 const KEEP_DAYS = 30;
-function replacer(_: string, v: unknown) {
-    return typeof v === "bigint" ? Number(v) : v;
-}
 async function requiredQuery(sql: string): Promise<Record<string, unknown>[]> {
     return prisma.$queryRawUnsafe<Record<string, unknown>[]>(sql);
 }
@@ -37,6 +35,11 @@ export async function POST() {
                 requiredQuery(`SELECT * FROM "Stop" ORDER BY "createdAt" ASC`),
             ]);
 
+        // 설정 조회가 모두 성공한 뒤 업무 자료(학생·수강·출결·청구·결제 등)를 보관용으로 모은다.
+        // 예외를 던지지 않는다 — 실패한 표는 archive.failed 에 남고, 설정 백업은 그대로 저장한다.
+        stage = "ARCHIVE";
+        const archive = await collectBackupArchive();
+
         const routesWithStops = routes.map((r) => ({
             ...r,
             stops: stops.filter((s) => s.routeId === r.id),
@@ -47,7 +50,9 @@ export async function POST() {
                 version: 1,
                 exportedAt: new Date().toISOString(),
                 source: "manual",
-                scope: "SETTINGS_ONLY",
+                // 복원 범위는 그대로 설정 7개 표. archive 칸은 보관용(파일·클라우드 복원·seed 가 읽지 않음).
+                scope: "SETTINGS_AND_ARCHIVE",
+                restoreScope: "SETTINGS_ONLY",
                 tables: ["AcademySettings", "Program", "Coach", "ClassSlotOverride", "CustomClassSlot", "Route/Stop"],
             },
             academySettings: academyRows[0] ?? null,
@@ -56,6 +61,7 @@ export async function POST() {
             classSlotOverrides,
             customClassSlots,
             routes: routesWithStops,
+            archive,
         };
 
         // 3. Supabase Storage에 업로드
@@ -63,7 +69,8 @@ export async function POST() {
         const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
         const filename = `stiz-backup-${kstNow.toISOString().slice(0, 19).replace(/:/g, "-")}.json`;
 
-        const body = JSON.stringify(snapshot, replacer, 2);
+        // 너무 크면 보관용 표 내용만 비우고 설정은 저장한다(파일 한 개 상한 대비).
+        const { body, summary } = serializeBackup(snapshot);
         stage = "BUCKET";
         const supabase = createAdminClient();
         const { data: buckets, error: bucketError } = await supabase.storage.listBuckets();
@@ -76,7 +83,12 @@ export async function POST() {
         intendedFilename = filename;
         const { error: uploadError } = await supabase.storage
             .from(BUCKET)
-            .upload(filename, body, { contentType: "application/json", upsert: false });
+            .upload(filename, body, {
+                contentType: "application/json",
+                upsert: false,
+                // 대시보드 «시스템 상태»가 파일을 내려받지 않고 담긴 표·행 수를 보도록 파일 정보에 적는다.
+                metadata: { archiveTables: summary.tables, archiveRows: summary.rows, archiveComplete: summary.complete },
+            });
 
         if (uploadError) throw new Error("UPLOAD_FAILED");
         savedFilename = filename;
@@ -100,10 +112,20 @@ export async function POST() {
             if (deleted.length !== names.length) throw new Error("CLEANUP_REMOVE_INCOMPLETE");
         }
 
+        const archiveResult = { tables: summary.tables, rows: summary.rows, complete: summary.complete, failedTables: summary.failedTables };
+        if (!summary.complete) {
+            // 설정은 저장됐지만 업무 자료 일부를 못 담았다 — 500 으로 알려 원장 슬랙 알림이 가게 한다.
+            console.error("[backup-now] archive incomplete:", summary.failedTables.length);
+            return NextResponse.json({ success: false, scope: "SETTINGS_AND_ARCHIVE", stage: "ARCHIVE_INCOMPLETE",
+                backupSaved: true, filename, deleted, archive: archiveResult,
+                error: "설정은 저장했지만 업무 자료 일부를 백업하지 못했습니다." }, { status: 500 });
+        }
+
         return NextResponse.json({
             success: true,
-            scope: "SETTINGS_ONLY",
+            scope: "SETTINGS_AND_ARCHIVE",
             filename,
+            archive: archiveResult,
             rows: {
                 programs: programs.length,
                 coaches: coaches.length,
@@ -115,10 +137,10 @@ export async function POST() {
     } catch {
         // DB/Storage 예외에는 연결정보나 자료가 포함될 수 있어 원문을 남기지 않는다.
         console.error("[backup-now] failed:", stage);
-        return NextResponse.json({ success: false, scope: "SETTINGS_ONLY", stage,
+        return NextResponse.json({ success: false, scope: "SETTINGS_AND_ARCHIVE", stage,
             // 응답 유실은 미저장으로 확정하지 않는다. 후보 파일을 재조회해야 한다.
             backupSaved: savedFilename !== null ? true : intendedFilename !== null ? null : false,
             filename: savedFilename ?? intendedFilename, deleted,
-            error: "설정 백업 작업을 완료하지 못했습니다." }, { status: 500 });
+            error: "백업 작업을 완료하지 못했습니다." }, { status: 500 });
     }
 }

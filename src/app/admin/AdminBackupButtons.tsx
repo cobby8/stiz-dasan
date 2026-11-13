@@ -28,7 +28,9 @@ export default function AdminBackupButtons({ sheetRetired = false }: { sheetReti
         setMsg(null);
 
         try {
-            const json = JSON.parse(await file.text());
+            // 보관용 업무 자료(archive)는 복원하지 않으므로 보내지 않는다 — 요청이 커져 서버 상한(4.5MB)에 걸리지 않게.
+            const { archive: _archive, ...json } = JSON.parse(await file.text());
+            void _archive;
             const res = await fetch("/api/admin/backup", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -76,7 +78,7 @@ export default function AdminBackupButtons({ sheetRetired = false }: { sheetReti
     }
 
     async function handleBackupNow() {
-        if (backupInFlight.current || !confirm("학원 설정·프로그램·코치·일부 차량 경로를 클라우드에 백업하시겠습니까? 학생·출결·청구·월 장부는 포함되지 않습니다.")) return;
+        if (backupInFlight.current || !confirm("학원 설정과 학생·수강·출결·청구·결제 등 업무 자료 전체를 클라우드에 백업하시겠습니까? 복원은 설정만 되고, 업무 자료는 보관용입니다.")) return;
 
         backupInFlight.current = true;
         setBusy(true);
@@ -86,13 +88,17 @@ export default function AdminBackupButtons({ sheetRetired = false }: { sheetReti
             const res = await fetch("/api/admin/backup-now", { method: "POST" });
             const data = await res.json();
             if (res.ok && data.success === true) {
-                show(`설정 백업 저장 완료 (${data.filename})`, true);
+                // 업무 자료가 몇 개 표·몇 줄 담겼는지 같이 보여 준다(정말 들어갔는지 원장이 바로 확인).
+                const archive = data.archive ? ` · 업무 자료 표 ${data.archive.tables}개 ${Number(data.archive.rows).toLocaleString("ko-KR")}줄` : "";
+                show(`백업 저장 완료 (${data.filename}${archive})`, true);
+            } else if (data.backupSaved === true && data.stage === "ARCHIVE_INCOMPLETE") {
+                show(`설정은 저장됐지만 업무 자료 일부(표 ${data.archive?.failedTables?.length ?? 0}개)를 담지 못했습니다. 잠시 후 다시 저장해 주세요. 파일: ${data.filename}`, false);
             } else if (data.backupSaved === true) {
-                show(`설정 백업은 저장됐지만 과거 파일 정리는 완료하지 못했습니다. 재저장하지 말고 확인해 주세요. 파일: ${data.filename}`, false);
+                show(`백업은 저장됐지만 과거 파일 정리는 완료하지 못했습니다. 재저장하지 말고 확인해 주세요. 파일: ${data.filename}`, false);
             } else if (data.backupSaved === null) {
                 show(`저장 여부 확인 필요. 다시 저장하기 전에 후보 파일을 확인해 주세요: ${data.filename}`, false);
             } else {
-                show("설정 백업을 완료하지 못했습니다. 권한과 백업 상태를 확인해 주세요.", false);
+                show("백업을 완료하지 못했습니다. 권한과 백업 상태를 확인해 주세요.", false);
             }
         } catch {
             show("백업 응답을 확인하지 못했습니다. 저장됐을 수 있으니 다시 저장하기 전에 클라우드 백업을 확인해 주세요.", false);
@@ -139,7 +145,7 @@ export default function AdminBackupButtons({ sheetRetired = false }: { sheetReti
                 className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-[var(--color-academy-faint)] transition-colors hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)]"
             >
                 <span className="text-xl">💾</span>
-                <span>설정 백업 다운로드</span>
+                <span>백업 다운로드</span>
             </a>
             <label
                 className={`flex w-full cursor-pointer items-center gap-3 rounded-lg px-4 py-3 transition-colors ${
@@ -170,7 +176,7 @@ export default function AdminBackupButtons({ sheetRetired = false }: { sheetReti
                 }`}
             >
                 <span className="text-xl">☁️</span>
-                <span>설정 백업 지금 저장</span>
+                <span>전체 백업 지금 저장</span>
             </button>
             <a
                 href="/api/admin/export-seed"
@@ -180,7 +186,7 @@ export default function AdminBackupButtons({ sheetRetired = false }: { sheetReti
                 <span className="text-xl">📦</span>
                 <span>seed 내보내기</span>
             </a>
-            <p className="px-4 text-xs text-[var(--color-academy-faint)]">학원 설정·프로그램·코치·일부 차량 경로 백업 · 학생·출결·청구·월 장부 제외</p>
+            <p className="px-4 text-xs text-[var(--color-academy-faint)]">설정 + 학생·출결·청구·결제 등 업무 자료 백업 · 복원은 설정만(업무 자료는 보관용) · 다운로드는 4MB까지</p>
             {msg && <p role="status" className={`break-all px-4 py-1 text-xs ${ok ? "text-[var(--color-academy-success)]" : "text-[var(--color-academy-warning)]"}`}>{msg}</p>}
         </div>
     );

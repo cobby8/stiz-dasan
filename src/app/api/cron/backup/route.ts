@@ -2,8 +2,8 @@
  * GET /api/cron/backup
  *
  * Vercel Cron이 매일 KST 자정(UTC 15:00)에 호출합니다.
- * 설정 7개 테이블을 JSON으로 내보내 Supabase Storage "backups/" 버킷에 저장합니다.
- * 학생·수강·청구·월 장부를 포함한 전체 DB 백업은 아닙니다.
+ * 설정 7개 테이블(복원 대상) + 나머지 업무 자료 전체(보관용 archive 칸)를 JSON으로 내보내
+ * Supabase Storage "backups/" 버킷에 저장합니다. 복원은 설정 7개 표만 — archive 칸은 자동 복원하지 않습니다.
  * 30일이 지난 백업은 자동 삭제됩니다.
  *
  * vercel.json:
@@ -13,16 +13,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { collectBackupArchive, serializeBackup } from "@/lib/backup/archive";
 import { withCronAlert } from "@/lib/cron/withCronAlert";
 
 export const dynamic = "force-dynamic";
 
 const BUCKET = "backups";
 const KEEP_DAYS = 30;
-
-function replacer(_: string, v: unknown) {
-    return typeof v === "bigint" ? Number(v) : v;
-}
 
 async function requiredQuery(sql: string): Promise<Record<string, unknown>[]> {
     // 조회 실패와 정상적인 0건을 구별한다. 실패하면 저장과 과거 백업 정리를 중단한다.
@@ -55,6 +52,11 @@ async function handleGet(req: NextRequest) {
                 requiredQuery(`SELECT * FROM "Stop" ORDER BY "createdAt" ASC`),
             ]);
 
+        // 설정 조회가 모두 성공한 뒤 업무 자료(학생·수강·출결·청구·결제 등)를 보관용으로 모은다.
+        // 예외를 던지지 않는다 — 실패한 표는 archive.failed 에 남고, 설정 백업은 그대로 저장한다.
+        stage = "ARCHIVE";
+        const archive = await collectBackupArchive();
+
         const routesWithStops = routes.map((r) => ({
             ...r,
             stops: stops.filter((s) => s.routeId === r.id),
@@ -65,7 +67,9 @@ async function handleGet(req: NextRequest) {
                 version: 1,
                 exportedAt: new Date().toISOString(),
                 source: "cron",
-                scope: "SETTINGS_ONLY",
+                // 복원 범위는 그대로 설정 7개 표. archive 칸은 보관용(파일·클라우드 복원·seed 가 읽지 않음).
+                scope: "SETTINGS_AND_ARCHIVE",
+                restoreScope: "SETTINGS_ONLY",
                 tables: ["AcademySettings", "Program", "Coach", "ClassSlotOverride", "CustomClassSlot", "Route/Stop"],
             },
             academySettings: academyRows[0] ?? null,
@@ -74,6 +78,7 @@ async function handleGet(req: NextRequest) {
             classSlotOverrides,
             customClassSlots,
             routes: routesWithStops,
+            archive,
         };
 
         // 3. Supabase Storage에 업로드
@@ -81,7 +86,8 @@ async function handleGet(req: NextRequest) {
         const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
         const filename = `stiz-backup-${kstNow.toISOString().slice(0, 19).replace(/:/g, "-")}.json`;
 
-        const body = JSON.stringify(snapshot, replacer, 2);
+        // 너무 크면 보관용 표 내용만 비우고 설정은 저장한다(파일 한 개 상한 대비).
+        const { body, summary } = serializeBackup(snapshot);
         stage = "BUCKET";
         const supabase = createAdminClient();
         const { data: buckets, error: bucketError } = await supabase.storage.listBuckets();
@@ -94,7 +100,12 @@ async function handleGet(req: NextRequest) {
         intendedFilename = filename;
         const { error: uploadError } = await supabase.storage
             .from(BUCKET)
-            .upload(filename, body, { contentType: "application/json", upsert: false });
+            .upload(filename, body, {
+                contentType: "application/json",
+                upsert: false,
+                // 대시보드 «시스템 상태»가 파일을 내려받지 않고 담긴 표·행 수를 보도록 파일 정보에 적는다.
+                metadata: { archiveTables: summary.tables, archiveRows: summary.rows, archiveComplete: summary.complete },
+            });
 
         if (uploadError) throw new Error("UPLOAD_FAILED");
         savedFilename = filename;
@@ -118,10 +129,20 @@ async function handleGet(req: NextRequest) {
             if (deleted.length !== names.length) throw new Error("CLEANUP_REMOVE_INCOMPLETE");
         }
 
+        const archiveResult = { tables: summary.tables, rows: summary.rows, complete: summary.complete, failedTables: summary.failedTables };
+        if (!summary.complete) {
+            // 설정은 저장됐지만 업무 자료 일부를 못 담았다 — 500 으로 알려 원장 슬랙 알림이 가게 한다.
+            console.error("[cron/backup] archive incomplete:", summary.failedTables.length);
+            return NextResponse.json({ success: false, scope: "SETTINGS_AND_ARCHIVE", stage: "ARCHIVE_INCOMPLETE",
+                backupSaved: true, filename, deleted, archive: archiveResult,
+                error: "설정은 저장했지만 업무 자료 일부를 백업하지 못했습니다." }, { status: 500 });
+        }
+
         return NextResponse.json({
             success: true,
-            scope: "SETTINGS_ONLY",
+            scope: "SETTINGS_AND_ARCHIVE",
             filename,
+            archive: archiveResult,
             rows: {
                 programs: programs.length,
                 coaches: coaches.length,
@@ -133,11 +154,11 @@ async function handleGet(req: NextRequest) {
     } catch {
         // DB/Storage 예외에는 연결정보나 자료가 포함될 수 있어 원문을 남기지 않는다.
         console.error("[cron/backup] failed:", stage);
-        return NextResponse.json({ success: false, scope: "SETTINGS_ONLY", stage,
+        return NextResponse.json({ success: false, scope: "SETTINGS_AND_ARCHIVE", stage,
             // 응답 유실은 미저장으로 확정하지 않는다. 후보 파일을 재조회해야 한다.
             backupSaved: savedFilename !== null ? true : intendedFilename !== null ? null : false,
             filename: savedFilename ?? intendedFilename, deleted,
-            error: "설정 백업 작업을 완료하지 못했습니다." }, { status: 500 });
+            error: "백업 작업을 완료하지 못했습니다." }, { status: 500 });
     }
 }
 

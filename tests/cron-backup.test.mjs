@@ -3,6 +3,7 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
+import * as archiveCore from '../src/lib/backup/archiveCore.ts';
 import { NextRequest, NextResponse } from 'next/server.js';
 
 const source = readFileSync(new URL('../src/app/api/cron/backup/route.ts', import.meta.url), 'utf8');
@@ -11,6 +12,13 @@ const compiled = ts.transpileModule(source, { compilerOptions: {
 } }).outputText;
 const old = { name: 'stiz-backup-2020-01-01T00-00-00.json', created_at: '2020-01-01T00:00:00Z' };
 const sensitive = 'SYNTHETIC_PRIVATE_CONNECTION_AND_STUDENT';
+
+// 보관용 업무 자료 수집은 가짜로 바꾸고(실제 수집 규칙은 backup-archive.test 에서 검사), 직렬화는 실제 코드를 쓴다.
+function fakeArchive(options) {
+  if (options.archive) return options.archive;
+  return { version: 1, restore: 'MANUAL_ONLY', note: '', complete: true, tables: { Student: [{ id: 'st1' }], Attendance: [{ id: 'a1' }, { id: 'a2' }] },
+    rowCounts: { Student: 1, Attendance: 2 }, restorableTables: [], excluded: {}, maskedColumns: {}, failed: [] };
+}
 
 // 실제 라우트만 실행하고 운영 인증·DB·Storage 모듈은 가져오지 않는다.
 function fixture(options = {}) {
@@ -40,6 +48,8 @@ function fixture(options = {}) {
       return options.rows?.[sql.match(/FROM "([^"]+)"/)[1]] ?? [];
     } } },
     '@/lib/cron/withCronAlert': { withCronAlert: (_name, handler) => handler }, // 실패 알림 래퍼(d4)는 cron-alert.test 에서 따로 검사
+    '@/lib/backup/archive': { async collectBackupArchive() { calls.archive = (calls.archive ?? 0) + 1; return structuredClone(fakeArchive(options)); },
+      serializeBackup: archiveCore.serializeBackup, DOWNLOAD_MAX_BYTES: archiveCore.DOWNLOAD_MAX_BYTES },
     '@/lib/supabase/admin': { createAdminClient: () => ({ storage }) },
   };
   const exports = {};
@@ -85,9 +95,10 @@ test('정상적인 빈 테이블은 설정 범위를 명시한 백업으로 저�
   const { status, body } = await f.run();
   assert.equal(status, 200);
   assert.equal(body.success, true);
-  assert.equal(body.scope, 'SETTINGS_ONLY');
+  assert.equal(body.scope, 'SETTINGS_AND_ARCHIVE');
   assert.equal(f.calls.query, 7);
-  assert.equal(f.calls.upload[0].snapshot._meta.scope, 'SETTINGS_ONLY');
+  assert.equal(f.calls.upload[0].snapshot._meta.scope, 'SETTINGS_AND_ARCHIVE');
+  assert.equal(f.calls.upload[0].snapshot._meta.restoreScope, 'SETTINGS_ONLY');
   assert.equal(f.calls.upload[0].snapshot.academySettings, null);
   assert.deepEqual(f.calls.upload[0].snapshot.routes, []);
   assert.equal(f.calls.upload[0].config.upsert, false);
@@ -153,4 +164,36 @@ test('삭제 응답에서 확인되지 않은 항목을 삭제 완료로 만들�
   assert.equal(status, 500);
   assert.equal(body.backupSaved, true);
   assert.deepEqual(body.deleted, []);
+});
+
+// 2026-11-13 f12 — 학생·출결·청구 등 업무 자료를 보관용(archive)으로 함께 담는다.
+test('업무 자료를 보관용 칸에 담고 파일 정보·응답에 표·행 수를 남긴다', async () => {
+  const f = fixture();
+  const { status, body } = await f.run();
+  assert.equal(status, 200);
+  const snapshot = f.calls.upload[0].snapshot;
+  assert.deepEqual(snapshot.archive.tables.Attendance, [{ id: 'a1' }, { id: 'a2' }]);
+  assert.equal(snapshot.archive.restore, 'MANUAL_ONLY');
+  assert.deepEqual(f.calls.upload[0].config.metadata, { archiveTables: 2, archiveRows: 3, archiveComplete: true });
+  assert.deepEqual(body.archive, { tables: 2, rows: 3, complete: true, failedTables: [] });
+});
+
+test('설정 조회가 실패하면 업무 자료를 모으지 않는다', async () => {
+  const f = fixture({ failQuery: 'Program' });
+  assert.equal((await f.run()).status, 500);
+  assert.equal(f.calls.archive, undefined);
+});
+
+test('업무 자료 일부 실패는 설정을 저장하고 정리한 뒤 500 으로 알린다(슬랙 알림)', async () => {
+  const archive = { version: 1, restore: 'MANUAL_ONLY', note: '', complete: false, tables: { Student: [] }, rowCounts: { Student: 0 },
+    restorableTables: [], excluded: {}, maskedColumns: {}, failed: [{ table: 'Attendance', reason: 'READ_FAILED' }] };
+  const f = fixture({ archive, files: [old] });
+  const { status, body } = await f.run();
+  assert.equal(status, 500);
+  assert.equal(body.stage, 'ARCHIVE_INCOMPLETE');
+  assert.equal(body.backupSaved, true);
+  assert.equal(body.filename, f.calls.upload[0].filename);
+  assert.deepEqual(body.archive.failedTables, ['Attendance']);
+  assert.deepEqual(f.calls.remove, [[old.name]]);
+  assert.equal(f.calls.upload[0].config.metadata.archiveComplete, false);
 });

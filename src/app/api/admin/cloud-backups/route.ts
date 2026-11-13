@@ -86,6 +86,9 @@ export async function POST(req: NextRequest) {
 
         const results: Record<string, string> = {};
 
+        // ⚠️ 복원 범위는 기존 설정 칸뿐이다. backup.archive(학생·출결·청구 등 보관용 업무 자료)는
+        // 일부러 읽지 않는다 — 운영 자료를 통째로 덮어쓰면 그 사이 쌓인 출결·결제가 사라진다.
+
         // AcademySettings 복원
         if (backup.academySettings) {
             const s = backup.academySettings;
