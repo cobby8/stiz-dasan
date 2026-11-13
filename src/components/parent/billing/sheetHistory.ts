@@ -49,6 +49,7 @@ export function attachSheetHistory(win: SheetHistoryWindow, handlers: { onClose:
     },
     /** 시트 안 링크로 떠날 때 — 칸을 먼저 되돌리고 이동 */
     leaveTo(href: string) {
+      if (pendingHref) return; // 결제하기 두 번 빠르게 누름 — back() 이 두 번 돌아 학부모 화면 밖으로 나가지 않게
       if (!pushed) {
         handlers.navigate(href);
         return;
