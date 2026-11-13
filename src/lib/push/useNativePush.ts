@@ -4,11 +4,19 @@ import { useCallback, useEffect, useState } from "react";
 import {
     NATIVE_PUSH_CHANGED_EVENT,
     askNativePush,
+    fetchServerPushConfigured,
     hasNativePushBridge,
     nativePushView,
     syncNativePushToken,
+    type NativePushState,
     type NativePushView,
 } from "@/lib/push/nativePushBridge";
+
+/** 앱 상태 + 서버 발송 키 설정 여부로 화면 판정(앱이 알림을 받을 수 있을 때만 서버에 묻는다) */
+async function viewOf(state: NativePushState | null): Promise<NativePushView> {
+    const configured = state?.supported ? await fetchServerPushConfigured() : null;
+    return nativePushView(state, configured);
+}
 
 /**
  * 스토어 앱 알림 상태(d2, 2026-11-14) — 설정 화면·직원 안내 줄이 함께 쓴다.
@@ -25,7 +33,7 @@ export function useNativePush() {
             setView("unavailable");
             return;
         }
-        setView(nativePushView(await askNativePush("state")));
+        setView(await viewOf(await askNativePush("state")));
     }, []);
 
     useEffect(() => {
@@ -46,9 +54,9 @@ export function useNativePush() {
         setBusy(true);
         try {
             const state = await askNativePush("request");
-            const next = nativePushView(state);
+            const next = await viewOf(state);
             setView(next);
-            await syncNativePushToken(state, true);
+            await syncNativePushToken(state, { force: true });
             window.dispatchEvent(new CustomEvent(NATIVE_PUSH_CHANGED_EVENT, { detail: next }));
         } finally {
             setBusy(false);

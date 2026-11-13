@@ -1,7 +1,7 @@
 # 스토어 앱 알림(FCM) — 구조와 켜는 법
 
 2026-11-14 (e2·d2). 스토어 앱(안드로이드 `kr.co.upturnlabs.stizdasan` · 아이폰 같은 번들 ID) 안에서도 휴대폰 알림을 받게 한다.
-설정 파일·키가 없으면 **빌드·발송은 그대로 되고 앱 알림만 꺼진다**(웹에는 «알림은 문자·카카오톡으로 보내드려요»).
+설정 파일·키가 없으면 **빌드·발송은 그대로 되고 앱 알림만 꺼진다**(웹에는 «중요한 안내는 문자·카카오톡으로 보내드려요»).
 
 ## 1. 기존 웹푸시 구조(바꾸지 않음)
 
@@ -15,16 +15,21 @@
 
 ## 2. 앱 알림이 더해진 곳
 
-- 표 `NativePushToken`(userId·platform·token unique·lastSeenAt, RLS ENABLE+FORCE·anon/authenticated 권한 없음) — `prisma/migrations/20261114000000_native_push_token`.
+- 표 `NativePushToken`(userId·platform·token unique·lastSeenAt, RLS ENABLE+FORCE·anon/authenticated 권한 없음) — `prisma/migrations/20261114000001_native_push_token`.
 - 발송: 두 발송 함수가 웹푸시 구독에 **더해** 그 사람의 앱 토큰에도 FCM HTTP v1 으로 보낸다(`src/lib/push/fcm.ts`, 외부 라이브러리 없이 서비스 계정 JWT 서명).
   - 끈 종류는 웹·앱 모두 안 보낸다(같은 스위치).
   - 같은 사람이 PC 브라우저 + 휴대폰 앱이면 **둘 다 받는다** — 예전에도 기기마다 하나씩 보냈다(같은 규칙). 같은 알림을 두 번 만들지 않는 건 대기열 중복방지 키(1건 = 발송 함수 1회)가 맡는다. 앱 웹뷰는 브라우저 웹푸시를 못 받으므로 한 휴대폰에서 앱·웹뷰가 겹치지 않는다(단, 같은 휴대폰에 옛 홈 화면 앱(PWA)까지 켜 두었으면 두 번 울릴 수 있다).
   - 재시도: 실패한 앱 토큰은 `native:<id>` 로 `failedSubscriptionIds` 에 담겨 그 토큰만 다시 보낸다.
-  - 죽은 토큰(UNREGISTERED·404·SENDER_ID_MISMATCH·«registration token» INVALID_ARGUMENT)은 지운다. 429·5xx·인증 오류는 지우지 않는다.
+  - 죽은 토큰(UNREGISTERED·«registration token» INVALID_ARGUMENT)만 지운다. SENDER_ID_MISMATCH(서버 키가 다른 프로젝트 것 = 설정 실수)·본문 없는 404·429·5xx·인증 오류는 지우지 않는다.
+  - 구글 인증 토큰 발급은 진행 중 요청 하나를 같이 기다리고(동시 발송에도 1회), FCM·인증 요청은 각각 10초 제한. 기기 발송은 동시 20개씩. 제목 200바이트·본문 2,000바이트(한글 안 깨지게)로 자른다.
+  - 전체 공지(`notifyAllParents`)의 푸시는 `after()` 로 응답 뒤에 보낸다(서버 함수가 중간에 멈추지 않게).
   - `FCM_SERVICE_ACCOUNT_JSON` 이 없으면 앱 토큰을 조회하지도 않는다(웹푸시만). 둘 다 없으면 예전과 같은 `NOT_CONFIGURED`.
 - 등록: 앱이 웹 화면에 «알림 창구»(안드로이드 `StizPushTransport` · 아이폰 `stizPush`)를 연다 → 웹(`NativePushRegistrar`, 루트 레이아웃)이 상태를 묻고 → 권한이 켜져 있으면 **웹뷰의 로그인 쿠키로** `POST /api/push/native {platform, token}`. 주인은 로그인 계정(본문 userId 무시). 같은 토큰이 다시 오면 지금 로그인한 사람으로 옮긴다. 한 사람 최근 10개까지.
-  - 로그인한 사람에게만, 기기당 한 번 자동으로 권한을 묻는다. 거절하면 설정 화면에 «휴대폰 설정에서 알림을 켜 주세요».
-- 로그아웃: 등록 때 남긴 httpOnly 쿠키 `stiz_np`(줄 id)로 **이 기기 토큰만** 지운다(`logout`·`logoutStaff`). 탈퇴: 그 사람 토큰 전부(표가 없으면 건너뜀).
+  - 로그인한 사람에게만, 서버 발송 키가 있을 때만(`GET /api/push/native` → `configured`), 기기당 한 번 자동으로 권한을 묻는다. 거절하면 설정 화면에 «휴대폰 설정에서 알림을 켜 주세요».
+  - 서버 키가 없거나(`configured=false`) 아이폰인데 허용 후에도 토큰이 없으면(푸시 권한 서명 미연결) 화면은 «중요한 안내는 문자·카카오톡으로 보내드려요».
+  - «방금 보냄» 기록(6시간)은 «토큰 + 로그인한 사람» 짝 — 다른 계정으로 로그인하면 바로 다시 등록되어 토큰 주인이 새 계정으로 옮겨진다. 로그인 화면(/login·/staff/login)에 들어오거나 세션이 없으면 기록을 지운다.
+  - 안드로이드 창구는 요청에 번호를 붙여(`state#7` → 답 `"id":7`) 짝짓고, 시간 초과된 요청은 버린다.
+- 로그아웃: 등록 때 남긴 httpOnly 쿠키 `stiz_np`(줄 id)로 **이 기기 토큰만** 지운다(`logout`·`logoutStaff`, 지금 로그인한 사람을 알면 그 사람 줄일 때만). 탈퇴: 그 사람 토큰 전부(표가 없으면 건너뜀).
 - 알림 누르기: 서버는 우리 사이트 «경로»만 보낸다(`safeNativePushPath`). 앱이 기존 주소 정책으로 한 번 더 거른다 — 안드로이드 `NativePushPolicy.target`(→ `AppNavigationPolicy.sameOrigin`) → MainActivity 의 기존 링크 열기 길, 아이폰 `NavigationPolicy.pushTarget`(→ `decide == .website`) → `openUniversalLink`. 로그인·운행 위치·바깥 주소는 열지 않는다.
 - 앱 형태: 안드로이드 = «데이터만» 보내 앱(`StizMessagingService`)이 알림을 그린다(채널 «학원 알림»). 아이폰 = APNs 알림(제목·본문·소리)을 붙여 아이폰이 띄운다.
 
@@ -38,7 +43,7 @@
 | APNs 인증 키(.p8) | Firebase 콘솔 → 프로젝트 설정 → 클라우드 메시징 → Apple 앱 구성 | 넣지 않음 |
 
 - 안드로이드: google-services 플러그인을 쓰지 않고 `app/build.gradle` 이 파일을 직접 읽어 BuildConfig 에 넣는다. 파일이 없거나 그 빌드의 패키지 이름이 파일에 없으면 그 빌드만 알림이 꺼진다(스토어 release = `kr.co.upturnlabs.stizdasan`, 개발 debug = `kr.stiz.driver.unified`). 시험(sandbox)·기기검증 빌드는 항상 꺼짐.
-- 아이폰: Firebase SDK(SPM `firebase-ios-sdk` 11.x · FirebaseMessaging)를 쓴다. `aps-environment` 는 `STIZ.entitlements` 에 준비만 했고 서명에는 아직 연결하지 않았다(유니버설 링크와 같이 — `docs/store-release.md` 7-1).
+- 아이폰: Firebase SDK(SPM `firebase-ios-sdk` 11.x · FirebaseMessaging)를 쓴다. `Package.resolved` 는 Windows 에서 만들 수 없어 아직 없다 — **Codemagic 첫 빌드 후 생성된 `STIZ.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` 를 커밋**해 버전을 고정한다. `aps-environment` 는 `STIZ.entitlements` 에 준비만 했고 서명에는 아직 연결하지 않았다(유니버설 링크와 같이 — `docs/store-release.md` 7-1).
 
 ## 4. 아이폰 설정 파일 주입(Codemagic) — 원장 승인 후
 
@@ -56,6 +61,9 @@
 4. Release 에 `CODE_SIGN_ENTITLEMENTS = STIZ/STIZ.entitlements;` 연결(애플 포털에서 Push Notifications·Associated Domains 를 켠 프로파일을 받은 뒤 — 7-1).
 
 ## 5. 원장이 할 외부 작업(순서대로)
+
+> ⚠️ **순서: 서버 키(7번)를 먼저 넣고 → 설정 파일이 든 앱을 출시**한다. 반대로 하면 앱이 «알림 켜기»를 물어 허용받고도 알림이 안 간다
+> (지금은 서버 키가 없으면 앱이 권한을 묻지 않고 «문자·카카오톡» 안내만 보이지만, 키 → 앱 순서가 가장 안전하다).
 
 1. **Firebase 콘솔**(console.firebase.google.com, 업턴랩스 계정) → 프로젝트 만들기(예: «STIZ 농구교실»). 애널리틱스는 꺼도 된다.
 2. 프로젝트 → 앱 추가 → **Android**: 패키지 이름 `kr.co.upturnlabs.stizdasan` → `google-services.json` 내려받기.

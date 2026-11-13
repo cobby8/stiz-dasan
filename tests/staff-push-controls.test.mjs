@@ -74,7 +74,7 @@ test("스토어 앱: 토글은 숨기고, 상단 한 줄은 앱 알림의 실제
   const inApp = (appView) => render("StaffPushBanner", { pushSupported: true, pushEnabled: false }, { storeAppLacksPush: true, appView });
   assert.equal(render("StaffPushToggle", { pushSupported: true, pushEnabled: false }, { storeAppLacksPush: true, appView: "default" }), "");
   // 못 받는 앱(옛 앱·Firebase 설정 없음): 문자·카카오톡 안내, 켜기 버튼 없음
-  assert.match(inApp("unavailable"), /알림은 문자·카카오톡으로 보내드려요/);
+  assert.match(inApp("unavailable"), /중요한 안내는 문자·카카오톡으로 보내드려요/);
   assert.doesNotMatch(inApp("unavailable"), /켜기/);
   // 권한을 거절함: 휴대폰 설정으로 안내
   assert.match(inApp("denied"), /휴대폰 설정에서 알림을 켜 주세요/);

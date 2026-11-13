@@ -27,12 +27,37 @@ final class NativePushPolicy {
     }
 
     /**
-     * 웹에 돌려줄 알림 상태 JSON 한 줄(웹의 parseNativePushReply 와 같은 모양).
+     * 웹 요청 «명령#번호»(예: "state#7")에서 명령을 꺼낸다. "state"·"request" 가 아니면 null.
+     * 웹은 답이 한 곳(onmessage)으로 모이므로 번호로 요청·답을 짝짓는다.
+     */
+    static String command(String message) {
+        if (message == null) return null;
+        int hash = message.indexOf('#');
+        String command = hash < 0 ? message : message.substring(0, hash);
+        return "state".equals(command) || "request".equals(command) ? command : null;
+    }
+
+    /** 요청 번호(1~999999999). 없거나 형식이 틀리면 0(답에 번호를 붙이지 않는다) */
+    static int requestId(String message) {
+        if (message == null) return 0;
+        int hash = message.indexOf('#');
+        if (hash < 0) return 0;
+        String digits = message.substring(hash + 1);
+        if (!digits.matches("[1-9][0-9]{0,8}")) return 0;
+        return Integer.parseInt(digits);
+    }
+
+    static String stateJson(boolean supported, String permission, String token) { return stateJson(supported, permission, token, 0); }
+
+    /**
+     * 웹에 돌려줄 알림 상태 JSON 한 줄(웹의 parseNativePushReply 와 같은 모양). id 가 0 보다 크면 "id" 를 붙인다.
      * permission: "granted" | "denied" | "default"
      */
-    static String stateJson(boolean supported, String permission, String token) {
+    static String stateJson(boolean supported, String permission, String token, int id) {
         String safePermission = "granted".equals(permission) || "denied".equals(permission) ? permission : "default";
-        StringBuilder out = new StringBuilder("{\"v\":1,\"platform\":\"android\",\"supported\":").append(supported)
+        StringBuilder out = new StringBuilder("{\"v\":1,");
+        if (id > 0) out.append("\"id\":").append(id).append(',');
+        out.append("\"platform\":\"android\",\"supported\":").append(supported)
             .append(",\"permission\":\"").append(safePermission).append("\",\"token\":");
         // FCM 토큰은 영문·숫자·:_-. 만 쓴다 — 그 밖의 글자가 있으면 보내지 않는다(따옴표로 JSON 이 깨지는 일 방지)
         if (supported && token != null && token.matches("[A-Za-z0-9:_\\-.]{20,4096}")) out.append('"').append(token).append('"');

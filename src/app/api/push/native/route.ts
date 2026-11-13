@@ -7,6 +7,7 @@ import {
     NATIVE_TOKENS_PER_USER,
     parseNativePushRegistration,
 } from "@/lib/push/nativePushPolicy";
+import { fcmServiceAccount } from "@/lib/push/fcm";
 
 // 스토어 앱(안드로이드·아이폰) 푸시 토큰 등록·해제(e2, 2026-11-14) — 모든 역할 공용, 역할 제한 없음.
 //
@@ -28,12 +29,14 @@ async function currentAppUserId(): Promise<{ userId: string } | { response: Next
     return { userId };
 }
 
-// GET: 로그인 상태 확인만 — 앱이 처음 알림 권한을 물을지 정할 때 쓴다(로그인 전에는 묻지 않는다)
+// GET: 로그인 상태 + 서버 발송 키 설정 여부 — 앱이 처음 알림 권한을 물을지 정할 때·설정 화면 안내에 쓴다.
+// configured=false(FCM_SERVICE_ACCOUNT_JSON 없음·깨짐)면 앱 알림이 실제로 가지 않으므로 화면은 «문자·카카오톡» 안내로.
+// 키 값 자체는 돌려주지 않는다(있다/없다만).
 export async function GET() {
     try {
         const me = await currentAppUserId();
         if ("response" in me) return me.response;
-        return NextResponse.json({ ok: true });
+        return NextResponse.json({ ok: true, configured: fcmServiceAccount() !== null });
     } catch {
         return NextResponse.json({ error: "확인하지 못했습니다." }, { status: 500 });
     }

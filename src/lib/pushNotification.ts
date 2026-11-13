@@ -121,8 +121,11 @@ function nativeTarget(row: NativeTokenRow, account: FcmServiceAccount, payload: 
   };
 }
 
+/** 한 번에 동시에 보내는 기기 수 — 전체 공지(학부모 수백 명)에서 연결·메모리가 한꺼번에 몰리지 않게 */
+export const PUSH_SEND_CONCURRENCY = 20;
+
 /**
- * 모은 기기에 한꺼번에 보내고 결과를 센다(예전 웹푸시 계산과 같은 규칙).
+ * 모은 기기에 동시 PUSH_SEND_CONCURRENCY 개씩 보내고 결과를 센다(예전 웹푸시 계산과 같은 규칙).
  * 지운 구독·토큰도 «실패 1»로 세고(예전과 같음), 다시 보낼 목록에는 넣지 않는다.
  */
 async function deliver(targets: DeviceTarget[], collectRetry: boolean): Promise<PushDeliveryResult> {
@@ -131,18 +134,22 @@ async function deliver(targets: DeviceTarget[], collectRetry: boolean): Promise<
   let failedCount = 0;
   let removedCount = 0;
   const failedSubscriptionIds: string[] = [];
-  await Promise.all(
-    targets.map(async (target) => {
+  // 일꾼 N 명이 목록에서 다음 기기를 하나씩 가져가 보낸다(순서대로 20개씩 묶는 것보다 느린 기기 하나에 덜 막힌다)
+  let next = 0;
+  const worker = async () => {
+    while (next < targets.length) {
+      const target = targets[next++];
       const outcome = await target.send();
       if (outcome === "sent") {
         sentCount += 1;
-        return;
+        continue;
       }
       failedCount += 1;
       if (outcome === "removed") removedCount += 1;
       else if (outcome === "failed" && collectRetry) failedSubscriptionIds.push(target.retryId);
-    }),
-  );
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(PUSH_SEND_CONCURRENCY, targets.length) }, worker));
   const status: PushDeliveryStatus =
     sentCount === targets.length ? "SENT" : sentCount > 0 ? "PARTIAL" : "FAILED";
   return {

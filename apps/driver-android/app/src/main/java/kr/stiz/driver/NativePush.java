@@ -42,8 +42,8 @@ final class NativePush {
     private static final String ASKED = "asked";
 
     private final Activity activity;
-    // 권한 창 결과를 기다리는 웹 요청들(창이 닫히면 한꺼번에 답한다)
-    private final List<JavaScriptReplyProxy> waiting = new ArrayList<>();
+    // 권한 창 결과를 기다리는 웹 요청들(창이 닫히면 한꺼번에 답한다) — 답 창구 + 요청 번호
+    private final List<Object[]> waiting = new ArrayList<>();
 
     private NativePush(Activity activity) { this.activity = activity; }
 
@@ -58,8 +58,11 @@ final class NativePush {
                 // 우리 사이트의 맨 위 화면만 — 광고·결제창 같은 안쪽 화면(iframe)은 답하지 않는다
                 if (!mainFrame || !AppNavigationPolicy.sameOrigin(BuildConfig.STIZ_ORIGIN, origin.toString())) return;
                 if (message.getType() != WebMessageCompat.TYPE_STRING) return;
-                if ("request".equals(message.getData())) push.request(reply);
-                else if ("state".equals(message.getData())) push.answer(reply);
+                // "state#7" → 명령 state, 요청 번호 7(답에 그대로 붙여 웹이 짝짓는다)
+                String command = NativePushPolicy.command(message.getData());
+                int id = NativePushPolicy.requestId(message.getData());
+                if ("request".equals(command)) push.request(reply, id);
+                else if ("state".equals(command)) push.answer(reply, id);
             });
         return push;
     }
@@ -98,24 +101,24 @@ final class NativePush {
     }
 
     /** 지금 상태로 답한다. 권한이 켜져 있으면 FCM 토큰을 받아 함께 보낸다 */
-    private void answer(JavaScriptReplyProxy reply) {
+    private void answer(JavaScriptReplyProxy reply, int id) {
         final String permission = permission();
         if (!"granted".equals(permission) || !ensureApp(activity)) {
-            post(reply, NativePushPolicy.stateJson(supported(), permission, null));
+            post(reply, NativePushPolicy.stateJson(supported(), permission, null, id));
             return;
         }
         try {
             FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task ->
-                post(reply, NativePushPolicy.stateJson(true, permission, task.isSuccessful() ? task.getResult() : null)));
+                post(reply, NativePushPolicy.stateJson(true, permission, task.isSuccessful() ? task.getResult() : null, id)));
         } catch (RuntimeException failure) {
-            post(reply, NativePushPolicy.stateJson(true, permission, null));
+            post(reply, NativePushPolicy.stateJson(true, permission, null, id));
         }
     }
 
     /** 아직 안 물어봤으면 휴대폰 권한 창을 띄우고, 이미 정해졌으면 상태만 답한다 */
-    private void request(JavaScriptReplyProxy reply) {
-        if (!supported() || Build.VERSION.SDK_INT < 33 || !"default".equals(permission())) { answer(reply); return; }
-        waiting.add(reply);
+    private void request(JavaScriptReplyProxy reply, int id) {
+        if (!supported() || Build.VERSION.SDK_INT < 33 || !"default".equals(permission())) { answer(reply, id); return; }
+        waiting.add(new Object[]{reply, id});
         if (waiting.size() > 1) return; // 이미 권한 창이 떠 있다
         prefs(activity).edit().putBoolean(ASKED, true).apply();
         activity.requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, PERMISSION_REQUEST);
@@ -124,9 +127,9 @@ final class NativePush {
     /** MainActivity.onRequestPermissionsResult 에서 부른다. 이 클래스의 요청이면 true */
     boolean onPermissionResult(int requestCode) {
         if (requestCode != PERMISSION_REQUEST) return false;
-        List<JavaScriptReplyProxy> replies = new ArrayList<>(waiting);
+        List<Object[]> replies = new ArrayList<>(waiting);
         waiting.clear();
-        for (JavaScriptReplyProxy reply : replies) answer(reply);
+        for (Object[] item : replies) answer((JavaScriptReplyProxy) item[0], (Integer) item[1]);
         return true;
     }
 

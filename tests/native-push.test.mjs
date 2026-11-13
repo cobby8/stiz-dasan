@@ -44,7 +44,7 @@ test("등록 본문 검사: 플랫폼 두 가지·토큰 길이 20~4096·허용 
     assert.equal(policy.parseNativePushRegistration(bad), null, JSON.stringify(bad));
   }
   // DB CHECK 와 같은 범위
-  const sql = read("prisma/migrations/20261114000000_native_push_token/migration.sql");
+  const sql = read("prisma/migrations/20261114000001_native_push_token/migration.sql");
   assert.match(sql, new RegExp(`char_length\\(token\\) BETWEEN ${policy.NATIVE_TOKEN_MIN} AND ${policy.NATIVE_TOKEN_MAX}`));
   assert.match(sql, /platform IN \('android', 'ios'\)/);
 });
@@ -108,8 +108,8 @@ test("FCM 오류 분류: 죽은 토큰만 지우고 일시 오류·인증 오류
   const fcm = load("src/lib/push/fcm.ts", { "@/lib/push/nativePushPolicy": policy });
   const body = (status, errorCode, message = "") => JSON.stringify({ error: { status, message, details: errorCode ? [{ "@type": "type.googleapis.com/google.firebase.fcm.v1.FcmError", errorCode }] : [] } });
   assert.equal(fcm.classifyFcmError(404, body("NOT_FOUND", "UNREGISTERED")).kind, "invalid-token");
-  assert.equal(fcm.classifyFcmError(404, "").kind, "invalid-token");
-  assert.equal(fcm.classifyFcmError(403, body("PERMISSION_DENIED", "SENDER_ID_MISMATCH")).kind, "invalid-token");
+  assert.equal(fcm.classifyFcmError(404, "").kind, "failed", "본문 없는 404 는 토큰을 지우지 않는다");
+  assert.equal(fcm.classifyFcmError(403, body("PERMISSION_DENIED", "SENDER_ID_MISMATCH")).kind, "failed", "서버 키가 다른 프로젝트 것(설정 실수) — 토큰을 지우면 고친 뒤에도 못 보낸다");
   assert.equal(fcm.classifyFcmError(400, body("INVALID_ARGUMENT", "INVALID_ARGUMENT", "The registration token is not a valid FCM registration token")).kind, "invalid-token");
   assert.equal(fcm.classifyFcmError(400, body("INVALID_ARGUMENT", "INVALID_ARGUMENT", "Invalid JSON payload")).kind, "failed", "메시지 형식 오류는 토큰 잘못이 아니다");
   assert.deepEqual(fcm.classifyFcmError(429, body("RESOURCE_EXHAUSTED", "QUOTA_EXCEEDED")), { kind: "failed", code: "FCM_QUOTA_EXCEEDED" });
@@ -148,6 +148,38 @@ test("FCM 발송: 서비스 계정으로 서명한 JWT 로 접근 토큰을 받�
   // 네트워크가 죽어도 throw 하지 않고 failed
   fcm.resetFcmAccessTokenCache();
   assert.equal((await fcm.sendFcm(account, "android", TOKEN_A, { title: "t", body: "b" }, { fetch: async () => { throw new Error("NET_DOWN"); }, now })).kind, "failed");
+});
+
+test("FCM 접근 토큰: 동시에 여러 건 보내도 발급은 한 번(진행 중 요청 공유), 모든 요청에 10초 제한", async () => {
+  const fcm = load("src/lib/push/fcm.ts", { "@/lib/push/nativePushPolicy": policy });
+  fcm.resetFcmAccessTokenCache();
+  const account = fcm.parseServiceAccount(ACCOUNT_JSON);
+  let authCalls = 0;
+  const signals = [];
+  const fetch = async (url, init) => {
+    signals.push(init.signal);
+    if (url.includes("oauth2")) {
+      authCalls += 1;
+      await new Promise((r) => setTimeout(r, 20)); // 발급이 느린 동안 다른 발송이 들어온다
+      return { ok: true, status: 200, text: async () => JSON.stringify({ access_token: "ya29.x", expires_in: 3600 }) };
+    }
+    return { ok: true, status: 200, text: async () => "{}" };
+  };
+  const results = await Promise.all(Array.from({ length: 30 }, () => fcm.sendFcm(account, "android", TOKEN_A, { title: "t", body: "b" }, { fetch })));
+  assert.ok(results.every((r) => r.kind === "sent"));
+  assert.equal(authCalls, 1, "인증 토큰 발급은 한 번만");
+  assert.equal(fcm.FCM_REQUEST_TIMEOUT_MS, 10_000);
+  assert.ok(signals.length === 31 && signals.every((sig) => sig instanceof AbortSignal), "인증·발송 요청 모두 시간 제한");
+});
+
+test("제목 200바이트·본문 2,000바이트로 자르되 한글이 반쪽으로 깨지지 않는다", () => {
+  const fcm = load("src/lib/push/fcm.ts", { "@/lib/push/nativePushPolicy": policy });
+  const msg = fcm.buildFcmMessage("android", TOKEN_A, { title: "가".repeat(100), body: "나".repeat(1000) });
+  assert.equal(Buffer.byteLength(msg.message.data.title), 198, "한글 66자(198바이트) — 67번째는 200을 넘어 뺀다");
+  assert.equal(Buffer.byteLength(msg.message.data.body), 1998);
+  assert.doesNotMatch(msg.message.data.title + msg.message.data.body, /\uFFFD/);
+  assert.equal(fcm.truncateUtf8("ab가", 4), "ab", "3바이트 글자가 다 안 들어가면 통째로 뺀다");
+  assert.equal(fcm.truncateUtf8("short", 200), "short");
 });
 
 // ── 발송 함수(sendPushToUser·sendPushToAllParents) ───────────────────────────
@@ -237,6 +269,33 @@ test("FCM 키 없음: 앱 발송은 조용히 건너뛰고 웹푸시만, 둘 다
   assert.equal(appOnly.log.webQueries.length, 0);
 });
 
+test("동시 발송 제한: 기기가 많아도 한 번에 20개까지만 보낸다", async () => {
+  let inFlight = 0;
+  let peak = 0;
+  const native = Array.from({ length: 55 }, (_, i) => ({ id: `t${i}`, userId: "p", platform: "android", token: `${TOKEN_A}${i}` }));
+  const { mod } = loadSender({ native, fcmResult: () => ({ kind: "sent" }) });
+  // sendFcm 대역을 느리게 바꿔 동시 실행 수를 잰다
+  const prisma = { $queryRawUnsafe: async () => [], $executeRawUnsafe: async () => 1 };
+  const mod2 = load("src/lib/pushNotification.ts", {
+    "web-push": { __esModule: true, default: { setVapidDetails() {}, sendNotification: async () => {} } },
+    "@/lib/prisma": { prisma },
+    "@/lib/parent-notification-preferences": { isPushAllowed: async () => true, optedOutUserIds: async () => new Set() },
+    "@/lib/push/fcm": { fcmServiceAccount: () => ({}), sendFcm: async () => { inFlight += 1; peak = Math.max(peak, inFlight); await new Promise((r) => setTimeout(r, 5)); inFlight -= 1; return { kind: "sent" }; } },
+    "@/lib/push/nativePushStore": { listNativeTokensForUser: async () => [], listNativeTokensForParents: async () => native, deleteNativeToken: async () => true },
+    "@/lib/push/nativePushPolicy": policy,
+  });
+  const result = await mod2.sendPushToAllParents({ title: "공지", body: "b" });
+  assert.equal(result.sentCount, 55);
+  assert.equal(mod2.PUSH_SEND_CONCURRENCY, 20);
+  assert.ok(peak <= 20 && peak >= 2, `동시 ${peak}개`);
+  assert.equal((await mod.sendPushToAllParents({ title: "t", body: "b" })).sentCount, 55);
+});
+
+test("전체 공지 푸시는 after() 로 응답 뒤에 보낸다(요청 밖이면 바로)", () => {
+  const src = read("src/lib/notification.ts");
+  assert.match(src, /const \{ after \} = await import\("next\/server"\);\s*after\(push\);\s*\} catch \{\s*void push\(\);/);
+});
+
 test("전체 공지(sendPushToAllParents): 앱 토큰도 보내고, 공지를 끈 학부모 기기는 뺀다", async () => {
   const { mod, log } = loadSender({ native: [{ id: "t1", userId: "on", platform: "android", token: TOKEN_A }, { id: "t2", userId: "off", platform: "ios", token: TOKEN_B }], optedOut: new Set(["off"]) });
   const result = await mod.sendPushToAllParents({ title: "공지", body: "b", tag: "NOTICE" });
@@ -249,7 +308,7 @@ test("전체 공지(sendPushToAllParents): 앱 토큰도 보내고, 공지를 �
 
 // ── 토큰 등록 API ───────────────────────────────────────────────────────────
 
-function loadRoute({ authUser, linkedId = "app-me" }) {
+function loadRoute({ authUser, linkedId = "app-me", configured = true }) {
   const writes = [];
   const cookies = [];
   const prisma = {
@@ -263,6 +322,7 @@ function loadRoute({ authUser, linkedId = "app-me" }) {
     "@/lib/prisma": { prisma },
     "@/lib/auth-guard": { findLinkedAppUserId: async (authId) => (authId === "auth-me" ? linkedId : null) },
     "@/lib/push/nativePushPolicy": policy,
+    "@/lib/push/fcm": { fcmServiceAccount: () => (configured ? { projectId: "p" } : null) },
   });
   const req = (body) => ({ json: async () => body });
   return { route, req, writes, cookies };
@@ -290,7 +350,11 @@ test("토큰 등록 권한: 로그인 안 하면 401, 연결 계정 없으면 40
   assert.equal(name, "stiz_np");
   assert.equal(value, "row-1", "쿠키에는 토큰이 아니라 줄 id");
   assert.equal(opts.httpOnly, true);
-  assert.equal((await me.route.GET()).status, 200);
+  const got = await me.route.GET();
+  assert.deepEqual([got.status, got.body], [200, { ok: true, configured: true }]);
+  // 서버 키가 없으면 configured=false → 앱 화면은 «문자·카카오톡» 안내(키 값 자체는 돌려주지 않는다)
+  const noKey = loadRoute({ authUser: { id: "auth-me" }, configured: false });
+  assert.deepEqual((await noKey.route.GET()).body, { ok: true, configured: false });
 });
 
 test("토큰 해제: 본인 토큰만 지운다", async () => {
@@ -314,14 +378,21 @@ test("로그아웃은 이 기기 토큰을 먼저 지우고, 탈퇴는 그 사�
   // 이 기기 = 등록 때 남긴 쿠키(줄 id)
   const executed = [];
   let deleted = null;
-  const device = load("src/lib/push/nativePushDevice.ts", {
+  const loadDevice = (authUser) => load("src/lib/push/nativePushDevice.ts", {
     "next/headers": { cookies: async () => ({ get: (n) => (n === "stiz_np" ? { value: "row-9" } : undefined), delete: (n) => { deleted = n; } }) },
     "@/lib/prisma": { prisma: { $executeRawUnsafe: async (sql, ...p) => { executed.push({ sql, p }); return 1; } } },
+    "@/lib/supabase/server": { createClient: async () => ({ auth: { getUser: async () => ({ data: { user: authUser } }) } }) },
+    "@/lib/auth-guard": { findLinkedAppUserId: async (id) => (id === "auth-me" ? "app-me" : null) },
     "@/lib/push/nativePushPolicy": policy,
   });
-  await device.forgetNativePushOnThisDevice();
-  assert.deepEqual(executed, [{ sql: `DELETE FROM "NativePushToken" WHERE id = $1`, p: ["row-9"] }]);
+  // 지금 로그인한 사람을 알면 그 사람 줄일 때만 지운다
+  await loadDevice({ id: "auth-me" }).forgetNativePushOnThisDevice();
+  assert.deepEqual(executed, [{ sql: `DELETE FROM "NativePushToken" WHERE id = $1 AND "userId" = $2`, p: ["row-9", "app-me"] }]);
   assert.equal(deleted, "stiz_np");
+  // 사람을 모르면 쿠키의 줄만(예전과 같음)
+  executed.length = 0;
+  await loadDevice(null).forgetNativePushOnThisDevice();
+  assert.deepEqual(executed, [{ sql: `DELETE FROM "NativePushToken" WHERE id = $1`, p: ["row-9"] }]);
 
   // 탈퇴: 표가 없으면(마이그레이션 전) DELETE 를 보내지 않는다 — 실패한 문장이 탈퇴 거래 전체를 무르지 않게
   const store = load("src/lib/push/nativePushStore.ts", { "@/lib/prisma": { prisma: {} } });
@@ -337,7 +408,7 @@ test("로그아웃은 이 기기 토큰을 먼저 지우고, 탈퇴는 그 사�
 // ── DB·화면 연결 ────────────────────────────────────────────────────────────
 
 test("마이그레이션: 새 표 하나·토큰 unique·RLS ENABLE+FORCE·anon/authenticated 권한 없음, schema.prisma 사본과 같다", () => {
-  const sql = read("prisma/migrations/20261114000000_native_push_token/migration.sql");
+  const sql = read("prisma/migrations/20261114000001_native_push_token/migration.sql");
   const body = sql.replace(/--.*$/gm, "");
   assert.match(body, /CREATE TABLE IF NOT EXISTS public\."NativePushToken"/);
   assert.match(body, /CREATE UNIQUE INDEX IF NOT EXISTS "NativePushToken_token_key"\s+ON public\."NativePushToken" \(token\)/);
@@ -365,20 +436,51 @@ test("앱 알림 창구 답 해석·화면 판정(웹): 모양이 틀리면 미�
   assert.equal(bridge.nativePushView({ ...ok, permission: "denied" }), "denied");
   assert.equal(bridge.nativePushView({ ...ok, permission: "default" }), "default");
   assert.equal(bridge.nativePushView(ok), "granted");
+  // 서버 발송 키가 없으면(configured=false) 앱이 켜져 있어도 미지원 안내, 모르면(null) 앱 상태대로
+  assert.equal(bridge.nativePushView(ok, false), "unavailable");
+  assert.equal(bridge.nativePushView({ ...ok, permission: "default" }, false), "unavailable");
+  assert.equal(bridge.nativePushView(ok, true), "granted");
+  // 아이폰: 허용했는데 토큰이 없으면(푸시 권한 서명 미연결) 미지원 — 안드로이드는 토큰이 늦게 와도 켜짐
+  assert.equal(bridge.nativePushView({ ...ok, platform: "ios", token: null }), "unavailable");
+  assert.equal(bridge.nativePushView({ ...ok, platform: "ios" }), "granted");
+  assert.equal(bridge.nativePushView({ ...ok, token: null }), "granted");
   assert.equal(bridge.NATIVE_PUSH_NOTES.denied, "휴대폰 설정에서 알림을 켜 주세요");
-  assert.equal(bridge.NATIVE_PUSH_NOTES.unavailable, "알림은 문자·카카오톡으로 보내드려요");
+  assert.equal(bridge.NATIVE_PUSH_NOTES.unavailable, "중요한 안내는 문자·카카오톡으로 보내드려요");
+  // «방금 보냄» 기록은 토큰 + 로그인한 사람 짝 — 계정이 바뀌면 다시 보낸다(MED1)
+  const now = 1_800_000_000_000;
+  const saved = { token: TOKEN_A, user: "auth-a", at: now - 60_000 };
+  assert.equal(bridge.isFreshSync(saved, TOKEN_A, "auth-a", now), true);
+  assert.equal(bridge.isFreshSync(saved, TOKEN_A, "auth-b", now), false, "다른 계정으로 로그인하면 바로 다시 등록");
+  assert.equal(bridge.isFreshSync(saved, TOKEN_B, "auth-a", now), false, "토큰이 바뀌면 다시 등록");
+  assert.equal(bridge.isFreshSync(saved, TOKEN_A, "", now), false, "사람을 모르면 기록을 믿지 않는다");
+  assert.equal(bridge.isFreshSync({ ...saved, at: now - 7 * 3600_000 }, TOKEN_A, "auth-a", now), false, "6시간 지나면 다시");
+  assert.equal(bridge.isFreshSync({ token: TOKEN_A, at: now }, TOKEN_A, "auth-a", now), false, "옛 모양(사람 없음) 기록은 무시");
+  for (const p of ["/login", "/login/forgot", "/staff/login"]) assert.equal(bridge.isLoginPath(p), true, p);
+  for (const p of ["/", "/mypage", "/loginx", "/staff"]) assert.equal(bridge.isLoginPath(p), false, p);
+  // 안드로이드 요청 번호 짝짓기(LOW4)
+  assert.equal(bridge.replyIdOf(`{"v":1,"id":7,"platform":"android","supported":false,"permission":"default","token":null}`), 7);
+  assert.equal(bridge.replyIdOf('{"v":1}'), null);
+  assert.equal(bridge.replyIdOf("깨짐"), null);
+  assert.equal(bridge.parseNativePushReply('{"v":1,"id":7,"platform":"android","supported":true,"permission":"denied","token":null}').permission, "denied", "번호가 붙어도 해석된다");
   // 등록은 로그인 쿠키로 /api/push/native — 401 이면 기록을 지워 로그인 후 바로 다시 등록
   const src = read("src/lib/push/nativePushBridge.ts");
   assert.match(src, /fetch\("\/api\/push\/native", \{\s*method: "POST"/);
   assert.match(src, /res\.status === 401[\s\S]{0,40}clearNativePushSync\(\)/);
+  assert.match(src, /androidWaiting\.delete\(id\)/, "시간 초과된 요청은 짝짓기 목록에서 지운다");
+  assert.match(src, /android\.postMessage\(`\$\{command\}#\$\{id\}`\)/);
 });
 
 test("화면 연결: 자동 등록기는 루트 레이아웃에, 설정 화면은 앱 상태대로(켜짐·휴대폰 설정·문자 안내)", () => {
   assert.match(read("src/app/layout.tsx"), /<NativePushRegistrar \/>/);
   const registrar = read("src/components/push/NativePushRegistrar.tsx");
   assert.match(registrar, /if \(!hasNativePushBridge\(\)\) return;/, "브라우저·옛 앱에서는 아무것도 안 한다");
-  assert.match(registrar, /fetch\("\/api\/push\/native", \{ method: "GET" \}\)/, "로그인한 사람에게만 자동으로 권한을 묻는다");
+  assert.match(read("src/lib/push/nativePushBridge.ts"), /fetch\("\/api\/push\/native", \{ method: "GET" \}\)/, "서버 키 설정 여부(로그인한 사람만)");
   assert.match(registrar, /NATIVE_PUSH_ASKED_KEY\) === "1"\) return;/, "자동으로 묻는 건 기기당 한 번");
+  assert.match(registrar, /if \(isLoginPath\(pathname\)\) \{\s*clearNativePushSync\(\);/, "로그인 화면에 오면 기록을 지운다");
+  assert.match(registrar, /if \(!userId\) \{\s*clearNativePushSync\(\);/, "로그인한 사람이 없으면 기록을 지운다");
+  assert.match(registrar, /auth\.getSession\(\)/, "세션은 저장된 것만 읽는다(네트워크 없음)");
+  assert.match(registrar, /syncNativePushToken\(state, \{ userId \}\)/);
+  assert.match(registrar, /configured !== true\) return;/, "서버 키가 없으면 권한을 묻지 않는다");
   const settings = read("src/app/mypage/settings/SettingsClient.tsx");
   assert.match(settings, /app\.view === "denied" && \([\s\S]*?NATIVE_PUSH_NOTES\.denied/);
   assert.match(settings, /app\.view === "unavailable" && \([\s\S]*?NATIVE_PUSH_NOTES\.unavailable/);

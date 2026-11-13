@@ -25,11 +25,27 @@ export type FcmSendOutcome =
   | { kind: "invalid-token"; code: string }
   | { kind: "failed"; code: string };
 
-type FetchLike = (url: string, init: { method: string; headers: Record<string, string>; body: string }) => Promise<{
+type FetchLike = (url: string, init: { method: string; headers: Record<string, string>; body: string; signal?: AbortSignal }) => Promise<{
   ok: boolean;
   status: number;
   text: () => Promise<string>;
 }>;
+
+/** FCM·구글 인증 요청 하나를 기다리는 최대 시간 — 넘으면 그 기기만 실패로(서버 함수 전체가 멈추지 않게) */
+export const FCM_REQUEST_TIMEOUT_MS = 10_000;
+
+/** 문자열을 UTF-8 바이트 수 기준으로 자른다(한글이 반쪽으로 깨지지 않게 글자 단위로 멈춘다) */
+export function truncateUtf8(text: string, maxBytes: number): string {
+  let bytes = 0;
+  let out = "";
+  for (const ch of text) {
+    const size = Buffer.byteLength(ch, "utf8");
+    if (bytes + size > maxBytes) break;
+    bytes += size;
+    out += ch;
+  }
+  return out;
+}
 
 /** 환경변수 값(JSON 원문 또는 base64)을 서비스 계정으로. 필요한 칸이 하나라도 없으면 null */
 export function parseServiceAccount(raw: string | null | undefined): FcmServiceAccount | null {
@@ -62,8 +78,9 @@ export function fcmServiceAccount(): FcmServiceAccount | null {
  */
 export function buildFcmMessage(platform: NativePushPlatform, token: string, payload: FcmPayload) {
   const data: Record<string, string> = {
-    title: payload.title.slice(0, 200),
-    body: payload.body.slice(0, 1000),
+    // FCM 메시지는 전체 4KB 제한 — 제목 200바이트·본문 2,000바이트(한글 약 660자)로 자른다
+    title: truncateUtf8(payload.title, 200),
+    body: truncateUtf8(payload.body, 2000),
     url: safeNativePushPath(payload.url),
     tag: String(payload.tag ?? "").slice(0, 64),
   };
@@ -84,9 +101,9 @@ export function buildFcmMessage(platform: NativePushPlatform, token: string, pay
 
 /**
  * FCM 오류 응답 → 이 토큰을 지울지(invalid-token), 아니면 실패로 남길지(failed).
- * 지우는 경우: UNREGISTERED(앱 삭제·토큰 만료) · 404 · SENDER_ID_MISMATCH(다른 Firebase 프로젝트 토큰)
- *            · 400 INVALID_ARGUMENT 중 «registration token» 이 문제라고 한 것.
- * 그 밖(429·5xx·인증 오류)은 토큰 잘못이 아니므로 지우지 않는다.
+ * 지우는 경우: UNREGISTERED(앱 삭제·토큰 만료) · 400 INVALID_ARGUMENT 중 «registration token» 이 문제라고 한 것.
+ * 지우지 않는 경우: SENDER_ID_MISMATCH(서버 키가 다른 Firebase 프로젝트 것 — 설정 실수라 토큰을 지우면 고친 뒤에도 못 보낸다)
+ *            · 본문 없는 404 · 429·5xx·인증 오류(토큰 잘못이 아니다).
  */
 export function classifyFcmError(status: number, bodyText: string): FcmSendOutcome {
   let errorCode = "";
@@ -98,8 +115,7 @@ export function classifyFcmError(status: number, bodyText: string): FcmSendOutco
   } catch {
     // 본문이 JSON 이 아니면 상태 코드로만 판단
   }
-  if (errorCode === "UNREGISTERED" || status === 404) return { kind: "invalid-token", code: errorCode || "UNREGISTERED" };
-  if (errorCode === "SENDER_ID_MISMATCH") return { kind: "invalid-token", code: errorCode };
+  if (errorCode === "UNREGISTERED") return { kind: "invalid-token", code: errorCode };
   if (status === 400 && errorCode === "INVALID_ARGUMENT" && /registration token/i.test(message)) {
     return { kind: "invalid-token", code: "INVALID_TOKEN" };
   }
@@ -112,15 +128,29 @@ function base64url(input: string | Buffer) {
 
 /** 구글 OAuth 접근 토큰(1시간) — 함수 인스턴스 안에서 만료 1분 전까지 다시 쓴다 */
 let cachedAccess: { email: string; token: string; expiresAt: number } | null = null;
+/** 발급 중인 요청 하나를 같이 기다린다 — 전체 공지처럼 동시에 수백 건이 나가도 인증 요청은 한 번만 */
+let inflightAccess: { email: string; promise: Promise<string> } | null = null;
 
 export function resetFcmAccessTokenCache() {
   cachedAccess = null;
+  inflightAccess = null;
 }
 
 async function accessToken(account: FcmServiceAccount, fetchImpl: FetchLike, nowMs: number): Promise<string> {
   if (cachedAccess && cachedAccess.email === account.clientEmail && cachedAccess.expiresAt - 60_000 > nowMs) {
     return cachedAccess.token;
   }
+  if (inflightAccess && inflightAccess.email === account.clientEmail) return inflightAccess.promise;
+  const promise = fetchAccessToken(account, fetchImpl, nowMs);
+  inflightAccess = { email: account.clientEmail, promise };
+  try {
+    return await promise;
+  } finally {
+    if (inflightAccess?.promise === promise) inflightAccess = null;
+  }
+}
+
+async function fetchAccessToken(account: FcmServiceAccount, fetchImpl: FetchLike, nowMs: number): Promise<string> {
   const iat = Math.floor(nowMs / 1000);
   const header = base64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
   const claims = base64url(JSON.stringify({
@@ -137,6 +167,7 @@ async function accessToken(account: FcmServiceAccount, fetchImpl: FetchLike, now
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: `grant_type=${encodeURIComponent("urn:ietf:params:oauth:grant-type:jwt-bearer")}&assertion=${encodeURIComponent(assertion)}`,
+    signal: AbortSignal.timeout(FCM_REQUEST_TIMEOUT_MS),
   });
   const text = await res.text();
   if (!res.ok) throw new Error(`FCM_AUTH_${res.status}`);
@@ -164,6 +195,7 @@ export async function sendFcm(
       method: "POST",
       headers: { Authorization: `Bearer ${bearer}`, "Content-Type": "application/json" },
       body: JSON.stringify(buildFcmMessage(platform, token, payload)),
+      signal: AbortSignal.timeout(FCM_REQUEST_TIMEOUT_MS),
     });
     if (res.ok) return { kind: "sent" };
     const outcome = classifyFcmError(res.status, await res.text());

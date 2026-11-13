@@ -104,7 +104,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
-| 11-14 | developer(e2·d2 스토어 앱 알림 FCM, claude/l3-push): NativePushToken 표(마이그레이션 20261114000000, RLS) · 발송 함수 2개가 웹푸시+앱 토큰(FCM v1, FCM_SERVICE_ACCOUNT_JSON 없으면 건너뜀·죽은 토큰 정리·재시도 native:id) · /api/push/native(본인만)·로그아웃 이 기기 토큰·탈퇴 정리 · 안드로이드 NativePush/StizMessagingService(json 없으면 꺼짐, gradle 빌드·lint 통과) · iOS NativePush.swift+SPM FirebaseMessaging(Xcode 빌드 미검증) · 설정 화면 앱 상태 문구 · 문서 docs/native-push.md | 구현 완료·검수 대기 |
+| 11-14 | developer(e2·d2 스토어 앱 알림 FCM, claude/l3-push): NativePushToken 표(마이그레이션 20261114000001, RLS) · 발송 함수 2개가 웹푸시+앱 토큰(FCM v1, FCM_SERVICE_ACCOUNT_JSON 없으면 건너뜀·죽은 토큰 정리·재시도 native:id) · /api/push/native(본인만)·로그아웃 이 기기 토큰·탈퇴 정리 · 안드로이드 NativePush/StizMessagingService(json 없으면 꺼짐, gradle 빌드·lint 통과) · iOS NativePush.swift+SPM FirebaseMessaging(Xcode 빌드 미검증) · 설정 화면 앱 상태 문구 · 문서 docs/native-push.md | 구현 완료·검수 대기 |
 | 11-13 | developer(l2 가입 f7·a6·f10, 브랜치 claude/l2-signup): 기존 학부모 활성화 «이메일+10자»→신규 가입과 같은 «아이디+8자»(공용 lib/parent-username, User.username 기록, 이메일 계정 하위호환) · 인증번호 IP 한도 시간당 100·하루 500 · 가입 안내 문자에 «▶ 앱 설치: …/install»(459→548바이트, 원래 LMS) + /install 페이지(안드로이드 Play 바로·아이폰 App Store ID 비어 «곧 출시»+웹) · 마이그레이션 없음 · tsc 0·tests 4293-0 | 커밋(push 안 함) |
 | 11-13 | developer(f12 백업 확대, claude/l2-backup 2커밋): 설정 파일(복원)+업무 자료 gzip 짝 파일(DB 전체 표, 제외 15표 이유 명시·비밀 칸 가림·id::text 5000줄 키셋·큰 표부터 SIZE_LIMIT·300초), 복원 범위 그대로·목록 files/archives 분리·업무 자료 서명 주소 내려받기, 대시보드 표·행 수, tests/backup-archive | 완료(push 전) |
 | 11-13 | reviewer(2ba1960c 자주 쓰는 결제 방법): HIGH 없음 · 금액·orderId·면세·주소·customerKey·계좌 흐름 동일, 저장은 승인 확정 뒤·소유자 조회 통과한 본인만·실패 로그만 · 권장: 단건 화면 연타 ref 가드, 모바일 리디렉트에선 바로가기 실패가 failUrl 로 가 재시도 안 됨(실패 문구에 «카드» 안내), 카드 거절 등도 통합창 재오픈, 가상계좌 복구 경로 미기억. tsc 0·결제 테스트 396-0 | 통과 |

@@ -1122,13 +1122,21 @@ export async function notifyAllParents(
         console.error("[notifyAllParents] insert failed:", e);
     }
 
-    // 2) 웹 푸시는 비차단(non-blocking)·베스트에포트로 전송한다.
-    //    await 하지 않으므로 공지 등록 응답을 지연시키지 않는다.
-    //    (구독이 없거나 VAPID 미설정이면 내부에서 즉시 반환)
-    void sendPushToAllParents({
+    // 2) 웹 푸시·앱 알림은 비차단(non-blocking)·베스트에포트로 전송한다.
+    //    응답을 먼저 돌려주고 after() 로 뒤에서 보낸다 — 그냥 void 로 두면 서버 함수가 응답 뒤 멈춰
+    //    전체 공지(수백 기기) 발송이 중간에 끊길 수 있다(2026-11-14 e2 검수).
+    //    after 는 요청 안에서만 쓸 수 있다 — 요청 밖(스크립트 등)이면 예전처럼 바로 보낸다.
+    //    (구독이 없거나 VAPID·FCM 미설정이면 내부에서 즉시 반환)
+    const push = () => sendPushToAllParents({
         title,
         body: message,
         url: linkUrl || "/notices",
         tag: type,
     }).catch((e) => console.error("[notifyAllParents] push failed:", e));
+    try {
+        const { after } = await import("next/server");
+        after(push);
+    } catch {
+        void push();
+    }
 }

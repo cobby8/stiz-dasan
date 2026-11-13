@@ -26,6 +26,13 @@ public final class NativePushPolicyTest {
         check(NativePushPolicy.stateJson(true, "granted", "bad\"token-with-quote-xxxxxxxx").endsWith("\"token\":null}"));
         check(NativePushPolicy.stateJson(true, "granted", "short").endsWith("\"token\":null}"));
         check(NativePushPolicy.stateJson(true, "weird", null).contains("\"permission\":\"default\""));
+        // 요청 번호로 짝짓기(웹 "state#7" → 답 "id":7), 형식이 틀리면 번호 없음
+        check("state".equals(NativePushPolicy.command("state#7")) && NativePushPolicy.requestId("state#7") == 7);
+        check("request".equals(NativePushPolicy.command("request")) && NativePushPolicy.requestId("request") == 0);
+        check(NativePushPolicy.command("delete#1") == null && NativePushPolicy.command(null) == null);
+        check(NativePushPolicy.requestId("state#0") == 0 && NativePushPolicy.requestId("state#x") == 0 && NativePushPolicy.requestId("state#1234567890") == 0);
+        check(NativePushPolicy.stateJson(false, "default", null, 7).startsWith("{\"v\":1,\"id\":7,\"platform\":\"android\""));
+        check(!NativePushPolicy.stateJson(false, "default", null, 0).contains("\"id\""));
         // 권한 판정: 13 이상 미허용 — 안 물어봤거나 다시 물을 수 있으면 default, 아니면 denied
         check(NativePushPolicy.permission(33, false, false, false, false).equals("default"));
         check(NativePushPolicy.permission(34, false, false, true, true).equals("default"));
