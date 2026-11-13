@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth-guard";
 import { isAnyDriverRunToken } from "@/lib/shuttle/driverToken";
+import { driverLinkBlocked } from "@/lib/shuttle/driverLinkAccess";
 import { pairLegMinutesWithTmap } from "@/lib/shuttle/tmap";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +24,8 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null) as { token?: unknown; pairs?: unknown } | null;
   const token = typeof body?.token === "string" ? body.token : "";
   let allowed = false;
-  if (token) allowed = await isAnyDriverRunToken(token);
+  // 기사님 링크 열쇠로 들어온 경우도 운행 링크 스위치(driverLinkBlocked)를 따른다 — 꺼졌으면 셔틀 권한 로그인만 통과.
+  if (token) allowed = (await isAnyDriverRunToken(token)) && !(await driverLinkBlocked());
   if (!allowed) {
     try { await requireAdmin(); allowed = true; } catch { allowed = false; }
   }
