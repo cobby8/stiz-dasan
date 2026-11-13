@@ -15,14 +15,16 @@ import { useState, useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { GRADE_ORDER, type Grade } from "@/lib/googleSheetsSchedule";
-import { type MergedSlot } from "@/app/schedule/ScheduleClient";
+import { type PublicScheduleSlot } from "@/app/schedule/ScheduleClient";
+// 잔여 인원 3단계(여유/임박/마감) — 숫자 없이(재원생 수 비공개 · 2026-11-13 f9)
+import { SEAT_LEVEL_BADGE_CLASS, SEAT_LEVEL_LABEL } from "@/lib/seats/seatLevel";
 
 // --- 타입 정의 ---
 
 type Program = { id: string; name: string };
 
 interface SimulatorClientProps {
-    allSlots: MergedSlot[];
+    allSlots: PublicScheduleSlot[];
     programs: Program[];
     phone: string;
 }
@@ -396,8 +398,6 @@ export default function SimulatorClient({ allSlots, programs, phone }: Simulator
                                 {/* 결과 카드 목록 */}
                                 <div className="space-y-3">
                                     {filteredSlots.map((slot) => {
-                                        // 인원 비율 계산 (프로그레스 바용)
-                                        const ratio = slot.capacity > 0 ? slot.enrolled / slot.capacity : 0;
                                         const programName = getProgramName(slot.programId);
 
                                         return (
@@ -421,19 +421,9 @@ export default function SimulatorClient({ allSlots, programs, phone }: Simulator
                                                                 </span>
                                                             )}
                                                             {/* 마감/마감임박/여유 뱃지 */}
-                                                            {slot.isFull ? (
-                                                                <span className="text-xs bg-red-500 text-white px-2.5 py-0.5 rounded-full font-black shrink-0">
-                                                                    마감
-                                                                </span>
-                                                            ) : ratio >= 0.8 ? (
-                                                                <span className="text-xs bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white px-2.5 py-0.5 rounded-full font-black shrink-0">
-                                                                    마감임박
-                                                                </span>
-                                                            ) : (
-                                                                <span className="text-xs bg-green-500 text-white px-2.5 py-0.5 rounded-full font-black shrink-0">
-                                                                    여유
-                                                                </span>
-                                                            )}
+                                                            <span className={`text-xs px-2.5 py-0.5 rounded-full font-black shrink-0 ${SEAT_LEVEL_BADGE_CLASS[slot.seatLevel]}`}>
+                                                                {SEAT_LEVEL_LABEL[slot.seatLevel]}
+                                                            </span>
                                                         </div>
 
                                                         <h3 className="font-bold text-gray-900 dark:text-white text-base mb-1.5">
@@ -454,21 +444,7 @@ export default function SimulatorClient({ allSlots, programs, phone }: Simulator
                                                             </div>
                                                         )}
 
-                                                        {/* 정원 프로그레스 바 */}
-                                                        <div className="mt-2.5 pt-2 border-t border-gray-50 dark:border-gray-700 flex items-center gap-2">
-                                                            <span className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-400 font-medium shrink-0">
-                                                                {slot.enrolled}/{slot.capacity}명
-                                                            </span>
-                                                            <div className="flex-1 h-1.5 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
-                                                                <div
-                                                                    className={[
-                                                                        "h-full rounded-full transition-all",
-                                                                        slot.isFull ? "bg-red-400 dark:bg-red-500" : ratio >= 0.8 ? "bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900" : "bg-green-400 dark:bg-brand-neon-lime",
-                                                                    ].join(" ")}
-                                                                    style={{ width: `${Math.min(100, ratio * 100)}%` }}
-                                                                />
-                                                            </div>
-                                                        </div>
+                                                        {/* 인원 막대(«N/N명»)는 뺐다 — 위 배지(여유/임박/마감)만 보인다(재원생 수 비공개 · 2026-11-13 f9) */}
 
                                                     </div>
 

@@ -4,6 +4,7 @@ import Module, { createRequire } from "node:module";
 import { resolve } from "node:path";
 import test from "node:test";
 import ts from "typescript";
+import * as seatLevelModule from "../src/lib/seats/seatLevel.ts";
 
 const nodeRequire = createRequire(import.meta.url);
 const load = (path, mocks = {}) => {
@@ -49,6 +50,7 @@ function requestHarness() {
     "@/lib/datetime/kst": load("src/lib/datetime/kst.ts"),
     "@/lib/enrollment/changeRequestRules": rules,
     "@/lib/enrollment/parentChangeStatus": changeStatus,
+    "@/lib/seats/seatLevel": seatLevelModule,
     "@/lib/operational-staff-notification": { notifyOperationalStaff: async () => {} },
   });
   return { api, writes };
@@ -99,6 +101,7 @@ test("재조회한 휴원 날짜·미정은 실제 학부모 신청 내역에 �
     "next/navigation": { useRouter: () => ({ refresh() {} }) },
     "@/lib/enrollment/changeRequestRules": rules,
     "@/lib/enrollment/parentChangeStatus": changeStatus,
+    "@/lib/seats/seatLevel": seatLevelModule,
     "@/components/parent/InlineConfirm": { __esModule: true, default: () => null },
     "@/lib/mypage/requestPreset": { presetIndex: () => 0, presetFirst: (list) => [...list] }, "@/components/parent/customerMessage": { customerMessage: (_, fallback) => fallback },
   }).default;
@@ -119,6 +122,7 @@ function renderAdminChange(props) {
     "@/app/actions/enrollment-changes": {},
     "@/lib/enrollment/changeRequestRules": rules,
     "@/lib/enrollment/parentChangeStatus": changeStatus,
+    "@/lib/seats/seatLevel": seatLevelModule,
     "@/lib/operations-sync/sheetRetirement": load("src/lib/operations-sync/sheetRetirement.ts"),
     "@/lib/enrollment/sheetManualCheckRules": load("src/lib/enrollment/sheetManualCheckRules.ts"),
     // 휴원 수강료 처리 이름표(순수 모듈 그대로)

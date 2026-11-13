@@ -1,5 +1,5 @@
 import { getAcademySettings, getClassSlotOverrides, getCustomClassSlots, getPrograms, getSheetSlotCache } from "@/lib/queries";
-import { buildMergedSlots } from "@/lib/mergeSlots";
+import { buildMergedSlots, toPublicScheduleSlots } from "@/lib/mergeSlots";
 import { getScheduleSlotAdminData } from "@/lib/scheduleSlotPayload";
 import PublicPageLayout from "@/components/PublicPageLayout";
 import AnimateOnScroll from "@/components/ui/AnimateOnScroll";
@@ -59,7 +59,8 @@ export default async function SimulatorPage() {
 
             {/* 위저드 UI (클라이언트 컴포넌트) */}
             <SimulatorClient
-                allSlots={allSlots}
+                // 정원·등록 인원 숫자는 빼고 여유/임박/마감만 넘긴다(페이지 응답에 숫자가 실리지 않게 · f9)
+                allSlots={toPublicScheduleSlots(allSlots)}
                 programs={programList}
                 phone={phone}
             />

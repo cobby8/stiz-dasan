@@ -10,6 +10,7 @@ import ts from "typescript";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createRequire } from "node:module";
+import * as seatLevelModule from "../src/lib/seats/seatLevel.ts";
 
 const require = createRequire(import.meta.url);
 const read = (path) => readFileSync(path, "utf8");
@@ -123,7 +124,7 @@ test("일정 탭 달 계산: 잘못된 ?month 는 이번 달, 수강월이 달�
 
 test("보강 예약은 4칸 집계판 대신 상태 칩(서버 집계와 같은 판정)과 한 목록의 행으로 보이고 예약·취소 흐름은 그대로다", () => {
   const Makeup = compileModule("src/app/mypage/makeup/MakeupClient.tsx", {
-    "@/lib/ui/statusTones": statusTones,
+    "@/lib/ui/statusTones": statusTones, "@/lib/seats/seatLevel": seatLevelModule,
     "@/lib/mypage/requestPreset": { presetIndex: () => 0, presetFirst: (list) => [...list] }, "@/components/parent/customerMessage": customerMessageModule, 
     "next/link": { default: Link },
     "next/navigation": { useRouter: () => ({ refresh() {} }) },
@@ -299,7 +300,7 @@ test("셔틀 예정 변경은 날짜 묶음의 한 줄 행이고 행 탭=하단 
 });
 
 test("방학특강 결석·보강은 세 목록이 한 목록의 행이고 배지·사유·날짜를 요소로 나누며 신청·신고 흐름은 그대로다", () => {
-  const Seasonal = compileModule("src/app/mypage/seasonal/SeasonalMakeupClient.tsx", { "@/lib/ui/statusTones": statusTones, "@/lib/mypage/requestPreset": { presetIndex: () => 0, presetFirst: (list) => [...list] }, "@/components/parent/customerMessage": customerMessageModule, "@/components/parent/InlineConfirm": inlineConfirm }).default;
+  const Seasonal = compileModule("src/app/mypage/seasonal/SeasonalMakeupClient.tsx", { "@/lib/ui/statusTones": statusTones, "@/lib/seats/seatLevel": seatLevelModule, "@/lib/mypage/requestPreset": { presetIndex: () => 0, presetFirst: (list) => [...list] }, "@/components/parent/customerMessage": customerMessageModule, "@/components/parent/InlineConfirm": inlineConfirm }).default;
   const html = renderToStaticMarkup(React.createElement(Seasonal, { initial: {
     phoneKnown: true,
     absences: [{ enrollmentDateId: "e1", childName: "합성", offeringTitle: "겨울 방학특강 저학년", absentLabel: "1/5(월)", seasonalCandidates: [], regularCandidates: [] }],

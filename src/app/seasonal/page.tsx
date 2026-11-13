@@ -4,7 +4,7 @@ import { buildPublicMetadata } from "@/lib/publicMetadata";
 
 export const metadata = buildPublicMetadata({
   title: "방학특강 | STIZ 농구교실 다산2호점",
-  description: "스티즈 농구교실 다산2호점 방학특강 일정과 잔여석을 확인하고 모바일로 신청하세요.",
+  description: "스티즈 농구교실 다산2호점 방학특강 일정과 모집 현황을 확인하고 모바일로 신청하세요.",
   path: "/seasonal",
 });
 

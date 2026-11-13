@@ -11,6 +11,8 @@ import {
 import { trackMetaEvent } from "@/components/MetaPixel";
 import FontFreeIcon from "@/components/ui/FontFreeIcon";
 import { isKstYmd, todayKst } from "@/lib/datetime/kst";
+// 잔여 인원은 숫자 대신 3단계(여유/임박/마감)로만(재원생 수 비공개 · 2026-11-13 f9)
+import { SEAT_LEVEL_LABEL, SEAT_LEVEL_TEXT_CLASS } from "@/lib/seats/seatLevel";
 import { trialDayForDate, trialScheduleError, trialScheduleForDate, trialSlotPeriod as getSlotPeriod, type TrialScheduleSelection } from "./trialScheduleSelection";
 import TrialVisitGuide from "./TrialVisitGuide";
 
@@ -398,13 +400,13 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
                             </label>
                             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                                 {periodOptions.map(({ period, slot }) => {
-                                    const isFull = Boolean(slot && slot.available <= 0);
+                                    const isFull = slot?.seatLevel === "FULL";
                                     return (
                                         <button key={period} type="button" disabled={isFull} onClick={() => update("trialPeriod", period)} className={`rounded-xl border px-3 py-3 text-sm font-medium transition-colors ${isFull ? "cursor-not-allowed border-[var(--color-public-line)] bg-[var(--color-public-tint)] text-[var(--color-public-dark-muted)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)]" : form.trialPeriod === period ? "border-[var(--color-public-accent)] bg-[var(--color-public-tint)] text-[var(--color-public-strong)] dark:border-brand-neon-lime dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime" : "border-gray-300 text-[var(--color-public-muted)] hover:border-gray-400 dark:text-[var(--color-public-muted)]"}`}>
                                             <span className="block">{period}교시</span>
                                             {/* 학부모가 교시 번호만으로는 몇 시 수업인지 몰라 시간도 함께 보여 준다 */}
                                             {slot?.startTime && <span className="mt-0.5 block text-xs font-semibold">{slot.startTime}~{slot.endTime}</span>}
-                                            {slot && <span className="mt-1 block text-xs">{isFull ? "마감" : `잔여 ${slot.available}명`}</span>}
+                                            {slot && <span className={`mt-1 block text-xs font-bold ${isFull ? "" : SEAT_LEVEL_TEXT_CLASS[slot.seatLevel]}`}>{SEAT_LEVEL_LABEL[slot.seatLevel]}</span>}
                                         </button>
                                     );
                                 })}

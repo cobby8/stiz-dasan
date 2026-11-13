@@ -12,6 +12,8 @@ import { SeasonalError, type SeasonalApplicationInput, type SeasonalWeekday } fr
 import { decideApplicantType, hasSeasonalShuttleSelection, isFreeHubShuttle, resolveOfferingPrice, resolveShuttleFee, totalSnapshot, weekdayInSeoul } from "./planning";
 import { getSettings } from "./shuttle-optimize";
 import { syncSeasonSiblingDiscounts } from "./sibling-discount-sync";
+// 공개 응답의 남은 자리는 3단계(여유/임박/마감)로만(재원생 수 비공개 · 2026-11-13 f9)
+import { seatLevel } from "@/lib/seats/seatLevel";
 
 const OCCUPYING_ITEM_STATUSES = ["PENDING", "APPROVED"];
 const ACTIVE_APPLICATION_ITEM_STATUSES = ["PENDING", "APPROVED", "WAITLISTED"];
@@ -107,7 +109,8 @@ function publicOffering(offering: PublicOfferingRow) {
   const endsAt = first?.endsAt ? new Date(first.endsAt) : null;
   const enrolled = offering._count?.applicationItems || 0;
   const capacity = offering.capacity;
-  const remaining = capacity === null ? null : Math.max(0, capacity - enrolled);
+  // 신청 인원·남은 자리 숫자는 공개 응답에 싣지 않는다 — 3단계만(정원 미확정이면 null = 학원 문의)
+  const level = capacity === null ? null : seatLevel(capacity - enrolled);
   const time = (value: Date | null) => value
     ? new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false }).format(value)
     : "";
@@ -137,8 +140,7 @@ function publicOffering(offering: PublicOfferingRow) {
     targetGrade: offering.targetGrades || undefined,
     coachName: offering.instructorName || undefined,
     capacity,
-    enrolled,
-    remaining,
+    seatLevel: level,
     price: offering.price,
     newApplicantPrice: offering.newApplicantPrice,
     existingApplicantPrice: offering.existingApplicantPrice,

@@ -6,6 +6,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
 import { SHUTTLE_LOCATION_CONSENT_VERSION } from "@/lib/seasonal/contracts";
 import { PublicBottomBar, usePublicOverlayOpen } from "@/components/public-floating";
+import { SEAT_LEVEL_LABEL } from "@/lib/seats/seatLevel";
 import { formatSeasonalPeriod, formatWon, normalizeProgram, programClasses, seasonalApplicationStatusLabel, seasonalDisplayState, type SeasonalClass, type SeasonalProgram } from "./types";
 
 type LoadState = "loading" | "ready" | "error";
@@ -127,14 +128,15 @@ function hasShuttleLocation(draft?: ShuttleDraft) {
   return Boolean(draft?.pickupLocationData || draft?.dropoffLocationData);
 }
 
+// 남은 자리를 모르면(null) 예전처럼 «마감» 쪽으로 본다(안전)
 function isFull(item: SeasonalClass) {
-  return item.capacity !== null && (item.remaining ?? 0) <= 0;
+  return item.capacity !== null && (item.seatLevel ?? "FULL") === "FULL";
 }
 
+// 숫자 대신 여유/임박/마감(재원생 수 비공개 · 2026-11-13 f9)
 function remainingText(item: SeasonalClass) {
-  if (item.capacity === null || item.remaining === null) return "학원 문의";
-  const remaining = item.remaining ?? 0;
-  if (remaining > 0) return `${remaining}석`;
+  if (item.capacity === null || item.seatLevel === null) return "학원 문의";
+  if (item.seatLevel !== "FULL") return SEAT_LEVEL_LABEL[item.seatLevel];
   return item.waitlistEnabled ? "대기 가능" : "마감";
 }
 
@@ -458,7 +460,7 @@ export default function SeasonalApplyClient({ slug }: { slug: string }) {
                   <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
                     <Pair label="시간" value={`${item.startTime}~${item.endTime}`} />
                     <Pair label="대상" value={item.targetGrade || "전체"} />
-                    <Pair label="잔여" value={remainingText(item)} />
+                    <Pair label="자리" value={remainingText(item)} />
                     <Pair label="수강료" value={formatWon(applicantPrice(priceItem, applicantType))} />
                   </dl>
                   {item.sessionDates.length > 0 && (

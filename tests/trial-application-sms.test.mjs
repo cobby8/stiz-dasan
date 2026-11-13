@@ -26,8 +26,10 @@ test("체험 신청 폼은 실제 빈자리 슬롯의 slotKey를 서버로 넘�
   assert.match(trialForm, /selectedSlot\?\.slotKey/);
   // 시각 표시 대신 잔여 인원·마감을 보여주도록 바뀌었다.
   // 이 테스트가 지키려는 "실제 빈자리"에는 오히려 이쪽이 맞다.
-  assert.match(trialForm, /slot\.available <= 0/);
-  assert.match(trialForm, /잔여 \$\{slot\.available\}명/);
+  // 2026-11-13 f9: 남은 자리 숫자 대신 3단계 — 마감이면 고를 수 없다
+  assert.match(trialForm, /const isFull = slot\?\.seatLevel === "FULL"/);
+  assert.match(trialForm, /SEAT_LEVEL_LABEL\[slot\.seatLevel\]/);
+  assert.doesNotMatch(trialForm, /잔여 \$\{slot\.available\}명/);
 });
 
 test("체험 신청 완료 화면은 체험비 입금 안내와 복사/송금 흐름을 제공한다", () => {

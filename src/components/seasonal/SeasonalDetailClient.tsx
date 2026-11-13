@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { PublicBottomBar } from "@/components/public-floating";
+// 남은 자리 3단계(여유/임박/마감) — 숫자 없이(재원생 수 비공개 · 2026-11-13 f9)
+import { SEAT_LEVEL_BADGE_CLASS, SEAT_LEVEL_LABEL } from "@/lib/seats/seatLevel";
 import { formatSeasonalDate, formatSeasonalPeriod, formatWon, normalizeProgram, programClasses, seasonalDisplayState, type SeasonalClass, type SeasonalProgram } from "./types";
 
 export default function SeasonalDetailClient({ slug }: { slug: string }) {
@@ -61,10 +63,12 @@ export default function SeasonalDetailClient({ slug }: { slug: string }) {
 
 function Offering({ item, showSeats }: { item: SeasonalClass; showSeats: boolean }) {
   const unlimited = item.capacity === null;
-  const remaining = item.remaining ?? 0;
-  const wait = !unlimited && remaining <= 0;
-  const badge = unlimited || item.remaining === null ? "잔여석 문의" : wait ? item.waitlistEnabled ? "대기 가능" : "마감" : `잔여 ${remaining}석`;
-  return <article className="public-card min-w-0 rounded-2xl border border-[var(--color-public-line)] bg-white p-5 dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-tint)]"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-bold text-[var(--color-public-accent)]">{item.dayLabel} {item.dateLabel}</p><h3 className="mt-1 text-lg font-black">{item.name}</h3></div>{showSeats && <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${wait ? "bg-[var(--color-public-tint)] text-[var(--color-public-muted)]" : unlimited || remaining > 2 ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{badge}</span>}</div><dl className="mt-4 grid grid-cols-2 gap-3 text-sm"><Pair label="시간" value={`${item.startTime}~${item.endTime}`} /><Pair label="대상" value={item.targetGrade || "전체"} /><Pair label="장소" value={item.location || "학원"} /><Pair label="수강료" value={formatWon(item.price)} /></dl><SessionSchedule item={item} /></article>;
+  const level = item.seatLevel;
+  const wait = !unlimited && (level ?? "FULL") === "FULL";
+  const badge = unlimited || level === null ? "자리 문의" : wait ? item.waitlistEnabled ? "대기 가능" : "마감" : SEAT_LEVEL_LABEL[level];
+  // 색은 학원 CSS 변수만: 마감·대기 = 회색, 문의 = 여유색, 그 외 = 단계 색
+  const badgeClass = wait ? SEAT_LEVEL_BADGE_CLASS.FULL : unlimited || level === null ? SEAT_LEVEL_BADGE_CLASS.AVAILABLE : SEAT_LEVEL_BADGE_CLASS[level];
+  return <article className="public-card min-w-0 rounded-2xl border border-[var(--color-public-line)] bg-white p-5 dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-tint)]"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-bold text-[var(--color-public-accent)]">{item.dayLabel} {item.dateLabel}</p><h3 className="mt-1 text-lg font-black">{item.name}</h3></div>{showSeats && <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${badgeClass}`}>{badge}</span>}</div><dl className="mt-4 grid grid-cols-2 gap-3 text-sm"><Pair label="시간" value={`${item.startTime}~${item.endTime}`} /><Pair label="대상" value={item.targetGrade || "전체"} /><Pair label="장소" value={item.location || "학원"} /><Pair label="수강료" value={formatWon(item.price)} /></dl><SessionSchedule item={item} /></article>;
 }
 
 function SessionSchedule({ item }: { item: SeasonalClass }) {

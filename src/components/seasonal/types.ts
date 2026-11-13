@@ -1,3 +1,7 @@
+// 상대 경로(.ts) — 테스트가 이 파일을 node 로 바로 불러와 «@/» 별칭을 못 푼다(admin-delivery-status.ts 와 같은 방식)
+// @ts-expect-error Node 의 타입 제거 테스트(tests/seasonal-public-display)에서도 같은 파일을 읽어서 확장자를 붙인다.
+import { seatLevel as toSeatLevel, type SeatLevel } from "../../lib/seats/seatLevel.ts";
+
 export type SeasonalSessionDate = {
   startsAt: string;
   endsAt: string;
@@ -21,8 +25,8 @@ export type SeasonalClass = {
   targetGrade?: string;
   coachName?: string;
   capacity: number | null;
-  enrolled: number;
-  remaining: number | null;
+  /** 남은 자리 3단계(여유/임박/마감). 정원 미확정·모름이면 null(학원 문의) — 숫자는 공개 응답에 없다(f9) */
+  seatLevel: SeatLevel | null;
   price: number;
   newApplicantPrice?: number | null;
   existingApplicantPrice?: number | null;
@@ -141,7 +145,7 @@ export function seasonalDisplayState(program: SeasonalProgram, now = Date.now())
   const status = resolvePublicStatus(program as unknown as Record<string, unknown>, now);
   const offerings = programClasses(program);
   const periodOpen = status === "OPEN" && program.isAccepting !== false;
-  const canApply = periodOpen && offerings.some((item) => item.capacity === null || (item.remaining ?? 0) > 0 || item.waitlistEnabled === true);
+  const canApply = periodOpen && offerings.some((item) => item.capacity === null || (item.seatLevel !== null && item.seatLevel !== "FULL") || item.waitlistEnabled === true);
   const unavailableCourses = periodOpen && !canApply;
   const label = unavailableCourses ? offerings.length ? "전 수업 마감" : "수업 안내 예정" : statusLabel(status);
   const message = unavailableCourses
@@ -204,11 +208,15 @@ function normalizeOffering(row: ApiRecord): SeasonalClass {
   const ends = publicDate(first?.endsAt as DisplayDate);
   const parsedCapacity = nullableNumber(row.capacity);
   const capacity = parsedCapacity !== null && parsedCapacity >= 0 ? parsedCapacity : null;
+  // 서버가 3단계(seatLevel)로 보낸다. 예전 응답(캐시)에 숫자가 남아 있으면 같은 기준으로 3단계로 바꿔 숫자는 버린다
+  const levelRaw = row.seatLevel;
   const enrolledCount = nullableNumber(row.enrolled);
   const rawRemaining = row.remainingCapacity ?? row.remaining;
-  const remaining = capacity === null ? null
-    : rawRemaining != null ? nullableNumber(rawRemaining)
-      : enrolledCount !== null ? Math.max(0, capacity - enrolledCount) : null;
+  const legacyRemaining = rawRemaining != null ? nullableNumber(rawRemaining)
+    : capacity !== null && enrolledCount !== null ? capacity - enrolledCount : null;
+  const seatLevel: SeatLevel | null = capacity === null ? null
+    : levelRaw === "AVAILABLE" || levelRaw === "LOW" || levelRaw === "FULL" ? levelRaw
+      : legacyRemaining !== null ? toSeatLevel(legacyRemaining) : null;
   const weekdayByLabel = { 월: "MON", 화: "TUE", 수: "WED", 목: "THU", 금: "FRI", 토: "SAT", 일: "SUN" } as const;
   const weekdays = Array.from(new Set(dates.flatMap((date) => {
     const start = publicDate(date.startsAt as DisplayDate);
@@ -227,7 +235,7 @@ function normalizeOffering(row: ApiRecord): SeasonalClass {
     endTime: String(row.endTime ?? (ends ? ends.toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false }) : "")),
     location: stringOrUndefined(row.location ?? first?.location), targetGrade: stringOrUndefined(row.targetGrades ?? row.targetGrade),
     coachName: stringOrUndefined(row.instructorName ?? row.coachName), capacity,
-    enrolled: enrolledCount !== null ? Math.max(0, enrolledCount) : capacity !== null && remaining !== null ? Math.max(0, capacity - remaining) : 0, remaining, price: Number(row.price ?? 0),
+    seatLevel, price: Number(row.price ?? 0),
     newApplicantPrice: nullableNumber(row.newApplicantPrice),
     existingApplicantPrice: nullableNumber(row.existingApplicantPrice),
     shuttleAvailable: row.shuttleAvailable === true,

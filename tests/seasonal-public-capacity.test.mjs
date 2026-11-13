@@ -18,14 +18,15 @@ test("public seasonal pages hide open offerings until capacity is confirmed", ()
   const publicOfferingSource = service.slice(service.indexOf("function publicOffering"), service.indexOf("function publicSeason"));
   assert.doesNotMatch(publicOfferingSource, /offering\.capacity === null/);
   assert.doesNotMatch(service, /capacity: byId\.get/);
-  assert.match(service, /const remaining = capacity === null \? null/);
+  // 공개 응답은 남은 자리 숫자 대신 3단계(정원 미확정이면 null) — 2026-11-13 f9
+  assert.match(service, /const level = capacity === null \? null : seatLevel\(capacity - enrolled\)/);
   assert.match(service, /waitlistEnabled: capacity !== null/);
 });
 
 test("seasonal planning and public UI still handle unspecified capacity defensively", () => {
   assert.match(planning, /capacity: number \| null/);
   assert.match(planning, /offering\.capacity !== null &&/);
-  assert.match(types, /remaining: number \| null/);
+  assert.match(types, /seatLevel: SeatLevel \| null/);
   assert.match(detail, /item\.capacity === null/);
   assert.match(apply, /function isFull\(item: SeasonalClass\)/);
   assert.match(apply, /function remainingText\(item: SeasonalClass\)/);

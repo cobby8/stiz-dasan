@@ -1,6 +1,8 @@
 "use client";
 
-import type { MergedSlot } from "@/app/schedule/ScheduleClient";
+import type { PublicScheduleSlot } from "@/app/schedule/ScheduleClient";
+// 잔여 인원 3단계(여유/임박/마감) — 숫자 없이(재원생 수 비공개 · 2026-11-13 f9). 기준·색은 한 곳
+import { SEAT_LEVEL_DOT_CLASS, SEAT_LEVEL_LABEL, SEAT_LEVEL_TEXT_CLASS } from "@/lib/seats/seatLevel";
 
 // 요일 순서 및 한글 라벨
 const DAY_ORDER = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
@@ -16,27 +18,7 @@ const DAY_HEADER_BG: Record<string, string> = {
     Sun: "bg-gray-500",
 };
 
-/**
- * 잔여석(remaining)에 따른 색상 클래스를 반환한다.
- * - 3석 이상: 초록 (여유)
- * - 1~2석: 노랑 (마감임박)
- * - 0석: 빨강 (마감)
- */
-function remainColor(remaining: number): string {
-    if (remaining <= 0) return "bg-red-100 text-red-700";
-    if (remaining <= 2) return "bg-yellow-100 text-yellow-700";
-    return "bg-green-100 text-green-700";
-}
-
-/**
- * 잔여석 배지 텍스트
- */
-function remainLabel(remaining: number): string {
-    if (remaining <= 0) return "마감";
-    return `잔여 ${remaining}석`;
-}
-
-export default function ScheduleTableView({ slots }: { slots: MergedSlot[] }) {
+export default function ScheduleTableView({ slots }: { slots: PublicScheduleSlot[] }) {
     // 1) 시간대 추출 — startTime 기준 고유값을 정렬
     const timeSet = new Set<string>();
     slots.forEach((s) => timeSet.add(s.startTime));
@@ -48,7 +30,7 @@ export default function ScheduleTableView({ slots }: { slots: MergedSlot[] }) {
     );
 
     // 3) (요일, 시간) -> 슬롯 배열 매핑 (같은 시간대에 여러 수업 가능)
-    const grid: Record<string, Record<string, MergedSlot[]>> = {};
+    const grid: Record<string, Record<string, PublicScheduleSlot[]>> = {};
     for (const day of activeDays) {
         grid[day] = {};
         for (const time of times) {
@@ -116,7 +98,6 @@ export default function ScheduleTableView({ slots }: { slots: MergedSlot[] }) {
                                     >
                                         <div className="space-y-1.5">
                                             {cellSlots.map((slot) => {
-                                                const remaining = slot.capacity - slot.enrolled;
                                                 return (
                                                     <div
                                                         key={slot.slotKey}
@@ -130,13 +111,10 @@ export default function ScheduleTableView({ slots }: { slots: MergedSlot[] }) {
                                                         )}
                                                         {/* 정원 인디케이터 — 색상 도트로 여유/임박/마감 표시 */}
                                                         <div className="flex items-center gap-1 mb-1">
-                                                            <span className={`inline-block w-2 h-2 rounded-full ${
-                                                                remaining <= 0 ? "bg-red-500" : remaining <= 2 ? "bg-amber-400" : "bg-emerald-400"
-                                                            }`} />
-                                                            <span className={`text-[10px] font-bold ${
-                                                                remaining <= 0 ? "text-red-600" : remaining <= 2 ? "text-amber-600" : "text-emerald-600"
-                                                            }`}>
-                                                                {remaining <= 0 ? "마감" : remaining <= 2 ? "마감임박" : "여유"}
+                                                            <span className={`inline-block w-2 h-2 rounded-full ${SEAT_LEVEL_DOT_CLASS[slot.seatLevel]}`} />
+                                                            {/* 글자 최소 12px(컴팩트 규칙) */}
+                                                            <span className={`text-[12px] font-bold ${SEAT_LEVEL_TEXT_CLASS[slot.seatLevel]}`}>
+                                                                {SEAT_LEVEL_LABEL[slot.seatLevel]}
                                                             </span>
                                                         </div>
                                                         {/* 코치명 — 있을 때만 표시 */}
