@@ -59,11 +59,11 @@ test("phone OTP uses keyed hashes and enforces expiry, attempts, resend, and dai
   assert.match(verification, /INTERVAL '60 seconds'/);
   assert.match(verification, />=\s*10/);
   assert.match(verification, /otpExpiresAt\s*<=\s*new Date\(\)/);
-  // 같은 IP 한도는 시간당 40·하루 200(2026-11-13 a6 완화). 번호당 하루 10·전체 5000·오답 잠금은 그대로.
+  // 같은 IP 한도는 시간당 100·하루 500(2026-11-13 a6 2차 완화, 1차 40·200). 번호당 하루 10·전체 5000·오답 잠금은 그대로.
   assert.match(verification, /hourlyRequest\)\s*>=\s*SIGNUP_OTP_IP_HOURLY_LIMIT/);
   assert.match(verification, /dailyRequest\)\s*>=\s*SIGNUP_OTP_IP_DAILY_LIMIT/);
-  assert.match(verification, /SIGNUP_OTP_IP_HOURLY_LIMIT = 40;/);
-  assert.match(verification, /SIGNUP_OTP_IP_DAILY_LIMIT = 200;/);
+  assert.match(verification, /SIGNUP_OTP_IP_HOURLY_LIMIT = 100;/);
+  assert.match(verification, /SIGNUP_OTP_IP_DAILY_LIMIT = 500;/);
   assert.match(verification, /dailyGlobal\)\s*>=\s*5000/);
   assert.match(verification, /DELETE FROM "ParentSignupVerification"[^`]*INTERVAL '7 days'/s);
   assert.match(signupMigration, /CREATE TABLE IF NOT EXISTS "ParentSignupOtpSend"[\s\S]*?"requestHash" TEXT/);

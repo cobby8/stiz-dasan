@@ -13,13 +13,18 @@ test("활성화 페이지는 토큰 상태와 만료·잠금·완료 상태를 �
   assert.match(page, /활성화 링크가 만료되었습니다/);
 });
 
-test("보호자는 OTP 확인 후 실제 이메일과 비밀번호를 설정한다", () => {
+test("보호자는 OTP 확인 후 로그인 아이디와 비밀번호(8자)를 설정한다 — 신규 가입과 같은 방식(f7)", () => {
   assert.match(client, /sendParentAccountOtp\(token\)/);
   assert.match(client, /verifyParentAccountOtp\(token, otp\)/);
   // 필수 동의 3개도 함께 보낸다(2026-11-13 a3) — 서버가 다시 확인하고 기록한다
-  assert.match(client, /acceptParentAccountClaim\(token, cleanEmail, password, consents\)/);
+  assert.match(client, /acceptParentAccountClaim\(token, cleanUsername, password, consents\)/);
   assert.match(client, /<ParentConsentChecks policies=\{policies\} tone="academy" \/>/);
-  assert.match(client, /password\.length < 10/);
+  // 2026-11-13 f7: 아이디 규칙·8자는 신규 가입과 같은 공용 모듈 — 예전 «이메일 + 10자» 입력이 남아 있으면 안 된다
+  assert.match(client, /password\.length < PARENT_PASSWORD_MIN/);
+  assert.match(client, /isValidParentUsername\(cleanUsername\)/);
+  assert.match(client, /from "@\/lib\/parent-username"/);
+  assert.match(client, /label="로그인 아이디"/);
+  assert.doesNotMatch(client, /type="email"|로그인 이메일|PARENT_ACTIVATION_PASSWORD_MIN|10자 이상/);
   assert.match(client, /password !== passwordConfirm/);
 });
 
@@ -29,7 +34,7 @@ test("활성화 3단계는 server action reject를 공통 오류로 복구한다
   assert.match(client, /catch \{\s*setMessage\(\{ kind: "error", text: fallbackMessage \}\)/);
   assert.match(client, /runServerAction\(async \(\) => \{[\s\S]*sendParentAccountOtp\(token\)/);
   assert.match(client, /runServerAction\(async \(\) => \{[\s\S]*verifyParentAccountOtp\(token, otp\)/);
-  assert.match(client, /runServerAction\(async \(\) => \{[\s\S]*acceptParentAccountClaim\(token, cleanEmail, password, consents\)/);
+  assert.match(client, /runServerAction\(async \(\) => \{[\s\S]*acceptParentAccountClaim\(token, cleanUsername, password, consents\)/);
 });
 
 test("성공하면 서버가 허용한 결제 경로로 이동하고 접근성 상태를 알린다", () => {

@@ -8,7 +8,9 @@ import {
   verifyParentAccountOtp,
 } from "@/app/actions/parent-account";
 import ParentConsentChecks, { type ParentPolicyTextsProp } from "@/components/auth/ParentConsentChecks";
-import { PARENT_ACTIVATION_PASSWORD_MIN, parentPasswordWarning } from "@/lib/parent-password-rules";
+import { PARENT_PASSWORD_MIN, parentPasswordWarning } from "@/lib/parent-password-rules";
+// 아이디 규칙은 신규 가입과 같은 모듈(2026-11-13 f7 가입 방식 통일 — 예전엔 이메일 + 10자)
+import { PARENT_USERNAME_RULE_MESSAGE, isValidParentUsername, normalizeParentUsername } from "@/lib/parent-username";
 
 type Step = "PHONE" | "OTP" | "ACCOUNT";
 type ActivationResult =
@@ -49,7 +51,8 @@ export default function ParentAccountActivateClient({
 }) {
   const [step, setStep] = useState<Step>(initialStep);
   const [otp, setOtp] = useState("");
-  const [email, setEmail] = useState("");
+  // 로그인 아이디 — 신규 가입과 같은 «아이디 + 8자 비밀번호»
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   // 경고는 입력칸을 벗어날 때·제출할 때 보인다
   const [passwordChecked, setPasswordChecked] = useState(false);
@@ -57,7 +60,7 @@ export default function ParentAccountActivateClient({
   const [message, setMessage] = useState<{ kind: "error" | "success"; text: string } | null>(null);
   const [pending, startTransition] = useTransition();
   // 입력 중 사전 경고 — 같은 숫자 반복·연속 숫자·qwer 류는 서버가 거의 확실히 거절한다(직원 초대 화면과 같은 규칙)
-  const weakWarning = parentPasswordWarning(password, { minLength: PARENT_ACTIVATION_PASSWORD_MIN });
+  const weakWarning = parentPasswordWarning(password, { minLength: PARENT_PASSWORD_MIN });
 
   useEffect(() => {
     const cleanUrl = new URL(window.location.href);
@@ -111,7 +114,7 @@ export default function ParentAccountActivateClient({
   }
 
   function activateAccount(form: HTMLFormElement) {
-    const cleanEmail = email.trim();
+    const cleanUsername = normalizeParentUsername(username);
     const formData = new FormData(form);
     // 필수 동의 3개 — 신규 가입과 같은 기준(서버도 다시 확인한다)
     const consents = {
@@ -120,12 +123,12 @@ export default function ParentAccountActivateClient({
       age: formData.get("age") === "on",
     };
     setMessage(null);
-    if (!cleanEmail || !cleanEmail.includes("@")) {
-      setMessage({ kind: "error", text: "로그인에 사용할 실제 이메일을 입력해 주세요." });
+    if (!isValidParentUsername(cleanUsername)) {
+      setMessage({ kind: "error", text: PARENT_USERNAME_RULE_MESSAGE });
       return;
     }
-    if (password.length < 10) {
-      setMessage({ kind: "error", text: "비밀번호는 10자 이상 입력해 주세요." });
+    if (password.length < PARENT_PASSWORD_MIN) {
+      setMessage({ kind: "error", text: "비밀번호는 8자 이상 입력해 주세요." });
       return;
     }
     if (weakWarning) {
@@ -144,7 +147,7 @@ export default function ParentAccountActivateClient({
     }
 
     runServerAction(async () => {
-      const result = await acceptParentAccountClaim(token, cleanEmail, password, consents) as ActivationResult;
+      const result = await acceptParentAccountClaim(token, cleanUsername, password, consents) as ActivationResult;
       if ("error" in result) {
         setMessage({ kind: "error", text: customerMessage(result.error, "계정을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.") });
         return;
@@ -164,7 +167,7 @@ export default function ParentAccountActivateClient({
         <header className="bg-[var(--color-academy-primary)] px-6 py-7 text-white">
           <p className="text-sm font-bold text-[var(--brand-accent)]">{selfService ? "STIZ 농구교실" : "STIZ 특강"}</p>
           <h1 id="activate-title" className="mt-1 text-2xl font-black">{selfService ? "기존 학부모 계정 활성화" : "보호자 계정 활성화"}</h1>
-          <p className="mt-2 text-sm leading-6 text-[var(--color-academy-faint)]">{selfService ? "휴대폰 인증이 끝났어요. 앞으로 로그인에 쓸 이메일과 비밀번호만 정해 주세요." : "본인 확인 후 결제에 사용할 로그인 정보를 만들어 주세요."}</p>
+          <p className="mt-2 text-sm leading-6 text-[var(--color-academy-faint)]">{selfService ? "휴대폰 인증이 끝났어요. 앞으로 로그인에 쓸 아이디와 비밀번호만 정해 주세요." : "본인 확인 후 결제에 사용할 로그인 정보를 만들어 주세요."}</p>
         </header>
 
         <div className="space-y-5 p-6">
@@ -198,8 +201,8 @@ export default function ParentAccountActivateClient({
 
           {step === "ACCOUNT" && (
             <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); activateAccount(event.currentTarget); }}>
-              <Field id="parent-email" label="로그인 이메일" type="email" value={email} onChange={setEmail} autoComplete="email" placeholder="name@example.com" />
-              <Field id="parent-password" label="비밀번호" type="password" value={password} onChange={(value) => { setPassword(value); setPasswordChecked(false); }} onBlur={() => setPasswordChecked(true)} autoComplete="new-password" placeholder="10자 이상, 숫자·영문 섞어서" />
+              <Field id="parent-username" label="로그인 아이디" type="text" value={username} onChange={setUsername} autoComplete="username" placeholder="영문으로 시작, 영문·숫자·밑줄 4~20자" />
+              <Field id="parent-password" label="비밀번호" type="password" value={password} onChange={(value) => { setPassword(value); setPasswordChecked(false); }} onBlur={() => setPasswordChecked(true)} autoComplete="new-password" placeholder="8자 이상, 숫자·영문 섞어서" />
               {passwordChecked && weakWarning && <p role="alert" className="-mt-2 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-xs font-semibold text-[var(--color-academy-danger)]">{weakWarning}</p>}
               <Field id="parent-password-confirm" label="비밀번호 확인" type="password" value={passwordConfirm} onChange={setPasswordConfirm} autoComplete="new-password" placeholder="비밀번호 다시 입력" />
               {/* 신규 가입과 같은 필수 동의 3개 + 약관 «보기» 창(같은 화면 안) */}
@@ -221,7 +224,7 @@ function ProgressStep({ active, step, label }: { active: boolean; step: string; 
 }
 
 function Field({ id, label, type, value, onChange, onBlur, autoComplete, placeholder }: { id: string; label: string; type: string; value: string; onChange: (value: string) => void; onBlur?: () => void; autoComplete: string; placeholder: string }) {
-  return <div><label htmlFor={id} className="text-sm font-bold text-[var(--color-academy-ink)]">{label}</label><input id={id} type={type} value={value} onChange={(event) => onChange(event.target.value)} onBlur={onBlur} autoComplete={autoComplete} placeholder={placeholder} required className="mt-2 min-h-12 w-full rounded-xl border border-[var(--color-academy-line-input)] bg-white px-4 outline-none focus:border-[var(--brand-accent)]" /></div>;
+  return <div><label htmlFor={id} className="text-sm font-bold text-[var(--color-academy-ink)]">{label}</label><input id={id} type={type} value={value} onChange={(event) => onChange(event.target.value)} onBlur={onBlur} autoComplete={autoComplete} autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder={placeholder} required className="mt-2 min-h-12 w-full rounded-xl border border-[var(--color-academy-line-input)] bg-white px-4 outline-none focus:border-[var(--brand-accent)]" /></div>;
 }
 
 function PrimaryButton({ pending, disabled = false, onClick, label, pendingLabel, submit = false }: { pending: boolean; disabled?: boolean; onClick: () => void; label: string; pendingLabel: string; submit?: boolean }) {

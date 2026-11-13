@@ -38,7 +38,7 @@ export default async function ParentAccountActivatePage({
   }
 
   // 회원가입 화면에서 문자 인증을 이미 끝내고 넘어온 경우: 같은 브라우저에 활성화 증표 쿠키가 있다.
-  // 그때는 인증번호 단계를 건너뛰고 계정 설정(이메일·비밀번호)부터 보여 준다.
+  // 그때는 인증번호 단계를 건너뛰고 계정 설정(아이디·비밀번호)부터 보여 준다.
   const hasProofCookie = Boolean((await cookies()).get(parentClaimProofCookieName(token))?.value);
   const alreadyVerified = status === "VERIFIED" && hasProofCookie;
   if (claim.selfService && !alreadyVerified) {

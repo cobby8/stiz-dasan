@@ -66,7 +66,10 @@ async function load(db) {
   const inviteAuthFailure = toDataUrl(await transpile("src/lib/staff/inviteAuthFailure.ts"));
   const passwordRules = toDataUrl((await transpile("src/lib/parent-password-rules.ts"))
     .split('"@/lib/staff/inviteAuthFailure"').join(`"${inviteAuthFailure}"`));
+  // 아이디 규칙(순수 모듈, 2026-11-13 f7) — 가입·활성화가 같이 쓴다
+  const username = toDataUrl(await transpile("src/lib/parent-username.ts"));
   const swap = (code) => code
+    .split('"@/lib/parent-username"').join(`"${username}"`)
     .split('"@/lib/user-facing-error"').join(`"${publicErrors}"`)
     .split('"@/lib/parent-synthetic-email"').join(`"${syntheticEmail}"`)
     .split('"@/lib/prisma"').join(`"${prismaStub}"`)

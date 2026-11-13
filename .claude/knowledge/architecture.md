@@ -3,6 +3,12 @@
 <!-- 프로젝트의 폴더 구조, 파일 역할, 핵심 패턴을 기록 -->
 <!-- 2026-11-10 정리: 48항목 → 주제별 19묶음. 원래 항목은 묶음 안 하위 항목(원래 날짜·제목)으로 내용 그대로 보존. 새 항목은 맞는 묶음에 하위 항목으로 넣는다 -->
 
+### [2026-11-13] 학부모 아이디 규칙 한 곳(parent-username) · 앱 설치 짧은 주소 /install
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: ① 아이디 정규식·정규화·로그인 메일 매핑(`아이디@member.stiz.kr`)·문구는 `src/lib/parent-username.ts`(import 없는 순수 모듈) 한 곳. 신규 가입(parent-signup-verification, 예전 import 위해 re-export)과 기존 학부모 계정 활성화(parent-account-claim)가 같이 쓴다 — 두 서버 모듈이 서로 import 하면 순환이라 따로 뺐다. 활성화는 User 에 `email`=매핑 메일 + `username` 을 함께 적고, 서버 액션은 결과의 `loginEmail` 로 바로 로그인. 예전 이메일 활성화 계정은 로그인 화면이 «@» 든 값을 그대로 써서 하위호환. 이 모듈을 import 하는 서버 파일을 data: URL 로 올리는 테스트는 `"@/lib/parent-username"` 도 바꿔 끼워야 한다(tests/parent-signup-existing-claim). ② 스토어 링크는 `src/lib/app-install-links.ts` 한 곳(PLAY_STORE_URL, `IOS_APP_STORE_ID` 빈 값 = 아이폰 «곧 출시»). `/install` 페이지가 `detectInstallEnvironment` 의 platform 으로 스토어에 바로 redirect. ⚠️ `/app` 은 next.config redirect → `/mypage/install`(홈 화면 바로가기) 짧은 주소라 별개.
+- **참조횟수**: 0
+
 ### [2026-11-13] 출시 전 안전장치 — 관리자 화면 가드·cron 실패 알림·스토어 앱 우회 한 곳
 - **분류**: architecture
 - **발견자**: developer

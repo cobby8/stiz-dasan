@@ -8,7 +8,15 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveRedirectForRole } from "@/lib/auth-routes";
 import { isSyntheticParentEmail } from "@/lib/parent-synthetic-email";
 import { PARENT_CONSENT_REQUIRED_MESSAGE, PARENT_PRIVACY_VERSION, PARENT_TERMS_VERSION, hasAllParentConsents, type ParentConsents } from "@/lib/parent-consent";
-import { PARENT_WEAK_PASSWORD_MESSAGE, isWeakPasswordRejection } from "@/lib/parent-password-rules";
+import { PARENT_PASSWORD_MIN, PARENT_WEAK_PASSWORD_MESSAGE, isWeakPasswordRejection } from "@/lib/parent-password-rules";
+// 아이디 규칙·로그인 메일 매핑 — 신규 가입과 같은 모듈(2026-11-13 f7 가입 방식 통일)
+import {
+  PARENT_USERNAME_PATTERN,
+  PARENT_USERNAME_RULE_MESSAGE,
+  PARENT_USERNAME_TAKEN_MESSAGE,
+  normalizeParentUsername,
+  parentUsernameAuthEmail,
+} from "@/lib/parent-username";
 
 const CLAIM_TTL_HOURS = 72;
 const OTP_TTL_MINUTES = 5;
@@ -415,15 +423,19 @@ export async function verifyParentClaimOtp(rawToken: string, code: string) {
 export async function consumeParentAccountClaim(
   rawToken: string,
   proof: string,
-  emailInput: string,
+  usernameInput: string,
   password: string,
   // 필수 동의 3개(2026-11-13 a3) — 신규 가입과 같은 기준. 없으면 계정을 만들지 않는다.
   consents?: Partial<ParentConsents> | null,
 ) {
   if (!hasAllParentConsents(consents)) return { error: PARENT_CONSENT_REQUIRED_MESSAGE };
-  const email = emailInput.trim().toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.endsWith(".local")) return { error: "실제로 사용하는 이메일을 입력해 주세요." };
-  if (password.length < 10) return { error: "비밀번호는 10자 이상이어야 합니다." };
+  // 2026-11-13 f7 가입 방식 통일: 예전 «이메일 + 10자» → 신규 가입과 같은 «아이디 + 8자».
+  // 로그인 메일은 신규 가입과 같은 매핑(아이디@member.stiz.kr) — 로그인 화면이 아이디를 이 주소로 바꿔 로그인한다.
+  // 이미 이메일로 활성화한 기존 계정은 손대지 않는다(로그인 화면이 «@» 든 값은 그 메일로 로그인).
+  const username = normalizeParentUsername(usernameInput);
+  if (!PARENT_USERNAME_PATTERN.test(username)) return { error: PARENT_USERNAME_RULE_MESSAGE };
+  if (password.length < PARENT_PASSWORD_MIN) return { error: "비밀번호는 8자 이상 입력해 주세요." };
+  const email = parentUsernameAuthEmail(username);
   const hash = tokenHash(rawToken);
   if (!/^[A-Za-z0-9_-]{40,200}$/.test(proof)) return { error: "전화번호 인증 증표가 없거나 만료되었습니다." };
   const suppliedProofHash = keyedHash(`proof:${hash}:${proof}`);
@@ -452,8 +464,13 @@ export async function consumeParentAccountClaim(
         normalizePhone(current.phone),
       );
       if (Number(duplicates[0]?.count) !== 1) throw new Error("같은 연락처의 보호자 계정이 여러 개여서 관리자 확인이 필요합니다.");
-      const emailOwners = await tx.$queryRawUnsafe<Array<{ id: string }>>(`SELECT id FROM "User" WHERE LOWER(email) = LOWER($1) AND id <> $2 LIMIT 1`, email, current.parentId);
-      if (emailOwners.length > 0) throw new Error("이미 사용 중인 이메일입니다.");
+      // 아이디 중복 — 신규 가입(rejectExisting)과 같은 기준(LOWER(username)). 로그인 메일(아이디@member.stiz.kr)을
+      // 이미 다른 계정이 쓰는 경우도 같은 아이디로 본다. 본인 행(이미 그 아이디가 적혀 있던 경우)은 제외.
+      const usernameOwners = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT id FROM "User" WHERE (LOWER(COALESCE(username, '')) = LOWER($1) OR LOWER(email) = LOWER($2)) AND id <> $3 LIMIT 1`,
+        username, email, current.parentId,
+      );
+      if (usernameOwners.length > 0) throw new Error(PARENT_USERNAME_TAKEN_MESSAGE);
       const authLinks = await tx.$queryRawUnsafe<Array<{ authUserId: string | null }>>(
         `SELECT "authUserId" FROM "User" WHERE id = $1 FOR UPDATE`, current.parentId,
       );
@@ -480,7 +497,7 @@ export async function consumeParentAccountClaim(
       email,
       password,
       email_confirm: true,
-      user_metadata: { role: "PARENT", parentAccountClaimId: claim.id, parentAccountClaimAttemptId: processingAttemptId },
+      user_metadata: { role: "PARENT", username, parentAccountClaimId: claim.id, parentAccountClaimAttemptId: processingAttemptId },
     });
     if (!created.error && created.data.user) {
       authUserId = created.data.user.id;
@@ -498,13 +515,18 @@ export async function consumeParentAccountClaim(
         if (owned) authUserId = owned.id;
         if (listed.data.users.length < 1000) break;
       }
-      if (!authUserId) throw new Error("이미 가입된 이메일입니다.");
+      // 이 활성화가 만든 계정이 아니면 그 아이디(로그인 메일)는 이미 다른 사람이 쓰는 것이다
+      if (!authUserId) throw new Error(PARENT_USERNAME_TAKEN_MESSAGE);
       const recovered = await auth.auth.admin.updateUserById(authUserId, {
         password,
         email_confirm: true,
-        user_metadata: { role: "PARENT", parentAccountClaimId: claim.id, parentAccountClaimAttemptId: processingAttemptId },
+        user_metadata: { role: "PARENT", username, parentAccountClaimId: claim.id, parentAccountClaimAttemptId: processingAttemptId },
       });
       if (recovered.error) throw new Error("중단된 계정 활성화를 복구하지 못했습니다.");
+    } else if (created.error?.message?.toLowerCase().includes("already")) {
+      // 중단된 이전 시도가 없는데 «이미 있음» — 그 로그인 메일(아이디@member.stiz.kr)을 다른 계정이 이미 쓴다.
+      // DB 아이디 검사를 통과했어도 Supabase 쪽에만 남은 계정이 있을 수 있어, 아이디를 바꾸라고 안내한다.
+      throw new Error(PARENT_USERNAME_TAKEN_MESSAGE);
     } else if (isWeakPasswordRejection(created.error)) {
       // 약한 비밀번호 거절 — 계정은 만들어지지 않았다. 이유를 알려 주고 같은 인증으로 다시 정하게 한다.
       throw new Error(PARENT_WEAK_PASSWORD_MESSAGE);
@@ -520,12 +542,14 @@ export async function consumeParentAccountClaim(
     await prisma.$transaction(async (tx) => {
       const updated = await tx.$executeRawUnsafe(
         // 문자 인증을 통과해 활성화했으므로 번호 인증 시각도 남긴다(이미 있으면 그대로 — 처음 인증 시각 보존, a4)
-        `UPDATE "User" SET email = $1, "authUserId" = $4, "phoneVerifiedAt" = COALESCE("phoneVerifiedAt", NOW()), "updatedAt" = NOW()
+        // 아이디도 함께 적는다 — 로그인 화면이 User.username 으로 로그인 메일(User.email)을 찾는다(신규 가입과 같은 모양)
+        `UPDATE "User" SET email = $1, "authUserId" = $4, "phoneVerifiedAt" = COALESCE("phoneVerifiedAt", NOW()), username = $5, "updatedAt" = NOW()
           WHERE id = $2 AND role = 'PARENT' AND email = $3 AND "authUserId" IS NULL`,
         email,
         claim!.parentId,
         claim!.email,
         authUserId,
+        username,
       );
       if (updated !== 1) throw new Error("보호자 계정 정보가 변경되어 관리자 확인이 필요합니다.");
       const consumed = await tx.$executeRawUnsafe(
@@ -538,7 +562,8 @@ export async function consumeParentAccountClaim(
       );
       if (consumed !== 1) throw new Error("계정 활성화 상태가 변경되었습니다.");
     });
-    return { ok: true, redirectPath: safeRedirect(claim.redirectPath) };
+    // username·loginEmail: 서버 액션이 바로 로그인 세션을 만들 때 쓴다(아이디 → 로그인 메일 매핑을 다시 계산하지 않게)
+    return { ok: true, redirectPath: safeRedirect(claim.redirectPath), username, loginEmail: email };
   } catch (error) {
     let recoveryRequired = false;
     if (authUserId) {

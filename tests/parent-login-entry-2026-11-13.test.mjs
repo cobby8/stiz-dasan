@@ -153,10 +153,10 @@ test("a5 가입·활성화 화면의 약관은 같은 화면 안의 창으로, �
 });
 
 // ── a6 IP 한도 ───────────────────────────────────────────────────────────────
-test("a6 같은 IP 인증 한도: 시간당 40·하루 200, 가입·비밀번호 찾기 같은 값", async () => {
+test("a6 같은 IP 인증 한도: 시간당 100·하루 500(2차 완화), 가입·비밀번호 찾기 같은 값", async () => {
   const signup = await read("src/lib/parent-signup-verification.ts");
-  assert.match(signup, /export const SIGNUP_OTP_IP_HOURLY_LIMIT = 40;/);
-  assert.match(signup, /export const SIGNUP_OTP_IP_DAILY_LIMIT = 200;/);
+  assert.match(signup, /export const SIGNUP_OTP_IP_HOURLY_LIMIT = 100;/);
+  assert.match(signup, /export const SIGNUP_OTP_IP_DAILY_LIMIT = 500;/);
   // 번호당·전체 한도는 그대로
   assert.match(signup, /daily\) >= 10\)/);
   assert.match(signup, /dailyGlobal\) >= 5000\)/);

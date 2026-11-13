@@ -174,7 +174,7 @@ export async function startParentPasswordReset(phoneInput: string, requestKey = 
       );
       if (Number(quota[0]?.recent) > 0) throw new ResetUserError("인증번호는 60초 후 다시 요청할 수 있습니다.");
       if (Number(quota[0]?.daily) >= 5) throw new ResetUserError("오늘 인증번호 요청 횟수를 초과했습니다. 내일 다시 시도하거나 학원에 문의해 주세요.");
-      // 같은 IP 한도는 회원가입 인증과 같은 값(시간당 40·하루 200, a6). 번호당·전체·오답 잠금은 그대로.
+      // 같은 IP 한도는 회원가입 인증과 같은 값(시간당 100·하루 500, a6 2차 완화). 번호당·전체·오답 잠금은 그대로.
       if (Number(quota[0]?.hourlyRequest) >= SIGNUP_OTP_IP_HOURLY_LIMIT || Number(quota[0]?.dailyRequest) >= SIGNUP_OTP_IP_DAILY_LIMIT) throw new ResetUserError("인증 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.");
       if (Number(quota[0]?.dailyGlobal) >= 2000) throw new ResetUserError("현재 인증 요청이 많습니다. 잠시 후 다시 시도해 주세요.");
 

@@ -51,7 +51,8 @@ export async function verifyParentAccountOtp(token: string, code: string) {
 
 export async function acceptParentAccountClaim(
   token: string,
-  email: string,
+  // 로그인 아이디(2026-11-13 f7 — 예전엔 이메일). 신규 가입과 같은 아이디 규칙·로그인 메일 매핑을 쓴다.
+  username: string,
   password: string,
   // 필수 동의 3개(이용약관·개인정보·만 14세) — 서버(consumeParentAccountClaim)가 다시 확인하고 기록한다
   consents?: { terms?: boolean; privacy?: boolean; age?: boolean } | null,
@@ -63,7 +64,7 @@ export async function acceptParentAccountClaim(
   const result = await consumeParentAccountClaim(
     normalizedToken,
     proof,
-    email,
+    username,
     password,
     {
       terms: consents?.terms === true,
@@ -75,8 +76,9 @@ export async function acceptParentAccountClaim(
 
   cookieStore.delete(cookieName);
   const supabase = await createClient();
+  // 활성화가 만든 로그인 메일(아이디@member.stiz.kr)로 바로 로그인 세션을 만든다
   const signedIn = await supabase.auth.signInWithPassword({
-    email: email.trim().toLowerCase(),
+    email: result.loginEmail,
     password,
   });
   if (signedIn.error) {
