@@ -113,7 +113,6 @@ const ALLOWED_WITHOUT_FILTER: Record<string, { count: number; reason: string }> 
             "id를 이미 아는 단건 조회 7건(학생 수정·수강 등록 잠금·수강 상태 변경·청구 보호자 확인·요청/피드백 알림 이름·일괄 등록 보호자) " +
             "+ 청구서 링크 알림·미납 문자 2건(청구)",
     },
-    "app/actions/student-media-consent.ts": { count: 1, reason: "id 지정 보호자 조회" },
     "lib/studentMediaConsentAdmin.ts": { count: 1, reason: "id 지정 보호자 조회" },
     "lib/notification.ts": {
         count: 2,

@@ -7,6 +7,7 @@ import { syncCreditForRegularSession, syncCreditForSeasonalSeat } from "@/lib/ma
 import { applyMakeupAttendanceInTx, findMakeupBookings, makeupOnClassDateSql } from "@/lib/makeup/makeup-attendance";
 import { requireStaffClassAccess, requireStaffSeasonalSessionAccess, requireStaffSessionAccess } from "@/lib/staff-class-access";
 import { todayKst } from "@/lib/datetime/kst";
+import { canEditFeedLine, feedLineWindowMessage, normalizeFeedLine, sessionKstDateSql, TODAY_KST_SQL } from "@/lib/feed/rules";
 import {
   BULK_ALREADY_RECORDED_MESSAGE,
   BULK_SKIPPED_MESSAGE,
@@ -394,6 +395,41 @@ export async function saveSessionMemo(input: { sessionId: string; notes: string 
   );
   revalidatePath(`/staff/sessions/${input.sessionId}`);
   return { ok: true as const };
+}
+
+/**
+ * «오늘 수업 한 줄»(Session.content — 학부모 소식·홈 카드에 보이는 본문) 저장(2026-11-14 원장 결정).
+ * - 수업 전·중·후 언제든, 단 수업 당일(KST) 자정까지 — canEditFeedLine 과 같은 규칙을 UPDATE 조건에도 건다.
+ * - 예전엔 수업 종료 확인 창에서만 쓸 수 있었다(종료 뒤엔 수업 화면이 닫혀 못 고쳤다).
+ * - 학부모 알림은 보내지 않는다(종료 때 한 번 나간 알림으로 충분 — 고칠 때마다 울리지 않게).
+ */
+export async function saveSessionFeedLine(input: { sessionId: string; content: string }) {
+  const gate = await trySessionAccess(input.sessionId);
+  if (!gate.ok) return gate;
+  // 오늘(KST)은 DB 시계로 — 서버(UTC) 시계를 믿지 않는다. NOW() 는 timestamptz 라 한 번만 변환.
+  // 수업일은 무tz 칼럼 Session.date 라 «두 번» 변환(sessionKstDateSql) — 옛 기록 모양에서도 하루 밀리지 않게.
+  const rows = await prisma.$queryRawUnsafe<{ status: string; sessionYmd: string; todayYmd: string }[]>(
+    `SELECT status, ${sessionKstDateSql('"Session"')}::text AS "sessionYmd", ${TODAY_KST_SQL}::text AS "todayYmd"
+       FROM "Session" WHERE id = $1 LIMIT 1`,
+    input.sessionId,
+  );
+  if (!rows[0]) return { ok: false as const, message: "수업 기록을 찾을 수 없습니다." };
+  const window = canEditFeedLine(rows[0]);
+  if (!window.ok) return { ok: false as const, message: feedLineWindowMessage(window.reason) };
+  const content = normalizeFeedLine(input.content);
+  const updated = await prisma.$queryRawUnsafe<{ id: string }[]>(
+    `UPDATE "Session" SET content = $2, "updatedAt" = NOW()
+      WHERE id = $1
+        AND status IN ('PLANNED', 'IN_PROGRESS', 'COMPLETED')
+        AND ${sessionKstDateSql('"Session"')} = ${TODAY_KST_SQL}
+      RETURNING id`,
+    input.sessionId,
+    content,
+  );
+  if (!updated[0]) return { ok: false as const, message: feedLineWindowMessage("NOT_TODAY") };
+  revalidatePath("/staff");
+  revalidatePath(`/staff/sessions/${input.sessionId}`);
+  return { ok: true as const, content };
 }
 
 /**

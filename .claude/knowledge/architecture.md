@@ -3,6 +3,12 @@
 <!-- 프로젝트의 폴더 구조, 파일 역할, 핵심 패턴을 기록 -->
 <!-- 2026-11-10 정리: 48항목 → 주제별 19묶음. 원래 항목은 묶음 안 하위 항목(원래 날짜·제목)으로 내용 그대로 보존. 새 항목은 맞는 묶음에 하위 항목으로 넣는다 -->
 
+### [2026-11-14] 수업 피드 = «볼 수 있는가» 판정 하나(src/lib/feed) — 사진·영상·소식·홈 카드 공용
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 학부모 공개 = 완료+발행 수업(`feedVisibleSessionSql`) × 참여한 내 아이(`feedParticipantSql` = 출결 기록 또는 그 반 ACTIVE 수강·개시일 ≤ 수업일). 서버 판정은 `feed/server.ts` 의 `loadParentViewableSession`/`parentCanViewSession` 하나(사진 보기 라우트·영상 라우트·소식 상세가 호출, 목록·홈 카드는 같은 SQL 조각). 사진 공개 동의·«나온 학생» 태그는 보지 않는다(원장 결정, 동의 표는 보존·공개 게시 검사는 `PUBLIC_POST_CONSENT_GATE_ENABLED=false` 스위치). 상세·홈은 `listViewableSessionPhotos`(사진 원장 SocialPostDraft 에 실제로 있는 이 수업 사진만)로 넘겨 403/404 헛요청이 없다. Session.date(무tz) 수업일은 `sessionKstDateSql`(두 번 변환) — 옛 «전날 15:00» 행도 같은 날. 선생님 쪽: 한 줄(Session.content)은 `saveSessionFeedLine`(PLANNED~COMPLETED·당일 자정), 사진·영상 시간은 `canManageSessionMedia`(=영상 규칙). 테스트 tests/feed-rules.test.mjs·parent-report-render.test.mjs.
+- **참조횟수**: 0
+
 ### [2026-11-14] 수업 영상 = 브라우저→저장소 직접 업로드 + 예약 행 + 유튜브 이동 cron
 - **분류**: architecture
 - **발견자**: developer

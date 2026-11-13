@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireStaffSessionAccess } from "@/lib/staff-class-access";
 import { ensureSocialPostDraftTable } from "@/lib/socialDrafts";
-import { notMergedStudent } from "@/lib/studentVisibility";
+import { canManageSessionMedia, photoWindowMessage, sessionKstDateSql, TODAY_KST_SQL } from "@/lib/feed/rules";
 import {
   ensurePrivateSessionPhotoBucket,
   parseSessionPhotoEntries,
@@ -24,39 +24,29 @@ import {
 
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const MAX_BYTES = 1024 * 1024;
-const MAX_SUBJECTS = 100;
-
-function parseSubjectStudentIds(value: FormDataEntryValue | null) {
-  if (typeof value !== "string") return [];
-  try {
-    const parsed = JSON.parse(value);
-    if (!Array.isArray(parsed)) return [];
-    return [...new Set(
-      parsed
-        .filter((id): id is string => typeof id === "string")
-        .map((id) => id.trim())
-        .filter(Boolean),
-    )].slice(0, MAX_SUBJECTS);
-  } catch {
-    return [];
-  }
-}
+/**
+ * 사진 관리 가능 시간 판정용 수업 행(2026-11-14 원장 결정) — 영상과 같은 규칙:
+ * 수업 중 또는 끝난 수업의 당일 KST 자정까지. 오늘(KST)은 DB 시계로(NOW() 는 timestamptz 라 한 번만 변환).
+ * 수업일은 무tz 칼럼 Session.date 를 «두 번» 변환(sessionKstDateSql) — 옛 기록 모양에서도 하루 밀리지 않게.
+ */
+const MEDIA_WINDOW_COLUMNS = `"classId", status, "photosJSON", ${sessionKstDateSql('"Session"')}::text AS "sessionYmd",
+        ${TODAY_KST_SQL}::text AS "todayYmd"`;
+type MediaWindowRow = { classId: string; status: string; photosJSON: string | null; sessionYmd: string; todayYmd: string };
 
 export async function GET(_req: Request, context: { params: Promise<{ sessionId: string }> }) {
   try {
     await processSessionPhotoDeletionQueue(3).catch(() => undefined);
     const { sessionId } = await context.params;
-    const sessions = await prisma.$queryRawUnsafe<Array<{ classId: string; status: string }>>(
-      `SELECT "classId", status FROM "Session" WHERE id = $1 LIMIT 1`,
+    const sessions = await prisma.$queryRawUnsafe<MediaWindowRow[]>(
+      `SELECT ${MEDIA_WINDOW_COLUMNS} FROM "Session" WHERE id = $1 LIMIT 1`,
       sessionId,
     );
     const session = sessions[0];
     if (!session) return NextResponse.json({ error: "수업 기록을 찾을 수 없습니다." }, { status: 404 });
     // 수업 시작·출석과 같은 권한 함수(특강 회차면 특강 담당 강사 기준) — 2026-11-13 G11
     await requireStaffSessionAccess(sessionId);
-    if (session.status !== "IN_PROGRESS") {
-      return NextResponse.json({ error: "진행 중인 수업의 사진만 관리할 수 있습니다." }, { status: 409 });
-    }
+    // 목록은 읽기만이라 언제든 보여 주고, 올리기·지우기 가능 여부를 함께 알려 준다(화면이 버튼을 잠근다)
+    const window = canManageSessionMedia(session);
     const drafts = await prisma.$queryRawUnsafe<SessionPhotoDraftRow[]>(
       `SELECT id, status, "mediaJSON", "subjectStudentIdsJSON", "galleryPostId", "instagramMediaId"
          FROM "SocialPostDraft"
@@ -64,7 +54,11 @@ export async function GET(_req: Request, context: { params: Promise<{ sessionId:
         ORDER BY "createdAt" ASC`,
       sessionId,
     );
-    return NextResponse.json({ photos: listManagedSessionPhotos(drafts) });
+    return NextResponse.json({
+      photos: listManagedSessionPhotos(drafts),
+      canUpload: window.ok,
+      windowMessage: window.ok ? null : photoWindowMessage(window.reason),
+    });
   } catch (error) {
     const message = userFacingError(error, "사진 목록을 불러오지 못했습니다.");
     return NextResponse.json({ error: message }, { status: 403 });
@@ -74,39 +68,23 @@ export async function GET(_req: Request, context: { params: Promise<{ sessionId:
 export async function POST(req: Request, context: { params: Promise<{ sessionId: string }> }) {
   try {
     const { sessionId } = await context.params;
-    const sessions = await prisma.$queryRawUnsafe<Array<{ id: string; classId: string; status: string; photosJSON: string | null }>>(
-      `SELECT id, "classId", status, "photosJSON" FROM "Session" WHERE id = $1 LIMIT 1`, sessionId,
+    const sessions = await prisma.$queryRawUnsafe<MediaWindowRow[]>(
+      `SELECT ${MEDIA_WINDOW_COLUMNS} FROM "Session" WHERE id = $1 LIMIT 1`, sessionId,
     );
     const session = sessions[0];
     if (!session) return NextResponse.json({ error: "수업 기록을 찾을 수 없습니다." }, { status: 404 });
     // 수업 시작·출석과 같은 권한 함수(특강 회차면 특강 담당 강사 기준) — 2026-11-13 G11
     const { access } = await requireStaffSessionAccess(sessionId);
-    if (session.status !== "IN_PROGRESS") {
-      return NextResponse.json({ error: "진행 중인 수업에만 사진을 등록할 수 있습니다." }, { status: 409 });
-    }
+    const window = canManageSessionMedia(session);
+    if (!window.ok) return NextResponse.json({ error: photoWindowMessage(window.reason) }, { status: 409 });
 
     await ensureSocialPostDraftTable();
     await ensureSessionPhotoDeletionQueue();
     const form = await req.formData();
     const file = form.get("file");
-    const subjectStudentIds = parseSubjectStudentIds(form.get("subjectStudentIds"));
+    // 2026-11-14: «사진에 나온 학생» 선택은 없앴다 — 학부모 보기는 수업 참여 기준(동의·태그 불필요, 원장 결정).
+    // 예전 화면이 보낸 subjectStudentIds 칸은 읽지 않는다.
     if (!(file instanceof File)) return NextResponse.json({ error: "사진을 선택해 주세요." }, { status: 400 });
-    if (subjectStudentIds.length === 0) {
-      return NextResponse.json({ error: "사진에 나온 학생을 한 명 이상 선택해 주세요." }, { status: 400 });
-    }
-
-    const eligibleSubjects = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
-      `SELECT DISTINCT st.id
-       FROM "Student" st
-       JOIN "Enrollment" e ON e."studentId" = st.id
-       WHERE e."classId" = $1 AND e.status = 'ACTIVE' AND st.id = ANY($2::text[])
-         AND ${notMergedStudent("st")}`,
-      session.classId,
-      subjectStudentIds,
-    );
-    if (eligibleSubjects.length !== subjectStudentIds.length) {
-      return NextResponse.json({ error: "현재 수업 학생만 사진 대상으로 선택할 수 있습니다." }, { status: 400 });
-    }
     if (!ALLOWED_TYPES.has(file.type) || file.type === "image/gif") {
       return NextResponse.json({ error: "수업 사진은 JPEG, PNG, WebP만 사용할 수 있습니다." }, { status: 400 });
     }
@@ -144,22 +122,13 @@ export async function POST(req: Request, context: { params: Promise<{ sessionId:
 
     try {
       await prisma.$transaction(async (tx) => {
-        const locked = await tx.$queryRawUnsafe<Array<{ classId: string; status: string; photosJSON: string | null }>>(
-          `SELECT "classId", status, "photosJSON" FROM "Session" WHERE id = $1 FOR UPDATE`, sessionId,
+        const locked = await tx.$queryRawUnsafe<MediaWindowRow[]>(
+          `SELECT ${MEDIA_WINDOW_COLUMNS} FROM "Session" WHERE id = $1 FOR UPDATE`, sessionId,
         );
-        if (locked[0]?.status !== "IN_PROGRESS" || locked[0]?.classId !== session.classId) {
-          throw new Error("진행 중인 수업의 사진만 등록할 수 있습니다.");
-        }
-        const lockedEligibleSubjects = await tx.$queryRawUnsafe<Array<{ id: string }>>(
-          `SELECT DISTINCT st.id FROM "Student" st
-             JOIN "Enrollment" e ON e."studentId" = st.id
-            WHERE e."classId" = $1 AND e.status = 'ACTIVE' AND st.id = ANY($2::text[])
-              AND ${notMergedStudent("st")}`,
-          session.classId,
-          subjectStudentIds,
-        );
-        if (lockedEligibleSubjects.length !== subjectStudentIds.length) {
-          throw new Error("현재 수업의 재원 학생만 사진 대상으로 선택할 수 있습니다.");
+        // 잠근 뒤 한 번 더 — 올리는 사이 자정이 지났거나 수업이 취소됐으면 저장하지 않는다
+        const lockedWindow = locked[0] ? canManageSessionMedia(locked[0]) : null;
+        if (!lockedWindow?.ok || locked[0]?.classId !== session.classId) {
+          throw new Error(lockedWindow && !lockedWindow.ok ? photoWindowMessage(lockedWindow.reason) : "수업 기록을 다시 확인해 주세요.");
         }
         const photos = parseSessionPhotoEntries(locked[0]?.photosJSON);
         if (!photos.some((photo) => photo === url)) photos.push(url);
@@ -173,7 +142,7 @@ export async function POST(req: Request, context: { params: Promise<{ sessionId:
           authorRole: access.staff.appUserRole,
           sessionId,
           classId: session.classId,
-          subjectStudentIds,
+          subjectStudentIds: [],
           photo: storedPhoto,
         });
         await cancelSessionPhotoCleanup(tx, photoId);
@@ -189,6 +158,6 @@ export async function POST(req: Request, context: { params: Promise<{ sessionId:
     return NextResponse.json({ url, type: "image", reviewStatus: "READY" });
   } catch (error) {
     const message = userFacingError(error, "사진 등록에 실패했습니다.");
-    return NextResponse.json({ error: message }, { status: error instanceof Error && error.message.includes("권한") ? 403 : 500 });
+    return NextResponse.json({ error: message }, { status: error instanceof Error && error.message.includes("권한") ? 403 : error instanceof Error && /자정|시작한 뒤/.test(error.message) ? 409 : 500 });
   }
 }

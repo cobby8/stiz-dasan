@@ -4,8 +4,9 @@
  */
 import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { childAccessSql } from "@/lib/account/child-access";
-import { notMergedStudent } from "@/lib/studentVisibility";
+import { parentCanViewSession } from "@/lib/feed/server";
+// 수업일 = 무tz 칼럼 «두 번» 변환(사진·한 줄 저장과 같은 SQL 조각 — 업로드 가능 시간이 갈라지지 않게)
+import { sessionKstDateSql, TODAY_KST_SQL } from "@/lib/feed/rules";
 import {
   canManageSessionVideo,
   isYoutubeVideoId,
@@ -25,7 +26,7 @@ export type SessionVideoSessionRow = {
   classId: string;
   className: string;
   status: string;
-  /** 수업 날짜(KST 달력) — Session.date 는 KST 날짜를 자정으로 저장한다(staff-sessions.ts `$2::date`) */
+  /** 수업 날짜(KST 달력) — 무tz 칼럼 Session.date 를 «두 번» 변환한 값(sessionKstDateSql, 옛 기록 모양에서도 하루 밀리지 않게) */
   sessionYmd: string;
   /** 오늘(KST) — DB 시계 기준(NOW() 는 timestamptz 라 AT TIME ZONE 한 번) */
   todayYmd: string;
@@ -34,8 +35,8 @@ export type SessionVideoSessionRow = {
 export async function loadSessionForVideo(sessionId: string): Promise<SessionVideoSessionRow | null> {
   const rows = await prisma.$queryRawUnsafe<SessionVideoSessionRow[]>(
     `SELECT s.id, s."classId", c.name AS "className", s.status,
-            s.date::date::text AS "sessionYmd",
-            (NOW() AT TIME ZONE 'Asia/Seoul')::date::text AS "todayYmd"
+            ${sessionKstDateSql("s")}::text AS "sessionYmd",
+            ${TODAY_KST_SQL}::text AS "todayYmd"
        FROM "Session" s JOIN "Class" c ON c.id = s."classId"
       WHERE s.id = $1 LIMIT 1`,
     sessionId,
@@ -77,24 +78,13 @@ export async function sessionVideoMaxBytes(): Promise<number> {
 }
 
 /**
- * 학부모가 이 수업 영상을 볼 수 있나 — 그 수업에 «참여한» 학생의 보호자만.
- * 참여 = 이 수업 출결 기록이 있음 또는 그 반 ACTIVE 수강. 보호자 판정은 childAccessSql(연결 표 포함).
+ * 학부모가 이 수업 영상을 볼 수 있나 — 수업 피드 공용 판정(@/lib/feed/server)에 맡긴다(2026-11-14 통일).
+ * 기준: 끝났고 발행된 수업(COMPLETED + published) + 그 수업에 «참여한» 내 아이
+ *       (출결 기록 또는 그 반 ACTIVE 수강·개시일 ≤ 수업일). 사진·소식 상세·홈 카드와 같은 함수다.
  * IDOR: sessionId 는 주소에서 오지만, 학생은 로그인한 보호자(appUserId) 쪽에서만 찾는다.
  */
-export async function parentCanViewSessionVideos(appUserId: string, sessionId: string, classId: string): Promise<boolean> {
-  const rows = await prisma.$queryRawUnsafe<Array<{ ok: number }>>(
-    `SELECT 1 AS ok
-       FROM "User" u
-       JOIN "Student" st ON ${await childAccessSql("st", 'u."id"')} AND ${notMergedStudent("st")}
-      WHERE u.id = $1
-        AND (
-          EXISTS (SELECT 1 FROM "Attendance" a WHERE a."sessionId" = $2 AND a."studentId" = st.id)
-          OR EXISTS (SELECT 1 FROM "Enrollment" e WHERE e."studentId" = st.id AND e."classId" = $3 AND e.status = 'ACTIVE')
-        )
-      LIMIT 1`,
-    appUserId, sessionId, classId,
-  );
-  return rows.length > 0;
+export async function parentCanViewSessionVideos(appUserId: string, sessionId: string): Promise<boolean> {
+  return parentCanViewSession(appUserId, sessionId);
 }
 
 export type SessionVideoRow = {

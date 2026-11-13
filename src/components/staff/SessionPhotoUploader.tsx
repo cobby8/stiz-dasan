@@ -6,38 +6,49 @@ import { SESSION_IMAGE_ALLOWED_TYPES } from "@/lib/clientImageCompression";
 import { uploadImagesWithProgress } from "@/lib/clientImageUpload";
 import { userErrorMessage } from "@/components/staff/userErrorMessage";
 
-type PhotoSubject = { id: string; name: string };
 type ManagedPhoto = {
   id: string;
   url: string;
-  subjectStudentIds: string[];
   canManage: boolean;
   requiresDeletionQueue: boolean;
 };
 
+/** 한 번에 고를 수 있는 사진 수(예전과 같은 10장) */
+const PHOTO_PICK_LIMIT = 10;
+
+/**
+ * 수업 사진 올리기(선생님) — 2026-11-14 수업 피드 개편(원장 결정).
+ * - «사진에 나온 학생» 선택을 없앴다: 학부모는 «그 수업에 참여한 아이의 보호자»만 보므로 태그·동의가 필요 없다.
+ * - 촬영·갤러리 여러 장은 그대로. 실패한 사진만 따로 «다시 올리기»(성공한 사진을 두 번 올리지 않게).
+ * - 올리기·지우기 가능 시간은 영상과 같다(수업 중 또는 끝난 당일 자정까지) — 서버가 canUpload 로 알려 준다.
+ * - 사진을 올려도 학부모 알림은 다시 보내지 않는다(수업 종료 알림 한 번).
+ */
 export function SessionPhotoUploader({
   sessionId,
-  students,
   onUploaded,
 }: {
   sessionId: string;
-  students: PhotoSubject[];
   onUploaded?: (urls: string[]) => void;
 }) {
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-  const [subjectStudentIds, setSubjectStudentIds] = useState<string[]>([]);
   const [photos, setPhotos] = useState<ManagedPhoto[]>([]);
-  const [editingPhotoId, setEditingPhotoId] = useState<string | null>(null);
-  const [retryAction, setRetryAction] = useState<(() => Promise<void>) | null>(null);
+  // 서버가 정한 올리기 가능 여부 — 목록을 읽기 전엔 막아 둔다(시간 밖에서 눌렀다 실패하지 않게)
+  const [canUpload, setCanUpload] = useState(false);
+  const [windowMessage, setWindowMessage] = useState<string | null>(null);
+  // 마지막 올리기에서 실패한 파일 — «실패한 n장 다시 올리기» 버튼에 쓴다
+  const [failedFiles, setFailedFiles] = useState<File[]>([]);
+  const [retryDelete, setRetryDelete] = useState<ManagedPhoto | null>(null);
 
   const loadPhotos = useCallback(async () => {
     const response = await fetch(`/api/staff/sessions/${encodeURIComponent(sessionId)}/photos`, { cache: "no-store" });
-    const body = await response.json().catch(() => ({})) as { photos?: ManagedPhoto[]; error?: string };
+    const body = await response.json().catch(() => ({})) as { photos?: ManagedPhoto[]; canUpload?: boolean; windowMessage?: string | null; error?: string };
     if (!response.ok) throw new Error(body.error || "사진 목록을 불러오지 못했습니다.");
     setPhotos(body.photos || []);
+    setCanUpload(body.canUpload === true);
+    setWindowMessage(body.windowMessage ?? null);
   }, [sessionId]);
 
   useEffect(() => {
@@ -47,45 +58,34 @@ export function SessionPhotoUploader({
     return () => window.clearTimeout(timer);
   }, [loadPhotos]);
 
-  function toggleSubject(studentId: string) {
-    setSubjectStudentIds((current) =>
-      current.includes(studentId)
-        ? current.filter((id) => id !== studentId)
-        : [...current, studentId],
-    );
-  }
-
-  async function upload(files: FileList | null) {
-    if (!files?.length || busy) return;
-    if (subjectStudentIds.length === 0) {
-      setMessage("사진에 나온 학생을 한 명 이상 선택해 주세요.");
-      return;
-    }
-
+  async function upload(files: FileList | File[] | null) {
+    const list = files ? Array.from(files) : [];
+    if (list.length === 0 || busy) return;
     setBusy(true);
+    setRetryDelete(null);
     setMessage("사진을 압축하고 있습니다.");
     try {
-      const result = await uploadImagesWithProgress(files, {
+      const result = await uploadImagesWithProgress(list, {
         folder: "staff-sessions",
         endpoint: `/api/staff/sessions/${encodeURIComponent(sessionId)}/photos`,
-        fields: { subjectStudentIds: JSON.stringify(subjectStudentIds) },
-        limit: 10,
+        limit: PHOTO_PICK_LIMIT,
         compression: {
           maxEdge: 1600,
           targetBytes: 700 * 1024,
           allowedTypes: SESSION_IMAGE_ALLOWED_TYPES,
         },
-        onProgress: (done, total) => setMessage(`사진 등록 중 ${done}/${total}`),
+        onProgress: (done, total) => setMessage(`사진 올리는 중 ${done}/${total}`),
       });
-      setMessage(
-        result.failedNames.length
-          ? `${result.failedNames.length}장의 등록에 실패했습니다.`
-          : "관리자 검토용 비공개 초안으로 등록했습니다.",
-      );
-      onUploaded?.(result.items.map((item) => item.url));
+      setFailedFiles(result.failedFiles);
+      const parts: string[] = [];
+      if (result.items.length > 0) parts.push(`사진 ${result.items.length}장을 올렸습니다.`);
+      if (result.failedFiles.length > 0) parts.push(`${result.failedFiles.length}장은 올리지 못했습니다.`);
+      if (result.skippedCount > 0) parts.push(`한 번에 ${PHOTO_PICK_LIMIT}장까지라 ${result.skippedCount}장은 빠졌습니다.`);
+      setMessage(parts.join(" ") || "사진을 올리지 못했습니다.");
+      if (result.items.length > 0) onUploaded?.(result.items.map((item) => item.url));
       await loadPhotos().catch(() => undefined);
     } catch {
-      setMessage("사진을 등록하지 못했습니다. 네트워크 연결을 확인한 뒤 다시 선택해 주세요.");
+      setMessage("사진을 올리지 못했습니다. 네트워크 연결을 확인한 뒤 다시 선택해 주세요.");
     } finally {
       setBusy(false);
       if (cameraRef.current) cameraRef.current.value = "";
@@ -93,144 +93,74 @@ export function SessionPhotoUploader({
     }
   }
 
-  async function updatePhotoSubjects(photo: ManagedPhoto) {
-    if (photo.subjectStudentIds.length === 0 || busy) return;
-    setBusy(true);
-    setRetryAction(null);
-    try {
-      const response = await fetch(
-        `/api/staff/sessions/${encodeURIComponent(sessionId)}/photos/${encodeURIComponent(photo.id)}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ subjectStudentIds: photo.subjectStudentIds }),
-        },
-      );
-      const body = await response.json().catch(() => ({})) as { error?: string };
-      if (!response.ok) throw new Error(body.error || "사진의 학생 정보를 수정하지 못했습니다.");
-      setEditingPhotoId(null);
-      setMessage("사진에 나온 학생 정보를 수정했습니다.");
-    } catch (error) {
-      setMessage(userErrorMessage(error, "네트워크 연결을 확인한 뒤 다시 시도해 주세요."));
-      setRetryAction(() => () => updatePhotoSubjects(photo));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function deletePhoto(photo: ManagedPhoto, confirmed = false) {
-    if (busy || (!confirmed && !window.confirm("이 사진을 수업 기록과 관리자 검토 목록에서 삭제할까요?"))) return;
+    if (busy || (!confirmed && !window.confirm("이 사진을 지울까요? 학부모 소식에서도 사라집니다."))) return;
     setBusy(true);
-    setRetryAction(null);
+    setRetryDelete(null);
     try {
       const response = await fetch(
         `/api/staff/sessions/${encodeURIComponent(sessionId)}/photos/${encodeURIComponent(photo.id)}`,
         { method: "DELETE" },
       );
       const body = await response.json().catch(() => ({})) as { error?: string };
-      if (!response.ok) throw new Error(body.error || "사진을 삭제하지 못했습니다.");
+      if (!response.ok) throw new Error(body.error || "사진을 지우지 못했습니다.");
       setPhotos((current) => current.filter((item) => item.id !== photo.id));
-      setMessage("사진을 삭제했습니다.");
+      setMessage("사진을 지웠습니다.");
     } catch (error) {
       setMessage(userErrorMessage(error, "네트워크 연결을 확인한 뒤 다시 시도해 주세요."));
-      setRetryAction(() => () => deletePhoto(photo, true));
+      setRetryDelete(photo);
     } finally {
       setBusy(false);
     }
   }
 
-  function togglePhotoSubject(photoId: string, studentId: string) {
-    setPhotos((current) => current.map((photo) => photo.id !== photoId ? photo : {
-      ...photo,
-      subjectStudentIds: photo.subjectStudentIds.includes(studentId)
-        ? photo.subjectStudentIds.filter((id) => id !== studentId)
-        : [...photo.subjectStudentIds, studentId],
-    }));
-  }
+  const locked = busy || !canUpload;
 
   return (
     <div className="space-y-3">
       {photos.length > 0 && (
-        <div className="grid grid-cols-2 gap-3" aria-label="등록한 수업 사진">
-          {photos.map((photo) => (
-            <article key={photo.id} className="overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-white">
+        // 올린 사진 — 3칸 작은 바둑판(공간 절약). 지우기는 사진 아래 글자 버튼
+        <ul className="grid grid-cols-3 gap-2" aria-label="올린 수업 사진">
+          {photos.map((photo, index) => (
+            <li key={photo.id} className="overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-white">
               {/* 인증된 비공개 API 주소라서 공개 URL을 만들지 않고도 미리보기가 가능합니다. */}
               <div className="relative aspect-square w-full">
-                <Image src={photo.url} alt="등록한 수업 사진" fill unoptimized sizes="(max-width: 640px) 50vw, 240px" className="object-cover" />
+                <Image src={photo.url} alt={`올린 수업 사진 ${index + 1}`} fill unoptimized sizes="(max-width: 640px) 33vw, 160px" className="object-cover" />
               </div>
-              <div className="space-y-2 p-2">
-                <p className="line-clamp-2 text-xs text-[var(--color-academy-muted)]">
-                  {photo.subjectStudentIds.map((id) => students.find((student) => student.id === id)?.name).filter(Boolean).join(", ") || "대상 학생 미지정"}
-                </p>
-                {photo.requiresDeletionQueue ? (
-                  <p className="rounded-lg bg-[var(--color-academy-warning-soft)] p-2 text-xs font-medium text-[var(--color-academy-warning)]">공개된 사진 · 관리자 회수 필요</p>
-                ) : (
-                  // 게슈탈트 T-10: «학생 수정»과 «삭제»가 나란히 붙어 있으면 잘못 누르기 쉽다.
-                  // 삭제는 오른쪽 끝 «삭제» 글자 버튼으로 떼어 두고(간격 12px), 확인 창(deletePhoto)은 그대로 둔다.
-                  <div className="flex items-center justify-between gap-3">
-                    <button type="button" disabled={busy} onClick={() => setEditingPhotoId(editingPhotoId === photo.id ? null : photo.id)} className="academy-button-tonal academy-button-sm min-w-0 flex-1">학생 수정</button>
-                    <button type="button" disabled={busy} aria-label="사진 삭제" title="사진 삭제" onClick={() => void deletePhoto(photo)} className="academy-button-danger academy-button-sm shrink-0">
-                      삭제
-                    </button>
-                  </div>
-                )}
-                {editingPhotoId === photo.id && photo.canManage && (
-                  <div className="space-y-2 border-t border-[var(--color-academy-line)] pt-2">
-                    <div className="flex max-h-48 flex-wrap gap-2 overflow-y-auto">
-                      {students.map((student) => {
-                        const selected = photo.subjectStudentIds.includes(student.id);
-                        return <button key={student.id} type="button" aria-pressed={selected} onClick={() => togglePhotoSubject(photo.id, student.id)} className="academy-choice">{student.name}</button>;
-                      })}
-                    </div>
-                    <button type="button" disabled={busy || photo.subjectStudentIds.length === 0} onClick={() => void updatePhotoSubjects(photo)} className="academy-button-secondary w-full">변경 저장</button>
-                  </div>
-                )}
-              </div>
-            </article>
+              {photo.requiresDeletionQueue ? (
+                <p className="bg-[var(--color-academy-warning-soft)] px-1 py-1 text-center text-xs font-medium text-[var(--color-academy-warning)]">공개됨 · 관리자 회수</p>
+              ) : photo.canManage && canUpload ? (
+                <button type="button" disabled={busy} aria-label={`사진 ${index + 1} 지우기`} onClick={() => void deletePhoto(photo)} className="academy-button-danger academy-button-sm w-full rounded-none! border-0! border-t!">
+                  지우기
+                </button>
+              ) : null}
+            </li>
           ))}
-        </div>
+        </ul>
       )}
-      <fieldset disabled={busy}>
-        <legend className="text-sm font-medium text-[var(--color-academy-ink)]">
-          사진에 나온 학생 <span className="text-[var(--color-academy-danger)]">(필수)</span>
-        </legend>
-        <p className="mt-1 text-xs leading-5 text-[var(--color-academy-muted)]">
-          선택한 학생의 보호자 동의가 확인된 사진만 관리자가 갤러리나 인스타그램에 게시할 수 있습니다.
-        </p>
-        <div className="mt-2 flex max-h-40 flex-wrap gap-2 overflow-y-auto rounded-xl border border-[var(--color-academy-line)] p-3">
-          {students.map((student) => {
-            const selected = subjectStudentIds.includes(student.id);
-            return (
-              <button
-                key={student.id}
-                type="button"
-                aria-pressed={selected}
-                onClick={() => toggleSubject(student.id)}
-                // 2026-11-13 UI 통일: 고른 학생 = 보조 색 칩. ✓ 는 테마(.academy-choice[aria-pressed])가 붙인다.
-                className="academy-choice"
-              >
-                {student.name}
-              </button>
-            );
-          })}
-        </div>
-      </fieldset>
 
       <input ref={cameraRef} hidden type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={(event) => void upload(event.target.files)} />
       <input ref={galleryRef} hidden type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => void upload(event.target.files)} />
       <div className="grid grid-cols-2 gap-2">
-        <button type="button" disabled={busy} onClick={() => cameraRef.current?.click()} className="academy-button-primary min-h-12!">
+        <button type="button" disabled={locked} onClick={() => cameraRef.current?.click()} className="academy-button-primary min-h-12!">
           사진 촬영
         </button>
-        <button type="button" disabled={busy} onClick={() => galleryRef.current?.click()} className="academy-button-secondary min-h-12!">
+        <button type="button" disabled={locked} onClick={() => galleryRef.current?.click()} className="academy-button-secondary min-h-12!">
           갤러리 선택
         </button>
       </div>
+      {!canUpload && windowMessage && <p className="text-xs text-[var(--color-academy-muted)]">{windowMessage}</p>}
       {message && (
-        <div className="flex items-center justify-between gap-3 rounded-xl bg-[var(--color-academy-soft)] p-3">
-          <p aria-live="polite" className="min-w-0 text-sm text-[var(--color-academy-muted)]">{message}</p>
-          {retryAction && (
-            <button type="button" disabled={busy} onClick={() => void retryAction()} className="academy-button-secondary shrink-0">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[var(--color-academy-soft)] p-3">
+          <p aria-live="polite" className="min-w-0 flex-1 text-sm text-[var(--color-academy-muted)]">{message}</p>
+          {failedFiles.length > 0 && canUpload && (
+            // 실패한 사진만 다시 — 성공한 사진은 다시 올리지 않는다
+            <button type="button" disabled={busy} onClick={() => void upload(failedFiles)} className="academy-button-secondary shrink-0">
+              실패한 {failedFiles.length}장 다시 올리기
+            </button>
+          )}
+          {retryDelete && (
+            <button type="button" disabled={busy} onClick={() => void deletePhoto(retryDelete, true)} className="academy-button-secondary shrink-0">
               다시 시도
             </button>
           )}

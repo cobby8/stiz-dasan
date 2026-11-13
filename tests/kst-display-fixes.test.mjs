@@ -90,33 +90,37 @@ test("1. 마이페이지 — 알림·요청 시각, 공지·피드백 날짜, �
 });
 
 test("2. 리포트 상세 — 서버(UTC)가 그려도 수업 날짜가 KST 달력으로 나온다", async () => {
-  async function renderWith(date) {
-    const rows = [
-      [{ id: "s1", date, topic: "드리블", content: "", photosJSON: null, published: true, class_name: "초등A", dayOfWeek: "Sat", startTime: "10:00", endTime: "11:00", program_name: "정규", coach_name: "김코치" }],
-      [{ id: "st1", name: "가나" }],
-      [{ studentId: "st1", status: "PRESENT", student_name: "가나" }],
-      [],
-    ];
+  // 2026-11-14 수업 피드: 수업일은 SQL 이 KST 달력 문자열로 만든다(무tz 칼럼 «두 번» 변환 — feed/rules sessionKstDateSql).
+  // 화면은 그 "YYYY-MM-DD" 를 formatKstDate 로 그리기만 한다(서버 UTC 시계가 끼어들 자리가 없다).
+  async function renderWith(ymd) {
     const { default: Page } = loadTsx("src/app/mypage/reports/[sessionId]/page.tsx", {
       "@/lib/supabase/server": { createClient: async () => ({ auth: { getUser: async () => ({ data: { user: { id: "u1" } } }) } }) },
       "@/lib/auth-guard": { requireVerifiedParent: async () => ({ appUserId: "p1" }) },
-      "@/lib/account/child-access": { childAccessSql: async () => "true" },
-      "@/lib/studentVisibility": { notMergedStudent: () => "true" },
-      "@/lib/prisma": { prisma: { $queryRawUnsafe: async () => rows.shift() ?? [] } },
-      "@/lib/sessionPhotoEntries": { toSessionReportPhotoViews: () => [] },
+      "@/lib/prisma": { prisma: { $queryRawUnsafe: async () => [] } },
+      "@/lib/feed/server": {
+        loadParentViewableSession: async () => ({
+          session: { id: "s1", classId: "k1", ymd, topic: "드리블", content: "", photosJSON: null, className: "초등A", dayOfWeek: "Sat", startTime: "10:00", endTime: "11:00", programName: "정규", coachName: "김코치" },
+          children: [{ id: "st1", name: "가나" }],
+        }),
+        listViewableSessionPhotos: async () => new Map(),
+        countSessionVideos: async () => new Map(),
+      },
+      "@/components/parent/FeedPhotoGallery": { default: () => null },
+      "@/components/parent/SessionVideoPlayer": { SessionVideoList: () => null },
       "next/navigation": { notFound: () => { throw new Error("not found"); } },
       "next/link": { default: ({ children, ...p }) => React.createElement("a", p, children) },
     });
     return renderToStaticMarkup(await Page({ params: Promise.resolve({ sessionId: "s1" }) }));
   }
-  // DB 저장값: 'YYYY-MM-DD'::timestamp → Prisma 가 UTC 자정 Date 로 읽는다.
-  // 형식은 예전 그대로 "2026년 10월 31일 토"(month: long + weekday: short 의 ko-KR 모양).
-  assert.match(await renderWith(new Date("2026-10-31T00:00:00.000Z")), /2026년 10월 31일 토 \|/);
-  // KST 자정이 UTC 로 저장된 값(전날 15:00Z)이어도 KST 날짜. 예전 코드는 UTC 서버에서 10월 30일 금이었다.
-  assert.match(await renderWith(new Date("2026-10-30T15:00:00.000Z")), /2026년 10월 31일 토 \|/);
+  // 형식은 예전 그대로 "2026년 10월 31일 토"(month: long + weekday: short 의 ko-KR 모양)
+  assert.match(await renderWith("2026-10-31"), /2026년 10월 31일 토 ·/);
   // 월말·연말
-  assert.match(await renderWith(new Date(MONTH_END)), /2026년 12월 1일 화 \|/);
-  assert.match(await renderWith(new Date(YEAR_END)), /2027년 1월 1일 금 \|/);
+  assert.match(await renderWith("2026-12-01"), /2026년 12월 1일 화 ·/);
+  assert.match(await renderWith("2027-01-01"), /2027년 1월 1일 금 ·/);
+  // 수업일을 만드는 SQL 은 두 번 변환 조각을 쓴다(옛 기록 «전날 15:00» 모양도 같은 날짜)
+  const feedServer = readFileSync("src/lib/feed/server.ts", "utf8");
+  assert.equal((feedServer.match(/\$\{sessionKstDateSql\("se"\)\}::text AS ymd/g) ?? []).length, 2);
+  assert.doesNotMatch(feedServer, /date::date::text AS ymd/);
 });
 
 test("3. 연간일정 패널 — 날짜·요일·시각을 KST 로", () => {

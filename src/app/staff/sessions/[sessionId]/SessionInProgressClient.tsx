@@ -11,6 +11,7 @@ import {
 } from "@/app/actions/staff-sessions";
 import { SessionPhotoUploader } from "@/components/staff/SessionPhotoUploader";
 import { SessionVideoUploader } from "@/components/staff/SessionVideoUploader";
+import { FeedLineEditor } from "@/components/staff/SessionFeedPanel";
 // 사유 라벨은 학부모 신고 화면과 같은 표를 쓴다(두 화면의 표기가 갈리면 안 된다).
 import { REASON_LABEL as ABSENCE_REASON_LABEL } from "@/lib/regular/regularAbsenceRules";
 import { VoiceToTextButton } from "@/components/staff/VoiceToTextButton";
@@ -108,7 +109,10 @@ export default function SessionInProgressClient({
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   // 종료 화면에서 바로 남기는 수업 리포트. 기본은 "바로 보내기" 켬 —
   // 꺼두면 지금처럼 아무도 발행하지 않아 학부모 화면이 계속 비어 있게 된다.
-  const [report, setReport] = useState("");
+  // 2026-11-14: 수업 중에도 «수업 피드» 칸에서 같은 값을 쓰고 저장한다(이미 저장한 한 줄로 시작).
+  const [report, setReport] = useState(session.content || "");
+  // 한 줄 저장·음성 변환 중에는 수업 종료를 잠근다(메모와 같은 원칙)
+  const [feedBusy, setFeedBusy] = useState(false);
   const [publishReport, setPublishReport] = useState(true);
   const [showPeople, setShowPeople] = useState(false);
   const [billingStudent, setBillingStudent] = useState<{ id: string; name: string } | null | undefined>(undefined);
@@ -748,21 +752,20 @@ export default function SessionInProgressClient({
         {showPlan && <p id="session-plan" className="border-t border-[var(--color-academy-line)] px-5 py-4 whitespace-pre-wrap text-sm leading-7 text-[var(--color-academy-muted)]">{session.plannedContent || "미리 등록한 수업 내용이 없습니다."}</p>}
       </section>
 
-      <section id="session-photos" className="scroll-mt-40 rounded-2xl border border-[var(--color-academy-line)] bg-white p-5">
-        <h2 className="academy-section-title mb-3">수업 사진</h2>
-        {/* 사진 태깅은 실제 Student(전환된 학생)만 대상으로 한다. 방학특강 미전환 신청자는 Student가 없어 제외. */}
-        <SessionPhotoUploader
-          sessionId={session.id}
-          students={students
-            .filter((student) => student.studentId)
-            .map((student) => ({ id: student.studentId as string, name: student.name }))}
-        />
-      </section>
-
-      {/* 2026-11-14 수업 영상(원장 결정) — 찍어 올리면 이 수업 학생의 보호자만 학부모 화면에서 본다 */}
-      <section id="session-videos" className="scroll-mt-40 rounded-2xl border border-[var(--color-academy-line)] bg-white p-5">
-        <h2 className="academy-section-title mb-3">수업 영상</h2>
-        <SessionVideoUploader sessionId={session.id} />
+      {/* 2026-11-14 «수업 피드»(원장 결정) — 한 줄·사진·영상을 한 칸에. 수업이 끝나도 당일 자정까지 오늘 수업 홈에서 이어 쓴다.
+          사진·영상은 이 수업에 참여한 학생의 보호자만 본다(사진 공개 동의·«나온 학생» 선택 없음). */}
+      <section id="session-photos" aria-labelledby="session-feed-title" className="scroll-mt-40 space-y-4 rounded-2xl border border-[var(--color-academy-line)] bg-white p-5">
+        <h2 id="session-feed-title" className="academy-section-title">수업 피드</h2>
+        <FeedLineEditor sessionId={session.id} value={report} onChange={setReport} onBusyChange={setFeedBusy} />
+        <div id="session-photo-uploader">
+          <h3 className="mb-2 text-sm font-semibold text-[var(--color-academy-ink)]">수업 사진</h3>
+          <SessionPhotoUploader sessionId={session.id} />
+        </div>
+        {/* 2026-11-14 수업 영상(원장 결정) — 찍어 올리면 이 수업 학생의 보호자만 학부모 화면에서 본다 */}
+        <div id="session-videos" className="scroll-mt-40">
+          <h3 className="mb-2 text-sm font-semibold text-[var(--color-academy-ink)]">수업 영상</h3>
+          <SessionVideoUploader sessionId={session.id} />
+        </div>
       </section>
 
       <section id="session-memo" className="scroll-mt-40 rounded-2xl border border-[var(--color-academy-line)] bg-white p-5">
@@ -794,7 +797,7 @@ export default function SessionInProgressClient({
           홈 인디케이터(safe-area)만큼만 아래 여백을 줘 겹침 없이 항상 접근 가능하게 한다. */}
       <div className="fixed inset-x-0 bottom-0 z-40 mx-auto max-w-lg px-4 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
         <div className="rounded-2xl border border-[var(--color-academy-line)] bg-white/95 p-2 shadow-lg backdrop-blur">
-          <button type="button" disabled={pending || voiceBusy || memoStatus === "saving" || !online} onClick={() => { setFinishError(""); setShowEndConfirm(true); }} style={{ minHeight: 56, borderWidth: 2 }} className="academy-button-danger w-full text-base! font-semibold!">수업 종료 확인</button>
+          <button type="button" disabled={pending || voiceBusy || feedBusy || memoStatus === "saving" || !online} onClick={() => { setFinishError(""); setShowEndConfirm(true); }} style={{ minHeight: 56, borderWidth: 2 }} className="academy-button-danger w-full text-base! font-semibold!">수업 종료 확인</button>
           {(voiceBusy || memoStatus === "saving" || !online) && <p className="mt-1 text-center text-xs text-[var(--color-academy-warning)]">{voiceBusy ? "음성 메모 처리 후 종료할 수 있습니다." : memoStatus === "saving" ? "메모 저장 후 종료할 수 있습니다." : "온라인 연결 후 종료할 수 있습니다."}</p>}
         </div>
       </div>
@@ -822,7 +825,7 @@ export default function SessionInProgressClient({
             {counts.UNCHECKED === 0 && (
               <div className="mt-4">
                 <label htmlFor="session-report" className="text-sm font-medium text-[var(--color-academy-ink)]">
-                  오늘 수업 한 줄 <span className="font-normal text-[var(--color-academy-faint)]">(선택)</span>
+                  오늘 수업 한 줄 <span className="font-normal text-[var(--color-academy-faint)]">(선택 · 수업 피드 칸과 같은 내용)</span>
                 </label>
                 <textarea
                   id="session-report"

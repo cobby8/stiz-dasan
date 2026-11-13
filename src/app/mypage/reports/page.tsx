@@ -11,6 +11,9 @@ import HideInInstalledApp from "@/components/pwa/HideInInstalledApp";
 import AppSafeLink from "@/components/pwa/AppSafeLink";
 // 달별 묶음 — 서버(UTC)에서 toLocaleDateString 을 쓰면 한국 자정 수업이 전날로 찍혀서 KST 모듈 기반 공용 함수를 쓴다
 import { groupByKstMonth } from "@/components/admin/list/monthDateGroups";
+// 행마다 «사진 n · 영상 n» — 상세 화면이 실제로 보여 주는 것과 같은 개수(수업 피드 공용 조회)
+import { countSessionFeedMedia } from "@/lib/feed/server";
+import { feedMediaCountLabel } from "@/lib/feed/rules";
 
 // 학부모 리포트 목록은 실시간 데이터 필요 (자녀 보안 체크)
 export const dynamic = "force-dynamic";
@@ -70,10 +73,13 @@ export default async function ParentReportsPage() {
         c.enrollments.map((e: { classId: string | null }) => e.classId).filter((v): v is string => typeof v === "string" && v.length > 0),
     );
     const studentIds = childList.map((c) => c.id);
-    const [allNotices, feedbacks, gallery] = await Promise.all([
+    const [allNotices, feedbacks, gallery, mediaCounts] = await Promise.all([
         getNoticesByClassIds(classIds, 10),
         getChildrenFeedbacks(studentIds),
         getGalleryByClassIds(classIds, 12),
+        // 개수 조회가 실패해도 목록은 그대로(개수만 빠진다)
+        countSessionFeedMedia(reports.map((r) => ({ id: r.sessionId, classId: r.classId, photosJSON: r.photosJSON })))
+            .catch(() => new Map<string, { photoCount: number; videoCount: number }>()),
     ]);
     // 공지(2026-11-09 원장 지시): 3개월 넘은 공지는 숨기고, 처음엔 3개만 — 나머지는 «더보기»로 펼친다
     const notices = recentNotices(allNotices, todayKst());
@@ -191,6 +197,10 @@ export default async function ParentReportsPage() {
                                                     <span className="break-keep">{r.className}</span>
                                                     <span className="tabular-nums">{DAY_LABELS[r.dayOfWeek] || r.dayOfWeek} {r.startTime}~{r.endTime}</span>
                                                     {r.coachName && <span>담당: {r.coachName}</span>}
+                                                    {(() => {
+                                                        const label = feedMediaCountLabel(mediaCounts.get(r.sessionId) ?? { photoCount: 0, videoCount: 0 });
+                                                        return label ? <span className="tabular-nums">{label}</span> : null;
+                                                    })()}
                                                 </div>
                                             </div>
                                             <span aria-hidden="true" className="shrink-0 text-[var(--color-academy-faint)]">›</span>

@@ -90,6 +90,8 @@ test("서버 홈은 빈 자녀 판정 전에 특강 내역을 조회하고 해�
     "@/lib/enrollment/parent-change-request": {},
     // 홈 «아이 기록» 한 줄(다닌 기간·올해 출석률, 2026-11-14) — 자녀가 없으면 부르지 않는다
     "@/lib/parent/childRecordQuery": {},
+    // 홈 «최신 수업 피드» 후보(2026-11-14) — 자녀가 없으면 부르지 않는다
+    "@/lib/feed/server": {},
     "@/lib/seasonal/parent-pending": { getPendingSeasonalChildren: async (id, students) => { calls.push([id, students]); return []; } },
     "@/components/account/EmptyParentState": { default: Empty },
     "./MyPageClient": { default: () => null },

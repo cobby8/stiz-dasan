@@ -13,6 +13,7 @@ import { VoiceToTextButton } from "@/components/staff/VoiceToTextButton";
 import { useStaffDialog } from "@/components/staff/useStaffDialog";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import { LiveStatusPill } from "@/components/staff/LiveStatusPill";
+import { SessionFeedPanel } from "@/components/staff/SessionFeedPanel";
 import type { StaffTodayClass } from "@/lib/staff-session-queries";
 import { isStaleDateKey, STALE_DATE_MESSAGE, staffReloginHref } from "@/lib/staff-session-rules";
 
@@ -79,6 +80,9 @@ export default function StaffHomeClient({
   const [billingTarget, setBillingTarget] = useState<{ lesson: StaffTodayClass; student?: { id: string; name: string } } | null>(null);
   // 남은·완료 수업 행을 누르면 여는 하단 시트(장소·수업 내용·빠른 메뉴는 여기서)
   const [detailTarget, setDetailTarget] = useState<StaffTodayClass | null>(null);
+  // «수업 피드» 시트(2026-11-14) — 시작 전엔 한 줄만, 끝난 수업은 한 줄·사진·영상(당일 자정까지).
+  // sessionId 가 null 이면 수업 기록을 만드는 중이다.
+  const [feedTarget, setFeedTarget] = useState<{ lesson: StaffTodayClass; sessionId: string | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -167,6 +171,34 @@ export default function StaffHomeClient({
         ? { ...lesson, sessionId: result.sessionId, sessionStatus: "PLANNED", plannedContent }
         : lesson));
       setContentTarget(null);
+    });
+  }
+
+  // 수업 피드 열기 — 시작 전 수업에 기록이 아직 없으면 «수업 내용» 저장과 같은 길(savePlannedClassContent)로
+  // 기록부터 만든다(적어 둔 수업 내용은 그대로 다시 저장 — 바뀌지 않는다). 그래야 한 줄을 그 기록에 저장할 수 있다.
+  function openFeed(lesson: StaffTodayClass) {
+    setError(null);
+    if (lesson.sessionId) {
+      setFeedTarget({ lesson, sessionId: lesson.sessionId });
+      return;
+    }
+    setFeedTarget({ lesson, sessionId: null });
+    startTransition(async () => {
+      const result = await savePlannedClassContent({
+        classId: lesson.id,
+        date: dateKey,
+        plannedContent: lesson.plannedContent || "",
+        ...(lesson.sessionDateId ? { sessionDateId: lesson.sessionDateId } : {}),
+      });
+      if (!result.ok) {
+        setError(result.message);
+        if ("needsLogin" in result && result.needsLogin) setNeedsLogin(true);
+        if (result.message === STALE_DATE_MESSAGE) router.refresh();
+        return;
+      }
+      const created = { ...lesson, sessionId: result.sessionId, sessionStatus: lesson.sessionStatus ?? "PLANNED" };
+      setClasses((current) => current.map((item) => item.scheduleKey === lesson.scheduleKey ? created : item));
+      setFeedTarget({ lesson: created, sessionId: result.sessionId });
     });
   }
 
@@ -325,6 +357,8 @@ export default function StaffHomeClient({
                     <summary className="min-h-11 cursor-pointer px-3 py-3 text-sm font-medium text-[var(--color-academy-muted)]">수업 준비·관리</summary>
                     <div className="grid grid-cols-2 gap-2 p-2" aria-label="수업 빠른 메뉴">
                       <SecondaryButton label="수업 내용" onClick={() => openContent(focusClass)} disabled={focusClass.sessionStatus === "IN_PROGRESS"} />
+                      {/* 수업 중이면 수업 화면의 «수업 피드» 칸에서 쓴다 */}
+                      {focusClass.sessionStatus !== "IN_PROGRESS" && <SecondaryButton label="수업 피드" onClick={() => openFeed(focusClass)} />}
                       <SecondaryButton label="학생 정보" onClick={() => setPeopleTarget(focusClass)} />
                       {showFees && <SecondaryButton label="청구 확인" onClick={() => setBillingTarget({ lesson: focusClass })} />}
                       {/* f4: 대타로만 보이는 반은 수업 공지를 숨긴다 — 서버도 대타에게는 공지 권한을 주지 않는다. */}
@@ -376,11 +410,40 @@ export default function StaffHomeClient({
             setDetailTarget(null);
             if (action === "start") openPrimaryAction(lesson);
             else if (action === "content") openContent(lesson);
+            else if (action === "feed") openFeed(lesson);
             else if (action === "contacts") openContacts(lesson);
             else if (action === "billing") { if (showFees) setBillingTarget({ lesson }); }
             else { setError(null); setNoticeTarget(lesson); }
           }}
         />
+      )}
+
+      {feedTarget && (
+        <ListDetailPanel onClose={() => setFeedTarget(null)} titleId="staff-feed-title">
+          <div className="flex items-start justify-between gap-3 border-b border-[var(--color-academy-line)] px-4 py-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium tabular-nums text-[var(--color-academy-ink)]">{feedTarget.lesson.startTime}–{feedTarget.lesson.endTime} · {feedTarget.lesson.name}</p>
+              <h2 id="staff-feed-title" className="text-lg font-bold text-[var(--color-academy-ink)]">수업 피드</h2>
+            </div>
+            <button type="button" aria-label="닫기" onClick={() => setFeedTarget(null)} className="academy-button-text academy-button-sm shrink-0">닫기</button>
+          </div>
+          <div className="px-4 pb-4 pt-3">
+            {feedTarget.sessionId ? (
+              <SessionFeedPanel
+                key={feedTarget.sessionId}
+                sessionId={feedTarget.sessionId}
+                initialLine={feedTarget.lesson.content}
+                started={feedTarget.lesson.sessionStatus === "IN_PROGRESS" || feedTarget.lesson.sessionStatus === "COMPLETED"}
+                // 저장한 한 줄을 목록에도 반영 — 시트를 다시 열어도 방금 쓴 내용이 보이게
+                onLineSaved={(content) => {
+                  const key = feedTarget.lesson.scheduleKey;
+                  setClasses((current) => current.map((item) => item.scheduleKey === key ? { ...item, content } : item));
+                  setFeedTarget((current) => current ? { ...current, lesson: { ...current.lesson, content } } : current);
+                }}
+              />
+            ) : error ? <ErrorMessage error={error} /> : <p role="status" className="text-sm text-[var(--color-academy-muted)]">준비 중…</p>}
+          </div>
+        </ListDetailPanel>
       )}
 
       {peopleTarget && <ClassPeopleSheet key={`${peopleTarget.id}:${peopleTarget.sessionId || peopleTarget.sessionDateId || "today"}`} open classId={peopleTarget.id} sessionId={peopleTarget.sessionId} sessionDateId={peopleTarget.sessionDateId} className={peopleTarget.name} onClose={() => setPeopleTarget(null)} onOpenBilling={showFees ? (student) => { const lesson = peopleTarget; setPeopleTarget(null); setBillingTarget({ lesson, student }); } : undefined} />}
@@ -483,7 +546,7 @@ function ClassRow({ lesson, startLocked, onOpen, onStart }: { lesson: StaffToday
   </li>;
 }
 
-type ClassDetailAction = "start" | "content" | "contacts" | "billing" | "notice";
+type ClassDetailAction = "start" | "content" | "feed" | "contacts" | "billing" | "notice";
 
 // 행을 누르면 여는 하단 시트: 기존 카드에 있던 정보·빠른 메뉴를 그대로 옮긴 것
 function ClassDetailSheet({ lesson, startLocked, showFees, onClose, onAction }: { lesson: StaffTodayClass; startLocked: boolean; showFees: boolean; onClose: () => void; onAction: (action: ClassDetailAction) => void }) {
@@ -502,9 +565,15 @@ function ClassDetailSheet({ lesson, startLocked, showFees, onClose, onAction }: 
         <span>{lesson.location || "장소 미정"}</span>
       </div>
       {lesson.plannedContent && <p className="whitespace-pre-wrap text-sm leading-6 text-[var(--color-academy-ink)]">{lesson.plannedContent}</p>}
+      {/* 끝난 수업 — 당일 자정까지 «수업 피드»(한 줄·사진·영상)를 이어 쓴다. 학부모 알림은 다시 안 보낸다 */}
+      {completed && <>
+        {lesson.content && <p className="whitespace-pre-wrap text-sm leading-6 text-[var(--color-academy-muted)]">{lesson.content}</p>}
+        <button type="button" onClick={() => onAction("feed")} className="academy-button-primary min-h-12! w-full text-base!">수업 피드 쓰기·사진 추가</button>
+      </>}
       {!completed && <>
         <div className="grid grid-cols-2 gap-2" aria-label={`${lesson.name} 수업 빠른 메뉴`}>
           <SecondaryButton label="수업 내용" onClick={() => onAction("content")} />
+          {lesson.sessionStatus !== "IN_PROGRESS" && <SecondaryButton label="수업 피드" onClick={() => onAction("feed")} />}
           <SecondaryButton label="학생 정보" onClick={() => onAction("contacts")} />
           {showFees && <SecondaryButton label="청구 확인" onClick={() => onAction("billing")} />}
           {!lesson.substitute && <SecondaryButton label="수업 공지" onClick={() => onAction("notice")} />}

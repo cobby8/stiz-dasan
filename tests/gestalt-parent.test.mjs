@@ -239,11 +239,13 @@ test("홈 맨 위 = «납부할 청구 N건 · 합계» 한 줄, 꽉 찬 버튼�
 
 test("리포트 상세는 «우리 아이 수업 현황»이 헤더 바로 아래 (M-12)", () => {
   const source = read("src/app/mypage/reports/[sessionId]/page.tsx");
-  const header = source.indexOf("{/* 수업 정보 헤더 */}");
+  // 2026-11-14 수업 피드 개편: 머리 → 우리 아이 → 수업 내용 → 사진 → 영상 순서(우리 아이 칸은 여전히 머리 바로 아래)
+  const header = source.indexOf("<header");
   const mine = source.indexOf("우리 아이 수업 현황");
-  const content = source.indexOf("{/* 수업 내용 */}");
-  const photos = source.indexOf("{/* 수업 사진 */}");
-  assert.ok(header < mine && mine < content && content < photos);
+  const content = source.indexOf('id="report-content-heading"');
+  const photos = source.indexOf('id="report-photos-heading"');
+  const videos = source.indexOf('id="report-videos-heading"');
+  assert.ok(header > 0 && header < mine && mine < content && content < photos && photos < videos);
 });
 
 test("글자 12px 이상·맨 위 설명 14px, 카카오 연결은 먼저 보이는 쪽만 꽉 찬 색 (M-13·M-14)", () => {

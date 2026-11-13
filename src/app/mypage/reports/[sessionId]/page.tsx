@@ -1,12 +1,11 @@
-import { childAccessSql } from "@/lib/account/child-access";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { requireVerifiedParent } from "@/lib/auth-guard";
 import { notFound } from "next/navigation";
-import { notMergedStudent } from "@/lib/studentVisibility";
 import Link from "next/link";
-import ReportPhoto from "@/components/parent/ReportPhoto";
-import { toSessionReportPhotoViews } from "@/lib/sessionPhotoEntries";
+import FeedPhotoGallery from "@/components/parent/FeedPhotoGallery";
+import { SessionVideoList } from "@/components/parent/SessionVideoPlayer";
+import { countSessionVideos, listViewableSessionPhotos, loadParentViewableSession } from "@/lib/feed/server";
 import { formatKstDate } from "@/lib/datetime/kst";
 import { ATTENDANCE_TONE, statusBadgeClass } from "@/lib/ui/statusTones";
 
@@ -26,6 +25,12 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
     LATE: { label: "지각", color: statusBadgeClass(ATTENDANCE_TONE.LATE) },
 };
 
+/**
+ * 수업 소식 상세(2026-11-14 수업 피드 개편) — 본문·사진(누르면 크게)·영상·우리 아이 출결과 코치 코멘트.
+ * 볼 수 있는가는 수업 피드 공용 판정 하나(loadParentViewableSession):
+ *   끝났고 발행된 수업 + 그 수업에 참여한 내 아이(출결 기록 또는 그 반 ACTIVE 수강).
+ * 사진은 서버에서 «실제로 열리는 것만» 넘긴다(사진 라우트와 같은 판정이라 403 헛요청이 없다).
+ */
 export default async function ParentReportDetailPage({
     params,
 }: {
@@ -50,170 +55,132 @@ export default async function ParentReportDetailPage({
         );
     }
 
-    // ── 2. 학부모 ID 조회 (인증 게이트가 검증한 appUserId 사용) ──
-    // 이메일 매칭 제거 — 소셜/이메일 불일치 시 자녀를 못 찾던 버그 수정
+    // ── 2. 학부모 ID (인증 게이트가 검증한 appUserId) ──
     const parentAuth = await requireVerifiedParent();
     const parentId = parentAuth.appUserId;
     if (!parentId) notFound();
 
-    // ── 3. 세션이 발행 상태인지 확인 ──
-    const sessionRows = await prisma.$queryRawUnsafe<any[]>(
-        `SELECT se.id, se.date, se.topic, se.content, se."photosJSON",
-                se.published, se."publishedAt",
-                c.name AS class_name, c."dayOfWeek", c."startTime", c."endTime",
-                p.name AS program_name,
-                co.name AS coach_name
-         FROM "Session" se
-         JOIN "Class" c ON se."classId" = c.id
-         LEFT JOIN "Program" p ON c."programId" = p.id
-         LEFT JOIN "Coach" co ON se."coachId" = co.id
-         WHERE se.id = $1 AND se.published = true`,
-        sessionId
-    );
-    if (!sessionRows[0]) notFound(); // 미발행 또는 존재하지 않는 세션
-    const session = sessionRows[0];
+    // ── 3. 볼 수 있는 수업인가 + 참여한 내 아이(IDOR: 아이는 로그인한 보호자 쪽에서만 찾는다) ──
+    const viewable = await loadParentViewableSession(parentId, sessionId);
+    if (!viewable) notFound(); // 없는 수업·미발행·내 아이가 참여하지 않은 수업 — 구분하지 않는다
+    const { session, children } = viewable;
+    const childIds = children.map((c) => c.id);
 
-    // ── 4. 보안: 내 자녀가 이 세션에 출석했는지 확인 ──
-    // 내 자녀 ID 목록 조회
-    const myStudents = await prisma.$queryRawUnsafe<any[]>(
-        `SELECT id, name FROM "Student" s WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")}`,
-        parentId
-    );
-    if (myStudents.length === 0) notFound();
-    const myStudentIds = myStudents.map((s: any) => s.id);
+    // ── 4. 내 아이 출결·코멘트 · 볼 수 있는 사진 · 영상 수 ──
+    const [attendances, notes, photoMap, videoCounts] = await Promise.all([
+        prisma.$queryRawUnsafe<Array<{ studentId: string; status: string }>>(
+            `SELECT a."studentId", a.status FROM "Attendance" a
+              WHERE a."sessionId" = $1 AND a."studentId" = ANY($2::text[])`,
+            sessionId, childIds,
+        ),
+        prisma.$queryRawUnsafe<Array<{ studentId: string; note: string | null; rating: number | null }>>(
+            `SELECT ssn."studentId", ssn.note, ssn.rating FROM "StudentSessionNote" ssn
+              WHERE ssn."sessionId" = $1 AND ssn."studentId" = ANY($2::text[])`,
+            sessionId, childIds,
+        ),
+        listViewableSessionPhotos([{ id: session.id, classId: session.classId, photosJSON: session.photosJSON }]),
+        countSessionVideos([session.id]),
+    ]);
+    const statusMap = new Map(attendances.map((a) => [a.studentId, a.status]));
+    const noteMap = new Map(notes.map((n) => [n.studentId, n]));
+    const photos = photoMap.get(session.id) ?? [];
+    const videoCount = videoCounts.get(session.id) ?? 0;
 
-    // 이 세션에 내 자녀가 출석했는지 확인
-    const placeholders = myStudentIds.map((_: string, i: number) => `$${i + 2}`).join(",");
-    const myAttendances = await prisma.$queryRawUnsafe<any[]>(
-        `SELECT a."studentId", a.status, s.name AS student_name
-         FROM "Attendance" a
-         JOIN "Student" s ON a."studentId" = s.id
-         WHERE a."sessionId" = $1 AND a."studentId" IN (${placeholders})
-         ORDER BY s.name ASC`,
-        sessionId,
-        ...myStudentIds
-    );
-    // 내 자녀가 이 세션에 없으면 접근 거부
-    if (myAttendances.length === 0) notFound();
-
-    // ── 5. 내 자녀의 개별 노트 조회 ──
-    const myNotes = await prisma.$queryRawUnsafe<any[]>(
-        `SELECT ssn."studentId", ssn.note, ssn.rating
-         FROM "StudentSessionNote" ssn
-         WHERE ssn."sessionId" = $1 AND ssn."studentId" IN (${placeholders})`,
-        sessionId,
-        ...myStudentIds
-    );
-    const noteMap = new Map(myNotes.map((n: any) => [n.studentId ?? n.studentid, n]));
-
-    // 사진 파싱
-    const photos = toSessionReportPhotoViews(session.photosJSON ?? session.photosjson, sessionId);
-
-    // 날짜 포맷 — 서버(UTC)가 그리므로 KST 로 못 박는다(새벽 수업이 전날로 보이지 않게).
-    const dateStr = formatKstDate(session.date, {
+    // 날짜 — KST 달력 문자열(SQL ::date)로 그린다(서버 UTC 에서 새벽 수업이 전날로 보이지 않게).
+    const dateStr = formatKstDate(session.ymd, {
         year: "numeric", month: "long", day: "numeric", weekday: "short",
     });
+    const dayLabel = session.dayOfWeek ? (DAY_LABELS[session.dayOfWeek] || session.dayOfWeek) : "";
 
     return (
-        <div>
+        <div className="space-y-3">
             {/* 뒤로가기 — 누르는 영역 44px(academy-back-link) */}
             <Link
                 href="/mypage/reports"
-                className="academy-back-link mb-2 gap-1 px-2 text-sm text-[var(--color-academy-muted)]"
+                className="academy-back-link gap-1 px-2 text-sm text-[var(--color-academy-muted)]"
             >
                 <span aria-hidden="true">←</span>
-                리포트 목록
+                소식
             </Link>
 
-            {/* 수업 정보 헤더 */}
-            <div className="bg-white rounded-xl border border-[var(--color-academy-line)] p-5 mb-4">
-                <h1 className="academy-heading">
-                    {session.topic || "수업 리포트"}
-                </h1>
-                <p className="text-sm text-[var(--color-academy-muted)] mt-1">
-                    {dateStr} | {session.class_name} ({DAY_LABELS[session.dayOfWeek ?? session.dayofweek] || (session.dayOfWeek ?? session.dayofweek)} {session.startTime ?? session.starttime}~{session.endTime ?? session.endtime})
+            {/* 수업 정보 머리 — 제목 1줄 + 날짜·반·시간 1줄 + 담당 */}
+            <header className="rounded-xl border border-[var(--color-academy-line)] bg-white p-4">
+                <h1 className="academy-heading">{session.topic || "수업 리포트"}</h1>
+                <p className="mt-1 text-sm text-[var(--color-academy-muted)]">
+                    {dateStr} · {session.className}
+                    {session.startTime && <span className="tabular-nums"> ({dayLabel} {session.startTime}~{session.endTime})</span>}
                 </p>
-                {(session.program_name) && (
-                    <p className="text-xs text-[var(--color-academy-faint)] mt-0.5">{session.program_name}</p>
+                {(session.programName || session.coachName) && (
+                    <p className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-[var(--color-academy-faint)]">
+                        {session.programName && <span>{session.programName}</span>}
+                        {session.coachName && <span>담당 코치: {session.coachName}</span>}
+                    </p>
                 )}
-                {(session.coach_name) && (
-                    <p className="text-xs text-[var(--color-academy-faint)] mt-0.5">담당 코치: {session.coach_name}</p>
-                )}
-            </div>
+            </header>
 
-            {/* 내 자녀 출석 + 개별 코멘트 — 학부모가 가장 먼저 찾는 칸이라 헤더 바로 아래(M-12, 내용은 그대로) */}
-            <div className="bg-white rounded-xl border border-[var(--color-academy-line)] overflow-hidden mb-4">
-                <div className="p-5 border-b border-[var(--color-academy-line)] bg-[var(--color-academy-soft)]">
-                    <h2 className="academy-section-title">
-                        우리 아이 수업 현황
-                    </h2>
-                </div>
-
-                <div className="divide-y divide-[var(--color-academy-line)]">
-                    {myAttendances.map((a: any) => {
-                        const studentId = a.studentId ?? a.studentid;
-                        const statusInfo = STATUS_MAP[a.status] || { label: "확인 중", color: statusBadgeClass("neutral") };
-                        const noteData = noteMap.get(studentId);
+            {/* 내 아이 출결 + 개별 코멘트 — 학부모가 가장 먼저 찾는 칸이라 머리 바로 아래(M-12) */}
+            <section aria-labelledby="report-children-heading" className="overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-white">
+                <h2 id="report-children-heading" className="academy-section-title border-b border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] px-4 py-2">
+                    우리 아이 수업 현황
+                </h2>
+                <ul className="divide-y divide-[var(--color-academy-line)]">
+                    {children.map((child) => {
+                        const status = statusMap.get(child.id);
+                        const statusInfo = (status && STATUS_MAP[status]) || { label: "확인 중", color: statusBadgeClass("neutral") };
+                        const noteData = noteMap.get(child.id);
                         const rating = noteData?.rating != null ? Number(noteData.rating) : null;
-
                         return (
-                            <div key={studentId} className="px-5 py-4">
-                                {/* 학생 이름 + 출석 상태 */}
-                                <div className="flex items-center justify-between mb-2">
-                                    <span className="font-semibold text-[var(--color-academy-ink)]">{a.student_name}</span>
-                                    <span className={`px-2 py-0.5 rounded text-xs ${statusInfo.color}`}>
-                                        {statusInfo.label}
-                                    </span>
+                            <li key={child.id} className="px-4 py-3">
+                                <div className="flex items-center justify-between gap-2">
+                                    <span className="font-semibold text-[var(--color-academy-ink)]">{child.name}</span>
+                                    <span className={`rounded px-2 py-0.5 text-xs ${statusInfo.color}`}>{statusInfo.label}</span>
                                 </div>
-
-                                {/* 참여도 평점 */}
                                 {rating !== null && (
-                                    <div className="flex items-center gap-1 mb-2">
-                                        <span className="text-xs text-[var(--color-academy-muted)] font-medium">참여도:</span>
+                                    <p className="mt-1 flex items-center gap-1 text-xs text-[var(--color-academy-muted)]">
+                                        참여도
                                         <span className="text-base leading-none text-[var(--color-academy-ink)]" aria-label={`참여도 ${rating}점`}>
                                             {[1, 2, 3, 4, 5].map((star) => (rating >= star ? "★" : "☆")).join("")}
                                         </span>
-                                    </div>
+                                    </p>
                                 )}
-
-                                {/* 코치 코멘트 */}
                                 {noteData?.note && (
-                                    <div className="bg-[var(--color-academy-soft)] rounded-lg p-3 mt-1">
-                                        <p className="text-xs text-[var(--color-academy-muted)] font-medium mb-1">코치 코멘트</p>
-                                        <p className="text-sm text-[var(--color-academy-muted)] whitespace-pre-line">{noteData.note}</p>
+                                    <div className="mt-2 rounded-lg bg-[var(--color-academy-soft)] p-3">
+                                        <p className="mb-1 text-xs font-medium text-[var(--color-academy-muted)]">코치 코멘트</p>
+                                        <p className="whitespace-pre-line text-sm text-[var(--color-academy-muted)]">{noteData.note}</p>
                                     </div>
                                 )}
-                            </div>
+                            </li>
                         );
                     })}
-                </div>
-            </div>
-            {/* 수업 내용 */}
-            {(session.content) && (
-                <div className="bg-white rounded-xl border border-[var(--color-academy-line)] p-5 mb-4">
-                    <h2 className="academy-section-title mb-2">
-                        수업 내용
-                    </h2>
-                    <p className="text-sm text-[var(--color-academy-muted)] whitespace-pre-line">{session.content}</p>
-                </div>
+                </ul>
+            </section>
+
+            {/* 수업 내용(오늘 수업 한 줄) */}
+            {session.content && (
+                <section aria-labelledby="report-content-heading" className="rounded-xl border border-[var(--color-academy-line)] bg-white p-4">
+                    <h2 id="report-content-heading" className="academy-section-title mb-1.5">수업 내용</h2>
+                    <p className="whitespace-pre-line text-sm text-[var(--color-academy-muted)]">{session.content}</p>
+                </section>
             )}
 
-            {/* 수업 사진 */}
+            {/* 수업 사진 — 누르면 크게 */}
             {photos.length > 0 && (
-                <div className="bg-white rounded-xl border border-[var(--color-academy-line)] p-5 mb-4">
-                    <h2 className="academy-section-title mb-3">
-                        수업 사진
+                <section aria-labelledby="report-photos-heading" className="rounded-xl border border-[var(--color-academy-line)] bg-white p-4">
+                    <h2 id="report-photos-heading" className="academy-section-title mb-2">
+                        수업 사진 <span className="text-sm font-normal tabular-nums text-[var(--color-academy-muted)]">{photos.length}</span>
                     </h2>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                        {photos.map((photo, i) => (
-                            <ReportPhoto
-                                key={`${photo.index}:${photo.src}`}
-                                src={photo.src}
-                                alt={`수업 사진 ${i + 1}`}
-                            />
-                        ))}
-                    </div>
-                </div>
+                    <FeedPhotoGallery photos={photos} />
+                </section>
+            )}
+
+            {/* 수업 영상 — 재생 주소는 화면에서 따로 받아 온다(10분짜리 서명 주소) */}
+            {videoCount > 0 && (
+                <section aria-labelledby="report-videos-heading" className="rounded-xl border border-[var(--color-academy-line)] bg-white p-4">
+                    <h2 id="report-videos-heading" className="academy-section-title mb-2">
+                        수업 영상 <span className="text-sm font-normal tabular-nums text-[var(--color-academy-muted)]">{videoCount}</span>
+                    </h2>
+                    <SessionVideoList sessionId={session.id} />
+                </section>
             )}
         </div>
     );
