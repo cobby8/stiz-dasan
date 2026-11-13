@@ -356,8 +356,9 @@ export default function GalleryAdminClient({
             prefetch={false}
             className="flex items-center gap-2 rounded-lg border border-[var(--color-academy-line)] bg-white px-4 py-2.5 text-sm font-bold text-[var(--color-academy-muted)] transition hover:border-[var(--color-academy-primary)] hover:text-[var(--color-academy-ink)]"
           >
+            {/* 2026-11-13 메뉴 «사진 빠른 업로드»를 없애고 이 버튼으로 들어간다(주소 /staff/quick-post 그대로) */}
             <FontFreeIcon name="upload" size={18} />
-            선생님 업로드
+            빠른 업로드
           </Link>
           <button
             onClick={() => {

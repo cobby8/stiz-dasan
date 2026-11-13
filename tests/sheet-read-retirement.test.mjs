@@ -72,12 +72,12 @@ test('재무: 은퇴면 「시트 점검」 버튼과 점검 패널을 숨기고
 });
 
 // ── 3. 학생 관리 시트 정합성 점검·재연결 ───────────────────────────────
-test('학생 관리: 시트 점검 도구는 화면에서 없애고(2026-10-29 원장 지시), 점검 API 는 남겨 둔다', () => {
+test('학생 관리: 시트 점검 도구는 화면에서 없앴고(2026-10-29), 점검 API 도 이관 도구와 함께 삭제(2026-11-13 원장 지시)', () => {
   const src = read('src/app/admin/students/StudentManagementClient.tsx');
   assert.doesNotMatch(src, /sheetRetired|showImportTools|ImportSummaryMetric|원생 자료 점검/);
   assert.doesNotMatch(read('src/app/admin/students/page.tsx'), /sheetRetired=/);
   for (const api of ['reconcile', 'relink', 'current-roster']) {
-    assert.ok(existsSync(`src/app/api/admin/import-students/${api}/route.ts`), `${api} API 유지`);
+    assert.ok(!existsSync(`src/app/api/admin/import-students/${api}/route.ts`), `${api} API 삭제`);
   }
 });
 
@@ -89,12 +89,11 @@ test('과거 시트 이력 표시는 유지: 학생 목록 월 상태·학생 �
 });
 
 // ── 4. 학생 가져오기 화면 ──────────────────────────────────────────────
-test('수강생 이관 화면: 은퇴면 "과거 자료 조회용" 안내만 붙이고 기능은 그대로', () => {
-  const src = read('src/app/admin/import/page.tsx');
-  assert.match(src, /const sheetRetired = isSheetSyncRetired\(process\.env\);/);
-  assert.match(src, /\{sheetRetired && \(/);
-  assert.match(src, /시트 원장 종료\(2026-10\) — 과거 자료 조회용/);
-  assert.match(src, /<ImportClient defaultSheetUrl=/, '가져오기 기능은 숨기지 않는다');
+// 2026-11-13 원장 «이번에 완전히 다 옮기고 제거»: 운영 시트는 11-05 에 9월분까지 끝까지 가져왔고(2,458줄)
+// 10월부터 시트를 쓰지 않아 화면·API 를 지웠다. 가져온 자료는 DB 에 그대로 있다(위 «과거 시트 이력 표시는 유지»).
+test('수강생 이관 화면은 삭제됐다', () => {
+  assert.ok(!existsSync('src/app/admin/import/page.tsx'));
+  assert.ok(!existsSync('src/app/api/admin/import-students/route.ts'));
 });
 
 // ── 5. 쓰지 않는 코드 삭제 ─────────────────────────────────────────────

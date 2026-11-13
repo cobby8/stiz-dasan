@@ -212,10 +212,11 @@ test("관리자 신청 화면은 제목을 반복하는 설명과 중복 요약�
   assert.match(adminShell, /label="청구·수납"/);
   // 사이드바 묶음 개편(게슈탈트 A-11): «업무별 상세 메뉴» 하나 → 3묶음
   // 2026-11-10 신청함 통합(d2): «요청·신청함» 묶음 → 최상위 «신청함» 하나
-  for (const label of ["수업 운영", "돈·수납"]) assert.ok(adminShell.includes(`label: "${label}"`), label);
+  // 2026-11-13 메뉴 정리: «수업 운영/돈·수납/홈페이지·소식/설정·도구» → «수업/홈페이지/설정»(돈·수납은 청구·수납 탭 줄로)
+  for (const label of ["수업", "홈페이지", "설정"]) assert.ok(adminShell.includes(`label: "${label}"`), label);
+  assert.ok(!adminShell.includes('label: "돈·수납"'));
   assert.ok(!adminShell.includes('label: "요청·신청함"'));
   assert.match(adminShell, /label="신청함"/);
-  assert.match(adminShell, /설정·도구/);
   assert.doesNotMatch(adminShell, /label="체험\/수강신청 관리"/);
   assert.match(applyClient, /체험\/수강신청 관리/);
   assert.match(applyClient, /체험\/수강신청 관리/);

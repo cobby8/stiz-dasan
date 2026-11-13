@@ -10,7 +10,9 @@ import AcademyTheme from "@/components/academy/AcademyTheme";
 import FontFreeIcon from "@/components/ui/FontFreeIcon";
 import AppBackButton from "@/components/AppBackButton";
 import AccountViewSwitcher from "@/components/AccountViewSwitcher";
+import SectionTabs from "@/components/admin/SectionTabs";
 import type { AccountViewOption } from "@/lib/account-views";
+import { findAdminSection, isInAdminSection, type AdminSectionKey } from "@/lib/admin-sections";
 
 const LazyBackupButtons = dynamic(() => import("./AdminBackupButtons"), {
     ssr: false,
@@ -39,43 +41,39 @@ function isShuttlePath(pathname: string): boolean {
 // 신청함을 거치는 옛 화면 목록 — 그 화면에 들어가 있으면 «신청함» 메뉴를 켜 둔다(길 잃지 않게)
 // 2026-11-10 원장 결정 k4: «신청·상담»(/admin/apply) 메뉴도 신청함 체험·수강 탭과 ⚙ 신청 설정으로 옮겼다(주소는 산다)
 const INBOX_LEGACY_PATHS = ["/admin/requests", "/admin/enrollment-changes", "/admin/withdrawals", "/admin/role-requests", "/admin/kakao-requests", "/admin/rental", "/admin/apply"] as const;
-const EXTRA_GROUPS = [
-    { label: "수업 운영", icon: "event_note", items: [
-        ["/admin/absence", "정규 결석 신고", "🙅"],
-        ["/admin/makeup", "보강", "🔄"],
-        ["/admin/schedule", "수업시간표 관리", "📅"],
-        ["/admin/attendance/report", "수업 리포트", "📝"],
-        ["/staff/quick-post", "사진 빠른 업로드", "⚡"],
-        ["/admin/seasonal", "방학특강", "🏀"],
+// 2026-11-13 관리자 메뉴 정리(원장 점검표 승인): 비슷한 화면은 메뉴 하나 + 화면 위 탭 줄로 묶었다.
+//   - section 이 있는 메뉴 = 그 묶음(src/lib/admin-sections.ts)의 어느 화면에 있어도 켜진다
+//   - 메뉴에서만 뺀 화면(주소·화면은 산다): 유니폼 주문(/admin/uniform) · 사진 빠른 업로드(/staff/quick-post → 갤러리 «빠른 업로드» 버튼)
+//   - 수강생 이관(/admin/import)은 원장 지시로 화면·API 를 삭제했다(가져온 자료는 DB 에 그대로)
+type ExtraNavItem = { href: string; label: string; icon: string; section?: AdminSectionKey };
+const EXTRA_GROUPS: ReadonlyArray<{ label: string; icon: string; items: readonly ExtraNavItem[] }> = [
+    { label: "수업", icon: "event_note", items: [
+        { href: "/admin/schedule", label: "수업시간표 관리", icon: "📅" },
+        { href: "/admin/seasonal", label: "방학특강", icon: "🏀" },
     ] },
-    { label: "돈·수납", icon: "savings", items: [
-        ["/admin/payment-requests", "입금 확인·영수증", "🧾"],
-        ["/admin/payment-confirmations", "현장 수납 승인", "💵"],
-        ["/admin/pos-reconcile", "POS 결제 대사", "🧮"],
-        ["/admin/pos-plugin", "POS 연결", "🔌"],
-        ["/admin/uniform", "유니폼 주문", "👕"],
+    { label: "홈페이지", icon: "web", items: [
+        { href: "/admin/notices", label: "공지사항 관리", icon: "📢" },
+        // 학원 소개·코치·프로그램·갤러리·사진 공개 회수·FAQ·후기 탭
+        { href: "/admin/settings", label: "홈페이지 관리", icon: "🏫", section: "homepage" },
     ] },
-    { label: "홈페이지·소식", icon: "web", items: [
-        ["/admin/settings", "학원 소개 관리", "🏫"],
-        ["/admin/coaches", "코치/강사진 관리", "👤"],
-        ["/admin/programs", "프로그램 관리", "📋"],
-        ["/admin/notices", "공지사항 관리", "📢"],
-        ["/admin/gallery", "사진/영상 갤러리", "📸"],
-        ["/admin/faq", "FAQ 관리", "❓"],
-        ["/admin/testimonials", "학부모 후기", "⭐"],
+    { label: "설정", icon: "settings", items: [
+        { href: "/admin/staff", label: "스태프", icon: "👥" },
+        // 문자/템플릿·담당자 전달 장부·카카오 정책 답변 탭
+        { href: "/admin/sms", label: "문자·알림", icon: "💬", section: "messaging" },
+        // 이용약관·개인정보처리방침 탭
+        { href: "/admin/terms", label: "약관·방침", icon: "📜", section: "policy" },
+        { href: "/admin/pos-plugin", label: "POS 연결", icon: "🔌" },
+        // 화면은 다른 작업이 다시 만든다 — 메뉴 이름만 «통계»
+        { href: "/admin/stats", label: "통계", icon: "📊" },
     ] },
-    { label: "설정·도구", icon: "settings", items: [
-        ["/admin/stats", "상세 통계", "📊"],
-        ["/admin/notification-deliveries", "담당자 전달 장부", "🔔"],
-        ["/admin/sms", "문자/템플릿", "💬"],
-        ["/admin/staff", "스태프", "👥"],
-        ["/admin/kakao-policy", "카카오 정책 답변", "📘"],
-        ["/admin/media-revocations", "사진 공개 회수", "🚫"],
-        ["/admin/import", "수강생 이관", "📥"],
-        ["/admin/terms", "이용약관 관리", "📜"],
-        ["/admin/privacy", "개인정보처리방침", "🔐"],
-    ] },
-] as const;
+];
+
+// 메뉴 한 칸이 켜졌는가 — 묶음 메뉴는 묶음 안 어느 화면이든, 나머지는 그 주소(하위 포함)일 때.
+// 방학특강 셔틀 화면(/admin/seasonal/shuttle 등)은 «셔틀» 메뉴가 켜지므로 «방학특강»은 끈다.
+function isExtraItemActive(pathname: string, item: ExtraNavItem): boolean {
+    if (item.section) return isInAdminSection(pathname, item.section);
+    return matchesNavPath(pathname, item.href) && !(item.href === "/admin/seasonal" && isShuttlePath(pathname));
+}
 
 export default function AdminShellClient({
     children,
@@ -99,6 +97,8 @@ export default function AdminShellClient({
     const userEmail = initialUserEmail;
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [systemToolsOpen, setSystemToolsOpen] = useState(false);
+    // 지금 화면이 속한 탭 묶음(없으면 null → 탭 줄 없음)
+    const activeSection = findAdminSection(pathname);
     useEffect(() => {
         // 화면 이동 다음 프레임에 닫아 새 페이지 렌더와 메뉴 상태 변경을 겹치지 않는다.
         const frame = window.requestAnimationFrame(() => {
@@ -140,26 +140,28 @@ export default function AdminShellClient({
                     <span className="text-xs font-bold text-[var(--color-academy-muted)] tracking-tight">학원 운영</span>
                 </div>
                 <nav aria-label="관리자 업무 메뉴" className="min-h-0 p-3 space-y-1 flex-1 overflow-y-auto [@media(max-height:500px)]:p-2">
-                    <NavItem href="/admin" active={pathname === "/admin"} icon="📊" label="오늘 업무" />
+                    {/* 2026-11-13 «오늘 업무» → «대시보드»(원장 점검표) */}
+                    <NavItem href="/admin" active={pathname === "/admin"} icon="📊" label="대시보드" />
                     {/* 신청함 — 체험·수강·상담·대관·변경·기타 6탭. 배지 = 처리 필요 건수 */}
                     <NavItem href="/admin/inbox" active={matchesNavPath(pathname, "/admin/inbox") || INBOX_LEGACY_PATHS.some((path) => matchesNavPath(pathname, path))} icon="📨" label="신청함" badge={inboxCount ?? undefined} />
                     <NavItem href="/admin/students" active={matchesNavPath(pathname, "/admin/students")} icon="🧑‍🎓" label="원생" />
-                    <NavItem href="/admin/attendance" active={matchesNavPath(pathname, "/admin/attendance") && !matchesNavPath(pathname, "/admin/attendance/report")} icon="✅" label="수업·출결" />
-                    <NavItem href="/admin/finance" active={matchesNavPath(pathname, "/admin/finance")} icon="💳" label="청구·수납" />
+                    {/* 출결·정규 결석 신고·보강·수업 리포트 탭 묶음 어디서든 켜진다 */}
+                    <NavItem href="/admin/attendance" active={isInAdminSection(pathname, "attendance")} icon="✅" label="수업·출결" />
+                    {/* 청구·수납·입금 확인·현장 수납 승인·POS 결제 대사 탭 묶음 */}
+                    <NavItem href="/admin/finance" active={isInAdminSection(pathname, "finance")} icon="💳" label="청구·수납" />
                     <NavItem href="/admin/shuttle/regular-dispatch" active={isShuttlePath(pathname)} icon="🚌" label="셔틀" />
                     {EXTRA_GROUPS.map((group) => (
-                        <details key={`${group.label}-${pathname}`} className="group border-t border-[var(--color-academy-line)] pt-1" open={group.items.some(([href]) => matchesNavPath(pathname, href) && !(href === "/admin/seasonal" && isShuttlePath(pathname)))}>
+                        <details key={`${group.label}-${pathname}`} className="group border-t border-[var(--color-academy-line)] pt-1" open={group.items.some((item) => isExtraItemActive(pathname, item))}>
                             <summary className="flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-lg px-4 py-2 text-sm font-bold text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
                                 <span className="material-symbols-outlined text-xl leading-none" aria-hidden="true">{group.icon}</span>
                                 <span className="min-w-0 flex-1">{group.label}</span>
                                 <FontFreeIcon name="expand_more" size={18} className="transition-transform group-open:rotate-180" />
                             </summary>
                             <div className="space-y-1 border-l border-[var(--color-academy-line)] pl-2">
-                                {group.items.map(([href, label, icon]) => (
-                                    <NavItem key={href} href={href} label={label} icon={icon} compact active={matchesNavPath(pathname, href) && !(href === "/admin/seasonal" && isShuttlePath(pathname))} />
+                                {group.items.map((item) => (
+                                    <NavItem key={item.href} href={item.href} label={item.label} icon={item.icon} compact active={isExtraItemActive(pathname, item)} />
                                 ))}
-                                {group.label === "홈페이지·소식" && <NavItem href="/" label="홈페이지 보기" icon="🌐" compact />}
-                                {group.label === "설정·도구" && <>
+                                {group.label === "설정" && <>
                                     <button type="button" aria-controls="admin-system-tools" aria-expanded={systemToolsOpen} onClick={() => setSystemToolsOpen((current) => !current)} className="flex min-h-11 w-full items-center gap-3 rounded-lg px-4 py-2 text-left text-sm text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
                                         <FontFreeIcon name="sync" size={18} /><span className="flex-1">시스템 도구</span><FontFreeIcon name="expand_more" size={18} />
                                     </button>
@@ -195,6 +197,15 @@ export default function AdminShellClient({
                             </button>
                         </form>
                     </div>
+                    {/* 2026-11-13 «홈페이지 보기»는 메뉴 묶음에서 빼고 맨 아래 작은 링크로(가끔 쓰는 바깥 이동) */}
+                    <Link
+                        href="/"
+                        prefetch={false}
+                        className="mt-1 flex min-h-11 items-center gap-2 rounded-lg px-2 text-xs font-medium text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-primary)] [@media(max-height:500px)]:mt-0 [@media(max-height:500px)]:shrink-0"
+                    >
+                        <span className="material-symbols-outlined text-lg leading-none" aria-hidden="true">public</span>
+                        홈페이지 보기
+                    </Link>
                 </div>
             </aside>
 
@@ -219,6 +230,8 @@ export default function AdminShellClient({
                     </div>
                 </header>
                 <div className="admin-table-scope w-full min-w-0 flex-1 p-4 md:p-6 xl:p-8">
+                    {/* 묶인 화면이면 맨 위에 탭 줄(같은 묶음의 다른 화면으로 바로 이동). 화면 파일은 건드리지 않는다 */}
+                    {activeSection && <SectionTabs label={activeSection.section.label} tabs={activeSection.section.tabs} activeHref={activeSection.activeHref} />}
                     {children}
                 </div>
             </main>
@@ -227,7 +240,7 @@ export default function AdminShellClient({
 }
 
 // 메뉴는 기능을 유지하고 공통 심볼로 바꿔 작은 화면에서도 같은 굵기로 읽히게 한다.
-const NAV_SYMBOLS: Record<string, string> = {"🏫": "school", "👤": "person", "🧑\u200d🏫": "sports", "📋": "assignment", "📅": "calendar_month", "📢": "campaign", "📸": "photo_library", "⚡": "bolt", "❓": "help", "⭐": "star", "📜": "description", "🔐": "lock", "📊": "dashboard", "📝": "edit_document", "🧑\u200d🎓": "groups", "✅": "fact_check", "🙅": "event_busy", "🔁": "swap_horiz", "🧾": "receipt_long", "💳": "payments", "👕": "checkroom", "🏀": "sports_basketball", "🚌": "directions_bus", "📩": "inbox", "💬": "chat", "📘": "menu_book", "🔔": "notifications", "🔄": "event_repeat", "📥": "download", "👥": "badge", "💵": "account_balance_wallet", "🧮": "calculate", "🗨️": "forum", "🚫": "hide_image", "🌐": "public", "🏟️": "stadium", "📨": "move_to_inbox"};
+const NAV_SYMBOLS: Record<string, string> = {"🏫": "school", "👤": "person", "🧑\u200d🏫": "sports", "📋": "assignment", "📅": "calendar_month", "📢": "campaign", "📸": "photo_library", "⚡": "bolt", "❓": "help", "⭐": "star", "📜": "description", "🔐": "lock", "📊": "dashboard", "📝": "edit_document", "🧑\u200d🎓": "groups", "✅": "fact_check", "🙅": "event_busy", "🔁": "swap_horiz", "🧾": "receipt_long", "💳": "payments", "👕": "checkroom", "🏀": "sports_basketball", "🚌": "directions_bus", "📩": "inbox", "💬": "chat", "📘": "menu_book", "🔔": "notifications", "🔄": "event_repeat", "📥": "download", "👥": "badge", "💵": "account_balance_wallet", "🧮": "calculate", "🗨️": "forum", "🚫": "hide_image", "🌐": "public", "🏟️": "stadium", "📨": "move_to_inbox", "🔌": "power"};
 
 function NavItem({ href, active, icon, label, badge, compact = false }: { href: string; active?: boolean; icon: string; label: string; badge?: number; compact?: boolean }) {
     return (

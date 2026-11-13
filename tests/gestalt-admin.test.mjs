@@ -164,15 +164,15 @@ test("A-11·A-12 사이드바: 상세 메뉴 3묶음, 아이콘 겹침 해소, �
   assert.ok(!shell.includes('label: "요청·신청함"'));
   assert.match(shell, /href="\/admin\/inbox"[^\n]*label="신청함"/);
   const requests = shell.slice(shell.indexOf("const INBOX_LEGACY_PATHS"), shell.indexOf("const EXTRA_GROUPS"));
-  const classes = shell.slice(shell.indexOf('label: "수업 운영"'), shell.indexOf('label: "돈·수납"'));
-  const money = shell.slice(shell.indexOf('label: "돈·수납"'), shell.indexOf('label: "홈페이지·소식"'));
   for (const href of ["/admin/requests", "/admin/enrollment-changes", "/admin/withdrawals", "/admin/role-requests", "/admin/kakao-requests"]) assert.ok(requests.includes(`"${href}"`), href);
-  for (const href of ["/admin/absence", "/admin/makeup", "/admin/schedule", "/admin/attendance/report", "/staff/quick-post", "/admin/seasonal"]) assert.ok(classes.includes(`"${href}"`), href);
-  for (const href of ["/admin/payment-requests", "/admin/payment-confirmations", "/admin/pos-reconcile", "/admin/uniform"]) assert.ok(money.includes(`"${href}"`), href);
+  // 2026-11-13 메뉴 정리: 묶음 3개(수업/홈페이지/설정). 결석·보강·리포트·돈·홈페이지 하위 화면은 탭 줄로
+  //   (묶음 내용·탭 연결은 tests/admin-menu-sections.test.mjs)
+  const classes = shell.slice(shell.indexOf('label: "수업"'), shell.indexOf('label: "홈페이지"'));
+  for (const href of ["/admin/schedule", "/admin/seasonal"]) assert.ok(classes.includes(`"${href}"`), href);
+  assert.ok(!shell.includes('label: "돈·수납"'));
   // 같은 기호가 두 메뉴에 붙지 않는다(카카오/문자, 사진 회수/개인정보, 홈페이지 보기/학원 소개)
-  assert.match(shell, /\["\/admin\/media-revocations", "사진 공개 회수", "🚫"\]/);
-  assert.match(shell, /label="홈페이지 보기" icon="🌐"/);
   assert.match(shell, /"🗨️": "forum", "🚫": "hide_image", "🌐": "public"/);
+  assert.match(shell, /aria-hidden="true">public<\/span>\s*홈페이지 보기/);
   assert.match(shell, /title="로그아웃"\s*aria-label="로그아웃"\s*className="inline-flex h-11 w-11/);
 });
 

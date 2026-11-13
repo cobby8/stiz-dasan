@@ -39,7 +39,8 @@ test("빈 번호·자리채움 번호는 사람을 찾는 열쇠로 쓰지 않�
 test("학부모를 찾는 모든 경로가 글자 그대로 비교하지 않는다", async () => {
   // 되돌아가면 4가족 사고가 그대로 재현된다.
   // 승인·엑셀 일괄등록·시트 임포트 세 곳이 같은 결함을 갖고 있었다(2026-09-28 전수 확인).
-  const files = ["src/app/actions/admin.ts", "src/app/api/admin/import-students/route.ts"];
+  // 2026-11-13 시트 임포트(api/admin/import-students)는 수강생 이관 도구와 함께 삭제 — 남은 경로만 검사
+  const files = ["src/app/actions/admin.ts"];
   for (const file of files) {
     const source = await readFile(file, "utf8");
     assert.doesNotMatch(
