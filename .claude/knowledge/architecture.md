@@ -3,6 +3,12 @@
 <!-- 프로젝트의 폴더 구조, 파일 역할, 핵심 패턴을 기록 -->
 <!-- 2026-11-10 정리: 48항목 → 주제별 19묶음. 원래 항목은 묶음 안 하위 항목(원래 날짜·제목)으로 내용 그대로 보존. 새 항목은 맞는 묶음에 하위 항목으로 넣는다 -->
 
+### [2026-11-14] 학부모 «아이 기록»(/mypage/record) = 순수 규칙 + 첫 SQL 권한 재확인 조회
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 규칙 `src/lib/parent/childRecordRules.ts`(청구 달=year/month 없으면 납기일 달·환불/취소 제외 합계·월 묶음 펼침·출석률 (출석+지각)÷(출석+지각+결석−보강 대체)·분모 0=null·타임라인) + 조회 `childRecordQuery.ts`(`getChildRecord(parent, student, db=prisma)` 첫 SQL `s.id=$2 AND childAccessSql AND notMerged`, 0행이면 다른 조회·getStudentTenure 안 돔, 섹션별 실패 null, 금액·영수증은 payerAccess). 보강 대체 판정 = ABSENT + 같은 반·KST 날짜 RegularAbsence(취소 아님) + MakeupCredit `REGULAR:{반}:{날짜}` USED. 화면은 홈 소속(PARENT_TABS 홈 also — isParentTabActive 홈도 also 를 본다). 시험은 db 를 가짜로 바꿔 끼워 IDOR 경로를 실행한다(tests/parent-child-record-rules). 아이콘은 UI 통일 가드(127개 상한) 때문에 글자(▾·영수증)로.
+- **참조횟수**: 0
+
 ### [2026-11-14] 비회원 결제 링크 /pay/<토큰> = 결제 장부의 «소유자» 갈래 하나 추가
 - **분류**: architecture
 - **발견자**: developer

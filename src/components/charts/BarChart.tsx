@@ -6,11 +6,17 @@ import { CHART_COLORS } from "./chartColors";
 // 막대 그래프 컴포넌트 — 반별 정원, 코치 워크로드 등에 사용
 // 순수 SVG로 구현, 호버 시 값 표시
 interface BarChartProps {
-    data: { label: string; value: number; max?: number }[];
+    // missing = 기록이 없는 칸(0 과 다르다 — 막대 대신 «–»), valueLabel = 막대 위에 늘 보일 값 글자(showValues 일 때)
+    data: { label: string; value: number; max?: number; missing?: boolean; valueLabel?: string }[];
     color?: string;        // 막대 색상 (CHART_COLORS 값)
     height?: number;       // SVG 높이 (px)
     unit?: string;         // 값 뒤 단위
     showMax?: boolean;     // max 값 표시 여부 (정원 대비 등)
+    // 2026-11-14 학부모 «아이 기록» 출석 막대: 휴대폰에서 글자가 12px 아래로 줄지 않게 그림 폭·글자 크기를 고를 수 있게 하고,
+    // 마우스가 없는 휴대폰에서도 값이 보이게 막대 위에 값을 늘 적는다(기본값은 예전 그대로).
+    viewWidth?: number;    // SVG 그림 폭(기본 500)
+    fontSize?: number;     // 축·값 글자 크기(기본 10)
+    showValues?: boolean;  // 막대 위 값 늘 보이기
 }
 
 export default function BarChart({
@@ -19,6 +25,9 @@ export default function BarChart({
     height = 200,
     unit = "",
     showMax = false,
+    viewWidth = 500,
+    fontSize = 10,
+    showValues = false,
 }: BarChartProps) {
     const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
@@ -28,7 +37,7 @@ export default function BarChart({
 
     // SVG 레이아웃
     const padding = { top: 20, right: 10, bottom: 30, left: 10 };
-    const width = 500;
+    const width = viewWidth;
     const chartW = width - padding.left - padding.right;
     const chartH = height - padding.top - padding.bottom;
 
@@ -91,8 +100,20 @@ export default function BarChart({
                             />
                         )}
 
+                        {/* 기록 없는 칸 — 막대 대신 «–» (0% 로 보이지 않게) */}
+                        {d.missing && (
+                            <text x={x + barWidth / 2} y={padding.top + chartH - 4} textAnchor="middle" fill={CHART_COLORS.axis} fontSize={fontSize}>–</text>
+                        )}
+
+                        {/* 막대 위 값(늘 보이기) */}
+                        {showValues && !d.missing && (
+                            <text x={x + barWidth / 2} y={Math.max(fontSize, y - 4)} textAnchor="middle" fill={CHART_COLORS.value} fontSize={fontSize} fontWeight="600">
+                                {d.valueLabel ?? `${d.value.toLocaleString()}${unit}`}
+                            </text>
+                        )}
+
                         {/* 값 막대 */}
-                        <rect
+                        {!d.missing && <rect
                             x={x}
                             y={y}
                             width={barWidth}
@@ -101,10 +122,10 @@ export default function BarChart({
                             fill={color}
                             opacity={isHovered ? 1 : 0.8}
                             className="transition-opacity duration-150"
-                        />
+                        />}
 
                         {/* 호버 시 값 표시 */}
-                        {isHovered && (
+                        {isHovered && !showValues && !d.missing && (
                             <>
                                 <rect
                                     x={x + barWidth / 2 - 30}
@@ -134,7 +155,7 @@ export default function BarChart({
                             y={height - 6}
                             textAnchor="middle"
                             fill={CHART_COLORS.axis}
-                            fontSize="10"
+                            fontSize={fontSize}
                         >
                             {d.label}
                         </text>

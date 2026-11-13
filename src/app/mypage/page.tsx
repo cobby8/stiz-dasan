@@ -10,6 +10,7 @@ import { getParentShuttleOverview, getShuttleDriverContact } from "@/lib/shuttle
 import { getPendingSeasonalChildren } from "@/lib/seasonal/parent-pending";
 import { getParentPaymentRequests } from "@/lib/payments/parent-payment-request";
 import { getParentClassStatusLines } from "@/lib/enrollment/parent-change-request";
+import { getChildRecordHomeLines } from "@/lib/parent/childRecordQuery";
 
 export const dynamic = "force-dynamic";
 
@@ -60,7 +61,8 @@ export default async function MyPageDashboard({
     // getMyPageData 의 자녀별 최근 5건으로 세면 오래된 미납이 빠져 탭과 숫자가 달라진다(2026-11-09). 실패하면 null → 예전 기준으로.
     // 반 상태 한 줄(휴원 예정·검토 중·휴원 중) — 실패해도 홈은 그대로 보이게 빈 목록으로.
     // 알림 목록·안 읽은 수는 머리줄 🔔(layout)이 읽는다(2026-11-10) — 홈에서는 읽지 않는다
-    const [notices, myRequests, shuttleOverview, driverContact, makeup, seasonal, paymentRows, classStatusLines] = await Promise.all([
+    // 아이 기록 한 줄(다닌 기간·올해 출석률) — 실패하면 빈 값(줄은 «전체 기록»으로 남는다)
+    const [notices, myRequests, shuttleOverview, driverContact, makeup, seasonal, paymentRows, classStatusLines, recordLines] = await Promise.all([
         // 공지·보낸 메시지·셔틀·기사 연락처도 아래 4개처럼 실패하면 빈 값 — 한 칸 조회가 실패해도 홈 전체가 오류로 바뀌지 않게(d5)
         getNoticesByClassIds(classIds, 10).catch(() => []),
         getMyRequests(data.parent.id).catch(() => []),
@@ -70,6 +72,7 @@ export default async function MyPageDashboard({
         getUpcomingSeasonalSeats(parentAuth.appUserId).catch(() => null),
         getParentPaymentRequests(parentAuth.appUserId).catch(() => null),
         getParentClassStatusLines(parentAuth.appUserId).catch(() => []),
+        getChildRecordHomeLines(parentAuth.appUserId).catch(() => ({} as Record<string, string>)),
     ]);
     // 미납만 홈으로 넘긴다(필요한 칸만 — 요청 내역·영수증은 청구 탭이 본다)
     const pendingPayments = paymentRows
@@ -81,5 +84,5 @@ export default async function MyPageDashboard({
     const childParam = (await searchParams)?.child;
     const initialChildId = data.children.find((c) => c.id === childParam)?.id ?? data.children[0].id;
 
-    return <MyPageClient initialChildId={initialChildId} data={data} notices={notices} myRequests={myRequests} parentShuttleOverview={shuttleOverview} shuttleDriverContact={driverContact} pendingSeasonalChildren={pendingSeasonalChildren} makeupAvailable={makeup?.counts.available ?? 0} seasonalUpcoming={seasonal?.seats.length ?? 0} pendingPayments={pendingPayments} classStatusLines={classStatusLines} />;
+    return <MyPageClient initialChildId={initialChildId} data={data} notices={notices} myRequests={myRequests} parentShuttleOverview={shuttleOverview} shuttleDriverContact={driverContact} pendingSeasonalChildren={pendingSeasonalChildren} makeupAvailable={makeup?.counts.available ?? 0} seasonalUpcoming={seasonal?.seats.length ?? 0} pendingPayments={pendingPayments} classStatusLines={classStatusLines} recordLines={recordLines} />;
 }
