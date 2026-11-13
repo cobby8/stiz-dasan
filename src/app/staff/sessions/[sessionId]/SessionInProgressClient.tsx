@@ -10,6 +10,7 @@ import {
   saveStaffAttendance,
 } from "@/app/actions/staff-sessions";
 import { SessionPhotoUploader } from "@/components/staff/SessionPhotoUploader";
+import { SessionVideoUploader } from "@/components/staff/SessionVideoUploader";
 // 사유 라벨은 학부모 신고 화면과 같은 표를 쓴다(두 화면의 표기가 갈리면 안 된다).
 import { REASON_LABEL as ABSENCE_REASON_LABEL } from "@/lib/regular/regularAbsenceRules";
 import { VoiceToTextButton } from "@/components/staff/VoiceToTextButton";
@@ -761,6 +762,12 @@ export default function SessionInProgressClient({
             .filter((student) => student.studentId)
             .map((student) => ({ id: student.studentId as string, name: student.name }))}
         />
+      </section>
+
+      {/* 2026-11-14 수업 영상(원장 결정) — 찍어 올리면 이 수업 학생의 보호자만 학부모 화면에서 본다 */}
+      <section id="session-videos" className="scroll-mt-40 rounded-2xl border border-[var(--color-academy-line)] bg-white p-5">
+        <h2 className="academy-section-title mb-3">수업 영상</h2>
+        <SessionVideoUploader sessionId={session.id} />
       </section>
 
       <section id="session-memo" className="scroll-mt-40 rounded-2xl border border-[var(--color-academy-line)] bg-white p-5">

@@ -10,6 +10,12 @@ final class FileSelectionPolicy {
     static final int MAX_FILES = 10;
     static final long MAX_FILE_BYTES = 25L * 1024 * 1024;
     static final long MAX_TOTAL_BYTES = 100L * 1024 * 1024;
+    // 수업 영상(2026-11-14): 영상 한 개는 사진보다 크다. 서버 버킷 상한(50MB)보다 넉넉히 받아
+    // 너무 큰 영상은 웹 화면이 «1분 이내로 찍어 주세요»로 안내하게 한다(앱이 조용히 거절하지 않게).
+    static final long MAX_VIDEO_BYTES = 100L * 1024 * 1024;
+    // 동영상 촬영 앱에 주는 상한(카메라 앱이 지키면 이 크기에서 녹화를 멈춘다) — 서버 버킷 상한과 같다
+    static final long VIDEO_CAPTURE_SIZE_LIMIT = 50L * 1024 * 1024;
+    static final int VIDEO_CAPTURE_SECONDS = 60;
     private FileSelectionPolicy() { }
 
     // Process-wide allocation prevents a late result from a rotated Activity matching a new chooser.
@@ -37,6 +43,22 @@ final class FileSelectionPolicy {
     static boolean imagesOnly(String[] accepted) {
         for (String type : accepted) if (!type.startsWith("image/")) return false;
         return accepted.length > 0;
+    }
+
+    /** 받는 형식이 영상뿐인가 — 촬영 요청이면 사진 카메라 대신 동영상 카메라를 연다 */
+    static boolean videosOnly(String[] accepted) {
+        for (String type : accepted) if (!type.startsWith("video/")) return false;
+        return accepted.length > 0;
+    }
+
+    /** 수업 영상으로 받는 형식(mp4·mov·webm) — 웹 서버의 허용 목록과 같다 */
+    static boolean isVideoType(String type) {
+        return "video/mp4".equals(type) || "video/quicktime".equals(type) || "video/webm".equals(type);
+    }
+
+    /** 파일 한 개 상한 — 영상이면 영상 상한, 그 밖은 기존 상한 */
+    static long maxFileBytes(String mime, String name) {
+        return isVideoType(effectiveImageType(mime, name)) || isVideoType(typeForName(name)) ? MAX_VIDEO_BYTES : MAX_FILE_BYTES;
     }
 
     static boolean accepts(String[] accepted, String mime, String name) {
@@ -85,6 +107,9 @@ final class FileSelectionPolicy {
             case "xls": return "application/vnd.ms-excel";
             case "xlsx": return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
             case "pdf": return "application/pdf";
+            case "mp4": case "m4v": return "video/mp4";
+            case "mov": return "video/quicktime";
+            case "webm": return "video/webm";
             default: return "";
         }
     }
@@ -101,7 +126,12 @@ final class FileSelectionPolicy {
     }
 
     static boolean bounded(int count, boolean multiple, long bytes, long total) {
+        return bounded(count, multiple, bytes, total, MAX_FILE_BYTES);
+    }
+
+    /** 파일 한 개 상한을 형식별로(maxFileBytes) 넘겨받는 판정 — 영상은 MAX_VIDEO_BYTES 까지 */
+    static boolean bounded(int count, boolean multiple, long bytes, long total, long maxFileBytes) {
         return count > 0 && count <= (multiple ? MAX_FILES : 1)
-            && bytes > 0 && bytes <= MAX_FILE_BYTES && total >= bytes && total <= MAX_TOTAL_BYTES;
+            && bytes > 0 && bytes <= maxFileBytes && total >= bytes && total <= MAX_TOTAL_BYTES;
     }
 }

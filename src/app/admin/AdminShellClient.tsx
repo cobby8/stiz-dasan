@@ -63,6 +63,8 @@ const EXTRA_GROUPS: ReadonlyArray<{ label: string; icon: string; items: readonly
         // 이용약관·개인정보처리방침 탭
         { href: "/admin/terms", label: "약관·방침", icon: "📜", section: "policy" },
         { href: "/admin/pos-plugin", label: "POS 연결", icon: "🔌" },
+        // 2026-11-14 수업 영상: 원장 유튜브 채널 연결(원장만 — 화면에서 다시 확인)
+        { href: "/admin/youtube", label: "유튜브 연결", icon: "▶️" },
     ] },
 ];
 

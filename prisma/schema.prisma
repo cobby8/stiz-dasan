@@ -584,6 +584,7 @@ model Session {
   attendances                 Attendance[]
   shuttleRoutePassengers      ShuttleRoutePassenger[]
   studentNotes                StudentSessionNote[]
+  videos                      SessionVideo[]
   class                       Class                      @relation(fields: [classId], references: [id])
   specialProgramSessionDate   SpecialProgramSessionDate? @relation(fields: [specialProgramSessionDateId], references: [id], onDelete: Restrict)
 
@@ -3619,4 +3620,54 @@ model NativeAuthFlow {
   createdAt     DateTime  @default(now()) @db.Timestamptz(6)
 
   @@index([expiresAt], map: "NativeAuthFlow_expiry")
+}
+
+/// 수업 영상(2026-11-14) — 선생님이 수업 화면에서 찍어 올리고, 그 수업 학생의 보호자만 본다.
+/// 서버 raw SQL(src/lib/sessionVideo/*)만 사용한다. RLS 켜짐(FORCE)·anon/authenticated 권한 회수.
+/// CHECK 제약(youtubeStatus·mimeType 값 목록)과 비공개 버킷 session-videos 는 migration 20261114120000_session_video 에 있다.
+model SessionVideo {
+  id                String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  sessionId         String
+  storageBucket     String
+  storagePath       String
+  mimeType          String // video/mp4 · video/quicktime · video/webm (DB CHECK)
+  sizeBytes         BigInt
+  durationSec       Int?
+  uploadedByUserId  String?
+  createdAt         DateTime  @default(now()) @db.Timestamptz(6)
+  registeredAt      DateTime? @db.Timestamptz(6) // NULL = 업로드 주소만 받은 예약(목록 제외)
+  youtubeVideoId    String?
+  youtubeStatus     String    @default("PENDING") // PENDING·UPLOADING·UPLOADED·PRIVATE_LOCKED·FAILED·SKIPPED (DB CHECK)
+  youtubePrivacy    String?
+  youtubeAttempts   Int       @default(0)
+  youtubeLastError  String?
+  youtubeLockedAt   DateTime? @db.Timestamptz(6)
+  youtubeUploadedAt DateTime? @db.Timestamptz(6)
+  youtubeDeletedAt  DateTime? @db.Timestamptz(6)
+  storageDeletedAt  DateTime? @db.Timestamptz(6)
+  deletedAt         DateTime? @db.Timestamptz(6)
+  updatedAt         DateTime  @default(now()) @db.Timestamptz(6)
+  session           Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([storageBucket, storagePath], map: "SessionVideo_storagePath_key")
+  @@index([sessionId, createdAt], map: "SessionVideo_sessionId_createdAt_idx")
+  @@index([youtubeStatus, registeredAt], map: "SessionVideo_youtube_queue_idx")
+}
+
+/// 유튜브 연결(한 행, id = 'default') — 원장 채널의 refresh token 은 AES-256-GCM 암호문으로만 둔다.
+/// 서버 raw SQL(src/lib/youtube/connection.ts)만 사용한다. RLS 켜짐(FORCE)·anon/authenticated 권한 회수.
+model YouTubeConnection {
+  id                    String    @id @default("default")
+  channelId             String
+  channelTitle          String?
+  refreshTokenEncrypted String
+  scope                 String?
+  connectedByUserId     String?
+  connectedAt           DateTime  @default(now()) @db.Timestamptz(6)
+  lastError             String?
+  lastErrorAt           DateTime? @db.Timestamptz(6)
+  quotaDay              String? // KST "YYYY-MM-DD"
+  quotaUsed             Int       @default(0)
+  quotaBlockedUntil     DateTime? @db.Timestamptz(6)
+  updatedAt             DateTime  @default(now()) @db.Timestamptz(6)
 }

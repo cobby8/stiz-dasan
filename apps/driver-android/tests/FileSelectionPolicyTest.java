@@ -59,6 +59,34 @@ public final class FileSelectionPolicyTest {
         check(!FileSelectionPolicy.bounded(1, true, FileSelectionPolicy.MAX_FILE_BYTES + 1, FileSelectionPolicy.MAX_FILE_BYTES + 1));
         check(!FileSelectionPolicy.bounded(4, true, 20, FileSelectionPolicy.MAX_TOTAL_BYTES + 1));
         check(!FileSelectionPolicy.bounded(1, true, 30, 20));
+        // 수업 영상(2026-11-14): mp4·mov·webm 촬영·선택 허용, 영상은 파일 한 개 상한이 더 크다
+        String[] videoAny = FileSelectionPolicy.acceptedTypes(new String[]{"video/*"});
+        check(FileSelectionPolicy.videosOnly(videoAny));
+        check(!FileSelectionPolicy.imagesOnly(videoAny));
+        check(!FileSelectionPolicy.videosOnly(images));
+        check(!FileSelectionPolicy.videosOnly(new String[]{"*/*"}));
+        check(FileSelectionPolicy.accepts(videoAny, "video/mp4", "capture.mp4"));
+        check(FileSelectionPolicy.accepts(videoAny, "video/quicktime", "IMG_0001.MOV"));
+        String[] videos = FileSelectionPolicy.acceptedTypes(new String[]{"video/mp4,video/quicktime,video/webm"});
+        check(FileSelectionPolicy.videosOnly(videos));
+        check(FileSelectionPolicy.accepts(videos, "video/mp4", "clip.mp4"));
+        check(FileSelectionPolicy.accepts(videos, "video/webm", "clip.webm"));
+        check(FileSelectionPolicy.accepts(videos, "application/octet-stream", "clip.mov"));
+        check(FileSelectionPolicy.accepts(videos, null, "clip.m4v"));
+        check(!FileSelectionPolicy.accepts(videos, "video/3gpp", "clip.3gp"));
+        check(!FileSelectionPolicy.accepts(videos, "video/mp4", "clip.mov"));
+        check(!FileSelectionPolicy.accepts(videos, "image/jpeg", "photo.jpg"));
+        check(!FileSelectionPolicy.accepts(images, "video/mp4", "clip.mp4"));
+        check(FileSelectionPolicy.typeForName("A.MOV").equals("video/quicktime"));
+        check(FileSelectionPolicy.maxFileBytes("video/mp4", "clip.mp4") == FileSelectionPolicy.MAX_VIDEO_BYTES);
+        check(FileSelectionPolicy.maxFileBytes("application/octet-stream", "clip.webm") == FileSelectionPolicy.MAX_VIDEO_BYTES);
+        check(FileSelectionPolicy.maxFileBytes("image/jpeg", "photo.jpg") == FileSelectionPolicy.MAX_FILE_BYTES);
+        check(FileSelectionPolicy.maxFileBytes("text/csv", "roster.csv") == FileSelectionPolicy.MAX_FILE_BYTES);
+        check(FileSelectionPolicy.MAX_VIDEO_BYTES > FileSelectionPolicy.MAX_FILE_BYTES);
+        check(FileSelectionPolicy.VIDEO_CAPTURE_SIZE_LIMIT <= FileSelectionPolicy.MAX_VIDEO_BYTES);
+        check(FileSelectionPolicy.bounded(1, false, 40L * 1024 * 1024, 40L * 1024 * 1024, FileSelectionPolicy.MAX_VIDEO_BYTES));
+        check(!FileSelectionPolicy.bounded(1, false, 40L * 1024 * 1024, 40L * 1024 * 1024));
+        check(!FileSelectionPolicy.bounded(1, false, FileSelectionPolicy.MAX_VIDEO_BYTES + 1, FileSelectionPolicy.MAX_VIDEO_BYTES + 1, FileSelectionPolicy.MAX_VIDEO_BYTES));
         System.out.println("File selection policy: " + checks + " checks passed");
     }
 }

@@ -12,15 +12,16 @@ const hrefs = (html) => [...html.matchAll(/<a [^>]*href="([^"]+)"/g)].map((m) =>
 const activeHrefs = (html) => [...html.matchAll(/<a [^>]*aria-current="page"[^>]*>/g)].map((m) => m[0].match(/href="([^"]+)"/)[1]);
 
 // 2026-11-13 통계 개편(원장 결정표): «통계»를 설정 묶음에서 빼 «대시보드» 바로 아래로 → 맨 위 7 + 설정 4
-test('사이드바 메뉴 = 맨 위 7 + 수업 2 + 홈페이지 2 + 설정 4 = 15칸(정리 전 33칸 + 홈페이지 보기)', () => {
+// 2026-11-14 수업 영상: 설정 묶음에 «유튜브 연결» 추가 → 설정 5
+test('사이드바 메뉴 = 맨 위 7 + 수업 2 + 홈페이지 2 + 설정 5 = 16칸(정리 전 33칸 + 홈페이지 보기)', () => {
   const nav = sidebar(renderAdminNavigation('/admin'));
   assert.deepEqual(hrefs(nav), [
     '/admin', '/admin/stats', '/admin/inbox', '/admin/students', '/admin/attendance', '/admin/finance', '/admin/shuttle/regular-dispatch',
     '/admin/schedule', '/admin/seasonal',
     '/admin/notices', '/admin/settings',
-    '/admin/staff', '/admin/sms', '/admin/terms', '/admin/pos-plugin',
+    '/admin/staff', '/admin/sms', '/admin/terms', '/admin/pos-plugin', '/admin/youtube',
   ]);
-  for (const label of ['대시보드', '홈페이지 관리', '문자·알림', '약관·방침', 'POS 연결', '통계', '시스템 도구']) assert.ok(nav.includes(label), label);
+  for (const label of ['대시보드', '홈페이지 관리', '문자·알림', '약관·방침', 'POS 연결', '유튜브 연결', '통계', '시스템 도구']) assert.ok(nav.includes(label), label);
   for (const gone of ['오늘 업무', '돈·수납', '상세 통계', '수강생 이관', '유니폼 주문', '사진 빠른 업로드', '학원 설정']) assert.ok(!nav.includes(gone), gone);
 });
 
