@@ -16,11 +16,15 @@ export const PAYMENT_REQUEST_KIND_LABEL: Record<PaymentRequestKind, string> = {
   RECEIPT: "영수증 요청",
 };
 
-/** 학부모가 고를 수 있는 결제 수단. 실제로 쓰는 것만 둔다. */
-export const PAYMENT_METHODS = ["TRANSFER", "RALLYZ", "CARD", "CASH"] as const;
+/**
+ * 학부모가 고를 수 있는 결제 수단. 실제로 쓰는 것만 둔다.
+ * 2026-11-14 랠리즈 은퇴 2단계: «랠리즈»는 새로 고를 수 없다(화면 버튼·서버 검사가 이 목록 하나를 쓴다).
+ */
+export const PAYMENT_METHODS = ["TRANSFER", "CARD", "CASH"] as const;
 export type PaymentMethodKind = (typeof PAYMENT_METHODS)[number];
 
-export const PAYMENT_METHOD_LABEL: Record<PaymentMethodKind, string> = {
+/** 표시 이름. RALLYZ 는 고를 수는 없지만 과거 요청을 «랠리즈»로 보여 주려고 남긴다. */
+export const PAYMENT_METHOD_LABEL: Record<PaymentMethodKind | "RALLYZ", string> = {
   TRANSFER: "계좌이체",
   RALLYZ: "랠리즈",
   CARD: "카드",

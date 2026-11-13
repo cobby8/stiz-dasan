@@ -56,7 +56,7 @@ export type PausePaymentInput = {
   status: string;
   paidProvider: string | null;
   method: string | null;
-  /** 랠리즈 장부 사본(method RALLYZ 또는 사본 감사기록) */
+  /** 랠리즈 장부 사본(method RALLYZ 또는 사본 감사기록). «사이트로 풀어 준» 사본은 false(일반 청구) */
   rallyzMirror: boolean;
   /** 이 청구를 덮는 «완료(DONE)» 토스 온라인 거래(없으면 null). method «가상계좌» = 무통장입금 */
   tossTx: { transactionId: string; method: string | null } | null;
@@ -118,7 +118,11 @@ export function paidChannel(p: Pick<PausePaymentInput, "paidProvider" | "method"
   const provider = String(p.paidProvider ?? "").trim().toUpperCase();
   if (provider === "TOSS" && p.tossTx) return p.tossTx.method === "가상계좌" ? "TOSS_VA" : "TOSS";
   if (provider === "TOSS_POS") return "TOSS_POS";
-  if (p.rallyzMirror || String(p.method ?? "").toUpperCase() === "RALLYZ") return "RALLYZ";
+  if (p.rallyzMirror) return "RALLYZ";
+  // method 만 RALLYZ 로 남은 경우(rallyzMirror=false = «사이트로 풀어 준» 사본, 2026-11-14 랠리즈 은퇴 2단계):
+  // 사이트가 받은 기록(paidProvider — 수동 MANUAL·토스 등)이 있으면 랠리즈로 받은 돈이 아니다 → 랠리즈 환불로 보내지 않는다.
+  // 받은 곳 기록이 없을 때만(과거 랠리즈 납부) 랠리즈로 본다.
+  if (String(p.method ?? "").toUpperCase() === "RALLYZ" && (provider === "" || provider === "RALLYZ")) return "RALLYZ";
   return "MANUAL";
 }
 

@@ -50,13 +50,15 @@ test("① 결제 가능한 청구는 기본 전부 체크, 막힌 청구(대표 
   const html = render({ items: [
     item("p1"),
     item("p2", { studentName: "합성 둘째", amount: 50000 }),
-    item("p3", { selectable: false, blockCode: "RALLYZ_MIRROR", blockReason: "랠리즈로 안내된 청구는 랠리즈 앱에서 결제해 주세요." }),
+    item("p3", { selectable: false, blockCode: "RALLYZ_MIRROR", blockReason: "이 청구는 아직 사이트 결제가 열리지 않았습니다. 학원으로 문의해 주세요." }),
   ] });
   // 체크박스 3개 중 2개만 체크, 막힌 1개는 disabled
   assert.equal((html.match(/type="checkbox"/g) || []).length, 3);
   assert.equal((html.match(/checked=""/g) || []).length, 2, "D3 기본 전부 체크(결제 가능한 것만)");
   assert.equal((html.match(/disabled=""[^>]*type="checkbox"|type="checkbox"[^>]*disabled=""/g) || []).length, 1);
-  assert.match(html, /랠리즈 앱에서 결제해 주세요/, "D4 막힌 이유를 그 줄에");
+  // 2026-11-14 랠리즈 은퇴 2단계: 랠리즈 앱으로 보내지 않고 학원 문의로 안내한다
+  assert.match(html, /아직 사이트 결제가 열리지 않았습니다/, "D4 막힌 이유를 그 줄에");
+  assert.doesNotMatch(html, /랠리즈 앱/);
   assert.match(html, /합성 둘째<\/span>p2 수강료/, "D2 형제 청구도 한 목록");
   assert.match(html, /선택 <span class="tabular-nums">2<\/span>건/);
   // 결제 방법 바로가기(2026-11-13): 지난번 방법이 없으면 큰 버튼 없이 버튼 줄 + 합계

@@ -639,7 +639,8 @@ test("실행: 랠리즈 사본 청구는 단건 결제를 시작하지 않는다
         const result = await ledger.createCheckoutSession({ invoiceId: "inv-1", owner, origin: "https://stiz.example", method: "CARD" });
         assert.equal(result.ok, false);
         assert.equal(result.rallyzMirror, true);
-        assert.match(result.error, /랠리즈/);
+        // 2026-11-14 랠리즈 은퇴 2단계: 랠리즈로 보내지 않고 학원 문의로 안내한다(차단 자체는 그대로)
+        assert.equal(result.error, "이 청구는 아직 사이트 결제가 열리지 않았습니다. 학원으로 문의해 주세요.");
         assert.equal(calls.some(isInsertTx), false);
     });
 });

@@ -506,7 +506,8 @@ export default function PaymentRequestClient({
                   <div className="mt-2 space-y-3 rounded-lg border border-[var(--color-academy-line)] p-3">
                     <div>
                       <p className="mb-1 text-xs font-medium text-[var(--color-academy-muted)]">어떻게 결제하셨나요?</p>
-                      <div className="grid grid-cols-2 gap-1.5 min-[375px]:grid-cols-4">
+                      {/* 선택지 3개(계좌이체·카드·현금) — 랠리즈는 2026-11-14 은퇴로 뺐다 */}
+                      <div className="grid grid-cols-3 gap-1.5">
                         {PAYMENT_METHODS.map((value) => (
                           <button
                             key={value}

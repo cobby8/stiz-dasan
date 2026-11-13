@@ -1,9 +1,12 @@
 // 학부모 청구 안내(청구서 링크·미납 알림) 사이트 발송 잠금 장치.
 //
-// 왜 필요한가: 실제 청구·납부 안내는 「랠리즈」 앱이 학부모에게 보낸다.
-// 사이트의 월 청구(Payment)는 대부분 랠리즈 청구서의 장부용 사본이고,
-// 토스 온라인 결제는 아직 심사 중이라 사이트 결제 링크를 열어도 결제가 안 된다.
-// 그래서 기본값은 "잠금"이고, 토스 라이브 이후 환경변수로만 다시 켠다.
+// 지금 사실(2026-11-14): 옛 학원 관리 서비스 「랠리즈」는 더 쓰지 않는다. 청구·납부 안내는 사이트가 보내고,
+// 토스 온라인 결제도 승인이 끝나 사이트 결제 링크로 실제 결제가 된다.
+// 잠금 스위치는 그대로 둔다 — 기본값은 "잠금"이고 환경변수 BILLING_PARENT_SEND_ENABLED="1" 일 때만 발송한다
+// (스위치를 끄면 언제든 학부모 발송을 한 번에 멈출 수 있다).
+//
+// 랠리즈 시절 청구의 «장부용 사본»(Payment)은 지금도 남아 있다. 사본은 사이트 결제·안내·자동 반영에서 빠지고,
+// 원장이 랠리즈 쪽 청구를 취소한 뒤 «사이트로 풀어 준» 사본만 일반 청구처럼 다룬다(rallyzMirrorExclusionSql).
 //
 // 이 파일은 다른 모듈을 import 하지 않는다(테스트에서 그대로 실행하기 위해).
 
@@ -22,21 +25,45 @@ export function isBillingParentSendEnabled(
     return env.BILLING_PARENT_SEND_ENABLED === "1";
 }
 
+/** 랠리즈 청구서의 장부용 사본임을 남긴 감사기록(PaymentAuditLog.action) */
+export const RALLYZ_MIRROR_AUDIT_ACTION = "RALLYZ_APPROVED_EXISTING_INVOICE_MIRROR";
+
 /**
- * 랠리즈 사본 청구를 발송 대상에서 빼는 SQL 조건.
- * - method = 'RALLYZ' 인 결제
- * - 또는 PaymentAuditLog 에 RALLYZ_APPROVED_EXISTING_INVOICE_MIRROR 기록이 있는 결제
- * 둘 중 하나라도 해당하면 제외한다. (description 문구로 판별하지 않는다 — 문구는 바뀔 수 있다)
- * @param paymentAlias Payment 테이블 별칭 (예: "p")
+ * «사이트로 풀어 준 사본» 표시(PaymentAuditLog.action) — 2026-11-14 랠리즈 은퇴 2단계.
+ * 원장이 랠리즈 쪽 청구를 취소한 미납 사본에만 붙인다(원장·총괄이 DB 로 직접).
+ * 이 기록이 있는 결제는 더 이상 사본으로 보지 않는다 → 사이트 결제·POS 자동 반영·미납 안내·휴원 정산에 일반 청구로 들어온다.
+ */
+export const RALLYZ_MIRROR_RELEASED_ACTION = "RALLYZ_MIRROR_RELEASED_TO_SITE";
+
+/**
+ * «이 결제는 랠리즈 사본이 아니다(= 일반 청구다)»가 참인 SQL 조건.
+ * 사본 = method 가 'RALLYZ' 이거나 PaymentAuditLog 에 사본 기록(RALLYZ_MIRROR_AUDIT_ACTION)이 있는 결제.
+ * 다만 «사이트로 풀어 준» 기록(RALLYZ_MIRROR_RELEASED_ACTION)이 있으면 사본이어도 일반 청구로 본다.
+ *   참 = (사본이 아니다) OR (풀어 준 기록이 있다)
+ * (description 문구로 판별하지 않는다 — 문구는 바뀔 수 있다)
+ *
+ * 반환값은 반드시 «전체를 괄호로» 감싼다. 사용처가 `AND ${...}` 와 `NOT (${...})` 두 모양으로 쓰는데,
+ * 안에 OR 이 있어 괄호가 없으면 `A AND x OR y` 가 `(A AND x) OR y` 로 읽혀 앞의 조건이 통째로 무시된다.
+ * @param paymentAlias Payment 테이블 별칭 (예: "p") — 코드에 적힌 고정 글자만 넘긴다(사용자 입력 금지)
  */
 export function rallyzMirrorExclusionSql(paymentAlias: string): string {
-    return `COALESCE(${paymentAlias}.method, '') <> 'RALLYZ'
-              AND NOT EXISTS (
+    return `(
+              (
+                COALESCE(${paymentAlias}.method, '') <> 'RALLYZ'
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM "PaymentAuditLog" mirror_log
+                  WHERE mirror_log."paymentId" = ${paymentAlias}.id
+                    AND mirror_log.action = '${RALLYZ_MIRROR_AUDIT_ACTION}'
+                )
+              )
+              OR EXISTS (
                 SELECT 1
-                FROM "PaymentAuditLog" mirror_log
-                WHERE mirror_log."paymentId" = ${paymentAlias}.id
-                  AND mirror_log.action = 'RALLYZ_APPROVED_EXISTING_INVOICE_MIRROR'
-              )`;
+                FROM "PaymentAuditLog" release_log
+                WHERE release_log."paymentId" = ${paymentAlias}.id
+                  AND release_log.action = '${RALLYZ_MIRROR_RELEASED_ACTION}'
+              )
+            )`;
 }
 
 export type UnpaidRowForParent = {

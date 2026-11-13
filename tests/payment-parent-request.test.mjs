@@ -29,7 +29,9 @@ test("미납 상태 판정", () => {
 });
 
 test("실제로 쓰는 결제 수단만 받는다", () => {
-  assert.deepEqual([...PAYMENT_METHODS], ["TRANSFER", "RALLYZ", "CARD", "CASH"]);
+  // 2026-11-14 랠리즈 은퇴 2단계: «랠리즈»는 새로 고를 수 없다(과거 요청 표시용 이름표는 남는다)
+  assert.deepEqual([...PAYMENT_METHODS], ["TRANSFER", "CARD", "CASH"]);
+  assert.equal(validatePaymentRequest({ kind: "PAYMENT_CLAIM", method: "RALLYZ", paidOn: "2026-08-08" }, UNPAID).error, "METHOD_REQUIRED");
   assert.deepEqual([...RECEIPT_TYPES], ["CASH_RECEIPT", "EXPENSE_PROOF"]);
 });
 

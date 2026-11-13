@@ -148,7 +148,7 @@ export const NOTICE_PAY_RECHECK_SQL = `
  *  - 직원이 현금·계좌로 받았다고 올린 확인 요청이 대기 중이면: POS 결제까지 받으면 이중 수납일 수 있다.
  *  - «현장 결제» 요청이 열려 있거나(PENDING·SENT) 보류(HELD)·납부(PAID)면: 그 요청 쪽이 이 청구를 처리 중이다.
  *    (요청 r 이 청구를 묶었나 = 대표 청구이거나 항목에 있거나 — chargeRequestService 의 hasPaymentSql 과 같은 모양)
- *  - 랠리즈 사본 청구(D4): 랠리즈에서 결제하는 청구라 사이트가 자동으로 닫지 않는다.
+ *  - 랠리즈 사본 청구(D4): 아직 사이트로 풀지 않은 랠리즈 사본 청구라 사이트가 자동으로 닫지 않는다.
  */
 export const NOTICE_AUTO_EXTRA_SQL = `
       AND NOT EXISTS (SELECT 1 FROM "StaffPaymentConfirmationRequest" sr

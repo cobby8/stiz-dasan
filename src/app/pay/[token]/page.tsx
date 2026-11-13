@@ -61,7 +61,7 @@ export default async function GuestPayPage({
     const description = maskNameInText(invoice.description, invoice.studentName);
 
     const isPaid = link.state === "PAID";
-    // 랠리즈 사본 청구는 랠리즈에서 결제한다(사이트 결제 막음 — 원장 결정 D4)
+    // 아직 «사이트로 풀어 주지 않은» 랠리즈 사본 청구는 사이트 결제를 막고 학원 문의 안내만 보인다(원장 결정 D4 · 2026-11-14 랠리즈 은퇴 2단계)
     const rallyzMirror = invoice.rallyzMirror === true;
     // 입금 계좌는 필요한 칸만(예금주 이름 등 개인정보 칸 제외 — 검수 권장 3)
     const virtualAccount = !isPaid && !rallyzMirror ? toGuestVirtualAccountView(await getVirtualAccountState(invoice.invoiceId)) : null;

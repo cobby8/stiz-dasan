@@ -1214,7 +1214,8 @@ export async function createCheckoutSession(input: {
         return { ok: false as const, error: "결제 금액이 없어 온라인 결제를 시작할 수 없습니다.", closed: true };
     }
 
-    // 랠리즈 사본 청구는 랠리즈에서 결제한다 — 사이트에서도 받으면 이중 납부(원장 결정 D4, 2026-11-09)
+    // 랠리즈 사본 청구는 사이트 결제를 막는다 — 랠리즈 쪽 청구가 살아 있으면 이중 납부(원장 결정 D4, 2026-11-09).
+    // 원장이 «사이트로 풀어 준» 사본은 rallyzMirror=false 라 여기서 막히지 않는다(2026-11-14 랠리즈 은퇴 2단계).
     if (invoice.rallyzMirror === true) {
         return { ok: false as const, error: BUNDLE_BLOCK_MESSAGE.RALLYZ_MIRROR, closed: true, rallyzMirror: true as const };
     }
