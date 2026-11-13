@@ -312,6 +312,16 @@ test("④ 기록 칸: 열면 한 칸, 닫기·뒤로가기·refresh 뒤 닫기·
     f.flush();
     assert.equal(f.index(), 0); assert.deepEqual(went, ["/payments/i-1"]); assert.equal(closed, 1);
   }
+  // 웹뷰가 popstate 를 안 보내도 «결제하기»는 멈추지 않는다(안전장치 — 0.4초 뒤 그대로 이동, 한 번만)
+  {
+    const f = fakeWindow(); const went = []; let closed = 0;
+    f.win.history.back = () => {}; // popstate 가 오지 않는 웹뷰 흉내
+    const c = sh.attachSheetHistory(f.win, { onClose: () => closed++, navigate: (href) => went.push(href) });
+    c.leaveTo("/payments/i-2"); f.flush();
+    assert.deepEqual(went, ["/payments/i-2"], "popstate 없이도 이동"); assert.equal(closed, 1);
+    c.detach(); f.flush();
+    assert.deepEqual(went, ["/payments/i-2"], "두 번 이동하지 않는다");
+  }
   // 열린 달이 목록에서 사라져 저절로 닫힘 → 정리 단계에서 남은 칸 되돌림
   {
     const f = fakeWindow(); let closed = 0;

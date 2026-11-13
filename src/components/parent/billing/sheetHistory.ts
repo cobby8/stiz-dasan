@@ -55,6 +55,14 @@ export function attachSheetHistory(win: SheetHistoryWindow, handlers: { onClose:
       }
       pendingHref = href;
       win.history.back();
+      // 안전장치(토스 심사 중 — «결제하기»가 멈추면 안 된다): 일부 웹뷰에서 popstate 가 안 오면 0.4초 뒤 그대로 이동
+      win.setTimeout(() => {
+        if (pendingHref !== href) return; // popstate 에서 이미 이동함
+        pendingHref = null;
+        pushed = false;
+        handlers.onClose();
+        handlers.navigate(href);
+      }, 400);
     },
     /** 시트가 사라질 때(정리 단계) */
     detach() {
