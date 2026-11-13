@@ -189,6 +189,14 @@ test("③ sendPushToUser: 끈 종류는 구독 조회 없이 건너뜀(대기열
       isPushAllowed: async (userId, tag) => !(userId === "off" && tag === "NOTICE"),
       optedOutUserIds: async (tag) => new Set(tag === "NOTICE" ? ["off"] : []),
     },
+    // 스토어 앱 푸시(e2): 이 검사는 웹푸시만 — FCM 설정 없음 = 앱 발송 건너뜀
+    "@/lib/push/fcm": { fcmServiceAccount: () => null, sendFcm: async () => { throw new Error("FCM 설정이 없으면 부르지 않는다"); } },
+    "@/lib/push/nativePushStore": {
+      listNativeTokensForUser: async () => { throw new Error("FCM 설정이 없으면 조회하지 않는다"); },
+      listNativeTokensForParents: async () => { throw new Error("FCM 설정이 없으면 조회하지 않는다"); },
+      deleteNativeToken: async () => true,
+    },
+    "@/lib/push/nativePushPolicy": load("src/lib/push/nativePushPolicy.ts"),
   });
   const skipped = await push.sendPushToUser("off", { title: "t", body: "b", tag: "NOTICE" });
   assert.equal(skipped.status, "NO_SUBSCRIPTION");

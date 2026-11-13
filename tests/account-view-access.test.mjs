@@ -128,6 +128,8 @@ function authFlowFixture(role, hasOwnChildren) {
       assert.equal(principal.id, user.id); childChecks++; return { hasOwnChildren, canUseParentView: hasOwnChildren || role === 'PARENT' };
     } },
     '@/app/actions/auth': { logout: async () => undefined },
+    // 로그아웃 때 이 기기의 앱 푸시 토큰 정리(e2) — 로그인 흐름과 무관
+    '@/lib/push/nativePushDevice': { forgetNativePushOnThisDevice: async () => undefined },
   };
   return { login: load(loginSource, dependencies).login, continuation: load(continueSource, dependencies).default, childChecks: () => childChecks };
 }

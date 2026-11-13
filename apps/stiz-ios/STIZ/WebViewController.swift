@@ -35,6 +35,8 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
         let baseName = configuration.applicationNameForUserAgent.flatMap { $0.isEmpty ? nil : $0 } ?? "Mobile/15E148"
         configuration.applicationNameForUserAgent = "\(baseName) STIZApp/\(appVersion) (ios)"
+        // 앱 알림(FCM) 창구 — 웹이 알림 권한·토큰을 묻는다(e2, 시험 앱에는 열지 않음)
+        NativePush.shared.attach(to: configuration.userContentController)
         webView = WKWebView(frame: .zero, configuration: configuration)
         if #available(iOS 16.4, *) {
             // 운영 화면은 검사 연결을 열지 않고, 유효한 격리 시험 주소에서만 허용한다.

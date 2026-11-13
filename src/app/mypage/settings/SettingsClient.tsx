@@ -8,6 +8,9 @@ import { PAYMENT_METHOD_OPTIONS, type PreferredPaymentMethod } from "@/lib/payme
 import { createParentRequest } from "@/app/actions/admin";
 import { usePushSubscription } from "@/lib/push/usePushSubscription";
 import { useStoreAppLacks } from "@/components/storeApp/useStoreAppLacks";
+// 스토어 앱 알림(FCM) 상태 — 앱 안에서는 브라우저 웹푸시 대신 이것으로 그린다(d2, 2026-11-14)
+import { useNativePush } from "@/lib/push/useNativePush";
+import { NATIVE_PUSH_NOTES } from "@/lib/push/nativePushBridge";
 import {
     FONT_SCALE_COOKIE,
     FONT_SCALES,
@@ -181,8 +184,12 @@ export function PasswordRow() {
 // ── 알림 설정: 휴대폰 알림 켜기 + 종류별 받기 ───────────────────────────────
 export function NotificationRows({ initialPrefs, prefsAvailable }: { initialPrefs: PushPrefs; prefsAvailable: boolean }) {
     const { pushSupported, pushEnabled, pushLoading, checked, togglePush } = usePushSubscription();
-    // 판정은 @/lib/storeApp 한 곳 — 앱 새 버전이 caps=push 를 보내면 자동으로 원래 스위치가 돌아온다
+    // 판정은 @/lib/storeApp 한 곳 — 스토어 앱 안이면 브라우저 웹푸시 스위치를 쓸 수 없다
     const appLacksPush = useStoreAppLacks("push");
+    // 앱 안에서는 앱 알림 상태(켜짐·권한 꺼짐·미지원)를 그대로 보여 준다
+    const app = useNativePush();
+    // 앱 알림을 받을 수 있는 상태인가(받을 수 없으면 종류별 스위치도 의미가 없어 숨긴다)
+    const appCanPush = app.view === "granted" || app.view === "default" || app.view === "denied";
     const [prefs, setPrefs] = useState<PushPrefs>(initialPrefs);
     const [msg, setMsg] = useState<{ text: string; tone: "ok" | "error" }>({ text: "", tone: "ok" });
     const [isPending, startTransition] = useTransition();
@@ -207,23 +214,34 @@ export function NotificationRows({ initialPrefs, prefsAvailable }: { initialPref
         <>
             <li>
                 <div className={ROW}>
-                    <RowIcon name={pushEnabled ? "notifications_active" : "notifications_off"} />
+                    <RowIcon name={(appLacksPush ? app.view === "granted" : pushEnabled) ? "notifications_active" : "notifications_off"} />
                     <span className="flex-1 font-bold text-[var(--color-academy-ink)]">휴대폰 알림</span>
-                    {appLacksPush ? null : !checked ? null : pushSupported ? (
+                    {appLacksPush ? (
+                        // 앱 안: 켜짐이면 글자, 아직 안 물어봤으면 켜기 스위치(누르면 휴대폰이 권한을 묻는다).
+                        // 끄기는 휴대폰 설정에서만 할 수 있어 켜진 뒤에는 스위치를 두지 않는다.
+                        app.view === "granted" ? (
+                            <span className="shrink-0 text-xs font-bold text-[var(--color-academy-success)]">켜짐</span>
+                        ) : app.view === "default" ? (
+                            <Switch on={false} busy={app.busy} label="휴대폰 알림" onToggle={() => void app.request()} />
+                        ) : null
+                    ) : !checked ? null : pushSupported ? (
                         <Switch on={pushEnabled} busy={pushLoading} label="휴대폰 알림" onToggle={togglePush} />
                     ) : (
                         // 이 브라우저는 웹푸시를 못 받는다(아이폰 사파리에서 홈 화면 추가 전 등)
                         <span className="shrink-0 text-xs text-[var(--color-academy-muted)]">앱에서 켤 수 있어요</span>
                     )}
                 </div>
-                {/* 스토어 앱(현재 버전)은 앱 알림을 못 받는다 — 안 되는 켜기 버튼 대신 안내(d2) */}
-                {appLacksPush && (
-                    <p className="px-4 pb-2 text-xs text-[var(--color-academy-muted)]">앱 알림은 준비 중이에요. 중요한 안내는 문자·카카오톡으로 보내드려요.</p>
+                {/* 앱 안 안내(d2): 권한을 거절했으면 휴대폰 설정으로, 알림을 못 받는 앱이면 문자·카카오톡으로 간다고 */}
+                {appLacksPush && app.view === "denied" && (
+                    <p className="px-4 pb-2 text-xs text-[var(--color-academy-muted)]">{NATIVE_PUSH_NOTES.denied}.</p>
+                )}
+                {appLacksPush && app.view === "unavailable" && (
+                    <p className="px-4 pb-2 text-xs text-[var(--color-academy-muted)]">{NATIVE_PUSH_NOTES.unavailable}.</p>
                 )}
             </li>
             {/* 종류별 받기 — 저장 표가 준비된 뒤에만 보인다. 끄는 건 휴대폰 울림만(종 목록에는 그대로 쌓임) */}
-            {/* 앱 알림을 못 받는 스토어 앱에서는 종류별 스위치도 숨긴다(d2) */}
-            {prefsAvailable && !appLacksPush && PUSH_CATEGORIES.map((c) => (
+            {/* 앱 알림을 못 받는 스토어 앱에서는 종류별 스위치도 숨긴다(d2) — 앱 알림이 되는 앱이면 보인다(웹·앱 같은 스위치) */}
+            {prefsAvailable && (!appLacksPush || appCanPush) && PUSH_CATEGORIES.map((c) => (
                 <li key={c.key}>
                     <div className={`${ROW} pl-12`}>
                         <span className="flex-1 text-[var(--color-academy-ink)]">{c.label} 알림</span>

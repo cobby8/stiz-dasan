@@ -3,6 +3,12 @@
 <!-- 프로젝트의 폴더 구조, 파일 역할, 핵심 패턴을 기록 -->
 <!-- 2026-11-10 정리: 48항목 → 주제별 19묶음. 원래 항목은 묶음 안 하위 항목(원래 날짜·제목)으로 내용 그대로 보존. 새 항목은 맞는 묶음에 하위 항목으로 넣는다 -->
 
+### [2026-11-14] 스토어 앱 알림(FCM) = 기존 발송 함수 2개에 앱 토큰을 «더한다» · 웹이 쿠키로 등록
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 모든 푸시는 `sendPushToUser`·`sendPushToAllParents`(pushNotification.ts)를 지난다 → 여기서 웹푸시 구독 + `NativePushToken`(FCM, `lib/push/fcm.ts` JWT 직접 서명)을 함께 보낸다. 재시도 id 는 웹=그대로, 앱=`native:<id>`. 키(`FCM_SERVICE_ACCOUNT_JSON`) 없으면 앱 토큰 조회 자체를 안 한다. 앱은 웹 화면에 창구(안드로이드 `StizPushTransport`·iOS `stizPush`)만 열고, 등록은 웹(`NativePushRegistrar`)이 로그인 쿠키로 `/api/push/native`. 로그아웃은 쿠키 `stiz_np`(줄 id)로 이 기기 토큰만. 안드로이드는 google-services 플러그인 없이 build.gradle 이 json 을 읽어 BuildConfig(파일 없으면 알림만 꺼짐), iOS 는 `STIZ/Firebase/` 폴더 참조. 테스트에서 pushNotification.ts 를 불러오면 `@/lib/push/fcm`·`nativePushStore`·`nativePushPolicy` 대역이 필요하다. 상세: docs/native-push.md
+- **참조횟수**: 0
+
 ### [2026-11-13] 학부모 아이디 규칙 한 곳(parent-username) · 앱 설치 짧은 주소 /install
 - **분류**: architecture
 - **발견자**: developer
