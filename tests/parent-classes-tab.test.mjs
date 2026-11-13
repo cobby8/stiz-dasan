@@ -189,8 +189,9 @@ test("화면: 아이 둘이면 칩(누름 상태) · 고른 아이 반만", () =
 
 test("⑦ 조회 가드: 수업 탭 조회는 childAccessSql + notMergedStudent + $queryRawUnsafe, ORM 기본 메서드 없음", () => {
   const src = read("src/lib/parent/classes-overview.ts");
-  assert.equal((src.match(/prisma\.\$queryRawUnsafe/g) || []).length, 3);
-  assert.ok((src.match(/\$\{access\}/g) || []).length >= 3, "세 조회 모두 자녀 접근 조건");
+  // 2026-11-14 w4: 반별 «이번 달 출석 n/m회» 조회가 하나 늘었다(네 조회 모두 자녀 접근 조건)
+  assert.equal((src.match(/prisma\.\$queryRawUnsafe/g) || []).length, 4);
+  assert.ok((src.match(/\$\{access\}/g) || []).length >= 4, "네 조회 모두 자녀 접근 조건");
   assert.ok((src.match(/notMergedStudent\("s"\)/g) || []).length >= 4);
   assert.doesNotMatch(src, /prisma\.\w+\.(findMany|findFirst|create|update|upsert)/);
   assert.doesNotMatch(src, /getFullYear|getMonth\(\)|getDay\(\)|toISOString\(\)\.slice/);

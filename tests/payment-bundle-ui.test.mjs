@@ -139,6 +139,9 @@ test("④ 청구 탭: 대표 보호자 미납이 있으면 «한 번에 결제»
     "next/link": link, "next/navigation": { useRouter: () => ({ refresh() {} }) },
     "@/lib/payments/parentRequestRules": load("src/lib/payments/parentRequestRules.ts"),
     "@/components/parent/VirtualAccountNotice": vaNotice,
+    // 2026-11-14 w3: 월 묶음(공용 함수)·올해(KST) — 진짜 파일로
+    "@/components/admin/list/monthDateGroups": load("src/components/admin/list/monthDateGroups.ts", { "@/lib/datetime/kst": kst }),
+    "@/lib/datetime/kst": kst,
   }).default;
   const row = (id, extra = {}) => ({ paymentId: id, studentId: "s", studentName: "합성", description: "11월 수강료", amount: 100000, status: "PENDING", dueDate: null, paidDate: null, invoiceNo: null, invoiceId: `i-${id}`, canCheckout: true, receiptUrl: null, virtualAccount: null, pending: [], resolved: [], ...extra });
   const va = { bankName: "합성은행", accountNumber: "777", customerName: null, amount: 250000, dueDate: "2026-11-20", dueLabel: "", expired: false };

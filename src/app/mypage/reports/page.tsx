@@ -79,9 +79,12 @@ export default async function ParentReportsPage() {
     const notices = recentNotices(allNotices, todayKst());
     const NOTICE_FIRST = 3;
     // 사진 묶음마다 첫 장만 타일로(홈에서 쓰던 방식 그대로)
+    // 위 요약 줄 «사진 n장»은 이 화면이 읽은 사진 묶음 안의 전체 장 수(2026-11-14 w4)
+    let photoCount = 0;
     const photos = gallery.flatMap((g: { id: string; title: string | null; mediaJSON: string }) => {
         let media: { url: string; type: string }[] = [];
         try { media = JSON.parse(g.mediaJSON); } catch {}
+        if (Array.isArray(media)) photoCount += media.length;
         return media[0] ? [{ id: g.id, title: g.title, first: media[0] }] : [];
     });
 
@@ -116,6 +119,8 @@ export default async function ParentReportsPage() {
         <div className="space-y-4">
             <div>
                 <h1 className="academy-heading">소식</h1>
+                {/* 요약 한 줄 «리포트 n건 · 사진 n장»(2026-11-14 w4) */}
+                <p className="mt-0.5 text-xs tabular-nums text-[var(--color-academy-muted)]">리포트 {reports.length}건 · 사진 {photoCount}장</p>
                 <nav aria-label="소식 종류" className="mt-2 flex flex-wrap gap-1.5">
                     {sections.map((s) => (
                         <a key={s.id} href={`#${s.id}`}
