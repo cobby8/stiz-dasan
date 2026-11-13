@@ -122,9 +122,10 @@ test("④ 값 화이트리스트(대소문자·공백 정리, 모르는 값은 n
 test("⑤ 승인 완료 지점에서 기억 · 저장 실패는 던지지 않는다 · 화면은 공통 부품", () => {
   const ledger = read("src/lib/payment-ledger.ts");
   const confirm = ledger.slice(ledger.indexOf("export async function confirmTossPayment("), ledger.indexOf("async function loadBundleCandidateRows("));
-  assert.equal((confirm.match(/await rememberPaymentMethodFromToss\(tx\.parentId, /g) || []).length, 3, "승인·복구·무통장 계좌 발급");
+  // 2026-11-13(c5): 승인·복구는 같은 반영 도우미(finalizeApprovedTossPayment) 하나를 지난다 → 기억 지점 = 도우미 1 + 무통장 계좌 발급 1
+  assert.equal((confirm.match(/await rememberPaymentMethodFromToss\(tx\.parentId, /g) || []).length, 2, "승인·복구 공용 도우미·무통장 계좌 발급");
   assert.ok(
-    confirm.lastIndexOf("rememberPaymentMethodFromToss(tx.parentId, result)") > confirm.indexOf("const finalized = await finalizeVerifiedTossPayment"),
+    confirm.lastIndexOf("rememberPaymentMethodFromToss(tx.parentId, payment)") > confirm.indexOf("finalized = await finalizeVerifiedTossPayment"),
     "납부 반영이 끝난 뒤에 기억한다",
   );
   const store = read("src/lib/payments/preferredMethodStore.ts");

@@ -82,6 +82,31 @@ function txCoversAnyPaymentSql(param: string): string {
 }
 
 /**
+ * 거래(t)가 «토스 승인은 끝났는데 장부 반영 전»인가 — SQL 조각(2026-11-13, 점검표 c5).
+ * 승인 직후 승인 원본(rawResponse.status = DONE)을 먼저 적어 두므로, 반영이 실패한 거래는 IN_PROGRESS + DONE 원본으로 남는다.
+ * 이런 거래가 품은 청구는 새 결제를 열면 이중 결제가 된다 → 결제 시작·승인 직전 검사가 막는다.
+ */
+export const APPROVED_PENDING_SQL = `(t.status = 'IN_PROGRESS' AND t."rawResponse"->>'status' = 'DONE')`;
+
+/** 이 청구들을 품은 «승인됐는데 장부 반영 전» 토스 거래 id(excludeTxId 는 뺀다) — 결제 시작(단건·묶음)이 쓴다 */
+export async function findApprovedPendingTxIds(
+    db: BundleSqlClient,
+    paymentIds: readonly string[],
+    excludeTxId: string | null,
+): Promise<string[]> {
+    if (paymentIds.length === 0) return [];
+    const rows = await db.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT t.id FROM "PaymentTransaction" t
+          WHERE t.provider = 'TOSS' AND ${APPROVED_PENDING_SQL}
+            AND ($2::text IS NULL OR t.id <> $2)
+            AND ${txCoversAnyPaymentSql("$1")}`,
+        [...paymentIds],
+        excludeTxId,
+    );
+    return rows.map((row) => row.id);
+}
+
+/**
  * 청구 id 정렬순으로 advisory 잠금(트랜잭션이 끝나면 풀림). 결제 시작·토스 승인 직전이 같은 키를 쓴다 —
  * 겹치는 청구를 가진 두 주문(묶음↔묶음, 묶음↔단건)이 동시에 지나가지 못하게(보안 리뷰 M1·M2).
  * 정렬순이라 서로 다른 순서로 잠그다 교착되지 않는다.
@@ -232,10 +257,12 @@ export async function claimTossConfirmInTx(
         }
     }
 
+    // 승인 중(10분 안)인 다른 주문, 또는 승인 원본(토스 DONE)이 남은 다른 주문 = 돈은 이미 나갔고 장부 반영만 남았다
+    // → 후자는 시간과 무관하게 같은 청구의 다른 결제를 막는다(2026-11-13 c5)
     const busy = await db.$queryRawUnsafe<Array<{ id: string }>>(
         `SELECT t.id FROM "PaymentTransaction" t
           WHERE t.id <> $1 AND t.provider = 'TOSS' AND t.status = 'IN_PROGRESS'
-            AND t."updatedAt" > NOW() - ($3::int * INTERVAL '1 minute')
+            AND (t."updatedAt" > NOW() - ($3::int * INTERVAL '1 minute') OR ${APPROVED_PENDING_SQL})
             AND ${txCoversAnyPaymentSql("$2")}
           LIMIT 1`,
         input.transactionId,
@@ -304,7 +331,8 @@ export type BundleFinalizeInput = {
     rawResponse: unknown;
     /** 토스 응답의 결제 수단이 «가상계좌»인가(거래 상태와 함께 무통장 판정에 쓴다) */
     methodIsVirtualAccount: boolean;
-    actorType: "PARENT" | "WEBHOOK";
+    /** SYSTEM = 주기 점검(cron)이 놓친 결제를 다시 맞춘 경우(2026-11-13) */
+    actorType: "PARENT" | "WEBHOOK" | "SYSTEM";
     actorId?: string | null;
 };
 
