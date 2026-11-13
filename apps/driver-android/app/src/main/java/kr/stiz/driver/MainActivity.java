@@ -19,6 +19,7 @@ public final class MainActivity extends Activity {
     private WebView web;
     private WebFileChooser fileChooser;
     private NativeAuthController nativeAuth;
+    private NativePush nativePush; // 앱 알림(FCM) 창구 — 로직은 NativePush.java(e2)
     private boolean visible;
     private final PendingRunStart pendingStart = new PendingRunStart();
     private boolean consentDialogOpen;
@@ -132,6 +133,7 @@ public final class MainActivity extends Activity {
         }
         fileChooser = new WebFileChooser(this, web);
         nativeAuth = new NativeAuthController(this, web);
+        nativePush = NativePush.install(this, web);
         web.getSettings().setJavaScriptEnabled(true); web.getSettings().setDomStorageEnabled(true);
         web.getSettings().setAllowFileAccess(false); web.getSettings().setAllowContentAccess(false);
         web.getSettings().setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
@@ -588,6 +590,7 @@ public final class MainActivity extends Activity {
     }
     @Override public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(request, permissions, results);
+        if (nativePush != null && nativePush.onPermissionResult(request)) return;
         if (request == 10) {
             boolean granted = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
             pendingStart.permissionResult(granted);

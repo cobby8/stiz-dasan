@@ -2,9 +2,9 @@
 
 import { usePushSubscription } from "@/lib/push/usePushSubscription";
 import { useStoreAppLacks } from "@/components/storeApp/useStoreAppLacks";
-
-// 스토어 앱(현재 버전)은 앱 알림을 못 받는다(d2) — 안 되는 켜기 버튼 대신 안내. 판정은 @/lib/storeApp 한 곳
-const STORE_APP_PUSH_NOTE = "앱 알림은 준비 중이에요. 중요한 안내는 문자·카카오톡으로 보내드려요";
+// 스토어 앱 안에서는 브라우저 웹푸시 대신 앱 알림(FCM) 상태로 안내한다(d2, 2026-11-14). 문구는 한 곳(NATIVE_PUSH_NOTES)
+import { useNativePush } from "@/lib/push/useNativePush";
+import { NATIVE_PUSH_NOTES } from "@/lib/push/nativePushBridge";
 
 // 직원(선생님·기사님) 화면의 휴대폰 알림 켜기 (2026-11-10).
 // 기사님·코치 웹푸시 구독이 0건이었던 원인 = 켜는 버튼이 학부모 설정 화면에만 있었다.
@@ -39,13 +39,29 @@ export function StaffPushToggle() {
 export function StaffPushBanner() {
     const { pushSupported, pushEnabled, pushLoading, checked, togglePush } = usePushSubscription();
     const appLacksPush = useStoreAppLacks("push");
+    const app = useNativePush();
     const row = "mx-auto flex min-h-11 max-w-lg items-center gap-2 px-4 text-sm";
     if (appLacksPush) {
+        // 앱 안: 켜짐·확인 중이면 안 그림 / 아직 안 물어봤으면 «켜기» / 거절했으면 휴대폰 설정 / 못 받는 앱이면 문자·카카오톡
+        if (app.view === "granted" || app.view === "checking") return null;
+        if (app.view === "default") {
+            return (
+                <div role="note" className="border-b border-[var(--color-academy-line)] bg-[var(--color-academy-info-soft)]">
+                    <div className={row}>
+                        <span className="material-symbols-outlined shrink-0 leading-none text-[var(--color-academy-info)]" style={{ fontSize: "18px" }} aria-hidden="true">notifications</span>
+                        <span className="min-w-0 flex-1 text-[var(--color-academy-ink)]">알림을 켜면 명단 변경을 바로 받아요</span>
+                        <button type="button" onClick={() => void app.request()} disabled={app.busy} className="academy-button-primary min-h-11 shrink-0">
+                            {app.busy ? "켜는 중" : "켜기"}
+                        </button>
+                    </div>
+                </div>
+            );
+        }
         return (
             <div role="note" className="border-b border-[var(--color-academy-line)] bg-[var(--color-academy-info-soft)]">
                 <p className={`${row} text-[var(--color-academy-ink)]`}>
-                    <span className="material-symbols-outlined shrink-0 leading-none text-[var(--color-academy-info)]" style={{ fontSize: "18px" }} aria-hidden="true">sms</span>
-                    {STORE_APP_PUSH_NOTE}
+                    <span className="material-symbols-outlined shrink-0 leading-none text-[var(--color-academy-info)]" style={{ fontSize: "18px" }} aria-hidden="true">{app.view === "denied" ? "notifications_off" : "sms"}</span>
+                    {app.view === "denied" ? NATIVE_PUSH_NOTES.denied : NATIVE_PUSH_NOTES.unavailable}
                 </p>
             </div>
         );

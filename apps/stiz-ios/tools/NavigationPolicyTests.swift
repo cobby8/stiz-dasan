@@ -239,6 +239,16 @@ struct NavigationPolicyTests {
         precondition(!DownloadPolicy.contentMatches(Data([0,1,2]), mime: "image/png"))
         precondition(!DownloadPolicy.contentMatches(Data("#!/bin/sh".utf8), mime: "text/plain"))
         print("STIZ iOS download policy: synthetic same-origin, filenames, types, size and content assertions passed")
+        // 앱 알림(FCM)을 눌렀을 때 열 주소(e2): 우리 사이트 경로만, 로그인·운행 위치·바깥 주소는 nil
+        precondition(NavigationPolicy.pushTarget("/mypage")?.absoluteString == "https://www.stiz-dasan.kr/mypage")
+        precondition(NavigationPolicy.pushTarget("/staff/shuttle?date=2026-11-14")?.absoluteString == "https://www.stiz-dasan.kr/staff/shuttle?date=2026-11-14")
+        let badPushTargets: [Any?] = [nil, 3, "", "mypage", "https://evil.invalid/x", "//evil.invalid/x", "/a b", "/a\\b", "/auth/oauth/google",
+                                      "/driver/token", "/staff/run", "/one/../driver/x", "@evil.invalid", "javascript:alert(1)"]
+        for bad in badPushTargets {
+            precondition(NavigationPolicy.pushTarget(bad) == nil, "push target \(String(describing: bad))")
+        }
+        precondition(NavigationPolicy.pushTarget("/mypage", configuration: .active(URL(string: "https://localhost:8453/")!)) == nil, "시험 앱은 알림 주소를 열지 않는다")
+        print("STIZ iOS push target policy: 17 assertions passed")
         print("STIZ iOS navigation policy: \(cases.count) cases passed")
         print("STIZ iOS payment policy: \(payments.count + paying.count) cases passed")
         print("STIZ iOS native handoff policy: 13 assertions passed")

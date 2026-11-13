@@ -10,6 +10,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         window.rootViewController = WebViewController()
         window.makeKeyAndVisible()
         self.window = window
+        // 앱 알림(FCM): 알림을 누르면 그 화면을 유니버설 링크와 같은 길로 연다 — 로직은 NativePush.swift(e2)
+        NativePush.shared.start(application) { [weak self] url in _ = (self?.window?.rootViewController as? WebViewController)?.openUniversalLink(url) }
         return true
     }
 

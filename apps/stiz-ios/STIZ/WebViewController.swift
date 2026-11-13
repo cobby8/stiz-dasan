@@ -37,6 +37,8 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         // « STIZNativeLogin/1»: 앱 간편로그인 기능이 켜진 빌드 표시 — 웹이 이 표시가 있을 때만 앱 화면에 간편로그인 버튼을 보인다(a1).
         let nativeLogin = NativeAuthCoordinator.enabled ? " STIZNativeLogin/1" : ""
         configuration.applicationNameForUserAgent = "\(baseName) STIZApp/\(appVersion) (ios)\(nativeLogin)"
+        // 앱 알림(FCM) 창구 — 웹이 알림 권한·토큰을 묻는다(e2, 시험 앱에는 열지 않음)
+        NativePush.shared.attach(to: configuration.userContentController)
         webView = WKWebView(frame: .zero, configuration: configuration)
         if #available(iOS 16.4, *) {
             // 운영 화면은 검사 연결을 열지 않고, 유효한 격리 시험 주소에서만 허용한다.
