@@ -106,7 +106,6 @@ export default function TeacherGuidePage() {
               href="/install"
               className="mt-3 inline-flex min-h-11 items-center gap-1 rounded-lg bg-[var(--color-public-accent)] px-4 text-sm font-bold text-white hover:bg-[var(--color-public-strong)] dark:bg-[var(--color-public-orange)] dark:text-[var(--color-public-dark)]"
             >
-              <span className="material-symbols-outlined text-lg" aria-hidden="true">download</span>
               앱 설치하기
             </Link>
           </Card>
