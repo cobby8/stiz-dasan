@@ -43,7 +43,7 @@ assert all(ref.attrib["BlueprintIdentifier"] in references for ref in scheme.ite
 assert "kr.stiz.academy.dev" in project and "DEVELOPMENT_TEAM" not in project
 # 스토어용 Release 는 정식 ID·1.x 버전, 개발 Debug 는 기존 개발 ID·0.1.0(격리 시험 도구 계약)을 유지한다.
 release_settings = re.search(r"A0000000000000000000000F = \{[^\n]*\}; name = Release;\};", project).group(0)
-assert "PRODUCT_BUNDLE_IDENTIFIER = kr.co.upturnlabs.stizdasan;" in release_settings and "MARKETING_VERSION = 1.0.2;" in release_settings
+assert "PRODUCT_BUNDLE_IDENTIFIER = kr.co.upturnlabs.stizdasan;" in release_settings and "MARKETING_VERSION = 1.0.3;" in release_settings
 assert "INFOPLIST_FILE = STIZ/Info.plist;" in release_settings and 'INFOPLIST_FILE = "STIZ/Info-Debug.plist";' in project
 # 1.0.2(2026-11-13): 애플 포털에서 Associated Domains·Push Notifications 를 켜고 배포 프로파일을 다시 받았으므로
 # 권한 파일을 «Release 에만» 연결한다. Debug(격리 시험 앱)는 그 권한이 없는 프로파일이라 연결하면 서명이 깨진다.
