@@ -304,7 +304,8 @@ export type BundleFinalizeInput = {
     rawResponse: unknown;
     /** 토스 응답의 결제 수단이 «가상계좌»인가(거래 상태와 함께 무통장 판정에 쓴다) */
     methodIsVirtualAccount: boolean;
-    actorType: "PARENT" | "WEBHOOK";
+    /** SYSTEM = 주기 점검(cron)이 놓친 결제를 다시 맞춘 경우(2026-11-13) */
+    actorType: "PARENT" | "WEBHOOK" | "SYSTEM";
     actorId?: string | null;
 };
 

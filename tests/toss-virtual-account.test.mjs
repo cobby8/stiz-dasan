@@ -263,9 +263,13 @@ test("승인 결과 응답은 secret 을 지워서 돌려준다", () => {
     assert.equal(stripped.secret, undefined);
     assert.equal(issuedResponse.secret, SECRET, "원본은 건드리지 않는다");
     const confirm = fnBody(ledger, "export async function confirmTossPayment(");
-    assert.match(confirm, /payment: stripPaymentSecret\(result\)/);
-    assert.match(confirm, /payment: stripPaymentSecret\(lookup\.payment\)/);
+    // 2026-11-13(c5): 승인·복구 응답은 반영 도우미 하나가 만든다 — 도우미가 secret 을 지운다
+    assert.match(confirm, /return finalizeApprovedTossPayment\(tx, result, false\)/);
+    assert.match(confirm, /finalizeApprovedTossPayment\(tx, lookup\.payment, true\)/);
     assert.doesNotMatch(confirm, /payment: result \}/);
+    const helper = fnBody(ledger, "async function finalizeApprovedTossPayment(");
+    assert.equal((helper.match(/payment: stripPaymentSecret\(payment\)/g) || []).length, 2);
+    assert.doesNotMatch(helper, /payment: payment[ ,}]/);
 });
 
 test("학부모 화면용 조회 SQL 은 발급 정보 칸만 고르고 secret 해시·원문 응답 전체를 고르지 않는다", () => {
