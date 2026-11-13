@@ -27,3 +27,16 @@ export function isChildLinkState(value: unknown): value is ChildLinkState {
   return typeof state.enabled === "boolean" && typeof state.verified === "boolean"
     && Array.isArray(state.outgoing) && Array.isArray(state.incoming);
 }
+
+/** 형제 간편 연결 제안(2026-11-13 f8) — 서버가 이름·반·처리 방법만 보낸다(학생 id·번호 없음) */
+export type SiblingAction = "LINK" | "REQUEST_APPROVAL" | "ALREADY_LINKED" | "PENDING" | "ASK_ACADEMY";
+export type SiblingProposal = { items: { name: string; className: string | null; action: SiblingAction }[]; canLinkAll: boolean };
+
+const SIBLING_ACTIONS: readonly string[] = ["LINK", "REQUEST_APPROVAL", "ALREADY_LINKED", "PENDING", "ASK_ACADEMY"];
+
+export function isSiblingProposal(value: unknown): value is SiblingProposal {
+  if (!value || typeof value !== "object") return false;
+  const data = value as Partial<SiblingProposal>;
+  return typeof data.canLinkAll === "boolean" && Array.isArray(data.items) && data.items.every((item) =>
+    item && typeof item.name === "string" && (item.className === null || typeof item.className === "string") && SIBLING_ACTIONS.includes(item.action));
+}

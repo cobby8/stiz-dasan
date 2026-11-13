@@ -3527,7 +3527,8 @@ model ChildLinkRequest {
   studentId           String
   requesterId         String
   approverId          String
-  challengeId         String    @unique
+  // 2026-11-13 f8: 인증 1건으로 형제 여러 명 요청 가능 — UNIQUE 를 일반 색인으로(migration 20261113220000)
+  challengeId         String
   requesterName       String
   requesterPhoneLast4 String
   relation            String
@@ -3539,4 +3540,5 @@ model ChildLinkRequest {
 
   @@index([approverId, status], map: "ChildLinkRequest_approver_status_idx")
   @@index([requesterId, createdAt], map: "ChildLinkRequest_requester_created_idx")
+  @@index([challengeId], map: "ChildLinkRequest_challengeId_idx")
 }
