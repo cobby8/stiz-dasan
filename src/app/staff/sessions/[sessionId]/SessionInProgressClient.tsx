@@ -332,6 +332,8 @@ export default function SessionInProgressClient({
 
   // 아직 안 찍은 보강 온 아이 수 — «전체 출석» 버튼에 함께 처리된다고 보여 준다.
   const uncheckedMakeup = useMemo(() => students.filter((student) => student.makeup && !student.status).length, [students]);
+  // 아직 안 찍은 체험 아이 수 — 전체 출석 대상이 아니라 따로 안내한다.
+  const uncheckedTrial = useMemo(() => students.filter((student) => student.trial && !student.status).length, [students]);
 
   const counts = useMemo(
     () => ({
@@ -519,7 +521,7 @@ export default function SessionInProgressClient({
     });
   }
 
-  const attendanceBillingSheet = attendanceBillingTarget && <ClassBillingSheet
+  const attendanceBillingSheet = showFees && attendanceBillingTarget && <ClassBillingSheet
     key={`${session.id}:${attendanceBillingTarget.id}`}
     open classId={session.classId} className={session.className}
     student={{ id: attendanceBillingTarget.studentId || attendanceBillingTarget.id, name: attendanceBillingTarget.name }}
@@ -573,6 +575,13 @@ export default function SessionInProgressClient({
           <p role="status" className="flex items-center gap-1 text-xs font-bold text-[var(--color-academy-warning)]">
             <span className="material-symbols-outlined text-sm" aria-hidden="true">info</span>
             {bulkReportedNotice(bulkSplit.reported.length)} 실제로 왔으면 그 줄의 «출석»을 눌러 주세요.
+          </p>
+        )}
+        {/* 체험 아이는 전체 출석에서 빠진다(검수 LOW-1) — 안 온 아이가 «체험 완료»로 올라가지 않게 직접 누른다. */}
+        {uncheckedTrial > 0 && (
+          <p role="status" className="flex items-center gap-1 text-xs font-bold text-[var(--color-academy-warning)]">
+            <span className="material-symbols-outlined text-sm" aria-hidden="true">info</span>
+            체험 {uncheckedTrial}명은 전체 출석에서 빠집니다. 그 줄에서 직접 눌러 주세요.
           </p>
         )}
         <p className="text-xs font-bold text-[var(--color-academy-muted)]">잘못 찍었으면 다른 버튼을 눌러 바로 고칠 수 있어요. 보강권도 함께 맞춰집니다.</p>
@@ -734,10 +743,11 @@ export default function SessionInProgressClient({
             <span className="material-symbols-outlined text-[var(--color-academy-muted)]" aria-hidden="true">contacts</span>
             학생 정보 <span className="ml-auto text-xs font-medium text-[var(--color-academy-muted)]">전화 · 문자</span>
           </button>
-          <button type="button" onClick={() => setBillingStudent(null)} className="flex min-h-11 items-center gap-2 rounded-lg px-2 text-left text-sm font-bold">
+          {/* 청구 확인은 원장·부원장만(f3 보완) — 선생님 현장 수납은 하단 «청구» 탭에서 한다. */}
+          {showFees && <button type="button" onClick={() => setBillingStudent(null)} className="flex min-h-11 items-center gap-2 rounded-lg px-2 text-left text-sm font-bold">
             <span className="material-symbols-outlined text-[var(--color-academy-muted)]" aria-hidden="true">receipt_long</span>
             청구 확인
-          </button>
+          </button>}
           <button type="button" disabled={pending || voiceBusy || memoStatus === "saving"} onClick={cancelStart} className="flex min-h-11 items-center gap-2 rounded-lg px-2 text-left text-sm font-bold text-[var(--color-academy-muted)] disabled:opacity-50">
             <span className="material-symbols-outlined" aria-hidden="true">undo</span>
             수업 시작 취소 (시작 전으로 되돌리기)
@@ -787,8 +797,8 @@ export default function SessionInProgressClient({
 
       {message && <p aria-live="polite" className="rounded-xl bg-[var(--color-academy-info-soft)] p-3 text-sm font-bold text-[var(--color-academy-info)]">{message}</p>}
 
-      {showPeople && <ClassPeopleSheet open classId={session.classId} sessionId={session.id} className={session.className} onClose={() => setShowPeople(false)} onOpenBilling={(student) => { setShowPeople(false); setBillingStudent(student); }} />}
-      {billingStudent !== undefined && <ClassBillingSheet key={`${session.classId}:${billingStudent?.id || "all"}`} open classId={session.classId} className={session.className} student={billingStudent} onClose={() => setBillingStudent(undefined)} />}
+      {showPeople && <ClassPeopleSheet open classId={session.classId} sessionId={session.id} className={session.className} onClose={() => setShowPeople(false)} onOpenBilling={showFees ? (student) => { setShowPeople(false); setBillingStudent(student); } : undefined} />}
+      {showFees && billingStudent !== undefined && <ClassBillingSheet key={`${session.classId}:${billingStudent?.id || "all"}`} open classId={session.classId} className={session.className} student={billingStudent} onClose={() => setBillingStudent(undefined)} />}
 
       {/* 수업 진행 화면에서는 하단 탭바(StaffBottomNav)가 숨겨지므로, 종료 바를 화면 최하단에 밀착시킨다.
           홈 인디케이터(safe-area)만큼만 아래 여백을 줘 겹침 없이 항상 접근 가능하게 한다. */}

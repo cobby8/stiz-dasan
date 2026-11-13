@@ -6,6 +6,7 @@ import {
   ABSENCE_NOTICE_DELAY_MINUTES,
   ABSENCE_NOTICE_EVENT,
   absenceNoticeDedupeKey,
+  absenceNoticeKeyPrefixSql,
   absenceNoticeMessage,
   absenceNoticeTitle,
 } from "@/lib/regular/absence-parent-notice";
@@ -49,9 +50,12 @@ export async function sweepAbsenceParentNotices(limit = 50, nowMs: number = Date
         AND NOT EXISTS (SELECT 1 FROM "RegularAbsence" ra
                          WHERE ra."studentId" = st.id AND ra."classId" = s."classId"
                            AND ra.date = $1::date AND ra.status IN ('REPORTED','CONFIRMED'))
-        -- 이미 보낸 아이는 다시 고르지 않는다(최종 중복 방지는 아래 dedupeKey 가 한다).
+        -- 이미 보낸 아이는 다시 고르지 않는다 — 중복 방지 키와 같은 기준(반+날짜+아이, absenceNoticeKeyPrefixSql).
+        -- «웹푸시 행»을 기준으로 본다: 앱 알림만 남고 웹푸시 기록이 실패했으면 다음 분에 다시 골라 웹푸시만 채운다
+        -- (앱 알림은 같은 키라 ON CONFLICT 로 두 번 생기지 않는다).
         AND NOT EXISTS (SELECT 1 FROM "NotificationDelivery" nd
-                         WHERE nd."eventType" = $3 AND nd."studentId" = st.id AND nd."sessionId" = s.id)
+                         WHERE nd."eventType" = $3 AND nd."studentId" = st.id AND nd.channel = 'PUSH'
+                           AND starts_with(nd."dedupeKey", ${absenceNoticeKeyPrefixSql('s."classId"', "$1::text", "st.id")}))
       ORDER BY a."updatedAt"
       LIMIT $4`,
     today, ABSENCE_NOTICE_DELAY_MINUTES, ABSENCE_NOTICE_EVENT, limit,

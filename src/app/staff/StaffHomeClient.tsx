@@ -33,11 +33,18 @@ export default function StaffHomeClient({
   dateKey,
   classes: initialClasses,
   coachLinkMissing = false,
+  showFees,
 }: {
   dateKey: string;
   classes: StaffTodayClass[];
   /** 선생님 계정에 코치가 연결되지 않아 수업이 안 보이는 상태(b4). 원장·부원장은 항상 false. */
   coachLinkMissing?: boolean;
+  /**
+   * «청구 확인» 시트·학생 정보의 미납 표시를 보일지 — 원장·부원장만 true(f3 보완).
+   * 서버(loadStaffClassBilling·loadStaffClassPeople)도 선생님에게는 금액을 주지 않아, 화면도 진입점을 숨긴다.
+   * 선생님의 현장 수납 확인 요청은 하단 «청구» 탭(/staff/billing)에서 그대로 한다.
+   */
+  showFees: boolean;
 }) {
   const router = useRouter();
   // 로그인이 풀렸을 때 «다시 로그인» 버튼(b5)
@@ -320,7 +327,7 @@ export default function StaffHomeClient({
                     <div className="grid grid-cols-2 gap-2 p-2" aria-label="수업 빠른 메뉴">
                       <SecondaryButton icon="edit_note" label="수업 내용" onClick={() => openContent(focusClass)} disabled={focusClass.sessionStatus === "IN_PROGRESS"} />
                       <SecondaryButton icon="groups" label="학생 정보" onClick={() => setPeopleTarget(focusClass)} />
-                      <SecondaryButton icon="receipt_long" label="청구 확인" onClick={() => setBillingTarget({ lesson: focusClass })} />
+                      {showFees && <SecondaryButton icon="receipt_long" label="청구 확인" onClick={() => setBillingTarget({ lesson: focusClass })} />}
                       <SecondaryButton icon="campaign" label="수업 공지" onClick={() => { setError(null); setNoticeTarget(focusClass); }} />
                     </div>
                   </details>
@@ -361,6 +368,7 @@ export default function StaffHomeClient({
         <ClassDetailSheet
           lesson={detailTarget}
           startLocked={Boolean(runningClass && detailTarget.sessionStatus !== "IN_PROGRESS")}
+          showFees={showFees}
           onClose={() => setDetailTarget(null)}
           // 시트를 먼저 닫고 기존 동작을 그대로 부른다(두 창이 겹치지 않게)
           onAction={(action) => {
@@ -369,14 +377,14 @@ export default function StaffHomeClient({
             if (action === "start") openPrimaryAction(lesson);
             else if (action === "content") openContent(lesson);
             else if (action === "contacts") openContacts(lesson);
-            else if (action === "billing") setBillingTarget({ lesson });
+            else if (action === "billing") { if (showFees) setBillingTarget({ lesson }); }
             else { setError(null); setNoticeTarget(lesson); }
           }}
         />
       )}
 
-      {peopleTarget && <ClassPeopleSheet key={`${peopleTarget.id}:${peopleTarget.sessionId || peopleTarget.sessionDateId || "today"}`} open classId={peopleTarget.id} sessionId={peopleTarget.sessionId} sessionDateId={peopleTarget.sessionDateId} className={peopleTarget.name} onClose={() => setPeopleTarget(null)} onOpenBilling={(student) => { const lesson = peopleTarget; setPeopleTarget(null); setBillingTarget({ lesson, student }); }} />}
-      {billingTarget && <ClassBillingSheet key={`${billingTarget.lesson.id}:${billingTarget.student?.id || "all"}`} open classId={billingTarget.lesson.id} className={billingTarget.lesson.name} student={billingTarget.student} onClose={() => setBillingTarget(null)} />}
+      {peopleTarget && <ClassPeopleSheet key={`${peopleTarget.id}:${peopleTarget.sessionId || peopleTarget.sessionDateId || "today"}`} open classId={peopleTarget.id} sessionId={peopleTarget.sessionId} sessionDateId={peopleTarget.sessionDateId} className={peopleTarget.name} onClose={() => setPeopleTarget(null)} onOpenBilling={showFees ? (student) => { const lesson = peopleTarget; setPeopleTarget(null); setBillingTarget({ lesson, student }); } : undefined} />}
+      {showFees && billingTarget && <ClassBillingSheet key={`${billingTarget.lesson.id}:${billingTarget.student?.id || "all"}`} open classId={billingTarget.lesson.id} className={billingTarget.lesson.name} student={billingTarget.student} onClose={() => setBillingTarget(null)} />}
 
       {noticeTarget && (
         <Modal title="수업 공지 작성" subtitle={`${noticeTarget.name} 학부모에게만 발송합니다.`} onClose={() => setNoticeTarget(null)} labelledBy="notice-title">
@@ -473,7 +481,7 @@ function ClassRow({ lesson, startLocked, onOpen, onStart }: { lesson: StaffToday
 type ClassDetailAction = "start" | "content" | "contacts" | "billing" | "notice";
 
 // 행을 누르면 여는 하단 시트: 기존 카드에 있던 정보·빠른 메뉴를 그대로 옮긴 것
-function ClassDetailSheet({ lesson, startLocked, onClose, onAction }: { lesson: StaffTodayClass; startLocked: boolean; onClose: () => void; onAction: (action: ClassDetailAction) => void }) {
+function ClassDetailSheet({ lesson, startLocked, showFees, onClose, onAction }: { lesson: StaffTodayClass; startLocked: boolean; showFees: boolean; onClose: () => void; onAction: (action: ClassDetailAction) => void }) {
   const completed = lesson.sessionStatus === "COMPLETED";
   return <ListDetailPanel onClose={onClose} titleId="staff-class-detail-title">
     <div className="flex items-start justify-between gap-3 border-b border-[var(--color-academy-line)] px-4 py-3">
@@ -493,7 +501,7 @@ function ClassDetailSheet({ lesson, startLocked, onClose, onAction }: { lesson: 
         <div className="grid grid-cols-2 gap-2" aria-label={`${lesson.name} 수업 빠른 메뉴`}>
           <SecondaryButton icon="edit_note" label="수업 내용" onClick={() => onAction("content")} />
           <SecondaryButton icon="groups" label="학생 정보" onClick={() => onAction("contacts")} />
-          <SecondaryButton icon="receipt_long" label="청구 확인" onClick={() => onAction("billing")} />
+          {showFees && <SecondaryButton icon="receipt_long" label="청구 확인" onClick={() => onAction("billing")} />}
           <SecondaryButton icon="campaign" label="수업 공지" onClick={() => onAction("notice")} />
         </div>
         <button type="button" disabled={startLocked} title={startLocked ? "진행 중인 수업을 먼저 종료해 주세요." : undefined} onClick={() => onAction("start")} className="academy-button-primary flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl px-4 text-base font-black disabled:cursor-not-allowed disabled:opacity-50">

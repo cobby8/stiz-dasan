@@ -12,6 +12,7 @@ import {
   BULK_SKIPPED_MESSAGE,
   SEAT_RECORD_WARNING_MESSAGE,
   STALE_DATE_MESSAGE,
+  TRIAL_BULK_SKIPPED_MESSAGE,
   activeSessionNotice,
   parseTrialRosterKey,
   shouldNotifyParentsForSession,
@@ -407,6 +408,8 @@ async function saveTrialAttendance(input: {
   bulk: boolean;
   checkedByUserId: string;
 }) {
+  // 체험 아이는 «전체 출석»으로 찍지 않는다(검수 LOW-1) — 화면이 빼고 보내지만, 낡은 화면·다른 경로도 서버가 막는다.
+  if (input.bulk) return { ok: true as const, skipped: true as const, message: TRIAL_BULK_SKIPPED_MESSAGE };
   const sessionYmd = String(input.session.date).slice(0, 10);
   const rows = await prisma.$queryRawUnsafe<{ status: string; staffAttendanceStatus: AttendanceStatus | null }[]>(
     `SELECT tl.status, tl."staffAttendanceStatus" FROM "TrialLead" tl
@@ -415,10 +418,6 @@ async function saveTrialAttendance(input: {
   );
   const lead = rows[0];
   if (!lead) return { ok: false as const, message: "이 수업의 체험 명단에 없는 아이입니다. 화면을 새로고침해 주세요." };
-  // «전체 출석»은 아직 안 찍은 아이만(정규와 같은 규칙) — 다른 기기에서 찍은 값을 덮지 않는다.
-  if (input.bulk && lead.staffAttendanceStatus) {
-    return { ok: true as const, skipped: true as const, message: BULK_ALREADY_RECORDED_MESSAGE };
-  }
   const nextLeadStatus = trialLeadStatusAfterStaffMark({
     currentStatus: lead.status,
     previousMark: lead.staffAttendanceStatus,
@@ -438,12 +437,10 @@ async function saveTrialAttendance(input: {
             "updatedAt" = NOW()
       WHERE id = $1 AND status = $5::text
         AND "staffAttendanceStatus" IS NOT DISTINCT FROM $6::text
-        AND ($7::boolean = false OR "staffAttendanceStatus" IS NULL)
       RETURNING id`,
-    input.trialLeadId, input.status, input.checkedByUserId, nextLeadStatus, lead.status, lead.staffAttendanceStatus, input.bulk,
+    input.trialLeadId, input.status, input.checkedByUserId, nextLeadStatus, lead.status, lead.staffAttendanceStatus,
   );
   if (!saved[0]) {
-    if (input.bulk) return { ok: true as const, skipped: true as const, message: BULK_ALREADY_RECORDED_MESSAGE };
     return { ok: false as const, message: "그사이 체험 정보가 바뀌었습니다. 화면을 새로고침한 뒤 다시 눌러 주세요." };
   }
   return { ok: true as const, changed: lead.staffAttendanceStatus !== input.status };

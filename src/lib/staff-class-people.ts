@@ -39,7 +39,8 @@ export type StaffClassPerson = {
   guardians: StaffClassGuardian[];
   recentAttendance: StaffClassAttendanceSummary;
   todayStatus: "PRESENT" | "LATE" | "ABSENT" | null;
-  billing: StaffClassBillingSummary;
+  // null = 이 직원은 수강료·미납을 볼 수 없음(선생님 — loadStaffClassPeople 이 비운다).
+  billing: StaffClassBillingSummary | null;
 };
 
 type StaffClassPersonRow = Omit<

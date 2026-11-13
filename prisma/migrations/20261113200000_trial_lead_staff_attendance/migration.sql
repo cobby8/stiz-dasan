@@ -9,6 +9,7 @@
 -- 코드는 칸이 없어도(이 마이그레이션 전) 출석부가 열리게 체험 명단 조회 실패를 로그로만 남긴다.
 --
 -- 되돌림:
+--   DROP INDEX IF EXISTS public."TrialLead_scheduledClassId_scheduledDate_idx";
 --   ALTER TABLE public."TrialLead" DROP CONSTRAINT IF EXISTS "TrialLead_staffAttendanceStatus_check";
 --   ALTER TABLE public."TrialLead" DROP COLUMN IF EXISTS "staffAttendanceByUserId";
 --   ALTER TABLE public."TrialLead" DROP COLUMN IF EXISTS "staffAttendanceAt";

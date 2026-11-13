@@ -35,5 +35,25 @@ export function absenceNoticeMessage(className: string, studentName: string): st
  * (수업 기록이 다시 만들어져도 같은 날 같은 반이면 같은 키라 두 번 나가지 않는다.)
  */
 export function absenceNoticeDedupeKey(input: { classId: string; dateYmd: string; studentId: string; userId: string }): string {
-  return `absence:${input.classId}:${input.dateYmd}:student:${input.studentId}:user:${input.userId}`;
+  return `${absenceNoticeKeyPrefix(input)}user:${input.userId}`;
 }
+
+/** 반+날짜+아이까지의 키 앞부분 — «이 아이는 오늘 이 반에서 이미 보냈나»를 고를 때 쓴다(학부모 무관). */
+export function absenceNoticeKeyPrefix(input: { classId: string; dateYmd: string; studentId: string }): string {
+  return `absence:${input.classId}:${input.dateYmd}:student:${input.studentId}:`;
+}
+
+/**
+ * 같은 앞부분을 SQL 식으로 — 대상 고르기(재선택 제외)가 중복 방지 키와 «같은 기준»을 쓰게 한다(검수 LOW-2).
+ * 인자는 SQL 식(컬럼·자리표시자). 결과는 absenceNoticeKeyPrefix 와 글자 하나까지 같아야 한다(테스트가 비교).
+ */
+export function absenceNoticeKeyPrefixSql(classExpr: string, dateExpr: string, studentExpr: string): string {
+  return `('absence:' || ${classExpr} || ':' || ${dateExpr} || ':student:' || ${studentExpr} || ':')`;
+}
+
+/**
+ * 웹푸시 장부 키 — deliverParentNotification 이 앱 알림 키 뒤에 «:push» 를 붙여 따로 남긴다.
+ * 재선택 제외는 이 «웹푸시 행»을 기준으로 한다: 앱 알림만 남고 웹푸시 기록이 실패했으면 다음 분에 다시 골라
+ * 웹푸시만 채운다(앱 알림은 키가 같아 두 번 생기지 않는다).
+ */
+export const PUSH_KEY_SUFFIX = ":push";

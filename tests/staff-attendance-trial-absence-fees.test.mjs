@@ -150,3 +150,100 @@ test("f3 선생님 출석부 화면은 수강료 줄을 숨기고 조회도 하�
   assert.match(client, /\{showFees && !student\.makeup && !student\.trial && <button/);
   assert.match(client, /\{showFees && <div aria-live="polite"/);
 });
+
+// ── 검수 보완(2026-11-13 PM) ──────────────────────────────────
+
+test("MED-1 출석부·홈의 청구 확인·학생 정보 미납은 원장·부원장만 — 서버도 금액을 주지 않는다", () => {
+  const client = read("src/app/staff/sessions/[sessionId]/SessionInProgressClient.tsx");
+  assert.match(client, /\{showFees && <button type="button" onClick=\{\(\) => setBillingStudent\(null\)\}/);
+  assert.match(client, /onOpenBilling=\{showFees \? /);
+  assert.match(client, /\{showFees && billingStudent !== undefined && <ClassBillingSheet/);
+  assert.match(client, /const attendanceBillingSheet = showFees && attendanceBillingTarget/);
+
+  const home = read("src/app/staff/StaffHomeClient.tsx");
+  assert.match(home, /\{showFees && <SecondaryButton icon="receipt_long" label="청구 확인" onClick=\{\(\) => setBillingTarget/);
+  assert.match(home, /\{showFees && <SecondaryButton icon="receipt_long" label="청구 확인" onClick=\{\(\) => onAction\("billing"\)\}/);
+  assert.match(home, /onOpenBilling=\{showFees \? /);
+  assert.match(home, /\{showFees && billingTarget && <ClassBillingSheet/);
+  assert.match(read("src/app/staff/page.tsx"), /showFees=\{canSeeStaffFees\(access\.staff\.appUserRole\)\}/);
+
+  // 학생 정보 시트: 서버가 billing=null 로 비우고, 화면은 onOpenBilling 이 없으면 미납 배지·청구 버튼을 숨긴다
+  const peopleAction = read("src/app/actions/staff-class-people.ts");
+  assert.match(peopleAction, /if \(!canSeeStaffFees\(access\.staff\.appUserRole\)\) \{\s*return \{ ok: true, people: people\.map\(\(person\) => \(\{ \.\.\.person, billing: null \}\)\) \};/);
+  const sheet = read("src/components/staff/ClassPeopleSheet.tsx");
+  assert.match(sheet, /const billing = openBilling \? person\.billing : null;/);
+  assert.doesNotMatch(sheet, /person\.billing\.unpaid/);
+
+  // 반·학생 청구 조회는 역할 검사 뒤에만 읽는다
+  const billing = read("src/app/actions/staff-billing.ts");
+  const body = functionBody(billing, "loadStaffClassBilling");
+  assert.ok(body.indexOf("canSeeStaffFees(") >= 0 && body.indexOf("canSeeStaffFees(") < body.indexOf("getStaffClassBilling("));
+
+  // «청구» 탭(/staff/billing 현장 수납 확인 요청)은 막은 함수를 쓰지 않아 그대로 동작한다
+  const tab = read("src/app/staff/billing/StaffBillingClient.tsx") + read("src/app/staff/billing/page.tsx");
+  assert.doesNotMatch(tab, /loadStaffClassBilling|loadStaffClassPeople|loadStaffAttendanceBilling|loadStaffSessionMonthlyFees/);
+  assert.doesNotMatch(functionBody(billing, "requestStaffPaymentConfirmation"), /canSeeStaffFees/);
+});
+
+test("MED-2 관리자가 체험 날짜·반을 바꾸면 선생님이 찍은 체험 출결을 비운다(본 저장과 분리)", () => {
+  const admin = read("src/app/actions/admin.ts");
+  const start = admin.indexOf("export async function updateTrialLead(");
+  const body = admin.slice(start, admin.indexOf("\nexport ", start + 10));
+  assert.match(body, /if \(data\.scheduledDate !== undefined \|\| data\.scheduledClassId !== undefined\) \{\s*try \{/);
+  assert.match(body, /SET "staffAttendanceStatus" = NULL, "staffAttendanceAt" = NULL, "staffAttendanceByUserId" = NULL/);
+  assert.match(body, /"scheduledDate" IS DISTINCT FROM \$2::timestamptz OR "scheduledClassId" IS DISTINCT FROM \$3::text/);
+  // 본 UPDATE 다음에 온다(이전 값과 비교)
+  assert.ok(body.indexOf('"staffAttendanceStatus" = NULL') > body.indexOf('UPDATE "TrialLead" SET ${setClauses}'));
+});
+
+test("LOW-1 전체 출석에서 체험 아이는 빠진다(화면·서버 모두)", () => {
+  const rows = [
+    { id: "a", status: null, absenceReport: null },
+    { id: "t", status: null, absenceReport: null, trial: true },
+    { id: "u", status: null, absenceReport: { reason: "ETC", status: "REPORTED", source: "PARENT" }, trial: true },
+  ];
+  const { targets, reported } = rules.splitBulkPresent(rows);
+  assert.deepEqual(targets.map((r) => r.id), ["a"]);
+  assert.deepEqual(reported.map((r) => r.id), []);
+  const source = read("src/app/actions/staff-sessions.ts");
+  const body = functionBody(source, "saveTrialAttendance");
+  assert.match(body, /if \(input\.bulk\) return \{ ok: true as const, skipped: true as const, message: TRIAL_BULK_SKIPPED_MESSAGE \};/);
+  // 일괄 판정이 DB 를 읽기 전에 끝난다
+  assert.ok(body.indexOf("TRIAL_BULK_SKIPPED_MESSAGE") < body.indexOf('FROM "TrialLead"'));
+});
+
+test("LOW-2 결석 알림 재선택 제외는 중복 방지 키와 같은 기준(반+날짜+아이)·웹푸시 행 기준", () => {
+  const prefix = notice.absenceNoticeKeyPrefix({ classId: "c1", dateYmd: "2026-11-13", studentId: "s1" });
+  const key = notice.absenceNoticeDedupeKey({ classId: "c1", dateYmd: "2026-11-13", studentId: "s1", userId: "u1" });
+  assert.ok(key.startsWith(prefix));
+  // SQL 식을 값으로 바꿔 이어 붙이면 같은 글자가 나와야 한다
+  const sql = notice.absenceNoticeKeyPrefixSql("'c1'", "'2026-11-13'", "'s1'");
+  const evaluated = sql.replace(/^\(|\)$/g, "").split(" || ").map((part) => part.replace(/^'|'$/g, "")).join("");
+  assert.equal(evaluated, prefix);
+
+  const sweep = read("src/lib/regular/absence-parent-notice-sweep.ts");
+  assert.match(sweep, /nd\.channel = 'PUSH'/);
+  assert.match(sweep, /starts_with\(nd\."dedupeKey", \$\{absenceNoticeKeyPrefixSql\('s\."classId"', "\$1::text", "st\.id"\)\}\)/);
+  assert.doesNotMatch(sweep, /nd\."sessionId" = s\.id/);
+  // 웹푸시 장부 키는 앱 알림 키 + «:push» (deliverParentNotification) — 재호출해도 앱 알림은 ON CONFLICT 로 한 번만
+  const deliver = read("src/lib/staff-notifications.ts");
+  assert.match(deliver, new RegExp("`\\$\\{input\\.dedupeKey\\}" + notice.PUSH_KEY_SUFFIX + "`"));
+  assert.match(deliver, /'IN_APP', \$7, 'SENT'[\s\S]*ON CONFLICT \("dedupeKey"\) DO NOTHING/);
+});
+
+test("LOW-4 관리자 체험 관리 목록에 선생님 체험 출결 배지", () => {
+  assert.deepEqual(rules.trialStaffMarkBadge("PRESENT"), { label: "출석", tone: "success" });
+  assert.deepEqual(rules.trialStaffMarkBadge("LATE"), { label: "지각", tone: "warning" });
+  assert.deepEqual(rules.trialStaffMarkBadge("ABSENT"), { label: "결석", tone: "danger" });
+  assert.equal(rules.trialStaffMarkBadge(null), null);
+  assert.equal(rules.trialStaffMarkBadge("X"), null);
+  assert.match(read("src/lib/queries.ts"), /staffAttendanceStatus: r\.staffAttendanceStatus \?\? null/);
+  const crm = read("src/app/admin/trial/TrialCrmClient.tsx");
+  assert.match(crm, /const staffMark = trialStaffMarkBadge\(lead\.staffAttendanceStatus\);/);
+  assert.match(crm, /선생님 \{staffMark\.label\}/);
+});
+
+test("되돌림 주석에 색인 삭제 줄이 있다", () => {
+  const sql = read("prisma/migrations/20261113200000_trial_lead_staff_attendance/migration.sql");
+  assert.match(sql, /--\s+DROP INDEX IF EXISTS public\."TrialLead_scheduledClassId_scheduledDate_idx";/);
+});

@@ -3160,6 +3160,8 @@ export const getTrialLeads = cache(async (statusOrOptions?: string | AdminListQu
             // 체험비 온라인 결제 요약(2026-11-10) — PAID·WAITING_FOR_DEPOSIT·REFUNDED·NEEDS_REFUND (칸이 없으면 null)
             trialFeePaymentStatus: r.trialFeePaymentStatus ?? null,
             trialFeePaidAt: r.trialFeePaidAt ?? null,
+            // 선생님이 출석부에서 찍은 체험 출결(2026-11-13 f1) — PRESENT·LATE·ABSENT (칸이 없으면 null)
+            staffAttendanceStatus: r.staffAttendanceStatus ?? null,
             hopeNote: r.hopeNote ?? r.hopenote ?? null,
             agreedTerms: r.agreedTerms ?? r.agreedterms ?? false,
             agreedPrivacy: r.agreedPrivacy ?? r.agreedprivacy ?? false,

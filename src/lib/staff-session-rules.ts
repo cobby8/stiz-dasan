@@ -14,6 +14,8 @@ import { todayKst } from "@/lib/datetime/kst";
 export type BulkAttendanceRow = {
   status: string | null;
   absenceReport: { reason: string; status: string; source: "SHEET" | "PARENT" } | null;
+  /** 체험수업 아이(f1) — 전체 출석 대상이 아니다. */
+  trial?: boolean;
 };
 
 /**
@@ -21,9 +23,11 @@ export type BulkAttendanceRow = {
  * - 이미 찍은 아이는 건드리지 않는다.
  * - 결석 신고(학부모 신고·원장 기간 결석)가 있는 아이는 일괄 출석에서 뺀다 → 선생님이 직접 확인한다.
  *   아이가 실제로 왔으면 그 줄의 «출석» 버튼을 직접 누르면 된다(개별 출석은 막지 않는다).
+ * - 체험 아이는 아예 빼고(targets·reported 어디에도 없음) 개별로만 찍는다 —
+ *   안 온 체험 아이가 일괄 출석으로 «체험 완료»에 올라가는 사고를 막는다(검수 LOW-1).
  */
 export function splitBulkPresent<T extends BulkAttendanceRow>(rows: T[]): { targets: T[]; reported: T[] } {
-  const unchecked = rows.filter((row) => !row.status);
+  const unchecked = rows.filter((row) => !row.status && !row.trial);
   return {
     targets: unchecked.filter((row) => !row.absenceReport),
     reported: unchecked.filter((row) => Boolean(row.absenceReport)),
@@ -169,6 +173,20 @@ export function parseTrialRosterKey(key: string | null | undefined): string | nu
   const id = value.slice(TRIAL_ROSTER_PREFIX.length).trim();
   return id && id.length <= 128 ? id : null;
 }
+
+/**
+ * 관리자 체험 관리 화면의 «선생님 출결» 배지(검수 LOW-4). 안 찍었거나 모르는 값이면 null(배지 없음).
+ * 색은 출석부와 같은 약속: 출석=초록·지각=노랑·결석=빨강.
+ */
+export function trialStaffMarkBadge(mark: string | null | undefined): { label: string; tone: "success" | "warning" | "danger" } | null {
+  if (mark === "PRESENT") return { label: "출석", tone: "success" };
+  if (mark === "LATE") return { label: "지각", tone: "warning" };
+  if (mark === "ABSENT") return { label: "결석", tone: "danger" };
+  return null;
+}
+
+/** 서버가 일괄 출석 요청에서 체험 아이를 건너뛸 때 돌려주는 문구(검수 LOW-1). */
+export const TRIAL_BULK_SKIPPED_MESSAGE = "체험 아이는 전체 출석에서 빠집니다. 그 줄에서 직접 눌러 주세요.";
 
 /** 선생님 출석부에 체험 아이로 띄우는 체험 신청 상태 — 일정 확정(SCHEDULED)·체험 완료(ATTENDED). */
 export const TRIAL_ROSTER_STATUSES = ["SCHEDULED", "ATTENDED"] as const;

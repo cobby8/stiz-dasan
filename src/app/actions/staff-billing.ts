@@ -3,9 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin, requireStaff } from "@/lib/auth-guard";
-import { requireStaffStudentAccess } from "@/lib/staff-class-access";
+import { getStaffClassAccessContext, requireStaffStudentAccess } from "@/lib/staff-class-access";
 import { resolveStaffBillingGuard } from "@/lib/staff-billing-policy";
-import { getStaffAttendanceBilling, getStaffSessionMonthlyFees } from "@/lib/staff-monthly-fees";
+import { STAFF_FEES_HIDDEN_MESSAGE, getStaffAttendanceBilling, getStaffSessionMonthlyFees } from "@/lib/staff-monthly-fees";
+import { canSeeStaffFees } from "@/lib/staff-session-rules";
 import type { StaffSessionMonthlyFees } from "@/lib/staff-monthly-fee-types";
 import {
   getStaffClassBilling,
@@ -42,6 +43,11 @@ export async function loadStaffClassBilling(input: {
     throw new Error("수업 또는 학생 정보가 올바르지 않습니다.");
   }
 
+  // 반·학생 청구 조회(출석부·홈의 «청구 확인» 시트)는 원장·부원장만(f3 보완, 2026-11-13).
+  // 선생님의 현장 수납 확인 요청은 «청구» 탭(/staff/billing — getStaffBilling·requestStaffPaymentConfirmation)이
+  // 따로 쓰므로 여기를 막아도 그대로 동작한다.
+  const access = await getStaffClassAccessContext();
+  if (!canSeeStaffFees(access.staff.appUserRole)) throw new Error(STAFF_FEES_HIDDEN_MESSAGE);
   const items = await getStaffClassBilling(classId, studentId);
   return {
     ok: true,

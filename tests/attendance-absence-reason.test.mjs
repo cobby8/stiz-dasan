@@ -223,7 +223,8 @@ test("전체 출석은 미확인이면 보강 아이도 포함하고, 수업 중
   // 전체 출석 대상은 공용 규칙(splitBulkPresent)이 고른다 — 보강 여부로 거르지 않고, 결석 신고 아이만 뺀다(2026-11-13 b1).
   assert.match(client, /splitBulkPresent\(students\)/);
   const rules = readFileSync("src/lib/staff-session-rules.ts", "utf8");
-  assert.match(rules, /const unchecked = rows\.filter\(\(row\) => !row\.status\)/, "보강 여부로 거르지 않는다");
+  // 체험 아이만 빠진다(2026-11-13 검수 LOW-1) — 보강 여부로는 여전히 거르지 않는다.
+  assert.match(rules, /const unchecked = rows\.filter\(\(row\) => !row\.status && !row\.trial\)/, "보강 여부로 거르지 않는다");
   assert.doesNotMatch(rules.slice(rules.indexOf("export function splitBulkPresent")), /makeup/);
   // 출결 버튼은 이미 찍힌 상태여도 막지 않는다(저장 중인 그 줄·전체 출석 중에만 잠금 — b5)
   assert.match(client, /active=\{student\.status === status\} disabled=\{bulkBusy \|\| Boolean\(savingRows\[student\.id\]\)\} onClick=\{\(\) => void updateAttendance\(student\.id, status\)\}/);
