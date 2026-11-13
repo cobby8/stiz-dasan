@@ -111,3 +111,33 @@ export function planDriverOrder(input: {
   }
   return { routes };
 }
+
+/**
+ * 기사님 저장 순서 → 행마다 저장할 순서 번호(sortOrder)·시각.
+ * 왜(2026-11-13): 예전엔 그날 학생 행 전체에 0,1,2…를 새로 매겨 2호점 경유·복귀 행(학생 없는 행) 번호와 뒤섞였다
+ *   → 명단 순서와 «합류» 배정 기준이 어긋났다. 관리자 저장(reassignSortSlots)과 같게,
+ *   묶음(수업시간 × 방향)마다 그 묶음 행들이 쓰던 번호만 새 순서대로 돌려 쓴다(다른 행 순서는 그대로).
+ * 같은 번호가 겹쳐 있으면(가져오기 잔재) 앞 번호보다 1 이상 크게 맞춘다.
+ */
+export function planDriverRowSlots(
+  rows: readonly Pick<RegularShuttleStop, "id" | "classTime" | "direction" | "sortOrder">[],
+  updates: readonly DriverOrderUpdate[],
+): { id: string; sortOrder: number; arriveTime: string | null }[] {
+  const byId = new Map(rows.filter((r) => r.id).map((r) => [r.id!, r]));
+  const groups = new Map<string, { id: string; arriveTime: string | null }[]>();
+  for (const update of [...updates].sort((a, b) => a.sortOrder - b.sortOrder)) {
+    for (const id of update.rowIds) {
+      const row = byId.get(id);
+      if (!row) throw new DriverOrderError("명단이 변경되었습니다. 새로고침 후 다시 저장해 주세요.");
+      const key = `${row.classTime ?? ""}|${row.direction}`;
+      groups.set(key, [...(groups.get(key) ?? []), { id, arriveTime: update.arriveTime }]);
+    }
+  }
+  const out: { id: string; sortOrder: number; arriveTime: string | null }[] = [];
+  for (const list of groups.values()) {
+    const slots = list.map((item) => Number(byId.get(item.id)!.sortOrder) || 0).sort((a, b) => a - b);
+    for (let i = 1; i < slots.length; i++) if (slots[i] <= slots[i - 1]) slots[i] = slots[i - 1] + 1;
+    list.forEach((item, i) => out.push({ id: item.id, sortOrder: slots[i], arriveTime: item.arriveTime }));
+  }
+  return out;
+}

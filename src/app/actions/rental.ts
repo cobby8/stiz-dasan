@@ -19,6 +19,7 @@ import { todayKst } from "@/lib/datetime/kst";
 import { isBookableDate, isRentalAction, rentalBankCopyText, type RentalAction, type RentalDay, type RentalStatus } from "@/lib/rental/gym-rental-rules";
 import {
   createRentalRequest,
+  editRentalInTx,
   isRentalOverlapViolation,
   listRentalMemberStudents,
   listRentalRequests,
@@ -26,6 +27,7 @@ import {
   saveRentalSmsStatus,
   transitionRentalInTx,
   type RentalApplyInput,
+  type RentalEditInput,
   type RentalMemberStudent,
   type RentalMemberViewer,
   type RentalRecord,
@@ -284,5 +286,44 @@ export async function updateRentalStatus(id: string, action: string, options: Re
     }
     console.error("[rental] status update failed:", (error as Error).message);
     return { ok: false, error: "처리하지 못했습니다. 잠시 후 다시 시도해 주세요." };
+  }
+}
+
+// ── 관리자: 신청 내용 수정(날짜·시간·인원·냉난방) ────────────────────────
+export type RentalEditActionResult = { ok: true; changed: boolean; sms: RentalSmsOutcome | null } | { ok: false; error: string };
+
+/**
+ * 승인 대기·입금 대기 신청의 내용을 고친다. 금액은 서버가 다시 계산한다.
+ * notify=true 이고 입금 대기(승인됨) 건이면 바뀐 시간·금액으로 «승인 안내» 문자를 다시 보낸다(승인 대기는 아직 안내한 게 없어 보내지 않는다).
+ */
+export async function editRentalRequest(id: string, input: RentalEditInput, options: { notify?: boolean } = {}): Promise<RentalEditActionResult> {
+  const admin = await requireAdmin();
+  try {
+    const result = await prisma.$transaction((tx) => editRentalInTx(tx, id, input, admin.appUserId, Date.now()));
+    if (!result.ok) return { ok: false, error: result.message };
+    if (!result.changed) return { ok: true, changed: false, sms: null };
+    let sms: RentalSmsOutcome | null = null;
+    if (options.notify === true && result.request.status === "APPROVED") {
+      // 같은 건·같은 종류 문자는 중복 방지로 막히므로 수정마다 새 실행 번호를 붙인다
+      sms = await sendRentalApplicantSms("approved", result.request, `edit-${Date.now()}`);
+      // 문자 꺼짐(OFF)이면 처음 승인 문자 결과 기록을 덮어쓰지 않는다
+      if (sms !== "OFF") {
+        try {
+          await saveRentalSmsStatus(prisma, result.request.id, `${sms}:approved`);
+        } catch (error) {
+          console.error("[rental] sms status save failed:", (error as Error).message);
+        }
+      }
+    }
+    revalidatePath("/admin/rental");
+    revalidatePath("/admin/inbox");
+    revalidatePath("/rental");
+    return { ok: true, changed: true, sms };
+  } catch (error) {
+    if (isRentalOverlapViolation(error)) {
+      return { ok: false, error: "이미 승인된 다른 대관과 시간이 겹칩니다. 다른 시간을 골라 주세요." };
+    }
+    console.error("[rental] edit failed:", (error as Error).message);
+    return { ok: false, error: "고치지 못했습니다. 잠시 후 다시 시도해 주세요." };
   }
 }

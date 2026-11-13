@@ -4,7 +4,7 @@ import { isAnyDriverRunToken } from "@/lib/shuttle/driverToken";
 import { driverLinkBlocked, driverLinkDisabledResponse } from "@/lib/shuttle/driverLinkAccess";
 import { prisma } from "@/lib/prisma";
 import { kstDow } from "@/lib/datetime/kst";
-import { DriverOrderError, parseDriverOrderUpdates, planDriverOrder } from "@/lib/shuttle/driverOrderPlan";
+import { DriverOrderError, parseDriverOrderUpdates, planDriverOrder, planDriverRowSlots } from "@/lib/shuttle/driverOrderPlan";
 import type { RegularShuttleStop } from "@/lib/shuttle/regularSheet";
 
 export const dynamic = "force-dynamic";
@@ -42,26 +42,29 @@ export async function POST(request: Request) {
       // 기사님 화면과 같은 조립기(명단 순서 그대로)로 «연 화면 = 지금 DB» 인지·저장 뒤 순서가 맞는지 검사한다.
       // 저장 노선이 없으므로 routes·학생↔행 연결은 빈 값이다(조립기가 명단 폴백으로만 묶는다).
       planDriverOrder({ rows, routes: [], updates, baseline, rowIdsByStudentId: { PICKUP: new Map(), DROPOFF: new Map() } });
+      // 순서 번호는 묶음(수업시간 × 방향)마다 그 묶음이 쓰던 번호를 돌려 쓴다(2026-11-13 — 예전엔 0,1,2…로 새로 매겨
+      // 2호점 경유·복귀 행과 뒤섞였다). 화면 순서(시각순)는 그대로이고, 명단 순서만 묶음 안에서 바뀐다.
+      const planned = planDriverRowSlots(rows, updates);
       let count = 0;
-      for (const update of updates) {
+      for (const item of planned) {
         // 행 id·달·요일·방향을 모두 조건에 걸어 다른 달·요일 행을 실수로 고치지 않는다.
         const changed = Number(await tx.$executeRawUnsafe(
           `UPDATE "RegularShuttleStop" SET "sortOrder"=$1, "arriveTime"=$2
             WHERE "id" = ANY($3::text[]) AND "serviceMonth"=$4 AND "weekday"=$5 AND "direction" IN ('BOARD','ALIGHT')`,
-          update.sortOrder, update.arriveTime, update.rowIds, serviceMonth, weekday,
+          item.sortOrder, item.arriveTime, [item.id], serviceMonth, weekday,
         )) || 0;
-        if (changed !== update.rowIds.length) throw new DriverOrderError("정차 명단이 변경되어 저장을 취소했습니다. 새로고침해 주세요.");
+        if (changed !== 1) throw new DriverOrderError("정차 명단이 변경되어 저장을 취소했습니다. 새로고침해 주세요.");
         count += changed;
       }
       // 저장 성공 응답 전에 다시 읽어 실제 반영값을 확인한다. 실패하면 위 변경도 함께 취소된다.
       const readback = await tx.$queryRawUnsafe<{ id: string; sortOrder: number; arriveTime: string | null }[]>(
         `SELECT "id","sortOrder","arriveTime" FROM "RegularShuttleStop" WHERE "id" = ANY($1::text[]) AND "serviceMonth"=$2 AND "weekday"=$3`,
-        updates.flatMap(update => update.rowIds), serviceMonth, weekday,
+        planned.map((item) => item.id), serviceMonth, weekday,
       );
       const byId = new Map(readback.map(row => [String(row.id), row]));
-      for (const update of updates) for (const id of update.rowIds) {
-        const row = byId.get(id);
-        if (!row || Number(row.sortOrder) !== update.sortOrder || (row.arriveTime ?? null) !== update.arriveTime) throw new DriverOrderError("저장 결과를 확인하지 못했습니다. 다시 확인해 주세요.");
+      for (const item of planned) {
+        const row = byId.get(item.id);
+        if (!row || Number(row.sortOrder) !== item.sortOrder || (row.arriveTime ?? null) !== item.arriveTime) throw new DriverOrderError("저장 결과를 확인하지 못했습니다. 다시 확인해 주세요.");
       }
       return count;
     }, { isolationLevel: "Serializable", timeout: 15000 });

@@ -17,12 +17,19 @@ import StatusCountChips from "@/components/admin/list/StatusCountChips";
 import { kstLabel } from "@/lib/datetime/kst";
 import { statusBadgeClass } from "@/lib/ui/statusTones";
 import {
+  RENTAL_CLOSE_HOUR,
+  RENTAL_DURATION_STEP_MINUTES,
+  RENTAL_MAX_HEADCOUNT,
+  RENTAL_MAX_MINUTES,
+  RENTAL_MIN_MINUTES,
+  RENTAL_OPEN_HOUR,
   RENTAL_REJECT_REASONS,
   RENTAL_STATUSES,
   RENTAL_STATUS_LABEL,
   RENTAL_TRANSITIONS,
   allowedRentalActions,
   buildRentalApplicantMessage,
+  calculateRentalFee,
   formatRentalPhone,
   formatWon,
   rentalTimeText,
@@ -31,7 +38,7 @@ import {
   type RentalApplicantKind,
   type RentalStatus,
 } from "@/lib/rental/gym-rental-rules";
-import { updateRentalStatus, type AdminRentalRow } from "@/app/actions/rental";
+import { editRentalRequest, updateRentalStatus, type AdminRentalRow } from "@/app/actions/rental";
 // 신청함 «대관» 탭에 끼울 때 «처리할 것 / 완료»를 나누는 기준 — 신청함과 같은 칸 판정(catalog 한 곳)
 import { bucketFor, deriveRentalStatus } from "@/lib/requests/catalog";
 
@@ -69,6 +76,18 @@ const CONFIRM_TEXT: Partial<Record<RentalAction, { description: string; tone: "d
 // 버튼 → 신청자 문자 종류(미리보기용 · 서버 updateRentalStatus 와 같은 짝)
 const SMS_KIND: Partial<Record<RentalAction, RentalApplicantKind>> = { approve: "approved", reject: "rejected", confirmPayment: "confirmed" };
 const CUSTOM_REASON = "__custom__";
+
+// 내용 수정 — 돈을 받기 전 단계만(서버 RENTAL_EDITABLE_STATUSES 와 같은 목록)
+const EDITABLE: readonly RentalStatus[] = ["REQUESTED", "APPROVED"];
+// 시작 시각 후보(10분 간격) · 이용 시간 후보(30분 간격). 실제로 비어 있는지는 서버가 수업·대관과 다시 맞춰 본다.
+const START_OPTIONS = Array.from({ length: (RENTAL_CLOSE_HOUR - 1 - RENTAL_OPEN_HOUR) * 6 + 1 }, (_, i) => RENTAL_OPEN_HOUR * 60 + i * 10);
+const DURATION_OPTIONS = Array.from(
+  { length: (RENTAL_MAX_MINUTES - RENTAL_MIN_MINUTES) / RENTAL_DURATION_STEP_MINUTES + 1 },
+  (_, i) => RENTAL_MIN_MINUTES + i * RENTAL_DURATION_STEP_MINUTES,
+);
+const hhmm = (minute: number) => `${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`;
+const durationText = (minute: number) => `${Math.floor(minute / 60)}시간${minute % 60 ? " 30분" : ""}`;
+type EditForm = { id: string; rentalDate: string; startMinute: number; durationMinutes: number; headcount: string; useAircon: boolean; notify: boolean };
 
 type SmsOn = Record<RentalApplicantKind, boolean>;
 
@@ -114,6 +133,7 @@ export default function RentalAdminClient({ rows, bankAccount, smsOn, embedded =
   const [copiedId, setCopiedId] = useState("");
   const [pending, startTransition] = useTransition();
   const [showDone, setShowDone] = useState(false);
+  const [editing, setEditing] = useState<EditForm | null>(null);
 
   const counts = useMemo(() => {
     const map = new Map<string, number>();
@@ -165,6 +185,41 @@ export default function RentalAdminClient({ rows, bankAccount, smsOn, embedded =
     setConfirming({ id: row.id, action });
   }
 
+  function openEdit(row: AdminRentalRow) {
+    setError("");
+    setNotice("");
+    setEditing({
+      id: row.id,
+      rentalDate: row.rentalDate,
+      startMinute: row.startMinute,
+      durationMinutes: row.endMinute - row.startMinute,
+      headcount: String(row.headcount),
+      useAircon: row.useAircon,
+      notify: true,
+    });
+  }
+
+  function saveEdit(form: EditForm) {
+    setError("");
+    startTransition(async () => {
+      const result = await editRentalRequest(
+        form.id,
+        { rentalDate: form.rentalDate, startMinute: form.startMinute, durationMinutes: form.durationMinutes, headcount: Number(form.headcount), useAircon: form.useAircon },
+        { notify: form.notify },
+      );
+      if (!result.ok) {
+        setError(adminMessageText(result.error, "고치지 못했습니다. 잠시 후 다시 시도해 주세요."));
+        return;
+      }
+      setEditing(null);
+      if (!result.changed) setNotice("바뀐 내용이 없어 그대로 두었습니다.");
+      else if (result.sms === "FAILED") setNotice("내용은 고쳤지만 신청자 문자를 보내지 못했어요. 전화로 안내해 주세요.");
+      else if (result.sms === "SENT") setNotice("내용을 고치고 바뀐 안내 문자를 보냈습니다.");
+      else setNotice("내용을 고쳤습니다. 바꾼 기록은 메모에 남았어요.");
+      router.refresh();
+    });
+  }
+
   function actionLabel(row: AdminRentalRow, action: RentalAction): string {
     // 입금할 금액이 0원(재원생 2시간 이내)이면 승인 = 바로 확정
     if (action === "approve" && rentalTransitionTarget(action, row) === "PAID") return "승인(바로 확정)";
@@ -175,7 +230,11 @@ export default function RentalAdminClient({ rows, bankAccount, smsOn, embedded =
     const id = row.id; // 패널을 닫은 뒤 실행돼도 대상이 바뀌지 않게 미리 붙잡아 둔다
     // 순서: 진행 버튼 먼저, 거절·취소(위험)는 뒤로. 보증금 0원 건은 «보증금 환불» 단계가 없다(row 를 넘김).
     const actions = allowedRentalActions(row.status, row).sort((a, b) => Number(a === "reject" || a === "cancel") - Number(b === "reject" || b === "cancel"));
-    return actions.map((action) => ({
+    // «내용 수정»은 진행 버튼 뒤에 둔다(위험 버튼은 메뉴가 알아서 맨 아래로 모은다)
+    const edit: AdminQuickAction[] = EDITABLE.includes(row.status)
+      ? [{ key: "edit", label: "내용 수정", icon: "edit_calendar", tone: "default", disabled: pending, onSelect: () => openEdit(row) }]
+      : [];
+    return [...actions.map((action): AdminQuickAction => ({
       key: action,
       label: actionLabel(row, action),
       icon: ACTION_ICON[action],
@@ -183,7 +242,7 @@ export default function RentalAdminClient({ rows, bankAccount, smsOn, embedded =
       disabled: pending,
       // 사용 완료는 되돌릴 일이 적고 돈이 오가지 않아 바로 처리, 나머지는 확인 창
       onSelect: () => (CONFIRM_TEXT[action] ? openConfirm(row, action) : run(id, action)),
-    }));
+    })), ...edit];
   }
 
   function handleRowKeyDown(event: React.KeyboardEvent<HTMLElement>, id: string) {
@@ -219,6 +278,19 @@ export default function RentalAdminClient({ rows, bankAccount, smsOn, embedded =
     }
   }
   const approveFree = confirming?.action === "approve" && confirmRow ? rentalTransitionTarget("approve", confirmRow) === "PAID" : false;
+  // 수정 창 — 바뀐 금액 미리보기(서버가 같은 함수로 다시 계산해 저장한다)
+  const editRow = editing ? rows.find((row) => row.id === editing.id) ?? null : null;
+  let editFee: ReturnType<typeof calculateRentalFee> | null = null;
+  let editFeeError = "";
+  if (editing && editRow) {
+    try {
+      editFee = calculateRentalFee({ durationMinutes: editing.durationMinutes, headcount: Number(editing.headcount), useAircon: editing.useAircon, memberFree: editRow.memberFree });
+    } catch (e) {
+      editFeeError = (e as Error).message;
+    }
+  }
+  const editInput = "mt-1 block min-h-11 w-full rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 font-normal tabular-nums";
+  const amountDiff = editFee && editRow ? editFee.total - editRow.totalAmount : 0;
 
   return (
     <div className="space-y-3">
@@ -312,7 +384,7 @@ export default function RentalAdminClient({ rows, bankAccount, smsOn, embedded =
         </button>
       )}
 
-      {detail && !confirming && (
+      {detail && !confirming && !editing && (
         <ListDetailPanel onClose={() => setDetailId(null)} titleId="rental-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
           <div className="mb-4 flex items-center gap-2">
             <h3 id="rental-detail-panel-title" className="min-w-0 break-keep text-lg font-black text-[var(--color-academy-ink)]">{detail.applicantName}</h3>
@@ -495,6 +567,85 @@ export default function RentalAdminClient({ rows, bankAccount, smsOn, embedded =
               cancelRefund: paidCancel ? (refundAmount === "" ? null : Number(refundAmount)) : null,
               rejectReason: confirming.action === "reject" ? rejectReason : undefined,
             });
+          }}
+        />
+      )}
+
+      {editing && editRow && (
+        <AdminConfirmDialog
+          titleId="rental-edit-title"
+          title={`${editRow.applicantName} · 내용 수정`}
+          description={
+            <div className="space-y-2">
+              <p className="text-[var(--color-academy-muted)]">
+                지금: {kstLabel(editRow.rentalDate)} {rentalTimeText(editRow)} · {editRow.headcount}명{editRow.useAircon ? " · 냉난방" : ""} · {formatWon(editRow.totalAmount)}
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="col-span-2 block font-bold text-[var(--color-academy-ink)]">
+                  이용일
+                  <input type="date" value={editing.rentalDate} onChange={(e) => setEditing({ ...editing, rentalDate: e.target.value })} className={editInput} />
+                </label>
+                <label className="block font-bold text-[var(--color-academy-ink)]">
+                  시작
+                  <select value={editing.startMinute} onChange={(e) => setEditing({ ...editing, startMinute: Number(e.target.value) })} className={editInput}>
+                    {START_OPTIONS.map((minute) => <option key={minute} value={minute}>{hhmm(minute)}</option>)}
+                  </select>
+                </label>
+                <label className="block font-bold text-[var(--color-academy-ink)]">
+                  이용 시간
+                  <select value={editing.durationMinutes} onChange={(e) => setEditing({ ...editing, durationMinutes: Number(e.target.value) })} className={editInput}>
+                    {DURATION_OPTIONS.map((minute) => (
+                      <option key={minute} value={minute}>{durationText(minute)} (~{hhmm(editing.startMinute + minute)})</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block font-bold text-[var(--color-academy-ink)]">
+                  인원
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={RENTAL_MAX_HEADCOUNT}
+                    value={editing.headcount}
+                    onChange={(e) => setEditing({ ...editing, headcount: e.target.value })}
+                    className={editInput}
+                  />
+                </label>
+                <label className="flex min-h-11 items-center gap-2 self-end font-bold text-[var(--color-academy-ink)]">
+                  <input type="checkbox" checked={editing.useAircon} onChange={(e) => setEditing({ ...editing, useAircon: e.target.checked })} className="h-5 w-5" />
+                  냉난방
+                </label>
+              </div>
+              {/* 바뀐 금액 — 서버가 같은 계산으로 다시 저장한다 */}
+              <p className="rounded-lg bg-[var(--color-academy-soft)] px-3 py-2 font-bold tabular-nums text-[var(--color-academy-ink)]">
+                {editFee
+                  ? `바뀐 금액: 이용료 ${formatWon(editFee.usageFee)} + 보증금 ${formatWon(editFee.deposit)} = ${formatWon(editFee.total)}${amountDiff ? ` (${amountDiff > 0 ? "+" : "-"}${formatWon(Math.abs(amountDiff))})` : ""}`
+                  : editFeeError}
+              </p>
+              {/* 입금 대기(승인 안내를 이미 보낸) 건만 바뀐 내용으로 다시 안내한다 */}
+              {editRow.status === "APPROVED" && (
+                <label className="flex min-h-11 items-center gap-2 font-bold text-[var(--color-academy-ink)]">
+                  <input type="checkbox" checked={editing.notify} onChange={(e) => setEditing({ ...editing, notify: e.target.checked })} className="h-5 w-5" />
+                  바뀐 시간·금액으로 승인 안내 문자 다시 보내기{smsOn.approved ? "" : " (문자 꺼짐 · 보내지 않음)"}
+                </label>
+              )}
+              <p className="text-xs text-[var(--color-academy-muted)]">수업·특강·다른 승인 대관과 겹치면 저장되지 않습니다. 바꾼 내용은 메모에 자동으로 남습니다.</p>
+            </div>
+          }
+          confirmLabel="저장"
+          tone="primary"
+          pending={pending}
+          error={error}
+          onCancel={() => {
+            setEditing(null);
+            setError("");
+          }}
+          onConfirm={() => {
+            if (!editFee) {
+              setError(editFeeError || "입력값을 확인해 주세요.");
+              return;
+            }
+            saveEdit(editing);
           }}
         />
       )}

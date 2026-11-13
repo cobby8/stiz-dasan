@@ -198,6 +198,7 @@ export async function loadRentalApplicantSmsSwitches(): Promise<Record<"approved
 export async function sendRentalApplicantSms(
   kind: RentalApplicantSmsKind,
   request: RentalRow,
+  deliveryRunId?: string, // 같은 건에 같은 종류 문자를 «다시» 보낼 때(관리자 내용 수정 뒤) — 없으면 중복 방지로 건너뛴다
 ): Promise<RentalSmsOutcome> {
   // 접수 문자는 전용 스위치, 승인·거절·확정 문자는 공용 스위치. 둘 다 /admin/sms 규칙도 켜져 있어야 나간다.
   if (kind === "received" ? !isRentalReceivedSmsEnabled() : !isRentalApplicantSmsEnabled()) return "OFF";
@@ -220,6 +221,7 @@ export async function sendRentalApplicantSms(
       recipientPhone: request.applicantPhone,
       body,
       alimtalk,
+      ...(deliveryRunId ? { deliveryRunId } : {}),
     });
     if (result.ok) return "SENT";
     return result.reason === "AUTOMATION_DISABLED" ? "OFF" : "FAILED";
