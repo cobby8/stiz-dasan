@@ -1900,6 +1900,10 @@ model TrialLead {
   hopeNote                    String? // 바라는 점 (자유 입력)
   agreedTerms                 Boolean               @default(false) // 이용약관 동의 여부
   agreedPrivacy               Boolean               @default(false) // 개인정보 수집/이용 동의 여부
+  // 선생님 출석부의 체험 아이 출결(마이그레이션 20261113200000) — PRESENT | LATE | ABSENT (DB CHECK). 정규 Attendance 와 분리.
+  staffAttendanceStatus       String?
+  staffAttendanceAt           DateTime?             @db.Timestamptz(6)
+  staffAttendanceByUserId     String?
   createdAt                   DateTime              @default(now()) @db.Timestamptz(6)
   updatedAt                   DateTime              @default(now()) @updatedAt @db.Timestamptz(6)
   enrollmentShortLinks        EnrollmentShortLink[]
@@ -1908,6 +1912,7 @@ model TrialLead {
   @@index([status])
   @@index([createdAt])
   @@index([status, createdAt])
+  @@index([scheduledClassId, scheduledDate])
 }
 
 /// 체험비 토스 주문 1건 = 1행 (마이그레이션 20261110150000 의 사본). 체험 신청자는 원생이 아니라 PaymentTransaction 을 못 써서 따로 둔다.

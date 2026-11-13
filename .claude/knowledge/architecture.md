@@ -9,6 +9,11 @@
 - **내용**: ① 아이디 정규식·정규화·로그인 메일 매핑(`아이디@member.stiz.kr`)·문구는 `src/lib/parent-username.ts`(import 없는 순수 모듈) 한 곳. 신규 가입(parent-signup-verification, 예전 import 위해 re-export)과 기존 학부모 계정 활성화(parent-account-claim)가 같이 쓴다 — 두 서버 모듈이 서로 import 하면 순환이라 따로 뺐다. 활성화는 User 에 `email`=매핑 메일 + `username` 을 함께 적고, 서버 액션은 결과의 `loginEmail` 로 바로 로그인. 예전 이메일 활성화 계정은 로그인 화면이 «@» 든 값을 그대로 써서 하위호환. 이 모듈을 import 하는 서버 파일을 data: URL 로 올리는 테스트는 `"@/lib/parent-username"` 도 바꿔 끼워야 한다(tests/parent-signup-existing-claim). ② 스토어 링크는 `src/lib/app-install-links.ts` 한 곳(PLAY_STORE_URL, `IOS_APP_STORE_ID` 빈 값 = 아이폰 «곧 출시»). `/install` 페이지가 `detectInstallEnvironment` 의 platform 으로 스토어에 바로 redirect. ⚠️ `/app` 은 next.config redirect → `/mypage/install`(홈 화면 바로가기) 짧은 주소라 별개.
 - **참조횟수**: 0
 
+### [2026-11-13] 선생님 출석부 — 체험 아이(trial: 키)·결석 학부모 알림(매분 훑기)·수강료는 원장만
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: ① 체험 아이는 `getStaffSessionStudents` 정규 명단 뒤에 `trial:true`·키 `trial:<TrialLead.id>`(`trialRosterKey`) — 저장은 `saveTrialAttendance` 가 `TrialLead.staffAttendanceStatus` 에만(정규 Attendance·보강권·청구와 분리), 조건은 `trialOnClassDateSql` 하나를 조회·저장이 공유. 출석·지각이면 단계 SCHEDULED→ATTENDED(`trialLeadStatusAfterStaffMark`). 명단 소비처(staff-monthly-fees 등)는 `!s.trial` 로 거른다. ② 결석 알림은 저장 때 보내지 않고 push-outbox 크론이 `sweepAbsenceParentNotices` 로 «결석으로 바뀐 지 3분 지난(Attendance.updatedAt, UTC 칸) 오늘 정규 수강생 · RegularAbsence 없음» 만 골라 `deliverParentNotification`(앱 알림+웹푸시, 문자 없음). 어느 경로로 찍혀도 Attendance 기준이라 bulk 도 자동 포함. ③ 출석부 수강료는 `canSeeStaffFees`(ADMIN·VICE_ADMIN) — 화면 `showFees` + 서버 `getStaffSessionMonthlyFees`(빈 목록)·`getStaffAttendanceBilling`(거부). 강제 `tests/staff-attendance-trial-absence-fees.test.mjs`.
+- **참조횟수**: 0
 ### [2026-11-13] 출시 전 안전장치 — 관리자 화면 가드·cron 실패 알림·스토어 앱 우회 한 곳
 - **분류**: architecture
 - **발견자**: developer

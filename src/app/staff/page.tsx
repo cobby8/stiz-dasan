@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { requireStaff } from "@/lib/auth-guard";
 import { getKoreaDateKey, getTodayStaffClasses } from "@/lib/staff-session-queries";
 import { getStaffClassAccessContext } from "@/lib/staff-class-access";
-import { DRIVER_ENTRY_PATH, needsCoachLink } from "@/lib/staff-session-rules";
+import { DRIVER_ENTRY_PATH, canSeeStaffFees, needsCoachLink } from "@/lib/staff-session-rules";
 
 export const dynamic = "force-dynamic";
 
@@ -15,5 +15,6 @@ export default async function StaffHomePage() {
   const [classes, access] = await Promise.all([getTodayStaffClasses(), getStaffClassAccessContext()]);
   const dateKey = getKoreaDateKey();
   // key=dateKey: 날짜가 바뀌어 새로 불러오면(b2) 화면 상태(수업 목록)도 새 날짜 것으로 처음부터 다시 만든다.
-  return <StaffHomeClient key={dateKey} dateKey={dateKey} classes={classes} coachLinkMissing={needsCoachLink(access)} />;
+  // showFees: 청구 확인·미납 표시는 원장·부원장만(f3 보완 — 서버도 선생님에게는 금액을 주지 않는다).
+  return <StaffHomeClient key={dateKey} dateKey={dateKey} classes={classes} coachLinkMissing={needsCoachLink(access)} showFees={canSeeStaffFees(access.staff.appUserRole)} />;
 }

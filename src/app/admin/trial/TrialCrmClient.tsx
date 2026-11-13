@@ -16,6 +16,7 @@ import { refundTrialFee } from "@/app/actions/trial-fee";
 import { trialClassShortLabel, trialClassTimeRange, trialConfirmedClassShortLabel, trialPreferredSlotKeyCandidates } from "@/lib/trial-schedule-display";
 import { seoulDateInputValue, seoulTimeInputValue } from "@/lib/trial-schedule-time";
 import { statusBadgeClass } from "@/lib/ui/statusTones";
+import { trialStaffMarkBadge } from "@/lib/staff-session-rules";
 import {
     updateTrialLead,
     sendPostTrialEnrollGuide,
@@ -69,6 +70,7 @@ export interface TrialLead {
     trialFeeNoticeAgreedAt?: string | null; // 학부모가 신청서에서 비용·계좌 안내에 동의한 시각(입금 아님)
     trialFeePaymentStatus?: string | null; // 체험비 온라인 결제 요약 — PAID·WAITING_FOR_DEPOSIT·REFUNDED·NEEDS_REFUND
     trialFeePaidAt?: string | null; // 온라인 결제 완료 시각
+    staffAttendanceStatus?: string | null; // 선생님 출석부의 체험 출결 PRESENT·LATE·ABSENT(2026-11-13)
     hopeNote: string | null;
     agreedTerms: boolean;
     agreedPrivacy: boolean;
@@ -1076,6 +1078,7 @@ export default function TrialCrmClient({
         const schoolLabel = lead.childSchool || "-";
         const gradeLabel = lead.childGrade || lead.childAge || "-";
         const feeChip = trialFeeListChip(lead);
+        const staffMark = trialStaffMarkBadge(lead.staffAttendanceStatus);
         return (
             <tr
                 key={`${lead.id}-list`}
@@ -1131,6 +1134,12 @@ export default function TrialCrmClient({
                         {feeChip && (
                             <span className={`ml-1 text-xs font-bold ${feeChip.needsAction ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-muted)]"}`} title={`체험비: ${trialFeeStatusLabel(lead)}`}>
                                 {feeChip.label}
+                            </span>
+                        )}
+                        {/* 선생님이 출석부에서 찍은 체험 출결(출석·지각·결석) — 작은 배지 하나, 행 높이는 그대로 */}
+                        {staffMark && (
+                            <span className={`ml-1 rounded px-1 py-0.5 text-xs font-bold ${statusBadgeClass(staffMark.tone)}`} title="선생님이 출석부에서 찍은 체험 출결">
+                                선생님 {staffMark.label}
                             </span>
                         )}
                     </span>

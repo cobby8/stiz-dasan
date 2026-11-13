@@ -4,6 +4,8 @@ import {
   getStaffClassPeople,
   type StaffClassPerson,
 } from "@/lib/staff-class-people";
+import { getStaffClassAccessContext } from "@/lib/staff-class-access";
+import { canSeeStaffFees } from "@/lib/staff-session-rules";
 
 export type LoadStaffClassPeopleResult =
   | { ok: true; people: StaffClassPerson[] }
@@ -23,6 +25,14 @@ export async function loadStaffClassPeople(input: {
     return { ok: false, message: "수업 정보를 다시 확인해 주세요." };
   }
 
-  const people = await getStaffClassPeople(classId, sessionId, sessionDateId);
+  const [people, access] = await Promise.all([
+    getStaffClassPeople(classId, sessionId, sessionDateId),
+    getStaffClassAccessContext(),
+  ]);
+  // 선생님(원장·부원장 외)에게는 미납 건수·금액을 내려보내지 않는다(f3 보완, 2026-11-13 원장 지시).
+  // 화면만 숨기면 응답에 값이 남으므로 서버에서 null 로 바꿔 보낸다.
+  if (!canSeeStaffFees(access.staff.appUserRole)) {
+    return { ok: true, people: people.map((person) => ({ ...person, billing: null })) };
+  }
   return { ok: true, people };
 }

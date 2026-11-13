@@ -12,10 +12,14 @@ import {
   BULK_SKIPPED_MESSAGE,
   SEAT_RECORD_WARNING_MESSAGE,
   STALE_DATE_MESSAGE,
+  TRIAL_BULK_SKIPPED_MESSAGE,
   activeSessionNotice,
+  parseTrialRosterKey,
   shouldNotifyParentsForSession,
   staffAccessFailure,
+  trialLeadStatusAfterStaffMark,
 } from "@/lib/staff-session-rules";
+import { trialOnClassDateSql } from "@/lib/staff-session-queries";
 import { deliverParentNotification, getClassParentRecipients, getStudentParentRecipients } from "@/lib/staff-notifications";
 import type { ParentRecipient } from "@/lib/staff-notifications";
 import { notMergedStudent } from "@/lib/studentVisibility";
@@ -391,6 +395,57 @@ export async function saveSessionMemo(input: { sessionId: string; notes: string 
   return { ok: true as const };
 }
 
+/**
+ * 체험수업 아이 출결 저장(f1) — 체험 장부(TrialLead)에만 쓴다.
+ * - 정규 출석 표(Attendance)·보강권·결석 사유·학부모 출석 알림을 타지 않는다(원생이 아니고 청구·출석률에 섞이면 안 된다).
+ * - 이 반·이 날 체험 아이인지 명단 조회와 같은 조건(trialOnClassDateSql)으로 다시 확인한다(다른 날 신청 id 위조 방지).
+ * - 출석·지각이면 체험 단계를 «체험 완료»로 올리고, 선생님이 올린 것을 결석으로 고치면 «일정 확정»으로 되돌린다.
+ */
+async function saveTrialAttendance(input: {
+  session: SessionRow;
+  trialLeadId: string;
+  status: AttendanceStatus;
+  bulk: boolean;
+  checkedByUserId: string;
+}) {
+  // 체험 아이는 «전체 출석»으로 찍지 않는다(검수 LOW-1) — 화면이 빼고 보내지만, 낡은 화면·다른 경로도 서버가 막는다.
+  if (input.bulk) return { ok: true as const, skipped: true as const, message: TRIAL_BULK_SKIPPED_MESSAGE };
+  const sessionYmd = String(input.session.date).slice(0, 10);
+  const rows = await prisma.$queryRawUnsafe<{ status: string; staffAttendanceStatus: AttendanceStatus | null }[]>(
+    `SELECT tl.status, tl."staffAttendanceStatus" FROM "TrialLead" tl
+      WHERE tl.id = $1 AND ${trialOnClassDateSql("tl", "$2", "$3")} LIMIT 1`,
+    input.trialLeadId, input.session.classId, sessionYmd,
+  );
+  const lead = rows[0];
+  if (!lead) return { ok: false as const, message: "이 수업의 체험 명단에 없는 아이입니다. 화면을 새로고침해 주세요." };
+  const nextLeadStatus = trialLeadStatusAfterStaffMark({
+    currentStatus: lead.status,
+    previousMark: lead.staffAttendanceStatus,
+    nextMark: input.status,
+  });
+  // 읽은 뒤 그사이 바뀌었으면(관리자가 단계를 바꿈·다른 기기에서 찍음) 덮어쓰지 않는다 — 0행이면 다시 눌러 달라고 한다.
+  const saved = await prisma.$queryRawUnsafe<{ id: string }[]>(
+    `UPDATE "TrialLead"
+        SET "staffAttendanceStatus" = $2,
+            "staffAttendanceAt" = NOW(),
+            "staffAttendanceByUserId" = $3,
+            "attendedDate" = CASE
+              WHEN $4::text = 'ATTENDED' AND status <> 'ATTENDED' THEN NOW()
+              WHEN $4::text = 'SCHEDULED' AND status = 'ATTENDED' THEN NULL
+              ELSE "attendedDate" END,
+            status = $4::text,
+            "updatedAt" = NOW()
+      WHERE id = $1 AND status = $5::text
+        AND "staffAttendanceStatus" IS NOT DISTINCT FROM $6::text
+      RETURNING id`,
+    input.trialLeadId, input.status, input.checkedByUserId, nextLeadStatus, lead.status, lead.staffAttendanceStatus,
+  );
+  if (!saved[0]) {
+    return { ok: false as const, message: "그사이 체험 정보가 바뀌었습니다. 화면을 새로고침한 뒤 다시 눌러 주세요." };
+  }
+  return { ok: true as const, changed: lead.staffAttendanceStatus !== input.status };
+}
+
 export async function saveStaffAttendance(input: {
   sessionId: string;
   attendanceKey: string;
@@ -421,6 +476,18 @@ export async function saveStaffAttendance(input: {
       note: input.note?.trim() || null,
       checkedByUserId: access.staff.appUserId,
       bulk: input.bulk,
+    });
+  }
+
+  // 체험수업 아이(f1): attendanceKey = «trial:<체험신청 id>». 정규 출석 표에 넣지 않고 체험 장부에만 남긴다.
+  const trialLeadId = parseTrialRosterKey(input.attendanceKey);
+  if (trialLeadId) {
+    return saveTrialAttendance({
+      session,
+      trialLeadId,
+      status: input.status,
+      bulk: Boolean(input.bulk),
+      checkedByUserId: access.staff.appUserId,
     });
   }
 

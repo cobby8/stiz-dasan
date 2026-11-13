@@ -14,6 +14,8 @@ import { todayKst } from "@/lib/datetime/kst";
 export type BulkAttendanceRow = {
   status: string | null;
   absenceReport: { reason: string; status: string; source: "SHEET" | "PARENT" } | null;
+  /** 체험수업 아이(f1) — 전체 출석 대상이 아니다. */
+  trial?: boolean;
 };
 
 /**
@@ -21,9 +23,11 @@ export type BulkAttendanceRow = {
  * - 이미 찍은 아이는 건드리지 않는다.
  * - 결석 신고(학부모 신고·원장 기간 결석)가 있는 아이는 일괄 출석에서 뺀다 → 선생님이 직접 확인한다.
  *   아이가 실제로 왔으면 그 줄의 «출석» 버튼을 직접 누르면 된다(개별 출석은 막지 않는다).
+ * - 체험 아이는 아예 빼고(targets·reported 어디에도 없음) 개별로만 찍는다 —
+ *   안 온 체험 아이가 일괄 출석으로 «체험 완료»에 올라가는 사고를 막는다(검수 LOW-1).
  */
 export function splitBulkPresent<T extends BulkAttendanceRow>(rows: T[]): { targets: T[]; reported: T[] } {
-  const unchecked = rows.filter((row) => !row.status);
+  const unchecked = rows.filter((row) => !row.status && !row.trial);
   return {
     targets: unchecked.filter((row) => !row.absenceReport),
     reported: unchecked.filter((row) => Boolean(row.absenceReport)),
@@ -150,3 +154,71 @@ export function shouldShowIosDriverNotice(storeApp: boolean, userAgent: string |
 export const DRIVER_ENTRY_PATH = "/staff/driver";
 /** 위치 전송(운행 시작)이 되는 기사님 운행 화면. */
 export const DRIVER_RUN_PATH = "/staff/run";
+
+// ── f1. 체험수업 아이(출시 전 수정 2026-11-13 원장 지시) ─────────────────
+
+/**
+ * 체험 아이의 출석부 키 — 정규 학생 ID·특강 좌석 ID 와 겹치지 않게 앞에 «trial:» 을 붙인다.
+ * 서버 저장(saveStaffAttendance)은 이 표시를 보고 체험 장부(TrialLead)로 보낸다 —
+ * 정규 출석 표(Attendance)에 섞이면 청구·출석률·보강권이 틀어진다.
+ */
+export const TRIAL_ROSTER_PREFIX = "trial:";
+export function trialRosterKey(trialLeadId: string): string {
+  return `${TRIAL_ROSTER_PREFIX}${trialLeadId}`;
+}
+/** «trial:<id>» 이면 체험 신청 id, 아니면 null. */
+export function parseTrialRosterKey(key: string | null | undefined): string | null {
+  const value = String(key ?? "");
+  if (!value.startsWith(TRIAL_ROSTER_PREFIX)) return null;
+  const id = value.slice(TRIAL_ROSTER_PREFIX.length).trim();
+  return id && id.length <= 128 ? id : null;
+}
+
+/**
+ * 관리자 체험 관리 화면의 «선생님 출결» 배지(검수 LOW-4). 안 찍었거나 모르는 값이면 null(배지 없음).
+ * 색은 출석부와 같은 약속: 출석=초록·지각=노랑·결석=빨강.
+ */
+export function trialStaffMarkBadge(mark: string | null | undefined): { label: string; tone: "success" | "warning" | "danger" } | null {
+  if (mark === "PRESENT") return { label: "출석", tone: "success" };
+  if (mark === "LATE") return { label: "지각", tone: "warning" };
+  if (mark === "ABSENT") return { label: "결석", tone: "danger" };
+  return null;
+}
+
+/** 서버가 일괄 출석 요청에서 체험 아이를 건너뛸 때 돌려주는 문구(검수 LOW-1). */
+export const TRIAL_BULK_SKIPPED_MESSAGE = "체험 아이는 전체 출석에서 빠집니다. 그 줄에서 직접 눌러 주세요.";
+
+/** 선생님 출석부에 체험 아이로 띄우는 체험 신청 상태 — 일정 확정(SCHEDULED)·체험 완료(ATTENDED). */
+export const TRIAL_ROSTER_STATUSES = ["SCHEDULED", "ATTENDED"] as const;
+
+type StaffMark = "PRESENT" | "LATE" | "ABSENT";
+
+/**
+ * 선생님이 체험 아이 출결을 찍은 뒤 체험 신청 상태(CRM 단계)를 어떻게 둘지.
+ * - 출석·지각: 일정 확정(SCHEDULED)이면 «체험 완료(ATTENDED)»로 올린다 — 관리자가 누르던 «체험 완료»와 같은 값.
+ * - 결석: 선생님이 앞서 출석·지각을 찍어 올린 것(이전 표시가 PRESENT/LATE)만 SCHEDULED 로 되돌린다.
+ *   관리자가 직접 바꾼 단계(상담·등록 등)는 건드리지 않는다.
+ * 체험 신청에는 «불참» 단계가 없어서, 결석 자체는 별도 칸(staffAttendanceStatus)에만 남긴다.
+ */
+export function trialLeadStatusAfterStaffMark(input: {
+  currentStatus: string;
+  previousMark: StaffMark | null;
+  nextMark: StaffMark;
+}): string {
+  const { currentStatus, previousMark, nextMark } = input;
+  if (nextMark === "PRESENT" || nextMark === "LATE") {
+    return currentStatus === "SCHEDULED" ? "ATTENDED" : currentStatus;
+  }
+  if (currentStatus === "ATTENDED" && (previousMark === "PRESENT" || previousMark === "LATE")) return "SCHEDULED";
+  return currentStatus;
+}
+
+// ── f3. 수강료·미납 표시 ─────────────────────────────────────
+
+/**
+ * 선생님 출석부에서 수강료·미납을 볼 수 있는 역할 — 원장(ADMIN)·부원장(VICE_ADMIN)만.
+ * 선생님(INSTRUCTOR)·기사님은 화면에서도, 서버 응답에서도 금액·미납 값을 받지 않는다(2026-11-13 원장 지시).
+ */
+export function canSeeStaffFees(role: string | null | undefined): boolean {
+  return role === "ADMIN" || role === "VICE_ADMIN";
+}

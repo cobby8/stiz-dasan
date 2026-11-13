@@ -4809,6 +4809,25 @@ export async function updateTrialLead(
             id,
         );
 
+        // 체험 날짜·반이 바뀌면 선생님이 예전 일정에 찍은 체험 출결은 새 일정과 무관하다 → 비운다(검수 MED-2).
+        // 남겨 두면 새 수업 출석부에 «이미 출석»으로 떠서 선생님이 못 찍는다.
+        // 본 저장과 따로 둔다 — 체험 출결 칸 마이그레이션 전이어도 관리자 저장은 실패하지 않게(로그만 남김).
+        if (data.scheduledDate !== undefined || data.scheduledClassId !== undefined) {
+            try {
+                await prisma.$executeRawUnsafe(
+                    `UPDATE "TrialLead"
+                        SET "staffAttendanceStatus" = NULL, "staffAttendanceAt" = NULL, "staffAttendanceByUserId" = NULL
+                      WHERE id = $1
+                        AND ("scheduledDate" IS DISTINCT FROM $2::timestamptz OR "scheduledClassId" IS DISTINCT FROM $3::text)`,
+                    id,
+                    previousLead.scheduledDate ?? previousLead.scheduleddate ?? null,
+                    previousLead.scheduledClassId ?? previousLead.scheduledclassid ?? null,
+                );
+            } catch (resetError) {
+                console.warn("[updateTrialLead] 체험 출결 초기화 실패:", (resetError as Error).message);
+            }
+        }
+
         if (history?.action) {
             await recordApplicationHistoryLog({
                 targetType: "TRIAL",

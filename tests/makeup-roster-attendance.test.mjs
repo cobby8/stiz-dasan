@@ -201,7 +201,8 @@ test("코치 수강료 확인은 보강 온 아이를 빼고 읽는다(다른 �
   const start = fees.indexOf("async function readContext(");
   assert.notEqual(start, -1, "readContext 함수가 없습니다");
   const b = fees.slice(start, fees.indexOf("\nexport ", start + 1));
-  assert.match(b, /const students = roster\.filter\(s => !s\.makeup\);/);
+  // 체험 아이(f1)도 함께 뺀다(2026-11-13) — 보강 제외는 그대로 남아 있어야 한다.
+  assert.match(b, /const students = roster\.filter\(s => !s\.makeup && !s\.trial\);/);
   // 결제 조회 대상 학생 목록은 걸러진 students 에서 만든다
   assert.match(b, /const studentIds = students\.filter/);
 });
