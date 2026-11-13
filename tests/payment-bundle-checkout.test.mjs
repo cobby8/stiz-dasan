@@ -445,6 +445,21 @@ test("동시(M1): 겹치는 청구의 묶음↔단건을 두 탭에서 동시에
 
 });
 
+test("동시(f8): 엄마·아빠가 같은 청구를 각자 주문으로 동시에 승인 → 하나만 통과, 다른 쪽은 «진행 중»으로 토스 승인 안 함", async () => {
+    // 두 번째 보호자 결제를 열면 같은 청구에 «사람마다 다른 주문»이 생길 수 있다. 잠금·판정은 청구 단위라 주인과 상관없이 막아야 한다.
+    const state = claimState();
+    state.txs["tx-mom"] = { id: "tx-mom", provider: "TOSS", status: "READY", paymentId: "pay-1", amount: 180000, parentId: "u1", updatedAtMs: 0 };
+    state.txs["tx-dad"] = { id: "tx-dad", provider: "TOSS", status: "READY", paymentId: "pay-1", amount: 180000, parentId: "u2", updatedAtMs: 0 };
+    const fake = claimDb(state);
+    const results = await Promise.all([claim(fake, "tx-mom", "pay-1"), claim(fake, "tx-dad", "pay-1")]);
+    assert.equal(results.filter((r) => r === null).length, 1, "한 사람만 승인 단계로 간다");
+    assert.ok(results.includes("CONFIRM_IN_PROGRESS"));
+    // 먼저 통과한 쪽이 납부되면, 남은 쪽은 «이미 납부»로 막힌다(다음 시도)
+    state.payments["pay-1"].status = "PAID";
+    const loser = results[0] === null ? "tx-dad" : "tx-mom";
+    assert.equal(await claim(fake, loser, "pay-1"), "NOT_UNPAID");
+});
+
 test("동시(M1): 묶음↔묶음(pay-2 겹침)도 하나만 · 잠금은 청구 id 정렬순(교착 방지)", async () => {
     const state = claimState();
     const fake = claimDb(state);
@@ -542,7 +557,16 @@ const ledger = await import(await moduleUrl("src/lib/payment-ledger.ts"));
 function fakePrisma(responder) {
     const calls = [];
     const db = {
-        async $queryRawUnsafe(sql, ...args) { calls.push({ kind: "query", sql, args }); return (await responder(sql, args, "query")) ?? []; },
+        async $queryRawUnsafe(sql, ...args) {
+            calls.push({ kind: "query", sql, args });
+            const hit = await responder(sql, args, "query");
+            if (hit !== undefined) return hit;
+            // 결제 권한 판정(payerAccess) 기본값 — 요청한 학생 전부와 연결된 보호자 u1(테스트가 따로 답하면 그 값, f8)
+            if (/LEFT JOIN "Student" s ON s\.id = ANY\(\$2::text\[\]\)/.test(sql)) {
+                return args[1].map((studentId) => ({ id: "u1", name: "김학부모", email: "parent@example.com", phone: null, studentId }));
+            }
+            return [];
+        },
         async $executeRawUnsafe(sql, ...args) { calls.push({ kind: "exec", sql, args }); return (await responder(sql, args, "exec")) ?? 0; },
         async $transaction(fn) { return fn(db); },
     };
@@ -846,7 +870,8 @@ test("계약: 묶음 결제 시작 — 서버가 다시 읽고(가족 범위·�
     const load = fnBody(ledgerSrc, "async function loadBundleCandidateRows(");
     assert.match(load, /childAccessSql\("s", "\$1"\)/);
     assert.match(load, /notMergedStudent\("s"\)/);
-    assert.match(load, /\(s\."parentId" = \$1\) AS "isPayer"/);
+    // 결제 가능 여부는 결제 권한 한 곳(payerAccess — 대표 보호자 + 승인된 가족)에서만 정한다(2026-11-13 f8)
+    assert.match(load, /\(\$\{await payerAccessSql\("s", "\$1"\)\}\) AS "isPayer"/);
     assert.match(load, /rallyzMirrorExclusionSql\("p"\)/);
     const start = fnBody(ledgerSrc, "export async function createBundleCheckoutSession(");
     assert.ok(start.indexOf("findOpenVirtualAccountsForPayments(") < start.indexOf('INSERT INTO "PaymentTransaction"'));

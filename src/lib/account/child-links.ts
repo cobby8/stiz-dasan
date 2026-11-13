@@ -3,13 +3,15 @@ import { createHmac, randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { childConnectionsAvailable, childAccessSql } from "./child-access";
-import { canConnectSelf, identityName, identityPhone, validBirth, CHILD_LINK_UNAVAILABLE } from "./child-link-policy";
+import { canConnectSelf, identityName, identityPhone, isSerializationConflict, validBirth, CHILD_LINK_UNAVAILABLE } from "./child-link-policy";
 import { fetchPortoneIdentityVerification, getPortoneConfig } from "@/lib/identity/portone";
+// 형제 간편 연결 순수 규칙(2026-11-13 f8)
+import { buildSiblingPlan, hasSiblingWork, isSingleFamily, toPublicSiblings, type SiblingCandidateRow } from "./sibling-link-rules";
 
 type Db = Prisma.TransactionClient;
 export type ChildActor = { id: string; authUserId: string };
 type Challenge = { id: string; userId: string; sessionHash: string; createdAt: Date; expiresAt: Date;
-  usedAt: Date | null; verifiedName: string | null; phoneLast4: string | null;
+  usedAt: Date | null; verifiedName: string | null; phoneHash?: string | null; phoneLast4: string | null;
   proofExpiresAt: Date | null; proofUsedAt: Date | null; verifyAttempts: number; requestAttempts: number };
 export class ChildConnectionError extends Error {
   constructor(message: string, public status = 400) { super(message); }
@@ -28,7 +30,7 @@ export function childConnectionsConfigured() {
 }
 function todayKst() { return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" }).format(new Date()); }
 /** 옛 직접 ID 로그인도 이 계정에서 발급·검증한 인증 원장이 있어야 가족 승인자로 인정한다. */
-function trustedFamilyLoginSql(alias: "u" | "reviewer") {
+function trustedFamilyLoginSql(alias: "u" | "reviewer" | "p") {
   return `(${alias}."authUserId" IS NOT NULL OR EXISTS(SELECT 1 FROM "ChildIdentityChallenge" family_identity
     WHERE family_identity."userId"=${alias}.id AND family_identity."usedAt" IS NOT NULL))`;
 }
@@ -116,7 +118,8 @@ export async function verifyChildIdentity(actor: ChildActor, sessionHash: string
     let count = 0;
     if (self.length === 1) count += await grant(tx,self[0].id,actor.id,"ADULT_SELF",null);
     // 형제는 함께 연결하지만 같은 연락처가 여러 가족 계정에 겹치면 추측하지 않는다.
-    if (new Set(children.map(row => row.parentId)).size === 1) {
+    // (형제 «바로 연결»과 같은 함수 — isSingleFamily)
+    if (isSingleFamily(children.map(row => row.parentId))) {
       for (const row of children) count += await grant(tx,row.id,actor.id,"REGISTERED_CONTACT",null);
     }
     return count;
@@ -210,4 +213,102 @@ export async function getChildConnectionState(actor:ChildActor,sessionHash:strin
         AND ${trustedFamilyLoginSql("reviewer")} AND reviewer."phoneVerifiedAt" IS NOT NULL)
       AND ${await childAccessSql("s","$1")} ORDER BY r."createdAt" DESC LIMIT 30`,actor.id);
   return {enabled:true,verified:proof[0].found,outgoing,incoming};
+}
+
+// ───────────────────────────── 형제 간편 연결(2026-11-13 f8) ─────────────────────────────
+// 본인인증 한 번 → 학원에 같은 보호자 번호로 등록된 아이들을 목록으로 보여 주고 «모두 연결» 한 번에 처리한다.
+// 규칙은 sibling-link-rules.ts(순수). 여기서는 읽기·쓰기만 한다. 주 보호자(Student.parentId)는 바꾸지 않는다.
+
+/** 본인인증 증명(아직 안 쓴 것)을 읽는다. lock=true 면 FOR UPDATE(«모두 연결» 처리 중 중복 사용 방지) */
+async function readSiblingProof(db: Db | typeof prisma, actor: ChildActor, sessionHash: string, lock: boolean) {
+  const rows = await db.$queryRawUnsafe<Challenge[]>(`SELECT * FROM "ChildIdentityChallenge"
+    WHERE "userId"=$1 AND "sessionHash"=$2 AND "usedAt" IS NOT NULL
+      AND "proofExpiresAt">NOW() AND "proofUsedAt" IS NULL ORDER BY "createdAt" DESC LIMIT 1${lock ? " FOR UPDATE" : ""}`, actor.id, sessionHash);
+  const c = assertChallenge(rows[0], actor, sessionHash);
+  if (!c.verifiedName || !c.phoneHash || !/^\d{4}$/.test(String(c.phoneLast4 ?? ""))) throw new ChildConnectionError("본인인증을 다시 진행해 주세요.");
+  return c;
+}
+
+/**
+ * 같은 번호 후보 아이들. 원본 번호는 DB 에 해시로만 남기므로(인증 원장) 끝 4자리로 좁힌 뒤 서버에서 해시로 맞춘다.
+ * 미성년(만 19세 미만)·병합 안 된 학생·탈퇴 안 한 주 보호자만 — 기존 자녀 연결과 같은 범위.
+ */
+async function loadSiblingRows(db: Db | typeof prisma, actorId: string, phoneLast4: string): Promise<SiblingCandidateRow[]> {
+  return db.$queryRawUnsafe<SiblingCandidateRow[]>(`SELECT s.id AS "studentId", s.name AS "studentName",
+      (SELECT string_agg(DISTINCT c.name, ', ' ORDER BY c.name) FROM "Enrollment" e JOIN "Class" c ON c.id=e."classId"
+        WHERE e."studentId"=s.id AND e.status='ACTIVE') AS "className",
+      p.id AS "primaryId", p.name AS "primaryName", p.role::text AS "primaryRole", p."authUserId" AS "primaryAuthUserId", p.email AS "primaryEmail", p.phone AS "primaryPhone",
+      (p."withdrawnAt" IS NULL AND ${trustedFamilyLoginSql("p")} AND p."phoneVerifiedAt" IS NOT NULL) AS "primaryCanApprove",
+      COALESCE((SELECT json_agg(json_build_object('name', g.name, 'phone', g.phone)) FROM "Guardian" g WHERE g."studentId"=s.id), '[]'::json) AS "guardians",
+      (s."parentId"=$1 OR EXISTS(SELECT 1 FROM "ParentStudentAccess" a WHERE a."studentId"=s.id AND a."userId"=$1 AND a.status='ACTIVE')) AS "alreadyLinked",
+      EXISTS(SELECT 1 FROM "ChildLinkRequest" r WHERE r."studentId"=s.id AND r."requesterId"=$1 AND r.status='PENDING' AND r."expiresAt">NOW()) AS "pendingRequest",
+      EXISTS(SELECT 1 FROM "ParentStudentAccess" a WHERE a."studentId"=s.id AND a."userId"=$1 AND a.status='REVOKED') AS "revokedAccess"
+    FROM "Student" s JOIN "User" p ON p.id=s."parentId"
+    WHERE s."mergedIntoStudentId" IS NULL AND p."withdrawnAt" IS NULL
+      AND s."birthDate"::date > ($3::date - INTERVAL '19 years') AND s."birthDate"::date <= $3::date
+      AND (right(regexp_replace(COALESCE(p.phone,''),'[^0-9]','','g'),4)=$2
+        OR EXISTS(SELECT 1 FROM "Guardian" g WHERE g."studentId"=s.id AND right(regexp_replace(COALESCE(g.phone,''),'[^0-9]','','g'),4)=$2))
+    ORDER BY s.name, s.id LIMIT 100`, actorId, phoneLast4, todayKst());
+}
+
+/** 인증한 번호와 같은지 — 원본 번호 없이 인증 원장 해시(childIdentityHash)로 비교한다 */
+function proofMatcher(phoneHash: string) {
+  return (digits: string) => childIdentityHash(`phone:${digits}`) === phoneHash;
+}
+
+/**
+ * 형제 연결 제안 목록(이름·반·처리 방법만). 본인인증 증명이 살아 있을 때만. 증명은 쓰지 않는다.
+ * 번호+이름이 모두 맞는 아이만 담긴다 — 번호만 맞는 아이는 이름·반·개수 어느 것도 응답에 없다.
+ */
+export async function getSiblingProposal(actor: ChildActor, sessionHash: string) {
+  await requireChildConnections();
+  const proof = await readSiblingProof(prisma, actor, sessionHash, false);
+  const plan = buildSiblingPlan(await loadSiblingRows(prisma, actor.id, String(proof.phoneLast4)), actor.id, proofMatcher(String(proof.phoneHash)), String(proof.verifiedName));
+  return { items: toPublicSiblings(plan), canLinkAll: hasSiblingWork(plan) };
+}
+
+/** 가족 승인 요청이 인증 1건당 1건으로 묶여 있는가(마이그레이션 20261113220000 적용 전) */
+async function oneRequestPerProof(tx: Db): Promise<boolean> {
+  const rows = await tx.$queryRawUnsafe<{ found: boolean }[]>(`SELECT EXISTS(SELECT 1 FROM pg_constraint
+    WHERE conname='ChildLinkRequest_challengeId_key' AND conrelid=to_regclass('public."ChildLinkRequest"')) AS found`);
+  return rows[0]?.found === true;
+}
+
+/**
+ * «모두 연결» — 같은 트랜잭션에서 목록을 다시 계산해 처리한다(화면이 보낸 학생 id 는 받지 않는다).
+ *  LINK → 바로 연결(등록 연락처), REQUEST_APPROVAL → 주 보호자 계정에 가족 승인 요청(기존 규칙). 증명은 끝에 소모한다.
+ */
+export async function linkAllSiblings(actor: ChildActor, sessionHash: string, relationInput: unknown) {
+  await requireChildConnections();
+  const relation = relationInput === "OTHER" ? "OTHER" : "PARENT";
+  try {
+  return await prisma.$transaction(async tx => {
+    await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, `child-request:${actor.id}`);
+    const proof = await readSiblingProof(tx, actor, sessionHash, true);
+    const plan = buildSiblingPlan(await loadSiblingRows(tx, actor.id, String(proof.phoneLast4)), actor.id, proofMatcher(String(proof.phoneHash)), String(proof.verifiedName));
+    if (!hasSiblingWork(plan)) throw new ChildConnectionError("새로 연결할 아이가 없습니다.", 409);
+    // 마이그레이션 전에는 승인 요청을 1건만 만든다(인증 1건 = 요청 1건 제약). 나머지는 다음 인증 때 다시 제안된다.
+    let requestSlots = await oneRequestPerProof(tx) ? 1 : Number.POSITIVE_INFINITY;
+    let linked = 0, requested = 0, deferred = 0;
+    await tx.$executeRawUnsafe(`UPDATE "ChildLinkRequest" SET status='EXPIRED',"decidedAt"=NOW()
+      WHERE "requesterId"=$1 AND status='PENDING' AND "expiresAt"<=NOW()`, actor.id);
+    for (const item of plan) {
+      if (item.action === "LINK") {
+        linked += await grant(tx, item.studentId, actor.id, "REGISTERED_CONTACT", null);
+      } else if (item.action === "REQUEST_APPROVAL" && item.approverId) {
+        if (requestSlots <= 0) { deferred++; continue; }
+        await tx.$executeRawUnsafe(`INSERT INTO "ChildLinkRequest"(id,"studentId","requesterId","approverId","challengeId",
+          "requesterName","requesterPhoneLast4",relation,"expiresAt") VALUES($1,$2,$3,$4,$5,$6,$7,$8,NOW()+INTERVAL '7 days')`,
+          randomUUID(), item.studentId, actor.id, item.approverId, proof.id, proof.verifiedName, proof.phoneLast4, relation);
+        requestSlots--; requested++;
+      }
+    }
+    await tx.$executeRawUnsafe(`UPDATE "ChildIdentityChallenge" SET "proofUsedAt"=NOW(),"verifiedName"=NULL WHERE id=$1`, proof.id);
+    return { ok: true as const, linked, requested, deferred };
+  }, { isolationLevel: "Serializable" });
+  } catch (error) {
+    // 같은 순간 다른 처리와 겹쳐 DB 가 트랜잭션을 되돌린 경우(직렬화 충돌) — 아무것도 저장되지 않았으니 다시 시도하면 된다
+    if (isSerializationConflict(error)) throw new ChildConnectionError("잠시 후 다시 시도해 주세요.", 409);
+    throw error;
+  }
 }

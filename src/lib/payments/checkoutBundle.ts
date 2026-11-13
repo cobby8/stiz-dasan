@@ -81,7 +81,7 @@ export const BUNDLE_BLOCK_MESSAGE: Record<BundleBlockCode, string> = {
     TOO_MANY: `한 번에 결제할 수 있는 청구는 ${MAX_BUNDLE_ITEMS}건까지예요. 나눠서 결제해 주세요.`,
     DUPLICATE: "같은 청구가 두 번 들어 있어요. 다시 선택해 주세요.",
     NOT_FOUND: "본인 자녀의 청구만 결제할 수 있어요.",
-    NOT_PAYER: "결제는 대표 보호자 계정에서만 할 수 있어요.",
+    NOT_PAYER: "이 아이와 연결된 보호자 계정에서만 결제할 수 있어요.",
     RALLYZ_MIRROR: "랠리즈로 안내된 청구는 랠리즈 앱에서 결제해 주세요.",
     NOT_UNPAID: "이미 납부했거나 결제할 수 없는 청구가 있어요. 화면을 새로 고쳐 주세요.",
     NO_INVOICE: "청구서가 아직 준비되지 않은 청구가 있어요. 잠시 후 다시 시도해 주세요.",

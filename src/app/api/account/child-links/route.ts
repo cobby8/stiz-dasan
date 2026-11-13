@@ -4,7 +4,8 @@ import { requireAuth } from "@/lib/auth-guard";
 import { prisma } from "@/lib/prisma";
 import { childConnectionsAvailable } from "@/lib/account/child-access";
 import { ChildConnectionError, childIdentityHash, childConnectionsConfigured, getChildConnectionState, startChildVerification,
-  verifyChildIdentity, requestChildConnection, decideChildConnection, cancelChildConnection, type ChildActor } from "@/lib/account/child-links";
+  verifyChildIdentity, requestChildConnection, decideChildConnection, cancelChildConnection, getSiblingProposal, linkAllSiblings,
+  type ChildActor } from "@/lib/account/child-links";
 
 export const dynamic = "force-dynamic";
 const COOKIE = "stiz-child-device";
@@ -58,6 +59,9 @@ export async function POST(request:NextRequest) {
     if(body.action==="verify" && typeof body.identityVerificationId==="string" && body.identityVerificationId.length<100)
       return response(await verifyChildIdentity(current,sessionHash,body.identityVerificationId));
     if(body.action==="request") return response(await requestChildConnection(current,sessionHash,body));
+    // 형제 간편 연결(f8) — 본인인증한 이 기기에서만. 목록은 이름·반·처리 방법만, «모두 연결»은 서버가 목록을 다시 계산한다
+    if(body.action==="siblings") return response(await getSiblingProposal(current,sessionHash));
+    if(body.action==="link-siblings") return response(await linkAllSiblings(current,sessionHash,body.relation));
     throw new ChildConnectionError("요청 방법을 확인해 주세요.");
   }catch(error){return failure(error);}
 }

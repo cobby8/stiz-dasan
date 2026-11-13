@@ -1,4 +1,5 @@
 import { childAccessSql } from "@/lib/account/child-access";
+import { payerAccessSql } from "@/lib/payments/payerAccess";
 import { prisma } from "@/lib/prisma";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import {
@@ -72,7 +73,8 @@ export async function getParentPaymentRequests(parentUserId: string): Promise<Pa
             to_char(p."dueDate",'YYYY-MM-DD') AS "dueDate",
             to_char(p."paidDate",'YYYY-MM-DD') AS "paidDate",
             i."invoiceNo", i.id AS "invoiceId",
-            (s."parentId" = $1) AS "canCheckout",
+            -- 결제 버튼 = 결제 권한(대표 보호자 + 승인된 가족, payerAccess 한 곳 — 2026-11-13 f8)
+            (${await payerAccessSql("s", "$1")}) AS "canCheckout",
             va.status AS "vaStatus", va.issue AS "vaIssue"
        FROM "Payment" p
        JOIN "Student" s ON s.id = p."studentId"
@@ -110,7 +112,7 @@ export async function getParentPaymentRequests(parentUserId: string): Promise<Pa
     invoiceId: row.invoiceId ?? null,
     canCheckout: row.canCheckout === true,
     receiptUrl: row.receiptUrl ?? null,
-    // 계좌는 결제 담당(대표) 보호자에게만 — 연결 가족에게는 보이지 않는다(홈 getMyPageData 와 같은 규칙)
+    // 계좌는 결제할 수 있는 보호자에게만(대표 + 승인된 가족) — 열린 계좌를 봐야 두 번째 보호자가 이중 결제하지 않는다(홈 getMyPageData 와 같은 규칙)
     virtualAccount: row.canCheckout === true ? parentVirtualAccountView(row.status, row.vaStatus, row.vaIssue, Date.now()) : null,
     pending: requests
       .filter((item) => item.paymentId === row.paymentId && item.status === "PENDING")

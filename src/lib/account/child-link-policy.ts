@@ -16,3 +16,11 @@ export function canConnectSelf(birth: string, today: string) {
   return age >= SELF_CONNECTION_AGE;
 }
 export const CHILD_LINK_UNAVAILABLE = "입력한 정보로 연결 요청을 접수할 수 없습니다. 이름과 연락처를 확인해 주세요.";
+
+/** Postgres 직렬화 충돌(40001)·Prisma 트랜잭션 충돌(P2034) 인가 — 다시 시도하면 되는 오류(«모두 연결» 등) */
+export function isSerializationConflict(error: unknown): boolean {
+  const e = error as { code?: unknown; meta?: { code?: unknown }; message?: unknown } | null;
+  if (!e || typeof e !== "object") return false;
+  if (e.code === "P2034" || e.code === "40001" || e.meta?.code === "40001") return true;
+  return typeof e.message === "string" && /40001|could not serialize access/i.test(e.message);
+}

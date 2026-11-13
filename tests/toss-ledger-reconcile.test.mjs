@@ -87,6 +87,18 @@ function fakeDb(state) {
         if (/AS found/.test(s)) return [{ found: false }];
         // 학부모 승인 — 주문 조회(소유자 확인 포함)
         if (/JOIN "User" u ON u\.id = tx\."parentId"/.test(s)) return args[0] === state.tx.orderId ? [joined()] : [];
+        // 결제 권한 판정(payerAccess) — 기본은 «연결된 보호자 u1». state.payer 로 바꾼다(f8):
+        //   { id, linked:false } = 계정은 있는데 이 학생과 연결 없음(미연결·해제·승인 대기)
+        if (/LEFT JOIN "Student" s ON s\.id = ANY\(\$2::text\[\]\)/.test(s)) {
+            state.payerQueries = [...(state.payerQueries ?? []), { sql: s, args }];
+            const payer = { id: "u1", name: "김학부모", email: "parent@example.com", phone: null, linked: true, ...state.payer };
+            const { linked, ...account } = payer;
+            return linked ? args[1].map((studentId) => ({ ...account, studentId })) : [{ ...account, studentId: null }];
+        }
+        // 30분 안 주문 재사용 조회 — 누구의 주문을 찾는지 기록(f8: 같은 사람 주문만 재사용)
+        if (/INTERVAL '30 minutes'/.test(s) && /FROM "PaymentTransaction"/.test(s)) { state.reuseQuery = { sql: s, args }; return []; }
+        // 주문에 든 학생 목록(승인 직전 권한 재확인)
+        if (/^SELECT p\."studentId" FROM "Payment" p WHERE p\.id = \$1/.test(s)) return [{ studentId: state.tx.studentId }];
         // 승인 직전 잠금·재확인(claimTossConfirmInTx)
         if (/^SELECT status FROM "Payment" WHERE id = \$1/.test(s)) return [{ status: state.payment.status }];
         if (/^SELECT amount FROM "PaymentTransaction" WHERE id = \$1/.test(s)) return [{ amount: state.tx.amount }];
@@ -114,10 +126,11 @@ function fakeDb(state) {
         if (/FROM "PaymentInvoice" i/.test(s) && /"rallyzMirror"/.test(s)) {
             return [{ invoiceId: state.tx.invoiceId, paymentId: state.tx.paymentId, studentId: "stu-1", parentId: "u1", invoiceNo: "STIZ-202611-x",
                 invoiceStatus: state.invoice.status, amount: state.tx.amount, title: "11월 수강료", paymentStatus: state.payment.status,
-                studentName: "김민준", parentEmail: "parent@example.com", rallyzMirror: false }];
+                studentName: "김민준", parentEmail: "parent@example.com", rallyzMirror: false, ...state.invoiceRowExtra }];
         }
         if (/INSERT INTO "PaymentTransaction"/.test(s)) {
             state.insertedTx = (state.insertedTx ?? 0) + 1;
+            state.insertedTxArgs = args;
             return [{ id: "tx-new" }];
         }
         // 승인 전 결제 번호 기록
@@ -626,4 +639,135 @@ test("L5: 점검이 찾은 무통장 입금 완료 건을 반영 못 하면(이�
         assert.equal(slack().length, 1);
         assert.equal(markPaidCount(state), 0);
     });
+});
+
+// ───────────────────────────── f8(2026-11-13) 두 번째 보호자 결제 — 결제 권한 한 곳(payerAccess) ─────────────────────────────
+
+test("f8: 가족 승인으로 연결된 두 번째 보호자도 결제를 시작할 수 있고, 주문·결제창 고객은 «결제하는 사람»이다", async () => {
+    const state = newState();
+    // 청구서의 대표 보호자는 u1(엄마), 로그인한 사람은 승인된 가족 u2(아빠)
+    state.payer = { id: "u2", name: "김아빠", email: "dad@example.com", phone: "010-2222-3333" };
+    fakeDb(state);
+    await withToss(async () => { throw new Error("결제 시작은 토스를 부르지 않는다"); }, async () => {
+        const result = await ledger.createCheckoutSession({ invoiceId: "inv-1", owner: { authUserId: "auth-dad", email: null }, origin: "https://stiz.example", method: "CARD" });
+        assert.equal(result.ok, true);
+        assert.equal(state.insertedTx, 1, "새 주문 1건");
+        assert.equal(state.insertedTxArgs[3], "u2", "거래의 학부모 = 결제하는 사람(승인 소유권·지난번 결제 방법·영수증이 이 값을 본다)");
+        assert.equal(result.customerName, "김아빠");
+        assert.equal(result.customerEmail, "dad@example.com", "토스 영수증은 결제한 사람에게");
+        assert.equal(result.customerMobilePhone, "01022223333");
+        // 30분 재사용은 같은 사람이 만든 주문만 — 엄마의 주문 번호를 아빠에게 돌려주지 않는다
+        assert.match(state.reuseQuery.sql, /"parentId" IS NOT DISTINCT FROM \$4/);
+        assert.equal(state.reuseQuery.args[3], "u2");
+        // 판정은 로그인 sub 와 그 청구의 학생으로 한다
+        assert.deepEqual(state.payerQueries[0].args, ["auth-dad", ["stu-1"]]);
+    });
+    // 대표 보호자 본인이면 고객 키가 예전과 같다(대표 보호자의 토스 고객 키가 바뀌지 않는다)
+    const mom = newState();
+    fakeDb(mom);
+    const dadKey = await withToss(async () => { throw new Error("x"); }, async () => {
+        const dad = newState();
+        dad.payer = { id: "u2", email: "dad@example.com" };
+        fakeDb(dad);
+        return (await ledger.createCheckoutSession({ invoiceId: "inv-1", owner, origin: "https://stiz.example", method: "CARD" })).customerKey;
+    });
+    fakeDb(mom);
+    const momKey = await withToss(async () => { throw new Error("x"); }, async () =>
+        (await ledger.createCheckoutSession({ invoiceId: "inv-1", owner, origin: "https://stiz.example", method: "CARD" })).customerKey);
+    assert.equal(mom.insertedTxArgs[3], "u1");
+    assert.notEqual(dadKey, momKey, "결제 수단 저장(고객 키)은 사람마다 따로");
+});
+
+test("f8: 연결 안 된 학생의 청구는 결제 시작·조회 모두 «없는 청구»로 거부(IDOR) — 주문을 만들지 않는다", async () => {
+    const state = newState();
+    state.payer = { id: "u9", linked: false };
+    fakeDb(state);
+    await withToss(async () => { throw new Error("토스를 부르면 안 된다"); }, async () => {
+        const viewed = await ledger.getInvoiceForParent("inv-1", { authUserId: "auth-other", email: null });
+        assert.equal(viewed, null);
+        const result = await ledger.createCheckoutSession({ invoiceId: "inv-1", owner: { authUserId: "auth-other", email: null }, origin: "https://stiz.example", method: "CARD" });
+        assert.equal(result.ok, false);
+        assert.equal(result.error, "청구서를 찾을 수 없습니다.");
+        assert.equal(state.insertedTx ?? 0, 0);
+    });
+});
+
+test("f8: 결제창을 연 뒤 가족 연결이 해제됐으면 승인하지 않는다(토스 승인 안 부름 — 돈 안 나감)", async () => {
+    const state = newState({ tx: { parentId: "u2" } });
+    state.payer = { id: "u2", linked: false };
+    fakeDb(state);
+    await withToss(async () => { throw new Error("토스 승인을 부르면 안 된다"); }, async (fetchCalls) => {
+        const result = await ledger.confirmTossPayment({ paymentKey: "pk-1", orderId: ORDER, amount: AMOUNT, invoiceId: null, owner: { authUserId: "auth-dad", email: null } });
+        assert.equal(result.ok, false);
+        assert.equal(result.error, "결제 주문을 찾을 수 없습니다.");
+        assert.equal(fetchCalls.length, 0);
+        assert.equal(state.payment.status, "PENDING");
+        assert.equal(state.tx.status, "READY", "«승인 진행 중» 표시도 남기지 않는다");
+        // 주문에 든 학생 전부(대표 청구 + 묶음 항목)로 판정한다
+        assert.deepEqual(state.payerQueries.at(-1).args, ["auth-dad", ["stu-1"]]);
+    });
+});
+
+test("f8: 연결이 살아 있는 두 번째 보호자는 승인까지 끝나고 장부에 한 번 반영된다", async () => {
+    const state = newState({ tx: { parentId: "u2" } });
+    state.payer = { id: "u2", email: "dad@example.com" };
+    fakeDb(state);
+    await withToss(async (url) => {
+        assert.ok(url.endsWith("/v1/payments/confirm"));
+        return json(tossDone());
+    }, async (fetchCalls) => {
+        const result = await ledger.confirmTossPayment({ paymentKey: "pk-1", orderId: ORDER, amount: AMOUNT, invoiceId: null, owner: { authUserId: "auth-dad", email: null } });
+        assert.equal(result.ok, true);
+        assert.equal(fetchCalls.filter(isConfirm).length, 1);
+        assert.equal(state.payment.status, "PAID");
+        assert.equal(markPaidCount(state), 1);
+    });
+});
+
+test("f8: 주문을 만든 사람이 아닌 다른 연결 보호자는 그 주문을 승인할 수 없다(엄마 주문을 아빠가 승인 X)", async () => {
+    // 주문은 엄마(u1)가 만들었고, 아빠(u2)도 학생과 연결돼 있다
+    const state = newState({ tx: { parentId: "u1" } });
+    state.payer = { id: "u2" };
+    fakeDb(state);
+    await withToss(async () => { throw new Error("토스 승인을 부르면 안 된다"); }, async (fetchCalls) => {
+        const result = await ledger.confirmTossPayment({ paymentKey: "pk-1", orderId: ORDER, amount: AMOUNT, invoiceId: null, owner: { authUserId: "auth-dad", email: null } });
+        assert.equal(result.ok, false);
+        assert.equal(fetchCalls.length, 0);
+    });
+});
+
+test("f8 LOW-2: 토스 승인 원본(DONE)이 남은 주문은 그 사이 연결이 해제돼도 막지 않고 장부에 한 번 반영(돈이 이미 나갔다)", async () => {
+    const state = newState({ tx: { parentId: "u2", status: "IN_PROGRESS", paymentKey: "pk-1", rawResponse: tossDone() } });
+    state.payer = { id: "u2", linked: false };
+    fakeDb(state);
+    await withToss(async () => { throw new Error("토스를 다시 부르면 안 된다"); }, async (fetchCalls) => {
+        const result = await ledger.confirmTossPayment({ paymentKey: "pk-1", orderId: ORDER, amount: AMOUNT, invoiceId: null, owner: { authUserId: "auth-dad", email: null } });
+        assert.equal(result.ok, true);
+        assert.equal(result.recovered, true);
+        assert.equal(fetchCalls.length, 0);
+        assert.equal(state.payment.status, "PAID");
+        assert.equal(markPaidCount(state), 1);
+        const again = await ledger.confirmTossPayment({ paymentKey: "pk-1", orderId: ORDER, amount: AMOUNT, invoiceId: null, owner: { authUserId: "auth-dad", email: null } });
+        assert.equal(again.ok, true);
+        assert.equal(markPaidCount(state), 1, "다시 불러도 납부 기록은 한 번");
+    });
+});
+
+test("f8 LOW-1: 청구서 발행 뒤 대표 보호자가 바뀌어도 지금 대표 보호자는 대표로 보고 영수증을 보인다", async () => {
+    const state = newState();
+    // 청구서에는 옛 대표(u1), 학생의 지금 대표는 u2, 마지막 거래는 다른 사람(u3)이 만들었다
+    state.invoiceRowExtra = { studentParentId: "u2", transactionParentId: "u3" };
+    state.payer = { id: "u2" };
+    fakeDb(state);
+    const now = await ledger.getInvoiceForParent("inv-1", { authUserId: "auth-u2", email: null });
+    assert.equal(now.payerIsPrimary, true);
+    assert.equal(now.canSeeReceipt, true);
+    // 대표도 아니고 그 결제를 한 사람도 아닌 연결 가족은 영수증을 못 본다
+    const family = newState();
+    family.invoiceRowExtra = { studentParentId: "u1", transactionParentId: "u3" };
+    family.payer = { id: "u9" };
+    fakeDb(family);
+    const other = await ledger.getInvoiceForParent("inv-1", { authUserId: "auth-u9", email: null });
+    assert.equal(other.payerIsPrimary, false);
+    assert.equal(other.canSeeReceipt, false);
 });
