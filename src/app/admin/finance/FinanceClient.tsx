@@ -38,6 +38,8 @@ import { bulkSelectionMode } from "@/lib/payments/bulkRefund";
 import InlineConfirm from "@/components/parent/InlineConfirm";
 // 실제 결제로 받은 청구는 «기록 영구 삭제» 금지(서버 deletePayment 와 같은 판정 · 2026-11-10 원장 승인)
 import { paymentDeleteBlockReason } from "@/lib/payments/paidStatusGuard";
+// 청구·미납 안내 야간 발송 금지(KST 21:00~08:00) 판정·안내 문구
+import { BILLING_QUIET_HINT, isBillingQuietHour } from "@/lib/billing/quietHours";
 
 type Payment = {
     id: string;
@@ -1316,7 +1318,12 @@ export default function FinanceClient({
                         noticeProgressLine(`${month}월 청구서 안내`, noticeProgress.invoice),
                         noticeProgressLine("오늘 미납 안내", noticeProgress.unpaid),
                     ].filter(Boolean).map((line) => <span key={line}>{line}</span>)}
-                    {noticeStillQueued && <span className="text-[var(--color-academy-muted)]">보내는 중 — 자동으로 새로 고칩니다</span>}
+                    {noticeStillQueued && (
+                        <span className="text-[var(--color-academy-muted)]">
+                            {/* 야간이면 «아침 8시에 보내집니다»를 먼저 보여 준다(밤새 «보내는 중»만 떠 있으면 고장으로 오해) */}
+                            {isBillingQuietHour() ? BILLING_QUIET_HINT : "보내는 중 — 자동으로 새로 고칩니다"}
+                        </span>
+                    )}
                     {!noticeStillQueued && (noticeProgress.invoice.failed + noticeProgress.unpaid.failed) > 0 && (
                         <span className="text-[var(--color-academy-muted)]">실패한 건은 같은 버튼을 다시 누르면 그 건만 이어 보냅니다</span>
                     )}
@@ -1373,6 +1380,10 @@ export default function FinanceClient({
                                     },
                                 ]}
                             />
+                            {/* 야간 발송 금지 안내(KST 21:00~08:00 · 문구는 quietHours.ts 한 곳) */}
+                            {!parentSendLocked && (
+                                <p className="mt-2 max-w-[220px] text-[12px] font-semibold leading-snug text-[var(--color-academy-muted)]">{BILLING_QUIET_HINT}</p>
+                            )}
                         </div></details>
                         {/* 잠금 안내: 학부모 청구 안내(링크·미납 알림)는 랠리즈에서 보낸다 */}
                         {parentSendLocked && (

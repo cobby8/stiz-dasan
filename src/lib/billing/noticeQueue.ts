@@ -17,6 +17,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { isBillingParentSendEnabled } from "@/lib/billing/parentSendGuard";
+import { isBillingQuietHour } from "@/lib/billing/quietHours";
 import {
     BILLING_BUTTON_NAME,
     BILLING_LINK_BASE,
@@ -342,6 +343,8 @@ export function describeReservation(input: {
     queued: PlannedNotice[];
     skippedActive: number;
     unlinked: UnlinkedNotice[];
+    /** 지금 시각(테스트용). 밤 9시~아침 8시(KST)면 «아침 8시에 보내집니다»로 안내한다 */
+    nowMs?: number;
 }): string {
     const alimtalk = input.queued.filter((n) => n.channel === "ALIMTALK").length;
     const sms = input.queued.filter((n) => n.channel === "SMS").length;
@@ -352,8 +355,12 @@ export function describeReservation(input: {
         `앱 알림만 ${appOnly}건`,
         `대상 아님(학부모 미연결) ${input.unlinked.length}건`,
     ];
+    // 야간(KST 21:00~08:00)에 예약하면 cron 이 아침 8시까지 기다린다 — 원장이 «왜 안 나가지?» 하지 않게 미리 알린다
+    const when = isBillingQuietHour(input.nowMs ?? Date.now())
+        ? "밤 9시~아침 8시라 아침 8시에 차례로 나갑니다"
+        : "1~2분 안에 차례로 나갑니다";
     const head = alimtalk + sms > 0
-        ? `${input.label} 발송을 예약했습니다(1~2분 안에 차례로 나갑니다).`
+        ? `${input.label} 발송을 예약했습니다(${when}).`
         : `${input.label} — 문자로 보낼 건은 없습니다.`;
     const names = input.unlinked.map((u) => u.studentName || "(이름 없음)");
     const unlinkedText = names.length > 0
