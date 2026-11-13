@@ -4,6 +4,8 @@ import { useState } from "react";
 import { taxFreeAmountFor } from "@/lib/payments/taxFree";
 import { VIRTUAL_ACCOUNT_VALID_HOURS, type PublicVirtualAccountView } from "@/lib/payments/virtualAccount";
 import VirtualAccountNotice from "@/components/parent/VirtualAccountNotice";
+import PaymentMethodPicker from "@/components/parent/PaymentMethodPicker";
+import { requestTossWithFallback, serverMethodFor, type PreferredPaymentMethod } from "@/lib/payments/preferredMethod";
 
 type TossPaymentMethod = "CARD" | "TRANSFER" | "VIRTUAL_ACCOUNT";
 type PaymentProvider = "TOSS" | "CAFE24_BRIDGE";
@@ -16,6 +18,8 @@ declare global {
                     method: TossPaymentMethod;
                     amount: { currency: "KRW"; value: number };
                     taxFreeAmount?: number;
+                    // 카드 결제창 방식 — DIRECT+easyPay = 그 간편결제 앱으로 바로, DEFAULT = 통합 결제창
+                    card?: { flowMode: "DIRECT"; easyPay: string } | { flowMode: "DEFAULT" };
                     orderId: string;
                     orderName: string;
                     successUrl: string;
@@ -68,6 +72,14 @@ const PAYMENT_METHODS: {
         { value: "VIRTUAL_ACCOUNT", label: "무통장입금", icon: "savings" },
     ];
 
+type ReadyCheckout = CheckoutResponse & { amount: number; orderId: string; orderName: string; successUrl: string; failUrl: string };
+
+// 결제창에 꼭 필요한 값이 다 왔는가(서버가 정한 값만 쓴다).
+// 타입 판정 함수로 둔 이유: 결제창 다시 열기(바로가기 실패 → 통합창) 함수 안에서도 «값이 있다»가 유지되게.
+function isReadyCheckout(data: CheckoutResponse): data is ReadyCheckout {
+    return Boolean(data.providerReady && data.orderId && data.amount && data.orderName && data.successUrl && data.failUrl);
+}
+
 function loadTossScript() {
     return new Promise<void>((resolve, reject) => {
         if (window.TossPayments) {
@@ -98,6 +110,7 @@ export default function PaymentCheckoutClient({
     provider,
     amount,
     virtualAccount = null,
+    preferredMethod = null,
 }: {
     invoiceId: string;
     providerReady: boolean;
@@ -107,10 +120,11 @@ export default function PaymentCheckoutClient({
     amount: number;
     /** 이 청구서의 최근 가상계좌(입금 대기 또는 만료). 서버가 소유권 확인 후 넘긴다. */
     virtualAccount?: PublicVirtualAccountView | null;
+    /** 지난번(또는 설정에서 고른) 결제 방법 — 서버가 본인 계정에서 읽어 넘긴다. 없으면 null */
+    preferredMethod?: PreferredPaymentMethod | null;
 }) {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [method, setMethod] = useState<TossPaymentMethod>("CARD");
     // 서버 판정으로 받은 열린 계좌(다른 탭에서 방금 발급한 경우 등) — 화면에 바로 보여 준다.
     const [openAccount, setOpenAccount] = useState<PublicVirtualAccountView | null>(
         virtualAccount && !virtualAccount.expired ? virtualAccount : null,
@@ -121,7 +135,8 @@ export default function PaymentCheckoutClient({
     const [switching, setSwitching] = useState(false);
 
     // closeAccount=true: 열린 입금 계좌를 서버가 토스에서 닫은 뒤 새 결제를 연다(확인 단계를 거친 경우만).
-    async function startPayment(selected: TossPaymentMethod = method, closeAccount = false) {
+    // selected = 학부모가 누른 결제 방법(간편결제 3종·카드·계좌이체·무통장입금)
+    async function startPayment(selected: PreferredPaymentMethod = "CARD", closeAccount = false) {
         if (!providerReady) {
             setError("지금은 온라인 결제를 쓸 수 없어요. 학원에 문의해 주세요.");
             return;
@@ -134,7 +149,8 @@ export default function PaymentCheckoutClient({
             const response = await fetch("/api/payments/checkout", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ invoiceId, method: selected, closeOpenVirtualAccount: closeAccount }),
+                // 간편결제는 토스에서 카드 결제라 서버에는 CARD 로 보낸다(금액·주문은 서버가 정한다)
+                body: JSON.stringify({ invoiceId, method: serverMethodFor(selected), closeOpenVirtualAccount: closeAccount }),
             });
             const data = (await response.json()) as CheckoutResponse;
 
@@ -148,7 +164,7 @@ export default function PaymentCheckoutClient({
                 setLoading(false);
                 return;
             }
-            if (!data.providerReady || !data.orderId || !data.amount || !data.orderName || !data.successUrl || !data.failUrl) {
+            if (!isReadyCheckout(data)) {
                 throw new Error("결제 정보가 부족해요. 학원에 문의해 주세요.");
             }
 
@@ -171,8 +187,9 @@ export default function PaymentCheckoutClient({
 
             const tossPayments = window.TossPayments(data.clientKey);
             const payment = tossPayments.payment({ customerKey: data.customerKey });
-            await payment.requestPayment({
-                method: selected,
+            // 간편결제 바로가기가 실패하면(미계약·미지원 등, 취소 제외) 안내 후 통합 결제창으로 한 번 다시 연다
+            await requestTossWithFallback(selected, (part) => payment.requestPayment({
+                ...part,
                 amount: { currency: "KRW", value: data.amount },
                 // 면세사업자(교육서비스)라 결제 금액 전부를 면세로 보낸다. 빠지면 토스 기본값(복합과세)으로 부가세가 잡힌다.
                 taxFreeAmount: taxFreeAmountFor(data.amount),
@@ -194,7 +211,7 @@ export default function PaymentCheckoutClient({
                         },
                     }
                     : {}),
-            });
+            }), (message) => setError(message));
         } catch (err) {
             setError(err instanceof Error ? err.message : "결제를 요청하지 못했어요.");
             setLoading(false);
@@ -258,10 +275,7 @@ export default function PaymentCheckoutClient({
             {expiredAccount && (
                 <VirtualAccountNotice
                     account={expiredAccount}
-                    onReissue={() => {
-                        setMethod("VIRTUAL_ACCOUNT");
-                        void startPayment("VIRTUAL_ACCOUNT");
-                    }}
+                    onReissue={() => void startPayment("VIRTUAL_ACCOUNT")}
                     reissuing={loading}
                 />
             )}
@@ -272,33 +286,16 @@ export default function PaymentCheckoutClient({
                 </p>
             )}
 
-            {/* 결제 방식 — 한 줄 3칸(묶음 결제 화면과 같은 모양) */}
+            {/* 결제 방법 — 지난번 방법 큰 버튼 + 간편결제·카드·계좌이체·무통장입금 바로가기(묶음 결제 화면과 같은 부품) */}
             {providerReady && provider === "TOSS" && (
-                <div role="radiogroup" aria-label="결제 방식" className="grid grid-cols-3 gap-1.5">
-                    {PAYMENT_METHODS.map((option) => {
-                        const active = method === option.value;
-                        return (
-                            <button
-                                key={option.value}
-                                type="button"
-                                role="radio"
-                                aria-checked={active}
-                                onClick={() => setMethod(option.value)}
-                                disabled={loading}
-                                className={`flex min-h-12 flex-col items-center justify-center whitespace-nowrap rounded-lg border px-1 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-60 ${
-                                    active
-                                        ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)]"
-                                        : "border-[var(--color-academy-line)] text-[var(--color-academy-muted)]"
-                                }`}
-                            >
-                                <span className="material-symbols-outlined text-lg leading-none" aria-hidden="true">{option.icon}</span>
-                                {option.label}
-                            </button>
-                        );
-                    })}
-                </div>
+                <PaymentMethodPicker
+                    preferred={preferredMethod}
+                    amountLabel={`${amount.toLocaleString("ko-KR")}원`}
+                    disabled={amount <= 0}
+                    loading={loading}
+                    onPay={(selected) => void startPayment(selected)}
+                />
             )}
-            {providerReady && provider === "TOSS" && method === "CARD" && <p className="text-xs text-[var(--color-academy-muted)]">토스페이는 토스 앱이 있어야 열려요. 없으면 카드를 골라 주세요.</p>}
 
             {providerReady && provider === "CAFE24_BRIDGE" && (
                 <p className="text-sm font-bold text-[var(--color-academy-ink)]">본사 카페24 결제창으로 이동합니다.</p>
@@ -310,7 +307,8 @@ export default function PaymentCheckoutClient({
                 </p>
             )}
 
-            {/* 주 버튼 하나 — 금액만 보여 준다(제공자 이름을 붙이면 좁은 화면에서 두 줄이 됐다) */}
+            {/* 토스가 아닐 때(카페24·준비 중)의 주 버튼 — 금액만 보여 준다(제공자 이름을 붙이면 좁은 화면에서 두 줄이 됐다) */}
+            {!(providerReady && provider === "TOSS") && (
             <button
                 type="button"
                 onClick={() => void startPayment()}
@@ -323,6 +321,7 @@ export default function PaymentCheckoutClient({
                         ? `${amount.toLocaleString("ko-KR")}원 결제하기`
                         : "온라인 결제 준비 중"}
             </button>
+            )}
 
             {/* 부가 안내는 접어 둔다 — 첫 화면에는 «결제 안내» 한 줄만 */}
             {providerReady && provider === "TOSS" && (

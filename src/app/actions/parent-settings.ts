@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/server";
 import { writePushPrefs } from "@/lib/parent-notification-preferences";
 import { cleanDisplayName, newPasswordProblem, normalizePushPrefs } from "@/lib/mypage/parentSettings";
 import { PARENT_WEAK_PASSWORD_MESSAGE, isWeakPasswordRejection } from "@/lib/parent-password-rules";
+import { normalizePreferredPaymentMethod } from "@/lib/payments/preferredMethod";
 
 // 학부모 설정 화면(/mypage/settings) 서버 동작 (2026-11-10 원장 결정 k7).
 //
@@ -75,6 +76,28 @@ export async function changeMyPassword(current: string, next: string, confirm: s
         if (isWeakPasswordRejection(updated.error)) return { ok: false, error: PARENT_WEAK_PASSWORD_MESSAGE };
         return { ok: false, error: "비밀번호를 바꾸지 못했습니다. 잠시 후 다시 시도해 주세요." };
     }
+    return { ok: true };
+}
+
+/**
+ * 자주 쓰는 결제 방법 저장(2026-11-13) — 로그인한 본인 계정만. 값은 화이트리스트만(모르는 값·빈 값 = 정하지 않음).
+ * 결제가 승인되면 그때 쓴 방법으로 다시 바뀐다(«지난번 결제 방법»과 같은 칸).
+ */
+export async function saveMyPreferredPaymentMethod(value: unknown): Promise<Result> {
+    const parent = await requireVerifiedParent().catch(() => null);
+    if (!parent) return { ok: false, error: "다시 로그인해 주세요." };
+    const clean = normalizePreferredPaymentMethod(value);
+    try {
+        await prisma.$executeRawUnsafe(
+            `UPDATE "User" SET "preferredPaymentMethod" = $1, "preferredPaymentMethodUpdatedAt" = NOW() WHERE id = $2 AND "withdrawnAt" IS NULL`,
+            clean,
+            parent.appUserId,
+        );
+    } catch (e) {
+        console.error("[saveMyPreferredPaymentMethod] failed:", e);
+        return { ok: false, error: "저장하지 못했습니다. 잠시 후 다시 시도해 주세요." };
+    }
+    revalidatePath("/mypage/settings");
     return { ok: true };
 }
 

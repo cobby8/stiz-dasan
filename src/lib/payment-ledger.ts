@@ -64,6 +64,8 @@ import {
 } from "@/lib/payments/virtualAccount";
 import { buildIssuedRawResponse, checkDepositSecret } from "@/lib/payments/virtualAccountSecret";
 import { postMessage } from "@/lib/slack/client";
+// 승인 완료 때 «지난번 결제 방법» 기억(실패해도 결제에는 영향 없음 — 로그만)
+import { rememberPaymentMethodFromToss } from "@/lib/payments/preferredMethodStore";
 import {
     CAFE24_PAYMENT_PROVIDER,
     Cafe24PaymentBridgeError,
@@ -2410,7 +2412,11 @@ export async function confirmTossPayment(input: {
                 actorType: "PARENT",
                 actorId: tx.parentId,
             });
-            if (recovered.ok) return { ok: true as const, payment: stripPaymentSecret(lookup.payment), recovered: true as const };
+            if (recovered.ok) {
+                // 응답을 못 받았지만 실제로는 승인된 경우도 같은 규칙으로 기억
+                await rememberPaymentMethodFromToss(tx.parentId, lookup.payment);
+                return { ok: true as const, payment: stripPaymentSecret(lookup.payment), recovered: true as const };
+            }
         }
 
         const retryable = response.status === 429 || response.status >= 500 || lookup.kind === "retryable";
@@ -2444,7 +2450,11 @@ export async function confirmTossPayment(input: {
         && result.orderId === input.orderId && Number(result.totalAmount) === Number(tx.amount)) {
         const view = await recordVirtualAccountIssued({ tx, payment: result, actorType: "PARENT" });
         if (view === "PAID") return { ok: true as const, alreadyConfirmed: true };
-        if (view) return { ok: true as const, waitingForDeposit: true as const, virtualAccount: view };
+        if (view) {
+            // 무통장입금 계좌 발급 = 학부모가 고른 방법은 «무통장입금»
+            await rememberPaymentMethodFromToss(tx.parentId, result);
+            return { ok: true as const, waitingForDeposit: true as const, virtualAccount: view };
+        }
     }
 
     if (result.status !== "DONE" || result.paymentKey !== input.paymentKey
@@ -2467,6 +2477,8 @@ export async function confirmTossPayment(input: {
 
     const finalized = await finalizeVerifiedTossPayment({ tx, payment: result, actorType: "PARENT", actorId: tx.parentId });
     if (!finalized.ok) return { ok: false as const, error: "결제 완료 처리에 실패했습니다." };
+    // 승인 완료 — 토스 응답(method·easyPay.provider)으로 «지난번 결제 방법» 기억. 던지지 않는다(저장 실패는 로그만).
+    await rememberPaymentMethodFromToss(tx.parentId, result);
 
     // 학부모에게 돌려주는 응답 — secret 칸은 지운다(가상계좌가 아니어도 같은 규칙).
     return { ok: true as const, payment: stripPaymentSecret(result) };

@@ -22,6 +22,10 @@ model User {
   // 둘 다 null=정상 / 신청만=대기 / withdrawnAt 있음=탈퇴 완료(로그인 수단 제거·익명화됨)
   withdrawRequestedAt         DateTime?                     @db.Timestamptz(6)
   withdrawnAt                 DateTime?                     @db.Timestamptz(6)
+  // 자주 쓰는 결제 방법(2026-11-13) — 결제 화면 맨 위 «지난번 결제 방법» 버튼. 카드 정보가 아니라 방법 코드만.
+  // TOSSPAY/KAKAOPAY/NAVERPAY/CARD/TRANSFER/VIRTUAL_ACCOUNT, null=정하지 않음 (DB CHECK, migration 20261113160000)
+  preferredPaymentMethod          String?
+  preferredPaymentMethodUpdatedAt DateTime?                   @db.Timestamptz(6)
   createdAt                   DateTime                      @default(now())
   updatedAt                   DateTime                      @updatedAt
   classes                     Class[]

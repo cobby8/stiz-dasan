@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import VirtualAccountNotice from "@/components/parent/VirtualAccountNotice";
+import PaymentMethodPicker from "@/components/parent/PaymentMethodPicker";
+import { requestTossWithFallback, serverMethodFor, type PreferredPaymentMethod } from "@/lib/payments/preferredMethod";
 import { todayKst } from "@/lib/datetime/kst";
 import { VIRTUAL_ACCOUNT_VALID_HOURS, type PublicVirtualAccountView } from "@/lib/payments/virtualAccount";
 import type { BundleCheckoutCandidate } from "@/lib/payment-ledger";
@@ -13,13 +15,7 @@ import type { BundleCheckoutCandidate } from "@/lib/payment-ledger";
 // 막힌 청구(대표 보호자 아님·랠리즈 청구 등)는 체크할 수 없고 이유를 그 줄에 적는다.
 // 계좌로 직접 입금했다면 고른 청구를 한 번에 «입금했어요»로 알린다(서버가 건마다 확인 요청을 만든다).
 
-type BundleMethod = "CARD" | "TRANSFER" | "VIRTUAL_ACCOUNT";
-
-const METHODS: { value: BundleMethod; label: string; icon: string }[] = [
-    { value: "CARD", label: "카드·간편결제", icon: "credit_card" },
-    { value: "TRANSFER", label: "계좌이체", icon: "account_balance" },
-    { value: "VIRTUAL_ACCOUNT", label: "무통장입금", icon: "savings" },
-];
+// 결제 방법 버튼(간편결제 3종·카드·계좌이체·무통장입금)은 단건 화면과 같은 부품(PaymentMethodPicker)을 쓴다.
 
 /** POST /api/mypage/payments/checkout 응답(서버 계약 9463c9ce) */
 type CheckoutResponse = {
@@ -90,6 +86,7 @@ export default function BundleCheckoutClient({
     bankAccount = null,
     failed = false,
     failMessage = "",
+    preferredMethod = null,
 }: {
     items: BundleCheckoutCandidate[];
     loadFailed?: boolean;
@@ -102,11 +99,13 @@ export default function BundleCheckoutClient({
     /** 토스 결제창에서 실패·취소하고 돌아왔는가(?result=fail) */
     failed?: boolean;
     failMessage?: string;
+    /** 지난번(또는 설정에서 고른) 결제 방법 — 서버가 본인 계정에서 읽어 넘긴다 */
+    preferredMethod?: PreferredPaymentMethod | null;
 }) {
     const router = useRouter();
     // D3: 결제 가능한 청구는 기본 전부 체크
     const [selected, setSelected] = useState<Set<string>>(() => new Set(items.filter((item) => item.selectable).map((item) => item.paymentId)));
-    const [method, setMethod] = useState<BundleMethod>("CARD");
+    const [method, setMethod] = useState<PreferredPaymentMethod>(preferredMethod ?? "CARD");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const [conflict, setConflict] = useState<CheckoutResponse["openVirtualAccounts"] | null>(null);
@@ -153,7 +152,8 @@ export default function BundleCheckoutClient({
         setError("");
     }
 
-    async function startPayment(closeOpenVirtualAccount = false) {
+    // chosen = 이번에 누른 결제 방법(계좌 닫기 확인 뒤 다시 부를 때는 마지막으로 누른 방법)
+    async function startPayment(closeOpenVirtualAccount = false, chosen: PreferredPaymentMethod = method) {
         if (sending.current || picked.length === 0 || overLimit || !onlineReady) return;
         sending.current = true;
         setLoading(true);
@@ -162,7 +162,8 @@ export default function BundleCheckoutClient({
             const response = await fetch("/api/mypage/payments/checkout", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ paymentIds: picked.map((item) => item.paymentId), method, closeOpenVirtualAccount }),
+                // 간편결제는 토스에서 카드 결제라 서버에는 CARD 로 보낸다(금액·주문은 서버가 정한다)
+                body: JSON.stringify({ paymentIds: picked.map((item) => item.paymentId), method: serverMethodFor(chosen), closeOpenVirtualAccount }),
             });
             const data = (await response.json().catch(() => ({}))) as CheckoutResponse;
 
@@ -196,8 +197,10 @@ export default function BundleCheckoutClient({
             setConflict(null);
 
             const TossPayments = await loadTossScript();
-            await TossPayments(data.clientKey).payment({ customerKey: data.customerKey }).requestPayment({
-                method,
+            const payment = TossPayments(data.clientKey).payment({ customerKey: data.customerKey });
+            // 간편결제 바로가기가 실패하면(미계약·미지원 등, 취소 제외) 안내 후 통합 결제창으로 한 번 다시 연다
+            await requestTossWithFallback(chosen, (part) => payment.requestPayment({
+                ...part,
                 amount: { currency: "KRW", value: data.amount },
                 taxFreeAmount: data.taxFreeAmount,
                 orderId: data.orderId,
@@ -208,10 +211,10 @@ export default function BundleCheckoutClient({
                 customerName: data.customerName,
                 customerMobilePhone: data.customerMobilePhone,
                 // 무통장입금: 단건 화면과 같은 옵션(최대 기한·현금영수증 소득공제 기본·에스크로 없음)
-                ...(method === "VIRTUAL_ACCOUNT"
+                ...(chosen === "VIRTUAL_ACCOUNT"
                     ? { virtualAccount: { validHours: VIRTUAL_ACCOUNT_VALID_HOURS, cashReceipt: { type: "소득공제" }, useEscrow: false } }
                     : {}),
-            });
+            }), (message) => setError(message));
         } catch (err) {
             setError(err instanceof Error ? err.message : "결제를 요청하지 못했어요.");
         } finally {
@@ -380,28 +383,6 @@ export default function BundleCheckoutClient({
 
                             {onlineReady ? (
                                 <>
-                                    <div role="radiogroup" aria-label="결제 방식" className="grid grid-cols-3 gap-1.5">
-                                        {METHODS.map((option) => (
-                                            <button
-                                                key={option.value}
-                                                type="button"
-                                                role="radio"
-                                                aria-checked={method === option.value}
-                                                disabled={loading}
-                                                onClick={() => { setMethod(option.value); setConflict(null); }}
-                                                className={`flex min-h-12 flex-col items-center justify-center whitespace-nowrap rounded-lg border px-1 text-xs font-bold ${
-                                                    method === option.value
-                                                        ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)]"
-                                                        : "border-[var(--color-academy-line)] text-[var(--color-academy-muted)]"
-                                                }`}
-                                            >
-                                                <span className="material-symbols-outlined text-lg leading-none" aria-hidden="true">{option.icon}</span>
-                                                {option.label}
-                                            </button>
-                                        ))}
-                                    </div>
-                                    {method === "CARD" && <p className="text-xs text-[var(--color-academy-muted)]">토스페이는 토스 앱이 있어야 열려요. 없으면 카드를 골라 주세요.</p>}
-
                                     {conflict ? (
                                         // 위험 확인: 계좌를 닫으면 그 계좌로는 입금할 수 없다 — 무엇이 일어나는지 먼저 알린다
                                         <div role="alertdialog" aria-labelledby="bundle-conflict-title" className="rounded-lg border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-3 text-sm text-[var(--color-academy-ink)]">
@@ -423,14 +404,20 @@ export default function BundleCheckoutClient({
                                             </div>
                                         </div>
                                     ) : (
-                                        <button
-                                            type="button"
-                                            disabled={loading || picked.length === 0 || overLimit}
-                                            onClick={() => void startPayment(false)}
-                                            className="academy-button-primary min-h-12 w-full text-base font-black"
-                                        >
-                                            {loading ? "결제창 여는 중..." : picked.length === 0 ? "결제할 청구를 선택해 주세요" : `${won(total)} 결제하기`}
-                                        </button>
+                                        <>
+                                            {picked.length === 0 && <p className="text-xs font-bold text-[var(--color-academy-muted)]">결제할 청구를 선택해 주세요</p>}
+                                            {/* 결제 방법 — 지난번 방법 큰 버튼 + 바로가기 버튼 줄(누르면 바로 결제창) */}
+                                            <PaymentMethodPicker
+                                                preferred={preferredMethod}
+                                                amountLabel={won(total)}
+                                                disabled={picked.length === 0 || overLimit}
+                                                loading={loading}
+                                                onPay={(chosen) => {
+                                                    setMethod(chosen);
+                                                    void startPayment(false, chosen);
+                                                }}
+                                            />
+                                        </>
                                     )}
                                     {/* «입금 대기 계좌가 있어요»는 그 청구 줄에 이미 적혀 있어 여기서는 다시 말하지 않는다 */}
                                 </>

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { requireVerifiedParent } from "@/lib/auth-guard";
 import { getInvoiceForParent, getPaymentProviderConfig, getVirtualAccountState } from "@/lib/payment-ledger";
 import { formatKstDate } from "@/lib/datetime/kst";
+import { readPreferredPaymentMethod } from "@/lib/payments/preferredMethodStore";
 import PaymentCheckoutClient from "./PaymentCheckoutClient";
 
 export const dynamic = "force-dynamic";
@@ -46,6 +47,8 @@ export default async function PaymentPage({ params }: { params: Promise<{ invoic
     const isOverdue = !isPaid && !isClosed && invoice.paymentStatus === "OVERDUE";
     // 무통장입금 계좌(입금 대기·만료) — 소유권 확인(getInvoiceForParent) 뒤에만 읽는다. 학부모 화면용 칸만 온다.
     const virtualAccount = !isPaid && !isClosed ? await getVirtualAccountState(invoice.invoiceId) : null;
+    // 지난번 결제 방법(본인 계정만, 못 읽으면 null — 결제 화면은 그대로 열린다)
+    const preferredMethod = !isPaid && !isClosed ? await readPreferredPaymentMethod(user.appUserId) : null;
     const waitingDeposit = Boolean(virtualAccount && !virtualAccount.expired);
     // 묶음 결제(«한 번에 결제»)로 받은 계좌면 금액이 이 청구보다 크다 — 합계를 입금해야 한다고 알린다
     const bundledAccount = Boolean(virtualAccount && virtualAccount.amount !== Number(invoice.amount));
@@ -123,6 +126,7 @@ export default async function PaymentPage({ params }: { params: Promise<{ invoic
                         providerLabel={providerConfig.providerLabel}
                         amount={Number(invoice.amount)}
                         virtualAccount={virtualAccount}
+                        preferredMethod={preferredMethod}
                     />
                 </section>
             )}

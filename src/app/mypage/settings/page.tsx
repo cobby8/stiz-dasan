@@ -11,7 +11,8 @@ import { readPushPrefs } from "@/lib/parent-notification-preferences";
 import { formatPhoneInput } from "@/lib/application-display-format";
 import { FONT_SCALE_COOKIE, parseFontScale, SHOW_THEME_SETTING } from "@/lib/mypage/parentSettings";
 import pkg from "../../../../package.json";
-import { NameRow, PasswordRow, NotificationRows, FontScaleRow, FeedbackRow } from "./SettingsClient";
+import { readPreferredPaymentMethod } from "@/lib/payments/preferredMethodStore";
+import { NameRow, PasswordRow, NotificationRows, FontScaleRow, FeedbackRow, PaymentMethodRow } from "./SettingsClient";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "설정 | 스티즈 농구교실" };
@@ -58,7 +59,7 @@ export default async function ParentSettingsPage() {
 
     const supabase = await createClient();
     // 모든 조회의 대상 = 서버가 확인한 로그인 사용자(parent.appUserId) — 화면 값으로 남의 정보를 열 수 없다
-    const [userRows, authResult, childRows, pushPrefs, cookieStore] = await Promise.all([
+    const [userRows, authResult, childRows, pushPrefs, cookieStore, preferredMethod] = await Promise.all([
         prisma.$queryRawUnsafe<{ name: string; phone: string | null; username: string | null; role: string }[]>(
             `SELECT name, phone, username, role::text AS role FROM "User" WHERE id = $1 LIMIT 1`,
             parent.appUserId,
@@ -70,6 +71,8 @@ export default async function ParentSettingsPage() {
         ).catch(() => [] as { id: string; name: string }[]),
         readPushPrefs(parent.appUserId),
         cookies(),
+        // 자주 쓰는 결제 방법(칸이 없거나 못 읽으면 null — 설정 화면은 그대로 열린다)
+        readPreferredPaymentMethod(parent.appUserId),
     ]);
     const me = userRows[0];
     const authUser = authResult.data?.user;
@@ -114,6 +117,11 @@ export default async function ParentSettingsPage() {
             <Section title="로그인">
                 {hasPasswordLogin && <PasswordRow />}
                 <LinkRow href="/mypage/login-methods" icon="key" label="간편로그인 연결" />
+            </Section>
+
+            {/* 결제 — 고른 방법이 결제 화면 맨 위 큰 버튼이 된다 */}
+            <Section title="결제">
+                <PaymentMethodRow current={preferredMethod} />
             </Section>
 
             <Section title="가족">

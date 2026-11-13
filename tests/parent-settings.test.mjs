@@ -79,6 +79,7 @@ function loadSettingsActions({ loggedIn = true, identities = [{ provider: "email
     "@/lib/parent-notification-preferences": { writePushPrefs: async (userId, prefs) => { sql.push({ q: "PREFS", params: [userId, prefs] }); } },
     "@/lib/mypage/parentSettings": settings,
     "@/lib/parent-password-rules": passwordRules,
+    "@/lib/payments/preferredMethod": load("src/lib/payments/preferredMethod.ts"),
     "@/lib/supabase/server": {
       createClient: async () => ({
         auth: {
@@ -110,7 +111,15 @@ test("② 이름·알림 설정은 로그인한 본인 줄만 바뀐다(화면�
   assert.deepEqual(await actions.saveMyPushPrefs({ notice: false, userId: "someone-else" }), { ok: true });
   assert.deepEqual(sql[1].params, ["me-parent", { attendance: true, billing: true, notice: false, shuttle: true }]);
 
+  // 자주 쓰는 결제 방법: 본인 줄만 · 화이트리스트 밖 값은 NULL(정하지 않음)
+  assert.deepEqual(await actions.saveMyPreferredPaymentMethod("kakaopay"), { ok: true });
+  assert.match(sql[2].q, /UPDATE "User" SET "preferredPaymentMethod" = \$1, "preferredPaymentMethodUpdatedAt" = NOW\(\) WHERE id = \$2/);
+  assert.deepEqual(sql[2].params, ["KAKAOPAY", "me-parent"]);
+  assert.deepEqual(await actions.saveMyPreferredPaymentMethod("'; DROP TABLE"), { ok: true });
+  assert.deepEqual(sql[3].params, [null, "me-parent"], "모르는 값은 저장하지 않고 «정하지 않음»");
+
   const out = loadSettingsActions({ loggedIn: false });
+  assert.equal((await out.actions.saveMyPreferredPaymentMethod("CARD")).ok, false);
   assert.equal((await out.actions.updateMyName("x")).ok, false);
   assert.equal((await out.actions.saveMyPushPrefs({})).ok, false);
   assert.equal((await out.actions.changeMyPassword("a", "abcdefgh", "abcdefgh")).ok, false);
@@ -119,7 +128,7 @@ test("② 이름·알림 설정은 로그인한 본인 줄만 바뀐다(화면�
   // 정적: 서버 동작의 대상 id 는 화면 인자가 아니라 requireVerifiedParent 결과뿐
   const src = read("src/app/actions/parent-settings.ts");
   assert.match(src, /^"use server";/);
-  assert.equal((src.match(/await requireVerifiedParent\(\)/g) || []).length, 3);
+  assert.equal((src.match(/await requireVerifiedParent\(\)/g) || []).length, 4, "이름·비밀번호·알림·자주 쓰는 결제 방법");
   assert.doesNotMatch(src, /prisma\.\w+\.(update|updateMany|upsert|create)/, "ORM 기본 메서드 금지(PgBouncer)");
 });
 

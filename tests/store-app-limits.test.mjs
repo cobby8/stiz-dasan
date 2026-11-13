@@ -103,7 +103,7 @@ test("마이페이지 통신 실패는 그 자리 안내(d1)·첫 화면 부분 
   assert.match(home, /catch \{[\s\S]*?setReqError\("보내지 못했습니다\. 다시 시도해 주세요\."\);\s*return;/);
   assert.match(home, /학원에 메시지를 보냈어요/);
   const settings = read("src/app/mypage/settings/SettingsClient.tsx");
-  assert.equal((settings.match(/\.catch\(\(\) => \(\{ ok: false as const, error: "보내지 못했습니다\. 다시 시도해 주세요\." \}\)\)/g) ?? []).length, 3);
+  assert.equal((settings.match(/\.catch\(\(\) => \(\{ ok: false as const, error: "보내지 못했습니다\. 다시 시도해 주세요\." \}\)\)/g) ?? []).length, 4, "이름·비밀번호·알림·자주 쓰는 결제 방법(2026-11-13)");
   const bell = read("src/app/mypage/ParentNotificationBell.tsx");
   assert.match(bell, /await markAllMyNotificationsRead\(\);\s*\} catch \{/);
   assert.match(bell, /await markMyNotificationRead\(id\);\s*\} catch \{/);

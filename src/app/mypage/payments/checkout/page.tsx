@@ -3,6 +3,7 @@ import { requireVerifiedParent } from "@/lib/auth-guard";
 import { getBundleCheckoutCandidates, getPaymentProviderConfig } from "@/lib/payment-ledger";
 import { academyBankAccount } from "@/lib/payments/academy-bank-account";
 import { tossFailMessage } from "@/lib/payments/tossFailMessage";
+import { readPreferredPaymentMethod } from "@/lib/payments/preferredMethodStore";
 import BundleCheckoutClient from "./BundleCheckoutClient";
 
 export const dynamic = "force-dynamic";
@@ -35,6 +36,8 @@ export default async function BundleCheckoutPage({
         return null;
     });
     const config = getPaymentProviderConfig();
+    // 지난번 결제 방법(본인 계정만, 못 읽으면 null)
+    const preferredMethod = await readPreferredPaymentMethod(parent.appUserId);
 
     return (
         <BundleCheckoutClient
@@ -47,6 +50,7 @@ export default async function BundleCheckoutPage({
             bankAccount={academyBankAccount()}
             failed={failed}
             failMessage={failMessage}
+            preferredMethod={preferredMethod}
         />
     );
 }

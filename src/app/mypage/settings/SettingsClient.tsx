@@ -3,7 +3,8 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { updateMyName, changeMyPassword, saveMyPushPrefs } from "@/app/actions/parent-settings";
+import { updateMyName, changeMyPassword, saveMyPushPrefs, saveMyPreferredPaymentMethod } from "@/app/actions/parent-settings";
+import { PAYMENT_METHOD_OPTIONS, type PreferredPaymentMethod } from "@/lib/payments/preferredMethod";
 import { createParentRequest } from "@/app/actions/admin";
 import { usePushSubscription } from "@/lib/push/usePushSubscription";
 import { useStoreAppLacks } from "@/components/storeApp/useStoreAppLacks";
@@ -84,6 +85,50 @@ export function NameRow({ name }: { name: string }) {
                         </button>
                     </>
                 )}
+            </div>
+            <Message {...msg} />
+        </li>
+    );
+}
+
+// ── 결제: 자주 쓰는 결제 방법(2026-11-13) ─────────────────────────────────
+// 고르면 결제 화면 맨 위 큰 버튼이 그 방법이 된다. 결제가 승인되면 그때 쓴 방법으로 자동으로 바뀐다.
+// 고르기는 기본 선택 상자(select) 하나 — 7가지를 버튼으로 펼치면 한 줄 행이 세 줄이 된다(컴팩트 규칙).
+export function PaymentMethodRow({ current }: { current: PreferredPaymentMethod | null }) {
+    const [value, setValue] = useState<string>(current ?? "");
+    const [msg, setMsg] = useState<{ text: string; tone: "ok" | "error" }>({ text: "", tone: "ok" });
+    const [isPending, startTransition] = useTransition();
+
+    function choose(next: string) {
+        const before = value;
+        setValue(next);
+        startTransition(async () => {
+            const res = await saveMyPreferredPaymentMethod(next).catch(() => ({ ok: false as const, error: "보내지 못했습니다. 다시 시도해 주세요." }));
+            if (res.ok) setMsg({ text: "저장했어요.", tone: "ok" });
+            else {
+                setValue(before); // 저장 실패면 원래 값으로 되돌린다
+                setMsg({ text: res.error, tone: "error" });
+            }
+        });
+    }
+
+    return (
+        <li>
+            <div className={ROW}>
+                <RowIcon name="payments" />
+                <label htmlFor="preferred-payment-method" className="flex-1 font-bold text-[var(--color-academy-ink)]">자주 쓰는 결제 방법</label>
+                <select
+                    id="preferred-payment-method"
+                    value={value}
+                    disabled={isPending}
+                    onChange={(e) => choose(e.target.value)}
+                    className="academy-input min-h-11 w-32 shrink-0 text-sm"
+                >
+                    <option value="">정하지 않음</option>
+                    {PAYMENT_METHOD_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                </select>
             </div>
             <Message {...msg} />
         </li>

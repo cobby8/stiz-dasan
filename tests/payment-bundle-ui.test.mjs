@@ -30,6 +30,8 @@ const kst = load("src/lib/datetime/kst.ts");
 const statusTones = load("src/lib/ui/statusTones.ts"); // 상태색 공용 지도(청구 탭 상태 글자)
 const taxFree = load("src/lib/payments/taxFree.ts");
 const virtualAccount = load("src/lib/payments/virtualAccount.ts", { "@/lib/payments/taxFree": taxFree, "@/lib/datetime/kst": kst });
+const preferredMethod = load("src/lib/payments/preferredMethod.ts");
+const picker = load("src/components/parent/PaymentMethodPicker.tsx", { "@/lib/payments/preferredMethod": preferredMethod });
 const vaNotice = { __esModule: true, default: ({ account }) => React.createElement("p", null, `계좌 ${account.accountNumber} ${account.amount}`) };
 
 const Checkout = load("src/app/mypage/payments/checkout/BundleCheckoutClient.tsx", {
@@ -38,6 +40,8 @@ const Checkout = load("src/app/mypage/payments/checkout/BundleCheckoutClient.tsx
   "@/components/parent/VirtualAccountNotice": vaNotice,
   "@/lib/datetime/kst": kst,
   "@/lib/payments/virtualAccount": virtualAccount,
+  "@/components/parent/PaymentMethodPicker": picker,
+  "@/lib/payments/preferredMethod": preferredMethod,
 }).default;
 const item = (id, extra = {}) => ({ paymentId: id, invoiceId: `i-${id}`, studentId: "s1", studentName: "합성 첫째", title: `${id} 수강료`, amount: 100000, paymentStatus: "PENDING", selectable: true, blockCode: null, blockReason: null, pendingDeposit: false, ...extra });
 const render = (props) => renderToStaticMarkup(React.createElement(Checkout, { maxItems: 10, maxTotal: 1_000_000, onlineReady: true, bankAccount: "합성은행 000111", ...props }));
@@ -55,9 +59,10 @@ test("① 결제 가능한 청구는 기본 전부 체크, 막힌 청구(대표 
   assert.match(html, /랠리즈 앱에서 결제해 주세요/, "D4 막힌 이유를 그 줄에");
   assert.match(html, /합성 둘째<\/span>p2 수강료/, "D2 형제 청구도 한 목록");
   assert.match(html, /선택 <span class="tabular-nums">2<\/span>건/);
-  assert.match(html, /150,000원 결제하기/);
-  assert.match(html, /role="radiogroup" aria-label="결제 방식"/);
-  for (const label of ["카드·간편결제", "계좌이체", "무통장입금"]) assert.ok(html.includes(label), label);
+  // 결제 방법 바로가기(2026-11-13): 지난번 방법이 없으면 큰 버튼 없이 버튼 줄 + 합계
+  assert.match(html, /결제 방법을 눌러 주세요 · 150,000원/);
+  assert.match(html, /role="group" aria-label="결제 방식"/);
+  for (const label of ["토스페이", "카카오페이", "네이버페이", "카드", "계좌이체", "무통장입금"]) assert.ok(html.includes(label), label);
   assert.match(html, /이미 계좌로 입금했어요 \(2건\)/, "입금 알림도 고른 청구 묶음으로");
   assert.match(html, /합성은행 000111/);
   assert.doesNotMatch(html, /한 번에 10건/, "상한 안이면 안내 없음");
@@ -66,7 +71,8 @@ test("① 결제 가능한 청구는 기본 전부 체크, 막힌 청구(대표 
 test("① 상한(D5 10건·100만 원)을 넘으면 결제 버튼을 막고 나눠 내라고 안내", () => {
   const over = render({ items: [item("p1", { amount: 600000 }), item("p2", { amount: 500000 })] });
   assert.match(over, /한 번에 10건·1,000,000원까지 결제할 수 있어요/);
-  assert.match(over, /<button[^>]*disabled=""[^>]*>1,100,000원 결제하기/);
+  assert.match(over, /결제 방법을 눌러 주세요 · 1,100,000원/);
+  assert.equal((over.match(/<button[^>]*disabled=""[^>]*><span class="material-symbols-outlined/g) || []).length, 6, "결제 방법 버튼 6개 모두 막힘");
   const many = render({ items: Array.from({ length: 11 }, (_, i) => item(`p${i}`, { amount: 1000 })) });
   assert.match(many, /한 번에 10건/);
 });
@@ -74,10 +80,10 @@ test("① 상한(D5 10건·100만 원)을 넘으면 결제 버튼을 막고 나�
 test("① 고를 수 있는 청구가 없거나 온라인 결제가 꺼져 있으면 그에 맞게 안내", () => {
   const none = render({ items: [item("p1", { selectable: false, blockCode: "NOT_PAYER", blockReason: "결제는 대표 보호자 계정에서만 할 수 있어요." })] });
   assert.match(none, /결제할 수 있는 청구가 없어요/);
-  assert.doesNotMatch(none, /결제하기/);
+  assert.doesNotMatch(none, /aria-label="결제 방식"/);
   const offline = render({ items: [item("p1")], onlineReady: false });
   assert.match(offline, /지금은 온라인 결제를 쓸 수 없어요/);
-  assert.doesNotMatch(offline, /radiogroup/);
+  assert.doesNotMatch(offline, /aria-label="결제 방식"/);
   assert.match(offline, /class="academy-button-primary[^"]*"[^>]*>이미 계좌로 입금했어요/, "온라인이 꺼지면 입금 알림이 주 버튼");
   const failed = render({ items: [item("p1")], failed: true, failMessage: "결제를 취소했어요." });
   assert.match(failed, /결제를 취소했어요\. 돈은 빠져나가지 않았어요\./);
@@ -95,7 +101,7 @@ test("② 토스 결제창: 단건과 같은 SDK·서버가 준 금액·면세 �
   assert.match(call, /failUrl: data\.failUrl/);
   assert.match(src, /typeof data\.taxFreeAmount !== "number"/, "면세 금액이 없으면 결제창을 열지 않는다");
   assert.match(src, /fetch\("\/api\/mypage\/payments\/checkout"/);
-  assert.match(src, /JSON\.stringify\(\{ paymentIds: picked\.map\(\(item\) => item\.paymentId\), method, closeOpenVirtualAccount \}\)/);
+  assert.match(src, /JSON\.stringify\(\{ paymentIds: picked\.map\(\(item\) => item\.paymentId\), method: serverMethodFor\(chosen\), closeOpenVirtualAccount \}\)/);
   assert.match(src, /if \(data\.openVirtualAccountConflict\)/);
   assert.match(src, /Array\.isArray\(data\.openVirtualAccounts\) \? data\.openVirtualAccounts : \[\]/, "빈 계좌 목록(OPEN_DEPOSIT_EXISTS)도 깨지지 않게");
   assert.match(src, /role="alertdialog"/);
