@@ -8,6 +8,7 @@ import {
   requireStaffSessionAccess,
 } from "@/lib/staff-class-access";
 import { notMergedStudent } from "@/lib/studentVisibility";
+import { kstDow } from "@/lib/datetime/kst";
 import { makeupOnClassDateSql } from "@/lib/makeup/makeup-attendance";
 import { absenceReportOf } from "@/lib/regular/attendance-absence-reason";
 import { TRIAL_ROSTER_STATUSES, trialRosterKey } from "@/lib/staff-session-rules";
@@ -116,7 +117,8 @@ export async function getTodayStaffClasses(dateKey: string = getKoreaDateKey()):
   ]);
   const classIds = Array.from(new Set([...assignedIds, ...substituteIds]));
 
-  const koreaDay = new Date(`${dateKey}T12:00:00+09:00`).getDay();
+  // 요일은 공용 KST 모듈에서만(서버 시간대·기준 시각에 기대지 않는다)
+  const koreaDay = kstDow(dateKey);
   const regularRows = classIds.length === 0 ? [] : await prisma.$queryRawUnsafe<TodayClassRow[]>(
     `SELECT c.id, c.name, c."startTime", c."endTime", c.location,
             COUNT(DISTINCT e.id)::int AS "studentCount",

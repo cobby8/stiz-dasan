@@ -2,6 +2,7 @@
 // 호출하는 쪽(관리자 page.tsx · 서버 액션)이 먼저 requireAdmin 을 통과해야 한다.
 import { prisma } from "@/lib/prisma";
 import { todayKst } from "@/lib/datetime/kst";
+import { SUBSTITUTE_TEACHER_SQL } from "@/lib/staff/classSubstitute";
 
 export type SubstituteClassOption = { id: string; name: string; dayOfWeek: string; startTime: string; endTime: string };
 export type SubstituteTeacherOption = { id: string; name: string };
@@ -22,18 +23,16 @@ export type ClassSubstituteAdminData = {
 };
 
 /**
- * 대타로 고를 수 있는 선생님 — 주 역할이 선생님(INSTRUCTOR)이거나, 선생님 추가 역할이 승인(ACTIVE)된 사람.
- * 원장·부원장은 이미 모든 반을 보므로 빼고, 탈퇴한 계정도 뺀다. 서버 액션도 같은 조건으로 다시 확인한다.
+ * 대타로 고를 수 있는 선생님 조건 — 정본은 순수 규칙 모듈(classSubstitute.ts) 한 곳.
+ * 화면 목록·서버 액션·출석부 판정(staff-class-access)이 같은 조건을 쓴다.
  */
-export const SUBSTITUTE_TEACHER_SQL = `
-    u."withdrawnAt" IS NULL
-    AND (
-      u.role = 'INSTRUCTOR'
-      OR EXISTS (
-        SELECT 1 FROM "UserRoleGrant" g
-         WHERE g."userId" = u.id AND g.role = 'INSTRUCTOR' AND g.status = 'ACTIVE'
-      )
-    )`;
+export { SUBSTITUTE_TEACHER_SQL };
+
+/** Postgres «표 없음»(42P01) — Prisma raw 오류는 meta.code 또는 메시지에 담긴다. */
+function isMissingTable(error: unknown): boolean {
+    const e = error as { code?: string; meta?: { code?: string }; message?: string } | null;
+    return e?.code === "42P01" || e?.meta?.code === "42P01" || /42P01|relation "ClassSubstitute" does not exist/.test(e?.message ?? "");
+}
 
 export async function getClassSubstituteAdminData(): Promise<ClassSubstituteAdminData> {
     const today = todayKst();
@@ -55,7 +54,11 @@ export async function getClassSubstituteAdminData(): Promise<ClassSubstituteAdmi
               ORDER BY cs.date, c."startTime", c.name
               LIMIT 100`,
             today,
-        ),
+        ).catch((error: unknown) => {
+            // 마이그레이션 전(표 없음 42P01)이면 빈 목록 — 스태프 관리 화면 전체가 멈추지 않게. 다른 오류는 그대로.
+            if (isMissingTable(error)) return [] as ClassSubstituteItem[];
+            throw error;
+        }),
     ]);
     return { today, classes, teachers, items };
 }

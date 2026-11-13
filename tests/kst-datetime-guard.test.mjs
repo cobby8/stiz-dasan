@@ -106,10 +106,8 @@ test("규칙 2 — T00:00+09:00 에 getUTC* 를 붙이지 않는다(하루 밀�
 // Vercel 은 UTC 로 돈다. getDay()/getHours() 는 서버 시간대를 따르므로 9시간 어긋난다.
 // 화면(use client)은 사용자 브라우저(=KST)에서 돌아 실사용상 맞으므로 대상에서 뺀다.
 const R3 = /new Date\([^)]*\)\s*\.\s*get(?:Day|Hours|Minutes)\(\)/;
-const R3_ALLOW = [
-  // T12:00 을 기준점으로 잡아 현재는 맞지만 위태롭다 — kst.kstDow 로 옮길 것.
-  "src/lib/staff-session-queries.ts",
-];
+const R3_ALLOW = [];
+// 2026-11-13 정리: src/lib/staff-session-queries.ts (선생님 홈 오늘 수업 요일, T12:00+getDay) → kstDow(dateKey) 로 교체.
 // 2026-10-06 정리: src/lib/queries.ts (출석 반 목록의 요일 attendanceDayOfWeek) → kstDow(date) 로 교체.
 // 2026-08-16 정리: src/lib/adminReadPayloads.ts (대시보드 오늘 요일·오늘 수업 3곳) → kstDow(todayKst()) 로 교체.
 

@@ -31,6 +31,34 @@ export function substituteActiveNow(substituteDate: unknown, nowMs: number = Dat
 }
 
 /**
+ * 출석부 권한 판정에 쓰는 최종 규칙(보안 검수 HIGH 1).
+ * 대타 행 날짜 == 판정 날짜(수업 기록·요청 날짜) == **오늘(KST)** 일 때만 true.
+ * 그날 기록 ID 를 들고 다음 날 다시 와도 «오늘»이 바뀌어 닫힌다 — 유예 없음(KST 자정에 닫힘).
+ */
+export function substituteAllowedNow(substituteDate: unknown, onDate: unknown, nowMs: number = Date.now()): boolean {
+  return substituteGrantsAccess(substituteDate, onDate) && substituteActiveNow(onDate, nowMs);
+}
+
+/**
+ * 대타가 될 수 있는 계정 조건(SQL 조각, 별칭 u = "User").
+ * 주 역할 선생님(INSTRUCTOR) 또는 선생님 추가 역할 승인(ACTIVE), 탈퇴 제외.
+ * 관리자 지정(서버 액션)과 **판정 시점**(staff-class-access) 양쪽이 같은 조건을 쓴다 —
+ * 지정 뒤에 선생님 역할이 회수되면 그 즉시 대타 권한도 사라진다(보안 검수 HIGH 2).
+ */
+export const SUBSTITUTE_TEACHER_SQL = `
+    u."withdrawnAt" IS NULL
+    AND (
+      u.role = 'INSTRUCTOR'
+      OR EXISTS (
+        SELECT 1 FROM "UserRoleGrant" g
+         WHERE g."userId" = u.id AND g.role = 'INSTRUCTOR' AND g.status = 'ACTIVE'
+      )
+    )`;
+
+/** 그날 특강 회차가 연결된 반에 대타를 지정하려 할 때의 안내(검수 M1). */
+export const SEASONAL_SUBSTITUTE_MESSAGE = "그날 특강 회차가 있는 반은 대타 대신 특강 담당 강사를 바꿔 주세요.";
+
+/**
  * 관리자가 대타를 지정할 때 입력 확인. 문제가 없으면 null, 있으면 화면에 보일 안내 문장.
  * - 날짜 형식·실재 여부
  * - 지난 날짜 금지(오늘은 가능)

@@ -1,7 +1,7 @@
 import { requireStaff, type StaffAuthUser } from "@/lib/auth-guard";
 import { prisma } from "@/lib/prisma";
-import { isKstYmd } from "@/lib/datetime/kst";
-import { substituteGrantsAccess } from "@/lib/staff/classSubstitute";
+import { SUBSTITUTE_TEACHER_SQL, substituteAllowedNow } from "@/lib/staff/classSubstitute";
+import { isKstYmd, todayKst } from "@/lib/datetime/kst";
 
 type CoachLinkRow = {
   coachId: string;
@@ -109,21 +109,26 @@ export type StaffClassAccessOptions = {
 };
 
 /**
- * 그 날짜에 이 선생님이 이 반의 대타로 지정됐는가(f4).
- * 날짜 비교는 순수 규칙(substituteGrantsAccess)과 같은 기준 — 정확히 같은 "YYYY-MM-DD" 일 때만.
- * 형식이 틀린 날짜는 DB 에 묻기 전에 거른다.
+ * 지금(오늘 KST) 이 선생님이 이 반의 대타인가(f4). 모든 출석부 경로가 이 함수 하나로 닫힌다.
+ * - 판정 날짜(수업 기록·요청 날짜) == 대타 행 날짜 == **오늘(KST)** 일 때만 허용(보안 검수 HIGH 1).
+ *   지난 대타가 그날 기록 ID 로 다음 날 명단·출석·메모·사진을 여는 길을 막는다. 유예 없음 — KST 자정에 닫힌다.
+ * - 판정 시점에 선생님 역할을 다시 본다(보안 검수 HIGH 2) — 지정 뒤 선생님 역할이 회수되거나(기사님만 남음)
+ *   탈퇴하면 그 즉시 거부. 조건은 관리자 지정과 같은 SUBSTITUTE_TEACHER_SQL.
  */
 async function hasClassSubstitute(classId: string, userId: string, onDate: string): Promise<boolean> {
-  if (!isKstYmd(onDate)) return false;
+  // 오늘이 아니면 DB 에 묻지도 않는다(형식이 틀린 날짜도 여기서 걸러진다)
+  if (!substituteAllowedNow(onDate, onDate)) return false;
+  // 조회 오류(표 없음 등)는 «대타 아님»으로 본다 — 실패가 권한을 넓히는 쪽으로 흐르지 않게(검수 M2)
   const rows = await prisma.$queryRawUnsafe<Array<{ date: string }>>(
-    `SELECT date FROM "ClassSubstitute"
-     WHERE "classId" = $1 AND "substituteUserId" = $2 AND date = $3
+    `SELECT cs.date FROM "ClassSubstitute" cs
+     JOIN "User" u ON u.id = cs."substituteUserId" AND ${SUBSTITUTE_TEACHER_SQL}
+     WHERE cs."classId" = $1 AND cs."substituteUserId" = $2 AND cs.date = $3
      LIMIT 1`,
     classId,
     userId,
     onDate,
-  );
-  return substituteGrantsAccess(rows[0]?.date, onDate);
+  ).catch(() => [] as Array<{ date: string }>);
+  return substituteAllowedNow(rows[0]?.date, onDate);
 }
 
 /**
@@ -134,14 +139,16 @@ export async function getSubstituteClassIds(
   access: StaffClassAccessContext,
   onDate: string,
 ): Promise<string[]> {
-  if (access.canAccessAllClasses || !isKstYmd(onDate)) return [];
+  // 출석부 판정과 같은 규칙 — 오늘(KST)만. 다른 날짜 화면(특강 날짜 넘기기 등)에는 대타 반을 띄우지 않는다.
+  if (access.canAccessAllClasses || !isKstYmd(onDate) || onDate !== todayKst()) return [];
   const rows = await prisma.$queryRawUnsafe<Array<{ classId: string }>>(
-    `SELECT "classId" FROM "ClassSubstitute"
-     WHERE "substituteUserId" = $1 AND date = $2
-     ORDER BY "classId"`,
+    `SELECT cs."classId" FROM "ClassSubstitute" cs
+     JOIN "User" u ON u.id = cs."substituteUserId" AND ${SUBSTITUTE_TEACHER_SQL}
+     WHERE cs."substituteUserId" = $1 AND cs.date = $2
+     ORDER BY cs."classId"`,
     access.staff.appUserId,
     onDate,
-  );
+  ).catch(() => [] as Array<{ classId: string }>); // 대타 표 조회 실패해도 담당 반 목록(홈)은 그대로 뜬다
   return rows.map((row) => row.classId);
 }
 
@@ -159,13 +166,13 @@ export async function requireStaffClassAccess(
   const access = context ?? (await getStaffClassAccessContext());
   if (access.canAccessAllClasses) return access;
 
-  // f4 대타: 출석부 경로(substituteDate 를 넘긴 곳)만, 그 날짜에 이 반 대타로 지정됐으면 담당 배정과 무관하게 통과.
-  //   코치 연결이 없는 선생님도 대타로는 들어올 수 있게 코치 확인보다 먼저 본다.
-  if (options?.substituteDate && (await hasClassSubstitute(classId, access.staff.appUserId, options.substituteDate))) {
-    return access;
-  }
+  // f4 대타: 담당(코치) 확인을 먼저 하고, 통과 못 했을 때만 대타를 본다(검수 M2).
+  //   대타 표가 없거나 조회가 실패해도 담당 선생님은 영향이 없다. 코치 연결이 없는 선생님도 대타로는 들어온다.
+  const substituteFallback = async () =>
+    Boolean(options?.substituteDate) && (await hasClassSubstitute(classId, access.staff.appUserId, options!.substituteDate!));
 
   if (!access.coachId) {
+    if (await substituteFallback()) return access;
     throw new Error("선생님 계정에 연결된 코치 정보가 없습니다.");
   }
 
@@ -197,6 +204,7 @@ export async function requireStaffClassAccess(
   );
 
   if (!rows[0]) {
+    if (await substituteFallback()) return access;
     throw new Error("담당 수업에만 접근할 수 있습니다.");
   }
 

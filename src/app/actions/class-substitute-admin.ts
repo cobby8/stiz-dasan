@@ -8,8 +8,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth-guard";
 import { todayKst } from "@/lib/datetime/kst";
-import { validateSubstituteInput } from "@/lib/staff/classSubstitute";
-import { SUBSTITUTE_TEACHER_SQL } from "@/lib/staff/classSubstituteData";
+import { SEASONAL_SUBSTITUTE_MESSAGE, SUBSTITUTE_TEACHER_SQL, validateSubstituteInput } from "@/lib/staff/classSubstitute";
 
 type ActionResult = { ok: true } | { ok: false; message: string };
 
@@ -54,6 +53,21 @@ export async function assignClassSubstitute(input: {
 
     const invalid = validateSubstituteInput({ date, classDayOfWeek: classRows[0].dayOfWeek, today: todayKst() });
     if (invalid) return { ok: false, message: invalid };
+
+    // 그날 특강 회차가 연결된 반은 거부(검수 M1) — 출석 명단이 특강 좌석 기준(특강 담당 강사 권한)으로 바뀌어
+    // 대타가 수업을 시작해도 명단이 막히고 진행 중 기록만 남는다. 특강은 담당 강사를 바꾸는 게 맞다.
+    // 판정은 출석 명단의 특강 전환(getStaffSessionStudents 폴백)과 같은 조건: 연결 반 + 회차 KST 날짜.
+    const seasonalRows = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT sd.id
+           FROM "SpecialProgramSessionDate" sd
+           JOIN "SpecialProgramOffering" o ON o.id = sd."offeringId"
+          WHERE o."linkedClassId" = $1
+            AND (sd."startsAt" AT TIME ZONE 'Asia/Seoul')::date = $2::date
+          LIMIT 1`,
+        classId,
+        date,
+    );
+    if (seasonalRows[0]) return { ok: false, message: SEASONAL_SUBSTITUTE_MESSAGE };
 
     // 역할 확인 — 화면 목록과 같은 조건(SUBSTITUTE_TEACHER_SQL)을 서버에서 다시 본다(요청 값 조작 방지).
     const teacherRows = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
