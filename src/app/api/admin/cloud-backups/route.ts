@@ -2,6 +2,8 @@
  * /api/admin/cloud-backups
  *
  * GET    Supabase Storage "backups/" 버킷의 파일 목록을 반환한다.
+ *        files = 설정 백업(복원 가능) · archives = 업무 자료 파일(stiz-archive-*.json.gz, 보관용)
+ * GET ?archive=<파일이름>  업무 자료 파일을 1분짜리 내려받기 주소로 돌려준다(원장만, 이름 규칙 검사).
  * POST   특정 백업 파일로 DB를 복원한다. body: { filename: string }
  * DELETE 특정 백업 파일을 삭제한다. body: { filename: string }
  */
@@ -10,18 +12,37 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireOwner } from "@/lib/auth-guard";
+import { ARCHIVE_BACKUP_NAME } from "@/lib/backup/archiveCore";
 
 export const dynamic = "force-dynamic";
 
 const BUCKET = "backups";
 
-// GET: 백업 파일 목록
-export async function GET() {
+// GET: 백업 파일 목록 (또는 ?archive= 업무 자료 파일 내려받기 주소)
+export async function GET(req: NextRequest) {
     // 원장 권한이 있는 사용자만 백업 목록을 조회할 수 있다.
     try {
         await requireOwner();
     } catch {
         return NextResponse.json({ error: "원장 권한이 필요합니다." }, { status: 403 });
+    }
+
+    // 업무 자료 파일 내려받기 — 파일이 수십 MB 라 함수 응답(4.5MB 상한)으로 넘기지 않고 1분짜리 서명 주소를 준다.
+    const archiveName = req.nextUrl.searchParams.get("archive");
+    if (archiveName !== null) {
+        // 이름 규칙에 맞는 업무 자료 파일만 — 다른 경로·파일을 받는 데 쓰이지 않게.
+        if (!ARCHIVE_BACKUP_NAME.test(archiveName)) {
+            return NextResponse.json({ error: "잘못된 파일 이름입니다." }, { status: 400 });
+        }
+        try {
+            const supabase = createAdminClient();
+            const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(archiveName, 60, { download: true });
+            if (error || !data?.signedUrl) throw new Error("SIGNED_URL_FAILED");
+            return NextResponse.json({ url: data.signedUrl });
+        } catch {
+            console.error("[cloud-backups GET archive] failed");
+            return NextResponse.json({ error: "업무 자료 파일을 준비하지 못했습니다." }, { status: 500 });
+        }
     }
 
     try {
@@ -44,7 +65,11 @@ export async function GET() {
             createdAt: f.created_at,
         }));
 
-        return NextResponse.json({ files: result });
+        // 업무 자료 파일은 «복원» 목록에서 뺀다 — 최신 자동백업 복원이 files[0] 을 쓰므로 섞이면 복원이 깨진다.
+        return NextResponse.json({
+            files: result.filter((f) => !f.filename.startsWith("stiz-archive-")),
+            archives: result.filter((f) => ARCHIVE_BACKUP_NAME.test(f.filename)),
+        });
     } catch (e) {
         console.error("[cloud-backups GET] failed:", e);
         return NextResponse.json({ error: "서버 오류가 발생했습니다." }, { status: 500 });
@@ -70,6 +95,11 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "잘못된 요청입니다." }, { status: 400 });
     }
 
+    // 업무 자료 파일은 보관용 — 자동 복원하지 않는다.
+    if (filename.startsWith("stiz-archive-")) {
+        return NextResponse.json({ error: "업무 자료 파일은 자동 복원하지 않습니다." }, { status: 400 });
+    }
+
     try {
         const supabase = createAdminClient();
 
@@ -86,7 +116,7 @@ export async function POST(req: NextRequest) {
 
         const results: Record<string, string> = {};
 
-        // ⚠️ 복원 범위는 기존 설정 칸뿐이다. backup.archive(학생·출결·청구 등 보관용 업무 자료)는
+        // ⚠️ 복원 범위는 기존 설정 칸뿐이다. 업무 자료(학생·출결·청구 등, stiz-archive-* 파일)는
         // 일부러 읽지 않는다 — 운영 자료를 통째로 덮어쓰면 그 사이 쌓인 출결·결제가 사라진다.
 
         // AcademySettings 복원

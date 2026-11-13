@@ -44,7 +44,7 @@ function renderBackupButtons(props) {
 test('관리자 시스템 도구: 은퇴면 「시트 동기화」가 없고, 스위치 "0"(false) 이면 그대로 보인다', () => {
   const retired = renderBackupButtons({ sheetRetired: true });
   assert.doesNotMatch(retired, /시트 동기화/);
-  assert.match(retired, /백업 다운로드/, '백업·복원 버튼은 그대로');
+  assert.match(retired, /설정 백업 다운로드/, '백업·복원 버튼은 그대로');
   assert.match(renderBackupButtons({ sheetRetired: false }), /시트 동기화/);
   assert.match(renderBackupButtons(), /시트 동기화/, 'props 없이 불러도 옛 화면');
   // layout → AdminShellClient → AdminBackupButtons 로 스위치가 이어지는지

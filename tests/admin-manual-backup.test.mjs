@@ -3,6 +3,7 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
+import { gunzipSync } from 'node:zlib';
 import * as archiveCore from '../src/lib/backup/archiveCore.ts';
 import { NextResponse } from 'next/server.js';
 
@@ -13,16 +14,25 @@ const compiled = ts.transpileModule(source, { compilerOptions: {
 const old = { name: 'stiz-backup-2020-01-01T00-00-00.json', created_at: '2020-01-01T00:00:00Z' };
 const sensitive = 'SYNTHETIC_PRIVATE_CONNECTION_AND_STUDENT';
 
-// 보관용 업무 자료 수집은 가짜로 바꾸고(실제 수집 규칙은 backup-archive.test 에서 검사), 직렬화는 실제 코드를 쓴다.
-function fakeArchive(options) {
+// 업무 자료 수집은 실제 collectArchive 를 가짜 DB(학생 1줄·출결 2줄)로 돌린다 — 운영 DB 는 쓰지 않는다.
+async function fakeArchive(options) {
   if (options.archive) return options.archive;
-  return { version: 1, restore: 'MANUAL_ONLY', note: '', complete: true, tables: { Student: [{ id: 'st1' }], Attendance: [{ id: 'a1' }, { id: 'a2' }] },
-    rowCounts: { Student: 1, Attendance: 2 }, restorableTables: [], excluded: {}, maskedColumns: {}, failed: [] };
+  const tables = { Student: [{ id: 'st1', tokenHash: 'h' }], Attendance: [{ id: 'a1' }, { id: 'a2' }] };
+  return archiveCore.collectArchive(async (sql) => {
+    if (/information_schema\.tables/.test(sql)) return Object.keys(tables).map(tableName => ({ tableName }));
+    if (/information_schema\.columns/.test(sql)) return Object.keys(tables).flatMap(tableName => ['id', 'tokenHash'].map(columnName => ({ tableName, columnName })));
+    return tables[sql.match(/FROM "([^"]+)"/)[1]];
+  });
 }
+const archiveModule = (calls, options) => ({
+  async collectBackupArchive() { calls.archive = (calls.archive ?? 0) + 1; return fakeArchive(options); },
+  packArchive: archiveCore.packArchive, archiveFilenameFor: archiveCore.archiveFilenameFor, backupReplacer: archiveCore.backupReplacer,
+  ARCHIVE_BACKUP_NAME: archiveCore.ARCHIVE_BACKUP_NAME, SETTINGS_BACKUP_NAME: archiveCore.SETTINGS_BACKUP_NAME,
+});
 
 // 실제 라우트만 실행하고 운영 인증·DB·Storage 모듈은 가져오지 않는다.
 function fixture(options = {}) {
-  const calls = { order: [], client: 0, query: 0, bucket: 0, create: 0, upload: [], list: 0, remove: [], logs: [] };
+  const calls = { archiveUpload: [], order: [], client: 0, query: 0, bucket: 0, create: 0, upload: [], list: 0, remove: [], logs: [] };
   const result = (key, data) => options.fail === key ? { data: null, error: { message: sensitive } } : { data, error: null };
   const storage = {
     async listBuckets() { calls.order.push('bucket'); calls.bucket++; return result('bucket', options.missingBucket ? [] : [{ name: 'backups' }]); },
@@ -31,6 +41,11 @@ function fixture(options = {}) {
       assert.equal(name, 'backups');
       return {
         async upload(filename, body, config) {
+          if (filename.endsWith('.gz')) {
+            calls.order.push('archive-upload'); calls.archiveUpload.push({ filename, archive: JSON.parse(gunzipSync(body).toString('utf8')), config });
+            if (options.fail === 'archive-upload-lost') throw new Error(sensitive);
+            return result('archive-upload', {});
+          }
           calls.order.push('upload'); calls.upload.push({ filename, snapshot: JSON.parse(body), config });
           if (options.fail === 'upload-response-lost') throw new Error(sensitive);
           return result('upload', {});
@@ -47,8 +62,7 @@ function fixture(options = {}) {
       if (options.failQuery && sql.includes(`"${options.failQuery}"`)) throw new Error(sensitive);
       return options.rows?.[sql.match(/FROM "([^"]+)"/)[1]] ?? [];
     } } },
-    '@/lib/backup/archive': { async collectBackupArchive() { calls.archive = (calls.archive ?? 0) + 1; return structuredClone(fakeArchive(options)); },
-      serializeBackup: archiveCore.serializeBackup, DOWNLOAD_MAX_BYTES: archiveCore.DOWNLOAD_MAX_BYTES },
+    '@/lib/backup/archive': archiveModule(calls, options),
     '@/lib/supabase/admin': { createAdminClient: () => { calls.client++; return { storage }; } },
     '@/lib/auth-guard': { async requireOwner() { if (options.unauthorized) throw new Error(sensitive); } },
   };
@@ -90,10 +104,9 @@ test('정상적인 빈 테이블은 설정 범위를 명시한 백업으로 저�
   const { status, body } = await f.run();
   assert.equal(status, 200);
   assert.equal(body.success, true);
-  assert.equal(body.scope, 'SETTINGS_AND_ARCHIVE');
+  assert.equal(body.scope, 'SETTINGS_ONLY');
   assert.equal(f.calls.query, 7);
-  assert.equal(f.calls.upload[0].snapshot._meta.scope, 'SETTINGS_AND_ARCHIVE');
-  assert.equal(f.calls.upload[0].snapshot._meta.restoreScope, 'SETTINGS_ONLY');
+  assert.equal(f.calls.upload[0].snapshot._meta.scope, 'SETTINGS_ONLY');
   assert.equal(f.calls.upload[0].snapshot._meta.source, 'manual');
   assert.equal(f.calls.upload[0].snapshot.academySettings, null);
   assert.deepEqual(f.calls.upload[0].snapshot.routes, []);
@@ -173,8 +186,6 @@ function downloadFixture(options = {}) {
   const dependencies = {
     'next/server': { NextResponse },
     '@/lib/auth-guard': { async requireOwner() { if (options.unauthorized) throw new Error(sensitive); } },
-    '@/lib/backup/archive': { async collectBackupArchive() { calls.archive = (calls.archive ?? 0) + 1; return structuredClone(fakeArchive(options)); },
-      serializeBackup: archiveCore.serializeBackup, DOWNLOAD_MAX_BYTES: archiveCore.DOWNLOAD_MAX_BYTES },
     '@/lib/prisma': { prisma: { async $queryRawUnsafe(sql) {
       calls.query++;
       const table = sql.match(/FROM "([^"]+)"/)[1];
@@ -191,7 +202,7 @@ function downloadFixture(options = {}) {
     const response = await exports.GET();
     const body = await response.json();
     assert.ok(!JSON.stringify([body, calls.logs]).includes(sensitive));
-    return { status: response.status, body, attachment: response.headers.get('content-disposition'), archiveHeader: response.headers.get('x-backup-archive') };
+    return { status: response.status, body, attachment: response.headers.get('content-disposition') };
   } };
 }
 
@@ -216,8 +227,7 @@ test('빈 다운로드는 기존 필드와 설정 한정 범위를 유지한다'
   assert.equal(status, 200);
   assert.match(attachment, /^attachment; filename="stiz-backup-.*\.json"$/);
   assert.equal(body._meta.version, 1);
-  assert.equal(body._meta.scope, 'SETTINGS_AND_ARCHIVE');
-  assert.equal(body._meta.restoreScope, 'SETTINGS_ONLY');
+  assert.equal(body._meta.scope, 'SETTINGS_ONLY');
   assert.equal(body.academySettings, null);
   for (const key of ['programs', 'coaches', 'classSlotOverrides', 'customClassSlots', 'routes']) assert.deepEqual(body[key], []);
   assert.equal(f.calls.query, 7);
@@ -246,48 +256,39 @@ test('수집 완료 후 버킷 생성·업로드·정리 순서와 30일 보관�
   assert.equal(status, 200);
   assert.equal(body.success, true);
   assert.equal(body.filename, f.calls.upload[0].filename);
-  assert.deepEqual(f.calls.order, [...Array(7).fill('query'), 'bucket', 'create', 'upload', 'list', 'remove']);
+  assert.deepEqual(f.calls.order, [...Array(7).fill('query'), 'bucket', 'create', 'upload', 'archive-upload', 'list', 'remove']);
   assert.deepEqual(f.calls.remove, [[old.name]]);
 });
 
-// 2026-11-13 f12 — 즉시 저장·다운로드도 업무 자료를 보관용(archive)으로 함께 담는다.
-test('즉시 저장은 업무 자료를 담고 응답에 표·행 수를 돌려준다', async () => {
+// 2026-11-13 f12 — 즉시 저장도 업무 자료 압축 파일을 짝으로 저장한다. 다운로드는 설정만 + 안내.
+test('즉시 저장은 업무 자료 압축 파일을 저장하고 응답에 표·행 수를 돌려준다', async () => {
   const f = fixture();
   const { status, body } = await f.run();
   assert.equal(status, 200);
-  assert.deepEqual(f.calls.upload[0].snapshot.archive.tables.Student, [{ id: 'st1' }]);
-  assert.deepEqual(body.archive, { tables: 2, rows: 3, complete: true, failedTables: [] });
-  assert.deepEqual(f.calls.upload[0].config.metadata, { archiveTables: 2, archiveRows: 3, archiveComplete: true });
+  assert.equal(f.calls.upload[0].snapshot._meta.source, 'manual');
+  assert.equal(f.calls.upload[0].snapshot._meta.archiveFile, f.calls.archiveUpload[0].filename);
+  assert.deepEqual(f.calls.archiveUpload[0].archive.tables.Attendance, [{ id: 'a1' }, { id: 'a2' }]);
+  assert.equal(body.archive.tables, 2);
+  assert.equal(body.archive.rows, 3);
+  assert.equal(body.archive.saved, true);
 });
 
-test('즉시 저장 업무 자료 일부 실패는 저장됨+미완료로 구분해 보고한다', async () => {
-  const archive = { version: 1, restore: 'MANUAL_ONLY', note: '', complete: false, tables: {}, rowCounts: {},
-    restorableTables: [], excluded: {}, maskedColumns: {}, failed: [{ table: '*', reason: 'LIST_FAILED' }] };
+test('즉시 저장 업무 자료 목록 조회 실패는 저장됨+미완료로 구분해 보고한다', async () => {
+  const archive = await archiveCore.collectArchive(async () => { throw new Error(sensitive); });
   const f = fixture({ archive });
   const { status, body } = await f.run();
   assert.equal(status, 500);
   assert.equal(body.success, false);
   assert.equal(body.stage, 'ARCHIVE_INCOMPLETE');
   assert.equal(body.backupSaved, true);
+  assert.deepEqual(body.archive.failedTables, ['*']);
 });
 
-test('다운로드는 업무 자료를 담고 요약 헤더를 붙인다', async () => {
+test('다운로드는 설정만 내려주고 업무 자료는 클라우드 파일에 있다고 안내한다', async () => {
   const f = downloadFixture();
-  const { status, body, archiveHeader } = await f.run();
+  const { status, body } = await f.run();
   assert.equal(status, 200);
-  assert.deepEqual(body.archive.tables.Attendance, [{ id: 'a1' }, { id: 'a2' }]);
-  assert.equal(archiveHeader, 'tables=2; rows=3; complete=true');
-});
-
-test('다운로드가 응답 상한을 넘으면 업무 자료 내용만 빼고 설정은 그대로 내려준다', async () => {
-  const big = 'x'.repeat(5 * 1024 * 1024);
-  const archive = { version: 1, restore: 'MANUAL_ONLY', note: '', complete: true, tables: { Notice: [{ id: 'n1', body: big }] }, rowCounts: { Notice: 1 },
-    restorableTables: [], excluded: {}, maskedColumns: {}, failed: [] };
-  const f = downloadFixture({ archive, rows: { Program: [{ id: 'p1' }] } });
-  const { status, body, archiveHeader } = await f.run();
-  assert.equal(status, 200);
-  assert.deepEqual(body.programs, [{ id: 'p1' }]);
-  assert.deepEqual(body.archive.tables, {});
-  assert.deepEqual(body.archive.failed, [{ table: '*', reason: 'SIZE_LIMIT' }]);
-  assert.equal(archiveHeader, 'tables=0; rows=0; complete=false');
+  assert.equal(body.archive, undefined);
+  assert.match(body._meta.archiveNote, /stiz-archive-/);
+  assert.equal(f.calls.query, 7);
 });

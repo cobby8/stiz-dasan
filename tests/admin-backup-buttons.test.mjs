@@ -99,10 +99,13 @@ test('저장 완료에 담긴 업무 자료 표·줄 수를 보여 주고, 일�
   const done = fixture({ ok: true, body: { success: true, filename: 'b.json', archive: { tables: 120, rows: 34567 } } });
   await done.click();
   assert.match(text(done.message()), /업무 자료 표 120개 34,567줄/);
-  const partial = fixture({ body: { backupSaved: true, stage: 'ARCHIVE_INCOMPLETE', filename: 'b.json', archive: { failedTables: ['Attendance'] } } });
+  const partial = fixture({ body: { backupSaved: true, stage: 'ARCHIVE_INCOMPLETE', filename: 'b.json', archive: { saved: true, failedTables: ['Attendance'] } } });
   await partial.click();
   assert.match(text(partial.message()), /업무 자료 일부\(표 1개\)를 담지 못했습니다/);
   assert.match(partial.message().props.className, /color-academy-warning/);
+  const noFile = fixture({ body: { backupSaved: true, stage: 'ARCHIVE_INCOMPLETE', filename: 'b.json', archive: { saved: false, failedTables: [] } } });
+  await noFile.click();
+  assert.match(text(noFile.message()), /업무 자료 파일을 저장하지 못했습니다/);
 });
 
 test('안내 문구가 업무 자료 포함·복원은 설정만임을 알리고, 파일 복원은 보관용 칸을 보내지 않는다', () => {
@@ -110,4 +113,7 @@ test('안내 문구가 업무 자료 포함·복원은 설정만임을 알리고
   assert.doesNotMatch(source, /학생·출결·청구·월 장부 제외|포함되지 않습니다/);
   assert.match(source, /복원은 설정만/);
   assert.match(source, /const \{ archive: _archive, \.\.\.json \} = JSON\.parse/);
+  // 업무 자료 파일은 서버(원장 확인·이름 규칙)가 준 1분짜리 주소로만 받는다
+  assert.match(source, /cloud-backups\?archive=\$\{encodeURIComponent\(archives\[0\]\.filename\)\}/);
+  assert.match(source, /설정 백업 다운로드/);
 });

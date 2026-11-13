@@ -92,7 +92,10 @@ export default function AdminBackupButtons({ sheetRetired = false }: { sheetReti
                 const archive = data.archive ? ` · 업무 자료 표 ${data.archive.tables}개 ${Number(data.archive.rows).toLocaleString("ko-KR")}줄` : "";
                 show(`백업 저장 완료 (${data.filename}${archive})`, true);
             } else if (data.backupSaved === true && data.stage === "ARCHIVE_INCOMPLETE") {
-                show(`설정은 저장됐지만 업무 자료 일부(표 ${data.archive?.failedTables?.length ?? 0}개)를 담지 못했습니다. 잠시 후 다시 저장해 주세요. 파일: ${data.filename}`, false);
+                // 업무 자료 파일 자체를 못 올린 경우와, 일부 표만 빠진 경우를 구분해 알린다.
+                show(data.archive?.saved !== true
+                    ? `설정은 저장됐지만 업무 자료 파일을 저장하지 못했습니다. 잠시 후 다시 저장해 주세요. 파일: ${data.filename}`
+                    : `설정은 저장됐지만 업무 자료 일부(표 ${data.archive?.failedTables?.length ?? 0}개)를 담지 못했습니다. 잠시 후 다시 저장해 주세요. 파일: ${data.filename}`, false);
             } else if (data.backupSaved === true) {
                 show(`백업은 저장됐지만 과거 파일 정리는 완료하지 못했습니다. 재저장하지 말고 확인해 주세요. 파일: ${data.filename}`, false);
             } else if (data.backupSaved === null) {
@@ -104,6 +107,32 @@ export default function AdminBackupButtons({ sheetRetired = false }: { sheetReti
             show("백업 응답을 확인하지 못했습니다. 저장됐을 수 있으니 다시 저장하기 전에 클라우드 백업을 확인해 주세요.", false);
         } finally {
             backupInFlight.current = false;
+            setBusy(false);
+        }
+    }
+
+    // 최신 업무 자료 파일(stiz-archive-*.json.gz) 내려받기 — 서버가 원장 권한을 확인하고 1분짜리 주소를 준다.
+    async function handleArchiveDownload() {
+        setBusy(true);
+        setMsg(null);
+        try {
+            const listRes = await fetch("/api/admin/cloud-backups");
+            const { archives } = await listRes.json();
+            if (!archives?.length) {
+                show("업무 자료 백업 파일이 아직 없습니다.", false);
+                return;
+            }
+            const res = await fetch(`/api/admin/cloud-backups?archive=${encodeURIComponent(archives[0].filename)}`);
+            const data = await res.json();
+            if (!res.ok || !data.url) {
+                show(adminMessageText(data.error, "업무 자료 파일을 준비하지 못했습니다."), false);
+                return;
+            }
+            window.location.href = data.url;
+            show(`업무 자료 내려받기 시작 (${archives[0].filename}) · 압축(.gz) 파일입니다`, true);
+        } catch {
+            show("업무 자료 파일을 준비하지 못했습니다.", false);
+        } finally {
             setBusy(false);
         }
     }
@@ -145,8 +174,19 @@ export default function AdminBackupButtons({ sheetRetired = false }: { sheetReti
                 className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-[var(--color-academy-faint)] transition-colors hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)]"
             >
                 <span className="text-xl">💾</span>
-                <span>백업 다운로드</span>
+                <span>설정 백업 다운로드</span>
             </a>
+            <button
+                type="button"
+                onClick={handleArchiveDownload}
+                disabled={busy}
+                className={`flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left transition-colors ${
+                    busy ? "opacity-50" : "text-[var(--color-academy-faint)] hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)]"
+                }`}
+            >
+                <span className="text-xl">🗄️</span>
+                <span>업무 자료 백업 내려받기</span>
+            </button>
             <label
                 className={`flex w-full cursor-pointer items-center gap-3 rounded-lg px-4 py-3 transition-colors ${
                     busy ? "opacity-50" : "text-[var(--color-academy-faint)] hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)]"
@@ -186,7 +226,7 @@ export default function AdminBackupButtons({ sheetRetired = false }: { sheetReti
                 <span className="text-xl">📦</span>
                 <span>seed 내보내기</span>
             </a>
-            <p className="px-4 text-xs text-[var(--color-academy-faint)]">설정 + 학생·출결·청구·결제 등 업무 자료 백업 · 복원은 설정만(업무 자료는 보관용) · 다운로드는 4MB까지</p>
+            <p className="px-4 text-xs text-[var(--color-academy-faint)]">설정 + 학생·출결·청구·결제 등 업무 자료(별도 압축 파일) 백업 · 복원은 설정만(업무 자료는 보관용)</p>
             {msg && <p role="status" className={`break-all px-4 py-1 text-xs ${ok ? "text-[var(--color-academy-success)]" : "text-[var(--color-academy-warning)]"}`}>{msg}</p>}
         </div>
     );
