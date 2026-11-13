@@ -9,7 +9,8 @@
  */
 
 import type { SheetClassSlot } from "@/lib/googleSheetsSchedule";
-import type { MergedSlot } from "@/app/schedule/ScheduleClient";
+import type { MergedSlot, PublicScheduleSlot } from "@/app/schedule/ScheduleClient";
+import { seatLevelFromCounts } from "@/lib/seats/seatLevel";
 
 // 요일 키(Mon, Tue...) → 한글 라벨 변환 (커스텀 슬롯에서 사용)
 export const DAY_KEY_TO_LABEL: Record<string, string> = {
@@ -78,4 +79,30 @@ export function buildMergedSlots(
 
     // 시트 슬롯 + 커스텀 슬롯을 하나의 배열로 합침
     return [...sheetMerged, ...customMerged];
+}
+
+/**
+ * 공개 화면(시간표·수업 찾기)으로 넘길 슬롯 — 정원·등록 인원 숫자를 빼고 3단계(여유/임박/마감)만 남긴다.
+ * 서버 컴포넌트에서 클라이언트로 넘기는 값은 페이지 응답(RSC 데이터)에 그대로 실리므로
+ * 화면에 안 그려도 숫자가 새어 나간다 → 넘기기 전에 여기서 걸러 낸다(재원생 수 비공개 · 2026-11-13 f9).
+ * 필드를 하나씩 골라 담는다(펼치기 ...rest 를 쓰면 나중에 MergedSlot 에 숫자 칸이 늘 때 같이 새어 나간다).
+ */
+export function toPublicScheduleSlots(slots: MergedSlot[]): PublicScheduleSlot[] {
+    return slots.map((slot) => {
+        const level = seatLevelFromCounts(slot.capacity, slot.enrolled);
+        return {
+            slotKey: slot.slotKey,
+            dayKey: slot.dayKey,
+            dayLabel: slot.dayLabel,
+            startTime: slot.startTime,
+            endTime: slot.endTime,
+            gradeRange: slot.gradeRange,
+            displayLabel: slot.displayLabel,
+            note: slot.note,
+            isFull: level === "FULL",
+            seatLevel: level,
+            coach: slot.coach ? { name: slot.coach.name, role: slot.coach.role, imageUrl: slot.coach.imageUrl } : null,
+            programId: slot.programId,
+        };
+    });
 }

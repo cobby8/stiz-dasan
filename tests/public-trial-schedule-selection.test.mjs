@@ -6,6 +6,7 @@ import React from "react";
 import ts from "typescript";
 import * as kst from "../src/lib/datetime/kst.ts";
 import * as publicErrorText from "../src/components/ui/public-error-text.ts";
+import * as seatLevel from "../src/lib/seats/seatLevel.ts";
 
 const require = createRequire(import.meta.url);
 function compile(file, dependencies) {
@@ -19,9 +20,10 @@ function compile(file, dependencies) {
 const schedule = compile("trialScheduleSelection", { "@/lib/datetime/kst": kst });
 const now = Date.parse("2026-10-22T00:00:00+09:00");
 const slots = [
-  { slotKey: "Mon-4", dayLabel: "월", available: 5 },
-  { slotKey: "Sat-2", dayLabel: "토", available: 4 },
-  { slotKey: "Sat-3", dayLabel: "토", available: 0 },
+  // 공개 응답은 남은 자리 숫자 대신 3단계만(2026-11-13 f9)
+  { slotKey: "Mon-4", dayLabel: "월", seatLevel: "AVAILABLE" },
+  { slotKey: "Sat-2", dayLabel: "토", seatLevel: "AVAILABLE" },
+  { slotKey: "Sat-3", dayLabel: "토", seatLevel: "FULL" },
 ];
 
 function harness(t, { initialStep = 1, form = {}, availableSlots = slots, existing = null, lookupError = false } = {}) {
@@ -48,6 +50,7 @@ function harness(t, { initialStep = 1, form = {}, availableSlots = slots, existi
     },
     "@/lib/datetime/kst": kst,
     "@/components/ui/public-error-text": publicErrorText,
+    "@/lib/seats/seatLevel": seatLevel,
     "./trialScheduleSelection": schedule,
     // 체험 안내(위치·준비물·확정 조건) 표시 부품 — 일정 검증과 무관해 빈 부품으로(2026-11-10 체험비 온라인 결제)
     "./TrialVisitGuide": { default: () => null },

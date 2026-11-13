@@ -7,6 +7,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 import * as kst from "../src/lib/datetime/kst.ts";
+import * as seatLevelModule from "../src/lib/seats/seatLevel.ts";
 import * as galleryMedia from "../src/lib/galleryMedia.ts";
 import * as shuttlePlaceName from "../src/lib/enrollment/shuttle-place-name.ts";
 
@@ -23,6 +24,7 @@ function loadPage(file, overrides = {}) {
   new Function("require", "exports", code)((id) => {
     if (Object.hasOwn(overrides, id)) return overrides[id];
     if (id === "@/lib/datetime/kst") return kst;
+    if (id === "@/lib/seats/seatLevel") return seatLevelModule;
     if (id === "@/lib/galleryMedia") return galleryMedia;
     if (id === "@/lib/enrollment/shuttle-place-name") return shuttlePlaceName;
     if (id === "next/link") return { default: ({ children, ...props }) => React.createElement("a", props, children) };

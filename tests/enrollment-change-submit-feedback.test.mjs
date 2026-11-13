@@ -4,6 +4,7 @@ import Module, { createRequire } from "node:module";
 import { resolve } from "node:path";
 import test from "node:test";
 import ts from "typescript";
+import * as seatLevelModule from "../src/lib/seats/seatLevel.ts";
 
 // 2026-11-09 원장 신고: 학부모 «⋯» → 수강 변경 신청 → 휴원 → «신청하기»가 «제대로 동작 안 함».
 // 재현한 원인 두 가지:
@@ -56,6 +57,7 @@ function harness() {
     "next/navigation": { useRouter: () => ({ refresh() { refreshes.count++; } }) },
     "@/lib/enrollment/changeRequestRules": rules,
     "@/lib/enrollment/parentChangeStatus": changeStatus,
+    "@/lib/seats/seatLevel": seatLevelModule,
     "@/components/parent/InlineConfirm": { __esModule: true, default: function InlineConfirm() { return null; } },
     "@/lib/mypage/requestPreset": { presetIndex: () => 0, presetFirst: (list) => [...list] }, "@/components/parent/customerMessage": { customerMessage: (raw, fallback) => (typeof raw === "string" && raw) || fallback },
   }).default;

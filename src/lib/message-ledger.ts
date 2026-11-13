@@ -2,6 +2,8 @@ import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, 
 import { prisma } from "@/lib/prisma";
 // 타입만 가져온다(실행 코드는 필요할 때 동적 import — 이 파일을 불러 쓰는 다른 검사가 의존성을 늘리지 않게)
 import type { BillingGuardTrigger } from "@/lib/billing/noticeQueue";
+// 청구·미납 안내 야간 발송 금지(KST 21:00~08:00) 판정 — kst.ts 만 쓰는 가벼운 순수 모듈
+import { isBillingQuietHour } from "@/lib/billing/quietHours";
 
 export type MessageLedgerSource = "AUTO" | "MANUAL" | "SECURITY";
 
@@ -146,28 +148,45 @@ export async function reserveManualMessageQueue(input: {
   });
 }
 
-export async function claimManualMessageQueue(limit = 10) {
+export async function claimManualMessageQueue(limit = 10, nowMs: number = Date.now()) {
+  // 밤 9시~아침 8시(KST)에는 청구·미납 안내(연결표 BillingNoticeDelivery 에 묶인 행)를 꺼내지 않는다.
+  // 행은 PENDING 그대로 남아 08:00 이후 첫 cron 이 보낸다. 다른 문자 묶음은 이 시간에도 그대로 나간다.
+  const billingQuiet = isBillingQuietHour(nowMs);
   return prisma.$transaction(async (tx) => {
     // 공급자 호출 뒤 서버가 끊겼을 수 있으므로 stale SENDING은 절대 재전송하지 않습니다.
     const stale = await tx.$queryRawUnsafe<Array<{ batchId: string | null }>>(
       `UPDATE "NotificationDelivery" SET status='UNCERTAIN', "errorCode"='STALE_SENDING_UNCERTAIN', "payloadJSON"=NULL, "lockedAt"=NULL, "lockToken"=NULL, "updatedAt"=NOW() WHERE source='MANUAL' AND trigger='MANUAL_MESSAGE' AND status='SENDING' AND COALESCE("providerStatus",'') <> 'ACCEPTED' AND "lockedAt" < NOW() - INTERVAL '10 minutes' RETURNING "batchId"`,
     );
     const finalizeBatchIds = new Set(stale.flatMap((row) => row.batchId ? [row.batchId] : []));
+    // 청구 안내 대기 상한(24시간) — 너무 오래 기다린 행은 보내지 않고 만료한다(묶음 정리가 연결표도 실패로 닫는다).
+    // SAVEPOINT 로 감싸 SQL 오류가 나도 다른 문자 꺼내기는 그대로 진행한다.
+    const billing = await import("@/lib/billing/noticeQueue");
+    await tx.$executeRawUnsafe(`SAVEPOINT billing_expire`);
+    try {
+      for (const batchId of await billing.expireOverdueBillingQueue(tx)) finalizeBatchIds.add(batchId);
+      await tx.$executeRawUnsafe(`RELEASE SAVEPOINT billing_expire`);
+    } catch (error) {
+      await tx.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT billing_expire`);
+      console.warn("[ledger] 청구 안내 대기 만료 실패(다른 문자는 그대로):", error instanceof Error ? error.message : error);
+    }
     const token = randomUUID();
     const rows = await tx.$queryRawUnsafe<Array<{ id: string; batchId: string; payloadJSON: unknown }>>(
       `WITH next_batch AS (
-         SELECT "batchId" FROM "NotificationDelivery"
-          WHERE source='MANUAL' AND trigger='MANUAL_MESSAGE' AND status='PENDING' AND "payloadJSON" IS NOT NULL
-          ORDER BY "createdAt" ASC LIMIT 1
+         SELECT nd."batchId" FROM "NotificationDelivery" nd
+          WHERE nd.source='MANUAL' AND nd.trigger='MANUAL_MESSAGE' AND nd.status='PENDING' AND nd."payloadJSON" IS NOT NULL
+            -- 야간($3=true)엔 청구 안내 행을 건너뛴다 — 맨 앞에 서 있어도 다른 묶음을 막지 않게 «다음 묶음» 고르기에서부터 뺀다
+            AND NOT ($3::boolean AND EXISTS (SELECT 1 FROM "BillingNoticeDelivery" bn WHERE bn."deliveryId" = nd.id))
+          ORDER BY nd."createdAt" ASC LIMIT 1
        ), picked AS (
-         SELECT id FROM "NotificationDelivery"
-          WHERE source='MANUAL' AND trigger='MANUAL_MESSAGE' AND status='PENDING' AND "payloadJSON" IS NOT NULL
-            AND "batchId"=(SELECT "batchId" FROM next_batch)
-          ORDER BY "createdAt" ASC FOR UPDATE SKIP LOCKED LIMIT $1
+         SELECT nd.id FROM "NotificationDelivery" nd
+          WHERE nd.source='MANUAL' AND nd.trigger='MANUAL_MESSAGE' AND nd.status='PENDING' AND nd."payloadJSON" IS NOT NULL
+            AND nd."batchId"=(SELECT "batchId" FROM next_batch)
+            AND NOT ($3::boolean AND EXISTS (SELECT 1 FROM "BillingNoticeDelivery" bn WHERE bn."deliveryId" = nd.id))
+          ORDER BY nd."createdAt" ASC FOR UPDATE SKIP LOCKED LIMIT $1
        ) UPDATE "NotificationDelivery" d SET status='SENDING', "lockedAt"=NOW(), "lockToken"=$2,
            "attemptCount"="attemptCount"+1, "updatedAt"=NOW()
          FROM picked WHERE d.id=picked.id RETURNING d.id, d."batchId", d."payloadJSON"`,
-      Math.max(1, Math.min(limit, 500)), token,
+      Math.max(1, Math.min(limit, 500)), token, billingQuiet,
     );
     const claimed: Array<{ id: string; batchId: string } & ManualQueuePayload> = [];
     for (const row of rows) {
@@ -184,9 +203,21 @@ export async function claimManualMessageQueue(limit = 10) {
     }
     // 청구 안내(guard 있음)는 «실제로 보내기 직전»에 잠금·/admin/sms 규칙을 다시 본다(예약 뒤 원장이 끈 경우).
     // 꺼져 있으면 보내지 않고 FAILED 로 남긴다 → 연결표도 실패가 되어, 다시 켠 뒤 누르면 이어 보낸다.
+    // 이중 안전장치: 연결표 행이 없는 청구 안내(guard 있음)가 야간에 꺼내졌으면 보내지 않고 실패로 남긴다.
+    // (PENDING 으로 되돌리면 SQL 이 못 거르는 행이라 매분 같은 묶음을 다시 꺼내 다른 묶음을 막는다 · 검수 LOW-1)
+    if (billingQuiet) {
+      for (const item of claimed.filter((row) => row.guard)) {
+        await tx.$executeRawUnsafe(
+          `UPDATE "NotificationDelivery" SET status='FAILED', "errorCode"='BILLING_QUIET_HOURS_UNLINKED', "failedAt"=NOW(), "payloadJSON"=NULL, "lockedAt"=NULL, "lockToken"=NULL, "updatedAt"=NOW() WHERE id=$1`,
+          item.id,
+        );
+        finalizeBatchIds.add(item.batchId);
+        claimed.splice(claimed.indexOf(item), 1);
+      }
+    }
     const guarded = claimed.filter((item) => item.guard);
     if (guarded.length > 0) {
-      const { checkBillingSendRule } = await import("@/lib/billing/noticeQueue");
+      const { checkBillingSendRule } = billing;
       const decisions = new Map<string, Awaited<ReturnType<typeof checkBillingSendRule>>>();
       for (const item of guarded) {
         const trigger = item.guard!;
@@ -209,6 +240,30 @@ export async function claimManualMessageQueue(limit = 10) {
         await tx.$executeRawUnsafe(
           `UPDATE "NotificationDelivery" SET status='FAILED', "errorCode"=$2, "failedAt"=NOW(), "payloadJSON"=NULL, "lockedAt"=NULL, "lockToken"=NULL, "updatedAt"=NOW() WHERE id=$1`,
           item.id, `BILLING_SEND_BLOCKED:${decision.code}`,
+        );
+        finalizeBatchIds.add(item.batchId);
+        claimed.splice(claimed.indexOf(item), 1);
+      }
+    }
+    // 보내기 직전 납부 확인 — 예약 뒤(특히 밤새 기다리는 동안) 학부모가 이미 다 납부·취소했으면 보내지 않는다.
+    // 대기열 행은 SKIPPED(사유 BILLING_ALREADY_SETTLED) → 묶음 정리가 연결표를 같은 사유의 FAILED 로 닫고,
+    // 화면은 이 사유를 «실패»가 아니라 «납부돼 생략»으로 센다(검수 MED-1). 조회 오류면 그대로 보낸다(예전과 같음).
+    const stillGuarded = claimed.filter((item) => item.guard);
+    if (stillGuarded.length > 0) {
+      let settledIds: string[] = [];
+      await tx.$executeRawUnsafe(`SAVEPOINT billing_settled_check`);
+      try {
+        settledIds = await billing.findSettledBillingDeliveries(tx, stillGuarded.map((item) => item.id));
+        await tx.$executeRawUnsafe(`RELEASE SAVEPOINT billing_settled_check`);
+      } catch {
+        await tx.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT billing_settled_check`);
+      }
+      const settled = new Set(settledIds);
+      for (const item of stillGuarded) {
+        if (!settled.has(item.id)) continue;
+        await tx.$executeRawUnsafe(
+          `UPDATE "NotificationDelivery" SET status='SKIPPED', "errorCode"=$2, "payloadJSON"=NULL, "lockedAt"=NULL, "lockToken"=NULL, "updatedAt"=NOW() WHERE id=$1`,
+          item.id, billing.BILLING_ALREADY_SETTLED_CODE,
         );
         finalizeBatchIds.add(item.batchId);
         claimed.splice(claimed.indexOf(item), 1);

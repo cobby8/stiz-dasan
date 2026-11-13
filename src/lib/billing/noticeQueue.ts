@@ -17,6 +17,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { isBillingParentSendEnabled } from "@/lib/billing/parentSendGuard";
+import { isBillingQuietHour } from "@/lib/billing/quietHours";
 import {
     BILLING_BUTTON_NAME,
     BILLING_LINK_BASE,
@@ -51,6 +52,16 @@ export const BILLING_NOTICE_ACTIVE_STATUSES = ["QUEUED", "SENT", "UNCERTAIN", "A
 export const UNPAID_REMINDER_INTERVAL_DAYS = 3;
 /** 예약만 되고 대기열에 못 들어간 행을 «실패»로 돌리는 시간(분) — 다시 누르면 이어 보낸다 */
 export const STALE_QUEUED_MINUTES = 10;
+/**
+ * 대기열에서 이만큼(시간) 넘게 기다린 청구 안내는 보내지 않고 만료한다(야간 대기 최대 11시간 + 여유).
+ * cron 이 오래 멈췄다 살아났을 때 하루 지난 안내가 한꺼번에 나가지 않게 막는 상한이다.
+ */
+export const BILLING_NOTICE_MAX_WAIT_HOURS = 24;
+export const BILLING_NOTICE_EXPIRED_CODE = "BILLING_NOTICE_EXPIRED";
+/** 보내기 직전에 보니 이미 다 납부(또는 취소·환불)된 안내 — 보내지 않고 닫는다 */
+export const BILLING_ALREADY_SETTLED_CODE = "BILLING_ALREADY_SETTLED";
+/** «끝난» 결제 상태 — 이 상태만 남았으면 안내할 게 없다 */
+export const BILLING_SETTLED_PAYMENT_STATUSES = ["PAID", "REFUNDED", "CANCELED"] as const;
 
 /** 문자 대기열 한 칸(message-ledger 의 ManualQueueItem 과 같은 모양 + 연결용 id) */
 export type BillingQueueItem = {
@@ -309,7 +320,7 @@ export function decideBillingSendRule(row: BillingRuleRow | null | undefined, se
     return { ok: true };
 }
 
-export type NoticeProgressRow = { channel: string; status: string };
+export type NoticeProgressRow = { channel: string; status: string; errorCode?: string | null };
 export type NoticeProgress = {
     total: number;
     queued: number;
@@ -317,15 +328,18 @@ export type NoticeProgress = {
     failed: number;
     uncertain: number;
     appOnly: number;
+    /** 보내기 전에 이미 납부·취소돼 보내지 않은 건(실패 아님) */
+    settled: number;
     alimtalk: number;
     sms: number;
 };
 
 /** 화면 진행 상황(예약 N·발송 N·실패 N) — 같은 안내의 최신 행만 넘겨받는다 */
 export function summarizeNoticeProgress(rows: NoticeProgressRow[]): NoticeProgress {
-    const out: NoticeProgress = { total: rows.length, queued: 0, sent: 0, failed: 0, uncertain: 0, appOnly: 0, alimtalk: 0, sms: 0 };
+    const out: NoticeProgress = { total: rows.length, queued: 0, sent: 0, failed: 0, uncertain: 0, appOnly: 0, settled: 0, alimtalk: 0, sms: 0 };
     for (const row of rows) {
         if (row.status === "QUEUED") out.queued += 1;
+        else if (row.status === "FAILED" && row.errorCode === BILLING_ALREADY_SETTLED_CODE) out.settled += 1;
         else if (row.status === "SENT") out.sent += 1;
         else if (row.status === "FAILED") out.failed += 1;
         else if (row.status === "UNCERTAIN") out.uncertain += 1;
@@ -342,6 +356,8 @@ export function describeReservation(input: {
     queued: PlannedNotice[];
     skippedActive: number;
     unlinked: UnlinkedNotice[];
+    /** 지금 시각(테스트용). 밤 9시~아침 8시(KST)면 «아침 8시에 보내집니다»로 안내한다 */
+    nowMs?: number;
 }): string {
     const alimtalk = input.queued.filter((n) => n.channel === "ALIMTALK").length;
     const sms = input.queued.filter((n) => n.channel === "SMS").length;
@@ -352,8 +368,12 @@ export function describeReservation(input: {
         `앱 알림만 ${appOnly}건`,
         `대상 아님(학부모 미연결) ${input.unlinked.length}건`,
     ];
+    // 야간(KST 21:00~08:00)에 예약하면 cron 이 아침 8시까지 기다린다 — 원장이 «왜 안 나가지?» 하지 않게 미리 알린다
+    const when = isBillingQuietHour(input.nowMs ?? Date.now())
+        ? "밤 9시~아침 8시라 아침 8시에 차례로 나갑니다"
+        : "1~2분 안에 차례로 나갑니다";
     const head = alimtalk + sms > 0
-        ? `${input.label} 발송을 예약했습니다(1~2분 안에 차례로 나갑니다).`
+        ? `${input.label} 발송을 예약했습니다(${when}).`
         : `${input.label} — 문자로 보낼 건은 없습니다.`;
     const names = input.unlinked.map((u) => u.studentName || "(이름 없음)");
     const unlinkedText = names.length > 0
@@ -612,6 +632,46 @@ export async function applyBillingNoticeResults(db: NoticeDb, tx: NoticeTx, batc
     });
 }
 
+/**
+ * 보내기 직전 확인 — 이 대기열 행들 중 «안내 대상 결제가 전부 이미 끝난(납부·취소·환불)» 것의 id.
+ * 청구서 안내(INVOICE)도 paymentIds 에 그 청구서의 결제가 들어 있어 같은 기준으로 본다.
+ * 결제 목록이 비어 있는 행은 판단할 수 없으니 그대로 보낸다. (삭제된 결제 = 받을 돈 없음 → 끝난 것으로 본다)
+ */
+export async function findSettledBillingDeliveries(db: NoticeDb, deliveryIds: string[]): Promise<string[]> {
+    if (deliveryIds.length === 0) return [];
+    const settled = BILLING_SETTLED_PAYMENT_STATUSES.map((s) => `'${s}'`).join(", ");
+    const rows = await db.$queryRawUnsafe<Array<{ deliveryId: string }>>(
+        `SELECT n."deliveryId"
+           FROM "BillingNoticeDelivery" n
+          WHERE n."deliveryId" = ANY($1::text[])
+            AND cardinality(n."paymentIds") > 0
+            AND NOT EXISTS (
+              SELECT 1 FROM "Payment" p
+               WHERE p.id = ANY(n."paymentIds") AND p.status NOT IN (${settled})
+            )`,
+        deliveryIds,
+    );
+    return rows.map((row) => row.deliveryId);
+}
+
+/**
+ * 너무 오래 기다린 청구 안내 대기열 행을 만료(FAILED)한다 — 돌려주는 값은 정리할 묶음 id.
+ * 묶음 정리(finalizeMessageDeliveryBatch → applyBillingNoticeResults)가 연결표도 실패로 닫는다 → 다시 누르면 이어 보낸다.
+ */
+export async function expireOverdueBillingQueue(db: NoticeDb): Promise<string[]> {
+    const rows = await db.$queryRawUnsafe<Array<{ batchId: string | null }>>(
+        `UPDATE "NotificationDelivery" d
+            SET status = 'FAILED', "errorCode" = $2, "failedAt" = NOW(), "payloadJSON" = NULL,
+                "lockedAt" = NULL, "lockToken" = NULL, "updatedAt" = NOW()
+          WHERE d.source = 'MANUAL' AND d.trigger = 'MANUAL_MESSAGE' AND d.status = 'PENDING'
+            AND d."createdAt" < NOW() - make_interval(hours => $1::int)
+            AND EXISTS (SELECT 1 FROM "BillingNoticeDelivery" bn WHERE bn."deliveryId" = d.id)
+          RETURNING d."batchId"`,
+        BILLING_NOTICE_MAX_WAIT_HOURS, BILLING_NOTICE_EXPIRED_CODE,
+    );
+    return [...new Set(rows.flatMap((row) => (row.batchId ? [row.batchId] : [])))];
+}
+
 /** 화면 진행 상황 — 같은 안내(noticeKey)는 가장 최근 행만 센다(실패 뒤 다시 보낸 건이 두 번 세지지 않게) */
 export async function loadBillingNoticeProgress(
     db: NoticeDb,
@@ -629,6 +689,7 @@ export async function loadBillingNoticeProgress(
     );
     return {
         ...summarizeNoticeProgress(rows),
-        failedNames: rows.filter((r) => r.status === "FAILED" || r.status === "UNCERTAIN").map((r) => r.studentName || "(이름 없음)").slice(0, 20),
+        // 이미 납부돼 안 보낸 건은 «실패» 이름에서 뺀다(다시 보낼 필요 없음)
+        failedNames: rows.filter((r) => (r.status === "FAILED" && r.errorCode !== BILLING_ALREADY_SETTLED_CODE) || r.status === "UNCERTAIN").map((r) => r.studentName || "(이름 없음)").slice(0, 20),
     };
 }

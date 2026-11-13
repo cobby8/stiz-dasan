@@ -1,7 +1,9 @@
 import { isKstYmd, kstDow, todayKst } from "@/lib/datetime/kst";
+import type { SeatLevel } from "@/lib/seats/seatLevel";
 
 export type TrialScheduleSelection = { trialDate: string; trialDay: string; trialPeriod: string };
-export type TrialSelectionSlot = { slotKey: string; dayLabel: string; available: number };
+// 남은 자리는 숫자 대신 3단계(여유/임박/마감)로만 받는다(재원생 수 비공개 · 2026-11-13 f9)
+export type TrialSelectionSlot = { slotKey: string; dayLabel: string; seatLevel: SeatLevel };
 const DAYS = ["일", "월", "화", "수", "목", "금", "토"];
 
 export function trialDayForDate(date: string): string {
@@ -15,7 +17,7 @@ export function trialSlotPeriod(slotKey: string): string {
 export function trialScheduleForDate(previous: TrialScheduleSelection, date: string, slots: TrialSelectionSlot[]): TrialScheduleSelection {
   const day = trialDayForDate(date);
   const keepPeriod = day && previous.trialDay === day && slots.some((slot) =>
-    slot.dayLabel === day && trialSlotPeriod(slot.slotKey) === previous.trialPeriod && slot.available > 0);
+    slot.dayLabel === day && trialSlotPeriod(slot.slotKey) === previous.trialPeriod && slot.seatLevel !== "FULL");
   return { trialDate: date, trialDay: day, trialPeriod: keepPeriod ? previous.trialPeriod : "" };
 }
 
@@ -32,6 +34,6 @@ export function trialScheduleError(selection: TrialScheduleSelection, slots: Tri
   if (!selection.trialPeriod) return "교시를 선택해주세요.";
   const slot = daySlots.find((item) => trialSlotPeriod(item.slotKey) === selection.trialPeriod);
   if (!slot) return "선택한 교시가 현재 시간표에 없습니다. 교시를 다시 선택해주세요.";
-  if (slot.available <= 0) return "선택한 수업은 마감되었습니다. 다른 교시를 선택해주세요.";
+  if (slot.seatLevel === "FULL") return "선택한 수업은 마감되었습니다. 다른 교시를 선택해주세요.";
   return "";
 }

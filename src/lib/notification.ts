@@ -499,7 +499,10 @@ export async function expireStaleSmsDeliveries(db: SmsLedgerDb = prisma): Promis
                 "lockToken" = NULL, "errorCode" = CASE WHEN status = 'SENDING' THEN 'FAILED_DELIVERY_UNCERTAIN' ELSE 'RESERVATION_EXPIRED' END,
                 "updatedAt" = NOW()
           WHERE channel = 'SMS' AND ((status = 'SENDING' AND "lockedAt" < NOW() - INTERVAL '2 minutes')
-             OR (status = 'PENDING' AND "createdAt" < NOW() - INTERVAL '15 minutes'))`,
+             OR (status = 'PENDING' AND "createdAt" < NOW() - INTERVAL '15 minutes'
+                 -- 청구·미납 안내는 밤 9시~아침 8시에 일부러 PENDING 으로 기다린다(야간 발송 금지 · 2026-11-13).
+                 -- 15분 만료에 걸려 «실패»가 되지 않게 연결표(BillingNoticeDelivery)에 묶인 행은 뺀다.
+                 AND NOT EXISTS (SELECT 1 FROM "BillingNoticeDelivery" bn WHERE bn."deliveryId" = "NotificationDelivery".id)))`,
     );
 }
 

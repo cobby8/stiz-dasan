@@ -158,7 +158,8 @@ test("P-12·P-13 /schedule 빈 상태는 한 줄 + 전화 링크, 마감 배지�
   assert.match(src, /href=\{`tel:\$\{phone\.replace\(\/-\/g, ""\)\}`\}/);
   assert.doesNotMatch(src, /py-20 text-gray-400 bg-white/);
   assert.doesNotMatch(src, /text-\[10px\][^"]*">마감/);
-  assert.match(src, /text-xs leading-none bg-red-50 text-red-500 font-black px-1\.5 py-0\.5 rounded uppercase">마감/);
+  // 2026-11-13 f9: 마감 배지 → 3단계 배지(여유/임박/마감) 한 줄 — 글자는 여전히 12px(text-xs)
+  assert.match(src, /text-xs leading-none font-black px-2 py-1 rounded \$\{SEAT_LEVEL_BADGE_CLASS\[slot\.seatLevel\]\}/);
 });
 
 test("P-09·P-12 /notices 목록은 한 줄 행(약 52px), 미리보기·썸네일 없음, 빈 상태 한 줄 + 전화", () => {

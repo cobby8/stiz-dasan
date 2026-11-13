@@ -4,6 +4,7 @@ import Module, { createRequire } from "node:module";
 import { resolve } from "node:path";
 import test from "node:test";
 import ts from "typescript";
+import * as seatLevelModule from "../src/lib/seats/seatLevel.ts";
 
 // 2026-11-09 원장 점검: «접수 후 복귀 신청도 떠야 해. 휴원 신청 취소도 필요하고».
 // 학부모 복귀(RESUME) 신청 서버 경로를 가짜 DB 로 실제 실행해 본다 — 소유권(IDOR)·휴원 중 여부·중복·날짜 경계.
@@ -64,6 +65,7 @@ function harness({ today = "2026-11-09", enrollments = [{ id: "enr-paused", pare
     "@/lib/prisma": { prisma },
     "@/lib/studentVisibility": { notMergedStudent: () => "TRUE" },
     "@/lib/datetime/kst": { ...kst, todayKst: () => today },
+    "@/lib/seats/seatLevel": seatLevelModule,
     "@/lib/enrollment/changeRequestRules": rules,
     "@/lib/enrollment/parentChangeStatus": changeStatus,
     "@/lib/operational-staff-notification": { notifyOperationalStaff: async (input) => { notices.push(input); } },
@@ -203,6 +205,7 @@ test("학부모 화면 조회는 휴원 중 반과 «승인됐지만 시작 전�
     "@/lib/prisma": { prisma },
     "@/lib/studentVisibility": { notMergedStudent: () => "TRUE" },
     "@/lib/datetime/kst": { ...kst, todayKst: () => "2026-11-09" },
+    "@/lib/seats/seatLevel": seatLevelModule,
     "@/lib/enrollment/changeRequestRules": rules,
     "@/lib/enrollment/parentChangeStatus": changeStatus,
   });

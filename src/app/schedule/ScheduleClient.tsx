@@ -5,6 +5,8 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import ScheduleTableView from "@/components/ScheduleTableView";
 import { usePublicOverlayOpen } from "@/components/public-floating";
+// 잔여 인원 3단계(여유/임박/마감) — 기준·색은 한 곳
+import { SEAT_LEVEL_BADGE_CLASS, SEAT_LEVEL_LABEL, type SeatLevel } from "@/lib/seats/seatLevel";
 
 // 요일 순서 — 월~일 표시용
 const DAY_ORDER = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -40,11 +42,17 @@ export type MergedSlot = {
     programId: string | null;
 };
 
+/**
+ * 공개 화면용 슬롯 — 정원·등록 인원 숫자 없이 3단계(여유/임박/마감)만(재원생 수 비공개 · 2026-11-13 f9).
+ * 서버에서 toPublicScheduleSlots(src/lib/mergeSlots.ts)로 만들어 넘긴다.
+ */
+export type PublicScheduleSlot = Omit<MergedSlot, "enrolled" | "capacity"> & { seatLevel: SeatLevel };
+
 type Program = { id: string; name: string };
 
 function ScheduleFilter({ programs, allSlots, phone }: {
     programs: Program[];
-    allSlots: MergedSlot[];
+    allSlots: PublicScheduleSlot[];
     phone: string;
 }) {
     const searchParams = useSearchParams();
@@ -59,7 +67,7 @@ function ScheduleFilter({ programs, allSlots, phone }: {
     }
 
     // 요일별 그룹핑 + 시간순 정렬
-    const byDay = DAY_ORDER.reduce<Record<string, MergedSlot[]>>((acc, d) => {
+    const byDay = DAY_ORDER.reduce<Record<string, PublicScheduleSlot[]>>((acc, d) => {
         acc[d] = slots.filter((s) => s.dayKey === d).sort((a, b) => a.startTime.localeCompare(b.startTime));
         return acc;
     }, {});
@@ -220,26 +228,12 @@ function ScheduleFilter({ programs, allSlots, phone }: {
                                                                     <span>{slot.gradeRange}</span>
                                                                 </div>
                                                             )}
-                                                            {/* 수강인원 인디케이터 바 */}
-                                                            <div className="mt-3 pt-2 border-t border-[var(--color-public-line)]">
-                                                                <div className="flex justify-between items-center mb-1.5 gap-2">
-                                                                    <span className="text-xs text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] font-medium">수강 현황</span>
-                                                                    <div className="flex items-center gap-1.5">
-                                                                        {slot.isFull && (
-                                                                            <span className="text-xs leading-none bg-red-50 text-red-500 font-black px-1.5 py-0.5 rounded uppercase">마감</span>
-                                                                        )}
-                                                                    </div>
-                                                                </div>
-                                                                <div className="w-full bg-[var(--color-public-tint)] dark:bg-[var(--color-public-tint)] rounded-full h-1.5 overflow-hidden">
-                                                                    <div
-                                                                        className={`h-full rounded-full transition-all duration-500 ${
-                                                                            slot.isFull ? "bg-red-500" :
-                                                                            (slot.enrolled / Math.max(slot.capacity, 1) >= 0.8) ? "bg-[var(--color-public-accent)] dark:bg-brand-neon-lime dark:text-brand-navy-900" :
-                                                                            "bg-blue-500"
-                                                                        }`}
-                                                                        style={{ width: `${Math.min((slot.enrolled / Math.max(slot.capacity, 1)) * 100, 100)}%` }}
-                                                                    />
-                                                                </div>
+                                                            {/* 수강 현황 — 인원 막대(비율이 곧 인원수) 대신 3단계 배지 한 줄(재원생 수 비공개 · 2026-11-13 f9) */}
+                                                            <div className="mt-3 pt-2 border-t border-[var(--color-public-line)] flex justify-between items-center gap-2">
+                                                                <span className="text-xs text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] font-medium">수강 현황</span>
+                                                                <span className={`text-xs leading-none font-black px-2 py-1 rounded ${SEAT_LEVEL_BADGE_CLASS[slot.seatLevel]}`}>
+                                                                    {SEAT_LEVEL_LABEL[slot.seatLevel]}
+                                                                </span>
                                                             </div>
                                                         </div>
 
@@ -276,7 +270,7 @@ function ScheduleFilter({ programs, allSlots, phone }: {
     );
 }
 
-export default function ScheduleClient(props: { programs: Program[]; allSlots: MergedSlot[]; phone: string }) {
+export default function ScheduleClient(props: { programs: Program[]; allSlots: PublicScheduleSlot[]; phone: string }) {
     return (
         <Suspense fallback={
             <div className="py-20 text-center text-[var(--color-public-muted)]">

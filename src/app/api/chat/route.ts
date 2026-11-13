@@ -15,6 +15,18 @@ import { prisma } from "@/lib/prisma";
 import { GEMINI_CHAT_MODEL, getGeminiClient } from "@/lib/gemini-client";
 import { takePublicRateLimit } from "@/lib/seasonal/public-rate-limit";
 import { CHAT_RATE_LIMITS, chatClientIpKey, chatRateLimitMessage, sanitizeChatMessages } from "@/lib/chat/chatRequestGuard";
+import { SEAT_LEVEL_LABEL, seatLevelFromCounts } from "@/lib/seats/seatLevel";
+
+/**
+ * 챗봇에게 주는 반별 자리 표시 — 인원 숫자 대신 여유/임박/마감만(재원생 수 비공개 · 2026-11-13 f9).
+ * 챗봇은 받은 글을 방문자에게 그대로 말할 수 있으므로 «8/12명» 같은 숫자를 처음부터 넣지 않는다.
+ * 마감이면 기존 프롬프트 규칙(«[마감] 표시 반은 추천하지 마세요»)이 그대로 동작하도록 «[마감]» 으로 쓴다.
+ */
+function chatSeatTag(enrolled: number, capacity: number | undefined): string {
+    if (!(typeof capacity === "number" && capacity > 0)) return "자리 문의";
+    const level = seatLevelFromCounts(capacity, enrolled);
+    return level === "FULL" ? "[마감]" : SEAT_LEVEL_LABEL[level];
+}
 
 // --- Gemini 클라이언트 초기화 (모듈 레벨에서 1회만) ---
 // 카카오 정책 답변과 같은 공용 설정(@/lib/gemini-client)을 쓴다. 키가 없으면 null.
@@ -261,7 +273,7 @@ const getCachedCoachSlots = unstable_cache(
           const gradeTag = grade ? `, ${grade}` : "";
           const enrolled = Number(slot.active_enrolled ?? slot.activeEnrolled ?? slot.enrolledSnapshot ?? slot.enrolledsnapshot ?? 0);
           const capacity = Number(slot.capacity ?? 12);
-          const capTag = capacity > 0 ? `, ${enrolled}/${capacity}명` : "";
+          const capTag = capacity > 0 ? `, ${chatSeatTag(enrolled, capacity)}` : "";
           const slotTag = slotNum > 0 ? `${slotNum}교시 ` : "";
           const slotInfo = `${dayKor} ${slotTag}${start}~${end} ${label}${gradeTag}${capTag}${program ? ` (${program})` : ""}`.trim();
 
@@ -338,10 +350,10 @@ const getCachedCoachSlots = unstable_cache(
         // 학년 범위 표시 (예: "초1~초4")
         const grade = c.gradeRange ?? c.graderange ?? "";
         const gradeTag = grade ? `, ${grade}` : "";
-        // 정원 현황 표시 (예: "8/12명")
+        // 자리 현황 표시 (예: "여유" · 숫자는 넣지 않는다)
         const enrolled = Number(c.enrolled ?? 0);
         const capacity = Number(c.capacity ?? 12);
-        const capTag = capacity > 0 ? `, ${enrolled}/${capacity}명` : "";
+        const capTag = capacity > 0 ? `, ${chatSeatTag(enrolled, capacity)}` : "";
         const slotInfo = `${dayKor} ${start}~${end} ${label}${gradeTag}${capTag}${program ? ` (${program})` : ""}`.trim();
 
         if (!coachMap[coachId]) coachMap[coachId] = { coachName, slots: [] };
@@ -786,16 +798,12 @@ function buildSystemPrompt(
   // Google Sheets 기반 슬롯의 학년 범위
   for (const s of slotGrades.sheetSlots) {
     const labelTag = s.label ? ` ${s.label}` : "";
-    const fullTag = typeof s.capacity === "number" && s.capacity > 0
-      ? `${s.enrolled}/${s.capacity}명${s.enrolled >= s.capacity ? " [마감]" : ""}`
-      : `${s.enrolled}명 수강중`;
+    const fullTag = chatSeatTag(s.enrolled, s.capacity);
     gradeLines.push(`- ${s.dayLabel} ${s.startTime}~${s.endTime}${labelTag}: ${s.gradeRange} (${fullTag})`);
   }
   // CustomClassSlot의 학년 범위
   for (const s of slotGrades.customSlots) {
-    const fullTag = s.capacity > 0
-      ? `${s.enrolled}/${s.capacity}명${s.enrolled >= s.capacity ? " [마감]" : ""}`
-      : `${s.enrolled}명 수강중`;
+    const fullTag = chatSeatTag(s.enrolled, s.capacity);
     gradeLines.push(`- ${s.dayLabel} ${s.startTime}~${s.endTime} ${s.label}: ${s.gradeRange} (${fullTag})`);
   }
   const slotGradeInfo = gradeLines.length > 0
@@ -809,7 +817,7 @@ ${introSection}
 - 주소: ${settings.address}${youtubeSection}${philosophySection}${facilitiesSection}
 
 ## 질문 분류 및 대응 전략 (모든 질문을 아래 카테고리로 분류 후 답변)
-A. 프로그램/반 추천 (학년, 레벨, 어떤 반) → 학년 확인 후 맞춤 추천. 반별 학년·시간·코치·정원 안내.
+A. 프로그램/반 추천 (학년, 레벨, 어떤 반) → 학년 확인 후 맞춤 추천. 반별 학년·시간·코치·자리 현황(여유/임박/마감) 안내 — 인원 숫자는 말하지 않음.
 B. 정보 조회 (수강료, 시간표, 코치, 셔틀, 환불, 시설 등) → 보유 데이터에서 바로 답변. 학년 묻지 않음.
    - "셔틀", "노선", "정류장", "버스" 키워드 → 반드시 아래 "셔틀" 섹션의 노선 상세 데이터를 활용하여 안내.
    - "환불", "이용약관", "규정", "취소", "수업규칙", "환불 규정" 키워드 → 이것은 수강료 질문이 아닙니다! 반드시 아래 "이용약관" 섹션을 찾아서 그 내용을 안내하세요. 수강료 목록을 보여주면 안 됩니다.
@@ -885,7 +893,7 @@ ${shuttleRouteInfo ? `\n### 셔틀 노선 상세\n${shuttleRouteInfo}` : (settin
   - 수강료/비용 질문 → 전체 프로그램 수강료 안내
   - 학원 소개/특징/시설 질문 → 학원 소개/철학/시설 안내
   - 일정/행사 질문 → 향후 일정 안내
-  - 마감/정원 질문 → 반별 정원 현황 안내
+  - 마감·자리 질문 → 반별 자리 현황(여유/임박/마감)만 안내. 인원 숫자(몇 명 다니는지·몇 자리 남았는지)는 말하지 마세요
   - FAQ에 해당하는 질문 → FAQ 데이터 기반 답변
 - 프로그램/반 추천이 필요한 경우의 흐름:
   1. 아이의 학년을 물어보세요.

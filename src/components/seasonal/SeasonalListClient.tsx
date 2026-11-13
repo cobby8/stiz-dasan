@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+// 모집 현황 3단계(여유/임박/마감) — 숫자 합계 대신(재원생 수 비공개 · 2026-11-13 f9)
+import { SEAT_LEVEL_LABEL, SEAT_LEVEL_TEXT_CLASS } from "@/lib/seats/seatLevel";
 import { extractPrograms, formatSeasonalPeriod, formatWon, programClasses, seasonalDisplayState, type SeasonalListResponse, type SeasonalProgram } from "./types";
 
 export default function SeasonalListClient() {
@@ -33,8 +35,10 @@ export default function SeasonalListClient() {
         const offerings = programClasses(program);
         const display = seasonalDisplayState(program);
         const hasOpenCapacity = offerings.some((item) => item.capacity === null);
-        const hasUnknownSeats = offerings.some((item) => item.capacity !== null && item.remaining === null);
-        const seats = offerings.reduce((sum, item) => sum + Math.max(item.remaining ?? 0, 0), 0);
+        const hasUnknownSeats = offerings.some((item) => item.capacity !== null && item.seatLevel === null);
+        // 반 중 가장 여유 있는 단계를 대표로(여유 > 임박 > 마감)
+        const bestLevel = offerings.some((item) => item.seatLevel === "AVAILABLE") ? "AVAILABLE" as const
+          : offerings.some((item) => item.seatLevel === "LOW") ? "LOW" as const : "FULL" as const;
         const minPrice = Math.min(...offerings.map((item) => item.price).filter((price) => price >= 0));
         return (
           <article key={program.id} className="public-card min-w-0 overflow-hidden rounded-2xl border border-[var(--color-public-line)] bg-white shadow-sm dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-tint)]">
@@ -49,7 +53,7 @@ export default function SeasonalListClient() {
               <Info icon="location_on" text={program.location || "장소 준비 중"} />
               <div className="flex items-end justify-between gap-4 border-t border-[var(--color-public-line)] pt-4 dark:border-[var(--color-public-line)]">
                 <div><p className="text-xs text-[var(--color-public-muted)]">수강료</p><p className="font-black text-[var(--color-public-ink)] dark:text-white">{Number.isFinite(minPrice) ? `${formatWon(minPrice)}부터` : "안내 예정"}</p></div>
-                {display.showSeats && offerings.length > 0 && <div className="text-right"><p className="text-xs text-[var(--color-public-muted)]">전체 잔여석</p><p className="font-bold text-emerald-600">{hasOpenCapacity || hasUnknownSeats ? "학원 문의" : seats > 0 ? `${seats}석` : offerings.some((item) => item.waitlistEnabled) ? "대기 가능" : "마감"}</p></div>}
+                {display.showSeats && offerings.length > 0 && <div className="text-right"><p className="text-xs text-[var(--color-public-muted)]">모집 현황</p><p className={`font-bold ${hasOpenCapacity || hasUnknownSeats ? SEAT_LEVEL_TEXT_CLASS.AVAILABLE : SEAT_LEVEL_TEXT_CLASS[bestLevel]}`}>{hasOpenCapacity || hasUnknownSeats ? "학원 문의" : bestLevel !== "FULL" ? SEAT_LEVEL_LABEL[bestLevel] : offerings.some((item) => item.waitlistEnabled) ? "대기 가능" : "마감"}</p></div>}
               </div>
               {!display.canApply && <p className="text-sm text-[var(--color-public-muted)]">{display.message}</p>}
               <Link href={`/seasonal/${program.slug}`} className="flex min-h-12 items-center justify-center rounded-xl bg-brand-orange-500 px-4 font-bold text-white transition hover:bg-orange-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-orange-500">{display.actionLabel}</Link>

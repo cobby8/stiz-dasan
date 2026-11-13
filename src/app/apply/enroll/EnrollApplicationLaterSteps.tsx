@@ -4,6 +4,8 @@ import { useState, type ReactNode } from "react";
 import FontFreeIcon, { type FontFreeIconName } from "@/components/ui/FontFreeIcon";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
 import { nextPlaceNameAfterRepick } from "@/lib/enrollment/shuttle-place-name";
+// 잔여 인원은 숫자 대신 3단계(여유/임박/마감)로만 보인다(재원생 수 비공개 · 2026-11-13 f9)
+import { SEAT_LEVEL_LABEL, SEAT_LEVEL_TEXT_CLASS, type SeatLevel } from "@/lib/seats/seatLevel";
 
 interface AvailableSlot {
     slotKey: string;
@@ -12,9 +14,7 @@ interface AvailableSlot {
     dayLabel: string;
     startTime: string;
     endTime: string;
-    capacity: number;
-    enrolled: number;
-    available: number;
+    seatLevel: SeatLevel;
 }
 
 interface FormData {
@@ -136,7 +136,7 @@ export default function EnrollApplicationLaterSteps({ step, form, availableSlots
                                         <p className="mb-1.5 text-xs font-bold uppercase text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">{DAY_LABELS[day]}요일</p>
                                         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                                             {slotsByDay[day]!.map((slot) => {
-                                                const isFull = slot.available <= 0;
+                                                const isFull = slot.seatLevel === "FULL";
                                                 const isSelected = form.preferredSlotKeys.includes(slot.slotKey);
                                                 return (
                                                     <button
@@ -148,8 +148,8 @@ export default function EnrollApplicationLaterSteps({ step, form, availableSlots
                                                     >
                                                         <span className="block text-sm font-semibold">{slot.startTime}~{slot.endTime}</span>
                                                         <span className="mt-0.5 block truncate">{slot.className}</span>
-                                                        <span className={`mt-1 block ${isFull ? "text-[var(--color-public-dark-muted)]" : slot.available <= 3 ? "text-red-500" : "text-green-600"}`}>
-                                                            {isFull ? "마감" : `잔여 ${slot.available}명`}
+                                                        <span className={`mt-1 block font-bold ${isFull ? "text-[var(--color-public-dark-muted)]" : SEAT_LEVEL_TEXT_CLASS[slot.seatLevel]}`}>
+                                                            {SEAT_LEVEL_LABEL[slot.seatLevel]}
                                                         </span>
                                                     </button>
                                                 );

@@ -1,5 +1,5 @@
 import { getAcademySettings, getClassSlotOverrides, getCustomClassSlots, getPrograms, getSheetSlotCache } from "@/lib/queries";
-import { buildMergedSlots } from "@/lib/mergeSlots";
+import { buildMergedSlots, toPublicScheduleSlots } from "@/lib/mergeSlots";
 import { getScheduleSlotAdminData } from "@/lib/scheduleSlotPayload";
 import PublicPageLayout from "@/components/PublicPageLayout";
 import ScheduleClient from "./ScheduleClient";
@@ -56,7 +56,8 @@ export default async function SchedulePage() {
             {/* 필터 탭 + 시간표 그리드 (클라이언트 컴포넌트 — useSearchParams 사용) */}
             <ScheduleClient
                 programs={(programs as any[]).map((p) => ({ id: p.id, name: p.name }))}
-                allSlots={allSlots}
+                // 정원·등록 인원 숫자는 빼고 여유/임박/마감만 넘긴다(페이지 응답에 숫자가 실리지 않게 · f9)
+                allSlots={toPublicScheduleSlots(allSlots)}
                 phone={phone}
             />
 

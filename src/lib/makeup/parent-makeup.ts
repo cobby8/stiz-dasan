@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import { recommendClasses, summarize, type ClassCandidate, type MakeupCreditStatus } from "./credit-rules";
 import { assertMakeupSessionAllowed, assertRegularMakeupAllowed, CompensationConflict, lockCompensation } from "@/lib/billing/absence-compensation-guard";
+// 학부모 응답의 남은 자리는 숫자 대신 3단계(재원생 수 비공개 · 2026-11-13 f9)
+import { seatLevel, type SeatLevel } from "@/lib/seats/seatLevel";
 
 // 학부모용 보강 — 보강권 조회 · 반 추천 · 예약 · 취소.
 //
@@ -104,7 +106,8 @@ export type MakeupOption = {
   startTime: string;
   endTime: string;
   grades: string[];
-  remaining: number;
+  /** 남은 자리 3단계 — 숫자는 학부모 응답에 싣지 않는다(예약 시 서버가 숫자로 다시 검사 · f9) */
+  seatLevel: SeatLevel;
   /** 만료 전에 실제로 갈 수 있는 날짜들 */
   dates: { ymd: string; label: string }[];
 };
@@ -175,7 +178,7 @@ export async function getMakeupOptionsForCredit(
     startTime: c.startTime,
     endTime: endTimeByClass.get(c.classId) ?? "",
     grades: c.grades,
-    remaining: c.remaining,
+    seatLevel: seatLevel(c.remaining),
     dates: upcomingDates(c.dayOfWeek, expiresAt),
   })).filter((o) => o.dates.length > 0); // 만료 전에 갈 수 있는 날이 없으면 뺀다
 

@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getMakeupOptions, createMakeup } from "@/lib/seasonal/makeup";
+// 학부모용 후보 정리(숫자 제거)는 순수 모듈 한 곳 — 실행 테스트가 바로 불러 쓴다
+import { toParentSeasonalCandidates } from "@/lib/seasonal/parentMakeupView";
 
 function digits(s?: string | null) { return (s || "").replace(/\D/g, ""); }
 function seoulLabel(value: Date | string | null) {
@@ -59,7 +61,7 @@ export async function getParentSeasonalContext(parentUserId: string) {
       enrollmentDateId: ab.enrollmentDateId,
       childName: opt.absence.childName, offeringTitle: opt.absence.offeringTitle,
       absentLabel: opt.absence.absentLabel, windowEndLabel: opt.windowEndLabel,
-      seasonalCandidates: opt.seasonalCandidates, regularCandidates: opt.regularCandidates,
+      ...toParentSeasonalCandidates(opt),
     });
   }
 

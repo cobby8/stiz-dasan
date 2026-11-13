@@ -20,6 +20,8 @@ import {
 } from "@/lib/enrollment-account-handoff";
 import { SHUTTLE_LOCATION_CONSENT_VERSION } from "@/lib/seasonal/contracts";
 import { shuttlePlaceNameError } from "@/lib/enrollment/shuttle-place-name";
+// 공개 화면 잔여 인원 3단계(여유/임박/마감) — 숫자는 공개 응답에 싣지 않는다
+import { seatLevelFromCounts, type SeatLevel } from "@/lib/seats/seatLevel";
 
 async function issueEnrollmentAccountHandoffSafely(enrollmentApplicationId: string) {
     try {
@@ -491,9 +493,9 @@ export interface AvailableSlot {
     className: string;      // 수업 이름
     startTime: string;
     endTime: string;
-    capacity: number;
-    enrolled: number;
-    available: number;      // capacity - enrolled
+    // 공개 응답이라 정원·등록 인원·남은 자리 숫자는 싣지 않는다(재원생 수 비공개 · 2026-11-13 f9).
+    // 서버에서 3단계(여유/임박/마감)로만 바꿔 보낸다 — 기준은 src/lib/seats/seatLevel.ts
+    seatLevel: SeatLevel;
 }
 
 // 요일 코드를 한글 라벨로 매핑합니다.
@@ -548,9 +550,7 @@ export async function getAvailableTrialSlots(): Promise<AvailableSlot[]> {
             className: r.class_name,
             startTime: r.startTime ?? r.starttime,
             endTime: r.endTime ?? r.endtime,
-            capacity: r.capacity,
-            enrolled: r.enrolled,
-            available: r.capacity - r.enrolled,
+            seatLevel: seatLevelFromCounts(Number(r.capacity ?? 0), Number(r.enrolled ?? 0)),
         }));
     } catch (e) {
         console.error("[getAvailableTrialSlots] failed:", e);

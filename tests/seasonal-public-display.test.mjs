@@ -8,6 +8,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 import * as seasonalTypes from "../src/components/seasonal/types.ts";
 import * as publicErrorText from "../src/components/ui/public-error-text.ts";
+import * as seatLevelModule from "../src/lib/seats/seatLevel.ts";
 import { extractPrograms, formatSeasonalDate, formatSeasonalPeriod, normalizeProgram, seasonalApplicationStatusLabel, seasonalDisplayState, statusLabel } from "../src/components/seasonal/types.ts";
 
 const at = (value) => new Date(value).getTime();
@@ -38,6 +39,7 @@ function renderPublicPage(name, program) {
     if (id === "./types") return { ...seasonalTypes, seasonalDisplayState: (value) => seasonalDisplayState(value, openTime) };
     if (id === "@/components/maps/LocationPickerModal") return { default: () => null };
     if (id === "@/components/ui/public-error-text") return publicErrorText;
+    if (id === "@/lib/seats/seatLevel") return seatLevelModule;
     if (id === "@/lib/seasonal/contracts") return { SHUTTLE_LOCATION_CONSENT_VERSION: "fixture" };
     // 하단 고정 바 감싸개(플로팅 버튼 위치용)는 모양만 같은 div 로 바꿔 렌더한다.
     if (id === "@/components/public-floating") return {
@@ -77,7 +79,7 @@ test("빈 수업·전 수업 마감의 목록·상세·직접 신청 화면은 �
       const html = renderPublicPage(name, program);
       assert.ok(html.includes(label), name);
       assert.ok(html.includes(message), name);
-      assert.doesNotMatch(html, /신청 가능<|수업을 선택하세요|신청 화면에서 여러 수업|자세히 보고 신청하기|전체 잔여석|href="[^"]*\/apply"|<form/);
+      assert.doesNotMatch(html, /신청 가능<|수업을 선택하세요|신청 화면에서 여러 수업|자세히 보고 신청하기|모집 현황|href="[^"]*\/apply"|<form/);
     }
   }
 });
@@ -186,9 +188,11 @@ test("수용인원만 있고 접수 자료가 없으면 잔여석을 임의로 �
     { id: "remaining", capacity: 15, remainingCapacity: 4 },
     { id: "enrolled", capacity: 15, enrolled: 12 },
   ] }).classes;
-  assert.equal(classes[0].remaining, null);
-  assert.equal(classes[1].remaining, 4);
-  assert.equal(classes[2].remaining, 3);
+  // 숫자는 3단계로만 남는다(2026-11-13 f9): 모름 = null · 4석 = 여유 · 3석 = 임박
+  assert.equal(classes[0].seatLevel, null);
+  assert.equal(classes[1].seatLevel, "AVAILABLE");
+  assert.equal(classes[2].seatLevel, "LOW");
+  assert.equal("remaining" in classes[1], false);
 });
 
 test("알 수 없는 신청 결과 상태도 내부 코드 대신 안전한 한글 안내를 쓴다", () => {

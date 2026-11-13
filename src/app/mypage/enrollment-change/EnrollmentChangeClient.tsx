@@ -16,6 +16,8 @@ import { parentKindName, shortMd } from "@/lib/enrollment/parentChangeStatus";
 import InlineConfirm from "@/components/parent/InlineConfirm";
 import { customerMessage } from "@/components/parent/customerMessage";
 import { presetIndex, type RequestPreset } from "@/lib/mypage/requestPreset";
+// 남은 자리는 숫자 대신 3단계(여유/임박)로(재원생 수 비공개 · 2026-11-13 f9)
+import { SEAT_LEVEL_LABEL } from "@/lib/seats/seatLevel";
 
 const DAY_KO: Record<string, string> = {
   Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금", Sat: "토", Sun: "일",
@@ -420,7 +422,7 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
                   {selectable.map((item) => (
                     <option key={item.classId} value={item.classId}>
                       {DAY_KO[item.dayOfWeek] ?? item.dayOfWeek} {item.startTime}~{item.endTime} · {item.programName}
-                      {item.full ? " (정원 마감 · 대기)" : ` (${item.capacity - item.enrolled}자리)`}
+                      {item.full ? " (정원 마감 · 대기)" : ` (${SEAT_LEVEL_LABEL[item.seatLevel]})`}
                     </option>
                   ))}
                 </select>

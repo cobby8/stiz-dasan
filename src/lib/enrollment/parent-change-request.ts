@@ -1,6 +1,8 @@
 import { childAccessSql } from "@/lib/account/child-access";
 import { prisma } from "@/lib/prisma";
 import { notMergedStudent } from "@/lib/studentVisibility";
+// 학부모 응답의 남은 자리는 숫자 대신 3단계(재원생 수 비공개 · 2026-11-13 f9)
+import { seatLevelFromCounts, type SeatLevel } from "@/lib/seats/seatLevel";
 import { addDaysKst, kstHm, todayKst } from "@/lib/datetime/kst";
 import {
   CHANGE_REQUEST_MESSAGE,
@@ -38,8 +40,8 @@ export type ChangeableClass = {
   dayOfWeek: string;
   startTime: string;
   endTime: string;
-  capacity: number;
-  enrolled: number;
+  /** 남은 자리 3단계 — 정원·인원 숫자는 학부모 응답에 싣지 않는다(신청 시 서버가 숫자로 다시 검사) */
+  seatLevel: SeatLevel;
   full: boolean;
 };
 
@@ -225,8 +227,7 @@ export async function getEnrollmentChangeOptions(parentUserId: string): Promise<
       dayOfWeek: row.dayOfWeek,
       startTime: row.startTime,
       endTime: row.endTime,
-      capacity: Number(row.capacity ?? 0),
-      enrolled: Number(row.enrolled ?? 0),
+      seatLevel: seatLevelFromCounts(Number(row.capacity ?? 0), Number(row.enrolled ?? 0)),
       full: Number(row.enrolled ?? 0) >= Number(row.capacity ?? 0),
     })),
   };

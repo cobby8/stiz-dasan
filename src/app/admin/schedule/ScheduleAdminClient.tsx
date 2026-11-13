@@ -13,6 +13,7 @@ import { updateAcademySettings } from "@/app/actions/admin";
 import type { SheetClassSlot } from "@/lib/googleSheetsSchedule";
 import type { SchedulePayloadSource } from "@/lib/scheduleSlotPayload";
 import type { MergedSlot } from "@/app/schedule/ScheduleClient";
+import { toPublicScheduleSlots } from "@/lib/mergeSlots";
 
 const ScheduleTableView = dynamic(() => import("@/components/ScheduleTableView"), {
     loading: () => (
@@ -613,7 +614,8 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
             {/* 표 보기 모드 — 공개 시간표 미리보기 (편집 불가) */}
             {adminViewMode === "table" && (
                 <div className="space-y-4">
-                    <ScheduleTableView slots={mergedSlotsForTable} />
+                    {/* 표 미리보기 = 공개 시간표와 같은 모양(여유/임박/마감) — 숫자 편집은 편집 모드에서 그대로 */}
+                    <ScheduleTableView slots={toPublicScheduleSlots(mergedSlotsForTable)} />
                 </div>
             )}
 
