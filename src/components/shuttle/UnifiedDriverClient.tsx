@@ -76,7 +76,7 @@ export default function UnifiedDriverClient({
   const [savingOrder, setSavingOrder] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   // 순서를 옮기면 그 묶음 시각을 지도 이동 시간으로 다시 계산한다(관리자 운행표와 같은 부품·같은 규칙).
-  const { retime, note: retimeNote, cancelPending: cancelRetime, clearNote: clearRetimeNote } = useRouteRetime({ academy, token });
+  const { retime, notes: retimeNotes, cancelPending: cancelRetime, clearNote: clearRetimeNote } = useRouteRetime({ academy, token });
   // 새 서버 자료가 도착하면 이전 저장의 표시용 덮어쓰기는 무시한다.
   // 편집 중에는 원본 스냅샷을 유지해 다른 화면의 변경을 baseline 검증으로 잡는다.
   const useOrderOverrides = editing || orderSourceRows === rows;
@@ -147,7 +147,8 @@ export default function UnifiedDriverClient({
   function reorderGroup(sameGroup: UnifiedRow[], next: UnifiedRow[]) {
     const groupKey = next[0]?.groupKey;
     if (!groupKey) return;
-    const slotSeq = sameGroup.map((slot) => sortOverride[slot.key]?.seq ?? slot.seq);
+    // seq 는 원래 명단 번호라 시각순과 어긋날 수 있다 → 오름차순으로 나눠 줘야 같은 시각에서도 새 순서가 유지된다.
+    const slotSeq = sameGroup.map((slot) => sortOverride[slot.key]?.seq ?? slot.seq).sort((a, b) => a - b);
     if (next[0].kind === "REGULAR") {
       const saved = orderSourceRows.filter((r) => r.groupKey === groupKey && !r.isTerminal);
       const done = retime(groupKey, saved, sameGroup, next, displayTime, (times) => {
@@ -221,6 +222,7 @@ export default function UnifiedDriverClient({
     // 화면을 연 뒤 관리자가 바꾼 내용을 덮어쓰지 않도록 마지막 조회 원본도 대조한다.
     const baseline = makeOrderPayload(orderSourceRows, (row) => row.time);
     if (updates.length === 0 || savingOrder) return;
+    cancelRetime(); // 저장 중에 늦게 온 지도 계산이 화면 시각을 바꾸지 않게
     setSavingOrder(true);
     setSaveMessage(null);
     try {
@@ -456,7 +458,12 @@ export default function UnifiedDriverClient({
         </div>
       )}
       {editing && <p className="mb-2 rounded-xl bg-[var(--color-academy-info-soft)] px-3 py-2 text-[13px] font-bold text-[var(--color-academy-info)]">순서를 바꾸면 첫 탑승(하원은 학원 출발) 시각은 그대로 두고 뒤 정류장 시각을 지도 이동 시간으로 다시 계산합니다. 시간을 직접 수정할 수도 있습니다. 정규 셔틀만 저장됩니다.</p>}
-      {editing && retimeNote && <p role="status" className={`mb-2 px-1 text-[13px] font-bold ${retimeNote.warn ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-muted)]"}`}>{retimeNote.text}</p>}
+      {/* 옮긴 묶음마다 다시 계산 결과 한 줄(어느 묶음이 지도 기준·추정인지, 학원 도착이 늦는지) */}
+      {editing && Object.values(retimeNotes).map((n) => (
+        <p key={n.groupKey} role="status" className={`mb-1 px-1 text-[13px] font-bold ${n.warn ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-muted)]"}`}>
+          {rows.find((r) => r.groupKey === n.groupKey)?.groupLabel ?? ""} {n.text}
+        </p>
+      ))}
       {saveMessage && <p className="mb-2 rounded-xl bg-[var(--color-academy-soft)] px-3 py-2 text-[13px] font-black text-[var(--color-academy-ink)]">{saveMessage}</p>}
 
       {stopRows.length === 0 && (

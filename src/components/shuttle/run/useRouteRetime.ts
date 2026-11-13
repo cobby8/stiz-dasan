@@ -26,8 +26,12 @@ function rowPoint(r: UnifiedRow): RetimePoint | null {
 
 export function useRouteRetime({ academy, token }: { academy: RetimePoint | null; token?: string }) {
   const cache = useRef(new Map<string, number | null>());
-  const version = useRef(0);
-  const [note, setNote] = useState<RetimeNote | null>(null);
+  // 버전은 묶음마다 따로 센다(기사님 화면은 여러 묶음을 한꺼번에 편집 — 다른 묶음을 옮겨도 앞 묶음 지도 보정은 살린다).
+  // epoch 는 전체 무효화(손 수정·저장·편집 끝)용.
+  const versions = useRef(new Map<string, number>());
+  const epoch = useRef(0);
+  const [notes, setNotes] = useState<Record<string, RetimeNote>>({});
+  const setNote = (n: RetimeNote) => setNotes((cur) => ({ ...cur, [n.groupKey]: n }));
 
   /**
    * saved   = 그 묶음의 저장된(편집 시작 때) 순서·시각 — «기사님 속도» 배율과 하원 학원 출발 시각의 기준.
@@ -60,7 +64,9 @@ export function useRouteRetime({ academy, token }: { academy: RetimePoint | null
       return true;
     };
 
-    const v = ++version.current;
+    const v = (versions.current.get(groupKey) ?? 0) + 1;
+    versions.current.set(groupKey, v);
+    const e = epoch.current;
     if (!compute(false)) return false;
 
     // 아직 모르는 구간만 지도에 묻는다.
@@ -78,13 +84,16 @@ export function useRouteRetime({ academy, token }: { academy: RetimePoint | null
         missing.forEach(([a, b], i) => cache.current.set(legKey(a, b), j?.minutes?.[i] ?? null));
       })
       .catch(() => { missing.forEach(([a, b]) => cache.current.set(legKey(a, b), null)); })
-      .finally(() => { if (v === version.current) compute(true); });
+      .finally(() => { if (v === versions.current.get(groupKey) && e === epoch.current) compute(true); });
     return true;
   }, [academy, token]);
 
-  /** 손으로 시각을 고쳤거나 편집을 끝냈을 때 — 늦게 도착한 지도 계산이 덮어쓰지 않게. */
-  const cancelPending = useCallback(() => { version.current++; }, []);
-  const clearNote = useCallback(() => { version.current++; setNote(null); }, []);
+  /** 손으로 시각을 고쳤거나 저장을 시작했을 때 — 늦게 도착한 지도 계산이 덮어쓰지 않게(전체). */
+  const cancelPending = useCallback(() => { epoch.current++; }, []);
+  const clearNote = useCallback(() => { epoch.current++; setNotes({}); }, []);
+  // 가장 최근 안내 하나(기사님 화면) — 묶음별 안내는 notes 로 꺼내 쓴다.
+  const noteList = Object.values(notes);
+  const note = noteList.length > 0 ? noteList[noteList.length - 1] : null;
 
-  return { retime, note, cancelPending, clearNote };
+  return { retime, note, notes, cancelPending, clearNote };
 }

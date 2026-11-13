@@ -123,7 +123,8 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
     const groupKey = next[0]?.groupKey;
     if (!groupKey) return;
     // 정렬 칸(seq)은 자리 그대로 — 같은 시각이 나와도 새 순서가 유지된다.
-    const slotSeq = same.map((slot) => sortOverride[slot.key]?.seq ?? slot.seq);
+    // seq 는 원래 명단 번호라 시각순과 어긋날 수 있다 → 오름차순으로 나눠 줘야 같은 시각에서도 새 순서가 유지된다.
+    const slotSeq = same.map((slot) => sortOverride[slot.key]?.seq ?? slot.seq).sort((a, b) => a - b);
     const saved = sourceRows.filter((r) => r.groupKey === groupKey && !r.isTerminal);
     const done = retime(groupKey, saved, same, next, displayTime, (times) => {
       const nextSort: Record<string, SortKey> = {};
@@ -211,6 +212,7 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
     if (savingOrder) return false;
     const changed = changedGroups;
     if (changed.length === 0) { if (!keepEditing) cancelEditing(); return true; }
+    cancelRetime(); // 저장 중에 늦게 온 지도 계산이 화면 시각을 바꾸지 않게
     setSavingOrder(true); setError(null); setMessage(null);
     let done = 0;
     let note = "";

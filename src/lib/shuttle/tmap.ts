@@ -210,17 +210,25 @@ export type SegmentsRouteResult = {
 // 정류장 순서를 옮겼을 때 시각 다시 계산(routeRetime)용 — 지점 쌍마다 실도로 이동 «분».
 // 쌍마다 따로 호출하고(경유 없음), 실패한 쌍은 null 로 남겨 화면이 직선 추정으로 채우게 한다.
 // ⚠️ 쌍 N개 = T맵 호출 N번. 호출부(API)가 개수를 제한한다(순서를 옮길 때만 부른다).
-export async function pairLegMinutesWithTmap(pairs: { a: LatLng; b: LatLng }[]): Promise<(number | null)[]> {
+export async function pairLegMinutesWithTmap(pairs: { a: LatLng; b: LatLng }[], budgetMs = 8_000): Promise<(number | null)[]> {
   const appKey = process.env.TMAP_APP_KEY?.trim();
   if (!appKey) return pairs.map(() => null);
-  const out: (number | null)[] = [];
-  for (const { a, b } of pairs) {
-    try {
-      const leg = await routesLegRetry(appKey, a, b);
-      out.push(leg.totalTime > 0 ? leg.totalTime / 60 : null);
-    } catch {
-      out.push(null);
-    }
+  // 4개씩 동시에 묻고, 전체 시간이 budgetMs 를 넘으면 남은 쌍은 null(화면이 직선 추정으로 채운다) — 서버 시간 제한에 걸리지 않게.
+  const deadline = Date.now() + budgetMs;
+  const out: (number | null)[] = pairs.map(() => null);
+  const CONCURRENCY = 4;
+  for (let i = 0; i < pairs.length; i += CONCURRENCY) {
+    if (Date.now() > deadline) break;
+    const batch = pairs.slice(i, i + CONCURRENCY);
+    const results = await Promise.all(batch.map(async ({ a, b }) => {
+      try {
+        const leg = await routesLegRetry(appKey, a, b, 0); // 재시도 없이 한 번만(느린 구간은 추정으로)
+        return leg.totalTime > 0 ? leg.totalTime / 60 : null;
+      } catch {
+        return null;
+      }
+    }));
+    results.forEach((m, j) => { out[i + j] = m; });
   }
   return out;
 }
