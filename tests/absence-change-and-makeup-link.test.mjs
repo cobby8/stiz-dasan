@@ -55,6 +55,10 @@ const rules = await import(load("src/lib/regular/regularAbsenceRules.ts"));
 const creditRules = await import(load("src/lib/makeup/credit-rules.ts"));
 const absence = await import(load("src/lib/regular/parent-regular-absence.ts"));
 const makeup = await import(load("src/lib/makeup/parent-makeup.ts"));
+// 2026-11-14 복귀 예정: 학부모가 쓸 수 있는 수강 = ACTIVE 또는 복귀 승인된 휴원 반(공용 규칙)
+const resumeWindow = await import(load("src/lib/enrollment/resumeWindow.ts"));
+const USABLE_SQL = resumeWindow.parentUsableEnrollmentSql("e");
+const usable = (e) => e.status === "ACTIVE" || (e.status === "PAUSED" && Boolean(e.resumeFrom));
 
 /** KST 날짜·시각 → 절대 시각(ms). 테스트 시계 고정용 */
 const at = (ymd, hm = "00:00") => new Date(`${ymd}T${hm}:00+09:00`).getTime();
@@ -283,15 +287,19 @@ function makeDb(overrides = {}) {
     if (/FROM "Enrollment" e\s+JOIN "Student" s ON s\.id = e\."studentId"\s+JOIN "Class" c ON c\.id = e\."classId"/.test(sql)) {
       assert.match(sql, /s\."parentId" = \$1/, "보호자 조건");
       assert.match(sql, /c\."startTime" AS "startTime"/, "마감 판정에 쓸 시작 시각을 함께 읽는다");
-      const ok = owns(args[1], args[0]) && db.enrollments.some((e) => e.studentId === args[1] && e.classId === args[2] && e.status === "ACTIVE");
+      // 2026-11-14 복귀 예정: 수강 조건은 «ACTIVE» 한 줄이 아니라 공용 조각(resumeWindow)이다 —
+      // 다니는 반 + 복귀 승인된 휴원 반(가짜 DB 에선 resumeFrom 이 적힌 PAUSED). 복귀 쪽 실행형 검증은 tests/resume-window.test.mjs
+      assert.ok(sql.includes(USABLE_SQL), "수강 조건은 공용 조각(parentUsableEnrollmentSql)");
+      const row = owns(args[1], args[0]) ? db.enrollments.find((e) => e.studentId === args[1] && e.classId === args[2] && usable(e)) : null;
       const c = cls(args[2]);
-      return ok ? [{ dayOfWeek: c.dayOfWeek, startTime: c.startTime, studentName: student(args[1]).name, className: c.name }] : [];
+      return row ? [{ dayOfWeek: c.dayOfWeek, startTime: c.startTime, studentName: student(args[1]).name, className: c.name, enrollmentStatus: row.status, resumeFrom: row.resumeFrom ?? null }] : [];
     }
     // ── 결석: 다가오는 수업일 목록 ──
-    if (/FROM "Student" s\s+JOIN "Enrollment" e ON e\."studentId" = s\.id AND e\.status = 'ACTIVE'/.test(sql)) {
-      return db.enrollments.filter((e) => e.status === "ACTIVE" && owns(e.studentId, args[0])).map((e) => {
+    if (/FROM "Student" s\s+JOIN "Enrollment" e ON e\."studentId" = s\.id AND /.test(sql) && sql.includes('c."dayOfWeek" AS "dayOfWeek"')) {
+      assert.ok(sql.includes(USABLE_SQL), "목록도 같은 공용 조각");
+      return db.enrollments.filter((e) => usable(e) && owns(e.studentId, args[0])).map((e) => {
         const c = cls(e.classId);
-        return { studentId: e.studentId, studentName: student(e.studentId).name, classId: c.id, className: c.name, dayOfWeek: c.dayOfWeek, startTime: c.startTime };
+        return { studentId: e.studentId, studentName: student(e.studentId).name, classId: c.id, className: c.name, dayOfWeek: c.dayOfWeek, startTime: c.startTime, enrollmentStatus: e.status, resumeFrom: e.resumeFrom ?? null };
       });
     }
     if (/FROM "RegularAbsence" ra\s+JOIN "Student" s ON s\.id = ra\."studentId"/.test(sql) && /^SELECT/.test(sql.trim())) {

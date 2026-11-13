@@ -4,8 +4,10 @@ import {
   getUpcomingRegularClassDates,
   reportRegularAbsence,
   cancelRegularAbsence,
+  ABSENCE_REPORT_WEEKS,
 } from "@/lib/regular/parent-regular-absence";
 import { ABSENCE_CHANGE_CLOSED_MESSAGE } from "@/lib/regular/regularAbsenceRules";
+import { BEFORE_RESUME_CODE, resumeFromOfError, resumeNotice } from "@/lib/enrollment/resumeWindow";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +66,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(result);
   } catch (error) {
     const code = error instanceof Error ? error.message : "UNKNOWN";
+    // 복귀 예정 반(2026-11-14): 복귀일 전 날짜 — 문구에 복귀일(M/D)을 넣어야 해서 표 밖에서 먼저 답한다
+    if (code === BEFORE_RESUME_CODE) {
+      return NextResponse.json({ error: `${resumeNotice(resumeFromOfError(error), "신고")}.`, code }, { status: 409 });
+    }
     // 에러코드 → 학부모용 한국어 메시지
     const map: Record<string, string> = {
       NOT_OWNER: "본인 자녀의 수업만 신고할 수 있습니다.",
@@ -71,6 +77,8 @@ export async function POST(request: NextRequest) {
       INVALID_DATE: "날짜 형식이 올바르지 않습니다.",
       STUDENT_OR_CLASS_MISSING: "자녀와 반을 선택해 주세요.",
       NOT_REPORTABLE_DATE: "지난 날짜이거나 그 반 수업 요일이 아니라 신고할 수 없습니다.",
+      // 2026-11-14: 목록에 보이는 범위(4주) 밖 날짜는 받지 않는다
+      ABSENCE_TOO_FAR: `앞으로 ${ABSENCE_REPORT_WEEKS}주 안의 수업만 신고할 수 있습니다.`,
       // 2026-11-14: 신고·취소·사유 변경은 수업 시작 1시간 전까지(서버가 강제 — regularAbsenceRules.isAbsenceChangeOpen)
       ABSENCE_CHANGE_CLOSED: ABSENCE_CHANGE_CLOSED_MESSAGE,
       ABSENCE_NOT_FOUND: "결석 신고를 찾을 수 없습니다.",

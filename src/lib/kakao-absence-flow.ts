@@ -3,6 +3,7 @@ import { classifyParentUtterance, type KakaoQuickReply } from "@/lib/kakao-chatb
 import { cancelRegularAbsence, getUpcomingRegularClassDates, reportRegularAbsence } from "@/lib/regular/parent-regular-absence";
 import { isAbsenceChangeOpen, REASON_LABEL, VALID_REASONS, type AbsenceReason } from "@/lib/regular/regularAbsenceRules";
 import { kstHm, kstLabel, todayKst } from "@/lib/datetime/kst";
+import { BEFORE_RESUME_CODE, resumeFromOfError, resumeNotice } from "@/lib/enrollment/resumeWindow";
 import {
   answerOf, clipText, createFlowStore, FLOW_MENU_TEXT, flowReply, MAIN_MENU, numberQuickReplies,
   parseKoreanDateYmd, parseNumberPick, pickChild, YES,
@@ -110,7 +111,10 @@ function absenceErrorMessage(error: unknown): string {
   const code = error instanceof Error ? error.message : "";
   if (code === "NOT_REPORTABLE_DATE") return "지난 날짜이거나 그 반 수업 요일이 아니에요.";
   if (code === "ABSENCE_CHANGE_CLOSED") return "수업 시작 1시간 전이 지나 카톡으로는 바꿀 수 없어요. 원장님께 알려 주세요.";
+  if (code === "ABSENCE_TOO_FAR") return `앞으로 ${ABSENCE_WEEKS}주 안의 수업만 신청할 수 있어요.`;
   if (code === "NOT_OWNER") return "지금 다니는 반의 수업이 아니에요.";
+  // 복귀 예정 반(2026-11-14): 복귀일 전 날짜는 아직 휴원이라 받지 않는다
+  if (code === BEFORE_RESUME_CODE) return `${resumeNotice(resumeFromOfError(error), "신고")}.`;
   if (code === "ABSENCE_NOT_CANCELABLE") return "원장님이 이미 확인(확정)한 결석이라 카톡으로는 바꿀 수 없어요.";
   // 보강권(2026-11-10): 카톡 취소는 «보강 예약도 함께 취소» 확인 단계가 없다 — 앱 결석 화면으로 안내
   if (code === "MAKEUP_BOOKING_CONFIRM_REQUIRED") return "이 결석의 보강권으로 보강이 예약돼 있어 카톡으로는 취소할 수 없어요. 앱 결석 화면에서 취소하면 보강 예약도 함께 취소돼요.";
@@ -266,7 +270,7 @@ async function confirmReport(flow: FlowRow<AbsenceState>): Promise<Reply> {
   }
   let creditIssued = false;
   try {
-    // ★ 서버 재검증: 소유권·ACTIVE 수강·요일·마감(수업 1시간 전)은 reportRegularAbsence 가 다시 본다(대화 상태를 믿지 않는다).
+    // ★ 서버 재검증: 소유권·쓸 수 있는 수강(ACTIVE 또는 복귀 승인된 휴원 반 — 복귀일 이후만)·요일·마감(수업 1시간 전)은 reportRegularAbsence 가 다시 본다(대화 상태를 믿지 않는다).
     const result = await reportRegularAbsence(state.parentUserId, { studentId: state.studentId, classId: chosen.classId, date: chosen.date, reason: state.reason });
     creditIssued = Boolean(result?.makeupCreditIssued);
   } catch (error) {

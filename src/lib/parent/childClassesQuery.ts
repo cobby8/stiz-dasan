@@ -5,6 +5,7 @@
 // 기준은 학부모 «수업» 탭(classes-overview)과 같다 — 방학특강 반 제외, ACTIVE·PAUSED, 상태 칩은 classStatusChip.
 // ⚠️ PgBouncer → $queryRawUnsafe 만. 날짜 칸(@db.Date)은 변환 없이 to_char.
 import { commencementYmd } from "@/lib/enrollment/commencement";
+import { resumeFromSql } from "@/lib/enrollment/resumeWindow";
 import { classStatusChip, type ClassChip } from "@/lib/parent/classCards";
 import type { ShuttleClassRef } from "@/lib/shuttle/childShuttleRules";
 
@@ -28,7 +29,9 @@ export async function loadChildClasses(db: Reader, studentId: string, today: str
             sc.kind AS "scheduledKind", to_char(sc."effectiveFrom",'YYYY-MM-DD') AS "scheduledFrom",
             to_char(sc."resumeOn",'YYYY-MM-DD') AS "scheduledResumeOn",
             pr.kind AS "pendingKind", to_char(pr."effectiveFrom",'YYYY-MM-DD') AS "pendingFrom",
-            to_char(pz."resumeOn",'YYYY-MM-DD') AS "pausedResumeOn"
+            to_char(pz."resumeOn",'YYYY-MM-DD') AS "pausedResumeOn",
+            -- 승인된 복귀일(공용 규칙 resumeWindow) — 셔틀 «휴원» 판정이 이 날짜부터 정상 운행으로 본다
+            ${resumeFromSql("e")} AS "resumeFrom"
        FROM "Enrollment" e
        JOIN "Class" c ON c.id = e."classId" AND c."dayOfWeek" <> 'Seasonal'
        LEFT JOIN "Program" p ON p.id = c."programId"
@@ -72,6 +75,7 @@ export async function loadChildClasses(db: Reader, studentId: string, today: str
       startsOn: commencementYmd(row.startsOn),
       scheduled,
       pausedResumeOn: row.pausedResumeOn ?? null,
+      resumeFrom: row.resumeFrom ?? null,
       programName: row.programName ?? null,
       coachName: row.coachName ?? null,
       chip: classStatusChip({

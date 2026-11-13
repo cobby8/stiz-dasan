@@ -2,6 +2,7 @@ import { childAccessSql } from "@/lib/account/child-access";
 import { prisma } from "@/lib/prisma";
 import { createHash } from "node:crypto";
 import { notMergedStudent } from "@/lib/studentVisibility";
+import { earliestUsableFrom, parentUsableEnrollmentSql, resumeFromSql, resumeNotice } from "@/lib/enrollment/resumeWindow";
 import { summarizeDeliveryStatus, type DeliveryStatusRow, type DeliveryStatusSummary } from "@/lib/parent-staff-status";
 import {
   SHUTTLE_EXCEPTION_MESSAGE,
@@ -17,6 +18,8 @@ import {
 //
 // ★ 보안 가드:
 //   1) IDOR — studentId 가 그 부모의 자녀인지 SQL 로 재검증.
+//      (2026-11-14 복귀 예정) 대상 = 다니는 학생 + «복귀 승인된 휴원» 학생(resumeWindow 한 곳의 규칙).
+//      다니는 반 없이 복귀 예정뿐이면 복귀일 이후 날짜만 받는다 — 서버가 다시 본다.
 //   2) 날짜는 서버 기준(KST)으로 판정 — 클라이언트 시계를 믿으면 지난 날도 바꿀 수 있다.
 //   3) 같은 학생·날짜·방향에 살아있는 예외는 한 건(DB 부분 유니크가 최종 방어선).
 
@@ -44,7 +47,8 @@ export type ShuttleExceptionRow = {
 export type ShuttleExceptionOptions = {
   today: string;
   maxDate: string;
-  children: { studentId: string; studentName: string }[];
+  // usableFrom: 다니는 반 없이 «복귀 예정»뿐인 자녀의 복귀일("YYYY-MM-DD") — 그날부터 신청할 수 있다. 다니는 자녀는 null
+  children: { studentId: string; studentName: string; usableFrom: string | null }[];
   upcoming: ShuttleExceptionRow[];
 };
 
@@ -52,15 +56,25 @@ export async function getShuttleExceptionOptions(parentUserId: string): Promise<
   const today = kstTodayYmd();
   const { addDays, MAX_DAYS_AHEAD } = await import("@/lib/shuttle/dayExceptionRules");
 
-  const children = await prisma.$queryRawUnsafe<{ studentId: string; studentName: string }[]>(
-    // 셔틀은 정규 수강생만 탄다. 지금 다니는 자녀만 보여준다.
-    `SELECT DISTINCT s.id AS "studentId", s.name AS "studentName"
+  const enrollRows = await prisma.$queryRawUnsafe<{ studentId: string; studentName: string; status: string; resumeFrom: string | null }[]>(
+    // 셔틀은 정규 수강생만 탄다. 지금 다니는 자녀 + 복귀가 승인된 자녀(2026-11-14 복귀 예정)만 보여준다.
+    `SELECT s.id AS "studentId", s.name AS "studentName", e.status AS status, ${resumeFromSql("e")} AS "resumeFrom"
        FROM "Student" s
-       JOIN "Enrollment" e ON e."studentId" = s.id AND e.status = 'ACTIVE'
+       JOIN "Enrollment" e ON e."studentId" = s.id AND ${parentUsableEnrollmentSql("e")}
       WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")}
-      ORDER BY s.name`,
+      ORDER BY s.name, s.id`,
     parentUserId,
   );
+  // 수강 행 → 자녀 한 줄(이름순 유지). 다니는 반이 하나라도 있으면 제한 없음, 전부 복귀 예정이면 가장 이른 복귀일부터.
+  const byStudent = new Map<string, { studentName: string; rows: { status: string; resumeFrom: string | null }[] }>();
+  for (const row of enrollRows) {
+    const entry = byStudent.get(row.studentId) ?? { studentName: row.studentName, rows: [] };
+    entry.rows.push({ status: row.status, resumeFrom: row.resumeFrom ?? null });
+    byStudent.set(row.studentId, entry);
+  }
+  const children = [...byStudent.entries()].map(([studentId, entry]) => ({
+    studentId, studentName: entry.studentName, usableFrom: earliestUsableFrom(entry.rows),
+  }));
 
   const upcoming = await prisma.$queryRawUnsafe<ShuttleExceptionRow[]>(
     `SELECT x.id, x."studentId", s.name AS "studentName",
@@ -77,7 +91,7 @@ export async function getShuttleExceptionOptions(parentUserId: string): Promise<
   return {
     today,
     maxDate: addDays(today, MAX_DAYS_AHEAD),
-    children: children.map((row) => ({ studentId: row.studentId, studentName: row.studentName })),
+    children,
     upcoming: await Promise.all(upcoming.map(async (row) => ({
       id: row.id,
       studentId: row.studentId,
@@ -105,13 +119,13 @@ export async function submitShuttleException(parentUserId: string, input: Submit
   const studentId = typeof input.studentId === "string" ? input.studentId.trim() : "";
   if (!studentId) return { ok: false as const, message: "자녀를 선택해 주세요." };
 
-  // 가드1: 그 부모의 자녀이고 지금 다니는 학생인지 재검증.
-  const owned = await prisma.$queryRawUnsafe<{ id: string; name: string }[]>(
-    `SELECT s.id, s.name
+  // 가드1: 그 부모의 자녀이고 지금 다니는(또는 복귀가 승인된) 학생인지 재검증.
+  // 수강 행을 모두 읽는다 — 복귀 예정뿐이면 아래에서 날짜를 복귀일과 비교해야 한다(2026-11-14 복귀 예정).
+  const owned = await prisma.$queryRawUnsafe<{ id: string; name: string; status: string; resumeFrom: string | null }[]>(
+    `SELECT s.id, s.name, e.status AS status, ${resumeFromSql("e")} AS "resumeFrom"
        FROM "Student" s
-       JOIN "Enrollment" e ON e."studentId" = s.id AND e.status = 'ACTIVE'
-      WHERE s.id = $1 AND ${await childAccessSql("s", "$2")} AND ${notMergedStudent("s")}
-      LIMIT 1`,
+       JOIN "Enrollment" e ON e."studentId" = s.id AND ${parentUsableEnrollmentSql("e")}
+      WHERE s.id = $1 AND ${await childAccessSql("s", "$2")} AND ${notMergedStudent("s")}`,
     studentId, parentUserId,
   );
   if (!owned[0]) return { ok: false as const, message: "본인 자녀만 신청할 수 있습니다." };
@@ -123,6 +137,9 @@ export async function submitShuttleException(parentUserId: string, input: Submit
   const kind: ShuttleExceptionKind = checked.kind;
 
   const serviceDate = String(input.serviceDate);
+  // 가드2-2: 복귀 예정뿐인 학생은 복귀일 이후 날짜만(그 전은 아직 휴원이라 셔틀 명단에 없다). 화면을 믿지 않고 서버가 막는다.
+  const usableFrom = earliestUsableFrom(owned.map((row) => ({ status: row.status, resumeFrom: row.resumeFrom ?? null })));
+  if (usableFrom && serviceDate < usableFrom) return { ok: false as const, message: `${resumeNotice(usableFrom)}.` };
   const location = kind === "LOCATION" ? String(input.location).trim().slice(0, 200) : null;
   const note = typeof input.note === "string" ? input.note.trim().slice(0, 300) || null : null;
 

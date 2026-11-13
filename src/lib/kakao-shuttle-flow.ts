@@ -6,6 +6,7 @@ import { DAY_INDEX, DAY_KO } from "@/lib/regular/regularAbsenceRules";
 import { notifyAdminsOfKakaoIntake } from "@/lib/kakao-intake-admin-alert";
 import { shuttleRosterTaskHref } from "@/lib/kakaoShuttleRosterTask";
 import { addDaysKst, kstDow, kstLabel, todayKst } from "@/lib/datetime/kst";
+import { parentUsableEnrollmentSql } from "@/lib/enrollment/resumeWindow";
 import {
   answerOf, createFlowStore, FLOW_MENU_TEXT, flowReply, MAIN_MENU, numberQuickReplies,
   parseKoreanDateYmd, parseNumberPick, pickChild, YES,
@@ -200,14 +201,14 @@ export function buildRegularShuttleIntake(state: Pick<ShuttleState, "studentId" 
 
 // ── DB 읽기(보호자 소유 조건 포함) ─────────────────────────────────────────
 
-/** 이 보호자 자녀가 지금 다니는 반 요일(한글, 월~일 순) */
+/** 이 보호자 자녀가 지금 다니는(또는 복귀가 승인된 — 2026-11-14 복귀 예정, resumeWindow 규칙) 반 요일(한글, 월~일 순) */
 async function classDaysOf(parentUserId: string, studentId: string): Promise<string[]> {
   const rows = await prisma.$queryRawUnsafe<Array<{ dayOfWeek: string }>>(
     `SELECT DISTINCT c."dayOfWeek" AS "dayOfWeek"
        FROM "Enrollment" e
        JOIN "Student" s ON s.id=e."studentId" AND s."parentId"=$1 AND s."mergedIntoStudentId" IS NULL
        JOIN "Class" c ON c.id=e."classId"
-      WHERE e."studentId"=$2 AND e.status='ACTIVE'`,
+      WHERE e."studentId"=$2 AND ${parentUsableEnrollmentSql("e")}`,
     parentUserId, studentId,
   );
   const ko = rows.map((row) => DAY_KO[DAY_INDEX[row.dayOfWeek] ?? -1]).filter(Boolean);
@@ -424,7 +425,7 @@ async function confirmDay(flow: FlowRow<ShuttleState>, today: string): Promise<R
   const state = flow.state;
   if (!state.studentId || !state.date || !state.direction || !state.kind) return renderStep({ ...state, step: nextDayStep(state) }, today, null);
   if (!(await store.advance(flow.id, "CONFIRM", { ...state, step: "SAVING" }))) return flowReply("이미 처리 중이거나 처리된 변경이에요.", ["셔틀", "메뉴"]);
-  // ★ 서버 재검증: 소유권·ACTIVE 수강·날짜 범위(KST)·방향·장소는 submitShuttleException 이 다시 본다.
+  // ★ 서버 재검증: 소유권·쓸 수 있는 수강(ACTIVE 또는 복귀 승인 — 복귀일 이후만)·날짜 범위(KST)·방향·장소는 submitShuttleException 이 다시 본다.
   const result = await submitShuttleException(state.parentUserId, {
     studentId: state.studentId,
     serviceDate: state.date,

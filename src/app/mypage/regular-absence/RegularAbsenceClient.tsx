@@ -9,6 +9,7 @@ import { todayKst } from "@/lib/datetime/kst";
 import InlineConfirm from "@/components/parent/InlineConfirm";
 import { customerMessage } from "@/components/parent/customerMessage";
 import { presetFirst } from "@/lib/mypage/requestPreset";
+import { resumeNotice } from "@/lib/enrollment/resumeWindow";
 
 // 날짜 묶음 이름 — 가까운 수업일이 먼저 보이게(오늘 → 이번 주 → 다음 주 → 이후)
 const DATE_GROUP_LABELS = { today: "오늘", thisWeek: "이번 주", nextWeek: "다음 주", later: "이후", past: "지난 수업" };
@@ -188,6 +189,17 @@ export default function RegularAbsenceClient({
       .filter((child) => child.groups.length > 0);
   }, [children, presetStudentId]);
 
+  // 복귀 예정 반(2026-11-14): 복귀가 승인된 휴원 반은 복귀일 이후 수업만 목록에 있다 — 왜 앞 날짜가 없는지 한 줄로 알린다
+  const resumeNotes = useMemo(
+    () =>
+      children.flatMap((child) =>
+        child.classes
+          .filter((cl) => cl.resumeFrom)
+          .map((cl) => ({ key: `${child.studentId}|${cl.classId}`, who: `${child.studentName} · ${cl.className}`, text: resumeNotice(cl.resumeFrom, "신고") })),
+      ),
+    [children],
+  );
+
   return (
     <div className="mx-auto max-w-2xl px-4 py-6">
       {/* 헤더 */}
@@ -249,6 +261,17 @@ export default function RegularAbsenceClient({
         <div className="mb-3 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-danger-soft)] px-4 py-3 text-sm font-medium text-[var(--color-academy-danger)]">
           {err}
         </div>
+      )}
+
+      {/* 복귀 예정 안내 — 안내(파랑) 한 줄씩. 글자만(아이콘 없음) */}
+      {resumeNotes.length > 0 && (
+        <ul className="mb-3 space-y-1 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-info-soft)] px-4 py-3 text-sm text-[var(--color-academy-info)]">
+          {resumeNotes.map((note) => (
+            <li key={note.key} className="break-keep">
+              <span className="font-medium">{note.who}</span> — {note.text}
+            </li>
+          ))}
+        </ul>
       )}
 
       {!hasAnyClass ? (

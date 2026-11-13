@@ -121,9 +121,14 @@ test("예외가 없으면 명단을 건드리지 않는다", () => {
   assert.equal(attachShuttleDayNotes(classes, [], () => true, describeException), classes);
 });
 
-test("본인 자녀·재원생만 신청할 수 있다", () => {
+test("본인 자녀·재원생만 신청할 수 있다", async () => {
   assert.match(parentLib, /s\.id = \$1 AND \$\{await childAccessSql\("s", "\$2"\)\}/);
-  assert.match(parentLib, /e\.status = 'ACTIVE'/);
+  // 2026-11-14 복귀 예정: 재원생 조건은 공용 조각(resumeWindow) — 다니는 반(ACTIVE) 또는 복귀 승인된 휴원 반.
+  // 목록·소유 검증 두 곳 모두 같은 조각이고, 맨 조건 «e.status = 'ACTIVE'» 를 따로 쓰지 않는다.
+  assert.equal((parentLib.match(/JOIN "Enrollment" e ON e\."studentId" = s\.id AND \$\{parentUsableEnrollmentSql\("e"\)\}/g) ?? []).length, 2);
+  assert.doesNotMatch(parentLib, /e\.status = 'ACTIVE'/);
+  const resumeWindowSrc = await readFile("src/lib/enrollment/resumeWindow.ts", "utf8");
+  assert.match(resumeWindowSrc, /\.status = 'ACTIVE' OR \(\$\{e\}\.status = 'PAUSED' AND EXISTS/);
   assert.match(parentLib, /본인 자녀만 신청할 수 있습니다/);
 });
 

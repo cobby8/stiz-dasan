@@ -17,6 +17,7 @@ import { groupByUpcomingDate } from "@/components/admin/list/upcomingDateGroups"
 import { kstLabel } from "@/lib/datetime/kst";
 import InlineConfirm from "@/components/parent/InlineConfirm";
 import { customerMessage } from "@/components/parent/customerMessage";
+import { resumeNotice } from "@/lib/enrollment/resumeWindow";
 
 // 예정된 변경의 날짜 묶음 이름(오늘 → 이번 주 → 다음 주 → 이후)
 const DATE_GROUP_LABELS = { today: "오늘", thisWeek: "이번 주", nextWeek: "다음 주", later: "이후", past: "지난 변경" };
@@ -46,7 +47,16 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
   const [studentId, setStudentId] = useState(
     initial.children.find((c) => c.studentId === presetStudentId)?.studentId ?? initial.children[0]?.studentId ?? "",
   );
-  const [serviceDate, setServiceDate] = useState(initial.today);
+  // 복귀 예정뿐인 자녀는 복귀일부터 신청할 수 있다(2026-11-14) — 날짜 칸의 가장 이른 날을 복귀일로 올린다(서버도 다시 막는다)
+  const earliestDateOf = (id: string) => {
+    const from = initial.children.find((c) => c.studentId === id)?.usableFrom ?? null;
+    return from && from > initial.today ? from : initial.today;
+  };
+  const [serviceDate, setServiceDate] = useState(() => earliestDateOf(studentId));
+  const usableFrom = initial.children.find((c) => c.studentId === studentId)?.usableFrom ?? null;
+  const minDate = earliestDateOf(studentId);
+  // 복귀일이 신청할 수 있는 기간(오늘부터 14일)보다 뒤면 지금은 고를 날짜가 없다
+  const noDateYet = minDate > initial.maxDate;
   const [direction, setDirection] = useState<ShuttleDirection>("PICKUP");
   const [kind, setKind] = useState<ShuttleExceptionKind>("SKIP");
   const [location, setLocation] = useState("");
@@ -228,7 +238,12 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
         {initial.children.length > 1 && (
           <select
             value={studentId}
-            onChange={(event) => setStudentId(event.target.value)}
+            onChange={(event) => {
+              setStudentId(event.target.value);
+              // 아이를 바꾸면 그 아이가 고를 수 있는 가장 이른 날보다 앞선 날짜는 올려 준다
+              const earliest = earliestDateOf(event.target.value);
+              if (serviceDate < earliest) setServiceDate(earliest);
+            }}
             className="academy-input"
           >
             {initial.children.map((child) => (
@@ -245,11 +260,17 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
             id="service-date"
             type="date"
             value={serviceDate}
-            min={initial.today}
+            min={minDate}
             max={initial.maxDate}
             onChange={(event) => setServiceDate(event.target.value)}
             className="academy-input"
           />
+          {/* 복귀 예정 안내 한 줄 — 글자만 */}
+          {usableFrom && (
+            <p className="mt-1 break-keep text-xs text-[var(--color-academy-info)]">
+              {resumeNotice(usableFrom)}.{noDateYet ? " 복귀일이 가까워지면 여기서 고를 수 있어요." : ""}
+            </p>
+          )}
         </div>
 
         <div>
@@ -320,7 +341,7 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
 
         <button
           type="button"
-          disabled={pending || Boolean(uncertain) || !studentId || (kind === "LOCATION" && !location.trim())}
+          disabled={pending || Boolean(uncertain) || !studentId || noDateYet || (kind === "LOCATION" && !location.trim())}
           onClick={submit}
           className="academy-button-primary w-full"
         >

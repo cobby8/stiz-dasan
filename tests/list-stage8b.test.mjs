@@ -177,6 +177,7 @@ test("정규 결석 신고는 반 카드 속 작은 카드 대신 날짜 묶음(
     "@/components/admin/list/upcomingDateGroups": groups,
     "@/lib/datetime/kst": kst,
     "@/components/parent/InlineConfirm": inlineConfirm,
+    "@/lib/enrollment/resumeWindow": compileModule("src/lib/enrollment/resumeWindow.ts"), // 2026-11-14 복귀 예정 안내 문구(진짜 규칙)
   }).default;
   const today = kst.todayKst();
   const date = (offset, extra = {}) => {
@@ -282,6 +283,7 @@ test("셔틀 예정 변경은 날짜 묶음의 한 줄 행이고 행 탭=하단 
     "@/components/admin/list/upcomingDateGroups": groups,
     "@/lib/datetime/kst": kst,
     "@/components/parent/InlineConfirm": inlineConfirm,
+    "@/lib/enrollment/resumeWindow": compileModule("src/lib/enrollment/resumeWindow.ts"), // 2026-11-14 복귀 예정 안내 문구(진짜 규칙)
   }).default;
   const today = "2026-10-29"; // 목요일
   const row = (id, serviceDate, extra = {}) => ({ id, studentId: "s1", studentName: "합성", serviceDate, direction: "PICKUP", kind: "LOCATION", location: "다산초 정문 앞", note: null, notificationStatus: { driverLinked: false }, ...extra });

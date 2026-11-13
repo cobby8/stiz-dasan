@@ -3,6 +3,7 @@ import { childAccessSql } from "@/lib/account/child-access";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import { addMonthsYm, todayKst } from "@/lib/datetime/kst";
 import { commencementYmd } from "@/lib/enrollment/commencement";
+import { resumeFromSql } from "@/lib/enrollment/resumeWindow";
 import { getMonthlyClassDates, loadAnnualPlanEvents } from "@/lib/enrollment/monthlyClassDates";
 import { classDatesForCalendarMonth, shiftMonth } from "@/lib/mypage/parentSchedule";
 import { getParentShuttleOverview } from "@/lib/shuttle/parent";
@@ -40,6 +41,8 @@ export type ParentClassCard = {
   startTime: string;
   endTime: string;
   paused: boolean;
+  /** 복귀가 승인된 휴원 반이면 복귀일 "YYYY-MM-DD"(2026-11-14 복귀 예정) — 그날 이후 수업이 «다음 수업», 버튼은 일반 반과 같다 */
+  resumeFrom: string | null;
   chip: ClassChip;
   /** 다음 수업일 "YYYY-MM-DD"(없으면 null) */
   nextClass: string | null;
@@ -83,7 +86,9 @@ export async function getParentClassesOverview(parentUserId: string): Promise<Pa
               sc.kind AS "scheduledKind", to_char(sc."effectiveFrom",'YYYY-MM-DD') AS "scheduledFrom",
               to_char(sc."resumeOn",'YYYY-MM-DD') AS "scheduledResumeOn",
               pr.kind AS "pendingKind", to_char(pr."effectiveFrom",'YYYY-MM-DD') AS "pendingFrom",
-              to_char(pz."resumeOn",'YYYY-MM-DD') AS "pausedResumeOn"
+              to_char(pz."resumeOn",'YYYY-MM-DD') AS "pausedResumeOn",
+              -- 승인된 복귀일(공용 규칙 resumeWindow) — 휴원 신청의 «복귀 예정일»(pausedResumeOn)과 다른 값이다
+              ${resumeFromSql("e")} AS "resumeFrom"
          FROM "Student" s
          JOIN "Enrollment" e ON e."studentId" = s.id AND e.status IN ('ACTIVE','PAUSED') AND ${notMergedStudent("s")}
          JOIN "Class" c ON c.id = e."classId" AND ${REGULAR_CLASS_FILTER}
@@ -146,18 +151,27 @@ export async function getParentClassesOverview(parentUserId: string): Promise<Pa
 
   // 다음 수업일 = 이번 달·다음 달 수업일(공개 연간일정·청구와 같은 계산) 중 오늘 이후 첫날
   const thisMonth = today.slice(0, 7);
-  const datesFor = (dayOfWeek: string, startsOn: string | null) =>
-    [thisMonth, shiftMonth(thisMonth, 1)].flatMap((month) =>
+  // 복귀 예정 반은 복귀일이 다음 달보다 뒤일 수 있다(최대 3개월) — 복귀하는 달과 그 다음 달까지 본다
+  const monthsFor = (resumeFrom: string | null) => {
+    const months = [thisMonth, shiftMonth(thisMonth, 1)];
+    const last = resumeFrom ? shiftMonth(resumeFrom.slice(0, 7), 1) : "";
+    while (months[months.length - 1] < last && months.length < 6) months.push(shiftMonth(months[months.length - 1], 1));
+    return months;
+  };
+  const datesFor = (dayOfWeek: string, startsOn: string | null, resumeFrom: string | null = null) =>
+    monthsFor(resumeFrom).flatMap((month) =>
       classDatesForCalendarMonth(month, dayOfWeek, startsOn, (ym, dow) => getMonthlyClassDates(planEvents, ym, dow)),
     );
 
   const cards: ParentClassCard[] = enrollments.map((row) => {
     const paused = row.enrollmentStatus === "PAUSED";
+    // 승인된 복귀일(휴원 중일 때만 값이 있다)
+    const resumeFrom: string | null = paused ? row.resumeFrom ?? null : null;
     const startsOn = commencementYmd(row.startsOn);
     const scheduled = row.scheduledKind
       ? { kind: row.scheduledKind as string, effectiveFrom: row.scheduledFrom as string, resumeOn: (row.scheduledResumeOn ?? null) as string | null }
       : null;
-    const dates = datesFor(row.dayOfWeek, startsOn);
+    const dates = datesFor(row.dayOfWeek, startsOn, resumeFrom);
     // 승인된 휴원·퇴원 적용일부터는 수업이 없다
     const stopFrom = scheduled && (scheduled.kind === "PAUSE" || scheduled.kind === "WITHDRAW") ? scheduled.effectiveFrom : null;
     return {
@@ -172,6 +186,7 @@ export async function getParentClassesOverview(parentUserId: string): Promise<Pa
       startTime: row.startTime,
       endTime: row.endTime,
       paused,
+      resumeFrom,
       chip: classStatusChip({
         enrollmentStatus: row.enrollmentStatus,
         scheduled,
@@ -179,8 +194,8 @@ export async function getParentClassesOverview(parentUserId: string): Promise<Pa
         pausedResumeOn: row.pausedResumeOn ?? null,
         today,
       }),
-      nextClass: nextClassDate({ dates, today, paused, stopFrom }),
-      planMissing: !paused && dates.length === 0,
+      nextClass: nextClassDate({ dates, today, paused, stopFrom, resumeFrom }),
+      planMissing: (!paused || !!resumeFrom) && dates.length === 0,
       startsOn: startsOn && startsOn > today ? startsOn : null,
       attendance: recentAttendanceCells(
         attendance.filter((a) => a.studentId === row.studentId && a.classId === row.classId),
@@ -190,7 +205,7 @@ export async function getParentClassesOverview(parentUserId: string): Promise<Pa
         return m && Number(m.total) > 0 ? { ok: Number(m.ok), total: Number(m.total) } : null;
       })(),
       shuttle: classShuttleLines(shuttleItems, { studentId: row.studentId, classId: row.classId, className: row.className }, today),
-      actions: classCardActions({ studentId: row.studentId, enrollmentId: row.enrollmentId, paused }),
+      actions: classCardActions({ studentId: row.studentId, enrollmentId: row.enrollmentId, paused, resumeFrom }),
     };
   });
 

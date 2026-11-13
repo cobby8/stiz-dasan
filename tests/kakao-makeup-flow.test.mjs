@@ -113,7 +113,8 @@ function makeDb({ credits = null, students = null } = {}) {
       return [{ id: row.id }];
     }
     // 결석 흐름(parent-regular-absence): 이 가짜 DB 에는 정규 수강이 없다
-    if (/JOIN "Enrollment" e ON e\."studentId" = s\.id AND e\.status = 'ACTIVE'/.test(sql)) return [];
+    // 2026-11-14 복귀 예정: 수강 조건이 공용 조각(resumeWindow — ACTIVE 또는 복귀 승인된 휴원 반)으로 바뀌었다
+    if (/JOIN "Enrollment" e ON e\."studentId" = s\.id AND \(e\.status = 'ACTIVE' OR \(e\.status = 'PAUSED' AND EXISTS/.test(sql)) return [];
     if (/FROM "RegularAbsence" ra/.test(sql)) return [];
     // 보강권 조회(카카오 흐름)
     if (/mc\.status='AVAILABLE' AND mc\."expiresAt">now\(\)/.test(sql)) {

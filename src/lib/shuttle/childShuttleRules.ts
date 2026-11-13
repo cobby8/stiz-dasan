@@ -18,6 +18,7 @@
 import { addDaysKst, kstDow } from "@/lib/datetime/kst";
 import { dowToRosterWeekday, hhmm } from "@/lib/shuttle/regularRosterEtaLogic";
 import { appliesToDirection, describeException } from "@/lib/shuttle/dayExceptionRules";
+import { usableOn } from "@/lib/enrollment/resumeWindow";
 
 /** 명단 한 행에서 쓰는 칸만 */
 export type RosterStopRow = {
@@ -42,6 +43,8 @@ export type ShuttleClassRef = {
   scheduled: { kind: string; effectiveFrom: string; resumeOn: string | null } | null;
   /** 휴원 중이면 복귀 예정일 */
   pausedResumeOn: string | null;
+  /** 휴원 중인데 복귀가 승인됐으면 그 복귀일(2026-11-14 복귀 예정 — resumeWindow 규칙). 있으면 pausedResumeOn 보다 먼저 본다 */
+  resumeFrom?: string | null;
 };
 
 export type ShuttleLeg = { stopName: string; time: string | null };
@@ -160,6 +163,8 @@ export function enrollmentStateOn(c: ShuttleClassRef, ymd: string): "ACTIVE" | "
   const s = c.scheduled;
   if (s?.kind === "WITHDRAW" && s.effectiveFrom && ymd >= s.effectiveFrom) return "ENDED";
   if (s?.kind === "PAUSE" && s.effectiveFrom && ymd >= s.effectiveFrom && (!s.resumeOn || ymd < s.resumeOn)) return "PAUSED";
+  // 승인된 복귀일이 있으면 그 날짜가 기준이다(공용 규칙 usableOn) — 휴원 신청에 적어 둔 옛 복귀 예정일은 승인된 날짜를 모른다
+  if (c.status === "PAUSED" && c.resumeFrom) return usableOn(c.status, c.resumeFrom, ymd) ? "ACTIVE" : "PAUSED";
   if (c.status === "PAUSED" && (!c.pausedResumeOn || ymd < c.pausedResumeOn)) return "PAUSED";
   return "ACTIVE";
 }

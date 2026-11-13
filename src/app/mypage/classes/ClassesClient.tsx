@@ -79,7 +79,8 @@ function ClassCard({ card }: { card: ParentClassCard }) {
   const meta = [`${dayKo(card.dayOfWeek)} ${card.startTime}~${card.endTime}`, card.programName, card.coachName ? `${card.coachName} 코치` : null, card.location]
     .filter(Boolean)
     .join(" · ");
-  const next = card.paused
+  // 휴원 중이면 «다음 수업»이 없다. 단 복귀가 승인된 반(resumeFrom)은 복귀일 이후 첫 수업을 보인다(2026-11-14 복귀 예정)
+  const next = card.paused && !card.resumeFrom
     ? null
     : card.startsOn
       ? `${kstLabel(card.startsOn)} 첫 수업`
@@ -133,8 +134,9 @@ function ClassCard({ card }: { card: ParentClassCard }) {
         </p>
       )}
 
-      {/* 신청 버튼 한 줄 [결석][보강][셔틀][변경 ▾] — 기존 신청 화면으로(그 아이·그 반을 미리 고른 채). 휴원 중이면 [복귀 신청] 하나 */}
-      <div className={`mt-2 grid gap-1.5 ${card.actions.length > 1 ? "grid-cols-4" : "grid-cols-1"}`}>
+      {/* 신청 버튼 한 줄 [결석][보강][셔틀][변경 ▾] — 기존 신청 화면으로(그 아이·그 반을 미리 고른 채). 휴원 중이면 [복귀 신청] 하나.
+          복귀 예정 반은 [결석][보강][셔틀] 3칸(변경은 복귀가 반영된 뒤) */}
+      <div className={`mt-2 grid gap-1.5 ${card.actions.length > 3 ? "grid-cols-4" : card.actions.length === 3 ? "grid-cols-3" : "grid-cols-1"}`}>
         {card.actions.map((action) =>
           action.key === "change" ? (
             <ChangeMenu key={action.key} action={action} />

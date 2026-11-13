@@ -10,6 +10,7 @@ import { kstAt, kstHm, todayKst } from "@/lib/datetime/kst";
 import { lockCompensation } from "@/lib/billing/absence-compensation-guard";
 import { createHash } from "node:crypto";
 import { notMergedStudent } from "@/lib/studentVisibility";
+import { BeforeResumeError, parentUsableEnrollmentSql, resumeFromSql, usableOn } from "@/lib/enrollment/resumeWindow";
 import {
   REASON_LABEL,
   DAY_KO,
@@ -30,7 +31,9 @@ import {
 //
 // ★ 3대 보안 가드(반드시 유지):
 //   1) IDOR 방어 — studentId 가 그 부모(appUserId)의 자녀인지, classId 가 그 학생의
-//      ACTIVE Enrollment 인지 SQL 로 재검증. 클라이언트가 보낸 값 자체를 신뢰하지 않는다.
+//      «쓸 수 있는» Enrollment 인지 SQL 로 재검증. 클라이언트가 보낸 값 자체를 신뢰하지 않는다.
+//      (2026-11-14 복귀 예정) 쓸 수 있는 수강 = ACTIVE 또는 «복귀 승인된 휴원 반»(resumeWindow 한 곳의 규칙).
+//      복귀 예정 반은 복귀일 이후 날짜만 받는다 — 목록·신고·취소 모두 서버가 다시 본다.
 //   2) 확정건 보호 — 관리자가 확정(CONFIRMED)한 건은 학부모가 덮어쓰거나 취소하지 못한다
 //      (INSERT ... ON CONFLICT DO UPDATE WHERE status<>'CONFIRMED', UPDATE WHERE status='REPORTED').
 //   3) 마감 전 + 요일 일치 — 지난 날짜, 그 반 요일과 맞지 않는 날짜는 신고 불가.
@@ -39,6 +42,9 @@ import {
 
 // 향후 몇 주치 수업일을 보여줄지(기본 4주).
 const DEFAULT_WEEKS = 4;
+// 신고를 받는 범위도 목록과 같다(2026-11-14 검수) — 화면에서 고를 수 없는 먼 날짜를 API 로 직접 보내
+// 건마다 보강권을 받아 가는 길을 막는다. 카카오 결석(ABSENCE_WEEKS)도 4주라 같은 범위다.
+export const ABSENCE_REPORT_WEEKS = DEFAULT_WEEKS;
 
 // «지금»을 KST 글자(날짜·시각)로 — 달력 값은 공용 모듈(kst.ts)에서만 만든다(서버는 UTC 로 돈다).
 function kstNow(): { ymd: string; hm: string } {
@@ -84,6 +90,8 @@ export type UpcomingChild = {
     className: string;
     dayOfWeek: string;
     startTime: string;
+    // 복귀 승인된 휴원 반이면 복귀일("YYYY-MM-DD") — 그날 이후 수업만 dates 에 들어 있다. 다니는 반은 null
+    resumeFrom: string | null;
     dates: UpcomingClassDate[];
   }[];
 };
@@ -98,13 +106,15 @@ export async function getUpcomingRegularClassDates(
   const now = kstNow();
   const today = now.ymd;
 
-  // 부모 자녀의 ACTIVE 수강 반(IDOR: Student.parentId = 로그인 부모).
+  // 부모 자녀가 «쓸 수 있는» 수강 반(IDOR: Student.parentId = 로그인 부모).
+  // 2026-11-14 복귀 예정: 다니는 반(ACTIVE) + 복귀가 승인된 휴원 반. 복귀 예정 반은 아래에서 복귀일 이후 날짜만 남긴다.
   const enrollRows = await prisma.$queryRawUnsafe<any[]>(
     `SELECT s.id AS "studentId", s.name AS "studentName",
             c.id AS "classId", c.name AS "className",
-            c."dayOfWeek" AS "dayOfWeek", c."startTime" AS "startTime"
+            c."dayOfWeek" AS "dayOfWeek", c."startTime" AS "startTime",
+            e.status AS "enrollmentStatus", ${resumeFromSql("e")} AS "resumeFrom"
        FROM "Student" s
-       JOIN "Enrollment" e ON e."studentId" = s.id AND e.status = 'ACTIVE'
+       JOIN "Enrollment" e ON e."studentId" = s.id AND ${parentUsableEnrollmentSql("e")}
        JOIN "Class" c ON c.id = e."classId"
       WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")}
       ORDER BY s.name ASC, c."startTime" ASC`,
@@ -154,7 +164,11 @@ export async function getUpcomingRegularClassDates(
     const child = childMap.get(r.studentId)!;
 
     // 오늘 수업도 목록에 넣는다(2026-11-14) — 마감 여부는 줄마다 changeOpen 으로 알려 준다
-    const dates = computeUpcomingDates(today, r.dayOfWeek, weeks, true).map((ymd) => {
+    // 복귀 예정 반은 복귀일 전 날짜를 내보내지 않는다(그날은 아직 휴원이다)
+    const resumeFrom: string | null = r.resumeFrom ?? null;
+    const dates = computeUpcomingDates(today, r.dayOfWeek, weeks, true)
+      .filter((ymd) => usableOn(r.enrollmentStatus, resumeFrom, ymd))
+      .map((ymd) => {
       const found = absByKey.get(`${r.studentId}|${r.classId}|${ymd}`);
       const status = found?.status ?? null;
       const reason = found?.reason ?? null;
@@ -181,6 +195,7 @@ export async function getUpcomingRegularClassDates(
       className: r.className,
       dayOfWeek: r.dayOfWeek,
       startTime: r.startTime,
+      resumeFrom: r.enrollmentStatus === "PAUSED" ? resumeFrom : null,
       dates,
     });
   }
@@ -188,23 +203,25 @@ export async function getUpcomingRegularClassDates(
   return Array.from(childMap.values());
 }
 
-// 소유권 재검증: studentId 가 부모 자녀이고 classId 가 그 학생 ACTIVE 수강인지.
-// 통과하면 그 반의 dayOfWeek·startTime 을 돌려준다(요일·마감 검증에 사용). 아니면 null.
+// 소유권 재검증: studentId 가 부모 자녀이고 classId 가 그 학생이 «쓸 수 있는» 수강인지
+// (ACTIVE 또는 복귀 승인된 휴원 반 — 2026-11-14 복귀 예정. 복귀 승인이 없거나 대기 중이면 null 그대로).
+// 통과하면 그 반의 dayOfWeek·startTime 과 수강 상태·복귀일을 돌려준다(요일·마감·복귀일 검증에 사용). 아니면 null.
 async function verifyOwnershipAndClass(
   parentUserId: string,
   studentId: string,
   classId: string,
-): Promise<{ dayOfWeek: string; startTime: string | null; studentName: string; className: string } | null> {
+): Promise<{ dayOfWeek: string; startTime: string | null; studentName: string; className: string; status: string; resumeFrom: string | null } | null> {
   const rows = await prisma.$queryRawUnsafe<any[]>(
     // 이름은 알림 문구에만 쓴다(원장이 누구 결석인지 바로 알아야 한다).
-    `SELECT c."dayOfWeek" AS "dayOfWeek", c."startTime" AS "startTime", s.name AS "studentName", c.name AS "className"
+    `SELECT c."dayOfWeek" AS "dayOfWeek", c."startTime" AS "startTime", s.name AS "studentName", c.name AS "className",
+            e.status AS "enrollmentStatus", ${resumeFromSql("e")} AS "resumeFrom"
        FROM "Enrollment" e
        JOIN "Student" s ON s.id = e."studentId"
        JOIN "Class" c ON c.id = e."classId"
       WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")}
         AND e."studentId" = $2
         AND e."classId" = $3
-        AND e.status = 'ACTIVE'
+        AND ${parentUsableEnrollmentSql("e")}
       LIMIT 1`,
     parentUserId, studentId, classId,
   );
@@ -214,6 +231,8 @@ async function verifyOwnershipAndClass(
         startTime: rows[0].startTime ?? rows[0].starttime ?? null,
         studentName: rows[0].studentName ?? rows[0].studentname ?? "",
         className: rows[0].className ?? rows[0].classname ?? "",
+        status: rows[0].enrollmentStatus ?? rows[0].enrollmentstatus ?? "",
+        resumeFrom: rows[0].resumeFrom ?? rows[0].resumefrom ?? null,
       }
     : null;
 }
@@ -283,12 +302,23 @@ export async function reportRegularAbsence(
   const owned = await verifyOwnershipAndClass(parentUserId, studentId, classId);
   if (!owned) throw new Error("NOT_OWNER");
 
+  // 복귀 예정 반(2026-11-14): 복귀일 전 날짜는 아직 휴원이라 받지 않는다 — 화면 목록을 믿지 않고 서버가 다시 본다.
+  if (!usableOn(owned.status, owned.resumeFrom, date)) {
+    if (owned.resumeFrom) throw new BeforeResumeError(owned.resumeFrom);
+    throw new Error("NOT_OWNER");
+  }
+
   // 가드3: 그 반 요일과 일치 + 마감 전(수업 시작 1시간 전까지 — 오늘 수업 포함).
   // 새 신고와 사유 변경(재신고)이 모두 이 길을 지나므로 여기 한 곳에서 막으면 둘 다 막힌다.
   const now = kstNow();
   if (!isReportableAt(date, owned.dayOfWeek, owned.startTime, now.ymd, now.hm)) {
     // 오늘 수업인데 1시간 전이 지난 경우는 «학원으로 연락» 안내가 따로 나가게 코드를 나눈다
     throw new Error(date === now.ymd && ymdToDayIndex(date) != null ? "ABSENCE_CHANGE_CLOSED" : "NOT_REPORTABLE_DATE");
+  }
+
+  // 앞날 상한: 목록이 보여 주는 수업일(오늘 포함 4주치) 밖의 날짜는 받지 않는다 — 다니는 반·복귀 예정 반 모두 같은 규칙.
+  if (!computeUpcomingDates(now.ymd, owned.dayOfWeek, ABSENCE_REPORT_WEEKS, true).includes(date)) {
+    throw new Error("ABSENCE_TOO_FAR");
   }
 
   // 결석 신고 저장 + 보강권 발급을 한 트랜잭션으로(2026-11-10 원장 결정 k4 — 신고 즉시 보강권).
@@ -369,8 +399,10 @@ export async function cancelRegularAbsence(
   // 취소 상태와 알림 근거를 같은 행에 남겨 나중에도 전달 실패를 재조정할 수 있게 한다.
   const returning = `RETURNING s.name AS "studentName", c.name AS "className", ra.id, c.id AS "classId", ra."studentId" AS "studentId",
                               to_char(ra.date,'YYYY-MM-DD') AS "date", c."startTime" AS "startTime",
-                              to_char(ra."updatedAt",'YYYYMMDDHH24MISSUS') AS "eventVersion"`;
-  type CanceledRow = { id: string; studentName: string; className: string; classId: string; studentId: string; date: string; startTime: string | null; eventVersion: string };
+                              to_char(ra."updatedAt",'YYYYMMDDHH24MISSUS') AS "eventVersion",
+                              (SELECT ${resumeFromSql("e")} FROM "Enrollment" e
+                                WHERE e."studentId" = ra."studentId" AND e."classId" = ra."classId" LIMIT 1) AS "resumeFrom"`;
+  type CanceledRow = { id: string; studentName: string; className: string; classId: string; studentId: string; date: string; startTime: string | null; eventVersion: string; resumeFrom: string | null };
   if (!id && (!studentId || !classId || !isYmd(date || ""))) throw new Error("ABSENCE_NOT_FOUND");
   // 권한 조건(그 부모의 자녀만)은 기존 그대로 — 트랜잭션 밖에서 SQL 조각만 미리 만든다
   const access = await childAccessSql("s", "$1");
@@ -410,6 +442,12 @@ export async function cancelRegularAbsence(
       );
     }
     if (canceled.length === 0) throw new Error("ABSENCE_NOT_CANCELABLE");
+
+    // 복귀 예정 반(2026-11-14): 복귀일 전 날짜의 신고는 학부모가 건드리지 못한다(신고와 같은 기준).
+    // resumeFrom 은 «복귀 승인된 휴원 반»일 때만 값이 있다 — 다니는 반은 NULL 이라 예전과 같다. 던지면 위 UPDATE 도 되돌려진다.
+    if (canceled[0].resumeFrom && canceled[0].date < canceled[0].resumeFrom) {
+      throw new BeforeResumeError(canceled[0].resumeFrom);
+    }
 
     // 마감 강제(2026-11-14): 수업 시작 1시간 전이 지났으면 취소를 받지 않는다 — 신고와 같은 함수.
     // 트랜잭션 안에서 던지므로 위 UPDATE 도 함께 되돌려진다(화면에서 버튼을 숨기는 것만으로 끝내지 않는다).
