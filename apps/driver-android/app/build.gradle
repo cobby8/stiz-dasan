@@ -96,7 +96,7 @@ android {
     compileSdk 36
     // 개발·시험 debug 는 기존 kr.stiz.driver(.unified/.sandbox/.devicetest)를 유지한다(시험 기기·격리 검사가 이 이름에 묶여 있다).
     // 스토어용 release 의 정식 ID 는 파일 끝 androidComponents 에서 정한다.
-    defaultConfig { applicationId 'kr.stiz.driver'; minSdk 26; targetSdk 36; versionCode 3; versionName '1.0.1'; testInstrumentationRunner 'kr.stiz.driver.DriverSmokeInstrumentation' }
+    defaultConfig { applicationId 'kr.stiz.driver'; minSdk 26; targetSdk 36; versionCode 4; versionName '1.0.2'; testInstrumentationRunner 'kr.stiz.driver.DriverSmokeInstrumentation' }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     buildFeatures { buildConfig true }
     defaultConfig {

@@ -39,12 +39,12 @@ assert all(ref.attrib["BlueprintIdentifier"] in references for ref in scheme.ite
 assert "kr.stiz.academy.dev" in project and "DEVELOPMENT_TEAM" not in project
 # 스토어용 Release 는 정식 ID·1.x 버전, 개발 Debug 는 기존 개발 ID·0.1.0(격리 시험 도구 계약)을 유지한다.
 release_settings = re.search(r"A0000000000000000000000F = \{[^\n]*\}; name = Release;\};", project).group(0)
-assert "PRODUCT_BUNDLE_IDENTIFIER = kr.co.upturnlabs.stizdasan;" in release_settings and "MARKETING_VERSION = 1.0.1;" in release_settings
+assert "PRODUCT_BUNDLE_IDENTIFIER = kr.co.upturnlabs.stizdasan;" in release_settings and "MARKETING_VERSION = 1.0.2;" in release_settings
 assert "INFOPLIST_FILE = STIZ/Info.plist;" in release_settings and 'INFOPLIST_FILE = "STIZ/Info-Debug.plist";' in project
-# 유니버설 링크 권한 파일은 준비만 해 두고 1.0.1 에서는 연결하지 않는다(2026-11-13 검수 결정).
-# 애플 포털에서 Associated Domains 를 켜고 프로파일을 다시 받은 뒤 Release 에 한 줄 복원 → 이 검사도 그때 «연결됨»으로 바꾼다.
+# 1.0.2(2026-11-13): 애플 포털에서 Associated Domains·Push Notifications 를 켜고 배포 프로파일을 다시 받았으므로
+# 권한 파일을 «Release 에만» 연결한다. Debug(격리 시험 앱)는 그 권한이 없는 프로파일이라 연결하면 서명이 깨진다.
 # 절차: docs/store-release.md «iOS 유니버설 링크 다시 켜기».
-assert "CODE_SIGN_ENTITLEMENTS" not in project, "프로파일 준비 전에는 권한 파일을 서명에 붙이지 않는다"
+assert project.count("CODE_SIGN_ENTITLEMENTS") == 1 and "CODE_SIGN_ENTITLEMENTS = STIZ/STIZ.entitlements;" in release_settings, "권한 파일은 Release 에만 연결"
 with (root / "STIZ/STIZ.entitlements").open("rb") as handle:
     entitlements = plistlib.load(handle)
 # 앱 알림(FCM→APNs, 2026-11-14 e2): aps-environment 도 준비만 — 애플 포털에서 Push Notifications 를 켠 프로파일과 함께 연결한다.

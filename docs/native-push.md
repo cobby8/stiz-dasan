@@ -47,7 +47,9 @@
 
 ## 4. 아이폰 설정 파일 주입(Codemagic) — 원장 승인 후
 
-스토어 작업(`stiz-ios-app-store`)은 지문(`APPROVED_STORE_WORKFLOW`)으로 잠겨 있어, 아래를 넣을 때 지문도 함께 바꿔야 한다(이번 작업에서는 바꾸지 않았다).
+스토어 작업(`stiz-ios-app-store`)은 지문(`APPROVED_STORE_WORKFLOW`)으로 잠겨 있어, 아래를 넣을 때 지문도 함께 바꿔야 한다.
+
+> **2026-11-13 1.0.2 반영 완료** — 2·3·4번(그룹·주입 단계·지문·Release 권한 파일 연결)은 코드에 들어갔다. 주입 단계는 값이 없거나 번들 ID 가 다르면 빌드를 멈춘다(알림 꺼진 앱이 올라가지 않게). 1번(Codemagic 그룹 값)은 원장님이 넣는다.
 
 1. Codemagic 팀 설정 → 환경변수 그룹 `stiz_firebase` 에 `GOOGLE_SERVICE_INFO_PLIST_B64`(plist 를 base64 로, Secure) 저장.
 2. `stiz-ios-app-store` 의 `environment.groups` 에 `stiz_firebase`, 「배포 서명 프로파일 적용」 앞에 한 단계:

@@ -85,6 +85,8 @@ workflows:
       app_store_connect: bdr-asc-key
     environment:
       xcode: latest
+      groups:
+        - stiz_firebase
       ios_signing:
         distribution_type: app_store
         bundle_identifier: kr.co.upturnlabs.stizdasan
@@ -102,6 +104,14 @@ workflows:
             apps/stiz-ios/STIZ/NativeAuthPolicy.swift \
             apps/stiz-ios/tools/NavigationPolicyTests.swift -o /tmp/stiz-store-navigation-tests
           /tmp/stiz-store-navigation-tests
+      - name: 앱 알림 설정 파일 넣기
+        script: |
+          set -euo pipefail
+          # 설정 파일이 없으면 알림이 꺼진 앱이 올라가므로 스토어 빌드는 여기서 멈춘다(docs/native-push.md 4절).
+          test -n "${GOOGLE_SERVICE_INFO_PLIST_B64:-}"
+          echo "$GOOGLE_SERVICE_INFO_PLIST_B64" | base64 --decode > apps/stiz-ios/STIZ/Firebase/GoogleService-Info.plist
+          plutil -lint apps/stiz-ios/STIZ/Firebase/GoogleService-Info.plist
+          test "$(/usr/libexec/PlistBuddy -c 'Print :BUNDLE_ID' apps/stiz-ios/STIZ/Firebase/GoogleService-Info.plist)" = "kr.co.upturnlabs.stizdasan"
       - name: 배포 서명 프로파일 적용
         script: |
           set -euo pipefail
