@@ -1412,9 +1412,16 @@ export async function updateEnrollmentStatus(
                 return;
             }
 
+            // 2026-11-14 보안 HIGH: 퇴원(WITHDRAWN) → 재원(ACTIVE) 이면 개시일을 효력일로 다시 적는다.
+            // 옛 개시일이 남으면 빠져 있던 몇 달의 수업 사진·소식·영상이 수업 피드에서 열렸다(참여 = 시작일 ≤ 수업일).
+            // 효력일은 위에서 KST 달력·미래 금지를 확인한 값(없으면 오늘 KST). 휴원(PAUSED) → 재원은 그대로 둔다.
+            const rejoin = before.previousStatus === "WITHDRAWN" && status === "ACTIVE";
             const [changed] = await tx.$queryRawUnsafe<Array<{ updatedAt: Date }>>(
-                `UPDATE "Enrollment" SET status=$1,"updatedAt"=NOW() WHERE id=$2 RETURNING "updatedAt"`,
-                status, enrollmentId,
+                `UPDATE "Enrollment" SET status=$1,
+                        "startsOn" = CASE WHEN $3::boolean THEN $4::date ELSE "startsOn" END,
+                        "updatedAt"=NOW()
+                  WHERE id=$2 RETURNING "updatedAt"`,
+                status, enrollmentId, rejoin, effectiveFrom,
             );
             const kind = status === "PAUSED" ? "PAUSE" : status === "WITHDRAWN" ? "WITHDRAW" : "RESUME";
             // 이력 id 를 돌려받아 운영 원장에 연결한다(「수강 변경 신청」 화면의 랠리즈 확인 배지용).

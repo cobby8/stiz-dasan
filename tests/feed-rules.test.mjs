@@ -71,6 +71,38 @@ test("보안 HIGH — 되살린 수강 → 쉬는 동안 수업 거부(되살리
   }
 });
 
+test("보안 HIGH — 퇴원 후 재원 → 빠져 있던 기간 수업 거부(관리자 상태 변경이 개시일을 효력일로 다시 적는다)", () => {
+  // 3월 등록·개시 → 6월 퇴원 → 11/12 재원(효력일 11/12): 개시일 = 11/12
+  const rejoined = { status: "ACTIVE", startsOnYmd: "2026-11-12", createdYmd: "2026-03-02" };
+  assert.equal(r.isFeedParticipant({ hasAttendance: false, enrollment: rejoined, sessionYmd: "2026-08-20" }), false, "빠져 있던 기간");
+  assert.equal(r.isFeedParticipant({ hasAttendance: false, enrollment: rejoined, sessionYmd: "2026-11-12" }), true, "재원 효력일 수업");
+  // 옛 개시일(3/2)이 남았다면 열렸을 수업 — 이 차이가 HIGH 였다
+  assert.equal(r.isFeedParticipant({ hasAttendance: false, enrollment: { ...rejoined, startsOnYmd: "2026-03-02" }, sessionYmd: "2026-08-20" }), true);
+  const admin = read("src/app/actions/admin.ts");
+  const start = admin.indexOf("export async function updateEnrollmentStatus");
+  const body = admin.slice(start, admin.indexOf("export async function", start + 10));
+  assert.match(body, /const rejoin = before\.previousStatus === "WITHDRAWN" && status === "ACTIVE";/);
+  assert.match(body, /"startsOn" = CASE WHEN \$3::boolean THEN \$4::date ELSE "startsOn" END/);
+  assert.match(body, /status, enrollmentId, rejoin, effectiveFrom,/);
+  // 효력일은 KST 달력 + 미래 금지 검증을 거친 값
+  assert.match(body, /if \(!isKstYmd\(effectiveFrom\)\) throw/);
+  assert.match(body, /if \(effectiveFrom > todayKst\(\)\) throw/);
+});
+
+test("보안 HIGH — ACTIVE 로 바꾸는 다른 경로 전수: 운영 동기화는 휴원·퇴원만, 수강 변경 복귀는 휴원→재원만", () => {
+  const ops = read("src/app/actions/operations-sync.ts");
+  assert.match(ops, /if \(!\['PAUSE', 'WITHDRAW'\]\.includes\(command\.kind\)\)/);
+  assert.match(ops, /const nextStatus = command\.kind === "PAUSE" \? "PAUSED" : "WITHDRAWN";/);
+  assert.match(read("src/lib/enrollment/due-change-plan.ts"), /RESUME: \{ from: \["PAUSED"\], to: "ACTIVE"/);
+  // Enrollment 를 status 만 바꾸는 UPDATE 는 이 목록뿐이다(새로 생기면 이 테스트가 알린다 — 재원이면 개시일도 적을 것)
+  const files = ["src/app/actions/admin.ts", "src/app/actions/operations-sync.ts", "src/lib/enrollment/admin-change-request.ts", "src/app/actions/enrollment-admin-edit.ts", "src/lib/seasonal/auto-end.ts"];
+  const counts = Object.fromEntries(files.map((f) => [f, (read(f).match(/UPDATE "Enrollment" SET status/g) ?? []).length]));
+  assert.deepEqual(counts, {
+    "src/app/actions/admin.ts": 1, "src/app/actions/operations-sync.ts": 1, "src/lib/enrollment/admin-change-request.ts": 1,
+    "src/app/actions/enrollment-admin-edit.ts": 1, "src/lib/seasonal/auto-end.ts": 1,
+  });
+});
+
 test("참여 SQL 조각 모양", () => {
   // SQL 조각: 출결 EXISTS 또는 ACTIVE 수강 + 개시일 ≤ 수업일(두 번 변환), 동의 표는 없다
   const sql = r.feedParticipantSql("st", "se");

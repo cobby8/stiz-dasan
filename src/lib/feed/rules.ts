@@ -53,7 +53,13 @@ export const TODAY_KST_SQL = `(NOW() AT TIME ZONE 'Asia/Seoul')::date`;
  * 시작일 = 개시일(startsOn), 비어 있으면 등록일(createdAt 의 KST 날짜) — 2026-11-14 보안 검수 HIGH:
  *   개시일이 빈 수강(관리자 «수강 추가»·대기자 등록·시트 가져오기·특강 전환이 예전에 비워 두던 것)을
  *   «처음부터 참여»로 보면 입학 전 수업의 사진·소식·영상이 열렸다. 그래서 비면 등록일로 막는다.
- *   되살린 수강(그만둔 반에 다시 등록)은 등록일이 옛날이라, 되살리는 4곳이 개시일을 «되살린 날»로 적는다.
+ *   되살린 수강(그만둔 반에 다시 등록)은 등록일이 옛날이라, 퇴원(WITHDRAWN)→재원(ACTIVE) 경로가 개시일을 다시 적는다:
+ *     ① 수강 추가 enrollStudent ② 대기자 등록 processWaitlistResponse ③ 시트 가져오기 ④ 특강 전환(api/admin/seasonal)
+ *       — INSERT … ON CONFLICT 되살리기 = 오늘(KST), 이미 ACTIVE 면 유지
+ *     ⑤ 관리자 상태 변경 updateEnrollmentStatus — WITHDRAWN→ACTIVE 면 개시일 = 효력일
+ *     ⑥ 반 이동(enrollment-admin-edit)·원생 등록(student-register)·수강 등록 일괄(admin.ts)은 원래 개시일을 적는다.
+ *   ACTIVE 로 바꾸지 않는 경로: 운영 동기화 승인(PAUSE·WITHDRAW 만), 수강 변경 신청 RESUME(PAUSED→ACTIVE 만 — 휴원 복귀는 유지).
+ *   남은 예외: 학생 병합 엔진의 promote(같은 사람 기록 합치기, 원장 확인 일회성 도구)는 개시일을 다시 적지 않는다.
  * 수업일은 sessionKstDateSql(두 번 변환), Enrollment.startsOn 은 @db.Date(달력 날짜 그대로),
  * Enrollment.createdAt 은 시간대 없는 timestamp(Prisma 기본 = UTC 벽시계)라 «두 번» 변환.
  * @param st Student 별칭(또는 학생 id 를 담은 SQL 식의 테이블 별칭)
