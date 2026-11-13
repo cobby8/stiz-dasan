@@ -112,7 +112,7 @@ export function inspectReadiness(root) {
   });
   // 업로드·연동 설정은 스토어 작업 안에서만 허용한다. 시뮬레이터·격리 서명 작업에는 여전히 금지.
   const noPublishing = !/^\s*(publishing|integrations|app_store_connect):/m.test(beforeStore);
-  const APPROVED_STORE_WORKFLOW = 'f7e44ba158e76d5d7ae4c6bcd96aab6e9974eff7308ed6b0538f0a025ea56251';
+  const APPROVED_STORE_WORKFLOW = 'ad61fa89047d388be1e670ce1810c29f6f3650745ef6151cd4548de5c0728e5d';
   const storeWorkflow = expectedWorkflows && manualOnly &&
     createHash('sha256').update(store).digest('hex') === APPROVED_STORE_WORKFLOW &&
     store.includes('app_store_connect: bdr-asc-key') && store.includes('submit_to_app_store: false') &&
