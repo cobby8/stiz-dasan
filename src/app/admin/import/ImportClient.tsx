@@ -11,6 +11,7 @@ import { adminErrorText, adminMessageText } from "@/components/admin/adminDispla
  */
 
 import { useState, useCallback } from "react";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 
 // ──────────────────────────────────────────────
 // 타입 정의 (API 응답과 동일)
@@ -318,23 +319,15 @@ export default function ImportClient({ defaultSheetUrl = "" }: { defaultSheetUrl
   return (
     <div className="space-y-6">
       {/* 페이지 헤더 */}
-      <div className="flex items-center justify-between">
-        <div>
-          {/* 설명문구 제거: 제목 반복 + 개발자 용어(DB) */}
-          <h1 className="text-2xl font-bold text-[var(--color-academy-ink)]">수강생 데이터 이관</h1>
-        </div>
-        {step !== "upload" && (
-          <button
-            onClick={handleReset}
-            className="px-4 py-2 text-sm bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] rounded-lg hover:bg-[var(--color-academy-line)] transition-colors"
-          >
-            <span className="material-symbols-outlined text-base align-middle mr-1">
-              restart_alt
-            </span>
+      {/* 설명문구 제거: 제목 반복 + 개발자 용어(DB) */}
+      <AdminPageHeader
+        title="수강생 데이터 이관"
+        actions={step !== "upload" ? (
+          <button onClick={handleReset} className="academy-button-secondary">
             처음부터 다시
           </button>
-        )}
-      </div>
+        ) : undefined}
+      />
 
       {/* 단계 표시 */}
       <StepIndicator current={step} />
@@ -342,7 +335,6 @@ export default function ImportClient({ defaultSheetUrl = "" }: { defaultSheetUrl
       {/* 에러 표시 */}
       {error && (
         <div className="bg-[var(--color-academy-danger-soft)] border border-[var(--color-academy-danger)] rounded-lg p-4 flex items-start gap-3">
-          <span className="material-symbols-outlined text-[var(--color-academy-danger)] mt-0.5">error</span>
           <div>
             <p className="text-sm font-medium text-[var(--color-academy-danger)]">오류</p>
             <p className="text-sm text-[var(--color-academy-danger)] mt-1">{error}</p>
@@ -362,7 +354,6 @@ export default function ImportClient({ defaultSheetUrl = "" }: { defaultSheetUrl
         <div className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
           <div className="rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)]/70 p-4">
             <div className="flex items-start gap-3">
-              <span className="material-symbols-outlined text-[var(--color-academy-muted)]">sync</span>
               <div className="flex-1 space-y-3">
                 <div>
                   <p className="text-sm font-semibold text-[var(--color-academy-ink)]">
@@ -380,12 +371,12 @@ export default function ImportClient({ defaultSheetUrl = "" }: { defaultSheetUrl
                       setError(null);
                     }}
                     placeholder="https://docs.google.com/spreadsheets/d/..."
-                    className="min-w-0 flex-1 rounded-lg border border-[var(--color-academy-line)] bg-white px-3 py-2 text-sm text-[var(--color-academy-ink)] outline-none focus:border-[var(--color-academy-line-input)] focus:ring-2 focus:ring-[var(--color-academy-line)]"
+                    className="academy-input min-w-0 flex-1"
                   />
                   <button
                     onClick={() => handlePreview("googleSheet")}
                     disabled={loading || !sheetUrl.trim()}
-                    className="rounded-lg bg-[var(--color-academy-primary)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[var(--color-academy-primary-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+                    className="academy-button-secondary shrink-0"
                   >
                     {loading ? "불러오는 중..." : "구글시트 미리보기"}
                   </button>
@@ -394,10 +385,7 @@ export default function ImportClient({ defaultSheetUrl = "" }: { defaultSheetUrl
             </div>
           </div>
 
-          <h2 className="text-lg font-semibold text-[var(--color-academy-ink)]">
-            <span className="material-symbols-outlined text-xl align-middle mr-2 text-[var(--color-academy-muted)]">
-              upload_file
-            </span>
+          <h2 className="academy-section-title">
             CSV 데이터 입력
           </h2>
 
@@ -411,15 +399,12 @@ export default function ImportClient({ defaultSheetUrl = "" }: { defaultSheetUrl
               setError(null);
             }}
             placeholder="여기에 스프레드시트 데이터를 붙여넣으세요... (Ctrl+V)&#10;&#10;헤더 행을 포함해서 전체를 복사해주세요."
-            className="w-full h-48 p-4 border rounded-lg text-sm font-mono resize-y focus:ring-2 focus:ring-[var(--color-academy-primary)] focus:border-[var(--color-academy-line-input)] outline-none"
+            className="academy-input h-48 resize-y font-mono"
           />
 
           {/* 파일 업로드 */}
           <div className="flex items-center gap-4">
-            <label className="px-4 py-2 text-sm bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] rounded-lg hover:bg-[var(--color-academy-line)] transition-colors cursor-pointer">
-              <span className="material-symbols-outlined text-base align-middle mr-1">
-                attach_file
-              </span>
+            <label className="academy-button-secondary cursor-pointer">
               CSV 파일 선택
               <input
                 type="file"
@@ -441,16 +426,14 @@ export default function ImportClient({ defaultSheetUrl = "" }: { defaultSheetUrl
             <button
               onClick={() => handlePreview("csv")}
               disabled={loading || !csvText.trim()}
-              className="px-6 py-3 bg-[var(--color-academy-primary)] text-white font-semibold rounded-lg hover:bg-[var(--color-academy-primary-hover)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="academy-button-primary"
             >
               {loading ? (
                 <span className="flex items-center gap-2">
-                  <span className="animate-spin material-symbols-outlined text-base">progress_activity</span>
                   읽는 중...
                 </span>
               ) : (
                 <span className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-base">preview</span>
                   미리보기
                 </span>
               )}
@@ -476,7 +459,6 @@ export default function ImportClient({ defaultSheetUrl = "" }: { defaultSheetUrl
           {auxiliarySummary && auxiliarySummary.totalRows > 0 && (
             <div className="rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)]/70 p-4 text-sm text-[var(--color-academy-ink)]">
               <div className="flex flex-wrap items-center gap-3">
-                <span className="material-symbols-outlined text-base">dataset</span>
                 <span className="font-semibold">보조 탭 감지</span>
                 <span>차량 {auxiliarySummary.shuttleRows.toLocaleString()}행</span>
                 <span>변동 {auxiliarySummary.changeRows.toLocaleString()}행</span>
@@ -502,7 +484,6 @@ export default function ImportClient({ defaultSheetUrl = "" }: { defaultSheetUrl
           {preview.errors.length > 0 && (
             <div className="bg-[var(--color-academy-warning-soft)] border border-[var(--color-academy-warning)] rounded-lg p-4">
               <p className="text-sm font-medium text-[var(--color-academy-warning)] mb-2">
-                <span className="material-symbols-outlined text-base align-middle mr-1">warning</span>
                 확인할 행 ({preview.errors.length}건)
               </p>
               <ul className="text-sm text-[var(--color-academy-warning)] space-y-1">
@@ -519,7 +500,7 @@ export default function ImportClient({ defaultSheetUrl = "" }: { defaultSheetUrl
           )}
 
           {/* 필터 탭 */}
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {[
               { key: "ALL", label: "전체", count: preview.students.length },
               { key: "ACTIVE", label: "재원", count: preview.summary.activeCount },
@@ -529,11 +510,8 @@ export default function ImportClient({ defaultSheetUrl = "" }: { defaultSheetUrl
               <button
                 key={tab.key}
                 onClick={() => setStatusFilter(tab.key)}
-                className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
-                  statusFilter === tab.key
-                    ? "bg-[var(--color-academy-primary)] text-white"
-                    : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)]"
-                }`}
+                aria-pressed={statusFilter === tab.key}
+                className={`academy-choice is-tab ${statusFilter === tab.key ? "is-selected" : ""}`}
               >
                 {tab.label} ({tab.count})
               </button>
@@ -620,23 +598,21 @@ export default function ImportClient({ defaultSheetUrl = "" }: { defaultSheetUrl
           <div className="flex justify-end gap-3">
             <button
               onClick={() => setStep("upload")}
-              className="px-6 py-3 bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] font-semibold rounded-lg hover:bg-[var(--color-academy-line)] transition-colors"
+              className="academy-button-secondary"
             >
               뒤로
             </button>
             <button
               onClick={handleExecute}
               disabled={loading || preview.students.length === 0}
-              className="px-6 py-3 bg-[var(--color-academy-primary)] text-white font-semibold rounded-lg hover:bg-[var(--color-academy-primary-hover)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="academy-button-primary"
             >
               {loading ? (
                 <span className="flex items-center gap-2">
-                  <span className="animate-spin material-symbols-outlined text-base">progress_activity</span>
                   이관 실행 중...
                 </span>
               ) : (
                 <span className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-base">database</span>
                   이관 실행 ({preview.students.length}명)
                 </span>
               )}
@@ -650,8 +626,7 @@ export default function ImportClient({ defaultSheetUrl = "" }: { defaultSheetUrl
         <div className="space-y-6">
           {/* 성공 배너 */}
           <div className="bg-[var(--color-academy-success-soft)] border border-[var(--color-academy-success)] rounded-lg p-6 text-center">
-            <span className="material-symbols-outlined text-5xl text-[var(--color-academy-success)]">check_circle</span>
-            <h2 className="text-xl font-bold text-[var(--color-academy-success)] mt-3">이관 완료</h2>
+            <h2 className="text-lg font-bold text-[var(--color-academy-success)]">이관 완료</h2>
             {/* 개발자 표현(DB 삽입)만 다듬고 성공 안내는 유지 */}
             <p className="text-sm text-[var(--color-academy-success)] mt-1">
               데이터가 성공적으로 저장되었습니다.
@@ -686,7 +661,6 @@ export default function ImportClient({ defaultSheetUrl = "" }: { defaultSheetUrl
           {importResult.sheetImport && (
             <div className="rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)]/70 p-4 text-sm text-[var(--color-academy-ink)]">
               <div className="flex flex-wrap items-center gap-3">
-                <span className="material-symbols-outlined text-base">database</span>
                 <span className="font-semibold">시트 원본 저장</span>
                 <span>원본 {importResult.sheetImport.rawRows.toLocaleString()}행</span>
                 <span>등록 {importResult.sheetImport.registrationRows.toLocaleString()}행</span>
@@ -703,7 +677,6 @@ export default function ImportClient({ defaultSheetUrl = "" }: { defaultSheetUrl
           {importResult.failed.length > 0 && (
             <div className="bg-[var(--color-academy-danger-soft)] border border-[var(--color-academy-danger)] rounded-lg p-4">
               <p className="text-sm font-medium text-[var(--color-academy-danger)] mb-2">
-                <span className="material-symbols-outlined text-base align-middle mr-1">error</span>
                 실패 ({importResult.failed.length}건)
               </p>
               <div className="space-y-1 max-h-60 overflow-y-auto">
@@ -720,9 +693,8 @@ export default function ImportClient({ defaultSheetUrl = "" }: { defaultSheetUrl
           <div className="flex justify-center">
             <button
               onClick={handleReset}
-              className="px-6 py-3 bg-[var(--color-academy-primary)] text-white font-semibold rounded-lg hover:bg-[var(--color-academy-primary-hover)] transition-colors"
+              className="academy-button-primary"
             >
-              <span className="material-symbols-outlined text-base align-middle mr-1">restart_alt</span>
               새 이관 시작
             </button>
           </div>
@@ -800,7 +772,7 @@ function ImportHistoryPanel({
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           {/* 내부 조회 동작 설명 제거 */}
-          <h2 className="text-base font-semibold text-[var(--color-academy-ink)]">
+          <h2 className="academy-section-title">
             최근 이관 기록
           </h2>
         </div>
@@ -808,11 +780,8 @@ function ImportHistoryPanel({
           type="button"
           onClick={onLoad}
           disabled={loading}
-          className="inline-flex items-center justify-center gap-2 rounded-lg bg-[var(--color-academy-primary-hover)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[var(--color-academy-primary-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+          className="academy-button-secondary"
         >
-          <span className={`material-symbols-outlined text-base ${loading ? "animate-spin" : ""}`}>
-            {loading ? "progress_activity" : "history"}
-          </span>
           {loading ? "불러오는 중" : "최근 기록 불러오기"}
         </button>
       </div>
@@ -841,7 +810,7 @@ function ImportHistoryPanel({
               <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-[var(--color-academy-success-soft)] px-2 py-0.5 text-xs font-semibold text-[var(--color-academy-success)]">
+                    <span className="rounded-full bg-[var(--color-academy-success-soft)] px-2 py-0.5 text-xs text-[var(--color-academy-success)]">
                       {BATCH_STATUS_LABEL[batch.status] ?? "상태 확인 필요"}
                     </span>
                     <span className="text-sm font-semibold text-[var(--color-academy-ink)]">
@@ -881,13 +850,8 @@ function ImportHistoryPanel({
                     type="button"
                     onClick={() => void loadBatchDetail(batch.id, type)}
                     disabled={detail?.batchId === batch.id && detail.type === type && detail.loading}
-                    className="inline-flex items-center gap-1 rounded-md border border-[var(--color-academy-line-input)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--color-academy-muted)] transition hover:bg-[var(--color-academy-line)] disabled:cursor-wait disabled:opacity-60"
+                    className="academy-button-tonal academy-button-sm disabled:cursor-wait"
                   >
-                    <span className="material-symbols-outlined text-sm">
-                      {detail?.batchId === batch.id && detail.type === type && detail.loading
-                        ? "progress_activity"
-                        : "manage_search"}
-                    </span>
                     {label}
                   </button>
                 ))}
@@ -925,7 +889,7 @@ function ImportDetailBox({ detail }: { detail: ImportDetailState }) {
   return (
     <div className="mt-3 rounded-lg border border-[var(--color-academy-line)] bg-white p-3">
       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-        <h3 className="text-sm font-bold text-[var(--color-academy-ink)]">
+        <h3 className="academy-section-title">
           {getImportDetailTitle(detail.type)}
         </h3>
         <p className="text-xs text-[var(--color-academy-muted)]">
@@ -966,7 +930,7 @@ function DetailRowCard({ type, row }: { type: ImportDetailType; row: ImportDetai
   if (type === "shuttle") {
     return (
       <div className="rounded-md bg-[var(--color-academy-soft)] px-3 py-2 text-xs text-[var(--color-academy-muted)]">
-        <p className="font-bold text-[var(--color-academy-ink)]">
+        <p className="font-semibold text-[var(--color-academy-ink)]">
           {detailText(row, "monthLabel")} · {detailText(row, "dayLabel")} {detailText(row, "classTime")}
         </p>
         <p className="mt-1">
@@ -982,7 +946,7 @@ function DetailRowCard({ type, row }: { type: ImportDetailType; row: ImportDetai
   if (type === "changes") {
     return (
       <div className="rounded-md bg-[var(--color-academy-soft)] px-3 py-2 text-xs text-[var(--color-academy-muted)]">
-        <p className="font-bold text-[var(--color-academy-ink)]">
+        <p className="font-semibold text-[var(--color-academy-ink)]">
           {detailDate(row, "occurredAt")} · {detailText(row, "changeSummary")}
         </p>
         <p className="mt-1">
@@ -996,7 +960,7 @@ function DetailRowCard({ type, row }: { type: ImportDetailType; row: ImportDetai
   if (type === "team") {
     return (
       <div className="rounded-md bg-[var(--color-academy-soft)] px-3 py-2 text-xs text-[var(--color-academy-muted)]">
-        <p className="font-bold text-[var(--color-academy-ink)]">
+        <p className="font-semibold text-[var(--color-academy-ink)]">
           #{detailText(row, "jerseyNumber")} {detailText(row, "studentName")}
         </p>
         <p className="mt-1">
@@ -1011,7 +975,7 @@ function DetailRowCard({ type, row }: { type: ImportDetailType; row: ImportDetai
 
   return (
     <div className="rounded-md border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] px-3 py-2 text-xs text-[var(--color-academy-warning)]">
-      <p className="font-bold">
+      <p className="font-semibold">
         {detailText(row, "severity")} · {detailText(row, "sheetName")}
         {detailText(row, "rowNumber") !== "-" ? ` ${detailText(row, "rowNumber")}행` : ""}
       </p>
@@ -1062,7 +1026,7 @@ function ImportMetric({
   return (
     <div className="rounded-md bg-white px-2 py-2">
       <p className="text-[var(--color-academy-muted)]">{label}</p>
-      <p className={`font-bold ${toneClass}`}>{value.toLocaleString()}</p>
+      <p className={`font-semibold tabular-nums ${toneClass}`}>{value.toLocaleString()}</p>
     </div>
   );
 }
@@ -1084,20 +1048,19 @@ function StepIndicator({ current }: { current: "upload" | "preview" | "result" }
           {i > 0 && (
             <div
               className={`w-8 h-0.5 ${
-                i <= currentIdx ? "bg-[var(--color-academy-primary)]" : "bg-[var(--color-academy-line)]"
+                i <= currentIdx ? "bg-[var(--color-academy-secondary-strong)]" : "bg-[var(--color-academy-line)]"
               }`}
             />
           )}
           <div
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium ${
               i === currentIdx
-                ? "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"
+                ? "bg-[var(--color-academy-secondary-soft)] text-[var(--color-academy-secondary-ink)]"
                 : i < currentIdx
                 ? "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]"
                 : "bg-[var(--color-academy-soft)] text-[var(--color-academy-faint)]"
             }`}
           >
-            <span className="material-symbols-outlined text-base">{s.icon}</span>
             {s.label}
           </div>
         </div>
@@ -1110,31 +1073,19 @@ function StepIndicator({ current }: { current: "upload" | "preview" | "result" }
 function SummaryCard({
   label,
   value,
-  icon,
-  color = "gray",
 }: {
   label: string;
   value: number;
   icon: string;
   color?: string;
 }) {
-  const colorMap: Record<string, string> = {
-    gray: "text-[var(--color-academy-muted)]",
-    blue: "text-[var(--color-academy-muted)]",
-    green: "text-[var(--color-academy-success)]",
-    yellow: "text-[var(--color-academy-warning)]",
-    red: "text-[var(--color-academy-danger)]",
-  };
 
   return (
     <div className="bg-white rounded-lg shadow-sm border p-4">
       <div className="flex items-center gap-2 mb-1">
-        <span className={`material-symbols-outlined text-lg ${colorMap[color]}`}>
-          {icon}
-        </span>
         <span className="text-xs text-[var(--color-academy-muted)]">{label}</span>
       </div>
-      <p className="text-2xl font-bold text-[var(--color-academy-ink)]">{value.toLocaleString()}</p>
+      <p className="text-lg font-semibold tabular-nums text-[var(--color-academy-ink)]">{value.toLocaleString()}</p>
     </div>
   );
 }
@@ -1155,7 +1106,7 @@ function ResultCard({
       <div className="space-y-1">
         <div className="flex justify-between text-sm">
           <span className="text-[var(--color-academy-success)]">생성</span>
-          <span className="font-bold text-[var(--color-academy-success)]">{created}</span>
+          <span className="font-semibold tabular-nums text-[var(--color-academy-success)]">{created}</span>
         </div>
         <div className="flex justify-between text-sm">
           <span className="text-[var(--color-academy-faint)]">건너뜀 (중복)</span>

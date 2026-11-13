@@ -3,7 +3,7 @@ import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useEffect, useState, useTransition } from "react";
 import { createProgram, updateProgram } from "@/app/actions/admin";
-import { isWeekendOnlyDays, REGULAR_FREQ_TIERS, WEEKEND_DAYS } from "@/lib/billing/regular-tuition-preview";
+import { isWeekendOnlyDays, REGULAR_FREQ_TIERS } from "@/lib/billing/regular-tuition-preview";
 
 const DAY_OPTIONS = [
     { key: "Mon", label: "월" },
@@ -16,10 +16,9 @@ const DAY_OPTIONS = [
 ];
 
 // 주말 요일·주 횟수별 가격 칸·셔틀 자동 요금은 한 곳(regular-tuition-preview)에서 가져온다 — 목록·등록 창과 같은 값
-const WEEKEND = WEEKEND_DAYS;
 const FREQ_TIERS = REGULAR_FREQ_TIERS;
 
-const INPUT = "w-full border border-[var(--color-academy-line-input)] rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--color-academy-primary)] focus:border-[var(--color-academy-primary)] bg-[var(--color-academy-soft)] focus:bg-white";
+const INPUT = "academy-input";
 
 interface Program {
     id: string;
@@ -152,20 +151,14 @@ function DaySelector({ selected, onChange }: { selected: string[]; onChange: (d:
         <div className="flex flex-wrap gap-2">
             {DAY_OPTIONS.map((d) => {
                 const active = selected.includes(d.key);
-                const isWknd = WEEKEND.has(d.key);
 
                 return (
                     <button
                         key={d.key}
                         type="button"
                         onClick={() => toggle(d.key)}
-                        className={`w-9 h-9 rounded-full text-sm font-bold transition border-2 ${
-                            active
-                                ? isWknd
-                                    ? "bg-[var(--color-academy-primary)] text-white border-[var(--color-academy-primary)]"
-                                    : "bg-[var(--color-academy-primary)] text-white border-[var(--color-academy-primary)]"
-                                : "bg-white text-[var(--color-academy-muted)] border-[var(--color-academy-line-input)] hover:border-[var(--color-academy-line-input)]"
-                        }`}
+                        aria-pressed={active}
+                        className="academy-choice"
                     >
                         {d.label}
                     </button>
@@ -228,7 +221,7 @@ function ProgramFormFields({
                 <DaySelector selected={form.days} onChange={(days) => p({ days })} />
                 {weekend && (
                     <p className="mt-2 text-xs text-[var(--color-academy-warning)] font-medium">
-                        🚌 주말 수업 — 셔틀버스 운행 없음
+                        주말 수업 — 셔틀버스 운행 없음
                     </p>
                 )}
             </div>
@@ -255,7 +248,7 @@ function ProgramFormFields({
                                 return (
                                     <tr key={tier.key} className={val ? "bg-[var(--color-academy-soft)]/40" : ""}>
                                         <td className="px-4 py-2.5">
-                                            <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${val ? "bg-[var(--color-academy-primary)] text-white" : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"}`}>
+                                            <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${val ? "bg-[var(--color-academy-secondary-soft)] text-[var(--color-academy-secondary-ink)]" : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"}`}>
                                                 {tier.label}
                                             </span>
                                         </td>
@@ -267,12 +260,12 @@ function ProgramFormFields({
                                                     value={val}
                                                     onChange={(e) => p({ [tier.key]: e.target.value } as Partial<ProgramForm>)}
                                                     placeholder="미제공"
-                                                    className="w-full border border-[var(--color-academy-line-input)] rounded-lg px-3 py-1.5 text-sm pr-7 bg-[var(--color-academy-soft)] focus:bg-white focus:ring-2 focus:ring-[var(--color-academy-primary)] focus:border-[var(--color-academy-primary)] placeholder:text-[var(--color-academy-faint)]"
+                                                    className="academy-input pr-7!"
                                                 />
                                                 <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[var(--color-academy-faint)]">원</span>
                                             </div>
                                             {val && !isNaN(Number(val)) && (
-                                                <p className="text-[11px] text-[var(--color-academy-muted)] mt-0.5 pl-1">{Number(val).toLocaleString()}원</p>
+                                                <p className="text-xs text-[var(--color-academy-muted)] mt-0.5 pl-1">{Number(val).toLocaleString()}원</p>
                                             )}
                                         </td>
                                         {shuttleOn && (
@@ -318,13 +311,13 @@ function ProgramFormFields({
                                 disabled={weekend}
                                 onChange={(e) => p({ runsShuttle: e.target.checked })}
                             />
-                            <span className="h-6 w-11 rounded-full bg-[var(--color-academy-line-input)] peer-checked:bg-[var(--color-academy-primary)] transition-colors" />
+                            <span className="h-6 w-11 rounded-full bg-[var(--color-academy-line-input)] peer-checked:bg-[var(--color-academy-secondary-strong)] transition-colors" />
                             <span className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5" />
                         </span>
                     </label>
                     {!shuttleOn && (
                         <p className="mt-3 text-xs font-medium text-[var(--color-academy-muted)]">
-                            🚫 셔틀 미운행 — 이 프로그램은 셔틀비가 부과되지 않고, 셔틀 노선에도 포함되지 않습니다.
+                            셔틀 미운행 — 이 프로그램은 셔틀비가 부과되지 않고, 셔틀 노선에도 포함되지 않습니다.
                         </p>
                     )}
                 </div>
@@ -403,7 +396,7 @@ function ProgramFormFields({
             <div className="flex justify-end gap-2 pt-2">
                 {onCancel && (
                     <button type="button" onClick={onCancel}
-                        className="border border-[var(--color-academy-line-input)] text-[var(--color-academy-muted)] text-sm font-medium px-4 py-2 rounded-lg hover:bg-[var(--color-academy-soft)] transition">
+                        className="academy-button-secondary">
                         취소
                     </button>
                 )}
@@ -411,7 +404,7 @@ function ProgramFormFields({
                     type="button"
                     onClick={onSubmit}
                     disabled={pending || !form.name.trim() || !hasAnyPrice}
-                    className="bg-[var(--color-academy-primary)] text-white text-sm font-bold px-5 py-2 rounded-lg hover:bg-[var(--color-academy-primary-hover)] transition disabled:opacity-40 shadow-sm"
+                    className="academy-button-primary"
                 >
                     {pending ? "저장 중..." : submitLabel}
                 </button>

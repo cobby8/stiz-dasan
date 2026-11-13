@@ -41,7 +41,7 @@ export default async function MyPageLayout({
     // /mypage/continue 로 가는 이유: /auth/continue 는 학부모 앱의 영역(/mypage) 밖이라
     // 설치된 앱이 주소표시줄을 띄우며 브라우저로 새어 나간다.
     const parent = await requireVerifiedParent().catch(() => redirect("/mypage/continue?bounced=1"));
-    // 머리줄 🔔 알림(모든 /mypage 화면 공통, 2026-11-10 원장 결정 k7) — 대상은 로그인한 본인 알림만
+    // 머리줄 «알림»(모든 /mypage 화면 공통, 2026-11-10 원장 결정 k7) — 대상은 로그인한 본인 알림만
     const [{ views }, notifications, unreadCount, cookieStore] = await Promise.all([
         getAccountViewAccess(),
         getNotifications(parent.appUserId),
@@ -53,14 +53,14 @@ export default async function MyPageLayout({
     const bellItems = notifications.map((n) => ({
         id: n.id, type: n.type, title: n.title, message: n.message, linkUrl: n.linkUrl, isRead: n.isRead, createdAt: n.createdAt,
     }));
-    // ⚙ 설정 버튼 — 예전 «⋯» 메뉴 자리. 누르는 영역 44×44
+    // «설정» 버튼 — 예전 «⋯» 메뉴 자리. 2026-11-13 UI 통일: 톱니 아이콘 → 글자. 누르는 높이 44px
     const settingsLink = (
         <Link
             href="/mypage/settings"
             aria-label="설정"
-            className="inline-flex size-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] transition-colors hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)]"
+            className="inline-flex min-h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-lg px-2 text-sm font-medium text-[var(--color-academy-muted)] transition-colors hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)]"
         >
-            <span className="material-symbols-outlined leading-none" style={{ fontSize: "24px" }} aria-hidden="true">settings</span>
+            설정
         </Link>
     );
 
@@ -69,7 +69,7 @@ export default async function MyPageLayout({
         <AcademyTheme role="parent" className="min-h-screen flex flex-col pb-20 md:pb-0">
             {/* 글자 크기 «크게·아주 크게» — html 글자 배율. 학부모 화면을 떠나면 이 줄도 사라져 다른 화면엔 영향 없음 */}
             {fontPercent !== 100 && <style>{`html{font-size:${fontPercent}%}`}</style>}
-            {/* 모바일 상단 헤더 — [뒤로 · 로고 · 학부모] …… [🔔 N] [⚙] (2026-11-10 원장 결정 k7) */}
+            {/* 모바일 상단 헤더 — [뒤로 · 로고 · 학부모] …… [알림 N] [설정] (2026-11-10 원장 결정 k7) */}
             <header className="bg-[var(--color-academy-surface)] sticky top-0 z-50 border-b border-[var(--color-academy-line)] grid grid-cols-[auto_auto_minmax(0,1fr)_auto_auto] items-center gap-1 px-3 py-2 md:hidden">
                 {/* 설치된 학부모 앱에서는 /mypage 밖으로 나가지 않는다.
                     브라우저로 들어온 사람은 홈페이지에서 왔을 수 있어 기존대로 둔다. */}
@@ -82,11 +82,11 @@ export default async function MyPageLayout({
                 </Link>
                 {/* «학부모» 글자는 로고 바로 오른쪽(역할이 둘 이상이면 화면 전환 단추) */}
                 <div className="min-w-0 justify-self-start">
-                    {views.length > 1 ? <AccountViewSwitcher views={views} /> : <span className="font-bold text-[var(--color-academy-ink)] text-sm">학부모</span>}
+                    {views.length > 1 ? <AccountViewSwitcher views={views} /> : <span className="font-medium text-[var(--color-academy-ink)] text-sm">학부모</span>}
                 </div>
-                {/* 🔔 알림 — 안 읽은 수 배지, 누르면 알림 목록(아래 «알림 설정») */}
+                {/* 알림 — 안 읽은 수 배지, 누르면 알림 목록(아래 «알림 설정») */}
                 <ParentNotificationBell notifications={bellItems} unreadCount={unreadCount} />
-                {/* ⚙ 설정 — 계정·비밀번호·가족·알림·글자 크기·앱 정보·문제 신고·로그아웃(예전 «⋯» 메뉴를 대신함) */}
+                {/* 설정 — 계정·비밀번호·가족·알림·글자 크기·앱 정보·문제 신고·로그아웃(예전 «⋯» 메뉴를 대신함) */}
                 {settingsLink}
             </header>
 
@@ -96,7 +96,7 @@ export default async function MyPageLayout({
                     <AppBackButton fallbackHref="/" scopeHref="/mypage" />
                     <Link href="/mypage" className="flex min-w-0 items-center gap-2">
                         <Image src="/stiz-logo.png" alt="STIZ" width={140} height={61} className="h-12 w-auto object-contain" />
-                        <span className="hidden lg:inline font-extrabold text-lg text-[var(--color-academy-ink)]">
+                        <span className="hidden lg:inline font-bold text-lg text-[var(--color-academy-ink)]">
                             스티즈농구교실 <span className="text-[var(--color-academy-ink)]">다산2호점</span>
                         </span>
                     </Link>
@@ -104,7 +104,7 @@ export default async function MyPageLayout({
                 {/* PC 메뉴 — 휴대폰 아래 탭과 같은 4개(홈·수업·청구·소식). 예전엔 PC 에 메뉴가 없어
                     하위 화면 사이를 «뒤로 → 홈 → 타일»로만 오갔다. */}
                 <MyPageBottomNav variant="top" />
-                <div className="flex shrink-0 items-center gap-3 text-sm font-bold text-[var(--color-academy-muted)]">
+                <div className="flex shrink-0 items-center gap-3 text-sm font-medium text-[var(--color-academy-muted)]">
                     <AccountViewSwitcher views={views} />
                     {/* 브라우저로 들어온 학부모에게는 홈페이지로 가는 길이 필요하지만,
                         설치된 앱에서는 나가면 돌아올 길이 없어 감춘다. */}

@@ -20,18 +20,19 @@
   min-width: 0;
 }
 
-/* 강조선이 번호와 조작 버튼에 붙지 않도록 안쪽 여백을 확보한다. */
+/* 강조선이 번호와 조작 버튼에 붙지 않도록 안쪽 여백을 확보한다.
+   2026-11-13 UI 통일: «다음 정류장 = 지금 있는 곳»은 보조 색(하늘색). 꽉 찬 주 색(네이비)은 주 버튼만 쓴다. */
 .workspace.workspace .stop.upcoming[data-upcoming][aria-current] {
-  border: 3px solid var(--color-academy-primary);
+  border: 3px solid var(--color-academy-secondary-strong);
   padding: 8px;
-  background: var(--color-academy-primary-soft);
+  background: var(--color-academy-secondary-soft);
 }
 
 .stopHeading { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
 .stopHeading input[type="time"] { flex-basis: 100%; }
 /* 주 색(검정)은 버튼 전용 — 순번·시각 글자는 본문 글자색(ink) */
 .sequence { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 10px; background: var(--color-academy-primary-soft); color: var(--color-academy-ink); font-size: 17px; font-weight: 700; }
-.upcoming .sequence { background: var(--color-academy-primary); color: var(--color-academy-on-primary, var(--color-academy-surface)); }
+.upcoming .sequence { background: var(--color-academy-secondary-ink); color: var(--color-academy-on-primary, var(--color-academy-surface)); }
 .stopName { flex: 1 1 96px; min-width: 80px; font-size: 19px; font-weight: 700; line-height: 1.35; overflow-wrap: anywhere; }
 .timeNavigation { display: flex; align-items: center; justify-content: flex-end; gap: 6px; white-space: nowrap; margin-inline-start: auto; }
 .time { color: var(--color-academy-ink); font-size: 25px; line-height: 1.1; font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -40,7 +41,7 @@
 .navigation { display: inline-flex; align-items: center; justify-content: center; gap: 3px; min-height: 44px; padding: 0 8px; border-radius: 10px; background: var(--color-academy-primary-soft); color: var(--color-academy-primary); font-size: 14px; font-weight: 700; }
 .navigation:focus-visible, .contacts a:focus-visible { outline: 3px solid var(--color-academy-primary); outline-offset: 2px; }
 .stopMeta { flex: 1 0 calc(100% - 38px); margin-inline-start: 38px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; color: var(--color-academy-muted); font-size: 13px; line-height: 1.4; font-weight: 600; }
-.upcomingBadge { display: inline-flex; align-items: center; min-height: 30px; margin-inline-start: 2px; padding: 4px 10px; border-radius: 9px; color: var(--color-academy-surface); background: var(--color-academy-primary); font-size: 14px; font-weight: 700; }
+.upcomingBadge { display: inline-flex; align-items: center; min-height: 30px; margin-inline-start: 2px; padding: 4px 10px; border-radius: 9px; color: var(--color-academy-surface); background: var(--color-academy-secondary-ink); font-size: 14px; font-weight: 600; }
 .riders { margin-top: 8px; min-width: 0; }
 .rider { padding: 6px 8px; min-width: 0; }
 .riderMain { display: flex; align-items: center; justify-content: space-between; gap: 4px 3px; min-height: 44px; flex-wrap: wrap; }

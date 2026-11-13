@@ -27,8 +27,8 @@ export default async function GalleryPage() {
             <section className="public-page-hero public-page-hero--compact relative overflow-hidden bg-gradient-to-br from-[var(--color-public-dark)] via-[var(--color-public-dark)] to-[var(--color-public-dark)] dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
                 <div className="max-w-6xl mx-auto px-6 md:px-4 relative">
                     <AnimateOnScroll>
-                        <h1 className="text-4xl md:text-5xl font-black mb-4 break-keep">포토갤러리</h1>
-                        <p className="text-blue-200 text-lg max-w-xl">수업 현장의 생생한 모습을 확인하세요</p>
+                        <h1 className="text-4xl md:text-5xl font-bold mb-4 break-keep">포토갤러리</h1>
+                        <p className="text-[var(--color-public-dark-muted)] text-lg max-w-xl">수업 현장의 생생한 모습을 확인하세요</p>
                     </AnimateOnScroll>
                 </div>
             </section>

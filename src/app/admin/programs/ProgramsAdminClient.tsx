@@ -5,6 +5,7 @@ import { useCallback, useState, useTransition, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import { deleteProgram, reorderPrograms } from "@/app/actions/admin";
 import AdminModal from "@/components/admin/AdminModal";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import { isWeekendOnlyDays, REGULAR_FREQ_TIERS, shuttleFeeAmount } from "@/lib/billing/regular-tuition-preview";
 
@@ -125,7 +126,7 @@ function ProgramsLoadingFallback() {
 function ProgramsErrorState({ onRetry }: { onRetry: () => void }) {
     return (
         <div className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-danger-soft)] p-6 text-center">
-            <p className="text-sm font-bold text-[var(--color-academy-danger)]">프로그램 목록을 불러오지 못했습니다.</p>
+            <p className="text-sm font-semibold text-[var(--color-academy-danger)]">프로그램 목록을 불러오지 못했습니다.</p>
             <button
                 type="button"
                 onClick={onRetry}
@@ -248,21 +249,18 @@ export default function ProgramsAdminClient({
 
     return (
         <div className="space-y-8">
-            <div className="flex items-center justify-between gap-4">
-                <div>
-                    <h1 className="text-2xl font-bold text-[var(--color-academy-ink)]">프로그램 관리</h1>
-                </div>
-                {/* 시드 내보내기 버튼 제거: 사이드바 백업 메뉴에 동일 기능이 이미 있다 */}
-                <div className="flex items-center gap-2">
+            {/* 시드 내보내기 버튼 제거: 사이드바 백업 메뉴에 동일 기능이 이미 있다 */}
+            <AdminPageHeader
+                title="프로그램 관리"
+                actions={
                     <button
                         onClick={() => setShowAddModal(true)}
-                        className="flex-shrink-0 flex items-center gap-2 bg-[var(--color-academy-primary)] hover:bg-[var(--color-academy-primary-hover)] text-white font-bold text-sm px-4 py-2.5 rounded-xl transition shadow-sm"
+                        className="academy-button-primary"
                     >
-                        <span className="text-lg leading-none">+</span>
                         프로그램 등록
                     </button>
-                </div>
-            </div>
+                }
+            />
 
             {/* Add Program Modal */}
             {showAddModal && (
@@ -275,12 +273,13 @@ export default function ProgramsAdminClient({
                     {/* Dialog */}
                     <div className="w-full">
                         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-academy-line)] sticky top-0 bg-white z-10 rounded-t-2xl">
-                            <h2 id="add-program-title" className="text-lg font-bold text-[var(--color-academy-ink)]">새 프로그램 등록</h2>
+                            <h2 id="add-program-title" className="academy-section-title">새 프로그램 등록</h2>
                             <button
                                 type="button"
                                 onClick={() => setShowAddModal(false)}
                                 disabled={formPending}
-                                className="text-[var(--color-academy-faint)] hover:text-[var(--color-academy-muted)] transition text-xl leading-none px-1"
+                                aria-label="닫기"
+                                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-xl leading-none text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)] disabled:opacity-50"
                             >
                                 ✕
                             </button>
@@ -308,7 +307,7 @@ export default function ProgramsAdminClient({
             <div className="overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] shadow-sm">
                 <div className="overflow-x-auto">
                     {/* 머리줄 — 아래 행과 같은 칸 폭(PROGRAM_ROW_GRID) */}
-                    <div className={`${PROGRAM_ROW_GRID} items-center bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]`}>
+                    <div className={`${PROGRAM_ROW_GRID} items-center bg-[var(--color-academy-soft)] text-xs font-medium text-[var(--color-academy-muted)]`}>
                         {/* 빈 칸도 자리를 차지해야 아래 행과 칸이 맞는다(sr-only 단독이면 grid 에서 빠져 한 칸씩 밀린다) */}
                         <span><span className="sr-only">순서 손잡이</span></span>
                         <span className="px-1 py-2 text-right">#</span>
@@ -335,7 +334,7 @@ export default function ProgramsAdminClient({
                             >
                                 {editId === program.id ? (
                                     <div className="p-6">
-                                        <p className="text-sm font-bold text-[var(--color-academy-muted)] mb-3">수정 중...</p>
+                                        <p className="text-sm font-medium text-[var(--color-academy-muted)] mb-3">수정 중...</p>
                                         <ProgramFormPanel
                                             mode="edit"
                                             program={program}
@@ -448,36 +447,36 @@ function ProgramRowInline({
                 <span className="text-xl leading-none" aria-hidden="true">⠿</span>
             </span>
             <span className="px-1 py-1.5 text-right tabular-nums text-[var(--color-academy-muted)]">{index + 1}</span>
-            <span className="min-w-0 break-keep px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{program.name}</span>
+            <span className="min-w-0 break-keep px-2 py-1.5 font-semibold text-[var(--color-academy-ink)]">{program.name}</span>
             <span className="hidden break-keep px-2 py-1.5 text-[var(--color-academy-muted)] md:block">{program.targetAge || "-"}</span>
             {/* 요일: 칸마다 한 글자 칩(주말은 경고색) */}
             <span className="hidden whitespace-nowrap px-2 py-1.5 md:block">
                 {days.length === 0 ? <span className="text-[var(--color-academy-muted)]">-</span> : (
                     <span className="inline-flex gap-0.5">
                         {days.map((d) => (
-                            <span key={d} className={`rounded px-1 text-xs font-bold ${d === "토" || d === "일" ? "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]" : "bg-[var(--color-academy-soft)] text-[var(--color-academy-ink)]"}`}>{d}</span>
+                            <span key={d} className={`rounded px-1 text-xs font-medium ${d === "토" || d === "일" ? "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]" : "bg-[var(--color-academy-soft)] text-[var(--color-academy-ink)]"}`}>{d}</span>
                         ))}
                     </span>
                 )}
             </span>
-            <span className="whitespace-nowrap px-2 py-1.5 text-right font-bold tabular-nums text-[var(--color-academy-ink)]">{priceShortLabel(program)}</span>
+            <span className="whitespace-nowrap px-2 py-1.5 text-right font-semibold tabular-nums text-[var(--color-academy-ink)]">{priceShortLabel(program)}</span>
             <span className="hidden whitespace-nowrap px-2 py-1.5 text-[var(--color-academy-muted)] md:block">{shuttleShortLabel(program)}</span>
             {/* 관리: 수정 · 삭제(확인/취소 두 단계) — 기존 함수·순서 그대로 */}
             <span className="flex items-center justify-center gap-0.5 px-1" onClick={(event) => event.stopPropagation()}>
                 <button type="button" onClick={onEdit}
-                    className="min-h-11 rounded-lg px-2 text-sm font-bold text-[var(--color-academy-ink)] transition hover:bg-[var(--color-academy-soft)]">
+                    className="min-h-11 rounded-lg px-2 text-sm font-medium text-[var(--color-academy-ink)] transition hover:bg-[var(--color-academy-soft)]">
                     수정
                 </button>
                 {isDeleting ? (
                     <>
                         <button type="button" onClick={onDelete} disabled={deletePending}
-                            className="min-h-11 rounded-lg px-2 text-sm font-bold text-[var(--color-academy-danger)] transition hover:bg-[var(--color-academy-danger-soft)]">확인</button>
+                            className="min-h-11 rounded-lg px-2 text-sm font-medium text-[var(--color-academy-danger)] transition hover:bg-[var(--color-academy-danger-soft)]">확인</button>
                         <button type="button" onClick={onCancelDelete}
                             className="min-h-11 rounded-lg px-2 text-sm text-[var(--color-academy-muted)] transition hover:bg-[var(--color-academy-soft)]">취소</button>
                     </>
                 ) : (
                     <button type="button" onClick={onSetDeleting}
-                        className="min-h-11 rounded-lg px-2 text-sm font-bold text-[var(--color-academy-danger)] transition hover:bg-[var(--color-academy-danger-soft)]">
+                        className="min-h-11 rounded-lg px-2 text-sm font-medium text-[var(--color-academy-danger)] transition hover:bg-[var(--color-academy-danger-soft)]">
                         삭제
                     </button>
                 )}
@@ -503,7 +502,7 @@ function ProgramDetailContent({
     return (
         <>
             <div className="mb-4 flex items-start gap-2">
-                <h3 id="program-detail-panel-title" className="min-w-0 break-keep break-words text-lg font-black text-[var(--color-academy-ink)]">{program.name}</h3>
+                <h3 id="program-detail-panel-title" className="academy-section-title min-w-0 break-keep break-words">{program.name}</h3>
                 <button
                     type="button"
                     onClick={onClose}
@@ -514,17 +513,17 @@ function ProgramDetailContent({
                 </button>
             </div>
             <dl className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
-                <dt className="font-bold text-[var(--color-academy-muted)]">대상</dt>
+                <dt className="font-medium text-[var(--color-academy-muted)]">대상</dt>
                 <dd className="min-w-0 break-keep text-[var(--color-academy-ink)]">{program.targetAge || "-"}</dd>
-                <dt className="font-bold text-[var(--color-academy-muted)]">요일</dt>
+                <dt className="font-medium text-[var(--color-academy-muted)]">요일</dt>
                 <dd className="text-[var(--color-academy-ink)]">{dayLabels(program).join(", ") || "-"}</dd>
                 {tiers.length === 0 && freq && (
                     <>
-                        <dt className="font-bold text-[var(--color-academy-muted)]">횟수</dt>
+                        <dt className="font-medium text-[var(--color-academy-muted)]">횟수</dt>
                         <dd className="text-[var(--color-academy-ink)]">{freq}</dd>
                     </>
                 )}
-                <dt className="font-bold text-[var(--color-academy-muted)]">수강료</dt>
+                <dt className="font-medium text-[var(--color-academy-muted)]">수강료</dt>
                 <dd className="min-w-0 text-[var(--color-academy-ink)]">
                     {tiers.length > 0 ? (
                         <ul className="space-y-1">
@@ -543,7 +542,7 @@ function ProgramDetailContent({
                         <strong className="tabular-nums">{program.price.toLocaleString()}원 / 월</strong>
                     )}
                 </dd>
-                <dt className="font-bold text-[var(--color-academy-muted)]">셔틀</dt>
+                <dt className="font-medium text-[var(--color-academy-muted)]">셔틀</dt>
                 <dd className="text-[var(--color-academy-ink)]">
                     {weekend ? "주말반 — 셔틀 운행 없음"
                         : (program.runsShuttle === false || program.shuttleFeeOverride === 0) ? "셔틀 미운행" : "운행"}
@@ -554,8 +553,7 @@ function ProgramDetailContent({
             )}
             <div className="mt-5 flex flex-wrap gap-2">
                 <button type="button" onClick={onEdit}
-                    className="inline-flex min-h-11 items-center gap-1 rounded-lg bg-[var(--color-academy-primary)] px-4 text-sm font-bold text-[var(--color-academy-on-primary)] hover:bg-[var(--color-academy-primary-hover)]">
-                    <span className="material-symbols-outlined text-lg" aria-hidden="true">edit</span>
+                    className="academy-button-primary">
                     수정
                 </button>
             </div>

@@ -25,12 +25,11 @@ export default async function MyPageHistoryPage({
     if (!user) {
         return (
             <div className="flex flex-col items-center justify-center py-20 text-center">
-                <div className="text-5xl mb-4">🔒</div>
-                <h2 className="text-xl font-bold text-[var(--color-academy-ink)] mb-2">로그인이 필요합니다</h2>
+                <h2 className="academy-heading mb-2">로그인이 필요합니다</h2>
                 <p className="text-[var(--color-academy-muted)] mb-6">일정은 학부모 계정으로 로그인 후 확인할 수 있습니다.</p>
                 <Link
                     href="/login"
-                    className="bg-[var(--color-academy-primary)] text-white font-bold px-6 py-3 rounded-xl hover:bg-[var(--color-academy-primary-hover)] transition"
+                    className="academy-button-primary"
                 >
                     로그인하기
                 </Link>
@@ -53,8 +52,7 @@ export default async function MyPageHistoryPage({
     if (!data || data.children.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center py-20 text-center">
-                <div className="text-5xl mb-4">👋</div>
-                <h2 className="text-xl font-bold text-[var(--color-academy-ink)] mb-2">등록된 자녀가 없습니다</h2>
+                <h2 className="academy-heading mb-2">등록된 자녀가 없습니다</h2>
                 <p className="text-[var(--color-academy-faint)] text-sm">학원에 자녀를 등록하시면 일정을 확인할 수 있습니다.</p>
             </div>
         );

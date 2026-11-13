@@ -69,7 +69,7 @@ export function SafariShareIllustration() {
         <path d="M216 40 h20 v20 h-20 z" fill="none" stroke="currentColor" strokeWidth="4" strokeLinejoin="round" />
         <path d="M270 42 h22 M270 50 h22 M270 58 h22" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
       </svg>
-      <figcaption className="mt-2 text-center text-xs font-bold text-gray-500 dark:text-gray-400">
+      <figcaption className="mt-2 text-center text-xs font-medium text-gray-500 dark:text-gray-400">
         화면 아래쪽(또는 위쪽) 가운데의 공유 버튼이에요.
       </figcaption>
     </figure>
@@ -113,11 +113,10 @@ export function OpenInChromeButton({
       onClick={openChrome}
       className={
         variant === "primary"
-          ? "flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-[var(--brand-accent)] px-5 font-black text-[var(--brand-accent-contrast)] shadow-md"
-          : "flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-gray-300 bg-white px-4 text-sm font-black text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+          ? "flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-[var(--brand-accent)] px-5 font-semibold text-[var(--brand-accent-contrast)] shadow-md"
+          : "flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-gray-300 bg-white px-4 text-sm font-medium text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
       }
     >
-      <span className="material-symbols-outlined text-lg" aria-hidden="true">open_in_new</span>
       {label}
     </button>
   );
@@ -158,9 +157,9 @@ export function AndroidInstallSteps({ androidBrowser }: AndroidInstallStepsProps
       <ol className="mt-5 space-y-3" aria-label={`${getAndroidBrowserLabel(androidBrowser)} 설치 순서`}>
         {steps.map(({ icon, label }, index) => (
           <li key={label} className="flex min-h-11 items-center gap-3 rounded-2xl bg-gray-50 px-3 py-2 dark:bg-gray-800">
-            <span className="grid size-8 shrink-0 place-items-center rounded-full bg-brand-navy-900 text-sm font-black text-white">{index + 1}</span>
+            <span className="grid size-8 shrink-0 place-items-center rounded-full bg-brand-navy-900 text-sm font-semibold text-white">{index + 1}</span>
             <span className="material-symbols-outlined text-[var(--brand-accent)]" aria-hidden="true">{icon}</span>
-            <span className="text-sm font-bold text-gray-800 dark:text-gray-100">{label}</span>
+            <span className="text-sm font-medium text-gray-800 dark:text-gray-100">{label}</span>
           </li>
         ))}
       </ol>
@@ -201,14 +200,13 @@ export function CopyAddressButton({ tone = "light" }: CopyAddressButtonProps) {
         onClick={copy}
         className={
           tone === "dark"
-            ? "flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-white/25 px-4 text-sm font-black text-white"
-            : "flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-gray-300 bg-white px-4 text-sm font-black text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+            ? "flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-white/25 px-4 text-sm font-medium text-white"
+            : "flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-gray-300 bg-white px-4 text-sm font-medium text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
         }
       >
-        <span className="material-symbols-outlined text-lg" aria-hidden="true">content_copy</span>
         주소 복사하기
       </button>
-      <p aria-live="polite" className="mt-2 text-center text-xs font-bold text-gray-500 dark:text-gray-400">
+      <p aria-live="polite" className="mt-2 text-center text-xs font-medium text-gray-500 dark:text-gray-400">
         {status === "copied" && "복사됐어요. Safari 주소창에 붙여넣어 주세요."}
         {status === "failed" && "복사가 막혔어요. 아래 주소를 길게 눌러 복사해 주세요."}
       </p>
@@ -249,14 +247,8 @@ export function InAppBrowserEscapeCard({ inAppBrowser, platform, description }: 
       aria-labelledby="inapp-escape-title"
     >
       <div className="flex items-start gap-3">
-        <span
-          className="grid size-11 shrink-0 place-items-center rounded-2xl bg-white text-brand-orange-500 shadow-sm dark:bg-gray-900 dark:text-brand-neon-lime"
-          aria-hidden="true"
-        >
-          <span className="material-symbols-outlined">open_in_browser</span>
-        </span>
         <div>
-          <h2 id="inapp-escape-title" className="font-black text-brand-navy-900 dark:text-white">
+          <h2 id="inapp-escape-title" className="font-bold text-brand-navy-900 dark:text-white">
             {label}에서 열렸어요
           </h2>
           <p className="mt-1 text-sm leading-6 text-brand-navy-700 dark:text-gray-200">
@@ -278,9 +270,8 @@ export function InAppBrowserEscapeCard({ inAppBrowser, platform, description }: 
         <button
           type="button"
           onClick={openExternal}
-          className="mt-4 flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-[var(--brand-accent)] px-5 font-black text-[var(--brand-accent-contrast)] shadow-md"
+          className="mt-4 flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-[var(--brand-accent)] px-5 font-semibold text-[var(--brand-accent-contrast)] shadow-md"
         >
-          <span className="material-symbols-outlined" aria-hidden="true">open_in_new</span>
           {browserName}에서 열기
         </button>
       ) : null}
@@ -292,10 +283,10 @@ export function InAppBrowserEscapeCard({ inAppBrowser, platform, description }: 
             key={step}
             className="flex min-h-11 items-center gap-3 rounded-2xl bg-white px-3 py-2 dark:bg-gray-900"
           >
-            <span className="grid size-7 shrink-0 place-items-center rounded-full bg-brand-navy-900 text-xs font-black text-white dark:bg-brand-neon-lime dark:text-brand-navy-900">
+            <span className="grid size-7 shrink-0 place-items-center rounded-full bg-brand-navy-900 text-xs font-semibold text-white dark:bg-brand-neon-lime dark:text-brand-navy-900">
               {index + 1}
             </span>
-            <span className="text-sm font-bold text-gray-800 dark:text-gray-100">{step}</span>
+            <span className="text-sm font-medium text-gray-800 dark:text-gray-100">{step}</span>
           </li>
         ))}
       </ol>

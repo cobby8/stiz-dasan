@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import FontFreeIcon from "@/components/ui/FontFreeIcon";
 import { normalizeMobilePhone, type ReviewTierOption } from "@/lib/payments/tossReview";
 import { openReviewCardPayment } from "@/lib/payments/tossReviewClient";
 
@@ -55,9 +54,9 @@ export default function OrderForm({ programId, options, initialTier }: {
         <>
             {/* 수업 빈도 + 금액 */}
             <div className={cardClass}>
-                <h2 className="text-base font-black text-[var(--color-public-ink)] dark:text-white">수업 선택</h2>
+                <h2 className="text-base font-bold text-[var(--color-public-ink)] dark:text-white">수업 선택</h2>
                 {options.length > 1 ? (
-                    <label className="mt-3 block text-sm font-semibold text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
+                    <label className="mt-3 block text-sm font-medium text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
                         수업 빈도
                         <select value={selected.key} onChange={(event) => setTier(event.target.value)} className={inputClass}>
                             {options.map((option) => (
@@ -68,11 +67,11 @@ export default function OrderForm({ programId, options, initialTier }: {
                         </select>
                     </label>
                 ) : (
-                    <p className="mt-3 text-sm font-semibold text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">{selected.label}</p>
+                    <p className="mt-3 text-sm font-medium text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">{selected.label}</p>
                 )}
                 <div className="mt-4 flex items-baseline justify-between border-t border-[var(--color-public-line)] pt-4 dark:border-[var(--color-public-line)]">
-                    <span className="text-sm font-bold text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">결제 금액</span>
-                    <span className="text-2xl font-black text-[var(--color-public-accent)] dark:text-brand-neon-lime">
+                    <span className="text-sm font-medium text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">결제 금액</span>
+                    <span className="text-2xl font-bold tabular-nums text-[var(--color-public-accent)] dark:text-brand-neon-lime">
                         {selected.amount.toLocaleString("ko-KR")}원
                     </span>
                 </div>
@@ -80,12 +79,12 @@ export default function OrderForm({ programId, options, initialTier }: {
 
             {/* 주문자 정보 — 저장하지 않음 */}
             <div className={cardClass}>
-                <h2 className="text-base font-black text-[var(--color-public-ink)] dark:text-white">주문자 정보</h2>
-                <label className="mt-3 block text-sm font-semibold text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
+                <h2 className="text-base font-bold text-[var(--color-public-ink)] dark:text-white">주문자 정보</h2>
+                <label className="mt-3 block text-sm font-medium text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
                     이름
                     <input type="text" value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" maxLength={50} placeholder="홍길동" className={inputClass} />
                 </label>
-                <label className="mt-3 block text-sm font-semibold text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
+                <label className="mt-3 block text-sm font-medium text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
                     휴대폰 번호
                     <input type="tel" inputMode="numeric" value={phone} onChange={(event) => setPhone(event.target.value)} autoComplete="tel" maxLength={13} placeholder="010-1234-5678" className={inputClass} />
                 </label>
@@ -96,17 +95,17 @@ export default function OrderForm({ programId, options, initialTier }: {
 
             {/* 결제수단 — 카드 1개(선택된 상태) */}
             <div className={cardClass}>
-                <h2 className="text-base font-black text-[var(--color-public-ink)] dark:text-white">결제수단</h2>
-                <label className="mt-3 flex min-h-11 items-center gap-2 rounded-xl border border-[var(--color-public-accent)] px-3 text-sm font-bold text-[var(--color-public-ink)] dark:border-brand-neon-lime dark:text-white">
-                    <input type="radio" name="payMethod" value="CARD" checked readOnly className="h-4 w-4 accent-brand-orange-500" />
+                <h2 className="text-base font-bold text-[var(--color-public-ink)] dark:text-white">결제수단</h2>
+                <label className="mt-3 flex min-h-11 items-center gap-2 rounded-xl bg-[var(--color-public-secondary-soft)] px-3 text-sm font-medium text-[var(--color-public-secondary-ink)] ring-1 ring-inset ring-[var(--color-public-secondary-strong)] dark:bg-transparent dark:text-white dark:ring-brand-neon-lime">
+                    <input type="radio" name="payMethod" value="CARD" checked readOnly className="h-4 w-4 accent-[var(--color-public-accent)]" />
                     신용·체크카드
                 </label>
             </div>
 
             {/* 구매조건 동의 + 결제하기 */}
             <div className={cardClass}>
-                <label className="flex items-start gap-2 text-sm font-semibold text-[var(--color-public-ink)] break-keep dark:text-[var(--color-public-ink)]">
-                    <input type="checkbox" checked={agreed} onChange={(event) => setAgreed(event.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-brand-orange-500" />
+                <label className="flex items-start gap-2 text-sm font-medium text-[var(--color-public-ink)] break-keep dark:text-[var(--color-public-ink)]">
+                    <input type="checkbox" checked={agreed} onChange={(event) => setAgreed(event.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--color-public-accent)]" />
                     <span>
                         구매조건 확인 및 결제 진행에 동의합니다(
                         <a href="/terms" target="_blank" rel="noreferrer" className="text-[var(--color-public-accent)] underline underline-offset-2 dark:text-brand-neon-lime">환불 규정</a>
@@ -117,9 +116,8 @@ export default function OrderForm({ programId, options, initialTier }: {
                     type="button"
                     onClick={pay}
                     disabled={!agreed || loading}
-                    className="mt-4 inline-flex min-h-12 w-full items-center justify-center gap-1.5 rounded-xl bg-[var(--color-public-accent)] px-4 text-base font-black text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900"
+                    className="public-btn-primary mt-4 w-full text-base disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                    <FontFreeIcon name="payments" size={20} />
                     {loading ? "결제창 여는 중" : `${selected.amount.toLocaleString("ko-KR")}원 결제하기`}
                 </button>
                 {error && <p className="mt-2 text-sm text-[var(--color-academy-danger)] dark:text-red-400">{error}</p>}

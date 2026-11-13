@@ -34,7 +34,10 @@ test("staff mobile navigation is role-aware", () => {
   assert.match(staffLayoutSource, /StaffProfileMenu staffName=\{staff\.appUserName\} staffRole=\{staff\.appUserRole\}/);
   assert.match(staffNavSource, /\.\.\.\(canTeach \? \[\.\.\.teachingItems, seasonalItem\] : \[\]\)/);
   assert.match(staffNavSource, /\.\.\.\(canShuttle \? \[shuttleItem\] : \[\]\)/);
-  assert.match(staffNavSource, /airport_shuttle/);
+  // 2026-11-13 UI 통일: 아래 메뉴는 아이콘 없이 글자만 — 셔틀 탭은 «셔틀» 글자로 확인한다
+  assert.match(staffNavSource, /label: "셔틀"/);
+  assert.doesNotMatch(staffNavSource, /material-symbols-outlined/);
+  assert.match(staffNavSource, /aria-current=\{active \? "page" : undefined\}/);
   // 기사님 전용 색은 «기사님만»인 사람에게.
   assert.match(staffLayoutSource, /const isDriverOnly = staff\.roles\.driver && !staff\.roles\.teacher/);
 });

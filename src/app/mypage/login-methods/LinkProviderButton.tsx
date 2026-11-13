@@ -13,7 +13,8 @@ export default function LinkProviderButton({ provider }: { provider: string }) {
     // <Link> 금지 — 미리 불러오기가 시작 주소를 열면 로그인 열쇠(PKCE)가 덮어써진다(2026-10-26 사고).
     <a
       href={`/auth/oauth/${provider}?intent=link`}
-      className="inline-flex min-h-11 items-center rounded-xl bg-[var(--color-academy-primary)] px-4 text-sm font-bold text-white"
+      // 줄마다 반복되는 작업 → 옅은 바탕(tonal). 꽉 찬 주 색은 화면에 하나뿐인 주 버튼 몫(2026-11-13 UI 통일)
+      className="academy-button-tonal shrink-0"
     >
       연결하기
     </a>

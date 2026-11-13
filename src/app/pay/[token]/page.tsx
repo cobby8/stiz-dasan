@@ -85,15 +85,15 @@ export default async function GuestPayPage({
             {/* 청구 정보 한 덩어리: 항목·상태 / 아이·납기 / 금액(주인공 숫자) / 청구 내용 / 번호 */}
             <section className="academy-panel p-4">
                 <div className="flex items-start justify-between gap-2">
-                    <h1 className="min-w-0 break-keep text-base font-black text-[var(--color-academy-ink)]">{title || "수강료"}</h1>
-                    <span className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-bold ${statusClass}`}>
+                    <h1 className="min-w-0 break-keep text-base font-bold text-[var(--color-academy-ink)]">{title || "수강료"}</h1>
+                    <span className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ${statusClass}`}>
                         {statusLabel}
                     </span>
                 </div>
                 <p className="mt-0.5 text-sm text-[var(--color-academy-muted)]">
                     {maskedName} · 납기 {formatDate(invoice.dueDate)}
                 </p>
-                <p className="mt-2 text-2xl font-black tabular-nums text-[var(--color-academy-ink)]">
+                <p className="mt-2 text-2xl font-bold tabular-nums text-[var(--color-academy-ink)]">
                     {formatAmount(Number(invoice.amount))}
                 </p>
                 {description && description !== title && (
@@ -104,7 +104,7 @@ export default async function GuestPayPage({
 
             {isPaid ? (
                 // 납부 완료 — 표시만(영수증 링크는 두지 않는다: 링크를 받은 다른 사람에게 카드 영수증 노출 방지)
-                <p className="academy-panel p-3 text-sm font-bold text-[var(--color-academy-success)]">
+                <p className="academy-panel p-3 text-sm font-semibold text-[var(--color-academy-success)]">
                     납부 완료 · {formatDate(invoice.paidDate || invoice.paidAt)}
                 </p>
             ) : rallyzMirror ? (
@@ -112,12 +112,12 @@ export default async function GuestPayPage({
             ) : (
                 <section aria-label="결제" className="academy-panel p-3">
                     {failNotice && (
-                        <p role="alert" className="mb-3 rounded-lg bg-[var(--color-academy-danger-soft)] p-2 text-sm font-bold text-[var(--color-academy-danger)]">
+                        <p role="alert" className="mb-3 rounded-lg bg-[var(--color-academy-danger-soft)] p-2 text-sm font-medium text-[var(--color-academy-danger)]">
                             {failNotice}
                         </p>
                     )}
                     {bundledAccount && virtualAccount && (
-                        <p className="mb-3 rounded-lg bg-[var(--color-academy-warning-soft)] p-2 text-sm font-bold text-[var(--color-academy-ink)]">
+                        <p className="mb-3 rounded-lg bg-[var(--color-academy-warning-soft)] p-2 text-sm font-medium text-[var(--color-academy-ink)]">
                             여러 청구를 묶은 계좌 · 합계 {formatAmount(virtualAccount.amount)}
                             <span className="block text-xs font-normal text-[var(--color-academy-muted)]">합계를 한 번에 입금해 주세요.</span>
                         </p>
@@ -137,7 +137,7 @@ export default async function GuestPayPage({
             {/* 가입 안내 한 줄 — 결제는 가입 없이 되고, 가입하면 더 볼 수 있다는 것만 */}
             <p className="flex min-h-11 flex-wrap items-center justify-center gap-x-2 text-xs text-[var(--color-academy-muted)]">
                 앱에 가입하면 출결·셔틀도 볼 수 있어요
-                <Link href="/signup/parent" prefetch={false} className="inline-flex min-h-11 items-center font-bold text-[var(--color-academy-ink)] underline">
+                <Link href="/signup/parent" prefetch={false} className="inline-flex min-h-11 items-center font-medium text-[var(--color-academy-ink)] underline">
                     가입하기
                 </Link>
             </p>

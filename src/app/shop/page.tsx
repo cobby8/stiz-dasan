@@ -19,7 +19,7 @@ export default function ShopPage() {
       <section className="public-page-hero public-page-hero--compact relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 py-12 text-white md:py-16">
         <div className="relative mx-auto max-w-5xl px-6">
           <AnimateOnScroll>
-            <h1 className="break-keep text-3xl font-black md:text-4xl">스티즈 클럽샵</h1>
+            <h1 className="break-keep text-3xl font-bold md:text-4xl">스티즈 클럽샵</h1>
           </AnimateOnScroll>
         </div>
       </section>

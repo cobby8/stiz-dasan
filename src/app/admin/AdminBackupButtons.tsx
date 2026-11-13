@@ -3,6 +3,11 @@ import { adminMessageText } from "@/components/admin/adminDisplayText";
 
 import { useRef, useState } from "react";
 
+// 행 모양(2026-11-13 UI 통일): 이모지 없이 글자만, 옆 메뉴와 같은 44px 행.
+const ROW_IDLE = "text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)]";
+// 복원은 지금 설정을 덮어쓰는 위험 작업 — 글자를 위험색으로 구분한다(확인 창은 그대로)
+const ROW_DANGER = "text-[var(--color-academy-danger)] hover:bg-[var(--color-academy-danger-soft)]";
+
 // sheetRetired: 구글 시트 원장 은퇴(2026-10~) 면 「시트 동기화」 버튼을 숨긴다(설정 백업·복원 버튼은 그대로).
 export default function AdminBackupButtons({ sheetRetired = false }: { sheetRetired?: boolean } = {}) {
     const [busy, setBusy] = useState(false);
@@ -161,38 +166,34 @@ export default function AdminBackupButtons({ sheetRetired = false }: { sheetReti
                 type="button"
                 onClick={handleSyncSchedule}
                 disabled={busy}
-                className={`flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left transition-colors ${
-                    busy ? "opacity-50" : "text-[var(--color-academy-faint)] hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)]"
+                className={`flex w-full min-h-11 items-center gap-3 rounded-lg px-4 py-2 text-sm text-left transition-colors ${
+                    busy ? "opacity-50" : ROW_IDLE
                 }`}
             >
-                <span className="text-xl">🔄</span>
                 <span>시트 동기화</span>
             </button>
             )}
             <a
                 href="/api/admin/backup"
-                className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-[var(--color-academy-faint)] transition-colors hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)]"
+                className={`flex w-full min-h-11 items-center gap-3 rounded-lg px-4 py-2 text-sm transition-colors ${ROW_IDLE}`}
             >
-                <span className="text-xl">💾</span>
                 <span>설정 백업 다운로드</span>
             </a>
             <button
                 type="button"
                 onClick={handleArchiveDownload}
                 disabled={busy}
-                className={`flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left transition-colors ${
-                    busy ? "opacity-50" : "text-[var(--color-academy-faint)] hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)]"
+                className={`flex w-full min-h-11 items-center gap-3 rounded-lg px-4 py-2 text-sm text-left transition-colors ${
+                    busy ? "opacity-50" : ROW_IDLE
                 }`}
             >
-                <span className="text-xl">🗄️</span>
                 <span>업무 자료 백업 내려받기</span>
             </button>
             <label
-                className={`flex w-full cursor-pointer items-center gap-3 rounded-lg px-4 py-3 transition-colors ${
-                    busy ? "opacity-50" : "text-[var(--color-academy-faint)] hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)]"
+                className={`flex w-full cursor-pointer min-h-11 items-center gap-3 rounded-lg px-4 py-2 text-sm transition-colors ${
+                    busy ? "opacity-50" : ROW_DANGER
                 }`}
             >
-                <span className="text-xl">📂</span>
                 <span>{busy ? "처리 중..." : "파일로 복원"}</span>
                 <input type="file" accept=".json" className="hidden" onChange={handleRestore} disabled={busy} />
             </label>
@@ -200,30 +201,27 @@ export default function AdminBackupButtons({ sheetRetired = false }: { sheetReti
                 type="button"
                 onClick={handleCloudRestore}
                 disabled={busy}
-                className={`flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left transition-colors ${
-                    busy ? "opacity-50" : "text-[var(--color-academy-faint)] hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)]"
+                className={`flex w-full min-h-11 items-center gap-3 rounded-lg px-4 py-2 text-sm text-left transition-colors ${
+                    busy ? "opacity-50" : ROW_DANGER
                 }`}
             >
-                <span className="text-xl">☁️</span>
                 <span>최신 자동백업 복원</span>
             </button>
             <button
                 type="button"
                 onClick={handleBackupNow}
                 disabled={busy}
-                className={`flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left transition-colors ${
-                    busy ? "opacity-50" : "text-[var(--color-academy-faint)] hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)]"
+                className={`flex w-full min-h-11 items-center gap-3 rounded-lg px-4 py-2 text-sm text-left transition-colors ${
+                    busy ? "opacity-50" : ROW_IDLE
                 }`}
             >
-                <span className="text-xl">☁️</span>
                 <span>전체 백업 지금 저장</span>
             </button>
             <a
                 href="/api/admin/export-seed"
                 download="seed-data.ts"
-                className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-[var(--color-academy-faint)] transition-colors hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)]"
+                className={`flex w-full min-h-11 items-center gap-3 rounded-lg px-4 py-2 text-sm transition-colors ${ROW_IDLE}`}
             >
-                <span className="text-xl">📦</span>
                 <span>seed 내보내기</span>
             </a>
             <p className="px-4 text-xs text-[var(--color-academy-faint)]">설정 + 학생·출결·청구·결제 등 업무 자료(별도 압축 파일) 백업 · 복원은 설정만(업무 자료는 보관용)</p>

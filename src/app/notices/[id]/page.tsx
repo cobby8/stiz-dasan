@@ -7,7 +7,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { toNoticeHtml, isImageAttachment, isHtmlContent } from "@/lib/noticeContent";
 import { sanitizeHtml } from "@/lib/sanitize";
-import FontFreeIcon from "@/components/ui/FontFreeIcon";
 import { formatKstDate } from "@/lib/datetime/kst";
 import { buildNoticeMetadata } from "@/lib/noticeMetadata";
 import type { Metadata } from "next";
@@ -57,26 +56,25 @@ export default async function NoticeDetailPage({ params }: { params: Promise<{ i
                         {/* 목록으로 돌아가기 링크 */}
                         <Link
                             href="/notices"
-                            className="inline-flex items-center gap-1.5 text-blue-200/70 hover:text-white text-sm mb-2 min-h-11 transition-colors"
+                            className="inline-flex items-center gap-1.5 text-[var(--color-public-dark-muted)] hover:text-white text-sm mb-2 min-h-11 transition-colors"
                         >
-                            <FontFreeIcon name="arrow_back" size={16} /> 목록으로 돌아가기
+                            <span aria-hidden="true">←</span> 목록으로 돌아가기
                         </Link>
 
                         {/* 고정 공지 뱃지 */}
                         {notice.isPinned && (
                             <div className="mb-3">
                                 <Badge variant="error" size="md">
-                                    <FontFreeIcon name="push_pin" size={12} className="mr-1" />
                                     중요 공지
                                 </Badge>
                             </div>
                         )}
 
                         {/* 공지 제목 */}
-                        <h1 className="text-3xl md:text-4xl font-black leading-tight mb-3 break-keep">{notice.title}</h1>
+                        <h1 className="text-3xl md:text-4xl font-bold leading-tight mb-3 break-keep">{notice.title}</h1>
 
                         {/* 날짜 */}
-                        <p className="text-blue-200/60 text-sm">
+                        <p className="text-[var(--color-public-dark-muted)] text-sm">
                             게시일 · {" "}
                             {formatKstDate(notice.createdAt, {
                                 year: "numeric",
@@ -84,7 +82,7 @@ export default async function NoticeDetailPage({ params }: { params: Promise<{ i
                                 day: "numeric",
                             })}
                         </p>
-                        <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-blue-200/70">
+                        <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-[var(--color-public-dark-muted)]">
                             <span>공지 내용은 게시 당시 기준입니다.</span>
                             <Link href="/schedule" className="underline underline-offset-2">현재 시간표</Link>
                             <Link href="/seasonal" className="underline underline-offset-2">방학특강 모집 확인</Link>
@@ -137,8 +135,7 @@ export default async function NoticeDetailPage({ params }: { params: Promise<{ i
                             {/* 이미지 외 첨부파일 — 다운로드 링크 */}
                             {fileAtts.length > 0 && (
                                 <div className="mt-10 pt-6 border-t border-[var(--color-public-line)] dark:border-[var(--color-public-line)]">
-                                    <h3 className="text-sm font-bold text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)] mb-4 flex items-center gap-2">
-                                        <FontFreeIcon name="attach_file" size={16} className="text-[var(--color-public-muted)]" />
+                                    <h3 className="text-sm font-semibold text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)] mb-4 flex items-center gap-2">
                                         첨부파일 ({fileAtts.length}개)
                                     </h3>
                                     <div className="space-y-2">
@@ -155,7 +152,7 @@ export default async function NoticeDetailPage({ params }: { params: Promise<{ i
                                                 </span>
                                                 <div className="flex items-center gap-3 flex-shrink-0 ml-4">
                                                     <span className="text-xs text-[var(--color-public-muted)]">{formatSize(a.size)}</span>
-                                                    <FontFreeIcon name="download" size={16} className="text-[var(--color-public-muted)] group-hover:text-[var(--color-public-accent)] dark:group-hover:text-brand-neon-lime transition-colors" />
+                                                    <span className="text-xs font-medium text-[var(--color-public-accent)] dark:text-brand-neon-lime">내려받기</span>
                                                 </div>
                                             </a>
                                         ))}
@@ -169,9 +166,9 @@ export default async function NoticeDetailPage({ params }: { params: Promise<{ i
                     <div className="mt-8 text-center">
                         <Link
                             href="/notices"
-                            className="inline-flex items-center gap-2 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] hover:text-[var(--color-public-ink)] text-sm font-medium transition-colors"
+                            className="public-btn-secondary text-sm"
                         >
-                            <FontFreeIcon name="arrow_back" size={16} /> 목록으로 돌아가기
+                            목록으로 돌아가기
                         </Link>
                     </div>
                 </div>

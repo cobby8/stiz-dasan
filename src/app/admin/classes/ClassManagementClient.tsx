@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link"; // 클래스 상세 페이지 링크용
 import { deleteClass } from "@/app/actions/admin";
 import AdminQuickActionMenu from "@/components/admin/AdminQuickActionMenu";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { useAdminConfirm } from "@/components/admin/AdminConfirmDialog";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import ListViewToggle, { useRememberedListView } from "@/components/admin/list/ListViewToggle";
@@ -80,11 +81,11 @@ function ClassesLoadingFallback() {
 function ClassesErrorState({ onRetry }: { onRetry: () => void }) {
     return (
         <div className="rounded-xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-4 text-center">
-            <p className="text-sm font-bold text-[var(--color-academy-danger)]">반 목록을 불러오지 못했습니다.</p>
+            <p className="text-sm font-semibold text-[var(--color-academy-danger)]">반 목록을 불러오지 못했습니다.</p>
             <button
                 type="button"
                 onClick={onRetry}
-                className="mt-3 min-h-11 rounded-lg border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)] px-4 text-sm font-bold"
+                className="academy-button-secondary mt-3"
             >
                 다시 시도
             </button>
@@ -170,7 +171,7 @@ export default function ClassManagementClient({
         }
     }
 
-    // ⚡ 빠른 작업 목록(기존 그대로: 수정·삭제)
+    // «빠른작업» 목록(기존 그대로: 수정·삭제)
     function buildQuickActions(cls: ClassItem) {
         return [
             {
@@ -220,7 +221,7 @@ export default function ClassManagementClient({
     const detailClass = detailClassId ? classes.find((cls) => cls.id === detailClassId) ?? null : null;
     const columnCount = 7;
 
-    // 한 줄 행: 요일 | 시간 | 반 이름 | 프로그램 | 장소 | 정원 | 관리(⚡). 긴 프로그램·장소는 상세 패널에서도 전부
+    // 한 줄 행: 요일 | 시간 | 반 이름 | 프로그램 | 장소 | 정원 | 관리(«빠른작업»). 긴 프로그램·장소는 상세 패널에서도 전부
     function renderClassRow(cls: ClassItem) {
         return (
             <tr
@@ -231,7 +232,7 @@ export default function ClassManagementClient({
                 onKeyDown={(event) => handleRowKeyDown(event, cls.id)}
                 className="cursor-pointer transition-colors hover:bg-[var(--color-academy-soft)] focus:bg-[var(--color-academy-primary-soft)] focus:outline-none"
             >
-                <td className="px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{dayLabelOf(cls.dayOfWeek)}</td>
+                <td className="px-2 py-1.5 text-[var(--color-academy-ink)]">{dayLabelOf(cls.dayOfWeek)}</td>
                 {/* 시간: 오른쪽 정렬 + 자릿수 폭 고정 */}
                 <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-ink)]">{cls.startTime || "-"}~{cls.endTime || "-"}</td>
                 <td className="px-2 py-1.5">
@@ -240,7 +241,7 @@ export default function ClassManagementClient({
                         href={`/admin/classes/${cls.id}`}
                         prefetch={false}
                         onClick={(event) => event.stopPropagation()}
-                        className="font-bold text-[var(--color-academy-ink)] hover:text-[var(--color-academy-ink)] hover:underline"
+                        className="font-semibold text-[var(--color-academy-ink)] hover:text-[var(--color-academy-primary)] hover:underline"
                     >
                         {cls.name}
                     </Link>
@@ -248,7 +249,7 @@ export default function ClassManagementClient({
                 <td className="hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{cls.program?.name || "-"}</td>
                 <td className="hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{cls.location || "미지정"}</td>
                 <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-ink)]">{cls.capacity}명</td>
-                {/* 관리: ⚡ 메뉴. 눌러도 행 클릭(패널 열기)이 같이 일어나지 않게 전파 차단 */}
+                {/* 관리: «빠른작업» 메뉴. 눌러도 행 클릭(패널 열기)이 같이 일어나지 않게 전파 차단 */}
                 <td className="admin-cell-center px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
                     <AdminQuickActionMenu
                         label={`${cls.name} 빠른 작업`}
@@ -269,18 +270,20 @@ export default function ClassManagementClient({
 
     return (
         <div className="space-y-3">
-            <div className="flex items-center justify-between gap-2">
-                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                    <h1 className="text-2xl font-bold text-[var(--color-academy-ink)]">클래스(반) 관리</h1>
-                    <p className="text-xs text-[var(--color-academy-muted)]">개설된 전체 시간표 <span className="tabular-nums">{classes.length}</span>개</p>
-                </div>
-                <button
-                    onClick={() => { setEditingClass(null); setShowForm(true); }}
-                    className="min-h-11 shrink-0 rounded-lg bg-[var(--color-academy-primary)] px-4 font-bold text-[var(--color-academy-on-primary)] transition hover:bg-[var(--color-academy-primary-hover)]"
-                >
-                    + 반 개설
-                </button>
-            </div>
+            {/* 페이지 제목은 공용 머리말 부품(모양 한 가지). 이 화면의 주 버튼은 «반 개설» 하나 */}
+            <AdminPageHeader
+                title="클래스(반) 관리"
+                description={<>개설된 전체 시간표 <span className="tabular-nums">{classes.length}</span>개</>}
+                actions={
+                    <button
+                        type="button"
+                        onClick={() => { setEditingClass(null); setShowForm(true); }}
+                        className="academy-button-primary"
+                    >
+                        + 반 개설
+                    </button>
+                }
+            />
 
             {programs.length === 0 && (
                 <div className="rounded-md bg-[var(--color-academy-warning-soft)] p-3 text-sm text-[var(--color-academy-warning)]">
@@ -328,7 +331,7 @@ export default function ClassManagementClient({
                     <div className="overflow-x-auto">
                         {/* admin-list-table: 글자 왼쪽·시간/정원 오른쪽(tabular)·한 줄(말줄임 없음, 좁으면 가로 스크롤) */}
                         <table className="admin-list-table w-full border-collapse text-sm">
-                            <thead className="bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]">
+                            <thead className="bg-[var(--color-academy-soft)] text-xs font-semibold text-[var(--color-academy-muted)]">
                                 <tr>
                                     <th className="px-2 py-2">요일</th>
                                     <th className="admin-cell-num px-2 py-2">시간</th>
@@ -344,7 +347,7 @@ export default function ClassManagementClient({
                                 dayGroups.map((group) => (
                                     <tbody key={group.key} className="divide-y divide-[var(--color-academy-line)]">
                                         <tr>
-                                            <th colSpan={columnCount} scope="rowgroup" className="bg-[var(--color-academy-soft)] px-2 py-1.5 text-xs font-black text-[var(--color-academy-ink)]">
+                                            <th colSpan={columnCount} scope="rowgroup" className="bg-[var(--color-academy-soft)] px-2 py-1.5 text-xs font-semibold text-[var(--color-academy-ink)]">
                                                 {group.label} · <span className="tabular-nums">{group.items.length}</span>개 반
                                             </th>
                                         </tr>
@@ -372,7 +375,7 @@ export default function ClassManagementClient({
                 return (
                     <ListDetailPanel onClose={() => setDetailClassId(null)} titleId="class-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
                         <div className="mb-4 flex items-center gap-2">
-                            <h3 id="class-detail-panel-title" className="min-w-0 break-keep text-lg font-black text-[var(--color-academy-ink)]">{d.name}</h3>
+                            <h3 id="class-detail-panel-title" className="min-w-0 break-keep text-lg font-bold text-[var(--color-academy-ink)]">{d.name}</h3>
                             <button
                                 type="button"
                                 onClick={() => setDetailClassId(null)}
@@ -385,19 +388,18 @@ export default function ClassManagementClient({
                         <dl className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
                             {rows.map((row) => (
                                 <div key={row.label} className="contents">
-                                    <dt className="font-bold text-[var(--color-academy-muted)]">{row.label}</dt>
+                                    <dt className="font-medium text-[var(--color-academy-muted)]">{row.label}</dt>
                                     <dd className="min-w-0 break-keep break-words text-[var(--color-academy-ink)]">{row.value}</dd>
                                 </div>
                             ))}
                         </dl>
-                        {/* 작업: 상세 페이지 열기 + 기존 ⚡ 의 «수정». 패널을 닫고 기존 폼을 연다(삭제는 ⚡ 에만 둔다) */}
+                        {/* 작업: 상세 페이지 열기 + 기존 «빠른작업» 의 «수정». 패널을 닫고 기존 폼을 연다(삭제는 «빠른작업» 에만 둔다) */}
                         <div className="mt-5 flex flex-wrap gap-2">
                             <Link
                                 href={`/admin/classes/${d.id}`}
                                 prefetch={false}
-                                className="inline-flex min-h-11 items-center gap-1 rounded-lg bg-[var(--color-academy-primary)] px-4 text-sm font-bold text-[var(--color-academy-on-primary)] hover:bg-[var(--color-academy-primary-hover)]"
+                                className="academy-button-primary"
                             >
-                                <span className="material-symbols-outlined text-lg" aria-hidden="true">open_in_new</span>
                                 상세 페이지 열기
                             </Link>
                             <button
@@ -406,9 +408,8 @@ export default function ClassManagementClient({
                                     setDetailClassId(null);
                                     startEdit(d);
                                 }}
-                                className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-[var(--color-academy-line)] px-4 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"
+                                className="academy-button-secondary"
                             >
-                                <span className="material-symbols-outlined text-lg" aria-hidden="true">edit</span>
                                 수정
                             </button>
                         </div>

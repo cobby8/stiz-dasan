@@ -31,7 +31,7 @@ export default function EmptyParentState({ pendingSeasonalChildren }: { pendingS
         <p className="mt-2 text-sm text-[var(--color-academy-muted)]">이미 다니고 있다면 등록된 보호자 번호로 본인인증해 주세요. 연결된 자녀의 수업·출결·납부 정보를 확인할 수 있습니다.</p>
         <Link href="/mypage/children" className="academy-button-primary mt-4">본인인증·자녀 연결</Link>
         {pending > 0 && <p role="status" className="mt-3 text-sm">가족 확인을 기다리는 요청 {pending}건이 있습니다. 승인 전에는 자녀 정보가 표시되지 않습니다.</p>}
-        {incoming > 0 && <Link href="/mypage/children" className="mt-3 block text-sm font-bold underline">가족 연결 요청 {incoming}건 확인</Link>}
+        {incoming > 0 && <Link href="/mypage/children" className="mt-3 block text-sm font-medium underline">가족 연결 요청 {incoming}건 확인</Link>}
         {error && <div className="mt-3 text-sm"><p role="alert">{error}</p><button type="button" onClick={() => { setError(""); setAttempt((value) => value + 1); }} className="academy-button-secondary mt-2">다시 확인</button></div>}
       </section>
       {pendingSeasonalChildren.length > 0 && <section className="academy-panel p-4" aria-labelledby="seasonal-pending-title">

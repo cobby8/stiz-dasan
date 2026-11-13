@@ -184,10 +184,12 @@ test("A-14 대시보드: 카드 두 줄에 소제목, 아이콘 색 muted 통일
   const dash = read("../src/app/admin/AdminDashboardClient.tsx");
   assert.match(dash, />운영 규모<\/h3>/);
   assert.match(dash, />이번 달 매출·출석·미납<\/h3>/);
-  for (const name of ["groups", "menu_book", "person_check", "layers"]) {
-    assert.ok(dash.includes(`<SymbolIcon name="${name}" size={20} className="text-[var(--color-academy-muted)]" />`), name);
+  // 2026-11-13 UI 통일: 카드 아이콘을 뺐다(제목 글자가 말한다) — 옛 «아이콘 색 muted 통일» 단언을 «아이콘 없음»으로 바꿨다
+  assert.doesNotMatch(dash, /SymbolIcon|material-symbols-outlined/, "대시보드에 아이콘이 다시 들어갔다");
+  for (const title of ["등록 원생", "운영 프로그램", "코치/강사진", "개설 반"]) {
+    assert.ok(dash.includes(`<StatCard title="${title}"`), title);
   }
-  // 운영 현황 카드 구역만(백업 상태 아이콘의 의미색은 그대로 둔다)
+  // 운영 현황 카드 구역만
   const cards = dash.slice(dash.indexOf(">운영 규모</h3>"), dash.indexOf(">이번 달 매출·출석·미납</h3>"));
   assert.doesNotMatch(cards, /text-blue-500|text-emerald-500|text-purple-500/);
 });

@@ -143,24 +143,16 @@ export default function StaffAppInstallClient() {
     <main className="min-h-screen bg-surface-warm px-4 pb-[max(2rem,env(safe-area-inset-bottom))] pt-[max(1.25rem,env(safe-area-inset-top))] dark:bg-gray-950">
       <div className="mx-auto max-w-lg">
         <header className="flex min-h-11 items-center gap-2 text-brand-navy-900 dark:text-white">
-          <span className="grid size-10 place-items-center rounded-xl bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]" aria-hidden="true">
-            <span className="material-symbols-outlined">sports_soccer</span>
-          </span>
           <div>
-            <p className="text-lg font-black leading-tight">STIZ</p>
-            <p className="text-xs font-bold text-gray-500 dark:text-gray-400">선생님 앱</p>
+            <p className="text-lg font-bold leading-tight">STIZ</p>
+            <p className="text-xs font-medium text-gray-500 dark:text-gray-400">선생님 앱</p>
           </div>
         </header>
 
         <section className="mt-7 overflow-hidden rounded-[2rem] bg-brand-navy-900 px-5 py-7 text-white shadow-xl">
-          <div className="mx-auto grid size-20 place-items-center rounded-[1.5rem] bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)] shadow-lg">
-            <span className="material-symbols-outlined text-4xl" aria-hidden="true">
-              {isInstalled ? "check_circle" : "install_mobile"}
-            </span>
-          </div>
-          <div className="mt-5 text-center">
-            <p className="text-sm font-bold text-white/65">가입을 마친 선생님 전용</p>
-            <h1 className="mt-1 text-balance text-3xl font-black leading-tight">
+          <div className="text-center">
+            <p className="text-sm font-medium text-white/65">가입을 마친 선생님 전용</p>
+            <h1 className="mt-1 text-balance text-3xl font-bold leading-tight">
               {isInstalled ? "선생님 앱이 준비됐어요" : "스티즈 선생님 앱 설치"}
             </h1>
             <p className="mx-auto mt-3 max-w-sm text-balance text-sm leading-6 text-white/75">
@@ -176,9 +168,8 @@ export default function StaffAppInstallClient() {
                 type="button"
                 onClick={install}
                 disabled={isInstalling}
-                className="flex min-h-16 w-full items-center justify-center gap-2 rounded-2xl bg-[var(--brand-accent)] px-5 text-lg font-black text-[var(--brand-accent-contrast)] shadow-md disabled:cursor-wait disabled:opacity-70"
+                className="flex min-h-16 w-full items-center justify-center gap-2 rounded-2xl bg-[var(--brand-accent)] px-5 text-lg font-semibold text-[var(--brand-accent-contrast)] shadow-md disabled:cursor-wait disabled:opacity-70"
               >
-                <span className="material-symbols-outlined" aria-hidden="true">download</span>
                 {isInstalling ? "설치 준비 중..." : "지금 앱 설치하기"}
               </button>
             </div>
@@ -191,9 +182,8 @@ export default function StaffAppInstallClient() {
             <div className="mt-6">
               <Link
                 href="/staff"
-                className="flex min-h-16 w-full items-center justify-center gap-2 rounded-2xl bg-[var(--brand-accent)] px-5 text-lg font-black text-[var(--brand-accent-contrast)] shadow-md"
+                className="flex min-h-16 w-full items-center justify-center gap-2 rounded-2xl bg-[var(--brand-accent)] px-5 text-lg font-semibold text-[var(--brand-accent-contrast)] shadow-md"
               >
-                <span className="material-symbols-outlined" aria-hidden="true">arrow_forward</span>
                 선생님 페이지 열기
               </Link>
             </div>
@@ -210,7 +200,7 @@ export default function StaffAppInstallClient() {
             <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-[var(--brand-accent-soft)] text-[var(--brand-accent)]" aria-hidden="true">
               <span className="material-symbols-outlined animate-spin">progress_activity</span>
             </span>
-            <p className="text-sm font-bold text-gray-600 dark:text-gray-300">설치 방법을 확인하고 있어요</p>
+            <p className="text-sm font-medium text-gray-600 dark:text-gray-300">설치 방법을 확인하고 있어요</p>
           </section>
         )}
 
@@ -223,11 +213,8 @@ export default function StaffAppInstallClient() {
         {view.showManualGuide && !isInstalled && deviceState !== "checking" && !inAppBrowser && (
           <section className="mt-4 rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900" aria-labelledby="install-guide-title">
             <div className="flex items-start gap-3">
-              <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-[var(--brand-accent-soft)] text-[var(--brand-accent)]" aria-hidden="true">
-                <span className="material-symbols-outlined">touch_app</span>
-              </span>
               <div>
-                <h2 id="install-guide-title" className="font-black text-gray-900 dark:text-white">
+                <h2 id="install-guide-title" className="font-bold text-gray-900 dark:text-white">
                   {deviceState === "ios-browser" ? "Safari에서 열어주세요" : "홈 화면에 설치하는 방법"}
                 </h2>
                 <p className="mt-1 text-sm leading-6 text-gray-600 dark:text-gray-300">
@@ -266,10 +253,10 @@ export default function StaffAppInstallClient() {
                     ["add", "오른쪽 위 ‘추가’ 누르기", ""],
                   ].map(([icon, label, hint], index) => (
                     <li key={label} className="flex min-h-11 items-center gap-3 rounded-2xl bg-gray-50 px-3 py-2 dark:bg-gray-800">
-                      <span className="grid size-8 shrink-0 place-items-center rounded-full bg-brand-navy-900 text-sm font-black text-white">{index + 1}</span>
+                      <span className="grid size-8 shrink-0 place-items-center rounded-full bg-brand-navy-900 text-sm font-semibold text-white">{index + 1}</span>
                       <span className="material-symbols-outlined text-[var(--brand-accent)]" aria-hidden="true">{icon}</span>
                       <span className="min-w-0">
-                        <span className="block text-sm font-bold text-gray-800 dark:text-gray-100">{label}</span>
+                        <span className="block text-sm font-medium text-gray-800 dark:text-gray-100">{label}</span>
                         {hint && <span className="block text-xs text-gray-500 dark:text-gray-400">{hint}</span>}
                       </span>
                     </li>

@@ -47,12 +47,12 @@ export default function RentalPage() {
           {/* 이용 안내 — 요금표·규칙(근접성: 돈 이야기는 한 상자, 지켜야 할 것은 한 상자) */}
           <aside className="space-y-4">
             <div className="public-card p-4">
-              <h2 className="text-base font-black text-[var(--color-public-ink)]">요금</h2>
+              <h2 className="text-base font-bold text-[var(--color-public-ink)]">요금</h2>
               <dl className="mt-2 divide-y divide-[var(--color-public-line)] text-sm">
                 {FEE_ROWS.map(([label, value]) => (
                   <div key={label} className="flex items-baseline justify-between gap-3 py-1.5">
                     <dt className="text-[var(--color-public-muted)]">{label}</dt>
-                    <dd className="text-right font-bold tabular-nums text-[var(--color-public-ink)]">{value}</dd>
+                    <dd className="text-right font-semibold tabular-nums text-[var(--color-public-ink)]">{value}</dd>
                   </div>
                 ))}
               </dl>
@@ -60,12 +60,12 @@ export default function RentalPage() {
                 보증금은 사용 후 돌려드립니다. 정리정돈·냉난방·인원 규칙을 지키지 않으면 차감될 수 있어요.
                 30분 단위로 신청하면 그만큼 나눠 계산해요.
               </p>
-              <p className="mt-1 text-xs font-bold break-keep text-[var(--color-public-ink)]">
+              <p className="mt-1 text-xs font-semibold break-keep text-[var(--color-public-ink)]">
                 재원생 가족은 2시간까지 무료(냉난방·인원 추가는 별도, 보증금 없음)
               </p>
             </div>
             <div className="public-card p-4">
-              <h2 className="text-base font-black text-[var(--color-public-ink)]">이용 규칙</h2>
+              <h2 className="text-base font-bold text-[var(--color-public-ink)]">이용 규칙</h2>
               <ul className="mt-2 space-y-1.5 text-sm break-keep text-[var(--color-public-ink)]">
                 <li>· 실내운동화 필수 지참·착용</li>
                 <li>· 건물 주차가 어려워요. 인근 주민센터 주차장을 이용해 주세요.</li>
@@ -75,7 +75,7 @@ export default function RentalPage() {
               </ul>
             </div>
             <div className="public-card p-4 text-sm break-keep text-[var(--color-public-muted)]">
-              <h2 className="text-base font-black text-[var(--color-public-ink)]">진행 순서</h2>
+              <h2 className="text-base font-bold text-[var(--color-public-ink)]">진행 순서</h2>
               <p className="mt-2">신청 → 원장님 승인 → 입금 → 확정 → 사용 → 보증금 환불</p>
             </div>
           </aside>

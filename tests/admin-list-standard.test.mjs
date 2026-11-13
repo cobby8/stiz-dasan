@@ -240,7 +240,8 @@ test("셔틀 명단: 수업시간 묶음 아래 학생 한 줄 행(등원·하�
   assert.match(rosterClient, /setDialog\(\{ kind: "move", entry, weekday: active, classTime, scope: defaultScope \}\)/);
   assert.match(rosterClient, /setDialog\(\{ kind: "remove", entry, weekday: active, scope: defaultScope \}\)/);
   // 좌표 없음 경고는 목록에서도 보인다
-  assert.match(rosterClient, /⚠ 좌표 없음/);
+  // 2026-11-13 UI 통일: 장식 기호(⚠)를 빼고 글자만 — 주의색 배지는 그대로.
+  assert.match(rosterClient, /text-\[var\(--color-academy-warning\)\]">좌표 없음<\/span>/);
   // 학생 목록 표에 말줄임 없음
   const table = rosterClient.slice(rosterClient.indexOf('view === "students" && groups.length > 0'), rosterClient.indexOf("<datalist"));
   assert.ok(table.length > 100, "학생 목록 표가 있어야 합니다");

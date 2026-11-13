@@ -33,10 +33,12 @@ const ACADEMY_DIRS = [
 ];
 
 // 갚아야 할 빚(2026-11-13 1단계 시점 804·645·54 → 2단계 «원생» 화면 정리 뒤 766·612·51). 줄어들기만 해야 한다.
+// 이력: 1단계 804·645·54 → 2단계(원생) 766·612·51 → 전 화면 정리 뒤 0·127·6 (2026-11-13).
+// 남은 아이콘 = 닫기·뒤로·펼침·정렬·끌기 손잡이·지도/GPS·출결 상태처럼 글자를 둘 자리가 없거나 뜻을 전하는 기호.
 const DEBT = {
-  heavyWeight: 766, // font-black · font-extrabold · font-[800] · fontWeight: 800 — 화면에서는 테마가 700 으로 낮춰 그리지만 코드에서도 걷어낸다
-  icons: 612, // material-symbols-outlined · <FontFreeIcon · <SymbolIcon(파일마다 따로 만든 아이콘 부품) — 글자를 둘 자리가 없는 조작만 남긴다
-  adminRawH1: 51, // 관리자 화면의 직접 쓴 <h1> — AdminPageHeader 로 옮긴다
+  heavyWeight: 0, // font-black · font-extrabold · font-[800] · fontWeight: 800 — 화면에서는 테마가 700 으로 낮춰 그리지만 코드에서도 걷어낸다
+  icons: 127, // material-symbols-outlined · <FontFreeIcon · <SymbolIcon(파일마다 따로 만든 아이콘 부품) — 글자를 둘 자리가 없는 조작만 남긴다
+  adminRawH1: 6, // 관리자 화면의 직접 쓴 <h1> — AdminPageHeader 로 옮긴다
 };
 
 test("굵은 글자(font-black·font-extrabold)가 늘지 않는다", () => {

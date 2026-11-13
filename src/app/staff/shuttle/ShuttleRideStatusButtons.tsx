@@ -72,7 +72,7 @@ export default function ShuttleRideStatusButtons({
         </StatusChoiceButton>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-x-2">
-        <p className={`text-xs font-bold ${isFailure ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-muted)]"}`} role={isFailure ? "alert" : "status"}>
+        <p className={`text-xs ${isFailure ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-muted)]"}`} role={isFailure ? "alert" : "status"}>
           {message || `현재 ${STATUS_LABEL[status]}`}
         </p>
         {/* 이미 대기면 되돌릴 것이 없으므로 숨긴다. 저장 경로는 다른 버튼과 같은 update() */}

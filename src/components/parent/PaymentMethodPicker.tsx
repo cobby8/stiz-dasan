@@ -44,17 +44,17 @@ export default function PaymentMethodPicker({
                     type="button"
                     onClick={() => onPay(preferred)}
                     disabled={off}
-                    className="academy-button-primary min-h-12 w-full flex-col py-1.5 text-base font-black"
+                    className="academy-button-primary w-full flex-col"
                 >
                     {/* 360px 에서도 한 줄 — 방법 이름이 첫 줄, 금액은 둘째 줄 작은 글자 */}
                     <span className="block whitespace-nowrap">{loading ? "결제창 여는 중..." : quickPayLabel(preferred)}</span>
-                    {!loading && showAmount && <span className="block whitespace-nowrap text-xs font-bold opacity-90">{amountLabel}</span>}
+                    {!loading && showAmount && <span className="block whitespace-nowrap text-xs font-normal tabular-nums opacity-90">{amountLabel}</span>}
                 </button>
             )}
 
             {/* 버튼 줄 제목 — 큰 버튼이 있으면 «다른 방법», 없으면 «결제 방법» */}
             {(preferred || showAmount) && (
-                <p className="text-xs font-bold text-[var(--color-academy-muted)]">
+                <p className="text-xs font-medium text-[var(--color-academy-muted)]">
                     {preferred ? "다른 방법으로 결제" : `결제 방법을 눌러 주세요 · ${amountLabel}`}
                 </p>
             )}
@@ -65,9 +65,8 @@ export default function PaymentMethodPicker({
                         type="button"
                         onClick={() => onPay(option.value)}
                         disabled={off}
-                        className="flex min-h-12 flex-col items-center justify-center whitespace-nowrap rounded-lg border border-[var(--color-academy-line)] px-1 text-xs font-bold text-[var(--color-academy-ink)] hover:border-[var(--color-academy-primary)] hover:text-[var(--color-academy-primary)] disabled:cursor-not-allowed disabled:opacity-60"
+                        className="academy-button-secondary whitespace-nowrap px-1!"
                     >
-                        <span className="material-symbols-outlined text-lg leading-none" aria-hidden="true">{option.icon}</span>
                         {option.label}
                     </button>
                 ))}

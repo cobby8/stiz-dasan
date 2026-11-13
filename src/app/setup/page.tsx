@@ -100,7 +100,7 @@ export default function SetupPage() {
           </p>
           <a
             href="/login"
-            className="inline-block px-6 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-medium rounded-lg transition-colors"
+            className="public-btn-primary"
           >
             로그인하러 가기
           </a>
@@ -132,7 +132,7 @@ export default function SetupPage() {
       <div className="w-full max-w-md">
         {/* 헤더 */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-orange-500 rounded-2xl mb-4">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-[var(--color-public-accent)] rounded-2xl mb-4">
             <span className="text-white text-2xl font-bold">S</span>
           </div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">초기 설정</h1>
@@ -223,7 +223,7 @@ export default function SetupPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="public-btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? "생성 중..." : "관리자 계정 생성"}
             </button>

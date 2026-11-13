@@ -10,47 +10,40 @@ import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
 import { formatKstDate } from "@/lib/datetime/kst";
 import { isFreeUniformOrderMemo } from "@/lib/uniform-free-grant-rules";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 
 type SyncTone = {
   label: string;
   className: string;
-  icon: string;
 };
 
 const SYNC_STATUS: Record<string, SyncTone> = {
   PENDING: {
     label: "전송 대기",
-    icon: "schedule",
     className: "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] ring-[var(--color-academy-line)]",
   },
   SENDING: {
     label: "전송 중",
-    icon: "progress_activity",
     className: "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] ring-[var(--color-academy-line)]",
   },
   SENT: {
     label: "본사 접수",
-    icon: "check_circle",
     className: "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)] ring-[var(--color-academy-success)]",
   },
   DUPLICATE: {
     label: "중복 확인",
-    icon: "task_alt",
     className: "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)] ring-[var(--color-academy-success)]",
   },
   RETRY_WAIT: {
     label: "재시도 대기",
-    icon: "restart_alt",
     className: "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)] ring-[var(--color-academy-warning)]",
   },
   NEEDS_REVIEW: {
     label: "확인 필요",
-    icon: "error",
     className: "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)] ring-[var(--color-academy-danger)]",
   },
   SETUP_REQUIRED: {
     label: "키 설정 필요",
-    icon: "vpn_key",
     className: "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)] ring-[var(--color-academy-danger)]",
   },
 };
@@ -70,7 +63,6 @@ function formatDateTime(value: string | null) {
 function getSyncStatus(status: string) {
   return SYNC_STATUS[status] || {
     label: status,
-    icon: "help",
     className: "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] ring-[var(--color-academy-line)]",
   };
 }
@@ -161,49 +153,47 @@ export default function UniformOrdersClient({
   // 재전송 버튼(행·패널 공용) — 함수·확인창·막힘 조건은 기존 그대로
   function renderRetryButton(order: UniformOrderAdminView) {
     if (!canRetry(order)) {
-      return <span className="text-xs font-bold text-[var(--color-academy-muted)]">완료</span>;
+      return <span className="text-xs text-[var(--color-academy-muted)]">완료</span>;
     }
     return (
       <button
         type="button"
         onClick={() => handleRetry(order)}
         disabled={isPending || busyId === order.id}
-        className="inline-flex min-h-11 items-center justify-center gap-1 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-xs font-black text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)] disabled:opacity-50"
+        className="academy-button-tonal academy-button-sm"
       >
-        <span className={`material-symbols-outlined text-sm ${busyId === order.id ? "animate-spin" : ""}`} aria-hidden="true">
-          {busyId === order.id ? "progress_activity" : "send"}
-        </span>
-        재전송
+        {/* 돌아가는 아이콘 대신 글자로 진행 중임을 알린다 */}
+        {busyId === order.id ? "전송 중…" : "재전송"}
       </button>
     );
   }
 
   return (
     <main className="mx-auto max-w-7xl space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <h1 className="text-2xl font-black text-[var(--color-academy-ink)]">유니폼 주문 관리</h1>
-          <p className="text-xs text-[var(--color-academy-muted)]">전체 <span className="tabular-nums">{counts.total}</span>건</p>
-        </div>
-        <Link
-          href="https://stiz.kr/product/detail.html?product_no=4095&from=dasan"
-          target="_blank"
-          className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-[var(--color-academy-primary)] px-4 text-sm font-black text-[var(--color-academy-on-primary)] hover:bg-[var(--color-academy-primary-hover)]"
-        >
-          <span className="material-symbols-outlined text-base" aria-hidden="true">open_in_new</span>
-          신청 페이지 열기
-        </Link>
-      </div>
+      <AdminPageHeader
+        title="유니폼 주문 관리"
+        description={<>전체 <span className="tabular-nums">{counts.total}</span>건</>}
+        actions={
+          // 다른 사이트로 나가는 보조 이동이라 테두리 버튼(이 화면에 꽉 찬 주 버튼은 두지 않는다)
+          <Link
+            href="https://stiz.kr/product/detail.html?product_no=4095&from=dasan"
+            target="_blank"
+            className="academy-button-secondary"
+          >
+            신청 페이지 열기
+          </Link>
+        }
+      />
 
       {loadError && (
-        <div className="rounded-xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-3 text-sm font-bold text-[var(--color-academy-danger)]">
+        <div className="rounded-xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-3 text-sm font-medium text-[var(--color-academy-danger)]">
           {loadError}
-          <p className="mt-1 text-xs font-medium">계속 불러오지 못하면 담당자에게 문의해 주세요.</p>
+          <p className="mt-1 text-xs font-normal">계속 불러오지 못하면 담당자에게 문의해 주세요.</p>
         </div>
       )}
 
       {feedback && (
-        <div className={`rounded-xl border px-4 py-3 text-sm font-bold ${
+        <div className={`rounded-xl border px-4 py-3 text-sm font-medium ${
           feedback.type === "success"
             ? "border-[var(--color-academy-success)] bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]"
             : "border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]"
@@ -225,7 +215,7 @@ export default function UniformOrdersClient({
         <div className="overflow-x-auto">
           {/* 한 줄 행: 상태 | 접수일 | 학부모 | 연락처 | 학생 | 수량 | 접수번호 | 시도 | 관리. 사이즈·메모·오류·다음 시도는 상세 패널 */}
           <table className="admin-list-table w-full border-collapse text-sm">
-            <thead className="bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]">
+            <thead className="bg-[var(--color-academy-soft)] text-xs font-medium text-[var(--color-academy-muted)]">
               <tr>
                 <th className="px-2 py-2">상태</th>
                 <th className="admin-cell-num px-2 py-2">접수일</th>
@@ -253,7 +243,7 @@ export default function UniformOrdersClient({
                   >
                     <td className="px-2 py-1.5"><SyncBadge order={order} sync={sync} /></td>
                     <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-muted)]">{formatDateTime(order.createdAt)}</td>
-                    <td className="px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{order.parentName}</td>
+                    <td className="px-2 py-1.5 font-semibold text-[var(--color-academy-ink)]">{order.parentName}</td>
                     <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{order.parentPhone}</td>
                     {/* 학생: 1명이면 이름, 여러 명이면 «첫 이름 외 N명» — 전체 이름·사이즈는 상세 패널 */}
                     <td className="px-2 py-1.5 text-[var(--color-academy-ink)]">
@@ -273,7 +263,7 @@ export default function UniformOrdersClient({
               })}
               {visibleOrders.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-4 py-4 text-center text-sm font-bold text-[var(--color-academy-muted)]">
+                  <td colSpan={9} className="px-4 py-4 text-center text-sm text-[var(--color-academy-muted)]">
                     표시할 유니폼 신청이 없습니다.
                   </td>
                 </tr>
@@ -294,12 +284,12 @@ export default function UniformOrdersClient({
           { label: "시도", value: <span className="tabular-nums">{d.sendAttempts}회</span> },
           { label: "다음 시도", value: d.nextRetryAt ? <span className="tabular-nums">{formatDateTime(d.nextRetryAt)}</span> : null },
           { label: "메모", value: d.customerMemo },
-          { label: "오류", value: d.lastError ? <span className="font-bold text-[var(--color-academy-danger)]">{d.lastError}</span> : null },
+          { label: "오류", value: d.lastError ? <span className="font-medium text-[var(--color-academy-danger)]">{d.lastError}</span> : null },
         ].filter((row) => row.value !== null && row.value !== undefined && row.value !== "");
         return (
           <ListDetailPanel onClose={() => setDetailOrderId(null)} titleId="uniform-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
             <div className="mb-4 flex items-center gap-2">
-              <h3 id="uniform-detail-panel-title" className="min-w-0 break-keep text-lg font-black text-[var(--color-academy-ink)]">{d.parentName}</h3>
+              <h3 id="uniform-detail-panel-title" className="min-w-0 break-keep text-lg font-bold text-[var(--color-academy-ink)]">{d.parentName}</h3>
               <SyncBadge order={d} sync={sync} />
               <button
                 type="button"
@@ -313,7 +303,7 @@ export default function UniformOrdersClient({
             <dl className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
               {rows.map((row) => (
                 <div key={row.label} className="contents">
-                  <dt className="font-bold text-[var(--color-academy-muted)]">{row.label}</dt>
+                  <dt className="font-medium text-[var(--color-academy-muted)]">{row.label}</dt>
                   <dd className="min-w-0 break-keep break-words text-[var(--color-academy-ink)]">{row.value}</dd>
                 </div>
               ))}
@@ -322,7 +312,7 @@ export default function UniformOrdersClient({
             <ul className="mt-4 divide-y divide-[var(--color-academy-line)] rounded-lg border border-[var(--color-academy-line)] text-sm">
               {d.items.map((item) => (
                 <li key={item.id} className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-1 p-3">
-                  <span className="font-bold text-[var(--color-academy-ink)]">{item.studentName}</span>
+                  <span className="font-medium text-[var(--color-academy-ink)]">{item.studentName}</span>
                   <span className="text-[var(--color-academy-ink)]">
                     {item.design || "디자인 미지정"} · <span className="tabular-nums">{item.quantity}</span>벌
                   </span>
@@ -354,13 +344,12 @@ function SyncBadge({ order, sync }: { order: UniformOrderAdminView; sync: SyncTo
   const isFree = isFreeUniformOrderMemo(order.customerMemo);
   return (
     <span className="inline-flex shrink-0 items-center gap-1">
-      <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-black ring-1 ${sync.className}`}>
-        <span className={`material-symbols-outlined text-sm ${order.stizSyncStatus === "SENDING" ? "animate-spin" : ""}`} aria-hidden="true">{sync.icon}</span>
+      <span className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs ring-1 ${sync.className}`}>
         {sync.label}
       </span>
       {isFree && (
-        <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-[var(--color-academy-primary-soft)] px-2 py-0.5 text-xs font-black text-[var(--color-academy-ink)]">
-          <span className="material-symbols-outlined text-sm" aria-hidden="true">redeem</span>
+        // 주 색(네이비)은 누르는 버튼 전용 — 표시용 배지는 «정보» 토큰
+        <span className="inline-flex shrink-0 items-center rounded-full bg-[var(--color-academy-info-soft)] px-2 py-0.5 text-xs text-[var(--color-academy-info)]">
           무료 증정
         </span>
       )}

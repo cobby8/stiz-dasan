@@ -12,6 +12,7 @@ import {
 } from "@/app/actions/social-posts";
 import InstagramFeedPreview from "@/components/instagram/InstagramFeedPreview";
 import FontFreeIcon from "@/components/ui/FontFreeIcon";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { toKstYmd } from "@/lib/datetime/kst";
 import type { SocialPostDraft } from "@/lib/socialDrafts";
 
@@ -131,7 +132,7 @@ function GalleryLoadingFallback() {
 function GalleryErrorState({ onRetry }: { onRetry: () => void }) {
   return (
     <div className="rounded-lg border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-6 text-center">
-      <p className="text-sm font-bold text-[var(--color-academy-danger)]">갤러리 데이터를 불러오지 못했습니다.</p>
+      <p className="text-sm font-medium text-[var(--color-academy-danger)]">갤러리 데이터를 불러오지 못했습니다.</p>
       <button
         type="button"
         onClick={onRetry}
@@ -346,43 +347,34 @@ export default function GalleryAdminClient({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-[var(--color-academy-ink)]">사진/영상 갤러리</h1>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Link
-            href="/staff/quick-post"
-            prefetch={false}
-            className="flex items-center gap-2 rounded-lg border border-[var(--color-academy-line)] bg-white px-4 py-2.5 text-sm font-bold text-[var(--color-academy-muted)] transition hover:border-[var(--color-academy-primary)] hover:text-[var(--color-academy-ink)]"
-          >
-            <FontFreeIcon name="upload" size={18} />
+      <AdminPageHeader
+        title="사진/영상 갤러리"
+        actions={<>
+          <Link href="/staff/quick-post" prefetch={false} className="academy-button-secondary">
             선생님 업로드
           </Link>
           <button
+            type="button"
             onClick={() => {
               setEditingPost(null);
               setShowForm(true);
             }}
-            className="flex items-center gap-2 rounded-lg bg-[var(--color-academy-primary)] px-4 py-2.5 text-sm font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)]"
+            className="academy-button-primary"
           >
-            <FontFreeIcon name="add" size={18} /> 새 게시물
+            새 게시물
           </button>
-        </div>
-      </div>
+        </>}
+      />
 
       {pageMessage && (
         <div
-          className={`flex items-start justify-between gap-3 rounded-lg border px-4 py-3 text-sm font-bold ${
+          className={`flex items-start justify-between gap-3 rounded-lg border px-4 py-3 text-sm font-medium ${
             pageMessage.ok
               ? "border-[var(--color-academy-success)] bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]"
               : "border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]"
           }`}
         >
-          <div className="flex items-center gap-2">
-            <FontFreeIcon name="check_circle" size={18} />
-            <span>{pageMessage.message}</span>
-          </div>
+          <span className="min-w-0">{pageMessage.message}</span>
           <button
             type="button"
             onClick={() => setPageMessage(null)}
@@ -399,33 +391,33 @@ export default function GalleryAdminClient({
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-sm font-bold text-[var(--color-academy-ink)]">인스타그램 연결</h2>
+                <h2 className="academy-section-title">인스타그램 연결</h2>
                 <span
-                  className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                  className={`rounded-full px-2 py-0.5 text-xs ${
                     instagramReady ? "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]" : "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]"
                   }`}
                 >
                   {instagramReady ? "준비 완료" : "설정 필요"}
                 </span>
                 {instagramStatus.autoPublishEnabled && (
-                  <span className="rounded-full bg-[var(--color-academy-soft)] px-2 py-0.5 text-[11px] font-bold text-[var(--color-academy-muted)]">
+                  <span className="rounded-full bg-[var(--color-academy-soft)] px-2 py-0.5 text-xs text-[var(--color-academy-muted)]">
                     즉시 업로드 켜짐
                   </span>
                 )}
               </div>
               {syncResult && (
-                <p className={`mt-1 text-xs font-medium ${syncResult.ok ? "text-[var(--color-academy-success)]" : "text-[var(--color-academy-danger)]"}`}>
+                <p className={`mt-1 text-xs ${syncResult.ok ? "text-[var(--color-academy-success)]" : "text-[var(--color-academy-danger)]"}`}>
                   {syncResult.ok ? syncResult.message : adminMessageText(syncResult.message, "인스타그램 게시물을 가져오지 못했습니다. 연결 설정을 확인해 주세요.")}
                 </p>
               )}
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {instagramProfileUrl && (
                 <a
                   href={instagramProfileUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="rounded-lg border border-[var(--color-academy-line)] px-3 py-2 text-xs font-bold text-[var(--color-academy-muted)] transition hover:border-[var(--color-academy-primary)] hover:text-[var(--color-academy-ink)]"
+                  className="academy-button-tonal academy-button-sm"
                 >
                   프로필 열기
                 </a>
@@ -433,14 +425,9 @@ export default function GalleryAdminClient({
               <button
                 onClick={handleInstagramSync}
                 disabled={!instagramReady || isPending}
-                className="flex items-center gap-2 rounded-lg bg-[var(--color-academy-primary-hover)] px-3 py-2 text-xs font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)] disabled:opacity-40"
+                className="academy-button-secondary academy-button-sm"
               >
-                {isPending ? (
-                  <FontFreeIcon name="sync" size={14} className="animate-spin" />
-                ) : (
-                  <FontFreeIcon name="sync" size={14} />
-                )}
-                인스타 가져오기
+                {isPending ? "가져오는 중..." : "인스타 가져오기"}
               </button>
             </div>
           </div>
@@ -450,18 +437,18 @@ export default function GalleryAdminClient({
       <section className="rounded-lg border border-[var(--color-academy-line)] bg-white p-4">
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
-            <h2 className="text-lg font-black text-[var(--color-academy-ink)]">선생님 업로드 대기</h2>
+            <h2 className="academy-section-title">선생님 업로드 대기</h2>
             <p className="text-sm text-[var(--color-academy-muted)]">
               문구를 직접 수정한 뒤 게시하면 홈페이지 갤러리와 인스타그램에 함께 반영됩니다.
             </p>
           </div>
-          <span className="w-fit rounded-full bg-[var(--color-academy-soft)] px-3 py-1 text-xs font-bold text-[var(--color-academy-muted)]">
+          <span className="w-fit rounded-full bg-[var(--color-academy-soft)] px-3 py-1 text-xs tabular-nums text-[var(--color-academy-muted)]">
             {drafts.length}개 대기
           </span>
         </div>
 
         {draftMessage && (
-          <div className="mt-3 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-muted)]">
+          <div className="mt-3 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] px-3 py-2 text-sm font-medium text-[var(--color-academy-muted)]">
             {draftMessage}
           </div>
         )}
@@ -493,19 +480,19 @@ export default function GalleryAdminClient({
                   <div className="flex min-w-0 flex-col justify-between gap-3">
                     <div className="space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-full bg-[var(--color-academy-soft)] px-2 py-0.5 text-xs font-bold text-[var(--color-academy-muted)]">
+                        <span className="rounded-full bg-[var(--color-academy-soft)] px-2 py-0.5 text-xs text-[var(--color-academy-muted)]">
                           {draft.lessonType || "수업"}
                         </span>
-                        <span className="rounded-full bg-[var(--color-academy-soft)] px-2 py-0.5 text-xs font-bold text-[var(--color-academy-muted)]">
+                        <span className="rounded-full bg-[var(--color-academy-soft)] px-2 py-0.5 text-xs text-[var(--color-academy-muted)]">
                           {draft.authorName || "선생님"}
                         </span>
                         {draft.status === "FAILED" && (
-                          <span className="rounded-full bg-[var(--color-academy-danger-soft)] px-2 py-0.5 text-xs font-bold text-[var(--color-academy-danger)]">
+                          <span className="rounded-full bg-[var(--color-academy-danger-soft)] px-2 py-0.5 text-xs text-[var(--color-academy-danger)]">
                             재시도 필요
                           </span>
                         )}
                         {hasPublishingStatus && (
-                          <span className="rounded-full bg-[var(--color-academy-soft)] px-2 py-0.5 text-xs font-bold text-[var(--color-academy-muted)]">
+                          <span className="rounded-full bg-[var(--color-academy-soft)] px-2 py-0.5 text-xs text-[var(--color-academy-muted)]">
                             게시 처리 중
                           </span>
                         )}
@@ -513,12 +500,12 @@ export default function GalleryAdminClient({
                       <input
                         value={draft.title || ""}
                         onChange={(event) => patchDraft(draft.id, { title: event.target.value })}
-                        className="w-full rounded-lg border border-[var(--color-academy-line)] px-3 py-2 text-sm font-bold outline-none focus:border-[var(--color-academy-primary)]"
+                        className="academy-input font-medium"
                         placeholder="게시물 제목"
                       />
                       {draft.memo && <p className="text-xs leading-5 text-[var(--color-academy-muted)]">메모: {draft.memo}</p>}
                       {draft.instagramPublishError && (
-                        <p className="rounded-lg bg-[var(--color-academy-danger-soft)] p-2 text-xs font-medium leading-5 text-[var(--color-academy-danger)]">
+                        <p className="rounded-lg bg-[var(--color-academy-danger-soft)] p-2 text-xs leading-5 text-[var(--color-academy-danger)]">
                           {draft.instagramPublishError}
                         </p>
                       )}
@@ -528,35 +515,24 @@ export default function GalleryAdminClient({
                         type="button"
                         onClick={() => handleDraftSave(draft)}
                         disabled={isEditLocked}
-                        className="flex min-h-10 items-center justify-center gap-1 rounded-lg border border-[var(--color-academy-line)] px-2 text-xs font-black text-[var(--color-academy-muted)] disabled:opacity-50"
+                        className="academy-button-secondary"
                       >
-                        <FontFreeIcon name="save" size={15} />
                         저장
                       </button>
                       <button
                         type="button"
                         onClick={() => handleDraftPublish(draft)}
                         disabled={isEditLocked}
-                        className="flex min-h-10 items-center justify-center gap-1 rounded-lg bg-[var(--color-academy-primary)] px-2 text-xs font-black text-white disabled:opacity-50"
+                        className="academy-button-primary"
                       >
-                        {isPublishingDraft || hasPublishingStatus ? (
-                          <FontFreeIcon name="sync" size={15} className="animate-spin" />
-                        ) : (
-                          <FontFreeIcon name="send" size={15} />
-                        )}
                         {hasPublishingStatus ? "처리 중" : draft.status === "FAILED" ? "다시 게시" : "게시"}
                       </button>
                       <button
                         type="button"
                         onClick={() => handleDraftReject(draft)}
                         disabled={isRejectingDraft}
-                        className="flex min-h-10 items-center justify-center gap-1 rounded-lg bg-[var(--color-academy-soft)] px-2 text-xs font-black text-[var(--color-academy-muted)] disabled:opacity-50"
+                        className="academy-button-tonal"
                       >
-                        {isRejectingDraft ? (
-                          <FontFreeIcon name="sync" size={15} className="animate-spin" />
-                        ) : (
-                          <FontFreeIcon name="block" size={15} />
-                        )}
                         {isRejectingDraft ? "반려 중" : "반려"}
                       </button>
                     </div>
@@ -583,8 +559,7 @@ export default function GalleryAdminClient({
 
       {posts.length === 0 ? (
         <div className="rounded-lg border border-[var(--color-academy-line)] bg-white p-12 text-center text-[var(--color-academy-faint)]">
-          <FontFreeIcon name="image" className="mx-auto mb-3 text-[var(--color-academy-faint)]" size={48} />
-          <p className="font-medium">아직 갤러리 게시물이 없습니다.</p>
+          <p>아직 갤러리 게시물이 없습니다.</p>
         </div>
       ) : (
         <>
@@ -608,29 +583,29 @@ export default function GalleryAdminClient({
                         className="h-full w-full object-cover"
                       />
                     ) : (
-                      <div className="flex h-full items-center justify-center text-[var(--color-academy-faint)]">
-                        <FontFreeIcon name="image" size={48} />
+                      <div className="flex h-full items-center justify-center text-sm text-[var(--color-academy-faint)]">
+                        사진 없음
                       </div>
                     )}
                     <div className="absolute right-2 top-2 flex gap-1">
                       {post.isPublic ? (
                         <span className="flex items-center gap-1 rounded-full bg-[var(--color-academy-success)] px-2 py-0.5 text-xs text-white">
-                          <FontFreeIcon name="visibility" size={10} /> 공개
+                          공개
                         </span>
                       ) : (
-                        <span className="flex items-center gap-1 rounded-full bg-[var(--color-academy-primary)] px-2 py-0.5 text-xs text-white">
-                          <FontFreeIcon name="visibility_off" size={10} /> 비공개
+                        <span className="flex items-center gap-1 rounded-full bg-[var(--color-academy-neutral)] px-2 py-0.5 text-xs text-white">
+                          비공개
                         </span>
                       )}
                       {media.length > 1 && (
-                        <span className="rounded-full bg-black/60 px-2 py-0.5 text-xs text-white">+{media.length - 1}</span>
+                        <span className="rounded-full bg-black/60 px-2 py-0.5 text-xs tabular-nums text-white">+{media.length - 1}</span>
                       )}
                     </div>
                   </div>
                   <div className="p-3">
                     <div className="mb-2 flex items-start justify-between gap-2">
                       {/* 제목은 말줄임 없이 전부(길면 줄바꿈) */}
-                      <h3 className="min-w-0 break-keep break-words text-sm font-bold text-[var(--color-academy-ink)]">
+                      <h3 className="min-w-0 break-keep break-words text-sm font-semibold text-[var(--color-academy-ink)]">
                         {post.title || "제목 없음"}
                       </h3>
                       {/* 작성일 — KST 달력 날짜, 자릿수 폭 고정 */}
@@ -649,16 +624,16 @@ export default function GalleryAdminClient({
                       <button
                         type="button"
                         onClick={() => startEdit(post)}
-                        className="flex min-h-11 items-center gap-1 rounded-lg px-2 text-xs text-[var(--color-academy-muted)] transition hover:text-[var(--color-academy-ink)]"
+                        className="academy-button-tonal academy-button-sm"
                       >
-                        <FontFreeIcon name="edit" size={14} /> 수정
+                        수정
                       </button>
                       <button
                         type="button"
                         onClick={() => handleDelete(post.id)}
-                        className="flex min-h-11 items-center gap-1 rounded-lg px-2 text-xs text-[var(--color-academy-muted)] transition hover:text-[var(--color-academy-danger)]"
+                        className="academy-button-danger academy-button-sm ml-auto"
                       >
-                        <FontFreeIcon name="delete" size={14} /> 삭제
+                        삭제
                       </button>
                     </div>
                   </div>
@@ -672,7 +647,7 @@ export default function GalleryAdminClient({
                 type="button"
                 onClick={loadMorePosts}
                 disabled={loadingMore}
-                className="rounded-lg border border-[var(--color-academy-line)] bg-white px-4 py-2.5 text-sm font-bold text-[var(--color-academy-muted)] transition hover:border-[var(--color-academy-primary)] hover:text-[var(--color-academy-ink)]"
+                className="academy-button-secondary"
               >
                 {loadingMore ? "불러오는 중..." : `더 보기 ${posts.length}/${pagination?.total ?? posts.length}`}
               </button>

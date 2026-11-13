@@ -92,11 +92,12 @@ interface ApplyAdminModalsProps {
 }
 
 // 신청 상태색 = 공용 지도(statusTones) — 목록(ApplyAdminClient)과 같은 색: 대기 주의 · 승인 정상 · 반려 위험 · 취소 중립
-const STATUS_CONFIG: Record<string, { label: string; color: string; icon: string }> = {
-    PENDING: { label: "대기중", color: statusBadgeClass(REQUEST_TONE.PENDING), icon: "hourglass_top" },
-    APPROVED: { label: "승인완료", color: statusBadgeClass(REQUEST_TONE.APPROVED), icon: "check_circle" },
-    REJECTED: { label: "반려", color: statusBadgeClass(REQUEST_TONE.REJECTED), icon: "cancel" },
-    CANCELLED: { label: "취소", color: statusBadgeClass(REQUEST_TONE.CANCELLED), icon: "block" },
+// 상태 배지는 아이콘 없이 글자로 말한다(2026-11-13 UI 통일)
+const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
+    PENDING: { label: "대기중", color: statusBadgeClass(REQUEST_TONE.PENDING) },
+    APPROVED: { label: "승인완료", color: statusBadgeClass(REQUEST_TONE.APPROVED) },
+    REJECTED: { label: "반려", color: statusBadgeClass(REQUEST_TONE.REJECTED) },
+    CANCELLED: { label: "취소", color: statusBadgeClass(REQUEST_TONE.CANCELLED) },
 };
 
 const CONTACT_ACTION_LABELS: Record<string, string> = {
@@ -136,7 +137,8 @@ const DAY_LABELS: Record<string, string> = {
 
 const REJECT_REASON_OPTIONS = ["정원 마감", "희망 시간대 불일치", "연락 불가", "셔틀 동선 확인 필요"];
 const CANCEL_REASON_OPTIONS = ["학부모 요청", "일정 변경", "중복 신청", "연락 불가", "기타"];
-const MODAL_INPUT_CLASS = "w-full rounded-lg border border-[var(--color-academy-line-input)] bg-white px-3 py-2 text-sm text-[var(--color-academy-ink)] focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)]";
+// 입력칸 = 테마 공용 입력칸(academy-input: 44px·입력선 테두리) — 2026-11-13 UI 통일
+const MODAL_INPUT_CLASS = "academy-input";
 
 function phoneHref(phone: string) {
     const digits = phone.replace(/\D/g, "");
@@ -557,8 +559,7 @@ function ApproveModal({
 
     return (
         <AdminModal onClose={onClose} titleId="approve-application-title" panelClassName="max-w-lg p-6">
-                <h2 id="approve-application-title" className="text-lg font-bold text-[var(--color-academy-ink)] flex items-center gap-2 mb-1">
-                    <span className="material-symbols-outlined text-[var(--color-academy-success)]">check_circle</span>
+                <h2 id="approve-application-title" className="text-lg font-bold text-[var(--color-academy-ink)] mb-1">
                     수강 신청 승인
                 </h2>
                 <p className="text-sm text-[var(--color-academy-muted)] mb-4">
@@ -566,29 +567,28 @@ function ApproveModal({
                 </p>
 
                 {preferredSlotLabel && (
-                    <div className="bg-[var(--color-academy-neutral-soft)] text-[var(--color-academy-neutral)] text-sm rounded-lg px-3 py-2 mb-4 flex items-center gap-2">
-                        <span className="material-symbols-outlined text-base">info</span>
+                    <div className="bg-[var(--color-academy-neutral-soft)] text-[var(--color-academy-neutral)] text-sm rounded-lg px-3 py-2 mb-4">
                         <span>희망 시간대: <span className="font-medium">{preferredSlotLabel}</span></span>
                     </div>
                 )}
 
                 <form onSubmit={handleSubmit} className="space-y-4">
-                    <label className="block space-y-1 text-sm font-bold">수강 개시일 *
-                        <input aria-label="확정 수강 개시일" required type="date" value={startOn} disabled={busy} onChange={event => setStartOn(event.target.value)} className={`${MODAL_INPUT_CLASS} box-border min-h-11 min-w-0 max-w-full text-[17px]`} />
+                    <label className="block space-y-1 text-sm font-medium">수강 개시일 *
+                        <input aria-label="확정 수강 개시일" required type="date" value={startOn} disabled={busy} onChange={event => setStartOn(event.target.value)} className={`${MODAL_INPUT_CLASS} box-border min-w-0 max-w-full`} />
                         <span className="block text-xs font-normal text-[var(--color-academy-muted)]">승인하면 바로 수강 중(재원생)으로 등록됩니다. 이 날짜는 출석부·수강료 시수 계산의 시작일입니다.</span>
                     </label>
                     <section aria-label="보호자 계정 연결" className="space-y-2 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] p-3">
-                        <label className="grid gap-1 text-sm font-bold" htmlFor="enrollment-parent-account">연결할 보호자 계정 *</label>
-                        {parentLoading ? <p role="status" className="text-sm text-[var(--color-academy-muted)]">계정 확인 중…</p> : parentError ? <div role="alert" className="text-sm"><p>{parentError}</p><button type="button" className="min-h-11 font-bold text-[var(--color-academy-ink)] underline" onClick={() => { setParentLoading(true); setParentError(""); setSelectedParent(""); setParentRetry(value => value + 1); }}>다시 조회</button></div> : <>
-                            <select id="enrollment-parent-account" value={selectedParent} onChange={event => setSelectedParent(event.target.value)} disabled={busy || linkedParentUserId !== null} className="h-11 min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-[17px]">
+                        <label className="grid gap-1 text-sm font-medium" htmlFor="enrollment-parent-account">연결할 보호자 계정 *</label>
+                        {parentLoading ? <p role="status" className="text-sm text-[var(--color-academy-muted)]">계정 확인 중…</p> : parentError ? <div role="alert" className="text-sm"><p>{parentError}</p><button type="button" className="academy-button-secondary academy-button-sm mt-1" onClick={() => { setParentLoading(true); setParentError(""); setSelectedParent(""); setParentRetry(value => value + 1); }}>다시 조회</button></div> : <>
+                            <select id="enrollment-parent-account" value={selectedParent} onChange={event => setSelectedParent(event.target.value)} disabled={busy || linkedParentUserId !== null} className="academy-input min-w-0">
                                 <option value="">직접 선택해 주세요</option>
                                 {parentCandidates.map(candidate => <option key={candidate.id} value={candidate.id}>{candidate.isCurrentAccount ? "내 계정 · " : ""}{candidate.name} · {({ ADMIN: "관리자", VICE_ADMIN: "부관리자", INSTRUCTOR: "선생님", PARENT: "학부모" } as Record<string, string>)[candidate.role] ?? candidate.role} · 연락처 끝 {candidate.phoneLast4}{!candidate.authLinked ? " · 로그인 연결 전" : ""}</option>)}
                                 {parentCandidates.length === 0 && !hasUnselectableMatches && <option value="__NEW__">신규 보호자 계정으로 등록</option>}
                             </select>
                             <p className="text-xs text-[var(--color-academy-muted)]">같은 전화번호만으로 연결하지 않습니다. 신청자와 계정 주인을 확인해 선택해 주세요.</p>
                             {linkedParentUserId && <p className="text-xs text-[var(--color-academy-muted)]">이미 확인된 보호자 연결을 유지합니다. 이 승인창에서는 연결 계정을 바꾸지 않습니다.</p>}
-                            {parentCandidates.length === 0 && hasUnselectableMatches && <p role="alert" className="text-sm font-bold">같은 연락처의 계정이 있지만 바로 연결할 수 없습니다. 로그인 연결과 보호자 자격을 확인해 주세요. 신규 계정은 만들지 않습니다.</p>}
-                            {selectedCandidate && ["ADMIN", "VICE_ADMIN", "INSTRUCTOR"].includes(selectedCandidate.role) && <p role="status" className="flex items-start gap-1 text-sm font-bold text-[var(--color-academy-ink)]"><span className="material-symbols-outlined text-lg" aria-hidden="true">verified_user</span>기존 관리자·선생님 역할을 유지하고 자녀 연결만 추가합니다.</p>}
+                            {parentCandidates.length === 0 && hasUnselectableMatches && <p role="alert" className="text-sm font-semibold">같은 연락처의 계정이 있지만 바로 연결할 수 없습니다. 로그인 연결과 보호자 자격을 확인해 주세요. 신규 계정은 만들지 않습니다.</p>}
+                            {selectedCandidate && ["ADMIN", "VICE_ADMIN", "INSTRUCTOR"].includes(selectedCandidate.role) && <p role="status" className="text-sm font-medium text-[var(--color-academy-ink)]">기존 관리자·선생님 역할을 유지하고 자녀 연결만 추가합니다.</p>}
                         </>}
                     </section>
                     <div>
@@ -598,7 +598,7 @@ function ApproveModal({
                         <div className="space-y-3 max-h-60 overflow-y-auto">
                             {Object.entries(classesByDay).map(([day, dayClasses]) => (
                                 <div key={day}>
-                                    <p className="text-xs font-bold text-[var(--color-academy-muted)] mb-1">
+                                    <p className="text-xs font-medium text-[var(--color-academy-muted)] mb-1">
                                         {DAY_LABELS[day] || day}요일
                                     </p>
                                     <div className="space-y-1">
@@ -610,9 +610,11 @@ function ApproveModal({
                                                     type="button"
                                                     disabled={busy}
                                                     onClick={() => toggleClass(classInfo.id)}
+                                                    // 고른 반 = 보조 색(하늘색) + ✓ — 주 색은 주 버튼에만(2026-11-13 UI 통일)
+                                                    aria-pressed={selected}
                                                     className={`min-h-11 w-full text-left px-3 py-2 rounded-lg text-sm transition border ${
                                                         selected
-                                                            ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-ink)]"
+                                                            ? "border-[var(--color-academy-secondary-strong)] bg-[var(--color-academy-secondary-soft)] text-[var(--color-academy-secondary-ink)]"
                                                             : "border-[var(--color-academy-line)] hover:border-[var(--color-academy-line-input)] text-[var(--color-academy-muted)]"
                                                     }`}
                                                 >
@@ -623,9 +625,7 @@ function ApproveModal({
                                                                 {classInfo.startTime}~{classInfo.endTime}
                                                             </span>
                                                         </span>
-                                                        {selected && (
-                                                            <span className="material-symbols-outlined text-[var(--color-academy-success)] text-lg">check</span>
-                                                        )}
+                                                        {selected && <span aria-hidden="true" className="font-bold">✓</span>}
                                                     </div>
                                                     {classInfo.program && (
                                                         <span className="text-xs text-[var(--color-academy-faint)]">{classInfo.program.name}</span>
@@ -652,29 +652,24 @@ function ApproveModal({
                             value={note}
                             onChange={(event) => setNote(event.target.value)}
                             rows={2}
-                            className="w-full border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] rounded-lg px-3 py-2 text-[17px] focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)] resize-none"
+                            className="academy-input resize-none"
                         />
                     </div>
 
                     <p className="rounded-lg bg-[var(--color-academy-soft)] p-3 text-sm" aria-label="승인 내용 확인"><strong>{app.childName}</strong> · {classes.filter(item => selectedClassIds.includes(item.id)).map(formatClassLabel).join(" / ") || "반 미선택"}<br />보호자: {selectedCandidate ? `${selectedCandidate.name} · 연락처 끝 ${selectedCandidate.phoneLast4}` : selectedParent === "__NEW__" ? "신규 보호자 계정" : "미선택"}<br /><span className="text-xs text-[var(--color-academy-muted)]">승인하면 원생·수강 등록이 진행됩니다. 알림은 자동 발송하지 않습니다.</span></p>
-                    <div className="flex justify-end gap-3 pt-2">
+                    <div className="flex flex-wrap justify-end gap-3 pt-2">
                         <button
                             type="button"
                             onClick={onClose}
-                            className="min-h-11 px-4 py-2 text-sm text-[var(--color-academy-muted)] hover:text-[var(--color-academy-ink)] transition"
+                            className="academy-button-text"
                         >
                             취소
                         </button>
                         <button
                             type="submit"
                             disabled={busy || selectedClassIds.length === 0 || !parentReady}
-                            className="flex min-h-11 items-center gap-1.5 px-5 py-2.5 bg-[var(--color-academy-primary)] text-[var(--color-academy-on-primary)] rounded-xl transition font-medium text-sm disabled:opacity-40"
+                            className="academy-button-primary"
                         >
-                            {busy ? (
-                                <span className="material-symbols-outlined text-lg animate-spin">progress_activity</span>
-                            ) : (
-                                <span className="material-symbols-outlined text-lg">check_circle</span>
-                            )}
                             {busy ? "처리 중..." : `승인 (${selectedClassIds.length}개 반)`}
                         </button>
                     </div>
@@ -778,8 +773,7 @@ function EditApplicationModal({
     return (
         <AdminModal onClose={onClose} titleId="edit-application-title" panelClassName="max-w-3xl p-6">
                 {/* 부제 문구를 없애면서 아래 폼과의 간격(mb-4)은 제목으로 옮겨 유지한다 */}
-                <h2 id="edit-application-title" className="mb-4 flex items-center gap-2 text-lg font-bold text-[var(--color-academy-ink)]">
-                    <span className="material-symbols-outlined text-[var(--color-academy-ink)]">edit</span>
+                <h2 id="edit-application-title" className="mb-4 text-lg font-bold text-[var(--color-academy-ink)]">
                     수강신청 수정
                 </h2>
 
@@ -791,7 +785,7 @@ function EditApplicationModal({
                     )}
 
                     <section>
-                        <h3 className="mb-2 text-xs font-black uppercase text-[var(--color-academy-muted)]">아이 정보</h3>
+                        <h3 className="mb-2 text-xs font-semibold uppercase text-[var(--color-academy-muted)]">아이 정보</h3>
                         <div className="grid gap-3 sm:grid-cols-2">
                             <FormField label="아이 이름 *">
                                 <input value={form.childName} onChange={(e) => setForm({ ...form, childName: e.target.value })} className={MODAL_INPUT_CLASS} />
@@ -819,7 +813,7 @@ function EditApplicationModal({
                     </section>
 
                     <section>
-                        <h3 className="mb-2 text-xs font-black uppercase text-[var(--color-academy-muted)]">보호자 정보</h3>
+                        <h3 className="mb-2 text-xs font-semibold uppercase text-[var(--color-academy-muted)]">보호자 정보</h3>
                         <div className="grid gap-3 sm:grid-cols-2">
                             <FormField label="보호자 이름 *">
                                 <input value={form.parentName} onChange={(e) => setForm({ ...form, parentName: e.target.value })} className={MODAL_INPUT_CLASS} />
@@ -837,10 +831,10 @@ function EditApplicationModal({
                     </section>
 
                     <section>
-                        <h3 className="mb-2 text-xs font-black uppercase text-[var(--color-academy-muted)]">수강 정보</h3>
+                        <h3 className="mb-2 text-xs font-semibold uppercase text-[var(--color-academy-muted)]">수강 정보</h3>
                         <div className="grid gap-3 sm:grid-cols-2">
                             <FormField label="수강 개시일">
-                                <input type="date" disabled={app.status === "APPROVED"} value={form.requestedStartOn} onChange={(e) => setForm({ ...form, requestedStartOn: e.target.value })} className={`${MODAL_INPUT_CLASS} box-border min-w-0 max-w-full text-[17px]`} />
+                                <input type="date" disabled={app.status === "APPROVED"} value={form.requestedStartOn} onChange={(e) => setForm({ ...form, requestedStartOn: e.target.value })} className={`${MODAL_INPUT_CLASS} box-border min-w-0 max-w-full`} />
                                 {app.status === "APPROVED" && <p className="mt-1 text-xs text-[var(--color-academy-muted)]">승인된 수강의 개시일은 이 신청서에서 변경하지 않습니다.</p>}
                                 {!app.requestedStartOn && app.enrollmentMonths && <p className="mt-1 text-xs text-[var(--color-academy-muted)]">기존 신청 월 {formatEnrollmentMonthsShort(app.enrollmentMonths)} · 정확한 개시일을 확인해 주세요.</p>}
                             </FormField>
@@ -865,11 +859,11 @@ function EditApplicationModal({
                     </section>
 
                     <section>
-                        <h3 className="mb-2 text-xs font-black uppercase text-[var(--color-academy-muted)]">희망 시간</h3>
+                        <h3 className="mb-2 text-xs font-semibold uppercase text-[var(--color-academy-muted)]">희망 시간</h3>
                         <div className="max-h-56 space-y-3 overflow-y-auto rounded-xl border border-[var(--color-academy-line)] p-3">
                             {Object.entries(classesByDay).map(([day, dayClasses]) => (
                                 <div key={day}>
-                                    <p className="mb-1 text-xs font-bold text-[var(--color-academy-muted)]">{DAY_LABELS[day] || day}요일</p>
+                                    <p className="mb-1 text-xs font-medium text-[var(--color-academy-muted)]">{DAY_LABELS[day] || day}요일</p>
                                     <div className="grid gap-2 sm:grid-cols-2">
                                         {dayClasses.map((classInfo) => {
                                             const slotKey = classInfo.slotKey;
@@ -880,15 +874,17 @@ function EditApplicationModal({
                                                     key={classInfo.id}
                                                     type="button"
                                                     onClick={() => toggleSlot(slotKey)}
-                                                    className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
+                                                    // 고른 시간 = 보조 색(하늘색) + ✓ (2026-11-13 UI 통일)
+                                                    aria-pressed={selected}
+                                                    className={`min-h-11 rounded-lg border px-3 py-2 text-left text-sm transition ${
                                                         selected
-                                                            ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-ink)]"
+                                                            ? "border-[var(--color-academy-secondary-strong)] bg-[var(--color-academy-secondary-soft)] text-[var(--color-academy-secondary-ink)]"
                                                             : "border-[var(--color-academy-line)] text-[var(--color-academy-muted)] hover:border-[var(--color-academy-line-input)]"
                                                     }`}
                                                 >
                                                     <div className="flex items-center justify-between gap-2">
-                                                        <span className="font-bold">{classInfo.name}</span>
-                                                        {selected && <span className="material-symbols-outlined text-lg text-[var(--color-academy-ink)]">check</span>}
+                                                        <span className="font-medium">{classInfo.name}</span>
+                                                        {selected && <span aria-hidden="true" className="font-bold">✓</span>}
                                                     </div>
                                                     <span className="text-xs text-[var(--color-academy-muted)]">{classInfo.startTime}~{classInfo.endTime}</span>
                                                 </button>
@@ -901,8 +897,8 @@ function EditApplicationModal({
                     </section>
 
                     <section>
-                        <h3 className="mb-2 text-xs font-black uppercase text-[var(--color-academy-muted)]">셔틀/메모</h3>
-                        <label className="mb-3 flex items-center gap-2 rounded-lg border border-[var(--color-academy-line)] px-3 py-2 text-sm font-semibold text-[var(--color-academy-muted)]">
+                        <h3 className="mb-2 text-xs font-semibold uppercase text-[var(--color-academy-muted)]">셔틀/메모</h3>
+                        <label className="mb-3 flex min-h-11 items-center gap-2 rounded-lg border border-[var(--color-academy-line)] px-3 py-2 text-sm font-medium text-[var(--color-academy-muted)]">
                             <input
                                 type="checkbox"
                                 checked={form.shuttleNeeded}
@@ -932,7 +928,7 @@ function EditApplicationModal({
                             </FormField>
                         </div>
                         <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                            <label className="flex items-center gap-2 rounded-lg border border-[var(--color-academy-line)] px-3 py-2 text-sm font-semibold text-[var(--color-academy-muted)]">
+                            <label className="flex min-h-11 items-center gap-2 rounded-lg border border-[var(--color-academy-line)] px-3 py-2 text-sm font-medium text-[var(--color-academy-muted)]">
                                 <input
                                     type="checkbox"
                                     checked={form.applicationNoticeConfirmed}
@@ -940,7 +936,7 @@ function EditApplicationModal({
                                 />
                                 신청 안내 확인
                             </label>
-                            <label className="flex items-center gap-2 rounded-lg border border-[var(--color-academy-line)] px-3 py-2 text-sm font-semibold text-[var(--color-academy-muted)]">
+                            <label className="flex min-h-11 items-center gap-2 rounded-lg border border-[var(--color-academy-line)] px-3 py-2 text-sm font-medium text-[var(--color-academy-muted)]">
                                 <input
                                     type="checkbox"
                                     checked={form.shuttleNoticeConfirmed}
@@ -955,14 +951,14 @@ function EditApplicationModal({
                         <button
                             type="button"
                             onClick={onClose}
-                            className="flex-1 rounded-lg border border-[var(--color-academy-line-input)] px-4 py-2.5 text-sm font-medium text-[var(--color-academy-muted)] transition hover:bg-[var(--color-academy-soft)]"
+                            className="academy-button-secondary flex-1"
                         >
                             닫기
                         </button>
                         <button
                             type="submit"
                             disabled={busy}
-                            className="flex-1 rounded-lg bg-[var(--color-academy-primary)] px-4 py-2.5 text-sm font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)] disabled:opacity-50"
+                            className="academy-button-primary flex-1"
                         >
                             {busy ? "저장 중..." : "수정 저장"}
                         </button>
@@ -987,8 +983,7 @@ function CancelApplicationModal({
 
     return (
         <AdminModal onClose={onClose} titleId="cancel-application-title" panelClassName="max-w-md p-6">
-                <h2 id="cancel-application-title" className="mb-1 flex items-center gap-2 text-lg font-bold text-[var(--color-academy-ink)]">
-                    <span className="material-symbols-outlined text-[var(--color-academy-muted)]">block</span>
+                <h2 id="cancel-application-title" className="mb-1 text-lg font-bold text-[var(--color-academy-ink)]">
                     수강신청 취소
                 </h2>
                 <p className="mb-4 text-sm text-[var(--color-academy-muted)]">
@@ -1007,11 +1002,9 @@ function CancelApplicationModal({
                                 key={option}
                                 type="button"
                                 onClick={() => setReason(option)}
-                                className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
-                                    reason === option
-                                        ? "border-[var(--color-academy-line-input)] bg-[var(--color-academy-soft)] text-[var(--color-academy-ink)]"
-                                        : "border-[var(--color-academy-line)] text-[var(--color-academy-muted)] hover:border-[var(--color-academy-line-input)] hover:text-[var(--color-academy-ink)]"
-                                }`}
+                                // 고르는 칩 = 테마 선택 칩(고르면 ✓ + 하늘색) — 2026-11-13 UI 통일
+                                aria-pressed={reason === option}
+                                className="academy-choice"
                             >
                                 {option}
                             </button>
@@ -1024,14 +1017,15 @@ function CancelApplicationModal({
                         <button
                             type="button"
                             onClick={onClose}
-                            className="flex-1 rounded-lg border border-[var(--color-academy-line-input)] px-4 py-2.5 text-sm font-medium text-[var(--color-academy-muted)] transition hover:bg-[var(--color-academy-line)]"
+                            className="academy-button-secondary flex-1"
                         >
                             닫기
                         </button>
                         <button
                             type="submit"
                             disabled={busy}
-                            className="flex-1 rounded-lg bg-[var(--color-academy-primary-hover)] px-4 py-2.5 text-sm font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)] disabled:opacity-50"
+                            // 취소 확정 = 확인 단계의 마지막 위험 버튼(반려 처리와 같은 등급) — 2026-11-13 UI 통일
+                            className="academy-button-danger-solid flex-1"
                         >
                             {busy ? "처리 중..." : "취소 처리"}
                         </button>
@@ -1050,13 +1044,13 @@ function ReopenApplicationModal({ app, onClose, onSubmit, busy, error }: {
 }) {
     const [reason, setReason] = useState("");
     return <AdminModal titleId="reopen-application-title" onClose={onClose} panelClassName="max-w-lg p-5">
-        <h2 id="reopen-application-title" className="flex items-center gap-2 text-lg font-bold"><span aria-hidden="true" className="material-symbols-outlined text-[var(--color-academy-ink)]">restart_alt</span>수강신청 재검토</h2>
+        <h2 id="reopen-application-title" className="text-lg font-bold">수강신청 재검토</h2>
         <p className="mt-2 text-sm"><strong>{app.childName}</strong> 신청을 반려에서 상담 대기로 되돌립니다. 기존 반려 사유는 이력으로 남깁니다.</p>
         <p className="mt-2 rounded-lg bg-[var(--color-academy-soft)] p-3 text-sm text-[var(--color-academy-muted)]">원생 등록·수업 배정·청구·알림 발송은 하지 않습니다. 내용을 다시 확인한 뒤 별도로 승인해야 합니다.</p>
         <form className="mt-3 space-y-3" onSubmit={event => { event.preventDefault(); if (!busy && reason.trim()) onSubmit(reason.trim()); }}>
-            <label className="grid gap-1 text-sm font-bold">재검토 사유 *<textarea required maxLength={500} rows={3} value={reason} onChange={event => setReason(event.target.value)} disabled={busy} placeholder="재검토가 필요한 이유를 적어주세요" className="min-h-11 w-full resize-none rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2 text-[17px] font-normal" /></label>
+            <label className="grid gap-1 text-sm font-medium">재검토 사유 *<textarea required maxLength={500} rows={3} value={reason} onChange={event => setReason(event.target.value)} disabled={busy} placeholder="재검토가 필요한 이유를 적어주세요" className="academy-input resize-none font-normal" /></label>
             {error && <p role="alert" className="rounded-lg border border-[var(--color-academy-line)] p-3 text-sm">{error}</p>}
-            <footer className="flex justify-end gap-2"><button type="button" disabled={busy} onClick={onClose} className="min-h-11 rounded-lg border border-[var(--color-academy-line)] px-4 text-sm font-bold disabled:opacity-50">닫기</button><button type="submit" disabled={busy || !reason.trim()} className="min-h-11 rounded-lg bg-[var(--color-academy-primary)] px-4 text-sm font-bold text-[var(--color-academy-on-primary)] disabled:opacity-50">{busy ? "처리 중…" : "상담 대기로 되돌리기"}</button></footer>
+            <footer className="flex flex-wrap justify-end gap-2"><button type="button" disabled={busy} onClick={onClose} className="academy-button-secondary">닫기</button><button type="submit" disabled={busy || !reason.trim()} className="academy-button-primary">{busy ? "처리 중…" : "상담 대기로 되돌리기"}</button></footer>
         </form>
     </AdminModal>;
 }
@@ -1076,8 +1070,7 @@ function RejectModal({
 
     return (
         <AdminModal onClose={onClose} titleId="reject-application-title" panelClassName="max-w-md p-6">
-                <h2 id="reject-application-title" className="text-lg font-bold text-[var(--color-academy-ink)] flex items-center gap-2 mb-1">
-                    <span className="material-symbols-outlined text-[var(--color-academy-danger)]">cancel</span>
+                <h2 id="reject-application-title" className="text-lg font-bold text-[var(--color-academy-ink)] mb-1">
                     수강 신청 반려
                 </h2>
                 <p className="text-sm text-[var(--color-academy-muted)] mb-4">
@@ -1093,11 +1086,9 @@ function RejectModal({
                                     key={option}
                                     type="button"
                                     onClick={() => setReason(option)}
-                                    className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
-                                        reason === option
-                                            ? "border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]"
-                                            : "border-[var(--color-academy-line)] text-[var(--color-academy-muted)] hover:border-[var(--color-academy-line)] hover:text-[var(--color-academy-danger)]"
-                                    }`}
+                                    // 고르는 칩 = 테마 선택 칩(고르면 ✓ + 하늘색) — 2026-11-13 UI 통일
+                                    aria-pressed={reason === option}
+                                    className="academy-choice"
                                 >
                                     {option}
                                 </button>
@@ -1107,29 +1098,24 @@ function RejectModal({
                             value={reason}
                             onChange={(event) => setReason(event.target.value)}
                             rows={3}
-                            className="w-full border border-[var(--color-academy-line-input)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-danger)] resize-none"
+                            className="academy-input resize-none"
                             placeholder="반려 사유를 입력하세요 (선택)"
                         />
                     </div>
 
-                    <div className="flex justify-end gap-3">
+                    <div className="flex flex-wrap justify-end gap-3">
                         <button
                             type="button"
                             onClick={onClose}
-                            className="px-4 py-2 text-sm text-[var(--color-academy-muted)] hover:text-[var(--color-academy-ink)] transition"
+                            className="academy-button-text"
                         >
                             취소
                         </button>
                         <button
                             onClick={() => onSubmit(reason)}
                             disabled={busy}
-                            className="flex items-center gap-1.5 px-5 py-2.5 bg-[var(--color-academy-danger-fill)] text-white rounded-xl hover:bg-[var(--color-academy-danger-fill-hover)] transition font-medium text-sm disabled:opacity-40"
+                            className="academy-button-danger-solid"
                         >
-                            {busy ? (
-                                <span className="material-symbols-outlined text-lg animate-spin">progress_activity</span>
-                            ) : (
-                                <span className="material-symbols-outlined text-lg">cancel</span>
-                            )}
                             {busy ? "처리 중..." : "반려 처리"}
                         </button>
                     </div>
@@ -1165,14 +1151,12 @@ function DetailModal({
     return (
         // 목록 개편: 상세는 가운데 모달 대신 오른쪽 패널(모바일은 아래 시트)로 연다. 내용·기능은 그대로.
         <ListDetailPanel onClose={onClose} titleId="application-detail-title" panelClassName="p-4">
-                <div className="flex items-center justify-between mb-4">
-                    <h2 id="application-detail-title" className="text-lg font-bold text-[var(--color-academy-ink)] flex items-center gap-2">
-                        <span className="material-symbols-outlined text-[var(--color-academy-ink)]">assignment</span>
+                <div className="flex items-center justify-between gap-2 mb-4">
+                    <h2 id="application-detail-title" className="text-lg font-bold text-[var(--color-academy-ink)]">
                         수강 신청 상세
                     </h2>
                     <div className="flex items-center gap-1">
-                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold ${cfg.color}`}>
-                            <span className="material-symbols-outlined text-sm">{cfg.icon}</span>
+                        <span className={`inline-flex items-center whitespace-nowrap px-2.5 py-1 rounded text-xs font-medium ${cfg.color}`}>
                             {cfg.label}
                         </span>
                         {/* 패널이 길어도 위에서 바로 닫을 수 있게 */}
@@ -1185,17 +1169,15 @@ function DetailModal({
                 <div className="mb-5 grid gap-2 sm:grid-cols-3">
                     <a
                         href={parentPhoneHref}
-                        className="flex items-center justify-center gap-1.5 rounded-xl border border-[var(--color-academy-line)] px-3 py-2 text-sm font-bold text-[var(--color-academy-muted)] transition hover:border-[var(--color-academy-line-input)] hover:bg-[var(--color-academy-primary-soft)] hover:text-[var(--color-academy-ink)]"
+                        className="academy-button-secondary"
                     >
-                        <span className="material-symbols-outlined text-lg">call</span>
                         전화
                     </a>
                     <button
                         type="button"
                         onClick={() => handleCopy(app.parentPhone, `${app.childName} 보호자 연락처를 복사했습니다.`)}
-                        className="flex items-center justify-center gap-1.5 rounded-xl border border-[var(--color-academy-line)] px-3 py-2 text-sm font-bold text-[var(--color-academy-muted)] transition hover:border-[var(--color-academy-line-input)] hover:bg-[var(--color-academy-primary-soft)] hover:text-[var(--color-academy-ink)]"
+                        className="academy-button-secondary"
                     >
-                        <span className="material-symbols-outlined text-lg">content_copy</span>
                         번호 복사
                     </button>
                     <button
@@ -1206,9 +1188,8 @@ function DetailModal({
                                 `${app.childName} 신청 요약을 복사했습니다.`,
                             )
                         }
-                        className="flex items-center justify-center gap-1.5 rounded-xl border border-[var(--color-academy-line)] px-3 py-2 text-sm font-bold text-[var(--color-academy-muted)] transition hover:border-[var(--color-academy-line-input)] hover:bg-[var(--color-academy-primary-soft)] hover:text-[var(--color-academy-ink)]"
+                        className="academy-button-secondary"
                     >
-                        <span className="material-symbols-outlined text-lg">assignment</span>
                         요약 복사
                     </button>
                 </div>
@@ -1217,16 +1198,14 @@ function DetailModal({
                     <div className="mb-5 grid gap-2 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-success-soft)] p-3 sm:grid-cols-2">
                         <a
                             href={`/admin/students/${app.convertedStudentId}`}
-                            className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)] px-3 py-2 text-sm font-black transition hover:bg-[var(--color-academy-line)]"
+                            className="academy-button-tonal"
                         >
-                            <span className="material-symbols-outlined text-lg">person_search</span>
                             원생 상세 열기
                         </a>
                         <a
                             href={`/admin/finance?studentId=${encodeURIComponent(app.convertedStudentId)}`}
-                            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-[var(--color-academy-line)] bg-white px-3 py-2 text-sm font-bold text-[var(--color-academy-success)] transition hover:bg-[var(--color-academy-success-soft)]"
+                            className="academy-button-secondary"
                         >
-                            <span className="material-symbols-outlined text-lg">receipt_long</span>
                             이 학생 청구·수납
                         </a>
                     </div>
@@ -1234,8 +1213,7 @@ function DetailModal({
 
                 <div className="space-y-5">
                     <div>
-                        <h3 className="text-xs font-bold text-[var(--color-academy-muted)] uppercase mb-2 flex items-center gap-1">
-                            <span className="material-symbols-outlined text-sm">child_care</span>
+                        <h3 className="text-xs font-semibold text-[var(--color-academy-muted)] uppercase mb-2">
                             아이 정보
                         </h3>
                         <div className="space-y-1.5 bg-[var(--color-academy-soft)] rounded-lg p-3">
@@ -1249,8 +1227,7 @@ function DetailModal({
                     </div>
 
                     <div>
-                        <h3 className="text-xs font-bold text-[var(--color-academy-muted)] uppercase mb-2 flex items-center gap-1">
-                            <span className="material-symbols-outlined text-sm">person</span>
+                        <h3 className="text-xs font-semibold text-[var(--color-academy-muted)] uppercase mb-2">
                             보호자 정보
                         </h3>
                         <div className="space-y-1.5 bg-[var(--color-academy-soft)] rounded-lg p-3">
@@ -1262,8 +1239,7 @@ function DetailModal({
                     </div>
 
                     <div>
-                        <h3 className="text-xs font-bold text-[var(--color-academy-muted)] uppercase mb-2 flex items-center gap-1">
-                            <span className="material-symbols-outlined text-sm">sports_basketball</span>
+                        <h3 className="text-xs font-semibold text-[var(--color-academy-muted)] uppercase mb-2">
                             수강 정보
                         </h3>
                         <div className="space-y-1.5 bg-[var(--color-academy-soft)] rounded-lg p-3">
@@ -1287,14 +1263,14 @@ function DetailModal({
 
                     {app.memo && (
                         <div>
-                            <h3 className="text-xs font-bold text-[var(--color-academy-muted)] uppercase mb-2">보호자 메모</h3>
+                            <h3 className="text-xs font-semibold text-[var(--color-academy-muted)] uppercase mb-2">보호자 메모</h3>
                             <p className="text-sm text-[var(--color-academy-muted)] bg-[var(--color-academy-soft)] rounded-lg p-3">{app.memo}</p>
                         </div>
                     )}
 
                     {app.processedAt && (
                         <div>
-                            <h3 className="text-xs font-bold text-[var(--color-academy-muted)] uppercase mb-2">처리 정보</h3>
+                            <h3 className="text-xs font-semibold text-[var(--color-academy-muted)] uppercase mb-2">처리 정보</h3>
                             <div className="space-y-1.5 bg-[var(--color-academy-soft)] rounded-lg p-3">
                                 <InfoRow label="처리일" value={formatDetailDate(app.processedAt)} />
                                 <InfoRow label="처리메모" value={app.processedNote} />
@@ -1304,7 +1280,7 @@ function DetailModal({
 
                     {(app.latestContactAction || app.openFollowUpAt) && (
                         <div>
-                            <h3 className="text-xs font-bold text-[var(--color-academy-muted)] uppercase mb-2">최근 운영 이력</h3>
+                            <h3 className="text-xs font-semibold text-[var(--color-academy-muted)] uppercase mb-2">최근 운영 이력</h3>
                             <div className="space-y-1.5 rounded-lg bg-[var(--color-academy-soft)] p-3">
                                 {app.latestContactAction && (
                                     <>
@@ -1330,8 +1306,9 @@ function DetailModal({
 
                 <div className="flex justify-end mt-5">
                     <button
+                        type="button"
                         onClick={onClose}
-                        className="px-5 py-2.5 bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] rounded-xl hover:bg-[var(--color-academy-line)] transition font-medium text-sm"
+                        className="academy-button-secondary"
                     >
                         닫기
                     </button>

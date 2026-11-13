@@ -121,7 +121,7 @@ export default function GalleryLightboxOverlay({
                 {(item.title || item.caption) && (
                     <div className="mt-3 max-w-lg break-words text-center">
                         {item.title && (
-                            <p className="text-white font-bold text-lg">{item.title}</p>
+                            <p className="text-white font-semibold text-lg">{item.title}</p>
                         )}
                         {item.caption && (
                             <p className="text-white/60 text-sm mt-1 leading-relaxed">{item.caption}</p>

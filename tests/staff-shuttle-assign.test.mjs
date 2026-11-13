@@ -202,10 +202,10 @@ test("API: 로그인 없음 401 · 오류 원문 비노출 · 화면 링크와 �
     assert.ok(ui.includes(text), `문구 없음: ${text}`);
   }
   assert.doesNotMatch(ui, /이 칸은 못 태워요/);
-  // 하드코딩 색·작은 글자 금지, 아이콘은 Material Symbols
+  // 하드코딩 색·작은 글자 금지. 2026-11-13 UI 통일: 배정 화면은 아이콘 없이 글자로 말한다 — 다른 아이콘 라이브러리만 막는다
   assert.doesNotMatch(ui, /#[0-9a-fA-F]{3,6}\b|(bg|text|border)-(red|green|blue|gray|amber|orange|black|white)-?\d*\b/);
   assert.doesNotMatch(ui, /text-\[(1[01]|[0-9])(\.\d+)?px\]/);
-  assert.match(ui, /material-symbols-outlined/);
+  assert.doesNotMatch(ui, /lucide-react/);
   // 오류 원문을 그대로 띄우지 않는다(코드로 고른 안내만)
   assert.doesNotMatch(ui, /value\?\.error|\.message\)/);
 });

@@ -14,5 +14,5 @@ export default async function ShopProductPage({
 }) {
   const { productNo } = await params;
 
-  return <PublicSiteTheme><ShopProductFrame productNo={productNo} /></PublicSiteTheme>;
+  return <PublicSiteTheme publicScope><ShopProductFrame productNo={productNo} /></PublicSiteTheme>;
 }

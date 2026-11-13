@@ -30,10 +30,7 @@ export default function MyPageError({
       aria-labelledby="mypage-error-title"
       className="mx-auto my-6 max-w-md rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-5 text-center shadow-sm"
     >
-      <span className="material-symbols-outlined leading-none text-[var(--color-academy-warning)]" style={{ fontSize: "32px" }} aria-hidden="true">
-        wifi_off
-      </span>
-      <h1 id="mypage-error-title" className="mt-2 text-lg font-bold text-[var(--color-academy-ink)]">
+      <h1 id="mypage-error-title" className="academy-heading">
         화면을 불러오지 못했어요
       </h1>
       <p className="mt-1 text-sm leading-6 text-[var(--color-academy-muted)]">
@@ -45,12 +42,11 @@ export default function MyPageError({
           type="button"
           disabled={retrying}
           onClick={() => startTransition(() => { router.refresh(); reset(); })}
-          className="academy-button-primary min-h-11 px-5"
+          className="academy-button-primary"
         >
-          <span className="material-symbols-outlined leading-none" style={{ fontSize: "18px" }} aria-hidden="true">refresh</span>
           {retrying ? "다시 불러오는 중" : "다시 시도"}
         </button>
-        <Link href="/mypage" className="academy-button-secondary min-h-11 px-5">
+        <Link href="/mypage" className="academy-button-secondary">
           홈으로
         </Link>
       </div>

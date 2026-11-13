@@ -76,7 +76,7 @@ function useInlineAction(onChanged?: () => void, refresh?: () => Promise<void>) 
 }
 
 function InlineError({ text }: { text: string }) {
-  return text ? <p role="alert" className="text-sm font-bold text-[var(--color-academy-danger)]">{text}</p> : null;
+  return text ? <p role="alert" className="text-sm text-[var(--color-academy-danger)]">{text}</p> : null;
 }
 
 function KakaoActions({ row, onChanged }: Props) {
@@ -111,7 +111,7 @@ function SeasonalAbsenceActions({ row, onChanged }: Props) {
 
   return (
     <section aria-label="특강 결석 처리" className="mt-4 space-y-3">
-      <label className="block text-sm font-bold">
+      <label className="block text-sm font-medium">
         결석 처리 방식
         <select className="academy-input mt-1 w-full" value={resolution} onChange={(event) => setChoice(event.target.value)} disabled={pending}>
           <option value="" disabled>선택</option>
@@ -170,7 +170,7 @@ function AssignSeasonalMakeup({ absenceId, onChanged }: { absenceId: string; onC
       {!options && <button type="button" className="academy-button-secondary" disabled={pending} onClick={loadOptions}>보강 수업 조회</button>}
       {options?.alreadyAssigned && <p className="text-sm">이미 보강이 배정된 결석입니다.</p>}
       {options && !options.alreadyAssigned && (candidates.length ? <>
-        <label className="block text-sm font-bold">보강 수업
+        <label className="block text-sm font-medium">보강 수업
           <select className="academy-input mt-1 w-full" value={selection} disabled={pending} onChange={(event) => setSelection(event.target.value)}>
             <option value="">수업을 선택해 주세요</option>
             {candidates.map((candidate) => <option key={candidate.key} value={candidate.key}>{candidate.label}</option>)}
@@ -244,7 +244,7 @@ function WithdrawalActions({ row, onChanged }: Props) {
   if (result.state !== "ready") return <LoadingOrError state={result.state} onRetry={refresh} />;
   if (!result.value) return null;
   if (result.value.administrativeHold) {
-    return <p className="mt-4 text-sm font-bold text-[var(--color-academy-warning)]">{result.value.reviewMessage ?? "업무·권한 이관 후 처리해 주세요."}</p>;
+    return <p className="mt-4 text-sm font-medium text-[var(--color-academy-warning)]">{result.value.reviewMessage ?? "업무·권한 이관 후 처리해 주세요."}</p>;
   }
   const activeEnrollments = result.value.activeEnrollments;
   return (
@@ -309,7 +309,7 @@ function MediaRevocationActions({ row, onChanged }: Props) {
       }}>이 작업 처리</button>}
       {manual && <>
         {url && <a className="academy-button-secondary" href={url} target="_blank" rel="noreferrer">인스타그램 게시물 확인</a>}
-        <label className="block text-sm font-bold">
+        <label className="block text-sm font-medium">
           외부 삭제 확인 근거
           <textarea className="academy-input mt-1 w-full" rows={2} value={evidence} onChange={(event) => setEvidence(event.target.value)} maxLength={500} disabled={pending} />
         </label>

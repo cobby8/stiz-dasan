@@ -17,7 +17,7 @@ export default function ReconcileNowButton() {
             type="submit"
             disabled={pending}
             aria-busy={pending}
-            className="inline-flex items-center gap-2 rounded-lg bg-[var(--color-academy-primary)] px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-[var(--color-academy-primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+            className="academy-button-primary"
         >
             {pending ? "대조하는 중… (최대 1분)" : "지금 대조하기"}
         </button>

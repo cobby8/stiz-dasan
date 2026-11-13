@@ -49,7 +49,7 @@ export default async function SimulatorPage() {
             <section className="public-page-hero public-page-hero--compact relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
                 <div className="max-w-6xl mx-auto px-6 md:px-4 relative">
                     <AnimateOnScroll>
-                        <h1 className="text-4xl md:text-5xl font-black mb-4 break-keep">우리 아이 수업 찾기</h1>
+                        <h1 className="text-4xl md:text-5xl font-bold mb-4 break-keep">우리 아이 수업 찾기</h1>
                         <p className="text-blue-200 text-lg max-w-xl break-keep">
                             학년과 원하는 요일/시간을 선택하면, 등록 가능한 수업을 자동으로 찾아드려요.
                         </p>

@@ -39,12 +39,11 @@ export default async function KakaoConnectPage({
     return (
       <Shell tone="success">
         <div className="text-center">
-          <div className="text-4xl">✅</div>
-          <h1 className="mt-4 text-xl font-black text-gray-950">카카오 학부모 인증 완료</h1>
-          <p className="mt-3 text-sm leading-6 text-gray-600">이제 카카오 채널에서 평소처럼 말씀하시면 연결된 자녀를 자동으로 확인합니다. 결석·당일 셔틀·입금·영수증은 실제 수업과 청구서를 고르는 전용 화면으로 바로 접수할 수 있어요.</p>
+          <h1 className="text-xl font-bold text-[var(--color-academy-ink)]">카카오 학부모 인증 완료</h1>
+          <p className="mt-3 text-sm leading-6 text-[var(--color-academy-muted)]">이제 카카오 채널에서 평소처럼 말씀하시면 연결된 자녀를 자동으로 확인합니다. 결석·당일 셔틀·입금·영수증은 실제 수업과 청구서를 고르는 전용 화면으로 바로 접수할 수 있어요.</p>
           <div className="mt-6 grid gap-2">
-            <a href={CHANNEL_CHAT_URL} className="inline-flex justify-center rounded-xl bg-yellow-400 px-5 py-3 text-sm font-black text-gray-950">카카오 채널로 돌아가기</a>
-            <Link href="/mypage" className="inline-flex justify-center rounded-xl bg-gray-950 px-5 py-3 text-sm font-bold text-white">학부모 마이페이지 보기</Link>
+            <a href={CHANNEL_CHAT_URL} className="academy-button-primary w-full">카카오 채널로 돌아가기</a>
+            <Link href="/mypage" className="academy-button-secondary w-full">학부모 마이페이지 보기</Link>
           </div>
         </div>
       </Shell>
@@ -55,10 +54,10 @@ export default async function KakaoConnectPage({
   if (!token || params.expired === "1" || !(await isKakaoConnectTokenUsable(token))) {
     return (
       <Shell tone="warn">
-        <p className="text-sm font-bold text-yellow-700">링크 확인</p>
-        <h1 className="mt-2 text-2xl font-black text-gray-950">인증 링크가 만료됐거나 이미 사용됐어요</h1>
-        <p className="mt-4 text-sm leading-6 text-gray-600">카카오채널에서 <b>‘기존 수강생 인증’</b>을 다시 눌러 새 링크를 받아 주세요. 링크는 받은 뒤 <b>15분</b> 동안만 쓸 수 있어요.</p>
-        <a href={CHANNEL_CHAT_URL} className="mt-6 inline-flex w-full justify-center rounded-xl bg-yellow-400 px-5 py-3.5 font-black text-gray-950">카카오 채널로 돌아가기</a>
+        <p className="text-sm font-medium text-[var(--color-academy-warning)]">링크 확인</p>
+        <h1 className="mt-2 text-2xl font-bold text-[var(--color-academy-ink)]">인증 링크가 만료됐거나 이미 사용됐어요</h1>
+        <p className="mt-4 text-sm leading-6 text-[var(--color-academy-muted)]">카카오채널에서 <b>‘기존 수강생 인증’</b>을 다시 눌러 새 링크를 받아 주세요. 링크는 받은 뒤 <b>15분</b> 동안만 쓸 수 있어요.</p>
+        <a href={CHANNEL_CHAT_URL} className="academy-button-primary mt-6 w-full">카카오 채널로 돌아가기</a>
       </Shell>
     );
   }
@@ -86,13 +85,13 @@ export default async function KakaoConnectPage({
 
     return (
       <Shell tone="warn">
-        <p className="text-sm font-bold text-yellow-700">최초 1회 인증</p>
-        <h1 className="mt-2 text-2xl font-black text-gray-950">카카오와 학부모 계정 연결</h1>
-        <p className="mt-4 text-sm leading-6 text-gray-600">{state.parent.appUserName} 학부모님의 검증된 계정을 현재 카카오 대화와 연결합니다. 카카오 계정 정보와 전화번호는 화면이나 학원 기록에 그대로 보이지 않습니다.</p>
+        <p className="text-sm font-medium text-[var(--color-academy-warning)]">최초 1회 인증</p>
+        <h1 className="mt-2 text-2xl font-bold text-[var(--color-academy-ink)]">카카오와 학부모 계정 연결</h1>
+        <p className="mt-4 text-sm leading-6 text-[var(--color-academy-muted)]">{state.parent.appUserName} 학부모님의 검증된 계정을 현재 카카오 대화와 연결합니다. 카카오 계정 정보와 전화번호는 화면이나 학원 기록에 그대로 보이지 않습니다.</p>
         <form action={connect} className="mt-7">
-          <button className="w-full rounded-xl bg-yellow-400 px-5 py-3.5 font-black text-gray-950">이 카카오 계정 연결하기</button>
+          <button className="academy-button-primary w-full">이 카카오 계정 연결하기</button>
         </form>
-        <p className="mt-4 text-xs leading-5 text-gray-500">본인이 요청하지 않았다면 연결하지 말고 창을 닫아주세요. 인증 링크는 15분 후 만료됩니다.</p>
+        <p className="mt-4 text-xs leading-5 text-[var(--color-academy-muted)]">본인이 요청하지 않았다면 연결하지 말고 창을 닫아주세요. 인증 링크는 15분 후 만료됩니다.</p>
       </Shell>
     );
   }
@@ -100,11 +99,11 @@ export default async function KakaoConnectPage({
   if (state.status === "STAFF_ACCOUNT") {
     return (
       <Shell tone="warn">
-        <p className="text-sm font-bold text-yellow-700">계정 확인</p>
-        <h1 className="mt-2 text-2xl font-black text-gray-950">학부모 계정으로 열어 주세요</h1>
-        <p className="mt-4 text-sm leading-6 text-gray-600">지금은 관리자·선생님 계정으로 로그인돼 있어요. 카카오 학부모 인증은 학부모 계정에만 연결할 수 있어요. 로그아웃한 뒤 학부모 계정으로 다시 로그인해 주세요.</p>
+        <p className="text-sm font-medium text-[var(--color-academy-warning)]">계정 확인</p>
+        <h1 className="mt-2 text-2xl font-bold text-[var(--color-academy-ink)]">학부모 계정으로 열어 주세요</h1>
+        <p className="mt-4 text-sm leading-6 text-[var(--color-academy-muted)]">지금은 관리자·선생님 계정으로 로그인돼 있어요. 카카오 학부모 인증은 학부모 계정에만 연결할 수 있어요. 로그아웃한 뒤 학부모 계정으로 다시 로그인해 주세요.</p>
         <form action={logout} className="mt-6">
-          <button className="w-full rounded-xl bg-gray-950 px-5 py-3.5 font-bold text-white">로그아웃</button>
+          <button className="academy-button-secondary w-full">로그아웃</button>
         </form>
       </Shell>
     );
@@ -113,10 +112,10 @@ export default async function KakaoConnectPage({
   if (state.status === "PHONE_UNVERIFIED") {
     return (
       <Shell tone="warn">
-        <p className="text-sm font-bold text-yellow-700">휴대폰 인증 필요</p>
-        <h1 className="mt-2 text-2xl font-black text-gray-950">휴대폰 인증을 먼저 끝내 주세요</h1>
-        <p className="mt-4 text-sm leading-6 text-gray-600">학부모 계정의 휴대폰 인증이 아직 끝나지 않아 카카오와 연결할 수 없어요. 아래 버튼으로 인증을 마치면 이 화면으로 돌아와요. 계속 안 되면 학원에 문의해 주세요.</p>
-        <Link href={`/auth/continue?${new URLSearchParams({ redirect: selfPath }).toString()}`} className="mt-6 inline-flex w-full justify-center rounded-xl bg-yellow-400 px-5 py-3.5 font-black text-gray-950">휴대폰 인증하러 가기</Link>
+        <p className="text-sm font-medium text-[var(--color-academy-warning)]">휴대폰 인증 필요</p>
+        <h1 className="mt-2 text-2xl font-bold text-[var(--color-academy-ink)]">휴대폰 인증을 먼저 끝내 주세요</h1>
+        <p className="mt-4 text-sm leading-6 text-[var(--color-academy-muted)]">학부모 계정의 휴대폰 인증이 아직 끝나지 않아 카카오와 연결할 수 없어요. 아래 버튼으로 인증을 마치면 이 화면으로 돌아와요. 계속 안 되면 학원에 문의해 주세요.</p>
+        <Link href={`/auth/continue?${new URLSearchParams({ redirect: selfPath }).toString()}`} className="academy-button-primary mt-6 w-full">휴대폰 인증하러 가기</Link>
       </Shell>
     );
   }
@@ -135,11 +134,11 @@ export default async function KakaoConnectPage({
 
   return (
     <Shell tone="warn">
-      <p className="text-sm font-bold text-yellow-700">최초 1회 인증</p>
-      <h1 className="mt-2 text-2xl font-black text-gray-950">
+      <p className="text-sm font-medium text-[var(--color-academy-warning)]">최초 1회 인증</p>
+      <h1 className="mt-2 text-2xl font-bold text-[var(--color-academy-ink)]">
         {state.status === "NO_APP_ACCOUNT" ? "학부모 계정 연결이 필요해요" : "먼저 학부모 계정으로 로그인해 주세요"}
       </h1>
-      <p className="mt-4 text-sm leading-6 text-gray-600">
+      <p className="mt-4 text-sm leading-6 text-[var(--color-academy-muted)]">
         로그인하면 이 화면으로 돌아와 카카오 연결을 바로 이어 가요. <b>계정이 없거나 로그인이 안 되면</b> ‘기존 학부모 계정 활성화’를 눌러 주세요. 학원에 알려 주신 휴대폰 번호로 문자 인증하고 비밀번호만 정하면 됩니다.
       </p>
       {/* 카카오톡 안 브라우저는 간편로그인 세션이 자주 끊긴다 → 비밀번호 방식(활성화)을 먼저 보여 준다 */}
@@ -148,7 +147,7 @@ export default async function KakaoConnectPage({
       </div>
       {inApp ? (
         <>
-          <p className="mt-4 text-xs leading-5 text-gray-500">카카오·구글 간편로그인은 카카오톡 안에서 끊길 수 있어요. 간편로그인을 쓰려면 아래 안내대로 외부 브라우저에서 열어 주세요. 아이디·이메일 로그인과 계정 활성화는 여기서 그대로 하셔도 돼요.</p>
+          <p className="mt-4 text-xs leading-5 text-[var(--color-academy-muted)]">카카오·구글 간편로그인은 카카오톡 안에서 끊길 수 있어요. 간편로그인을 쓰려면 아래 안내대로 외부 브라우저에서 열어 주세요. 아이디·이메일 로그인과 계정 활성화는 여기서 그대로 하셔도 돼요.</p>
           <InAppBrowserEscapeCard
             inAppBrowser={inApp}
             platform={env.platform}
@@ -156,7 +155,7 @@ export default async function KakaoConnectPage({
           />
         </>
       ) : null}
-      <p className="mt-4 text-xs leading-5 text-gray-500">인증 링크는 받은 뒤 15분 동안만 쓸 수 있어요. 시간이 지나면 카카오채널에서 ‘기존 수강생 인증’을 다시 눌러 주세요.</p>
+      <p className="mt-4 text-xs leading-5 text-[var(--color-academy-muted)]">인증 링크는 받은 뒤 15분 동안만 쓸 수 있어요. 시간이 지나면 카카오채널에서 ‘기존 수강생 인증’을 다시 눌러 주세요.</p>
     </Shell>
   );
 }
@@ -164,7 +163,7 @@ export default async function KakaoConnectPage({
 function Shell({ tone, children }: { tone: "warn" | "success"; children: React.ReactNode }) {
   return (
     <main className="mx-auto max-w-lg px-5 py-12">
-      <div className={`rounded-3xl border bg-white p-7 shadow-sm ${tone === "success" ? "border-emerald-200" : "border-yellow-200"}`}>
+      <div className={`rounded-3xl border bg-white p-7 shadow-sm ${tone === "success" ? "border-[var(--color-academy-success)]" : "border-[var(--color-academy-line)]"}`}>
         {children}
       </div>
     </main>

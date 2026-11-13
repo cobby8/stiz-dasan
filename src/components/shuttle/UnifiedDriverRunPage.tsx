@@ -36,8 +36,7 @@ export function DriverLightError({ title, sub }: { title: string; sub: string })
     <AcademyTheme role="driver" className="min-h-screen text-[var(--color-academy-ink)]">
       <div className="mx-auto grid min-h-[80dvh] max-w-md place-items-center px-6 text-center">
         <div>
-          <p className="text-5xl">🚌</p>
-          <h1 className="mt-3 text-xl font-black text-[var(--color-academy-ink)]">{title}</h1>
+          <h1 className="text-xl font-bold text-[var(--color-academy-ink)]">{title}</h1>
           <p className="mt-1 text-base text-[var(--color-academy-muted)]">{sub}</p>
         </div>
       </div>
@@ -51,12 +50,11 @@ function DriverLinkDisabledNotice() {
     <AcademyTheme role="driver" className="min-h-screen text-[var(--color-academy-ink)]">
       <div className="mx-auto grid min-h-[80dvh] max-w-md place-items-center px-6 text-center">
         <div>
-          <span className="material-symbols-outlined text-5xl text-[var(--color-academy-muted)]" aria-hidden="true">link_off</span>
-          <h1 className="mt-3 text-xl font-black text-[var(--color-academy-ink)]">{DRIVER_LINK_DISABLED_MESSAGE}</h1>
+          <h1 className="text-xl font-bold text-[var(--color-academy-ink)]">{DRIVER_LINK_DISABLED_MESSAGE}</h1>
           <p className="mt-1 text-base text-[var(--color-academy-muted)]">원장님이 기사님 역할을 준 계정으로 로그인하면 운행표가 열립니다.</p>
           <a
             href={`/login?${new URLSearchParams({ redirect: "/staff/run" }).toString()}`}
-            className="mt-6 inline-flex min-h-12 items-center justify-center rounded-xl border border-[var(--color-academy-line-input)] px-5 text-base font-bold text-[var(--color-academy-ink)]"
+            className="mt-6 inline-flex min-h-12 items-center justify-center rounded-xl border border-[var(--color-academy-line-input)] px-5 text-base font-medium text-[var(--color-academy-ink)]"
           >
             앱에서 로그인하기
           </a>

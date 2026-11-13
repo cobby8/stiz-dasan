@@ -17,6 +17,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import AdminModal from "@/components/admin/AdminModal";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { adminErrorText } from "@/components/admin/adminDisplayText";
 import { useAdminConfirm, type AdminConfirmOptions } from "@/components/admin/AdminConfirmDialog";
 import { kstHm, kstLabel, todayKst, toKstYmd } from "@/lib/datetime/kst";
@@ -270,7 +271,7 @@ function TabLoading() {
 /** 탭 안 묶음 머리(처리 필요·진행 중·완료) — 얇은 한 줄 */
 function GroupHead({ label, count }: { label: string; count: number }) {
   return (
-    <li className="bg-[var(--color-academy-soft)] px-3 py-1 text-xs font-black text-[var(--color-academy-muted)]">
+    <li className="bg-[var(--color-academy-soft)] px-3 py-1 text-xs font-semibold text-[var(--color-academy-muted)]">
       {label} <span className="tabular-nums">{count}</span>
     </li>
   );
@@ -474,14 +475,14 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
           }}
           className={`flex min-h-12 min-w-0 flex-1 items-center gap-2 py-1.5 pr-3 text-left hover:bg-[var(--color-academy-soft)] ${gutter ? "pl-0" : "pl-3"}`}
         >
-          <span className="hidden w-24 shrink-0 truncate text-xs font-bold text-[var(--color-academy-muted)] sm:block">{kindLabel(row.kind)}</span>
+          <span className="hidden w-24 shrink-0 truncate text-xs text-[var(--color-academy-muted)] sm:block">{kindLabel(row.kind)}</span>
           <span className="min-w-0 flex-1 truncate text-sm">
-            <b className="text-[var(--color-academy-ink)]">{row.studentName ?? row.title}</b>
+            <b className="font-medium text-[var(--color-academy-ink)]">{row.studentName ?? row.title}</b>
             <span className="text-[var(--color-academy-muted)]">
               {row.studentName ? ` · ${row.title}` : ""}{row.summary ? ` · ${row.summary}` : ""}
             </span>
           </span>
-          <span className={`shrink-0 rounded px-2 py-0.5 text-xs font-bold ${badgeClass(row)}`}>{row.statusLabel}</span>
+          <span className={`shrink-0 rounded px-2 py-0.5 text-xs ${badgeClass(row)}`}>{row.statusLabel}</span>
           <span className="hidden w-16 shrink-0 text-right text-xs tabular-nums text-[var(--color-academy-muted)] sm:block">{whenLabel(row.createdAt)}</span>
         </button>
       </li>
@@ -491,7 +492,7 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
   return (
     <div className="space-y-2">
       <header className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 md:grid-cols-[auto_minmax(0,1fr)_auto]">
-        <h1 className="text-xl font-black text-[var(--color-academy-ink)]">신청함</h1>
+        <AdminPageHeader title="신청함" />
         <nav className="col-span-2 col-start-1 row-start-2 flex min-w-0 gap-1 overflow-x-auto p-0.5 md:col-span-1 md:col-start-2 md:row-start-1" aria-label="신청 종류">
           {INBOX_TABS.map((entry) => {
             const n = counts?.byTab[entry.tab] ?? 0;
@@ -502,15 +503,15 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
                 type="button"
                 aria-pressed={active}
                 onClick={() => go({ tab: entry.tab })}
-                className={`relative inline-flex min-h-11 shrink-0 items-center gap-1 whitespace-nowrap rounded-lg px-2.5 text-sm font-bold ${active
-                  ? "bg-[var(--color-academy-primary)] text-[var(--color-academy-on-primary)]"
+                className={`relative inline-flex min-h-11 shrink-0 items-center gap-1 whitespace-nowrap rounded-lg px-2.5 text-sm font-medium ${active
+                  ? "bg-[var(--color-academy-secondary-soft)] text-[var(--color-academy-secondary-ink)] ring-1 ring-inset ring-[var(--color-academy-secondary-strong)]"
                   : "text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"}`}
               >
                 {entry.label}
                 {n > 0 && (
                   <span className={`rounded-full px-1.5 text-xs tabular-nums ${active
                     ? "bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)]"
-                    : "bg-[var(--color-academy-primary)] text-[var(--color-academy-on-primary)]"}`}>
+                    : "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]"}`}>
                     <span className="sr-only">처리 필요 </span>{n}
                   </span>
                 )}
@@ -519,8 +520,7 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
           })}
         </nav>
         <Link href="/admin/inbox/settings" prefetch={false} className="academy-button-secondary col-start-2 row-start-1 whitespace-nowrap md:col-start-3" aria-label="신청 설정(유입 통계·안내 설정·입학 점검)">
-          <span className="material-symbols-outlined text-lg" aria-hidden="true">settings</span>
-          <span className="hidden sm:inline">신청 설정</span>
+          신청 설정
         </Link>
       </header>
 
@@ -528,7 +528,6 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
         <div className="flex min-w-0 items-center gap-2">
           <label className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-xl border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 sm:max-w-xs">
             <span className="sr-only">원생 이름 검색</span>
-            <span className="material-symbols-outlined text-lg text-[var(--color-academy-muted)]" aria-hidden="true">search</span>
             <input
               type="search"
               value={query}
@@ -538,7 +537,6 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
             />
           </label>
           <button type="button" onClick={() => setFilterOpen(true)} className="academy-button-secondary shrink-0" aria-haspopup="dialog">
-            <span className="material-symbols-outlined text-lg" aria-hidden="true">tune</span>
             필터{filterCount > 0 && <span className="tabular-nums"> {filterCount}</span>}
           </button>
         </div>
@@ -556,8 +554,8 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
                 type="button"
                 aria-pressed={active}
                 onClick={() => go({ sub: s.key, done: false })}
-                className={`min-h-11 shrink-0 rounded-lg px-3 text-sm font-bold ${active
-                  ? "bg-[var(--color-academy-soft)] text-[var(--color-academy-ink)]"
+                className={`min-h-11 shrink-0 rounded-lg px-3 text-sm font-medium ${active
+                  ? "bg-[var(--color-academy-secondary-soft)] text-[var(--color-academy-secondary-ink)] ring-1 ring-inset ring-[var(--color-academy-secondary-strong)]"
                   : "text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"}`}
               >
                 {s.label}
@@ -569,7 +567,7 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
 
       {/* 한 종류만 보는 중(옛 «?kind=» 주소) — 누르면 탭 전체 */}
       {isRowsTab && kind && (
-        <button type="button" onClick={() => go({ kind: null, sub: null })} className="inline-flex min-h-11 items-center gap-1 rounded-full border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 text-sm font-bold text-[var(--color-academy-ink)]">
+        <button type="button" onClick={() => go({ kind: null, sub: null })} className="inline-flex min-h-11 items-center gap-1 rounded-full border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 text-sm font-medium text-[var(--color-academy-ink)]">
           {kindLabel(kind)}만 보기
           <span className="material-symbols-outlined text-lg" aria-hidden="true">close</span>
           <span className="sr-only">— 눌러서 {tabLabel(tab)} 전체 보기</span>
@@ -580,7 +578,7 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
       {isRowsTab && filterCount > 0 && (
         <p className="text-sm text-[var(--color-academy-muted)]">
           신청일 {from ?? "…"} ~ {to ?? "…"}
-          <button type="button" onClick={() => go({ from: null, to: null })} className="ml-2 min-h-11 font-bold text-[var(--color-academy-ink)] underline">필터 풀기</button>
+          <button type="button" onClick={() => go({ from: null, to: null })} className="academy-button-text ml-2">필터 풀기</button>
         </p>
       )}
 
@@ -604,7 +602,7 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
       {rowsData && (
         <>
           {message && (
-            <p role="status" className={`rounded px-3 py-2 text-sm font-bold ${message.tone === "ok"
+            <p role="status" className={`rounded px-3 py-2 text-sm font-medium ${message.tone === "ok"
               ? "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]"
               : "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]"}`}>{message.text}</p>
           )}
@@ -616,7 +614,7 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
 
           {/* 정산은 해당 휴원 신청의 상세에서 이어서 처리한다. */}
           {tab === "CHANGE" && (rowsData.openSettlementCount ?? 0) > 0 && (
-            <p className="rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-warning)]">
+            <p className="rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm font-medium text-[var(--color-academy-warning)]">
               휴원 수강료 처리 대기 {rowsData.openSettlementCount}건 · 신청 상세에서 확인하세요.
             </p>
           )}
@@ -624,7 +622,7 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
           {/* 일괄 처리 줄 — 고른 게 있을 때만 */}
           {selectedRows.length > 0 && (
             <div className="sticky top-14 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2">
-              <span className="text-sm font-bold text-[var(--color-academy-ink)]">{selectedRows.length}건 선택</span>
+              <span className="text-sm font-medium tabular-nums text-[var(--color-academy-ink)]">{selectedRows.length}건 선택</span>
               <button type="button" onClick={() => setSelected(new Set())} className="academy-button-text">선택 풀기</button>
               <span className="ml-auto flex flex-wrap gap-2">
                 {selectedOther.length > 0 && (
@@ -693,11 +691,11 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
         <ListDetailPanel onClose={() => setOpenSelection(null)} titleId="inbox-detail-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
           <div className="mb-3 flex items-start gap-2">
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-bold text-[var(--color-academy-muted)]">{kindLabel(open.kind)} · {whenLabel(open.createdAt)} 신청</p>
-              <h2 id="inbox-detail-title" className="mt-1 break-keep text-lg font-black text-[var(--color-academy-ink)]">
+              <p className="text-xs text-[var(--color-academy-muted)]">{kindLabel(open.kind)} · {whenLabel(open.createdAt)} 신청</p>
+              <h2 id="inbox-detail-title" className="mt-1 break-keep text-lg font-bold text-[var(--color-academy-ink)]">
                 {open.studentName ? `${open.studentName} · ${open.title}` : open.title}
               </h2>
-              {freshOpen && <span className={`mt-1 inline-block rounded px-2 py-0.5 text-xs font-bold ${badgeClass(open)}`}>{open.statusLabel}</span>}
+              {freshOpen && <span className={`mt-1 inline-block rounded px-2 py-0.5 text-xs ${badgeClass(open)}`}>{open.statusLabel}</span>}
             </div>
             <button type="button" onClick={() => setOpenSelection(null)} aria-label="닫기" className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
               <span className="material-symbols-outlined" aria-hidden="true">close</span>
@@ -709,7 +707,7 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
             <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
               {open.facts.map(([label, value]) => (
                 <div key={label} className="contents">
-                  <dt className="font-bold text-[var(--color-academy-muted)]">{label}</dt>
+                  <dt className="font-medium text-[var(--color-academy-muted)]">{label}</dt>
                   <dd className="whitespace-pre-wrap break-words text-[var(--color-academy-ink)]">{value}</dd>
                 </div>
               ))}
@@ -724,18 +722,17 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
           )}
           {/* 상담 — 보호자에게 바로 전화(휴대폰에서 누르면 전화 앱) */}
           {open.kind === "CONSULT" && open.ref?.phone && (
-            <a href={`tel:${open.ref.phone}`} className="academy-button-secondary mt-3 inline-flex min-h-11 items-center gap-1">
-              <span className="material-symbols-outlined text-lg" aria-hidden="true">call</span>
+            <a href={`tel:${open.ref.phone}`} className="academy-button-secondary mt-3">
               전화 걸기
             </a>
           )}
           {wantsNote(open, openActions) && (
-            <label className="mt-4 block text-sm font-bold text-[var(--color-academy-ink)]">
+            <label className="mt-4 block text-sm font-medium text-[var(--color-academy-ink)]">
               {open.kind === "PARENT_REQUEST" ? "답변(학부모에게 보임)" : open.kind === "CONSULT" ? "원장 메모(학부모에게 안 보임)" : "메모·거절 사유(선택)"}
               <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={2} maxLength={open.kind === "PARENT_REQUEST" ? 2000 : open.kind === "CONSULT" ? 1000 : 500} className="academy-input mt-1 w-full" />
             </label>
           )}
-          {message?.tone === "error" && <p role="alert" className="mt-3 text-sm font-bold text-[var(--color-academy-danger)]">{message.text}</p>}
+          {message?.tone === "error" && <p role="alert" className="mt-3 text-sm text-[var(--color-academy-danger)]">{message.text}</p>}
           {canDecideStaffRoles && open.kind === "ROLE_GRANT" && open.ref?.role === "INSTRUCTOR"
             && (open.rawStatus === "PENDING" || open.rawStatus === "COACH_LINK_REQUIRED") && (
               <RoleRequestCoachLink
@@ -789,9 +786,9 @@ function FilterModal({ from, to, onClose, onApply }: {
   const reversed = Boolean(fromValue && toValue && fromValue > toValue);
   return (
     <AdminModal onClose={onClose} titleId="inbox-filter-title" panelClassName="max-w-lg p-5">
-      <h2 id="inbox-filter-title" className="text-lg font-black text-[var(--color-academy-ink)]">필터</h2>
+      <h2 id="inbox-filter-title" className="text-lg font-bold text-[var(--color-academy-ink)]">필터</h2>
       <fieldset className="mt-3">
-        <legend className="text-sm font-bold text-[var(--color-academy-muted)]">신청일</legend>
+        <legend className="text-sm font-medium text-[var(--color-academy-muted)]">신청일</legend>
         <div className="mt-2 flex items-center gap-2">
           <input type="date" value={fromValue} onChange={(event) => setFromValue(event.target.value)} className="academy-input min-h-11 min-w-0 flex-1" aria-label="신청일 시작" />
           <span className="text-[var(--color-academy-muted)]">~</span>

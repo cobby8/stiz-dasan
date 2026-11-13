@@ -69,7 +69,7 @@ export default function DriverLocationPanel({ onClose }: { onClose: () => void }
         {/* 헤더 */}
         <div className="flex items-center justify-between border-b border-[var(--color-academy-line)] px-5 py-4">
           <div>
-            <h2 className="text-[17px] font-black text-[var(--color-academy-ink)]">
+            <h2 className="text-[17px] font-bold text-[var(--color-academy-ink)]">
               🚌 차량 마지막 위치
             </h2>
             {lastRefresh && (
@@ -108,7 +108,7 @@ export default function DriverLocationPanel({ onClose }: { onClose: () => void }
               <div className="flex items-start gap-3">
                 <StatusDot sharing={loc.sharing} secondsAgo={loc.secondsAgo} />
                 <div className="min-w-0 flex-1">
-                  <p className="text-[15px] font-black text-[var(--color-academy-ink)]">
+                  <p className="text-[15px] font-bold text-[var(--color-academy-ink)]">
                     {loc.label ?? "기사님"}
                   </p>
                   <p className="text-[13px] text-[var(--color-academy-muted)]">
@@ -122,7 +122,7 @@ export default function DriverLocationPanel({ onClose }: { onClose: () => void }
                     href={kakaoMapUrl(loc.label, loc.latitude, loc.longitude)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="shrink-0 rounded-lg bg-[var(--color-academy-primary-soft)] px-3 py-2 text-[13px] font-black text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-line)]"
+                    className="shrink-0 rounded-lg bg-[var(--color-academy-primary-soft)] px-3 py-2 text-[13px] font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-line)]"
                   >
                     지도↗
                   </a>

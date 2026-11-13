@@ -59,8 +59,7 @@ export default function ParentShuttleDetail({
     return (
         <section id="mypage-shuttle" aria-labelledby="parent-shuttle-heading" className="academy-panel scroll-mt-24 p-4">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <h2 id="parent-shuttle-heading" className="flex items-center gap-2 font-bold text-[var(--color-academy-ink)]">
-                    <span className="material-symbols-outlined leading-none text-[var(--color-academy-muted)]" style={{ fontSize: "20px" }} aria-hidden="true">airport_shuttle</span>
+                <h2 id="parent-shuttle-heading" className="academy-section-title flex items-center gap-2">
                     셔틀 배정
                     <span className="text-sm font-normal tabular-nums text-[var(--color-academy-muted)]">{items.length}건</span>
                 </h2>
@@ -72,12 +71,11 @@ export default function ParentShuttleDetail({
                             className="academy-button-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-academy-primary)] focus-visible:ring-offset-2"
                             aria-label={`셔틀 기사님 ${driverContact.name}에게 전화하기`}
                         >
-                            <span className="material-symbols-outlined leading-none text-[var(--color-academy-muted)]" style={{ fontSize: "16px" }} aria-hidden="true">call</span>
                             기사님께 연락 ({driverContact.name})
                         </a>
                     )}
                     <Link href="/mypage/shuttle"
-                        className="flex min-h-11 items-center justify-center rounded-xl border border-[var(--color-academy-line)] px-3 py-2 text-xs font-bold text-[var(--color-academy-ink)]">
+                        className="academy-button-secondary">
                         셔틀 당일 변경
                     </Link>
                 </div>
@@ -91,27 +89,27 @@ export default function ParentShuttleDetail({
                         <article key={item.id} className="rounded-xl bg-[var(--color-academy-soft)] p-3">
                             <div className="flex flex-wrap items-start justify-between gap-2">
                                 <div>
-                                    <p className="text-sm font-bold text-[var(--color-academy-ink)]">
-                                        {showChild && childNames[item.studentId] && <span className="mr-1 font-bold text-[var(--color-academy-ink)]">{childNames[item.studentId]}</span>}
+                                    <p className="text-sm font-semibold text-[var(--color-academy-ink)]">
+                                        {showChild && childNames[item.studentId] && <span className="mr-1 text-[var(--color-academy-ink)]">{childNames[item.studentId]}</span>}
                                         {item.title}
                                     </p>
                                     <p className="mt-0.5 text-xs text-[var(--color-academy-muted)]">
                                         {item.label}{item.direction ? ` · ${SHUTTLE_DIRECTION[item.direction]}` : ""}
                                     </p>
                                 </div>
-                                <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${status.color}`}>{status.label}</span>
+                                <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs ${status.color}`}>{status.label}</span>
                             </div>
 
                             <dl className="mt-2 grid grid-cols-[6rem_1fr] gap-x-3 gap-y-1.5 text-sm">
                                 <dt className="text-[var(--color-academy-muted)]">운행일</dt>
-                                <dd className="font-medium text-[var(--color-academy-ink)]">
+                                <dd className="text-[var(--color-academy-ink)]">
                                     {item.serviceDate ? <time dateTime={item.serviceDate}>{formatShuttleDate(item.serviceDate)}</time> : "운행일 확인 중"}
                                 </dd>
                                 {/* 셔틀 확정 승·하차 시각(저장된 배차 노선 기준). 방학특강·정규 공통, 값이 있을 때만 노출한다. */}
                                 {(item.pickupEtaLabel || item.dropoffEtaLabel) && (
                                     <>
                                         <dt className="text-[var(--color-academy-muted)]">확정 시각</dt>
-                                        <dd className="font-medium text-[var(--color-academy-ink)]">
+                                        <dd className="text-[var(--color-academy-ink)]">
                                             {[
                                                 item.pickupEtaLabel ? `등원 ${item.pickupEtaLabel}` : null,
                                                 item.dropoffEtaLabel ? `하원 ${item.dropoffEtaLabel}` : null,
@@ -122,24 +120,24 @@ export default function ParentShuttleDetail({
                                 {showDetails && (
                                     <>
                                         <dt className="text-[var(--color-academy-muted)]">노선</dt>
-                                        <dd className="font-medium text-[var(--color-academy-ink)]">{item.routeName || "노선 확인 중"}</dd>
+                                        <dd className="text-[var(--color-academy-ink)]">{item.routeName || "노선 확인 중"}</dd>
                                         <dt className="text-[var(--color-academy-muted)]">
                                             {item.direction === "PICKUP" ? "탑승 장소" : item.direction === "DROPOFF" ? "하차 장소" : "정류장"}
                                         </dt>
-                                        <dd className="font-medium text-[var(--color-academy-ink)]">
+                                        <dd className="text-[var(--color-academy-ink)]">
                                             {item.stopName || "정류장 확인 중"}
                                             {item.stopAddress && <span className="mt-0.5 block text-xs font-normal text-[var(--color-academy-muted)]">{item.stopAddress}</span>}
                                         </dd>
                                         <dt className="text-[var(--color-academy-muted)]">확정 시간</dt>
-                                        <dd className="font-medium text-[var(--color-academy-ink)]">
+                                        <dd className="text-[var(--color-academy-ink)]">
                                             {item.plannedAt ? <time dateTime={item.plannedAt}>{formatShuttleTime(item.plannedAt)}</time> : "시간 확인 중"}
                                         </dd>
                                         <dt className="text-[var(--color-academy-muted)]">차량</dt>
-                                        <dd className="font-medium text-[var(--color-academy-ink)]">{item.vehicleName || "차량 확인 중"}</dd>
+                                        <dd className="text-[var(--color-academy-ink)]">{item.vehicleName || "차량 확인 중"}</dd>
                                         {item.rideStatus && (
                                             <>
                                                 <dt className="text-[var(--color-academy-muted)]">탑승 상태</dt>
-                                                <dd className="font-medium text-[var(--color-academy-ink)]">
+                                                <dd className="text-[var(--color-academy-ink)]">
                                                     {SHUTTLE_RIDE_STATUS[item.rideStatus] || "상태 확인 중"}
                                                 </dd>
                                             </>

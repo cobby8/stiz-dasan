@@ -15,7 +15,8 @@ import {
 } from "@/app/actions/trial-fee";
 import { adminErrorText } from "@/components/admin/adminDisplayText";
 
-const INPUT = "w-full rounded-lg border border-[var(--color-academy-line-input)] bg-[var(--color-academy-soft)] px-3 py-2.5 text-sm focus:bg-white focus:ring-2 focus:ring-[var(--color-academy-primary)]";
+// 입력칸 = 테마 공용 입력칸(academy-input) — 2026-11-13 UI 통일
+const INPUT = "academy-input";
 
 export default function TrialFeeGuideSettings() {
     const [state, setState] = useState<TrialFeeAdminState | null>(null);
@@ -92,17 +93,17 @@ export default function TrialFeeGuideSettings() {
     return (
         <div className="overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-white shadow-sm">
             <div className="flex items-center gap-3 border-b border-[var(--color-academy-line)] px-6 py-4">
-                <span className="rounded-full border border-[var(--color-academy-line)] bg-[var(--color-academy-neutral-soft)] px-2.5 py-1 text-xs font-bold text-[var(--color-academy-neutral)]">체험비</span>
-                <h2 className="text-base font-bold text-[var(--color-academy-ink)]">체험비 결제 · 자동 안내</h2>
+                <span className="rounded-full border border-[var(--color-academy-line)] bg-[var(--color-academy-neutral-soft)] px-2.5 py-1 text-xs font-medium text-[var(--color-academy-neutral)]">체험비</span>
+                <h2 className="academy-section-title">체험비 결제 · 자동 안내</h2>
             </div>
             <div className="space-y-5 p-6">
                 {/* ① 체험비 결제 — 금액(설정값) + 온라인 결제 켜기 */}
                 <div className="grid gap-3 sm:grid-cols-[160px_1fr] sm:items-end">
                     <label className="block">
-                        <span className="mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">체험비(원)</span>
+                        <span className="mb-1 block text-xs font-medium text-[var(--color-academy-muted)]">체험비(원)</span>
                         <input inputMode="numeric" value={amount} onChange={(event) => setAmount(event.target.value)} className={INPUT} />
                     </label>
-                    <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm font-bold text-[var(--color-academy-ink)]">
+                    <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm font-medium text-[var(--color-academy-ink)]">
                         <input type="checkbox" checked={online} onChange={(event) => setOnline(event.target.checked)} className="h-5 w-5" />
                         신청 후 바로 온라인 결제(카드·계좌이체·무통장입금)
                     </label>
@@ -112,16 +113,17 @@ export default function TrialFeeGuideSettings() {
                         ? "결제 키 준비됨. 끄면 신청 완료 화면에 예전 계좌 안내가 보여요. 결제가 확인되면 체험 목록에 «결제»로 표시돼요."
                         : "토스 결제 키가 아직 준비되지 않아, 켜도 계좌 안내로 보여요."}
                 </p>
-                <div className="flex items-center justify-end gap-3">
-                    {message && <span className="text-sm font-bold text-[var(--color-academy-muted)]">{message}</span>}
-                    <button type="button" onClick={() => void save()} disabled={saving} className="min-h-11 rounded-xl bg-[var(--color-academy-primary)] px-6 text-sm font-bold text-white hover:bg-[var(--color-academy-primary-hover)] disabled:opacity-40">
+                {/* 이 화면의 주 버튼은 맨 아래 «저장하기» 하나 — 카드 안 저장은 보조 버튼(2026-11-13 UI 통일) */}
+                <div className="flex flex-wrap items-center justify-end gap-3">
+                    {message && <span className="text-sm text-[var(--color-academy-muted)]">{message}</span>}
+                    <button type="button" onClick={() => void save()} disabled={saving} className="academy-button-secondary">
                         {saving ? "저장 중..." : "체험비 저장"}
                     </button>
                 </div>
 
                 {/* 자동 발송 상태와 발송 문구 미리보기 */}
                 <div className="space-y-3 border-t border-[var(--color-academy-line)] pt-5">
-                    <div className="flex flex-wrap gap-2 text-xs font-bold">
+                    <div className="flex flex-wrap gap-2 text-xs">
                         <span className="rounded-full bg-[var(--color-academy-soft)] px-2.5 py-1 text-[var(--color-academy-muted)]">체험비 결제 확인 자동 발송: {state.trialGuideAutoSend ? "켜짐" : "꺼짐"}</span>
                         <span className="rounded-full bg-[var(--color-academy-soft)] px-2.5 py-1 text-[var(--color-academy-muted)]">등록 완료 안내 자동 발송: {state.enrollGuideAutoSend ? "켜짐" : "꺼짐"}</span>
                     </div>
@@ -136,7 +138,7 @@ export default function TrialFeeGuideSettings() {
                                     <input type="checkbox" checked={automation.enroll} disabled={savingAutomation} onChange={(event) => setAutomation({ ...automation, enroll: event.target.checked })} />
                                     등록 완료 안내 자동 발송
                                 </label>
-                                <button type="button" onClick={() => void saveAutomation()} disabled={savingAutomation || (automation.trial === state.trialGuideAutoSend && automation.enroll === state.enrollGuideAutoSend)} className="min-h-11 rounded-xl border border-[var(--color-academy-line)] px-3 text-sm font-bold disabled:opacity-40">
+                                <button type="button" onClick={() => void saveAutomation()} disabled={savingAutomation || (automation.trial === state.trialGuideAutoSend && automation.enroll === state.enrollGuideAutoSend)} className="academy-button-secondary">
                                     {savingAutomation ? "저장 중..." : "자동 발송 설정 저장"}
                                 </button>
                             </div>
@@ -154,7 +156,7 @@ export default function TrialFeeGuideSettings() {
                             {state.recentStudents.map((student) => <option key={student.id} value={student.id}>{student.label}</option>)}
                         </select>
                     </div>
-                    <button type="button" onClick={() => void runPreview()} disabled={previewing} className="min-h-11 w-full rounded-xl border border-[var(--color-academy-line)] text-sm font-bold text-[var(--color-academy-ink)] disabled:opacity-40">
+                    <button type="button" onClick={() => void runPreview()} disabled={previewing} className="academy-button-secondary w-full">
                         {previewing ? "만드는 중..." : "안내 미리보기"}
                     </button>
                     {preview && (
@@ -172,7 +174,7 @@ export default function TrialFeeGuideSettings() {
 function PreviewBox({ title, preview }: { title: string; preview: GuidePreviewSet["trial"] }) {
     return (
         <div className="rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] p-3">
-            <p className="text-xs font-bold text-[var(--color-academy-muted)]">{title}</p>
+            <p className="text-xs font-medium text-[var(--color-academy-muted)]">{title}</p>
             {preview ? (
                 <>
                     <p className="mt-1 text-xs text-[var(--color-academy-muted)]">{preview.subject} · 받는 번호 {preview.recipientMasked}</p>

@@ -12,6 +12,7 @@ import AdminModal from "@/components/admin/AdminModal";
 import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { kstLabel } from "@/lib/datetime/kst";
 
 // ── 타입 정의 ──────────────────────────────────────────────────────────────
@@ -110,12 +111,11 @@ function WaitlistLoadingFallback() {
 function WaitlistErrorState({ onRetry }: { onRetry: () => void }) {
     return (
         <div className="rounded-2xl border border-[var(--color-academy-line)] bg-white p-8 text-center shadow-sm">
-            <span className="material-symbols-outlined mb-3 text-4xl text-[var(--color-academy-danger)]">error</span>
-            <p className="font-bold text-[var(--color-academy-ink)]">대기자 정보를 불러오지 못했습니다.</p>
+            <p className="font-medium text-[var(--color-academy-ink)]">대기자 정보를 불러오지 못했습니다.</p>
             <button
                 type="button"
                 onClick={onRetry}
-                className="mt-4 rounded-xl bg-[var(--color-academy-primary)] px-4 py-2 text-sm font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)]"
+                className="academy-button-secondary mt-4"
             >
                 다시 시도
             </button>
@@ -336,7 +336,7 @@ export default function WaitlistClient({
 
     function statusBadge(w: WaitlistItem) {
         const cfg = STATUS_CONFIG[w.status] ?? STATUS_CONFIG.WAITING;
-        return <span className={`rounded-full px-2 py-0.5 text-xs font-black ${cfg.tone}`}>{cfg.label}</span>;
+        return <span className={`rounded-full px-2 py-0.5 text-xs ${cfg.tone}`}>{cfg.label}</span>;
     }
 
     if (loading && !hasAnyData) {
@@ -354,22 +354,21 @@ export default function WaitlistClient({
     return (
         <div className="space-y-3">
             {/* 페이지 헤더 */}
-            <div className="flex items-center justify-between gap-2">
-                <h1 className="flex items-center gap-2 text-lg font-black text-[var(--color-academy-ink)]">
-                    <span className="material-symbols-outlined text-2xl text-[var(--color-academy-ink)]" aria-hidden="true">hourglass_top</span>
-                    대기자 관리
-                </h1>
-                <button
-                    onClick={() => {
-                        setShowAddModal(true);
-                        void loadStudents();
-                    }}
-                    className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-[var(--color-academy-primary)] px-4 text-sm font-bold text-[var(--color-academy-on-primary)] transition-colors hover:bg-[var(--color-academy-primary-hover)]"
-                >
-                    <span className="material-symbols-outlined text-xl" aria-hidden="true">person_add</span>
-                    대기 등록
-                </button>
-            </div>
+            <AdminPageHeader
+                title="대기자 관리"
+                actions={
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setShowAddModal(true);
+                            void loadStudents();
+                        }}
+                        className="academy-button-primary"
+                    >
+                        대기 등록
+                    </button>
+                }
+            />
 
             {/* 반별 정원 현황 — 예전 큰 카드(정원 막대)를 한 줄 버튼으로. 누르면 그 반만 보기(다시 누르면 전체) */}
             {classesWithActivity.length > 0 && (
@@ -384,19 +383,19 @@ export default function WaitlistClient({
                                 onClick={() => changeClassFilter(selected ? "ALL" : c.id)}
                                 className={`inline-flex min-h-11 items-center gap-2 rounded-lg border px-3 text-left text-sm transition ${
                                     selected
-                                        ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary-soft)]"
-                                        : "border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] hover:border-[var(--color-academy-primary)]"
+                                        ? "border-[var(--color-academy-secondary-strong)] bg-[var(--color-academy-secondary-soft)]"
+                                        : "border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] hover:border-[var(--color-academy-secondary-strong)]"
                                 }`}
                             >
-                                <span className="font-bold text-[var(--color-academy-ink)]">{c.name}</span>
+                                <span className="font-medium text-[var(--color-academy-ink)]">{c.name}</span>
                                 <span className="tabular-nums text-xs text-[var(--color-academy-muted)]">{DAY_LABELS[c.dayOfWeek] ?? c.dayOfWeek} {c.startTime}~{c.endTime}</span>
                                 {/* 정원이 찼으면 위험색, 2자리 이하 남으면 주의색 */}
-                                <span className={`tabular-nums text-xs font-bold ${c.remaining <= 0 ? "text-[var(--color-academy-danger)]" : c.remaining <= 2 ? "text-[var(--color-academy-warning)]" : "text-[var(--color-academy-success)]"}`}>
+                                <span className={`tabular-nums text-xs font-medium ${c.remaining <= 0 ? "text-[var(--color-academy-danger)]" : c.remaining <= 2 ? "text-[var(--color-academy-warning)]" : "text-[var(--color-academy-success)]"}`}>
                                     등록 {c.enrolled}/{c.capacity}
                                 </span>
                                 <span className="tabular-nums text-xs text-[var(--color-academy-muted)]">잔여 {c.remaining}</span>
                                 {c.waiting > 0 && (
-                                    <span className="tabular-nums rounded-full bg-[var(--color-academy-warning-soft)] px-2 py-0.5 text-xs font-black text-[var(--color-academy-warning)]">대기 {c.waiting}</span>
+                                    <span className="tabular-nums rounded-full bg-[var(--color-academy-warning-soft)] px-2 py-0.5 text-xs text-[var(--color-academy-warning)]">대기 {c.waiting}</span>
                                 )}
                             </button>
                         );
@@ -410,7 +409,7 @@ export default function WaitlistClient({
                     value={filterClassId}
                     onChange={(e) => changeClassFilter(e.target.value)}
                     aria-label="반 선택"
-                    className="min-h-11 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-sm font-bold text-[var(--color-academy-ink)]"
+                    className="min-h-11 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-sm text-[var(--color-academy-ink)]"
                 >
                     <option value="ALL">전체 반</option>
                     {classes.map((c) => (
@@ -451,7 +450,7 @@ export default function WaitlistClient({
             ) : (
                 <div className="overflow-x-auto rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
                     <table className="admin-list-table w-full border-collapse text-sm">
-                        <thead className="bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]">
+                        <thead className="bg-[var(--color-academy-soft)] text-xs font-semibold text-[var(--color-academy-muted)]">
                             <tr>
                                 <th className="admin-cell-num px-2 py-2">순번</th>
                                 <th className="px-2 py-2">원생</th>
@@ -466,12 +465,12 @@ export default function WaitlistClient({
                             <tbody key={classId} className="divide-y divide-[var(--color-academy-line)]">
                                 {/* 반 머리줄: 반 이름 · 요일 시간 · n명 */}
                                 <tr>
-                                    <th colSpan={columnCount} scope="rowgroup" className="bg-[var(--color-academy-soft)] px-2 py-1.5 text-xs font-black text-[var(--color-academy-ink)]">
+                                    <th colSpan={columnCount} scope="rowgroup" className="bg-[var(--color-academy-soft)] px-2 py-1.5 text-xs font-semibold text-[var(--color-academy-ink)]">
                                         {items[0].className}
-                                        <span className="ml-2 font-bold tabular-nums text-[var(--color-academy-muted)]">
+                                        <span className="ml-2 font-normal tabular-nums text-[var(--color-academy-muted)]">
                                             {DAY_LABELS[items[0].classDay] ?? items[0].classDay} {items[0].classStart}~{items[0].classEnd}
                                         </span>
-                                        <span className="ml-2 tabular-nums text-[var(--color-academy-muted)]">{items.length}명 대기</span>
+                                        <span className="ml-2 font-normal tabular-nums text-[var(--color-academy-muted)]">{items.length}명 대기</span>
                                     </th>
                                 </tr>
                                 {items.map((w, idx) => {
@@ -486,14 +485,14 @@ export default function WaitlistClient({
                                             className="cursor-pointer transition-colors hover:bg-[var(--color-academy-soft)] focus:bg-[var(--color-academy-primary-soft)] focus:outline-none"
                                         >
                                             <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-muted)]">{idx + 1}</td>
-                                            <td className="px-2 py-1.5 font-black text-[var(--color-academy-ink)]">{w.studentName}</td>
+                                            <td className="px-2 py-1.5 font-medium text-[var(--color-academy-ink)]">{w.studentName}</td>
                                             <td className="px-2 py-1.5">{statusBadge(w)}</td>
                                             <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] sm:table-cell">{kstLabel(w.createdAt) || "-"}</td>
                                             {/* 응답 기한은 제안됨(OFFERED)일 때만 */}
                                             <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-ink)]">{w.status === "OFFERED" && w.respondBy ? kstLabel(w.respondBy) : "-"}</td>
                                             {/* 메모는 줄이 늘어나지 않게 아이콘만, 내용은 상세 패널 */}
                                             <td className="admin-cell-center hidden px-2 py-1.5 sm:table-cell">
-                                                {w.memo ? <span className="material-symbols-outlined text-base text-[var(--color-academy-muted)]" aria-label="메모 있음">sticky_note_2</span> : <span className="text-xs text-[var(--color-academy-muted)]">-</span>}
+                                                {w.memo ? <span className="text-xs text-[var(--color-academy-muted)]" aria-label="메모 있음">있음</span> : <span className="text-xs text-[var(--color-academy-muted)]">-</span>}
                                             </td>
                                             {/* 관리: ⚡. 눌러도 행 클릭(패널)이 같이 일어나지 않게 전파 차단 */}
                                             <td className="admin-cell-center px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
@@ -527,7 +526,7 @@ export default function WaitlistClient({
                 return (
                     <ListDetailPanel onClose={() => setDetailId(null)} titleId="waitlist-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
                         <div className="mb-4 flex items-center gap-2">
-                            <h3 id="waitlist-detail-panel-title" className="min-w-0 break-keep text-lg font-black text-[var(--color-academy-ink)]">{d.studentName}</h3>
+                            <h3 id="waitlist-detail-panel-title" className="min-w-0 break-keep text-lg font-bold text-[var(--color-academy-ink)]">{d.studentName}</h3>
                             {statusBadge(d)}
                             <button
                                 type="button"
@@ -541,7 +540,7 @@ export default function WaitlistClient({
                         <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
                             {panelRows.map((row) => (
                                 <div key={row.label} className="contents">
-                                    <dt className="font-bold text-[var(--color-academy-muted)]">{row.label}</dt>
+                                    <dt className="font-medium text-[var(--color-academy-muted)]">{row.label}</dt>
                                     <dd className="min-w-0 break-keep break-words text-[var(--color-academy-ink)]">{row.value}</dd>
                                 </div>
                             ))}
@@ -554,15 +553,8 @@ export default function WaitlistClient({
                                         type="button"
                                         disabled={action.disabled}
                                         onClick={() => { setDetailId(null); void action.onSelect(); }}
-                                        className={`inline-flex min-h-11 items-center gap-1 rounded-lg border px-4 text-sm font-bold disabled:opacity-50 ${
-                                            action.tone === "danger"
-                                                ? "border-[var(--color-academy-danger)] text-[var(--color-academy-danger)] hover:bg-[var(--color-academy-danger-soft)]"
-                                                : action.tone === "primary"
-                                                    ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary)] text-[var(--color-academy-on-primary)] hover:bg-[var(--color-academy-primary-hover)]"
-                                                    : "border-[var(--color-academy-line)] text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"
-                                        }`}
+                                        className={action.tone === "danger" ? "academy-button-danger" : action.tone === "primary" ? "academy-button-primary" : "academy-button-secondary"}
                                     >
-                                        <span className="material-symbols-outlined text-lg" aria-hidden="true">{action.icon}</span>
                                         {action.label}
                                     </button>
                                 ))}
@@ -649,12 +641,11 @@ function AddWaitlistModal({
         >
             <div className="w-full p-6">
                 <div className="flex items-center justify-between mb-5">
-                    <h3 id="add-waitlist-title" className="text-lg font-bold text-[var(--color-academy-ink)] flex items-center gap-2">
-                        <span className="material-symbols-outlined text-[var(--color-academy-ink)]">person_add</span>
+                    <h3 id="add-waitlist-title" className="text-lg font-bold text-[var(--color-academy-ink)]">
                         대기 등록
                     </h3>
-                    <button onClick={onClose} className="text-[var(--color-academy-faint)] hover:text-[var(--color-academy-muted)]">
-                        <span className="material-symbols-outlined">close</span>
+                    <button type="button" onClick={onClose} aria-label="닫기" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
+                        <span className="material-symbols-outlined" aria-hidden="true">close</span>
                     </button>
                 </div>
 
@@ -668,13 +659,13 @@ function AddWaitlistModal({
                             value={studentSearch}
                             onChange={(e) => setStudentSearch(e.target.value)}
                             disabled={studentsLoading || Boolean(studentsError)}
-                            className="w-full border border-[var(--color-academy-line-input)] rounded-lg px-3 py-2 text-sm mb-1"
+                            className="academy-input mb-1"
                         />
                         <select
                             value={studentId}
                             onChange={(e) => setStudentId(e.target.value)}
                             disabled={studentsLoading || Boolean(studentsError)}
-                            className="w-full border border-[var(--color-academy-line-input)] rounded-lg px-3 py-2 text-sm"
+                            className="academy-input"
                             size={5}
                         >
                             <option value="">
@@ -690,7 +681,7 @@ function AddWaitlistModal({
                                 <button
                                     type="button"
                                     onClick={() => void onRetryLoadStudents()}
-                                    className="shrink-0 rounded-md border border-[var(--color-academy-line)] px-2 py-1 text-xs font-medium text-[var(--color-academy-danger)] hover:bg-[var(--color-academy-danger-soft)]"
+                                    className="academy-button-tonal academy-button-sm shrink-0"
                                 >
                                     다시 시도
                                 </button>
@@ -709,7 +700,7 @@ function AddWaitlistModal({
                         <select
                             value={classId}
                             onChange={(e) => setClassId(e.target.value)}
-                            className="w-full border border-[var(--color-academy-line-input)] rounded-lg px-3 py-2 text-sm"
+                            className="academy-input"
                         >
                             <option value="">-- 반 선택 --</option>
                             {classes.map((c) => (
@@ -728,7 +719,7 @@ function AddWaitlistModal({
                             value={memo}
                             onChange={(e) => setMemo(e.target.value)}
                             placeholder="대기 사유나 참고사항"
-                            className="w-full border border-[var(--color-academy-line-input)] rounded-lg px-3 py-2 text-sm"
+                            className="academy-input"
                         />
                     </div>
 
@@ -737,14 +728,14 @@ function AddWaitlistModal({
                         <button
                             type="button"
                             onClick={onClose}
-                            className="px-4 py-2 text-sm text-[var(--color-academy-muted)] hover:text-[var(--color-academy-ink)]"
+                            className="academy-button-secondary"
                         >
                             취소
                         </button>
                         <button
                             type="submit"
                             disabled={busy}
-                            className="px-5 py-2 bg-[var(--color-academy-primary)] text-white text-sm font-semibold rounded-lg hover:bg-[var(--color-academy-primary-hover)] disabled:opacity-50 transition-colors"
+                            className="academy-button-primary"
                         >
                             {busy ? "등록 중..." : "대기 등록"}
                         </button>

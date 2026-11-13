@@ -23,7 +23,7 @@ export default function DriverDateNav({
   today: string;
 }) {
   // 비활성 버튼과 활성 링크의 공통 크기 — 손가락으로 누르기 쉬운 큰 영역.
-  const btn = "grid h-12 min-w-[84px] place-items-center rounded-xl text-[16px] font-black";
+  const btn = "grid h-12 min-w-[84px] place-items-center rounded-xl text-base font-semibold";
   return (
     <div className="mx-auto -mt-1 mb-3 flex max-w-lg items-center justify-between gap-2 px-3">
       {/* 이전: prevDate 있을 때만 이동 가능 */}
@@ -35,9 +35,9 @@ export default function DriverDateNav({
 
       {/* 가운데: 현재 날짜 + (오늘이 아니면) 오늘로 바로가기 */}
       <div className="flex flex-col items-center leading-tight">
-        <span className="text-[17px] font-black text-[var(--color-academy-ink)]">{fmtDate(date)}</span>
+        <span className="text-[17px] font-semibold text-[var(--color-academy-ink)]">{fmtDate(date)}</span>
         {date !== today && (
-          <Link href={`?date=${today}`} className="mt-0.5 inline-flex min-h-11 items-center justify-center px-2 text-[13px] font-black text-[var(--color-academy-ink)] underline underline-offset-2">오늘로</Link>
+          <Link href={`?date=${today}`} className="mt-0.5 inline-flex min-h-11 items-center justify-center px-2 text-sm font-medium text-[var(--color-academy-ink)] underline underline-offset-2">오늘로</Link>
         )}
       </div>
 

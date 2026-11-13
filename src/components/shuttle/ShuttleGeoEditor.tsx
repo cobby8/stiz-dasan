@@ -45,8 +45,8 @@ export default function ShuttleGeoEditor({ initial }: { initial: GeoState }) {
 
   return (
     <div className="rounded-2xl border border-[var(--color-academy-line)] bg-white p-4">
-      <h3 className="text-base font-black text-[var(--color-academy-ink)]">🚐 셔틀 기준 위치</h3>
-      <p className="mt-0.5 text-[12.5px] text-[var(--color-academy-muted)]">배차·정규셔틀 지도의 출발·도착 지점과 무료 탑승 거점 기준입니다.</p>
+      <h3 className="academy-section-title">셔틀 기준 위치</h3>
+      <p className="mt-0.5 text-xs text-[var(--color-academy-muted)]">배차·정규셔틀 지도의 출발·도착 지점과 무료 탑승 거점 기준입니다.</p>
 
       <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         {(Object.keys(GEO_META) as GeoKind[]).map((kind) => {
@@ -54,16 +54,16 @@ export default function ShuttleGeoEditor({ initial }: { initial: GeoState }) {
           return (
             <div key={kind} className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] p-2.5">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] font-black text-[var(--color-academy-muted)]">{m.icon} {m.title}</span>
-                <button onClick={() => setEditKind(kind)} className="rounded-lg border border-[var(--color-academy-line)] px-2 py-1 text-[11px] font-bold text-[var(--color-academy-ink)] hover:bg-white">지도에서 변경</button>
+                <span className="text-xs font-medium text-[var(--color-academy-muted)]">{m.title}</span>
+                <button type="button" onClick={() => setEditKind(kind)} className="academy-button-secondary academy-button-sm shrink-0">지도에서 변경</button>
               </div>
-              <div className="mt-1 truncate text-[12px] font-bold text-[var(--color-academy-ink)]">{g ? g.label : "미설정"}</div>
+              <div className="mt-1 truncate text-xs font-medium text-[var(--color-academy-ink)]">{g ? g.label : "미설정"}</div>
             </div>
           );
         })}
       </div>
 
-      {err && <p className="mt-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-xs font-bold text-[var(--color-academy-danger)]">⚠ {err}</p>}
+      {err && <p className="mt-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-xs text-[var(--color-academy-danger)]">{err}</p>}
 
       {editKind && (
         <LocationPickerModal

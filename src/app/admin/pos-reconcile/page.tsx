@@ -5,6 +5,7 @@ import {
     listPosReconcileRuns,
     type PosReconcileRunRow,
 } from "@/lib/pos/reconcileService";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import ReconcileNowButton from "./ReconcileNowButton";
 
 export const dynamic = "force-dynamic";
@@ -45,18 +46,20 @@ export default async function PosReconcilePage() {
 
     return (
         <main className="space-y-5 p-4 md:p-6">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                    <h1 className="text-2xl font-black text-[var(--color-academy-ink)]">POS 결제 대사</h1>
-                    <p className="mt-1 max-w-3xl text-sm text-[var(--color-academy-muted)]">
-                        토스 단말기(POS)에서 승인된 카드결제와 사이트에 기록된 결제를 매일 새벽 자동으로 맞춰 봅니다.
-                        맞지 않는 건만 추려서 아래에 보여 줍니다. 이 화면은 보기만 하며, 결제·청구서를 바꾸지 않습니다.
-                    </p>
-                </div>
-                {/* 서버 액션 안에서 관리자 권한을 한 번 더 확인한다(화면을 가리는 것만으로는 막히지 않는다). */}
-                <form action={runPosReconcileNow}>
-                    <ReconcileNowButton />
-                </form>
+            <div>
+                <AdminPageHeader
+                    title="POS 결제 대사"
+                    actions={
+                        // 서버 액션 안에서 관리자 권한을 한 번 더 확인한다(화면을 가리는 것만으로는 막히지 않는다).
+                        <form action={runPosReconcileNow}>
+                            <ReconcileNowButton />
+                        </form>
+                    }
+                />
+                <p className="academy-page-description mt-1 max-w-3xl">
+                    토스 단말기(POS)에서 승인된 카드결제와 사이트에 기록된 결제를 매일 새벽 자동으로 맞춰 봅니다.
+                    맞지 않는 건만 추려서 아래에 보여 줍니다. 이 화면은 보기만 하며, 결제·청구서를 바꾸지 않습니다.
+                </p>
             </div>
 
             {!latest && (
@@ -68,14 +71,14 @@ export default async function PosReconcilePage() {
             {latest && (
                 <section className="space-y-4 rounded-xl border border-[var(--color-academy-line)] bg-white p-4 md:p-5">
                     <div className="flex flex-wrap items-center gap-3">
-                        <h2 className="text-lg font-black text-[var(--color-academy-ink)]">
+                        <h2 className="academy-section-title">
                             {latest.targetMonth} 대조 결과
                         </h2>
                         <span
                             className={
                                 latest.status === "OK"
-                                    ? "rounded-full bg-[var(--color-academy-success-soft)] px-3 py-1 text-xs font-bold text-[var(--color-academy-success)]"
-                                    : "rounded-full bg-[var(--color-academy-danger-soft)] px-3 py-1 text-xs font-bold text-[var(--color-academy-danger)]"
+                                    ? "rounded-full bg-[var(--color-academy-success-soft)] px-3 py-1 text-xs text-[var(--color-academy-success)]"
+                                    : "rounded-full bg-[var(--color-academy-danger-soft)] px-3 py-1 text-xs text-[var(--color-academy-danger)]"
                             }
                         >
                             {STATUS_LABEL[latest.status] ?? latest.status}
@@ -93,31 +96,31 @@ export default async function PosReconcilePage() {
 
                     <div className="overflow-x-auto rounded-lg border border-[var(--color-academy-line)]">
                         <table className="w-full min-w-[640px] text-left text-sm">
-                            <thead className="bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]">
+                            <thead className="bg-[var(--color-academy-soft)] text-xs font-medium text-[var(--color-academy-muted)]">
                                 <tr>
-                                    <th className="p-3">구분</th>
-                                    <th className="p-3 text-right">건수</th>
-                                    <th className="p-3 text-right">금액</th>
-                                    <th className="p-3">설명</th>
+                                    <th className="p-3 font-medium">구분</th>
+                                    <th className="p-3 font-medium text-right">건수</th>
+                                    <th className="p-3 font-medium text-right">금액</th>
+                                    <th className="p-3 font-medium">설명</th>
                                 </tr>
                             </thead>
                             <tbody className="text-[var(--color-academy-ink)]">
                                 <tr className="border-t border-[var(--color-academy-line)]">
-                                    <td className="p-3 font-bold">토스 단말기(POS)</td>
+                                    <td className="p-3 font-medium">토스 단말기(POS)</td>
                                     <td className="p-3 text-right tabular-nums">{latest.posCount}건</td>
-                                    <td className="p-3 text-right font-bold tabular-nums">{formatWonText(latest.posAmount)}</td>
+                                    <td className="p-3 text-right font-semibold tabular-nums">{formatWonText(latest.posAmount)}</td>
                                     <td className="p-3 text-xs text-[var(--color-academy-muted)]">단말기에서 승인된 카드결제</td>
                                 </tr>
                                 <tr className="border-t border-[var(--color-academy-line)]">
-                                    <td className="p-3 font-bold">사이트 기록</td>
+                                    <td className="p-3 font-medium">사이트 기록</td>
                                     <td className="p-3 text-right tabular-nums">{latest.siteCount}건</td>
-                                    <td className="p-3 text-right font-bold tabular-nums">{formatWonText(latest.siteAmount)}</td>
+                                    <td className="p-3 text-right font-semibold tabular-nums">{formatWonText(latest.siteAmount)}</td>
                                     <td className="p-3 text-xs text-[var(--color-academy-muted)]">사이트에 결제완료로 적힌 카드결제 + POS 메모로 찾은 기존 납부 기록</td>
                                 </tr>
                                 <tr className="border-t border-[var(--color-academy-line)] bg-[var(--color-academy-soft)]">
-                                    <td className="p-3 font-black">차이 (POS − 사이트)</td>
+                                    <td className="p-3 font-semibold">차이 (POS − 사이트)</td>
                                     <td className="p-3" />
-                                    <td className="p-3 text-right font-black tabular-nums">{formatWonText(latest.diffAmount)}</td>
+                                    <td className="p-3 text-right font-semibold tabular-nums">{formatWonText(latest.diffAmount)}</td>
                                     <td className="p-3 text-xs text-[var(--color-academy-muted)]">0원이면 두 쪽이 완전히 맞은 것입니다</td>
                                 </tr>
                                 <tr className="border-t border-[var(--color-academy-line)]">
@@ -150,7 +153,7 @@ export default async function PosReconcilePage() {
 
                     {report ? (
                         <details open className="rounded-lg border border-[var(--color-academy-line)]">
-                            <summary className="cursor-pointer px-4 py-3 text-sm font-bold text-[var(--color-academy-ink)]">
+                            <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-[var(--color-academy-ink)]">
                                 대조표 전문 (어떤 결제가 왜 안 맞는지)
                             </summary>
                             {/* 리포트는 이미 사람이 읽는 표 형태로 만들어져 있다. 화면에서 다시 계산하지 않는다. */}
@@ -168,34 +171,34 @@ export default async function PosReconcilePage() {
 
             {runs.length > 0 && (
                 <section className="overflow-x-auto rounded-xl border border-[var(--color-academy-line)] bg-white">
-                    <h2 className="px-4 pt-4 text-sm font-black text-[var(--color-academy-ink)]">최근 실행 기록</h2>
+                    <h2 className="academy-section-title px-4 pt-4">최근 실행 기록</h2>
                     <table className="mt-2 w-full min-w-[760px] text-left text-sm">
-                        <thead className="bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]">
+                        <thead className="bg-[var(--color-academy-soft)] text-xs font-medium text-[var(--color-academy-muted)]">
                             <tr>
-                                <th className="p-3">대상 월</th>
-                                <th className="p-3">실행 시각(한국시간)</th>
-                                <th className="p-3">방식</th>
-                                <th className="p-3">상태</th>
-                                <th className="p-3 text-right">POS</th>
-                                <th className="p-3 text-right">사이트</th>
-                                <th className="p-3 text-right">차이</th>
-                                <th className="p-3 text-right">확인 필요</th>
+                                <th className="p-3 font-medium">대상 월</th>
+                                <th className="p-3 font-medium">실행 시각(한국시간)</th>
+                                <th className="p-3 font-medium">방식</th>
+                                <th className="p-3 font-medium">상태</th>
+                                <th className="p-3 font-medium text-right">POS</th>
+                                <th className="p-3 font-medium text-right">사이트</th>
+                                <th className="p-3 font-medium text-right">차이</th>
+                                <th className="p-3 font-medium text-right">확인 필요</th>
                             </tr>
                         </thead>
                         <tbody className="text-[var(--color-academy-ink)]">
                             {runs.map((run) => (
                                 <tr key={run.id} className="border-t border-[var(--color-academy-line)]">
-                                    <td className="p-3 font-bold">{run.targetMonth}</td>
-                                    <td className="p-3">{run.startedAtKst ?? "-"}</td>
+                                    <td className="p-3 font-medium tabular-nums">{run.targetMonth}</td>
+                                    <td className="p-3 tabular-nums">{run.startedAtKst ?? "-"}</td>
                                     <td className="p-3 text-xs">{SOURCE_LABEL[run.source] ?? run.source}</td>
-                                    <td className="p-3 text-xs font-bold">{STATUS_LABEL[run.status] ?? run.status}</td>
+                                    <td className="p-3 text-xs">{STATUS_LABEL[run.status] ?? run.status}</td>
                                     <td className="p-3 text-right tabular-nums">
                                         {run.posCount}건 · {formatWonText(run.posAmount)}
                                     </td>
                                     <td className="p-3 text-right tabular-nums">
                                         {run.siteCount}건 · {formatWonText(run.siteAmount)}
                                     </td>
-                                    <td className="p-3 text-right font-bold tabular-nums">{formatWonText(run.diffAmount)}</td>
+                                    <td className="p-3 text-right font-semibold tabular-nums">{formatWonText(run.diffAmount)}</td>
                                     <td className="p-3 text-right tabular-nums">{run.heldCount}건</td>
                                 </tr>
                             ))}

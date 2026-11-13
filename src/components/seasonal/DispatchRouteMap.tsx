@@ -95,14 +95,14 @@ export function RouteMapCanvas({
     <div>
       <div className={`relative ${heightClass} w-full bg-[var(--color-academy-soft)]`}>
         <div ref={mapElRef} className="absolute inset-0" aria-label="노선 지도" />
-        {status === "loading" && <div className="absolute inset-0 grid place-items-center text-sm font-bold text-[var(--color-academy-muted)]">지도를 불러오는 중…</div>}
+        {status === "loading" && <div className="absolute inset-0 grid place-items-center text-sm text-[var(--color-academy-muted)]">지도를 불러오는 중…</div>}
         {status === "fallback" && (
-          <div className="absolute inset-0 grid place-items-center p-4 text-center text-xs font-bold text-[var(--color-academy-muted)]">
+          <div className="absolute inset-0 grid place-items-center p-4 text-center text-xs text-[var(--color-academy-muted)]">
             지도를 표시할 수 없습니다. 카카오 지도 키를 확인해주세요.
           </div>
         )}
       </div>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-[var(--color-academy-line)] px-3 py-2 text-[11px] font-bold text-[var(--color-academy-muted)]">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-[var(--color-academy-line)] px-3 py-2 text-xs text-[var(--color-academy-muted)]">
         <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: "var(--color-academy-neutral)" }} />출발·도착</span>
         <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: "var(--color-academy-primary)" }} />정차 순서</span>
         <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: "var(--color-academy-success)" }} />무료 거점</span>

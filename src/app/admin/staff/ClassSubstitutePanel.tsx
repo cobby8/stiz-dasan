@@ -14,7 +14,7 @@ import { CLASS_DAY_KEYS } from "@/lib/staff/classSubstitute";
 import { assignClassSubstitute, cancelClassSubstitute } from "@/app/actions/class-substitute-admin";
 import type { ClassSubstituteAdminData } from "@/lib/staff/classSubstituteData";
 
-const FIELD = "min-h-11 w-full rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-sm text-[var(--color-academy-ink)]";
+const FIELD = "academy-input";
 
 // "YYYY-MM-DD" → «11. 14. (금)» 처럼 짧게(KST 달력 그대로)
 function dateLabel(ymd: string) {
@@ -74,21 +74,19 @@ export default function ClassSubstitutePanel({ data }: { data: ClassSubstituteAd
         <section aria-labelledby="class-substitute-title" className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
             {/* 머리줄 한 줄 */}
             <div className="flex min-h-11 items-center gap-2 px-3 py-1">
-                <span className="material-symbols-outlined text-[20px] text-[var(--color-academy-muted)]" aria-hidden="true">swap_horiz</span>
-                <h2 id="class-substitute-title" className="text-sm font-black text-[var(--color-academy-ink)]">대타 지정</h2>
+                <h2 id="class-substitute-title" className="academy-section-title">대타 지정</h2>
                 <span className="text-xs tabular-nums text-[var(--color-academy-muted)]">오늘 이후 {data.items.length}건</span>
                 <button
                     type="button"
                     onClick={openModal}
-                    className="academy-button-secondary ml-auto inline-flex min-h-11 items-center gap-1 rounded-lg px-3 text-sm font-bold"
+                    className="academy-button-secondary academy-button-sm ml-auto shrink-0"
                 >
-                    <span className="material-symbols-outlined text-[18px]" aria-hidden="true">add</span>
                     대타 지정
                 </button>
             </div>
 
             {message && !open && (
-                <p role="status" className={`px-3 pb-2 text-xs font-bold ${message.ok ? "text-[var(--color-academy-success)]" : "text-[var(--color-academy-danger)]"}`}>{message.text}</p>
+                <p role="status" className={`px-3 pb-2 text-xs font-medium ${message.ok ? "text-[var(--color-academy-success)]" : "text-[var(--color-academy-danger)]"}`}>{message.text}</p>
             )}
 
             {/* 목록 = 한 줄 행(날짜 · 시간 반 · 선생님 · 취소) */}
@@ -96,21 +94,21 @@ export default function ClassSubstitutePanel({ data }: { data: ClassSubstituteAd
                 <ul className="border-t border-[var(--color-academy-line)]" aria-label="대타 지정 목록">
                     {data.items.map((item) => (
                         <li key={item.id} className="flex min-h-11 items-center gap-2 border-b border-[var(--color-academy-line)] px-3 text-sm last:border-b-0">
-                            <span className={`w-24 shrink-0 font-bold tabular-nums ${item.date === data.today ? "text-[var(--color-academy-primary)]" : "text-[var(--color-academy-ink)]"}`}>
+                            <span className={`w-24 shrink-0 tabular-nums ${item.date === data.today ? "font-semibold text-[var(--color-academy-secondary-ink)]" : "text-[var(--color-academy-ink)]"}`}>
                                 {item.date === data.today ? "오늘" : dateLabel(item.date)}
                             </span>
                             <span className="min-w-0 flex-1 truncate text-[var(--color-academy-ink)]">
                                 <span className="tabular-nums text-[var(--color-academy-muted)]">{item.startTime}</span> {item.className}
                             </span>
-                            <span className="shrink-0 font-bold text-[var(--color-academy-ink)]">{item.substituteName}</span>
+                            <span className="shrink-0 font-semibold text-[var(--color-academy-ink)]">{item.substituteName}</span>
                             <button
                                 type="button"
                                 disabled={pending}
                                 onClick={() => cancel(item)}
                                 aria-label={`${dateLabel(item.date)} ${item.className} 대타 취소`}
-                                className="grid size-11 shrink-0 place-items-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-danger-soft)] hover:text-[var(--color-academy-danger)] disabled:opacity-40"
+                                className="academy-button-text academy-button-sm shrink-0"
                             >
-                                <span className="material-symbols-outlined text-[20px]" aria-hidden="true">close</span>
+                                취소
                             </button>
                         </li>
                     ))}
@@ -120,18 +118,17 @@ export default function ClassSubstitutePanel({ data }: { data: ClassSubstituteAd
             {open && (
                 <AdminModal onClose={() => setOpen(false)} titleId="class-substitute-modal-title" panelClassName="max-w-md">
                     <div className="flex items-center justify-between border-b border-[var(--color-academy-line)] px-5 py-3">
-                        <h2 id="class-substitute-modal-title" className="flex items-center gap-2 text-base font-bold text-[var(--color-academy-ink)]">
-                            <span className="material-symbols-outlined text-[20px]" aria-hidden="true">swap_horiz</span>
+                        <h2 id="class-substitute-modal-title" className="academy-section-title">
                             대타 선생님 지정
                         </h2>
                         <button type="button" onClick={() => setOpen(false)} aria-label="닫기" className="grid size-11 place-items-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)]">
-                            <span className="material-symbols-outlined">close</span>
+                            <span className="material-symbols-outlined" aria-hidden="true">close</span>
                         </button>
                     </div>
                     <div className="space-y-3 px-5 py-4">
                         <p className="text-xs text-[var(--color-academy-muted)]">그 날짜에만 고른 선생님이 이 반 출석부를 열고 출석을 찍습니다. 원래 담당 선생님도 그대로 볼 수 있습니다.</p>
                         <label className="block space-y-1">
-                            <span className="text-xs font-bold text-[var(--color-academy-muted)]">날짜</span>
+                            <span className="text-xs font-medium text-[var(--color-academy-muted)]">날짜</span>
                             <input
                                 type="date"
                                 value={date}
@@ -141,7 +138,7 @@ export default function ClassSubstitutePanel({ data }: { data: ClassSubstituteAd
                             />
                         </label>
                         <label className="block space-y-1">
-                            <span className="text-xs font-bold text-[var(--color-academy-muted)]">반 (그 요일 수업 {dayClasses.length}개)</span>
+                            <span className="text-xs font-medium text-[var(--color-academy-muted)]">반 (그 요일 수업 {dayClasses.length}개)</span>
                             <select value={classId} onChange={(e) => setClassId(e.target.value)} className={FIELD}>
                                 <option value="">반 고르기</option>
                                 {dayClasses.map((c) => (
@@ -150,7 +147,7 @@ export default function ClassSubstitutePanel({ data }: { data: ClassSubstituteAd
                             </select>
                         </label>
                         <label className="block space-y-1">
-                            <span className="text-xs font-bold text-[var(--color-academy-muted)]">대타 선생님</span>
+                            <span className="text-xs font-medium text-[var(--color-academy-muted)]">대타 선생님</span>
                             <select value={teacherId} onChange={(e) => setTeacherId(e.target.value)} className={FIELD}>
                                 <option value="">선생님 고르기</option>
                                 {data.teachers.map((t) => (
@@ -159,15 +156,15 @@ export default function ClassSubstitutePanel({ data }: { data: ClassSubstituteAd
                             </select>
                         </label>
                         {message && !message.ok && (
-                            <p role="alert" className="text-sm font-bold text-[var(--color-academy-danger)]">{message.text}</p>
+                            <p role="alert" className="text-sm font-medium text-[var(--color-academy-danger)]">{message.text}</p>
                         )}
                         <div className="flex justify-end gap-2 pt-1">
-                            <button type="button" onClick={() => setOpen(false)} className="academy-button-secondary min-h-11 rounded-lg px-4 text-sm font-bold">그만</button>
+                            <button type="button" onClick={() => setOpen(false)} className="academy-button-secondary">그만</button>
                             <button
                                 type="button"
                                 disabled={pending || !date || !classId || !teacherId}
                                 onClick={submit}
-                                className="min-h-11 rounded-lg bg-[var(--color-academy-primary)] px-4 text-sm font-bold text-[var(--color-academy-on-primary)] hover:bg-[var(--color-academy-primary-hover)] disabled:opacity-40"
+                                className="academy-button-primary"
                             >
                                 {pending ? "저장 중…" : "지정"}
                             </button>

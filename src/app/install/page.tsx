@@ -15,8 +15,9 @@ import { PLAY_STORE_URL, appStoreUrl, resolveAppInstallTarget } from "@/lib/app-
 
 // 기기마다 다른 곳으로 보내므로 미리 만들어 두면 안 된다(요청마다 UA 를 본다)
 // 버튼 등급(게슈탈트 «유사성»): 꽉 찬 주 버튼 / 테두리 보조 버튼. 색은 공개 홈페이지 토큰(public-sport.css)
-const PRIMARY_BUTTON = "flex min-h-12 w-full items-center justify-center gap-1.5 rounded-xl bg-[var(--color-public-accent)] px-4 text-sm font-bold text-[var(--color-public-white)]";
-const SECONDARY_BUTTON = "flex min-h-12 w-full items-center justify-center rounded-xl border border-[var(--color-public-accent)] px-4 text-sm font-bold text-[var(--color-public-accent)]";
+// 공용 버튼 등급(public-sport.css) — 주 버튼 네이비, 보조는 테두리. 아이콘 없이 글자로 말한다(2026-11-13 UI 통일)
+const PRIMARY_BUTTON = "public-btn-primary w-full text-sm";
+const SECONDARY_BUTTON = "public-btn-secondary w-full text-sm";
 
 export const dynamic = "force-dynamic";
 
@@ -41,13 +42,9 @@ export default async function AppInstallPage() {
       <PublicSiteTheme publicScope>
         <main className="mx-auto flex min-h-[70vh] max-w-md items-center px-4 py-8">
           <section className="w-full rounded-2xl border border-[var(--color-public-line)] bg-[var(--color-public-paper)] p-5" aria-labelledby="install-title">
-            <div className="flex items-center gap-3">
-              <span className="material-symbols-outlined text-3xl text-[var(--color-public-accent)]" aria-hidden="true">install_mobile</span>
-              <h1 id="install-title" className="text-lg font-black text-[var(--color-public-ink)]">스티즈 농구교실 앱</h1>
-            </div>
+            <h1 id="install-title" className="text-lg font-bold text-[var(--color-public-ink)]">스티즈 농구교실 앱</h1>
             <div className="mt-4 space-y-2">
               <a href={target.intentUrl} className={PRIMARY_BUTTON}>
-                <span className="material-symbols-outlined text-xl" aria-hidden="true">shop</span>
                 Play 스토어에서 설치하기
               </a>
               <a href={target.url} className={SECONDARY_BUTTON} rel="noopener">스토어가 안 열리면 여기를 눌러 주세요</a>
@@ -65,12 +62,9 @@ export default async function AppInstallPage() {
           className="w-full rounded-2xl border border-[var(--color-public-line)] bg-[var(--color-public-paper)] p-5"
           aria-labelledby="install-title"
         >
-          <div className="flex items-center gap-3">
-            <span className="material-symbols-outlined text-3xl text-[var(--color-public-accent)]" aria-hidden="true">install_mobile</span>
-            <div>
-              <h1 id="install-title" className="text-lg font-black text-[var(--color-public-ink)]">스티즈 농구교실 앱</h1>
-              <p className="text-sm text-[var(--color-public-muted)]">출결·수업 소식·청구와 결제를 한 곳에서</p>
-            </div>
+          <div>
+            <h1 id="install-title" className="text-lg font-bold text-[var(--color-public-ink)]">스티즈 농구교실 앱</h1>
+            <p className="text-sm text-[var(--color-public-muted)]">출결·수업 소식·청구와 결제를 한 곳에서</p>
           </div>
 
           {isIphone ? (
@@ -86,12 +80,10 @@ export default async function AppInstallPage() {
             // PC 등 기기를 모를 때: 두 스토어를 나란히(아이폰은 출시 전이면 안내만)
             <div className="mt-4 space-y-2">
               <a href={PLAY_STORE_URL} className={PRIMARY_BUTTON} rel="noopener">
-                <span className="material-symbols-outlined text-xl" aria-hidden="true">shop</span>
                 안드로이드 · Play 스토어
               </a>
               {iosUrl ? (
                 <a href={iosUrl} className={PRIMARY_BUTTON} rel="noopener">
-                  <span className="material-symbols-outlined text-xl" aria-hidden="true">phone_iphone</span>
                   아이폰 · App Store
                 </a>
               ) : (

@@ -33,7 +33,7 @@ export default async function PaymentPage({ params }: { params: Promise<{ invoic
                 <div className="academy-panel p-4 text-center">
                     <p className="font-bold text-[var(--color-academy-ink)]">청구서를 찾을 수 없어요</p>
                     <p className="mt-1 text-xs text-[var(--color-academy-muted)]">이 계정에 연결된 자녀의 청구서만 볼 수 있어요.</p>
-                    <Link href="/mypage" className="academy-button-primary mt-3 min-h-11 px-5 text-sm">
+                    <Link href="/mypage" className="academy-button-primary mt-3">
                         마이페이지
                     </Link>
                 </div>
@@ -65,7 +65,7 @@ export default async function PaymentPage({ params }: { params: Promise<{ invoic
 
     return (
         <main className="mx-auto max-w-lg space-y-3 px-4 py-4">
-            <Link href="/mypage" className="academy-button-text min-h-11 text-sm">
+            <Link href="/mypage" className="academy-button-text">
                 <span className="material-symbols-outlined text-lg leading-none" aria-hidden="true">chevron_left</span>
                 마이페이지
             </Link>
@@ -73,15 +73,15 @@ export default async function PaymentPage({ params }: { params: Promise<{ invoic
             {/* 청구 정보 한 덩어리: 항목·상태 / 아이·납기 / 금액(주인공 숫자) / 청구 내용 / 번호·발행일(작게) */}
             <section className="academy-panel p-4">
                 <div className="flex items-start justify-between gap-2">
-                    <h1 className="min-w-0 break-keep text-base font-black text-[var(--color-academy-ink)]">{invoice.title}</h1>
-                    <span className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-bold ${statusClass}`}>
+                    <h1 className="min-w-0 break-keep text-base font-bold text-[var(--color-academy-ink)]">{invoice.title}</h1>
+                    <span className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ${statusClass}`}>
                         {statusLabel}
                     </span>
                 </div>
                 <p className="mt-0.5 text-sm text-[var(--color-academy-muted)]">
                     {invoice.studentName} · 납기 {formatDate(invoice.dueDate)}
                 </p>
-                <p className="mt-2 text-2xl font-black tabular-nums text-[var(--color-academy-ink)]">
+                <p className="mt-2 text-2xl font-bold tabular-nums text-[var(--color-academy-ink)]">
                     {formatAmount(Number(invoice.amount))}
                 </p>
                 {invoice.description && (
@@ -95,11 +95,11 @@ export default async function PaymentPage({ params }: { params: Promise<{ invoic
             {isPaid ? (
                 // 납부 완료 — 한 줄 + 영수증 버튼
                 <section className="academy-panel flex items-center justify-between gap-2 p-3">
-                    <p className="text-sm font-bold text-[var(--color-academy-success)]">
+                    <p className="text-sm font-semibold text-[var(--color-academy-success)]">
                         납부 완료 · {formatDate(invoice.paidDate || invoice.paidAt)}
                     </p>
                     {receiptHref && (
-                        <a href={receiptHref} target="_blank" rel="noreferrer" className="academy-button-secondary min-h-11 shrink-0 px-4 text-sm">
+                        <a href={receiptHref} target="_blank" rel="noreferrer" className="academy-button-secondary shrink-0">
                             영수증 보기
                         </a>
                     )}
@@ -112,11 +112,11 @@ export default async function PaymentPage({ params }: { params: Promise<{ invoic
                 <section aria-label="결제" className="academy-panel p-3">
                     {bundledAccount && virtualAccount && (
                         // 묶음 결제로 받은 계좌 — 이 청구만이 아니라 합계를 입금해야 한다
-                        <p className="mb-3 rounded-lg bg-[var(--color-academy-warning-soft)] p-2 text-sm font-bold text-[var(--color-academy-ink)]">
+                        <p className="mb-3 rounded-lg bg-[var(--color-academy-warning-soft)] p-2 text-sm font-medium text-[var(--color-academy-ink)]">
                             여러 청구를 묶은 계좌 · 합계 {formatAmount(virtualAccount.amount)}
                             <span className="block text-xs font-normal text-[var(--color-academy-muted)]">
                                 합계를 한 번에 입금해 주세요.{" "}
-                                <Link href="/mypage/payments" className="font-bold underline">청구 목록</Link>
+                                <Link href="/mypage/payments" className="font-medium underline">청구 목록</Link>
                             </span>
                         </p>
                     )}

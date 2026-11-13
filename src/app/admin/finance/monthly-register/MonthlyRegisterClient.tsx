@@ -3,6 +3,7 @@ import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { calculateMonthlyRegister, validateMonthlyRegisterDraft, type MonthlyRegisterDraft, type MonthlyRegisterTotals, type MonthlyRegisterView } from "@/lib/billing/monthly-register";
 
 type Row = MonthlyRegisterDraft["classes"][number];
@@ -196,64 +197,64 @@ export default function MonthlyRegisterClient({ initialStudentId, initialMonth }
 
   return <section className="space-y-5">
     <Link href="/admin/finance/monthly-ledger" className="underline">월별·반별 장부 점검으로 돌아가기</Link>
-    <header><h1 className="text-2xl font-bold">학생별 월 운영 장부</h1><p className="mt-2">학생·월·반별 금액과 근거를 초안으로 작성하고 확인합니다. 청구·수납·문자·시트·랠리즈에는 반영하지 않습니다.</p></header>
+    <header><AdminPageHeader title="학생별 월 운영 장부" /><p className="academy-page-description mt-1">학생·월·반별 금액과 근거를 초안으로 작성하고 확인합니다. 청구·수납·문자·시트·랠리즈에는 반영하지 않습니다.</p></header>
     <div className="rounded border border-[var(--color-academy-primary)] p-4">이 화면의 확정은 장부 내용 확인입니다. 청구서 발행이나 운영 시스템 전환을 뜻하지 않습니다. 빈 금액과 날짜를 자동으로 채우지 않습니다.</div>
     <form onSubmit={(event) => { event.preventDefault(); chooseTarget(); }} className="flex flex-wrap items-end gap-3">
-      <label className="grid gap-1">원생 번호<input value={studentId} disabled={saving || Boolean(preview)} onChange={(event) => setStudentId(event.target.value)} className="rounded border p-2" /></label>
-      <label className="grid gap-1">적용 월<input type="month" value={month} disabled={saving || Boolean(preview)} onChange={(event) => setMonth(event.target.value)} className="rounded border p-2" /></label>
-      <button disabled={saving || Boolean(preview) || loading} className="rounded border px-4 py-2 disabled:opacity-50">조회 / 새로고침</button>
+      <label className="grid gap-1">원생 번호<input value={studentId} disabled={saving || Boolean(preview)} onChange={(event) => setStudentId(event.target.value)} className="academy-input" /></label>
+      <label className="grid gap-1">적용 월<input type="month" value={month} disabled={saving || Boolean(preview)} onChange={(event) => setMonth(event.target.value)} className="academy-input" /></label>
+      <button disabled={saving || Boolean(preview) || loading} className="academy-button-secondary">조회 / 새로고침</button>
     </form>
     {loading && <p role="status">장부를 조회하고 있습니다.</p>}
     {!targetMatches && view && <p>입력한 학생·월로 다시 조회해 주세요. 이전 장부의 편집과 저장은 잠겨 있습니다.</p>}
     {error && <p role="alert" className="rounded border p-3">{error}</p>}
     {notice && <p role="status">{notice}</p>}
     {ready && view && target && <>
-      <div className="rounded border p-4"><h2 className="text-lg font-bold">{view.studentName} · {target.month}</h2><p className="break-all text-sm">원생 번호: {target.studentId}</p>
+      <div className="rounded border p-4"><h2 className="academy-section-title">{view.studentName} · {target.month}</h2><p className="break-all text-sm">원생 번호: {target.studentId}</p>
         <p>{view.record ? `${view.record.status === "CONFIRMED" ? "확정" : "초안"} · 기록 ${view.record.version}차` : "저장된 장부 없음"}</p>
-        {!view.writesEnabled && <p className="mt-2 font-bold">현재 조회만 가능합니다. 저장 기능은 준비 중입니다.</p>}
-        {hasUnknownClasses && <p className="mt-2 font-bold">현재 등록 후보에 없는 과거 반이 있어 확인보류합니다. 내용을 조회할 수 있지만 수정·확정은 잠겨 있습니다.</p>}
+        {!view.writesEnabled && <p className="mt-2 font-semibold">현재 조회만 가능합니다. 저장 기능은 준비 중입니다.</p>}
+        {hasUnknownClasses && <p className="mt-2 font-semibold">현재 등록 후보에 없는 과거 반이 있어 확인보류합니다. 내용을 조회할 수 있지만 수정·확정은 잠겨 있습니다.</p>}
         {confirmed && <p>확정 장부는 편집할 수 없습니다. 사유를 입력하고 수정용으로 다시 열어 주세요.</p>}
         {view.record && <p>저장된 수강료 {money(view.record.totals.tuitionAmount)} + 월 셔틀비 {money(view.record.totals.shuttleAmount)} = 합계 {money(view.record.totals.totalAmount)}</p>}
       </div>
       <fieldset disabled={locked} className="space-y-4 disabled:opacity-70">
-        <legend className="font-bold">반별 월 내역</legend>
+        <legend className="academy-section-title">반별 월 내역</legend>
         <p>현재 수강·휴원 반은 확정 전에 모두 기록해야 합니다. 월에 제외할 반도 상태와 0원 근거를 남겨 주세요. 휴원·퇴원·이월 상태는 모든 금액을 직접 0으로 입력해야 합니다.</p>
-        <label className="grid max-w-lg gap-1">실제 등록 반 추가<select value="" className="rounded border p-2" onChange={(event) => {
+        <label className="grid max-w-lg gap-1">실제 등록 반 추가<select value="" className="academy-input" onChange={(event) => {
           const candidate = view.candidates.find((row) => row.classId === event.target.value);
           if (!candidate) return;
           setEditor((current) => ({ ...current, classes: [...current.classes, { classId: candidate.classId, status: "", periodStart: "", periodEnd: "", baseAmount: "", discountAmount: "", carryAmount: "", prorationAmount: "", basis: "" }] }));
         }}><option value="">반을 선택해 주세요</option>{view.candidates.filter((candidate) => !editor.classes.some((row) => row.classId === candidate.classId)).map((candidate) => <option key={candidate.classId} value={candidate.classId}>{candidate.className} (현재 {statuses[candidate.status as Row["status"]] ?? candidate.status})</option>)}</select></label>
         {editor.classes.map((row, index) => <div key={row.classId} className="space-y-3 rounded border p-4">
-          <div className="flex items-center justify-between gap-3"><h3 className="font-bold">{index + 1}. {className(row.classId)}</h3><button type="button" className="rounded border px-3 py-1" onClick={() => setEditor((current) => ({ ...current, classes: current.classes.filter((_, i) => i !== index) }))}>초안에서 제외</button></div>
+          <div className="flex items-center justify-between gap-3"><h3 className="min-w-0 font-semibold">{index + 1}. {className(row.classId)}</h3><button type="button" className="academy-button-tonal academy-button-sm shrink-0" onClick={() => setEditor((current) => ({ ...current, classes: current.classes.filter((_, i) => i !== index) }))}>초안에서 제외</button></div>
           <div className="grid gap-3 sm:grid-cols-3">
-            <label className="grid gap-1">이번 달 상태<select className="rounded border p-2" value={row.status} onChange={(event) => patchRow(index, { status: event.target.value as EditorRow["status"] })}><option value="">상태를 선택해 주세요</option>{Object.entries(statuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-            <label className="grid gap-1">실제 시작일<input type="date" className="rounded border p-2" value={row.periodStart} onChange={(event) => patchRow(index, { periodStart: event.target.value })} /></label>
-            <label className="grid gap-1">실제 종료일<input type="date" className="rounded border p-2" value={row.periodEnd} onChange={(event) => patchRow(index, { periodEnd: event.target.value })} /></label>
+            <label className="grid gap-1">이번 달 상태<select className="academy-input" value={row.status} onChange={(event) => patchRow(index, { status: event.target.value as EditorRow["status"] })}><option value="">상태를 선택해 주세요</option>{Object.entries(statuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+            <label className="grid gap-1">실제 시작일<input type="date" className="academy-input" value={row.periodStart} onChange={(event) => patchRow(index, { periodStart: event.target.value })} /></label>
+            <label className="grid gap-1">실제 종료일<input type="date" className="academy-input" value={row.periodEnd} onChange={(event) => patchRow(index, { periodEnd: event.target.value })} /></label>
           </div>
-          <div className="grid gap-3 sm:grid-cols-4">{amounts.map(([key, label]) => <label key={key} className="grid gap-1">{label} (원)<input type="text" inputMode="numeric" className="min-w-0 rounded border p-2" value={row[key]} onChange={(event) => patchRow(index, { [key]: event.target.value })} placeholder="없으면 0을 입력" /></label>)}</div>
-          <label className="grid gap-1">금액·할인·이월·일할 근거<textarea className="rounded border p-2" value={row.basis} onChange={(event) => patchRow(index, { basis: event.target.value })} /></label>
+          <div className="grid gap-3 sm:grid-cols-4">{amounts.map(([key, label]) => <label key={key} className="grid gap-1">{label} (원)<input type="text" inputMode="numeric" className="academy-input min-w-0" value={row[key]} onChange={(event) => patchRow(index, { [key]: event.target.value })} placeholder="없으면 0을 입력" /></label>)}</div>
+          <label className="grid gap-1">금액·할인·이월·일할 근거<textarea className="academy-input" value={row.basis} onChange={(event) => patchRow(index, { basis: event.target.value })} /></label>
         </div>)}
-        <div className="grid gap-3 rounded border p-4 sm:grid-cols-2"><label className="grid gap-1">월 전체 셔틀비 — 한 번만 (원)<input type="text" inputMode="numeric" className="rounded border p-2" value={editor.shuttleAmount} onChange={(event) => setEditor((current) => ({ ...current, shuttleAmount: event.target.value }))} placeholder="미이용이면 0을 입력" /></label>
-          <label className="grid gap-1">셔틀비 근거<textarea className="rounded border p-2" value={editor.shuttleBasis} onChange={(event) => setEditor((current) => ({ ...current, shuttleBasis: event.target.value }))} /></label></div>
+        <div className="grid gap-3 rounded border p-4 sm:grid-cols-2"><label className="grid gap-1">월 전체 셔틀비 — 한 번만 (원)<input type="text" inputMode="numeric" className="academy-input" value={editor.shuttleAmount} onChange={(event) => setEditor((current) => ({ ...current, shuttleAmount: event.target.value }))} placeholder="미이용이면 0을 입력" /></label>
+          <label className="grid gap-1">셔틀비 근거<textarea className="academy-input" value={editor.shuttleBasis} onChange={(event) => setEditor((current) => ({ ...current, shuttleBasis: event.target.value }))} /></label></div>
       </fieldset>
-      <label className="grid gap-1">이번 저장·확정·재열기 사유<textarea disabled={saving || Boolean(preview) || !view.writesEnabled} className="rounded border p-2" value={reason} onChange={(event) => setReason(event.target.value)} /></label>
+      <label className="grid gap-1">이번 저장·확정·재열기 사유<textarea disabled={saving || Boolean(preview) || !view.writesEnabled} className="academy-input" value={reason} onChange={(event) => setReason(event.target.value)} /></label>
       <div className="flex flex-wrap gap-3">
-        {confirmed ? <button type="button" disabled={saving || Boolean(preview) || !view.writesEnabled || needsRefresh || hasUnknownClasses} onClick={() => prepare("REOPEN")} className="rounded border px-4 py-2 disabled:opacity-50">재열기 미리보기</button> : <>
-          <button type="button" disabled={locked} onClick={() => prepare("SAVE_DRAFT")} className="rounded border px-4 py-2 disabled:opacity-50">초안 저장 미리보기</button>
-          <button type="button" disabled={locked || dirty || !view.record} onClick={() => prepare("CONFIRM")} className="rounded border px-4 py-2 disabled:opacity-50">저장된 장부 확정 미리보기</button>
+        {confirmed ? <button type="button" disabled={saving || Boolean(preview) || !view.writesEnabled || needsRefresh || hasUnknownClasses} onClick={() => prepare("REOPEN")} className="academy-button-secondary">재열기 미리보기</button> : <>
+          <button type="button" disabled={locked} onClick={() => prepare("SAVE_DRAFT")} className="academy-button-secondary">초안 저장 미리보기</button>
+          <button type="button" disabled={locked || dirty || !view.record} onClick={() => prepare("CONFIRM")} className="academy-button-secondary">저장된 장부 확정 미리보기</button>
         </>}
       </div>
       {dirty && !confirmed && <p>저장하지 않은 편집이 있습니다. 확정 전에 초안을 저장해야 합니다.</p>}
       {preview && <section aria-label="작업 미리보기" className="space-y-3 rounded border-2 border-[var(--color-academy-primary)] p-4">
-        <h2 className="text-lg font-bold">{actions[preview.action]} 전 최종 확인</h2>
+        <h2 className="academy-section-title">{actions[preview.action]} 전 최종 확인</h2>
         <p>{view.studentName} · {preview.target.month} · 기준 버전 {preview.version}</p><p className="break-all text-xs">원생 번호: {preview.target.studentId}</p>
         {preview.payload.classes.map((row) => <div key={row.classId} className="border-b pb-2"><p>{className(row.classId)} · {statuses[row.status]} · {row.periodStart} ~ {row.periodEnd}</p><p>기본 {money(row.baseAmount)} − 할인 {money(row.discountAmount)} − 이월 {money(row.carryAmount)} − 일할 {money(row.prorationAmount)} = {money(preview.totals.rows.find((item) => item.classId === row.classId)?.amount ?? 0)}</p><p>근거: {row.basis}</p></div>)}
         <p>월 셔틀비 {money(preview.payload.shuttleAmount)} · {preview.payload.shuttleBasis}</p><p>작업 사유: {preview.reason}</p>
-        <p className="font-bold">수강료 합계 {money(preview.totals.tuitionAmount)} + 월 셔틀비 {money(preview.totals.shuttleAmount)} = 월 총액 {money(preview.totals.totalAmount)}</p>
+        <p className="font-semibold tabular-nums">수강료 합계 {money(preview.totals.tuitionAmount)} + 월 셔틀비 {money(preview.totals.shuttleAmount)} = 월 총액 {money(preview.totals.totalAmount)}</p>
         <p>장부에만 기록하며 청구서 발행·수납·문자 발송은 하지 않습니다.</p>
-        <div className="flex gap-3"><button type="button" disabled={saving} onClick={() => void executePreview()} className="rounded border px-4 py-2 disabled:opacity-50">{saving ? "처리 중…" : `위 내용을 확인했고 ${actions[preview.action]}합니다`}</button><button type="button" disabled={saving} onClick={() => setPreview(null)} className="rounded border px-4 py-2">취소</button></div>
+        <div className="flex flex-wrap gap-3"><button type="button" disabled={saving} onClick={() => void executePreview()} className="academy-button-primary">{saving ? "처리 중…" : `위 내용을 확인했고 ${actions[preview.action]}합니다`}</button><button type="button" disabled={saving} onClick={() => setPreview(null)} className="academy-button-secondary">취소</button></div>
       </section>}
-      <section className="space-y-2"><h2 className="font-bold">장부 변경 이력</h2>{view.history.length ? view.history.map((entry) => <p key={entry.version}>버전 {entry.version} · {entry.status === "CONFIRMED" ? "확정" : "초안"} · {entry.createdAt} · {entry.reason}</p>) : <p>변경 이력 없음</p>}</section>
+      <section className="space-y-2"><h2 className="academy-section-title">장부 변경 이력</h2>{view.history.length ? view.history.map((entry) => <p key={entry.version}>버전 {entry.version} · {entry.status === "CONFIRMED" ? "확정" : "초안"} · {entry.createdAt} · {entry.reason}</p>) : <p>변경 이력 없음</p>}</section>
     </>}
   </section>;
 }

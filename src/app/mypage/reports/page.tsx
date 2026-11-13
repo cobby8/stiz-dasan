@@ -37,12 +37,11 @@ export default async function ParentReportsPage() {
     if (!user) {
         return (
             <div className="flex flex-col items-center justify-center py-20 text-center">
-                <div className="text-5xl mb-4">🔒</div>
-                <h2 className="text-xl font-bold text-[var(--color-academy-ink)] mb-2">로그인이 필요합니다</h2>
+                <h2 className="academy-heading mb-2">로그인이 필요합니다</h2>
                 <p className="text-[var(--color-academy-muted)] mb-6">수업 리포트는 학부모 계정으로 로그인 후 확인할 수 있습니다.</p>
                 <Link
                     href="/login"
-                    className="bg-[var(--color-academy-primary)] text-white font-bold px-6 py-3 rounded-xl hover:bg-[var(--color-academy-primary-hover)] transition"
+                    className="academy-button-primary"
                 >
                     로그인하기
                 </Link>
@@ -57,8 +56,7 @@ export default async function ParentReportsPage() {
     if (!parentId) {
         return (
             <div className="flex flex-col items-center justify-center py-20 text-center">
-                <div className="text-5xl mb-4">👋</div>
-                <h2 className="text-xl font-bold text-[var(--color-academy-ink)] mb-2">등록된 정보가 없습니다</h2>
+                <h2 className="academy-heading mb-2">등록된 정보가 없습니다</h2>
                 <p className="text-[var(--color-academy-faint)] text-sm">학원에 등록 후 이용할 수 있습니다.</p>
             </div>
         );
@@ -102,14 +100,14 @@ export default async function ParentReportsPage() {
             <Link href={`/mypage/news/${n.id}`} className="flex min-h-14 items-center gap-2 px-3 py-2 hover:bg-[var(--color-academy-soft)]">
                 <div className="min-w-0 flex-1">
                     <div className="flex items-start gap-2">
-                        <p className="min-w-0 flex-1 break-keep text-sm font-bold text-[var(--color-academy-ink)]">
-                            {n.isPinned && <span className="mr-1 font-bold text-[var(--color-academy-warning)]">중요</span>}
+                        <p className="min-w-0 flex-1 break-keep text-sm font-medium text-[var(--color-academy-ink)]">
+                            {n.isPinned && <span className="mr-1 font-semibold text-[var(--color-academy-warning)]">중요</span>}
                             {n.title}
                         </p>
                         <span className="shrink-0 text-right text-sm tabular-nums text-[var(--color-academy-muted)]">{formatKstDate(n.createdAt, { month: "numeric", day: "numeric" })}</span>
                     </div>
                 </div>
-                <span className="material-symbols-outlined shrink-0 text-[var(--color-academy-faint)]" aria-hidden="true">chevron_right</span>
+                <span aria-hidden="true" className="shrink-0 text-[var(--color-academy-faint)]">›</span>
             </Link>
         </li>
     );
@@ -117,12 +115,12 @@ export default async function ParentReportsPage() {
     return (
         <div className="space-y-4">
             <div>
-                <h1 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">소식</h1>
+                <h1 className="academy-heading">소식</h1>
                 <nav aria-label="소식 종류" className="mt-2 flex flex-wrap gap-1.5">
                     {sections.map((s) => (
                         <a key={s.id} href={`#${s.id}`}
-                            className="inline-flex min-h-11 items-center gap-1 whitespace-nowrap rounded-full border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-2.5 text-sm font-bold text-[var(--color-academy-ink)] hover:border-[var(--color-academy-primary)]">
-                            {s.label}<span className="tabular-nums text-[var(--color-academy-muted)]">{s.count}</span>
+                            className="inline-flex min-h-11 items-center gap-1 whitespace-nowrap rounded-full border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-2.5 text-sm font-medium text-[var(--color-academy-ink)] hover:border-[var(--color-academy-primary)]">
+                            {s.label}<span className="tabular-nums font-normal text-[var(--color-academy-muted)]">{s.count}</span>
                         </a>
                     ))}
                 </nav>
@@ -131,10 +129,10 @@ export default async function ParentReportsPage() {
             {/* 공지 — 한 줄 행. 상세는 앱 안(/mypage/news/[id])에서 연다(공개 /notices 는 앱 범위 밖) */}
             {notices.length > 0 && (
                 <section id="news-notices" aria-labelledby="news-notices-heading" className="scroll-mt-24 overflow-hidden rounded-2xl border border-[var(--color-academy-line)] bg-white">
-                    <h2 id="news-notices-heading" className="flex items-center justify-between bg-[var(--color-academy-soft)] px-3 py-1.5 text-sm font-bold text-[var(--color-academy-ink)]">
+                    <h2 id="news-notices-heading" className="academy-section-title flex items-center justify-between bg-[var(--color-academy-soft)] px-3 py-1.5">
                         <span>학원 공지</span>
                         <HideInInstalledApp>
-                            <Link href="/notices" className="inline-flex min-h-11 items-center px-1 text-xs font-bold text-[var(--color-academy-ink)] underline">전체보기</Link>
+                            <Link href="/notices" className="academy-button-text">전체보기</Link>
                         </HideInInstalledApp>
                     </h2>
                     <ul className="divide-y divide-[var(--color-academy-line)]">
@@ -143,7 +141,7 @@ export default async function ParentReportsPage() {
                     {/* 나머지 공지 — «더보기»를 누르면 같은 자리에서 펼친다(서버 화면이라 details 사용) */}
                     {notices.length > NOTICE_FIRST && (
                         <details className="group border-t border-[var(--color-academy-line)]">
-                            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-center gap-1 text-sm font-bold text-[var(--color-academy-ink)] group-open:hidden">
+                            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-center gap-1 text-sm font-medium text-[var(--color-academy-ink)] group-open:hidden">
                                 더보기 <span className="tabular-nums">{notices.length - NOTICE_FIRST}</span>
                                 <span className="material-symbols-outlined leading-none" style={{ fontSize: "18px" }} aria-hidden="true">expand_more</span>
                             </summary>
@@ -155,7 +153,7 @@ export default async function ParentReportsPage() {
                 </section>
             )}
 
-            <h2 id="news-reports" className="scroll-mt-24 px-1 text-base font-bold text-[var(--color-academy-ink)]">수업 리포트</h2>
+            <h2 id="news-reports" className="academy-section-title scroll-mt-24 px-1">수업 리포트</h2>
             {reports.length === 0 ? (
                 <div className="bg-white rounded-xl border border-[var(--color-academy-line)] p-12 text-center text-[var(--color-academy-faint)]">
                     아직 발행된 수업 리포트가 없습니다.
@@ -165,9 +163,9 @@ export default async function ParentReportsPage() {
                     {groupByKstMonth(reports, (r) => r.date).map((group) => (
                         // 달별 묶음 — 제목 오른쪽에 그 달 리포트 수
                         <section key={group.month} aria-label={group.label} className="overflow-hidden rounded-2xl border border-[var(--color-academy-line)] bg-white">
-                            <h2 className="flex items-center justify-between bg-[var(--color-academy-soft)] px-3 py-1.5 text-sm font-bold text-[var(--color-academy-ink)]">
+                            <h2 className="academy-section-title flex items-center justify-between bg-[var(--color-academy-soft)] px-3 py-1.5">
                                 <span>{group.label}</span>
-                                <span className="tabular-nums text-[var(--color-academy-muted)]">{group.items.length}</span>
+                                <span className="text-sm font-normal tabular-nums text-[var(--color-academy-muted)]">{group.items.length}</span>
                             </h2>
                             <ul className="divide-y divide-[var(--color-academy-line)]">
                                 {group.items.map(({ item: r, ymd }) => (
@@ -180,7 +178,7 @@ export default async function ParentReportsPage() {
                                             <div className="min-w-0 flex-1">
                                                 {/* 1줄: 주제(줄바꿈 허용, 말줄임 없음) · 날짜(오른쪽, 숫자 폭 고정) */}
                                                 <div className="flex items-start gap-2">
-                                                    <p className="min-w-0 flex-1 break-keep text-sm font-bold text-[var(--color-academy-ink)]">{r.topic || "수업 리포트"}</p>
+                                                    <p className="min-w-0 flex-1 break-keep text-sm font-medium text-[var(--color-academy-ink)]">{r.topic || "수업 리포트"}</p>
                                                     <span className="shrink-0 text-right text-sm tabular-nums text-[var(--color-academy-muted)]">{kstLabel(ymd)}</span>
                                                 </div>
                                                 {/* 2줄: 반 · 요일 시간 · 담당 — «|»·괄호로 잇던 글을 요소로 나눔 */}
@@ -190,7 +188,7 @@ export default async function ParentReportsPage() {
                                                     {r.coachName && <span>담당: {r.coachName}</span>}
                                                 </div>
                                             </div>
-                                            <span className="material-symbols-outlined shrink-0 text-[var(--color-academy-faint)]" aria-hidden="true">chevron_right</span>
+                                            <span aria-hidden="true" className="shrink-0 text-[var(--color-academy-faint)]">›</span>
                                         </Link>
                                     </li>
                                 ))}
@@ -203,9 +201,9 @@ export default async function ParentReportsPage() {
             {/* 학습 피드백 — 한 줄 행, 누르면 그 행만 펼쳐 내용을 본다(행 단위 펼침 — 칸 전체를 접지 않는다) */}
             {feedbacks.length > 0 && (
                 <section id="news-feedback" aria-labelledby="news-feedback-heading" className="scroll-mt-24 overflow-hidden rounded-2xl border border-[var(--color-academy-line)] bg-white">
-                    <h2 id="news-feedback-heading" className="flex items-center justify-between bg-[var(--color-academy-soft)] px-3 py-1.5 text-sm font-bold text-[var(--color-academy-ink)]">
+                    <h2 id="news-feedback-heading" className="academy-section-title flex items-center justify-between bg-[var(--color-academy-soft)] px-3 py-1.5">
                         <span>학습 피드백</span>
-                        <span className="tabular-nums text-[var(--color-academy-muted)]">{feedbacks.length}</span>
+                        <span className="text-sm font-normal tabular-nums text-[var(--color-academy-muted)]">{feedbacks.length}</span>
                     </h2>
                     <ul className="divide-y divide-[var(--color-academy-line)]">
                         {feedbacks.map((fb) => (
@@ -214,7 +212,7 @@ export default async function ParentReportsPage() {
                                     <summary className="flex min-h-14 cursor-pointer list-none items-center gap-2 px-3 py-2 hover:bg-[var(--color-academy-soft)]">
                                         <div className="min-w-0 flex-1">
                                             <div className="flex items-start gap-2">
-                                                <p className="min-w-0 flex-1 break-keep text-sm font-bold text-[var(--color-academy-ink)]">{fb.title}</p>
+                                                <p className="min-w-0 flex-1 break-keep text-sm font-medium text-[var(--color-academy-ink)]">{fb.title}</p>
                                                 <span className="shrink-0 text-right text-sm tabular-nums text-[var(--color-academy-muted)]">{kstLabel(fb.sessionDate ?? fb.createdAt)}</span>
                                             </div>
                                             <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-[var(--color-academy-muted)]">
@@ -240,9 +238,9 @@ export default async function ParentReportsPage() {
             {photos.length > 0 && (
                 <section id="news-photos" aria-labelledby="news-photos-heading" className="scroll-mt-24">
                     <div className="mb-2 flex items-center justify-between px-1">
-                        <h2 id="news-photos-heading" className="text-base font-bold text-[var(--color-academy-ink)]">수업 사진</h2>
+                        <h2 id="news-photos-heading" className="academy-section-title">수업 사진</h2>
                         <HideInInstalledApp>
-                            <Link href="/gallery" className="inline-flex min-h-11 items-center px-1 text-xs font-bold text-[var(--color-academy-ink)] underline">전체보기</Link>
+                            <Link href="/gallery" className="academy-button-text">전체보기</Link>
                         </HideInInstalledApp>
                     </div>
                     <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">

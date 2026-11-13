@@ -111,10 +111,7 @@ export default function WithdrawClient({
   if (state === "WITHDRAWN") {
     return (
       <div className="mx-auto max-w-2xl px-4 py-6">
-        <h1 className="mb-2 flex items-center gap-2 text-lg font-black text-[var(--color-academy-ink)]">
-          <span className="material-symbols-outlined text-[var(--color-academy-faint)]">
-            check_circle
-          </span>
+        <h1 className="academy-heading mb-2">
           탈퇴가 완료되었습니다
         </h1>
         <p className="mb-4 text-sm text-[var(--color-academy-muted)]">
@@ -127,9 +124,8 @@ export default function WithdrawClient({
         </p>
         <Link
           href="/"
-          className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--color-academy-soft)] px-4 py-2.5 text-sm font-bold text-[var(--color-academy-muted)]"
+          className="academy-button-secondary"
         >
-          <span className="material-symbols-outlined text-base">home</span>
           홈으로
         </Link>
       </div>
@@ -144,10 +140,7 @@ export default function WithdrawClient({
         <Link href={backHref} aria-label="이전 화면으로" className="academy-back-link">
           <span className="material-symbols-outlined" aria-hidden="true">arrow_back</span>
         </Link>
-        <h1 className="flex items-center gap-2 text-lg font-black text-[var(--color-academy-ink)]">
-          <span className="material-symbols-outlined text-[var(--color-academy-muted)]">
-            person_remove
-          </span>
+        <h1 className="academy-heading">
           회원 탈퇴
         </h1>
       </div>
@@ -158,7 +151,7 @@ export default function WithdrawClient({
       </p>
 
       {error && (
-        <p className="mb-3 rounded-xl bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-academy-danger)]">
+        <p className="mb-3 rounded-xl bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-medium text-[var(--color-academy-danger)]">
           {error}
         </p>
       )}
@@ -166,10 +159,7 @@ export default function WithdrawClient({
       {/* 신청 접수 상태 — 재학 중이라 원장님 확인을 기다리는 경우 */}
       {state === "PENDING" && (
         <div className="mb-4 rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-warning-soft)] p-4">
-          <h2 className="mb-1 flex items-center gap-1.5 text-sm font-black text-[var(--color-academy-warning)]">
-            <span className="material-symbols-outlined text-base">
-              hourglass_top
-            </span>
+          <h2 className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-[var(--color-academy-warning)]">
             탈퇴 신청이 접수되었습니다
           </h2>
           <p className="text-xs text-[var(--color-academy-warning)]">
@@ -194,10 +184,7 @@ export default function WithdrawClient({
           {/* 재학 중이면 즉시 처리되지 않는다 — 누르기 전에 알려야 한다 */}
           {!initial.immediate && (
             <div className="mb-4 rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-info-soft)] p-4">
-              <h2 className="mb-1 flex items-center gap-1.5 text-sm font-black text-[var(--color-academy-info)]">
-                <span className="material-symbols-outlined text-base">
-                  info
-                </span>
+              <h2 className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-[var(--color-academy-info)]">
                 {initial.reviewReason === "ADMIN_HANDOFF"
                   ? "관리 역할을 다른 분께 넘겨야 합니다"
                   : initial.reviewReason === "STAFF_REVIEW"
@@ -215,10 +202,7 @@ export default function WithdrawClient({
           {/* 지워지는 것 / 남는 것 — 두 칸을 나란히 두어 한눈에 비교되게 한다 */}
           <div className="mb-4 grid gap-3 sm:grid-cols-2">
             <div className="rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-danger-soft)] p-4">
-              <h2 className="mb-2 flex items-center gap-1.5 text-sm font-black text-[var(--color-academy-danger)]">
-                <span className="material-symbols-outlined text-base">
-                  delete
-                </span>
+              <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-[var(--color-academy-danger)]">
                 삭제되는 정보
               </h2>
               <ul className="space-y-1 text-xs text-[var(--color-academy-danger)]">
@@ -232,10 +216,7 @@ export default function WithdrawClient({
             </div>
 
             <div className="rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] p-4">
-              <h2 className="mb-2 flex items-center gap-1.5 text-sm font-black text-[var(--color-academy-muted)]">
-                <span className="material-symbols-outlined text-base">
-                  inventory_2
-                </span>
+              <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-[var(--color-academy-muted)]">
                 보관되는 정보
               </h2>
               <ul className="space-y-1 text-xs text-[var(--color-academy-muted)]">

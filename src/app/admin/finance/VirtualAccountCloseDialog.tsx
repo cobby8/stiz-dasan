@@ -43,7 +43,7 @@ export default function VirtualAccountCloseDialog({
             titleId="virtual-account-close-title"
             title={`"${target.studentName}" 가상계좌 닫기`}
             description={paidNotice ? (
-                <p role="status" className="rounded-lg bg-[var(--color-academy-success-soft)] px-3 py-2 font-bold text-[var(--color-academy-success)]">
+                <p role="status" className="rounded-lg bg-[var(--color-academy-success-soft)] px-3 py-2 font-medium text-[var(--color-academy-success)]">
                     {paidNotice}
                 </p>
             ) : `${target.amount.toLocaleString("ko-KR")}원 입금 대기 계좌를 토스에서 닫습니다.\n닫으면 학부모가 그 계좌로 입금할 수 없고, 청구는 미납 그대로 남습니다.\n이미 입금됐다면 닫지 않고 납부 완료로 반영합니다.`}

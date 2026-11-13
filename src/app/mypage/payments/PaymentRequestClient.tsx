@@ -119,31 +119,31 @@ export default function PaymentRequestClient({
   return (
     <main className="mx-auto max-w-lg space-y-3 px-4 py-4">
       <div>
-        <h1 className="text-xl font-black text-[var(--color-academy-ink)]">청구·영수증</h1>
+        <h1 className="academy-heading">청구·영수증</h1>
         {/* 왜 바로 안 바뀌는지 먼저 알린다. 이걸 모르면 "입금했는데요" 문자가 계속 온다. — 한 줄로 줄였다 */}
         <p className="mt-0.5 text-xs text-[var(--color-academy-muted)]">계좌 입금은 학원 확인 뒤 완료돼요. «입금했어요»로 알려 주면 빨라요.</p>
       </div>
 
       {payReady && bundleRows.length > 0 && (
-        <section aria-label="한 번에 결제" className="academy-panel flex items-center gap-3 p-3">
-          <p className="min-w-0 flex-1 break-keep text-sm font-bold text-[var(--color-academy-ink)]">
+        <section aria-label="한 번에 결제" className="academy-panel flex flex-wrap items-center gap-x-3 gap-y-2 p-3">
+          <p className="min-w-0 flex-1 break-keep text-sm font-semibold text-[var(--color-academy-ink)]">
             미납 <span className="tabular-nums">{bundleRows.length}</span>건
             <span className="mx-1 text-[var(--color-academy-muted)]">·</span>
             <span className="whitespace-nowrap tabular-nums">합계 {bundleTotal.toLocaleString("ko-KR")}원</span>
           </p>
-          <Link href="/mypage/payments/checkout" className="academy-button-primary min-h-11 shrink-0 px-4 text-sm">한 번에 결제</Link>
+          <Link href="/mypage/payments/checkout" className="academy-button-primary shrink-0">한 번에 결제</Link>
         </section>
       )}
 
-      {done && <p role="status" className="rounded-lg bg-[var(--color-academy-success-soft)] p-3 text-sm font-bold text-[var(--color-academy-success)]">{done}</p>}
-      {error && <p role="alert" className="rounded-lg bg-[var(--color-academy-danger-soft)] p-3 text-sm font-bold text-[var(--color-academy-danger)]">{error}</p>}
+      {done && <p role="status" className="rounded-lg bg-[var(--color-academy-success-soft)] p-3 text-sm font-medium text-[var(--color-academy-success)]">{done}</p>}
+      {error && <p role="alert" className="rounded-lg bg-[var(--color-academy-danger-soft)] p-3 text-sm font-medium text-[var(--color-academy-danger)]">{error}</p>}
       {uncertain && (
         <div className="flex flex-wrap gap-2">
-          <button type="button" disabled={pending} onClick={() => startTransition(() => router.refresh())} className="academy-button-secondary min-h-11 text-sm">
+          <button type="button" disabled={pending} onClick={() => startTransition(() => router.refresh())} className="academy-button-secondary">
             {pending ? "확인 중..." : "접수 결과 다시 확인"}
           </button>
           {uncertainSource !== rows && (
-            <button type="button" disabled={pending} onClick={() => { setUncertainSource(null); setError(""); }} className="academy-button-secondary min-h-11 text-sm">
+            <button type="button" disabled={pending} onClick={() => { setUncertainSource(null); setError(""); }} className="academy-button-secondary">
               내역 확인했어요
             </button>
           )}
@@ -168,7 +168,7 @@ export default function PaymentRequestClient({
                 {/* 청구 정보 한 덩어리: 항목·금액 / 아이·납기·상태 (청구서 번호는 결제 화면에서 본다) */}
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="break-keep font-black text-[var(--color-academy-ink)]">
+                    <p className="break-keep font-semibold text-[var(--color-academy-ink)]">
                       {row.description || "수강료"}
                     </p>
                     <p className="text-xs text-[var(--color-academy-muted)]">
@@ -177,9 +177,9 @@ export default function PaymentRequestClient({
                     </p>
                   </div>
                   <div className="shrink-0 text-right">
-                    <p className="font-black tabular-nums text-[var(--color-academy-ink)]">{row.amount.toLocaleString()}원</p>
+                    <p className="font-semibold tabular-nums text-[var(--color-academy-ink)]">{row.amount.toLocaleString()}원</p>
                     {/* 색만 공용 지도(statusTones): 미납 주의 · 연체 위험 · 납부 정상 · 환불 중립. unpaid 판정은 그대로 */}
-                    <p className={`text-xs font-bold ${TONE_TEXT_CLASS[toneFor(PAYMENT_TONE, row.status, unpaid ? "warning" : "success")]}`}>
+                    <p className={`text-xs font-medium ${TONE_TEXT_CLASS[toneFor(PAYMENT_TONE, row.status, unpaid ? "warning" : "success")]}`}>
                       {STATUS_LABEL[row.status] ?? row.status}
                     </p>
                   </div>
@@ -208,7 +208,7 @@ export default function PaymentRequestClient({
                     {[claimPending, receiptPending].filter(Boolean).map((item) => (
                       // «확인 중» = 정보(info) — 입금 확인 중 규칙과 같게(PM 결정 11-09)
                       <div key={item!.id} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--color-academy-info-soft)] py-1 pl-2 pr-1">
-                        <p className="text-xs font-bold text-[var(--color-academy-ink)]">
+                        <p className="text-xs font-medium text-[var(--color-academy-ink)]">
                           {PAYMENT_REQUEST_KIND_LABEL[item!.kind as "PAYMENT_CLAIM" | "RECEIPT"]} 확인 중
                         </p>
                         {/* 터치 44px — 예전 36px(min-h-9)에서 올렸다 */}
@@ -216,7 +216,7 @@ export default function PaymentRequestClient({
                           type="button"
                           disabled={pending || uncertain}
                           onClick={() => cancel(item!.id)}
-                          className="academy-button-text min-h-11 shrink-0 px-3 text-xs"
+                          className="academy-button-text shrink-0"
                         >
                           취소
                         </button>
@@ -230,7 +230,7 @@ export default function PaymentRequestClient({
                     href={row.receiptUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="academy-button-secondary mt-2 min-h-11 w-full text-sm"
+                    className="academy-button-secondary mt-2 w-full"
                   >
                     영수증 보기
                   </a>
@@ -241,9 +241,8 @@ export default function PaymentRequestClient({
                 {unpaid && !claimPending && canPayOnline && (
                   <Link
                     href={`/payments/${encodeURIComponent(row.invoiceId!)}`}
-                    className="academy-button-primary mt-2 min-h-12 w-full font-black"
+                    className="academy-button-primary mt-2 w-full"
                   >
-                    <span className="material-symbols-outlined text-xl leading-none" aria-hidden="true">credit_card</span>
                     결제하기
                   </Link>
                 )}
@@ -251,8 +250,7 @@ export default function PaymentRequestClient({
                 {/* 결제 버튼을 못 보여 줄 때는 눌리지 않는 버튼 대신 «왜·어떻게»를 알려 준다. */}
                 {unpaid && !claimPending && !canPayOnline && (
                   <div className="mt-2 rounded-lg bg-[var(--color-academy-soft)] p-2.5 text-sm text-[var(--color-academy-ink)]">
-                    <p className="flex items-center gap-1.5 font-bold">
-                      <span className="material-symbols-outlined text-lg leading-none" aria-hidden="true">account_balance</span>
+                    <p className="font-semibold">
                       {!row.canCheckout ? "결제는 대표 보호자 계정에서 해요" : "지금은 온라인 결제를 쓸 수 없어요"}
                     </p>
                     {!contact.bankAccount && (
@@ -261,7 +259,7 @@ export default function PaymentRequestClient({
                     {contact.bankAccount && (
                       // 계좌 글과 복사 버튼을 한 줄에 — 버튼은 «복사»로 짧게(읽기 프로그램에는 «계좌번호 복사»)
                       <div className="mt-1 flex items-center gap-2">
-                        <span className="min-w-0 flex-1 break-keep font-bold tabular-nums">{contact.bankAccount}</span>
+                        <span className="min-w-0 flex-1 break-keep font-semibold tabular-nums">{contact.bankAccount}</span>
                         <button
                           type="button"
                           aria-label="계좌번호 복사"
@@ -275,9 +273,8 @@ export default function PaymentRequestClient({
                             if (!navigator.clipboard) { done(`fail:${row.paymentId}`); return; }
                             navigator.clipboard.writeText(digits).then(() => done(row.paymentId)).catch(() => done(`fail:${row.paymentId}`));
                           }}
-                          className="academy-button-secondary min-h-11 shrink-0 whitespace-nowrap px-3 text-xs"
+                          className="academy-button-secondary shrink-0 whitespace-nowrap"
                         >
-                          <span className="material-symbols-outlined text-base leading-none" aria-hidden="true">content_copy</span>
                           {copied === row.paymentId ? "복사됨" : "복사"}
                         </button>
                       </div>
@@ -292,10 +289,9 @@ export default function PaymentRequestClient({
                         {contact.phone && (
                           <a
                             href={`tel:${contact.phone.replace(/[^0-9+]/g, "")}`}
-                            className="academy-button-secondary min-h-11 whitespace-nowrap px-3 text-xs"
+                            className="academy-button-secondary whitespace-nowrap tabular-nums"
                           >
-                            <span className="material-symbols-outlined text-base leading-none" aria-hidden="true">call</span>
-                            {contact.phone}
+                            전화 {contact.phone}
                           </a>
                         )}
                         {contact.kakaoChannelUrl && (
@@ -303,9 +299,8 @@ export default function PaymentRequestClient({
                             href={contact.kakaoChannelUrl} data-outside-link
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="academy-button-secondary min-h-11 whitespace-nowrap px-3 text-xs"
+                            className="academy-button-secondary whitespace-nowrap"
                           >
-                            <span className="material-symbols-outlined text-base leading-none" aria-hidden="true">chat</span>
                             카카오 채널로 문의
                           </a>
                         )}
@@ -322,7 +317,7 @@ export default function PaymentRequestClient({
                     className={
                       canPayOnline
                         ? "academy-button-secondary mt-2 min-h-11 w-full text-sm"
-                        : "academy-button-primary mt-2 min-h-12 w-full font-black"
+                        : "academy-button-primary mt-2 w-full"
                     }
                   >
                     {canPayOnline ? "이미 계좌로 입금했어요" : "입금했어요 알리기"}
@@ -332,7 +327,7 @@ export default function PaymentRequestClient({
                   <button
                     type="button"
                     onClick={() => setOpenId(open ? null : row.paymentId)}
-                    className="academy-button-secondary mt-2 min-h-11 w-full text-sm"
+                    className="academy-button-secondary mt-2 w-full"
                   >
                     영수증 요청하기
                   </button>
@@ -341,17 +336,18 @@ export default function PaymentRequestClient({
                 {open && unpaid && (
                   <div className="mt-2 space-y-3 rounded-lg border border-[var(--color-academy-line)] p-3">
                     <div>
-                      <p className="mb-1 text-xs font-bold text-[var(--color-academy-muted)]">어떻게 결제하셨나요?</p>
+                      <p className="mb-1 text-xs font-medium text-[var(--color-academy-muted)]">어떻게 결제하셨나요?</p>
                       <div className="grid grid-cols-2 gap-1.5 min-[375px]:grid-cols-4">
                         {PAYMENT_METHODS.map((value) => (
                           <button
                             key={value}
                             type="button"
+                            aria-pressed={method === value}
                             onClick={() => setMethod(value)}
-                            className={`min-h-11 whitespace-nowrap rounded-lg border text-xs font-bold ${
+                            className={`min-h-11 whitespace-nowrap rounded-md border text-xs ${
                               method === value
-                                ? "border-[var(--brand-accent)] bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]"
-                                : "border-[var(--color-academy-line)] text-[var(--color-academy-muted)]"
+                                ? "border-[var(--color-academy-secondary-strong)] bg-[var(--color-academy-secondary-soft)] font-semibold text-[var(--color-academy-secondary-ink)]"
+                                : "border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] font-medium text-[var(--color-academy-ink)]"
                             }`}
                           >
                             {PAYMENT_METHOD_LABEL[value]}
@@ -362,7 +358,7 @@ export default function PaymentRequestClient({
                     {/* 날짜·입금자명은 한 줄 두 칸(묶음 결제 화면과 같은 모양) */}
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label htmlFor={`paid-on-${row.paymentId}`} className="mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">
+                        <label htmlFor={`paid-on-${row.paymentId}`} className="mb-1 block text-xs font-medium text-[var(--color-academy-muted)]">
                           입금한 날짜
                         </label>
                         <input
@@ -370,11 +366,11 @@ export default function PaymentRequestClient({
                           type="date"
                           value={paidOn}
                           onChange={(event) => setPaidOn(event.target.value)}
-                          className="min-h-11 w-full rounded-lg border border-[var(--color-academy-line)] px-2 text-sm text-[var(--color-academy-ink)]"
+                          className="academy-input"
                         />
                       </div>
                       <div>
-                        <label htmlFor={`depositor-${row.paymentId}`} className="mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">
+                        <label htmlFor={`depositor-${row.paymentId}`} className="mb-1 block text-xs font-medium text-[var(--color-academy-muted)]">
                           입금자명 (선택)
                         </label>
                         {/* 통장에 찍힌 이름이 자녀 이름과 다르면 원장이 못 찾는다. */}
@@ -384,7 +380,7 @@ export default function PaymentRequestClient({
                           onChange={(event) => setDepositorName(event.target.value)}
                           maxLength={60}
                           placeholder="자녀 이름과 다르면"
-                          className="min-h-11 w-full rounded-lg border border-[var(--color-academy-line)] px-2 text-sm text-[var(--color-academy-ink)]"
+                          className="academy-input"
                         />
                       </div>
                     </div>
@@ -392,7 +388,7 @@ export default function PaymentRequestClient({
                       type="button"
                       disabled={pending || uncertain || !paidOn}
                       onClick={() => submitClaim(row.paymentId)}
-                      className="academy-button-primary min-h-12 w-full font-black"
+                      className="academy-button-primary w-full"
                     >
                       {pending ? "보내는 중..." : "확인 요청 보내기"}
                     </button>
@@ -402,17 +398,18 @@ export default function PaymentRequestClient({
                 {open && row.status === "PAID" && (
                   <div className="mt-2 space-y-3 rounded-lg border border-[var(--color-academy-line)] p-3">
                     <div>
-                      <p className="mb-1 text-xs font-bold text-[var(--color-academy-muted)]">영수증 종류</p>
+                      <p className="mb-1 text-xs font-medium text-[var(--color-academy-muted)]">영수증 종류</p>
                       <div className="grid grid-cols-2 gap-1.5">
                         {RECEIPT_TYPES.map((value) => (
                           <button
                             key={value}
                             type="button"
+                            aria-pressed={receiptType === value}
                             onClick={() => setReceiptType(value)}
-                            className={`min-h-11 whitespace-nowrap rounded-lg border px-1 text-xs font-bold ${
+                            className={`min-h-11 whitespace-nowrap rounded-md border px-1 text-xs ${
                               receiptType === value
-                                ? "border-[var(--brand-accent)] bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]"
-                                : "border-[var(--color-academy-line)] text-[var(--color-academy-muted)]"
+                                ? "border-[var(--color-academy-secondary-strong)] bg-[var(--color-academy-secondary-soft)] font-semibold text-[var(--color-academy-secondary-ink)]"
+                                : "border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] font-medium text-[var(--color-academy-ink)]"
                             }`}
                           >
                             {RECEIPT_TYPE_LABEL[value]}
@@ -421,7 +418,7 @@ export default function PaymentRequestClient({
                       </div>
                     </div>
                     <div>
-                      <label htmlFor={`receipt-target-${row.paymentId}`} className="mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">
+                      <label htmlFor={`receipt-target-${row.paymentId}`} className="mb-1 block text-xs font-medium text-[var(--color-academy-muted)]">
                         {receiptType === "CASH_RECEIPT" ? "휴대폰 번호" : "사업자등록번호"}
                       </label>
                       {/* 번호를 안 받으면 원장이 발급을 못 해 다시 물어봐야 한다. */}
@@ -432,14 +429,14 @@ export default function PaymentRequestClient({
                         inputMode="numeric"
                         maxLength={60}
                         placeholder={receiptType === "CASH_RECEIPT" ? "010-0000-0000" : "000-00-00000"}
-                        className="min-h-11 w-full rounded-lg border border-[var(--color-academy-line)] px-3 text-sm text-[var(--color-academy-ink)]"
+                        className="academy-input"
                       />
                     </div>
                     <button
                       type="button"
                       disabled={pending || uncertain || !receiptTarget.trim()}
                       onClick={() => submitReceipt(row.paymentId)}
-                      className="academy-button-primary min-h-12 w-full font-black"
+                      className="academy-button-primary w-full"
                     >
                       {pending ? "보내는 중..." : "영수증 요청 보내기"}
                     </button>

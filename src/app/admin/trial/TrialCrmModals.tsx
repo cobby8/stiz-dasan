@@ -217,7 +217,8 @@ function isDateOnlySchedulePlaceholder(dateStr: string | Date | null) {
     return typeof dateStr === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dateStr.trim());
 }
 
-const MODAL_INPUT_CLASS = "w-full rounded-lg border border-[var(--color-academy-line-input)] bg-white px-3 py-2 text-sm text-[var(--color-academy-ink)] focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)]";
+// 입력칸 = 테마 공용 입력칸(academy-input: 44px·입력선 테두리) — 2026-11-13 UI 통일
+const MODAL_INPUT_CLASS = "academy-input";
 
 const DAY_LABELS: Record<string, string> = {
     Mon: "월",
@@ -328,25 +329,24 @@ function ModalActions({
     accent?: "sky";
     muted?: boolean;
 }) {
-    const submitClass = muted
-        ? "bg-[var(--color-academy-primary-hover)] text-white hover:bg-[var(--color-academy-primary-hover)]"
-        : accent === "sky"
-            ? "bg-[var(--color-academy-primary)] text-white hover:bg-[var(--color-academy-primary-hover)]"
-            : "bg-[var(--color-academy-primary)] text-white hover:bg-[var(--color-academy-primary-hover)]";
+    // 버튼 등급은 테마 클래스로(2026-11-13 UI 통일): 저장 = 주 버튼, 취소 확정(muted) = 확인 단계의 마지막 위험 버튼.
+    // accent 는 예전에도 같은 주 색이었다(모양 차이 없음) — 호출부 호환을 위해 인자만 남긴다.
+    void accent;
+    const submitClass = muted ? "academy-button-danger-solid" : "academy-button-primary";
 
     return (
-        <div className="flex gap-3 pt-2">
+        <div className="flex flex-wrap gap-3 pt-2">
             <button
                 type="button"
                 onClick={onClose}
-                className="flex-1 rounded-lg border border-[var(--color-academy-line-input)] px-4 py-2.5 text-sm font-medium text-[var(--color-academy-muted)] transition hover:bg-[var(--color-academy-soft)]"
+                className="academy-button-secondary flex-1"
             >
                 닫기
             </button>
             <button
                 type="submit"
                 disabled={busy}
-                className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-bold transition disabled:opacity-50 ${submitClass}`}
+                className={`${submitClass} flex-1`}
             >
                 {busy ? busyLabel : submitLabel}
             </button>
@@ -411,8 +411,7 @@ function TrialEditModal({
 
     return (
         <AdminModal onClose={onClose} titleId="trial-edit-title" panelClassName="max-w-2xl p-6">
-                <h2 id="trial-edit-title" className="mb-1 flex items-center gap-2 text-lg font-bold text-[var(--color-academy-ink)]">
-                    <span className="material-symbols-outlined text-[var(--color-academy-ink)]">edit</span>
+                <h2 id="trial-edit-title" className="mb-1 text-lg font-bold text-[var(--color-academy-ink)]">
                     체험 신청 수정
                 </h2>
                 <form onSubmit={handleSubmit} className="space-y-4">
@@ -479,9 +478,9 @@ function TrialEditModal({
                         </FormField>
                     </div>
                     {lead.scheduledClassId && <p className="text-xs text-[var(--color-academy-muted)]">희망 일정 변경은 확정 수업을 바꾸지 않습니다. 확정 수업·시간은 ‘일정 변경’에서 변경해 주세요.</p>}
-                    <div className="rounded-lg border border-[var(--color-academy-line)] px-3 py-2 text-sm font-semibold text-[var(--color-academy-muted)]">
+                    <div className="rounded-lg border border-[var(--color-academy-line)] px-3 py-2 text-sm font-medium text-[var(--color-academy-muted)]">
                         체험비 상태: {trialFeeStatusLabel(lead)}
-                        <p className="mt-1 text-xs font-medium text-[var(--color-academy-faint)]">입금 확인은 상세 화면의 전용 버튼에서 처리합니다.</p>
+                        <p className="mt-1 text-xs font-normal text-[var(--color-academy-faint)]">입금 확인은 상세 화면의 전용 버튼에서 처리합니다.</p>
                     </div>
                     <FormField label="바라는 점">
                         <textarea value={form.hopeNote} onChange={(e) => setForm({ ...form, hopeNote: e.target.value })} rows={2} className={`${MODAL_INPUT_CLASS} resize-none`} />
@@ -591,8 +590,7 @@ function TrialScheduleModal({
 
     return (
         <AdminModal onClose={onClose} titleId="trial-schedule-title" panelClassName="max-w-2xl p-6">
-                <h2 id="trial-schedule-title" className="mb-1 flex items-center gap-2 text-lg font-bold text-[var(--color-academy-ink)]">
-                    <span className="material-symbols-outlined text-[var(--color-academy-muted)]">event_available</span>
+                <h2 id="trial-schedule-title" className="mb-1 text-lg font-bold text-[var(--color-academy-ink)]">
                     체험 일정 확정/변경
                 </h2>
                 <p className="mb-4 text-sm text-[var(--color-academy-muted)]">
@@ -606,16 +604,16 @@ function TrialScheduleModal({
                     )}
                     <div className="grid gap-3 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] p-3 text-sm text-[var(--color-academy-ink)] sm:grid-cols-3">
                         <div>
-                            <p className="text-xs font-black uppercase opacity-70">신청일</p>
-                            <p className="mt-1 font-black">{dateInputValue(lead.createdAt) || "-"}</p>
+                            <p className="text-xs font-medium opacity-70">신청일</p>
+                            <p className="mt-1 font-semibold">{dateInputValue(lead.createdAt) || "-"}</p>
                         </div>
                         <div>
-                            <p className="text-xs font-black uppercase opacity-70">희망일자</p>
-                            <p className="mt-1 font-black">{dateInputValue(lead.trialDate) || "미입력"}</p>
+                            <p className="text-xs font-medium opacity-70">희망일자</p>
+                            <p className="mt-1 font-semibold">{dateInputValue(lead.trialDate) || "미입력"}</p>
                         </div>
                         <div>
-                            <p className="text-xs font-black uppercase opacity-70">수업교시</p>
-                            <p className="mt-1 font-black">{preferredSchedule}</p>
+                            <p className="text-xs font-medium opacity-70">수업교시</p>
+                            <p className="mt-1 font-semibold">{preferredSchedule}</p>
                         </div>
                     </div>
                     <FormField label="확정 날짜 *">
@@ -644,7 +642,7 @@ function TrialScheduleModal({
                     <FormField label="확정 시간 *">
                         <input type="time" value={scheduledTime} onChange={(e) => setScheduledTime(e.target.value)} className={MODAL_INPUT_CLASS} disabled={!scheduledClassId} />
                     </FormField>
-                    <p className="rounded-lg bg-[var(--color-academy-soft)] px-3 py-2 text-xs font-semibold text-[var(--color-academy-muted)]">
+                    <p className="rounded-lg bg-[var(--color-academy-soft)] px-3 py-2 text-xs text-[var(--color-academy-muted)]">
                         선택한 날짜에 운영되는 수업만 표시됩니다. 반을 고르면 시작 시간이 자동으로 들어가며, 실제 체험 시간이 다르면 시간만 직접 바꿔주세요. 저장만으로 문자는 발송되지 않습니다.
                     </p>
                     <FormField label="관리 메모">
@@ -672,8 +670,7 @@ function TrialCancelModal({
 
     return (
         <AdminModal onClose={onClose} titleId="trial-cancel-title" panelClassName="max-w-md p-6">
-                <h2 id="trial-cancel-title" className="mb-1 flex items-center gap-2 text-lg font-bold text-[var(--color-academy-ink)]">
-                    <span className="material-symbols-outlined text-[var(--color-academy-muted)]">block</span>
+                <h2 id="trial-cancel-title" className="mb-1 text-lg font-bold text-[var(--color-academy-ink)]">
                     체험 신청 취소
                 </h2>
                 <p className="mb-4 text-sm text-[var(--color-academy-muted)]">
@@ -692,11 +689,9 @@ function TrialCancelModal({
                                 key={option}
                                 type="button"
                                 onClick={() => setReason(option)}
-                                className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
-                                    reason === option
-                                        ? "border-[var(--color-academy-line-input)] bg-[var(--color-academy-soft)] text-[var(--color-academy-ink)]"
-                                        : "border-[var(--color-academy-line)] text-[var(--color-academy-muted)] hover:border-[var(--color-academy-line-input)] hover:text-[var(--color-academy-ink)]"
-                                }`}
+                                // 고르는 칩 = 테마 선택 칩(고르면 ✓ + 하늘색) — 2026-11-13 UI 통일
+                                aria-pressed={reason === option}
+                                className="academy-choice"
                             >
                                 {option}
                             </button>
@@ -749,8 +744,7 @@ function AddLeadModal({
 
     return (
         <AdminModal onClose={onClose} titleId="trial-add-title" panelClassName="max-w-md p-6">
-                <h2 id="trial-add-title" className="text-lg font-bold text-[var(--color-academy-ink)] flex items-center gap-2 mb-4">
-                    <span className="material-symbols-outlined text-[var(--color-academy-ink)]">person_add</span>
+                <h2 id="trial-add-title" className="text-lg font-bold text-[var(--color-academy-ink)] mb-4">
                     체험 신청 등록
                 </h2>
                 <form onSubmit={handleSubmit} className="space-y-4">
@@ -765,7 +759,7 @@ function AddLeadModal({
                             type="text"
                             value={form.childName}
                             onChange={(e) => setForm({ ...form, childName: e.target.value })}
-                            className="w-full border border-[var(--color-academy-line-input)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                            className="academy-input"
                             placeholder="홍길동"
                         />
                     </div>
@@ -775,7 +769,7 @@ function AddLeadModal({
                             type="text"
                             value={form.childAge}
                             onChange={(e) => setForm({ ...form, childAge: e.target.value })}
-                            className="w-full border border-[var(--color-academy-line-input)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                            className="academy-input"
                             placeholder="초등 3학년"
                         />
                     </div>
@@ -785,7 +779,7 @@ function AddLeadModal({
                             type="text"
                             value={form.parentName}
                             onChange={(e) => setForm({ ...form, parentName: e.target.value })}
-                            className="w-full border border-[var(--color-academy-line-input)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                            className="academy-input"
                             placeholder="홍부모"
                         />
                     </div>
@@ -801,7 +795,7 @@ function AddLeadModal({
                                 else if (nums.length > 3) formatted = `${nums.slice(0, 3)}-${nums.slice(3)}`;
                                 setForm({ ...form, parentPhone: formatted });
                             }}
-                            className="w-full border border-[var(--color-academy-line-input)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                            className="academy-input"
                             placeholder="숫자만 입력 (자동 변환: 010-1234-5678)"
                         />
                         <p className="text-xs text-[var(--color-academy-faint)] mt-1">숫자만 입력하면 자동으로 000-0000-0000 형식으로 변환됩니다</p>
@@ -811,7 +805,7 @@ function AddLeadModal({
                         <select
                             value={form.source}
                             onChange={(e) => setForm({ ...form, source: e.target.value })}
-                            className="w-full border border-[var(--color-academy-line-input)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                            className="academy-input"
                         >
                             <option value="WEBSITE">홈페이지</option>
                             <option value="NAVER">네이버</option>
@@ -834,22 +828,22 @@ function AddLeadModal({
                             value={form.memo}
                             onChange={(e) => setForm({ ...form, memo: e.target.value })}
                             rows={3}
-                            className="w-full border border-[var(--color-academy-line-input)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)] resize-none"
+                            className="academy-input resize-none"
                             placeholder="추가 메모 사항"
                         />
                     </div>
-                    <div className="flex gap-3 pt-2">
+                    <div className="flex flex-wrap gap-3 pt-2">
                         <button
                             type="button"
                             onClick={onClose}
-                            className="flex-1 px-4 py-2.5 border border-[var(--color-academy-line-input)] rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)] transition-colors text-sm font-medium"
+                            className="academy-button-secondary flex-1"
                         >
                             취소
                         </button>
                         <button
                             type="submit"
                             disabled={busy}
-                            className="flex-1 px-4 py-2.5 bg-[var(--color-academy-primary)] text-white rounded-lg hover:bg-[var(--color-academy-primary-hover)] transition-colors text-sm font-medium disabled:opacity-50"
+                            className="academy-button-primary flex-1"
                         >
                             {busy ? "등록 중..." : "등록"}
                         </button>
@@ -893,8 +887,7 @@ function LostModal({
 
     return (
         <AdminModal onClose={onClose} titleId="trial-lost-title" panelClassName="max-w-md p-6">
-                <h2 id="trial-lost-title" className="text-lg font-bold text-[var(--color-academy-ink)] flex items-center gap-2 mb-4">
-                    <span className="material-symbols-outlined text-[var(--color-academy-danger)]">person_off</span>
+                <h2 id="trial-lost-title" className="text-lg font-bold text-[var(--color-academy-ink)] mb-4">
                     이탈 처리
                 </h2>
                 <p className="text-sm text-[var(--color-academy-muted)] mb-4">
@@ -906,21 +899,21 @@ function LostModal({
                         value={reason}
                         onChange={(e) => setReason(e.target.value)}
                         rows={3}
-                        className="w-full border border-[var(--color-academy-line-input)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)] resize-none"
+                        className="academy-input resize-none"
                         placeholder="사유를 입력하세요 (선택)"
                     />
                 </div>
                 <div className="flex gap-3">
                     <button
                         onClick={onClose}
-                        className="flex-1 px-4 py-2.5 border border-[var(--color-academy-line-input)] rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)] transition-colors text-sm font-medium"
+                        className="academy-button-secondary flex-1"
                     >
                         취소
                     </button>
                     <button
                         onClick={() => onSubmit(reason)}
                         disabled={busy}
-                        className="flex-1 px-4 py-2.5 bg-[var(--color-academy-danger-fill)] text-white rounded-lg hover:bg-[var(--color-academy-danger-fill-hover)] transition-colors text-sm font-medium disabled:opacity-50"
+                        className="academy-button-danger-solid flex-1"
                     >
                         {busy ? "처리 중..." : "이탈 처리"}
                     </button>
@@ -944,8 +937,7 @@ function MemoModal({
 
     return (
         <AdminModal onClose={onClose} titleId="trial-memo-title" panelClassName="max-w-md p-6">
-                <h2 id="trial-memo-title" className="text-lg font-bold text-[var(--color-academy-ink)] flex items-center gap-2 mb-4">
-                    <span className="material-symbols-outlined text-[var(--color-academy-ink)]">edit_note</span>
+                <h2 id="trial-memo-title" className="text-lg font-bold text-[var(--color-academy-ink)] mb-4">
                     메모 편집
                 </h2>
                 <div className="mb-4">
@@ -953,7 +945,7 @@ function MemoModal({
                         value={memo}
                         onChange={(e) => setMemo(e.target.value)}
                         rows={4}
-                        className="w-full border border-[var(--color-academy-line-input)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)] resize-none"
+                        className="academy-input resize-none"
                         placeholder="메모를 입력하세요"
                         autoFocus
                     />
@@ -961,14 +953,14 @@ function MemoModal({
                 <div className="flex gap-3">
                     <button
                         onClick={onClose}
-                        className="flex-1 px-4 py-2.5 border border-[var(--color-academy-line-input)] rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)] transition-colors text-sm font-medium"
+                        className="academy-button-secondary flex-1"
                     >
                         취소
                     </button>
                     <button
                         onClick={() => onSubmit(memo)}
                         disabled={busy}
-                        className="flex-1 px-4 py-2.5 bg-[var(--color-academy-primary)] text-white rounded-lg hover:bg-[var(--color-academy-primary-hover)] transition-colors text-sm font-medium disabled:opacity-50"
+                        className="academy-button-primary flex-1"
                     >
                         {busy ? "저장 중..." : "저장"}
                     </button>

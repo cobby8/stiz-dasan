@@ -46,12 +46,12 @@ export function ScopeFields({ scope, onScope, serviceMonth, laterMonths }: Scope
   ];
   return (
     <fieldset className="mt-3">
-      <legend className="text-xs font-bold text-[var(--color-academy-muted)]">적용 범위</legend>
+      <legend className="text-xs font-medium text-[var(--color-academy-muted)]">적용 범위</legend>
       <div className="mt-1 grid gap-2 sm:grid-cols-2">
         {options.map((o) => (
-          <label key={o.value} className={`flex min-h-11 cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-sm ${scope === o.value ? "border-[var(--color-academy-ink)]" : "border-[var(--color-academy-line)]"}`}>
+          <label key={o.value} className={`flex min-h-11 cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-sm ${scope === o.value ? "border-[var(--color-academy-secondary-strong)] bg-[var(--color-academy-secondary-soft)]" : "border-[var(--color-academy-line)]"}`}>
             <input type="radio" name="run-edit-scope" className="mt-1 h-4 w-4" checked={scope === o.value} onChange={() => onScope(o.value)} />
-            <span><b>{o.label}</b><span className="block text-xs text-[var(--color-academy-muted)]">{o.hint}</span></span>
+            <span><span className="font-medium">{o.label}</span><span className="block text-xs text-[var(--color-academy-muted)]">{o.hint}</span></span>
           </label>
         ))}
       </div>
@@ -63,9 +63,10 @@ export function ScopeFields({ scope, onScope, serviceMonth, laterMonths }: Scope
 function Footer({ busy, onCancel, onSave, saveLabel, danger = false, disabled = false }: { busy: boolean; onCancel: () => void; onSave: () => void; saveLabel: string; danger?: boolean; disabled?: boolean }) {
   return (
     <div className="mt-4 flex items-center justify-between gap-3">
-      <button type="button" onClick={onCancel} disabled={busy} className="min-h-11 px-2 text-sm font-bold text-[var(--color-academy-muted)]">그만</button>
+      <button type="button" onClick={onCancel} disabled={busy} className="academy-button-text">그만</button>
+      {/* 2026-11-13 UI 통일: 검정 꽉 찬 버튼 → 주 색(네이비). 빼기 확정만 꽉 찬 위험색. */}
       <button type="button" onClick={onSave} disabled={busy || disabled}
-        className={`min-h-11 rounded-lg px-5 text-sm font-black disabled:opacity-50 ${danger ? "bg-[var(--color-academy-danger-fill)] text-[var(--color-academy-on-primary)]" : "bg-[var(--color-academy-ink)] text-[var(--color-academy-surface)]"}`}>
+        className={danger ? "academy-button-danger-solid" : "academy-button-primary"}>
         {busy ? "저장 중…" : saveLabel}
       </button>
     </div>
@@ -74,7 +75,7 @@ function Footer({ busy, onCancel, onSave, saveLabel, danger = false, disabled = 
 
 function ErrorBox({ error }: { error: string | null }) {
   if (!error) return null;
-  return <p role="alert" className="mt-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-danger)]">{error}</p>;
+  return <p role="alert" className="mt-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm text-[var(--color-academy-danger)]">{error}</p>;
 }
 
 /** 그 달 명단 한 학생의 등·하원 행(명단 화면과 같은 학생 판정 rosterStudentKeyResolver). */
@@ -166,15 +167,15 @@ export function StudentShuttleDialog({ stops, rowId, serviceMonth, laterMonths, 
       {!picker && (
         <AdminModal titleId="run-student-title" onClose={() => { if (!busy) onClose(); }} panelClassName="max-w-2xl p-4" closeOnBackdrop={false}>
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h3 id="run-student-title" className="text-lg font-black text-[var(--color-academy-ink)]">{name} · 셔틀 정보 ({Number(serviceMonth.slice(5))}월)</h3>
-            {studentId && <Link href={`/admin/students/${encodeURIComponent(studentId)}`} className="inline-flex min-h-11 items-center text-sm font-bold text-[var(--color-academy-primary)] underline">학생 상세</Link>}
+            <h3 id="run-student-title" className="academy-section-title">{name} · 셔틀 정보 ({Number(serviceMonth.slice(5))}월)</h3>
+            {studentId && <Link href={`/admin/students/${encodeURIComponent(studentId)}`} className="inline-flex min-h-11 items-center text-sm font-medium text-[var(--color-academy-primary)] underline">학생 상세</Link>}
           </div>
           {reassign.length > 0 && (
             <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm">
-              <b className="text-[var(--color-academy-warning)]">반 이동 재배정 필요</b>
+              <span className="font-semibold text-[var(--color-academy-warning)]">반 이동 재배정 필요</span>
               {reassign.map((l) => (
                 <button key={l.legKey} type="button" onClick={() => onOpenReassign(l)}
-                  className="inline-flex min-h-11 items-center rounded-full border border-[var(--color-academy-ink)] bg-[var(--color-academy-surface)] px-3 font-bold">{l.label}</button>
+                  className="academy-button-secondary academy-button-sm">{l.label}</button>
               ))}
             </div>
           )}
@@ -188,13 +189,13 @@ export function StudentShuttleDialog({ stops, rowId, serviceMonth, laterMonths, 
                 const dirty = !sameDraft(d, draftOf(r));
                 return (
                   <li key={r.id} className={`grid grid-cols-[4.5rem_1fr] items-center gap-2 px-2 py-2 sm:grid-cols-[6.5rem_1fr_7rem_auto] ${dirty ? "bg-[var(--color-academy-primary-soft)]" : ""}`}>
-                    <span className="text-sm font-black text-[var(--color-academy-ink)]">{WEEKDAY_LABELS[r.weekday]} {DIR_KO[r.direction as "BOARD" | "ALIGHT"]}<span className="block text-xs font-semibold text-[var(--color-academy-muted)]">{r.classTime ?? "수업 미정"}</span></span>
+                    <span className="text-sm font-semibold text-[var(--color-academy-ink)]">{WEEKDAY_LABELS[r.weekday]} {DIR_KO[r.direction as "BOARD" | "ALIGHT"]}<span className="block text-xs font-normal text-[var(--color-academy-muted)]">{r.classTime ?? "수업 미정"}</span></span>
                     <input list="run-stop-names" value={d.stopName} onChange={(e) => setName(r.id!, e.target.value)} aria-label={`${WEEKDAY_LABELS[r.weekday]} ${DIR_KO[r.direction as "BOARD" | "ALIGHT"]} 정류장`}
-                      className="h-11 min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-2 text-sm" />
+                      className="academy-input min-w-0" />
                     <input type="time" value={d.arriveTime} onChange={(e) => setDrafts((x) => ({ ...x, [r.id!]: { ...x[r.id!], arriveTime: e.target.value } }))} aria-label={`${WEEKDAY_LABELS[r.weekday]} ${DIR_KO[r.direction as "BOARD" | "ALIGHT"]} 정차 시각`}
-                      className="col-start-2 h-11 min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-2 text-sm sm:col-start-auto" />
-                    <button type="button" onClick={() => setPicker(r.id!)} className="col-start-2 inline-flex min-h-11 items-center justify-center gap-1 rounded-lg border border-[var(--color-academy-line)] px-3 text-sm font-bold sm:col-start-auto">
-                      <span className="material-symbols-outlined text-lg" aria-hidden="true">map</span>지도
+                      className="academy-input col-start-2 min-w-0 sm:col-start-auto" />
+                    <button type="button" onClick={() => setPicker(r.id!)} className="academy-button-secondary col-start-2 sm:col-start-auto">
+                      지도
                     </button>
                   </li>
                 );
@@ -202,7 +203,7 @@ export function StudentShuttleDialog({ stops, rowId, serviceMonth, laterMonths, 
             </ul>
           )}
           <datalist id="run-stop-names">{book.names.map((n) => <option key={n} value={n} />)}</datalist>
-          <p className="mt-2 text-xs text-[var(--color-academy-muted)]">목록의 기존 정류장을 고르면 위치도 같이 바뀌어요. 정류장이 바뀌면 운행표에서 순서·시각을 확인해 주세요. 칸 추가는 «배정 필요», 빼기는 운행표의 × 로 해요.</p>
+          <p className="mt-2 text-xs text-[var(--color-academy-muted)]">목록의 기존 정류장을 고르면 위치도 같이 바뀌어요. 정류장이 바뀌면 운행표에서 순서·시각을 확인해 주세요. 칸 추가는 «배정 필요», 빼기는 운행표의 «빼기»로 해요.</p>
           <ScopeFields scope={scope} onScope={setScope} serviceMonth={serviceMonth} laterMonths={laterMonths} />
           <ErrorBox error={error} />
           <Footer busy={busy} onCancel={onClose} onSave={() => void save()} saveLabel={changed.length > 0 ? `${changed.length}칸 저장` : "바뀐 칸 없음"} disabled={changed.length === 0} />
@@ -270,15 +271,15 @@ export function RemoveRiderDialog({ stops, rowId, serviceMonth, laterMonths, def
 
   return (
     <AdminModal titleId="run-remove-title" onClose={() => { if (!busy) onClose(); }} panelClassName="max-w-md p-5" closeOnBackdrop={false}>
-      <h3 id="run-remove-title" className="text-lg font-black text-[var(--color-academy-ink)]">{me.studentName} 학생을 셔틀 명단에서 뺄까요?</h3>
+      <h3 id="run-remove-title" className="academy-section-title">{me.studentName} 학생을 셔틀 명단에서 뺄까요?</h3>
       <p className="mt-1 text-sm text-[var(--color-academy-muted)]">퇴원·셔틀 중단일 때 써요. 하루만 안 타는 건 결석·«오늘만 변경»으로 해 주세요.</p>
       <fieldset className="mt-3">
-        <legend className="text-xs font-bold text-[var(--color-academy-muted)]">뺄 칸</legend>
+        <legend className="text-xs font-medium text-[var(--color-academy-muted)]">뺄 칸</legend>
         <div className="mt-1 grid gap-2">
           {options.map((o) => (
             <label key={o.value} className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm ${range === o.value ? "border-[var(--color-academy-danger)]" : "border-[var(--color-academy-line)]"}`}>
               <input type="radio" name="run-remove-range" className="h-4 w-4" checked={range === o.value} onChange={() => setRange(o.value)} />
-              <b>{o.label}</b><span className="text-xs text-[var(--color-academy-muted)]">{o.hint}</span>
+              <span className="font-medium">{o.label}</span><span className="text-xs text-[var(--color-academy-muted)]">{o.hint}</span>
             </label>
           ))}
         </div>
@@ -341,14 +342,14 @@ export function StopEditDialog({ stops, rowIds, serviceMonth, laterMonths, defau
     <>
       {!picker && (
         <AdminModal titleId="run-stop-title" onClose={() => { if (!busy) onClose(); }} panelClassName="max-w-md p-5" closeOnBackdrop={false}>
-          <h3 id="run-stop-title" className="text-lg font-black text-[var(--color-academy-ink)]">정류장 수정 · {first.stopName}</h3>
+          <h3 id="run-stop-title" className="academy-section-title">정류장 수정 · {first.stopName}</h3>
           <p className="mt-1 text-sm text-[var(--color-academy-muted)]">{rows.map((r) => r.studentName).join(", ")} · {WEEKDAY_LABELS[first.weekday]} {DIR_KO[first.direction as "BOARD" | "ALIGHT"]}</p>
           <div className="mt-3 flex gap-2">
             <input list="run-stop-names-one" value={draft.stopName} aria-label="정류장 이름"
               onChange={(e) => { const v = e.target.value; const hit = book.coords.get(v.trim()); setDraft((d) => ({ ...d, stopName: v, ...(hit ?? {}) })); }}
-              className="h-11 min-w-0 flex-1 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-sm" />
-            <button type="button" onClick={() => setPicker(true)} className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-[var(--color-academy-line)] px-3 text-sm font-bold">
-              <span className="material-symbols-outlined text-lg" aria-hidden="true">map</span>지도
+              className="academy-input min-w-0 flex-1" />
+            <button type="button" onClick={() => setPicker(true)} className="academy-button-secondary shrink-0">
+              지도
             </button>
           </div>
           <datalist id="run-stop-names-one">{book.names.map((n) => <option key={n} value={n} />)}</datalist>

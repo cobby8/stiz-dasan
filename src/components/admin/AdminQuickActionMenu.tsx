@@ -157,8 +157,8 @@ export default function AdminQuickActionMenu({
                 }}
                 className={getActionClass(action.tone)}
             >
+                {/* 항목도 글자만(2026-11-13 «아이콘 빼고 글자 깔끔하게»). action.icon 은 부르는 쪽 호환용으로 받기만 한다 */}
                 <span className="truncate">{action.label}</span>
-                <span className="material-symbols-outlined text-[18px]" aria-hidden="true">{action.icon}</span>
             </button>
         );
     }

@@ -21,7 +21,7 @@ export default async function AccountPage() {
   return (
     <OwnAccountFrame views={views}>
       <section className="mx-auto max-w-2xl px-4 py-6 text-[var(--color-academy-ink)]">
-        <h1 className="text-xl font-black">내 계정</h1>
+        <h1 className="academy-heading">내 계정</h1>
         <p className="mt-2 text-sm text-[var(--color-academy-muted)]">
           {account.appUserName} · {roleNames[account.appUserRole] || "회원"}
         </p>
@@ -31,22 +31,18 @@ export default async function AccountPage() {
         >
           <Link
             href="/account/children"
-            className="flex min-h-14 items-center justify-between gap-3 px-4 text-sm font-bold"
+            className="flex min-h-14 items-center justify-between gap-3 px-4 text-sm font-medium"
           >
             <span>자녀·가족 연결</span>
-            <span className="material-symbols-outlined" aria-hidden="true">
-              chevron_right
-            </span>
+            <span aria-hidden="true">›</span>
           </Link>
           {account.appUserRole === "PARENT" && (
             <Link
               href="/mypage/login-methods"
-              className="flex min-h-14 items-center justify-between gap-3 px-4 text-sm font-bold"
+              className="flex min-h-14 items-center justify-between gap-3 px-4 text-sm font-medium"
             >
               <span>간편로그인 연결</span>
-              <span className="material-symbols-outlined" aria-hidden="true">
-                chevron_right
-              </span>
+              <span aria-hidden="true">›</span>
             </Link>
           )}
         </nav>
@@ -54,12 +50,10 @@ export default async function AccountPage() {
         <div className="mt-6 border-t border-[var(--color-academy-line)] pt-4">
           <Link
             href="/account/withdraw"
-            className="flex min-h-14 items-center justify-between gap-3 rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-4 text-sm font-bold text-[var(--color-academy-danger)]"
+            className="flex min-h-14 items-center justify-between gap-3 rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-4 text-sm font-medium text-[var(--color-academy-danger)]"
           >
             <span>회원 탈퇴</span>
-            <span className="material-symbols-outlined" aria-hidden="true">
-              chevron_right
-            </span>
+            <span aria-hidden="true">›</span>
           </Link>
         </div>
         <p className="mt-4 text-xs leading-5 text-[var(--color-academy-muted)]">

@@ -89,15 +89,15 @@ export default function ParentNotificationBell({ notifications, unreadCount }: {
                 aria-haspopup="dialog"
                 aria-expanded={open}
                 onClick={() => setOpen((v) => !v)}
-                // 누르는 영역 44×44(터치 최소 크기)
-                className="relative inline-flex size-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] transition-colors hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)]"
+                // 2026-11-13 UI 통일: 종 아이콘 → «알림» 글자. 누르는 높이 44px(터치 최소 크기)
+                className="inline-flex min-h-11 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-lg px-2 text-sm font-medium text-[var(--color-academy-muted)] transition-colors hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)]"
             >
-                <span className="material-symbols-outlined leading-none" style={{ fontSize: "24px" }} aria-hidden="true">notifications</span>
-                {/* 안 읽은 수 배지 — 10건 이상은 9+ */}
+                알림
+                {/* 안 읽은 수 배지 — 글자 옆에 붙는다. 10건 이상은 9+ */}
                 {badge && (
                     <span
                         aria-hidden="true"
-                        className="absolute right-0.5 top-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--color-academy-danger-fill)] px-1 text-xs font-bold leading-none tabular-nums text-[var(--color-academy-on-primary)]"
+                        className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--color-academy-danger-fill)] px-1 text-xs font-semibold leading-none tabular-nums text-[var(--color-academy-on-primary)]"
                     >
                         {badge}
                     </span>
@@ -115,7 +115,7 @@ export default function ParentNotificationBell({ notifications, unreadCount }: {
                     >
                         {/* 머리: 제목 + 모두 읽음 + 닫기 (한 줄 44px) */}
                         <div className="flex min-h-11 items-center gap-1 border-b border-[var(--color-academy-line)] pl-4 pr-1">
-                            <span className="flex-1 text-sm font-bold text-[var(--color-academy-ink)]">알림</span>
+                            <span className="academy-section-title flex-1">알림</span>
                             {unreadCount > 0 && (
                                 <button
                                     type="button"
@@ -130,9 +130,9 @@ export default function ParentNotificationBell({ notifications, unreadCount }: {
                                         });
                                     }}
                                     disabled={isPending}
-                                    className="academy-button-text text-[var(--color-academy-primary)]"
+                                    className="academy-button-text"
                                 >
-                                    <span className="material-symbols-outlined leading-none" style={{ fontSize: "16px" }} aria-hidden="true">done_all</span> 모두 읽음
+                                    모두 읽음
                                 </button>
                             )}
                             <button
@@ -146,7 +146,7 @@ export default function ParentNotificationBell({ notifications, unreadCount }: {
                         </div>
 
                         {bellError && (
-                            <p role="alert" className="border-b border-[var(--color-academy-line)] px-4 py-2 text-xs font-bold text-[var(--color-academy-danger)]">{bellError}</p>
+                            <p role="alert" className="border-b border-[var(--color-academy-line)] px-4 py-2 text-xs font-semibold text-[var(--color-academy-danger)]">{bellError}</p>
                         )}
 
                         {/* 목록 */}
@@ -166,21 +166,18 @@ export default function ParentNotificationBell({ notifications, unreadCount }: {
                                                     disabled={isPending}
                                                     className={`flex w-full min-h-11 items-start gap-3 px-4 py-2.5 text-left hover:bg-[var(--color-academy-soft)] ${!n.isRead ? "bg-[var(--color-academy-info-soft)]" : ""}`}
                                                 >
-                                                    <span className="material-symbols-outlined mt-0.5 shrink-0 leading-none text-[var(--color-academy-neutral)]" style={{ fontSize: "18px" }} aria-hidden="true">
-                                                        {n.type === "ATTENDANCE" ? "event_available" : n.type.startsWith("PAYMENT") ? "credit_card" : n.type.startsWith("SHUTTLE") ? "airport_shuttle" : "notifications"}
-                                                    </span>
                                                     <span className="min-w-0 flex-1">
-                                                        <span className={`block text-sm ${!n.isRead ? "font-bold text-[var(--color-academy-ink)]" : "text-[var(--color-academy-muted)]"}`}>{n.title}</span>
+                                                        <span className={`block text-sm ${!n.isRead ? "font-semibold text-[var(--color-academy-ink)]" : "text-[var(--color-academy-muted)]"}`}>{n.title}</span>
                                                         <span className="mt-0.5 block text-xs text-[var(--color-academy-muted)]">{n.message}</span>
                                                         <span className="mt-0.5 block text-xs text-[var(--color-academy-faint)]">
                                                             {formatKstDate(n.createdAt, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                                                         </span>
                                                     </span>
-                                                    {/* 끝 표시 — 이동할 화면이 있으면 화살표, 없고 안 읽었으면 체크(누르면 읽음) */}
+                                                    {/* 끝 표시 — 이동할 화면이 있으면 «›», 없고 안 읽었으면 «확인»(누르면 읽음) */}
                                                     {href ? (
-                                                        <span className="material-symbols-outlined mt-0.5 shrink-0 leading-none text-[var(--color-academy-muted)]" style={{ fontSize: "18px" }} aria-hidden="true">chevron_right</span>
+                                                        <span aria-hidden="true" className="shrink-0 text-[var(--color-academy-faint)]">›</span>
                                                     ) : !n.isRead ? (
-                                                        <span className="material-symbols-outlined mt-0.5 shrink-0 leading-none text-[var(--color-academy-muted)]" style={{ fontSize: "18px" }} aria-hidden="true">check</span>
+                                                        <span aria-hidden="true" className="shrink-0 text-xs text-[var(--color-academy-muted)]">확인</span>
                                                     ) : null}
                                                 </button>
                                             </li>
@@ -194,11 +191,10 @@ export default function ParentNotificationBell({ notifications, unreadCount }: {
                         <Link
                             href={SETTINGS_NOTIFICATION_HREF}
                             onClick={() => setOpen(false)}
-                            className="flex min-h-11 items-center gap-2 border-t border-[var(--color-academy-line)] px-4 text-sm font-bold text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
+                            className="flex min-h-11 items-center gap-2 border-t border-[var(--color-academy-line)] px-4 text-sm font-medium text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
                         >
-                            <span className="material-symbols-outlined leading-none" style={{ fontSize: "18px" }} aria-hidden="true">tune</span>
                             <span className="flex-1">알림 설정</span>
-                            <span className="material-symbols-outlined leading-none" style={{ fontSize: "18px" }} aria-hidden="true">chevron_right</span>
+                            <span aria-hidden="true" className="shrink-0 text-[var(--color-academy-faint)]">›</span>
                         </Link>
                     </div>
                 </>

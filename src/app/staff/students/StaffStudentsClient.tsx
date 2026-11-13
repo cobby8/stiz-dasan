@@ -27,13 +27,13 @@ export default function StaffStudentsClient({ students }: { students: StaffStude
 
   return (
     <main className="mx-auto max-w-lg space-y-3 px-4 py-5">
-      <header><h1 className="text-2xl font-black text-[var(--color-academy-ink)]">학생·학부모 연락</h1><p className="mt-1 text-sm text-[var(--color-academy-muted)]">내가 맡은 수업의 재원생만 표시됩니다.</p></header>
-      <label className="flex min-h-12 items-center gap-2 rounded-2xl border border-[var(--color-academy-line)] bg-white px-4 focus-within:ring-2 focus-within:ring-[var(--brand-accent)]"><span aria-hidden="true" className="material-symbols-outlined text-[var(--color-academy-faint)]">search</span><span className="sr-only">학생 검색</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="학생, 학부모, 수업명, 전화번호 검색" className="w-full bg-transparent text-sm outline-none" /></label>
-      <p aria-live="polite" className="text-sm font-bold text-[var(--color-academy-muted)]">총 <span className="tabular-nums">{filtered.length}</span>명</p>
+      <header><h1 className="academy-heading">학생·학부모 연락</h1><p className="mt-1 text-sm text-[var(--color-academy-muted)]">내가 맡은 수업의 재원생만 표시됩니다.</p></header>
+      <label className="flex min-h-12 items-center gap-2 rounded-2xl border border-[var(--color-academy-line)] bg-white px-4 focus-within:ring-2 focus-within:ring-[var(--brand-accent)]"><span className="sr-only">학생 검색</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="학생, 학부모, 수업명, 전화번호 검색" className="w-full bg-transparent text-sm outline-none" /></label>
+      <p aria-live="polite" className="text-sm text-[var(--color-academy-muted)]">총 <span className="tabular-nums">{filtered.length}</span>명</p>
       {filtered.length === 0 ? (
         <div className="rounded-xl border border-dashed border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-5 text-center">
-          <p className="font-bold">{students.length === 0 ? "아직 담당 수업에 등록된 학생이 없습니다." : "검색 결과가 없습니다."}</p>
-          {query && <button type="button" onClick={() => setQuery("")} className="mt-3 min-h-11 rounded-xl border border-[var(--color-academy-line)] px-4 font-bold">검색어 지우기</button>}
+          <p className="font-medium">{students.length === 0 ? "아직 담당 수업에 등록된 학생이 없습니다." : "검색 결과가 없습니다."}</p>
+          {query && <button type="button" onClick={() => setQuery("")} className="academy-button-secondary mt-3">검색어 지우기</button>}
         </div>
       ) : (
         // 한 학생 = 한 줄 행: 이름 · 학년 · 반 · 학부모 전화. 연락처 전체는 행을 눌러 시트에서
@@ -48,21 +48,20 @@ export default function StaffStudentsClient({ students }: { students: StaffStude
               onKeyDown={(event) => handleRowKeyDown(event, student.id)}
               className="flex min-h-14 cursor-pointer items-center gap-2 border-b border-[var(--color-academy-line)] px-3 py-1.5 last:border-b-0 hover:bg-[var(--color-academy-soft)]"
             >
-              <span className="shrink-0 text-base font-black text-[var(--color-academy-ink)]">{student.name}</span>
-              {student.grade && <span className="shrink-0 text-xs font-bold text-[var(--color-academy-muted)]">{student.grade}</span>}
+              <span className="shrink-0 text-base font-semibold text-[var(--color-academy-ink)]">{student.name}</span>
+              {student.grade && <span className="shrink-0 text-xs text-[var(--color-academy-muted)]">{student.grade}</span>}
               {/* 반 이름은 자르지 않고 줄바꿈 허용(말줄임 금지) */}
               <span className="min-w-0 flex-1 break-keep text-xs text-[var(--color-academy-muted)]">{student.classNames.join(", ")}</span>
               {student.parentPhone ? (
                 // 가장 많이 쓰는 «학부모에게 전화»는 목록에서 바로 — 행 열기와 섞이지 않게 전파 차단
-                // 게슈탈트 T-09: 행마다 반복되므로 tonal. 테마 버튼 여백이 아이콘 칸을 넘지 않게 padding 0
+                // 게슈탈트 T-09: 행마다 반복되므로 tonal. 2026-11-13 UI 통일: 전화 아이콘 대신 «전화» 글자(터치 44px)
                 <a
                   href={`tel:${student.parentPhone}`}
                   aria-label={`학부모 ${student.parentName}에게 전화 ${student.parentPhone}`}
                   onClick={(event) => event.stopPropagation()}
-                  className="academy-button-tonal grid size-11 shrink-0 place-items-center rounded-xl"
-                  style={{ padding: 0 }}
+                  className="academy-button-tonal academy-button-sm shrink-0"
                 >
-                  <span aria-hidden="true" className="material-symbols-outlined text-xl">call</span>
+                  전화
                 </a>
               ) : (
                 <span className="shrink-0 text-xs text-[var(--color-academy-muted)]">번호 없음</span>
@@ -76,7 +75,7 @@ export default function StaffStudentsClient({ students }: { students: StaffStude
         <ListDetailPanel onClose={() => setDetailId(null)} titleId="staff-student-detail-title">
           <div className="flex items-start justify-between gap-3 border-b border-[var(--color-academy-line)] px-4 py-3">
             <div className="min-w-0">
-              <h2 id="staff-student-detail-title" className="text-lg font-black text-[var(--color-academy-ink)]">{detail.name}</h2>
+              <h2 id="staff-student-detail-title" className="text-lg font-bold text-[var(--color-academy-ink)]">{detail.name}</h2>
               <p className="text-sm text-[var(--color-academy-muted)]">{[detail.school, detail.grade].filter(Boolean).join(" ") || "학교·학년 미등록"}</p>
             </div>
             <button type="button" aria-label="닫기" onClick={() => setDetailId(null)} className="grid size-11 shrink-0 place-items-center rounded-full">
@@ -84,7 +83,7 @@ export default function StaffStudentsClient({ students }: { students: StaffStude
             </button>
           </div>
           <div className="px-4 pb-4 pt-2">
-            <div className="flex flex-wrap gap-1">{detail.classNames.map((name) => <span key={name} className="rounded-full bg-[var(--color-academy-soft)] px-2 py-1 text-xs font-bold text-[var(--color-academy-muted)]">{name}</span>)}</div>
+            <div className="flex flex-wrap gap-1">{detail.classNames.map((name) => <span key={name} className="rounded-full bg-[var(--color-academy-soft)] px-2 py-1 text-xs text-[var(--color-academy-muted)]">{name}</span>)}</div>
             <ContactActions label="학생" name={detail.name} phone={detail.studentPhone} />
             <ContactActions label="학부모" name={detail.parentName} phone={detail.parentPhone} accent />
           </div>
@@ -101,19 +100,19 @@ function ContactActions({ label, name, phone, accent = false }: { label: string;
   if (!phone) return <div className="mt-3 flex min-h-12 items-center justify-between rounded-xl bg-[var(--color-academy-soft)] px-3 text-sm text-[var(--color-academy-faint)]"><span>{label} {name}</span><span>번호 없음</span></div>;
   return (
     <div className="mt-3 rounded-xl border border-[var(--color-academy-line)] p-3">
-      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1"><p className="min-w-0 break-keep text-sm font-bold">{label} {name}</p><a href={`tel:${phone}`} aria-label={`${name}에게 전화 ${phone}`} className="shrink-0 whitespace-nowrap text-sm font-bold text-[var(--brand-accent)] underline underline-offset-2">{phone}</a></div>
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1"><p className="min-w-0 break-keep text-sm font-medium">{label} {name}</p><a href={`tel:${phone}`} aria-label={`${name}에게 전화 ${phone}`} className="shrink-0 whitespace-nowrap text-sm font-medium tabular-nums text-[var(--brand-accent)] underline underline-offset-2">{phone}</a></div>
       <div className="mt-2 grid grid-cols-2 gap-2">
-        <a href={`tel:${phone}`} className={`flex min-h-12 items-center justify-center gap-1 rounded-xl font-bold ${accent ? "border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)]" : "border border-[var(--color-academy-line)]"}`}><span aria-hidden="true" className="material-symbols-outlined text-xl">call</span>전화</a>
+        <a href={`tel:${phone}`} className={`flex min-h-12 items-center justify-center gap-1 rounded-xl font-medium ${accent ? "border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)]" : "border border-[var(--color-academy-line)]"}`}>전화</a>
         {appLacksSms ? (
           <button
             type="button"
             onClick={async () => showAppToast((await copyText(phone)) ? "번호를 복사했어요. 문자 앱에 붙여 넣어 주세요." : `번호를 복사하지 못했어요: ${phone}`)}
-            className="flex min-h-12 items-center justify-center gap-1 rounded-xl border border-[var(--color-academy-line)] font-bold"
+            className="flex min-h-12 items-center justify-center gap-1 rounded-xl border border-[var(--color-academy-line)] font-medium"
           >
-            <span aria-hidden="true" className="material-symbols-outlined text-xl">content_copy</span>번호 복사
+            번호 복사
           </button>
         ) : (
-          <a href={`sms:${phone}`} className="flex min-h-12 items-center justify-center gap-1 rounded-xl border border-[var(--color-academy-line)] font-bold"><span aria-hidden="true" className="material-symbols-outlined text-xl">sms</span>문자</a>
+          <a href={`sms:${phone}`} className="flex min-h-12 items-center justify-center gap-1 rounded-xl border border-[var(--color-academy-line)] font-medium">문자</a>
         )}
       </div>
     </div>

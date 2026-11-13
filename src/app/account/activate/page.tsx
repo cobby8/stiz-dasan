@@ -78,10 +78,9 @@ function ClaimUnavailable({
   return (
     <main className="flex min-h-screen items-center justify-center bg-[var(--color-academy-soft)] px-4 py-10">
       <section className="w-full max-w-md rounded-3xl bg-white p-8 text-center shadow-lg" aria-labelledby="claim-unavailable-title">
-        <span className="material-symbols-outlined text-5xl text-[var(--brand-accent)]" aria-hidden="true">info</span>
-        <h1 id="claim-unavailable-title" className="mt-4 text-xl font-black text-[var(--color-academy-ink)]">{title}</h1>
+        <h1 id="claim-unavailable-title" className="text-xl font-bold text-[var(--color-academy-ink)]">{title}</h1>
         <p className="mt-3 text-sm leading-6 text-[var(--color-academy-muted)]">{message}</p>
-        <a href={actionHref} className="mt-6 inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-[var(--color-academy-primary)] px-4 font-bold text-white">{actionLabel}</a>
+        <a href={actionHref} className="academy-button-primary mt-6 w-full">{actionLabel}</a>
       </section>
     </main>
   );

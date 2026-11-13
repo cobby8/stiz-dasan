@@ -271,17 +271,17 @@ export default function BundleCheckoutClient({
     return (
         <main className="mx-auto max-w-lg space-y-3 px-4 py-4">
             <div className="flex items-center justify-between gap-2">
-                <h1 className="text-xl font-black text-[var(--color-academy-ink)]">한 번에 결제</h1>
-                <Link href="/mypage/payments" className="academy-button-text min-h-11 text-sm">청구 목록</Link>
+                <h1 className="academy-heading">한 번에 결제</h1>
+                <Link href="/mypage/payments" className="academy-button-text shrink-0">청구 목록</Link>
             </div>
 
             {failed && (
-                <p role="alert" className="rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm font-bold text-[var(--color-academy-danger)]">
+                <p role="alert" className="rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm font-medium text-[var(--color-academy-danger)]">
                     {failMessage || "결제가 완료되지 않았어요. 다시 시도해 주세요."} 돈은 빠져나가지 않았어요.
                 </p>
             )}
-            {claimDone && <p role="status" className="rounded-xl bg-[var(--color-academy-success-soft)] p-3 text-sm font-bold text-[var(--color-academy-success)]">{claimDone}</p>}
-            {error && <p role="alert" className="rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm font-bold text-[var(--color-academy-danger)]">{error}</p>}
+            {claimDone && <p role="status" className="rounded-xl bg-[var(--color-academy-success-soft)] p-3 text-sm font-medium text-[var(--color-academy-success)]">{claimDone}</p>}
+            {error && <p role="alert" className="rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm font-medium text-[var(--color-academy-danger)]">{error}</p>}
 
             {loadFailed ? (
                 <p className="academy-panel p-4 text-sm text-[var(--color-academy-muted)]">청구 목록을 불러오지 못했어요. 잠시 후 다시 열어 주세요.</p>
@@ -291,8 +291,8 @@ export default function BundleCheckoutClient({
                 <>
                     {/* 미납 청구 목록 — 한 줄 행(체크·자녀·항목·금액). 줄 전체를 눌러 체크한다(터치 44px) */}
                     <section aria-labelledby="bundle-list-heading" className="academy-panel overflow-hidden">
-                        <h2 id="bundle-list-heading" className="flex items-center justify-between border-b border-[var(--color-academy-line)] px-3 py-2 text-sm font-bold text-[var(--color-academy-ink)]">
-                            <span>미납 청구 <span className="tabular-nums text-[var(--color-academy-muted)]">{items.length}</span></span>
+                        <h2 id="bundle-list-heading" className="academy-section-title flex items-center justify-between border-b border-[var(--color-academy-line)] px-3 py-2">
+                            <span>미납 청구 <span className="text-sm font-normal tabular-nums text-[var(--color-academy-muted)]">{items.length}</span></span>
                             {selectableCount > 1 && (
                                 <button
                                     type="button"
@@ -302,7 +302,7 @@ export default function BundleCheckoutClient({
                                         setConflict(null);
                                         setAccount(null);
                                     }}
-                                    className="academy-button-text min-h-11 text-xs"
+                                    className="academy-button-text"
                                 >
                                     {picked.length === selectableCount ? "모두 해제" : "모두 선택"}
                                 </button>
@@ -323,18 +323,18 @@ export default function BundleCheckoutClient({
                                                 aria-describedby={item.blockReason ? `block-${item.paymentId}` : undefined}
                                             />
                                             <span className="min-w-0 flex-1">
-                                                <span className="block break-keep text-sm font-bold text-[var(--color-academy-ink)]">
-                                                    <span className="mr-1 font-bold text-[var(--color-academy-ink)]">{item.studentName}</span>
+                                                <span className="block break-keep text-sm text-[var(--color-academy-ink)]">
+                                                    <span className="mr-1 font-semibold text-[var(--color-academy-ink)]">{item.studentName}</span>
                                                     {item.title}
                                                 </span>
                                                 {item.blockReason && (
                                                     <span id={`block-${item.paymentId}`} className="block text-xs text-[var(--color-academy-muted)]">{item.blockReason}</span>
                                                 )}
                                                 {item.pendingDeposit && (
-                                                    <span className="block text-xs font-bold text-[var(--color-academy-warning)]">입금 대기 계좌가 있어요</span>
+                                                    <span className="block text-xs text-[var(--color-academy-warning)]">입금 대기 계좌가 있어요</span>
                                                 )}
                                             </span>
-                                            <span className="shrink-0 text-sm font-bold tabular-nums text-[var(--color-academy-ink)]">{won(item.amount)}</span>
+                                            <span className="shrink-0 text-right text-sm tabular-nums text-[var(--color-academy-ink)]">{won(item.amount)}</span>
                                         </label>
                                     </li>
                                 );
@@ -362,7 +362,7 @@ export default function BundleCheckoutClient({
                                         setConflict([{ ...account, paymentIds: picked.map((item) => item.paymentId) }]);
                                         setAccount(null);
                                     }}
-                                    className="academy-button-secondary min-h-11 w-full text-sm"
+                                    className="academy-button-secondary w-full"
                                 >
                                     다른 방법으로 결제(계좌가 닫혀요)
                                 </button>
@@ -371,12 +371,12 @@ export default function BundleCheckoutClient({
                     ) : (
                         <section aria-label="결제" className="academy-panel space-y-3 p-3">
                             {/* 합계 한 줄 — 이 화면의 주인공 숫자 */}
-                            <p className="flex items-baseline justify-between gap-2 text-sm font-bold text-[var(--color-academy-ink)]">
+                            <p className="flex items-baseline justify-between gap-2 text-sm font-medium text-[var(--color-academy-ink)]">
                                 <span>선택 <span className="tabular-nums">{picked.length}</span>건</span>
-                                <span className="text-lg font-black tabular-nums">{won(total)}</span>
+                                <span className="text-lg font-bold tabular-nums">{won(total)}</span>
                             </p>
                             {overLimit && (
-                                <p role="alert" className="rounded-lg bg-[var(--color-academy-warning-soft)] p-2 text-xs font-bold text-[var(--color-academy-ink)]">
+                                <p role="alert" className="rounded-lg bg-[var(--color-academy-warning-soft)] p-2 text-xs font-medium text-[var(--color-academy-ink)]">
                                     한 번에 {maxItems}건·{won(maxTotal)}까지 결제할 수 있어요. 나눠서 결제해 주세요.
                                 </p>
                             )}
@@ -386,7 +386,7 @@ export default function BundleCheckoutClient({
                                     {conflict ? (
                                         // 위험 확인: 계좌를 닫으면 그 계좌로는 입금할 수 없다 — 무엇이 일어나는지 먼저 알린다
                                         <div role="alertdialog" aria-labelledby="bundle-conflict-title" className="rounded-lg border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-3 text-sm text-[var(--color-academy-ink)]">
-                                            <p id="bundle-conflict-title" className="font-extrabold">입금 대기 중인 계좌가 있는 청구가 들어 있어요</p>
+                                            <p id="bundle-conflict-title" className="font-semibold">입금 대기 중인 계좌가 있는 청구가 들어 있어요</p>
                                             {conflict.length === 0 && conflictMessage && <p className="mt-1 text-xs">{conflictMessage}</p>}
                                             {conflict.map((va) => (
                                                 <p key={va.accountNumber} className="mt-1 break-all text-xs tabular-nums">
@@ -395,17 +395,17 @@ export default function BundleCheckoutClient({
                                             ))}
                                             <p className="mt-1 text-xs">계좌를 닫고 새로 결제할까요? <b>이미 입금했다면 닫지 말고</b> 잠시 기다려 주세요.</p>
                                             <div className="mt-2 grid grid-cols-2 gap-2">
-                                                <button type="button" disabled={loading} onClick={() => setConflict(null)} className="academy-button-secondary min-h-11 text-sm">
+                                                <button type="button" disabled={loading} onClick={() => setConflict(null)} className="academy-button-secondary">
                                                     그대로 두기
                                                 </button>
-                                                <button type="button" disabled={loading} onClick={() => void startPayment(true)} className="academy-button-danger-solid min-h-11 text-sm">
+                                                <button type="button" disabled={loading} onClick={() => void startPayment(true)} className="academy-button-danger-solid">
                                                     {loading ? "계좌 닫는 중..." : "계좌 닫고 결제"}
                                                 </button>
                                             </div>
                                         </div>
                                     ) : (
                                         <>
-                                            {picked.length === 0 && <p className="text-xs font-bold text-[var(--color-academy-muted)]">결제할 청구를 선택해 주세요</p>}
+                                            {picked.length === 0 && <p className="text-xs text-[var(--color-academy-muted)]">결제할 청구를 선택해 주세요</p>}
                                             {/* 결제 방법 — 지난번 방법 큰 버튼 + 바로가기 버튼 줄(누르면 바로 결제창) */}
                                             <PaymentMethodPicker
                                                 preferred={preferredMethod}
@@ -431,9 +431,8 @@ export default function BundleCheckoutClient({
                                 {bankAccount && (
                                     // 계좌 글과 복사 버튼을 한 줄에 — 버튼은 «복사»로 짧게, 계좌 글은 남은 폭에서 단어 단위로 접힌다
                                     <div className="mb-2 flex flex-wrap items-center gap-2 text-sm">
-                                        <span className="min-w-0 flex-1 break-keep font-bold tabular-nums text-[var(--color-academy-ink)]">{bankAccount}</span>
-                                        <button type="button" onClick={copyBankAccount} aria-label="계좌번호 복사" className="academy-button-secondary min-h-11 shrink-0 whitespace-nowrap px-3 text-xs">
-                                            <span className="material-symbols-outlined text-base leading-none" aria-hidden="true">content_copy</span>
+                                        <span className="min-w-0 flex-1 break-keep font-semibold tabular-nums text-[var(--color-academy-ink)]">{bankAccount}</span>
+                                        <button type="button" onClick={copyBankAccount} aria-label="계좌번호 복사" className="academy-button-secondary shrink-0 whitespace-nowrap">
                                             {copied === "ok" ? "복사됨" : "복사"}
                                         </button>
                                         {copied === "fail" && <span role="status" className="w-full text-xs text-[var(--color-academy-muted)]">복사가 안 됐어요. 계좌번호를 길게 눌러 복사해 주세요.</span>}
@@ -444,26 +443,26 @@ export default function BundleCheckoutClient({
                                         type="button"
                                         disabled={picked.length === 0 || overLimit}
                                         onClick={() => setClaimOpen(true)}
-                                        className={`${onlineReady ? "academy-button-secondary" : "academy-button-primary"} min-h-11 w-full text-sm`}
+                                        className={`${onlineReady ? "academy-button-secondary" : "academy-button-primary"} w-full`}
                                     >
                                         이미 계좌로 입금했어요 ({picked.length}건)
                                     </button>
                                 ) : (
                                     <div className="space-y-2">
                                         <div className="grid grid-cols-2 gap-2">
-                                            <label className="text-xs font-bold text-[var(--color-academy-muted)]">
+                                            <label className="text-xs font-medium text-[var(--color-academy-muted)]">
                                                 입금한 날짜
-                                                <input type="date" value={paidOn} max={todayKst()} onChange={(event) => setPaidOn(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--color-academy-line)] px-2 text-sm text-[var(--color-academy-ink)]" />
+                                                <input type="date" value={paidOn} max={todayKst()} onChange={(event) => setPaidOn(event.target.value)} className="academy-input mt-1" />
                                             </label>
-                                            <label className="text-xs font-bold text-[var(--color-academy-muted)]">
+                                            <label className="text-xs font-medium text-[var(--color-academy-muted)]">
                                                 입금자명 (선택)
-                                                <input value={depositorName} maxLength={60} onChange={(event) => setDepositorName(event.target.value)} placeholder="자녀 이름과 다르면" className="mt-1 min-h-11 w-full rounded-lg border border-[var(--color-academy-line)] px-2 text-sm text-[var(--color-academy-ink)]" />
+                                                <input value={depositorName} maxLength={60} onChange={(event) => setDepositorName(event.target.value)} placeholder="자녀 이름과 다르면" className="academy-input mt-1" />
                                             </label>
                                         </div>
                                         <p className="text-xs text-[var(--color-academy-muted)]">{picked.length}건 · {won(total)} 입금을 학원에 알려요.</p>
                                         <div className="grid grid-cols-2 gap-2">
-                                            <button type="button" disabled={loading} onClick={() => setClaimOpen(false)} className="academy-button-secondary min-h-11 text-sm">닫기</button>
-                                            <button type="button" disabled={loading || !paidOn || picked.length === 0 || overLimit} onClick={() => void submitClaim()} className="academy-button-primary min-h-11 text-sm">
+                                            <button type="button" disabled={loading} onClick={() => setClaimOpen(false)} className="academy-button-secondary">닫기</button>
+                                            <button type="button" disabled={loading || !paidOn || picked.length === 0 || overLimit} onClick={() => void submitClaim()} className="academy-button-primary">
                                                 {loading ? "보내는 중..." : "확인 요청 보내기"}
                                             </button>
                                         </div>

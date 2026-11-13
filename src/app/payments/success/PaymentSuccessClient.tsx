@@ -116,7 +116,7 @@ export default function PaymentSuccessClient({ guestToken = null }: { guestToken
     return (
         <div className="mx-auto max-w-lg rounded-2xl border border-[var(--color-academy-line)] bg-white p-8 text-center shadow-sm">
             <div
-                className={`mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full text-sm font-extrabold ${
+                className={`mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full text-sm font-semibold ${
                     state === "loading"
                         ? "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"
                         : isSuccess
@@ -128,7 +128,7 @@ export default function PaymentSuccessClient({ guestToken = null }: { guestToken
             >
                 {state === "loading" ? "확인" : isDeposit ? "입금" : isSuccess ? "완료" : isPending ? "대기" : "오류"}
             </div>
-            <h1 className="text-xl font-extrabold">{message}</h1>
+            <h1 className="text-xl font-bold">{message}</h1>
             {isDeposit && result.virtualAccount && (
                 <div className="mt-4 text-left">
                     <VirtualAccountNotice account={result.virtualAccount} />
@@ -152,21 +152,21 @@ export default function PaymentSuccessClient({ guestToken = null }: { guestToken
                     <button
                         type="button"
                         onClick={retryConfirm}
-                        className="inline-flex rounded-xl border border-[var(--color-academy-line)] px-5 py-3 text-sm font-bold text-[var(--color-academy-muted)]"
+                        className="academy-button-secondary"
                     >
                         다시 확인
                     </button>
                 )}
                 <Link
                     href={invoiceHref}
-                    className="inline-flex rounded-xl bg-[var(--color-academy-primary)] px-5 py-3 text-sm font-bold text-white"
+                    className="academy-button-primary"
                 >
                     {guestHref || invoiceId ? "청구서 확인" : "마이페이지로 이동"}
                 </Link>
                 {invoiceId && !guestHref && (
                     <Link
                         href="/mypage"
-                        className="inline-flex rounded-xl border border-[var(--color-academy-line)] px-5 py-3 text-sm font-bold text-[var(--color-academy-muted)]"
+                        className="academy-button-secondary"
                     >
                         마이페이지
                     </Link>

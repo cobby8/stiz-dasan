@@ -40,8 +40,9 @@ test("공지: 행 클릭 = 상세 패널, 행 키보드 가드, 관리 칸 전�
   // 패널에서도 수정·삭제·소셜 발행 가능
   assert.match(notices, /setDetailNoticeId\(null\); startEdit\(d\);/);
   assert.match(notices, /onClick=\{\(\) => handleDelete\(d\.id\)\}/);
-  // 관리 버튼 터치 44px
-  assert.match(listTable(notices), /min-h-11 min-w-11/);
+  // 관리 버튼 터치 44px — 2026-11-13 UI 통일: 아이콘 버튼(min-h-11 min-w-11) → 글자 버튼(academy-button-sm: PC 36px · 터치 화면 44px)
+  assert.match(listTable(notices), /academy-button-tonal academy-button-sm/);
+  assert.match(listTable(notices), /academy-button-danger academy-button-sm/);
 });
 
 // ── FAQ ──
@@ -120,7 +121,8 @@ test("프로그램: 드래그 순서 변경은 같은 li·같은 처리기로 �
 test("프로그램: 한 줄 행(머리줄과 같은 칸 폭), 수강료 오른쪽·tabular, 행 클릭 패널·키보드 가드·관리 칸 전파 차단", () => {
   assert.match(programs, /const PROGRAM_ROW_GRID =/);
   assert.match(programs, /\$\{PROGRAM_ROW_GRID\} items-center bg-\[var\(--color-academy-soft\)\]/);
-  assert.match(programs, /text-right font-bold tabular-nums[^"]*">\{priceShortLabel\(program\)\}/);
+  // 2026-11-13 UI 통일: 금액 강조는 600(font-semibold) — 오른쪽 정렬·tabular 는 그대로 지킨다
+  assert.match(programs, /text-right font-semibold tabular-nums[^"]*">\{priceShortLabel\(program\)\}/);
   assert.match(programs, /<ListDetailPanel onClose=\{\(\) => setDetailProgramId\(null\)\} titleId="program-detail-panel-title"/);
   assert.match(programs, /function handleRowKeyDown[\s\S]*?if \(event\.target !== event\.currentTarget\) return;/);
   assert.match(programs, /onClick=\{\(event\) => event\.stopPropagation\(\)\}/);
@@ -159,8 +161,9 @@ test("갤러리: 사진 카드 제목은 말줄임 없이, 작성일은 KST 달�
   assert.doesNotMatch(gallery, /truncate text-sm font-bold/);
   assert.match(gallery, /\{toKstYmd\(post\.createdAt\)\}/);
   assert.doesNotMatch(gallery, /toLocaleDateString/);
-  assert.match(gallery, /onClick=\{\(\) => startEdit\(post\)\}\s*className="flex min-h-11/);
-  assert.match(gallery, /onClick=\{\(\) => handleDelete\(post\.id\)\}\s*className="flex min-h-11/);
+  // 2026-11-13 UI 통일: 직접 그린 버튼(flex min-h-11) → 테마 작은 버튼(터치 화면 44px). 함수는 그대로
+  assert.match(gallery, /onClick=\{\(\) => startEdit\(post\)\}\s*className="academy-button-tonal academy-button-sm"/);
+  assert.match(gallery, /onClick=\{\(\) => handleDelete\(post\.id\)\}\s*className="academy-button-danger academy-button-sm ml-auto"/);
   assert.match(gallery, /xl:grid-cols-4/);
 });
 

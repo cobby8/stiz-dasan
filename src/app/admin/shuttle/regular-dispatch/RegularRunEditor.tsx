@@ -369,7 +369,7 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
         })()}
         {recommendation && (
           <button type="button" disabled={savingOrder} onClick={() => setTimeOverride((values) => ({ ...values, [row.key]: recommendation }))}
-            className="min-h-11 px-1 text-xs font-bold text-[var(--color-academy-primary)] underline">
+            className="min-h-11 px-1 text-xs font-medium text-[var(--color-academy-primary)] underline">
             추천 {recommendation} 적용
           </button>
         )}
@@ -377,15 +377,16 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
         {rowEditing && row.kind === "REGULAR" && row.riders.length > 0 && (
           <button type="button" disabled={savingOrder} onClick={() => openDialog({ kind: "stop", rowIds: row.riders.map((x) => x.checkId) })}
             aria-label={`${row.label} 정류장 수정`} title="정류장 수정(이름·위치·시각)"
-            className="inline-flex min-h-11 items-center gap-0.5 whitespace-nowrap rounded-lg px-1 text-[13px] font-bold text-[var(--color-academy-primary)] underline underline-offset-2">
-            <span aria-hidden="true" className="material-symbols-outlined text-[16px]">edit_location_alt</span>정류장
+            className="inline-flex min-h-11 items-center gap-0.5 whitespace-nowrap rounded-lg px-1 text-sm font-medium text-[var(--color-academy-primary)] underline underline-offset-2">
+            정류장
           </button>
         )}
       </>
     );
   }
 
-  // 학생 한 줄(관리자) — 보기 모드는 이름만(기사님 화면처럼). 편집 모드는 칩: 이름(누르면 셔틀 정보 창) · ×(명단에서 빼기).
+  // 학생 한 줄(관리자) — 보기 모드는 이름만(기사님 화면처럼). 편집 모드는 칩: 이름(누르면 셔틀 정보 창) · «빼기»(명단에서 빼기).
+  // 2026-11-13 UI 통일: × 아이콘만 있던 빼기 버튼을 글자 «빼기»로(아이콘만 있는 버튼 금지).
   // 반 이동 표시는 배정 할 일이라 두 모드 모두 누를 수 있다.
   // 색: «반 이동» 버튼은 주의 할 일로 이동하는 버튼 — 주황 채움 대신 옅은 주의 바탕 + 진한 주의 글자 + 테두리(2026-11-09)
   function renderRider(row: UnifiedRow, rider: UnifiedRider) {
@@ -396,16 +397,16 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
       return (
         <span key={`${row.key}:${rider.checkId}`} className="inline-flex items-center rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
           <button type="button" disabled={savingOrder} onClick={() => openDialog({ kind: "student", rowId: rider.checkId })} aria-label={`${rider.name} 셔틀 정보 수정`}
-            className="min-h-11 pl-2 pr-0.5 text-left text-[15px] font-black text-[var(--color-academy-ink)] underline decoration-dotted underline-offset-4">{rider.name}</button>
+            className="min-h-11 pl-2 pr-0.5 text-left text-sm font-medium text-[var(--color-academy-ink)] underline decoration-dotted underline-offset-4">{rider.name}</button>
           {links.map((l) => (
             <button key={l.legKey} type="button" disabled={savingOrder} onClick={() => openReassign(l)} aria-label={`${rider.name} ${l.label} 재배정`} title="반 이동 · 재배정"
-              className="inline-flex min-h-11 items-center gap-0.5 rounded-md border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] px-1.5 text-[12px] font-black text-[var(--color-academy-warning)]">
-              <span aria-hidden="true" className="material-symbols-outlined text-[15px] leading-none">swap_horiz</span>반 이동
+              className="inline-flex min-h-11 items-center gap-0.5 rounded-md border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] px-1.5 text-xs font-medium text-[var(--color-academy-warning)]">
+              반 이동
             </button>
           ))}
           <button type="button" disabled={savingOrder} onClick={() => openDialog({ kind: "remove", rowId: rider.checkId })} aria-label={`${rider.name} 명단에서 빼기`}
-            className="grid h-11 w-11 place-items-center text-[var(--color-academy-danger)] lg:w-8">
-            <span aria-hidden="true" className="material-symbols-outlined text-[20px]">close</span>
+            className="inline-flex min-h-11 items-center whitespace-nowrap px-2 text-xs font-medium text-[var(--color-academy-danger)]">
+            빼기
           </button>
         </span>
       );
@@ -415,12 +416,12 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
         <div className={styles.riderMain}>
           <div className={styles.riderInfo}>
             <div className={styles.identity}>
-              <span className="break-all text-[19px] font-black text-[var(--color-academy-ink)]">{rider.name}</span>
-              {rider.grade && <span className="text-[14px] text-[var(--color-academy-muted)]">{rider.grade}</span>}
+              <span className="break-all text-lg font-semibold text-[var(--color-academy-ink)]">{rider.name}</span>
+              {rider.grade && <span className="text-sm text-[var(--color-academy-muted)]">{rider.grade}</span>}
               {links.map((l) => (
                 <button key={l.legKey} type="button" disabled={savingOrder} onClick={() => openReassign(l)} aria-label={`${rider.name} ${l.label} 재배정`}
-                  className="inline-flex min-h-11 items-center gap-0.5 rounded-md border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] px-2 text-[13px] font-black text-[var(--color-academy-warning)]">
-                  <span aria-hidden="true" className="material-symbols-outlined text-[16px] leading-none">swap_horiz</span>반 이동 · 재배정
+                  className="inline-flex min-h-11 items-center gap-0.5 rounded-md border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] px-2 text-sm font-medium text-[var(--color-academy-warning)]">
+                  반 이동 · 재배정
                 </button>
               ))}
             </div>
@@ -430,12 +431,12 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
     );
   }
 
-  // 편집 중인 묶음 머리 줄 오른쪽 — [취소][저장] 작게(누르는 높이는 44px 유지).
+  // 편집 중인 묶음 머리 줄 오른쪽 — [취소][저장] 작게(테마 academy-button-sm: PC 36px · 터치 화면 44px).
   function renderEditActions() {
     return (
       <>
-        <button type="button" onClick={() => { if (confirmLeave()) cancelEditing(); }} disabled={savingOrder} className="min-h-11 rounded-lg border border-[var(--color-academy-line-input)] bg-white px-3 text-[13px] font-bold text-[var(--color-academy-muted)]">취소</button>
-        <button type="button" onClick={() => void saveOrder()} disabled={savingOrder} className="min-h-11 rounded-lg bg-[var(--color-academy-ink)] px-3 text-[13px] font-black text-[var(--color-academy-surface)]">{savingOrder ? "저장 중…" : "저장"}</button>
+        <button type="button" onClick={() => { if (confirmLeave()) cancelEditing(); }} disabled={savingOrder} className="academy-button-secondary academy-button-sm">취소</button>
+        <button type="button" onClick={() => void saveOrder()} disabled={savingOrder} className="academy-button-primary academy-button-sm">{savingOrder ? "저장 중…" : "저장"}</button>
       </>
     );
   }
@@ -443,24 +444,24 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
   function renderEditBar() {
     return (
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-[var(--color-academy-line)] px-2 py-1">
-        <p className="mr-auto text-[12px] font-bold text-[var(--color-academy-muted)]">
-          {orderDirty && <span className="mr-1 text-[13px] font-black text-[var(--color-academy-warning)]">저장 안 됨 ·</span>}
+        <p className="mr-auto text-xs text-[var(--color-academy-muted)]">
+          {orderDirty && <span className="mr-1 text-sm font-semibold text-[var(--color-academy-warning)]">저장 안 됨 ·</span>}
           ⠿ 끌어서 순서 변경
         </p>
         {retimeNote && retimeNote.groupKey === editingGroup && (
           // 순서를 옮긴 뒤 시각 다시 계산 결과 — 학원 도착이 수업 시작보다 늦거나 계산을 못 했으면 경고색.
-          <p role="status" className={`basis-full text-[12px] font-bold ${retimeNote.warn ? "text-[var(--color-academy-warning)]" : "text-[var(--color-academy-muted)]"}`}>
+          <p role="status" className={`basis-full text-xs ${retimeNote.warn ? "text-[var(--color-academy-warning)]" : "text-[var(--color-academy-muted)]"}`}>
             {retimeNote.text}
           </p>
         )}
-        <label className="flex items-center gap-1 text-[13px] font-bold text-[var(--color-academy-muted)]">
+        <label className="flex items-center gap-1 text-sm font-medium text-[var(--color-academy-muted)]">
           적용
           <select value={orderScope} onChange={(e) => setOrderScope(e.target.value as RosterScope)} aria-label="순서·시각 적용 범위"
-            className="min-h-11 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-2 text-[13px] font-bold text-[var(--color-academy-ink)]">
+            className="min-h-11 rounded-lg border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-2 text-sm text-[var(--color-academy-ink)]">
             <option value="FROM_THIS_MONTH">{monthLabel}부터 계속</option>
             <option value="THIS_MONTH">{monthLabel}만</option>
           </select>
-          <span className="text-[12px]">{scopeHint}</span>
+          <span className="text-xs font-normal">{scopeHint}</span>
         </label>
       </div>
     );
@@ -470,22 +471,22 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
     <div className="mx-auto max-w-6xl px-4 py-3">
       {/* 한 줄 머리: 제목 · 월 · 기사님 위치·요청(컴팩트 — 히어로 없음) */}
       <div className="flex flex-wrap items-center gap-2">
-        <h3 className="mr-auto text-base font-black text-[var(--color-academy-ink)]">정규 셔틀 운행표</h3>
+        <h3 className="academy-section-title mr-auto">정규 셔틀 운행표</h3>
         <select value={serviceMonth} aria-label="운행 월" onChange={(e) => { if (!confirmLeave()) return; cancelEditing(); router.push(`/admin/shuttle/regular-dispatch?month=${encodeURIComponent(e.target.value)}`); }}
-          className="min-h-11 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-sm font-bold">
+          className="min-h-11 rounded-lg border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 text-sm">
           {months.map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
         <button type="button" onClick={() => {
           if (confirmLeave()) router.push(`/admin/shuttle/regular?${new URLSearchParams({ month: serviceMonth, weekday: String(weekday), add: "1" })}`);
-        }} className="inline-flex min-h-11 items-center gap-1 rounded-lg bg-[var(--color-academy-primary-hover)] px-3 text-sm font-bold text-white">
-          <span aria-hidden="true" className="material-symbols-outlined text-lg">person_add</span>학생 추가
+        }} className="academy-button-primary">
+          학생 추가
         </button>
-        <button type="button" onClick={() => setShowLocations(true)} className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-sm font-bold">
-          <span aria-hidden="true" className="material-symbols-outlined text-lg">map</span>실시간 위치
+        <button type="button" onClick={() => setShowLocations(true)} className="academy-button-secondary">
+          실시간 위치
         </button>
-        <button type="button" onClick={() => setShowRequests(true)} className="relative inline-flex min-h-11 items-center gap-1 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-sm font-bold">
-          <span aria-hidden="true" className="material-symbols-outlined text-lg">inbox</span>기사 요청
-          {pendingRequests > 0 && <span className="absolute -right-1.5 -top-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-[var(--color-academy-danger)] px-1 text-xs font-black text-[var(--color-academy-on-primary)]">{pendingRequests}</span>}
+        <button type="button" onClick={() => setShowRequests(true)} className="academy-button-secondary relative">
+          기사 요청
+          {pendingRequests > 0 && <span className="absolute -right-1.5 -top-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-[var(--color-academy-danger)] px-1 text-xs font-semibold tabular-nums text-[var(--color-academy-on-primary)]">{pendingRequests}</span>}
         </button>
         {/* 편집은 묶음 머리마다 작은 연필로 들어간다(2026-11-10) — 화면 위 [수정] 버튼은 없앴다. */}
       </div>
@@ -493,13 +494,14 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
       {showRequests && <DriverRequestPanel onClose={() => { setShowRequests(false); loadPendingRequests(); }} />}
 
       {/* 요일 탭(학생 수) */}
-      <div role="tablist" aria-label="요일" className="mt-2 flex flex-wrap gap-1 rounded-xl bg-[var(--color-academy-soft)] p-1">
+      <div role="tablist" aria-label="요일" className="mt-2 flex flex-wrap gap-1">
         {dayCounts.map((d) => (
           <button key={d.weekday} type="button" role="tab" aria-selected={weekday === d.weekday}
             // 요일을 바꾸면 묶음 편집을 끝낸다(요일마다 묶음이 다르다) — 손댄 순서·시각이 있으면 먼저 확인.
             onClick={() => { if (d.weekday !== weekday && confirmLeave()) { cancelEditing(); setWeekday(d.weekday); } }}
-            className={`min-h-11 rounded-lg px-3 text-sm font-black ${weekday === d.weekday ? "bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)] shadow" : "text-[var(--color-academy-muted)]"}`}>
-            {WEEKDAY_LABELS[d.weekday]} <span className="text-xs font-bold">{d.count}</span>
+            // 요일 탭 = «지금 보는 것» — 보조 색, ✓ 없음(테마 academy-choice is-tab)
+            className={`academy-choice is-tab${weekday === d.weekday ? " is-selected" : ""}`}>
+            {WEEKDAY_LABELS[d.weekday]} <span className="text-xs font-normal tabular-nums">{d.count}</span>
           </button>
         ))}
       </div>
@@ -509,7 +511,7 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
         onAssigned={() => { setMessage(null); router.refresh(); }} onBoard={setBoard} openRequest={openRequest} />
       {missingTimes.length > 0 && (
         <details className="mt-2 rounded-lg bg-[var(--color-academy-warning-soft)] p-3 text-sm">
-          <summary className="cursor-pointer font-bold text-[var(--color-academy-warning)]">배차 필요 · 시각 미입력 {missingTimes.length}건</summary>
+          <summary className="cursor-pointer font-medium text-[var(--color-academy-warning)]">배차 필요 · 시각 미입력 {missingTimes.length}건</summary>
           <ul className="mt-2 flex flex-wrap gap-2">
             {missingTimes.map((stop) => (
               <li key={stop.id}>
@@ -517,7 +519,7 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
                   if (!confirmLeave()) return;
                   router.push(`/admin/shuttle/regular-dispatch?${new URLSearchParams({ month: serviceMonth, studentId: stop.studentId ?? "", stopId: stop.id! })}`);
                 }}>
-                  <span className="font-bold">{stop.studentName}</span>
+                  <span className="font-semibold">{stop.studentName}</span>
                   <span>{WEEKDAY_LABELS[stop.weekday]}요일 {stop.direction === "BOARD" ? "등원" : "하원"}</span>
                   <span className="text-[var(--color-academy-muted)]">{stop.classTime ?? "수업시간 미입력"}</span>
                 </button>
@@ -528,12 +530,12 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
       )}
 
       {mismatches.length > 0 && (
-        <p className="mt-2 rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-xs font-bold text-[var(--color-academy-warning)]">
+        <p className="mt-2 rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-xs text-[var(--color-academy-warning)]">
           등원·하원 수업시간이 다른 학생 {mismatches.length}명 — {mismatches.map((m) => `${m.name}(등원 ${m.board}/하원 ${m.alight})`).join(", ")}. 학생 이름을 눌러 확인해 주세요.
         </p>
       )}
-      {message && <p role="status" className="mt-2 rounded-lg bg-[var(--color-academy-success-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-success)]">{message}</p>}
-      {error && <p role="alert" className="mt-2 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-danger)]">{error}</p>}
+      {message && <p role="status" className="mt-2 rounded-lg bg-[var(--color-academy-success-soft)] px-3 py-2 text-sm text-[var(--color-academy-success)]">{message}</p>}
+      {error && <p role="alert" className="mt-2 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm text-[var(--color-academy-danger)]">{error}</p>}
 
       {/* PC(≥1024px) = 왼쪽 운행표 · 오른쪽 고정 지도. 좁은 화면은 운행표만(지도 숨김). */}
       <div className="mt-2 lg:grid lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start lg:gap-4">
@@ -542,7 +544,7 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
         {stopRows.length > 0 && (
           <p className={`${styles.runSummary} mb-2`}>{WEEKDAY_LABELS[weekday]}요일 운행 순서 · {stopRows.length}곳 <span>학생 {riderCount}명</span></p>
         )}
-        {stopRows.length === 0 && <p className="rounded-2xl bg-[var(--color-academy-soft)] px-4 py-6 text-center text-[16px] font-bold text-[var(--color-academy-faint)]">{WEEKDAY_LABELS[weekday]}요일에는 운행이 없습니다.</p>}
+        {stopRows.length === 0 && <p className="rounded-2xl bg-[var(--color-academy-soft)] px-4 py-6 text-center text-base text-[var(--color-academy-faint)]">{WEEKDAY_LABELS[weekday]}요일에는 운행이 없습니다.</p>}
         <RunBoard
           rows={ordered}
           mode="admin"
@@ -570,20 +572,19 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
       {stopRows.length > 0 && (
         <aside aria-label="노선 지도" className="hidden lg:sticky lg:top-[4.5rem] lg:block">
           <div className="overflow-hidden rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
-            <p className="flex flex-wrap items-center gap-x-1.5 px-3 py-2 text-[14px] font-black text-[var(--color-academy-ink)]">
-              <span aria-hidden="true" className="material-symbols-outlined text-[18px] text-[var(--color-academy-muted)]">map</span>
+            <p className="flex flex-wrap items-center gap-x-1.5 px-3 py-2 text-sm font-semibold text-[var(--color-academy-ink)]">
               {mapRows[0] ? runBlockLabel(mapRows[0]) : "노선"}
-              <span className="text-[12px] font-bold text-[var(--color-academy-muted)]">정류장 {mapRows.length}곳</span>
+              <span className="text-xs font-normal text-[var(--color-academy-muted)]">정류장 {mapRows.length}곳</span>
             </p>
             {wide
               ? <RouteMapCanvas start={null} end={null} stops={mapStops} heightClass="h-[58vh]" />
               : <div className="h-[58vh] bg-[var(--color-academy-soft)]" />}
             {mapStops.length < mapRows.length && (
-              <p className="border-t border-[var(--color-academy-line)] px-3 py-2 text-[12px] font-bold text-[var(--color-academy-warning)]">
+              <p className="border-t border-[var(--color-academy-line)] px-3 py-2 text-xs text-[var(--color-academy-warning)]">
                 위치가 없는 정류장 {mapRows.length - mapStops.length}곳은 지도에 안 보여요 — «정류장 수정»에서 위치를 정해 주세요.
               </p>
             )}
-            <p className="border-t border-[var(--color-academy-line)] px-3 py-2 text-[12px] font-bold text-[var(--color-academy-muted)]">왼쪽 묶음 머리를 누르면 그 노선을 보여 줘요.</p>
+            <p className="border-t border-[var(--color-academy-line)] px-3 py-2 text-xs text-[var(--color-academy-muted)]">왼쪽 묶음 머리를 누르면 그 노선을 보여 줘요.</p>
           </div>
         </aside>
       )}

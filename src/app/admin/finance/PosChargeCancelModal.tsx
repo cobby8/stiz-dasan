@@ -170,8 +170,8 @@ export default function PosChargeCancelModal({
             <div className="w-full p-5">
                 <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                        <p className="text-xs font-bold text-[var(--color-academy-danger)]">결제 취소 · 토스 POS</p>
-                        <h2 id="pos-cancel-title" className={`mt-0.5 text-lg font-extrabold text-[var(--color-academy-ink)] ${isBundle ? "break-words" : "truncate"}`}>
+                        <p className="text-xs font-medium text-[var(--color-academy-danger)]">결제 취소 · 토스 POS</p>
+                        <h2 id="pos-cancel-title" className={`mt-0.5 text-lg font-bold text-[var(--color-academy-ink)] ${isBundle ? "break-words" : "truncate"}`}>
                             {heading}
                         </h2>
                         <p className="text-sm text-[var(--color-academy-muted)]">
@@ -192,7 +192,7 @@ export default function PosChargeCancelModal({
                     </p>
                 ) : state === "DONE" ? (
                     <div className="mt-4 rounded-lg border border-[var(--color-academy-line)] px-4 py-4" aria-live="polite">
-                        <p className="text-base font-extrabold text-[var(--color-academy-success)]">
+                        <p className="text-base font-semibold text-[var(--color-academy-success)]">
                             환불 처리됐습니다{isBundle && cancel ? ` · 청구 ${cancel.itemCount}건 모두` : ""}
                         </p>
                         <p className="mt-1 text-sm text-[var(--color-academy-muted)]">
@@ -203,8 +203,8 @@ export default function PosChargeCancelModal({
                     <div className="mt-4">
                         {/* 주인공 하나: 지금 상태 — POS 가 취소하고 토스가 확인해 주기를 기다린다 */}
                         <div className="rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] px-4 py-4 text-center" aria-live="polite">
-                            <p className="text-base font-extrabold text-[var(--color-academy-ink)]">POS 에서 결제 취소 중</p>
-                            <p className="mt-1 text-xl font-extrabold text-[var(--color-academy-ink)]">{won(cancel.amount)}</p>
+                            <p className="text-base font-semibold text-[var(--color-academy-ink)]">POS 에서 결제 취소 중</p>
+                            <p className="mt-1 text-xl font-semibold tabular-nums text-[var(--color-academy-ink)]">{won(cancel.amount)}</p>
                             <p className="mt-2 text-sm text-[var(--color-academy-muted)]">
                                 {cancel.reported
                                     ? "POS 에서 취소를 마쳤어요. 토스 확인이 오면 바로 환불로 바뀝니다."
@@ -226,13 +226,13 @@ export default function PosChargeCancelModal({
                     <div className="mt-4">
                         {state === "FAILED" ? (
                             <div className="rounded-lg border border-[var(--color-academy-danger)] px-4 py-3 text-sm">
-                                <p className="font-bold text-[var(--color-academy-danger)]">POS 에서 취소하지 못했습니다</p>
+                                <p className="font-semibold text-[var(--color-academy-danger)]">POS 에서 취소하지 못했습니다</p>
                                 {cancel.cancelReportMessage && <p className="mt-1 text-[var(--color-academy-ink)]">{cancel.cancelReportMessage}</p>}
                                 <p className="mt-1 text-[var(--color-academy-muted)]">POS 에서 직접 취소해 주세요. 취소하면 여기서도 자동으로 환불로 바뀝니다.</p>
                             </div>
                         ) : state === "PARTIAL" ? (
                             <div className="rounded-lg border border-[var(--color-academy-danger)] px-4 py-3 text-sm">
-                                <p className="font-bold text-[var(--color-academy-danger)]">일부 결제만 취소됐습니다</p>
+                                <p className="font-semibold text-[var(--color-academy-danger)]">일부 결제만 취소됐습니다</p>
                                 <p className="mt-1 text-[var(--color-academy-muted)]">
                                     나눠 낸 결제 중 일부만 취소돼 청구는 납부완료 그대로입니다. 남은 결제도 취소하면 환불로 바뀝니다.
                                 </p>
@@ -286,7 +286,7 @@ function CancelItemList({ cancel }: { cancel: AdminChargeCancelView }) {
                     <span className="shrink-0 tabular-nums">{won(it.amount)}</span>
                 </span>
             ))}
-            <span className="mt-1 flex justify-between gap-3 border-t border-[var(--color-academy-line)] pt-1 font-extrabold text-[var(--color-academy-ink)]">
+            <span className="mt-1 flex justify-between gap-3 border-t border-[var(--color-academy-line)] pt-1 font-semibold text-[var(--color-academy-ink)]">
                 <span>합계{cancel.itemCount > 1 ? ` · ${cancel.itemCount}건` : ""}</span>
                 <span className="shrink-0 tabular-nums">{won(cancel.amount)}</span>
             </span>

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import PublicSiteTheme from "@/components/PublicSiteTheme";
 
 export const dynamic = "force-dynamic";
 
@@ -12,17 +13,19 @@ export default async function ReviewPaymentFailPage({
     const message = typeof params.message === "string" && params.message ? params.message.slice(0, 200) : "결제가 취소되었습니다.";
 
     return (
-        <main className="min-h-screen bg-gray-50 px-4 py-12 text-gray-900 dark:bg-gray-950 dark:text-white">
-            <div className="mx-auto max-w-lg rounded-2xl border border-gray-200 bg-white p-8 text-center shadow-sm dark:border-gray-800 dark:bg-gray-900">
-                <h1 className="text-xl font-black">결제가 완료되지 않았습니다</h1>
-                <p className="mt-4 break-keep text-sm text-gray-600 dark:text-gray-300">{message}</p>
+        <PublicSiteTheme publicScope>
+        <main className="min-h-screen bg-[var(--color-public-tint)] px-4 py-12 text-[var(--color-public-ink)]">
+            <div className="mx-auto max-w-lg rounded-2xl border border-[var(--color-public-line)] bg-[var(--color-public-paper)] p-8 text-center shadow-sm">
+                <h1 className="text-xl font-bold">결제가 완료되지 않았습니다</h1>
+                <p className="mt-4 break-keep text-sm text-[var(--color-public-muted)]">{message}</p>
                 <Link
                     href="/programs"
-                    className="mt-6 inline-flex min-h-11 items-center justify-center rounded-lg bg-brand-orange-500 px-5 text-sm font-black text-white dark:bg-brand-neon-lime dark:text-brand-navy-900"
+                    className="public-btn-primary mt-6 text-sm"
                 >
                     프로그램 안내로 돌아가기
                 </Link>
             </div>
         </main>
+        </PublicSiteTheme>
     );
 }

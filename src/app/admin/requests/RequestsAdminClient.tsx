@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { updateRequestStatus, getParentRequestStatusForAdmin, deleteParentRequest } from "@/app/actions/admin";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 // 날짜·시각 표시는 KST 모듈로만(기기 시간대를 따라가지 않게)
 import { formatKstDate, kstLabel } from "@/lib/datetime/kst";
 
@@ -16,10 +17,10 @@ const TYPE_LABELS: Record<string, { label: string; color: string }> = {
 };
 
 const STATUS_OPTIONS = [
-    { value: "PENDING", label: "대기중", color: "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]", iconName: "schedule" },
-    { value: "CONFIRMED", label: "확인됨", color: "bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-ink)]", iconName: "check_circle" },
-    { value: "COMPLETED", label: "상담 종결", color: "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]", iconName: "check_circle" },
-    { value: "REJECTED", label: "반려", color: "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]", iconName: "cancel" },
+    { value: "PENDING", label: "대기중", color: "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]" },
+    { value: "CONFIRMED", label: "확인됨", color: "bg-[var(--color-academy-info-soft)] text-[var(--color-academy-info)]" },
+    { value: "COMPLETED", label: "상담 종결", color: "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]" },
+    { value: "REJECTED", label: "반려", color: "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]" },
 ];
 
 // 상태 칩 — 예전 필터 탭(대기중·확인됨·상담 종결)과 같은 filter 값. 반려도 서버가 받는 값이라 건수가 있으면 보인다
@@ -34,26 +35,6 @@ const STATUS_FILTER_CHIPS = [
 // 접수 시각 «14:05» (KST)
 function formatKstTime(value: Date | string) {
     return formatKstDate(value, { hour: "2-digit", minute: "2-digit", hour12: false }, "-");
-}
-
-function SymbolIcon({
-    name,
-    size = 18,
-    className = "",
-}: {
-    name: string;
-    size?: number;
-    className?: string;
-}) {
-    return (
-        <span
-            className={`material-symbols-outlined leading-none ${className}`}
-            style={{ fontSize: `${size}px` }}
-            aria-hidden="true"
-        >
-            {name}
-        </span>
-    );
 }
 
 type RequestData = {
@@ -148,7 +129,7 @@ function RequestsLoadingFallback() {
 function RequestsErrorState({ onRetry }: { onRetry: () => void }) {
     return (
         <div className="mx-auto max-w-4xl rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-danger-soft)] p-6 text-center">
-            <p className="text-sm font-bold text-[var(--color-academy-danger)]">요청 목록을 불러오지 못했습니다.</p>
+            <p className="text-sm font-medium text-[var(--color-academy-danger)]">요청 목록을 불러오지 못했습니다.</p>
             <button
                 type="button"
                 onClick={onRetry}
@@ -266,18 +247,15 @@ export default function RequestsAdminClient({
 
     return (
         <div className="max-w-4xl mx-auto space-y-3">
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                {/* 일반 메시지의 상담 상태를 실제 운영 반영과 구분한다. */}
-                <h1 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">학부모 요청 관리</h1>
-                <p className="text-xs text-[var(--color-academy-muted)]">상담 상태와 답변을 관리합니다. 상담 종결은 출결·셔틀 변경 완료를 의미하지 않습니다.</p>
-            </div>
+            {/* 일반 메시지의 상담 상태를 실제 운영 반영과 구분한다. */}
+            <AdminPageHeader title="학부모 요청 관리" description="상담 상태와 답변을 관리합니다. 상담 종결은 출결·셔틀 변경 완료를 의미하지 않습니다." />
             {/* 처리 결과 안내 — 패널이 열려 있으면 패널 안에 보인다(같은 글이 두 번 나오지 않게) */}
             {feedback && !detail && <p role="status" className="rounded-xl border border-[var(--color-academy-line)] p-3 text-sm text-[var(--color-academy-ink)]">{feedback}</p>}
             {loadError && requests.length > 0 && <p role="alert" className="text-sm text-[var(--color-academy-danger)]">목록을 새로 불러오지 못했습니다. 이전 내용을 표시합니다.</p>}
 
             {/* 상태 칩(예전 필터 탭) — 건수는 서버 counts 그대로, 누르면 그 상태, 다시 누르면 전체 */}
             <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <span className="text-xs font-bold text-[var(--color-academy-muted)]">전체 <span className="tabular-nums">{counts.ALL ?? 0}</span>건</span>
+                <span className="text-xs text-[var(--color-academy-muted)]">전체 <span className="tabular-nums">{counts.ALL ?? 0}</span>건</span>
                 <StatusCountChips
                     ariaLabel="요청 상태별 건수"
                     items={statusChipItems}
@@ -298,7 +276,7 @@ export default function RequestsAdminClient({
                         <div className="overflow-x-auto">
                             {/* 한 줄 행: 접수일 | 시각 | 종류 | 제목 | 학부모 | 원생 | 해당 날짜 | 상태. 내용·연락처·답변·처리는 상세 패널 */}
                             <table className="admin-list-table w-full border-collapse text-sm">
-                                <thead className="bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]">
+                                <thead className="bg-[var(--color-academy-soft)] text-xs font-semibold text-[var(--color-academy-muted)]">
                                     <tr>
                                         <th className="admin-cell-num px-2 py-2">접수일</th>
                                         <th className="admin-cell-num hidden px-2 py-2 sm:table-cell">시각</th>
@@ -324,18 +302,17 @@ export default function RequestsAdminClient({
                                                 className="cursor-pointer transition-colors hover:bg-[var(--color-academy-soft)] focus:bg-[var(--color-academy-primary-soft)] focus:outline-none"
                                             >
                                                 {/* 날짜·시각은 오른쪽 + 자릿수 폭 고정 */}
-                                                <td className="admin-cell-num px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{kstLabel(req.createdAt) || "-"}</td>
+                                                <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-ink)]">{kstLabel(req.createdAt) || "-"}</td>
                                                 <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] sm:table-cell">{formatKstTime(req.createdAt)}</td>
                                                 <td className="px-2 py-1.5">
-                                                    <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${typeInfo.color}`}>{typeInfo.label}</span>
+                                                    <span className={`rounded-full px-2 py-0.5 text-xs ${typeInfo.color}`}>{typeInfo.label}</span>
                                                 </td>
-                                                <td className="px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{req.title}</td>
+                                                <td className="px-2 py-1.5 font-medium text-[var(--color-academy-ink)]">{req.title}</td>
                                                 <td className="px-2 py-1.5 text-[var(--color-academy-ink)]">{req.parentName}</td>
                                                 <td className="hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{req.studentName}</td>
                                                 <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{req.date ? kstLabel(req.date) || "-" : "-"}</td>
                                                 <td className="px-2 py-1.5">
-                                                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold ${statusInfo.color}`}>
-                                                        <SymbolIcon name={statusInfo.iconName} size={14} />
+                                                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${statusInfo.color}`}>
                                                         {statusInfo.label}
                                                     </span>
                                                 </td>
@@ -356,7 +333,7 @@ export default function RequestsAdminClient({
                                     offset: pagination.nextOffset ?? requests.length,
                                     append: true,
                                 })}
-                                className="min-h-11 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-5 text-sm font-bold text-[var(--color-academy-ink)] transition hover:border-[var(--color-academy-primary)] disabled:opacity-60"
+                                className="academy-button-secondary"
                             >
                                 {loadingMore ? "불러오는 중..." : `더 보기 (${requests.length}/${pagination.total})`}
                             </button>
@@ -376,13 +353,12 @@ export default function RequestsAdminClient({
                         <div className="mb-3 flex items-start gap-2">
                             <div className="min-w-0">
                                 <div className="flex flex-wrap items-center gap-1.5">
-                                    <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${typeInfo.color}`}>{typeInfo.label}</span>
-                                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold ${statusInfo.color}`}>
-                                        <SymbolIcon name={statusInfo.iconName} size={14} />
+                                    <span className={`rounded-full px-2 py-0.5 text-xs ${typeInfo.color}`}>{typeInfo.label}</span>
+                                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${statusInfo.color}`}>
                                         {statusInfo.label}
                                     </span>
                                 </div>
-                                <h3 id="request-detail-panel-title" className="mt-1 break-keep break-words text-lg font-black text-[var(--color-academy-ink)]">{req.title}</h3>
+                                <h3 id="request-detail-panel-title" className="mt-1 break-keep break-words text-lg font-bold text-[var(--color-academy-ink)]">{req.title}</h3>
                             </div>
                             <button
                                 type="button"
@@ -399,20 +375,20 @@ export default function RequestsAdminClient({
                         <div className="space-y-4">
                             {/* 요청 정보 + 내용 */}
                             <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
-                                <dt className="font-bold text-[var(--color-academy-muted)]">학부모</dt>
+                                <dt className="font-medium text-[var(--color-academy-muted)]">학부모</dt>
                                 <dd className="min-w-0 break-keep break-words text-[var(--color-academy-ink)]">{req.parentName} ({req.studentName})</dd>
-                                <dt className="font-bold text-[var(--color-academy-muted)]">접수</dt>
+                                <dt className="font-medium text-[var(--color-academy-muted)]">접수</dt>
                                 <dd className="tabular-nums text-[var(--color-academy-ink)]">{kstLabel(req.createdAt) || "-"} {formatKstTime(req.createdAt)}</dd>
                                 {req.date && (
                                     <>
-                                        <dt className="font-bold text-[var(--color-academy-muted)]">해당 날짜</dt>
-                                        <dd className="tabular-nums font-bold text-[var(--color-academy-ink)]">{formatKstDate(req.date, { year: "numeric", month: "numeric", day: "numeric" }, "-")}</dd>
+                                        <dt className="font-medium text-[var(--color-academy-muted)]">해당 날짜</dt>
+                                        <dd className="tabular-nums text-[var(--color-academy-ink)]">{formatKstDate(req.date, { year: "numeric", month: "numeric", day: "numeric" }, "-")}</dd>
                                     </>
                                 )}
                                 {req.parentPhone && (
                                     <>
-                                        <dt className="font-bold text-[var(--color-academy-muted)]">연락처</dt>
-                                        <dd><a href={`tel:${req.parentPhone}`} className="inline-flex min-h-11 items-center font-bold tabular-nums text-[var(--color-academy-ink)]">{req.parentPhone}</a></dd>
+                                        <dt className="font-medium text-[var(--color-academy-muted)]">연락처</dt>
+                                        <dd><a href={`tel:${req.parentPhone}`} className="inline-flex min-h-11 items-center tabular-nums text-[var(--color-academy-ink)] underline">{req.parentPhone}</a></dd>
                                     </>
                                 )}
                             </dl>
@@ -427,11 +403,11 @@ export default function RequestsAdminClient({
                                     onChange={e => setAdminNotes(prev => ({ ...prev, [req.id]: e.target.value }))}
                                     placeholder="학부모에게 전달할 답변을 작성하세요"
                                     rows={3}
-                                    className="w-full rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2 text-sm text-[var(--color-academy-ink)] resize-none"
+                                    className="academy-input resize-none"
                                 />
                             </div>
 
-                            {uncertain[req.id] && <button type="button" disabled={isPending} className="min-h-11 text-sm font-bold underline" onClick={() => startTransition(async () => {
+                            {uncertain[req.id] && <button type="button" disabled={isPending} className="academy-button-text" onClick={() => startTransition(async () => {
                                 try {
                                     const stored = await getParentRequestStatusForAdmin(req.id);
                                     const expected = uncertain[req.id];
@@ -470,9 +446,9 @@ export default function RequestsAdminClient({
                                                     setFeedback("저장 응답을 확인하지 못했습니다. 입력한 답변은 유지됩니다. 먼저 상태를 다시 조회해 주세요.");
                                                 }
                                             })}
-                                            className={`flex min-h-11 items-center gap-1.5 px-3 rounded-xl text-xs font-bold border border-transparent transition hover:shadow-sm disabled:opacity-50 ${s.color}`}
+                                            className={s.value === "REJECTED" ? "academy-button-danger" : "academy-button-secondary"}
                                         >
-                                            <SymbolIcon name={s.iconName} size={14} /> {s.label}
+                                            {s.label}
                                         </button>
                                     );
                                 })}
@@ -487,7 +463,7 @@ export default function RequestsAdminClient({
                                             });
                                         }
                                     }}
-                                    className="ml-auto min-h-11 px-2 text-xs font-bold text-[var(--color-academy-danger)] transition hover:underline disabled:opacity-50"
+                                    className="academy-button-danger ml-auto"
                                 >
                                     삭제
                                 </button>

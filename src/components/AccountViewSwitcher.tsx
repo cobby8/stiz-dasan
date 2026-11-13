@@ -58,13 +58,13 @@ export default function AccountViewSwitcher({ views, variant = "menu", placement
 
   const options = (
     <nav aria-label="이용 화면 전환" className="space-y-1">
-      <p className="px-3 pb-1 text-xs font-bold text-[var(--color-academy-muted)]">화면 전환</p>
+      <p className="px-3 pb-1 text-xs font-medium text-[var(--color-academy-muted)]">화면 전환</p>
       {views.map(view => {
         const active = view.key === current?.key;
         const outsideApp = installed && scope !== null && !(view.href === scope || view.href.startsWith(`${scope}/`));
-        const className = "flex min-h-11 w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-sm font-bold text-[var(--color-academy-ink)]";
+        const className = "flex min-h-11 w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-sm font-medium text-[var(--color-academy-ink)]";
         return active ? (
-          <span key={view.key} aria-current="page" className={`${className} bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)]`}>
+          <span key={view.key} aria-current="page" className={`${className} bg-[var(--color-academy-secondary-soft)] font-semibold! text-[var(--color-academy-secondary-ink)]! ring-1 ring-inset ring-[var(--color-academy-secondary-strong)]`}>
             <span>{view.label}</span><span className="shrink-0 text-xs">현재 화면</span>
           </span>
         ) : (
@@ -72,22 +72,21 @@ export default function AccountViewSwitcher({ views, variant = "menu", placement
             onClick={event => { onNavigate?.(event, view); setOpen(false); }}>
             <span className="min-w-0">
               <span className="block">{view.label}</span>
-              {outsideApp && <span className="block text-xs font-medium text-[var(--color-academy-muted)]">앱 밖의 브라우저 화면으로 이동</span>}
+              {outsideApp && <span className="block text-xs font-normal text-[var(--color-academy-muted)]">앱 밖의 브라우저 화면으로 이동</span>}
             </span>
-            <span className="material-symbols-outlined shrink-0 text-lg" aria-hidden="true">arrow_forward</span>
           </Link>
         );
       })}
       {canManageFamily && <Link href={familyOption.href} prefetch={false}
-        className="flex min-h-11 flex-col justify-center border-t border-[var(--color-academy-line)] px-3 py-2 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"
+        className="flex min-h-11 flex-col justify-center border-t border-[var(--color-academy-line)] px-3 py-2 text-sm font-medium text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"
         onClick={event => { onNavigate?.(event, familyOption); setOpen(false); }}>
         <span>{familyOption.label}</span>
-        {installed && scope !== null && <span className="text-xs font-medium text-[var(--color-academy-muted)]">앱 밖의 브라우저 화면으로 이동</span>}
+        {installed && scope !== null && <span className="text-xs font-normal text-[var(--color-academy-muted)]">앱 밖의 브라우저 화면으로 이동</span>}
       </Link>}
       <Link href="/account" prefetch={false}
-        className="flex min-h-11 items-center justify-between border-t border-[var(--color-academy-line)] px-3 py-2 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"
+        className="flex min-h-11 items-center border-t border-[var(--color-academy-line)] px-3 py-2 text-sm font-medium text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"
         onClick={event=>{onNavigate?.(event,{key:"account",label:"내 계정",href:"/account"});setOpen(false);}}>
-        <span>내 계정</span><span className="material-symbols-outlined text-lg" aria-hidden="true">manage_accounts</span>
+        <span>내 계정</span>
       </Link>
     </nav>
   );
@@ -103,7 +102,7 @@ export default function AccountViewSwitcher({ views, variant = "menu", placement
         setPopupRight(rect.right - left - width);
         setOpen(value => !value);
       }}
-        className="inline-flex min-h-11 items-center justify-center gap-1 whitespace-nowrap rounded-xl px-2 text-xs font-bold text-[var(--color-academy-primary)] hover:bg-[var(--color-academy-primary-soft)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-academy-primary)]">
+        className="inline-flex min-h-11 items-center justify-center gap-1 whitespace-nowrap rounded-xl px-2 text-xs font-medium text-[var(--color-academy-secondary-ink)] hover:bg-[var(--color-academy-secondary-soft)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-academy-primary)]">
         <span>{current?.label || "화면 전환"}</span>
         <span className="material-symbols-outlined shrink-0 text-lg" aria-hidden="true">expand_more</span>
       </button>

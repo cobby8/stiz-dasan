@@ -32,10 +32,10 @@ export default async function FaqPage() {
       <section className="public-page-hero public-page-hero--compact relative overflow-hidden bg-gradient-to-br from-[var(--color-public-dark)] via-[var(--color-public-dark)] to-[var(--color-public-dark)] dark:from-black dark:via-gray-900 dark:to-black text-white py-16 md:py-20 transition-colors duration-300">
         <div className="max-w-6xl mx-auto px-6 md:px-4 relative">
           <AnimateOnScroll>
-            <h1 className="text-4xl md:text-5xl font-black mb-4 break-keep">
+            <h1 className="text-4xl md:text-5xl font-bold mb-4 break-keep">
               자주 묻는 질문
             </h1>
-            <p className="text-blue-200 text-lg max-w-xl">
+            <p className="text-[var(--color-public-dark-muted)] text-lg max-w-xl">
               체험수업, 수강료, 보강 등 궁금한 점을 빠르게 확인하세요.
             </p>
           </AnimateOnScroll>

@@ -34,8 +34,7 @@ export default async function InvitePage({
         return (
             <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-4">
                 <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-8 max-w-md w-full text-center">
-                    <span className="material-symbols-outlined text-[48px] text-red-400">error</span>
-                    <h1 className="text-xl font-bold text-gray-900 dark:text-white mt-4">유효하지 않은 초대</h1>
+                    <h1 className="text-xl font-bold text-gray-900 dark:text-white">유효하지 않은 초대</h1>
                     <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
                         존재하지 않는 초대 링크입니다. 원장에게 문의해주세요.
                     </p>
@@ -49,8 +48,7 @@ export default async function InvitePage({
         return (
             <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-4">
                 <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-8 max-w-md w-full text-center">
-                    <span className="material-symbols-outlined text-[48px] text-green-400">check_circle</span>
-                    <h1 className="text-xl font-bold text-gray-900 dark:text-white mt-4">{invitation.purpose === "PASSWORD_RESET" ? "이미 사용한 재설정 링크" : "이미 수락된 초대"}</h1>
+                    <h1 className="text-xl font-bold text-gray-900 dark:text-white">{invitation.purpose === "PASSWORD_RESET" ? "이미 사용한 재설정 링크" : "이미 수락된 초대"}</h1>
                     <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
                         {invitation.role === "INSTRUCTOR" || invitation.role === "DRIVER"
                             ? "이 초대는 이미 수락되었습니다. 스태프 앱을 설치하거나 열어주세요."
@@ -58,7 +56,7 @@ export default async function InvitePage({
                     </p>
                     <a
                         href={invitation.role === "INSTRUCTOR" || invitation.role === "DRIVER" ? "/staff/install" : "/login"}
-                        className="inline-block mt-4 px-6 py-2.5 bg-brand-navy-900 text-white rounded-lg text-sm font-medium hover:bg-brand-navy-800 transition-colors"
+                        className="academy-button-primary mt-4"
                     >
                         {invitation.role === "INSTRUCTOR" || invitation.role === "DRIVER" ? "스태프 앱 설치하기" : "로그인하기"}
                     </a>
@@ -72,8 +70,7 @@ export default async function InvitePage({
         return (
             <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-4">
                 <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-8 max-w-md w-full text-center">
-                    <span className="material-symbols-outlined text-[48px] text-gray-400">block</span>
-                    <h1 className="text-xl font-bold text-gray-900 dark:text-white mt-4">취소된 초대</h1>
+                    <h1 className="text-xl font-bold text-gray-900 dark:text-white">취소된 초대</h1>
                     <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
                         이 초대는 취소되었습니다. 원장에게 문의해주세요.
                     </p>
@@ -88,8 +85,7 @@ export default async function InvitePage({
         return (
             <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-4">
                 <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-8 max-w-md w-full text-center">
-                    <span className="material-symbols-outlined text-[48px] text-orange-400">schedule</span>
-                    <h1 className="text-xl font-bold text-gray-900 dark:text-white mt-4">만료된 초대</h1>
+                    <h1 className="text-xl font-bold text-gray-900 dark:text-white">만료된 초대</h1>
                     <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
                         초대 링크가 만료되었습니다. 원장에게 재발송을 요청해주세요.
                     </p>

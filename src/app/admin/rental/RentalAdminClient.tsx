@@ -13,6 +13,7 @@ import AdminConfirmDialog from "@/components/admin/AdminConfirmDialog";
 import AdminPanelActions from "@/components/admin/AdminPanelActions";
 import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
 import { kstLabel } from "@/lib/datetime/kst";
 import { statusBadgeClass } from "@/lib/ui/statusTones";
@@ -92,7 +93,7 @@ type SmsOn = Record<RentalApplicantKind, boolean>;
 
 function StatusBadge({ status }: { status: RentalStatus }) {
   return (
-    <span className={`inline-flex rounded px-1.5 py-0.5 text-xs font-bold ${STATUS_TONE[status] ?? ""}`}>
+    <span className={`inline-flex rounded px-1.5 py-0.5 text-xs ${STATUS_TONE[status] ?? ""}`}>
       {RENTAL_STATUS_LABEL[status] ?? status}
     </span>
   );
@@ -102,7 +103,7 @@ function StatusBadge({ status }: { status: RentalStatus }) {
 function MemberBadge({ row }: { row: AdminRentalRow }) {
   if (!row.memberFree) return null;
   return (
-    <span className="inline-flex rounded bg-[var(--color-academy-success-soft)] px-1.5 py-0.5 text-xs font-bold text-[var(--color-academy-success)]">
+    <span className="inline-flex rounded bg-[var(--color-academy-success-soft)] px-1.5 py-0.5 text-xs text-[var(--color-academy-success)]">
       재원생 무료{row.memberStudentName ? `(${row.memberStudentName})` : ""}
     </span>
   );
@@ -289,31 +290,28 @@ export default function RentalAdminClient({ rows, bankAccount, smsOn, embedded =
       editFeeError = (e as Error).message;
     }
   }
-  const editInput = "mt-1 block min-h-11 w-full rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 font-normal tabular-nums";
+  const editInput = "academy-input mt-1 block font-normal tabular-nums";
   const amountDiff = editFee && editRow ? editFee.total - editRow.totalAmount : 0;
 
   return (
     <div className="space-y-3">
       {!embedded && (
-      <div>
-        <h1 className="flex items-center gap-2 text-lg font-black text-[var(--color-academy-ink)]">
-          <span className="material-symbols-outlined text-[var(--color-academy-primary)]" aria-hidden="true">sports_basketball</span>
-          체육관 대관
-        </h1>
-        <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
+      <AdminPageHeader
+        title="체육관 대관"
+        description={<>
           홈페이지 «체육관 대관»에서 들어온 신청입니다. 승인 → 입금 확인(확정) → 사용 완료 → 보증금 환불 순서로 눌러 주세요.
           재원생 무료(입금 0원)는 승인하면 바로 확정되고, 보증금이 없어 사용 완료가 마지막입니다.
-        </p>
-      </div>
+        </>}
+      />
       )}
 
       {!embedded && <StatusCountChips items={chips} selected={statusFilter} onSelect={setStatusFilter} ariaLabel="대관 상태별 건수" />}
 
       {error && !confirming && (
-        <p role="alert" className="rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-academy-danger)]">{error}</p>
+        <p role="alert" className="rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm text-[var(--color-academy-danger)]">{error}</p>
       )}
       {notice && (
-        <p role="status" className="rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-academy-warning)]">{notice}</p>
+        <p role="status" className="rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm text-[var(--color-academy-warning)]">{notice}</p>
       )}
 
       {visible.length === 0 ? (
@@ -323,7 +321,7 @@ export default function RentalAdminClient({ rows, bankAccount, smsOn, embedded =
       ) : (
         <div className="overflow-x-auto rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
           <table className="admin-list-table w-full border-collapse text-sm">
-            <thead className="bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]">
+            <thead className="bg-[var(--color-academy-soft)] text-xs font-semibold text-[var(--color-academy-muted)]">
               <tr>
                 <th className="admin-cell-center px-2 py-2">상태</th>
                 <th className="admin-cell-num px-2 py-2">이용일</th>
@@ -348,15 +346,15 @@ export default function RentalAdminClient({ rows, bankAccount, smsOn, embedded =
                     className="cursor-pointer transition-colors hover:bg-[var(--color-academy-soft)] focus:bg-[var(--color-academy-primary-soft)] focus:outline-none"
                   >
                     <td className="admin-cell-center px-2 py-1.5"><StatusBadge status={row.status} /></td>
-                    <td className="admin-cell-num px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{kstLabel(row.rentalDate)}</td>
+                    <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-ink)]">{kstLabel(row.rentalDate)}</td>
                     <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-ink)]">{rentalTimeText(row)}</td>
-                    <td className="px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">
+                    <td className="px-2 py-1.5 font-medium text-[var(--color-academy-ink)]">
                       {/* 이름 옆에 배지를 붙여 한 줄 유지(컴팩트) */}
                       <span className="inline-flex flex-wrap items-center gap-1">
                         {row.applicantName}
                         <MemberBadge row={row} />
                         {smsFailed(row) && (
-                          <span className="inline-flex rounded-md bg-[var(--color-academy-danger-soft)] px-1.5 py-0.5 text-xs font-bold text-[var(--color-academy-danger)]">문자 실패</span>
+                          <span className="inline-flex rounded-md bg-[var(--color-academy-danger-soft)] px-1.5 py-0.5 text-xs font-normal text-[var(--color-academy-danger)]">문자 실패</span>
                         )}
                       </span>
                     </td>
@@ -387,7 +385,7 @@ export default function RentalAdminClient({ rows, bankAccount, smsOn, embedded =
       {detail && !confirming && !editing && (
         <ListDetailPanel onClose={() => setDetailId(null)} titleId="rental-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
           <div className="mb-4 flex items-center gap-2">
-            <h3 id="rental-detail-panel-title" className="min-w-0 break-keep text-lg font-black text-[var(--color-academy-ink)]">{detail.applicantName}</h3>
+            <h3 id="rental-detail-panel-title" className="min-w-0 break-keep text-lg font-bold text-[var(--color-academy-ink)]">{detail.applicantName}</h3>
             <StatusBadge status={detail.status} />
             <MemberBadge row={detail} />
             <button
@@ -400,38 +398,37 @@ export default function RentalAdminClient({ rows, bankAccount, smsOn, embedded =
             </button>
           </div>
           <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
-            <dt className="font-bold text-[var(--color-academy-muted)]">이용</dt>
+            <dt className="font-medium text-[var(--color-academy-muted)]">이용</dt>
             <dd className="text-[var(--color-academy-ink)]">{kstLabel(detail.rentalDate)} {rentalTimeText(detail)}</dd>
-            <dt className="font-bold text-[var(--color-academy-muted)]">연락처</dt>
+            <dt className="font-medium text-[var(--color-academy-muted)]">연락처</dt>
             <dd className="tabular-nums text-[var(--color-academy-ink)]">
               <a href={`tel:${detail.applicantPhone}`} className="underline">{formatRentalPhone(detail.applicantPhone)}</a>
             </dd>
-            <dt className="font-bold text-[var(--color-academy-muted)]">인원</dt>
+            <dt className="font-medium text-[var(--color-academy-muted)]">인원</dt>
             <dd className="text-[var(--color-academy-ink)]">{detail.headcount}명{detail.useAircon ? " · 냉난방 사용" : ""}</dd>
-            <dt className="font-bold text-[var(--color-academy-muted)]">목적</dt>
+            <dt className="font-medium text-[var(--color-academy-muted)]">목적</dt>
             <dd className="whitespace-pre-wrap break-keep text-[var(--color-academy-ink)]">{detail.purpose || "—"}</dd>
-            <dt className="font-bold text-[var(--color-academy-muted)]">금액</dt>
+            <dt className="font-medium text-[var(--color-academy-muted)]">금액</dt>
             <dd className="tabular-nums text-[var(--color-academy-ink)]">
-              {detail.memberFree ? "재원생 2시간 무료 · " : ""}이용료 {formatWon(detail.usageFee)} + 보증금 {formatWon(detail.deposit)} = <b>{formatWon(detail.totalAmount)}</b>
+              {detail.memberFree ? "재원생 2시간 무료 · " : ""}이용료 {formatWon(detail.usageFee)} + 보증금 {formatWon(detail.deposit)} = <b className="font-semibold">{formatWon(detail.totalAmount)}</b>
             </dd>
             {detail.rejectReason && (
               <>
-                <dt className="font-bold text-[var(--color-academy-muted)]">거절 사유</dt>
+                <dt className="font-medium text-[var(--color-academy-muted)]">거절 사유</dt>
                 <dd className="break-keep text-[var(--color-academy-ink)]">{detail.rejectReason}</dd>
               </>
             )}
             {/* 환불 계좌는 «사용 완료·환불 완료» 단계에서만 서버가 보내 준다 */}
             {detail.refundAccount && (
               <>
-                <dt className="font-bold text-[var(--color-academy-muted)]">환불 계좌</dt>
+                <dt className="font-medium text-[var(--color-academy-muted)]">환불 계좌</dt>
                 <dd className="flex flex-wrap items-center gap-2 tabular-nums text-[var(--color-academy-ink)]">
                   <span>{detail.refundBank} {detail.refundAccount} · {detail.refundHolder}</span>
                   <button
                     type="button"
                     onClick={() => copyRefund(detail)}
-                    className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-[var(--color-academy-line)] px-2 text-xs font-bold text-[var(--color-academy-ink)]"
+                    className="academy-button-tonal academy-button-sm"
                   >
-                    <span className="material-symbols-outlined" aria-hidden="true">content_copy</span>
                     {copiedId === detail.id ? "복사함" : "복사"}
                   </button>
                 </dd>
@@ -439,27 +436,27 @@ export default function RentalAdminClient({ rows, bankAccount, smsOn, embedded =
             )}
             {detail.depositRefunded !== null && (
               <>
-                <dt className="font-bold text-[var(--color-academy-muted)]">환불</dt>
+                <dt className="font-medium text-[var(--color-academy-muted)]">환불</dt>
                 <dd className="tabular-nums text-[var(--color-academy-ink)]">{formatWon(detail.depositRefunded)}{detail.depositRefunded < detail.deposit ? ` (차감 ${formatWon(detail.deposit - detail.depositRefunded)})` : ""}</dd>
               </>
             )}
             {detail.cancelRefundAmount !== null && (
               <>
-                <dt className="font-bold text-[var(--color-academy-muted)]">취소 환불</dt>
+                <dt className="font-medium text-[var(--color-academy-muted)]">취소 환불</dt>
                 <dd className="tabular-nums text-[var(--color-academy-ink)]">{formatWon(detail.cancelRefundAmount)}</dd>
               </>
             )}
             {smsFailed(detail) && (
               <>
-                <dt className="font-bold text-[var(--color-academy-muted)]">문자</dt>
-                <dd className="font-bold text-[var(--color-academy-danger)]">마지막 안내 문자 실패 — 전화로 안내해 주세요</dd>
+                <dt className="font-medium text-[var(--color-academy-muted)]">문자</dt>
+                <dd className="font-medium text-[var(--color-academy-danger)]">마지막 안내 문자 실패 — 전화로 안내해 주세요</dd>
               </>
             )}
-            <dt className="font-bold text-[var(--color-academy-muted)]">신청일</dt>
+            <dt className="font-medium text-[var(--color-academy-muted)]">신청일</dt>
             <dd className="tabular-nums text-[var(--color-academy-ink)]">{kstLabel(detail.createdAt)}</dd>
             {detail.adminMemo && (
               <>
-                <dt className="font-bold text-[var(--color-academy-muted)]">메모</dt>
+                <dt className="font-medium text-[var(--color-academy-muted)]">메모</dt>
                 <dd className="whitespace-pre-wrap break-keep text-[var(--color-academy-ink)]">{detail.adminMemo}</dd>
               </>
             )}
@@ -478,13 +475,13 @@ export default function RentalAdminClient({ rows, bankAccount, smsOn, embedded =
               <p>{approveFree ? "입금할 금액이 0원이라 승인하면 바로 확정됩니다. 이 시간은 다른 신청에서 막힙니다." : confirmText.description}</p>
               {/* 재원생 무료는 로그인한 학부모 계정의 연결 학생일 때만 들어온다 — 어느 계정이 신청했는지 한 줄로 보인다 */}
               {confirming.action === "approve" && confirmRow.memberFree && (
-                <p className="font-bold text-[var(--color-academy-warning)]">
+                <p className="font-medium text-[var(--color-academy-warning)]">
                   재원생 무료 · 로그인 계정: {confirmRow.applicantUserName || "확인 필요"}로 신청(학생: {confirmRow.memberStudentName || "확인 필요"})
                 </p>
               )}
               {confirming.action === "reject" && (
                 <div className="space-y-1.5">
-                  <p className="font-bold text-[var(--color-academy-ink)]">거절 사유(필수)</p>
+                  <p className="font-medium text-[var(--color-academy-ink)]">거절 사유(필수)</p>
                   <div className="flex flex-wrap gap-1.5" role="group" aria-label="거절 사유 빠른 선택">
                     {[...RENTAL_REJECT_REASONS, CUSTOM_REASON].map((reason) => (
                       <button
@@ -492,9 +489,7 @@ export default function RentalAdminClient({ rows, bankAccount, smsOn, embedded =
                         type="button"
                         aria-pressed={reasonChoice === reason}
                         onClick={() => setReasonChoice(reason)}
-                        className={`min-h-11 rounded-lg border px-3 text-xs font-bold ${reasonChoice === reason
-                          ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)]"
-                          : "border-[var(--color-academy-line)] text-[var(--color-academy-ink)]"}`}
+                        className="academy-choice"
                       >
                         {reason === CUSTOM_REASON ? "직접 입력" : reason}
                       </button>
@@ -507,13 +502,13 @@ export default function RentalAdminClient({ rows, bankAccount, smsOn, embedded =
                       maxLength={100}
                       placeholder="신청자 문자에 그대로 나가요"
                       aria-label="거절 사유 직접 입력"
-                      className="block min-h-11 w-full rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 font-normal"
+                      className="academy-input block font-normal"
                     />
                   )}
                 </div>
               )}
               {(confirming.action === "refund" || paidCancel) && (
-                <label className="block font-bold text-[var(--color-academy-ink)]">
+                <label className="block font-medium text-[var(--color-academy-ink)]">
                   {/* 확정(입금 확인) 뒤 취소는 이미 돈을 받았으므로 돌려준 금액을 꼭 적는다(0원도 직접 입력) */}
                   {paidCancel ? `돌려준 금액(원, 필수 · 0 ~ ${confirmRow.totalAmount.toLocaleString("ko-KR")})` : "돌려준 보증금(원)"}
                   <input
@@ -524,27 +519,27 @@ export default function RentalAdminClient({ rows, bankAccount, smsOn, embedded =
                     required={paidCancel}
                     value={refundAmount}
                     onChange={(e) => setRefundAmount(e.target.value)}
-                    className="mt-1 block min-h-11 w-full rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 font-normal tabular-nums"
+                    className="academy-input mt-1 block font-normal tabular-nums"
                   />
                 </label>
               )}
               {/* 보낼 문자 미리보기 — 꺼져 있으면 «문자 꺼짐»(상태만 바뀌고 문자는 안 나간다) */}
               {smsKind && (
                 <div className="rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] p-2">
-                  <p className="text-xs font-black text-[var(--color-academy-muted)]">
+                  <p className="text-xs font-medium text-[var(--color-academy-muted)]">
                     신청자 문자 {smsOn[smsKind] ? "· 보냄" : "· 문자 꺼짐(보내지 않음)"}
                   </p>
                   {smsPreview && <pre className="mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap break-keep font-sans text-xs text-[var(--color-academy-ink)]">{smsPreview}</pre>}
                 </div>
               )}
-              <label className="block font-bold text-[var(--color-academy-ink)]">
+              <label className="block font-medium text-[var(--color-academy-ink)]">
                 메모(선택)
                 <input
                   value={memo}
                   onChange={(e) => setMemo(e.target.value)}
                   maxLength={200}
                   placeholder={confirming.action === "refund" ? "예: 정리 미흡 5,000원 차감" : "예: 전화로 안내함"}
-                  className="mt-1 block min-h-11 w-full rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 font-normal"
+                  className="academy-input mt-1 block font-normal"
                 />
               </label>
             </div>
@@ -581,17 +576,17 @@ export default function RentalAdminClient({ rows, bankAccount, smsOn, embedded =
                 지금: {kstLabel(editRow.rentalDate)} {rentalTimeText(editRow)} · {editRow.headcount}명{editRow.useAircon ? " · 냉난방" : ""} · {formatWon(editRow.totalAmount)}
               </p>
               <div className="grid grid-cols-2 gap-2">
-                <label className="col-span-2 block font-bold text-[var(--color-academy-ink)]">
+                <label className="col-span-2 block font-medium text-[var(--color-academy-ink)]">
                   이용일
                   <input type="date" value={editing.rentalDate} onChange={(e) => setEditing({ ...editing, rentalDate: e.target.value })} className={editInput} />
                 </label>
-                <label className="block font-bold text-[var(--color-academy-ink)]">
+                <label className="block font-medium text-[var(--color-academy-ink)]">
                   시작
                   <select value={editing.startMinute} onChange={(e) => setEditing({ ...editing, startMinute: Number(e.target.value) })} className={editInput}>
                     {START_OPTIONS.map((minute) => <option key={minute} value={minute}>{hhmm(minute)}</option>)}
                   </select>
                 </label>
-                <label className="block font-bold text-[var(--color-academy-ink)]">
+                <label className="block font-medium text-[var(--color-academy-ink)]">
                   이용 시간
                   <select value={editing.durationMinutes} onChange={(e) => setEditing({ ...editing, durationMinutes: Number(e.target.value) })} className={editInput}>
                     {DURATION_OPTIONS.map((minute) => (
@@ -599,7 +594,7 @@ export default function RentalAdminClient({ rows, bankAccount, smsOn, embedded =
                     ))}
                   </select>
                 </label>
-                <label className="block font-bold text-[var(--color-academy-ink)]">
+                <label className="block font-medium text-[var(--color-academy-ink)]">
                   인원
                   <input
                     type="number"
@@ -611,27 +606,27 @@ export default function RentalAdminClient({ rows, bankAccount, smsOn, embedded =
                     className={editInput}
                   />
                 </label>
-                <label className="flex min-h-11 items-center gap-2 self-end font-bold text-[var(--color-academy-ink)]">
+                <label className="flex min-h-11 items-center gap-2 self-end font-medium text-[var(--color-academy-ink)]">
                   <input type="checkbox" checked={editing.useAircon} onChange={(e) => setEditing({ ...editing, useAircon: e.target.checked })} className="h-5 w-5" />
                   냉난방
                 </label>
               </div>
               {/* 바뀐 금액 — 서버가 같은 계산으로 다시 저장한다 */}
-              <p className="rounded-lg bg-[var(--color-academy-soft)] px-3 py-2 font-bold tabular-nums text-[var(--color-academy-ink)]">
+              <p className="rounded-lg bg-[var(--color-academy-soft)] px-3 py-2 font-medium tabular-nums text-[var(--color-academy-ink)]">
                 {editFee
                   ? `바뀐 금액: 이용료 ${formatWon(editFee.usageFee)} + 보증금 ${formatWon(editFee.deposit)} = ${formatWon(editFee.total)}${amountDiff ? ` (${amountDiff > 0 ? "+" : "-"}${formatWon(Math.abs(amountDiff))})` : ""}`
                   : editFeeError}
               </p>
               {/* 안내 문자가 이미 나간 단계만 다시 안내한다: 입금 대기 → 승인 안내, 무료 확정 → 확정 안내 */}
               {(editRow.status === "APPROVED" || editRow.status === "PAID") && (
-                <label className="flex min-h-11 items-center gap-2 font-bold text-[var(--color-academy-ink)]">
+                <label className="flex min-h-11 items-center gap-2 font-medium text-[var(--color-academy-ink)]">
                   <input type="checkbox" checked={editing.notify} onChange={(e) => setEditing({ ...editing, notify: e.target.checked })} className="h-5 w-5" />
                   {editRow.status === "PAID" ? "바뀐 시간으로 확정 안내 문자 다시 보내기" : "바뀐 시간·금액으로 승인 안내 문자 다시 보내기"}
                   {smsOn[editRow.status === "PAID" ? "confirmed" : "approved"] ? "" : " (문자 꺼짐 · 보내지 않음)"}
                 </label>
               )}
               {editRow.status === "PAID" && editFee && editFee.total > 0 && (
-                <p role="alert" className="font-bold text-[var(--color-academy-danger)]">무료 확정 건은 0원 안에서만 고칠 수 있어요(재원생 2시간까지 무료). 늘리려면 취소 후 다시 신청받아 주세요.</p>
+                <p role="alert" className="font-medium text-[var(--color-academy-danger)]">무료 확정 건은 0원 안에서만 고칠 수 있어요(재원생 2시간까지 무료). 늘리려면 취소 후 다시 신청받아 주세요.</p>
               )}
               <p className="text-xs text-[var(--color-academy-muted)]">수업·특강·다른 승인 대관과 겹치면 저장되지 않습니다. 바꾼 내용은 메모에 자동으로 남습니다.</p>
             </div>

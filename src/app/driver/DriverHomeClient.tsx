@@ -44,10 +44,7 @@ export default function DriverHomeClient() {
           </p>
         ) : (
           <div>
-            <p className="text-5xl" aria-hidden="true">
-              🚌
-            </p>
-            <h1 className="mt-3 text-xl font-black text-[var(--color-academy-ink)]">
+            <h1 className="text-xl font-bold text-[var(--color-academy-ink)]">
               받으신 운행 링크를 한 번 열어주세요
             </h1>
             <p className="mt-2 text-base leading-7 text-[var(--color-academy-muted)]">
@@ -57,7 +54,7 @@ export default function DriverHomeClient() {
             {/* 링크를 받지 못했거나 잃어버린 기사님 — 원장님이 기사님 역할을 준 계정이 있으면 로그인만으로 연다. */}
             <a
               href={`/login?${new URLSearchParams({ redirect: "/staff/shuttle" }).toString()}`}
-              className="mt-6 inline-flex min-h-12 items-center justify-center rounded-xl border border-[var(--color-academy-line-input)] px-5 text-base font-bold text-[var(--color-academy-ink)]"
+              className="mt-6 inline-flex min-h-12 items-center justify-center rounded-xl border border-[var(--color-academy-line-input)] px-5 text-base font-medium text-[var(--color-academy-ink)]"
             >
               학원 계정으로 로그인해서 열기
             </a>

@@ -18,6 +18,7 @@ import {
 import AdminModal from "@/components/admin/AdminModal";
 import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
 import AdminPanelActions from "@/components/admin/AdminPanelActions";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import ListViewToggle, { useRememberedListView } from "@/components/admin/list/ListViewToggle";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
@@ -197,7 +198,7 @@ export default function RegularAbsenceAdminClient({
     count: rows.filter((r) => r.status === chip.value).length,
   }));
 
-  // ⚡·상세 패널이 같이 쓰는 작업 목록 — 예전 카드의 확정/확정 취소·취소 버튼, 보강 상태 드롭다운·보강 취소·보강 지정을
+  // «빠른작업»·상세 패널이 같이 쓰는 작업 목록 — 예전 카드의 확정/확정 취소·취소 버튼, 보강 상태 드롭다운·보강 취소·보강 지정을
   // 같은 함수·같은 인자로 옮긴 것(확인창이 없던 버튼은 그대로 없음)
   function buildAbsenceActions(r: RegularAbsenceRow): AdminQuickAction[] {
     const id = r.id; // 패널을 닫은 뒤 실행돼도 대상이 바뀌지 않게 미리 붙잡아 둔다
@@ -225,7 +226,7 @@ export default function RegularAbsenceAdminClient({
     return actions;
   }
 
-  // 행 키보드(Enter·Space) = 상세 패널. 행 안의 ⚡ 버튼에서 누른 키는 가로채지 않는다.
+  // 행 키보드(Enter·Space) = 상세 패널. 행 안의 «빠른작업» 버튼에서 누른 키는 가로채지 않는다.
   function handleRowKeyDown(event: React.KeyboardEvent<HTMLElement>, id: string) {
     if (event.target !== event.currentTarget) return;
     if (event.key === "Enter" || event.key === " ") {
@@ -242,12 +243,11 @@ export default function RegularAbsenceAdminClient({
 
   function statusBadge(r: RegularAbsenceRow) {
     return r.status === "CONFIRMED" ? (
-      <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-academy-success-soft)] px-2 py-0.5 text-xs font-black text-[var(--color-academy-success)]">
-        <span className="material-symbols-outlined text-sm" aria-hidden="true">check_circle</span>
+      <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-academy-success-soft)] px-2 py-0.5 text-xs text-[var(--color-academy-success)]">
         {r.statusLabel}
       </span>
     ) : (
-      <span className="inline-flex items-center rounded-full bg-[var(--color-academy-warning-soft)] px-2 py-0.5 text-xs font-black text-[var(--color-academy-warning)]">
+      <span className="inline-flex items-center rounded-full bg-[var(--color-academy-warning-soft)] px-2 py-0.5 text-xs text-[var(--color-academy-warning)]">
         {r.statusLabel}
       </span>
     );
@@ -255,8 +255,8 @@ export default function RegularAbsenceAdminClient({
 
   function makeupBadge(r: RegularAbsenceRow) {
     return r.makeupId ? (
-      <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-academy-primary-soft)] px-2 py-0.5 text-xs font-black text-[var(--color-academy-ink)]">
-        <span className="material-symbols-outlined text-sm" aria-hidden="true">event_repeat</span>
+      // 보강 상태 표시 = 중립 토큰(주 색은 누르는 버튼에만 쓴다)
+      <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-academy-neutral-soft)] px-2 py-0.5 text-xs text-[var(--color-academy-neutral)]">
         {r.makeupStatusLabel}
       </span>
     ) : (
@@ -267,7 +267,7 @@ export default function RegularAbsenceAdminClient({
   // 표 칸 수(날짜별 머리줄 colSpan 용)
   const columnCount = 10;
 
-  // 한 줄 행: 결석일 | 시간 | 원생 | 반 | 사유 | 상태 | 보강 | 보강 반 | 보강일 | 관리(⚡). 신고 시각은 상세 패널에서
+  // 한 줄 행: 결석일 | 시간 | 원생 | 반 | 사유 | 상태 | 보강 | 보강 반 | 보강일 | 관리(«빠른작업»). 신고 시각은 상세 패널에서
   function renderAbsenceRow(r: RegularAbsenceRow) {
     return (
       <tr
@@ -279,16 +279,16 @@ export default function RegularAbsenceAdminClient({
         className="cursor-pointer transition-colors hover:bg-[var(--color-academy-soft)] focus:bg-[var(--color-academy-primary-soft)] focus:outline-none"
       >
         {/* 날짜·시간은 오른쪽 + 자릿수 폭 고정 */}
-        <td className="admin-cell-num px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{r.dateLabel}</td>
+        <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-ink)]">{r.dateLabel}</td>
         <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] sm:table-cell">{r.startTime || "-"}</td>
-        <td className="px-2 py-1.5 font-black text-[var(--color-academy-ink)]">{r.studentName}</td>
+        <td className="px-2 py-1.5 font-semibold text-[var(--color-academy-ink)]">{r.studentName}</td>
         <td className="px-2 py-1.5 text-[var(--color-academy-muted)]">{r.className}</td>
         <td className="hidden px-2 py-1.5 text-[var(--color-academy-ink)] md:table-cell">{r.reasonLabel}</td>
         <td className="px-2 py-1.5">{statusBadge(r)}</td>
         <td className="px-2 py-1.5">{makeupBadge(r)}</td>
         <td className="hidden px-2 py-1.5 text-[var(--color-academy-ink)] lg:table-cell">{r.makeupId ? r.makeupClassName ?? "반 미지정" : "-"}</td>
         <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-ink)] md:table-cell">{r.makeupDateLabel || "-"}</td>
-        {/* 관리: ⚡(확정·취소·보강). 눌러도 행 클릭(패널)이 같이 일어나지 않게 전파 차단 */}
+        {/* 관리: «빠른작업»(확정·취소·보강). 눌러도 행 클릭(패널)이 같이 일어나지 않게 전파 차단 */}
         <td className="admin-cell-center px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
           <AdminQuickActionMenu label={`${r.studentName} 결석 빠른 작업`} actions={buildAbsenceActions(r)} />
         </td>
@@ -302,39 +302,40 @@ export default function RegularAbsenceAdminClient({
   return (
     <div className="mx-auto max-w-5xl px-4 py-4">
       {/* 헤더 + 반 필터 */}
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <h2 className="flex items-center gap-2 text-lg font-black text-[var(--color-academy-ink)]">
-            <span className="material-symbols-outlined text-2xl text-[var(--color-academy-ink)]" aria-hidden="true">event_busy</span>
-            정규 수업 결석
-          </h2>
-          <p className="text-xs text-[var(--color-academy-muted)]">
+      {/* 페이지 제목은 공용 머리말 부품(모양 한 가지, 아이콘 없음). 오른쪽은 반 필터 */}
+      <AdminPageHeader
+        className="mb-2"
+        title="정규 수업 결석"
+        description={
+          <>
             (방학특강 결석은 별도 메뉴)
             {reportedCount > 0 && (
-              <span className="ml-1 font-bold text-[var(--color-academy-warning)]">미확정 <span className="tabular-nums">{reportedCount}</span>건</span>
+              <span className="ml-1 font-semibold text-[var(--color-academy-warning)]">미확정 <span className="tabular-nums">{reportedCount}</span>건</span>
             )}
-          </p>
-        </div>
-        <select
-          value={classId}
-          onChange={(e) => {
-            setDetailId(""); // 반을 바꾸면 목록이 다시 읽히므로 열린 패널은 닫는다
-            onClassChange(e.target.value);
-          }}
-          aria-label="반 선택"
-          className="min-h-11 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-sm font-bold text-[var(--color-academy-ink)]"
-        >
-          <option value="">전체 반</option>
-          {initial.classes.map((c) => (
-            <option key={c.classId} value={c.classId}>
-              {c.className}
-            </option>
-          ))}
-        </select>
-      </div>
+          </>
+        }
+        actions={
+          <select
+            value={classId}
+            onChange={(e) => {
+              setDetailId(""); // 반을 바꾸면 목록이 다시 읽히므로 열린 패널은 닫는다
+              onClassChange(e.target.value);
+            }}
+            aria-label="반 선택"
+            className="academy-input w-auto!"
+          >
+            <option value="">전체 반</option>
+            {initial.classes.map((c) => (
+              <option key={c.classId} value={c.classId}>
+                {c.className}
+              </option>
+            ))}
+          </select>
+        }
+      />
 
       {err && !makeupTarget && (
-        <div className="mb-2 rounded-xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] px-4 py-2 text-sm font-bold text-[var(--color-academy-danger)]">
+        <div className="mb-2 rounded-xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] px-4 py-2 text-sm font-medium text-[var(--color-academy-danger)]">
           {err}
         </div>
       )}
@@ -366,7 +367,7 @@ export default function RegularAbsenceAdminClient({
               <div className="overflow-x-auto">
                 {/* admin-list-table: 글자 왼쪽·날짜/시간 오른쪽(tabular)·한 줄(말줄임 없음, 좁으면 가로 스크롤) */}
                 <table className="admin-list-table w-full border-collapse text-sm">
-                  <thead className="bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]">
+                  <thead className="bg-[var(--color-academy-soft)] text-xs font-semibold text-[var(--color-academy-muted)]">
                     <tr>
                       <th className="admin-cell-num px-2 py-2">결석일</th>
                       <th className="admin-cell-num hidden px-2 py-2 sm:table-cell">시간</th>
@@ -387,7 +388,7 @@ export default function RegularAbsenceAdminClient({
                       return (
                         <tbody key={group.key} className="divide-y divide-[var(--color-academy-line)]">
                           <tr>
-                            <th colSpan={columnCount} scope="rowgroup" className="bg-[var(--color-academy-soft)] px-2 py-1.5 text-xs font-black text-[var(--color-academy-ink)]">
+                            <th colSpan={columnCount} scope="rowgroup" className="bg-[var(--color-academy-soft)] px-2 py-1.5 text-xs font-semibold text-[var(--color-academy-ink)]">
                               {group.label} · <span className="tabular-nums">{group.items.length}</span>건
                               {pending > 0 && <> · 미확정 <span className="tabular-nums">{pending}</span></>}
                             </th>
@@ -406,7 +407,7 @@ export default function RegularAbsenceAdminClient({
         </>
       )}
 
-      {/* 행 클릭 상세 패널 — 이미 받아온 값만(새 조회 없음). 작업 버튼은 ⚡ 와 같은 목록 */}
+      {/* 행 클릭 상세 패널 — 이미 받아온 값만(새 조회 없음). 작업 버튼은 «빠른작업» 과 같은 목록 */}
       {detail && !makeupTarget && (() => {
         const d = detail;
         const panelRows: { label: string; value: React.ReactNode }[] = [
@@ -421,7 +422,7 @@ export default function RegularAbsenceAdminClient({
         return (
           <ListDetailPanel onClose={() => setDetailId("")} titleId="absence-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
             <div className="mb-4 flex items-center gap-2">
-              <h3 id="absence-detail-panel-title" className="min-w-0 break-keep text-lg font-black text-[var(--color-academy-ink)]">{d.studentName}</h3>
+              <h3 id="absence-detail-panel-title" className="min-w-0 break-keep text-lg font-bold text-[var(--color-academy-ink)]">{d.studentName}</h3>
               {statusBadge(d)}
               <button
                 type="button"
@@ -435,12 +436,12 @@ export default function RegularAbsenceAdminClient({
             <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
               {panelRows.map((row) => (
                 <div key={row.label} className="contents">
-                  <dt className="font-bold text-[var(--color-academy-muted)]">{row.label}</dt>
+                  <dt className="font-medium text-[var(--color-academy-muted)]">{row.label}</dt>
                   <dd className="min-w-0 break-keep break-words text-[var(--color-academy-ink)]">{row.value}</dd>
                 </div>
               ))}
             </dl>
-            {/* 공용 패널 버튼 줄 — ⚡ 와 같은 목록·같은 함수, 위험 작업은 오른쪽 끝으로 떨어진다 */}
+            {/* 공용 패널 버튼 줄 — «빠른작업» 과 같은 목록·같은 함수, 위험 작업은 오른쪽 끝으로 떨어진다 */}
             <AdminPanelActions actions={buildAbsenceActions(d)} onBeforeSelect={() => setDetailId("")} />
           </ListDetailPanel>
         );
@@ -450,20 +451,20 @@ export default function RegularAbsenceAdminClient({
       {makeupOpenId && (
         <AdminModal titleId="absence-makeup-form-title" onClose={() => { if (busyId !== makeupOpenId) setMakeupOpenId(""); }} closeOnBackdrop={false} panelClassName="max-w-md p-5">
           <div className="mb-3 flex items-center gap-2">
-            <h3 id="absence-makeup-form-title" className="min-w-0 break-keep text-lg font-black text-[var(--color-academy-ink)]">
+            <h3 id="absence-makeup-form-title" className="min-w-0 break-keep text-lg font-bold text-[var(--color-academy-ink)]">
               보강 지정{makeupTarget ? ` — ${makeupTarget.studentName} ${makeupTarget.dateLabel} 결석` : ""}
             </h3>
           </div>
           {err && (
-            <p className="mb-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-danger)]">{err}</p>
+            <p role="alert" className="mb-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-medium text-[var(--color-academy-danger)]">{err}</p>
           )}
           <div className="space-y-3">
-            <label className="flex flex-col gap-1 text-xs font-bold text-[var(--color-academy-muted)]">
+            <label className="flex flex-col gap-1 text-xs font-medium text-[var(--color-academy-muted)]">
               보강 반
               <select
                 value={makeupClassId}
                 onChange={(e) => setMakeupClassId(e.target.value)}
-                className="min-h-11 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-2 text-sm font-bold text-[var(--color-academy-ink)]"
+                className="academy-input"
               >
                 <option value="">-- 반 선택 --</option>
                 {initial.makeupClasses.map((c) => (
@@ -475,13 +476,13 @@ export default function RegularAbsenceAdminClient({
                 ))}
               </select>
             </label>
-            <label className="flex flex-col gap-1 text-xs font-bold text-[var(--color-academy-muted)]">
+            <label className="flex flex-col gap-1 text-xs font-medium text-[var(--color-academy-muted)]">
               보강일
               <input
                 type="date"
                 value={makeupDate}
                 onChange={(e) => setMakeupDate(e.target.value)}
-                className="min-h-11 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-2 text-sm font-bold text-[var(--color-academy-ink)]"
+                className="academy-input"
               />
             </label>
           </div>
@@ -490,7 +491,7 @@ export default function RegularAbsenceAdminClient({
               type="button"
               disabled={busyId === makeupOpenId}
               onClick={() => setMakeupOpenId("")}
-              className="inline-flex min-h-11 flex-1 items-center justify-center rounded-lg border border-[var(--color-academy-line)] px-3 text-sm font-bold text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
+              className="academy-button-secondary flex-1"
             >
               닫기
             </button>
@@ -498,7 +499,7 @@ export default function RegularAbsenceAdminClient({
               type="button"
               disabled={busyId === makeupOpenId || !makeupClassId || !makeupDate}
               onClick={() => submitMakeup(makeupOpenId)}
-              className="inline-flex min-h-11 flex-1 items-center justify-center rounded-lg bg-[var(--color-academy-primary)] px-3 text-sm font-black text-[var(--color-academy-on-primary)] hover:bg-[var(--color-academy-primary-hover)] disabled:cursor-not-allowed disabled:opacity-40"
+              className="academy-button-primary flex-1"
             >
               보강 지정
             </button>

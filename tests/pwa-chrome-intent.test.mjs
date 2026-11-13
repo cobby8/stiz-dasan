@@ -118,5 +118,7 @@ test("새 UI도 하드코딩 색상 없이 토큰·다크모드 클래스를 쓴
   assert.match(chromeButtonBlock, /dark:/);
   // #rrggbb 같은 하드코딩 색상 금지
   assert.doesNotMatch(chromeButtonBlock, /#[0-9a-fA-F]{3,8}\b/);
-  assert.match(chromeButtonBlock, /material-symbols-outlined/);
+  // 2026-11-13 UI 통일: 버튼은 아이콘 없이 글자(«크롬으로 열기»)로 말한다 — 옛 «아이콘 글꼴을 쓴다» 단언을 뒤집었다.
+  assert.doesNotMatch(chromeButtonBlock, /material-symbols-outlined/);
+  assert.match(chromeButtonBlock, /\{label\}/);
 });

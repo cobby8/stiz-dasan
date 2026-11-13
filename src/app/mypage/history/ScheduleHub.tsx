@@ -92,13 +92,13 @@ function DayCell({ cell }: { cell: MonthCell }) {
                 cell.closed
                     ? "text-[var(--color-academy-cal-closed)]"
                     : cell.isClass || cell.isToday
-                        ? "font-bold text-[var(--color-academy-ink)]"
+                        ? "font-semibold text-[var(--color-academy-ink)]"
                         : "text-[var(--color-academy-ink)]"
             }`}>
                 {cell.day}
             </span>
             {cell.closed ? (
-                <span aria-hidden="true" className="text-xs font-bold leading-none text-[var(--color-academy-cal-closed)]">휴</span>
+                <span aria-hidden="true" className="text-xs font-medium leading-none text-[var(--color-academy-cal-closed)]">휴</span>
             ) : (
                 <span className="flex h-3.5 items-center gap-0.5" aria-hidden="true">
                     {att && <Mark kind={att} />}
@@ -132,7 +132,7 @@ export function MonthCalendar({
     const { summary } = view;
     const summaryLine = (
         <>
-            <span className="font-bold text-[var(--color-academy-ink)]">수업 <span className="tabular-nums">{summary.classCount}</span>회</span>
+            <span className="font-semibold text-[var(--color-academy-ink)]">수업 <span className="tabular-nums">{summary.classCount}</span>회</span>
             <span className="whitespace-nowrap text-[var(--color-academy-muted)]">
                 출석 <span className="tabular-nums">{summary.present}</span>
                 {summary.late > 0 && <> · 지각 <span className="tabular-nums">{summary.late}</span></>}
@@ -149,7 +149,7 @@ export function MonthCalendar({
                             <Link href={monthNav.prevHref} scroll={false} aria-label="이전 달" className="inline-flex size-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
                                 <Icon name="chevron_left" size={22} />
                             </Link>
-                            <span className="whitespace-nowrap text-sm font-bold tabular-nums text-[var(--color-academy-ink)]">{monthTitle(view.month)}</span>
+                            <span className="whitespace-nowrap text-sm font-semibold tabular-nums text-[var(--color-academy-ink)]">{monthTitle(view.month)}</span>
                             <Link href={monthNav.nextHref} scroll={false} aria-label="다음 달" className="inline-flex size-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
                                 <Icon name="chevron_right" size={22} />
                             </Link>
@@ -175,7 +175,7 @@ export function MonthCalendar({
                         <LegendItem label="지각"><Mark kind="LATE" /></LegendItem>
                         <LegendItem label="결석"><Mark kind="ABSENT" /></LegendItem>
                         <LegendItem label="행사"><Mark kind="EVENT" /></LegendItem>
-                        <LegendItem label="휴무"><span aria-hidden="true" className="inline-flex size-4 items-center justify-center rounded bg-[var(--color-academy-cal-closed-soft)] text-xs font-bold leading-none text-[var(--color-academy-cal-closed)]">휴</span></LegendItem>
+                        <LegendItem label="휴무"><span aria-hidden="true" className="inline-flex size-4 items-center justify-center rounded bg-[var(--color-academy-cal-closed-soft)] text-xs font-medium leading-none text-[var(--color-academy-cal-closed)]">휴</span></LegendItem>
                         <LegendItem label="오늘"><span aria-hidden="true" className="inline-block size-3.5 rounded ring-2 ring-inset ring-[var(--color-academy-cal-today)]" /></LegendItem>
                     </p>
                     {!planReady && hasEnrollments && (
@@ -215,12 +215,12 @@ export default function ScheduleHub({
         <div className="space-y-3">
             {/* 제목 + 달 이동을 한 줄로(설명 문구 없음) */}
             <div className="flex items-center justify-between gap-2">
-                <h1 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">일정</h1>
+                <h1 className="academy-heading">일정</h1>
                 <nav aria-label="달 이동" className="flex items-center">
                     <Link href={hrefFor(shiftMonth(view.month, -1))} aria-label="이전 달" className="inline-flex size-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
                         <Icon name="chevron_left" size={24} />
                     </Link>
-                    <span className="whitespace-nowrap px-1 text-base font-bold tabular-nums text-[var(--color-academy-ink)]">{monthTitle(view.month)}</span>
+                    <span className="whitespace-nowrap px-1 text-base font-semibold tabular-nums text-[var(--color-academy-ink)]">{monthTitle(view.month)}</span>
                     <Link href={hrefFor(shiftMonth(view.month, 1))} aria-label="다음 달" className="inline-flex size-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
                         <Icon name="chevron_right" size={24} />
                     </Link>
@@ -243,9 +243,9 @@ export default function ScheduleHub({
 
             {/* 이 달 행사·휴무 — 한 줄 행(날짜 · 제목) */}
             <section aria-labelledby="schedule-events-heading" className="academy-panel overflow-hidden">
-                <h2 id="schedule-events-heading" className="flex items-center justify-between border-b border-[var(--color-academy-line)] px-3 py-2 text-sm font-bold text-[var(--color-academy-ink)]">
+                <h2 id="schedule-events-heading" className="academy-section-title flex items-center justify-between border-b border-[var(--color-academy-line)] px-3 py-2">
                     <span>행사·휴무</span>
-                    <span className="font-normal tabular-nums text-[var(--color-academy-muted)]">{view.events.length}</span>
+                    <span className="text-sm font-normal tabular-nums text-[var(--color-academy-muted)]">{view.events.length}</span>
                 </h2>
                 {view.events.length === 0 ? (
                     <p className="px-3 py-2 text-sm text-[var(--color-academy-muted)]">이 달 행사·휴무 없음</p>
@@ -256,9 +256,9 @@ export default function ScheduleHub({
                                 <span className="shrink-0 whitespace-nowrap text-sm tabular-nums text-[var(--color-academy-muted)]">
                                     {shortDay(ev.startYmd)}{ev.endYmd !== ev.startYmd && `~${shortDay(ev.endYmd)}`}
                                 </span>
-                                <span className="min-w-0 flex-1 break-keep text-sm font-bold text-[var(--color-academy-ink)]">{ev.title}</span>
+                                <span className="min-w-0 flex-1 break-keep text-sm text-[var(--color-academy-ink)]">{ev.title}</span>
                                 {/* 휴무 꼬리표 — 달력 «휴» 칸과 같은 회색 */}
-                                {ev.closed && <span className="shrink-0 rounded-full bg-[var(--color-academy-cal-closed-soft)] px-2 py-0.5 text-xs font-bold text-[var(--color-academy-cal-closed)]">휴무</span>}
+                                {ev.closed && <span className="shrink-0 rounded-full bg-[var(--color-academy-cal-closed-soft)] px-2 py-0.5 text-xs text-[var(--color-academy-cal-closed)]">휴무</span>}
                             </li>
                         ))}
                     </ul>
@@ -268,16 +268,16 @@ export default function ScheduleHub({
             {/* 수강 반 — 한 줄 행(반 이름 · 요일 시간). 홈 «다음 수업»이 이 자리로 데려온다 */}
             {enrollments.length > 0 && (
                 <section id="mypage-enrollments" aria-labelledby="schedule-enrollments-heading" className="academy-panel scroll-mt-24 overflow-hidden">
-                    <h2 id="schedule-enrollments-heading" className="border-b border-[var(--color-academy-line)] px-3 py-2 text-sm font-bold text-[var(--color-academy-ink)]">
-                        수강 반 <span className="font-normal tabular-nums text-[var(--color-academy-muted)]">{enrollments.length}</span>
+                    <h2 id="schedule-enrollments-heading" className="academy-section-title border-b border-[var(--color-academy-line)] px-3 py-2">
+                        수강 반 <span className="text-sm font-normal tabular-nums text-[var(--color-academy-muted)]">{enrollments.length}</span>
                     </h2>
                     <ul className="divide-y divide-[var(--color-academy-line)]">
                         {enrollments.map((e) => (
                             <li key={e.id} className="flex min-h-11 items-center gap-2 px-3 py-2">
                                 <div className="min-w-0 flex-1">
-                                    <p className="break-keep text-sm font-bold text-[var(--color-academy-ink)]">{e.className}</p>
+                                    <p className="break-keep text-sm font-medium text-[var(--color-academy-ink)]">{e.className}</p>
                                     {/* 승인된 반은 개시일 전에도 수강 중 — 첫 수업 전이면 개시일만 안내 */}
-                                    {e.startsLater && <p className="text-xs font-bold text-[var(--color-academy-info)]">{formatKstDate(e.startsOn, { month: "long", day: "numeric" })}부터 수업 시작</p>}
+                                    {e.startsLater && <p className="text-xs text-[var(--color-academy-info)]">{formatKstDate(e.startsOn, { month: "long", day: "numeric" })}부터 수업 시작</p>}
                                 </div>
                                 <span className="shrink-0 whitespace-nowrap text-right text-sm tabular-nums text-[var(--color-academy-muted)]">
                                     {DAY_LABELS[e.dayOfWeek] || e.dayOfWeek} {e.startTime}~{e.endTime}

@@ -25,7 +25,7 @@ export default function DriverEntryClient({ canTeach }: { canTeach: boolean }) {
   if (!iosNotice) {
     return (
       <main className="mx-auto max-w-lg px-4 py-10 text-center" aria-busy="true">
-        <p className="text-sm font-bold text-[var(--color-academy-muted)]">운행 화면을 여는 중…</p>
+        <p className="text-sm text-[var(--color-academy-muted)]">운행 화면을 여는 중…</p>
       </main>
     );
   }
@@ -33,13 +33,12 @@ export default function DriverEntryClient({ canTeach }: { canTeach: boolean }) {
   return (
     <main className="mx-auto max-w-lg px-4 py-8">
       <section role="status" className="rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-5 text-center">
-        <span className="material-symbols-outlined text-4xl text-[var(--brand-accent)]" aria-hidden="true">airport_shuttle</span>
-        <h1 className="mt-2 text-lg font-black text-[var(--color-academy-ink)]">아이폰 앱의 운행 기능은 다음 업데이트에 열립니다</h1>
+        <h1 className="text-lg font-bold text-[var(--color-academy-ink)]">아이폰 앱의 운행 기능은 다음 업데이트에 열립니다</h1>
         <p className="mt-2 text-sm leading-6 text-[var(--color-academy-muted)]">
           문자로 받은 운행 링크를 이용해 주세요. 링크를 열면 승하차 체크와 위치 전송을 그대로 쓸 수 있습니다.
         </p>
         {canTeach && (
-          <Link href="/staff" className="academy-button-secondary mt-4 inline-flex min-h-11 items-center justify-center rounded-xl px-4 text-sm font-black">
+          <Link href="/staff" className="academy-button-secondary mt-4">
             수업 화면으로
           </Link>
         )}

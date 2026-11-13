@@ -8,6 +8,7 @@ import { decideKakaoParentIntake, type KakaoIntakeDecision } from "@/app/actions
 import { prepareKakaoReconfirmationNotice, sendKakaoReconfirmationNotice } from "@/app/actions/kakao-reconfirmation-notice";
 import { kakaoFollowupSummary, isKakaoFollowupOverdue, type KakaoFollowupCommand } from "@/lib/kakaoIntakeFollowup";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 // 처리 결과 안내 문자 — 미리보기 후 원장이 «보내기»를 눌러야만 발송(자동 발송 없음)
 import CustomerNoticeSender from "@/components/admin/CustomerNoticeSender";
 import { isIntakeResultStatus } from "@/lib/customer-notice/templates";
@@ -177,34 +178,34 @@ export default function KakaoRequestsClient({ rows, classes, status, schemaReady
   }
   const Wrapper = inlineId ? "section" : "main";
   return <Wrapper className={inlineId ? "mt-4 space-y-3" : "mx-auto max-w-4xl space-y-3 p-4"}>
-    {!inlineId && <><header><p className="text-xs font-bold text-[var(--color-academy-warning)]">학부모 채널</p><h1 className="text-2xl font-black text-[var(--color-academy-ink)]">카카오 접수함</h1><p className="mt-1 text-xs text-[var(--color-academy-muted)]">검증된 요청은 운영 승인 대기로 이관하며, 관리자 보완값은 학부모 재확인 전 시트·랠리즈·사이트에 반영하거나 알림을 보내지 않습니다.</p></header>
-    {!schemaReady && <section role="alert" className="rounded-xl bg-[var(--color-academy-warning-soft)] p-4 text-[var(--color-academy-ink)]"><b>접수함을 준비 중입니다.</b><p className="mt-2 text-sm">준비가 끝나면 접수 목록을 확인하고 처리할 수 있습니다.</p></section>}
+    {!inlineId && <><AdminPageHeader title={<>카카오 접수함 <span className="text-xs font-normal text-[var(--color-academy-muted)]">학부모 채널</span></>} description="검증된 요청은 운영 승인 대기로 이관하며, 관리자 보완값은 학부모 재확인 전 시트·랠리즈·사이트에 반영하거나 알림을 보내지 않습니다." />
+    {!schemaReady && <section role="alert" className="rounded-xl bg-[var(--color-academy-warning-soft)] p-4 text-[var(--color-academy-ink)]"><b className="font-semibold">접수함을 준비 중입니다.</b><p className="mt-2 text-sm">준비가 끝나면 접수 목록을 확인하고 처리할 수 있습니다.</p></section>}
     {/* 상태 필터는 서버 조회 주소(?status=)를 바꾸는 기존 방식 그대로 — 한 줄 가로 스크롤 */}
-    <nav className="flex gap-2 overflow-x-auto" aria-label="접수 상태 필터">{FILTERS.map(([value,label]) => <button key={value} type="button" aria-pressed={status===value} onClick={() => router.push(`/admin/kakao-requests?status=${value}`)} className={`min-h-11 shrink-0 rounded-full border px-3 text-sm font-bold ${status===value ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary)] text-[var(--color-academy-on-primary)]" : "border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)]"}`}>{label}</button>)}</nav>
+    <nav className="flex gap-2 overflow-x-auto" aria-label="접수 상태 필터">{FILTERS.map(([value,label]) => <button key={value} type="button" aria-pressed={status===value} onClick={() => router.push(`/admin/kakao-requests?status=${value}`)} className={`academy-choice is-tab shrink-0${status===value ? " is-selected" : ""}`}>{label}</button>)}</nav>
     <div className="flex flex-wrap items-center justify-between gap-2">
       <p className="text-sm text-[var(--color-academy-ink)]">현재 목록 <span className="tabular-nums">{rows.length}</span>건(최대 200건) · 접수 후 24시간 이상 후속 대상 <span className="tabular-nums">{rows.filter(row => isKakaoFollowupOverdue(row.status, row.createdAt, checkedAt)).length}</span>건 · 접수/동기화 실패 <span className="tabular-nums">{rows.filter(row => row.status === "FAILED" || row.commands.some(command => ["FAILED", "PARTIAL"].includes(command.status))).length}</span>건</p>
-      <button type="button" disabled={pending} onClick={reloadRows} className="min-h-11 rounded-xl border border-[var(--color-academy-line)] px-3 text-sm font-bold disabled:opacity-40">최신 목록 다시 조회</button>
+      <button type="button" disabled={pending} onClick={reloadRows} className="academy-button-secondary">최신 목록 다시 조회</button>
     </div>
     <p className="text-xs text-[var(--color-academy-muted)]">상담 전환·운영 원장 이관은 업무 완료가 아닙니다. 접수 종결도 청구·알림 발송 완료를 뜻하지 않습니다.</p>
     {/* 오류는 패널이 열려 있으면 패널 안에 보인다(같은 글 두 번 금지) */}
     </>}
-    {error && !openRow && <p role="alert" className="rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm font-bold text-[var(--color-academy-danger)]">{error}</p>}
+    {error && !openRow && <p role="alert" className="rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm text-[var(--color-academy-danger)]">{error}</p>}
     {noticeResult && <p role="status">{noticeResult}</p>}
     {notice && <section aria-label="재확인 안내 미리보기" className="rounded-xl border p-4 space-y-2">
-      <h2 className="font-bold">{notice.studentName} 학생 보호자 · 재확인 안내 미발송</h2>
+      <h2 className="academy-section-title">{notice.studentName} 학생 보호자 · 재확인 안내 미발송</h2>
       <p className="text-sm">만료: {formatDate(notice.expiresAt)} · 발송 승인 대기</p>
       <p className="text-sm">선택 채널: SMS 문자 · 수신자 {notice.maskedRecipient} · 1건 (카카오 메시지가 아닙니다)</p>
       <p className="text-sm">해당 보호자 대화방을 확인한 뒤 사용하세요. 다시 생성하면 이전 링크는 무효가 됩니다. 이 화면은 안내 준비만 하며 자동 발송하지 않습니다.</p>
       <textarea aria-label="재확인 안내 문구" readOnly value={notice.message} className="w-full min-h-40 rounded border p-2" />
-      <button type="button" disabled={pending} onClick={sendNotice} className="min-h-11 rounded border px-3 disabled:opacity-40">위 미리보기 승인 후 SMS 1건 발송</button>
-      <button type="button" onClick={() => setNotice(null)} className="min-h-11 underline">미리보기 닫기</button>
+      <button type="button" disabled={pending} onClick={sendNotice} className="academy-button-secondary">위 미리보기 승인 후 SMS 1건 발송</button>
+      <button type="button" onClick={() => setNotice(null)} className="academy-button-text">미리보기 닫기</button>
     </section>}
     {!inlineId && (!schemaReady || rows.length===0 ? <p className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-4 text-center text-sm text-[var(--color-academy-muted)]">{schemaReady ? "해당 요청이 없습니다." : "접수함 준비 후 표시됩니다."}</p> : (
       <div className="overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] shadow-sm">
         <div className="overflow-x-auto">
           {/* 한 줄 행: 접수일 | 시각 | 상태 | 종류 | 학생 | 학년 | 보호자 | 확인 필요. 원문·검토·처리는 상세 패널(서버 정렬 그대로: 처리 필요 우선 → 최신순) */}
           <table className="admin-list-table w-full border-collapse text-sm">
-            <thead className="bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]">
+            <thead className="bg-[var(--color-academy-soft)] text-xs font-semibold text-[var(--color-academy-muted)]">
               <tr>
                 <th className="admin-cell-num px-2 py-2">접수일</th>
                 <th className="admin-cell-num hidden px-2 py-2 sm:table-cell">시각</th>
@@ -236,15 +237,15 @@ export default function KakaoRequestsClient({ rows, classes, status, schemaReady
                   className="cursor-pointer transition-colors hover:bg-[var(--color-academy-soft)] focus:bg-[var(--color-academy-primary-soft)] focus:outline-none"
                 >
                   {/* 날짜·시각은 오른쪽 + 자릿수 폭 고정 */}
-                  <td className="admin-cell-num px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{kstLabel(row.createdAt) || "-"}</td>
+                  <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-ink)]">{kstLabel(row.createdAt) || "-"}</td>
                   <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] sm:table-cell">{formatTime(row.createdAt)}</td>
-                  <td className="px-2 py-1.5"><span className="rounded-full bg-[var(--color-academy-warning-soft)] px-2 py-0.5 text-xs font-black text-[var(--color-academy-ink)]">{statusLabel(row)}</span></td>
+                  <td className="px-2 py-1.5"><span className="rounded-full bg-[var(--color-academy-warning-soft)] px-2 py-0.5 text-xs text-[var(--color-academy-ink)]">{statusLabel(row)}</span></td>
                   <td className="px-2 py-1.5 text-[var(--color-academy-ink)]">{KIND_LABEL[row.kind] ?? "기타 문의"}</td>
-                  <td className="px-2 py-1.5 font-black text-[var(--color-academy-ink)]">{row.studentName ?? "학생 확인 필요"}</td>
+                  <td className="px-2 py-1.5 font-medium text-[var(--color-academy-ink)]">{row.studentName ?? "학생 확인 필요"}</td>
                   <td className="hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{row.studentGrade ?? "-"}</td>
                   <td className="hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{row.parentName ?? "확인 필요"}</td>
                   <td className="px-2 py-1.5">
-                    {flags.length === 0 ? <span className="text-xs text-[var(--color-academy-muted)]">-</span> : <span className="inline-flex gap-1">{flags.map(flag => <span key={flag} className="rounded-full bg-[var(--color-academy-danger-soft)] px-2 py-0.5 text-xs font-bold text-[var(--color-academy-danger)]">{flag}</span>)}</span>}
+                    {flags.length === 0 ? <span className="text-xs text-[var(--color-academy-muted)]">-</span> : <span className="inline-flex gap-1">{flags.map(flag => <span key={flag} className="rounded-full bg-[var(--color-academy-danger-soft)] px-2 py-0.5 text-xs text-[var(--color-academy-danger)]">{flag}</span>)}</span>}
                   </td>
                 </tr>;
               })}
@@ -267,45 +268,45 @@ export default function KakaoRequestsClient({ rows, classes, status, schemaReady
       const currentClasses = classes.filter(option => row.currentClassIds.includes(option.id));
       const followup = kakaoFollowupSummary(row.status, row.commands);
       const body = <>
-        <div className="flex items-start gap-3"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-[var(--color-academy-warning-soft)] px-2 py-1 text-xs font-black text-[var(--color-academy-ink)]">{statusLabel(row)}</span><span className="text-xs font-bold text-[var(--color-academy-muted)]">{KIND_LABEL[row.kind] ?? "기타 문의"}</span></div><h2 id="kakao-request-detail-panel-title" className="mt-2 break-keep text-xl font-black text-[var(--color-academy-ink)]">{row.studentName ?? "학생 확인 필요"}</h2><p className="mt-1 text-xs text-[var(--color-academy-muted)]">{row.studentGrade ?? "학년 미확인"} · 보호자 {row.parentName ?? "확인 필요"}</p>{row.linkedStudents.length > 1 && <p className="mt-2 rounded-lg bg-[var(--color-academy-primary-soft)] px-3 py-2 text-xs text-[var(--color-academy-ink)]"><b>연결 자녀</b> · {row.linkedStudents.map(student => `${student.name}${student.grade ? ` (${student.grade})` : ""}`).join(" · ")}</p>}</div>{!inlineId && <button type="button" onClick={() => setOpenId("")} aria-label="닫기" className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"><span className="material-symbols-outlined" aria-hidden="true">close</span></button>}</div>
+        <div className="flex items-start gap-3"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-[var(--color-academy-warning-soft)] px-2 py-1 text-xs text-[var(--color-academy-ink)]">{statusLabel(row)}</span><span className="text-xs text-[var(--color-academy-muted)]">{KIND_LABEL[row.kind] ?? "기타 문의"}</span></div><h2 id="kakao-request-detail-panel-title" className="mt-2 break-keep text-xl font-bold text-[var(--color-academy-ink)]">{row.studentName ?? "학생 확인 필요"}</h2><p className="mt-1 text-xs text-[var(--color-academy-muted)]">{row.studentGrade ?? "학년 미확인"} · 보호자 {row.parentName ?? "확인 필요"}</p>{row.linkedStudents.length > 1 && <p className="mt-2 rounded-lg bg-[var(--color-academy-primary-soft)] px-3 py-2 text-xs text-[var(--color-academy-ink)]"><b>연결 자녀</b> · {row.linkedStudents.map(student => `${student.name}${student.grade ? ` (${student.grade})` : ""}`).join(" · ")}</p>}</div>{!inlineId && <button type="button" onClick={() => setOpenId("")} aria-label="닫기" className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"><span className="material-symbols-outlined" aria-hidden="true">close</span></button>}</div>
         <time className="mt-1 block text-xs tabular-nums text-[var(--color-academy-muted)]">{formatDate(row.createdAt)}</time>
-        {error && <p role="alert" className="mt-3 rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm font-bold text-[var(--color-academy-danger)]">{error}</p>}
+        {error && <p role="alert" className="mt-3 rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm text-[var(--color-academy-danger)]">{error}</p>}
         <p className="mt-3 whitespace-pre-wrap break-words rounded-xl bg-[var(--color-academy-soft)] p-3 text-sm">{row.sourceText}</p>
-        {followup && <p className="mt-3 rounded-xl border p-3 text-sm font-bold">{followup}</p>}
+        {followup && <p className="mt-3 rounded-xl border p-3 text-sm font-medium">{followup}</p>}
         {/* 원장 할 일: 정규 셔틀 신청은 셔틀 명단에 넣어야 실제 운행에 반영된다. 넣은 뒤 «반영 완료»를 누르면 접수가 닫힌다. */}
         {isShuttleRosterTask(row) && row.studentId && <section aria-label="셔틀 명단 할 일" className="mt-3 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] p-3 text-sm text-[var(--color-academy-ink)]">
           <b>셔틀 명단에 넣어 주세요</b>
           {shuttleRosterTaskSummary(row.structuredJson) && <p className="mt-1 text-xs">{shuttleRosterTaskSummary(row.structuredJson)}</p>}
           <div className="mt-2 flex flex-wrap gap-2">
-            <Link href={shuttleRosterTaskHref(row.studentId, row.structuredJson)} prefetch={false} target={inlineId ? "_blank" : undefined} rel={inlineId ? "noopener noreferrer" : undefined} className="inline-flex min-h-11 items-center rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-sm font-bold">셔틀 명단 열기</Link>
-            <button type="button" disabled={pending} onClick={() => completeRosterTask(rowId, row.studentName)} className="min-h-11 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-sm font-bold disabled:opacity-40">셔틀 명단 반영 완료</button>
+            <Link href={shuttleRosterTaskHref(row.studentId, row.structuredJson)} prefetch={false} target={inlineId ? "_blank" : undefined} rel={inlineId ? "noopener noreferrer" : undefined} className="academy-button-secondary">셔틀 명단 열기</Link>
+            <button type="button" disabled={pending} onClick={() => completeRosterTask(rowId, row.studentName)} className="academy-button-secondary">셔틀 명단 반영 완료</button>
           </div>
         </section>}
-        {row.hasProcessingError && <p className="mt-2 text-xs font-bold">처리 보류·오류 기록 있음 · 학생/날짜/필수 정보와 실제 반영 이력을 확인해 주세요.</p>}
-        {isKakaoFollowupOverdue(row.status, row.createdAt, checkedAt) && <p className="mt-2 text-xs font-bold">접수 후 24시간 경과 · 후속 진행 여부 확인</p>}
-        <section className="mt-3 rounded-xl border p-3 text-xs"><b>보호자·요청 내용 확인</b><p className={identityOk ? "mt-2 text-[var(--color-academy-success)]" : "mt-2 text-[var(--color-academy-danger)]"}>{identityOk ? `보호자 인증 완료 · 원생 연결 · 보호자 ${row.parentName ?? "확인"}` : "보호자 인증 또는 원생 연결 확인 필요"}</p><details className="mt-2"><summary className="min-h-11 cursor-pointer py-2">접수 세부 정보 보기</summary>{(() => { const items = readableDetails(row.structuredJson, classes); return items.length ? <dl className="mt-2 space-y-1">{items.map(([label, value]) => <div key={label} className="flex gap-2"><dt className="shrink-0 font-bold">{label}</dt><dd className="min-w-0 whitespace-pre-wrap break-words">{value}</dd></div>)}</dl> : <p className="mt-2">세부 정보 없음</p>; })()}</details></section>
+        {row.hasProcessingError && <p className="mt-2 text-xs font-medium">처리 보류·오류 기록 있음 · 학생/날짜/필수 정보와 실제 반영 이력을 확인해 주세요.</p>}
+        {isKakaoFollowupOverdue(row.status, row.createdAt, checkedAt) && <p className="mt-2 text-xs font-medium">접수 후 24시간 경과 · 후속 진행 여부 확인</p>}
+        <section className="mt-3 rounded-xl border p-3 text-xs"><b>보호자·요청 내용 확인</b><p className={identityOk ? "mt-2 text-[var(--color-academy-success)]" : "mt-2 text-[var(--color-academy-danger)]"}>{identityOk ? `보호자 인증 완료 · 원생 연결 · 보호자 ${row.parentName ?? "확인"}` : "보호자 인증 또는 원생 연결 확인 필요"}</p><details className="mt-2"><summary className="min-h-11 cursor-pointer py-2">접수 세부 정보 보기</summary>{(() => { const items = readableDetails(row.structuredJson, classes); return items.length ? <dl className="mt-2 space-y-1">{items.map(([label, value]) => <div key={label} className="flex gap-2"><dt className="shrink-0 font-medium">{label}</dt><dd className="min-w-0 whitespace-pre-wrap break-words">{value}</dd></div>)}</dl> : <p className="mt-2">세부 정보 없음</p>; })()}</details></section>
         <p className="mt-3 rounded-xl bg-[var(--color-academy-primary-soft)] p-3 text-xs text-[var(--color-academy-ink)]"><b>이관 후:</b> 변경 요청은 승인 대기 상태입니다. 외부 서비스 반영과 알림 발송은 별도 승인 전까지 보류됩니다.</p>
-        {row.operationsRequestId && <Link href="/admin/operations-sync" target={inlineId ? "_blank" : undefined} rel={inlineId ? "noopener noreferrer" : undefined} className="mt-2 inline-flex min-h-11 items-center text-sm font-bold text-[var(--color-academy-primary)] underline">생성된 운영 원장 확인</Link>}
+        {row.operationsRequestId && <Link href="/admin/operations-sync" target={inlineId ? "_blank" : undefined} rel={inlineId ? "noopener noreferrer" : undefined} className="academy-button-text mt-2">생성된 운영 원장 확인</Link>}
         {row.decidedAt && <p className="mt-2 text-xs text-[var(--color-academy-muted)]">{row.decidedByName ?? "관리자"} · {formatDate(row.decidedAt)} · {row.decisionNote ?? "메모 없음"}</p>}
         {isIntakeResultStatus(row.status) && identityOk && <section aria-label="학부모 결과 안내" className="mt-3 rounded-xl border border-[var(--color-academy-line)] p-3">
           <b className="text-sm text-[var(--color-academy-ink)]">학부모께 처리 결과 안내</b>
           {/* key 에 상태를 넣어, 상태가 바뀌면 새 문구로 미리보기를 다시 만든다 */}
           <div className="mt-2"><CustomerNoticeSender key={`${row.id}:${row.status}`} kind="KAKAO_INTAKE_RESULT" intakeId={row.id} autoOpen={justDecidedId === row.id} hint="문자 문구를 먼저 보여 드려요. «이대로 보내기»를 눌러야만 1건 발송됩니다. 같은 결과는 한 번만 보낼 수 있어요." /></div>
         </section>}
-        {row.status === "APPROVED" && row.commands.some(command => command.parentReconfirmationRequired && !command.parentConfirmed) && <button type="button" disabled={pending || !identityOk} onClick={() => { if (!inlineId) setOpenId(""); prepareNotice(rowId); }} className="mt-3 min-h-11 rounded-xl border px-3 disabled:opacity-40">재확인 링크·안내 준비 (미발송)</button>}
+        {row.status === "APPROVED" && row.commands.some(command => command.parentReconfirmationRequired && !command.parentConfirmed) && <button type="button" disabled={pending || !identityOk} onClick={() => { if (!inlineId) setOpenId(""); prepareNotice(rowId); }} className="academy-button-secondary mt-3">재확인 링크·안내 준비 (미발송)</button>}
         {REVIEWABLE.has(row.status) && <div className="mt-4 space-y-3">
           {TRANSFERABLE.has(row.kind) && <section className="space-y-3 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] p-3">
             <div><b className="text-sm text-[var(--color-academy-ink)]">관리자 검토 정보</b><p className="mt-1 text-xs text-[var(--color-academy-muted)]">여기서 저장한 내용은 운영 원장 검토안에만 들어갑니다. 시트·랠리즈·사이트 변경이나 알림 발송은 실행되지 않습니다.</p></div>
-            <label className="block text-xs font-bold text-[var(--color-academy-ink)]">적용일<input type="date" value={detail.effectiveDate} onChange={event => updateDetail("effectiveDate", event.target.value)} className="mt-1 min-h-11 w-full rounded-xl border bg-[var(--color-academy-surface)] px-3 text-sm font-normal" /></label>
-            {NEEDS_FROM_CLASS.has(row.kind) && <label className="block text-xs font-bold text-[var(--color-academy-ink)]">현재 수업<select value={detail.fromClassId} onChange={event => updateDetail("fromClassId", event.target.value)} className="mt-1 min-h-11 w-full rounded-xl border bg-[var(--color-academy-surface)] px-3 text-sm font-normal"><option value="">현재 등록반 선택</option>{currentClasses.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select>{currentClasses.length===0 && <span className="mt-1 block font-normal text-[var(--color-academy-danger)]">활성·휴원 등록반을 확인할 수 없습니다.</span>}</label>}
-            {NEEDS_TO_CLASS.has(row.kind) && <label className="block text-xs font-bold text-[var(--color-academy-ink)]">희망 수업<select value={detail.toClassId} onChange={event => updateDetail("toClassId", event.target.value)} className="mt-1 min-h-11 w-full rounded-xl border bg-[var(--color-academy-surface)] px-3 text-sm font-normal"><option value="">실제 개설반 선택</option>{classes.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>}
-            {NEEDS_SHUTTLE.has(row.kind) && <label className="block text-xs font-bold text-[var(--color-academy-ink)]">셔틀 요청<select value={detail.shuttleIntent} onChange={event => updateDetail("shuttleIntent", event.target.value as ReviewDetails["shuttleIntent"])} className="mt-1 min-h-11 w-full rounded-xl border bg-[var(--color-academy-surface)] px-3 text-sm font-normal"><option value="">요청 의도 선택</option>{row.kind==="SHUTTLE_START_STOP" && <><option value="START">지속 이용 시작</option><option value="STOP">지속 이용 중단</option></>}{row.kind==="SHUTTLE_CHANGE" && <option value="CHANGE">탑승 정보 변경</option>}{row.kind==="SHUTTLE_FEE" && <option value="EXEMPT">셔틀비 면제 검토</option>}</select></label>}
-            <label className="block text-xs font-bold text-[var(--color-academy-ink)]">상세 메모<textarea rows={3} maxLength={500} value={detail.details} onChange={event => updateDetail("details", event.target.value)} placeholder="학부모가 확인한 날짜·방향·장소·청구 근거 등을 입력" className="mt-1 w-full rounded-xl border bg-[var(--color-academy-surface)] p-3 text-sm font-normal" /></label>
+            <label className="block text-xs font-medium text-[var(--color-academy-ink)]">적용일<input type="date" value={detail.effectiveDate} onChange={event => updateDetail("effectiveDate", event.target.value)} className="academy-input mt-1 font-normal" /></label>
+            {NEEDS_FROM_CLASS.has(row.kind) && <label className="block text-xs font-medium text-[var(--color-academy-ink)]">현재 수업<select value={detail.fromClassId} onChange={event => updateDetail("fromClassId", event.target.value)} className="academy-input mt-1 font-normal"><option value="">현재 등록반 선택</option>{currentClasses.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select>{currentClasses.length===0 && <span className="mt-1 block font-normal text-[var(--color-academy-danger)]">활성·휴원 등록반을 확인할 수 없습니다.</span>}</label>}
+            {NEEDS_TO_CLASS.has(row.kind) && <label className="block text-xs font-medium text-[var(--color-academy-ink)]">희망 수업<select value={detail.toClassId} onChange={event => updateDetail("toClassId", event.target.value)} className="academy-input mt-1 font-normal"><option value="">실제 개설반 선택</option>{classes.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>}
+            {NEEDS_SHUTTLE.has(row.kind) && <label className="block text-xs font-medium text-[var(--color-academy-ink)]">셔틀 요청<select value={detail.shuttleIntent} onChange={event => updateDetail("shuttleIntent", event.target.value as ReviewDetails["shuttleIntent"])} className="academy-input mt-1 font-normal"><option value="">요청 의도 선택</option>{row.kind==="SHUTTLE_START_STOP" && <><option value="START">지속 이용 시작</option><option value="STOP">지속 이용 중단</option></>}{row.kind==="SHUTTLE_CHANGE" && <option value="CHANGE">탑승 정보 변경</option>}{row.kind==="SHUTTLE_FEE" && <option value="EXEMPT">셔틀비 면제 검토</option>}</select></label>}
+            <label className="block text-xs font-medium text-[var(--color-academy-ink)]">상세 메모<textarea rows={3} maxLength={500} value={detail.details} onChange={event => updateDetail("details", event.target.value)} placeholder="학부모가 확인한 날짜·방향·장소·청구 근거 등을 입력" className="academy-input mt-1 font-normal" /></label>
           </section>}
-          <textarea aria-label="검토 및 상담 처리 사유" rows={2} maxLength={500} value={notes[row.id] ?? ""} onChange={e => { captureRevision(row); setNotes(v => ({...v,[row.id]:e.target.value})); }} placeholder="추가 확인·반려·상담 종결 사유 (필수)" className="w-full rounded-xl border p-3 text-sm"/>
-          {row.status === "CONSULTATION" && <button type="button" disabled={pending || !notes[row.id]?.trim()} onClick={() => decide(row.id,"CLOSE_CONSULTATION")} className="min-h-11 rounded-xl border px-3 font-bold disabled:opacity-40">사유를 남기고 상담 종결 (안내 미발송)</button>}
+          <textarea aria-label="검토 및 상담 처리 사유" rows={2} maxLength={500} value={notes[row.id] ?? ""} onChange={e => { captureRevision(row); setNotes(v => ({...v,[row.id]:e.target.value})); }} placeholder="추가 확인·반려·상담 종결 사유 (필수)" className="academy-input"/>
+          {row.status === "CONSULTATION" && <button type="button" disabled={pending || !notes[row.id]?.trim()} onClick={() => decide(row.id,"CLOSE_CONSULTATION")} className="academy-button-secondary">사유를 남기고 상담 종결 (안내 미발송)</button>}
           {/* 게슈탈트 근접성: 진행 작업(추가 확인·상담 전환·이관)은 한 칸에, 되돌리기 어려운 «접수 반려»는 구분선 아래 오른쪽 끝 위험색 */}
-          <div className="grid grid-cols-2 gap-2">{[["NEEDS_DETAILS","추가 확인"],["CONSULTATION","상담 전환"]].map(([decision,label]) => <button key={decision} disabled={pending} onClick={() => decide(row.id, decision as KakaoIntakeDecision)} className="min-h-11 rounded-xl border font-bold disabled:opacity-40">{label}</button>)}<button disabled={pending || !identityOk || !TRANSFERABLE.has(row.kind)} onClick={() => decide(row.id,"TRANSFER")} className="col-span-2 min-h-11 rounded-xl bg-[var(--brand-accent)] px-2 font-black text-[var(--brand-accent-contrast)] disabled:opacity-40">검토 정보 저장 및 운영 원장 이관</button></div>
+          <div className="grid grid-cols-2 gap-2">{[["NEEDS_DETAILS","추가 확인"],["CONSULTATION","상담 전환"]].map(([decision,label]) => <button key={decision} disabled={pending} onClick={() => decide(row.id, decision as KakaoIntakeDecision)} className="academy-button-secondary">{label}</button>)}<button disabled={pending || !identityOk || !TRANSFERABLE.has(row.kind)} onClick={() => decide(row.id,"TRANSFER")} className="academy-button-primary col-span-2">검토 정보 저장 및 운영 원장 이관</button></div>
           <div className="flex justify-end border-t border-[var(--color-academy-line)] pt-3"><button type="button" disabled={pending} onClick={() => decide(row.id, "REJECT")} className="academy-button-danger">접수 반려</button></div>
         </div>}
       </>;

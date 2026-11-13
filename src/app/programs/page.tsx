@@ -97,12 +97,12 @@ export default async function ProgramsPage() {
             <section className="public-page-hero relative overflow-hidden bg-gradient-to-br from-[var(--color-public-dark)] via-[var(--color-public-dark)] to-[var(--color-public-dark)] dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
                 <div className="absolute inset-0 pointer-events-none">
                     <div className="absolute right-0 top-0 w-72 h-72 border-[20px] border-white/5 dark:border-brand-neon-cobalt/10 rounded-full translate-x-1/3 -translate-y-1/3 transition-colors duration-300" />
-                    <div className="absolute left-0 bottom-0 w-48 h-48 border-[15px] border-[var(--color-public-accent)]/10 dark:border-brand-neon-lime/10 rounded-full -translate-x-1/4 translate-y-1/4 transition-colors duration-300" />
+                    <div className="absolute left-0 bottom-0 w-48 h-48 border-[15px] border-white/5 dark:border-brand-neon-lime/10 rounded-full -translate-x-1/4 translate-y-1/4 transition-colors duration-300" />
                 </div>
                 <div className="max-w-6xl mx-auto px-6 md:px-4 relative">
                     <AnimateOnScroll>
-                        <p className="text-[var(--color-public-accent)] dark:text-brand-neon-lime text-sm font-bold uppercase tracking-widest mb-3">PROGRAMS</p>
-                        <h1 className="text-4xl md:text-5xl font-black mb-4 break-keep">프로그램 안내</h1>
+                        <p className="text-[var(--color-public-dark-muted)] dark:text-brand-neon-lime text-sm font-medium uppercase tracking-widest mb-3">PROGRAMS</p>
+                        <h1 className="text-4xl md:text-5xl font-bold mb-4 break-keep">프로그램 안내</h1>
                         <p className="text-blue-200 text-lg max-w-xl">수준과 연령에 맞는 최적의 프로그램을 찾아보세요.</p>
                     </AnimateOnScroll>
                 </div>
@@ -112,7 +112,6 @@ export default async function ProgramsPage() {
             <SectionLayout className="public-content-section" bgColor="white">
                 {programs.length === 0 ? (
                     <div className="text-center py-20 text-[var(--color-public-muted)]">
-                        <div className="text-5xl mb-4">🏀</div>
                         <p className="text-lg font-medium">준비 중입니다.</p>
                         <p className="text-sm mt-2">문의: {phone}</p>
                     </div>
@@ -126,7 +125,7 @@ export default async function ProgramsPage() {
                         </p>
                         <p className="mt-1">
                             <strong className="text-[var(--color-public-ink)] dark:text-white">환불</strong> 「학원법 시행령」 교습비 반환기준에 따릅니다 —{" "}
-                            <a href="/terms" className="font-bold text-[var(--color-public-accent)] underline underline-offset-2 dark:text-brand-neon-lime">환불 규정 보기</a>
+                            <a href="/terms" className="font-medium text-[var(--color-public-accent)] underline underline-offset-2 dark:text-brand-neon-lime">환불 규정 보기</a>
                         </p>
                     </div>
                     <div data-tour-target="program-cards" className="grid min-w-0 md:grid-cols-2 gap-4 md:gap-5">
@@ -163,7 +162,7 @@ export default async function ProgramsPage() {
                                             <div className="flex flex-wrap gap-2">
                                                 {/* 대상 연령 뱃지 */}
                                                 {program.targetAge && (
-                                                    <span className={`${ageColor.bg} ${ageColor.text} text-xs font-bold px-3 py-1 rounded-full`}>
+                                                    <span className={`${ageColor.bg} ${ageColor.text} text-xs px-3 py-1 rounded-full`}>
                                                         {program.targetAge}
                                                     </span>
                                                 )}
@@ -176,7 +175,7 @@ export default async function ProgramsPage() {
                                                 ))}
                                                 {/* 수업 요일 뱃지 */}
                                                 {days.map((d) => (
-                                                    <span key={d} className={`text-xs font-bold px-2.5 py-1 rounded-full ${WEEKEND.has(d) ? "bg-orange-100 text-orange-700" : "bg-[var(--color-public-tint)] dark:bg-[var(--color-public-tint)] text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]"}`}>
+                                                    <span key={d} className={`text-xs px-2.5 py-1 rounded-full ${WEEKEND.has(d) ? "bg-orange-100 text-orange-700" : "bg-[var(--color-public-tint)] dark:bg-[var(--color-public-tint)] text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]"}`}>
                                                         {DAY_OPTIONS[d]}
                                                     </span>
                                                 ))}
@@ -197,9 +196,9 @@ export default async function ProgramsPage() {
                                                     <table className="public-table public-fee-table w-full table-fixed text-sm">
                                                         <thead className="bg-[var(--color-public-dark)] text-white">
                                                             <tr>
-                                                                <th className="px-2 sm:px-4 py-2.5 text-left font-bold">수업 빈도</th>
-                                                                <th className="px-2 sm:px-4 py-2.5 text-right font-bold">월 수강료</th>
-                                                                <th className="px-2 sm:px-4 py-2.5 text-right font-bold">셔틀비</th>
+                                                                <th className="px-2 sm:px-4 py-2.5 text-left font-medium">수업 빈도</th>
+                                                                <th className="px-2 sm:px-4 py-2.5 text-right font-medium">월 수강료</th>
+                                                                <th className="px-2 sm:px-4 py-2.5 text-right font-medium">셔틀비</th>
                                                             </tr>
                                                         </thead>
                                                         <tbody className="divide-y divide-[var(--color-public-line)] dark:divide-[var(--color-public-line)]">
@@ -208,10 +207,10 @@ export default async function ProgramsPage() {
                                                                 return (
                                                                     <tr key={t.key} className="hover:bg-[var(--color-public-tint)] dark:hover:bg-[var(--color-public-tint)]">
                                                                         <td className="px-2 sm:px-4 py-3 font-semibold text-[var(--color-public-ink)] dark:text-[var(--color-public-ink)]">{t.label}</td>
-                                                                        <td className="px-2 sm:px-4 py-3 text-right font-bold text-[var(--color-public-ink)] dark:text-white">
+                                                                        <td className="px-2 sm:px-4 py-3 text-right font-semibold tabular-nums text-[var(--color-public-ink)] dark:text-white">
                                                                             {Number(program[t.key]).toLocaleString()}원
                                                                         </td>
-                                                                        <td className="px-2 sm:px-4 py-3 text-right text-[var(--color-public-muted)] dark:text-blue-400 font-medium">
+                                                                        <td className="px-2 sm:px-4 py-3 text-right tabular-nums text-[var(--color-public-muted)] dark:text-blue-400">
                                                                             {fee ? fee : <span className="text-[var(--color-public-muted)] font-normal">운행 없음</span>}
                                                                         </td>
                                                                     </tr>
@@ -224,17 +223,17 @@ export default async function ProgramsPage() {
                                                 <div className="flex flex-wrap items-center gap-6">
                                                     <div>
                                                         <p className="text-sm text-[var(--color-public-muted)] mb-0.5">월 수강료</p>
-                                                        <p className="text-3xl font-black text-[var(--color-public-ink)] dark:text-white">
+                                                        <p className="text-3xl font-bold tabular-nums text-[var(--color-public-ink)] dark:text-white">
                                                             {program.price.toLocaleString()}
                                                             <span className="text-base font-normal text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">원</span>
                                                         </p>
                                                     </div>
                                                     {weekend ? (
-                                                        <p className="text-sm text-orange-600 dark:text-orange-400 font-medium">셔틀 운행 없음</p>
+                                                        <p className="text-sm text-[var(--color-public-muted)]">셔틀 운행 없음</p>
                                                     ) : program.shuttleFeeOverride === 0 ? (
                                                         <p className="text-sm text-[var(--color-public-muted)]">셔틀 없음</p>
                                                     ) : program.shuttleFeeOverride != null && program.shuttleFeeOverride > 0 ? (
-                                                        <p className="text-sm text-[var(--color-public-muted)] font-medium">
+                                                        <p className="text-sm text-[var(--color-public-muted)]">
                                                             셔틀비 {program.shuttleFeeOverride.toLocaleString()}원
                                                         </p>
                                                     ) : null}
@@ -244,7 +243,7 @@ export default async function ProgramsPage() {
                                             {/* 시간표 보기 링크 */}
                                             <div className="flex justify-end mt-4">
                                                 <a href={`/schedule?program=${program.id}`}
-                                                    className="text-sm font-bold text-[var(--color-public-accent)] dark:text-brand-neon-lime hover:text-orange-600 border border-[var(--color-public-accent)] dark:border-brand-neon-lime/50 hover:border-[var(--color-public-accent)] dark:border-brand-neon-lime px-4 py-2 rounded-xl transition-all duration-200 hover:scale-[1.02]">
+                                                    className="inline-flex min-h-11 items-center text-sm font-medium text-[var(--color-public-accent)] dark:text-brand-neon-lime hover:text-[var(--color-public-strong)] border border-[var(--color-public-accent)] dark:border-brand-neon-lime/50 hover:border-[var(--color-public-strong)] dark:hover:border-brand-neon-lime px-4 py-2 rounded-xl transition-colors duration-200">
                                                     시간표 보기 →
                                                 </a>
                                             </div>

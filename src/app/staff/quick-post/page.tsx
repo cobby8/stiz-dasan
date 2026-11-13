@@ -11,13 +11,13 @@ export default async function StaffQuickPostPage() {
       return (
         <main className="min-h-screen bg-surface-warm px-4 py-10">
           <div className="mx-auto max-w-md rounded-lg border border-[var(--color-academy-line)] bg-white p-6 shadow-sm">
-            <h1 className="text-xl font-black text-[var(--color-academy-ink)]">사진 업로드는 선생님 전용입니다</h1>
+            <h1 className="text-xl font-bold text-[var(--color-academy-ink)]">사진 업로드는 선생님 전용입니다</h1>
             <p className="mt-2 text-sm leading-6 text-[var(--color-academy-muted)]">
               셔틀 기사 계정은 운행 화면에서 노선과 탑승 정보를 확인하도록 분리했습니다.
             </p>
             <Link
               href="/staff/shuttle"
-              className="mt-5 inline-flex w-full items-center justify-center rounded-lg bg-[var(--color-academy-primary)] px-4 py-3 text-sm font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)]"
+              className="academy-button-primary mt-5 w-full"
             >
               셔틀 화면으로 이동
             </Link>
@@ -37,13 +37,13 @@ export default async function StaffQuickPostPage() {
     return (
       <main className="min-h-screen bg-surface-warm px-4 py-10">
         <div className="mx-auto max-w-md rounded-lg border border-[var(--color-academy-line)] bg-white p-6 shadow-sm">
-          <h1 className="text-xl font-black text-[var(--color-academy-ink)]">스태프 로그인이 필요합니다</h1>
+          <h1 className="text-xl font-bold text-[var(--color-academy-ink)]">스태프 로그인이 필요합니다</h1>
           <p className="mt-2 text-sm leading-6 text-[var(--color-academy-muted)]">
             사진 초안 업로드는 등록된 선생님, 부관리자, 관리자만 사용할 수 있습니다.
           </p>
           <Link
             href="/login?redirect=/staff/quick-post"
-            className="mt-5 inline-flex w-full items-center justify-center rounded-lg bg-[var(--color-academy-primary)] px-4 py-3 text-sm font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)]"
+            className="academy-button-primary mt-5 w-full"
           >
             로그인하기
           </Link>

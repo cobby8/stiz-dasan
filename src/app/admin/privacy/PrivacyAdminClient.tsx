@@ -1,5 +1,6 @@
 "use client";
 import { adminErrorText } from "@/components/admin/adminDisplayText";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { updateAcademySettings } from "@/app/actions/admin";
@@ -90,30 +91,23 @@ export default function PrivacyAdminClient({
     <div className="space-y-8">
       {loadError && <div role="alert" className="rounded-lg border p-4">
         <p>{loadError}</p>
-        <button type="button" onClick={() => void loadPrivacyPolicy()} disabled={loading}>{loading ? "불러오는 중..." : "다시 불러오기"}</button>
+        <button type="button" onClick={() => void loadPrivacyPolicy()} disabled={loading} className="academy-button-secondary mt-2">{loading ? "불러오는 중..." : "다시 불러오기"}</button>
       </div>}
       {saveError && <p role="alert">{saveError}</p>}
 
-      <div>
-        <h1 className="text-2xl font-bold text-[var(--color-academy-ink)] mb-2">
-          개인정보처리방침 관리
-        </h1>
-        <p className="text-[var(--color-academy-muted)]">
-          공개 페이지(/privacy)에 표시되는 개인정보 처리방침을 관리합니다.
-        </p>
-      </div>
+      <AdminPageHeader title="개인정보처리방침 관리" description="공개 페이지(/privacy)에 표시되는 개인정보 처리방침을 관리합니다." />
 
       <div className="bg-white p-6 rounded-xl shadow-sm border border-[var(--color-academy-line)]">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold text-[var(--color-academy-ink)]">
+          <h2 className="academy-section-title">
             개인정보 처리방침 내용
           </h2>
           <div className="flex items-center gap-3">
-            {saved && <span className="text-xs text-[var(--color-academy-success)] font-medium">저장됨</span>}
+            {saved && <span className="text-xs text-[var(--color-academy-success)]">저장됨</span>}
             <button
               onClick={savePrivacyPolicy}
               disabled={pending || loading || !!loadError || !loaded}
-              className="bg-[var(--color-academy-primary-hover)] text-white text-sm font-bold px-4 py-2 rounded-lg hover:bg-[var(--color-academy-primary-hover)] transition disabled:opacity-40"
+              className="academy-button-primary"
             >
               {pending ? "저장 중..." : "저장"}
             </button>

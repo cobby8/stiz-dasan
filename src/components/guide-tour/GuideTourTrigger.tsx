@@ -202,7 +202,7 @@ function waitForElement(
  * 각 popover description 앞에 "N/4 단계" 표시를 추가
  */
 function progressLabel(step: number, total: number = 5): string {
-  return `<span style="display:inline-block;color:#999;font-size:11px;margin-bottom:4px">${step}/${total} 단계</span><br/>`;
+  return `<span style="display:inline-block;color:#666;font-size:12px;margin-bottom:4px">${step}/${total} 단계</span><br/>`;
 }
 
 /**
@@ -217,7 +217,6 @@ function showCompletionToast() {
       background:white;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.15);
       padding:24px 32px;max-width:360px;text-align:center;
       animation:tourSlideUp 0.3s ease-out">
-      <div style="font-size:36px;margin-bottom:8px">🎉</div>
       <div style="font-size:18px;font-weight:700;color:#1a1a2e;margin-bottom:6px">둘러보기 완료!</div>
       <div style="font-size:13px;color:#666;line-height:1.6">
         궁금한 프로그램을 찾으셨나요?<br/>
@@ -457,7 +456,7 @@ async function runPhase2(routerPush: (url: string) => void) {
       {
         element: '[data-tour-target="program-cards"]',
         popover: {
-          title: "프로그램 안내 📋",
+          title: "프로그램 안내",
           description:
             progressLabel(2) +
             "스크롤하여 프로그램과 수강료를 확인하세요!",
@@ -624,7 +623,7 @@ async function runPhase3(routerPush: (url: string) => void) {
       {
         element: '[data-tour-target="schedule-grid"]',
         popover: {
-          title: "수업 시간표 📅",
+          title: "수업 시간표",
           description:
             progressLabel(3) + "스크롤하여 시간표를 확인하세요!",
           side: "bottom" as const,
@@ -798,7 +797,7 @@ async function runPhase4(routerPush: (url: string) => void) {
       {
         element: '[data-tour-target="grade-select"]',
         popover: {
-          title: "학년을 선택해 주세요 📝",
+          title: "학년을 선택해 주세요",
           description:
             progressLabel(4) +
             "학년을 선택하고 '다음 단계' 버튼을 눌러주세요!",
@@ -873,7 +872,7 @@ async function waitForStep2Card(driverFn: any, parentClosed: boolean, routerPush
       {
         element: '[data-tour-target="sim-step2-card"]',
         popover: {
-          title: "요일과 시간을 선택하세요 📅",
+          title: "요일과 시간을 선택하세요",
           description:
             progressLabel(4) +
             "요일과 시간대를 선택하고 '수업 찾기'를 눌러주세요!",
@@ -925,7 +924,7 @@ async function runSubStep4_4(driverFn: any, routerPush: (url: string) => void) {
       {
         element: '[data-tour-target="sim-search-btn"]',
         popover: {
-          title: "수업을 찾아볼까요? 🔍",
+          title: "수업을 찾아볼까요?",
           description:
             progressLabel(4) +
             "'수업 찾기' 버튼을 눌러보세요!",
@@ -985,7 +984,7 @@ async function runSubStep4_5(driverFn: any, routerPush: (url: string) => void) {
       {
         element: '[data-tour-target="sim-results"]',
         popover: {
-          title: "수업을 찾았어요! 🎉",
+          title: "수업을 찾았어요!",
           description:
             progressLabel(4) +
             "스크롤하여 결과를 확인하고, 체험수업을 신청해보세요!",
@@ -1037,7 +1036,7 @@ async function runPhase5() {
       {
         element: '[data-tour-target="trial-apply-btn"]',
         popover: {
-          title: "체험수업을 신청해 보세요! 🏀",
+          title: "체험수업을 신청해 보세요!",
           description:
             progressLabel(5) +
             "체험수업을 신청하면 실제 수업을 경험할 수 있어요! (체험비 1만원)",
@@ -1191,35 +1190,40 @@ function TourTriggerInner({ autoStart = false }: { autoStart?: boolean }) {
       {/* 플로팅 입학 가이드 버튼 — 챗봇 버튼 바로 위, 같은 열. 위치는 public-floating-btn--guide(CSS) */}
       <button
         onClick={startTour}
-        className="public-floating-btn public-floating-btn--guide fixed right-6 z-50 w-14 h-14 rounded-full bg-white dark:bg-black text-brand-orange-500 dark:text-brand-neon-lime shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200 flex items-center justify-center border-2 border-brand-orange-500 dark:border-brand-neon-lime"
+        className="public-floating-btn public-floating-btn--guide fixed right-4 z-50 h-12 w-12 rounded-full bg-[var(--color-public-paper)] dark:bg-black text-[var(--color-public-accent)] dark:text-brand-neon-lime shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200 flex items-center justify-center border-2 border-[var(--color-public-accent)] dark:border-brand-neon-lime sm:right-6 sm:h-14 sm:w-14"
         aria-label="입학 가이드 시작"
         title="입학 가이드"
       >
         <FontFreeIcon name="school" size={26} />
       </button>
 
-      {/* 첫 방문 자동 제안 토스트 -- 메인 페이지에서만, 3초 후 표시 */}
+      {/* 첫 방문 자동 제안 토스트 -- 메인 페이지에서만, 3초 후 표시.
+          좁은 화면(640px 미만)에서는 머리 메뉴 바로 아래에 한 줄로 붙인다 — 예전 자리(오른쪽 아래 144px)는
+          홈 첫 화면의 «체험·수강 신청» 주 버튼을 덮었다(2026-11-13 실제 화면 확인).
+          bottom 은 public-sport.css(.public-floating-btn)가 정하므로 좁은 화면에서만 !로 푼다. */}
       {showPrompt && (
-        <div className="public-floating-btn public-floating-btn--prompt fixed right-4 z-50 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-5 max-w-xs border border-gray-100 dark:border-gray-800 animate-in slide-in-from-bottom-4">
+        <div className="public-floating-btn public-floating-btn--prompt fixed right-4 z-50 max-w-xs rounded-2xl border border-[var(--color-public-line)] bg-[var(--color-public-paper)] p-5 shadow-2xl animate-in slide-in-from-bottom-4 max-sm:bottom-auto! max-sm:left-3 max-sm:right-3 max-sm:top-24 max-sm:flex max-sm:max-w-none max-sm:items-center max-sm:gap-2 max-sm:p-3">
           {hasSavedPhase ? (
             <>
               {/* 이전에 중단된 투어가 있는 경우 */}
-              <p className="text-sm font-bold text-gray-900 dark:text-white mb-1">
-                이어서 볼까요? 🏀
-              </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-                이전에 보시던 둘러보기가 있어요.
-              </p>
-              <div className="flex gap-2">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-[var(--color-public-ink)] sm:mb-1">
+                  이어서 볼까요?
+                </p>
+                <p className="text-xs text-[var(--color-public-muted)] sm:mb-4">
+                  이전에 보시던 둘러보기가 있어요.
+                </p>
+              </div>
+              <div className="flex shrink-0 gap-1 sm:gap-2">
                 <button
                   onClick={startTourFromBeginning}
-                  className="px-3 py-1.5 text-xs text-gray-400 hover:text-gray-600 dark:text-gray-300 transition-colors"
+                  className="public-btn-text text-sm"
                 >
                   처음부터
                 </button>
                 <button
                   onClick={startTour}
-                  className="px-4 py-1.5 text-xs font-bold text-white dark:text-black bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 hover:bg-brand-orange-600 dark:hover:bg-lime-400 rounded-lg transition-colors"
+                  className="public-btn-primary px-3! text-sm"
                 >
                   이어서 보기
                 </button>
@@ -1228,22 +1232,24 @@ function TourTriggerInner({ autoStart = false }: { autoStart?: boolean }) {
           ) : (
             <>
               {/* 첫 방문 사용자 */}
-              <p className="text-sm font-bold text-gray-900 dark:text-white mb-1">
-                처음 오셨나요?
-              </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-                학원 둘러보기를 시작할까요?
-              </p>
-              <div className="flex gap-2">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-[var(--color-public-ink)] sm:mb-1">
+                  처음 오셨나요?
+                </p>
+                <p className="text-xs text-[var(--color-public-muted)] sm:mb-4">
+                  학원 둘러보기를 시작할까요?
+                </p>
+              </div>
+              <div className="flex shrink-0 gap-1 sm:gap-2">
                 <button
                   onClick={dismissPrompt}
-                  className="px-3 py-1.5 text-xs text-gray-400 hover:text-gray-600 dark:text-gray-300 transition-colors"
+                  className="public-btn-text text-sm"
                 >
                   괜찮아요
                 </button>
                 <button
                   onClick={startTour}
-                  className="px-4 py-1.5 text-xs font-bold text-white dark:text-black bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 hover:bg-brand-orange-600 dark:hover:bg-lime-400 rounded-lg transition-colors"
+                  className="public-btn-primary px-3! text-sm"
                 >
                   시작하기
                 </button>

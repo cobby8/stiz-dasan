@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { addDaysKst, kstDow, kstLabel, toKstYmd, todayKst } from "@/lib/datetime/kst";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import ListViewToggle, { useRememberedListView } from "@/components/admin/list/ListViewToggle";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
@@ -67,13 +68,11 @@ function dateGroupOf(ymd: string, today: string): DateGroupKey {
 
 function PublishBadge({ published }: { published: boolean }) {
     return published ? (
-        <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-academy-success-soft)] px-2 py-0.5 text-xs font-bold text-[var(--color-academy-success)]">
-            <span className="material-symbols-outlined text-sm" aria-hidden="true">check_circle</span>
+        <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-academy-success-soft)] px-2 py-0.5 text-xs text-[var(--color-academy-success)]">
             발행됨
         </span>
     ) : (
-        <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-academy-soft)] px-2 py-0.5 text-xs font-bold text-[var(--color-academy-muted)]">
-            <span className="material-symbols-outlined text-sm" aria-hidden="true">edit_note</span>
+        <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-academy-soft)] px-2 py-0.5 text-xs text-[var(--color-academy-muted)]">
             미발행
         </span>
     );
@@ -95,11 +94,11 @@ function ReportListLoadingFallback() {
 function ReportListErrorState({ onRetry }: { onRetry: () => void }) {
     return (
         <div className="mx-auto max-w-5xl rounded-xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-4 text-center">
-            <p className="text-sm font-bold text-[var(--color-academy-danger)]">수업 리포트 목록을 불러오지 못했습니다.</p>
+            <p className="text-sm font-semibold text-[var(--color-academy-danger)]">수업 리포트 목록을 불러오지 못했습니다.</p>
             <button
                 type="button"
                 onClick={onRetry}
-                className="mt-3 min-h-11 rounded-lg border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)] px-4 text-sm font-bold"
+                className="academy-button-secondary mt-3"
             >
                 다시 시도
             </button>
@@ -195,8 +194,8 @@ export default function ReportListClient({ sessions: initialSessions }: { sessio
                 className="cursor-pointer transition-colors hover:bg-[var(--color-academy-soft)] focus:bg-[var(--color-academy-primary-soft)] focus:outline-none"
             >
                 {/* 날짜: «10/30(목)» 오른쪽 정렬 */}
-                <td className="admin-cell-num px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{kstLabel(session.date)}</td>
-                <td className="px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{session.className}</td>
+                <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-ink)]">{kstLabel(session.date)}</td>
+                <td className="px-2 py-1.5 font-semibold text-[var(--color-academy-ink)]">{session.className}</td>
                 <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{session.startTime}~{session.endTime}</td>
                 <td className="hidden px-2 py-1.5 text-[var(--color-academy-muted)] lg:table-cell">{session.coachName || "-"}</td>
                 <td className="hidden px-2 py-1.5 text-[var(--color-academy-ink)] lg:table-cell">
@@ -209,9 +208,9 @@ export default function ReportListClient({ sessions: initialSessions }: { sessio
                     <Link
                         href={`/admin/attendance/report/${session.id}`}
                         prefetch={false}
-                        className="inline-flex min-h-11 items-center gap-1 rounded-lg bg-[var(--color-academy-primary)] px-3 text-xs font-bold text-[var(--color-academy-on-primary)] transition hover:bg-[var(--color-academy-primary-hover)]"
+                        // 행 안 작은 작업 = 옅은 바탕(tonal). 꽉 찬 주 버튼이 행마다 반복되지 않게
+                        className="academy-button-tonal academy-button-sm"
                     >
-                        <span className="material-symbols-outlined text-sm" aria-hidden="true">edit</span>
                         편집
                     </Link>
                 </td>
@@ -229,10 +228,12 @@ export default function ReportListClient({ sessions: initialSessions }: { sessio
 
     return (
         <div className="mx-auto max-w-5xl">
-            <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <h1 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">수업 리포트 관리</h1>
-                <p className="text-xs text-[var(--color-academy-muted)]">출결이 기록된 최근 수업 <span className="tabular-nums">{sessions.length}</span>개</p>
-            </div>
+            {/* 페이지 제목은 공용 머리말 부품(모양 한 가지) */}
+            <AdminPageHeader
+                className="mb-3"
+                title="수업 리포트 관리"
+                description={<>출결이 기록된 최근 수업 <span className="tabular-nums">{sessions.length}</span>개</>}
+            />
 
             {sessions.length === 0 ? (
                 <div className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-4 text-center text-sm text-[var(--color-academy-muted)]">
@@ -266,7 +267,7 @@ export default function ReportListClient({ sessions: initialSessions }: { sessio
                             <div className="overflow-x-auto">
                                 {/* admin-list-table: 글자 왼쪽·날짜/시간/인원 오른쪽(tabular)·한 줄(말줄임 없음, 좁으면 가로 스크롤) */}
                                 <table className="admin-list-table w-full border-collapse text-sm">
-                                    <thead className="bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]">
+                                    <thead className="bg-[var(--color-academy-soft)] text-xs font-semibold text-[var(--color-academy-muted)]">
                                         <tr>
                                             <th className="admin-cell-num px-2 py-2">날짜</th>
                                             <th className="px-2 py-2">반</th>
@@ -285,7 +286,7 @@ export default function ReportListClient({ sessions: initialSessions }: { sessio
                                             return (
                                                 <tbody key={group.key} className="divide-y divide-[var(--color-academy-line)]">
                                                     <tr>
-                                                        <th colSpan={columnCount} scope="rowgroup" className="bg-[var(--color-academy-soft)] px-2 py-1.5 text-xs font-black text-[var(--color-academy-ink)]">
+                                                        <th colSpan={columnCount} scope="rowgroup" className="bg-[var(--color-academy-soft)] px-2 py-1.5 text-xs font-semibold text-[var(--color-academy-ink)]">
                                                             {group.label} · <span className="tabular-nums">{group.items.length}</span>개
                                                             {draftCount > 0 && <> · 미발행 <span className="tabular-nums">{draftCount}</span></>}
                                                         </th>
@@ -320,7 +321,7 @@ export default function ReportListClient({ sessions: initialSessions }: { sessio
                 return (
                     <ListDetailPanel onClose={() => setDetailSessionId(null)} titleId="report-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
                         <div className="mb-4 flex items-center gap-2">
-                            <h3 id="report-detail-panel-title" className="min-w-0 break-keep text-lg font-black text-[var(--color-academy-ink)]">{d.className}</h3>
+                            <h3 id="report-detail-panel-title" className="min-w-0 break-keep text-lg font-bold text-[var(--color-academy-ink)]">{d.className}</h3>
                             <PublishBadge published={d.published} />
                             <button
                                 type="button"
@@ -334,7 +335,7 @@ export default function ReportListClient({ sessions: initialSessions }: { sessio
                         <dl className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
                             {rows.map((row) => (
                                 <div key={row.label} className="contents">
-                                    <dt className="font-bold text-[var(--color-academy-muted)]">{row.label}</dt>
+                                    <dt className="font-medium text-[var(--color-academy-muted)]">{row.label}</dt>
                                     <dd className="min-w-0 break-keep break-words text-[var(--color-academy-ink)]">{row.value}</dd>
                                 </div>
                             ))}
@@ -343,9 +344,8 @@ export default function ReportListClient({ sessions: initialSessions }: { sessio
                             <Link
                                 href={`/admin/attendance/report/${d.id}`}
                                 prefetch={false}
-                                className="inline-flex min-h-11 items-center gap-1 rounded-lg bg-[var(--color-academy-primary)] px-4 text-sm font-bold text-[var(--color-academy-on-primary)] hover:bg-[var(--color-academy-primary-hover)]"
+                                className="academy-button-primary"
                             >
-                                <span className="material-symbols-outlined text-lg" aria-hidden="true">edit</span>
                                 리포트 편집
                             </Link>
                         </div>

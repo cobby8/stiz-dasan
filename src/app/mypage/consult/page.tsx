@@ -27,7 +27,7 @@ export default async function ParentConsultPage() {
     return (
         <div className="mx-auto w-full max-w-2xl space-y-3 px-4 py-4">
             <div>
-                <h1 className="text-xl font-black text-[var(--color-academy-ink)]">형제·자매 상담 신청</h1>
+                <h1 className="academy-heading">형제·자매 상담 신청</h1>
                 <p className="mt-1 text-sm break-keep text-[var(--color-academy-muted)]">
                     함께 다닐 아이 정보를 남겨 주시면 학원에서 확인 후 전화로 안내해 드려요.
                 </p>

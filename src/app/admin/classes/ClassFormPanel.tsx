@@ -61,7 +61,7 @@ export default function ClassFormPanel({
 
     return (
         <form onSubmit={handleSubmit} className="bg-white border border-[var(--color-academy-line)] rounded-xl p-6 shadow-sm space-y-4">
-            <h3 className="font-bold text-lg text-[var(--color-academy-ink)]">{classItem ? "반 수정" : "새 반 개설"}</h3>
+            <h3 className="academy-section-title">{classItem ? "반 수정" : "새 반 개설"}</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                     <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">소속 프로그램 *</label>
@@ -69,7 +69,7 @@ export default function ClassFormPanel({
                         value={programId}
                         onChange={(e) => setProgramId(e.target.value)}
                         required
-                        className="w-full border border-[var(--color-academy-line-input)] rounded-md p-2 focus:ring-[var(--color-academy-primary)] focus:border-[var(--color-academy-primary)] bg-white"
+                        className="academy-input"
                     >
                         <option value="">선택하세요</option>
                         {programs.map((p) => (
@@ -84,7 +84,7 @@ export default function ClassFormPanel({
                         onChange={(e) => setName(e.target.value)}
                         required
                         placeholder="예: 초등 저학년 A반"
-                        className="w-full border border-[var(--color-academy-line-input)] rounded-md p-2 focus:ring-[var(--color-academy-primary)] focus:border-[var(--color-academy-primary)]"
+                        className="academy-input"
                     />
                 </div>
                 <div>
@@ -93,7 +93,7 @@ export default function ClassFormPanel({
                         value={dayOfWeek}
                         onChange={(e) => setDayOfWeek(e.target.value)}
                         required
-                        className="w-full border border-[var(--color-academy-line-input)] rounded-md p-2 focus:ring-[var(--color-academy-primary)] focus:border-[var(--color-academy-primary)] bg-white"
+                        className="academy-input"
                     >
                         <option value="">선택하세요</option>
                         {DAYS.map((d) => (
@@ -107,7 +107,7 @@ export default function ClassFormPanel({
                         type="time"
                         value={startTime}
                         onChange={(e) => setStartTime(e.target.value)}
-                        className="w-full border border-[var(--color-academy-line-input)] rounded-md p-2 focus:ring-[var(--color-academy-primary)] focus:border-[var(--color-academy-primary)]"
+                        className="academy-input"
                     />
                 </div>
                 <div>
@@ -116,7 +116,7 @@ export default function ClassFormPanel({
                         type="time"
                         value={endTime}
                         onChange={(e) => setEndTime(e.target.value)}
-                        className="w-full border border-[var(--color-academy-line-input)] rounded-md p-2 focus:ring-[var(--color-academy-primary)] focus:border-[var(--color-academy-primary)]"
+                        className="academy-input"
                     />
                 </div>
                 <div>
@@ -126,7 +126,7 @@ export default function ClassFormPanel({
                         value={capacity}
                         onChange={(e) => setCapacity(parseInt(e.target.value) || 0)}
                         required
-                        className="w-full border border-[var(--color-academy-line-input)] rounded-md p-2 focus:ring-[var(--color-academy-primary)] focus:border-[var(--color-academy-primary)]"
+                        className="academy-input"
                     />
                 </div>
                 <div className="md:col-span-2">
@@ -135,18 +135,18 @@ export default function ClassFormPanel({
                         value={location}
                         onChange={(e) => setLocation(e.target.value)}
                         placeholder="예: A코트, 메인구장"
-                        className="w-full border border-[var(--color-academy-line-input)] rounded-md p-2 focus:ring-[var(--color-academy-primary)] focus:border-[var(--color-academy-primary)]"
+                        className="academy-input"
                     />
                 </div>
                 <div className="flex items-end justify-end">
                     <div className="flex gap-2">
-                        <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-[var(--color-academy-muted)] hover:text-[var(--color-academy-ink)]">
+                        <button type="button" onClick={onClose} className="academy-button-text">
                             취소
                         </button>
                         <button
                             type="submit"
                             disabled={busy}
-                            className="bg-[var(--color-academy-primary)] text-white px-4 py-2 rounded-md font-bold hover:bg-[var(--color-academy-primary-hover)] transition shadow-sm disabled:opacity-50"
+                            className="academy-button-primary"
                         >
                             {busy ? "저장 중..." : classItem ? "수정" : "개설하기"}
                         </button>

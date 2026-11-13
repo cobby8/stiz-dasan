@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { INBOX_TABS } from "@/lib/requests/catalog";
 import type { InboxCounts } from "@/lib/requests/admin-inbox";
@@ -99,26 +99,6 @@ type SiteOpsBotResult = {
     notified: boolean;
 };
 
-function SymbolIcon({
-    name,
-    size = 18,
-    className = "",
-}: {
-    name: string;
-    size?: number;
-    className?: string;
-}) {
-    return (
-        <span
-            className={`material-symbols-outlined leading-none ${className}`}
-            style={{ fontSize: `${size}px` }}
-            aria-hidden="true"
-        >
-            {name}
-        </span>
-    );
-}
-
 function formatKRW(n: number): string {
     if (n >= 10000) return `${(n / 10000).toFixed(n % 10000 === 0 ? 0 : 1)}만원`;
     return n.toLocaleString("ko-KR") + "원";
@@ -141,12 +121,11 @@ function DashboardPrimarySkeleton() {
 function ErrorState({ onRetry }: { onRetry: () => void }) {
     return (
         <div className="rounded-2xl border border-[var(--color-academy-danger)] bg-white p-8 text-center shadow-sm">
-            <SymbolIcon name="error" size={36} className="mx-auto mb-3 text-[var(--color-academy-danger)]" />
-            <p className="font-bold text-[var(--color-academy-ink)]">대시보드 데이터를 불러오지 못했습니다.</p>
+            <p className="font-semibold text-[var(--color-academy-ink)]">대시보드 데이터를 불러오지 못했습니다.</p>
             <button
                 type="button"
                 onClick={onRetry}
-                className="mt-4 rounded-xl academy-button-primary px-4 py-2 text-sm font-bold"
+                className="academy-button-secondary mt-4"
             >
                 다시 시도
             </button>
@@ -247,8 +226,8 @@ export default function AdminDashboardClient({
             {/* 반복 방문에서는 설명보다 업무 제목과 바로 쓰는 두 동선이 먼저 보이게 한다. */}
             <header className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                    <h1 className="academy-heading">오늘의 업무</h1>
-                    {data?.todayLabel && <p className="text-sm text-[var(--color-academy-muted)]">{data.todayLabel}</p>}
+                    <h1 className="academy-page-title">오늘의 업무</h1>
+                    {data?.todayLabel && <p className="academy-page-description">{data.todayLabel}</p>}
                 </div>
                 <div className="flex flex-wrap gap-2">
                     <Link href="/admin/students" prefetch={false} className="academy-button-secondary">원생 찾기</Link>
@@ -329,14 +308,14 @@ function DashboardContent({
             <div className={`grid items-start gap-3 ${pendingCount > 0 || enrollStats.PENDING > 0 ? "xl:grid-cols-2" : ""}`}>
             <section className="academy-panel overflow-hidden">
                 <div className={`flex flex-wrap items-center justify-between gap-3 px-4 py-3 ${pendingCount > 0 ? "border-b border-[var(--color-academy-line)]" : ""}`}>
-                    <h2 className="academy-section-title flex items-center gap-2"><SymbolIcon name="inbox" />처리할 신청 <span className="academy-status">{pendingCount}건</span></h2>
-                    <Link href="/admin/inbox" prefetch={false} className="text-sm font-bold text-[var(--color-academy-primary)]">전체 보기 →</Link>
+                    <h2 className="academy-section-title flex items-center gap-2">처리할 신청 <span className="academy-status">{pendingCount}건</span></h2>
+                    <Link href="/admin/inbox" prefetch={false} className="text-sm font-medium text-[var(--color-academy-primary)]">전체 보기 →</Link>
                 </div>
                 {/* 탭별 건수 한 줄 — 누르면 신청함이 그 탭으로 열린다 */}
                 {inboxTabs.length > 0 && (
                     <div className="flex flex-wrap gap-2 border-b border-[var(--color-academy-line)] px-4 py-2">
                         {inboxTabs.map((entry) => (
-                            <Link key={entry.tab} href={`/admin/inbox?tab=${entry.tab}`} prefetch={false} className="inline-flex min-h-11 items-center gap-1 rounded-full border border-[var(--color-academy-line-input)] px-3 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]">
+                            <Link key={entry.tab} href={`/admin/inbox?tab=${entry.tab}`} prefetch={false} className="inline-flex min-h-11 items-center gap-1 rounded-full border border-[var(--color-academy-line-input)] px-3 text-sm font-medium text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]">
                                 {entry.label} <span className="tabular-nums">{inboxCounts?.byTab[entry.tab]}</span>
                             </Link>
                         ))}
@@ -346,15 +325,14 @@ function DashboardContent({
                     <div className="divide-y divide-[var(--color-academy-line)]">
                         {pendingRequests.map((request) => (
                             <Link key={request.id} href="/admin/inbox?kind=PARENT_REQUEST" prefetch={false} className="flex items-center gap-3 px-5 py-4 transition hover:bg-[var(--color-academy-soft)]">
-                                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-[var(--color-academy-primary-soft)] font-bold text-[var(--color-academy-primary)]">{(request.studentName ?? request.parentName ?? "요청").slice(0, 1)}</span>
-                                <div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-[var(--color-academy-ink)]">{request.studentName ?? request.parentName ?? "학부모 요청"}</p><p className="mt-0.5 break-words text-sm text-[var(--color-academy-muted)]">{request.title}</p></div>
-                                <span className="shrink-0 text-xs font-bold text-[var(--color-academy-warning)]">미처리</span>
-                                <SymbolIcon name="chevron_right" className="shrink-0 text-[var(--color-academy-muted)]" />
+                                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-[var(--color-academy-primary-soft)] font-semibold text-[var(--color-academy-primary)]">{(request.studentName ?? request.parentName ?? "요청").slice(0, 1)}</span>
+                                <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-[var(--color-academy-ink)]">{request.studentName ?? request.parentName ?? "학부모 요청"}</p><p className="mt-0.5 break-words text-sm text-[var(--color-academy-muted)]">{request.title}</p></div>
+                                <span className="shrink-0 text-xs text-[var(--color-academy-warning)]">미처리</span>
                             </Link>
                         ))}
                     </div>
                 ) : pendingCount > 0 && inboxTabs.length === 0 ? <p className="px-4 py-3 text-sm text-[var(--color-academy-muted)]">요청 목록에서 처리할 내용을 확인하세요.</p> : null}
-                {enrollStats.PENDING > 0 && <Link href="/admin/inbox?tab=ENROLL" prefetch={false} className="flex items-center justify-between gap-3 border-t border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] px-5 py-3 text-sm font-bold text-[var(--color-academy-primary)]"><span>수강 신청 대기 {enrollStats.PENDING}건</span><span>확인하기 →</span></Link>}
+                {enrollStats.PENDING > 0 && <Link href="/admin/inbox?tab=ENROLL" prefetch={false} className="flex items-center justify-between gap-3 border-t border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] px-5 py-3 text-sm font-medium text-[var(--color-academy-primary)]"><span>수강 신청 대기 {enrollStats.PENDING}건</span><span>확인하기 →</span></Link>}
             </section>
                 <TodayClassesCard todayClasses={todayClasses} todayLabel={todayLabel} />
             </div>
@@ -365,7 +343,7 @@ function DashboardContent({
                     운영 현황
                     {/* 게슈탈트 A-13: 접힌 채로도 미납 건수가 보이게(상세를 불러온 뒤에만 — 첫 응답엔 값이 없다) */}
                     {detailsLoaded && extendedStats.unpaidCount > 0 && (
-                        <span className="ml-2 rounded-full bg-[var(--color-academy-danger-soft)] px-2 py-0.5 text-xs font-bold tabular-nums text-[var(--color-academy-danger)]">미납 {extendedStats.unpaidCount}건</span>
+                        <span className="ml-2 rounded-full bg-[var(--color-academy-danger-soft)] px-2 py-0.5 text-xs font-normal tabular-nums text-[var(--color-academy-danger)]">미납 {extendedStats.unpaidCount}건</span>
                     )}
                 </summary>
                 <div className="mt-5 space-y-5">
@@ -373,60 +351,54 @@ function DashboardContent({
                     {detailsError && <p role="alert" className="rounded-xl bg-[var(--color-academy-danger-soft)] px-4 py-3 text-sm text-[var(--color-academy-danger)]">상세 운영 현황을 불러오지 못했습니다. 현재 표시 중인 정보는 유지됩니다. 다시 불러와 주세요.</p>}
                     {(!detailsLoaded || detailsError) && <DeferredDetailsCard loading={detailsLoading} onLoad={onLoadDetails} retry={detailsError} />}
                     {detailsLoaded && <>
-            {/* 게슈탈트 A-14: 두 카드 줄이 한 덩어리로 읽히지 않게 줄마다 소제목을 단다. 아이콘 색은 한 가지(muted) */}
-            <h3 className="mb-2 text-xs font-bold text-[var(--color-academy-muted)]">운영 규모</h3>
+            {/* 게슈탈트 A-14: 두 카드 줄이 한 덩어리로 읽히지 않게 줄마다 소제목을 단다. 2026-11-13 UI 통일: 카드 아이콘은 뺐다(제목 글자가 말한다) */}
+            <h3 className="mb-2 text-xs font-medium text-[var(--color-academy-muted)]">운영 규모</h3>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <StatCard title="등록 원생" value={`${stats.studentCount}명`}
-                    icon={<SymbolIcon name="groups" size={20} className="text-[var(--color-academy-muted)]" />} href="/admin/students" />
-                <StatCard title="운영 프로그램" value={`${stats.programCount}개`}
-                    icon={<SymbolIcon name="menu_book" size={20} className="text-[var(--color-academy-muted)]" />} href="/admin/programs" />
-                <StatCard title="코치/강사진" value={`${stats.coachCount}명`}
-                    icon={<SymbolIcon name="person_check" size={20} className="text-[var(--color-academy-muted)]" />} href="/admin/coaches" />
-                <StatCard title="개설 반" value={`${stats.classCount}개`}
-                    icon={<SymbolIcon name="layers" size={20} className="text-[var(--color-academy-muted)]" />} href="/admin/classes" />
+                <StatCard title="등록 원생" value={`${stats.studentCount}명`} href="/admin/students" />
+                <StatCard title="운영 프로그램" value={`${stats.programCount}개`} href="/admin/programs" />
+                <StatCard title="코치/강사진" value={`${stats.coachCount}명`} href="/admin/coaches" />
+                <StatCard title="개설 반" value={`${stats.classCount}개`} href="/admin/classes" />
             </div>
 
-            <h3 className="mb-2 mt-6 text-xs font-bold text-[var(--color-academy-muted)]">이번 달 매출·출석·미납</h3>
+            <h3 className="mb-2 mt-6 text-xs font-medium text-[var(--color-academy-muted)]">이번 달 매출·출석·미납</h3>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="academy-panel p-4">
                     <p className="text-xs font-medium text-[var(--color-academy-muted)] mb-1">이번 달 매출</p>
-                    <h3 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">{formatKRW(extendedStats.thisMonthRevenue)}</h3>
+                    <h3 className="text-2xl font-bold tabular-nums text-[var(--color-academy-ink)]">{formatKRW(extendedStats.thisMonthRevenue)}</h3>
                     {extendedStats.lastMonthRevenue > 0 && (
                         <div className={`flex items-center gap-1 mt-1 text-xs font-medium ${revDiff >= 0 ? "text-[var(--color-academy-success)]" : "text-[var(--color-academy-danger)]"}`}>
-                            <SymbolIcon name={revDiff > 0 ? "trending_up" : revDiff < 0 ? "trending_down" : "remove"} size={14} />
                             전월 대비 {revDiff > 0 ? "+" : ""}{revDiff}%
                         </div>
                     )}
                 </div>
                 <div className="academy-panel p-4">
                     <p className="text-xs font-medium text-[var(--color-academy-muted)] mb-1">이번 달 출석률</p>
-                    <h3 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">{extendedStats.attendanceRate}%</h3>
+                    <h3 className="text-lg font-semibold tabular-nums text-[var(--color-academy-ink)]">{extendedStats.attendanceRate}%</h3>
                 </div>
                 <Link href="/admin/finance" prefetch={false} className="academy-panel p-4 hover:border-[var(--color-academy-danger)] transition">
                     <p className="text-xs font-medium text-[var(--color-academy-muted)] mb-1">미납 현황</p>
-                    <h3 className={`text-2xl font-extrabold ${extendedStats.unpaidCount > 0 ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-ink)]"}`}>
+                    <h3 className={`text-lg font-semibold tabular-nums ${extendedStats.unpaidCount > 0 ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-ink)]"}`}>
                         {extendedStats.unpaidCount}건
                     </h3>
                     {extendedStats.unpaidAmount > 0 && (
                         <p className="text-xs text-[var(--color-academy-danger)] mt-1 flex items-center gap-1">
-                            <SymbolIcon name="warning" size={12} /> {formatKRW(extendedStats.unpaidAmount)}
+                            {formatKRW(extendedStats.unpaidAmount)}
                         </p>
                     )}
                 </Link>
                 <div className="academy-panel p-4">
                     <p className="text-xs font-medium text-[var(--color-academy-muted)] mb-1">전월 매출</p>
-                    <h3 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">{formatKRW(extendedStats.lastMonthRevenue)}</h3>
+                    <h3 className="text-lg font-semibold tabular-nums text-[var(--color-academy-ink)]">{formatKRW(extendedStats.lastMonthRevenue)}</h3>
                 </div>
             </div>
 
             <Link href="/admin/stats" prefetch={false} className="flex items-center justify-between bg-[var(--color-academy-primary-soft)] border border-[var(--color-academy-line)] rounded-2xl p-4 hover:opacity-90 transition shadow-sm">
                 <div className="flex items-center gap-3">
-                    <SymbolIcon name="monitoring" size={28} className="text-[var(--color-academy-primary)]" />
                     <div>
-                        <p className="font-bold text-[var(--color-academy-primary)]">상세 운영 통계</p>
+                        <p className="font-semibold text-[var(--color-academy-primary)]">상세 운영 통계</p>
                     </div>
                 </div>
-                <span className="text-[var(--color-academy-primary)] text-sm font-bold">보러가기 &rarr;</span>
+                <span className="text-[var(--color-academy-primary)] text-sm font-medium">보러가기 &rarr;</span>
             </Link>
 
             <ChartsSection extendedStats={extendedStats} maxRevenue={maxRevenue} />
@@ -458,7 +430,6 @@ function DeferredDetailsCard({ loading, onLoad, retry }: { loading: boolean; onL
         <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-[var(--color-academy-muted)]">매출·출석 추이와 최근 등록 원생은 조회 후 표시합니다.</p>
             <button type="button" onClick={onLoad} disabled={loading} className="academy-button-secondary disabled:cursor-wait disabled:opacity-60">
-                <SymbolIcon name={loading ? "sync" : "download"} size={18} />
                 {loading ? "불러오는 중" : retry ? "상세 데이터 다시 불러오기" : "상세 데이터 불러오기"}
             </button>
         </div>
@@ -469,16 +440,16 @@ function ChartsSection({ extendedStats, maxRevenue }: { extendedStats: ExtendedS
     return (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="academy-panel p-5">
-                <h3 className="font-bold text-[var(--color-academy-ink)] mb-4">매출 추이 (최근 6개월)</h3>
+                <h3 className="academy-section-title mb-4">매출 추이 (최근 6개월)</h3>
                 <div className="flex items-end gap-2 h-40">
                     {extendedStats.monthlyRevenue.map((m, i) => (
                         <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                            <span className="text-xs text-[var(--color-academy-muted)] font-medium">
+                            <span className="text-xs tabular-nums text-[var(--color-academy-muted)]">
                                 {m.amount > 0 ? formatKRW(m.amount) : ""}
                             </span>
                             <div className="w-full bg-[var(--color-academy-soft)] rounded-t-lg relative" style={{ height: "120px" }}>
                                 <div
-                                    className="absolute bottom-0 left-0 right-0 bg-[var(--color-academy-primary)] rounded-t-lg transition-all duration-500"
+                                    className="absolute bottom-0 left-0 right-0 bg-[var(--color-academy-secondary-strong)] rounded-t-lg transition-all duration-500"
                                     style={{ height: `${maxRevenue > 0 ? (m.amount / maxRevenue) * 100 : 0}%` }}
                                 />
                             </div>
@@ -489,16 +460,16 @@ function ChartsSection({ extendedStats, maxRevenue }: { extendedStats: ExtendedS
             </div>
 
             <div className="academy-panel p-5">
-                <h3 className="font-bold text-[var(--color-academy-ink)] mb-4">출석률 추이 (최근 6개월)</h3>
+                <h3 className="academy-section-title mb-4">출석률 추이 (최근 6개월)</h3>
                 <div className="flex items-end gap-2 h-40">
                     {extendedStats.monthlyAttendance.map((m, i) => (
                         <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                            <span className="text-xs text-[var(--color-academy-muted)] font-medium">
+                            <span className="text-xs tabular-nums text-[var(--color-academy-muted)]">
                                 {m.rate > 0 ? `${m.rate}%` : ""}
                             </span>
                             <div className="w-full bg-[var(--color-academy-soft)] rounded-t-lg relative" style={{ height: "120px" }}>
                                 <div
-                                    className="absolute bottom-0 left-0 right-0 bg-[var(--color-academy-primary)] rounded-t-lg transition-all duration-500"
+                                    className="absolute bottom-0 left-0 right-0 bg-[var(--color-academy-secondary-strong)] rounded-t-lg transition-all duration-500"
                                     style={{ height: `${m.rate}%` }}
                                 />
                             </div>
@@ -515,7 +486,7 @@ function TodayClassesCard({ todayClasses, todayLabel }: { todayClasses: TodayCla
     return (
         <section className="academy-panel overflow-hidden">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--color-academy-line)] px-5 py-4">
-                <h2 className="academy-section-title flex items-center gap-2"><SymbolIcon name="event_available" />오늘의 수업</h2>
+                <h2 className="academy-section-title">오늘의 수업</h2>
                 <span className="text-xs text-[var(--color-academy-muted)]">{todayLabel}</span>
             </div>
             {todayClasses.length === 0 ? <p className="px-5 py-6 text-sm text-[var(--color-academy-muted)]">오늘은 수업이 없습니다.</p> : (
@@ -523,10 +494,10 @@ function TodayClassesCard({ todayClasses, todayLabel }: { todayClasses: TodayCla
                     {todayClasses.map((item) => (
                         <div key={item.id} className="flex items-center justify-between gap-3 px-5 py-4">
                             <div className="min-w-0">
-                                <p className="break-words text-sm font-bold text-[var(--color-academy-ink)]">{item.name}</p>
+                                <p className="break-words text-sm font-semibold text-[var(--color-academy-ink)]">{item.name}</p>
                                 <p className="mt-0.5 text-sm text-[var(--color-academy-muted)]">{item.startTime ?? "시간 미정"}{item.endTime ? `–${item.endTime}` : ""}{item.programName ? ` · ${item.programName}` : ""}</p>
                             </div>
-                            <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ${item.enrolled >= item.capacity ? "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]" : "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]"}`}>{item.enrolled}/{item.capacity}명</span>
+                            <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs tabular-nums ${item.enrolled >= item.capacity ? "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]" : "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]"}`}>{item.enrolled}/{item.capacity}명</span>
                         </div>
                     ))}
                 </div>
@@ -543,7 +514,7 @@ function RecentStudentsCard({ recentStudents }: { recentStudents: RecentStudent[
                 <div className="divide-y divide-[var(--color-academy-line)]">
                     {recentStudents.map((student) => (
                         <Link key={student.id} href={`/admin/students/${student.id}`} prefetch={false} className="flex items-center justify-between gap-3 rounded-lg py-3 transition hover:bg-[var(--color-academy-soft)]">
-                            <div className="min-w-0"><p className="break-words text-sm font-bold">{student.name}</p><p className="text-xs text-[var(--color-academy-muted)]">학부모: {student.parentName ?? "-"}</p></div>
+                            <div className="min-w-0"><p className="break-words text-sm font-semibold">{student.name}</p><p className="text-xs text-[var(--color-academy-muted)]">학부모: {student.parentName ?? "-"}</p></div>
                             <span className="shrink-0 text-xs text-[var(--color-academy-muted)]">{new Date(student.createdAt).toLocaleDateString("ko-KR", { month: "short", day: "numeric" })}</span>
                         </Link>
                     ))}
@@ -558,7 +529,7 @@ function ProgramStudentsCard({ programStudents }: { programStudents: { name: str
 
     return (
         <div className="academy-panel p-5">
-            <h3 className="font-bold text-[var(--color-academy-ink)] mb-4">프로그램별 원생 수</h3>
+            <h3 className="academy-section-title mb-4">프로그램별 원생 수</h3>
             {programStudents.length === 0 ? (
                 <p className="text-sm text-[var(--color-academy-faint)]">프로그램을 추가하세요</p>
             ) : (
@@ -566,12 +537,12 @@ function ProgramStudentsCard({ programStudents }: { programStudents: { name: str
                     {programStudents.map((program, index) => (
                         <div key={index}>
                             <div className="flex justify-between text-sm mb-1">
-                                <span className="text-[var(--color-academy-muted)] font-medium truncate">{program.name}</span>
-                                <span className="text-[var(--color-academy-muted)] font-bold">{program.count}명</span>
+                                <span className="text-[var(--color-academy-muted)] truncate">{program.name}</span>
+                                <span className="text-[var(--color-academy-muted)] font-semibold tabular-nums">{program.count}명</span>
                             </div>
                             <div className="w-full bg-[var(--color-academy-soft)] rounded-full h-2">
                                 <div
-                                    className="bg-[var(--color-academy-primary)] h-2 rounded-full transition-all duration-500"
+                                    className="bg-[var(--color-academy-secondary-strong)] h-2 rounded-full transition-all duration-500"
                                     style={{ width: `${(program.count / maxCnt) * 100}%` }}
                                 />
                             </div>
@@ -614,7 +585,7 @@ function SiteOpsBotCard({
         <div className="academy-panel p-4">
             <div className="mb-3 flex items-start justify-between gap-3">
                 <div>
-                    <h3 className="font-bold text-[var(--color-academy-ink)]">사이트 점검 봇</h3>
+                    <h3 className="academy-section-title">사이트 점검 봇</h3>
                     {/* 마지막 점검 시각은 실제 점검 결과가 있을 때만 표시한다 */}
                     {result && (
                         <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
@@ -622,7 +593,7 @@ function SiteOpsBotCard({
                         </p>
                     )}
                 </div>
-                <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ${statusClass}`}>
+                <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${statusClass}`}>
                     {loading ? "점검 중" : statusLabel}
                 </span>
             </div>
@@ -631,14 +602,13 @@ function SiteOpsBotCard({
                 type="button"
                 onClick={onRun}
                 disabled={loading}
-                className="mb-3 inline-flex w-full items-center justify-center gap-2 rounded-xl academy-button-primary px-4 py-2 text-sm font-bold disabled:cursor-wait disabled:opacity-60"
+                className="academy-button-secondary mb-3 w-full disabled:cursor-wait"
             >
-                <SymbolIcon name={loading ? "sync" : "smart_toy"} size={18} />
                 {loading ? "점검 중" : "점검 실행"}
             </button>
 
             {error && (
-                <p className="mb-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-xs font-medium text-[var(--color-academy-danger)]">
+                <p className="mb-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-xs text-[var(--color-academy-danger)]">
                     점검을 실행하지 못했습니다. 잠시 후 다시 시도해주세요.
                 </p>
             )}
@@ -653,15 +623,15 @@ function SiteOpsBotCard({
                 <div className="space-y-2">
                     <div className="grid grid-cols-3 gap-2 text-center text-xs">
                         <div className="rounded-lg bg-[var(--color-academy-soft)] px-2 py-2">
-                            <p className="font-bold text-[var(--color-academy-ink)]">{result.checks.length}</p>
+                            <p className="font-semibold tabular-nums text-[var(--color-academy-ink)]">{result.checks.length}</p>
                             <p className="text-[var(--color-academy-muted)]">점검</p>
                         </div>
                         <div className="rounded-lg bg-[var(--color-academy-success-soft)] px-2 py-2">
-                            <p className="font-bold text-[var(--color-academy-success)]">{result.fixedCount}</p>
+                            <p className="font-semibold tabular-nums text-[var(--color-academy-success)]">{result.fixedCount}</p>
                             <p className="text-[var(--color-academy-success)]/70">자동조치</p>
                         </div>
                         <div className="rounded-lg bg-[var(--color-academy-warning-soft)] px-2 py-2">
-                            <p className="font-bold text-[var(--color-academy-warning)]">{result.manualActionCount}</p>
+                            <p className="font-semibold tabular-nums text-[var(--color-academy-warning)]">{result.manualActionCount}</p>
                             <p className="text-[var(--color-academy-warning)]/70">확인</p>
                         </div>
                     </div>
@@ -676,10 +646,10 @@ function SiteOpsBotCard({
                                 <div key={item.id} className="rounded-lg border border-[var(--color-academy-line)] px-3 py-2">
                                     <div className="flex items-start justify-between gap-2">
                                         <div>
-                                            <p className="text-xs font-bold text-[var(--color-academy-ink)]">{item.label}</p>
+                                            <p className="text-xs font-semibold text-[var(--color-academy-ink)]">{item.label}</p>
                                             <p className="mt-0.5 text-xs text-[var(--color-academy-muted)]">{item.message}</p>
                                         </div>
-                                        <span className={`rounded-full px-1.5 py-0.5 text-xs font-bold ${
+                                        <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-xs ${
                                             item.status === "critical"
                                                 ? "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]"
                                                 : item.status === "fixed"
@@ -690,7 +660,7 @@ function SiteOpsBotCard({
                                         </span>
                                     </div>
                                     {item.actionHref && item.actionLabel && (
-                                        <Link href={item.actionHref} prefetch={false} className="mt-2 inline-flex text-xs font-bold text-[var(--color-academy-primary)]">
+                                        <Link href={item.actionHref} prefetch={false} className="mt-2 inline-flex text-xs font-medium text-[var(--color-academy-primary)]">
                                             {item.actionLabel} &rarr;
                                         </Link>
                                     )}
@@ -734,12 +704,12 @@ function SystemStatusCard({
     return (
         <div className="academy-panel p-4">
             <div className="mb-3 flex items-center justify-between">
-                <h3 className="font-bold text-[var(--color-academy-ink)]">시스템 상태</h3>
+                <h3 className="academy-section-title">시스템 상태</h3>
                 <button
                     type="button"
                     onClick={onRetry}
                     disabled={systemLoading}
-                    className="text-xs font-bold text-[var(--color-academy-primary)] transition hover:text-[var(--color-academy-warning)] disabled:cursor-wait disabled:opacity-60"
+                    className="academy-button-text academy-button-sm disabled:cursor-wait"
                 >
                     {systemLoading ? "확인 중" : systemError ? "다시 시도" : systemStatus ? "새로고침" : "확인"}
                 </button>
@@ -747,10 +717,9 @@ function SystemStatusCard({
             <div className="space-y-2.5">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 text-sm text-[var(--color-academy-muted)]">
-                        <SymbolIcon name="database" size={14} className="text-[var(--color-academy-faint)]" />
                         <span>자료 저장소</span>
                     </div>
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${
                         !systemStatus ? "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]" : systemStatus.dbOk ? "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]" : "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]"
                     }`}>
                         {systemLoading ? "확인 중" : !systemStatus ? "미확인" : systemStatus.dbOk ? "정상" : "오류"}
@@ -758,10 +727,9 @@ function SystemStatusCard({
                 </div>
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 text-sm text-[var(--color-academy-muted)]">
-                        <SymbolIcon name={backupWarn ? "cloud_off" : "cloud_done"} size={14} className={!systemStatus ? "text-[var(--color-academy-faint)]" : backupDanger ? "text-[var(--color-academy-danger)]" : backupWarn ? "text-[var(--color-academy-warning)]" : "text-[var(--color-academy-muted)]"} />
                         <span>마지막 백업</span>
                     </div>
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${!systemStatus ? "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]" : backupDanger ? "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]" : backupWarn ? "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]" : "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]"}`}>
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${!systemStatus ? "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]" : backupDanger ? "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]" : backupWarn ? "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]" : "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]"}`}>
                         {systemLoading ? "확인 중" : !systemStatus ? "미확인" : backupLabel()}
                     </span>
                 </div>
@@ -774,7 +742,7 @@ function SystemStatusCard({
                 {backup?.archive && (
                     <div className="flex items-center justify-between">
                         <span className="text-sm text-[var(--color-academy-muted)]">담긴 업무 자료</span>
-                        <span className={`text-xs ${backup.archive.complete ? "text-[var(--color-academy-muted)]" : "font-bold text-[var(--color-academy-warning)]"}`}>
+                        <span className={`text-xs ${backup.archive.complete ? "text-[var(--color-academy-muted)]" : "font-semibold text-[var(--color-academy-warning)]"}`}>
                             표 {backup.archive.tables}개 · {backup.archive.rows.toLocaleString("ko-KR")}줄
                             {typeof backup.lastBackupBytes === "number" ? ` · ${(backup.lastBackupBytes / 1024 / 1024).toFixed(1)}MB` : ""}
                             {backup.archive.complete ? "" : " · 일부 누락"}
@@ -791,21 +759,15 @@ function SystemStatusCard({
     );
 }
 
-function StatCard({ title, value, icon, href }: {
+function StatCard({ title, value, href }: {
     title: string;
     value: string;
-    icon: ReactNode;
     href?: string;
 }) {
     const content = (
         <div className={`academy-panel p-4 ${href ? "hover:border-[var(--color-academy-primary)] transition-colors cursor-pointer" : ""}`}>
-            <div className="flex justify-between items-start">
-                <div>
-                    <p className="text-xs font-medium text-[var(--color-academy-muted)] mb-1">{title}</p>
-                    <h3 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">{value}</h3>
-                </div>
-                <div className="p-2.5 bg-[var(--color-academy-soft)] rounded-xl">{icon}</div>
-            </div>
+            <p className="text-xs font-medium text-[var(--color-academy-muted)] mb-1">{title}</p>
+            <h3 className="text-lg font-semibold tabular-nums text-[var(--color-academy-ink)]">{value}</h3>
         </div>
     );
     if (href) return <Link href={href} prefetch={false}>{content}</Link>;

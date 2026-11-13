@@ -117,8 +117,11 @@ const DAY_OPTIONS = [
     { key: "Sun", label: "일요일" },
 ];
 
-const INPUT = "w-full border border-[var(--color-academy-line-input)] rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--color-academy-primary)] focus:border-[var(--color-academy-primary)] bg-[var(--color-academy-soft)] focus:bg-white";
-const TIME_INPUT = "border border-[var(--color-academy-line-input)] rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--color-academy-primary)] focus:border-[var(--color-academy-primary)] bg-[var(--color-academy-soft)] focus:bg-white";
+// 입력칸 = 테마 공용 모양(academy-input: 흰 면·입력선 테두리·44px). 2026-11-13 UI 통일
+const INPUT = "academy-input";
+const TIME_INPUT = "academy-input";
+// 닫기·지우기(✕) 버튼 — 글자를 둘 자리가 없는 조작이라 기호를 남기되, 누르는 영역은 44px
+const ICON_BUTTON = "inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]";
 
 export default function ScheduleAdminModals({
     editingSheetSlot,
@@ -166,27 +169,27 @@ export default function ScheduleAdminModals({
                     <span id="sheet-slot-title" className="sr-only">시트 수업 수정</span>
                         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-academy-line)]">
                             <div className="flex items-center gap-3">
-                                <span className="bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] text-xs font-bold px-2.5 py-1 rounded-full">
+                                <span className="bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] text-xs tabular-nums px-2.5 py-1 rounded-full">
                                     {editingSheetSlot.period}교시
                                 </span>
-                                <span className="font-bold text-[var(--color-academy-ink)]">
+                                <span className="font-bold tabular-nums text-[var(--color-academy-ink)]">
                                     {DAY_LABEL[editingSheetSlot.dayKey]} {editingSheetSlot.startTime} ~ {editingSheetSlot.endTime}
                                 </span>
                                 {editingSheetSlot.gradeRange && (
-                                    <span className="bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] text-xs font-bold px-2 py-0.5 rounded-full border border-[var(--color-academy-line)]">
+                                    <span className="bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] text-xs px-2 py-0.5 rounded-full border border-[var(--color-academy-line)]">
                                         {editingSheetSlot.gradeRange}
                                     </span>
                                 )}
                             </div>
-                            <button onClick={onCloseSheetSlot} className="text-[var(--color-academy-faint)] hover:text-[var(--color-academy-muted)]">
-                                <span className="material-symbols-outlined" style={{ fontSize: "22px" }}>close</span>
+                            <button type="button" aria-label="닫기" onClick={onCloseSheetSlot} className={ICON_BUTTON}>
+                                <span className="material-symbols-outlined" style={{ fontSize: "22px" }} aria-hidden="true">close</span>
                             </button>
                         </div>
 
                         <div className="p-6 space-y-4">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                 <div>
-                                    <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">
+                                    <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">
                                         표시 레이블<span className="font-normal text-[var(--color-academy-faint)] ml-1">(비워두면 &quot;n교시&quot; 자동)</span>
                                     </label>
                                     <input
@@ -199,7 +202,7 @@ export default function ScheduleAdminModals({
                                 </div>
 
                                 <div>
-                                    <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">
+                                    <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">
                                         정원<span className="font-normal text-[var(--color-academy-faint)] ml-1">(기본 12명)</span>
                                     </label>
                                     <input
@@ -213,7 +216,7 @@ export default function ScheduleAdminModals({
                                 </div>
 
                                 <div>
-                                    <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">
+                                    <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">
                                         시작 시간 조정<span className="font-normal text-[var(--color-academy-faint)] ml-1">(기본: {editingSheetSlot.startTime})</span>
                                     </label>
                                     <div className="flex items-center gap-2">
@@ -224,15 +227,15 @@ export default function ScheduleAdminModals({
                                             className={TIME_INPUT + " flex-1"}
                                         />
                                         {editingSheetState.startTimeOverride && (
-                                            <button type="button" onClick={() => onUpdateSlot(editingSheetSlot.slotKey, { startTimeOverride: "" })} className="text-[var(--color-academy-faint)] hover:text-[var(--color-academy-muted)] shrink-0">
-                                                <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>close</span>
+                                            <button type="button" aria-label="시작 시간 조정 지우기" onClick={() => onUpdateSlot(editingSheetSlot.slotKey, { startTimeOverride: "" })} className={ICON_BUTTON}>
+                                                <span className="material-symbols-outlined" style={{ fontSize: "18px" }} aria-hidden="true">close</span>
                                             </button>
                                         )}
                                     </div>
                                 </div>
 
                                 <div>
-                                    <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">
+                                    <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">
                                         종료 시간 조정<span className="font-normal text-[var(--color-academy-faint)] ml-1">(기본: {editingSheetSlot.endTime})</span>
                                     </label>
                                     <div className="flex items-center gap-2">
@@ -243,15 +246,15 @@ export default function ScheduleAdminModals({
                                             className={TIME_INPUT + " flex-1"}
                                         />
                                         {editingSheetState.endTimeOverride && (
-                                            <button type="button" onClick={() => onUpdateSlot(editingSheetSlot.slotKey, { endTimeOverride: "" })} className="text-[var(--color-academy-faint)] hover:text-[var(--color-academy-muted)] shrink-0">
-                                                <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>close</span>
+                                            <button type="button" aria-label="종료 시간 조정 지우기" onClick={() => onUpdateSlot(editingSheetSlot.slotKey, { endTimeOverride: "" })} className={ICON_BUTTON}>
+                                                <span className="material-symbols-outlined" style={{ fontSize: "18px" }} aria-hidden="true">close</span>
                                             </button>
                                         )}
                                     </div>
                                 </div>
 
                                 <div className="md:col-span-2">
-                                    <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">
+                                    <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">
                                         메모 / 특이사항<span className="font-normal text-[var(--color-academy-faint)] ml-1">(공개 시간표에 표시)</span>
                                     </label>
                                     <input
@@ -264,7 +267,7 @@ export default function ScheduleAdminModals({
                                 </div>
 
                                 <div className="md:col-span-2">
-                                    <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">
+                                    <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">
                                         담당 코치<span className="font-normal text-[var(--color-academy-faint)] ml-1">(공개 시간표 카드에 표시)</span>
                                     </label>
                                     <div className="flex items-center gap-3">
@@ -287,7 +290,7 @@ export default function ScheduleAdminModals({
 
                                 {programs.length > 0 && (
                                     <div className="md:col-span-2">
-                                        <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">
+                                        <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">
                                             프로그램 분류<span className="font-normal text-[var(--color-academy-faint)] ml-1">(공개 시간표 필터에 사용)</span>
                                         </label>
                                         <select
@@ -309,25 +312,25 @@ export default function ScheduleAdminModals({
                                     onChange={(event) => onUpdateSlot(editingSheetSlot.slotKey, { isHidden: event.target.checked })}
                                     className="w-4 h-4 rounded border-[var(--color-academy-line-input)] text-[var(--color-academy-ink)] focus:ring-[var(--color-academy-primary)]"
                                 />
-                                <span className="text-sm text-[var(--color-academy-muted)] font-medium">공개 시간표에서 숨기기</span>
+                                <span className="text-sm text-[var(--color-academy-ink)]">공개 시간표에서 숨기기</span>
                             </label>
                         </div>
 
-                        <div className="flex items-center justify-between px-6 py-4 border-t border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] rounded-b-2xl">
+                        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 px-6 py-4 border-t border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] rounded-b-2xl">
                             <div className="flex items-center gap-2">
-                                {editingSheetState.error && <span className="text-xs text-[var(--color-academy-danger)] flex items-center gap-1"><span className="material-symbols-outlined" style={{ fontSize: "14px" }}>error</span>{editingSheetState.error}</span>}
-                                {editingSheetState.saved && !editingSheetState.dirty && <span className="text-xs text-[var(--color-academy-success)] font-medium flex items-center gap-1"><span className="material-symbols-outlined" style={{ fontSize: "14px" }}>check_circle</span>저장됨</span>}
+                                {editingSheetState.error && <span className="text-xs text-[var(--color-academy-danger)]">{editingSheetState.error}</span>}
+                                {editingSheetState.saved && !editingSheetState.dirty && <span className="text-xs text-[var(--color-academy-success)]">저장됨</span>}
                             </div>
                             <div className="flex items-center gap-2">
-                                <button onClick={onCloseSheetSlot} className="bg-white border border-[var(--color-academy-line-input)] text-[var(--color-academy-muted)] text-sm font-medium px-4 py-2 rounded-lg hover:bg-[var(--color-academy-soft)] transition">
+                                <button type="button" onClick={onCloseSheetSlot} className="academy-button-secondary">
                                     닫기
                                 </button>
                                 <button
+                                    type="button"
                                     onClick={() => onSaveSheetSlot(editingSheetSlot)}
                                     disabled={pending || !editingSheetState.dirty}
-                                    className="bg-[var(--color-academy-primary)] text-white text-sm font-bold px-5 py-2 rounded-lg hover:bg-[var(--color-academy-primary-hover)] transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+                                    className="academy-button-primary"
                                 >
-                                    <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>save</span>
                                     {pending ? "저장 중..." : "저장"}
                                 </button>
                             </div>
@@ -340,11 +343,11 @@ export default function ScheduleAdminModals({
                     <span id="custom-slot-edit-title" className="sr-only">커스텀 수업 수정</span>
                         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-academy-line)]">
                             <div className="flex items-center gap-3">
-                                <span className="bg-[var(--color-academy-primary)] text-white text-xs font-bold px-2.5 py-1 rounded-full">커스텀</span>
+                                <span className="bg-[var(--color-academy-neutral-soft)] text-[var(--color-academy-neutral)] text-xs px-2.5 py-1 rounded-full">커스텀</span>
                                 <span className="font-bold text-[var(--color-academy-ink)]">수업 수정</span>
                             </div>
-                            <button onClick={onCloseCustomEdit} className="text-[var(--color-academy-faint)] hover:text-[var(--color-academy-muted)]">
-                                <span className="material-symbols-outlined" style={{ fontSize: "22px" }}>close</span>
+                            <button type="button" aria-label="닫기" onClick={onCloseCustomEdit} className={ICON_BUTTON}>
+                                <span className="material-symbols-outlined" style={{ fontSize: "22px" }} aria-hidden="true">close</span>
                             </button>
                         </div>
 
@@ -352,32 +355,31 @@ export default function ScheduleAdminModals({
                             <CustomSlotFormFields form={editCustomForm} onChange={onEditCustomFormChange} coaches={coaches} programs={programs} />
                         </div>
 
-                        <div className="flex items-center justify-between px-6 py-4 border-t border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] rounded-b-2xl">
+                        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 px-6 py-4 border-t border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] rounded-b-2xl">
                             <div>
                                 {deletingCustomId === editingCustomSlot.id ? (
-                                    <span className="flex items-center gap-2">
+                                    <span className="flex flex-wrap items-center gap-2">
                                         <span className="text-xs text-[var(--color-academy-muted)]">정말 삭제할까요?</span>
-                                    <button onClick={() => onConfirmDeleteCustom(editingCustomSlot.id)} disabled={customPending} className="text-xs text-[var(--color-academy-danger)] hover:text-[var(--color-academy-danger)] font-bold">삭제 확인</button>
-                                        <button onClick={onCancelDeleteCustom} className="text-xs text-[var(--color-academy-muted)] hover:text-[var(--color-academy-muted)]">취소</button>
+                                    <button type="button" onClick={() => onConfirmDeleteCustom(editingCustomSlot.id)} disabled={customPending} className="academy-button-danger-solid academy-button-sm">삭제 확인</button>
+                                        <button type="button" onClick={onCancelDeleteCustom} className="academy-button-text academy-button-sm">취소</button>
                                     </span>
                                 ) : (
-                                    <button onClick={() => onStartDeleteCustom(editingCustomSlot.id)} className="flex items-center gap-1 text-sm text-[var(--color-academy-danger)] hover:text-[var(--color-academy-danger)] font-medium transition-colors">
-                                        <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>delete</span>
+                                    <button type="button" onClick={() => onStartDeleteCustom(editingCustomSlot.id)} className="academy-button-danger academy-button-sm">
                                         삭제
                                     </button>
                                 )}
                             </div>
 
                             <div className="flex items-center gap-2">
-                                <button onClick={onCloseCustomEdit} className="bg-white border border-[var(--color-academy-line-input)] text-[var(--color-academy-muted)] text-sm font-medium px-4 py-2 rounded-lg hover:bg-[var(--color-academy-soft)] transition">
+                                <button type="button" onClick={onCloseCustomEdit} className="academy-button-secondary">
                                     닫기
                                 </button>
                                 <button
+                                    type="button"
                                     onClick={() => onSaveCustomEdit(editingCustomSlot.id)}
                                     disabled={customPending || !editCustomForm.label.trim()}
-                                    className="bg-[var(--color-academy-primary)] text-white text-sm font-bold px-5 py-2 rounded-lg hover:bg-[var(--color-academy-primary-hover)] transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+                                    className="academy-button-primary"
                                 >
-                                    <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>save</span>
                                     {customPending ? "저장 중..." : "저장"}
                                 </button>
                             </div>
@@ -389,68 +391,65 @@ export default function ScheduleAdminModals({
                 <AdminModal onClose={onCloseSheetUrl} titleId="sheet-url-title" panelClassName="max-w-xl">
                     <span id="sheet-url-title" className="sr-only">구글 시트 연동 관리</span>
                         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-academy-line)]">
-                            <span className="font-bold text-[var(--color-academy-ink)] text-base flex items-center gap-2">
-                                <span className="material-symbols-outlined" style={{ fontSize: "20px" }}>link</span>
-                                구글시트 연동관리
-                            </span>
-                            <button onClick={onCloseSheetUrl} className="text-[var(--color-academy-faint)] hover:text-[var(--color-academy-muted)]">
-                                <span className="material-symbols-outlined" style={{ fontSize: "22px" }}>close</span>
+                            <span className="academy-section-title">구글시트 연동관리</span>
+                            <button type="button" aria-label="닫기" onClick={onCloseSheetUrl} className={ICON_BUTTON}>
+                                <span className="material-symbols-outlined" style={{ fontSize: "22px" }} aria-hidden="true">close</span>
                             </button>
                         </div>
                         <div className="p-6 space-y-4">
                             <div className="bg-[var(--color-academy-success-soft)] border border-[var(--color-academy-line)] rounded-lg p-3 text-xs text-[var(--color-academy-success)]">
-                                <p className="font-bold mb-1">URL 확인 방법</p>
+                                <p className="font-semibold mb-1">URL 확인 방법</p>
                                 <p>구글시트 열기 → 주소창 URL 복사</p>
                                 <p className="mt-1 font-mono bg-[var(--color-academy-success-soft)] px-2 py-1 rounded">spreadsheets/d/.../edit?gid=... 형태 그대로</p>
-                                <p className="mt-1 font-bold">시트가 &quot;링크가 있는 모든 사용자 - 뷰어&quot; 공개 설정이어야 합니다.</p>
+                                <p className="mt-1 font-semibold">시트가 &quot;링크가 있는 모든 사용자 - 뷰어&quot; 공개 설정이어야 합니다.</p>
                             </div>
                             <div className="bg-[var(--color-academy-soft)] border border-[var(--color-academy-line)] rounded-lg p-3 text-xs text-[var(--color-academy-ink)]">
-                                <p className="font-bold mb-1">운영 방식</p>
+                                <p className="font-semibold mb-1">운영 방식</p>
                                 <p>저장된 시간표를 표시합니다. 구글시트 변경 내용은 “지금 동기화”를 눌러 가져오세요.</p>
                             </div>
                             <div>
-                                <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1.5">구글시트 URL</label>
+                                <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1.5">구글시트 URL</label>
                                 <input
                                     type="url"
                                     value={sheetUrlInput}
                                     onChange={(event) => onSheetUrlChange(event.target.value)}
                                     placeholder="https://docs.google.com/spreadsheets/d/.../edit?gid=..."
-                                    className="w-full border border-[var(--color-academy-line-input)] rounded-lg px-3 py-2.5 text-sm font-mono bg-[var(--color-academy-soft)] focus:bg-white focus:ring-2 focus:ring-[var(--color-academy-primary)] focus:border-[var(--color-academy-primary)]"
+                                    className="academy-input font-mono"
                                 />
                             </div>
                             {sheetError && (
-                                <p className="text-sm text-[var(--color-academy-danger)] font-medium flex items-center gap-1">
-                                    <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>warning</span>
+                                <p role="alert" className="text-sm text-[var(--color-academy-danger)] font-medium">
                                     {sheetError}
                                 </p>
                             )}
                             {sheetSyncMessage && (
-                                <p className="text-sm text-[var(--color-academy-success)] font-medium flex items-center gap-1">
-                                    <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>check_circle</span>
+                                <p className="text-sm text-[var(--color-academy-success)] font-medium">
                                     {sheetSyncMessage}
                                 </p>
                             )}
                             <div className="flex flex-wrap gap-2 pt-1">
+                                {/* 이 창의 주 버튼은 «저장» 하나 — «지금 동기화»는 보조 버튼 */}
                                 <button
+                                    type="button"
                                     onClick={onSaveSheetUrl}
                                     disabled={sheetSaving || sheetSyncing}
-                                    className="bg-[var(--color-academy-primary)] hover:bg-[var(--color-academy-primary-hover)] text-white text-sm font-bold px-5 py-2.5 rounded-lg transition disabled:opacity-40 flex items-center gap-2"
+                                    className="academy-button-primary"
                                 >
                                     {sheetSaving ? "저장 중..." : sheetSaved ? "저장됨" : "저장"}
                                 </button>
                                 <button
+                                    type="button"
                                     onClick={onSyncSheet}
                                     disabled={sheetSaving || sheetSyncing || !sheetUrlInput.trim()}
-                                    className="bg-[var(--color-academy-primary)] hover:bg-[var(--color-academy-primary-hover)] text-white text-sm font-bold px-5 py-2.5 rounded-lg transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+                                    className="academy-button-secondary"
                                 >
-                                    <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>sync</span>
                                     {sheetSyncing ? "동기화 중..." : "지금 동기화"}
                                 </button>
-                                <button onClick={onCloseSheetUrl} className="bg-white border border-[var(--color-academy-line-input)] text-[var(--color-academy-muted)] text-sm font-medium px-4 py-2.5 rounded-lg hover:bg-[var(--color-academy-soft)] transition">
+                                <button type="button" onClick={onCloseSheetUrl} className="academy-button-text">
                                     취소
                                 </button>
                                 {sheetUrlInput && (
-                                    <button onClick={onClearSheetUrl} className="ml-auto text-xs text-[var(--color-academy-danger)] hover:text-[var(--color-academy-danger)] font-medium">
+                                    <button type="button" onClick={onClearSheetUrl} className="academy-button-danger academy-button-sm ml-auto">
                                         URL 초기화
                                     </button>
                                 )}
@@ -463,27 +462,24 @@ export default function ScheduleAdminModals({
                 <AdminModal onClose={onCloseAddCustom} titleId="custom-slot-add-title" panelClassName="max-w-2xl">
                     <span id="custom-slot-add-title" className="sr-only">커스텀 수업 추가</span>
                         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-academy-line)]">
-                            <span className="font-bold text-[var(--color-academy-ink)] text-base flex items-center gap-2">
-                                <span className="material-symbols-outlined text-[var(--color-academy-ink)]" style={{ fontSize: "20px" }}>add_circle</span>
-                                새 수업 추가
-                            </span>
-                            <button onClick={onCloseAddCustom} className="text-[var(--color-academy-faint)] hover:text-[var(--color-academy-muted)]">
-                                <span className="material-symbols-outlined" style={{ fontSize: "22px" }}>close</span>
+                            <span className="academy-section-title">새 수업 추가</span>
+                            <button type="button" aria-label="닫기" onClick={onCloseAddCustom} className={ICON_BUTTON}>
+                                <span className="material-symbols-outlined" style={{ fontSize: "22px" }} aria-hidden="true">close</span>
                             </button>
                         </div>
                         <div className="p-6">
                             <CustomSlotFormFields form={newCustomForm} onChange={onNewCustomFormChange} coaches={coaches} programs={programs} />
                         </div>
                         <div className="flex items-center justify-end px-6 py-4 border-t border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] rounded-b-2xl gap-2">
-                            <button onClick={onCloseAddCustom} className="bg-white border border-[var(--color-academy-line-input)] text-[var(--color-academy-muted)] text-sm font-medium px-4 py-2 rounded-lg hover:bg-[var(--color-academy-soft)] transition">
+                            <button type="button" onClick={onCloseAddCustom} className="academy-button-secondary">
                                 취소
                             </button>
                             <button
+                                type="button"
                                 onClick={onSaveNewCustom}
                                 disabled={customPending || !newCustomForm.label.trim()}
-                                className="bg-[var(--color-academy-primary)] hover:bg-[var(--color-academy-primary-hover)] text-white text-sm font-bold px-5 py-2 rounded-lg transition disabled:opacity-40 flex items-center gap-1.5"
+                                className="academy-button-primary"
                             >
-                                <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>add</span>
                                 {customPending ? "저장 중..." : "저장"}
                             </button>
                         </div>
@@ -509,37 +505,37 @@ function CustomSlotFormFields({
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-                <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">요일 *</label>
+                <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">요일 *</label>
                 <select value={form.dayKey} onChange={(event) => patch({ dayKey: event.target.value })} className={INPUT}>
                     {DAY_OPTIONS.map((day) => <option key={day.key} value={day.key}>{day.label}</option>)}
                 </select>
             </div>
             <div>
-                <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">표시 레이블 *</label>
+                <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">표시 레이블 *</label>
                 <input type="text" value={form.label} onChange={(event) => patch({ label: event.target.value })} placeholder="예: 성인반 A" className={INPUT} />
             </div>
             <div>
-                <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">시작 시간 *</label>
+                <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">시작 시간 *</label>
                 <input type="time" value={form.startTime} onChange={(event) => patch({ startTime: event.target.value })} className={TIME_INPUT + " w-full"} />
             </div>
             <div>
-                <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">종료 시간 *</label>
+                <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">종료 시간 *</label>
                 <input type="time" value={form.endTime} onChange={(event) => patch({ endTime: event.target.value })} className={TIME_INPUT + " w-full"} />
             </div>
             <div>
-                <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">학년 범위</label>
+                <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">학년 범위</label>
                 <input type="text" value={form.gradeRange} onChange={(event) => patch({ gradeRange: event.target.value })} placeholder="예: 초4~중1" className={INPUT} />
             </div>
             <div>
-                <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">정원</label>
+                <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">정원</label>
                 <input type="number" min={1} max={50} value={form.capacity} onChange={(event) => patch({ capacity: parseInt(event.target.value) || 12 })} className={INPUT} />
             </div>
             <div>
-                <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">현재 수강 인원</label>
+                <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">현재 수강 인원</label>
                 <input type="number" min={0} value={form.enrolled} onChange={(event) => patch({ enrolled: parseInt(event.target.value) || 0 })} className={INPUT} />
             </div>
             <div>
-                <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">담당 코치</label>
+                <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">담당 코치</label>
                 <select value={form.coachId} onChange={(event) => patch({ coachId: event.target.value })} className={INPUT}>
                     <option value="">-- 코치 미배정 --</option>
                     {coaches.map((coach) => <option key={coach.id} value={coach.id}>{coach.name} ({coach.role})</option>)}
@@ -547,7 +543,7 @@ function CustomSlotFormFields({
             </div>
             {programs.length > 0 && (
                 <div>
-                    <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">프로그램 분류</label>
+                    <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">프로그램 분류</label>
                     <select value={form.programId} onChange={(event) => patch({ programId: event.target.value })} className={INPUT}>
                         <option value="">-- 프로그램 미설정 --</option>
                         {programs.map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}
@@ -555,13 +551,13 @@ function CustomSlotFormFields({
                 </div>
             )}
             <div className="md:col-span-2">
-                <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">메모 / 특이사항</label>
+                <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">메모 / 특이사항</label>
                 <input type="text" value={form.note} onChange={(event) => patch({ note: event.target.value })} placeholder="예: 이번 주 보강 있음" className={INPUT} />
             </div>
             <div className="md:col-span-2">
                 <label className="flex items-center gap-2 cursor-pointer select-none">
                     <input type="checkbox" checked={form.isHidden} onChange={(event) => patch({ isHidden: event.target.checked })} className="w-4 h-4 rounded border-[var(--color-academy-line-input)]" />
-                    <span className="text-sm text-[var(--color-academy-muted)] font-medium">공개 시간표에서 숨기기</span>
+                    <span className="text-sm text-[var(--color-academy-ink)]">공개 시간표에서 숨기기</span>
                 </label>
             </div>
         </div>

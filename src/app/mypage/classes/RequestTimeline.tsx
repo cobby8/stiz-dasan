@@ -20,9 +20,9 @@ function Icon({ name, size = 16, className = "" }: { name: string; size?: number
 function Step({ step }: { step: TimelineStep }) {
   const mark = step.state === "done" ? "check_circle" : step.state === "current" ? "radio_button_checked" : step.state === "stopped" ? "cancel" : "radio_button_unchecked";
   const tone = step.state === "current"
-    ? "text-[var(--color-academy-info)] font-bold"
+    ? "text-[var(--color-academy-info)] font-semibold"
     : step.state === "stopped"
-      ? "text-[var(--color-academy-danger)] font-bold"
+      ? "text-[var(--color-academy-danger)] font-semibold"
       : step.state === "done"
         ? "text-[var(--color-academy-ink)]"
         : "text-[var(--color-academy-muted)]";
@@ -89,9 +89,9 @@ export default function RequestTimeline({ rows }: { rows: ParentTimelineView[] }
 
   return (
     <section aria-labelledby="request-timeline-heading" className="academy-panel !shadow-none overflow-hidden">
-      <h2 id="request-timeline-heading" className="flex items-center justify-between border-b border-[var(--color-academy-line)] px-3 py-2 text-sm font-bold text-[var(--color-academy-ink)]">
-        <span>신청 내역 <span className="font-normal text-[var(--color-academy-muted)]">최근 3개월</span></span>
-        <span className="font-normal tabular-nums text-[var(--color-academy-muted)]">{rows.length}</span>
+      <h2 id="request-timeline-heading" className="academy-section-title flex items-center justify-between border-b border-[var(--color-academy-line)] px-3 py-2">
+        <span>신청 내역 <span className="text-sm font-normal text-[var(--color-academy-muted)]">최근 3개월</span></span>
+        <span className="text-sm font-normal tabular-nums text-[var(--color-academy-muted)]">{rows.length}</span>
       </h2>
       {rows.length === 0 ? (
         <p className="px-3 py-2 text-sm text-[var(--color-academy-muted)]">신청 내역이 없어요</p>
@@ -107,7 +107,7 @@ export default function RequestTimeline({ rows }: { rows: ParentTimelineView[] }
               >
                 <span className="min-w-0 flex-1 break-keep text-sm text-[var(--color-academy-ink)]">{r.title}</span>
                 {r.when && <span className="shrink-0 whitespace-nowrap text-xs tabular-nums text-[var(--color-academy-muted)]">{r.when}</span>}
-                <span className={`shrink-0 whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-bold ${TONE_BADGE_CLASS[r.tone]}`}>{r.statusLabel}</span>
+                <span className={`shrink-0 whitespace-nowrap rounded px-1.5 py-0.5 text-xs ${TONE_BADGE_CLASS[r.tone]}`}>{r.statusLabel}</span>
               </button>
             </li>
           ))}
@@ -117,10 +117,10 @@ export default function RequestTimeline({ rows }: { rows: ParentTimelineView[] }
       {row && (
         <ListDetailPanel onClose={() => setOpenKey(null)} titleId="request-timeline-detail-title" panelClassName="p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
           <div className="mb-2 flex items-center gap-2">
-            <h3 id="request-timeline-detail-title" className="min-w-0 break-keep text-lg font-black text-[var(--color-academy-ink)]">
+            <h3 id="request-timeline-detail-title" className="academy-section-title min-w-0 break-keep">
               {row.studentName} · {row.kindName}
             </h3>
-            <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-bold ${TONE_BADGE_CLASS[row.tone]}`}>{row.statusLabel}</span>
+            <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs ${TONE_BADGE_CLASS[row.tone]}`}>{row.statusLabel}</span>
             <button
               type="button"
               onClick={() => setOpenKey(null)}
@@ -130,7 +130,7 @@ export default function RequestTimeline({ rows }: { rows: ParentTimelineView[] }
               <Icon name="close" size={22} />
             </button>
           </div>
-          <p className="break-keep text-sm font-bold text-[var(--color-academy-ink)]">{row.title}</p>
+          <p className="break-keep text-sm font-semibold text-[var(--color-academy-ink)]">{row.title}</p>
           <p className="text-xs tabular-nums text-[var(--color-academy-muted)]">
             {[row.when, `신청 ${row.createdOn}`, ...row.details].filter(Boolean).join(" · ")}
           </p>
@@ -143,14 +143,14 @@ export default function RequestTimeline({ rows }: { rows: ParentTimelineView[] }
           {/* 원장 답변·거절 사유 */}
           {row.answer && (
             <div className="mt-3 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] px-3 py-2">
-              <p className="text-xs font-bold text-[var(--color-academy-muted)]">학원 답변</p>
+              <p className="text-xs font-medium text-[var(--color-academy-muted)]">학원 답변</p>
               <p className="whitespace-pre-wrap break-keep text-sm text-[var(--color-academy-ink)]">{row.answer}</p>
             </div>
           )}
-          {row.cancelLine && <p className="mt-2 break-keep text-sm font-bold text-[var(--color-academy-ink)]">{row.cancelLine}</p>}
+          {row.cancelLine && <p className="mt-2 break-keep text-sm font-semibold text-[var(--color-academy-ink)]">{row.cancelLine}</p>}
 
-          {error && <p role="alert" className="mt-2 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-danger)]">{error}</p>}
-          {done && <p role="status" className="mt-2 rounded-lg bg-[var(--color-academy-success-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-success)]">{done}</p>}
+          {error && <p role="alert" className="mt-2 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-medium text-[var(--color-academy-danger)]">{error}</p>}
+          {done && <p role="status" className="mt-2 rounded-lg bg-[var(--color-academy-success-soft)] px-3 py-2 text-sm font-medium text-[var(--color-academy-success)]">{done}</p>}
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
             {/* 검토 중 = 바로 취소(기존 취소 API). 서버가 PENDING/REPORTED 인지 다시 본다 */}
@@ -175,7 +175,6 @@ export default function RequestTimeline({ rows }: { rows: ParentTimelineView[] }
             )}
             <Link href={row.openHref} className="academy-button-text">
               신청 화면에서 보기
-              <Icon name="chevron_right" size={18} />
             </Link>
           </div>
         </ListDetailPanel>

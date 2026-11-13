@@ -20,7 +20,7 @@ export default function ChildConnectionNotice() {
     }).catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
   }, [attempt]);
-  if (error) return <p className="text-xs text-[var(--color-academy-muted)]">가족 연결 요청을 확인하지 못했습니다. <button className="min-h-11 font-bold underline" type="button" onClick={() => setAttempt((value) => value + 1)}>다시 확인</button></p>;
+  if (error) return <p className="text-xs text-[var(--color-academy-muted)]">가족 연결 요청을 확인하지 못했습니다. <button className="min-h-11 font-medium underline" type="button" onClick={() => setAttempt((value) => value + 1)}>다시 확인</button></p>;
   if (!counts.incoming && !counts.outgoing) return null;
-  return <Link href="/mypage/children" className="academy-panel flex min-h-11 flex-wrap items-center justify-between gap-2 p-3 text-sm"><span>{counts.incoming > 0 ? <b>가족 연결 승인 요청 {counts.incoming}건</b> : <b>가족 확인 대기 {counts.outgoing}건</b>}</span><span className="font-bold text-[var(--color-academy-primary)]">확인하기 →</span></Link>;
+  return <Link href="/mypage/children" className="academy-panel flex min-h-11 flex-wrap items-center justify-between gap-2 p-3 text-sm"><span>{counts.incoming > 0 ? <b>가족 연결 승인 요청 {counts.incoming}건</b> : <b>가족 확인 대기 {counts.outgoing}건</b>}</span><span className="font-medium text-[var(--color-academy-primary)]">확인하기 →</span></Link>;
 }

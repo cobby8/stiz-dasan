@@ -35,25 +35,24 @@ export default function KakaoShuttleRosterTasks({ tasks }: { tasks: KakaoShuttle
   return (
     <div className="mx-auto max-w-6xl px-4 pt-4">
       <details open className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] px-3 py-2 text-sm text-[var(--color-academy-ink)]">
-        <summary className="cursor-pointer font-black">
-          <span className="material-symbols-outlined mr-1 align-middle text-base text-[var(--color-academy-primary)]" aria-hidden="true">assignment_late</span>
+        <summary className="cursor-pointer font-medium">
           카카오 정규 셔틀 신청 <span className="tabular-nums">{tasks.length}</span>건 — 셔틀 명단에 넣어 주세요
         </summary>
-        {error && <p role="alert" className="mt-2 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-xs font-bold text-[var(--color-academy-danger)]">{error}</p>}
+        {error && <p role="alert" className="mt-2 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-xs text-[var(--color-academy-danger)]">{error}</p>}
         <ul className="mt-2 divide-y divide-[var(--color-academy-line)]">
           {tasks.map((task) => (
             <li key={task.intakeId} className="flex flex-wrap items-center gap-x-2 gap-y-1 py-1.5">
-              <span className="font-black">{task.studentName}</span>
+              <span className="font-semibold">{task.studentName}</span>
               <span className="text-xs text-[var(--color-academy-muted)] tabular-nums">{kstLabel(task.createdAt)} 접수</span>
               {task.summary && <span className="text-xs">{task.summary}</span>}
-              {task.inRoster && <span className="rounded bg-[var(--color-academy-success-soft)] px-1.5 py-0.5 text-xs font-bold text-[var(--color-academy-success)]">명단에 있음</span>}
-              <span className="ml-auto flex gap-1">
+              {task.inRoster && <span className="rounded bg-[var(--color-academy-success-soft)] px-1.5 py-0.5 text-xs text-[var(--color-academy-success)]">명단에 있음</span>}
+              <span className="ml-auto flex flex-wrap justify-end gap-1">
                 {/* 명단 화면이 ?studentId= 를 받아 «신청 학생 선택해 명단 추가»를 띄운다(기존 기능) */}
                 {/* 병합 후 학생을 못 찾으면 주소가 없다 — 엉뚱한(흡수된) 학생으로 명단에 넣지 않게 버튼을 숨기고 안내만 한다 */}
                 {task.href
-                  ? <Link href={task.href} prefetch={false} className="inline-flex min-h-11 items-center rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-xs font-black">명단에 넣기</Link>
-                  : <span className="inline-flex min-h-11 items-center px-1 text-xs font-bold text-[var(--color-academy-muted)]">학생 확인 필요(카카오 접수함)</span>}
-                <button type="button" disabled={pending} onClick={() => complete(task)} className="min-h-11 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-xs font-black disabled:opacity-50">완료</button>
+                  ? <Link href={task.href} prefetch={false} className="academy-button-secondary academy-button-sm">명단에 넣기</Link>
+                  : <span className="inline-flex min-h-11 items-center px-1 text-xs text-[var(--color-academy-muted)]">학생 확인 필요(카카오 접수함)</span>}
+                <button type="button" disabled={pending} onClick={() => complete(task)} className="academy-button-secondary academy-button-sm">완료</button>
               </span>
             </li>
           ))}

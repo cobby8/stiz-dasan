@@ -153,7 +153,8 @@ test("셀은 미확인(출결 체크 안 된 인원)이 남으면 표시한다",
 
 test("셀을 누르면 그 날짜가 선택되고, 선택된 날은 링으로 강조된다", () => {
   assert.match(client, /onClick=\{\(\) => setSelDate\(d\.sessionDateId\)\}/);
-  assert.match(client, /ring-1 ring-\[var\(--brand-accent\)\]/);
+  // 2026-11-13 UI 통일: «고른 날짜»는 주 색(네이비)이 아니라 보조 색(하늘색) 링으로 강조한다.
+  assert.match(client, /ring-1 ring-\[var\(--color-academy-secondary-strong\)\]/);
 });
 
 test("셀에서 뺀 정보(시간·N일차·출결 상세)는 title로 남긴다", () => {

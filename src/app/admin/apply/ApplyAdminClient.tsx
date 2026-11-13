@@ -12,6 +12,7 @@ import Link from "next/link";
 import { getEnrollTrialLinkSuggestions, linkEnrollApplicationToTrialLead, recordApplicationContact, sendManualSms } from "@/app/actions/admin";
 import type { TrialLinkSuggestion } from "@/lib/enrollment/trialLeadMatch";
 import AdminModal from "@/components/admin/AdminModal";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { statusToneClass } from "@/components/admin/StatusBadge";
 import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
 import ManualSmsModal from "./ManualSmsModal";
@@ -253,12 +254,12 @@ type ContactModalState = { app: EnrollApplication; defaultAction: ContactActionT
 type ManualSmsModalState = { app: EnrollApplication } | null;
 // ── 상태별 설정 ──────────────────────────────────────────────────────────────────
 
-const STATUS_CONFIG: Record<string, { label: string; color: string; icon: string }> = {
-    // 색은 공용 상태 배지 색(학원 변수)으로 통일(게슈탈트 C-A3)
-    PENDING: { label: "대기중", color: statusToneClass("warning"), icon: "hourglass_top" },
-    APPROVED: { label: "승인완료", color: statusToneClass("success"), icon: "check_circle" },
-    REJECTED: { label: "반려", color: statusToneClass("danger"), icon: "cancel" },
-    CANCELLED: { label: "취소", color: statusToneClass("neutral"), icon: "block" },
+const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
+    // 색은 공용 상태 배지 색(학원 변수)으로 통일(게슈탈트 C-A3). 아이콘 없이 글자로 말한다(2026-11-13 UI 통일)
+    PENDING: { label: "대기중", color: statusToneClass("warning") },
+    APPROVED: { label: "승인완료", color: statusToneClass("success") },
+    REJECTED: { label: "반려", color: statusToneClass("danger") },
+    CANCELLED: { label: "취소", color: statusToneClass("neutral") },
 };
 
 // 유입경로 라벨 (9개 + 레거시 호환)
@@ -419,12 +420,11 @@ function ApplyLoadingFallback() {
 function ApplyErrorState({ onRetry }: { onRetry: () => void }) {
     return (
         <div className="rounded-2xl border border-[var(--color-academy-line)] bg-white p-8 text-center shadow-sm">
-            <span className="material-symbols-outlined mb-3 text-4xl text-[var(--color-academy-danger)]">error</span>
-            <p className="font-bold text-[var(--color-academy-ink)]">수강 신청 정보를 불러오지 못했습니다.</p>
+            <p className="font-semibold text-[var(--color-academy-danger)]">수강 신청 정보를 불러오지 못했습니다.</p>
             <button
                 type="button"
                 onClick={onRetry}
-                className="mt-4 rounded-xl bg-[var(--color-academy-primary)] px-4 py-2 text-sm font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)]"
+                className="academy-button-primary mt-4"
             >
                 다시 시도
             </button>
@@ -751,13 +751,13 @@ export default function ApplyAdminClient({
                 <div className="rounded-xl border border-[var(--color-academy-line)] bg-white p-4 shadow-sm">
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                         <div>
-                            <h2 className="text-lg font-black text-[var(--color-academy-ink)]">유입경로 통계</h2>
+                            <h2 className="academy-section-title">유입경로 통계</h2>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex min-w-0 flex-wrap items-center gap-2">
                             <select
                                 value={sourceStatsRange}
                                 onChange={(event) => setSourceStatsRange(event.target.value as SourceStatsRange)}
-                                className="min-h-10 rounded-lg border border-[var(--color-academy-line)] bg-white px-3 text-sm font-bold text-[var(--color-academy-ink)]"
+                                className="academy-input w-auto!"
                             >
                                 {SOURCE_STATS_RANGES.map((range) => (
                                     <option key={range.value} value={range.value}>
@@ -769,9 +769,8 @@ export default function ApplyAdminClient({
                                 type="button"
                                 onClick={() => void loadSourceStats(sourceStatsRange)}
                                 disabled={sourceStatsLoading}
-                                className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-[var(--color-academy-line)] px-3 text-sm font-bold text-[var(--color-academy-muted)] transition hover:bg-[var(--color-academy-soft)] disabled:opacity-60"
+                                className="academy-button-secondary"
                             >
-                                <span className="material-symbols-outlined text-base">refresh</span>
                                 새로고침
                             </button>
                         </div>
@@ -779,16 +778,16 @@ export default function ApplyAdminClient({
                 </div>
 
                 {sourceStatsLoading && !payload ? (
-                    <div className="rounded-xl border border-[var(--color-academy-line)] bg-white p-8 text-center text-sm font-bold text-[var(--color-academy-muted)]">
+                    <div className="rounded-xl border border-[var(--color-academy-line)] bg-white p-8 text-center text-sm text-[var(--color-academy-muted)]">
                         유입경로 통계를 불러오는 중입니다.
                     </div>
                 ) : sourceStatsErrorRange === sourceStatsRange ? (
-                    <div className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-danger-soft)] p-6 text-center text-sm font-bold text-[var(--color-academy-danger)]">
+                    <div className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-danger-soft)] p-6 text-center text-sm font-medium text-[var(--color-academy-danger)]">
                         통계를 불러오지 못했습니다.
                         <button
                             type="button"
                             onClick={() => void loadSourceStats(sourceStatsRange)}
-                            className="ml-3 rounded-lg border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)] px-3 py-1.5"
+                            className="academy-button-secondary academy-button-sm ml-3"
                         >
                             다시 시도
                         </button>
@@ -796,10 +795,10 @@ export default function ApplyAdminClient({
                 ) : (
                     <>
                         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                            <SourceMetricCard label="전체 접수" value={`${totals?.total ?? 0}건`} icon="inbox" />
-                            <SourceMetricCard label="체험 문의" value={`${totals?.trialTotal ?? 0}건`} icon="diversity_3" />
-                            <SourceMetricCard label="수강신청" value={`${totals?.enrollTotal ?? 0}건`} icon="assignment" />
-                            <SourceMetricCard label="등록 전환" value={`${totals?.conversionRate ?? 0}%`} icon="trending_up" />
+                            <SourceMetricCard label="전체 접수" value={`${totals?.total ?? 0}건`} />
+                            <SourceMetricCard label="체험 문의" value={`${totals?.trialTotal ?? 0}건`} />
+                            <SourceMetricCard label="수강신청" value={`${totals?.enrollTotal ?? 0}건`} />
+                            <SourceMetricCard label="등록 전환" value={`${totals?.conversionRate ?? 0}%`} />
                         </div>
 
                         <div className="overflow-x-auto rounded-xl border border-[var(--color-academy-line)] bg-white shadow-sm">
@@ -813,7 +812,7 @@ export default function ApplyAdminClient({
                                     <col className="w-[12%]" />
                                     <col className="w-[16%]" />
                                 </colgroup>
-                                <thead className="bg-[var(--color-academy-soft)] text-xs font-black uppercase text-[var(--color-academy-muted)]">
+                                <thead className="bg-[var(--color-academy-soft)] text-xs font-semibold uppercase text-[var(--color-academy-muted)]">
                                     <tr className="divide-x divide-[var(--color-academy-line)]">
                                         <th className="px-3 py-2">유입경로</th>
                                         <th className="px-3 py-2">전체</th>
@@ -827,7 +826,7 @@ export default function ApplyAdminClient({
                                 <tbody className="divide-y divide-[var(--color-academy-line)]">
                                     {rows.length === 0 ? (
                                         <tr>
-                                            <td colSpan={7} className="px-3 py-8 text-center text-sm font-bold text-[var(--color-academy-muted)]">
+                                            <td colSpan={7} className="px-3 py-8 text-center text-sm text-[var(--color-academy-muted)]">
                                                 선택한 기간에 접수된 신청이 없습니다.
                                             </td>
                                         </tr>
@@ -839,26 +838,26 @@ export default function ApplyAdminClient({
                                                     <td className="px-3 py-2 align-middle">
                                                         <div className="min-w-0">
                                                             <div className="flex items-center justify-between gap-3">
-                                                                <span className="truncate font-black text-[var(--color-academy-ink)]">{sourceLabel(row.source)}</span>
-                                                                <span className="shrink-0 text-xs font-bold text-[var(--color-academy-faint)]">{row.source}</span>
+                                                                <span className="truncate font-semibold text-[var(--color-academy-ink)]">{sourceLabel(row.source)}</span>
+                                                                <span className="shrink-0 text-xs text-[var(--color-academy-faint)]">{row.source}</span>
                                                             </div>
                                                             <div className="mt-2 h-2 overflow-hidden rounded-full bg-[var(--color-academy-soft)]">
-                                                                <div className="h-full rounded-full bg-[var(--color-academy-primary)]" style={{ width: `${width}%` }} />
+                                                                <div className="h-full rounded-full bg-[var(--color-academy-secondary-strong)]" style={{ width: `${width}%` }} />
                                                             </div>
                                                         </div>
                                                     </td>
-                                                    <td className="px-3 py-2 font-black text-[var(--color-academy-ink)]">{row.total}</td>
-                                                    <td className="px-3 py-2 text-[var(--color-academy-muted)]">
-                                                        <span className="font-black">{row.trialTotal}</span>
+                                                    <td className="px-3 py-2 font-semibold tabular-nums text-[var(--color-academy-ink)]">{row.total}</td>
+                                                    <td className="px-3 py-2 tabular-nums text-[var(--color-academy-muted)]">
+                                                        <span>{row.trialTotal}</span>
                                                         <span className="ml-1 text-xs text-[var(--color-academy-faint)]">완료 {row.trialAttended}</span>
                                                     </td>
-                                                    <td className="px-3 py-2 text-[var(--color-academy-muted)]">
-                                                        <span className="font-black">{row.enrollTotal}</span>
+                                                    <td className="px-3 py-2 tabular-nums text-[var(--color-academy-muted)]">
+                                                        <span>{row.enrollTotal}</span>
                                                         <span className="ml-1 text-xs text-[var(--color-academy-faint)]">대기 {row.enrollPending}</span>
                                                     </td>
-                                                    <td className="px-3 py-2 text-[var(--color-academy-muted)]">{row.trialConverted + row.enrollApproved}</td>
-                                                    <td className="px-3 py-2 font-black text-[var(--color-academy-ink)]">{row.conversionRate}%</td>
-                                                    <td className="px-3 py-2 text-xs font-bold text-[var(--color-academy-muted)]">{formatDate(row.latestAt)}</td>
+                                                    <td className="px-3 py-2 tabular-nums text-[var(--color-academy-muted)]">{row.trialConverted + row.enrollApproved}</td>
+                                                    <td className="px-3 py-2 font-semibold tabular-nums text-[var(--color-academy-ink)]">{row.conversionRate}%</td>
+                                                    <td className="px-3 py-2 text-xs tabular-nums text-[var(--color-academy-muted)]">{formatDate(row.latestAt)}</td>
                                                 </tr>
                                             );
                                         })
@@ -923,17 +922,14 @@ export default function ApplyAdminClient({
                 }}
                 className="cursor-pointer transition focus:bg-[var(--color-academy-primary-soft)] focus:outline-none"
             >
-                {/* 상태 — 휴대폰에선 아이콘만, sm 이상에서 글자까지 */}
+                {/* 상태 — 아이콘 없이 글자 배지(2026-11-13 UI 통일: 휴대폰에서도 글자로 보인다) */}
                 <td className="px-2 py-1.5">
-                    <span className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-bold ${cfg.color}`} title={cfg.label}>
-                        <span className="material-symbols-outlined text-sm" aria-hidden="true">{cfg.icon}</span>
-                        <span className="sr-only sm:not-sr-only">{cfg.label}</span>
-                    </span>
-                    {app.trialLeadId && <span className="ml-1 text-xs font-bold text-[var(--color-academy-muted)]">체험후</span>}
-                    {app.assignedClassId && <span className="ml-1 text-xs font-bold text-[var(--color-academy-muted)]">배정</span>}
+                    <span className={`inline-flex items-center whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium ${cfg.color}`}>{cfg.label}</span>
+                    {app.trialLeadId && <span className="ml-1 whitespace-nowrap text-xs text-[var(--color-academy-muted)]">체험후</span>}
+                    {app.assignedClassId && <span className="ml-1 whitespace-nowrap text-xs text-[var(--color-academy-muted)]">배정</span>}
                 </td>
                 <td className="px-2 py-1.5">
-                    <span className="font-black text-[var(--color-academy-ink)]">{app.childName}</span>
+                    <span className="font-semibold text-[var(--color-academy-ink)]">{app.childName}</span>
                     {trialSuggestion && (
                         <button
                             type="button"
@@ -943,12 +939,11 @@ export default function ApplyAdminClient({
                             }}
                             disabled={trialLinkBusyId !== null}
                             title={`${trialSuggestionLabel} · ${trialSuggestion.reason}`}
-                            className="ml-1.5 inline-flex min-h-11 min-w-11 justify-center items-center gap-0.5 rounded-md sm:min-h-8 sm:min-w-0 border border-[var(--color-academy-line)] px-2 text-xs font-black text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-surface)] disabled:opacity-50"
+                            className="academy-button-tonal academy-button-sm ml-1.5 whitespace-nowrap"
                             aria-label={`${app.childName} 신청서를 체험 기록 ${trialSuggestion.childName}과 연결 (${trialSuggestionLabel})`}
                         >
-                            <span className="material-symbols-outlined text-sm" aria-hidden="true">link</span>
-                            {/* 휴대폰 폭(sm 미만)에선 아이콘만 보여 행이 두 줄로 밀리지 않게 한다(뜻은 aria-label 이 읽어 준다) */}
-                            <span className="sr-only sm:not-sr-only">{trialLinkBusyId === app.id ? "연결 중" : "체험 연결"}</span>
+                            {/* 아이콘 없이 글자 버튼(2026-11-13 UI 통일) — 휴대폰에서도 «체험 연결» 글자가 보인다 */}
+                            {trialLinkBusyId === app.id ? "연결 중" : "체험 연결"}
                         </button>
                     )}
                 </td>
@@ -960,9 +955,9 @@ export default function ApplyAdminClient({
                 <td className="hidden px-2 py-1.5 text-[var(--color-academy-muted)] lg:table-cell">{app.parentName || "-"}</td>
                 <td className="hidden px-2 py-1.5 tabular-nums text-[var(--color-academy-muted)] md:table-cell">{app.parentPhone || "-"}</td>
                 <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-muted)]">{formatDate(app.createdAt)}</td>
-                <td className="px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">
-                    <span className="inline-block whitespace-nowrap">{preferredSlotShort ?? <span className="text-xs font-bold text-[var(--color-academy-warning)]">확인 필요</span>}</span>
-                    <span className={`mt-1 block ${app.requestedStartOn ? "whitespace-nowrap" : ""} text-xs font-medium text-[var(--color-academy-muted)] lg:hidden`}><span className="sr-only">수강 개시일 </span>{formatEnrollmentStartOn(app.requestedStartOn)}</span>
+                <td className="px-2 py-1.5 text-[var(--color-academy-ink)]">
+                    <span className="inline-block whitespace-nowrap">{preferredSlotShort ?? <span className="text-xs font-medium text-[var(--color-academy-warning)]">확인 필요</span>}</span>
+                    <span className={`mt-1 block ${app.requestedStartOn ? "whitespace-nowrap" : ""} text-xs text-[var(--color-academy-muted)] lg:hidden`}><span className="sr-only">수강 개시일 </span>{formatEnrollmentStartOn(app.requestedStartOn)}</span>
                     {app.shuttleNeeded && <span className="mt-1 block md:hidden"><EnrollmentShuttleProgressView progress={app.shuttleProgress} /></span>}
                 </td>
                 <td className="hidden px-2 py-1.5 text-[var(--color-academy-muted)] lg:table-cell">{formatEnrollmentStartOn(app.requestedStartOn)}{!app.requestedStartOn && app.enrollmentMonths && <span className="mt-1 block text-xs text-[var(--color-academy-muted)]">기존 신청 월 {formatEnrollmentMonthsShort(app.enrollmentMonths)}</span>}</td>
@@ -994,7 +989,7 @@ export default function ApplyAdminClient({
         return (
             <div className="overflow-x-auto rounded-xl border border-[var(--color-academy-line)] bg-white shadow-sm">
                 <table className="admin-list-table w-full border-collapse text-sm">
-                    <thead className="sticky top-0 z-10 bg-[var(--color-academy-soft)] text-xs font-black uppercase text-[var(--color-academy-muted)]">
+                    <thead className="sticky top-0 z-10 bg-[var(--color-academy-soft)] text-xs font-semibold uppercase text-[var(--color-academy-muted)]">
                         <tr>
                             <th className="px-2 py-2">상태</th>
                             <th className="px-2 py-2">학생</th>
@@ -1013,7 +1008,7 @@ export default function ApplyAdminClient({
                         statusGroups.map((group) => (
                             <tbody key={group.status}>
                                 <tr>
-                                    <th colSpan={APPLICATION_LIST_COLUMN_COUNT} scope="rowgroup" className="bg-[var(--color-academy-soft)] px-2 py-1.5 text-xs font-black text-[var(--color-academy-ink)]">
+                                    <th colSpan={APPLICATION_LIST_COLUMN_COUNT} scope="rowgroup" className="bg-[var(--color-academy-soft)] px-2 py-1.5 text-xs font-semibold text-[var(--color-academy-ink)]">
                                         {group.label} · <span className="tabular-nums">{group.total}</span>건
                                     </th>
                                 </tr>
@@ -1040,18 +1035,11 @@ export default function ApplyAdminClient({
         <div className={`min-w-0 ${embedded ? "space-y-3" : "space-y-4"}`}>
             {/* 제목 줄 — 옛 /admin/apply 에서만(신청함·신청 설정은 자기 제목이 있다) */}
             {mode === "full" && (
-            <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">
-                <h1 className="flex min-w-0 items-center gap-2 text-2xl font-bold text-[var(--color-academy-ink)]">
-                    <span className="material-symbols-outlined text-2xl text-[var(--color-academy-ink)]" aria-hidden="true">how_to_reg</span>
-                    체험/수강신청 관리
-                </h1>
-                <div className="flex max-w-full flex-wrap items-center gap-2">
-                    <Link href="/admin/registration-readiness" className="inline-flex min-h-11 items-center gap-1 rounded-xl px-2 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-primary-soft)]" prefetch={false}>
-                        <span className="material-symbols-outlined text-lg" aria-hidden="true">checklist</span>
-                        입학 점검
-                    </Link>
-                </div>
-            </div>
+            <AdminPageHeader
+                className="min-w-0"
+                title="체험/수강신청 관리"
+                actions={<Link href="/admin/registration-readiness" className="academy-button-secondary" prefetch={false}>입학 점검</Link>}
+            />
             )}
 
             {/* 업무 탭 — 드롭다운을 열지 않아도 다섯 업무와 처리할 건수가 한눈에 보이게 한 줄로 펼친다.
@@ -1059,11 +1047,11 @@ export default function ApplyAdminClient({
             {!embedded && (
             <div role="group" aria-label="신청 관리 업무" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
                 {([
-                    { key: "trial", label: "체험 문의", icon: "sports_basketball", count: initialTrialStats?.NEW ?? 0, countLabel: "신규" },
-                    { key: "applications", label: "수강신청", icon: "assignment", count: stats.PENDING, countLabel: "대기" },
-                    { key: "waitlist", label: "대기자", icon: "hourglass_top", count: 0, countLabel: "" },
-                    { key: "sources", label: "유입 통계", icon: "insights", count: 0, countLabel: "" },
-                    { key: "settings", label: "안내 설정", icon: "tune", count: 0, countLabel: "" },
+                    { key: "trial", label: "체험 문의", count: initialTrialStats?.NEW ?? 0, countLabel: "신규" },
+                    { key: "applications", label: "수강신청", count: stats.PENDING, countLabel: "대기" },
+                    { key: "waitlist", label: "대기자", count: 0, countLabel: "" },
+                    { key: "sources", label: "유입 통계", count: 0, countLabel: "" },
+                    { key: "settings", label: "안내 설정", count: 0, countLabel: "" },
                 ] as const).filter(tab => mode !== "settings" || tab.key === "sources" || tab.key === "settings").map(tab => {
                     const active = activeTab === tab.key;
                     return (
@@ -1072,16 +1060,12 @@ export default function ApplyAdminClient({
                             type="button"
                             aria-pressed={active}
                             onClick={() => setActiveTab(tab.key as TabType)}
-                            className={`inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-xl border px-3.5 text-sm font-bold transition ${
-                                active
-                                    ? "border-[var(--color-academy-ink)] bg-[var(--color-academy-ink)] text-white"
-                                    : "border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)] hover:border-[var(--color-academy-primary)] hover:text-[var(--color-academy-ink)]"
-                            }`}
+                            // «지금 보는 탭» = 보조 색(하늘색) 탭 칩. 검정 채움·아이콘은 뺐다(2026-11-13 UI 통일)
+                            className={`academy-choice is-tab shrink-0 whitespace-nowrap ${active ? "is-selected" : ""}`}
                         >
-                            <span className="material-symbols-outlined text-lg" aria-hidden="true">{tab.icon}</span>
                             {tab.label}
                             {tab.count > 0 && (
-                                <span className={`rounded-full px-1.5 py-0.5 text-xs font-extrabold leading-none ${active ? "bg-white text-[var(--color-academy-ink)]" : "bg-[var(--color-academy-primary)] text-[var(--color-academy-on-primary)]"}`}>
+                                <span className={`rounded-full px-1.5 py-0.5 text-xs font-semibold leading-none tabular-nums ${active ? "bg-[var(--color-academy-surface)] text-[var(--color-academy-secondary-ink)]" : "bg-[var(--color-academy-neutral-soft)] text-[var(--color-academy-neutral)]"}`}>
                                     <span className="sr-only">{tab.countLabel} </span>{tab.count}
                                 </span>
                             )}
@@ -1093,16 +1077,13 @@ export default function ApplyAdminClient({
 
             {feedback && (
                 <div
-                    className={`flex items-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold ${
+                    className={`flex items-center gap-2 rounded-xl border px-4 py-3 text-sm font-medium ${
                         feedback.type === "success"
                             ? "border-[var(--color-academy-line)] bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]"
                             : "border-[var(--color-academy-line)] bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]"
                     }`}
                     role="status"
                 >
-                    <span className="material-symbols-outlined text-lg">
-                        {feedback.type === "success" ? "check_circle" : "error"}
-                    </span>
                     {feedback.message}
                 </div>
             )}
@@ -1126,20 +1107,19 @@ export default function ApplyAdminClient({
                         summary={[filter !== "ALL" ? STATUS_CONFIG[filter]?.label : null, workFilter !== "ALL" ? APPLICATION_WORK_FILTERS.find(item => item.value === workFilter)?.label : null].filter(Boolean).join(" · ") || "전체 조건"}
                         resultCount={`${filteredApps.length}건`}
                         onReset={() => { setFilter("ALL"); setWorkFilter("ALL"); }}
-                        search={<label className="flex min-h-11 min-w-0 items-center gap-2 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3">
-                            <span className="material-symbols-outlined text-lg text-[var(--color-academy-muted)]" aria-hidden="true">search</span>
-                            <input type="search" value={searchQuery} onChange={event => setSearchQuery(event.target.value)} placeholder="학생, 보호자, 전화번호로 검색" className="min-w-0 flex-1 bg-transparent py-2 text-[17px] text-[var(--color-academy-ink)] outline-none [&::-webkit-search-cancel-button]:appearance-none" />
+                        search={<label className="flex min-h-11 min-w-0 items-center gap-2 rounded-md border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3">
+                            <input type="search" value={searchQuery} onChange={event => setSearchQuery(event.target.value)} placeholder="학생, 보호자, 전화번호로 검색" className="min-w-0 flex-1 bg-transparent py-2 text-sm text-[var(--color-academy-ink)] outline-none [&::-webkit-search-cancel-button]:appearance-none" />
                             {searchQuery && <button type="button" onClick={() => setSearchQuery("")} title="검색어 지우기" className="inline-flex min-h-11 w-11 shrink-0 items-center justify-center text-[var(--color-academy-muted)]"><span className="material-symbols-outlined text-lg" aria-hidden="true">close</span></button>}
                         </label>}
                     >
-                        <label className="min-w-0 space-y-1 text-xs font-bold text-[var(--color-academy-muted)]">신청 상태
-                            <select aria-label="수강신청 상태" value={filter} onChange={event => setFilter(event.target.value)} className="h-11 block min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-2 text-[17px] text-[var(--color-academy-ink)]">
+                        <label className="min-w-0 space-y-1 text-xs font-medium text-[var(--color-academy-muted)]">신청 상태
+                            <select aria-label="수강신청 상태" value={filter} onChange={event => setFilter(event.target.value)} className="academy-input block min-w-0">
                                 <option value="ALL">전체 {stats.total}</option>
                                 {STATUS_ORDER.map(status => <option key={status} value={status}>{STATUS_CONFIG[status].label} {stats[status]}</option>)}
                             </select>
                         </label>
-                        <label className="min-w-0 space-y-1 text-xs font-bold text-[var(--color-academy-muted)]">업무 조건
-                            <select aria-label="수강신청 업무 조건" value={workFilter} onChange={event => setWorkFilter(event.target.value as ApplicationWorkFilter)} className="h-11 block min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-2 text-[17px] text-[var(--color-academy-ink)]">
+                        <label className="min-w-0 space-y-1 text-xs font-medium text-[var(--color-academy-muted)]">업무 조건
+                            <select aria-label="수강신청 업무 조건" value={workFilter} onChange={event => setWorkFilter(event.target.value as ApplicationWorkFilter)} className="academy-input block min-w-0">
                                 {APPLICATION_WORK_FILTERS.map(item => <option key={item.value} value={item.value}>{item.label} {workFilterCounts[item.value]}</option>)}
                             </select>
                         </label>
@@ -1159,9 +1139,8 @@ export default function ApplyAdminClient({
 
                     {/* 신청서 목록 */}
                     {filteredApps.length === 0 ? (
-                        <div className="text-center py-16 bg-white rounded-xl border border-[var(--color-academy-line)]">
-                            <span className="material-symbols-outlined text-5xl text-[var(--color-academy-faint)]">inbox</span>
-                            <p className="text-[var(--color-academy-muted)] mt-3">
+                        <div className="text-center py-10 bg-white rounded-xl border border-[var(--color-academy-line)]">
+                            <p className="text-[var(--color-academy-muted)]">
                                 {searchQuery || workFilter !== "ALL"
                                     ? "조건에 맞는 수강신청이 없습니다"
                                     : filter === "ALL"
@@ -1173,7 +1152,7 @@ export default function ApplyAdminClient({
                                     type="button"
                                     onClick={handleShowMoreApps}
                                     disabled={loadingMore}
-                                    className="mt-4 rounded-lg border border-[var(--color-academy-line)] px-4 py-2 text-sm font-bold text-[var(--color-academy-muted)] transition hover:bg-[var(--color-academy-soft)] disabled:opacity-60"
+                                    className="academy-button-secondary mt-4"
                                 >
                                     {loadingMore ? "불러오는 중..." : "다음 50건에서 더 찾아보기"}
                                 </button>
@@ -1191,7 +1170,7 @@ export default function ApplyAdminClient({
                                         type="button"
                                         onClick={handleShowMoreApps}
                                         disabled={loadingMore}
-                                        className="rounded-lg border border-[var(--color-academy-line)] px-4 py-2 font-bold text-[var(--color-academy-muted)] transition hover:bg-[var(--color-academy-soft)]"
+                                        className="academy-button-secondary"
                                     >
                                         {loadingMore ? "불러오는 중..." : "50건 더 보기"}
                                     </button>
@@ -1261,18 +1240,12 @@ export default function ApplyAdminClient({
     );
 }
 
-function SourceMetricCard({ label, value, icon }: { label: string; value: string; icon: string }) {
+// 숫자 카드 — 장식 아이콘 없이 라벨 + 숫자만(2026-11-13 UI 통일)
+function SourceMetricCard({ label, value }: { label: string; value: string }) {
     return (
         <div className="rounded-xl border border-[var(--color-academy-line)] bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between gap-3">
-                <div>
-                    <p className="text-xs font-bold text-[var(--color-academy-muted)]">{label}</p>
-                    <p className="mt-1 text-2xl font-black text-[var(--color-academy-ink)]">{value}</p>
-                </div>
-                <span className="inline-flex size-10 items-center justify-center rounded-xl bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-ink)]">
-                    <span className="material-symbols-outlined">{icon}</span>
-                </span>
-            </div>
+            <p className="text-xs font-medium text-[var(--color-academy-muted)]">{label}</p>
+            <p className="mt-1 text-2xl font-bold tabular-nums text-[var(--color-academy-ink)]">{value}</p>
         </div>
     );
 }
@@ -1315,8 +1288,7 @@ function ApplicationContactModal({
                 onSubmit={handleSubmit}
                 className="w-full p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]"
             >
-                <h2 id="application-contact-modal-title" className="flex items-center gap-2 text-lg font-black text-[var(--color-academy-ink)]">
-                    <span className="material-symbols-outlined text-[var(--color-academy-ink)]">phone_callback</span>
+                <h2 id="application-contact-modal-title" className="text-lg font-bold text-[var(--color-academy-ink)]">
                     후속 연락 기록
                 </h2>
                 <p className="mt-1 text-sm text-[var(--color-academy-muted)]">
@@ -1329,11 +1301,9 @@ function ApplicationContactModal({
                             key={option}
                             type="button"
                             onClick={() => setAction(option)}
-                            className={`rounded-xl border px-3 py-2 text-sm font-black transition ${
-                                action === option
-                                    ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-ink)]"
-                                    : "border-[var(--color-academy-line)] text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
-                            }`}
+                            // 고르는 칩 = 테마 선택 칩(고르면 ✓ + 하늘색) — 2026-11-13 UI 통일
+                            aria-pressed={action === option}
+                            className="academy-choice"
                         >
                             {CONTACT_ACTION_LABELS[option]}
                         </button>
@@ -1341,29 +1311,29 @@ function ApplicationContactModal({
                 </div>
 
                 {action === "FOLLOW_UP" && (
-                    <label className="mt-4 block text-sm font-bold text-[var(--color-academy-muted)]">
+                    <label className="mt-4 block text-sm font-medium text-[var(--color-academy-muted)]">
                         다음 연락 예정
                         <input
                             type="datetime-local"
                             value={nextFollowUpAt}
                             onChange={(event) => setNextFollowUpAt(event.target.value)}
-                            className="mt-1 w-full rounded-xl border border-[var(--color-academy-line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--color-academy-primary)]"
+                            className="academy-input mt-1"
                         />
                     </label>
                 )}
 
-                <label className="mt-4 block text-sm font-bold text-[var(--color-academy-muted)]">
+                <label className="mt-4 block text-sm font-medium text-[var(--color-academy-muted)]">
                     상담 메모
                     <textarea
                         value={note}
                         onChange={(event) => setNote(event.target.value)}
                         rows={4}
-                        className="mt-1 w-full resize-none rounded-xl border border-[var(--color-academy-line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--color-academy-primary)]"
+                        className="academy-input mt-1 resize-none"
                     />
                 </label>
 
                 {formError && (
-                    <p className="mt-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-danger)]">
+                    <p className="mt-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-medium text-[var(--color-academy-danger)]">
                         {formError}
                     </p>
                 )}
@@ -1372,14 +1342,14 @@ function ApplicationContactModal({
                     <button
                         type="button"
                         onClick={onClose}
-                        className="rounded-xl px-4 py-2 text-sm font-bold text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
+                        className="academy-button-text"
                     >
                         닫기
                     </button>
                     <button
                         type="submit"
                         disabled={busy}
-                        className="rounded-xl bg-[var(--color-academy-primary)] px-5 py-2 text-sm font-black text-white transition hover:bg-[var(--color-academy-primary-hover)] disabled:opacity-50"
+                        className="academy-button-primary"
                     >
                         {busy ? "저장 중..." : "저장"}
                     </button>

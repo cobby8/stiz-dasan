@@ -163,12 +163,12 @@ export function SessionPhotoUploader({
                   {photo.subjectStudentIds.map((id) => students.find((student) => student.id === id)?.name).filter(Boolean).join(", ") || "대상 학생 미지정"}
                 </p>
                 {photo.requiresDeletionQueue ? (
-                  <p className="rounded-lg bg-[var(--color-academy-warning-soft)] p-2 text-xs font-bold text-[var(--color-academy-warning)]">공개된 사진 · 관리자 회수 필요</p>
+                  <p className="rounded-lg bg-[var(--color-academy-warning-soft)] p-2 text-xs font-medium text-[var(--color-academy-warning)]">공개된 사진 · 관리자 회수 필요</p>
                 ) : (
                   // 게슈탈트 T-10: «학생 수정»과 «삭제»가 나란히 붙어 있으면 잘못 누르기 쉽다.
                   // 삭제는 오른쪽 끝 휴지통 아이콘으로 떼어 두고(간격 12px), 확인 창(deletePhoto)은 그대로 둔다.
                   <div className="flex items-center justify-between gap-3">
-                    <button type="button" disabled={busy} onClick={() => setEditingPhotoId(editingPhotoId === photo.id ? null : photo.id)} className="min-h-11 flex-1 rounded-lg border border-[var(--color-academy-line)] text-xs font-bold disabled:opacity-50">학생 수정</button>
+                    <button type="button" disabled={busy} onClick={() => setEditingPhotoId(editingPhotoId === photo.id ? null : photo.id)} className="academy-button-tonal academy-button-sm min-w-0 flex-1">학생 수정</button>
                     <button type="button" disabled={busy} aria-label="사진 삭제" title="사진 삭제" onClick={() => void deletePhoto(photo)} className="grid size-11 shrink-0 place-items-center rounded-lg border border-[var(--color-academy-danger)] text-[var(--color-academy-danger)] disabled:opacity-50">
                       <span aria-hidden="true" className="material-symbols-outlined text-xl">delete</span>
                     </button>
@@ -179,10 +179,10 @@ export function SessionPhotoUploader({
                     <div className="flex max-h-48 flex-wrap gap-2 overflow-y-auto">
                       {students.map((student) => {
                         const selected = photo.subjectStudentIds.includes(student.id);
-                        return <button key={student.id} type="button" aria-pressed={selected} onClick={() => togglePhotoSubject(photo.id, student.id)} className={`min-h-11 rounded-full border px-3 text-xs font-bold ${selected ? "border-[var(--brand-accent)] bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]" : "border-[var(--color-academy-line)]"}`}>{student.name}</button>;
+                        return <button key={student.id} type="button" aria-pressed={selected} onClick={() => togglePhotoSubject(photo.id, student.id)} className="academy-choice">{student.name}</button>;
                       })}
                     </div>
-                    <button type="button" disabled={busy || photo.subjectStudentIds.length === 0} onClick={() => void updatePhotoSubjects(photo)} className="academy-button-secondary min-h-11 w-full rounded-lg text-xs font-black disabled:opacity-50">변경 저장</button>
+                    <button type="button" disabled={busy || photo.subjectStudentIds.length === 0} onClick={() => void updatePhotoSubjects(photo)} className="academy-button-secondary w-full">변경 저장</button>
                   </div>
                 )}
               </div>
@@ -191,7 +191,7 @@ export function SessionPhotoUploader({
         </div>
       )}
       <fieldset disabled={busy}>
-        <legend className="text-sm font-bold text-[var(--color-academy-ink)]">
+        <legend className="text-sm font-medium text-[var(--color-academy-ink)]">
           사진에 나온 학생 <span className="text-[var(--color-academy-danger)]">(필수)</span>
         </legend>
         <p className="mt-1 text-xs leading-5 text-[var(--color-academy-muted)]">
@@ -206,13 +206,10 @@ export function SessionPhotoUploader({
                 type="button"
                 aria-pressed={selected}
                 onClick={() => toggleSubject(student.id)}
-                className={`min-h-11 rounded-full border px-3 text-sm font-bold ${
-                  selected
-                    ? "border-[var(--brand-accent)] bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]"
-                    : "border-[var(--color-academy-line)] bg-white text-[var(--color-academy-muted)]"
-                }`}
+                // 2026-11-13 UI 통일: 고른 학생 = 보조 색 칩. ✓ 는 테마(.academy-choice[aria-pressed])가 붙인다.
+                className="academy-choice"
               >
-                {selected ? "✓ " : ""}{student.name}
+                {student.name}
               </button>
             );
           })}
@@ -222,18 +219,18 @@ export function SessionPhotoUploader({
       <input ref={cameraRef} hidden type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={(event) => void upload(event.target.files)} />
       <input ref={galleryRef} hidden type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => void upload(event.target.files)} />
       <div className="grid grid-cols-2 gap-2">
-        <button type="button" disabled={busy} onClick={() => cameraRef.current?.click()} className="min-h-12 rounded-xl bg-[var(--brand-accent)] px-3 font-black text-[var(--brand-accent-contrast)] disabled:opacity-50">
+        <button type="button" disabled={busy} onClick={() => cameraRef.current?.click()} className="academy-button-primary min-h-12!">
           사진 촬영
         </button>
-        <button type="button" disabled={busy} onClick={() => galleryRef.current?.click()} className="min-h-12 rounded-xl border border-[var(--color-academy-line)] bg-white px-3 font-black disabled:opacity-50">
+        <button type="button" disabled={busy} onClick={() => galleryRef.current?.click()} className="academy-button-secondary min-h-12!">
           갤러리 선택
         </button>
       </div>
       {message && (
         <div className="flex items-center justify-between gap-3 rounded-xl bg-[var(--color-academy-soft)] p-3">
-          <p aria-live="polite" className="text-sm font-bold text-[var(--color-academy-muted)]">{message}</p>
+          <p aria-live="polite" className="min-w-0 text-sm text-[var(--color-academy-muted)]">{message}</p>
           {retryAction && (
-            <button type="button" disabled={busy} onClick={() => void retryAction()} className="min-h-11 shrink-0 rounded-xl border border-[var(--color-academy-line-input)] px-3 text-sm font-black">
+            <button type="button" disabled={busy} onClick={() => void retryAction()} className="academy-button-secondary shrink-0">
               다시 시도
             </button>
           )}

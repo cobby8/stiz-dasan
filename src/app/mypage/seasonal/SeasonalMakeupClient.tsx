@@ -90,18 +90,18 @@ export default function SeasonalMakeupClient({ initial }: { initial: any }) {
   }
 
   if (!ctx.phoneKnown) {
-    return <div className="mx-auto max-w-lg p-4"><h1 className="mb-2 text-lg font-black">방학특강 보강</h1><div className="rounded-xl bg-[var(--color-academy-soft)] p-4 text-sm font-bold text-[var(--color-academy-muted)]">계정에 등록된 전화번호로 신청 내역을 찾을 수 없습니다. 학원에 문의해 주세요.</div></div>;
+    return <div className="mx-auto max-w-lg p-4"><h1 className="academy-heading mb-2">방학특강 보강</h1><div className="rounded-xl bg-[var(--color-academy-soft)] p-4 text-sm text-[var(--color-academy-muted)]">계정에 등록된 전화번호로 신청 내역을 찾을 수 없습니다. 학원에 문의해 주세요.</div></div>;
   }
 
   return (
     <div className="mx-auto max-w-lg p-4">
-      <h1 className="mb-1 text-lg font-black">🏀 방학특강 결석 신고 · 보강</h1>
-      <p className="mb-4 text-sm font-bold text-[var(--color-academy-muted)]">앞으로 못 오는 회차는 <b>미리 결석 신고</b>(셔틀 자동 제외), 이미 결석한 회차는 <b>보강 신청</b>을 할 수 있어요. (보강은 결석일로부터 2개월 이내)</p>
+      <h1 className="academy-heading mb-1">방학특강 결석 신고 · 보강</h1>
+      <p className="mb-4 text-sm text-[var(--color-academy-muted)]">앞으로 못 오는 회차는 <b>미리 결석 신고</b>(셔틀 자동 제외), 이미 결석한 회차는 <b>보강 신청</b>을 할 수 있어요. (보강은 결석일로부터 2개월 이내)</p>
 
-      {msg && <div className="mb-3 rounded-lg bg-[var(--color-academy-success-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-success)]">{msg}</div>}
-      {err && <div className="mb-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-danger)]">{err}</div>}
+      {msg && <div className="mb-3 rounded-lg bg-[var(--color-academy-success-soft)] px-3 py-2 text-sm text-[var(--color-academy-success)]">{msg}</div>}
+      {err && <div className="mb-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm text-[var(--color-academy-danger)]">{err}</div>}
 
-      <div className="mb-2 text-sm font-black">보강이 필요한 결석</div>
+      <div className="academy-section-title mb-2">보강이 필요한 결석</div>
       {/* 카드 묶음 대신 한 목록의 행(divide-y) — 휴대폰 첫 화면에 더 많이 보이게 */}
       {(ctx.absences || []).length > 0 && (
         <ul className={LIST_CLASS}>
@@ -110,10 +110,10 @@ export default function SeasonalMakeupClient({ initial }: { initial: any }) {
               {/* 한 줄 행: 자녀 · 특강 이름(줄바꿈 허용) · 결석일(오른쪽) · 보강 신청 버튼 — «·»로 잇던 글을 요소로 나눔 */}
               <div className="flex min-h-11 items-center gap-2">
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-black">{ab.childName}</p>
-                  <p className="break-keep text-xs font-bold text-[var(--color-academy-muted)]">{ab.offeringTitle}</p>
+                  <p className="text-sm font-semibold">{ab.childName}</p>
+                  <p className="break-keep text-xs text-[var(--color-academy-muted)]">{ab.offeringTitle}</p>
                 </div>
-                <span className="shrink-0 text-right text-xs font-bold tabular-nums text-[var(--color-academy-danger)]">{ab.absentLabel} 결석</span>
+                <span className="shrink-0 text-right text-xs tabular-nums text-[var(--color-academy-danger)]">{ab.absentLabel} 결석</span>
                 {/* 행의 «여는» 버튼 = 옅은 바탕(tonal), 열린 뒤 «닫기» = 글자 버튼(M-08) */}
                 <button onClick={() => setOpen(open === ab.enrollmentDateId ? "" : ab.enrollmentDateId)}
                   className={`${open === ab.enrollmentDateId ? "academy-button-text" : "academy-button-tonal"} shrink-0`}>{open === ab.enrollmentDateId ? "닫기" : "보강 신청"}</button>
@@ -121,39 +121,41 @@ export default function SeasonalMakeupClient({ initial }: { initial: any }) {
               {/* 보강 후보 고르기 — 기존 그대로(후보를 누르면 바로 신청, 학원 승인 후 확정) */}
               {open === ab.enrollmentDateId && (
                 <div className="mb-1 mt-2 border-t border-[var(--color-academy-line)] pt-2">
-                  <div className="mb-1 text-xs font-black text-[var(--color-academy-muted)]">① 같은 특강 다른 날짜</div>
+                  <div className="mb-1 text-xs font-medium text-[var(--color-academy-muted)]">① 같은 특강 다른 날짜</div>
                   {ab.seasonalCandidates.length === 0 && <div className="mb-2 text-xs text-[var(--color-academy-faint)]">여유 있는 날짜가 없습니다.</div>}
                   <div className="mb-2 flex flex-wrap gap-2">
                     {ab.seasonalCandidates.map((s: any) => (
                       <button key={s.sessionDateId} disabled={busy} onClick={() => request(ab.enrollmentDateId, "SEASONAL", s)}
-                        className="min-h-11 rounded-lg border border-[var(--color-academy-line)] px-3 text-xs font-black tabular-nums hover:border-[var(--brand-accent)] disabled:opacity-50">{s.label} <span className={SEAT_LEVEL_TEXT_CLASS[s.seatLevel as keyof typeof SEAT_LEVEL_TEXT_CLASS] ?? SEAT_LEVEL_TEXT_CLASS.AVAILABLE}>{SEAT_LEVEL_LABEL[s.seatLevel as keyof typeof SEAT_LEVEL_LABEL] ?? "여유"}</span></button>
+                        className="academy-button-secondary tabular-nums">{s.label} <span className={SEAT_LEVEL_TEXT_CLASS[s.seatLevel as keyof typeof SEAT_LEVEL_TEXT_CLASS] ?? SEAT_LEVEL_TEXT_CLASS.AVAILABLE}>{SEAT_LEVEL_LABEL[s.seatLevel as keyof typeof SEAT_LEVEL_LABEL] ?? "여유"}</span></button>
                     ))}
                   </div>
                   {ab.regularCandidates.length > 0 && <>
-                    <div className="mb-1 mt-2 text-xs font-black text-[var(--color-academy-muted)]">② 정규수업 보강 (추천)</div>
+                    <div className="mb-1 mt-2 text-xs font-medium text-[var(--color-academy-muted)]">② 정규수업 보강 (추천)</div>
                     <div className="flex flex-wrap gap-2">
                       {ab.regularCandidates.map((c: any) => (
                         <button key={c.classId} disabled={busy} onClick={() => request(ab.enrollmentDateId, "REGULAR", c)}
-                          className="min-h-11 rounded-lg border border-[var(--color-academy-line)] px-3 py-1.5 text-left text-xs font-black hover:border-[var(--brand-accent)] disabled:opacity-50">
-                          {/* 날짜와 반 이름을 요소로 나눔 */}
-                          <div className="flex flex-wrap gap-x-1.5"><span className="tabular-nums">{c.nextLabel}</span><span className="break-keep">{c.name}</span></div>
-                          <div className="font-bold text-[var(--color-academy-faint)]">{c.schedule}</div>
+                          className="academy-button-secondary">
+                          {/* 날짜와 반 이름을 요소로 나눔(두 줄 — 버튼 안에서 왼쪽 정렬) */}
+                          <span className="block text-left">
+                            <span className="flex flex-wrap gap-x-1.5"><span className="tabular-nums">{c.nextLabel}</span><span className="break-keep">{c.name}</span></span>
+                            <span className="block text-xs font-normal text-[var(--color-academy-faint)]">{c.schedule}</span>
+                          </span>
                         </button>
                       ))}
                     </div>
                   </>}
-                  <p className="mt-2 text-xs font-bold text-[var(--color-academy-faint)]">신청 후 학원 승인 시 확정됩니다.</p>
+                  <p className="mt-2 text-xs text-[var(--color-academy-faint)]">신청 후 학원 승인 시 확정됩니다.</p>
                 </div>
               )}
             </li>
           ))}
         </ul>
       )}
-      {(ctx.absences || []).length === 0 && <div className="rounded-xl bg-[var(--color-academy-soft)] p-4 text-sm font-bold text-[var(--color-academy-muted)]">현재 보강이 필요한 결석이 없습니다.</div>}
+      {(ctx.absences || []).length === 0 && <div className="rounded-xl bg-[var(--color-academy-soft)] p-4 text-sm text-[var(--color-academy-muted)]">현재 보강이 필요한 결석이 없습니다.</div>}
 
       {/* ── 예정 회차 · 결석 미리 신고 ── */}
-      <div className="mb-2 mt-6 text-sm font-black">예정 회차 · 결석 미리 신고</div>
-      <p className="mb-2 text-xs font-bold text-[var(--color-academy-faint)]">앞으로의 수업에 못 오게 되면 미리 신고할 수 있어요. 신고하면 그날 셔틀 배차에서도 자동 제외됩니다.</p>
+      <div className="academy-section-title mb-2 mt-6">예정 회차 · 결석 미리 신고</div>
+      <p className="mb-2 text-xs text-[var(--color-academy-faint)]">앞으로의 수업에 못 오게 되면 미리 신고할 수 있어요. 신고하면 그날 셔틀 배차에서도 자동 제외됩니다.</p>
       {seats.length > 0 && (
         <ul className={LIST_CLASS}>
           {seats.map((s: any) => {
@@ -163,18 +165,18 @@ export default function SeasonalMakeupClient({ initial }: { initial: any }) {
                 {/* 한 줄 행: 자녀 · 특강 이름 · (상태 배지·사유) | 회차 날짜(오른쪽) · 동작 */}
                 <div className="flex min-h-11 flex-wrap items-center gap-2">
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-black">{s.childName}</p>
-                    <p className="break-keep text-xs font-bold text-[var(--color-academy-muted)]">{s.offeringTitle}</p>
+                    <p className="text-sm font-semibold">{s.childName}</p>
+                    <p className="break-keep text-xs text-[var(--color-academy-muted)]">{s.offeringTitle}</p>
                     {/* 신고됨(본인이 사전 신고) → 상태 배지와 사유를 나눠 표시 */}
                     {s.reported && (
                       <p className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                        <span className={`rounded px-2 py-0.5 text-xs font-black ${TONE_BADGE_CLASS.warning}`}>결석 신고됨</span>
-                        {s.reasonLabel && <span className="text-xs font-bold text-[var(--color-academy-muted)]">{s.reasonLabel}</span>}
-                        {s.locked && <span className="text-xs font-bold text-[var(--color-academy-faint)]">학원 확정 — 변경은 문의</span>}
+                        <span className={`rounded px-2 py-0.5 text-xs ${TONE_BADGE_CLASS.warning}`}>결석 신고됨</span>
+                        {s.reasonLabel && <span className="text-xs text-[var(--color-academy-muted)]">{s.reasonLabel}</span>}
+                        {s.locked && <span className="text-xs text-[var(--color-academy-faint)]">학원 확정 — 변경은 문의</span>}
                       </p>
                     )}
                   </div>
-                  <span className="shrink-0 text-right text-xs font-bold tabular-nums text-[var(--color-academy-muted)]">{s.dateLabel}</span>
+                  <span className="shrink-0 text-right text-xs tabular-nums text-[var(--color-academy-muted)]">{s.dateLabel}</span>
                   {/* 동작 — 기존과 같은 조건·같은 함수 */}
                   {s.reported ? (
                     !s.locked && (
@@ -183,7 +185,7 @@ export default function SeasonalMakeupClient({ initial }: { initial: any }) {
                         onConfirm={() => cancelAbsence(s.enrollmentDateId)} pending={busy} openClassName="basis-full" />
                     )
                   ) : s.locked ? (
-                    <span className="shrink-0 rounded-full bg-[var(--color-academy-soft)] px-2 py-1 text-xs font-black text-[var(--color-academy-muted)]">출결 확정됨</span>
+                    <span className="academy-status shrink-0">출결 확정됨</span>
                   ) : (
                     <button onClick={() => setSeatOpen(seatOpen === s.enrollmentDateId ? "" : s.enrollmentDateId)}
                       className={`${seatOpen === s.enrollmentDateId ? "academy-button-text" : "academy-button-tonal"} shrink-0`}>{seatOpen === s.enrollmentDateId ? "닫기" : "결석 신고"}</button>
@@ -192,15 +194,15 @@ export default function SeasonalMakeupClient({ initial }: { initial: any }) {
                 {/* 신고 폼: 사유 드롭다운 + 안내문 + 제출 (기존 그대로) */}
                 {seatOpen === s.enrollmentDateId && !s.reported && !s.locked && (
                   <div className="mb-1 mt-2 border-t border-[var(--color-academy-line)] pt-2">
-                    <div className="mb-1 text-xs font-black text-[var(--color-academy-muted)]">결석 사유</div>
+                    <div className="mb-1 text-xs font-medium text-[var(--color-academy-muted)]">결석 사유</div>
                     <select
                       value={seatReason[s.enrollmentDateId] || ""}
                       onChange={(e) => setSeatReason((prev) => ({ ...prev, [s.enrollmentDateId]: e.target.value }))}
-                      className="mb-2 min-h-11 w-full rounded-lg border border-[var(--color-academy-line)] bg-white px-3 text-sm font-bold">
+                      className="academy-input mb-2">
                       <option value="">사유를 선택하세요</option>
                       {ABSENCE_REASONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
                     </select>
-                    {reasonInfo && <p className="mb-2 text-xs font-bold text-[var(--color-academy-faint)]">{reasonInfo.hint} 최종 처리는 학원과 협의됩니다.</p>}
+                    {reasonInfo && <p className="mb-2 text-xs text-[var(--color-academy-faint)]">{reasonInfo.hint} 최종 처리는 학원과 협의됩니다.</p>}
                     <button onClick={() => reportAbsence(s.enrollmentDateId)} disabled={busy || !seatReason[s.enrollmentDateId]}
                       className="academy-button-primary w-full">결석 신고하기</button>
                   </div>
@@ -210,22 +212,22 @@ export default function SeasonalMakeupClient({ initial }: { initial: any }) {
           })}
         </ul>
       )}
-      {seats.length === 0 && <div className="rounded-xl bg-[var(--color-academy-soft)] p-4 text-sm font-bold text-[var(--color-academy-muted)]">예정된 방학특강 회차가 없습니다.</div>}
+      {seats.length === 0 && <div className="rounded-xl bg-[var(--color-academy-soft)] p-4 text-sm text-[var(--color-academy-muted)]">예정된 방학특강 회차가 없습니다.</div>}
 
       {(ctx.makeups || []).length > 0 && <>
-        <div className="mb-2 mt-6 text-sm font-black">보강 신청 현황</div>
+        <div className="academy-section-title mb-2 mt-6">보강 신청 현황</div>
         <ul className={LIST_CLASS}>
           {ctx.makeups.map((m: any) => (
             // 한 줄 행: 자녀 · 특강 이름 / 결석 → 보강 대상 | 상태(오른쪽)
             <li key={m.id} className="flex min-h-11 items-center gap-2 px-3 py-2">
               <div className="min-w-0 flex-1">
                 <p className="flex flex-wrap items-baseline gap-x-1.5">
-                  <span className="text-sm font-black">{m.childName}</span>
-                  <span className="break-keep text-xs font-bold text-[var(--color-academy-muted)]">{m.offeringTitle}</span>
+                  <span className="text-sm font-semibold">{m.childName}</span>
+                  <span className="break-keep text-xs text-[var(--color-academy-muted)]">{m.offeringTitle}</span>
                 </p>
-                <p className="break-keep text-xs font-bold tabular-nums text-[var(--color-academy-muted)]">{m.absentLabel} 결석 → {m.targetLabel || (m.targetType === "REGULAR" ? "정규수업" : "-")}</p>
+                <p className="break-keep text-xs tabular-nums text-[var(--color-academy-muted)]">{m.absentLabel} 결석 → {m.targetLabel || (m.targetType === "REGULAR" ? "정규수업" : "-")}</p>
               </div>
-              <span className={`shrink-0 rounded px-2 py-1 text-xs font-black ${TONE_BADGE_CLASS[toneFor(REQUEST_TONE, m.status, "info")]}`}>{STATUS_LABEL[m.status] || "상태 확인 중"}</span>
+              <span className={`shrink-0 rounded px-2 py-1 text-xs ${TONE_BADGE_CLASS[toneFor(REQUEST_TONE, m.status, "info")]}`}>{STATUS_LABEL[m.status] || "상태 확인 중"}</span>
             </li>
           ))}
         </ul>

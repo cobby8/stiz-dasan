@@ -28,7 +28,6 @@ export default function GalleryPublicClient({ posts }: { posts: GalleryPost[] })
     if (items.length === 0) {
         return (
             <div className="text-center py-20 text-[var(--color-public-muted)]">
-                <FontFreeIcon name="image" size={64} className="mx-auto mb-4 text-[var(--color-public-dark-muted)]" />
                 <p className="text-lg font-medium">아직 갤러리가 비어있습니다</p>
                 <p className="text-sm mt-1">곧 수업 사진이 업로드됩니다.</p>
             </div>
@@ -73,11 +72,10 @@ export default function GalleryPublicClient({ posts }: { posts: GalleryPost[] })
                             <div className="absolute bottom-0 left-0 right-0 p-3 md:p-4">
                                 {/* 게시물 제목 — 첫 번째 미디어에만 표시 */}
                                 {item.mediaIdx === 0 && item.title && (
-                                    <p className="text-white text-sm font-bold truncate mb-1">{item.title}</p>
+                                    <p className="text-white text-sm font-semibold truncate mb-1">{item.title}</p>
                                 )}
                                 {/* 날짜 표시 */}
-                                <p className="text-white/70 text-xs flex items-center gap-1">
-                                    <FontFreeIcon name="calendar_today" size={10} />
+                                <p className="text-white/70 text-xs">
                                     {item.displayDate}
                                 </p>
                             </div>
@@ -98,7 +96,8 @@ export default function GalleryPublicClient({ posts }: { posts: GalleryPost[] })
                     <button
                         type="button"
                         onClick={() => setVisibleCount((current) => Math.min(current + VISIBLE_ITEM_INCREMENT, items.length))}
-                        className="min-h-11 rounded-full border border-[var(--color-public-line)] bg-white px-6 text-sm font-black text-[var(--color-public-strong)] shadow-sm transition hover:border-[var(--color-public-accent)] hover:bg-orange-50 dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-tint)] dark:text-brand-neon-lime"
+                        // 공용 보조(테두리) 버튼 — 올리면 --color-public-tint 바탕(2026-11-13 UI 통일: 주황 옅은 바탕·가장 굵은 글자 제거)
+                        className="public-btn-secondary text-sm"
                     >
                         더 보기
                     </button>

@@ -1,5 +1,6 @@
 "use client";
 import { adminErrorText } from "@/components/admin/adminDisplayText";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 
 import { useCallback, useEffect, useState } from "react";
 import { createAnnualEvent, updateAnnualEvent, deleteAnnualEvent, updateAcademySettings } from "@/app/actions/admin";
@@ -80,7 +81,7 @@ function AnnualLoadingFallback() {
 function AnnualErrorState({ onRetry }: { onRetry: () => void }) {
     return (
         <div className="mx-auto max-w-4xl rounded-xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-6 text-center">
-            <p className="text-sm font-bold text-[var(--color-academy-danger)]">연간일정을 불러오지 못했습니다.</p>
+            <p className="text-sm font-medium text-[var(--color-academy-danger)]">연간일정을 불러오지 못했습니다.</p>
             <button
                 type="button"
                 onClick={onRetry}
@@ -247,21 +248,23 @@ export default function AnnualAdminClient({
 
     return (
         <div className="max-w-4xl mx-auto">
-            <div className="flex justify-between items-center mb-6">
-                <div>
-                    <h1 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">연간일정 관리</h1>
-                </div>
-                <button
-                    onClick={() => { resetForm(); setShowForm(true); }}
-                    className="bg-[var(--color-academy-primary)] text-white px-4 py-2 rounded-lg font-bold hover:bg-[var(--color-academy-primary-hover)] transition"
-                >
-                    + 일정 추가
-                </button>
-            </div>
+            <AdminPageHeader
+                className="mb-6"
+                title="연간일정 관리"
+                actions={
+                    <button
+                        type="button"
+                        onClick={() => { resetForm(); setShowForm(true); }}
+                        className="academy-button-primary"
+                    >
+                        일정 추가
+                    </button>
+                }
+            />
 
             {/* ── 구글 캘린더 ICS URL 설정 ────────────────────────── */}
             <div className="bg-white border border-[var(--color-academy-line)] rounded-xl p-5 mb-6 shadow-sm">
-                <h3 className="font-bold text-sm text-[var(--color-academy-ink)] mb-2">구글 캘린더 연동 (ICS)</h3>
+                <h3 className="academy-section-title mb-2">구글 캘린더 연동 (ICS)</h3>
                 <p className="text-xs text-[var(--color-academy-muted)] mb-3">
                     구글 캘린더 → 설정 → 캘린더 통합 → &quot;iCal 형식의 공개 주소&quot;를 복사해 붙여넣으세요.
                     연동하면 공개 연간일정 페이지에 구글 캘린더 일정이 함께 표시됩니다.
@@ -272,13 +275,13 @@ export default function AnnualAdminClient({
                         value={icsUrl}
                         onChange={(e) => setIcsUrl(e.target.value)}
                         placeholder="https://calendar.google.com/calendar/ical/...@group.calendar.google.com/public/basic.ics"
-                        className="flex-1 border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm bg-[var(--color-academy-soft)] focus:bg-white focus:ring-2 focus:ring-[var(--color-academy-primary)] transition font-mono"
+                        className="academy-input min-w-0 flex-1 font-mono"
                     />
                     <button
                         type="button"
                         onClick={handleSaveIcsUrl}
                         disabled={icsSaving}
-                        className="shrink-0 bg-[var(--color-academy-primary)] text-white px-4 py-2 rounded-lg font-bold hover:bg-[var(--color-academy-primary-hover)] transition disabled:opacity-50 text-sm"
+                        className="academy-button-secondary shrink-0"
                     >
                         {icsSaving ? "저장 중..." : "저장"}
                     </button>
@@ -293,46 +296,46 @@ export default function AnnualAdminClient({
             {/* Form */}
             {showForm && (
                 <form onSubmit={handleSubmit} className="bg-white border border-[var(--color-academy-line)] rounded-xl p-6 mb-6 shadow-sm space-y-4">
-                    <h3 className="font-bold text-lg text-[var(--color-academy-ink)]">{editingId ? "일정 수정" : "새 일정 추가"}</h3>
+                    <h3 className="academy-section-title">{editingId ? "일정 수정" : "새 일정 추가"}</h3>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="sm:col-span-2">
-                            <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">제목 *</label>
+                            <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">제목 *</label>
                             <input
                                 value={title}
                                 onChange={(e) => setTitle(e.target.value)}
                                 required
                                 placeholder="예: 3월 개강"
-                                className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                                className="academy-input"
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">시작일 *</label>
+                            <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">시작일 *</label>
                             <input
                                 type="date"
                                 min="2020-01-01" max="2030-12-31"
                                 value={date}
                                 onChange={(e) => setDate(e.target.value)}
                                 required
-                                className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                                className="academy-input"
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">종료일 (선택)</label>
+                            <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">종료일 (선택)</label>
                             <input
                                 type="date"
                                 min="2020-01-01" max="2030-12-31"
                                 value={endDate}
                                 onChange={(e) => setEndDate(e.target.value)}
-                                className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                                className="academy-input"
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">카테고리</label>
+                            <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">카테고리</label>
                             <select
                                 value={category}
                                 onChange={(e) => setCategory(e.target.value)}
-                                className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                                className="academy-input"
                             >
                                 {CATEGORIES.map((c) => (
                                     <option key={c} value={c}>{c}</option>
@@ -340,25 +343,25 @@ export default function AnnualAdminClient({
                             </select>
                         </div>
                         <div className="sm:col-span-2">
-                            <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">설명 (선택)</label>
+                            <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">설명 (선택)</label>
                             <textarea
                                 value={description}
                                 onChange={(e) => setDescription(e.target.value)}
                                 rows={2}
                                 placeholder="일정에 대한 추가 설명"
-                                className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                                className="academy-input"
                             />
                         </div>
                     </div>
 
                     <div className="flex gap-2 justify-end">
-                        <button type="button" onClick={resetForm} className="px-4 py-2 text-sm text-[var(--color-academy-muted)] hover:text-[var(--color-academy-ink)]">
+                        <button type="button" onClick={resetForm} className="academy-button-secondary">
                             취소
                         </button>
                         <button
                             type="submit"
                             disabled={busy}
-                            className="bg-[var(--color-academy-primary)] text-white px-6 py-2 rounded-lg font-bold hover:bg-[var(--color-academy-primary-hover)] transition disabled:opacity-50"
+                            className="academy-button-primary"
                         >
                             {busy ? "저장 중..." : editingId ? "수정" : "추가"}
                         </button>
@@ -375,20 +378,20 @@ export default function AnnualAdminClient({
                 <div className="space-y-6">
                     {years.map((year) => (
                         <div key={year}>
-                            <h2 className="text-lg font-bold text-[var(--color-academy-ink)] mb-3">{year}년</h2>
+                            <h2 className="academy-section-title mb-3 tabular-nums">{year}년</h2>
                             <div className="bg-white rounded-xl border border-[var(--color-academy-line)] divide-y divide-[var(--color-academy-line)]">
                                 {eventsByYear[year].map((ev) => (
                                     <div key={ev.id} className="flex items-center justify-between p-4 hover:bg-[var(--color-academy-soft)] transition-colors">
                                         <div className="flex items-center gap-4 min-w-0">
-                                            <div className="text-sm font-mono text-[var(--color-academy-muted)] shrink-0 w-24">
+                                            <div className="text-sm tabular-nums text-right text-[var(--color-academy-muted)] shrink-0 w-24">
                                                 {toDateString(ev.date).slice(5)}
                                                 {ev.endDate && ` ~ ${toDateString(ev.endDate).slice(5)}`}
                                             </div>
-                                            <span className={`text-xs font-bold px-2 py-0.5 rounded-full shrink-0 ${CATEGORY_COLORS[ev.category || "일반"] || CATEGORY_COLORS["일반"]}`}>
+                                            <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${CATEGORY_COLORS[ev.category || "일반"] || CATEGORY_COLORS["일반"]}`}>
                                                 {ev.category || "일반"}
                                             </span>
                                             <div className="min-w-0">
-                                                <p className="font-bold text-[var(--color-academy-ink)] truncate">{ev.title}</p>
+                                                <p className="font-medium text-[var(--color-academy-ink)] truncate">{ev.title}</p>
                                                 {ev.description && (
                                                     <p className="text-xs text-[var(--color-academy-muted)] truncate">{ev.description}</p>
                                                 )}

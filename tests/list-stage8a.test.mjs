@@ -32,7 +32,8 @@ test("선생님 청구: 상태 칩이 기존 filter 를 공유(기본 미납)·�
   assert.match(billingClient, /function handleRowKeyDown[\s\S]*?if \(event\.target !== event\.currentTarget\) return;/);
   assert.match(billingClient, /onClick=\{\(event\) => \{ event\.stopPropagation\(\); openRequest\(bill\); \}\}/);
   // 금액은 오른쪽·tabular-nums, 납부 기한은 KST 모듈로
-  assert.match(billingClient, /text-right font-black tabular-nums/);
+  // 2026-11-13 UI 통일: 굵기 네 단계(font-black → font-semibold) — 오른쪽 정렬·tabular-nums 는 그대로
+  assert.match(billingClient, /text-right font-semibold tabular-nums/);
   assert.match(billingClient, /formatKstDate\(detail\.dueDate/);
   // 요청 버튼 조건·대기·막힌 사유·서버 호출은 기존 그대로
   assert.match(billingClient, /bill\.confirmationStatus !== "PENDING" && OPEN_STATUSES\.includes\(bill\.status\) && bill\.confirmable/);
@@ -47,7 +48,8 @@ const seasonalClient = read("../src/app/staff/seasonal/StaffSeasonalClient.tsx")
 
 test("선생님 특강: 한 줄 행(시간·반·인원 오른쪽·행동 버튼), 시작·이어하기·기록 보기 동작은 그대로, 날짜 이동은 KST 모듈", () => {
   assert.match(seasonalClient, /<ul aria-label="특강 수업 목록"/);
-  assert.match(seasonalClient, /text-right text-xs font-bold tabular-nums[^"]*">\{d\.studentCount\}명/);
+  // 2026-11-13 UI 통일: 인원 칸은 본문 굵기(굵기 클래스 없음) — 오른쪽 정렬·tabular-nums 는 그대로
+  assert.match(seasonalClient, /text-right text-xs tabular-nums[^"]*">\{d\.studentCount\}명/);
   // 시작은 정규 수업과 같은 서버 액션 → 출결 화면, 진행 중이면 그 세션으로
   assert.match(seasonalClient, /startClassSession\(\{\s*classId: row\.id,\s*date: ymd,\s*sessionDateId: row\.sessionDateId as string,/);
   assert.match(seasonalClient, /router\.push\(`\/staff\/sessions\/\$\{result\.sessionId\}\?view=attendance`\)/);
@@ -77,7 +79,8 @@ test("선생님 홈: 남은·완료 수업은 한 줄 행 + 시트, 시작 잠�
   // 시트 시작 버튼도 진행 중 수업이 있으면 잠근다
   assert.match(homeClient, /startLocked=\{Boolean\(runningClass && detailTarget\.sessionStatus !== "IN_PROGRESS"\)\}/);
   // 시간·인원은 tabular-nums, 인원은 오른쪽
-  assert.match(homeClient, /text-right text-xs font-bold tabular-nums[^"]*">\{lesson\.studentCount\}명/);
+  // 2026-11-13 UI 통일: 인원 칸은 본문 굵기(굵기 클래스 없음)
+  assert.match(homeClient, /text-right text-xs tabular-nums[^"]*">\{lesson\.studentCount\}명/);
   // 학부모 공지 확인 문구·발송 함수는 그대로
   assert.match(homeClient, /이 수업의 학부모에게 공지와 푸시 알림을 보내시겠습니까\?/);
   assert.match(homeClient, /createStaffClassNotice\(\{ classId: noticeTarget\.id/);
@@ -97,6 +100,7 @@ test("선생님 셔틀: 상단은 제목 1줄 + 요약 1줄, 예정 노선은 �
   assert.match(shuttleClient, /<RouteCard route=\{detailRoute\} rideStatuses=\{rideStatuses\} onStatusChange=\{handleStatusChange\} \/>/);
   assert.match(shuttleClient, /function RouteSummaryRow[\s\S]*?if \(event\.target !== event\.currentTarget\) return;/);
   // 인원은 오른쪽·tabular-nums, 승객 이름 말줄임 제거
-  assert.match(shuttleClient, /text-right text-xs font-bold tabular-nums[^"]*">\{route\.passengerCount\}명/);
+  // 2026-11-13 UI 통일: 인원 칸은 본문 굵기(굵기 클래스 없음)
+  assert.match(shuttleClient, /text-right text-xs tabular-nums[^"]*">\{route\.passengerCount\}명/);
   assert.doesNotMatch(shuttleClient, /\btruncate\b|text-ellipsis|line-clamp/);
 });

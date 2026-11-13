@@ -15,15 +15,9 @@ export default function NotFound() {
     <div className="min-h-screen bg-[var(--color-public-paper)] flex items-center justify-center px-6">
       <div className="max-w-md w-full text-center">
         {/* 옛 큰 «404» 숫자는 HTTP 오류 번호라 학부모에게 개발 용어로 보여 지웠다(원장 지시 2026-10-30) */}
-        {/* 농구 아이콘 */}
-        <div className="mx-auto w-16 h-16 rounded-full bg-[var(--color-public-tint)] flex items-center justify-center mb-6">
-          <span className="text-3xl" role="img" aria-label="농구공">
-            🏀
-          </span>
-        </div>
 
         {/* 제목 + 설명 */}
-        <h1 className="text-2xl font-black text-[var(--color-public-ink)] dark:text-white mb-2 break-keep">
+        <h1 className="text-2xl font-bold text-[var(--color-public-ink)] dark:text-white mb-2 break-keep">
           페이지를 찾을 수 없습니다
         </h1>
         <p className="text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] mb-8 break-keep">

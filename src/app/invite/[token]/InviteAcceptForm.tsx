@@ -168,7 +168,7 @@ export default function InviteAcceptForm({
                         <div
                             key={s}
                             className={`flex-1 h-1.5 rounded-full transition-colors ${
-                                step >= s ? "bg-brand-navy-900" : "bg-gray-200"
+                                step >= s ? "bg-[var(--color-academy-secondary-strong)]" : "bg-gray-200"
                             }`}
                         />
                     ))}
@@ -223,7 +223,7 @@ export default function InviteAcceptForm({
                     <button
                         onClick={handleStartVerify}
                         disabled={isPending}
-                        className="w-full py-3 bg-brand-navy-900 text-white rounded-lg font-medium text-sm hover:bg-brand-navy-800 transition-colors disabled:opacity-50"
+                        className="academy-button-primary w-full disabled:opacity-50"
                     >
                         {isPending ? "인증번호 발송 중..." : "본인 인증 시작"}
                     </button>
@@ -268,7 +268,7 @@ export default function InviteAcceptForm({
                     <button
                         onClick={handleVerify}
                         disabled={isPending || verifyCode.length < 6}
-                        className="w-full py-3 bg-brand-navy-900 text-white rounded-lg font-medium text-sm hover:bg-brand-navy-800 transition-colors disabled:opacity-50"
+                        className="academy-button-primary w-full disabled:opacity-50"
                     >
                         {isPending ? "확인 중..." : "인증번호 확인"}
                     </button>
@@ -278,7 +278,7 @@ export default function InviteAcceptForm({
                         <button
                             onClick={handleResendCode}
                             disabled={isPending}
-                            className="text-xs text-gray-500 dark:text-gray-400 hover:text-brand-navy-700 underline disabled:opacity-50"
+                            className="academy-button-text underline disabled:opacity-50"
                         >
                             인증번호가 안 왔나요? 재발송
                         </button>
@@ -290,8 +290,7 @@ export default function InviteAcceptForm({
             {step === 3 && (
                 <div className="p-6 space-y-5">
                     <div className="text-center">
-                        <span className="material-symbols-outlined text-[36px] text-green-500">verified</span>
-                        <h2 className="text-lg font-bold text-gray-900 dark:text-white mt-2">인증 완료</h2>
+                        <h2 className="text-lg font-bold text-gray-900 dark:text-white">인증 완료</h2>
                         <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                             마지막으로 로그인에 사용할 비밀번호를 설정해주세요.
                         </p>
@@ -339,7 +338,7 @@ export default function InviteAcceptForm({
                     <button
                         onClick={handleAccept}
                         disabled={isPending || !password || !confirmPassword}
-                        className="w-full py-3 bg-brand-navy-900 text-white rounded-lg font-medium text-sm hover:bg-brand-navy-800 transition-colors disabled:opacity-50"
+                        className="academy-button-primary w-full disabled:opacity-50"
                     >
                         {isPending ? (isReset ? "변경 중..." : "가입 처리 중...") : (isReset ? "비밀번호 변경" : "가입 완료")}
                     </button>
@@ -349,7 +348,6 @@ export default function InviteAcceptForm({
             {/* Step 4: 완료 */}
             {step === 4 && (
                 <div className="p-6 space-y-5 text-center">
-                    <span className="material-symbols-outlined text-[48px] text-green-500">celebration</span>
                     <div>
                         <h2 className="text-lg font-bold text-gray-900 dark:text-white">{isReset ? "비밀번호를 바꿨습니다!" : "가입이 완료되었습니다!"}</h2>
                         <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
@@ -372,7 +370,7 @@ export default function InviteAcceptForm({
 
                     <a
                         href={showInstall ? "/staff/install" : isStaffRole ? "/login?mode=staff" : "/login"}
-                        className="inline-block w-full py-3 bg-brand-navy-900 text-white rounded-lg font-medium text-sm hover:bg-brand-navy-800 transition-colors text-center"
+                        className="academy-button-primary w-full"
                     >
                         {showInstall ? "스태프 앱 설치하기" : "로그인하러 가기"}
                     </a>

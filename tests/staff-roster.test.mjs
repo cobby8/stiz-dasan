@@ -165,7 +165,8 @@ test("화면: 연결 예정 코치는 이름(전화 끝 4자리)·«이름 일�
   assert.match(client, /코치 프로필 \{row\.coach\.name\}\{last4 \? `\(\$\{last4\}\)` : ""\} 연결 예정/);
   assert.match(client, /row\.matchedBy === "name"[\s\S]{0,160}이름 일치/);
   assert.equal(client.match(/\{inviteCoachNote\(row\)\}/g)?.length, 2);
-  assert.match(client, /<span className="hidden sm:inline">가입 멈춤<\/span>/);
+  // 2026-11-13 UI 통일: 경고 아이콘을 빼서 휴대폰에서도 글자가 보여야 한다(옛 «아이콘 + 숫자만» → «가입 멈춤 N»)
+  assert.match(client, /<span>가입 멈춤<\/span>\s*<span className="tabular-nums">\{recoveryCount\}<\/span>/);
   assert.doesNotMatch(client, /\bbg-white\b/);
   // main(455fb2c2)의 비밀번호 재설정 표시 보존 — 표·카드·이력
   assert.match(client, /inv\.purpose === "PASSWORD_RESET"/);

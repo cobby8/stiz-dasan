@@ -74,10 +74,10 @@ export default function DriverRequestPanel({ onClose }: { onClose: () => void })
 
         <div className="flex items-center justify-between border-b border-[var(--color-academy-line)] px-5 py-4">
           <div>
-            <h2 className="text-[17px] font-black text-[var(--color-academy-ink)]">
+            <h2 className="text-[17px] font-bold text-[var(--color-academy-ink)]">
               📥 기사 요청 수신함
               {pending.length > 0 && (
-                <span className="ml-2 rounded-full bg-[var(--color-academy-danger)] px-2 py-0.5 text-[12px] font-black text-white">
+                <span className="ml-2 rounded-full bg-[var(--color-academy-danger)] px-2 py-0.5 text-[12px] font-bold text-white">
                   {pending.length}
                 </span>
               )}
@@ -99,11 +99,11 @@ export default function DriverRequestPanel({ onClose }: { onClose: () => void })
           {pending.map((req) => (
             <div key={req.id} className="rounded-xl border-2 border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] p-4">
               <div className="flex items-start gap-2 mb-2">
-                <span className={`shrink-0 rounded-md px-2 py-0.5 text-[12px] font-black ${TYPE_COLOR[req.type] ?? "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"}`}>
+                <span className={`shrink-0 rounded-md px-2 py-0.5 text-[12px] font-bold ${TYPE_COLOR[req.type] ?? "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"}`}>
                   {TYPE_LABEL[req.type] ?? req.type}
                 </span>
                 {req.targetName && (
-                  <span className="text-[14px] font-black text-[var(--color-academy-ink)]">{req.targetName}</span>
+                  <span className="text-[14px] font-bold text-[var(--color-academy-ink)]">{req.targetName}</span>
                 )}
                 <span className="ml-auto shrink-0 text-[11px] text-[var(--color-academy-faint)]">{fmtDate(req.createdAt)}</span>
               </div>
@@ -119,12 +119,12 @@ export default function DriverRequestPanel({ onClose }: { onClose: () => void })
               <div className="flex gap-2">
                 <button type="button" disabled={busy[req.id]}
                   onClick={() => resolve(req.id, "approve")}
-                  className="flex-1 h-11 rounded-xl bg-[var(--color-academy-primary)] text-[15px] font-black text-[var(--color-academy-on-primary)] disabled:opacity-60 active:bg-[var(--color-academy-primary-hover)]">
+                  className="flex-1 h-11 rounded-xl bg-[var(--color-academy-primary)] text-[15px] font-bold text-[var(--color-academy-on-primary)] disabled:opacity-60 active:bg-[var(--color-academy-primary-hover)]">
                   {busy[req.id] ? "처리 중…" : "✅ 승인"}
                 </button>
                 <button type="button" disabled={busy[req.id]}
                   onClick={() => resolve(req.id, "reject")}
-                  className="h-11 min-w-[80px] rounded-xl border-2 border-[var(--color-academy-line-input)] text-[15px] font-black text-[var(--color-academy-muted)] disabled:opacity-60">
+                  className="h-11 min-w-[80px] rounded-xl border-2 border-[var(--color-academy-line-input)] text-[15px] font-bold text-[var(--color-academy-muted)] disabled:opacity-60">
                   ❌ 거절
                 </button>
               </div>
@@ -141,13 +141,13 @@ export default function DriverRequestPanel({ onClose }: { onClose: () => void })
                 {done.map((req) => (
                   <div key={req.id} className="rounded-xl border border-[var(--color-academy-line)] p-3 opacity-70">
                     <div className="flex items-center gap-2">
-                      <span className={`rounded-md px-2 py-0.5 text-[11px] font-black ${TYPE_COLOR[req.type] ?? "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"}`}>
+                      <span className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${TYPE_COLOR[req.type] ?? "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"}`}>
                         {TYPE_LABEL[req.type] ?? req.type}
                       </span>
                       <span className="text-[13px] font-semibold text-[var(--color-academy-muted)]">
                         {req.targetName ?? "-"}
                       </span>
-                      <span className={`ml-auto rounded px-2 py-0.5 text-[11px] font-black ${STATUS_COLOR[req.status] ?? ""}`}>
+                      <span className={`ml-auto rounded px-2 py-0.5 text-[11px] font-bold ${STATUS_COLOR[req.status] ?? ""}`}>
                         {STATUS_LABEL[req.status] ?? req.status}
                       </span>
                     </div>

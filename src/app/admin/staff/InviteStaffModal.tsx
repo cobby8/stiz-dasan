@@ -118,12 +118,11 @@ export default function InviteStaffModal({
     return (
         <AdminModal onClose={onClose} titleId="invite-staff-modal-title" panelClassName="max-w-md" closeOnBackdrop={!result}>
                 <div className="flex items-center justify-between border-b border-[var(--color-academy-line)] px-6 py-4">
-                    <h2 id="invite-staff-modal-title" className="flex items-center gap-2 text-lg font-bold text-[var(--color-academy-ink)]">
-                        <span className="material-symbols-outlined text-[20px]">person_add</span>
+                    <h2 id="invite-staff-modal-title" className="academy-section-title">
                         새 스태프 초대·가입
                     </h2>
-                    <button type="button" onClick={onClose} className="rounded-lg p-1 text-[var(--color-academy-faint)] hover:bg-[var(--color-academy-line)] hover:text-[var(--color-academy-muted)]" aria-label="닫기">
-                        <span className="material-symbols-outlined">close</span>
+                    <button type="button" onClick={onClose} className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]" aria-label="닫기">
+                        <span className="material-symbols-outlined" aria-hidden="true">close</span>
                     </button>
                 </div>
 
@@ -131,20 +130,20 @@ export default function InviteStaffModal({
                     // 기존 학부모 계정에 역할을 붙인 경우 — 보낼 링크가 없다. 링크 복사 버튼을 두면 빈 값을 복사한다.
                     <div className="space-y-4 p-6">
                         <div className="rounded-xl border border-[var(--color-academy-success)] bg-[var(--color-academy-success-soft)] p-4 text-[var(--color-academy-success)]">
-                            <p className="font-bold">기존 계정에 {form.role === "DRIVER" ? "기사님" : "선생님"} 역할을 추가했습니다.</p>
+                            <p className="font-semibold">기존 계정에 {form.role === "DRIVER" ? "기사님" : "선생님"} 역할을 추가했습니다.</p>
                             <p className="mt-1 text-sm">
                                 이 번호로 이미 가입된 학부모 계정({result.accountName})이 있어 새 계정을 만들지 않았습니다.
                                 그 계정으로 로그인하면 화면 전환에서 바로 쓸 수 있습니다. 「직원 역할 신청」 화면에서 회수할 수 있습니다.
                             </p>
                         </div>
                         <div className="flex justify-end">
-                            <button type="button" onClick={onClose} className="rounded-lg bg-[var(--color-academy-soft)] px-4 py-2.5 text-sm font-medium text-[var(--color-academy-muted)]">완료</button>
+                            <button type="button" onClick={onClose} className="academy-button-secondary">완료</button>
                         </div>
                     </div>
                 ) : result ? (
                     <div className="space-y-4 p-6">
                         <div className={`rounded-xl border p-4 ${result.smsSent ? "border-[var(--color-academy-success)] bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]" : "border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]"}`}>
-                            <p className="font-bold">{resetMode ? "비밀번호 재설정 링크가 만들어졌습니다." : "초대 링크가 만들어졌습니다."}</p>
+                            <p className="font-semibold">{resetMode ? "비밀번호 재설정 링크가 만들어졌습니다." : "초대 링크가 만들어졌습니다."}</p>
                             <p className="mt-1 text-sm">
                                 {result.smsSent
                                     ? `${resetMode ? "재설정" : "가입"} 안내 문자를 발송했습니다. 아래 링크를 카카오톡으로도 전달할 수 있습니다.`
@@ -153,7 +152,7 @@ export default function InviteStaffModal({
                             {!result.smsSent && result.smsError && <p className="mt-2 text-xs opacity-80">발송 사유: {result.smsError}</p>}
                         </div>
                         {result.previousRecordNotice && (
-                            <p role="status" className="rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-warning)]">
+                            <p role="status" className="rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm font-medium text-[var(--color-academy-warning)]">
                                 {result.previousRecordNotice}
                             </p>
                         )}
@@ -169,17 +168,15 @@ export default function InviteStaffModal({
                         {copyMessage && <p role="status" aria-live="polite" className="text-sm font-medium text-[var(--color-academy-muted)]">{copyMessage}</p>}
 
                         <div className="flex flex-wrap justify-end gap-2">
-                            <button type="button" onClick={() => void copyInviteUrl()} className="flex items-center gap-1 rounded-lg border border-[var(--color-academy-line)] px-4 py-2.5 text-sm font-bold text-[var(--color-academy-ink)]">
-                                <span className="material-symbols-outlined text-[18px]">content_copy</span>
+                            <button type="button" onClick={() => void copyInviteUrl()} className="academy-button-secondary">
                                 가입 링크 복사
                             </button>
                             {typeof navigator !== "undefined" && "share" in navigator && (
-                                <button type="button" onClick={() => void shareInviteUrl()} className="flex items-center gap-1 rounded-lg bg-[var(--color-academy-primary-hover)] px-4 py-2.5 text-sm font-bold text-white">
-                                    <span className="material-symbols-outlined text-[18px]">share</span>
+                                <button type="button" onClick={() => void shareInviteUrl()} className="academy-button-primary">
                                     공유하기
                                 </button>
                             )}
-                            <button type="button" onClick={onClose} className="rounded-lg bg-[var(--color-academy-soft)] px-4 py-2.5 text-sm font-medium text-[var(--color-academy-muted)]">완료</button>
+                            <button type="button" onClick={onClose} className="academy-button-secondary">완료</button>
                         </div>
                     </div>
                 ) : (
@@ -189,11 +186,11 @@ export default function InviteStaffModal({
                         </div>
                         <div>
                             <label className="mb-1 block text-sm font-medium text-[var(--color-academy-muted)]">이름 *</label>
-                            <input data-admin-modal-initial-focus type="text" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required placeholder="홍길동" className="w-full rounded-lg border border-[var(--color-academy-line-input)] px-4 py-2.5 text-sm focus:border-[var(--color-academy-primary)] focus:ring-2 focus:ring-[var(--color-academy-primary)]" />
+                            <input data-admin-modal-initial-focus type="text" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required placeholder="홍길동" className="academy-input" />
                         </div>
                         <div>
                             <label className="mb-1 block text-sm font-medium text-[var(--color-academy-muted)]">전화번호 *</label>
-                            <input type="tel" value={form.phone} onChange={(event) => setForm({ ...form, phone: formatPhone(event.target.value) })} required inputMode="numeric" autoComplete="tel" pattern="010-[0-9]{4}-[0-9]{4}" title="010-0000-0000 형식으로 입력해 주세요." placeholder="010-1234-5678" className="w-full rounded-lg border border-[var(--color-academy-line-input)] px-4 py-2.5 text-sm focus:border-[var(--color-academy-primary)] focus:ring-2 focus:ring-[var(--color-academy-primary)]" />
+                            <input type="tel" value={form.phone} onChange={(event) => setForm({ ...form, phone: formatPhone(event.target.value) })} required inputMode="numeric" autoComplete="tel" pattern="010-[0-9]{4}-[0-9]{4}" title="010-0000-0000 형식으로 입력해 주세요." placeholder="010-1234-5678" className="academy-input" />
                             {/* 안내문구 제거: placeholder + input title 속성과 삼중 중복 */}
                         </div>
                         <div>
@@ -201,7 +198,7 @@ export default function InviteStaffModal({
                             <select
                                 value={form.role}
                                 onChange={(event) => setForm({ ...form, role: event.target.value as "INSTRUCTOR" | "DRIVER" })}
-                                className="w-full rounded-lg border border-[var(--color-academy-line-input)] px-4 py-2.5 text-sm font-bold focus:border-[var(--color-academy-primary)] focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                                className="academy-input"
                             >
                                 <option value="INSTRUCTOR">코치/강사</option>
                                 <option value="DRIVER">셔틀 기사</option>
@@ -212,17 +209,17 @@ export default function InviteStaffModal({
                         </div>
                         {rejection && (
                             <div role="alert" className="rounded-lg border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] px-4 py-3 text-sm text-[var(--color-academy-danger)]">
-                                <p className="font-bold">{rejection.error}</p>
+                                <p className="font-semibold">{rejection.error}</p>
                                 {rejection.resetAvailable && (
-                                    <button type="button" onClick={handlePasswordReset} disabled={isPending} className="mt-2 rounded-lg bg-[var(--color-academy-primary-hover)] px-3 py-2 text-sm font-bold text-white disabled:opacity-50">
+                                    <button type="button" onClick={handlePasswordReset} disabled={isPending} className="academy-button-secondary academy-button-sm mt-2">
                                         {isPending ? "보내는 중…" : "비밀번호 재설정 링크 보내기"}
                                     </button>
                                 )}
                             </div>
                         )}
                         <div className="flex justify-end gap-3 pt-2">
-                            <button type="button" onClick={onClose} className="rounded-lg bg-[var(--color-academy-soft)] px-4 py-2.5 text-sm font-medium text-[var(--color-academy-muted)]">취소</button>
-                            <button type="submit" disabled={isPending || !form.name.trim() || !phoneComplete} className="rounded-lg bg-[var(--color-academy-primary-hover)] px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50">
+                            <button type="button" onClick={onClose} className="academy-button-secondary">취소</button>
+                            <button type="submit" disabled={isPending || !form.name.trim() || !phoneComplete} className="academy-button-primary">
                                 {isPending ? "가입 링크 만드는 중…" : "개인 가입 링크 만들기"}
                             </button>
                         </div>

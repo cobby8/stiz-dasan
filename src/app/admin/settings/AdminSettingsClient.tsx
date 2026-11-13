@@ -18,8 +18,8 @@ function AppliesTo({ pages }: { pages: string[] }) {
     return (
         <div className="flex flex-wrap gap-1.5 mt-1 mb-3">
             {pages.map((p) => (
-                <span key={p} className="text-[11px] bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] border border-[var(--color-academy-line)] px-2 py-0.5 rounded-full font-medium">
-                    📍 {p}
+                <span key={p} className="text-xs bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] border border-[var(--color-academy-line)] px-2 py-0.5 rounded-full">
+                    {p}
                 </span>
             ))}
         </div>
@@ -36,22 +36,22 @@ function FontCard({ option, selected, name, onSelect }: {
     return (
         <label
             className={`cursor-pointer rounded-xl border-2 p-3.5 transition-all flex flex-col gap-1.5 ${
-                selected ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary-soft)] shadow-sm" : "border-[var(--color-academy-line)] bg-white hover:border-[var(--color-academy-line-input)]"
+                selected ? "border-[var(--color-academy-secondary-strong)] bg-[var(--color-academy-secondary-soft)]" : "border-[var(--color-academy-line)] bg-white hover:border-[var(--color-academy-line-input)]"
             }`}
             onClick={() => onSelect(option.key)}
         >
             <input type="radio" name={name} value={option.key} checked={selected} onChange={() => onSelect(option.key)} className="sr-only" />
             <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-[var(--color-academy-ink)]">{option.name}</span>
+                <span className="text-xs font-semibold text-[var(--color-academy-ink)]">{option.name}</span>
                 {option.tag && (
-                    <span className="text-[10px] bg-[var(--color-academy-primary)] text-white px-1.5 py-0.5 rounded-full font-bold">{option.tag}</span>
+                    <span className="academy-status">{option.tag}</span>
                 )}
-                {selected && <span className="ml-auto text-[var(--color-academy-ink)] text-sm">✓</span>}
+                {selected && <span className="ml-auto text-sm font-semibold text-[var(--color-academy-secondary-ink)]">✓</span>}
             </div>
             <p style={{ fontFamily: option.css === "inherit" ? undefined : option.css }} className="text-sm text-[var(--color-academy-muted)] leading-snug truncate">
                 {option.sample}
             </p>
-            <p className="text-[10px] text-[var(--color-academy-faint)]">{option.nameEn}</p>
+            <p className="text-xs text-[var(--color-academy-faint)]">{option.nameEn}</p>
         </label>
     );
 }
@@ -59,7 +59,7 @@ function FontCard({ option, selected, name, onSelect }: {
 // ─── 섹션 헤더 ────────────────────────────────────────────────────────────────
 function SectionHeader({ title }: { title: string }) {
     return (
-        <h2 className="text-xl font-bold text-[var(--color-academy-ink)] border-b-2 border-[var(--color-academy-primary)] pb-2 mb-2 inline-block">
+        <h2 className="academy-section-title mb-2">
             {title}
         </h2>
     );
@@ -244,14 +244,14 @@ export default function AdminSettingsClient({
             )}
             {saveSuccess && (
                 <div className="bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)] p-4 rounded-lg font-medium border border-[var(--color-academy-success)] mb-4 text-sm flex justify-between items-center">
-                    <span>✓ 저장되었습니다. 폰트 변경은 새로고침 후 반영됩니다.</span>
-                    <button onClick={() => setSaveSuccess(false)} className="text-[var(--color-academy-success)] hover:text-[var(--color-academy-success)] font-bold ml-4">✕</button>
+                    <span>저장되었습니다. 폰트 변경은 새로고침 후 반영됩니다.</span>
+                    <button onClick={() => setSaveSuccess(false)} aria-label="닫기" className="ml-2 inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-success)]">✕</button>
                 </div>
             )}
             {actionError && (
                 <div className="bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)] p-4 rounded-lg font-medium border border-[var(--color-academy-danger)] mb-4 text-sm flex justify-between items-center">
-                    <span>⚠ {actionError}</span>
-                    <button onClick={() => setActionError(null)} className="text-[var(--color-academy-danger)] hover:text-[var(--color-academy-danger)] font-bold ml-4">✕</button>
+                    <span>{actionError}</span>
+                    <button onClick={() => setActionError(null)} aria-label="닫기" className="ml-2 inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-danger)]">✕</button>
                 </div>
             )}
 
@@ -271,14 +271,14 @@ export default function AdminSettingsClient({
                         {/* 폰트 미리보기 */}
                         <div className="bg-[var(--color-academy-primary-hover)] rounded-xl p-5 mb-6 text-white space-y-1">
                             <p className="text-xs text-[var(--color-academy-faint)] mb-2 font-mono">미리보기</p>
-                            <p style={{ fontFamily: headingFontCss }} className="text-2xl font-black">STIZ 농구교실 다산2호점</p>
+                            <p style={{ fontFamily: headingFontCss }} className="text-2xl font-bold">STIZ 농구교실 다산2호점</p>
                             <p style={{ fontFamily: bodyFontCss }} className="text-sm text-[var(--color-academy-faint)] leading-relaxed">
                                 아이들의 가능성을 이끌어드립니다. 전문 코치진의 체계적인 지도로 농구의 즐거움을 경험하세요.
                             </p>
                         </div>
 
                         <div className="mb-6">
-                            <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-3">
+                            <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-3">
                                 본문 폰트
                             </label>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -289,7 +289,7 @@ export default function AdminSettingsClient({
                         </div>
 
                         <div>
-                            <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-3">
+                            <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-3">
                                 제목 폰트
                             </label>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -307,7 +307,7 @@ export default function AdminSettingsClient({
                         <div className="space-y-5">
                             {/* 메인 타이틀 */}
                             <div>
-                                <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">
+                                <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">
                                     메인 타이틀
                                 </label>
                                 <AppliesTo pages={["홈페이지 메인 히어로 제목"]} />
@@ -316,13 +316,13 @@ export default function AdminSettingsClient({
                                     type="text"
                                     defaultValue={settings?.introductionTitle || ""}
                                     placeholder="예: 다산신도시 No.1 스티즈농구교실"
-                                    className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm bg-[var(--color-academy-soft)] focus:bg-white focus:ring-2 focus:ring-[var(--color-academy-primary)] transition"
+                                    className="academy-input"
                                 />
                             </div>
 
                             {/* 원장 인사말 */}
                             <div>
-                                <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">
+                                <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">
                                     원장 인사말 / 학원 소개
                                 </label>
                                 <AppliesTo pages={["홈페이지 메인 히어로 소개 문구", "학원소개 페이지 원장 인사말"]} />
@@ -356,7 +356,7 @@ export default function AdminSettingsClient({
 
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">시설 설명</label>
+                                <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">시설 설명</label>
                                 <p className="text-xs text-[var(--color-academy-faint)] mb-2">비워두면 섹션이 숨겨집니다.</p>
                                 <LazyRichTextEditor
                                     value={facilitiesText}
@@ -366,7 +366,7 @@ export default function AdminSettingsClient({
                             </div>
 
                             <div>
-                                <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">시설 사진 URL</label>
+                                <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">시설 사진 URL</label>
                                 <p className="text-xs text-[var(--color-academy-faint)] mb-2">
                                     이미지 URL을 한 줄에 하나씩 입력합니다.
                                 </p>
@@ -381,21 +381,21 @@ export default function AdminSettingsClient({
                                                 setFacilityImages(next);
                                             }}
                                             placeholder="https://..."
-                                            className="flex-1 border border-[var(--color-academy-line-input)] rounded-lg p-2 text-sm bg-[var(--color-academy-soft)] focus:bg-white focus:ring-2 focus:ring-[var(--color-academy-primary)] transition font-mono"
+                                            className="academy-input min-w-0 flex-1 font-mono"
                                         />
                                         <button
                                             type="button"
                                             onClick={() => setFacilityImages(facilityImages.filter((_, j) => j !== i))}
-                                            className="text-[var(--color-academy-danger)] hover:text-[var(--color-academy-danger)] px-2 font-bold text-lg"
+                                            className="academy-button-danger academy-button-sm shrink-0"
                                         >
-                                            ✕
+                                            삭제
                                         </button>
                                     </div>
                                 ))}
                                 <button
                                     type="button"
                                     onClick={() => setFacilityImages([...facilityImages, ""])}
-                                    className="text-sm text-[var(--color-academy-ink)] font-bold hover:underline"
+                                    className="academy-button-secondary academy-button-sm"
                                 >
                                     + 사진 URL 추가
                                 </button>
@@ -411,7 +411,7 @@ export default function AdminSettingsClient({
                             <Link
                                 href="/admin/gallery"
                                 prefetch={false}
-                                className="inline-flex items-center justify-center rounded-lg bg-[var(--color-academy-primary-hover)] px-4 py-2 text-sm font-bold text-white hover:bg-[var(--color-academy-primary-hover)] transition"
+                                className="academy-button-secondary"
                             >
                                 사진/영상 갤러리 관리로 이동
                             </Link>
@@ -425,34 +425,34 @@ export default function AdminSettingsClient({
 
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">대표 전화번호</label>
+                                <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">대표 전화번호</label>
                                 <input
                                     name="contactPhone"
                                     type="text"
                                     defaultValue={settings?.contactPhone || ""}
                                     placeholder="010-0000-0000"
-                                    className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm bg-[var(--color-academy-soft)] focus:bg-white focus:ring-2 focus:ring-[var(--color-academy-primary)] transition"
+                                    className="academy-input"
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">운영시간</label>
+                                <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">운영시간</label>
                                 <input
                                     name="operatingHours"
                                     type="text"
                                     defaultValue={settings?.operatingHours || ""}
                                     placeholder="평일 13:00~21:00 / 토 09:00~18:00 (일요일·공휴일 휴무)"
-                                    className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm bg-[var(--color-academy-soft)] focus:bg-white focus:ring-2 focus:ring-[var(--color-academy-primary)] transition"
+                                    className="academy-input"
                                 />
                                 <p className="text-xs text-[var(--color-academy-faint)] mt-1.5">비워두면 기본 운영시간이 표시됩니다. 모든 공개 페이지의 상단 바와 푸터에 함께 반영됩니다.</p>
                             </div>
                             <div>
-                                <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">오시는 길 (주소)</label>
+                                <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">오시는 길 (주소)</label>
                                 <input
                                     name="address"
                                     type="text"
                                     defaultValue={settings?.address || ""}
                                     placeholder="경기도 남양주시 다산동 ..."
-                                    className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm bg-[var(--color-academy-soft)] focus:bg-white focus:ring-2 focus:ring-[var(--color-academy-primary)] transition"
+                                    className="academy-input"
                                 />
                             </div>
 
@@ -463,42 +463,42 @@ export default function AdminSettingsClient({
                             <div className="rounded-xl border border-[var(--color-academy-line)] p-4">
                                 <div className="flex flex-wrap items-start justify-between gap-2">
                                     <div>
-                                        <p className="text-sm font-bold text-[var(--color-academy-muted)]">셔틀 기준 학원 위치</p>
+                                        <p className="text-sm font-medium text-[var(--color-academy-muted)]">셔틀 기준 학원 위치</p>
                                         <p className="text-xs text-[var(--color-academy-faint)] mt-1">셔틀 노선 만들기의 &quot;학원으로 채우기&quot;와 반별 자동배치가 이 좌표를 사용합니다.</p>
                                     </div>
                                     <button
                                         type="button"
                                         onClick={() => setAcademyPickerOpen(true)}
-                                        className="min-h-10 rounded-lg border border-[var(--color-academy-line-input)] bg-[var(--color-academy-soft)] px-3 text-xs font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-line)] transition"
+                                        className="academy-button-secondary academy-button-sm"
                                     >
                                         지도에서 선택
                                     </button>
                                 </div>
                                 <div className="grid gap-3 sm:grid-cols-2 mt-3">
                                     <div className="sm:col-span-2">
-                                        <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">학원 이름</label>
+                                        <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">학원 이름</label>
                                         <input
                                             name="academyPlaceName"
                                             type="text"
                                             value={academyPin.name}
                                             onChange={(e) => setAcademyPin(p => ({ ...p, name: e.target.value }))}
                                             placeholder="스티즈농구교실 다산2호점"
-                                            className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm bg-[var(--color-academy-soft)] focus:bg-white focus:ring-2 focus:ring-[var(--color-academy-primary)] transition"
+                                            className="academy-input"
                                         />
                                     </div>
                                     <div className="sm:col-span-2">
-                                        <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">학원 주소</label>
+                                        <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">학원 주소</label>
                                         <input
                                             name="academyAddress"
                                             type="text"
                                             value={academyPin.address}
                                             onChange={(e) => setAcademyPin(p => ({ ...p, address: e.target.value }))}
                                             placeholder="경기 남양주시 다산중앙로20번길 10-32"
-                                            className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm bg-[var(--color-academy-soft)] focus:bg-white focus:ring-2 focus:ring-[var(--color-academy-primary)] transition"
+                                            className="academy-input"
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">위도</label>
+                                        <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">위도</label>
                                         <input
                                             name="academyLatitude"
                                             type="text"
@@ -506,11 +506,11 @@ export default function AdminSettingsClient({
                                             value={academyPin.latitude}
                                             onChange={(e) => setAcademyPin(p => ({ ...p, latitude: e.target.value }))}
                                             placeholder="37.6145054"
-                                            className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm bg-[var(--color-academy-soft)] focus:bg-white focus:ring-2 focus:ring-[var(--color-academy-primary)] transition"
+                                            className="academy-input"
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">경도</label>
+                                        <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">경도</label>
                                         <input
                                             name="academyLongitude"
                                             type="text"
@@ -518,7 +518,7 @@ export default function AdminSettingsClient({
                                             value={academyPin.longitude}
                                             onChange={(e) => setAcademyPin(p => ({ ...p, longitude: e.target.value }))}
                                             placeholder="127.1563116"
-                                            className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm bg-[var(--color-academy-soft)] focus:bg-white focus:ring-2 focus:ring-[var(--color-academy-primary)] transition"
+                                            className="academy-input"
                                         />
                                     </div>
                                 </div>
@@ -535,7 +535,7 @@ export default function AdminSettingsClient({
                             type="text"
                             defaultValue={settings?.youtubeUrl || ""}
                             placeholder="https://www.youtube.com/watch?v=XXXXXXXXXXX  또는 <iframe ...> 코드"
-                            className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm bg-[var(--color-academy-soft)] focus:bg-white focus:ring-2 focus:ring-[var(--color-academy-primary)] transition font-mono"
+                            className="academy-input font-mono"
                         />
                         <p className="text-xs text-[var(--color-academy-faint)] mt-1.5">YouTube 영상 URL 또는 YouTube &quot;공유 → 퍼가기&quot; iframe 코드를 그대로 붙여넣으면 메인페이지에 자동 임베드됩니다. 비우면 영상 섹션이 숨겨집니다.</p>
                     </section>
@@ -547,69 +547,69 @@ export default function AdminSettingsClient({
 
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">푸터 소개 문구</label>
+                                <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">푸터 소개 문구</label>
                                 <textarea
                                     name="footerDescription"
                                     defaultValue={settings?.footerDescription || ""}
                                     rows={3}
                                     placeholder={"아이들이 농구를 통해 협동심과\n건강한 체력을 기를 수 있도록 지도합니다."}
-                                    className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm bg-[var(--color-academy-soft)] focus:bg-white focus:ring-2 focus:ring-[var(--color-academy-primary)] transition resize-y"
+                                    className="academy-input resize-y"
                                 />
                                 <p className="text-xs text-[var(--color-academy-faint)] mt-1.5">비워두면 기본 소개 문구가 표시됩니다.</p>
                             </div>
 
                             <div>
-                                <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">저작권 문구</label>
+                                <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">저작권 문구</label>
                                 <input
                                     name="footerCopyright"
                                     type="text"
                                     defaultValue={settings?.footerCopyright || ""}
                                     placeholder="© 2026 STIZ Basketball Academy. All rights reserved."
-                                    className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm bg-[var(--color-academy-soft)] focus:bg-white focus:ring-2 focus:ring-[var(--color-academy-primary)] transition"
+                                    className="academy-input"
                                 />
                                 <p className="text-xs text-[var(--color-academy-faint)] mt-1.5">비워두면 기본 저작권 문구가 표시됩니다.</p>
                             </div>
 
                             <div className="grid md:grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">인스타그램 URL</label>
+                                    <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">인스타그램 URL</label>
                                     <input
                                         name="instagramUrl"
                                         type="text"
                                         defaultValue={settings?.instagramUrl || ""}
                                         placeholder="https://www.instagram.com/stiz... 또는 @stiz..."
-                                        className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm bg-[var(--color-academy-soft)] focus:bg-white focus:ring-2 focus:ring-[var(--color-academy-primary)] transition"
+                                        className="academy-input"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">인스타그램 비즈니스 계정 번호</label>
+                                    <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">인스타그램 비즈니스 계정 번호</label>
                                     <input
                                         name="instagramBusinessAccountId"
                                         type="text"
                                         defaultValue={settings?.instagramBusinessAccountId || ""}
                                         placeholder="예: 1784..."
-                                        className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm bg-[var(--color-academy-soft)] focus:bg-white focus:ring-2 focus:ring-[var(--color-academy-primary)] transition font-mono"
+                                        className="academy-input font-mono"
                                     />
                                     <p className="text-xs text-[var(--color-academy-faint)] mt-1.5">인스타그램 게시물 가져오기와 자동 업로드에 사용됩니다.</p>
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">네이버 플레이스 URL</label>
+                                    <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">네이버 플레이스 URL</label>
                                     <input
                                         name="naverPlaceUrl"
                                         type="url"
                                         defaultValue={settings?.naverPlaceUrl || ""}
                                         placeholder="https://naver.me/..."
-                                        className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm bg-[var(--color-academy-soft)] focus:bg-white focus:ring-2 focus:ring-[var(--color-academy-primary)] transition"
+                                        className="academy-input"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">카카오 채널 URL</label>
+                                    <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">카카오 채널 URL</label>
                                     <input
                                         name="kakaoChannelUrl"
                                         type="url"
                                         defaultValue={settings?.kakaoChannelUrl || ""}
                                         placeholder="https://pf.kakao.com/..."
-                                        className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm bg-[var(--color-academy-soft)] focus:bg-white focus:ring-2 focus:ring-[var(--color-academy-primary)] transition"
+                                        className="academy-input"
                                     />
                                 </div>
                             </div>
@@ -622,7 +622,7 @@ export default function AdminSettingsClient({
                                     className="mt-1 rounded border-[var(--color-academy-line-input)]"
                                 />
                                 <span>
-                                    <span className="block font-bold text-[var(--color-academy-muted)]">갤러리 새 게시물 인스타그램 자동 업로드</span>
+                                    <span className="block font-medium text-[var(--color-academy-muted)]">갤러리 새 게시물 인스타그램 자동 업로드</span>
                                     <span className="block text-xs text-[var(--color-academy-faint)] mt-1">켜면 관리자 갤러리에 새 공개 게시물을 만들 때 첫 번째 이미지를 인스타그램에도 발행합니다.</span>
                                 </span>
                             </label>
@@ -633,7 +633,7 @@ export default function AdminSettingsClient({
                     <div className="pt-4 border-t border-[var(--color-academy-line)] flex justify-end">
                         <ConfirmSubmitButton
                             confirmMessage="변경 사항을 저장하시겠습니까?"
-                            className="bg-[var(--color-academy-primary)] text-white px-6 py-2.5 rounded-lg font-bold hover:bg-[var(--color-academy-primary-hover)] transition shadow"
+                            className="academy-button-primary"
                         >
                             {saving ? "저장 중..." : "저장하기"}
                         </ConfirmSubmitButton>

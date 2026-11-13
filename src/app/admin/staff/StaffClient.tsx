@@ -4,7 +4,7 @@ import { adminErrorText } from "@/components/admin/adminDisplayText";
 /**
  * 스태프 관리 클라이언트 컴포넌트
  * - 한 사람 = 한 줄 목록(초대 대기 · 스태프 계정 · 계정 없는 코치 프로필을 한 표로 합침, 2026-11-12)
- * - [역할 변경] 버튼 → 역할 고르기 창(원장만, 2026-11-12) + 코치 연결(원장만), 대기 초대 ⚡(가입 링크 복사·재발송·취소)
+ * - [역할 변경] 버튼 → 역할 고르기 창(원장만, 2026-11-12) + 코치 연결(원장만), 대기 초대 «빠른작업»(가입 링크 복사·재발송·취소)
  * - 머리줄: 제목 + 주 버튼 «새 스태프 초대» + ⋯ 더보기(앱 설치 링크·중단된 초대 복구·로그인 차단 다시 시도)
  * - 상세 패널(원장): 초대로 전환(로그인 없는 코치·기사) · 로그인 연결(로그인 없는 원장·부원장) · 링크 복사·문자 보내기 · 퇴사 처리 · 담당 반(보기)
  * - 추가 역할 직원(학부모 계정)은 보기 전용 줄, 회수는 신청함
@@ -25,6 +25,8 @@ import {
     retireStaffMember,
     retryRetiredLoginBlocks,
 } from "@/app/actions/admin";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
+import { TONE_BADGE_CLASS } from "@/lib/ui/statusTones";
 import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
 import AdminPanelActions from "@/components/admin/AdminPanelActions";
 import { useAdminConfirm } from "@/components/admin/AdminConfirmDialog";
@@ -123,7 +125,7 @@ function errorMessage(error: unknown, fallback: string): string {
 const ROLE_CONFIG: Record<string, { label: string; color: string }> = {
     ADMIN: { label: "원장", color: "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]" },
     VICE_ADMIN: { label: "부원장", color: "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]" },
-    INSTRUCTOR: { label: "코치/강사", color: "bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)]" },
+    INSTRUCTOR: { label: "코치/강사", color: TONE_BADGE_CLASS.info },
     DRIVER: { label: "셔틀 기사", color: "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]" },
     PARENT: { label: "학부모", color: "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]" },
 };
@@ -135,13 +137,13 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
     ACCEPTED: { label: "수락 완료", color: "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]" },
     CANCELLED: { label: "취소됨", color: "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]" },
     EXPIRED: { label: "만료됨", color: "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]" },
-    PROCESSING: { label: "가입 처리 중", color: "bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)]" },
+    PROCESSING: { label: "가입 처리 중", color: TONE_BADGE_CLASS.info },
     RECOVERY_REQUIRED: { label: "복구 필요", color: "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]" },
     RECOVERING: { label: "복구 중", color: "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]" },
 };
 
 // 칩 공통 모양(한 줄, 줄바꿈 없음)
-const CHIP = "inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-bold";
+const CHIP = "inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-xs";
 const CHIP_WAIT = `${CHIP} bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]`;
 const CHIP_OK = `${CHIP} bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]`;
 const CHIP_MUTED = `${CHIP} bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]`;
@@ -187,12 +189,11 @@ function StaffLoadingFallback() {
 function StaffErrorState({ onRetry }: { onRetry: () => void }) {
     return (
         <div className="rounded-2xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-surface)] p-8 text-center shadow-sm">
-            <span className="material-symbols-outlined mb-3 text-4xl text-[var(--color-academy-danger)]">error</span>
-            <p className="font-bold text-[var(--color-academy-ink)]">스태프 정보를 불러오지 못했습니다.</p>
+            <p className="font-semibold text-[var(--color-academy-ink)]">스태프 정보를 불러오지 못했습니다.</p>
             <button
                 type="button"
                 onClick={onRetry}
-                className="mt-4 rounded-xl bg-[var(--color-academy-primary)] px-4 py-2 text-sm font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)]"
+                className="academy-button-secondary mt-4"
             >
                 다시 시도
             </button>
@@ -402,7 +403,7 @@ export default function StaffClient({
 
     // ── 원장·부원장 비밀번호 재설정(원장, 검수 정확 4) ─────────────────────
     // 직원 전용 로그인이 있는 원장·부원장에게 24시간 재설정 링크. 문자는 자동으로 보내지 않는다 —
-    // 링크는 목록의 «재설정 대기» 줄 ⚡(링크 복사·재발송)로 원장이 전한다.
+    // 링크는 목록의 «재설정 대기» 줄 «빠른작업»(링크 복사·재발송)로 원장이 전한다.
     async function handleOwnerPasswordReset(user: StaffUser) {
         setDetail(null);
         const ok = await askConfirm({
@@ -524,7 +525,7 @@ export default function StaffClient({
         const tone = ok === true ? "text-[var(--color-academy-success)]" : ok === false ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-muted)]";
         return (
             <span className="tabular-nums text-[var(--color-academy-ink)]">
-                {kstLabel(last.at)} {kstHm(last.at)} · <span className={`font-bold ${tone}`}>{label}</span>
+                {kstLabel(last.at)} {kstHm(last.at)} · <span className={`font-medium ${tone}`}>{label}</span>
             </span>
         );
     }
@@ -556,7 +557,7 @@ export default function StaffClient({
         }
     }
 
-    // 대기 중 초대의 ⚡·패널 작업 — 예전 행의 «가입 링크 복사 / 재발송 / 취소» 버튼과 같은 함수·인자(확인창 그대로)
+    // 대기 중 초대의 «빠른작업»·패널 작업 — 예전 행의 «가입 링크 복사 / 재발송 / 취소» 버튼과 같은 함수·인자(확인창 그대로)
     // 재발송·취소는 원장 전용(서버 requireOwner) — 부원장에게는 링크 복사만 보인다.
     function buildInvitationActions(inv: Invitation): AdminQuickAction[] {
         const actions: AdminQuickAction[] = [
@@ -594,7 +595,7 @@ export default function StaffClient({
             : []),
     ];
 
-    // 행 키보드(Enter·Space) = 상세 패널. 행 안의 선택칸·⚡ 에서 누른 키는 가로채지 않는다.
+    // 행 키보드(Enter·Space) = 상세 패널. 행 안의 선택칸·«빠른작업» 에서 누른 키는 가로채지 않는다.
     function handleRowKeyDown(event: React.KeyboardEvent<HTMLElement>, next: { kind: "user" | "invite"; id: string }) {
         if (event.target !== event.currentTarget) return;
         if (event.key === "Enter" || event.key === " ") {
@@ -613,7 +614,7 @@ export default function StaffClient({
 
     const rowClass =
         "cursor-pointer transition-colors hover:bg-[var(--color-academy-soft)] focus:bg-[var(--color-academy-primary-soft)] focus:outline-none";
-    const headClass = "bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]";
+    const headClass = "bg-[var(--color-academy-soft)] text-xs font-medium text-[var(--color-academy-muted)]";
     const detailUser = detail?.kind === "user" ? staffUsers.find((user) => user.id === detail.id) ?? null : null;
     // 상세 패널 대상의 «앱 계정 전환» 대기 초대(같은 사람이라 표에는 따로 줄이 없다)
     const detailConversion = detailUser
@@ -670,10 +671,9 @@ export default function StaffClient({
             <Link
                 href="/admin/role-requests"
                 aria-label={`${grantUser.name} 추가 역할 회수는 신청함에서`}
-                className="inline-flex min-h-11 items-center gap-1 whitespace-nowrap rounded-lg px-2 text-xs font-bold text-[var(--color-academy-primary)] hover:bg-[var(--color-academy-primary-soft)]"
+                className="academy-button-text academy-button-sm whitespace-nowrap"
             >
                 신청함
-                <span className="material-symbols-outlined text-[16px]" aria-hidden="true">arrow_forward</span>
             </Link>
         );
     }
@@ -700,9 +700,8 @@ export default function StaffClient({
                     onClick={() => openRoleChange(user.id)}
                     disabled={isPending}
                     aria-label={`${user.name} 역할 변경`}
-                    className="inline-flex min-h-11 items-center gap-0.5 whitespace-nowrap rounded-lg px-2 text-xs font-bold text-[var(--color-academy-primary)] hover:bg-[var(--color-academy-primary-soft)] disabled:opacity-50"
+                    className="academy-button-tonal academy-button-sm whitespace-nowrap"
                 >
-                    <span className="material-symbols-outlined text-[16px]" aria-hidden="true">swap_horiz</span>
                     역할 변경
                 </button>
             </span>
@@ -762,7 +761,7 @@ export default function StaffClient({
         return (
             <span className="whitespace-nowrap text-xs text-[var(--color-academy-muted)]">
                 코치 프로필 {row.coach.name}{last4 ? `(${last4})` : ""} 연결 예정
-                {row.matchedBy === "name" && <span className="ml-1 font-bold text-[var(--color-academy-warning)]">· 이름 일치</span>}
+                {row.matchedBy === "name" && <span className="ml-1 font-medium text-[var(--color-academy-warning)]">· 이름 일치</span>}
             </span>
         );
     }
@@ -803,23 +802,23 @@ export default function StaffClient({
     return (
         <div className="space-y-2">
             {/* 머리줄 한 줄 — 제목 · 요약 숫자 · (복구 필요 알림) · ⋯ 더보기 · 주 버튼 «새 스태프 초대» */}
-            <div className="flex min-h-11 items-center gap-2">
-                <h1 className="whitespace-nowrap text-lg font-black text-[var(--color-academy-ink)]">스태프 관리</h1>
-                <p className="hidden whitespace-nowrap text-xs tabular-nums text-[var(--color-academy-muted)] sm:block">
-                    계정 {staffUsers.length} · 초대 대기 {pendingInvitations.length}
-                    {unlinkedCoachCount > 0 ? ` · 앱 미연결 코치 ${unlinkedCoachCount}` : ""}
-                </p>
-                {!canManage && <span className={CHIP_MUTED}>보기 전용</span>}
-                <div className="ml-auto flex items-center gap-2">
+            <AdminPageHeader
+                title="스태프 관리"
+                description={
+                    <span className="hidden whitespace-nowrap tabular-nums sm:inline">
+                        계정 {staffUsers.length} · 초대 대기 {pendingInvitations.length}
+                        {unlinkedCoachCount > 0 ? ` · 앱 미연결 코치 ${unlinkedCoachCount}` : ""}
+                    </span>
+                }
+                actions={<>
+                    {!canManage && <span className={CHIP_MUTED}>보기 전용</span>}
                     {canManage && recoveryCount > 0 && (
                         <Link
                             href="/admin/staff/recovery"
-                            className="inline-flex min-h-11 items-center gap-1 whitespace-nowrap rounded-lg px-2 text-xs font-bold text-[var(--color-academy-danger)] hover:bg-[var(--color-academy-danger-soft)]"
+                            className="academy-button-danger academy-button-sm whitespace-nowrap"
                         >
-                            <span className="material-symbols-outlined text-[18px]" aria-hidden="true">warning</span>
-                            {/* 375px 에서 머리줄이 넘치지 않게 휴대폰은 아이콘 + 숫자만(글자는 화면 읽기용으로 남긴다) */}
-                            <span className="hidden sm:inline">가입 멈춤</span>
-                            <span className="sr-only sm:hidden">가입 멈춤</span>
+                            {/* 2026-11-13 UI 통일: 경고 아이콘 대신 글자로(휴대폰에서도 «가입 멈춤 N») */}
+                            <span>가입 멈춤</span>
                             <span className="tabular-nums">{recoveryCount}</span>
                         </Link>
                     )}
@@ -828,21 +827,20 @@ export default function StaffClient({
                         <button
                             type="button"
                             onClick={() => setShowModal("invite")}
-                            className="inline-flex min-h-11 items-center gap-1.5 whitespace-nowrap rounded-lg bg-[var(--color-academy-primary)] px-3 text-sm font-bold text-[var(--color-academy-on-primary)] transition-colors hover:bg-[var(--color-academy-primary-hover)]"
+                            className="academy-button-primary whitespace-nowrap"
                         >
-                            <span className="material-symbols-outlined text-[20px]" aria-hidden="true">send</span>
                             새 스태프 초대
                         </button>
                     )}
-                </div>
-            </div>
+                </>}
+            />
 
             {/* 상태 메시지 */}
             {message && (
                 <div
                     role="status"
                     aria-live="polite"
-                    className={`rounded-lg border px-4 py-2 text-sm font-bold ${message.ok ? "border-[var(--color-academy-success)] bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]" : "border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]"}`}
+                    className={`rounded-lg border px-4 py-2 text-sm font-medium ${message.ok ? "border-[var(--color-academy-success)] bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]" : "border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]"}`}
                 >
                     {message.text}
                 </div>
@@ -871,10 +869,10 @@ export default function StaffClient({
                                         const inv = row.invite;
                                         return (
                                             <tr key={row.key} tabIndex={0} aria-label={`${inv.name} 초대 상세 보기`} onClick={() => openRow(row)} onKeyDown={(event) => handleRowKeyDown(event, { kind: "invite", id: inv.id })} className={rowClass}>
-                                                <td className="px-3 py-1.5 font-bold text-[var(--color-academy-ink)]">{inv.name}</td>
+                                                <td className="px-3 py-1.5 font-semibold text-[var(--color-academy-ink)]">{inv.name}</td>
                                                 <td className="px-3 py-1.5"><span className="flex items-center gap-1">{roleChip(inv.role)}{resetChip(inv)}</span></td>
                                                 <td className="admin-cell-num px-3 py-1.5 text-[var(--color-academy-muted)]">{rowPhone(row)}</td>
-                                                {/* 상태 + ⚡(복사·재발송·취소). ⚡ 를 눌러도 행 클릭(패널)이 같이 일어나지 않게 ⚡ 둘레만 전파 차단 */}
+                                                {/* 상태 + «빠른작업»(복사·재발송·취소). «빠른작업» 를 눌러도 행 클릭(패널)이 같이 일어나지 않게 «빠른작업» 둘레만 전파 차단 */}
                                                 <td className="px-3 py-1.5">
                                                     <span className="flex items-center gap-2">
                                                         {inviteStatusChip(row)}
@@ -893,7 +891,7 @@ export default function StaffClient({
                                         return (
                                             <tr key={row.key} tabIndex={0} aria-label={`${user.name} 스태프 상세 보기`} onClick={() => openRow(row)} onKeyDown={(event) => handleRowKeyDown(event, { kind: "user", id: user.id })} className={rowClass}>
                                                 {/* 이름은 말줄임 없이 전체 */}
-                                                <td className="px-3 py-1.5 font-bold text-[var(--color-academy-ink)]">{user.name}</td>
+                                                <td className="px-3 py-1.5 font-semibold text-[var(--color-academy-ink)]">{user.name}</td>
                                                 {/* [역할 변경]을 눌러도 행 클릭(패널)이 같이 일어나지 않게 전파 차단 */}
                                                 <td className="px-3 py-1" onClick={(event) => event.stopPropagation()}>
                                                     {canManage ? roleChangeButton(user) : roleChip(user.role)}
@@ -917,7 +915,7 @@ export default function StaffClient({
                                         const coachName = grantCoachName(grantUser);
                                         return (
                                             <tr key={row.key}>
-                                                <td className="px-3 py-1.5 font-bold text-[var(--color-academy-ink)]">{grantUser.name}</td>
+                                                <td className="px-3 py-1.5 font-semibold text-[var(--color-academy-ink)]">{grantUser.name}</td>
                                                 <td className="px-3 py-1.5">{grantChips(grantUser)}</td>
                                                 <td className="admin-cell-num px-3 py-1.5 text-[var(--color-academy-muted)]">{rowPhone(row)}</td>
                                                 <td className="px-3 py-1">
@@ -932,7 +930,7 @@ export default function StaffClient({
                                     // 계정 없는 코치 프로필(문자 발송·시간표 배정용) — 작업이 없어 패널도 없다
                                     return (
                                         <tr key={row.key}>
-                                            <td className="px-3 py-1.5 font-bold text-[var(--color-academy-ink)]">{row.coach.name}</td>
+                                            <td className="px-3 py-1.5 font-semibold text-[var(--color-academy-ink)]">{row.coach.name}</td>
                                             <td className="px-3 py-1.5 text-xs text-[var(--color-academy-muted)]">코치 프로필 · {row.coach.role}</td>
                                             <td className="admin-cell-num px-3 py-1.5 text-[var(--color-academy-muted)]">{rowPhone(row)}</td>
                                             <td className="px-3 py-1.5">{coachStatusChip(row)}</td>
@@ -943,7 +941,7 @@ export default function StaffClient({
                         </table>
                     </div>
 
-                    {/* 휴대폰(375px): 표 대신 한 줄 카드 — 이름 · 역할 · 상태 · 전화(· ⚡). 역할·코치 연결은 줄을 눌러 패널에서. */}
+                    {/* 휴대폰(375px): 표 대신 한 줄 카드 — 이름 · 역할 · 상태 · 전화(· «빠른작업»). 역할·코치 연결은 줄을 눌러 패널에서. */}
                     <ul className="divide-y divide-[var(--color-academy-line)] overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] sm:hidden">
                         {rows.map((row) => {
                             const clickable = row.kind === "invite" || row.kind === "user";
@@ -964,7 +962,7 @@ export default function StaffClient({
                                         : {})}
                                     className={`flex min-h-12 flex-wrap items-center gap-x-2 gap-y-0.5 px-3 py-1.5 text-sm ${clickable ? rowClass : ""}`}
                                 >
-                                    <span className="font-bold text-[var(--color-academy-ink)]">{rowName(row)}</span>
+                                    <span className="font-semibold text-[var(--color-academy-ink)]">{rowName(row)}</span>
                                     {row.kind === "invite" && <>{roleChip(row.invite.role)}{resetChip(row.invite)}{inviteStatusChip(row)}{inviteCoachNote(row)}</>}
                                     {row.kind === "user" && <>{roleChip(row.user.role)}{row.user.coachName && <span className="text-xs text-[var(--color-academy-muted)]">코치 {row.user.coachName}</span>}{loginChip(row)}</>}
                                     {row.kind === "grant" && grantChips(row.grantUser)}
@@ -986,7 +984,7 @@ export default function StaffClient({
             {/* 아래쪽 접힘 두 줄 — 초대 이력 · 역할별 권한 안내(평소엔 한 줄씩만 차지) */}
             {pastInvitations.length > 0 && (
                 <details className="overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
-                    <summary className="flex min-h-11 cursor-pointer items-center px-4 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]">
+                    <summary className="flex min-h-11 cursor-pointer items-center px-4 text-sm font-semibold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]">
                         초대 이력 (<span className="tabular-nums">{pastInvitations.length}</span>건)
                     </summary>
                     <div className="divide-y divide-[var(--color-academy-line)] border-t border-[var(--color-academy-line)]">
@@ -996,12 +994,12 @@ export default function StaffClient({
                             const sc = isExpired ? STATUS_CONFIG.EXPIRED : (STATUS_CONFIG[inv.status] || STATUS_CONFIG.PENDING);
                             return (
                                 <div key={inv.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-1.5 text-sm">
-                                    <span className="font-bold text-[var(--color-academy-ink)]">{inv.name}</span>
+                                    <span className="font-semibold text-[var(--color-academy-ink)]">{inv.name}</span>
                                     <span className={`rounded-full px-2 py-0.5 text-xs ${rc.color}`}>{rc.label}</span>
-                                    {inv.purpose === "PASSWORD_RESET" && <span className="text-xs font-bold text-[var(--color-academy-warning)]">비밀번호 재설정</span>}
+                                    {inv.purpose === "PASSWORD_RESET" && <span className="text-xs text-[var(--color-academy-warning)]">비밀번호 재설정</span>}
                                     <span className="tabular-nums text-[var(--color-academy-muted)]">{formatPhone(inv.phone)}</span>
                                     <span className="ml-auto flex items-center gap-2">
-                                        <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${sc.color}`}>
+                                        <span className={`rounded-full px-2 py-0.5 text-xs ${sc.color}`}>
                                             {sc.label}
                                         </span>
                                         {/* 만료된 초대는 재발송하면 7일 연장(서버 resendInvitation) — 원장만 */}
@@ -1010,14 +1008,14 @@ export default function StaffClient({
                                                 type="button"
                                                 onClick={() => handleResendInvitation(inv.id, inv.name)}
                                                 disabled={isPending}
-                                                className="min-h-11 rounded-lg px-3 text-xs font-bold text-[var(--color-academy-primary)] transition-colors hover:bg-[var(--color-academy-primary-soft)] disabled:opacity-50"
+                                                className="academy-button-tonal academy-button-sm"
                                             >
                                                 재발송
                                             </button>
                                         )}
                                         {/* 가입이 멈춘 초대는 복구 화면으로 */}
                                         {canManage && inv.status === "RECOVERY_REQUIRED" && (
-                                            <Link href="/admin/staff/recovery" className="inline-flex min-h-11 items-center rounded-lg px-3 text-xs font-bold text-[var(--color-academy-primary)] hover:bg-[var(--color-academy-primary-soft)]">
+                                            <Link href="/admin/staff/recovery" className="academy-button-tonal academy-button-sm">
                                                 복구
                                             </Link>
                                         )}
@@ -1031,8 +1029,7 @@ export default function StaffClient({
 
             {/* 역할별 권한 안내 — 예전 큰 카드 4개(항상 펼침)를 접힘 한 줄로. 내용은 그대로 */}
             <details className="overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
-                <summary className="flex min-h-11 cursor-pointer items-center gap-1.5 px-4 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]">
-                    <span className="material-symbols-outlined text-[18px] text-[var(--color-academy-muted)]" aria-hidden="true">info</span>
+                <summary className="flex min-h-11 cursor-pointer items-center gap-1.5 px-4 text-sm font-semibold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]">
                     역할별 권한 안내
                 </summary>
                 <dl className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-1.5 border-t border-[var(--color-academy-line)] px-4 py-3 text-xs">
@@ -1051,29 +1048,29 @@ export default function StaffClient({
             {detailUser && (
                 <ListDetailPanel onClose={() => setDetail(null)} titleId="staff-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
                     <div className="mb-4 flex items-center gap-2">
-                        <h3 id="staff-detail-panel-title" className="min-w-0 break-keep text-lg font-black text-[var(--color-academy-ink)]">{detailUser.name}</h3>
+                        <h3 id="staff-detail-panel-title" className="academy-section-title min-w-0 break-keep">{detailUser.name}</h3>
                         {roleChip(detailUser.role)}
                         <button type="button" onClick={() => setDetail(null)} aria-label="닫기" className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
                             <span className="material-symbols-outlined" aria-hidden="true">close</span>
                         </button>
                     </div>
                     <dl className="grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-2 text-sm">
-                        <dt className="font-bold text-[var(--color-academy-muted)]">이메일</dt>
+                        <dt className="font-medium text-[var(--color-academy-muted)]">이메일</dt>
                         <dd className="break-all text-[var(--color-academy-ink)]">{detailUser.email || "-"}</dd>
-                        <dt className="font-bold text-[var(--color-academy-muted)]">전화번호</dt>
+                        <dt className="font-medium text-[var(--color-academy-muted)]">전화번호</dt>
                         <dd className="tabular-nums text-[var(--color-academy-ink)]">
                             {detailUser.phone ? <a href={`tel:${detailUser.phone.replace(/\D/g, "")}`} className="underline-offset-2 hover:underline">{formatPhone(detailUser.phone)}</a> : "-"}
                         </dd>
-                        <dt className="font-bold text-[var(--color-academy-muted)]">역할</dt>
+                        <dt className="font-medium text-[var(--color-academy-muted)]">역할</dt>
                         <dd>{canManage ? roleChangeButton(detailUser) : roleChip(detailUser.role)}</dd>
-                        <dt className="font-bold text-[var(--color-academy-muted)]">코치 연결</dt>
+                        <dt className="font-medium text-[var(--color-academy-muted)]">코치 연결</dt>
                         <dd className="text-[var(--color-academy-ink)]">{userLinkCell(detailUser)}</dd>
-                        <dt className="font-bold text-[var(--color-academy-muted)]">가입일</dt>
+                        <dt className="font-medium text-[var(--color-academy-muted)]">가입일</dt>
                         <dd className="tabular-nums text-[var(--color-academy-ink)]">{kstLabel(detailUser.createdAt) || "-"}</dd>
                         {/* 직접 추가 기록 — 로그인 없음 / 가입 대기(마지막 문자 발송). 원장·부원장은 [로그인 연결]로 붙인다 */}
                         {detailUser.directAdded && (
                             <>
-                                <dt className="font-bold text-[var(--color-academy-muted)]">앱 계정</dt>
+                                <dt className="font-medium text-[var(--color-academy-muted)]">앱 계정</dt>
                                 <dd className="flex flex-col gap-0.5">
                                     {detailConversion
                                         ? (
@@ -1082,7 +1079,7 @@ export default function StaffClient({
                                                 <span className={CHIP_WAIT}>가입 대기 · {kstLabel(detailConversion.expiresAt)} {kstHm(detailConversion.expiresAt)}까지</span>
                                                 {/* 원장·부원장 로그인 연결 — 인증번호가 갈 번호를 크게(원장이 그 사람 번호인지 확인) */}
                                                 {isOwnerAccountInvite(detailConversion) && (
-                                                    <span className="text-base font-black tabular-nums text-[var(--color-academy-ink)]">
+                                                    <span className="text-base font-semibold tabular-nums text-[var(--color-academy-ink)]">
                                                         {maskedPhoneLast4(detailConversion.phone)} 로 인증번호가 가요
                                                     </span>
                                                 )}
@@ -1096,7 +1093,7 @@ export default function StaffClient({
                         {/* 담당 반(보기만) — 시간표 배정·반 담당자 기준(선생님 앱의 담당 수업과 같다) */}
                         {(detailUser.coachId || detailClasses.length > 0) && (
                             <>
-                                <dt className="self-start font-bold text-[var(--color-academy-muted)]">담당 반</dt>
+                                <dt className="self-start font-medium text-[var(--color-academy-muted)]">담당 반</dt>
                                 <dd className="text-[var(--color-academy-ink)]">
                                     {detailClasses.length === 0
                                         ? "-"
@@ -1114,30 +1111,30 @@ export default function StaffClient({
                 </ListDetailPanel>
             )}
 
-            {/* 행 클릭 상세 패널(대기 중 초대) — 작업 버튼은 ⚡ 와 같은 목록 */}
+            {/* 행 클릭 상세 패널(대기 중 초대) — 작업 버튼은 «빠른작업» 와 같은 목록 */}
             {detailInvite && (
                 <ListDetailPanel onClose={() => setDetail(null)} titleId="staff-invite-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
                     <div className="mb-4 flex items-center gap-2">
-                        <h3 id="staff-invite-detail-panel-title" className="min-w-0 break-keep text-lg font-black text-[var(--color-academy-ink)]">{detailInvite.name}</h3>
+                        <h3 id="staff-invite-detail-panel-title" className="academy-section-title min-w-0 break-keep">{detailInvite.name}</h3>
                         {roleChip(detailInvite.role)}
                         <button type="button" onClick={() => setDetail(null)} aria-label="닫기" className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
                             <span className="material-symbols-outlined" aria-hidden="true">close</span>
                         </button>
                     </div>
                     <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
-                        <dt className="font-bold text-[var(--color-academy-muted)]">전화번호</dt>
+                        <dt className="font-medium text-[var(--color-academy-muted)]">전화번호</dt>
                         <dd className="tabular-nums text-[var(--color-academy-ink)]">
                             <a href={`tel:${detailInvite.phone.replace(/\D/g, "")}`} className="underline-offset-2 hover:underline">{formatPhone(detailInvite.phone)}</a>
                         </dd>
-                        <dt className="font-bold text-[var(--color-academy-muted)]">초대일</dt>
+                        <dt className="font-medium text-[var(--color-academy-muted)]">초대일</dt>
                         <dd className="tabular-nums text-[var(--color-academy-ink)]">{kstLabel(detailInvite.createdAt) || "-"}</dd>
-                        <dt className="font-bold text-[var(--color-academy-muted)]">만료일</dt>
+                        <dt className="font-medium text-[var(--color-academy-muted)]">만료일</dt>
                         <dd className="tabular-nums text-[var(--color-academy-ink)]">{kstLabel(detailInvite.expiresAt) || "-"}</dd>
                         {/* 마지막 초대 문자 — 발송 시각·성공/실패(기존 발송 기록) */}
-                        <dt className="font-bold text-[var(--color-academy-muted)]">문자</dt>
+                        <dt className="font-medium text-[var(--color-academy-muted)]">문자</dt>
                         <dd>{lastSendLine(detailInvite.id)}</dd>
                     </dl>
-                    {/* 공용 패널 버튼 줄 — ⚡ 와 같은 목록·같은 함수, 위험 작업은 오른쪽 끝으로 떨어진다 */}
+                    {/* 공용 패널 버튼 줄 — «빠른작업» 와 같은 목록·같은 함수, 위험 작업은 오른쪽 끝으로 떨어진다 */}
                     <AdminPanelActions actions={buildInvitationActions(detailInvite)} onBeforeSelect={() => setDetail(null)} />
                 </ListDetailPanel>
             )}

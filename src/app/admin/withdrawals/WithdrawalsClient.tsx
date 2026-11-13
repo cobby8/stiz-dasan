@@ -13,6 +13,7 @@ import AdminConfirmDialog from "@/components/admin/AdminConfirmDialog";
 import AdminPanelActions from "@/components/admin/AdminPanelActions";
 import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 
 export default function WithdrawalsClient({ rows }: { rows: WithdrawalRequestRow[] }) {
   const router = useRouter();
@@ -63,22 +64,17 @@ export default function WithdrawalsClient({ rows }: { rows: WithdrawalRequestRow
 
   return (
     <div className="space-y-3">
-      <div>
-        <h1 className="flex items-center gap-2 text-lg font-black text-[var(--color-academy-ink)]">
-          <span className="material-symbols-outlined text-[var(--color-academy-ink)]" aria-hidden="true">
-            person_remove
-          </span>
-          회원 탈퇴 신청
-        </h1>
-        <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
+      <AdminPageHeader
+        title="회원 탈퇴 신청"
+        description={<>
           수강 중인 자녀나 직원 역할이 있는 회원의 탈퇴 요청입니다. 담당 업무와 연락 관계를 정리한 뒤
-          처리해 주세요. <b>처리하면 로그인 계정과 연락처가 삭제되고 되돌릴 수 없습니다.</b> 출결·납부
+          처리해 주세요. <b className="font-semibold">처리하면 로그인 계정과 연락처가 삭제되고 되돌릴 수 없습니다.</b> 출결·납부
           기록은 그대로 남습니다.
-        </p>
-      </div>
+        </>}
+      />
 
       {error && !confirmTarget && (
-        <p className="rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-academy-danger)]">
+        <p className="rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm text-[var(--color-academy-danger)]">
           {error}
         </p>
       )}
@@ -91,7 +87,7 @@ export default function WithdrawalsClient({ rows }: { rows: WithdrawalRequestRow
         <div className="overflow-x-auto rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
           {/* admin-list-table: 글자 왼쪽·날짜/숫자 오른쪽(tabular)·한 줄(말줄임 없음, 좁으면 가로 스크롤) */}
           <table className="admin-list-table w-full border-collapse text-sm">
-            <thead className="bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]">
+            <thead className="bg-[var(--color-academy-soft)] text-xs font-semibold text-[var(--color-academy-muted)]">
               <tr>
                 <th className="admin-cell-num px-2 py-2">신청일</th>
                 <th className="px-2 py-2">회원</th>
@@ -115,12 +111,12 @@ export default function WithdrawalsClient({ rows }: { rows: WithdrawalRequestRow
                   >
                     <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-muted)]">{kstLabel(row.requestedAt)}</td>
                     {/* 처리 메모(reviewMessage)는 줄이 늘어나지 않게 상세 패널에서 */}
-                    <td className="px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{row.name}</td>
+                    <td className="px-2 py-1.5 font-medium text-[var(--color-academy-ink)]">{row.name}</td>
                     <td className="px-2 py-1.5 text-[var(--color-academy-ink)]">{row.childNames || "—"}</td>
                     <td className="admin-cell-num px-2 py-1.5">
                       {row.activeEnrollments > 0 ? (
                         // 수업이 남아 있는데 지우면 보호자 연락이 끊긴다 — 눈에 띄게 표시한다.
-                        <span className="rounded-md bg-[var(--color-academy-warning-soft)] px-1.5 py-0.5 text-xs font-bold text-[var(--color-academy-warning)]">
+                        <span className="rounded-md bg-[var(--color-academy-warning-soft)] px-1.5 py-0.5 text-xs text-[var(--color-academy-warning)]">
                           {row.activeEnrollments}개 반
                         </span>
                       ) : (
@@ -131,7 +127,7 @@ export default function WithdrawalsClient({ rows }: { rows: WithdrawalRequestRow
                     {/* 처리: ⚡(탈퇴 처리·신청 반려). 눌러도 행 클릭(패널)이 같이 일어나지 않게 전파 차단 */}
                     <td className="admin-cell-center px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
                       {row.administrativeHold ? (
-                        <span className="text-xs font-semibold text-[var(--color-academy-warning)]">업무·권한 이관 후 처리</span>
+                        <span className="text-xs text-[var(--color-academy-warning)]">업무·권한 이관 후 처리</span>
                       ) : (
                         <AdminQuickActionMenu label={`${row.name} 탈퇴 신청 빠른 작업`} actions={actions} />
                       )}
@@ -148,7 +144,7 @@ export default function WithdrawalsClient({ rows }: { rows: WithdrawalRequestRow
       {detail && !confirmTarget && (
         <ListDetailPanel onClose={() => setDetailId(null)} titleId="withdrawal-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
           <div className="mb-4 flex items-center gap-2">
-            <h3 id="withdrawal-detail-panel-title" className="min-w-0 break-keep text-lg font-black text-[var(--color-academy-ink)]">{detail.name}</h3>
+            <h3 id="withdrawal-detail-panel-title" className="min-w-0 break-keep text-lg font-bold text-[var(--color-academy-ink)]">{detail.name}</h3>
             <button
               type="button"
               onClick={() => setDetailId(null)}
@@ -159,23 +155,23 @@ export default function WithdrawalsClient({ rows }: { rows: WithdrawalRequestRow
             </button>
           </div>
           <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
-            <dt className="font-bold text-[var(--color-academy-muted)]">신청일</dt>
+            <dt className="font-medium text-[var(--color-academy-muted)]">신청일</dt>
             <dd className="tabular-nums text-[var(--color-academy-ink)]">{kstLabel(detail.requestedAt)}</dd>
-            <dt className="font-bold text-[var(--color-academy-muted)]">자녀</dt>
+            <dt className="font-medium text-[var(--color-academy-muted)]">자녀</dt>
             <dd className="break-keep text-[var(--color-academy-ink)]">{detail.childNames || "—"}</dd>
-            <dt className="font-bold text-[var(--color-academy-muted)]">수강 중</dt>
+            <dt className="font-medium text-[var(--color-academy-muted)]">수강 중</dt>
             <dd className="text-[var(--color-academy-ink)]">{detail.activeEnrollments > 0 ? `${detail.activeEnrollments}개 반` : "없음"}</dd>
-            <dt className="font-bold text-[var(--color-academy-muted)]">연락처</dt>
+            <dt className="font-medium text-[var(--color-academy-muted)]">연락처</dt>
             <dd className="tabular-nums text-[var(--color-academy-ink)]">{detail.phone || "—"}</dd>
             {detail.reviewMessage && (
               <>
-                <dt className="font-bold text-[var(--color-academy-muted)]">메모</dt>
+                <dt className="font-medium text-[var(--color-academy-muted)]">메모</dt>
                 <dd className="whitespace-pre-wrap break-keep text-[var(--color-academy-ink)]">{detail.reviewMessage}</dd>
               </>
             )}
           </dl>
           {detail.administrativeHold ? (
-            <p className="mt-5 text-sm font-semibold text-[var(--color-academy-warning)]">업무·권한 이관 후 처리</p>
+            <p className="mt-5 text-sm font-medium text-[var(--color-academy-warning)]">업무·권한 이관 후 처리</p>
           ) : (
             // 공용 패널 버튼 줄 — «탈퇴 처리»(위험)는 오른쪽 끝으로 떨어진다
             <AdminPanelActions actions={buildActions(detail)} onBeforeSelect={() => setDetailId(null)} />

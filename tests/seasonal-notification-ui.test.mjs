@@ -6,7 +6,8 @@ const client = readFileSync("src/app/admin/seasonal/SeasonalAdminClient.tsx", "u
 
 test("신청 목록과 상세는 추적 안내 상태를 직접 문자와 구분한다", () => {
   assert.match(client, /latestApplicationNotification\(application\)/);
-  assert.match(client, /<Icon name="sms" \/>직접 문자/);
+  // 2026-11-13 UI 통일: 버튼의 장식 아이콘을 뺐다 — «직접 문자» 링크(sms:)는 그대로 지킨다.
+  assert.match(client, /<a href=\{parentSmsHref\}[^>]*>직접 문자<\/a>/);
   assert.match(client, /label="특강 신청 접수 안내"/);
   assert.match(client, /aria-live="polite"/);
 });

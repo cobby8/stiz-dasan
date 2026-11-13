@@ -31,7 +31,8 @@ test("C-T1 공용 상태 버튼: 의미색 토큰·44px·눌림 표시·안 눌�
   assert.match(statusButton, /min-h-11/);
   assert.match(statusButton, /material-symbols-outlined/);
   // 되돌리기는 별도 글자 버튼(44px 터치)
-  assert.match(statusButton, /export function StatusUndoButton[\s\S]*min-h-11[\s\S]*undo/);
+  // 2026-11-13 UI 통일: 되돌리기 버튼의 undo 아이콘을 뺐다(글자가 말한다) — 글자 버튼·44px 은 그대로 지킨다
+  assert.match(statusButton, /export function StatusUndoButton[\s\S]*대기로 되돌리기[\s\S]*min-h-11[\s\S]*underline/);
   // 하드코딩 색 금지
   assert.doesNotMatch(statusButton, /(bg|text|border)-(red|green|emerald|amber|violet|gray)-\d/);
 });
@@ -78,7 +79,10 @@ test("T-01 운행 종료: 화면 안 확인 후에만 handleRunEnd, GPS 표시�
 });
 
 test("T-07 진행 알약: 수업 진행·홈·기사님 헤더가 같은 LiveStatusPill", () => {
-  assert.match(livePill, /bg-\[var\(--brand-accent\)\]/);
+  // 2026-11-13 UI 통일: 진행 알약은 꽉 찬 주 색 대신 보조 색(하늘색) 바탕 + 테두리 — 꽉 찬 주 색은 누르는 주 버튼만
+  assert.match(livePill, /bg-\[var\(--color-academy-secondary-soft\)\]/);
+  assert.match(livePill, /ring-\[var\(--color-academy-secondary-strong\)\]/);
+  assert.doesNotMatch(livePill, /font-(black|extrabold)/);
   assert.match(livePill, /animate-pulse motion-reduce:animate-none/);
   assert.match(session, /<LiveStatusPill>수업 중<\/LiveStatusPill>/);
   assert.match(home, /if \(status === "IN_PROGRESS"\) return <LiveStatusPill>\{text\}<\/LiveStatusPill>;/);
@@ -92,8 +96,9 @@ test("T-06 수업 화면 보조 버튼: 메모 저장 secondary, 미확인 0명�
 
 test("T-08 홈: 경고 상자 대신 카드 안 한 줄 안내, 진행 중 카드 주황 2px", () => {
   assert.doesNotMatch(home, /bg-amber-50 p-4 text-sm font-bold leading-6 text-amber-900/);
-  assert.match(home, /수업으로 돌아가기" : "수업 시작"\}\s*<\/button>[\s\S]{0,200}\{runningClass && \(\s*<p role="status" className="text-xs font-bold text-\[var\(--color-academy-muted\)\]">/);
-  assert.match(home, /\{ border: "2px solid var\(--brand-accent\)" \}/);
+  assert.match(home, /수업으로 돌아가기" : "수업 시작"\}\s*<\/button>[\s\S]{0,200}\{runningClass && \(\s*<p role="status" className="text-xs text-\[var\(--color-academy-muted\)\]">/);
+  // 2026-11-13 UI 통일: 진행 중 카드 테두리 = 보조 색(«지금 이것»). 안내 줄 굵기는 본문(굵기 클래스 없음).
+  assert.match(home, /\{ border: "2px solid var\(--color-academy-secondary-strong\)" \}/);
   // 시작 잠금은 그대로
   assert.match(home, /setError\(`\$\{runningClass\.name\} 수업을 먼저 종료해 주세요\.`\)/);
 });
@@ -109,9 +114,11 @@ test("T-05 빠른 게시: 꽉 찬 버튼은 바로 게시 하나, 게시·새로
 
 test("T-09 행 안 반복 버튼은 tonal, 하나뿐인 이어하기만 primary", () => {
   assert.match(billing, /aria-label=\{`\$\{bill\.studentName\} 납부 확인 요청`\} className="academy-button-tonal/);
-  assert.match(seasonal, /className="academy-button-primary[^"]*"\s*>\s*<span[^>]*>arrow_forward<\/span>\s*수업 이어하기/);
+  // 2026-11-13 UI 통일: 버튼 안 화살표 아이콘을 뺐다 — «하나뿐인 이어하기만 primary» 는 그대로
+  assert.match(seasonal, /className="academy-button-primary[^"]*"\s*>\s*수업 이어하기/);
   assert.match(seasonal, /onClick=\{\(\) => startLesson\(d\)\}\s*className="academy-button-tonal/);
-  assert.match(students, /className="academy-button-tonal grid size-11/);
+  // 2026-11-13 UI 통일: 전화 아이콘 버튼 → «전화» 글자 버튼(tonal, 터치 화면 44px 은 테마 academy-button-sm 이 지킨다)
+  assert.match(students, /className="academy-button-tonal academy-button-sm shrink-0"\s*>\s*전화/);
 });
 
 test("T-10 사진: 삭제는 오른쪽 휴지통 아이콘(확인 창 유지), 버튼·칩 44px", () => {

@@ -3,7 +3,9 @@ import { useState } from "react";
 import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 type Preview = { status: string; payloadHash: string; studentName: string; recipientLast4: string; messageBody: string };
-const BUTTON = "min-h-11 rounded-lg border border-[var(--color-academy-line)] px-3 py-2 text-sm font-bold disabled:opacity-50";
+// 2026-11-13 UI 통일: 테마 버튼. 준비·닫기는 보조, 승인·발송(한 번에 하나만 보인다)은 이 칸의 주 버튼.
+const BUTTON = "academy-button-secondary";
+const BUTTON_MAIN = "academy-button-primary";
 export default function RegularShuttleNoticePanel({ studentId, serviceMonth, compareMonth }: { studentId: string; serviceMonth: string; compareMonth: string }) {
   const [preview,setPreview] = useState<Preview | null>(null);
   const [busy,setBusy] = useState(false);
@@ -24,13 +26,13 @@ export default function RegularShuttleNoticePanel({ studentId, serviceMonth, com
     <button type="button" className={BUTTON} disabled={busy} onClick={() => void act("PREPARE")}>{busy ? "확인 중…" : "확정 차량 일정 안내 준비"}</button>
     {error && <p role="alert" className="break-words">{error}</p>}
     {preview && <div className="space-y-3 rounded-lg bg-[var(--color-academy-soft)] p-3">
-      <p className="font-bold">{preview.studentName} · 보호자 끝자리 {preview.recipientLast4}</p>
+      <p className="font-semibold">{preview.studentName} · 보호자 끝자리 {preview.recipientLast4}</p>
       <p className="whitespace-pre-wrap break-words">{preview.messageBody}</p>
       <p className="text-xs text-[var(--color-academy-muted)]">{preview.status === "SENT" ? "발송 접수됐습니다. 최종 전달 결과는 신청 상세에서 확인해 주세요." : preview.status === "UNCERTAIN" ? "발송 결과를 확정하지 못했습니다. 다시 보내지 말고 문자 이력을 확인해 주세요." : preview.status === "APPROVED" ? "문구가 승인됐습니다. 발송 버튼을 누르기 전에는 문자가 나가지 않습니다." : "아직 발송하지 않았습니다. 수신자와 문구를 확인해 주세요."}</p>
       <div className="flex flex-wrap gap-2">
         <button type="button" className={BUTTON} disabled={busy} onClick={() => setPreview(null)}>닫기</button>
-        {preview.status === "HELD" && <button type="button" className={BUTTON} disabled={busy} onClick={() => void act("APPROVE")}>수신자·문구 확인 후 승인</button>}
-        {preview.status === "APPROVED" && <button type="button" className={BUTTON} disabled={busy} onClick={() => void act("SEND")}>보호자에게 문자 발송</button>}
+        {preview.status === "HELD" && <button type="button" className={BUTTON_MAIN} disabled={busy} onClick={() => void act("APPROVE")}>수신자·문구 확인 후 승인</button>}
+        {preview.status === "APPROVED" && <button type="button" className={BUTTON_MAIN} disabled={busy} onClick={() => void act("SEND")}>보호자에게 문자 발송</button>}
       </div>
     </div>}
   </section>;

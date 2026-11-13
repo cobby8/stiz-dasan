@@ -29,12 +29,11 @@ export default async function StaffRunPage({
   if (!token) {
     return (
       <div className="mx-auto max-w-lg px-4 py-10 text-center">
-        <p className="text-4xl" aria-hidden="true">🚌</p>
-        <h1 className="mt-3 text-lg font-black text-[var(--color-academy-ink)]">아직 운행 링크가 없습니다</h1>
+        <h1 className="text-lg font-bold text-[var(--color-academy-ink)]">아직 운행 링크가 없습니다</h1>
         <p className="mt-2 text-sm leading-6 text-[var(--color-academy-muted)]">
           원장님이 셔틀 배차 화면에서 기사님 운행 링크를 만들면 여기서 바로 열립니다.
         </p>
-        <Link href="/staff/shuttle" className="mt-5 inline-flex rounded-xl bg-[var(--color-academy-soft)] px-4 py-2.5 text-sm font-bold text-[var(--color-academy-ink)]">
+        <Link href="/staff/shuttle" className="academy-button-secondary mt-5">
           셔틀 화면으로
         </Link>
       </div>

@@ -5,6 +5,7 @@ import { Fragment, useCallback, useEffect, useRef, useState, useTransition } fro
 import { createCoach, updateCoach, deleteCoach, reorderCoaches } from "@/app/actions/admin";
 import { compressImageForUpload } from "@/lib/clientImageCompression";
 import AdminModal from "@/components/admin/AdminModal";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
 import AdminPanelActions from "@/components/admin/AdminPanelActions";
 import { useAdminConfirm } from "@/components/admin/AdminConfirmDialog";
@@ -73,7 +74,7 @@ function CoachPhoto({ url, name, size = "md" }: { url: string | null; name: stri
         );
     }
     return (
-        <div className={`${box} flex shrink-0 items-center justify-center rounded-full bg-[var(--color-academy-soft)] text-xs font-bold text-[var(--color-academy-muted)]`}>
+        <div className={`${box} flex shrink-0 items-center justify-center rounded-full bg-[var(--color-academy-soft)] text-xs font-medium text-[var(--color-academy-muted)]`}>
             {size === "sm" ? name.charAt(0) : "없음"}
         </div>
     );
@@ -119,12 +120,11 @@ function CoachesLoadingFallback() {
 function CoachesErrorState({ onRetry }: { onRetry: () => void }) {
     return (
         <div className="rounded-2xl border border-[var(--color-academy-danger)] bg-white p-8 text-center shadow-sm">
-            <span className="material-symbols-outlined mb-3 text-4xl text-[var(--color-academy-danger)]">error</span>
-            <p className="font-bold text-[var(--color-academy-ink)]">코치 목록을 불러오지 못했습니다.</p>
+            <p className="font-semibold text-[var(--color-academy-ink)]">코치 목록을 불러오지 못했습니다.</p>
             <button
                 type="button"
                 onClick={onRetry}
-                className="mt-4 rounded-xl bg-[var(--color-academy-primary)] px-4 py-2 text-sm font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)]"
+                className="academy-button-secondary mt-4"
             >
                 다시 시도
             </button>
@@ -157,7 +157,7 @@ function ImageUploadField({
 
     return (
         <div>
-            <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">
+            <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">
                 프로필 사진
                 <span className="text-[var(--color-academy-faint)] font-normal ml-1">(직접 업로드)</span>
             </label>
@@ -175,13 +175,13 @@ function ImageUploadField({
                         type="file"
                         accept="image/*"
                         onChange={handleFile}
-                        className="block w-full text-sm text-[var(--color-academy-muted)] file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-bold file:bg-[var(--color-academy-primary)] file:text-white hover:file:bg-[var(--color-academy-primary-hover)] cursor-pointer"
+                        className="block w-full text-sm text-[var(--color-academy-muted)] file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-[var(--color-academy-primary-soft)] file:text-[var(--color-academy-primary)] cursor-pointer"
                     />
                     {displayUrl && (
                         <button
                             type="button"
                             onClick={handleClear}
-                            className="text-xs text-[var(--color-academy-danger)] hover:text-[var(--color-academy-danger)]"
+                            className="academy-button-danger academy-button-sm"
                         >
                             사진 제거
                         </button>
@@ -366,10 +366,10 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
         setDragOver(null);
     }
 
-    const INPUT = "w-full border border-[var(--color-academy-line-input)] rounded-lg px-3 py-2.5 text-sm bg-[var(--color-academy-soft)] focus:bg-white focus:ring-2 focus:ring-[var(--color-academy-primary)] focus:border-[var(--color-academy-primary)] transition";
+    const INPUT = "academy-input";
     const TEXTAREA = INPUT + " resize-none";
 
-    // ⚡·상세 패널이 같이 쓰는 작업 — 예전 ⚡ 의 수정(인라인 폼 열기/닫기)·삭제(확인창) 그대로
+    // «빠른작업»·상세 패널이 같이 쓰는 작업 — 예전 «빠른작업» 의 수정(인라인 폼 열기/닫기)·삭제(확인창) 그대로
     function buildCoachActions(coach: Coach): AdminQuickAction[] {
         return [
             {
@@ -393,7 +393,7 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
         ];
     }
 
-    // 행 키보드(Enter·Space) = 상세 패널. 행 안의 ⚡ 버튼에서 누른 키는 가로채지 않는다.
+    // 행 키보드(Enter·Space) = 상세 패널. 행 안의 «빠른작업» 버튼에서 누른 키는 가로채지 않는다.
     function handleRowKeyDown(event: React.KeyboardEvent<HTMLElement>, id: string) {
         if (event.target !== event.currentTarget) return;
         if (event.key === "Enter" || event.key === " ") {
@@ -414,25 +414,25 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
 
     return (
         <div className="space-y-3">
-            <div className="flex items-start justify-between gap-3">
-                <div>
-                    <h1 className="text-lg font-black text-[var(--color-academy-ink)]">코치/강사진 관리</h1>
-                    <p className="text-xs text-[var(--color-academy-muted)]">학원소개 페이지 코치진 소개 및 시간표 코치 배정에 사용됩니다.</p>
-                </div>
-                <button
-                    onClick={() => { setAddForm(defaultForm()); setAddError(null); setShowAddModal(true); }}
-                    className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-4 text-sm font-bold text-[var(--color-academy-ink)] transition hover:bg-[var(--color-academy-soft)]"
-                >
-                    <span className="material-symbols-outlined text-lg text-[var(--color-academy-primary)]" aria-hidden="true">add</span> 강사 추가
-                </button>
-            </div>
+            <AdminPageHeader
+                title="코치/강사진 관리"
+                description="학원소개 페이지 코치진 소개 및 시간표 코치 배정에 사용됩니다."
+                actions={
+                    <button
+                        onClick={() => { setAddForm(defaultForm()); setAddError(null); setShowAddModal(true); }}
+                        className="academy-button-primary"
+                    >
+                        강사 추가
+                    </button>
+                }
+            />
 
             {/* 강사 추가 모달 */}
             {showAddModal && (
                 <AdminModal onClose={() => setShowAddModal(false)} titleId="add-coach-modal-title" panelClassName="max-w-xl">
                         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-academy-line)]">
-                            <span id="add-coach-modal-title" className="font-bold text-[var(--color-academy-ink)] text-base">강사 추가</span>
-                            <button onClick={() => setShowAddModal(false)} className="text-[var(--color-academy-faint)] hover:text-[var(--color-academy-muted)] text-xl leading-none">✕</button>
+                            <span id="add-coach-modal-title" className="academy-section-title">강사 추가</span>
+                            <button onClick={() => setShowAddModal(false)} aria-label="닫기" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-xl leading-none text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">✕</button>
                         </div>
                         <div className="p-6 space-y-4">
                             {addError && (
@@ -442,7 +442,7 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
                             )}
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">이름 *</label>
+                                    <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">이름 *</label>
                                     <input
                                         type="text"
                                         value={addForm.name}
@@ -452,7 +452,7 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">직책 *</label>
+                                    <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">직책 *</label>
                                     <input
                                         type="text"
                                         value={addForm.role}
@@ -464,7 +464,7 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
                             </div>
                             {/* 전화번호 — SMS 수신용 (선택) */}
                             <div>
-                                <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">
+                                <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">
                                     전화번호
                                     <span className="text-[var(--color-academy-faint)] font-normal ml-1">(SMS 수신용, 선택)</span>
                                 </label>
@@ -483,7 +483,7 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">
+                                <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">
                                     약력 / 소개
                                 </label>
                                 <textarea
@@ -498,14 +498,14 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
                             <div className="flex justify-end gap-2 pt-2">
                                 <button
                                     onClick={() => setShowAddModal(false)}
-                                    className="px-4 py-2.5 text-sm text-[var(--color-academy-muted)] border border-[var(--color-academy-line-input)] rounded-lg hover:bg-[var(--color-academy-soft)] transition"
+                                    className="academy-button-secondary"
                                 >
                                     취소
                                 </button>
                                 <button
                                     onClick={handleAdd}
                                     disabled={pending || !addForm.name.trim() || !addForm.role.trim()}
-                                    className="bg-[var(--color-academy-primary-hover)] text-white px-6 py-2.5 rounded-lg font-bold hover:bg-[var(--color-academy-primary-hover)] transition disabled:opacity-40"
+                                    className="academy-button-primary"
                                 >
                                     {pending ? "처리 중..." : "추가하기"}
                                 </button>
@@ -517,8 +517,8 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
             {/* ── 코치 목록 — 한 줄 표(끌어서 순서 바꾸기는 행에 그대로) ─────────── */}
             <div className="overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
                 <div className="flex items-center justify-between border-b border-[var(--color-academy-line)] px-3 py-2">
-                    <h2 className="text-sm font-black text-[var(--color-academy-ink)]">
-                        등록된 코치 <span className="tabular-nums text-[var(--color-academy-primary)]">{coaches.length}명</span>
+                    <h2 className="academy-section-title">
+                        등록된 코치 <span className="text-sm font-normal tabular-nums text-[var(--color-academy-muted)]">{coaches.length}명</span>
                     </h2>
                     <span className="text-xs text-[var(--color-academy-muted)]">끌어서 순서 변경</span>
                 </div>
@@ -530,7 +530,7 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
                 {coaches.length > 0 && (
                     <div className="overflow-x-auto">
                         <table className="admin-list-table w-full border-collapse text-sm">
-                            <thead className="bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]">
+                            <thead className="bg-[var(--color-academy-soft)] text-xs font-medium text-[var(--color-academy-muted)]">
                                 <tr>
                                     <th className="admin-cell-center w-8 px-1 py-2"><span className="sr-only">순서</span></th>
                                     <th className="admin-cell-center px-2 py-2">사진</th>
@@ -554,7 +554,7 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
                                             aria-label={`${coach.name} 코치 상세 보기`}
                                             onClick={() => setDetailId(coach.id)}
                                             onKeyDown={(event) => handleRowKeyDown(event, coach.id)}
-                                            className={`cursor-pointer transition-colors hover:bg-[var(--color-academy-soft)] focus:bg-[var(--color-academy-primary-soft)] focus:outline-none ${dragOver === i ? "border-t-2 border-t-[var(--color-academy-primary)] bg-[var(--color-academy-primary-soft)]" : ""}`}
+                                            className={`cursor-pointer transition-colors hover:bg-[var(--color-academy-soft)] focus:bg-[var(--color-academy-secondary-soft)] focus:outline-none ${dragOver === i ? "border-t-2 border-t-[var(--color-academy-secondary-strong)] bg-[var(--color-academy-secondary-soft)]" : ""}`}
                                         >
                                             {/* 드래그 핸들 */}
                                             <td className="admin-cell-center px-1 py-1.5">
@@ -564,16 +564,16 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
                                             <td className="admin-cell-center px-2 py-1">
                                                 <CoachPhoto url={coach.imageUrl} name={coach.name} size="sm" />
                                             </td>
-                                            <td className="px-2 py-1.5 font-black text-[var(--color-academy-ink)]">{coach.name}</td>
+                                            <td className="px-2 py-1.5 font-semibold text-[var(--color-academy-ink)]">{coach.name}</td>
                                             <td className="px-2 py-1.5">
-                                                <span className="rounded-full bg-[var(--color-academy-primary-soft)] px-2 py-0.5 text-xs font-bold text-[var(--color-academy-primary)]">{coach.role}</span>
+                                                <span className="academy-status">{coach.role}</span>
                                             </td>
                                             <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] sm:table-cell">{coach.phone || "-"}</td>
                                             {/* 소개(약력)는 여러 줄이라 표시만, 전문은 상세 패널 */}
                                             <td className="admin-cell-center hidden px-2 py-1.5 sm:table-cell">
-                                                {coach.description ? <span className="material-symbols-outlined text-base text-[var(--color-academy-muted)]" aria-label="소개 있음">description</span> : <span className="text-xs text-[var(--color-academy-muted)]">-</span>}
+                                                {coach.description ? <span className="text-xs text-[var(--color-academy-muted)]">있음</span> : <span className="text-xs text-[var(--color-academy-muted)]">-</span>}
                                             </td>
-                                            {/* 관리: ⚡(수정·삭제). 눌러도 행 클릭(패널)이 같이 일어나지 않게 전파 차단 */}
+                                            {/* 관리: «빠른작업»(수정·삭제). 눌러도 행 클릭(패널)이 같이 일어나지 않게 전파 차단 */}
                                             <td className="admin-cell-center px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
                                                 <AdminQuickActionMenu label={`${coach.name} 빠른 작업`} actions={buildCoachActions(coach)} />
                                             </td>
@@ -584,7 +584,7 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
                                             <tr>
                                                 <td colSpan={7} className="p-0">
                                                     <div className="whitespace-normal border-t border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] px-6 py-5 text-left">
-                                                        <h3 className="text-sm font-bold text-[var(--color-academy-ink)] mb-4">코치 정보 수정</h3>
+                                                        <h3 className="academy-section-title mb-4">코치 정보 수정</h3>
                                                         {editError && (
                                                             <div className="bg-[var(--color-academy-danger-soft)] border border-[var(--color-academy-danger)] text-[var(--color-academy-danger)] text-sm rounded-lg p-3 mb-4">
                                                                 {editError}
@@ -593,7 +593,7 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
                                                         <div className="space-y-4">
                                                             <div className="grid grid-cols-2 gap-4">
                                                                 <div>
-                                                                    <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">이름 *</label>
+                                                                    <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">이름 *</label>
                                                                     <input
                                                                         type="text"
                                                                         value={editForm.name}
@@ -602,7 +602,7 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
                                                                     />
                                                                 </div>
                                                                 <div>
-                                                                    <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">직책 *</label>
+                                                                    <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">직책 *</label>
                                                                     <input
                                                                         type="text"
                                                                         value={editForm.role}
@@ -614,7 +614,7 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
 
                                                             {/* 전화번호 — SMS 수신용 (선택) */}
                                                             <div>
-                                                                <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">
+                                                                <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">
                                                                     전화번호
                                                                     <span className="text-[var(--color-academy-faint)] font-normal ml-1">(SMS 수신용, 선택)</span>
                                                                 </label>
@@ -635,7 +635,7 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
                                                             </div>
 
                                                             <div>
-                                                                <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">약력 / 소개</label>
+                                                                <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">약력 / 소개</label>
                                                                 <textarea
                                                                     value={editForm.description}
                                                                     onChange={(e) => patchEdit({ description: e.target.value })}
@@ -649,14 +649,14 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
                                                             <div className="flex justify-end gap-3 pt-2">
                                                                 <button
                                                                     onClick={cancelEdit}
-                                                                    className="px-4 py-2 text-sm text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)] rounded-lg transition"
+                                                                    className="academy-button-text"
                                                                 >
                                                                     취소
                                                                 </button>
                                                                 <button
                                                                     onClick={() => handleUpdate(coach.id)}
                                                                     disabled={pending || !editForm.name.trim() || !editForm.role.trim()}
-                                                                    className="px-5 py-2 text-sm font-bold bg-[var(--color-academy-primary)] text-white rounded-lg hover:bg-[var(--color-academy-primary-hover)] transition disabled:opacity-40"
+                                                                    className="academy-button-primary"
                                                                 >
                                                                     {pending ? "저장 중..." : "저장하기"}
                                                                 </button>
@@ -674,26 +674,26 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
                 )}
             </div>
 
-            {/* 행 클릭 상세 패널 — 큰 사진·소개 전문. 작업 버튼은 ⚡ 와 같은 목록 */}
+            {/* 행 클릭 상세 패널 — 큰 사진·소개 전문. 작업 버튼은 «빠른작업» 와 같은 목록 */}
             {detail && (
                 <ListDetailPanel onClose={() => setDetailId(null)} titleId="coach-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
                     <div className="mb-4 flex items-center gap-3">
                         <CoachPhoto url={detail.imageUrl} name={detail.name} />
                         <div className="min-w-0">
-                            <h3 id="coach-detail-panel-title" className="break-keep text-lg font-black text-[var(--color-academy-ink)]">{detail.name}</h3>
-                            <span className="rounded-full bg-[var(--color-academy-primary-soft)] px-2 py-0.5 text-xs font-bold text-[var(--color-academy-primary)]">{detail.role}</span>
+                            <h3 id="coach-detail-panel-title" className="academy-section-title break-keep">{detail.name}</h3>
+                            <span className="academy-status">{detail.role}</span>
                         </div>
                         <button type="button" onClick={() => setDetailId(null)} aria-label="닫기" className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
                             <span className="material-symbols-outlined" aria-hidden="true">close</span>
                         </button>
                     </div>
                     <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
-                        <dt className="font-bold text-[var(--color-academy-muted)]">전화번호</dt>
+                        <dt className="font-medium text-[var(--color-academy-muted)]">전화번호</dt>
                         <dd className="tabular-nums text-[var(--color-academy-ink)]">{detail.phone || "-"}</dd>
-                        <dt className="font-bold text-[var(--color-academy-muted)]">소개</dt>
+                        <dt className="font-medium text-[var(--color-academy-muted)]">소개</dt>
                         <dd className="whitespace-pre-line break-keep text-[var(--color-academy-ink)]">{detail.description || "-"}</dd>
                     </dl>
-                    {/* 공용 패널 버튼 줄 — ⚡ 와 같은 목록·같은 함수, 위험 작업은 오른쪽 끝으로 떨어진다 */}
+                    {/* 공용 패널 버튼 줄 — «빠른작업» 와 같은 목록·같은 함수, 위험 작업은 오른쪽 끝으로 떨어진다 */}
                     <AdminPanelActions actions={buildCoachActions(detail)} onBeforeSelect={() => setDetailId(null)} />
                 </ListDetailPanel>
             )}

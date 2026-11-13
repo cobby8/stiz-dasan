@@ -108,7 +108,7 @@ export default function InlineConfirm({
       // 묻는 말과 [확정][그만두기]를 한 줄에 두고, 좁으면 버튼 묶음만 다음 줄로 내려간다(막대 높이를 크게 늘리지 않게).
       className={`flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-l-4 border-[var(--color-academy-danger-line)] border-l-[var(--color-academy-danger-fill)] bg-[var(--color-academy-surface)] py-1 pl-3 pr-1 ${className} ${openClassName}`}
     >
-      <span className="min-w-[12rem] flex-1 py-1 text-sm font-bold text-[var(--color-academy-ink)]">{question}</span>
+      <span className="min-w-[12rem] flex-1 py-1 text-sm font-medium text-[var(--color-academy-ink)]">{question}</span>
       <span className="ml-auto flex shrink-0 items-center gap-1">
         <button type="button" disabled={disabled || locked} onClick={() => void handleConfirm()} className="academy-button-danger-solid">
           {locked ? pendingLabel : confirmLabel}

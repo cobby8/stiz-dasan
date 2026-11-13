@@ -93,7 +93,7 @@ export default function TeacherGuidePage() {
     <PublicPageLayout>
       <section className="public-page-hero public-page-hero--compact bg-[var(--color-public-dark)] py-8 text-white md:py-10">
         <div className="mx-auto max-w-3xl px-6 md:px-4">
-          <h1 className="mb-1 break-keep text-2xl font-black md:text-3xl">선생님 앱 사용 설명</h1>
+          <h1 className="mb-1 break-keep text-2xl font-bold md:text-3xl">선생님 앱 사용 설명</h1>
           <p className="text-sm text-white/80">설치 → 로그인 → 수업 하나 끝내기까지</p>
         </div>
       </section>
@@ -104,7 +104,7 @@ export default function TeacherGuidePage() {
             {lineList(["아이폰·안드로이드 스토어에서 «스티즈농구교실»을 설치해요. 아래 버튼을 누르면 내 휴대폰에 맞는 스토어로 가요."])}
             <Link
               href="/install"
-              className="mt-3 inline-flex min-h-11 items-center gap-1 rounded-lg bg-[var(--color-public-accent)] px-4 text-sm font-bold text-white hover:bg-[var(--color-public-strong)] dark:bg-[var(--color-public-orange)] dark:text-[var(--color-public-dark)]"
+              className="mt-3 inline-flex min-h-11 items-center gap-1 rounded-lg bg-[var(--color-public-accent)] px-4 text-sm font-semibold text-white hover:bg-[var(--color-public-strong)] dark:bg-[var(--color-public-orange)] dark:text-[var(--color-public-dark)]"
             >
               앱 설치하기
             </Link>
@@ -126,11 +126,11 @@ export default function TeacherGuidePage() {
             <ol className="space-y-3">
               {CLASS_FLOW.map((step, index) => (
                 <li key={step.title} className="flex gap-3">
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--color-public-accent)] text-sm font-black text-white dark:bg-[var(--color-public-orange)] dark:text-[var(--color-public-dark)]" aria-hidden="true">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--color-public-accent)] text-sm font-semibold text-white dark:bg-[var(--color-public-orange)] dark:text-[var(--color-public-dark)]" aria-hidden="true">
                     {index + 1}
                   </span>
                   <div className="min-w-0">
-                    <p className="mb-1 text-sm font-bold text-[var(--color-public-ink)] dark:text-white">{step.title}</p>
+                    <p className="mb-1 text-sm font-semibold text-[var(--color-public-ink)] dark:text-white">{step.title}</p>
                     {lineList(step.lines)}
                   </div>
                 </li>

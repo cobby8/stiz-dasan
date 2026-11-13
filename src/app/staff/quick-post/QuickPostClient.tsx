@@ -28,26 +28,6 @@ const ROLE_LABELS: Record<string, string> = {
 const MAX_UPLOAD_COUNT = 10;
 type UploadProgress = { done: number; total: number };
 
-function SymbolIcon({
-  name,
-  size = 18,
-  className = "",
-}: {
-  name: string;
-  size?: number;
-  className?: string;
-}) {
-  return (
-    <span
-      className={`material-symbols-outlined leading-none ${className}`}
-      style={{ fontSize: `${size}px` }}
-      aria-hidden="true"
-    >
-      {name}
-    </span>
-  );
-}
-
 export default function QuickPostClient({
   currentUser,
 }: {
@@ -239,26 +219,24 @@ export default function QuickPostClient({
   return (
     <main className="min-h-screen bg-surface-warm px-4 py-5">
       <div className="mx-auto max-w-md space-y-4">
-        <header className="flex items-center justify-between">
+        <header className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            {roleLabel && <p className="text-xs font-bold tracking-wide text-[var(--color-academy-muted)]">{roleLabel}</p>}
-            <h1 className="text-2xl font-black text-[var(--color-academy-ink)]">사진 올리기</h1>
+            {roleLabel && <p className="text-xs text-[var(--color-academy-muted)]">{roleLabel}</p>}
+            <h1 className="academy-heading">사진 올리기</h1>
             <p className="text-sm text-[var(--color-academy-muted)]">{currentUser.name} 선생님</p>
           </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={goBack}
-              className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-[var(--color-academy-line)] bg-white px-2.5 text-xs font-bold text-[var(--color-academy-muted)] transition hover:border-[var(--color-academy-ink)] hover:text-[var(--color-academy-ink)]"
+              className="academy-button-secondary academy-button-sm"
             >
-              <SymbolIcon name="arrow_back" size={15} />
               이전
             </button>
             {/* 선생님 앱의 "홈"은 /staff 다. 공개 홈페이지로 보내면 설치된 앱이 제 범위를
                 벗어나 주소표시줄이 뜨고 돌아올 길이 없다(프로필 메뉴에서 공개 링크를
                 모두 뺀 것과 같은 이유). */}
-            <Link href="/staff" className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-[var(--color-academy-line)] bg-white px-2.5 text-xs font-bold text-[var(--color-academy-muted)] transition hover:border-[var(--color-academy-ink)] hover:text-[var(--color-academy-ink)]">
-              <SymbolIcon name="home" size={15} />
+            <Link href="/staff" className="academy-button-secondary academy-button-sm">
               홈
             </Link>
           </div>
@@ -271,11 +249,8 @@ export default function QuickPostClient({
                 key={type}
                 type="button"
                 onClick={() => setLessonType(type)}
-                className={`min-h-10 rounded-lg border px-3 text-sm font-bold transition ${
-                  lessonType === type
-                    ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-ink)]"
-                    : "border-[var(--color-academy-line)] bg-white text-[var(--color-academy-muted)]"
-                }`}
+                // 2026-11-13 UI 통일: 고른 수업 종류 = 보조 색 칩(✓ + 하늘색)
+                className={`academy-choice ${lessonType === type ? "is-selected" : ""}`}
               >
                 {type}
               </button>
@@ -286,7 +261,7 @@ export default function QuickPostClient({
             value={memo}
             onChange={(event) => setMemo(event.target.value)}
             rows={3}
-            className="mt-3 w-full resize-none rounded-lg border border-[var(--color-academy-line)] bg-white px-3 py-2 text-sm leading-6 text-[var(--color-academy-ink)] outline-none placeholder:text-[var(--color-academy-faint)] focus:border-[var(--color-academy-primary)]"
+            className="academy-input mt-3 resize-none leading-6"
             placeholder="오늘 수업 포인트를 짧게 적어주세요"
           />
 
@@ -303,22 +278,20 @@ export default function QuickPostClient({
             type="button"
             onClick={() => inputRef.current?.click()}
             disabled={busy}
-            className="mt-3 flex min-h-14 w-full items-center justify-center gap-2 rounded-lg bg-[var(--color-academy-primary)] px-4 py-3 text-sm font-black text-white transition hover:bg-[var(--color-academy-primary-hover)] disabled:opacity-60"
+            className="academy-button-primary mt-3 min-h-14! w-full"
           >
-            <SymbolIcon name={busy ? "progress_activity" : "photo_camera"} size={20} className={busy ? "animate-spin" : ""} />
             사진 선택하고 AI 초안 만들기
           </button>
         </section>
 
         {message && (
-          <div className="flex items-center gap-2 rounded-lg border border-[var(--color-academy-success)] bg-[var(--color-academy-success-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-success)]">
-            <SymbolIcon name="check_circle" size={17} />
+          <div className="flex items-center gap-2 rounded-lg border border-[var(--color-academy-success)] bg-[var(--color-academy-success-soft)] px-3 py-2 text-sm font-medium text-[var(--color-academy-success)]">
             {message}
           </div>
         )}
 
         {error && (
-          <div className="rounded-lg border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-danger)]">
+          <div className="rounded-lg border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-medium text-[var(--color-academy-danger)]">
             {error}
           </div>
         )}
@@ -326,8 +299,7 @@ export default function QuickPostClient({
         {draft && (
           <section className="space-y-3">
             <div className="rounded-lg border border-[var(--color-academy-success)] bg-[var(--color-academy-success-soft)] p-4 text-[var(--color-academy-success)]">
-              <div className="flex items-center gap-2 text-sm font-black">
-                <SymbolIcon name="check_circle" size={18} />
+              <div className="text-sm font-semibold">
                 {isPublished
                   ? "게시 완료"
                   : needsInstagramRetry
@@ -346,10 +318,9 @@ export default function QuickPostClient({
               {canApprove && (
                 <Link
                   href="/admin/gallery"
-                  className="mt-3 flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)] px-3 text-sm font-black"
+                  className="academy-button-secondary mt-3 w-full"
                 >
                   관리자 갤러리 보기
-                  <SymbolIcon name="arrow_forward" size={17} />
                 </Link>
               )}
               {isPublished && (
@@ -358,10 +329,9 @@ export default function QuickPostClient({
                   <HideInInstalledApp>
                   <Link
                     href="/gallery"
-                    className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[var(--color-academy-success)] bg-white px-3 text-sm font-black text-[var(--color-academy-success)]"
+                    className="academy-button-secondary w-full"
                   >
                     홈페이지 갤러리 보기
-                    <SymbolIcon name="arrow_forward" size={17} />
                   </Link>
                   </HideInInstalledApp>
                   {draft?.instagramPermalink && (
@@ -369,10 +339,9 @@ export default function QuickPostClient({
                       href={draft.instagramPermalink} data-outside-link
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)] px-3 text-sm font-black"
+                      className="academy-button-secondary w-full"
                     >
                       인스타그램 게시물 보기
-                      <SymbolIcon name="arrow_forward" size={17} />
                     </a>
                   )}
                 </div>
@@ -395,9 +364,8 @@ export default function QuickPostClient({
                 type="button"
                 onClick={handleSave}
                 disabled={busy || isPublished}
-                className="academy-button-secondary flex min-h-12 items-center justify-center gap-2 rounded-lg px-3 text-sm font-black disabled:opacity-60"
+                className="academy-button-secondary min-h-12!"
               >
-                <SymbolIcon name="save" size={18} />
                 수정 저장
               </button>
               {!isPublished && (
@@ -405,13 +373,8 @@ export default function QuickPostClient({
                   type="button"
                   onClick={confirmPublish}
                   disabled={busy || hasPublishingStatus}
-                  className="academy-button-primary flex min-h-12 items-center justify-center gap-2 rounded-lg px-3 text-sm font-black disabled:opacity-60"
+                  className="academy-button-primary min-h-12!"
                 >
-                  <SymbolIcon
-                    name={hasPublishingStatus ? "progress_activity" : "send"}
-                    size={18}
-                    className={hasPublishingStatus ? "animate-spin" : ""}
-                  />
                   {hasPublishingStatus ? "인스타그램 게시 중" : needsInstagramRetry ? "인스타그램 다시 게시" : "바로 게시"}
                 </button>
               )}
@@ -421,9 +384,8 @@ export default function QuickPostClient({
                 type="button"
                 onClick={confirmReset}
                 disabled={busy}
-                className="academy-button-text flex min-h-11 items-center justify-center gap-1 px-3 text-sm font-bold disabled:opacity-60"
+                className="academy-button-text"
               >
-                <SymbolIcon name="refresh" size={18} />
                 새로 작성
               </button>
             </div>
@@ -431,20 +393,18 @@ export default function QuickPostClient({
         )}
 
         {hasPublishingStatus && !busy && (
-          <div className="flex items-start gap-3 rounded-lg border border-[var(--color-academy-info)] bg-[var(--color-academy-info-soft)] p-4 text-sm font-bold text-[var(--color-academy-info)]">
-            <SymbolIcon name="progress_activity" size={18} className="mt-0.5 shrink-0 animate-spin" />
+          <div role="status" className="rounded-lg border border-[var(--color-academy-info)] bg-[var(--color-academy-info-soft)] p-4 text-sm font-medium text-[var(--color-academy-info)]">
             <p>인스타그램 게시를 처리 중입니다.</p>
           </div>
         )}
 
         {busy && (
-          <div className="flex items-start gap-3 rounded-lg border border-[var(--color-academy-line)] bg-white p-4 text-sm font-bold text-[var(--color-academy-muted)]">
-            <SymbolIcon name="auto_awesome" size={18} className="mt-0.5 shrink-0 text-[var(--color-academy-muted)]" />
+          <div className="rounded-lg border border-[var(--color-academy-line)] bg-white p-4 text-sm font-medium text-[var(--color-academy-muted)]">
             <div className="min-w-0 flex-1">
               <p>{progressText || "처리 중입니다."}</p>
               {uploadProgress && uploadProgress.total > 0 && (
                 <div className="mt-2">
-                  <div className="flex justify-between text-xs text-[var(--color-academy-muted)]">
+                  <div className="flex justify-between text-xs font-normal tabular-nums text-[var(--color-academy-muted)]">
                     <span>사진 업로드</span>
                     <span>
                       {uploadProgress.done}/{uploadProgress.total}
@@ -452,7 +412,7 @@ export default function QuickPostClient({
                   </div>
                   <div className="mt-1 h-2 overflow-hidden rounded-full bg-[var(--color-academy-soft)]">
                     <div
-                      className="h-full rounded-full bg-[var(--color-academy-info)] transition-all"
+                      className="h-full rounded-full bg-[var(--color-academy-secondary-strong)] transition-all"
                       style={{ width: `${Math.round((uploadProgress.done / uploadProgress.total) * 100)}%` }}
                     />
                   </div>

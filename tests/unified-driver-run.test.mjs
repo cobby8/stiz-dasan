@@ -298,7 +298,8 @@ test("기사님 카드의 시간·길안내와 이름 옆 연락처 배치를 �
 test("운행 시작은 헤더 오른쪽에만 두고 순서·시간 수정은 목록 제목 옆에 둔다", async () => {
   const src = await readFile("src/components/shuttle/UnifiedDriverClient.tsx", "utf8");
   assert.match(src, /const orderControls = !accountRun && stopRows\.length > 0/);
-  assert.match(src, /min-h-11[^\n]*[\s\S]*↕ 순서·시간 수정/);
+  // 2026-11-13 UI 통일: 직접 그린 버튼 → 테마 보조 버튼(높이 44px 그대로), 장식 기호(↕) 제거.
+  assert.match(src, /const orderControls =[\s\S]{0,400}className="academy-button-secondary shrink-0">\s*순서·시간 수정/);
   assert.match(src, /<header[\s\S]*runState === "idle"[\s\S]*운행 시작/);
   assert.doesNotMatch(src, /운행을 시작하면 위치가 관리자에게 공유됩니다/);
   assert.match(src, /운행 순서 ·[\s\S]*\{orderControls\}/);

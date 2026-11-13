@@ -95,13 +95,11 @@ export function VoiceToTextButton({
       aria-pressed={recording}
       aria-label={recording ? "음성 녹음 종료" : "특이사항 음성 녹음 시작"}
       onClick={recording ? stop : () => void start()}
-      className="min-h-12 rounded-xl bg-[var(--brand-accent)] px-4 text-sm font-black text-[var(--brand-accent-contrast)] disabled:opacity-50"
+      // 2026-11-13 UI 통일: 아이콘 없이 글자로(녹음 중이면 «녹음 종료»). 화면의 주 버튼이 아니라 보조 버튼, 높이 48px 유지.
+      className="academy-button-secondary min-h-12!"
     >
-      <span className="material-symbols-outlined mr-1 align-middle" aria-hidden="true">
-        {recording ? "stop_circle" : transcribing ? "progress_activity" : "mic"}
-      </span>
       {recording ? "녹음 종료" : transcribing ? "메모 변환 중" : "음성으로 기록"}
     </button>
-    {message && <span aria-live="polite" className="max-w-48 text-right text-xs font-bold text-[var(--color-academy-muted)]">{message}</span>}
+    {message && <span aria-live="polite" className="max-w-48 text-right text-xs text-[var(--color-academy-muted)]">{message}</span>}
   </div>;
 }

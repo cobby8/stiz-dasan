@@ -51,7 +51,7 @@ export default function AccountDeletionPage() {
     <PublicPageLayout>
       <section className="public-page-hero public-page-hero--compact bg-[var(--color-public-dark)] text-white py-10 md:py-12">
         <div className="max-w-4xl mx-auto px-6 md:px-4">
-          <h1 className="text-3xl md:text-4xl font-black mb-2 break-keep">계정 삭제 안내</h1>
+          <h1 className="text-3xl md:text-4xl font-bold mb-2 break-keep">계정 삭제 안내</h1>
           <p className="text-white/80 text-base">STIZ 농구교실 앱·웹사이트 (운영: 업턴랩스)</p>
         </div>
       </section>

@@ -28,7 +28,7 @@ function SymbolIcon({
   name,
   size = 18,
 }: {
-  name: "close" | "send";
+  name: "close";
   size?: number;
 }) {
   return <FontFreeIcon name={name} size={size} />;
@@ -154,18 +154,18 @@ export default function ChatPanel({ onClose }: ChatPanelProps) {
           inset-0 sm:inset-auto
           sm:bottom-6 sm:right-6
           sm:w-96 sm:h-[500px]
-          bg-white dark:bg-gray-800 sm:rounded-2xl shadow-2xl
+          bg-[var(--color-public-paper)] sm:rounded-2xl shadow-2xl
           flex flex-col overflow-hidden
-          border border-gray-200 dark:border-gray-700
+          border border-[var(--color-public-line)]
         "
       >
         {/* 상단 헤더: 제목 + 닫기 버튼 */}
-        <div className="flex items-center justify-between px-4 py-1 bg-orange-500 text-white flex-shrink-0">
-          <h3 className="font-bold text-base">STIZ 상담</h3>
+        <div className="flex items-center justify-between px-4 py-1 bg-[var(--color-public-dark)] text-white flex-shrink-0">
+          <h3 className="font-semibold text-base">STIZ 상담</h3>
           <button
             onClick={onClose}
             // 터치 영역 44px(게슈탈트 P-13)
-            className="flex h-11 w-11 items-center justify-center hover:bg-orange-600 rounded-full transition-colors"
+            className="flex h-11 w-11 items-center justify-center hover:bg-white/10 rounded-full transition-colors"
             aria-label="채팅 닫기"
           >
             <SymbolIcon name="close" size={20} />
@@ -181,7 +181,7 @@ export default function ChatPanel({ onClose }: ChatPanelProps) {
           {/* API 호출 중일 때 "답변 작성 중..." 표시 */}
           {isLoading && (
             <div className="flex justify-start mb-3">
-              <div className="bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 rounded-2xl rounded-bl-md px-4 py-3 text-sm">
+              <div className="bg-[var(--color-public-tint)] text-[var(--color-public-muted)] rounded-2xl rounded-bl-md px-4 py-3 text-sm">
                 <span className="animate-pulse">답변 작성 중...</span>
               </div>
             </div>
@@ -192,7 +192,7 @@ export default function ChatPanel({ onClose }: ChatPanelProps) {
         </div>
 
         {/* 하단 입력 영역 */}
-        <div className="border-t border-gray-200 dark:border-gray-700 p-3 flex-shrink-0">
+        <div className="border-t border-[var(--color-public-line)] p-3 flex-shrink-0">
           <div className="flex items-end gap-2">
             <textarea
               ref={inputRef}
@@ -202,9 +202,10 @@ export default function ChatPanel({ onClose }: ChatPanelProps) {
               placeholder="메시지를 입력하세요..."
               rows={1}
               className="
-                flex-1 resize-none rounded-xl border border-gray-300
+                flex-1 resize-none rounded-xl border border-[var(--color-public-line)]
+                bg-[var(--color-public-paper)] text-[var(--color-public-ink)]
                 px-3 py-2 text-sm
-                focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent
+                focus:outline-none focus:ring-2 focus:ring-[var(--color-public-focus)] focus:border-transparent
                 max-h-24
               "
               disabled={isLoading}
@@ -214,14 +215,15 @@ export default function ChatPanel({ onClose }: ChatPanelProps) {
               onClick={sendMessage}
               disabled={isLoading || !input.trim()}
               className="
-                p-2 rounded-xl bg-orange-500 text-white
-                hover:bg-orange-600 transition-colors
+                flex h-11 items-center justify-center rounded-xl px-4 text-sm font-medium
+                bg-[var(--color-public-accent)] text-white dark:text-[var(--color-public-dark)]
+                hover:bg-[var(--color-public-strong)] transition-colors
                 disabled:opacity-40 disabled:cursor-not-allowed
                 flex-shrink-0
               "
               aria-label="메시지 전송"
             >
-              <SymbolIcon name="send" size={18} />
+              전송
             </button>
           </div>
         </div>

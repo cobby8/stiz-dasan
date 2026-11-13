@@ -1,5 +1,6 @@
 "use client";
 import { adminErrorText } from "@/components/admin/adminDisplayText";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 
 import { useState, useTransition, useCallback, useEffect } from "react";
 import { createFeedback, updateFeedback, deleteFeedback } from "@/app/actions/admin";
@@ -98,7 +99,7 @@ function FeedbackLoadingFallback() {
 function FeedbackErrorState({ onRetry }: { onRetry: () => void }) {
     return (
         <div className="rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-danger-soft)] p-6 text-center">
-            <p className="text-sm font-bold text-[var(--color-academy-danger)]">피드백 목록을 불러오지 못했습니다.</p>
+            <p className="text-sm font-medium text-[var(--color-academy-danger)]">피드백 목록을 불러오지 못했습니다.</p>
             <button
                 type="button"
                 onClick={onRetry}
@@ -367,33 +368,33 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
     return (
         <div className="space-y-3">
             {/* 헤더: 제목 + 피드백 작성 버튼 */}
-            <div className="flex items-center justify-between gap-2">
-                <div className="flex flex-wrap items-baseline gap-x-2">
-                    <h1 className="text-lg font-black text-[var(--color-academy-ink)]">학습 피드백 관리</h1>
-                    {/* 설명문구는 제거하고 실무에 쓰이는 건수 표시만 유지 */}
-                    <p className="text-xs text-[var(--color-academy-muted)]">
-                        총 <span className="tabular-nums">{feedbacks.length}</span>건
-                    </p>
-                </div>
-                <button
-                    onClick={() => {
-                        if (showForm && !editingId) {
-                            // 폼이 열려있고 새 작성 중이면 닫기
-                            setShowForm(false);
-                            resetForm();
-                        } else {
-                            // 폼 열기 (수정 중이었으면 초기화)
-                            resetForm();
-                            setShowForm(true);
-                            void loadStudents();
-                            void loadCoaches();
-                        }
-                    }}
-                    className="px-5 py-2.5 bg-[var(--color-academy-primary)] text-white rounded-xl font-medium hover:bg-[var(--color-academy-primary-hover)] transition-colors"
-                >
-                    {showForm && !editingId ? "닫기" : "피드백 작성"}
-                </button>
-            </div>
+            {/* 설명문구는 제거하고 실무에 쓰이는 건수 표시만 유지 */}
+            <AdminPageHeader
+                title="학습 피드백 관리"
+                description={<>총 <span className="tabular-nums">{feedbacks.length}</span>건</>}
+                actions={
+                    <button
+                        type="button"
+                        onClick={() => {
+                            if (showForm && !editingId) {
+                                // 폼이 열려있고 새 작성 중이면 닫기
+                                setShowForm(false);
+                                resetForm();
+                            } else {
+                                // 폼 열기 (수정 중이었으면 초기화)
+                                resetForm();
+                                setShowForm(true);
+                                void loadStudents();
+                                void loadCoaches();
+                            }
+                        }}
+                        // 폼이 열려 있으면 주 버튼은 폼의 «저장» 하나 — 이 버튼은 «닫기» 보조 버튼이 된다
+                        className={showForm && !editingId ? "academy-button-secondary" : "academy-button-primary"}
+                    >
+                        {showForm && !editingId ? "닫기" : "피드백 작성"}
+                    </button>
+                }
+            />
 
             {/* 피드백 작성/수정 폼 (토글) */}
             {showForm && (
@@ -431,7 +432,7 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
                                     <button
                                         type="button"
                                         onClick={() => void loadStudents()}
-                                        className="shrink-0 rounded-md border border-[var(--color-academy-line)] px-2 py-1 text-xs font-medium text-[var(--color-academy-danger)] hover:bg-[var(--color-academy-danger-soft)]"
+                                        className="academy-button-tonal academy-button-sm shrink-0"
                                     >
                                         다시 시도
                                     </button>
@@ -468,7 +469,7 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
                                     <button
                                         type="button"
                                         onClick={() => void loadCoaches()}
-                                        className="shrink-0 rounded-md border border-[var(--color-academy-line)] px-2 py-1 text-xs font-medium text-[var(--color-academy-danger)] hover:bg-[var(--color-academy-danger-soft)]"
+                                        className="academy-button-tonal academy-button-sm shrink-0"
                                     >
                                         다시 시도
                                     </button>
@@ -491,7 +492,7 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
                                 min="2020-01-01" max="2030-12-31"
                                 value={form.sessionDate}
                                 onChange={(e) => setForm({ ...form, sessionDate: e.target.value })}
-                                className="w-full border border-[var(--color-academy-line)] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                                className="academy-input"
                             />
                         </div>
                         <div>
@@ -499,7 +500,7 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
                             <select
                                 value={form.category}
                                 onChange={(e) => setForm({ ...form, category: e.target.value })}
-                                className="w-full border border-[var(--color-academy-line)] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                                className="academy-input"
                             >
                                 {Object.entries(CATEGORIES).map(([key, { label }]) => (
                                     <option key={key} value={key}>{label}</option>
@@ -517,7 +518,7 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
                             type="text"
                             value={form.title}
                             onChange={(e) => setForm({ ...form, title: e.target.value })}
-                            className="w-full border border-[var(--color-academy-line)] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                            className="academy-input"
                         />
                     </div>
 
@@ -530,7 +531,7 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
                             value={form.content}
                             onChange={(e) => setForm({ ...form, content: e.target.value })}
                             rows={4}
-                            className="w-full border border-[var(--color-academy-line)] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)] resize-none"
+                            className="academy-input resize-none"
                         />
                     </div>
 
@@ -556,7 +557,7 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
                         <button
                             type="submit"
                             disabled={isPending}
-                            className="px-6 py-2.5 bg-[var(--color-academy-primary)] text-white rounded-xl font-medium hover:bg-[var(--color-academy-primary-hover)] transition-colors disabled:opacity-50"
+                            className="academy-button-primary"
                         >
                             {isPending ? "저장 중..." : editingId ? "수정 완료" : "피드백 저장"}
                         </button>
@@ -566,7 +567,7 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
                                 setShowForm(false);
                                 resetForm();
                             }}
-                            className="px-6 py-2.5 bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] rounded-xl font-medium hover:bg-[var(--color-academy-line)] transition-colors"
+                            className="academy-button-secondary"
                         >
                             취소
                         </button>
@@ -582,7 +583,7 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
             ) : (
                 <div className="overflow-x-auto rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
                     <table className="admin-list-table w-full border-collapse text-sm">
-                        <thead className="bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]">
+                        <thead className="bg-[var(--color-academy-soft)] text-xs font-semibold text-[var(--color-academy-muted)]">
                             <tr>
                                 <th className="admin-cell-num px-2 py-2">날짜</th>
                                 <th className="px-2 py-2">분류</th>
@@ -608,8 +609,8 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
                                     >
                                         {/* 수업일이 없으면 작성일(예전 카드와 같은 규칙) */}
                                         <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-muted)]">{feedbackDate(fb)}</td>
-                                        <td className="px-2 py-1.5"><span className={`rounded-full px-2 py-0.5 text-xs font-bold ${cat.color}`}>{cat.label}</span></td>
-                                        <td className="px-2 py-1.5 font-black text-[var(--color-academy-ink)]">{fb.studentName}</td>
+                                        <td className="px-2 py-1.5"><span className={`rounded-full px-2 py-0.5 text-xs ${cat.color}`}>{cat.label}</span></td>
+                                        <td className="px-2 py-1.5 font-medium text-[var(--color-academy-ink)]">{fb.studentName}</td>
                                         <td className="px-2 py-1.5 text-[var(--color-academy-ink)]">{fb.title}</td>
                                         <td className="hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{fb.coachName} 코치</td>
                                         <td className="hidden px-2 py-1.5 lg:table-cell">{renderStars(fb.rating)}</td>
@@ -639,23 +640,23 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
                 return (
                     <ListDetailPanel onClose={() => setDetailId(null)} titleId="feedback-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
                         <div className="mb-4 flex items-center gap-2">
-                            <h3 id="feedback-detail-panel-title" className="min-w-0 break-keep text-lg font-black text-[var(--color-academy-ink)]">{fb.studentName}</h3>
-                            <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${cat.color}`}>{cat.label}</span>
+                            <h3 id="feedback-detail-panel-title" className="min-w-0 break-keep text-lg font-bold text-[var(--color-academy-ink)]">{fb.studentName}</h3>
+                            <span className={`rounded-full px-2 py-0.5 text-xs ${cat.color}`}>{cat.label}</span>
                             {!fb.isPublic && <span className="rounded-full border border-[var(--color-academy-danger)] px-2 py-0.5 text-xs text-[var(--color-academy-danger)]">비공개</span>}
                             <button type="button" onClick={() => setDetailId(null)} aria-label="닫기" className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
                                 <span className="material-symbols-outlined" aria-hidden="true">close</span>
                             </button>
                         </div>
                         <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
-                            <dt className="font-bold text-[var(--color-academy-muted)]">제목</dt>
-                            <dd className="break-keep font-bold text-[var(--color-academy-ink)]">{fb.title}</dd>
-                            <dt className="font-bold text-[var(--color-academy-muted)]">코치</dt>
+                            <dt className="font-medium text-[var(--color-academy-muted)]">제목</dt>
+                            <dd className="break-keep font-medium text-[var(--color-academy-ink)]">{fb.title}</dd>
+                            <dt className="font-medium text-[var(--color-academy-muted)]">코치</dt>
                             <dd className="text-[var(--color-academy-ink)]">{fb.coachName} 코치</dd>
-                            <dt className="font-bold text-[var(--color-academy-muted)]">수업일</dt>
+                            <dt className="font-medium text-[var(--color-academy-muted)]">수업일</dt>
                             <dd className="tabular-nums text-[var(--color-academy-ink)]">{fb.sessionDate ? toKstYmd(fb.sessionDate) : "-"}</dd>
-                            <dt className="font-bold text-[var(--color-academy-muted)]">작성일</dt>
+                            <dt className="font-medium text-[var(--color-academy-muted)]">작성일</dt>
                             <dd className="tabular-nums text-[var(--color-academy-ink)]">{toKstYmd(fb.createdAt)}</dd>
-                            <dt className="font-bold text-[var(--color-academy-muted)]">평점</dt>
+                            <dt className="font-medium text-[var(--color-academy-muted)]">평점</dt>
                             <dd>{renderStars(fb.rating)}</dd>
                         </dl>
                         {/* 피드백 내용 (줄바꿈 유지) */}

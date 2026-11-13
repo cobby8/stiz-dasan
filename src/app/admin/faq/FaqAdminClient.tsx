@@ -5,6 +5,7 @@ import { createFaq, updateFaq, deleteFaq } from "@/app/actions/admin";
 import AdminModal from "@/components/admin/AdminModal";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { toKstYmd } from "@/lib/datetime/kst";
 
 // FAQ 데이터 타입
@@ -21,38 +22,17 @@ type FaqPayload = {
     faqs: FaqData[];
 };
 
-function SymbolIcon({
-    name,
-    size = 18,
-    className = "",
-}: {
-    name: string;
-    size?: number;
-    className?: string;
-}) {
-    return (
-        <span
-            className={`material-symbols-outlined leading-none ${className}`}
-            style={{ fontSize: `${size}px` }}
-            aria-hidden="true"
-        >
-            {name}
-        </span>
-    );
-}
-
 // 공개 상태 칩의 «전체» 값
 const FAQ_VISIBILITY_ALL = "ALL";
 
 // 공개/비공개 배지(목록 행·상세 패널 공용)
 function FaqVisibilityBadge({ isPublic }: { isPublic: boolean }) {
     return (
-        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold ${
+        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${
             isPublic
                 ? "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]"
                 : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"
         }`}>
-            <span className="material-symbols-outlined text-sm" aria-hidden="true">{isPublic ? "visibility" : "visibility_off"}</span>
             {isPublic ? "공개" : "비공개"}
         </span>
     );
@@ -102,7 +82,7 @@ function FaqLoadingFallback() {
 function FaqErrorState({ onRetry }: { onRetry: () => void }) {
     return (
         <div className="rounded-2xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-6 text-center">
-            <p className="text-sm font-bold text-[var(--color-academy-danger)]">FAQ를 불러오지 못했습니다.</p>
+            <p className="text-sm font-medium text-[var(--color-academy-danger)]">FAQ를 불러오지 못했습니다.</p>
             <button
                 type="button"
                 onClick={onRetry}
@@ -232,24 +212,23 @@ export default function FaqAdminClient({ faqs: initialFaqs }: { faqs?: FaqData[]
     return (
         <div className="space-y-6">
             {/* 페이지 헤더 */}
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold text-[var(--color-academy-ink)]">FAQ 관리</h1>
-                    <p className="text-sm text-[var(--color-academy-muted)] mt-1">체험신청 페이지에 표시</p>
-                </div>
-                <button onClick={() => { resetForm(); setShowForm(true); }}
-                    className="flex items-center gap-2 bg-[var(--color-academy-primary)] text-white px-4 py-2.5 rounded-xl font-bold hover:bg-[var(--color-academy-primary-hover)] transition">
-                    <SymbolIcon name="add" size={18} /> 새 FAQ
-                </button>
-            </div>
+            <AdminPageHeader
+                title="FAQ 관리"
+                description="체험신청 페이지에 표시"
+                actions={
+                    <button type="button" onClick={() => { resetForm(); setShowForm(true); }} className="academy-button-primary">
+                        새 FAQ
+                    </button>
+                }
+            />
 
             {/* 생성/수정 모달 */}
             {showForm && (
                 <AdminModal onClose={resetForm} titleId="faq-form-modal-title" panelClassName="max-w-2xl">
                         <div className="p-6 border-b border-[var(--color-academy-line)] flex items-center justify-between">
-                            <h2 id="faq-form-modal-title" className="text-lg font-bold">{editId ? "FAQ 수정" : "새 FAQ"}</h2>
-                            <button onClick={resetForm} className="p-1 hover:bg-[var(--color-academy-line)] rounded-lg">
-                                <SymbolIcon name="close" size={20} />
+                            <h2 id="faq-form-modal-title" className="text-lg font-bold text-[var(--color-academy-ink)]">{editId ? "FAQ 수정" : "새 FAQ"}</h2>
+                            <button type="button" onClick={resetForm} aria-label="닫기" className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
+                                <span className="material-symbols-outlined" aria-hidden="true">close</span>
                             </button>
                         </div>
                         <div className="p-6 space-y-4">
@@ -258,21 +237,21 @@ export default function FaqAdminClient({ faqs: initialFaqs }: { faqs?: FaqData[]
                                 <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">질문</label>
                                 <input value={question} onChange={e => setQuestion(e.target.value)}
                                     placeholder="자주 묻는 질문을 입력하세요"
-                                    className="w-full border border-[var(--color-academy-line)] rounded-xl px-4 py-2.5 text-sm" />
+                                    className="academy-input" />
                             </div>
                             {/* 답변 입력 */}
                             <div>
                                 <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">답변</label>
                                 <textarea value={answer} onChange={e => setAnswer(e.target.value)}
                                     rows={4} placeholder="답변을 입력하세요"
-                                    className="w-full border border-[var(--color-academy-line)] rounded-xl px-4 py-2.5 text-sm" />
+                                    className="academy-input" />
                             </div>
                             {/* 순서와 공개여부 — 가로 배치 */}
                             <div className="flex gap-4">
                                 <div className="flex-1">
                                     <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">표시 순서</label>
                                     <input type="number" value={order} onChange={e => setOrder(Number(e.target.value))}
-                                        className="w-full border border-[var(--color-academy-line)] rounded-xl px-4 py-2.5 text-sm" />
+                                        className="academy-input" />
                                     <p className="text-xs text-[var(--color-academy-faint)] mt-1">숫자가 작을수록 위에 표시됩니다</p>
                                 </div>
                                 <div className="flex items-center gap-2 pt-6">
@@ -283,9 +262,9 @@ export default function FaqAdminClient({ faqs: initialFaqs }: { faqs?: FaqData[]
                         </div>
                         {/* 모달 하단 버튼 */}
                         <div className="p-6 border-t border-[var(--color-academy-line)] flex justify-end gap-3">
-                            <button onClick={resetForm} className="px-4 py-2 text-sm text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)] rounded-xl transition">취소</button>
+                            <button type="button" onClick={resetForm} className="academy-button-secondary">취소</button>
                             <button onClick={handleSubmit} disabled={isPending}
-                                className="px-6 py-2 bg-[var(--color-academy-primary)] text-white font-bold rounded-xl hover:bg-[var(--color-academy-primary-hover)] transition disabled:opacity-50">
+                                className="academy-button-primary">
                                 {isPending ? "저장 중..." : editId ? "수정" : "등록"}
                             </button>
                         </div>
@@ -316,7 +295,7 @@ export default function FaqAdminClient({ faqs: initialFaqs }: { faqs?: FaqData[]
                             <div className="overflow-x-auto">
                                 {/* admin-list-table: 글자 왼쪽·순서/날짜 오른쪽(tabular)·한 줄(말줄임 없음, 좁으면 가로 스크롤) */}
                                 <table className="admin-list-table w-full border-collapse text-sm">
-                                    <thead className="bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]">
+                                    <thead className="bg-[var(--color-academy-soft)] text-xs font-semibold text-[var(--color-academy-muted)]">
                                         <tr>
                                             <th className="admin-cell-num px-2 py-2">순서</th>
                                             <th className="px-2 py-2">질문</th>
@@ -336,21 +315,21 @@ export default function FaqAdminClient({ faqs: initialFaqs }: { faqs?: FaqData[]
                                                 className="cursor-pointer transition-colors hover:bg-[var(--color-academy-soft)] focus:bg-[var(--color-academy-primary-soft)] focus:outline-none"
                                             >
                                                 <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-muted)]">{faq.order}</td>
-                                                <td className="px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{faq.question}</td>
+                                                <td className="px-2 py-1.5 font-medium text-[var(--color-academy-ink)]">{faq.question}</td>
                                                 <td className="px-2 py-1.5"><FaqVisibilityBadge isPublic={faq.isPublic} /></td>
                                                 <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{toKstYmd(faq.createdAt)}</td>
                                                 {/* 관리: 수정·삭제(행 클릭=상세 패널과 겹치지 않게 전파 차단). 함수·확인창은 기존 그대로 */}
                                                 <td className="admin-cell-center px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
-                                                    <div className="inline-flex gap-0.5">
+                                                    <div className="inline-flex gap-1">
                                                         <button type="button" onClick={() => startEdit(faq)}
-                                                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] transition hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-primary)]"
+                                                            className="academy-button-tonal academy-button-sm"
                                                             title="수정" aria-label={`${faq.question} 수정`}>
-                                                            <SymbolIcon name="edit" size={18} />
+                                                            수정
                                                         </button>
                                                         <button type="button" onClick={() => handleDelete(faq.id)}
-                                                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] transition hover:bg-[var(--color-academy-danger-soft)] hover:text-[var(--color-academy-danger)]"
+                                                            className="academy-button-danger academy-button-sm"
                                                             title="삭제" aria-label={`${faq.question} 삭제`}>
-                                                            <SymbolIcon name="delete" size={18} />
+                                                            삭제
                                                         </button>
                                                     </div>
                                                 </td>
@@ -368,7 +347,7 @@ export default function FaqAdminClient({ faqs: initialFaqs }: { faqs?: FaqData[]
             {detailFaq && (
                 <ListDetailPanel onClose={() => setDetailFaqId(null)} titleId="faq-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
                     <div className="mb-4 flex items-start gap-2">
-                        <h3 id="faq-detail-panel-title" className="min-w-0 break-keep break-words text-lg font-black text-[var(--color-academy-ink)]">
+                        <h3 id="faq-detail-panel-title" className="min-w-0 break-keep break-words text-lg font-bold text-[var(--color-academy-ink)]">
                             <span className="text-[var(--color-academy-primary)]">Q.</span> {detailFaq.question}
                         </h3>
                         <button
@@ -381,11 +360,11 @@ export default function FaqAdminClient({ faqs: initialFaqs }: { faqs?: FaqData[]
                         </button>
                     </div>
                     <dl className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
-                        <dt className="font-bold text-[var(--color-academy-muted)]">공개</dt>
+                        <dt className="font-medium text-[var(--color-academy-muted)]">공개</dt>
                         <dd><FaqVisibilityBadge isPublic={detailFaq.isPublic} /></dd>
-                        <dt className="font-bold text-[var(--color-academy-muted)]">표시 순서</dt>
+                        <dt className="font-medium text-[var(--color-academy-muted)]">표시 순서</dt>
                         <dd className="tabular-nums text-[var(--color-academy-ink)]">{detailFaq.order}</dd>
-                        <dt className="font-bold text-[var(--color-academy-muted)]">작성일</dt>
+                        <dt className="font-medium text-[var(--color-academy-muted)]">작성일</dt>
                         <dd className="tabular-nums text-[var(--color-academy-ink)]">{toKstYmd(detailFaq.createdAt)}</dd>
                     </dl>
                     {/* 답변 — 말줄임 없이 전부, 줄바꿈 그대로 */}
@@ -394,12 +373,12 @@ export default function FaqAdminClient({ faqs: initialFaqs }: { faqs?: FaqData[]
                     </p>
                     <div className="mt-5 flex flex-wrap gap-2">
                         <button type="button" onClick={() => { const target = detailFaq; setDetailFaqId(null); startEdit(target); }}
-                            className="inline-flex min-h-11 items-center gap-1 rounded-lg bg-[var(--color-academy-primary)] px-4 text-sm font-bold text-[var(--color-academy-on-primary)] hover:bg-[var(--color-academy-primary-hover)]">
-                            <SymbolIcon name="edit" size={18} /> 수정
+                            className="academy-button-secondary">
+                            수정
                         </button>
                         <button type="button" onClick={() => handleDelete(detailFaq.id)}
-                            className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-[var(--color-academy-danger)] px-4 text-sm font-bold text-[var(--color-academy-danger)] hover:bg-[var(--color-academy-danger-soft)]">
-                            <SymbolIcon name="delete" size={18} /> 삭제
+                            className="academy-button-danger ml-auto">
+                            삭제
                         </button>
                     </div>
                 </ListDetailPanel>

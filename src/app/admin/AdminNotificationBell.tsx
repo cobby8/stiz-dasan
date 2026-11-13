@@ -29,25 +29,6 @@ function timeAgo(dateStr: string) {
     return `${Math.floor(hours / 24)}일 전`;
 }
 
-function typeIcon(type: string) {
-    switch (type) {
-        case "TRIAL_APPLICATION":
-            return "person_add" as const;
-        case "ENROLL_APPLICATION":
-            return "how_to_reg" as const;
-        case "REQUEST":
-            return "mail" as const;
-        case "ATTENDANCE":
-            return "check_circle" as const;
-        case "PAYMENT":
-            return "payments" as const;
-        case "NOTICE":
-            return "campaign" as const;
-        default:
-            return "notifications";
-    }
-}
-
 export default function AdminNotificationBell() {
     const [open, setOpen] = useState(false);
     const [unreadCount, setUnreadCount] = useState(0);
@@ -135,10 +116,11 @@ export default function AdminNotificationBell() {
                 onClick={handleToggle}
                 className="relative rounded-lg p-2 text-[var(--color-academy-muted)] transition-colors hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-muted)]"
                 title="알림"
+                aria-label="알림"
             >
                 <FontFreeIcon name="notifications" size={22} />
                 {unreadCount > 0 && (
-                    <span className="absolute -right-0.5 -top-0.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[var(--color-academy-danger)] px-1 text-[10px] font-bold text-white">
+                    <span className="absolute -right-0.5 -top-0.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[var(--color-academy-danger)] px-1 text-xs font-semibold text-white">
                         {unreadCount > 99 ? "99+" : unreadCount}
                     </span>
                 )}
@@ -147,13 +129,13 @@ export default function AdminNotificationBell() {
             {open && (
                 <div className="absolute right-0 top-full z-50 mt-2 w-[calc(100vw-2rem)] max-w-sm overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-white shadow-xl sm:w-96">
                     <div className="flex items-center justify-between border-b border-[var(--color-academy-line)] px-4 py-3">
-                        <h3 className="text-sm font-bold text-[var(--color-academy-ink)]">알림</h3>
+                        <h3 className="academy-section-title">알림</h3>
                         {unreadCount > 0 && (
                             <button
                                 type="button"
                                 onClick={handleMarkAllRead}
                                 disabled={loading}
-                                className="text-xs font-medium text-[var(--color-academy-muted)] hover:text-[var(--color-academy-ink)] disabled:opacity-50"
+                                className="academy-button-text academy-button-sm"
                             >
                                 모두 읽음
                             </button>
@@ -163,7 +145,6 @@ export default function AdminNotificationBell() {
                     <div className="max-h-[400px] overflow-y-auto">
                         {items.length === 0 ? (
                             <div className="py-12 text-center text-sm text-[var(--color-academy-faint)]">
-                                <FontFreeIcon name="notifications_off" size={40} className="mx-auto mb-2" />
                                 알림이 없습니다
                             </div>
                         ) : (
@@ -176,15 +157,6 @@ export default function AdminNotificationBell() {
                                         !item.isRead ? "bg-[var(--color-academy-soft)]/50" : ""
                                     }`}
                                 >
-                                    <div
-                                        className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full ${
-                                            !item.isRead
-                                                ? "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"
-                                                : "bg-[var(--color-academy-soft)] text-[var(--color-academy-faint)]"
-                                        }`}
-                                    >
-                                        <FontFreeIcon name={typeIcon(item.type)} size={18} />
-                                    </div>
                                     <div className="min-w-0 flex-1">
                                         <p
                                             className={`truncate text-sm ${
@@ -200,7 +172,7 @@ export default function AdminNotificationBell() {
                                         </p>
                                         <p className="mt-1 text-xs text-[var(--color-academy-faint)]">{timeAgo(item.createdAt)}</p>
                                     </div>
-                                    {!item.isRead && <div className="mt-2 h-2 w-2 flex-shrink-0 rounded-full bg-[var(--color-academy-primary)]" />}
+                                    {!item.isRead && <div className="mt-2 h-2 w-2 flex-shrink-0 rounded-full bg-[var(--color-academy-secondary-strong)]" />}
                                 </button>
                             ))
                         )}

@@ -24,6 +24,8 @@ import type { UnifiedRider, UnifiedRow } from "@/lib/shuttle/unifiedDriverRunLog
 //   · 관리자 끌기 피드백 — 끄는 카드가 손가락/마우스를 따라 떠다니고(그림자), 제자리는 흐린 자리표시,
 //     놓일 자리에 삽입선, 놓으면 짧게 미끄러지는 이동 애니메이션. 기사님 끌기(카드 전체)는 예전 그대로.
 //   · (3차) 삽입선 → «실시간 재배치»: 끄는 카드가 따라오고 다른 카드들이 밀려 빈 자리가 생긴다. 기사님 카드 끌기도 같은 동작.
+// 2026-11-13 UI 통일(원장 «아이콘 빼고 글자로»): 묶음 머리의 연필 아이콘 버튼 → 글자 «수정» 작은 버튼, 머리의 등원/하원·지도 장식 아이콘 제거.
+//   남긴 기호: 끌기 손잡이(drag_indicator — 글자를 둘 자리가 없는 조작)·▲▼·길안내 화살표(near_me — 방향을 전하는 기호).
 // 2026-11-10 원장 점검: «수정 버튼이 섹션마다 있는 게 자연스러움, 연필 모양 아이콘 버튼만 작게».
 //   · (관리자) 화면 위 [수정] 하나 → 묶음 머리 오른쪽 작은 연필. 누른 묶음만 편집 모드(editingGroupKey),
 //     그 머리 줄에 [취소][저장](renderEditActions)·아래 한 줄에 적용 범위(renderEditBar). 다른 묶음은 보기 그대로.
@@ -359,10 +361,10 @@ export default function RunBoard({
     // 차고지 출발·학원 도착 같은 안내 줄 — 얇은 회색 한 줄(탑승 체크 없음).
     if (row.isTerminal) {
       return (
-        <li key={row.key} className="flex items-center gap-2 rounded-xl bg-[var(--color-academy-soft)] px-4 py-2.5 text-[15px] font-bold text-[var(--color-academy-ink)]">
-          <span className="shrink-0 text-[15px] font-black text-[var(--color-academy-muted)]">{row.time}</span>
+        <li key={row.key} className="flex items-center gap-2 rounded-xl bg-[var(--color-academy-soft)] px-4 py-2.5 text-[15px] font-medium text-[var(--color-academy-ink)]">
+          <span className="shrink-0 text-[15px] font-semibold text-[var(--color-academy-muted)]">{row.time}</span>
           <span className="min-w-0 flex-1">{row.label}</span>
-          {row.subLabel && <span className="shrink-0 text-[13px] font-semibold text-[var(--color-academy-faint)]">{row.subLabel}</span>}
+          {row.subLabel && <span className="shrink-0 text-sm font-normal text-[var(--color-academy-faint)]">{row.subLabel}</span>}
         </li>
       );
     }
@@ -396,13 +398,13 @@ export default function RunBoard({
             <span aria-hidden="true" className="material-symbols-outlined text-[24px]">drag_indicator</span>
           </button>
           <span className={`${styles.sequence} shrink-0`}>{seq}</span>
-          <span className="min-w-0 flex-1 text-[15px] font-black leading-tight text-[var(--color-academy-ink)] lg:w-36 lg:flex-none">{row.label}</span>
+          <span className="min-w-0 flex-1 text-[15px] font-semibold leading-tight text-[var(--color-academy-ink)] lg:w-36 lg:flex-none">{row.label}</span>
           {/* 시각 칸 — «오후 03:40» 이 잘리지 않는 폭(글자 16px·숫자 고정폭). 24시간/12시간 표기는 기기 설정을 따른다. */}
           <input
             type="time"
             value={displayTime(row) ?? ""}
             onChange={(event) => onTimeChange(row, event.target.value)}
-            className="h-11 w-[8.75rem] shrink-0 rounded-lg border-2 border-[var(--color-academy-line-input)] bg-white px-1.5 text-[15px] font-black tabular-nums text-[var(--color-academy-ink)]"
+            className="h-11 w-[8.75rem] shrink-0 rounded-lg border-2 border-[var(--color-academy-line-input)] bg-white px-1.5 text-[15px] font-semibold tabular-nums text-[var(--color-academy-ink)]"
             aria-label={`${row.label} 정차 시간`}
           />
           {/* 학생 이름들 — 한 줄에 칩으로(넘치면 칸 안에서 줄바꿈) */}
@@ -411,8 +413,8 @@ export default function RunBoard({
           </div>
           <span className="ml-auto flex shrink-0 items-center gap-1">
             {renderStopMeta?.(row)}
-            <button type="button" onClick={() => moveWithAnimation(row, -1)} aria-label={`${row.label} 순서 위로`} className="h-11 w-11 rounded-lg border border-[var(--color-academy-line-input)] bg-white text-[15px] font-black text-[var(--color-academy-muted)]">▲</button>
-            <button type="button" onClick={() => moveWithAnimation(row, 1)} aria-label={`${row.label} 순서 아래로`} className="h-11 w-11 rounded-lg border border-[var(--color-academy-line-input)] bg-white text-[15px] font-black text-[var(--color-academy-muted)]">▼</button>
+            <button type="button" onClick={() => moveWithAnimation(row, -1)} aria-label={`${row.label} 순서 위로`} className="h-11 w-11 rounded-lg border border-[var(--color-academy-line-input)] bg-white text-[15px] font-medium text-[var(--color-academy-muted)]">▲</button>
+            <button type="button" onClick={() => moveWithAnimation(row, 1)} aria-label={`${row.label} 순서 아래로`} className="h-11 w-11 rounded-lg border border-[var(--color-academy-line-input)] bg-white text-[15px] font-medium text-[var(--color-academy-muted)]">▼</button>
           </span>
         </li>
       );
@@ -444,9 +446,9 @@ export default function RunBoard({
           {editable ? (
             <div className="flex shrink-0 flex-col gap-0.5" aria-label="순서 변경">
               <button type="button" onClick={() => onMove(row, -1)}
-                aria-label={`${row.label} 순서 위로`} className="h-11 w-11 rounded-lg border border-[var(--color-academy-line-input)] text-[16px] font-black text-[var(--color-academy-muted)]">▲</button>
+                aria-label={`${row.label} 순서 위로`} className="h-11 w-11 rounded-lg border border-[var(--color-academy-line-input)] text-base font-medium text-[var(--color-academy-muted)]">▲</button>
               <button type="button" onClick={() => onMove(row, 1)}
-                aria-label={`${row.label} 순서 아래로`} className="h-11 w-11 rounded-lg border border-[var(--color-academy-line-input)] text-[16px] font-black text-[var(--color-academy-muted)]">▼</button>
+                aria-label={`${row.label} 순서 아래로`} className="h-11 w-11 rounded-lg border border-[var(--color-academy-line-input)] text-base font-medium text-[var(--color-academy-muted)]">▼</button>
             </div>
           ) : (
             <span className={styles.sequence}>
@@ -459,7 +461,7 @@ export default function RunBoard({
               type="time"
               value={displayTime(row) ?? ""}
               onChange={(event) => onTimeChange(row, event.target.value)}
-              className="col-span-3 mt-2 h-12 w-full min-w-0 rounded-xl border-2 border-[var(--color-academy-line-input)] bg-white px-3 text-[22px] font-black text-[var(--color-academy-ink)]"
+              className="col-span-3 mt-2 h-12 w-full min-w-0 rounded-xl border-2 border-[var(--color-academy-line-input)] bg-white px-3 text-[22px] font-semibold text-[var(--color-academy-ink)]"
               aria-label={`${row.label} 정차 시간`}
             />
           ) : (
@@ -473,18 +475,18 @@ export default function RunBoard({
             </div>
           )}
           <div className={styles.stopMeta}>
-            <span className="font-bold text-[var(--color-academy-ink)]">{row.kind === "SEASONAL" ? "특강" : "정규"} · {isPickup ? "등원" : "하원"}</span>
+            <span className="font-semibold text-[var(--color-academy-ink)]">{row.kind === "SEASONAL" ? "특강" : "정규"} · {isPickup ? "등원" : "하원"}</span>
             {row.groupLabel && <span>{row.groupLabel}</span>}
             {row.subLabel && row.subLabel !== row.groupLabel && <span>{row.subLabel}</span>}
             {renderStopMeta?.(row)}
-            {row.isHub && <span className="font-bold text-[var(--color-academy-success)]">무료 거점</span>}
-            {row.pending && <span className="font-bold text-[var(--color-academy-warning)]">순서 확인 필요</span>}
-            {row.warn && <span className="font-bold text-[var(--color-academy-warning)]">노선 밖 승객 · 정차 확인 필요</span>}
+            {row.isHub && <span className="font-semibold text-[var(--color-academy-success)]">무료 거점</span>}
+            {row.pending && <span className="font-semibold text-[var(--color-academy-warning)]">순서 확인 필요</span>}
+            {row.warn && <span className="font-semibold text-[var(--color-academy-warning)]">노선 밖 승객 · 정차 확인 필요</span>}
             {isUpcoming && upcoming && <span className={styles.upcomingBadge}>{upcoming.remainingMinutes != null && upcoming.remainingMinutes <= 5 ? upcoming.remainingMinutes === 0 ? "곧 도착 · 예정 시각" : `곧 도착 · ${upcoming.remainingMinutes}분 후` : `다음 정류장 · ${upcoming.remainingMinutes}분 후`}</span>}
           </div>
         </div>
 
-        {row.isHub && row.riders.length === 0 && <p className="mt-1.5 text-[15px] font-bold text-[var(--color-academy-success)]">무료 거점(워크인, 정원 별도)</p>}
+        {row.isHub && row.riders.length === 0 && <p className="mt-1.5 text-[15px] font-semibold text-[var(--color-academy-success)]">무료 거점(워크인, 정원 별도)</p>}
 
         {row.riders.length > 0 && (
           <div className={`${styles.riders} space-y-1`}>
@@ -495,8 +497,8 @@ export default function RunBoard({
     );
   }
 
-  // 블록 머리 — 아이콘(등원/하원) + «16:00~17:00 수업 · 등원» + 정류장·학생 수·시각 범위.
-  // 색이 아니라 글자·아이콘으로 방향을 구분한다(색 규칙). 관리자는 머리를 눌러 그 묶음을 지도에 띄운다.
+  // 블록 머리 — «16:00~17:00 수업 · 등원» + 정류장·학생 수·시각 범위.
+  // 색이 아니라 글자로 방향을 구분한다(색 규칙 · 2026-11-13 장식 아이콘 제거). 관리자는 머리를 눌러 그 묶음을 지도에 띄운다.
   function renderBlockHead(block: RunBlock) {
     const stopsInBlock = block.rows.filter((r) => !r.isTerminal);
     const riderCount = new Set(stopsInBlock.flatMap((r) => r.riders.map((x) => x.key))).size;
@@ -505,13 +507,12 @@ export default function RunBoard({
     const selected = selectedGroupKey != null && selectedGroupKey === block.groupKey;
     const content = (
       <>
-        <span aria-hidden="true" className="material-symbols-outlined text-[20px] text-[var(--color-academy-muted)]">{block.direction === "PICKUP" ? "login" : "logout"}</span>
-        <span className="text-[16px] font-black text-[var(--color-academy-ink)]">{block.label}{block.continued && <span className="ml-1 text-[13px] font-bold text-[var(--color-academy-muted)]">(이어서)</span>}</span>
-        <span className="text-[13px] font-semibold text-[var(--color-academy-muted)]">
+        <span className="text-base font-bold text-[var(--color-academy-ink)]">{block.label}{block.continued && <span className="ml-1 text-sm font-normal text-[var(--color-academy-muted)]">(이어서)</span>}</span>
+        <span className="text-sm text-[var(--color-academy-muted)]">
           정류장 {stopsInBlock.length}곳 · 학생 {riderCount}명{range ? ` · ${range}` : ""}
         </span>
-        {onSelectBlock && <span className={`ml-auto hidden items-center gap-0.5 text-[13px] font-bold lg:inline-flex ${selected ? "text-[var(--color-academy-info)]" : "text-[var(--color-academy-muted)]"}`}>
-          <span aria-hidden="true" className="material-symbols-outlined text-[16px]">map</span>{selected ? "지도에 표시 중" : "지도 보기"}
+        {onSelectBlock && <span className={`ml-auto hidden items-center gap-0.5 text-sm font-medium lg:inline-flex ${selected ? "text-[var(--color-academy-info)]" : "text-[var(--color-academy-muted)]"}`}>
+          {selected ? "지도에 표시 중" : "지도 보기"}
         </span>}
       </>
     );
@@ -534,12 +535,10 @@ export default function RunBoard({
           {blockEditing
             ? <span className="flex shrink-0 items-center gap-1 pr-1">{renderEditActions?.(block)}</span>
             : onEditBlock && block.kind === "REGULAR" && (
-              // 연필 = 눈에 보이는 원은 36px, 누르는 자리는 44px(휴대폰 터치). 중립색 — 흰 바탕·회색 테두리·검정 아이콘.
+              // 2026-11-13 UI 통일: 연필 아이콘 버튼 → 글자 «수정»(테마 작은 보조 버튼 — PC 36px · 터치 화면 44px). 이름표는 그대로.
               <button type="button" onClick={() => onEditBlock(block.groupKey)} aria-label={`${blockEditName(block)} 묶음 수정`}
-                title="이 묶음 수정(순서·시각·정류장·학생)" className="group grid h-11 w-11 shrink-0 place-items-center rounded-full">
-                <span className="grid h-9 w-9 place-items-center rounded-full border border-[var(--color-academy-line-input)] bg-white text-[var(--color-academy-ink)] group-hover:bg-[var(--color-academy-soft)]">
-                  <span aria-hidden="true" className="material-symbols-outlined text-[18px]">edit</span>
-                </span>
+                title="이 묶음 수정(순서·시각·정류장·학생)" className="academy-button-secondary academy-button-sm shrink-0">
+                수정
               </button>
             )}
         </div>

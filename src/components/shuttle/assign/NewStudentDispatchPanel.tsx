@@ -20,7 +20,8 @@ const INTAKE_API = "/api/admin/shuttle/intake";
 // 기사 검토 상태는 화면 보조 정보라 몇 쪽(1쪽 50명)만 읽는다. 못 읽어도 배정은 된다.
 const MAX_INTAKE_PAGES = 4;
 const CHIP = "inline-flex min-h-11 items-center rounded-full border px-3 text-sm";
-const BUTTON = "inline-flex min-h-11 items-center justify-center gap-1 rounded-full border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-sm font-bold disabled:opacity-50";
+// 2026-11-13 UI 통일: 테마 보조 버튼.
+const BUTTON = "academy-button-secondary";
 
 type Target = { studentId: string; legKey: string };
 type Driver = { id: string; name: string };
@@ -146,7 +147,7 @@ export default function NewStudentDispatchPanel({ month, selectedWeekday, onAssi
         <div role="alert" className="flex flex-wrap items-center gap-2 text-xs text-[var(--color-academy-muted)]">
           <span>신규 배차 학생을 불러오지 못했어요.</span>
           <button type="button" onClick={() => void load()} className={BUTTON}>
-            <span className="material-symbols-outlined text-lg" aria-hidden="true">refresh</span>다시 시도
+            다시 시도
           </button>
         </div>
       )}
@@ -156,15 +157,14 @@ export default function NewStudentDispatchPanel({ month, selectedWeekday, onAssi
       {board && students.length > 0 && (
         <button type="button" aria-expanded={expanded} aria-controls="new-student-dispatch-list" onClick={() => setExpanded((v) => !v)}
           className="flex min-h-11 w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2 text-left text-sm">
-          <span className="material-symbols-outlined text-lg text-[var(--color-academy-primary)]" aria-hidden="true">person_add</span>
-          <b>배정 필요 {students.length}명</b>
-          <span className="text-[var(--color-academy-muted)]">· 신규 <b className="text-[var(--color-academy-warning)]">{Math.max(0, freshLegCount)}</b>칸</span>
-          {reassignLegCount > 0 && <span className="text-[var(--color-academy-muted)]">· 반 이동 <b className="text-[var(--color-academy-warning)]">{reassignLegCount}</b>칸</span>}
+          <span className="font-semibold">배정 필요 {students.length}명</span>
+          <span className="text-[var(--color-academy-muted)]">· 신규 <span className="font-semibold tabular-nums text-[var(--color-academy-warning)]">{Math.max(0, freshLegCount)}</span>칸</span>
+          {reassignLegCount > 0 && <span className="text-[var(--color-academy-muted)]">· 반 이동 <span className="font-semibold tabular-nums text-[var(--color-academy-warning)]">{reassignLegCount}</span>칸</span>}
           {selectedWeekday != null && dayLegCount > 0 && <span className="text-[var(--color-academy-muted)]">· 이 요일 {dayLegCount}칸</span>}
           <span className="material-symbols-outlined ml-auto text-lg text-[var(--color-academy-muted)]" aria-hidden="true">{expanded ? "expand_less" : "expand_more"}</span>
         </button>
       )}
-      {notice && !target && <p role="status" className="mt-2 rounded-lg bg-[var(--color-academy-success-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-success)]">{notice}</p>}
+      {notice && !target && <p role="status" className="mt-2 rounded-lg bg-[var(--color-academy-success-soft)] px-3 py-2 text-sm text-[var(--color-academy-success)]">{notice}</p>}
 
       {/* 펼침 목록 — 학생 한 명 = 한 줄(좁은 화면에선 줄바꿈). 칩을 누르면 그 칸을 넣는 모달이 뜬다. */}
       {expanded && students.length > 0 && (
@@ -174,18 +174,18 @@ export default function NewStudentDispatchPanel({ month, selectedWeekday, onAssi
             return (
               <li key={s.studentId} className={`flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2 ${i === 0 ? "" : "border-t border-[var(--color-academy-line)]"}`}>
                 <span className="flex min-w-0 items-baseline gap-1.5">
-                  <b className="break-keep text-sm">{s.name}</b>
+                  <span className="break-keep text-sm font-semibold">{s.name}</span>
                   {s.grade && <span className="text-xs text-[var(--color-academy-muted)]">{s.grade}</span>}
                 </span>
                 <span className="min-w-0 break-keep text-xs">{s.classes || "수업 확인 필요"}</span>
                 <span className="text-xs text-[var(--color-academy-muted)]">희망 {s.wishTime || "없음"}</span>
                 <span className="flex flex-wrap gap-1.5" aria-label={`${s.name} 남은 칸`}>
                   {s.legs.map((l) => {
-                    // 지금 고른 요일의 칸은 진하게(검정 테두리 + 연한 강조 바탕) — 그 요일 회차 카드와 같이 보며 넣게.
+                    // 지금 고른 요일의 칸은 진하게(보조 색 테두리 + 옅은 하늘색 바탕 · 2026-11-13 UI 통일) — 그 요일 회차 카드와 같이 보며 넣게.
                     const today = l.weekday === selectedWeekday;
                     return (
                       <button key={l.key} type="button" onClick={() => openLeg(s.studentId, l.key)} aria-label={`${s.name} ${l.reassign ? l.reassign.label : `${l.label} 순서에 넣기`}`}
-                        className={`${CHIP} ${today ? "border-2 border-[var(--color-academy-ink)] bg-[var(--color-academy-primary-soft)] font-bold" : "border-dashed border-[var(--color-academy-muted)] bg-[var(--color-academy-surface)] text-[var(--color-academy-muted)]"}`}>
+                        className={`${CHIP} ${today ? "border-2 border-[var(--color-academy-secondary-strong)] bg-[var(--color-academy-secondary-soft)] font-semibold text-[var(--color-academy-secondary-ink)]" : "border-dashed border-[var(--color-academy-muted)] bg-[var(--color-academy-surface)] text-[var(--color-academy-muted)]"}`}>
                         {/* 반 이동 재배정 칸은 «화→목 등원 (반 이동)»처럼 옛 칸까지 보여 준다. */}
                         {l.reassign ? l.reassign.label : l.label}
                       </button>
@@ -251,7 +251,7 @@ function ReviewRequest({ item, month, drivers, onDone }: { item: ShuttleIntakeIt
   return (
     <span className="flex min-w-0 flex-wrap items-center gap-1.5 sm:ml-auto">
       {/* 상태 표시 = 4px 모서리(누르는 칩과 모양을 다르게). 기사 의견은 마우스를 올리면 전문이 보인다. */}
-      {review && <span title={review.note ?? undefined} className="rounded bg-[var(--color-academy-soft)] px-2 py-0.5 text-xs font-bold">{REVIEW_LABELS[review.status]}{review.driverName ? ` · ${review.driverName}` : ""}</span>}
+      {review && <span title={review.note ?? undefined} className="rounded bg-[var(--color-academy-soft)] px-2 py-0.5 text-xs">{REVIEW_LABELS[review.status]}{review.driverName ? ` · ${review.driverName}` : ""}</span>}
       {!open && <button type="button" className={BUTTON} onClick={() => { setOpen(true); setDone(""); }}>{review ? "다시 검토 요청" : "기사 검토 요청"}</button>}
       {open && (
         <>
@@ -265,8 +265,8 @@ function ReviewRequest({ item, month, drivers, onDone }: { item: ShuttleIntakeIt
         </>
       )}
       {review?.note && <span className="w-full break-words text-xs text-[var(--color-academy-muted)]">기사님 의견: {review.note}</span>}
-      {done && <span role="status" className="text-xs font-bold text-[var(--color-academy-success)]">{done}</span>}
-      {error && <span role="alert" className="w-full break-words text-xs font-bold text-[var(--color-academy-danger)]">{error}</span>}
+      {done && <span role="status" className="text-xs text-[var(--color-academy-success)]">{done}</span>}
+      {error && <span role="alert" className="w-full break-words text-xs text-[var(--color-academy-danger)]">{error}</span>}
     </span>
   );
 }

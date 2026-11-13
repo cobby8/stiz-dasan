@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import { saveAttendance } from "@/app/actions/admin";
 import { kstLabel, todayKst } from "@/lib/datetime/kst";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
 
@@ -71,7 +72,7 @@ function kindOf(item: ClassItem) {
 function KindBadge({ item }: { item: ClassItem }) {
     const isSeasonal = item.kind === "SEASONAL";
     return (
-        <span className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ${isSeasonal
+        <span className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs ${isSeasonal
             ? "bg-[var(--color-academy-neutral-soft)] text-[var(--color-academy-neutral)]"
             : "bg-[var(--color-academy-neutral-soft)] text-[var(--color-academy-neutral)]"}`}
         >
@@ -99,11 +100,11 @@ function AttendanceLoadingFallback() {
 function AttendanceErrorState({ onRetry }: { onRetry: () => void }) {
     return (
         <div className="mx-auto max-w-4xl rounded-xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-4 text-center">
-            <p className="text-sm font-bold text-[var(--color-academy-danger)]">출석 관리 데이터를 불러오지 못했습니다.</p>
+            <p className="text-sm font-semibold text-[var(--color-academy-danger)]">출석 관리 데이터를 불러오지 못했습니다.</p>
             <button
                 type="button"
                 onClick={onRetry}
-                className="mt-3 min-h-11 rounded-lg border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)] px-4 text-sm font-bold"
+                className="academy-button-secondary mt-3"
             >
                 다시 불러오기
             </button>
@@ -299,29 +300,27 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
 
     return (
         <div className="max-w-4xl mx-auto">
-            <div className="mb-3 flex items-center justify-between gap-2">
-                <h1 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">출결 관리</h1>
-                {/* 수업 리포트 관리 페이지로 이동하는 버튼 */}
-                <Link
-                    href="/admin/attendance/report"
-                    prefetch={false}
-                    className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-[var(--color-academy-primary)] px-4 text-sm font-bold text-[var(--color-academy-on-primary)] transition hover:bg-[var(--color-academy-primary-hover)]"
-                >
-                    <span className="material-symbols-outlined text-base" aria-hidden="true">assignment</span>
-                    수업 리포트
-                </Link>
-            </div>
+            {/* 페이지 제목은 공용 머리말 부품. 이 화면의 주 버튼은 패널의 «출결 저장» 하나라 «수업 리포트» 이동은 보조 버튼 */}
+            <AdminPageHeader
+                className="mb-3"
+                title="출결 관리"
+                actions={
+                    <Link href="/admin/attendance/report" prefetch={false} className="academy-button-secondary">
+                        수업 리포트
+                    </Link>
+                }
+            />
 
             {/* 날짜 + 구분 칩(정규/특강 건수 — 누르면 그 구분만, 다시 누르면 전체) */}
             <div className="mb-2 flex min-w-0 flex-wrap items-center gap-2">
-                <label className="flex items-center gap-2 text-sm font-bold text-[var(--color-academy-ink)]">
+                <label className="flex items-center gap-2 text-sm font-medium text-[var(--color-academy-ink)]">
                     날짜
                     <input
                         type="date"
                         min="2020-01-01" max="2030-12-31"
                         value={date}
                         onChange={(e) => setDate(e.target.value)}
-                        className="min-h-11 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-[17px] text-[var(--color-academy-ink)] focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                        className="academy-input w-auto!"
                     />
                 </label>
                 {/* 요일 표시는 KST 달력 기준(kstLabel → «10/30(목)») */}
@@ -348,7 +347,7 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
                     <div className="overflow-x-auto">
                         {/* admin-list-table: 글자 왼쪽·시간/인원 오른쪽(tabular)·한 줄(말줄임 없음, 좁으면 가로 스크롤) */}
                         <table className="admin-list-table w-full border-collapse text-sm">
-                            <thead className="bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]">
+                            <thead className="bg-[var(--color-academy-soft)] text-xs font-semibold text-[var(--color-academy-muted)]">
                                 <tr>
                                     <th className="admin-cell-num px-2 py-2">시간</th>
                                     <th className="px-2 py-2">반</th>
@@ -369,11 +368,11 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
                                             aria-label={`${c.name} ${c.startTime} 출결 입력`}
                                             onClick={() => openLesson(key)}
                                             onKeyDown={(event) => handleRowKeyDown(event, key)}
-                                            className={`cursor-pointer transition-colors hover:bg-[var(--color-academy-soft)] focus:bg-[var(--color-academy-primary-soft)] focus:outline-none ${active ? "bg-[var(--color-academy-primary-soft)]" : ""}`}
+                                            className={`cursor-pointer transition-colors hover:bg-[var(--color-academy-soft)] focus:bg-[var(--color-academy-primary-soft)] focus:outline-none ${active ? "bg-[var(--color-academy-secondary-soft)]" : ""}`}
                                         >
                                             {/* 시간: «16:00~17:00» 오른쪽 정렬 */}
                                             <td className="admin-cell-num px-2 py-2.5 text-[var(--color-academy-ink)]">{c.startTime}~{c.endTime}</td>
-                                            <td className="px-2 py-2.5 font-bold text-[var(--color-academy-ink)]">{c.name}</td>
+                                            <td className="px-2 py-2.5 font-semibold text-[var(--color-academy-ink)]">{c.name}</td>
                                             <td className="px-2 py-2.5"><KindBadge item={c} /></td>
                                             <td className="hidden px-2 py-2.5 text-[var(--color-academy-muted)] md:table-cell">{c.program?.name || "-"}</td>
                                             <td className="hidden px-2 py-2.5 text-[var(--color-academy-muted)] md:table-cell">{c.coachName || "-"}</td>
@@ -398,7 +397,7 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
                 >
                     <div className="border-b border-[var(--color-academy-line)] p-4 pb-3">
                         <div className="flex items-center gap-2">
-                            <h3 id="attendance-lesson-panel-title" className="min-w-0 break-keep text-lg font-black text-[var(--color-academy-ink)]">{selectedLesson.name}</h3>
+                            <h3 id="attendance-lesson-panel-title" className="min-w-0 break-keep text-lg font-bold text-[var(--color-academy-ink)]">{selectedLesson.name}</h3>
                             <KindBadge item={selectedLesson} />
                             <button
                                 type="button"
@@ -411,23 +410,23 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
                         </div>
                         {/* 수업 정보: 긴 프로그램·장소 이름도 말줄임 없이(줄바꿈 허용) */}
                         <dl className="mt-1 grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
-                            <dt className="font-bold text-[var(--color-academy-muted)]">일시</dt>
+                            <dt className="font-medium text-[var(--color-academy-muted)]">일시</dt>
                             <dd className="tabular-nums text-[var(--color-academy-ink)]">{kstLabel(date)} {selectedLesson.startTime}~{selectedLesson.endTime}</dd>
                             {selectedLesson.program?.name && (
                                 <>
-                                    <dt className="font-bold text-[var(--color-academy-muted)]">프로그램</dt>
+                                    <dt className="font-medium text-[var(--color-academy-muted)]">프로그램</dt>
                                     <dd className="break-keep text-[var(--color-academy-ink)]">{selectedLesson.program.name}</dd>
                                 </>
                             )}
                             {selectedLesson.coachName && (
                                 <>
-                                    <dt className="font-bold text-[var(--color-academy-muted)]">코치</dt>
+                                    <dt className="font-medium text-[var(--color-academy-muted)]">코치</dt>
                                     <dd className="text-[var(--color-academy-ink)]">{selectedLesson.coachName}</dd>
                                 </>
                             )}
                             {selectedLesson.location && (
                                 <>
-                                    <dt className="font-bold text-[var(--color-academy-muted)]">장소</dt>
+                                    <dt className="font-medium text-[var(--color-academy-muted)]">장소</dt>
                                     <dd className="break-keep text-[var(--color-academy-ink)]">{selectedLesson.location}</dd>
                                 </>
                             )}
@@ -441,8 +440,8 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
                     ) : (
                         <>
                             {/* 집계 줄: 수강생 수 + 출석/결석/지각/미입력 건수 + 전체 출석 처리 */}
-                            <div className="flex flex-wrap items-center gap-1.5 px-4 py-2 text-xs font-bold">
-                                <span className="mr-1 text-sm text-[var(--color-academy-ink)]">수강생 <span className="tabular-nums">{students.length}</span>명</span>
+                            <div className="flex flex-wrap items-center gap-1.5 px-4 py-2 text-xs">
+                                <span className="mr-1 text-sm font-semibold text-[var(--color-academy-ink)]">수강생 <span className="tabular-nums">{students.length}</span>명</span>
                                 <span className="rounded-full bg-[var(--color-academy-success-soft)] px-2 py-0.5 text-[var(--color-academy-success)]">출석 <span className="tabular-nums">{presentCount}</span></span>
                                 <span className="rounded-full bg-[var(--color-academy-danger-soft)] px-2 py-0.5 text-[var(--color-academy-danger)]">결석 <span className="tabular-nums">{absentCount}</span></span>
                                 <span className="rounded-full bg-[var(--color-academy-warning-soft)] px-2 py-0.5 text-[var(--color-academy-warning)]">지각 <span className="tabular-nums">{lateCount}</span></span>
@@ -452,7 +451,7 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
                                 <button
                                     type="button"
                                     onClick={() => markAll("PRESENT")}
-                                    className="ml-auto inline-flex min-h-11 items-center rounded-lg px-2 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-line)]"
+                                    className="academy-button-secondary academy-button-sm ml-auto"
                                 >
                                     전체 출석 처리
                                 </button>
@@ -462,7 +461,7 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
                             <ul className="flex-1 divide-y divide-[var(--color-academy-line)] border-y border-[var(--color-academy-line)]">
                                 {students.map((s) => (
                                     <li key={s.studentId} className="flex flex-wrap items-center justify-between gap-2 px-4 py-1">
-                                        <span className="min-w-0 break-keep font-bold text-[var(--color-academy-ink)]">{s.studentName}</span>
+                                        <span className="min-w-0 break-keep font-semibold text-[var(--color-academy-ink)]">{s.studentName}</span>
                                         <div className="flex shrink-0 flex-wrap justify-end gap-1" role="group" aria-label={`${s.studentName} 출결`}>
                                             {/* 결석일 때만: 질병·부상 표시 → 청구 작업대 이월 검토 후보(정규만). 학부모 신고가 있으면 그 사유를 따른다 */}
                                             {s.status === "ABSENT" && !selectedLesson.sessionDateId && (
@@ -472,11 +471,9 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
                                                     disabled={s.absenceReport?.source === "PARENT"}
                                                     title={s.absenceReport?.source === "PARENT" ? "학부모 결석 신고 사유를 따릅니다(결석 관리에서 변경)" : undefined}
                                                     onClick={() => toggleIllness(s.studentId)}
-                                                    className={`inline-flex min-h-11 items-center gap-1 rounded-lg border px-2 text-sm font-bold disabled:opacity-60 ${illnessOf(s)
-                                                        ? "border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]"
-                                                        : "border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"}`}
+                                                    // 고르는 칩 = 테마 공용(고르면 ✓ + 보조 색). 체크 상자 아이콘 대신 ✓ 가 «골랐다»를 말한다
+                                                    className="academy-choice disabled:opacity-60"
                                                 >
-                                                    <span className="material-symbols-outlined text-base" aria-hidden="true">{illnessOf(s) ? "check_box" : "check_box_outline_blank"}</span>
                                                     질병·부상
                                                 </button>
                                             )}
@@ -488,9 +485,9 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
                                                         type="button"
                                                         aria-pressed={on}
                                                         onClick={() => setStatus(s.studentId, opt.value)}
-                                                        className={`min-h-11 min-w-11 rounded-lg border px-2 text-sm font-bold transition ${on
+                                                        className={`min-h-11 min-w-11 rounded-lg border px-2 text-sm font-medium transition ${on
                                                             ? opt.color
-                                                            : "border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
+                                                            : "border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
                                                         }`}
                                                     >
                                                         {opt.label}
@@ -505,13 +502,13 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
                             {/* 저장: 패널 아래에 붙여 학생이 많아도 바로 누를 수 있게 */}
                             <div className="sticky bottom-0 flex items-center justify-end gap-3 bg-[var(--color-academy-surface)] px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
                                 {saved && (
-                                    <span className="text-sm font-bold text-[var(--color-academy-success)]">저장 완료</span>
+                                    <span className="text-sm font-medium text-[var(--color-academy-success)]">저장 완료</span>
                                 )}
                                 <button
                                     type="button"
                                     onClick={handleSave}
                                     disabled={saving}
-                                    className="min-h-11 rounded-lg bg-[var(--color-academy-primary)] px-6 font-bold text-[var(--color-academy-on-primary)] transition hover:bg-[var(--color-academy-primary-hover)] disabled:opacity-50"
+                                    className="academy-button-primary"
                                 >
                                     {saving ? "저장 중..." : "출결 저장"}
                                 </button>

@@ -82,23 +82,20 @@ export default function StaffSeasonalClient({ initial }: { initial: { ymd: strin
 
   return (
     <div className="mx-auto max-w-lg p-4">
-      <h1 className="mb-3 flex items-center gap-1.5 text-lg font-black">
-        <span className="material-symbols-outlined text-xl text-[var(--brand-accent)]" aria-hidden="true">sports_basketball</span>
-        특강 수업
-      </h1>
+      <h1 className="academy-heading mb-3">특강 수업</h1>
 
       {/* 날짜 네비(정규와 동일하게 유지, 오늘 기본) — 이동 버튼은 44px 터치 */}
       <div className="mb-3 flex items-center justify-between rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-1">
         <button type="button" aria-label="이전 날짜" onClick={() => shiftDay(-1)} className="grid size-11 place-items-center text-[var(--color-academy-muted)]">
           <span className="material-symbols-outlined" aria-hidden="true">chevron_left</span>
         </button>
-        <span className="text-sm font-black tabular-nums">{ymd}</span>
+        <span className="text-sm font-semibold tabular-nums">{ymd}</span>
         <button type="button" aria-label="다음 날짜" onClick={() => shiftDay(1)} className="grid size-11 place-items-center text-[var(--color-academy-muted)]">
           <span className="material-symbols-outlined" aria-hidden="true">chevron_right</span>
         </button>
       </div>
 
-      {err && <div className="mb-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-danger)]">{err}</div>}
+      {err && <div className="mb-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-medium text-[var(--color-academy-danger)]">{err}</div>}
 
       {dates.length === 0 ? (
         <p className="rounded-xl border border-dashed border-[var(--color-academy-line)] p-5 text-center text-sm text-[var(--color-academy-muted)]">
@@ -112,18 +109,17 @@ export default function StaffSeasonalClient({ initial }: { initial: { ymd: strin
             const busy = pending && startingId === d.sessionDateId;
             return (
               <li key={d.scheduleKey} className="flex min-h-14 items-center gap-2 border-b border-[var(--color-academy-line)] px-3 py-1.5 last:border-b-0">
-                <span className="shrink-0 text-xs font-bold tabular-nums text-[var(--color-academy-muted)]">{d.startTime}~{d.endTime}</span>
+                <span className="shrink-0 text-xs tabular-nums text-[var(--color-academy-muted)]">{d.startTime}~{d.endTime}</span>
                 {/* 반 이름은 자르지 않고 줄바꿈 허용(말줄임 금지) */}
-                <span className="min-w-0 flex-1 break-keep font-black">{d.name}</span>
-                <span className="shrink-0 text-right text-xs font-bold tabular-nums text-[var(--color-academy-muted)]">{d.studentCount}명</span>
+                <span className="min-w-0 flex-1 break-keep font-semibold">{d.name}</span>
+                <span className="shrink-0 text-right text-xs tabular-nums text-[var(--color-academy-muted)]">{d.studentCount}명</span>
                 {status === "IN_PROGRESS" && d.sessionId ? (
                   // 진행 중: 통합 진행화면으로 바로 이어하기
                   <button
                     type="button"
                     onClick={() => router.push(`/staff/sessions/${d.sessionId}`)}
-                    className="academy-button-primary flex min-h-11 shrink-0 items-center gap-1 rounded-xl px-3 text-sm font-black"
+                    className="academy-button-primary academy-button-sm shrink-0"
                   >
-                    <span className="material-symbols-outlined text-lg" aria-hidden="true">arrow_forward</span>
                     수업 이어하기
                   </button>
                 ) : status === "COMPLETED" ? (
@@ -135,9 +131,8 @@ export default function StaffSeasonalClient({ initial }: { initial: { ymd: strin
                         type="button"
                         aria-label={`${d.name} 기록 보기`}
                         onClick={() => router.push(`/staff/sessions/${d.sessionId}`)}
-                        className="flex min-h-11 items-center gap-1 rounded-xl border border-[var(--color-academy-line)] px-2 text-sm font-bold text-[var(--color-academy-muted)]"
+                        className="academy-button-secondary academy-button-sm"
                       >
-                        <span className="material-symbols-outlined text-lg" aria-hidden="true">history</span>
                         기록 보기
                       </button>
                     )}
@@ -149,9 +144,8 @@ export default function StaffSeasonalClient({ initial }: { initial: { ymd: strin
                     type="button"
                     disabled={busy}
                     onClick={() => startLesson(d)}
-                    className="academy-button-tonal flex min-h-11 shrink-0 items-center gap-1 rounded-xl px-3 text-sm font-black disabled:opacity-50"
+                    className="academy-button-tonal academy-button-sm shrink-0"
                   >
-                    <span className="material-symbols-outlined text-lg" aria-hidden="true">play_arrow</span>
                     {busy ? "시작 중…" : "수업 시작"}
                   </button>
                 )}
@@ -169,9 +163,9 @@ function StatusBadge({ status }: { status: SeasonalClass["sessionStatus"] }) {
   const text = status === "COMPLETED" ? "완료" : status === "IN_PROGRESS" ? "수업 중" : "시작 전";
   const tone =
     status === "IN_PROGRESS"
-      ? "bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]"
+      ? "bg-[var(--color-academy-secondary-soft)] text-[var(--color-academy-secondary-ink)] ring-1 ring-inset ring-[var(--color-academy-secondary-strong)]"
       : status === "COMPLETED"
         ? "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]"
         : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]";
-  return <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${tone}`}>{text}</span>;
+  return <span className={`shrink-0 rounded-full px-3 py-1 text-xs ${tone}`}>{text}</span>;
 }

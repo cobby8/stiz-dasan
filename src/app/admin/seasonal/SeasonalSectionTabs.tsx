@@ -4,13 +4,14 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 
-const ITEMS: Array<{ key: string; href: string; label: string; icon: string }> = [
-  { key: "overview", href: "/admin/seasonal?tab=overview", label: "운영 현황", icon: "dashboard" },
-  { key: "seasons", href: "/admin/seasonal?tab=seasons", label: "시즌·반", icon: "calendar_month" },
-  { key: "applications", href: "/admin/seasonal?tab=applications", label: "신청 관리", icon: "assignment_ind" },
-  { key: "attendance", href: "/admin/seasonal/attendance", label: "출석 관리", icon: "fact_check" },
-  { key: "makeup", href: "/admin/seasonal/attendance?view=makeup", label: "보강 관리", icon: "cached" },
-  { key: "absence", href: "/admin/seasonal/absence", label: "결석 신고 처리", icon: "event_busy" },
+// 탭은 글자로만 말한다(장식 아이콘 제거 — 2026-11-13 UI 통일).
+const ITEMS: Array<{ key: string; href: string; label: string }> = [
+  { key: "overview", href: "/admin/seasonal?tab=overview", label: "운영 현황" },
+  { key: "seasons", href: "/admin/seasonal?tab=seasons", label: "시즌·반" },
+  { key: "applications", href: "/admin/seasonal?tab=applications", label: "신청 관리" },
+  { key: "attendance", href: "/admin/seasonal/attendance", label: "출석 관리" },
+  { key: "makeup", href: "/admin/seasonal/attendance?view=makeup", label: "보강 관리" },
+  { key: "absence", href: "/admin/seasonal/absence", label: "결석 신고 처리" },
 ];
 
 // 활성 탭 판정 — 경로(pathname) + ?view 쿼리 조합. 기존 판정 결과와 동일하다.
@@ -35,9 +36,10 @@ function TabsView({ active, makeupPending = 0 }: { active: string; makeupPending
             <Link
               key={it.key}
               href={it.href}
-              className={`flex min-h-11 shrink-0 items-center gap-2 rounded-xl px-4 text-sm font-bold ${on ? "bg-[var(--brand-accent-soft)] text-[var(--brand-accent)]" : "text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"}`}
+              aria-current={on ? "page" : undefined}
+              // 지금 보는 탭 = 보조 색(하늘색). 주 색(네이비)은 누르는 주 버튼에만 쓴다.
+              className={`flex min-h-11 shrink-0 items-center gap-2 rounded-xl px-4 text-sm font-medium ${on ? "bg-[var(--color-academy-secondary-soft)] text-[var(--color-academy-secondary-ink)] ring-1 ring-inset ring-[var(--color-academy-secondary-strong)]" : "text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"}`}
             >
-              <span className="material-symbols-outlined text-xl">{it.icon}</span>
               {it.label}
               {badge > 0 && (
                 // 빨간 뱃지 — bg-[var(--color-academy-danger)] + 흰 글자는 라이트/다크 모두에서 대비가 충분하다.
@@ -45,7 +47,7 @@ function TabsView({ active, makeupPending = 0 }: { active: string; makeupPending
                 <span
                   aria-label={`승인 대기 ${badge}건`}
                   title={`승인 대기 ${badge}건`}
-                  className="ml-0.5 inline-flex min-w-5 items-center justify-center rounded-full bg-[var(--color-academy-danger)] px-1.5 py-0.5 text-[11px] font-black leading-none text-white"
+                  className="ml-0.5 inline-flex min-w-5 items-center justify-center rounded-full bg-[var(--color-academy-danger)] px-1.5 py-0.5 text-xs font-medium leading-none text-white"
                 >
                   {badge > 99 ? "99+" : badge}
                 </span>

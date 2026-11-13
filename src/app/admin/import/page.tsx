@@ -29,7 +29,7 @@ export default async function ImportPage() {
           data-testid="sheet-retired-import-notice"
           className="mb-4 rounded-xl border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] px-4 py-3 text-sm text-[var(--color-academy-warning)]"
         >
-          <p className="font-bold">시트 원장 종료(2026-10) — 과거 자료 조회용</p>
+          <p className="font-semibold">시트 원장 종료(2026-10) — 과거 자료 조회용</p>
           <p className="mt-1">
             2026년 10월부터 구글 시트 원장을 쓰지 않습니다. 신규 등록·휴원·퇴원은 사이트에서 처리하고,
             이 화면은 9월까지의 과거 시트 자료를 확인할 때만 사용해 주세요.

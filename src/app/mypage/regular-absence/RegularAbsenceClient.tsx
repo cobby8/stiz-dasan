@@ -175,8 +175,7 @@ export default function RegularAbsenceClient({
         <Link href="/mypage" aria-label="마이페이지로" className="academy-back-link">
           <span className="material-symbols-outlined" aria-hidden="true">arrow_back</span>
         </Link>
-        <h1 className="flex items-center gap-2 text-lg font-black text-[var(--color-academy-ink)]">
-          <span className="material-symbols-outlined text-[var(--color-academy-ink)]">event_busy</span>
+        <h1 className="academy-heading">
           정규수업 결석 신고
         </h1>
       </div>
@@ -188,8 +187,7 @@ export default function RegularAbsenceClient({
       {/* 예정 보강(읽기 전용) — 관리자가 지정한 자녀의 보강 일정 */}
       {makeups.length > 0 && (
         <div className="mb-4 rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-info-soft)] p-4">
-          <h2 className="mb-2 flex items-center gap-1.5 text-sm font-black text-[var(--color-academy-info)]">
-            <span className="material-symbols-outlined text-lg">event_repeat</span>
+          <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-[var(--color-academy-info)]">
             예정 보강
           </h2>
           <ul className="divide-y divide-[var(--color-academy-line)] overflow-hidden rounded-xl bg-white">
@@ -197,12 +195,12 @@ export default function RegularAbsenceClient({
               // 한 줄 행: 학생 · 보강 반(줄바꿈 허용) · 보강 날짜(오른쪽) · 상태 / 아래 줄에 원래 결석
               <li key={m.id} className="px-3 py-2">
                 <div className="flex min-h-7 items-center gap-2">
-                  <span className="shrink-0 text-sm font-black text-[var(--color-academy-ink)]">{m.studentName}</span>
+                  <span className="shrink-0 text-sm font-semibold text-[var(--color-academy-ink)]">{m.studentName}</span>
                   <span className="min-w-0 flex-1 break-keep text-sm text-[var(--color-academy-muted)]">{m.makeupClassName ?? "보강 반"}</span>
                   {m.makeupDateLabel && (
-                    <span className="shrink-0 text-right text-sm font-bold tabular-nums text-[var(--color-academy-ink)]">{m.makeupDateLabel}</span>
+                    <span className="shrink-0 text-right text-sm tabular-nums text-[var(--color-academy-ink)]">{m.makeupDateLabel}</span>
                   )}
-                  <span className="inline-flex shrink-0 items-center rounded-full bg-[var(--color-academy-info-soft)] px-2 py-0.5 text-xs font-black text-[var(--color-academy-info)]">
+                  <span className="inline-flex shrink-0 items-center rounded-full bg-[var(--color-academy-info-soft)] px-2 py-0.5 text-xs text-[var(--color-academy-info)]">
                     {m.statusLabel}
                   </span>
                 </div>
@@ -222,12 +220,12 @@ export default function RegularAbsenceClient({
       )}
 
       {msg && (
-        <div className="mb-3 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-success-soft)] px-4 py-3 text-sm font-bold text-[var(--color-academy-success)]">
+        <div className="mb-3 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-success-soft)] px-4 py-3 text-sm font-medium text-[var(--color-academy-success)]">
           {msg}
         </div>
       )}
       {err && (
-        <div className="mb-3 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-danger-soft)] px-4 py-3 text-sm font-bold text-[var(--color-academy-danger)]">
+        <div className="mb-3 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-danger-soft)] px-4 py-3 text-sm font-medium text-[var(--color-academy-danger)]">
           {err}
         </div>
       )}
@@ -240,7 +238,7 @@ export default function RegularAbsenceClient({
         <div className="space-y-5">
           {childGroups.map((child) => (
             <div key={child.studentId}>
-              <h2 className="mb-2 px-1 text-sm font-black text-[var(--color-academy-ink)]">{child.studentName}</h2>
+              <h2 className="mb-2 px-1 text-sm font-semibold text-[var(--color-academy-ink)]">{child.studentName}</h2>
               <div className="space-y-3">
                 {child.groups.map((group) => (
                   // 날짜 묶음(오늘/이번 주/다음 주/이후) — 묶음 제목 오른쪽에 건수
@@ -249,9 +247,9 @@ export default function RegularAbsenceClient({
                     aria-label={`${child.studentName} ${group.label}`}
                     className="overflow-hidden rounded-2xl border border-[var(--color-academy-line)] bg-white"
                   >
-                    <h3 className="flex items-center justify-between bg-[var(--color-academy-soft)] px-3 py-1.5 text-sm font-bold text-[var(--color-academy-ink)]">
+                    <h3 className="flex items-center justify-between bg-[var(--color-academy-soft)] px-3 py-1.5 text-sm font-semibold text-[var(--color-academy-ink)]">
                       <span>{group.label}</span>
-                      <span className="tabular-nums text-[var(--color-academy-muted)]">{group.items.length}</span>
+                      <span className="font-normal tabular-nums text-[var(--color-academy-muted)]">{group.items.length}</span>
                     </h3>
                     <ul className="divide-y divide-[var(--color-academy-line)]">
                       {group.items.map((d) => {
@@ -262,15 +260,14 @@ export default function RegularAbsenceClient({
                             {/* 한 줄 행: 반·시각(왼쪽, 줄바꿈 허용) · 날짜(오른쪽, 숫자 폭 고정) · 동작 버튼 */}
                             <div className="flex min-h-11 flex-wrap items-center gap-2">
                               <div className="min-w-0 flex-1">
-                                <p className="break-keep text-sm font-bold text-[var(--color-academy-ink)]">
+                                <p className="break-keep text-sm font-medium text-[var(--color-academy-ink)]">
                                   {d.className}
                                   <span className="ml-1.5 text-xs font-normal tabular-nums text-[var(--color-academy-faint)]">{d.startTime}</span>
                                 </p>
                                 {/* 상태 배지와 사유를 따로 나눠 보인다(«확정됨 · 사유» 이어 붙이지 않음) */}
                                 {d.locked ? (
                                   <p className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                                    <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-academy-success-soft)] px-2 py-0.5 text-xs font-black text-[var(--color-academy-success)]">
-                                      <span className="material-symbols-outlined text-sm">check_circle</span>
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-academy-success-soft)] px-2 py-0.5 text-xs text-[var(--color-academy-success)]">
                                       확정됨
                                     </span>
                                     {d.reasonLabel && <span className="text-xs text-[var(--color-academy-muted)]">{d.reasonLabel}</span>}
@@ -278,18 +275,18 @@ export default function RegularAbsenceClient({
                                   </p>
                                 ) : d.reported ? (
                                   <p className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                                    <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-academy-warning-soft)] px-2 py-0.5 text-xs font-black text-[var(--color-academy-warning)]">
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-academy-warning-soft)] px-2 py-0.5 text-xs text-[var(--color-academy-warning)]">
                                       결석 신고됨
                                     </span>
                                     {d.reasonLabel && <span className="text-xs text-[var(--color-academy-muted)]">{d.reasonLabel}</span>}
                                     {/* 신고 즉시 발급된 보강권 상태(짧게) */}
                                     {d.makeupCredit && CREDIT_NOTE[d.makeupCredit] && (
-                                      <span className="text-xs font-bold text-[var(--color-academy-info)]">{CREDIT_NOTE[d.makeupCredit]}</span>
+                                      <span className="text-xs text-[var(--color-academy-info)]">{CREDIT_NOTE[d.makeupCredit]}</span>
                                     )}
                                   </p>
                                 ) : null}
                               </div>
-                              <span className="shrink-0 text-right text-sm font-bold tabular-nums text-[var(--color-academy-ink)]">{d.dateLabel}</span>
+                              <span className="shrink-0 text-right text-sm tabular-nums text-[var(--color-academy-ink)]">{d.dateLabel}</span>
 
                               {/* 액션 — 기존과 같은 조건·같은 함수(신고 취소 / 결석 신고 폼 열기) */}
                               {d.locked ? null : d.reported && creditBlocksCancel(d) ? (
@@ -324,7 +321,7 @@ export default function RegularAbsenceClient({
                                 <select
                                   value={reason[key] || ""}
                                   onChange={(e) => setReason((prev) => ({ ...prev, [key]: e.target.value }))}
-                                  className="min-h-11 rounded-lg border border-[var(--color-academy-line)] bg-white px-2 text-sm font-bold text-[var(--color-academy-ink)]"
+                                  className="academy-input min-w-32 flex-1"
                                   aria-label="결석 사유"
                                 >
                                   <option value="">사유 선택</option>

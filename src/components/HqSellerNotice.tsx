@@ -1,5 +1,3 @@
-import FontFreeIcon from "@/components/ui/FontFreeIcon";
-
 /**
  * SHOP 상품의 실제 판매자(본사) 안내.
  *
@@ -22,22 +20,21 @@ export const HQ_SELLER = {
 export default function HqSellerNotice({ compact = false }: { compact?: boolean }) {
   if (compact) {
     return (
-      <p className="break-keep border-b border-gray-200 bg-gray-50 px-3 py-2 text-[11px] leading-5 text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 sm:px-5">
-        판매자 <strong className="font-bold text-gray-800 dark:text-white">{HQ_SELLER.name}</strong> · 결제·배송·교환은 본사 쇼핑몰에서 처리됩니다 · 문의 {HQ_SELLER.phone}
+      <p className="break-keep border-b border-gray-200 bg-gray-50 px-3 py-2 text-xs leading-5 text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 sm:px-5">
+        판매자 <strong className="font-semibold text-gray-800 dark:text-white">{HQ_SELLER.name}</strong> · 결제·배송·교환은 본사 쇼핑몰에서 처리됩니다 · 문의 {HQ_SELLER.phone}
       </p>
     );
   }
 
   return (
     <div className="mb-5 rounded-xl border border-gray-200 bg-white p-4 text-sm dark:border-gray-800 dark:bg-gray-950">
-      <p className="flex items-start gap-2 break-keep font-bold text-gray-900 dark:text-white">
-        <FontFreeIcon name="checkroom" size={18} className="mt-0.5 shrink-0 text-brand-orange-500 dark:text-brand-neon-lime" />
+      <p className="break-keep font-semibold text-gray-900 dark:text-white">
         SHOP 상품은 STIZ 본사(소명엔비씨 주식회사)가 판매·배송합니다.
       </p>
-      <p className="mt-1 break-keep pl-6 text-xs leading-5 text-gray-600 dark:text-gray-400">
+      <p className="mt-1 break-keep text-xs leading-5 text-gray-600 dark:text-gray-400">
         결제·배송·교환·환불은 본사 쇼핑몰에서 처리되며, 학원 수강료와는 별도입니다.
       </p>
-      <p className="mt-2 break-keep pl-6 text-[11px] leading-5 text-gray-500 dark:text-gray-400">
+      <p className="mt-2 break-keep text-xs leading-5 text-gray-500 dark:text-gray-400">
         상호 {HQ_SELLER.name} · 대표자 {HQ_SELLER.owner} · 사업자등록번호 {HQ_SELLER.registrationNumber} · 통신판매업 {HQ_SELLER.mailOrderNumber}
         <br />
         주소 {HQ_SELLER.address} · 전화 {HQ_SELLER.phone}

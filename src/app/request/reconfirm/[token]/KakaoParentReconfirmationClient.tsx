@@ -38,11 +38,11 @@ export default function KakaoParentReconfirmationClient({ preview, confirm }: Pr
     });
   }
 
-  return <main className="min-h-dvh bg-slate-50 px-4 py-8 sm:py-12"><div className="mx-auto max-w-lg">
-    <header className="px-1"><p className="text-xs font-black tracking-[0.2em] text-lime-600">STIZ BASKETBALL</p><h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950">요청 내용 재확인</h1><p className="mt-2 text-sm leading-6 text-slate-600">원장님이 정리한 내용을 확인해 주세요. 이 화면에서는 내용을 수정하거나 새 요청을 입력할 수 없습니다.</p></header>
-    <section className="mt-5 rounded-3xl bg-white p-5 shadow-xl shadow-slate-200/60 sm:p-7">
-      <div className="rounded-2xl bg-slate-950 p-4 text-white"><p className="text-xs font-bold text-slate-300">확인할 학생</p><p className="mt-1 text-2xl font-black">{preview.studentName}</p></div>
-      <dl className="mt-5 divide-y divide-slate-100 rounded-2xl border border-slate-200 px-4">
+  return <main className="min-h-dvh bg-[var(--color-academy-canvas)] px-4 py-8 sm:py-12"><div className="mx-auto max-w-lg">
+    <header className="px-1"><p className="text-xs font-medium tracking-[0.2em] text-[var(--color-academy-muted)]">STIZ BASKETBALL</p><h1 className="academy-heading mt-1">요청 내용 재확인</h1><p className="mt-2 text-sm leading-6 text-[var(--color-academy-muted)]">원장님이 정리한 내용을 확인해 주세요. 이 화면에서는 내용을 수정하거나 새 요청을 입력할 수 없습니다.</p></header>
+    <section className="mt-5 rounded-3xl bg-[var(--color-academy-surface)] p-5 shadow-sm sm:p-7">
+      <div className="rounded-2xl bg-[var(--color-academy-soft)] p-4 text-[var(--color-academy-ink)]"><p className="text-xs text-[var(--color-academy-muted)]">확인할 학생</p><p className="mt-1 text-xl font-bold">{preview.studentName}</p></div>
+      <dl className="mt-5 divide-y divide-[var(--color-academy-line)] rounded-2xl border border-[var(--color-academy-line)] px-4">
         <Summary label="요청 종류" value={KIND_LABEL[preview.kind] ?? "기타 요청"} />
         <Summary label="적용일" value={preview.effectiveDate} />
         {preview.fromClassLabel && <Summary label="현재 수업" value={preview.fromClassLabel} />}
@@ -50,16 +50,16 @@ export default function KakaoParentReconfirmationClient({ preview, confirm }: Pr
         {preview.shuttleIntent && <Summary label="셔틀 요청" value={SHUTTLE_LABEL[preview.shuttleIntent] ?? "셔틀 요청 확인 필요"} />}
         <Summary label="상세 내용" value={preview.details || "추가 내용 없음"} multiline />
       </dl>
-      <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold leading-6 text-amber-950">확정해도 바로 변경되거나 알림이 발송되지 않습니다. 원장님의 최종 승인 전까지 수업·셔틀·청구 정보와 학원 기록은 바뀌지 않습니다.</div>
-      <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-300 p-4 text-sm font-bold leading-6 text-slate-800"><input type="checkbox" checked={agreed} onChange={(event) => setAgreed(event.target.checked)} className="mt-1 size-5 shrink-0 accent-slate-950" /><span>{preview.studentName} 학생의 위 요청 내용이 맞음을 확인했습니다.</span></label>
-      {message && <p role="alert" className="mt-3 rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{message}</p>}
-      <button type="button" disabled={!agreed || pending} onClick={submit} className="mt-4 min-h-14 w-full rounded-2xl bg-slate-950 px-5 text-base font-black text-white disabled:cursor-not-allowed disabled:opacity-40">{pending ? "확정 처리 중…" : "확인한 내용으로 확정"}</button>
-      <p className="mt-4 text-center text-xs leading-5 text-slate-500">이 일회용 링크는 {new Date(preview.expiresAt).toLocaleString("ko-KR")}까지 사용할 수 있습니다.</p>
+      <div className="mt-5 rounded-2xl border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] p-4 text-sm font-medium leading-6 text-[var(--color-academy-ink)]">확정해도 바로 변경되거나 알림이 발송되지 않습니다. 원장님의 최종 승인 전까지 수업·셔틀·청구 정보와 학원 기록은 바뀌지 않습니다.</div>
+      <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-2xl border border-[var(--color-academy-line-input)] p-4 text-sm font-medium leading-6 text-[var(--color-academy-ink)]"><input type="checkbox" checked={agreed} onChange={(event) => setAgreed(event.target.checked)} className="mt-1 size-5 shrink-0 accent-[var(--color-academy-primary)]" /><span>{preview.studentName} 학생의 위 요청 내용이 맞음을 확인했습니다.</span></label>
+      {message && <p role="alert" className="mt-3 rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm font-medium text-[var(--color-academy-danger)]">{message}</p>}
+      <button type="button" disabled={!agreed || pending} onClick={submit} className="academy-button-primary mt-4 w-full">{pending ? "확정 처리 중…" : "확인한 내용으로 확정"}</button>
+      <p className="mt-4 text-center text-xs leading-5 text-[var(--color-academy-faint)]">이 일회용 링크는 {new Date(preview.expiresAt).toLocaleString("ko-KR")}까지 사용할 수 있습니다.</p>
     </section>
   </div></main>;
 }
 
-function Summary({ label, value, multiline=false }: { label:string; value:string; multiline?:boolean }) { return <div className="grid grid-cols-[6rem_1fr] gap-3 py-4"><dt className="text-xs font-black text-slate-500">{label}</dt><dd className={`text-sm font-black leading-6 text-slate-950 ${multiline ? "whitespace-pre-wrap break-words" : ""}`}>{value}</dd></div>; }
+function Summary({ label, value, multiline=false }: { label:string; value:string; multiline?:boolean }) { return <div className="grid grid-cols-[6rem_1fr] gap-3 py-4"><dt className="text-xs text-[var(--color-academy-faint)]">{label}</dt><dd className={`text-sm font-semibold leading-6 text-[var(--color-academy-ink)] ${multiline ? "whitespace-pre-wrap break-words" : ""}`}>{value}</dd></div>; }
 
 function StateCard({ status }: { status:Exclude<KakaoReconfirmationPreview["status"],"ACTIVE"> | "CONFIRMED" }) {
   const content = {
@@ -69,5 +69,5 @@ function StateCard({ status }: { status:Exclude<KakaoReconfirmationPreview["stat
     NOT_REQUIRED:["재확인이 필요하지 않습니다","요청 상태가 변경되었거나 원장님이 다시 검토 중입니다."],
     CONFIRMED:["요청 내용을 확인했습니다","원장님이 최종 승인한 뒤 반영합니다. 그전에는 수업·셔틀·청구 정보 변경이나 알림 발송이 없습니다."],
   }[status];
-  return <main className="flex min-h-dvh items-center justify-center bg-slate-50 px-5"><section className="w-full max-w-md rounded-3xl bg-white p-7 text-center shadow-xl"><div className="mx-auto flex size-14 items-center justify-center rounded-full bg-slate-100 text-2xl" aria-hidden="true">{status==="CONFIRMED" || status==="USED" ? "✓" : "!"}</div><h1 className="mt-5 text-2xl font-black text-slate-950">{content[0]}</h1><p className="mt-3 leading-7 text-slate-600">{content[1]}</p></section></main>;
+  return <main className="flex min-h-dvh items-center justify-center bg-[var(--color-academy-canvas)] px-5"><section className="w-full max-w-md rounded-3xl bg-[var(--color-academy-surface)] p-7 text-center shadow-sm"><div className="mx-auto flex size-14 items-center justify-center rounded-full bg-[var(--color-academy-soft)] text-2xl text-[var(--color-academy-muted)]" aria-hidden="true">{status==="CONFIRMED" || status==="USED" ? "✓" : "!"}</div><h1 className="mt-5 text-2xl font-bold text-[var(--color-academy-ink)]">{content[0]}</h1><p className="mt-3 leading-7 text-[var(--color-academy-muted)]">{content[1]}</p></section></main>;
 }

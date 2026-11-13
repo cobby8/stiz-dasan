@@ -84,8 +84,9 @@ test("개별 출석 네트워크 예외와 전체 처리 결과를 버튼 가까
   // 2026-11-13 b5: 개별 저장 실패는 맨 위 한 칸이 아니라 그 아이 줄 아래에 보인다.
   assert.match(sessionSource, /setRowNotice\(rowId, "저장하지 못했습니다\. 연결을 확인하고 다시 눌러 주세요\."\)/);
   assert.match(sessionSource, /rowNotices\[student\.id\]\.tone === "error" \? \(\s*<p role="alert"/);
-  // 건너뜀·참고 안내는 오류색이 아니라 주의색 + info 아이콘(검수 4)
-  assert.match(sessionSource, /<p role="status" className="mt-1 flex items-center gap-1 text-xs font-bold text-\[var\(--color-academy-warning\)\]">\s*<span className="material-symbols-outlined text-sm" aria-hidden="true">info<\/span>/);
+  // 건너뜀·참고 안내는 오류색이 아니라 주의색(검수 4). 2026-11-13 UI 통일: 장식 아이콘(info·error)은 뺐다 — 역할(status/alert)·색으로 구분한다
+  assert.match(sessionSource, /<p role="status" className="mt-1 text-xs text-\[var\(--color-academy-warning\)\]">\s*\{rowNotices\[student\.id\]\.text\}/);
+  assert.match(sessionSource, /<p role="alert" className="mt-1 text-xs font-semibold text-\[var\(--color-academy-danger\)\]">\s*\{rowNotices\[student\.id\]\.text\}/);
   assert.match(sessionSource, /setRowNotice\(student\.id, result\.message \?\? "", "notice"\)/);
   // 특강 정규 기록 실패는 그 줄에 «다시 눌러 주세요»(검수 2)
   assert.match(sessionSource, /if \(recordWarning\) setRowNotice\(rowId, recordWarning, "error"\)/);

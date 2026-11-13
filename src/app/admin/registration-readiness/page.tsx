@@ -27,7 +27,7 @@ export default async function RegistrationReadinessPage() {
     prisma.paymentInvoice.findMany({ where: { studentId: { in: studentIds }, canceledAt: null, status: { in: ["ISSUED", "SENT", "OVERDUE", "PAID"] }, amount: { gt: 0 } }, select: { studentId: true } }),
   ]);
   return <main className="p-6 space-y-6">
-    <h1 className="text-2xl font-bold">입학 완료 확인</h1>
+    <h1 className="academy-page-title">입학 완료 확인</h1>
     <p>최근 승인 신청 100건까지 점검합니다. 승인만으로 등록이 완료되지는 않으며, ‘확인 필요’는 실패를 뜻하지 않습니다.</p>
     <p>실제 수강 시작일과 외부 등록 기록을 확인하세요. 승인일은 수강 시작일이 아닙니다. 이 화면에서는 발송·청구·장부를 변경하지 않습니다.</p>
     <Link className="underline" href="/admin/inbox?tab=ENROLL">수강 신청함으로 이동</Link>
@@ -43,13 +43,13 @@ export default async function RegistrationReadinessPage() {
         // 시트 원장 은퇴(기본) 상태면 시트 항목을 만들지 않는다.
         sheetRetired: isSheetSyncRetired(process.env) });
       return <section key={app.id} className="border rounded-xl p-4 space-y-3">
-        <h2 className="font-bold">{app.childName} · 등록 절차 확인 필요</h2>
+        <h2 className="academy-section-title">{app.childName} · 등록 절차 확인 필요</h2>
         <p className="text-sm break-all">신청 번호: {app.id} / 원생 번호: {app.convertedStudentId ?? "미연결"}</p>
         <ul className="space-y-2">{result.checks.map((check) => <li key={check.key}>
           <strong>{check.label}: {check.status === "VERIFIED" ? check.key === "site" ? "현재 수강 확인" : check.key === "shuttle" ? "배차·안내 전달 확인" : "등록 재조회 확인" : "확인 필요"}</strong><p className="text-sm">{check.detail}</p>
         </li>)}</ul>
         <details className="space-y-3">
-          <summary className="cursor-pointer font-bold">등록 원장 증거 {result.evidence.length}건 보기</summary>
+          <summary className="cursor-pointer font-medium">등록 원장 증거 {result.evidence.length}건 보기</summary>
           <p className="text-sm">아래 날짜·월은 원장 기록값이며 확정 수강 시작일을 뜻하지 않습니다. 이후 변경·무효화 여부도 별도 대조해야 합니다.</p>
           {result.evidence.length === 0 && <p>연결 후보 없음 · 기존 수강 유지나 복귀 신청은 신규 등록 원장이 없을 수 있습니다.</p>}
           {result.evidence.map((item, index) => <article key={`${item.commandId ?? "missing"}-${index}`} className="space-y-2 rounded border p-3 text-sm break-all">

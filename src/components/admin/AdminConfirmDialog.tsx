@@ -62,7 +62,7 @@ export default function AdminConfirmDialog({
             closeOnBackdrop={false}
             panelClassName="max-w-md p-5"
         >
-            <h3 id={titleId} className="break-keep text-lg font-black text-[var(--color-academy-ink)]">{title}</h3>
+            <h3 id={titleId} className="break-keep text-lg font-bold text-[var(--color-academy-ink)]">{title}</h3>
             {description && (
                 <div className="mt-2 whitespace-pre-line break-keep text-sm text-[var(--color-academy-muted)]">{description}</div>
             )}

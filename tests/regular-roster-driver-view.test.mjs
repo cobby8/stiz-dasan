@@ -28,7 +28,8 @@ test("관리자 기사님 화면 보기는 기사님 화면과 같은 순수 함
 test("기사님 화면 보기 저장은 regular-roster reorder 액션으로 간다", () => {
   assert.match(view, /action: "reorder"/);
   assert.match(view, /\/api\/admin\/shuttle\/regular-roster/);
-  assert.match(view, /● 저장 안 됨/);
+  // 2026-11-13 UI 통일: 장식 기호(●)를 빼고 글자만 — «저장 안 됨» 표시는 그대로.
+  assert.match(view, /\{dirty && <span[^>]*>저장 안 됨<\/span>\}/);
   const route = read("src/app/api/admin/shuttle/regular-roster/route.ts");
   assert.match(route, /b\.action === "reorder"/);
   const lib = read("src/lib/shuttle/regularRosterEdit.ts");

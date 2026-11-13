@@ -273,9 +273,8 @@ export default function RentalClient() {
       // scroll-mt-24 = 위쪽 고정 헤더 높이만큼 띄워서 멈춘다(헤더에 제목이 가리지 않게)
       <div ref={receiptRef} className="public-card scroll-mt-24 p-4 sm:p-5" aria-live="polite">
         <div className="flex items-center gap-2">
-          <FontFreeIcon name="check_circle" size={28} className="text-[var(--color-public-accent)]" />
           {/* tabIndex=-1: Tab 으로 가지는 않지만, 접수 직후 코드로 포커스를 줄 수 있게 */}
-          <h2 ref={receiptTitleRef} tabIndex={-1} className="text-xl font-black text-[var(--color-public-ink)] outline-none">{duplicate ? "이미 접수된 신청입니다" : "대관 신청이 접수되었습니다"}</h2>
+          <h2 ref={receiptTitleRef} tabIndex={-1} className="text-xl font-bold text-[var(--color-public-ink)] outline-none">{duplicate ? "이미 접수된 신청입니다" : "대관 신청이 접수되었습니다"}</h2>
         </div>
         <p className="mt-1 text-sm break-keep text-[var(--color-public-muted)]">
           <b className="text-[var(--color-public-ink)]">원장님 승인 후 확정</b>됩니다.
@@ -286,27 +285,27 @@ export default function RentalClient() {
             이 화면에서만 계좌를 보여 준다. 입금할 돈이 없으면 계좌 대신 기다림 안내 */}
         {nothingToPay ? (
           <div className="mt-3 rounded-[var(--color-public-radius)] border border-[var(--color-public-accent)] bg-[var(--color-public-tint)] p-3">
-            <p className="text-base font-black break-keep text-[var(--color-public-ink)]">입금할 금액이 없어요. 원장님 승인 문자를 기다려 주세요</p>
+            <p className="text-base font-semibold break-keep text-[var(--color-public-ink)]">입금할 금액이 없어요. 원장님 승인 문자를 기다려 주세요</p>
           </div>
         ) : (
           <div className="mt-3 space-y-2 rounded-[var(--color-public-radius)] border border-[var(--color-public-accent)] bg-[var(--color-public-tint)] p-3">
             {/* 계좌 줄: 계좌 글자 + 바로 옆 [계좌 복사] (근접성 — 복사 버튼을 복사할 값 옆에) */}
             <div className="flex items-center gap-2">
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-bold text-[var(--color-public-muted)]">입금 계좌</p>
-                <p className="text-sm font-bold break-keep text-[var(--color-public-ink)]">{receipt.bankAccount}</p>
+                <p className="text-sm text-[var(--color-public-muted)]">입금 계좌</p>
+                <p className="text-sm font-semibold break-keep text-[var(--color-public-ink)]">{receipt.bankAccount}</p>
               </div>
-              <button type="button" onClick={() => copyText("account", receipt.bankCopyText)} className="public-btn-secondary min-h-11 shrink-0 px-3 text-sm">
+              <button type="button" onClick={() => copyText("account", receipt.bankCopyText)} className="public-btn-secondary shrink-0 text-sm">
                 {copied === "account" ? "계좌를 복사했어요" : "계좌 복사"}
               </button>
             </div>
             {/* 금액 줄: 금액 + 바로 옆 [금액 복사] — 복사값은 숫자만 */}
             <div className="flex items-center gap-2">
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-bold text-[var(--color-public-muted)]">입금할 금액</p>
-                <p className="text-2xl font-black tabular-nums text-[var(--color-public-ink)]">{formatWon(receipt.totalAmount)}</p>
+                <p className="text-sm text-[var(--color-public-muted)]">입금할 금액</p>
+                <p className="text-2xl font-bold tabular-nums text-[var(--color-public-ink)]">{formatWon(receipt.totalAmount)}</p>
               </div>
-              <button type="button" onClick={() => copyText("amount", String(receipt.totalAmount))} className="public-btn-secondary min-h-11 shrink-0 px-3 text-sm">
+              <button type="button" onClick={() => copyText("amount", String(receipt.totalAmount))} className="public-btn-secondary shrink-0 text-sm">
                 {copied === "amount" ? "금액을 복사했어요" : "금액 복사"}
               </button>
             </div>
@@ -319,9 +318,9 @@ export default function RentalClient() {
         {/* 넣은 내용(접수 번호·일시 등) — 입금 안내 아래로 내렸다 */}
         <dl className="mt-4 grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-sm">
           <dt className="text-[var(--color-public-muted)]">접수 번호</dt>
-          <dd className="font-bold tabular-nums text-[var(--color-public-ink)]">{receipt.number}</dd>
+          <dd className="font-semibold tabular-nums text-[var(--color-public-ink)]">{receipt.number}</dd>
           <dt className="text-[var(--color-public-muted)]">이용 일시</dt>
-          <dd className="font-bold text-[var(--color-public-ink)]">{longDate(receipt.rentalDate)} {formatRentalTime(receipt.startMinute, receipt.endMinute)}</dd>
+          <dd className="font-semibold text-[var(--color-public-ink)]">{longDate(receipt.rentalDate)} {formatRentalTime(receipt.startMinute, receipt.endMinute)}</dd>
           <dt className="text-[var(--color-public-muted)]">인원</dt>
           <dd className="text-[var(--color-public-ink)]">{receipt.headcount}명{receipt.useAircon ? " · 냉난방 사용" : ""}</dd>
           <dt className="text-[var(--color-public-muted)]">이용료</dt>
@@ -331,12 +330,12 @@ export default function RentalClient() {
         </dl>
 
         {/* 단계 표시 — 지금 어디인지 */}
-        <ol className={`mt-4 grid gap-1 text-center text-xs font-bold ${nothingToPay ? "grid-cols-3" : "grid-cols-4"}`}>
+        <ol className={`mt-4 grid gap-1 text-center text-xs font-medium ${nothingToPay ? "grid-cols-3" : "grid-cols-4"}`}>
           {steps.map((step, index) => (
             <li
               key={step}
               className={`rounded-[var(--color-public-radius)] border px-1 py-2 ${index === 0
-                ? "border-[var(--color-public-accent)] bg-[var(--color-public-accent)] text-[var(--color-public-white)]"
+                ? "border-[var(--color-public-secondary-strong)] bg-[var(--color-public-secondary-soft)] text-[var(--color-public-secondary-ink)]"
                 : "border-[var(--color-public-line)] text-[var(--color-public-muted)]"}`}
             >
               {step}
@@ -370,14 +369,14 @@ export default function RentalClient() {
       {/* 로그인 안 했으면 맨 위에서 로그인 유도 — 입력하기 전에 보이게(로그인하러 가면 입력값은 사라진다) */}
       {memberCtx && !memberCtx.signedIn && (
         <div className="flex flex-wrap items-center gap-2 rounded-[var(--color-public-radius)] bg-[var(--color-public-tint)] px-3 py-2">
-          <p className="min-w-0 flex-1 text-sm font-bold break-keep text-[var(--color-public-ink)]">재원생 가족이면 로그인하고 신청하면 2시간 무료</p>
-          <Link href="/login?redirect=%2Frental" className="public-btn-secondary shrink-0 px-3 text-sm">로그인</Link>
+          <p className="min-w-0 flex-1 text-sm font-medium break-keep text-[var(--color-public-ink)]">재원생 가족이면 로그인하고 신청하면 2시간 무료</p>
+          <Link href="/login?redirect=%2Frental" className="public-btn-secondary shrink-0 text-sm">로그인</Link>
         </div>
       )}
 
       {/* 1. 날짜 — 월 달력. 오늘~60일 안만 고를 수 있고, 지난 날·범위 밖은 흐리게 */}
       <fieldset className="min-w-0">
-        <legend className="text-base font-black text-[var(--color-public-ink)]">날짜</legend>
+        <legend className="text-base font-bold text-[var(--color-public-ink)]">날짜</legend>
         <div className="mt-2 flex items-center justify-between gap-2">
           <button
             type="button"
@@ -388,7 +387,7 @@ export default function RentalClient() {
           >
             <FontFreeIcon name="chevron_left" size={20} />
           </button>
-          <p className="text-sm font-black tabular-nums text-[var(--color-public-ink)]" aria-live="polite">{monthTitle(viewYm)}</p>
+          <p className="text-sm font-semibold tabular-nums text-[var(--color-public-ink)]" aria-live="polite">{monthTitle(viewYm)}</p>
           <button
             type="button"
             onClick={() => setPickedYm(shiftYm(viewYm, 1))}
@@ -399,7 +398,7 @@ export default function RentalClient() {
             <FontFreeIcon name="chevron_right" size={20} />
           </button>
         </div>
-        <div className="mt-1 grid grid-cols-7 gap-1 text-center text-xs font-bold text-[var(--color-public-muted)]" aria-hidden="true">
+        <div className="mt-1 grid grid-cols-7 gap-1 text-center text-xs font-medium text-[var(--color-public-muted)]" aria-hidden="true">
           {DOW_KO.map((d) => <span key={d} className="py-1">{d}</span>)}
         </div>
         <div className="grid grid-cols-7 gap-1" role="group" aria-label={`${monthTitle(viewYm)} 날짜`}>
@@ -414,16 +413,16 @@ export default function RentalClient() {
                 aria-pressed={active}
                 aria-label={`${longDate(cell.date)}${cell.isToday ? " 오늘" : ""}`}
                 onClick={() => selectDate(cell.date)}
-                className={`flex min-h-11 flex-col items-center justify-center rounded-[var(--color-public-radius)] border text-sm font-bold leading-tight tabular-nums ${!cell.bookable
+                className={`flex min-h-11 flex-col items-center justify-center rounded-[var(--color-public-radius)] border text-sm font-medium leading-tight tabular-nums ${!cell.bookable
                   ? "cursor-not-allowed border-transparent text-[var(--color-public-muted)] opacity-40"
                   : active
-                    ? "border-[var(--color-public-ink)] bg-[var(--color-public-ink)] text-[var(--color-public-paper)]"
+                    ? "border-[var(--color-public-secondary-strong)] bg-[var(--color-public-secondary-soft)] text-[var(--color-public-secondary-ink)]"
                     : cell.isToday
                       ? "border-[var(--color-public-accent)] text-[var(--color-public-ink)]"
                       : "border-[var(--color-public-line)] text-[var(--color-public-ink)]"}`}
               >
                 {cell.day}
-                {cell.isToday && <span className="text-xs font-semibold">오늘</span>}
+                {cell.isToday && <span className="text-xs">오늘</span>}
               </button>
             );
           })}
@@ -432,11 +431,11 @@ export default function RentalClient() {
 
       {/* 2. 시간 — 버튼 하나. 누르면 시트에서 시 → 분 → 이용 시간 */}
       <fieldset className="min-w-0">
-        <legend className="text-base font-black text-[var(--color-public-ink)]">
-          시간 <span className="text-sm font-bold text-[var(--color-public-muted)]">{longDate(date)}</span>
+        <legend className="text-base font-bold text-[var(--color-public-ink)]">
+          시간 <span className="text-sm font-normal text-[var(--color-public-muted)]">{longDate(date)}</span>
         </legend>
         {dayError ? (
-          <p role="alert" className="mt-2 text-sm font-bold text-[var(--color-public-accent)]">{dayError}</p>
+          <p role="alert" className="mt-2 text-sm font-medium text-[var(--color-public-accent)]">{dayError}</p>
         ) : !day ? (
           <p className="mt-2 text-sm text-[var(--color-public-muted)]">가능한 시간을 확인하는 중…</p>
         ) : openHours.length === 0 ? (
@@ -454,15 +453,14 @@ export default function RentalClient() {
               type="button"
               onClick={() => setSheetOpen(true)}
               aria-haspopup="dialog"
-              className={`mt-2 flex min-h-12 w-full items-center gap-2 rounded-[var(--color-public-radius)] border px-3 text-left text-sm font-bold ${timeChosen
-                ? "border-[var(--color-public-accent)] text-[var(--color-public-ink)]"
+              className={`mt-2 flex min-h-12 w-full items-center gap-2 rounded-[var(--color-public-radius)] border px-3 text-left text-sm font-medium ${timeChosen
+                ? "border-[var(--color-public-secondary-strong)] bg-[var(--color-public-secondary-soft)] text-[var(--color-public-secondary-ink)]"
                 : "border-[var(--color-public-ink)] text-[var(--color-public-ink)]"}`}
             >
-              <FontFreeIcon name="calendar_today" size={20} />
               <span className="min-w-0 flex-1 tabular-nums">
                 {timeChosen && startMinute !== null ? formatRentalTime(startMinute, startMinute + durationMinutes) : "시간 고르기"}
               </span>
-              {timeChosen && <span className="text-[var(--color-public-accent)]">변경</span>}
+              {timeChosen && <span className="underline underline-offset-2">변경</span>}
             </button>
           </>
         )}
@@ -484,10 +482,10 @@ export default function RentalClient() {
 
       {/* 3. 인원·냉난방 */}
       <fieldset className="min-w-0">
-        <legend className="text-base font-black text-[var(--color-public-ink)]">인원·냉난방</legend>
+        <legend className="text-base font-bold text-[var(--color-public-ink)]">인원·냉난방</legend>
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-1" role="group" aria-label="인원">
-            <button type="button" onClick={() => changeHeadcount(-1)} aria-label="인원 줄이기" className="public-btn-secondary w-11 px-0">−</button>
+            <button type="button" onClick={() => changeHeadcount(-1)} aria-label="인원 줄이기" className="public-btn-secondary w-11 px-0!">−</button>
             <input
               type="number"
               inputMode="numeric"
@@ -496,12 +494,12 @@ export default function RentalClient() {
               value={headcount}
               onChange={(e) => setHeadcount(Math.min(RENTAL_MAX_HEADCOUNT, Math.max(1, Math.floor(Number(e.target.value) || 1))))}
               aria-label="인원 수"
-              className="min-h-11 w-16 rounded-[var(--color-public-radius)] border border-[var(--color-public-line)] bg-[var(--color-public-paper)] text-center font-bold tabular-nums text-[var(--color-public-ink)]"
+              className="min-h-11 w-16 rounded-[var(--color-public-radius)] border border-[var(--color-public-line)] bg-[var(--color-public-paper)] text-center font-semibold tabular-nums text-[var(--color-public-ink)]"
             />
-            <button type="button" onClick={() => changeHeadcount(1)} aria-label="인원 늘리기" className="public-btn-secondary w-11 px-0">+</button>
+            <button type="button" onClick={() => changeHeadcount(1)} aria-label="인원 늘리기" className="public-btn-secondary w-11 px-0!">+</button>
             <span className="ml-1 text-sm text-[var(--color-public-ink)]">명</span>
           </div>
-          <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm font-bold text-[var(--color-public-ink)]">
+          <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm font-medium text-[var(--color-public-ink)]">
             <input type="checkbox" checked={useAircon} onChange={(e) => setUseAircon(e.target.checked)} className="h-5 w-5 accent-[var(--color-public-accent)]" />
             냉난방 사용(1시간 {formatWon(RENTAL_FEE.airconPerHour)})
           </label>
@@ -530,8 +528,8 @@ export default function RentalClient() {
                   type="button"
                   aria-pressed={pickedStudentId === student.id}
                   onClick={() => setPickedStudentId(student.id)}
-                  className={`min-h-11 rounded-[var(--color-public-radius)] border px-3 text-sm font-bold ${pickedStudentId === student.id
-                    ? "border-[var(--color-public-accent)] bg-[var(--color-public-accent)] text-[var(--color-public-white)]"
+                  className={`min-h-11 rounded-[var(--color-public-radius)] border px-3 text-sm font-medium ${pickedStudentId === student.id
+                    ? "border-[var(--color-public-secondary-strong)] bg-[var(--color-public-secondary-soft)] text-[var(--color-public-secondary-ink)]"
                     : "border-[var(--color-public-line)] text-[var(--color-public-ink)]"}`}
                 >
                   {student.name}
@@ -556,8 +554,8 @@ export default function RentalClient() {
             <div className="flex justify-between gap-3"><dt className="text-[var(--color-public-muted)]">보증금(환불)</dt><dd className="tabular-nums">{fee.deposit > 0 ? formatWon(fee.deposit) : "없음"}</dd></div>
           </dl>
           <div className="mt-2 flex items-baseline justify-between gap-3 border-t border-[var(--color-public-line)] pt-2">
-            <span className="font-bold text-[var(--color-public-ink)]">입금할 금액</span>
-            <span className="text-xl font-black tabular-nums text-[var(--color-public-ink)]">{formatWon(fee.total)}</span>
+            <span className="font-semibold text-[var(--color-public-ink)]">입금할 금액</span>
+            <span className="text-xl font-bold tabular-nums text-[var(--color-public-ink)]">{formatWon(fee.total)}</span>
           </div>
           {!timeChosen && <p className="mt-1 text-xs text-[var(--color-public-muted)]">시간을 고르면 그 시간 기준으로 확정됩니다.</p>}
           {memberFree && <p className="mt-1 text-xs text-[var(--color-public-muted)]">재원생 무료는 서버 확인 후 확정돼요.</p>}
@@ -566,9 +564,9 @@ export default function RentalClient() {
 
       {/* 6. 신청자 정보 */}
       <fieldset className="min-w-0 space-y-2">
-        <legend className="text-base font-black text-[var(--color-public-ink)]">신청자</legend>
+        <legend className="text-base font-bold text-[var(--color-public-ink)]">신청자</legend>
         <div className="grid gap-2 sm:grid-cols-2">
-          <label className="block text-sm font-bold text-[var(--color-public-ink)]">
+          <label className="block text-sm font-medium text-[var(--color-public-ink)]">
             이름
             <input
               value={name}
@@ -579,7 +577,7 @@ export default function RentalClient() {
               className={INPUT_CLASS}
             />
           </label>
-          <label className="block text-sm font-bold text-[var(--color-public-ink)]">
+          <label className="block text-sm font-medium text-[var(--color-public-ink)]">
             휴대폰
             <input
               value={phone}
@@ -595,7 +593,7 @@ export default function RentalClient() {
             />
           </label>
         </div>
-        <label className="block text-sm font-bold text-[var(--color-public-ink)]">
+        <label className="block text-sm font-medium text-[var(--color-public-ink)]">
           사용 목적
           <input
             value={purpose}
@@ -610,18 +608,18 @@ export default function RentalClient() {
       {/* 7. 보증금 환불 계좌 — 보증금이 있을 때만(재원생 무료는 보증금 0원이라 숨긴다) */}
       {needsRefundAccount && (
         <fieldset className="min-w-0 space-y-2">
-          <legend className="text-base font-black text-[var(--color-public-ink)]">
-            보증금 환불 계좌 <span className="text-sm font-bold text-[var(--color-public-muted)]">사용 후 이 계좌로 돌려드려요</span>
+          <legend className="text-base font-bold text-[var(--color-public-ink)]">
+            보증금 환불 계좌 <span className="text-sm font-normal text-[var(--color-public-muted)]">사용 후 이 계좌로 돌려드려요</span>
           </legend>
           <div className="grid gap-2 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)]">
-            <label className="block text-sm font-bold text-[var(--color-public-ink)]">
+            <label className="block text-sm font-medium text-[var(--color-public-ink)]">
               은행
               <select value={refundBank} onChange={(e) => setRefundBank(e.target.value)} className={INPUT_CLASS}>
                 <option value="">은행 선택</option>
                 {RENTAL_REFUND_BANKS.map((bank) => <option key={bank} value={bank}>{bank}</option>)}
               </select>
             </label>
-            <label className="block text-sm font-bold text-[var(--color-public-ink)]">
+            <label className="block text-sm font-medium text-[var(--color-public-ink)]">
               계좌번호
               <input
                 value={refundAccount}
@@ -633,7 +631,7 @@ export default function RentalClient() {
               />
             </label>
           </div>
-          <label className="block text-sm font-bold text-[var(--color-public-ink)]">
+          <label className="block text-sm font-medium text-[var(--color-public-ink)]">
             예금주
             <input value={refundHolder} onChange={(e) => setRefundHolder(e.target.value)} maxLength={20} autoComplete="off" className={INPUT_CLASS} />
           </label>
@@ -664,8 +662,7 @@ export default function RentalClient() {
       </div>
 
       {error && (
-        <div ref={errorRef} role="alert" className="flex items-center gap-2 rounded-[var(--color-public-radius)] border border-[var(--color-public-accent)] px-3 py-2 text-sm font-bold text-[var(--color-public-accent)]">
-          <FontFreeIcon name="error" size={18} />
+        <div ref={errorRef} role="alert" className="flex items-center gap-2 rounded-[var(--color-public-radius)] border border-[var(--color-public-accent)] px-3 py-2 text-sm font-medium text-[var(--color-public-accent)]">
           {error}
         </div>
       )}

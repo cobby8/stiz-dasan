@@ -62,13 +62,17 @@ test("② 머리줄 🔔·⚙(휴대폰·PC 둘 다), 둘 다 44×44 — 로그�
   assert.doesNotMatch(layout, />\s*로그아웃\s*</, "머리줄에 로그아웃 버튼 없음");
   assert.equal((layout.match(/<ParentNotificationBell notifications=\{bellItems\} unreadCount=\{unreadCount\} \/>/g) || []).length, 2);
   assert.equal((layout.match(/\{settingsLink\}/g) || []).length, 2);
-  assert.match(layout, /href="\/mypage\/settings"\s*aria-label="설정"\s*className="inline-flex size-11/);
+  // 2026-11-13 UI 통일: 톱니 아이콘(44×44) → «설정» 글자 버튼. 누르는 높이 44px(min-h-11)과 aria-label 은 그대로 지킨다.
+  assert.match(layout, /href="\/mypage\/settings"\s*aria-label="설정"\s*className="inline-flex min-h-11/);
+  assert.match(layout, />\s*설정\s*<\/Link>/, "아이콘만 있는 빈 버튼이 아니라 글자 라벨");
+  assert.doesNotMatch(layout, /material-symbols-outlined/, "머리줄에 아이콘 글꼴을 다시 넣지 않는다");
   // 휴대폰: «학부모» 글자는 로고 오른쪽 → 그 뒤 종·설정
   const mobile = layout.slice(layout.indexOf("md:hidden"), layout.indexOf("데스크탑 헤더"));
   const order = ['<Link href="/mypage"', ">학부모</span>", "<ParentNotificationBell", "{settingsLink}"].map((t) => mobile.indexOf(t));
   assert.ok(order.every((v, i) => v > 0 && (i === 0 || v > order[i - 1])), "로고 → 학부모 → 🔔 → ⚙");
   const bell = read("src/app/mypage/ParentNotificationBell.tsx");
-  assert.match(bell, /inline-flex size-11/);
+  // 2026-11-13 UI 통일: 종 아이콘 → «알림» 글자 버튼(높이 44px), 안 읽은 수 배지는 글자 옆
+  assert.match(bell, /className="inline-flex min-h-11 shrink-0[^"]*"\s*>\s*알림/);
   assert.match(bell, /useEffect\(\(\) => \{ setOpen\(false\); \}, \[pathname\]\)/, "화면을 옮기면 닫힌다");
   assert.match(read("src/app/mypage/settings/page.tsx"), /<form action=\{logout\}>/);
 });

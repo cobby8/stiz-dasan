@@ -236,7 +236,8 @@ test("P-13 작은 글자 12px·닫기/글씨 버튼 44px", () => {
   assert.match(read("src/app/annual/AnnualEventsClient.tsx"), /<span className="text-xs">\{isScheduleOpen \? "▲" : "▼"\}<\/span>/);
   assert.match(read("src/components/PublicHeader.tsx"), /"public-mobile-font md:hidden flex h-11 w-11 /);
   assert.match(read("src/app/annual/EventDetailPanel.tsx"), /className="shrink-0 w-11 h-11 flex items-center justify-center rounded-full[^"]*"\s*aria-label="닫기"/);
-  assert.match(read("src/components/chat/ChatPanel.tsx"), /className="flex h-11 w-11 items-center justify-center hover:bg-orange-600 rounded-full transition-colors"\s*aria-label="채팅 닫기"/);
+  // 2026-11-13 UI 통일: 챗봇 머리띠가 주황 → 어두운 띠(--color-public-dark)라 올림색만 바뀌었다. 44px 는 그대로 지킨다.
+  assert.match(read("src/components/chat/ChatPanel.tsx"), /className="flex h-11 w-11 items-center justify-center hover:bg-white\/10 rounded-full transition-colors"\s*aria-label="채팅 닫기"/);
 });
 
 test("P-14 갤러리 좌우 화살표는 닫기와 같은 반투명 검은 원 44px + 80% 흰색", () => {

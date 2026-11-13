@@ -2,10 +2,9 @@
 .workbench { color: var(--color-academy-ink); max-width: 100%; min-width: 0; }
 .header, .toolbar, .summary, .actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .header { justify-content: space-between; margin-bottom: 12px; }
-.header h1 { font-size: 22px; font-weight: 700; }
 .header p, .muted { color: var(--color-academy-muted); font-size: 13px; }
-.button, .primary { display: inline-flex; justify-content: center; align-items: center; gap: 6px; min-height: 44px; border-radius: 10px; padding: 8px 12px; font-size: 14px; font-weight: 700; border: 1px solid var(--color-academy-line-input); background: var(--color-academy-surface); color: var(--color-academy-ink); cursor: pointer; }
-.primary { background: var(--color-academy-primary); color: var(--color-academy-on-primary); border-color: var(--color-academy-primary); }
+.button, .primary { display: inline-flex; justify-content: center; align-items: center; gap: 6px; min-height: 44px; border-radius: 6px; padding: 8px 14px; font-size: 14px; font-weight: 500; border: 1px solid var(--color-academy-line-input); background: var(--color-academy-surface); color: var(--color-academy-ink); cursor: pointer; }
+.primary { background: var(--color-academy-primary); color: var(--color-academy-on-primary); border-color: var(--color-academy-primary); font-weight: 600; }
 .button:disabled, .primary:disabled { opacity: .45; cursor: not-allowed; }
 .toolbar { margin-bottom: 10px; }
 .search { flex: 1 1 200px; min-width: 0; }
@@ -15,25 +14,27 @@
 .filter summary { list-style: none; }
 .filterPanel { position: absolute; right: 0; width: 240px; max-width: calc(100vw - 32px); z-index: 5; border: 1px solid var(--color-academy-line); border-radius: 12px; padding: 12px; background: var(--color-academy-surface); box-shadow: 0 8px 24px color-mix(in srgb, var(--color-academy-ink) 12%, transparent); display: grid; gap: 10px; }
 .summary { border-block: 1px solid var(--color-academy-line); padding: 10px 0; margin-bottom: 12px; font-size: 14px; }
-.summary strong { color: var(--color-academy-ink); font-size: 18px; }
+.summary strong { color: var(--color-academy-ink); font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .notice, .error { border-radius: 10px; padding: 10px 12px; margin-block: 10px; font-size: 14px; overflow-wrap: anywhere; }
 .notice { background: var(--color-academy-primary-soft); }
 .error { background: var(--color-academy-danger-soft); color: var(--color-academy-danger); }
 .tableWrap { overflow-x: auto; border: 1px solid var(--color-academy-line); border-radius: 12px; background: var(--color-academy-surface); }
 .table { width: 100%; border-collapse: collapse; font-size: 14px; }
-.table th { background: var(--color-academy-soft); color: var(--color-academy-muted); font-size: 12px; text-align: right; padding: 10px 8px; white-space: nowrap; }
-.table td { border-top: 1px solid var(--color-academy-line); padding: 6px 8px; text-align: right; white-space: nowrap; }
+.table th { background: var(--color-academy-soft); color: var(--color-academy-muted); font-size: 12px; font-weight: 500; text-align: right; padding: 10px 8px; white-space: nowrap; }
+.table td { border-top: 1px solid var(--color-academy-line); padding: 6px 8px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.table td strong { font-weight: 600; }
 .table th:first-child, .table td:first-child { text-align: left; }
 .table th:nth-child(2), .table td:nth-child(2) { text-align: left; }
 .check { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; }
 .check input { width: 18px; height: 18px; accent-color: var(--color-academy-primary); }
-.student { font-weight: 700; }
+.student { font-weight: 600; }
 .className { font-size: 12px; color: var(--color-academy-muted); white-space: normal; min-width: 100px; }
-.badge { display: inline-flex; padding: 4px 7px; border-radius: 7px; background: var(--color-academy-primary-soft); font-size: 12px; font-weight: 700; }
+/* 상태 표시는 중립 토큰 — 주 색(네이비)은 누르는 버튼 전용(2026-11-13 UI 통일) */
+.badge { display: inline-flex; padding: 4px 7px; border-radius: 4px; background: var(--color-academy-neutral-soft); color: var(--color-academy-neutral); font-size: 12px; font-weight: 400; }
 .review { background: var(--color-academy-warning-soft); color: var(--color-academy-warning); }
 .details { padding: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; text-align: left; white-space: normal; }
 .details ul { list-style: disc; padding-left: 18px; font-size: 13px; }
-.details h3 { margin-bottom: 6px; font-size: 14px; font-weight: 700; }
+.details h3 { margin-bottom: 6px; font-size: 14px; font-weight: 600; }
 .fields { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; }
 .fields label { display: grid; gap: 3px; font-size: 12px; }
 .reason { grid-column: 1 / -1; }
@@ -48,11 +49,10 @@
   .mobileRow { background: var(--color-academy-surface); border: 1px solid var(--color-academy-line); border-radius: 12px; padding: 8px; min-width: 0; }
   .mobileHead { display: flex; align-items: center; gap: 4px; }
   .mobileHead .student { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-  .amount { margin-left: auto; font-weight: 700; white-space: nowrap; }
+  .amount { margin-left: auto; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
   .mobileMeta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; padding-left: 44px; font-size: 12px; }
   .details { grid-template-columns: 1fr; gap: 12px; padding: 10px 2px; }
   .fields { grid-template-columns: repeat(2,minmax(0,1fr)); }
-  .header h1 { font-size: 20px; }
   .summary { gap: 6px 12px; }
   .bottom .actions > button { flex: 1 1 auto; }
 }

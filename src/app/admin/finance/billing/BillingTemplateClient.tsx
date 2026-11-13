@@ -9,6 +9,7 @@ import {
 } from "@/app/actions/admin";
 import AdminQuickActionMenu from "@/components/admin/AdminQuickActionMenu";
 import { useAdminConfirm } from "@/components/admin/AdminConfirmDialog";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 
 // 청구 유형 라벨 매핑
 const TYPE_LABELS: Record<string, string> = {
@@ -96,12 +97,11 @@ function BillingTemplateLoadingFallback() {
 function BillingTemplateErrorState({ onRetry }: { onRetry: () => void }) {
     return (
         <div className="mx-auto max-w-4xl rounded-2xl border border-[var(--color-academy-line)] bg-white p-8 text-center shadow-sm">
-            <span className="material-symbols-outlined mb-3 text-4xl text-[var(--color-academy-danger)]">error</span>
-            <p className="font-bold text-[var(--color-academy-ink)]">청구 템플릿을 불러오지 못했습니다.</p>
+            <p className="font-semibold text-[var(--color-academy-ink)]">청구 템플릿을 불러오지 못했습니다.</p>
             <button
                 type="button"
                 onClick={onRetry}
-                className="mt-4 rounded-xl bg-[var(--color-academy-primary)] px-4 py-2 text-sm font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)]"
+                className="academy-button-primary mt-4"
             >
                 다시 시도
             </button>
@@ -250,56 +250,58 @@ export default function BillingTemplateClient({
     return (
         <div className="max-w-4xl mx-auto">
             {/* 헤더 */}
-            <div className="flex justify-between items-center mb-6">
-                <div>
-                    <h1 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">청구 템플릿 설정</h1>
-                </div>
-                <button
-                    onClick={() => { resetForm(); setShowForm(!showForm); }}
-                    className="bg-[var(--color-academy-primary)] text-white px-4 py-2 rounded-lg font-bold hover:bg-[var(--color-academy-primary-hover)] transition"
-                >
-                    + 템플릿 추가
-                </button>
-            </div>
+            <AdminPageHeader
+                className="mb-4"
+                title="청구 템플릿 설정"
+                actions={
+                    // 폼이 열려 있으면 폼의 저장 버튼이 주인공 — 주 버튼은 한 화면에 하나만
+                    <button
+                        onClick={() => { resetForm(); setShowForm(!showForm); }}
+                        className={showForm ? "academy-button-secondary" : "academy-button-primary"}
+                    >
+                        + 템플릿 추가
+                    </button>
+                }
+            />
 
             {/* 생성/수정 폼 */}
             {showForm && (
                 <form onSubmit={handleSubmit} className="bg-white border border-[var(--color-academy-line)] rounded-xl p-6 mb-6 shadow-sm space-y-4">
-                    <h3 className="font-bold text-lg text-[var(--color-academy-ink)]">
+                    <h3 className="academy-section-title">
                         {editId ? "템플릿 수정" : "새 청구 템플릿"}
                     </h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                         {/* 템플릿 이름 */}
                         <div>
-                            <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">이름 *</label>
+                            <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">이름 *</label>
                             <input
                                 type="text"
                                 value={name}
                                 onChange={(e) => setName(e.target.value)}
                                 required
                                 placeholder="예: 초등 주3회 수강료"
-                                className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                                className="academy-input"
                             />
                         </div>
                         {/* 금액 */}
                         <div>
-                            <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">금액 (원) *</label>
+                            <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">금액 (원) *</label>
                             <input
                                 type="number"
                                 value={amount || ""}
                                 onChange={(e) => setAmount(parseInt(e.target.value) || 0)}
                                 required
                                 placeholder="150000"
-                                className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                                className="academy-input"
                             />
                         </div>
                         {/* 유형 */}
                         <div>
-                            <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">유형</label>
+                            <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">유형</label>
                             <select
                                 value={type}
                                 onChange={(e) => setType(e.target.value)}
-                                className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-[var(--color-academy-primary)] bg-white"
+                                className="academy-input"
                             >
                                 <option value="MONTHLY">월 수강료</option>
                                 <option value="SHUTTLE">셔틀</option>
@@ -309,7 +311,7 @@ export default function BillingTemplateClient({
                         </div>
                         {/* 납부기한일 */}
                         <div>
-                            <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">납부기한</label>
+                            <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">납부기한</label>
                             {/*
                               납부기한은 이용약관("수강일 전까지")에 따라 자동 계산되므로
                               더 이상 템플릿마다 다르게 지정하지 않는다. 값은 옛 데이터 호환용으로만 남긴다.
@@ -319,17 +321,17 @@ export default function BillingTemplateClient({
                                 readOnly
                                 disabled
                                 value="약관 기준 자동 (수강 개시일 전날 = 전월 말일)"
-                                className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"
+                                className="academy-input"
                             />
                             <p className="text-xs text-[var(--color-academy-faint)] mt-1">예: 8월 수강료 → 7월 31일까지</p>
                         </div>
                         {/* 연결 프로그램 */}
                         <div>
-                            <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">연결 프로그램 (선택)</label>
+                            <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">연결 프로그램 (선택)</label>
                             <select
                                 value={programId}
                                 onChange={(e) => setProgramId(e.target.value)}
-                                className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-[var(--color-academy-primary)] bg-white"
+                                className="academy-input"
                             >
                                 <option value="">전체 수강생</option>
                                 {programs.map((p) => (
@@ -339,24 +341,24 @@ export default function BillingTemplateClient({
                         </div>
                         {/* 설명 */}
                         <div>
-                            <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">설명 (선택)</label>
+                            <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">설명 (선택)</label>
                             <input
                                 type="text"
                                 value={description}
                                 onChange={(e) => setDescription(e.target.value)}
                                 placeholder="청구서에 표시될 설명"
-                                className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                                className="academy-input"
                             />
                         </div>
                     </div>
                     <div className="flex gap-2 justify-end">
-                        <button type="button" onClick={resetForm} className="px-4 py-2 text-sm text-[var(--color-academy-muted)]">
+                        <button type="button" onClick={resetForm} className="academy-button-text">
                             취소
                         </button>
                         <button
                             type="submit"
                             disabled={busy}
-                            className="bg-[var(--color-academy-primary)] text-white px-6 py-2 rounded-lg font-bold hover:bg-[var(--color-academy-primary-hover)] transition disabled:opacity-50"
+                            className="academy-button-primary"
                         >
                             {busy ? "저장 중..." : editId ? "수정" : "추가"}
                         </button>
@@ -377,7 +379,7 @@ export default function BillingTemplateClient({
                                 <tr>
                                     <th className="px-5 py-3 text-left text-xs font-medium text-[var(--color-academy-muted)] uppercase">이름</th>
                                     <th className="px-5 py-3 text-left text-xs font-medium text-[var(--color-academy-muted)] uppercase">유형</th>
-                                    <th className="px-5 py-3 text-left text-xs font-medium text-[var(--color-academy-muted)] uppercase">금액</th>
+                                    <th className="px-5 py-3 text-right text-xs font-medium text-[var(--color-academy-muted)] uppercase">금액</th>
                                     <th className="px-5 py-3 text-left text-xs font-medium text-[var(--color-academy-muted)] uppercase">납부기한일</th>
                                     <th className="px-5 py-3 text-left text-xs font-medium text-[var(--color-academy-muted)] uppercase">상태</th>
                                     <th className="px-5 py-3 text-right text-xs font-medium text-[var(--color-academy-muted)] uppercase">관리</th>
@@ -397,7 +399,7 @@ export default function BillingTemplateClient({
                                         <td className="px-5 py-3.5 text-sm text-[var(--color-academy-muted)]">
                                             {TYPE_LABELS[tpl.type] || tpl.type}
                                         </td>
-                                        <td className="px-5 py-3.5 text-sm text-[var(--color-academy-muted)] font-mono">
+                                        <td className="px-5 py-3.5 text-right text-sm tabular-nums text-[var(--color-academy-ink)]">
                                             {formatAmount(tpl.amount)}
                                         </td>
                                         <td className="px-5 py-3.5 text-sm text-[var(--color-academy-muted)]">
@@ -407,7 +409,7 @@ export default function BillingTemplateClient({
                                             <button
                                                 onClick={() => toggleActive(tpl)}
                                                 disabled={busy}
-                                                className={`text-xs font-bold px-2 py-1 rounded-full ${
+                                                className={`text-xs font-medium px-2 py-1 rounded-full ${
                                                     tpl.isActive
                                                         ? "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]"
                                                         : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"

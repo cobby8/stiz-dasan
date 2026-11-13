@@ -4,6 +4,7 @@ import { adminErrorText } from "@/components/admin/adminDisplayText";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { groupOperationalDeliveries, operationalDeliveryView } from "@/lib/admin-delivery-status";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 
 type Delivery = {
   id: string;
@@ -43,7 +44,7 @@ const EVENT_LABEL: Record<string, string> = {
 // 상태 배지 색 — 문구는 operationalDeliveryView 그대로 쓰고, 색만 화면 토큰으로 맞춘다
 function statusTone(status: string) {
   if (status === "SENT") return "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]";
-  if (status === "PENDING") return "bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)]";
+  if (status === "PENDING") return "bg-[var(--color-academy-info-soft)] text-[var(--color-academy-info)]";
   if (status === "FAILED") return "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]";
   return "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]";
 }
@@ -100,42 +101,35 @@ export default function OperationalDeliveryClient() {
     }
   }
 
-  const filterClass = (selected: boolean) =>
-    `min-h-11 rounded-full border px-3 text-sm font-bold ${
-      selected
-        ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary)] text-[var(--color-academy-on-primary)]"
-        : "border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)] hover:border-[var(--color-academy-primary)]"
-    }`;
+  // 고르는 칩 — 테마 공용 모양(고르면 ✓ + 보조 색). 고름 여부는 aria-pressed 가 정한다
+  const FILTER_CLASS = "academy-choice";
 
   const detail = detailId ? rows.find((row) => row.id === detailId) ?? null : null;
 
   return (
     <main className="space-y-3">
-      <div>
-        <h1 className="flex flex-wrap items-baseline gap-x-2 text-lg font-black text-[var(--color-academy-ink)]">
-          담당자 전달 장부
-          <span className="text-xs font-bold text-[var(--color-academy-primary)]">운영 알림</span>
-        </h1>
-        <p className="mt-1 text-xs text-[var(--color-academy-muted)]">결석·셔틀 요청의 담당자별 사이트 알림 등록과 푸시 접수를 확인합니다. 알림 접수는 담당자의 열람·업무 확인을 뜻하지 않습니다.</p>
-      </div>
+      <AdminPageHeader
+        title={<>담당자 전달 장부 <span className="text-xs font-normal text-[var(--color-academy-muted)]">운영 알림</span></>}
+        description="결석·셔틀 요청의 담당자별 사이트 알림 등록과 푸시 접수를 확인합니다. 알림 접수는 담당자의 열람·업무 확인을 뜻하지 않습니다."
+      />
 
       {/* 상태·채널 필터 — 예전 두 줄 상자를 한 줄로(서버가 조건별로 읽어 주므로 건수 칩은 쓰지 않는다) */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <div className="flex flex-wrap gap-1.5" role="group" aria-label="전달 상태 필터">
-          {STATUS_OPTIONS.map(([value, label]) => <button key={value} type="button" aria-pressed={status === value} onClick={() => changeStatus(value)} className={filterClass(status === value)}>{label}</button>)}
+          {STATUS_OPTIONS.map(([value, label]) => <button key={value} type="button" aria-pressed={status === value} onClick={() => changeStatus(value)} className={FILTER_CLASS}>{label}</button>)}
         </div>
         <div className="flex flex-wrap gap-1.5" role="group" aria-label="채널 필터">
-          {CHANNEL_OPTIONS.map(([value, label]) => <button key={value} type="button" aria-pressed={channel === value} onClick={() => changeChannel(value)} className={filterClass(channel === value)}>{label}</button>)}
+          {CHANNEL_OPTIONS.map(([value, label]) => <button key={value} type="button" aria-pressed={channel === value} onClick={() => changeChannel(value)} className={FILTER_CLASS}>{label}</button>)}
         </div>
       </div>
 
-      {error && <div role="alert" className="rounded-xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-3 text-sm font-bold text-[var(--color-academy-danger)]">{error}<button type="button" onClick={() => void load()} className="ml-3 min-h-11 underline">다시 불러오기</button></div>}
+      {error && <div role="alert" className="rounded-xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-3 text-sm text-[var(--color-academy-danger)]">{error}<button type="button" onClick={() => void load()} className="academy-button-text ml-3">다시 불러오기</button></div>}
       <section className="overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
         {loading ? <p className="p-6 text-center text-sm text-[var(--color-academy-muted)]">전달 상태를 불러오는 중입니다.</p> : error ? <p className="p-4 text-sm text-[var(--color-academy-muted)]">조회 결과를 확인할 수 없습니다. 기록이 없다는 뜻이 아닙니다.</p> : rows.length === 0 ? <p className="p-6 text-center text-sm text-[var(--color-academy-muted)]">선택한 조건의 전달 기록이 없습니다.</p> : (
           <div className="overflow-x-auto">
             {/* 한 줄 행: 상태 | 요청 | 학생 | 수신 역할 | 수신자 | 채널 | 시도 | 갱신 | 오류. 같은 요청·담당자 묶음은 tbody 하나 */}
             <table className="admin-list-table w-full border-collapse text-sm">
-              <thead className="bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]">
+              <thead className="bg-[var(--color-academy-soft)] text-xs font-semibold text-[var(--color-academy-muted)]">
                 <tr>
                   <th className="px-2 py-2">상태</th>
                   <th className="px-2 py-2">요청</th>
@@ -158,16 +152,16 @@ export default function OperationalDeliveryClient() {
                   onKeyDown={(event) => handleRowKeyDown(event, row.id)}
                   className="cursor-pointer transition-colors hover:bg-[var(--color-academy-soft)] focus:bg-[var(--color-academy-primary-soft)] focus:outline-none"
                 >
-                  <td className="px-2 py-1.5"><span className={`rounded-full px-2 py-0.5 text-xs font-black ${statusTone(row.status)}`}>{view.label}</span></td>
-                  <td className="px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{EVENT_LABEL[row.eventType] ?? row.eventType}</td>
-                  <td className="px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{row.studentName ?? "학생 정보 없음"}</td>
+                  <td className="px-2 py-1.5"><span className={`rounded-full px-2 py-0.5 text-xs ${statusTone(row.status)}`}>{view.label}</span></td>
+                  <td className="px-2 py-1.5 text-[var(--color-academy-ink)]">{EVENT_LABEL[row.eventType] ?? row.eventType}</td>
+                  <td className="px-2 py-1.5 font-medium text-[var(--color-academy-ink)]">{row.studentName ?? "학생 정보 없음"}</td>
                   <td className="hidden px-2 py-1.5 text-[var(--color-academy-muted)] sm:table-cell">{ROLE_LABEL[row.recipientRole ?? ""] ?? "담당자"}</td>
                   <td className="px-2 py-1.5 text-[var(--color-academy-ink)]">{row.recipientName ?? "미확인"}</td>
                   <td className="px-2 py-1.5 text-[var(--color-academy-ink)]">{channelLabel(row.channel)}</td>
                   <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-ink)] sm:table-cell">{row.attemptCount}회</td>
                   <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-muted)]"><time>{formatTime(row.updatedAt)}</time></td>
                   {/* 오류 문구는 길어서 표시만, 내용은 상세 패널 */}
-                  <td className="admin-cell-center hidden px-2 py-1.5 md:table-cell">{row.errorMessage ? <span className="material-symbols-outlined text-base text-[var(--color-academy-warning)]" aria-label="오류 문구 있음">warning</span> : <span className="text-xs text-[var(--color-academy-muted)]">-</span>}</td>
+                  <td className="admin-cell-center hidden px-2 py-1.5 md:table-cell">{row.errorMessage ? <span className="text-xs text-[var(--color-academy-warning)]" aria-label="오류 문구 있음">있음</span> : <span className="text-xs text-[var(--color-academy-muted)]">-</span>}</td>
                 </tr>;
               })}</tbody>)}
             </table>
@@ -194,8 +188,8 @@ export default function OperationalDeliveryClient() {
         return (
           <ListDetailPanel onClose={() => setDetailId(null)} titleId="operational-delivery-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
             <div className="mb-4 flex items-center gap-2">
-              <h3 id="operational-delivery-detail-panel-title" className="min-w-0 break-keep text-lg font-black text-[var(--color-academy-ink)]">{row.studentName ?? "학생 정보 없음"}</h3>
-              <span className={`rounded-full px-2 py-0.5 text-xs font-black ${statusTone(row.status)}`}>{view.label}</span>
+              <h3 id="operational-delivery-detail-panel-title" className="min-w-0 break-keep text-lg font-bold text-[var(--color-academy-ink)]">{row.studentName ?? "학생 정보 없음"}</h3>
+              <span className={`rounded-full px-2 py-0.5 text-xs ${statusTone(row.status)}`}>{view.label}</span>
               <button
                 type="button"
                 onClick={() => setDetailId(null)}
@@ -208,12 +202,12 @@ export default function OperationalDeliveryClient() {
             <dl className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
               {panelRows.map((item) => (
                 <div key={item.label} className="contents">
-                  <dt className="font-bold text-[var(--color-academy-muted)]">{item.label}</dt>
+                  <dt className="font-medium text-[var(--color-academy-muted)]">{item.label}</dt>
                   <dd className="min-w-0 break-keep text-[var(--color-academy-ink)]">{item.value}</dd>
                 </div>
               ))}
             </dl>
-            {row.errorMessage && <p className="mt-4 rounded-lg bg-[var(--color-academy-warning-soft)] p-3 text-sm font-bold text-[var(--color-academy-warning)]">{row.errorMessage}</p>}
+            {row.errorMessage && <p className="mt-4 rounded-lg bg-[var(--color-academy-warning-soft)] p-3 text-sm text-[var(--color-academy-warning)]">{row.errorMessage}</p>}
           </ListDetailPanel>
         );
       })()}

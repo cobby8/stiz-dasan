@@ -14,7 +14,8 @@ test("방학특강 화면은 정규 손편집·시간순 모드를 켜지 않는
   assert.doesNotMatch(seasonalClient, /regularEditing/);
   assert.doesNotMatch(seasonalClient, /timeOrdered/);
   // 방학특강의 기존 삭제 버튼·문구는 그대로
-  assert.match(routeSection, /🗑 노선 삭제/);
+  // 2026-11-13 UI 통일: 버튼의 그림 문자를 빼고 글자로만 말한다(「노선 삭제」 라벨 자체는 그대로 지킨다).
+  assert.match(routeSection, /"노선 삭제"/);
   assert.match(routeSection, /이 요일의 저장된 노선을 삭제할까요\?/);
 });
 
@@ -41,8 +42,9 @@ test("정규 손편집 안전장치: 명단 안내·정원 경고·자동 제안
   assert.match(routeSection, /「셔틀 명단」에서 빼야 다음 자동 제안에서도 빠집니다/);
   assert.match(routeSection, /overCapacityVehicles\(sug\.vehicles\)/);
   assert.match(routeSection, /손으로 고친 순서·시각·배정이 사라집니다\. 계속할까요\?/);
-  assert.match(routeSection, /↺ 자동 제안으로 초기화/);
-  assert.match(routeSection, /● 저장 안 됨/);
+  // 2026-11-13 UI 통일: 장식 기호(↺·●)를 뺐다 — 라벨·표시 문구는 그대로 지킨다.
+  assert.match(routeSection, /"자동 제안으로 초기화"/);
+  assert.match(routeSection, />저장 안 됨<\/span>/);
   assert.match(routeSection, /addEventListener\("beforeunload"/);
   assert.match(routeSection, /reorderStop\(vIdx, sIdx, sIdx - 1\)/);
   assert.match(routeSection, /reorderStop\(vIdx, sIdx, sIdx \+ 1\)/);

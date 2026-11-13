@@ -117,7 +117,7 @@ function SmsTemplatesLoadingFallback() {
 function SmsTemplatesErrorState({ onRetry }: { onRetry: () => void }) {
     return (
         <div className="rounded-xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-6 text-center">
-            <p className="text-sm font-bold text-[var(--color-academy-danger)]">SMS 템플릿을 불러오지 못했습니다.</p>
+            <p className="text-sm font-semibold text-[var(--color-academy-danger)]">SMS 템플릿을 불러오지 못했습니다.</p>
             <button
                 type="button"
                 onClick={onRetry}
@@ -175,27 +175,19 @@ export default function SmsTemplateClient({ templates }: { templates?: SmsTempla
     return (
         <div className="space-y-6">
             {/* 탭 전환 */}
-            <div className="flex gap-1 bg-[var(--color-academy-soft)] p-1 rounded-lg w-fit">
+            <div className="flex flex-wrap gap-2">
                 <button
                     onClick={() => setActiveTab("staff")}
-                    className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${
-                        activeTab === "staff"
-                            ? "bg-white text-[var(--color-academy-ink)] shadow-sm"
-                            : "text-[var(--color-academy-muted)] hover:text-[var(--color-academy-muted)]"
-                    }`}
+                    aria-pressed={activeTab === "staff"}
+                    className={`academy-choice is-tab ${activeTab === "staff" ? "is-selected" : ""}`}
                 >
-                    <span className="material-symbols-outlined text-[16px] align-middle mr-1">admin_panel_settings</span>
                     관리자/코치 ({staffTemplates.length})
                 </button>
                 <button
                     onClick={() => setActiveTab("parent")}
-                    className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${
-                        activeTab === "parent"
-                            ? "bg-white text-[var(--color-academy-ink)] shadow-sm"
-                            : "text-[var(--color-academy-muted)] hover:text-[var(--color-academy-muted)]"
-                    }`}
+                    aria-pressed={activeTab === "parent"}
+                    className={`academy-choice is-tab ${activeTab === "parent" ? "is-selected" : ""}`}
                 >
-                    <span className="material-symbols-outlined text-[16px] align-middle mr-1">family_restroom</span>
                     학부모 ({parentTemplates.length})
                 </button>
             </div>
@@ -209,7 +201,6 @@ export default function SmsTemplateClient({ templates }: { templates?: SmsTempla
 
             {filtered.length === 0 && (
                 <div className="text-center py-16 text-[var(--color-academy-faint)]">
-                    <span className="material-symbols-outlined text-5xl block mb-3">sms</span>
                     <p>등록된 템플릿이 없습니다</p>
                 </div>
             )}
@@ -339,8 +330,8 @@ function TemplateCard({ template, onReload }: { template: SmsTemplate; onReload:
             {/* 카드 상단: 이름 + 배지 + 토글 */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--color-academy-line)]">
                 <div className="flex items-center gap-2.5 min-w-0">
-                    <h3 className="font-semibold text-[var(--color-academy-ink)] text-sm truncate">{template.name}</h3>
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${TARGET_COLORS[template.target] || "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"}`}>
+                    <h3 className="academy-section-title truncate">{template.name}</h3>
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${TARGET_COLORS[template.target] || "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"}`}>
                         {TARGET_LABELS[template.target] || template.target}
                     </span>
                 </div>
@@ -364,7 +355,6 @@ function TemplateCard({ template, onReload }: { template: SmsTemplate; onReload:
             {/* 설명 */}
             {template.description && (
                 <p className="px-5 pt-3 text-xs text-[var(--color-academy-muted)]">
-                    <span className="material-symbols-outlined text-[14px] align-middle mr-0.5">info</span>
                     {template.description}
                 </p>
             )}
@@ -373,7 +363,6 @@ function TemplateCard({ template, onReload }: { template: SmsTemplate; onReload:
             {lockedBody && (
                 <div className="px-5 py-3">
                     <p className="mb-2 rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-xs text-[var(--color-academy-warning)]">
-                        <span className="material-symbols-outlined text-[14px] align-middle mr-0.5">lock</span>
                         문자와 카카오 알림톡이 같은 문구를 쓰므로 여기서 고칠 수 없어요. 알림톡에는 카카오 심사를 마친 문구를 사용합니다. 켜기/끄기는 그대로 쓸 수 있어요.
                     </p>
                     <pre className="w-full whitespace-pre-wrap rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] px-3 py-2.5 font-mono text-sm leading-relaxed text-[var(--color-academy-muted)]">{lockedBody}</pre>
@@ -388,7 +377,7 @@ function TemplateCard({ template, onReload }: { template: SmsTemplate; onReload:
                     value={body}
                     onChange={e => { setBody(e.target.value); setPreview(null); }}
                     rows={4}
-                    className="w-full px-3 py-2.5 text-sm border border-[var(--color-academy-line)] rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)]/20 focus:border-[var(--color-academy-line-input)] font-mono leading-relaxed"
+                    className="academy-input resize-none font-mono leading-relaxed"
                     placeholder="메시지를 입력하세요..."
                 />
 
@@ -398,10 +387,9 @@ function TemplateCard({ template, onReload }: { template: SmsTemplate; onReload:
                         <button
                             key={v.key}
                             onClick={() => insertVariable(v.key)}
-                            className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] rounded-md hover:bg-[var(--color-academy-line)] transition-colors"
+                            className="academy-button-tonal academy-button-sm"
                             title={`커서 위치에 {{${v.key}}} 삽입`}
                         >
-                            <span className="material-symbols-outlined text-[12px]">add</span>
                             {v.label}
                         </button>
                     ))}
@@ -419,8 +407,7 @@ function TemplateCard({ template, onReload }: { template: SmsTemplate; onReload:
             {/* 미리보기 영역 */}
             {preview !== null && (
                 <div className="mx-5 mb-3 p-3 bg-[var(--color-academy-soft)] rounded-lg border border-[var(--color-academy-line)]">
-                    <p className="text-[11px] font-medium text-[var(--color-academy-muted)] mb-1.5">
-                        <span className="material-symbols-outlined text-[12px] align-middle mr-0.5">visibility</span>
+                    <p className="text-xs font-medium text-[var(--color-academy-muted)] mb-1.5">
                         미리보기 (샘플 데이터)
                     </p>
                     <p className="text-sm text-[var(--color-academy-ink)] whitespace-pre-line font-mono">{preview}</p>
@@ -428,31 +415,28 @@ function TemplateCard({ template, onReload }: { template: SmsTemplate; onReload:
             )}
 
             {/* 하단 버튼 바 */}
-            <div className="flex items-center justify-between px-5 py-3 bg-[var(--color-academy-soft)] border-t border-[var(--color-academy-line)]">
-                <div className="flex gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3 bg-[var(--color-academy-soft)] border-t border-[var(--color-academy-line)]">
+                <div className="flex min-w-0 flex-wrap gap-2">
                     <button
                         onClick={handlePreview}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-[var(--color-academy-muted)] bg-white border border-[var(--color-academy-line)] rounded-lg hover:bg-[var(--color-academy-soft)] transition-colors"
+                        className="academy-button-secondary academy-button-sm"
                     >
-                        <span className="material-symbols-outlined text-[14px]">visibility</span>
                         {preview !== null ? "닫기" : "미리보기"}
                     </button>
                     {!lockedBody && (
                     <button
                         onClick={handleAutoConvert}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-[var(--color-academy-muted)] bg-[var(--color-academy-soft)] border border-[var(--color-academy-line)] rounded-lg hover:bg-[var(--color-academy-line)] transition-colors"
+                        className="academy-button-secondary academy-button-sm"
                         title="한글 키워드를 자동으로 변수로 변환"
                     >
-                        <span className="material-symbols-outlined text-[14px]">auto_fix_high</span>
                         자동 변환
                     </button>
                     )}
                     <button
                         onClick={handleReset}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-[var(--color-academy-muted)] bg-white border border-[var(--color-academy-line)] rounded-lg hover:bg-[var(--color-academy-soft)] transition-colors"
+                        className="academy-button-secondary academy-button-sm"
                         title="기본 템플릿으로 초기화"
                     >
-                        <span className="material-symbols-outlined text-[14px]">restart_alt</span>
                         초기화
                     </button>
                 </div>
@@ -460,17 +444,8 @@ function TemplateCard({ template, onReload }: { template: SmsTemplate; onReload:
                 <button
                     onClick={handleSave}
                     disabled={saving || !isModified}
-                    className={`inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
-                        saved
-                            ? "bg-[var(--color-academy-success)] text-white"
-                            : isModified
-                                ? "bg-[var(--color-academy-primary)] text-white hover:bg-[var(--color-academy-primary-hover)]"
-                                : "bg-[var(--color-academy-line)] text-[var(--color-academy-faint)] cursor-not-allowed"
-                    }`}
+                    className={`academy-button-primary academy-button-sm ${saved ? "border-[var(--color-academy-success)]! bg-[var(--color-academy-success)]! opacity-100!" : ""}`}
                 >
-                    <span className="material-symbols-outlined text-[14px]">
-                        {saved ? "check" : "save"}
-                    </span>
                     {saving ? "저장 중..." : saved ? "저장됨" : "저장"}
                 </button>
                 )}

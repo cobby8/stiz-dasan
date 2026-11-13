@@ -16,7 +16,7 @@ export default function PaymentSuccessPage() {
 function PaymentSuccessFallback() {
     return (
         <div className="mx-auto max-w-lg rounded-2xl border border-[var(--color-academy-line)] bg-white p-8 text-center shadow-sm">
-            <p className="font-bold">결제 승인 확인 중...</p>
+            <p className="font-medium">결제 승인 확인 중...</p>
         </div>
     );
 }

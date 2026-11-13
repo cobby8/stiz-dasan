@@ -53,12 +53,12 @@ export default function InstagramFeedPreview({
     <div className="overflow-hidden rounded-lg border border-gray-200 bg-white text-gray-900 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white">
       <div className="flex h-12 items-center justify-between px-3">
         <div className="flex min-w-0 items-center gap-2">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 to-pink-500 text-xs font-black text-white">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 to-pink-500 text-xs font-semibold text-white">
             S
           </div>
           <div className="min-w-0">
-            <p className="truncate text-sm font-bold">{authorLabel}</p>
-            <p className="truncate text-[11px] text-gray-500 dark:text-gray-400">STIZ Basketball Dasan</p>
+            <p className="truncate text-sm font-semibold">{authorLabel}</p>
+            <p className="truncate text-xs text-gray-500 dark:text-gray-400">STIZ Basketball Dasan</p>
           </div>
         </div>
         <SymbolIcon name="more_horiz" size={18} className="shrink-0 text-gray-500" />
@@ -89,7 +89,7 @@ export default function InstagramFeedPreview({
             >
               <SymbolIcon name="chevron_right" size={18} />
             </button>
-            <div className="absolute right-2 top-2 rounded-full bg-black/55 px-2 py-0.5 text-[11px] font-bold text-white">
+            <div className="absolute right-2 top-2 rounded-full bg-black/55 px-2 py-0.5 text-xs font-medium text-white">
               {Math.min(activeIndex + 1, images.length)} / {images.length}
             </div>
           </>

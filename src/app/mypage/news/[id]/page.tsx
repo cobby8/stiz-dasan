@@ -39,15 +39,15 @@ export default async function ParentNoticeDetailPage({ params }: { params: Promi
 
     return (
         <article className="space-y-4">
-            <Link href="/mypage/reports#news-notices" className="academy-back-link">
-                <span className="material-symbols-outlined text-sm" aria-hidden="true">arrow_back</span>
+            <Link href="/mypage/reports#news-notices" className="academy-back-link gap-1 px-2 text-sm text-[var(--color-academy-muted)]">
+                <span aria-hidden="true">←</span>
                 소식
             </Link>
             <header>
                 {notice.isPinned && (
-                    <p className="mb-1 text-xs font-bold text-[var(--color-academy-warning)]">중요 공지</p>
+                    <p className="mb-1 text-xs font-semibold text-[var(--color-academy-warning)]">중요 공지</p>
                 )}
-                <h1 className="break-keep text-xl font-extrabold text-[var(--color-academy-ink)]">{notice.title}</h1>
+                <h1 className="academy-heading break-keep">{notice.title}</h1>
                 <p className="mt-1 text-sm text-[var(--color-academy-muted)]">
                     게시일 {formatKstDate(notice.createdAt, { year: "numeric", month: "long", day: "numeric" })}
                     <span className="ml-2">· 게시 당시 기준 안내입니다</span>
@@ -65,7 +65,7 @@ export default async function ParentNoticeDetailPage({ params }: { params: Promi
                 ) : (
                     // 옛 순수 텍스트 공지 — toNoticeHtml 이 이스케이프 + 줄바꿈 + 주소 링크
                     <div
-                        className="max-w-none whitespace-pre-wrap text-[15px] leading-loose text-[var(--color-academy-muted)] [overflow-wrap:anywhere]"
+                        className="max-w-none whitespace-pre-wrap text-base leading-loose text-[var(--color-academy-muted)] [overflow-wrap:anywhere]"
                         data-outside-links
                         dangerouslySetInnerHTML={{ __html: toNoticeHtml(notice.content) }}
                     />
@@ -85,14 +85,14 @@ export default async function ParentNoticeDetailPage({ params }: { params: Promi
                 {/* 그 외 첨부파일 — 내려받기 */}
                 {fileAtts.length > 0 && (
                     <div className="mt-6 border-t border-[var(--color-academy-line)] pt-4">
-                        <h2 className="mb-2 text-sm font-bold text-[var(--color-academy-ink)]">첨부파일 <span className="tabular-nums">{fileAtts.length}</span>개</h2>
+                        <h2 className="academy-section-title mb-2">첨부파일 <span className="tabular-nums">{fileAtts.length}</span>개</h2>
                         <ul className="space-y-1">
                             {fileAtts.map((a, i) => (
                                 <li key={i}>
                                     <a href={a.url} data-outside-link target="_blank" rel="noopener noreferrer"
                                         className="flex min-h-11 items-center gap-2 rounded-lg px-2 text-sm text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]">
-                                        <span className="material-symbols-outlined text-base" aria-hidden="true">download</span>
-                                        <span className="min-w-0 break-all">{a.filename}</span>
+                                        <span className="min-w-0 flex-1 break-all">{a.filename}</span>
+                                        <span className="shrink-0 text-xs font-medium text-[var(--color-academy-primary)]">내려받기</span>
                                     </a>
                                 </li>
                             ))}

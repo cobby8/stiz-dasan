@@ -332,8 +332,8 @@ export default function LocationPickerModal({
       <section ref={panelRef} tabIndex={-1} className="flex max-h-[96dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl outline-none dark:bg-gray-800 sm:max-h-[calc(100dvh-2rem)] sm:rounded-3xl">
         <header className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-700">
           <div>
-            <p className="text-xs font-bold text-brand-orange-500 dark:text-brand-neon-lime">셔틀 위치 선택</p>
-            <h2 id={titleId} className="text-lg font-black text-gray-900 dark:text-white">{title}</h2>
+            <p className="text-xs font-medium text-brand-orange-500 dark:text-brand-neon-lime">셔틀 위치 선택</p>
+            <h2 id={titleId} className="text-lg font-bold text-gray-900 dark:text-white">{title}</h2>
           </div>
           <button type="button" onClick={onClose} aria-label="지도 닫기" className="flex size-11 items-center justify-center rounded-full text-gray-600 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700">
             <span className="material-symbols-outlined" aria-hidden="true">close</span>
@@ -345,13 +345,13 @@ export default function LocationPickerModal({
             <div className="flex gap-2">
               <label className="sr-only" htmlFor={`${titleId}-search`}>주소 또는 장소 검색</label>
               <input ref={searchInputRef} id={`${titleId}-search`} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); search(); } }} placeholder="도로명, 건물명으로 검색" className="min-h-11 min-w-0 flex-1 rounded-xl border border-gray-300 bg-white px-3 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-white" />
-              <button type="button" onClick={search} disabled={confirmPending} className="min-h-11 rounded-xl bg-brand-navy-900 px-4 text-sm font-black text-white disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900">검색</button>
+              <button type="button" onClick={search} disabled={confirmPending} className="min-h-11 shrink-0 rounded-xl border border-current px-4 text-sm font-medium text-gray-800 disabled:opacity-50 dark:text-white">검색</button>
             </div>
           )}
 
           {status !== "fallback" && (
             <div>
-              <label className="mb-1 block text-xs font-bold text-gray-600 dark:text-gray-300" htmlFor={`${titleId}-place-name`}>
+              <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300" htmlFor={`${titleId}-place-name`}>
                 {requirePlaceName ? <>장소명 <span className="text-red-600 dark:text-red-300">*</span></> : "장소명 (선택)"}
               </label>
               {/* 검색으로 고른 장소의 이름이 자동 채워지고, 직접 수정할 수 있다. 확정 시 placeName으로 함께 저장된다. */}
@@ -368,30 +368,30 @@ export default function LocationPickerModal({
               />
               {/* 필수인데 비었을 때만 안내(기사님 명단에 이 이름이 나온다) */}
               {placeNameMissing && (
-                <p id={`${titleId}-place-name-hint`} className="mt-1 text-xs font-bold text-red-600 dark:text-red-300">{SHUTTLE_PLACE_NAME_REQUIRED_MESSAGE}</p>
+                <p id={`${titleId}-place-name-hint`} className="mt-1 text-xs font-medium text-red-600 dark:text-red-300">{SHUTTLE_PLACE_NAME_REQUIRED_MESSAGE}</p>
               )}
             </div>
           )}
 
           {status === "fallback" ? (
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
-              <p className="font-black">현재 지도를 사용할 수 없습니다.</p>
+              <p className="font-semibold">현재 지도를 사용할 수 없습니다.</p>
               <p className="mt-1">신청 화면의 기존 위치 입력란에 주소와 정차 위치를 자세히 적어주세요. 지도 위치는 나중에 다시 확인할 수 있습니다.</p>
-              <button type="button" onClick={onClose} className="mt-3 min-h-11 rounded-xl border border-amber-400 px-4 font-bold">텍스트로 입력하기</button>
+              <button type="button" onClick={onClose} className="mt-3 min-h-11 rounded-xl border border-amber-400 px-4 font-medium">텍스트로 입력하기</button>
             </div>
           ) : (
             <>
               <div className="relative h-[45dvh] min-h-72 overflow-hidden rounded-2xl bg-gray-100 dark:bg-gray-900">
                 <div ref={mapElementRef} className="absolute inset-0" aria-label="승하차 위치 지도" />
-                {status === "loading" && <div className="absolute inset-0 grid place-items-center text-sm font-bold text-gray-500">지도를 불러오는 중...</div>}
+                {status === "loading" && <div className="absolute inset-0 grid place-items-center text-sm text-gray-500">지도를 불러오는 중...</div>}
                 <span className="material-symbols-outlined pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-full text-5xl text-brand-orange-500 drop-shadow" aria-hidden="true">location_on</span>
-                {!appLacksGeolocation && <button type="button" onClick={useCurrentLocation} disabled={confirmPending || isLocating} className="absolute bottom-3 right-3 z-10 flex min-h-11 items-center gap-1 rounded-xl bg-white px-3 text-sm font-black text-gray-800 shadow-lg disabled:opacity-60 dark:bg-gray-800 dark:text-white">
-                  <span className="material-symbols-outlined text-lg" aria-hidden="true">my_location</span>{isLocating ? "확인 중" : "현재 위치"}
+                {!appLacksGeolocation && <button type="button" onClick={useCurrentLocation} disabled={confirmPending || isLocating} className="absolute bottom-3 right-3 z-10 flex min-h-11 items-center gap-1 rounded-xl bg-white px-3 text-sm font-medium text-gray-800 shadow-lg disabled:opacity-60 dark:bg-gray-800 dark:text-white">
+                  {isLocating ? "확인 중" : "현재 위치"}
                 </button>}
               </div>
               <div className="rounded-xl bg-gray-50 p-3 dark:bg-gray-900">
                 <p className="text-xs text-gray-500 dark:text-gray-400">{message}</p>
-                <p className="mt-1 font-bold text-gray-900 dark:text-white">{location?.placeName ?? location?.roadAddress ?? location?.address ?? "위치를 선택해주세요."}</p>
+                <p className="mt-1 font-semibold text-gray-900 dark:text-white">{location?.placeName ?? location?.roadAddress ?? location?.address ?? "위치를 선택해주세요."}</p>
                 {/* 장소명이 있으면 그 아래에 주소를, 없으면 기존처럼 지번을 보조로 보여준다. */}
                 {location?.placeName
                   ? <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{location.roadAddress ?? location.address}</p>
@@ -403,8 +403,8 @@ export default function LocationPickerModal({
 
         {status !== "fallback" && (
           <footer className="flex gap-2 border-t border-gray-200 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] dark:border-gray-700">
-            <button type="button" onClick={onClose} disabled={confirmPending} className="min-h-12 rounded-xl border border-gray-300 px-5 font-bold text-gray-700 disabled:opacity-50 dark:border-gray-600 dark:text-gray-200">취소</button>
-            <button type="button" disabled={confirmPending || placeNameMissing} aria-busy={confirmPending || isLocating} onClick={confirmSelection} className="min-h-12 flex-1 rounded-xl bg-brand-orange-500 px-5 font-black text-white disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900">{confirmPending ? "저장 중..." : isLocating ? "현재 위치 확인 중..." : placeNameMissing ? "장소명을 적어 주세요" : location ? "이 위치로 선택" : "위치 선택 필요"}</button>
+            <button type="button" onClick={onClose} disabled={confirmPending} className="min-h-12 rounded-xl border border-gray-300 px-5 font-medium text-gray-700 disabled:opacity-50 dark:border-gray-600 dark:text-gray-200">취소</button>
+            <button type="button" disabled={confirmPending || placeNameMissing} aria-busy={confirmPending || isLocating} onClick={confirmSelection} className="min-h-12 flex-1 rounded-xl bg-brand-orange-500 px-5 font-semibold text-white disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900">{confirmPending ? "저장 중..." : isLocating ? "현재 위치 확인 중..." : placeNameMissing ? "장소명을 적어 주세요" : location ? "이 위치로 선택" : "위치 선택 필요"}</button>
           </footer>
         )}
       </section>

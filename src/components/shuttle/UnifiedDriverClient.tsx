@@ -294,17 +294,17 @@ export default function UnifiedDriverClient({
   const stopRows = ordered.filter((r) => !r.isTerminal);
   const orderControls = !accountRun && stopRows.length > 0 && (!editing ? (
     <button type="button" onClick={() => { setOrderSourceRows(rows); setSortOverride({}); setTimeOverride({}); clearRetimeNote(); setEditing(true); }}
-      className="min-h-11 shrink-0 rounded-lg border border-[var(--color-academy-line-input)] bg-white px-2 py-1 text-[13px] font-bold text-[var(--color-academy-muted)] active:bg-[var(--color-academy-soft)]">
-      ↕ 순서·시간 수정
+      className="academy-button-secondary shrink-0">
+      순서·시간 수정
     </button>
   ) : (
     <div className="flex shrink-0 gap-1">
       <button type="button" disabled={savingOrder} onClick={saveRegularOrder}
-        className="min-h-11 rounded-lg bg-[var(--color-academy-primary)] px-3 py-1 text-[13px] font-bold text-white active:bg-[var(--color-academy-primary-hover)]">
+        className="academy-button-primary">
         {savingOrder ? "저장 중..." : "저장"}
       </button>
       <button type="button" onClick={() => { setEditing(false); setSortOverride({}); setTimeOverride({}); clearRetimeNote(); }}
-        className="min-h-11 rounded-lg border border-[var(--color-academy-line-input)] bg-white px-3 py-1 text-[13px] font-bold text-[var(--color-academy-muted)]">취소</button>
+        className="academy-button-secondary">취소</button>
     </div>
   ));
 
@@ -315,7 +315,7 @@ export default function UnifiedDriverClient({
     return (
       <>
         <span>{initialBoardingReliable ? checks.total > 0 ? `체크 ${checks.checked}/${checks.total}${checks.checked === checks.total ? " · 체크 완료" : ""}` : "체크 대상 없음" : "기록 확인 필요"}</span>
-        {absence.absentCount > 0 && <span className="font-black text-[var(--color-academy-danger)]">결석 {absence.absentCount}명{absence.allSkippable ? " · 정차 안 해도 됨" : ""}</span>}
+        {absence.absentCount > 0 && <span className="font-semibold text-[var(--color-academy-danger)]">결석 {absence.absentCount}명{absence.allSkippable ? " · 정차 안 해도 됨" : ""}</span>}
       </>
     );
   }
@@ -339,15 +339,15 @@ export default function UnifiedDriverClient({
         <div className={styles.riderMain}>
           <div className={styles.riderInfo}>
             <div className={styles.identity}>
-              <span className={`break-all text-[19px] font-black ${view.dimmed ? "text-[var(--color-academy-muted)]" : "text-[var(--color-academy-ink)]"}`}>{rider.name}</span>
+              <span className={`break-all text-[19px] font-semibold ${view.dimmed ? "text-[var(--color-academy-muted)]" : "text-[var(--color-academy-ink)]"}`}>{rider.name}</span>
               {/* 결석 뱃지 — 이름 바로 옆, 진한 바탕 + 흰 글자(14px)로 운전 중에도 한눈에. 흐린 행 안에서도 흐리지 않는다.
                   실외 가독성 때문에 채움은 유지하고, 색만 꽉 찬 위험색 토큰(danger-fill)으로 통일(2026-11-09). */}
               {view.absentReported && (
-                <span className="inline-flex items-center gap-0.5 rounded-md bg-[var(--color-academy-danger-fill)] px-2 py-0.5 text-[14px] font-black text-[var(--color-academy-on-primary)]">
+                <span className="inline-flex items-center gap-0.5 rounded-md bg-[var(--color-academy-danger-fill)] px-2 py-0.5 text-sm font-semibold text-[var(--color-academy-on-primary)]">
                   <span aria-hidden="true" className="material-symbols-outlined text-[16px] leading-none">event_busy</span>{rider.absentLabel || "결석"}
                 </span>
               )}
-              {rider.grade && <span className="text-[14px] text-[var(--color-academy-muted)]">{rider.grade}</span>}
+              {rider.grade && <span className="text-sm text-[var(--color-academy-muted)]">{rider.grade}</span>}
             </div>
             {(parent || child) && <div className={styles.contacts}>
               {parent && <a href={`tel:${parent}`} aria-label={`${rider.name} 학부모 전화`}><span aria-hidden="true" className="material-symbols-outlined">call</span>학부모</a>}
@@ -369,28 +369,28 @@ export default function UnifiedDriverClient({
         {(rider.shuttleNote || (rider.absent && !view.absentReported && status !== "BOARDED" && status !== "SELF") || (!view.absentReported && status === "NOSHOW") || status === "SELF") && <div className={styles.riderNotes}>
               {/* 특강 «결석예정»은 종전대로(체크 대상 · 정규 결석 뱃지와 구분) */}
               {rider.absent && !view.absentReported && status !== "BOARDED" && status !== "SELF" && (
-                <span className="rounded-md bg-[var(--color-academy-warning)] px-2 py-0.5 text-[13px] font-black text-[var(--color-academy-on-primary)]">결석예정</span>
+                <span className="rounded-md bg-[var(--color-academy-warning)] px-2 py-0.5 text-sm font-semibold text-[var(--color-academy-on-primary)]">결석예정</span>
               )}
               {/* 정규 결석 학생은 이름 옆 뱃지가 이미 «결석»이라 같은 말을 두 번 띄우지 않는다 */}
-              {!view.absentReported && status === "NOSHOW" && <span className="rounded-md bg-[var(--color-academy-danger-fill)] px-2 py-0.5 text-[13px] font-black text-[var(--color-academy-on-primary)]">결석</span>}
-              {status === "SELF" && <span className="rounded-md bg-[var(--color-driver-self)] px-2 py-0.5 text-[13px] font-black text-[var(--color-academy-on-primary)]">{selfLabel}</span>}
+              {!view.absentReported && status === "NOSHOW" && <span className="rounded-md bg-[var(--color-academy-danger-fill)] px-2 py-0.5 text-sm font-semibold text-[var(--color-academy-on-primary)]">결석</span>}
+              {status === "SELF" && <span className="rounded-md bg-[var(--color-driver-self)] px-2 py-0.5 text-sm font-semibold text-[var(--color-academy-on-primary)]">{selfLabel}</span>}
               {/* "오늘만" 셔틀 변경. 결석과 다른 색으로 둔다 — 아이는 수업에 오고,
                   기사님이 태우지 않거나 다른 곳으로 가야 한다는 뜻이다. */}
-              {rider.shuttleNote && <span className="rounded-md bg-[var(--color-driver-note)] px-2 py-0.5 text-[13px] font-black text-[var(--color-academy-on-primary)]">{rider.shuttleNote}</span>}
+              {rider.shuttleNote && <span className="rounded-md bg-[var(--color-driver-note)] px-2 py-0.5 text-sm font-semibold text-[var(--color-academy-on-primary)]">{rider.shuttleNote}</span>}
         </div>}
         {(saveState || stored || view.absentDefault) && <div className={styles.riderStatusLine}>
           {saveState ? <p role="status" className={`text-xs font-semibold ${saveState.state === "failed" || saveState.state === "unknown" ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-muted)]"}`}>{saveState.message}{saveState.state === "unknown" && <button type="button" disabled={busy[rider.key]} onClick={() => void setStatus(rider, "BOARDED", true)} className="ml-2 inline-flex min-h-11 min-w-11 items-center underline">저장 상태 확인</button>}</p>
-            : view.absentDefault ? <p className="text-[13px] font-semibold text-[var(--color-academy-muted)]">이 아이는 안 태워도 돼요 (탔으면 «{isPickup ? "탑승" : "하차"}»)</p> : <span />}
+            : view.absentDefault ? <p className="text-sm font-semibold text-[var(--color-academy-muted)]">이 아이는 안 태워도 돼요 (탔으면 «{isPickup ? "탑승" : "하차"}»)</p> : <span />}
           {/* 잘못 눌렀을 때만 쓰는 되돌리기 — 상태 버튼과 떨어진 작은 글자 버튼(결석 학생은 기본 «결석»으로 돌아간다) */}
           {stored && <StatusUndoButton disabled={isBusy} ariaLabel={`${rider.name} ${view.absentReported ? "결석으로" : "대기로"} 되돌리기`} onClick={() => { setMenuKey(null); void setStatus(rider, null); }} />}
         </div>}
         {menuKey === rowKey && (
           <div className="mt-2 flex gap-3">
             <StatusChoiceButton tone="danger" icon="close" disabled={isBusy} active={status === "NOSHOW"} onClick={() => { void setStatus(rider, "NOSHOW"); setMenuKey(null); }}
-              className="min-h-12 flex-1 text-[16px]">결석(안 옴)</StatusChoiceButton>
+              className="min-h-12 flex-1 text-base">결석(안 옴)</StatusChoiceButton>
             {/* 자차는 결석과 다른 «자차 색»(이 화면 CSS 변수 --color-driver-self) */}
             <button type="button" disabled={isBusy} aria-pressed={status === "SELF"} onClick={() => { void setStatus(rider, "SELF"); setMenuKey(null); }}
-              className={`inline-flex min-h-12 flex-1 items-center justify-center gap-1 rounded-xl border-2 border-[var(--color-driver-self)] text-[16px] font-black ${status === "SELF" ? "bg-[var(--color-driver-self)] text-[var(--color-academy-on-primary)]" : "bg-[var(--color-academy-surface)] text-[var(--color-driver-self)]"}`}><span aria-hidden="true" className="material-symbols-outlined text-[18px] leading-none">directions_car</span>{selfLabel}</button>
+              className={`inline-flex min-h-12 flex-1 items-center justify-center gap-1 rounded-xl border-2 border-[var(--color-driver-self)] text-base font-medium ${status === "SELF" ? "bg-[var(--color-driver-self)] text-[var(--color-academy-on-primary)]" : "bg-[var(--color-academy-surface)] text-[var(--color-driver-self)]"}`}><span aria-hidden="true" className="material-symbols-outlined text-[18px] leading-none">directions_car</span>{selfLabel}</button>
           </div>
         )}
       </div>
@@ -402,8 +402,8 @@ export default function UnifiedDriverClient({
       {/* 운행 동작은 헤더 한 곳에 두고, 날짜는 아래 날짜 탐색에만 표시합니다. */}
       <header className={(accountRun ? "" : "sticky top-0 ") + "academy-staff-header z-10 -mx-3 mb-2 flex items-center justify-between gap-2 border-b px-3 py-2"}>
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2"><Image src="/stiz-logo.png" alt="스티즈 농구교실" width={96} height={42} className="h-[42px] w-24 shrink-0 object-contain" /><h1 className="text-[17px] font-extrabold text-[var(--color-academy-ink)]">셔틀 운행</h1>{runState === "running" && <LiveStatusPill>운행 중</LiveStatusPill>}</div>
-          {runState === "ended" && <p className="text-[13px] font-bold text-[var(--color-academy-muted)]">{transmission === "stop-unknown" ? "위치 공유를 멈췄습니다 · 운행 종료가 저장됐는지 확인해 주세요" : "운행이 종료되었습니다"}</p>}
+          <div className="flex flex-wrap items-center gap-2"><Image src="/stiz-logo.png" alt="스티즈 농구교실" width={96} height={42} className="h-[42px] w-24 shrink-0 object-contain" /><h1 className="text-[17px] font-bold text-[var(--color-academy-ink)]">셔틀 운행</h1>{runState === "running" && <LiveStatusPill>운행 중</LiveStatusPill>}</div>
+          {runState === "ended" && <p className="text-sm font-medium text-[var(--color-academy-muted)]">{transmission === "stop-unknown" ? "위치 공유를 멈췄습니다 · 운행 종료가 저장됐는지 확인해 주세요" : "운행이 종료되었습니다"}</p>}
         </div>
         {!accountRun && <div className={styles.headerActions}>
         {(runState === "running" || runState === "ended" || (gpsMode === "native" && runState === "idle" && (gpsState === "denied" || gpsState === "error"))) && (
@@ -411,28 +411,29 @@ export default function UnifiedDriverClient({
         )}
         {(runState === "idle" || (runState === "ended" && transmission !== "stop-unknown")) && (
           <button type="button" onClick={handleRunStart}
-            className="h-11 shrink-0 rounded-xl bg-[var(--color-academy-primary)] px-3 text-[14px] font-black text-white active:opacity-80">
+            // 2026-11-13 UI 통일: 테마 주 버튼(44px·네이비). 운전 중 누르는 버튼이라 academy-button-sm 은 쓰지 않는다.
+            className="academy-button-primary shrink-0">
             {runState === "ended" ? "다시 운행 시작" : "운행 시작"}
           </button>
         )}
         {runState === "ended" && transmission === "stop-unknown" && (
           <button type="button" onClick={handleRunEnd}
-            className="h-11 shrink-0 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] px-3 text-[14px] font-bold text-[var(--color-academy-primary)]">
+            className="academy-button-tonal shrink-0">
             종료 재확인
           </button>
         )}
-        {runState === "running" && <button type="button" disabled={transmission === "stopping" || confirmEnd} onClick={() => setConfirmEnd(true)} aria-expanded={confirmEnd} className="academy-button-danger h-11 shrink-0 rounded-xl px-3 text-[14px] font-bold">{transmission === "stopping" ? "종료 확인 중" : "운행 종료"}</button>}
+        {runState === "running" && <button type="button" disabled={transmission === "stopping" || confirmEnd} onClick={() => setConfirmEnd(true)} aria-expanded={confirmEnd} className="academy-button-danger shrink-0">{transmission === "stopping" ? "종료 확인 중" : "운행 종료"}</button>}
         </div>}
       </header>
 
       {/* 운행 종료 확인 — 기본 초점은 안전한 «계속 운행». 종료 버튼은 12px 떼어 오른쪽에. */}
       {confirmEnd && runState === "running" && (
         <div role="alertdialog" aria-labelledby="driver-run-end-title" className="mb-2 rounded-xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-3">
-          <p id="driver-run-end-title" className="text-[16px] font-black text-[var(--color-academy-ink)]">운행을 종료할까요?</p>
-          <p className="mt-0.5 text-[14px] font-semibold text-[var(--color-academy-muted)]">위치 공유가 멈춥니다.</p>
+          <p id="driver-run-end-title" className="text-base font-semibold text-[var(--color-academy-ink)]">운행을 종료할까요?</p>
+          <p className="mt-0.5 text-sm text-[var(--color-academy-muted)]">위치 공유가 멈춥니다.</p>
           <div className="mt-3 grid grid-cols-2 gap-3">
-            <button type="button" autoFocus onClick={() => setConfirmEnd(false)} className="academy-button-secondary min-h-12 rounded-xl text-[15px] font-black">계속 운행</button>
-            <button type="button" disabled={transmission === "stopping"} onClick={() => { setConfirmEnd(false); void handleRunEnd(); }} className="academy-button-danger-solid min-h-12 rounded-xl text-[15px] font-black">운행 종료</button>
+            <button type="button" autoFocus onClick={() => setConfirmEnd(false)} className="academy-button-secondary">계속 운행</button>
+            <button type="button" disabled={transmission === "stopping"} onClick={() => { setConfirmEnd(false); void handleRunEnd(); }} className="academy-button-danger-solid">운행 종료</button>
           </div>
         </div>
       )}
@@ -440,15 +441,15 @@ export default function UnifiedDriverClient({
       {/* PWA 설치 배너 */}
       {showInstallBanner && (
         <div className="mb-2 flex items-center gap-2 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] px-2">
-          <p className="min-w-0 flex-1 text-[14px] font-bold text-[var(--color-academy-ink)]">홈 화면에서 빠르게 열기</p>
+          <p className="min-w-0 flex-1 text-sm font-medium text-[var(--color-academy-ink)]">홈 화면에서 빠르게 열기</p>
           <button type="button" onClick={installPwa}
-            className="min-h-11 min-w-11 text-[14px] font-bold text-[var(--color-academy-primary)]">설치</button>
-          <button type="button" onClick={() => setShowInstallBanner(false)} aria-label="설치 안내 닫기" className="h-11 w-11 shrink-0 text-[20px] text-[var(--color-academy-primary)]">×</button>
+            className="min-h-11 min-w-11 text-sm font-medium text-[var(--color-academy-primary)]">설치</button>
+          <button type="button" onClick={() => setShowInstallBanner(false)} aria-label="설치 안내 닫기" className="h-11 w-11 shrink-0 text-xl text-[var(--color-academy-primary)]">×</button>
         </div>
       )}
 
       <DriverDateNav date={date} prevDate={prevDate} nextDate={nextDate} today={today} />
-      {!initialBoardingReliable && <p role="alert" className="mb-2 text-sm font-bold text-[var(--color-academy-danger)]">체크 기록을 불러오지 못했습니다. 미체크로 판단하지 말고 <button type="button" className="inline-flex min-h-11 min-w-11 items-center underline" onClick={() => window.location.reload()}>기록 다시 불러오기</button>를 눌러주세요. 확인 전에는 체크를 잠시 막습니다.</p>}
+      {!initialBoardingReliable && <p role="alert" className="mb-2 text-sm font-semibold text-[var(--color-academy-danger)]">체크 기록을 불러오지 못했습니다. 미체크로 판단하지 말고 <button type="button" className="inline-flex min-h-11 min-w-11 items-center underline" onClick={() => window.location.reload()}>기록 다시 불러오기</button>를 눌러주세요. 확인 전에는 체크를 잠시 막습니다.</p>}
 
       {/* 순서 편집 */}
       {stopRows.length > 0 && (
@@ -457,17 +458,17 @@ export default function UnifiedDriverClient({
           {orderControls}
         </div>
       )}
-      {editing && <p className="mb-2 rounded-xl bg-[var(--color-academy-info-soft)] px-3 py-2 text-[13px] font-bold text-[var(--color-academy-info)]">순서를 바꾸면 첫 탑승(하원은 학원 출발) 시각은 그대로 두고 뒤 정류장 시각을 지도 이동 시간으로 다시 계산합니다. 시간을 직접 수정할 수도 있습니다. 정규 셔틀만 저장됩니다.</p>}
+      {editing && <p className="mb-2 rounded-xl bg-[var(--color-academy-info-soft)] px-3 py-2 text-sm text-[var(--color-academy-info)]">순서를 바꾸면 첫 탑승(하원은 학원 출발) 시각은 그대로 두고 뒤 정류장 시각을 지도 이동 시간으로 다시 계산합니다. 시간을 직접 수정할 수도 있습니다. 정규 셔틀만 저장됩니다.</p>}
       {/* 옮긴 묶음마다 다시 계산 결과 한 줄(어느 묶음이 지도 기준·추정인지, 학원 도착이 늦는지) */}
       {editing && Object.values(retimeNotes).map((n) => (
-        <p key={n.groupKey} role="status" className={`mb-1 px-1 text-[13px] font-bold ${n.warn ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-muted)]"}`}>
+        <p key={n.groupKey} role="status" className={`mb-1 px-1 text-sm font-medium ${n.warn ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-muted)]"}`}>
           {rows.find((r) => r.groupKey === n.groupKey)?.groupLabel ?? ""} {n.text}
         </p>
       ))}
-      {saveMessage && <p className="mb-2 rounded-xl bg-[var(--color-academy-soft)] px-3 py-2 text-[13px] font-black text-[var(--color-academy-ink)]">{saveMessage}</p>}
+      {saveMessage && <p className="mb-2 rounded-xl bg-[var(--color-academy-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-academy-ink)]">{saveMessage}</p>}
 
       {stopRows.length === 0 && (
-        <p className="rounded-2xl bg-[var(--color-academy-soft)] px-4 py-6 text-center text-[16px] font-bold text-[var(--color-academy-faint)]">선택한 날짜에는 운행이 없습니다.</p>
+        <p className="rounded-2xl bg-[var(--color-academy-soft)] px-4 py-6 text-center text-base text-[var(--color-academy-faint)]">선택한 날짜에는 운행이 없습니다.</p>
       )}
 
       {/* 카드 목록 = 운행표 부품(RunBoard). 정렬·편집 상태는 이 화면이 들고, 탑승 버튼은 renderRider 로 끼운다. */}
@@ -487,7 +488,7 @@ export default function UnifiedDriverClient({
         focusKey={focusKey}
       />
 
-      <details className="mt-3 text-[14px] font-semibold text-[var(--color-academy-muted)]"><summary className="min-h-11 cursor-pointer py-3">탑승 체크 사용 안내</summary><p className="pb-2">체크 후 저장 완료를 확인하세요. 잘못 눌렀으면 이름 아래 «대기로 되돌리기»를 누르세요(같은 버튼을 다시 눌러도 바뀌지 않습니다). 미탑승에서는 결석·자차를 구분할 수 있습니다. 결석 신고된 아이는 빨간 «결석» 표시와 함께 기본이 결석이라 들르지 않아도 되고, 실제로 탔으면 «탑승»을 누르세요.</p></details>
+      <details className="mt-3 text-sm text-[var(--color-academy-muted)]"><summary className="min-h-11 cursor-pointer py-3 font-medium">탑승 체크 사용 안내</summary><p className="pb-2">체크 후 저장 완료를 확인하세요. 잘못 눌렀으면 이름 아래 «대기로 되돌리기»를 누르세요(같은 버튼을 다시 눌러도 바뀌지 않습니다). 미탑승에서는 결석·자차를 구분할 수 있습니다. 결석 신고된 아이는 빨간 «결석» 표시와 함께 기본이 결석이라 들르지 않아도 되고, 실제로 탔으면 «탑승»을 누르세요.</p></details>
     </AcademyTheme>
   );
 }

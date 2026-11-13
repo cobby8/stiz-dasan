@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect } from "react";
-import FontFreeIcon from "@/components/ui/FontFreeIcon";
 
 export default function AdminError({
   error,
@@ -22,10 +21,7 @@ export default function AdminError({
         aria-labelledby="admin-error-title"
         role="alert"
       >
-        <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]">
-          <FontFreeIcon name="error" size={30} />
-        </span>
-        <h1 id="admin-error-title" className="mt-5 text-2xl font-black text-[var(--color-academy-ink)]">
+        <h1 id="admin-error-title" className="academy-page-title">
           관리자 화면을 불러오지 못했습니다
         </h1>
         <p className="mt-3 text-sm leading-6 text-[var(--color-academy-muted)]">
@@ -36,16 +32,14 @@ export default function AdminError({
           <button
             type="button"
             onClick={reset}
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[var(--color-academy-primary)] px-5 font-black text-[var(--color-academy-on-primary)]"
+            className="academy-button-primary"
           >
-            <FontFreeIcon name="sync" size={19} />
             다시 시도
           </button>
           <Link
             href="/admin"
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[var(--color-academy-line-input)] px-5 font-bold text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
+            className="academy-button-secondary"
           >
-            <FontFreeIcon name="home" size={19} />
             대시보드로 이동
           </Link>
         </div>

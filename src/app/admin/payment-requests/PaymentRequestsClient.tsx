@@ -7,6 +7,7 @@ import { PAYMENT_REQUEST_STATUS_LABEL } from "@/lib/payments/parentRequestRules"
 import type { AdminPaymentRequestRow } from "@/lib/payments/admin-payment-request";
 import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 
 const FILTERS = [
   { value: "PENDING", label: "확인 중" },
@@ -80,13 +81,11 @@ export default function PaymentRequestsClient({
 
   return (
     <main className="mx-auto max-w-5xl space-y-3 p-4">
-      <div>
-        <h1 className="text-xl font-black text-[var(--color-academy-ink)]">입금 확인·영수증 요청</h1>
-        {/* 승인이 곧 납부 처리라는 점을 먼저 알린다. */}
-        <p className="mt-1 text-sm text-[var(--color-academy-muted)]">
-          입금 확인을 승인하면 <b>바로 납부 처리</b>됩니다. 통장·랠리즈에서 대조한 뒤 눌러 주세요.
-        </p>
-      </div>
+      {/* 승인이 곧 납부 처리라는 점을 먼저 알린다. */}
+      <AdminPageHeader
+        title="입금 확인·영수증 요청"
+        description={<>입금 확인을 승인하면 <b className="font-semibold text-[var(--color-academy-ink)]">바로 납부 처리</b>됩니다. 통장·랠리즈에서 대조한 뒤 눌러 주세요.</>}
+      />
 
       {/* 상태 필터 — 서버가 상태별로 읽어 주므로(다른 상태 건수는 모름) 건수 칩 대신 예전 버튼을 유지 */}
       <div className="flex flex-wrap gap-1.5">
@@ -96,18 +95,15 @@ export default function PaymentRequestsClient({
             type="button"
             aria-pressed={status === item.value}
             onClick={() => { setDetailId(null); router.push(`/admin/payment-requests?status=${item.value}`); }}
-            className={`min-h-11 rounded-full border px-4 text-sm font-bold ${
-              status === item.value
-                ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary)] text-[var(--color-academy-on-primary)]"
-                : "border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)] hover:border-[var(--color-academy-primary)]"
-            }`}
+            // «지금 보는 상태»를 가리키는 탭 칩 — 보조 색(하늘색), ✓ 없음
+            className={`academy-choice is-tab ${status === item.value ? "is-selected" : ""}`}
           >
             {item.label}
           </button>
         ))}
       </div>
 
-      {error && !detail && <p role="alert" className="rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm font-bold text-[var(--color-academy-danger)]">{error}</p>}
+      {error && !detail && <p role="alert" className="rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm font-medium text-[var(--color-academy-danger)]">{error}</p>}
 
       {rows.length === 0 ? (
         <p className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-4 text-center text-sm text-[var(--color-academy-muted)]">
@@ -117,7 +113,7 @@ export default function PaymentRequestsClient({
         <div className="overflow-x-auto rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
           {/* 한 줄 행: 예전 «항목 · 금액 · 기한» / «입금일 · 방법 · 입금자» 를 칸별로 나눴다 */}
           <table className="admin-list-table w-full border-collapse text-sm">
-            <thead className="bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]">
+            <thead className="bg-[var(--color-academy-soft)] text-xs font-medium text-[var(--color-academy-muted)]">
               <tr>
                 <th className="admin-cell-num px-2 py-2">요청</th>
                 <th className="px-2 py-2">원생</th>
@@ -145,20 +141,20 @@ export default function PaymentRequestsClient({
                     className="cursor-pointer transition-colors hover:bg-[var(--color-academy-soft)] focus:bg-[var(--color-academy-primary-soft)] focus:outline-none"
                   >
                     <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-muted)]">{row.createdAt}</td>
-                    <td className="px-2 py-1.5 font-black text-[var(--color-academy-ink)]">
+                    <td className="px-2 py-1.5 font-semibold text-[var(--color-academy-ink)]">
                       {row.studentName}
-                      {/* 학부모 메모는 줄을 늘리지 않게 아이콘만, 내용은 상세 패널 */}
-                      {row.note && <span className="material-symbols-outlined ml-1 align-middle text-base text-[var(--color-academy-muted)]" aria-label="메모 있음">chat</span>}
+                      {/* 학부모 메모는 줄을 늘리지 않게 «메모» 두 글자만, 내용은 상세 패널 */}
+                      {row.note && <span className="ml-1 whitespace-nowrap text-xs font-normal text-[var(--color-academy-muted)]" aria-label="메모 있음">메모</span>}
                     </td>
                     <td className="px-2 py-1.5 text-[var(--color-academy-ink)]">{row.kindLabel}</td>
                     <td className="hidden px-2 py-1.5 text-[var(--color-academy-ink)] md:table-cell">{row.description || "수강료"}</td>
-                    <td className="admin-cell-num px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{row.amount.toLocaleString()}원</td>
+                    <td className="admin-cell-num px-2 py-1.5 font-semibold text-[var(--color-academy-ink)]">{row.amount.toLocaleString()}원</td>
                     <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] lg:table-cell">{row.dueDate || "-"}</td>
                     <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-ink)] sm:table-cell">{row.kind === "PAYMENT_CLAIM" ? row.paidOn || "-" : "-"}</td>
                     <td className="hidden px-2 py-1.5 text-[var(--color-academy-ink)] sm:table-cell">{(row.kind === "PAYMENT_CLAIM" ? row.methodLabel : row.receiptTypeLabel) || "-"}</td>
                     <td className="hidden px-2 py-1.5 text-[var(--color-academy-ink)] md:table-cell">{(row.kind === "PAYMENT_CLAIM" ? row.depositorName : row.receiptTarget) || "-"}</td>
                     <td className="px-2 py-1.5">
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-black ${statusTone(row.status)}`}>
+                      <span className={`rounded-full px-2 py-0.5 text-xs ${statusTone(row.status)}`}>
                         {PAYMENT_REQUEST_STATUS_LABEL[row.status] ?? row.status}
                       </span>
                     </td>
@@ -184,8 +180,8 @@ export default function PaymentRequestsClient({
         return (
           <ListDetailPanel onClose={() => setDetailId(null)} titleId="payment-request-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
             <div className="mb-4 flex items-center gap-2">
-              <h3 id="payment-request-detail-panel-title" className="min-w-0 break-keep text-lg font-black text-[var(--color-academy-ink)]">{row.studentName}</h3>
-              <span className={`rounded-full px-2 py-0.5 text-xs font-black ${statusTone(row.status)}`}>
+              <h3 id="payment-request-detail-panel-title" className="min-w-0 break-keep text-lg font-bold text-[var(--color-academy-ink)]">{row.studentName}</h3>
+              <span className={`rounded-full px-2 py-0.5 text-xs ${statusTone(row.status)}`}>
                 {PAYMENT_REQUEST_STATUS_LABEL[row.status] ?? row.status}
               </span>
               <button
@@ -198,48 +194,48 @@ export default function PaymentRequestsClient({
               </button>
             </div>
             <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
-              <dt className="font-bold text-[var(--color-academy-muted)]">종류</dt>
+              <dt className="font-medium text-[var(--color-academy-muted)]">종류</dt>
               <dd className="text-[var(--color-academy-ink)]">{row.kindLabel}</dd>
-              <dt className="font-bold text-[var(--color-academy-muted)]">항목</dt>
+              <dt className="font-medium text-[var(--color-academy-muted)]">항목</dt>
               <dd className="break-keep text-[var(--color-academy-ink)]">{row.description || "수강료"}</dd>
-              <dt className="font-bold text-[var(--color-academy-muted)]">금액</dt>
-              <dd className="tabular-nums font-bold text-[var(--color-academy-ink)]">{row.amount.toLocaleString()}원</dd>
+              <dt className="font-medium text-[var(--color-academy-muted)]">금액</dt>
+              <dd className="tabular-nums font-semibold text-[var(--color-academy-ink)]">{row.amount.toLocaleString()}원</dd>
               {row.dueDate && (
                 <>
-                  <dt className="font-bold text-[var(--color-academy-muted)]">납부 기한</dt>
+                  <dt className="font-medium text-[var(--color-academy-muted)]">납부 기한</dt>
                   <dd className="tabular-nums text-[var(--color-academy-ink)]">{row.dueDate}까지</dd>
                 </>
               )}
               {/* 통장에서 대조할 단서 */}
               {row.kind === "PAYMENT_CLAIM" && (
                 <>
-                  <dt className="font-bold text-[var(--color-academy-muted)]">입금일</dt>
+                  <dt className="font-medium text-[var(--color-academy-muted)]">입금일</dt>
                   <dd className="tabular-nums text-[var(--color-academy-ink)]">{row.paidOn || "-"}</dd>
-                  <dt className="font-bold text-[var(--color-academy-muted)]">방법</dt>
+                  <dt className="font-medium text-[var(--color-academy-muted)]">방법</dt>
                   <dd className="text-[var(--color-academy-ink)]">{row.methodLabel || "-"}</dd>
-                  <dt className="font-bold text-[var(--color-academy-muted)]">입금자</dt>
+                  <dt className="font-medium text-[var(--color-academy-muted)]">입금자</dt>
                   <dd className="text-[var(--color-academy-ink)]">{row.depositorName || "-"}</dd>
                 </>
               )}
               {row.kind === "RECEIPT" && (
                 <>
-                  <dt className="font-bold text-[var(--color-academy-muted)]">영수증</dt>
+                  <dt className="font-medium text-[var(--color-academy-muted)]">영수증</dt>
                   <dd className="text-[var(--color-academy-ink)]">{row.receiptTypeLabel || "-"}</dd>
-                  <dt className="font-bold text-[var(--color-academy-muted)]">발급 대상</dt>
+                  <dt className="font-medium text-[var(--color-academy-muted)]">발급 대상</dt>
                   <dd className="break-all text-[var(--color-academy-ink)]">{row.receiptTarget || "-"}</dd>
                 </>
               )}
               {row.note && (
                 <>
-                  <dt className="font-bold text-[var(--color-academy-muted)]">메모</dt>
+                  <dt className="font-medium text-[var(--color-academy-muted)]">메모</dt>
                   <dd className="whitespace-pre-wrap break-keep text-[var(--color-academy-ink)]">{row.note}</dd>
                 </>
               )}
-              <dt className="font-bold text-[var(--color-academy-muted)]">요청</dt>
+              <dt className="font-medium text-[var(--color-academy-muted)]">요청</dt>
               <dd className="tabular-nums text-[var(--color-academy-ink)]">{row.createdAt}</dd>
             </dl>
 
-            {error && <p role="alert" className="mt-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-danger)]">{error}</p>}
+            {error && <p role="alert" className="mt-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-medium text-[var(--color-academy-danger)]">{error}</p>}
 
             {row.status === "PENDING" ? (
               <div className="mt-4 space-y-2">
@@ -249,7 +245,7 @@ export default function PaymentRequestsClient({
                     onChange={(event) => setReceipts((prev) => ({ ...prev, [row.id]: event.target.value }))}
                     maxLength={500}
                     placeholder="영수증 링크 (있으면 붙여넣기 — 학부모 화면에 '영수증 보기'로 뜹니다)"
-                    className="min-h-11 w-full rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-sm text-[var(--color-academy-ink)]"
+                    className="academy-input"
                   />
                 )}
                 <input
@@ -257,14 +253,14 @@ export default function PaymentRequestsClient({
                   onChange={(event) => setNotes((prev) => ({ ...prev, [row.id]: event.target.value }))}
                   maxLength={500}
                   placeholder="학부모에게 전할 말 (확인 안 됨으로 처리할 때 함께 전달됩니다)"
-                  className="min-h-11 w-full rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-sm text-[var(--color-academy-ink)]"
+                  className="academy-input"
                 />
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
                     disabled={pending}
                     onClick={() => decide(row.id, false)}
-                    className="min-h-11 rounded-lg border border-[var(--color-academy-line)] font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)] disabled:opacity-50"
+                    className="academy-button-secondary"
                   >
                     확인 안 됨
                   </button>
@@ -272,7 +268,7 @@ export default function PaymentRequestsClient({
                     type="button"
                     disabled={pending}
                     onClick={() => decide(row.id, true)}
-                    className="min-h-11 rounded-lg bg-[var(--color-academy-primary)] font-black text-[var(--color-academy-on-primary)] hover:bg-[var(--color-academy-primary-hover)] disabled:opacity-50"
+                    className="academy-button-primary"
                   >
                     {row.kind === "PAYMENT_CLAIM" ? "확인 · 납부 처리" : "발급 완료"}
                   </button>

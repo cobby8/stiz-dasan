@@ -47,7 +47,8 @@ export default function GuideTourLazyTrigger() {
     <button
       onClick={() => setLoadMode("autoStart")}
       // 위치(bottom)는 public-floating-btn--guide(챗봇 버튼 바로 위 88px + 하단 고정 바 높이)
-      className="public-floating-btn public-floating-btn--guide fixed right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full border-2 border-brand-orange-500 bg-white text-brand-orange-500 shadow-lg transition-all duration-200 hover:scale-105 hover:shadow-xl dark:border-brand-neon-lime dark:bg-black dark:text-brand-neon-lime"
+      // 좁은 화면에서는 48px·오른쪽 16px — 홈 첫 화면 버튼과 겹치지 않게(GuideTourTrigger 의 같은 버튼과 모양을 맞춘다)
+      className="public-floating-btn public-floating-btn--guide fixed right-4 z-50 flex h-12 w-12 items-center justify-center rounded-full border-2 border-[var(--color-public-accent)] bg-[var(--color-public-paper)] text-[var(--color-public-accent)] shadow-lg transition-all duration-200 hover:scale-105 hover:shadow-xl dark:border-brand-neon-lime dark:bg-black dark:text-brand-neon-lime sm:right-6 sm:h-14 sm:w-14"
       aria-label="입학 가이드 시작"
       title="입학 가이드"
     >

@@ -13,8 +13,8 @@ function digits(p: string | null): string | null { if (!p) return null; const d 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex justify-between gap-3 py-1.5">
-      <span className="shrink-0 text-[12px] font-bold text-[var(--color-academy-faint)]">{label}</span>
-      <span className="text-right text-[13px] font-semibold text-[var(--color-academy-ink)]">{value ?? "-"}</span>
+      <span className="shrink-0 text-xs text-[var(--color-academy-muted)]">{label}</span>
+      <span className="text-right text-sm text-[var(--color-academy-ink)]">{value ?? "-"}</span>
     </div>
   );
 }
@@ -23,12 +23,12 @@ function ContactRow({ label, phone }: { label: string; phone: string | null }) {
   const d = digits(phone);
   return (
     <div className="flex items-center justify-between gap-2 rounded-xl border border-[var(--color-academy-line)] px-3 py-2">
-      <div><div className="text-[11px] font-bold text-[var(--color-academy-faint)]">{label}</div><div className="text-[13px] font-bold text-[var(--color-academy-ink)]">{phone || "미등록"}</div></div>
+      <div className="min-w-0"><div className="text-xs text-[var(--color-academy-muted)]">{label}</div><div className="text-sm tabular-nums text-[var(--color-academy-ink)]">{phone || "미등록"}</div></div>
       {/* 전화·문자 = 보조 버튼(흰 바탕·테두리·검정 글자) — 전화 버튼 색을 화면마다 같게(2026-11-09) */}
       {d && (
-        <div className="flex gap-1.5">
-          <a href={`tel:${d}`} className="rounded-lg border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 py-1.5 text-[12px] font-black text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]">전화</a>
-          <a href={`sms:${d}`} className="rounded-lg border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 py-1.5 text-[12px] font-black text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]">문자</a>
+        <div className="flex shrink-0 gap-1.5">
+          <a href={`tel:${d}`} className="academy-button-secondary academy-button-sm">전화</a>
+          <a href={`sms:${d}`} className="academy-button-secondary academy-button-sm">문자</a>
         </div>
       )}
     </div>
@@ -129,20 +129,20 @@ export default function StudentDetailModal({ applicationId, onClose, save, onCha
       <div className="flex max-h-[94dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl" onClick={(e) => e.stopPropagation()}>
         <header className="flex items-center justify-between border-b border-[var(--color-academy-line)] px-5 py-3.5">
           <div>
-            <p className="text-[11px] font-bold text-[var(--color-academy-ink)]">수강생 상세</p>
-            <h2 className="text-lg font-black text-[var(--color-academy-ink)]">{c?.name ?? "학생"} {c?.grade ? <span className="text-sm font-bold text-[var(--color-academy-faint)]">· {c.grade}{c.gender ? ` · ${c.gender}` : ""}</span> : null}</h2>
+            <p className="text-xs text-[var(--color-academy-muted)]">수강생 상세</p>
+            <h2 className="text-lg font-bold text-[var(--color-academy-ink)]">{c?.name ?? "학생"} {c?.grade ? <span className="text-sm font-normal text-[var(--color-academy-muted)]">· {c.grade}{c.gender ? ` · ${c.gender}` : ""}</span> : null}</h2>
           </div>
-          <button onClick={onClose} aria-label="닫기" className="grid size-9 place-items-center rounded-full text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)]">✕</button>
+          <button type="button" onClick={onClose} aria-label="닫기" className="grid size-11 shrink-0 place-items-center rounded-md text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">✕</button>
         </header>
 
         <div className="flex-1 space-y-4 overflow-y-auto p-5">
           {loading && <div className="py-10 text-center text-sm text-[var(--color-academy-faint)]">불러오는 중…</div>}
-          {err && <div className="rounded-xl bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-danger)]">⚠ {err}</div>}
+          {err && <div className="rounded-xl bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm text-[var(--color-academy-danger)]">{err}</div>}
 
           {detail && (
             <>
               <section className="rounded-2xl border border-[var(--color-academy-line)] p-4">
-                <h3 className="mb-1 text-[13px] font-black text-[var(--color-academy-ink)]">학생 정보</h3>
+                <h3 className="mb-1 text-sm font-semibold text-[var(--color-academy-ink)]">학생 정보</h3>
                 <div className="divide-y divide-[var(--color-academy-line)]">
                   <Field label="이름" value={c?.name} />
                   <Field label="학년 · 성별" value={[c?.grade, c?.gender].filter(Boolean).join(" · ") || "-"} />
@@ -152,7 +152,7 @@ export default function StudentDetailModal({ applicationId, onClose, save, onCha
               </section>
 
               <section className="rounded-2xl border border-[var(--color-academy-line)] p-4">
-                <h3 className="mb-2 text-[13px] font-black text-[var(--color-academy-ink)]">연락처</h3>
+                <h3 className="mb-2 text-sm font-semibold text-[var(--color-academy-ink)]">연락처</h3>
                 <div className="space-y-2">
                   <ContactRow label={`보호자${detail.parent.name ? ` · ${detail.parent.name}${detail.parent.relation ? `(${detail.parent.relation})` : ""}` : ""}`} phone={detail.parent.phone} />
                   <ContactRow label="학생" phone={c?.phone ?? null} />
@@ -160,50 +160,51 @@ export default function StudentDetailModal({ applicationId, onClose, save, onCha
               </section>
 
               <section className="rounded-2xl border border-[var(--color-academy-line)] p-4">
-                <h3 className="mb-2 text-[13px] font-black text-[var(--color-academy-ink)]">수강 수업</h3>
-                {detail.classes.length === 0 ? <p className="text-[12px] text-[var(--color-academy-faint)]">수강 수업 없음</p> : (
+                <h3 className="mb-2 text-sm font-semibold text-[var(--color-academy-ink)]">수강 수업</h3>
+                {detail.classes.length === 0 ? <p className="text-xs text-[var(--color-academy-faint)]">수강 수업 없음</p> : (
                   <ul className="space-y-1.5">
                     {detail.classes.map((cl, i) => (
                       <li key={i} className="flex items-center justify-between gap-2 rounded-xl bg-[var(--color-academy-soft)] px-3 py-2">
-                        <span className="text-[13px] font-bold text-[var(--color-academy-ink)]">{cl.title}</span>
-                        <span className="text-[12px] font-semibold text-[var(--color-academy-muted)]">{[detail.application.weekdayLabel, cl.classStart && cl.classEnd ? `${cl.classStart}~${cl.classEnd}` : cl.classStart].filter(Boolean).join(" · ")}</span>
+                        <span className="text-sm font-medium text-[var(--color-academy-ink)]">{cl.title}</span>
+                        <span className="text-xs tabular-nums text-[var(--color-academy-muted)]">{[detail.application.weekdayLabel, cl.classStart && cl.classEnd ? `${cl.classStart}~${cl.classEnd}` : cl.classStart].filter(Boolean).join(" · ")}</span>
                       </li>
                     ))}
                   </ul>
                 )}
-                {detail.application.applicantType && <p className="mt-2 text-[11px] text-[var(--color-academy-faint)]">신청자 구분: {detail.application.applicantType === "EXISTING" ? "기존 회원" : detail.application.applicantType === "NEW" ? "신규 회원" : detail.application.applicantType}</p>}
+                {detail.application.applicantType && <p className="mt-2 text-xs text-[var(--color-academy-faint)]">신청자 구분: {detail.application.applicantType === "EXISTING" ? "기존 회원" : detail.application.applicantType === "NEW" ? "신규 회원" : detail.application.applicantType}</p>}
               </section>
 
               <section className="rounded-2xl border border-[var(--color-academy-line)] p-4">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <h3 className="text-[13px] font-black text-[var(--color-academy-ink)]">셔틀 · 승하차 위치</h3>
-                  <div className="flex shrink-0 items-center gap-1.5">
+                {/* 버튼이 글자로 넓어져 좁은 화면에서는 다음 줄로 넘어가게 한다 */}
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold text-[var(--color-academy-ink)]">셔틀 · 승하차 위치</h3>
+                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                     {canEdit && sh && sh.ride && !shIsHub && (
-                      <button onClick={placeAtHub} disabled={savingPin} className="rounded-lg border border-[var(--color-academy-success)] px-2.5 py-1.5 text-[11px] font-bold text-[var(--color-academy-success)] disabled:opacity-50">🆓 무료 거점 배치</button>
+                      <button type="button" onClick={placeAtHub} disabled={savingPin} className="academy-button-secondary academy-button-sm">무료 거점 배치</button>
                     )}
-                    {shIsHub && <span className="rounded-lg bg-[var(--color-academy-success-soft)] px-2 py-1 text-[11px] font-black text-[var(--color-academy-success)]">🆓 거점 배치됨</span>}
+                    {shIsHub && <span className="rounded bg-[var(--color-academy-success-soft)] px-2 py-1 text-xs text-[var(--color-academy-success)]">거점 배치됨</span>}
                     {canEdit && sh && (
                       sh.ride
-                        ? <button onClick={() => saveRide(false)} disabled={savingPin} className="rounded-lg border border-[var(--color-academy-danger)] px-2.5 py-1.5 text-[11px] font-bold text-[var(--color-academy-danger)] disabled:opacity-50">🚫 셔틀 미이용(배정 취소)</button>
-                        : <button onClick={() => saveRide(true)} disabled={savingPin} className="rounded-lg border border-[var(--color-academy-success)] px-2.5 py-1.5 text-[11px] font-bold text-[var(--color-academy-success)] disabled:opacity-50">🚌 셔틀 이용으로 변경</button>
+                        ? <button type="button" onClick={() => saveRide(false)} disabled={savingPin} className="academy-button-danger academy-button-sm">셔틀 미이용(배정 취소)</button>
+                        : <button type="button" onClick={() => saveRide(true)} disabled={savingPin} className="academy-button-secondary academy-button-sm">셔틀 이용으로 변경</button>
                     )}
                   </div>
                 </div>
-                {!sh || !sh.ride ? <p className="text-[12px] text-[var(--color-academy-faint)]">셔틀 미이용{canEdit && sh ? " · 위 버튼으로 이용으로 바꿀 수 있습니다" : ""}</p> : (
+                {!sh || !sh.ride ? <p className="text-xs text-[var(--color-academy-faint)]">셔틀 미이용{canEdit && sh ? " · 위 버튼으로 이용으로 바꿀 수 있습니다" : ""}</p> : (
                   <div className="space-y-2">
                     <div className="flex items-center justify-between gap-2 rounded-xl bg-[var(--color-academy-soft)] px-3 py-2">
                       <div className="min-w-0">
-                        <div className="text-[11px] font-bold text-[var(--color-academy-faint)]">등원(승차)</div>
-                        <div className="text-[13px] font-bold text-[var(--color-academy-ink)]">{sh.pickupLocation || "미지정"} {sh.pickupPinned ? <span className="ml-1 rounded bg-[var(--color-academy-success-soft)] px-1 text-[10px] font-black text-[var(--color-academy-success)]">핀</span> : sh.pickupApprox ? <span className="ml-1 rounded bg-[var(--color-academy-warning-soft)] px-1 text-[10px] font-black text-[var(--color-academy-warning)]">추정</span> : null}</div>
+                        <div className="text-xs text-[var(--color-academy-muted)]">등원(승차)</div>
+                        <div className="text-sm font-medium text-[var(--color-academy-ink)]">{sh.pickupLocation || "미지정"} {sh.pickupPinned ? <span className="ml-1 rounded bg-[var(--color-academy-success-soft)] px-1 text-xs font-normal text-[var(--color-academy-success)]">핀</span> : sh.pickupApprox ? <span className="ml-1 rounded bg-[var(--color-academy-warning-soft)] px-1 text-xs font-normal text-[var(--color-academy-warning)]">추정</span> : null}</div>
                       </div>
-                      {canEdit && <button onClick={() => setPinEdit("pickup")} className="shrink-0 rounded-lg border border-[var(--color-academy-line)] px-2.5 py-1.5 text-[11px] font-bold text-[var(--color-academy-ink)]">지도에서 변경</button>}
+                      {canEdit && <button type="button" onClick={() => setPinEdit("pickup")} className="academy-button-tonal academy-button-sm shrink-0">지도에서 변경</button>}
                     </div>
                     <div className="flex items-center justify-between gap-2 rounded-xl bg-[var(--color-academy-soft)] px-3 py-2">
                       <div className="min-w-0">
-                        <div className="text-[11px] font-bold text-[var(--color-academy-faint)]">하원(하차)</div>
-                        <div className="text-[13px] font-bold text-[var(--color-academy-ink)]">{sh.dropoffSameAsPickup ? "등원과 동일" : <>{sh.dropoffLocation || "미지정"} {sh.dropoffPinned ? <span className="ml-1 rounded bg-[var(--color-academy-success-soft)] px-1 text-[10px] font-black text-[var(--color-academy-success)]">핀</span> : sh.dropoffApprox ? <span className="ml-1 rounded bg-[var(--color-academy-warning-soft)] px-1 text-[10px] font-black text-[var(--color-academy-warning)]">추정</span> : null}</>}</div>
+                        <div className="text-xs text-[var(--color-academy-muted)]">하원(하차)</div>
+                        <div className="text-sm font-medium text-[var(--color-academy-ink)]">{sh.dropoffSameAsPickup ? "등원과 동일" : <>{sh.dropoffLocation || "미지정"} {sh.dropoffPinned ? <span className="ml-1 rounded bg-[var(--color-academy-success-soft)] px-1 text-xs font-normal text-[var(--color-academy-success)]">핀</span> : sh.dropoffApprox ? <span className="ml-1 rounded bg-[var(--color-academy-warning-soft)] px-1 text-xs font-normal text-[var(--color-academy-warning)]">추정</span> : null}</>}</div>
                       </div>
-                      {canEdit && !sh.dropoffSameAsPickup && <button onClick={() => setPinEdit("dropoff")} className="shrink-0 rounded-lg border border-[var(--color-academy-line)] px-2.5 py-1.5 text-[11px] font-bold text-[var(--color-academy-ink)]">지도에서 변경</button>}
+                      {canEdit && !sh.dropoffSameAsPickup && <button type="button" onClick={() => setPinEdit("dropoff")} className="academy-button-tonal academy-button-sm shrink-0">지도에서 변경</button>}
                     </div>
                   </div>
                 )}

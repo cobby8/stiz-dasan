@@ -128,8 +128,9 @@ export default function RentalTimeSheet({ open, day, dateLabel, initialStart, in
     setDuration(clampRentalDuration(RENTAL_MIN_MINUTES, option.maxMinutes));
   }
 
-  const chipBase = "min-h-11 rounded-[var(--color-public-radius)] border text-sm font-bold tabular-nums";
-  const chipOn = "border-[var(--color-public-accent)] bg-[var(--color-public-accent)] text-[var(--color-public-white)]";
+  const chipBase = "min-h-11 rounded-[var(--color-public-radius)] border text-sm font-medium tabular-nums";
+  // 고른 시·분 = 보조 색(하늘색). 꽉 찬 주 색은 아래 «이 시간으로» 버튼 하나만
+  const chipOn = "border-[var(--color-public-secondary-strong)] bg-[var(--color-public-secondary-soft)] text-[var(--color-public-secondary-ink)]";
   const chipOff = "border-[var(--color-public-line)] text-[var(--color-public-ink)]";
   const chipDisabled = "cursor-not-allowed border-dashed border-[var(--color-public-line)] text-[var(--color-public-muted)] opacity-40";
 
@@ -145,8 +146,8 @@ export default function RentalTimeSheet({ open, day, dateLabel, initialStart, in
         className="relative flex max-h-[88vh] w-full flex-col rounded-t-2xl bg-[var(--color-public-paper)] sm:mx-4 sm:max-w-md sm:rounded-2xl"
       >
         <div className="flex items-center gap-2 border-b border-[var(--color-public-line)] px-4 py-2">
-          <h2 id="rental-time-sheet-title" className="min-w-0 flex-1 text-base font-black text-[var(--color-public-ink)]">
-            시간 고르기 <span className="text-sm font-bold text-[var(--color-public-muted)]">{dateLabel}</span>
+          <h2 id="rental-time-sheet-title" className="min-w-0 flex-1 text-base font-bold text-[var(--color-public-ink)]">
+            시간 고르기 <span className="text-sm font-normal text-[var(--color-public-muted)]">{dateLabel}</span>
           </h2>
           <button
             ref={closeRef}
@@ -162,7 +163,7 @@ export default function RentalTimeSheet({ open, day, dateLabel, initialStart, in
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-3">
           {/* ① 시 — 가능한 시작이 하나라도 있는 시만 */}
           <section>
-            <p className="text-sm font-black text-[var(--color-public-ink)]">① 시작 시</p>
+            <p className="text-sm font-semibold text-[var(--color-public-ink)]">① 시작 시</p>
             <div className="mt-1.5 grid grid-cols-5 gap-1.5" role="group" aria-label="시작 시">
               {hours.map((h, index) => (
                 <button
@@ -182,7 +183,7 @@ export default function RentalTimeSheet({ open, day, dateLabel, initialStart, in
           {/* ② 분 — 그 시에서 안 되는 분은 흐리게(누를 수 없음) */}
           {hour !== null && (
             <section>
-              <p className="text-sm font-black text-[var(--color-public-ink)]">② 시작 분</p>
+              <p className="text-sm font-semibold text-[var(--color-public-ink)]">② 시작 분</p>
               <div className="mt-1.5 grid grid-cols-6 gap-1.5" role="group" aria-label="시작 분">
                 {MINUTE_STEPS.map((m) => {
                   const option = byMinute.get(hour * 60 + m);
@@ -209,8 +210,8 @@ export default function RentalTimeSheet({ open, day, dateLabel, initialStart, in
           {/* ③ 이용 시간 — 30분씩, 최소 1시간, 최대 = 그 시작에서 이어서 쓸 수 있는 시간 */}
           {selected?.available && (
             <section>
-              <p className="text-sm font-black text-[var(--color-public-ink)]">
-                ③ 이용 시간 <span className="text-xs font-semibold text-[var(--color-public-muted)]">최대 {rentalDurationLabel(maxMinutes)}</span>
+              <p className="text-sm font-semibold text-[var(--color-public-ink)]">
+                ③ 이용 시간 <span className="text-xs font-normal text-[var(--color-public-muted)]">최대 {rentalDurationLabel(maxMinutes)}</span>
               </p>
               <div className="mt-1.5 flex items-center gap-2" role="group" aria-label="이용 시간">
                 <button
@@ -218,11 +219,11 @@ export default function RentalTimeSheet({ open, day, dateLabel, initialStart, in
                   onClick={() => setDuration((d) => clampRentalDuration(d - RENTAL_DURATION_STEP_MINUTES, maxMinutes))}
                   disabled={duration <= RENTAL_MIN_MINUTES}
                   aria-label="30분 줄이기"
-                  className="public-btn-secondary w-11 px-0 disabled:opacity-40"
+                  className="public-btn-secondary w-11 px-0! disabled:opacity-40"
                 >
                   −
                 </button>
-                <output aria-live="polite" className="min-w-28 text-center text-lg font-black tabular-nums text-[var(--color-public-ink)]">
+                <output aria-live="polite" className="min-w-28 text-center text-lg font-bold tabular-nums text-[var(--color-public-ink)]">
                   {rentalDurationLabel(duration)}
                 </output>
                 <button
@@ -230,7 +231,7 @@ export default function RentalTimeSheet({ open, day, dateLabel, initialStart, in
                   onClick={() => setDuration((d) => clampRentalDuration(d + RENTAL_DURATION_STEP_MINUTES, maxMinutes))}
                   disabled={duration >= maxMinutes}
                   aria-label="30분 늘리기"
-                  className="public-btn-secondary w-11 px-0 disabled:opacity-40"
+                  className="public-btn-secondary w-11 px-0! disabled:opacity-40"
                 >
                   +
                 </button>
@@ -241,7 +242,7 @@ export default function RentalTimeSheet({ open, day, dateLabel, initialStart, in
 
         {/* 하단 고정 줄 — 고른 시간·금액 + 확정 버튼(주인공 버튼 하나) */}
         <div className="flex items-center gap-3 border-t border-[var(--color-public-line)] px-4 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-          <p className="min-w-0 flex-1 text-sm font-bold tabular-nums text-[var(--color-public-ink)]" aria-live="polite">
+          <p className="min-w-0 flex-1 text-sm font-semibold tabular-nums text-[var(--color-public-ink)]" aria-live="polite">
             {selected?.available && start !== null
               ? <>{minuteLabel(start)}~{minuteLabel(start + duration)}{price !== null && <span className="text-[var(--color-public-muted)]"> · {formatWon(price)}</span>}</>
               : <span className="text-[var(--color-public-muted)]">시·분을 골라 주세요</span>}
@@ -250,7 +251,7 @@ export default function RentalTimeSheet({ open, day, dateLabel, initialStart, in
             type="button"
             disabled={!selected?.available || start === null}
             onClick={() => start !== null && onConfirm(start, duration)}
-            className="public-btn-primary shrink-0 px-4 text-sm disabled:opacity-40"
+            className="public-btn-primary shrink-0 text-sm disabled:opacity-40"
           >
             이 시간으로
           </button>

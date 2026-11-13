@@ -66,7 +66,7 @@ export function StatusChoiceButton({
       aria-label={ariaLabel}
       aria-pressed={active}
       aria-expanded={ariaExpanded}
-      className={`inline-flex min-h-11 items-center justify-center gap-1 rounded-xl border-2 px-2 text-sm font-black disabled:opacity-55 ${active ? FILLED[tone] : OUTLINED[tone]} ${className}`}
+      className={`inline-flex min-h-11 items-center justify-center gap-1 rounded-xl border-2 px-2 text-sm font-semibold disabled:opacity-55 ${active ? FILLED[tone] : OUTLINED[tone]} ${className}`}
     >
       <span aria-hidden="true" className="material-symbols-outlined text-[18px] leading-none">{icon}</span>
       {children}
@@ -78,7 +78,7 @@ export function StatusChoiceButton({
  *  누르는 버튼(둥근 모서리)과 헷갈리지 않게 상태 표시 모양(모서리 4px)이다. */
 export function StatusPill({ tone, icon, children, className = "" }: { tone: StatusTone; icon?: string; children: ReactNode; className?: string }) {
   return (
-    <span className={`inline-flex shrink-0 items-center gap-0.5 rounded px-2 py-0.5 text-xs font-black ${PILL[tone]} ${className}`}>
+    <span className={`inline-flex shrink-0 items-center gap-0.5 rounded px-2 py-0.5 text-xs font-medium ${PILL[tone]} ${className}`}>
       {icon && <span aria-hidden="true" className="material-symbols-outlined text-[14px] leading-none">{icon}</span>}
       {children}
     </span>
@@ -93,9 +93,8 @@ export function StatusUndoButton({ disabled = false, onClick, children = "대기
       onClick={onClick}
       disabled={disabled}
       aria-label={ariaLabel}
-      className="inline-flex min-h-11 items-center gap-1 px-1 text-xs font-bold text-[var(--color-academy-muted)] underline underline-offset-2 disabled:opacity-55"
+      className="inline-flex min-h-11 items-center gap-1 px-1 text-xs font-medium text-[var(--color-academy-muted)] underline underline-offset-2 disabled:opacity-55"
     >
-      <span aria-hidden="true" className="material-symbols-outlined text-[16px] leading-none no-underline">undo</span>
       {children}
     </button>
   );

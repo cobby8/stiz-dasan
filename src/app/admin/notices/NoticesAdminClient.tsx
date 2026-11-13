@@ -8,6 +8,7 @@ import { isImageAttachment, isHtmlContent, plainToEditorHtml, stripHtmlForPrevie
 import { compressImageForUpload } from "@/lib/clientImageCompression";
 import AdminModal from "@/components/admin/AdminModal";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { toKstYmd } from "@/lib/datetime/kst";
 
 const RichTextEditor = dynamic(() => import("@/components/RichTextEditor"), {
@@ -62,26 +63,6 @@ type NoticesPayload = {
     pagination?: NoticePagination;
 };
 
-function SymbolIcon({
-    name,
-    size = 18,
-    className = "",
-}: {
-    name: string;
-    size?: number;
-    className?: string;
-}) {
-    return (
-        <span
-            className={`material-symbols-outlined leading-none ${className}`}
-            style={{ fontSize: `${size}px` }}
-            aria-hidden="true"
-        >
-            {name}
-        </span>
-    );
-}
-
 function NoticesLoadingFallback() {
     return (
         <div className="space-y-6">
@@ -124,7 +105,7 @@ function NoticesLoadingFallback() {
 function NoticesErrorState({ onRetry }: { onRetry: () => void }) {
     return (
         <div className="rounded-2xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-6 text-center">
-            <p className="text-sm font-bold text-[var(--color-academy-danger)]">공지사항을 불러오지 못했습니다.</p>
+            <p className="text-sm font-medium text-[var(--color-academy-danger)]">공지사항을 불러오지 못했습니다.</p>
             <button
                 type="button"
                 onClick={onRetry}
@@ -353,29 +334,28 @@ export default function NoticesAdminClient({
 
     return (
         <div className="space-y-6">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold text-[var(--color-academy-ink)]">공지사항 관리</h1>
-                </div>
-                <button onClick={() => { resetForm(); setShowForm(true); }}
-                    className="flex items-center gap-2 bg-[var(--color-academy-primary)] text-white px-4 py-2.5 rounded-xl font-bold hover:bg-[var(--color-academy-primary-hover)] transition">
-                    <SymbolIcon name="add" size={18} /> 새 공지
-                </button>
-            </div>
+            <AdminPageHeader
+                title="공지사항 관리"
+                actions={
+                    <button type="button" onClick={() => { resetForm(); setShowForm(true); }} className="academy-button-primary">
+                        새 공지
+                    </button>
+                }
+            />
 
             {/* Form Modal */}
             {showForm && (
                 <AdminModal onClose={resetForm} titleId="notice-form-modal-title" panelClassName="max-w-2xl">
                         <div className="p-6 border-b border-[var(--color-academy-line)] flex items-center justify-between">
-                            <h2 id="notice-form-modal-title" className="text-lg font-bold">{editId ? "공지 수정" : "새 공지"}</h2>
-                            <button onClick={resetForm} className="p-1 hover:bg-[var(--color-academy-line)] rounded-lg"><SymbolIcon name="close" size={20} /></button>
+                            <h2 id="notice-form-modal-title" className="text-lg font-bold text-[var(--color-academy-ink)]">{editId ? "공지 수정" : "새 공지"}</h2>
+                            <button type="button" onClick={resetForm} aria-label="닫기" className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
                         </div>
                         <div className="p-6 space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">제목</label>
                                 <input value={formTitle} onChange={e => setFormTitle(e.target.value)}
                                     placeholder="공지 제목을 입력하세요"
-                                    className="w-full border border-[var(--color-academy-line)] rounded-xl px-4 py-2.5 text-sm" />
+                                    className="academy-input" />
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">내용</label>
@@ -405,12 +385,10 @@ export default function NoticesAdminClient({
                                     <div className="flex flex-wrap gap-2 mt-2">
                                         {classes.map(c => (
                                             <button key={c.id}
+                                                type="button"
+                                                aria-pressed={selectedClassIds.includes(c.id)}
                                                 onClick={() => toggleClassId(c.id)}
-                                                className={`text-xs px-3 py-1.5 rounded-full border transition ${
-                                                    selectedClassIds.includes(c.id)
-                                                        ? "bg-[var(--color-academy-primary)] text-white border-[var(--color-academy-primary)]"
-                                                        : "bg-white text-[var(--color-academy-muted)] border-[var(--color-academy-line)] hover:border-[var(--color-academy-primary)]"
-                                                }`}>
+                                                className="academy-choice">
                                                 {c.name}
                                             </button>
                                         ))}
@@ -419,8 +397,8 @@ export default function NoticesAdminClient({
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">첨부파일</label>
-                                <label className="inline-flex items-center gap-2 text-sm text-[var(--color-academy-muted)] hover:text-[var(--color-academy-ink)] cursor-pointer transition">
-                                    <SymbolIcon name="attach_file" size={16} /> {uploading ? "업로드 중..." : "이미지 첨부"}
+                                <label className="academy-button-secondary cursor-pointer">
+                                    {uploading ? "업로드 중..." : "이미지 첨부"}
                                     <input type="file" accept="image/*" className="hidden" multiple onChange={e => handleFileUpload(e.target.files)} disabled={uploading} />
                                 </label>
                                 <p className="text-xs text-[var(--color-academy-faint)] mt-1">JPG·PNG·WebP·GIF, 최대 5MB</p>
@@ -435,9 +413,10 @@ export default function NoticesAdminClient({
                                                     )}
                                                     <span className="text-xs text-[var(--color-academy-muted)] truncate">{a.filename}</span>
                                                 </div>
-                                                <button onClick={() => setAttachments(prev => prev.filter((_, j) => j !== i))}
-                                                    className="text-[var(--color-academy-faint)] hover:text-[var(--color-academy-danger)] shrink-0">
-                                                    <SymbolIcon name="close" size={14} />
+                                                <button type="button" onClick={() => setAttachments(prev => prev.filter((_, j) => j !== i))}
+                                                    aria-label={`${a.filename} 첨부 빼기`}
+                                                    className="academy-button-tonal academy-button-sm shrink-0">
+                                                    빼기
                                                 </button>
                                             </div>
                                         ))}
@@ -450,9 +429,9 @@ export default function NoticesAdminClient({
                             </div>
                         </div>
                         <div className="p-6 border-t border-[var(--color-academy-line)] flex justify-end gap-3">
-                            <button onClick={resetForm} className="px-4 py-2 text-sm text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)] rounded-xl transition">취소</button>
+                            <button type="button" onClick={resetForm} className="academy-button-secondary">취소</button>
                             <button onClick={handleSubmit} disabled={isPending || uploading || editorUploading}
-                                className="px-6 py-2 bg-[var(--color-academy-primary)] text-white font-bold rounded-xl hover:bg-[var(--color-academy-primary-hover)] transition disabled:opacity-50">
+                                className="academy-button-primary">
                                 {isPending ? "저장 중..." : editorUploading ? "이미지 업로드 중..." : editId ? "수정" : "등록"}
                             </button>
                         </div>
@@ -472,7 +451,7 @@ export default function NoticesAdminClient({
                         <div className="overflow-x-auto">
                             {/* admin-list-table: 글자 왼쪽·날짜/개수 오른쪽(tabular)·한 줄(말줄임 없음, 좁으면 가로 스크롤) */}
                             <table className="admin-list-table w-full border-collapse text-sm">
-                                <thead className="bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]">
+                                <thead className="bg-[var(--color-academy-soft)] text-xs font-semibold text-[var(--color-academy-muted)]">
                                     <tr>
                                         <th className="admin-cell-center px-2 py-2">고정</th>
                                         <th className="px-2 py-2">제목</th>
@@ -497,10 +476,10 @@ export default function NoticesAdminClient({
                                             >
                                                 <td className="admin-cell-center px-2 py-1.5">
                                                     {n.isPinned
-                                                        ? <span className="material-symbols-outlined text-base text-[var(--color-academy-primary)]" aria-label="상단 고정">push_pin</span>
+                                                        ? <span className="text-xs text-[var(--color-academy-ink)]" aria-label="상단 고정">고정</span>
                                                         : <span className="text-[var(--color-academy-muted)]" aria-hidden="true">-</span>}
                                                 </td>
-                                                <td className="px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{n.title}</td>
+                                                <td className="px-2 py-1.5 font-medium text-[var(--color-academy-ink)]">{n.title}</td>
                                                 {/* 대상: 전체 / 반별(반 1개면 이름, 여러 개면 «반별 N개») — 전체 반 이름은 상세 패널 */}
                                                 <td className="px-2 py-1.5 text-[var(--color-academy-muted)]">
                                                     {n.targetType === "ALL"
@@ -511,21 +490,21 @@ export default function NoticesAdminClient({
                                                 <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-muted)]">{toKstYmd(n.createdAt)}</td>
                                                 {/* 관리: 소셜 발행·수정·삭제(행 클릭=상세 패널과 겹치지 않게 전파 차단). 함수·확인창은 기존 그대로 */}
                                                 <td className="admin-cell-center px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
-                                                    <div className="inline-flex gap-0.5">
+                                                    <div className="inline-flex gap-1">
                                                         <button type="button" onClick={() => setSocialNotice(n)}
-                                                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] transition hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-primary)]"
+                                                            className="academy-button-tonal academy-button-sm"
                                                             title="소셜 발행" aria-label={`${n.title} 소셜 발행`}>
-                                                            <SymbolIcon name="campaign" size={18} />
+                                                            소셜 발행
                                                         </button>
                                                         <button type="button" onClick={() => startEdit(n)}
-                                                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] transition hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-primary)]"
+                                                            className="academy-button-tonal academy-button-sm"
                                                             title="수정" aria-label={`${n.title} 수정`}>
-                                                            <SymbolIcon name="edit" size={18} />
+                                                            수정
                                                         </button>
                                                         <button type="button" onClick={() => handleDelete(n.id)}
-                                                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] transition hover:bg-[var(--color-academy-danger-soft)] hover:text-[var(--color-academy-danger)]"
+                                                            className="academy-button-danger academy-button-sm"
                                                             title="삭제" aria-label={`${n.title} 삭제`}>
-                                                            <SymbolIcon name="delete" size={18} />
+                                                            삭제
                                                         </button>
                                                     </div>
                                                 </td>
@@ -542,9 +521,8 @@ export default function NoticesAdminClient({
                                 type="button"
                                 onClick={loadMoreNotices}
                                 disabled={loadingMore}
-                                className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-5 text-sm font-bold text-[var(--color-academy-ink)] transition hover:border-[var(--color-academy-primary)] disabled:cursor-not-allowed disabled:opacity-60"
+                                className="academy-button-secondary"
                             >
-                                <SymbolIcon name={loadingMore ? "progress_activity" : "expand_more"} size={18} />
                                 {loadingMore ? "불러오는 중..." : `더 보기 (${Math.max(pagination.total - notices.length, 0)}개 남음)`}
                             </button>
                         </div>
@@ -560,8 +538,7 @@ export default function NoticesAdminClient({
                 return (
                     <ListDetailPanel onClose={() => setDetailNoticeId(null)} titleId="notice-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
                         <div className="mb-4 flex items-start gap-2">
-                            {d.isPinned && <SymbolIcon name="push_pin" size={18} className="mt-1 shrink-0 text-[var(--color-academy-primary)]" />}
-                            <h3 id="notice-detail-panel-title" className="min-w-0 break-keep break-words text-lg font-black text-[var(--color-academy-ink)]">{d.title}</h3>
+                            <h3 id="notice-detail-panel-title" className="min-w-0 break-keep break-words text-lg font-bold text-[var(--color-academy-ink)]">{d.title}</h3>
                             <button
                                 type="button"
                                 onClick={() => setDetailNoticeId(null)}
@@ -572,22 +549,22 @@ export default function NoticesAdminClient({
                             </button>
                         </div>
                         <dl className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
-                            <dt className="font-bold text-[var(--color-academy-muted)]">대상</dt>
+                            <dt className="font-medium text-[var(--color-academy-muted)]">대상</dt>
                             <dd className="min-w-0 break-keep break-words text-[var(--color-academy-ink)]">
                                 {d.targetType === "ALL" ? "전체 공지" : `반별 공지 · ${classNames.join(", ") || "선택된 반 없음"}`}
                             </dd>
-                            <dt className="font-bold text-[var(--color-academy-muted)]">작성일</dt>
+                            <dt className="font-medium text-[var(--color-academy-muted)]">작성일</dt>
                             <dd className="tabular-nums text-[var(--color-academy-ink)]">{toKstYmd(d.createdAt)}</dd>
-                            <dt className="font-bold text-[var(--color-academy-muted)]">상단 고정</dt>
+                            <dt className="font-medium text-[var(--color-academy-muted)]">상단 고정</dt>
                             <dd className="text-[var(--color-academy-ink)]">{d.isPinned ? "고정" : "고정 안 함"}</dd>
                             {atts.length > 0 && (
                                 <>
-                                    <dt className="font-bold text-[var(--color-academy-muted)]">첨부</dt>
+                                    <dt className="font-medium text-[var(--color-academy-muted)]">첨부</dt>
                                     <dd className="min-w-0 space-y-1">
                                         {atts.map((a, i) => (
                                             <a key={i} href={a.url} target="_blank" rel="noopener noreferrer"
-                                                className="flex min-h-11 items-center gap-1 break-all text-[var(--color-academy-primary)] hover:underline">
-                                                <SymbolIcon name="attach_file" size={16} className="shrink-0" /> {a.filename}
+                                                className="flex min-h-11 items-center gap-1 break-all text-[var(--color-academy-primary)] underline">
+                                                {a.filename}
                                             </a>
                                         ))}
                                     </dd>
@@ -600,16 +577,16 @@ export default function NoticesAdminClient({
                         </p>
                         <div className="mt-5 flex flex-wrap gap-2">
                             <button type="button" onClick={() => { setDetailNoticeId(null); startEdit(d); }}
-                                className="inline-flex min-h-11 items-center gap-1 rounded-lg bg-[var(--color-academy-primary)] px-4 text-sm font-bold text-[var(--color-academy-on-primary)] hover:bg-[var(--color-academy-primary-hover)]">
-                                <SymbolIcon name="edit" size={18} /> 수정
+                                className="academy-button-secondary">
+                                수정
                             </button>
                             <button type="button" onClick={() => { setDetailNoticeId(null); setSocialNotice(d); }}
-                                className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-[var(--color-academy-line)] px-4 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]">
-                                <SymbolIcon name="campaign" size={18} /> 소셜 발행
+                                className="academy-button-secondary">
+                                소셜 발행
                             </button>
                             <button type="button" onClick={() => handleDelete(d.id)}
-                                className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-[var(--color-academy-danger)] px-4 text-sm font-bold text-[var(--color-academy-danger)] hover:bg-[var(--color-academy-danger-soft)]">
-                                <SymbolIcon name="delete" size={18} /> 삭제
+                                className="academy-button-danger ml-auto">
+                                삭제
                             </button>
                         </div>
                     </ListDetailPanel>

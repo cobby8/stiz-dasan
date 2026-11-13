@@ -161,8 +161,9 @@ test("MED-1 출석부·홈의 청구 확인·학생 정보 미납은 원장·부
   assert.match(client, /const attendanceBillingSheet = showFees && attendanceBillingTarget/);
 
   const home = read("src/app/staff/StaffHomeClient.tsx");
-  assert.match(home, /\{showFees && <SecondaryButton icon="receipt_long" label="청구 확인" onClick=\{\(\) => setBillingTarget/);
-  assert.match(home, /\{showFees && <SecondaryButton icon="receipt_long" label="청구 확인" onClick=\{\(\) => onAction\("billing"\)\}/);
+  // 2026-11-13 UI 통일: 빠른 메뉴 버튼의 아이콘(icon prop)을 뺐다 — showFees 조건은 그대로 지킨다
+  assert.match(home, /\{showFees && <SecondaryButton label="청구 확인" onClick=\{\(\) => setBillingTarget/);
+  assert.match(home, /\{showFees && <SecondaryButton label="청구 확인" onClick=\{\(\) => onAction\("billing"\)\}/);
   assert.match(home, /onOpenBilling=\{showFees \? /);
   assert.match(home, /\{showFees && billingTarget && <ClassBillingSheet/);
   assert.match(read("src/app/staff/page.tsx"), /showFees=\{canSeeStaffFees\(access\.staff\.appUserRole\)\}/);

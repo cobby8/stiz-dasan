@@ -41,7 +41,7 @@ export default function RoleChangeModal({
     return (
         <AdminModal onClose={onClose} titleId="staff-role-change-title" panelClassName="max-w-md">
             <div className="flex items-center gap-2 border-b border-[var(--color-academy-line)] px-4 py-2">
-                <h2 id="staff-role-change-title" className="min-w-0 break-keep text-base font-black text-[var(--color-academy-ink)]">
+                <h2 id="staff-role-change-title" className="academy-section-title min-w-0 break-keep">
                     {user.name} 역할 변경
                 </h2>
                 <button
@@ -54,7 +54,7 @@ export default function RoleChangeModal({
                 </button>
             </div>
 
-            {/* 역할 버튼 — 한 줄에 아이콘 · 이름 · 한 줄 설명. 지금 역할은 «지금» 표시 + 누를 수 없음 */}
+            {/* 역할 버튼 — 한 줄에 이름 · 한 줄 설명(2026-11-13 UI 통일: 아이콘 없음, 고른 역할은 보조 색). 지금 역할은 «지금» 표시 + 누를 수 없음 */}
             <div role="radiogroup" aria-label="바꿀 역할" className="grid gap-1.5 p-3">
                 {ROLE_CHANGE_OPTIONS.map((option) => {
                     const isCurrent = option.value === user.role;
@@ -69,28 +69,22 @@ export default function RoleChangeModal({
                             onClick={() => setSelected(option.value)}
                             className={`flex min-h-12 w-full items-center gap-3 rounded-lg border px-3 py-1.5 text-left transition-colors ${
                                 isSelected
-                                    ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary-soft)]"
+                                    ? "border-[var(--color-academy-secondary-strong)] bg-[var(--color-academy-secondary-soft)]"
                                     : isCurrent
                                         ? "cursor-default border-[var(--color-academy-line)] bg-[var(--color-academy-soft)]"
-                                        // 마우스 올림은 선택(주 색 테두리)과 다르게 — 회색 선 + 옅은 바탕(교과서 6장 «마우스 올림 ≠ 선택됨»)
+                                        // 마우스 올림은 선택(보조 색 테두리)과 다르게 — 회색 선 + 옅은 바탕(교과서 6장 «마우스 올림 ≠ 선택됨»)
                                         : "border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] hover:border-[var(--color-academy-line-input)] hover:bg-[var(--color-academy-soft)]"
                             }`}
                         >
-                            <span
-                                className={`material-symbols-outlined text-[22px] ${isSelected ? "text-[var(--color-academy-primary)]" : "text-[var(--color-academy-muted)]"}`}
-                                aria-hidden="true"
-                            >
-                                {option.icon}
-                            </span>
                             <span className="min-w-0 flex-1">
-                                <span className="block text-sm font-bold text-[var(--color-academy-ink)]">{option.label}</span>
+                                <span className={`block text-sm font-semibold ${isSelected ? "text-[var(--color-academy-secondary-ink)]" : "text-[var(--color-academy-ink)]"}`}>{option.label}</span>
                                 <span className="block text-xs text-[var(--color-academy-muted)]">{option.description}</span>
                             </span>
                             {isCurrent && (
-                                <span className="whitespace-nowrap rounded-full bg-[var(--color-academy-line)] px-2 py-0.5 text-xs font-bold text-[var(--color-academy-muted)]">지금</span>
+                                <span className="whitespace-nowrap rounded-full bg-[var(--color-academy-line)] px-2 py-0.5 text-xs text-[var(--color-academy-muted)]">지금</span>
                             )}
                             {isSelected && (
-                                <span className="material-symbols-outlined text-[20px] text-[var(--color-academy-primary)]" aria-hidden="true">check_circle</span>
+                                <span className="shrink-0 text-sm font-semibold text-[var(--color-academy-secondary-ink)]" aria-hidden="true">✓</span>
                             )}
                         </button>
                     );
@@ -100,7 +94,7 @@ export default function RoleChangeModal({
             {/* 고르면 «바뀌는 것» + [취소]·[변경하기] — 같은 창 안에서 확정 */}
             {preview && selected && (
                 <div className="border-t border-[var(--color-academy-line)] px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3">
-                    <p className="text-xs font-black text-[var(--color-academy-muted)]">바뀌는 것</p>
+                    <p className="text-xs font-medium text-[var(--color-academy-muted)]">바뀌는 것</p>
                     <ul
                         className={`mt-1 space-y-0.5 text-sm ${preview.danger ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-ink)]"}`}
                         aria-live="polite"
@@ -111,7 +105,7 @@ export default function RoleChangeModal({
                         <button
                             type="button"
                             onClick={onClose}
-                            className="min-h-11 rounded-lg px-4 text-sm font-bold text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
+                            className="academy-button-text"
                         >
                             취소
                         </button>
@@ -119,11 +113,8 @@ export default function RoleChangeModal({
                             type="button"
                             disabled={pending}
                             onClick={() => onConfirm(selected)}
-                            className={`min-h-11 rounded-lg px-4 text-sm font-bold text-[var(--color-academy-on-primary)] disabled:opacity-50 ${
-                                preview.danger
-                                    ? "bg-[var(--color-academy-danger)]"
-                                    : "bg-[var(--color-academy-primary)] hover:bg-[var(--color-academy-primary-hover)]"
-                            }`}
+                            // 권한이 줄어드는 변경은 확인 단계의 최종 버튼이라 꽉 찬 위험색, 아니면 주 버튼
+                            className={preview.danger ? "academy-button-danger-solid" : "academy-button-primary"}
                         >
                             {pending ? "바꾸는 중…" : "변경하기"}
                         </button>

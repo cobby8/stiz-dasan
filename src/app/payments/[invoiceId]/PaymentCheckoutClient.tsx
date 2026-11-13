@@ -256,7 +256,7 @@ export default function PaymentCheckoutClient({
             <div className="space-y-2">
                 <VirtualAccountNotice account={openAccount} />
                 {error && (
-                    <p role="alert" className="rounded-lg bg-[var(--color-academy-danger-soft)] p-2 text-sm font-bold text-[var(--color-academy-danger)]">
+                    <p role="alert" className="rounded-lg bg-[var(--color-academy-danger-soft)] p-2 text-sm font-medium text-[var(--color-academy-danger)]">
                         {error}
                     </p>
                 )}
@@ -264,7 +264,7 @@ export default function PaymentCheckoutClient({
                     <button
                         type="button"
                         onClick={() => setSwitching(true)}
-                        className="academy-button-secondary min-h-11 w-full text-sm"
+                        className="academy-button-secondary w-full"
                     >
                         다른 방법으로 결제(계좌가 닫혀요)
                     </button>
@@ -272,7 +272,7 @@ export default function PaymentCheckoutClient({
                 {switching && (
                     // 위험 확인: 계좌를 닫으면 되돌릴 수 없으니 무엇이 일어나는지 먼저 알리고 수단을 고르게 한다.
                     <div role="alertdialog" aria-labelledby="close-account-title" className="rounded-lg border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-3 text-sm text-[var(--color-academy-ink)]">
-                        <p id="close-account-title" className="font-extrabold">지금 받은 입금 계좌를 닫을까요?</p>
+                        <p id="close-account-title" className="font-semibold">지금 받은 입금 계좌를 닫을까요?</p>
                         <p className="mt-0.5 text-xs">이미 입금했다면 닫지 말고 잠시 기다려 주세요.</p>
                         {/* 버튼은 «닫고 + 수단 이름»만 — 2칸 버튼에서 줄바꿈되지 않게 짧게 */}
                         <div className="mt-2 grid grid-cols-2 gap-2">
@@ -282,7 +282,7 @@ export default function PaymentCheckoutClient({
                                     type="button"
                                     disabled={loading}
                                     onClick={() => void startPayment(option.value, true)}
-                                    className="academy-button-danger-solid min-h-11 whitespace-nowrap px-2 text-sm"
+                                    className="academy-button-danger-solid whitespace-nowrap"
                                 >
                                     {loading ? "닫는 중..." : `닫고 ${option.label}`}
                                 </button>
@@ -292,7 +292,7 @@ export default function PaymentCheckoutClient({
                             type="button"
                             disabled={loading}
                             onClick={() => setSwitching(false)}
-                            className="academy-button-secondary mt-2 min-h-11 w-full text-sm"
+                            className="academy-button-secondary mt-2 w-full"
                         >
                             그대로 두기
                         </button>
@@ -330,11 +330,11 @@ export default function PaymentCheckoutClient({
             )}
 
             {providerReady && provider === "CAFE24_BRIDGE" && (
-                <p className="text-sm font-bold text-[var(--color-academy-ink)]">본사 카페24 결제창으로 이동합니다.</p>
+                <p className="text-sm font-medium text-[var(--color-academy-ink)]">본사 카페24 결제창으로 이동합니다.</p>
             )}
 
             {error && (
-                <p role="alert" className="rounded-lg bg-[var(--color-academy-danger-soft)] p-2 text-sm font-bold text-[var(--color-academy-danger)]">
+                <p role="alert" className="rounded-lg bg-[var(--color-academy-danger-soft)] p-2 text-sm font-medium text-[var(--color-academy-danger)]">
                     {error}
                 </p>
             )}
@@ -345,7 +345,7 @@ export default function PaymentCheckoutClient({
                 type="button"
                 onClick={() => void startPayment()}
                 disabled={loading || amount <= 0 || !providerReady}
-                className="academy-button-primary min-h-12 w-full text-base font-black"
+                className="academy-button-primary w-full"
             >
                 {loading
                     ? "결제창 여는 중..."
@@ -358,7 +358,7 @@ export default function PaymentCheckoutClient({
             {/* 부가 안내는 접어 둔다 — 첫 화면에는 «결제 안내» 한 줄만 */}
             {providerReady && provider === "TOSS" && (
                 <details className="text-xs text-[var(--color-academy-muted)]">
-                    <summary className="flex min-h-11 cursor-pointer items-center justify-center font-bold">결제 안내</summary>
+                    <summary className="flex min-h-11 cursor-pointer items-center justify-center font-medium">결제 안내</summary>
                     <ul className="space-y-1 pb-1">
                         <li>· 카드·계좌이체는 결제하면 바로 납부 완료돼요.</li>
                         <li>· 무통장입금은 받은 계좌로 90일 안에 아무 은행에서 입금해요.</li>

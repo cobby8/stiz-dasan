@@ -94,16 +94,18 @@ export default function BundleDoneClient({ paymentKey, orderId, amount }: { paym
         : state === "deposit" ? "입금 계좌가 발급됐어요"
         : state === "pending" ? "결제 확인 중이에요"
         : "결제가 완료되지 않았어요";
-    const icon = state === "success" ? "check_circle" : state === "deposit" ? "savings" : state === "error" ? "error" : "hourglass_top";
-    const tone = state === "success" ? "text-[var(--color-academy-success)]" : state === "error" ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-info)]";
 
     return (
         <main className="mx-auto max-w-lg space-y-3 px-4 py-4">
             <section aria-live="polite" className="academy-panel p-4">
-                <div className="flex items-center gap-3">
-                    <span className={`material-symbols-outlined text-3xl leading-none ${tone}`} aria-hidden="true">{icon}</span>
+                <div className="flex items-stretch gap-3">
+                    {/* 결과를 색으로도 알린다(아이콘을 빼며 색 구분이 사라졌던 것 복구) — 완료 초록 · 실패 빨강 · 입금 대기 정보색 · 확인 중 주의색. 글자(제목)가 같은 뜻을 말한다 */}
+                    <span
+                        aria-hidden="true"
+                        className={`w-1 shrink-0 rounded-full ${state === "success" ? "bg-[var(--color-academy-success)]" : state === "error" ? "bg-[var(--color-academy-danger-fill)]" : state === "deposit" ? "bg-[var(--color-academy-info)]" : state === "pending" ? "bg-[var(--color-academy-warning)]" : "bg-[var(--color-academy-line)]"}`}
+                    />
                     <div className="min-w-0">
-                        <h1 className="text-lg font-black text-[var(--color-academy-ink)]">{heading}</h1>
+                        <h1 className="academy-heading">{heading}</h1>
                         {/* 보조 문장은 할 일이 있을 때만(확인 중·실패). 완료·입금 안내는 아래 목록·계좌 안내가 대신한다 */}
                         {(state === "pending" || state === "error") && (
                             <p className="text-xs text-[var(--color-academy-muted)]">
@@ -123,20 +125,20 @@ export default function BundleDoneClient({ paymentKey, orderId, amount }: { paym
 
             {order && order.items.length > 0 && (
                 <section aria-labelledby="done-items-heading" className="academy-panel overflow-hidden">
-                    <h2 id="done-items-heading" className="flex items-center justify-between border-b border-[var(--color-academy-line)] px-3 py-2 text-sm font-bold text-[var(--color-academy-ink)]">
-                        <span>묶은 청구 <span className="tabular-nums text-[var(--color-academy-muted)]">{order.items.length}</span></span>
-                        <span className="tabular-nums">합계 {won(order.amount)}</span>
+                    <h2 id="done-items-heading" className="academy-section-title flex items-center justify-between border-b border-[var(--color-academy-line)] px-3 py-2">
+                        <span>묶은 청구 <span className="text-sm font-normal tabular-nums text-[var(--color-academy-muted)]">{order.items.length}</span></span>
+                        <span className="text-sm tabular-nums">합계 {won(order.amount)}</span>
                     </h2>
                     <ul className="divide-y divide-[var(--color-academy-line)]">
                         {order.items.map((item) => (
                             <li key={item.paymentId} className="flex min-h-11 items-center gap-2 px-3 py-2 text-sm">
-                                <span className="min-w-0 flex-1 break-keep font-bold text-[var(--color-academy-ink)]">
-                                    <span className="mr-1 font-bold text-[var(--color-academy-ink)]">{item.studentName}</span>
+                                <span className="min-w-0 flex-1 break-keep text-[var(--color-academy-ink)]">
+                                    <span className="mr-1 font-semibold text-[var(--color-academy-ink)]">{item.studentName}</span>
                                     {item.title}
                                 </span>
                                 <span className="shrink-0 text-right tabular-nums">
                                     {won(item.amount)}
-                                    <span className={`block text-xs font-bold ${item.paymentStatus === "PAID" ? "text-[var(--color-academy-success)]" : "text-[var(--color-academy-muted)]"}`}>
+                                    <span className={`block text-xs ${item.paymentStatus === "PAID" ? "text-[var(--color-academy-success)]" : "text-[var(--color-academy-muted)]"}`}>
                                         {ITEM_STATUS[item.paymentStatus] ?? item.paymentStatus}
                                     </span>
                                 </span>
@@ -148,16 +150,16 @@ export default function BundleDoneClient({ paymentKey, orderId, amount }: { paym
 
             <div className="grid grid-cols-2 gap-2">
                 {state === "success" && order?.receiptUrl ? (
-                    <a href={order.receiptUrl} target="_blank" rel="noopener noreferrer" className="academy-button-secondary min-h-11 text-sm">영수증 보기</a>
+                    <a href={order.receiptUrl} target="_blank" rel="noopener noreferrer" className="academy-button-secondary">영수증 보기</a>
                 ) : state === "pending" || state === "error" ? (
-                    <button type="button" onClick={() => void run()} className="academy-button-secondary min-h-11 text-sm">다시 확인</button>
+                    <button type="button" onClick={() => void run()} className="academy-button-secondary">다시 확인</button>
                 ) : (
-                    <Link href="/mypage" className="academy-button-secondary min-h-11 text-sm">홈으로</Link>
+                    <Link href="/mypage" className="academy-button-secondary">홈으로</Link>
                 )}
                 {state === "error" && !CHECK_HISTORY_BLOCKS.has(blocked) ? (
-                    <Link href="/mypage/payments/checkout" className="academy-button-primary min-h-11 text-sm">다시 결제하기</Link>
+                    <Link href="/mypage/payments/checkout" className="academy-button-primary">다시 결제하기</Link>
                 ) : (
-                    <Link href="/mypage/payments" className="academy-button-primary min-h-11 text-sm">청구 목록</Link>
+                    <Link href="/mypage/payments" className="academy-button-primary">청구 목록</Link>
                 )}
             </div>
         </main>

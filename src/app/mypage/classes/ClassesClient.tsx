@@ -67,7 +67,7 @@ function ChangeMenu({ action }: { action: Extract<ClassCardAction, { key: "chang
               href={item.href}
               role="menuitem"
               onClick={() => setOpen(false)}
-              className="flex min-h-11 items-center px-3 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"
+              className="flex min-h-11 items-center px-3 text-sm font-medium text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"
             >
               {item.label} 신청
             </Link>
@@ -95,9 +95,9 @@ function ClassCard({ card }: { card: ParentClassCard }) {
   return (
     <article className="academy-panel !shadow-none p-3" aria-label={`${card.className} 반`}>
       <div className="flex items-start gap-2">
-        <h3 className="min-w-0 flex-1 break-keep text-base font-extrabold text-[var(--color-academy-ink)]">{card.className}</h3>
+        <h3 className="academy-section-title min-w-0 flex-1 break-keep">{card.className}</h3>
         {/* 상태 칩 — 홈 «반 상태 한 줄»과 같은 함수·같은 말. 상태 표시는 모서리 4px(rounded) */}
-        <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-bold ${TONE_BADGE_CLASS[card.chip.tone]}`}>{card.chip.text}</span>
+        <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs ${TONE_BADGE_CLASS[card.chip.tone]}`}>{card.chip.text}</span>
       </div>
       <p className="mt-0.5 break-keep text-xs tabular-nums text-[var(--color-academy-muted)]">{meta}</p>
 
@@ -105,9 +105,8 @@ function ClassCard({ card }: { card: ParentClassCard }) {
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
         {next && (
           <span className="inline-flex items-center gap-1 whitespace-nowrap">
-            <Icon name="event" size={16} className="text-[var(--color-academy-muted)]" />
             <span className="text-[var(--color-academy-muted)]">다음</span>
-            <span className="font-bold tabular-nums text-[var(--color-academy-ink)]">{next}</span>
+            <span className="font-semibold tabular-nums text-[var(--color-academy-ink)]">{next}</span>
           </span>
         )}
         {card.attendance.length > 0 && (
@@ -126,7 +125,7 @@ function ClassCard({ card }: { card: ParentClassCard }) {
       {/* 셔틀 — 이 반의 정규 셔틀만(정류장·시각 KST) */}
       {card.shuttle.length > 0 && (
         <p className="mt-1 flex items-start gap-1 text-xs text-[var(--color-academy-ink)]">
-          <Icon name="airport_shuttle" size={16} className="text-[var(--color-academy-muted)]" />
+          <span className="shrink-0 text-[var(--color-academy-muted)]">셔틀</span>
           <span className="break-keep">{card.shuttle.map((s) => s.text).join("  ·  ")}</span>
         </p>
       )}
@@ -171,7 +170,7 @@ export default function ClassesClient({
   if (!child) {
     return (
       <div className="py-16 text-center">
-        <h1 className="text-lg font-bold text-[var(--color-academy-ink)]">등록된 자녀가 없습니다</h1>
+        <h1 className="academy-heading">등록된 자녀가 없습니다</h1>
         <p className="mt-1 text-sm text-[var(--color-academy-muted)]">학원에 자녀를 등록하시면 수업을 확인할 수 있어요.</p>
       </div>
     );
@@ -183,7 +182,7 @@ export default function ClassesClient({
   return (
     <div className="space-y-3">
       {/* 제목(설명 문구 없음) — 달력은 아래 같은 화면에 붙는다 */}
-      <h1 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">수업</h1>
+      <h1 className="academy-heading">수업</h1>
 
       {/* 아이 칩 — 둘 이상일 때만 */}
       {overview.children.length > 1 && (

@@ -123,7 +123,8 @@ test("정규 배차 화면은 등원·하원 회차 카드를 한 목록에 시�
   // 공용 섹션(방학특강·옛 정규 모드 코드는 그대로): 시간순 모드에서만 겉 상자를 풀고 카드에 순서 값·방향 배지·방향이 적힌 저장 버튼
   assert.match(seasonalRouteSection, /timeOrdered = false/);
   assert.match(seasonalRouteSection, /order: runTimelineOrder\(v, isPickup, vIdx\)/);
-  assert.match(seasonalRouteSection, /`💾 \$\{dirLabel\} 저장`/);
+  // 2026-11-13 UI 통일: 저장 버튼의 그림 문자를 뺐다 — «어느 방향을 저장하는지» 라벨은 그대로 지킨다.
+  assert.match(seasonalRouteSection, /`\$\{dirLabel\} 저장`/);
   assert.match(seasonalRouteSection, /\{timeOrdered && <span[^>]*>\{dirLabel\}<\/span>\}/);
 });
 

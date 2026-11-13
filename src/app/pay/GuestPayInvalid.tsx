@@ -9,11 +9,9 @@ export default function GuestPayInvalid({ contactPhone }: { contactPhone?: strin
     return (
         <main className="mx-auto max-w-lg px-4 py-8">
             <div className="academy-panel p-4 text-center">
-                <span className="material-symbols-outlined text-3xl leading-none text-[var(--color-academy-muted)]" aria-hidden="true">link_off</span>
-                <p className="mt-1 font-bold text-[var(--color-academy-ink)]">{GUEST_PAY_INVALID_MESSAGE}</p>
+                <p className="font-bold text-[var(--color-academy-ink)]">{GUEST_PAY_INVALID_MESSAGE}</p>
                 {tel && (
-                    <a href={`tel:${tel}`} className="academy-button-secondary mt-3 min-h-11 px-5 text-sm">
-                        <span className="material-symbols-outlined text-lg leading-none" aria-hidden="true">call</span>
+                    <a href={`tel:${tel}`} className="academy-button-secondary mt-3">
                         학원 전화 {contactPhone}
                     </a>
                 )}

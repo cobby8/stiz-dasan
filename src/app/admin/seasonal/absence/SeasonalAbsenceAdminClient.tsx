@@ -109,19 +109,16 @@ export default function SeasonalAbsenceAdminClient({
       {/* 헤더 + 시즌 필터 */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="flex items-center gap-2 text-lg font-black text-[var(--color-academy-ink)]">
-            <span className="material-symbols-outlined text-2xl text-[var(--brand-accent)]">event_busy</span>
-            결석 신고 처리
-          </h2>
+          <h2 className="academy-section-title">결석 신고 처리</h2>
           {/* 설명문만 제거하고 '미확정 N건' 배지는 그대로 유지한다(처리해야 할 건수 표시) */}
           <p className="mt-1 text-sm text-[var(--color-academy-muted)]">
-            {reportedCount > 0 && <span className="font-bold text-[var(--color-academy-warning)]">미확정 {reportedCount}건</span>}
+            {reportedCount > 0 && <span className="font-medium text-[var(--color-academy-warning)]">미확정 {reportedCount}건</span>}
           </p>
         </div>
         <select
           value={seasonId}
           onChange={(e) => onSeasonChange(e.target.value)}
-          className="min-h-11 rounded-xl border border-[var(--color-academy-line)] bg-white px-3 text-sm font-bold text-[var(--color-academy-ink)]"
+          className="min-h-11 rounded-md border border-[var(--color-academy-line-input)] bg-white px-3 text-sm text-[var(--color-academy-ink)]"
         >
           <option value="">전체 시즌</option>
           {initial.seasons.map((s) => (
@@ -133,7 +130,7 @@ export default function SeasonalAbsenceAdminClient({
       </div>
 
       {err && (
-        <div className="mb-3 rounded-xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] px-4 py-3 text-sm font-bold text-[var(--color-academy-danger)]">
+        <div className="mb-3 rounded-xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] px-4 py-3 text-sm text-[var(--color-academy-danger)]">
           {err}
         </div>
       )}
@@ -156,22 +153,21 @@ export default function SeasonalAbsenceAdminClient({
                   {/* 좌: 학생·회차·사유 */}
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-base font-black text-[var(--color-academy-ink)]">{r.childName}</span>
+                      <span className="text-base font-semibold text-[var(--color-academy-ink)]">{r.childName}</span>
                       <span className="text-sm text-[var(--color-academy-muted)]">{r.offeringTitle}</span>
                       {/* 상태 배지 */}
                       {confirmed ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-academy-success-soft)] px-2 py-0.5 text-[11px] font-black text-[var(--color-academy-success)]">
-                          <span className="material-symbols-outlined text-sm">check_circle</span>
+                        <span className="inline-flex items-center gap-1 rounded bg-[var(--color-academy-success-soft)] px-2 py-0.5 text-xs text-[var(--color-academy-success)]">
                           {r.statusLabel}
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-academy-warning-soft)] px-2 py-0.5 text-[11px] font-black text-[var(--color-academy-warning)]">
+                        <span className="inline-flex items-center gap-1 rounded bg-[var(--color-academy-warning-soft)] px-2 py-0.5 text-xs text-[var(--color-academy-warning)]">
                           {r.statusLabel}
                         </span>
                       )}
                     </div>
                     <div className="mt-1 text-sm text-[var(--color-academy-muted)]">
-                      <span className="font-bold">{r.dateLabel ?? "-"}</span>
+                      <span className="font-medium tabular-nums">{r.dateLabel ?? "-"}</span>
                       {r.reasonLabel && <span className="ml-2">· 사유: {r.reasonLabel}</span>}
                       {r.reportedAtLabel && (
                         <span className="ml-2 text-[var(--color-academy-faint)]">· 신고 {r.reportedAtLabel}</span>
@@ -180,26 +176,25 @@ export default function SeasonalAbsenceAdminClient({
                     {/* 결제여부 + 회차금액 */}
                     <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
                       {r.paid ? (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-[var(--color-academy-soft)] px-2 py-0.5 font-bold text-[var(--color-academy-muted)]">
-                          <span className="material-symbols-outlined text-sm">paid</span>결제완료
+                        <span className="inline-flex items-center gap-1 rounded bg-[var(--color-academy-soft)] px-2 py-0.5 text-[var(--color-academy-muted)]">
+                          결제완료
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-[var(--color-academy-danger-soft)] px-2 py-0.5 font-bold text-[var(--color-academy-danger)]">
-                          <span className="material-symbols-outlined text-sm">error</span>
+                        <span className="inline-flex items-center gap-1 rounded bg-[var(--color-academy-danger-soft)] px-2 py-0.5 text-[var(--color-academy-danger)]">
                           미결제 — 결제 후 이월/환불 확정
                         </span>
                       )}
-                      <span className="text-[var(--color-academy-muted)]">회차 금액 {won(r.perSessionAmount)}</span>
+                      <span className="tabular-nums text-[var(--color-academy-muted)]">회차 금액 {won(r.perSessionAmount)}</span>
                     </div>
                   </div>
 
                   {/* 우: 처리방식 드롭다운 + 확정/취소 */}
-                  <div className="flex shrink-0 flex-wrap items-center gap-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <select
                       value={RESOLUTION_OPTIONS.some((o) => o.value === r.resolution) ? r.resolution : ""}
                       disabled={busy}
                       onChange={(e) => e.target.value && onResolution(r.absenceId, e.target.value)}
-                      className="min-h-10 rounded-xl border border-[var(--color-academy-line)] bg-white px-3 text-sm font-bold text-[var(--color-academy-ink)] disabled:opacity-50"
+                      className="min-h-10 rounded-md border border-[var(--color-academy-line-input)] bg-white px-3 text-sm text-[var(--color-academy-ink)] disabled:opacity-50"
                       aria-label="처리방식"
                     >
                       {/* 현재값이 PENDING이면 "미정"을 선택지로 보여준다(관리자가 아직 지정 안 함) */}
@@ -216,9 +211,9 @@ export default function SeasonalAbsenceAdminClient({
                         type="button"
                         disabled={busy}
                         onClick={() => onRevert(r.absenceId)}
-                        className="inline-flex min-h-10 items-center gap-1 rounded-xl border border-[var(--color-academy-line-input)] bg-white px-3 text-sm font-bold text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)] disabled:opacity-50"
+                        className="academy-button-secondary academy-button-sm"
                       >
-                        <span className="material-symbols-outlined text-lg">undo</span>확정 취소
+                        확정 취소
                       </button>
                     ) : (
                       <button
@@ -226,9 +221,10 @@ export default function SeasonalAbsenceAdminClient({
                         disabled={busy || r.resolution === "PENDING"}
                         onClick={() => onConfirm(r.absenceId)}
                         title={r.resolution === "PENDING" ? "먼저 처리방식을 지정하세요" : undefined}
-                        className="inline-flex min-h-10 items-center gap-1 rounded-xl bg-[var(--brand-accent)] px-3 text-sm font-black text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                        // 행마다 반복되는 작업이라 꽉 찬 주 버튼 대신 옅은 버튼(tonal)
+                        className="academy-button-tonal academy-button-sm"
                       >
-                        <span className="material-symbols-outlined text-lg">check</span>확정
+                        확정
                       </button>
                     )}
                   </div>

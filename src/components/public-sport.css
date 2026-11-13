@@ -68,6 +68,10 @@
   --color-public-accent: #f4753a;
   --color-public-strong: #fd925c;
   --color-public-rest: #f4753a;           /* 다크모드는 지금 모양(주황) 그대로 */
+  /* «고른 것»도 다크모드는 지금 모양(주황 바탕 + 어두운 글자) — 밝은 하늘색 칩이 어두운 화면에 그대로 뜨지 않게 토큰 한 곳에서 바꾼다 */
+  --color-public-secondary-soft: #f4753a;
+  --color-public-secondary-strong: #f4753a;
+  --color-public-secondary-ink: #15181c;
   --color-public-focus: #fd925c;
   /* 다크모드는 나중에 정한다(원장 결정 5) — 체험 신청 입구도 지금 모양(밝은 주황 + 어두운 글자) 그대로 */
   --color-public-trial: #f4753a;

@@ -544,8 +544,10 @@ test("관리자: 환불 계좌는 확정·사용 완료·환불 완료·취소 �
   assert.match(svc, /AS "applicantUserName"/);
   const admin = read("src/app/admin/rental/RentalAdminClient.tsx");
   assert.match(admin, /재원생 무료 · 로그인 계정: \{confirmRow\.applicantUserName \|\| "확인 필요"\}로 신청/);
-  // 아이콘은 같은 파일의 다른 아이콘과 같은 방식(material-symbols-outlined + aria-hidden, 크기 클래스 없음)
-  assert.match(admin, /<span className="material-symbols-outlined" aria-hidden="true">content_copy<\/span>/);
+  // 2026-11-13 UI 통일: 복사 버튼의 장식 아이콘(content_copy)을 빼고 글자(«복사»/«복사함»)로만 말한다
+  assert.doesNotMatch(admin, /content_copy/);
+  assert.match(admin, /onClick=\{\(\) => copyRefund\(detail\)\}\s*className="academy-button-tonal academy-button-sm"/);
+  assert.match(admin, /\{copiedId === detail\.id \? "복사함" : "복사"\}/);
   // 공개 신청서: 재원생 무료면 «보증금 차감» 문장을 빼고 보인다
   const client = read("src/app/rental/RentalClient.tsx");
   assert.match(client, /memberFree \? "를 지키겠습니다\." : "를 지키지 않으면 보증금이 차감될 수 있습니다\."/);

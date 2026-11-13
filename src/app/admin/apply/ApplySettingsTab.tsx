@@ -28,7 +28,8 @@ const DEFAULT_SETTINGS: ApplySettings = {
     uniformFormUrl: null,
 };
 
-const INPUT = "w-full border border-[var(--color-academy-line-input)] rounded-lg px-3 py-2.5 text-sm bg-[var(--color-academy-soft)] focus:bg-white focus:ring-2 focus:ring-[var(--color-academy-primary)] focus:border-[var(--color-academy-primary)] transition";
+// 입력칸 = 테마 공용 입력칸(academy-input: 44px·입력선 테두리) — 2026-11-13 UI 통일
+const INPUT = "academy-input";
 const TEXTAREA = INPUT + " resize-none";
 
 export default function ApplySettingsTab({ initialSettings }: ApplySettingsTabProps) {
@@ -117,7 +118,7 @@ export default function ApplySettingsTab({ initialSettings }: ApplySettingsTabPr
                 <button
                     type="button"
                     onClick={loadSettings}
-                    className="mt-3 rounded-lg bg-[var(--color-academy-primary)] px-4 py-2 text-sm font-bold text-white hover:bg-[var(--color-academy-primary-hover)]"
+                    className="academy-button-primary mt-3"
                 >
                     다시 시도
                 </button>
@@ -135,7 +136,7 @@ export default function ApplySettingsTab({ initialSettings }: ApplySettingsTabPr
 
             <SettingsCard badge="체험수업" badgeColor="bg-[var(--color-academy-neutral-soft)] text-[var(--color-academy-neutral)] border border-[var(--color-academy-line)]" title="체험수업 안내 설정">
                 <div>
-                    <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">섹션 제목</label>
+                    <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">섹션 제목</label>
                     <input
                         type="text"
                         value={trialTitle}
@@ -145,7 +146,7 @@ export default function ApplySettingsTab({ initialSettings }: ApplySettingsTabPr
                     />
                 </div>
                 <div>
-                    <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">
+                    <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">
                         안내 내용
                     </label>
                     <textarea
@@ -157,7 +158,7 @@ export default function ApplySettingsTab({ initialSettings }: ApplySettingsTabPr
                     />
                 </div>
                 <div>
-                    <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">
+                    <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">
                         외부 신청 링크
                     </label>
                     <input
@@ -175,7 +176,7 @@ export default function ApplySettingsTab({ initialSettings }: ApplySettingsTabPr
 
             <SettingsCard badge="수강신청" badgeColor="bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] border border-[var(--color-academy-line)]" title="수강신청 안내 설정">
                 <div>
-                    <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">섹션 제목</label>
+                    <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">섹션 제목</label>
                     <input
                         type="text"
                         value={enrollTitle}
@@ -185,7 +186,7 @@ export default function ApplySettingsTab({ initialSettings }: ApplySettingsTabPr
                     />
                 </div>
                 <div>
-                    <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">
+                    <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">
                         안내 내용
                     </label>
                     <textarea
@@ -197,7 +198,7 @@ export default function ApplySettingsTab({ initialSettings }: ApplySettingsTabPr
                     />
                 </div>
                 <div>
-                    <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">
+                    <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">
                         외부 신청 링크
                     </label>
                     <input
@@ -212,7 +213,7 @@ export default function ApplySettingsTab({ initialSettings }: ApplySettingsTabPr
 
             <SettingsCard badge="유니폼" badgeColor="bg-[var(--color-academy-neutral-soft)] text-[var(--color-academy-neutral)] border border-[var(--color-academy-line)]" title="유니폼 신청 설정">
                 <div>
-                    <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">
+                    <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">
                         유니폼 신청 링크
                     </label>
                     <input
@@ -230,7 +231,7 @@ export default function ApplySettingsTab({ initialSettings }: ApplySettingsTabPr
                 <button
                     onClick={handleSave}
                     disabled={saving}
-                    className="bg-[var(--color-academy-primary)] hover:bg-[var(--color-academy-primary-hover)] text-white font-bold px-8 py-3 rounded-xl transition disabled:opacity-40 shadow-sm"
+                    className="academy-button-primary"
                 >
                     {saving ? "저장 중..." : "저장하기"}
                 </button>
@@ -253,8 +254,8 @@ function SettingsCard({
     return (
         <div className="bg-white rounded-xl shadow-sm border border-[var(--color-academy-line)] overflow-hidden">
             <div className="px-6 py-4 border-b border-[var(--color-academy-line)] flex items-center gap-3">
-                <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${badgeColor}`}>{badge}</span>
-                <h2 className="text-base font-bold text-[var(--color-academy-ink)]">{title}</h2>
+                <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${badgeColor}`}>{badge}</span>
+                <h2 className="academy-section-title">{title}</h2>
             </div>
             <div className="p-6 space-y-4">{children}</div>
         </div>

@@ -99,7 +99,8 @@ test("화면 가드 — 결석 학생도 탑승 버튼·연락처가 보이고, 
   assert.match(src, /stopAbsenceSummary\(row\.riders, boarding\)/);
   assert.match(src, /정차 안 해도 됨/);
   // 뱃지: 꽉 찬 위험색(danger-fill, 2026-11-09 위험색 역할 분리) 바탕 + on-primary 글자, 14px, 아이콘은 Material Symbols
-  assert.match(src, /bg-\[var\(--color-academy-danger-fill\)\] px-2 py-0\.5 text-\[14px\] font-black text-\[var\(--color-academy-on-primary\)\]">\s*<span aria-hidden="true" className="material-symbols-outlined[^"]*">event_busy<\/span>\{rider\.absentLabel \|\| "결석"\}/);
+  // 2026-11-13 UI 통일: text-[14px] → text-sm(같은 14px), font-black → font-semibold(굵기 네 단계). 색·아이콘·문구는 그대로.
+  assert.match(src, /bg-\[var\(--color-academy-danger-fill\)\] px-2 py-0\.5 text-sm font-semibold text-\[var\(--color-academy-on-primary\)\]">\s*<span aria-hidden="true" className="material-symbols-outlined[^"]*">event_busy<\/span>\{rider\.absentLabel \|\| "결석"\}/);
   // 버튼 묶음이 결석 조건으로 감싸이지 않는다
   assert.doesNotMatch(src, /\? \(\s*<span[^>]*>미\{isPickup/);
 });

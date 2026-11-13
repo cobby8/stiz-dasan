@@ -29,16 +29,17 @@ export default function ChatBotButton() {
       {isOpen && <ChatPanel onClose={() => setIsOpen(false)} />}
 
       {/* 플로팅 말풍선 버튼 — 패널이 닫혀 있을 때만 표시.
-          위치(bottom)는 public-sport.css 의 public-floating-btn 이 정한다(하단 고정 바 높이만큼 위로). */}
+          위치(bottom)는 public-sport.css 의 public-floating-btn 이 정한다(하단 고정 바 높이만큼 위로).
+          좁은 화면에서는 48px·오른쪽 16px — 홈 첫 화면 버튼과 겹치지 않게. 글자를 둘 자리가 없어 아이콘 + aria-label. */}
       {!isOpen && (
         <button
           onClick={() => setIsOpen(true)}
           className="
             public-floating-btn public-floating-btn--chat
-            fixed right-6 z-50
-            w-14 h-14 rounded-full
-            bg-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white dark:text-black
-            shadow-lg hover:bg-orange-600 dark:hover:bg-lime-400
+            fixed right-4 sm:right-6 z-50
+            w-12 h-12 sm:w-14 sm:h-14 rounded-full
+            bg-[var(--color-public-accent)] dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white dark:text-black
+            shadow-lg hover:bg-[var(--color-public-strong)] dark:hover:bg-lime-400
             transition-all duration-200 hover:scale-105
             flex items-center justify-center
           "

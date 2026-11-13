@@ -126,7 +126,8 @@ export default function AssignLegView({ month, board, student, leg, notice, warn
   const endRow = leg.direction === "BOARD" ? `학원 도착 · ${leg.startTime} 수업` : null;
   const startRow = leg.direction === "ALIGHT" ? "학원 출발" : null;
 
-  const radio = (active: boolean) => `flex min-h-11 w-full min-w-0 items-start gap-3 rounded-lg bg-[var(--color-academy-surface)] p-3 text-left ${active ? "border-2 border-[var(--color-academy-ink)]" : "border border-[var(--color-academy-line)]"}`;
+  // 고른 칸 = 보조 색(하늘색) 테두리 + 옅은 바탕(2026-11-13 UI 통일 — 옛 검정 테두리).
+  const radio = (active: boolean) => `flex min-h-11 w-full min-w-0 items-start gap-3 rounded-lg p-3 text-left ${active ? "border-2 border-[var(--color-academy-secondary-strong)] bg-[var(--color-academy-secondary-soft)]" : "border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)]"}`;
 
   // 페이지에선 main, 모달 안에선 div(한 화면에 main 은 하나여야 한다).
   const Root = variant === "modal" ? "div" : "main";
@@ -134,8 +135,8 @@ export default function AssignLegView({ month, board, student, leg, notice, warn
   return (
     <Root className="mx-auto w-full min-w-0 max-w-lg text-[var(--color-academy-ink)]">
       <header className="space-y-2 border-b border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-4 py-3">
-        <button type="button" onClick={onBack} className="inline-flex min-h-11 items-center gap-1 text-sm text-[var(--color-academy-muted)]">
-          <span className="material-symbols-outlined text-lg" aria-hidden="true">{variant === "modal" ? "close" : "chevron_left"}</span>{backLabel}
+        <button type="button" onClick={onBack} className="academy-button-text -ml-3">
+          {backLabel}
         </button>
         <div className="min-w-0">
           <Title id={titleId} className="break-keep text-xl font-bold">{student.name} · {leg.label}</Title>
@@ -146,7 +147,8 @@ export default function AssignLegView({ month, board, student, leg, notice, warn
           <div className="flex flex-wrap gap-2" role="tablist" aria-label="남은 칸 고르기">
             {student.legs.map((l) => (
               <button key={l.key} type="button" role="tab" aria-selected={l.key === leg.key} disabled={saving} onClick={() => onPickLeg(l.key)}
-                className={`min-h-11 rounded-full border px-4 text-sm ${l.key === leg.key ? "border-[var(--color-academy-ink)] bg-[var(--color-academy-ink)] text-[var(--color-academy-surface)]" : "border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]"}`}>
+                // 탭 = «지금 보는 칸» — 보조 색, ✓ 없음(테마 academy-choice is-tab)
+                className={`academy-choice is-tab${l.key === leg.key ? " is-selected" : ""}`}>
                 {l.label}
               </button>
             ))}
@@ -155,8 +157,8 @@ export default function AssignLegView({ month, board, student, leg, notice, warn
       </header>
 
       <div className="space-y-6 p-4">
-        {notice && <p role="status" className="rounded-lg bg-[var(--color-academy-success-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-success)]">{notice}</p>}
-        {warn && <p role="alert" className="rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-warning)]">{warn}</p>}
+        {notice && <p role="status" className="rounded-lg bg-[var(--color-academy-success-soft)] px-3 py-2 text-sm text-[var(--color-academy-success)]">{notice}</p>}
+        {warn && <p role="alert" className="rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm text-[var(--color-academy-warning)]">{warn}</p>}
         {/* 반 이동 재배정 — 넣으면 옛 칸이 같이 빠진다는 것을 먼저 알린다(옛 정류장이 기본 추천으로 따라온다). */}
         {leg.reassign && (
           <p className="rounded-lg border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm text-[var(--color-academy-ink)]">
@@ -164,10 +166,10 @@ export default function AssignLegView({ month, board, student, leg, notice, warn
             넣으면 옛 칸({WEEKDAY_FULL[leg.reassign.fromWeekday]} {leg.reassign.fromClassTime} · {leg.reassign.fromStopName})은 명단에서 빠져요.
           </p>
         )}
-        {leg.blocked && <p role="alert" className="rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-warning)]">{leg.blocked}</p>}
+        {leg.blocked && <p role="alert" className="rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm text-[var(--color-academy-warning)]">{leg.blocked}</p>}
 
         <section className="space-y-2" aria-labelledby="where-title">
-          <h2 id="where-title" className="text-base font-bold">① 어디서 {leg.direction === "BOARD" ? "태울까요" : "내릴까요"}?</h2>
+          <h2 id="where-title" className="academy-section-title">① 어디서 {leg.direction === "BOARD" ? "태울까요" : "내릴까요"}?</h2>
           <p className="break-words text-xs text-[var(--color-academy-muted)]">학생 위치: {place ?? "등록 안 됨"}</p>
           <div role="radiogroup" aria-labelledby="where-title" className="space-y-2">
             {leg.joinOptions.map((o) => {
@@ -176,7 +178,7 @@ export default function AssignLegView({ month, board, student, leg, notice, warn
                 <button key={o.key ?? `i${o.stopIndex}`} type="button" role="radio" aria-checked={active} disabled={saving} onClick={() => setChoice(optionChoice(o))} className={radio(active)}>
                   <Dot active={active} />
                   <span className="flex min-w-0 flex-col gap-0.5">
-                    <span className="break-words text-sm font-bold">{o.label}
+                    <span className="break-words text-sm font-semibold">{o.label}
                       {o.recommended && <span className="ml-1 rounded bg-[var(--color-academy-primary-soft)] px-1.5 py-px text-xs font-medium text-[var(--color-academy-primary)]">추천{o.recommendReason ? ` · ${o.recommendReason}` : ""}</span>}
                     </span>
                     <span className="text-xs text-[var(--color-academy-muted)]">
@@ -190,7 +192,7 @@ export default function AssignLegView({ month, board, student, leg, notice, warn
               <button type="button" role="radio" aria-checked={isNew} disabled={saving} onClick={() => setChoice({ kind: "INSERT", position })} className={radio(isNew)}>
                 <Dot active={isNew} />
                 <span className="flex min-w-0 flex-col gap-0.5">
-                  <span className="text-sm font-bold">학생 위치에 새 정류장
+                  <span className="text-sm font-semibold">학생 위치에 새 정류장
                     {leg.defaultChoice?.kind === "INSERT" && <span className="ml-1 rounded bg-[var(--color-academy-primary-soft)] px-1.5 py-px text-xs font-medium text-[var(--color-academy-primary)]">추천</span>}
                   </span>
                   <span className="break-words text-xs text-[var(--color-academy-muted)]">{leg.newStop.name} · 이름은 넣은 뒤 고칠 수 있어요</span>
@@ -202,7 +204,7 @@ export default function AssignLegView({ month, board, student, leg, notice, warn
         </section>
 
         <section className="space-y-2" aria-labelledby="order-title">
-          <h2 id="order-title" className="text-base font-bold">② 몇 번째로 {leg.direction === "BOARD" ? "태울까요" : "내릴까요"}?</h2>
+          <h2 id="order-title" className="academy-section-title">② 몇 번째로 {leg.direction === "BOARD" ? "태울까요" : "내릴까요"}?</h2>
           <p className="text-xs text-[var(--color-academy-muted)]">지금 기사님 화면의 {leg.label} 순서예요.</p>
           <ol className="overflow-hidden rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
             {startRow && <RouteRow no="출발" stop={startRow} riders="" first />}
@@ -212,9 +214,9 @@ export default function AssignLegView({ month, board, student, leg, notice, warn
           {n === 0 && <p className="text-xs text-[var(--color-academy-muted)]">이 수업·방향에 아직 정차가 없어 첫 정차로 들어가요.</p>}
           <div className="flex gap-2">
             <button type="button" disabled={!movable || saving || plusAt <= 0} onClick={() => move(-1)}
-              className="min-h-11 flex-1 rounded-full border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-sm disabled:opacity-40">한 칸 위로</button>
+              className="academy-button-secondary flex-1">한 칸 위로</button>
             <button type="button" disabled={!movable || saving || plusAt >= n} onClick={() => move(1)}
-              className="min-h-11 flex-1 rounded-full border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-sm disabled:opacity-40">한 칸 아래로</button>
+              className="academy-button-secondary flex-1">한 칸 아래로</button>
           </div>
           {choice?.kind === "JOIN" && <p className="text-xs text-[var(--color-academy-muted)]">기존 정류장에 함께 타면 그 정류장 순서를 따라요. 순서를 바꾸려면 새 정류장을 고르세요.</p>}
           {choice?.kind === "OTHER" && <p className="text-xs text-[var(--color-academy-muted)]">처음엔 운행 거리가 가장 적게 늘어나는 자리에 놓여요. 한 칸 위·아래로 옮길 수 있어요.</p>}
@@ -222,25 +224,25 @@ export default function AssignLegView({ month, board, student, leg, notice, warn
 
         {board.laterMonths.length > 0 && (
           <label className="flex min-h-11 items-center gap-3 text-sm">
-            <input type="checkbox" checked={withLater} disabled={saving} onChange={(e) => setWithLater(e.target.checked)} className="h-5 w-5 accent-[var(--color-academy-ink)]" />
+            <input type="checkbox" checked={withLater} disabled={saving} onChange={(e) => setWithLater(e.target.checked)} className="h-5 w-5" />
             {months} 운행표에 같이 넣기
           </label>
         )}
 
         <div className="space-y-2">
           {error && (
-            <div role="alert" className="rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-danger)]">
+            <div role="alert" className="rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm text-[var(--color-academy-danger)]">
               <p>{error}</p>
               {error === FAIL && (
-                <button type="button" onClick={() => void save()} className="mt-1 inline-flex min-h-11 items-center gap-1 underline">
-                  <span className="material-symbols-outlined text-lg" aria-hidden="true">refresh</span>다시 시도
+                <button type="button" onClick={() => void save()} className="mt-1 inline-flex min-h-11 items-center gap-1 font-medium underline">
+                  다시 시도
                 </button>
               )}
             </div>
           )}
-          {/* 이 화면의 채운 주 버튼은 이것 하나(검정). */}
+          {/* 이 화면의 채운 주 버튼은 이것 하나(2026-11-13 UI 통일: 검정 → 테마 주 버튼 네이비). */}
           <button type="button" disabled={saving || !choice || Boolean(leg.blocked)} onClick={() => void save()}
-            className="flex h-[52px] w-full items-center justify-center rounded-lg bg-[var(--color-academy-ink)] text-base font-bold text-[var(--color-academy-surface)] disabled:opacity-50">
+            className="academy-button-primary h-[52px] w-full">
             {saving ? "넣는 중…" : leg.reassign ? `${leg.label} 옮겨 넣기` : `${leg.label} 순서에 넣기`}
           </button>
         </div>
@@ -251,18 +253,18 @@ export default function AssignLegView({ month, board, student, leg, notice, warn
 
 function Dot({ active }: { active: boolean }) {
   return (
-    <span aria-hidden="true" className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border-2 ${active ? "border-[var(--color-academy-ink)]" : "border-[var(--color-academy-line)]"}`}>
-      {active && <span className="h-2.5 w-2.5 rounded-full bg-[var(--color-academy-ink)]" />}
+    <span aria-hidden="true" className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border-2 ${active ? "border-[var(--color-academy-secondary-strong)] bg-[var(--color-academy-surface)]" : "border-[var(--color-academy-line-input)]"}`}>
+      {active && <span className="h-2.5 w-2.5 rounded-full bg-[var(--color-academy-secondary-strong)]" />}
     </span>
   );
 }
 
 function RouteRow({ no, stop, riders, mine, first }: { no: string; stop: string; riders: string; mine?: boolean; first?: boolean }) {
   return (
-    <li className={`flex min-w-0 items-center gap-3 p-3 ${first ? "" : "border-t border-[var(--color-academy-line)]"} ${mine ? "bg-[var(--color-academy-primary-soft)] outline-dashed outline-2 -outline-offset-2 outline-[var(--color-academy-primary)]" : ""}`}>
-      <span className={`grid h-7 min-w-7 shrink-0 place-items-center rounded-full px-1 text-xs font-bold ${mine ? "bg-[var(--color-academy-primary)] text-[var(--color-academy-on-primary)]" : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"}`}>{no}</span>
+    <li className={`flex min-w-0 items-center gap-3 p-3 ${first ? "" : "border-t border-[var(--color-academy-line)]"} ${mine ? "bg-[var(--color-academy-secondary-soft)] outline-dashed outline-2 -outline-offset-2 outline-[var(--color-academy-secondary-strong)]" : ""}`}>
+      <span className={`grid h-7 min-w-7 shrink-0 place-items-center rounded-full px-1 text-xs tabular-nums ${mine ? "bg-[var(--color-academy-secondary-ink)] font-semibold text-[var(--color-academy-on-primary)]" : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"}`}>{no}</span>
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className={`break-words text-sm ${mine ? "font-bold" : ""}`}>{stop}</span>
+        <span className={`break-words text-sm ${mine ? "font-semibold" : ""}`}>{stop}</span>
         {riders && <span className="break-words text-xs text-[var(--color-academy-muted)]">{riders}</span>}
       </span>
     </li>

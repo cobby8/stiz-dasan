@@ -39,7 +39,7 @@ export default function AdminPanelActions({ actions, onBeforeSelect, className =
                 }}
                 className={buttonClass(action.tone)}
             >
-                <span className="material-symbols-outlined text-lg" aria-hidden="true">{action.icon}</span>
+                {/* 글자만(2026-11-13 «아이콘 빼고 글자 깔끔하게»). action.icon 은 부르는 쪽 호환용으로 받기만 한다 */}
                 {action.label}
             </button>
         );

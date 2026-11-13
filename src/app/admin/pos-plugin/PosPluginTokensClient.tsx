@@ -80,9 +80,9 @@ export default function PosPluginTokensClient({ initialTokens }: { initialTokens
             {newToken && (
                 // 주인공: 방금 만든 코드(한 번만 보임)
                 <section className="rounded-lg border border-[var(--color-academy-primary)] bg-[var(--color-academy-primary-soft)] p-4">
-                    <p className="text-sm font-bold text-[var(--color-academy-ink)]">새 POS 연결 코드 — 이 화면을 닫으면 다시 볼 수 없습니다</p>
+                    <p className="text-sm font-semibold text-[var(--color-academy-ink)]">새 POS 연결 코드 — 이 화면을 닫으면 다시 볼 수 없습니다</p>
                     <p className="mt-2 break-all rounded-md bg-[var(--color-academy-surface)] p-3 font-mono text-sm text-[var(--color-academy-ink)]">{newToken}</p>
-                    <div className="mt-3 flex items-center gap-2">
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
                         <button type="button" onClick={() => void handleCopy()} className="academy-button-primary">
                             {copied ? "복사됨" : "코드 복사"}
                         </button>
@@ -95,13 +95,13 @@ export default function PosPluginTokensClient({ initialTokens }: { initialTokens
 
             <section className="rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-4">
                 <div className="flex flex-wrap items-end gap-2">
-                    <label className="min-w-0 flex-1 text-sm font-bold text-[var(--color-academy-ink)]">
+                    <label className="min-w-0 flex-1 text-sm font-medium text-[var(--color-academy-ink)]">
                         이름(어느 POS 인지)
                         <input
                             value={label}
                             onChange={(e) => setLabel(e.target.value)}
                             maxLength={60}
-                            className="mt-1 block min-h-11 w-full rounded-md border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-sm font-normal text-[var(--color-academy-ink)]"
+                            className="academy-input mt-1 block"
                         />
                     </label>
                     <button type="button" onClick={() => void handleIssue()} disabled={busy || !label.trim()} className="academy-button-primary">
@@ -109,14 +109,14 @@ export default function PosPluginTokensClient({ initialTokens }: { initialTokens
                     </button>
                 </div>
                 {message && (
-                    <p role="alert" className="mt-2 text-sm font-semibold text-[var(--color-academy-danger)]">
+                    <p role="alert" className="mt-2 text-sm font-medium text-[var(--color-academy-danger)]">
                         {message}
                     </p>
                 )}
             </section>
 
             <section className="rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
-                <h2 className="border-b border-[var(--color-academy-line)] px-4 py-2 text-sm font-extrabold text-[var(--color-academy-ink)]">
+                <h2 className="academy-section-title border-b border-[var(--color-academy-line)] px-4 py-2">
                     POS 연결 코드 {tokens.filter((t) => t.active).length}개 사용 중
                 </h2>
                 {tokens.length === 0 ? (
@@ -126,18 +126,18 @@ export default function PosPluginTokensClient({ initialTokens }: { initialTokens
                         {tokens.map((t) => (
                             // 한 줄 행: 이름 · 앞글자 · 만든/마지막 사용 시각 · 끊기
                             <li key={t.id} className="flex min-h-12 flex-wrap items-center gap-x-3 gap-y-1 border-b border-[var(--color-academy-line)] px-4 py-2 last:border-b-0">
-                                <span className="text-sm font-bold text-[var(--color-academy-ink)]">{t.label}</span>
+                                <span className="text-sm font-medium text-[var(--color-academy-ink)]">{t.label}</span>
                                 <span className="font-mono text-xs text-[var(--color-academy-muted)]">{t.tokenPrefix}…</span>
-                                <span className="text-xs text-[var(--color-academy-muted)]">
+                                <span className="text-xs tabular-nums text-[var(--color-academy-muted)]">
                                     만든 시각 {t.createdKst} · 마지막 사용 {t.lastUsedKst ?? "없음"}
                                     {t.revokedKst ? ` · 끊음 ${t.revokedKst}` : ""}
                                 </span>
                                 {t.active ? (
-                                    <button type="button" onClick={() => void handleRevoke(t)} disabled={busy} className="academy-button-danger ml-auto">
+                                    <button type="button" onClick={() => void handleRevoke(t)} disabled={busy} className="academy-button-danger academy-button-sm ml-auto">
                                         연결 끊기
                                     </button>
                                 ) : (
-                                    <span className="ml-auto text-xs font-bold text-[var(--color-academy-muted)]">끊김</span>
+                                    <span className="ml-auto text-xs text-[var(--color-academy-muted)]">끊김</span>
                                 )}
                             </li>
                         ))}

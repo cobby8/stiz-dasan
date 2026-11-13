@@ -74,24 +74,24 @@ export default function DriverAssignClient({ month }: { month: string }) {
     <main className="mx-auto w-full min-w-0 max-w-lg text-[var(--color-academy-ink)]">
       <header className="border-b border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-4 pb-3 pt-4">
         <div className="flex items-center justify-between gap-2">
-          <h1 className="text-xl font-bold">새 학생 배정</h1>
+          <h1 className="academy-heading">새 학생 배정</h1>
           <span className="text-sm text-[var(--color-academy-muted)]">{monthLabel(month)} 운행</span>
         </div>
         {board && (
           <p className="mt-1 text-sm text-[var(--color-academy-muted)]">
-            배정할 학생 <b className="text-[var(--color-academy-ink)]">{students.length}명</b> · 남은 칸 <b className="text-[var(--color-academy-warning)]">{board.openLegCount}칸</b>
+            배정할 학생 <b className="font-semibold tabular-nums text-[var(--color-academy-ink)]">{students.length}명</b> · 남은 칸 <b className="font-semibold tabular-nums text-[var(--color-academy-warning)]">{board.openLegCount}칸</b>
           </p>
         )}
       </header>
       <div className="space-y-4 p-4">
-        {notice && <p role="status" className="rounded-lg bg-[var(--color-academy-success-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-success)]">{notice}</p>}
-        {warn && <p role="alert" className="rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-warning)]">{warn}</p>}
+        {notice && <p role="status" className="rounded-lg bg-[var(--color-academy-success-soft)] px-3 py-2 text-sm font-medium text-[var(--color-academy-success)]">{notice}</p>}
+        {warn && <p role="alert" className="rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm font-medium text-[var(--color-academy-warning)]">{warn}</p>}
         {loading && !board && <p role="status" className="text-sm">불러오는 중…</p>}
         {loadError && (
           <div role="alert" className="rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-3 text-sm">
             <p>목록을 불러오지 못했어요. 잠시 뒤 다시 해 주세요.</p>
-            <button type="button" onClick={() => void load()} className="mt-2 inline-flex min-h-11 items-center gap-1 rounded-full border border-[var(--color-academy-line)] px-4 font-bold">
-              <span className="material-symbols-outlined text-lg" aria-hidden="true">refresh</span>다시 시도
+            <button type="button" onClick={() => void load()} className="academy-button-secondary mt-2">
+              다시 시도
             </button>
           </div>
         )}
@@ -102,7 +102,7 @@ export default function DriverAssignClient({ month }: { month: string }) {
           <section key={s.studentId} className="min-w-0 space-y-3 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-4">
             <div className="min-w-0 space-y-1">
               <div className="flex min-w-0 items-baseline gap-2">
-                <h2 className="truncate text-lg font-bold">{s.name}</h2>
+                <h2 className="truncate text-lg font-semibold">{s.name}</h2>
                 {s.grade && <span className="shrink-0 text-sm text-[var(--color-academy-muted)]">{s.grade}</span>}
                 {/* 상태 표시 = 4px 모서리(누르는 칩과 모양을 다르게) */}
                 <span className="ml-auto shrink-0 rounded bg-[var(--color-academy-warning-soft)] px-2 py-0.5 text-xs font-medium text-[var(--color-academy-warning)]">{s.legs.length}칸 남음</span>
@@ -120,14 +120,14 @@ export default function DriverAssignClient({ month }: { month: string }) {
               ))}
             </ul>
             <button type="button" onClick={() => { setNotice(""); setView({ mode: "assign", studentId: s.studentId, legKey: s.legs[0].key }); }}
-              className="flex h-12 w-full items-center justify-center rounded-lg bg-[var(--color-academy-ink)] text-base font-bold text-[var(--color-academy-surface)]">
+              className="academy-button-primary min-h-12! w-full text-base!">
               배정 시작
             </button>
           </section>
         ))}
         <p className="text-center text-xs text-[var(--color-academy-muted)]">이미 운행표에 있는 학생은 여기 나오지 않아요.</p>
-        <Link href="/staff/shuttle" className="flex min-h-11 items-center justify-center gap-1 text-sm font-bold text-[var(--color-academy-muted)]">
-          <span className="material-symbols-outlined text-lg" aria-hidden="true">arrow_back</span>운행 관리로
+        <Link href="/staff/shuttle" className="academy-button-text w-full">
+          운행 관리로
         </Link>
       </div>
     </main>

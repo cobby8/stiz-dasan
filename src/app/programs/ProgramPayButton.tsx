@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import FontFreeIcon from "@/components/ui/FontFreeIcon";
 
 type TierOption = { key: string; label: string; amount: number };
 
@@ -27,7 +26,7 @@ export default function ProgramPayButton({ programId, tiers }: { programId: stri
                     value={tier}
                     onChange={(event) => setTier(event.target.value)}
                     aria-label="결제할 수업 빈도"
-                    className="min-h-10 max-w-full rounded-xl border border-[var(--color-public-line)] bg-white px-3 text-sm font-semibold text-[var(--color-public-ink)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-[var(--color-public-ink)]"
+                    className="min-h-11 max-w-full rounded-xl border border-[var(--color-public-line)] bg-white px-3 text-sm text-[var(--color-public-ink)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-[var(--color-public-ink)]"
                 >
                     {tiers.map((option) => (
                         <option key={option.key} value={option.key}>
@@ -38,9 +37,8 @@ export default function ProgramPayButton({ programId, tiers }: { programId: stri
             )}
             <Link
                 href={orderHref}
-                className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-[var(--color-public-accent)] px-4 text-sm font-black text-white transition hover:bg-orange-600 dark:bg-brand-neon-lime dark:text-brand-navy-900"
+                className="public-btn-primary text-sm"
             >
-                <FontFreeIcon name="payments" size={18} />
                 결제하기
             </Link>
         </div>

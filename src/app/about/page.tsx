@@ -24,39 +24,31 @@ function renderHtml(text: string | null | undefined, fallback: string) {
     return sanitizeHtml(text.replace(/\n/g, "<br>"));
 }
 
-// 교육 이념 아이콘 카드 데이터 — 학원의 핵심 가치 4가지
+// 교육 이념 카드 데이터 — 학원의 핵심 가치 4가지(화면에 그리지 않던 그림 이모지·색 값은 2026-11-13 UI 통일 때 뺐다)
 const PHILOSOPHY_CARDS = [
     {
-        icon: "🎯",
         title: "전문성",
         description: "체계적인 커리큘럼과 전문 코치진이 아이의 실력을 단계별로 끌어올립니다",
-        color: "bg-[var(--color-public-tint)] text-[var(--color-public-muted)]",
     },
     {
-        icon: "🛡️",
         title: "안전",
         description: "안전한 시설과 체계적인 관리로 아이들이 마음껏 뛰어놀 수 있는 환경을 제공합니다",
-        color: "bg-emerald-50 text-emerald-600",
     },
     {
-        icon: "😊",
         title: "즐거움",
         description: "농구를 통해 성취감과 즐거움을 경험하며 운동에 대한 긍정적 태도를 형성합니다",
-        color: "bg-amber-50 text-amber-600",
     },
     {
-        icon: "🌱",
         title: "성장",
         description: "체력뿐 아니라 협동심, 리더십, 인성까지 함께 성장하는 교육을 추구합니다",
-        color: "bg-purple-50 text-purple-600",
     },
 ];
 
 // 핵심 약속 3가지 — 학원 소개 섹션 하단에 표시
 const PROMISES = [
-    { icon: "🏆", title: "최고의 코치진", text: "자격증 보유 전문 코치" },
-    { icon: "📋", title: "체계적 커리큘럼", text: "수준별 맞춤 교육" },
-    { icon: "💬", title: "소통하는 교육", text: "학부모 피드백 시스템" },
+    { title: "최고의 코치진", text: "자격증 보유 전문 코치" },
+    { title: "체계적 커리큘럼", text: "수준별 맞춤 교육" },
+    { title: "소통하는 교육", text: "학부모 피드백 시스템" },
 ];
 
 export default async function AboutPage() {
@@ -82,8 +74,8 @@ export default async function AboutPage() {
             <section className="public-page-hero public-page-hero--compact relative overflow-hidden bg-gradient-to-br from-[var(--color-public-dark)] via-[var(--color-public-dark)] to-[var(--color-public-dark)] dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
                 <div className="max-w-6xl mx-auto px-6 md:px-4 relative">
                     <AnimateOnScroll>
-                        <h1 className="text-4xl md:text-5xl font-black mb-4 break-keep">학원/멤버소개</h1>
-                        <p className="text-blue-200 text-lg max-w-xl">스티즈 농구교실 다산2호점의 교육 철학과 전문 코치진을 소개합니다.</p>
+                        <h1 className="text-4xl md:text-5xl font-bold mb-4 break-keep">학원/멤버소개</h1>
+                        <p className="text-[var(--color-public-dark-muted)] text-lg max-w-xl">스티즈 농구교실 다산2호점의 교육 철학과 전문 코치진을 소개합니다.</p>
                     </AnimateOnScroll>
                 </div>
             </section>
@@ -121,7 +113,7 @@ export default async function AboutPage() {
                                                     className="w-full h-full object-cover"
                                                 />
                                             </div>
-                                            <p className="mt-3 font-bold text-[var(--color-public-ink)] dark:text-[var(--color-public-ink)] transition-colors">{headCoach.name}</p>
+                                            <p className="mt-3 font-semibold text-[var(--color-public-ink)] dark:text-[var(--color-public-ink)] transition-colors">{headCoach.name}</p>
                                             <Badge variant="default" size="sm">대표원장</Badge>
                                         </div>
                                     </AnimateOnScroll>
@@ -149,7 +141,7 @@ export default async function AboutPage() {
                             <div className="grid grid-cols-2 md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-[var(--color-public-line)] dark:divide-[var(--color-public-line)]">
                                 {PHILOSOPHY_CARDS.map((card, i) => (
                                     <div key={i} className="flex flex-col items-center text-center gap-1.5 py-5 px-3 md:py-6 md:px-4">
-                                        <h4 className="text-lg md:text-xl font-black text-[var(--color-public-ink)] dark:text-white tracking-tight">{card.title}</h4>
+                                        <h4 className="text-lg md:text-xl font-bold text-[var(--color-public-ink)] dark:text-white tracking-tight">{card.title}</h4>
                                         <p className="text-sm md:text-base text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] leading-relaxed">{card.description}</p>
                                     </div>
                                 ))}
@@ -164,7 +156,7 @@ export default async function AboutPage() {
                             <div className="grid grid-cols-2 md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-[var(--color-public-line)] dark:divide-[var(--color-public-line)]">
                                 {PHILOSOPHY_CARDS.map((card, i) => (
                                     <div key={i} className="flex flex-col items-center text-center gap-1.5 py-5 px-3 md:py-6 md:px-4">
-                                        <h4 className="text-lg md:text-xl font-black text-[var(--color-public-ink)] dark:text-white tracking-tight">{card.title}</h4>
+                                        <h4 className="text-lg md:text-xl font-bold text-[var(--color-public-ink)] dark:text-white tracking-tight">{card.title}</h4>
                                         <p className="text-sm md:text-base text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] leading-relaxed">{card.description}</p>
                                     </div>
                                 ))}
@@ -192,8 +184,9 @@ export default async function AboutPage() {
                                                 sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
                                             />
                                         ) : (
-                                            <div className="w-full h-full flex items-center justify-center text-6xl opacity-30">
-                                                🏀
+                                            // 사진이 없으면 이름 첫 글자(그림 이모지 대신)
+                                            <div className="w-full h-full flex items-center justify-center text-6xl font-bold text-[var(--color-public-muted)] opacity-30" aria-hidden="true">
+                                                {String(coach.name || "").slice(0, 1)}
                                             </div>
                                         )}
                                     </div>
@@ -268,11 +261,10 @@ export default async function AboutPage() {
                                     allowFullScreen
                                 />
                             </div>
-                            {/* 주소 텍스트 — 아이콘 + 클립보드 복사 없이 심플하게 */}
+                            {/* 주소 텍스트 — 글자만(지도는 바로 위에 있다) */}
                             <div className="flex items-start gap-3 text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
-                                <span className="material-symbols-outlined text-[var(--color-public-accent)] dark:text-brand-neon-lime text-2xl mt-0.5 shrink-0">location_on</span>
                                 <div>
-                                    <p className="font-bold text-lg text-[var(--color-public-ink)] dark:text-white">{settings.address}</p>
+                                    <p className="font-semibold text-lg text-[var(--color-public-ink)] dark:text-white">{settings.address}</p>
                                     {phone && (
                                         <p className="mt-1 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
                                             상담문의: <a href={`tel:${phone.replace(/-/g, "")}`} className="text-[var(--color-public-ink)] dark:text-brand-neon-lime font-semibold hover:underline">{phone}</a>

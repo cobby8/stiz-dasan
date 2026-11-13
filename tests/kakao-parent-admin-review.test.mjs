@@ -50,7 +50,8 @@ test("접수함은 처리 필터와 안전 경계를 보여준다", () => {
 });
 
 test("접수함은 학생을 중심으로 표시하고 보호자 개인정보를 줄인다", () => {
-  assert.match(client, /text-xl font-black[^>]*>\{row\.studentName/);
+  // 2026-11-13 UI 통일: 제목 굵기 font-black → font-bold(굵기 네 단계). 학생 이름이 제목인 것은 그대로
+  assert.match(client, /text-xl font-bold[^>]*>\{row\.studentName/);
   assert.match(client, /연결 자녀/);
   assert.match(page, /function maskName/);
   assert.match(page, /parentName:maskName\(row\.rawParentName\)/);

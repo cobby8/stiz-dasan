@@ -39,11 +39,10 @@ export default async function ParentReportDetailPage({
     if (!user) {
         return (
             <div className="flex flex-col items-center justify-center py-20 text-center">
-                <div className="text-5xl mb-4">🔒</div>
-                <h2 className="text-xl font-bold text-[var(--color-academy-ink)] mb-2">로그인이 필요합니다</h2>
+                <h2 className="academy-heading mb-2">로그인이 필요합니다</h2>
                 <Link
                     href="/login"
-                    className="bg-[var(--color-academy-primary)] text-white font-bold px-6 py-3 rounded-xl hover:bg-[var(--color-academy-primary-hover)] transition mt-4"
+                    className="academy-button-primary mt-4"
                 >
                     로그인하기
                 </Link>
@@ -122,13 +121,13 @@ export default async function ParentReportDetailPage({
                 href="/mypage/reports"
                 className="academy-back-link mb-2 gap-1 px-2 text-sm text-[var(--color-academy-muted)]"
             >
-                <span className="material-symbols-outlined text-base" aria-hidden="true">arrow_back</span>
+                <span aria-hidden="true">←</span>
                 리포트 목록
             </Link>
 
             {/* 수업 정보 헤더 */}
             <div className="bg-white rounded-xl border border-[var(--color-academy-line)] p-5 mb-4">
-                <h1 className="text-xl font-extrabold text-[var(--color-academy-ink)]">
+                <h1 className="academy-heading">
                     {session.topic || "수업 리포트"}
                 </h1>
                 <p className="text-sm text-[var(--color-academy-muted)] mt-1">
@@ -145,8 +144,7 @@ export default async function ParentReportDetailPage({
             {/* 내 자녀 출석 + 개별 코멘트 — 학부모가 가장 먼저 찾는 칸이라 헤더 바로 아래(M-12, 내용은 그대로) */}
             <div className="bg-white rounded-xl border border-[var(--color-academy-line)] overflow-hidden mb-4">
                 <div className="p-5 border-b border-[var(--color-academy-line)] bg-[var(--color-academy-soft)]">
-                    <h2 className="text-sm font-bold text-[var(--color-academy-muted)] flex items-center gap-1">
-                        <span className="material-symbols-outlined text-base">school</span>
+                    <h2 className="academy-section-title">
                         우리 아이 수업 현황
                     </h2>
                 </div>
@@ -162,8 +160,8 @@ export default async function ParentReportDetailPage({
                             <div key={studentId} className="px-5 py-4">
                                 {/* 학생 이름 + 출석 상태 */}
                                 <div className="flex items-center justify-between mb-2">
-                                    <span className="font-bold text-[var(--color-academy-ink)]">{a.student_name}</span>
-                                    <span className={`px-2 py-0.5 rounded text-xs font-bold ${statusInfo.color}`}>
+                                    <span className="font-semibold text-[var(--color-academy-ink)]">{a.student_name}</span>
+                                    <span className={`px-2 py-0.5 rounded text-xs ${statusInfo.color}`}>
                                         {statusInfo.label}
                                     </span>
                                 </div>
@@ -172,29 +170,16 @@ export default async function ParentReportDetailPage({
                                 {rating !== null && (
                                     <div className="flex items-center gap-1 mb-2">
                                         <span className="text-xs text-[var(--color-academy-muted)] font-medium">참여도:</span>
-                                        <div className="flex gap-0.5">
-                                            {[1, 2, 3, 4, 5].map((star) => (
-                                                <span
-                                                    key={star}
-                                                    className={`material-symbols-outlined text-base ${
-                                                        rating >= star ? "text-[var(--color-academy-ink)]" : "text-[var(--color-academy-faint)]"
-                                                    }`}
-                                                    style={{
-                                                        fontVariationSettings:
-                                                            rating >= star ? "'FILL' 1" : "'FILL' 0",
-                                                    }}
-                                                >
-                                                    star
-                                                </span>
-                                            ))}
-                                        </div>
+                                        <span className="text-base leading-none text-[var(--color-academy-ink)]" aria-label={`참여도 ${rating}점`}>
+                                            {[1, 2, 3, 4, 5].map((star) => (rating >= star ? "★" : "☆")).join("")}
+                                        </span>
                                     </div>
                                 )}
 
                                 {/* 코치 코멘트 */}
                                 {noteData?.note && (
                                     <div className="bg-[var(--color-academy-soft)] rounded-lg p-3 mt-1">
-                                        <p className="text-xs text-[var(--color-academy-muted)] font-bold mb-1">코치 코멘트</p>
+                                        <p className="text-xs text-[var(--color-academy-muted)] font-medium mb-1">코치 코멘트</p>
                                         <p className="text-sm text-[var(--color-academy-muted)] whitespace-pre-line">{noteData.note}</p>
                                     </div>
                                 )}
@@ -206,8 +191,7 @@ export default async function ParentReportDetailPage({
             {/* 수업 내용 */}
             {(session.content) && (
                 <div className="bg-white rounded-xl border border-[var(--color-academy-line)] p-5 mb-4">
-                    <h2 className="text-sm font-bold text-[var(--color-academy-muted)] mb-2 flex items-center gap-1">
-                        <span className="material-symbols-outlined text-base">description</span>
+                    <h2 className="academy-section-title mb-2">
                         수업 내용
                     </h2>
                     <p className="text-sm text-[var(--color-academy-muted)] whitespace-pre-line">{session.content}</p>
@@ -217,8 +201,7 @@ export default async function ParentReportDetailPage({
             {/* 수업 사진 */}
             {photos.length > 0 && (
                 <div className="bg-white rounded-xl border border-[var(--color-academy-line)] p-5 mb-4">
-                    <h2 className="text-sm font-bold text-[var(--color-academy-muted)] mb-3 flex items-center gap-1">
-                        <span className="material-symbols-outlined text-base">photo_library</span>
+                    <h2 className="academy-section-title mb-3">
                         수업 사진
                     </h2>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">

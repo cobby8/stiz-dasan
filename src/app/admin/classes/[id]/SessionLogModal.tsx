@@ -298,8 +298,10 @@ export default function SessionLogModal({
                     </h2>
                     {/* 닫기 버튼 */}
                     <button
+                        type="button"
+                        aria-label="닫기"
                         onClick={handleClose}
-                        className="p-2 hover:bg-[var(--color-academy-soft)] rounded-lg transition text-[var(--color-academy-faint)] hover:text-[var(--color-academy-muted)]"
+                        className="inline-flex min-h-11 min-w-11 items-center justify-center hover:bg-[var(--color-academy-soft)] rounded-lg transition text-[var(--color-academy-muted)] hover:text-[var(--color-academy-ink)]"
                     >
                         {/* X 아이콘 (인라인 SVG — lucide-react 대신) */}
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -324,7 +326,7 @@ export default function SessionLogModal({
                                 min="2020-01-01" max="2030-12-31"
                                 value={date}
                                 onChange={(e) => setDate(e.target.value)}
-                                className="w-full border border-[var(--color-academy-line)] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)] focus:border-transparent"
+                                className="academy-input"
                             />
                         </div>
 
@@ -336,7 +338,7 @@ export default function SessionLogModal({
                             <select
                                 value={coachId}
                                 onChange={(e) => setCoachId(e.target.value)}
-                                className="w-full border border-[var(--color-academy-line)] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)] focus:border-transparent"
+                                className="academy-input"
                             >
                                 <option value="">선택 안 함</option>
                                 {coaches.map((c) => (
@@ -358,7 +360,7 @@ export default function SessionLogModal({
                             value={topic}
                             onChange={(e) => setTopic(e.target.value)}
                             placeholder="예: 드리블 기초, 슈팅 연습"
-                            className="w-full border border-[var(--color-academy-line)] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)] focus:border-transparent"
+                            className="academy-input"
                         />
                     </div>
 
@@ -372,7 +374,7 @@ export default function SessionLogModal({
                             onChange={(e) => setContent(e.target.value)}
                             placeholder="오늘 수업에서 진행한 내용을 기록해주세요"
                             rows={3}
-                            className="w-full border border-[var(--color-academy-line)] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)] focus:border-transparent resize-none"
+                            className="academy-input resize-none"
                         />
                     </div>
 
@@ -426,14 +428,7 @@ export default function SessionLogModal({
                                     업로드 중...
                                 </>
                             ) : (
-                                <>
-                                    {/* 카메라 아이콘 (인라인 SVG) */}
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                        <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" />
-                                        <circle cx="12" cy="13" r="4" />
-                                    </svg>
-                                    사진 추가 (여러 장 선택 가능)
-                                </>
+                                <>사진 추가 (여러 장 선택 가능)</>
                             )}
                         </button>
 
@@ -539,16 +534,18 @@ export default function SessionLogModal({
                 {/* ── 푸터: 취소 + 저장 버튼 ── */}
                 <div className="p-6 border-t border-[var(--color-academy-line)] flex justify-end gap-3 flex-shrink-0">
                     <button
+                        type="button"
                         onClick={handleClose}
                         disabled={saving}
-                        className="px-4 py-2 text-sm font-medium text-[var(--color-academy-muted)] bg-[var(--color-academy-soft)] rounded-xl hover:bg-[var(--color-academy-line)] transition disabled:opacity-50"
+                        className="academy-button-secondary"
                     >
                         취소
                     </button>
                     <button
+                        type="button"
                         onClick={handleSave}
                         disabled={saving || uploading}
-                        className="px-6 py-2 text-sm font-bold text-white bg-[var(--color-academy-primary)] rounded-xl hover:bg-[var(--color-academy-primary-hover)] transition disabled:opacity-50 flex items-center gap-2"
+                        className="academy-button-primary"
                     >
                         {saving ? (
                             <>

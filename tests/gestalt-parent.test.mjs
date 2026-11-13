@@ -209,7 +209,8 @@ test("홈: 히어로 한 덩어리(이름·다음 수업·오늘 셔틀) + «할
   // 알림(머리줄 🔔): 줄 전체가 버튼(44px↑ — 누르면 읽음 + 내부 주소로 이동) · 모두 읽음 · 목록 아래 «알림 설정» 줄
   const bell = read("src/app/mypage/ParentNotificationBell.tsx");
   assert.match(bell, /onClick=\{\(\) => openNotification\(n\.id, n\.isRead, href\)\}[\s\S]{0,200}className=\{`flex w-full min-h-11 /);
-  assert.match(bell, /className="academy-button-text text-\[var\(--color-academy-primary\)\]"/);
+  // 2026-11-13 UI 통일: «모두 읽음»은 글자 버튼 그대로 — 덧붙였던 주 색 글자(테마에 눌려 원래도 안 먹던 클래스)와 체크 아이콘만 뺐다.
+  assert.match(bell, /className="academy-button-text"\s*>\s*모두 읽음/);
   const list = bell.indexOf("notifications.map((n) =>");
   const settings = bell.indexOf("href={SETTINGS_NOTIFICATION_HREF}");
   assert.ok(list > 0 && settings > list, "알림 설정 줄은 알림 목록 뒤(구분선으로 뗀 줄)");

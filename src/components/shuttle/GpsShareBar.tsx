@@ -40,12 +40,12 @@ export default function GpsShareBar({
   );
   return (
     <div className={`mb-2 rounded-xl border px-4 py-2.5 ${needsAttention ? "border-[var(--color-amber-300)] bg-[var(--color-amber-50)]" : "border-[var(--color-green-300)] bg-[var(--color-green-50)]"}`}>
-      <p role={failed ? "alert" : "status"} className={`text-[14px] font-bold ${needsAttention ? "text-[var(--color-amber-800)]" : "text-[var(--color-green-800)]"}`}>
+      <p role={failed ? "alert" : "status"} className={`text-sm font-semibold ${needsAttention ? "text-[var(--color-amber-800)]" : "text-[var(--color-green-800)]"}`}>
         📍 {title}
       </p>
-      {lastSentAt && <p className="mt-0.5 text-[13px] font-semibold text-[var(--color-slate-700)]">{`마지막 위치 수신 · ${elapsedLabel(lastSentAt, clock)}${accuracy != null ? ` · 정확도 ${Math.round(accuracy)}m` : ""}`}</p>}
-      {(gpsState === "denied" || gpsState === "error") && onRetry && <button type="button" className="text-[12px] font-bold underline" onClick={onRetry}>위치 연결 다시 시도</button>}
-      <p role="status" className="mt-0.5 text-[12px] font-semibold text-[var(--color-amber-700)]">
+      {lastSentAt && <p className="mt-0.5 text-sm font-semibold text-[var(--color-slate-700)]">{`마지막 위치 수신 · ${elapsedLabel(lastSentAt, clock)}${accuracy != null ? ` · 정확도 ${Math.round(accuracy)}m` : ""}`}</p>}
+      {(gpsState === "denied" || gpsState === "error") && onRetry && <button type="button" className="text-xs font-medium underline" onClick={onRetry}>위치 연결 다시 시도</button>}
+      <p role="status" className="mt-0.5 text-xs font-semibold text-[var(--color-amber-700)]">
         {transmission === "sending" && "위치 전송 중…"}
         {transmission === "error" && "위치 전송 확인 필요 · 다음 전송에서 재시도합니다"}
         {delayed && gpsState !== "off" && !stopping && <span className="block">30초 이상 새 위치를 받지 못했습니다 · 현재 위치를 확인해 주세요</span>}
@@ -54,7 +54,7 @@ export default function GpsShareBar({
         {transmission === "stop-unknown" && "위치 수집은 중단됨 · 공유 종료 확인 필요"}
       </p>
       {(gpsState === "active" || gpsState === "requesting") && (
-        <p className="mt-0.5 text-[12px] font-semibold text-[var(--color-amber-700)]">
+        <p className="mt-0.5 text-xs font-semibold text-[var(--color-amber-700)]">
           {mode === "native" ? "운행 중에는 화면을 끄거나 길안내 앱으로 이동해도 위치 공유를 계속합니다. 운행 종료 시 수집을 멈춥니다." : "⚠️ 웹에서는 화면 잠금·다른 앱 이동 시 위치 공유가 멈출 수 있습니다"}
         </p>
       )}

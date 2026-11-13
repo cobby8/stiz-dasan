@@ -85,8 +85,9 @@ const ROSTER_VIEW_OPTIONS: ReadonlyArray<ListViewOption<RosterView>> = [
   { value: "driver", label: "기사님 화면(운행 순서)", icon: "directions_bus" },
 ];
 const EMPTY_DRAFT: StopDraft = { stopName: "", arriveTime: "", latitude: null, longitude: null };
-const INPUT = "w-full rounded-lg border border-[var(--color-academy-line)] bg-white px-3 py-2 text-sm font-semibold";
-const LABEL = "flex flex-col gap-1 text-[11px] font-bold text-[var(--color-academy-muted)]";
+// 2026-11-13 UI 통일: 입력칸은 테마 공용 모양(academy-input), 라벨 굵기는 500.
+const INPUT = "academy-input";
+const LABEL = "flex flex-col gap-1 text-xs font-medium text-[var(--color-academy-muted)]";
 
 function tel(p: string | null): string | null { if (!p) return null; const d = p.replace(/[^0-9]/g, ""); return d.length >= 9 ? `tel:${d}` : null; }
 function fmtImported(iso: string | null): string {
@@ -145,7 +146,7 @@ function EnrollmentFlagBadges({ flags }: { flags: RosterEnrollmentFlag[] }) {
   return (
     <>
       {flags.map((f) => (
-        <span key={f.label} title={f.detail} className={`ml-1 inline-block rounded px-1.5 py-0.5 align-middle text-xs font-bold ${tone(f.kind)}`}>{f.label}</span>
+        <span key={f.label} title={f.detail} className={`ml-1 inline-block rounded px-1.5 py-0.5 align-middle text-xs ${tone(f.kind)}`}>{f.label}</span>
       ))}
     </>
   );
@@ -613,8 +614,8 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
     const hasCoord = row.latitude != null && row.longitude != null;
     return (
       <span className="inline-flex items-center gap-1.5">
-        <span className="font-bold text-[var(--color-academy-ink)]">{row.stopName}</span>
-        {!hasCoord && <span className="rounded bg-[var(--color-academy-warning-soft)] px-1.5 py-0.5 text-xs font-black text-[var(--color-academy-warning)]">⚠ 좌표 없음</span>}
+        <span className="text-[var(--color-academy-ink)]">{row.stopName}</span>
+        {!hasCoord && <span className="rounded bg-[var(--color-academy-warning-soft)] px-1.5 py-0.5 text-xs text-[var(--color-academy-warning)]">좌표 없음</span>}
       </span>
     );
   }
@@ -645,12 +646,12 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button type="button" onClick={() => setPicker(target)} className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-[var(--color-academy-line)] px-3 text-[12.5px] font-black text-[var(--color-academy-muted)]">
-            <span className="material-symbols-outlined text-base">location_on</span>{hasCoord ? "지도에서 다시 지정" : "지도에서 위치 지정"}
+          <button type="button" onClick={() => setPicker(target)} className="academy-button-secondary academy-button-sm">
+            {hasCoord ? "지도에서 다시 지정" : "지도에서 위치 지정"}
           </button>
           {hasCoord
-            ? <span className="text-[11.5px] font-bold text-[var(--color-academy-success)]">좌표 있음</span>
-            : <span className="text-[11.5px] font-bold text-[var(--color-academy-warning)]">⚠ 좌표 없음 — 배차 지도에 안 나옵니다</span>}
+            ? <span className="text-xs text-[var(--color-academy-success)]">좌표 있음</span>
+            : <span className="text-xs text-[var(--color-academy-warning)]">좌표 없음 — 배차 지도에 안 나옵니다</span>}
         </div>
       </div>
     );
@@ -686,10 +687,10 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
     if (out.length === 0) return null;
     return (
       <div className="mt-2 flex flex-wrap items-center gap-1">
-        <span className="text-[11px] font-bold text-[var(--color-academy-faint)]">후보</span>
+        <span className="text-xs text-[var(--color-academy-faint)]">후보</span>
         {out.map((c) => (
           <button key={c.key} type="button" onClick={() => patchDraft(target, c.draft)}
-            className="rounded-lg border border-[var(--color-academy-line)] px-2 py-1 text-[11.5px] font-bold text-[var(--color-academy-muted)]">{c.label}</button>
+            className="academy-button-tonal academy-button-sm">{c.label}</button>
         ))}
       </div>
     );
@@ -704,13 +705,13 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
     ];
     return (
       <fieldset className="mt-3 rounded-xl border border-[var(--color-academy-line)] p-3">
-        <legend className="px-1 text-[11px] font-bold text-[var(--color-academy-muted)]">적용 범위</legend>
+        <legend className="px-1 text-xs font-medium text-[var(--color-academy-muted)]">적용 범위</legend>
         <div className="flex flex-col gap-1.5">
           {options.map((o) => (
-            <label key={o.value} className="flex items-start gap-2 text-[12.5px] font-bold text-[var(--color-academy-muted)]">
+            <label key={o.value} className="flex items-start gap-2 text-xs font-medium text-[var(--color-academy-muted)]">
               <input type="radio" name="roster-scope" className="mt-0.5" checked={scope === o.value}
                 onChange={() => setDialog((d) => (d ? { ...d, scope: o.value } : d))} />
-              <span>{o.label}<span className="block text-[11px] font-semibold text-[var(--color-academy-faint)]">{o.hint}</span></span>
+              <span>{o.label}<span className="block text-xs font-normal text-[var(--color-academy-faint)]">{o.hint}</span></span>
             </label>
           ))}
         </div>
@@ -722,12 +723,12 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
     if (!dialog) return null;
     const footer = (onSave: () => void, saveLabel: string, danger = false) => (
       <div className="mt-4 flex justify-end gap-2">
-        <button type="button" onClick={() => setDialog(null)} className="rounded-xl border border-[var(--color-academy-line)] px-4 py-2 text-sm font-bold text-[var(--color-academy-muted)]">취소</button>
+        <button type="button" onClick={() => setDialog(null)} className="academy-button-secondary">취소</button>
         <button type="button" disabled={busy} onClick={onSave}
-          className={`rounded-xl px-4 py-2 text-sm font-black text-white disabled:opacity-50 ${danger ? "bg-[var(--color-academy-danger-fill)]" : "bg-[var(--color-academy-primary-hover)]"}`}>{busy ? "저장 중…" : saveLabel}</button>
+          className={danger ? "academy-button-danger-solid" : "academy-button-primary"}>{busy ? "저장 중…" : saveLabel}</button>
       </div>
     );
-    const errBox = dialogErr && <p role="alert" className="mt-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-xs font-bold text-[var(--color-academy-danger)]">⚠ {dialogErr}</p>;
+    const errBox = dialogErr && <p role="alert" className="mt-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-xs text-[var(--color-academy-danger)]">{dialogErr}</p>;
 
     if (dialog.kind === "add") {
       const set = (patch: Partial<Extract<Dialog, { kind: "add" }>>) => setDialog((d) => (d?.kind === "add" ? { ...d, ...patch } : d));
@@ -745,20 +746,20 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
       const toggleSlot = (o: RosterClassSlot) => set({ slots: hasSlot(o) ? dialog.slots.filter((s) => !sameSlot(s, o)) : [...dialog.slots, { weekday: o.weekday, classTime: o.classTime }] });
       return (
         <div className="p-4">
-          <h4 id="roster-dialog-title" className="text-base font-black text-[var(--color-academy-ink)]">학생 추가 · {serviceMonth}</h4>
+          <h4 id="roster-dialog-title" className="academy-section-title">학생 추가 · {serviceMonth}</h4>
           <div className="mt-3 space-y-4">
             {/* 학생 선택 */}
             {dialog.student ? (
               <div className="flex items-center justify-between rounded-xl bg-[var(--color-academy-soft)] px-3 py-2">
-                <p className="text-sm font-black text-[var(--color-academy-ink)]">{dialog.student.name}<span className="ml-2 text-xs font-bold text-[var(--color-academy-muted)]">{dialog.student.grade ?? ""}</span></p>
-                <button type="button" onClick={() => set({ student: null, slots: [], overrides: {} })} className="text-xs font-black text-[var(--color-academy-muted)]">다시 선택</button>
+                <p className="text-sm font-semibold text-[var(--color-academy-ink)]">{dialog.student.name}<span className="ml-2 text-xs font-normal text-[var(--color-academy-muted)]">{dialog.student.grade ?? ""}</span></p>
+                <button type="button" onClick={() => set({ student: null, slots: [], overrides: {} })} className="academy-button-text academy-button-sm">다시 선택</button>
               </div>
             ) : (
               <div>
                 <div className="flex gap-2">
                   <input value={dialog.query} data-admin-modal-initial-focus onChange={(e) => set({ query: e.target.value })} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void searchStudents(); } }}
                     placeholder="학생 이름 검색" className={INPUT} />
-                  <button type="button" onClick={() => void searchStudents()} className="shrink-0 rounded-lg bg-[var(--color-academy-primary-hover)] px-3 text-sm font-black text-white">검색</button>
+                  <button type="button" onClick={() => void searchStudents()} className="academy-button-secondary shrink-0">검색</button>
                 </div>
                 {dialog.results && (
                   <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto">
@@ -766,8 +767,8 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
                     {dialog.results.map((s) => (
                       <li key={s.id}>
                         <button type="button" onClick={() => pickStudent(s)} className="flex w-full items-center justify-between rounded-lg border border-[var(--color-academy-line)] px-3 py-2 text-left text-sm hover:bg-[var(--color-academy-soft)]">
-                          <span className="font-bold text-[var(--color-academy-ink)]">{s.name} <span className="text-xs text-[var(--color-academy-muted)]">{s.grade ?? ""}</span></span>
-                          <span className="text-[11px] text-[var(--color-academy-muted)]">{s.parentPhone ? `학부모 …${s.parentPhone.replace(/\D/g, "").slice(-4)}` : ""}{s.pickup || s.dropoff ? " · 위치 저장됨" : ""}</span>
+                          <span className="font-semibold text-[var(--color-academy-ink)]">{s.name} <span className="text-xs font-normal text-[var(--color-academy-muted)]">{s.grade ?? ""}</span></span>
+                          <span className="text-xs text-[var(--color-academy-muted)]">{s.parentPhone ? `학부모 …${s.parentPhone.replace(/\D/g, "").slice(-4)}` : ""}{s.pickup || s.dropoff ? " · 위치 저장됨" : ""}</span>
                         </button>
                       </li>
                     ))}
@@ -781,8 +782,8 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
 
             {/* 이 학생이 이 달 이미 타는 셔틀 — 같은 수업을 또 넣지 않도록, 정류장 후보로도 쓴다. */}
             {riding.length > 0 && (
-              <div className="rounded-xl bg-[var(--color-academy-soft)] px-3 py-2 text-[12px] text-[var(--color-academy-muted)]">
-                <p className="font-black">이 달 이미 타는 셔틀</p>
+              <div className="rounded-xl bg-[var(--color-academy-soft)] px-3 py-2 text-xs text-[var(--color-academy-muted)]">
+                <p className="font-semibold">이 달 이미 타는 셔틀</p>
                 <ul className="mt-0.5 space-y-0.5">
                   {riding.map((s, i) => <li key={s.id ?? i}>{WEEKDAY_LABELS[s.weekday]} {s.classTime} {s.direction === "BOARD" ? "등원" : "하원"} · 「{s.stopName}」 {s.arriveTime ?? ""}</li>)}
                 </ul>
@@ -791,25 +792,26 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
 
             {/* 수업(요일·수업시간) — 등록 수업을 불러와 미리 고른다. 등록 수업에 없는 수업은 아래에서 직접 추가. */}
             <div>
-              <p className="text-[11px] font-bold text-[var(--color-academy-muted)]">수업(요일·수업시간)</p>
-              {dialog.contextLoading && <p className="mt-1 text-[12px] text-[var(--color-academy-faint)]">등록 수업을 불러오는 중…</p>}
+              <p className="text-xs font-medium text-[var(--color-academy-muted)]">수업(요일·수업시간)</p>
+              {dialog.contextLoading && <p className="mt-1 text-xs text-[var(--color-academy-faint)]">등록 수업을 불러오는 중…</p>}
               {dialog.student && !dialog.contextLoading && dialog.contextError && (
-                <p className="mt-1 text-[12px] font-bold text-[var(--color-academy-danger)]">학생 정보를 불러오지 못했습니다(아래에서 수업을 직접 추가할 수 있습니다).</p>
+                <p className="mt-1 text-xs text-[var(--color-academy-danger)]">학생 정보를 불러오지 못했습니다(아래에서 수업을 직접 추가할 수 있습니다).</p>
               )}
               {dialog.student && !dialog.contextLoading && !dialog.contextError && enrolledOptions.length === 0 && (
-                <p className="mt-1 text-[12px] font-bold text-[var(--color-academy-warning)]">등록 수업이 없습니다. 아래에서 직접 추가해 주세요.</p>
+                <p className="mt-1 text-xs text-[var(--color-academy-warning)]">등록 수업이 없습니다. 아래에서 직접 추가해 주세요.</p>
               )}
               {dialog.student && !dialog.contextLoading && !dialog.contextError && enrolledOptions.length > 0 && !hasActiveEnrolled && (
-                <p className="mt-1 text-[12px] font-bold text-[var(--color-academy-warning)]">휴원 중인 수업이 있습니다 — 복귀할 수업을 눌러 고르세요.</p>
+                <p className="mt-1 text-xs text-[var(--color-academy-warning)]">휴원 중인 수업이 있습니다 — 복귀할 수업을 눌러 고르세요.</p>
               )}
               <div className="mt-1 flex flex-wrap gap-1">
                 {[...enrolledOptions, ...extraSlots].map((o) => {
                   const on = hasSlot(o);
                   return (
+                    // 고르는 칩 — 테마 academy-choice 가 고르면 ✓ + 보조 색(하늘색)으로 그린다(aria-pressed).
                     <button key={`${o.weekday}|${o.classTime}`} type="button" aria-pressed={on} onClick={() => toggleSlot(o)}
-                      className={`min-h-9 rounded-lg px-2.5 text-left text-[12.5px] font-black ${on ? "bg-[var(--color-academy-primary-hover)] text-white" : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"}`}>
-                      {on ? "✓ " : ""}{o.label}
-                      {o.paused && <span className="ml-1.5 rounded bg-[var(--color-academy-warning-soft)] px-1.5 py-0.5 text-[10.5px] font-black text-[var(--color-academy-warning)]">휴원</span>}
+                      className="academy-choice">
+                      {o.label}
+                      {o.paused && <span className="ml-1.5 rounded bg-[var(--color-academy-warning-soft)] px-1.5 py-0.5 text-xs font-normal text-[var(--color-academy-warning)]">휴원</span>}
                     </button>
                   );
                 })}
@@ -822,13 +824,13 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
                 <button type="button" disabled={!dialog.manualClassTime.trim()} onClick={() => {
                   const slot = { weekday: dialog.manualWeekday, classTime: dialog.manualClassTime.trim() };
                   if (!hasSlot(slot)) set({ slots: [...dialog.slots, slot] });
-                }} className="rounded-lg border border-[var(--color-academy-line)] px-3 text-[12.5px] font-black text-[var(--color-academy-muted)] disabled:opacity-40">직접 추가</button>
+                }} className="academy-button-secondary">직접 추가</button>
               </div>
             </div>
 
             {/* 등원 */}
             <fieldset className="rounded-xl border border-[var(--color-academy-line)] p-3">
-              <label className="flex items-center gap-2 text-sm font-black text-[var(--color-academy-ink)]">
+              <label className="flex items-center gap-2 text-sm font-medium text-[var(--color-academy-ink)]">
                 <input type="checkbox" checked={dialog.useBoard} onChange={(e) => set({ useBoard: e.target.checked })} /> 등원 셔틀 이용
               </label>
               {dialog.useBoard && <div className="mt-2">{stopFields("board", "등원 정류장", false)}{stopCandidates("board")}</div>}
@@ -836,18 +838,18 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
 
             {/* 하원 */}
             <fieldset className="rounded-xl border border-[var(--color-academy-line)] p-3">
-              <label className="flex items-center gap-2 text-sm font-black text-[var(--color-academy-ink)]">
+              <label className="flex items-center gap-2 text-sm font-medium text-[var(--color-academy-ink)]">
                 <input type="checkbox" checked={dialog.useAlight} onChange={(e) => set({ useAlight: e.target.checked })} /> 하원 셔틀 이용
               </label>
               {dialog.useAlight && (
                 <div className="mt-2 space-y-2">
                   {dialog.useBoard && (
-                    <label className="flex items-center gap-2 text-[12.5px] font-bold text-[var(--color-academy-muted)]">
+                    <label className="flex items-center gap-2 text-xs font-medium text-[var(--color-academy-muted)]">
                       <input type="checkbox" checked={dialog.alightSame} onChange={(e) => set({ alightSame: e.target.checked })} /> 등원과 같은 정류장
                     </label>
                   )}
                   {dialog.useBoard && dialog.alightSame ? (
-                    <p className="text-[12px] text-[var(--color-academy-muted)]">등원 정류장 「{dialog.board.stopName || "미입력"}」에서 내립니다. 하원 시각은 아래 운행표에서 정합니다.</p>
+                    <p className="text-xs text-[var(--color-academy-muted)]">등원 정류장 「{dialog.board.stopName || "미입력"}」에서 내립니다. 하원 시각은 아래 운행표에서 정합니다.</p>
                   ) : <>{stopFields("alight", "하원 정류장", false)}{stopCandidates("alight")}</>}
                 </div>
               )}
@@ -855,7 +857,7 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
 
             {/* 현재 운행표 대조 · 넣을 자리(추천 기본) */}
             {dialog.slots.length === 0
-              ? <p className="rounded-xl border border-dashed border-[var(--color-academy-line-input)] p-3 text-center text-[12px] text-[var(--color-academy-faint)]">수업을 고르면 그 수업의 현재 운행표와 넣을 자리 추천이 나옵니다.</p>
+              ? <p className="rounded-xl border border-dashed border-[var(--color-academy-line-input)] p-3 text-center text-xs text-[var(--color-academy-faint)]">수업을 고르면 그 수업의 현재 운행표와 넣을 자리 추천이 나옵니다.</p>
               : (
                 <AddRiderRoutePanel
                   stops={stops}
@@ -884,7 +886,7 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
     if (dialog.kind === "move") {
       return (
         <div className="p-4">
-          <h4 id="roster-dialog-title" className="text-base font-black text-[var(--color-academy-ink)]">반이동 · {dialog.entry.studentName}</h4>
+          <h4 id="roster-dialog-title" className="academy-section-title">반이동 · {dialog.entry.studentName}</h4>
           <p className="mt-1 text-xs text-[var(--color-academy-muted)]">{WEEKDAY_LABELS[active]}요일 {dialog.entry.board?.classTime ?? dialog.entry.alight?.classTime ?? ""} 등·하원을 옮깁니다. 정류장은 그대로입니다.</p>
           <div className="mt-3 grid grid-cols-[6rem_1fr] gap-2">
             <label className={LABEL}>요일
@@ -907,19 +909,19 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
       const row = dialog.direction === "BOARD" ? dialog.entry.board : dialog.entry.alight;
       return (
         <div className="p-4">
-          <h4 id="roster-dialog-title" className="text-base font-black text-[var(--color-academy-ink)]">정류장 수정 · {dialog.entry.studentName}</h4>
+          <h4 id="roster-dialog-title" className="academy-section-title">정류장 수정 · {dialog.entry.studentName}</h4>
           {dialog.entry.board && dialog.entry.alight && (
             <div className="mt-3 flex gap-1 rounded-xl bg-[var(--color-academy-soft)] p-1">
               {(["BOARD", "ALIGHT"] as const).map((dir) => (
-                <button key={dir} type="button" onClick={() => setDialog({ ...dialog, direction: dir, draft: draftFromRow(dir === "BOARD" ? dialog.entry.board : dialog.entry.alight) })}
-                  className={`min-h-9 flex-1 rounded-lg text-sm font-black ${dialog.direction === dir ? "bg-white text-[var(--color-academy-ink)] shadow" : "text-[var(--color-academy-muted)]"}`}>{dir === "BOARD" ? "등원" : "하원"}</button>
+                <button key={dir} type="button" aria-pressed={dialog.direction === dir} onClick={() => setDialog({ ...dialog, direction: dir, draft: draftFromRow(dir === "BOARD" ? dialog.entry.board : dialog.entry.alight) })}
+                  className={`min-h-11 flex-1 rounded-lg text-sm font-medium ${dialog.direction === dir ? "bg-[var(--color-academy-secondary-soft)] text-[var(--color-academy-secondary-ink)] ring-1 ring-inset ring-[var(--color-academy-secondary-strong)]" : "text-[var(--color-academy-muted)]"}`}>{dir === "BOARD" ? "등원" : "하원"}</button>
               ))}
             </div>
           )}
           <div className="mt-3">{stopFields("stop")}</div>
-          <label className="mt-3 flex items-start gap-2 text-[12.5px] font-bold text-[var(--color-academy-muted)]">
+          <label className="mt-3 flex items-start gap-2 text-xs font-medium text-[var(--color-academy-muted)]">
             <input type="checkbox" className="mt-0.5" checked={dialog.applyToAll} onChange={(e) => setDialog({ ...dialog, applyToAll: e.target.checked })} />
-            <span>이 달 「{row?.stopName}」 정류장 전체에 이름·좌표 함께 적용<span className="block text-[11px] font-semibold text-[var(--color-academy-faint)]">도착시각은 이 학생 것만 바뀝니다.</span></span>
+            <span>이 달 「{row?.stopName}」 정류장 전체에 이름·좌표 함께 적용<span className="block text-xs font-normal text-[var(--color-academy-faint)]">도착시각은 이 학생 것만 바뀝니다.</span></span>
           </label>
           {scopeFields(dialog.scope)}
           {errBox}
@@ -933,15 +935,15 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
     const label = dialog.entry.studentName;
     return (
       <div className="p-4">
-        <h4 id="roster-dialog-title" className="text-base font-black text-[var(--color-academy-ink)]">{label} 학생을 명단에서 뺄까요?</h4>
+        <h4 id="roster-dialog-title" className="academy-section-title">{label} 학생을 명단에서 뺄까요?</h4>
         <p className="mt-1 text-xs text-[var(--color-academy-muted)]">퇴원·셔틀 중단일 때 씁니다. 빼면 이 달 배차 화면에서도 빠진 학생으로 표시됩니다.</p>
         {scopeFields(dialog.scope)}
         <div className="mt-4 flex flex-col gap-2">
           <button type="button" disabled={busy} onClick={() => void submitDialog("DELETE", { ids: entryIds(dialog.entry) }, `${label} 학생을 ${WEEKDAY_LABELS[dialog.weekday]}요일 명단에서 뺐습니다.`)}
-            className="min-h-11 rounded-xl border border-[var(--color-academy-danger)] px-4 text-sm font-black text-[var(--color-academy-danger)] disabled:opacity-50">{WEEKDAY_LABELS[dialog.weekday]}요일만 빼기</button>
+            className="academy-button-danger">{WEEKDAY_LABELS[dialog.weekday]}요일만 빼기</button>
           <button type="button" disabled={busy} onClick={() => void submitDialog("DELETE", { ids: allIds }, `${label} 학생을 ${serviceMonth} 명단에서 모두 뺐습니다.`)}
-            className="min-h-11 rounded-xl bg-[var(--color-academy-danger-fill)] px-4 text-sm font-black text-white disabled:opacity-50">{serviceMonth} 전체 요일 빼기 ({allIds.length}개 정류장)</button>
-          <button type="button" onClick={() => setDialog(null)} className="min-h-11 rounded-xl border border-[var(--color-academy-line)] px-4 text-sm font-bold text-[var(--color-academy-muted)]">취소</button>
+            className="academy-button-danger-solid">{serviceMonth} 전체 요일 빼기 ({allIds.length}개 정류장)</button>
+          <button type="button" onClick={() => setDialog(null)} className="academy-button-secondary">취소</button>
         </div>
         {errBox}
       </div>
@@ -955,11 +957,11 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
       <div className="rounded-2xl border border-[var(--color-academy-line)] bg-white p-4">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
-            <h3 className="text-base font-black text-[var(--color-academy-ink)]">셔틀 명단</h3>
-            <p className="mt-0.5 text-[11.5px] text-[var(--color-academy-faint)]">이번 달·다음 달 명단은 직전 달을 복사해 자동으로 만들어집니다. 다음 달 변경은 월을 바꿔 미리 고쳐 두세요.</p>
+            <h3 className="academy-section-title">셔틀 명단</h3>
+            <p className="mt-0.5 text-xs text-[var(--color-academy-faint)]">이번 달·다음 달 명단은 직전 달을 복사해 자동으로 만들어집니다. 다음 달 변경은 월을 바꿔 미리 고쳐 두세요.</p>
           </div>
-          <label className="flex flex-col gap-1 text-[11px] font-bold text-[var(--color-academy-muted)]">월
-            <select value={serviceMonth} disabled={busy} onChange={(e) => { if (confirmLeaveOrder()) void loadMonth(e.target.value); }} className="rounded-lg border border-[var(--color-academy-line)] bg-white px-3 py-2 text-sm font-bold">
+          <label className="flex flex-col gap-1 text-xs font-medium text-[var(--color-academy-muted)]">월
+            <select value={serviceMonth} disabled={busy} onChange={(e) => { if (confirmLeaveOrder()) void loadMonth(e.target.value); }} className="academy-input">
               {monthOptions.map((month) => <option key={month} value={month}>{month}{month === currentMonth ? " (이번 달)" : ""}</option>)}
             </select>
           </label>
@@ -967,56 +969,57 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
 
         {initialStudentId && !stops.some(row => row.studentId === initialStudentId) && <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg bg-[var(--color-academy-soft)] p-3 text-sm text-[var(--color-academy-ink)]">
           <span>신청 학생이 {serviceMonth} 명단에 없습니다.</span>
-          <button type="button" disabled={busy} onClick={() => void openRequestedStudent()} className="min-h-11 rounded-lg border border-[var(--color-academy-line)] px-3 font-bold">신청 학생 선택해 명단 추가</button>
+          <button type="button" disabled={busy} onClick={() => void openRequestedStudent()} className="academy-button-secondary">신청 학생 선택해 명단 추가</button>
         </div>}
 
         {/* 주요 동작 */}
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button type="button" onClick={openAdd} className="inline-flex min-h-10 items-center gap-1 rounded-xl bg-[var(--color-academy-primary-hover)] px-4 text-sm font-black text-white">
-            <span className="material-symbols-outlined text-lg">person_add</span>학생 추가
+          <button type="button" onClick={openAdd} className="academy-button-primary">
+            학생 추가
           </button>
-          <button type="button" onClick={copyRegularRunLink} className="inline-flex min-h-10 items-center gap-1 rounded-xl border border-[var(--color-academy-line)] px-4 text-sm font-black text-[var(--color-academy-muted)]">
-            <span className="material-symbols-outlined text-lg">directions_bus</span>기사님 운행 링크 복사
+          <button type="button" onClick={copyRegularRunLink} className="academy-button-secondary">
+            기사님 운행 링크 복사
           </button>
         </div>
 
-        {err && <p className="mt-2 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-xs font-bold text-[var(--color-academy-danger)]">⚠ {err}</p>}
-        {msg && <p className="mt-2 rounded-lg bg-[var(--color-academy-success-soft)] px-3 py-2 text-xs font-bold text-[var(--color-academy-success)]">✓ {msg}</p>}
+        {err && <p className="mt-2 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-xs text-[var(--color-academy-danger)]">{err}</p>}
+        {msg && <p className="mt-2 rounded-lg bg-[var(--color-academy-success-soft)] px-3 py-2 text-xs text-[var(--color-academy-success)]">{msg}</p>}
         {/* 저장 노선이 있는 요일만 정규 배차에서 다시 배정해야 한다. 없으면 기사님 화면이 이 명단 순서를 바로 쓴다. */}
         {showDispatchHint && (routeStatus?.PICKUP || routeStatus?.DROPOFF) && (
-          <p className="mt-2 flex flex-wrap items-center gap-2 rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-xs font-bold text-[var(--color-academy-warning)]">
+          <p className="mt-2 flex flex-wrap items-center gap-2 rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-xs text-[var(--color-academy-warning)]">
             정규 배차 화면에서 새 학생을 차량에 배정하고 저장해야 기사님 화면에 반영됩니다.
             <Link href="/admin/shuttle/regular-dispatch" className="underline">정규 배차로 가기</Link>
           </p>
         )}
         {showDispatchHint && routeStatus && !routeStatus.PICKUP && !routeStatus.DROPOFF && (
-          <p className="mt-2 rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-xs font-bold text-[var(--color-academy-warning)]">
+          <p className="mt-2 rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-xs text-[var(--color-academy-warning)]">
             기사님 화면은 이 명단 순서로 운행합니다. 「기사님 화면」 보기에서 순서·시각을 맞춰 주세요.
           </p>
         )}
         {locationLink && <div className="mt-2 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] p-3 text-xs">
-          <p className="font-black text-[var(--color-academy-ink)]">{locationLink.studentName} 학부모 위치 입력 링크</p>
-          <div className="mt-2 flex items-center gap-2"><input readOnly value={locationLink.url} aria-label="학부모 위치 입력 링크" className="min-w-0 flex-1 rounded-lg border border-[var(--color-academy-line)] bg-white px-2 py-2 text-[var(--color-academy-muted)]" /><button type="button" onClick={() => void navigator.clipboard.writeText(locationLink.url)} className="min-h-9 rounded-lg bg-[var(--color-academy-primary)] px-3 font-black text-white">복사</button></div>
+          <p className="font-semibold text-[var(--color-academy-ink)]">{locationLink.studentName} 학부모 위치 입력 링크</p>
+          <div className="mt-2 flex items-center gap-2"><input readOnly value={locationLink.url} aria-label="학부모 위치 입력 링크" className="min-w-0 flex-1 rounded-lg border border-[var(--color-academy-line)] bg-white px-2 py-2 text-[var(--color-academy-muted)]" /><button type="button" onClick={() => void navigator.clipboard.writeText(locationLink.url)} className="academy-button-secondary academy-button-sm shrink-0">복사</button></div>
           <p className="mt-1 text-[var(--color-academy-muted)]">실제 문자는 발송되지 않습니다. 내용을 확인한 뒤 직접 전달해 주세요. · 만료 {fmtImported(locationLink.expiresAt)}</p>
-          {locationLinks[locationLink.studentId] && <button type="button" onClick={() => void revokeParentLocationLink(locationLinks[locationLink.studentId])} className="mt-2 rounded-lg border border-[var(--color-academy-danger)] px-3 py-1.5 font-black text-[var(--color-academy-danger)]">이 링크 취소</button>}
+          {locationLinks[locationLink.studentId] && <button type="button" onClick={() => void revokeParentLocationLink(locationLinks[locationLink.studentId])} className="academy-button-danger academy-button-sm mt-2">이 링크 취소</button>}
         </div>}
 
         {stops.length === 0 ? (
           <div className="mt-4 rounded-xl border border-dashed border-[var(--color-academy-line-input)] p-8 text-center text-sm text-[var(--color-academy-faint)]">
             <p>{serviceMonth} 명단이 아직 없습니다.</p>
             {previousMonth
-              ? <button type="button" disabled={busy} onClick={() => void copyMonth(previousMonth, serviceMonth)} className="mt-3 rounded-xl bg-[var(--color-academy-primary-hover)] px-4 py-2 text-sm font-black text-white disabled:opacity-50">{previousMonth} 명단 복사해 오기</button>
+              ? <button type="button" disabled={busy} onClick={() => void copyMonth(previousMonth, serviceMonth)} className="academy-button-secondary mt-3">{previousMonth} 명단 복사해 오기</button>
               : <p className="mt-1">위의 「학생 추가」로 명단을 만들어 주세요.</p>}
           </div>
         ) : (
           <>
             {/* 요일 탭 */}
-            <div className="mt-3 flex flex-wrap items-center gap-1 rounded-xl bg-[var(--color-academy-soft)] p-1">
+            <div className="mt-3 flex flex-wrap items-center gap-1">
               {weekdays.map((w) => (
                 <button key={w.weekday} type="button" onClick={() => { if (w.weekday !== active && confirmLeaveOrder()) { setActive(w.weekday); setDetail(null); } }}
                   aria-pressed={active === w.weekday}
-                  className={`min-h-11 rounded-lg px-3 text-sm font-black ${active === w.weekday ? "bg-white text-[var(--color-academy-ink)] shadow" : "text-[var(--color-academy-muted)] hover:text-[var(--color-academy-muted)]"}`}>
-                  {WEEKDAY_LABELS[w.weekday]}<span className="ml-1 text-xs font-bold tabular-nums text-[var(--color-academy-faint)]">{w.count}</span>
+                  // 요일 탭 = «지금 보는 것» — 보조 색, ✓ 없음(테마 academy-choice is-tab)
+                  className={`academy-choice is-tab${active === w.weekday ? " is-selected" : ""}`}>
+                  {WEEKDAY_LABELS[w.weekday]}<span className="ml-1 text-xs font-normal tabular-nums text-[var(--color-academy-faint)]">{w.count}</span>
                 </button>
               ))}
             </div>
@@ -1039,7 +1042,7 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
 
             {/* 정규 배차 저장 노선이 있는 방향은 기사님 화면이 그 노선을 쓴다 → 여기 순서는 쓰이지 않는다(조회만). */}
             {routeStatus && (routeStatus.PICKUP || routeStatus.DROPOFF) && (
-              <p className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] px-3 py-2 text-xs font-bold text-[var(--color-academy-ink)]">
+              <p className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] px-3 py-2 text-xs text-[var(--color-academy-ink)]">
                 이 요일 {[routeStatus.PICKUP && "등원", routeStatus.DROPOFF && "하원"].filter(Boolean).join("·")}은 정규 배차 저장 노선으로 운행 중 — 여기 순서는 기사님 화면에 쓰이지 않습니다.
                 <Link href="/admin/shuttle/regular-dispatch" className="underline">정규 배차 보기</Link>
               </p>
@@ -1048,34 +1051,33 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
             {/* 명단 점검 — 기사님 화면에서 빠지거나 어긋나 보일 행(이 달 전체). 자동으로 고치지 않는다. */}
             {issues.length > 0 && (
               <details className="mt-2 rounded-xl border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] p-3 text-xs text-[var(--color-academy-warning)]">
-                <summary className="cursor-pointer font-black">⚠ 명단 점검 {issues.length}건 — 기사님 화면에서 빠지거나 어긋나 보일 수 있습니다</summary>
+                <summary className="cursor-pointer font-medium">명단 점검 {issues.length}건 — 기사님 화면에서 빠지거나 어긋나 보일 수 있습니다</summary>
                 <ul className="mt-2 space-y-1">
-                  {issues.map((issue, i) => <li key={`${issue.kind}-${i}`} className={issue.weekday === active ? "font-bold" : ""}>· {issue.message}</li>)}
+                  {issues.map((issue, i) => <li key={`${issue.kind}-${i}`} className={issue.weekday === active ? "font-semibold" : ""}>· {issue.message}</li>)}
                 </ul>
-                <p className="mt-2 font-bold">자동으로 고치지 않았습니다. 학생 목록 보기에서 학생 행의 «빠른작업»(반이동·정류장 수정·빼기)로 고쳐 주세요.</p>
+                <p className="mt-2 font-medium">자동으로 고치지 않았습니다. 학생 목록 보기에서 학생 행의 «빠른작업»(반이동·정류장 수정·빼기)로 고쳐 주세요.</p>
               </details>
             )}
 
             {/* 수강 점검 요약 한 줄 — 휴원·퇴원·반 변경 뒤 남은 학생(이 달 전체). 펼치면 학생 목록. 자동으로 빼지 않는다. */}
             {enrollReport && enrollSummary && (
               <details open={needsMonthReview} className="mt-2 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-warning-soft)] px-3 py-2 text-xs text-[var(--color-academy-ink)]">
-                <summary className="cursor-pointer font-black">
-                  <span className="material-symbols-outlined mr-1 align-middle text-base text-[var(--color-academy-warning)]" aria-hidden="true">warning</span>
+                <summary className="cursor-pointer font-medium">
                   수강 점검: {enrollSummary}
-                  {enrollReport.unlinkedCount > 0 && <span className="ml-1 font-bold text-[var(--color-academy-muted)]">· 학생 연결 없음 {enrollReport.unlinkedCount}명(점검 불가)</span>}
+                  {enrollReport.unlinkedCount > 0 && <span className="ml-1 font-normal text-[var(--color-academy-muted)]">· 학생 연결 없음 {enrollReport.unlinkedCount}명(점검 불가)</span>}
                 </summary>
                 {needsMonthReview && enrollCheck?.autoCreatedFrom && (
-                  <div className="mt-2 flex flex-wrap items-center gap-2 font-bold">
+                  <div className="mt-2 flex flex-wrap items-center gap-2 font-medium">
                     <span>이 달 명단은 {enrollCheck.autoCreatedFrom} 명단을 자동으로 복사해 만들었습니다. 아래 학생도 그대로 넘어왔습니다.</span>
                     <button type="button" disabled={busy} onClick={() => void markMonthReviewed()}
-                      className="min-h-11 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 font-black disabled:opacity-50">확인했어요</button>
+                      className="academy-button-secondary academy-button-sm">확인했어요</button>
                   </div>
                 )}
                 <ul className="mt-2 space-y-1">
                   {enrollReport.problems.map((r) => <li key={r.key}>· {describeRosterEnrollmentStudent(r)}</li>)}
                   {enrollReport.notes.map((r) => <li key={r.key} className="text-[var(--color-academy-muted)]">· {describeRosterEnrollmentStudent(r)}</li>)}
                 </ul>
-                <p className="mt-2 font-bold">지금 수강 기준입니다. 자동으로 빼지 않았습니다 — 학생 행의 «빠른작업»(반이동·빼기)로 정리해 주세요. «한쪽만»은 직접 데려가는 경우라면 정상입니다.</p>
+                <p className="mt-2 font-medium">지금 수강 기준입니다. 자동으로 빼지 않았습니다 — 학생 행의 «빠른작업»(반이동·빼기)로 정리해 주세요. «한쪽만»은 직접 데려가는 경우라면 정상입니다.</p>
               </details>
             )}
 
@@ -1100,7 +1102,7 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
                 <div className="overflow-x-auto">
                   {/* admin-list-table: 글자 왼쪽·시각 오른쪽(tabular)·한 줄(말줄임 없음, 좁으면 가로 스크롤) */}
                   <table className="admin-list-table w-full border-collapse text-sm">
-                    <thead className="bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]">
+                    <thead className="bg-[var(--color-academy-soft)] text-xs font-semibold text-[var(--color-academy-muted)]">
                       <tr>
                         <th className="px-2 py-2">이름</th>
                         <th className="px-2 py-2">등원 정류장</th>
@@ -1114,7 +1116,7 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
                     {groups.map((g) => (
                       <tbody key={g.classTime || "none"} className="divide-y divide-[var(--color-academy-line)]">
                         <tr>
-                          <th colSpan={7} scope="rowgroup" className="bg-[var(--color-academy-soft)] px-2 py-1.5 text-xs font-black text-[var(--color-academy-ink)]">
+                          <th colSpan={7} scope="rowgroup" className="bg-[var(--color-academy-soft)] px-2 py-1.5 text-xs font-semibold text-[var(--color-academy-ink)]">
                             {g.classTime || "수업시간 미지정"} · <span className="tabular-nums">{g.students.length}</span>명
                           </th>
                         </tr>
@@ -1131,9 +1133,9 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
                               className="cursor-pointer transition-colors hover:bg-[var(--color-academy-soft)] focus:bg-[var(--color-academy-primary-soft)] focus:outline-none"
                             >
                               <td className="px-2 py-1.5">
-                                <span className="font-black text-[var(--color-academy-ink)]">{entry.studentName}</span>
+                                <span className="font-semibold text-[var(--color-academy-ink)]">{entry.studentName}</span>
                                 {/* 메모가 있으면 표시만 — 내용은 상세 패널에서 전부 */}
-                                {note && <span className="material-symbols-outlined ml-1 align-middle text-base text-[var(--color-academy-muted)]" aria-label="메모 있음" title="메모 있음">sticky_note_2</span>}
+                                {note && <span className="ml-1 text-xs text-[var(--color-academy-muted)]" title="메모 있음">메모</span>}
                                 {/* 수강 점검 배지(다니는 반 없음·수업 없는 요일·한쪽만) — 설명은 마우스를 올리거나 상세 패널에서 */}
                                 {enrollIndex && <EnrollmentFlagBadges flags={rosterEntryFlags(entry, active, enrollIndex)} />}
                               </td>
@@ -1141,7 +1143,7 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
                               <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-ink)]">{entry.board ? entry.board.arriveTime || "-" : ""}</td>
                               <td className="px-2 py-1.5">{stopCell(entry.alight)}</td>
                               <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-ink)]">{entry.alight ? entry.alight.arriveTime || "-" : ""}</td>
-                              <td className="hidden px-2 py-1.5 text-xs font-bold text-[var(--color-academy-muted)] md:table-cell">{link ? LOCATION_LINK_STATUS[link.status] : "-"}</td>
+                              <td className="hidden px-2 py-1.5 text-xs text-[var(--color-academy-muted)] md:table-cell">{link ? LOCATION_LINK_STATUS[link.status] : "-"}</td>
                               {/* 관리: ⚡ 메뉴(반이동·정류장 수정·학부모 전화·위치 링크·빼기). 눌러도 행 클릭(패널)이 같이 일어나지 않게 전파 차단 */}
                               <td className="admin-cell-center px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
                                 <AdminQuickActionMenu label={`${entry.studentName} 빠른 작업`} actions={buildRosterActions(entry, g.classTime)} />
@@ -1175,7 +1177,7 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
           { label: "수업", value: <span className="tabular-nums">{WEEKDAY_LABELS[active]}요일 {detail.classTime || "수업시간 미지정"}</span> },
           { label: "등원", value: stopDetail(d.board) },
           { label: "하원", value: stopDetail(d.alight) },
-          { label: "학부모", value: tp ? <a href={tp} className="font-bold tabular-nums text-[var(--color-academy-primary)] underline">{d.parentPhone}</a> : "-" },
+          { label: "학부모", value: tp ? <a href={tp} className="font-medium tabular-nums text-[var(--color-academy-primary)] underline">{d.parentPhone}</a> : "-" },
           ...(d.studentPhone ? [{ label: "학생", value: <span className="tabular-nums">{d.studentPhone}</span> }] : []),
           { label: "위치 링크", value: link ? `${LOCATION_LINK_STATUS[link.status]}${link.lastSubmittedAt ? ` · 제출 ${fmtImported(link.lastSubmittedAt)}` : ""}${link.status === "ACTIVE" ? ` · 만료 ${fmtImported(link.expiresAt)}` : ""}` : d.studentId ? "발급 안 함" : "학생 연결 없음(링크 불가)" },
           ...(notes.length > 0 ? [{ label: "메모", value: notes.join(" / ") }] : []),
@@ -1186,7 +1188,7 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
         return (
           <ListDetailPanel onClose={() => setDetail(null)} titleId="roster-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
             <div className="mb-4 flex items-center gap-2">
-              <h3 id="roster-detail-panel-title" className="min-w-0 break-keep text-lg font-black text-[var(--color-academy-ink)]">{d.studentName}</h3>
+              <h3 id="roster-detail-panel-title" className="min-w-0 break-keep text-lg font-bold text-[var(--color-academy-ink)]">{d.studentName}</h3>
               <button type="button" onClick={() => setDetail(null)} aria-label="닫기"
                 className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
                 <span className="material-symbols-outlined" aria-hidden="true">close</span>
@@ -1195,7 +1197,7 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
             <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
               {rows.map((row) => (
                 <div key={row.label} className="contents">
-                  <dt className="font-bold text-[var(--color-academy-muted)]">{row.label}</dt>
+                  <dt className="font-medium text-[var(--color-academy-muted)]">{row.label}</dt>
                   <dd className="min-w-0 break-keep break-words text-[var(--color-academy-ink)]">{row.value}</dd>
                 </div>
               ))}

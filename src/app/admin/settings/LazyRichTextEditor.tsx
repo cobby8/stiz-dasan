@@ -59,7 +59,7 @@ export default function LazyRichTextEditor({
                     className="w-full border border-[var(--color-academy-line-input)] rounded-md p-4 min-h-[150px] bg-[var(--color-academy-soft)] flex flex-col items-center justify-center gap-2 text-sm text-[var(--color-academy-muted)] hover:border-[var(--color-academy-primary)] transition"
                 >
                     {/* 지연 로딩(성능 최적화)은 그대로 두고, 사용자에게는 "내용 편집"으로만 보이게 한다 */}
-                    <span className="font-bold text-[var(--color-academy-muted)]">내용 편집</span>
+                    <span className="font-medium text-[var(--color-academy-muted)]">내용 편집</span>
                 </button>
             )}
         </div>

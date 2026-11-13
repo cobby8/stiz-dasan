@@ -84,8 +84,7 @@ export default function RolesClient({
         <Link href="/mypage" aria-label="마이페이지로" className="academy-back-link">
           <span className="material-symbols-outlined" aria-hidden="true">arrow_back</span>
         </Link>
-        <h1 className="flex items-center gap-2 text-lg font-black text-[var(--color-academy-ink)]">
-          <span className="material-symbols-outlined text-[var(--color-academy-ink)]">badge</span>
+        <h1 className="academy-heading">
           역할 추가 신청
         </h1>
       </div>
@@ -105,19 +104,12 @@ export default function RolesClient({
                 onChange={() => toggle(row.role)}
                 className="mt-1 h-4 w-4 rounded border-[var(--color-academy-line-input)] text-[var(--color-academy-ink)] focus:ring-[var(--color-academy-primary)]"
               />
-            ) : (
-              <span
-                className={`material-symbols-outlined mt-0.5 text-lg ${row.state === "ACTIVE" ? "text-[var(--color-academy-success)]" : "text-[var(--color-academy-warning)]"}`}
-                aria-hidden
-              >
-                {row.state === "ACTIVE" ? "check_circle" : "hourglass_top"}
-              </span>
-            )}
+            ) : null}
             <label htmlFor={`role-${row.role}`} className="min-w-0 flex-1">
-              <span className="flex items-center gap-2 text-sm font-bold text-[var(--color-academy-ink)]">
+              <span className="flex flex-wrap items-center gap-2 text-sm font-medium text-[var(--color-academy-ink)]">
                 {row.label}
-                {row.state === "ACTIVE" && <span className="rounded-md bg-[var(--color-academy-success-soft)] px-1.5 py-0.5 text-xs font-bold text-[var(--color-academy-success)]">사용 중</span>}
-                {row.state === "PENDING" && <span className="rounded-md bg-[var(--color-academy-warning-soft)] px-1.5 py-0.5 text-xs font-bold text-[var(--color-academy-warning)]">원장님 확인 중</span>}
+                {row.state === "ACTIVE" && <span className="rounded bg-[var(--color-academy-success-soft)] px-1.5 py-0.5 text-xs font-normal text-[var(--color-academy-success)]">사용 중</span>}
+                {row.state === "PENDING" && <span className="rounded bg-[var(--color-academy-warning-soft)] px-1.5 py-0.5 text-xs font-normal text-[var(--color-academy-warning)]">원장님 확인 중</span>}
               </span>
               <span className="mt-0.5 block text-xs text-[var(--color-academy-muted)]">{ROLE_DESCRIPTIONS[row.role]}</span>
             </label>
@@ -137,7 +129,7 @@ export default function RolesClient({
       </div>
 
       {error && (
-        <p className="mb-3 rounded-xl bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-academy-danger)]">{error}</p>
+        <p className="mb-3 rounded-xl bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-medium text-[var(--color-academy-danger)]">{error}</p>
       )}
       {notice && (
         <p role="status" className="mb-3 rounded-xl bg-[var(--color-academy-info-soft)] px-3 py-2 text-sm text-[var(--color-academy-info)]">{notice}</p>

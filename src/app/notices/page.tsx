@@ -3,7 +3,6 @@ import PublicPageLayout from "@/components/PublicPageLayout";
 import AnimateOnScroll from "@/components/ui/AnimateOnScroll";
 import CTABanner from "@/components/landing/CTABanner";
 import Link from "next/link";
-import FontFreeIcon from "@/components/ui/FontFreeIcon";
 import { buildPublicMetadata } from "@/lib/publicMetadata";
 import { formatKstDate, toKstYmd } from "@/lib/datetime/kst";
 
@@ -31,8 +30,8 @@ export default async function NoticesPage() {
             <section className="public-page-hero public-page-hero--compact relative overflow-hidden bg-gradient-to-br from-[var(--color-public-dark)] via-[var(--color-public-dark)] to-[var(--color-public-dark)] dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
                 <div className="max-w-6xl mx-auto px-6 md:px-4 relative">
                     <AnimateOnScroll>
-                        <h1 className="text-4xl md:text-5xl font-black mb-4 break-keep">공지사항</h1>
-                        <p className="text-blue-200 text-lg max-w-xl">학원 소식과 안내사항을 확인하세요</p>
+                        <h1 className="text-4xl md:text-5xl font-bold mb-4 break-keep">공지사항</h1>
+                        <p className="text-[var(--color-public-dark-muted)] text-lg max-w-xl">학원 소식과 안내사항을 확인하세요</p>
                     </AnimateOnScroll>
                 </div>
             </section>
@@ -44,8 +43,8 @@ export default async function NoticesPage() {
                     {publicNotices.length === 0 ? (
                         /* 게슈탈트 P-12 빈 상태: 한 줄 문구 + 전화 링크 */
                         <p className="py-6 text-center text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
-                            <span className="font-bold">아직 공지사항이 없습니다.</span>{" "}
-                            <a href={`tel:${phone.replace(/-/g, "")}`} className="inline-flex min-h-11 items-center font-bold text-[var(--color-public-accent)] underline underline-offset-2">문의 {phone}</a>
+                            <span>아직 공지사항이 없습니다.</span>{" "}
+                            <a href={`tel:${phone.replace(/-/g, "")}`} className="inline-flex min-h-11 items-center font-medium text-[var(--color-public-accent)] underline underline-offset-2">문의 {phone}</a>
                         </p>
                     ) : (
                         <ul className="public-notice-list divide-y divide-[var(--color-public-line)] overflow-hidden rounded-xl border border-[var(--color-public-line)] bg-[var(--color-public-paper)]">
@@ -61,11 +60,11 @@ export default async function NoticesPage() {
                                             className="flex min-h-[52px] items-center gap-2 px-4 py-2 text-sm text-[var(--color-public-ink)] transition-colors hover:bg-[var(--color-public-tint)]"
                                         >
                                             {/* 고정 공지만 «중요» 표시(일반 공지는 표시 없음 — 표시가 많으면 오히려 안 보인다) */}
-                                            {n.isPinned && <span className="shrink-0 text-xs font-bold text-[var(--color-public-accent)]">중요</span>}
-                                            <h2 className="min-w-0 flex-1 font-bold [overflow-wrap:anywhere]">{n.title}</h2>
+                                            {n.isPinned && <span className="shrink-0 text-xs font-semibold text-[var(--color-public-accent)]">중요</span>}
+                                            <h2 className="min-w-0 flex-1 font-medium [overflow-wrap:anywhere]">{n.title}</h2>
                                             {atts.length > 0 && (
-                                                <span className="flex shrink-0 items-center gap-0.5 text-xs text-[var(--color-public-muted)]" aria-label={`첨부 ${atts.length}개`}>
-                                                    <FontFreeIcon name="attach_file" size={12} />{atts.length}
+                                                <span className="shrink-0 whitespace-nowrap text-xs text-[var(--color-public-muted)]" aria-label={`첨부 ${atts.length}개`}>
+                                                    첨부 {atts.length}
                                                 </span>
                                             )}
                                             <time dateTime={toKstYmd(n.createdAt) || undefined} className="shrink-0 whitespace-nowrap text-xs text-[var(--color-public-muted)]">

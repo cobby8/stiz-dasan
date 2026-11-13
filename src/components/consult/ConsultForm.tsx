@@ -10,7 +10,6 @@
  */
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import FontFreeIcon from "@/components/ui/FontFreeIcon";
 import { submitConsultRequest, submitParentConsultRequest } from "@/app/actions/consult";
 import {
   CONSULT_DAY_OPTIONS,
@@ -36,32 +35,30 @@ type Props = {
 };
 
 // 색 묶음 — 하드코딩 색 없이 토큰만(공개 화면 / 학원 앱)
-const STYLE: Record<Mode, { card: string; ink: string; muted: string; input: string; chipOn: string; chipOff: string; primary: string; secondary: string; error: string; accent: string; done: string }> = {
+const STYLE: Record<Mode, { card: string; ink: string; muted: string; input: string; chipOn: string; chipOff: string; primary: string; secondary: string; error: string; accent: string }> = {
   public: {
     card: "public-card",
     ink: "text-[var(--color-public-ink)]",
     muted: "text-[var(--color-public-muted)]",
     input: "mt-1 block min-h-11 w-full rounded-[var(--color-public-radius)] border border-[var(--color-public-line)] bg-[var(--color-public-paper)] px-3 font-normal text-[var(--color-public-ink)]",
-    chipOn: "border-[var(--color-public-accent)] bg-[var(--color-public-tint)] text-[var(--color-public-ink)]",
+    chipOn: "border-[var(--color-public-secondary-strong)] bg-[var(--color-public-secondary-soft)] text-[var(--color-public-secondary-ink)]",
     chipOff: "border-[var(--color-public-line)] text-[var(--color-public-muted)]",
     primary: "public-btn-primary w-full text-base",
     secondary: "public-btn-secondary",
     error: "border-[var(--color-public-accent)] text-[var(--color-public-accent)]",
     accent: "accent-[var(--color-public-accent)]",
-    done: "text-[var(--color-public-accent)]",
   },
   parent: {
     card: "rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]",
     ink: "text-[var(--color-academy-ink)]",
     muted: "text-[var(--color-academy-muted)]",
     input: "mt-1 block min-h-11 w-full rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 font-normal text-[var(--color-academy-ink)]",
-    chipOn: "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-ink)]",
+    chipOn: "border-[var(--color-academy-secondary-strong)] bg-[var(--color-academy-secondary-soft)] text-[var(--color-academy-secondary-ink)]",
     chipOff: "border-[var(--color-academy-line)] text-[var(--color-academy-muted)]",
     primary: "academy-button-primary w-full",
     secondary: "academy-button-secondary",
     error: "border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]",
     accent: "accent-[var(--color-academy-primary)]",
-    done: "text-[var(--color-academy-success)]",
   },
 };
 
@@ -123,23 +120,22 @@ export default function ConsultForm({ mode, source = "PUBLIC_WEB", initialGuardi
     return (
       <div className={`${s.card} p-4 sm:p-5`} aria-live="polite">
         <div className="flex items-center gap-2">
-          <FontFreeIcon name="check_circle" size={28} className={s.done} />
-          <h2 ref={doneRef} tabIndex={-1} className={`text-xl font-black outline-none ${s.ink}`}>
+          <h2 ref={doneRef} tabIndex={-1} className={`text-xl font-bold outline-none ${s.ink}`}>
             상담 신청이 접수됐어요
           </h2>
         </div>
         <p className={`mt-2 text-sm break-keep ${s.muted}`}>
           학원에서 내용을 확인한 뒤 <b className={s.ink}>남겨 주신 번호로 전화드릴게요.</b>
-          {contactPhone ? <> 급하시면 <a href={`tel:${contactPhone.replace(/-/g, "")}`} className={`font-bold underline underline-offset-2 ${s.ink}`}>{contactPhone}</a>로 연락해 주세요.</> : null}
+          {contactPhone ? <> 급하시면 <a href={`tel:${contactPhone.replace(/-/g, "")}`} className={`font-medium underline underline-offset-2 ${s.ink}`}>{contactPhone}</a>로 연락해 주세요.</> : null}
         </p>
-        <Link href={homeHref ?? "/"} className={`${s.secondary} mt-4 inline-flex min-h-11 items-center px-4 text-sm`}>
+        <Link href={homeHref ?? "/"} className={`${s.secondary} mt-4 text-sm`}>
           {mode === "parent" ? "홈으로" : "처음으로"}
         </Link>
       </div>
     );
   }
 
-  const chip = (on: boolean) => `min-h-11 rounded-xl border px-3 text-sm font-bold transition-colors ${on ? s.chipOn : s.chipOff}`;
+  const chip = (on: boolean) => `min-h-11 rounded-xl border px-3 text-sm font-medium transition-colors ${on ? s.chipOn : s.chipOff}`;
 
   return (
     <form onSubmit={submit} className={`${s.card} min-w-0 space-y-4 p-4 sm:p-5`} noValidate>
@@ -155,13 +151,13 @@ export default function ConsultForm({ mode, source = "PUBLIC_WEB", initialGuardi
 
       {/* 1. 학생 — 이름·학년 한 줄(근접성) */}
       <fieldset className="min-w-0">
-        <legend className={`text-base font-black ${s.ink}`}>학생</legend>
+        <legend className={`text-base font-bold ${s.ink}`}>학생</legend>
         <div className="mt-1 grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,9rem)]">
-          <label className={`block text-sm font-bold ${s.ink}`}>
+          <label className={`block text-sm font-medium ${s.ink}`}>
             이름 <span className={s.muted}>(필수)</span>
             <input value={studentName} onChange={(e) => { setStudentName(e.target.value); setError(""); }} maxLength={CONSULT_LIMITS.studentName} autoComplete="off" className={s.input} />
           </label>
-          <label className={`block text-sm font-bold ${s.ink}`}>
+          <label className={`block text-sm font-medium ${s.ink}`}>
             학년(나이) <span className={s.muted}>(필수)</span>
             <select value={grade} onChange={(e) => { setGrade(e.target.value); setError(""); }} className={s.input}>
               <option value="">선택</option>
@@ -173,13 +169,13 @@ export default function ConsultForm({ mode, source = "PUBLIC_WEB", initialGuardi
 
       {/* 2. 연락받을 분 — 이름(선택)·휴대폰(필수) */}
       <fieldset className="min-w-0">
-        <legend className={`text-base font-black ${s.ink}`}>연락받을 분</legend>
+        <legend className={`text-base font-bold ${s.ink}`}>연락받을 분</legend>
         <div className="mt-1 grid gap-2 sm:grid-cols-2">
-          <label className={`block text-sm font-bold ${s.ink}`}>
+          <label className={`block text-sm font-medium ${s.ink}`}>
             보호자 이름 <span className={s.muted}>(선택)</span>
             <input value={guardianName} onChange={(e) => setGuardianName(e.target.value)} maxLength={CONSULT_LIMITS.guardianName} autoComplete="name" className={s.input} />
           </label>
-          <label className={`block text-sm font-bold ${s.ink}`}>
+          <label className={`block text-sm font-medium ${s.ink}`}>
             휴대폰 번호 <span className={s.muted}>(필수)</span>
             <input value={guardianPhone} onChange={(e) => { setGuardianPhone(formatPhoneTyping(e.target.value)); setError(""); }} inputMode="tel" autoComplete="tel" placeholder="010-0000-0000" className={`${s.input} tabular-nums`} />
           </label>
@@ -188,7 +184,7 @@ export default function ConsultForm({ mode, source = "PUBLIC_WEB", initialGuardi
 
       {/* 3. 희망 수업 — 요일·시간대(여러 개 고르기, 선택) */}
       <fieldset className="min-w-0">
-        <legend className={`text-base font-black ${s.ink}`}>희망 수업 <span className={`text-sm font-bold ${s.muted}`}>여러 개 골라도 돼요(선택)</span></legend>
+        <legend className={`text-base font-bold ${s.ink}`}>희망 수업 <span className={`text-sm font-normal ${s.muted}`}>여러 개 골라도 돼요(선택)</span></legend>
         <div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-label="희망 요일">
           {CONSULT_DAY_OPTIONS.map((d) => (
             <button key={d} type="button" aria-pressed={days.includes(d)} onClick={() => toggle(days, d, setDays)} className={`${chip(days.includes(d))} w-11 px-0`}>{d}</button>
@@ -202,8 +198,8 @@ export default function ConsultForm({ mode, source = "PUBLIC_WEB", initialGuardi
       </fieldset>
 
       {/* 4. 요청사항 */}
-      <label className={`block text-base font-black ${s.ink}`}>
-        요청사항 <span className={`text-sm font-bold ${s.muted}`}>(선택)</span>
+      <label className={`block text-base font-bold ${s.ink}`}>
+        요청사항 <span className={`text-sm font-normal ${s.muted}`}>(선택)</span>
         <textarea
           value={message}
           onChange={(e) => setMessage(e.target.value)}
@@ -227,8 +223,7 @@ export default function ConsultForm({ mode, source = "PUBLIC_WEB", initialGuardi
       </label>
 
       {error && (
-        <div ref={errorRef} role="alert" className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold ${s.error}`}>
-          <FontFreeIcon name="error" size={18} />
+        <div ref={errorRef} role="alert" className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium ${s.error}`}>
           {error}
         </div>
       )}

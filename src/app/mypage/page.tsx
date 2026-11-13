@@ -25,12 +25,11 @@ export default async function MyPageDashboard({
     if (!user) {
         return (
             <div className="flex flex-col items-center justify-center py-20 text-center">
-                <div className="text-5xl mb-4">🔒</div>
-                <h2 className="text-xl font-bold text-[var(--color-academy-ink)] mb-2">로그인이 필요합니다</h2>
+                <h2 className="academy-heading mb-2">로그인이 필요합니다</h2>
                 <p className="text-[var(--color-academy-muted)] mb-6">마이페이지는 학부모 계정으로 로그인 후 이용할 수 있습니다.</p>
                 <Link
                     href="/login"
-                    className="bg-[var(--color-academy-primary)] text-white font-bold px-6 py-3 rounded-xl hover:bg-[var(--color-academy-primary-hover)] transition"
+                    className="academy-button-primary"
                 >
                     로그인하기
                 </Link>

@@ -241,9 +241,9 @@ export default function PosChargeRequestModal({
             <div className="w-full p-5">
                 <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                        <p className="text-xs font-bold text-[var(--color-academy-ink)]">현장 결제 · 토스 POS</p>
+                        <p className="text-xs font-medium text-[var(--color-academy-muted)]">현장 결제 · 토스 POS</p>
                         {/* 묶음 제목은 길어질 수 있어 자르지 않고 줄을 바꾼다 */}
-                        <h2 id="pos-charge-title" className={`mt-0.5 text-lg font-extrabold text-[var(--color-academy-ink)] ${isBundle ? "break-words" : "truncate"}`}>
+                        <h2 id="pos-charge-title" className={`mt-0.5 text-lg font-bold text-[var(--color-academy-ink)] ${isBundle ? "break-words" : "truncate"}`}>
                             {heading}
                         </h2>
                         {isBundle ? (
@@ -268,8 +268,8 @@ export default function PosChargeRequestModal({
                     <div className="mt-4">
                         {/* 주인공 하나: 지금 상태 — 사람이 따로 할 일은 없고 POS 결제만 기다린다 */}
                         <div className="rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] px-4 py-4 text-center" aria-live="polite">
-                            <p className="text-base font-extrabold text-[var(--color-academy-ink)]">POS로 보냈어요 · 결제 기다리는 중</p>
-                            <p className="mt-1 text-xl font-extrabold text-[var(--color-academy-ink)]">{won(request.amount)}</p>
+                            <p className="text-base font-semibold text-[var(--color-academy-ink)]">POS로 보냈어요 · 결제 기다리는 중</p>
+                            <p className="mt-1 text-xl font-semibold tabular-nums text-[var(--color-academy-ink)]">{won(request.amount)}</p>
                             <p className="mt-2 text-sm text-[var(--color-academy-muted)]">
                                 보통 몇 초 안에 POS에 결제창이 열려요. 안 열리면 POS의 STIZ 탭에서 결제할 수 있어요.
                             </p>
@@ -293,7 +293,7 @@ export default function PosChargeRequestModal({
                     </div>
                 ) : request?.status === "PAID" ? (
                     <div className="mt-4 rounded-lg border border-[var(--color-academy-line)] px-4 py-4">
-                        <p className="text-base font-extrabold text-[var(--color-academy-success)]">
+                        <p className="text-base font-semibold text-[var(--color-academy-success)]">
                             납부완료로 반영됐습니다{request.itemCount > 1 ? ` · 청구 ${request.itemCount}건 모두` : ""}
                         </p>
                         <p className="mt-1 text-sm text-[var(--color-academy-muted)]">
@@ -305,7 +305,7 @@ export default function PosChargeRequestModal({
                     <div className="mt-4">
                         {request?.status === "HELD" ? (
                             <div className="rounded-lg border border-[var(--color-academy-danger)] px-4 py-3 text-sm">
-                                <p className="font-bold text-[var(--color-academy-danger)]">자동 반영 보류</p>
+                                <p className="font-semibold text-[var(--color-academy-danger)]">자동 반영 보류</p>
                                 <p className="mt-1 text-[var(--color-academy-ink)]">{request.note ?? "확인이 필요합니다."}</p>
                                 <p className="mt-1 text-[var(--color-academy-muted)]">슬랙 결제 확인 알림에서 처리해 주세요.</p>
                                 {/* 슬랙 알림과 맞춰 볼 때만 쓰는 내부 번호 — 작은 회색 글씨 */}

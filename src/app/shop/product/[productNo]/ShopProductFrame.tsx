@@ -100,19 +100,19 @@ export default function ShopProductFrame({ productNo }: { productNo: string }) {
           href="/shop"
           title="클럽샵으로 돌아가기"
           aria-label="클럽샵으로 돌아가기"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-gray-800 transition hover:bg-gray-100 dark:border-gray-700 dark:text-white dark:hover:bg-gray-800"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-gray-800 transition hover:bg-gray-100 dark:border-gray-700 dark:text-white dark:hover:bg-gray-800"
         >
           <FontFreeIcon name="arrow_back" size={21} />
         </Link>
 
         <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-black text-brand-orange-600 dark:text-brand-neon-lime">STIZ CLUB SHOP</p>
+          <p className="text-xs font-medium text-[var(--color-public-muted)] dark:text-brand-neon-lime">STIZ CLUB SHOP</p>
           <div className="flex min-w-0 items-baseline gap-2">
-            <h1 className="truncate text-sm font-black sm:text-base">
+            <h1 className="truncate text-sm font-bold sm:text-base">
               {state.status === "ready" ? state.product.name : state.status === "unavailable" ? "상품을 열 수 없습니다" : "상품 불러오는 중"}
             </h1>
             {state.status === "ready" && (
-              <span className="shrink-0 text-xs font-bold text-gray-500 dark:text-gray-300 sm:text-sm">
+              <span className="shrink-0 text-xs tabular-nums text-gray-500 dark:text-gray-300 sm:text-sm">
                 {formatPrice(state.product.price)}
               </span>
             )}
@@ -126,7 +126,7 @@ export default function ShopProductFrame({ productNo }: { productNo: string }) {
             rel="noreferrer"
             title="외부 브라우저에서 열기"
             aria-label="외부 브라우저에서 열기"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-gray-700 transition hover:bg-gray-100 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-800"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-gray-700 transition hover:bg-gray-100 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-800"
           >
             <FontFreeIcon name="open_in_new" size={20} />
           </a>
@@ -142,14 +142,11 @@ export default function ShopProductFrame({ productNo }: { productNo: string }) {
         {state.status === "unavailable" && (
           <div className="flex h-full items-center justify-center p-6">
             <div className="max-w-sm text-center">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-300">
-                <FontFreeIcon name="error" size={27} />
-              </div>
-              <h2 className="mt-4 text-lg font-black">상품을 열 수 없습니다</h2>
+              <h2 className="text-lg font-bold">상품을 열 수 없습니다</h2>
               <p className="mt-2 break-keep text-sm leading-6 text-gray-600 dark:text-gray-300">{state.message}</p>
               <Link
                 href="/shop"
-                className="mt-5 inline-flex min-h-11 items-center justify-center rounded-lg bg-brand-orange-500 px-5 text-sm font-black text-white dark:bg-brand-neon-lime dark:text-brand-navy-900"
+                className="public-btn-primary mt-5 text-sm"
               >
                 상품 목록으로
               </Link>
@@ -161,14 +158,14 @@ export default function ShopProductFrame({ productNo }: { productNo: string }) {
         {state.status === "ready" && appCannotOpen && (
           <div className="flex h-full items-center justify-center p-6">
             <div className="max-w-sm text-center">
-              <h2 className="text-lg font-black text-[var(--color-academy-ink)]">구매는 휴대폰 브라우저에서 해 주세요</h2>
-              <p className="mt-2 break-keep text-sm leading-6 text-[var(--color-academy-muted)]">
+              <h2 className="text-lg font-bold text-[var(--color-public-ink)]">구매는 휴대폰 브라우저에서 해 주세요</h2>
+              <p className="mt-2 break-keep text-sm leading-6 text-[var(--color-public-muted)]">
                 앱에서는 본사 쇼핑몰 구매 화면을 열 수 없어요. 주소를 복사해 휴대폰 브라우저에 붙여 넣어 주세요.
               </p>
               <button
                 type="button"
                 onClick={() => void copyInsteadOfOpening(state.sourceUrl)}
-                className="academy-button-primary mt-5 min-h-11 px-5"
+                className="public-btn-primary mt-5 text-sm"
               >
                 구매 주소 복사
               </button>
@@ -197,8 +194,8 @@ export default function ShopProductFrame({ productNo }: { productNo: string }) {
 function ProductLoading() {
   return (
     <div className="absolute inset-0 z-10 flex items-center justify-center bg-white dark:bg-gray-950">
-      <div className="flex items-center gap-3 text-sm font-bold text-gray-600 dark:text-gray-300">
-        <FontFreeIcon name="progress_activity" size={24} className="animate-spin text-brand-orange-500 dark:text-brand-neon-lime" />
+      <div className="flex items-center gap-3 text-sm font-medium text-gray-600 dark:text-gray-300">
+        <FontFreeIcon name="progress_activity" size={24} className="animate-spin text-[var(--color-public-muted)] dark:text-brand-neon-lime" />
         상품을 불러오고 있습니다
       </div>
     </div>

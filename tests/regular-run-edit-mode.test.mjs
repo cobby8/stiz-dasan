@@ -105,7 +105,9 @@ test("관리자 묶음 편집(2026-11-10): 머리마다 작은 연필 · 고른 
   assert.equal((view.match(/묶음 수정"/g) ?? []).length, 2);
   assert.match(view, /aria-label="16:30 등원 묶음 수정"/);
   assert.match(view, /aria-label="17:00 등원 묶음 수정"/);
-  assert.match(view, /class="group grid h-11 w-11[^"]*"[\s\S]{0,40}<span class="grid h-9 w-9[^"]*bg-white text-\[var\(--color-academy-ink\)\]/);
+  // 2026-11-13 UI 통일(원장 «아이콘 빼고 글자로»): 연필 아이콘 원 → 글자 «수정» 작은 보조 버튼(PC 36px · 터치 44px). 이름표는 위 단언 그대로.
+  assert.match(view, /<button type="button" aria-label="16:30 등원 묶음 수정"[^>]*class="academy-button-secondary academy-button-sm shrink-0">수정<\/button>/);
+  assert.doesNotMatch(view, />edit<\/span>/);
   assert.doesNotMatch(view, /drag_indicator|type="time"|data-edit-bar|>저장</);
   // g1 편집 = g1 카드 2장만 손잡이·시각 칸, g1 머리에는 연필 대신 [저장]·아래 줄, g2 는 연필 그대로
   const edit = render({ ...base, editing: true, editingGroupKey: "g1" });
@@ -133,7 +135,8 @@ test("관리자 화면 배선: 묶음 연필 → 그 묶음만 편집 모드, �
   assert.doesNotMatch(editor, /sticky top-0/);
   // 적용 범위 옆에 어느 달 명단에 반영되는지 짧게
   assert.match(editor, /formatRosterMonths\(\[serviceMonth, \.\.\.laterMonths\]\)\} 명단에 반영/);
-  assert.match(editor, /<span className="text-\[12px\]">\{scopeHint\}<\/span>/);
+  // 2026-11-13 UI 통일: 임의 크기 text-[12px] → text-xs(같은 12px), 보조 설명은 굵기 없음.
+  assert.match(editor, /<span className="text-xs font-normal">\{scopeHint\}<\/span>/);
   // 보기 묶음에는 편집 버튼이 없다
   assert.match(editor, /\{rowEditing && row\.kind === "REGULAR" && row\.riders\.length > 0 && \(/);
   // 2026-11-09 2차: 편집 모드 학생 = 한 줄 카드 안 칩(이름 → 셔틀 정보 창 · × → 빼기). 보기 모드 학생 줄엔 둘 다 없다.

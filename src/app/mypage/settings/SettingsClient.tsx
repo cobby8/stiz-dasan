@@ -23,7 +23,7 @@ import {
 // 학부모 설정 화면의 «누르면 바뀌는» 줄들 (2026-11-10 원장 결정 k7).
 // 화면 틀(섹션·링크 줄)은 서버(page.tsx)가 그리고, 입력·저장이 있는 줄만 여기 둔다.
 
-// 한 줄 행 공통 모양 — 높이 44px 이상, 왼쪽 아이콘·이름, 오른쪽 값/버튼
+// 한 줄 행 공통 모양 — 높이 44px 이상, 왼쪽 이름, 오른쪽 값/버튼(2026-11-13 UI 통일: 줄 앞 장식 아이콘을 뺐다. 펼침 화살표만 남긴다)
 const ROW = "flex min-h-12 w-full items-center gap-3 px-4 py-1.5 text-left text-sm";
 
 function RowIcon({ name }: { name: string }) {
@@ -37,7 +37,7 @@ function RowIcon({ name }: { name: string }) {
 function Message({ text, tone }: { text: string; tone: "ok" | "error" }) {
     if (!text) return null;
     return (
-        <p role={tone === "error" ? "alert" : "status"} className={`px-4 pb-2 text-xs font-semibold ${tone === "error" ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-success)]"}`}>
+        <p role={tone === "error" ? "alert" : "status"} className={`px-4 pb-2 text-xs font-medium ${tone === "error" ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-success)]"}`}>
             {text}
         </p>
     );
@@ -64,8 +64,7 @@ export function NameRow({ name }: { name: string }) {
     return (
         <li>
             <div className={ROW}>
-                <RowIcon name="person" />
-                <span className="w-16 shrink-0 font-bold text-[var(--color-academy-ink)]">이름</span>
+                <span className="w-16 shrink-0 font-medium text-[var(--color-academy-ink)]">이름</span>
                 {editing ? (
                     <>
                         <input
@@ -118,8 +117,7 @@ export function PaymentMethodRow({ current }: { current: PreferredPaymentMethod 
     return (
         <li>
             <div className={ROW}>
-                <RowIcon name="payments" />
-                <label htmlFor="preferred-payment-method" className="flex-1 font-bold text-[var(--color-academy-ink)]">자주 쓰는 결제 방법</label>
+                <label htmlFor="preferred-payment-method" className="flex-1 font-medium text-[var(--color-academy-ink)]">자주 쓰는 결제 방법</label>
                 <select
                     id="preferred-payment-method"
                     value={value}
@@ -162,8 +160,7 @@ export function PasswordRow() {
     return (
         <li>
             <button type="button" aria-expanded={open} onClick={() => { setOpen((v) => !v); setMsg({ text: "", tone: "ok" }); }} className={`${ROW} hover:bg-[var(--color-academy-soft)]`}>
-                <RowIcon name="lock" />
-                <span className="flex-1 font-bold text-[var(--color-academy-ink)]">비밀번호 바꾸기</span>
+                <span className="flex-1 font-medium text-[var(--color-academy-ink)]">비밀번호 바꾸기</span>
                 <RowIcon name={open ? "expand_less" : "expand_more"} />
             </button>
             {open && (
@@ -214,13 +211,12 @@ export function NotificationRows({ initialPrefs, prefsAvailable }: { initialPref
         <>
             <li>
                 <div className={ROW}>
-                    <RowIcon name={(appLacksPush ? app.view === "granted" : pushEnabled) ? "notifications_active" : "notifications_off"} />
-                    <span className="flex-1 font-bold text-[var(--color-academy-ink)]">휴대폰 알림</span>
+                    <span className="flex-1 font-medium text-[var(--color-academy-ink)]">휴대폰 알림</span>
                     {appLacksPush ? (
                         // 앱 안: 켜짐이면 글자, 아직 안 물어봤으면 켜기 스위치(누르면 휴대폰이 권한을 묻는다).
                         // 끄기는 휴대폰 설정에서만 할 수 있어 켜진 뒤에는 스위치를 두지 않는다.
                         app.view === "granted" ? (
-                            <span className="shrink-0 text-xs font-bold text-[var(--color-academy-success)]">켜짐</span>
+                            <span className="shrink-0 text-xs font-medium text-[var(--color-academy-success)]">켜짐</span>
                         ) : app.view === "default" ? (
                             <Switch on={false} busy={app.busy} label="휴대폰 알림" onToggle={() => void app.request()} />
                         ) : null
@@ -266,7 +262,7 @@ function Switch({ on, busy, label, onToggle }: { on: boolean; busy: boolean; lab
             onClick={onToggle}
             className="inline-flex min-h-11 shrink-0 items-center px-1 disabled:opacity-60"
         >
-            <span className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${on ? "bg-[var(--color-academy-primary)]" : "bg-[var(--color-academy-line-input)]"}`}>
+            <span className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${on ? "bg-[var(--color-academy-secondary-strong)]" : "bg-[var(--color-academy-line-input)]"}`}>
                 <span className={`inline-block size-5 rounded-full bg-[var(--color-academy-surface)] shadow transition-transform ${on ? "translate-x-[22px]" : "translate-x-0.5"}`} />
             </span>
         </button>
@@ -288,8 +284,7 @@ export function FontScaleRow({ current }: { current: FontScaleKey }) {
     return (
         <li>
             <div className={`${ROW} flex-wrap`}>
-                <RowIcon name="format_size" />
-                <span className="flex-1 font-bold text-[var(--color-academy-ink)]">글자 크기</span>
+                <span className="flex-1 font-medium text-[var(--color-academy-ink)]">글자 크기</span>
                 <div role="group" aria-label="글자 크기" className="flex shrink-0 gap-1">
                     {FONT_SCALES.map((s) => (
                         <button
@@ -343,14 +338,13 @@ export function FeedbackRow({ childList }: { childList: ChildLite[] }) {
     return (
         <li>
             <button type="button" aria-expanded={open} onClick={() => { setOpen((v) => !v); setMsg({ text: "", tone: "ok" }); }} className={`${ROW} hover:bg-[var(--color-academy-soft)]`}>
-                <RowIcon name="support_agent" />
-                <span className="flex-1 font-bold text-[var(--color-academy-ink)]">문제 신고·문의</span>
+                <span className="flex-1 font-medium text-[var(--color-academy-ink)]">문제 신고·문의</span>
                 <RowIcon name={open ? "expand_less" : "expand_more"} />
             </button>
             {open && (
                 childList.length === 0 ? (
                     <p className="px-4 pb-3 text-sm text-[var(--color-academy-muted)]">
-                        자녀를 연결한 뒤 보낼 수 있어요. <Link href="/mypage/children" className="font-bold underline">자녀 연결</Link>
+                        자녀를 연결한 뒤 보낼 수 있어요. <Link href="/mypage/children" className="font-semibold underline">자녀 연결</Link>
                     </p>
                 ) : (
                     <div className="grid gap-2 px-4 pb-3">

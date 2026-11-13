@@ -66,7 +66,7 @@ function won(n: number) {
 }
 
 const inputClass =
-    "mt-1 min-h-11 w-full rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-sm text-[var(--color-academy-ink)]";
+    "academy-input mt-1"; // 입력칸은 테마 공용 모양(흰 면 + 입력선 + 44px)
 
 /** POS 그룹 버튼 이름 — «홍길동 2건 5,000원 POS 결제», 10건 넘어 나뉘면 «홍길동 (1/2) …» */
 function groupButtonText(g: PosGroup<RecordPaymentTarget>) {
@@ -95,20 +95,20 @@ function TargetList({
                 return (
                     <li key={t.id} className="flex min-h-9 items-center gap-2 px-3 py-1.5 text-sm">
                         <span className={`min-w-0 flex-1 truncate ${reason ? "text-[var(--color-academy-muted)] line-through" : "text-[var(--color-academy-ink)]"}`}>
-                            <span className="font-bold">{t.studentName || "이름 없음"}</span> · {planTargetLabel(t)}
+                            <span className="font-medium">{t.studentName || "이름 없음"}</span> · {planTargetLabel(t)}
                         </span>
                         {/* 사유 칩은 줄 긋기 밖에 두어 읽히게 한다 */}
                         {reason && (
-                            <span className="shrink-0 rounded bg-[var(--color-academy-soft)] px-1.5 py-0.5 text-xs font-bold text-[var(--color-academy-muted)]">
+                            <span className="shrink-0 rounded bg-[var(--color-academy-soft)] px-1.5 py-0.5 text-xs text-[var(--color-academy-muted)]">
                                 {EXCLUDE_REASON_LABEL[reason]}
                             </span>
                         )}
                         {!reason && note && (
-                            <span className="shrink-0 rounded bg-[var(--color-academy-warning-soft)] px-1.5 py-0.5 text-xs font-bold text-[var(--color-academy-warning)]">
+                            <span className="shrink-0 rounded bg-[var(--color-academy-warning-soft)] px-1.5 py-0.5 text-xs text-[var(--color-academy-warning)]">
                                 {note}
                             </span>
                         )}
-                        <span className={`shrink-0 tabular-nums ${reason ? "text-[var(--color-academy-muted)] line-through" : "font-bold text-[var(--color-academy-ink)]"}`}>
+                        <span className={`shrink-0 tabular-nums ${reason ? "text-[var(--color-academy-muted)] line-through" : "font-semibold text-[var(--color-academy-ink)]"}`}>
                             {won(t.amount)}
                         </span>
                     </li>
@@ -121,8 +121,7 @@ function TargetList({
 /** 빠지는 건이 있을 때 경고 상자 — 어느 건이 왜 빠지고 몇 건·얼마가 처리되는지 */
 function WarnBox({ children }: { children: React.ReactNode }) {
     return (
-        <p className="mt-2 flex gap-1.5 rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-warning)]">
-            <span className="material-symbols-outlined text-lg leading-5" aria-hidden="true">warning</span>
+        <p className="mt-2 flex gap-1.5 rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm font-medium text-[var(--color-academy-warning)]">
             <span>{children}</span>
         </p>
     );
@@ -194,9 +193,8 @@ export default function RecordPaymentModal({ targets, onClose, onChoosePos, onRe
                     key={g.key}
                     type="button"
                     onClick={() => onChoosePos(g.targets)}
-                    className="academy-button-secondary flex min-h-11 items-center justify-center gap-1.5"
+                    className="academy-button-secondary"
                 >
-                    <span className="material-symbols-outlined" aria-hidden="true">contactless</span>
                     {groupButtonText(g)}
                 </button>
             ))}
@@ -206,7 +204,7 @@ export default function RecordPaymentModal({ targets, onClose, onChoosePos, onRe
     // 현장 결제가 하나도 안 될 때 — 이때만 버튼 대신 사유와 계좌이체 안내
     const posNone = (
         <p className="mt-2 rounded-lg bg-[var(--color-academy-soft)] px-3 py-2 text-sm text-[var(--color-academy-ink)]">
-            <span className="font-bold">현장 결제할 수 있는 청구가 없어요: {posNoneReason || "대상 없음"}.</span>
+            <span className="font-semibold">현장 결제할 수 있는 청구가 없어요: {posNoneReason || "대상 없음"}.</span>
             {transfer.recordable.length > 0 && " 입금을 받았다면 계좌이체로 기록해 주세요."}
         </p>
     );
@@ -216,10 +214,10 @@ export default function RecordPaymentModal({ targets, onClose, onChoosePos, onRe
             <div className="w-full p-5">
                 <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                        <p className="text-xs font-bold text-[var(--color-academy-ink)]">
+                        <p className="text-xs font-medium text-[var(--color-academy-muted)]">
                             {step === "pos" ? "현장 결제 확인" : step === "transfer" ? "계좌이체 기록" : "납부 처리"}
                         </p>
-                        <h2 id="record-payment-title" className="mt-0.5 truncate text-lg font-extrabold text-[var(--color-academy-ink)]">
+                        <h2 id="record-payment-title" className="mt-0.5 truncate text-lg font-bold text-[var(--color-academy-ink)]">
                             {heading}
                         </h2>
                     </div>
@@ -235,33 +233,31 @@ export default function RecordPaymentModal({ targets, onClose, onChoosePos, onRe
                             <WarnBox>{excludedNotice(transfer.excluded, transfer.recordable.length, transferTotal)}</WarnBox>
                         )}
                         {transfer.excluded.length === 0 && transfer.recordable.length > 1 && (
-                            <p className="mt-2 text-sm font-bold text-[var(--color-academy-ink)]">
+                            <p className="mt-2 text-sm font-semibold tabular-nums text-[var(--color-academy-ink)]">
                                 {transfer.recordable.length}건 합계 {won(transferTotal)}
                             </p>
                         )}
 
-                        <p className="mt-4 text-sm font-bold text-[var(--color-academy-ink)]">결제 방법을 골라 주세요</p>
+                        <p className="mt-4 text-sm font-semibold text-[var(--color-academy-ink)]">결제 방법을 골라 주세요</p>
                         <div className={`mt-2 grid gap-2 ${transfer.recordable.length > 0 && pos.groups.length === 1 ? "grid-cols-2" : "grid-cols-1"}`}>
                             {transfer.recordable.length > 0 && (
                                 <button
                                     type="button"
                                     onClick={() => setStep("transfer")}
-                                    className="academy-button-secondary flex min-h-14 flex-col items-center justify-center gap-0.5"
+                                    className="academy-button-secondary flex-col"
                                 >
-                                    <span className="material-symbols-outlined" aria-hidden="true">account_balance</span>
                                     계좌이체
-                                    <span className="text-xs font-normal">{transfer.recordable.length}건 {won(transferTotal)}</span>
+                                    <span className="text-xs font-normal tabular-nums">{transfer.recordable.length}건 {won(transferTotal)}</span>
                                 </button>
                             )}
                             {pos.groups.length === 1 && (
                                 <button
                                     type="button"
                                     onClick={() => onChoosePos(pos.groups[0].targets)}
-                                    className="academy-button-secondary flex min-h-14 flex-col items-center justify-center gap-0.5"
+                                    className="academy-button-secondary flex-col"
                                 >
-                                    <span className="material-symbols-outlined" aria-hidden="true">contactless</span>
                                     현장 결제(POS)
-                                    <span className="text-xs font-normal">{pos.groups[0].targets.length}건 {won(pos.groups[0].total)}</span>
+                                    <span className="text-xs font-normal tabular-nums">{pos.groups[0].targets.length}건 {won(pos.groups[0].total)}</span>
                                 </button>
                             )}
                         </div>
@@ -292,15 +288,14 @@ export default function RecordPaymentModal({ targets, onClose, onChoosePos, onRe
                         )}
                         {pos.groups.length === 1 && (
                             <>
-                                <p className="mt-3 text-sm font-bold text-[var(--color-academy-ink)]">
+                                <p className="mt-3 text-sm font-semibold tabular-nums text-[var(--color-academy-ink)]">
                                     {pos.groups[0].studentName} · {pos.groups[0].targets.length}건 합계 {won(pos.groups[0].total)}
                                 </p>
                                 <button
                                     type="button"
                                     onClick={() => onChoosePos(pos.groups[0].targets)}
-                                    className="academy-button-primary mt-2 flex min-h-11 w-full items-center justify-center gap-1.5"
+                                    className="academy-button-primary mt-2 w-full"
                                 >
-                                    <span className="material-symbols-outlined" aria-hidden="true">contactless</span>
                                     POS로 결제 요청
                                 </button>
                             </>
@@ -331,14 +326,14 @@ export default function RecordPaymentModal({ targets, onClose, onChoosePos, onRe
                             <WarnBox>{excludedNotice(transfer.excluded, transfer.recordable.length, transferTotal)}</WarnBox>
                         )}
                         <p className="text-sm text-[var(--color-academy-ink)]">
-                            <span className="font-bold">{transfer.recordable.length}건 합계 {won(transferTotal)}</span>
+                            <span className="font-semibold tabular-nums">{transfer.recordable.length}건 합계 {won(transferTotal)}</span>
                             {/* 여러 건이면 입금 정보가 모든 건에 같이 들어간다는 것을 입력 직전에 알린다 */}
                             {transfer.recordable.length > 1 && (
                                 <span className="text-[var(--color-academy-muted)]"> · 선택한 모든 건에 같은 입금 정보로 기록돼요.</span>
                             )}
                         </p>
                         <div className="grid grid-cols-2 gap-2">
-                            <label className="block text-sm font-bold text-[var(--color-academy-ink)]">
+                            <label className="block text-sm font-medium text-[var(--color-academy-ink)]">
                                 입금일 *
                                 <input
                                     type="date"
@@ -349,7 +344,7 @@ export default function RecordPaymentModal({ targets, onClose, onChoosePos, onRe
                                     className={inputClass}
                                 />
                             </label>
-                            <label className="block text-sm font-bold text-[var(--color-academy-ink)]">
+                            <label className="block text-sm font-medium text-[var(--color-academy-ink)]">
                                 입금자명 *
                                 <input
                                     type="text"
@@ -363,7 +358,7 @@ export default function RecordPaymentModal({ targets, onClose, onChoosePos, onRe
                                 />
                             </label>
                         </div>
-                        <label className="block text-sm font-bold text-[var(--color-academy-ink)]">
+                        <label className="block text-sm font-medium text-[var(--color-academy-ink)]">
                             메모 <span className="font-normal text-[var(--color-academy-muted)]">(선택)</span>
                             <textarea
                                 value={memo}
@@ -376,7 +371,7 @@ export default function RecordPaymentModal({ targets, onClose, onChoosePos, onRe
                         </label>
 
                         {error && (
-                            <p role="alert" className="rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-danger)]">
+                            <p role="alert" className="rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-medium text-[var(--color-academy-danger)]">
                                 {error}
                             </p>
                         )}

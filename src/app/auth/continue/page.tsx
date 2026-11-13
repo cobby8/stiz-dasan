@@ -73,10 +73,7 @@ export default async function AuthContinuePage({ searchParams }: ContinuePagePro
     return (
       <main className="grid min-h-screen place-items-center bg-surface-warm px-4 dark:bg-gray-950">
         <section className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 text-center shadow-sm dark:border-gray-700 dark:bg-gray-900">
-          <span className="material-symbols-outlined text-4xl text-brand-orange-500" aria-hidden="true">
-            sync_problem
-          </span>
-          <h1 className="mt-3 text-xl font-black text-brand-navy-900 dark:text-white">
+          <h1 className="text-xl font-bold text-brand-navy-900 dark:text-white">
             계정 권한을 확인하지 못했습니다
           </h1>
           <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
@@ -85,14 +82,14 @@ export default async function AuthContinuePage({ searchParams }: ContinuePagePro
           <div className="mt-5 grid gap-2">
             <Link
               href="/auth/continue"
-              className="flex min-h-11 items-center justify-center rounded-xl bg-brand-orange-500 px-4 font-bold text-white"
+              className="public-btn-primary w-full"
             >
               다시 시도
             </Link>
             <form action={logout}>
               <button
                 type="submit"
-                className="min-h-11 w-full rounded-xl border border-gray-300 px-4 font-bold text-gray-700 dark:border-gray-700 dark:text-gray-200"
+                className="public-btn-secondary w-full"
               >
                 로그아웃
               </button>

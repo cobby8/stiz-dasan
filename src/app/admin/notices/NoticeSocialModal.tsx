@@ -9,26 +9,6 @@ import AdminModal from "@/components/admin/AdminModal";
 type SocialPreview = Awaited<ReturnType<typeof prepareNoticeSocialCampaign>>;
 type SocialPublishResult = Awaited<ReturnType<typeof publishNoticeSocialCampaign>>;
 
-function SymbolIcon({
-    name,
-    size = 18,
-    className = "",
-}: {
-    name: string;
-    size?: number;
-    className?: string;
-}) {
-    return (
-        <span
-            className={`material-symbols-outlined leading-none ${className}`}
-            style={{ fontSize: `${size}px` }}
-            aria-hidden="true"
-        >
-            {name}
-        </span>
-    );
-}
-
 export default function NoticeSocialModal({
     notice,
     onClose,
@@ -117,13 +97,13 @@ export default function NoticeSocialModal({
                         <h2 id="notice-social-modal-title" className="text-lg font-bold text-[var(--color-academy-ink)]">소셜 발행</h2>
                         <p className="text-sm text-[var(--color-academy-muted)] mt-1">{notice.title}</p>
                     </div>
-                    <button onClick={onClose} className="p-1 hover:bg-[var(--color-academy-line)] rounded-lg">
-                        <SymbolIcon name="close" size={20} />
+                    <button type="button" onClick={onClose} aria-label="닫기" className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
+                        <span className="material-symbols-outlined" aria-hidden="true">close</span>
                     </button>
                 </div>
 
                 {socialLoading && !socialPreview ? (
-                    <div className="p-8 text-center text-sm font-bold text-[var(--color-academy-muted)]">소셜 발행 내용을 준비 중입니다.</div>
+                    <div className="p-8 text-center text-sm text-[var(--color-academy-muted)]">소셜 발행 내용을 준비 중입니다.</div>
                 ) : socialPreview ? (
                     <div className="p-6 space-y-5">
                         {socialPreview.mediaItems.length > 0 ? (
@@ -134,83 +114,81 @@ export default function NoticeSocialModal({
                                 ))}
                             </div>
                         ) : (
-                            <div className="rounded-xl border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] px-4 py-3 text-sm font-bold text-[var(--color-academy-warning)]">
+                            <div className="rounded-xl border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] px-4 py-3 text-sm font-medium text-[var(--color-academy-warning)]">
                                 인스타 피드/스토리에 올릴 이미지가 없습니다. 공지 본문이나 첨부파일에 이미지를 추가해주세요.
                             </div>
                         )}
 
                         <div className="grid gap-3 sm:grid-cols-2">
-                            <label className="flex items-center gap-2 rounded-xl border border-[var(--color-academy-line)] px-4 py-3 text-sm font-bold text-[var(--color-academy-muted)]">
+                            <label className="flex items-center gap-2 rounded-xl border border-[var(--color-academy-line)] px-4 py-3 text-sm font-medium text-[var(--color-academy-muted)]">
                                 <input type="checkbox" checked={socialPreview.mediaItems.length > 0 && publishFeed} onChange={(e) => setPublishFeed(e.target.checked)} disabled={socialPreview.mediaItems.length === 0} />
                                 인스타 피드
                             </label>
-                            <label className="flex items-center gap-2 rounded-xl border border-[var(--color-academy-line)] px-4 py-3 text-sm font-bold text-[var(--color-academy-muted)]">
+                            <label className="flex items-center gap-2 rounded-xl border border-[var(--color-academy-line)] px-4 py-3 text-sm font-medium text-[var(--color-academy-muted)]">
                                 <input type="checkbox" checked={socialPreview.mediaItems.length > 0 && publishStory} onChange={(e) => setPublishStory(e.target.checked)} disabled={socialPreview.mediaItems.length === 0} />
                                 인스타 스토리
                             </label>
                         </div>
 
                         <div>
-                            <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">인스타 피드 문구</label>
+                            <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">인스타 피드 문구</label>
                             <textarea
                                 value={socialPreview.feedCaption}
                                 onChange={(e) => updateSocialPreview({ feedCaption: e.target.value })}
                                 rows={7}
-                                className="w-full resize-none rounded-xl border border-[var(--color-academy-line)] px-4 py-3 text-sm leading-6"
+                                className="academy-input resize-none leading-6"
                             />
                         </div>
 
                         <div>
-                            <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">스토리 문구</label>
+                            <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">스토리 문구</label>
                             <input
                                 value={socialPreview.storyText}
                                 onChange={(e) => updateSocialPreview({ storyText: e.target.value })}
-                                className="w-full rounded-xl border border-[var(--color-academy-line)] px-4 py-3 text-sm"
+                                className="academy-input"
                             />
                         </div>
 
                         <div className="rounded-2xl border border-[var(--color-academy-line)] p-4 space-y-3">
-                            <h3 className="font-bold text-[var(--color-academy-ink)]">페이스북 광고 소재</h3>
+                            <h3 className="academy-section-title">페이스북 광고 소재</h3>
                             <textarea
                                 value={socialPreview.adPrimaryText}
                                 onChange={(e) => updateSocialPreview({ adPrimaryText: e.target.value })}
                                 rows={5}
-                                className="w-full resize-none rounded-xl border border-[var(--color-academy-line)] px-4 py-3 text-sm leading-6"
+                                className="academy-input resize-none leading-6"
                             />
                             <input
                                 value={socialPreview.adHeadline}
                                 onChange={(e) => updateSocialPreview({ adHeadline: e.target.value })}
-                                className="w-full rounded-xl border border-[var(--color-academy-line)] px-4 py-3 text-sm"
+                                className="academy-input"
                                 placeholder="광고 제목"
                             />
                             <input
                                 value={socialPreview.adDescription}
                                 onChange={(e) => updateSocialPreview({ adDescription: e.target.value })}
-                                className="w-full rounded-xl border border-[var(--color-academy-line)] px-4 py-3 text-sm"
+                                className="academy-input"
                                 placeholder="광고 설명"
                             />
                             <input
                                 value={socialPreview.landingUrl}
                                 onChange={(e) => updateSocialPreview({ landingUrl: e.target.value })}
-                                className="w-full rounded-xl border border-[var(--color-academy-line)] px-4 py-3 text-sm"
+                                className="academy-input"
                                 placeholder="랜딩 링크"
                             />
                             <div className="grid gap-2 sm:grid-cols-2">
                                 <button
                                     type="button"
                                     onClick={copyAdDraft}
-                                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[var(--color-academy-line)] px-4 text-sm font-bold text-[var(--color-academy-muted)]"
+                                    className="academy-button-secondary"
                                 >
-                                    <SymbolIcon name="content_copy" size={16} />
                                     광고 문구 복사
                                 </button>
                                 <a
                                     href="https://adsmanager.facebook.com/adsmanager/manage/campaigns"
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[var(--color-academy-primary)] px-4 text-sm font-bold text-white"
+                                    className="academy-button-secondary"
                                 >
-                                    <SymbolIcon name="open_in_new" size={16} />
                                     광고관리자 열기
                                 </a>
                             </div>
@@ -218,7 +196,7 @@ export default function NoticeSocialModal({
 
                         {socialResult && (
                             <div className="rounded-xl border border-[var(--color-academy-line)] p-4 text-sm">
-                                <p className="font-bold text-[var(--color-academy-ink)] mb-2">발행 결과</p>
+                                <p className="font-semibold text-[var(--color-academy-ink)] mb-2">발행 결과</p>
                                 <div className="space-y-1">
                                     {socialResult.results.length === 0 ? (
                                         <p className="text-[var(--color-academy-muted)]">인스타 발행 없이 광고 소재만 준비했습니다.</p>
@@ -232,13 +210,12 @@ export default function NoticeSocialModal({
                         )}
 
                         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                            <button onClick={onClose} className="px-4 py-2 text-sm text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)] rounded-xl transition">닫기</button>
+                            <button type="button" onClick={onClose} className="academy-button-secondary">닫기</button>
                             <button
                                 onClick={handleSocialPublish}
                                 disabled={socialLoading}
-                                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[var(--color-academy-primary)] px-5 text-sm font-bold text-white disabled:opacity-50"
+                                className="academy-button-primary"
                             >
-                                <SymbolIcon name="campaign" size={16} />
                                 {socialLoading ? "발행 중..." : "선택 항목 발행"}
                             </button>
                         </div>

@@ -310,10 +310,10 @@ const NOTIFICATION_ERROR_LABEL: Record<string, string> = {
   BLOCKED_NUMBER: "수신 거부 번호입니다.",
 };
 
-const TABS: Array<{ key: Tab; label: string; icon: string }> = [
-  { key: "overview", label: "운영 현황", icon: "dashboard" },
-  { key: "seasons", label: "시즌·반", icon: "calendar_month" },
-  { key: "applications", label: "신청 관리", icon: "assignment_ind" },
+const TABS: Array<{ key: Tab; label: string }> = [
+  { key: "overview", label: "운영 현황" },
+  { key: "seasons", label: "시즌·반" },
+  { key: "applications", label: "신청 관리" },
 ];
 
 const BULK_ITEM_STATUSES: ItemStatus[] = ["APPROVED", "WAITLISTED", "REJECTED", "CANCELLED"];
@@ -327,10 +327,6 @@ const WEEKDAY_OPTIONS = [
   { value: "SAT", label: "토" },
   { value: "SUN", label: "일" },
 ] as const;
-
-function Icon({ name, className = "" }: { name: string; className?: string }) {
-  return <span className={`material-symbols-outlined ${className}`} aria-hidden="true">{name}</span>;
-}
 
 function formatDate(value?: string | null) {
   if (!value) return "미정";
@@ -371,7 +367,8 @@ function badge(status?: string | null) {
       : status === "REJECTED" || status === "CANCELLED"
         ? "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]"
         : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]";
-  return `inline-flex min-h-7 items-center rounded-full px-2.5 text-xs font-bold ${tone}`;
+  // 상태 표시는 모서리 4px·보통 굵기(누르는 칩·알약과 다른 모양 — 2026-11-13 UI 통일)
+  return `inline-flex min-h-6 items-center rounded px-2 text-xs ${tone}`;
 }
 
 function stringList(value: unknown) {
@@ -688,11 +685,12 @@ function ColHeader({
 }) {
   return (
     <div className="relative inline-flex items-center gap-1">
-      <span className="font-bold">{title}</span>
-      {sortDir && <span className="text-xs text-[var(--brand-accent)]">{sortDir === "asc" ? "▲" : "▼"}</span>}
-      <button type="button" aria-label={`${title} 필터`} onClick={onToggleOpen}
-        className={`grid h-5 w-5 place-items-center rounded ${active ? "bg-[var(--brand-accent-soft)] text-[var(--brand-accent)]" : "text-[var(--color-academy-faint)] hover:bg-[var(--color-academy-line)]"}`}>
-        <span className="material-symbols-outlined text-[16px]">filter_list</span>
+      <span className="font-medium">{title}</span>
+      {sortDir && <span className="text-xs text-[var(--color-academy-secondary-strong)]">{sortDir === "asc" ? "▲" : "▼"}</span>}
+      {/* 표 머리 칸이 좁아 글자 라벨을 둘 자리가 없다 — 펼침 화살표(▾)만 두고 aria-label 로 뜻을 알린다. 걸린 필터는 보조 색. */}
+      <button type="button" aria-label={`${title} 필터`} aria-expanded={open} onClick={onToggleOpen}
+        className={`grid h-6 w-6 place-items-center rounded text-xs ${active ? "bg-[var(--color-academy-secondary-soft)] text-[var(--color-academy-secondary-ink)]" : "text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)]"}`}>
+        ▾
       </button>
       {open && (
         <>
@@ -700,20 +698,20 @@ function ColHeader({
           <div className={`absolute top-full z-50 mt-1 w-52 whitespace-normal rounded-xl border border-[var(--color-academy-line)] bg-white p-2 text-[var(--color-academy-muted)] shadow-xl ${alignRight ? "right-0" : "left-0"}`} onClick={(e) => e.stopPropagation()}>
             {onSort && (
               <div className="mb-1 flex gap-1">
-                <button type="button" onClick={() => onSort("asc")} className={`flex-1 rounded-lg px-2 py-1.5 text-[12px] font-bold ${sortDir === "asc" ? "bg-[var(--brand-accent-soft)] text-[var(--brand-accent)]" : "hover:bg-[var(--color-academy-line)]"}`}>▲ 오름차순</button>
-                <button type="button" onClick={() => onSort("desc")} className={`flex-1 rounded-lg px-2 py-1.5 text-[12px] font-bold ${sortDir === "desc" ? "bg-[var(--brand-accent-soft)] text-[var(--brand-accent)]" : "hover:bg-[var(--color-academy-line)]"}`}>▼ 내림차순</button>
+                <button type="button" onClick={() => onSort("asc")} aria-pressed={sortDir === "asc"} className={`min-h-9 flex-1 rounded-md px-2 py-1.5 text-xs font-medium ${sortDir === "asc" ? "bg-[var(--color-academy-secondary-soft)] text-[var(--color-academy-secondary-ink)] ring-1 ring-inset ring-[var(--color-academy-secondary-strong)]" : "hover:bg-[var(--color-academy-line)]"}`}>▲ 오름차순</button>
+                <button type="button" onClick={() => onSort("desc")} aria-pressed={sortDir === "desc"} className={`min-h-9 flex-1 rounded-md px-2 py-1.5 text-xs font-medium ${sortDir === "desc" ? "bg-[var(--color-academy-secondary-soft)] text-[var(--color-academy-secondary-ink)] ring-1 ring-inset ring-[var(--color-academy-secondary-strong)]" : "hover:bg-[var(--color-academy-line)]"}`}>▼ 내림차순</button>
               </div>
             )}
             {options && excluded && (
               <div>
-                <div className="mb-1 flex items-center justify-between text-xs font-bold text-[var(--color-academy-faint)]">
-                  <button type="button" onClick={onAll} className="hover:text-[var(--brand-accent)]">모두 선택</button>
-                  <button type="button" onClick={onNone} className="hover:text-[var(--brand-accent)]">모두 해제</button>
+                <div className="mb-1 flex items-center justify-between text-xs text-[var(--color-academy-muted)]">
+                  <button type="button" onClick={onAll} className="min-h-8 underline-offset-2 hover:text-[var(--color-academy-ink)] hover:underline">모두 선택</button>
+                  <button type="button" onClick={onNone} className="min-h-8 underline-offset-2 hover:text-[var(--color-academy-ink)] hover:underline">모두 해제</button>
                 </div>
                 <div className="max-h-56 space-y-0.5 overflow-auto">
-                  {options.length === 0 && <p className="px-1 py-2 text-[12px] text-[var(--color-academy-faint)]">값 없음</p>}
+                  {options.length === 0 && <p className="px-1 py-2 text-xs text-[var(--color-academy-faint)]">값 없음</p>}
                   {options.map((o) => (
-                    <label key={o} className="flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-[12.5px] font-semibold hover:bg-[var(--color-academy-soft)]">
+                    <label key={o} className="flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-xs hover:bg-[var(--color-academy-soft)]">
                       <input type="checkbox" checked={!excluded.has(o)} onChange={() => onToggleValue?.(o)} className="h-4 w-4 rounded border-[var(--color-academy-line-input)] accent-[var(--brand-accent)]" />
                       {o}
                     </label>
@@ -1391,20 +1389,20 @@ export default function SeasonalAdminClient({ initialData }: SeasonalAdminClient
     <main className="mx-auto min-w-0 max-w-7xl space-y-6 overflow-x-clip pb-20">
       {/* 공통 헤더로 교체. "새 시즌 만들기" 버튼은 action 슬롯으로 옮겼고 onClick 동작은 그대로다. */}
       <SeasonalHeader
-        action={<button type="button" onClick={() => { setEditingSeason(null); setModal("season"); }} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[var(--brand-accent)] px-4 font-black text-[var(--brand-accent-contrast)]"><Icon name="add" />새 시즌 만들기</button>}
+        action={<button type="button" onClick={() => { setEditingSeason(null); setModal("season"); }} className="academy-button-primary">새 시즌 만들기</button>}
       />
 
       <nav className="relative flex min-w-0 items-center justify-between gap-2" aria-label="방학특강 관리 메뉴">
-        <select aria-label="방학특강 업무" value={tab} onChange={(event) => setTab(event.target.value as Tab)} className="h-11 min-h-11 max-w-full shrink-0 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] px-3 text-[17px] font-bold text-[var(--color-academy-primary)]">{TABS.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select>
-        <details className="relative shrink-0"><summary className="flex min-h-11 cursor-pointer list-none items-center gap-1 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-sm font-bold text-[var(--color-academy-primary)]">관련 업무<Icon name="expand_more" className="text-lg" /></summary><div className="absolute right-0 top-full z-20 mt-1 w-44 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-1 shadow-lg">
-        <a href="/admin/seasonal/attendance" className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"><Icon name="fact_check" className="text-xl" />출석 관리</a>
-        <a href="/admin/seasonal/attendance?view=makeup" className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"><Icon name="cached" className="text-xl" />보강 관리</a>
-        <a href="/admin/shuttle" className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"><Icon name="directions_bus" className="text-xl" />셔틀 관리</a>
+        <select aria-label="방학특강 업무" value={tab} onChange={(event) => setTab(event.target.value as Tab)} className="h-11 min-h-11 max-w-full shrink-0 rounded-md border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 text-base font-medium text-[var(--color-academy-ink)]">{TABS.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select>
+        <details className="relative shrink-0"><summary className="academy-button-secondary cursor-pointer list-none">관련 업무 <span aria-hidden="true">▾</span></summary><div className="absolute right-0 top-full z-20 mt-1 w-44 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-1 shadow-lg">
+        <a href="/admin/seasonal/attendance" className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]">출석 관리</a>
+        <a href="/admin/seasonal/attendance?view=makeup" className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]">보강 관리</a>
+        <a href="/admin/shuttle" className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]">셔틀 관리</a>
         </div></details>
       </nav>
 
-      {notice && <div role="status" className="flex items-center gap-2 rounded-xl border border-[var(--color-academy-success)] bg-[var(--color-academy-success-soft)] p-4 text-sm font-bold text-[var(--color-academy-success)]"><Icon name="check_circle" />{notice}</div>}
-      {error && <div role="alert" className="flex items-start justify-between gap-3 rounded-xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-4 text-sm font-bold text-[var(--color-academy-danger)]"><span>{error}</span><button type="button" onClick={() => void load()} className="underline">다시 시도</button></div>}
+      {notice && <div role="status" className="flex items-center gap-2 rounded-xl border border-[var(--color-academy-success)] bg-[var(--color-academy-success-soft)] p-4 text-sm text-[var(--color-academy-success)]">{notice}</div>}
+      {error && <div role="alert" className="flex items-start justify-between gap-3 rounded-xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-4 text-sm text-[var(--color-academy-danger)]"><span className="min-w-0">{error}</span><button type="button" onClick={() => void load()} className="academy-button-secondary academy-button-sm shrink-0">다시 시도</button></div>}
       {loading ? <Loading /> : tab === "overview" ? <Overview stats={calculatedStats} seasons={data.seasons} applications={data.applications} onNavigate={setTab} /> : tab === "seasons" ? (
         <SeasonsView seasons={data.seasons} selected={selectedSeason} coaches={coachOptions} assigningInstructorClassId={assigningInstructorClassId} onSelect={setSelectedSeasonId} onAddClass={() => { setEditingClass(null); setModal("class"); }} onEditSeason={(season) => { setEditingSeason(season); setModal("season"); }} onEditClass={(klass) => { setEditingClass(klass); setModal("class"); }} onOpenRoster={(klass, weekday) => openRosterForClass(klass, { weekday })} onOpenTodayRoster={(klass) => openRosterForClass(klass, { date: todayDateInputValue() })} onAssignInstructor={assignClassInstructor} onStatus={async (id, status) => { try { await mutate("PATCH", { resource: "season", id, data: { status } }, "시즌 상태를 변경했습니다."); } catch (caught) { setError(adminErrorText(caught, "시즌 상태를 변경하지 못했습니다.")); } }} />
       ) : <ApplicationsView applications={filteredApplications} allApplications={data.applications} seasons={data.seasons} search={search} status={statusFilter} pagination={applicationsPagination} selectedItemIdSet={selectedItemIdSet} selectedItemCount={selectedItemIds.length} selectedApplicationCount={selectedApplicationCount} allVisibleSelected={allVisibleSelected} bulkProcessingStatus={bulkProcessingStatus} bulkConverting={bulkConverting} mode={applicationsMode} appTab={appTab} onAppTab={setAppTab} roster={roster} rosterFilters={rosterFilters} rosterLoading={rosterLoading} rosterError={rosterError} onMode={setApplicationsMode} onRosterFilters={setRosterFilters} onSearch={setSearch} onStatus={setStatusFilter} onPage={(page) => { setSelectedItemIds([]); void load({ includeApplications: true, page }); }} onSelect={setSelectedApplication} onToggleApplication={toggleApplicationSelection} onToggleAll={toggleAllVisibleApplications} onBulkStatus={handleBulkItemStatus} onBulkConversion={handleBulkConversion} />}
@@ -1420,18 +1418,19 @@ function Overview({ stats, seasons, applications, onNavigate }: { stats: Record<
   // 마지막 값(clickable)은 "눌렀을 때 실제로 신청 관리 탭으로 이동하는가"를 뜻한다.
   // false 인 카드는 이동할 곳이 없으므로 버튼이 아니라 단순 표시(div)로 그린다.
   const cards = [
-    ["승인 대기", stats.pending, "pending_actions", "신청 관리", true], ["승인 완료", stats.confirmed, "verified", "신청 관리", false], ["미결제", stats.unpaid, "payments", "결제 관리", false], ["대기자", stats.waitlisted, "hourglass_top", "신청 관리", true], ["차량 미배정", stats.shuttleUnassigned, "directions_bus", "차량 관리", false],
+    ["승인 대기", stats.pending, "신청 관리", true], ["승인 완료", stats.confirmed, "신청 관리", false], ["미결제", stats.unpaid, "결제 관리", false], ["대기자", stats.waitlisted, "신청 관리", true], ["차량 미배정", stats.shuttleUnassigned, "차량 관리", false],
   ] as const;
-  return <div className="space-y-6"><section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">{cards.map(([label, count, icon, helper, clickable]) => {
+  return <div className="space-y-6"><section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">{cards.map(([label, count, helper, clickable]) => {
     // 카드 내용은 클릭 가능 여부와 무관하게 동일하다 (숫자 표시는 그대로 유지)
-    const body = <><div className="flex items-center justify-between"><Icon name={icon} className="text-2xl text-[var(--brand-accent)]" /><span className="text-xs font-bold text-[var(--color-academy-faint)]">{helper}</span></div><p className="mt-4 text-3xl font-black">{count}</p><p className="mt-1 text-sm font-bold text-[var(--color-academy-muted)]">{label}</p></>;
+    // 장식 아이콘을 빼고 글자와 숫자만 둔다(2026-11-13 UI 통일) — 숫자가 이 카드의 주인공
+    const body = <><p className="text-xs text-[var(--color-academy-muted)]">{helper}</p><p className="mt-2 text-3xl font-bold tabular-nums">{count}</p><p className="mt-1 text-sm font-medium text-[var(--color-academy-muted)]">{label}</p></>;
     // 이동 대상이 없는 카드에서는 hover 들썩임(transition hover:-translate-y-0.5)을 빼서 눌리는 것처럼 보이지 않게 한다
     return clickable
-      ? <button type="button" key={label} onClick={() => onNavigate("applications")} className="rounded-2xl border border-[var(--color-academy-line)] bg-white p-5 text-left shadow-sm transition hover:-translate-y-0.5">{body}</button>
-      : <div key={label} className="rounded-2xl border border-[var(--color-academy-line)] bg-white p-5 text-left shadow-sm">{body}</div>;
+      ? <button type="button" key={label} onClick={() => onNavigate("applications")} className="rounded-lg border border-[var(--color-academy-line)] bg-white p-4 text-left transition hover:border-[var(--color-academy-primary)]">{body}</button>
+      : <div key={label} className="rounded-lg border border-[var(--color-academy-line)] bg-white p-4 text-left">{body}</div>;
   })}</section>
-    <section className="grid gap-4 lg:grid-cols-2"><Panel title="운영 중인 시즌" icon="calendar_month">{seasons.length ? seasons.slice(0, 4).map((season) => <div key={season.id} className="flex items-center justify-between border-b border-[var(--color-academy-line)] py-3 last:border-0"><div><p className="font-bold">{season.name}</p><p className="text-xs text-[var(--color-academy-muted)]">{formatDate(season.startsAt)} ~ {formatDate(season.endsAt)} · {season.classes.length}개 반</p></div><span className={badge(season.status)}>{STATUS_LABEL[season.status] ?? season.status}</span></div>) : <Empty text="아직 개설된 시즌이 없습니다." />}</Panel>
-    <Panel title="최근 신청" icon="person_add">{applications.length ? applications.slice(0, 5).map((application) => <div key={application.id} className="flex items-center justify-between border-b border-[var(--color-academy-line)] py-3 last:border-0"><div><p className="font-bold">{application.childName} <span className="text-xs text-[var(--color-academy-faint)]">{application.childGrade}</span></p><p className="text-xs text-[var(--color-academy-muted)]">{application.parentName} · {application.items.length}개 반</p></div><span className={badge(application.items[0]?.status)}>{STATUS_LABEL[application.items[0]?.status] ?? "접수"}</span></div>) : <Empty text="접수된 신청이 없습니다." />}</Panel></section></div>;
+    <section className="grid gap-4 lg:grid-cols-2"><Panel title="운영 중인 시즌">{seasons.length ? seasons.slice(0, 4).map((season) => <div key={season.id} className="flex items-center justify-between border-b border-[var(--color-academy-line)] py-3 last:border-0"><div><p className="font-medium">{season.name}</p><p className="text-xs tabular-nums text-[var(--color-academy-muted)]">{formatDate(season.startsAt)} ~ {formatDate(season.endsAt)} · {season.classes.length}개 반</p></div><span className={badge(season.status)}>{STATUS_LABEL[season.status] ?? season.status}</span></div>) : <Empty text="아직 개설된 시즌이 없습니다." />}</Panel>
+    <Panel title="최근 신청">{applications.length ? applications.slice(0, 5).map((application) => <div key={application.id} className="flex items-center justify-between border-b border-[var(--color-academy-line)] py-3 last:border-0"><div><p className="font-medium">{application.childName} <span className="text-xs text-[var(--color-academy-faint)]">{application.childGrade}</span></p><p className="text-xs text-[var(--color-academy-muted)]">{application.parentName} · {application.items.length}개 반</p></div><span className={badge(application.items[0]?.status)}>{STATUS_LABEL[application.items[0]?.status] ?? "접수"}</span></div>) : <Empty text="접수된 신청이 없습니다." />}</Panel></section></div>;
 }
 
 function SeasonsView({
@@ -1469,7 +1468,7 @@ function SeasonsView({
     : operationalGroups.filter((group) => !inactiveGroups.includes(group));
   return (
     <div className="grid gap-5 lg:grid-cols-[280px_1fr]">
-      <Panel title="시즌 목록" icon="event_note">
+      <Panel title="시즌 목록">
         <div className="space-y-2">
           {seasons.map((season) => {
             const groupCount = groupOperationalClasses(season.classes, coaches).length;
@@ -1478,9 +1477,11 @@ function SeasonsView({
                 type="button"
                 key={season.id}
                 onClick={() => onSelect(season.id)}
-                className={`w-full rounded-xl border p-3 text-left ${selected?.id === season.id ? "border-[var(--brand-accent)] bg-[var(--brand-accent-soft)]" : "border-[var(--color-academy-line)]"}`}
+                aria-pressed={selected?.id === season.id}
+                // 고른 시즌 = 보조 색(하늘색)
+                className={`w-full rounded-lg border p-3 text-left ${selected?.id === season.id ? "border-[var(--color-academy-secondary-strong)] bg-[var(--color-academy-secondary-soft)] text-[var(--color-academy-secondary-ink)]" : "border-[var(--color-academy-line)] hover:bg-[var(--color-academy-soft)]"}`}
               >
-                <p className="font-bold">{season.name}</p>
+                <p className="font-medium">{season.name}</p>
                 <p className="mt-1 text-xs text-[var(--color-academy-muted)]">{STATUS_LABEL[season.status]} · 운영반 {groupCount}개</p>
               </button>
             );
@@ -1491,29 +1492,30 @@ function SeasonsView({
 
       <Panel
         title={selected?.name ?? "시즌을 선택하세요"}
-        icon="view_week"
+       
         action={selected && (
           <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => onEditSeason(selected)} className="min-h-10 rounded-lg border border-[var(--color-academy-line)] px-3 text-sm font-bold">시즌 수정</button>
-            <select aria-label="시즌 상태" value={selected.status} onChange={(event) => void onStatus(selected.id, event.target.value as SeasonStatus)} className="min-h-10 rounded-lg border border-[var(--color-academy-line)] bg-white px-2 text-sm">
+            <button type="button" onClick={() => onEditSeason(selected)} className="academy-button-secondary">시즌 수정</button>
+            <select aria-label="시즌 상태" value={selected.status} onChange={(event) => void onStatus(selected.id, event.target.value as SeasonStatus)} className="min-h-11 rounded-md border border-[var(--color-academy-line-input)] bg-white px-2 text-sm text-[var(--color-academy-ink)]">
               {["DRAFT", "PUBLISHED", "CLOSED", "ARCHIVED"].map((value) => <option key={value} value={value}>{STATUS_LABEL[value]}</option>)}
             </select>
-            <button type="button" onClick={onAddClass} className="min-h-10 rounded-lg bg-[var(--brand-accent)] px-3 text-sm font-black text-[var(--brand-accent-contrast)]">운영반/요금 추가</button>
+            {/* 꽉 찬 주 버튼은 화면 위 «새 시즌 만들기» 하나 — 여기는 옅은 버튼 */}
+            <button type="button" onClick={onAddClass} className="academy-button-tonal">운영반/요금 추가</button>
           </div>
         )}
       >
         {selected ? (
           <>
-            <div className="mb-4 grid gap-3 rounded-xl bg-[var(--color-academy-soft)] p-4 text-sm sm:grid-cols-3">
+            <div className="mb-4 grid gap-3 rounded-lg bg-[var(--color-academy-soft)] p-4 text-sm tabular-nums sm:grid-cols-3">
               <p><span className="block text-xs text-[var(--color-academy-muted)]">모집 기간</span>{formatDate(selected.enrollmentStartsAt)} ~ {formatDate(selected.enrollmentEndsAt)}</p>
               <p><span className="block text-xs text-[var(--color-academy-muted)]">운영 기간</span>{formatDate(selected.startsAt)} ~ {formatDate(selected.endsAt)}</p>
               <p><span className="block text-xs text-[var(--color-academy-muted)]">지점</span>{selected.branch || "전체"}</p>
             </div>
             <div className="space-y-3">
               {inactiveGroups.length > 0 && (
-                <div className="flex items-center justify-between rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] px-4 py-3 text-sm">
-                  <span className="font-bold">취소된 운영 반 {inactiveGroups.length}개{showInactive ? "를 함께 표시합니다." : "를 숨겼습니다."}</span>
-                  <button type="button" onClick={() => setShowInactive((current) => !current)} className="min-h-9 rounded-lg border border-[var(--color-academy-line-input)] bg-white px-3 text-xs font-black">
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] px-4 py-3 text-sm">
+                  <span>취소된 운영 반 {inactiveGroups.length}개{showInactive ? "를 함께 표시합니다." : "를 숨겼습니다."}</span>
+                  <button type="button" onClick={() => setShowInactive((current) => !current)} className="academy-button-secondary academy-button-sm">
                     {showInactive ? "운영 반만 보기" : "취소 반 보기"}
                   </button>
                 </div>
@@ -1535,34 +1537,34 @@ function SeasonsView({
                     <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-lg font-black">{group.name}</h3>
-                          {group.baseClass.shuttleAvailable && <span className="rounded-full bg-[var(--color-academy-soft)] px-2 py-1 text-xs font-bold text-[var(--color-academy-muted)]">셔틀</span>}
+                          <h3 className="text-lg font-bold">{group.name}</h3>
+                          {group.baseClass.shuttleAvailable && <span className="rounded bg-[var(--color-academy-soft)] px-2 py-0.5 text-xs text-[var(--color-academy-muted)]">셔틀</span>}
                           <span className={badge(classStatus)}>{classStatusLabel}</span>
                         </div>
                         <p className="mt-1 text-sm text-[var(--color-academy-muted)]">
                           {group.baseClass.targetGrade || "전체 학년"} · {group.baseClass.location || selected.branch || "장소 미정"} · 운영 요일 {activeSlots || "미등록"}개
                         </p>
-                        <p className="mt-2 text-xs font-bold text-[var(--color-academy-muted)]">
+                        <p className="mt-2 text-xs text-[var(--color-academy-muted)]">
                           주 n회 정보는 수강료 계산용입니다. 실제 반은 이 운영반 하나로 관리합니다.
                         </p>
                       </div>
                       <div className="grid gap-2 sm:grid-cols-[120px_auto] xl:min-w-[440px]">
-                        <div className="rounded-lg bg-[var(--color-academy-soft)] px-3 py-2 text-right">
-                          <p className="font-black">확정 {group.confirmedTotal}명</p>
+                        <div className="rounded-lg bg-[var(--color-academy-soft)] px-3 py-2 text-right tabular-nums">
+                          <p className="font-semibold">확정 {group.confirmedTotal}명</p>
                           <p className="text-xs text-[var(--color-academy-muted)]">요일 정원 {group.capacity || "미정"}명 · 대기 {group.waitlistedTotal}명</p>
                         </div>
                         <div className="flex flex-wrap gap-2 xl:justify-end">
-                          <button type="button" onClick={() => onOpenRoster(group.baseClass)} className="inline-flex min-h-10 items-center gap-1 rounded-lg border border-[var(--color-academy-line)] px-3 text-sm font-bold"><Icon name="groups" className="text-lg" />전체 명단</button>
-                          <button type="button" onClick={() => onOpenTodayRoster(group.baseClass)} className="inline-flex min-h-10 items-center gap-1 rounded-lg border border-[var(--color-academy-line)] px-3 text-sm font-bold"><Icon name="fact_check" className="text-lg" />오늘 출석</button>
-                          <button type="button" onClick={() => onEditClass(group.baseClass)} className="inline-flex min-h-10 items-center gap-1 rounded-lg border border-[var(--color-academy-line)] px-3 text-sm font-bold"><Icon name="edit" className="text-lg" />기본정보</button>
+                          <button type="button" onClick={() => onOpenRoster(group.baseClass)} className="academy-button-secondary academy-button-sm">전체 명단</button>
+                          <button type="button" onClick={() => onOpenTodayRoster(group.baseClass)} className="academy-button-secondary academy-button-sm">오늘 출석</button>
+                          <button type="button" onClick={() => onEditClass(group.baseClass)} className="academy-button-secondary academy-button-sm">기본정보</button>
                         </div>
                       </div>
                     </div>
                     <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1fr)_260px]">
                       <div className="rounded-xl bg-[var(--color-academy-soft)] p-3">
                         <div className="mb-2 flex items-center justify-between gap-2">
-                          <h4 className="text-sm font-black">요일별 운영</h4>
-                          <span className="text-xs font-bold text-[var(--color-academy-muted)]">학생별 신청 요일 기준</span>
+                          <h4 className="text-sm font-semibold">요일별 운영</h4>
+                          <span className="text-xs text-[var(--color-academy-muted)]">학생별 신청 요일 기준</span>
                         </div>
                         <div className="grid gap-2 md:grid-cols-2">
                           {group.slots.map((slot) => {
@@ -1572,20 +1574,20 @@ function SeasonsView({
                               <div key={slot.key} className="rounded-lg border border-[var(--color-academy-line)] bg-white p-3">
                                 <div className="flex items-start justify-between gap-2">
                                   <div>
-                                    <p className="font-black">{slot.label}요일</p>
-                                    <p className="text-xs font-bold text-[var(--color-academy-muted)]">{slot.startTime}~{slot.endTime} · {slot.dateCount}회차</p>
+                                    <p className="font-semibold">{slot.label}요일</p>
+                                    <p className="text-xs tabular-nums text-[var(--color-academy-muted)]">{slot.startTime}~{slot.endTime} · {slot.dateCount}회차</p>
                                     <p className="text-xs text-[var(--color-academy-muted)]">{slot.location || "장소 미정"}</p>
                                   </div>
-                                  <button type="button" onClick={() => onOpenRoster(group.baseClass, slot.weekdayKey)} className="min-h-8 rounded-lg border border-[var(--color-academy-line)] px-2 text-xs font-black">명단 {slot.confirmed}</button>
+                                  <button type="button" onClick={() => onOpenRoster(group.baseClass, slot.weekdayKey)} className="academy-button-tonal academy-button-sm shrink-0 tabular-nums">명단 {slot.confirmed}</button>
                                 </div>
-                                <label className="mt-3 block text-xs font-black text-[var(--color-academy-muted)]">
+                                <label className="mt-3 block text-xs font-medium text-[var(--color-academy-muted)]">
                                   담당 선생님
                                   <select
                                     aria-label={`${group.name} ${slot.label}요일 담당 선생님`}
                                     value={slot.instructorId}
                                     disabled={assigningInstructorClassId === assigningKey}
                                     onChange={(event) => void onAssignInstructor(group.baseClass, slot, event.target.value)}
-                                    className="mt-1 min-h-10 w-full rounded-lg border border-[var(--color-academy-line)] bg-white px-3 text-sm font-bold text-[var(--color-academy-ink)] disabled:cursor-wait disabled:opacity-60"
+                                    className="mt-1 min-h-11 w-full rounded-md border border-[var(--color-academy-line-input)] bg-white px-3 text-sm text-[var(--color-academy-ink)] disabled:cursor-wait disabled:opacity-60"
                                   >
                                     <option value="">{slot.mixedInstructor ? "혼합 배정" : "담당자 미정"}</option>
                                     {currentCoachMissingFromOptions && <option value={slot.instructorId}>{slot.instructorName || "현재 담당 선생님"}</option>}
@@ -1599,17 +1601,17 @@ function SeasonsView({
                         </div>
                       </div>
                       <div className="rounded-xl bg-[var(--color-academy-soft)] p-3">
-                        <h4 className="text-sm font-black">수강료 계산 규칙</h4>
+                        <h4 className="text-sm font-semibold">수강료 계산 규칙</h4>
                         <div className="mt-2 space-y-2">
                           {group.pricingRules.map((rule) => (
-                            <div key={rule.key} className="rounded-lg bg-white px-3 py-2 text-sm">
+                            <div key={rule.key} className="rounded-lg bg-white px-3 py-2 text-sm tabular-nums">
                               <div className="flex items-center justify-between">
-                                <span className="font-black">{rule.label}</span>
-                                {group.baseClass.shuttleAvailable && <span className="text-xs font-bold text-[var(--color-academy-muted)]">셔틀 +{(rule.shuttleFee ?? 0).toLocaleString()}원</span>}
+                                <span className="font-medium">{rule.label}</span>
+                                {group.baseClass.shuttleAvailable && <span className="text-xs text-[var(--color-academy-muted)]">셔틀 +{(rule.shuttleFee ?? 0).toLocaleString()}원</span>}
                               </div>
                               <div className="mt-1 flex items-center justify-between gap-3 text-xs">
                                 <span className="text-[var(--color-academy-muted)]">기존 {(rule.existingPrice ?? rule.price).toLocaleString()}원</span>
-                                <span className="font-bold text-[var(--brand-accent)]">신규 {(rule.newPrice ?? rule.price).toLocaleString()}원</span>
+                                <span className="text-[var(--color-academy-ink)]">신규 {(rule.newPrice ?? rule.price).toLocaleString()}원</span>
                               </div>
                             </div>
                           ))}
@@ -1618,7 +1620,7 @@ function SeasonsView({
                     </div>
                     {attendanceMissing.length > 0 && (
                       <div role="status" className="mt-3 rounded-lg border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] p-3 text-sm text-[var(--color-academy-warning)]">
-                        <p className="flex items-center gap-2 font-black"><Icon name="warning" />출석 준비 미완료</p>
+                        <p className="font-semibold">출석 준비 미완료</p>
                         <p className="mt-1 text-xs">빠진 항목: {attendanceMissing.join(" · ")}</p>
                       </div>
                     )}
@@ -1739,23 +1741,24 @@ function ApplicationsView({
   }
 
   return <div className="space-y-4">
-    <label className="print:hidden inline-flex items-center gap-2 text-sm font-bold text-[var(--color-academy-muted)]">보기<select aria-label="신청 관리 보기" value={mode} onChange={(event) => onMode(event.target.value as ApplicationsMode)} className="h-11 min-h-11 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-[17px] text-[var(--color-academy-ink)]"><option value="applications">신청별</option><option value="roster">반별 명단</option></select></label>
-    {mode === "roster" ? <RosterView seasons={seasons} applications={allApplications} roster={roster} filters={rosterFilters} loading={rosterLoading} error={rosterError} onFilters={onRosterFilters} onSelect={onSelect} /> : <Panel title="신청 목록" icon="assignment_ind">
+    <label className="print:hidden inline-flex items-center gap-2 text-sm font-medium text-[var(--color-academy-muted)]">보기<select aria-label="신청 관리 보기" value={mode} onChange={(event) => onMode(event.target.value as ApplicationsMode)} className="h-11 min-h-11 rounded-md border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 text-base text-[var(--color-academy-ink)]"><option value="applications">신청별</option><option value="roster">반별 명단</option></select></label>
+    {mode === "roster" ? <RosterView seasons={seasons} applications={allApplications} roster={roster} filters={rosterFilters} loading={rosterLoading} error={rosterError} onFilters={onRosterFilters} onSelect={onSelect} /> : <Panel title="신청 목록">
     <CompactListFilters className="mb-4" activeCount={(appTab === "cancelled" ? 1 : Number(status !== "ALL")) + [exType, exBase, exFreq, exPay, exShuttle].filter(values => values.size > 0).length}
       resultCount={`표시 ${displayApplications.length}건 · 조회 ${pagination.total}건`}
       summary={[appTab === "cancelled" ? "취소자" : status === "ALL" ? "진행 중 · 취소 제외" : STATUS_LABEL[status] ?? status, [exType, exBase, exFreq, exPay, exShuttle].some(values => values.size > 0) ? "열 제외 조건 적용" : ""].filter(Boolean).join(" · ")}
       onReset={() => { onAppTab("active"); onStatus("ALL"); setExType(new Set()); setExBase(new Set()); setExFreq(new Set()); setExPay(new Set()); setExShuttle(new Set()); }}
-      search={<label className="relative block"><span className="sr-only">신청 검색</span><Icon name="search" className="absolute left-3 top-3 text-xl text-[var(--color-academy-muted)]" /><input type="search" enterKeyHint="search" value={search} onChange={(event) => onSearch(event.target.value)} placeholder="학생·학부모·전화번호 검색" className="min-h-11 w-full min-w-0 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] pl-10 pr-3 text-[17px]" /></label>}
+      search={<label className="relative block"><span className="sr-only">신청 검색</span><input type="search" enterKeyHint="search" value={search} onChange={(event) => onSearch(event.target.value)} placeholder="학생·학부모·전화번호 검색" className="min-h-11 w-full min-w-0 rounded-md border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 text-base" /></label>}
     >
-      <label className="grid min-w-0 gap-1 text-sm font-bold">조회 범위<select aria-label="신청 진행 상태" value={appTab} onChange={(event) => onAppTab(event.target.value as "active" | "cancelled")} className="h-11 min-h-11 w-full min-w-0 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-[17px]"><option value="active">진행 중 · 취소 제외</option><option value="cancelled">취소자만</option></select></label>
-      {appTab === "active" && <label className="grid min-w-0 gap-1 text-sm font-bold">신청 상태<select aria-label="신청 상태" value={status} onChange={(event) => onStatus(event.target.value)} className="h-11 min-h-11 w-full min-w-0 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-[17px]"><option value="ALL">전체 상태(취소 제외)</option>{["PENDING","APPROVED","WAITLISTED","REJECTED"].map((value) => <option value={value} key={value}>{STATUS_LABEL[value]}</option>)}</select></label>}
+      <label className="grid min-w-0 gap-1 text-sm font-medium">조회 범위<select aria-label="신청 진행 상태" value={appTab} onChange={(event) => onAppTab(event.target.value as "active" | "cancelled")} className="h-11 min-h-11 w-full min-w-0 rounded-md border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 text-base"><option value="active">진행 중 · 취소 제외</option><option value="cancelled">취소자만</option></select></label>
+      {appTab === "active" && <label className="grid min-w-0 gap-1 text-sm font-medium">신청 상태<select aria-label="신청 상태" value={status} onChange={(event) => onStatus(event.target.value)} className="h-11 min-h-11 w-full min-w-0 rounded-md border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 text-base"><option value="ALL">전체 상태(취소 제외)</option>{["PENDING","APPROVED","WAITLISTED","REJECTED"].map((value) => <option value={value} key={value}>{STATUS_LABEL[value]}</option>)}</select></label>}
     </CompactListFilters>
 
     {selectedItemCount > 0 && (
-      <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-[var(--brand-accent)] bg-[var(--brand-accent-soft)] p-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="font-black text-[var(--color-academy-ink)]">선택한 신청 반 {selectedItemCount}개</p>
-          <p className="mt-1 text-xs font-bold text-[var(--color-academy-muted)]">{selectedApplicationCount}명 학생을 현재 목록에서 처리합니다.</p>
+      // 고른 항목 묶음 처리 띠 = 보조 색(하늘색) — «고른 것»의 색
+      <div className="mb-4 flex flex-col gap-3 rounded-lg border border-[var(--color-academy-secondary-strong)] bg-[var(--color-academy-secondary-soft)] p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className="font-semibold tabular-nums text-[var(--color-academy-ink)]">선택한 신청 반 {selectedItemCount}개</p>
+          <p className="mt-1 text-xs tabular-nums text-[var(--color-academy-muted)]">{selectedApplicationCount}명 학생을 현재 목록에서 처리합니다.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           {BULK_ITEM_STATUSES.map((nextStatus) => (
@@ -1764,7 +1767,7 @@ function ApplicationsView({
               type="button"
               disabled={Boolean(bulkProcessingStatus) || bulkConverting}
               onClick={() => void onBulkStatus(nextStatus)}
-              className="inline-flex min-h-10 items-center justify-center gap-1 rounded-xl border border-[var(--color-academy-line)] bg-white px-3 text-sm font-black text-[var(--color-academy-ink)] hover:border-[var(--brand-accent)] hover:text-[var(--brand-accent)] disabled:cursor-wait disabled:opacity-60"
+              className="academy-button-secondary academy-button-sm disabled:cursor-wait"
             >
               {bulkProcessingStatus === nextStatus ? "처리 중" : STATUS_LABEL[nextStatus]}
             </button>
@@ -1773,9 +1776,8 @@ function ApplicationsView({
             type="button"
             disabled={Boolean(bulkProcessingStatus) || bulkConverting}
             onClick={() => void onBulkConversion()}
-            className="inline-flex min-h-10 items-center justify-center gap-1 rounded-xl bg-[var(--brand-accent)] px-3 text-sm font-black text-[var(--brand-accent-contrast)] disabled:cursor-wait disabled:opacity-60"
+            className="academy-button-primary academy-button-sm disabled:cursor-wait"
           >
-            <Icon name="receipt_long" className="text-lg" />
             {bulkConverting ? "생성 중" : "수강·청구 생성"}
           </button>
         </div>
@@ -1852,7 +1854,7 @@ function ApplicationsView({
                 aria-label={`${application.childName} 신청 상세 보기`}
                 onClick={() => onSelect(application)}
                 onKeyDown={(event) => handleRowKeyDown(event, application)}
-                className={`cursor-pointer transition-colors focus:bg-[var(--color-academy-primary-soft)] focus:outline-none ${checked ? "bg-[var(--brand-accent-soft)]/60" : "hover:bg-[var(--color-academy-soft)]"}`}
+                className={`cursor-pointer transition-colors focus:bg-[var(--color-academy-secondary-soft)] focus:outline-none ${checked ? "bg-[var(--color-academy-secondary-soft)]/60" : "hover:bg-[var(--color-academy-soft)]"}`}
               >
                 {/* 선택 체크박스 — 행 클릭(상세 서랍)과 겹치지 않게 전파 차단 */}
                 <td className="px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
@@ -1866,15 +1868,15 @@ function ApplicationsView({
                   />
                 </td>
                 <td className="px-2 py-1.5">
-                  <span className="font-black text-[var(--color-academy-ink)]">{application.childName}</span>
-                  {selectedCount > 0 && <span className="ml-1.5 text-xs font-black tabular-nums text-[var(--brand-accent)]">{selectedCount}/{itemIds.length}개 선택</span>}
+                  <span className="font-medium text-[var(--color-academy-ink)]">{application.childName}</span>
+                  {selectedCount > 0 && <span className="ml-1.5 text-xs tabular-nums text-[var(--color-academy-secondary-ink)]">{selectedCount}/{itemIds.length}개 선택</span>}
                 </td>
                 <td className="hidden px-2 py-1.5 text-[var(--color-academy-muted)] lg:table-cell">{[application.childGrade, application.childSchool].filter(Boolean).join(" ") || "-"}</td>
                 <td className="px-2 py-1.5">
-                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-black ${application.applicantType === "NEW" ? "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]" : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"}`}>{application.applicantType === "NEW" ? "신규" : application.applicantType === "EXISTING" ? "기존" : "-"}</span>
+                  <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs ${application.applicantType === "NEW" ? "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]" : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"}`}>{application.applicantType === "NEW" ? "신규" : application.applicantType === "EXISTING" ? "기존" : "-"}</span>
                 </td>
                 {/* 수업: 1개면 이름, 여러 개면 «첫 수업 외 N» — 전체는 상세 서랍 */}
-                <td className="px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">
+                <td className="px-2 py-1.5 text-[var(--color-academy-ink)]">
                   {classInfo.bases.length === 0 ? <span className="text-[var(--color-academy-muted)]">-</span>
                     : classInfo.bases.length === 1 ? classInfo.bases[0]
                     : <>{classInfo.bases[0]} 외 <span className="tabular-nums">{classInfo.bases.length - 1}</span></>}
@@ -1882,33 +1884,33 @@ function ApplicationsView({
                 <td className="px-2 py-1.5">
                   <span className="inline-flex gap-1">
                     {application.items.slice(0,2).map((item) => <span key={item.id} className={badge(item.status)}>{STATUS_LABEL[item.status]}</span>)}
-                    {application.items.length > 2 && <span className="inline-flex min-h-7 items-center rounded-full bg-[var(--color-academy-soft)] px-2.5 text-xs font-bold text-[var(--color-academy-muted)]">+{application.items.length - 2}</span>}
+                    {application.items.length > 2 && <span className="inline-flex min-h-6 items-center rounded bg-[var(--color-academy-soft)] px-2 text-xs text-[var(--color-academy-muted)]">+{application.items.length - 2}</span>}
                   </span>
                 </td>
                 <td className="px-2 py-1.5">
                   <span className="inline-flex gap-1">
-                    {classInfo.freqs.length ? classInfo.freqs.map((f) => <span key={f} className="inline-flex min-h-7 items-center rounded-full bg-[var(--brand-accent-soft)] px-2.5 text-xs font-black text-[var(--brand-accent)]">{f}</span>) : <span className="text-[var(--color-academy-muted)]">-</span>}
+                    {classInfo.freqs.length ? classInfo.freqs.map((f) => <span key={f} className="inline-flex min-h-6 items-center rounded bg-[var(--color-academy-neutral-soft)] px-2 text-xs text-[var(--color-academy-neutral)]">{f}</span>) : <span className="text-[var(--color-academy-muted)]">-</span>}
                   </span>
                 </td>
-                <td className="px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{application.parentName}</td>
+                <td className="px-2 py-1.5 text-[var(--color-academy-ink)]">{application.parentName}</td>
                 {/* 전화 걸기 링크 — 행 클릭과 겹치지 않게 전파 차단 */}
                 <td className="admin-cell-num hidden px-2 py-1.5 md:table-cell">
-                  <a href={`tel:${application.parentPhone}`} onClick={(event) => event.stopPropagation()} className="text-[var(--brand-accent)] hover:underline">{application.parentPhone}</a>
+                  <a href={`tel:${application.parentPhone}`} onClick={(event) => event.stopPropagation()} className="text-[var(--color-academy-primary)] underline-offset-2 hover:underline">{application.parentPhone}</a>
                 </td>
                 {/* 안내 문자 상태(가장 확인이 급한 것 하나) — 시각·재발송은 상세 서랍 */}
-                <td className={`hidden px-2 py-1.5 text-xs font-bold xl:table-cell ${notice.className}`}>{notice.text}</td>
+                <td className={`hidden px-2 py-1.5 text-xs xl:table-cell ${notice.className}`}>{notice.text}</td>
                 <td className="px-2 py-1.5">
                   <span className={badge(application.paymentStatus)}>{STATUS_LABEL[application.paymentStatus || ""] ?? application.paymentStatus ?? "청구 전"}</span>
                 </td>
                 <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-ink)] md:table-cell">{(application.totalAmount ?? 0).toLocaleString()}원</td>
                 <td className="px-2 py-1.5">
                   {application.shuttleNeeded
-                    ? <span className="inline-flex min-h-7 items-center rounded-full bg-[var(--color-academy-success-soft)] px-2.5 text-xs font-black text-[var(--color-academy-success)]">🚌 이용</span>
-                    : <span className="inline-flex min-h-7 items-center rounded-full bg-[var(--color-academy-soft)] px-2.5 text-xs font-black text-[var(--color-academy-muted)]">미이용</span>}
+                    ? <span className="inline-flex min-h-6 items-center rounded bg-[var(--color-academy-success-soft)] px-2 text-xs text-[var(--color-academy-success)]">이용</span>
+                    : <span className="inline-flex min-h-6 items-center rounded bg-[var(--color-academy-soft)] px-2 text-xs text-[var(--color-academy-muted)]">미이용</span>}
                 </td>
                 <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-muted)]">{application.createdAt ? kstLabel(application.createdAt) : "미정"}</td>
                 <td className="admin-cell-center px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
-                  <button type="button" onClick={() => onSelect(application)} className="inline-flex min-h-11 items-center rounded-lg border border-[var(--color-academy-line)] px-3 font-bold">상세</button>
+                  <button type="button" onClick={() => onSelect(application)} className="academy-button-tonal academy-button-sm">상세</button>
                 </td>
               </tr>
             );
@@ -1918,7 +1920,7 @@ function ApplicationsView({
       </table>
     </div>
     {pagination.totalPages > 1 && (
-      <nav className="mt-4 flex flex-col gap-2 text-sm font-bold sm:flex-row sm:items-center sm:justify-between" aria-label="신청 목록 페이지">
+      <nav className="mt-4 flex flex-col gap-2 text-sm tabular-nums sm:flex-row sm:items-center sm:justify-between" aria-label="신청 목록 페이지">
         <span className="text-[var(--color-academy-muted)]">
           {pagination.total.toLocaleString()}건 중 {(pagination.page - 1) * pagination.pageSize + 1}-
           {Math.min(pagination.page * pagination.pageSize, pagination.total).toLocaleString()}건
@@ -1928,7 +1930,7 @@ function ApplicationsView({
             type="button"
             disabled={pagination.page <= 1}
             onClick={() => onPage(pagination.page - 1)}
-            className="min-h-10 rounded-lg border border-[var(--color-academy-line)] px-3 disabled:opacity-40"
+            className="academy-button-secondary academy-button-sm"
           >
             이전
           </button>
@@ -1937,7 +1939,7 @@ function ApplicationsView({
             type="button"
             disabled={pagination.page >= pagination.totalPages}
             onClick={() => onPage(pagination.page + 1)}
-            className="min-h-10 rounded-lg border border-[var(--color-academy-line)] px-3 disabled:opacity-40"
+            className="academy-button-secondary academy-button-sm"
           >
             다음
           </button>
@@ -2022,32 +2024,32 @@ function RosterView({ seasons, applications, roster, filters, loading, error, on
     filters.weekday ? `${filters.weekday}요일` : "",
   ].filter(Boolean).join(" · ") || "방학특강 일자별 출석부";
 
-  return <Panel title="일자별 출석부" icon="fact_check" action={<div className="print:hidden flex gap-2">
-    <button type="button" onClick={() => window.print()} className="inline-flex min-h-10 items-center gap-1 rounded-lg border border-[var(--color-academy-line)] px-3 text-sm font-black"><Icon name="print" />인쇄</button>
-    <button type="button" onClick={() => void downloadCsv().catch((caught) => window.alert(adminErrorText(caught, "CSV 다운로드에 실패했습니다.")))} className="inline-flex min-h-10 items-center gap-1 rounded-lg bg-[var(--brand-accent)] px-3 text-sm font-black text-[var(--brand-accent-contrast)]"><Icon name="download" />CSV</button>
+  return <Panel title="일자별 출석부" action={<div className="print:hidden flex flex-wrap gap-2">
+    <button type="button" onClick={() => window.print()} className="academy-button-secondary academy-button-sm">인쇄</button>
+    <button type="button" onClick={() => void downloadCsv().catch((caught) => window.alert(adminErrorText(caught, "CSV 다운로드에 실패했습니다.")))} className="academy-button-secondary academy-button-sm">CSV 내려받기</button>
   </div>}>
     <style>{`@media print { @page { size: A4 landscape; margin: 12mm; } body * { visibility: hidden !important; } .seasonal-roster-print, .seasonal-roster-print * { visibility: visible !important; } .seasonal-roster-print { position: absolute; inset: 0; width: 100%; color: black !important; } .roster-desktop { display: block !important; } .roster-mobile, .print\\:hidden { display: none !important; } .seasonal-roster-print table { width: 100%; border-collapse: collapse; font-size: 10pt; } .seasonal-roster-print th, .seasonal-roster-print td { border: 1px solid var(--color-academy-line-input); padding: 6px; } .seasonal-roster-print thead { display: table-header-group; } }`}</style>
-    <div className="print:hidden mb-2 flex min-w-0 items-center gap-2 text-sm font-bold"><span>시즌</span><select aria-label="명단 시즌" value={filters.seasonId} onChange={(event) => changeFilter("seasonId", event.target.value)} className="h-11 min-h-11 flex-1 min-w-0 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-[17px]"><option value="">전체 시즌</option>{seasons.map((season) => <option key={season.id} value={season.id}>{season.name}</option>)}</select></div>
+    <div className="print:hidden mb-2 flex min-w-0 items-center gap-2 text-sm font-medium"><span>시즌</span><select aria-label="명단 시즌" value={filters.seasonId} onChange={(event) => changeFilter("seasonId", event.target.value)} className="h-11 min-h-11 flex-1 min-w-0 rounded-md border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 text-base"><option value="">전체 시즌</option>{seasons.map((season) => <option key={season.id} value={season.id}>{season.name}</option>)}</select></div>
     <CompactListFilters className="print:hidden" activeCount={[filters.offeringId, filters.weekday, filters.date, filters.paymentStatus, filters.shuttleStatus].filter(Boolean).length}
       resultCount={`명단 ${roster.pagination.total}명`}
       summary={[offerings.find(offering => offering.id === filters.offeringId)?.name, filters.date ? formatDate(filters.date) : "", filters.weekday ? `${filters.weekday}요일` : "", filters.paymentStatus ? STATUS_LABEL[filters.paymentStatus] ?? filters.paymentStatus : "", filters.shuttleStatus ? STATUS_LABEL[filters.shuttleStatus] ?? (filters.shuttleStatus === "NOT_USED" ? "미이용" : filters.shuttleStatus) : ""].filter(Boolean).join(" · ") || "전체 반 · 전체 일정"}
       onReset={() => onFilters(current => ({ ...current, offeringId: "", weekday: "", date: "", paymentStatus: "", shuttleStatus: "", page: 1 }))}
-      search={<label className="relative block"><span className="sr-only">명단 검색</span><Icon name="search" className="absolute left-3 top-3 text-xl text-[var(--color-academy-muted)]" /><input type="search" enterKeyHint="search" value={filters.q} onChange={(event) => changeFilter("q", event.target.value)} placeholder="학생·학교 검색" className="min-h-11 w-full min-w-0 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] pl-10 pr-3 text-[17px]" /></label>}
+      search={<label className="relative block"><span className="sr-only">명단 검색</span><input type="search" enterKeyHint="search" value={filters.q} onChange={(event) => changeFilter("q", event.target.value)} placeholder="학생·학교 검색" className="min-h-11 w-full min-w-0 rounded-md border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 text-base" /></label>}
     >
-      <label className="grid min-w-0 gap-1 text-sm font-bold">운영 반<select aria-label="명단 반" value={filters.offeringId} onChange={(event) => changeFilter("offeringId", event.target.value)} className="h-11 min-h-11 w-full min-w-0 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-[17px]"><option value="">전체 운영 반</option>{offerings.map((offering) => <option key={offering.id} value={offering.id}>{offering.name}</option>)}</select></label>
-      <label className="grid min-w-0 gap-1 text-sm font-bold">출석일<input aria-label="명단 출석일" type="date" value={filters.date} onChange={(event) => changeFilter("date", event.target.value)} className="h-11 max-w-full appearance-none box-border min-h-11 w-full min-w-0 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-[17px]" /></label>
-      <label className="grid min-w-0 gap-1 text-sm font-bold">요일<select aria-label="명단 요일" value={filters.weekday} onChange={(event) => changeFilter("weekday", event.target.value)} className="h-11 min-h-11 w-full min-w-0 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-[17px]"><option value="">전체 요일</option>{["월","화","수","목","금","토","일"].map((day) => <option key={day} value={day}>{day}요일</option>)}</select></label>
-      <label className="grid min-w-0 gap-1 text-sm font-bold">결제<select aria-label="명단 결제" value={filters.paymentStatus} onChange={(event) => changeFilter("paymentStatus", event.target.value)} className="h-11 min-h-11 w-full min-w-0 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-[17px]"><option value="">전체 결제</option><option value="PAID">결제 완료</option><option value="UNPAID">미결제</option><option value="PAYMENT_PENDING">결제 대기</option></select></label>
-      <label className="grid min-w-0 gap-1 text-sm font-bold">셔틀<select aria-label="명단 셔틀" value={filters.shuttleStatus} onChange={(event) => changeFilter("shuttleStatus", event.target.value)} className="h-11 min-h-11 w-full min-w-0 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-[17px]"><option value="">전체 셔틀</option><option value="NOT_USED">미이용</option><option value="REQUESTED">요청</option><option value="UNASSIGNED">미배정</option><option value="ASSIGNED">배정 완료</option></select></label>
+      <label className="grid min-w-0 gap-1 text-sm font-medium">운영 반<select aria-label="명단 반" value={filters.offeringId} onChange={(event) => changeFilter("offeringId", event.target.value)} className="h-11 min-h-11 w-full min-w-0 rounded-md border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 text-base"><option value="">전체 운영 반</option>{offerings.map((offering) => <option key={offering.id} value={offering.id}>{offering.name}</option>)}</select></label>
+      <label className="grid min-w-0 gap-1 text-sm font-medium">출석일<input aria-label="명단 출석일" type="date" value={filters.date} onChange={(event) => changeFilter("date", event.target.value)} className="h-11 max-w-full appearance-none box-border min-h-11 w-full min-w-0 rounded-md border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 text-base" /></label>
+      <label className="grid min-w-0 gap-1 text-sm font-medium">요일<select aria-label="명단 요일" value={filters.weekday} onChange={(event) => changeFilter("weekday", event.target.value)} className="h-11 min-h-11 w-full min-w-0 rounded-md border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 text-base"><option value="">전체 요일</option>{["월","화","수","목","금","토","일"].map((day) => <option key={day} value={day}>{day}요일</option>)}</select></label>
+      <label className="grid min-w-0 gap-1 text-sm font-medium">결제<select aria-label="명단 결제" value={filters.paymentStatus} onChange={(event) => changeFilter("paymentStatus", event.target.value)} className="h-11 min-h-11 w-full min-w-0 rounded-md border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 text-base"><option value="">전체 결제</option><option value="PAID">결제 완료</option><option value="UNPAID">미결제</option><option value="PAYMENT_PENDING">결제 대기</option></select></label>
+      <label className="grid min-w-0 gap-1 text-sm font-medium">셔틀<select aria-label="명단 셔틀" value={filters.shuttleStatus} onChange={(event) => changeFilter("shuttleStatus", event.target.value)} className="h-11 min-h-11 w-full min-w-0 rounded-md border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 text-base"><option value="">전체 셔틀</option><option value="NOT_USED">미이용</option><option value="REQUESTED">요청</option><option value="UNASSIGNED">미배정</option><option value="ASSIGNED">배정 완료</option></select></label>
     </CompactListFilters>
-    <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-[var(--color-academy-muted)]" aria-label="명단 현황"><span><span>확정</span> <strong className="text-[var(--color-academy-ink)]">{roster.stats.confirmed}</strong></span><span><span>미결제</span> <strong className="text-[var(--color-academy-ink)]">{roster.stats.unpaid}</strong></span><span><span>셔틀</span> <strong className="text-[var(--color-academy-ink)]">{roster.stats.shuttle}</strong></span></p>
-    {error && <p role="alert" className="mt-4 rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm font-bold text-[var(--color-academy-danger)]">{error}</p>}
+    <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-[var(--color-academy-muted)]" aria-label="명단 현황"><span><span>확정</span> <strong className="font-semibold tabular-nums text-[var(--color-academy-ink)]">{roster.stats.confirmed}</strong></span><span><span>미결제</span> <strong className="font-semibold tabular-nums text-[var(--color-academy-ink)]">{roster.stats.unpaid}</strong></span><span><span>셔틀</span> <strong className="font-semibold tabular-nums text-[var(--color-academy-ink)]">{roster.stats.shuttle}</strong></span></p>
+    {error && <p role="alert" className="mt-4 rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm text-[var(--color-academy-danger)]">{error}</p>}
     {loading ? <Loading /> : <section className="seasonal-roster-print mt-4" aria-label="반별 확정 명단 결과">
-      <div className="mb-3 hidden print:block"><h2 className="text-xl font-black">{printTitle}</h2><p className="text-sm">확정 {roster.stats.confirmed}명 · 출력 {formatDateTime(new Date().toISOString())}</p></div>
-      <div className="roster-desktop hidden overflow-x-auto md:block"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-[var(--color-academy-soft)] text-xs text-[var(--color-academy-muted)]"><tr><th className="px-3 py-3">번호</th><th className="px-3 py-3">요일</th><th className="px-3 py-3">운영 반</th><th className="px-3 py-3">학생</th><th className="px-3 py-3">결제</th><th className="px-3 py-3">셔틀</th><th className="px-3 py-3">출석</th><th className="px-3 py-3">메모</th></tr></thead><tbody className="divide-y divide-[var(--color-academy-line)]">{roster.rows.map((row, index) => <tr key={row.id} className="hover:bg-[var(--color-academy-soft)]"><td className="px-3 py-3">{(roster.pagination.page - 1) * roster.pagination.pageSize + index + 1}</td><td className="px-3 py-3 font-black">{row.weekday || "미정"}</td><td className="px-3 py-3 font-bold">{row.offeringName}</td><td className="px-3 py-3"><button type="button" onClick={() => openApplication(row.applicationId)} className="font-black hover:underline print:pointer-events-none">{row.childName}</button><p className="text-xs text-[var(--color-academy-muted)]">{[row.childGrade,row.childSchool].filter(Boolean).join(" · ")}</p></td><td className="px-3 py-3"><span className={badge(row.paymentStatus)}>{STATUS_LABEL[row.paymentStatus] ?? row.paymentStatus}</span></td><td className="px-3 py-3"><span className={badge(row.shuttleStatus)}>{STATUS_LABEL[row.shuttleStatus] ?? (row.shuttleStatus === "NOT_USED" ? "미이용" : row.shuttleStatus)}</span></td><td className="px-3 py-3">□</td><td className="px-3 py-3"> </td></tr>)}{!roster.rows.length && <tr><td colSpan={8}><Empty text="조건에 맞는 출석부 명단이 없습니다." /></td></tr>}</tbody></table></div>
-      <div className="roster-mobile space-y-3 md:hidden">{roster.rows.map((row) => <article key={row.id} className="rounded-xl border border-[var(--color-academy-line)] p-4"><div className="flex items-start justify-between gap-2"><div><button type="button" onClick={() => openApplication(row.applicationId)} className="min-h-11 font-black hover:underline">{row.childName}</button><p className="text-xs text-[var(--color-academy-muted)]">{[row.childGrade,row.childSchool].filter(Boolean).join(" · ")}</p></div><span className="rounded-full bg-[var(--brand-accent-soft)] px-2.5 py-1 text-xs font-black text-[var(--brand-accent)]">{row.weekday || "요일 미정"}</span></div><p className="mt-2 text-sm font-bold">{row.offeringName}</p><div className="mt-2 flex flex-wrap gap-2"><span className={badge(row.paymentStatus)}>{STATUS_LABEL[row.paymentStatus] ?? row.paymentStatus}</span><span className={badge(row.shuttleStatus)}>{STATUS_LABEL[row.shuttleStatus] ?? (row.shuttleStatus === "NOT_USED" ? "미이용" : row.shuttleStatus)}</span></div><button type="button" onClick={() => openApplication(row.applicationId)} className="mt-3 min-h-11 w-full rounded-lg border border-[var(--color-academy-line)] font-bold">신청 상세</button></article>)}</div>
+      <div className="mb-3 hidden print:block"><h2 className="text-xl font-bold">{printTitle}</h2><p className="text-sm">확정 {roster.stats.confirmed}명 · 출력 {formatDateTime(new Date().toISOString())}</p></div>
+      <div className="roster-desktop hidden overflow-x-auto md:block"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-[var(--color-academy-soft)] text-xs text-[var(--color-academy-muted)]"><tr><th className="px-3 py-3">번호</th><th className="px-3 py-3">요일</th><th className="px-3 py-3">운영 반</th><th className="px-3 py-3">학생</th><th className="px-3 py-3">결제</th><th className="px-3 py-3">셔틀</th><th className="px-3 py-3">출석</th><th className="px-3 py-3">메모</th></tr></thead><tbody className="divide-y divide-[var(--color-academy-line)]">{roster.rows.map((row, index) => <tr key={row.id} className="hover:bg-[var(--color-academy-soft)]"><td className="px-3 py-3 tabular-nums">{(roster.pagination.page - 1) * roster.pagination.pageSize + index + 1}</td><td className="px-3 py-3">{row.weekday || "미정"}</td><td className="px-3 py-3">{row.offeringName}</td><td className="px-3 py-3"><button type="button" onClick={() => openApplication(row.applicationId)} className="font-medium underline-offset-2 hover:underline print:pointer-events-none">{row.childName}</button><p className="text-xs text-[var(--color-academy-muted)]">{[row.childGrade,row.childSchool].filter(Boolean).join(" · ")}</p></td><td className="px-3 py-3"><span className={badge(row.paymentStatus)}>{STATUS_LABEL[row.paymentStatus] ?? row.paymentStatus}</span></td><td className="px-3 py-3"><span className={badge(row.shuttleStatus)}>{STATUS_LABEL[row.shuttleStatus] ?? (row.shuttleStatus === "NOT_USED" ? "미이용" : row.shuttleStatus)}</span></td><td className="px-3 py-3">□</td><td className="px-3 py-3"> </td></tr>)}{!roster.rows.length && <tr><td colSpan={8}><Empty text="조건에 맞는 출석부 명단이 없습니다." /></td></tr>}</tbody></table></div>
+      <div className="roster-mobile space-y-3 md:hidden">{roster.rows.map((row) => <article key={row.id} className="rounded-xl border border-[var(--color-academy-line)] p-4"><div className="flex items-start justify-between gap-2"><div><button type="button" onClick={() => openApplication(row.applicationId)} className="min-h-11 font-semibold underline-offset-2 hover:underline">{row.childName}</button><p className="text-xs text-[var(--color-academy-muted)]">{[row.childGrade,row.childSchool].filter(Boolean).join(" · ")}</p></div><span className="rounded bg-[var(--color-academy-neutral-soft)] px-2 py-1 text-xs text-[var(--color-academy-neutral)]">{row.weekday || "요일 미정"}</span></div><p className="mt-2 text-sm">{row.offeringName}</p><div className="mt-2 flex flex-wrap gap-2"><span className={badge(row.paymentStatus)}>{STATUS_LABEL[row.paymentStatus] ?? row.paymentStatus}</span><span className={badge(row.shuttleStatus)}>{STATUS_LABEL[row.shuttleStatus] ?? (row.shuttleStatus === "NOT_USED" ? "미이용" : row.shuttleStatus)}</span></div><button type="button" onClick={() => openApplication(row.applicationId)} className="academy-button-secondary mt-3 w-full">신청 상세</button></article>)}</div>
     </section>}
-    {roster.pagination.totalPages > 1 && <nav className="print:hidden mt-4 flex items-center justify-center gap-3" aria-label="명단 페이지"><button type="button" disabled={filters.page <= 1} onClick={() => changeFilter("page", filters.page - 1)} className="min-h-10 rounded-lg border px-3 disabled:opacity-40">이전</button><span className="text-sm font-bold">{filters.page} / {roster.pagination.totalPages}</span><button type="button" disabled={filters.page >= roster.pagination.totalPages} onClick={() => changeFilter("page", filters.page + 1)} className="min-h-10 rounded-lg border px-3 disabled:opacity-40">다음</button></nav>}
+    {roster.pagination.totalPages > 1 && <nav className="print:hidden mt-4 flex items-center justify-center gap-3" aria-label="명단 페이지"><button type="button" disabled={filters.page <= 1} onClick={() => changeFilter("page", filters.page - 1)} className="academy-button-secondary academy-button-sm">이전</button><span className="text-sm tabular-nums">{filters.page} / {roster.pagination.totalPages}</span><button type="button" disabled={filters.page >= roster.pagination.totalPages} onClick={() => changeFilter("page", filters.page + 1)} className="academy-button-secondary academy-button-sm">다음</button></nav>}
   </Panel>;
 }
 
@@ -2101,20 +2103,20 @@ function ApplicationDrawer({
     <aside className="min-h-0 w-full flex-1 overflow-y-auto overscroll-contain p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:p-7">
       <header className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-sm font-bold text-[var(--brand-accent)]">신청 상세</p>
-          <h2 id="application-title" className="mt-1 text-2xl font-black text-[var(--color-academy-ink)]">{application.childName} <span className="text-base text-[var(--color-academy-faint)]">{application.childGrade || "학년 미입력"}</span></h2>
+          <p className="text-sm text-[var(--color-academy-muted)]">신청 상세</p>
+          <h2 id="application-title" className="academy-page-title mt-1">{application.childName} <span className="text-base font-normal text-[var(--color-academy-muted)]">{application.childGrade || "학년 미입력"}</span></h2>
           <div className="mt-3 flex flex-wrap gap-2">
             <span className={badge(application.status)}>{STATUS_LABEL[application.status] ?? application.status}</span>
             <span className={badge(application.paymentStatus)}>{STATUS_LABEL[application.paymentStatus || ""] ?? application.paymentStatus ?? "청구 전"}</span>
             {application.shuttleNeeded && <span className={badge(application.shuttleStatus || "REQUESTED")}>셔틀 {STATUS_LABEL[application.shuttleStatus || "REQUESTED"]}</span>}
           </div>
         </div>
-        <button type="button" onClick={onClose} aria-label="닫기" data-admin-modal-initial-focus className="rounded-full p-2 text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)]"><Icon name="close" /></button>
+        <button type="button" onClick={onClose} aria-label="닫기" data-admin-modal-initial-focus className="grid size-11 shrink-0 place-items-center rounded-md text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">✕</button>
       </header>
 
       <ApplicationReviewSummary application={application} onResolveReview={onResolveReview} resolving={resolvingReview} />
 
-      <section className="mt-6 grid gap-3 rounded-2xl bg-[var(--color-academy-soft)] p-4 text-sm sm:grid-cols-2">
+      <section className="mt-6 grid gap-3 rounded-lg bg-[var(--color-academy-soft)] p-4 text-sm tabular-nums sm:grid-cols-2">
         <Info label="학부모">{application.parentName}{application.parentRelation ? ` · ${application.parentRelation}` : ""}</Info>
         <Info label="학부모 연락처">{application.parentPhone || "미입력"}</Info>
         <Info label="학생 정보">{[formatDate(application.childBirthDate), application.childGender, application.childPhone].filter(Boolean).join(" · ") || "미입력"}</Info>
@@ -2127,8 +2129,8 @@ function ApplicationDrawer({
       {/* 연락처가 없으면 눌러도 아무 일이 없는 빈 링크가 되므로, 번호가 있을 때만 버튼을 보여준다 */}
       {parentPhoneHref && parentSmsHref && (
         <div className="mt-3 grid grid-cols-2 gap-2">
-          <a href={parentPhoneHref} className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[var(--color-academy-line)] font-bold text-[var(--color-academy-ink)]"><Icon name="call" />전화</a>
-          <a href={parentSmsHref} className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[var(--color-academy-line)] font-bold text-[var(--color-academy-ink)]"><Icon name="sms" />직접 문자</a>
+          <a href={parentPhoneHref} className="academy-button-secondary">전화</a>
+          <a href={parentSmsHref} className="academy-button-secondary">직접 문자</a>
         </div>
       )}
 
@@ -2143,17 +2145,17 @@ function ApplicationDrawer({
         <div className="flex items-end justify-between gap-3">
           <div>
             {/* 설명문 제거 — 아래 항목마다 승인/대기/반려/취소 버튼이 그대로 보인다 */}
-            <h3 className="font-black text-[var(--color-academy-ink)]">신청 항목별 처리</h3>
+            <h3 className="academy-section-title">신청 항목별 처리</h3>
           </div>
-          <span className="text-xs font-bold text-[var(--color-academy-muted)]">{application.items.length}개 반 신청</span>
+          <span className="text-xs tabular-nums text-[var(--color-academy-muted)]">{application.items.length}개 반 신청</span>
         </div>
         <div className="mt-3 space-y-3">
           {hasNoItems && (
             <section className="rounded-2xl border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] p-4 text-sm text-[var(--color-academy-warning)]">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <p className="font-black">신청 반이 아직 없습니다.</p>
-                  <p className="mt-1 text-xs font-bold opacity-80">반을 배정해 접수하거나, 실제 취소 건이면 여기서 신청 자체를 닫아 주세요.</p>
+                  <p className="font-semibold">신청 반이 아직 없습니다.</p>
+                  <p className="mt-1 text-xs">반을 배정해 접수하거나, 실제 취소 건이면 여기서 신청 자체를 닫아 주세요.</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {APPLICATION_CLOSE_STATUSES.map((status) => (
@@ -2162,7 +2164,7 @@ function ApplicationDrawer({
                       type="button"
                       disabled={applicationClosed || Boolean(updatingApplicationStatus)}
                       onClick={() => void onUpdateApplicationStatus(application.id, status)}
-                      className="min-h-10 rounded-xl border border-[var(--color-academy-warning)] bg-white px-3 text-xs font-black text-[var(--color-academy-warning)] shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
+                      className="academy-button-danger academy-button-sm"
                     >
                       {updatingApplicationStatus === status ? "처리 중" : STATUS_LABEL[status]}
                     </button>
@@ -2202,8 +2204,8 @@ function ApplicationDrawer({
         </div>
       </section>
 
-      {application.memo && <section className="mt-6 rounded-2xl border border-[var(--color-academy-line)] p-4"><h3 className="text-sm font-black text-[var(--color-academy-ink)]">요청사항</h3><p className="mt-2 whitespace-pre-wrap text-sm text-[var(--color-academy-muted)]">{application.memo}</p></section>}
-      {application.processedNote && <section className="mt-3 rounded-2xl border border-[var(--color-academy-line)] p-4"><h3 className="text-sm font-black text-[var(--color-academy-ink)]">처리 메모</h3><p className="mt-2 whitespace-pre-wrap text-sm text-[var(--color-academy-muted)]">{application.processedNote}</p></section>}
+      {application.memo && <section className="mt-6 rounded-2xl border border-[var(--color-academy-line)] p-4"><h3 className="text-sm font-semibold text-[var(--color-academy-ink)]">요청사항</h3><p className="mt-2 whitespace-pre-wrap text-sm text-[var(--color-academy-muted)]">{application.memo}</p></section>}
+      {application.processedNote && <section className="mt-3 rounded-2xl border border-[var(--color-academy-line)] p-4"><h3 className="text-sm font-semibold text-[var(--color-academy-ink)]">처리 메모</h3><p className="mt-2 whitespace-pre-wrap text-sm text-[var(--color-academy-muted)]">{application.processedNote}</p></section>}
     </aside>
   </AdminModal>;
 }
@@ -2215,12 +2217,12 @@ function ApplicationReviewSummary({ application, onResolveReview, resolving }: {
   const [reviewNote, setReviewNote] = useState("");
   return <section aria-label="운영 확인 정보" className="mt-5 rounded-2xl border border-[var(--color-academy-line)] bg-white p-4">
     <div className="flex flex-wrap gap-2">
-      <span className="inline-flex min-h-7 items-center rounded-full bg-[var(--brand-accent-soft)] px-2.5 text-xs font-black text-[var(--brand-accent)]">{applicantTypeLabel(application.applicantType)} 회원</span>
-      <span className="inline-flex min-h-7 items-center rounded-full bg-[var(--color-academy-soft)] px-2.5 text-xs font-bold text-[var(--color-academy-muted)]"><Icon name={application.imported ? "upload_file" : "language"} className="mr-1 text-base" />{importedLabel}</span>
+      <span className="inline-flex min-h-6 items-center rounded bg-[var(--color-academy-neutral-soft)] px-2 text-xs text-[var(--color-academy-neutral)]">{applicantTypeLabel(application.applicantType)} 회원</span>
+      <span className="inline-flex min-h-6 items-center rounded bg-[var(--color-academy-soft)] px-2 text-xs text-[var(--color-academy-muted)]">{importedLabel}</span>
       <span className={badge(application.paymentStatus)}>{paymentReviewLabel(application.paymentStatus)}</span>
     </div>
     <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><Info label="선택 요일">{weekdays}</Info><Info label="원본 가져오기">{application.imported ? "완료" : "해당 없음"}</Info></dl>
-    {needsReview.length > 0 && <div className="mt-4 rounded-xl border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] p-3 text-[var(--color-academy-warning)]"><p className="flex items-center gap-1 text-sm font-black"><Icon name="error" className="text-lg" />확인 필요</p><ul className="mt-2 list-disc space-y-1 pl-5 text-xs">{needsReview.map((reason) => <li key={reason}>{reason}</li>)}</ul><label className="mt-3 block text-xs font-black">검토 메모 (필수)<textarea value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} rows={2} placeholder="확인한 내용과 처리 근거를 입력하세요" className="mt-1 w-full rounded-lg border border-[var(--color-academy-warning)] bg-white p-2 font-normal text-[var(--color-academy-ink)]" /></label><div className="mt-2 flex justify-end"><button type="button" disabled={resolving || !reviewNote.trim()} onClick={() => void onResolveReview(application.id, reviewNote.trim())} className="min-h-9 rounded-lg bg-[var(--color-academy-warning)] px-3 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-60">{resolving ? "처리 중…" : "검토 완료"}</button></div></div>}
+    {needsReview.length > 0 && <div className="mt-4 rounded-xl border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] p-3 text-[var(--color-academy-warning)]"><p className="text-sm font-semibold">확인 필요</p><ul className="mt-2 list-disc space-y-1 pl-5 text-xs">{needsReview.map((reason) => <li key={reason}>{reason}</li>)}</ul><label className="mt-3 block text-xs font-medium">검토 메모 (필수)<textarea value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} rows={2} placeholder="확인한 내용과 처리 근거를 입력하세요" className="mt-1 w-full rounded-lg border border-[var(--color-academy-warning)] bg-white p-2 font-normal text-[var(--color-academy-ink)]" /></label><div className="mt-2 flex justify-end"><button type="button" disabled={resolving || !reviewNote.trim()} onClick={() => void onResolveReview(application.id, reviewNote.trim())} className="academy-button-secondary academy-button-sm">{resolving ? "처리 중…" : "검토 완료"}</button></div></div>}
   </section>;
 }
 
@@ -2314,37 +2316,38 @@ function ApplicationAssignmentEditor({
   return <form onSubmit={submit} className="mt-4 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] p-3 text-sm">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div>
-        <h4 className="font-black text-[var(--color-academy-ink)]">{item ? "수업 정보" : "반 지정 필요"}</h4>
+        <h4 className="font-semibold text-[var(--color-academy-ink)]">{item ? "수업 정보" : "반 지정 필요"}</h4>
         <p className="mt-1 text-xs text-[var(--color-academy-muted)]">{locked ? "수강·청구 연결 후에는 이 화면에서 반 정보를 바꿀 수 없습니다." : "운영 반과 참여 요일을 고르면 금액은 자동으로 맞춰집니다."}</p>
       </div>
-      <button type="submit" disabled={saving || locked || offerings.length === 0} className="min-h-9 rounded-lg bg-[var(--brand-accent)] px-3 text-xs font-black text-[var(--brand-accent-contrast)] disabled:cursor-not-allowed disabled:opacity-50">{saving ? "저장 중…" : "저장"}</button>
+      <button type="submit" disabled={saving || locked || offerings.length === 0} className="academy-button-tonal academy-button-sm shrink-0">{saving ? "저장 중…" : "저장"}</button>
     </div>
     <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_140px]">
-      <label className="text-xs font-black text-[var(--color-academy-muted)]">
+      <label className="text-xs font-medium text-[var(--color-academy-muted)]">
         특강 반
-        <select value={offeringId} disabled={saving || locked} onChange={(event) => setOfferingId(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-[var(--color-academy-line)] bg-white px-3 text-sm font-bold text-[var(--color-academy-ink)] disabled:opacity-60">
+        <select value={offeringId} disabled={saving || locked} onChange={(event) => setOfferingId(event.target.value)} className="mt-1 min-h-11 w-full rounded-md border border-[var(--color-academy-line-input)] bg-white px-3 text-sm text-[var(--color-academy-ink)] disabled:opacity-60">
           <option value="">반 선택</option>
           {offerings.map((offering) => <option key={offering.id} value={offering.id}>{offering.name}</option>)}
         </select>
       </label>
-      <label className="text-xs font-black text-[var(--color-academy-muted)]">
+      <label className="text-xs font-medium text-[var(--color-academy-muted)]">
         자동 금액
-        <input value={price} readOnly disabled={saving || locked} inputMode="numeric" type="number" min={1} className="mt-1 min-h-10 w-full rounded-lg border border-[var(--color-academy-line)] bg-white px-3 text-sm font-bold text-[var(--color-academy-ink)] disabled:opacity-60" />
+        <input value={price} readOnly disabled={saving || locked} inputMode="numeric" type="number" min={1} className="mt-1 min-h-11 w-full rounded-md border border-[var(--color-academy-line-input)] bg-white px-3 text-right text-sm tabular-nums text-[var(--color-academy-ink)] disabled:opacity-60" />
       </label>
     </div>
-    {!locked && <p className="mt-2 text-xs font-bold text-[var(--color-academy-muted)]">저장 시 {applicantTypeLabel(application.applicantType)} · 주 {selectedWeekdays.length || "-"}회 기준으로 청구 금액을 다시 계산합니다.</p>}
+    {!locked && <p className="mt-2 text-xs text-[var(--color-academy-muted)]">저장 시 {applicantTypeLabel(application.applicantType)} · 주 {selectedWeekdays.length || "-"}회 기준으로 청구 금액을 다시 계산합니다.</p>}
     <fieldset className="mt-3">
-      <legend className="text-xs font-black text-[var(--color-academy-muted)]">참여 요일</legend>
+      <legend className="text-xs font-medium text-[var(--color-academy-muted)]">참여 요일</legend>
       <div className="mt-2 flex flex-wrap gap-1.5">
         {WEEKDAY_OPTIONS.map((option) => (
-          <label key={option.value} className={`inline-flex min-h-9 items-center gap-1 rounded-lg border px-2.5 text-xs font-black ${selectedWeekdays.includes(option.value) ? "border-[var(--brand-accent)] bg-[var(--brand-accent-soft)] text-[var(--brand-accent)]" : "border-[var(--color-academy-line)] bg-white text-[var(--color-academy-muted)]"}`}>
+          // 고른 요일 = 보조 색(하늘색) 칩. 체크박스는 화면에서 숨기고(sr-only) 라벨이 칩 역할을 한다.
+          <label key={option.value} className={`inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center gap-1 rounded-md border px-3 text-sm font-medium ${selectedWeekdays.includes(option.value) ? "border-[var(--color-academy-secondary-strong)] bg-[var(--color-academy-secondary-soft)] text-[var(--color-academy-secondary-ink)]" : "border-[var(--color-academy-line-input)] bg-white text-[var(--color-academy-ink)]"}`}>
             <input type="checkbox" disabled={saving || locked} checked={selectedWeekdays.includes(option.value)} onChange={(event) => toggleWeekday(option.value, event.target.checked)} className="sr-only" />
             {option.label}
           </label>
         ))}
       </div>
     </fieldset>
-    {(localError || error) && <p role="alert" className="mt-3 rounded-lg border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-2 text-xs font-bold text-[var(--color-academy-danger)]">{localError || error}</p>}
+    {(localError || error) && <p role="alert" className="mt-3 rounded-lg border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-2 text-xs text-[var(--color-academy-danger)]">{localError || error}</p>}
   </form>;
 }
 
@@ -2356,7 +2359,7 @@ function ItemPriceBreakdown({ item }: { item: ApplicationItem }) {
   const tuition = item.tuitionPriceSnapshot ?? 0;
   const shuttle = item.shuttleFeeSnapshot ?? 0;
   return (
-    <p className="mt-1 text-xs font-bold text-[var(--color-academy-success)]">
+    <p className="mt-1 text-xs tabular-nums text-[var(--color-academy-success)]">
       수강료 {tuition.toLocaleString()}원 · 형제할인 −{discount.toLocaleString()}원
       {shuttle > 0 ? ` · 셔틀비(할인 없음) +${shuttle.toLocaleString()}원` : ""}
     </p>
@@ -2400,10 +2403,10 @@ function ApplicationItemCard({
   return <article className="rounded-2xl border border-[var(--color-academy-line)] p-4" aria-busy={updating}>
     <div className="flex items-start justify-between gap-3">
       <div>
-        <p className="font-black text-[var(--color-academy-ink)]">{item.className}</p>
-        <p className="mt-1 text-xs text-[var(--color-academy-muted)]">{item.scheduleLabel || "일정 미정"} · {(item.amount ?? 0).toLocaleString()}원</p>
+        <p className="font-semibold text-[var(--color-academy-ink)]">{item.className}</p>
+        <p className="mt-1 text-xs tabular-nums text-[var(--color-academy-muted)]">{item.scheduleLabel || "일정 미정"} · {(item.amount ?? 0).toLocaleString()}원</p>
         <ItemPriceBreakdown item={item} />
-        {item.waitlistOrder && <p className="mt-1 text-xs font-bold text-[var(--color-academy-warning)]">대기 {item.waitlistOrder}번</p>}
+        {item.waitlistOrder && <p className="mt-1 text-xs tabular-nums text-[var(--color-academy-warning)]">대기 {item.waitlistOrder}번</p>}
       </div>
       <span className={badge(item.status)}>{STATUS_LABEL[item.status]}</span>
     </div>
@@ -2416,12 +2419,12 @@ function ApplicationItemCard({
       onSaveAssignment={onSaveAssignment}
     />
     <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-      {quickStatuses.map((status) => <button key={status} type="button" disabled={updating || item.status === status} onClick={() => void onUpdateItem(item.id, status)} className={`min-h-10 rounded-xl border px-3 text-sm font-black disabled:cursor-wait disabled:opacity-60 ${item.status === status ? "border-transparent bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]" : "border-[var(--color-academy-line)] text-[var(--color-academy-muted)] hover:border-[var(--brand-accent)] hover:text-[var(--brand-accent)]"}`}>{updating ? "처리 중…" : STATUS_LABEL[status]}</button>)}
+      {quickStatuses.map((status) => <button key={status} type="button" disabled={updating || item.status === status} onClick={() => void onUpdateItem(item.id, status)} aria-pressed={item.status === status} className={`min-h-11 rounded-md border px-3 text-sm font-medium disabled:cursor-wait ${item.status === status ? "border-[var(--color-academy-secondary-strong)] bg-[var(--color-academy-secondary-soft)] text-[var(--color-academy-secondary-ink)]" : "border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)] hover:border-[var(--color-academy-primary)] disabled:opacity-60"}`}>{updating ? "처리 중…" : STATUS_LABEL[status]}</button>)}
     </div>
-    {updateError && <p role="alert" aria-live="assertive" className="mt-3 rounded-xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-3 text-sm font-bold text-[var(--color-academy-danger)]">{updateError}</p>}
-    <label className="mt-4 block text-xs font-bold text-[var(--color-academy-muted)]">
+    {updateError && <p role="alert" aria-live="assertive" className="mt-3 rounded-xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-3 text-sm text-[var(--color-academy-danger)]">{updateError}</p>}
+    <label className="mt-4 block text-xs font-medium text-[var(--color-academy-muted)]">
       상태 직접 변경
-      <select value={item.status} disabled={updating} aria-busy={updating} onChange={(event) => void onUpdateItem(item.id, event.target.value as ItemStatus)} className="h-11 mt-1 min-h-11 w-full rounded-xl border border-[var(--color-academy-line)] bg-white px-3 text-sm text-[var(--color-academy-ink)] disabled:cursor-wait disabled:opacity-60">
+      <select value={item.status} disabled={updating} aria-busy={updating} onChange={(event) => void onUpdateItem(item.id, event.target.value as ItemStatus)} className="h-11 mt-1 min-h-11 w-full rounded-md border border-[var(--color-academy-line-input)] bg-white px-3 text-sm text-[var(--color-academy-ink)] disabled:cursor-wait disabled:opacity-60">
         {["PENDING","APPROVED","WAITLISTED","REJECTED","CANCELLED"].map((value) => <option key={value} value={value}>{STATUS_LABEL[value]}</option>)}
       </select>
     </label>
@@ -2467,8 +2470,8 @@ function ConversionReadinessBox({ item, onConvertItem, converting }: { item: App
   return <div className={`mt-4 rounded-xl border p-3 text-sm ${tone}`}>
     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
       <div>
-        <p className="font-black">{title}</p>
-        <p className="mt-1 text-xs opacity-80">{helper}</p>
+        <p className="font-semibold">{title}</p>
+        {helper && <p className="mt-1 text-xs">{helper}</p>}
       </div>
       <div className="flex shrink-0 flex-wrap justify-start gap-1 sm:justify-end">
         <MiniState active={hasClass} label="반 연결" />
@@ -2479,7 +2482,7 @@ function ConversionReadinessBox({ item, onConvertItem, converting }: { item: App
             type="button"
             disabled={converting}
             onClick={() => void onConvertItem(item.id)}
-            className="ml-0 min-h-8 rounded-full bg-[var(--brand-accent)] px-3 text-xs font-black text-[var(--brand-accent-contrast)] disabled:opacity-60 sm:ml-2"
+            className="academy-button-primary academy-button-sm ml-0 sm:ml-2"
           >
             {converting ? "생성 중" : "수강·청구 생성"}
           </button>
@@ -2490,7 +2493,7 @@ function ConversionReadinessBox({ item, onConvertItem, converting }: { item: App
 }
 
 function MiniState({ active, label }: { active: boolean; label: string }) {
-  return <span className={`rounded-full px-2 py-1 text-xs font-black ${active ? "bg-white text-[var(--color-academy-success)]" : "bg-white/60 text-[var(--color-academy-muted)]"}`}>{label}</span>;
+  return <span className={`inline-flex items-center rounded px-2 py-1 text-xs ${active ? "bg-white text-[var(--color-academy-success)]" : "bg-white/60 text-[var(--color-academy-muted)]"}`}>{label}</span>;
 }
 
 function InvoiceActionBox({ item, onCopyInvoiceLink, onRetryNotification, sendingNotificationKey, onRefresh }: { item: ApplicationItem; onCopyInvoiceLink: (item: ApplicationItem) => Promise<void>; onRetryNotification: (scope: "application" | "item" | "invoice", id: string, trigger: string) => Promise<void>; sendingNotificationKey: string; onRefresh?: () => void }) {
@@ -2524,26 +2527,26 @@ function InvoiceActionBox({ item, onCopyInvoiceLink, onRetryNotification, sendin
     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div>
         <div className="flex items-center gap-2">
-          <p className="font-black text-[var(--color-academy-ink)]">청구서</p>
-          {isPaid && <span className="rounded-full bg-[var(--color-academy-success-soft)] px-2 py-0.5 text-xs font-black text-[var(--color-academy-success)]">납부 완료</span>}
+          <p className="font-semibold text-[var(--color-academy-ink)]">청구서</p>
+          {isPaid && <span className="rounded bg-[var(--color-academy-success-soft)] px-2 py-0.5 text-xs text-[var(--color-academy-success)]">납부 완료</span>}
         </div>
-        <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
+        <p className="mt-1 text-xs tabular-nums text-[var(--color-academy-muted)]">
           {item.invoice?.invoiceNo || "청구번호 준비됨"} · {STATUS_LABEL[item.invoice?.status || ""] ?? item.invoice?.status ?? "발행"}
         </p>
-        <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
+        <p className="mt-1 text-xs tabular-nums text-[var(--color-academy-muted)]">
           {(item.invoice?.amount ?? item.amount ?? 0).toLocaleString()}원 · 납부기한 {formatDate(item.invoice?.dueDate)}
         </p>
       </div>
-      <div className="flex shrink-0 flex-wrap gap-2">
-        {href && <a href={href} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center rounded-xl border border-[var(--color-academy-line)] px-3 text-xs font-black text-[var(--color-academy-muted)] hover:border-[var(--brand-accent)] hover:text-[var(--brand-accent)]">청구서 열기</a>}
-        {!isPaid && <button type="button" onClick={() => void onCopyInvoiceLink(item)} className="inline-flex min-h-10 items-center rounded-xl bg-[var(--brand-accent)] px-3 text-xs font-black text-[var(--brand-accent-contrast)]">{activationRequired ? "가입 링크 재발급·복사" : "결제 링크 복사"}</button>}
+      <div className="flex min-w-0 flex-wrap gap-2">
+        {href && <a href={href} target="_blank" rel="noreferrer" className="academy-button-secondary academy-button-sm">청구서 열기</a>}
+        {!isPaid && <button type="button" onClick={() => void onCopyInvoiceLink(item)} className="academy-button-tonal academy-button-sm">{activationRequired ? "가입 링크 재발급·복사" : "결제 링크 복사"}</button>}
       </div>
     </div>
     {!isPaid && item.invoice && <div className="mt-3 flex flex-wrap gap-2 border-t border-[var(--color-academy-line)] pt-3">
-      <p className="w-full text-xs font-bold text-[var(--color-academy-muted)]">직접 납부 확인</p>
-      <button type="button" disabled={paying !== null} onClick={() => void handleMarkPaid("CASH")} className="inline-flex min-h-9 items-center rounded-xl border border-[var(--color-academy-line)] px-3 text-xs font-black text-[var(--color-academy-ink)] hover:border-[var(--color-academy-success)] hover:text-[var(--color-academy-success)] disabled:opacity-50">{paying === "CASH" ? "처리 중…" : "현금 납부 완료"}</button>
-      <button type="button" disabled={paying !== null} onClick={() => void handleMarkPaid("BANK_TRANSFER")} className="inline-flex min-h-9 items-center rounded-xl border border-[var(--color-academy-line)] px-3 text-xs font-black text-[var(--color-academy-ink)] hover:border-[var(--color-academy-success)] hover:text-[var(--color-academy-success)] disabled:opacity-50">{paying === "BANK_TRANSFER" ? "처리 중…" : "계좌이체 납부 완료"}</button>
-      {payErr && <p className="w-full text-xs font-bold text-[var(--color-academy-danger)]">⚠ {payErr}</p>}
+      <p className="w-full text-xs text-[var(--color-academy-muted)]">직접 납부 확인</p>
+      <button type="button" disabled={paying !== null} onClick={() => void handleMarkPaid("CASH")} className="academy-button-secondary academy-button-sm">{paying === "CASH" ? "처리 중…" : "현금 납부 완료"}</button>
+      <button type="button" disabled={paying !== null} onClick={() => void handleMarkPaid("BANK_TRANSFER")} className="academy-button-secondary academy-button-sm">{paying === "BANK_TRANSFER" ? "처리 중…" : "계좌이체 납부 완료"}</button>
+      {payErr && <p role="alert" className="w-full text-xs text-[var(--color-academy-danger)]">{payErr}</p>}
     </div>}
     <NotificationActionRow label={notificationLabel} summary={currentNotificationSummary} sending={sendingNotificationKey === `invoice:${item.id}:${defaultTrigger}`} onSend={() => void onRetryNotification("invoice", item.id, defaultTrigger)} />
   </div>;
@@ -2604,13 +2607,13 @@ function NotificationActionRow({ label, summary, sending, onSend }: { label: str
   const disabled = pending || Boolean(summary && !summary.canRetry && !needsReview);
   return <div className="mt-3 flex flex-col gap-2 rounded-xl bg-[var(--color-academy-soft)] p-3 text-sm sm:flex-row sm:items-center sm:justify-between" aria-live="polite">
     <div className="min-w-0">
-      <p className="font-black text-[var(--color-academy-ink)]">{label}</p>
-      <p className={`mt-1 text-xs font-bold ${state.className}`}>{pending ? "발송 중" : state.text}{summary?.updatedAt ? ` · ${formatDateTime(summary.updatedAt)}` : ""}</p>
+      <p className="font-semibold text-[var(--color-academy-ink)]">{label}</p>
+      <p className={`mt-1 text-xs tabular-nums ${state.className}`}>{pending ? "발송 중" : state.text}{summary?.updatedAt ? ` · ${formatDateTime(summary.updatedAt)}` : ""}</p>
       {summary?.status === "FAILED" && summary.errorCode && <p className="mt-1 text-xs text-[var(--color-academy-danger)]">{NOTIFICATION_ERROR_LABEL[summary.errorCode] ?? "발송 오류 — 솔라피 이력을 확인해주세요."}</p>}
       {needsReview && <p className="mt-1 text-xs text-[var(--color-academy-warning)]">중복 발송을 피하려면 발송 이력을 확인한 뒤 재시도하세요.</p>}
       {summary?.status === "SKIPPED" && <p className="mt-1 text-xs text-[var(--color-academy-warning)]">문자 템플릿이 켜져 있는지 확인한 뒤 재시도하세요.</p>}
     </div>
-    <button type="button" disabled={disabled} onClick={onSend} aria-label={`${label} ${needsReview ? "확인 후 재시도" : summary ? "재발송" : "발송"}`} className="min-h-10 shrink-0 rounded-xl border border-[var(--color-academy-line)] bg-white px-3 text-xs font-black text-[var(--color-academy-ink)] disabled:cursor-not-allowed disabled:opacity-50">{pending ? "발송 중…" : needsReview ? "확인 후 재시도" : summary ? "재발송" : "발송"}</button>
+    <button type="button" disabled={disabled} onClick={onSend} aria-label={`${label} ${needsReview ? "확인 후 재시도" : summary ? "재발송" : "발송"}`} className="academy-button-secondary academy-button-sm shrink-0">{pending ? "발송 중…" : needsReview ? "확인 후 재시도" : summary ? "재발송" : "발송"}</button>
   </div>;
 }
 
@@ -2679,10 +2682,7 @@ function ShuttleLocationCard({ point }: { point: ShuttlePoint }) {
 
   return <article className="min-w-0 rounded-xl border border-[var(--color-academy-line)] bg-white p-3">
     <div className="flex flex-wrap items-start justify-between gap-2">
-      <div className="flex min-w-0 items-center gap-2">
-        <Icon name={point.label === "탑승 위치" ? "trip_origin" : "location_on"} className="shrink-0 text-xl text-[var(--color-academy-muted)]" />
-        <h5 className="font-black text-[var(--color-academy-ink)]">{point.label}</h5>
-      </div>
+      <h5 className="min-w-0 font-semibold text-[var(--color-academy-ink)]">{point.label}</h5>
       {hasCoordinates ? (
         <span className={badge("UNASSIGNED")}>지도 핀 제출 · 관리자 확인 필요</span>
       ) : (
@@ -2690,11 +2690,11 @@ function ShuttleLocationCard({ point }: { point: ShuttlePoint }) {
       )}
     </div>
 
-    <p className="mt-3 break-words text-sm font-bold text-[var(--color-academy-ink)]">{displayAddress}</p>
+    <p className="mt-3 break-words text-sm text-[var(--color-academy-ink)]">{displayAddress}</p>
     {point.location && point.location !== displayAddress && <p className="mt-1 break-words text-xs text-[var(--color-academy-muted)]">상세 설명: {point.location}</p>}
     {(kakaoHref || naverHref) && <div className="mt-3 grid grid-cols-2 gap-2">
-      {kakaoHref && <a href={kakaoHref} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center justify-center gap-1 rounded-lg border border-[var(--color-academy-line)] bg-white px-2 text-xs font-black text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"><Icon name="map" className="text-base" />카카오맵</a>}
-      {naverHref && <a href={naverHref} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center justify-center gap-1 rounded-lg border border-[var(--color-academy-success)] bg-white px-2 text-xs font-black text-[var(--color-academy-success)] hover:bg-[var(--color-academy-success-soft)]"><Icon name="map" className="text-base" />네이버 지도</a>}
+      {kakaoHref && <a href={kakaoHref} target="_blank" rel="noreferrer" className="academy-button-secondary academy-button-sm">카카오맵</a>}
+      {naverHref && <a href={naverHref} target="_blank" rel="noreferrer" className="academy-button-secondary academy-button-sm">네이버 지도</a>}
     </div>}
   </article>;
 }
@@ -2720,18 +2720,18 @@ function ShuttleRequestBox({ request, onChanged }: { request: ShuttleRequest; on
   // 취소(미이용) 상태면 회색 톤 + 상세 카드를 접어, 실제로 신청이 빠졌음을 한눈에 알 수 있게 한다.
   return <div className={`mt-4 min-w-0 rounded-xl p-3 text-sm ${cancelled ? "bg-[var(--color-academy-soft)]" : "bg-[var(--color-academy-soft)]"}`}>
     <div className="flex flex-wrap items-center justify-between gap-2">
-      <h4 className={`font-black ${cancelled ? "text-[var(--color-academy-muted)] line-through" : "text-[var(--color-academy-ink)]"}`}>셔틀 요청</h4>
-      <div className="flex items-center gap-2">
+      <h4 className={`font-semibold ${cancelled ? "text-[var(--color-academy-muted)] line-through" : "text-[var(--color-academy-ink)]"}`}>셔틀 요청</h4>
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
         <span className={badge(request.status || "REQUESTED")}>{STATUS_LABEL[request.status || "REQUESTED"]}</span>
         {cancelled
           // 게슈탈트 A-15: 44px·12px 이상, 되돌리기는 옅은 바탕(tonal), 취소는 위험 테두리(danger) — 같은 toggleRide·같은 확인
-          ? <button type="button" disabled={busy} onClick={() => toggleRide(true)} className="academy-button-tonal">{busy ? "처리 중…" : "🚌 셔틀 이용으로 변경"}</button>
-          : <button type="button" disabled={busy} onClick={() => toggleRide(false)} className="academy-button-danger">{busy ? "처리 중…" : "🚫 셔틀 신청 취소"}</button>}
+          ? <button type="button" disabled={busy} onClick={() => toggleRide(true)} className="academy-button-tonal">{busy ? "처리 중…" : "셔틀 이용으로 변경"}</button>
+          : <button type="button" disabled={busy} onClick={() => toggleRide(false)} className="academy-button-danger">{busy ? "처리 중…" : "셔틀 신청 취소"}</button>}
       </div>
     </div>
-    {err && <p className="mt-1 text-xs font-bold text-[var(--color-academy-danger)]">⚠ {err}</p>}
+    {err && <p role="alert" className="mt-1 text-xs text-[var(--color-academy-danger)]">{err}</p>}
     {cancelled ? (
-      <p className="mt-2 rounded-lg bg-white px-3 py-2 text-xs font-bold text-[var(--color-academy-muted)]">🚫 셔틀 미이용 처리됨 — 배차 명단에서 제외되었습니다. 다시 태우려면 위 버튼을 누르세요.</p>
+      <p className="mt-2 rounded-lg bg-white px-3 py-2 text-xs text-[var(--color-academy-muted)]">셔틀 미이용 처리됨 — 배차 명단에서 제외되었습니다. 다시 태우려면 위 버튼을 누르세요.</p>
     ) : <>
       <div className="mt-3 grid min-w-0 gap-3 lg:grid-cols-2">
         <ShuttleLocationCard point={shuttlePoint(request, "pickup")} />
@@ -2746,7 +2746,7 @@ function ShuttleRequestBox({ request, onChanged }: { request: ShuttleRequest; on
 }
 
 function Info({ label, children }: { label: string; children: React.ReactNode }) {
-  return <p><span className="block text-xs font-bold text-[var(--color-academy-muted)]">{label}</span><b className="font-bold text-[var(--color-academy-ink)]">{children}</b></p>;
+  return <p><span className="block text-xs text-[var(--color-academy-muted)]">{label}</span><b className="font-normal text-[var(--color-academy-ink)]">{children}</b></p>;
 }
 
 function dateInputValue(value?: string | null) {
@@ -2818,14 +2818,15 @@ function ClassForm({ seasonId, initial, coaches, onClose, onSubmit }: { seasonId
     }
   }
 
-  const inputClass = "mt-1 min-h-11 w-full rounded-xl border border-[var(--color-academy-line)] bg-white px-3 font-normal text-[var(--color-academy-ink)]";
+  // 입력칸은 테마 공용 모양(흰 면 + 입력선 + 44px)
+  const inputClass = "academy-input mt-1";
   const selectedCoach = coaches.find((coach) => coach.id === selectedInstructorId);
   const currentCoachMissingFromOptions = Boolean(selectedInstructorId && !selectedCoach);
   const attendanceMissing = ["OPEN", "CLOSED"].includes(attendanceReadiness.status)
     ? missingAttendancePreparation(attendanceReadiness.linkedClassId, attendanceReadiness.instructorId)
     : [];
-  return <AdminModal onClose={() => { if (!pending) onClose(); }} titleId="seasonal-class-modal-title"><form onSubmit={submit} className="w-full max-w-3xl p-6"><header className="flex items-center justify-between"><div><h2 id="seasonal-class-modal-title" className="text-xl font-black">{initial ? "특강 반 수정" : "특강 반 추가"}</h2></div><button type="button" onClick={onClose} disabled={pending} aria-label="닫기"><Icon name="close" /></button></header>
-    {error && <p role="alert" className="mt-4 rounded-lg bg-[var(--color-academy-danger-soft)] p-3 text-sm font-bold text-[var(--color-academy-danger)]">{error}</p>}
+  return <AdminModal onClose={() => { if (!pending) onClose(); }} titleId="seasonal-class-modal-title"><form onSubmit={submit} className="w-full max-w-3xl p-6"><header className="flex items-center justify-between"><div><h2 id="seasonal-class-modal-title" className="text-xl font-bold">{initial ? "특강 반 수정" : "특강 반 추가"}</h2></div><button type="button" onClick={onClose} disabled={pending} aria-label="닫기" className="grid size-11 shrink-0 place-items-center rounded-md text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">✕</button></header>
+    {error && <p role="alert" className="mt-4 rounded-lg bg-[var(--color-academy-danger-soft)] p-3 text-sm text-[var(--color-academy-danger)]">{error}</p>}
     <div className="mt-5 grid gap-4 sm:grid-cols-2">
       <ClassInput name="code" label="반 코드" required defaultValue={initial?.code} placeholder="예: MON-1" />
       <ClassInput name="title" label="반 이름" required defaultValue={initial?.name} placeholder="예: 초등 고학년 1교시" />
@@ -2836,7 +2837,7 @@ function ClassForm({ seasonId, initial, coaches, onClose, onSubmit }: { seasonId
       <ClassInput name="newApplicantPrice" label="신규 회원 수강료" type="number" defaultValue={initial?.newApplicantPrice} />
       <ClassInput name="existingApplicantPrice" label="기존 회원 수강료" type="number" defaultValue={initial?.existingApplicantPrice} />
       <ClassInput name="shuttleFee" label="셔틀비" type="number" defaultValue={initial?.shuttleFee ?? 0} />
-      <label className="text-sm font-bold text-[var(--color-academy-muted)]">담당 선생님
+      <label className="text-sm font-medium text-[var(--color-academy-muted)]">담당 선생님
         <select name="instructorId" value={selectedInstructorId} onChange={(event) => {
           setSelectedInstructorId(event.target.value);
           setAttendanceReadiness((current) => ({ ...current, instructorId: event.target.value }));
@@ -2849,19 +2850,19 @@ function ClassForm({ seasonId, initial, coaches, onClose, onSubmit }: { seasonId
       </label>
       <ClassInput name="linkedProgramId" label="연결 프로그램 ID" defaultValue={initial?.linkedProgramId} placeholder="기존 프로그램 ID (선택)" />
       <ClassInput name="linkedClassId" label="연결 정규 반 ID" defaultValue={initial?.linkedClassId} placeholder="수강·출석에 연결할 반 ID" onChange={(value) => setAttendanceReadiness((current) => ({ ...current, linkedClassId: value }))} />
-      <label className="text-sm font-bold text-[var(--color-academy-muted)]">공개 상태<select name="status" value={attendanceReadiness.status} onChange={(event) => setAttendanceReadiness((current) => ({ ...current, status: event.target.value as NonNullable<SeasonalClass["status"]> }))} className={inputClass}><option value="DRAFT">작성 중</option><option value="OPEN">모집 중</option><option value="CLOSED">모집 마감</option><option value="CANCELLED">취소</option></select></label>
-      <label className="flex min-h-11 items-center gap-3 self-end rounded-xl border border-[var(--color-academy-line)] px-3 text-sm font-bold"><input name="shuttleAvailable" type="checkbox" defaultChecked={initial?.shuttleAvailable} className="size-5" />셔틀 이용 가능</label>
+      <label className="text-sm font-medium text-[var(--color-academy-muted)]">공개 상태<select name="status" value={attendanceReadiness.status} onChange={(event) => setAttendanceReadiness((current) => ({ ...current, status: event.target.value as NonNullable<SeasonalClass["status"]> }))} className={inputClass}><option value="DRAFT">작성 중</option><option value="OPEN">모집 중</option><option value="CLOSED">모집 마감</option><option value="CANCELLED">취소</option></select></label>
+      <label className="flex min-h-11 items-center gap-3 self-end rounded-md border border-[var(--color-academy-line-input)] px-3 text-sm"><input name="shuttleAvailable" type="checkbox" defaultChecked={initial?.shuttleAvailable} className="size-5" />셔틀 이용 가능</label>
     </div>
-    {attendanceMissing.length > 0 && <div role="status" className="mt-4 rounded-xl border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] p-3 text-sm text-[var(--color-academy-warning)]"><p className="flex items-center gap-2 font-black"><Icon name="warning" />출석 준비 미완료</p><p className="mt-1">빠진 항목: {attendanceMissing.join(" · ")}. 모집 상태로 저장할 수 있지만 수업 시작 전 연결해 주세요.</p></div>}
-    <section className="mt-6 border-t border-[var(--color-academy-line)] pt-5"><div className="flex items-center justify-between"><div><h3 className="font-black">전체 수업 일정</h3><p className="text-xs text-[var(--color-academy-muted)]">학생에게 안내할 모든 회차를 입력하세요.</p></div><button type="button" onClick={() => setSessionDates((rows) => [...rows, { startsAt: "", endsAt: "", location: initial?.location ?? "", note: "" }])} className="min-h-10 rounded-lg border border-[var(--color-academy-line)] px-3 text-sm font-bold">회차 추가</button></div>
-      <div className="mt-3 space-y-3">{sessionDates.map((row, index) => <div key={index} className="grid gap-3 rounded-xl bg-[var(--color-academy-soft)] p-3 sm:grid-cols-2"><label className="text-xs font-bold">{index + 1}회 시작<input required type="datetime-local" value={row.startsAt} onChange={(event) => setSessionDates((rows) => rows.map((item, rowIndex) => rowIndex === index ? { ...item, startsAt: event.target.value } : item))} className={inputClass} /></label><label className="text-xs font-bold">{index + 1}회 종료<input required type="datetime-local" value={row.endsAt} onChange={(event) => setSessionDates((rows) => rows.map((item, rowIndex) => rowIndex === index ? { ...item, endsAt: event.target.value } : item))} className={inputClass} /></label><label className="text-xs font-bold">장소<input value={row.location} onChange={(event) => setSessionDates((rows) => rows.map((item, rowIndex) => rowIndex === index ? { ...item, location: event.target.value } : item))} className={inputClass} /></label><div className="flex items-end gap-2"><label className="min-w-0 flex-1 text-xs font-bold">메모<input value={row.note} onChange={(event) => setSessionDates((rows) => rows.map((item, rowIndex) => rowIndex === index ? { ...item, note: event.target.value } : item))} className={inputClass} /></label>{sessionDates.length > 1 && <button type="button" aria-label={`${index + 1}회 삭제`} onClick={() => setSessionDates((rows) => rows.filter((_, rowIndex) => rowIndex !== index))} className="mb-0 min-h-11 rounded-lg border border-[var(--color-academy-danger)] px-3 text-sm font-bold text-[var(--color-academy-danger)]">삭제</button>}</div></div>)}</div>
+    {attendanceMissing.length > 0 && <div role="status" className="mt-4 rounded-xl border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] p-3 text-sm text-[var(--color-academy-warning)]"><p className="font-semibold">출석 준비 미완료</p><p className="mt-1">빠진 항목: {attendanceMissing.join(" · ")}. 모집 상태로 저장할 수 있지만 수업 시작 전 연결해 주세요.</p></div>}
+    <section className="mt-6 border-t border-[var(--color-academy-line)] pt-5"><div className="flex items-center justify-between"><div><h3 className="academy-section-title">전체 수업 일정</h3><p className="text-xs text-[var(--color-academy-muted)]">학생에게 안내할 모든 회차를 입력하세요.</p></div><button type="button" onClick={() => setSessionDates((rows) => [...rows, { startsAt: "", endsAt: "", location: initial?.location ?? "", note: "" }])} className="academy-button-secondary academy-button-sm shrink-0">회차 추가</button></div>
+      <div className="mt-3 space-y-3">{sessionDates.map((row, index) => <div key={index} className="grid gap-3 rounded-xl bg-[var(--color-academy-soft)] p-3 sm:grid-cols-2"><label className="text-xs font-medium">{index + 1}회 시작<input required type="datetime-local" value={row.startsAt} onChange={(event) => setSessionDates((rows) => rows.map((item, rowIndex) => rowIndex === index ? { ...item, startsAt: event.target.value } : item))} className={inputClass} /></label><label className="text-xs font-medium">{index + 1}회 종료<input required type="datetime-local" value={row.endsAt} onChange={(event) => setSessionDates((rows) => rows.map((item, rowIndex) => rowIndex === index ? { ...item, endsAt: event.target.value } : item))} className={inputClass} /></label><label className="text-xs font-medium">장소<input value={row.location} onChange={(event) => setSessionDates((rows) => rows.map((item, rowIndex) => rowIndex === index ? { ...item, location: event.target.value } : item))} className={inputClass} /></label><div className="flex items-end gap-2"><label className="min-w-0 flex-1 text-xs font-medium">메모<input value={row.note} onChange={(event) => setSessionDates((rows) => rows.map((item, rowIndex) => rowIndex === index ? { ...item, note: event.target.value } : item))} className={inputClass} /></label>{sessionDates.length > 1 && <button type="button" aria-label={`${index + 1}회 삭제`} onClick={() => setSessionDates((rows) => rows.filter((_, rowIndex) => rowIndex !== index))} className="academy-button-danger shrink-0">삭제</button>}</div></div>)}</div>
     </section>
-    <footer className="mt-6 flex justify-end gap-2"><button type="button" onClick={onClose} disabled={pending} className="min-h-11 rounded-xl border border-[var(--color-academy-line)] px-4 font-bold disabled:opacity-60">취소</button><button disabled={pending} className="min-h-11 rounded-xl bg-[var(--brand-accent)] px-5 font-black text-[var(--brand-accent-contrast)] disabled:opacity-60">{pending ? "저장 중…" : "저장"}</button></footer>
+    <footer className="mt-6 flex flex-wrap justify-end gap-2"><button type="button" onClick={onClose} disabled={pending} className="academy-button-secondary">취소</button><button disabled={pending} className="academy-button-primary">{pending ? "저장 중…" : "저장"}</button></footer>
   </form></AdminModal>;
 }
 
 function ClassInput({ name, label, type = "text", placeholder, required, defaultValue, onChange }: Field) {
-  return <label className="text-sm font-bold text-[var(--color-academy-muted)]">{label}{required && <span className="text-[var(--color-academy-danger)]"> *</span>}<input name={name} type={type} required={required} placeholder={placeholder} defaultValue={defaultValue ?? ""} onChange={onChange ? (event) => onChange(event.target.value) : undefined} min={type === "number" ? 0 : undefined} className="mt-1 min-h-11 w-full rounded-xl border border-[var(--color-academy-line)] bg-white px-3 font-normal text-[var(--color-academy-ink)]" /></label>;
+  return <label className="text-sm font-medium text-[var(--color-academy-muted)]">{label}{required && <span className="text-[var(--color-academy-danger)]"> *</span>}<input name={name} type={type} required={required} placeholder={placeholder} defaultValue={defaultValue ?? ""} onChange={onChange ? (event) => onChange(event.target.value) : undefined} min={type === "number" ? 0 : undefined} className="academy-input mt-1" /></label>;
 }
 
 type Field = { name: string; label: string; type?: string; placeholder?: string; required?: boolean; defaultValue?: string | number | null; onChange?: (value: string) => void };
@@ -2869,9 +2870,10 @@ function FormModal({ title, helper, fields, onClose, onSubmit }: { title: string
   const [pending, setPending] = useState(false); const [error, setError] = useState("");
   async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setPending(true); setError(""); const form = new FormData(event.currentTarget); const payload = Object.fromEntries(form.entries()); try { await onSubmit(payload); } catch (caught) { setError(adminErrorText(caught, "저장하지 못했습니다.")); setPending(false); } }
   const titleId = "seasonal-form-modal-title";
-  return <AdminModal onClose={() => { if (!pending) onClose(); }} titleId={titleId}><form onSubmit={submit} className="w-full p-6"><header className="flex items-center justify-between"><h2 id={titleId} className="text-xl font-black">{title}</h2><button type="button" onClick={onClose} disabled={pending} aria-label="닫기"><Icon name="close" /></button></header>{helper && <p className="mt-3 rounded-xl bg-[var(--color-academy-warning-soft)] p-3 text-xs font-bold text-[var(--color-academy-warning)]">{helper}</p>}{error && <p role="alert" className="mt-4 rounded-lg bg-[var(--color-academy-danger-soft)] p-3 text-sm font-bold text-[var(--color-academy-danger)]">{error}</p>}<div className="mt-5 grid gap-4 sm:grid-cols-2">{fields.map((field, index) => <label key={field.name} className="text-sm font-bold text-[var(--color-academy-muted)]">{field.label}{field.required && <span className="text-[var(--color-academy-danger)]"> *</span>}<input name={field.name} type={field.type || "text"} required={field.required} placeholder={field.placeholder} defaultValue={field.defaultValue ?? ""} min={field.type === "number" ? 0 : undefined} data-admin-modal-initial-focus={index === 0 ? "true" : undefined} className="mt-1 min-h-11 w-full rounded-xl border border-[var(--color-academy-line)] bg-white px-3 font-normal text-[var(--color-academy-ink)]" /></label>)}</div><footer className="mt-6 flex justify-end gap-2"><button type="button" onClick={onClose} disabled={pending} className="min-h-11 rounded-xl border border-[var(--color-academy-line)] px-4 font-bold disabled:opacity-60">취소</button><button disabled={pending} className="min-h-11 rounded-xl bg-[var(--brand-accent)] px-5 font-black text-[var(--brand-accent-contrast)] disabled:opacity-60">{pending ? "저장 중…" : "저장"}</button></footer></form></AdminModal>;
+  return <AdminModal onClose={() => { if (!pending) onClose(); }} titleId={titleId}><form onSubmit={submit} className="w-full p-6"><header className="flex items-center justify-between"><h2 id={titleId} className="text-xl font-bold">{title}</h2><button type="button" onClick={onClose} disabled={pending} aria-label="닫기" className="grid size-11 shrink-0 place-items-center rounded-md text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">✕</button></header>{helper && <p className="mt-3 rounded-xl bg-[var(--color-academy-warning-soft)] p-3 text-xs text-[var(--color-academy-warning)]">{helper}</p>}{error && <p role="alert" className="mt-4 rounded-lg bg-[var(--color-academy-danger-soft)] p-3 text-sm text-[var(--color-academy-danger)]">{error}</p>}<div className="mt-5 grid gap-4 sm:grid-cols-2">{fields.map((field, index) => <label key={field.name} className="text-sm font-medium text-[var(--color-academy-muted)]">{field.label}{field.required && <span className="text-[var(--color-academy-danger)]"> *</span>}<input name={field.name} type={field.type || "text"} required={field.required} placeholder={field.placeholder} defaultValue={field.defaultValue ?? ""} min={field.type === "number" ? 0 : undefined} data-admin-modal-initial-focus={index === 0 ? "true" : undefined} className="academy-input mt-1" /></label>)}</div><footer className="mt-6 flex flex-wrap justify-end gap-2"><button type="button" onClick={onClose} disabled={pending} className="academy-button-secondary">취소</button><button disabled={pending} className="academy-button-primary">{pending ? "저장 중…" : "저장"}</button></footer></form></AdminModal>;
 }
 
-function Panel({ title, icon, action, children }: { title: string; icon: string; action?: React.ReactNode; children: React.ReactNode }) { return <section className="min-w-0 max-w-full rounded-2xl border border-[var(--color-academy-line)] bg-white shadow-sm"><header className="flex min-w-0 flex-col justify-between gap-3 border-b border-[var(--color-academy-line)] px-5 py-4 sm:flex-row sm:items-center"><h2 className="flex min-w-0 items-center gap-2 break-words font-black"><Icon name={icon} className="text-[var(--brand-accent)]" />{title}</h2>{action}</header><div className="min-w-0 max-w-full p-5">{children}</div></section>; }
-function Empty({ text }: { text: string }) { return <div className="py-10 text-center"><Icon name="inbox" className="text-4xl text-[var(--color-academy-faint)]" /><p className="mt-2 text-sm text-[var(--color-academy-muted)]">{text}</p></div>; }
+// 카드 제목은 글자로만 말한다(장식 아이콘 제거 — 2026-11-13 UI 통일). 제목 모양은 테마 academy-section-title.
+function Panel({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) { return <section className="min-w-0 max-w-full rounded-lg border border-[var(--color-academy-line)] bg-white"><header className="flex min-w-0 flex-col justify-between gap-3 border-b border-[var(--color-academy-line)] px-5 py-3 sm:flex-row sm:items-center"><h2 className="academy-section-title min-w-0 break-words">{title}</h2>{action}</header><div className="min-w-0 max-w-full p-5">{children}</div></section>; }
+function Empty({ text }: { text: string }) { return <div className="py-8 text-center"><p className="text-sm text-[var(--color-academy-muted)]">{text}</p></div>; }
 function Loading() { return <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 8 }).map((_, index) => <div key={index} className="h-36 animate-pulse rounded-2xl bg-[var(--color-academy-soft)]" />)}</div>; }

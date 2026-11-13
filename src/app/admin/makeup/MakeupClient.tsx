@@ -11,6 +11,7 @@ import {
 import AdminModal from "@/components/admin/AdminModal";
 import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
 import AdminPanelActions from "@/components/admin/AdminPanelActions";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import ListViewToggle, { useRememberedListView } from "@/components/admin/list/ListViewToggle";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
@@ -151,12 +152,12 @@ function MakeupLoadingFallback() {
 function MakeupErrorState({ onRetry }: { onRetry: () => void }) {
     return (
         <div className="rounded-2xl border border-[var(--color-academy-line)] bg-white p-8 text-center shadow-sm">
-            <span className="material-symbols-outlined mb-3 text-4xl text-[var(--color-academy-danger)]">error</span>
-            <p className="font-bold text-[var(--color-academy-ink)]">보강 예약 정보를 불러오지 못했습니다.</p>
+            {/* 오류 안내는 아이콘 없이 글자로(2026-11-13 UI 통일) */}
+            <p className="font-semibold text-[var(--color-academy-danger)]">보강 예약 정보를 불러오지 못했습니다.</p>
             <button
                 type="button"
                 onClick={onRetry}
-                className="mt-4 rounded-xl bg-[var(--color-academy-primary)] px-4 py-2 text-sm font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)]"
+                className="academy-button-primary mt-4"
             >
                 다시 시도
             </button>
@@ -308,7 +309,7 @@ export default function MakeupClient({
         }
     }
 
-    // ⚡·상세 패널이 같이 쓰는 작업 목록 — 예전 행의 상태 드롭다운(출석·노쇼·취소)과 «취소» 버튼을 같은 인자로 옮긴 것.
+    // «빠른작업»·상세 패널이 같이 쓰는 작업 목록 — 예전 행의 상태 드롭다운(출석·노쇼·취소)과 «취소» 버튼을 같은 인자로 옮긴 것.
     // 예약(BOOKED) 상태에서만 바꿀 수 있던 예전 규칙 그대로(다른 상태는 작업 없음).
     // ⚠️ «취소 처리»(상태 변경 = 보강권 동기화)와 «예약 취소»(확인창 후 취소)는 서버 동작이 달라 둘 다 남긴다.
     function buildMakeupActions(item: MakeupItem): AdminQuickAction[] {
@@ -322,7 +323,7 @@ export default function MakeupClient({
         ];
     }
 
-    // 행 키보드(Enter·Space) = 상세 패널. 행 안의 ⚡ 버튼에서 누른 키는 가로채지 않는다.
+    // 행 키보드(Enter·Space) = 상세 패널. 행 안의 «빠른작업» 버튼에서 누른 키는 가로채지 않는다.
     function handleRowKeyDown(event: React.KeyboardEvent<HTMLElement>, id: string) {
         if (event.target !== event.currentTarget) return;
         if (event.key === "Enter" || event.key === " ") {
@@ -340,7 +341,7 @@ export default function MakeupClient({
     // 표 칸 수(날짜별 머리줄 colSpan 용)
     const columnCount = 8;
 
-    // 한 줄 행: 보강일 | 시간 | 원생 | 보강 반 | 원래 반 | 결석일 | 상태 | 관리(⚡). 요일·프로그램은 상세 패널에서
+    // 한 줄 행: 보강일 | 시간 | 원생 | 보강 반 | 원래 반 | 결석일 | 상태 | 관리(«빠른작업»). 요일·프로그램은 상세 패널에서
     function renderMakeupRow(item: MakeupItem) {
         const cfg = STATUS_CONFIG[item.status] ?? STATUS_CONFIG.BOOKED;
         const actions = buildMakeupActions(item);
@@ -354,16 +355,16 @@ export default function MakeupClient({
                 className="cursor-pointer transition-colors hover:bg-[var(--color-academy-soft)] focus:bg-[var(--color-academy-primary-soft)] focus:outline-none"
             >
                 {/* 날짜·시간은 오른쪽 + 자릿수 폭 고정 */}
-                <td className="admin-cell-num px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{fmtDate(item.makeupDate)}</td>
+                <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-ink)]">{fmtDate(item.makeupDate)}</td>
                 <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{fmtTime(item)}</td>
-                <td className="px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{item.studentName}</td>
+                <td className="px-2 py-1.5 font-semibold text-[var(--color-academy-ink)]">{item.studentName}</td>
                 <td className="px-2 py-1.5 text-[var(--color-academy-ink)]">{item.makeupClassName}</td>
                 <td className="hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{item.originalClassName}</td>
                 <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{fmtDate(item.originalDate)}</td>
                 <td className="px-2 py-1.5">
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${cfg.bg} ${cfg.color}`}>{cfg.label}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-xs ${cfg.bg} ${cfg.color}`}>{cfg.label}</span>
                 </td>
-                {/* 관리: ⚡(출석·노쇼·취소). 눌러도 행 클릭(패널)이 같이 일어나지 않게 전파 차단 */}
+                {/* 관리: «빠른작업»(출석·노쇼·취소). 눌러도 행 클릭(패널)이 같이 일어나지 않게 전파 차단 */}
                 <td className="admin-cell-center px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
                     {actions.length > 0 ? (
                         <AdminQuickActionMenu label={`${item.studentName} 보강 빠른 작업`} actions={actions} />
@@ -388,22 +389,22 @@ export default function MakeupClient({
     return (
         <div className="space-y-3">
             {/* 페이지 제목 + 예약 버튼 */}
-            <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                    <h1 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">보강 관리</h1>
-                    <p className="text-xs text-[var(--color-academy-muted)]">보강 예약 <span className="tabular-nums">{sessions.length}</span>건</p>
-                </div>
-                <button
-                    onClick={() => {
-                        setShowBookModal(true);
-                        void loadStudents();
-                    }}
-                    className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-[var(--color-academy-primary)] px-4 text-sm font-bold text-[var(--color-academy-on-primary)] transition-colors hover:bg-[var(--color-academy-primary-hover)]"
-                >
-                    <span className="material-symbols-outlined text-[20px]" aria-hidden="true">event_repeat</span>
-                    보강 예약
-                </button>
-            </div>
+            <AdminPageHeader
+                title="보강 관리"
+                description={<>보강 예약 <span className="tabular-nums">{sessions.length}</span>건</>}
+                actions={
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setShowBookModal(true);
+                            void loadStudents();
+                        }}
+                        className="academy-button-primary"
+                    >
+                        보강 예약
+                    </button>
+                }
+            />
 
             {/* 상태 칩(예전 요약 카드 4개 + 상태 탭을 한 줄로) + 보기 전환(날짜별 | 목록) */}
             <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
@@ -432,7 +433,7 @@ export default function MakeupClient({
                     <div className="overflow-x-auto">
                         {/* admin-list-table: 글자 왼쪽·날짜/시간 오른쪽(tabular)·한 줄(말줄임 없음, 좁으면 가로 스크롤) */}
                         <table className="admin-list-table w-full border-collapse text-sm">
-                            <thead className="bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]">
+                            <thead className="bg-[var(--color-academy-soft)] text-xs font-semibold text-[var(--color-academy-muted)]">
                                 <tr>
                                     <th className="admin-cell-num px-2 py-2">보강일</th>
                                     <th className="admin-cell-num hidden px-2 py-2 md:table-cell">시간</th>
@@ -451,7 +452,7 @@ export default function MakeupClient({
                                     return (
                                         <tbody key={group.key} className="divide-y divide-[var(--color-academy-line)]">
                                             <tr>
-                                                <th colSpan={columnCount} scope="rowgroup" className="bg-[var(--color-academy-soft)] px-2 py-1.5 text-xs font-black text-[var(--color-academy-ink)]">
+                                                <th colSpan={columnCount} scope="rowgroup" className="bg-[var(--color-academy-soft)] px-2 py-1.5 text-xs font-semibold text-[var(--color-academy-ink)]">
                                                     {group.label} · <span className="tabular-nums">{group.items.length}</span>건
                                                     {bookedCount > 0 && <> · 예약 <span className="tabular-nums">{bookedCount}</span></>}
                                                 </th>
@@ -468,7 +469,7 @@ export default function MakeupClient({
                 </div>
             )}
 
-            {/* 행 클릭 상세 패널 — 데스크톱 오른쪽 / 모바일 하단 시트. 작업 버튼은 ⚡ 와 같은 목록 */}
+            {/* 행 클릭 상세 패널 — 데스크톱 오른쪽 / 모바일 하단 시트. 작업 버튼은 «빠른작업» 과 같은 목록 */}
             {detailItem && (() => {
                 const d = detailItem;
                 const cfg = STATUS_CONFIG[d.status] ?? STATUS_CONFIG.BOOKED;
@@ -485,8 +486,8 @@ export default function MakeupClient({
                 return (
                     <ListDetailPanel onClose={() => setDetailId(null)} titleId="makeup-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
                         <div className="mb-4 flex items-center gap-2">
-                            <h3 id="makeup-detail-panel-title" className="min-w-0 break-keep text-lg font-black text-[var(--color-academy-ink)]">{d.studentName}</h3>
-                            <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${cfg.bg} ${cfg.color}`}>{cfg.label}</span>
+                            <h3 id="makeup-detail-panel-title" className="min-w-0 break-keep text-lg font-bold text-[var(--color-academy-ink)]">{d.studentName}</h3>
+                            <span className={`rounded-full px-2 py-0.5 text-xs ${cfg.bg} ${cfg.color}`}>{cfg.label}</span>
                             <button
                                 type="button"
                                 onClick={() => setDetailId(null)}
@@ -499,7 +500,7 @@ export default function MakeupClient({
                         <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
                             {rows.map((row) => (
                                 <div key={row.label} className="contents">
-                                    <dt className="font-bold text-[var(--color-academy-muted)]">{row.label}</dt>
+                                    <dt className="font-medium text-[var(--color-academy-muted)]">{row.label}</dt>
                                     <dd className="min-w-0 break-keep break-words text-[var(--color-academy-ink)]">{row.value}</dd>
                                 </div>
                             ))}
@@ -691,8 +692,8 @@ function BookMakeupModal({
                     <h2 id="book-makeup-title" className="text-lg font-bold text-[var(--color-academy-ink)]">
                         {step === 1 ? "보강 예약 - 원생/결석 정보" : "보강 예약 - 보강 반 선택"}
                     </h2>
-                    <button onClick={onClose} className="text-[var(--color-academy-faint)] hover:text-[var(--color-academy-muted)]">
-                        <span className="material-symbols-outlined">close</span>
+                    <button type="button" aria-label="닫기" onClick={onClose} className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
+                        <span className="material-symbols-outlined" aria-hidden="true">close</span>
                     </button>
                 </div>
 
@@ -708,13 +709,13 @@ function BookMakeupModal({
                                     value={studentSearch}
                                     onChange={(e) => setStudentSearch(e.target.value)}
                                     disabled={studentsLoading || Boolean(studentsError)}
-                                    className="w-full border border-[var(--color-academy-line-input)] rounded-lg px-3 py-2 text-sm mb-2"
+                                    className="academy-input mb-2"
                                 />
                                 <select
                                     value={studentId}
                                     onChange={(e) => setStudentId(e.target.value)}
                                     disabled={studentsLoading || Boolean(studentsError)}
-                                    className="w-full border border-[var(--color-academy-line-input)] rounded-lg px-3 py-2 text-sm"
+                                    className="academy-input"
                                     size={5}
                                 >
                                     <option value="">
@@ -732,7 +733,7 @@ function BookMakeupModal({
                                         <button
                                             type="button"
                                             onClick={() => void onRetryLoadStudents()}
-                                            className="shrink-0 rounded-md border border-[var(--color-academy-line)] px-2 py-1 text-xs font-medium text-[var(--color-academy-danger)] hover:bg-[var(--color-academy-danger-soft)]"
+                                            className="academy-button-secondary academy-button-sm shrink-0"
                                         >
                                             다시 시도
                                         </button>
@@ -751,7 +752,7 @@ function BookMakeupModal({
                                 <select
                                     value={originalClassId}
                                     onChange={(e) => setOriginalClassId(e.target.value)}
-                                    className="w-full border border-[var(--color-academy-line-input)] rounded-lg px-3 py-2 text-sm"
+                                    className="academy-input"
                                 >
                                     <option value="">-- 반 선택 --</option>
                                     {classes.map((c) => (
@@ -771,13 +772,14 @@ function BookMakeupModal({
                                     min="2020-01-01" max="2030-12-31"
                                     value={originalDate}
                                     onChange={(e) => setOriginalDate(e.target.value)}
-                                    className="w-full border border-[var(--color-academy-line-input)] rounded-lg px-3 py-2 text-sm"
+                                    className="academy-input"
                                 />
                             </div>
 
                             <button
+                                type="button"
                                 onClick={goToStep2}
-                                className="w-full py-2.5 bg-[var(--color-academy-primary)] text-white rounded-lg hover:bg-[var(--color-academy-primary-hover)] font-medium transition-colors"
+                                className="academy-button-primary w-full"
                             >
                                 다음: 보강 반 선택
                             </button>
@@ -790,7 +792,7 @@ function BookMakeupModal({
                             <div className="bg-[var(--color-academy-soft)] rounded-lg p-3 text-sm space-y-1">
                                 <p>
                                     <span className="text-[var(--color-academy-muted)]">원생:</span>{" "}
-                                    <span className="font-medium">{students.find((s) => s.id === studentId)?.name}</span>
+                                    <span className="font-semibold">{students.find((s) => s.id === studentId)?.name}</span>
                                 </p>
                                 <p>
                                     <span className="text-[var(--color-academy-muted)]">원래 반:</span>{" "}
@@ -800,7 +802,7 @@ function BookMakeupModal({
                                 </p>
                                 <p>
                                     <span className="text-[var(--color-academy-muted)]">결석일:</span>{" "}
-                                    <span className="font-medium">{originalDate}</span>
+                                    <span className="font-medium tabular-nums">{originalDate}</span>
                                 </p>
                             </div>
 
@@ -832,7 +834,7 @@ function BookMakeupModal({
                                                     full
                                                         ? "border-[var(--color-academy-line)] opacity-60 cursor-not-allowed"
                                                         : makeupClassId === slot.id
-                                                            ? "border-[var(--color-academy-line-input)] bg-[var(--color-academy-soft)] cursor-pointer"
+                                                            ? "border-[var(--color-academy-secondary-strong)] bg-[var(--color-academy-secondary-soft)] cursor-pointer"
                                                             : "border-[var(--color-academy-line)] hover:border-[var(--color-academy-line-input)] cursor-pointer"
                                                 }`}
                                             >
@@ -847,7 +849,7 @@ function BookMakeupModal({
                                                 />
                                                 <div className="flex-1">
                                                     <p className="font-medium text-sm">{slot.name}</p>
-                                                    <p className="text-xs text-[var(--color-academy-muted)]">
+                                                    <p className="text-xs tabular-nums text-[var(--color-academy-muted)]">
                                                         {DAY_LABELS[slot.dayOfWeek] ?? slot.dayOfWeek}요일 {slot.startTime}~{slot.endTime}
                                                         {" / "}
                                                         {/* 잔여 N석 · 정원 M명 (아직 모르면 "잔여석 확인 중") */}
@@ -871,21 +873,23 @@ function BookMakeupModal({
                                     min="2020-01-01" max="2030-12-31"
                                     value={makeupDate}
                                     onChange={(e) => setMakeupDate(e.target.value)}
-                                    className="w-full border border-[var(--color-academy-line-input)] rounded-lg px-3 py-2 text-sm"
+                                    className="academy-input"
                                 />
                             </div>
 
                             <div className="flex gap-3">
                                 <button
+                                    type="button"
                                     onClick={() => setStep(1)}
-                                    className="flex-1 py-2.5 border border-[var(--color-academy-line-input)] text-[var(--color-academy-muted)] rounded-lg hover:bg-[var(--color-academy-soft)] font-medium transition-colors"
+                                    className="academy-button-secondary flex-1"
                                 >
                                     이전
                                 </button>
                                 <button
+                                    type="button"
                                     onClick={handleBook}
                                     disabled={busy || !makeupClassId || !makeupDate}
-                                    className="flex-1 py-2.5 bg-[var(--color-academy-primary)] text-white rounded-lg hover:bg-[var(--color-academy-primary-hover)] font-medium transition-colors disabled:opacity-50"
+                                    className="academy-button-primary flex-1"
                                 >
                                     {busy ? "처리 중..." : "보강 예약"}
                                 </button>

@@ -27,8 +27,8 @@ export default function ChatMessage({ role, content, actions }: ChatMessageProps
             rounded-2xl px-4 py-3 text-sm leading-relaxed
             ${
               isUser
-                ? "bg-blue-500 text-white rounded-br-md" // 사용자: 파란색, 우하단 모서리 각짐
-                : "bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-bl-md" // 봇: 회색, 좌하단 모서리 각짐
+                ? "bg-[var(--color-public-accent)] text-white dark:text-[var(--color-public-dark)] rounded-br-md" // 사용자: 주 색(네이비), 우하단 모서리 각짐
+                : "bg-[var(--color-public-tint)] text-[var(--color-public-ink)] rounded-bl-md" // 봇: 옅은 회색, 좌하단 모서리 각짐
             }
           `}
         >
@@ -45,7 +45,8 @@ export default function ChatMessage({ role, content, actions }: ChatMessageProps
               <Link
                 key={i}
                 href={action.url}
-                className="inline-block px-4 py-2 bg-orange-500 text-white text-sm font-medium rounded-full hover:bg-orange-600 transition-colors no-underline"
+                // 신청으로 가는 버튼 — 첫 버튼만 주 버튼(체험 주소는 테마가 주황으로 칠한다), 나머지는 테두리 버튼
+                className={`${i === 0 ? "public-btn-primary" : "public-btn-secondary"} text-sm`}
                 onClick={(e) => {
                   e.stopPropagation();
                 }}

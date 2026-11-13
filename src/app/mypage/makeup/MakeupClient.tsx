@@ -123,8 +123,7 @@ export default function MakeupClient({ initial, presetStudentId = null }: { init
         <Link href="/mypage" aria-label="마이페이지로" className="academy-back-link">
           <span className="material-symbols-outlined" aria-hidden="true">arrow_back</span>
         </Link>
-        <h1 className="flex items-center gap-2 text-lg font-black text-[var(--color-academy-ink)]">
-          <span className="material-symbols-outlined text-[var(--color-academy-ink)]">event_repeat</span>
+        <h1 className="academy-heading">
           보강 예약
         </h1>
       </div>
@@ -140,12 +139,12 @@ export default function MakeupClient({ initial, presetStudentId = null }: { init
       </div>
 
       {msg && (
-        <div className="mb-3 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-success-soft)] px-4 py-3 text-sm font-bold text-[var(--color-academy-success)]">
+        <div className="mb-3 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-success-soft)] px-4 py-3 text-sm font-medium text-[var(--color-academy-success)]">
           {msg}
         </div>
       )}
       {err && (
-        <div className="mb-3 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-danger-soft)] px-4 py-3 text-sm font-bold text-[var(--color-academy-danger)]">
+        <div className="mb-3 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-danger-soft)] px-4 py-3 text-sm font-medium text-[var(--color-academy-danger)]">
           {err}
         </div>
       )}
@@ -165,11 +164,11 @@ export default function MakeupClient({ initial, presetStudentId = null }: { init
               <li key={c.id} className="px-3 py-2.5">
                 {/* 1줄: 학생 · 구분(정규/방학특강) · 상태(오른쪽) — «·»로 잇던 글을 요소로 나눔 */}
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <span className="text-sm font-black text-[var(--color-academy-ink)]">{c.studentName}</span>
-                  <span className="rounded-full border border-[var(--color-academy-line)] px-2 py-0.5 text-xs font-bold text-[var(--color-academy-muted)]">
+                  <span className="text-sm font-semibold text-[var(--color-academy-ink)]">{c.studentName}</span>
+                  <span className="rounded-full border border-[var(--color-academy-line)] px-2 py-0.5 text-xs text-[var(--color-academy-muted)]">
                     {c.sourceLabel}
                   </span>
-                  <span className={`ml-auto inline-flex items-center rounded px-2 py-0.5 text-xs font-black ${badge.cls}`}>
+                  <span className={`ml-auto inline-flex items-center rounded px-2 py-0.5 text-xs ${badge.cls}`}>
                     {badge.label}
                   </span>
                 </div>
@@ -183,8 +182,8 @@ export default function MakeupClient({ initial, presetStudentId = null }: { init
                 {c.booking && c.status === "RESERVED" && (
                   <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl bg-[var(--color-academy-info-soft)] py-1 pl-3 pr-1">
                     {/* 예약한 반(왼쪽, 줄바꿈 허용) · 날짜(오른쪽) · 취소 버튼 */}
-                    <span className="min-w-0 flex-1 break-keep text-sm font-bold text-[var(--color-academy-info)]">{c.booking.className}</span>
-                    <span className="shrink-0 text-sm font-bold tabular-nums text-[var(--color-academy-info)]">{c.booking.dateLabel}</span>
+                    <span className="min-w-0 flex-1 break-keep text-sm font-medium text-[var(--color-academy-info)]">{c.booking.className}</span>
+                    <span className="shrink-0 text-sm tabular-nums text-[var(--color-academy-info)]">{c.booking.dateLabel}</span>
                     {/* 예약 취소 = 그 자리 확인(C-M1) 후 기존 cancel(c.id) 그대로 */}
                     <InlineConfirm
                       label="예약 취소"
@@ -222,14 +221,14 @@ export default function MakeupClient({ initial, presetStudentId = null }: { init
                         {options.map((o) => (
                           <div key={o.classId} className="rounded-xl border border-[var(--color-academy-line)] p-3">
                             <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div className="text-sm font-black text-[var(--color-academy-ink)]">
+                              <div className="text-sm font-semibold text-[var(--color-academy-ink)]">
                                 {o.className}
-                                <span className="ml-2 text-xs font-bold text-[var(--color-academy-muted)]">
+                                <span className="ml-2 text-xs font-normal tabular-nums text-[var(--color-academy-muted)]">
                                   {DOW_KO[o.dayOfWeek] ?? o.dayOfWeek} {o.startTime}
                                   {o.endTime ? `~${o.endTime}` : ""}
                                 </span>
                               </div>
-                              <span className={`text-xs font-black ${SEAT_LEVEL_TEXT_CLASS[o.seatLevel]}`}>
+                              <span className={`text-xs font-semibold ${SEAT_LEVEL_TEXT_CLASS[o.seatLevel]}`}>
                                 {SEAT_LEVEL_LABEL[o.seatLevel]}
                               </span>
                             </div>

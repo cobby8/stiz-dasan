@@ -64,6 +64,13 @@ const ALLOWED_WITHOUT_FILTER: Record<string, { count: number; reason: string }> 
         reason: "납부 요청 이력 + 청구 id 지정 제출·취소(부모 소유 확인 포함). 청구 목록 자체는 이미 필터됨",
     },
     "lib/payments/admin-payment-request.ts": { count: 1, reason: "원장 납부 요청 처리 목록" },
+    // 결제 권한 판정(2026-11-13 f8 «두 번째 보호자도 결제») — 목록이 아니라 «결제하려는 청구에 묶인 학생 id» 를 지정해
+    //   그 학생이 로그인 사용자와 연결돼 있는지만 본다. 흡수된 학생에 남은 청구(위 실측 4건)도 결제할 수 있어야 하므로
+    //   병합 필터를 걸면 오히려 정당한 납부가 막힌다. 위 parent-payment-request 의 «청구 id 지정» 과 같은 사유.
+    "lib/payments/payerAccess.ts": {
+        count: 1,
+        reason: "결제 권한 판정 — 청구에 묶인 학생 id 지정 조회(연결 확인). 흡수 학생에 남은 청구도 결제 가능해야 함",
+    },
     "lib/billing/monthly-class-ledger-read.ts": {
         count: 2,
         reason: "월 청구 원장(수강 ACTIVE/PAUSED + 청구). 흡수 학생은 진행 중 수강이 0건이라 수강 쪽은 영향 없음. 순수 모듈이라 @/ import 불가",

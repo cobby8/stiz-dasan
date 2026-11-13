@@ -56,9 +56,9 @@ export default function RoleRequestCoachLink({ grantId, status, disabled, onConn
         <p className="text-xs text-[var(--color-academy-muted)]">신청자 휴대폰 끝자리 {options.phoneLast4}</p>
       )}
       {options?.linked ? (
-        <p className="text-sm font-bold">연결된 코치 · {options.linked.name} ({options.linked.role})</p>
+        <p className="text-sm font-medium">연결된 코치 · {options.linked.name} ({options.linked.role})</p>
       ) : options?.options.length ? (
-        <label className="block text-sm font-bold">
+        <label className="block text-sm font-medium">
           기존 코치 프로필
           <select
             value={selectedId}
@@ -75,7 +75,7 @@ export default function RoleRequestCoachLink({ grantId, status, disabled, onConn
           </select>
         </label>
       ) : options && <p className="text-sm">연결할 수 있는 기존 코치 프로필이 없습니다.</p>}
-      {error && <p role="alert" className="text-sm font-bold text-[var(--color-academy-danger)]">{error}</p>}
+      {error && <p role="alert" className="text-sm text-[var(--color-academy-danger)]">{error}</p>}
       {options?.canConnect && (approving || !options.linked) && (
         <div className="flex justify-end">
           <button type="button" onClick={save} disabled={!coachId || saving || disabled} className="academy-button-primary min-h-11">

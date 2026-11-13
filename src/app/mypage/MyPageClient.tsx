@@ -44,26 +44,6 @@ function formatAmount(n: number): string {
     return n.toLocaleString("ko-KR") + "원";
 }
 
-function SymbolIcon({
-    name,
-    size = 18,
-    className = "",
-}: {
-    name: string;
-    size?: number;
-    className?: string;
-}) {
-    return (
-        <span
-            className={`material-symbols-outlined leading-none ${className}`}
-            style={{ fontSize: `${size}px` }}
-            aria-hidden="true"
-        >
-            {name}
-        </span>
-    );
-}
-
 type ChildData = {
     id: string;
     name: string;
@@ -144,12 +124,13 @@ type MyPageData = {
 // 결석처럼 진짜 기능이 있는 것은 그 기능으로 보내고, 나머지는 자유 메시지 하나로 받는다.
 // 서버는 type 을 계속 받으므로(다른 경로 호환) 여기서는 항상 "OTHER" 로 보낸다.
 
-const REQUEST_STATUS: Record<string, { label: string; color: string; iconName: string }> = {
+// 2026-11-13 UI 통일: 상태 배지의 장식 아이콘을 뺐다 — 글자(대기중·확인됨…)와 색이 뜻을 전한다.
+const REQUEST_STATUS: Record<string, { label: string; color: string }> = {
     // 색 = 공용 지도(statusTones): 대기 주의 · 확인됨(진행 중) 정보 · 종결 정상 · 반려 위험
-    PENDING: { label: "대기중", color: TONE_BADGE_CLASS[REQUEST_TONE.PENDING], iconName: "schedule" },
-    CONFIRMED: { label: "확인됨", color: TONE_BADGE_CLASS[REQUEST_TONE.CONFIRMED], iconName: "check_circle" },
-    COMPLETED: { label: "상담 종결", color: TONE_BADGE_CLASS[REQUEST_TONE.COMPLETED], iconName: "check_circle" },
-    REJECTED: { label: "반려", color: TONE_BADGE_CLASS[REQUEST_TONE.REJECTED], iconName: "cancel" },
+    PENDING: { label: "대기중", color: TONE_BADGE_CLASS[REQUEST_TONE.PENDING] },
+    CONFIRMED: { label: "확인됨", color: TONE_BADGE_CLASS[REQUEST_TONE.CONFIRMED] },
+    COMPLETED: { label: "상담 종결", color: TONE_BADGE_CLASS[REQUEST_TONE.COMPLETED] },
+    REJECTED: { label: "반려", color: TONE_BADGE_CLASS[REQUEST_TONE.REJECTED] },
 };
 
 /** 알림·요청 시각 "10월 31일 AM 12:05" — 예전 모양 그대로, KST 기준. */
@@ -162,7 +143,7 @@ export function formatShortDate(value: Date | string): string {
     return formatKstDate(value);
 }
 
-// «처리할 일» 한 줄 — 왼쪽 아이콘·제목, 오른쪽 숫자/설명, 끝에 화살표. 터치 44px.
+// «처리할 일» 한 줄 — 왼쪽 제목, 오른쪽 숫자/설명, 끝에 «›». 터치 44px.
 const TODO_ROW = "flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-[var(--color-academy-soft)]";
 
 export default function MyPageClient({ data, notices = [], myRequests = [], parentShuttleOverview = [], shuttleDriverContact = null, pendingSeasonalChildren = [], makeupAvailable = 0, seasonalUpcoming = 0, pendingPayments = null, classStatusLines = [], initialChildId }: {
@@ -290,9 +271,8 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
             {/* ① 납부할 청구 한 줄 — 홈의 유일한 꽉 찬 버튼(교과서 2장 전경/배경: 주인공은 하나) */}
             {paySummary.count > 0 && (
                 <section id="mypage-payment-alert" aria-label="납부할 청구" className="academy-panel scroll-mt-4 p-3">
-                    <div className="flex items-center gap-3">
-                        <SymbolIcon name="credit_card" size={22} className="shrink-0 text-[var(--color-academy-danger)]" />
-                        <p className="min-w-0 flex-1 break-keep text-sm font-bold text-[var(--color-academy-ink)]">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                        <p className="min-w-0 flex-1 break-keep text-sm font-semibold text-[var(--color-academy-ink)]">
                             납부할 청구 <span className="tabular-nums">{paySummary.count}</span>건
                             <span className="mx-1 text-[var(--color-academy-muted)]">·</span>
                             <span className="whitespace-nowrap tabular-nums">합계 {formatAmount(paySummary.total)}</span>
@@ -321,7 +301,7 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
             <section aria-labelledby="parent-child-heading" className="academy-hero p-4 sm:p-5">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                     <div className="min-w-0">
-                        <h1 id="parent-child-heading" className="academy-heading text-xl font-extrabold">{child.name} 학생</h1>
+                        <h1 id="parent-child-heading" className="academy-heading">{child.name} 학생</h1>
                         <p className="mt-1 text-sm leading-relaxed text-[var(--color-academy-muted)]">
                             {currentEnrollments.length > 0 ? `수강 중인 반 ${currentEnrollments.length}개` : "수강 중인 반이 없습니다"}
                             {/* 첫 수업 전인 반이 있으면 개시일만 덧붙인다(상태는 수강 중) */}
@@ -357,11 +337,10 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                                 className="flex w-full items-center justify-between gap-2 min-h-11 rounded-xl bg-[var(--color-academy-surface)] px-3 py-1.5 text-left transition hover:bg-[var(--color-academy-soft)]"
                             >
                                 <span className="flex shrink-0 items-center gap-2">
-                                    <SymbolIcon name="event" size={18} className="text-[var(--color-academy-ink)]" />
                                     <span className="whitespace-nowrap text-sm font-medium text-[var(--color-academy-muted)]">다음 수업</span>
                                 </span>
                                 <span className="min-w-0 text-right">
-                                    <span className="block whitespace-nowrap text-sm font-bold text-[var(--color-academy-ink)]">{nextClassWhenLabel(nextClass, kstNow)} {nextClass.startTime}</span>
+                                    <span className="block whitespace-nowrap text-sm font-semibold tabular-nums text-[var(--color-academy-ink)]">{nextClassWhenLabel(nextClass, kstNow)} {nextClass.startTime}</span>
                                     <span className="block break-keep text-xs text-[var(--color-academy-muted)]">{nextClass.className}</span>
                                 </span>
                             </Link>
@@ -375,14 +354,9 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                                 className="flex w-full items-center justify-between gap-2 min-h-11 rounded-xl bg-[var(--color-academy-surface)] px-3 py-1.5 text-left transition hover:bg-[var(--color-academy-soft)]"
                             >
                                 <span className="flex min-w-0 items-center gap-2">
-                                    <SymbolIcon
-                                        name={line.tone === "warning" ? "hourglass_top" : line.tone === "info" ? "event_upcoming" : "pause_circle"}
-                                        size={18}
-                                        className={line.tone === "warning" ? "shrink-0 text-[var(--color-academy-warning)]" : "shrink-0 text-[var(--color-academy-muted)]"}
-                                    />
                                     <span className="break-keep text-sm font-medium text-[var(--color-academy-muted)]">{line.className}</span>
                                 </span>
-                                <span className="break-keep text-right text-sm font-bold text-[var(--color-academy-ink)]">{line.text}</span>
+                                <span className={`break-keep text-right text-sm font-semibold ${line.tone === "warning" ? "text-[var(--color-academy-warning)]" : "text-[var(--color-academy-ink)]"}`}>{line.text}</span>
                             </Link>
                         ))}
 
@@ -394,10 +368,9 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                                     className="flex min-w-0 flex-1 items-center justify-between gap-2 min-h-11 rounded-xl bg-[var(--color-academy-surface)] px-3 py-1.5 text-left transition hover:bg-[var(--color-academy-soft)]"
                                 >
                                     <span className="flex shrink-0 items-center gap-2">
-                                        <SymbolIcon name="airport_shuttle" size={18} className="text-[var(--color-academy-muted)]" />
                                         <span className="whitespace-nowrap text-sm font-medium text-[var(--color-academy-muted)]">오늘 셔틀</span>
                                     </span>
-                                    <span className="text-right text-sm font-bold tabular-nums text-[var(--color-academy-ink)]">
+                                    <span className="text-right text-sm font-semibold tabular-nums text-[var(--color-academy-ink)]">
                                         {/* 확정 승·하차 시각이 있으면 한 줄씩(한 줄에 둘이면 좁은 폭에서 전화 버튼 옆으로 넘친다), 없으면 운행 건수 */}
                                         {todayShuttleLines.length === 0
                                             ? `운행 ${todayShuttles.length}건`
@@ -408,10 +381,10 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                                     <a
                                         href={`tel:${shuttleDriverContact.phone.replace(/[^0-9]/g, "")}`}
                                         aria-label={`셔틀 기사님 ${shuttleDriverContact.name}에게 전화하기`}
-                                        // 44×44 전화 버튼 — 보조 버튼 모양(흰 바탕·입력선 테두리·검정 아이콘). 초록 아이콘은 화면마다 전화 색이 달라 통일(2026-11-09). 키보드 초점 링 유지
-                                        className="inline-flex min-h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-academy-primary)]"
+                                        // 전화 버튼 — 보조 버튼(흰 바탕·입력선 테두리). 2026-11-13 UI 통일: 전화 아이콘 → «전화» 글자(44px 유지). 키보드 초점 링 유지
+                                        className="academy-button-secondary shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-academy-primary)]"
                                     >
-                                        <SymbolIcon name="call" size={18} />
+                                        전화
                                     </a>
                                 )}
                             </div>
@@ -420,49 +393,45 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                 )}
             </section>
 
-            {/* ③ 처리할 일 — 해야 할 일이 있는 줄만 보인다. 알림은 머리줄 🔔(설정은 ⚙)로 옮겼다 */}
+            {/* ③ 처리할 일 — 해야 할 일이 있는 줄만 보인다. 알림·설정은 머리줄의 «알림»·«설정»으로 옮겼다 */}
             <section aria-labelledby="parent-todo-heading" className="academy-panel overflow-hidden">
-                <h2 id="parent-todo-heading" className="border-b border-[var(--color-academy-line)] px-3 py-2 text-sm font-bold text-[var(--color-academy-ink)]">처리할 일</h2>
+                <h2 id="parent-todo-heading" className="academy-section-title border-b border-[var(--color-academy-line)] px-3 py-2">처리할 일</h2>
                 <ul className="divide-y divide-[var(--color-academy-line)]">
                     {makeupAvailable > 0 && (
                         <li>
                             <Link href="/mypage/makeup" className={TODO_ROW}>
-                                <SymbolIcon name="event_repeat" size={18} className="shrink-0 text-[var(--color-academy-ink)]" />
-                                <span className="min-w-0 flex-1 font-bold text-[var(--color-academy-ink)]">보강 예약</span>
+                                <span className="min-w-0 flex-1 font-medium text-[var(--color-academy-ink)]">보강 예약</span>
                                 <span className="shrink-0 text-[var(--color-academy-muted)]">보강권 <span className="tabular-nums">{makeupAvailable}</span>장</span>
-                                <SymbolIcon name="chevron_right" size={18} className="shrink-0 text-[var(--color-academy-muted)]" />
+                                <span aria-hidden="true" className="shrink-0 text-[var(--color-academy-faint)]">›</span>
                             </Link>
                         </li>
                     )}
                     {seasonalUpcoming > 0 && (
                         <li>
                             <Link href="/mypage/seasonal" className={TODO_ROW}>
-                                <SymbolIcon name="sports_basketball" size={18} className="shrink-0 text-[var(--color-academy-ink)]" />
-                                <span className="min-w-0 flex-1 font-bold text-[var(--color-academy-ink)]">방학특강 결석·보강</span>
+                                <span className="min-w-0 flex-1 font-medium text-[var(--color-academy-ink)]">방학특강 결석·보강</span>
                                 <span className="shrink-0 text-[var(--color-academy-muted)]">남은 <span className="tabular-nums">{seasonalUpcoming}</span>회</span>
-                                <SymbolIcon name="chevron_right" size={18} className="shrink-0 text-[var(--color-academy-muted)]" />
+                                <span aria-hidden="true" className="shrink-0 text-[var(--color-academy-faint)]">›</span>
                             </Link>
                         </li>
                     )}
                     {(answerCount > 0 || pendingRequestCount > 0) && (
                         <li>
                             <button type="button" onClick={openRequests} className={TODO_ROW}>
-                                <SymbolIcon name="forum" size={18} className="shrink-0 text-[var(--color-academy-ink)]" />
-                                <span className="min-w-0 flex-1 font-bold text-[var(--color-academy-ink)]">보낸 메시지</span>
+                                <span className="min-w-0 flex-1 font-medium text-[var(--color-academy-ink)]">보낸 메시지</span>
                                 <span className="shrink-0 text-[var(--color-academy-muted)]">
                                     {answerCount > 0 ? <>학원 답변 <span className="tabular-nums">{answerCount}</span>건</> : <>답변 대기 <span className="tabular-nums">{pendingRequestCount}</span>건</>}
                                 </span>
-                                <SymbolIcon name="chevron_right" size={18} className="shrink-0 text-[var(--color-academy-muted)]" />
+                                <span aria-hidden="true" className="shrink-0 text-[var(--color-academy-faint)]">›</span>
                             </button>
                         </li>
                     )}
                     {newNoticeCount > 0 && (
                         <li>
                             <Link href="/mypage/reports#news-notices" className={TODO_ROW}>
-                                <SymbolIcon name="campaign" size={18} className="shrink-0 text-[var(--color-academy-ink)]" />
-                                <span className="min-w-0 flex-1 font-bold text-[var(--color-academy-ink)]">새 공지</span>
+                                <span className="min-w-0 flex-1 font-medium text-[var(--color-academy-ink)]">새 공지</span>
                                 <span className="shrink-0 text-[var(--color-academy-muted)]"><span className="tabular-nums">{newNoticeCount}</span>건</span>
-                                <SymbolIcon name="chevron_right" size={18} className="shrink-0 text-[var(--color-academy-muted)]" />
+                                <span aria-hidden="true" className="shrink-0 text-[var(--color-academy-faint)]">›</span>
                             </Link>
                         </li>
                     )}
@@ -477,10 +446,7 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
             {pendingSeasonalChildren.length > 0 && (
                 <section aria-labelledby="pending-seasonal-heading" className="rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-warning-soft)] p-4 shadow-sm">
                     <div className="mb-3">
-                        <div className="flex items-center gap-2">
-                            <SymbolIcon name="hourglass_top" size={20} className="text-[var(--color-academy-warning)]" />
-                            <h2 id="pending-seasonal-heading" className="font-bold text-[var(--color-academy-ink)]">방학특강 신청 자녀</h2>
-                        </div>
+                        <h2 id="pending-seasonal-heading" className="academy-section-title">방학특강 신청 자녀</h2>
                         <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
                             학생 등록 후 정규 수업·청구가 보여요.
                         </p>
@@ -489,14 +455,14 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                         {pendingSeasonalChildren.map((c, idx) => (
                             <div key={`${c.childName}-${idx}`} className="rounded-xl border border-[var(--color-academy-line)] bg-white p-3">
                                 <div className="flex items-center justify-between gap-2">
-                                    <div className="font-bold text-[var(--color-academy-ink)]">
+                                    <div className="font-semibold text-[var(--color-academy-ink)]">
                                         {c.childName}
                                         {c.childGrade && (
-                                            <span className="ml-2 text-xs font-medium text-[var(--color-academy-muted)]">{c.childGrade}</span>
+                                            <span className="ml-2 text-xs font-normal text-[var(--color-academy-muted)]">{c.childGrade}</span>
                                         )}
                                     </div>
                                     {c.upcomingCount > 0 && (
-                                        <span className="shrink-0 rounded-full bg-[var(--color-academy-warning-soft)] px-2.5 py-1 text-xs font-bold text-[var(--color-academy-warning)]">
+                                        <span className="shrink-0 rounded-full bg-[var(--color-academy-warning-soft)] px-2.5 py-1 text-xs tabular-nums text-[var(--color-academy-warning)]">
                                             예정 {c.upcomingCount}회
                                         </span>
                                     )}
@@ -513,7 +479,6 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                                     className="academy-button-secondary mt-2"
                                 >
                                     방학특강 결석·보강
-                                    <SymbolIcon name="arrow_forward" size={16} />
                                 </Link>
                             </div>
                         ))}
@@ -524,28 +489,27 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
             {/* ④ 빠른 실행 4개 — 한 줄. 화면 이동만(접힌 칸으로 뛰지 않는다). «문의»만 이 자리에서 폼을 연다 */}
             <nav aria-label="빠른 실행" className="grid grid-cols-4 gap-2">
                 {[
-                    { href: absenceHref, icon: "event_busy", label: "결석 알리기" },
-                    { href: "/mypage/makeup", icon: "event_repeat", label: "보강 예약" },
-                    { href: "/mypage/shuttle", icon: "airport_shuttle", label: "셔틀 변경" },
+                    { href: absenceHref, label: "결석 알리기" },
+                    { href: "/mypage/makeup", label: "보강 예약" },
+                    { href: "/mypage/shuttle", label: "셔틀 변경" },
                 ].map((item) => (
                     <Link key={item.label} href={item.href}
-                        className="flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-1 py-2 text-xs font-bold text-[var(--color-academy-ink)] transition-colors hover:border-[var(--color-academy-primary)]">
-                        <SymbolIcon name={item.icon} size={22} className="text-[var(--color-academy-ink)]" />
-                        <span className="break-keep text-center">{item.label}</span>
+                        className="flex min-h-12 items-center justify-center rounded-md border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-1 py-2 text-sm font-medium text-[var(--color-academy-ink)] transition-colors hover:border-[var(--color-academy-primary)] hover:bg-[var(--color-academy-soft)]">
+                        <span className="break-keep text-center leading-tight">{item.label}</span>
                     </Link>
                 ))}
                 <button
                     type="button"
                     aria-expanded={showRequestForm}
                     onClick={openRequestForm}
-                    className={`flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl border px-1 py-2 text-xs font-bold transition-colors ${
+                    // 열려 있는 동안 = «지금 고른 것» → 보조 색(하늘색) 바탕·테두리·글자(주 색은 주 버튼 몫)
+                    className={`flex min-h-12 items-center justify-center rounded-md border px-1 py-2 text-sm transition-colors ${
                         showRequestForm
-                            ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)]"
-                            : "border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)] hover:border-[var(--color-academy-primary)]"
+                            ? "border-[var(--color-academy-secondary-strong)] bg-[var(--color-academy-secondary-soft)] font-semibold text-[var(--color-academy-secondary-ink)]"
+                            : "border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] font-medium text-[var(--color-academy-ink)] hover:border-[var(--color-academy-primary)] hover:bg-[var(--color-academy-soft)]"
                     }`}
                 >
-                    <SymbolIcon name="send" size={22} className="text-[var(--color-academy-ink)]" />
-                    <span className="break-keep text-center">문의</span>
+                    <span className="break-keep text-center leading-tight">문의</span>
                 </button>
             </nav>
 
@@ -553,12 +517,11 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
             {showRequestForm && (
                 <div id="parent-request-form" className="scroll-mt-4 bg-white border border-[var(--color-academy-line)] rounded-2xl p-4 shadow-sm space-y-3">
                     <div className="flex items-center justify-between gap-2">
-                        <h3 className="font-bold text-[var(--color-academy-ink)]">학원에 메시지 보내기</h3>
+                        <h3 className="academy-section-title">학원에 메시지 보내기</h3>
                         <button type="button" onClick={() => (showRequests ? setShowRequests(false) : openRequests())} className="academy-button-text">
-                            <SymbolIcon name="forum" size={16} />
                             보낸 메시지
                             {pendingRequestCount > 0 && (
-                                <span className="bg-[var(--color-academy-warning)] text-white text-xs font-bold px-1.5 py-0.5 rounded-full">{pendingRequestCount}</span>
+                                <span className="bg-[var(--color-academy-warning)] text-white text-xs tabular-nums px-1.5 py-0.5 rounded-full">{pendingRequestCount}</span>
                             )}
                         </button>
                     </div>
@@ -568,9 +531,9 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                         기능이 있는 것은 그 기능으로 보내고, 나머지는 자유 메시지 하나로 받는다. */}
                     <div className="rounded-xl bg-[var(--color-academy-warning-soft)] border border-[var(--color-academy-line)] px-3 py-2 text-xs text-[var(--color-academy-warning)] leading-relaxed">
                         결석은 여기 적지 마시고{" "}
-                        <Link href="/mypage/regular-absence" className="font-bold underline">결석 신고</Link>·
-                        <Link href="/mypage/seasonal" className="font-bold underline">방학특강 결석</Link>·
-                        <Link href="/mypage/shuttle" className="font-bold underline">셔틀 변경</Link>
+                        <Link href="/mypage/regular-absence" className="font-semibold underline">결석 신고</Link>·
+                        <Link href="/mypage/seasonal" className="font-semibold underline">방학특강 결석</Link>·
+                        <Link href="/mypage/shuttle" className="font-semibold underline">셔틀 변경</Link>
                         에서 신청해 주세요.
                     </div>
 
@@ -581,7 +544,7 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                             <select
                                 value={selectedIdx}
                                 onChange={e => setSelectedIdx(Number(e.target.value))}
-                                className="w-full min-h-11 border border-[var(--color-academy-line)] rounded-xl px-3 py-2 text-sm"
+                                className="academy-input"
                             >
                                 {data.children.map((c, i) => (
                                     <option key={c.id} value={i}>{c.name}</option>
@@ -596,7 +559,7 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                             해당 날짜 (선택)
                         </label>
                         <input type="date" min="2020-01-01" max="2030-12-31" value={reqDate} onChange={e => setReqDate(e.target.value)}
-                            className="w-full min-h-11 border border-[var(--color-academy-line)] rounded-xl px-3 py-2 text-sm" />
+                            className="academy-input" />
                     </div>
 
                     {/* 내용 */}
@@ -609,7 +572,7 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                             rows={4}
                             // 서버 한도(createParentRequest 2,000자)와 같게 — 넘겨 쓰고 보냈다가 거절되는 일이 없게
                             maxLength={2000}
-                            className="w-full border border-[var(--color-academy-line)] rounded-xl px-3 py-2 text-sm resize-none"
+                            className="academy-input resize-none"
                         />
                         <p className="mt-0.5 text-right text-xs tabular-nums text-[var(--color-academy-faint)]" aria-live="polite">{reqContent.length.toLocaleString("ko-KR")} / 2,000자</p>
                     </div>
@@ -647,16 +610,16 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                         {isPending ? "보내는 중..." : "메시지 보내기"}
                     </button>
                     {reqError && (
-                        <p role="alert" className="text-xs font-bold text-[var(--color-academy-danger)]">{reqError}</p>
+                        <p role="alert" className="text-xs font-semibold text-[var(--color-academy-danger)]">{reqError}</p>
                     )}
                 </div>
             )}
 
             {/* 보낸 뒤 안내 — 폼이 닫혀도 «보냈다»는 걸 알 수 있게 */}
             {reqSent && !showRequestForm && (
-                <div role="status" className="flex items-center justify-between gap-2 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-success-soft)] px-3 py-2 text-xs font-bold text-[var(--color-academy-success)]">
-                    <span className="flex items-center gap-1"><SymbolIcon name="check_circle" size={16} /> 학원에 메시지를 보냈어요. 답변은 «보낸 메시지»에서 볼 수 있어요.</span>
-                    <button type="button" onClick={() => setReqSent(false)} className="academy-button-text min-h-11" aria-label="안내 닫기">닫기</button>
+                <div role="status" className="flex items-center justify-between gap-2 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-success-soft)] px-3 py-2 text-xs font-medium text-[var(--color-academy-success)]">
+                    <span className="min-w-0 break-keep">학원에 메시지를 보냈어요. 답변은 «보낸 메시지»에서 볼 수 있어요.</span>
+                    <button type="button" onClick={() => setReqSent(false)} className="academy-button-text shrink-0" aria-label="안내 닫기">닫기</button>
                 </div>
             )}
 
@@ -664,7 +627,7 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
             {showRequests && (
                 <section id="parent-request-list" aria-label="보낸 메시지" className="scroll-mt-4 bg-white border border-[var(--color-academy-line)] rounded-2xl shadow-sm overflow-hidden">
                     <div className="flex items-center justify-between border-b border-[var(--color-academy-line)] px-4 py-1">
-                        <h3 className="text-sm font-bold text-[var(--color-academy-ink)]">보낸 메시지</h3>
+                        <h3 className="academy-section-title">보낸 메시지</h3>
                         <button type="button" onClick={() => setShowRequests(false)} className="academy-button-text">닫기</button>
                     </div>
                     {myRequests.length === 0 ? (
@@ -676,16 +639,16 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                                 return (
                                     <div key={r.id} className="px-4 py-3">
                                         <div className="flex items-center justify-between mb-1">
-                                            <span className="text-sm font-bold text-[var(--color-academy-ink)]">{r.title}</span>
-                                            <span className={`text-xs font-bold px-2 py-0.5 rounded flex items-center gap-1 ${st.color}`}>
-                                                <SymbolIcon name={st.iconName} size={12} /> {st.label}
+                                            <span className="text-sm font-semibold text-[var(--color-academy-ink)]">{r.title}</span>
+                                            <span className={`text-xs px-2 py-0.5 rounded shrink-0 ${st.color}`}>
+                                                {st.label}
                                             </span>
                                         </div>
                                         <p className="text-xs text-[var(--color-academy-muted)] line-clamp-2">{r.content}</p>
                                         {r.adminNote && (
                                             <div className="mt-2 bg-[var(--color-academy-info-soft)] rounded-lg px-3 py-2">
                                                 <p className="text-xs text-[var(--color-academy-info)]">
-                                                    <span className="font-bold">학원 답변:</span> {r.adminNote}
+                                                    <span className="font-semibold">학원 답변:</span> {r.adminNote}
                                                 </p>
                                             </div>
                                         )}

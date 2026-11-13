@@ -72,7 +72,8 @@ test("① 상한(D5 10건·100만 원)을 넘으면 결제 버튼을 막고 나�
   const over = render({ items: [item("p1", { amount: 600000 }), item("p2", { amount: 500000 })] });
   assert.match(over, /한 번에 10건·1,000,000원까지 결제할 수 있어요/);
   assert.match(over, /결제 방법을 눌러 주세요 · 1,100,000원/);
-  assert.equal((over.match(/<button[^>]*disabled=""[^>]*><span class="material-symbols-outlined/g) || []).length, 6, "결제 방법 버튼 6개 모두 막힘");
+  // 2026-11-13 UI 통일: 결제 방법 버튼의 지갑·카드 아이콘을 뺐다 → 아이콘 대신 버튼 이름으로 6개가 모두 막혔는지 센다(잠금 조건은 그대로).
+  assert.equal((over.match(/<button[^>]*disabled=""[^>]*>(?:토스페이|카카오페이|네이버페이|카드|계좌이체|무통장입금)<\/button>/g) || []).length, 6, "결제 방법 버튼 6개 모두 막힘");
   const many = render({ items: Array.from({ length: 11 }, (_, i) => item(`p${i}`, { amount: 1000 })) });
   assert.match(many, /한 번에 10건/);
 });

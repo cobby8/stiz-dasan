@@ -1,4 +1,5 @@
 import Link from "next/link";
+import PublicSiteTheme from "@/components/PublicSiteTheme";
 import { isReviewOrderId, readTossReviewConfig } from "@/lib/payments/tossReview";
 import { describeTaxFreeMismatch } from "@/lib/payments/taxFree";
 
@@ -22,28 +23,30 @@ export default async function ReviewPaymentSuccessPage({
     const result = await confirmReviewPayment({ paymentKey, orderId, amount });
 
     return (
-        <main className="min-h-screen bg-gray-50 px-4 py-12 text-gray-900 dark:bg-gray-950 dark:text-white">
-            <div className="mx-auto max-w-lg rounded-2xl border border-gray-200 bg-white p-8 text-center shadow-sm dark:border-gray-800 dark:bg-gray-900">
-                <h1 className="text-xl font-black">{result.ok ? "테스트 결제가 완료되었습니다" : "결제를 완료하지 못했습니다"}</h1>
+        <PublicSiteTheme publicScope>
+        <main className="min-h-screen bg-[var(--color-public-tint)] px-4 py-12 text-[var(--color-public-ink)]">
+            <div className="mx-auto max-w-lg rounded-2xl border border-[var(--color-public-line)] bg-[var(--color-public-paper)] p-8 text-center shadow-sm">
+                <h1 className="text-xl font-bold">{result.ok ? "테스트 결제가 완료되었습니다" : "결제를 완료하지 못했습니다"}</h1>
                 {result.ok ? (
-                    <div className="mt-4 space-y-1 text-sm text-gray-600 dark:text-gray-300">
+                    <div className="mt-4 space-y-1 text-sm text-[var(--color-public-muted)]">
                         <p>{result.orderName}</p>
-                        <p className="text-2xl font-black text-gray-900 dark:text-white">{result.amount.toLocaleString("ko-KR")}원</p>
-                        <p className="break-keep pt-2 text-xs text-gray-500 dark:text-gray-400">
+                        <p className="text-2xl font-bold tabular-nums text-[var(--color-public-ink)]">{result.amount.toLocaleString("ko-KR")}원</p>
+                        <p className="break-keep pt-2 text-xs text-[var(--color-public-muted)]">
                             테스트 결제라 실제 금액은 청구되지 않습니다. 수강료 납부는 학원에서 보내드리는 청구서로 진행됩니다.
                         </p>
                     </div>
                 ) : (
-                    <p className="mt-4 break-keep text-sm text-gray-600 dark:text-gray-300">{result.message}</p>
+                    <p className="mt-4 break-keep text-sm text-[var(--color-public-muted)]">{result.message}</p>
                 )}
                 <Link
                     href="/programs"
-                    className="mt-6 inline-flex min-h-11 items-center justify-center rounded-lg bg-brand-orange-500 px-5 text-sm font-black text-white dark:bg-brand-neon-lime dark:text-brand-navy-900"
+                    className="public-btn-primary mt-6 text-sm"
                 >
                     프로그램 안내로 돌아가기
                 </Link>
             </div>
         </main>
+        </PublicSiteTheme>
     );
 }
 

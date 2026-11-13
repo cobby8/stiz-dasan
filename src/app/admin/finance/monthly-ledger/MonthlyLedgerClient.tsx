@@ -4,6 +4,7 @@ import { adminErrorText } from "@/components/admin/adminDisplayText";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { MonthlyClassLedgerResult } from "@/lib/billing/monthly-class-ledger";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 
 const PAGE_SIZE = 50;
 const money = (value: number | null) => value === null ? "기록 없음" : `${value.toLocaleString("ko-KR")}원`;
@@ -56,30 +57,30 @@ export default function MonthlyLedgerClient({ initialMonth }: { initialMonth: st
     <section className="space-y-5">
       <Link href="/admin/finance" className="underline">수납/청구로 돌아가기</Link>
       <header>
-        <h1 className="text-2xl font-bold">월별·반별 장부 점검</h1>
-        <p className="mt-2">저장된 청구·납부 기록을 학생과 반별로 나눠 확인합니다. 조회만 하며 청구서나 문자를 만들지 않습니다.</p>
+        <AdminPageHeader title="월별·반별 장부 점검" />
+        <p className="academy-page-description mt-1">저장된 청구·납부 기록을 학생과 반별로 나눠 확인합니다. 조회만 하며 청구서나 문자를 만들지 않습니다.</p>
       </header>
       <div className="rounded-lg border border-[var(--color-academy-primary)] p-4 text-sm">
         현재 수강 목록은 조회 월의 확정 명부가 아닙니다. 할인·이월·일할계산을 추측하지 않으며, 이 화면만으로 시트를 중단하거나 청구 금액을 확정할 수 없습니다.
       </div>
       <div className="flex flex-wrap items-end gap-3">
-        <label className="grid gap-1">조회 월
+        <label className="grid gap-1 text-sm font-medium">조회 월
           <input type="month" min="2020-01" max="2100-12" value={month}
-            onChange={(event) => { setData(null); setMonth(event.target.value); }} className="rounded border p-2" />
+            onChange={(event) => { setData(null); setMonth(event.target.value); }} className="academy-input" />
         </label>
-        <label className="grid gap-1">학생·반 검색
+        <label className="grid gap-1 text-sm font-medium">학생·반 검색
           <input value={search} onChange={(event) => { setSearch(event.target.value); setPage(0); }}
-            placeholder="학생명, 반 또는 원생 번호" className="rounded border p-2" />
+            placeholder="학생명, 반 또는 원생 번호" className="academy-input" />
         </label>
         <button type="button" disabled={loading} onClick={() => setAttempt((value) => value + 1)}
-          className="rounded border px-4 py-2 disabled:opacity-50">다시 조회</button>
+          className="academy-button-secondary">다시 조회</button>
       </div>
       {loading && <p role="status">월별 기록을 확인하고 있습니다.</p>}
       {error && <p role="alert">{error}</p>}
       {data && !loading && (
         <>
           <div className="rounded-lg border p-4" aria-live="polite">
-            <p className="font-bold">{data.year}년 {data.month}월 · 저장 기록 기준</p>
+            <p className="font-semibold">{data.year}년 {data.month}월 · 저장 기록 기준</p>
             <p>학생 {data.summary.studentCount}명 · 반별 행 {data.summary.classRowCount}건 · 반 미연결 청구 {data.summary.unassignedPaymentCount}건</p>
             <p>기록상 납부 {money(data.summary.knownPaidAmount)} · 기록상 납부 대기 {money(data.summary.knownOutstandingAmount)}</p>
             <p className="text-sm">확인 필요 {data.summary.reviewRowCount}행 · 합산 제외 {data.summary.excludedPaymentCount}건. 납부/대기 합계는 수강료 외 항목도 포함하며, 실제 입금 대조나 최종 월 청구액이 아닙니다.</p>
@@ -88,12 +89,12 @@ export default function MonthlyLedgerClient({ initialMonth }: { initialMonth: st
             <table className="w-full min-w-[850px] text-left text-sm">
               <caption className="p-3 text-left">검색 결과 {filtered.length}행 · 각 행은 학생·조회 월·반으로 구분합니다.</caption>
               <thead><tr>
-                {["학생 / 반", "수강료 기록", "셔틀 기록", "기타 기록", "납부 / 대기", "확인할 내용"].map((label) => <th key={label} className="border-b p-3">{label}</th>)}
+                {["학생 / 반", "수강료 기록", "셔틀 기록", "기타 기록", "납부 / 대기", "확인할 내용"].map((label) => <th key={label} className="border-b p-3 text-xs font-medium">{label}</th>)}
               </tr></thead>
               <tbody>
                 {visible.map((row) => <tr key={row.rowKey} className="align-top">
                   <td className="border-b p-3">
-                    <Link className="font-bold underline" href={`/admin/students/${encodeURIComponent(row.studentId)}`}>{row.studentName}</Link>
+                    <Link className="font-medium underline" href={`/admin/students/${encodeURIComponent(row.studentId)}`}>{row.studentName}</Link>
                     <p>{row.className ?? (row.classId ? "반 이름 확인 필요" : "반 미연결 — 임의 배분 안 함")}</p>
                     <p className="text-xs">현재 상태: {row.enrollmentStatus === "ACTIVE" ? "수강" : row.enrollmentStatus === "PAUSED" ? "휴원" : "현재 수강 목록에 없음"}</p>
                     <Link className="mt-2 inline-block underline" href={`/admin/finance/monthly-register?studentId=${encodeURIComponent(row.studentId)}&month=${encodeURIComponent(month)}`}>월 운영 장부 작성·확인</Link>
@@ -117,9 +118,9 @@ export default function MonthlyLedgerClient({ initialMonth }: { initialMonth: st
             </table>
           </div>
           <nav aria-label="장부 페이지" className="flex items-center gap-3">
-            <button type="button" disabled={page === 0} onClick={() => setPage((value) => value - 1)} className="rounded border px-3 py-2 disabled:opacity-50">이전</button>
-            <span>{page + 1} / {pageCount}</span>
-            <button type="button" disabled={page + 1 >= pageCount} onClick={() => setPage((value) => value + 1)} className="rounded border px-3 py-2 disabled:opacity-50">다음</button>
+            <button type="button" disabled={page === 0} onClick={() => setPage((value) => value - 1)} className="academy-button-secondary academy-button-sm">이전</button>
+            <span className="text-sm tabular-nums">{page + 1} / {pageCount}</span>
+            <button type="button" disabled={page + 1 >= pageCount} onClick={() => setPage((value) => value + 1)} className="academy-button-secondary academy-button-sm">다음</button>
           </nav>
         </>
       )}

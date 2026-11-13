@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import type { SessionInitialData } from "./SessionLogModal";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 
 const SessionLogModal = dynamic(() => import("./SessionLogModal"), {
     loading: () => null,
@@ -87,26 +88,6 @@ type Props = {
     classId?: string;
 };
 
-function SymbolIcon({
-    name,
-    size = 18,
-    className = "",
-}: {
-    name: string;
-    size?: number;
-    className?: string;
-}) {
-    return (
-        <span
-            className={`material-symbols-outlined leading-none ${className}`}
-            style={{ fontSize: `${size}px` }}
-            aria-hidden="true"
-        >
-            {name}
-        </span>
-    );
-}
-
 function ClassDetailLoadingSkeleton() {
     return (
         <div className="max-w-5xl mx-auto space-y-6">
@@ -148,12 +129,12 @@ function ClassDetailLoadingSkeleton() {
 function ClassDetailErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
     return (
         <div className="max-w-5xl mx-auto rounded-2xl border border-[var(--color-academy-line)] bg-white p-8 text-center shadow-sm">
-            <SymbolIcon name="error" size={36} className="mx-auto mb-3 text-[var(--color-academy-danger)]" />
-            <p className="font-bold text-[var(--color-academy-ink)]">{message}</p>
+            {/* 오류 안내는 아이콘 없이 글자로(2026-11-13 UI 통일) */}
+            <p className="font-semibold text-[var(--color-academy-danger)]">{message}</p>
             <button
                 type="button"
                 onClick={onRetry}
-                className="mt-4 rounded-xl bg-[var(--color-academy-primary)] px-4 py-2 text-sm font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)]"
+                className="academy-button-primary mt-4"
             >
                 다시 시도
             </button>
@@ -253,35 +234,37 @@ export default function ClassDetailClient({
 
     const { classData, sessions, coaches } = detail;
 
-    // 탭 정의 — 아이콘 + 라벨 + 카운트
-    const tabs: { key: TabKey; label: string; iconName: string; count?: number }[] = [
-        { key: "students", label: "학생 명단", iconName: "groups", count: classData.students.length },
-        { key: "sessions", label: "수업 기록", iconName: "menu_book", count: sessions.length },
-        { key: "attendance", label: "출석 현황", iconName: "event_available" },
+    // 탭 정의 — 라벨 + 카운트(아이콘 없이 글자로 말한다)
+    const tabs: { key: TabKey; label: string; count?: number }[] = [
+        { key: "students", label: "학생 명단", count: classData.students.length },
+        { key: "sessions", label: "수업 기록", count: sessions.length },
+        { key: "attendance", label: "출석 현황" },
     ];
 
     return (
         <div className="max-w-5xl mx-auto space-y-6">
             {/* ── 상단 헤더: 뒤로가기 + 반 정보 ── */}
-            <div className="flex items-center gap-4">
-                <Link href="/admin/classes" prefetch={false} className="p-2 hover:bg-[var(--color-academy-soft)] rounded-lg transition">
-                    <SymbolIcon name="arrow_back" size={20} className="text-[var(--color-academy-muted)]" />
+            <div className="min-w-0">
+                {/* 뒤로가기는 글자 버튼, 제목은 공용 머리말 부품(모양 한 가지) */}
+                <Link href="/admin/classes" prefetch={false} className="academy-button-text academy-button-sm -ml-2">
+                    ← 반 목록으로
                 </Link>
-                <div className="flex-1">
-                    <h1 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">
-                        {classData.name}
-                    </h1>
-                    <p className="text-sm text-[var(--color-academy-muted)]">
-                        {/* 프로그램명 + 요일/시간 + 수강생 수/정원 */}
-                        {classData.programName && <span>{classData.programName} · </span>}
-                        {DAY_LABELS[classData.dayOfWeek] || classData.dayOfWeek}요일{" "}
-                        {classData.startTime}~{classData.endTime}
-                        {" · "}
-                        <span className="font-medium text-[var(--color-academy-muted)]">
-                            {classData.students.length}/{classData.capacity}명
-                        </span>
-                    </p>
-                </div>
+                <AdminPageHeader
+                    className="mt-1"
+                    title={classData.name}
+                    description={
+                        <>
+                            {/* 프로그램명 + 요일/시간 + 수강생 수/정원 */}
+                            {classData.programName && <span>{classData.programName} · </span>}
+                            {DAY_LABELS[classData.dayOfWeek] || classData.dayOfWeek}요일{" "}
+                            <span className="tabular-nums">{classData.startTime}~{classData.endTime}</span>
+                            {" · "}
+                            <span className="tabular-nums">
+                                {classData.students.length}/{classData.capacity}명
+                            </span>
+                        </>
+                    }
+                />
             </div>
 
             {/* ── 요약 카드 3개 ── */}
@@ -289,7 +272,7 @@ export default function ClassDetailClient({
                 {/* 수강생 수 */}
                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-[var(--color-academy-line)]">
                     <p className="text-xs text-[var(--color-academy-muted)] mb-1">수강생</p>
-                    <p className="text-2xl font-extrabold text-[var(--color-academy-ink)]">
+                    <p className="text-2xl font-bold tabular-nums text-[var(--color-academy-ink)]">
                         {classData.students.length}
                         <span className="text-sm font-normal text-[var(--color-academy-faint)]">/{classData.capacity}</span>
                     </p>
@@ -297,12 +280,12 @@ export default function ClassDetailClient({
                 {/* 수업 횟수 */}
                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-[var(--color-academy-line)]">
                     <p className="text-xs text-[var(--color-academy-muted)] mb-1">수업 기록</p>
-                    <p className="text-2xl font-extrabold text-[var(--color-academy-ink)]">{sessions.length}회</p>
+                    <p className="text-2xl font-bold tabular-nums text-[var(--color-academy-ink)]">{sessions.length}회</p>
                 </div>
                 {/* 평균 출석률 */}
                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-[var(--color-academy-line)]">
                     <p className="text-xs text-[var(--color-academy-muted)] mb-1">평균 출석률</p>
-                    <p className="text-2xl font-extrabold text-[var(--color-academy-ink)]">
+                    <p className="text-2xl font-bold tabular-nums text-[var(--color-academy-ink)]">
                         {/* 전체 세션의 출석률 평균 계산 */}
                         {sessions.length > 0
                             ? Math.round(
@@ -323,19 +306,21 @@ export default function ClassDetailClient({
                         return (
                             <button
                                 key={tab.key}
+                                type="button"
+                                aria-current={isActive ? "page" : undefined}
                                 onClick={() => setActiveTab(tab.key)}
-                                className={`flex items-center gap-2 pb-3 px-1 text-sm font-medium border-b-2 transition ${
+                                // 지금 보는 탭 = 보조 색(하늘색) 밑줄 + 같은 계열 글자. 주 색(네이비)은 누르는 주 버튼에만 쓴다
+                                className={`flex min-h-11 items-center gap-2 pb-3 px-1 text-sm border-b-2 transition ${
                                     isActive
-                                        ? "border-[var(--color-academy-primary)] text-[var(--color-academy-ink)]"
-                                        : "border-transparent text-[var(--color-academy-muted)] hover:text-[var(--color-academy-muted)]"
+                                        ? "border-[var(--color-academy-secondary-strong)] font-semibold text-[var(--color-academy-secondary-ink)]"
+                                        : "border-transparent font-medium text-[var(--color-academy-muted)] hover:text-[var(--color-academy-ink)]"
                                 }`}
                             >
-                                <SymbolIcon name={tab.iconName} size={16} />
                                 {tab.label}
                                 {/* 카운트 뱃지 */}
                                 {tab.count !== undefined && (
-                                    <span className={`text-xs px-1.5 py-0.5 rounded-full ${
-                                        isActive ? "bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-ink)]" : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"
+                                    <span className={`text-xs font-normal tabular-nums px-1.5 py-0.5 rounded-full ${
+                                        isActive ? "bg-[var(--color-academy-secondary-soft)] text-[var(--color-academy-secondary-ink)]" : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"
                                     }`}>
                                         {tab.count}
                                     </span>
@@ -391,7 +376,6 @@ function StudentsTab({ students }: { students: ClassData["students"] }) {
     if (students.length === 0) {
         return (
             <div className="bg-white p-8 rounded-2xl shadow-sm border border-[var(--color-academy-line)] text-center">
-                <SymbolIcon name="groups" size={40} className="mx-auto mb-3 text-[var(--color-academy-faint)]" />
                 <p className="text-[var(--color-academy-muted)]">등록된 수강생이 없습니다</p>
             </div>
         );
@@ -419,7 +403,7 @@ function StudentsTab({ students }: { students: ClassData["students"] }) {
                                     <Link
                                         href={`/admin/students/${s.studentId}`}
                                         prefetch={false}
-                                        className="font-medium text-[var(--color-academy-ink)] hover:text-[var(--color-academy-ink)] transition"
+                                        className="font-medium text-[var(--color-academy-ink)] hover:text-[var(--color-academy-primary)] transition"
                                     >
                                         {s.studentName}
                                     </Link>
@@ -427,8 +411,8 @@ function StudentsTab({ students }: { students: ClassData["students"] }) {
                                 <td className="py-3 px-4 text-[var(--color-academy-muted)]">{s.gender || "-"}</td>
                                 <td className="py-3 px-4 text-[var(--color-academy-muted)]">{s.school || "-"}</td>
                                 <td className="py-3 px-4 text-[var(--color-academy-muted)]">{s.grade || "-"}</td>
-                                <td className="py-3 px-4 text-[var(--color-academy-muted)]">{s.phone || "-"}</td>
-                                <td className="py-3 px-4 text-[var(--color-academy-muted)]">{toDateStr(s.enrolledAt)}</td>
+                                <td className="py-3 px-4 tabular-nums text-[var(--color-academy-muted)]">{s.phone || "-"}</td>
+                                <td className="py-3 px-4 tabular-nums text-[var(--color-academy-muted)]">{toDateStr(s.enrolledAt)}</td>
                             </tr>
                         ))}
                     </tbody>
@@ -452,17 +436,16 @@ function SessionsTab({ sessions, onAddSession, onEditSession, loadingSession }: 
             {/* 상단: 수업 기록 추가 버튼 */}
             <div className="flex justify-end">
                 <button
+                    type="button"
                     onClick={onAddSession}
-                    className="flex items-center gap-2 bg-[var(--color-academy-primary)] text-white px-4 py-2 rounded-xl font-bold text-sm hover:bg-[var(--color-academy-primary-hover)] transition"
+                    className="academy-button-primary"
                 >
-                    <SymbolIcon name="add" size={16} />
                     수업 기록 추가
                 </button>
             </div>
 
             {sessions.length === 0 ? (
                 <div className="bg-white p-8 rounded-2xl shadow-sm border border-[var(--color-academy-line)] text-center">
-                    <SymbolIcon name="menu_book" size={40} className="mx-auto mb-3 text-[var(--color-academy-faint)]" />
                     <p className="text-[var(--color-academy-muted)]">수업 기록이 없습니다</p>
                 </div>
             ) : (
@@ -505,17 +488,17 @@ function SessionsTab({ sessions, onAddSession, onEditSession, loadingSession }: 
                                         />
                                     </div>
                                 )}
-                                {/* 사진 없을 때 아이콘 placeholder */}
+                                {/* 사진 없을 때 — 아이콘 대신 글자로 알린다 */}
                                 {!firstPhotoUrl && (
-                                    <div className="w-20 h-20 rounded-xl bg-[var(--color-academy-soft)] flex-shrink-0 flex items-center justify-center">
-                                        <SymbolIcon name="photo_camera" size={24} className="text-[var(--color-academy-faint)]" />
+                                    <div className="w-20 h-20 rounded-xl bg-[var(--color-academy-soft)] flex-shrink-0 flex items-center justify-center text-xs text-[var(--color-academy-faint)]">
+                                        사진 없음
                                     </div>
                                 )}
 
                                 {/* 수업 기록 텍스트 정보 */}
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2 mb-1">
-                                        <span className="font-bold text-[var(--color-academy-ink)]">{toDateStr(s.date)}</span>
+                                        <span className="font-semibold tabular-nums text-[var(--color-academy-ink)]">{toDateStr(s.date)}</span>
                                         {s.coachName && (
                                             <span className="text-xs bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] px-2 py-0.5 rounded-full">
                                                 {s.coachName} 코치
@@ -524,7 +507,7 @@ function SessionsTab({ sessions, onAddSession, onEditSession, loadingSession }: 
                                     </div>
                                     {/* 수업 주제 */}
                                     {s.topic && (
-                                        <p className="text-sm text-[var(--color-academy-muted)] font-medium truncate">{s.topic}</p>
+                                        <p className="text-sm text-[var(--color-academy-muted)] truncate">{s.topic}</p>
                                     )}
                                     {/* 출석률 바 */}
                                     <div className="flex items-center gap-2 mt-2">
@@ -534,7 +517,7 @@ function SessionsTab({ sessions, onAddSession, onEditSession, loadingSession }: 
                                                 style={{ width: `${rate}%` }}
                                             />
                                         </div>
-                                        <span className="text-xs text-[var(--color-academy-muted)]">
+                                        <span className="text-xs tabular-nums text-[var(--color-academy-muted)]">
                                             출석 {s.presentCount}/{s.attendanceCount}명 ({rate}%)
                                         </span>
                                     </div>
@@ -555,7 +538,6 @@ function AttendanceTab({ sessions }: { sessions: SessionRow[] }) {
     if (sessions.length === 0) {
         return (
             <div className="bg-white p-8 rounded-2xl shadow-sm border border-[var(--color-academy-line)] text-center">
-                <SymbolIcon name="event_available" size={40} className="mx-auto mb-3 text-[var(--color-academy-faint)]" />
                 <p className="text-[var(--color-academy-muted)]">출석 기록이 없습니다</p>
             </div>
         );
@@ -585,19 +567,19 @@ function AttendanceTab({ sessions }: { sessions: SessionRow[] }) {
 
                             return (
                                 <tr key={s.id} className="border-b border-[var(--color-academy-line)] hover:bg-[var(--color-academy-line)] transition">
-                                    <td className="py-3 px-4 font-medium text-[var(--color-academy-ink)]">{toDateStr(s.date)}</td>
+                                    <td className="py-3 px-4 tabular-nums text-[var(--color-academy-ink)]">{toDateStr(s.date)}</td>
                                     <td className="py-3 px-4 text-[var(--color-academy-muted)]">{s.coachName || "-"}</td>
                                     <td className="py-3 px-4">
-                                        <span className="text-[var(--color-academy-success)] font-medium">{s.presentCount}명</span>
+                                        <span className="tabular-nums text-[var(--color-academy-success)]">{s.presentCount}명</span>
                                     </td>
                                     <td className="py-3 px-4">
-                                        <span className={absentOrLate > 0 ? "text-[var(--color-academy-danger)] font-medium" : "text-[var(--color-academy-faint)]"}>
+                                        <span className={absentOrLate > 0 ? "tabular-nums text-[var(--color-academy-danger)] font-medium" : "tabular-nums text-[var(--color-academy-faint)]"}>
                                             {absentOrLate}명
                                         </span>
                                     </td>
                                     <td className="py-3 px-4">
                                         {/* 출석률에 따라 색상 변경 */}
-                                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                                        <span className={`text-xs tabular-nums px-2 py-0.5 rounded-full ${
                                             rate >= 80
                                                 ? "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]"
                                                 : rate >= 50

@@ -70,8 +70,7 @@ export default function DriverRunLinkControls({ initialEnabled }: { initialEnabl
   return (
     <section aria-label="기사님 운행 링크 관리" className="mb-3 rounded-xl border border-[var(--color-academy-line)] bg-white px-3 py-2">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="material-symbols-outlined text-lg text-[var(--color-academy-muted)]" aria-hidden="true">link</span>
-        <span className="text-sm font-black text-[var(--color-academy-ink)]">운행 링크(문자 주소) 사용</span>
+        <span className="text-sm font-semibold text-[var(--color-academy-ink)]">운행 링크(문자 주소) 사용</span>
         {/* 스위치 — role=switch 로 화면읽기에서도 켜짐/꺼짐을 읽는다. 터치 44px */}
         <button
           type="button"
@@ -79,20 +78,19 @@ export default function DriverRunLinkControls({ initialEnabled }: { initialEnabl
           aria-checked={enabled}
           disabled={busy}
           onClick={() => void toggle()}
-          className={`inline-flex min-h-11 items-center gap-1 rounded-lg px-3 text-sm font-black ${enabled ? "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]" : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"}`}
+          className={`inline-flex min-h-11 items-center gap-1 rounded-lg px-3 text-sm font-medium ${enabled ? "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]" : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"}`}
         >
-          <span className="material-symbols-outlined text-lg" aria-hidden="true">{enabled ? "toggle_on" : "toggle_off"}</span>
           {enabled ? "켜짐" : "꺼짐"}
         </button>
-        <button type="button" disabled={busy} onClick={() => void rotate()} className="academy-button-danger inline-flex min-h-11 items-center gap-1 rounded-lg px-3 text-sm font-black">
-          <span className="material-symbols-outlined text-lg" aria-hidden="true">autorenew</span>링크 새로 만들기
+        <button type="button" disabled={busy} onClick={() => void rotate()} className="academy-button-danger">
+          링크 새로 만들기
         </button>
         <span className="text-xs text-[var(--color-academy-muted)]">
           {enabled ? "기사님 계정 승인 후 끄면, 로그인한 기사님만 운행표를 봅니다." : "꺼짐 — 문자 주소로는 운행표가 열리지 않습니다."}
         </span>
       </div>
-      {err && <p role="alert" className="mt-2 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-xs font-bold text-[var(--color-academy-danger)]">{err}</p>}
-      {msg && <p className="mt-2 rounded-lg bg-[var(--color-academy-success-soft)] px-3 py-2 text-xs font-bold text-[var(--color-academy-success)]">{msg}</p>}
+      {err && <p role="alert" className="mt-2 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-xs text-[var(--color-academy-danger)]">{err}</p>}
+      {msg && <p className="mt-2 rounded-lg bg-[var(--color-academy-success-soft)] px-3 py-2 text-xs text-[var(--color-academy-success)]">{msg}</p>}
       {confirmDialog}
     </section>
   );

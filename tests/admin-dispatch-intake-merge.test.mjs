@@ -92,8 +92,9 @@ test("패널: 기준은 기사님과 같은 배정 목록(getDriverAssignBoard A
   assert.match(PANEL, /e\.key === "Escape"/);
   // 요약 문구 · 0명이면 작은 한 줄
   assert.match(PANEL, /배정 필요 \{students\.length\}명/);
-  assert.match(PANEL, /신규 <b/);
-  assert.match(PANEL, /반 이동 <b/);
+  // 2026-11-13 UI 통일: 숫자 강조를 <b>(700) 대신 font-semibold(600) span 으로 그린다 — 문구는 그대로.
+  assert.match(PANEL, /· 신규 <span className="font-semibold/);
+  assert.match(PANEL, /· 반 이동 <span className="font-semibold/);
   assert.match(PANEL, /text-xs text-\[var\(--color-academy-muted\)\]">배정 필요 학생 없음/);
 });
 
@@ -112,10 +113,13 @@ test("디자인: 학원 토큰 색만 · 글자 12px 이상 · 터치 44px · �
     assert.doesNotMatch(src, /#[0-9a-fA-F]{3,6}\b|(bg|text|border)-(red|green|blue|gray|amber|orange|black|white)-?\d*\b/, `${name}: 하드코딩 색`);
     assert.doesNotMatch(src, /text-\[(1[01]|[0-9])(\.\d+)?px\]/, `${name}: 12px 미만 글자`);
     assert.doesNotMatch(src, /\btruncate\b|text-ellipsis|line-clamp/, `${name}: 말줄임`);
-    assert.match(src, /material-symbols-outlined/);
   }
+  // 2026-11-13 UI 통일(원장 «아이콘 빼고 글자로»): 장식 아이콘을 뺐다 — 남은 아이콘은 펼침/접힘 화살표(패널)뿐이고 Material Symbols 다.
+  assert.match(PANEL, /material-symbols-outlined[^>]*>\{expanded \? "expand_less" : "expand_more"\}/);
+  assert.doesNotMatch(LEG, /material-symbols-outlined/);
   assert.match(PANEL, /const CHIP = "inline-flex min-h-11/);
-  assert.match(PANEL, /const BUTTON = "inline-flex min-h-11/);
+  // 2026-11-13 UI 통일: 직접 그린 버튼 → 테마 보조 버튼(academy-button-secondary 는 높이 44px)
+  assert.match(PANEL, /const BUTTON = "academy-button-secondary";/);
   assert.doesNotMatch(PANEL, /lucide-react/);
 });
 

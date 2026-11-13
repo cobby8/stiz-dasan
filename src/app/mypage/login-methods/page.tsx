@@ -60,8 +60,7 @@ export default async function LoginMethodsPage({
         <Link href="/mypage" aria-label="마이페이지로" className="academy-back-link">
           <span className="material-symbols-outlined" aria-hidden="true">arrow_back</span>
         </Link>
-        <h1 className="flex items-center gap-2 text-lg font-black text-[var(--color-academy-ink)]">
-          <span className="material-symbols-outlined text-[var(--color-academy-ink)]">link</span>
+        <h1 className="academy-heading">
           간편로그인 연결
         </h1>
       </div>
@@ -73,12 +72,12 @@ export default async function LoginMethodsPage({
       {/* 스토어 앱에서는 «연결하기»를 숨기고 한 줄 안내(앱 밖으로 나가 돌아오지 못한다) */}
       <StoreAppLinkNotice />
       {justLinked && (
-        <p role="status" className="mb-3 rounded-xl bg-[var(--color-academy-success-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-academy-success)]">
+        <p role="status" className="mb-3 rounded-xl bg-[var(--color-academy-success-soft)] px-3 py-2 text-sm font-medium text-[var(--color-academy-success)]">
           {PARENT_OAUTH_LABELS[justLinked]} 연결을 마쳤습니다.
         </p>
       )}
       {error && (
-        <p className="mb-3 rounded-xl bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-academy-danger)]">{error}</p>
+        <p className="mb-3 rounded-xl bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-medium text-[var(--color-academy-danger)]">{error}</p>
       )}
 
       {rows.length === 0 ? (
@@ -89,13 +88,12 @@ export default async function LoginMethodsPage({
         <div className="grid gap-2">
           {rows.map((provider) => (
             <div key={provider} className="flex min-h-14 items-center gap-3 rounded-2xl border border-[var(--color-academy-line)] px-3.5 py-2.5">
-              <span className="flex min-w-0 flex-1 items-center gap-2 text-sm font-bold text-[var(--color-academy-ink)]">
+              <span className="flex min-w-0 flex-1 items-center gap-2 text-sm font-medium text-[var(--color-academy-ink)]">
                 {provider === "apple" && <AppleLogo />}
                 {PARENT_OAUTH_LABELS[provider]}
               </span>
               {linked.has(provider) ? (
-                <span className="inline-flex items-center gap-1 rounded-md bg-[var(--color-academy-success-soft)] px-2 py-1 text-xs font-bold text-[var(--color-academy-success)]">
-                  <span className="material-symbols-outlined text-sm" aria-hidden>check_circle</span>
+                <span className="inline-flex shrink-0 items-center rounded bg-[var(--color-academy-success-soft)] px-2 py-1 text-xs text-[var(--color-academy-success)]">
                   연결됨
                 </span>
               ) : (

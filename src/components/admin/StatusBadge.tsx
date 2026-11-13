@@ -16,7 +16,7 @@ export function statusToneClass(tone: StatusTone): string {
 
 export default function StatusBadge({ tone, children, className = "" }: { tone: StatusTone; children: ReactNode; className?: string }) {
     return (
-        <span className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-bold ${TONE_BADGE_CLASS[tone]} ${className}`}>
+        <span className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium ${TONE_BADGE_CLASS[tone]} ${className}`}>
             {children}
         </span>
     );
