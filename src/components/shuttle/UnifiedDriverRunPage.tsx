@@ -3,6 +3,7 @@ import RememberDriverToken from "./RememberDriverToken";
 import { loadUnifiedDriverRun } from "@/lib/shuttle/unifiedDriverRun";
 import UnifiedDriverClient from "./UnifiedDriverClient";
 import AcademyTheme from "@/components/academy/AcademyTheme";
+import { DRIVER_LINK_DISABLED_MESSAGE, isDriverRunLinkEnabled } from "@/lib/shuttle/driverLinkAccess";
 
 /**
  * 기사님 통합 운행 화면(서버) — /shuttle/run/[token], /shuttle/regular/[token], /driver/[token] 셋이 공유한다.
@@ -42,7 +43,36 @@ export function DriverLightError({ title, sub }: { title: string; sub: string })
   );
 }
 
-export default async function UnifiedDriverRunPage({ token, searchDate, rememberToken = false, focusDirection = null }: { token: string; searchDate?: string | null; rememberToken?: boolean; focusDirection?: "PICKUP" | "DROPOFF" | null }) {
+// 원장이 운행 링크(문자 주소)를 끈 뒤 옛 주소로 들어온 기사님께 보이는 안내 — 로그인하면 계정 운행표(/staff/run)로 간다.
+function DriverLinkDisabledNotice() {
+  return (
+    <AcademyTheme role="driver" className="min-h-screen text-[var(--color-academy-ink)]">
+      <div className="mx-auto grid min-h-[80dvh] max-w-md place-items-center px-6 text-center">
+        <div>
+          <span className="material-symbols-outlined text-5xl text-[var(--color-academy-muted)]" aria-hidden="true">link_off</span>
+          <h1 className="mt-3 text-xl font-black text-[var(--color-academy-ink)]">{DRIVER_LINK_DISABLED_MESSAGE}</h1>
+          <p className="mt-1 text-base text-[var(--color-academy-muted)]">원장님이 기사님 역할을 준 계정으로 로그인하면 운행표가 열립니다.</p>
+          <a
+            href={`/login?${new URLSearchParams({ redirect: "/staff/run" }).toString()}`}
+            className="mt-6 inline-flex min-h-12 items-center justify-center rounded-xl border border-[var(--color-academy-line-input)] px-5 text-base font-bold text-[var(--color-academy-ink)]"
+          >
+            앱에서 로그인하기
+          </a>
+        </div>
+      </div>
+    </AcademyTheme>
+  );
+}
+
+/**
+ * viaAccount = 로그인 계정 경로(/staff/run)가 이미 셔틀 권한을 확인하고 연 경우.
+ * 이때만 운행 링크 스위치를 건너뛴다. 토큰 주소(/driver/[token] 등)는 스위치가 꺼지면 안내만 보인다.
+ */
+export default async function UnifiedDriverRunPage({ token, searchDate, rememberToken = false, focusDirection = null, viaAccount = false }: { token: string; searchDate?: string | null; rememberToken?: boolean; focusDirection?: "PICKUP" | "DROPOFF" | null; viaAccount?: boolean }) {
+  // 운행 링크 스위치(서버 판정) — 꺼졌으면 토큰이 맞아도 명단을 읽지 않는다.
+  if (!viaAccount && !(await isDriverRunLinkEnabled())) {
+    return <DriverLinkDisabledNotice />;
+  }
   // 토큰 검증은 기존 함수 그대로(방학특강 resolveRunToken · 정규 isRegularRunToken).
   if (!(await isAnyDriverRunToken(token))) {
     return <DriverLightError title="유효하지 않은 링크입니다" sub="원장님께 새 링크를 요청해주세요." />;

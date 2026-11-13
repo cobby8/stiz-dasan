@@ -18,6 +18,8 @@ function setup({failWrite=false,failVerify=false}={}){
  const deps={
  'next/server':{NextResponse:{json(body,options={}){return new Response(JSON.stringify(body),options)}}},
  '@/lib/shuttle/driverToken':{isAnyDriverRunToken:async token=>token==='valid'},
+ // 운행 링크 스위치 켜짐(기존 동작) — 스위치 자체는 driver-link-toggle.test.mjs 가 검사한다.
+ '@/lib/shuttle/driverLinkAccess':{driverLinkBlocked:async()=>false,driverLinkDisabledResponse:()=>new Response('{}',{status:410})},
  '@/lib/datetime/kst':{kstDow:()=>1},
  '@/lib/shuttle/driverOrderPlan':plan,
  '@/lib/prisma':{prisma:{$transaction:async(fn,options)=>{assert.equal(options.isolationLevel,'Serializable');const before=structuredClone(state);try{

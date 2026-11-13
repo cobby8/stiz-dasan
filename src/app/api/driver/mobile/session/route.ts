@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { assertMobileSchema, hashSecret, locationInput, lockTrackingToken, mobileTrackingEnabled, MobileTrackingError, SECRET, secretMatches, SESSION_LIFETIME_MS, UUID, type MobileSession } from "@/lib/shuttle/mobileTracking";
+// 운행 링크 스위치 — 기사님 앱(안드로이드)은 로그인 쿠키 없이 링크 열쇠로만 위치를 보내므로, 링크를 끄면 시작·위치 전송도 막는다.
+import { driverLinkBlocked, DRIVER_LINK_DISABLED_CODE } from "@/lib/shuttle/driverLinkAccess";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -16,6 +18,8 @@ export async function POST(request: Request) {
     if (!["start", "location", "stop", "status"].includes(String(action))) return reply({ error: "INVALID_ACTION" }, 400);
     const secret = action === "start" ? body.secret : request.headers.get("authorization")?.match(/^Bearer ([0-9a-f]{64})$/i)?.[1];
     if (typeof secret !== "string" || !SECRET.test(secret)) return reply({ error: "INVALID_CREDENTIAL" }, 403);
+    // 종료(stop)·상태(status)는 그대로 둔다 — 링크를 꺼도 켜져 있던 위치 공유를 끄고 정리할 수 있어야 한다.
+    if ((action === "start" || action === "location") && await driverLinkBlocked()) return reply({ error: DRIVER_LINK_DISABLED_CODE }, 410);
     return await prisma.$transaction(async (db) => {
       await assertMobileSchema(db);
       let token: string;

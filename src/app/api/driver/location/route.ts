@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+// 운행 링크 스위치(원장이 끄면 토큰만으로는 못 연다 — 셔틀 권한 있는 로그인 사용자만 통과)
+import { driverLinkBlocked, driverLinkDisabledResponse } from "@/lib/shuttle/driverLinkAccess";
 import { assertLegacyTrackingAllowed, mobileTrackingEnabled, MobileTrackingError, type TrackingDb } from "@/lib/shuttle/mobileTracking";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +33,7 @@ export async function POST(request: Request) {
     if (!links.length) {
       return NextResponse.json({ error: "유효하지 않은 토큰" }, { status: 403 });
     }
+    if (await driverLinkBlocked()) return driverLinkDisabledResponse();
 
     const save = async (db: TrackingDb) => db.$executeRawUnsafe(
       `INSERT INTO "DriverLocation" (token, label, latitude, longitude, accuracy, speed, heading, sharing, "updatedAt")

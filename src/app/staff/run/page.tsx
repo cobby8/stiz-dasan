@@ -49,5 +49,6 @@ export default async function StaffRunPage({
   // focus 쿼리 = 명단 변경 알림 «노선 확인하기»의 바뀐 방향(BOARD=등원·ALIGHT=하원). 그 묶음으로 바로 스크롤한다.
   // 정해진 두 값만 받는다(그 밖의 값은 무시 — 평소 화면 그대로).
   const focusDirection = sp?.focus === "BOARD" ? "PICKUP" : sp?.focus === "ALIGHT" ? "DROPOFF" : null;
-  return <UnifiedDriverRunPage token={token} searchDate={searchDate} focusDirection={focusDirection} />;
+  // viaAccount: 위에서 셔틀 권한을 확인했으므로 운행 링크 스위치(문자 주소용)를 건너뛴다 — 링크를 꺼도 계정은 연다.
+  return <UnifiedDriverRunPage token={token} searchDate={searchDate} focusDirection={focusDirection} viaAccount />;
 }

@@ -28,6 +28,8 @@ function fixture({ regular = true, seasonal = false, failRead = false } = {}) {
     '@/lib/shuttle/driverToken': { async isAnyDriverRunToken() { return regular || seasonal; } },
     '@/lib/seasonal/shuttleRun': { async resolveRunToken() { return seasonal ? { date: '2026-10-19' } : null; } },
     '@/lib/shuttle/driverStatusRead': reader,
+    // 운행 링크 스위치 켜짐(기존 동작) — 스위치 자체는 driver-link-toggle.test.mjs 가 검사한다.
+    '@/lib/shuttle/driverLinkAccess': { async driverLinkBlocked() { return false; }, driverLinkDisabledResponse() { return new Response('{}', { status: 410 }); } },
   };
   const regularApi = load('src/app/api/shuttle/regular-boarding/route.ts', dependencies);
   const seasonalApi = load('src/app/api/shuttle/boarding/route.ts', dependencies);

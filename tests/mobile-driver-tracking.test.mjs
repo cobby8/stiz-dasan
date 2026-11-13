@@ -17,6 +17,7 @@ test('기본 비활성은 DB 미접속 503과 no-store', async () => {
     'next/server': { NextResponse: { json: (body, options) => new Response(JSON.stringify(body), options) } },
     '@/lib/prisma': { prisma: new Proxy({}, { get() { throw new Error('DB 접근 금지'); } }) },
     '@/lib/shuttle/mobileTracking': helper,
+    '@/lib/shuttle/driverLinkAccess': { async driverLinkBlocked() { throw new Error('비활성일 때는 스위치도 읽지 않는다'); }, DRIVER_LINK_DISABLED_CODE: 'DRIVER_LINK_DISABLED' },
   });
   const result = await api.POST(new Request('https://fixture.invalid', { method: 'POST' }));
   assert.equal(result.status, 503); assert.equal(result.headers.get('cache-control'), 'no-store');
