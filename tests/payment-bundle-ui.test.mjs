@@ -45,6 +45,7 @@ const billingMocks = {
     "@/lib/ui/statusTones": statusTones,
     "@/lib/payments/monthBills": monthBills,
     "@/components/admin/list/ListDetailPanel": load("src/components/admin/list/ListDetailPanel.tsx", { "@/components/admin/AdminModal": adminModal }),
+    "./sheetHistory": load("src/components/parent/billing/sheetHistory.ts"),
   }),
 };
 

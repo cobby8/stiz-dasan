@@ -19,7 +19,7 @@ import VirtualAccountNotice from "@/components/parent/VirtualAccountNotice";
 // 2026-11-14 원장 지시: 청구는 «한 달 = 카드 한 줄»(청구월·합계·상태), 누르면 세부 시트 — 아이 기록 화면과 같은 부품
 import MonthBillCard, { MonthBillList } from "@/components/parent/billing/MonthBillCard";
 import BillDetailSheet from "@/components/parent/billing/BillDetailSheet";
-import { groupBillsByMonth, wonText, type BillItemBase } from "@/lib/payments/monthBills";
+import { groupBillsByMonth, type BillItemBase } from "@/lib/payments/monthBills";
 import { todayKst } from "@/lib/datetime/kst";
 
 /** 온라인 결제가 안 될 때 안내할 학원 연락처(학원 설정값). 없으면 null */
@@ -454,9 +454,6 @@ export default function PaymentRequestClient({
     </>
   );
 
-  // 시트 맨 아래 «한 번에 결제» — 이 달에 결제할 수 있는 미납이 2건 이상일 때만(기존 묶음 결제 화면 그대로)
-  const openBundle = openBill ? openBill.items.filter((item) => isUnpaidStatus(item.status) && item.row.canCheckout) : [];
-
   return (
     <main className="mx-auto max-w-lg space-y-3 px-4 py-4">
       <div>
@@ -523,19 +520,10 @@ export default function PaymentRequestClient({
           bill={openBill}
           onClose={() => { setOpenYm(null); setOpenId(null); }}
           renderItemActions={(item) => itemActions(item.row)}
-          footer={
-            <>
-              {messages}
-              {payReady && openBundle.length > 1 && (
-                <div className="flex items-center gap-2 border-t border-[var(--color-academy-line)] pt-2">
-                  <p className="min-w-0 flex-1 break-keep text-sm font-semibold tabular-nums text-[var(--color-academy-ink)]">
-                    미납 {openBundle.length}건 · {wonText(openBundle.reduce((sum, item) => sum + item.row.amount, 0))}
-                  </p>
-                  <Link href="/mypage/payments/checkout" className="academy-button-primary shrink-0">한 번에 결제</Link>
-                </div>
-              )}
-            </>
-          }
+          // 시트 안 링크(결제하기)는 기록 칸을 되돌린 뒤 같은 화면 이동(router.push)으로
+          navigate={(href) => router.push(href)}
+          // 처리 결과·오류 안내만. «한 번에 결제»는 모든 달 미납을 묶으므로 화면 위쪽 칸 하나만 둔다(검수 11-14)
+          footer={messages}
         />
       )}
     </main>

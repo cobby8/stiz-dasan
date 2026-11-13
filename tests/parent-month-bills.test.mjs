@@ -212,7 +212,10 @@ test("③ 결제 흐름 보존: 결제하기 링크·한 번에 결제·입금�
   assert.match(actions, /<VirtualAccountNotice compact account=\{row\.virtualAccount\} \/>/, "가상계좌 안내 같은 부품");
   assert.match(actions, /영수증 요청/);
   assert.match(client, /renderItemActions=\{\(item\) => itemActions\(item\.row\)\}/, "시트 항목마다 같은 함수");
-  assert.equal((client.match(/href="\/mypage\/payments\/checkout"/g) || []).length, 2, "한 번에 결제 = 위 요약 칸 + 시트 맨 아래(같은 묶음 결제 화면)");
+  // «한 번에 결제»는 모든 달 미납을 묶으므로 화면 위쪽 칸 하나만(시트 안에 «이 달 합계»처럼 두면 금액이 어긋난다 — 검수 11-14)
+  assert.equal((client.match(/href="\/mypage\/payments\/checkout"/g) || []).length, 1, "한 번에 결제는 위쪽 칸 하나");
+  assert.match(client, /footer=\{messages\}/);
+  assert.match(client, /navigate=\{\(href\) => router\.push\(href\)\}/, "시트 안 결제하기는 칸을 되돌린 뒤 같은 화면 이동");
   assert.doesNotMatch(client, /groupByKstMonth/, "월 묶음은 공용 규칙(groupBillsByMonth) 하나");
 });
 
@@ -224,9 +227,12 @@ test("③ 같은 부품: 청구 탭·아이 기록이 월 카드·세부 시트�
     assert.match(src, /groupBillsByMonth/, file);
   }
   const sheet = read("src/components/parent/billing/BillDetailSheet.tsx");
-  assert.match(sheet, /window\.addEventListener\("popstate", onPop\)/, "휴대폰 뒤로가기 = 닫기");
-  assert.match(sheet, /history\.pushState\(\{ \.\.\.state, billSheet: true \}/, "라우터 기록 값을 품은 채 한 칸");
+  assert.match(sheet, /attachSheetHistory\(window,/, "기록 칸 관리는 sheetHistory 한 곳");
+  assert.match(sheet, /controller\.detach\(\)/, "사라질 때 남은 칸 정리");
+  assert.match(sheet, /onClickCapture=\{onClickCapture\}/, "시트 안 링크는 칸을 되돌린 뒤 이동");
   assert.match(sheet, /<ListDetailPanel onClose=\{requestClose\}/, "Esc·바깥 누르기도 같은 닫기");
+  assert.doesNotMatch(sheet, /history\.state\?\.billSheet/, "router.refresh 가 지우는 표시에 기대지 않는다");
+  assert.doesNotMatch(sheet, /academy-success/, "할인 금액은 상태색(완료 초록)을 쓰지 않는다");
   for (const file of ["src/components/parent/billing/BillDetailSheet.tsx", "src/components/parent/billing/MonthBillCard.tsx"]) {
     assert.doesNotMatch(read(file), /material-symbols|lucide|#[0-9a-fA-F]{6}\b/, file);
   }
@@ -237,4 +243,93 @@ test("③ 같은 부품: 청구 탭·아이 기록이 월 카드·세부 시트�
   const query = read("src/lib/payments/parent-payment-request.ts");
   assert.match(query, /to_char\(\(\(p\."dueDate" AT TIME ZONE 'UTC'\) AT TIME ZONE 'Asia\/Seoul'\),'YYYY-MM-DD'\) AS "dueDate"/);
   assert.match(query, /p\.type, p\.year, p\.month, p\.method, p\."paidProvider"/);
+});
+
+// ── ④ 뒤로가기 기록 칸(가짜 history 로 실행) ────────────────────────────────
+
+const sh = load("src/components/parent/billing/sheetHistory.ts");
+/** 같은 주소 기록 더미 — back() 은 실제 브라우저처럼 «나중에» popstate 를 보낸다 */
+function fakeWindow() {
+  const entries = [{ state: { __NA: true, tree: "t" } }];
+  let index = 0;
+  const listeners = new Set();
+  const timers = [];
+  const win = {
+    history: {
+      get state() { return entries[index].state; },
+      pushState(state) { entries.splice(index + 1); entries.push({ state }); index += 1; },
+      back() { timers.push(() => { if (index > 0) { index -= 1; for (const fn of [...listeners]) fn(); } }); },
+    },
+    location: { href: "https://x.example/mypage/payments" },
+    addEventListener: (_type, fn) => listeners.add(fn),
+    removeEventListener: (_type, fn) => listeners.delete(fn),
+    setTimeout: (fn) => timers.push(fn),
+  };
+  // Next 16 router.refresh() 흉내 — 지금 칸의 상태를 라우터 값으로 갈아 끼운다(billSheet 표시가 사라짐)
+  const refresh = () => { entries[index].state = { __NA: true, tree: "t2" }; };
+  const flush = () => { while (timers.length) timers.shift()(); };
+  return { win, refresh, flush, length: () => entries.length, index: () => index, listeners };
+}
+
+test("④ 기록 칸: 열면 한 칸, 닫기·뒤로가기·refresh 뒤 닫기·링크 이동·저절로 사라짐 모두 정확히 한 번 되돌린다", () => {
+  sh.resetSheetHistoryForTest();
+  // 닫기 버튼
+  {
+    const f = fakeWindow(); let closed = 0;
+    const c = sh.attachSheetHistory(f.win, { onClose: () => closed++, navigate() {} });
+    assert.equal(f.index(), 1, "열면 한 칸");
+    assert.equal(f.win.history.state.billSheet, true);
+    assert.equal(f.win.history.state.tree, "t", "라우터 값을 품은 채");
+    c.requestClose(); f.flush();
+    assert.equal(f.index(), 0); assert.equal(closed, 1);
+    c.detach(); f.flush();
+    assert.equal(f.index(), 0, "닫힌 뒤 정리에서 더 되돌리지 않는다");
+  }
+  // 입금 알림·영수증 요청 뒤 router.refresh() 로 표시가 지워져도 닫기 = 칸 되돌림(검수 지적 1)
+  {
+    const f = fakeWindow(); let closed = 0;
+    const c = sh.attachSheetHistory(f.win, { onClose: () => closed++, navigate() {} });
+    f.refresh();
+    assert.equal(f.win.history.state.billSheet, undefined);
+    c.requestClose(); f.flush();
+    assert.equal(f.index(), 0, "남는 칸 없음"); assert.equal(closed, 1);
+  }
+  // 휴대폰 뒤로가기
+  {
+    const f = fakeWindow(); let closed = 0;
+    const c = sh.attachSheetHistory(f.win, { onClose: () => closed++, navigate() {} });
+    f.win.history.back(); f.flush();
+    assert.equal(closed, 1); assert.equal(f.index(), 0);
+    c.detach(); f.flush();
+    assert.equal(f.index(), 0);
+  }
+  // 시트 안 결제하기 → 칸을 먼저 되돌리고 이동(돌아왔을 때 헛걸음 없음)
+  {
+    const f = fakeWindow(); const went = []; let closed = 0;
+    const c = sh.attachSheetHistory(f.win, { onClose: () => closed++, navigate: (href) => went.push(href) });
+    c.leaveTo("/payments/i-1");
+    assert.deepEqual(went, [], "칸을 되돌리기 전에는 이동하지 않는다");
+    f.flush();
+    assert.equal(f.index(), 0); assert.deepEqual(went, ["/payments/i-1"]); assert.equal(closed, 1);
+  }
+  // 열린 달이 목록에서 사라져 저절로 닫힘 → 정리 단계에서 남은 칸 되돌림
+  {
+    const f = fakeWindow(); let closed = 0;
+    const c = sh.attachSheetHistory(f.win, { onClose: () => closed++, navigate() {} });
+    c.detach(); f.flush();
+    assert.equal(f.index(), 0, "남는 칸 없음");
+    assert.equal(closed, 0, "이미 사라진 시트에 닫기를 다시 부르지 않는다");
+    assert.equal(f.listeners.size, 0);
+  }
+  // 개발 모드(StrictMode) 붙였다 떼었다 다시 붙임 → 칸 하나를 이어 쓰고, 열린 채 유지
+  {
+    const f = fakeWindow(); let closed = 0;
+    const first = sh.attachSheetHistory(f.win, { onClose: () => closed++, navigate() {} });
+    first.detach();
+    const second = sh.attachSheetHistory(f.win, { onClose: () => closed++, navigate() {} });
+    f.flush();
+    assert.equal(f.length(), 2, "칸은 하나만"); assert.equal(f.index(), 1, "열린 채"); assert.equal(closed, 0);
+    second.requestClose(); f.flush();
+    assert.equal(f.index(), 0); assert.equal(closed, 1);
+  }
 });
