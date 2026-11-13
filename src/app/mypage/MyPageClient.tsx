@@ -400,7 +400,7 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                 href={`/mypage/record?child=${encodeURIComponent(child.id)}`}
                 className="flex min-h-11 w-full items-center justify-between gap-2 rounded-xl bg-[var(--color-academy-surface)] px-3 py-1.5 text-sm ring-1 ring-inset ring-[var(--color-academy-line)] transition hover:bg-[var(--color-academy-soft)]"
             >
-                <span className="min-w-0 break-keep font-medium tabular-nums text-[var(--color-academy-ink)]">{recordLines?.[child.id] ?? "전체 기록"}</span>
+                <span className="min-w-0 break-keep tabular-nums text-[var(--color-academy-ink)]"><b className="font-bold">우리 아이 기록</b>{recordLines?.[child.id] && recordLines[child.id] !== "전체 기록" ? <span className="text-[var(--color-academy-muted)]"> · {recordLines[child.id]}</span> : null}</span>
                 <span aria-hidden="true" className="shrink-0 text-[var(--color-academy-faint)]">▸</span>
             </Link>
 
