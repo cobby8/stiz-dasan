@@ -26,6 +26,7 @@ import { notMergedStudent } from "@/lib/studentVisibility";
 import { endAbsencePeriodInTx, periodCarryColumnsReady, type PeriodContext } from "@/lib/regular/absence-period-service";
 import { illnessReviewReady, type IllnessTx } from "@/lib/regular/illness-carry-tx";
 import { ILLNESS_REASON } from "@/lib/regular/illnessCarryRules";
+import { readIllnessPeriodBillingHold } from "@/lib/regular/illness-period-admin";
 import { IllnessPeriodError, illnessPeriodAbsenceSql, parsePeriodApprovalRecord, parseSettlementSummary, parseUnpaidGuides } from "@/lib/regular/illnessPeriodRules";
 import { parentReturnDateMax } from "@/lib/regular/parentAbsencePeriodRules";
 import {
@@ -249,16 +250,21 @@ async function readSettlementPlan(
   });
   // 낸 돈이 없는 달에 «미납 청구가 그대로 살아 있으면» 확정을 막는다(코드 리뷰 필수) — 그대로 확정하면 그 청구가 전액으로 남아
   // 학부모에게 전액이 청구된다. 먼저 «발행 보류로 돌리기»로 그 청구를 거둬야 다닌 만큼만 다시 발행할 수 있다. 문제 목록에 넣어 지문에도 반영된다.
+  let holdable: Set<string> | null = null;
   for (const guide of plan.unpaidGuides) {
     const [year, monthNumber] = guide.month.split("-").map(Number);
-    const open = await tx.$queryRawUnsafe<Array<{ found: number }>>(
-      `SELECT 1 AS found FROM "Payment" p
+    const open = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+      `SELECT p.id FROM "Payment" p
         WHERE p."studentId" = $1 AND p."classId" = $2 AND p.year = $3 AND p.month = $4
-          AND COALESCE(p.type, 'MONTHLY') = 'MONTHLY' AND p.status IN ('PENDING', 'OVERDUE') LIMIT 1`,
+          AND COALESCE(p.type, 'MONTHLY') = 'MONTHLY' AND p.status IN ('PENDING', 'OVERDUE') ORDER BY p.id`,
       period.studentId, guide.classId, year, monthNumber,
     );
     if (open.length > 0) {
-      plan.problems.push({ code: "OPEN_BILL", text: `${Number(guide.month.slice(5, 7))}월 ${guide.className} 미납 청구가 그대로 있습니다. 먼저 ‹발행 보류로 돌리기›를 해 주세요.` });
+      // 그 청구가 «발행 보류로 돌리기»로 돌릴 수 있는 것인가 — 보류 칸과 같은 판정 함수로 본다(랠리즈 사본·결제 진행 중·현장 결제 중 등은 못 돌린다).
+      // 못 돌리는 청구가 섞여 있으면 그 버튼만으로는 풀리지 않으므로 갈 곳을 함께 알려 준다
+      holdable ??= new Set(((await readIllnessPeriodBillingHold(tx, period.id))?.bills ?? []).filter((bill) => !bill.skip).map((bill) => bill.paymentId));
+      const stuck = open.some((bill) => !holdable!.has(String(bill.id)));
+      plan.problems.push({ code: "OPEN_BILL", text: `${Number(guide.month.slice(5, 7))}월 ${guide.className} 미납 청구가 그대로 있습니다. 먼저 ‹발행 보류로 돌리기›를 해 주세요.${stuck ? " 보류로 돌릴 수 없는 청구는 수납 관리에서 취소한 뒤 다시 열어 주세요." : ""}` });
     }
   }
   return { plan, fingerprint: settlementFingerprint({ id: period.id, returnDate }, plan), absences, resolved };
@@ -550,11 +556,14 @@ export async function cancelIllnessPeriodSettlement(
       const [guideYear, guideMonth] = guide.month.split("-").map(Number);
       const issued = await tx.$queryRawUnsafe<Array<{ found: number }>>(
         `SELECT 1 AS found FROM "BillingWorkbenchDraft" d
-          WHERE d."studentId" = $1 AND d."classId" = $2 AND d.month = $3 AND d.status IN ('ISSUED', 'ZERO')
+          WHERE d."studentId" = $1 AND d."classId" = $2 AND d.month = $3
+            -- 0원 발행이거나, 발행했고 그 청구가 살아 있다(취소·환불된 청구의 초안은 «발행됨»이 아니다)
+            AND (d.status = 'ZERO' OR (d.status = 'ISSUED' AND NOT EXISTS (
+                  SELECT 1 FROM "Payment" dp WHERE dp.id = d."paymentId" AND dp.status IN ('CANCELED', 'CANCELLED', 'REFUNDED'))))
          UNION ALL
          SELECT 1 FROM "Payment" pay
           WHERE pay."studentId" = $1 AND pay."classId" = $2 AND pay.year = $4 AND pay.month = $5
-            AND COALESCE(pay.type, 'MONTHLY') = 'MONTHLY' AND pay.status NOT IN ('CANCELED', 'CANCELLED')
+            AND COALESCE(pay.type, 'MONTHLY') = 'MONTHLY' AND pay.status NOT IN ('CANCELED', 'CANCELLED', 'REFUNDED')
           LIMIT 1`,
         period.studentId, guide.classId, guide.month, guideYear, guideMonth,
       );

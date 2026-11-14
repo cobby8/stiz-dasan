@@ -290,7 +290,7 @@ export type UnpaidShape = "WHOLE" | "PREFIX" | "SUFFIX" | "MIDDLE" | "NONE";
 /**
  * 그 달 수업일(scheduled) 중 빠진 날(missed)의 모양과, 다닌 날만 남기는 수강 기간 제안.
  *   · 전부 빠짐(WHOLE) = 청구 없음 · 앞쪽(PREFIX) = 수강 시작일을 첫 다닌 날로 · 뒤쪽(SUFFIX) = 수강 종료일을 마지막 다닌 날로
- *   · 가운데(MIDDLE) = 기간으로 표현할 수 없어 자동 제안하지 않는다(원장이 금액을 직접 조정)
+ *   · 가운데(MIDDLE) = 수강 기간으로는 표현할 수 없다 — 기간은 그대로 두고 청구 준비가 빠진 횟수만큼 기간 조정 금액을 제안한다
  * 날짜는 «YYYY-MM-DD» 글자 비교만 한다(시간대 계산 없음).
  */
 export function unpaidGuideShape(scheduled: readonly string[], missed: readonly string[]): {

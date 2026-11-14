@@ -421,7 +421,9 @@ test("부원장 응답: 금액으로 만든 지문도 내려보내지 않는다 
 // ── 코드 리뷰 반영(2026-11-15): 미납 청구가 살아 있으면 확정 차단 · 날짜 상한 재료 · 권장 항목 ─────────────────
 test("코드 리뷰: 낸 돈이 없는 달에 미납 청구가 살아 있으면 경고가 아니라 확정 차단 — 지문에 들어가고, 정산 칸에서 보류 칸으로 바로 간다", () => {
   const plan = slice(service, "async function readSettlementPlan(", "/** 지금 이 기간에 쓸 복귀일");
-  assert.match(plan, /plan\.problems\.push\(\{ code: "OPEN_BILL", text: `\$\{Number\(guide\.month\.slice\(5, 7\)\)\}월 \$\{guide\.className\} 미납 청구가 그대로 있습니다\. 먼저 ‹발행 보류로 돌리기›를 해 주세요\.` \}\);/);
+  assert.match(plan, /plan\.problems\.push\(\{ code: "OPEN_BILL", text: `\$\{Number\(guide\.month\.slice\(5, 7\)\)\}월 \$\{guide\.className\} 미납 청구가 그대로 있습니다\. 먼저 ‹발행 보류로 돌리기›를 해 주세요\.\$\{stuck \? " 보류로 돌릴 수 없는 청구는 수납 관리에서 취소한 뒤 다시 열어 주세요\." : ""\}` \}\);/);
+  // 보류 버튼으로 돌릴 수 있는지는 보류 칸과 같은 판정 함수로 본다(랠리즈 사본·결제 진행 중·현장 결제 중 등은 못 돌린다)
+  assert.match(plan, /holdable \?\?= new Set\(\(\(await readIllnessPeriodBillingHold\(tx, period\.id\)\)\?\.bills \?\? \[\]\)\.filter\(\(bill\) => !bill\.skip\)\.map\(\(bill\) => bill\.paymentId\)\);\s+const stuck = open\.some\(\(bill\) => !holdable!\.has\(String\(bill\.id\)\)\);/);
   assert.doesNotMatch(plan, /warnings\.push\("이 달 미납 청구가/, "경고로만 두지 않는다");
   // 문제를 넣은 «뒤에» 지문을 만든다(지문에 문제 코드가 들어 있다)
   assert.ok(plan.indexOf('code: "OPEN_BILL"') < plan.indexOf("fingerprint: settlementFingerprint({ id: period.id, returnDate }, plan)"));
@@ -463,7 +465,8 @@ test("코드 리뷰(권장): 장부 근거는 납부 청구가 확인될 때만 
   assert.match(settleLib, /if \(handled\.length === 0\) throw new IllnessPeriodError\(SETTLE_NOTHING_MESSAGE\);/);
   assert.match(previewLib, /read\.plan\.rows\.every\(\(row\) => row\.absenceIds\.length === 0\) \? \[SETTLE_NOTHING_MESSAGE\] : \[\]/);
   // 확정 취소: 이 정산의 안내로 그 달 청구를 이미 발행했으면 거절 — 삭제보다 앞
-  assert.match(cancelLib, /d\.status IN \('ISSUED', 'ZERO'\)\s+UNION ALL\s+SELECT 1 FROM "Payment" pay[\s\S]{0,260}pay\.status NOT IN \('CANCELED', 'CANCELLED'\)/);
+  // «발행됨» = 0원 발행이거나 살아 있는 청구. 취소·환불된 청구(와 그 초안)는 발행된 것으로 보지 않는다
+  assert.match(cancelLib, /d\.status = 'ZERO' OR \(d\.status = 'ISSUED' AND NOT EXISTS \(\s+SELECT 1 FROM "Payment" dp WHERE dp\.id = d\."paymentId" AND dp\.status IN \('CANCELED', 'CANCELLED', 'REFUNDED'\)\)\)\)\s+UNION ALL\s+SELECT 1 FROM "Payment" pay[\s\S]{0,260}pay\.status NOT IN \('CANCELED', 'CANCELLED', 'REFUNDED'\)/);
   assert.ok(cancelLib.indexOf("청구를 이미 발행했어요. 확정 취소 대신 수납 관리에서 직접 조정해 주세요.") < cancelLib.indexOf('DELETE FROM "BillingCarryCredit"'));
   // 반이 지정되지 않은 납부 청구: 근거 없음(= 낸 돈이 없는 달)으로 단정하지 않는다 — 문구가 «낸 돈이 없는 달»로 가는 두 문구와 다르다
   const absence = read("src/lib/billing/workbench-absence.ts");

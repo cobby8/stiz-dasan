@@ -321,7 +321,7 @@ test("낸 돈이 없는 달: 전부 빠짐 → 청구 0원 / 앞쪽 빠짐 → �
   assert.deepEqual([suffix.shape, suffix.attended, suffix.periodStart, suffix.periodEnd], ["SUFFIX", 3, "2026-12-07", "2026-12-21"]);
   const middle = guideOf([scheduled[1]]).unpaidGuides[0];
   assert.deepEqual([middle.shape, middle.attended, middle.periodStart, middle.periodEnd], ["MIDDLE", 3, null, null]);
-  assert.match(plan.unpaidGuideAdminText(middle), /달 가운데가 빠져 자동 제안이 없어요/);
+  assert.match(plan.unpaidGuideAdminText(middle), /다닌 3회만 청구\(달 가운데가 빠져 수강 기간은 그대로, 기간 조정 금액으로 제안\)/);
   assert.match(plan.unpaidGuideAdminText(prefix), /12월 월요반 · 4회 중 2회 결석 → 다닌 2회만 청구\(수강 시작일 2026-12-21 제안\)/);
   // 모양 판정(순수 함수) — 청구 준비도 같은 함수로 지금 일정에 맞춰 다시 본다
   assert.equal(rules.unpaidGuideShape(scheduled, []).shape, "NONE");

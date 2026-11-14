@@ -331,4 +331,39 @@ export async function runIllnessSettlementPostgresTests({ pool, database, root, 
   assert.equal((await one(`SELECT "carryState" FROM "RegularAbsencePeriod" WHERE id='guide-period'`)).carryState, 'SETTLED');
   assert.equal(Number((await one(`SELECT count(*) FROM "BillingAbsenceResolution" WHERE "studentId"='s12'`)).count), 2);
   checks.push('낸 돈이 없는 달만 있는 기간: 이월 0원 확정 → 그 달 청구가 다닌 만큼(52,500)으로 발행 → 그 뒤 확정 취소는 거절(이미 발행)');
+  // 환불된 청구는 «발행됨»이 아니다 — 그 달 청구를 환불한 뒤에는 확정 취소가 된다(이월이 없던 정산이라 정산 기록만 지운다)
+  await pool.query(`UPDATE "Payment" SET status='REFUNDED' WHERE id=$1`, [guideIssued.operationResult.paymentIds[0]]);
+  assert.deepEqual(await settlement.cancelIllnessPeriodSettlement(database, { periodId: 'guide-period' }, 'admin', true), { periodId: 'guide-period', studentId: 's12', creditsRemoved: 0, resolutionsRemoved: 2, reopened: 0 });
+  assert.equal((await one(`SELECT "carryState" FROM "RegularAbsencePeriod" WHERE id='guide-period'`)).carryState, 'APPROVED');
+  checks.push('확정 취소: 그 달 청구가 환불됐으면 «발행됨»으로 보지 않아 취소된다');
+
+  // ── 달 가운데만 빠진 달(한 달 안에서 시작하고 끝나는 2주 결석: 4/5·4/12) ──
+  await pool.query(`INSERT INTO "Student"(id,name,"parentId","mergedIntoStudentId") VALUES('s13','합성 가운데결석 원생','parent13',NULL);
+    INSERT INTO "Enrollment"(id,"studentId","classId",status,"createdAt","updatedAt") VALUES('e13','s13','m7','ACTIVE','2026-01-01','2026-01-01');
+    INSERT INTO "RegularAbsencePeriod"(id,"studentId",reason,"startDate","returnDate",status,"classIds","carryState","coveredUntil","createdByUserId") VALUES('middle-period','s13','ILLNESS_INJURY','2027-04-05','2027-04-19','ENDED',ARRAY[]::text[],'APPROVED','2027-04-18','admin');
+    INSERT INTO "RegularAbsence"(id,"studentId","classId",date,reason,status,"periodId") VALUES('s13-0405','s13','m7','2027-04-05','ILLNESS_INJURY','CONFIRMED','middle-period'),('s13-0412','s13','m7','2027-04-12','ILLNESS_INJURY','CONFIRMED','middle-period');
+    INSERT INTO "Payment"(id,"studentId","classId",amount,status,type,year,month,"invoiceNo","updatedAt") VALUES('s13-open','s13','m7',105000,'PENDING','MONTHLY',2027,4,'S13-OPEN',NOW());
+    INSERT INTO "PaymentInvoice"(id,"paymentId","studentId","classId","invoiceNo",status,amount,"createdAt","updatedAt") VALUES('s13-open-inv','s13-open','s13','m7','S13-OPEN','ISSUED',105000,NOW(),NOW());
+    INSERT INTO "PaymentTransaction"(id,"paymentId",provider,status,"updatedAt") VALUES('s13-tx','s13-open','TOSS','READY',now())`);
+  // 미납 청구가 살아 있고, 학부모가 결제하는 중이라 보류 버튼으로는 못 돌린다 → 문구가 갈 곳을 함께 알려 준다
+  const stuck = await settlement.previewIllnessPeriodSettlement(database, { periodId: 'middle-period' }, ctx(TODAY));
+  assert.deepEqual(stuck.plan.problems.map((problem) => problem.text), ['4월 합성 월요반 미납 청구가 그대로 있습니다. 먼저 ‹발행 보류로 돌리기›를 해 주세요. 보류로 돌릴 수 없는 청구는 수납 관리에서 취소한 뒤 다시 열어 주세요.']);
+  await pool.query(`DELETE FROM "PaymentTransaction" WHERE id='s13-tx'`);
+  assert.deepEqual((await settlement.previewIllnessPeriodSettlement(database, { periodId: 'middle-period' }, ctx(TODAY))).plan.problems.map((problem) => problem.text), ['4월 합성 월요반 미납 청구가 그대로 있습니다. 먼저 ‹발행 보류로 돌리기›를 해 주세요.'], '돌릴 수 있는 청구뿐이면 덧붙이지 않는다');
+  await pool.query(`DELETE FROM "PaymentInvoice" WHERE id='s13-open-inv';DELETE FROM "Payment" WHERE id='s13-open'`);
+  checks.push('미납 청구 차단 문구: 보류로 돌릴 수 없는 청구(결제 진행 중)가 섞이면 «수납 관리에서 취소» 안내를 덧붙인다');
+  const middle = await settlement.previewIllnessPeriodSettlement(database, { periodId: 'middle-period' }, ctx(TODAY));
+  assert.deepEqual([middle.blockers, middle.plan.unpaidGuides.map((g) => [g.shape, g.attended, g.missedDates])], [[], [['MIDDLE', 2, ['2027-04-05', '2027-04-12']]]]);
+  await settlement.settleIllnessPeriod(database, { periodId: 'middle-period', expectedFingerprint: middle.fingerprint }, 'admin', true, ctx(TODAY));
+  let middleApril = await view('2027-04');
+  const middleRow = middleApril.rows.find((r) => r.id === 's13:m7');
+  // 수강 기간은 그대로(3/29~4/19, 4회), 기간 조정 = 105,000 × 빠진 2회 ÷ 4회 = 52,500 → 52,500원(전액 105,000 이 아니다)
+  assert.deepEqual([middleRow.periodStart, middleRow.periodEnd, middleRow.scheduledDates.length, middleRow.prorationAmount, middleRow.totalAmount], ['2027-03-29', '2027-04-19', 4, 52500, 52500]);
+  assert.ok(middleRow.basis.includes('부상 결석 2회(2027-04-05, 2027-04-12) 제외 → 기간 조정 52,500원 제안(다닌 2회 · 달 가운데가 빠져 수강 기간은 그대로)'));
+  // 화면에 보이는 값 그대로 저장 → 확정 → 발행
+  middleApril = (await mutateWorkbench(database, cmd('SAVE', middleApril, ['s13:m7'], { periodStart: middleRow.periodStart, periodEnd: middleRow.periodEnd }), 'admin', true)).view;
+  middleApril = (await mutateWorkbench(database, cmd('CONFIRM', middleApril, ['s13:m7']), 'admin', true)).view;
+  const middleIssued = await mutateWorkbench(database, cmd('ISSUE', middleApril, ['s13:m7']), 'admin', true);
+  assert.equal((await one(`SELECT amount FROM "Payment" WHERE id=$1`, [middleIssued.operationResult.paymentIds[0]])).amount, 52500);
+  checks.push('달 가운데만 빠진 달: 기간은 그대로·기간 조정 52,500 자동 제안 → 화면 값 그대로 저장·확정·발행 = 52,500원(전액 아님)');
 }

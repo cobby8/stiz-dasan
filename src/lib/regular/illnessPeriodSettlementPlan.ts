@@ -270,7 +270,8 @@ export function unpaidGuideAdminText(guide: UnpaidGuide): string {
   if (guide.shape === "WHOLE") return `${head} → 이 달 청구는 0원으로 제안해요`;
   if (guide.shape === "PREFIX") return `${head} → 다닌 ${guide.attended}회만 청구(수강 시작일 ${guide.periodStart} 제안)`;
   if (guide.shape === "SUFFIX") return `${head} → 다닌 ${guide.attended}회만 청구(수강 종료일 ${guide.periodEnd} 제안)`;
-  return `${head} → 달 가운데가 빠져 자동 제안이 없어요. 청구 준비에서 기간 조정 금액을 직접 넣어 주세요`;
+  // 달 가운데만 빠지면 수강 기간으로 나타낼 수 없다 — 기간은 그대로 두고 빠진 횟수만큼 기간 조정 금액을 제안한다(청구 준비)
+  return `${head} → 다닌 ${guide.attended}회만 청구(달 가운데가 빠져 수강 기간은 그대로, 기간 조정 금액으로 제안)`;
 }
 
 export function parentSettlementView(plan: SettlementPlan): ParentSettlementView {

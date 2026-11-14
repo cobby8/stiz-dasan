@@ -57,7 +57,7 @@ function database({credit=0,secondClass=false}={}){
   // 그 학생·그 달에 반이 지정되지 않은 납부 수강료 청구가 있는가(있으면 «낸 돈이 없는 달»로 단정하지 않는다)
   if(sql.includes(`p.status='PAID' AND p."classId" IS NULL LIMIT 1`))return state.payments.filter(p=>p.studentId===v[0]&&p.year===v[1]&&p.month===v[2]&&p.type==="MONTHLY"&&p.status==="PAID"&&(p.classId===null||p.classId===undefined)).slice(0,1).map(p=>({id:p.id}));
   // 부상 결석 복귀 정산(3단계)이 남긴 «낸 돈이 없는 달» 안내 — 확정된(SETTLED) 기간의 이 달 것만
-  if(sql.includes('FROM "RegularAbsencePeriod" sp')){assert.match(sql,/sp\.reason = 'ILLNESS_INJURY' AND sp\."carryState" = 'SETTLED'/);assert.match(sql,/sp\."carrySettlement"->'unpaidGuides' @> jsonb_build_array\(jsonb_build_object\('month', \$1::text\)\)/);return (state.settledGuides??[]).filter(g=>g.guides.some(x=>x.month===v[0])).map(g=>({studentId:g.studentId,periodId:g.periodId,guides:g.guides}));}
+  if(sql.includes('FROM "RegularAbsencePeriod" sp')){assert.match(sql,/sp\.reason = 'ILLNESS_INJURY' AND sp\."carryState" = 'SETTLED'/);assert.match(sql,/sp\."carrySettlement"->'unpaidGuides' @> jsonb_build_array\(jsonb_build_object\('month', \$1::text\)\)/);return (state.settledGuides??[]).filter(g=>g.guides.some(x=>x.month===v[0])).map(g=>({studentId:g.studentId,periodId:g.periodId,guides:g.guides,settledAt:g.settledAt??null}));}
   if(sql.includes('FROM "RegularAbsencePeriod" p JOIN "RegularAbsence" a ON a."periodId"=p.id')){assert.match(sql,/p\."carryState"<>'NONE'/);return (state.periodDecided??[]).includes(v[0])?[{found:1}]:[];}
   // 납부 Payment 근거(2026-11-15): 그 학생·그 반의 수강 개시일 / 그 반·그 달 납부완료 수강료 청구 / 그 청구에서 이미 줄인 금액
   if(sql.includes('FROM "Enrollment" e WHERE e."studentId"=$1 AND e."classId"=$2'))return state.enrollments.filter(e=>e.studentId===v[0]&&e.classId===v[1]).map(e=>({startsOn:e.startsOn??null}));
@@ -89,7 +89,7 @@ function database({credit=0,secondClass=false}={}){
   throw new Error(`unexpected read ${sql}`);
  },async $executeRawUnsafe(sql,...v){
   if(sql.includes("pg_advisory"))return 1;
-  if(sql.startsWith('INSERT INTO "BillingWorkbenchDraft"')){const d={id:v[0],month:v[1],studentId:v[2],classId:v[3],version:v[4],status:v[5],payload:JSON.parse(v[6]),reason:v[7],sourceVersion:v[8],paymentId:v[9],periodStart:v[11],periodEnd:v[12],scheduledDates:JSON.parse(v[13]),calculationBasis:JSON.parse(v[14])};const i=state.drafts.findIndex(x=>x.id===d.id&&x.month===d.month);if(i<0)state.drafts.push(d);else state.drafts[i]=d;return 1;}
+  if(sql.startsWith('INSERT INTO "BillingWorkbenchDraft"')){const d={id:v[0],month:v[1],studentId:v[2],classId:v[3],version:v[4],status:v[5],payload:JSON.parse(v[6]),reason:v[7],sourceVersion:v[8],paymentId:v[9],periodStart:v[11],periodEnd:v[12],scheduledDates:JSON.parse(v[13]),calculationBasis:JSON.parse(v[14]),updatedAt:new Date().toISOString()};const i=state.drafts.findIndex(x=>x.id===d.id&&x.month===d.month);if(i<0)state.drafts.push(d);else state.drafts[i]=d;return 1;}
   if(sql.startsWith('INSERT INTO "BillingWorkbenchOperation"')){state.operations.push({requestId:v[0],fingerprint:v[1],result:JSON.parse(v[2])});return 1;}
   if(sql.startsWith('INSERT INTO "BillingWorkbenchRevision"')){state.revisions.push(v);return 1;}
   if(sql.startsWith('INSERT INTO "BillingCarryUsage"')){state.usages.push({studentId:v[1],month:v[2],amount:v[4],paymentId:v[5],sourceCreditIds:v[7],basis:JSON.parse(v[8])});return 1;}
@@ -1016,10 +1016,11 @@ test("발행 보류: 화면 — 보류 요약·필터·행 글자·선택 불가
 // 가짜 달력의 2026-11 토요일 수업 = 11/7·14·21·28(4회), 정가 100,000원 → 한 번 25,000원.
 function guideDatabase(missedDates,options={}){
  const db=database(options);db.state.periodCarry=true;
- db.state.settledGuides=[{studentId:"student-a",periodId:"period-s",guides:[{month:"2026-11",classId:"class-a",missedDates}]}];
+ // settledAt = 그 기간의 이월을 확정한 시각(지난 시각 — 그 뒤에 저장하는 초안은 «정산 뒤» 초안이 된다)
+ db.state.settledGuides=[{studentId:"student-a",periodId:"period-s",settledAt:"2026-11-12T00:00:00.000Z",guides:[{month:"2026-11",classId:"class-a",missedDates}]}];
  return db;
 }
-test("정산 안내: 앞쪽·뒤쪽이 빠진 달은 수강 기간과 기간 조정을 제안하고, 전부 빠진 달은 0원, 가운데만 빠진 달은 자동 제안하지 않는다",async()=>{
+test("정산 안내: 앞쪽·뒤쪽이 빠진 달은 수강 기간과 기간 조정을 제안하고, 전부 빠진 달은 0원, 가운데만 빠진 달은 기간은 그대로 두고 빠진 횟수만큼 기간 조정",async()=>{
  const rowOf=async missed=>(await readWorkbench(guideDatabase(missed).tx,"2026-11",true)).rows[0];
  // 앞 2회 빠짐 → 수강 11/21~11/28, 기간 조정 50,000 → 청구 50,000(다닌 2회 × 25,000)
  const prefix=await rowOf(["2026-11-07","2026-11-14"]);
@@ -1032,10 +1033,13 @@ test("정산 안내: 앞쪽·뒤쪽이 빠진 달은 수강 기간과 기간 조
  const whole=await rowOf(["2026-11-07","2026-11-14","2026-11-21","2026-11-28"]);
  assert.deepEqual([whole.periodStart,whole.periodEnd,whole.prorationAmount,whole.totalAmount],["2026-11-07","2026-11-28",100000,0]);
  assert.ok(whole.basis.includes("부상 결석 4회 제외(다닌 수업 없음) → 기간 조정 100,000원 제안(청구 0원)"));
- // 가운데만 빠짐 → 금액·기간을 자동으로 넣지 않고 참고 금액만 알린다
+ // 가운데만 빠짐 → 수강 기간은 그대로(기간으로 나타낼 수 없다), 기간 조정은 빠진 1회분 25,000 자동 제안 → 75,000(전액 100,000 이 아니다)
  const middle=await rowOf(["2026-11-14"]);
- assert.deepEqual([middle.periodStart,middle.periodEnd,middle.prorationAmount,middle.totalAmount],["2026-11-07","2026-11-28",0,100000]);
- assert.ok(middle.reviewReasons.some(reason=>/^부상 결석 1회\(2026-11-14\)가 달 가운데라 자동 제안하지 않았습니다\. 기간 조정 금액을 직접 넣어 주세요\(참고 25,000원\)\.$/.test(reason)));
+ assert.deepEqual([middle.periodStart,middle.periodEnd,middle.scheduledDates.length,middle.prorationAmount,middle.totalAmount],["2026-11-07","2026-11-28",4,25000,75000]);
+ assert.ok(middle.basis.includes("부상 결석 1회(2026-11-14) 제외 → 기간 조정 25,000원 제안(다닌 3회 · 달 가운데가 빠져 수강 기간은 그대로)"));
+ // 앞뒤가 모두 빠진 달(첫 주·마지막 주)도 가운데와 같은 방식 — 빠진 2회분
+ const ends=await rowOf(["2026-11-07","2026-11-28"]);
+ assert.deepEqual([ends.periodStart,ends.periodEnd,ends.prorationAmount,ends.totalAmount],["2026-11-07","2026-11-28",50000,50000]);
  // 수업일이 아닌 날짜만 적힌 안내는 아무것도 바꾸지 않는다(일정이 바뀌어 그 날이 휴무가 된 경우)
  const none=await rowOf(["2026-11-01"]),plain=(await readWorkbench(database().tx,"2026-11",true)).rows[0];
  assert.deepEqual([none.periodStart,none.periodEnd,none.prorationAmount,none.totalAmount,none.basis,none.reviewReasons],[plain.periodStart,plain.periodEnd,plain.prorationAmount,plain.totalAmount,plain.basis,plain.reviewReasons]);
@@ -1067,7 +1071,7 @@ test("정산 안내: 3회 달은 3회 달 차감 뒤 금액을 횟수로 나눈�
  assert.equal((await readWorkbench(legacy.tx,"2026-11",true)).rows[0].prorationAmount,0);
 });
 test("정산 안내: 정산 전에 저장해 둔 초안(보류로 돌렸던 청구의 금액 메모)은 기간 조정·수강 기간·이월만 제안값으로 — 그대로 저장해도 줄인 금액으로 발행된다",async()=>{
- const held=()=>({id:"student-a:class-a",month:"2026-11",studentId:"student-a",classId:"class-a",version:4,status:"DRAFT",payload:{...draft(),discountAmount:10000},reason:"발행",sourceVersion:"stale",paymentId:null,periodStart:"2026-11-07",periodEnd:"2026-11-28",scheduledDates:["2026-11-07","2026-11-14","2026-11-21","2026-11-28"]});
+ const held=()=>({id:"student-a:class-a",month:"2026-11",studentId:"student-a",classId:"class-a",version:4,status:"DRAFT",payload:{...draft(),discountAmount:10000},reason:"발행",sourceVersion:"stale",paymentId:null,updatedAt:"2026-11-10T00:00:00.000Z",periodStart:"2026-11-07",periodEnd:"2026-11-28",scheduledDates:["2026-11-07","2026-11-14","2026-11-21","2026-11-28"]});
  const db=guideDatabase(["2026-11-07","2026-11-14"]);
  // 보류로 돌려 둔 초안 = 정산 전 금액(수강료 100,000·할인 10,000·기간 조정 0·이월 0·전체 기간), 원본은 그 뒤 바뀌었다
  db.state.drafts.push(held());
@@ -1100,11 +1104,35 @@ test("정산 안내: 정산 전에 저장해 둔 초안(보류로 돌렸던 청�
  const wholeRow=(await readWorkbench(whole.tx,"2026-11",true)).rows[0];
  assert.deepEqual([wholeRow.prorationAmount,wholeRow.shuttleAmount,wholeRow.totalAmount,wholeRow.periodStart,wholeRow.periodEnd],[100000,0,0,"2026-11-07","2026-11-28"]);
  assert.ok(wholeRow.reviewReasons.some(reason=>reason.includes("·셔틀비 0원(저장값 20,000원)")));
- // 가운데만 빠진 달: 자동으로 바꾸지 않는다(저장값 그대로 + 참고 금액 알림)
- const middle=guideDatabase(["2026-11-14"]);middle.state.drafts.push(held());
- const middleRow=(await readWorkbench(middle.tx,"2026-11",true)).rows[0];
- assert.deepEqual([middleRow.prorationAmount,middleRow.periodStart,middleRow.totalAmount],[0,"2026-11-07",90000]);
- assert.ok(middleRow.reviewReasons.some(reason=>reason.includes("달 가운데라 자동 제안하지 않았습니다")));
+ // 가운데만 빠진 달(한 달 안에서 시작하고 끝나는 2주 결석: 11/14·11/21): 정산 전 초안도 기간은 그대로·기간 조정만 빠진 2회분으로 덮는다
+ //   (100,000 − 10,000) × 2 ÷ 4 = 45,000 → 화면 값 그대로 저장 → 확정 → 발행 = 45,000(전액 90,000 이 아니다)
+ const middle=guideDatabase(["2026-11-14","2026-11-21"]);middle.state.drafts.push(held());
+ let middleView=await readWorkbench(middle.tx,"2026-11",true);let middleRow=middleView.rows[0];
+ assert.deepEqual([middleRow.prorationAmount,middleRow.periodStart,middleRow.periodEnd,middleRow.scheduledDates.length,middleRow.totalAmount],[45000,"2026-11-07","2026-11-28",4,45000]);
+ assert.ok(middleRow.reviewReasons.some(reason=>reason.startsWith("부상 결석 정산 뒤라 저장해 둔 금액 대신 제안값으로 바꿨습니다 — 기간 조정 45,000원(저장값 0원)")));
+ const middleCmd=(action)=>({action,month:middleView.month,sourceVersion:middleView.sourceVersion,requestId:`request-middle-${action}-${Math.random().toString(36).slice(2)}`,rows:[{id:middleRow.id,expectedVersion:middleRow.version,
+  ...(action==="SAVE"?{baseAmount:middleRow.baseAmount,discountAmount:middleRow.discountAmount,prorationAmount:middleRow.prorationAmount,carryAmount:middleRow.carryAmount,shuttleAmount:middleRow.shuttleAmount,periodStart:middleRow.periodStart,periodEnd:middleRow.periodEnd,reason:"정산 뒤 확인"}:{})}]});
+ for(const action of ["SAVE","CONFIRM","ISSUE"]){({view:middleView}=await mutateWorkbench(middle,middleCmd(action),"admin",true));middleRow=middleView.rows[0];}
+ assert.deepEqual(middle.state.payments.map(p=>p.amount),[45000],"빠진 2회만큼 줄인 금액");
+ // 초안이 없던 행(새 행)도 같다: 화면 값 그대로 저장 → 확정 → 발행 = 100,000 − 50,000
+ const fresh=guideDatabase(["2026-11-14","2026-11-21"]);let freshView=await readWorkbench(fresh.tx,"2026-11",true);let freshRow=freshView.rows[0];
+ assert.deepEqual([freshRow.prorationAmount,freshRow.totalAmount],[50000,50000]);
+ const freshCmd=(action)=>({action,month:freshView.month,sourceVersion:freshView.sourceVersion,requestId:`request-fresh-${action}-${Math.random().toString(36).slice(2)}`,rows:[{id:freshRow.id,expectedVersion:freshRow.version,
+  ...(action==="SAVE"?{baseAmount:freshRow.baseAmount,discountAmount:freshRow.discountAmount,prorationAmount:freshRow.prorationAmount,carryAmount:freshRow.carryAmount,shuttleAmount:freshRow.shuttleAmount,periodStart:freshRow.periodStart,periodEnd:freshRow.periodEnd,reason:"확인"}:{})}]});
+ for(const action of ["SAVE","CONFIRM","ISSUE"]){({view:freshView}=await mutateWorkbench(fresh,freshCmd(action),"admin",true));freshRow=freshView.rows[0];}
+ assert.deepEqual(fresh.state.payments.map(p=>p.amount),[50000]);
+ // 덮는 기준은 «원본 지문이 달라졌는가»가 아니라 «초안이 그 기간의 확정 전에 저장됐는가»다:
+ //   확정 «뒤»에 원장이 손으로 고쳐 저장한 초안은, 다른 학생의 발행·납부로 지문이 달라져도(sourceVersion 낡음) 다시 덮지 않는다
+ const after=guideDatabase(["2026-11-07","2026-11-14"]);after.state.drafts.push({...held(),updatedAt:"2026-11-13T00:00:00.000Z",payload:{...draft(),prorationAmount:10000}});
+ const afterRow=(await readWorkbench(after.tx,"2026-11",true)).rows[0];
+ assert.deepEqual([afterRow.prorationAmount,afterRow.periodStart,afterRow.totalAmount],[10000,"2026-11-07",90000]);
+ assert.ok(!afterRow.reviewReasons.some(reason=>reason.startsWith("부상 결석 정산 뒤라")));
+ assert.ok(afterRow.reviewReasons.includes("검토 후 원본이 변경되었습니다. 다시 저장·확정해 주세요."),"지문이 낡았다는 기존 알림은 그대로");
+ // 확정 전에 저장됐지만 값이 이미 제안과 같으면 «바꿨습니다» 알림을 내지 않는다
+ const equal=guideDatabase(["2026-11-07","2026-11-14"]);equal.state.drafts.push({...held(),payload:{...draft(),discountAmount:10000,prorationAmount:45000},periodStart:"2026-11-21",scheduledDates:["2026-11-21","2026-11-28"]});
+ const equalRow=(await readWorkbench(equal.tx,"2026-11",true)).rows[0];
+ assert.deepEqual([equalRow.prorationAmount,equalRow.periodStart,equalRow.totalAmount],[45000,"2026-11-21",45000]);
+ assert.ok(!equalRow.reviewReasons.some(reason=>reason.startsWith("부상 결석 정산 뒤라")));
  // 정산 안내가 없는 행의 옛 초안은 저장값 그대로 — 부상 결석 이월을 쓸 수 있으면 알림만(예전 동작)
  const noGuide=database();noGuide.state.periodCarry=true;noGuide.state.drafts.push(held());
  noGuide.state.carryCredits.push({id:"period-credit",studentId:"student-a",numerator:"30000",denominator:"1",availableMonth:"2026-11",basis:{periodId:"period-s"}});
@@ -1131,6 +1159,14 @@ test("정산 안내: 같은 반·같은 달 안내가 둘이면 빠진 날을 �
  const wholeRows=(await readWorkbench(shuttle(all).tx,"2026-11",true)).rows;
  assert.deepEqual(wholeRows.map(r=>[r.classId,r.shuttleAmount,r.totalAmount===0]),[["class-a",0,true],["class-b",fee,false]]);
  assert.ok(wholeRows[0].basis.includes("부상 결석으로 다닌 수업이 없어 이 행에는 셔틀비를 제안하지 않았어요"));
+ // 전부 빠진 반(class-a)에 정산 전 저장된 초안이 셔틀비를 들고 있어도, 그 셔틀비는 0원으로 덮이므로 «이미 들어간 셔틀비»로 세지 않는다 → class-b 가 제안을 받는다
+ const heldShuttle=shuttle(all);
+ heldShuttle.state.drafts.push({id:"student-a:class-a",month:"2026-11",studentId:"student-a",classId:"class-a",version:2,status:"DRAFT",payload:{...draft(),shuttleAmount:fee},reason:"발행",sourceVersion:"stale",paymentId:null,updatedAt:"2026-11-10T00:00:00.000Z",periodStart:"2026-11-07",periodEnd:"2026-11-28",scheduledDates:all});
+ const heldShuttleRows=(await readWorkbench(heldShuttle.tx,"2026-11",true)).rows;
+ assert.deepEqual(heldShuttleRows.map(r=>[r.classId,r.shuttleAmount]),[["class-a",0],["class-b",fee]]);
+ // 그 초안이 정산 «뒤»에 저장된 것이면(사람이 확인한 셔틀비) 예전처럼 다른 반에는 제안하지 않는다
+ heldShuttle.state.drafts[0].updatedAt="2026-11-13T00:00:00.000Z";
+ assert.deepEqual((await readWorkbench(heldShuttle.tx,"2026-11",true)).rows.map(r=>[r.classId,r.shuttleAmount]),[["class-a",fee],["class-b",0]]);
  // 일부만 빠진 달: 셔틀비는 그대로 제안하고 근거에 한 줄
  const partRows=(await readWorkbench(shuttle(["2026-11-07"]).tx,"2026-11",true)).rows;
  assert.equal(partRows[0].shuttleAmount,fee);assert.ok(partRows[0].basis.includes("셔틀비는 그대로예요 · 필요하면 조정"));
