@@ -74,7 +74,8 @@ export async function runIllnessRefundPostgresTests({ pool, database, checks, re
     ['2027-04', 'UNPAID', 0, 4, ['2027-03-29', '2027-04-05', '2027-04-12'], 0, 0],
   ]);
   assert.equal(preview.plan.carryTotal, 52500, '환불 검토 금액 = 낸 돈이 있는 달의 빠진 수업 값');
-  assert.deepEqual(preview.ownerNotes, [], '표 금액이 실제 납부액(105,000)을 넘지 않으면 경고 없음 — 납부액 조회 SQL 이 실제로 돈다');
+  // 표 금액이 실제 납부액(105,000)을 넘지 않아 납부액 경고는 없다. 이 아이는 수강 종료 기록(이력)이 없어 «오늘까지 셌다»는 안내만 원장에게 간다
+  assert.deepEqual(preview.ownerNotes, ['합성 월요반은 수강 종료일 기록이 없어 오늘까지 셌어요 · 퇴원일 이후 날짜는 표에서 빼 주세요']);
   // 완전히 퇴원한 아이는 «이월 확정»을 서버에서 거절한다(차감할 다음 청구가 없다)
   await assert.rejects(settlement.settleIllnessPeriod(database, { periodId: 'refund-period', expectedFingerprint: preview.fingerprint, returnDate: '2027-04-13' }, 'admin', true, ctx(TODAY)), /퇴원한 아이는 환불 검토로 넘겨 주세요/);
   assert.equal(Number((await one(`SELECT count(*) FROM "BillingCarryCredit" WHERE "studentId"='s14'`)).count), 0);
@@ -263,7 +264,10 @@ export async function runIllnessRefundPostgresTests({ pool, database, checks, re
   await pool.query(`UPDATE "Enrollment" SET status='WITHDRAWN' WHERE id='e18'`);
   const cut = await refund.previewIllnessPeriodRefund(database, { periodId: 'cutoff-period' }, ctx('2027-03-26'));
   assert.deepEqual(cut.plan.rows.map((row) => [row.month, row.tuition, row.sessions, row.dates, row.subtotal]), [['2027-03', 90000, 4, ['2027-03-05'], 22500]], '효력일(3/12) 전날까지인 3/5 한 번만');
-  assert.deepEqual([cut.plan.carryTotal, cut.blockers], [22500, []]);
+  assert.deepEqual([cut.plan.carryTotal, cut.blockers, cut.ownerNotes], [22500, [], []], '종료 기록으로 잘랐으면 안내가 없다');
+  // 옛 방식 반 이동 기록(MOVE)도 종료 기록으로 읽는다
+  await pool.query(`UPDATE "EnrollmentChangeRequest" SET kind='MOVE' WHERE id='cr-last'`);
+  assert.deepEqual([...await database.$transaction((tx) => refund.readRefundClassCutoffs(tx, 's18'), { isolationLevel: 'RepeatableRead' })], [['f7', '2027-03-12']]);
   // 오늘이 효력일보다 이르면 오늘까지만(효력일 전날과 오늘 중 이른 날)
   assert.equal((await refund.previewIllnessPeriodRefund(database, { periodId: 'cutoff-period' }, ctx('2027-03-04'))).plan.rows.length, 0);
   const cutSent = await refund.sendIllnessPeriodToRefundReview(database, { periodId: 'cutoff-period', expectedFingerprint: cut.fingerprint }, 'admin', true, ctx('2027-03-26'));

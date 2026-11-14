@@ -416,7 +416,8 @@ export function refundClassCutoffs(rows: ReadonlyArray<{ classId: string; endsOn
   const cutoffs = new Map<string, string>();
   for (const row of rows) {
     if (!row?.classId || !row.endsOn || !isKstYmd(row.endsOn)) continue;
-    // 같은 반 기록이 여럿이면 가장 이른 날(더 조심스러운 쪽)
+    // 읽는 SQL(REFUND_CLASS_END_SQL)이 반마다 «가장 최근에 적용된» 기록 한 줄만 준다 — 보통 반마다 한 줄이다.
+    // 다른 길로 같은 반이 두 번 들어오면 이른 날을 쓴다(덜 세는 쪽)
     const known = cutoffs.get(row.classId);
     if (!known || row.endsOn < known) cutoffs.set(row.classId, row.endsOn);
   }
@@ -424,13 +425,30 @@ export function refundClassCutoffs(rows: ReadonlyArray<{ classId: string; endsOn
 }
 
 /**
+ * 수강은 끝났는데 종료일 기록이 없어 «자르지 못한» 반의 안내(원장에게만 보인다) — 그 반은 오늘까지 센 표다.
+ * 퇴원일 이후 날짜가 섞였을 수 있으니 원장이 표에서 빼야 한다. 표에 넣은 결석이 있는 반만 알린다.
+ * @param liveClassIds 지금 다니는 반(끝나지 않은 수강이 있는 반) — 그 반은 자를 일이 없다
+ */
+export function refundUncutClassNotes(
+  rows: ReadonlyArray<{ classId: string; className: string; included: number }>,
+  cutoffs: ReadonlyMap<string, string>, liveClassIds: ReadonlySet<string>,
+): string[] {
+  const names = new Map<string, string>();
+  for (const row of rows) {
+    if (row.included > 0 && !cutoffs.has(row.classId) && !liveClassIds.has(row.classId)) names.set(row.classId, row.className);
+  }
+  return [...names.values()].map((name) => `${name}은 수강 종료일 기록이 없어 오늘까지 셌어요 · 퇴원일 이후 날짜는 표에서 빼 주세요`);
+}
+
+/**
  * 그 학생($1)의 «지금 끝나 있는 반»마다 가장 최근에 적용된 수강 종료·반 변경의 효력일을 읽는 SQL.
+ * 반 변경은 지금 방식(CLASS_CHANGE)과 옛 방식(MOVE) 기록을 같게 본다(학부모 기록 화면 childRecordRules 와 같은 취급).
  * 관리자 직접 변경은 status='APPLIED', 학부모 신청이 적용일에 반영된 것은 status='APPROVED' + appliedAt 이다.
  * 다시 다니는 반(끝나지 않은 수강이 있는 반)은 뺀다 — 예전 종료 기록으로 지금 수업을 자르지 않는다. effectiveFrom 은 date 칼럼(달력 값).
  */
 export const REFUND_CLASS_END_SQL = `SELECT DISTINCT ON (r."fromClassId") r."fromClassId" AS "classId", to_char(r."effectiveFrom", 'YYYY-MM-DD') AS "endsOn"
        FROM "EnrollmentChangeRequest" r
-      WHERE r."studentId" = $1 AND r.kind IN ('WITHDRAW', 'CLASS_CHANGE') AND r."appliedAt" IS NOT NULL AND r.status IN ('APPLIED', 'APPROVED')
+      WHERE r."studentId" = $1 AND r.kind IN ('WITHDRAW', 'CLASS_CHANGE', 'MOVE') AND r."appliedAt" IS NOT NULL AND r.status IN ('APPLIED', 'APPROVED')
         AND r."effectiveFrom" IS NOT NULL AND r."fromClassId" IS NOT NULL
         AND NOT EXISTS (SELECT 1 FROM "Enrollment" back_enrollment
                          WHERE back_enrollment."studentId" = r."studentId" AND back_enrollment."classId" = r."fromClassId" AND back_enrollment.status <> 'WITHDRAWN')

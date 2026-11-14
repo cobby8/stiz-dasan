@@ -75,7 +75,8 @@ test("반마다 자르는 날(refundClassCutoffs): 그 반 수강 종료 효력�
   assert.deepEqual(friday.filter((date) => date < cutoffs.get("fri")), ["2026-11-06"]);
   // 읽는 SQL: 적용된 수강 종료·반 변경만, 지금 다시 다니는 반은 빼고, 반마다 가장 최근 것
   const sql = rules.REFUND_CLASS_END_SQL;
-  assert.match(sql, /r\.kind IN \('WITHDRAW', 'CLASS_CHANGE'\) AND r\."appliedAt" IS NOT NULL AND r\.status IN \('APPLIED', 'APPROVED'\)/);
+  // 옛 방식 반 이동 기록(MOVE)도 수강 종료 기록이다(CLASS_CHANGE 와 같게 본다)
+  assert.match(sql, /r\.kind IN \('WITHDRAW', 'CLASS_CHANGE', 'MOVE'\) AND r\."appliedAt" IS NOT NULL AND r\.status IN \('APPLIED', 'APPROVED'\)/);
   assert.match(sql, /NOT EXISTS \(SELECT 1 FROM "Enrollment" back_enrollment[\s\S]{0,200}back_enrollment\.status <> 'WITHDRAWN'\)/);
   assert.match(sql, /SELECT DISTINCT ON \(r\."fromClassId"\)[\s\S]+ORDER BY r\."fromClassId", r\."appliedAt" DESC, r\.id/);
   // 미리보기와 넘기기가 같은 자르는 날을 읽기 함수에 넘긴다 · 읽기 함수는 그날부터의 결석을 표에 올리지 않는다
@@ -409,4 +410,23 @@ test("코드 리뷰: 실제 납부액보다 표 금액이 큰 달의 경고는 �
   assert.match(refundLib, /if \(Number\.isSafeInteger\(paidAmount\) && row\.tuition > paidAmount\) \{/);
   assert.match(refundLib, /SELECT p\.amount FROM "Payment" p WHERE p\.id = \$1/);
   for (const file of ["src/app/admin/inbox/IllnessPeriodRefundBox.tsx", "src/app/admin/inbox/IllnessPeriodSettlementBox.tsx"]) assert.match(read(file), /ownerNotes/);
+});
+
+test("재검수: 종료일 기록이 없어 자르지 못한 반은 원장에게 알린다 — 표에 넣은 결석이 있는 끝난 반만", () => {
+  const rows = [
+    { classId: "fri", className: "금요반", included: 2 },   // 끝났고 기록 없음 → 알림
+    { classId: "fri", className: "금요반", included: 1 },   // 같은 반은 한 줄만
+    { classId: "mon", className: "월요반", included: 3 },   // 종료 기록 있음(잘랐다)
+    { classId: "wed", className: "수요반", included: 1 },   // 지금 다니는 반
+    { classId: "sat", className: "토요반", included: 0 },   // 표에 넣은 결석 없음
+  ];
+  const notes = rules.refundUncutClassNotes(rows, new Map([["mon", "2026-11-13"]]), new Set(["wed"]));
+  assert.deepEqual(notes, ["금요반은 수강 종료일 기록이 없어 오늘까지 셌어요 · 퇴원일 이후 날짜는 표에서 빼 주세요"]);
+  assert.deepEqual(rules.refundUncutClassNotes([], new Map(), new Set()), []);
+  // 원장에게만 내려간다(기존 ownerNotes 길 — 부원장은 빈 목록)
+  assert.deepEqual(viewOf({ ownerNotes: notes }).refund.ownerNotes, notes);
+  assert.deepEqual(viewOf({ money: false, ownerNotes: notes }).refund.ownerNotes, []);
+  // 미리보기·넘기기 모두 같은 함수로 만든다
+  assert.equal((refundLib.match(/ownerNotes: await readPaidShortfallNotes\(tx, period\.studentId, read\),/g) ?? []).length, 2);
+  assert.match(refundLib, /SELECT e\."classId" AS "classId" FROM "Enrollment" e WHERE e\."studentId" = \$1 AND e\.status <> 'WITHDRAWN'/);
 });

@@ -25,7 +25,7 @@ import { illnessReviewReady, type IllnessTx } from "@/lib/regular/illness-carry-
 import { ILLNESS_REASON } from "@/lib/regular/illnessCarryRules";
 import {
   IllnessPeriodError, REFUND_CLASS_END_SQL, REFUND_MEMO_MAX, REFUND_RESOLUTION_REASON, illnessWithdrawnSql, parsePeriodApprovalRecord, parseRefundRecord,
-  parseSettlementSummary, refundClassCutoffs, refundCountUntil,
+  parseSettlementSummary, refundClassCutoffs, refundCountUntil, refundUncutClassNotes,
 } from "@/lib/regular/illnessPeriodRules";
 import {
   PERIOD_SELECT, READ_TX_OPTIONS, SETTLE_TX_OPTIONS, cleanId, cleanIds, newReviewAbsenceIds, readSettlementPlan, tableExists,
@@ -81,8 +81,15 @@ export async function readRefundClassCutoffs(tx: IllnessTx, studentId: string): 
  * 수납 관리의 환불은 납부액까지만 되므로, 표 금액대로 환불할 수 없을 수 있다. 금액이 들어 있어 부원장에게는 내려보내지 않는다.
  * 지문에는 넣지 않는다(안내일 뿐 계산이 아니다).
  */
-async function readPaidShortfallNotes(tx: IllnessTx, read: Awaited<ReturnType<typeof readSettlementPlan>>): Promise<string[]> {
-  const notes: string[] = [];
+async function readPaidShortfallNotes(tx: IllnessTx, studentId: string, read: Awaited<ReturnType<typeof readSettlementPlan>>): Promise<string[]> {
+  // 수강은 끝났는데 종료일 기록이 없어 자르지 못한 반 — 그 반은 오늘까지 센 표라 원장이 퇴원일 이후 날짜를 빼야 한다
+  const live = await tx.$queryRawUnsafe<Array<{ classId: string }>>(
+    `SELECT e."classId" AS "classId" FROM "Enrollment" e WHERE e."studentId" = $1 AND e.status <> 'WITHDRAWN'`, studentId,
+  );
+  const notes: string[] = refundUncutClassNotes(
+    read.plan.rows.map((row) => ({ classId: row.classId, className: row.className, included: row.absenceIds.length })),
+    await readRefundClassCutoffs(tx, studentId), new Set(live.map((row) => row.classId)),
+  );
   for (const row of read.plan.rows) {
     if (row.absenceIds.length === 0) continue;
     const paymentId = read.resolved.get(`${row.classId}|${row.month}`)?.sourcePaymentId ?? null;
@@ -97,7 +104,7 @@ async function readPaidShortfallNotes(tx: IllnessTx, read: Awaited<ReturnType<ty
 }
 
 export type RefundPreview = SettlementPreview & IllnessPeriodWithdrawal & {
-  /** 원장에게만 보일 경고(실제 납부액보다 표 금액이 큰 달) */
+  /** 원장에게만 보일 경고(종료일 기록이 없어 오늘까지 센 반 · 실제 납부액보다 표 금액이 큰 달) */
   ownerNotes: string[];
 };
 
@@ -135,7 +142,7 @@ export async function previewIllnessPeriodRefund(
       canSetReturnDate: false,
       plan: read.plan, fingerprint: read.fingerprint,
       // 이월이 아니라 환불 검토라 «쓸 수 있는 달»이 없다
-      availableMonth: null, blockers, ...withdrawal, ownerNotes: await readPaidShortfallNotes(tx, read),
+      availableMonth: null, blockers, ...withdrawal, ownerNotes: await readPaidShortfallNotes(tx, period.studentId, read),
     };
   }, READ_TX_OPTIONS);
 }
@@ -258,7 +265,7 @@ export async function sendIllnessPeriodToRefundReview(
       mode: "REFUND", fingerprint: read.fingerprint, returnDate: countUntil, availableMonth: null, carryTotal: read.plan.carryTotal,
       rows: read.plan.rows, unpaidGuides: read.plan.unpaidGuides, omitAbsenceIds: omit,
       refundAbsenceIds, unpaidAbsenceIds, confirmedAbsenceIds, createdReviewAbsenceIds, revokedCreditIds: revoked.map((row) => row.id),
-      ownerNotes: await readPaidShortfallNotes(tx, read),
+      ownerNotes: await readPaidShortfallNotes(tx, period.studentId, read),
       todayYmd: ctx.todayYmd, calendarFingerprint: ctx.calendar?.fingerprint ?? null,
     };
     const changed = Number(await tx.$executeRawUnsafe(
