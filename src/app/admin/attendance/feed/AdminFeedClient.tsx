@@ -1,5 +1,6 @@
 "use client";
 
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 import { useCallback, useEffect, useRef, useState } from "react";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import AdminModal from "@/components/admin/AdminModal";
@@ -186,7 +187,7 @@ export default function AdminFeedClient({
             setItems((prev) => appendAdminFeedItems(prev, body.items ?? []));
             setNextCursor(body.nextCursor ?? null);
         } catch (error) {
-            if (requestId === requestIdRef.current) setLoadError(error instanceof Error ? error.message : "수업 피드를 불러오지 못했습니다.");
+            if (requestId === requestIdRef.current) setLoadError(adminErrorText(error, "수업 피드를 불러오지 못했습니다."));
         } finally {
             if (requestId === requestIdRef.current) {
                 loadingRef.current = false;
@@ -210,7 +211,7 @@ export default function AdminFeedClient({
             setNextCursor(body.nextCursor ?? null);
             if (body.facets) setFacets(body.facets);
         } catch (error) {
-            if (requestId === requestIdRef.current) setLoadError(error instanceof Error ? error.message : "수업 피드를 불러오지 못했습니다.");
+            if (requestId === requestIdRef.current) setLoadError(adminErrorText(error, "수업 피드를 불러오지 못했습니다."));
         } finally {
             if (requestId === requestIdRef.current) {
                 loadingRef.current = false;
