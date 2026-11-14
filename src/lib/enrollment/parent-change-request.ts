@@ -249,9 +249,10 @@ export async function getEnrollmentChangeHistory(
             to_char(r."cancelRequestedAt" AT TIME ZONE 'Asia/Seoul','YYYY-MM-DD') AS "cancelRequestedOn",
             r."cancelDecisionNote"`
     : "";
+  // SUPERSEDED(학원이 직접 변경해 정리한 신청, 2026-11-14)도 결과로 보여 준다 — 빼면 학부모 신청이 말없이 사라진다
   const statuses = options.includeOpen
-    ? `('PENDING','APPROVED','APPLIED','REJECTED','CANCELED')`
-    : `('APPROVED','APPLIED','REJECTED','CANCELED')`;
+    ? `('PENDING','APPROVED','APPLIED','REJECTED','CANCELED','SUPERSEDED')`
+    : `('APPROVED','APPLIED','REJECTED','CANCELED','SUPERSEDED')`;
   const rows = await prisma.$queryRawUnsafe<any[]>(
     `SELECT r.id, r."studentId", s.name AS "studentName", r.kind, r.status, (r."appliedAt" IS NOT NULL) AS applied,
             to_char(r."resumeOn",'YYYY-MM-DD') AS "resumeOn",

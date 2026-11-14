@@ -329,3 +329,9 @@
 - **발견자**: developer
 - **내용**: /admin/attendance/feed 는 첫 20개만 서버에서 그리고 다음은 GET /api/admin/feed(?cursor·필터, ?sessionId=카드 하나). 커서 = «수업일~시작 시각~id» 세 값 모두 내림차순이라 SQL 행 비교 (a,b,c) < ($1,$2,$3) 하나로 자른다(adminFeedRules.encode/decodeAdminFeedCursor). 필터는 전부 SQL(담당 선생님은 CROSS JOIN LATERAL 로 classCoachNameSql 한 번 계산). 리포트 편집 본문은 src/components/admin/SessionReportEditor.tsx 한 벌 — /admin/attendance/report/[sessionId] 화면과 피드 패널(SessionReportEditorLoader, compact)이 같이 쓴다. 관리자 영상 재생 = SessionVideoList endpoint 에 /api/staff/sessions/{id}/videos(관리자 = 전체 반).
 - **참조횟수**: 0
+
+### [2026-11-14] 관리자 직접 수강 변경 뒤 정리 = enrollment-end-cleanup.ts 한 곳
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: updateEnrollmentStatus·moveEnrollmentToClass 가 같은 트랜잭션에서 (A) 처리 중 신청 planOpenChangeRequests(같은 방향 승인=SUPERSEDED / 대기·반대=OPEN_REQUESTS 확인 / 청구서·정산·원장=BLOCKED) (B) cleanupEndedClassInTx(효력일 포함 이후 결석 취소·미사용 보강권 회수, 정산·이월·보강·출석은 보호) (C) 미납 청구 목록만. 잠금 순서 = lockCompensation → 신청 FOR UPDATE → 수강(크론과 같은 순서). 취소 결석 note 머리말 «수강 종료로 정리»는 알림 재조정이 거른다. 학부모 자동 적용 크론(applyDue…)은 아직 이 정리를 안 부른다.
+- **참조횟수**: 0

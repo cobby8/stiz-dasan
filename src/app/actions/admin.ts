@@ -10,6 +10,21 @@ import { prisma } from "@/lib/prisma";
 import { assertRegularMakeupAllowed, assertMakeupSessionAllowed, CompensationConflict, lockCompensation } from "@/lib/billing/absence-compensation-guard";
 import { isKstYmd, todayKst } from "@/lib/datetime/kst";
 import { normalizeApprovalClassIds } from "@/lib/enrollment/approval-classes";
+// 관리자 직접 수강 변경 뒤 정리(처리 중 신청·끝난 반의 결석·보강권·미납 안내) — 2026-11-14 김루빈 사례 재발 방지
+import {
+    askConfirmed,
+    blockedRequestsMessage,
+    cleanupEndedClassInTx,
+    emptyCleanupSummary,
+    openRequestsMessage,
+    openRequestViews,
+    planOpenChangeRequests,
+    readOpenChangeRequestsForUpdate,
+    supersedeChangeRequests,
+    supersedeNote,
+    type EnrollmentEndCleanupSummary,
+    type OpenRequestView,
+} from "@/lib/enrollment/enrollment-end-cleanup";
 // 정원 경고·셔틀 위치 저장 = 신청서 승인과 새 «원생 등록»이 같이 쓰는 한 곳
 import { findOverCapacityClasses } from "@/lib/enrollment/class-capacity";
 import { upsertStudentShuttleLocation } from "@/lib/students/student-shuttle-location-upsert";
@@ -1380,11 +1395,22 @@ export async function enrollStudent(studentId: string, classId: string) {
     revalidateClassAdminCaches();
 }
 
+/**
+ * 관리자 수강 상태 변경 결과.
+ * - ok: 바뀜(또는 같은 상태라 할 일 없음) + 함께 정리한 내용(화면이 «결석 N건 취소…»·미납 청구 안내를 띄운다)
+ * - OPEN_REQUESTS: 확인이 필요한 처리 중 신청이 있어 아무것도 바꾸지 않았다 — 화면에 보여 준 신청 id 목록을 closeOpenRequests 로
+ *   다시 보내면 함께 닫는다(그 사이 신청이 바뀌었으면 아무것도 쓰지 않고 다시 묻는다)
+ * - BLOCKED_REQUESTS: 청구서·정산·반영 처리가 걸린 신청이 있어 막았다 — «수강 변경 신청»에서 먼저 처리
+ */
+export type EnrollmentStatusChangeResult =
+    | { ok: true; cleanup: EnrollmentEndCleanupSummary }
+    | { ok: false; code: "OPEN_REQUESTS" | "BLOCKED_REQUESTS"; message: string; requests: OpenRequestView[] };
+
 export async function updateEnrollmentStatus(
     enrollmentId: string,
     status: string,
-    change?: { effectiveFrom?: string; reason?: string },
-) {
+    change?: { effectiveFrom?: string; reason?: string; closeOpenRequests?: string[] },
+): Promise<EnrollmentStatusChangeResult> {
     const admin = await requireAdmin();
 
     const allowedStatuses = new Set(["ACTIVE", "PAUSED", "WITHDRAWN"]);
@@ -1397,9 +1423,15 @@ export async function updateEnrollmentStatus(
 
     let changedStudentId: string | null = null;
     let changedClassId: string | null = null;
+    // 바뀌지 않았을 때(같은 상태·확인 필요)도 화면이 같은 모양을 받게 기본값을 둔다
+    // (as 로 둔다 — 트랜잭션 콜백 안에서 바뀌는 값이라 TS 가 처음 값으로 좁혀 버리지 않게)
+    let outcome = { ok: true, cleanup: emptyCleanupSummary() } as EnrollmentStatusChangeResult;
 
     try {
         await prisma.$transaction(async (tx) => {
+            // 잠금 순서: 청구 정산 전역 잠금 → 처리 중 신청 → 수강. 적용일 크론(신청 → 수강)·휴원 정산(전역 → 신청)과 같은 순서라 서로 막히지 않는다.
+            await lockCompensation(tx);
+            const openRequests = await readOpenChangeRequestsForUpdate(tx, enrollmentId);
             const [before] = await tx.$queryRawUnsafe<Array<{
                 studentId: string;
                 classId: string;
@@ -1420,6 +1452,22 @@ export async function updateEnrollmentStatus(
             if (before.previousStatus === status) {
                 changedStudentId = before.studentId;
                 changedClassId = before.classId;
+                return;
+            }
+
+            // 처리 중 수강 변경 신청 — 같은 방향 승인 건은 닫고, 판단이 어려운 건은 확인을 받고, 돈·반영이 걸린 건은 막는다
+            const action = { type: "STATUS" as const, nextStatus: status as "ACTIVE" | "PAUSED" | "WITHDRAWN" };
+            const requestPlan = planOpenChangeRequests(openRequests, action);
+            if (requestPlan.block.length) {
+                outcome = { ok: false, code: "BLOCKED_REQUESTS", message: blockedRequestsMessage(requestPlan.block.length), requests: openRequestViews(requestPlan.block) };
+                return; // 아무것도 쓰지 않았으니 그대로 끝난다
+            }
+            // 관리자가 확인창에서 본 신청과 지금 닫을 대상이 정확히 같을 때만 진행(그 사이 새 신청이 들어왔으면 다시 묻는다)
+            if (!askConfirmed(requestPlan.ask, change?.closeOpenRequests)) {
+                outcome = {
+                    ok: false, code: "OPEN_REQUESTS", requests: openRequestViews(requestPlan.ask),
+                    message: openRequestsMessage(requestPlan.ask.length, Boolean(change?.closeOpenRequests?.length)),
+                };
                 return;
             }
 
@@ -1467,6 +1515,23 @@ export async function updateEnrollmentStatus(
                 enrollmentChangeRequestId: history?.id,
             });
             if (event) await enqueueWebsiteOperationsEventInTransaction(tx, event);
+
+            // 같은 트랜잭션에서 정리 — 하나라도 실패하면 상태 변경까지 통째로 되돌아간다
+            const cleanup = emptyCleanupSummary();
+            const toClose = [...requestPlan.supersede, ...requestPlan.ask]; // ask 는 위에서 보여 준 목록 그대로 확인(closeOpenRequests)을 받은 경우만 여기 온다
+            cleanup.supersededRequests = await supersedeChangeRequests(tx, toClose, {
+                enrollmentId, actorUserId: admin.appUserId,
+                note: supersedeNote(action, todayKst(), requestPlan.ask.length > 0), confirmed: requestPlan.ask.length > 0,
+            });
+            // 수강 종료면 그 반의 효력일 이후 결석·보강권 정리 + 미납 청구 안내(휴원·복귀는 반이 그대로라 손대지 않는다)
+            if (status === "WITHDRAWN") {
+                const ended = await cleanupEndedClassInTx(tx, {
+                    studentId: before.studentId, classId: before.classId, className: before.className,
+                    fromYmd: effectiveFrom, actorUserId: admin.appUserId,
+                });
+                Object.assign(cleanup, ended);
+            }
+            outcome = { ok: true, cleanup };
         });
     } catch (e) {
         console.error("Failed to update enrollment:", e);
@@ -1475,13 +1540,17 @@ export async function updateEnrollmentStatus(
         }
         throw new Error("수강 상태 변경 실패");
     }
+    if (!outcome.ok) return outcome; // 바뀐 게 없으니 캐시도 그대로
     revalidatePath("/admin/students");
     if (changedStudentId) revalidatePath(`/admin/students/${changedStudentId}`);
     revalidatePath("/admin/classes");
     if (changedClassId) revalidatePath(`/admin/classes/${changedClassId}`);
+    revalidatePath("/admin/enrollment-changes");
+    revalidatePath("/admin/absence");
     revalidateStudentAdminCaches();
     revalidateClassAdminCaches();
     revalidateFinanceCaches();
+    return outcome;
 }
 
 export async function deleteEnrollment(enrollmentId: string) {

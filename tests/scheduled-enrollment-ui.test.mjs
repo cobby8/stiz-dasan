@@ -49,6 +49,8 @@ test("관리자 원생 상세는 개시일이 미래인 ACTIVE 반을 «수강 �
     "@/components/admin/AdminQuickActionMenu": { __esModule: true, default: ({ actions }) => React.createElement("div", {}, actions.map((a) => a.label).join("|")) },
     "@/components/admin/AdminConfirmDialog": { useAdminConfirm: () => ({ confirm: async () => false, confirmDialog: null }) },
     "@/app/actions/enrollment-admin-edit": {}, "./EnrollmentMoveModal": nullComponent,
+    // 2026-11-14: 수강 변경 뒤 정리 결과·처리 중 신청 확인 상자(이 테스트에서는 빈 부품)
+    "./EnrollmentCleanupNotice": { EnrollmentCleanupNotice: () => null, OpenRequestsBox: () => null, hasCleanupNotice: () => false },
     "@/app/actions/guest-pay-link": {},
     "@/components/maps/LocationPickerModal": nullComponent, "@/components/admin/AdminModal": nullComponent,
     // 2026-11-13 UI 통일 2단계: 페이지 제목이 공용 부품(AdminPageHeader)으로 옮겨져 가짜 부품 목록에 추가(단언은 그대로)

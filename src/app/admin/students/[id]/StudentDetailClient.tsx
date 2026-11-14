@@ -24,6 +24,9 @@ import { removeMistakenEnrollment } from "@/app/actions/enrollment-admin-edit";
 // 비회원 결제 링크 발급(원장 전용 — 서버가 권한·학생·미납을 다시 확인한다)
 import { createGuestPayLinkForPayment, revokeGuestPayLinksForPayment } from "@/app/actions/guest-pay-link";
 import EnrollmentMoveModal, { type EnrollmentMoveSource } from "./EnrollmentMoveModal";
+// 관리자 직접 수강 변경 뒤 정리 결과·미납 안내·«처리 중 신청» 확인 상자(2026-11-14)
+import { EnrollmentCleanupNotice, OpenRequestsBox, hasCleanupNotice } from "./EnrollmentCleanupNotice";
+import type { EnrollmentEndCleanupSummary, OpenRequestView } from "@/lib/enrollment/enrollment-end-cleanup";
 import { statusToneClass } from "@/components/admin/StatusBadge";
 import { PAYMENT_TONE, TONE_SELECTED_CLASS } from "@/lib/ui/statusTones";
 import ParentRequestLinkPanel from "./ParentRequestLinkPanel";
@@ -543,6 +546,9 @@ export default function StudentDetailClient({
         reason: string;
     } | null>(null);
     const [statusFormError, setStatusFormError] = useState<string | null>(null);
+    // 상태 변경 창: 처리 중 신청 확인 상자 / 저장 뒤 정리 결과 안내(닫을 때까지 남는다 — 미납 청구를 놓치지 않게)
+    const [statusOpenRequests, setStatusOpenRequests] = useState<{ code: "OPEN_REQUESTS" | "BLOCKED_REQUESTS"; message: string; requests: OpenRequestView[] } | null>(null);
+    const [cleanupNotice, setCleanupNotice] = useState<EnrollmentEndCleanupSummary | null>(null);
     // 반 줄 ⋯ 메뉴: 반 이동 창 대상 / 삭제 확인 창(빨간 확인 — 공용 부품)
     const [moveSource, setMoveSource] = useState<EnrollmentMoveSource | null>(null);
     const { confirm: confirmDanger, confirmDialog: dangerConfirmDialog } = useAdminConfirm();
@@ -902,15 +908,19 @@ export default function StudentDetailClient({
         });
         setStatusFormError(null);
         setStatusFeedback(null);
+        setStatusOpenRequests(null);
     }
 
     async function submitEnrollmentStatusChange(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
+        await runEnrollmentStatusChange();
+    }
+
+    // closeOpenRequests: 확인 상자에서 «함께 정리하고 저장»을 눌렀을 때 그 상자에 보여 준 신청 id 목록(서버가 다시 읽은 것과 다르면 다시 묻는다)
+    async function runEnrollmentStatusChange(closeOpenRequests?: string[]) {
         if (!statusChange || statusUpdatingId) return;
-        const { enrollmentId, nextStatus } = statusChange;
-        const formData = new FormData(event.currentTarget);
-        const effectiveFrom = String(formData.get("effectiveFrom") || "");
-        const reason = String(formData.get("reason") || "");
+        // 날짜·사유 칸은 상태(statusChange)와 묶여 있어 그 값을 그대로 쓴다
+        const { enrollmentId, nextStatus, effectiveFrom, reason } = statusChange;
         if (effectiveFrom > todayKst()) {
             setStatusFormError("미래 효력일은 예약 변경으로 신청해 주세요.");
             return;
@@ -919,11 +929,19 @@ export default function StudentDetailClient({
         setStatusFormError(null);
 
         try {
-            await updateEnrollmentStatus(enrollmentId, nextStatus, { effectiveFrom, reason });
+            const result = await updateEnrollmentStatus(enrollmentId, nextStatus, { effectiveFrom, reason, closeOpenRequests });
+            if (!result.ok) {
+                // 아무것도 바뀌지 않았다 — 창 안에 확인 상자를 띄운다
+                setStatusOpenRequests({ code: result.code, message: result.message, requests: result.requests });
+                return;
+            }
             await loadData();
             setStatusChange(null);
+            setStatusOpenRequests(null);
             setStatusFeedback({ type: "success", message: "수강 상태를 변경했습니다." });
             window.setTimeout(() => setStatusFeedback(null), 2500);
+            // 함께 정리한 것·남은 미납 청구가 있으면 닫을 때까지 보여 준다
+            setCleanupNotice(hasCleanupNotice(result.cleanup) ? result.cleanup : null);
         } catch (statusError) {
             setStatusFormError(getErrorMessage(statusError, "수강 상태 변경에 실패했습니다."));
         } finally {
@@ -1511,6 +1529,14 @@ export default function StudentDetailClient({
                                         </button>
                                     }
                                 />
+                                {cleanupNotice && (
+                                    <EnrollmentCleanupNotice
+                                        cleanup={cleanupNotice}
+                                        canManageFinance={canManageFinance}
+                                        onOpenBilling={() => goTab("pay")}
+                                        onClose={() => setCleanupNotice(null)}
+                                    />
+                                )}
                                 {statusFeedback && (
                                     <p className={`mb-3 rounded-lg px-3 py-2 text-xs font-medium ${
                                         statusFeedback.type === "success"
@@ -2225,6 +2251,15 @@ export default function StudentDetailClient({
                             />
                         </label>
                         {statusFormError && <p role="alert" className="text-sm font-medium text-[var(--color-academy-danger)]">{statusFormError}</p>}
+                        {statusOpenRequests && (
+                            <OpenRequestsBox
+                                code={statusOpenRequests.code}
+                                message={statusOpenRequests.message}
+                                requests={statusOpenRequests.requests}
+                                busy={Boolean(statusUpdatingId)}
+                                onConfirm={() => void runEnrollmentStatusChange(statusOpenRequests.requests.map((r) => r.id))}
+                            />
+                        )}
                         <div className="flex justify-end gap-2">
                             <button type="button" onClick={() => setStatusChange(null)} disabled={Boolean(statusUpdatingId)} className="academy-button-secondary">취소</button>
                             <button type="submit" disabled={Boolean(statusUpdatingId)} className="academy-button-primary">
@@ -2241,11 +2276,13 @@ export default function StudentDetailClient({
                     studentName={student.name}
                     source={moveSource}
                     onClose={() => setMoveSource(null)}
-                    onMoved={(message) => {
+                    onMoved={(message, cleanup) => {
                         setMoveSource(null);
                         void loadData();
                         setStatusFeedback({ type: "success", message });
                         window.setTimeout(() => setStatusFeedback(null), 3000);
+                        // 옛 반 결석·보강권 정리 결과와 남은 미납 청구 안내(닫을 때까지)
+                        setCleanupNotice(hasCleanupNotice(cleanup) ? cleanup : null);
                     }}
                 />
             )}

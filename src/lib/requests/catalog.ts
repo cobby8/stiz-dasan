@@ -98,6 +98,8 @@ export const REQUEST_KINDS: readonly KindEntry[] = [
       APPLIED: ok("적용됨"), // 파생: APPROVED + appliedAt
       REJECTED: no("거절"),
       CANCELED: off("취소"),
+      // 관리자 직접 변경으로 정리된 신청(2026-11-14) — 없으면 «상태 확인 필요»로 진행 중 칸에 남아 있었다
+      SUPERSEDED: off("학원에서 처리함"),
     },
   },
   {

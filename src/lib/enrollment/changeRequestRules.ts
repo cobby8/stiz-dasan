@@ -32,6 +32,8 @@ export const CHANGE_STATUS_LABEL: Record<string, string> = {
   CANCELED: "취소함",
   // 사이트 수강 상태까지 반영된 건(관리자 즉시 변경 · 적용일 자동 적용). 시트·랠리즈 확인은 운영 동기화에서 이어진다.
   APPLIED: "반영 완료",
+  // 관리자가 같은 수강을 직접 바꿔(상태 변경·반 이동) 더 적용할 필요가 없어진 신청(2026-11-14 김루빈 사례)
+  SUPERSEDED: "학원에서 처리함",
 };
 
 /**
