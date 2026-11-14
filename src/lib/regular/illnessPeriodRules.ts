@@ -153,9 +153,16 @@ export const BILLING_HOLD_LABEL = "부상 결석 중 · 발행 보류";
 export const BILLING_HOLD_STUDENT_LABEL = "부상 결석 중 · 청구 보류";
 /** 신청함 목록의 상태 값(승인 + 보류 중) — catalog.ts 의 ILLNESS_PERIOD 상태 지도와 같은 값이어야 한다(테스트가 비교) */
 export const PERIOD_HOLD_INBOX_STATUS = "APPROVED_HOLD";
-/** 학부모 결제 화면·앱 알림: 보류 안내 한 줄(«학원에 문의» 대신 상태를 그대로 보인다) */
-export function billingHoldParentText(studentName: string): string {
-  return `${studentName} · 부상 결석 중이라 수강료 청구를 잠시 멈췄어요. 복귀하면 빠진 수업을 뺀 금액으로 다시 안내해요.`;
+/**
+ * 학부모 결제 화면·앱 알림: 보류 안내 한 줄(«학원에 문의» 대신 상태를 그대로 보인다).
+ * 보류 범위에 맞춘다 — 반 이름이 없으면(그 아이의 반 전부) «수강료 청구를», 일부 반이면 «부상 결석 중인 반(반 이름)의 수강료 청구를».
+ */
+export function billingHoldParentText(studentName: string, classNames: readonly string[] = []): string {
+  const names = Array.from(new Set(classNames.map((name) => name.trim()).filter(Boolean)));
+  const tail = "잠시 멈췄어요. 복귀하면 빠진 수업을 뺀 금액으로 다시 안내해요.";
+  return names.length === 0
+    ? `${studentName} · 부상 결석 중이라 수강료 청구를 ${tail}`
+    : `${studentName} · 부상 결석 중인 반(${names.join(", ")})의 수강료 청구를 ${tail}`;
 }
 
 /** 그 기간(period)이 «청구 발행 보류»를 만드는 상태인가 — 승인됐고 금액 미확정, 등록 취소되지 않음 */
@@ -171,6 +178,18 @@ export function illnessBillingHoldSql(student: string, ready = true): string {
   if (!ready) return "false";
   return `EXISTS (SELECT 1 FROM "RegularAbsencePeriod" hold_period
                    WHERE hold_period."studentId" = ${student}.id AND ${illnessHoldPeriodSql("hold_period")})`;
+}
+
+/**
+ * 그 학생(student 별칭)의 보류 범위 두 칸 — "allClasses"(한 기간이라도 대상 반이 빈 배열 = 반 전부) · "classNames"(대상 반 이름들).
+ * 보류는 «기간의 대상 반» 단위다(청구 준비 차단·보류 전환과 같은 범위). 학부모 안내 문구가 이 범위를 그대로 말한다.
+ */
+export function illnessHoldScopeColumnsSql(student: string): string {
+  return `COALESCE((SELECT bool_or(cardinality(scope_period."classIds") = 0) FROM "RegularAbsencePeriod" scope_period
+                     WHERE scope_period."studentId" = ${student}.id AND ${illnessHoldPeriodSql("scope_period")}), false) AS "allClasses",
+          COALESCE((SELECT array_agg(DISTINCT scope_class.name ORDER BY scope_class.name)
+                      FROM "RegularAbsencePeriod" scope_period JOIN "Class" scope_class ON scope_class.id = ANY(scope_period."classIds")
+                     WHERE scope_period."studentId" = ${student}.id AND ${illnessHoldPeriodSql("scope_period")}), ARRAY[]::text[]) AS "classNames"`;
 }
 
 /** 보류로 돌린 청구 한 건의 사본(기간 행 carrySettlement.held 에 남긴다 — 금액·달·반을 나중에 대조할 수 있게) */

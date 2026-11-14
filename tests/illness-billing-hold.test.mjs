@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import test from "node:test";
 import { loadTsModule } from "./_ts-module.mjs";
 
@@ -112,6 +112,12 @@ function fakeDb(init = {}) {
       return state.drafts.filter((d) => d.paymentId === v[0]).map((d) => ({ id: d.id, month: d.month, version: d.version, payload: d.payload, reason: "발행" }));
     }
     if (/SELECT s\.name FROM "Student" s WHERE s\.id = \$1 AND /.test(sql)) return [{ name: " 윤수영 " }];
+    // 미납 셔틀비 청구가 있는가(보류 대상은 아니다 — 안내 한 줄용)
+    if (/FROM "Payment" p WHERE p\."studentId" = \$1 AND p\.type = 'SHUTTLE' AND p\.status IN \('PENDING','OVERDUE'\) LIMIT 1/.test(sql)) {
+      return state.payments.filter((p) => p.studentId === v[0] && p.type === "SHUTTLE" && ["PENDING", "OVERDUE"].includes(p.status)).slice(0, 1).map(() => ({ found: 1 }));
+    }
+    // 보류 범위의 반 이름
+    if (/SELECT c\.name FROM "Class" c WHERE c\.id = ANY\(\$1::text\[\]\) ORDER BY c\.name/.test(sql)) return [...v[0]].map(className).sort().map((name) => ({ name }));
     throw new Error(`모르는 조회: ${sql}`);
   };
 
@@ -266,7 +272,8 @@ test("보류로 돌리기: 청구·청구서는 취소, 초안은 «검토 전»
   assert.deepEqual(rules.parsePeriodApprovalRecord(settlement).revokedCreditIds, ["c1"]);
   assert.equal(rules.parseHeldBills(settlement).length, 2);
   assert.deepEqual(db.state.audit.map((a) => [a.action, a.actorId, a.details.held.length, a.details.skipped.length]), [["ILLNESS_PERIOD_BILLS_HELD", "owner-1", 2, 0]]);
-  assert.equal(db.txOptions.isolationLevel, "Serializable");
+  // 반 전부가 대상인 기간 → 범위 반 이름은 비어 있다(알림 문구가 «수강료 청구를»로 나간다)
+  assert.deepEqual(done.scopeClassNames, []);
   // 돌린 뒤 미리보기: 남은 미납 청구 없음, 돌린 2건이 보인다
   const after = await admin.readIllnessPeriodBillingHold(db, "p1", NOW);
   assert.deepEqual(after.bills, []);
@@ -284,6 +291,70 @@ test("잠금 순서: 작업대 전역 잠금 → 기간 행 → 대상 id(잠금
   // 토스·현장 결제 코드는 부르지 않는다(결제 취소·환불 API 없음)
   const source = read("src/lib/regular/illness-period-admin.ts");
   assert.doesNotMatch(source, /cancelTossPayment|tossPayments|fetch\(|UPDATE "PosChargeRequest|UPDATE "PaymentTransaction|INSERT INTO "PaymentTransaction/);
+});
+
+test("격리 수준: 보류 전환은 Serializable·RepeatableRead 를 쓰지 않는다 — 잠근 뒤 다시 읽을 때 그 사이 시작된 결제가 보여야 한다", async () => {
+  // 왜: Serializable 은 거래의 첫 문장 시점 사진으로 읽는다. 결제 잠금을 기다리는 동안 커밋된 결제 거래·현장 결제 요청이
+  // 잠근 뒤에 다시 읽어도 안 보여, 결제가 막 시작된 청구를 취소할 수 있다(실제 경합은 로컬 Postgres 통합 테스트가 돌린다).
+  const db = yoonCase();
+  await admin.holdIssuedBillsForPeriod(db, { periodId: "p1", expectedPaymentIds: DEC }, "owner-1", NOW);
+  assert.equal(db.txOptions.isolationLevel, undefined, "격리 수준을 지정하지 않는다(DB 기본 READ COMMITTED)");
+  assert.equal(db.txOptions.timeout, 30_000);
+  const source = read("src/lib/regular/illness-period-admin.ts");
+  assert.match(source, /const HOLD_TX_OPTIONS = \{ timeout: 30_000 \};/);
+  const body = source.slice(source.indexOf("export async function holdIssuedBillsForPeriod("), source.indexOf("/** 학부모 앱 알림 본문에 넣을 아이 이름"));
+  assert.match(body, /\}, HOLD_TX_OPTIONS\);\s*\}\s*$/, "보류 전환의 거래 옵션은 HOLD_TX_OPTIONS");
+  assert.doesNotMatch(body, /\}, TX_OPTIONS\)|CONVERT_TX_OPTIONS|isolationLevel/, "Serializable 옵션을 쓰지 않는다");
+  // 승인·승인 취소(청구를 읽지 않는 상태 전이)는 예전 그대로 Serializable
+  await admin.cancelIllnessPeriodApproval(db, { periodId: "p1" }, "owner-1");
+  assert.equal(db.txOptions.isolationLevel, "Serializable");
+});
+
+test("범위: 대상 반이 정해진 기간은 그 반 이름을 돌려주고, 미납 셔틀비가 있으면 안내용 표시가 켜진다(셔틀비는 보류 대상이 아니다)", async () => {
+  const db = yoonCase(); db.state.periods[0].classIds = ["mon"];
+  db.state.payments.push({ id: "pay-shuttle", studentId: "s1", classId: null, type: "SHUTTLE", status: "PENDING", year: 2026, month: 12, amount: 30000 });
+  db.state.invoices.push({ id: "inv-pay-shuttle", paymentId: "pay-shuttle", status: "ISSUED" });
+  const preview = await admin.readIllnessPeriodBillingHold(db, "p1", NOW);
+  assert.equal(preview.unpaidShuttle, true);
+  assert.deepEqual(preview.bills.map((bill) => bill.paymentId), ["pay-dec-mon"], "셔틀비·다른 반 청구는 대상이 아니다");
+  const done = await admin.holdIssuedBillsForPeriod(db, { periodId: "p1", expectedPaymentIds: ["pay-dec-mon"] }, "owner-1", NOW);
+  assert.deepEqual(done.scopeClassNames, ["월요반"]);
+  assert.equal(db.state.payments.find((p) => p.id === "pay-shuttle").status, "PENDING");
+  assert.equal(db.state.payments.find((p) => p.id === "pay-dec-fri").status, "PENDING", "결석이 아닌 반의 청구는 그대로");
+  // 미납 셔틀비가 없으면 표시가 꺼진다 / 보류가 아닌 기간은 묻지도 않는다
+  assert.equal((await admin.readIllnessPeriodBillingHold(yoonCase(), "p1", NOW)).unpaidShuttle, false);
+  const none = yoonCase(); none.state.periods[0].carryState = "NONE";
+  assert.equal((await admin.readIllnessPeriodBillingHold(none, "p1", NOW)).unpaidShuttle, false);
+  // 문구
+  assert.equal(rules.billingHoldParentText("윤수영", ["월요반"]), "윤수영 · 부상 결석 중인 반(월요반)의 수강료 청구를 잠시 멈췄어요. 복귀하면 빠진 수업을 뺀 금액으로 다시 안내해요.");
+  assert.equal(rules.billingHoldParentText("윤수영", ["월요반", " 금요반 ", "월요반", ""]), "윤수영 · 부상 결석 중인 반(월요반, 금요반)의 수강료 청구를 잠시 멈췄어요. 복귀하면 빠진 수업을 뺀 금액으로 다시 안내해요.");
+  assert.equal(rules.billingHoldParentText("윤수영", []), rules.billingHoldParentText("윤수영"));
+});
+
+test("가드: holdIssuedBillsForPeriod 를 부르는 파일은 원장 확인(requireOwner)을 한다", () => {
+  const callers = [];
+  const walk = (dir) => {
+    for (const name of readdirSync(dir)) {
+      const full = `${dir}/${name}`;
+      if (statSync(full).isDirectory()) walk(full);
+      else if (/\.(ts|tsx)$/.test(name) && !/\.test\.ts$/.test(name)) {
+        const text = read(full);
+        // 정의한 파일(export async function …)은 빼고, 호출하는 파일만
+        if (/holdIssuedBillsForPeriod\(/.test(text) && !/export async function holdIssuedBillsForPeriod\(/.test(text)) callers.push([full, text]);
+      }
+    }
+  };
+  walk("src");
+  assert.deepEqual(callers.map(([file]) => file), ["src/app/actions/illness-period-admin.ts"], "새 호출부가 생기면 원장 확인을 넣고 이 목록을 고친다");
+  for (const [file, text] of callers) {
+    assert.match(text, /await requireOwner\(\)/, `${file}: 원장 확인 없음`);
+    // 호출마다 그 함수 안에서 먼저 원장 확인을 한다
+    for (const match of text.matchAll(/holdIssuedBillsForPeriod\(/g)) {
+      const before = text.slice(0, match.index);
+      const fnStart = before.lastIndexOf("export async function ");
+      assert.match(before.slice(fnStart), /await requireOwner\(\)/, `${file}: 호출 앞에 원장 확인 없음`);
+    }
+  }
 });
 
 test("건너뛰기: 학부모 결제 진행 중·현장 결제 요청 중·결제 거래 기록 있음 — 그 청구는 그대로 두고 이유를 돌려준다", async () => {
@@ -451,7 +522,7 @@ test("연결: 현장 결제 요청 조건은 휴원 정산과 같은 글자 / �
   // 원장 확인이 맨 먼저(부원장 거절) — DB 를 건드리기 전
   assert.match(hold, /^export async function holdIllnessPeriodBillsAction\([^\n]*\{\n(\s*\/\/[^\n]*\n)*\s+let owner[^\n]*\n\s+try \{ owner = await requireOwner\(\); \} catch \{ return \{ ok: false, message: "발행 보류로 돌리기는 원장만 할 수 있습니다\." \}; \}/);
   assert.ok(hold.indexOf("requireOwner()") < hold.indexOf("holdIssuedBillsForPeriod("));
-  assert.match(hold, /notifyParentOnce\(done\.studentId, "수강료 청구 안내", billingHoldParentText\(name\), "\/mypage\/payments"\)/);
+  assert.match(hold, /notifyParentOnce\(done\.studentId, "수강료 청구 안내", billingHoldParentText\(name, done\.scopeClassNames\), "\/mypage\/payments"\)/);
   assert.doesNotMatch(action, /sendTrackedSms|alimtalk|sendSms/i, "문자·알림톡을 만들지 않는다");
   // 미리보기: 금액은 서버 응답에서 뺀다(부원장)
   assert.match(action, /const owner = canSeeAllMoney\(admin\.appUserRole\);/);
@@ -487,7 +558,11 @@ test("화면: 신청함 상세의 보류 칸(원장만 버튼·확인 창)·학�
   assert.match(holds, /WHERE \$\{await childAccessSql\("s", "\$1"\)\} AND \$\{notMergedStudent\("s"\)\}\s+AND \$\{illnessBillingHoldSql\("s", ready\)\}/, "본인 자녀만 · 판정 조각 한 곳");
   assert.match(holds, /if \(!ready\) return \[\];/);
   const parent = read("src/app/mypage/payments/PaymentRequestClient.tsx");
-  assert.match(parent, /\{billingHoldParentText\(held\.studentName\)\}/);
+  assert.match(parent, /\{billingHoldParentText\(held\.studentName, held\.classNames \?\? \[\]\)\}/);
+  assert.match(holds, /SELECT s\.id AS "studentId", s\.name AS "studentName", \$\{illnessHoldScopeColumnsSql\("s"\)\}/, "보류 범위(반 전부/일부 반)를 함께 읽는다");
+  assert.match(holds, /classNames: row\.allClasses === true \|\| !Array\.isArray\(row\.classNames\) \? \[\] : row\.classNames\.map\(String\)/);
+  // 셔틀비 안내 한 줄은 미납 셔틀비가 있을 때만
+  assert.match(detail, /\{hold\.unpaidShuttle && \(\s+<p[^>]*>셔틀비 청구는 그대로예요\(수강료 청구만 멈춰요\)\.<\/p>/);
   assert.match(parent, /shownHolds\.length === 0 && \(/, "보류 안내가 보이면 «청구서가 없어요»를 겹치지 않는다");
   assert.match(read("src/app/mypage/payments/page.tsx"), /const holds = await getParentBillingHolds\(parent\.appUserId\);/);
 });

@@ -241,7 +241,11 @@ export default function IllnessPeriodInboxDetail({ periodId, studentName, onChan
           {hold?.holdActive && (
             <div className="space-y-2 rounded-lg border border-[var(--color-academy-line)] px-3 py-2 text-sm">
               <p className="font-semibold text-[var(--color-academy-ink)]">{BILLING_HOLD_LABEL}</p>
-              <p className="text-xs text-[var(--color-academy-muted)]">금액이 정해질 때까지 이 아이의 새 수강료 청구는 발행되지 않습니다.</p>
+              <p className="text-xs text-[var(--color-academy-muted)]">금액이 정해질 때까지 결석 중인 반의 새 수강료 청구는 발행되지 않습니다.</p>
+              {/* 미납 셔틀비 청구가 있을 때만 — 보류는 수강료 청구만 멈춘다 */}
+              {hold.unpaidShuttle && (
+                <p className="text-xs text-[var(--color-academy-muted)]">셔틀비 청구는 그대로예요(수강료 청구만 멈춰요).</p>
+              )}
               {hold.heldCount > 0 && (
                 <p className="text-[var(--color-academy-ink)]">보류로 돌린 청구 {hold.heldCount}건 · 복귀 뒤 청구 준비에서 다시 발행합니다.</p>
               )}

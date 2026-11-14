@@ -156,7 +156,17 @@ export async function runBillingWorkbenchPostgresTests({pool,database,root}){
  assert.equal((await pool.query(`SELECT ${periodRules.illnessHoldPeriodSql('p')} AS hold FROM "RegularAbsencePeriod" p WHERE p.id='hold-period'`)).rows[0].hold,true);
  assert.equal((await pool.query(`SELECT CASE WHEN ${periodRules.illnessHoldPeriodSql('x')} THEN '${periodRules.PERIOD_HOLD_INBOX_STATUS}' WHEN x."carryState" <> 'NONE' THEN x."carryState" ELSE 'PENDING' END AS raw FROM "RegularAbsencePeriod" x WHERE x.id='hold-period'`)).rows[0].raw,'APPROVED_HOLD');
  assert.equal(await database.$transaction(tx=>periodAdmin.readStudentName(tx,'s6'),{isolationLevel:'RepeatableRead'}),'합성 부상 원생');
- checks.push('보류 판정 조각(학생 단위·기간 단위·신청함 상태식)과 아이 이름 조회 실제 실행');
+ // 보류 범위 칸(학부모 문구용): 반 전부 → allClasses, 대상 반 지정 → 그 반 이름. 청구 준비도 대상 반만 막는다(다른 반 'c' 는 대상 아님)
+ const scopeOf=async()=>(await pool.query(`SELECT ${periodRules.illnessHoldScopeColumnsSql('s')} FROM "Student" s WHERE s.id='s6'`)).rows[0];
+ assert.deepEqual(await scopeOf(),{allClasses:true,classNames:[]});
+ await pool.query(`UPDATE "RegularAbsencePeriod" SET "classIds"=ARRAY['c'] WHERE id='hold-period'`);
+ assert.deepEqual(await scopeOf(),{allClasses:false,classNames:['합성 토요반']});
+ assert.deepEqual((await holdRead()).bills,[],'대상 반(c)이 아닌 반(h)의 청구는 보류 전환 대상이 아니다');
+ await pool.query(`UPDATE "RegularAbsencePeriod" SET "classIds"=ARRAY['h'] WHERE id='hold-period'`);
+ assert.deepEqual(await scopeOf(),{allClasses:false,classNames:['합성 보류반']});
+ assert.equal((await holdRead()).bills.length,1);
+ await pool.query(`UPDATE "RegularAbsencePeriod" SET "classIds"=ARRAY[]::text[] WHERE id='hold-period'`);
+ checks.push('보류 판정 조각(학생 단위·기간 단위·신청함 상태식)·보류 범위 칸(반 전부/대상 반)·아이 이름 조회 실제 실행');
  // 학부모가 방금 결제창을 열었다 → 건너뛰고, 그 청구를 넣어 요청하면 실행하지 않는다
  await pool.query(`INSERT INTO "PaymentTransaction"(id,"paymentId",provider,status,"updatedAt") VALUES('hold-tx',$1,'TOSS','READY',now())`,[heldPaymentId]);
  holdView=await holdRead();assert.equal(holdView.bills[0].skip,'CHECKOUT');
@@ -170,6 +180,21 @@ export async function runBillingWorkbenchPostgresTests({pool,database,root}){
  assert.equal((await holdRead()).bills[0].skip,'CARRY_USED');
  await pool.query(`DELETE FROM "BillingCarryUsage" WHERE id='hold-usage';DELETE FROM "BillingCarryCredit" WHERE id='hold-credit';DELETE FROM "RegularAbsence" WHERE id='hold-abs'`);
  checks.push('결제 진행 중·현장 결제 요청 중·이월을 쓴 청구는 건너뜀(요청해도 실행 안 함)');
+ // 경합(리뷰 필수): 보류 전환이 결제 잠금을 기다리는 «동안» 학부모 결제가 시작돼 커밋됐다 → 잠근 뒤 다시 읽어 그 거래를 보고 실행하지 않아야 한다.
+ // Serializable 이면 첫 문장 시점 사진으로 읽어 이 거래가 안 보이고 청구가 취소된다 — READ COMMITTED 라서 보인다.
+ const racer=await pool.connect();
+ try{
+  await racer.query('BEGIN');await racer.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,[`stiz-payment-checkout:${heldPaymentId}`]);
+  const waiting=periodAdmin.holdIssuedBillsForPeriod(database,{periodId:'hold-period',expectedPaymentIds:[heldPaymentId]},'admin').then(()=>null,e=>e);
+  await new Promise(r=>setTimeout(r,1200)); // 보류 전환이 결제 잠금 앞에서 기다리게 둔다
+  await racer.query(`INSERT INTO "PaymentTransaction"(id,"paymentId",provider,status,"updatedAt") VALUES('hold-race',$1,'TOSS','READY',now())`,[heldPaymentId]);
+  await racer.query('COMMIT');
+  const raced=await waiting;assert.match(String(raced?.message),/대상 청구가 바뀌었습니다/);
+ }finally{racer.release();}
+ assert.equal(database.lastIsolation,'read committed');
+ assert.equal((await pool.query('SELECT status FROM "Payment" WHERE id=$1',[heldPaymentId])).rows[0].status,'PENDING');
+ await pool.query(`DELETE FROM "PaymentTransaction" WHERE id='hold-race'`);
+ checks.push('경합: 결제 잠금을 기다리는 동안 시작된 학부모 결제를 잠근 뒤 다시 읽어 발견 → 청구를 취소하지 않음(READ COMMITTED)');
  const heldResult=await periodAdmin.holdIssuedBillsForPeriod(database,{periodId:'hold-period',expectedPaymentIds:[heldPaymentId]},'admin');
  assert.deepEqual(heldResult.held.map(b=>[b.paymentId,b.amount,b.draftId]),[[heldPaymentId,100000,'s6:h']]);
  const heldRow=(await pool.query('SELECT p.status,i.status AS "invoiceStatus",i."canceledAt" IS NOT NULL AS canceled FROM "Payment" p JOIN "PaymentInvoice" i ON i."paymentId"=p.id WHERE p.id=$1',[heldPaymentId])).rows[0];

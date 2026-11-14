@@ -31,7 +31,7 @@ import {
 } from "@/lib/regular/illnessPeriodRules";
 
 export type IllnessPeriodDb = IllnessTx & {
-  $transaction<T>(work: (tx: IllnessTx) => Promise<T>, options?: { isolationLevel: "Serializable" | "RepeatableRead"; timeout?: number }): Promise<T>;
+  $transaction<T>(work: (tx: IllnessTx) => Promise<T>, options?: { isolationLevel?: "Serializable" | "RepeatableRead"; timeout?: number }): Promise<T>;
 };
 
 type PeriodRow = {
@@ -51,6 +51,11 @@ const PERIOD_SELECT = `SELECT p.id, p."studentId" AS "studentId", p.reason, p.st
 const TX_OPTIONS = { isolationLevel: "Serializable" as const, timeout: 30_000 };
 // 보강권 전환은 결석마다 기존 함수(조회 여러 번)를 부른다 — 긴 기간도 끝나게 넉넉히
 const CONVERT_TX_OPTIONS = { isolationLevel: "Serializable" as const, timeout: 60_000 };
+// «발행 보류로 돌리기» 전용 — 격리 수준을 지정하지 않는다(DB 기본 READ COMMITTED).
+// 왜: Serializable·RepeatableRead 는 거래의 «첫 문장 시점 사진»으로 읽는다. 결제 잠금을 기다리는 동안 다른 거래가 커밋한
+// 결제 거래(입금 계좌 발급·토스 승인)·현장 결제 요청이 잠근 뒤에 다시 읽어도 보이지 않아, 결제가 막 시작된 청구를 취소할 수 있다.
+// READ COMMITTED 는 문장마다 새로 읽으므로 «잠근 뒤 다시 읽기»가 실제 최신 상태를 본다(휴원 정산 applyCarriesForStudent 와 같은 보장).
+const HOLD_TX_OPTIONS = { timeout: 30_000 };
 
 function cleanId(value: unknown): string {
   const id = typeof value === "string" ? value.trim() : "";
@@ -460,7 +465,19 @@ export type IllnessPeriodBillingHold = {
   bills: HoldBillView[];
   /** 이미 보류로 돌려 둔 청구 사본 */
   heldBills: HeldBillRecord[];
+  /** 그 학생에게 미납 셔틀비 청구가 있는가 — 보류는 수강료 청구만 멈춘다는 안내 한 줄에 쓴다 */
+  unpaidShuttle: boolean;
 };
+
+/** 기간 대상 반의 이름들(빈 배열 = 그 학생의 반 전부) — 학부모 알림 문구가 보류 범위를 그대로 말하게 */
+async function holdScopeClassNames(tx: Pick<IllnessTx, "$queryRawUnsafe">, period: PeriodRow): Promise<string[]> {
+  const classIds = Array.isArray(period.classIds) ? period.classIds.map(String) : [];
+  if (classIds.length === 0) return [];
+  const rows = await tx.$queryRawUnsafe<Array<{ name: string | null }>>(
+    `SELECT c.name FROM "Class" c WHERE c.id = ANY($1::text[]) ORDER BY c.name`, classIds,
+  );
+  return rows.map((row) => row.name?.trim() ?? "").filter(Boolean);
+}
 
 /** 신청함 상세의 보류 칸 — 읽기만(잠금 없음). 금액을 가릴지는 호출부(역할)가 정한다 */
 export async function readIllnessPeriodBillingHold(tx: IllnessTx, periodIdInput: string, nowMs = Date.now()): Promise<IllnessPeriodBillingHold | null> {
@@ -471,10 +488,17 @@ export async function readIllnessPeriodBillingHold(tx: IllnessTx, periodIdInput:
   const period = periods.find((row) => row.id === periodId) ?? null;
   if (!period || period.reason !== ILLNESS_REASON) return null;
   const holdActive = isHoldActive(period);
+  // 셔틀비(SHUTTLE) 청구는 보류 대상이 아니다 — 미납 셔틀비가 있으면 화면이 «셔틀비 청구는 그대로»라고 알린다
+  const shuttle = holdActive
+    ? await tx.$queryRawUnsafe<Array<{ found: number }>>(
+        `SELECT 1 AS found FROM "Payment" p WHERE p."studentId" = $1 AND p.type = 'SHUTTLE' AND p.status IN ('PENDING','OVERDUE') LIMIT 1`,
+        period.studentId)
+    : [];
   return {
     periodId, studentId: period.studentId, holdActive,
     bills: holdActive ? await readHoldTargets(tx, period, nowMs, null) : [],
     heldBills: period.carryState === "APPROVED" ? parseHeldBills(period.carrySettlement) : [],
+    unpaidShuttle: shuttle.length > 0,
   };
 }
 
@@ -483,6 +507,8 @@ export type HoldBillsResult = {
   held: HeldBillRecord[];
   /** 이번에 돌리지 않은 청구와 이유 */
   skipped: HoldBillView[];
+  /** 보류 범위의 반 이름(빈 배열 = 그 학생의 반 전부) */
+  scopeClassNames: string[];
 };
 
 /**
@@ -492,6 +518,8 @@ export type HoldBillsResult = {
  *   작업대 전역 잠금 → 기간 행 → ① 대상 청구 id 를 잠금 없이 읽고 → ② 결제 잠금(lockPaymentsForCheckout, id 정렬순)
  *   → ③ 그 id 만 청구 행 FOR UPDATE → ④ 범위를 다시 읽어 처음 목록과 같은지 확인.
  * 결제 시작·승인 직전도 같은 결제 잠금을 잡고 상태를 다시 읽으므로, «취소한 청구가 결제되는» 엇갈림이 없다.
+ * 반대 방향(«결제가 막 시작된 청구를 취소»)은 이 거래가 READ COMMITTED 라서 막힌다 — 결제 잠금을 얻은 «뒤에» 읽는
+ * 결제 거래·현장 결제 요청은 그 사이 커밋된 것까지 보인다. ⚠️ 이 함수에 Serializable/RepeatableRead 를 걸지 말 것(테스트가 고정).
  *
  * @param input.expectedPaymentIds 원장이 화면에서 본 «돌릴 청구» id 목록. 잠근 뒤의 대상과 다르면 실행하지 않는다
  *        (본 것과 다른 청구가 취소되지 않게). 건너뛸 청구(결제 진행 중 등)는 여기에 넣지 않는다.
@@ -607,8 +635,8 @@ export async function holdIssuedBillsForPeriod(
       held: held.map((bill) => ({ paymentId: bill.paymentId, year: bill.year, month: bill.month, amount: bill.amount })),
       skipped: skipped.map((bill) => ({ paymentId: bill.paymentId, reason: bill.skip })),
     });
-    return { periodId, studentId: period.studentId, held, skipped };
-  }, TX_OPTIONS);
+    return { periodId, studentId: period.studentId, held, skipped, scopeClassNames: await holdScopeClassNames(tx, period) };
+  }, HOLD_TX_OPTIONS);
 }
 
 /** 학부모 앱 알림 본문에 넣을 아이 이름(없으면 빈 글자) — 형제가 같은 기간이어도 알림이 아이마다 따로 가게 */

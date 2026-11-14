@@ -51,7 +51,7 @@ function database({credit=0,secondClass=false}={}){
   // 2026-11-15 부상·질병 기간 결석: 기간 정산 칸이 있는가 / 그 결석의 기간이 승인·정산됐는가(state.periodCarry: 칸 있음, state.periodDecided: 승인된 기간의 결석 id)
   if(sql.includes("information_schema.columns"))return [{n:state.periodCarry?1:0}];
   // 2단계 발행 보류: 승인됐고 금액 미확정인 질병·부상 기간(state.holdPeriods) — 판정 조건 문구가 SQL 에 있을 때만, 그 달까지 시작한 기간만 답한다
-  if(sql.includes('FROM "RegularAbsencePeriod" hp')){assert.match(sql,/hp\.reason = 'ILLNESS_INJURY' AND hp\."carryState" = 'APPROVED' AND hp\.status IN \('ACTIVE', 'ENDED'\)/);assert.match(sql,/to_char\(hp\."startDate",'YYYY-MM'\) <= \$1/);return (state.holdPeriods??[]).filter(p=>p.reason==="ILLNESS_INJURY"&&p.carryState==="APPROVED"&&["ACTIVE","ENDED"].includes(p.status)&&p.startDate.slice(0,7)<=v[0]).sort((a,b)=>a.studentId.localeCompare(b.studentId)||a.startDate.localeCompare(b.startDate)||a.id.localeCompare(b.id)).map(p=>({studentId:p.studentId,periodId:p.id,startMonth:p.startDate.slice(0,7)}));}
+  if(sql.includes('FROM "RegularAbsencePeriod" hp')){assert.match(sql,/hp\.reason = 'ILLNESS_INJURY' AND hp\."carryState" = 'APPROVED' AND hp\.status IN \('ACTIVE', 'ENDED'\)/);assert.match(sql,/to_char\(hp\."startDate",'YYYY-MM'\) <= \$1/);return (state.holdPeriods??[]).filter(p=>p.reason==="ILLNESS_INJURY"&&p.carryState==="APPROVED"&&["ACTIVE","ENDED"].includes(p.status)&&p.startDate.slice(0,7)<=v[0]).sort((a,b)=>a.studentId.localeCompare(b.studentId)||a.startDate.localeCompare(b.startDate)||a.id.localeCompare(b.id)).map(p=>({studentId:p.studentId,periodId:p.id,startMonth:p.startDate.slice(0,7),...(sql.includes('hp."classIds" AS "classIds"')?{classIds:p.classIds??[]}:{})}));}
   if(sql.includes('FROM "RegularAbsencePeriod" p JOIN "RegularAbsence" a ON a."periodId"=p.id')){assert.match(sql,/p\."carryState"<>'NONE'/);return (state.periodDecided??[]).includes(v[0])?[{found:1}]:[];}
   // 납부 Payment 근거(2026-11-15): 그 학생·그 반의 수강 개시일 / 그 반·그 달 납부완료 수강료 청구 / 그 청구에서 이미 줄인 금액
   if(sql.includes('FROM "Enrollment" e WHERE e."studentId"=$1 AND e."classId"=$2'))return state.enrollments.filter(e=>e.studentId===v[0]&&e.classId===v[1]).map(e=>({startsOn:e.startsOn??null}));
@@ -942,6 +942,40 @@ test("발행 보류: 승인 취소(보류 해제) 뒤 그 행이 «확인 필요
  await mutateWorkbench(db,issue,"admin",true); // 같은 요청을 두 번 보내도
  assert.equal(db.state.payments.filter(p=>p.studentId==="student-b").length,1);
  assert.equal(db.state.invoices.length,1);
+});
+test("발행 보류: 대상 반이 정해진 기간은 그 반만 막히고, 같은 학생의 다른 반은 그대로 발행된다",async()=>{
+ // student-a 가 두 반(class-a·class-b)을 다니고, 부상 결석 기간은 class-b 만 대상
+ const make=()=>{const db=database({secondClass:true});db.state.periodCarry=true;db.state.holdPeriods=[{id:"period-a",studentId:"student-a",reason:"ILLNESS_INJURY",carryState:"APPROVED",status:"ACTIVE",startDate:"2026-11-06",classIds:["class-b"]}];return db;};
+ const db=make();let view=await readWorkbench(db.tx,"2026-11",true);
+ const held=view.rows.find(r=>r.id==="student-a:class-b"),free=view.rows.find(r=>r.id==="student-a:class-a");
+ assert.equal(held.hold,true);assert.equal(held.holdPeriodId,"period-a");assert.equal(held.blockingReasons[0],HOLD_LABEL);
+ assert.ok(!("hold" in free));assert.deepEqual(free.blockingReasons,[]);
+ // 보류가 없을 때와 견줘 다른 반 행은 완전히 같다
+ const plain=await readWorkbench(database({secondClass:true}).tx,"2026-11",true);
+ assert.deepEqual(free,plain.rows.find(r=>r.id==="student-a:class-a"));
+ // 다른 반은 저장 → 확정 → 발행, 대상 반은 거절
+ ({view}=await mutateWorkbench(db,commandFor("SAVE",view,"student-a:class-a"),"admin",true));
+ ({view}=await mutateWorkbench(db,commandFor("CONFIRM",view,"student-a:class-a"),"admin",true));
+ ({view}=await mutateWorkbench(db,commandFor("ISSUE",view,"student-a:class-a"),"admin",true));
+ assert.deepEqual(db.state.payments.map(p=>p.classId),["class-a"]);
+ ({view}=await mutateWorkbench(db,commandFor("SAVE",view,"student-a:class-b"),"admin",true));
+ await assert.rejects(()=>mutateWorkbench(db,commandFor("CONFIRM",view,"student-a:class-b"),"admin",true),new RegExp(HOLD_LABEL));
+ // 대상 반이 빈 배열(반 전부)이면 두 반 다 막힌다 / 대상 반 목록이 바뀌면 지문도 바뀐다
+ const all=make();all.state.holdPeriods[0].classIds=[];
+ const allView=await readWorkbench(all.tx,"2026-11",true);
+ assert.deepEqual(allView.rows.map(r=>Boolean(r.hold)),[true,true]);
+ assert.notEqual(allView.sourceVersion,(await readWorkbench(make().tx,"2026-11",true)).sourceVersion);
+});
+test("발행 보류: 보류 행은 «확인 필요» 수와 발행 예정 합계에 들어가지 않는다(보류가 없으면 숫자는 예전 그대로)",async()=>{
+ const withHold=await readWorkbench(holdDatabase().tx,"2026-11",true);
+ // student-a(확인 필요 1건·100,000원)만 센다 — student-b 는 보류
+ assert.equal(withHold.summary.review,1);assert.equal(withHold.summary.totalAmount,100000);assert.equal(withHold.summary.total,2);
+ const noHold=holdDatabase();noHold.state.holdPeriods=[];
+ const plain=await readWorkbench(noHold.tx,"2026-11",true);
+ assert.equal(plain.summary.review,2);assert.equal(plain.summary.totalAmount,200000);
+ const screen=await readFile("src/app/admin/finance/prepare/BillingWorkbench.tsx","utf8");
+ assert.match(screen,/확인 필요 <strong>\{rows\.filter\(\(row\) => row\.status === "REVIEW" && !row\.hold\)\.length\}<\/strong>/);
+ assert.match(screen,/filter === "REVIEW" \? row\.status === "REVIEW" && !row\.hold :/);
 });
 test("발행 보류: 화면 — 보류 요약·필터·행 글자·선택 불가·신청함 이동, 보류 판정은 규칙 조각 한 곳",async()=>{
  const screen=await readFile("src/app/admin/finance/prepare/BillingWorkbench.tsx","utf8");

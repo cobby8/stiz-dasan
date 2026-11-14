@@ -138,6 +138,8 @@ export type IllnessPeriodHoldView = {
   bills: Array<{ paymentId: string; label: string; amount: number | null; skipText: string | null }>;
   /** 이미 보류로 돌려 둔 청구 수 */
   heldCount: number;
+  /** 미납 셔틀비 청구가 있는가 — «셔틀비 청구는 그대로예요» 한 줄을 보일지 */
+  unpaidShuttle: boolean;
 };
 
 /** 신청함 기간 상세의 보류 칸 — 승인 뒤에만 내용이 있다 */
@@ -160,6 +162,7 @@ export async function loadIllnessPeriodHold(periodId: string): Promise<{ ok: tru
           skipText: bill.skipText,
         })),
         heldCount: hold.heldBills.length,
+        unpaidShuttle: hold.unpaidShuttle,
       },
     };
   } catch (error) {
@@ -186,7 +189,8 @@ export async function holdIllnessPeriodBillsAction(input: { periodId: string; ex
     );
     const name = await readStudentName(prisma, done.studentId).catch(() => "");
     if (done.held.length > 0 && name) {
-      await notifyParentOnce(done.studentId, "수강료 청구 안내", billingHoldParentText(name), "/mypage/payments");
+      // 문구는 보류 범위 그대로 — 대상 반이 정해진 기간이면 그 반 이름을 넣는다
+      await notifyParentOnce(done.studentId, "수강료 청구 안내", billingHoldParentText(name, done.scopeClassNames), "/mypage/payments");
     }
     // 청구 상태가 바뀌었다 — 신청함·수납 관리·학생 상세·학부모 화면을 다시 그린다(기존 «미납 청구 취소»와 같은 범위)
     revalidatePath("/admin/inbox");

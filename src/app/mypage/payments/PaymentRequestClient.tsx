@@ -40,7 +40,7 @@ export default function PaymentRequestClient({
   holds = [],
 }: {
   /** 부상 결석이 승인돼 수강료 청구를 잠시 멈춘 자녀 — 미납 목록 위에 상태 한 줄로 보인다(«학원에 문의» 대신) */
-  holds?: Array<{ studentId: string; studentName: string }>;
+  holds?: Array<{ studentId: string; studentName: string; /** 멈춘 반 이름(비어 있으면 그 아이의 반 전부) */ classNames?: string[] }>;
   rows: ParentPaymentRow[];
   /** 온라인 결제(토스 등) 설정이 끝났는가 — 결제 화면과 같은 판정(getPaymentProviderConfig) */
   payReady?: boolean;
@@ -578,7 +578,7 @@ export default function PaymentRequestClient({
       {/* 부상 결석 중이라 청구를 멈춘 아이 — 상태를 그대로 한 줄로(아이 칩으로 다른 아이를 골랐으면 숨긴다) */}
       {shownHolds.map((held) => (
         <p key={held.studentId} role="status" className="academy-panel break-keep p-3 text-sm text-[var(--color-academy-ink)]">
-          {billingHoldParentText(held.studentName)}
+          {billingHoldParentText(held.studentName, held.classNames ?? [])}
         </p>
       ))}
 

@@ -80,7 +80,12 @@
 | tests/illness-billing-hold.test.mjs(신규 16건) · billing-workbench(+6)·illness-period·payment-bundle-ui·rallyz-mirror-release · billing-workbench-postgres.integration | 실행 테스트 + 로컬 Postgres 31개 | 신규/수정 |
 
 💡 tester 참고: ① 신청함에서 부상 결석 승인 → 청구 준비(그 기간 시작 달 이후)에서 그 아이 행이 «부상 결석 중 · 발행 보류»·체크 불가, 요약 «발행 보류 n», 필터 «발행 보류(부상 결석)», 글자를 누르면 신청함 기간 상세가 열림 ② 승인된 기간 상세에 «이미 발행된 미납 청구 n건 ○원» → [발행 보류로 돌리기](원장만, 부원장은 건수만) → 수납 관리에서 그 청구 «취소», 청구 준비 행은 보류 ③ 학부모 결제 화면에 «○○ · 부상 결석 중이라…» 한 줄, 취소된 청구는 안 보임 ④ [승인 취소] → 청구 준비에 «확인 필요»로 다시 나와 저장→확정→발행하면 새 청구 1건. 주의 입력: 학부모가 30분 안에 결제창을 연 청구·현장 결제 요청 중·이월을 쓴 청구는 건너뛰고 이유가 보여야 한다.
-⚠️ reviewer 참고: 초안 ISSUED→DRAFT 는 처음 생긴 전이(BillingWorkbenchRevision action 'HOLD' — 운영 표에 action CHECK 가 없는지 확인 필요, 준비 파일 workbench-schema.sql 에는 없음). 보류 범위가 둘이다 — 청구 준비는 «학생 단위», 보류 전환은 «기간 대상 반(classIds)». 수납 관리의 직접 발행(createPayment)은 보류 학생도 막지 않는다(원장이 일부러 하는 길). getParentBillingHolds·listAbsencePeriodsInDb 의 완성된 문장은 실제 DB 에서 못 돌렸다(조각은 돌림).
+⚠️ reviewer 참고: 초안 ISSUED→DRAFT 는 처음 생긴 전이(BillingWorkbenchRevision action 'HOLD' — 운영 표에 action CHECK 가 없는지 확인 필요, 준비 파일 workbench-schema.sql 에는 없음). 보류 범위는 하나(1차 수정 뒤) — 청구 준비 차단·보류 전환 모두 «기간 대상 반(classIds, 빈 배열이면 전부)». 수납 관리의 직접 발행(createPayment)은 보류 학생도 막지 않는다(원장이 일부러 하는 길). getParentBillingHolds·listAbsencePeriodsInDb 의 완성된 문장은 실제 DB 에서 못 돌렸다(조각은 돌림).
+
+#### 수정 이력
+| 회차 | 날짜 | 수정 내용 | 수정 파일 | 사유 |
+|------|------|----------|----------|------|
+| 1차 | 11-15 | [필수] 보류 전환 거래를 Serializable → DB 기본(READ COMMITTED)으로(잠금을 기다리는 동안 시작된 결제가 잠근 뒤 보이게)·테스트로 고정·실제 Postgres 경합 사례 추가 · 청구 준비 차단을 «기간 대상 반»으로 좁힘 + 학부모 문구도 범위대로 · «확인 필요» 수·발행 예정 합계에서 보류 행 제외 · 미납 셔틀비가 있으면 «셔틀비 청구는 그대로예요» 한 줄 · 호출부 requireOwner 가드 테스트. tsc 0 · tests 5512-0 · guards 337-0 · 로컬 Postgres 32개 | illness-period-admin.ts · workbench-service.ts · illnessPeriodRules.ts · parent-payment-request.ts · actions/illness-period-admin.ts · IllnessPeriodInboxDetail.tsx · BillingWorkbench.tsx · PaymentRequestClient.tsx · scripts/test-billing-workbench-postgres.mjs · tests | reviewer 필수 1 + 권장 4 |
 
 ### 구현 기록 (developer · 11-15 학부모 여러 날 결석, claude/absence-period-parent)
 📝 구현한 기능: 학부모 «결석 알리기 › 여러 날»(4주 한도·모든 사유) + 관리자 «기간 결석 등록» 빠른 입구 + 이월 재검수 권장 ②~⑤
