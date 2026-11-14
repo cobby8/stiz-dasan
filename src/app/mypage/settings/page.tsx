@@ -152,8 +152,16 @@ export default async function ParentSettingsPage() {
             </Section>
 
             {/* 도움 — 홈 «문의»와 같은 기능(학원에 메시지 보내기)이라 폼을 따로 두지 않고 홈 문의 폼으로 보낸다(2026-11-14 문구 정리) */}
+            {/* 홈 문의 폼은 자녀가 연결된 계정에만 있다 — 자녀가 없으면 갈 곳이 없으니 연결 안내를 보인다(예전 문의 폼과 같은 취지) */}
             <Section title="도움">
-                <LinkRow href="/mypage#parent-request-form" label="문의" />
+                {childRows.length > 0 ? (
+                    <LinkRow href="/mypage#parent-request-form" label="문의" />
+                ) : (
+                    <li className={`${ROW} flex-wrap`}>
+                        <span className="min-w-0 flex-1 text-[var(--color-academy-muted)]">자녀를 연결한 뒤 문의를 보낼 수 있어요</span>
+                        <Link href="/mypage/children" className="academy-button-secondary shrink-0">자녀 연결</Link>
+                    </li>
+                )}
             </Section>
 
             <Section title="앱 정보">

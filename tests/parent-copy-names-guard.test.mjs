@@ -11,7 +11,9 @@ import test from "node:test";
 // 안 보는 것:
 //   - 주석(설명 글에는 옛 이름을 적을 수 있다)
 //   - 결제 화면(src/app/mypage/payments/**) — 돈 문구는 이번 범위가 아니다
-//   - 선생님·관리자·기사 화면, 카카오 대화, 기사님·관리자에게 가는 알림 제목(«셔틀 당일 변경» 등 — 그쪽 문구는 그대로)
+//   - 선생님·관리자·기사 화면, 기사님·관리자에게 가는 알림 제목(«셔틀 당일 변경» 등 — 그쪽 문구는 그대로)
+//   - 카카오 채널 대화 파일은 이 목록에 없다. 다만 결석 대화의 복귀일 안내는 학부모 화면과 같은 함수(resumeNotice)를 써서
+//     «알릴 수 있어요»로 함께 바뀌었다(의도한 변경 — 2026-11-15 확정). 셔틀 라벨은 카카오·관리자·기사 쪽이 공용 라벨 그대로다.
 //   - 코드 식별자(resumeNotice 의 verb 값 "신고" 같은 한 낱말) — 금지어는 «결석 신고»처럼 화면에 보이는 이름 단위다
 
 const ROOT = process.cwd();
@@ -38,6 +40,8 @@ const PARENT_FILES = [
   ...walk("src/app/mypage").filter((file) => !file.startsWith("src/app/mypage/payments/")),
   ...walk("src/components/parent").filter((file) => !file.startsWith("src/components/parent/billing/")),
   "src/components/account/EmptyParentState.tsx",
+  // 학부모 앱 설명·바로가기 이름(홈 화면 아이콘을 길게 누르면 보이는 글)
+  "public/manifest-parent.json",
   "src/lib/parent/classCards.ts",
   "src/lib/requests/parent-timeline.ts",
   "src/lib/requests/parent-timeline-rules.ts",

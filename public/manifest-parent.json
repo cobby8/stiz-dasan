@@ -2,7 +2,7 @@
   "id": "/parent-app",
   "name": "스티즈 학부모",
   "short_name": "스티즈 학부모",
-  "description": "출결과 셔틀 시각, 결석 신고와 청구를 확인하는 스티즈 학부모 앱",
+  "description": "출결과 셔틀 시각, 결석 알리기와 청구를 확인하는 스티즈 학부모 앱",
   "start_url": "/mypage",
   "scope": "/mypage",
   "display": "standalone",
@@ -49,8 +49,8 @@
       ]
     },
     {
-      "name": "결석 신고",
-      "short_name": "결석 신고",
+      "name": "결석 알리기",
+      "short_name": "결석 알리기",
       "url": "/mypage/regular-absence",
       "icons": [
         {

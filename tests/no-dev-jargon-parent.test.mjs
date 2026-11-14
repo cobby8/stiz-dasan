@@ -103,12 +103,14 @@ test("셔틀 변경 화면은 관리자용 알림 결과 문장 대신 학부모
   assert.match(source, /function parentDeliveryText\(summary: DeliveryStatusSummary \| null \| undefined\): string/);
   assert.match(source, /parentDeliveryText\(item\.notificationStatus\)/);
   assert.match(source, /if \(response\.status >= 500\) return reconcile\(body\);/);
-  // 2026-11-14 문구 정리: 건수 나열 대신 «알렸다/못 알렸다» 한 줄. 못 알렸을 때만 할 일(학원에 알리기)과 문의 버튼
-  assert.match(source, /"기사님께 알렸어요"/);
-  assert.match(source, /기사님께 알림을 못 보냈어요\. 학원에 알려 주세요/);
-  assert.match(source, /\{done && notifyFailed && \([\s\S]{0,500}href="\/mypage#parent-request-form"/);
-  // 받은 사람 중 기사님이 없으면 «기사님께 알렸다»고 하지 않는다
-  assert.match(source, /summary\.driverLinked === false \? "학원에 알렸어요" : "기사님께 알렸어요"/);
+  // 2026-11-14 문구 정리: 건수 나열 대신 한 줄. 판정은 순수 규칙 parentDeliveryView 한 곳(실행 테스트 = parent-delivery-view.test.mjs)
+  assert.match(source, /return parentDeliveryView\(summary\)\?\.text \?\? "";/);
+  const rules = read("src/lib/parent-staff-status.ts");
+  for (const text of ["기사님께 알렸어요", "기사님 알림함에 남겼어요. 급하면 학원에 전화해 주세요", "학원에 알렸어요", "알림을 못 보냈어요. 학원에 전화해 주세요"]) {
+    assert.ok(rules.includes(`text: "${text}"`), text);
+  }
+  // 전화가 필요할 수 있는 결과만 경고 줄 + «학원에 전화하기»(설정값 번호)
+  assert.match(source, /\{done && notifyCall && \([\s\S]{0,500}<CallAcademy phone=\{academyPhone\} \/>/);
   for (const old of ["알림함 등록", "휴대폰 알림 꺼짐", "변경 저장 완료", "셔틀 명단에 반영됨", "담당 기사님 배정은 학원에서 확인 중", "결과 확인 필요:", "변경 저장하고 알림 요청"]) {
     assert.ok(!source.includes(old), old);
   }

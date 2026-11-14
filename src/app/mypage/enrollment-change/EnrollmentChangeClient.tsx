@@ -246,15 +246,17 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
       {child.scheduled.kind === "PAUSE" && (
         <p className="mt-1 text-sm text-[var(--color-academy-muted)]">{pauseResumeLabel(child.scheduled.resumeOn)}</p>
       )}
-      {scheduledCancelable ? (
-        <Link href={`/mypage/classes?child=${encodeURIComponent(child.studentId)}#request-timeline-heading`} className="academy-button-secondary mt-2">
-          취소 요청
+      {/* 버튼 글자는 «다른 화면으로 간다»가 드러나게(▸) — 여기서 바로 취소되는 버튼이 아니다. 날짜 변경은 문의로 */}
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+        {scheduledCancelable && (
+          <Link href={`/mypage/classes?child=${encodeURIComponent(child.studentId)}#request-timeline-heading`} className="academy-button-secondary">
+            신청 내역에서 취소 요청 ▸
+          </Link>
+        )}
+        <Link href="/mypage#parent-request-form" className="academy-button-text">
+          날짜 변경은 학원에 문의
         </Link>
-      ) : (
-        <Link href="/mypage#parent-request-form" className="academy-button-secondary mt-2">
-          학원에 문의
-        </Link>
-      )}
+      </div>
     </section>
   ) : null;
 

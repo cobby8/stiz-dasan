@@ -12,7 +12,7 @@ import {
   type ShuttleExceptionKind,
 } from "@/lib/shuttle/dayExceptionRules";
 import type { ShuttleExceptionOptions } from "@/lib/shuttle/parent-shuttle-exception";
-import { matchesShuttleChange, type DeliveryStatusSummary } from "@/lib/parent-staff-status";
+import { matchesShuttleChange, parentDeliveryView, type DeliveryStatusSummary, type ParentDeliveryView } from "@/lib/parent-staff-status";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import { groupByUpcomingDate } from "@/components/admin/list/upcomingDateGroups";
 import { kstLabel } from "@/lib/datetime/kst";
@@ -29,18 +29,18 @@ const DATE_GROUP_LABELS = { today: "오늘", thisWeek: "이번 주", nextWeek: "
 // 예전엔 알림함·휴대폰 알림 건수를 길게 늘어놓았다 — 학부모가 알고 싶은 것은 «알렸나, 못 알렸나» 하나다.
 // 관리자 화면용 deliveryStatusText 는 «푸시 구독 미등록» 같은 개발 용어를 써서 고객 화면에는 쓰지 않는다.
 
-/** 알림이 한 건도 닿지 않았나 — 받을 사람이 없거나, 알림함·휴대폰 어느 쪽에도 못 갔고 보내는 중도 아닐 때 */
-function deliveryFailed(summary: DeliveryStatusSummary | null | undefined): boolean {
-  if (!summary) return false; // 결과를 아직 모르면 «실패»라고 말하지 않는다
-  if (summary.recipientCount === 0) return true;
-  return summary.inAppCount === 0 && summary.pushAcceptedCount === 0 && summary.pushPartialCount === 0 && summary.pendingCount === 0;
+// 판정은 순수 규칙 parentDeliveryView(실행 테스트 있음) 한 곳 — «기사님께 실제로 갔는지»를 본다(2026-11-15 리뷰 반영).
+//  기사님 휴대폰 알림 나감 → «기사님께 알렸어요» / 알림함에만 → «기사님 알림함에 남겼어요…» + 전화 버튼
+//  선생님만 받음 → «학원에 알렸어요» / 아무에게도 못 감 → «알림을 못 보냈어요…» + 전화 버튼 / 아직 모름 → 줄 없음
+function parentDeliveryText(summary: DeliveryStatusSummary | null | undefined): string {
+  return parentDeliveryView(summary)?.text ?? "";
 }
 
-function parentDeliveryText(summary: DeliveryStatusSummary | null | undefined): string {
-  if (!summary) return ""; // 결과를 아직 모르면 줄을 그리지 않는다
-  if (deliveryFailed(summary)) return "기사님께 알림을 못 보냈어요. 학원에 알려 주세요";
-  // 받은 사람 중에 기사님이 없으면(선생님만 받음) «기사님께 알렸다»고 하지 않는다
-  return summary.driverLinked === false ? "학원에 알렸어요" : "기사님께 알렸어요";
+/** «학원에 전화하기» — 번호(설정값)가 있으면 전화 버튼, 없으면 아무것도 그리지 않는다(문장이 이미 할 일을 말한다) */
+function CallAcademy({ phone, className = "academy-button-secondary shrink-0" }: { phone: string | null | undefined; className?: string }) {
+  const tel = String(phone ?? "").replace(/[^0-9]/g, "");
+  if (tel.length < 8) return null;
+  return <a href={`tel:${tel}`} className={className}>학원에 전화하기</a>;
 }
 
 // 저장 결과 한마디 — 취소 / 그 밖(신청·날짜 바꾸기)
@@ -49,7 +49,8 @@ function savedText(body: Record<string, unknown>): string {
 }
 
 // presetStudentId = 수업 탭 반 카드에서 온 아이 — 그 아이를 미리 고른다(내 자녀 목록에 있을 때만)
-export default function ShuttleExceptionClient({ initial, presetStudentId = null }: { initial: ShuttleExceptionOptions; presetStudentId?: string | null }) {
+// academyPhone = 학원 대표 번호(설정값) — 알림이 기사님께 못 갔을 때의 «학원에 전화하기» 버튼용. 없으면 글자만 보인다
+export default function ShuttleExceptionClient({ initial, presetStudentId = null, academyPhone = null }: { initial: ShuttleExceptionOptions; presetStudentId?: string | null; academyPhone?: string | null }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [studentId, setStudentId] = useState(
@@ -71,8 +72,8 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const [done, setDone] = useState("");
-  // 저장은 됐지만 기사님께 알림이 못 간 경우 — 경고 줄 + «학원에 문의» 버튼
-  const [notifyFailed, setNotifyFailed] = useState(false);
+  // 저장은 됐지만 학부모가 전화해야 할 수 있는 알림 결과(기사님 알림함에만 / 아무에게도 못 감) — 경고 줄 + «학원에 전화하기»
+  const [notifyCall, setNotifyCall] = useState<ParentDeliveryView | null>(null);
   const [uncertain, setUncertain] = useState<Record<string, unknown> | null>(null);
   // 하단 시트로 자세히 보고 있는 예정 변경 id (없으면 닫힘)
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -89,12 +90,11 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
     }
   }
 
-  // 저장 결과 한 줄 — «저장했어요. 기사님께 알렸어요». 알림이 못 갔을 때만 따로 경고 줄 + «학원에 문의» 버튼을 보인다
+  // 저장 결과 한 줄 — «저장했어요. 기사님께 알렸어요». 전화가 필요할 수 있는 결과(call)는 따로 경고 줄 + «학원에 전화하기»로 보인다
   function showSaved(body: Record<string, unknown>, status: DeliveryStatusSummary | null | undefined) {
-    const failed = deliveryFailed(status);
-    const delivery = failed ? "" : parentDeliveryText(status);
-    setDone(delivery ? `${savedText(body)}. ${delivery}` : savedText(body));
-    setNotifyFailed(failed);
+    const view = parentDeliveryView(status);
+    setDone(view && !view.call ? `${savedText(body)}. ${view.text}` : savedText(body));
+    setNotifyCall(view?.call ? view : null);
   }
 
   async function reconcile(body: Record<string, unknown>) {
@@ -120,7 +120,7 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
   async function send(body: Record<string, unknown>) {
     setError("");
     setDone("");
-    setNotifyFailed(false);
+    setNotifyCall(null);
     try {
     const response = await fetch("/api/mypage/shuttle-exception", {
       method: "POST",
@@ -130,7 +130,7 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
     const data = await response.json();
     if (!response.ok) {
       if (response.status >= 500) return reconcile(body);
-      setError(customerMessage(data?.error, "처리에 실패했습니다. 잠시 후 다시 시도해 주세요."));
+      setError(customerMessage(data?.error, "처리하지 못했어요. 잠시 후 다시 시도해 주세요."));
       return false;
     }
     if (!data.ok) return reconcile(body);
@@ -193,7 +193,7 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
       <main className="mx-auto max-w-lg px-4 py-6">
         <h1 className="academy-heading">셔틀 변경</h1>
         <p className="mt-3 rounded-2xl bg-white p-5 text-sm text-[var(--color-academy-muted)] shadow-sm">
-          지금 다니고 있는 반이 없습니다. 학원으로 문의해 주세요.
+          지금 다니고 있는 반이 없어요. 학원에 문의해 주세요.
         </p>
       </main>
     );
@@ -209,16 +209,16 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
         </p>
         {/* 마감 안내(2026-11-15) — 서버가 같은 규칙으로 막는다 */}
         <p className="mt-1 break-keep text-xs text-[var(--color-academy-muted)]">
-          신청·취소·날짜 바꾸기는 수업 시작 {PARENT_CHANGE_CUTOFF_TEXT} 전까지 할 수 있습니다. 수업이 없는 날은 전날까지입니다.
+          신청·취소·날짜 바꾸기는 수업 시작 {PARENT_CHANGE_CUTOFF_TEXT} 전까지 할 수 있어요. 수업이 없는 날은 전날까지예요.
         </p>
       </div>
 
       {done && <p role="status" className="rounded-xl bg-[var(--color-academy-success-soft)] p-3 text-sm font-medium text-[var(--color-academy-success)]">{done}</p>}
-      {/* 저장은 됐지만 기사님께 알림이 못 갔을 때만 — 학부모가 할 일(학원에 알리기)과 그 버튼 */}
-      {done && notifyFailed && (
+      {/* 저장은 됐지만 기사님이 휴대폰 알림을 못 받았을 때만 — 학부모가 할 일(학원에 전화)과 그 버튼. 번호가 없으면 글자만 */}
+      {done && notifyCall && (
         <div role="alert" className="flex flex-wrap items-center gap-2 rounded-xl bg-[var(--color-academy-warning-soft)] p-3 text-sm font-medium text-[var(--color-academy-warning)]">
-          <span className="min-w-0 flex-1 break-keep">기사님께 알림을 못 보냈어요. 학원에 알려 주세요</span>
-          <Link href="/mypage#parent-request-form" className="academy-button-secondary shrink-0">학원에 문의</Link>
+          <span className="min-w-0 flex-1 break-keep">{notifyCall.text}</span>
+          <CallAcademy phone={academyPhone} />
         </div>
       )}
       {error && <p role="alert" className="rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm font-medium text-[var(--color-academy-danger)]">{error}</p>}
@@ -495,7 +495,11 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
               {parentDeliveryText(item.notificationStatus) && (
                 <>
                   <dt className="text-[var(--color-academy-muted)]">알림</dt>
-                  <dd className="break-keep">{parentDeliveryText(item.notificationStatus)}</dd>
+                  <dd className="break-keep">
+                    {parentDeliveryText(item.notificationStatus)}
+                    {/* 전화가 필요할 수 있는 결과면 그 자리에 전화 버튼 */}
+                    {parentDeliveryView(item.notificationStatus)?.call && <CallAcademy phone={academyPhone} className="academy-button-secondary mt-2" />}
+                  </dd>
                 </>
               )}
             </dl>

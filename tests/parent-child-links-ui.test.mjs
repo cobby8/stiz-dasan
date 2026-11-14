@@ -41,6 +41,7 @@ test("비로그인 가족 연결 진입은 로그인 화면이 읽는 복귀 주
     "@/components/academy/AcademyTheme": { default: () => null },
     "@/components/AccountViewSwitcher": { default: () => null },
     "@/app/mypage/children/ChildConnectionsClient": { default: () => null },
+    "@/lib/academyPhone": { getUsableAcademyPhone: async () => { throw new Error("로그인 전 조회 금지"); } }, // 학원 번호도 로그인 확인 뒤에만 읽는다
   });
   await assert.rejects(Page(), /TEST_REDIRECT/);
   const target = new URL(location, "https://fixture.invalid");
@@ -149,6 +150,7 @@ test("직원 연결 페이지는 로그인만 요구하고 자녀 목록의 기�
     "@/components/academy/AcademyTheme": { default: ({ children }) => React.createElement("div", { className: "academy-app" }, children) },
     "@/components/AccountViewSwitcher": { default: () => null },
     "@/app/mypage/children/ChildConnectionsClient": { default: EmptyClient },
+    "@/lib/academyPhone": { getUsableAcademyPhone: async () => null }, // 학원 번호(설정값) — 못 읽으면 null(글자만)
   });
   const html = renderToStaticMarkup(await Page());
   assert.equal(authenticated, 1);

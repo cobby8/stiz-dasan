@@ -43,8 +43,8 @@ export default function SeasonalMakeupClient({ initial }: { initial: any }) {
       else { body.targetClassId = target.classId; body.targetDate = target.nextDate; }
       const r = await fetch("/api/mypage/seasonal-makeup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const j = await r.json(); if (!r.ok) throw new Error(j?.error || "신청 실패");
-      setMsg("보강 신청이 접수되었습니다. 학원 승인 후 확정됩니다."); setOpen(""); await reload();
-    } catch (e) { setErr(customerMessage(e, "보강 신청을 접수하지 못했습니다. 잠시 후 다시 시도해 주세요.")); } finally { setBusy(false); }
+      setMsg("보강을 신청했어요. 학원이 승인하면 확정돼요."); setOpen(""); await reload();
+    } catch (e) { setErr(customerMessage(e, "보강을 신청하지 못했어요. 잠시 후 다시 시도해 주세요.")); } finally { setBusy(false); }
   }
 
   // ── 예정 회차 · 결석 알리기 ──────────────────────────────────────────
@@ -53,12 +53,19 @@ export default function SeasonalMakeupClient({ initial }: { initial: any }) {
   const [seatOpen, setSeatOpen] = useState<string>("");   // 열린 신고 폼
 
   // 예정 회차는 페이지 로드 후 별도 API로 조회(마이페이지 보강 컨텍스트와 소스가 다름)
+  // 예정 회차를 불러온 상태 — 불러오는 중·실패를 «없어요»로 보이지 않게 한다(실패를 0건처럼 보이면 학부모가 회차가 없는 줄 안다)
+  const [seatsState, setSeatsState] = useState<"loading" | "ready" | "failed">("loading");
   const reloadSeats = useCallback(async () => {
     try {
       const r = await fetch("/api/mypage/seasonal-absence", { cache: "no-store" });
       const j = await r.json();
-      if (r.ok) setSeats(j.seats || []);
-    } catch { /* noop */ }
+      if (!r.ok) throw new Error("LOAD_FAILED");
+      setSeats(j.seats || []);
+      setSeatsState("ready");
+    } catch {
+      // 이미 보이던 목록이 있으면 그대로 두고(다시 읽기 실패), 처음부터 못 읽었을 때만 실패 표시
+      setSeatsState((before) => (before === "ready" ? before : "failed"));
+    }
   }, []);
 
   useEffect(() => { reloadSeats(); }, [reloadSeats]);
@@ -74,7 +81,7 @@ export default function SeasonalMakeupClient({ initial }: { initial: any }) {
         body: JSON.stringify({ action: "report", enrollmentDateId, reason }),
       });
       const j = await r.json(); if (!r.ok) throw new Error(j?.error || "결석을 알리지 못했어요");
-      setMsg("결석을 알렸어요"); setSeatOpen(""); await reloadSeats();
+      setMsg("결석을 알렸어요."); setSeatOpen(""); await reloadSeats();
     } catch (e) { setErr(customerMessage(e, "결석을 알리지 못했어요. 잠시 후 다시 시도해 주세요.")); } finally { setBusy(false); }
   }
 
@@ -87,7 +94,7 @@ export default function SeasonalMakeupClient({ initial }: { initial: any }) {
         body: JSON.stringify({ action: "cancel", enrollmentDateId }),
       });
       const j = await r.json(); if (!r.ok) throw new Error(j?.error || "취소 실패");
-      setMsg("결석 알림을 취소했어요"); await reloadSeats();
+      setMsg("결석 알림을 취소했어요."); await reloadSeats();
     } catch (e) { setErr(customerMessage(e, "결석 알림을 취소하지 못했어요. 잠시 후 다시 시도해 주세요.")); } finally { setBusy(false); }
   }
 
@@ -117,13 +124,26 @@ export default function SeasonalMakeupClient({ initial }: { initial: any }) {
       {msg && <div className="mb-3 rounded-lg bg-[var(--color-academy-success-soft)] px-3 py-2 text-sm text-[var(--color-academy-success)]">{msg}</div>}
       {err && <div className="mb-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm text-[var(--color-academy-danger)]">{err}</div>}
 
-      {/* 셋(보강할 결석·예정 회차·보강 신청 현황)이 모두 비면 빈 화면이 되지 않게 한 줄만 */}
-      {!hasAbsences && seats.length === 0 && (ctx.makeups || []).length === 0 && (
+      {/* 예정 회차를 불러오는 중·못 불러옴 — 각각 맞는 표시(실패는 다시 시도 버튼) */}
+      {seatsState === "loading" && <p role="status" className="mb-3 text-sm text-[var(--color-academy-muted)]">예정 회차를 불러오는 중이에요</p>}
+      {seatsState === "failed" && (
+        <div role="alert" className="mb-3 flex flex-wrap items-center gap-2 text-sm text-[var(--color-academy-muted)]">
+          <span className="min-w-0 flex-1 break-keep">예정 회차를 불러오지 못했어요</span>
+          <button type="button" onClick={() => { setSeatsState("loading"); void reloadSeats(); }} className="academy-button-secondary shrink-0">다시 시도</button>
+        </div>
+      )}
+      {/* 셋(보강할 결석·예정 회차·보강 신청 현황)이 모두 비면 빈 화면이 되지 않게 한 줄만 — «불러옴» 뒤에만 말한다 */}
+      {seatsState === "ready" && !hasAbsences && seats.length === 0 && (ctx.makeups || []).length === 0 && (
         <p className="text-sm text-[var(--color-academy-muted)]">예정된 회차나 보강할 결석이 없어요</p>
       )}
 
-      {/* 보강이 필요한 결석 — 없으면 칸째(제목 포함) 그리지 않는다(원장 결정 d7) */}
-      {hasAbsences && <div className="academy-section-title mb-2">보강이 필요한 결석</div>}
+      {/* 보강이 필요한 결석 — 없으면 칸째(제목 포함) 그리지 않는다(원장 결정 d7). 기한(결석일부터 2개월)은 제목 옆 한마디로 */}
+      {hasAbsences && (
+        <div className="academy-section-title mb-2 flex flex-wrap items-baseline gap-x-2">
+          보강이 필요한 결석
+          <span className="text-xs font-normal text-[var(--color-academy-muted)]">결석일부터 2개월 안에</span>
+        </div>
+      )}
       {/* 카드 묶음 대신 한 목록의 행(divide-y) — 휴대폰 첫 화면에 더 많이 보이게 */}
       {hasAbsences && (
         <ul className={LIST_CLASS}>
@@ -144,7 +164,7 @@ export default function SeasonalMakeupClient({ initial }: { initial: any }) {
               {open === ab.enrollmentDateId && (
                 <div className="mb-1 mt-2 border-t border-[var(--color-academy-line)] pt-2">
                   <div className="mb-1 text-xs font-medium text-[var(--color-academy-muted)]">① 같은 특강 다른 날짜</div>
-                  {ab.seasonalCandidates.length === 0 && <div className="mb-2 text-xs text-[var(--color-academy-faint)]">여유 있는 날짜가 없습니다.</div>}
+                  {ab.seasonalCandidates.length === 0 && <div className="mb-2 text-xs text-[var(--color-academy-faint)]">여유 있는 날짜가 없어요</div>}
                   <div className="mb-2 flex flex-wrap gap-2">
                     {ab.seasonalCandidates.map((s: any) => (
                       <button key={s.sessionDateId} disabled={busy} onClick={() => request(ab.enrollmentDateId, "SEASONAL", s)}

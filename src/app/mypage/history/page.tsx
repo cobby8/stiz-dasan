@@ -81,7 +81,6 @@ export default async function MyPageHistoryPage({
             childList={childList}
             selectedChildId={selectedId}
             view={view}
-            planReady={classDates.length > 0}
             shuttleItems={shuttleItems}
             driverContact={driverContact}
         />

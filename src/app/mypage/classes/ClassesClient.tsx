@@ -227,8 +227,6 @@ export default function ClassesClient({
       {calendarView && calendar && (
         <MonthCalendar
           view={calendarView.view}
-          planReady={calendarView.planReady}
-          hasEnrollments={calendarView.hasEnrollments}
           monthNav={{ prevHref: monthHref(shiftMonth(calendar.month, -1)), nextHref: monthHref(shiftMonth(calendar.month, 1)) }}
         />
       )}

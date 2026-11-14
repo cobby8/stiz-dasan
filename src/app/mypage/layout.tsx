@@ -88,7 +88,7 @@ export default async function MyPageLayout({
                 </div>
                 {/* 알림 — 안 읽은 수 배지, 누르면 알림 목록(아래 «알림 설정») */}
                 <ParentNotificationBell notifications={bellItems} unreadCount={unreadCount} />
-                {/* 설정 — 계정·비밀번호·가족·알림·글자 크기·앱 정보·문제 신고·로그아웃(예전 «⋯» 메뉴를 대신함) */}
+                {/* 설정 — 계정·비밀번호·가족·알림·글자 크기·앱 정보·문의·로그아웃(예전 «⋯» 메뉴를 대신함) */}
                 {settingsLink}
             </header>
 

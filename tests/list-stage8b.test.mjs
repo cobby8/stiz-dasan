@@ -418,8 +418,11 @@ test("방학특강 결석·보강은 세 목록이 한 목록의 행이고 배�
   assert.match(html, />승인 대기</);
   assert.doesNotMatch(html, /신청 접수 \(승인 대기\)|현재 보강이 필요한 결석이 없습니다|예정된 방학특강 회차가 없습니다|미리 결석 신고|최종 처리는 학원과 협의/);
   assert.match(html, /방학특강 결석 알리기 · 보강/);
-  // 예정 회차가 없으면(이 화면 데이터) 그 칸은 제목째 그리지 않는다
-  assert.doesNotMatch(html, /예정 회차/);
+  // 예정 회차 칸은 불러온 뒤 있을 때만 제목째 그린다 — 처음 그림(불러오는 중)에는 «없어요»가 아니라 «불러오는 중»이 보인다
+  assert.doesNotMatch(html, /예정 회차 · 결석 알리기|예정된 회차나 보강할 결석이 없어요/);
+  assert.match(html, /예정 회차를 불러오는 중이에요/);
+  // 보강 기한(결석일부터 2개월)은 제목 옆 한마디로 남긴다
+  assert.match(html, /보강이 필요한 결석<span[^>]*>결석일부터 2개월 안에<\/span>/);
 
   const source = read("src/app/mypage/seasonal/SeasonalMakeupClient.tsx");
   assert.doesNotMatch(source, /결석 신고됨 · /);

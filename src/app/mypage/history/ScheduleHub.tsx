@@ -131,10 +131,6 @@ export function MonthCalendar({
     monthNav,
 }: {
     view: ParentMonthView;
-    // planReady·hasEnrollments = 예전 «이 달 수업일은 연간일정 확정 후 보여요» 한 줄의 조건.
-    // 그 안내를 없애(2026-11-14 문구 정리) 지금은 쓰지 않지만, 부르는 쪽(일정·수업 탭)은 그대로 넘긴다.
-    planReady?: boolean;
-    hasEnrollments: boolean;
     monthNav?: { prevHref: string; nextHref: string };
 }) {
     const { summary } = view;
@@ -195,7 +191,6 @@ export default function ScheduleHub({
     childList,
     selectedChildId,
     view,
-    planReady = true,
     shuttleItems,
     driverContact = null,
 }: {
@@ -204,8 +199,6 @@ export default function ScheduleHub({
     selectedChildId: string;
     /** 한 달 달력 데이터(buildParentMonth 결과) */
     view: ParentMonthView;
-    /** 이 달 수업일이 연간일정에서 계산됐는지 — false 면 «수업일 확정 전» 한 줄 */
-    planReady?: boolean;
     shuttleItems: ParentShuttleOverviewItem[];
     driverContact?: { name: string; phone: string } | null;
 }) {
@@ -245,7 +238,7 @@ export default function ScheduleHub({
             )}
 
             {/* 한 달 달력 — 수업일(연한 칸) · 출결(점·고리·×) · 행사(별) · 휴무(회색 «휴») · 오늘(굵은 테두리) */}
-            <MonthCalendar view={view} planReady={planReady} hasEnrollments={enrollments.length > 0} />
+            <MonthCalendar view={view} />
 
             {/* 이 달 행사·휴무 — 한 줄 행(날짜 · 제목). 행사·휴무가 없는 달은 칸째 그리지 않는다(2026-11-14 원장 결정 d7) */}
             {view.events.length > 0 && (

@@ -258,7 +258,7 @@ test("④ 일정 달력: 달력·수강 반·셔틀 배정만, 신청 줄은 없
   assert.match(html, /2026년 11월 14일 토/);
   assert.match(html, /dateTime="2026-11-14T00:40:00.000Z">[^<]*09:40</, "확정 시간은 KST(UTC 00:40 = 09:40)");
   assert.match(html, /href="tel:01000001111"/);
-  const empty = renderToStaticMarkup(React.createElement(Hub, { childList: children, selectedChildId: "a", view, planReady: false, shuttleItems: [] }));
+  const empty = renderToStaticMarkup(React.createElement(Hub, { childList: children, selectedChildId: "a", view, shuttleItems: [] }));
   assert.doesNotMatch(empty, /id="mypage-shuttle"/);
   // 연간일정이 없을 때의 «이 달 수업일은 연간일정 확정 후 보여요» 안내는 없앴다(학부모가 할 일이 없는 안내)
   assert.doesNotMatch(empty, /연간일정 확정/);
