@@ -38,6 +38,20 @@
 - 운영 배포 = `git push origin HEAD:main` fast-forward.
 - 테스트는 `node --test tests/*.test.mjs` **+ 가드 `node --experimental-strip-types --test src/lib/*.test.ts`**(=`npm test`). ⚠️ 2026-10-25 실측: `tests/` 만 돌려 **학생 병합 필터 가드(src/lib/studentVisibility.test.ts)를 놓쳤다** — 회원 탈퇴 배포 후 release:preflight 가 실패하던 상태였다. **`npx vitest`는 이 프로젝트에 없음**(설정도 없어 worktree까지 긁어 전부 오탐).
 
+### 구현 기록 (developer · 11-14 질병·부상 결석 이월, claude/illness-carry)
+📝 구현한 기능: 질병·부상 결석 = 증빙 사진 → 원장 [이월 승인](다음 달 수강료 1회분 차감) / [보강권으로], 7일 사진 없으면 보강권 자동 전환
+
+| 파일 경로 | 변경 내용 | 신규/수정 |
+|----------|----------|----------|
+| prisma/migrations/20261114130000_illness_carry_review/migration.sql · schema.prisma | 검토·증빙 표 2개(RLS FORCE, 되돌림 주석, 기존 정산 채우기) | 신규/수정 |
+| src/lib/regular/illnessCarryRules.ts · illness-carry-tx.ts · illness-carry-admin.ts · illness-carry-cron.ts · illness-evidence-access.ts · illness-evidence-storage.ts | 규칙·쓰기·승인·cron·사진 권한/저장 | 신규 |
+| src/lib/regular/parent-regular-absence.ts · api/mypage/regular-absence(+evidence) · mypage/regular-absence/* | 신고 분기·사유 글·사진·상태 표시·문구 정리 | 수정/신규 |
+| src/lib/requests/catalog.ts · admin-inbox.ts · admin/inbox/IllnessCarryInboxDetail.tsx · actions/illness-carry-admin.ts · api/admin/absence-evidence/[id] | 신청함 «질병·부상 결석» | 수정/신규 |
+| src/lib/makeup/credit-service.ts · regular/attendance-absence-reason.ts · actions/staff-sessions.ts · actions/admin.ts · billing/workbench-absence.ts · api/cron/makeup-credits | 출결 보류·순서·검토 상태 맞춤·cron | 수정 |
+
+💡 tester 참고: 마이그레이션 적용 «전»은 예전 방식(즉시 보강권)·신청함에 새 종류 0건이 정상. 적용 «후» 질병·부상 신고 → 보강권 없음+«이월 검토 중», 사진 올리기/지우기(7일·3장), 신청함 [이월 승인] 뒤 다음 달 청구 준비 화면 «이월 잔액». 주의 입력: 결석일 전 승인(버튼 꺼짐)·보강 예약된 결석(함께 취소 확인)·원래 달 청구 미발행(사유 한 줄).
+⚠️ reviewer 참고: ① 새 SQL 전부 실제 Postgres 미실행(가짜 DB·문구 검증만) ② approveIllnessCarry 가 readWorkbench 를 한 거래에서 3~4번 읽음(무거움·45초 제한) ③ 신청함에 같은 결석이 «결석»·«질병·부상 결석» 두 줄로 보임 ④ 옛 질병·부상 결석(10-05 이후·검토 줄 없음)이 «이월 검토»에 한꺼번에 뜸.
+
 ## 미해결 리뷰 수정 사항 (이월)
 | 번호 | 파일 | 심각도 | 내용 |
 |------|------|--------|------|
@@ -64,6 +78,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-14 | developer(질병·부상 결석 이월, claude/illness-carry): 질병·부상 결석 = 보강권 대신 «이월 검토 중»(RegularAbsenceCarryReview) · 사유 글 필수+증빙 사진 1~3장(비공개 버킷 absence-evidence, 7일 안 추가) · 신청함 «질병·부상 결석»(ILLNESS_CARRY) [이월 승인]=기존 resolveWorkbenchAbsence 재사용 / [보강권으로] · 7일 사진 없음 자동 전환·90일 뒤 사진 삭제(cron/makeup-credits) · 출결 결석 시 보류 · 카카오 안내·FAQ·«결석 알리기» 문구. **마이그레이션 20261114130000 운영 미적용**(없어도 예전 방식으로 동작). tsc 0·tests 4827-0·guards 82-0. 새 SQL 은 실제 Postgres 에서 미실행 — 적용 후 읽기 검증 필요 | 검수 대기 |
 | 11-14 | PM: 청구 월 카드(f8bc4572+결제하기 안전장치 87c09363·중복 누름 8e43b575)·기사 운행표 휴원·휴무(067011c5)·앱 1.0.3 버전(5175e8ec) 묶음 배포 a2ce24e READY·오류 0. 안드로이드 vc6 내부 테스트 게시·iOS Codemagic #6 TestFlight 처리 완료(외부 베타 정보 미입력 경고만) | 완료 |
 | 11-14 | developer(기사님 운행표 휴원·휴무, claude/driver-paused-holiday): 휴원·퇴원·첫 수업 전 = 회색 뱃지+탑승·미탑승 잠금(명단 유지), 휴무일 = 맨 위 «오늘은 휴무(사유)»+정규 줄 잠금, 저장 API 2곳 409, 관리자 운행표 뱃지+«이 달 휴무». 판정 = regularRunDayRules(학부모 childShuttleRules 재사용). 운영 읽기: 휴원 3명·6행 뱃지 대상. 리뷰 반영(월말 다음 달 미입력=모름·반 0개는 퇴원 기록 있을 때만 퇴원·409 문구 표시) tsc 0·node --test 4672/0·guards 5/0 | 재검수 대기 |
 | 11-14 | developer(청구 월 카드, claude/billing-cards): 학부모 청구 탭·아이 기록 = 한 달 한 줄(청구월·합계·상태) + 세부 시트(할인 «원래−할인=낼 금액»·기존 결제 버튼 그대로 시트 안) · 할인 원인 = Payment 에 할인 칸 없음, 글(description) 안에만 있어 카드가 원문을 통째로 보였음 → 해석 156/157건 · 청구 탭 날짜 두 번 변환 · tests 4661-0·guards 5-0·tsc 0 | 검수 대기 |
@@ -73,4 +88,3 @@
 | 11-14 | developer(아이 기록 w1~w4·q1~q4, claude/child-record): 새 화면 /mypage/record(홈 소속·요약 4칸·청구 이력 연도칩+필터 시트+월 묶음 접기·출석 12개월 막대(기록 없음 «–»)·수강 반 타임라인·특강/유니폼/리포트) · 순수 lib/parent/childRecordRules + 조회 childRecordQuery(첫 SQL 권한 재확인·섹션별 null·무tz 두 번) · 홈 한 줄·청구 탭 요약 줄/형제 칩/월 묶음/납부 완료 한 줄 행·수업 탭 «이번 달 출석 n/m»+«전체 기록»·소식 요약 줄 · 홈 영수증 = 결제 권한자(q3) · BarChart missing/showValues · tests/parent-child-record-rules 15건. tsc 0·tests 4571-0·운영 읽기 대조(납부 합계 SQL 일치) | 검수 대기 |
 | 11-14 | developer(수업 영상, claude/session-video): SessionVideo·YouTubeConnection 표(마이그레이션 20261114120000, RLS FORCE, 버킷 session-videos 50MB — 운영 미적용) · 선생님 촬영·직접 업로드·삭제(당일 KST 자정까지) · 학부모 재생 API/부품 · /admin/youtube 연결 · cron youtube-upload 15분 · 안드로이드 영상 촬영·선택. tsc 0·전체 테스트 fail 0 | 검수 대기 |
 | 11-14 | developer(학부모 설정 화면 손보기, claude/parent-settings-fix): 결제 방법 줄 세로 접힘(.academy-input width:100% 가 w-32 를 이김) · 옛 앱 알림 «업데이트» 안내(nativePushNotice·appUpdateTarget, 아이폰 1.0 은 버튼 없이 글) · 버전 «앱 1.0.2 / 화면 xxxxxxx»(appVersionLabels) · 아래 탭 64→48px+env 안전영역(pb-safe 는 정의 없던 글자) · tests/parent-settings-fix-1114 | 완료(전체 fail 0·tsc 0) |
-| 11-13 | developer(대시보드·통계 개편, claude/admin-stats 2커밋): 대시보드 맨 위 카드 6개(재원생·수납률·출석률·신규/퇴원·체험→등록·유니폼) + 통계 /admin/stats 탭 5개(?tab=&branch=&period=, 필터 버튼+창) · 순수 규칙 lib/stats/statsRules.ts(학년 KST 3월 기준·성별·지점·유니폼 5묶음) + 조회 statsQueries.ts(무tz 두 번·tz 한 번) · 접힌 «운영 현황» 제거(내용은 통계 탭) · 신청 설정 «유입 통계» 제거 · «통계» 메뉴 대시보드 아래 · 옛 /api/admin/stats 삭제. 운영 DB 대조: 재원생 133 = 목록 «활성» 133, 학년·성별·지점·유니폼 합 133. tests 4521-0 · tsc 0 · studentVisibility 4-1(payerAccess.ts 기존 실패, 이번 변경 무관) | 검수 대기 |
