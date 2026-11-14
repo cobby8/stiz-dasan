@@ -8,6 +8,7 @@ import test from "node:test";
 const parentAbsence = await readFile("src/lib/regular/parent-regular-absence.ts", "utf8");
 const staffQueries = await readFile("src/lib/staff-session-queries.ts", "utf8");
 const sessionClient = await readFile("src/app/staff/sessions/[sessionId]/SessionInProgressClient.tsx", "utf8");
+const studentSheet = await readFile("src/components/staff/SessionStudentSheet.tsx", "utf8");
 
 test("신고와 취소 모두 원장에게 알린다", () => {
   // 취소를 안 알리면 원장이 결석으로 알고 준비한 채로 남는다.
@@ -51,8 +52,10 @@ test("방학특강 명단은 정규 결석 신고를 끌어다 쓰지 않는다"
 
 test("출석 화면에 사전 신고가 보인다", () => {
   // 학부모 신고만 «학부모 결석 알림»으로 띄운다(출석부가 만든 질병·부상 표시는 아래 체크 버튼으로 보인다).
-  assert.match(sessionClient, /student\.absenceReport\?\.source === "PARENT" && \(/);
-  assert.match(sessionClient, /학부모 결석 알림/);
+  // 2026-11-14 수업 화면 간결화: 명단 줄에는 «결석 신고» 표시, 사유·확정 여부는 학생 상세 시트에 있다.
+  assert.match(sessionClient, /student\.absenceReport\?\.source === "PARENT" && \(\s*<span[^>]*>결석 신고<\/span>/);
+  assert.match(studentSheet, /student\.absenceReport\?\.source === "PARENT" && \(/);
+  assert.match(studentSheet, /학부모 결석 알림/);
   // 사유 표기는 학부모 화면과 같은 표를 쓴다.
-  assert.match(sessionClient, /REASON_LABEL as ABSENCE_REASON_LABEL/);
+  assert.match(studentSheet, /REASON_LABEL as ABSENCE_REASON_LABEL/);
 });

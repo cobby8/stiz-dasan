@@ -184,6 +184,21 @@ export function appBuildHasPush(userAgent: string | null | undefined): boolean {
   return Boolean(app) && !isAppVersionBelow(app!.version, NATIVE_PUSH_MIN_APP_VERSION);
 }
 
+/** «영상 촬영»을 누르면 동영상 카메라가 바로 열리는 첫 안드로이드 앱 버전(WebFileChooser 의 ACTION_VIDEO_CAPTURE) */
+export const NATIVE_VIDEO_CAPTURE_MIN_ANDROID_VERSION = "1.0.3";
+
+/**
+ * «영상 촬영»이 촬영 화면 대신 파일 선택으로 떨어지는 옛 안드로이드 앱인가(순수 — 테스트로 못박는다).
+ * - 안드로이드 앱 1.0.3 미만 → true (촬영 요청을 사진으로만 알아들어 영상은 파일 선택 화면이 뜬다)
+ * - 표식이 없는 안드로이드 스토어 앱(1.0) → true
+ * - 아이폰 앱·일반 브라우저 → false (브라우저·WKWebView 가 capture 를 직접 처리한다)
+ */
+export function needsAppUpdateForVideoCapture(input: { userAgent: string | null | undefined; storeApp?: boolean }): boolean {
+  const app = storeAppVersionOf(input.userAgent);
+  if (app) return app.platform === "android" && isAppVersionBelow(app.version, NATIVE_VIDEO_CAPTURE_MIN_ANDROID_VERSION);
+  return input.storeApp === true && /\bAndroid\b/.test(String(input.userAgent ?? ""));
+}
+
 /**
  * 설정 화면 «앱 정보 → 버전» 글자(순수 — 테스트로 못박는다).
  * 학부모에게 package.json 의 «0.1.0» 은 틀린 정보처럼 보여서(원장 11-14) 빼고,
