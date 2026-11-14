@@ -636,8 +636,14 @@ test("출결 저장 경로: 정규 결석은 발급 전에 보류 여부를 보�
   assert.ok(fn.indexOf("isIllnessCreditHeld(") < fn.indexOf("return syncMakeupCreditForAttendance("), "발급 함수보다 먼저 본다");
   // 출석·지각으로 정정할 때의 회수는 사유와 상관없이 그대로(ABSENT 일 때만 보류를 본다)
   assert.doesNotMatch(fn, /status !== "ABSENT" && await isIllnessCreditHeld/);
-  for (const [path, name] of [["src/app/actions/staff-sessions.ts", "saveStaffAttendance"], ["src/app/actions/admin.ts", "saveAttendance"]]) {
-    const source = read(path);
+  // 2026-11-14 출결 취소(clearStaffAttendance)가 생겨 선생님 쪽은 «저장»·«취소» 두 함수가 각각 한 번씩 부른다.
+  // 함수마다 «사유 정리 → 보강권 맞춤» 순서이고 한 번뿐인지를 따로 본다.
+  const staffSource = read("src/app/actions/staff-sessions.ts");
+  const adminSource = read("src/app/actions/admin.ts");
+  const staffSave = staffSource.slice(staffSource.indexOf("export async function saveStaffAttendance"), staffSource.indexOf("// ── 출결 취소(미확인으로 되돌리기)"));
+  const staffClear = staffSource.slice(staffSource.indexOf("export async function clearStaffAttendance"), staffSource.indexOf("async function getMakeupCompletedParentRecipients"));
+  assert.equal(staffSource.split("await syncCreditForRegularSession(").length - 1, 2, "선생님 쪽 정규 보강권 맞춤은 저장·취소 두 곳뿐");
+  for (const [source, name] of [[staffSave, "saveStaffAttendance"], [staffClear, "clearStaffAttendance"], [adminSource, "saveAttendance"]]) {
     const reasonAt = source.indexOf("applyAttendanceAbsenceReasonInTx(tx,");
     const syncAt = source.indexOf("await syncCreditForRegularSession(");
     assert.ok(reasonAt > 0 && syncAt > reasonAt, `${name}: 사유(질병·부상 표시) 저장 뒤에 보강권을 맞춘다`);
