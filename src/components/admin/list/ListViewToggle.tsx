@@ -60,6 +60,8 @@ export default function ListViewToggle<T extends string>({
  */
 export function useRememberedListView<T extends string>(storageKey: string, allowed: readonly T[], fallback: T) {
     const [view, setView] = useState<T>(fallback);
+    // 저장값을 읽었는지(세 번째 반환값). 무거운 보기를 저장값 확인 전에 헛그리지 않게 쓸 수 있다
+    const [ready, setReady] = useState(false);
 
     useEffect(() => {
         try {
@@ -69,6 +71,7 @@ export function useRememberedListView<T extends string>(storageKey: string, allo
         } catch {
             // 사생활 보호 모드 등에서 저장소 접근이 막혀도 기본 보기로 동작
         }
+        setReady(true);
         // allowed 는 보통 상수 배열이라 처음 한 번만 읽으면 된다
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [storageKey]);
@@ -82,5 +85,5 @@ export function useRememberedListView<T extends string>(storageKey: string, allo
         }
     };
 
-    return [view, changeView] as const;
+    return [view, changeView, ready] as const;
 }
