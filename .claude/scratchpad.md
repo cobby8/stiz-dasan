@@ -108,12 +108,27 @@
 💡 tester 참고: `node --test tests/parent-inquiry-thread.test.mjs tests/parent-news-annual.test.mjs tests/parent-apply-menu.test.mjs`. 마이그레이션 적용 «전»: 대화는 첫 글+옛 답변만·학부모 이어 쓰기는 «새 문의» 안내·학원 답은 adminNote 에 저장·환불 문의는 청구 연결 없이 접수. 주의 입력: 2,000/2,001자 · 남의 문의 id 주소 직접 입력(404) · 종결된 문의에 이어 쓰기(대기중 복귀) · 같은 청구 환불 문의 두 번 · 지난 공지 ?page=0/99/abc · 형제 계정의 특강 신청서(아이 칸 비움).
 ⚠️ reviewer 참고: ① 새 SQL 은 실제 Postgres 미실행 ② 앱 안 대관·특강 화면은 공개 테마를 /mypage 틀 안에 겹쳐 그린다 — 모양·하단 고정 바 위치는 실기기 확인 필요 ③ 요청함 답변 칸은 이제 빈칸으로 열린다(예전엔 저장된 답을 고쳐 덮어씀).
 
+### 구현 기록 (developer · 11-14 셔틀 탑승 알림 묶음 A, claude/shuttle-board-notify)
+📝 구현한 기능: 셔틀 «탔어요·내렸어요» 알림 · «수업 종료» 출결 스위치 · 홈 «오늘 셔틀» 실제 시각 · 관리자 출결 저장 알림 규칙 통일 · 가입 안내문 문구
+
+| 파일 경로 | 변경 내용 | 신규/수정 |
+|----------|----------|----------|
+| src/lib/shuttle/boardingNoticeRules.ts · boardingNoticeSweep.ts · api/cron/push-outbox/route.ts | 탑승 알림 규칙(순수)·훑기·크론 연결 | 신규/수정 |
+| src/lib/attendance/attendanceNoticeRules.ts · actions/staff-sessions.ts · actions/admin.ts(saveAttendance) | 출석 알림 규칙 한 곳, 선생님·관리자 공용 | 신규/수정 |
+| src/lib/shuttle/parent.ts · lib/mypage/summary.ts · app/mypage/MyPageClient.tsx | 홈 «오늘 셔틀» 실제 시각 | 수정 |
+| src/lib/mypage/parentSettings.ts · lib/customer-notice/templates.ts | CLASS_COMPLETED=출결 · «결석 알리기» | 수정 |
+| tests/shuttle-boarding-notice(신규 17건) · staff-session-completion-policy · staff-session-review · staff-attendance-toggle · parent-signup-guide | 테스트 | 신규/수정 |
+
+💡 tester 참고: 기사 화면에서 «탑승» → 1분 뒤 대표 보호자 앱 알림(등원 줄 «셔틀에 탔어요», 하원 줄 «셔틀에서 내렸어요»). 1분 안에 되돌리거나 미탑승으로 고치면 안 옴. 보낸 뒤 고쳐도 정정 알림 없음. 설정 «셔틀» 끄면 휴대폰 울림 없음(종 목록에는 남음). 관리자 출결: 오늘 수업에서 상태가 바뀐 출석·지각 아이만 «○○ 학생이 출석했습니다», 같은 저장 반복·지난 날짜는 조용. 주의: 형제·보호자 없는 아이·방학특강 미전환 신청·자정 직후.
+⚠️ reviewer 참고: ① 새 SQL 2개 실제 Postgres 미실행 ② ShuttleBoarding.checkedAt 타입이 schema 와 마이그레이션이 달라 초(EXTRACT EPOCH)로만 비교 ③ 30분 한도는 내가 넣은 안전장치(배포 직후·크론 장애 뒤 몰아 보내기 방지) ④ 관리자 방학특강 출결도 같은 규칙으로 바꿈(예전 «방학특강 출석이 기록되었습니다» 전원 발송 제거).
+
 ---
 
 ## 작업 로그 (최근 10건)
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-14 | developer(셔틀 탑승 알림 묶음 A, claude/shuttle-board-notify): 셔틀 «탔어요·내렸어요» 앱 알림(탑승 체크 1분 뒤·30분 한도·대표 보호자·정규+방학특강·SHUTTLE_ 이벤트, push-outbox 크론 훑기) · «수업 종료»를 «출결» 스위치로 · 홈 «오늘 셔틀» 실제 시각(탑승 08:52·하차 18:40) · 관리자 출결 저장 알림 = 선생님과 같은 규칙 함수(바뀐 아이만·출석/지각만·오늘만·한 번만, «출결이 기록되었습니다» 전체 발송 제거) · 가입 안내문 «결석 알리기». DB 변경 없음. tsc 0·tests 5284-0·guards 337-0. 새 SQL 2개(훑기·홈 시각) 실제 Postgres 미실행 | 검수 대기 |
 | 11-14 | developer(재검수 권장, claude/merged-carry): 휴원 수강료 «남은 이월» 차감 대상을 처리 기록의 학생 + 병합된 대표 학생(mergedIntoStudentId 따라가기, 5단계) 청구로 넓힘(pause-settlement.ts CARRY_TARGET_STUDENTS_SQL) · 병합 결과(PairResult.carryNotice)에 «남은 이월 ○원은 대표 학생 청구에서 차감됩니다» 한 줄 · 관리자 수강 변경 화면은 신청 id 로 읽어 이미 보임(변경 없음). tsc 0·tests 5267-0·guards 337-0. 새 SQL(재귀 CTE) 실제 Postgres 미실행 | 검수 대기 |
 | 11-14 | developer(학부모 5단계, claude/parent-step5-inquiry): 보낸 문의 화면·대화·이어 쓰기(ParentRequestMessage, 관리자 요청함·신청함 답변 이어 쓰기, 앱 알림만) · 소식 사진 앱 안 크게 보기 · 지난 공지(/mypage/news 20건씩)·연간 일정(/mypage/annual) · 앱 안 «신청» 메뉴(유니폼=본사 쇼핑몰 바깥 링크, 대관·방학특강=공개 부품을 /mypage 아래에서) · 청구 탭 «환불 문의»(청구 id·금액 연결). **마이그레이션 20261115110000 운영 미적용**(없어도 동작). tsc 0·tests 5202-0·guards 82-0. 새 SQL 실제 Postgres 미실행·앱 안 신청 화면 실기기 미확인 | 검수 대기 |
 | 11-14 | developer(학부모 5단계, claude/parent-step5-enroll-shuttle): c2 수강 변경 화면에서 승인된 휴원·퇴원 «취소 요청» 한 번에(708ae954) · c8 «반 추가» 신청 — 학년 맞는 반·정원 차면 대기·원장 승인 때 수강 등록(6a00d594) · c5 셔틀 «계속 바꾸기» — 신청→원장 승인→적용일 명단 반영, 이용 시작·중단은 같은 목록(7fab2086). **마이그레이션 20261115120000 운영 미적용**(없으면 입구만 숨김). tsc 0·tests 5204-0·guards 82-0. 새 SQL 실제 Postgres 미실행 | 검수 대기 |

@@ -9,6 +9,9 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { assertRegularMakeupAllowed, assertMakeupSessionAllowed, CompensationConflict, lockCompensation } from "@/lib/billing/absence-compensation-guard";
 import { isKstYmd, todayKst } from "@/lib/datetime/kst";
+// 관리자 출결 저장의 학부모 알림 = 선생님 화면과 같은 규칙·같은 발송 함수
+import { attendanceNoticePayload, pickAttendanceNoticeTargets } from "@/lib/attendance/attendanceNoticeRules";
+import { deliverParentNotification, getClassParentRecipients, getStudentParentRecipients, type ParentRecipient } from "@/lib/staff-notifications";
 import { normalizeApprovalClassIds } from "@/lib/enrollment/approval-classes";
 // 정원 경고·셔틀 위치 저장 = 신청서 승인과 새 «원생 등록»이 같이 쓰는 한 곳
 import { findOverCapacityClasses } from "@/lib/enrollment/class-capacity";
@@ -1585,6 +1588,52 @@ async function syncAdminSeasonalMakeupCredit(sessionDateId: string, studentId: s
     await syncCreditForSeasonalSeat({ enrollmentDateId: seats[0].id, studentId, status });
 }
 
+/** 그 수업의 저장 «전» 출결(학생 → 상태). 관리자 출결 저장이 «바뀐 아이»를 고르는 기준이다. */
+async function readAttendanceStatuses(sessionId: string): Promise<Map<string, string>> {
+    const rows = await prisma.$queryRawUnsafe<{ studentId: string; status: string }[]>(
+        `SELECT "studentId", status FROM "Attendance" WHERE "sessionId" = $1`, sessionId,
+    );
+    return new Map(rows.map((row) => [row.studentId, row.status]));
+}
+
+/**
+ * 관리자 출결 저장 뒤 학부모 출석 알림 — 선생님 화면과 같은 규칙 함수(attendanceNoticeRules)·같은 발송 함수를 쓴다.
+ * 알림이 실패해도 출결 저장은 성공으로 둔다(장부에 남은 실패분은 push-outbox 크론이 다시 보낸다).
+ */
+async function notifyAttendanceChanges(input: {
+    classId: string;
+    sessionId: string;
+    sessionYmd: string;
+    records: readonly { studentId: string; status: string }[];
+    previousByStudent: ReadonlyMap<string, string>;
+    attendanceIdByStudent: ReadonlyMap<string, string>;
+    findRecipients: (studentIds: string[]) => Promise<ParentRecipient[]>;
+}) {
+    try {
+        // 관리자 화면은 날짜를 골라 저장한다 — 오늘(KST) 수업일 때만 알린다(todayOnly: 지난 날 정리·앞날 미리 입력은 조용히).
+        const targets = pickAttendanceNoticeTargets({
+            records: input.records, previousByStudent: input.previousByStudent, sessionYmd: input.sessionYmd, todayOnly: true,
+        });
+        if (targets.length === 0) return;
+        const [recipients, classRows] = await Promise.all([
+            input.findRecipients(targets.map((target) => target.studentId)),
+            prisma.$queryRawUnsafe<{ name: string }[]>(`SELECT name FROM "Class" WHERE id = $1 LIMIT 1`, input.classId),
+        ]);
+        const className = classRows[0]?.name ?? "수업";
+        const recipientByStudent = new Map(recipients.map((recipient) => [recipient.studentId, recipient]));
+        await Promise.allSettled(targets.map(async (target) => {
+            const recipient = recipientByStudent.get(target.studentId);
+            const attendanceId = input.attendanceIdByStudent.get(target.studentId);
+            if (!recipient || !attendanceId) return;
+            await deliverParentNotification(attendanceNoticePayload({
+                recipient, status: target.status, className, sessionId: input.sessionId, attendanceId,
+            }));
+        }));
+    } catch (error) {
+        console.error("[saveAttendance] 출석 알림 실패(출결은 저장됨)", { sessionId: input.sessionId, error });
+    }
+}
+
 // absenceReason(정규만): "ILLNESS_INJURY"=질병·부상 결석 표시 / null=표시 끄기 / 생략=그대로.
 // 관리자가 찍은 질병·부상은 바로 «확정(CONFIRMED)» — 청구 작업대 이월 후보가 된다(이월 적용은 증빙 확인 후).
 export async function saveAttendance(classId: string, date: string, records: { studentId: string; status: string; absenceReason?: "ILLNESS_INJURY" | null }[], options?: { sessionDateId?: string | null }) {
@@ -1619,17 +1668,22 @@ export async function saveAttendance(classId: string, date: string, records: { s
                 sessionDateId,
             );
             const sessionId = sessionRows[0].id;
+            // 저장 «전» 출결 — 알림은 바뀐 아이에게만 보낸다(선생님 화면과 같은 규칙).
+            const previousByStudent = await readAttendanceStatuses(sessionId);
+            const attendanceIdByStudent = new Map<string, string>();
             for (const rec of allowedRecords) {
-                await prisma.$executeRawUnsafe(
+                const saved = await prisma.$queryRawUnsafe<{ id: string }[]>(
                     `INSERT INTO "Attendance" (id, "sessionId", "studentId", status, "checkedAt", "checkedByUserId", "createdAt", "updatedAt")
                      VALUES (gen_random_uuid()::text, $1, $2, $3, NOW(), $4, NOW(), NOW())
                      ON CONFLICT ("sessionId", "studentId") DO UPDATE SET
                        status = $3,
                        "checkedAt" = COALESCE("Attendance"."checkedAt", NOW()),
                        "checkedByUserId" = $4,
-                       "updatedAt" = NOW()`,
+                       "updatedAt" = NOW()
+                     RETURNING id`,
                     sessionId, rec.studentId, rec.status, admin.appUserId,
                 );
+                if (saved[0]) attendanceIdByStudent.set(rec.studentId, saved[0].id);
             }
             // 보강권 — 결석이면 발급, 출석·지각으로 정정되면 회수(코치 화면과 같은 규칙·같은 키).
             // ★ 출결은 이미 저장됐다. 보강권이 실패해도 출결 저장을 실패로 만들지 않는다.
@@ -1642,15 +1696,12 @@ export async function saveAttendance(classId: string, date: string, records: { s
                     });
                 }
             }
-            const studentIds = allowedRecords.map(r => r.studentId);
-            const dateStr = new Date(date).toLocaleDateString("ko-KR", { month: "long", day: "numeric" });
-            await notifyParentsOfStudents(
-                studentIds,
-                "ATTENDANCE",
-                "출석 확인",
-                `${dateStr} 방학특강 출석이 기록되었습니다.`,
-                "/mypage",
-            );
+            // 출석 알림 — 선생님 화면과 같은 규칙·같은 문구(바뀐 아이만·출석/지각만·오늘 수업만·한 번만).
+            await notifyAttendanceChanges({
+                classId, sessionId, sessionYmd: date, records: allowedRecords, previousByStudent, attendanceIdByStudent,
+                // 특강 회차 학부모는 학생으로 바로 찾는다(이 반의 정규 수강생이 아니다)
+                findRecipients: (ids) => getStudentParentRecipients(ids),
+            });
         } catch (e) {
             console.error("Failed to save seasonal attendance:", e);
             throw new Error("방학특강 출석 저장 실패");
@@ -1674,14 +1725,19 @@ export async function saveAttendance(classId: string, date: string, records: { s
         // 예전엔 키 없이 새 기록을 만들어, 그 뒤 코치가 수업을 시작하면 기록이 둘로 갈라질 수 있었다.
         const sessionId = await prisma.$transaction(tx => findOrCreateRegularSession(tx, { classId, dateYmd: date }));
 
+        // 저장 «전» 출결 — 알림은 바뀐 아이에게만 보낸다(선생님 화면과 같은 규칙).
+        const previousByStudent = await readAttendanceStatuses(sessionId);
+        const attendanceIdByStudent = new Map<string, string>();
         // 각 학생 출석 기록 upsert
         for (const rec of records) {
-            await prisma.$executeRawUnsafe(
+            const saved = await prisma.$queryRawUnsafe<{ id: string }[]>(
                 `INSERT INTO "Attendance" (id, "sessionId", "studentId", status, "createdAt", "updatedAt")
                  VALUES (gen_random_uuid()::text, $1, $2, $3, NOW(), NOW())
-                 ON CONFLICT ("sessionId", "studentId") DO UPDATE SET status = $3, "updatedAt" = NOW()`,
+                 ON CONFLICT ("sessionId", "studentId") DO UPDATE SET status = $3, "updatedAt" = NOW()
+                 RETURNING id`,
                 sessionId, rec.studentId, rec.status
             );
+            if (saved[0]) attendanceIdByStudent.set(rec.studentId, saved[0].id);
         }
         // 결석 사유(질병·부상) — 코치 출석부와 같은 함수·같은 저장 위치(RegularAbsence). 실패해도 출결은 유지.
         if (isKstYmd(date)) {
@@ -1711,16 +1767,13 @@ export async function saveAttendance(classId: string, date: string, records: { s
                 });
             }
         }
-        // 출결 완료 알림 → 학부모에게 전송
-        const studentIds = records.map(r => r.studentId);
-        const dateStr = new Date(date).toLocaleDateString("ko-KR", { month: "long", day: "numeric" });
-        await notifyParentsOfStudents(
-            studentIds,
-            "ATTENDANCE",
-            "출결 확인",
-            `${dateStr} 출결이 기록되었습니다.`,
-            "/mypage",
-        );
+        // 출석 알림 — 선생님 화면과 같은 규칙·같은 문구(2026-11-14 원장 결정표).
+        // 예전엔 저장할 때마다 반 학부모 전원에게 «출결 기록» 알림이 나갔다 → 바뀐 아이만·출석/지각만·오늘 수업만·한 번만.
+        // 결석은 여기서 보내지 않는다 — 3분 뒤에도 결석이면 결석 알림 훑기(absence-parent-notice-sweep)가 출결 표를 보고 보낸다.
+        await notifyAttendanceChanges({
+            classId, sessionId, sessionYmd: date, records, previousByStudent, attendanceIdByStudent,
+            findRecipients: (ids) => getClassParentRecipients(classId, ids, date),
+        });
     } catch (e) {
         console.error("Failed to save attendance:", e);
         throw new Error("출결 저장 실패");

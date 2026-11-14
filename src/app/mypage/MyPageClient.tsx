@@ -12,7 +12,7 @@ import type { ParentShuttleOverviewItem } from "@/lib/shuttle/parent";
 import type { PendingSeasonalChild } from "@/lib/seasonal/pendingSeasonalChildren";
 // "오늘/이번주 우리 아이" 요약 + «오늘 할 일» 집계용 순수 로직(표시 전용, 기존 데이터 재조합).
 import {
-    getKstNow, getKstDateStr, computeNextClass, nextClassWhenLabel, filterTodayShuttle,
+    getKstNow, getKstDateStr, computeNextClass, nextClassWhenLabel, filterTodayShuttle, todayShuttleLineTexts,
     summarizePendingPayments, countRecentNotices, legacyHomeHashTarget,
 } from "@/lib/mypage/summary";
 import { formatKstDate } from "@/lib/datetime/kst";
@@ -232,10 +232,8 @@ export default function MyPageClient({ data, notices = [], inquiryCounts = { ans
         : resumingEnrollments.length > 0
             ? `복귀 예정인 반 ${resumingEnrollments.length}개 · ${[...resumingEnrollments].sort((a, b) => a.resumeFrom.localeCompare(b.resumeFrom))[0].resumeFromLabel}부터`
             : "수강 중인 반이 없습니다";
-    // 오늘 셔틀 줄의 «등원 08:40»·«하원 17:30» — 확정 시각이 있는 것만
-    const todayPickup = todayShuttles.map((s) => s.pickupEtaLabel).find(Boolean);
-    const todayDropoff = todayShuttles.map((s) => s.dropoffEtaLabel).find(Boolean);
-    const todayShuttleLines = [todayPickup ? `등원 ${todayPickup}` : null, todayDropoff ? `하원 ${todayDropoff}` : null].filter((v): v is string => Boolean(v));
+    // 오늘 셔틀 줄 — 기사님이 찍었으면 실제 시각(«탑승 08:52»·«하차 18:40»), 아직이면 예정 시각(«등원 08:40 승차»·«하원 17:30 하차»)
+    const todayShuttleLines = todayShuttleLineTexts(todayShuttles);
     // 다음 수업·오늘 셔틀을 누르면 «일정» 탭의 그 칸으로(홈 아래 접힌 칸으로 뛰지 않는다)
     const scheduleHref = `/mypage/history?child=${encodeURIComponent(child.id)}`;
 

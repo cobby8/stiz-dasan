@@ -14,6 +14,8 @@ import { rosterOverviewItems } from "@/lib/shuttle/childShuttleRules";
 import { loadChildClasses } from "@/lib/parent/childClassesQuery";
 import { getMonthlyClassDates, loadAnnualPlanEvents } from "@/lib/enrollment/monthlyClassDates";
 import { todayKst } from "@/lib/datetime/kst";
+// 기사님이 찍은 실제 탑승·하차 시각(홈 «오늘 셔틀» 줄) — 알림과 같은 규칙 파일로 «어느 아이의 등원/하원인가»를 푼다.
+import { boardingTimeKey, boardingTimeLabels, type BoardingRow } from "@/lib/shuttle/boardingNoticeRules";
 
 export type ParentShuttleOverviewItem = {
   id: string;
@@ -38,7 +40,40 @@ export type ParentShuttleOverviewItem = {
   dropoffEtaLabel?: string | null;
   /** 셔틀 명단에서 만든 7일 운행 항목 — 일정 탭은 요일별 한 줄로 줄여 보인다(노선·차량 칸이 없다) */
   fromRoster?: boolean;
+  /** 오늘 항목에만: 기사님이 «탑승»을 찍은 실제 시각 "HH:MM"(KST) — 등원이면 탄 시각, 하원이면 내린 시각. 아직이면 null */
+  actualTimeLabel?: string | null;
 };
+
+/**
+ * 오늘 내 자녀의 실제 탑승·하차 시각(«아이:방향 → "08:52"»). 정규(셔틀 명단 줄)·방학특강(셔틀 신청) 모두.
+ * studentIds 는 getParentShuttleOverview 가 childAccessWhere 로 고른 내 자녀뿐이고, 방학특강 신청 id 도 그 자녀 것만 넘긴다(IDOR 안전).
+ * 탑승 표를 못 읽으면 빈 값 — 홈은 예정 시각만 보인다.
+ */
+async function loadTodayBoardingTimes(
+  today: string,
+  studentIds: string[],
+  seasonalStudentByRequest: Map<string, string | null>,
+): Promise<Map<string, string>> {
+  try {
+    // checkedAt 은 초(epoch)로 읽어 kst.ts 로 «HH:MM» 을 만든다 — 칼럼이 timestamp(UTC 저장)든 timestamptz 든 같은 값이다.
+    const rows = await prisma.$queryRawUnsafe<BoardingRow[]>(
+      `SELECT b.direction, b."shuttleRequestId", b.status,
+              r."studentId" AS "rosterStudentId", r.direction AS "stopDirection",
+              EXTRACT(EPOCH FROM b."checkedAt")::float8 AS "checkedEpoch"
+         FROM "ShuttleBoarding" b
+         LEFT JOIN "RegularShuttleStop" r ON b.direction = 'REGULAR' AND r.id = b."shuttleRequestId"
+        WHERE b."serviceDate" = $1
+          AND b.status = 'BOARDED'
+          AND (r."studentId" = ANY($2::text[])
+               OR (b.direction IN ('PICKUP','DROPOFF') AND b."shuttleRequestId" = ANY($3::text[])))`,
+      today, studentIds, [...seasonalStudentByRequest.keys()],
+    );
+    return boardingTimeLabels(rows, seasonalStudentByRequest);
+  } catch (error) {
+    console.error("[parent shuttle] 오늘 탑승 시각 조회 실패", error instanceof Error ? error.name : "");
+    return new Map();
+  }
+}
 
 type RouteStatus = "DRAFT" | "CONFIRMED" | "COMPLETED";
 type RegularApplicationRow = {
@@ -352,7 +387,20 @@ export async function getParentShuttleOverview(
     }];
   });
 
-  return [...regularItems, ...rosterOnly, ...specialItems, ...regularRequestItems].sort((left, right) => {
+  // 오늘 항목에 기사님이 찍은 실제 시각을 붙인다(홈 «오늘 셔틀» 줄: 탑승 08:52 · 하차 18:40). 정규·방학특강 같은 길.
+  const today = todayKst();
+  const allItems = [...regularItems, ...rosterOnly, ...specialItems, ...regularRequestItems];
+  const hasToday = allItems.some((item) => item.direction && item.serviceDate?.slice(0, 10) === today);
+  const boardingTimes = hasToday
+    ? await loadTodayBoardingTimes(today, studentIds, new Map(seasonalEntries.map((entry) => [entry.shuttleRequestId, entry.studentId])))
+    : new Map<string, string>();
+  const withActual = boardingTimes.size === 0 ? allItems : allItems.map((item) => (
+    item.direction && item.serviceDate?.slice(0, 10) === today
+      ? { ...item, actualTimeLabel: boardingTimes.get(boardingTimeKey(item.studentId, item.direction)) ?? null }
+      : item
+  ));
+
+  return withActual.sort((left, right) => {
     return (right.serviceDate ?? "").localeCompare(left.serviceDate ?? "") || left.label.localeCompare(right.label, "ko");
   });
 }
