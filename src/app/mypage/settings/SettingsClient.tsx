@@ -3,6 +3,7 @@
 import UiIcon from "@/components/common/UiIcon";
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { updateMyName, changeMyPassword, saveMyPushPrefs, saveMyPreferredPaymentMethod } from "@/app/actions/parent-settings";
 import { PAYMENT_METHOD_OPTIONS, type PreferredPaymentMethod } from "@/lib/payments/preferredMethod";
 import { usePushSubscription } from "@/lib/push/usePushSubscription";
@@ -48,9 +49,16 @@ function Message({ text, tone }: { text: string; tone: "ok" | "error" }) {
 export function MyPhotoRow({ userId, name, version }: { userId: string; name: string; version: string | null }) {
     return (
         <li>
-            <p className="px-4 pt-2 text-sm font-medium text-[var(--color-academy-ink)]">내 사진</p>
+            <p className="px-4 pt-2 text-sm font-medium text-[var(--color-academy-ink)]">내 사진(보호자)</p>
             <div className="px-1">
                 <ProfilePhotoEditor target="me" ownerId={userId} name={name} initialVersion={version} />
+            </div>
+            {/* 아이 사진은 여기가 아니다 — 실제로 아이 사진을 이 칸에 올린 일이 있었다(2026-11-14) */}
+            <div className="flex flex-wrap items-center gap-x-2 px-4 pb-2">
+                <span className="break-keep text-xs text-[var(--color-academy-muted)]">아이 사진은 «우리 아이 기록 → 아이 정보»에서 올려요.</span>
+                <Link href="/mypage/record#record-info" className="academy-button-text min-h-11! inline-flex items-center">
+                    아이 사진 올리러 가기
+                </Link>
             </div>
         </li>
     );

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { requireVerifiedParent } from "@/lib/auth-guard";
 import { parentOwnsStudent } from "@/lib/profilePhoto/access";
 import { ProfilePhotoUnreadableError, deleteProfilePhoto, saveProfilePhoto } from "@/lib/profilePhoto/server";
@@ -12,6 +13,12 @@ import { profilePhotoUploadProblem, profilePhotoUrl, type ProfilePhotoOwner } fr
 export const dynamic = "force-dynamic";
 
 type Resolved = { owner: ProfilePhotoOwner } | { response: NextResponse };
+
+/** 아이 사진을 바꾸면 관리자 원생 목록 저장분(60초)을 비워 새 사진이 바로 보이게 한다(2026-11-14). 실패해도 사진 저장은 성공 */
+function refreshAdminStudentList(owner: ProfilePhotoOwner): void {
+  if (owner.kind !== "student") return;
+  try { revalidateTag("admin-students", { expire: 0 }); } catch { /* 다음 60초 갱신 때 반영된다 */ }
+}
 
 /** 로그인·소유 확인 뒤 «누구 사진인지»를 정한다. 통과하지 못하면 돌려줄 응답을 준다 */
 async function resolveOwner(target: unknown, studentId: unknown): Promise<Resolved> {
@@ -46,6 +53,7 @@ export async function POST(request: Request) {
     if (problem) return NextResponse.json({ error: problem }, { status: 400 });
 
     const { version } = await saveProfilePhoto(resolved.owner, Buffer.from(await file.arrayBuffer()));
+    refreshAdminStudentList(resolved.owner);
     return NextResponse.json({ ok: true, version, url: profilePhotoUrl(resolved.owner, version) });
   } catch (error) {
     if (error instanceof ProfilePhotoUnreadableError) {
@@ -64,6 +72,7 @@ export async function DELETE(request: Request) {
     if ("response" in resolved) return resolved.response;
 
     await deleteProfilePhoto(resolved.owner);
+    refreshAdminStudentList(resolved.owner);
     return NextResponse.json({ ok: true, version: null });
   } catch (error) {
     console.error("[profile-photo] 지우기 실패", error instanceof Error ? error.name : "");

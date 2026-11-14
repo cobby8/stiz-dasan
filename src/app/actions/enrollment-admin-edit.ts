@@ -13,6 +13,7 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth-guard";
 import { todayKst } from "@/lib/datetime/kst";
+import { lockCompensation } from "@/lib/billing/absence-compensation-guard";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import { buildEnrollmentOperationsEvent } from "@/lib/operations-events/admin-hooks";
 import { enqueueWebsiteOperationsEventInTransaction } from "@/lib/operations-events";
@@ -23,6 +24,21 @@ import {
   planEnrollmentMove,
   readEnrollmentLinkCounts,
 } from "@/lib/enrollment/admin-enrollment-edit";
+// 반 이동 뒤 정리(처리 중 신청·옛 반의 결석·보강권·미납 안내) — 관리자 상태 변경(updateEnrollmentStatus)과 같은 부품
+import {
+  askConfirmed,
+  blockedRequestsMessage,
+  cleanupEndedClassInTx,
+  emptyCleanupSummary,
+  openRequestsMessage,
+  openRequestViews,
+  planOpenChangeRequests,
+  readOpenChangeRequestsForUpdate,
+  supersedeChangeRequests,
+  supersedeNote,
+  type EnrollmentEndCleanupSummary,
+  type OpenRequestView,
+} from "@/lib/enrollment/enrollment-end-cleanup";
 
 type EnrollmentStatus = "ACTIVE" | "PAUSED" | "WITHDRAWN";
 
@@ -43,8 +59,15 @@ function revalidateEnrollmentViews(studentId: string | null, classIds: string[])
 }
 
 export type MoveEnrollmentResult =
-  | { ok: true; newEnrollmentId: string; newStartsOn: string }
-  | { ok: false; code: "INVALID" | "OVER_CAPACITY"; message: string };
+  | { ok: true; newEnrollmentId: string; newStartsOn: string; cleanup: EnrollmentEndCleanupSummary }
+  | { ok: false; code: "INVALID" | "OVER_CAPACITY"; message: string }
+  // 처리 중 신청 — OPEN_REQUESTS 는 보여 준 신청 id 목록(closeOpenRequests)으로 다시 보내면 함께 닫고, BLOCKED_REQUESTS 는 신청함에서 먼저 처리
+  | { ok: false; code: "OPEN_REQUESTS" | "BLOCKED_REQUESTS"; message: string; requests: OpenRequestView[] };
+
+/** 확인이 필요한 신청 목록을 들고 트랜잭션을 빠져나오는 표식(아직 아무것도 쓰지 않은 시점에만 던진다) */
+class OpenRequestsStop extends Error {
+  constructor(readonly code: "OPEN_REQUESTS" | "BLOCKED_REQUESTS", message: string, readonly requests: OpenRequestView[]) { super(message); }
+}
 
 /** 반 이동: 기존 수강은 적용일로 수강 종료, 새 반 수강을 같은 조건으로 생성 */
 export async function moveEnrollmentToClass(input: {
@@ -53,6 +76,8 @@ export async function moveEnrollmentToClass(input: {
   effectiveFrom?: string;
   reason?: string;
   allowOverCapacity?: boolean;
+  /** 확인창에서 «함께 정리하고 저장»을 눌렀을 때 화면에 보여 준 신청 id 목록(서버가 다시 읽은 대상과 같아야 진행) */
+  closeOpenRequests?: string[];
 }): Promise<MoveEnrollmentResult> {
   const admin = await requireAdmin();
   const today = todayKst();
@@ -61,6 +86,9 @@ export async function moveEnrollmentToClass(input: {
   let fromClassId: string | null = null;
   try {
     const result = await prisma.$transaction(async (tx) => {
+      // 0) 잠금 순서: 청구 정산 전역 잠금 → 처리 중 신청 → 수강(적용일 크론·휴원 정산과 같은 순서)
+      await lockCompensation(tx);
+      const openRequests = await readOpenChangeRequestsForUpdate(tx, input.enrollmentId);
       // 1) 기존 수강·대상 반·대상 반의 기존 수강을 잠그고 다시 읽는다(화면 값 믿지 않음)
       const [from] = await tx.$queryRawUnsafe<Array<{
         studentId: string; classId: string; status: EnrollmentStatus; startsOn: string | null; createdYmd: string | null; studentName: string; className: string;
@@ -90,9 +118,27 @@ export async function moveEnrollmentToClass(input: {
         `SELECT id, status FROM "Enrollment" WHERE "studentId" = $1 AND "classId" = $2 FOR UPDATE`,
         from.studentId, input.toClassId,
       );
-      // 처리 중 수강 변경 신청 수 — 삭제 차단과 같은 조회(readEnrollmentLinkCounts)를 재사용
+      // 2) 판정(순수 함수 한 곳) — 먼저 신청을 빼고 이동 자체가 되는지 본다(정원·반 오류를 신청 확인보다 먼저 알린다)
+      const precheck = planEnrollmentMove({
+        from, target: target ?? null, targetExistingStatus: existing?.status ?? null, openChangeRequests: 0,
+        effectiveDate, today, allowOverCapacity: input.allowOverCapacity,
+      });
+      if (!precheck.ok) throw new EnrollmentEditError(precheck.message, precheck.code);
+      // 처리 중 신청: 같은 반으로 가는 승인 건은 닫고, 나머지는 확인을 받고, 돈·반영이 걸린 건은 막는다(아직 아무것도 안 썼다)
+      const action = { type: "MOVE" as const, toClassId: input.toClassId };
+      const requestPlan = planOpenChangeRequests(openRequests, action);
+      if (requestPlan.block.length) throw new OpenRequestsStop("BLOCKED_REQUESTS", blockedRequestsMessage(requestPlan.block.length), openRequestViews(requestPlan.block));
+      // 확인창에서 본 신청과 지금 닫을 대상이 정확히 같을 때만 진행(그 사이 바뀌었으면 아무것도 쓰지 않고 다시 묻는다)
+      if (!askConfirmed(requestPlan.ask, input.closeOpenRequests)) {
+        throw new OpenRequestsStop("OPEN_REQUESTS", openRequestsMessage(requestPlan.ask.length, Boolean(input.closeOpenRequests?.length)), openRequestViews(requestPlan.ask));
+      }
+      const cleanup = emptyCleanupSummary();
+      cleanup.supersededRequests = await supersedeChangeRequests(tx, [...requestPlan.supersede, ...requestPlan.ask], {
+        enrollmentId: input.enrollmentId, actorUserId: admin.appUserId,
+        note: supersedeNote(action, today, requestPlan.ask.length > 0), confirmed: requestPlan.ask.length > 0,
+      });
+      // 처리 중 수강 변경 신청 수 — 삭제 차단과 같은 조회(readEnrollmentLinkCounts)로 다시 센다(위에서 닫은 뒤라 남은 게 있으면 막힌다)
       const links = await readEnrollmentLinkCounts(tx, { enrollmentId: input.enrollmentId, studentId: from.studentId, classId: from.classId });
-      // 2) 판정(순수 함수 한 곳)
       const plan = planEnrollmentMove({
         from, target: target ?? null, targetExistingStatus: existing?.status ?? null, openChangeRequests: links.openChangeRequests,
         effectiveDate, today, allowOverCapacity: input.allowOverCapacity,
@@ -142,11 +188,20 @@ export async function moveEnrollmentToClass(input: {
         enrollmentChangeRequestId: history?.id,
       });
       if (startEvent) await enqueueWebsiteOperationsEventInTransaction(tx, startEvent);
-      return { ok: true as const, newEnrollmentId: created.id, newStartsOn: plan.newStartsOn };
+
+      // 7) 옛 반의 이동 적용일(포함) 이후 결석·보강권 정리 + 미납 청구 안내(같은 트랜잭션)
+      const endedClass = await cleanupEndedClassInTx(tx, {
+        studentId: from.studentId, classId: from.classId, className: from.className, fromYmd: effectiveDate, actorUserId: admin.appUserId,
+      });
+      Object.assign(cleanup, endedClass);
+      return { ok: true as const, newEnrollmentId: created.id, newStartsOn: plan.newStartsOn, cleanup };
     });
     revalidateEnrollmentViews(studentId, [fromClassId, input.toClassId].filter(Boolean) as string[]);
+    revalidatePath("/admin/enrollment-changes");
+    revalidatePath("/admin/absence");
     return result;
   } catch (e) {
+    if (e instanceof OpenRequestsStop) return { ok: false, code: e.code, message: e.message, requests: e.requests };
     if (e instanceof EnrollmentEditError) return { ok: false, code: e.code, message: e.message };
     console.error("Failed to move enrollment:", e);
     return { ok: false, code: "INVALID", message: "반 이동에 실패했어요. 잠시 후 다시 해 주세요." };

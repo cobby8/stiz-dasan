@@ -143,6 +143,26 @@
 
 ---
 
+### 리뷰 결과 (reviewer · 11-15 앱 간편로그인 연결 A안, claude/app-link-handoff)
+
+📊 종합 판정: 수정 필요(필수 1)
+
+✅ 잘된 점: 웹(앱 아님) 경로 무회귀(mode=client·via 없으면 기존 함수 그대로) · 발급 실패 catch→옛 숨김 폴백 · raw SQL 만·조건부 UPDATE 원자 소비·hash 저장 · @supabase/ssr 0.8.0 확인: code-verifier 는 즉시 setAll, 세션은 SIGNED_IN 이벤트로 setAll, getItem 이 setItems 먼저 읽어 verifyOtp→linkIdentity 같은 클라이언트 OK · 유니버설/앱 링크 경로에 /auth/link-handoff 없음 · 아이콘·hex·800/900 없음 · KST 금지 패턴 없음 · node --test 38-0
+
+🔴 필수 수정:
+- src/app/auth/link-handoff/page.tsx:22 `referrer: "no-referrer"` + start/route.ts:39 Origin 검사 → Fetch 규격상 referrer policy 가 no-referrer 인 문서의 POST 는 같은 출처여도 `Origin: null` 을 보낸다(Chrome·Firefox, Rails 의 유명한 CSRF 오류 사례). 그러면 [계속]이 항상 «이 화면에서 바로 시작할 수 없어요»로 끝나 기능 전체가 막힌다. 수정: 확인 화면 referrer 를 `same-origin`(또는 `strict-origin`)으로 바꾸거나, Origin 이 "null" 일 때 `Sec-Fetch-Site: same-origin` 을 대안으로 받기. 실기기(안드 Chrome·iOS Safari)로 확인 필수.
+
+🟡 권장 수정:
+- start/route.ts:69~89 — verifyOtp 뒤 사용자가 카카오/구글 화면에서 창을 닫거나 뒤로 가면 콜백이 안 와서 휴대폰 브라우저에 학부모 로그인(갱신 토큰)이 그대로 남는다. 확인 화면 문구 «자동으로 로그아웃됩니다»와 어긋남. 완화안: done/확인 화면 재방문 시 signOut, 또는 linkIdentity URL 받은 직후 세션 쿠키만 지우고 code-verifier 는 남기기(동작 검증 필요).
+- 같은 이유로 1회용 표 = 10분짜리 «로그인 열쇠»다(연결뿐 아니라 그 브라우저 전체 로그인·타인 소셜 연결 가능). 노출 경로는 앱 화면뿐이라 낮음이지만 문서·주석에 명시 권장. 연결 알림(SOCIAL_LOGIN_LINKED)은 유지돼 있어 좋음.
+- 바깥 브라우저가 이미 다른 계정(가족)으로 로그인돼 있으면 verifyOtp 가 덮고 콜백에서 로그아웃 → 그 브라우저의 원래 로그인이 사라진다(안내 문구 정도).
+- LinkProviderButton.tsx:151 visibilitychange 마다 router.refresh → 매번 표 1~3행 INSERT(이전 표는 10분간 계속 유효). 정리 크론이 있어 치명적이진 않음.
+- start/route.ts:56 getEnabledParentOAuthProviders 예외 시 표는 이미 소비된 채 500 — try/catch→"failed" 권장.
+- iOS NavigationPolicy: paymentActive 중이면 apex 링크가 .paymentPage 로 웹뷰 안에서 열린다(드문 경우).
+- 테스트 대부분이 소스 문자열 정규식 확인이라 위 Origin:null 같은 실제 동작은 못 잡는다(규칙 함수 실행 테스트는 의미 있음).
+
+---
+
 ## 작업 로그 (최근 10건)
 
 | 날짜 | 작업 내용 | 상태 |
@@ -155,9 +175,16 @@
 | 11-14 | developer(학부모 문구 정리, claude/parent-copy-cleanup): 원장 결정표 d1~d7 — 이름 통일(결석 알리기·셔틀 변경·보강 예약)·맨 아래 계정 링크 줄 삭제(설정 «계정» 묶음으로)·역할 신청 링크 제거·옛 기록 안내 삭제·빈 칸/«○○ 확인 중» 줄 숨김·셔틀 알림 결과 한 줄. 학부모용 셔틀 라벨 분리(PARENT_SHUTTLE_*), 가드 tests/parent-copy-names-guard. 미완: 수강 변경 «취소 요청»은 신청 내역으로 가는 버튼(조회에 신청 id 없음) | tsc 0 · fail 0 |
 | 11-15 | developer(학부모 여러 날 결석, claude/absence-period-parent): 이월 재검수 권장 ②~⑤(564ce9bc) + 학부모 «결석 알리기 › 여러 날»(4주·모든 사유, 날짜마다 saveReportedAbsenceInTx·알림 기간당 1회·복귀했어요/알림 취소·끝나기 전 앱 알림) · 질병·부상 증빙 기간 한 묶음·같은 기간 함께 승인 · 관리자 «기간 결석 등록» 입구 2곳·학부모 신고 표시. **마이그레이션 20261115100000 운영 미적용**(없으면 여러 날만 숨김). tsc 0·tests 5000-0·guards 82-0. 새 SQL 실제 Postgres 미실행 | 검수 대기 |
 | 11-14 | developer(완료한 수업 다시 보기·고치기, claude/staff-session-review): 수정 기간 규칙 한 곳(staffSessionEditWindow — 수업일 포함 7일·원장/부원장 무제한, 사진·영상·한 줄·메모·출결 정정 공통) · 수업 주소가 완료한 수업도 연다(CompletedSessionPanel: 발행 상태·[학부모에게 보내기]·출결 정정(정규·특강 좌석만, 미리 보기+확인 1회)·메모) · «지난 수업» 목록(/staff/sessions, 최근 14일) · 완료 뒤 수정은 OperationsAuditLog(STAFF_SESSION_REVIEW_EDIT)·알림 없음. tsc 0·tests 5088-0·guards 82-0. 새 SQL 은 실제 Postgres 미실행 | 검수 대기 |
+| 11-15 | reviewer(앱 연결 A안): 수정 필요 — 확인 화면 no-referrer 로 POST Origin:null → 시작 항상 거절(필수 1) · 중도 이탈 시 바깥 브라우저 로그인 잔존 등 권장 6 | 수정 요청 |
+| 11-15 | developer(앱에서 간편로그인 연결 A안, claude/app-link-handoff): 앱(UA STIZApp/)+nativeAuthEnabled 이면 /mypage/login-methods 가 제공자별 1회용 표(AccountLinkHandoff, hash 저장·10분) 발급 → apex https://stiz-dasan.kr/auth/link-handoff?t= 링크(바깥 브라우저) → 확인 화면(읽기만)·[계속] POST /start(Origin·원자 소비·magiclink 로그인·같은 계정 확인·linkIdentity via=app) → 콜백 via=app 은 이 브라우저 signOut local + /auth/link-handoff/done. 마이그레이션 20261115020000 **운영 미적용**. tsc 0·tests 5105-0 · **검수 1차 반영**: referrer same-origin+Origin null 은 Sec-Fetch-Site same-origin 만 · linkIdentity 직후 관리자 signOut(local)+세션 쿠키만 삭제(PKCE 열쇠 유지) · 발급·사용 모두 계정 재확인(PARENT·직원 역할 없음·휴대폰 인증·탈퇴 아님) · 옛 표 무효화·5분 · 주소 t 지우기 · 표시 쿠키 stiz-link-app 게이트 · 완료 화면 코드 문구+가린 아이디 · 확인 화면 가린 이름. tsc 0·tests 5108-0 | 재검수 대기 |
+| 2026-11-14 | 수강 정리 검수 권장 2건 확인·마무리(developer) — 취소 요청 대기 건 REJECTED+안내 문구(«…정리되었습니다»로 맞춤), closeOpenRequests=보여 준 신청 id 목록 대조(관리자 상태 변경·반 이동·화면 2곳) · tsc 0 · npm test 5145/fail 0 | 완료 |
+| 11-15 | developer(학부모 여러 날 결석, claude/absence-period-parent): 이월 재검수 권장 ②~⑤(564ce9bc) + 학부모 «결석 알리기 › 여러 날»(4주·모든 사유, 날짜마다 saveReportedAbsenceInTx·알림 기간당 1회·복귀했어요/알림 취소·끝나기 전 앱 알림) · 질병·부상 증빙 기간 한 묶음·같은 기간 함께 승인 · 관리자 «기간 결석 등록» 입구 2곳·학부모 신고 표시. **마이그레이션 20261115100000 운영 미적용**(없으면 여러 날만 숨김). tsc 0·tests 5000-0·guards 82-0. 새 SQL 실제 Postgres 미실행 | 검수 대기 |
+| 11-14 | reviewer(수강 변경 뒤 정리, 미커밋): 조건부 통과 — 필수 0·권장 4(①학부모 «취소 요청 대기» 걸린 승인 건을 SUPERSEDED 하면 cancelRequestStatus=PENDING 이 남아 «수강 변경 신청» 취소 요청 목록에 찌꺼기로 남음 → 함께 닫거나 ask 로 ②«함께 정리» 확인 시 화면에 보인 신청 id 를 서버에 넘겨 그 사이 새로 생긴 신청은 다시 묻기 ③쓰는 곳 없는 deleteEnrollment 반환형 정리 ④이미 ACTIVE 인 수강의 묵은 승인 신청은 같은 상태 저장으로는 안 닫힘(반 이동·신청함으로만)). tsc 0·관련 테스트 34/34 | 통과(권장 남음) |
+| 11-14 | developer(수강 변경 뒤 정리, claude/supersede-stale-change-requests): 관리자 상태 변경·반 이동 때 같은 수강의 처리 중 신청 = 같은 방향 승인 건 SUPERSEDED·대기/반대는 확인창·청구서/정산/원장 걸린 건 차단, 수강 종료·이동 시 옛 반 효력일(포함) 이후 결석 CANCELLED(note «수강 종료로 정리» → 알림 재조정 제외)·미사용 보강권 REVOKED(정산·이월·보강 예약·출석 기록은 보호), 미납 청구는 목록 안내만. 새 enrollment-end-cleanup.ts·EnrollmentCleanupNotice.tsx·테스트 15개, SUPERSEDED 이름표(신청함·학부모 내역). tsc·전체 5104 fail 0. 미커밋 | 검수 대기 |
 | 11-14 | developer(출결 다시 누르면 취소, claude/attendance-toggle): 선생님 수업 화면에서 선택된 출결 버튼을 다시 누르면 미확인(출결 기록 삭제) — 새 액션 clearStaffAttendance(정규·보강·체험·특강 좌석, dryRun 미리 보기). 결석 취소는 확인 1회·안 쓴 보강권 회수(기존 규칙 함수), 예약·사용된 보강권/정산된 결석이면 거부, 학부모 신고와 그 보강권은 유지, 알림 없음. tsc 0·tests 5023-0 | 완료(main 머지 전) |
 | 11-14 | developer(아이 정보 수정, claude/child-edit): 학부모 «수정» 시트(학교·학생 전화·주소·건강 특이사항 바로 반영 / 이름·생년월일 변경 신청→학생 상세 «정보 변경 요청» 승인·반려) · 건강 글 선생님 «특이»+상세 시트·기사님 줄 «특이» · 연락처 바꾸기(본인인증) · 연결된 가족 보기·끊기(대표만) · 막다른 문구 3곳 · 임시 생일 학년. 마이그레이션 20261114140000 **운영 미적용**. tsc 0·tests 4938-0·guards 82-0 | 검수 대기 |
 | 11-14 | developer(질병·부상 결석 이월, claude/illness-carry): 질병·부상 결석 = 보강권 대신 «이월 검토 중»(RegularAbsenceCarryReview) · 사유 글 필수+증빙 사진 1~3장(비공개 버킷 absence-evidence, 7일 안 추가) · 신청함 «질병·부상 결석»(ILLNESS_CARRY) [이월 승인]=기존 resolveWorkbenchAbsence 재사용 / [보강권으로] · 7일 사진 없음 자동 전환·90일 뒤 사진 삭제(cron/makeup-credits) · 출결 결석 시 보류 · 카카오 안내·FAQ·«결석 알리기» 문구. **마이그레이션 20261114130000 운영 미적용**(없어도 예전 방식으로 동작). tsc 0·tests 4827-0·guards 82-0. 새 SQL 은 실제 Postgres 에서 미실행 — 적용 후 읽기 검증 필요 | 검수 대기 |
 | 11-14 | developer(수업 진행 화면 간결화, claude/staff-session-compact): 출석부 화면·«출석 확인» 칸·«학생 정보·수업 관리» 펼침을 없애고 학생 한 줄 명단(이름+출결 3버튼)+상세 시트(SessionStudentSheet)+«더보기» · «오늘 수업 내용»+«수업 피드» → «오늘 수업» 한 칸(계획 접힘·불러오기) · 종료 창 중복 입력 제거 · 옛 안드로이드 앱(1.0.3 미만) 영상 촬영 안내. 서버·액션 변경 없음. tsc 0·tests 4808-0 | 완료(main 머지 전·실기기 점검 필요) |
 | 11-14 | developer(보강 예약 학년 판정, claude/makeup-grade): 학생 학년 = 생년월일 계산(student-grade.ts, 임시 생일 2000-01-01·빈 값이면 학년 글자), 후보 = 포함 먼저+±1 유지·미취학 위로 2학년·성인반끼리(credit-rules.makeupGradeFit, 목록·예약 같은 판정), 빈 목록 4종 그 자리 버튼(학년 확인·다시 확인·학원에 문의→홈 메시지 폼), 문구 한 줄씩. 휴원 차단 조건 없음. tsc 0·node --test 4795/0 | 검수 대기 |
 | 11-14 | PM: 청구 월 카드(f8bc4572+결제하기 안전장치 87c09363·중복 누름 8e43b575)·기사 운행표 휴원·휴무(067011c5)·앱 1.0.3 버전(5175e8ec) 묶음 배포 a2ce24e READY·오류 0. 안드로이드 vc6 내부 테스트 게시·iOS Codemagic #6 TestFlight 처리 완료(외부 베타 정보 미입력 경고만) | 완료 |
+| 11-14 | developer(기사님 운행표 휴원·휴무, claude/driver-paused-holiday): 휴원·퇴원·첫 수업 전 = 회색 뱃지+탑승·미탑승 잠금(명단 유지), 휴무일 = 맨 위 «오늘은 휴무(사유)»+정규 줄 잠금, 저장 API 2곳 409, 관리자 운행표 뱃지+«이 달 휴무». 판정 = regularRunDayRules(학부모 childShuttleRules 재사용). 운영 읽기: 휴원 3명·6행 뱃지 대상. 리뷰 반영(월말 다음 달 미입력=모름·반 0개는 퇴원 기록 있을 때만 퇴원·409 문구 표시) tsc 0·node --test 4672/0·guards 5/0 | 재검수 대기 |

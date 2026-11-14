@@ -15,6 +15,8 @@ import { SessionPhotoUploader, type SessionPhotoUploaderHandle, type SessionUplo
 import { SessionVideoUploader, type SessionVideoUploaderHandle, type SessionVideoUploaderState } from "@/components/staff/SessionVideoUploader";
 // 2026-11-15 수업 한 화면: 접는 칸·통합 글칸·학생 정보·아래 올리기 막대
 import UiIcon from "@/components/common/UiIcon";
+import ProfileAvatar from "@/components/common/ProfileAvatar";
+import { profilePhotoUrl } from "@/lib/profilePhoto/rules";
 import { WorkspaceSection } from "@/components/staff/WorkspaceSection";
 import { LessonTextEditor, type LessonTextSaveResult } from "@/components/staff/LessonTextEditor";
 import { useClassPeople } from "@/components/staff/RosterPersonInfo";
@@ -889,6 +891,8 @@ function LiveSessionWorkspace({
                 <div className="flex items-center gap-2">
                   {/* 이름 쪽을 누르면 이 줄 아래에 학생 정보가 펼쳐진다 — 연락처·수강료·메모·최근 출결은 거기서 본다 */}
                   <button type="button" aria-expanded={infoOpen} aria-controls={`roster-info-${student.id}`} aria-label={`${student.name} 상세 정보`} onClick={() => { setPeopleWanted(true); setInfoRow(infoOpen ? null : student.id); }} className="flex min-h-11 min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-left">
+                    {/* 아이 사진 28px(없으면 이름 첫 글자, 2026-11-14) — 체험·미전환 아이는 학생 id 가 없어 첫 글자 */}
+                    <ProfileAvatar decorative name={student.name} size={28} src={student.studentId ? profilePhotoUrl({ kind: "student", id: student.studentId }, student.photoVersion ?? null, true) : null} />
                     <span className="break-keep text-base font-semibold">{student.name}</span>
                     {/* 다른 반 아이가 보강 온 경우. 출석을 찍으면 보강권이 사용 처리되고, 결석이면 보강권은 그대로 남는다. */}
                     {student.makeup && (

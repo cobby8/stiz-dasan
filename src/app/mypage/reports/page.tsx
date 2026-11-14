@@ -2,6 +2,8 @@ import UiIcon from "@/components/common/UiIcon";
 import { getStudentReports, getMyPageData, getNoticesByClassIds, getChildrenFeedbacks, getGalleryByClassIds } from "@/lib/queries";
 import { requireVerifiedParent } from "@/lib/auth-guard";
 import Link from "next/link";
+import ProfileAvatar from "@/components/common/ProfileAvatar";
+import { profilePhotoUrl } from "@/lib/profilePhoto/rules";
 import { kstLabel, formatKstDate, todayKst } from "@/lib/datetime/kst";
 // 공지 3개월 기준 — 일정 탭과 같은 순수 함수 모듈(KST 달력 날짜로 비교)
 import { recentNotices } from "@/lib/mypage/parentSchedule";
@@ -76,6 +78,8 @@ export default async function ParentReportsPage() {
         c.enrollments.map((e: { classId: string | null }) => e.classId).filter((v): v is string => typeof v === "string" && v.length > 0),
     );
     const studentIds = childList.map((c) => c.id);
+    // 아이 사진 캐시 버전(홈과 같은 조회 — 내 아이만). 피드백 줄 앞 작은 사진에 쓴다(2026-11-14)
+    const photoVersionById = new Map(childList.map((c) => [c.id, c.photoVersion ?? null]));
     const [allNotices, feedbacks, gallery, mediaCounts] = await Promise.all([
         getNoticesByClassIds(classIds, 10),
         getChildrenFeedbacks(studentIds),
@@ -239,6 +243,8 @@ export default async function ParentReportsPage() {
                             <li key={fb.id}>
                                 <details className="group">
                                     <summary className="flex min-h-14 cursor-pointer list-none items-center gap-2 px-3 py-2 hover:bg-[var(--color-academy-soft)]">
+                                        {/* 어느 아이 피드백인지 한눈에 — 사진 28px(없으면 이름 첫 글자). 바로 아래 줄에 이름이 있어 장식용 */}
+                                        <ProfileAvatar decorative name={fb.studentName ?? ""} size={28} src={profilePhotoUrl({ kind: "student", id: fb.studentId }, photoVersionById.get(fb.studentId) ?? null, true)} />
                                         <div className="min-w-0 flex-1">
                                             <div className="flex items-start gap-2">
                                                 <p className="min-w-0 flex-1 break-keep text-sm font-medium text-[var(--color-academy-ink)]">{fb.title}</p>

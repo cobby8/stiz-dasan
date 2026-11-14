@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { previewStaffAttendanceCorrection, saveStaffAttendance } from "@/app/actions/staff-sessions";
 import UiIcon from "@/components/common/UiIcon";
+import ProfileAvatar from "@/components/common/ProfileAvatar";
+import { profilePhotoUrl } from "@/lib/profilePhoto/rules";
 import { RosterPersonInfo, type useClassPeople } from "@/components/staff/RosterPersonInfo";
 import { StatusChoiceButton, StatusPill, type StatusTone } from "@/components/staff/StatusChoiceButton";
 import { findRosterPerson } from "@/components/staff/sessionWorkspaceRules";
@@ -125,6 +127,8 @@ export function CompletedAttendanceRoster({ session, students, onStudentsChange,
             <div className="flex items-center gap-2">
               {/* 이름 쪽을 누르면 이 줄 아래에 학생 정보가 펼쳐진다 */}
               <button type="button" aria-expanded={infoOpen} aria-controls={`roster-info-${student.id}`} aria-label={`${student.name} 상세 정보`} onClick={() => onToggleInfo(student.id)} className="flex min-h-11 min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-left">
+                {/* 아이 사진 28px(없으면 이름 첫 글자, 2026-11-14) — 체험·미전환 아이는 학생 id 가 없어 첫 글자 */}
+                <ProfileAvatar decorative name={student.name} size={28} src={student.studentId ? profilePhotoUrl({ kind: "student", id: student.studentId }, student.photoVersion ?? null, true) : null} />
                 <span className="break-keep font-semibold text-[var(--color-academy-ink)]">{student.name}</span>
                 {student.makeup && <span className={`rounded px-1.5 py-0.5 text-xs ${TONE_BADGE_CLASS[ATTENDANCE_TONE.MAKEUP]}`}>보강</span>}
                 {student.trial && <span className="rounded bg-[var(--color-academy-primary-soft)] px-1.5 py-0.5 text-xs text-[var(--brand-accent)]">체험</span>}

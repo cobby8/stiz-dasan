@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { publishStaffSessionReport, saveSessionFeedLine, saveSessionMemo } from "@/app/actions/staff-sessions";
 import UiIcon from "@/components/common/UiIcon";
+import ProfileAvatar from "@/components/common/ProfileAvatar";
+import { profilePhotoUrl } from "@/lib/profilePhoto/rules";
 import { LessonTextEditor, type LessonTextSaveResult } from "@/components/staff/LessonTextEditor";
 import { RosterPersonInfo, useClassPeople } from "@/components/staff/RosterPersonInfo";
 import { SessionPhotoUploader } from "@/components/staff/SessionPhotoUploader";
@@ -48,9 +50,11 @@ export type PlannedLessonProps = {
 };
 
 /** 이름을 누르면 그 자리에서 학생 정보가 펼쳐지는 한 줄(출결 버튼 없는 명단용) */
-function RosterInfoRow({ rowId, name, trailing, open, onToggle, children }: {
+function RosterInfoRow({ rowId, name, photoSrc, trailing, open, onToggle, children }: {
   rowId: string;
   name: string;
+  /** 아이 사진 주소(없으면 이름 첫 글자) */
+  photoSrc?: string | null;
   trailing?: React.ReactNode;
   open: boolean;
   onToggle: () => void;
@@ -59,6 +63,7 @@ function RosterInfoRow({ rowId, name, trailing, open, onToggle, children }: {
   return (
     <li className="border-b border-[var(--color-academy-line)] py-1 last:border-b-0">
       <button type="button" aria-expanded={open} aria-controls={`roster-info-${rowId}`} onClick={onToggle} className="flex min-h-11 w-full items-center gap-2 text-left">
+        <ProfileAvatar decorative name={name} size={28} src={photoSrc ?? null} />
         <span className="min-w-0 flex-1 break-keep font-semibold text-[var(--color-academy-ink)]">{name}</span>
         {trailing}
         <span className="flex shrink-0 text-[var(--color-academy-muted)]">
@@ -165,7 +170,7 @@ export function PlannedLessonPanel({ lesson, startLocked, startPrimary, onStart,
         {people.loaded && people.people.length === 0 && <p className="py-2 text-xs text-[var(--color-academy-muted)]">표시할 학생이 없습니다.</p>}
         <ul aria-label="학생 명단">
           {people.people.map((person) => (
-            <RosterInfoRow key={person.id} rowId={person.id} name={person.name} open={infoRow === person.id} onToggle={() => setInfoRow(infoRow === person.id ? null : person.id)}>
+            <RosterInfoRow key={person.id} rowId={person.id} name={person.name} photoSrc={profilePhotoUrl({ kind: "student", id: person.id }, people.photoVersions[person.id] ?? null, true)} open={infoRow === person.id} onToggle={() => setInfoRow(infoRow === person.id ? null : person.id)}>
               <RosterPersonInfo person={person} photoVersion={people.photoVersions[person.id]} onOpenBilling={onOpenBilling} />
             </RosterInfoRow>
           ))}

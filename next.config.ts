@@ -135,6 +135,17 @@ const nextConfig: NextConfig = {
         ],
       },
       {
+        // 앱 «연결하기» 확인·시작·완료 화면(2026-11-15 A안) — 주소에 1회용 표가 실린다.
+        // 캐시 저장·검색 노출을 막는다. :path* 는 0개 이상이라 /auth/link-handoff 자체도 포함된다.
+        // 다른 사이트로 주소 전달(리퍼러)은 화면 메타데이터 referrer=no-referrer 가, 끼워 넣기(X-Frame-Options DENY)는
+        // 맨 아래 전역 규칙이 맡는다 — 같은 헤더를 여기 또 쓰면 뒤 규칙이 덮어써 헷갈리기만 한다.
+        source: "/auth/link-handoff/:path*",
+        headers: [
+          { key: "Cache-Control", value: "no-store" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
+        ],
+      },
+      {
         source: "/uploads/:path*",
         headers: [
           {

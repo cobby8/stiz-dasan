@@ -28,7 +28,8 @@ const ChildInfoEditSheet = dynamic(() => import("./ChildInfoEditSheet"), { ssr: 
 export function CollapsibleSection({ id, title, note, defaultOpen = true, children }: { id: string; title: string; note?: string | null; defaultOpen?: boolean; children: ReactNode }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <section aria-labelledby={`${id}-heading`} className="academy-panel overflow-hidden">
+    // id = 바로가기 주소(#record-info 등) — 마이페이지 «사진 올리기»가 이 칸으로 바로 온다(2026-11-14)
+    <section id={id} aria-labelledby={`${id}-heading`} className="academy-panel scroll-mt-4 overflow-hidden">
       <h2 id={`${id}-heading`} className="m-0">
         <button
           type="button"

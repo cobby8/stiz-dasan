@@ -792,7 +792,7 @@ function historyStatusLabel(row: ChangeHistoryRow): string {
 /** 결과 글자 색 — 거절만 눈에 띄게(위험색), 나머지는 차분하게. */
 function historyStatusClass(status: string): string {
   if (status === "REJECTED") return "text-[var(--color-academy-danger)]";
-  if (status === "CANCELED") return "text-[var(--color-academy-faint)]";
+  if (status === "CANCELED" || status === "SUPERSEDED") return "text-[var(--color-academy-faint)]";
   return "text-[var(--color-academy-ink)]";
 }
 

@@ -3,14 +3,15 @@ import { getAccessibleClassIds, getStaffClassAccessContext } from "@/lib/staff-c
 import { resolveStaffBillingGuard } from "@/lib/staff-billing-policy";
 import { normalizePhoneNumber } from "@/lib/staff-contacts";
 import { notMergedStudent } from "@/lib/studentVisibility";
+import { profilePhotoUpdatedAtSql, profilePhotoVersion } from "@/lib/profilePhoto/rules";
 import { todayKst } from "@/lib/datetime/kst";
 import { resolveBillingMonth, splitBillingMonth, unlinkedMonthlyBillScopeSql } from "@/lib/staff-billing-lookup";
 import { maskStaffBillAmounts } from "@/lib/staff-session-rules";
 
-export type StaffStudentListItem = { id: string; name: string; school: string | null; grade: string | null; studentPhone: string | null; parentName: string; parentPhone: string | null; classNames: string[] };
+export type StaffStudentListItem = { id: string; name: string; school: string | null; grade: string | null; studentPhone: string | null; parentName: string; parentPhone: string | null; classNames: string[]; /** 프로필 사진 캐시 버전(사진 없으면 null) */ photoVersion?: string | null };
 export type StaffBillingListItem = { id: string; classId: string; paymentClassId: string | null; studentName: string; className: string; title: string; amount: number | null; invoiceAmount: number | null; amountMismatch: boolean; studentMismatch: boolean; status: string; dueDate: Date; paidDate: Date | null; invoiceNo: string | null; confirmationStatus: string | null; confirmable: boolean; blockReason: string | null };
 type StaffBillingRow = Omit<StaffBillingListItem, "confirmable" | "blockReason">;
-type StudentRow = Omit<StaffStudentListItem, "classNames"> & { classNames: string[] | null };
+type StudentRow = Omit<StaffStudentListItem, "classNames" | "photoVersion"> & { classNames: string[] | null; photoUpdatedAt: Date | string | null };
 
 /** 담당 수업을 먼저 확정한 뒤 그 수업의 활성 수강생만 조회합니다. */
 export async function getStaffStudents(): Promise<StaffStudentListItem[]> {
@@ -20,14 +21,16 @@ export async function getStaffStudents(): Promise<StaffStudentListItem[]> {
   const rows = await prisma.$queryRawUnsafe<StudentRow[]>(
     `SELECT s.id, s.name, s.school, s.grade, s.phone AS "studentPhone",
             p.name AS "parentName", p.phone AS "parentPhone",
-            array_agg(DISTINCT c.name ORDER BY c.name) AS "classNames"
+            array_agg(DISTINCT c.name ORDER BY c.name) AS "classNames",
+            ${profilePhotoUpdatedAtSql("s")} AS "photoUpdatedAt"
      FROM "Student" s JOIN "User" p ON p.id = s."parentId"
      JOIN "Enrollment" e ON e."studentId" = s.id AND e.status = 'ACTIVE'
      JOIN "Class" c ON c.id = e."classId"
      -- 병합으로 흡수된 학생은 담당 반 명단에서 제외한다
      WHERE e."classId" = ANY($1::text[]) AND ${notMergedStudent("s")}
-     GROUP BY s.id, s.name, s.school, s.grade, s.phone, p.name, p.phone ORDER BY s.name`, classIds);
-  return rows.map((row) => ({ ...row, studentPhone: normalizePhoneNumber(row.studentPhone), parentPhone: normalizePhoneNumber(row.parentPhone), classNames: row.classNames ?? [] }));
+     GROUP BY s.id, s.name, s.school, s.grade, s.phone, s."photoPath", s."photoUpdatedAt", p.name, p.phone ORDER BY s.name`, classIds);
+  // 사진 시각은 버전 글자로만 바꿔 내보낸다(원래 시각 칸은 화면에 보내지 않는다)
+  return rows.map(({ photoUpdatedAt, ...row }) => ({ ...row, studentPhone: normalizePhoneNumber(row.studentPhone), parentPhone: normalizePhoneNumber(row.parentPhone), classNames: row.classNames ?? [], photoVersion: profilePhotoVersion(photoUpdatedAt) }));
 }
 
 /** 교사용 청구 화면은 담당 학생 범위의 조회만 제공하고 상태를 직접 바꾸지 않습니다. */
