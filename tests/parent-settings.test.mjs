@@ -260,10 +260,21 @@ test("④ 설정 화면: 원장 목록 항목 + 예전 ⋯ 메뉴 항목이 전�
   assert.match(page, /href="\/privacy"/);
   assert.match(page, /href="\/mypage\/withdraw"/);
   assert.match(page, /\{hasPasswordLogin && <PasswordRow \/>\}/, "비밀번호 바꾸기는 비밀번호 로그인 계정만");
-  for (const label of ["비밀번호 바꾸기", "휴대폰 알림", "글자 크기", "문제 신고·문의", "불편 신고", "앱에서 켤 수 있어요"]) assert.ok(client.includes(label), label);
+  for (const label of ["비밀번호 바꾸기", "휴대폰 알림", "글자 크기", "앱에서 켤 수 있어요"]) assert.ok(client.includes(label), label);
   assert.match(page, /SHOW_THEME_SETTING \?/, "테마 자리는 스위치 뒤에 숨김");
-  // 문제 신고는 홈 «문의»와 같은 경로(자유 메시지 OTHER) — 서버 유형 목록은 그대로
-  assert.match(client, /createParentRequest\(\{ userId: "", studentId: child\.id, type: "OTHER"/);
+  // 2026-11-14 문구 정리: 설정의 «문제 신고·문의» 폼은 홈 «문의»와 같은 기능이라 없애고, 홈 문의 폼으로 가는 링크 한 줄로 바꿨다
+  assert.match(page, /<Section title="도움">\s*<LinkRow href="\/mypage#parent-request-form" label="문의" \/>\s*<\/Section>/);
+  assert.doesNotMatch(client, /createParentRequest|FeedbackRow|불편 신고/);
+  // 그 링크가 닿는 홈 폼은 주소의 #parent-request-form 으로 펴지고, 보내는 값은 자유 메시지(OTHER) 그대로다
+  const home = read("src/app/mypage/MyPageClient.tsx");
+  assert.match(home, /if \(id === "parent-request-form"\) setShowRequestForm\(true\);/);
+  assert.match(home, /type: "OTHER",/);
+  // «계정» 묶음(2026-11-14 d3): 맨 아래 링크 줄에 있던 «내 계정»을 설정으로 — 비밀번호·간편로그인과 한 묶음
+  assert.match(page, /<Section title="계정">\s*<LinkRow href="\/account" label="내 계정" \/>\s*\{hasPasswordLogin && <PasswordRow \/>\}\s*<LinkRow href="\/mypage\/login-methods" label="간편로그인 연결" \/>/);
+  assert.doesNotMatch(page, /\/mypage\/roles/, "역할 추가 신청은 링크하지 않는다(d4)");
+  // 앱 정보: 앱 버전만 — 배포 번호(«화면 xxxxxxx»)는 보이지 않는다
+  assert.match(page, /\{version\.app && \(\s*<li className=\{ROW\}>/);
+  assert.doesNotMatch(page, /version\.web/);
   // 종류별 스위치는 학부모 계정에만 보인다(발송 쪽 PARENT 한정과 같은 기준)
   assert.match(page, /prefsAvailable=\{pushPrefs\.available && me\?\.role === "PARENT"\}/);
   // 설정 화면 조회는 로그인 사용자 기준(남의 정보 화면 없음)

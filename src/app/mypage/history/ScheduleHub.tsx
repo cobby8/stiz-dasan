@@ -128,11 +128,11 @@ function LegendItem({ children, label }: { children: ReactNode; label: string })
  */
 export function MonthCalendar({
     view,
-    planReady = true,
-    hasEnrollments,
     monthNav,
 }: {
     view: ParentMonthView;
+    // planReady·hasEnrollments = 예전 «이 달 수업일은 연간일정 확정 후 보여요» 한 줄의 조건.
+    // 그 안내를 없애(2026-11-14 문구 정리) 지금은 쓰지 않지만, 부르는 쪽(일정·수업 탭)은 그대로 넘긴다.
     planReady?: boolean;
     hasEnrollments: boolean;
     monthNav?: { prevHref: string; nextHref: string };
@@ -186,9 +186,6 @@ export function MonthCalendar({
                         <LegendItem label="휴무"><span aria-hidden="true" className="inline-flex size-4 items-center justify-center rounded bg-[var(--color-academy-cal-closed-soft)] text-xs font-medium leading-none text-[var(--color-academy-cal-closed)]">휴</span></LegendItem>
                         <LegendItem label="오늘"><span aria-hidden="true" className="inline-block size-3.5 rounded ring-2 ring-inset ring-[var(--color-academy-cal-today)]" /></LegendItem>
                     </p>
-                    {!planReady && hasEnrollments && (
-                        <p className="mt-1 px-1 text-xs text-[var(--color-academy-muted)]">이 달 수업일은 연간일정 확정 후 보여요.</p>
-                    )}
                 </div>
             </section>
     );
@@ -250,15 +247,13 @@ export default function ScheduleHub({
             {/* 한 달 달력 — 수업일(연한 칸) · 출결(점·고리·×) · 행사(별) · 휴무(회색 «휴») · 오늘(굵은 테두리) */}
             <MonthCalendar view={view} planReady={planReady} hasEnrollments={enrollments.length > 0} />
 
-            {/* 이 달 행사·휴무 — 한 줄 행(날짜 · 제목) */}
-            <section aria-labelledby="schedule-events-heading" className="academy-panel overflow-hidden">
-                <h2 id="schedule-events-heading" className="academy-section-title flex items-center justify-between border-b border-[var(--color-academy-line)] px-3 py-2">
-                    <span>행사·휴무</span>
-                    <span className="text-sm font-normal tabular-nums text-[var(--color-academy-muted)]">{view.events.length}</span>
-                </h2>
-                {view.events.length === 0 ? (
-                    <p className="px-3 py-2 text-sm text-[var(--color-academy-muted)]">이 달 행사·휴무 없음</p>
-                ) : (
+            {/* 이 달 행사·휴무 — 한 줄 행(날짜 · 제목). 행사·휴무가 없는 달은 칸째 그리지 않는다(2026-11-14 원장 결정 d7) */}
+            {view.events.length > 0 && (
+                <section aria-labelledby="schedule-events-heading" className="academy-panel overflow-hidden">
+                    <h2 id="schedule-events-heading" className="academy-section-title flex items-center justify-between border-b border-[var(--color-academy-line)] px-3 py-2">
+                        <span>행사·휴무</span>
+                        <span className="text-sm font-normal tabular-nums text-[var(--color-academy-muted)]">{view.events.length}</span>
+                    </h2>
                     <ul className="divide-y divide-[var(--color-academy-line)]">
                         {view.events.map((ev) => (
                             <li key={`${ev.startYmd}-${ev.title}`} className="flex min-h-11 items-center gap-2 px-3 py-2">
@@ -271,8 +266,8 @@ export default function ScheduleHub({
                             </li>
                         ))}
                     </ul>
-                )}
-            </section>
+                </section>
+            )}
 
             {/* 수강 반 — 한 줄 행(반 이름 · 요일 시간). 홈 «다음 수업»이 이 자리로 데려온다 */}
             {enrollments.length + resuming.length > 0 && (

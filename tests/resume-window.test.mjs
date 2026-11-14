@@ -103,7 +103,7 @@ test("earliestUsableFrom — 반 2개의 복귀일이 다르면 이른 날, 다�
 
 test("안내 문구·오류 — 복귀일(M/D)을 넣는다", () => {
   assert.equal(rw.resumeNotice("2026-11-16"), "복귀일(11/16) 이후 수업부터 신청할 수 있어요");
-  assert.equal(rw.resumeNotice("2026-11-16", "신고"), "복귀일(11/16) 이후 수업부터 신고할 수 있어요");
+  assert.equal(rw.resumeNotice("2026-11-16", "신고"), "복귀일(11/16) 이후 수업부터 알릴 수 있어요");
   assert.equal(rw.resumeNotice(null), "복귀일 이후 수업부터 신청할 수 있어요");
   const error = new rw.BeforeResumeError("2026-12-01");
   assert.equal(error.message, "BEFORE_RESUME_DATE");
@@ -410,7 +410,7 @@ test("결석 신고 — 목록 범위(4주) 밖 날짜는 거절, 경계일은 �
   assert.equal((await absence.reportRegularAbsence("p1", { ...body, date: "2026-12-14" })).ok, true, "목록 마지막 날");
   await assert.rejects(absence.reportRegularAbsence("p1", { ...body, date: "2026-12-21" }), /^Error: ABSENCE_TOO_FAR$/);
   // 문구
-  assert.match(read("src/app/api/mypage/regular-absence/route.ts"), /ABSENCE_TOO_FAR: `앞으로 \$\{ABSENCE_REPORT_WEEKS\}주 안의 수업만 신고할 수 있습니다\.`/);
+  assert.match(read("src/app/api/mypage/regular-absence/route.ts"), /ABSENCE_TOO_FAR: `앞으로 \$\{ABSENCE_REPORT_WEEKS\}주 안의 수업만 알릴 수 있습니다\.`/);
   const kakao = read("src/lib/kakao-absence-flow.ts");
   assert.match(kakao, /if \(code === "ABSENCE_TOO_FAR"\)/);
   assert.match(kakao, /export const ABSENCE_WEEKS = 4;/, "카카오 결석 후보도 같은 4주 — 상한 때문에 깨지지 않는다");

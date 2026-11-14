@@ -6,7 +6,7 @@ import { getEnrollmentChangeHistory } from "@/lib/enrollment/parent-change-reque
 import { parentKindName, shortMd } from "@/lib/enrollment/parentChangeStatus";
 import { deriveEnrollmentChangeStatus, deriveShuttleDayStatus } from "@/lib/requests/catalog";
 import { REASON_LABEL } from "@/lib/regular/regularAbsenceRules";
-import { SHUTTLE_DIRECTION_LABEL, SHUTTLE_EXCEPTION_KIND_LABEL } from "@/lib/shuttle/dayExceptionRules";
+import { PARENT_SHUTTLE_DIRECTION_LABEL, PARENT_SHUTTLE_EXCEPTION_KIND_LABEL } from "@/lib/shuttle/dayExceptionRules";
 import { absenceCreditLine, sortTimeline, toTimelineView, type ParentTimelineRow, type ParentTimelineView } from "@/lib/requests/parent-timeline-rules";
 
 // ── 학부모 «수업» 탭 신청 내역 타임라인(최근 3개월) — 2026-11-10 원장 결정 설계 B ─────────────
@@ -172,12 +172,12 @@ export async function getParentRequestTimeline(parentUserId: string): Promise<Pa
     });
   }
   for (const r of shuttles) {
-    const what = SHUTTLE_EXCEPTION_KIND_LABEL[r.kind as keyof typeof SHUTTLE_EXCEPTION_KIND_LABEL] ?? "셔틀 변경";
+    const what = PARENT_SHUTTLE_EXCEPTION_KIND_LABEL[r.kind as keyof typeof PARENT_SHUTTLE_EXCEPTION_KIND_LABEL] ?? "셔틀 변경";
     rows.push({
       key: `SHUTTLE_DAY:${r.id}`, kind: "SHUTTLE_DAY", id: r.id, studentId: r.studentId, studentName: r.studentName,
       title: `셔틀 · ${what}`, when: kstLabel(r.date),
       createdOn: r.createdOn, createdAt: iso(r.createdAt), rawStatus: deriveShuttleDayStatus(r.canceledAt),
-      details: [SHUTTLE_DIRECTION_LABEL[r.direction as keyof typeof SHUTTLE_DIRECTION_LABEL], r.location].filter(Boolean) as string[],
+      details: [PARENT_SHUTTLE_DIRECTION_LABEL[r.direction as keyof typeof PARENT_SHUTTLE_DIRECTION_LABEL], r.location].filter(Boolean) as string[],
       answer: null, openHref: "/mypage/shuttle",
     });
   }

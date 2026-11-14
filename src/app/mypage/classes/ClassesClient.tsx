@@ -87,8 +87,9 @@ function ClassCard({ card }: { card: ParentClassCard }) {
       ? `${kstLabel(card.startsOn)} 첫 수업`
       : card.nextClass
         ? `${kstLabel(card.nextClass)} ${card.startTime}`
+        // 연간일정이 아직 없어 다음 수업일을 모르면 «다음» 칸째 숨긴다(2026-11-14 문구 정리 — 학부모가 할 일이 없는 안내)
         : card.planMissing
-          ? "연간일정 확정 후 보여요"
+          ? null
           : "예정 없음";
   return (
     <article className="academy-panel !shadow-none p-3" aria-label={`${card.className} 반`}>

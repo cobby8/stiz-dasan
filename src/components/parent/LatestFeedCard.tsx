@@ -16,7 +16,7 @@ export default function LatestFeedCard({ card }: { card: FeedCard }) {
       <div className="flex items-center justify-between gap-2 border-b border-[var(--color-academy-line)] pl-3">
         <h2 id="latest-feed-heading" className="academy-section-title py-2">최신 수업 피드</h2>
         <Link href="/mypage/reports#news-reports" className="academy-button-text academy-button-sm shrink-0">
-          소식에서 더보기
+          더보기
         </Link>
       </div>
       <div className="space-y-1.5 px-3 py-2">

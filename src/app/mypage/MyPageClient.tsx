@@ -244,6 +244,15 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
     // 고른 아이의 반 상태 한 줄(휴원 예정 · 12/1부터 등). 눌러서 수강 변경 화면(결과·사유)으로.
     const childStatusLines = classStatusLines.filter((line) => line.studentId === child.id);
     const hasSummary = Boolean(nextClass) || todayShuttles.length > 0 || childStatusLines.length > 0;
+    // 이름 아래 한 줄 — «다음 수업» 줄이 보이면 반 개수는 겹치는 말이라 뺀다(복귀 예정 수만 남긴다).
+    // 전부 복귀 예정인 아이는 «수강 중인 반이 없습니다» 대신 복귀 예정을 말한다(2026-11-14)
+    const heroEnrollLine = currentEnrollments.length > 0
+        ? nextClass
+            ? (resumingEnrollments.length > 0 ? `복귀 예정 ${resumingEnrollments.length}개` : "")
+            : `수강 중인 반 ${currentEnrollments.length}개${resumingEnrollments.length > 0 ? ` · 복귀 예정 ${resumingEnrollments.length}개` : ""}`
+        : resumingEnrollments.length > 0
+            ? `복귀 예정인 반 ${resumingEnrollments.length}개 · ${[...resumingEnrollments].sort((a, b) => a.resumeFrom.localeCompare(b.resumeFrom))[0].resumeFromLabel}부터`
+            : "수강 중인 반이 없습니다";
     // 오늘 셔틀 줄의 «등원 08:40»·«하원 17:30» — 확정 시각이 있는 것만
     const todayPickup = todayShuttles.map((s) => s.pickupEtaLabel).find(Boolean);
     const todayDropoff = todayShuttles.map((s) => s.dropoffEtaLabel).find(Boolean);
@@ -344,16 +353,15 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                     <ProfileAvatar decorative name={child.name} size={64} src={profilePhotoUrl({ kind: "student", id: child.id }, child.photoVersion, true)} />
                     <div className="min-w-0 flex-1">
                         <h1 id="parent-child-heading" className="academy-heading">{child.name} 학생</h1>
-                        <p className="mt-1 text-sm leading-relaxed text-[var(--color-academy-muted)]">
-                            {/* 전부 복귀 예정인 아이는 «수강 중인 반이 없습니다» 대신 복귀 예정을 말한다(2026-11-14) */}
-                            {currentEnrollments.length > 0
-                                ? `수강 중인 반 ${currentEnrollments.length}개${resumingEnrollments.length > 0 ? ` · 복귀 예정 ${resumingEnrollments.length}개` : ""}`
-                                : resumingEnrollments.length > 0
-                                    ? `복귀 예정인 반 ${resumingEnrollments.length}개 · ${[...resumingEnrollments].sort((a, b) => a.resumeFrom.localeCompare(b.resumeFrom))[0].resumeFromLabel}부터`
-                                    : "수강 중인 반이 없습니다"}
-                            {/* 첫 수업 전인 반이 있으면 개시일만 덧붙인다(상태는 수강 중) */}
-                            {startsLaterEnrollment && <span className="ml-2">{formatKstDate(startsLaterEnrollment.startsOn, { month: "long", day: "numeric" })}부터 수업 시작</span>}
-                        </p>
+                        {/* 2026-11-14 문구 정리: 바로 아래 «다음 수업» 줄이 있으면 «수강 중인 반 N개»는 같은 말이라 뺀다.
+                            복귀 예정·개시일처럼 아래 줄에 없는 내용만 남기고, 남길 말이 없으면 줄째 그리지 않는다. */}
+                        {(heroEnrollLine || startsLaterEnrollment) && (
+                            <p className="mt-1 text-sm leading-relaxed text-[var(--color-academy-muted)]">
+                                {heroEnrollLine}
+                                {/* 첫 수업 전인 반이 있으면 개시일만 덧붙인다(상태는 수강 중) */}
+                                {startsLaterEnrollment && <span className={heroEnrollLine ? "ml-2" : undefined}>{formatKstDate(startsLaterEnrollment.startsOn, { month: "long", day: "numeric" })}부터 수업 시작</span>}
+                            </p>
+                        )}
                     </div>
                 </div>
                 {data.children.length > 1 && (
@@ -451,7 +459,9 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                 <span aria-hidden="true" className="shrink-0 text-[var(--color-academy-faint)]">▸</span>
             </Link>
 
-            {/* ③ 처리할 일 — 해야 할 일이 있는 줄만 보인다. 알림·설정은 머리줄의 «알림»·«설정»으로 옮겼다 */}
+            {/* ③ 처리할 일 — 해야 할 일이 있는 줄만 보인다. 알림·설정은 머리줄의 «알림»·«설정»으로 옮겼다.
+                할 일이 0건이면 칸째 그리지 않는다(2026-11-14 원장 결정 d7 — «처리할 일이 없어요» 한 줄을 위해 칸을 두지 않는다) */}
+            {hasTodo && (
             <section aria-labelledby="parent-todo-heading" className="academy-panel overflow-hidden">
                 <h2 id="parent-todo-heading" className="academy-section-title border-b border-[var(--color-academy-line)] px-3 py-2">처리할 일</h2>
                 <ul className="divide-y divide-[var(--color-academy-line)]">
@@ -493,11 +503,9 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                             </Link>
                         </li>
                     )}
-                    {!hasTodo && (
-                        <li className="flex min-h-11 items-center px-3 text-sm text-[var(--color-academy-muted)]">지금 처리할 일이 없어요</li>
-                    )}
                 </ul>
             </section>
+            )}
 
             {/* 최신 수업 피드 — «처리할 일» 바로 아래, 고른 아이의 최신 공개 수업 1건. 없으면 칸을 그리지 않는다 */}
             {(() => {
@@ -511,9 +519,6 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                 <section aria-labelledby="pending-seasonal-heading" className="rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-warning-soft)] p-4 shadow-sm">
                     <div className="mb-3">
                         <h2 id="pending-seasonal-heading" className="academy-section-title">방학특강 신청 자녀</h2>
-                        <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
-                            학생 등록 후 정규 수업·청구가 보여요.
-                        </p>
                     </div>
                     <div className="space-y-2">
                         {pendingSeasonalChildren.map((c, idx) => (
@@ -537,13 +542,16 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                                         {c.offeringTitles.join(", ")}
                                     </p>
                                 )}
-                                <Link
-                                    href="/mypage/seasonal"
-                                    // 보조 버튼(테두리) — 홈의 꽉 찬 색은 납부 몫(M-07)
-                                    className="academy-button-secondary mt-2"
-                                >
-                                    방학특강 결석·보강
-                                </Link>
+                                {/* 위 «처리할 일»에 같은 목적지(/mypage/seasonal) 줄이 이미 보이면 버튼은 그리지 않는다 — 같은 길 하나만 */}
+                                {seasonalUpcoming <= 0 && (
+                                    <Link
+                                        href="/mypage/seasonal"
+                                        // 보조 버튼(테두리) — 홈의 꽉 찬 색은 납부 몫(M-07)
+                                        className="academy-button-secondary mt-2"
+                                    >
+                                        방학특강 결석·보강
+                                    </Link>
+                                )}
                             </div>
                         ))}
                     </div>
@@ -594,11 +602,7 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                         보이는데, 실제로는 전부 사람이 읽고 손으로 처리하는 메모였다. 결석처럼 진짜
                         기능이 있는 것은 그 기능으로 보내고, 나머지는 자유 메시지 하나로 받는다. */}
                     <div className="rounded-xl bg-[var(--color-academy-warning-soft)] border border-[var(--color-academy-line)] px-3 py-2 text-xs text-[var(--color-academy-warning)] leading-relaxed">
-                        결석은 여기 적지 마시고{" "}
-                        <Link href="/mypage/regular-absence" className="font-semibold underline">결석 알리기</Link>·
-                        <Link href="/mypage/seasonal" className="font-semibold underline">방학특강 결석</Link>·
-                        <Link href="/mypage/shuttle" className="font-semibold underline">셔틀 변경</Link>
-                        에서 신청해 주세요.
+                        결석·셔틀은 위 버튼으로 알려 주세요
                     </div>
 
                     {/* 자녀 선택 (여러 명일 때) */}
@@ -620,7 +624,7 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                     {/* 날짜 */}
                     <div>
                         <label className="text-xs font-medium text-[var(--color-academy-muted)] mb-1 block">
-                            해당 날짜 (선택)
+                            날짜 (선택)
                         </label>
                         <input type="date" min="2020-01-01" max="2030-12-31" value={reqDate} onChange={e => setReqDate(e.target.value)}
                             className="academy-input" />
@@ -638,7 +642,10 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                             maxLength={2000}
                             className="academy-input resize-none"
                         />
-                        <p className="mt-0.5 text-right text-xs tabular-nums text-[var(--color-academy-faint)]" aria-live="polite">{reqContent.length.toLocaleString("ko-KR")} / 2,000자</p>
+                        {/* 글자 수는 한도(2,000자)에 가까워질 때만(1,800자 초과) 보인다 — 평소엔 필요 없는 숫자 */}
+                        {reqContent.length > 1800 && (
+                            <p className="mt-0.5 text-right text-xs tabular-nums text-[var(--color-academy-faint)]" aria-live="polite">{reqContent.length.toLocaleString("ko-KR")} / 2,000자</p>
+                        )}
                     </div>
 
                     {/* 제출 */}
@@ -682,7 +689,7 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
             {/* 보낸 뒤 안내 — 폼이 닫혀도 «보냈다»는 걸 알 수 있게 */}
             {reqSent && !showRequestForm && (
                 <div role="status" className="flex items-center justify-between gap-2 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-success-soft)] px-3 py-2 text-xs font-medium text-[var(--color-academy-success)]">
-                    <span className="min-w-0 break-keep">학원에 메시지를 보냈어요. 답변은 «보낸 메시지»에서 볼 수 있어요.</span>
+                    <span className="min-w-0 break-keep">보냈어요. 답변은 «보낸 메시지»에서 볼 수 있어요</span>
                     <button type="button" onClick={() => setReqSent(false)} className="academy-button-text shrink-0" aria-label="안내 닫기">닫기</button>
                 </div>
             )}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   CHANGE_KIND_LABEL,
@@ -23,11 +24,8 @@ const DAY_KO: Record<string, string> = {
   Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금", Sat: "토", Sun: "일",
 };
 
-const KIND_HELP: Record<ChangeKind, string> = {
-  CLASS_CHANGE: "다른 요일·시간의 반으로 옮깁니다.",
-  PAUSE: "잠시 쉬었다가 다시 나옵니다. 자리는 비워둡니다.",
-  WITHDRAW: "그만둡니다. 자리가 다른 학생에게 넘어갑니다.",
-};
+// 종류 설명 문장(KIND_HELP)은 없앴다(2026-11-14 문구 정리) — «반 변경·휴원·퇴원»은 이름이 곧 설명이고,
+// 퇴원의 «자리가 다른 학생에게 넘어갑니다» 경고는 제출 직전 확인창에만 둔다.
 
 type PendingRequest = NonNullable<ChildChangeOption["pending"]>;
 
@@ -114,7 +112,7 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
       return data;
     } catch {
       setUncertainSource(initial);
-      setError("결과를 확인하지 못해 접수·취소 여부를 알 수 없습니다. 입력 내용은 유지했습니다. 다시 보내기 전에 현재 신청 내역을 확인해 주세요.");
+      setError("접수됐는지 확인하지 못했어요. «다시 확인»을 눌러 주세요");
       return null;
     } finally {
       sending.current = false;
@@ -221,7 +219,7 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
       {uncertain && (
         <div className="flex flex-wrap gap-2">
           <button type="button" disabled={pending} onClick={() => startTransition(() => router.refresh())} className="academy-button-secondary">
-            {pending ? "확인 중..." : "접수 결과 다시 확인"}
+            {pending ? "확인 중..." : "다시 확인"}
           </button>
           {uncertainSource !== initial && (
             <button type="button" disabled={pending} onClick={() => { setUncertainSource(null); setError(""); }} className="academy-button-secondary">
@@ -234,7 +232,11 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
     </>
   );
 
-  // 원장이 승인했지만 아직 적용 전인 신청(휴원 예정 등). 학부모가 직접 취소할 수 없어 연락 안내만 한다.
+  // 원장이 승인했지만 아직 적용 전인 신청(휴원 예정 등).
+  // 2026-11-14 결정표 c2: «취소하거나 날짜를 바꾸려면 학원에 연락해 주세요» 문장 대신 버튼 하나.
+  //  휴원·퇴원 예정 = 수업 탭 «신청 내역»의 «취소 요청»으로 보낸다(그 버튼이 신청 번호·이미 요청했는지를 알고 있다 — 이 화면의 자료에는 없다).
+  //  그 밖(반 변경·복귀 예정) = 취소 요청 길이 없어 학원 문의 폼으로.
+  const scheduledCancelable = child?.scheduled?.kind === "PAUSE" || child?.scheduled?.kind === "WITHDRAW";
   const scheduledBox = child?.scheduled ? (
     <section className="rounded-2xl border border-[var(--color-academy-line)] bg-white p-4">
       <p className="text-sm font-semibold text-[var(--color-academy-ink)]">
@@ -244,9 +246,15 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
       {child.scheduled.kind === "PAUSE" && (
         <p className="mt-1 text-sm text-[var(--color-academy-muted)]">{pauseResumeLabel(child.scheduled.resumeOn)}</p>
       )}
-      <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
-        취소하거나 날짜를 바꾸려면 학원에 연락해 주세요.
-      </p>
+      {scheduledCancelable ? (
+        <Link href={`/mypage/classes?child=${encodeURIComponent(child.studentId)}#request-timeline-heading`} className="academy-button-secondary mt-2">
+          취소 요청
+        </Link>
+      ) : (
+        <Link href="/mypage#parent-request-form" className="academy-button-secondary mt-2">
+          학원에 문의
+        </Link>
+      )}
     </section>
   ) : null;
 
@@ -267,11 +275,6 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
     <main className="mx-auto max-w-lg space-y-4 px-4 py-6">
       <div>
         <h1 className="academy-heading">수강 변경 신청</h1>
-        {/* 적용일을 먼저 알린다. 언제부터 바뀌는지 모르고 신청하면 그게 곧 문의가 된다. */}
-        <p className="mt-1 text-sm text-[var(--color-academy-muted)]">
-          퇴원은 <b className="text-[var(--color-academy-ink)]">{initial.effectiveFrom}</b>부터 적용됩니다.
-          반 변경·휴원은 원하시는 날짜를 고를 수 있어요.
-        </p>
       </div>
 
       {initial.children.length > 1 && (
@@ -343,9 +346,6 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
                 onChange={(event) => setResumeFrom(event.target.value)}
                 className="academy-input box-border min-w-0 max-w-full appearance-none"
               />
-              <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
-                학원에서 확인한 뒤 그날부터 다시 수업에 들어갑니다.
-              </p>
             </div>
 
             <div>
@@ -405,7 +405,12 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
                 </button>
               ))}
             </div>
-            <p className="text-xs text-[var(--color-academy-muted)]">{KIND_HELP[kind]}</p>
+            {/* 퇴원을 골랐을 때만 적용일을 알린다(반 변경·휴원은 아래에서 날짜를 직접 고른다) */}
+            {kind === "WITHDRAW" && (
+              <p className="text-sm text-[var(--color-academy-muted)]">
+                <b className="text-[var(--color-academy-ink)]">{initial.effectiveFrom}</b>부터 퇴원
+              </p>
+            )}
 
             {kind === "CLASS_CHANGE" && (
               <div>
@@ -426,12 +431,14 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
                     </option>
                   ))}
                 </select>
-                {/* 만석이어도 신청은 받는다(원장 결정). 대신 기대를 정확히 만든다. */}
-                <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
-                  정원이 찬 반도 신청할 수 있어요. 자리가 나면 순서대로 배정됩니다.
-                </p>
+                {/* 만석이어도 신청은 받는다(원장 결정). 마감된 반을 골랐을 때만 기대를 정확히 만든다. */}
+                {selectable.find((item) => item.classId === toClassId)?.full && (
+                  <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
+                    정원이 찬 반도 신청할 수 있어요. 자리가 나면 순서대로 배정됩니다.
+                  </p>
+                )}
 
-                {/* 시작일을 학부모가 고른다. 달 중간이면 그달 수강료는 회차대로 다시 계산된다. */}
+                {/* 시작일을 학부모가 고른다. 달 중간이면 그달 수강료는 회차대로 다시 계산된다(안내는 화면 맨 아래 한 줄). */}
                 <label htmlFor="effective-from" className="mt-4 mb-1 block text-xs font-medium text-[var(--color-academy-muted)]">
                   언제부터 옮길까요?
                 </label>
@@ -444,9 +451,6 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
                   onChange={(event) => setEffectiveFrom(event.target.value)}
                   className="academy-input box-border min-w-0 max-w-full appearance-none"
                 />
-                <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
-                  달 중간부터 옮기면 그달 수강료를 수업 회차대로 다시 계산해 안내드립니다.
-                </p>
               </div>
             )}
 
@@ -515,8 +519,8 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
                   className="academy-input box-border min-w-0 max-w-full appearance-none"
                 />
                 <p id="resume-on-help" className="mt-1 text-xs text-[var(--color-academy-muted)]">
-                  {resumeOn ? `${resumeOn} 복귀 예정` : "아직 정해지지 않았다면 비워두세요. ‘복귀일 미정’으로 접수됩니다."}
-                  {" "}예정일에 자동으로 복귀 처리되지는 않습니다. 휴원이 시작된 뒤 이 화면에서 «복귀 신청»을 해 주세요.
+                  {resumeOn ? `${resumeOn} 복귀 예정.` : "비워 두면 «복귀일 미정»."}
+                  {" "}복귀는 휴원 뒤 따로 신청해 주세요
                 </p>
               </div>
             )}
@@ -575,7 +579,7 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
       <ChangeHistoryList rows={initial.history ?? []} />
 
       <p className="text-center text-xs text-[var(--color-academy-faint)]">
-        요금이 달라지는 반으로 옮기면 학원에서 다시 안내드립니다.
+        수강료가 달라지면 학원에서 다시 안내드려요
       </p>
     </main>
   );

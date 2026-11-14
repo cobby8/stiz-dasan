@@ -289,8 +289,9 @@ export function ChildShuttleSection({ shuttle, studentId }: { shuttle: ChildShut
                       {w.classTime ? ` ${w.classTime.split(/[~\-–]/)[0]} 수업` : ""}
                     </span>
                     <span className="min-w-0 flex-1 break-keep tabular-nums text-[var(--color-academy-ink)]">
-                      <span className="block">{w.board ? `승차 ${w.board.time ?? "시각 미정"} · ${w.board.stopName}` : "등원 셔틀 없음"}</span>
-                      <span className="block">{w.alight ? `하차 ${w.alight.time ?? "시각 미정"} · ${w.alight.stopName}` : "하원 셔틀 없음"}</span>
+                      {/* 타는 쪽만 보인다 — «등원 셔틀 없음»·«하원 셔틀 없음» 줄은 그리지 않는다(2026-11-14 문구 정리) */}
+                      {w.board && <span className="block">{`승차 ${w.board.time ?? "시각 미정"} · ${w.board.stopName}`}</span>}
+                      {w.alight && <span className="block">{`하차 ${w.alight.time ?? "시각 미정"} · ${w.alight.stopName}`}</span>}
                     </span>
                   </li>
                 ))}
@@ -311,7 +312,6 @@ export function ChildShuttleSection({ shuttle, studentId }: { shuttle: ChildShut
                       <Badge tone={d.statusText === "안 탐(신청)" ? "info" : DAY_TONE[d.status]}>{d.statusText}</Badge>
                       <span className="min-w-0 flex-1 break-keep tabular-nums text-[var(--color-academy-ink)]">
                         {dayDetail(d)}
-                        {d.planMissing && <span className="block text-xs text-[var(--color-academy-muted)]">연간일정 확정 전 — 명단대로 표시</span>}
                       </span>
                     </li>
                   ))}
@@ -361,11 +361,11 @@ export function ChildShuttleSection({ shuttle, studentId }: { shuttle: ChildShut
             </a>
           )}
           <p className="border-t border-[var(--color-academy-line)] px-3 py-1.5 text-xs text-[var(--color-academy-muted)]">
-            시각은 셔틀 명단의 예정 시각이에요. 길 사정에 따라 조금 달라질 수 있어요.
+            길 사정에 따라 시각이 조금 달라질 수 있어요
           </p>
         </>
       )}
-      {uses && <LinkBar links={[{ href: presetHref("/mypage/shuttle", { studentId }), label: "이날 안 타요·다른 곳에서 타요" }]} />}
+      {uses && <LinkBar links={[{ href: presetHref("/mypage/shuttle", { studentId }), label: "셔틀 변경" }]} />}
     </CollapsibleSection>
   );
 }

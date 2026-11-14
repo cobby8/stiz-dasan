@@ -12,7 +12,6 @@ import { getNotifications, getUnreadNotificationCount } from "@/lib/queries";
 import { FONT_SCALE_COOKIE, fontScalePercent, parseFontScale } from "@/lib/mypage/parentSettings";
 import AcademyTheme from "@/components/academy/AcademyTheme";
 import UiIcon from "@/components/common/UiIcon";
-import AccountLinks from "@/components/account/AccountLinks";
 import AccountViewSwitcher from "@/components/AccountViewSwitcher";
 import { getAccountViewAccess } from "@/lib/account-view-access";
 
@@ -21,7 +20,7 @@ import { getAccountViewAccess } from "@/lib/account-view-access";
 // 자기 manifest 를 명시한다.
 export const metadata: Metadata = {
   title: "스티즈 학부모",
-  description: "자녀의 출결과 셔틀 시각, 결석 신고와 청구를 확인하는 스티즈 학부모 화면",
+  description: "자녀의 출결과 셔틀 시각, 결석 알리기와 청구를 확인하는 스티즈 학부모 화면",
   manifest: "/manifest-parent.json",
   appleWebApp: {
     capable: true,
@@ -121,8 +120,8 @@ export default async function MyPageLayout({
 
             {/* 메인 콘텐츠 영역 */}
             <main className="flex-1 max-w-5xl w-full mx-auto p-4 md:p-8">
+                {/* 맨 아래 계정 링크 줄은 없앴다(2026-11-14 원장 결정 d3) — 계정·가족·탈퇴는 머리줄 «설정» 화면 안에 있다 */}
                 {children}
-                <AccountLinks />
             </main>
 
             {/* 모바일 하단 탭 — 홈·수업·청구·소식(2026-11-10 원장 결정 d5).

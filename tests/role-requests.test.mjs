@@ -15,7 +15,7 @@ const page = fs.readFileSync("src/app/mypage/roles/page.tsx", "utf8");
 const client = fs.readFileSync("src/app/mypage/roles/RolesClient.tsx", "utf8");
 const signup = fs.readFileSync("src/components/auth/ParentSignupClient.tsx", "utf8");
 const accountLayout = fs.readFileSync("src/app/mypage/layout.tsx", "utf8");
-const myPage = fs.readFileSync("src/components/account/AccountLinks.tsx", "utf8");
+const settingsPage = fs.readFileSync("src/app/mypage/settings/page.tsx", "utf8");
 const continuePage = fs.readFileSync("src/app/auth/continue/page.tsx", "utf8");
 const loginAction = fs.readFileSync("src/app/actions/auth.ts", "utf8");
 const viewAccess = fs.readFileSync("src/lib/account-view-access.ts", "utf8");
@@ -136,9 +136,12 @@ test("신청 화면은 인증된 본인만, 주소창 값은 아는 역할만 �
   assert.match(client, /row\.state === "NONE" \? \(\s*\n?\s*<input/);
 });
 
-test("마이페이지에서 신청 화면으로 가는 길이 있다", () => {
-  // 화면만 있고 길이 없으면 아무도 못 쓴다(이 프로젝트에서 2회 실측).
-  assert.match(myPage, /href="\/mypage\/roles"/);
-  assert.match(myPage, /역할 추가 신청/);
-  assert.match(accountLayout, /\{children\}\s*<AccountLinks\s*\/>/);
+test("신청 화면으로 가는 길: 가입 흐름만 — 학부모 화면(머리줄·설정)에서는 링크하지 않는다(2026-11-14 원장 결정 d4)", () => {
+  // 역할은 원장이 직접 지정한다. 화면(/mypage/roles)은 남기되, 학부모가 평소 쓰는 화면에는 길을 두지 않는다.
+  // 남은 길 = 가입 때 직원 역할을 고른 사람을 데려오는 가입 흐름(화면이 «길 없는 화면»이 되지 않게 이 고리는 못박는다).
+  assert.match(signup, /\/mypage\/roles\?request=/);
+  assert.doesNotMatch(accountLayout, /\/mypage\/roles|AccountLinks/);
+  // 설정 화면에 링크가 없다(주석의 설명 글은 본다 — 실제 링크 주소와 줄 이름만 금지)
+  assert.doesNotMatch(settingsPage, /\/mypage\/roles|label="역할 추가 신청"/);
+  assert.equal(fs.existsSync("src/components/account/AccountLinks.tsx"), false);
 });

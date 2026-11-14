@@ -84,12 +84,9 @@ export default async function ParentReportsPage() {
     const notices = recentNotices(allNotices, todayKst());
     const NOTICE_FIRST = 3;
     // 사진 묶음마다 첫 장만 타일로(홈에서 쓰던 방식 그대로)
-    // 위 요약 줄 «사진 n장»은 이 화면이 읽은 사진 묶음 안의 전체 장 수(2026-11-14 w4)
-    let photoCount = 0;
     const photos = gallery.flatMap((g: { id: string; title: string | null; mediaJSON: string }) => {
         let media: { url: string; type: string }[] = [];
         try { media = JSON.parse(g.mediaJSON); } catch {}
-        if (Array.isArray(media)) photoCount += media.length;
         return media[0] ? [{ id: g.id, title: g.title, first: media[0] }] : [];
     });
 
@@ -123,9 +120,8 @@ export default async function ParentReportsPage() {
     return (
         <div className="space-y-4">
             <div>
+                {/* 요약 줄 «리포트 n건 · 사진 n장»은 없앴다(2026-11-14 문구 정리) — 바로 아래 칩이 같은 숫자를 보여 준다 */}
                 <h1 className="academy-heading">소식</h1>
-                {/* 요약 한 줄 «리포트 n건 · 사진 n장»(2026-11-14 w4) */}
-                <p className="mt-0.5 text-xs tabular-nums text-[var(--color-academy-muted)]">리포트 {reports.length}건 · 사진 {photoCount}장</p>
                 <nav aria-label="소식 종류" className="mt-2 flex flex-wrap gap-1.5">
                     {sections.map((s) => (
                         <a key={s.id} href={`#${s.id}`}
@@ -165,9 +161,10 @@ export default async function ParentReportsPage() {
 
             <h2 id="news-reports" className="academy-section-title scroll-mt-24 px-1">수업 리포트</h2>
             {reports.length === 0 ? (
-                <div className="bg-white rounded-xl border border-[var(--color-academy-line)] p-12 text-center text-[var(--color-academy-faint)]">
-                    아직 발행된 수업 리포트가 없습니다.
-                </div>
+                // 빈 상태는 한 줄 높이로(예전엔 안쪽 여백 48px 큰 상자였다)
+                <p className="rounded-xl border border-[var(--color-academy-line)] bg-white px-3 py-3 text-sm text-[var(--color-academy-muted)]">
+                    수업 리포트가 아직 없어요
+                </p>
             ) : (
                 <div className="space-y-3">
                     {groupByKstMonth(reports, (r) => r.date).map((group) => (

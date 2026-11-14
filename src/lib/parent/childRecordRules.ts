@@ -302,8 +302,8 @@ export function missingMonthsText(bars: readonly AttendanceBar[]): string | null
 // ── 다닌 기간 ────────────────────────────────────────────────────────────────
 
 /**
- * «실제 수강 n개월 · 첫 등록 YYYY.MM» — 옛 기록 기준값이 있는 학생.
- * 기준값이 없으면 «사이트 기록 기준 n개월»(옛 구글시트 시절이 빠져 있을 수 있다는 뜻).
+ * «n개월 · 첫 등록 YYYY.MM» — 옛 기록 기준값이 있는 학생.
+ * 기준값이 없으면 «n개월 · 첫 기록 YYYY.MM»(옛 구글시트 시절이 빠져 있을 수 있다는 뜻).
  */
 export function tenureText(
   tenure: { label: string; firstMonth: string | null } | null,
@@ -311,8 +311,10 @@ export function tenureText(
 ): { main: string; sub: string | null } | null {
   if (!tenure) return null;
   const first = tenure.firstMonth && /^\d{4}-\d{2}$/.test(tenure.firstMonth) ? tenure.firstMonth.replace("-", ".") : null;
-  if (hasBaseline) return { main: `실제 수강 ${tenure.label}`, sub: first ? `첫 등록 ${first}` : null };
-  return { main: `사이트 기록 기준 ${tenure.label}`, sub: first ? `첫 기록 ${first}` : null };
+  // 2026-11-14 문구 정리: 칸 이름이 이미 «다닌 기간»이라 값 앞 꼬리표(«실제 수강»·«사이트 기록 기준»)를 뺐다.
+  // 기준의 차이는 아래 줄(«첫 등록»/«첫 기록»)이 말한다.
+  if (hasBaseline) return { main: tenure.label, sub: first ? `첫 등록 ${first}` : null };
+  return { main: tenure.label, sub: first ? `첫 기록 ${first}` : null };
 }
 
 /** 홈 한 줄 «다닌 지 n년 n개월 · 올해 출석 n%» — 값이 없는 칸은 뺀다. 둘 다 없으면 «전체 기록» */

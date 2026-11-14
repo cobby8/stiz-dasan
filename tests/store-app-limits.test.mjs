@@ -103,7 +103,8 @@ test("안 되는 버튼은 한 곳의 판정(useStoreAppLacks)으로 숨기거�
 test("마이페이지 통신 실패는 그 자리 안내(d1)·첫 화면 부분 실패는 빈 값(d5)", () => {
   const home = read("src/app/mypage/MyPageClient.tsx");
   assert.match(home, /catch \{[\s\S]*?setReqError\("보내지 못했습니다\. 다시 시도해 주세요\."\);\s*return;/);
-  assert.match(home, /학원에 메시지를 보냈어요/);
+  // 보낸 뒤 안내(2026-11-14 문구 정리: «보냈어요. 답변은 «보낸 메시지»에서 볼 수 있어요»)
+  assert.match(home, /role="status"[\s\S]{0,400}보냈어요\. 답변은 «보낸 메시지»에서 볼 수 있어요/);
   const settings = read("src/app/mypage/settings/SettingsClient.tsx");
   assert.equal((settings.match(/\.catch\(\(\) => \(\{ ok: false as const, error: "보내지 못했습니다\. 다시 시도해 주세요\." \}\)\)/g) ?? []).length, 4, "이름·비밀번호·알림·자주 쓰는 결제 방법(2026-11-13)");
   const bell = read("src/app/mypage/ParentNotificationBell.tsx");
@@ -129,7 +130,8 @@ test("마이페이지 통신 실패는 그 자리 안내(d1)·첫 화면 부분 
 test("검수 권장 반영: 문의 2,000자 제한·남은 글자, 오류 화면 다시 시도 = refresh+reset, 관리자 확인 요청당 한 번", () => {
   const home = read("src/app/mypage/MyPageClient.tsx");
   assert.match(home, /maxLength=\{2000\}/);
-  assert.match(home, /\{reqContent\.length\.toLocaleString\("ko-KR"\)\} \/ 2,000자/);
+  // 글자 수는 한도에 가까워질 때만(1,800자 초과) 보인다 — 2026-11-14 문구 정리
+  assert.match(home, /\{reqContent\.length > 1800 && \(\s*<p[^>]*>\{reqContent\.length\.toLocaleString\("ko-KR"\)\} \/ 2,000자<\/p>\s*\)\}/);
   const err = read("src/app/mypage/error.tsx");
   assert.match(err, /startTransition\(\(\) => \{ router\.refresh\(\); reset\(\); \}\)/);
   const guard = read("src/lib/auth-guard.ts");

@@ -185,8 +185,6 @@ export default function ChildRecordClient({
           href={summary.unpaidCount > 0 ? "/mypage/payments" : undefined}
         />
       </section>
-      {/* 옛 기록 안내(q4) — 한 줄 */}
-      <p className="text-xs text-[var(--color-academy-muted)]">2026년 4월 이전 출석·일부 청구는 기록이 없어요.</p>
 
       {/* 수강 반 · 셔틀(명단 기준 — 기사님·관리자 운행표와 같은 정본) */}
       <ChildClassesSection profile={record.profile} studentId={childId} />
@@ -267,9 +265,8 @@ export default function ChildRecordClient({
                 showValues
               />
             </div>
-            <p className="text-xs text-[var(--color-academy-muted)]">
-              월별 출석률(%) · 출석·지각 ÷ 출석·지각·결석{missing ? ` · 기록 없음(–): ${missing}` : ""}
-            </p>
+            {/* 계산식 설명은 뺐다 — 기록이 빈 달이 있을 때만 그 달을 알린다 */}
+            {missing && <p className="text-xs text-[var(--color-academy-muted)]">기록 없는 달: {missing}</p>}
           </>
         )}
       </section>
@@ -302,12 +299,8 @@ export default function ChildRecordClient({
         <ul className="divide-y divide-[var(--color-academy-line)]">
           {record.seasonal === null ? (
             <li className="px-3 py-2 text-sm text-[var(--color-academy-muted)]">특강 기록을 불러오지 못했어요.</li>
-          ) : record.seasonal.length === 0 ? (
-            <li className="flex min-h-11 items-center gap-2 px-3 py-1.5 text-sm">
-              <span className="w-14 shrink-0 text-xs text-[var(--color-academy-muted)]">특강</span>
-              <span className="text-[var(--color-academy-muted)]">들은 방학특강이 없어요</span>
-            </li>
-          ) : (
+          ) : record.seasonal.length === 0 ? null : (
+            // 들은 방학특강이 없으면 줄째 그리지 않는다(2026-11-14 문구 정리)
             record.seasonal.map((s) => (
               <li key={s.seasonId} className="flex min-h-11 items-center gap-2 px-3 py-1.5 text-sm">
                 <span className="w-14 shrink-0 text-xs text-[var(--color-academy-muted)]">특강</span>

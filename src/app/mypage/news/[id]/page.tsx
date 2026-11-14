@@ -49,9 +49,7 @@ export default async function ParentNoticeDetailPage({ params }: { params: Promi
                 )}
                 <h1 className="academy-heading break-keep">{notice.title}</h1>
                 <p className="mt-1 text-sm text-[var(--color-academy-muted)]">
-                    게시일 {formatKstDate(notice.createdAt, { year: "numeric", month: "long", day: "numeric" })}
-                    <span className="ml-2">· 게시 당시 기준 안내입니다</span>
-                </p>
+                    게시일 {formatKstDate(notice.createdAt, { year: "numeric", month: "long", day: "numeric" })}                </p>
             </header>
 
             <div className="academy-panel p-4 md:p-6">

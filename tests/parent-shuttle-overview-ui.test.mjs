@@ -27,9 +27,16 @@ test("마이페이지 홈은 선택한 자녀의 셔틀만, 일정 탭은 자녀
 
 test("배정 확정 또는 완료된 셔틀에만 상세 정보를 공개한다", () => {
   assert.match(detail, /item\.status === "CONFIRMED" \|\| item\.status === "COMPLETED"/);
-  assert.match(detail, /item\.routeName \|\| "노선 확인 중"/);
-  assert.match(detail, /item\.stopName \|\| "정류장 확인 중"/);
-  assert.match(detail, /item\.vehicleName \|\| "차량 확인 중"/);
+  // 2026-11-14 원장 결정 d7: 값이 없으면 «○○ 확인 중» 대신 그 줄을 숨긴다(값이 있을 때만 그린다)
+  assert.match(detail, /\{item\.routeName && \(/);
+  assert.match(detail, /\{\(item\.stopName \|\| item\.stopAddress\) && \(/);
+  assert.match(detail, /\{item\.plannedAt && \(/);
+  assert.match(detail, /\{item\.vehicleName && \(/);
+  assert.match(detail, /\{item\.serviceDate && \(/);
+  assert.doesNotMatch(detail, /"(노선|정류장|차량) 확인 중"|: "(시간|운행일) 확인 중"\}/);
+  // 상세 줄은 여전히 확정·완료 묶음(showDetails) 안에만 있다
+  const detailsAt = detail.indexOf("{showDetails && (");
+  assert.ok(detailsAt > 0 && detail.indexOf("{item.routeName && (") > detailsAt && detail.indexOf("{item.vehicleName && (") > detailsAt, "노선·차량은 확정·완료에만");
   assert.match(detail, /<time dateTime=\{item\.plannedAt\}>/);
 });
 

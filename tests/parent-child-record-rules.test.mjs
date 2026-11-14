@@ -145,9 +145,10 @@ test("① 최근 12개월 막대: 연말을 넘어 이어지고, 기록 없는 �
   assert.deepEqual(march.map((b) => b.ym), ["2026-01", "2026-02", "2026-03"]);
 });
 
-test("① 다닌 기간 글: 기준값 있으면 «실제 수강 · 첫 등록», 없으면 «사이트 기록 기준»", () => {
-  assert.deepEqual(rules.tenureText({ label: "3년 2개월", firstMonth: "2022-09" }, true), { main: "실제 수강 3년 2개월", sub: "첫 등록 2022.09" });
-  assert.deepEqual(rules.tenureText({ label: "8개월", firstMonth: "2026-04" }, false), { main: "사이트 기록 기준 8개월", sub: "첫 기록 2026.04" });
+test("① 다닌 기간 글: 값은 기간만(꼬리표 없음) — 기준값 있으면 아래 줄 «첫 등록», 없으면 «첫 기록»", () => {
+  // 2026-11-14 문구 정리: 칸 이름이 «다닌 기간»이라 값 앞 «실제 수강»·«사이트 기록 기준» 꼬리표를 뺐다. 기준 차이는 아래 줄이 말한다.
+  assert.deepEqual(rules.tenureText({ label: "3년 2개월", firstMonth: "2022-09" }, true), { main: "3년 2개월", sub: "첫 등록 2022.09" });
+  assert.deepEqual(rules.tenureText({ label: "8개월", firstMonth: "2026-04" }, false), { main: "8개월", sub: "첫 기록 2026.04" });
   assert.equal(rules.tenureText(null, true), null);
   assert.equal(rules.homeRecordLine({ tenureLabel: "3년 2개월", hasBaseline: true, yearRate: 92 }), "다닌 지 3년 2개월 · 올해 출석 92%");
   assert.equal(rules.homeRecordLine({ tenureLabel: null, hasBaseline: false, yearRate: null }), "전체 기록");
@@ -276,11 +277,12 @@ const baseRecord = (extra = {}) => ({
   ...extra,
 });
 
-test("③ 빈 데이터: 요약 4칸·옛 기록 안내·빈 칸 문구, 0% 대신 «기록 없음»", () => {
+test("③ 빈 데이터: 요약 4칸·빈 칸 문구, 0% 대신 «기록 없음» — 옛 기록 안내·«들은 방학특강이 없어요» 줄은 없다", () => {
   const html = renderToStaticMarkup(React.createElement(ChildRecordClient, { record: baseRecord(), childList: [{ id: "kid", name: "합성" }], initialYear: null }));
   assert.match(html, /합성 기록/);
   for (const label of ["다닌 기간", "올해 출석률", "올해 납부", "미납"]) assert.ok(html.includes(label), label);
-  assert.match(html, /2026년 4월 이전 출석·일부 청구는 기록이 없어요/);
+  // 2026-11-14 원장 결정 d5·d7: 옛 기록 안내 삭제, 들은 특강이 없으면 그 줄째 숨김
+  assert.doesNotMatch(html, /2026년 4월 이전|들은 방학특강이 없어요|>특강</);
   assert.match(html, /최근 12개월 출석 기록이 없어요/);
   assert.match(html, /청구가 없어요/);
   assert.match(html, /수강 기록이 없어요/);
@@ -307,8 +309,12 @@ test("③ 형제 + 미납 있음: 아이 칩(지금 아이 표시)·미납 칸 �
   assert.match(html, /href="\/mypage\/record\?child=kid2"/);
   // 칩 안: 사진 동그라미(사진이 없어 이름 첫 글자) + 이름 (2026-11-15 프로필 사진)
   assert.match(html, /aria-current="page"[^>]*><span[^>]*><span[^>]*>합<\/span><\/span>합성</);
-  assert.match(html, /실제 수강 1년 8개월/);
+  assert.match(html, />1년 8개월</);
+  assert.doesNotMatch(html, /실제 수강|사이트 기록 기준/, "값 앞 꼬리표 없음");
   assert.match(html, /첫 등록 2025\.03/);
+  // 출석 막대 아래: 계산식 설명은 없고 «기록 없는 달»만(이 화면은 이번 달만 기록이 있다)
+  assert.match(html, /기록 없는 달: /);
+  assert.doesNotMatch(html, /월별 출석률\(%\)|출석·지각 ÷/);
   assert.match(html, /100%/, "올해 출석률(출석3+지각1 / 4)");
   assert.match(html, /href="\/mypage\/payments"/, "미납 칸은 청구 탭으로");
   // 2026-11-14 월 카드: 한 달 = 한 줄 «11월 · 295,000원 · 일부 납부» — 세부(항목·영수증)는 누르면 시트

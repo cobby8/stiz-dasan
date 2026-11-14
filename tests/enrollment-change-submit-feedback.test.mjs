@@ -259,13 +259,13 @@ test("복귀 희망일이 범위를 벗어나면(아이폰 min 무시) 보내지
   }
 });
 
-test("승인됐지만 시작 전인 휴원은 «휴원 예정»과 학원 연락 안내를 보여 준다", () => {
+test("승인됐지만 시작 전인 휴원은 «휴원 예정»과 «취소 요청» 버튼을 보여 준다", () => {
   const h = harness();
   const data = initial(null);
   data.children[0].scheduled = { kind: "PAUSE", effectiveFrom: "2026-12-01", resumeOn: "2027-01-05" };
   const text = allText(flatten(h.render(data)));
   assert.match(text, /휴원 예정 · 2026-12-01부터/);
-  assert.match(text, /학원에 연락/);
+  assert.match(text, /취소 요청/); assert.doesNotMatch(text, /학원에 연락해 주세요/); // 2026-11-14 결정표 c2: 연락 안내 문장 대신 «취소 요청» 버튼(신청 내역으로)
   assert.match(text, /2027-01-05 복귀 예정/);
   // 휴원 중 반에 복귀가 이미 승인돼 기다리는 중이면 복귀 신청 양식은 숨긴다(중복 방지)
   const h2 = harness();

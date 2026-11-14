@@ -279,7 +279,9 @@ test("정규 결석 신고는 반 카드 속 작은 카드 대신 날짜 묶음(
   // 화면에 보이는 글에 «신고»가 남지 않는다(주석·코드 식별자는 제외하고 따옴표·JSX 글자만 본다)
   for (const text of ["결석 신고됨", "신고 취소", "결석 신고를", "신고에 실패", "신고·취소할 수"]) assert.ok(!source.includes(`"${text}`) && !source.includes(`>${text}`) && !new RegExp(`^\\s+${text}`, "m").test(source), text);
   // 홈의 길 안내 링크 글자도 «결석 알리기»
-  assert.match(read("src/app/mypage/MyPageClient.tsx"), /<Link href="\/mypage\/regular-absence" className="font-semibold underline">결석 알리기<\/Link>/);
+  // 홈 문의 폼의 길 안내는 한 줄로 줄였다(2026-11-14 문구 정리) — 결석·셔틀 버튼이 바로 위 «빠른 실행»에 있다
+  assert.match(read("src/app/mypage/MyPageClient.tsx"), /결석·셔틀은 위 버튼으로 알려 주세요/);
+  assert.match(read("src/app/mypage/MyPageClient.tsx"), /{ href: absenceHref, label: "결석 알리기" }/);
   assert.match(source, /\`\$\{head\} 보강권 1장이 생겼어요\.\`/);
   // 사진은 줄여서 보내고(서버가 다시 인코딩), 공개 업로드 주소는 쓰지 않는다
   assert.match(source, /compressImageForUpload\(file, \{ maxEdge: 2000,/);
@@ -355,6 +357,7 @@ test("셔틀 예정 변경은 날짜 묶음의 한 줄 행이고 행 탭=하단 
   const Shuttle = compileModule("src/app/mypage/shuttle/ShuttleExceptionClient.tsx", {
     "@/lib/mypage/requestPreset": { presetIndex: () => 0, presetFirst: (list) => [...list] }, "@/components/parent/customerMessage": customerMessageModule, 
     "next/navigation": { useRouter: () => ({ refresh() {} }) },
+    "next/link": { __esModule: true, default: Link }, // 2026-11-14: «결석 알리기» 링크·«학원에 문의» 버튼
     "@/lib/shuttle/dayExceptionRules": compileModule("src/lib/shuttle/dayExceptionRules.ts"),
     "@/lib/parent-staff-status": { deliveryStatusText: () => "사이트 알림 등록 1건 · 푸시 전송 접수 1건", matchesShuttleChange: () => false },
     "@/components/admin/list/ListDetailPanel": { default: ({ children }) => React.createElement("div", { "data-sheet": "" }, children) },
@@ -376,8 +379,15 @@ test("셔틀 예정 변경은 날짜 묶음의 한 줄 행이고 행 탭=하단 
   assert.match(html, /11\/3\(화\)/);
   assert.doesNotMatch(html, /2026-10-29 · 합성/, "«날짜 · 학생» 이어 붙인 글은 요소로 나눴다");
   assert.match(html, /다산초 정문 앞/);
-  assert.match(html, /담당 기사님 배정은 학원에서 확인 중/);
-  assert.doesNotMatch(html, /알림함 등록/, "긴 알림 결과는 행이 아니라 시트에서");
+  // 2026-11-14 문구 정리: 줄마다 붙던 꼬리표(«변경 저장 완료»·«담당 기사님 배정은 학원에서 확인 중»)와 건수 나열은 없앴다
+  assert.doesNotMatch(html, /담당 기사님 배정은 학원에서 확인 중|변경 저장 완료|알림함 등록|휴대폰 알림 \d+건/);
+  // 이름 통일(d2)·짧은 라벨: 제목 «셔틀 변경», 칩 «등원»·«안 타요», 버튼 «변경 신청», 결석은 «결석 알리기»로 보낸다
+  assert.match(html, /<h1[^>]*>셔틀 변경<\/h1>/);
+  assert.match(html, />등원<\/button>/);
+  assert.match(html, />안 타요<\/button>/);
+  assert.doesNotMatch(html, /셔틀 당일 변경|타러 갈 때|데려다줄 때|오늘 안 타요|결석 미리 알리기|알림 요청/);
+  assert.match(html, /수업에 빠지면 <a[^>]*href="\/mypage\/regular-absence"[^>]*>결석 알리기<\/a>로 알려 주세요/);
+  assert.match(html, />변경 신청<\/button>/);
   assert.doesNotMatch(html, /data-sheet/, "처음엔 시트가 닫혀 있다");
 
   const source = read("src/app/mypage/shuttle/ShuttleExceptionClient.tsx");
@@ -404,7 +414,12 @@ test("방학특강 결석·보강은 세 목록이 한 목록의 행이고 배�
   assert.doesNotMatch(html, /· 겨울 방학특강/, "«자녀 · 특강» 이어 붙인 글은 요소로 나눴다");
   assert.match(html, /1\/5\(월\) 결석/);
   assert.match(html, />보강 신청</);
-  assert.match(html, /신청 접수 \(승인 대기\)/);
+  // 2026-11-14 문구 정리: 상태는 «승인 대기» 한마디, 제목 아래 설명 문단·빈 칸 안내 상자는 없앴다
+  assert.match(html, />승인 대기</);
+  assert.doesNotMatch(html, /신청 접수 \(승인 대기\)|현재 보강이 필요한 결석이 없습니다|예정된 방학특강 회차가 없습니다|미리 결석 신고|최종 처리는 학원과 협의/);
+  assert.match(html, /방학특강 결석 알리기 · 보강/);
+  // 예정 회차가 없으면(이 화면 데이터) 그 칸은 제목째 그리지 않는다
+  assert.doesNotMatch(html, /예정 회차/);
 
   const source = read("src/app/mypage/seasonal/SeasonalMakeupClient.tsx");
   assert.doesNotMatch(source, /결석 신고됨 · /);
@@ -414,7 +429,10 @@ test("방학특강 결석·보강은 세 목록이 한 목록의 행이고 배�
   assert.match(source, /onClick=\{\(\) => request\(ab\.enrollmentDateId, "REGULAR", c\)\}/);
   assert.match(source, /onClick=\{\(\) => reportAbsence\(s\.enrollmentDateId\)\} disabled=\{busy \|\| !seatReason\[s\.enrollmentDateId\]\}/);
   assert.match(source, /onConfirm=\{\(\) => cancelAbsence\(s\.enrollmentDateId\)\}/);
-  assert.match(source, /신고하면 그날 셔틀 배차에서도 자동 제외됩니다\./);
+  // 2026-11-14 원장 결정(문구 정리 62번): 칸 제목 아래 설명 문장(«…미리 신고할 수 있어요. 신고하면 그날 셔틀 배차에서도 자동 제외됩니다.»)은 없앴다
+  assert.doesNotMatch(source, /셔틀 배차에서도 자동 제외됩니다|미리 신고할 수 있어요/);
+  // 이름 통일(d2): 방학특강 화면도 «결석 알리기» — 화면에 보이는 글에 «결석 신고»가 남지 않는다(주석 제외)
+  for (const text of ["결석 신고", "신고 취소", "결석 미리 신고"]) assert.ok(!source.includes(`"${text}`) && !source.includes(`>${text}`), text);
 });
 
 test("가족 연결의 받은 요청·보낸 요청 행은 요소로 나뉘고 상태 칩·요청일(오른쪽)을 보이며 승인 확인 단계는 그대로다", () => {

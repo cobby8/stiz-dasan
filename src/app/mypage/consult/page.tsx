@@ -27,10 +27,8 @@ export default async function ParentConsultPage() {
     return (
         <div className="mx-auto w-full max-w-2xl space-y-3 px-4 py-4">
             <div>
+                {/* 제목 아래 안내는 없앴다(2026-11-14 문구 정리) — 폼의 보내기 버튼 아래 «확인 후 전화로 연락드려요»가 같은 말을 한다 */}
                 <h1 className="academy-heading">형제·자매 상담 신청</h1>
-                <p className="mt-1 text-sm break-keep text-[var(--color-academy-muted)]">
-                    함께 다닐 아이 정보를 남겨 주시면 학원에서 확인 후 전화로 안내해 드려요.
-                </p>
             </div>
             <ConsultForm
                 mode="parent"

@@ -9,7 +9,9 @@ import test from "node:test";
 // 회원 탈퇴는 거기에 하나 더 있다 — 구글플레이가 **앱 안에서** 계정을 삭제할 수 있어야
 // 등록을 허용한다. 링크가 사라지면 기능이 아니라 스토어 등록이 막힌다.
 
-const myPage = fs.readFileSync("src/components/account/AccountLinks.tsx", "utf8");
+// 2026-11-14 원장 결정 d3: 모든 화면 맨 아래 계정 링크 줄(AccountLinks)을 없애고 설정 화면 안으로 모았다.
+// 가는 길 = 머리줄 «설정»(모든 /mypage 화면) → 설정 화면 맨 끝 «회원 탈퇴». 두 고리를 다 못박는다.
+const myPage = fs.readFileSync("src/app/mypage/settings/page.tsx", "utf8");
 const layout = fs.readFileSync("src/app/mypage/layout.tsx", "utf8");
 const page = fs.readFileSync("src/app/mypage/withdraw/page.tsx", "utf8");
 const client = fs.readFileSync("src/app/mypage/withdraw/WithdrawClient.tsx", "utf8").replace(/\r\n/g, "\n");
@@ -17,7 +19,12 @@ const client = fs.readFileSync("src/app/mypage/withdraw/WithdrawClient.tsx", "ut
 test("마이페이지에서 탈퇴 화면으로 가는 길이 있다", () => {
   assert.match(myPage, /href="\/mypage\/withdraw"/);
   assert.match(myPage, /회원 탈퇴/);
-  assert.match(layout, /<AccountLinks\s*\/>/);
+  // 설정 화면으로 가는 버튼은 머리줄에(휴대폰·PC 머리줄 둘 다 같은 settingsLink)
+  assert.match(layout, /href="\/mypage\/settings"/);
+  assert.equal((layout.match(/\{settingsLink\}/g) || []).length, 2, "휴대폰·PC 머리줄 둘 다");
+  // 맨 아래 링크 줄은 다시 들어오지 않는다
+  assert.doesNotMatch(layout, /AccountLinks/);
+  assert.equal(fs.existsSync("src/components/account/AccountLinks.tsx"), false);
 });
 
 test("탈퇴 페이지는 학부모 인증을 거치고 캐시되지 않는다", () => {

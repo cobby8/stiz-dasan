@@ -12,7 +12,7 @@ import { formatPhoneInput } from "@/lib/application-display-format";
 import { FONT_SCALE_COOKIE, parseFontScale, SHOW_THEME_SETTING } from "@/lib/mypage/parentSettings";
 import { appVersionLabels } from "@/lib/storeApp";
 import { readPreferredPaymentMethod } from "@/lib/payments/preferredMethodStore";
-import { NameRow, PasswordRow, NotificationRows, FontScaleRow, FeedbackRow, PaymentMethodRow, MyPhotoRow } from "./SettingsClient";
+import { NameRow, PasswordRow, NotificationRows, FontScaleRow, PaymentMethodRow, MyPhotoRow } from "./SettingsClient";
 import { profilePhotoUpdatedAtSql, profilePhotoVersion } from "@/lib/profilePhoto/rules";
 import PhoneChangeButton from "@/components/account/PhoneChangeButton";
 import { phoneChangeAvailable } from "@/lib/account/phone-change";
@@ -120,7 +120,10 @@ export default async function ParentSettingsPage() {
                 )}
             </Section>
 
-            <Section title="로그인">
+            {/* 계정 — 예전엔 모든 화면 맨 아래 링크 줄(AccountLinks)에 있던 것을 여기로 모았다(2026-11-14 원장 결정 d3).
+                자녀·가족은 아래 «가족», 회원 탈퇴는 맨 끝 줄에 이미 있어 다시 넣지 않는다. «역할 추가 신청»은 원장이 직접 지정하므로 링크하지 않는다(d4) */}
+            <Section title="계정">
+                <LinkRow href="/account" label="내 계정" />
                 {hasPasswordLogin && <PasswordRow />}
                 <LinkRow href="/mypage/login-methods" label="간편로그인 연결" />
             </Section>
@@ -148,19 +151,19 @@ export default async function ParentSettingsPage() {
                 {SHOW_THEME_SETTING ? <li className={ROW}><span className="flex-1 font-medium text-[var(--color-academy-ink)]">테마</span></li> : null}
             </Section>
 
+            {/* 도움 — 홈 «문의»와 같은 기능(학원에 메시지 보내기)이라 폼을 따로 두지 않고 홈 문의 폼으로 보낸다(2026-11-14 문구 정리) */}
             <Section title="도움">
-                <FeedbackRow childList={childRows} />
+                <LinkRow href="/mypage#parent-request-form" label="문의" />
             </Section>
 
             <Section title="앱 정보">
-                <li className={ROW}>
-                    <span className="flex-1 font-medium text-[var(--color-academy-ink)]">버전</span>
-                    {/* 앱 버전이 주인공, 화면(웹) 배포 번호는 작게 — 브라우저면 배포 번호만 */}
-                    <span className="flex shrink-0 items-baseline gap-2 tabular-nums text-[var(--color-academy-muted)]">
-                        {version.app && <span>{version.app}</span>}
-                        <span className="text-xs text-[var(--color-academy-faint)]">{version.web}</span>
-                    </span>
-                </li>
+                {/* 앱 버전만 보인다 — 배포 번호(«화면 xxxxxxx»)는 학부모에게 뜻 없는 값이라 뺐다. 브라우저(앱 버전 없음)면 줄째 숨김 */}
+                {version.app && (
+                    <li className={ROW}>
+                        <span className="flex-1 font-medium text-[var(--color-academy-ink)]">버전</span>
+                        <span className="shrink-0 tabular-nums text-[var(--color-academy-muted)]">{version.app}</span>
+                    </li>
+                )}
                 <LinkRow href="/terms" label="이용약관" />
                 <LinkRow href="/privacy" label="개인정보처리방침" />
             </Section>

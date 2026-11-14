@@ -66,7 +66,7 @@ export default async function LoginMethodsPage({
       </div>
       {/* 화면 맨 위 설명 한 줄 = 본문 14px */}
       <p className="mb-4 text-sm text-[var(--color-academy-muted)]">
-        연결해 두면 다음부터 아이디·비밀번호 없이 그 방법으로 같은 계정에 로그인됩니다. 자녀 정보는 그대로입니다.
+        연결하면 아이디·비밀번호 없이 로그인할 수 있어요
       </p>
 
       {/* 스토어 앱에서는 «연결하기»를 숨기고 한 줄 안내(앱 밖으로 나가 돌아오지 못한다) */}

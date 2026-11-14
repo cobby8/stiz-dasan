@@ -127,8 +127,12 @@ function md(ymd: string | null | undefined): string {
   return m ? `${Number(m[1])}/${Number(m[2])}` : "";
 }
 
-/** 안내 한 줄: «복귀일(11/16) 이후 수업부터 신청할 수 있어요» — 결석은 verb 를 «신고»로 */
+/**
+ * 안내 한 줄: «복귀일(11/16) 이후 수업부터 신청할 수 있어요» — 결석은 verb 를 «신고»로 넘긴다.
+ * 2026-11-14 이름 통일(d2): 학부모에게 보이는 말은 «결석 알리기»라 결석 쪽 글은 «알릴 수 있어요»로 나간다.
+ * (verb 값 "신고"는 부르는 쪽 코드가 쓰는 식별자라 그대로 둔다)
+ */
 export function resumeNotice(resumeFrom: string | null | undefined, verb: "신청" | "신고" = "신청"): string {
   const when = md(resumeFrom);
-  return `복귀일${when ? `(${when})` : ""} 이후 수업부터 ${verb}할 수 있어요`;
+  return `복귀일${when ? `(${when})` : ""} 이후 수업부터 ${verb === "신고" ? "알릴" : "신청할"} 수 있어요`;
 }

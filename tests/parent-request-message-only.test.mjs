@@ -23,8 +23,16 @@ test("보내는 값은 항상 자유 메시지(OTHER)다", () => {
 
 test("결석은 메시지가 아니라 결석 기능으로 보낸다", () => {
   // 여기 적으면 셔틀 자동 제외가 안 되므로 반드시 길을 안내해야 한다.
-  assert.match(client, /결석은 여기 적지 마시고[\s\S]{0,200}\/mypage\/regular-absence/);
-  assert.match(client, /\/mypage\/seasonal/);
+  // 2026-11-14 문구 정리: 폼 안 안내는 «결석·셔틀은 위 버튼으로 알려 주세요» 한 줄 —
+  // 그 «위 버튼»(빠른 실행의 결석 알리기·셔틀 변경)이 실제로 폼보다 위에 있고 결석 기능으로 가야 한다.
+  const noticeAt = client.indexOf("결석·셔틀은 위 버튼으로 알려 주세요");
+  const quickAt = client.indexOf('{ href: absenceHref, label: "결석 알리기" }');
+  const shuttleAt = client.indexOf('{ href: "/mypage/shuttle", label: "셔틀 변경" }');
+  assert.ok(noticeAt > 0, "폼 안 길 안내 한 줄");
+  assert.ok(quickAt > 0 && quickAt < noticeAt && shuttleAt > 0 && shuttleAt < noticeAt, "결석·셔틀 버튼이 안내보다 위");
+  assert.ok(client.indexOf('id="parent-request-form"') < noticeAt, "안내는 문의 폼 안");
+  assert.match(client, /const absenceHref = !hasRegularClass && seasonalUpcoming > 0 \? "\/mypage\/seasonal" : "\/mypage\/regular-absence";/);
+  assert.doesNotMatch(client, /결석은 여기 적지 마시고/);
 });
 
 test("셔틀 변경은 전용 처리 화면으로 보내고 자유 메시지와 구분한다", () => {

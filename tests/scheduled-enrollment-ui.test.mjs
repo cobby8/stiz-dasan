@@ -134,7 +134,10 @@ test("학부모 홈은 개시일 미래인 ACTIVE 반을 수강 중으로 세고
     parent: { id: "parent-a", name: "합성 부모" },
     children: [{ id: "student-a", name: "합성 학생", birthDate: "2016-01-01", enrollments: [enrollment], attendance: { total: 0, present: 0, absent: 0, late: 0, records: [] }, payments: [] }],
   } }));
-  assert.match(html, /수강 중인 반 1개/);
+  // 2026-11-14 문구 정리: 바로 아래 «다음 수업» 줄이 같은 말을 해서 «수강 중인 반 1개»는 그 줄이 있을 때 뺐다 — 개시 전 반도 «다음 수업»으로 잡히고 개시일 안내가 붙는다
+  assert.match(html, /다음 수업/);
+  assert.match(html, /부터 수업 시작/, "개시일 안내는 그대로(이 검사의 날짜 도우미는 값을 그대로 돌려준다)");
+  assert.doesNotMatch(html, /수강 중인 반 1개|수강 중인 반이 없습니다/);
   assert.doesNotMatch(html, /수강 예정|수강 시작을 기다리고 있어요/);
   // 수강 반 목록은 «일정» 탭(ScheduleHub)으로 옮겨졌다 — 개시일 안내도 그 목록 행에서 확인한다
   const parentSchedule = load("src/lib/mypage/parentSchedule.ts", { "@/lib/datetime/kst": kstModule, "@/lib/classSchedule": load("src/lib/classSchedule.ts", {}) });

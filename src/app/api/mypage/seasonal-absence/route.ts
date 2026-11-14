@@ -65,13 +65,13 @@ export async function POST(request: NextRequest) {
     const code = error instanceof Error ? error.message : "UNKNOWN";
     // 에러코드 → 학부모용 한국어 메시지
     const map: Record<string, string> = {
-      NOT_OWNER: "본인 자녀의 회차만 신고할 수 있습니다.",
+      NOT_OWNER: "본인 자녀의 회차만 알릴 수 있습니다.",
       INVALID_REASON: "결석 사유를 선택해 주세요.",
       SEAT_NOT_FOUND: "회차를 찾을 수 없습니다.",
-      SEAT_NOT_SCHEDULED: "신청이 유효한 회차만 신고할 수 있습니다.",
-      PAST_SESSION: "지난 회차는 신고할 수 없습니다.",
+      SEAT_NOT_SCHEDULED: "신청이 유효한 회차만 알릴 수 있습니다.",
+      PAST_SESSION: "지난 회차는 알릴 수 없습니다.",
       ALREADY_CHECKED: "이미 출결이 확정된 회차입니다. 학원에 문의해 주세요.",
-      ABSENCE_NOT_CANCELABLE: "이미 학원에서 처리된 신고라 취소할 수 없습니다.",
+      ABSENCE_NOT_CANCELABLE: "이미 학원에서 처리된 결석이라 취소할 수 없습니다.",
       PARENT_PHONE_UNKNOWN: "계정에 등록된 전화번호가 없습니다.",
     };
     const known = map[code];

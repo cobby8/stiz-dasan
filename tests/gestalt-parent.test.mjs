@@ -149,10 +149,13 @@ test("회원 탈퇴: «돌아가기» 먼저, 계정 삭제는 24px 아래 전�
   assert.match(withdraw, /className="academy-button-secondary mt-3"[\s\S]{0,80}신청 취소하기/);
   assert.match(withdraw, /className="academy-back-link"/);
 
-  const links = read("src/components/account/AccountLinks.tsx");
+  // 2026-11-14 d3: 맨 아래 링크 줄(AccountLinks)은 설정 화면으로 모았다 — 회원 탈퇴는 설정 화면 맨 끝, 다른 묶음과 떨어진 칸에 위험색으로
+  const links = read("src/app/mypage/settings/page.tsx");
   const hrefs = [...links.matchAll(/href="([^"]+)"/g)].map((m) => m[1]);
   assert.equal(hrefs.at(-1), "/mypage/withdraw", "회원 탈퇴는 맨 끝");
-  assert.match(links, /ml-auto[^"]*pl-4[^"]*text-\[var\(--color-academy-danger\)\][^"]*" href="\/mypage\/withdraw"/);
+  assert.match(links, /<Link href="\/mypage\/withdraw" className=\{`\$\{LINK_ROW\} font-medium text-\[var\(--color-academy-danger\)\]`\}>/);
+  // «앱 정보» 묶음(</Section>)이 닫힌 뒤의 별도 칸(로그아웃·탈퇴)에 있다 — 자주 쓰는 링크 묶음 안이 아니다
+  assert.ok(links.lastIndexOf("</Section>") < links.indexOf('href="/mypage/withdraw"'), "탈퇴는 묶음 밖 별도 칸");
 
   const account = read("src/app/account/page.tsx");
   assert.ok(account.indexOf("</nav>") < account.indexOf('href="/account/withdraw"'), "/account 에서도 묶음 밖 별도 칸");
@@ -184,7 +187,7 @@ test("결석·보강 행의 «여는» 버튼은 보조, 꽉 찬 색은 폼 안 
   assert.match(regular, /onClick=\{\(\) => setOpenKey\(""\)\}\s*className="academy-button-text"/);
   const seasonal = read("src/app/mypage/seasonal/SeasonalMakeupClient.tsx");
   assert.equal((seasonal.match(/"academy-button-text" : "academy-button-tonal"/g) || []).length, 2);
-  assert.match(seasonal, /className="academy-button-primary w-full">결석 신고하기/);
+  assert.match(seasonal, /className="academy-button-primary w-full">결석 알리기/);
   assert.doesNotMatch(seasonal, /bg-\[var\(--brand-accent\)\]/);
 });
 

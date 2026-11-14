@@ -775,7 +775,7 @@ test("결석 신고 취소의 «예약한 보강의 취소 마감»도 같은 �
       assert.equal(db.credits[0].status, "REVOKED");
     }
   }
-  assert.match(read("src/app/api/mypage/regular-absence/route.ts"), /MAKEUP_BOOKING_PAST: "예약한 보강의 취소 마감\(수업 시작 1시간 전\)이 지나 결석 신고를 취소할 수 없어요/);
+  assert.match(read("src/app/api/mypage/regular-absence/route.ts"), /MAKEUP_BOOKING_PAST: "예약한 보강의 취소 마감\(수업 시작 1시간 전\)이 지나 결석 알림을 취소할 수 없어요/);
   // 판정은 SQL 이 아니라 학부모 보강 취소와 같은 함수
   assert.match(read("src/lib/makeup/absence-report-credit.ts"), /!isMakeupChangeOpen\(credit\.bookingYmd, credit\.bookingStartTime, todayKst\(nowMs\), kstHm\(nowMs\)\)/);
 });
