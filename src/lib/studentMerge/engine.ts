@@ -11,6 +11,7 @@
 
 import {
   BILLING_FREEZE_FROM,
+  carryNoticeLine,
   chooseRepresentative,
   countActive,
   finalEnrollmentStatuses,
@@ -105,6 +106,8 @@ export type PairResult = {
   tableMoves: TableMoveResult[];
   billingMoved: { payments: number; invoices: number; transactions: number };
   billingFrozenLeftBehind: number;
+  /** 흡수 학생에 남은 휴원 수강료 이월 안내 한 줄(없으면 null) — 미리보기(DRY-RUN)·결과 보고에 그대로 보인다 */
+  carryNotice: string | null;
   parentAction: string;
   logRows: number;
   /** 흡수된 학생의 프로필 사진 경로(없으면 null). 적용이 COMMIT 된 뒤 removeMergedStudentPhotos 로 파일을 지운다 */
@@ -429,6 +432,17 @@ export async function mergePair(
      WHERE p."studentId" = ${l} AND NOT ${billingFreezeGuard("p")}`,
   );
 
+  // 흡수 학생의 «남은 이월» — 처리 기록은 흡수 쪽에 남지만 차감은 대표 학생 청구에서 이어진다(안내 한 줄)
+  let carryNotice: string | null = null;
+  const settlementTable = STUDENT_REF_TABLES.filter((t) => t.table === "EnrollmentChangeSettlement");
+  if ((await presentTables(runner, settlementTable)).length > 0) {
+    const [carry] = await runner.query<{ n: string }>(
+      `SELECT COALESCE(SUM("carryRemaining"), 0)::int AS n FROM "EnrollmentChangeSettlement"
+       WHERE "studentId" = ${l} AND "carryRemaining" > 0`,
+    );
+    carryNotice = carryNoticeLine(Number(carry?.n ?? 0));
+  }
+
   // --- 4) 보호자 교정: User.phone은 절대 건드리지 않고 Student.parentId만 옮긴다 ---
   //     (오기 번호 계정에 다른 자녀나 로그인이 매달려 있을 수 있어서, 계정 자체를 수정하면 위험하다)
   let parentAction = "변경 없음";
@@ -618,6 +632,7 @@ export async function mergePair(
     tableMoves: tableMoves.filter((t) => t.moved > 0 || t.softSkipped > 0 || t.promoted > 0),
     billingMoved: { payments: movedPayments, invoices: movedInvoices, transactions: movedTx },
     billingFrozenLeftBehind: Number(frozenLeft?.n ?? 0),
+    carryNotice,
     parentAction,
     logRows: Number(logCount?.n ?? 0),
     loserPhotoPath,

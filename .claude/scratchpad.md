@@ -114,6 +114,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-14 | developer(재검수 권장, claude/merged-carry): 휴원 수강료 «남은 이월» 차감 대상을 처리 기록의 학생 + 병합된 대표 학생(mergedIntoStudentId 따라가기, 5단계) 청구로 넓힘(pause-settlement.ts CARRY_TARGET_STUDENTS_SQL) · 병합 결과(PairResult.carryNotice)에 «남은 이월 ○원은 대표 학생 청구에서 차감됩니다» 한 줄 · 관리자 수강 변경 화면은 신청 id 로 읽어 이미 보임(변경 없음). tsc 0·tests 5267-0·guards 337-0. 새 SQL(재귀 CTE) 실제 Postgres 미실행 | 검수 대기 |
 | 11-14 | developer(학부모 5단계, claude/parent-step5-inquiry): 보낸 문의 화면·대화·이어 쓰기(ParentRequestMessage, 관리자 요청함·신청함 답변 이어 쓰기, 앱 알림만) · 소식 사진 앱 안 크게 보기 · 지난 공지(/mypage/news 20건씩)·연간 일정(/mypage/annual) · 앱 안 «신청» 메뉴(유니폼=본사 쇼핑몰 바깥 링크, 대관·방학특강=공개 부품을 /mypage 아래에서) · 청구 탭 «환불 문의»(청구 id·금액 연결). **마이그레이션 20261115110000 운영 미적용**(없어도 동작). tsc 0·tests 5202-0·guards 82-0. 새 SQL 실제 Postgres 미실행·앱 안 신청 화면 실기기 미확인 | 검수 대기 |
 | 11-14 | developer(학부모 5단계, claude/parent-step5-enroll-shuttle): c2 수강 변경 화면에서 승인된 휴원·퇴원 «취소 요청» 한 번에(708ae954) · c8 «반 추가» 신청 — 학년 맞는 반·정원 차면 대기·원장 승인 때 수강 등록(6a00d594) · c5 셔틀 «계속 바꾸기» — 신청→원장 승인→적용일 명단 반영, 이용 시작·중단은 같은 목록(7fab2086). **마이그레이션 20261115120000 운영 미적용**(없으면 입구만 숨김). tsc 0·tests 5204-0·guards 82-0. 새 SQL 실제 Postgres 미실행 | 검수 대기 |
 | 11-14 | developer(학부모 문구 정리, claude/parent-copy-cleanup): 원장 결정표 d1~d7 — 이름 통일(결석 알리기·셔틀 변경·보강 예약)·맨 아래 계정 링크 줄 삭제(설정 «계정» 묶음으로)·역할 신청 링크 제거·옛 기록 안내 삭제·빈 칸/«○○ 확인 중» 줄 숨김·셔틀 알림 결과 한 줄. 학부모용 셔틀 라벨 분리(PARENT_SHUTTLE_*), 가드 tests/parent-copy-names-guard. 미완: 수강 변경 «취소 요청»은 신청 내역으로 가는 버튼(조회에 신청 id 없음) | tsc 0 · fail 0 |
