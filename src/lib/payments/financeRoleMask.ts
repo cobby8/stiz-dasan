@@ -11,7 +11,7 @@
 //   - 부원장 = 미납(PENDING·OVERDUE) 청구의 금액만 보이고, 납부 완료·취소·환불 금액은 null.
 //             월 요약(총 청구·납부 완료·미납 합계·건수)은 전부 null — 수납률도 여기서 계산되므로 같이 사라진다.
 
-import { canSeeAllMoney, maskPaymentAmount } from "../auth/moneyAccess";
+import { canSeeAllMoney, canSeePaymentAmount, maskPaymentAmount } from "../auth/moneyAccess";
 
 /** 월 요약 — 부원장에게는 모든 칸이 null */
 export type FinanceSummaryView = {
@@ -36,6 +36,13 @@ export const HIDDEN_FINANCE_SUMMARY: FinanceSummaryView = {
 type PaymentLike = { amount?: number | null; status?: string | null };
 
 /**
+ * 금액을 가리는 청구 행에서 같이 비우는 칸(2026-11-14 검수 S1).
+ * 영수증·청구서(결제 페이지) 링크·승인번호를 열면 납부 완료 금액이 그대로 보이므로 금액과 함께 뺀다.
+ * 화면은 이 값이 없으면 «청구서»·«링크복사»·«영수증 열기»를 그리지 않는다.
+ */
+export const MASKED_PAYMENT_LINK_KEYS = ["receiptUrl", "invoiceCheckoutUrl", "invoiceId", "providerOrderId"] as const;
+
+/**
  * 수납 관리 응답(payments + summary + 그 밖의 칸)을 역할에 맞게 가린다.
  * 그 밖의 칸(결제 설정 상태 등)은 손대지 않는다.
  */
@@ -48,15 +55,17 @@ export function maskFinancePayloadForRole<T extends { payments: PaymentLike[]; s
     return {
         ...payload,
         // 청구 행의 돈 필드는 amount 하나뿐이다(getPayments). 미납 행은 그대로, 나머지는 null
-        payments: payload.payments.map((payment) => maskPaymentAmount(payment, role)) as T["payments"],
+        payments: payload.payments.map((payment) =>
+            maskPaymentAmount(payment, role, MASKED_PAYMENT_LINK_KEYS as unknown as (keyof typeof payment)[])) as T["payments"],
         summary: HIDDEN_FINANCE_SUMMARY,
     };
 }
 
 // ── 현장 결제(토스 POS) 요청 보기 ─────────────────────────────────────────────
 // 부원장도 ⚡현장 결제를 한다(미납 청구만 요청 가능 — 서버 SQL 이 PENDING·OVERDUE 만 받는다).
-// 다만 «청구서의 가장 최근 요청» 조회는 이미 결제된(PAID) 요청을 돌려줄 수 있다 → 그때 금액을 가린다.
-// 결제 전(대기·보냄·만료·취소·보류) 요청의 금액은 «아직 안 낸 청구» 금액이라 그대로 둔다.
+// 다만 «청구서의 가장 최근 요청» 조회는 이미 납부된 청구의 요청을 돌려줄 수 있다.
+// 판단 기준 = 요청 상태가 아니라 «묶인 청구(Payment)의 지금 상태»(2026-11-14 검수 S2):
+//   묶인 청구가 하나라도 미납(PENDING·OVERDUE)이 아니면(또는 상태를 모르면) 금액·면세·항목 금액을 모두 null.
 
 type ChargeItemAmount = { amount: number | null };
 
@@ -69,10 +78,16 @@ export type ChargeViewAmountsMasked<V extends { items: ChargeItemAmount[] }> = O
 
 export function maskChargeRequestViewForRole<
     V extends { status: string; amount: number | null; taxFreeAmount: number | null; items: ChargeItemAmount[] },
->(view: V | null, role: string | null | undefined): ChargeViewAmountsMasked<V> | null {
+>(
+    view: V | null,
+    role: string | null | undefined,
+    /** 묶인 청구들의 지금 상태(DB 에서 읽은 값). 비었으면 «모름» → 가린다 */
+    paymentStatuses: readonly (string | null | undefined)[],
+): ChargeViewAmountsMasked<V> | null {
     if (!view) return null;
-    // 원장이거나 아직 결제되지 않은 요청이면 그대로
-    if (canSeeAllMoney(role) || view.status !== "PAID") return view as unknown as ChargeViewAmountsMasked<V>;
+    // 원장이거나, 묶인 청구가 전부 아직 미납이면 그대로
+    const allUnpaid = paymentStatuses.length > 0 && paymentStatuses.every((status) => canSeePaymentAmount(role, status));
+    if (canSeeAllMoney(role) || allUnpaid) return view as unknown as ChargeViewAmountsMasked<V>;
     return {
         ...view,
         amount: null,

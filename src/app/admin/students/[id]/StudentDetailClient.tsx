@@ -1256,6 +1256,13 @@ export default function StudentDetailClient({
                             전화
                         </a>
                     )}
+                    {/* 부원장용 «청구서 발행»(검수 M3, 2026-11-14 원장 결정) — «청구/수납» 탭은 닫혀 있어 머리에 둔다.
+                        같은 발행 창을 그대로 쓰고, 서버 createPayment 가 부원장 청구를 미납으로 강제한다. 원장은 탭 안 버튼 그대로 */}
+                    {!canManageFinance && (
+                        <button type="button" onClick={() => setIssueOpen(true)} className="academy-button-secondary">
+                            청구서 발행
+                        </button>
+                    )}
                     {editSection === "header" ? renderEditControls("header") : (
                         <button type="button" onClick={() => setDetailModal("profile")} className="academy-button-secondary">
                             기본 정보

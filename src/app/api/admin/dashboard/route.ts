@@ -2,9 +2,10 @@ import { getCachedAdminDashboardPayload } from "@/lib/adminReadPayloads";
 import { stripDashboardMoneyForRole } from "@/lib/auth/dashboardMoneyStrip";
 import { createAdminTiming, requireTimedAdmin, timedJson } from "@/lib/adminTiming";
 
-const ADMIN_DASHBOARD_CACHE_SECONDS = 300;
+// 브라우저 캐시 금지(2026-11-14 검수 S3): 학원 공용 PC 에서 원장 → 부원장으로 바꿔 로그인하면
+// 원장이 받은 응답(매출·미납 합계)을 브라우저가 그대로 다시 쓸 수 있었다. 서버 캐시(unstable_cache)는 그대로다.
 const ADMIN_DASHBOARD_CACHE_HEADERS = {
-    "Cache-Control": `private, max-age=60, stale-while-revalidate=${ADMIN_DASHBOARD_CACHE_SECONDS}`,
+    "Cache-Control": "private, no-store",
 };
 
 export async function GET() {

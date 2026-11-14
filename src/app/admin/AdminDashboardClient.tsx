@@ -65,7 +65,8 @@ type DashboardData = {
     pendingRequests: PendingRequest[];
     pendingCount: number;
     enrollStats: EnrollStats;
-    extendedStats: ExtendedStats;
+    // 부원장에게는 서버가 null 로 보낸다(stripDashboardMoneyForRole, 검수 L3)
+    extendedStats: ExtendedStats | null;
     todayClasses: TodayClass[];
     recentStudents: RecentStudent[];
     todayLabel?: string;
@@ -162,7 +163,8 @@ export default function AdminDashboardClient({
         setError(null);
 
         try {
-            const res = await fetch("/api/admin/dashboard");
+            // no-store: 공용 PC 에서 다른 역할이 받아 둔 응답을 다시 쓰지 않게(검수 S3)
+            const res = await fetch("/api/admin/dashboard", { cache: "no-store" });
             if (!res.ok) throw new Error("Dashboard request failed");
             setData((await res.json()) as DashboardData);
         } catch {

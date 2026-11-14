@@ -1895,7 +1895,9 @@ export default function FinanceClient({
                                     <tbody key={group.status} className="divide-y divide-[var(--color-academy-line)]">
                                         <tr>
                                             <th colSpan={paymentColumnCount} scope="rowgroup" className="bg-[var(--color-academy-soft)] px-2 py-1.5 text-xs font-semibold text-[var(--color-academy-ink)]">
-                                                {group.label} · <span className="tabular-nums">{group.items.length}</span>건
+                                                {group.label}
+                                                {/* 건수: 부원장은 미납·연체 묶음만(납부완료·취소·환불 건수는 월 요약처럼 숨김 — 검수 L4). 원장은 그대로 */}
+                                                {(canManageCriticalFinance || ["PENDING", "OVERDUE"].includes(group.status)) && <> · <span className="tabular-nums">{group.items.length}</span>건</>}
                                                 {/* 묶음 합계는 원장만 — 부원장에게 합계는 숨긴다(미납 합계 포함) */}
                                                 {canManageCriticalFinance && <> · 합계 <span className="tabular-nums">{formatAmount(group.totalAmount)}</span></>}
                                             </th>

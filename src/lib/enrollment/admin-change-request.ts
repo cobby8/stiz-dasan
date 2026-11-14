@@ -203,7 +203,28 @@ const PAUSE_SETTLEMENT_SINCE = "2026-11-10";
 
 /** 수강료 처리 남은 일 건수(화면 상단 알림) — 표가 없거나 실패하면 0 */
 export async function countOpenPauseSettlements(): Promise<number> {
-  return countOpenSettlementWork(prisma).catch(() => 0);
+  const [open, deferred] = await Promise.all([
+    countOpenSettlementWork(prisma).catch(() => 0),
+    countDeferredPauseSettlements().catch(() => 0),
+  ]);
+  return open + deferred;
+}
+
+/**
+ * 부원장이 수강료 처리 없이 승인한 휴원 중 아직 정산 행이 없는 건(검수 M1).
+ * 원장이 «수강료 처리»를 하면 정산 행이 생겨 자연히 빠진다. 거절·취소된 신청은 세지 않는다.
+ */
+export const DEFERRED_PAUSE_SETTLEMENT_COUNT_SQL = `SELECT count(*)::int AS n FROM "EnrollmentChangeRequest" r
+  WHERE r.kind = 'PAUSE' AND r.status IN ('APPROVED', 'APPLIED')
+    AND EXISTS (SELECT 1 FROM "OperationsAuditLog" a
+                 WHERE a.action = 'ENROLLMENT_CHANGE_DECIDED'
+                   AND a."detailsJson"->>'requestId' = r.id
+                   AND a."detailsJson"->>'settlementDeferred' = 'true')
+    AND NOT EXISTS (SELECT 1 FROM "EnrollmentChangeSettlement" s WHERE s."requestId" = r.id)`;
+
+async function countDeferredPauseSettlements(): Promise<number> {
+  const rows = await prisma.$queryRawUnsafe<Array<{ n: number }>>(DEFERRED_PAUSE_SETTLEMENT_COUNT_SQL);
+  return Number(rows[0]?.n ?? 0);
 }
 
 /**
@@ -294,16 +315,18 @@ export async function decideEnrollmentChangeRequest(input: {
 }) {
   const note = (input.note ?? "").trim().slice(0, 500) || null;
   const settlementChoice = input.approve && input.settlement && !input.deferSettlementChoice ? input.settlement : null;
-  const pendingKind = input.approve && !settlementChoice && !input.deferSettlementChoice && todayKst() >= PAUSE_SETTLEMENT_SINCE
+  const pendingKind = input.approve && !settlementChoice && todayKst() >= PAUSE_SETTLEMENT_SINCE
     ? (await prisma.$queryRawUnsafe<Array<{ kind: string }>>(
       `SELECT kind FROM "EnrollmentChangeRequest" WHERE id = $1 AND status = 'PENDING'`, input.requestId,
     ))[0]?.kind
     : null;
-  const mustCheckChoice = pendingKind === "PAUSE";
+  const mustCheckChoice = pendingKind === "PAUSE" && !input.deferSettlementChoice;
+  // 부원장 «승인만»(검수 M1): 같은 미리보기로 «처리할 금액이 있는가»만 보고, 있으면 «정산 미룸» 표시를 남긴다
+  const checkDeferred = pendingKind === "PAUSE" && Boolean(input.deferSettlementChoice);
   // 일정은 잠금을 잡기 전에 읽고, 청구는 거래 안에서 잠근 뒤 다시 읽는다.
-  const classDatesFor = settlementChoice || mustCheckChoice ? await loadClassDatesFor() : null;
+  const classDatesFor = settlementChoice || mustCheckChoice || checkDeferred ? await loadClassDatesFor() : null;
   // 콜백 안에서 채우므로 객체로 둔다(let 이면 TS 가 콜백 밖에서 null 로만 본다)
-  const holder: { settled: ExecutedSettlement | null } = { settled: null };
+  const holder: { settled: ExecutedSettlement | null; settlementDeferred: boolean } = { settled: null, settlementDeferred: false };
   let rows: any[];
   try {
   rows = await prisma.$transaction(async (tx) => {
@@ -313,6 +336,11 @@ export async function decideEnrollmentChangeRequest(input: {
     if (preview?.tablesReady && settlementChoiceRequired(preview.plan)) {
       throw new SettlementRejected(SETTLEMENT_CHOICE_REQUIRED_MESSAGE);
     }
+  }
+  if (checkDeferred && classDatesFor) {
+    // 미리보기 실패는 «미룸»으로 본다(원장이 놓치는 쪽보다 한 번 더 보는 쪽이 안전)
+    const preview = await previewPauseSettlement(tx, input.requestId, classDatesFor, true).catch(() => null);
+    holder.settlementDeferred = !preview || Boolean(preview.tablesReady && settlementChoiceRequired(preview.plan));
   }
   const decided = await tx.$queryRawUnsafe<any[]>(
     // 결정과 결정 기록(감사 로그)은 함께 저장한다.
@@ -329,7 +357,9 @@ export async function decideEnrollmentChangeRequest(input: {
     action: "ENROLLMENT_CHANGE_DECIDED", actorType: "ADMIN", actorUserId: input.adminUserId,
     detailsJson: { requestId: input.requestId, studentId: decided[0].studentId,
       kind: decided[0].kind, approved: input.approve, effectiveFrom: decided[0].effectiveFrom,
-      notificationChannel: "APP_ONLY" },
+      notificationChannel: "APP_ONLY",
+      // 부원장이 수강료 처리 없이 승인한 휴원 — countOpenPauseSettlements 가 정산 행이 생길 때까지 센다
+      ...(holder.settlementDeferred ? { settlementDeferred: true } : {}) },
   }});
   // 휴원 수강료 처리(2026-11-10 m6) — 승인과 «같은 트랜잭션». 처리가 막히면 승인도 되돌린다(원장이 확인한 뒤 다시 승인).
   if (decided[0] && settlementChoice && classDatesFor) {
@@ -356,6 +386,13 @@ export async function decideEnrollmentChangeRequest(input: {
   // 커밋 뒤: 토스 부분 취소 실행 → 이월 차감. 알림 문구가 처리 기록(이월·환불 예정)을 읽으므로 알림보다 먼저.
   const settlementResult = holder.settled ? await finishSettlement(holder.settled, input.adminUserId) : null;
 
+  // 부원장 승인 뒤 원장 할 일(검수 M1) — 휴원 수강료 처리·반 변경 차액 청구를 원장(ADMIN)에게만 벨 알림.
+  // 알림 실패가 승인을 되돌리면 안 되므로 기다리되 오류는 삼킨다.
+  if (input.approve && input.deferSettlementChoice) {
+    await notifyOwnerOfDeferredMoneyWork(input.requestId, rows[0].kind, holder.settlementDeferred)
+      .catch((error) => console.error("[admin-change-request] 원장 알림 실패", error instanceof Error ? error.name : ""));
+  }
+
   // 학부모 앱 알림 — 신청자가 지금도 그 학생 보호자일 때만(관리자 직접 변경은 건너뜀). 중복 키로 한 번만.
   const notificationStatus = await notifyParentOfEnrollmentChange(input.requestId, input.approve ? "APPROVED" : "REJECTED");
 
@@ -369,7 +406,42 @@ export async function decideEnrollmentChangeRequest(input: {
     appliedCount: summary?.applied ?? 0,
     notificationStatus,
     settlement: settlementResult,
+    settlementDeferred: holder.settlementDeferred,
   };
+}
+
+/**
+ * 부원장 승인 뒤 원장에게 남는 돈 일 알림(검수 M1). 원장(ADMIN)에게만 인앱 벨(+웹푸시) — 문자는 보내지 않는다.
+ * - 휴원: 처리할 수강료가 있어 «정산 미룸»이면 «수강료 처리 필요»
+ * - 반 변경: 일할 차액이 있으면(청구 또는 차감) «차액 청구 확인 필요»
+ */
+async function notifyOwnerOfDeferredMoneyWork(requestId: string, kind: string, settlementDeferred: boolean) {
+  let what: string | null = null;
+  if (kind === "PAUSE" && settlementDeferred) what = "수강료 처리 필요";
+  if (kind === "CLASS_CHANGE") {
+    // 차액 판단은 수강 변경 화면과 같은 계산(getEnrollmentChangeRequests 의 proration)
+    const [row] = await getEnrollmentChangeRequests("ALL", [requestId]);
+    if (row?.proration?.needsProration && !row.proration.scheduleUnavailable && row.proration.diff !== 0) what = "반 변경 차액 청구 확인 필요";
+  }
+  if (!what) return;
+  const info = await prisma.$queryRawUnsafe<Array<{ studentName: string; kindLabel: string }>>(
+    `SELECT s.name AS "studentName", r.kind AS "kindLabel" FROM "EnrollmentChangeRequest" r
+       JOIN "Student" s ON s.id = r."studentId" AND ${notMergedStudent("s")} WHERE r.id = $1`,
+    requestId,
+  );
+  const name = info[0]?.studentName ?? "학생";
+  const label = CHANGE_KIND_LABEL[kind as ChangeKind] ?? "수강 변경";
+  const owners = await prisma.$queryRawUnsafe<Array<{ id: string }>>(`SELECT id FROM "User" WHERE role = 'ADMIN'`);
+  const { createNotificationRecord } = await import("@/lib/notification");
+  for (const owner of owners) {
+    await createNotificationRecord({
+      userId: owner.id,
+      type: "ENROLLMENT_CHANGE",
+      title: `부원장이 ${name} ${label} 승인 — ${what}`,
+      message: `${name} 학생의 ${label} 신청을 부원장이 승인했습니다. 수강 변경 화면에서 ${what === "수강료 처리 필요" ? "휴원 수강료(이월·환불)를 처리" : "차액 청구서를 확인"}해 주세요.`,
+      linkUrl: "/admin/enrollment-changes?status=APPROVED",
+    });
+  }
 }
 
 /** 처리 막힘(문구 그대로 보여 줄 것)·청구 경합이면 원장용 문구, 그 밖의 오류면 null(그대로 던진다) */

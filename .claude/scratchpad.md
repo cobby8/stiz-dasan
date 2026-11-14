@@ -64,6 +64,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-14 | developer(부원장 수납 가림, claude/vice-admin-money-hide): 공용 가림 함수 src/lib/payments/financeRoleMask.ts(수납 목록·POS 요청 보기·수강 변경 행·학생 상세 — 캐시에서 꺼낸 뒤 역할로) · 원장 전용 차단 = 월 일괄 발행·미리보기·일괄 문자·발송 진행(requireFinanceOwner)·청구 준비/월 장부/월 대장/시트 대조 API(requireOwner)·화면 redirect·POS 대사·휴원 정산·환불·차액 청구 · 부원장 열림 = ⚡현장 결제(1건·묶음, 결제 전 취소·정리 확인)·청구서 발행(미납)·입금/현장수납 승인·휴원 «승인만»(deferSettlementChoice — 정산은 원장이 나중에) · 화면: 요약·수납률·청구 준비·시트 점검·일괄 문자·묶음 합계·학생 상세 청구/수납 탭·수납 칸 숨김, 가린 금액 «—» · 새 테스트 vice-admin-finance-access 18건 · 기존 테스트 기대값 13파일 갱신 · tests 4819-0·guards 5-0·tsc 0 | 검수 대기 |
 | 11-14 | PM: 청구 월 카드(f8bc4572+결제하기 안전장치 87c09363·중복 누름 8e43b575)·기사 운행표 휴원·휴무(067011c5)·앱 1.0.3 버전(5175e8ec) 묶음 배포 a2ce24e READY·오류 0. 안드로이드 vc6 내부 테스트 게시·iOS Codemagic #6 TestFlight 처리 완료(외부 베타 정보 미입력 경고만) | 완료 |
 | 11-14 | developer(기사님 운행표 휴원·휴무, claude/driver-paused-holiday): 휴원·퇴원·첫 수업 전 = 회색 뱃지+탑승·미탑승 잠금(명단 유지), 휴무일 = 맨 위 «오늘은 휴무(사유)»+정규 줄 잠금, 저장 API 2곳 409, 관리자 운행표 뱃지+«이 달 휴무». 판정 = regularRunDayRules(학부모 childShuttleRules 재사용). 운영 읽기: 휴원 3명·6행 뱃지 대상. 리뷰 반영(월말 다음 달 미입력=모름·반 0개는 퇴원 기록 있을 때만 퇴원·409 문구 표시) tsc 0·node --test 4672/0·guards 5/0 | 재검수 대기 |
 | 11-14 | developer(청구 월 카드, claude/billing-cards): 학부모 청구 탭·아이 기록 = 한 달 한 줄(청구월·합계·상태) + 세부 시트(할인 «원래−할인=낼 금액»·기존 결제 버튼 그대로 시트 안) · 할인 원인 = Payment 에 할인 칸 없음, 글(description) 안에만 있어 카드가 원문을 통째로 보였음 → 해석 156/157건 · 청구 탭 날짜 두 번 변환 · tests 4661-0·guards 5-0·tsc 0 | 검수 대기 |

@@ -71,19 +71,41 @@ test("공용 규칙 maskPaymentAmount: 미납만 보이고 extraKeys 도 같이 
     assert.deepEqual(paid, { status: "PAID", amount: null, receiptAmount: null });
 });
 
-test("현장 결제 요청 보기: 결제 전 요청은 부원장에게도 금액이 보이고, 결제된(PAID) 요청은 금액·항목 금액이 null", () => {
+test("현장 결제 요청 보기(S2): 요청 상태가 아니라 «묶인 청구의 지금 상태»로 — 전부 미납일 때만 부원장에게 금액", () => {
     const view = (status) => ({ id: "r1", status, amount: 210000, taxFreeAmount: 210000, items: [{ paymentId: "a", amount: 180000 }, { paymentId: "b", amount: 30000 }] });
-    for (const status of ["PENDING", "SENT", "EXPIRED", "CANCELLED", "HELD"]) {
-        assert.equal(mask.maskChargeRequestViewForRole(view(status), "VICE_ADMIN").amount, 210000, status);
+    // 묶인 청구가 전부 미납·연체 → 요청 상태와 무관하게 보인다
+    for (const status of ["PENDING", "SENT", "EXPIRED", "CANCELLED", "HELD", "PAID"]) {
+        assert.equal(mask.maskChargeRequestViewForRole(view(status), "VICE_ADMIN", ["PENDING", "OVERDUE"]).amount, 210000, status);
     }
-    const paid = mask.maskChargeRequestViewForRole(view("PAID"), "VICE_ADMIN");
-    assert.equal(paid.amount, null);
-    assert.equal(paid.taxFreeAmount, null);
-    assert.deepEqual(paid.items.map((it) => it.amount), [null, null]);
-    assert.deepEqual(paid.items.map((it) => it.paymentId), ["a", "b"]);
+    // 요청은 «보냄»인데 청구 하나가 이미 납부됨(다른 길로 납부·환불 등) → 가린다
+    for (const statuses of [["PENDING", "PAID"], ["REFUNDED", "PENDING"], ["CANCELED"], []]) {
+        const out = mask.maskChargeRequestViewForRole(view("SENT"), "VICE_ADMIN", statuses);
+        assert.equal(out.amount, null, JSON.stringify(statuses));
+        assert.equal(out.taxFreeAmount, null);
+        assert.deepEqual(out.items.map((it) => it.amount), [null, null]);
+        assert.deepEqual(out.items.map((it) => it.paymentId), ["a", "b"]);
+    }
     const original = view("PAID");
-    assert.equal(mask.maskChargeRequestViewForRole(original, "ADMIN"), original, "원장은 그대로");
-    assert.equal(mask.maskChargeRequestViewForRole(null, "VICE_ADMIN"), null);
+    assert.equal(mask.maskChargeRequestViewForRole(original, "ADMIN", []), original, "원장은 그대로");
+    assert.equal(mask.maskChargeRequestViewForRole(null, "VICE_ADMIN", []), null);
+});
+
+test("수납 목록(S1): 금액을 가리는 청구는 영수증·청구서(결제 페이지) 링크·승인번호도 null, 미납은 그대로", () => {
+    const row = (status) => ({ id: status, status, amount: 1000, receiptUrl: "https://r", invoiceCheckoutUrl: "https://c", invoiceId: "inv", providerOrderId: "o", invoiceNo: "NO-1" });
+    const out = mask.maskFinancePayloadForRole({ payments: [row("PAID"), row("REFUNDED"), row("PENDING")], summary: {} }, "VICE_ADMIN");
+    for (const hidden of out.payments.slice(0, 2)) {
+        assert.deepEqual(
+            { a: hidden.amount, r: hidden.receiptUrl, c: hidden.invoiceCheckoutUrl, i: hidden.invoiceId, o: hidden.providerOrderId },
+            { a: null, r: null, c: null, i: null, o: null }, hidden.status,
+        );
+    }
+    assert.equal(out.payments[2].invoiceCheckoutUrl, "https://c", "미납 청구 링크는 결제 안내에 필요해 그대로");
+    assert.equal(out.payments[2].invoiceId, "inv");
+    // 화면은 링크 값이 없으면 «청구서»·«링크복사»·«영수증 열기»를 그리지 않는다
+    const client = read("src/app/admin/finance/FinanceClient.tsx");
+    assert.match(client, /if \(payment\.invoiceCheckoutUrl\) return payment\.invoiceCheckoutUrl;\n    if \(!payment\.invoiceId\) return null;/);
+    assert.match(client, /\.\.\.\(invoiceHref \? \[\s*\{\s*key: "invoice"/);
+    assert.match(client, /value: d\.receiptUrl \? \(/);
 });
 
 test("수강 변경 행: 부원장에게는 차액·휴원 수강료 미리보기·처리 기록이 null, 원장은 그대로", () => {
@@ -167,8 +189,14 @@ test("현장 결제: 카운터 동작은 원장·부원장, 결제 취소(환불
     for (const name of ["loadPosChargeCancel", "requestPosChargeCancel", "loadPosPluginTokens", "issuePosPluginTokenAction", "revokePosPluginTokenAction"]) {
         assert.match(fnBody(src, name), /await requireFinanceOwner\(\)/, name);
     }
-    assert.match(fnBody(src, "loadPosChargeRequest"), /maskChargeRequestViewForRole\(request, admin\.appUserRole\)/);
-    assert.match(fnBody(src, "createPosChargeRequest"), /maskChargeRequestViewForRole\(result\.request, admin\.appUserRole\)/);
+    assert.match(fnBody(src, "loadPosChargeRequest"), /await maskViewForRole\(request, admin\.appUserRole\)/);
+    assert.match(fnBody(src, "createPosChargeRequest"), /await maskViewForRole\(result\.request, admin\.appUserRole\)/);
+    // S2: 부원장이면 묶인 청구(대표+항목)의 지금 상태를 DB 에서 읽어 판단, 원장은 읽지 않는다
+    const helper = src.slice(src.indexOf("async function maskViewForRole"), src.indexOf("/** 원장만 — 결제 취소"));
+    assert.match(helper, /if \(!view \|\| canSeeAllMoney\(role\)\) return maskChargeRequestViewForRole\(view, role, \[\]\);/);
+    assert.match(helper, /\[view\.paymentId, \.\.\.view\.items\.map\(\(item\) => item\.paymentId\)\]/);
+    assert.match(helper, /SELECT status FROM "Payment" WHERE id = ANY\(\$1::text\[\]\)/);
+    assert.match(helper, /rows\.length === ids\.length \? rows\.map\(\(row\) => row\.status\) : \[\]/, "못 찾은 청구가 있으면 «모름» → 가림");
     // 미납만 요청 가능 — 서비스 SQL 이 DB 값으로 다시 확인한다(부원장 경로도 같은 함수)
     const service = read("src/lib/pos/chargeRequestService.ts");
     assert.match(service, /WHERE p\.status IN \('PENDING', 'OVERDUE'\) AND p\.type IN \('MONTHLY', 'SHUTTLE', 'OTHER'\)/);
@@ -204,7 +232,8 @@ test("휴원·수강 변경: 승인·거절은 부원장도(정산은 미룸), �
     assert.match(decide, /deferSettlementChoice: !owner/);
     assert.match(fnBody(src, "readEnrollmentChangesForInbox"), /maskEnrollmentChangeRowForRole\(row, admin\.appUserRole\)/);
     const lib = read("src/lib/enrollment/admin-change-request.ts");
-    assert.match(lib, /const pendingKind = input\.approve && !settlementChoice && !input\.deferSettlementChoice/);
+    // 부원장(미룸)은 정산 선택을 요구받지 않는다(같은 미리보기는 «미룸 표시»에만 쓴다 — M1)
+    assert.match(lib, /const mustCheckChoice = pendingKind === "PAUSE" && !input\.deferSettlementChoice;/);
     const page = read("src/app/admin/enrollment-changes/page.tsx");
     assert.match(page, /maskEnrollmentChangeRowForRole\(row, admin\.appUserRole\)/);
     assert.match(page, /openSettlementCount=\{owner \? openSettlementCount : 0\}/);
@@ -235,4 +264,55 @@ test("신청함: 처리된 입금 확인·현장 수납 금액은 부원장에�
     const page = read("src/app/admin/inbox/page.tsx");
     assert.match(page, /viewerRole: role/);
     assert.match(page, /kinds\.includes\("ENROLLMENT_CHANGE"\) && canSeeAllMoney\(role\) \? countOpenPauseSettlements\(\)/);
+});
+
+test("S3: 대시보드·수납 API 는 브라우저 캐시 금지(private, no-store), 화면 fetch 도 no-store", () => {
+    for (const file of ["src/app/api/admin/dashboard/route.ts", "src/app/api/admin/finance/route.ts"]) {
+        const src = read(file);
+        assert.match(src, /"Cache-Control": "private, no-store"/, file);
+        assert.doesNotMatch(src, /max-age=|stale-while-revalidate/, file);
+    }
+    assert.match(read("src/app/admin/AdminDashboardClient.tsx"), /fetch\("\/api\/admin\/dashboard", \{ cache: "no-store" \}\)/);
+    assert.match(read("src/app/admin/finance/FinanceClient.tsx"), /fetch\(`\/api\/admin\/finance\?year=\$\{y\}&month=\$\{m\}`, \{ cache: "no-store" \}\)/);
+    // 학생 상세 다시 읽기(청구 목록)는 원래부터 no-store
+    assert.match(read("src/app/api/admin/students/[id]/activity/route.ts"), /"Cache-Control": "no-store"/);
+});
+
+test("M1: 부원장 «승인만» 휴원은 정산 미룸 표시 → 원장 «정산 남은 일» 숫자에 더하고 원장에게만 벨 알림", () => {
+    const lib = read("src/lib/enrollment/admin-change-request.ts");
+    const decide = fnBody(lib, "decideEnrollmentChangeRequest");
+    assert.match(decide, /const checkDeferred = pendingKind === "PAUSE" && Boolean\(input\.deferSettlementChoice\);/);
+    assert.match(decide, /holder\.settlementDeferred = !preview \|\| Boolean\(preview\.tablesReady && settlementChoiceRequired\(preview\.plan\)\);/);
+    assert.match(decide, /\.\.\.\(holder\.settlementDeferred \? \{ settlementDeferred: true \} : \{\}\)/, "감사 로그 detailsJson 에 기록");
+    assert.match(decide, /if \(input\.approve && input\.deferSettlementChoice\) \{\s*await notifyOwnerOfDeferredMoneyWork\(/);
+    // 건수 = 기존 정산 남은 일 + «미룸이고 정산 행이 없는 승인·반영 휴원»
+    assert.match(fnBody(lib, "countOpenPauseSettlements"), /countOpenSettlementWork\(prisma\)[\s\S]*countDeferredPauseSettlements\(\)[\s\S]*return open \+ deferred;/);
+    const sqlStart = lib.indexOf("export const DEFERRED_PAUSE_SETTLEMENT_COUNT_SQL");
+    const sql = lib.slice(sqlStart, lib.indexOf("`;", sqlStart));
+    assert.match(sql, /r\.kind = 'PAUSE' AND r\.status IN \('APPROVED', 'APPLIED'\)/);
+    assert.match(sql, /a\."detailsJson"->>'settlementDeferred' = 'true'/);
+    assert.match(sql, /NOT EXISTS \(SELECT 1 FROM "EnrollmentChangeSettlement" s WHERE s\."requestId" = r\.id\)/, "원장이 정산하면 빠진다");
+    // 알림 = 원장(ADMIN)만, 휴원(미룸)·반 변경 차액, 링크는 승인 목록
+    const notify = lib.slice(lib.indexOf("async function notifyOwnerOfDeferredMoneyWork"), lib.indexOf("/** 처리 막힘"));
+    assert.match(notify, /SELECT id FROM "User" WHERE role = 'ADMIN'/);
+    assert.doesNotMatch(notify, /VICE_ADMIN/);
+    assert.match(notify, /kind === "PAUSE" && settlementDeferred/);
+    assert.match(notify, /kind === "CLASS_CHANGE"[\s\S]*row\.proration\.diff !== 0/);
+    assert.match(notify, /linkUrl: "\/admin\/enrollment-changes\?status=APPROVED"/);
+    // 원장 화면 두 곳(수강 변경·신청함)이 같은 건수 함수를 쓴다
+    assert.match(read("src/app/admin/enrollment-changes/page.tsx"), /countOpenPauseSettlements\(\)/);
+    assert.match(read("src/app/admin/inbox/page.tsx"), /canSeeAllMoney\(role\) \? countOpenPauseSettlements\(\)/);
+});
+
+test("M3: 학생 상세 — 부원장도 머리의 «청구서 발행»으로 같은 발행 창(미납 강제), «청구/수납» 탭은 닫힌 채", () => {
+    const client = read("src/app/admin/students/[id]/StudentDetailClient.tsx");
+    assert.match(client, /\{!canManageFinance && \(\s*<button type="button" onClick=\{\(\) => setIssueOpen\(true\)\} className="academy-button-secondary">\s*청구서 발행/);
+    assert.match(client, /activeTab === "pay" && canManageFinance && \(/, "탭은 여전히 원장만");
+    assert.match(client, /\{issueOpen && \(\s*<IssueInvoiceModal/);
+    const modal = read("src/app/admin/students/[id]/StudentBillingModals.tsx");
+    const issue = modal.slice(modal.indexOf("export function IssueInvoiceModal"), modal.indexOf("export function EditInvoiceModal"));
+    assert.match(issue, /status: "PENDING"/, "발행 창은 언제나 미납으로 보낸다");
+    assert.match(issue, /d\.amount == null \? "—" : formatWon\(d\.amount\)/, "중복 안내의 납부 완료 금액은 가려진 채");
+    // 서버도 부원장 청구를 미납으로 강제
+    assert.match(fnBody(read("src/app/actions/admin.ts"), "createPayment"), /admin\.appUserRole !== "ADMIN" && requestedStatus !== "PENDING"/);
 });

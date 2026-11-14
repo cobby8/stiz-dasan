@@ -21,6 +21,8 @@ import {
     type PosPluginTokenRow,
 } from "@/lib/pos/pluginAuth";
 import { maskChargeRequestViewForRole, type ChargeViewAmountsMasked } from "@/lib/payments/financeRoleMask";
+import { canSeeAllMoney } from "@/lib/auth/moneyAccess";
+import { prisma } from "@/lib/prisma";
 
 /**
  * 토스 POS «현장 결제» · «POS 연결(토큰)» 관리자 동작.
@@ -38,6 +40,22 @@ export type ActionResult<T> = ({ ok: true } & T) | { ok: false; message: string 
 
 /** 화면에 내려가는 요청 보기 — 부원장에게는 결제된 요청의 금액이 null */
 export type PosChargeRequestView = ChargeViewAmountsMasked<AdminChargeRequestView>;
+
+/**
+ * 요청 보기를 역할에 맞게 가린다(검수 S2). 부원장이면 묶인 청구(대표 + 항목)의 «지금 상태»를 DB 에서 읽어
+ * 하나라도 미납이 아니면 금액을 뺀다. 원장은 DB 를 읽지 않고 그대로.
+ */
+async function maskViewForRole(view: AdminChargeRequestView | null, role: string): Promise<PosChargeRequestView | null> {
+    if (!view || canSeeAllMoney(role)) return maskChargeRequestViewForRole(view, role, []);
+    const ids = [...new Set([view.paymentId, ...view.items.map((item) => item.paymentId)].filter(Boolean))];
+    const rows = await prisma.$queryRawUnsafe<{ status: string }[]>(
+        `SELECT status FROM "Payment" WHERE id = ANY($1::text[])`,
+        ids,
+    );
+    // 찾은 행 수가 다르면(삭제 등) «모름»으로 보고 가린다
+    const statuses = rows.length === ids.length ? rows.map((row) => row.status) : [];
+    return maskChargeRequestViewForRole(view, role, statuses);
+}
 
 /** 원장만 — 결제 취소(환불)·POS 연결 코드 */
 async function requireFinanceOwner() {
@@ -83,8 +101,8 @@ export async function loadPosChargeRequest(paymentIds: string | string[]): Promi
         const admin = await requirePosCounter();
         const ids = paymentIdsOf(paymentIds);
         const request = ids.length > 1 ? await getChargeRequestForPayments(ids) : await getChargeRequestForPayment(ids[0] ?? "");
-        // 부원장: 이미 결제된 요청이면 금액을 가린다(원장은 그대로)
-        return { ok: true, request: maskChargeRequestViewForRole(request, admin.appUserRole) };
+        // 부원장: 묶인 청구가 하나라도 미납이 아니면 금액을 가린다(원장은 그대로)
+        return { ok: true, request: await maskViewForRole(request, admin.appUserRole) };
     } catch (error) {
         return failure(error, "현장 결제 요청을 불러오지 못했습니다.");
     }
@@ -103,8 +121,8 @@ export async function createPosChargeRequest(paymentIds: string | string[]): Pro
             adminUserId: admin.appUserId,
             adminName: admin.appUserName,
         });
-        // 새로 만든 요청은 결제 전이라 금액이 그대로다(가림 함수는 PAID 일 때만 가린다)
-        const request = maskChargeRequestViewForRole(result.request, admin.appUserRole);
+        // 새로 만든(또는 열려 있던) 요청도 같은 기준 — 묶인 청구가 전부 미납이면 금액이 그대로 보인다
+        const request = await maskViewForRole(result.request, admin.appUserRole);
         if (!request) throw new ChargeRequestError("NOT_FOUND", "현장 결제 요청을 만들지 못했습니다.");
         return { ok: true, request, existing: result.existing };
     } catch (error) {
