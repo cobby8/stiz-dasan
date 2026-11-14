@@ -479,7 +479,10 @@ export default function SessionInProgressClient({
     const target = students.find((student) => student.id === rowId);
     if (!target || savingRows[rowId]) return;
     // 이미 선택된 버튼을 다시 누름 = 취소(미확인). «질병·부상» 칩(absenceReason 을 보냄)은 결석을 유지한 채 사유만 바꾸므로 해당 없음.
-    if (target.status === status && absenceReason === undefined) return clearAttendance(target);
+    // 단, 그 줄에 오류 안내가 떠 있으면(예: «출결은 저장됐지만 정규 출석 기록이 실패했어요. 다시 눌러 주세요.»)
+    // 같은 버튼을 다시 누르는 것은 «다시 저장»이다 — 안내대로 눌렀는데 출결이 지워지면 안 된다.
+    const retryAfterError = rowNotices[rowId]?.tone === "error";
+    if (target.status === status && absenceReason === undefined && !retryAfterError) return clearAttendance(target);
     setRowNotice(rowId, "");
     setSavingRows((current) => ({ ...current, [rowId]: true }));
     try {

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { syncCreditForRegularSession, syncCreditForSeasonalSeat } from "@/lib/makeup/credit-service";
+import { revokeMakeupCreditInTx, syncCreditForRegularSession, syncCreditForSeasonalSeat } from "@/lib/makeup/credit-service";
 import { makeSourceKey } from "@/lib/makeup/credit-rules";
 import { applyMakeupAttendanceInTx, findMakeupBookings, makeupOnClassDateSql } from "@/lib/makeup/makeup-attendance";
 import { requireStaffClassAccess, requireStaffSeasonalSessionAccess, requireStaffSessionAccess } from "@/lib/staff-class-access";
@@ -670,6 +670,7 @@ export async function saveStaffAttendance(input: {
 const CREDIT_LOCKED_STATUSES = ["RESERVED", "USED", "NO_SHOW"];
 const CREDIT_LOCKED_MESSAGE = "이 결석으로 나간 보강권이 이미 예약됐거나 사용돼 결석을 취소할 수 없습니다. 보강 예약을 먼저 취소하거나 원장님께 요청해 주세요.";
 const ABSENCE_RESOLVED_MESSAGE = "이미 청구에서 이월·보강으로 정산된 결석이라 취소할 수 없습니다. 원장님께 요청해 주세요.";
+const MAKEUP_REVERT_FAILED_MESSAGE = "보강 예약을 되돌리지 못해 출결을 취소하지 않았습니다. 원장님께 요청해 주세요.";
 const CLEAR_RACE_MESSAGE = "그사이 출결이 바뀌었습니다. 화면을 새로고침한 뒤 다시 눌러 주세요.";
 
 /** 이 결석으로 나간 보강권이 지금 어떤 상태인가 — locked=취소 불가, revocable=취소하면 회수됨, none=보강권 없음(또는 이미 회수·소멸) */
@@ -755,7 +756,13 @@ export async function clearStaffAttendance(input: { sessionId: string; attendanc
   if (session.sessionDateId) {
     const seat = await findSeasonalSeatInSession(input.sessionId, input.attendanceKey);
     if (!seat) return { ok: false as const, message: "이 수업의 확정 명단에 없는 좌석입니다." };
-    if (!seat.attendanceStatus) return { ok: true as const, cleared: true as const, previousStatus: null, creditRevoke: false };
+    if (!seat.attendanceStatus) {
+      // 좌석은 이미 미확인인데 정규 출석 기록만 남은 경우(앞선 취소가 중간에 끊김)를 다시 눌러 정리할 수 있게 — 여러 번 해도 같은 결과.
+      if (!dryRun && seat.studentId) {
+        await prisma.$executeRawUnsafe(`DELETE FROM "Attendance" WHERE "sessionId" = $1 AND "studentId" = $2`, input.sessionId, seat.studentId);
+      }
+      return { ok: true as const, cleared: true as const, previousStatus: null, creditRevoke: false };
+    }
     let creditRevoke = false;
     if (seat.attendanceStatus === "ABSENT" && seat.studentId) {
       const credit = await absenceCreditState(seat.studentId, makeSourceKey({ sourceType: "SEASONAL", enrollmentDateId: seat.id }));
@@ -767,7 +774,7 @@ export async function clearStaffAttendance(input: { sessionId: string; attendanc
     const cleared = await prisma.$queryRawUnsafe<{ id: string }[]>(
       `UPDATE "SpecialProgramEnrollmentDate"
           SET "attendanceStatus" = NULL, "attendanceNote" = NULL, "arrivedAt" = NULL,
-              "attendanceCheckedAt" = now(), "attendanceCheckedByUserId" = $3, "updatedAt" = now()
+              "attendanceCheckedAt" = NULL, "attendanceCheckedByUserId" = $3, "updatedAt" = now()
         WHERE id = $1 AND "attendanceStatus" = $2
         RETURNING id`,
       seat.id, seat.attendanceStatus, access.staff.appUserId,
@@ -840,7 +847,10 @@ export async function clearStaffAttendance(input: { sessionId: string; attendanc
   }
   if (dryRun) return { ok: true as const, preview: true as const, previousStatus, creditRevoke };
 
-  // 결석 사유 정리와 출결 삭제를 한 트랜잭션으로 — 이미 정산된 결석이면 둘 다 하지 않는다.
+
+  // 결석 사유 정리 · 출결 삭제 · 보강권 회수(보강 온 아이는 예약 되돌림)를 «한 트랜잭션»으로.
+  // 하나라도 안 되면 전부 되돌린다 — 출결은 지워졌는데 보강권만 남거나, 그 반대가 생기지 않게.
+  const creditSourceKey = makeSourceKey({ sourceType: "REGULAR", classId: session.classId, absenceYmd: sessionYmd });
   let absenceReport: AbsenceReportState | undefined;
   try {
     const applied = await prisma.$transaction(async (tx) => {
@@ -858,28 +868,25 @@ export async function clearStaffAttendance(input: { sessionId: string; attendanc
         input.sessionId, studentId, previousStatus,
       );
       if (!deleted[0]) throw new ClearBlockedError(CLEAR_RACE_MESSAGE);
+      if (isMakeup) {
+        // 참석 표시였으면 «예약됨»·보강권 «예약 중»으로 되돌린다 — 결석으로 고칠 때와 같은 전이.
+        // 이월로 정산된 보강처럼 규칙이 막으면 던진다 → 출결 삭제도 함께 되돌아간다.
+        try {
+          await applyMakeupAttendanceInTx(tx, { studentId, classId: session.classId, dateYmd: sessionYmd, status: "ABSENT" });
+        } catch (error) {
+          console.error("[clearStaffAttendance] 보강 예약 되돌림 실패(출결 취소도 되돌림)", { sessionId: input.sessionId, studentId, error });
+          throw new ClearBlockedError(MAKEUP_REVERT_FAILED_MESSAGE);
+        }
+      } else if (!keepReportCredit) {
+        // 결석이 사라졌으니 안 쓴 보강권(AVAILABLE)만 회수한다 — 출석·지각으로 정정할 때의 회수와 같은 규칙(revokeMakeupCredit)의 트랜잭션판.
+        await revokeMakeupCreditInTx(tx, { studentId, sourceKey: creditSourceKey, note: "출결이 미확인으로 되돌려져 회수" });
+      }
       return { report };
     });
     absenceReport = applied.report;
   } catch (error) {
     if (error instanceof ClearBlockedError) return { ok: false as const, message: error.message };
     throw error;
-  }
-
-  if (isMakeup) {
-    // 참석 표시였으면 «예약됨»·보강권 «예약 중»으로 되돌린다 — 결석으로 고칠 때와 같은 전이.
-    try {
-      await prisma.$transaction((tx) => applyMakeupAttendanceInTx(tx, { studentId, classId: session.classId, dateYmd: sessionYmd, status: "ABSENT" }));
-    } catch (error) {
-      console.error("[clearStaffAttendance] 보강 예약·보강권 처리 실패(출결 취소는 저장됨)", { sessionId: input.sessionId, studentId, error });
-    }
-  } else if (!keepReportCredit) {
-    // 결석이 사라졌으니 안 쓴 보강권을 회수한다(출석·지각으로 정정할 때와 같은 함수 — 결석이 아니면 회수).
-    try {
-      await syncCreditForRegularSession({ sessionId: input.sessionId, studentId, status: UNCHECKED_STATUS });
-    } catch (error) {
-      console.error("[clearStaffAttendance] 보강권 처리 실패(출결 취소는 저장됨)", { sessionId: input.sessionId, studentId, error });
-    }
   }
   return { ok: true as const, cleared: true as const, previousStatus, creditRevoke, absenceReport };
 }
