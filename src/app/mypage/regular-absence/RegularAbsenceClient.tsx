@@ -171,7 +171,7 @@ export default function RegularAbsenceClient({
         if (!res.ok) {
           // 화면을 연 뒤 마감(수업 1시간 전)이 지난 경우 — 다시 읽어 그 줄이 «마감»으로 바뀌게 한다
           if (j?.code === "ABSENCE_CHANGE_CLOSED") await reload();
-          throw new Error(j?.error || "신고에 실패했습니다.");
+          throw new Error(j?.error || "결석을 알리지 못했습니다.");
         }
         // 질병·부상: 고른 사진을 이어서 올린다. 사진이 실패해도 결석은 이미 알렸다 — 7일 안에 다시 올리면 된다.
         const pending = j?.carryReview === "PENDING";
@@ -192,7 +192,7 @@ export default function RegularAbsenceClient({
           pending
             ? uploaded > 0
               ? `${head} 사진을 확인한 뒤 다음 달 수강료에서 빼 드려요.`
-              : `${head} 7일 안에 증빙 사진을 올려 주시면 확인한 뒤 다음 달 수강료에서 빼 드려요.`
+              : `${head} 결석일부터 7일 안에 증빙 사진을 올려 주시면 확인한 뒤 다음 달 수강료에서 빼 드려요.`
             : d.reported
               ? head
               : j?.makeupCreditIssued
@@ -204,7 +204,7 @@ export default function RegularAbsenceClient({
         setPhotos((prev) => ({ ...prev, [key]: [] }));
         await reload();
       } catch (e) {
-        setErr(customerMessage(e, "결석 신고를 접수하지 못했습니다. 잠시 후 다시 시도해 주세요."));
+        setErr(customerMessage(e, "결석을 알리지 못했습니다. 잠시 후 다시 시도해 주세요."));
       } finally {
         setBusyKey("");
       }
@@ -242,14 +242,14 @@ export default function RegularAbsenceClient({
         }
         setMsg(
           j?.makeupBookingCanceled
-            ? "결석 신고와 보강 예약을 취소했어요."
+            ? "결석 알림과 보강 예약을 취소했어요."
             : j?.makeupCreditRevoked
-              ? "결석 신고를 취소했어요. 보강권도 함께 회수됐어요."
-              : "결석 신고를 취소했어요.",
+              ? "결석 알림을 취소했어요. 보강권도 함께 회수됐어요."
+              : "결석 알림을 취소했어요.",
         );
         await reload();
       } catch (e) {
-        setErr(customerMessage(e, "결석 신고를 취소하지 못했습니다. 잠시 후 다시 시도해 주세요."));
+        setErr(customerMessage(e, "결석 알림을 취소하지 못했습니다. 잠시 후 다시 시도해 주세요."));
       } finally {
         setBusyKey("");
       }
@@ -347,7 +347,7 @@ export default function RegularAbsenceClient({
       </div>
       {/* 화면 맨 위 설명 한 줄 = 본문 14px */}
       <p className="mb-4 text-sm text-[var(--color-academy-muted)]">
-        수업 1시간 전까지 신고·취소할 수 있어요.
+        수업 1시간 전까지 알리거나 취소할 수 있어요.
       </p>
 
       {/* 예정 보강(읽기 전용) — 관리자가 지정한 자녀의 보강 일정 */}
@@ -527,6 +527,9 @@ export default function RegularAbsenceClient({
                         const busy = busyKey === key;
                         const reviewLabel = illnessReviewLabel(d.carryReview);
                         const illnessChosen = reason[key] === ILLNESS_REASON;
+                        // 이미 질병·부상으로 알린 줄에서 «사유 변경»을 연 채 같은 사유면 보낼 것이 없다 —
+                        // 사유 글·사진 칸(눌러도 저장되지 않는 막다른 길)을 숨기고 사진 올리는 곳만 알려 준다
+                        const sameIllness = illnessChosen && d.reported && d.reason === ILLNESS_REASON;
                         const chosenPhotos = photos[key] || [];
                         return (
                           <li key={key} className="px-3 py-1.5">
@@ -550,7 +553,7 @@ export default function RegularAbsenceClient({
                                 ) : d.reported ? (
                                   <p className="mt-0.5 flex flex-wrap items-center gap-1.5">
                                     <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-academy-warning-soft)] px-2 py-0.5 text-xs text-[var(--color-academy-warning)]">
-                                      결석 신고됨
+                                      결석 알림
                                     </span>
                                     {d.reasonLabel && <span className="text-xs text-[var(--color-academy-muted)]">{d.reasonLabel}</span>}
                                     {/* 질병·부상이면 이월 검토 상태 한 단어(사진 추가는 위 «질병·부상 결석» 칸에서) */}
@@ -605,9 +608,9 @@ export default function RegularAbsenceClient({
                                   )}
                                   {/* 신고 취소 = 그 자리 확인(C-M1) 후 기존 cancel(d) 그대로 */}
                                   <InlineConfirm
-                                    label="신고 취소"
-                                    question={d.makeupCredit === "RESERVED" ? "보강 예약도 함께 취소돼요. 이 결석 신고를 취소할까요?" : "이 결석 신고를 취소할까요?"}
-                                    confirmLabel="신고 취소하기"
+                                    label="알림 취소"
+                                    question={d.makeupCredit === "RESERVED" ? "보강 예약도 함께 취소돼요. 이 결석 알림을 취소할까요?" : "이 결석 알림을 취소할까요?"}
+                                    confirmLabel="알림 취소하기"
                                     onConfirm={() => cancel(d)}
                                     pending={busy}
                                     openClassName="basis-full"
@@ -662,7 +665,12 @@ export default function RegularAbsenceClient({
                                 </button>
 
                                 {/* 질병·부상(2026-11-14 원장 결정 a1): 사유 글(필수) + 증빙 사진 1~3장(지금 또는 7일 안) */}
-                                {illnessChosen && (
+                                {sameIllness && (
+                                  <p className="basis-full break-keep text-xs text-[var(--color-academy-muted)]">
+                                    사진은 위 «질병·부상 결석» 칸에서 추가할 수 있어요.
+                                  </p>
+                                )}
+                                {illnessChosen && !sameIllness && (
                                   <div className="basis-full space-y-2">
                                     <label className="block text-sm font-medium text-[var(--color-academy-ink)]">
                                       어디가 아픈가요?
@@ -696,7 +704,7 @@ export default function RegularAbsenceClient({
                                       </span>
                                     </div>
                                     <p className="break-keep text-xs text-[var(--color-academy-muted)]">
-                                      사진은 지금 올리거나 7일 안에 추가할 수 있어요. 확인한 뒤 다음 달 수강료에서 1회분을 빼 드려요. 사진이 없으면 보강권 1장으로 바뀌어요.
+                                      사진은 지금 올리거나 결석일부터 7일 안에 추가할 수 있어요. 확인한 뒤 다음 달 수강료에서 1회분을 빼 드려요. 사진이 없으면 보강권 1장으로 바뀌어요.
                                     </p>
                                   </div>
                                 )}

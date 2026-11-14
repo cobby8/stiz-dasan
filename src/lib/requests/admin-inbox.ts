@@ -240,7 +240,9 @@ const ADAPTERS: Adapter[] = [
     rawExpr: `CASE WHEN r.status = 'APPROVED' THEN 'APPROVED' WHEN r.status = 'MAKEUP' THEN 'MAKEUP'
                    WHEN x.date > (now() AT TIME ZONE 'Asia/Seoul')::date THEN 'WAITING' ELSE 'PENDING' END`,
     // 2026-10-05 = 보강권 발급·청구 작업대 결석 정산이 시작된 날(그 전 결석은 대상이 아니다)
+    // 닫힌 검토(CLOSED — 그날 출석으로 기록돼 자동으로 닫힌 건 등)는 고를 것이 없어 뺀다(결석 신고 자체는 «결석» 줄에 그대로 있다)
     where: `x.reason = 'ILLNESS_INJURY' AND x.status <> 'CANCELLED' AND x.date >= '2026-10-05'::date
+            AND COALESCE(r.status, '') <> 'CLOSED'
             AND NOT (r."absenceId" IS NULL AND EXISTS (
               SELECT 1 FROM "MakeupCredit" used WHERE used."studentId" = x."studentId"
                  AND used."sourceKey" = 'REGULAR:' || x."classId" || ':' || to_char(x.date, 'YYYY-MM-DD')

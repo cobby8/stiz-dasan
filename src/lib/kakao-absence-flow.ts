@@ -260,7 +260,7 @@ async function startCancel(input: AbsenceFlowInput, child: FlowChild | null, lea
 }
 
 /** 질병·부상 결석 완료 안내 — 카톡으로는 사진을 받을 수 없어 앱으로 이끈다(사유 글은 싣지 않는다) */
-export const ILLNESS_KAKAO_NOTICE = "질병·부상 결석은 앱 「결석 알리기」에서 7일 안에 증빙 사진(진단서·처방전·약 봉투 등)을 올려 주세요. 확인 후 다음 달 수강료에서 빼 드려요. 사진이 없으면 보강권 1장으로 바뀌어요.";
+export const ILLNESS_KAKAO_NOTICE = "질병·부상 결석은 앱 「결석 알리기」에서 결석일부터 7일 안에 증빙 사진(진단서·처방전·약 봉투 등)을 올려 주세요. 확인 후 다음 달 수강료에서 빼 드려요. 사진이 없으면 보강권 1장으로 바뀌어요.";
 
 /** 확정 → 실제 결석 신청(reportRegularAbsence — 웹과 같은 함수) */
 async function confirmReport(flow: FlowRow<AbsenceState>): Promise<Reply> {

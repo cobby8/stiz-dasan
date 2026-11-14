@@ -2,7 +2,7 @@
 //
 // 원장 결정표(2026-11-14) a1~a8:
 //   · 사유 «질병·부상»이면 보강권을 바로 주지 않고 «이월 검토 중»으로 둔다.
-//   · 증빙 사진은 1~3장, 알릴 때 또는 알린 날부터 7일 안에 추가.
+//   · 증빙 사진은 1~3장, 알릴 때 또는 «결석일(더 늦게 알렸으면 알린 날)부터 7일» 안에 추가.
 //   · 원장이 [이월 승인] → 다음 달 수강료에서 1회분 차감 / [보강권으로] 또는 7일 안에 사진 없음 → 보강권 1장.
 //   · 사진은 처리 끝나고 90일 뒤 자동 삭제.
 //
@@ -20,7 +20,7 @@ export type IllnessReviewStatus = (typeof ILLNESS_REVIEW_STATUSES)[number];
 export const ILLNESS_REVIEW_SOURCES = ["PARENT", "KAKAO", "STAFF"] as const;
 export type IllnessReviewSource = (typeof ILLNESS_REVIEW_SOURCES)[number];
 
-/** 사진을 올릴 수 있는 기간(알린 날 포함하지 않고 +7일째 되는 날 자정까지) */
+/** 사진을 올릴 수 있는 기간(기준일 포함하지 않고 +7일째 되는 날 자정까지). 기준일 = evidenceBaseYmd */
 export const EVIDENCE_WINDOW_DAYS = 7;
 /** 결석 1건에 살아 있는 사진 최대 장수 */
 export const EVIDENCE_MAX_PHOTOS = 3;
@@ -54,26 +54,36 @@ export function isValidReasonText(value: unknown): boolean {
   return Boolean(text) && text!.length <= REASON_TEXT_MAX;
 }
 
-/** 사진을 올릴 수 있는 마지막 날(KST). 알린 날이 11/14 면 11/21 */
-export function evidenceDeadlineYmd(requestedYmd: string): string {
-  return addDaysKst(requestedYmd, EVIDENCE_WINDOW_DAYS);
+/**
+ * «7일»을 세기 시작하는 날 = 알린 날과 결석일 중 «더 늦은 날».
+ * 왜: 몇 주 뒤 결석(수술 예정 등)을 미리 알리면, 알린 날만 기준으로는 결석일이 오기도 전에 기한이 끝나
+ *     진단서를 받을 수 없는 시점에 보강권으로 바뀐다. 올리기 가능 판정·자동 전환·화면 기한 안내가 모두 이 함수를 쓴다.
+ * 결석일을 모르면(값 없음·형식 오류) 알린 날 그대로.
+ */
+export function evidenceBaseYmd(requestedYmd: string, absenceYmd?: string | null): string {
+  return absenceYmd && isKstYmd(absenceYmd) && absenceYmd > requestedYmd ? absenceYmd : requestedYmd;
+}
+
+/** 사진을 올릴 수 있는 마지막 날(KST). 기준일이 11/14 면 11/21 */
+export function evidenceDeadlineYmd(requestedYmd: string, absenceYmd?: string | null): string {
+  return addDaysKst(evidenceBaseYmd(requestedYmd, absenceYmd), EVIDENCE_WINDOW_DAYS);
 }
 
 /** 사진 기간이 끝났나 — 마지막 날 «다음 날»부터 true(마지막 날 밤 11:59 까지는 올릴 수 있다) */
-export function isEvidenceWindowOver(requestedYmd: string, todayYmd: string): boolean {
+export function isEvidenceWindowOver(requestedYmd: string, todayYmd: string, absenceYmd?: string | null): boolean {
   if (!isKstYmd(requestedYmd) || !isKstYmd(todayYmd)) return false; // 날짜를 모르면 닫지 않는다(전환은 되돌리기 어렵다)
-  return todayYmd > evidenceDeadlineYmd(requestedYmd);
+  return todayYmd > evidenceDeadlineYmd(requestedYmd, absenceYmd);
 }
 
 /** 학부모가 지금 사진을 추가·삭제할 수 있나 — 검토 중이고 기간 안일 때만 */
-export function canEditEvidence(input: { status: string | null | undefined; requestedYmd: string; todayYmd: string }): boolean {
+export function canEditEvidence(input: { status: string | null | undefined; requestedYmd: string; absenceYmd?: string | null; todayYmd: string }): boolean {
   if (input.status !== "PENDING") return false;
   if (!isKstYmd(input.requestedYmd) || !isKstYmd(input.todayYmd)) return false;
-  return !isEvidenceWindowOver(input.requestedYmd, input.todayYmd);
+  return !isEvidenceWindowOver(input.requestedYmd, input.todayYmd, input.absenceYmd);
 }
 
 /** 한 장 더 올릴 수 있나(기간 + 장수) */
-export function canAddEvidence(input: { status: string | null | undefined; requestedYmd: string; todayYmd: string; photoCount: number }): boolean {
+export function canAddEvidence(input: { status: string | null | undefined; requestedYmd: string; absenceYmd?: string | null; todayYmd: string; photoCount: number }): boolean {
   return canEditEvidence(input) && input.photoCount < EVIDENCE_MAX_PHOTOS;
 }
 
@@ -83,12 +93,12 @@ export function canAddEvidence(input: { status: string | null | undefined; reque
  * 학원이 등록한 결석(STAFF)은 원장이 직접 고르므로 자동 전환하지 않는다.
  */
 export function shouldAutoConvertToMakeup(input: {
-  status: string; source: string; photoCount: number; requestedYmd: string; todayYmd: string;
+  status: string; source: string; photoCount: number; requestedYmd: string; absenceYmd?: string | null; todayYmd: string;
 }): boolean {
   if (input.status !== "PENDING") return false;
   if (input.source !== "PARENT" && input.source !== "KAKAO") return false;
   if (input.photoCount > 0) return false;
-  return isEvidenceWindowOver(input.requestedYmd, input.todayYmd);
+  return isEvidenceWindowOver(input.requestedYmd, input.todayYmd, input.absenceYmd);
 }
 
 /** 처리 끝난 날로부터 90일이 지나 사진을 지울 때인가(90일째 되는 날부터 true) */

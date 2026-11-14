@@ -8,6 +8,9 @@ import { notifyParentsOfStudents } from "@/lib/notification";
 
 export const dynamic = "force-dynamic";
 
+/** 증빙 사진 삭제 실패가 이 건수 이상이면 cron 오류 알림으로 올린다(한두 건은 다음 날 재시도로 충분) */
+const EVIDENCE_PURGE_ALERT_AT = 5;
+
 /**
  * 보강권 하루 정리(매일 KST 00:30).
  *
@@ -33,26 +36,38 @@ async function handleGet(req: NextRequest) {
 
   // ② 는 ① 과 따로 실패한다 — 한쪽이 실패해도 다른 쪽은 끝까지 돌리고, 마지막에 오류를 던져 원장 슬랙 알림(withCronAlert)이 가게 한다
   const errors: unknown[] = [];
+  let notifyFailed = 0;
   let illness: { converted: number; failed: number } = { converted: 0, failed: 0 };
   let evidence: { purged: number; failed: number } = { purged: 0, failed: 0 };
   try {
     const result = await autoConvertOverdueIllnessReviews(prisma, isMakeupCreditIssuableYmd);
     illness = { converted: result.converted.length, failed: result.failed };
     for (const item of result.converted) {
-      // 앱 안 알림만(문자·알림톡 없음). 건강 정보(사유 글)는 본문에 싣지 않는다
-      await notifyParentsOfStudents(
-        [item.studentId], "ABSENCE", "결석 보강권 안내",
-        item.creditIssued
-          ? `${item.absenceYmd} 결석은 증빙 사진이 없어 보강권 1장으로 바꿨어요.`
-          : `${item.absenceYmd} 결석은 증빙 사진이 없어 이월 검토를 마쳤어요.`,
-        "/mypage/regular-absence",
-      );
+      // 앱 안 알림만(문자·알림톡 없음). 건강 정보(사유 글)는 본문에 싣지 않는다.
+      // 건별로 감싼다 — 한 건의 알림 실패가 나머지 학부모 알림을 건너뛰게 하지 않는다(전환 자체는 이미 끝났다)
+      try {
+        await notifyParentsOfStudents(
+          [item.studentId], "ABSENCE", "결석 보강권 안내",
+          item.creditIssued
+            ? `${item.absenceYmd} 결석은 증빙 사진이 없어 보강권 1장으로 바꿨어요.`
+            : `${item.absenceYmd} 결석은 증빙 사진이 없어 이월 검토를 마쳤어요.`,
+          "/mypage/regular-absence",
+        );
+      } catch (error) {
+        notifyFailed += 1;
+        console.error("[cron/makeup-credits] 전환 알림 실패:", error instanceof Error ? error.name : "");
+      }
     }
+    // 전환이 한 건이라도 실패했으면 조용히 넘기지 않는다 — 아래에서 cron 오류 알림으로 올린다
+    if (result.failed > 0) errors.push(new Error(`질병·부상 결석 자동 전환 ${result.failed}건 실패`));
+    if (notifyFailed > 0) errors.push(new Error(`질병·부상 결석 전환 알림 ${notifyFailed}건 실패`));
   } catch (error) {
     errors.push(error);
   }
   try {
     evidence = await purgeIllnessEvidence(prisma, removeEvidencePhoto);
+    // 사진 삭제는 다음 날 다시 시도하므로 한두 건 실패는 넘기되, 여러 건이면 저장소 문제라 알린다
+    if (evidence.failed >= EVIDENCE_PURGE_ALERT_AT) errors.push(new Error(`증빙 사진 삭제 ${evidence.failed}건 실패`));
   } catch (error) {
     errors.push(error);
   }

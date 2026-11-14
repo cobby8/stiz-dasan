@@ -79,7 +79,7 @@ export async function resolveWorkbenchAbsence(db: WorkbenchDb, input: unknown, a
       await tx.$executeRawUnsafe(`UPDATE "MakeupSession" SET status='CANCELLED',"updatedAt"=NOW() WHERE id=ANY($1::text[]) AND status='BOOKED'`,bookings.map(c=>c.id));
       await tx.$executeRawUnsafe(`UPDATE "MakeupCredit" SET status='REVOKED',"makeupSessionId"=NULL,"updatedAt"=NOW() WHERE id=ANY($1::text[]) AND status IN ('AVAILABLE','RESERVED','EXPIRED')`,credits.map(c=>c.id));
     } else {
-      if (!credits.some(c=>["AVAILABLE","RESERVED","USED","NO_SHOW"].includes(c.status))) throw new WorkbenchError("사용 가능한 기존 보강권을 먼저 확인해 주세요. 과거 결석의 보강권을 소급 발급하지 않습니다.",409);
+      if (!credits.some(c=>["AVAILABLE","RESERVED","USED","NO_SHOW"].includes(c.status))) throw new WorkbenchError("사용 가능한 기존 보강권을 먼저 확인해 주세요. 과거 결석의 보강권을 소급 발급하지 않습니다. 질병·부상 이월 검토 중인 결석은 신청함의 [보강권으로]를 눌러 주세요.",409);
     }
     await tx.$executeRawUnsafe(`INSERT INTO "BillingAbsenceResolution" ("absenceId","studentId",resolution,reason,"evidenceConfirmed",eligibility,"actorUserId") VALUES ($1,$2,$3,$4,$5,$6,$7)`,absence.id,absence.studentId,b.resolution,b.reason.trim(),b.evidenceConfirmed===true,b.eligibility,actorId);
     // 질병·부상 «이월 검토»(2026-11-14 원장 결정 a3) — 신청함의 검토 상태를 «같은 트랜잭션»에서 맞춘다.

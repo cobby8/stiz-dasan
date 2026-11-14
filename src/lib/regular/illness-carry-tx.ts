@@ -117,6 +117,8 @@ export async function closeIllnessReviewInTx(
 /**
  * 출결을 «결석»으로 찍을 때 보강권 자동 발급을 멈춰야 하는 결석인가.
  * 질병·부상 결석이고 아직 [보강권으로] 결정이 나지 않았으면 true(검토 대기 — 원장이 고른다).
+ * 닫힌 검토(CLOSED — 그날 출석으로 기록돼 자동으로 닫힌 건 등)는 검토가 끝난 것이라 보통 결석과 같이 발급한다
+ * (출결이 나중에 결석으로 정정되면 보강권이 나가야 한다. 신청함에서도 빠져 있어 보류로 두면 아무것도 못 받는다).
  * 표가 없으면(마이그레이션 전) false → 예전처럼 발급한다.
  */
 export async function isIllnessCreditHeld(
@@ -130,11 +132,41 @@ export async function isIllnessCreditHeld(
        LEFT JOIN "RegularAbsenceCarryReview" r ON r."absenceId" = ra.id
       WHERE ra."studentId" = $1 AND ra."classId" = $2 AND ra.date = $3::date
         AND ra.status <> 'CANCELLED' AND ra.reason = $4
-        AND COALESCE(r.status, '') <> 'MAKEUP'
+        AND COALESCE(r.status, '') NOT IN ('MAKEUP', 'CLOSED')
       LIMIT 1`,
     input.studentId, input.classId, input.absenceYmd, ILLNESS_REASON,
   );
   return rows.length > 0;
+}
+
+/**
+ * 검토 중이던 결석 신고를 «관리자»가 취소했는데 그날 출결은 결석이다 → 보류해 둔 보강권을 되살린다.
+ * 왜: 이월 검토 전에는 «신고 취소 + 출결 결석 = 보강권 유지»였다(실제로 빠졌으니 권리는 그대로).
+ *     검토 중에는 보강권을 거둬 두므로, 취소로 검토를 닫을 때 여기서 돌려주지 않으면 결석했는데 아무것도 못 받는다.
+ * 호출부는 검토를 닫은 «같은 트랜잭션»에서 부른다. 출결이 결석이 아니면 아무것도 하지 않는다.
+ */
+export async function restoreHeldCreditIfAbsentInTx(
+  tx: IllnessTx,
+  input: { studentId: string; classId: string; absenceYmd: string; issuable: (absenceYmd: string) => boolean },
+): Promise<{ restored: boolean }> {
+  if (!input.issuable(input.absenceYmd)) return { restored: false };
+  // Session."date" 는 무tz timestamp 에 KST 달력 자정을 담는다 — 변환 없이 글자 그대로 비교
+  const absent = await tx.$queryRawUnsafe<Array<{ found: number }>>(
+    `SELECT 1 AS found
+       FROM "Attendance" a
+       JOIN "Session" se ON se.id = a."sessionId"
+      WHERE a."studentId" = $1 AND se."classId" = $2
+        AND to_char(se."date", 'YYYY-MM-DD') = $3
+        AND a.status = 'ABSENT'
+      LIMIT 1`,
+    input.studentId, input.classId, input.absenceYmd,
+  );
+  if (absent.length === 0) return { restored: false };
+  const credit = await issueCreditForReportedAbsence(tx, {
+    studentId: input.studentId, classId: input.classId, absenceYmd: input.absenceYmd,
+    note: "결석 신고는 취소됐지만 출결이 결석이라 보강권 유지",
+  });
+  return { restored: credit.issued };
 }
 
 export type ConvertOutcome =

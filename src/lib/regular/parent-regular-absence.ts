@@ -152,7 +152,8 @@ export async function getParentIllnessReviews(parentUserId: string): Promise<Par
     const today = todayKst();
     return rows.map((r) => {
       const photos: { id: string; mine: boolean }[] = (typeof r.photos === "string" ? JSON.parse(r.photos) : r.photos) ?? [];
-      const window = { status: r.status, requestedYmd: r.requestedYmd, todayYmd: today };
+      // 7일 기준점 = 알린 날과 결석일 중 더 늦은 날(규칙 함수 한 곳)
+      const window = { status: r.status, requestedYmd: r.requestedYmd, absenceYmd: r.date, todayYmd: today };
       return {
         absenceId: r.absenceId,
         studentId: r.studentId,
@@ -163,7 +164,7 @@ export async function getParentIllnessReviews(parentUserId: string): Promise<Par
         dateLabel: dateLabel(r.date),
         status: r.status,
         statusLabel: illnessReviewLabel(r.status) ?? "",
-        deadlineLabel: dateLabel(evidenceDeadlineYmd(r.requestedYmd)),
+        deadlineLabel: dateLabel(evidenceDeadlineYmd(r.requestedYmd, r.date)),
         canEdit: canEditEvidence(window),
         canAdd: canAddEvidence({ ...window, photoCount: photos.length }),
         photos: photos.map((photo) => ({ id: String(photo.id), mine: photo.mine === true })),

@@ -1,6 +1,6 @@
 // 질병·부상 결석 증빙 사진 — «누가 무엇을 할 수 있나»를 SQL 로 확인하는 곳(원장 결정 a6).
 //
-//   · 올리기·지우기: 그 아이의 보호자(childAccessSql) + 검토 중 + 알린 날부터 7일 안 + 3장까지
+//   · 올리기·지우기: 그 아이의 보호자(childAccessSql) + 검토 중 + 결석일(더 늦게 알렸으면 알린 날)부터 7일 안 + 3장까지
 //   · 열어 보기: 관리자, 그리고 «올린 학부모 본인»(같은 가정의 다른 보호자도 사진 자체는 열지 못한다 — 장수만 보인다)
 //
 // DB 는 인자(db)로만 받는다 — 테스트가 가짜 db 로 권한 조건을 실제 실행해 본다.
@@ -16,7 +16,7 @@ export type EvidenceDb = {
 /** 결석 한 건의 사진 올리기를 줄 세우는 잠금(검토 줄 한 행). 반드시 거래 안에서, 장수를 세기 «전»에 따로 실행한다 */
 export const EVIDENCE_LOCK_SQL = `SELECT 1 AS locked FROM "RegularAbsenceCarryReview" WHERE "absenceId" = $1 FOR UPDATE`;
 
-export type EvidenceTarget = { absenceId: string; status: string; requestedYmd: string; todayYmd: string; photoCount: number };
+export type EvidenceTarget = { absenceId: string; status: string; requestedYmd: string; absenceYmd: string; todayYmd: string; photoCount: number };
 
 /** 학부모가 사진을 올리려는 결석 — 내 아이의 살아 있는 질병·부상 결석이고 검토 줄이 있을 때만 */
 export async function findEvidenceTargetForParent(
@@ -29,6 +29,7 @@ export async function findEvidenceTargetForParent(
   const rows = await db.$queryRawUnsafe<EvidenceTarget[]>(
     `SELECT ra.id AS "absenceId", r.status,
             to_char(r."requestedAt" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "requestedYmd",
+            to_char(ra.date, 'YYYY-MM-DD') AS "absenceYmd",
             to_char(now() AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "todayYmd",
             (SELECT COUNT(*)::int FROM "RegularAbsenceEvidence" e WHERE e."absenceId" = ra.id AND e."removedAt" IS NULL) AS "photoCount"
        FROM "RegularAbsence" ra
@@ -46,7 +47,7 @@ export async function findEvidenceTargetForParent(
 export function evidenceAddRefusal(target: EvidenceTarget): string | null {
   if (canAddEvidence(target)) return null;
   if (target.status !== "PENDING") return "이미 처리가 끝난 결석이라 사진을 올릴 수 없어요.";
-  if (!canEditEvidence(target)) return "사진을 올릴 수 있는 기간(알린 날부터 7일)이 지났어요.";
+  if (!canEditEvidence(target)) return "사진을 올릴 수 있는 기간(결석일부터 7일)이 지났어요.";
   return `사진은 ${EVIDENCE_MAX_PHOTOS}장까지 올릴 수 있어요. 바꾸려면 먼저 한 장을 지워 주세요.`;
 }
 
@@ -55,11 +56,12 @@ export type EvidenceFile = { id: string; storageBucket: string; storagePath: str
 /** 학부모가 열거나 지우려는 사진 — «내가 올린» 살아 있는 사진이고, 지금도 그 아이의 보호자일 때만 */
 export async function findEvidenceForParent(
   db: EvidenceDb, accessSql: string, parentUserId: string, evidenceId: string,
-): Promise<(EvidenceFile & { status: string; requestedYmd: string; todayYmd: string }) | null> {
-  const rows = await db.$queryRawUnsafe<Array<EvidenceFile & { status: string; requestedYmd: string; todayYmd: string }>>(
+): Promise<(EvidenceFile & { status: string; requestedYmd: string; absenceYmd: string; todayYmd: string }) | null> {
+  const rows = await db.$queryRawUnsafe<Array<EvidenceFile & { status: string; requestedYmd: string; absenceYmd: string; todayYmd: string }>>(
     `SELECT e.id, e."storageBucket" AS "storageBucket", e."storagePath" AS "storagePath", e."absenceId" AS "absenceId",
             r.status,
             to_char(r."requestedAt" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "requestedYmd",
+            to_char(ra.date, 'YYYY-MM-DD') AS "absenceYmd",
             to_char(now() AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "todayYmd"
        FROM "RegularAbsenceEvidence" e
        JOIN "RegularAbsence" ra ON ra.id = e."absenceId"

@@ -577,7 +577,7 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                         기능이 있는 것은 그 기능으로 보내고, 나머지는 자유 메시지 하나로 받는다. */}
                     <div className="rounded-xl bg-[var(--color-academy-warning-soft)] border border-[var(--color-academy-line)] px-3 py-2 text-xs text-[var(--color-academy-warning)] leading-relaxed">
                         결석은 여기 적지 마시고{" "}
-                        <Link href="/mypage/regular-absence" className="font-semibold underline">결석 신고</Link>·
+                        <Link href="/mypage/regular-absence" className="font-semibold underline">결석 알리기</Link>·
                         <Link href="/mypage/seasonal" className="font-semibold underline">방학특강 결석</Link>·
                         <Link href="/mypage/shuttle" className="font-semibold underline">셔틀 변경</Link>
                         에서 신청해 주세요.

@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS public."RegularAbsenceCarryReview" (
   source TEXT NOT NULL DEFAULT 'PARENT',
   -- 학부모가 적은 사유 글(예: 독감). 건강 정보 — 로그·알림 본문에 싣지 않는다
   "reasonText" TEXT,
-  -- 검토가 시작된 시각 — «7일 안에 사진» 기준점
+  -- 검토가 시작된 시각 — «7일 안에 사진» 기준점은 이 날과 결석일 중 «더 늦은 날»(미리 알린 결석은 결석일부터 7일)
   "requestedAt" TIMESTAMPTZ(6) NOT NULL DEFAULT NOW(),
   "decidedAt" TIMESTAMPTZ(6),
   -- ADMIN 원장이 결정 · AUTO 7일 지나 자동 전환

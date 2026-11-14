@@ -120,6 +120,14 @@ async function readAbsence(
  */
 async function holdSheetIllnessCredit(db: AbsenceReasonDb, key: { studentId: string; classId: string; dateYmd: string }) {
   if (!(await illnessReviewReady(db))) return;
+  // 예전에 닫힌 검토 줄(신고 취소 등)이 남아 있으면 지운다 — 닫힌 검토는 신청함에서 빠지므로, 새로 표시한 결석이 다시 «이월 검토»에 뜨게
+  await db.$executeRawUnsafe(
+    `DELETE FROM "RegularAbsenceCarryReview" r
+      USING "RegularAbsence" ra
+      WHERE ra.id = r."absenceId" AND ra."studentId" = $1 AND ra."classId" = $2 AND ra.date = $3::date
+        AND r.status = 'CLOSED'`,
+    key.studentId, key.classId, key.dateYmd,
+  );
   await holdCreditForIllnessInTx(db, { studentId: key.studentId, classId: key.classId, absenceYmd: key.dateYmd });
 }
 

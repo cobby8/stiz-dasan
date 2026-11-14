@@ -1,6 +1,6 @@
 // 질병·부상 결석 «이월 검토» — 매일 한 번 도는 뒷정리(cron/makeup-credits, KST 00:30).
 //
-//   ① 알린 지 7일이 지났는데 사진이 한 장도 없는 검토 → 보강권 1장으로 자동 전환(원장 결정 a2)
+//   ① 기준일(알린 날·결석일 중 더 늦은 날)부터 7일이 지났는데 사진이 한 장도 없는 검토 → 보강권 1장으로 자동 전환(원장 결정 a2)
 //   ② 증빙 사진 파일 지우기 — 처리 끝나고 90일 지난 것(a6) + 화면에서 뺀 것(학부모 삭제·검토 닫힘·업로드 중단)
 //
 // DB·저장소·알림은 인자로 받는다 — 테스트가 가짜로 실제 실행한다. 이 파일은 prisma 를 import 하지 않는다.
@@ -12,7 +12,7 @@ export type IllnessCronDb = IllnessTx & {
   $transaction<T>(work: (tx: IllnessTx) => Promise<T>, options?: { isolationLevel: "Serializable" | "RepeatableRead"; timeout?: number }): Promise<T>;
 };
 
-type OverdueRow = { absenceId: string; status: string; source: string; photoCount: number; requestedYmd: string; todayYmd: string };
+type OverdueRow = { absenceId: string; status: string; source: string; photoCount: number; requestedYmd: string; absenceYmd: string; todayYmd: string };
 
 /** ① 7일 지나 사진 없는 검토 → 보강권. 전환된 결석(학생·날짜)을 돌려준다 — 호출부가 학부모에게 앱 알림을 보낸다 */
 export async function autoConvertOverdueIllnessReviews(
@@ -25,8 +25,11 @@ export async function autoConvertOverdueIllnessReviews(
     `SELECT r."absenceId" AS "absenceId", r.status, r.source,
             (SELECT COUNT(*)::int FROM "RegularAbsenceEvidence" e WHERE e."absenceId" = r."absenceId" AND e."removedAt" IS NULL) AS "photoCount",
             to_char(r."requestedAt" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "requestedYmd",
+            -- 결석일(date 칼럼 — 이미 달력 값이라 변환 없음). 7일 기준점 = 알린 날과 결석일 중 더 늦은 날(규칙 함수가 판정)
+            to_char(ra.date, 'YYYY-MM-DD') AS "absenceYmd",
             to_char(now() AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "todayYmd"
        FROM "RegularAbsenceCarryReview" r
+       JOIN "RegularAbsence" ra ON ra.id = r."absenceId"
       WHERE r.status = 'PENDING' AND r.source IN ('PARENT', 'KAKAO')
       ORDER BY r."requestedAt" ASC
       LIMIT 500`,

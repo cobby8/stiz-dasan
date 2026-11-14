@@ -196,10 +196,13 @@ test("정규 결석 신고는 반 카드 속 작은 카드 대신 날짜 묶음(
   }));
   assert.match(html, /aria-label="합성 오늘"/);
   assert.match(html, /aria-label="합성 이후"/);
-  assert.match(html, />결석 신고됨<\/span><span class="text-xs[^"]*">개인 사정</);
+  // 2026-11-14 용어 통일(결정표 d2): 학부모 화면은 «신고» 대신 «알림»
+  assert.match(html, />결석 알림<\/span><span class="text-xs[^"]*">개인 사정</);
+  assert.doesNotMatch(html, /결석 신고됨|신고 취소|신고·취소/);
+  assert.match(html, /수업 1시간 전까지 알리거나 취소할 수 있어요\./);
   assert.match(html, /확정됨<\/span><span class="text-xs[^"]*">질병\/부상</);
-  assert.doesNotMatch(html, /확정됨 · |결석 신고됨 · |초등 고학년반 · 11\/5/);
-  assert.match(html, />신고 취소</);
+  assert.doesNotMatch(html, /확정됨 · |결석 알림 · |초등 고학년반 · 11\/5/);
+  assert.match(html, />알림 취소</);
   // 2026-11-14 원장: «변경은 문의» 글 대신 한 단어 + 그 자리 전화 버튼(학원 전화가 설정돼 있을 때)
   assert.doesNotMatch(html, /변경은 문의/);
   assert.match(html, />학원 확정<\/span>/);
@@ -257,12 +260,20 @@ test("정규 결석 신고는 반 카드 속 작은 카드 대신 날짜 묶음(
   // 2026-11-14 질병·부상: 사유 글이 비면 보내지 않고, 사유 글·사진 칸은 질병·부상을 골랐을 때만 보인다
   assert.match(source, /if \(illness && !text\) \{\s*setErr\("어디가 아픈지 한 줄로 적어 주세요\./);
   assert.match(source, /reasonText: illness \? text : null,/);
-  assert.match(source, /\{illnessChosen && \(\s*<div className="basis-full space-y-2">[\s\S]{0,400}어디가 아픈가요\?[\s\S]{0,500}placeholder="예: 독감, 발목 염좌"/);
+  // 이미 질병·부상인 줄에서 «사유 변경»을 열고 같은 사유면 사유 글·사진 칸을 숨기고 사진 올리는 곳을 알려 준다(막다른 길 제거)
+  assert.match(source, /const sameIllness = illnessChosen && d\.reported && d\.reason === ILLNESS_REASON;/);
+  assert.match(source, /\{sameIllness && \(\s*<p[^>]*>\s*사진은 위 «질병·부상 결석» 칸에서 추가할 수 있어요\./);
+  assert.match(source, /\{illnessChosen && !sameIllness && \(\s*<div className="basis-full space-y-2">[\s\S]{0,400}어디가 아픈가요\?[\s\S]{0,500}placeholder="예: 독감, 발목 염좌"/);
   assert.match(source, /증빙 사진 고르기/);
   assert.match(source, /진단서·진료확인서·처방전·약 봉투 \(1~\$\{EVIDENCE_MAX_PHOTOS\}장\)/);
   // 완료 문구: 질병·부상이면 «사진을 확인한 뒤 다음 달 수강료에서 빼 드려요», 그 밖은 지금처럼
   assert.match(source, /const head = d\.reported \? "결석 사유를 바꿨어요\." : "결석을 알렸어요\.";/);
   assert.match(source, /\`\$\{head\} 사진을 확인한 뒤 다음 달 수강료에서 빼 드려요\.\`/);
+  assert.match(source, /결석일부터 7일 안에 증빙 사진을 올려 주시면/);
+  // 화면에 보이는 글에 «신고»가 남지 않는다(주석·코드 식별자는 제외하고 따옴표·JSX 글자만 본다)
+  for (const text of ["결석 신고됨", "신고 취소", "결석 신고를", "신고에 실패", "신고·취소할 수"]) assert.ok(!source.includes(`"${text}`) && !source.includes(`>${text}`) && !new RegExp(`^\\s+${text}`, "m").test(source), text);
+  // 홈의 길 안내 링크 글자도 «결석 알리기»
+  assert.match(read("src/app/mypage/MyPageClient.tsx"), /<Link href="\/mypage\/regular-absence" className="font-semibold underline">결석 알리기<\/Link>/);
   assert.match(source, /\`\$\{head\} 보강권 1장이 생겼어요\.\`/);
   // 사진은 줄여서 보내고(서버가 다시 인코딩), 공개 업로드 주소는 쓰지 않는다
   assert.match(source, /compressImageForUpload\(file, \{ maxEdge: 2000,/);
