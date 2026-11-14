@@ -1,5 +1,7 @@
 "use client";
 
+import ProfileAvatar from "@/components/common/ProfileAvatar";
+import { profilePhotoUrl } from "@/lib/profilePhoto/rules";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { todayKst } from "@/lib/datetime/kst";
 import {
@@ -262,6 +264,8 @@ export default function WeekBoard({
                                                     onKeyDown={(event) => handleRowKeyDown(event, item)}
                                                     className="flex min-h-11 cursor-pointer items-center gap-2 px-3 text-sm hover:bg-[var(--color-academy-soft)] focus:bg-[var(--color-academy-primary-soft)] focus:outline-none"
                                                 >
+                                                    {/* 아이 사진 28px(없으면 이름 첫 글자, 2026-11-14) */}
+                                                    <ProfileAvatar decorative name={s.studentName} size={28} src={profilePhotoUrl({ kind: "student", id: s.studentId }, s.photoVersion ?? null, true)} />
                                                     <span className="min-w-0 break-keep text-[var(--color-academy-ink)]">{s.studentName}</span>
                                                     {/* 질병·부상: 입력 패널과 같은 기준(결석 + 정규반 + 신고 사유) */}
                                                     {showsIllness(s, lesson.sessionDateId) && (

@@ -13,6 +13,8 @@ import {
 } from "@/app/actions/admin";
 import AdminModal from "@/components/admin/AdminModal";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
+import ProfileAvatar from "@/components/common/ProfileAvatar";
+import { profilePhotoUrl } from "@/lib/profilePhoto/rules";
 import type { StudentRegistered } from "./StudentRegisterModal";
 import AdminQuickActionMenu from "@/components/admin/AdminQuickActionMenu";
 import { useAdminConfirm } from "@/components/admin/AdminConfirmDialog";
@@ -36,6 +38,8 @@ const StudentRegisterModal = dynamic(() => import("./StudentRegisterModal"), {
 type Student = {
     id: string;
     name: string;
+    /** 프로필 사진 캐시 버전(사진 없으면 null → 이름 첫 글자) */
+    photoVersion?: string | null;
     birthDate: Date | string;
     gender: string | null;
     parentId: string;
@@ -1182,8 +1186,10 @@ export default function StudentManagementClient({
                                                     href={`/admin/students/${s.id}`}
                                                     prefetch={false}
                                                     onClick={(event) => event.stopPropagation()}
-                                                    className="block whitespace-nowrap leading-[2.75rem] font-semibold text-[var(--color-academy-ink)] hover:text-[var(--color-academy-primary)]"
+                                                    className="flex min-h-11 items-center gap-2 whitespace-nowrap font-semibold text-[var(--color-academy-ink)] hover:text-[var(--color-academy-primary)]"
                                                 >
+                                                    {/* 아이 사진 28px(없으면 이름 첫 글자) — 행 높이(44px) 안이라 줄이 커지지 않는다 */}
+                                                    <ProfileAvatar decorative name={s.name} size={28} src={profilePhotoUrl({ kind: "student", id: s.id }, s.photoVersion ?? null, true)} />
                                                     {s.name}
                                                     {s.enrollments.some((enrollment) => enrollment.classId === group.key && enrollment.startsLater) && <span className="ml-1 text-xs font-normal text-[var(--color-academy-ink)]">개시 전</span>}
                                                 </Link>
@@ -1235,8 +1241,9 @@ export default function StudentManagementClient({
                                                 href={`/admin/students/${s.id}`}
                                                 prefetch={false}
                                                 onClick={(event) => event.stopPropagation()}
-                                                className="font-semibold text-[var(--color-academy-ink)] hover:text-[var(--color-academy-primary)] transition-colors"
+                                                className="inline-flex items-center gap-2 font-semibold text-[var(--color-academy-ink)] hover:text-[var(--color-academy-primary)] transition-colors"
                                             >
+                                                <ProfileAvatar decorative name={s.name} size={28} src={profilePhotoUrl({ kind: "student", id: s.id }, s.photoVersion ?? null, true)} />
                                                 {s.name}
                                             </Link>
                                         </td>

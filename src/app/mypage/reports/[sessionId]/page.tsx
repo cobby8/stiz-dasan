@@ -2,6 +2,8 @@ import { prisma } from "@/lib/prisma";
 import { requireVerifiedParent } from "@/lib/auth-guard";
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import ProfileAvatar from "@/components/common/ProfileAvatar";
+import { profilePhotoUrl } from "@/lib/profilePhoto/rules";
 import FeedPhotoGallery from "@/components/parent/FeedPhotoGallery";
 import { SessionVideoList } from "@/components/parent/SessionVideoPlayer";
 import { countSessionVideos, listViewableSessionPhotos, loadParentViewableSession } from "@/lib/feed/server";
@@ -130,7 +132,11 @@ export default async function ParentReportDetailPage({
                         return (
                             <li key={child.id} className="px-4 py-3">
                                 <div className="flex items-center justify-between gap-2">
-                                    <span className="font-semibold text-[var(--color-academy-ink)]">{child.name}</span>
+                                    <span className="flex min-w-0 items-center gap-2">
+                                        {/* 아이 사진 28px(없으면 이름 첫 글자) — 옆에 이름이 있어 장식용 */}
+                                        <ProfileAvatar decorative name={child.name} size={28} src={profilePhotoUrl({ kind: "student", id: child.id }, child.photoVersion ?? null, true)} />
+                                        <span className="font-semibold text-[var(--color-academy-ink)]">{child.name}</span>
+                                    </span>
                                     <span className={`rounded px-2 py-0.5 text-xs ${statusInfo.color}`}>{statusInfo.label}</span>
                                 </div>
                                 {rating !== null && (

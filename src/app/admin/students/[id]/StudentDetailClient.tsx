@@ -18,6 +18,8 @@ import { isCurrentEnrollment } from "@/lib/enrollment/commencement";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
 import AdminModal from "@/components/admin/AdminModal";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
+import ProfileAvatar from "@/components/common/ProfileAvatar";
+import { profilePhotoUrl } from "@/lib/profilePhoto/rules";
 import AdminQuickActionMenu from "@/components/admin/AdminQuickActionMenu";
 import { useAdminConfirm } from "@/components/admin/AdminConfirmDialog";
 import { removeMistakenEnrollment } from "@/app/actions/enrollment-admin-edit";
@@ -169,6 +171,8 @@ function MiniDonut({ rate, className = "text-[var(--color-academy-success)]" }: 
 type StudentActivityData = {
     student: {
         id: string; name: string; birthDate: Date | string; gender: string | null;
+        /** 프로필 사진 캐시 버전(사진 없으면 null) */
+        photoVersion?: string | null;
         memo: string | null; parentId: string; createdAt: Date | string;
         // 새 필드: 학생 추가 정보
         phone: string | null; school: string | null; grade: string | null;
@@ -1202,6 +1206,8 @@ export default function StudentDetailClient({
                 <Link href="/admin/students" prefetch={false} aria-label="원생 목록으로" className="academy-button-secondary academy-button-sm shrink-0 whitespace-nowrap">
                     ← 목록
                 </Link>
+                {/* 아이 사진 64px(학부모가 올린 프로필 사진, 없으면 이름 첫 글자) — 옆 제목에 이름이 있어 장식용(2026-11-14) */}
+                <ProfileAvatar decorative name={student.name} size={64} src={profilePhotoUrl({ kind: "student", id: student.id }, student.photoVersion ?? null, true)} />
                 <div className="min-w-0 basis-52 flex-1">
                     {/* 페이지 제목은 공용 머리말 부품(모양 한 가지). 상태 배지·저장 표시는 제목 옆 설명 자리에 둔다 */}
                     <AdminPageHeader
