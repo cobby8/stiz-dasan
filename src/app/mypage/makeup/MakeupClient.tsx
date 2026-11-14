@@ -20,13 +20,26 @@ const DOW_KO: Record<string, string> = {
 
 // 후보가 0건일 때 이유별 안내(2026-11-14) — 서버(parent-makeup)가 준 emptyReason 을 그대로 글로 바꾼다.
 // 이유를 모르는 옛 응답은 기본 글로.
+// 원장 지시(2026-11-14): «학원에 문의하지 않고 해결할 수 있는 기능은 바로 해당 화면에서 해결» —
+// 글 끝에 «학원으로 문의해 주세요»를 붙이지 않고, 글 아래에 «여기서 할 수 있는 일» 버튼을 둔다(EMPTY_REASON_ACTIONS).
 const EMPTY_REASON_TEXT: Record<string, string> = {
-  NO_GRADE: "학년 정보가 없어 수업을 고를 수 없습니다. 학원으로 문의해 주세요.",
-  NO_MATCH: "학년대가 맞는 다른 수업이 없습니다. 학원으로 문의해 주세요.",
-  NO_DATE: "사용 기한 안에 열리는 수업 날짜가 없습니다. 학원으로 문의해 주세요.",
-  FULL: "학년대가 맞는 수업이 지금은 모두 마감입니다. 며칠 뒤 다시 확인하거나 학원으로 문의해 주세요.",
+  NO_GRADE: "아이 학년을 알 수 없어 수업을 고르지 못했어요.",
+  NO_MATCH: "학년이 맞는 다른 수업이 아직 없어요.",
+  NO_DATE: "사용 기한 안에 열리는 수업 날짜가 없어요.",
+  FULL: "학년이 맞는 수업이 지금은 모두 마감이에요. 자리가 나면 다시 보여요.",
 };
-const EMPTY_DEFAULT_TEXT = "지금 예약할 수 있는 수업이 없습니다. 학원으로 문의해 주세요.";
+const EMPTY_DEFAULT_TEXT = "지금 예약할 수 있는 수업이 없어요.";
+
+// 이유별로 «이 자리에서 할 수 있는 일» — record = 아이 정보에서 학년 확인 · retry = 다시 확인(자리는 수시로 바뀐다).
+// «학원에 문의» 버튼은 이유와 상관없이 하나만 붙는다(학원만 풀 수 있는 일: 반 개설·기한 연장·학년 정정).
+const EMPTY_REASON_ACTIONS: Record<string, readonly ("record" | "retry")[]> = {
+  NO_GRADE: ["record"],
+  NO_MATCH: [],
+  NO_DATE: [],
+  FULL: ["retry"],
+};
+// 홈의 «학원에 메시지 보내기» 폼을 바로 연다(MyPageClient 가 이 #주소를 받아 폼을 편다)
+const ACADEMY_ASK_HREF = "/mypage#parent-request-form";
 
 /** 상태 뱃지 — 학부모가 한눈에 "쓸 수 있나"를 알아야 한다. */
 function statusBadge(c: ParentCredit, expired: boolean) {
@@ -74,14 +87,13 @@ export default function MakeupClient({ initial, presetStudentId = null }: { init
   // 오늘은 KST 로 구한다(toISOString 은 새벽 0~9시에 어제가 나와 만료 판정이 하루 늦어진다)
   const today = todayKst();
 
-  // 보강권을 펼치면서 그 학생이 갈 수 있는 반을 불러온다.
-  const open = useCallback(async (credit: ParentCredit) => {
-    if (openId === credit.id) { setOpenId(""); return; }
+  // 그 보강권으로 갈 수 있는 반을 불러온다 — 처음 펼칠 때와 «다시 확인»이 같은 길을 쓴다.
+  const load = useCallback(async (creditId: string) => {
     setErr(""); setMsg(""); setPick(null); setOptions([]); setEmptyReason("");
-    setOpenId(credit.id);
-    setBusy(credit.id);
+    setOpenId(creditId);
+    setBusy(creditId);
     try {
-      const r = await fetchMakeupOptions(credit.id);
+      const r = await fetchMakeupOptions(creditId);
       if (!r.ok) { setErr(customerMessage(r.message, "불러오지 못했습니다.")); setOpenId(""); return; }
       setOptions(r.options || []);
       setEmptyReason(r.emptyReason || "");
@@ -91,7 +103,13 @@ export default function MakeupClient({ initial, presetStudentId = null }: { init
     } finally {
       setBusy("");
     }
-  }, [openId]);
+  }, []);
+
+  // 보강권을 펼치면서 그 학생이 갈 수 있는 반을 불러온다(열려 있으면 닫는다).
+  const open = useCallback(async (credit: ParentCredit) => {
+    if (openId === credit.id) { setOpenId(""); return; }
+    await load(credit.id);
+  }, [openId, load]);
 
   const book = useCallback(async (creditId: string) => {
     if (!pick) { setErr("보강받을 수업과 날짜를 골라 주세요."); return; }
@@ -141,8 +159,7 @@ export default function MakeupClient({ initial, presetStudentId = null }: { init
       </div>
       {/* 화면 맨 위 설명 한 줄 = 본문 14px */}
       <p className="mb-4 text-sm text-[var(--color-academy-muted)]">
-        결석 1회당 보강권 1장이 발급됩니다. <strong>결석일로부터 2개월</strong> 안에 사용해 주세요.
-        기간이 지나면 자동으로 소멸합니다.
+        보강권은 결석일부터 2개월 안에 써 주세요
       </p>
 
       {/* 잔여 집계 — 예전 4칸 판(약 70px)을 상태 칩 한 줄로. 칩을 누르면 그 상태만 본다. */}
@@ -226,9 +243,29 @@ export default function MakeupClient({ initial, presetStudentId = null }: { init
                           <p className="text-xs text-[var(--color-academy-muted)]">수업을 불러오는 중…</p>
                         )}
                         {busy !== c.id && options.length === 0 && (
-                          <p className="rounded-xl bg-[var(--color-academy-soft)] px-3 py-4 text-center text-xs text-[var(--color-academy-muted)]">
-                            {EMPTY_REASON_TEXT[emptyReason] ?? EMPTY_DEFAULT_TEXT}
-                          </p>
+                          // 빈 목록 = 이유 한 줄 + 그 자리에서 할 수 있는 일(막다른 곳을 만들지 않는다)
+                          <div className="rounded-xl bg-[var(--color-academy-soft)] px-3 py-3">
+                            <p className="break-keep text-center text-sm text-[var(--color-academy-ink)]">
+                              {EMPTY_REASON_TEXT[emptyReason] ?? EMPTY_DEFAULT_TEXT}
+                            </p>
+                            <div className="mt-2 flex flex-wrap justify-center gap-2">
+                              {(EMPTY_REASON_ACTIONS[emptyReason] ?? []).includes("record") && (
+                                // 학년은 생년월일로 계산한다 — 아이 정보에서 생년월일·학년이 맞는지 본다
+                                <Link href={`/mypage/record?child=${encodeURIComponent(c.studentId)}`} className="academy-button-secondary">
+                                  아이 정보에서 학년 확인
+                                </Link>
+                              )}
+                              {(EMPTY_REASON_ACTIONS[emptyReason] ?? []).includes("retry") && (
+                                <button type="button" onClick={() => load(c.id)} className="academy-button-secondary">
+                                  다시 확인
+                                </button>
+                              )}
+                              {/* 학원만 풀 수 있는 일은 이 버튼 하나로 — 홈의 메시지 폼이 바로 열린다 */}
+                              <Link href={ACADEMY_ASK_HREF} className="academy-button-secondary">
+                                학원에 문의
+                              </Link>
+                            </div>
+                          </div>
                         )}
                         {options.map((o) => (
                           // 후보 한 줄 행: 반 이름 · 요일 시간 · 대상 학년 · 남은 자리(글자 — 학생 수 숫자는 싣지 않는다) / 아래에 날짜 칩
@@ -288,9 +325,7 @@ export default function MakeupClient({ initial, presetStudentId = null }: { init
       )}
 
       <p className="mt-5 text-xs leading-relaxed text-[var(--color-academy-faint)]">
-        · 보강은 학년대가 비슷한(대상 학년 앞뒤 1학년까지) 다른 수업의 빈자리로 예약할 수 있습니다.<br />
-        · 예약을 미리 취소하면 보강권은 그대로 유지됩니다.<br />
-        · 예약 후 알리지 않고 오지 않으면 보강권을 사용한 것으로 처리됩니다.
+        알리지 않고 빠지면 보강권이 사용 처리돼요
       </p>
     </div>
   );

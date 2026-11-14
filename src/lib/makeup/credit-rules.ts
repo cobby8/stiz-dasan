@@ -213,23 +213,76 @@ export function isGradeNear(studentGrade: number | null, span: GradeSpan | null,
   return studentGrade >= span.min - tolerance && studentGrade <= span.max + tolerance;
 }
 
+// ── 보강 후보 판정 한 곳 (2026-11-14 원장 결정: 학년은 생년월일로 · 성인반끼리 · 미취학은 위로 2개 학년) ──
+// 원장 메모: «같은 학년이 포함되는 반은 모두 추천, 김루빈처럼 6세인 경우 1학년이 있는반(위로 2개학년)까지 포함».
+// 목록(getMakeupOptionsForCredit)과 예약 저장(bookMakeup)이 모두 이 판정 하나(makeupGradeFit)를 탄다.
+//
+//   학생 학년(숫자): 5세=-2 · 6세=-1 · 7세=0 · 초1=1 … 고3=12 · 성인=13(MAKEUP_ADULT_GRADE)
+//   · 성인 학생 → «성인» 대상 반만(학년 범위 ±1 로 고등반에 붙지 않는다)
+//   · 그 밖 → 반 대상 학년 범위에 «포함»(0순위) → 아래로 1학년·위로 1학년 여유(1순위)
+//   · 미취학(7세 이하, 숫자 ≤ 0)은 위로 여유가 2학년 — 6세가 초1 이 들어 있는 반까지 닿는다
+
+/** 성인을 뜻하는 학년 숫자(고3=12 다음). 생년월일 계산이 13 이상이면 모두 이 값으로 모은다 */
+export const MAKEUP_ADULT_GRADE = 13;
+
+/** 미취학(7세 이하) 학생이 위쪽으로 닿는 폭 — 2개 학년 */
+export const MAKEUP_PRESCHOOL_UPWARD = 2;
+
+/** 학년 글자 → 보강 판정용 숫자. «성인»이 들어 있으면 성인(13), 그 밖은 gradeToNumber 와 같다 */
+export function makeupGradeFromText(raw: string | null | undefined): number | null {
+  if (cleanGradeText(raw).includes("성인")) return MAKEUP_ADULT_GRADE;
+  return gradeToNumber(raw);
+}
+
 /**
- * 학년대가 비슷한 반만 고른다(자리·날짜는 아직 보지 않는다).
+ * 성인 대상 반인가 — 시간표 학년 구성(gradesJSON)·대상 학년 글자·반 이름 중 한 곳에 «성인»이 적혀 있으면 성인반.
+ * (시간표 시트의 학년 줄에 «성인»이 있고, 반 이름도 "화요일 8교시(성인)"처럼 적는다)
+ */
+export function isAdultClass(c: { grades: string[]; gradeRangeText?: string | null; className?: string | null }): boolean {
+  return c.grades.some((g) => String(g).includes("성인"))
+    || String(c.gradeRangeText ?? "").includes("성인")
+    || String(c.className ?? "").includes("성인");
+}
+
+/**
+ * 이 학생이 이 반에서 보강받을 수 있는가 — 0 = 학년이 대상에 포함 · 1 = 가까운 학년(여유 폭 안) · null = 불가.
+ * 숫자가 작을수록 먼저 권한다(포함되는 반이 위에 보인다).
+ */
+export function makeupGradeFit(
+  studentGrade: number | null,
+  c: { grades: string[]; gradeRangeText?: string | null; className?: string | null },
+): 0 | 1 | null {
+  if (studentGrade == null) return null;
+  // 성인은 성인반끼리만
+  if (studentGrade >= MAKEUP_ADULT_GRADE) return isAdultClass(c) ? 0 : null;
+  const span = classGradeSpan(c.grades, c.gradeRangeText);
+  if (!span) return null; // 학년을 모르는 반·성인만 받는 반
+  if (studentGrade >= span.min && studentGrade <= span.max) return 0;
+  // 반이 학생보다 위 학년일 때의 여유: 보통 1학년, 미취학은 2학년
+  const upward = studentGrade <= 0 ? MAKEUP_PRESCHOOL_UPWARD : MAKEUP_GRADE_TOLERANCE;
+  if (studentGrade >= span.min - upward && studentGrade <= span.max + MAKEUP_GRADE_TOLERANCE) return 1;
+  return null;
+}
+
+/**
+ * 학년대가 맞는 반만 고른다(자리·날짜는 아직 보지 않는다). 순서는 받은 그대로.
  * 빼는 반: 원래 결석한 반(excludeClassId) · 그 학생이 이미 다니는 반(excludeClassIds) · 학년 정보가 없는 반.
  * 학생 학년을 모르면 빈 목록.
+ *
+ * @param studentGrade 학년 글자("초5"·"성인") 또는 이미 구한 숫자(생년월일 계산값 — student-grade.ts)
  */
-export function matchClassesByGrade<T extends Pick<ClassCandidate, "classId" | "grades" | "gradeRangeText">>(
+export function matchClassesByGrade<T extends Pick<ClassCandidate, "classId" | "grades" | "gradeRangeText"> & { className?: string | null }>(
   candidates: T[],
-  studentGrade: string | null | undefined,
+  studentGrade: string | number | null | undefined,
   opts: { excludeClassId?: string | null; excludeClassIds?: readonly string[] } = {},
 ): T[] {
-  const grade = gradeToNumber(studentGrade);
+  const grade = typeof studentGrade === "number" ? studentGrade : makeupGradeFromText(studentGrade);
   if (grade == null) return [];
   const excluded = new Set<string>(opts.excludeClassIds ?? []);
   if (opts.excludeClassId) excluded.add(opts.excludeClassId);
   return candidates
     .filter((c) => !excluded.has(c.classId))
-    .filter((c) => isGradeNear(grade, classGradeSpan(c.grades, c.gradeRangeText)));
+    .filter((c) => makeupGradeFit(grade, c) != null);
 }
 
 /**
@@ -255,7 +308,7 @@ export function remainingSeatsByDate(
 
 /** 후보가 0건일 때의 이유 — 화면이 이유를 나눠 보인다 */
 export type MakeupEmptyReason =
-  | "NO_GRADE"  // 학생 학년 정보가 없다 → 학원으로 문의
+  | "NO_GRADE"  // 생년월일로도 학년 글자로도 학생 학년을 알 수 없다 → 아이 정보 확인
   | "NO_MATCH"  // 학년대가 맞는 반이 없다
   | "NO_DATE"   // 맞는 반은 있지만 사용 기한 안에 열리는 날이 없다
   | "FULL";     // 맞는 반·날짜는 있지만 모두 자리가 없다

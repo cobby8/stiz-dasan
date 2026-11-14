@@ -2,9 +2,11 @@ import { childAccessSql } from "@/lib/account/child-access";
 import { prisma } from "@/lib/prisma";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import {
-  gradeToNumber, matchClassesByGrade, remainingSeatsByDate, summarize,
+  makeupGradeFit, matchClassesByGrade, remainingSeatsByDate, summarize,
   type ClassCandidate, type MakeupCreditStatus, type MakeupEmptyReason,
 } from "./credit-rules";
+// 학생 학년 = 생년월일로 계산(아이 정보 화면과 같은 기준) → 안 되면 학년 글자
+import { studentMakeupGrade } from "./student-grade";
 import { activeMakeupSql } from "./capacity";
 // 달력 값(오늘·요일·날짜 더하기·KST 자정)은 공용 모듈에서만 만든다 — 서버는 UTC 로 돈다
 import { addDaysKst, isKstYmd, kstAt, kstDow, kstLabel, todayKst, toKstYmd } from "@/lib/datetime/kst";
@@ -22,6 +24,8 @@ import { seatLevel, type SeatLevel } from "@/lib/seats/seatLevel";
 // 근거 — 2026-08-09 개정 이용약관 「수업의 보강」
 //   · 학년이 맞는 다른 수업 / 정원 +2 까지
 //     (2026-11-14 원장 결정: «학년이 맞는» = 반의 대상 학년 범위 ±1학년. 날짜별로 자리를 센다)
+//     (2026-11-14 추가 결정: 학생 학년은 생년월일로 계산 · 학년이 포함되는 반 먼저 · 미취학은 위로 2개 학년 ·
+//      성인은 성인반끼리 · 휴원 중에도 예약 가능 — 이 파일은 학생·수강 상태로 막지 않는다)
 //   · 보강 예약은 보호자가 직접
 //   · 미리 취소하면 보강권 유지, 무단 불참은 사용 처리
 
@@ -119,7 +123,8 @@ function gradeLabelOf(grades: string[], gradeRangeText: string | null): string {
  * 이 보강권으로 갈 수 있는 반 목록.
  *
  * 후보 조건(2026-11-14 결석 당일 취소·보강 연결):
- *   ① 학생 학년(숫자)이 반의 대상 학년 범위 ±1학년 안 — 학생 학년을 모르면 0건(NO_GRADE)
+ *   ① 학생 학년(생년월일 계산 → 안 되면 학년 글자)이 반의 대상 학년에 포함되거나 ±1학년 안
+ *      (미취학은 위로 2개 학년, 성인은 성인반만 — credit-rules.makeupGradeFit). 학년을 끝내 모르면 0건(NO_GRADE)
  *   ② 반의 학년 정보 = 시간표 학년 구성(ScheduleSlot.gradesJSON) → 비어 있으면 대상 학년 글자
  *      (ScheduleSlot.gradeRange → 직접 만든 슬롯 CustomClassSlot.gradeRange). 끝내 없으면 그 반은 뺀다.
  *      프로그램 대상연령("초등저~고 (일부 중학생 가능)")은 자유 문장이라 절대 파싱하지 않는다.
@@ -134,11 +139,14 @@ export async function getMakeupOptionsForCredit(
 ): Promise<{ ok: true; options: MakeupOption[]; expiresYmd: string; emptyReason: MakeupEmptyReason | null } | { ok: false; message: string }> {
   // ★ 부모 소유 확인이 여기서 끝난다. 이후 쿼리는 이 결과만 신뢰한다.
   const own = await prisma.$queryRawUnsafe<Array<{
-    id: string; studentId: string; studentGrade: string | null; originClassId: string | null;
+    id: string; studentId: string; studentGrade: string | null; birthYmd: string | null; originClassId: string | null;
     status: MakeupCreditStatus; expiresAt: Date;
   }>>(
-    `SELECT mc.id, mc."studentId", s.grade AS "studentGrade", mc."originClassId",
-            mc.status, mc."expiresAt"
+    // birthDate 는 시간대 없는 timestamp(UTC 로 저장) — KST 달력 날짜로 읽으려면 변환을 «두 번» 건다
+    // (아이 기록 조회 childRecordQuery 의 birthYmd 와 같은 식)
+    `SELECT mc.id, mc."studentId", s.grade AS "studentGrade",
+            to_char(((s."birthDate" AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Seoul'), 'YYYY-MM-DD') AS "birthYmd",
+            mc."originClassId", mc.status, mc."expiresAt"
        FROM "MakeupCredit" mc
        JOIN "Student" s ON s.id = mc."studentId"
       WHERE mc.id = $1 AND ${await childAccessSql("s", "$2")}
@@ -156,8 +164,10 @@ export async function getMakeupOptionsForCredit(
   const expiresYmd = toKstYmd(expiresAt);
   const empty = (emptyReason: MakeupEmptyReason) => ({ ok: true as const, options: [] as MakeupOption[], expiresYmd, emptyReason });
 
-  // ① 학생 학년을 모르면 반을 고를 기준이 없다 — 임의 배정하지 않고 학원 문의로 안내한다
-  if (gradeToNumber(credit.studentGrade) == null) return empty("NO_GRADE");
+  // ① 학생 학년 — 생년월일로 계산(3월 학년도), 임시 생일·빈 값이면 학년 글자. 끝내 모르면 임의 배정하지 않는다
+  const today = todayKst();
+  const studentGrade = studentMakeupGrade(credit.birthYmd ?? null, credit.studentGrade, today);
+  if (studentGrade == null) return empty("NO_GRADE");
 
   // 반 + 대상 학년(시간표 학년 구성 → 대상 학년 글자 → 직접 만든 슬롯) + 현재 인원.
   // LEFT JOIN: 시간표 슬롯과 이어지지 않은 반(직접 만든 슬롯 custom-…)도 학년 글자가 있으면 후보가 된다.
@@ -197,14 +207,13 @@ export async function getMakeupOptionsForCredit(
     };
   });
 
-  const matched = matchClassesByGrade(candidates, credit.studentGrade, {
+  const matched = matchClassesByGrade(candidates, studentGrade, {
     excludeClassId: credit.originClassId,
     excludeClassIds: enrolledRows.map((r) => r.classId),
   });
   if (matched.length === 0) return empty("NO_MATCH");
 
   // ④-1 만료 전에 열리는 날짜(내일부터)
-  const today = todayKst();
   const withDates = matched
     .map((c) => ({ c, dateYmds: upcomingDateYmds(c.dayOfWeek, today, expiresAt) }))
     .filter((item) => item.dateYmds.length > 0);
@@ -244,12 +253,14 @@ export async function getMakeupOptionsForCredit(
       seatLevel: seatLevel(best),
       dates: open.map((d) => ({ ymd: d.ymd, label: kstLabel(d.ymd), seatLevel: seatLevel(d.remaining) })),
     };
-    return { option, best };
+    // fit: 0 = 학생 학년이 대상에 포함되는 반 · 1 = 가까운 학년 반
+    return { option, best, fit: makeupGradeFit(studentGrade, c) ?? 1 };
   }).filter((item) => item.option.dates.length > 0);
   if (built.length === 0) return empty("FULL");
 
-  // 정렬(기존과 같은 뜻): 자리 여유가 많은 순 → 요일·시각 순. 여유 있는 반을 먼저 권해 쏠림을 막는다.
+  // 정렬: 학년이 포함되는 반 먼저 → 자리 여유가 많은 순 → 요일·시각 순. 여유 있는 반을 먼저 권해 쏠림을 막는다.
   built.sort((a, b) =>
+    a.fit - b.fit ||
     b.best - a.best ||
     a.option.dayOfWeek.localeCompare(b.option.dayOfWeek) ||
     a.option.startTime.localeCompare(b.option.startTime));

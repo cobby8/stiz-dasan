@@ -270,6 +270,9 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                 window.location.replace(moved);
                 return;
             }
+            // 다른 화면의 «학원에 문의» 버튼(/mypage#parent-request-form)으로 오면 메시지 폼을 펴서 보인다
+            // (폼은 접혀 있으면 화면에 없어서, 펴지 않으면 갈 자리가 없다)
+            if (id === "parent-request-form") setShowRequestForm(true);
             requestAnimationFrame(() => scrollToSection(id));
         };
         revealHash();
