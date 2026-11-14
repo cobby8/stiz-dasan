@@ -129,9 +129,10 @@ test("취소 7종은 InlineConfirm 뒤에 기존 함수·인자를 그대로 부
 
 test("수강 변경 «퇴원»만 위험 버튼 + 한 번 더 확인, 다른 신청은 주인공 버튼 그대로 같은 submit (M-03)", () => {
   const source = read("src/app/mypage/enrollment-change/EnrollmentChangeClient.tsx");
-  assert.match(source, /\{kind === "WITHDRAW" \? \([\s\S]*?<InlineConfirm[\s\S]*?label="퇴원 신청하기"[\s\S]*?onConfirm=\{submit\}[\s\S]*?\) : \([\s\S]*?onClick=\{submit\}[\s\S]*?className="academy-button-primary w-full"[\s\S]*?"신청하기"/);
+  assert.match(source, /activeKind === "WITHDRAW" \? \([\s\S]*?<InlineConfirm[\s\S]*?label="퇴원 신청하기"[\s\S]*?onConfirm=\{submit\}[\s\S]*?\) : \([\s\S]*?onClick=\{submit\}[\s\S]*?className="academy-button-primary w-full"[\s\S]*?"신청하기"/);
   // 고른 종류 칩 = academy-choice, 꽉 찬 색은 제출 버튼만
-  assert.match(source, /aria-pressed=\{kind === value\}\s*onClick=\{\(\) => setKind\(value\)\}\s*className="academy-choice/);
+  // (2026-11-14 c8: «반 추가» 칩이 생겨 종류를 바꾸면 고른 반도 비운다 — 반 변경용 반이 반 추가로 넘어가지 않게)
+  assert.match(source, /aria-pressed=\{activeKind === value\}\s*onClick=\{\(\) => \{ setKind\(value\); setToClassId\(""\); \}\}\s*className="academy-choice/);
 });
 
 test("가족 연결 거절 확정은 꽉 찬 위험색, 승인은 주인공 버튼 (M-04)", () => {

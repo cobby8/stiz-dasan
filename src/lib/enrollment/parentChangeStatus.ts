@@ -14,6 +14,7 @@ const KIND_NAME: Record<string, string> = {
   PAUSE: "휴원",
   WITHDRAW: "퇴원",
   RESUME: "복귀",
+  CLASS_ADD: "반 추가",
 };
 
 export function parentKindName(kind: string): string {
@@ -163,6 +164,7 @@ export function buildChangeDecisionNotice(input: {
     WITHDRAW: "퇴원이 처리됐어요",
     RESUME: "복귀가 반영됐어요",
     CLASS_CHANGE: "반 변경이 반영됐어요",
+    CLASS_ADD: "반 추가가 반영됐어요",
   };
   return { title: "수강 변경 반영", message: `${who} ${applied[input.kind] ?? "수강 변경이 반영됐어요"}${when}` };
 }

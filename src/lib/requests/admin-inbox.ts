@@ -132,7 +132,7 @@ const hm = (minutes: unknown) => {
 const ABSENCE_REASON: Record<string, string> = {
   ILLNESS_INJURY: "아픔·부상", PERSONAL: "개인 사정", FAMILY_TRIP: "가족 여행", SCHOOL_EVENT: "학교 행사", ETC: "기타",
 };
-const CHANGE_KIND: Record<string, string> = { CLASS_CHANGE: "반 변경", PAUSE: "휴원", WITHDRAW: "퇴원", RESUME: "복귀" };
+const CHANGE_KIND: Record<string, string> = { CLASS_CHANGE: "반 변경", PAUSE: "휴원", WITHDRAW: "퇴원", RESUME: "복귀", CLASS_ADD: "반 추가" };
 const REQUEST_TYPE: Record<string, string> = { ABSENCE: "결석", SHUTTLE: "셔틀", EARLY_LEAVE: "조퇴", OTHER: "기타" };
 const DIRECTION: Record<string, string> = { PICKUP: "등원", DROPOFF: "하원", BOTH: "등·하원" };
 const PAY_METHOD: Record<string, string> = { TRANSFER: "계좌이체", RALLYZ: "랠리즈", CARD: "카드", CASH: "현금", MANUAL: "직접" };
@@ -194,7 +194,10 @@ const ADAPTERS: Adapter[] = [
     },
     format: (row, e) => {
       const kind = CHANGE_KIND[text(e.changeKind)] ?? "수강 변경";
-      const classes = e.toClass ? `${text(e.fromClass) || "?"} → ${text(e.toClass)}` : text(e.fromClass);
+      // 반 추가(CLASS_ADD)는 떠나는 반이 없다 — «? → 반»이 아니라 추가할 반 이름만.
+      const classes = text(e.changeKind) === "CLASS_ADD"
+        ? text(e.toClass)
+        : e.toClass ? `${text(e.fromClass) || "?"} → ${text(e.toClass)}` : text(e.fromClass);
       if (row.raw === ENROLLMENT_CANCEL_REQUESTED) {
         // 학부모 «취소 요청»(d8) — 승인된 휴원·퇴원을 되돌려 달라는 요청. 적용일이 왔으면 취소는 못 하고 거절만.
         return {

@@ -22,8 +22,15 @@ export const CHANGE_KIND_LABEL: Record<ChangeKind, string> = {
  */
 export const RESUME_KIND = "RESUME" as const;
 
-/** 학부모 화면·원장 알림에 쓰는 종류 이름. 복귀까지 포함한다. */
-export const REQUEST_KIND_LABEL: Record<string, string> = { ...CHANGE_KIND_LABEL, [RESUME_KIND]: "복귀" };
+/**
+ * 반 추가(CLASS_ADD) — 지금 다니는 반은 그대로 두고 다른 반을 하나 더(2026-11-14 결정표 c8).
+ * 떠나는 반이 없어 접수·승인 길이 다르다(classAddRules·parent-class-add·admin-class-add) — 그래서 CHANGE_KINDS 에 넣지 않는다.
+ * (이 파일은 테스트가 단독으로 불러오므로 import 없이 적는다. classAddRules.CLASS_ADD_KIND 와 같은 값인지 테스트가 대조한다.)
+ */
+export const CLASS_ADD_KIND = "CLASS_ADD" as const;
+
+/** 학부모 화면·원장 알림에 쓰는 종류 이름. 복귀·반 추가까지 포함한다. */
+export const REQUEST_KIND_LABEL: Record<string, string> = { ...CHANGE_KIND_LABEL, [RESUME_KIND]: "복귀", [CLASS_ADD_KIND]: "반 추가" };
 
 export const CHANGE_STATUS_LABEL: Record<string, string> = {
   PENDING: "검토 중",

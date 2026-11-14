@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireVerifiedParent } from "@/lib/auth-guard";
 import { getEnrollmentChangeOptions } from "@/lib/enrollment/parent-change-request";
+import { getClassAddOptions } from "@/lib/enrollment/parent-class-add";
 import { parseRequestPreset } from "@/lib/mypage/requestPreset";
 import EnrollmentChangeClient from "./EnrollmentChangeClient";
 
@@ -17,7 +18,11 @@ export default async function EnrollmentChangePage({
   // /mypage/continue 로 가야 설치된 학부모 앱이 제 영역을 벗어나지 않는다.
   if (!parent) redirect("/mypage/continue?bounced=1");
 
-  const initial = await getEnrollmentChangeOptions(parent.appUserId);
+  // 반 추가 후보(학년 맞는 반·검토 중 신청)는 따로 읽는다 — 실패해도 빈 값이라 나머지 신청은 그대로 쓸 수 있다.
+  const [initial, classAdd] = await Promise.all([
+    getEnrollmentChangeOptions(parent.appUserId),
+    getClassAddOptions(parent.appUserId),
+  ]);
   const preset = parseRequestPreset(searchParams ? await searchParams : null);
-  return <EnrollmentChangeClient initial={initial} preset={preset} />;
+  return <EnrollmentChangeClient initial={initial} classAdd={classAdd} preset={preset} />;
 }

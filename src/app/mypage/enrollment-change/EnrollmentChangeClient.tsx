@@ -13,6 +13,7 @@ import {
   type ChangeKind,
 } from "@/lib/enrollment/changeRequestRules";
 import type { ChangeHistoryRow, ChildChangeOption, EnrollmentChangeOptions } from "@/lib/enrollment/parent-change-request";
+import type { ClassAddOptions, ClassAddPending } from "@/lib/enrollment/parent-class-add";
 import { parentKindName, shortMd } from "@/lib/enrollment/parentChangeStatus";
 import InlineConfirm from "@/components/parent/InlineConfirm";
 import { customerMessage } from "@/components/parent/customerMessage";
@@ -29,10 +30,22 @@ const DAY_KO: Record<string, string> = {
 
 type PendingRequest = NonNullable<ChildChangeOption["pending"]>;
 
+/**
+ * 반 추가(2026-11-14 결정표 c8) — 지금 다니는 반은 그대로 두고 다른 요일·시간 반을 하나 더.
+ * 반 변경·휴원·퇴원과 달리 «수강 등록 한 건»에 묶이지 않는 신청이라(떠나는 반이 없다) 종류 값을 따로 둔다.
+ */
+const CLASS_ADD = "CLASS_ADD" as const;
+type FormKind = ChangeKind | typeof CLASS_ADD;
+
 /** 종류 이름(복귀 포함). 모르는 값이면 «수강 변경». */
 const kindLabel = (kind: string) => REQUEST_KIND_LABEL[kind] ?? "수강 변경";
 
-export default function EnrollmentChangeClient({ initial, preset }: { initial: EnrollmentChangeOptions; preset?: RequestPreset }) {
+export default function EnrollmentChangeClient({ initial, classAdd, preset }: {
+  initial: EnrollmentChangeOptions;
+  /** 반 추가 후보(학년 맞는 반)·검토 중인 반 추가 신청. 없으면 «반 추가»를 보이지 않는다(읽기 실패·옛 호출) */
+  classAdd?: ClassAddOptions;
+  preset?: RequestPreset;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   // 수업 탭 반 카드에서 왔으면 그 반을 먼저 고른다(없으면 첫 반 — 예전 그대로)
@@ -40,7 +53,7 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
   // 반 카드 [반 변경·휴원 ▾]에서 고른 종류(반 변경·휴원·퇴원만 받는다. 복귀는 휴원 중인 반이면 화면이 알아서 바꾼다)
   const presetKind: ChangeKind =
     preset?.kind === "PAUSE" || preset?.kind === "WITHDRAW" || preset?.kind === "CLASS_CHANGE" ? preset.kind : "CLASS_CHANGE";
-  const [kind, setKind] = useState<ChangeKind>(presetKind);
+  const [kind, setKind] = useState<FormKind>(presetKind);
   const [toClassId, setToClassId] = useState("");
   // 반 변경만 시작일을 고를 수 있다(원장 지시). 기본값은 다음 달 1일.
   const [effectiveFrom, setEffectiveFrom] = useState(initial.effectiveFrom);
@@ -66,6 +79,8 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
   const [additionalPauseIds, setAdditionalPauseIds] = useState<string[]>([]);
   // 방금 이 화면에서 보낸 «취소 요청»(결정표 c2) — 새로고침이 늦어도 버튼 대신 상태 한 줄을 바로 보여 준다.
   const [cancelRequested, setCancelRequested] = useState<{ id: string; line: string } | null>(null);
+  // 이 화면에서 방금 낸·취소한 «반 추가» 신청 — 새로고침이 늦어도 «확인 중» 줄과 후보 목록이 바로 맞게.
+  const [addState, setAddState] = useState<{ added: ClassAddPending[]; canceled: string[] }>({ added: [], canceled: [] });
 
   const child = initial.children[childIdx];
   // 화면에 보일 «검토 중» 신청 = 서버 내역(방금 취소한 건 제외) → 없으면 방금 접수한 건
@@ -90,6 +105,26 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
     () => initial.classes.filter((item) => item.classId !== child?.currentClassId),
     [initial.classes, child?.currentClassId],
   );
+
+  // ── 반 추가(c8): 그 아이의 후보 반·검토 중인 반 추가 신청 ──────────────────────────
+  const addInfo = child && classAdd ? classAdd.byStudent[child.studentId] : undefined;
+  // 검토 중인 반 추가 = 서버 내역 + 방금 낸 것(서버 내역에 아직 없을 때만) − 방금 취소한 것
+  const serverAdds = child && classAdd ? classAdd.pending.filter((item) => item.studentId === child.studentId) : [];
+  const shownAdds = [
+    ...serverAdds,
+    ...addState.added.filter((item) => item.studentId === child?.studentId && !serverAdds.some((s) => s.id === item.id)),
+  ].filter((item) => !addState.canceled.includes(item.id));
+  // 후보 = 서버가 학년·이미 다니는 반으로 거른 순서 그대로, 방금 신청한 반은 뺀다(같은 반 두 번 신청 차단 — 서버도 다시 본다)
+  const addable = addInfo
+    ? addInfo.classIds
+        .filter((id) => !shownAdds.some((item) => item.toClassId === id))
+        .map((id) => initial.classes.find((item) => item.classId === id))
+        .filter((item): item is NonNullable<typeof item> => Boolean(item))
+    : [];
+  // «반 추가» 칩은 그 아이에게 후보 자료가 있을 때만(휴원 중인 반만 있거나 읽기 실패면 없다)
+  const formKinds: FormKind[] = addInfo ? ["CLASS_CHANGE", CLASS_ADD, "PAUSE", "WITHDRAW"] : (Object.keys(CHANGE_KIND_LABEL) as ChangeKind[]);
+  // 다른 아이로 바꿨는데 그 아이는 반 추가를 못 하면 기본 종류로 되돌려 본다
+  const activeKind: FormKind = kind === CLASS_ADD && !addInfo ? "CLASS_CHANGE" : kind;
 
   /** 보내고 서버 응답(성공일 때만)을 돌려준다. 실패·불확실이면 null. */
   async function send(body: Record<string, unknown>): Promise<Record<string, any> | null> {
@@ -149,7 +184,9 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
   }
 
   function submit() {
-    if (!child) return;
+    // 반 추가는 submitClassAdd 가 보낸다. 아래는 화면에 실제로 골라져 있는 종류(activeKind)로만 판단한다.
+    if (!child || activeKind === CLASS_ADD) return;
+    const kind: ChangeKind = activeKind;
     // 아이폰 날짜 고르기는 min 을 무시해 휴원 시작일 이전 복귀일도 고를 수 있다. 보내기 전에 언제부터인지 알려 준다.
     // 문자열 비교로 충분하다("YYYY-MM-DD" 는 글자 순서 = 날짜 순서).
     // 아이폰은 휴원 시작일 min·max 도 무시한다 — 범위를 벗어나면 보내기 전에 알려 준다(서버도 같은 규칙으로 다시 본다).
@@ -178,6 +215,43 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
       });
       if (!data) return;
       afterSubmitted(child.enrollmentId, data);
+    });
+  }
+
+  /** 반 추가 신청(c8) — 아이·추가할 반·시작일만 보낸다. 후보·정원·중복은 서버가 다시 판정한다. */
+  function submitClassAdd() {
+    if (!child) return;
+    // 아이폰 날짜 고르기는 min·max 를 무시한다 — 범위를 벗어나면 보내기 전에 알려 준다(서버도 같은 규칙으로 다시 본다).
+    if (effectiveFrom < initial.minEffectiveFrom || (initial.maxEffectiveFrom && effectiveFrom > initial.maxEffectiveFrom)) {
+      setDone("");
+      setError(`시작일은 ${initial.minEffectiveFrom}부터 ${initial.maxEffectiveFrom} 사이로 골라 주세요.`);
+      return;
+    }
+    startTransition(async () => {
+      const data = await send({ studentId: child.studentId, kind: CLASS_ADD, toClassId, effectiveFrom, reason });
+      if (!data) return;
+      if (typeof data.id === "string" && data.id) {
+        const added: ClassAddPending = {
+          id: data.id, studentId: child.studentId, toClassId: String(data.toClassId ?? toClassId),
+          toClassName: data.toClassName ?? null, effectiveFrom: String(data.effectiveFrom ?? effectiveFrom), waitlisted: Boolean(data.waitlisted),
+        };
+        setAddState((state) => ({ ...state, added: [...state.added, added] }));
+      }
+      setDone("신청이 접수되었습니다. 학원에서 확인 후 알려드립니다.");
+      setToClassId("");
+      setEffectiveFrom(initial.effectiveFrom);
+      setReason("");
+      router.refresh();
+    });
+  }
+
+  /** 검토 중인 반 추가 신청 취소 — 다른 신청과 같은 취소 액션(cancel). */
+  function cancelClassAdd(id: string) {
+    startTransition(async () => {
+      if (!(await send({ action: "cancel", id }))) return;
+      setAddState((state) => ({ ...state, canceled: [...state.canceled, id] }));
+      setDone("신청을 취소했습니다.");
+      router.refresh();
     });
   }
 
@@ -322,6 +396,33 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
         </select>
       )}
 
+      {/* 검토 중인 «반 추가» — 한 줄씩(반 · 시작일 · 확인 중) + 그 자리 취소. 반에 묶이지 않아 아이 기준으로 보인다 */}
+      {shownAdds.length > 0 && (
+        <section aria-label="검토 중인 반 추가 신청" className="rounded-2xl border border-[var(--color-academy-line)] bg-white px-4 py-1">
+          <ul className="divide-y divide-[var(--color-academy-line)]">
+            {shownAdds.map((item) => (
+              <li key={item.id} className="flex min-h-11 flex-wrap items-center gap-x-2 gap-y-1 py-1.5">
+                <span className="min-w-0 flex-1 break-keep text-sm text-[var(--color-academy-ink)]">
+                  반 추가 · {item.toClassName ?? "반"} · {shortMd(item.effectiveFrom)}부터
+                  <span className="ml-1 text-xs font-medium text-[var(--color-academy-warning)]">
+                    {CHANGE_STATUS_LABEL.PENDING}{item.waitlisted ? " · 자리가 나면 배정" : ""}
+                  </span>
+                </span>
+                <InlineConfirm
+                  label="신청 취소"
+                  question={`${item.toClassName ?? "반"} 추가 신청을 취소할까요?`}
+                  confirmLabel="신청 취소"
+                  onConfirm={() => cancelClassAdd(item.id)}
+                  disabled={uncertain}
+                  pending={pending}
+                  openClassName="basis-full"
+                />
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {shownPending ? (
         <section className="rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-warning-soft)] p-5">
           <p className="text-sm font-semibold text-[var(--color-academy-warning)]">
@@ -419,28 +520,77 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
               </p>
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
-              {(Object.keys(CHANGE_KIND_LABEL) as ChangeKind[]).map((value) => (
+            <div className={`grid gap-2 ${formKinds.length === 4 ? "grid-cols-2" : "grid-cols-3"}`}>
+              {formKinds.map((value) => (
                 <button
                   key={value}
                   type="button"
                   // 고른 칩 = academy-choice(체크·연한 바탕). 꽉 찬 색은 맨 아래 제출 버튼만(C-M2)
-                  aria-pressed={kind === value}
-                  onClick={() => setKind(value)}
+                  aria-pressed={activeKind === value}
+                  onClick={() => { setKind(value); setToClassId(""); }}
                   className="academy-choice break-keep px-1!"
                 >
-                  {CHANGE_KIND_LABEL[value]}
+                  {REQUEST_KIND_LABEL[value]}
                 </button>
               ))}
             </div>
             {/* 퇴원을 골랐을 때만 적용일을 알린다(반 변경·휴원은 아래에서 날짜를 직접 고른다) */}
-            {kind === "WITHDRAW" && (
+            {activeKind === "WITHDRAW" && (
               <p className="text-sm text-[var(--color-academy-muted)]">
                 <b className="text-[var(--color-academy-ink)]">{initial.effectiveFrom}</b>부터 퇴원
               </p>
             )}
 
-            {kind === "CLASS_CHANGE" && (
+            {/* 반 추가(c8): 지금 반은 그대로 — 학년에 맞는 반 중 하나를 고르고 시작일을 정한다. 정원이 찬 반은 대기(반 변경과 같은 규칙) */}
+            {activeKind === CLASS_ADD && (
+              addable.length === 0 ? (
+                <p className="text-sm text-[var(--color-academy-muted)]">
+                  {addInfo?.gradeKnown ? "아이 학년에 맞는 다른 반이 없어요." : "추가할 수 있는 반이 없어요."}{" "}
+                  <Link href={`/mypage/record?child=${encodeURIComponent(child.studentId)}`} className="academy-button-text">
+                    아이 학년 확인
+                  </Link>
+                </p>
+              ) : (
+                <div>
+                  <label htmlFor="add-class" className="mb-1 block text-xs font-medium text-[var(--color-academy-muted)]">
+                    추가할 반
+                  </label>
+                  <select
+                    id="add-class"
+                    value={toClassId}
+                    onChange={(event) => setToClassId(event.target.value)}
+                    className="academy-input"
+                  >
+                    <option value="">반을 선택해 주세요</option>
+                    {addable.map((item) => (
+                      <option key={item.classId} value={item.classId}>
+                        {DAY_KO[item.dayOfWeek] ?? item.dayOfWeek} {item.startTime}~{item.endTime} · {item.programName}
+                        {item.full ? " (정원 마감 · 대기)" : ` (${SEAT_LEVEL_LABEL[item.seatLevel]})`}
+                      </option>
+                    ))}
+                  </select>
+                  {addable.find((item) => item.classId === toClassId)?.full && (
+                    <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
+                      정원이 찬 반도 신청할 수 있어요. 자리가 나면 순서대로 배정됩니다.
+                    </p>
+                  )}
+                  <label htmlFor="add-from" className="mt-4 mb-1 block text-xs font-medium text-[var(--color-academy-muted)]">
+                    언제부터 다닐까요?
+                  </label>
+                  <input
+                    id="add-from"
+                    type="date"
+                    value={effectiveFrom}
+                    min={initial.minEffectiveFrom}
+                    max={initial.maxEffectiveFrom}
+                    onChange={(event) => setEffectiveFrom(event.target.value)}
+                    className="academy-input box-border min-w-0 max-w-full appearance-none"
+                  />
+                </div>
+              )
+            )}
+
+            {activeKind === "CLASS_CHANGE" && (
               <div>
                 <label htmlFor="to-class" className="mb-1 block text-xs font-medium text-[var(--color-academy-muted)]">
                   옮기고 싶은 반
@@ -482,7 +632,7 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
               </div>
             )}
 
-            {kind === "PAUSE" && (
+            {activeKind === "PAUSE" && (
               <div>
                 {otherPauseOptions.length > 0 && (
                   <fieldset className="mb-3" disabled={pending || uncertain}>
@@ -570,7 +720,19 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
 
             {notice}
 
-            {kind === "WITHDRAW" ? (
+            {activeKind === CLASS_ADD ? (
+              // 반 추가는 접수 뒤에도 양식이 남는다(다른 반을 더 신청할 수 있다) — 방금 신청한 반은 후보에서 빠져 두 번 못 낸다
+              addable.length > 0 && (
+                <button
+                  type="button"
+                  disabled={pending || uncertain || !toClassId}
+                  onClick={submitClassAdd}
+                  className="academy-button-primary w-full"
+                >
+                  {pending ? "접수 중..." : "반 추가 신청하기"}
+                </button>
+              )
+            ) : activeKind === "WITHDRAW" ? (
               // 퇴원은 되돌리기 어렵다 → 위험색 버튼 + 한 번 더 확인(M-03). 확인 후 제출 함수·내용은 같다(submit)
               <InlineConfirm
                 label="퇴원 신청하기"
@@ -587,7 +749,7 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
             ) : (
               <button
                 type="button"
-                disabled={pending || uncertain || awaitingReload || (kind === "CLASS_CHANGE" && !toClassId)}
+                disabled={pending || uncertain || awaitingReload || (activeKind === "CLASS_CHANGE" && !toClassId)}
                 onClick={submit}
                 className="academy-button-primary w-full"
               >
@@ -643,7 +805,7 @@ function ChangeHistoryList({ rows }: { rows: ChangeHistoryRow[] }) {
           <li key={row.id} className="px-4 py-2">
             <div className="flex min-h-7 items-center justify-between gap-2 text-sm">
               <span className="min-w-0 break-keep text-[var(--color-academy-ink)]">
-                {row.studentName} · {row.fromClassName ?? "반"} {parentKindName(row.kind)}
+                {row.studentName} · {row.kind === "CLASS_ADD" ? (row.toClassName ?? "반") : (row.fromClassName ?? "반")} {parentKindName(row.kind)}
                 {row.kind === "CLASS_CHANGE" && row.toClassName ? ` → ${row.toClassName}` : ""}
                 {shortMd(row.effectiveFrom) && (
                   <span className="ml-1 text-xs text-[var(--color-academy-muted)]">({shortMd(row.effectiveFrom)}부터)</span>
