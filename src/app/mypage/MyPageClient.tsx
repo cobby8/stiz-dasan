@@ -325,6 +325,16 @@ export default function MyPageClient({ data, notices = [], inquiryCounts = { ans
                     <ProfileAvatar decorative name={child.name} size={64} src={profilePhotoUrl({ kind: "student", id: child.id }, child.photoVersion, true)} />
                     <div className="min-w-0 flex-1">
                         <h1 id="parent-child-heading" className="academy-heading">{child.name} 학생</h1>
+                        {/* 아이 사진이 아직 없으면 사진 칸(아이 기록 → 아이 정보)으로 바로 가는 글자 버튼(2026-11-14).
+                            설정의 «내 사진»에 아이 사진을 올리는 헷갈림이 실제로 있었다 */}
+                        {!child.photoVersion && (
+                            <Link
+                                href={`/mypage/record?child=${encodeURIComponent(child.id)}#record-info`}
+                                className="academy-button-text min-h-11! -my-2 inline-flex items-center"
+                            >
+                                아이 사진 올리기
+                            </Link>
+                        )}
                         {/* 2026-11-14 문구 정리: 바로 아래 «다음 수업» 줄이 있으면 «수강 중인 반 N개»는 같은 말이라 뺀다.
                             복귀 예정·개시일처럼 아래 줄에 없는 내용만 남기고, 남길 말이 없으면 줄째 그리지 않는다. */}
                         {(heroEnrollLine || startsLaterEnrollment) && (

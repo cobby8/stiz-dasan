@@ -53,6 +53,8 @@ test("관리자 원생 상세는 개시일이 미래인 ACTIVE 반을 «수강 �
     "@/components/maps/LocationPickerModal": nullComponent, "@/components/admin/AdminModal": nullComponent,
     // 2026-11-13 UI 통일 2단계: 페이지 제목이 공용 부품(AdminPageHeader)으로 옮겨져 가짜 부품 목록에 추가(단언은 그대로)
     "@/components/admin/AdminPageHeader": nullComponent,
+    // 프로필 사진(2026-11-14 연결) — 화면 검사와 무관해 빈 부품·주소 없음으로 둔다
+    "@/components/common/ProfileAvatar": nullComponent, "@/lib/profilePhoto/rules": { profilePhotoUrl: () => null },
     "@/components/admin/StatusBadge": { statusToneClass: () => "" },
     "./ParentRequestLinkPanel": nullComponent, "./GuardianPanel": nullComponent, "./AbsencePeriodPanel": nullComponent,
     // 2026-11-14: 학부모 «정보 변경 요청»·건강 특이사항 칸이 늘었다(화면이 열린 뒤 따로 읽는 칸이라 이 테스트에서는 빈 부품)
@@ -92,6 +94,8 @@ test("관리자 원생 목록 «활성» 필터·반별 인원은 개시일 미�
     "@/app/actions/admin": {}, "@/components/admin/AdminModal": nullComponent,
     // 2026-11-13 UI 통일 2단계: 페이지 제목이 공용 부품(AdminPageHeader)으로 옮겨져 가짜 부품 목록에 추가(단언은 그대로)
     "@/components/admin/AdminPageHeader": nullComponent,
+    // 프로필 사진(2026-11-14 연결) — 화면 검사와 무관해 빈 부품·주소 없음으로 둔다
+    "@/components/common/ProfileAvatar": nullComponent, "@/lib/profilePhoto/rules": { profilePhotoUrl: () => null },
     "@/components/admin/AdminQuickActionMenu": nullComponent,
     "@/components/admin/AbsencePeriodQuickCreate": nullComponent, // 2026-11-15 ⚡ «기간 결석 등록»
     "@/components/admin/AdminConfirmDialog": { useAdminConfirm: () => ({ confirm: async () => false, confirmDialog: null }) },

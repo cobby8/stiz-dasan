@@ -1,4 +1,6 @@
 "use client";
+import ProfileAvatar from "@/components/common/ProfileAvatar";
+import { profilePhotoUrl } from "@/lib/profilePhoto/rules";
 import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
@@ -33,6 +35,8 @@ export type ClassItem = {
 export type StudentRecord = {
     studentId: string;
     studentName: string;
+    /** 프로필 사진 캐시 버전(사진 없으면 null → 이름 첫 글자) */
+    photoVersion?: string | null;
     status: string | null;
     attendanceId: string | null;
     // 그날 결석 신고(정규만). source=SHEET 출석부 표시 / PARENT 학부모 신고
@@ -539,7 +543,11 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
                             <ul className="flex-1 divide-y divide-[var(--color-academy-line)] border-y border-[var(--color-academy-line)]">
                                 {students.map((s) => (
                                     <li key={s.studentId} className="flex flex-wrap items-center justify-between gap-2 px-4 py-1">
-                                        <span className="min-w-0 break-keep font-semibold text-[var(--color-academy-ink)]">{s.studentName}</span>
+                                        <span className="flex min-w-0 items-center gap-2">
+                                            {/* 아이 사진 28px(없으면 이름 첫 글자, 2026-11-14) — 얼굴로 바로 알아보게 */}
+                                            <ProfileAvatar decorative name={s.studentName} size={28} src={profilePhotoUrl({ kind: "student", id: s.studentId }, s.photoVersion ?? null, true)} />
+                                            <span className="min-w-0 break-keep font-semibold text-[var(--color-academy-ink)]">{s.studentName}</span>
+                                        </span>
                                         <div className="flex shrink-0 flex-wrap justify-end gap-1" role="group" aria-label={`${s.studentName} 출결`}>
                                             {/* 결석일 때만: 질병·부상 표시 → 청구 작업대 이월 검토 후보(정규만). 학부모 신고가 있으면 그 사유를 따른다 */}
                                             {s.status === "ABSENT" && !selectedLesson.sessionDateId && (

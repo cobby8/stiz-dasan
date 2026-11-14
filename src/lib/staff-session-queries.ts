@@ -8,6 +8,7 @@ import {
   requireStaffSessionAccess,
 } from "@/lib/staff-class-access";
 import { notMergedStudent } from "@/lib/studentVisibility";
+import { profilePhotoUpdatedAtSql, profilePhotoVersion } from "@/lib/profilePhoto/rules";
 import { kstDow } from "@/lib/datetime/kst";
 import { makeupOnClassDateSql } from "@/lib/makeup/makeup-attendance";
 import { absenceReportOf } from "@/lib/regular/attendance-absence-reason";
@@ -86,6 +87,9 @@ export type StaffSessionStudent = {
   // 출결은 체험 장부(TrialLead.staffAttendanceStatus)에만 남고 정규 출석 표·청구·보강권과 섞이지 않는다.
   // 선생님에게는 이름·학년만 보인다(학부모 연락처 등은 내려보내지 않는다).
   trial: boolean;
+  // 프로필 사진 캐시 버전(사진 없음·체험·미전환이면 null/없음 → 이름 첫 글자, 2026-11-14).
+  // 사진 주소는 권한 확인 API 라, 담당이 아닌 아이(다른 반 보강 등)는 사진 대신 첫 글자가 보인다.
+  photoVersion?: string | null;
 };
 
 type TodayClassRow = Omit<StaffTodayClass, "startedAt" | "kind" | "scheduleKey" | "sessionDateId"> & {
@@ -341,6 +345,7 @@ export async function getStaffSessionStudents(
         status: StaffSessionStudent["status"];
         attendanceNote: string | null;
         arrivedAt: Date | string | null;
+        photoUpdatedAt: Date | string | null;
       }>
     >(
       `SELECT e.id AS "enrollmentDateId",
@@ -350,7 +355,8 @@ export async function getStaffSessionStudents(
               COALESCE(app."childPhone", app."parentPhone") AS phone,
               e."attendanceStatus" AS status,
               e."attendanceNote" AS "attendanceNote",
-              e."arrivedAt" AS "arrivedAt"
+              e."arrivedAt" AS "arrivedAt",
+              ${profilePhotoUpdatedAtSql("st")} AS "photoUpdatedAt"
        FROM "SpecialProgramSessionDate" anchor_sd
        JOIN "SpecialProgramOffering" anchor_o ON anchor_o.id = anchor_sd."offeringId"
        JOIN "SpecialProgramSessionDate" sd
@@ -390,6 +396,7 @@ export async function getStaffSessionStudents(
       absenceReport: null,
       makeup: false,
       trial: false,
+      photoVersion: profilePhotoVersion(row.photoUpdatedAt),
     }));
   }
 
@@ -406,13 +413,15 @@ export async function getStaffSessionStudents(
       absenceStatus: string | null;
       absenceNote: string | null;
       absenceReportedBy: string | null;
+      photoUpdatedAt: Date | string | null;
     }>
   >(
     // 사전 결석 신고를 함께 읽는다. 이게 없으면 선생님이 신고 사실을 모른 채
     // 출석을 찍고, 학부모가 미리 알린 의미가 사라진다.
     `SELECT st.id, st.name, a.status, a.note AS "attendanceNote", a."arrivedAt",
             ra.reason AS "absenceReason", ra.status AS "absenceStatus",
-            ra.note AS "absenceNote", ra."reportedByUserId" AS "absenceReportedBy"
+            ra.note AS "absenceNote", ra."reportedByUserId" AS "absenceReportedBy",
+            ${profilePhotoUpdatedAtSql("st")} AS "photoUpdatedAt"
      FROM "Enrollment" e
      JOIN "Student" st ON st.id = e."studentId" AND ${notMergedStudent("st")}
      LEFT JOIN "Attendance" a ON a."sessionId" = $1 AND a."studentId" = st.id
@@ -444,6 +453,7 @@ export async function getStaffSessionStudents(
       : null,
     makeup: false,
     trial: false,
+    photoVersion: profilePhotoVersion(row.photoUpdatedAt),
   }));
 
   // 보강 온 아이 — 이 반·이 날(KST)에 보강 예약(예약됨·참석)된 다른 반 학생을 명단 뒤에 «보강»으로 붙인다.
@@ -451,9 +461,10 @@ export async function getStaffSessionStudents(
   const sessionYmd = sessionKinds[0]?.date ?? null;
   if (!sessionYmd) return regular;
   const makeupRows = await prisma.$queryRawUnsafe<
-    Array<{ id: string; name: string; status: StaffSessionStudent["status"]; attendanceNote: string | null; arrivedAt: Date | string | null }>
+    Array<{ id: string; name: string; status: StaffSessionStudent["status"]; attendanceNote: string | null; arrivedAt: Date | string | null; photoUpdatedAt: Date | string | null }>
   >(
-    `SELECT DISTINCT ON (st.id) st.id, st.name, a.status, a.note AS "attendanceNote", a."arrivedAt"
+    `SELECT DISTINCT ON (st.id) st.id, st.name, a.status, a.note AS "attendanceNote", a."arrivedAt",
+            ${profilePhotoUpdatedAtSql("st")} AS "photoUpdatedAt"
        FROM "MakeupSession" ms
        JOIN "Student" st ON st.id = ms."studentId" AND ${notMergedStudent("st")}
        LEFT JOIN "Attendance" a ON a."sessionId" = $1 AND a."studentId" = st.id
@@ -480,6 +491,7 @@ export async function getStaffSessionStudents(
       absenceReport: null,
       makeup: true,
       trial: false,
+      photoVersion: profilePhotoVersion(row.photoUpdatedAt),
     }));
 
   // 체험수업 아이(f1) — 이 반·이 날(KST)로 체험 일정이 잡힌 신청을 명단 맨 뒤에 «체험»으로 붙인다.
