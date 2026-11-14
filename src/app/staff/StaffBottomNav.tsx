@@ -1,8 +1,8 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState, type MouseEvent } from "react";
-import { prepareStaffNavigation } from "./staffNavigation";
+import { useEffect, useState, useSyncExternalStore, type MouseEvent } from "react";
+import { isStaffLiveLessonOpen, prepareStaffNavigation, subscribeStaffLiveLesson } from "./staffNavigation";
 import { isStoreApp } from "@/lib/storeApp";
 import { DRIVER_ENTRY_PATH, shouldShowIosDriverNotice } from "@/lib/staff-session-rules";
 
@@ -47,8 +47,14 @@ export default function StaffBottomNav({ canTeach, canShuttle }: { canTeach: boo
     router.push(href);
   }
 
+  // 2026-11-15 원장 점검: 홈에서 진행 중 수업 칸이 펼쳐져 있는 동안에도 메뉴를 숨긴다(아래 고정 막대 밑에 탭이 다시 보이던 문제).
+  // 줄 머리를 눌러 접으면 다시 나온다. 홈이 아닌 화면에서는 이 표시를 보지 않는다(남은 표시 때문에 메뉴가 사라지지 않게).
+  // 서버가 그릴 때는 «안 펼쳐짐»(탭 보임)으로 그리고, 화면이 뜬 뒤 표시를 읽는다
+  const liveLessonOpen = useSyncExternalStore(subscribeStaffLiveLesson, isStaffLiveLessonOpen, () => false);
+
   // 수업 진행 화면은 종료 버튼 등 수업 조작에 집중할 수 있도록 메뉴를 숨깁니다.
   if (pathname.startsWith("/staff/sessions/")) return null;
+  if (liveLessonOpen && pathname === "/staff") return null;
 
   const shuttleItem = { href: shuttleHref, label: "셔틀", exact: false } as const;
   const items = [

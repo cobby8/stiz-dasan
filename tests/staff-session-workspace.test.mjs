@@ -56,9 +56,9 @@ test("아래 고정 막대: [사진]=바로 촬영 · [동영상]=바로 촬영 
   // 수업 화면: 올리기 부품은 버튼만 숨기고(목록·지우기는 그대로) 막대에 손잡이를 넘긴다
   assert.match(workspace, /<SessionPhotoUploader ref=\{photoUploaderRef\} sessionId=\{session\.id\} hideButtons onStateChange=\{setPhotoState\} \/>/);
   assert.match(workspace, /<SessionVideoUploader ref=\{videoUploaderRef\} sessionId=\{session\.id\} hideButtons onStateChange=\{setVideoState\} \/>/);
-  // 홈에서는 아래 탭 위에 띄운다
-  assert.match(workspace, /aboveBottomNav=\{embedded\}/);
-  assert.match(mediaBar, /aboveBottomNav \? "calc\(3\.75rem \+ max\(0\.625rem, env\(safe-area-inset-bottom\)\)\)"/);
+  // 2026-11-15 원장 점검: 수업 중 아래 탭 숨김·시작 취소 위험 버튼 — 홈에서도 아래 탭이 숨으므로 막대는 늘 화면 바닥(안전 영역만 비움)에 붙는다
+  assert.doesNotMatch(workspace, /aboveBottomNav/);
+  assert.match(mediaBar, /: "max\(0\.5rem, env\(safe-area-inset-bottom\)\)"/);
 });
 
 test("갤러리에서 고른 파일은 사진(여러 장)·영상(1개)으로 나뉜다", () => {
@@ -413,7 +413,8 @@ test("권장 3·4: 펼쳐진 줄 머리의 «시작»은 숨기고, 접힌 줄 �
 
 test("권장 5·6·9: 수업 중에도 미리 쓴 내용을 읽을 수 있고, 홈은 막대만큼 끝 여백을 두며, 글칸은 음성·저장을 따로 센다", () => {
   assert.match(workspace, /\{plan && \([\s\S]{0,300}aria-expanded=\{showPlan\} aria-controls="session-plan"[\s\S]{0,500}\{showPlan && \(\s*<div id="session-plan"[^>]*>\s*<p[^>]*>\{plan\}<\/p>/);
-  assert.match(home, /\{expandedLesson\?\.sessionStatus === "IN_PROGRESS" && <div aria-hidden="true" className="h-28" \/>\}/);
+  // 2026-11-15 원장 점검: 수업 중 아래 탭 숨김·시작 취소 위험 버튼 — 탭이 숨은 만큼 끝 여백은 줄었다(막대가 마지막 줄을 가리지 않을 만큼)
+  assert.match(home, /\{liveLessonOpen && <div aria-hidden="true" className="h-12" \/>\}/);
   assert.match(editor, /busyRef\.current\[kind\] = busy;\s*onBusyChange\?\.\(busyRef\.current\.voice \|\| busyRef\.current\.saving\);/);
   assert.match(editor, /onBusyChange=\{\(busy\) => reportBusy\("voice", busy\)\}/);
   assert.doesNotMatch(editor, /onBusyChange\?\.\((true|false)\)/);
@@ -429,4 +430,58 @@ test("권장 7: 갤러리에서 고른 것 중 막힌 쪽은 보내지 않고 �
   assert.equal(rules.planGalleryUpload({ images: [], video, photoAvailable: false, videoAvailable: true }).blocked, "");
   assert.match(mediaBar, /const plan = planGalleryUpload\(\{[\s\S]{0,600}\}\);[\s\S]{0,200}sendPhotos\(plan\.images\);\s*sendVideo\(plan\.video\);/);
   assert.doesNotMatch(mediaBar, /sendPhotos\(split\.images\)|sendVideo\(split\.video\)/);
+});
+
+// ── 2026-11-15 원장 점검: 수업 중 아래 탭 숨김·시작 취소 위험 버튼 ──
+
+test("원장 점검 1: 홈에서 진행 중 수업 칸이 펼쳐져 있는 동안 아래 탭을 숨기고, 접거나 떠나면 푼다", async () => {
+  const navigation = read("src/app/staff/staffNavigation.ts");
+  const nav = read("src/app/staff/StaffBottomNav.tsx");
+  // 신호를 실제로 돌려 본다(브라우저 전역 대역)
+  const events = [];
+  globalThis.document = { documentElement: { dataset: {} } };
+  globalThis.window = { dispatchEvent: (event) => { events.push(event.type); return true; } };
+  try {
+    const signal = await loadTsModule("src/app/staff/staffNavigation.ts");
+    assert.equal(signal.isStaffLiveLessonOpen(), false);
+    signal.setStaffLiveLessonOpen(true);
+    assert.equal(signal.isStaffLiveLessonOpen(), true);
+    signal.setStaffLiveLessonOpen(false);
+    assert.equal(signal.isStaffLiveLessonOpen(), false);
+    assert.equal("staffLiveLesson" in document.documentElement.dataset, false, "표시가 남지 않는다");
+    assert.deepEqual(events, [signal.STAFF_LIVE_LESSON_EVENT, signal.STAFF_LIVE_LESSON_EVENT]);
+    // 듣기·그만 듣기
+    const calls = [];
+    window.addEventListener = (type) => calls.push(`add:${type}`);
+    window.removeEventListener = (type) => calls.push(`remove:${type}`);
+    signal.subscribeStaffLiveLesson(() => {})();
+    assert.deepEqual(calls, ["add:staff:live-lesson", "remove:staff:live-lesson"]);
+  } finally {
+    delete globalThis.document;
+    delete globalThis.window;
+  }
+  // 홈: 펼친 줄이 진행 중 수업일 때만 켜고, 줄을 접거나(값이 바뀜)·화면이 사라질 때 끈다. 수업 전·완료 줄은 켜지 않는다
+  assert.match(home, /const liveLessonOpen = expandedLesson\?\.sessionStatus === "IN_PROGRESS";\s*useEffect\(\(\) => \{\s*if \(!liveLessonOpen\) return;\s*setStaffLiveLessonOpen\(true\);\s*return \(\) => setStaffLiveLessonOpen\(false\);\s*\}, \[liveLessonOpen\]\);/);
+  // 아래 탭: 신호를 듣고(처음 뜰 때도 한 번 읽는다) 홈에서만 숨는다. 수업 주소에서 숨는 것은 그대로
+  assert.match(nav, /const liveLessonOpen = useSyncExternalStore\(subscribeStaffLiveLesson, isStaffLiveLessonOpen, \(\) => false\);/);
+  assert.match(nav, /if \(liveLessonOpen && pathname === "\/staff"\) return null;/);
+  assert.match(nav, /if \(pathname\.startsWith\("\/staff\/sessions\/"\)\) return null;/);
+  // 탭 이동 전 메모 저장은 그대로
+  assert.match(nav, /const result = await prepareStaffNavigation\(\);/);
+  assert.match(navigation, /staff:prepare-navigation/);
+  // 탭이 숨은 동안 나가는 길: 펼친 줄 머리 전체가 접기 버튼이다
+  assert.match(home, /role="button"\s+tabIndex=\{0\}\s+aria-expanded=\{expandedKey === focusClass\.scheduleKey\}\s+aria-controls=\{lessonBodyId\(focusClass\)\}\s+onClick=\{\(\) => void toggleLesson\(focusClass\)\}/);
+});
+
+test("원장 점검 2: «수업 시작 취소»는 빨간 위험 버튼 하나(칸 전체 폭·44px 이상), 확인·메모 먼저 저장은 그대로", () => {
+  const block = workspace.slice(workspace.indexOf('<div id="session-cancel-start"'), workspace.indexOf("{showPeople && <ClassPeopleSheet"));
+  assert.equal((block.match(/<button/g) ?? []).length, 1, "그 자리의 버튼은 하나");
+  assert.doesNotMatch(block, /<a |academy-button-text|academy-button-secondary/);
+  assert.match(block, /<button type="button" disabled=\{actionsLocked\} onClick=\{cancelStart\} className="academy-button-danger min-h-12! w-full">\s*수업 시작 취소/);
+  // 설명 한 줄은 버튼 위에
+  assert.ok(block.indexOf("시작을 취소해도 기록한 출결은 유지됩니다.") < block.indexOf("<button"));
+  // 꽉 찬 빨강은 여전히 «종료 확인» 창의 최종 버튼 하나
+  assert.equal((workspace.match(/academy-button-danger-solid/g) ?? []).length, 1);
+  assert.match(workspace, /window\.confirm\("수업 시작을 취소하고 '시작 전' 상태로 되돌릴까요\? \(기록한 출결은 그대로 유지됩니다\)"\)/);
+  assert.match(workspace, /const memoSaved = await persistMemo\(memoRef\.current\);[\s\S]{0,300}await cancelClassSession\(\{ sessionId: session\.id \}\)/);
 });
