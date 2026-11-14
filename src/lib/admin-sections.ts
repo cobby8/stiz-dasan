@@ -29,14 +29,14 @@ export type AdminSection = {
 };
 
 export const ADMIN_SECTIONS = {
-  // 사이드바 «수업·출결» — 출결 화면에 결석 신고·보강·수업 리포트를 탭으로 붙였다
+  // 사이드바 «수업·출결» — 출결 화면에 결석 신고·보강·수업 피드를 탭으로 붙였다
+  // (2026-11-14 «수업 리포트» 탭은 수업 피드로 합쳤다 — 옛 목록 주소는 피드로 redirect, 편집 화면 주소는 그대로)
   attendance: {
     label: "수업·출결",
     tabs: [
       { href: "/admin/attendance", label: "출결", icon: "fact_check" },
       { href: "/admin/absence", label: "정규 결석 신고", icon: "event_busy" },
       { href: "/admin/makeup", label: "보강", icon: "event_repeat" },
-      { href: "/admin/attendance/report", label: "수업 리포트", icon: "edit_document" },
       { href: "/admin/attendance/feed", label: "수업 피드", icon: "photo_library" },
     ],
   },
@@ -93,7 +93,7 @@ export function matchesAdminPath(pathname: string, path: string): boolean {
 
 /**
  * 지금 주소가 속한 탭 묶음과 켜질 탭을 찾는다. 없으면 null(탭 줄을 그리지 않는다).
- * 가장 «긴» 주소를 고른다 — /admin/attendance/report 는 «출결»이 아니라 «수업 리포트» 탭이다.
+ * 가장 «긴» 주소를 고른다 — /admin/attendance/feed 는 «출결»이 아니라 «수업 피드» 탭이다.
  */
 export function findAdminSection(pathname: string): { key: AdminSectionKey; section: AdminSection; activeHref: string } | null {
   let best: { key: AdminSectionKey; section: AdminSection; activeHref: string } | null = null;

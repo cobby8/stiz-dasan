@@ -1,77 +1,17 @@
 "use client";
-import { adminErrorText } from "@/components/admin/adminDisplayText";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import {
-    saveSessionReport,
-    publishSessionReport,
-    saveStudentSessionNotes,
-} from "@/app/actions/admin";
-// 사진 항목은 구버전(URL 문자열)과 선생님 앱이 저장한 객체가 섞여 있어 전용 파서를 씁니다.
-import {
-    appendSessionPhotoUrls,
-    removeSessionPhotoEntryAt,
-    toSessionReportPhotoViews,
-} from "@/lib/sessionPhotoEntries";
-import { compressImageForUpload } from "@/lib/clientImageCompression";
-import { ATTENDANCE_TONE, statusBadgeClass } from "@/lib/ui/statusTones";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
-
-// ── 타입 정의 ──────────────────────────────────────────────────────────────────
-
-type AttendanceRecord = {
-    id: string;
-    studentId: string;
-    status: string;
-    studentName: string;
-};
-
-type NoteRecord = {
-    id: string;
-    studentId: string;
-    note: string;
-    rating: number | null;
-    studentName: string;
-};
-
-type ReportData = {
-    id: string;
-    classId: string;
-    date: string;
-    topic: string | null;
-    content: string | null;
-    photosJSON: string | null;
-    coachId: string | null;
-    coachName: string | null;
-    published: boolean;
-    publishedAt: string | null;
-    className: string;
-    dayOfWeek: string;
-    startTime: string;
-    endTime: string;
-    programName: string | null;
-    attendances: AttendanceRecord[];
-    notes: NoteRecord[];
-};
-
-type Coach = {
-    id: string;
-    name: string;
-    role: string;
-};
+// 편집 본문(주제·내용·사진·학생 코멘트·저장·발행)은 수업 피드 패널과 같은 공용 부품을 쓴다(2026-11-14)
+import SessionReportEditor, {
+    type SessionReportCoach as Coach,
+    type SessionReportData as ReportData,
+} from "@/components/admin/SessionReportEditor";
 
 // 요일 한글 변환
 const DAY_LABELS: Record<string, string> = {
     Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금", Sat: "토", Sun: "일",
-};
-
-// 출석 상태 라벨/색상
-// 출결 상태색 = 공용 지도(statusTones): 출석 정상 · 지각 주의 · 결석 위험
-const STATUS_MAP: Record<string, { label: string; color: string }> = {
-    PRESENT: { label: "출석", color: statusBadgeClass(ATTENDANCE_TONE.PRESENT) },
-    ABSENT: { label: "결석", color: statusBadgeClass(ATTENDANCE_TONE.ABSENT) },
-    LATE: { label: "지각", color: statusBadgeClass(ATTENDANCE_TONE.LATE) },
 };
 
 type ReportPayload = {
@@ -205,160 +145,8 @@ function ReportEditForm({
     report: ReportData;
     coaches: Coach[];
 }) {
-
-    // ── 리포트 기본 정보 상태 ──
-    const [topic, setTopic] = useState(report.topic || "");
-    const [content, setContent] = useState(report.content || "");
-    const [coachId, setCoachId] = useState(report.coachId || "");
-    const [photosJSON, setPhotosJSON] = useState(report.photosJSON || "[]");
+    // 머리말의 발행 배지 — 편집 부품이 발행 상태를 바꾸면 알려 준다
     const [published, setPublished] = useState(report.published);
-
-    // ── 학생별 노트 상태 (출석 목록 기반으로 초기화) ──
-    // 기존 노트를 studentId로 빠르게 찾기 위한 맵
-    const noteMap = new Map(report.notes.map((n) => [n.studentId, n]));
-    const [studentNotes, setStudentNotes] = useState<
-        Record<string, { note: string; rating: number | null }>
-    >(() => {
-        const initial: Record<string, { note: string; rating: number | null }> = {};
-        for (const a of report.attendances) {
-            const existing = noteMap.get(a.studentId);
-            initial[a.studentId] = {
-                note: existing?.note || "",
-                rating: existing?.rating ?? null,
-            };
-        }
-        return initial;
-    });
-
-    // ── 저장 상태 ──
-    const [saving, setSaving] = useState(false);
-    const [saved, setSaved] = useState(false);
-    const [publishing, setPublishing] = useState(false);
-
-    // ── 사진 상태 ──
-    // photosJSON에는 URL 문자열과 선생님 앱이 저장한 사진 객체가 섞여 있습니다.
-    // 비공개 사진은 권한 검사를 거치는 프록시 경로(/api/staff/sessions/.../photos/...)로만 보입니다.
-    const photos = toSessionReportPhotoViews(photosJSON, report.id);
-    const [uploading, setUploading] = useState(false);
-    const [photoError, setPhotoError] = useState<string | null>(null);
-    // 불러오기에 실패한 사진 위치 — 빈 src로 되돌리는 대신 자리표시자를 보여주기 위함
-    const [brokenPhotoIndexes, setBrokenPhotoIndexes] = useState<number[]>([]);
-    const fileInputRef = useRef<HTMLInputElement>(null);
-
-    // 사진 업로드 (수업 기록 모달과 동일하게 /api/upload → class-logs 폴더 사용)
-    const uploadPhotos = useCallback(async (files: FileList) => {
-        setUploading(true);
-        setPhotoError(null);
-        try {
-            const uploadedUrls: string[] = [];
-            // 서버 부하를 줄이기 위해 한 장씩 순차 업로드합니다.
-            for (const file of Array.from(files)) {
-                const compressed = await compressImageForUpload(file);
-                const formData = new FormData();
-                formData.append("file", compressed);
-                formData.append("folder", "class-logs");
-
-                const res = await fetch("/api/upload", { method: "POST", body: formData });
-                if (!res.ok) throw new Error(`사진 업로드 실패: ${file.name}`);
-
-                const data = await res.json();
-                if (data.url) uploadedUrls.push(data.url);
-            }
-            if (uploadedUrls.length === 0) return;
-            // 기존 항목의 형태(문자열/객체)는 그대로 두고 뒤에 덧붙입니다.
-            setPhotosJSON((prev) => appendSessionPhotoUrls(prev, uploadedUrls));
-            setSaved(false);
-        } catch (err) {
-            setPhotoError(adminErrorText(err, "사진 업로드 중 오류가 발생했습니다."));
-        } finally {
-            setUploading(false);
-        }
-    }, []);
-
-    const handlePhotoFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-        const files = e.target.files;
-        if (files && files.length > 0) void uploadPhotos(files);
-        // 같은 파일을 다시 고를 수 있도록 초기화
-        e.target.value = "";
-    }, [uploadPhotos]);
-
-    // 사진 삭제 — 문자열/객체 어느 형태든 해당 위치 항목만 제거합니다.
-    const removePhoto = useCallback((index: number) => {
-        setPhotosJSON((prev) => removeSessionPhotoEntryAt(prev, index));
-        setBrokenPhotoIndexes([]);
-        setSaved(false);
-    }, []);
-
-    // 학생 노트 변경
-    const updateNote = (studentId: string, note: string) => {
-        setStudentNotes((prev) => ({
-            ...prev,
-            [studentId]: { ...prev[studentId], note },
-        }));
-        setSaved(false);
-    };
-
-    // 학생 평점 변경
-    const updateRating = (studentId: string, rating: number | null) => {
-        setStudentNotes((prev) => ({
-            ...prev,
-            [studentId]: { ...prev[studentId], rating },
-        }));
-        setSaved(false);
-    };
-
-    // ── 리포트 저장 (기본 정보 + 학생별 노트) ──
-    async function handleSave() {
-        setSaving(true);
-        setSaved(false);
-        try {
-            // 1. 세션 리포트 기본 정보 저장
-            await saveSessionReport({
-                sessionId: report.id,
-                topic: topic || undefined,
-                content: content || undefined,
-                photosJSON: photosJSON !== "[]" ? photosJSON : undefined,
-                coachId: coachId || undefined,
-            });
-
-            // 2. 학생별 노트 저장 (노트가 있는 것만)
-            const notesToSave = Object.entries(studentNotes)
-                .filter(([, v]) => v.note.trim())
-                .map(([studentId, v]) => ({
-                    studentId,
-                    note: v.note,
-                    rating: v.rating,
-                }));
-            if (notesToSave.length > 0) {
-                await saveStudentSessionNotes(report.id, notesToSave);
-            }
-
-            setSaved(true);
-        } catch (err: any) {
-            alert(adminErrorText(err, "저장 실패"));
-        } finally {
-            setSaving(false);
-        }
-    }
-
-    // ── 발행/발행취소 토글 ──
-    async function handleTogglePublish() {
-        const newState = !published;
-        const msg = newState
-            ? "리포트를 발행하시겠습니까? 학부모에게 알림이 전송됩니다."
-            : "리포트 발행을 취소하시겠습니까? 학부모가 더 이상 볼 수 없습니다.";
-        if (!confirm(msg)) return;
-
-        setPublishing(true);
-        try {
-            await publishSessionReport(report.id, newState);
-            setPublished(newState);
-        } catch (err: any) {
-            alert(adminErrorText(err, "발행 상태 변경 실패"));
-        } finally {
-            setPublishing(false);
-        }
-    }
 
     // 날짜 포맷
     const dateStr = new Date(report.date).toLocaleDateString("ko-KR", {
@@ -369,13 +157,13 @@ function ReportEditForm({
         <div className="max-w-4xl mx-auto">
             {/* 헤더: 뒤로가기 + 제목 */}
             <div className="mb-6 min-w-0">
-                {/* 뒤로가기는 글자 버튼, 제목은 공용 머리말 부품(모양 한 가지) */}
+                {/* 뒤로가기는 글자 버튼 — 리포트 목록은 수업 피드로 합쳐졌다(2026-11-14) */}
                 <Link
-                    href="/admin/attendance/report"
+                    href="/admin/attendance/feed"
                     prefetch={false}
                     className="academy-button-text academy-button-sm -ml-2"
                 >
-                    ← 리포트 목록
+                    ← 수업 피드
                 </Link>
                 <AdminPageHeader
                     className="mt-1"
@@ -401,211 +189,7 @@ function ReportEditForm({
                 />
             </div>
 
-            {/* 기본 정보 카드 */}
-            <div className="bg-white rounded-xl border border-[var(--color-academy-line)] shadow-sm p-6 mb-6">
-                <h2 className="academy-section-title mb-4">수업 정보</h2>
-
-                <div className="space-y-4">
-                    {/* 수업 주제 */}
-                    <div>
-                        <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">수업 주제</label>
-                        <input
-                            type="text"
-                            value={topic}
-                            onChange={(e) => { setTopic(e.target.value); setSaved(false); }}
-                            placeholder="예: 드리블 연습, 3대3 미니게임"
-                            className="academy-input"
-                        />
-                    </div>
-
-                    {/* 담당 코치 */}
-                    <div>
-                        <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">담당 코치</label>
-                        <select
-                            value={coachId}
-                            onChange={(e) => { setCoachId(e.target.value); setSaved(false); }}
-                            className="academy-input"
-                        >
-                            <option value="">코치 선택</option>
-                            {coaches.map((c) => (
-                                <option key={c.id} value={c.id}>{c.name} ({c.role})</option>
-                            ))}
-                        </select>
-                    </div>
-
-                    {/* 수업 내용 */}
-                    <div>
-                        <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">수업 내용</label>
-                        <textarea
-                            value={content}
-                            onChange={(e) => { setContent(e.target.value); setSaved(false); }}
-                            rows={4}
-                            className="academy-input resize-y"
-                        />
-                    </div>
-
-                    {/* 수업 사진 */}
-                    <div>
-                        <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">수업 사진</label>
-                        {photos.length > 0 && (
-                            <div className="flex flex-wrap gap-3 mb-3">
-                                {photos.map((photo, i) => (
-                                    <div key={`${photo.index}-${photo.src}`} className="relative group">
-                                        {brokenPhotoIndexes.includes(photo.index) ? (
-                                            // 로드 실패 시 빈 src로 되돌리면 현재 페이지를 다시 요청하게 되므로 자리표시자를 그립니다.
-                                            <div className="w-24 h-24 rounded-lg border border-dashed border-[var(--color-academy-line-input)] bg-[var(--color-academy-soft)] flex flex-col items-center justify-center gap-1 px-1 text-center">
-                                                <span className="break-keep text-xs leading-tight text-[var(--color-academy-faint)]">사진을 불러올 수 없습니다</span>
-                                            </div>
-                                        ) : (
-                                            <img
-                                                src={photo.src}
-                                                alt={`수업 사진 ${i + 1}`}
-                                                className="w-24 h-24 object-cover rounded-lg border border-[var(--color-academy-line)]"
-                                                onError={() => {
-                                                    setBrokenPhotoIndexes((prev) =>
-                                                        prev.includes(photo.index) ? prev : [...prev, photo.index]
-                                                    );
-                                                }}
-                                            />
-                                        )}
-                                        {/* 비공개(초상권 보호) 사진 표시 */}
-                                        {photo.isPrivate && (
-                                            <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1 text-xs text-white">
-                                                비공개
-                                            </span>
-                                        )}
-                                        <button
-                                            type="button"
-                                            onClick={() => removePhoto(photo.index)}
-                                            aria-label={`수업 사진 ${i + 1} 삭제`}
-                                            className="absolute -top-2 -right-2 w-5 h-5 bg-[var(--color-academy-danger)] text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition"
-                                        >
-                                            X
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                        <button
-                            type="button"
-                            onClick={() => fileInputRef.current?.click()}
-                            disabled={uploading}
-                            className="academy-button-secondary academy-button-sm"
-                        >
-                            {uploading ? "업로드 중..." : "사진 추가 (여러 장 선택 가능)"}
-                        </button>
-                        {/* 숨겨진 파일 선택창 — 수업 기록 모달과 동일한 방식 */}
-                        <input
-                            ref={fileInputRef}
-                            type="file"
-                            accept="image/*"
-                            multiple
-                            onChange={handlePhotoFileChange}
-                            className="hidden"
-                        />
-                        {photoError && (
-                            <p className="mt-2 text-xs font-medium text-[var(--color-academy-danger)]">{photoError}</p>
-                        )}
-                    </div>
-                </div>
-            </div>
-
-            {/* 출석 현황 + 학생별 노트 카드 */}
-            <div className="bg-white rounded-xl border border-[var(--color-academy-line)] shadow-sm overflow-hidden mb-6">
-                <div className="p-5 border-b border-[var(--color-academy-line)] bg-[var(--color-academy-soft)]">
-                    <h2 className="academy-section-title">출석 현황 및 학생별 코멘트</h2>
-                    <p className="text-[var(--color-academy-muted)] text-xs mt-1">
-                        학부모에게 리포트 발행 시 함께 전달됩니다.
-                    </p>
-                </div>
-
-                {report.attendances.length === 0 ? (
-                    <div className="p-12 text-center text-[var(--color-academy-faint)]">
-                        출석 기록이 없습니다.
-                    </div>
-                ) : (
-                    <div className="divide-y divide-[var(--color-academy-line)]">
-                        {report.attendances.map((a) => {
-                            const statusInfo = STATUS_MAP[a.status] || { label: a.status, color: statusBadgeClass("neutral") };
-                            const noteData = studentNotes[a.studentId] || { note: "", rating: null };
-
-                            return (
-                                <div key={a.studentId} className="px-5 py-4">
-                                    {/* 학생 이름 + 출석 상태 */}
-                                    <div className="flex items-center justify-between mb-2">
-                                        <span className="font-semibold text-[var(--color-academy-ink)]">{a.studentName}</span>
-                                        <span className={`px-2 py-0.5 rounded text-xs ${statusInfo.color}`}>
-                                            {statusInfo.label}
-                                        </span>
-                                    </div>
-
-                                    {/* 참여도 평점 (별 1~5) */}
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <span className="text-xs text-[var(--color-academy-muted)]">참여도:</span>
-                                        <div className="flex gap-0.5">
-                                            {[1, 2, 3, 4, 5].map((star) => (
-                                                <button
-                                                    key={star}
-                                                    type="button"
-                                                    aria-label={`${a.studentName} 참여도 ${star}점`}
-                                                    aria-pressed={noteData.rating === star}
-                                                    onClick={() => updateRating(
-                                                        a.studentId,
-                                                        noteData.rating === star ? null : star
-                                                    )}
-                                                    className="focus:outline-none"
-                                                >
-                                                    <span aria-hidden="true" className={`text-lg leading-none ${
-                                                            noteData.rating && noteData.rating >= star
-                                                                ? "text-[var(--color-academy-warning)]"
-                                                                : "text-[var(--color-academy-faint)]"
-                                                        }`}>{noteData.rating && noteData.rating >= star ? "★" : "☆"}</span>
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    {/* 개별 코멘트 */}
-                                    <textarea
-                                        value={noteData.note}
-                                        onChange={(e) => updateNote(a.studentId, e.target.value)}
-                                        rows={2}
-                                        className="academy-input resize-y"
-                                    />
-                                </div>
-                            );
-                        })}
-                    </div>
-                )}
-            </div>
-
-            {/* 하단 버튼 바 */}
-            <div className="bg-white rounded-xl border border-[var(--color-academy-line)] shadow-sm p-5 flex min-w-0 flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                    {/* 발행/발행취소 버튼 — 이 화면의 주 버튼은 «저장» 하나라 보조 버튼(누르면 확인 창이 한 번 묻는다) */}
-                    <button
-                        type="button"
-                        onClick={handleTogglePublish}
-                        disabled={publishing}
-                        className="academy-button-secondary"
-                    >
-                        {publishing ? "처리 중..." : published ? "발행 취소" : "학부모에게 발행"}
-                    </button>
-                </div>
-                <div className="flex items-center gap-3">
-                    {saved && (
-                        <span className="text-sm text-[var(--color-academy-success)] font-medium">저장 완료</span>
-                    )}
-                    <button
-                        type="button"
-                        onClick={handleSave}
-                        disabled={saving}
-                        className="academy-button-primary"
-                    >
-                        {saving ? "저장 중..." : "저장"}
-                    </button>
-                </div>
-            </div>
+            <SessionReportEditor report={report} coaches={coaches} onPublishedChange={setPublished} />
         </div>
     );
 }

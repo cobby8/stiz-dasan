@@ -5,11 +5,15 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import { saveAttendance } from "@/app/actions/admin";
 import { kstLabel, todayKst } from "@/lib/datetime/kst";
+import { mondayOf } from "@/lib/attendance/weekBoard";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
+import ListViewToggle, { useRememberedListView } from "@/components/admin/list/ListViewToggle";
+import WeekBoard, { type LessonRef } from "./WeekBoard";
 
-type ClassItem = {
+// 주간 보드(WeekBoard)도 같은 모양을 쓴다
+export type ClassItem = {
     id: string;
     lessonKey?: string;
     kind?: "REGULAR" | "SEASONAL";
@@ -26,7 +30,7 @@ type ClassItem = {
     program: { id: string; name: string } | null;
 };
 
-type StudentRecord = {
+export type StudentRecord = {
     studentId: string;
     studentName: string;
     status: string | null;
@@ -35,6 +39,8 @@ type StudentRecord = {
     absenceReport?: { reason: string; status: string; source: "SHEET" | "PARENT" } | null;
     // 화면에서 고른 «질병·부상» 표시(저장 전 값). 없으면 absenceReport 를 따른다.
     illness?: boolean;
+    // 보강 온 아이 표시(주간 보드용). 지금 관리자 명단 조회는 이 값을 주지 않아 표시되지 않는다
+    makeup?: boolean;
 };
 
 // 질병·부상 표시 현재값: 화면에서 바꾼 값 → 없으면 저장된 신고 사유
@@ -58,6 +64,14 @@ const KIND_ALL = "ALL";
 const KIND_CHIPS = [
     { value: "REGULAR", label: "정규" },
     { value: "SEASONAL", label: "특강" },
+] as const;
+
+// 보기 전환: «주간 보드»(기본) | «날짜별»(예전 화면 그대로). 마지막 선택을 브라우저에 기억한다
+const ATTENDANCE_VIEW_STORAGE_KEY = "admin-attendance-view-mode";
+const ATTENDANCE_VIEW_VALUES = ["week", "date"] as const;
+const ATTENDANCE_VIEW_OPTIONS = [
+    { value: "week", label: "주간 보드" },
+    { value: "date", label: "날짜별" },
 ] as const;
 
 function lessonKeyOf(item: ClassItem) {
@@ -128,8 +142,19 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
     const [dirty, setDirty] = useState(false);
     // 수업 목록 «구분» 칩 선택값(전체/정규/특강)
     const [kindFilter, setKindFilter] = useState<string>(KIND_ALL);
+    // viewReady: 저장된 보기값을 읽은 뒤에만 주간 보드를 그린다(«날짜별» 사용자가 주간 API 를 헛부르지 않게)
+    const [viewMode, changeViewMode, viewReady] = useRememberedListView(ATTENDANCE_VIEW_STORAGE_KEY, ATTENDANCE_VIEW_VALUES, "week");
+    // 보던 주(월요일) — 보기를 «날짜별»로 바꿨다 돌아와도 같은 주가 보이게 여기서 들고 있는다
+    const [weekStart, setWeekStart] = useState(() => mondayOf(todayKst()));
+    // 패널에서 저장하면 주간 보드의 그 카드만 다시 불러오게 보내는 신호
+    const [boardRefresh, setBoardRefresh] = useState<(LessonRef & { n: number }) | null>(null);
+
+    // 요청 번호: 날짜(또는 보드 카드)를 빨리 바꾸면 늦게 온 이전 날짜 목록이 덮어써서
+    // 지금 연 수업이 목록에서 사라지고 패널이 닫히는 일을 막는다 — 마지막 요청 응답만 반영
+    const classesRequestRef = useRef(0);
 
     const loadClasses = useCallback(async (targetDate = date) => {
+        const requestId = ++classesRequestRef.current;
         setClassesLoading(true);
         setClassesError(false);
         try {
@@ -138,12 +163,13 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
                 throw new Error("Failed to load classes.");
             }
             const data = (await response.json()) as AttendanceClassesPayload;
+            if (requestId !== classesRequestRef.current) return;
             setClasses(data.classes);
         } catch (error) {
             console.error("Failed to load attendance classes:", error);
-            setClassesError(true);
+            if (requestId === classesRequestRef.current) setClassesError(true);
         } finally {
-            setClassesLoading(false);
+            if (requestId === classesRequestRef.current) setClassesLoading(false);
         }
     }, [date]);
 
@@ -170,16 +196,20 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
     // 요청 번호: 반을 빨리 바꾸면 늦게 온 이전 반 응답이 새 반 패널에 섞여(그대로 저장되면 다른 반 이름으로 기록) 들어오지 않게 최신 요청만 반영한다
     const attendanceRequestRef = useRef(0);
 
+    // 수업 «객체»가 아니라 id 값에 묶는다 — 주간 보드에서 연 뒤 그날 수업 목록이 다시 도착해도(같은 수업) 명단을 또 불러오지 않게
+    const selectedLessonId = selectedLesson?.id ?? null;
+    const selectedSessionDateId = selectedLesson?.sessionDateId ?? null;
+
     const loadAttendance = useCallback(async (options?: { resetSaved?: boolean }) => {
-        if (!selectedLesson || !date) return;
+        if (!selectedLessonId || !date) return;
         const requestId = ++attendanceRequestRef.current;
         setLoading(true);
         if (options?.resetSaved !== false) {
             setSaved(false);
         }
         try {
-            const params = new URLSearchParams({ classId: selectedLesson.id, date });
-            if (selectedLesson.sessionDateId) params.set("sessionDateId", selectedLesson.sessionDateId);
+            const params = new URLSearchParams({ classId: selectedLessonId, date });
+            if (selectedSessionDateId) params.set("sessionDateId", selectedSessionDateId);
             const res = await fetch(`/api/admin/attendance?${params.toString()}`);
             if (requestId !== attendanceRequestRef.current) return; // 이미 다른 반/날짜로 바뀜
             if (res.ok) {
@@ -194,7 +224,7 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
         } finally {
             if (requestId === attendanceRequestRef.current) setLoading(false);
         }
-    }, [date, selectedLesson]);
+    }, [date, selectedLessonId, selectedSessionDateId]);
 
     useEffect(() => {
         loadAttendance();
@@ -242,6 +272,8 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
             const result = await saveAttendance(selectedLesson.id, date, records, { sessionDateId: selectedLesson.sessionDateId });
             await loadAttendance({ resetSaved: false });
             setSaved(true);
+            // 주간 보드의 해당 카드 갱신
+            setBoardRefresh((prev) => ({ date, classId: selectedLesson.id, sessionDateId: selectedLesson.sessionDateId ?? null, n: (prev?.n ?? 0) + 1 }));
             if (result?.absenceMessages?.length) alert(result.absenceMessages.join(" / "));
         } catch (err: any) {
             alert(adminErrorText(err, "저장 실패"));
@@ -256,6 +288,22 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
         setStudents([]);
         setDirty(false);
         setLoading(true); // 불러오기 전 «원생이 없습니다»가 잠깐 깜빡이지 않게
+        setSelectedClass(key);
+    }
+
+    // 주간 보드 카드 → 그 날짜·수업으로 같은 출결 입력 패널을 연다.
+    // 패널은 «그날 수업 목록(classes)»에서 수업을 찾으므로, 보드가 이미 가진 그날 목록을 먼저 넣어 둔다
+    // (날짜가 바뀌어 목록을 새로 받는 동안 선택이 풀리지 않게)
+    function openFromBoard(lessonDate: string, lesson: ClassItem, dayLessons: ClassItem[]) {
+        const key = lessonKeyOf(lesson);
+        if (lessonDate === date && key === selectedClass) return;
+        if (dirty && !window.confirm("저장하지 않은 출결이 있습니다. 다른 수업을 열까요?")) return;
+        setClasses(dayLessons);
+        setDate(lessonDate);
+        setStudents([]);
+        setDirty(false);
+        setSaved(false);
+        setLoading(true);
         setSelectedClass(key);
     }
 
@@ -297,26 +345,48 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
     const lateCount = students.filter((s) => s.status === "LATE").length;
     const unmarkedCount = students.length - presentCount - absentCount - lateCount;
 
-    if (classesLoading && classes.length === 0) {
+    // 날짜별 보기에서만 화면 전체 로딩·오류를 쓴다(주간 보드는 자기 로딩·오류 표시가 있다)
+    if (viewMode === "date" && classesLoading && classes.length === 0) {
         return <AttendanceLoadingFallback />;
     }
 
-    if (classesError && classes.length === 0) {
+    if (viewMode === "date" && classesError && classes.length === 0) {
         return <AttendanceErrorState onRetry={() => loadClasses(date)} />;
     }
 
     return (
-        <div className="max-w-4xl mx-auto">
-            {/* 페이지 제목은 공용 머리말 부품. 이 화면의 주 버튼은 패널의 «출결 저장» 하나라 «수업 리포트» 이동은 보조 버튼 */}
+        // 주간 보드는 PC 화면을 넓게(3열) 쓰고, 날짜별은 예전 폭 그대로
+        <div className={viewMode === "week" ? "" : "max-w-4xl mx-auto"}>
+            {/* 페이지 제목은 공용 머리말 부품. 이 화면의 주 버튼은 패널의 «출결 저장» 하나라 «수업 피드» 이동은 보조 버튼 */}
             <AdminPageHeader
                 className="mb-3"
                 title="출결 관리"
                 actions={
-                    <Link href="/admin/attendance/report" prefetch={false} className="academy-button-secondary">
-                        수업 리포트
-                    </Link>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <ListViewToggle
+                            value={viewMode}
+                            options={ATTENDANCE_VIEW_OPTIONS}
+                            ariaLabel="출결 보기 방식"
+                            onChange={changeViewMode}
+                        />
+                        <Link href="/admin/attendance/feed" prefetch={false} className="academy-button-secondary">
+                            수업 피드
+                        </Link>
+                    </div>
                 }
             />
+
+            {viewReady && viewMode === "week" && (
+                <WeekBoard
+                    weekStart={weekStart}
+                    onWeekChange={setWeekStart}
+                    onOpenLesson={openFromBoard}
+                    activeLesson={selectedLesson ? { date, classId: selectedLesson.id, sessionDateId: selectedLesson.sessionDateId ?? null } : null}
+                    refreshSignal={boardRefresh}
+                />
+            )}
+
+            {viewMode === "date" && (<>
 
             {/* 날짜 + 구분 칩(정규/특강 건수 — 누르면 그 구분만, 다시 누르면 전체) */}
             <div className="mb-2 flex min-w-0 flex-wrap items-center gap-2">
@@ -393,6 +463,7 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
                     </div>
                 </div>
             )}
+            </>)}
 
             {/* 출결 입력 패널 — 데스크톱 오른쪽 패널 / 모바일 하단 시트.
                 불러오기·전체 출석·저장 흐름은 예전 화면 아래 영역과 같다. 저장 안 한 변경이 있으면 바깥 클릭으로 닫히지 않는다 */}
