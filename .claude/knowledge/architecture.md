@@ -377,3 +377,9 @@
 - **발견자**: developer
 - **내용**: 기간 정산 금액은 `illnessPeriodSettlementPlan.ts`(순수) 한 곳에서만 만든다 — 원장 미리보기·학부모 «복귀했어요» 미리보기·확정이 `illness-period-settlement.ts` 의 같은 읽기 함수(readSettlementPlan)를 지난다. 반·달 근거는 하루짜리 이월과 같은 `workbench-absence.readClassMonthEvidenceInTx`(발행 초안도 «납부된 것만»), 이월 INSERT 는 `insertCarryCreditInTx` 한 곳. ⚠️ 결석을 달로 묶을 때 `date.slice(0,7)`(달력 월)을 쓰면 틀린다 — 연간 일정의 «수강월»은 달력 월과 다를 수 있다(예: 12월 1주차가 11/30 에 시작하면 11/30 결석의 청구 달은 12월). 그 달 그 요일 수업일에 그 날이 있는 달(달력 월 → 다음 달 → 이전 달)을 수강월로 쓴다. 하루짜리 이월(approveIllnessCarry 의 originMonth)은 아직 달력 월이라 그런 날은 «수업일에 포함되는지 확인»으로 거절된다(미해결). 확정·확정 취소는 READ COMMITTED(잠근 뒤 다시 읽기), 이월의 수업 횟수는 청구 준비와 같은 공식 일정(loadWorkbenchCalendar)으로 세야 readWorkbench 유효성 검사를 통과한다.
 - **참조횟수**: 0
+
+### [2026-11-15] 부상 결석 퇴원 정산 = 복귀 정산의 읽기·계산을 그대로 쓰고 «쓰는 것만» 다르다(환불 검토)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 퇴원 정산(illness-period-refund.ts)은 복귀 정산의 readSettlementPlan·지문을 그대로 쓰고 이월(BillingCarryCredit) 없이 정산 기록(BillingAbsenceResolution · 사유 «퇴원 정산 — 환불 검토»)만 남긴다. 상태 APPROVED → REFUND_REVIEW → REFUND_DONE. 결제·환불 코드는 부르지 않는다(환불은 원장이 수납 관리에서). «퇴원» = illnessWithdrawnSql 한 곳(승인 + 대상 반에 WITHDRAWN 아닌 수강이 없음 — 수강 행이 없는 반도 끝난 것). 함정 ① 3단계 파일들은 소스 글자를 고정한 테스트가 많다 — 같은 파일에 덧붙이면 «취소는 알림 없음» 같은 구간 검사가 깨져서 새 파일(lib·actions·Box)로 나눴다 ② 수강 종료 정리는 효력일 이후 결석을 지우므로 승인된 기간의 지난 날은 KEEP_ILLNESS 로 보호해야 정산 대상이 남는다 ③ 청구 준비는 2026-10-05 이전 결석을 읽지 않는다(하루짜리 이월 테스트 날짜 주의) ④ 수강월 묶기는 workbench.billingMonthOfDate 한 곳(하루짜리·기간 공용), 가운데 빠진 달의 발행 초안은 scheduledDates=다닌 날만 + calculationBasis.illnessMissedDates(근거 읽기·이월 유효성이 같은 날을 빼고 견준다).
+- **참조횟수**: 0

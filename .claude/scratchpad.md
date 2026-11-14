@@ -38,6 +38,36 @@
 - 운영 배포 = `git push origin HEAD:main` fast-forward.
 - 테스트는 `node --test tests/*.test.mjs` **+ 가드 `node --experimental-strip-types --test src/lib/*.test.ts`**(=`npm test`). ⚠️ 2026-10-25 실측: `tests/` 만 돌려 **학생 병합 필터 가드(src/lib/studentVisibility.test.ts)를 놓쳤다** — 회원 탈퇴 배포 후 release:preflight 가 실패하던 상태였다. **`npx vitest`는 이 프로젝트에 없음**(설정도 없어 worktree까지 긁어 전부 오탐).
 
+### 구현 기록 (developer · 11-15 부상·질병 기간 결석 4단계 퇴원 정산 + 3단계 검수 숙제, claude/illness-period-refund)
+
+📝 구현한 기능: 부상 결석 중 퇴원 → 복귀 정산과 같은 계산으로 «환불 검토 ○원»(이월 0건·정산 기록만) → 원장이 수납 관리에서 직접 환불 → «환불 처리함»(메모). 돈을 움직이는 코드는 부르지 않는다. + 3단계 검수 숙제 4건.
+
+| 파일 경로 | 변경 내용 | 신규/수정 |
+|----------|----------|----------|
+| src/lib/regular/illness-period-refund.ts | 미리보기·환불 검토로 넘기기·환불 처리함·환불 검토 취소·표 사본 읽기(READ COMMITTED, 병합 저장) | 신규 |
+| src/lib/regular/illnessPeriodRefundView.ts | 화면 모양 한 곳(부원장 응답에서 금액·지문 제거) — 순수, 실행 테스트 | 신규 |
+| src/app/actions/illness-period-refund.ts | 서버 액션(읽기 = 원장·부원장, 쓰기 3종 = 원장만) + 학부모 앱 알림 2회 | 신규 |
+| src/app/admin/inbox/IllnessPeriodRefundBox.tsx | 넘긴 뒤 칸(수납 관리 링크·메모·환불 처리함·환불 검토 취소) | 신규 |
+| src/app/admin/inbox/IllnessPeriodSettlementBox.tsx · IllnessPeriodInboxDetail.tsx | 퇴원이면 «환불 검토로 넘기기» 길 · «정산 필요 · 퇴원» 안내 · 반만 옮긴 아이는 이월로 정산 선택 | 수정 |
+| src/lib/regular/illnessPeriodRules.ts | 퇴원 판정 조각(illnessWithdrawnSql)·종료 정리 보호 조각·세는 끝(refundCountUntil)·문구·상태 값 | 수정 |
+| src/lib/regular/illness-period-settlement.ts | 공용 읽기 함수 export(식 한 곳)·학부모 REFUND 상태 | 수정 |
+| src/lib/enrollment/enrollment-end-cleanup.ts | 승인된 기간의 지난 결석 보호(KEEP_ILLNESS)·결과 문구 한 줄 | 수정 |
+| src/lib/requests/catalog.ts · admin-inbox.ts | 상태 SETTLE_WITHDRAWN·REFUND_REVIEW(처리 필요)·REFUND_DONE(완료) | 수정 |
+| src/lib/regular/absence-period-service.ts · students/[id]/AbsencePeriodPanel.tsx | 학생 상세 기간 줄 상태 글자 | 수정 |
+| src/lib/regular/parent-absence-period.ts · parent-regular-absence.ts · mypage/regular-absence/*.tsx | 학부모 «환불 검토 중» → «환불 처리 완료»(본인 아이만) | 수정 |
+| src/lib/billing/workbench.ts · workbench-service.ts · workbench-absence.ts · regular/illness-carry-admin.ts | 숙제 4건(개시일 이후만 다닌 횟수·확정 시각 못 읽으면 덮고 차단·가운데 빠진 달 사본은 다닌 날만·하루짜리 수강월 묶기) | 수정 |
+| tests/illness-period-refund.test.mjs · illness-period-refund-postgres.mjs · billing-workbench.test.mjs 외 | 새 실행 테스트(단위 14 + 숙제 3 + 실DB 11) · 바뀐 동작에 맞춘 기존 테스트 5곳 | 신규/수정 |
+
+💡 tester 참고:
+- 테스트 방법: `node --test "tests/*.test.mjs"`(5569 pass) · `npm run test:guards`(337 pass) · `node scripts/test-billing-workbench-postgres.mjs`(62 pass — 승인→보류→퇴원→환불 검토→취소→다시 넘기기→환불 처리함)
+- 정상 동작: 승인된 기간의 대상 반이 모두 수강 종료 → 신청함 «정산 필요 · 퇴원» → 정산하기 → «환불 검토로 넘기기» → «환불 검토» 칸(수납 관리 링크·메모) → «환불 처리함» → 완료(환불 처리)
+- 주의할 입력: 메모 빈 값·501자 / 두 번 누르기 / 환불 처리함 뒤 취소 / 부원장 계정(금액·지문 없음) / 반만 옮긴 아이(다른 반 수강 중)
+
+⚠️ reviewer 참고:
+- 넘길 때 진행 중인 학원 등록 기간을 «오늘까지»로 닫는다(endAbsencePeriodInTx) — 안 닫으면 재등록 때 매일 연장이 결석을 만든다. 설계에는 없던 처리.
+- 숙제 2(확정 시각 못 읽음): «덮기 + 확정 시각 자체가 없으면 차단» 둘 다 넣었다. 숙제 1의 «합산»은 다닌 횟수를 개시일 이후로만 세어 한 금액에 합쳐지게 했다(옛 초안의 수동 조정액이 단가와 다르면 저장값을 알림에 보인다).
+- IllnessPeriodSettlementBox.tsx:70 의 react-hooks/set-state-in-effect 린트 오류는 3단계부터 있던 것(건드리지 않음).
+
 ### 구현 기록 (developer · 11-15 부상·질병 기간 결석 3단계 복귀 정산, claude/illness-period-settle)
 📝 구현한 기능: 복귀 정산 미리보기·이월 확정·확정 취소(원장) + 학부모 «복귀했어요» 예정 금액 + 청구 준비 «다닌 만큼만» 제안. DB 스키마 변경 없음.
 
@@ -266,3 +296,5 @@
 | 11-14 | PM: 청구 월 카드(f8bc4572+결제하기 안전장치 87c09363·중복 누름 8e43b575)·기사 운행표 휴원·휴무(067011c5)·앱 1.0.3 버전(5175e8ec) 묶음 배포 a2ce24e READY·오류 0. 안드로이드 vc6 내부 테스트 게시·iOS Codemagic #6 TestFlight 처리 완료(외부 베타 정보 미입력 경고만) | 완료 |
 | 11-15 | developer(부상·질병 복귀 정산 1a, claude/illness-carry-payment-evidence): 결석 이월 근거에 «납부완료 Payment 1건» 허용(초안·장부 없을 때만 — 2건 이상 차단·취소/환불/미납은 기존 문구·이미 줄인 금액은 원래 금액·월중 등록은 개시일 이후). 새 carryEvidence.ts(순수)·creditCarryForAbsenceInTx 추출·readWorkbench 유효성 PAID_PAYMENT 갈래·신청함 billReady. DB 변경 없음. tsc 0·tests 5426-0·guards 337-0. 새 SQL 4개는 임시 로컬 Postgres 16 에서 실행 확인(운영 DB 미실행). **검수 권장 반영**: 휴원 정산이 처리한 날 거절(공통) · 신청함 상세 근거 미리보기 한 줄(금액은 원장만) · 셔틀비 섞임 경고 · 버튼 꺼짐 문구 «납부한 뒤/발행한 뒤» 구분 · 통합 실행기 임시 스키마 보정(로컬 Postgres 24개 통과). tsc 0·tests 5430-0·guards 337-0 | 재검수 대기 |
 | 11-14 | developer(기사님 운행표 휴원·휴무, claude/driver-paused-holiday): 휴원·퇴원·첫 수업 전 = 회색 뱃지+탑승·미탑승 잠금(명단 유지), 휴무일 = 맨 위 «오늘은 휴무(사유)»+정규 줄 잠금, 저장 API 2곳 409, 관리자 운행표 뱃지+«이 달 휴무». 판정 = regularRunDayRules(학부모 childShuttleRules 재사용). 운영 읽기: 휴원 3명·6행 뱃지 대상. 리뷰 반영(월말 다음 달 미입력=모름·반 0개는 퇴원 기록 있을 때만 퇴원·409 문구 표시) tsc 0·node --test 4672/0·guards 5/0 | 재검수 대기 |
+
+| 11-15 | developer(부상·질병 기간 결석 4단계 퇴원 정산, claude/illness-period-refund): 부상 결석 중 퇴원 → 같은 계산으로 «환불 검토 ○원»(이월 0건·정산 기록만·돈 안 움직임) → «환불 처리함»(메모)·«환불 검토 취소» / 수강 종료 정리가 승인된 기간의 지난 결석을 지우지 않음 / 3단계 숙제 4건(개시일 이후만 다닌 횟수·확정 시각 못 읽으면 덮고 차단·가운데 빠진 달 수업일 사본·하루짜리 수강월). tsc 0 · tests 5569 · guards 337 · 실DB 62 |
