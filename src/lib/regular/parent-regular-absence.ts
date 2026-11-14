@@ -737,36 +737,39 @@ export async function moveRegularAbsence(
     // ⑥ 질병·부상 이월 검토(2026-11-14)도 새 날짜로 옮긴다 — 날짜를 바꿨다고 보강권이 바로 나가면 «검토 대기» 규칙을 돌아가는 길이 된다.
     //   · 검토 중이던 결석: 올린 사진과 사유 글을 새 결석으로 옮기고 새 날짜에서 다시 «검토 중»(보강권 없음).
     //   · 원장이 이미 [보강권으로] 정한 결석: 그 결정을 새 날짜로 가져간다(보강권 1장).
-    //   · 검토 줄이 없던 결석(이 기능 이전 신고)·다른 사유: 아래 ⑦ 예전 그대로.
+    //   · 검토 줄이 없던 질병·부상 결석(이 기능 이전 신고): 새 날짜에서 검토를 새로 연다 — 하루 신고와 같은 결과로 통일.
+    //   · 다른 사유: 아래 ⑦ 예전 그대로.
     const reviewReady = await illnessReviewReady(tx);
     const oldReview = reviewReady && reason === ILLNESS_REASON
       ? (await tx.$queryRawUnsafe<{ status: string; source: string; reasonText: string | null }[]>(
           `SELECT status, source, "reasonText" FROM "RegularAbsenceCarryReview" WHERE "absenceId" = $1 FOR UPDATE`, canceled[0].id,
         ))[0] ?? null
       : null;
-    if (oldReview?.status === "PENDING") {
-      await tx.$executeRawUnsafe(
-        `UPDATE "RegularAbsenceEvidence" SET "absenceId" = $2 WHERE "absenceId" = $1 AND "removedAt" IS NULL`,
-        canceled[0].id, saved[0].id,
-      );
+    if (reviewReady && reason === ILLNESS_REASON && oldReview?.status !== "MAKEUP") {
+      if (oldReview?.status === "PENDING") {
+        await tx.$executeRawUnsafe(
+          `UPDATE "RegularAbsenceEvidence" SET "absenceId" = $2 WHERE "absenceId" = $1 AND "removedAt" IS NULL`,
+          canceled[0].id, saved[0].id,
+        );
+      }
       await closeIllnessReviewInTx(tx, canceled[0].id, { canceled: true });
-      const opened = await openIllnessReviewInTx(tx, {
+      await openIllnessReviewInTx(tx, {
         absenceId: saved[0].id, studentId, classId, absenceYmd: toDate,
-        reasonText: oldReview.reasonText, source: oldReview.source === "KAKAO" ? "KAKAO" : "PARENT",
+        reasonText: oldReview?.reasonText ?? null, source: oldReview?.source === "KAKAO" ? "KAKAO" : "PARENT",
       });
-      return { canceled: canceled[0], saved: saved[0], reason, makeupCreditIssued: false, carryReview: opened.status as string | null };
+      return { canceled: canceled[0], saved: saved[0], reason, makeupCreditIssued: false };
     }
     if (reviewReady) await closeIllnessReviewInTx(tx, canceled[0].id, { canceled: true });
     if (oldReview?.status === "MAKEUP") {
       const kept = await convertIllnessToMakeupInTx(tx, { absenceId: saved[0].id, by: "ADMIN", actorUserId: null, issuable: isMakeupCreditIssuableYmd });
-      return { canceled: canceled[0], saved: saved[0], reason, makeupCreditIssued: kept.converted && kept.creditIssued, carryReview: "MAKEUP" as string | null };
+      return { canceled: canceled[0], saved: saved[0], reason, makeupCreditIssued: kept.converted && kept.creditIssued };
     }
 
     // ⑦ 새 결석의 보강권(멱등 — 같은 키면 한 장)
     const credit = isMakeupCreditIssuableYmd(toDate)
       ? await issueCreditForReportedAbsence(tx, { studentId, classId, absenceYmd: toDate })
       : { issued: false };
-    return { canceled: canceled[0], saved: saved[0], reason, makeupCreditIssued: credit.issued, carryReview: null as string | null };
+    return { canceled: canceled[0], saved: saved[0], reason, makeupCreditIssued: credit.issued };
   });
 
   // 알림 — 기존 알림 두 통을 그대로 쓴다(취소 + 새 신고). 날짜마다 담당 기사님이 다를 수 있어 한 통으로 합치지 않는다.

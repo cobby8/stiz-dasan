@@ -35,7 +35,9 @@ async function handleGet(req: NextRequest) {
   if (expired > 0) console.log(`[cron/makeup-credits] 보강권 ${expired}장 소멸`);
 
   // ② 는 ① 과 따로 실패한다 — 한쪽이 실패해도 다른 쪽은 끝까지 돌리고, 마지막에 오류를 던져 원장 슬랙 알림(withCronAlert)이 가게 한다
-  const errors: unknown[] = [];
+  // 실패는 종류별 한 줄로 모았다가 마지막에 «한 문장»으로 합쳐 던진다 — 첫 실패만 알리면 나머지가 묻힌다
+  const errors: string[] = [];
+  const describe = (error: unknown) => (error instanceof Error ? error.name : "알 수 없는 오류");
   let notifyFailed = 0;
   let illness: { converted: number; failed: number } = { converted: 0, failed: 0 };
   let evidence: { purged: number; failed: number } = { purged: 0, failed: 0 };
@@ -59,22 +61,23 @@ async function handleGet(req: NextRequest) {
       }
     }
     // 전환이 한 건이라도 실패했으면 조용히 넘기지 않는다 — 아래에서 cron 오류 알림으로 올린다
-    if (result.failed > 0) errors.push(new Error(`질병·부상 결석 자동 전환 ${result.failed}건 실패`));
-    if (notifyFailed > 0) errors.push(new Error(`질병·부상 결석 전환 알림 ${notifyFailed}건 실패`));
+    if (result.failed > 0) errors.push(`자동 전환 ${result.failed}건 실패`);
+    if (notifyFailed > 0) errors.push(`전환 알림 ${notifyFailed}건 실패`);
   } catch (error) {
-    errors.push(error);
+    errors.push(`자동 전환 중단(${describe(error)})`);
   }
   try {
     evidence = await purgeIllnessEvidence(prisma, removeEvidencePhoto);
     // 사진 삭제는 다음 날 다시 시도하므로 한두 건 실패는 넘기되, 여러 건이면 저장소 문제라 알린다
-    if (evidence.failed >= EVIDENCE_PURGE_ALERT_AT) errors.push(new Error(`증빙 사진 삭제 ${evidence.failed}건 실패`));
+    if (evidence.failed >= EVIDENCE_PURGE_ALERT_AT) errors.push(`증빙 사진 삭제 ${evidence.failed}건 실패`);
   } catch (error) {
-    errors.push(error);
+    errors.push(`증빙 사진 삭제 중단(${describe(error)})`);
   }
   if (illness.converted > 0 || evidence.purged > 0) {
     console.log(`[cron/makeup-credits] 질병·부상 결석 보강권 전환 ${illness.converted}건 · 증빙 사진 삭제 ${evidence.purged}장`);
   }
-  if (errors.length > 0) throw errors[0];
+  // 건수만 담는다(이름·사유 글 없음). withCronAlert 가 원장 슬랙으로 한 줄 보낸다
+  if (errors.length > 0) throw new Error(`질병·부상 결석 정리: ${errors.join(" · ")}`);
   return NextResponse.json({ ok: true, expired, illness, evidence });
 }
 

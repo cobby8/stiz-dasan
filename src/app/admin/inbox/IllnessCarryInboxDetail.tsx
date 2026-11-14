@@ -12,6 +12,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import AdminModal from "@/components/admin/AdminModal";
+import { kstAt, kstLabel } from "@/lib/datetime/kst";
 import { useAdminConfirm } from "@/components/admin/AdminConfirmDialog";
 import { approveIllnessCarryAction, convertIllnessCarryAction, loadIllnessCarryDetail } from "@/app/actions/illness-carry-admin";
 import type { IllnessCarryDetail } from "@/lib/regular/illness-carry-admin";
@@ -121,7 +122,9 @@ export default function IllnessCarryInboxDetail({ absenceId, studentName, onChan
         </ul>
       ) : (
         <p className="rounded-lg bg-[var(--color-academy-soft)] px-3 py-2 text-sm text-[var(--color-academy-muted)]">
-          {detail.source === "STAFF" ? "학부모가 올린 증빙 사진이 없습니다. 직접 확인한 뒤 승인해 주세요." : "아직 올라온 사진이 없습니다. 결석일부터 7일 안에 사진이 없으면 보강권 1장으로 바뀝니다."}
+          {detail.source === "STAFF" ? "학부모가 올린 증빙 사진이 없습니다. 직접 확인한 뒤 승인해 주세요." : detail.evidenceDeadlineYmd
+            ? `아직 올라온 사진이 없습니다. ${kstLabel(kstAt(detail.evidenceDeadlineYmd))}까지 사진이 없으면 보강권 1장으로 바뀝니다.`
+            : "아직 올라온 사진이 없습니다."}
         </p>
       )}
 

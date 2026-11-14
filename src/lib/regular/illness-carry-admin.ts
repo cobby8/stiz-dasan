@@ -16,7 +16,7 @@ import { readWorkbench, type WorkbenchDb, type WorkbenchTx } from "@/lib/billing
 import { resolveWorkbenchAbsence } from "@/lib/billing/workbench-absence";
 import { regularAbsenceSourceKey } from "@/lib/makeup/absence-report-credit";
 import { convertIllnessToMakeupInTx, illnessReviewReady, type ConvertOutcome } from "@/lib/regular/illness-carry-tx";
-import { ILLNESS_REASON, carryApprovalBlocker } from "@/lib/regular/illnessCarryRules";
+import { ILLNESS_REASON, carryApprovalBlocker, evidenceDeadlineYmd } from "@/lib/regular/illnessCarryRules";
 
 type AbsenceRow = { id: string; studentId: string; classId: string; date: string; reason: string; status: string };
 
@@ -107,6 +107,8 @@ export type IllnessCarryDetail = {
   creditStatus: string | null;
   /** 지금 [이월 승인]을 누를 수 없는 이유 한 줄(없으면 null) */
   blocker: string | null;
+  /** 학부모가 사진을 올릴 수 있는 마지막 날(«YYYY-MM-DD») — 검토 중이고 학부모가 알린 결석일 때만. 지나면 보강권으로 자동 전환 */
+  evidenceDeadlineYmd: string | null;
 };
 
 /** 신청함 상세 칸 — 사유 글·사진 목록·승인 가능 여부. 관리자만 부른다(호출부가 requireAdmin) */
@@ -117,8 +119,9 @@ export async function readIllnessCarryDetail(tx: WorkbenchTx, absenceId: string,
 
   const ready = await illnessReviewReady(tx);
   const reviews = ready
-    ? await tx.$queryRawUnsafe<Array<{ status: string; source: string; reasonText: string | null }>>(
-        `SELECT status, source, "reasonText" FROM "RegularAbsenceCarryReview" WHERE "absenceId" = $1`, absenceId)
+    ? await tx.$queryRawUnsafe<Array<{ status: string; source: string; reasonText: string | null; requestedYmd: string }>>(
+        `SELECT status, source, "reasonText", to_char("requestedAt" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "requestedYmd"
+           FROM "RegularAbsenceCarryReview" WHERE "absenceId" = $1`, absenceId)
     : [];
   const photos = ready
     ? await tx.$queryRawUnsafe<Array<{ id: string }>>(
@@ -164,6 +167,10 @@ export async function readIllnessCarryDetail(tx: WorkbenchTx, absenceId: string,
     creditStatus,
     blocker: status === "PENDING"
       ? carryApprovalBlocker({ absenceYmd: absence.date, todayYmd: todayKst(), creditStatus, billReady, writesEnabled: enabled })
+      : null,
+    // 화면이 «○월 ○일까지»로 보여 준다 — 학부모 화면·자동 전환과 같은 함수
+    evidenceDeadlineYmd: review?.status === "PENDING" && review.source !== "STAFF" && review.requestedYmd
+      ? evidenceDeadlineYmd(review.requestedYmd, absence.date)
       : null,
   };
 }

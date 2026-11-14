@@ -840,15 +840,23 @@ test("결석 날짜 바꾸기(원장이 이미 [보강권으로] 정한 결석):
   assert.deepEqual(db.reviews.map((r) => [r.absenceId, r.status]), [[old.id, "CLOSED"], [moved.id, "MAKEUP"]]);
 });
 
-test("결석 날짜 바꾸기(다른 사유·검토 줄 없는 옛 질병·부상 결석): 표가 있어도 예전 그대로 — 옛 보강권 회수·새 보강권 발급", async () => {
-  for (const reason of ["FAMILY_TRIP", "ILLNESS_INJURY"]) {
-    const db = makeDb({ illnessReady: true });
-    seedAbsence(db, { reason });
-    freeze(SUN, "10:00");
-    await absence.moveRegularAbsence("p1", MOVE);
-    assert.deepEqual(db.credits.map((c) => [c.sourceKey, c.status]), [[`REGULAR:cO:${MON}`, "REVOKED"], [`REGULAR:cO:${NEXT_MON}`, "AVAILABLE"]], reason);
-    assert.equal(db.reviews.length, 0, reason);
-  }
+test("결석 날짜 바꾸기(다른 사유): 표가 있어도 예전 그대로 — 옛 보강권 회수·새 보강권 발급", async () => {
+  const db = makeDb({ illnessReady: true });
+  seedAbsence(db, { reason: "FAMILY_TRIP" });
+  freeze(SUN, "10:00");
+  await absence.moveRegularAbsence("p1", MOVE);
+  assert.deepEqual(db.credits.map((c) => [c.sourceKey, c.status]), [[`REGULAR:cO:${MON}`, "REVOKED"], [`REGULAR:cO:${NEXT_MON}`, "AVAILABLE"]]);
+  assert.equal(db.reviews.length, 0);
+});
+
+test("결석 날짜 바꾸기(검토 줄 없는 옛 질병·부상 결석): 새 날짜에서 «검토 중»으로 통일 — 옛 보강권 회수, 새 보강권은 나가지 않는다", async () => {
+  const db = makeDb({ illnessReady: true });
+  seedAbsence(db, { reason: "ILLNESS_INJURY" }); // 이 기능 이전 신고: 보강권 있음·검토 줄 없음
+  freeze(SUN, "10:00");
+  await absence.moveRegularAbsence("p1", MOVE);
+  const moved = db.absences.find((a) => a.date === NEXT_MON);
+  assert.deepEqual(db.credits.map((c) => [c.sourceKey, c.status]), [[`REGULAR:cO:${MON}`, "REVOKED"]], "하루 신고와 같은 결과 — 보강권 대신 검토 대기");
+  assert.deepEqual(db.reviews.map((r) => [r.absenceId, r.status, r.source, r.reasonText]), [[moved.id, "PENDING", "PARENT", null]]);
 });
 
 test("결석 날짜 바꾸기 알림: 기존 알림 두 통(취소 + 새 신고), 다시 눌러도 더 가지 않는다", async () => {

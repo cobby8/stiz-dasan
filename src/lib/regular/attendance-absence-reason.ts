@@ -20,7 +20,7 @@
 // DB 접근은 인자로 받은 db(트랜잭션) 로만 한다 — 테스트가 가짜 db 로 실제 실행해 본다.
 import { lockCompensation } from "@/lib/billing/absence-compensation-guard";
 import { isKstYmd } from "@/lib/datetime/kst";
-import { holdCreditForIllnessInTx, illnessReviewReady } from "@/lib/regular/illness-carry-tx";
+import { holdCreditForIllnessInTx, illnessReviewReady, reopenClosedIllnessReviewInTx } from "@/lib/regular/illness-carry-tx";
 
 /** 출석부가 만든 결석 행 표시(관리자 결석 관리 화면에서도 출처를 알 수 있게 사람이 읽는 문장). */
 export const SHEET_ABSENCE_NOTE = "출석부에서 질병·부상 결석으로 표시";
@@ -120,14 +120,8 @@ async function readAbsence(
  */
 async function holdSheetIllnessCredit(db: AbsenceReasonDb, key: { studentId: string; classId: string; dateYmd: string }) {
   if (!(await illnessReviewReady(db))) return;
-  // 예전에 닫힌 검토 줄(신고 취소 등)이 남아 있으면 지운다 — 닫힌 검토는 신청함에서 빠지므로, 새로 표시한 결석이 다시 «이월 검토»에 뜨게
-  await db.$executeRawUnsafe(
-    `DELETE FROM "RegularAbsenceCarryReview" r
-      USING "RegularAbsence" ra
-      WHERE ra.id = r."absenceId" AND ra."studentId" = $1 AND ra."classId" = $2 AND ra.date = $3::date
-        AND r.status = 'CLOSED'`,
-    key.studentId, key.classId, key.dateYmd,
-  );
+  // 예전에 닫힌 검토 줄(신고 취소 등)이 남아 있으면 다시 연다 — 닫힌 검토는 신청함에서 빠지므로, 새로 표시한 결석이 다시 «이월 검토»에 뜨게
+  await reopenClosedIllnessReviewInTx(db, { studentId: key.studentId, classId: key.classId, absenceYmd: key.dateYmd });
   await holdCreditForIllnessInTx(db, { studentId: key.studentId, classId: key.classId, absenceYmd: key.dateYmd });
 }
 
@@ -154,6 +148,17 @@ export async function applyAttendanceAbsenceReasonInTx(
   // 1) 잠금 없이 먼저 본다 — 대부분의 출석 저장(전체 출석 포함)은 할 일이 없어 전역 잠금을 잡지 않게.
   const peek = await readAbsence(db, key, false);
   if (planAttendanceAbsenceReason(peek, input.attendanceStatus, input.intent) === "NONE") {
+    // 이미 질병·부상인 살아 있는 결석(학부모 신고 등)에 결석+질병·부상을 찍었다 — 결석 행은 바꿀 것이 없지만,
+    // 그 검토가 닫혀 있으면(그날 출석으로 기록돼 자동으로 닫혔다가 출결을 정정한 경우) 다시 열어 원장이 고를 수 있게 한다.
+    // 열린 것이 있을 때만 보강권을 거둔다(뒤이어 도는 보강권 맞춤이 «검토 중»이라 발급하지 않는다).
+    if (input.attendanceStatus === "ABSENT" && input.intent === SHEET_ABSENCE_REASON
+      && peek && peek.status !== "CANCELLED" && peek.reason === SHEET_ABSENCE_REASON && await illnessReviewReady(db)) {
+      const reopened = await reopenClosedIllnessReviewInTx(db, { studentId: key.studentId, classId: key.classId, absenceYmd: key.dateYmd });
+      if (reopened.reopened) {
+        await lockCompensation(db);
+        await holdCreditForIllnessInTx(db, { studentId: key.studentId, classId: key.classId, absenceYmd: key.dateYmd });
+      }
+    }
     return { plan: "NONE", report: absenceReportOf(peek) };
   }
 

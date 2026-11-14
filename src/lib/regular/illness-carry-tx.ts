@@ -140,12 +140,38 @@ export async function isIllnessCreditHeld(
 }
 
 /**
- * 검토 중이던 결석 신고를 «관리자»가 취소했는데 그날 출결은 결석이다 → 보류해 둔 보강권을 되살린다.
+ * 닫혔던 검토(CLOSED)를 다시 «검토 중»으로 연다 — 출석부가 그 결석을 질병·부상으로 (다시) 표시했을 때.
+ *   · 학부모가 알린 결석의 검토가 «그날 출석»으로 자동으로 닫혔는데, 뒤에 출결이 결석+질병·부상으로 정정된 경우
+ *   · 취소됐던 결석 행을 출석부가 질병·부상으로 되살린 경우
+ * 닫힌 검토는 신청함에서 빠지므로 다시 열어야 원장이 고를 수 있다. «7일» 기준점은 지금으로 새로 잡는다.
+ * 출석부 행(학부모 표시 없음)은 학원 등록(STAFF)으로 바꿔 7일 자동 전환 대상에서 뺀다. 닫을 때 뺀 사진은 되살리지 않는다.
+ */
+export async function reopenClosedIllnessReviewInTx(
+  tx: IllnessTx,
+  input: { studentId: string; classId: string; absenceYmd: string },
+): Promise<{ reopened: boolean }> {
+  const n = await tx.$executeRawUnsafe(
+    `UPDATE "RegularAbsenceCarryReview" r
+        SET status = 'PENDING', "requestedAt" = now(),
+            source = CASE WHEN ra."reportedByUserId" IS NULL THEN 'STAFF' ELSE r.source END,
+            "decidedAt" = NULL, "decidedBy" = NULL, "decidedByUserId" = NULL, "convertReason" = NULL, "updatedAt" = now()
+       FROM "RegularAbsence" ra
+      WHERE ra.id = r."absenceId" AND ra."studentId" = $1 AND ra."classId" = $2 AND ra.date = $3::date
+        AND ra.status <> 'CANCELLED' AND r.status = 'CLOSED'`,
+    input.studentId, input.classId, input.absenceYmd,
+  );
+  return { reopened: Number(n) > 0 };
+}
+
+/**
+ * 검토 중이던 결석 신고를 «관리자»가 취소했는데 그날 출결은 결석이다 → 보강권 1장을 보장한다.
+ *   · 검토 때문에 거둬 둔 보강권이 있으면 그 «같은 한 장»을 되살리고,
+ *   · 처음부터 보강권이 없던 결석(질병·부상으로 바로 알려 한 번도 발급된 적 없음)이면 «새로 한 장 발급»한다.
  * 왜: 이월 검토 전에는 «신고 취소 + 출결 결석 = 보강권 유지»였다(실제로 빠졌으니 권리는 그대로).
- *     검토 중에는 보강권을 거둬 두므로, 취소로 검토를 닫을 때 여기서 돌려주지 않으면 결석했는데 아무것도 못 받는다.
+ *     검토 중에는 보강권이 없으므로, 취소로 검토를 닫을 때 여기서 주지 않으면 결석했는데 아무것도 못 받는다.
  * 호출부는 검토를 닫은 «같은 트랜잭션»에서 부른다. 출결이 결석이 아니면 아무것도 하지 않는다.
  */
-export async function restoreHeldCreditIfAbsentInTx(
+export async function ensureCreditForAbsentAfterCancelInTx(
   tx: IllnessTx,
   input: { studentId: string; classId: string; absenceYmd: string; issuable: (absenceYmd: string) => boolean },
 ): Promise<{ restored: boolean }> {
