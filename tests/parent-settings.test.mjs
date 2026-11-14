@@ -230,6 +230,8 @@ test("④ 🔔 배지: 안 읽은 수(10 이상 9+), 없으면 배지 없음", (
     "@/lib/mypage/parentNav": { safeInternalHref: () => null },
     "@/lib/datetime/kst": load("src/lib/datetime/kst.ts"),
     "@/lib/mypage/parentSettings": settings,
+    // 2026-11-15 아이콘 예외(화살표·종·톱니): 공용 아이콘 부품은 실제 코드를 그대로 쓴다
+    "@/components/common/UiIcon": load("src/components/common/UiIcon.tsx"),
   }).default;
   const many = renderToStaticMarkup(React.createElement(Bell, { notifications: [], unreadCount: 12 }));
   assert.match(many, />9\+<\/span>/);
@@ -237,6 +239,10 @@ test("④ 🔔 배지: 안 읽은 수(10 이상 9+), 없으면 배지 없음", (
   const none = renderToStaticMarkup(React.createElement(Bell, { notifications: [], unreadCount: 0 }));
   assert.doesNotMatch(none, /9\+|>0</);
   assert.match(none, /aria-label="알림"/);
+  // 2026-11-15 아이콘 예외(알림 = 종): 글자 대신 종을 그린다 — 이름은 위 aria-label, 누르는 영역 44×44
+  for (const html of [many, none]) {
+    assert.match(html, /<button[^>]*aria-label="알림[^"]*"[^>]*class="inline-flex min-h-11 min-w-11[^"]*"[^>]*><span aria-hidden="true" class="ui-icon[^"]*"><span class="material-symbols-outlined text-2xl">notifications<\/span><span class="ui-icon-fallback">알림<\/span><\/span>/);
+  }
 });
 
 test("④ 설정 화면: 원장 목록 항목 + 예전 ⋯ 메뉴 항목이 전부 있다, 테마는 숨김", () => {

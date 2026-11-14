@@ -54,5 +54,6 @@ test("선생님 수업 관리 명단은 방학특강 회차 ID를 넘겨 해당 
   assert.match(staffPeopleSource, /anchor_sd\.id = \$1/);
   // 요일은 좌석이 맞춘다 — 학생정보 명단도 출석부와 같은 좌석(SCHEDULED) 기준.
   assert.match(staffPeopleSource, /JOIN "SpecialProgramEnrollmentDate" seat\s+ON seat\."applicationItemId" = item\.id AND seat\."sessionDateId" = sd\.id AND seat\.status = 'SCHEDULED'/);
-  assert.match(staffHomeSource, /sessionDateId=\{peopleTarget\.sessionDateId\}/);
+  // 2026-11-15 선생님 수업 화면 한 화면 구조: 학생 정보가 수업 줄 안의 출석부 칸으로 옮겨졌다 — 홈이 회차를 본문에 넘기는 약속은 그대로.
+  assert.match(staffHomeSource, /sessionDateId: lesson\.sessionDateId,/);
 });

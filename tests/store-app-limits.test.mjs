@@ -87,7 +87,8 @@ test("안 되는 버튼은 한 곳의 판정(useStoreAppLacks)으로 숨기거�
     ["src/app/staff/StaffProfileMenu.tsx", "install", /!hideInstallGuide && <Link href="\/staff\/install"/],
     ["src/app/invite/[token]/InviteAcceptForm.tsx", "install", /showInstall \? "스태프 앱 설치하기" : "로그인하러 가기"/],
     ["src/components/maps/LocationPickerModal.tsx", "geolocation", /!appLacksGeolocation && <button type="button" onClick=\{useCurrentLocation\}/],
-    ["src/components/staff/VoiceToTextButton.tsx", "voice", /if \(appLacksVoice\) return null;/],
+    // 2026-11-15 선생님 수업 화면 한 화면 구조: 말없이 숨기면 «음성 버튼이 없다»로 보여, 버튼 대신 이유 한 줄을 보인다(녹음은 여전히 못 한다)
+    ["src/components/staff/VoiceToTextButton.tsx", "voice", /if \(appLacksVoice\) return <p [^>]*>음성 입력은 앱 다음 버전부터 됩니다<\/p>;/],
     ["src/app/staff/students/StaffStudentsClient.tsx", "sms", /번호 복사/],
   ];
   for (const [file, cap, pattern] of cases) {

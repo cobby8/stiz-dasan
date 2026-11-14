@@ -32,19 +32,25 @@ function render(name, state, { storeAppLacksPush = false, appView = "unavailable
     // 앱 알림 상태(e2) — 브라우저에서는 늘 unavailable
     "@/lib/push/useNativePush": { useNativePush: () => ({ view: appView, busy: false, request: async () => {} }) },
     "@/lib/push/nativePushBridge": load("src/lib/push/nativePushBridge.ts"),
+    // 2026-11-15 아이콘 예외(화살표·종·톱니): 공용 아이콘 부품은 실제 코드를 그대로 쓴다
+    "@/components/common/UiIcon": load("src/components/common/UiIcon.tsx"),
   });
   return renderToStaticMarkup(React.createElement(mod[name]));
 }
 
-test("머리줄 토글: 켜짐/꺼짐이 글자로 보이고 높이 44, 웹푸시 못 받는 기기·확인 전에는 안 그린다", () => {
+test("머리줄 토글: 켜짐 = 종 · 꺼짐 = 빗금 친 종(이름은 aria-label), 44×44, 웹푸시 못 받는 기기·확인 전에는 안 그린다", () => {
   const off = render("StaffPushToggle", { pushSupported: true, pushEnabled: false });
-  assert.match(off, /role="switch" aria-checked="false" aria-label="휴대폰 알림 켜기"/);
-  // 2026-11-14 아이콘 완전 제거: 종 아이콘 → 글자 «알림 꺼짐/켜짐»(높이 44px 유지)
-  assert.match(off, /inline-flex min-h-11/);
-  assert.match(off, />알림 꺼짐</);
-  assert.doesNotMatch(off, /material-symbols/);
+  // 이름과 툴팁은 같은 문장으로 «상태»를 말한다(스위치의 aria-checked 와 맞게) — 꺼짐일 때만 누르면 어떻게 되는지 덧붙인다
+  assert.match(off, /role="switch" aria-checked="false" aria-label="휴대폰 알림 꺼짐 — 누르면 켜기"/);
+  // 2026-11-15 아이콘 예외(화살표·종·톱니): 글자 «알림 꺼짐/켜짐» → 종 아이콘. 글자가 없으니 이름(aria-label)·상태(aria-checked)·44×44 를 못박는다
+  assert.match(off, /inline-flex size-11/);
+  assert.match(off, /title="휴대폰 알림 꺼짐 — 누르면 켜기"/);
+  // 글꼴을 못 받으면 보일 대체 글자(«알림 끔»)도 함께 그려 둔다 — 아이콘만 있는 버튼이 빈칸이 되지 않게
+  assert.match(off, /<span aria-hidden="true" class="ui-icon[^"]*"><span class="material-symbols-outlined text-2xl">notifications_off<\/span><span class="ui-icon-fallback">알림 끔<\/span><\/span><\/button>$/, "꺼짐은 모양이 다른 종 — 색만으로 알리지 않는다");
   const on = render("StaffPushToggle", { pushSupported: true, pushEnabled: true });
   assert.match(on, /aria-checked="true" aria-label="휴대폰 알림 켜짐"/);
+  assert.match(on, /title="휴대폰 알림 켜짐"/);
+  assert.match(on, /<span aria-hidden="true" class="ui-icon[^"]*"><span class="material-symbols-outlined text-2xl">notifications<\/span><span class="ui-icon-fallback">알림<\/span><\/span><\/button>$/);
   assert.equal(render("StaffPushToggle", { pushSupported: false, pushEnabled: false }), "");
   assert.equal(render("StaffPushToggle", { pushSupported: true, pushEnabled: false, checked: false }), "");
 });

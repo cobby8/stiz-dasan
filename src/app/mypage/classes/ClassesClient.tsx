@@ -1,5 +1,6 @@
 "use client";
 
+import UiIcon from "@/components/common/UiIcon";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { ParentClassCard, ParentClassesOverview } from "@/lib/parent/classes-overview";
@@ -26,7 +27,7 @@ function AttendanceMark({ status }: { status: AttendanceCell["status"] }) {
   return <span aria-hidden="true" className="inline-block size-2.5 shrink-0 rounded-full border border-[var(--color-academy-line-input)]" />;
 }
 
-/** «변경 ▾» 펼침 메뉴(반 변경·휴원·퇴원) — 바깥 누름·Esc 로 닫힌다(학부모 «⋯» 메뉴와 같은 방식) */
+/** «변경» 펼침 메뉴(반 변경·휴원·퇴원 — 글자 옆 펼침 화살표는 공용 UiIcon) — 바깥 누름·Esc 로 닫힌다(학부모 «⋯» 메뉴와 같은 방식) */
 function ChangeMenu({ action }: { action: Extract<ClassCardAction, { key: "change" }> }) {
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
@@ -53,7 +54,7 @@ function ChangeMenu({ action }: { action: Extract<ClassCardAction, { key: "chang
         className="academy-button-secondary w-full !gap-0.5 !px-1 text-sm leading-tight"
       >
         <span className="whitespace-nowrap">{action.label}</span>
-        <span aria-hidden="true">▾</span>
+        <UiIcon name={open ? "expand_less" : "expand_more"} />
       </button>
       {open && (
         <div role="menu" className="absolute right-0 top-12 z-30 w-36 overflow-hidden rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] py-1 shadow-lg">

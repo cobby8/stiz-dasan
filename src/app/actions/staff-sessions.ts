@@ -21,7 +21,9 @@ import {
   staffAccessFailure,
   trialLeadStatusAfterStaffMark,
 } from "@/lib/staff-session-rules";
-import { trialOnClassDateSql } from "@/lib/staff-session-queries";
+import { getStaffSessionDetail, getStaffSessionStudents, trialOnClassDateSql } from "@/lib/staff-session-queries";
+import type { StaffSessionDetail, StaffSessionStudent } from "@/lib/staff-session-queries";
+import { profilePhotoVersion } from "@/lib/profilePhoto/rules";
 import { deliverParentNotification, getClassParentRecipients, getStudentParentRecipients } from "@/lib/staff-notifications";
 import type { ParentRecipient } from "@/lib/staff-notifications";
 import { notMergedStudent } from "@/lib/studentVisibility";
@@ -442,6 +444,96 @@ export async function saveSessionFeedLine(input: { sessionId: string; content: s
   revalidatePath("/staff");
   revalidatePath(`/staff/sessions/${input.sessionId}`);
   return { ok: true as const, content };
+}
+
+export type LoadStaffSessionWorkspaceResult =
+  | { ok: true; session: StaffSessionDetail; students: StaffSessionStudent[] }
+  | { ok: false; message: string; needsLogin?: true };
+
+/**
+ * 오늘 수업 홈에서 수업 줄을 «펼칠 때» 그 수업의 본문(수업 정보·출석부)을 읽는다(2026-11-15 수업 한 화면).
+ * - 수업 주소(/staff/sessions/[id])가 읽는 것과 같은 조회(getStaffSessionDetail·getStaffSessionStudents)를 쓴다.
+ * - 권한은 출석 저장·종료와 같은 문(trySessionAccess) — 담당 수업·특강 담당·그날 대타만 통과한다.
+ *   두 조회 함수도 안에서 같은 권한을 다시 확인한다(이중 확인).
+ */
+export async function loadStaffSessionWorkspace(input: { sessionId: string }): Promise<LoadStaffSessionWorkspaceResult> {
+  const sessionId = input.sessionId?.trim();
+  if (!sessionId || sessionId.length > 100) return { ok: false, message: "수업 정보를 다시 확인해 주세요." };
+  try {
+    const gate = await trySessionAccess(sessionId);
+    if (!gate.ok) return gate;
+    const session = await getStaffSessionDetail(sessionId);
+    if (!session) return { ok: false, message: "수업 기록을 찾을 수 없습니다." };
+    const students = await getStaffSessionStudents(sessionId, session.classId);
+    return { ok: true, session, students };
+  } catch (error) {
+    // 로그인 풀림·권한 없음은 던지지 않고 결과로(b5) — 화면이 «다시 로그인»을 띄운다
+    const failure = staffAccessFailure(error);
+    if (failure) return failure;
+    throw error;
+  }
+}
+
+/**
+ * 출석부 학생 정보에 붙일 프로필 사진 «버전»(사진이 있는 학생만) — 사진 주소의 캐시 값으로 쓴다.
+ * - 권한: 수업 기록이 있으면 출석 저장과 같은 문, 특강 회차면 특강 담당, 그 밖은 담당 반(오늘 대타 포함).
+ * - 학생은 화면이 보낸 목록이 아니라 «이 반·이 수업 학생»만 서버가 고른다(다른 학생 정보를 떠볼 수 없게).
+ * - 사진 자체는 사진 조회 주소가 따로 권한을 본다. 조회가 실패하면 빈 값(이름 첫 글자로 그린다).
+ */
+export async function loadStaffRosterPhotoVersions(input: {
+  classId: string;
+  sessionId?: string | null;
+  sessionDateId?: string | null;
+}): Promise<{ ok: true; versions: Record<string, string> } | { ok: false; message: string; needsLogin?: true }> {
+  const classId = input.classId?.trim();
+  const sessionId = input.sessionId?.trim() || null;
+  const sessionDateId = input.sessionDateId?.trim() || null;
+  if (!classId || classId.length > 100 || (sessionId && sessionId.length > 100) || (sessionDateId && sessionDateId.length > 100)) {
+    return { ok: false, message: "수업 정보를 다시 확인해 주세요." };
+  }
+  try {
+    if (sessionId) {
+      const { session } = await requireSessionAccess(sessionId);
+      if (session.classId !== classId) return { ok: false, message: "수업 정보를 다시 확인해 주세요." };
+    } else if (sessionDateId) {
+      const { seasonal } = await requireStaffSeasonalSessionAccess(sessionDateId);
+      if (seasonal.linkedClassId !== classId) return { ok: false, message: "수업 정보를 다시 확인해 주세요." };
+    } else {
+      await requireStaffClassAccess(classId, undefined, { substituteDate: todayKst() });
+    }
+  } catch (error) {
+    const failure = staffAccessFailure(error);
+    if (failure) return failure;
+    throw error;
+  }
+  try {
+    const rows = await prisma.$queryRawUnsafe<Array<{ id: string; photoUpdatedAt: Date | string | null }>>(
+      `SELECT s.id, s."photoUpdatedAt"
+         FROM "Student" s
+        WHERE s."photoPath" IS NOT NULL AND ${notMergedStudent("s")}
+          AND (
+            EXISTS (SELECT 1 FROM "Enrollment" e WHERE e."studentId" = s.id AND e."classId" = $1 AND e.status = 'ACTIVE')
+            OR EXISTS (
+              SELECT 1 FROM "SpecialProgramApplication" app
+                JOIN "SpecialProgramApplicationItem" i ON i."applicationId" = app.id AND i.status = 'APPROVED'
+                JOIN "SpecialProgramOffering" o ON o.id = i."offeringId"
+               WHERE app."convertedStudentId" = s.id AND o."linkedClassId" = $1
+            )
+            OR ($2::text IS NOT NULL AND EXISTS (SELECT 1 FROM "Attendance" a WHERE a."sessionId" = $2 AND a."studentId" = s.id))
+          )`,
+      classId, sessionId,
+    );
+    const versions: Record<string, string> = {};
+    for (const row of rows) {
+      const version = profilePhotoVersion(row.photoUpdatedAt);
+      if (version) versions[row.id] = version;
+    }
+    return { ok: true, versions };
+  } catch (error) {
+    // 사진 칸이 아직 없는 환경이어도 출석부는 그대로 열려야 한다
+    console.error("[loadStaffRosterPhotoVersions] 프로필 사진 버전 조회 실패(첫 글자로 표시)", error);
+    return { ok: true, versions: {} };
+  }
 }
 
 /**

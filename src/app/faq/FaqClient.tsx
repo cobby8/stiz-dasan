@@ -8,6 +8,7 @@
  * DB에 데이터가 없으면 기본 FAQ(DEFAULT_FAQ_DATA)를 보여준다.
  */
 
+import UiIcon from "@/components/common/UiIcon";
 import Card from "@/components/ui/Card";
 import AnimateOnScroll from "@/components/ui/AnimateOnScroll";
 
@@ -81,9 +82,8 @@ function FAQItem({ question, answer }: { question: string; answer: string }) {
         className="w-full flex items-center justify-between gap-2 py-4 px-1 text-left hover:text-[var(--color-public-accent)] dark:hover:text-brand-neon-lime transition-colors cursor-pointer"
       >
         <span className="font-semibold text-[var(--color-public-ink)] dark:text-white pr-4">{question}</span>
-        {/* 2026-11-14 아이콘 완전 제거: 화살표 대신 글자로 상태를 말한다(details 가 열리면 «접기») */}
-        <span aria-hidden="true" className="shrink-0 text-sm text-[var(--color-public-muted)] group-open:hidden">펼치기</span>
-        <span aria-hidden="true" className="hidden shrink-0 text-sm text-[var(--color-public-muted)] group-open:inline">접기</span>
+        {/* 2026-11-15 아이콘 예외(펼침 화살표): 접힘 = 아래 화살표, details 가 열리면 뒤집힌다. 이름은 질문 글자가 준다 */}
+        <span className="inline-flex shrink-0 text-[var(--color-public-muted)]"><UiIcon name="expand_more" className="transition-transform group-open:rotate-180" /></span>
       </summary>
       <div className="pb-5 px-1">
         <p className="text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] text-base leading-relaxed">{answer}</p>

@@ -305,14 +305,21 @@ test("한 줄 저장 — 권한 함수 + 당일 자정 조건을 UPDATE 에도 �
   assert.match(body, /status IN \('PLANNED', 'IN_PROGRESS', 'COMPLETED'\)/);
   assert.match(body, /AND \$\{sessionKstDateSql\('"Session"'\)\} = \$\{TODAY_KST_SQL\}/);
   assert.doesNotMatch(body, /deliverParentNotification|runAfterResponse/);
-  // 수업 화면 «수업 피드» 칸과 종료 확인 창이 같은 값을 쓴다(이미 저장한 한 줄로 시작)
+  // 2026-11-15 선생님 수업 화면 한 화면 구조: «수업 피드»와 «수업 내용»이 통합 글칸 하나가 됐다.
+  // 글칸과 종료 확인 창은 여전히 같은 값(report)을 쓰고, 저장된 수업 내용으로 시작한다(없으면 미리 쓴 내용을 채워 보여 줄 뿐 저장하지 않는다).
   const client = read("src/app/staff/sessions/[sessionId]/SessionInProgressClient.tsx");
-  assert.match(client, /useState\(session\.content \|\| ""\)/);
-  assert.match(client, /<FeedLineEditor sessionId=\{session\.id\} value=\{report\} onChange=\{setReport\}/);
-  // 오늘 수업 홈: 시작 전·끝난 수업에서 «수업 피드»를 연다
+  assert.match(client, /resolveLessonText\(\{ status: session\.status, content: session\.content, plannedContent: session\.plannedContent \}\)/);
+  assert.match(client, /const \[report, setReport\] = useState\(initialLessonText\.value\);/);
+  assert.match(client, /<LessonTextEditor inputId=\{`lesson-text-\$\{session\.id\}`\} phase="IN_PROGRESS" value=\{report\} onChange=\{setReport\} save=\{saveLessonText\}/);
+  assert.match(client, /id="session-report"\s+value=\{report\}\s+onChange=\{\(event\) => setReport\(event\.target\.value\)\}/);
+  // 수업 중 저장은 같은 서버 기능(한 줄 저장)으로
+  assert.match(client, /await saveSessionFeedLine\(\{ sessionId: session\.id, content: text \}\)/);
+  // 오늘 수업 홈: 시작 전·끝난 수업도 수업 줄을 펼친 본문에서 쓴다(끝난 수업은 한 줄·사진·영상)
   const home = read("src/app/staff/StaffHomeClient.tsx");
-  assert.match(home, /else if \(action === "feed"\) openFeed\(lesson\);/);
-  assert.match(home, /수업 피드 쓰기·사진 추가/);
+  assert.match(home, /savePlanned: \(text\) => savePlanned\(lesson, text\),/);
+  assert.match(home, /onLineSaved=\{\(content\) => patchLesson\(lesson\.scheduleKey, \{ content \}\)\}/);
+  const panels = read("src/components/staff/LessonWorkspacePanels.tsx");
+  assert.match(panels, /export function CompletedSessionPanel[\s\S]*?saveSessionFeedLine\(\{ sessionId: session\.id, content: value \}\)[\s\S]*?<SessionPhotoUploader sessionId=\{session\.id\} \/>[\s\S]*?<SessionVideoUploader sessionId=\{session\.id\} \/>/);
 });
 
 test("동의 UI 제거 — 학생 상세 링크·동의 화면·등록 창 질문이 없다(기록 표는 그대로)", () => {
