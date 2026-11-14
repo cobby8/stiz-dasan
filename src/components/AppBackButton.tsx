@@ -1,11 +1,14 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
 import { usePathname, useRouter } from "next/navigation";
 // 어디로 갈지 정하는 규칙은 순수 모듈 한 곳에서만 판단한다(분기가 네 갈래라 눈으로 못 잡는다).
 import { resolveBackAction } from "@/lib/navigation/backAction";
 import { useInstalledApp } from "@/components/pwa/useInstalledApp";
 import { isPublicSitePath } from "@/lib/public-site-path";
 import { hasSameOriginPreviousEntry, publicParentPath, type PublicNavigation } from "@/lib/navigation/publicHistory";
+// 학부모 화면(/mypage) 안 이동 기록 — Next.js 는 history.state.idx 를 안 넣고 referrer 도 화면 안 이동에선 안 바뀌어서 따로 남긴다
+import { inAppHistoryVersion, parentHistoryDecision, subscribeInAppHistory } from "@/lib/navigation/inAppHistory";
 
 type AppBackButtonProps = {
   fallbackHref?: string;
@@ -22,8 +25,16 @@ type AppBackButtonProps = {
 };
 
 
-function canGoBackWithinApp(pathname: string) {
+function canGoBackWithinApp(pathname: string, isInstalledApp: boolean) {
   if (typeof window === "undefined") return false;
+
+  // 학부모 화면은 우리가 남긴 이동 기록을 먼저 본다(2026-11-14). null = 학부모 화면이 아니거나
+  // 아직 이 화면을 기록하기 전 → 아래 옛 판단 그대로(공개 사이트·선생님 화면 동작은 바뀌지 않는다)
+  const parentDecision = parentHistoryDecision(pathname);
+  if (parentDecision === true) return true;
+  // 설치된 앱은 «기록 없음»이 정답이다(referrer 는 앱을 연 첫 주소에 멈춰 있어 믿을 수 없다).
+  // 브라우저는 홈페이지에서 들어왔을 수 있어 아래 옛 판단(referrer)도 본다.
+  if (parentDecision === false && isInstalledApp) return false;
 
   if (isPublicSitePath(pathname) && hasSameOriginPreviousEntry(
     (window as Window & { navigation?: PublicNavigation }).navigation,
@@ -51,13 +62,15 @@ export default function AppBackButton({
   const router = useRouter();
   const pathname = usePathname() || "/";
   const isInstalledApp = useInstalledApp();
+  // 이동 기록이 바뀌면(화면 이동 직후) 다시 그려 «돌아갈 곳 없음» 판단을 새로 한다. 서버에선 0 고정
+  useSyncExternalStore(subscribeInAppHistory, inAppHistoryVersion, () => 0);
   const backFallback = isPublicSitePath(pathname) ? publicParentPath(pathname, fallbackHref) : fallbackHref;
 
   // 앱의 첫 화면이라 돌아갈 곳이 없다. 죽은 버튼을 두느니 자리만 남긴다
   // (헤더가 격자 배치라 그냥 지우면 로고·제목이 밀린다).
   const nothingToGoBackTo =
     resolveBackAction({
-      hasHistory: canGoBackWithinApp(pathname),
+      hasHistory: canGoBackWithinApp(pathname, isInstalledApp),
       pathname,
       fallbackHref: backFallback,
       scopeHref,
@@ -72,7 +85,7 @@ export default function AppBackButton({
 
   const handleClick = () => {
     const action = resolveBackAction({
-      hasHistory: canGoBackWithinApp(pathname),
+      hasHistory: canGoBackWithinApp(pathname, isInstalledApp),
       pathname,
       fallbackHref: backFallback,
       scopeHref,

@@ -109,6 +109,8 @@ test("2. 리포트 상세 — 서버(UTC)가 그려도 수업 날짜가 KST 달�
       "@/components/parent/SessionVideoPlayer": { SessionVideoList: () => null },
       "next/navigation": { notFound: () => { throw new Error("not found"); } },
       "next/link": { default: ({ children, ...p }) => React.createElement("a", p, children) },
+      // 보조 조회 기본값(2026-11-14) — 성공하면 그 값, 실패하면 기본값
+      "@/lib/server/loadOrDefault": { loadOrDefault: async (_stage, load, fallback) => { try { return await load(); } catch { return fallback; } } },
     });
     return renderToStaticMarkup(await Page({ params: Promise.resolve({ sessionId: "s1" }) }));
   }

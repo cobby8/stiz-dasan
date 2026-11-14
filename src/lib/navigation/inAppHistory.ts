@@ -1,0 +1,139 @@
+/**
+ * 학부모 화면(/mypage) 안 이동 기록 — 탭(창)마다 짧게 남긴다(2026-11-14).
+ *
+ * 왜 따로 남기나: Next.js App Router 는 history.state 에 순번(idx)을 넣지 않고,
+ * document.referrer 는 화면 안 이동(SPA) 중에 바뀌지 않는다. 그래서 설치된 앱에서는
+ * «되돌아갈 기록이 있나»를 늘 «없음»으로 읽어, 뒤로 버튼이 매번 홈(/mypage)으로 갔다.
+ * → 화면이 바뀔 때마다 주소를 sessionStorage 에 쌓고(탭마다 따로), 그걸 보고 판단한다.
+ *
+ * 규칙(순수 함수 nextInAppHistory — 테스트로 실행 검증):
+ *  1) 같은 주소면 그대로(새로고침·같은 화면 다시 그리기)
+ *  2) 새 화면이 «바로 앞» 화면과 같은 경로면 = 뒤로 간 것 → 맨 끝 하나를 뺀다(pop)
+ *  3) 경로는 같고 쿼리만 바뀌면(쪽 넘김·필터) = 같은 화면 → 맨 끝을 바꿔 끼운다(replace)
+ *  4) 그 밖은 새 화면 → 쌓는다(push), 최대 30개(오래된 것부터 버림)
+ * 판단이 애매하면 늘 «기록을 짧게» 보는 쪽으로 기운다 — 짧게 보면 고정 주소로 가는 옛 동작이고,
+ * 길게 보면 첫 화면에서 router.back() 이 아무 일도 안 하는(죽은 버튼) 더 나쁜 결과가 난다.
+ */
+
+export const IN_APP_HISTORY_KEY = "stiz:parent-nav-history:v1";
+export const IN_APP_HISTORY_MAX = 30;
+/** 기록을 남기는 범위 — 학부모 화면 */
+export const PARENT_HISTORY_SCOPE = "/mypage";
+
+/** "/mypage/news?page=2" → "/mypage/news" (해시·쿼리 제외) */
+export function pathOf(entry: string): string {
+  const cut = entry.search(/[?#]/);
+  return cut === -1 ? entry : entry.slice(0, cut);
+}
+
+/** 기록 한 칸 = 경로 + 쿼리(해시는 화면 이동이 아니라 뺀다) */
+export function entryOf(pathname: string, search = ""): string {
+  const q = search.replace(/^\?/, "");
+  return q ? `${pathname}?${q}` : pathname;
+}
+
+/** 새 주소가 들어왔을 때 다음 기록(원본은 바꾸지 않는다) */
+export function nextInAppHistory(stack: readonly string[], entry: string, max = IN_APP_HISTORY_MAX): string[] {
+  if (stack.length === 0) return [entry];
+  const last = stack[stack.length - 1];
+  if (last === entry) return [...stack]; // 1) 같은 주소
+  const prev = stack.length >= 2 ? stack[stack.length - 2] : undefined;
+  // 2) 바로 앞 화면으로 돌아옴 → pop (쿼리가 달라도 같은 화면이면 그 칸을 새 주소로)
+  if (prev !== undefined && pathOf(prev) === pathOf(entry)) return [...stack.slice(0, -2), entry];
+  // 3) 같은 화면에서 쿼리만 바뀜 → replace
+  if (pathOf(last) === pathOf(entry)) return [...stack.slice(0, -1), entry];
+  // 4) 새 화면 → push(최대 개수 유지)
+  const next = [...stack, entry];
+  return next.length > max ? next.slice(next.length - max) : next;
+}
+
+/**
+ * 지금 화면에서 되돌아갈 기록이 있나.
+ * - 기록의 맨 끝이 지금 경로가 아니면 null(= 아직 이 화면을 기록하지 못함 → 판단 보류, 옛 방식으로)
+ * - 맨 끝이 지금 경로면 기록이 2칸 이상일 때만 true
+ */
+export function hasInAppHistory(stack: readonly string[], pathname: string): boolean | null {
+  if (stack.length === 0) return null;
+  if (pathOf(stack[stack.length - 1]) !== pathname) return null;
+  return stack.length > 1;
+}
+
+/** 저장된 값 → 기록 배열. 깨진 값·이상한 값은 빈 기록으로(절대 throw 하지 않는다) */
+export function parseInAppHistory(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const value = JSON.parse(raw);
+    if (!Array.isArray(value)) return [];
+    return value.filter((v): v is string => typeof v === "string" && v.startsWith("/")).slice(-IN_APP_HISTORY_MAX);
+  } catch {
+    return [];
+  }
+}
+
+// ── 브라우저 쪽(저장·구독) — 서버에서는 아무 일도 하지 않는다 ──────────────────────
+
+type StorageLike = Pick<Storage, "getItem" | "setItem">;
+
+function sessionStore(): StorageLike | null {
+  try {
+    return typeof window === "undefined" ? null : window.sessionStorage;
+  } catch {
+    return null; // 사생활 보호 모드 등에서 접근 자체가 막힌 경우
+  }
+}
+
+/** sessionStorage 가 막힌 브라우저에서도 그 탭이 살아 있는 동안은 기억한다 */
+let memoryStack: string[] = [];
+let version = 0;
+const listeners = new Set<() => void>();
+
+export function readInAppHistory(storage: StorageLike | null = sessionStore()): string[] {
+  if (!storage) return memoryStack;
+  try {
+    return parseInAppHistory(storage.getItem(IN_APP_HISTORY_KEY));
+  } catch {
+    return memoryStack;
+  }
+}
+
+/** 화면이 바뀔 때 부른다(ParentHistoryTracker). 저장 실패는 조용히 메모리로만 */
+export function recordInAppNavigation(entry: string, storage: StorageLike | null = sessionStore()): string[] {
+  const next = nextInAppHistory(readInAppHistory(storage), entry);
+  memoryStack = next;
+  try {
+    storage?.setItem(IN_APP_HISTORY_KEY, JSON.stringify(next));
+  } catch {
+    // 저장 공간이 가득 찼거나 막힘 — 메모리 기록으로 계속
+  }
+  version += 1;
+  listeners.forEach((listener) => listener());
+  return next;
+}
+
+/** 기록이 바뀌면 뒤로 버튼이 다시 그려지게(useSyncExternalStore 용) */
+export function subscribeInAppHistory(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+export function inAppHistoryVersion(): number {
+  return version;
+}
+
+/**
+ * 학부모 화면에서 router.back() 해도 되나.
+ * true = 이 탭 안에 학부모 화면 기록이 있고 브라우저 기록도 2칸 이상(새 탭으로 열려 기록이 복사된 경우를 거른다)
+ * false = 기록 없음 → 고정 주소로
+ * null = 학부모 화면이 아니거나 아직 이 화면을 기록하지 못함 → 부르는 쪽의 옛 방식으로
+ */
+export function parentHistoryDecision(pathname: string): boolean | null {
+  if (typeof window === "undefined") return null;
+  if (pathname !== PARENT_HISTORY_SCOPE && !pathname.startsWith(`${PARENT_HISTORY_SCOPE}/`)) return null;
+  const decision = hasInAppHistory(readInAppHistory(), pathname);
+  if (decision !== true) return decision;
+  try {
+    return window.history.length > 1;
+  } catch {
+    return false;
+  }
+}

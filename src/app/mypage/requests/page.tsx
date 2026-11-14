@@ -1,4 +1,5 @@
 import Link from "next/link";
+import ParentBackLink from "@/components/parent/ParentBackLink";
 import { redirect } from "next/navigation";
 import { requireVerifiedParent } from "@/lib/auth-guard";
 import { prisma } from "@/lib/prisma";
@@ -26,9 +27,7 @@ export default async function ParentRequestsPage() {
         <div className="mx-auto grid max-w-2xl gap-3">
             <div className="flex items-center gap-2">
                 {/* 뒤로가기 = 누르는 영역 44×44(academy-back-link) */}
-                <Link href="/mypage" aria-label="홈으로" className="academy-back-link">
-                    <span aria-hidden="true">←</span>
-                </Link>
+                <ParentBackLink fallbackHref="/mypage" ariaLabel="홈으로" className="academy-back-link" />
                 <h1 className="academy-heading min-w-0 flex-1">보낸 문의</h1>
                 {/* 새 문의는 홈의 문의 폼 한 곳에서 쓴다(폼을 두 벌 두지 않는다) */}
                 <Link href="/mypage#parent-request-form" className="academy-button-primary shrink-0">새 문의</Link>

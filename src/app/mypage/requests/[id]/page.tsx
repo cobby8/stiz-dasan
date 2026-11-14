@@ -1,4 +1,5 @@
 import Link from "next/link";
+import ParentBackLink from "@/components/parent/ParentBackLink";
 import { notFound, redirect } from "next/navigation";
 import { requireVerifiedParent } from "@/lib/auth-guard";
 import { prisma } from "@/lib/prisma";
@@ -28,9 +29,7 @@ export default async function ParentRequestDetailPage({ params }: { params: Prom
     return (
         <div className="mx-auto grid max-w-2xl gap-3">
             <div className="flex items-center gap-2">
-                <Link href="/mypage/requests" aria-label="보낸 문의 목록으로" className="academy-back-link">
-                    <span aria-hidden="true">←</span>
-                </Link>
+                <ParentBackLink fallbackHref="/mypage/requests" ariaLabel="보낸 문의 목록으로" className="academy-back-link" />
                 <h1 className="academy-heading min-w-0 flex-1 break-keep">{inquiry.title}</h1>
                 <span className={`shrink-0 rounded px-2 py-0.5 text-xs ${TONE_BADGE_CLASS[INQUIRY_PARENT_STATUS_TONE[inquiry.status]]}`}>
                     {INQUIRY_PARENT_STATUS_LABEL[inquiry.status]}

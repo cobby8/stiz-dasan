@@ -26,9 +26,13 @@ if (!process.execArgv.includes("--conditions=react-server")) {
     const videoId = "test/SessionVideoList";
     const Gallery = registerClientReference(() => {}, galleryId, "default");
     const VideoList = registerClientReference(() => {}, videoId, "SessionVideoList");
+    // 2026-11-14 «←» 는 클라이언트 부품(ParentBackLink) — 서버 화면이 함수 없이 글자·주소만 넘기는지 같이 검사된다
+    const backLinkId = "test/ParentBackLink";
+    const BackLink = registerClientReference(() => {}, backLinkId, "default");
     const manifest = {
         [galleryId]: { id: "feed-photo-gallery", chunks: [], name: "default" },
         [videoId]: { id: "session-video-list", chunks: [], name: "SessionVideoList" },
+        [backLinkId]: { id: "parent-back-link", chunks: [], name: "default" },
     };
     const missing = new Error("NOT_FOUND");
 
@@ -46,6 +50,7 @@ if (!process.execArgv.includes("--conditions=react-server")) {
         return testModule.exports;
     }
     const kst = compile("src/lib/datetime/kst.ts");
+    const resilience = compile("src/lib/net/resilience.ts");
     const photos = compile("src/lib/sessionPhotoEntries.ts");
     const videoRules = compile("src/lib/sessionVideo/rules.ts", { "@/lib/datetime/kst": kst });
     const feedRules = compile("src/lib/feed/rules.ts", { "@/lib/datetime/kst": kst, "@/lib/sessionVideo/rules": videoRules });
@@ -107,6 +112,9 @@ if (!process.execArgv.includes("--conditions=react-server")) {
             "@/components/parent/SessionVideoPlayer": { SessionVideoList: VideoList },
             "@/lib/feed/server": feedServer,
             "@/lib/datetime/kst": kst,
+            "@/components/parent/ParentBackLink": { default: BackLink, __esModule: true },
+            // 보조 조회 기본값(2026-11-14) — 실제 규칙(withFallback)으로 돌린다
+            "@/lib/server/loadOrDefault": { loadOrDefault: (stage, load, fallback) => resilience.withFallback(stage, load, fallback, { log() {} }) },
         }).default;
         let tree;
         try { tree = await Page({ params: Promise.resolve({ sessionId: SESSION }) }); }

@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import Link from "next/link";
+import ParentBackLink from "@/components/parent/ParentBackLink";
 import { useRouter } from "next/navigation";
 import type { ParentMakeupOverview, ParentCredit, MakeupOption } from "@/lib/makeup/parent-makeup";
 // 남은 자리는 숫자 대신 3단계(여유/임박/마감)로(재원생 수 비공개 · 2026-11-13 f9)
@@ -242,9 +243,7 @@ export default function MakeupClient({ initial, presetStudentId = null }: { init
       {/* 헤더 */}
       <div className="mb-2 flex items-center gap-2">
         {/* 뒤로가기 = 누르는 영역 44×44(academy-back-link) */}
-        <Link href="/mypage" aria-label="마이페이지로" className="academy-back-link">
-          <span aria-hidden="true">←</span>
-        </Link>
+        <ParentBackLink fallbackHref="/mypage" ariaLabel="마이페이지로" className="academy-back-link" />
         <h1 className="academy-heading">
           보강 예약
         </h1>

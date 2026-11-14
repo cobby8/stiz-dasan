@@ -1,4 +1,5 @@
 import Link from "next/link";
+import ParentBackLink from "@/components/parent/ParentBackLink";
 import { redirect } from "next/navigation";
 import { requireVerifiedParent } from "@/lib/auth-guard";
 import { getMyPageData } from "@/lib/queries";
@@ -31,9 +32,7 @@ export default async function ParentPastNoticesPage({ searchParams }: { searchPa
     return (
         <div className="mx-auto grid max-w-2xl gap-3">
             <div className="flex items-center gap-2">
-                <Link href="/mypage/reports#news-notices" aria-label="소식으로" className="academy-back-link">
-                    <span aria-hidden="true">←</span>
-                </Link>
+                <ParentBackLink fallbackHref="/mypage/reports#news-notices" ariaLabel="소식으로" className="academy-back-link" />
                 <h1 className="academy-heading min-w-0 flex-1">지난 공지</h1>
                 {total > 0 && <span className="shrink-0 text-sm tabular-nums text-[var(--color-academy-muted)]">{total}건</span>}
             </div>

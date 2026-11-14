@@ -34,7 +34,9 @@ const summary = load("src/lib/mypage/summary.ts");
 // 2026-11-14 «최신 수업 피드» 카드 — 순수 규칙·카드 부품을 실제로 돌린다
 const sessionVideoRules = load("src/lib/sessionVideo/rules.ts", { "@/lib/datetime/kst": kst });
 const feedRules = load("src/lib/feed/rules.ts", { "@/lib/datetime/kst": kst, "@/lib/sessionVideo/rules": sessionVideoRules });
-const latestFeedCard = load("src/components/parent/LatestFeedCard.tsx", { "next/link": link, "@/lib/datetime/kst": kst });
+// 2026-11-14 카드·더보기가 «수업 리포트 피드»로 간다 — 주소는 피드 순수 규칙이 만든다
+const reportFeedRules = load("src/lib/feed/reportFeedRules.ts", { "@/lib/datetime/kst": kst });
+const latestFeedCard = load("src/components/parent/LatestFeedCard.tsx", { "next/link": link, "@/lib/datetime/kst": kst, "@/lib/feed/reportFeedRules": reportFeedRules });
 
 test("① 메뉴 4개 — 하위 화면에서도 소속 탭이 켜지고 방학특강 탭은 없다", () => {
   const nav = load("src/app/mypage/MyPageBottomNav.tsx", { "next/link": link, "next/navigation": { usePathname: () => "/mypage" } });
@@ -104,7 +106,7 @@ const feedCandidate = (extra = {}) => ({
   content: "드리블 기본기 연습했습니다.", topic: null, photos: [], videoCount: 0, ...extra,
 });
 
-test("홈 피드 카드: «처리할 일» 바로 아래, 날짜·반·코치·본문 + 소식 더보기, 누르면 상세", () => {
+test("홈 피드 카드: «처리할 일» 바로 아래, 날짜·반·코치·본문 + 피드 더보기, 누르면 리포트 피드의 그 수업 자리", () => {
   const feed = [feedCandidate({ photos: [{ src: "/api/staff/sessions/s-a/photos/p1" }] })];
   // 처리할 일이 있을 때(보강권 1장) — 카드는 그 칸 바로 아래
   const html = renderHome({ data: { parent: { id: "p" }, children: [childA([])] }, makeupAvailable: 1, feedCandidates: feed });
@@ -121,8 +123,8 @@ test("홈 피드 카드: «처리할 일» 바로 아래, 날짜·반·코치·�
   assert.match(html, /초등 저학년반/);
   assert.match(html, /합성 코치 코치/);
   assert.match(html, /line-clamp-2[^"]*">드리블 기본기 연습했습니다\./);
-  assert.match(html, /href="\/mypage\/reports\/s-a"/);
-  assert.match(html, /href="\/mypage\/reports#news-reports"[^>]*>더보기</);
+  assert.match(html, /href="\/mypage\/reports\/feed\?start=s-a"/);
+  assert.match(html, /href="\/mypage\/reports\/feed"[^>]*>더보기</);
   assert.doesNotMatch(html, /소식에서 더보기/);
   assert.match(html, /src="\/api\/staff\/sessions\/s-a\/photos\/p1"/);
   assert.equal((html.match(/academy-button-primary/g) || []).length, 0, "카드는 꽉 찬 버튼을 늘리지 않는다");
@@ -282,6 +284,8 @@ test("⑤ 앱 안 공지 상세: 전체 공지·우리 아이 반 공지만 보�
   let sanitized = 0;
   const Page = load("src/app/mypage/news/[id]/page.tsx", {
     "next/link": link,
+    // «← 소식» = 기록 우선 뒤로 링크(2026-11-14) — 진짜 부품을 그린다(기록 없을 때 주소 = 예전 고정 주소)
+    "@/components/parent/ParentBackLink": load("src/components/parent/ParentBackLink.tsx", { "next/link": link, "@/lib/navigation/inAppHistory": load("src/lib/navigation/inAppHistory.ts") }),
     "next/navigation": { notFound: () => { throw NOT_FOUND; } },
     "@/lib/auth-guard": { requireVerifiedParent: async () => ({ appUserId: "p1" }) },
     "@/lib/queries": {

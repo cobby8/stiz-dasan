@@ -14,6 +14,8 @@ import AcademyTheme from "@/components/academy/AcademyTheme";
 import UiIcon from "@/components/common/UiIcon";
 import AccountViewSwitcher from "@/components/AccountViewSwitcher";
 import { getAccountViewAccess } from "@/lib/account-view-access";
+import { Suspense } from "react";
+import ParentHistoryTracker from "@/components/parent/ParentHistoryTracker";
 
 // 학부모 앱의 시작 주소가 /mypage 다. 여기서 공용 manifest(id "/")를 내려주면
 // 브라우저가 "이 앱은 공식 앱이었나?" 하고 신원을 헷갈린다. 교사용(/staff)과 같은 구조로
@@ -71,6 +73,11 @@ export default async function MyPageLayout({
         <AcademyTheme role="parent" className="min-h-screen flex flex-col pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0">
             {/* 글자 크기 «크게·아주 크게» — html 글자 배율. 학부모 화면을 떠나면 이 줄도 사라져 다른 화면엔 영향 없음 */}
             {fontPercent !== 100 && <style>{`html{font-size:${fontPercent}%}`}</style>}
+            {/* 학부모 화면 안 이동 기록(탭마다) — «←» 가 방금 있던 화면으로 돌아가게. 보이지 않는 부품
+                (쿼리 읽기 부품이라 Suspense 로 감싼다 — 감싸지 않으면 화면 전체가 클라이언트 렌더로 밀린다) */}
+            <Suspense fallback={null}>
+                <ParentHistoryTracker />
+            </Suspense>
             {/* 모바일 상단 헤더 — [뒤로 · 로고 · 학부모] …… [알림 N] [설정] (2026-11-10 원장 결정 k7) */}
             <header className="bg-[var(--color-academy-surface)] sticky top-0 z-50 border-b border-[var(--color-academy-line)] grid grid-cols-[auto_auto_minmax(0,1fr)_auto_auto] items-center gap-1 px-3 py-2 md:hidden">
                 {/* 설치된 학부모 앱에서는 /mypage 밖으로 나가지 않는다.
