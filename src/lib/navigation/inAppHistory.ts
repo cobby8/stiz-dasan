@@ -173,10 +173,45 @@ function takeReplaceFlag(storage: StorageLike | null): boolean {
 export function resetPageLoadStateForTest() {
   firstRecordOfPage = true;
   replacePending = false;
+  leftScopePending = false;
   memoryStack = [];
 }
 
 /** 화면이 바뀔 때 부른다(ParentHistoryTracker). 저장 실패는 조용히 메모리로만 */
+/**
+ * 학부모 화면을 «화면 안 이동»(새로 불러오기 없이)으로 떠났다는 표시(2026-11-14 재검수 권장).
+ * 세션이 끝나 /login → 로그인 뒤 화면 안 이동으로 /mypage 에 돌아오면 첫 기록 판정(shouldRestartOnPageLoad)이
+ * 돌지 않아 «←» 가 /login 으로 돌아갔다. 떠날 때 표시해 두고, 돌아온 첫 기록에서 [entry] 로 새로 시작한다.
+ */
+export const IN_APP_LEFT_KEY = "stiz:parent-nav-left:v1";
+let leftScopePending = false;
+
+export function markLeftParentScope(storage: StorageLike | null = sessionStore()) {
+  leftScopePending = true;
+  try {
+    storage?.setItem(IN_APP_LEFT_KEY, "1");
+  } catch {
+    // 저장이 막히면 메모리 표시로만
+  }
+}
+
+function takeLeftFlag(storage: StorageLike | null): boolean {
+  let flagged = leftScopePending;
+  leftScopePending = false;
+  try {
+    if (storage?.getItem(IN_APP_LEFT_KEY) === "1") flagged = true;
+    storage?.setItem(IN_APP_LEFT_KEY, "");
+  } catch {
+    // 메모리 표시로만 판단
+  }
+  return flagged;
+}
+
+/** 경로가 학부모 범위(/mypage, /mypage/...) 안인지 */
+export function isParentScopePath(pathname: string): boolean {
+  return pathname === PARENT_HISTORY_SCOPE || pathname.startsWith(`${PARENT_HISTORY_SCOPE}/`);
+}
+
 export function recordInAppNavigation(
   entry: string,
   storage: StorageLike | null = sessionStore(),
@@ -184,6 +219,7 @@ export function recordInAppNavigation(
 ): string[] {
   const prev = readInAppHistory(storage);
   let next: string[];
+  const leftScope = takeLeftFlag(storage);
   if (firstRecordOfPage) {
     firstRecordOfPage = false;
     const replaced = takeReplaceFlag(storage);
@@ -194,6 +230,8 @@ export function recordInAppNavigation(
     } else {
       next = nextInAppHistory(prev, entry);
     }
+  } else if (leftScope) {
+    next = [entry]; // 화면 안 이동으로 학부모 화면 밖(로그인·공개 홈)을 다녀왔다
   } else {
     next = nextInAppHistory(prev, entry);
   }

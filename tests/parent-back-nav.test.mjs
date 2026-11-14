@@ -427,3 +427,20 @@ test("canAutoRetry — 판정만 하고 기록은 남기지 않는다(오류 화
   const src = await read("src/app/mypage/error.tsx");
   assert.ok(src.includes("useState(() => peekAutoRetry(pathname))"), "첫 그림부터 판정 결과대로");
 });
+
+test("화면 안 이동으로 학부모 화면 밖을 다녀오면(로그인 등) 다음 기록은 새로 시작한다", async () => {
+  const h = await loadTsModule("src/lib/navigation/inAppHistory.ts");
+  h.resetPageLoadStateForTest();
+  const store = new Map();
+  const storage = { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)) };
+  const env = { referrer: "https://www.stiz-dasan.kr/mypage", origin: "https://www.stiz-dasan.kr", historyLength: 5 };
+  h.recordInAppNavigation("/mypage", storage, env);
+  assert.deepEqual(h.recordInAppNavigation("/mypage/settings", storage, env), ["/mypage", "/mypage/settings"]);
+  h.markLeftParentScope(storage); // /login 으로 화면 안 이동
+  assert.deepEqual(h.recordInAppNavigation("/mypage/reports", storage, env), ["/mypage/reports"]);
+  // 표시는 한 번만 쓰인다 — 그 뒤 이동은 다시 쌓인다
+  assert.deepEqual(h.recordInAppNavigation("/mypage/news", storage, env), ["/mypage/reports", "/mypage/news"]);
+  assert.equal(h.isParentScopePath("/mypage"), true);
+  assert.equal(h.isParentScopePath("/mypagex"), false);
+  assert.equal(h.isParentScopePath("/login"), false);
+});
