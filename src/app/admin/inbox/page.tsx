@@ -23,7 +23,7 @@ import InboxClient, { type InboxTabData } from "./InboxClient";
 // 신청함 — 체험·수강·상담·대관·변경·기타 6탭(2026-11-10 원장 결정 k1~k4). 실시간 처리 화면이라 캐시하지 않는다.
 export const dynamic = "force-dynamic";
 
-type SearchParams = { tab?: string; sub?: string; done?: string; from?: string; to?: string; kind?: string };
+type SearchParams = { tab?: string; sub?: string; done?: string; from?: string; to?: string; kind?: string; open?: string };
 
 const ymd = (value?: string) => (value && isKstYmd(value) ? value : null);
 
@@ -87,6 +87,8 @@ export default async function AdminInboxPage({ searchParams }: { searchParams?: 
       canDecideStaffRoles={admin.appUserRole === "ADMIN"}
       // 랠리즈 은퇴(2026-11-14 원장 결정) — 기본 은퇴, STIZ_RALLYZ_SYNC_RETIRED 가 "0" 일 때만 옛 «랠리즈 반영 확인» 화면
       rallyzRetired={isRallyzSyncRetired(process.env)}
+      // «?kind=종류&open=id» — 그 줄 상세를 열어 둔다. 값은 목록에 있는 줄과 «같은지»만 비교하므로 길이만 본다
+      initialOpenId={kind && typeof params.open === "string" && params.open.length > 0 && params.open.length <= 200 ? params.open : null}
     />
   );
 }

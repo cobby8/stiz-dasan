@@ -11,7 +11,7 @@ export async function runBillingWorkbenchPostgresTests({pool,database,root}){
  const modules={};for(const [key,file]of Object.entries({kst:'src/lib/datetime/kst.ts',register:'src/lib/billing/monthly-register.ts',due:'src/lib/billing-due-date.ts',visibility:'src/lib/studentVisibility.ts',schedule:'src/lib/classSchedule.ts'}))modules[key]=url(await source(file));
  modules.model=url((await source('src/lib/billing/workbench.ts')).replace('from "@/lib/datetime/kst"',`from "${modules.kst}"`));
  const calendar=url((await source('src/lib/enrollment/monthlyClassDates.ts')).replace('import { getAcademySettings, getAnnualEvents } from "@/lib/queries";','const getAcademySettings=()=>{throw Error("External query forbidden")},getAnnualEvents=getAcademySettings;').replace('import { fetchGoogleCalendarEvents } from "@/lib/googleCalendar";','const fetchGoogleCalendarEvents=()=>{throw Error("External calendar forbidden")};').replace('from "@/lib/classSchedule"',`from "${modules.schedule}"`));
- const service=url((await source('src/lib/billing/workbench-service.ts')).replaceAll('from "@/lib/enrollment/monthlyClassDates"',`from "${calendar}"`).replace('from "@/lib/billing-due-date"',`from "${modules.due}"`).replace('from "@/lib/studentVisibility"',`from "${modules.visibility}"`).replace('from "./monthly-register"',`from "${modules.register}"`).replace('from "./workbench"',`from "${modules.model}"`).replace('from "./workbench-pricing"',`from "${url(await source('src/lib/billing/workbench-pricing.ts'))}"`));
+ const service=url((await source('src/lib/billing/workbench-service.ts')).replaceAll('from "@/lib/enrollment/monthlyClassDates"',`from "${calendar}"`).replace('from "@/lib/billing-due-date"',`from "${modules.due}"`).replace('from "@/lib/studentVisibility"',`from "${modules.visibility}"`).replace('from "./monthly-register"',`from "${modules.register}"`).replace('from "./workbench"',`from "${modules.model}"`).replace('from "./workbench-pricing"',`from "${url(await source('src/lib/billing/workbench-pricing.ts'))}"`).replace('from "@/lib/regular/illnessPeriodRules"',`from "${url((await source('src/lib/regular/illnessPeriodRules.ts')).replace('from "@/lib/datetime/kst"',`from "${modules.kst}"`))}"`));
  const {readWorkbench,mutateWorkbench}=await import(service);
  const {resolveWorkbenchAbsence}=await import(url((await source('src/lib/billing/workbench-absence.ts')).replace('from "./carryEvidence"',`from "${url(await source('src/lib/billing/carryEvidence.ts'))}"`).replace('from "@/lib/studentVisibility"',`from "${modules.visibility}"`).replace('from "./monthly-register"',`from "${modules.register}"`).replace('from "./workbench"',`from "${modules.model}"`).replace('from "./workbench-service"',`from "${service}"`).replace('import("@/lib/enrollment/monthlyClassDates")',`import("${calendar}")`)));
  await pool.query(`CREATE TABLE "Student"(id text PRIMARY KEY,name text,"parentId" text,"mergedIntoStudentId" text,"birthDate" timestamp);
@@ -121,5 +121,93 @@ export async function runBillingWorkbenchPostgresTests({pool,database,root}){
  await pool.query(`UPDATE "Payment" SET status='REFUNDED' WHERE id='rallyz-oct'`);
  const refunded=await database.$transaction(tx=>readWorkbench(tx,'2026-12',true),{isolationLevel:'RepeatableRead'});
  assert.ok(refunded.rows.find(r=>r.id==='s5:c').blockingReasons.some(reason=>reason.includes('원결석 취소·출석 정정된 이월')));checks.push('근거 청구 환불 뒤 그 이월 무효 → 그 학생 후속 발행 보류');
+
+ // ── 부상·질병 기간 결석 «청구 발행 보류»(2단계, 2026-11-15) — 실제 PostgreSQL 로 SQL 을 돌린다 ──
+ // 흐름: 1월 청구 발행(미납) → 부상 결석 승인 → 미리보기 → 결제 진행 중이면 건너뜀 → 보류로 돌리기 → 청구 준비가 막음
+ //       → 승인 취소 → 다시 저장·확정·발행 → 살아 있는 청구는 정확히 1건
+ const {loadTsModule}=await import('./_ts-module.mjs');
+ const periodAdmin=await loadTsModule('src/lib/regular/illness-period-admin.ts');
+ await pool.query(`ALTER TABLE "Payment" ADD COLUMN method text, ADD COLUMN "paidDate" timestamp;ALTER TABLE "PaymentInvoice" ADD COLUMN "canceledAt" timestamp;
+ CREATE TABLE "PaymentAuditLog"(id text PRIMARY KEY,"paymentId" text,"invoiceId" text,"transactionId" text,"actorType" text NOT NULL,"actorId" text,action text NOT NULL,message text,metadata jsonb,"createdAt" timestamptz NOT NULL DEFAULT now());
+ CREATE TABLE "PaymentTransaction"(id text PRIMARY KEY,"paymentId" text,provider text,status text,method text,"rawResponse" jsonb,"approvedAt" timestamptz,"updatedAt" timestamptz NOT NULL DEFAULT now());
+ CREATE TABLE "PaymentTransactionItem"(id text PRIMARY KEY,"transactionId" text,"paymentId" text,amount integer);
+ CREATE TABLE "PosChargeRequest"(id text PRIMARY KEY,"paymentId" text,status text);CREATE TABLE "PosChargeRequestItem"(id text PRIMARY KEY,"paymentId" text,"open" boolean);
+ CREATE TABLE "OperationsAuditLog"(id text PRIMARY KEY,action text,"actorType" text,"actorUserId" text,"detailsJson" jsonb,"createdAt" timestamptz DEFAULT now());
+ CREATE TABLE "RegularAbsencePeriod"(id text PRIMARY KEY,"studentId" text NOT NULL,reason text NOT NULL,"startDate" date NOT NULL,"returnDate" date,note text,status text NOT NULL DEFAULT 'ACTIVE',"classIds" text[] NOT NULL DEFAULT ARRAY[]::text[],"reportedByUserId" text,
+   "carryState" text NOT NULL DEFAULT 'NONE',"carryApprovedAt" timestamptz,"carryApprovedByUserId" text,"carrySettledAt" timestamptz,"carrySettledByUserId" text,"carrySettlement" jsonb,"createdAt" timestamptz DEFAULT now(),"updatedAt" timestamptz DEFAULT now());
+ ALTER TABLE "RegularAbsence" ADD COLUMN "periodId" text;
+ INSERT INTO "Student" VALUES('s6','합성 부상 원생',NULL,NULL);INSERT INTO "Class" VALUES('h','합성 보류반','p','Sat');INSERT INTO "Enrollment" VALUES('e6','s6','h','ACTIVE','2026-01-01','2026-01-01');`);
+ const holdMonthView=()=>database.$transaction(tx=>readWorkbench(tx,'2027-01',true),{isolationLevel:'RepeatableRead'});
+ const holdRead=()=>database.$transaction(tx=>periodAdmin.readIllnessPeriodBillingHold(tx,'hold-period',Date.now()),{isolationLevel:'RepeatableRead'});
+ // 기간 표가 생겼지만 보류가 없으면 지문·행이 그대로다(표가 없던 때와 같은 지문인지는 보류 0건 = 키 없음으로 보장)
+ let jan=await holdMonthView();assert.ok(!jan.rows.some(r=>r.hold));
+ jan=(await mutateWorkbench(database,cmd('SAVE',jan,['s6:h']),'admin',true)).view;jan=(await mutateWorkbench(database,cmd('CONFIRM',jan,['s6:h']),'admin',true)).view;
+ const firstIssue=await mutateWorkbench(database,cmd('ISSUE',jan,['s6:h']),'admin',true);const heldPaymentId=firstIssue.operationResult.paymentIds[0];assert.ok(heldPaymentId);
+ const beforeHoldVersion=(await holdMonthView()).sourceVersion;
+ await pool.query(`INSERT INTO "RegularAbsencePeriod"(id,"studentId",reason,"startDate",status,"carryState","carryApprovedAt","carryApprovedByUserId","carrySettlement") VALUES('hold-period','s6','ILLNESS_INJURY','2026-12-20','ACTIVE','APPROVED',now(),'admin','{"approval":{"revokedCreditIds":[],"createdReviewAbsenceIds":["kept"]}}'::jsonb)`);
+ jan=await holdMonthView();assert.notEqual(jan.sourceVersion,beforeHoldVersion);
+ // 이미 발행된 행은 «발행됨» 그대로(보류 글자를 붙이지 않는다) — 보류는 새로 발행될 행만 막는다
+ assert.equal(jan.rows.find(r=>r.id==='s6:h').status,'ISSUED');assert.ok(!jan.rows.find(r=>r.id==='s6:h').hold);
+ let holdView=await holdRead();assert.equal(holdView.holdActive,true);assert.deepEqual(holdView.bills.map(b=>[b.paymentId,b.month,b.className,b.amount,b.skip]),[[heldPaymentId,1,'합성 보류반',100000,null]]);
+ checks.push('보류 미리보기: 기간 시작 달 이후의 발행된 미납 청구 1건(실제 SQL — 랠리즈 사본 제외·현장 결제·결제 거래·이월 사용·휴원 정산 조건 포함)');
+ // 보류 판정 조각 자체를 실제로 돌린다 — 학부모 결제 화면(학생 단위)·학생 상세(기간 단위)·신청함 상태식이 같은 조각을 쓴다
+ const periodRules=await loadTsModule('src/lib/regular/illnessPeriodRules.ts');
+ assert.deepEqual((await pool.query(`SELECT s.id FROM "Student" s WHERE ${periodRules.illnessBillingHoldSql('s')} ORDER BY s.id`)).rows.map(r=>r.id),['s6']);
+ assert.equal((await pool.query(`SELECT ${periodRules.illnessHoldPeriodSql('p')} AS hold FROM "RegularAbsencePeriod" p WHERE p.id='hold-period'`)).rows[0].hold,true);
+ assert.equal((await pool.query(`SELECT CASE WHEN ${periodRules.illnessHoldPeriodSql('x')} THEN '${periodRules.PERIOD_HOLD_INBOX_STATUS}' WHEN x."carryState" <> 'NONE' THEN x."carryState" ELSE 'PENDING' END AS raw FROM "RegularAbsencePeriod" x WHERE x.id='hold-period'`)).rows[0].raw,'APPROVED_HOLD');
+ assert.equal(await database.$transaction(tx=>periodAdmin.readStudentName(tx,'s6'),{isolationLevel:'RepeatableRead'}),'합성 부상 원생');
+ checks.push('보류 판정 조각(학생 단위·기간 단위·신청함 상태식)과 아이 이름 조회 실제 실행');
+ // 학부모가 방금 결제창을 열었다 → 건너뛰고, 그 청구를 넣어 요청하면 실행하지 않는다
+ await pool.query(`INSERT INTO "PaymentTransaction"(id,"paymentId",provider,status,"updatedAt") VALUES('hold-tx',$1,'TOSS','READY',now())`,[heldPaymentId]);
+ holdView=await holdRead();assert.equal(holdView.bills[0].skip,'CHECKOUT');
+ await assert.rejects(periodAdmin.holdIssuedBillsForPeriod(database,{periodId:'hold-period',expectedPaymentIds:[heldPaymentId]},'admin'),/대상 청구가 바뀌었습니다/);
+ assert.equal((await pool.query('SELECT status FROM "Payment" WHERE id=$1',[heldPaymentId])).rows[0].status,'PENDING');
+ // 현장 결제 요청 중 / 이월을 쓴 청구도 건너뛴다(실제 SQL)
+ await pool.query(`DELETE FROM "PaymentTransaction" WHERE id='hold-tx';INSERT INTO "PosChargeRequest" VALUES('hold-pos','${heldPaymentId}','SENT')`);assert.equal((await holdRead()).bills[0].skip,'POS');
+ await pool.query(`DELETE FROM "PosChargeRequest" WHERE id='hold-pos'`);
+ await pool.query(`INSERT INTO "RegularAbsence"(id,"studentId","classId",date,reason,status) VALUES('hold-abs','s6','h','2026-12-26','ILLNESS_INJURY','CONFIRMED');INSERT INTO "BillingCarryCredit"(id,"studentId","absenceId",numerator,denominator,"availableMonth",basis,"actorUserId") VALUES('hold-credit','s6','hold-abs',1,1,'2027-03','{}','fixture')`);
+ await pool.query(`INSERT INTO "BillingCarryUsage"(id,"studentId",month,"draftId",amount,"paymentId","actorUserId","sourceCreditIds",basis) VALUES('hold-usage','s6','2027-01','s6:h',1,$1,'fixture',ARRAY['hold-credit'],'{}')`,[heldPaymentId]);
+ assert.equal((await holdRead()).bills[0].skip,'CARRY_USED');
+ await pool.query(`DELETE FROM "BillingCarryUsage" WHERE id='hold-usage';DELETE FROM "BillingCarryCredit" WHERE id='hold-credit';DELETE FROM "RegularAbsence" WHERE id='hold-abs'`);
+ checks.push('결제 진행 중·현장 결제 요청 중·이월을 쓴 청구는 건너뜀(요청해도 실행 안 함)');
+ const heldResult=await periodAdmin.holdIssuedBillsForPeriod(database,{periodId:'hold-period',expectedPaymentIds:[heldPaymentId]},'admin');
+ assert.deepEqual(heldResult.held.map(b=>[b.paymentId,b.amount,b.draftId]),[[heldPaymentId,100000,'s6:h']]);
+ const heldRow=(await pool.query('SELECT p.status,i.status AS "invoiceStatus",i."canceledAt" IS NOT NULL AS canceled FROM "Payment" p JOIN "PaymentInvoice" i ON i."paymentId"=p.id WHERE p.id=$1',[heldPaymentId])).rows[0];
+ assert.deepEqual([heldRow.status,heldRow.invoiceStatus,heldRow.canceled],['CANCELED','CANCELED',true]);
+ const heldDraft=(await pool.query(`SELECT status,"paymentId",version,payload FROM "BillingWorkbenchDraft" WHERE id='s6:h' AND month='2027-01'`)).rows[0];
+ assert.deepEqual([heldDraft.status,heldDraft.paymentId,heldDraft.payload.baseAmount],['DRAFT',null,100000]);
+ const heldRevision=(await pool.query(`SELECT action,version,payload FROM "BillingWorkbenchRevision" WHERE "draftId"='s6:h' AND month='2027-01' ORDER BY version DESC LIMIT 1`)).rows[0];
+ assert.deepEqual([heldRevision.action,heldRevision.version,heldRevision.payload.heldPaymentId],['HOLD',heldDraft.version,heldPaymentId]);
+ assert.equal((await pool.query(`SELECT count(*)::int AS n FROM "PaymentAuditLog" WHERE "paymentId"=$1 AND action='ILLNESS_PERIOD_BILL_HELD'`,[heldPaymentId])).rows[0].n,1);
+ const settlement=(await pool.query(`SELECT "carrySettlement" FROM "RegularAbsencePeriod" WHERE id='hold-period'`)).rows[0].carrySettlement;
+ assert.deepEqual(settlement.approval.createdReviewAbsenceIds,['kept']);assert.deepEqual(settlement.held.map(b=>b.paymentId),[heldPaymentId]);
+ checks.push('보류로 돌리기: 청구·청구서 취소, 초안 DRAFT·paymentId NULL·버전+1, HOLD 이력, 감사 기록, carrySettlement 병합 저장(approval 유지)');
+ // 청구 준비: 그 행이 보류로 나오고 확정·발행이 거절된다. 다른 학생 행에는 보류 칸이 없다
+ jan=await holdMonthView();const holdRow=jan.rows.find(r=>r.id==='s6:h');
+ assert.equal(holdRow.hold,true);assert.equal(holdRow.holdPeriodId,'hold-period');assert.equal(holdRow.blockingReasons[0],'부상 결석 중 · 발행 보류');assert.equal(holdRow.totalAmount,100000);
+ assert.ok(jan.rows.filter(r=>r.studentId!=='s6').every(r=>!('hold' in r)));
+ await assert.rejects(mutateWorkbench(database,cmd('CONFIRM',jan,['s6:h']),'admin',true),/부상 결석 중 · 발행 보류/);
+ jan=(await mutateWorkbench(database,cmd('SAVE',jan,['s6:h']),'admin',true)).view;
+ await assert.rejects(mutateWorkbench(database,cmd('CONFIRM',jan,['s6:h']),'admin',true),/부상 결석 중 · 발행 보류/);
+ assert.deepEqual((await holdRead()).bills,[]);assert.equal((await holdRead()).heldBills.length,1);
+ checks.push('보류 중인 학생 행은 확정·발행 거절(저장 뒤에도), 다른 학생 행은 그대로');
+ // 승인 취소 → 보류가 풀려 «확인 필요»로 다시 나온다 → 다시 저장·확정·발행 → 살아 있는 청구는 정확히 1건(취소된 청구는 되살리지 않는다)
+ // 승인 때 거둔 보강권 2장: 12/26 은 결석 기록, 1/2 는 그날 출석으로 기록됐다 → 승인 취소는 12/26 것만 돌려준다(실제 SQL)
+ await pool.query(`ALTER TABLE "MakeupCredit" ADD COLUMN "expiresAt" timestamptz, ADD COLUMN note text;
+ INSERT INTO "RegularAbsence"(id,"studentId","classId",date,reason,status,"periodId") VALUES('hold-day-1','s6','h','2026-12-26','ILLNESS_INJURY','CONFIRMED','hold-period'),('hold-day-2','s6','h','2027-01-02','ILLNESS_INJURY','CONFIRMED','hold-period');
+ INSERT INTO "MakeupCredit"(id,"studentId","sourceKey",status,"updatedAt","expiresAt") VALUES('hold-mc-1','s6','REGULAR:h:2026-12-26','REVOKED',NOW(),NOW()+interval '30 days'),('hold-mc-2','s6','REGULAR:h:2027-01-02','REVOKED',NOW(),NOW()+interval '30 days');
+ INSERT INTO "Session" VALUES('hold-session','h','2027-01-02');INSERT INTO "Attendance" VALUES('hold-attendance','s6','hold-session','PRESENT',NOW());
+ UPDATE "RegularAbsencePeriod" SET "carrySettlement"="carrySettlement" || '{"approval":{"revokedCreditIds":["hold-mc-1","hold-mc-2"],"createdReviewAbsenceIds":[]}}'::jsonb WHERE id='hold-period'`);
+ const approvalCancelled=await periodAdmin.cancelIllnessPeriodApproval(database,{periodId:'hold-period'},'admin');assert.equal(approvalCancelled.heldBills,1);
+ assert.equal(approvalCancelled.creditsRestored,1);
+ assert.deepEqual((await pool.query(`SELECT id,status FROM "MakeupCredit" WHERE id LIKE 'hold-mc-%' ORDER BY id`)).rows.map(r=>[r.id,r.status]),[['hold-mc-1','AVAILABLE'],['hold-mc-2','REVOKED']]);
+ checks.push('승인 취소: 그날 출석으로 기록된 날의 보강권은 돌려주지 않는다(결석일 것만 되돌림)');
+ jan=await holdMonthView();const reopened=jan.rows.find(r=>r.id==='s6:h');assert.ok(!reopened.hold);assert.deepEqual(reopened.blockingReasons,[]);assert.equal(reopened.status,'REVIEW');
+ jan=(await mutateWorkbench(database,cmd('SAVE',jan,['s6:h']),'admin',true)).view;jan=(await mutateWorkbench(database,cmd('CONFIRM',jan,['s6:h']),'admin',true)).view;
+ const reissue=cmd('ISSUE',jan,['s6:h']),reissued=await mutateWorkbench(database,reissue,'admin',true);await mutateWorkbench(database,reissue,'admin',true);
+ const s6Payments=(await pool.query(`SELECT id,status,amount FROM "Payment" WHERE "studentId"='s6' AND year=2027 AND month=1 ORDER BY status`)).rows;
+ assert.deepEqual(s6Payments.map(p=>p.status),['CANCELED','PENDING']);assert.equal(s6Payments.find(p=>p.status==='PENDING').id,reissued.operationResult.paymentIds[0]);assert.notEqual(reissued.operationResult.paymentIds[0],heldPaymentId);
+ assert.equal((await pool.query(`SELECT "paymentId" FROM "BillingWorkbenchDraft" WHERE id='s6:h' AND month='2027-01'`)).rows[0].paymentId,reissued.operationResult.paymentIds[0]);
+ checks.push('승인 취소 뒤 다시 발행 가능 — 살아 있는 청구 정확히 1건(새 청구 번호), 취소된 청구는 그대로');
  return {checks};
 }

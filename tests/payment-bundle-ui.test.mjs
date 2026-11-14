@@ -164,6 +164,8 @@ test("④ 청구 탭: 대표 보호자 미납이 있으면 «한 번에 결제»
     // 2026-11-14 c11: 납부 완료 항목의 «환불 문의»(서버 동작·문구 거르기) — 이 테스트는 결제 진입만 본다
     "@/app/actions/parent-inquiry": { sendRefundInquiry: async () => ({ ok: false, error: "" }) },
     "@/components/parent/customerMessage": { customerMessage: (_value, fallback) => fallback },
+    // 2026-11-15 부상 결석 «청구 보류» 안내 글자(순수 규칙 모듈 — 진짜 파일로)
+    "@/lib/regular/illnessPeriodRules": load("src/lib/regular/illnessPeriodRules.ts", { "@/lib/datetime/kst": kst }),
   }).default;
   const row = (id, extra = {}) => ({ paymentId: id, studentId: "s", studentName: "합성", description: "11월 수강료", amount: 100000, status: "PENDING", dueDate: null, paidDate: null, invoiceNo: null, invoiceId: `i-${id}`, canCheckout: true, receiptUrl: null, virtualAccount: null, pending: [], resolved: [], ...extra });
   const va = { bankName: "합성은행", accountNumber: "777", customerName: null, amount: 250000, dueDate: "2026-11-20", dueLabel: "", expired: false };
@@ -176,6 +178,19 @@ test("④ 청구 탭: 대표 보호자 미납이 있으면 «한 번에 결제»
   assert.match(html, /href="\/payments\/i-a"/, "기존 단건 결제 버튼도 그대로");
   const family = renderToStaticMarkup(React.createElement(Client, { payReady: true, rows: [row("a", { canCheckout: false })] }));
   assert.doesNotMatch(family, /한 번에 결제/, "연결 가족은 진입 없음");
+
+  // 2026-11-15 부상 결석 «청구 보류»: 보류 중인 아이는 상태 한 줄로 보인다(«학원에 문의»가 아니다)
+  const HOLD_TEXT = "윤수영 · 부상 결석 중이라 수강료 청구를 잠시 멈췄어요. 복귀하면 빠진 수업을 뺀 금액으로 다시 안내해요.";
+  // 청구가 하나도 없을 때: 보류 안내만 보이고 «청구서가 없어요»는 겹치지 않는다
+  const heldOnly = renderToStaticMarkup(React.createElement(Client, { payReady: true, rows: [], holds: [{ studentId: "s", studentName: "윤수영" }] }));
+  assert.ok(heldOnly.includes(HOLD_TEXT));
+  assert.doesNotMatch(heldOnly, /청구서가 없어요|학원에 문의/);
+  // 다른 청구(예: 납부 완료)가 있어도 안내 한 줄은 목록 위에 보인다
+  const heldWithRows = renderToStaticMarkup(React.createElement(Client, { payReady: true, rows: [row("c", { status: "PAID" })], holds: [{ studentId: "s", studentName: "윤수영" }] }));
+  assert.ok(heldWithRows.includes(HOLD_TEXT));
+  // 보류가 없으면 예전 화면 그대로
+  assert.doesNotMatch(html, /부상 결석 중/);
+  assert.match(renderToStaticMarkup(React.createElement(Client, { payReady: true, rows: [] })), /청구서가 없어요/);
 });
 
 test("④ 홈 합계는 청구 탭과 같은 목록, 단건 결제 화면은 KST 날짜 + 묶음 계좌 안내", () => {

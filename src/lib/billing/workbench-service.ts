@@ -7,6 +7,8 @@ import { WorkbenchError, carryPool, allocateCarry, filterWorkbenchDates, validat
   type WorkbenchAmounts, type WorkbenchView, type WorkbenchRow, type WorkbenchOperation, type WorkbenchCalendarSnapshot } from "./workbench";
 // 주N회 요금·셔틀비·형제할인 «제안값» 규칙은 순수 모듈 한 곳에서만 정한다.
 import { planWeeklyTuition, planShuttleFee, siblingDiscountStudents, siblingDiscountAmount, REGULAR_SIBLING_DISCOUNT_PERCENT, type ShuttlePlan } from "./workbench-pricing";
+// 부상·질병 기간 결석의 «청구 발행 보류» 판정 조각·글자(순수 모듈 한 곳)
+import { BILLING_HOLD_LABEL, illnessHoldPeriodSql } from "@/lib/regular/illnessPeriodRules";
 
 export type WorkbenchTx = {
   $queryRawUnsafe<T>(sql: string, ...values: unknown[]): Promise<T>;
@@ -40,7 +42,7 @@ export async function readWorkbenchSchedule(tx:WorkbenchTx,month:string,classId:
 /** 동일 거래의 원본만 읽는다. 외부 캘린더/서비스와 연결하거나 초기 테이블을 생성하지 않는다. */
 // 읽기에 필요한 표가 있는지 한 번에 확인한다(2026-11-14 속도 개선 — 예전엔 표마다 따로 12번 왕복).
 // 판정 기준은 예전 표별 확인과 같은 to_regclass 다.
-const READ_TABLES = ["MonthlyEnrollmentRegister","AnnualEvent","BillingWorkbenchDraft","BillingWorkbenchOperation","BillingCarryCredit","BillingCarryUsage","BillingAbsenceResolution","BillingWorkbenchRevision","RegularAbsence","MakeupCredit","MakeupSession","Attendance","SpecialProgramCredit","RegularShuttleStop"] as const;
+const READ_TABLES = ["MonthlyEnrollmentRegister","AnnualEvent","BillingWorkbenchDraft","BillingWorkbenchOperation","BillingCarryCredit","BillingCarryUsage","BillingAbsenceResolution","BillingWorkbenchRevision","RegularAbsence","MakeupCredit","MakeupSession","Attendance","SpecialProgramCredit","RegularShuttleStop","RegularAbsencePeriod"] as const;
 async function existingTables(tx: WorkbenchTx): Promise<Set<string>> {
   const rows = await tx.$queryRawUnsafe<Array<{ name: string; found: boolean }>>(
     `SELECT name, to_regclass('public."' || name || '"') IS NOT NULL AS found FROM unnest($1::text[]) AS name`, [...READ_TABLES]);
@@ -95,6 +97,16 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
   // 이름만 있고 학생 연결이 없는 행은 동명이인 오청구 위험이 있어 자동 제안에 쓰지 않고 안내만 한다.
   // 무료 거점(1호점 앞 버스정류장) 판정에 쓰도록 방향·정류장 이름도 함께 읽는다.
   const shuttleStops = has("RegularShuttleStop") ? take(await tx.$queryRawUnsafe<Array<{studentId:string|null;studentName:string;direction:string;stopName:string}>>(`SELECT DISTINCT "studentId","studentName",direction,"stopName" FROM "RegularShuttleStop" WHERE "serviceMonth"=$1 AND direction IN ('BOARD','ALIGHT') AND "studentName" IS NOT NULL AND btrim("studentName")<>'' ORDER BY "studentName","studentId",direction,"stopName" LIMIT ${limit}`,month)) : [];
+  // 부상·질병 기간 결석 «발행 보류»(2026-11-15 원장 결정): 승인됐고 금액이 아직 확정되지 않은 기간이 있는 학생은
+  // 그 기간이 시작한 달부터의 청구를 발행하지 않는다. 보류는 표시 칸이 아니라 기간 상태에서 계산한다(판정 조각 한 곳).
+  // 기간 정산 칸이 아직 없는 DB 면 읽지 않는다(없는 칸을 읽으면 조회 전체가 실패한다).
+  const holdReady = has("RegularAbsencePeriod") && Number((await tx.$queryRawUnsafe<Array<{ n: number }>>(
+    `SELECT COUNT(*)::int AS n FROM information_schema.columns WHERE table_schema='public' AND table_name='RegularAbsencePeriod' AND column_name='carryState'`))[0]?.n ?? 0) === 1;
+  const illnessHolds = holdReady ? take(await tx.$queryRawUnsafe<Array<{ studentId: string; periodId: string; startMonth: string }>>(
+    `SELECT hp."studentId", hp.id AS "periodId", to_char(hp."startDate",'YYYY-MM') AS "startMonth" FROM "RegularAbsencePeriod" hp
+      WHERE ${illnessHoldPeriodSql("hp")} AND to_char(hp."startDate",'YYYY-MM') <= $1 ORDER BY hp."studentId", hp."startDate", hp.id LIMIT ${limit}`, month)) : [];
+  const holdPeriodOf = new Map<string, string>();
+  for (const held of illnessHolds) if (!holdPeriodOf.has(held.studentId)) holdPeriodOf.set(held.studentId, held.periodId);
   const shuttleRiders = new Set(shuttleStops.map(r=>r.studentId).filter((v):v is string=>Boolean(v)));
   const unlinkedShuttleNames = [...new Set(shuttleStops.filter(r=>!r.studentId).map(r=>r.studentName))];
   const calendar = await calendarInput;
@@ -147,7 +159,9 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
   const completedCurrentDrafts=drafts.filter(d=>["ISSUED","ZERO"].includes(d.status));
   const calendarSource=calendar?.kind??"DB";
   const officialCalendarFingerprint=calendar?hash({kind:calendar.kind,events:calendar.events,fingerprint:calendar.fingerprint}):null;
-  const sourceVersion = hash({ month, enrollments, payments, invoices, registers, events, officialCalendarFingerprint, calendarSource, credits, usages, absences, bookings, originDrafts, completedCurrentDrafts, originPayments, originInvoices, makeupSource, attendance, seasonalCredits, shuttleStops });
+  // 보류 목록도 원본이다 — 화면을 연 뒤 승인(보류)이 끼면 지문이 달라져 확정·발행이 거절된다.
+  // 보류가 한 건도 없으면 키를 넣지 않는다: 보류가 없는 달의 지문이 예전과 같아야 이미 저장·확정해 둔 초안이 그대로 유효하다.
+  const sourceVersion = hash({ month, enrollments, payments, invoices, registers, events, officialCalendarFingerprint, calendarSource, credits, usages, absences, bookings, originDrafts, completedCurrentDrafts, originPayments, originInvoices, makeupSource, attendance, seasonalCredits, shuttleStops, ...(illnessHolds.length ? { illnessHolds } : {}) });
   const pool = (studentId:string)=>carryPool(credits.filter(c=>c.studentId===studentId),usages.filter(u=>u.studentId===studentId),month);
   const available = (studentId: string) => pool(studentId).available;
   const assignedShuttle = new Set<string>(), assignedCarry = new Map<string, number>();
@@ -283,6 +297,10 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
       }
     }
     if(participates) assignedCarry.set(e.studentId, (assignedCarry.get(e.studentId) ?? 0) + amounts.carryAmount);
+    // 발행 보류: 이번에 새로 발행될 수 있는 행(제외·이미 발행·기존 청구 있음이 아닌 행)만 막는다.
+    // 차단 사유 맨 앞에 넣어, 확정·발행을 요청하면 이 글자로 거절된다(mutateWorkbench 가 첫 차단 사유를 돌려준다).
+    const holdPeriodId = participates ? holdPeriodOf.get(e.studentId) : undefined;
+    if (holdPeriodId) blockingReasons.unshift(BILLING_HOLD_LABEL);
     if(credits.some(c=>c.studentId===e.studentId && c.valid===false)) blockingReasons.push("원결석 취소·출석 정정된 이월이 있습니다. 정산을 확인해 주세요.");
     if(usages.some(u=>u.studentId===e.studentId && (["CANCELED","CANCELLED","REFUNDED"].includes(u.paymentStatus??"") || ["CANCELED","CANCELLED","REFUNDED"].includes(u.invoiceStatus??"") || (u.paymentId && (!u.paymentStatus || !u.invoiceStatus))))) blockingReasons.push("이월 사용 청구의 취소·환불 내역을 재정산해야 합니다.");
     if(seasonalCredits.some(c=>c.studentId===e.studentId)) blockingReasons.push("기존 특강 이월액은 원결석·사용액 대조 후 옮겨야 합니다. 중복 차감을 막기 위해 보류합니다.");
@@ -299,7 +317,9 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
       status: completed || existing.length ? "ISSUED" : excluded ? "EXCLUDED" : reviewReasons.length ? "REVIEW" : "READY",
       totalAmount: workbenchTotal(amounts), reviewReasons, basis, version: saved?.version ?? 0, draftStatus: saved?.status ?? null,
       paymentId: saved?.paymentId ?? existing[0]?.id ?? null, periodStart,
-      periodEnd, scheduledDates, monthDates: allScheduledDates, carryAvailable: balance, remainingCarry: Math.max(0, balance - (assignedCarry.get(e.studentId) ?? 0)), dueDate: monthlyBillingDueDate(year,monthNumber), blockingReasons };
+      periodEnd, scheduledDates, monthDates: allScheduledDates, carryAvailable: balance, remainingCarry: Math.max(0, balance - (assignedCarry.get(e.studentId) ?? 0)), dueDate: monthlyBillingDueDate(year,monthNumber), blockingReasons,
+      // 보류 행에만 붙인다 — 보류가 아닌 행의 모양은 예전과 완전히 같다
+      ...(holdPeriodId ? { hold: true as const, holdPeriodId } : {}) };
   });
   return { month, sourceVersion, storageReady, writesEnabled: writesEnabled && storageReady, rows,carrySettlementReady:true,calendarSource,
     notices:[...seasonalCredits.length?[`기존 특강 이월 ${seasonalCredits.length}건은 별도 대조·이관이 필요합니다. 자동 중복 적립하지 않습니다.`]:[],

@@ -38,7 +38,9 @@ import { countConsultAction } from "@/lib/requests/consult-inbox";
 import { illnessReviewReady } from "@/lib/regular/illness-carry-tx";
 import { evidenceScopeSql } from "@/lib/regular/illnessCarryRules";
 import { periodCarryColumnsReady } from "@/lib/regular/absence-period-service";
-import { boundToIllnessPeriodSql, illnessPeriodAbsenceSql, illnessPeriodVisibleSql, periodInboxSummary, periodRangeText } from "@/lib/regular/illnessPeriodRules";
+import {
+  PERIOD_HOLD_INBOX_STATUS, boundToIllnessPeriodSql, illnessHoldPeriodSql, illnessPeriodAbsenceSql, illnessPeriodVisibleSql, periodInboxSummary, periodRangeText,
+} from "@/lib/regular/illnessPeriodRules";
 // 문의에 이어 쓴 글(학부모 추가 글·학원 답) — 상세 줄에 붙인다(2026-11-14 c3)
 import { inquiryFollowUpFacts } from "@/lib/requests/inquiry-thread";
 
@@ -318,7 +320,9 @@ const ADAPTERS: Adapter[] = [
     kind: "ILLNESS_PERIOD",
     from: `"RegularAbsencePeriod" x ${studentJoin("s", `x."studentId"`)}`,
     // 기간의 정산 상태 그대로. 아직 결정 전(NONE)이면 «결정 전인 결석이 남았는가»로 나눈다 — 전부 하루씩 처리했으면 고를 것이 없다
-    rawExpr: `CASE WHEN x."carryState" <> 'NONE' THEN x."carryState"
+    // 승인됐고 청구 발행 보류 중이면(판정 조각 illnessHoldPeriodSql 한 곳) «인정 · 발행 보류 중»
+    rawExpr: `CASE WHEN ${illnessHoldPeriodSql("x")} THEN '${PERIOD_HOLD_INBOX_STATUS}'
+                   WHEN x."carryState" <> 'NONE' THEN x."carryState"
                    WHEN EXISTS (SELECT 1 FROM "RegularAbsence" pa LEFT JOIN "RegularAbsenceCarryReview" pr ON pr."absenceId" = pa.id
                                  WHERE ${illnessPeriodAbsenceSql("x", "pa")} AND COALESCE(pr.status, 'PENDING') = 'PENDING') THEN 'PENDING'
                    ELSE 'DAY_DONE' END`,

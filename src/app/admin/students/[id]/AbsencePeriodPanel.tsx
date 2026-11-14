@@ -13,6 +13,7 @@ import { addDaysKst, todayKst } from "@/lib/datetime/kst";
 import { REASON_LABEL, VALID_REASONS } from "@/lib/regular/regularAbsenceRules";
 import { DEFAULT_PERIOD_REASON, shortDateLabel } from "@/lib/regular/absence-period-plan";
 import type { AbsencePeriodView } from "@/lib/regular/absence-period-service";
+import { BILLING_HOLD_STUDENT_LABEL, ILLNESS_PERIOD_INBOX_HREF } from "@/lib/regular/illnessPeriodRules";
 import {
     cancelAbsencePeriod,
     createAbsencePeriod,
@@ -155,6 +156,16 @@ export default function AbsencePeriodPanel({
                                     <span className={`shrink-0 rounded px-2 py-0.5 text-xs font-medium ${chip.className}`}>{chip.label}</span>
                                     <span className="inline-flex shrink-0 text-[var(--color-academy-muted)]"><UiIcon name={open ? "expand_less" : "expand_more"} /></span>
                                 </button>
+
+                                {/* 부상 결석이 승인돼 금액이 정해질 때까지 청구 발행을 보류 중 — 접힌 상태에서도 보이는 한 줄(글자로) */}
+                                {p.billingHold && (
+                                    <p className="flex flex-wrap items-center gap-x-1 text-xs font-medium text-[var(--color-academy-warning)]">
+                                        <span>{BILLING_HOLD_STUDENT_LABEL}</span>
+                                        <span className="font-normal text-[var(--color-academy-muted)]">· 복귀 정산 뒤 다시 발행합니다.</span>
+                                        {/* 누르는 곳은 높이 44px */}
+                                        <Link href={`${ILLNESS_PERIOD_INBOX_HREF}&open=${encodeURIComponent(p.id)}`} className="inline-flex min-h-11 items-center font-medium text-[var(--color-academy-primary)] underline">신청함에서 보기</Link>
+                                    </p>
+                                )}
 
                                 {open && (
                                     <div className="space-y-2 pb-3">

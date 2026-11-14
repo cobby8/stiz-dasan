@@ -11,6 +11,8 @@ import { MAX_BUNDLE_ITEMS } from "@/lib/payments/checkoutBundle";
 import { todayKst } from "@/lib/datetime/kst";
 import { txCoversPaymentSql } from "@/lib/payments/bundleLedger";
 import { parentVirtualAccountView, type PublicVirtualAccountView } from "@/lib/payments/virtualAccount";
+import { periodCarryColumnsReady } from "@/lib/regular/absence-period-service";
+import { illnessBillingHoldSql } from "@/lib/regular/illnessPeriodRules";
 
 // ── 학부모의 청구서 요청(입금 확인·영수증) ──────────────────────────────────
 //
@@ -73,6 +75,31 @@ const PARENT_VA_LATERAL = `LEFT JOIN LATERAL (
           ORDER BY t."createdAt" DESC
           LIMIT 1
        ) va ON true`;
+
+/**
+ * 부상 결석이 승인돼 수강료 청구를 잠시 멈춘 자녀(2026-11-15 원장 결정) — 결제 화면이 «학원에 문의» 대신 상태를 그대로 보인다.
+ * 판정은 illnessBillingHoldSql 한 곳(청구 준비와 같은 조건). 본인 자녀만(childAccessSql).
+ * 기간 정산 칸이 없거나 조회가 실패하면 빈 목록 — 결제 화면 자체는 떠야 한다.
+ */
+export async function getParentBillingHolds(parentUserId: string): Promise<Array<{ studentId: string; studentName: string }>> {
+  try {
+    const ready = await periodCarryColumnsReady(prisma);
+    if (!ready) return [];
+    const rows = await prisma.$queryRawUnsafe<Array<{ studentId: string; studentName: string }>>(
+      `SELECT s.id AS "studentId", s.name AS "studentName"
+         FROM "Student" s
+        WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")}
+          AND ${illnessBillingHoldSql("s", ready)}
+        ORDER BY s.name, s.id
+        LIMIT 20`,
+      parentUserId,
+    );
+    return rows.map((row) => ({ studentId: String(row.studentId), studentName: String(row.studentName ?? "") }));
+  } catch (error) {
+    console.error("[parent-billing-hold]", error instanceof Error ? error.name : "");
+    return [];
+  }
+}
 
 export async function getParentPaymentRequests(parentUserId: string): Promise<ParentPaymentRow[]> {
   const rows = await prisma.$queryRawUnsafe<any[]>(

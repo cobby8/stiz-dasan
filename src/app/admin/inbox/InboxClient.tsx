@@ -89,6 +89,11 @@ type Props = {
    * 기본값 true(은퇴): «랠리즈 반영 확인» 일괄 버튼·고르기 칸을 그리지 않는다. false 는 스위치 "0"(옛 방식)일 때만.
    */
   rallyzRetired?: boolean;
+  /**
+   * «?kind=종류&open=id» — 처음부터 그 줄의 상세를 열어 둔다(청구 준비의 «발행 보류» 행에서 기간 상세로 건너올 때).
+   * 목록에 그 줄이 없으면 아무것도 열지 않는다.
+   */
+  initialOpenId?: string | null;
 };
 
 type PanelAction = {
@@ -290,11 +295,16 @@ function GroupHead({ label, count }: { label: string; count: number }) {
   );
 }
 
-export default function InboxClient({ tab, sub, kind, showDone, from, to, counts, data, canDecideStaffRoles = false, rallyzRetired = true }: Props) {
+export default function InboxClient({ tab, sub, kind, showDone, from, to, counts, data, canDecideStaffRoles = false, initialOpenId = null, rallyzRetired = true }: Props) {
   const router = useRouter();
   const pathname = usePathname() || "/admin/inbox";
   const [query, setQuery] = useState("");
-  const [openSelection, setOpenSelection] = useState<InboxRow | null>(null);
+  // 주소로 지정한 줄(종류 + id)이 받은 목록에 있으면 처음부터 연다
+  const [openSelection, setOpenSelection] = useState<InboxRow | null>(() => (
+    initialOpenId && kind && data.type === "ROWS"
+      ? [...data.open, ...data.done].find((row) => row.kind === kind && row.id === initialOpenId) ?? null
+      : null
+  ));
   const [filterOpen, setFilterOpen] = useState(false);
   const [note, setNote] = useState("");
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);

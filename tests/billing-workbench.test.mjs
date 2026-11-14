@@ -10,8 +10,10 @@ const registerUrl=url(await readFile("src/lib/billing/monthly-register.ts","utf8
 const dueUrl=url(await readFile("src/lib/billing-due-date.ts","utf8"));
 const visibilityUrl=url(await readFile("src/lib/studentVisibility.ts","utf8"));
 const pricingUrl=url(await readFile("src/lib/billing/workbench-pricing.ts","utf8"));
+// 부상·질병 기간 결석 «발행 보류» 판정 조각(순수 규칙 모듈) — 청구 준비 서비스가 가져다 쓴다
+const periodRulesUrl=url((await readFile("src/lib/regular/illnessPeriodRules.ts","utf8")).replace('from "@/lib/datetime/kst"',`from "${kstUrl}"`));
 const serviceSource=await readFile("src/lib/billing/workbench-service.ts","utf8");
-const serviceUrl=url(serviceSource.replace('import { getMonthlyClassDates } from "@/lib/enrollment/monthlyClassDates";','const getMonthlyClassDates=(events,month)=>events.some(e=>e.title==="NO_SCHEDULE")?[]:events.some(e=>e.title==="SHORT_MONTH")&&month==="2026-11"?["2026-11-07","2026-11-14","2026-11-21"]:(month==="2026-10"?["2026-10-03","2026-10-10","2026-10-17","2026-10-24"]:["2026-11-07","2026-11-14","2026-11-21","2026-11-28"]).filter(d=>!(d==="2026-10-10"&&events.some(e=>e.title==="CLOSE_OCT_10")));').replace('from "@/lib/billing-due-date"',`from "${dueUrl}"`).replace('from "@/lib/studentVisibility"',`from "${visibilityUrl}"`).replace('from "./monthly-register"',`from "${registerUrl}"`).replace('from "./workbench"',`from "${modelUrl}"`).replace('from "./workbench-pricing"',`from "${pricingUrl}"`));
+const serviceUrl=url(serviceSource.replace('import { getMonthlyClassDates } from "@/lib/enrollment/monthlyClassDates";','const getMonthlyClassDates=(events,month)=>events.some(e=>e.title==="NO_SCHEDULE")?[]:events.some(e=>e.title==="SHORT_MONTH")&&month==="2026-11"?["2026-11-07","2026-11-14","2026-11-21"]:(month==="2026-10"?["2026-10-03","2026-10-10","2026-10-17","2026-10-24"]:["2026-11-07","2026-11-14","2026-11-21","2026-11-28"]).filter(d=>!(d==="2026-10-10"&&events.some(e=>e.title==="CLOSE_OCT_10")));').replace('from "@/lib/billing-due-date"',`from "${dueUrl}"`).replace('from "@/lib/studentVisibility"',`from "${visibilityUrl}"`).replace('from "./monthly-register"',`from "${registerUrl}"`).replace('from "./workbench"',`from "${modelUrl}"`).replace('from "./workbench-pricing"',`from "${pricingUrl}"`).replace('from "@/lib/regular/illnessPeriodRules"',`from "${periodRulesUrl}"`));
 const {readWorkbench,mutateWorkbench}=await import(serviceUrl);
 const absenceSource=await readFile("src/lib/billing/workbench-absence.ts","utf8");
 const evidenceUrl=url(await readFile("src/lib/billing/carryEvidence.ts","utf8"));
@@ -48,6 +50,8 @@ function database({credit=0,secondClass=false}={}){
   if(sql.includes("to_regclass"))return [{found:"present"}];
   // 2026-11-15 부상·질병 기간 결석: 기간 정산 칸이 있는가 / 그 결석의 기간이 승인·정산됐는가(state.periodCarry: 칸 있음, state.periodDecided: 승인된 기간의 결석 id)
   if(sql.includes("information_schema.columns"))return [{n:state.periodCarry?1:0}];
+  // 2단계 발행 보류: 승인됐고 금액 미확정인 질병·부상 기간(state.holdPeriods) — 판정 조건 문구가 SQL 에 있을 때만, 그 달까지 시작한 기간만 답한다
+  if(sql.includes('FROM "RegularAbsencePeriod" hp')){assert.match(sql,/hp\.reason = 'ILLNESS_INJURY' AND hp\."carryState" = 'APPROVED' AND hp\.status IN \('ACTIVE', 'ENDED'\)/);assert.match(sql,/to_char\(hp\."startDate",'YYYY-MM'\) <= \$1/);return (state.holdPeriods??[]).filter(p=>p.reason==="ILLNESS_INJURY"&&p.carryState==="APPROVED"&&["ACTIVE","ENDED"].includes(p.status)&&p.startDate.slice(0,7)<=v[0]).sort((a,b)=>a.studentId.localeCompare(b.studentId)||a.startDate.localeCompare(b.startDate)||a.id.localeCompare(b.id)).map(p=>({studentId:p.studentId,periodId:p.id,startMonth:p.startDate.slice(0,7)}));}
   if(sql.includes('FROM "RegularAbsencePeriod" p JOIN "RegularAbsence" a ON a."periodId"=p.id')){assert.match(sql,/p\."carryState"<>'NONE'/);return (state.periodDecided??[]).includes(v[0])?[{found:1}]:[];}
   // 납부 Payment 근거(2026-11-15): 그 학생·그 반의 수강 개시일 / 그 반·그 달 납부완료 수강료 청구 / 그 청구에서 이미 줄인 금액
   if(sql.includes('FROM "Enrollment" e WHERE e."studentId"=$1 AND e."classId"=$2'))return state.enrollments.filter(e=>e.studentId===v[0]&&e.classId===v[1]).map(e=>({startsOn:e.startsOn??null}));
@@ -72,7 +76,8 @@ function database({credit=0,secondClass=false}={}){
   if(sql.includes('FROM "SpecialProgramCredit"'))return structuredClone(state.seasonalCredits);
   if(sql.includes('FROM "Class"'))return [{dayOfWeek:"Sat"}];
   if(sql.includes('FROM "BillingWorkbenchOperation"'))return structuredClone(state.operations.filter(o=>o.requestId===v[0]));
-  if(sql.includes('FROM "Student"'))return state.studentHidden?[]:[{id:"student-a"}];
+  // 발행 전 학생 행 잠금 — 요청한 학생 id 목록을 그대로 돌려준다(예전엔 student-a 한 명만 있어 고정값이었다)
+  if(sql.includes('FROM "Student"'))return state.studentHidden?[]:Array.isArray(v[0])?v[0].map(id=>({id})):[{id:"student-a"}];
   // 셔틀 명단(그 달 승차·하차 이용자). 기본은 비어 있음 → 셔틀비 제안 없음.
   if(sql.includes('FROM "RegularShuttleStop"'))return structuredClone((state.shuttleStops??[]).filter(r=>r.serviceMonth===v[0]));
   throw new Error(`unexpected read ${sql}`);
@@ -850,4 +855,111 @@ test("신청함 상세 연결부: 금액은 원장에게만(서버 응답에서 
  assert.match(screen,/\$\{head\} \$\{won\(evidence\.tuition\)\} ÷ \$\{evidence\.sessions\}회 = 1회 \$\{won\(evidence\.unit\)\}/);
  assert.match(screen,/if \(evidence\.tuition === null \|\| evidence\.unit === null\) return `\$\{head\} 수강료 ÷ \$\{evidence\.sessions\}회`;/);
  assert.match(screen,/\{detail\.evidence\.warnings\.join\(" · "\)\}/);
+});
+
+// ── 부상·질병 기간 결석 «청구 발행 보류»(2단계, 2026-11-15 원장 결정) ─────────────────────────────
+// 승인됐고 금액이 아직 확정되지 않은 기간이 있는 학생은 그 기간이 시작한 달부터 청구를 발행하지 않는다.
+const HOLD_LABEL="부상 결석 중 · 발행 보류";
+/** 학생 둘(student-a·student-b), 반 둘. student-b 에게 11/6 시작 부상 결석 기간(승인됨)이 있다 */
+function holdDatabase(period={}){
+ const db=database();
+ db.state.enrollments.push({...db.state.enrollments[0],studentId:"student-b",studentName:"합성 원생B",classId:"class-b",className:"합성 반B"});
+ db.state.periodCarry=true;
+ db.state.holdPeriods=[{id:"period-b",studentId:"student-b",reason:"ILLNESS_INJURY",carryState:"APPROVED",status:"ACTIVE",startDate:"2026-11-06",...period}];
+ return db;
+}
+const commandFor=(action,view,rowId,overrides={})=>({action,month:view.month,sourceVersion:view.sourceVersion,requestId:`request-${action}-${Math.random().toString(36).slice(2)}`,rows:view.rows.filter(r=>r.id===rowId).map(r=>({id:r.id,expectedVersion:r.version,...(action==="SAVE"?{...draft(),reason:"기간 및 금액 확인"}:{})})),...overrides});
+test("발행 보류: 보류 학생 행은 확정·발행이 거절되고, 다른 학생은 그대로 발행된다",async()=>{
+ const db=holdDatabase();let view=await readWorkbench(db.tx,"2026-11",true);
+ const held=view.rows.find(r=>r.studentId==="student-b"),other=view.rows.find(r=>r.studentId==="student-a");
+ assert.equal(held.hold,true);assert.equal(held.holdPeriodId,"period-b");assert.equal(held.blockingReasons[0],HOLD_LABEL);assert.equal(held.status,"REVIEW");
+ assert.ok(!("hold" in other)&&!("holdPeriodId" in other),"보류가 아닌 행에는 보류 칸이 아예 없다");assert.deepEqual(other.blockingReasons,[]);
+ // 보류 학생: 저장은 되지만(검토 메모) 확정·발행은 차단 사유 그대로 거절된다
+ ({view}=await mutateWorkbench(db,commandFor("SAVE",view,"student-b:class-b"),"admin",true));
+ await assert.rejects(()=>mutateWorkbench(db,commandFor("CONFIRM",view,"student-b:class-b"),"admin",true),new RegExp(HOLD_LABEL));
+ await assert.rejects(()=>mutateWorkbench(db,commandFor("ISSUE",view,"student-b:class-b"),"admin",true),new RegExp(HOLD_LABEL));
+ // 다른 학생: 저장 → 확정 → 발행
+ ({view}=await mutateWorkbench(db,commandFor("SAVE",view,"student-a:class-a"),"admin",true));
+ ({view}=await mutateWorkbench(db,commandFor("CONFIRM",view,"student-a:class-a"),"admin",true));
+ ({view}=await mutateWorkbench(db,commandFor("ISSUE",view,"student-a:class-a"),"admin",true));
+ assert.deepEqual(db.state.payments.map(p=>p.studentId),["student-a"]);
+ assert.equal(view.rows.find(r=>r.studentId==="student-a").draftStatus,"ISSUED");
+ assert.equal(view.rows.find(r=>r.studentId==="student-b").hold,true);
+});
+test("발행 보류: 보류가 아닌 학생의 행은 보류가 있든 없든 완전히 같고, 보류가 한 건도 없으면 지문이 예전과 같다",async()=>{
+ const plain=database();plain.state.enrollments.push({...plain.state.enrollments[0],studentId:"student-b",studentName:"합성 원생B",classId:"class-b",className:"합성 반B"});
+ const before=await readWorkbench(plain.tx,"2026-11",true);
+ // 기간 정산 칸은 있지만 보류가 0건 → 지문·행 전부 같다
+ const noHold=holdDatabase();noHold.state.holdPeriods=[];
+ const empty=await readWorkbench(noHold.tx,"2026-11",true);
+ assert.equal(empty.sourceVersion,before.sourceVersion);assert.deepEqual(empty.rows,before.rows);
+ // 보류 1건 → 지문은 달라지고, 보류가 아닌 학생(student-a)의 행은 그대로
+ const withHold=await readWorkbench(holdDatabase().tx,"2026-11",true);
+ assert.notEqual(withHold.sourceVersion,before.sourceVersion);
+ assert.deepEqual(withHold.rows.find(r=>r.studentId==="student-a"),before.rows.find(r=>r.studentId==="student-a"));
+ // 보류 행도 금액 제안은 같다(막기만 한다)
+ const heldRow=withHold.rows.find(r=>r.studentId==="student-b"),plainRow=before.rows.find(r=>r.studentId==="student-b");
+ assert.equal(heldRow.totalAmount,plainRow.totalAmount);assert.equal(heldRow.baseAmount,plainRow.baseAmount);
+});
+test("발행 보류: 등록 취소된 기간·승인 전·정산 끝난 기간·다음 달에 시작하는 기간은 보류가 아니다",async()=>{
+ for(const period of [{status:"CANCELLED"},{carryState:"NONE"},{carryState:"SETTLED"},{reason:"PERSONAL"},{startDate:"2026-12-01"}]){
+  const view=await readWorkbench(holdDatabase(period).tx,"2026-11",true);
+  assert.ok(!view.rows.some(r=>r.hold),JSON.stringify(period));
+ }
+ // 복귀 처리(ENDED)했어도 금액이 확정되기 전이면 보류가 이어진다 / 기간이 시작한 달 뒤의 달도 보류
+ assert.ok((await readWorkbench(holdDatabase({status:"ENDED"}).tx,"2026-11",true)).rows.find(r=>r.studentId==="student-b").hold);
+ assert.ok((await readWorkbench(holdDatabase({startDate:"2026-10-20"}).tx,"2026-11",true)).rows.find(r=>r.studentId==="student-b").hold);
+ // 기간 정산 칸이 없는 DB(마이그레이션 전)는 기간 표를 읽지 않는다
+ const old=holdDatabase();old.state.periodCarry=false;
+ assert.ok(!(await readWorkbench(old.tx,"2026-11",true)).rows.some(r=>r.hold));
+});
+test("발행 보류: 화면을 연 뒤 승인(보류)이 끼면 지문 불일치로 저장·확정·발행이 거절된다",async()=>{
+ const db=holdDatabase();db.state.holdPeriods=[];
+ let view=await readWorkbench(db.tx,"2026-11",true);
+ ({view}=await mutateWorkbench(db,commandFor("SAVE",view,"student-b:class-b"),"admin",true));
+ ({view}=await mutateWorkbench(db,commandFor("CONFIRM",view,"student-b:class-b"),"admin",true));
+ // 원장이 발행 화면을 열어 둔 사이 부상 결석이 승인됐다
+ db.state.holdPeriods=[{id:"period-b",studentId:"student-b",reason:"ILLNESS_INJURY",carryState:"APPROVED",status:"ACTIVE",startDate:"2026-11-06"}];
+ await assert.rejects(()=>mutateWorkbench(db,commandFor("ISSUE",view,"student-b:class-b"),"admin",true),/자료가 변경/);
+ // 다른 학생의 발행도 옛 화면으로는 거절된다(다시 조회해야 한다)
+ await assert.rejects(()=>mutateWorkbench(db,commandFor("SAVE",view,"student-a:class-a"),"admin",true),/자료가 변경/);
+ assert.equal(db.state.payments.length,0);
+});
+test("발행 보류: 승인 취소(보류 해제) 뒤 그 행이 «확인 필요»로 다시 나오고, 다시 저장·확정·발행하면 청구가 정확히 1건",async()=>{
+ const db=holdDatabase();let view=await readWorkbench(db.tx,"2026-11",true);
+ ({view}=await mutateWorkbench(db,commandFor("SAVE",view,"student-b:class-b"),"admin",true));
+ // 승인 취소 → 보류 목록에서 빠진다
+ db.state.holdPeriods[0].carryState="NONE";
+ view=await readWorkbench(db.tx,"2026-11",true);
+ const row=view.rows.find(r=>r.studentId==="student-b");
+ assert.ok(!row.hold);assert.deepEqual(row.blockingReasons,[]);assert.equal(row.status,"REVIEW");
+ assert.ok(row.reviewReasons.some(reason=>reason.includes("원본이 변경")),"보류 중에 저장한 초안은 다시 저장·확정해야 한다");
+ await assert.rejects(()=>mutateWorkbench(db,commandFor("CONFIRM",view,"student-b:class-b"),"admin",true),/최신 자료로 저장·확정/);
+ ({view}=await mutateWorkbench(db,commandFor("SAVE",view,"student-b:class-b"),"admin",true));
+ ({view}=await mutateWorkbench(db,commandFor("CONFIRM",view,"student-b:class-b"),"admin",true));
+ const issue=commandFor("ISSUE",view,"student-b:class-b");
+ ({view}=await mutateWorkbench(db,issue,"admin",true));
+ await mutateWorkbench(db,issue,"admin",true); // 같은 요청을 두 번 보내도
+ assert.equal(db.state.payments.filter(p=>p.studentId==="student-b").length,1);
+ assert.equal(db.state.invoices.length,1);
+});
+test("발행 보류: 화면 — 보류 요약·필터·행 글자·선택 불가·신청함 이동, 보류 판정은 규칙 조각 한 곳",async()=>{
+ const screen=await readFile("src/app/admin/finance/prepare/BillingWorkbench.tsx","utf8");
+ const rules=await import(periodRulesUrl);
+ assert.equal(rules.BILLING_HOLD_LABEL,HOLD_LABEL);
+ assert.match(screen,/const label = \(row: Row\) => row\.hold \? BILLING_HOLD_LABEL :/);
+ assert.match(screen,/const canSelect = \(row: Row\) => !row\.hold && /,"보류 행은 고를 수 없다");
+ assert.match(screen,/\{holdCount > 0 && <span>발행 보류 <strong>\{holdCount\}<\/strong><\/span>\}/);
+ assert.match(screen,/<option value="HOLD">발행 보류\(부상 결석\)<\/option>/);
+ assert.match(screen,/filter === "HOLD" \? Boolean\(row\.hold\)/);
+ assert.match(screen,/\$\{ILLNESS_PERIOD_INBOX_HREF\}\$\{row\.holdPeriodId \? `&open=\$\{encodeURIComponent\(row\.holdPeriodId\)\}` : ""\}/);
+ // 신청함은 «?kind=…&open=id» 로 그 줄 상세를 연다
+ assert.match(await readFile("src/app/admin/inbox/page.tsx","utf8"),/initialOpenId=\{kind && typeof params\.open === "string"/);
+ assert.match(await readFile("src/app/admin/inbox/InboxClient.tsx","utf8"),/\.find\(\(row\) => row\.kind === kind && row\.id === initialOpenId\)/);
+ // 서비스는 판정 조각을 가져다 쓰고, 보류가 없으면 지문에 키를 넣지 않는다
+ assert.match(serviceSource,/WHERE \$\{illnessHoldPeriodSql\("hp"\)\} AND to_char\(hp\."startDate",'YYYY-MM'\) <= \$1/);
+ assert.match(serviceSource,/\.\.\.\(illnessHolds\.length \? \{ illnessHolds \} : \{\}\)/);
+ assert.equal(rules.illnessHoldPeriodSql("p"),`(p.reason = 'ILLNESS_INJURY' AND p."carryState" = 'APPROVED' AND p.status IN ('ACTIVE', 'ENDED'))`);
+ assert.equal(rules.illnessBillingHoldSql("s",false),"false","기간 정산 칸이 없으면 항상 false");
+ assert.match(rules.illnessBillingHoldSql("s"),/hold_period\."studentId" = s\.id AND \(hold_period\.reason = 'ILLNESS_INJURY' AND hold_period\."carryState" = 'APPROVED' AND hold_period\.status IN \('ACTIVE', 'ENDED'\)\)/);
 });

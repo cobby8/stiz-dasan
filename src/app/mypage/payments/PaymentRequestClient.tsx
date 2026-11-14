@@ -24,6 +24,7 @@ import { todayKst } from "@/lib/datetime/kst";
 // 환불 문의(2026-11-14 원장 결정표 c11) — 납부 완료 항목에서 그 청구를 가리키는 문의를 만든다(«문의 접수»까지, 실제 환불은 학원이 처리)
 import { sendRefundInquiry } from "@/app/actions/parent-inquiry";
 import { customerMessage } from "@/components/parent/customerMessage";
+import { billingHoldParentText } from "@/lib/regular/illnessPeriodRules";
 
 /** 온라인 결제가 안 될 때 안내할 학원 연락처(학원 설정값). 없으면 null */
 export type PaymentContact = { phone: string | null; kakaoChannelUrl: string | null; bankAccount?: string | null };
@@ -36,7 +37,10 @@ export default function PaymentRequestClient({
   payReady = false,
   contact = { phone: null, kakaoChannelUrl: null },
   initialOpenYm = null,
+  holds = [],
 }: {
+  /** 부상 결석이 승인돼 수강료 청구를 잠시 멈춘 자녀 — 미납 목록 위에 상태 한 줄로 보인다(«학원에 문의» 대신) */
+  holds?: Array<{ studentId: string; studentName: string }>;
   rows: ParentPaymentRow[];
   /** 온라인 결제(토스 등) 설정이 끝났는가 — 결제 화면과 같은 판정(getPaymentProviderConfig) */
   payReady?: boolean;
@@ -156,6 +160,7 @@ export default function PaymentRequestClient({
   const [childFilter, setChildFilter] = useState<string | null>(null);
   const childChips = [...new Map(rows.map((row) => [row.studentId, row.studentName])).entries()];
   const shownRows = childFilter ? rows.filter((row) => row.studentId === childFilter) : rows;
+  const shownHolds = childFilter ? holds.filter((held) => held.studentId === childFilter) : holds;
   // 올해 납부 = 납기일이 올해(KST)인 납부 완료 합계 · 미납 = 미납·연체 건수(이 목록 기준 — 최근 60건)
   const thisYear = todayKst().slice(0, 4);
   const paidThisYear = shownRows
@@ -570,10 +575,20 @@ export default function PaymentRequestClient({
 
       {!openBill && messages}
 
-      {rows.length === 0 ? (
-        <p className="academy-panel p-4 text-center text-sm text-[var(--color-academy-muted)]">
-          청구서가 없어요
+      {/* 부상 결석 중이라 청구를 멈춘 아이 — 상태를 그대로 한 줄로(아이 칩으로 다른 아이를 골랐으면 숨긴다) */}
+      {shownHolds.map((held) => (
+        <p key={held.studentId} role="status" className="academy-panel break-keep p-3 text-sm text-[var(--color-academy-ink)]">
+          {billingHoldParentText(held.studentName)}
         </p>
+      ))}
+
+      {rows.length === 0 ? (
+        // 청구를 멈춘 안내가 이미 보이면 «청구서가 없어요»를 겹쳐 보이지 않는다
+        shownHolds.length === 0 && (
+          <p className="academy-panel p-4 text-center text-sm text-[var(--color-academy-muted)]">
+            청구서가 없어요
+          </p>
+        )
       ) : (
         // 한 달 = 한 줄(청구월 · 합계 · 상태) — 누르면 세부 시트
         <MonthBillList label="월별 청구">

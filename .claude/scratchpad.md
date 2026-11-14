@@ -62,6 +62,26 @@
 |------|------|----------|----------|------|
 | 1차 | 11-15 | «보강권으로 전환»(기간의 결정 전인 날 일괄) 추가 · 승인 때 거둔 보강권 id·새 검토 줄 id 를 carrySettlement.approval+감사 기록에 남기고 승인 취소 때 되돌림 · 취소된 결석의 승인 검토는 닫음 · 보강 예약/사용한 날은 승인 대상 제외 · 가드에 질병 사유 조건 · 학부모 글자를 기간 상태 기준으로 · 정산 시작일 상수화 · 알림 24시간 중복 방지 | illness-period-admin.ts · actions/illness-period-admin.ts · IllnessPeriodInboxDetail.tsx · illnessPeriodRules.ts · parent-regular-absence.ts · workbench-absence.ts · tests | reviewer 필수 1 + 권장 5 + 보안 LOW |
 
+### 구현 기록 (developer · 11-15 부상·질병 기간 결석 2단계 청구 발행 보류, claude/illness-billing-hold)
+📝 구현한 기능: 승인됐고 금액 미확정인 부상 결석 기간이 있는 아이는 청구 준비에서 발행 보류 + 이미 발행된 미납 청구를 원장이 «발행 보류로 돌리기» + 학생 상세·학부모 결제 화면 상태 한 줄. DB 스키마 변경 없음.
+
+| 파일 경로 | 변경 내용 | 신규/수정 |
+|----------|----------|----------|
+| src/lib/regular/illnessPeriodRules.ts | 보류 판정 조각(illnessHoldPeriodSql·illnessBillingHoldSql)·글자·건너뛰는 이유·held 기록 꺼내기 | 수정 |
+| src/lib/billing/workbench-service.ts · workbench.ts | 보류 읽기(기간 시작 달 이후) → 차단 사유 맨 앞·hold/holdPeriodId·지문(보류 0건이면 키 없음 = 예전 지문 그대로) | 수정 |
+| src/lib/regular/illness-period-admin.ts | readIllnessPeriodBillingHold(미리보기)·holdIssuedBillsForPeriod(실행)·readStudentName · 승인 취소: heldBills 반환·보강권 되돌림에 출석 조건 | 수정 |
+| src/app/actions/illness-period-admin.ts | loadIllnessPeriodHold(금액은 원장만)·holdIllnessPeriodBillsAction(requireOwner)·알림 본문 아이 이름 | 수정 |
+| src/app/admin/inbox/IllnessPeriodInboxDetail.tsx · InboxClient.tsx · page.tsx | 보류 칸·«발행 보류로 돌리기»(확인 창) · «?kind=…&open=id» 로 상세 열기 | 수정 |
+| src/app/admin/finance/prepare/BillingWorkbench.tsx | «발행 보류 n» 요약·필터·행 글자·선택 불가·신청함 이동 | 수정 |
+| src/app/admin/students/[id]/AbsencePeriodPanel.tsx · absence-period-service.ts | 기간 줄에 «부상 결석 중 · 청구 보류»(billingHold) | 수정 |
+| src/app/mypage/payments/* · src/lib/payments/parent-payment-request.ts | 학부모 결제 화면 보류 안내 한 줄(getParentBillingHolds) | 수정 |
+| src/lib/requests/catalog.ts · admin-inbox.ts | 신청함 상태 APPROVED_HOLD «인정 · 발행 보류 중» | 수정 |
+| src/lib/regular/parent-regular-absence.ts | getParentIllnessReviews 한도 30 → 200 | 수정 |
+| tests/illness-billing-hold.test.mjs(신규 16건) · billing-workbench(+6)·illness-period·payment-bundle-ui·rallyz-mirror-release · billing-workbench-postgres.integration | 실행 테스트 + 로컬 Postgres 31개 | 신규/수정 |
+
+💡 tester 참고: ① 신청함에서 부상 결석 승인 → 청구 준비(그 기간 시작 달 이후)에서 그 아이 행이 «부상 결석 중 · 발행 보류»·체크 불가, 요약 «발행 보류 n», 필터 «발행 보류(부상 결석)», 글자를 누르면 신청함 기간 상세가 열림 ② 승인된 기간 상세에 «이미 발행된 미납 청구 n건 ○원» → [발행 보류로 돌리기](원장만, 부원장은 건수만) → 수납 관리에서 그 청구 «취소», 청구 준비 행은 보류 ③ 학부모 결제 화면에 «○○ · 부상 결석 중이라…» 한 줄, 취소된 청구는 안 보임 ④ [승인 취소] → 청구 준비에 «확인 필요»로 다시 나와 저장→확정→발행하면 새 청구 1건. 주의 입력: 학부모가 30분 안에 결제창을 연 청구·현장 결제 요청 중·이월을 쓴 청구는 건너뛰고 이유가 보여야 한다.
+⚠️ reviewer 참고: 초안 ISSUED→DRAFT 는 처음 생긴 전이(BillingWorkbenchRevision action 'HOLD' — 운영 표에 action CHECK 가 없는지 확인 필요, 준비 파일 workbench-schema.sql 에는 없음). 보류 범위가 둘이다 — 청구 준비는 «학생 단위», 보류 전환은 «기간 대상 반(classIds)». 수납 관리의 직접 발행(createPayment)은 보류 학생도 막지 않는다(원장이 일부러 하는 길). getParentBillingHolds·listAbsencePeriodsInDb 의 완성된 문장은 실제 DB 에서 못 돌렸다(조각은 돌림).
+
 ### 구현 기록 (developer · 11-15 학부모 여러 날 결석, claude/absence-period-parent)
 📝 구현한 기능: 학부모 «결석 알리기 › 여러 날»(4주 한도·모든 사유) + 관리자 «기간 결석 등록» 빠른 입구 + 이월 재검수 권장 ②~⑤
 
@@ -191,6 +211,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-15 | developer(부상·질병 기간 결석 2단계 청구 발행 보류, claude/illness-billing-hold): 청구 준비 보류(차단 사유·hold·지문)·이미 발행된 미납 청구 «발행 보류로 돌리기»(원장만, 결제 진행 중 등은 건너뜀)·학생 상세/학부모 결제 화면 한 줄·신청함 «인정 · 발행 보류 중»·1단계 숙제 3건. tsc 0 · tests 5484-0 · guards 337-0 · 로컬 Postgres 31개 통과. 스키마 변경 없음 | 검수 대기 |
 | 11-15 | developer(부상·질병 기간 결석 1b, claude/illness-period-approve): 신청함 기간 한 줄(ILLNESS_PERIOD)·금액 없는 승인/승인 취소·하루씩 이월 가드·7일 자동 전환 제외·학부모 글자. tsc 0 · tests 5422-0 · guards 337-0. 새 SQL 실제 Postgres 미실행 | 검수 대기 |
 | 11-14 | developer(묶음 B 지각·조퇴·자차, claude/late-early-selfdrive): 학부모 «늦어요 · 일찍 가요»(RegularArrivalNotice, 지각=시작 전·조퇴=끝나기 전, 보강권 없음, 원장·담당 선생님 앱 알림) · 조퇴/지각 날 셔틀 SKIP 연결 · «안 타요»→자차 문구 · 기사 화면 «자차·조퇴·지각» 뱃지+버튼 잠금(화면만) · 출석부 «지각 예정 17:20». tsc 0 · tests 5312-0 · guards 337-0. 마이그레이션 20261115140000(changeCount 포함) 운영 미적용. 2차(보안·리뷰 반영): 하루 변경 5회 상한 · 기존 셔틀 변경 있으면 묻지 않음 · 홈/아이 기록/카카오 자차 문구 · 먼 날짜 셔틀 안내 | 재검수 대기 |
 | 11-14 | developer(셔틀 탑승 알림 묶음 A, claude/shuttle-board-notify): 셔틀 «탔어요·내렸어요» 앱 알림(탑승 체크 1분 뒤·30분 한도·대표 보호자·정규+방학특강·SHUTTLE_ 이벤트, push-outbox 크론 훑기) · «수업 종료»를 «출결» 스위치로 · 홈 «오늘 셔틀» 실제 시각(탑승 08:52·하차 18:40) · 관리자 출결 저장 알림 = 선생님과 같은 규칙 함수(바뀐 아이만·출석/지각만·오늘만·한 번만, «출결이 기록되었습니다» 전체 발송 제거) · 가입 안내문 «결석 알리기». DB 변경 없음. tsc 0·tests 5284-0·guards 337-0. 새 SQL 2개(훑기·홈 시각) 실제 Postgres 미실행 | 검수 대기 |

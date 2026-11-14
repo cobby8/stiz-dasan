@@ -183,7 +183,9 @@ export async function getParentIllnessReviews(parentUserId: string): Promise<Par
           AND ra.status <> 'CANCELLED'
           AND ra.date >= ((now() AT TIME ZONE 'Asia/Seoul')::date - 90)
         ORDER BY ra.date DESC, s.name ASC
-        LIMIT 30`,
+        LIMIT 200`,
+      // 한도는 «날짜» 단위다 — 긴 기간 결석(한 기간이 16줄 이상)이 최근 하루짜리를 밀어내지 않게 넉넉히(90일 창 안).
+      // 화면은 같은 기간을 한 줄로 접어 보인다(collapseReviewsByPeriod)
       parentUserId,
     );
     const today = todayKst();

@@ -16,10 +16,11 @@ import AdminModal from "@/components/admin/AdminModal";
 import { useAdminConfirm } from "@/components/admin/AdminConfirmDialog";
 import { kstAt, kstLabel } from "@/lib/datetime/kst";
 import {
-  approveIllnessPeriodAction, cancelIllnessPeriodApprovalAction, convertIllnessPeriodToMakeupAction, loadIllnessPeriodDetail,
+  approveIllnessPeriodAction, cancelIllnessPeriodApprovalAction, convertIllnessPeriodToMakeupAction, holdIllnessPeriodBillsAction,
+  loadIllnessPeriodDetail, loadIllnessPeriodHold, type IllnessPeriodHoldView,
 } from "@/app/actions/illness-period-admin";
 import type { IllnessPeriodDetail } from "@/lib/regular/illness-period-admin";
-import { PERIOD_APPROVED_ADMIN_NOTE } from "@/lib/regular/illnessPeriodRules";
+import { BILLING_HOLD_LABEL, PERIOD_APPROVED_ADMIN_NOTE } from "@/lib/regular/illnessPeriodRules";
 
 type Props = { periodId: string; studentName: string; onChanged: () => void };
 
@@ -34,14 +35,21 @@ export default function IllnessPeriodInboxDetail({ periodId, studentName, onChan
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
   const [pending, startTransition] = useTransition();
   const { confirm, confirmDialog } = useAdminConfirm();
+  // 청구 발행 보류 칸(승인 뒤에만) — 이미 발행된 미납 청구 목록과 보류로 돌린 건수. 못 읽으면 칸만 숨긴다
+  const [hold, setHold] = useState<IllnessPeriodHoldView | null>(null);
 
-  // 칸을 열 때 한 번 읽는다(처리 뒤에는 아래 reload 가 다시 읽는다)
+  // 칸을 열 때 한 번 읽는다(처리 뒤에는 아래 reload 가 다시 읽는다).
+  // 보류 칸은 승인된 기간일 때만, 상세를 읽은 «뒤에» 읽는다(DB 연결을 동시에 늘리지 않는다)
   useEffect(() => {
     let alive = true;
     loadIllnessPeriodDetail(periodId)
-      .then((result) => {
+      .then(async (result) => {
         if (!alive) return;
-        if (result.ok) setDetail(result.detail); else setLoadError(result.message);
+        if (!result.ok) { setLoadError(result.message); return; }
+        setDetail(result.detail);
+        if (result.detail.carryState !== "APPROVED") return;
+        const holdResult = await loadIllnessPeriodHold(periodId).catch(() => null);
+        if (alive) setHold(holdResult?.ok ? holdResult.hold : null);
       })
       .catch(() => { if (alive) setLoadError("내용을 불러오지 못했습니다. 잠시 뒤 다시 열어 주세요."); });
     return () => { alive = false; };
@@ -49,7 +57,10 @@ export default function IllnessPeriodInboxDetail({ periodId, studentName, onChan
 
   const reload = async () => {
     const result = await loadIllnessPeriodDetail(periodId).catch(() => null);
-    if (result?.ok) setDetail(result.detail);
+    if (!result?.ok) return;
+    setDetail(result.detail);
+    const holdResult = result.detail.carryState === "APPROVED" ? await loadIllnessPeriodHold(periodId).catch(() => null) : null;
+    setHold(holdResult?.ok ? holdResult.hold : null);
   };
 
   if (loadError) return <p role="alert" className="mt-4 text-sm text-[var(--color-academy-danger)]">{loadError}</p>;
@@ -80,6 +91,9 @@ export default function IllnessPeriodInboxDetail({ periodId, studentName, onChan
         "기간이 다시 «승인 대기»로 돌아갑니다.",
         detail.heldCreditCount > 0 ? `승인하며 거둔 보강권 ${detail.heldCreditCount}장은 돌려줍니다(만료일이 지난 것은 만료).` : "",
         "학부모가 알린 결석은 «검토 중»으로 돌아가 사진 기한(7일)이 새로 시작합니다.",
+        // 보류로 돌린 청구는 되살리지 않는다 — 청구 준비에 «확인 필요»로 다시 나온다
+        "발행 보류가 풀려 청구 준비에서 다시 발행할 수 있습니다.",
+        hold && hold.heldCount > 0 ? `보류로 돌린 청구 ${hold.heldCount}건은 청구 준비에서 다시 발행해야 합니다.` : "",
       ].filter(Boolean).join(" "),
       confirmLabel: "승인 취소",
       tone: "danger",
@@ -88,6 +102,32 @@ export default function IllnessPeriodInboxDetail({ periodId, studentName, onChan
     startTransition(async () => {
       const result = await cancelIllnessPeriodApprovalAction({ periodId })
         .catch(() => ({ ok: false as const, message: "승인을 취소하지 못했습니다. 잠시 뒤 다시 시도해 주세요." }));
+      setMessage({ tone: result.ok ? "ok" : "error", text: result.message });
+      await reload();
+      if (result.ok) onChanged();
+    });
+  }
+
+  // 이미 발행된 미납 청구를 보류로 돌린다 — 원장만. 대상과 금액을 확인 창에서 한 번 더 보여 준 뒤 실행한다.
+  // 서버에는 «지금 화면에서 본 돌릴 청구» id 를 함께 보낸다(그 사이 목록이 바뀌었으면 서버가 실행하지 않는다)
+  const holdTargets = (hold?.bills ?? []).filter((bill) => !bill.skipText);
+  const holdTotal = holdTargets.reduce((sum, bill) => sum + (bill.amount ?? 0), 0);
+  async function holdBills() {
+    if (!hold?.canHold || holdTargets.length === 0) return;
+    const ok = await confirm({
+      title: `${studentName} · 미납 청구 ${holdTargets.length}건 발행 보류`,
+      description: [
+        `${holdTargets.map((bill) => `${bill.label} ${(bill.amount ?? 0).toLocaleString("ko-KR")}원`).join(", ")} — 합계 ${holdTotal.toLocaleString("ko-KR")}원.`,
+        "이 청구를 취소 상태로 돌려 학부모 결제 화면과 미납 안내에서 뺍니다. 금액 메모는 청구 준비에 남고, 복귀 뒤 다시 발행합니다(새 청구 번호).",
+        "학부모에게 앱 알림이 한 번 갑니다.",
+      ].join(" "),
+      confirmLabel: "발행 보류로 돌리기",
+      tone: "danger",
+    });
+    if (!ok) return;
+    startTransition(async () => {
+      const result = await holdIllnessPeriodBillsAction({ periodId, expectedPaymentIds: holdTargets.map((bill) => bill.paymentId) })
+        .catch(() => ({ ok: false as const, message: "발행 보류로 돌리지 못했습니다. 잠시 뒤 다시 시도해 주세요." }));
       setMessage({ tone: result.ok ? "ok" : "error", text: result.message });
       await reload();
       if (result.ok) onChanged();
@@ -197,6 +237,41 @@ export default function IllnessPeriodInboxDetail({ periodId, studentName, onChan
           <p className="rounded-lg bg-[var(--color-academy-info-soft)] px-3 py-2 text-sm text-[var(--color-academy-info)]">
             부상 결석 인정{detail.approvedYmd ? ` · ${kstLabel(kstAt(detail.approvedYmd))} 승인` : ""} · {PERIOD_APPROVED_ADMIN_NOTE}
           </p>
+          {/* 청구 발행 보류 — 상태 한 줄 + 이미 발행된 미납 청구(한 줄 행) + 원장만 누르는 «발행 보류로 돌리기» */}
+          {hold?.holdActive && (
+            <div className="space-y-2 rounded-lg border border-[var(--color-academy-line)] px-3 py-2 text-sm">
+              <p className="font-semibold text-[var(--color-academy-ink)]">{BILLING_HOLD_LABEL}</p>
+              <p className="text-xs text-[var(--color-academy-muted)]">금액이 정해질 때까지 이 아이의 새 수강료 청구는 발행되지 않습니다.</p>
+              {hold.heldCount > 0 && (
+                <p className="text-[var(--color-academy-ink)]">보류로 돌린 청구 {hold.heldCount}건 · 복귀 뒤 청구 준비에서 다시 발행합니다.</p>
+              )}
+              {hold.bills.length > 0 && (
+                <>
+                  <p className="font-medium text-[var(--color-academy-ink)]">
+                    이미 발행된 미납 청구 {hold.bills.length}건{hold.canHold ? ` · ${hold.bills.reduce((sum, bill) => sum + (bill.amount ?? 0), 0).toLocaleString("ko-KR")}원` : ""}
+                  </p>
+                  <ul aria-label="이미 발행된 미납 청구">
+                    {hold.bills.map((bill) => (
+                      <li key={bill.paymentId} className="flex min-h-11 flex-wrap items-center gap-x-2 border-t border-[var(--color-academy-line)] py-1">
+                        <span className="min-w-0 flex-1 break-keep text-[var(--color-academy-ink)]">{bill.label}</span>
+                        {bill.amount !== null && <span className="whitespace-nowrap tabular-nums text-[var(--color-academy-ink)]">{bill.amount.toLocaleString("ko-KR")}원</span>}
+                        {bill.skipText && <span className="w-full text-xs text-[var(--color-academy-warning)]">{bill.skipText}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                  {hold.canHold ? (
+                    holdTargets.length > 0 && (
+                      <div className="flex justify-end">
+                        <button type="button" disabled={pending} onClick={() => void holdBills()} className="academy-button-secondary">발행 보류로 돌리기</button>
+                      </div>
+                    )
+                  ) : (
+                    <p className="text-xs text-[var(--color-academy-muted)]">발행 보류로 돌리기는 원장만 할 수 있습니다.</p>
+                  )}
+                </>
+              )}
+            </div>
+          )}
           {/* 위험 작업(되돌리기)은 위험 등급 버튼 + 확인 창 */}
           <div className="flex justify-end">
             <button type="button" disabled={pending} onClick={() => void cancelApproval()} className="academy-button-danger">승인 취소</button>

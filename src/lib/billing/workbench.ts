@@ -13,6 +13,10 @@ export type WorkbenchRow = WorkbenchAmounts & {
   carryAvailable: number; remainingCarry: number;
   dueDate: string;
   blockingReasons: string[];
+  /** 부상·질병 기간 결석이 승인돼 금액이 정해질 때까지 발행을 보류한 행(보류 행에만 있다) */
+  hold?: true;
+  /** 보류를 만든 기간 id — 화면이 신청함 기간 상세로 보낸다 */
+  holdPeriodId?: string;
 };
 export type WorkbenchAbsence = {
   id: string; studentId: string; studentName: string; classId: string; date: string;

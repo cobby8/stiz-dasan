@@ -129,6 +129,9 @@ export const REQUEST_KINDS: readonly KindEntry[] = [
     statuses: {
       PENDING: act("승인 대기"),
       APPROVED: going("인정 · 금액은 복귀 뒤"),
+      // 승인 + 청구 발행 보류 중(2단계) — 승인된 기간이 살아 있으면(등록 취소 아님) 그 아이 청구가 보류된다.
+      // 값은 illnessPeriodRules.PERIOD_HOLD_INBOX_STATUS 와 같아야 한다(테스트가 비교). 등록 취소된 승인 기간만 위 APPROVED 로 남는다
+      APPROVED_HOLD: going("인정 · 발행 보류 중"),
       DAY_DONE: off("날짜별로 처리함"),
     },
   },

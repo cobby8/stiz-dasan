@@ -31,6 +31,8 @@ import {
   type CreateCounts,
   type PeriodClass,
 } from "@/lib/regular/absence-period-plan";
+// 청구 발행 보류 판정 조각(순수 모듈 — 이 파일을 다시 가져오지 않는다)
+import { illnessHoldPeriodSql } from "@/lib/regular/illnessPeriodRules";
 
 export type AbsencePeriodDb = {
   $queryRawUnsafe<T = unknown>(sql: string, ...values: unknown[]): Promise<T>;
@@ -430,6 +432,8 @@ export type AbsencePeriodView = {
   createdAt: string;
   /** 학부모가 «결석 알리기 › 여러 날»로 알린 기간인가 — 화면에 «학부모 신고»로 표시하고 기간째 처리 버튼은 숨긴다 */
   parentReported?: boolean;
+  /** 부상 결석이 승인돼 금액이 정해질 때까지 그 아이 청구 발행을 보류 중인 기간인가(2단계) — 판정은 illnessHoldPeriodSql 한 곳 */
+  billingHold?: boolean;
   /** 이 기간이 만든 결석 날짜(취소된 것 포함 — 화면에서 구분) */
   absences: { id: string; classId: string; className: string; date: string; status: string }[];
 };
@@ -438,9 +442,11 @@ export async function listAbsencePeriodsInDb(db: AbsencePeriodDb, studentId: str
   // 마이그레이션 전이면 화면이 깨지지 않게 «아직 사용 불가»로 돌려준다
   if (!(await tableExists(db, "RegularAbsencePeriod"))) return { available: false, periods: [] };
   const parentSql = (await parentPeriodColumnsReady(db)) ? `(p."reportedByUserId" IS NOT NULL)` : `false`;
+  // 청구 발행 보류 중인 기간인가 — 기간 정산 칸이 없는 DB 면 항상 false(없는 칸을 읽지 않는다)
+  const holdSql = (await periodCarryColumnsReady(db)) ? illnessHoldPeriodSql("p") : `false`;
   const periods = await db.$queryRawUnsafe<Array<Omit<AbsencePeriodView, "absences">>>(
     `SELECT ${PERIOD_COLUMNS}, p.note, to_char(p."createdAt" AT TIME ZONE 'Asia/Seoul','YYYY-MM-DD') AS "createdAt",
-            ${parentSql} AS "parentReported"
+            ${parentSql} AS "parentReported", ${holdSql} AS "billingHold"
        FROM "RegularAbsencePeriod" p
       WHERE p."studentId" = $1
       ORDER BY p."startDate" DESC, p."createdAt" DESC

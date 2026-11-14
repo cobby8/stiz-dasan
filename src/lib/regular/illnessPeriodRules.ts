@@ -143,6 +143,64 @@ export function parsePeriodApprovalRecord(value: unknown): PeriodApprovalRecord 
   return { revokedCreditIds: ids(record.revokedCreditIds), createdReviewAbsenceIds: ids(record.createdReviewAbsenceIds) };
 }
 
+// ── 청구 발행 보류(2단계, 2026-11-15 원장 결정) ─────────────────────────────────────────
+// 보류는 «표시 칸»이 아니라 계산값이다: 그 학생에게 승인됐고(APPROVED) 금액이 아직 확정되지 않은 질병·부상 기간이 있다.
+// 칸을 따로 두면 승인 취소 때 한쪽만 고쳐지는 사고가 난다 → 아래 조각 하나로만 판정한다(청구 준비·신청함·학부모 화면·학생 상세 공용).
+
+/** 청구 준비 행·차단 사유에 쓰는 글자 */
+export const BILLING_HOLD_LABEL = "부상 결석 중 · 발행 보류";
+/** 학생 상세 수강·출결 카드에 쓰는 글자 */
+export const BILLING_HOLD_STUDENT_LABEL = "부상 결석 중 · 청구 보류";
+/** 신청함 목록의 상태 값(승인 + 보류 중) — catalog.ts 의 ILLNESS_PERIOD 상태 지도와 같은 값이어야 한다(테스트가 비교) */
+export const PERIOD_HOLD_INBOX_STATUS = "APPROVED_HOLD";
+/** 학부모 결제 화면·앱 알림: 보류 안내 한 줄(«학원에 문의» 대신 상태를 그대로 보인다) */
+export function billingHoldParentText(studentName: string): string {
+  return `${studentName} · 부상 결석 중이라 수강료 청구를 잠시 멈췄어요. 복귀하면 빠진 수업을 뺀 금액으로 다시 안내해요.`;
+}
+
+/** 그 기간(period)이 «청구 발행 보류»를 만드는 상태인가 — 승인됐고 금액 미확정, 등록 취소되지 않음 */
+export function illnessHoldPeriodSql(period: string): string {
+  return `(${period}.reason = 'ILLNESS_INJURY' AND ${period}."carryState" = 'APPROVED' AND ${period}.status IN ('ACTIVE', 'ENDED'))`;
+}
+
+/**
+ * 그 학생(student 별칭)의 청구 발행이 보류 중인가 — 보류 판정은 이 조각 하나로만 한다.
+ * ready=false(기간 정산 칸이 아직 없는 DB)면 항상 false — 없는 칸을 읽지 않는다.
+ */
+export function illnessBillingHoldSql(student: string, ready = true): string {
+  if (!ready) return "false";
+  return `EXISTS (SELECT 1 FROM "RegularAbsencePeriod" hold_period
+                   WHERE hold_period."studentId" = ${student}.id AND ${illnessHoldPeriodSql("hold_period")})`;
+}
+
+/** 보류로 돌린 청구 한 건의 사본(기간 행 carrySettlement.held 에 남긴다 — 금액·달·반을 나중에 대조할 수 있게) */
+export type HeldBillRecord = {
+  paymentId: string; invoiceId: string; year: number; month: number; classId: string | null;
+  amount: number; draftId: string | null; heldAt: string;
+};
+
+/** 기간 행의 carrySettlement(jsonb) 에서 보류로 돌린 청구 목록을 꺼낸다. 모양이 다르면 그 줄은 버린다 */
+export function parseHeldBills(value: unknown): HeldBillRecord[] {
+  let parsed: unknown = value;
+  if (typeof value === "string") { try { parsed = JSON.parse(value); } catch { parsed = null; } }
+  const held = parsed && typeof parsed === "object" ? (parsed as { held?: unknown }).held : null;
+  if (!Array.isArray(held)) return [];
+  return held.filter((item): item is HeldBillRecord => Boolean(item) && typeof item === "object"
+    && typeof (item as HeldBillRecord).paymentId === "string" && Number.isSafeInteger((item as HeldBillRecord).amount));
+}
+
+/** 발행된 미납 청구를 보류로 돌릴 수 없는 이유(화면에 그대로 보인다) */
+export const HOLD_SKIP_REASONS = {
+  CHECKOUT: "학부모가 결제하는 중이라 건너뜁니다. 잠시 뒤 다시 확인해 주세요.",
+  POS: "현장 결제 요청 중이라 건너뜁니다. 요청이 끝난 뒤 다시 확인해 주세요.",
+  PAID_TX: "결제 거래 기록이 있어 직접 확인이 필요합니다.",
+  CARRY_USED: "이월을 쓴 청구라 직접 확인이 필요합니다.",
+  CARRY_SOURCE: "이 청구를 근거로 적립한 이월이 있어 직접 확인이 필요합니다.",
+  PAUSE_SETTLED: "휴원 정산이 반영된 청구라 직접 확인이 필요합니다.",
+  INVOICE: "청구서 상태를 확인할 수 없어 건너뜁니다.",
+} as const;
+export type HoldSkipCode = keyof typeof HOLD_SKIP_REASONS;
+
 /** 하루짜리 목록(ILLNESS_CARRY)에서 뺄 결석(abs)인가 — 신청함에 기간 한 줄로 올라가는 기간에 묶인 결석 */
 export function boundToIllnessPeriodSql(abs: string): string {
   return `EXISTS (SELECT 1 FROM "RegularAbsencePeriod" illness_period

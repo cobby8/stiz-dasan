@@ -17,6 +17,8 @@
 //
 // DB 는 인자(db)로만 받는다 — 테스트가 가짜 db 로 실제 실행한다. 이 파일은 prisma 를 import 하지 않는다.
 import { lockCompensation } from "@/lib/billing/absence-compensation-guard";
+import { rallyzMirrorExclusionSql } from "@/lib/billing/parentSendGuard";
+import { APPROVED_PENDING_SQL, findParentCheckoutActivePaymentIds, lockPaymentsForCheckout } from "@/lib/payments/bundleLedger";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import { periodCarryColumnsReady } from "@/lib/regular/absence-period-service";
 import {
@@ -24,7 +26,8 @@ import {
 } from "@/lib/regular/illness-carry-tx";
 import { ILLNESS_REASON } from "@/lib/regular/illnessCarryRules";
 import {
-  IllnessPeriodError, illnessPeriodAbsenceSql, makeupInUseSql, parsePeriodApprovalRecord, periodApprovalBlocker,
+  HOLD_SKIP_REASONS, IllnessPeriodError, illnessPeriodAbsenceSql, makeupInUseSql, parseHeldBills, parsePeriodApprovalRecord, periodApprovalBlocker,
+  type HeldBillRecord, type HoldSkipCode,
 } from "@/lib/regular/illnessPeriodRules";
 
 export type IllnessPeriodDb = IllnessTx & {
@@ -35,12 +38,14 @@ type PeriodRow = {
   id: string; studentId: string; reason: string; status: string; carryState: string;
   startDate: string; returnDate: string | null; note: string | null; parentReported: boolean;
   carrySettlement: unknown;
+  /** 기간 대상 반(빈 배열 = 그 학생의 수강 중 반 전부) */
+  classIds?: string[] | null;
 };
 
 // 기간 한 줄 — date 칼럼은 달력 값이라 시간대 변환이 없다
 const PERIOD_SELECT = `SELECT p.id, p."studentId" AS "studentId", p.reason, p.status, p."carryState" AS "carryState",
        to_char(p."startDate", 'YYYY-MM-DD') AS "startDate", to_char(p."returnDate", 'YYYY-MM-DD') AS "returnDate",
-       p.note, (p."reportedByUserId" IS NOT NULL) AS "parentReported", p."carrySettlement" AS "carrySettlement"
+       p.note, (p."reportedByUserId" IS NOT NULL) AS "parentReported", p."carrySettlement" AS "carrySettlement", p."classIds" AS "classIds"
   FROM "RegularAbsencePeriod" p WHERE p.id = $1`;
 
 const TX_OPTIONS = { isolationLevel: "Serializable" as const, timeout: 30_000 };
@@ -172,7 +177,11 @@ export async function approveIllnessPeriod(
   }, TX_OPTIONS);
 }
 
-export type CancelPeriodApprovalResult = { periodId: string; studentId: string; reopened: number; creditsRestored: number; reviewsRemoved: number; closed: number };
+export type CancelPeriodApprovalResult = {
+  periodId: string; studentId: string; reopened: number; creditsRestored: number; reviewsRemoved: number; closed: number;
+  /** 보류로 돌려 둔 청구 수 — 승인 취소해도 되살리지 않는다(청구 준비에서 다시 발행) */
+  heldBills: number;
+};
 
 /**
  * [승인 취소] — 금액을 정하기 전(APPROVED)에만. 승인 «직전»으로 되돌린다.
@@ -194,6 +203,8 @@ export async function cancelIllnessPeriodApproval(
   return db.$transaction(async (tx) => {
     const period = await lockPeriod(tx, periodId);
     const approval = parsePeriodApprovalRecord(period.carrySettlement);
+    // 보류로 돌린 청구 사본 — 아래에서 carrySettlement 를 비우므로 먼저 꺼내 감사 기록에 남긴다
+    const heldBills = parseHeldBills(period.carrySettlement);
 
     const changed = await tx.$executeRawUnsafe(
       `UPDATE "RegularAbsencePeriod"
@@ -248,6 +259,7 @@ export async function cancelIllnessPeriodApproval(
 
     // ④ 승인 때 거둔 보강권을 돌려준다 — 여전히 «회수» 상태이고 예약에 묶인 적 없는 그 보강권만.
     //    그 결석이 아직 살아 있고 이월로 정산되지 않았을 때만. 만료일이 지났으면 만료 처리(매일 도는 만료 규칙과 같은 기준: expiresAt < now())
+    //    그날 출석·지각으로 기록된 날은 돌려주지 않는다(수업을 들었으니 보강권이 없다 — [보강권으로 전환]과 같은 기준)
     let creditsRestored = 0;
     if (approval.revokedCreditIds.length > 0) {
       creditsRestored = Number(await tx.$executeRawUnsafe(
@@ -257,15 +269,20 @@ export async function cancelIllnessPeriodApproval(
           WHERE mc.id = ANY($1::text[]) AND mc."studentId" = $2 AND mc.status = 'REVOKED' AND mc."makeupSessionId" IS NULL
             AND EXISTS (SELECT 1 FROM "RegularAbsence" ra
                          WHERE ra."periodId" = $3 AND ra."studentId" = mc."studentId" AND ra.status <> 'CANCELLED'
-                           AND mc."sourceKey" = 'REGULAR:' || ra."classId" || ':' || to_char(ra.date, 'YYYY-MM-DD') ${notSettled})`,
+                           AND mc."sourceKey" = 'REGULAR:' || ra."classId" || ':' || to_char(ra.date, 'YYYY-MM-DD') ${notSettled}
+                           AND NOT EXISTS (SELECT 1 FROM "Attendance" att JOIN "Session" se ON se.id = att."sessionId"
+                                            WHERE att."studentId" = ra."studentId" AND se."classId" = ra."classId"
+                                              AND to_char(se."date", 'YYYY-MM-DD') = to_char(ra.date, 'YYYY-MM-DD')
+                                              AND att.status IN ('PRESENT', 'LATE')))`,
         approval.revokedCreditIds, period.studentId, periodId,
       ));
     }
 
     await writeAudit(tx, "ILLNESS_PERIOD_APPROVAL_CANCELED", actorId, {
       periodId, studentId: period.studentId, reopened, reviewsRemoved, closed, creditsRestored, ...approval,
+      heldPaymentIds: heldBills.map((bill) => bill.paymentId),
     });
-    return { periodId, studentId: period.studentId, reopened, creditsRestored, reviewsRemoved, closed };
+    return { periodId, studentId: period.studentId, reopened, creditsRestored, reviewsRemoved, closed, heldBills: heldBills.length };
   }, TX_OPTIONS);
 }
 
@@ -333,6 +350,274 @@ export async function convertIllnessPeriodToMakeup(
     await writeAudit(tx, "ILLNESS_PERIOD_TO_MAKEUP", actorId, { periodId, studentId: period.studentId, converted, creditsIssued, attendedClosed });
     return { periodId, studentId: period.studentId, startDate: period.startDate, returnDate: period.returnDate, converted, creditsIssued, attendedClosed };
   }, CONVERT_TX_OPTIONS);
+}
+
+// ── 청구 발행 보류: 이미 발행된 미납 청구를 «보류로 돌리기» (2단계, 2026-11-15 원장 결정) ─────────────
+//
+// 왜: 부상 결석을 승인하면 그 아이의 새 청구는 발행되지 않는다(청구 준비가 막는다). 그런데 승인 «전에» 이미 발행된
+// 미납 청구(예: 12월분)는 학부모 화면에 그대로 남아 결제·미납 안내 대상이 된다. 원장이 대상과 금액을 보고 한 번 눌러
+// 그 청구를 «취소» 상태로 돌리고, 청구 준비의 초안을 «검토 전»으로 되돌려 복귀 뒤 다시 발행할 수 있게 한다.
+// 비유: 이미 보낸 청구서를 회수해 서랍에 넣어 두는 일. 금액 메모(초안)는 남겨 두고, 다시 보낼 때는 새 청구 번호가 붙는다.
+//
+// 자동으로 하지 않는다 — 원장만 누른다(호출부가 원장 권한을 확인한다. 기존 «미납 청구 취소»와 같은 권한).
+// 토스·현장 결제 코드는 건드리지 않는다: 결제가 진행 중인 청구는 «건너뛰고» 이유를 돌려준다.
+
+/** 현장 결제(POS) 요청에 묶인 청구(별칭 p) — 휴원 정산(pause-settlement.ts POS_BUSY_P)과 같은 조건(테스트가 비교) */
+export const HOLD_POS_BUSY_SQL = `(EXISTS (SELECT 1 FROM "PosChargeRequestItem" pi WHERE pi."paymentId" = p.id AND pi."open")
+             OR EXISTS (SELECT 1 FROM "PosChargeRequest" pr WHERE pr."paymentId" = p.id AND pr.status IN ('PENDING','SENT')))`;
+
+/**
+ * 보류로 돌릴 대상 청구(별칭 p) — $1 학생 · $2 기간 시작 달(YYYYMM 숫자) · $3 기간 대상 반(빈 배열 = 전부).
+ * 수강료(MONTHLY) 미납·연체, 수강월 ≥ 기간 시작 달. 랠리즈 사본 청구는 사이트에서 바꾸지 않는다(휴원 정산과 같은 기준).
+ */
+const HOLD_TARGET_SCOPE = `p."studentId" = $1 AND COALESCE(p.type, 'MONTHLY') = 'MONTHLY' AND p.status IN ('PENDING','OVERDUE')
+        AND p.year IS NOT NULL AND p.month IS NOT NULL AND (p.year * 100 + p.month) >= $2
+        AND (cardinality($3::text[]) = 0 OR p."classId" = ANY($3::text[]))
+        AND ${rallyzMirrorExclusionSql("p")}`;
+
+type HoldTargetRow = {
+  id: string; year: number; month: number; amount: number; status: string; classId: string | null; className: string | null;
+  invoiceId: string | null; invoiceStatus: string | null;
+  posBusy: boolean; paidTx: boolean; carryUsed: boolean; carrySource: boolean; pauseSettled: boolean;
+};
+
+/** 화면에 보이는 대상 청구 한 줄 — skip 이 있으면 이번에 돌리지 않는 청구(이유 글자와 함께) */
+export type HoldBillView = {
+  paymentId: string; year: number; month: number; classId: string | null; className: string | null; amount: number; status: string;
+  skip: HoldSkipCode | null; skipText: string | null;
+};
+
+const isHoldActive = (period: PeriodRow) =>
+  period.reason === ILLNESS_REASON && period.carryState === "APPROVED" && (period.status === "ACTIVE" || period.status === "ENDED");
+
+const holdScopeArgs = (period: PeriodRow): [string, number, string[]] => [
+  period.studentId,
+  Number(period.startDate.slice(0, 4)) * 100 + Number(period.startDate.slice(5, 7)),
+  Array.isArray(period.classIds) ? period.classIds.map(String) : [],
+];
+
+/**
+ * 대상 청구를 읽어 «돌릴 수 있는가»를 건마다 판정한다. lockedIds 를 주면 그 id 만 행 잠금(FOR UPDATE)으로 읽는다.
+ * 판정 순서: 학부모 결제 진행 중 → 현장 결제 요청 중 → 결제 거래 기록 있음 → 이월을 쓴 청구 → 이월의 근거인 청구
+ *   → 휴원 정산 반영 → 청구서 상태 이상.
+ * «이월의 근거인 청구»를 취소하면 그 이월이 무효가 돼 그 학생 청구가 통째로 막히고, «휴원 정산이 줄여 준 청구»를 취소하면
+ * 이미 차감한 휴원 이월이 사라진다 — 둘 다 자동으로 돌리지 않고 원장이 직접 본다.
+ */
+async function readHoldTargets(tx: IllnessTx, period: PeriodRow, nowMs: number, lockedIds: string[] | null): Promise<HoldBillView[]> {
+  const args = holdScopeArgs(period);
+  // 표가 아직 없는 DB 에서도 깨지지 않게 — 없는 표의 조건은 «해당 없음»(false)으로 둔다
+  const posReady = (await tableExists(tx, "PosChargeRequest")) && (await tableExists(tx, "PosChargeRequestItem"));
+  const carryReady = (await tableExists(tx, "BillingCarryUsage")) && (await tableExists(tx, "BillingWorkbenchDraft")) && (await tableExists(tx, "BillingCarryCredit"));
+  const pauseReady = await tableExists(tx, "EnrollmentChangeSettlementLine");
+  const rows = await tx.$queryRawUnsafe<HoldTargetRow[]>(
+    `SELECT p.id, p.year, p.month, p.amount, p.status, p."classId" AS "classId", c.name AS "className",
+            (SELECT i.id FROM "PaymentInvoice" i WHERE i."paymentId" = p.id ORDER BY i."createdAt" DESC LIMIT 1) AS "invoiceId",
+            (SELECT i.status FROM "PaymentInvoice" i WHERE i."paymentId" = p.id ORDER BY i."createdAt" DESC LIMIT 1) AS "invoiceStatus",
+            ${posReady ? HOLD_POS_BUSY_SQL : "false"} AS "posBusy",
+            EXISTS (SELECT 1 FROM "PaymentTransaction" t
+                     WHERE (t.status = 'DONE' OR ${APPROVED_PENDING_SQL})
+                       AND (t."paymentId" = p.id OR EXISTS (SELECT 1 FROM "PaymentTransactionItem" it WHERE it."transactionId" = t.id AND it."paymentId" = p.id))) AS "paidTx",
+            ${carryReady
+              ? `EXISTS (SELECT 1 FROM "BillingCarryUsage" u
+                          WHERE u."paymentId" = p.id
+                             OR EXISTS (SELECT 1 FROM "BillingWorkbenchDraft" d WHERE d."paymentId" = p.id AND d.id = u."draftId" AND d.month = u.month))`
+              : "false"} AS "carryUsed",
+            ${carryReady
+              ? `EXISTS (SELECT 1 FROM "BillingCarryCredit" source_credit WHERE source_credit.basis->>'sourcePaymentId' = p.id)`
+              : "false"} AS "carrySource",
+            ${pauseReady
+              ? `EXISTS (SELECT 1 FROM "EnrollmentChangeSettlementLine" l WHERE l."paymentId" = p.id AND l.kind IN ('UNPAID_REDUCE','CARRY_APPLY'))`
+              : "false"} AS "pauseSettled"
+       FROM "Payment" p
+       LEFT JOIN "Class" c ON c.id = p."classId"
+      WHERE ${HOLD_TARGET_SCOPE}${lockedIds ? ` AND p.id = ANY($4::text[])` : ""}
+      ORDER BY p.year, p.month, p.id${lockedIds ? " FOR UPDATE OF p" : ""}`,
+    ...args, ...(lockedIds ? [lockedIds] : []),
+  );
+  // 학부모 결제 진행 중(30분 안 결제창·기한 남은 입금 계좌) — 관리자 청구서 수정·휴원 정산과 같은 판정 함수
+  const active = await findParentCheckoutActivePaymentIds(tx, rows.map((row) => String(row.id)), nowMs);
+  return rows.map((row) => {
+    const skip: HoldSkipCode | null = active.has(String(row.id)) ? "CHECKOUT"
+      : row.posBusy ? "POS"
+      : row.paidTx ? "PAID_TX"
+      : row.carryUsed ? "CARRY_USED"
+      : row.carrySource ? "CARRY_SOURCE"
+      : row.pauseSettled ? "PAUSE_SETTLED"
+      : !row.invoiceId || !["ISSUED", "SENT", "OVERDUE"].includes(String(row.invoiceStatus)) ? "INVOICE"
+      : null;
+    return {
+      paymentId: String(row.id), year: Number(row.year), month: Number(row.month), classId: row.classId ?? null, className: row.className ?? null,
+      amount: Number(row.amount), status: String(row.status), skip, skipText: skip ? HOLD_SKIP_REASONS[skip] : null,
+    };
+  });
+}
+
+export type IllnessPeriodBillingHold = {
+  periodId: string; studentId: string;
+  /** 이 기간이 지금 «발행 보류»를 만들고 있는가(승인됨 + 금액 미확정 + 등록 취소 아님) */
+  holdActive: boolean;
+  /** 이미 발행된 미납 청구(보류로 돌릴 수 있는 것과 건너뛸 것 모두) */
+  bills: HoldBillView[];
+  /** 이미 보류로 돌려 둔 청구 사본 */
+  heldBills: HeldBillRecord[];
+};
+
+/** 신청함 상세의 보류 칸 — 읽기만(잠금 없음). 금액을 가릴지는 호출부(역할)가 정한다 */
+export async function readIllnessPeriodBillingHold(tx: IllnessTx, periodIdInput: string, nowMs = Date.now()): Promise<IllnessPeriodBillingHold | null> {
+  const periodId = typeof periodIdInput === "string" ? periodIdInput.trim() : "";
+  if (!periodId || periodId.length > 200) return null;
+  if (!(await periodCarryColumnsReady(tx))) return null;
+  const periods = await tx.$queryRawUnsafe<PeriodRow[]>(PERIOD_SELECT, periodId);
+  const period = periods.find((row) => row.id === periodId) ?? null;
+  if (!period || period.reason !== ILLNESS_REASON) return null;
+  const holdActive = isHoldActive(period);
+  return {
+    periodId, studentId: period.studentId, holdActive,
+    bills: holdActive ? await readHoldTargets(tx, period, nowMs, null) : [],
+    heldBills: period.carryState === "APPROVED" ? parseHeldBills(period.carrySettlement) : [],
+  };
+}
+
+export type HoldBillsResult = {
+  periodId: string; studentId: string;
+  held: HeldBillRecord[];
+  /** 이번에 돌리지 않은 청구와 이유 */
+  skipped: HoldBillView[];
+};
+
+/**
+ * [발행 보류로 돌리기] — 이미 발행된 미납 청구를 «취소» 상태로 돌리고, 청구 준비 초안을 «검토 전»으로 되돌린다. 전부 한 트랜잭션.
+ *
+ * 잠금 순서(휴원 정산·관리자 청구서 수정과 같게 — 교착 금지):
+ *   작업대 전역 잠금 → 기간 행 → ① 대상 청구 id 를 잠금 없이 읽고 → ② 결제 잠금(lockPaymentsForCheckout, id 정렬순)
+ *   → ③ 그 id 만 청구 행 FOR UPDATE → ④ 범위를 다시 읽어 처음 목록과 같은지 확인.
+ * 결제 시작·승인 직전도 같은 결제 잠금을 잡고 상태를 다시 읽으므로, «취소한 청구가 결제되는» 엇갈림이 없다.
+ *
+ * @param input.expectedPaymentIds 원장이 화면에서 본 «돌릴 청구» id 목록. 잠근 뒤의 대상과 다르면 실행하지 않는다
+ *        (본 것과 다른 청구가 취소되지 않게). 건너뛸 청구(결제 진행 중 등)는 여기에 넣지 않는다.
+ */
+export async function holdIssuedBillsForPeriod(
+  db: IllnessPeriodDb,
+  input: { periodId: string; expectedPaymentIds: string[] },
+  actorId: string,
+  nowMs = Date.now(),
+): Promise<HoldBillsResult> {
+  if (!actorId) throw new IllnessPeriodError("관리자 확인이 필요합니다.", 403);
+  const periodId = cleanId(input?.periodId);
+  const expected = Array.isArray(input?.expectedPaymentIds)
+    ? [...new Set(input.expectedPaymentIds.filter((id): id is string => typeof id === "string" && id.length > 0 && id.length <= 200))].sort()
+    : [];
+  if (expected.length === 0) throw new IllnessPeriodError("보류로 돌릴 청구가 없습니다.", 400);
+
+  return db.$transaction(async (tx) => {
+    const period = await lockPeriod(tx, periodId);
+    if (!isHoldActive(period)) throw new IllnessPeriodError("부상 결석으로 승인돼 발행 보류 중인 기간만 처리할 수 있습니다.");
+
+    // ① 잠금 없이 대상 id → ② 결제 잠금(정렬순) → ③ 그 id 만 행 잠금으로 다시 읽기
+    const scopeArgs = holdScopeArgs(period);
+    const readScopeIds = async () => (await tx.$queryRawUnsafe<Array<{ id: string }>>(
+      `SELECT p.id FROM "Payment" p WHERE ${HOLD_TARGET_SCOPE} ORDER BY p.id`, ...scopeArgs,
+    )).map((row) => String(row.id));
+    const lockedIds = await readScopeIds();
+    await lockPaymentsForCheckout(tx, lockedIds);
+    const bills = lockedIds.length > 0 ? await readHoldTargets(tx, period, nowMs, lockedIds) : [];
+    // ④ 잠그는 사이 새 청구가 생기거나 빠졌으면 실행하지 않는다(원장이 다시 누르면 새 목록으로 잠근다)
+    const again = await readScopeIds();
+    if (again.length !== lockedIds.length || again.some((id, index) => id !== lockedIds[index])) {
+      throw new IllnessPeriodError("청구 목록이 바뀌었습니다. 다시 확인한 뒤 눌러 주세요.");
+    }
+
+    const targets = bills.filter((bill) => !bill.skip);
+    const skipped = bills.filter((bill) => bill.skip);
+    // 원장이 본 목록과 지금 돌릴 목록이 같을 때만 — 그 사이 결제가 시작됐거나 납부됐으면 다시 보여 준다
+    const targetIds = targets.map((bill) => bill.paymentId).sort();
+    if (targetIds.length !== expected.length || targetIds.some((id, index) => id !== expected[index])) {
+      throw new IllnessPeriodError("대상 청구가 바뀌었습니다. 목록을 다시 확인한 뒤 눌러 주세요.");
+    }
+
+    const draftReady = (await tableExists(tx, "BillingWorkbenchDraft")) && (await tableExists(tx, "BillingWorkbenchRevision"));
+    const heldAt = new Date(nowMs).toISOString();
+    const held: HeldBillRecord[] = [];
+    for (const bill of targets) {
+      const invoices = await tx.$queryRawUnsafe<Array<{ id: string; status: string }>>(
+        `SELECT id, status FROM "PaymentInvoice" WHERE "paymentId" = $1 FOR UPDATE`, bill.paymentId,
+      );
+      const invoice = invoices[0];
+      if (!invoice) throw new IllnessPeriodError("청구서 상태가 바뀌었습니다. 다시 확인한 뒤 눌러 주세요.");
+      // 기존 «미납 청구 취소»(cancelUnpaidPayment)와 같은 조건부 UPDATE — 지금도 미납·연체일 때만
+      const paymentUpdated = Number(await tx.$executeRawUnsafe(
+        `UPDATE "Payment" SET status = 'CANCELED', "paidDate" = NULL, "updatedAt" = NOW()
+          WHERE id = $1 AND status IN ('PENDING', 'OVERDUE')`,
+        bill.paymentId,
+      ));
+      const invoiceUpdated = Number(await tx.$executeRawUnsafe(
+        `UPDATE "PaymentInvoice" SET status = 'CANCELED', "canceledAt" = NOW(), "updatedAt" = NOW()
+          WHERE id = $1 AND "paymentId" = $2 AND status IN ('ISSUED', 'SENT', 'OVERDUE')`,
+        invoice.id, bill.paymentId,
+      ));
+      // 하나라도 안 바뀌면 던진다 → 거래 전체가 되돌아간다(일부만 취소되는 일 없음)
+      if (paymentUpdated !== 1 || invoiceUpdated !== 1) throw new IllnessPeriodError("청구 상태가 바뀌어 처리하지 않았습니다. 다시 확인해 주세요.");
+      await tx.$executeRawUnsafe(
+        `INSERT INTO "PaymentAuditLog" (id, "paymentId", "invoiceId", "actorType", "actorId", action, message, metadata, "createdAt")
+         VALUES (gen_random_uuid()::text, $1, $2, 'ADMIN', $3, 'ILLNESS_PERIOD_BILL_HELD', $4, $5::jsonb, NOW())`,
+        bill.paymentId, invoice.id, actorId, "부상 결석 발행 보류",
+        JSON.stringify({ amount: bill.amount, year: bill.year, month: bill.month, periodId }),
+      );
+
+      // 청구 준비 초안을 «검토 전»으로 — 금액(payload)은 남겨 복귀 때 다시 쓴다. 발행 상태이고 이 청구에 연결된 초안일 때만
+      let draftId: string | null = null;
+      if (draftReady) {
+        const drafts = await tx.$queryRawUnsafe<Array<{ id: string; month: string; version: number; payload: unknown; reason: string }>>(
+          `SELECT id, month, version, payload, reason FROM "BillingWorkbenchDraft" WHERE "paymentId" = $1 FOR UPDATE`, bill.paymentId,
+        );
+        const draft = drafts[0];
+        if (draft) {
+          const nextVersion = Number(draft.version) + 1;
+          const draftUpdated = Number(await tx.$executeRawUnsafe(
+            `UPDATE "BillingWorkbenchDraft" SET status = 'DRAFT', "paymentId" = NULL, version = $4, "actorUserId" = $5, "updatedAt" = NOW()
+              WHERE id = $1 AND month = $2 AND "paymentId" = $3 AND status = 'ISSUED'`,
+            draft.id, draft.month, bill.paymentId, nextVersion, actorId,
+          ));
+          if (draftUpdated !== 1) throw new IllnessPeriodError("청구 준비 기록이 바뀌어 처리하지 않았습니다. 다시 확인해 주세요.");
+          const payload = typeof draft.payload === "string" ? JSON.parse(draft.payload) : draft.payload;
+          await tx.$executeRawUnsafe(
+            `INSERT INTO "BillingWorkbenchRevision" (id, "draftId", month, version, action, payload, reason, "actorUserId")
+             VALUES (gen_random_uuid()::text, $1, $2, $3, 'HOLD', $4::jsonb, $5, $6)`,
+            draft.id, draft.month, nextVersion, JSON.stringify({ ...(payload ?? {}), heldPaymentId: bill.paymentId, periodId }),
+            "부상 결석 발행 보류", actorId,
+          );
+          draftId = draft.id;
+        }
+      }
+      held.push({ paymentId: bill.paymentId, invoiceId: invoice.id, year: bill.year, month: bill.month, classId: bill.classId, amount: bill.amount, draftId, heldAt });
+    }
+
+    // 돌린 목록을 기간 행에 «병합» 저장한다 — 승인 때 남긴 approval 키(되돌릴 재료)를 지우지 않는다.
+    // 두 번째 실행이면 앞서 돌린 목록 뒤에 잇는다
+    const allHeld = [...parseHeldBills(period.carrySettlement), ...held];
+    const saved = Number(await tx.$executeRawUnsafe(
+      `UPDATE "RegularAbsencePeriod"
+          SET "carrySettlement" = COALESCE("carrySettlement", '{}'::jsonb) || $2::jsonb, "updatedAt" = now()
+        WHERE id = $1 AND "carryState" = 'APPROVED'`,
+      periodId, JSON.stringify({ held: allHeld }),
+    ));
+    if (saved !== 1) throw new IllnessPeriodError("기간 상태가 바뀌어 처리하지 않았습니다. 다시 확인해 주세요.");
+    await writeAudit(tx, "ILLNESS_PERIOD_BILLS_HELD", actorId, {
+      periodId, studentId: period.studentId,
+      held: held.map((bill) => ({ paymentId: bill.paymentId, year: bill.year, month: bill.month, amount: bill.amount })),
+      skipped: skipped.map((bill) => ({ paymentId: bill.paymentId, reason: bill.skip })),
+    });
+    return { periodId, studentId: period.studentId, held, skipped };
+  }, TX_OPTIONS);
+}
+
+/** 학부모 앱 알림 본문에 넣을 아이 이름(없으면 빈 글자) — 형제가 같은 기간이어도 알림이 아이마다 따로 가게 */
+export async function readStudentName(tx: Pick<IllnessTx, "$queryRawUnsafe">, studentId: string): Promise<string> {
+  // 병합돼 사라진 학생 행은 읽지 않는다(이름을 못 읽으면 알림 본문에 이름을 붙이지 않을 뿐이다)
+  const rows = await tx.$queryRawUnsafe<Array<{ name: string | null }>>(
+    `SELECT s.name FROM "Student" s WHERE s.id = $1 AND ${notMergedStudent("s")}`, studentId,
+  );
+  return rows[0]?.name?.trim() ?? "";
 }
 
 /**

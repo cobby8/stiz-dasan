@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { requireVerifiedParent } from "@/lib/auth-guard";
-import { getParentPaymentRequests } from "@/lib/payments/parent-payment-request";
+import { getParentBillingHolds, getParentPaymentRequests } from "@/lib/payments/parent-payment-request";
 import { getPaymentProviderConfig } from "@/lib/payment-ledger";
 import { getAcademySettings } from "@/lib/queries";
 import { academyBankAccount } from "@/lib/payments/academy-bank-account";
@@ -20,6 +20,8 @@ export default async function ParentPaymentsPage() {
     getParentPaymentRequests(parent.appUserId),
     getAcademySettings().catch(() => null) as Promise<any>,
   ]);
+  // 부상 결석이 승인돼 청구를 잠시 멈춘 자녀 — 위 조회가 끝난 뒤에 읽는다(DB 연결을 동시에 늘리지 않는다). 실패하면 빈 목록
+  const holds = await getParentBillingHolds(parent.appUserId);
 
   // 온라인 결제 가능 여부 — 결제 화면(/payments/[invoiceId])이 쓰는 판정을 그대로 쓴다(키·제공자 설정).
   // 비밀키는 넘기지 않고 참/거짓만 넘긴다.
@@ -34,5 +36,5 @@ export default async function ParentPaymentsPage() {
     bankAccount: academyBankAccount(),
   };
 
-  return <PaymentRequestClient rows={rows} payReady={payReady} contact={contact} />;
+  return <PaymentRequestClient rows={rows} payReady={payReady} contact={contact} holds={holds} />;
 }
