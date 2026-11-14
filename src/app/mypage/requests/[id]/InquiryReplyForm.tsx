@@ -2,8 +2,9 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { sendInquiryFollowUp } from "@/app/actions/parent-inquiry";
-import { INQUIRY_BODY_MAX } from "@/lib/requests/inquiryThreadRules";
+import { INQUIRY_BODY_MAX, OPEN_REFUND_EXISTS_PARENT } from "@/lib/requests/inquiryThreadRules";
 // 서버 안내를 그대로 띄우지 않고 고객용 문장인지 한 번 거른다(오류 원문·개발 용어 차단)
 import { customerMessage } from "@/components/parent/customerMessage";
 import { academyTel } from "@/lib/academyPhoneRules";
@@ -19,6 +20,8 @@ export default function InquiryReplyForm({ requestId, academyPhone = null }: { r
   // 학원 답을 기다리는 동안 연달아 쓴 글이 한도(5개)에 닿았는가 — 안내 + 전화 버튼을 보인다
   const [waitingLimit, setWaitingLimit] = useState(false);
   const tel = academyTel(academyPhone);
+  // 글은 붙었지만 이 문의는 다시 열리지 않았다 — 같은 청구에 열려 있는 다른 환불 문의로 안내한다
+  const [openRefundId, setOpenRefundId] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   function submit() {
@@ -32,6 +35,7 @@ export default function InquiryReplyForm({ requestId, academyPhone = null }: { r
           setError(customerMessage(result.error, "보내지 못했어요. 다시 시도해 주세요."));
           return;
         }
+        setOpenRefundId(result.openRefundRequestId ?? null);
       } catch {
         // 통신 끊김·서버 오류 — 쓴 글은 지우지 않는다
         setError("보내지 못했어요. 다시 시도해 주세요.");
@@ -65,6 +69,12 @@ export default function InquiryReplyForm({ requestId, academyPhone = null }: { r
         {pending ? "보내는 중..." : "보내기"}
       </button>
       {error && <p role="alert" className="text-xs font-semibold text-[var(--color-academy-danger)]">{error}</p>}
+      {openRefundId && (
+        <p role="status" className="text-xs text-[var(--color-academy-muted)]">
+          {OPEN_REFUND_EXISTS_PARENT}{" "}
+          <Link href={`/mypage/requests/${openRefundId}`} className="inline-flex min-h-11 items-center underline">그 문의 보기</Link>
+        </p>
+      )}
       {/* 한도 안내는 막다른 곳으로 두지 않는다 — 급하면 그 자리에서 전화 */}
       {waitingLimit && tel && (
         <a href={`tel:${tel}`} className="academy-button-secondary w-full tabular-nums">학원에 전화 {academyPhone}</a>

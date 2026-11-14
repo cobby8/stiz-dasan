@@ -59,6 +59,10 @@ function fakeDb(seed = {}) {
     tick: 0,
   };
   const now = () => new Date(Date.UTC(2026, 10, 20, 3, 0, state.tick++));
+  // 부분 유일 색인 ParentRequest_open_refund_key 흉내: 같은 사람·같은 청구에 열린(PENDING·CONFIRMED) 환불 문의는 하나
+  const uniqueRefund = () => Object.assign(new Error('duplicate key value violates unique constraint "ParentRequest_open_refund_key"'), { code: "P2010", meta: { code: "23505" } });
+  const openRefundClash = (row, nextStatus) => Boolean(row.paymentId) && ["PENDING", "CONFIRMED"].includes(nextStatus)
+    && state.requests.some((o) => o.id !== row.id && o.userId === row.userId && o.paymentId === row.paymentId && ["PENDING", "CONFIRMED"].includes(o.status));
   const run = async (sql, ...args) => {
     state.calls.push({ sql, args });
     if (/^\s*SELECT m\.id, m\."requestId"/.test(sql)) {
@@ -85,10 +89,15 @@ function fakeDb(seed = {}) {
       state.messages.push({ id: `m${state.messages.length + 1}`, requestId, authorRole: "ADMIN", authorUserId: adminId, body, createdAt: now() });
       return 1;
     }
+    if (/^\s*SELECT o\.id FROM "ParentRequest" r/.test(sql)) {
+      const self = state.requests.find((r) => r.id === args[0] && r.userId === args[1]);
+      return state.requests.filter((o) => self && o.id !== self.id && o.userId === self.userId && o.paymentId === self.paymentId && ["PENDING", "CONFIRMED"].includes(o.status)).map((o) => ({ id: o.id }));
+    }
     if (/^UPDATE "ParentRequest" r SET status = \$3/.test(sql.trim())) {
       const [requestId, userId, status] = args;
       const row = state.requests.find((r) => r.id === requestId && r.userId === userId);
       if (!row) return [];
+      if (openRefundClash(row, status)) throw uniqueRefund();
       row.status = status;
       return [{ title: row.title, studentName: row.studentName ?? null, adminNote: row.adminNote ?? null }];
     }
@@ -102,7 +111,9 @@ function fakeDb(seed = {}) {
       return [{ id: row.id }];
     }
     if (/UPDATE "ParentRequest" SET status = \$2/.test(sql)) {
-      state.requests.find((r) => r.id === args[0]).status = args[1];
+      const row = state.requests.find((r) => r.id === args[0]);
+      if (openRefundClash(row, args[1])) throw uniqueRefund();
+      row.status = args[1];
       return 1;
     }
     if (/FROM "ParentRequest"\s+WHERE "userId" = \$1 AND "paymentId" = \$2/.test(sql)) {
@@ -549,7 +560,8 @@ test("⑨ 환불 문의 중복: 동시에 두 번 눌러 유일 색인에 걸리
   assert.deepEqual([again.ok, again.existing], [true, false]);
   const source = read("src/lib/requests/inquiry-thread.ts");
   assert.doesNotMatch(source, /UPDATE "ParentRequest" SET "paymentId"/, "만든 뒤 따로 연결하지 않는다(한 문장)");
-  assert.doesNotMatch(source, /status IN \('PENDING', 'CONFIRMED'\)[\s\S]{0,160}\.catch\(\(\) => \[\]/, "조회 실패를 빈 목록으로 삼키지 않는다");
+  // 환불 문의 만들기 안에서만 본다(이어 쓰기의 «열린 다른 문의 안내용» 조회는 실패해도 안내만 빠진다)
+  assert.doesNotMatch(source.slice(source.indexOf("export async function createRefundInquiry")), /status IN \('PENDING', 'CONFIRMED'\)[\s\S]{0,160}\.catch\(\(\) => \[\]/, "조회 실패를 빈 목록으로 삼키지 않는다");
 });
 
 test("⑨ 환불 사유 길이는 문의 글과 같은 함수로(빈 값만 허용)", async () => {
@@ -652,6 +664,57 @@ test("⑩ F7·F8 목록 날짜 칸 폭 · 계좌 안내 링크는 실제 문의 
   const home = read("src/app/mypage/MyPageClient.tsx");
   assert.match(home, /if \(id === "parent-request-form"\) setShowRequestForm\(true\);/);
   assert.match(home, /<div id="parent-request-form"/);
+});
+
+// ── ⑪ 재검수 권장: 열린 환불 문의 유일 제약에 걸렸을 때 ───────────────────────────
+
+const twoRefunds = () => fakeDb({ requests: [
+  baseRequest({ id: "old", title: "환불 문의 · 옛 건", status: "COMPLETED", paymentId: "pay-1", paymentAmount: 72000 }),
+  baseRequest({ id: "open", title: "환불 문의 · 열린 건", status: "PENDING", paymentId: "pay-1", paymentAmount: 72000 }),
+] });
+
+test("⑪ 종결된 환불 문의에 이어 쓰면: 글은 남고, 열려 있는 다른 환불 문의를 알려 준다", async () => {
+  const db = twoRefunds();
+  const result = await service.addParentInquiryMessage(db, "parent-a", "old", "한 가지 더 여쭤요");
+  assert.equal(result.ok, true);
+  assert.equal(result.openRefundRequestId, "open");
+  assert.deepEqual(db.state.messages.map((m) => [m.requestId, m.body]), [["old", "한 가지 더 여쭤요"]], "쓴 글은 버리지 않는다");
+  assert.equal(db.state.requests[0].status, "COMPLETED", "다시 열리지는 않는다");
+  // 서버 동작이 그 id 를 화면까지 넘기고, 화면은 안내 + 그 문의로 가는 링크를 보인다
+  const again = await loadActions(db).actions.sendInquiryFollowUp("old", "또 한 가지");
+  assert.deepEqual([again.ok, again.openRefundRequestId], [true, "open"]);
+  const form = read("src/app/mypage/requests/[id]/InquiryReplyForm.tsx");
+  assert.match(form, /setOpenRefundId\(result\.openRefundRequestId \?\? null\);/);
+  assert.match(form, /\{OPEN_REFUND_EXISTS_PARENT\}\{" "\}\s*<Link href=\{`\/mypage\/requests\/\$\{openRefundId\}`\}/);
+  assert.equal(rules.OPEN_REFUND_EXISTS_PARENT, "이 청구에는 열려 있는 환불 문의가 따로 있어요");
+  // 겹치지 않는 보통 문의는 그대로(안내 없음)
+  const plain = fakeDb({ requests: [baseRequest({ status: "COMPLETED" })] });
+  assert.equal((await service.addParentInquiryMessage(plain, "parent-a", "r1", "추가")).openRefundRequestId, undefined);
+});
+
+test("⑪ 관리자 답 + 상태: 유일 제약에 걸리면 답은 저장하고 «상태는 바뀌지 않았습니다»를 화면까지 돌려준다", async () => {
+  const db = twoRefunds();
+  const result = await service.addAdminInquiryReply(db, "admin-1", "old", "다시 확인해 보겠습니다", "PENDING");
+  assert.deepEqual([result.ok, result.status, result.statusNote], [true, "COMPLETED", rules.REPLY_SAVED_STATUS_KEPT]);
+  assert.match(result.statusNote, /답은 저장했고 상태는 바뀌지 않았습니다\(같은 청구에 열린 환불 문의가 있음\)/);
+  assert.equal(db.state.messages.length, 1, "답은 저장됐다");
+  const viaAction = await loadActions(db).actions.replyToParentRequest("old", "한 번 더 안내", "CONFIRMED");
+  assert.deepEqual([viaAction.saved, viaAction.status, viaAction.note], [true, "COMPLETED", rules.REPLY_SAVED_STATUS_KEPT]);
+  assert.equal(db.state.notifications.length, 1, "답 1건 = 학부모 알림 1건은 그대로");
+  // 상태를 고르지 않은 답(종결 상태 유지)은 걸리지 않는다
+  assert.equal((await service.addAdminInquiryReply(db, "admin-1", "old", "참고 안내")).statusNote, undefined);
+  // 요청함·신청함이 그 글을 보인다
+  assert.match(read("src/app/admin/requests/RequestsAdminClient.tsx"), /setFeedback\(result\.note \? `\$\{result\.note\} \$\{saved\}` : saved\);/);
+  assert.match(read("src/app/admin/inbox/InboxClient.tsx"), /text: partial \|\| `\$\{row\.studentName \?\? row\.title\} · \$\{action\.label\} 처리했습니다\.` \}/);
+  assert.match(read("src/app/admin/requests/RequestsAdminClient.tsx"), /if \(!result\.saved && "error" in result && result\.error\) \{\s*setFeedback\(result\.error\);/);
+});
+
+test("⑪ 하루 새 문의 상한 주석이 실제 동작과 같다: 환불 문의는 건수에 세어지지만 막지는 않는다", () => {
+  const source = read("src/lib/requests/inquiryThreadRules.ts");
+  assert.match(source, /환불 문의도 같은 표에 쌓여 이 «건수»에는 세어지지만, 환불 문의 자체는 이 상한으로 막지 않는다/);
+  // 실제 동작: 상한은 홈 문의 폼(createParentRequest)에만 있고, 환불 문의 서버 함수에는 없다
+  assert.doesNotMatch(read("src/lib/requests/inquiry-thread.ts"), /INQUIRY_DAILY_NEW_MAX/);
+  assert.match(read("src/app/actions/admin.ts"), /requestedDate, INQUIRY_DAILY_NEW_MAX,/);
 });
 
 // ── ⑧ 청구 화면의 «환불 문의»(c11) ──────────────────────────────────────────────

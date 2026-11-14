@@ -16,6 +16,8 @@ import {
   buildInquiryThread,
   canAskRefund,
   appendLegacyAnswer,
+  OPEN_REFUND_EXISTS_ADMIN,
+  REPLY_SAVED_STATUS_KEPT,
   cleanInquiryBody,
   INQUIRY_PARENT_STREAK_MAX,
   INQUIRY_WAITING_LIMIT_MESSAGE,
@@ -165,7 +167,7 @@ export async function getMyInquiry(db: InquiryDb, parentUserId: string, requestI
 }
 
 export type InquiryWriteResult =
-  | { ok: true; requestId: string; title: string; studentName: string | null; /** 원장 앱 알림을 만들 것인가(바로 앞 글이 학원 글일 때만) */ notifyAdmins: boolean }
+  | { ok: true; requestId: string; title: string; studentName: string | null; /** 원장 앱 알림을 만들 것인가(바로 앞 글이 학원 글일 때만) */ notifyAdmins: boolean; /** 글은 저장됐지만 이 문의를 다시 열지 못했다 — 같은 청구에 열려 있는 다른 환불 문의의 id */ openRefundRequestId?: string }
   | { ok: false; error: string; /** 연속 글 한도에 걸렸는가(화면이 전화 버튼을 보인다) */ waitingLimit?: boolean };
 
 /** Postgres 유일 제약 위반(23505) */
@@ -215,6 +217,7 @@ export async function addParentInquiryMessage(db: InquiryDb, parentUserId: strin
     return mine.length ? { ok: false, error: INQUIRY_WAITING_LIMIT_MESSAGE, waitingLimit: true } : { ok: false, error: INQUIRY_NOT_FOUND };
   }
   // 글은 이미 저장됐다 — 상태 되돌리기가 실패해도 학부모에게 실패로 돌려주지 않는다(다시 보내면 글이 두 번 쌓인다)
+  let reopenBlocked = false;
   const heads = await db.$queryRawUnsafe<{ title: string; studentName: string | null; adminNote: string | null }[]>(
     `UPDATE "ParentRequest" r SET status = $3, "updatedAt" = NOW()
        FROM (SELECT x.id, s.name AS "studentName" FROM "ParentRequest" x LEFT JOIN "Student" s ON s.id = x."studentId" AND ${notMergedStudent("s")} WHERE x.id = $1 AND x."userId" = $2) src
@@ -222,9 +225,23 @@ export async function addParentInquiryMessage(db: InquiryDb, parentUserId: strin
       RETURNING r.title, src."studentName", r."adminNote"`,
     requestId, parentUserId, statusAfterParentMessage(),
   ).catch((error) => {
-    console.error("[inquiry-thread] 문의 상태 되돌리기 실패:", error);
+    // 종결된 환불 문의를 다시 열려는데 같은 청구에 열린 환불 문의가 이미 있다(부분 유일 색인) — 글은 그대로 두고 그 문의를 알려 준다
+    if (isUniqueViolation(error)) reopenBlocked = true;
+    else console.error("[inquiry-thread] 문의 상태 되돌리기 실패:", error);
     return [] as { title: string; studentName: string | null; adminNote: string | null }[];
   });
+  let openRefundRequestId: string | undefined;
+  if (reopenBlocked) {
+    const others = await db.$queryRawUnsafe<{ id: string }[]>(
+      `SELECT o.id FROM "ParentRequest" r
+         JOIN "ParentRequest" o ON o."userId" = r."userId" AND o."paymentId" = r."paymentId" AND o.id <> r.id
+                                AND o.status IN ('PENDING', 'CONFIRMED')
+        WHERE r.id = $1 AND r."userId" = $2
+        ORDER BY o."createdAt" DESC LIMIT 1`,
+      requestId, parentUserId,
+    ).catch(() => [] as { id: string }[]);
+    openRefundRequestId = others[0]?.id;
+  }
   // 원장 알림 = 바로 앞 글이 학원 글일 때만(연달아 쓰는 글마다 알림을 만들지 않는다). 앞 글을 못 읽으면 알림을 만드는 쪽으로
   const { available, byRequest } = await readInquiryMessages(db, [requestId]);
   const messages = byRequest.get(requestId) ?? [];
@@ -232,7 +249,7 @@ export async function addParentInquiryMessage(db: InquiryDb, parentUserId: strin
   const notifyAdmins = !available || heads.length === 0
     ? true
     : shouldNotifyAdminsOfFollowUp(previous ? (previous.authorRole === "ADMIN" ? "ADMIN" : "PARENT") : null, heads[0].adminNote);
-  return { ok: true, requestId, title: heads[0]?.title ?? "문의", studentName: heads[0]?.studentName ?? null, notifyAdmins };
+  return { ok: true, requestId, title: heads[0]?.title ?? "문의", studentName: heads[0]?.studentName ?? null, notifyAdmins, ...(openRefundRequestId ? { openRefundRequestId } : {}) };
 }
 
 // ── 관리자: 대화 보기·답하기 ─────────────────────────────────────────────────
@@ -250,7 +267,7 @@ export async function getInquiryThreadForAdmin(db: InquiryDb, requestId: string)
 }
 
 export type AdminReplyResult =
-  | { ok: true; parentUserId: string; title: string; status: string; /** 새 표가 없어 예전 칸(adminNote)에 저장했는가 */ legacy: boolean }
+  | { ok: true; parentUserId: string; title: string; status: string; /** 새 표가 없어 예전 칸(adminNote)에 저장했는가 */ legacy: boolean; /** 답은 저장됐지만 상태를 못 바꾼 사유(화면에 보인다) */ statusNote?: string }
   | { ok: false; error: string };
 
 /**
@@ -301,11 +318,13 @@ export async function addAdminInquiryReply(db: InquiryDb, adminUserId: string, r
       );
     }
   } catch (error) {
-    console.error("[inquiry-thread] 문의 상태 저장 실패:", error);
+    // 같은 청구에 열린 환불 문의가 이미 있어(부분 유일 색인) 이 문의를 열린 상태로 바꿀 수 없다
+    const blocked = isUniqueViolation(error);
+    if (!blocked) console.error("[inquiry-thread] 문의 상태 저장 실패:", error);
     // 옛 칸에 저장하는 길이 실패했으면 답이 저장되지 않은 것이다
-    if (legacy) return { ok: false, error: "답변을 저장하지 못했습니다. 다시 시도해 주세요." };
-    // 새 표에 답은 저장됐다 — 상태만 예전 값으로 남는다
-    return { ok: true, parentUserId: head.userId, title: head.title, status: head.status, legacy };
+    if (legacy) return { ok: false, error: blocked ? OPEN_REFUND_EXISTS_ADMIN : "답변을 저장하지 못했습니다. 다시 시도해 주세요." };
+    // 새 표에 답은 저장됐다 — 상태만 예전 값으로 남는다(유일 위반이면 그 사유를 화면에 보인다)
+    return { ok: true, parentUserId: head.userId, title: head.title, status: head.status, legacy, ...(blocked ? { statusNote: REPLY_SAVED_STATUS_KEPT } : {}) };
   }
   return { ok: true, parentUserId: head.userId, title: head.title, status: nextStatus, legacy };
 }

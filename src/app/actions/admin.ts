@@ -2787,7 +2787,13 @@ export async function updateRequestStatus(id: string, status: string, adminNote?
              WHERE id = $3 AND status = $4 AND "adminNote" IS NOT DISTINCT FROM $5 RETURNING id`,
             status, note, id, before.status, before.adminNote,
         );
-    } catch {
+    } catch (e) {
+        // 종결된 환불 문의를 다시 «대기·확인»으로 바꾸려는데 같은 청구에 열린 환불 문의가 이미 있다
+        // (부분 유일 색인 ParentRequest_open_refund_key, Postgres 23505) — 저장되지 않은 것이 분명하므로 사유를 돌려준다
+        const pg = e as { code?: string; meta?: { code?: string }; message?: string } | null;
+        if (pg?.meta?.code === "23505" || pg?.code === "23505" || /23505|duplicate key value/.test(pg?.message ?? "")) {
+            return { saved: false as const, notification: "UNKNOWN" as const, error: "같은 청구에 이미 열려 있는 환불 문의가 있습니다. 그 문의에서 이어서 처리해 주세요." };
+        }
         return { saved: false as const, notification: "UNKNOWN" as const };
     }
     if (!updated.length) return { saved: false as const, notification: "UNKNOWN" as const };

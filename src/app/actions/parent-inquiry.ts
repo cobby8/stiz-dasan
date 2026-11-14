@@ -22,7 +22,7 @@ import {
 import type { InquiryBubble } from "@/lib/requests/inquiryThreadRules";
 
 type ParentResult =
-  | { ok: true; requestId: string; notice?: string }
+  | { ok: true; requestId: string; notice?: string; /** 같은 청구에 열려 있는 다른 환불 문의(이 문의는 다시 열리지 않았다) */ openRefundRequestId?: string }
   | { ok: false; error: string; /** 연속 글 한도 — 화면이 학원 전화 버튼을 보인다 */ waitingLimit?: boolean };
 
 const SIGN_IN_AGAIN = "다시 로그인해 주세요.";
@@ -66,7 +66,7 @@ export async function sendInquiryFollowUp(requestIdRaw: string, body: string): P
   // 원장 앱 알림은 «학원 답 뒤 첫 글»에만 — 연달아 쓰는 글마다 알림을 만들지 않는다(처음 문의 때 이미 알림이 갔다)
   if (result.notifyAdmins) await notifyAdminsOfInquiry("문의 추가 글", `${result.studentName ?? "원생"} - ${result.title}`);
   refreshRequestViews(requestId);
-  return { ok: true, requestId };
+  return { ok: true, requestId, ...(result.openRefundRequestId ? { openRefundRequestId: result.openRefundRequestId } : {}) };
 }
 
 /** 학부모: 납부 완료 청구에 대한 환불 문의를 접수한다(실제 환불은 관리자 기존 기능) */
@@ -101,7 +101,7 @@ export async function getParentRequestThreadForAdmin(requestIdRaw: string): Prom
 }
 
 export type AdminInquiryReplyResult =
-  | { saved: true; status: string; notification: "REGISTERED" | "UNKNOWN" }
+  | { saved: true; status: string; notification: "REGISTERED" | "UNKNOWN"; /** 답은 저장됐지만 상태를 못 바꾼 사유 */ note?: string }
   | { saved: false; error: string };
 
 /**
@@ -138,5 +138,5 @@ export async function replyToParentRequest(requestIdRaw: string, body: string, s
       // 푸시 실패는 답변 저장 결과를 바꾸지 않는다(앱 안 알림은 이미 등록됨)
     }
   }
-  return { saved: true, status: result.status, notification };
+  return { saved: true, status: result.status, notification, ...(result.statusNote ? { note: result.statusNote } : {}) };
 }

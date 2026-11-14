@@ -368,7 +368,9 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
           setMessage({ tone: "error", text: failure });
           return;
         }
-        setMessage({ tone: "ok", text: `${row.studentName ?? row.title} · ${action.label} 처리했습니다.` });
+        // 일부만 처리된 경우의 덧붙임(예: 문의 답은 저장했지만 상태는 못 바꿈) — 서버 동작이 note 로 돌려준다
+        const partial = result && typeof result === "object" && typeof (result as { note?: unknown }).note === "string" ? (result as { note: string }).note : "";
+        setMessage({ tone: "ok", text: partial || `${row.studentName ?? row.title} · ${action.label} 처리했습니다.` });
         setOpenSelection(null);
         setNote("");
         router.refresh();

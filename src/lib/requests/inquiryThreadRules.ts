@@ -97,7 +97,11 @@ export function inquiryParentStatus(head: Pick<InquiryHead, "status" | "adminNot
 export const INQUIRY_PARENT_STREAK_MAX = 5;
 export const INQUIRY_WAITING_LIMIT_MESSAGE = "답변을 기다리고 있어요. 급하면 학원에 전화해 주세요";
 
-/** 새 문의는 한 사람이 하루(KST)에 이만큼까지(환불 문의 포함 — 같은 표의 건수로 센다) */
+/**
+ * 새 문의(홈 문의 폼 — createParentRequest)는 한 사람이 하루(KST)에 이만큼까지.
+ * 환불 문의도 같은 표에 쌓여 이 «건수»에는 세어지지만, 환불 문의 자체는 이 상한으로 막지 않는다
+ * (환불 문의는 «같은 청구에 열린 문의 하나» 규칙으로 따로 묶인다 — createRefundInquiry).
+ */
 export const INQUIRY_DAILY_NEW_MAX = 20;
 
 /**
@@ -122,6 +126,14 @@ export function countRecentAnswered(rows: readonly { status: InquiryParentStatus
     return Number.isFinite(at) && at >= since;
   }).length;
 }
+
+// ── 같은 청구에 열린 환불 문의는 하나(부분 유일 색인 ParentRequest_open_refund_key)에 걸렸을 때의 안내 ──
+/** 관리자가 종결된 환불 문의를 다시 «대기·확인» 상태로 바꾸려 할 때 */
+export const OPEN_REFUND_EXISTS_ADMIN = "같은 청구에 이미 열려 있는 환불 문의가 있습니다. 그 문의에서 이어서 처리해 주세요.";
+/** 관리자 답은 저장됐지만 상태를 못 바꿨을 때 */
+export const REPLY_SAVED_STATUS_KEPT = "답은 저장했고 상태는 바뀌지 않았습니다(같은 청구에 열린 환불 문의가 있음).";
+/** 학부모가 종결된 환불 문의에 이어 썼는데, 같은 청구에 열린 환불 문의가 따로 있을 때 */
+export const OPEN_REFUND_EXISTS_PARENT = "이 청구에는 열려 있는 환불 문의가 따로 있어요";
 
 /** 옛 답변 칸(adminNote) 한도 — 새 표가 없는 환경에서 답을 이어 붙일 때 쓴다(글 한 개 한도와 같은 값) */
 export const LEGACY_ANSWER_MAX = INQUIRY_BODY_MAX;

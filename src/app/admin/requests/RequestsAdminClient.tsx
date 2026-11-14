@@ -253,7 +253,9 @@ export default function RequestsAdminClient({
                 return;
             }
             setAdminNotes((prev) => { const next = { ...prev }; delete next[id]; return next; });
-            setFeedback(result.notification === "REGISTERED" ? "답변 저장 완료 · 학부모 앱 알림 등록 완료" : "답변 저장 완료 · 알림 등록 결과 확인 필요. 자동 재발송하지 않습니다.");
+            // 상태를 못 바꾼 사유(같은 청구에 열린 환불 문의가 있음)가 있으면 그 글을 먼저 보인다
+            const saved = result.notification === "REGISTERED" ? "답변 저장 완료 · 학부모 앱 알림 등록 완료" : "답변 저장 완료 · 알림 등록 결과 확인 필요. 자동 재발송하지 않습니다.";
+            setFeedback(result.note ? `${result.note} ${saved}` : saved);
             await Promise.all([loadThread(id), loadRequests({ status: filter, offset: 0 })]);
         } catch {
             setFeedback("답변 저장 응답을 확인하지 못했습니다. 입력한 답변은 유지됩니다. 대화를 다시 열어 저장됐는지 확인해 주세요.");
@@ -500,6 +502,11 @@ export default function RequestsAdminClient({
                                                 setFeedback(null);
                                                 try {
                                                     const result = await updateRequestStatus(req.id, s.value, note);
+                                                    // 저장하지 않은 것이 분명한 경우(같은 청구에 열린 환불 문의가 있음)는 «결과 확인 필요»가 아니라 그 사유를 보인다
+                                                    if (!result.saved && "error" in result && result.error) {
+                                                        setFeedback(result.error);
+                                                        return;
+                                                    }
                                                     if (!result.saved) {
                                                         setUncertain(prev => ({ ...prev, [req.id]: { status: s.value, note } }));
                                                         setFeedback("저장 결과 확인이 필요합니다. 입력한 답변은 유지됩니다. 상태를 다시 조회해 주세요.");
