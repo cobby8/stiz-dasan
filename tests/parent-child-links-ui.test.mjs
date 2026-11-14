@@ -78,7 +78,8 @@ test("서버 홈은 빈 자녀 판정 전에 특강 내역을 조회하고 해�
   const calls = [];
   const Dashboard = compile("src/app/mypage/page.tsx", {
     "@/lib/supabase/server": { createClient: async () => ({ auth: { getUser: async () => ({ data: { user: { id: "auth-fixture" } } }) } }) },
-    "@/lib/queries": { getMyPageData: async (id) => { calls.push(id); return { children: [] }; } },
+    // 2026-11-14: 자녀 없음 화면의 학원 번호를 코드가 아니라 설정값에서 읽는다(getAcademySettings)
+    "@/lib/queries": { getMyPageData: async (id) => { calls.push(id); return { children: [] }; }, getAcademySettings: async () => ({ contactPhone: null }) },
     "@/lib/auth-guard": { requireVerifiedParent: async () => ({ appUserId: "verified-app-fixture" }) },
     "@/lib/shuttle/parent": {},
     // 홈 «처리할 일»(보강권·방학특강 회차) — 자녀가 없으면 부르지 않는다

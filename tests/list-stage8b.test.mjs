@@ -318,7 +318,9 @@ test("셔틀 예정 변경은 날짜 묶음의 한 줄 행이고 행 탭=하단 
 });
 
 test("방학특강 결석·보강은 세 목록이 한 목록의 행이고 배지·사유·날짜를 요소로 나누며 신청·신고 흐름은 그대로다", () => {
-  const Seasonal = compileModule("src/app/mypage/seasonal/SeasonalMakeupClient.tsx", { "@/lib/ui/statusTones": statusTones, "@/lib/seats/seatLevel": seatLevelModule, "@/lib/mypage/requestPreset": { presetIndex: () => 0, presetFirst: (list) => [...list] }, "@/components/parent/customerMessage": customerMessageModule, "@/components/parent/InlineConfirm": inlineConfirm }).default;
+  const Seasonal = compileModule("src/app/mypage/seasonal/SeasonalMakeupClient.tsx", { "@/lib/ui/statusTones": statusTones, "@/lib/seats/seatLevel": seatLevelModule, "@/lib/mypage/requestPreset": { presetIndex: () => 0, presetFirst: (list) => [...list] }, "@/components/parent/customerMessage": customerMessageModule, "@/components/parent/InlineConfirm": inlineConfirm,
+    // 2026-11-14: 연락처가 없을 때의 막다른 안내를 «연락처 바꾸기» 버튼+«학원에 문의» 링크로 바꿔 부품 둘이 늘었다(이 테스트는 연락처가 있는 화면만 본다)
+    "@/components/account/PhoneChangeButton": { __esModule: true, default: () => null }, "next/link": { __esModule: true, default: Link } }).default;
   const html = renderToStaticMarkup(React.createElement(Seasonal, { initial: {
     phoneKnown: true,
     absences: [{ enrollmentDateId: "e1", childName: "합성", offeringTitle: "겨울 방학특강 저학년", absentLabel: "1/5(월)", seasonalCandidates: [], regularCandidates: [] }],

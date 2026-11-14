@@ -701,8 +701,8 @@ export default function SessionInProgressClient({
                   {showFees && !student.makeup && !student.trial && feesByRoster.get(student.id)?.status === "UNPAID" && (
                     <span className="rounded bg-[var(--color-academy-warning-soft)] px-1.5 py-0.5 text-xs font-medium text-[var(--color-academy-warning)]">미납</span>
                   )}
-                  {/* 학생 메모·오늘 출결 메모가 있으면 «특이» — 내용은 상세 시트에 */}
-                  {(person?.memo || student.attendanceNote) && (
+                  {/* 학생 메모·건강 특이사항(학부모 입력)·오늘 출결 메모가 있으면 «특이» — 내용은 상세 시트에 */}
+                  {(person?.memo || person?.healthNote || student.attendanceNote) && (
                     <span className={`rounded px-1.5 py-0.5 text-xs ${TONE_BADGE_CLASS.neutral}`}>특이</span>
                   )}
                   <span className="text-sm text-[var(--color-academy-faint)]" aria-hidden="true">›</span>

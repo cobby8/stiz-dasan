@@ -8,6 +8,7 @@ import {
 } from "@/lib/staff-class-access";
 import { normalizePhoneNumber } from "@/lib/staff-contacts";
 import { notMergedStudent } from "@/lib/studentVisibility";
+import { loadHealthNotes } from "@/lib/student/healthNote";
 
 export type StaffClassGuardian = {
   id: string | null;
@@ -36,6 +37,8 @@ export type StaffClassPerson = {
   school: string | null;
   grade: string | null;
   memo: string | null;
+  /** 건강·알레르기·특이사항(학부모가 적는다, 2026-11-14 b5) — 이 반 명단에 있는 학생 것만. 칸이 없는 환경이면 null */
+  healthNote?: string | null;
   studentPhone: string | null;
   guardians: StaffClassGuardian[];
   recentAttendance: StaffClassAttendanceSummary;
@@ -335,8 +338,12 @@ export async function getStaffClassPeople(
     sessionId ?? null,
   );
 
+  // 건강 특이사항 — 위에서 권한을 확인하고 읽은 «이 반 명단» 학생 id 로만 따로 읽는다(칸이 없거나 실패하면 빈 값)
+  const healthNotes = await loadHealthNotes(prisma, rows.map((row) => row.id));
+
   return rows.map((row) => ({
     ...row,
+    healthNote: healthNotes[row.id] ?? null,
     studentPhone: normalizePhoneNumber(row.studentPhone),
     guardians: (row.guardians ?? []).map((guardian) => ({
       ...guardian,

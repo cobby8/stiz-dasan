@@ -64,6 +64,8 @@ export default function UnifiedDriverClient({
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [menuKey, setMenuKey] = useState<string | null>(null);
+  // 건강·알레르기·특이사항을 펼친 학생 줄(이름 옆 «특이»를 누르면 줄 아래에 글이 보인다)
+  const [healthKey, setHealthKey] = useState<string | null>(null);
   const [runState, setRunState] = useState<"idle" | "running" | "ended">("idle");
   // 게슈탈트 T-01: «운행 종료»는 운전 중 잘못 누르면 위치 공유가 바로 끊긴다 → 화면 안 확인 단계를 둔다.
   // (앱 웹뷰의 window.confirm 은 다른 창이 떠 있으면 iOS 에서 조용히 «취소»가 되므로 페이지 안 확인 UI 를 쓴다)
@@ -367,6 +369,14 @@ export default function UnifiedDriverClient({
                 </span>
               )}
               {rider.grade && <span className="text-sm text-[var(--color-academy-muted)]">{rider.grade}</span>}
+              {/* 건강·알레르기·특이사항(학부모 입력) — 글자 «특이», 누르면 줄 아래에 내용. 누르는 영역 44px */}
+              {rider.healthNote && (
+                <button type="button" aria-expanded={healthKey === rowKey} aria-label={`${rider.name} 건강·특이사항 ${healthKey === rowKey ? "접기" : "보기"}`}
+                  onClick={() => setHealthKey(healthKey === rowKey ? null : rowKey)}
+                  className="inline-flex min-h-11 min-w-11 items-center justify-center">
+                  <span className="rounded-md border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] px-2 py-0.5 text-sm font-semibold text-[var(--color-academy-warning)]">특이</span>
+                </button>
+              )}
             </div>
             {(parent || child) && <div className={styles.contacts}>
               {parent && <a href={`tel:${parent}`} aria-label={`${rider.name} 학부모 전화`}>학부모 전화</a>}
@@ -385,6 +395,9 @@ export default function UnifiedDriverClient({
             </StatusChoiceButton>
           </div>
         </div>
+        {rider.healthNote && healthKey === rowKey && (
+          <p className="mt-2 whitespace-pre-wrap rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-base text-[var(--color-academy-ink)]">{rider.healthNote}</p>
+        )}
         {(rider.shuttleNote || (rider.absent && !view.absentReported && status !== "BOARDED" && status !== "SELF") || (!view.absentReported && status === "NOSHOW") || status === "SELF") && <div className={styles.riderNotes}>
               {/* 특강 «결석예정»은 종전대로(체크 대상 · 정규 결석 뱃지와 구분) */}
               {rider.absent && !view.absentReported && status !== "BOARDED" && status !== "SELF" && (

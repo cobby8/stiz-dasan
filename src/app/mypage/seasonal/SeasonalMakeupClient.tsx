@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import PhoneChangeButton from "@/components/account/PhoneChangeButton";
 import InlineConfirm from "@/components/parent/InlineConfirm";
 import { customerMessage } from "@/components/parent/customerMessage";
 // 남은 자리는 숫자 대신 3단계(여유/임박/마감)로(재원생 수 비공개 · 2026-11-13 f9)
@@ -90,7 +92,19 @@ export default function SeasonalMakeupClient({ initial }: { initial: any }) {
   }
 
   if (!ctx.phoneKnown) {
-    return <div className="mx-auto max-w-lg p-4"><h1 className="academy-heading mb-2">방학특강 보강</h1><div className="rounded-xl bg-[var(--color-academy-soft)] p-4 text-sm text-[var(--color-academy-muted)]">계정에 등록된 전화번호로 신청 내역을 찾을 수 없습니다. 학원에 문의해 주세요.</div></div>;
+    // 막다른 안내 대신 그 자리에서 해결(2026-11-14 원장 c1): 본인인증으로 연락처 등록 → 신청 내역이 번호로 이어진다. 안 되면 홈 문의 폼
+    return (
+      <div className="mx-auto max-w-lg p-4">
+        <h1 className="academy-heading mb-2">방학특강 보강</h1>
+        <div className="rounded-xl bg-[var(--color-academy-soft)] p-4 text-sm text-[var(--color-academy-muted)]">
+          <p>계정에 연락처가 없어 신청 내역을 찾지 못했어요.</p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <PhoneChangeButton label="연락처 바꾸기" className="academy-button-primary" messageClassName="text-xs" />
+            <Link href="/mypage#parent-request-form" className="academy-button-secondary">학원에 문의</Link>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (

@@ -10,6 +10,44 @@ import {
   type UnifiedRow,
 } from "./unifiedDriverRunLogic";
 import type { DriverClass } from "./regularDriverRouteLogic";
+import { notMergedStudent } from "@/lib/studentVisibility";
+
+/**
+ * 운행표에 «이미 올라온» 학생의 건강·알레르기·특이사항을 줄에 붙인다(2026-11-14 원장 결정 b5).
+ * 범위는 그날 이 운행표의 승객뿐 — 승객 줄의 저장 키(정규=명단 정차행 id, 특강=셔틀 신청 id)로만 학생을 되짚는다.
+ * 칸이 아직 없거나 조회가 실패하면 아무것도 붙이지 않는다(운행표는 그대로). 내용은 로그에 남기지 않는다.
+ */
+async function attachRiderHealthNotes(rows: UnifiedRow[]): Promise<void> {
+  const regularIds = new Set<string>();
+  const seasonalIds = new Set<string>();
+  for (const row of rows) for (const rider of row.riders) (rider.kind === "REGULAR" ? regularIds : seasonalIds).add(rider.checkId);
+  if (regularIds.size + seasonalIds.size === 0) return;
+  const notes = new Map<string, string>(); // "R:<정차행 id>" | "S:<신청 id>" → 글
+  const read = async (prefix: "R" | "S", sql: string, ids: Set<string>) => {
+    if (ids.size === 0) return;
+    try {
+      const found = await prisma.$queryRawUnsafe<Array<{ key: string; healthNote: string | null }>>(sql, [...ids]);
+      for (const item of found) if (item.healthNote) notes.set(`${prefix}:${item.key}`, String(item.healthNote));
+    } catch {
+      // 칸 없음(마이그레이션 전)·조회 실패 — 표시 없이 지나간다
+    }
+  };
+  await Promise.all([
+    read("R", `SELECT r.id AS key, s."healthNote" FROM "RegularShuttleStop" r JOIN "Student" s ON s.id = r."studentId" AND ${notMergedStudent("s")}
+                WHERE r.id = ANY($1::text[]) AND NULLIF(btrim(s."healthNote"), '') IS NOT NULL`, regularIds),
+    // 특강 승객 = 셔틀 신청 → 신청 항목 → 수강(Enrollment) → 학생. 학생으로 전환되지 않은 신청자는 건강 칸이 없다
+    read("S", `SELECT r.id AS key, s."healthNote" FROM "SpecialProgramShuttleRequest" r
+                 JOIN "SpecialProgramApplicationItem" i ON i.id = r."applicationItemId"
+                 JOIN "Enrollment" e ON e.id = i."enrollmentId"
+                 JOIN "Student" s ON s.id = e."studentId" AND ${notMergedStudent("s")}
+                WHERE r.id = ANY($1::text[]) AND NULLIF(btrim(s."healthNote"), '') IS NOT NULL`, seasonalIds),
+  ]);
+  if (notes.size === 0) return;
+  for (const row of rows) for (const rider of row.riders) {
+    const note = notes.get(`${rider.kind === "REGULAR" ? "R" : "S"}:${rider.checkId}`);
+    if (note) rider.healthNote = note;
+  }
+}
 
 /**
  * 기사님 통합 운행 화면의 그날 데이터(서버 전용).
@@ -160,8 +198,11 @@ export async function loadUnifiedDriverRun(viewDate: string): Promise<UnifiedDri
   const driverLabel = sections[0]?.vehicles?.[0]?.vehicleName
     ?? (regular.classes.length > 0 ? "정규 셔틀 기사님" : "방학특강 기사님");
 
+  const rows = buildUnifiedRun({ seasonal: sections, regular: regular.classes });
+  await attachRiderHealthNotes(rows);
+
   return {
-    rows: buildUnifiedRun({ seasonal: sections, regular: regular.classes }),
+    rows,
     boarding: mergeBoardingMaps({ pickup, dropoff, regular: regularBoarding }),
     boardingReliable,
     driverLabel,

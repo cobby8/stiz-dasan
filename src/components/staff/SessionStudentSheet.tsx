@@ -141,9 +141,11 @@ export function SessionStudentSheet({
         )}
 
         {/* 메모·최근 출결·보호자 — 값이 있는 것만 보인다 */}
-        {(person?.memo || student.attendanceNote) && (
+        {(person?.healthNote || person?.memo || student.attendanceNote) && (
           <div className="mt-4">
             <h3 className="text-sm font-semibold text-[var(--color-academy-ink)]">메모·특이사항</h3>
+            {/* 학부모가 적은 건강·알레르기·특이사항 — 수업 중 꼭 알아야 해서 맨 위, 주의색 바탕 */}
+            {person?.healthNote && <p className="mt-1.5 whitespace-pre-wrap rounded-lg bg-[var(--color-academy-warning-soft)] p-3 text-sm text-[var(--color-academy-ink)]"><span className="font-medium text-[var(--color-academy-warning)]">건강·알레르기 </span>{person.healthNote}</p>}
             {person?.memo && <p className="mt-1.5 whitespace-pre-wrap rounded-lg bg-[var(--color-academy-soft)] p-3 text-sm text-[var(--color-academy-ink)]">{person.memo}</p>}
             {student.attendanceNote && <p className="mt-1.5 whitespace-pre-wrap rounded-lg bg-[var(--color-academy-soft)] p-3 text-sm text-[var(--color-academy-ink)]">오늘 출결 메모: {student.attendanceNote}</p>}
           </div>

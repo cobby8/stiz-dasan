@@ -19,6 +19,7 @@ import { getStudentTenure } from "@/lib/student-tenure-query";
 import { todayKst, toKstYmd } from "@/lib/datetime/kst";
 import { loadChildClasses, type ChildClassRow } from "@/lib/parent/childClassesQuery";
 import type { GuardianInfo } from "@/lib/parent/childProfileRules";
+import { loadChildEditInfo, type ChildEditInfo } from "@/lib/parent/childEdit";
 import { loadChildRegularShuttle, type ChildRegularShuttle } from "@/lib/shuttle/childShuttleQuery";
 import { getParentShuttleOverview, getShuttleDriverContact, type ParentShuttleOverviewItem } from "@/lib/shuttle/parent";
 import { getMonthlyClassDates, loadAnnualPlanEvents } from "@/lib/enrollment/monthlyClassDates";
@@ -57,6 +58,11 @@ export type ChildProfile = {
   guardians: GuardianInfo | null;
   classes: ChildClassRow[] | null;
   makeup: { available: number; reserved: number; nearestExpiryYmd: string | null } | null;
+  /**
+   * «수정» 시트용(2026-11-14 b4·b5) — 학생 전화·주소·건강 특이사항·변경 신청 목록.
+   * 못 읽으면 null(수정 버튼을 숨긴다). 옛 모양 데이터는 칸이 없을 수 있다.
+   */
+  edit?: ChildEditInfo | null;
 };
 
 /** «셔틀» 칸 — 정규는 셔틀 명단 기준(기사님·관리자 운행표와 같은 정본), 방학특강·신청 접수는 기존 학부모 셔틀 조회 그대로 */
@@ -235,6 +241,8 @@ export async function getChildRecord(parentUserId: string, studentId: string, db
         .sort((a, b) => a.expiresAt.getTime() - b.expiresAt.getTime());
       return { available: counts.available, reserved: counts.reserved, nearestExpiryYmd: usable[0] ? toKstYmd(usable[0].expiresAt) : null };
     }),
+    // 수정 시트 값 — 권한은 함수 안에서 같은 SQL 로 다시 확인한다. 새 칸·새 표가 없으면 그 부분만 꺼진다
+    section("edit", () => loadChildEditInfo(db, parentUserId, sid)),
   ]);
   // 셔틀 — 정규는 명단 기준(childShuttleQuery), 방학특강·신청 접수는 기존 학부모 셔틀 조회(명단 항목 제외)를 이 아이로 거른다
   const shuttleP = section("shuttle", async (): Promise<ChildShuttle> => {
@@ -367,7 +375,7 @@ export async function getChildRecord(parentUserId: string, studentId: string, db
     section("tenure", () => getStudentTenure(sid)),
   ]);
 
-  const [classes, [guardians, makeup], shuttle] = await Promise.all([classesP, profileExtrasP, shuttleP]);
+  const [classes, [guardians, makeup, edit], shuttle] = await Promise.all([classesP, profileExtrasP, shuttleP]);
 
   const g = grant?.[0];
   return {
@@ -381,6 +389,7 @@ export async function getChildRecord(parentUserId: string, studentId: string, db
       guardians,
       classes,
       makeup,
+      edit,
     },
     shuttle,
     today,

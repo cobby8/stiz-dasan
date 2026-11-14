@@ -36,6 +36,8 @@ export type UnifiedRider = {
   shuttleNote?: string | null;
   /** 잠긴 줄 뱃지(정규 휴원·퇴원·첫 수업 전·휴무). 있으면 탑승·미탑승 버튼을 잠그고 체크 대상에서 뺀다. */
   blockedLabel?: string | null;
+  /** 건강·알레르기·특이사항(학부모 입력, 2026-11-14 b5) — 이 운행표에 있는 학생 것만. 이름 옆 «특이»를 누르면 보인다. */
+  healthNote?: string | null;
 };
 
 /** 목록의 한 줄 = 한 정차(또는 차고지 출발/학원 도착 같은 안내 줄). */

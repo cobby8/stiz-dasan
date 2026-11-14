@@ -28,6 +28,9 @@ import { PAYMENT_TONE, TONE_SELECTED_CLASS } from "@/lib/ui/statusTones";
 import ParentRequestLinkPanel from "./ParentRequestLinkPanel";
 import GuardianPanel from "./GuardianPanel";
 import AbsencePeriodPanel from "./AbsencePeriodPanel";
+// 학부모 «정보 변경 요청» 승인·반려 + 건강·알레르기·특이사항(2026-11-14 b4·b5)
+import { ProfileChangeRequestsPanel, StudentHealthNotePanel } from "./StudentProfilePanels";
+import { getStudentProfileExtras, type StudentProfileExtras } from "@/app/actions/student-profile-admin";
 // 학부모에게 카카오채널 링크 안내 문자 — 미리보기 후 원장이 «보내기»를 눌러야만 발송
 import CustomerNoticeSender from "@/components/admin/CustomerNoticeSender";
 import type { StudentTenure } from "@/lib/student-tenure";
@@ -508,6 +511,17 @@ export default function StudentDetailClient({
     const [memo, setMemo] = useState(initialData?.student.memo || "");
     const [isPending, startTransition] = useTransition();
     const [memoSaved, setMemoSaved] = useState(false);
+    // 정보 변경 요청·건강 특이사항 — 화면이 열릴 때 따로 한 번 읽는다(못 읽으면 두 칸 모두 숨김 · 기존 화면은 그대로)
+    const [profileExtras, setProfileExtras] = useState<StudentProfileExtras | null>(null);
+    const profileExtrasStudentId = studentId ?? initialData?.student.id ?? null;
+    useEffect(() => {
+        if (!profileExtrasStudentId) return;
+        let alive = true;
+        getStudentProfileExtras(profileExtrasStudentId)
+            .then((extras) => { if (alive) setProfileExtras(extras); })
+            .catch(() => { if (alive) setProfileExtras(null); });
+        return () => { alive = false; };
+    }, [profileExtrasStudentId]);
     const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
     const [statusFeedback, setStatusFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
     const [statusChange, setStatusChange] = useState<{
@@ -1422,6 +1436,17 @@ export default function StudentDetailClient({
 
                 {/* ---- 우측 본문 (탭) ---- */}
                 <section className="order-1 min-w-0 lg:order-2">
+                    {/* 학부모가 신청한 이름·생년월일 변경 — 확인할 것이 있으면 탭 위에 눈에 띄게. 승인하면 학생 정보를 다시 읽는다 */}
+                    {profileExtras?.requestsAvailable && (
+                        <ProfileChangeRequestsPanel
+                            studentId={student.id}
+                            requests={profileExtras.requests}
+                            onChanged={(requests, approved) => {
+                                setProfileExtras((prev) => (prev ? { ...prev, requests } : prev));
+                                if (approved) void loadData();
+                            }}
+                        />
+                    )}
                     {/* 탭 바 — 요약 칸을 누르면 여기로 내려온다(goTab). scroll-mt 는 위 여백 */}
                     <div id="student-detail-tabs" role="tablist" className="mb-4 flex scroll-mt-4 gap-1 overflow-x-auto rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] p-1">
                         {tabs.map((tab) => {
@@ -1952,6 +1977,10 @@ export default function StudentDetailClient({
                         />
                         {memoSaved && <p className="mt-2 text-xs font-medium text-[var(--color-academy-success)]">저장됨</p>}
                     </div>
+                    {/* 건강·알레르기·특이사항 — 학부모가 적고 관리자도 고친다(메모는 관리자 전용, 이 칸은 선생님·기사님에게 보인다) */}
+                    {profileExtras?.healthAvailable && (
+                        <StudentHealthNotePanel studentId={student.id} initialNote={profileExtras.healthNote} cardClassName={CARD_CLASS} />
+                    )}
                 </section>
             </div>
 

@@ -16,6 +16,16 @@ import { MAKEUP_ADULT_GRADE, makeupGradeFromText } from "./credit-rules";
  */
 export const PLACEHOLDER_BIRTH_YMD = "2000-01-01";
 
+/**
+ * 학년·나이 계산에 써도 되는 «진짜 생일»만 돌려준다 — 빈 값·임시 생일(2000-01-01)은 null.
+ * 보강 판정(studentMakeupGrade)과 학부모 «아이 정보» 학년·만 나이(childProfileRules)가 이 함수 하나를 같이 쓴다
+ * (2026-11-14 원장: 화면마다 학년이 달라지지 않게).
+ */
+export function realBirthYmd(birthYmd: string | null | undefined): string | null {
+  const v = String(birthYmd ?? "").trim();
+  return v && v !== PLACEHOLDER_BIRTH_YMD ? v : null;
+}
+
 /** 학원이 받는 가장 어린 나이 = 5세(-2). 이보다 어린 계산값은 생일 오입력을 의심한다 */
 export const YOUNGEST_CLASS_GRADE = -2;
 
@@ -31,8 +41,9 @@ export function studentMakeupGrade(
   gradeText: string | null | undefined,
   todayYmd: string,
 ): number | null {
-  if (birthYmd && birthYmd !== PLACEHOLDER_BIRTH_YMD) {
-    const n = schoolGradeNumber(birthYmd, todayYmd);
+  const birth = realBirthYmd(birthYmd);
+  if (birth) {
+    const n = schoolGradeNumber(birth, todayYmd);
     // 13 이상(고등학교를 마친 나이)은 모두 성인 하나로 모은다
     if (n != null && n >= MAKEUP_ADULT_GRADE) return MAKEUP_ADULT_GRADE;
     // 5세보다 어리게 나오면 생일 오입력(등록한 해를 적은 경우 등)일 수 있다 —
