@@ -26,10 +26,6 @@ const hash = (v: unknown) => createHash("sha256").update(JSON.stringify(v)).dige
 const limit = 5001;
 const take = <T>(rows: T[]) => { if (rows.length >= limit) throw new WorkbenchError("자료가 많아 전체 계산을 완료하지 못했습니다. 기간을 나눠 확인해 주세요.", 409); return rows; };
 const amountFields = (r: WorkbenchAmounts): WorkbenchAmounts => ({ baseAmount: r.baseAmount, discountAmount: r.discountAmount, prorationAmount: r.prorationAmount, carryAmount: r.carryAmount, shuttleAmount: r.shuttleAmount });
-async function exists(tx: WorkbenchTx, table: string) {
-  const rows = await tx.$queryRawUnsafe<Array<{ found: string | null }>>(`SELECT to_regclass($1)::text AS found`, `public."${table}"`);
-  return Boolean(rows[0]?.found);
-}
 export async function readWorkbenchSchedule(tx:WorkbenchTx,month:string,classId:string,start:string|null,end:string|null,calendar?:WorkbenchCalendarSnapshot) {
   const cls=await tx.$queryRawUnsafe<Array<{dayOfWeek:string}>>(`SELECT "dayOfWeek" FROM "Class" WHERE id=$1 FOR SHARE`,classId);
   const events=await tx.$queryRawUnsafe<Array<{title:string;date:Date|string;endDate:Date|string|null}>>(`SELECT title,date,"endDate" FROM "AnnualEvent" ORDER BY date,id`);
@@ -40,9 +36,22 @@ export async function readWorkbenchSchedule(tx:WorkbenchTx,month:string,classId:
 }
 
 /** 동일 거래의 원본만 읽는다. 외부 캘린더/서비스와 연결하거나 초기 테이블을 생성하지 않는다. */
-export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnabled = false,calendar?:WorkbenchCalendarSnapshot): Promise<WorkbenchView> {
+// 읽기에 필요한 표가 있는지 한 번에 확인한다(2026-11-14 속도 개선 — 예전엔 표마다 따로 12번 왕복).
+// 판정 기준은 예전 표별 확인과 같은 to_regclass 다.
+const READ_TABLES = ["MonthlyEnrollmentRegister","AnnualEvent","BillingWorkbenchDraft","BillingWorkbenchOperation","BillingCarryCredit","BillingCarryUsage","BillingAbsenceResolution","BillingWorkbenchRevision","RegularAbsence","MakeupCredit","MakeupSession","Attendance","SpecialProgramCredit","RegularShuttleStop"] as const;
+async function existingTables(tx: WorkbenchTx): Promise<Set<string>> {
+  const rows = await tx.$queryRawUnsafe<Array<{ name: string; found: boolean }>>(
+    `SELECT name, to_regclass('public."' || name || '"') IS NOT NULL AS found FROM unnest($1::text[]) AS name`, [...READ_TABLES]);
+  return new Set(rows.filter(r => r.found).map(r => r.name));
+}
+
+// calendar 는 값 또는 «불러오는 중인 약속(Promise)»을 받는다. 약속을 받으면 아래 DB 조회와 동시에 불러와지고,
+// 달력이 처음 필요한 곳(조회가 다 끝난 뒤)에서만 기다린다(2026-11-14 속도 개선). 달력 실패는 예전처럼 그대로 오류가 된다.
+export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnabled = false,calendarInput?:WorkbenchCalendarSnapshot|Promise<WorkbenchCalendarSnapshot>): Promise<WorkbenchView> {
   validateWorkbenchMonth(month);
   const [year, monthNumber] = month.split("-").map(Number);
+  const tables = await existingTables(tx);
+  const has = (table: (typeof READ_TABLES)[number]) => tables.has(table);
   const enrollments = take(await tx.$queryRawUnsafe<Enrollment[]>(`SELECT e."studentId", s.name AS "studentName", e."classId", c.name AS "className", e.status, e."startsOn"::text AS "startsOn",
     p.price, p.id AS "programId", p.name AS "programName", p."priceWeek1", p."priceWeek2", p."priceWeek3", p."priceDaily", p."runsShuttle", p."shuttleFeeOverride", c."slotKey",
     to_char(s."birthDate",'YYYY-MM-DD') AS "birthDate", c."dayOfWeek", s."parentId", c."updatedAt" AS "classUpdatedAt", p."updatedAt" AS "programUpdatedAt", e."createdAt", e."updatedAt" FROM "Enrollment" e JOIN "Student" s ON s.id=e."studentId"
@@ -50,35 +59,53 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
     WHERE ${notMergedStudent("s")} ORDER BY e."studentId",e."classId" LIMIT ${limit}`));
   const payments = take(await tx.$queryRawUnsafe<Array<{ id: string; studentId: string; classId: string | null; status: string; amount: number; type: string; updatedAt: Date | string }>>(`SELECT id,"studentId","classId",status,amount,type,"updatedAt" FROM "Payment" WHERE year=$1 AND month=$2 ORDER BY id LIMIT ${limit}`, year, monthNumber));
   const invoices = take(await tx.$queryRawUnsafe<Array<{ id: string; paymentId: string; status: string; amount: number; updatedAt: Date | string }>>(`SELECT i.id,i."paymentId",i.status,i.amount,i."updatedAt" FROM "PaymentInvoice" i JOIN "Payment" p ON p.id=i."paymentId" WHERE p.year=$1 AND p.month=$2 ORDER BY i.id LIMIT ${limit}`, year, monthNumber));
-  const registerReady = await exists(tx, "MonthlyEnrollmentRegister");
+  const registerReady = has("MonthlyEnrollmentRegister");
   const registers = registerReady ? take(await tx.$queryRawUnsafe<Register[]>(`SELECT "studentId",month,status,payload,version FROM "MonthlyEnrollmentRegister" ORDER BY month,"studentId" LIMIT ${limit}`)) : [];
-  const events = await exists(tx, "AnnualEvent") ? take(await tx.$queryRawUnsafe<Array<{ title: string; date: Date | string; endDate: Date | string | null }>>(`SELECT title,date,"endDate","updatedAt" FROM "AnnualEvent" ORDER BY date,id LIMIT ${limit}`)) : [];
-  const eventValues = calendar?.events??events.map(e => ({ title: e.title, date: new Date(e.date).toISOString(), ...(e.endDate ? { endDate: new Date(e.endDate).toISOString() } : {}) }));
-  const storageReady = (await Promise.all(["BillingWorkbenchDraft", "BillingWorkbenchOperation", "BillingCarryCredit", "BillingCarryUsage", "BillingAbsenceResolution", "BillingWorkbenchRevision"].map(t => exists(tx, t)))).every(Boolean);
+  const events = has("AnnualEvent") ? take(await tx.$queryRawUnsafe<Array<{ title: string; date: Date | string; endDate: Date | string | null }>>(`SELECT title,date,"endDate","updatedAt" FROM "AnnualEvent" ORDER BY date,id LIMIT ${limit}`)) : [];
+  const storageReady = (["BillingWorkbenchDraft", "BillingWorkbenchOperation", "BillingCarryCredit", "BillingCarryUsage", "BillingAbsenceResolution", "BillingWorkbenchRevision"] as const).every(has);
   const drafts = storageReady ? take(await tx.$queryRawUnsafe<Stored[]>(`SELECT * FROM "BillingWorkbenchDraft" WHERE month=$1 ORDER BY id LIMIT ${limit}`, month)) : [];
   // 원기간에서 실제 수정·발행한 금액도 결석 정산의 정본이다. 선택월 초안은 자체 저장으로 해시가 변하지 않게 제외한다.
   const originDrafts = storageReady ? take(await tx.$queryRawUnsafe<Stored[]>(`SELECT * FROM "BillingWorkbenchDraft" WHERE month<>$1 AND status IN ('ISSUED','ZERO') ORDER BY month,id LIMIT ${limit}`,month)) : [];
-  const originPayments = take(await tx.$queryRawUnsafe<Array<{id:string;studentId:string;classId:string|null;amount:number;status:string;year:number|null;month:number|null;updatedAt:Date|string}>>(`SELECT id,"studentId","classId",amount,status,year,month,"updatedAt" FROM "Payment" ORDER BY id LIMIT ${limit}`));
-  const originInvoices = take(await tx.$queryRawUnsafe<Array<{id:string;paymentId:string;status:string;amount:number;updatedAt:Date|string}>>(`SELECT id,"paymentId",status,amount,"updatedAt" FROM "PaymentInvoice" ORDER BY id LIMIT ${limit}`));
   const credits = storageReady ? take(await tx.$queryRawUnsafe<Credit[]>(`SELECT c.id,c."studentId",c."absenceId",c.numerator::text,c.denominator::text,c."availableMonth",c.basis,
     (a.status='CONFIRMED' AND COALESCE(c.basis->>'originalReason',a.reason)=a.reason AND COALESCE(c.basis->>'absenceDate',to_char(a.date,'YYYY-MM-DD'))=to_char(a.date,'YYYY-MM-DD') AND COALESCE(c.basis->>'classId',a."classId")=a."classId" AND NOT EXISTS(SELECT 1 FROM "Attendance" t JOIN "Session" se ON se.id=t."sessionId" WHERE t."studentId"=c."studentId" AND se."classId"=a."classId" AND se.date::date=a.date::date AND t.status<>'ABSENT')) AS valid
     FROM "BillingCarryCredit" c JOIN "RegularAbsence" a ON a.id=c."absenceId" WHERE c."availableMonth" <= $1 OR c.id IN (SELECT unnest(u."sourceCreditIds") FROM "BillingCarryUsage" u) ORDER BY c.id LIMIT ${limit}`, month)) : [];
+  // 결석 이월 검증에 필요한 «원래 청구»만 읽는다(2026-11-14 — 예전엔 결제·청구서 표 전체를 읽어 5,001건 한도에 닿을 수 있었다).
+  // 아래 검증은 credit.basis.sourcePaymentId 로만 찾으므로, 그 결제와 그 결제의 청구서만 있으면 판정이 같다.
+  const sourcePaymentIds = [...new Set(credits.map(c => c.basis?.sourcePaymentId).filter((id): id is string => typeof id === "string" && id.length > 0))];
+  const originPayments = sourcePaymentIds.length ? take(await tx.$queryRawUnsafe<Array<{id:string;studentId:string;classId:string|null;amount:number;status:string;year:number|null;month:number|null;updatedAt:Date|string}>>(`SELECT id,"studentId","classId",amount,status,year,month,"updatedAt" FROM "Payment" WHERE id = ANY($1::text[]) ORDER BY id LIMIT ${limit}`, sourcePaymentIds)) : [];
+  const originInvoices = sourcePaymentIds.length ? take(await tx.$queryRawUnsafe<Array<{id:string;paymentId:string;status:string;amount:number;updatedAt:Date|string}>>(`SELECT id,"paymentId",status,amount,"updatedAt" FROM "PaymentInvoice" WHERE "paymentId" = ANY($1::text[]) ORDER BY id LIMIT ${limit}`, sourcePaymentIds)) : [];
   // 미래 기간에서 사용한 잔액도 중복 차감하지 않는다.
   const usages = storageReady ? take(await tx.$queryRawUnsafe<Usage[]>(`SELECT u."studentId",u.amount,u.month,u."paymentId",u.basis,u."sourceCreditIds",p.status AS "paymentStatus",i.status AS "invoiceStatus" FROM "BillingCarryUsage" u LEFT JOIN "Payment" p ON p.id=u."paymentId" LEFT JOIN "PaymentInvoice" i ON i."paymentId"=p.id ORDER BY u.id LIMIT ${limit}`)) : [];
-  const absences: Absence[] = await exists(tx, "RegularAbsence") ? take(await tx.$queryRawUnsafe<Absence[]>(`SELECT a.id,a."studentId",s.name AS "studentName",a."classId",to_char(a.date,'YYYY-MM-DD') AS date,a.reason,a.status,
-      ${await exists(tx, "MakeupCredit") ? `(SELECT string_agg(DISTINCT m.status,',') FROM "MakeupCredit" m WHERE m."studentId"=a."studentId" AND m."sourceKey"='REGULAR:'||a."classId"||':'||to_char(a.date,'YYYY-MM-DD'))` : `NULL::text`} AS "makeupStatus",
+  const absences: Absence[] = has("RegularAbsence") ? take(await tx.$queryRawUnsafe<Absence[]>(`SELECT a.id,a."studentId",s.name AS "studentName",a."classId",to_char(a.date,'YYYY-MM-DD') AS date,a.reason,a.status,
+      ${has("MakeupCredit") ? `(SELECT string_agg(DISTINCT m.status,',') FROM "MakeupCredit" m WHERE m."studentId"=a."studentId" AND m."sourceKey"='REGULAR:'||a."classId"||':'||to_char(a.date,'YYYY-MM-DD'))` : `NULL::text`} AS "makeupStatus",
       ${storageReady ? `(SELECT r.resolution FROM "BillingAbsenceResolution" r WHERE r."absenceId"=a.id)` : `NULL::text`} AS resolution
       FROM "RegularAbsence" a JOIN "Student" s ON s.id=a."studentId" WHERE ${notMergedStudent("s")} AND a.date>='2026-10-05'::date AND a.date < ($1||'-01')::date+interval '1 month' AND a.status<>'CANCELLED' ORDER BY a.id LIMIT ${limit}`, month)) : [];
-  const bookings = await exists(tx, "MakeupSession") ? take(await tx.$queryRawUnsafe<Array<{ id: string; status: string; studentId: string; originalClassId: string; originalDate: Date | string; updatedAt: Date | string }>>(`SELECT id,status,"studentId","originalClassId","originalDate","updatedAt" FROM "MakeupSession" WHERE "originalDate">='2026-10-05'::timestamp AND "originalDate" < ($1||'-01')::date+interval '1 month' ORDER BY id LIMIT ${limit}`,month)) : [];
-  const makeupSource = await exists(tx,"MakeupCredit") ? take(await tx.$queryRawUnsafe<Array<{id:string;studentId:string;sourceKey:string;status:string;updatedAt:Date|string;makeupSessionId:string|null}>>(`SELECT id,"studentId","sourceKey",status,"updatedAt","makeupSessionId" FROM "MakeupCredit" ORDER BY id LIMIT ${limit}`)) : [];
-  const attendance = await exists(tx,"Attendance") ? take(await tx.$queryRawUnsafe<Array<{id:string;studentId:string;classId:string;date:string;status:string;updatedAt:Date|string}>>(`SELECT t.id,t."studentId",se."classId",to_char(se.date,'YYYY-MM-DD') AS date,t.status,t."updatedAt" FROM "Attendance" t JOIN "Session" se ON se.id=t."sessionId" ORDER BY t.id LIMIT ${limit}`)) : [];
-  const seasonalCredits = await exists(tx,"SpecialProgramCredit") ? take(await tx.$queryRawUnsafe<Array<{id:string;studentId:string|null;amount:number;status:string;updatedAt:Date|string}>>(`SELECT cr.id,a."convertedStudentId" AS "studentId",cr.amount,cr.status,cr."updatedAt" FROM "SpecialProgramCredit" cr JOIN "SpecialProgramApplicationItem" it ON it.id=cr."applicationItemId" JOIN "SpecialProgramApplication" a ON a.id=it."applicationId" WHERE cr.status='ACTIVE' ORDER BY cr.id LIMIT ${limit}`)) : [];
+  const bookings = has("MakeupSession") ? take(await tx.$queryRawUnsafe<Array<{ id: string; status: string; studentId: string; originalClassId: string; originalDate: Date | string; updatedAt: Date | string }>>(`SELECT id,status,"studentId","originalClassId","originalDate","updatedAt" FROM "MakeupSession" WHERE "originalDate">='2026-10-05'::timestamp AND "originalDate" < ($1||'-01')::date+interval '1 month' ORDER BY id LIMIT ${limit}`,month)) : [];
+  const makeupSource = has("MakeupCredit") ? take(await tx.$queryRawUnsafe<Array<{id:string;studentId:string;sourceKey:string;status:string;updatedAt:Date|string;makeupSessionId:string|null}>>(`SELECT id,"studentId","sourceKey",status,"updatedAt","makeupSessionId" FROM "MakeupCredit" ORDER BY id LIMIT ${limit}`)) : [];
+  // 출결은 «변경 감지 지문»(sourceVersion)에만 쓰인다. 결석 이월 판정이 실제로 보는 출결 = 결석 신고(RegularAbsence)와
+  // 같은 학생·반·날짜의 출결뿐이라 그것만 읽는다(2026-11-14 — 예전엔 출결 전체를 읽어 5,001건 한도에 곧 닿았다).
+  const attendance = has("Attendance") ? take(await tx.$queryRawUnsafe<Array<{id:string;studentId:string;classId:string;date:string;status:string;updatedAt:Date|string}>>(has("RegularAbsence")
+    ? `SELECT DISTINCT t.id,t."studentId",se."classId",to_char(se.date,'YYYY-MM-DD') AS date,t.status,t."updatedAt" FROM "Attendance" t JOIN "Session" se ON se.id=t."sessionId"
+        JOIN "RegularAbsence" a ON a."studentId"=t."studentId" AND a."classId"=se."classId" AND a.date::date=se.date::date ORDER BY t.id LIMIT ${limit}`
+    : `SELECT t.id,t."studentId",se."classId",to_char(se.date,'YYYY-MM-DD') AS date,t.status,t."updatedAt" FROM "Attendance" t JOIN "Session" se ON se.id=t."sessionId" WHERE false`)) : [];
+  const seasonalCredits = has("SpecialProgramCredit") ? take(await tx.$queryRawUnsafe<Array<{id:string;studentId:string|null;amount:number;status:string;updatedAt:Date|string}>>(`SELECT cr.id,a."convertedStudentId" AS "studentId",cr.amount,cr.status,cr."updatedAt" FROM "SpecialProgramCredit" cr JOIN "SpecialProgramApplicationItem" it ON it.id=cr."applicationItemId" JOIN "SpecialProgramApplication" a ON a.id=it."applicationId" WHERE cr.status='ACTIVE' ORDER BY cr.id LIMIT ${limit}`)) : [];
   // 그 달 셔틀 명단(셔틀 명단 탭에서 편집하는 RegularShuttleStop). 학생 연결(studentId)된 승차·하차 행만 이용자로 본다.
   // 이름만 있고 학생 연결이 없는 행은 동명이인 오청구 위험이 있어 자동 제안에 쓰지 않고 안내만 한다.
   // 무료 거점(1호점 앞 버스정류장) 판정에 쓰도록 방향·정류장 이름도 함께 읽는다.
-  const shuttleStops = await exists(tx,"RegularShuttleStop") ? take(await tx.$queryRawUnsafe<Array<{studentId:string|null;studentName:string;direction:string;stopName:string}>>(`SELECT DISTINCT "studentId","studentName",direction,"stopName" FROM "RegularShuttleStop" WHERE "serviceMonth"=$1 AND direction IN ('BOARD','ALIGHT') AND "studentName" IS NOT NULL AND btrim("studentName")<>'' ORDER BY "studentName","studentId",direction,"stopName" LIMIT ${limit}`,month)) : [];
+  const shuttleStops = has("RegularShuttleStop") ? take(await tx.$queryRawUnsafe<Array<{studentId:string|null;studentName:string;direction:string;stopName:string}>>(`SELECT DISTINCT "studentId","studentName",direction,"stopName" FROM "RegularShuttleStop" WHERE "serviceMonth"=$1 AND direction IN ('BOARD','ALIGHT') AND "studentName" IS NOT NULL AND btrim("studentName")<>'' ORDER BY "studentName","studentId",direction,"stopName" LIMIT ${limit}`,month)) : [];
   const shuttleRiders = new Set(shuttleStops.map(r=>r.studentId).filter((v):v is string=>Boolean(v)));
   const unlinkedShuttleNames = [...new Set(shuttleStops.filter(r=>!r.studentId).map(r=>r.studentName))];
+  const calendar = await calendarInput;
+  const eventValues = calendar?.events??events.map(e => ({ title: e.title, date: new Date(e.date).toISOString(), ...(e.endDate ? { endDate: new Date(e.endDate).toISOString() } : {}) }));
+  // 같은 달·같은 요일의 수업일은 한 번만 계산한다(2026-11-14 속도 개선 — 예전엔 반 500여 개마다 연간 일정 전체를 다시 훑었다).
+  // 순수 계산이라 결과는 같고, 받는 쪽이 고쳐도 기억한 값이 바뀌지 않게 복사본을 준다.
+  const classDatesMemo = new Map<string, string[]>();
+  const classDates = (targetMonth: string, dayOfWeek: string) => {
+    const key = `${targetMonth}|${dayOfWeek}`;
+    let dates = classDatesMemo.get(key);
+    if (!dates) { dates = getMonthlyClassDates(eventValues, targetMonth, dayOfWeek); classDatesMemo.set(key, dates); }
+    return [...dates];
+  };
   for(const credit of credits) if(credit.basis?.originMonth && credit.basis.classId) {
     const b=credit.basis,issued=[...originDrafts,...drafts].find(d=>d.studentId===credit.studentId&&d.classId===b.classId&&d.month===b.originMonth&&["ISSUED","ZERO"].includes(d.status));
     const reg=registers.find(r=>r.studentId===credit.studentId&&r.month===b.originMonth&&r.status==="CONFIRMED");
@@ -94,13 +121,15 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
     const periodEnd=issued?.periodEnd??monthly?.periodEnd??b.periodEnd;
     const day=enrollments.find(e=>e.classId===b.classId)?.dayOfWeek;
     // 적립 후 휴강·원기간 조정으로 실제 분모가 바뀌면 새 사유 저장으로 우회하지 않는다.
-    let currentDates=day?getMonthlyClassDates(eventValues,b.originMonth!,day):[];
+    let currentDates=day?classDates(b.originMonth!,day):[];
     try{if(periodStart&&periodEnd)currentDates=filterWorkbenchDates(currentDates,periodStart,periodEnd);}catch{credit.valid=false;}
     if(!b.scheduledDates?.length || String(b.scheduledDates.length)!==credit.denominator || JSON.stringify([...b.scheduledDates].sort())!==JSON.stringify(currentDates))credit.valid=false;
   }
+  // 날짜 변환기는 한 번만 만든다(반복문 안에서 매번 만들면 느리다). 판정 기준(KST 날짜)은 그대로.
+  const kstYmd = new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Seoul"});
   for(const absence of absences) {
     const states = new Set((absence.makeupStatus ?? "").split(",").filter(Boolean));
-    for(const booking of bookings) if(booking.studentId===absence.studentId && booking.originalClassId===absence.classId && new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Seoul"}).format(new Date(booking.originalDate))===absence.date && booking.status!=="CANCELLED") states.add(booking.status);
+    for(const booking of bookings) if(booking.studentId===absence.studentId && booking.originalClassId===absence.classId && kstYmd.format(new Date(booking.originalDate))===absence.date && booking.status!=="CANCELLED") states.add(booking.status);
     absence.makeupStatus=states.size ? [...states].sort().join(",") : null;
   }
   const completedCurrentDrafts=drafts.filter(d=>["ISSUED","ZERO"].includes(d.status));
@@ -116,7 +145,7 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
     const register = registers.find(r => r.studentId === e.studentId && r.month===month && r.status === "CONFIRMED");
     let reg: ReturnType<typeof validateMonthlyRegisterDraft> | null = null;
     if (register) { try { reg = validateMonthlyRegisterDraft(register.payload); } catch { /* 잘못된 확정 장부는 발행을 막는다. */ } }
-    const allScheduledDates = getMonthlyClassDates(eventValues, month, e.dayOfWeek);
+    const allScheduledDates = classDates(month, e.dayOfWeek);
     const classReg = reg?.classes.find(c => c.classId === e.classId);
     const startsOn = typeof e.startsOn === "string" ? e.startsOn : null;
     const futurePeriod=Boolean(startsOn && allScheduledDates.length && startsOn > allScheduledDates.at(-1)!);

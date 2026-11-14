@@ -42,6 +42,8 @@ function database({credit=0,secondClass=false}={}){
  const state={drafts:[],payments:[],invoices:[],operations:[],usages:[],revisions:[],absences:[],makeupCredits:[],bookings:[],registers:[],carryCredits:[],resolutions:[],attendance:[],seasonalCredits:[],events:[],enrollments:[{studentId:"student-a",studentName:"합성 원생",classId:"class-a",className:"합성 반",status:"ACTIVE",price:100000,dayOfWeek:"Sat",createdAt:"2026-01-01",updatedAt:"2026-01-01"}]};
  if(secondClass)state.enrollments.push({...state.enrollments[0],classId:"class-b"});
  const tx={async $queryRawUnsafe(sql,...v){
+  // 2026-11-14: 읽기용 표 확인은 한 번에 묶어 묻는다(name 목록 → 표마다 found)
+  if(sql.includes("unnest($1::text[]) AS name"))return v[0].map(name=>({name,found:true}));
   if(sql.includes("to_regclass"))return [{found:"present"}];
   if(sql.includes('FROM "Enrollment"'))return structuredClone(state.enrollments);
   if(sql.includes('FROM "PaymentInvoice"'))return structuredClone(state.invoices);

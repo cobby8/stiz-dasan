@@ -15,8 +15,12 @@ export async function GET(request: NextRequest) {
   try { await requireOwner(); } catch { return NextResponse.json({error:"원장 권한이 필요합니다."},{status:403,headers}); }
   try {
     const month = validateWorkbenchMonth(request.nextUrl.searchParams.get("month"));
-    const calendar=await loadWorkbenchCalendar();
-    const view = await prisma.$transaction(async tx => { await tx.$executeRawUnsafe("SET TRANSACTION READ ONLY"); return readWorkbench(tx,month,enabled(),calendar); },{isolationLevel:"RepeatableRead"});
+    // 공식 일정(달력)은 DB 읽기와 동시에 불러온다(2026-11-14 속도 개선 — 예전엔 달력을 다 받은 뒤에 읽기를 시작했다).
+    // 읽기 쪽이 먼저 실패해도 달력 오류가 «처리 안 된 거절»로 남지 않게 빈 처리기를 붙여 둔다(오류 자체는 readWorkbench 가 그대로 받는다).
+    const calendar=loadWorkbenchCalendar();
+    // 달력을 기다리는 동안 거래가 열려 있으므로(캐시가 비어 구글 일정 응답이 느릴 때) 거래 시간제한을 기본 5초보다 넉넉히 둔다.
+    calendar.catch(()=>{});
+    const view = await prisma.$transaction(async tx => { await tx.$executeRawUnsafe("SET TRANSACTION READ ONLY"); return readWorkbench(tx,month,enabled(),calendar); },{isolationLevel:"RepeatableRead",timeout:15000});
     return NextResponse.json(view,{headers});
   } catch(e) { return fail(e); }
 }
