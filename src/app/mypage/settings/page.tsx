@@ -17,6 +17,9 @@ import { profilePhotoUpdatedAtSql, profilePhotoVersion } from "@/lib/profilePhot
 import PhoneChangeButton from "@/components/account/PhoneChangeButton";
 import { phoneChangeAvailable } from "@/lib/account/phone-change";
 import { looksLikeLegalName } from "@/lib/account/phone-change-rules";
+// 학원 대표 번호(설정값) — 문의 폼도 쓸 수 없는 계정에게 «전화»라는 길을 남긴다
+import { getUsableAcademyPhone } from "@/lib/academyPhone";
+import { academyTel } from "@/lib/academyPhoneRules";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "설정 | 스티즈 농구교실" };
@@ -79,6 +82,8 @@ export default async function ParentSettingsPage() {
         phoneChangeAvailable().catch(() => false),
     ]);
     const me = userRows[0];
+    // 연락처를 앱에서 못 바꾸고(본인인증 꺼짐) 문의 폼도 없는(자녀 없음) 계정에만 학원 번호를 읽는다 — 그 밖에는 조회하지 않는다
+    const academyPhone = !canChangePhone && childRows.length === 0 ? await getUsableAcademyPhone() : null;
     const authUser = authResult.data?.user;
     // 아이디·비밀번호로 로그인하는 계정인가(간편로그인만 쓰는 계정은 비밀번호가 없다)
     const hasPasswordLogin = (authUser?.identities ?? []).some((identity) => identity.provider === "email");
@@ -108,11 +113,13 @@ export default async function ParentSettingsPage() {
                     {/* 번호 아래 한 줄 안내 — 큰 글자·좁은 화면에서도 번호가 잘리지 않게 */}
                     <span className="min-w-0 flex-1">
                         <span className="block tabular-nums text-[var(--color-academy-muted)]">{me?.phone ? formatPhoneInput(me.phone) : "없음"}</span>
-                        {/* 본인인증을 쓸 수 없는 환경 — «학원 문의» 글자만 두지 않고 문의 폼으로 바로 보낸다(자녀가 없으면 폼이 없어 글자만) */}
+                        {/* 본인인증을 쓸 수 없는 환경 — «학원 문의» 글자만 두지 않고 문의 폼으로 바로 보낸다(자녀가 없어 폼이 없으면 학원 전화, 번호도 없으면 글자만) */}
                         {canChangePhone ? (
                             <span className="block text-xs text-[var(--color-academy-faint)]">본인 명의 휴대폰 인증 후 바뀌어요</span>
                         ) : childRows.length > 0 ? (
                             <Link href="/mypage#parent-request-form" className="inline-flex min-h-11 items-center text-xs text-[var(--color-academy-muted)] underline">변경은 문의로 요청</Link>
+                        ) : academyPhone ? (
+                            <a href={`tel:${academyTel(academyPhone)}`} className="inline-flex min-h-11 items-center text-xs tabular-nums text-[var(--color-academy-muted)] underline">변경은 학원 전화 {academyPhone}</a>
                         ) : (
                             <span className="block text-xs text-[var(--color-academy-faint)]">변경은 학원 문의</span>
                         )}

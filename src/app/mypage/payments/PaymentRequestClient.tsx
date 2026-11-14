@@ -21,6 +21,9 @@ import MonthBillCard, { MonthBillList } from "@/components/parent/billing/MonthB
 import BillDetailSheet from "@/components/parent/billing/BillDetailSheet";
 import { groupBillsByMonth, type BillItemBase } from "@/lib/payments/monthBills";
 import { todayKst } from "@/lib/datetime/kst";
+// 환불 문의(2026-11-14 원장 결정표 c11) — 납부 완료 항목에서 그 청구를 가리키는 문의를 만든다(«문의 접수»까지, 실제 환불은 학원이 처리)
+import { sendRefundInquiry } from "@/app/actions/parent-inquiry";
+import { customerMessage } from "@/components/parent/customerMessage";
 
 /** 온라인 결제가 안 될 때 안내할 학원 연락처(학원 설정값). 없으면 null */
 export type PaymentContact = { phone: string | null; kakaoChannelUrl: string | null; bankAccount?: string | null };
@@ -56,6 +59,11 @@ export default function PaymentRequestClient({
   const sending = useRef(false);
   const [uncertainSource, setUncertainSource] = useState<ParentPaymentRow[] | null>(null);
   const uncertain = uncertainSource !== null;
+  // 환불 문의 — 사유 칸을 연 청구·쓴 사유·보낸 결과(청구 id → 문의 id)·오류. 결제 흐름의 상태(openId 등)와 섞지 않는다
+  const [refundOpenId, setRefundOpenId] = useState<string | null>(null);
+  const [refundReason, setRefundReason] = useState("");
+  const [refundSent, setRefundSent] = useState<Record<string, string>>({});
+  const [refundError, setRefundError] = useState("");
   // 열려 있는 세부 시트의 청구 달
   const [openYm, setOpenYm] = useState<string | null>(initialOpenYm);
 
@@ -108,6 +116,25 @@ export default function PaymentRequestClient({
       setReceiptTarget("");
       setNote("");
       router.refresh();
+    });
+  }
+
+  // 환불 문의 보내기 — 내 아이의 납부 완료 청구인지는 서버가 다시 확인한다. 실패하면 쓴 사유는 그대로 둔다
+  function submitRefund(paymentId: string) {
+    setRefundError("");
+    startTransition(async () => {
+      try {
+        const result = await sendRefundInquiry(paymentId, refundReason);
+        if (!result.ok) {
+          setRefundError(customerMessage(result.error, "보내지 못했어요. 다시 시도해 주세요."));
+          return;
+        }
+        setRefundSent((prev) => ({ ...prev, [paymentId]: result.requestId }));
+        setRefundOpenId(null);
+        setRefundReason("");
+      } catch {
+        setRefundError("보내지 못했어요. 다시 시도해 주세요.");
+      }
     });
   }
 
@@ -284,7 +311,9 @@ export default function PaymentRequestClient({
               {!row.canCheckout ? "결제는 대표 보호자 계정에서 해요" : "지금은 온라인 결제를 쓸 수 없어요"}
             </p>
             {!contact.bankAccount && (
-              <p className="mt-0.5 text-xs text-[var(--color-academy-muted)]">입금 계좌는 학원에 문의해 주세요.</p>
+              <p className="mt-0.5 text-xs text-[var(--color-academy-muted)]">
+                입금 계좌는 <Link href="/mypage#parent-request-form" className="inline-flex min-h-11 items-center underline">문의</Link>로 알려 드려요.
+              </p>
             )}
             {contact.bankAccount && (
               // 계좌 글과 복사 버튼을 한 줄에 — 버튼은 «복사»로 짧게(읽기 프로그램에는 «계좌번호 복사»)
@@ -430,6 +459,44 @@ export default function PaymentRequestClient({
         )}
 
         {open && row.status === "PAID" && receiptForm(row)}
+
+        {/* 환불 문의(납부 완료 항목만) — 보내면 «보낸 문의»의 대화로 이어진다. 결제·입금 알림·영수증 흐름과는 따로 논다 */}
+        {row.status === "PAID" && (refundSent[row.paymentId] ? (
+          <p role="status" className="mt-2 rounded-lg bg-[var(--color-academy-success-soft)] p-2 text-xs font-medium text-[var(--color-academy-success)]">
+            환불 문의를 보냈어요.{" "}
+            <Link href={`/mypage/requests/${refundSent[row.paymentId]}`} className="inline-flex min-h-11 items-center underline">보낸 문의에서 보기</Link>
+          </p>
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              setRefundOpenId(refundOpenId === row.paymentId ? null : row.paymentId);
+              setRefundError("");
+            }}
+            aria-expanded={refundOpenId === row.paymentId}
+            className="academy-button-text -ml-2 whitespace-nowrap"
+          >
+            환불 문의
+          </button>
+        ))}
+        {refundOpenId === row.paymentId && row.status === "PAID" && !refundSent[row.paymentId] && (
+          <div className="mt-2 space-y-2 rounded-lg border border-[var(--color-academy-line)] p-3">
+            <label htmlFor={`refund-reason-${row.paymentId}`} className="block text-xs font-medium text-[var(--color-academy-muted)]">환불 사유(선택)</label>
+            <textarea
+              id={`refund-reason-${row.paymentId}`}
+              value={refundReason}
+              onChange={(event) => setRefundReason(event.target.value)}
+              rows={3}
+              maxLength={2000}
+              placeholder="사유를 적어 주시면 더 빨리 확인해 드려요"
+              className="academy-input resize-none"
+            />
+            <button type="button" disabled={pending} onClick={() => submitRefund(row.paymentId)} className="academy-button-primary w-full">
+              {pending ? "보내는 중..." : "환불 문의 보내기"}
+            </button>
+            {refundError && <p role="alert" className="text-xs font-semibold text-[var(--color-academy-danger)]">{refundError}</p>}
+          </div>
+        )}
       </>
     );
   }

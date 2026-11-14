@@ -557,7 +557,7 @@ test("⑥ 번호를 화면에서 받는 길이 없다 · 꺼진 환경은 기존
   assert.ok(lib.indexOf("phoneChangeOutcome(") < lib.indexOf(`UPDATE "User" SET phone=$1`));
   const settings = read("src/app/mypage/settings/page.tsx");
   // 2026-11-14 c3: 꺼진 환경의 «학원 문의» 글자는 문의 폼으로 가는 링크가 됐다(자녀가 없어 폼이 없으면 글자 그대로)
-  assert.match(settings, /\{canChangePhone \? \(\s*<span[^>]*>본인 명의 휴대폰 인증 후 바뀌어요<\/span>\s*\) : childRows\.length > 0 \? \(\s*<Link href="\/mypage#parent-request-form"[^>]*>변경은 문의로 요청<\/Link>\s*\) : \(\s*<span[^>]*>변경은 학원 문의<\/span>/);
+  assert.match(settings, /\{canChangePhone \? \(\s*<span[^>]*>본인 명의 휴대폰 인증 후 바뀌어요<\/span>\s*\) : childRows\.length > 0 \? \(\s*<Link href="\/mypage#parent-request-form"[^>]*>변경은 문의로 요청<\/Link>\s*\) : academyPhone \? \(\s*<a href=\{`tel:\$\{academyTel\(academyPhone\)\}`\}/);
   assert.match(settings, /<PhoneChangeButton enabled=\{canChangePhone\}/);
   const button = read("src/components/account/PhoneChangeButton.tsx");
   assert.match(button, /if \(!available\) return <>\{fallback\}<\/>/);

@@ -461,3 +461,40 @@ test("⑦ 마이그레이션: 여러 번 돌려도 같은 결과 · RLS 강제 �
   assert.match(schema, /model ParentRequestMessage \{/);
   assert.match(schema, /paymentId\s+String\?/);
 });
+
+// ── ⑧ 청구 화면의 «환불 문의»(c11) ──────────────────────────────────────────────
+
+test("⑧ 청구 세부 시트: 납부 완료 항목에만 «환불 문의» · 결제·입금 알림·영수증 흐름은 그대로", () => {
+  const Link = ({ href, children, ...rest }) => React.createElement("a", { href, ...rest }, children);
+  const Client = load("src/app/mypage/payments/PaymentRequestClient.tsx", {
+    "next/link": { default: Link, __esModule: true },
+    "next/navigation": { useRouter: () => ({ refresh() {}, push() {} }) },
+    "@/app/actions/parent-inquiry": { sendRefundInquiry: async () => ({ ok: true, requestId: "r1" }) },
+  }).default;
+  const row = (id, extra = {}) => ({
+    paymentId: id, studentId: "s1", studentName: "김하늘", description: null, amount: 72000, status: "PENDING", type: "TUITION",
+    year: 2026, month: 11, method: null, paidProvider: null, dueDate: "2026-11-10", paidDate: null, invoiceNo: null, invoiceId: `inv-${id}`,
+    canCheckout: true, receiptUrl: null, virtualAccount: null, pending: [], resolved: [], ...extra,
+  });
+  const render = (rows) => renderToStaticMarkup(React.createElement(Client, { payReady: true, initialOpenYm: "2026-11", rows }));
+
+  const paid = render([row("p1", { status: "PAID", paidDate: "2026-11-05" })]);
+  assert.match(paid, /<button type="button" aria-expanded="false"[^>]*>환불 문의<\/button>/);
+  assert.match(paid, />영수증 요청<\/button>/, "영수증 요청은 그대로");
+  const unpaid = render([row("p2")]);
+  assert.doesNotMatch(unpaid, /환불 문의/, "미납 청구에는 없다");
+  assert.match(unpaid, /href="\/payments\/inv-p2"[^>]*>결제하기/, "결제하기는 그대로");
+  assert.doesNotMatch(render([row("p3", { status: "REFUNDED" })]), /환불 문의/, "이미 환불된 청구에는 없다");
+
+  const source = read("src/app/mypage/payments/PaymentRequestClient.tsx");
+  assert.match(source, /await sendRefundInquiry\(paymentId, refundReason\)/);
+  assert.match(source, /href=\{`\/mypage\/requests\/\$\{refundSent\[row\.paymentId\]\}`\}/, "보낸 뒤 그 문의 대화로");
+  // 결제 동작은 건드리지 않았다(같은 주소·같은 요청 몸통)
+  assert.match(source, /href=\{`\/payments\/\$\{encodeURIComponent\(row\.invoiceId!\)\}`\}/);
+  assert.match(source, /send\(\{ paymentId, kind: "PAYMENT_CLAIM", method, paidOn, depositorName, note \}\)/);
+  assert.match(source, /send\(\{ paymentId, kind: "RECEIPT", receiptType, receiptTarget, note \}\)/);
+  assert.match(source, /fetch\("\/api\/mypage\/payment-request"/);
+  // 막다른 문구 정리: 계좌를 모를 때 «학원에 문의해 주세요» 대신 문의 폼으로
+  assert.doesNotMatch(source, /학원에 문의해 주세요/);
+  assert.match(source, /입금 계좌는 <Link href="\/mypage#parent-request-form"/);
+});
