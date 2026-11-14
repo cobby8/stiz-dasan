@@ -71,6 +71,8 @@ type CarryEvidenceInput = { absence: CarryAbsenceTarget; originMonth: string; ca
 type ResolvedCarryEvidence = { source: CarryEvidenceSource; numerator: number; dates: string[]; periodStart: string | null; periodEnd: string | null; sourcePaymentId: string | null; paidCopy: { paymentAmount: number; priorReduction: number; warnings: string[] } | null; warnings: string[] };
 export const CARRY_NO_EVIDENCE_MESSAGE = "원결석 기간의 확정 수강료·실제 수업일 근거가 필요합니다.";
 export const CARRY_PAUSE_SETTLED_MESSAGE = "휴원 정산에서 처리한 날입니다. 같은 날을 이월로 다시 보상할 수 없습니다.";
+// 휴원 처리 방식이 «없음»(환불·이월·감액 없이 넘긴 날)이면 보상이 있었던 것이 아니다 — 막되 사실대로 말한다.
+export const CARRY_PAUSE_PERIOD_MESSAGE = "휴원 기간 중인 날입니다. 휴원 신청을 먼저 확인해 주세요.";
 /**
  * 결석 한 건의 «원기간 근거»(한 번 값의 분자·분모)를 정한다 — 적립(잠금 있음)과 신청함 미리보기(잠금 없음)가 같은 규칙을 쓴다.
  * 근거 순서: 발행 초안(ISSUED/ZERO)·확정 장부 → 없으면 그 반·그 달의 납부완료(PAID) 수강료 청구 1건(carryEvidence 규칙).
@@ -84,8 +86,9 @@ async function readCarryEvidenceInTx(tx: WorkbenchTx, input: CarryEvidenceInput,
   // 취소된 휴원 신청의 정산은 실제로 빠지지 않은 날이라 제외한다. 정산 표가 아직 없으면(마이그레이션 전) 통과.
   const lineTable=await tx.$queryRawUnsafe<Array<{found:string|null}>>(`SELECT to_regclass($1)::text AS found`,'public."EnrollmentChangeSettlementLine"');
   if(lineTable[0]?.found) {
-    const settled=await tx.$queryRawUnsafe<Array<{found:number}>>(`SELECT 1 AS found FROM "EnrollmentChangeSettlementLine" l JOIN "EnrollmentChangeSettlement" s ON s.id=l."settlementId" JOIN "EnrollmentChangeRequest" r ON r.id=s."requestId" WHERE s."studentId"=$1 AND r."fromClassId"=$2 AND r.status<>'CANCELED' AND l."missedDates" @> to_jsonb($3::text) LIMIT 1`,absence.studentId,absence.classId,absence.date);
-    if(settled.length) throw new WorkbenchError(CARRY_PAUSE_SETTLED_MESSAGE,409);
+    const settled=await tx.$queryRawUnsafe<Array<{kind:string}>>(`SELECT DISTINCT l.kind AS kind FROM "EnrollmentChangeSettlementLine" l JOIN "EnrollmentChangeSettlement" s ON s.id=l."settlementId" JOIN "EnrollmentChangeRequest" r ON r.id=s."requestId" WHERE s."studentId"=$1 AND r."fromClassId"=$2 AND r.status<>'CANCELED' AND l."missedDates" @> to_jsonb($3::text)`,absence.studentId,absence.classId,absence.date);
+    if(settled.some(l=>l.kind!=="NONE")) throw new WorkbenchError(CARRY_PAUSE_SETTLED_MESSAGE,409);
+    if(settled.length) throw new WorkbenchError(CARRY_PAUSE_PERIOD_MESSAGE,409);
   }
   const registerExists=await tx.$queryRawUnsafe<Array<{found:string|null}>>(`SELECT to_regclass($1)::text AS found`,'public."MonthlyEnrollmentRegister"');
   const source = registerExists[0]?.found ? await tx.$queryRawUnsafe<Array<{ payload: unknown; status: string }>>(`SELECT payload,status FROM "MonthlyEnrollmentRegister" WHERE "studentId"=$1 AND month=$2${share()}`,absence.studentId,originMonth) : [];

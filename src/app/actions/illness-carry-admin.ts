@@ -48,8 +48,8 @@ function failure(error: unknown, fallback: string): { ok: false; message: string
 export async function loadIllnessCarryDetail(absenceId: string): Promise<{ ok: true; detail: IllnessCarryDetail } | { ok: false; message: string }> {
   const admin = await requireAdmin();
   try {
-    // 근거 미리보기의 수업 횟수는 승인 때와 같은 공식 일정으로 센다. 일정을 못 읽으면 DB 일정으로 보여 준다(승인 때 다시 판정).
-    const calendar = await loadWorkbenchCalendar().catch(() => undefined);
+    // 근거 미리보기의 수업 횟수는 승인 때와 같은 공식 일정으로 센다. 일정을 못 읽으면(null) 미리보기·거절 사유를 내지 않는다(승인 때 서버가 판정).
+    const calendar = await loadWorkbenchCalendar().catch(() => null);
     const detail = await readIllnessCarryDetail(prisma, String(absenceId ?? "").trim(), writesEnabled(), calendar);
     if (!detail) return { ok: false, message: "결석을 찾을 수 없거나 질병·부상 결석이 아닙니다." };
     // 금액은 원장만 — 화면만 가리지 않고 서버 응답에서 지운다(부원장 금액 숨김 규칙). 횟수·경고 글은 그대로 보인다.

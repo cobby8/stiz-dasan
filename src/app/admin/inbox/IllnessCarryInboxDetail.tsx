@@ -175,6 +175,7 @@ export default function IllnessCarryInboxDetail({ absenceId, studentName, onChan
               )}
             </div>
           )}
+          {detail.evidenceNote && <p className="text-xs text-[var(--color-academy-muted)]">{detail.evidenceNote}</p>}
           {/* 아직 승인할 수 없는 이유 한 줄 — 이때는 승인 버튼을 꺼 둔다 */}
           {detail.blocker && (
             <p className="rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm text-[var(--color-academy-warning)]">{detail.blocker}</p>

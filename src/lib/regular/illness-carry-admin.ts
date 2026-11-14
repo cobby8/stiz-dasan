@@ -113,6 +113,8 @@ export type IllnessCarryDetail = {
    * 금액(tuition·unit)은 금액을 볼 수 없는 역할이면 액션이 null 로 지운다.
    */
   evidence: { kind: "WORKBENCH_ISSUED" | "MONTHLY_REGISTER" | "PAID_PAYMENT"; month: string; tuition: number | null; sessions: number; unit: number | null; warnings: string[] } | null;
+  /** 근거 미리보기를 내지 못한 이유 한 줄(공식 일정을 못 읽음) — 없으면 null. 승인 버튼은 막지 않는다 */
+  evidenceNote: string | null;
   /**
    * 같은 «여러 날 결석»(기간)에서 지금 함께 승인할 수 있는 다른 결석 id — 결석일이 지났고 아직 결정 전인 것.
    * 화면이 «같은 기간 n건 함께 승인»을 보인다. 하루 결석이면 빈 배열.
@@ -123,7 +125,8 @@ export type IllnessCarryDetail = {
 };
 
 /** 신청함 상세 칸 — 사유 글·사진 목록·승인 가능 여부. 관리자만 부른다(호출부가 requireAdmin) */
-export async function readIllnessCarryDetail(tx: WorkbenchTx, absenceId: string, enabled: boolean, calendar?: WorkbenchCalendarSnapshot): Promise<IllnessCarryDetail | null> {
+/** calendar: 승인 때와 같은 공식 일정. null = 공식 일정을 읽으려 했지만 실패 → 근거 미리보기·거절 사유를 내지 않는다(승인 때 서버가 판정) */
+export async function readIllnessCarryDetail(tx: WorkbenchTx, absenceId: string, enabled: boolean, calendar?: WorkbenchCalendarSnapshot | null): Promise<IllnessCarryDetail | null> {
   const rows = await tx.$queryRawUnsafe<AbsenceRow[]>(ABSENCE_SELECT, absenceId);
   const absence = rows.find((row) => row.id === absenceId) ?? null;
   if (!absence || absence.status === "CANCELLED" || absence.reason !== ILLNESS_REASON) return null;
@@ -155,8 +158,17 @@ export async function readIllnessCarryDetail(tx: WorkbenchTx, absenceId: string,
   let bill: CarryBillState = null;
   let evidence: IllnessCarryDetail["evidence"] = null;
   let evidenceProblem: string | null = null;
-  if (tables[0]?.draftTable) {
-    const preview = await previewCarryEvidence(tx, { absence, originMonth: month, calendar });
+  let evidenceNote: string | null = null;
+  // 공식 일정을 못 읽었으면 DB 일정으로 대신 세지 않는다 — 수업 횟수가 승인 때와 달라 틀린 금액·틀린 거절 사유를 보일 수 있다.
+  if (calendar === null) evidenceNote = "공식 일정을 확인하지 못했어요. 승인할 때 다시 확인합니다.";
+  // 미리보기의 예상 못 한 오류(조회 실패 등)는 상세 칸 전체를 막지 않는다 — 근거만 «모름»으로 두고 사유 글·사진·[보강권으로]는 그대로.
+  const preview = tables[0]?.draftTable && calendar !== null
+    ? await previewCarryEvidence(tx, { absence, originMonth: month, calendar }).catch((error: unknown) => {
+        console.error("[illness-carry-admin] 근거 미리보기 실패:", error instanceof Error ? error.name : "");
+        return null;
+      })
+    : null;
+  if (preview) {
     if (preview.ok) {
       bill = "READY";
       evidence = { kind: preview.source, month, tuition: preview.tuition, sessions: preview.sessions, unit: preview.unit, warnings: preview.warnings };
@@ -206,6 +218,7 @@ export async function readIllnessCarryDetail(tx: WorkbenchTx, absenceId: string,
       ? carryApprovalBlocker({ absenceYmd: absence.date, todayYmd: todayKst(), creditStatus, bill, writesEnabled: enabled }) ?? evidenceProblem
       : null,
     evidence: status === "PENDING" ? evidence : null,
+    evidenceNote: status === "PENDING" ? evidenceNote : null,
     periodPeerIds: status === "PENDING" ? peers.map((peer) => peer.id) : [],
     // 화면이 «○월 ○일까지»로 보여 준다 — 학부모 화면·자동 전환과 같은 함수(여러 날 결석은 기간의 마지막 결석일 기준)
     evidenceDeadlineYmd: review?.status === "PENDING" && review.source !== "STAFF" && review.requestedYmd
