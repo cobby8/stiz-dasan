@@ -93,6 +93,7 @@ test("관리자 원생 목록 «활성» 필터·반별 인원은 개시일 미�
     // 2026-11-13 UI 통일 2단계: 페이지 제목이 공용 부품(AdminPageHeader)으로 옮겨져 가짜 부품 목록에 추가(단언은 그대로)
     "@/components/admin/AdminPageHeader": nullComponent,
     "@/components/admin/AdminQuickActionMenu": nullComponent,
+    "@/components/admin/AbsencePeriodQuickCreate": nullComponent, // 2026-11-15 ⚡ «기간 결석 등록»
     "@/components/admin/AdminConfirmDialog": { useAdminConfirm: () => ({ confirm: async () => false, confirmDialog: null }) },
     "@/components/academy/CompactListFilters": { __esModule: true, default: ({ children }) => React.createElement("div", {}, children) },
     "@/components/admin/list/ListDetailPanel": nullComponent,

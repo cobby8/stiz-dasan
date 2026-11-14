@@ -185,6 +185,8 @@ test("정규 결석 신고는 반 카드 속 작은 카드 대신 날짜 묶음(
     // 2026-11-14 질병·부상 이월 검토: 상태 글자는 진짜 규칙, 사진 압축은 브라우저 전용이라 그대로 통과
     "@/lib/regular/illnessCarryRules": compileModule("src/lib/regular/illnessCarryRules.ts", { "@/lib/datetime/kst": kst }),
     "@/lib/clientImageCompression": { compressImageForUpload: async (file) => file },
+    // 2026-11-15 여러 날 결석 칸 — 이 테스트는 «하루» 화면을 본다(여러 날 칸은 tests/parent-absence-period.test.mjs)
+    "./PeriodAbsencePanel": { __esModule: true, default: () => null, ActivePeriodList: () => null },
   }).default;
   const today = kst.todayKst();
   const date = (offset, extra = {}) => {

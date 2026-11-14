@@ -3096,6 +3096,10 @@ model RegularAbsencePeriod {
   classIds        String[]  @default([]) // 대상 반. 빈 배열 = 그 학생의 수강 중(ACTIVE) 반 전부(나중에 생긴 반 포함)
   createdByUserId String
   endedByUserId   String?
+  // 학부모 «여러 날 결석»(2026-11-15) — 학부모가 알린 기간이면 그 계정(NULL = 관리자 등록). 상세는 20261115100000 마이그레이션
+  reportedByUserId String?
+  openEnded        Boolean   @default(false) // 끝일 «아직 몰라요»(4주까지만 잡음)
+  reminderSentAt   DateTime? @db.Timestamptz(6) // 끝나기 전 «연장/복귀» 안내를 보낸 시각
   createdAt       DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt       DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
   student         Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)

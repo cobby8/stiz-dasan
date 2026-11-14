@@ -6,7 +6,7 @@ import { requireAdmin } from "@/lib/auth-guard";
 import { assertAbsenceCompensationEditable, lockCompensation } from "@/lib/billing/absence-compensation-guard";
 import { getRegularAbsences, type RegularAbsenceRow } from "@/lib/regular/admin-regular-absence";
 import { settleCreditOnAbsenceCancel } from "@/lib/makeup/absence-report-credit";
-import { closeIllnessReviewInTx, illnessReviewReady, restoreHeldCreditIfAbsentInTx } from "@/lib/regular/illness-carry-tx";
+import { closeIllnessReviewInTx, ensureCreditForAbsentAfterCancelInTx, illnessReviewReady } from "@/lib/regular/illness-carry-tx";
 import { isMakeupCreditIssuableYmd } from "@/lib/makeup/credit-service";
 import {
   bookMakeupSession,
@@ -107,9 +107,10 @@ export async function cancelRegularAbsenceByAdmin(input: { id: string }) {
       await settleCreditOnAbsenceCancel(tx, {
         actor: "ADMIN", studentId: rows[0].studentId, classId: rows[0].classId, absenceYmd: rows[0].date,
       });
-      // 검토 중이라 보강권을 거둬 둔 결석인데 그날 출결이 결석이면 보강권을 되살린다 — 예전 동작(출결 결석이면 보강권 유지)과 같게
+      // 검토 중이던 결석인데 그날 출결이 결석이면 보강권 1장을 보장한다(거둬 둔 것은 되살리고, 없었으면 새로 발급)
+      // — 예전 동작(출결 결석이면 보강권 유지)과 같게
       if (review.closed) {
-        await restoreHeldCreditIfAbsentInTx(tx, {
+        await ensureCreditForAbsentAfterCancelInTx(tx, {
           studentId: rows[0].studentId, classId: rows[0].classId, absenceYmd: rows[0].date, issuable: isMakeupCreditIssuableYmd,
         });
       }

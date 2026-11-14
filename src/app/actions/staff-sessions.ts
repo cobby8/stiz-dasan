@@ -12,6 +12,7 @@ import { canEditFeedLine, feedLineWindowMessage, normalizeFeedLine, sessionKstDa
 import {
   STAFF_EDIT_EXPIRED_MESSAGE,
   STAFF_REVIEW_ASK_OWNER_MESSAGE,
+  STAFF_REVIEW_CREDIT_LOCKED_MESSAGE,
   STAFF_SESSION_REVIEW_AUDIT_ACTION,
   correctionCreditEffect,
   staffSessionEditWindow,
@@ -99,6 +100,35 @@ async function completedEditError(
   });
   if (window.ok) return null;
   return window.reason === "EXPIRED" ? STAFF_EDIT_EXPIRED_MESSAGE : "수업 날짜를 확인하지 못했습니다.";
+}
+
+/** 메모·출결 노트 최대 길이(글자) — 수업 한 줄(FEED_LINE_MAX)과 같은 2000자 */
+const STAFF_NOTE_MAX = 2000;
+const NOTE_TOO_LONG_MESSAGE = `글이 너무 깁니다. ${STAFF_NOTE_MAX}자 안으로 줄여 주세요.`;
+function noteTooLong(value: unknown): boolean {
+  return typeof value === "string" && Array.from(value).length > STAFF_NOTE_MAX;
+}
+
+/** 화면이 보낸 id 모양 확인(보안 검수 LOW 2) — 글자·숫자·-·_·: 만, 100자 이하. 조회 전에 걸러 이상한 값이 SQL·기록에 닿지 않게 */
+function isPlainId(value: unknown, max = 100): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= max && /^[A-Za-z0-9_:-]+$/.test(value);
+}
+const BAD_REQUEST_MESSAGE = "수업 정보를 다시 확인해 주세요.";
+
+/**
+ * 이 학생·반·날짜에 «살아 있는 질병·부상 결석»이 있는가(출석부 표시든 학부모 신고든, 취소되지 않은 것).
+ * 완료한 수업의 정정에서 이런 결석을 출석·지각으로 바꾸면 출석부 표시가 취소되고, 다시 결석으로 돌리면
+ * «일반 결석»이 되어 보강권이 자동으로 나간다(이월 검토를 건너뛴다 — 보안 검수 MEDIUM). 그래서 원장이 고친다.
+ */
+async function hasLiveIllnessAbsence(studentId: string, classId: string, dateYmd: string): Promise<boolean> {
+  const rows = await prisma.$queryRawUnsafe<{ id: string }[]>(
+    `SELECT ra.id FROM "RegularAbsence" ra
+      WHERE ra."studentId" = $1 AND ra."classId" = $2 AND ra.date = $3::date
+        AND ra.status <> 'CANCELLED' AND ra.reason = 'ILLNESS_INJURY'
+      LIMIT 1`,
+    studentId, classId, dateYmd,
+  );
+  return Boolean(rows[0]);
 }
 
 /**
@@ -203,6 +233,8 @@ async function saveSeasonalSeatAttendance(input: {
   bulk?: boolean;
   /** false 면 학부모 출석 알림을 보내지 않는다 — 완료한 수업의 정정(«방금 출석했어요»가 뒤늦게 울리지 않게). */
   notifyParents?: boolean;
+  /** true 면 노트를 보내지 않았을 때 적혀 있던 출결 노트를 지키고 덮어쓰지 않는다 — 완료한 수업의 정정(보안 검수 LOW 3). */
+  keepNote?: boolean;
 }) {
   // 알림 전송 여부 판정용 이전 좌석 상태(변경 없으면 알림 생략).
   const prev = await prisma.$queryRawUnsafe<{ attendanceStatus: string | null }[]>(
@@ -216,7 +248,7 @@ async function saveSeasonalSeatAttendance(input: {
   const updated = await prisma.$queryRawUnsafe<{ id: string; studentId: string | null }[]>(
     `UPDATE "SpecialProgramEnrollmentDate" e
         SET "attendanceStatus" = $3,
-            "attendanceNote" = $4,
+            "attendanceNote" = CASE WHEN $7::boolean THEN COALESCE($4, e."attendanceNote") ELSE $4 END,
             "arrivedAt" = CASE WHEN $3 = 'LATE' THEN COALESCE(e."arrivedAt", now()) ELSE NULL END,
             "attendanceCheckedAt" = now(),
             "attendanceCheckedByUserId" = $5,
@@ -244,7 +276,7 @@ async function saveSeasonalSeatAttendance(input: {
         AND e.status = 'SCHEDULED'
         AND ($6::boolean = false OR e."attendanceStatus" IS NULL)
       RETURNING e.id, e."studentId"`,
-    input.session.id, input.enrollmentDateId, input.status, input.note, input.checkedByUserId, Boolean(input.bulk),
+    input.session.id, input.enrollmentDateId, input.status, input.note, input.checkedByUserId, Boolean(input.bulk), input.keepNote === true,
   );
   if (updated.length === 0) {
     // 전체 출석인데 이미 찍힌 좌석이면(다른 기기) 덮어쓰지 않고 건너뜀으로 돌려준다(검수 3).
@@ -294,12 +326,13 @@ async function saveSeasonalSeatAttendance(input: {
       `INSERT INTO "Attendance" (id, "sessionId", "studentId", status, note, "checkedAt", "arrivedAt", "checkedByUserId", "createdAt", "updatedAt")
        VALUES (gen_random_uuid()::text, $1, $2, $3, $4, NOW(), CASE WHEN $3 = 'LATE' THEN NOW() ELSE NULL END, $5, NOW(), NOW())
        ON CONFLICT ("sessionId", "studentId") DO UPDATE SET
-         status = EXCLUDED.status, note = EXCLUDED.note,
+         status = EXCLUDED.status,
+         note = CASE WHEN $6::boolean THEN COALESCE(EXCLUDED.note, "Attendance".note) ELSE EXCLUDED.note END,
          "checkedAt" = COALESCE("Attendance"."checkedAt", NOW()),
          "arrivedAt" = CASE WHEN EXCLUDED.status = 'LATE' THEN COALESCE("Attendance"."arrivedAt", NOW()) ELSE NULL END,
          "checkedByUserId" = EXCLUDED."checkedByUserId", "updatedAt" = NOW()
        RETURNING id`,
-      input.session.id, studentId, input.status, input.note, input.checkedByUserId,
+      input.session.id, studentId, input.status, input.note, input.checkedByUserId, input.keepNote === true,
     );
     if (saved[0]) attendanceId = saved[0].id;
 
@@ -448,6 +481,8 @@ export async function savePlannedClassContent(input: {
 }
 
 export async function saveSessionMemo(input: { sessionId: string; notes: string }) {
+  if (typeof input.notes !== "string") return { ok: false as const, message: BAD_REQUEST_MESSAGE };
+  if (noteTooLong(input.notes)) return { ok: false as const, message: NOTE_TOO_LONG_MESSAGE };
   const gate = await trySessionAccess(input.sessionId);
   if (!gate.ok) return gate;
   const { session, access } = gate;
@@ -690,6 +725,7 @@ export async function saveStaffAttendance(input: {
   if (input.absenceReason !== undefined && input.absenceReason !== null && input.absenceReason !== "ILLNESS_INJURY") {
     return { ok: false as const, message: "올바른 결석 사유가 아닙니다." };
   }
+  if (noteTooLong(input.note)) return { ok: false as const, message: NOTE_TOO_LONG_MESSAGE };
   if (review) {
     const blocked = await completedEditError(session, access);
     if (blocked) return { ok: false as const, message: blocked };
@@ -702,6 +738,16 @@ export async function saveStaffAttendance(input: {
   //  - attendanceKey = enrollmentDateId(좌석). 미전환 신청자도 좌석이 있어 여기서 처리된다.
   //  - 좌석을 먼저 저장하고, 전환된 학생(studentId 있음)만 정규 Attendance + 학부모 알림을 병행한다.
   if (session.sessionDateId) {
+    // 완료한 수업: 이미 예약·사용된 보강권이 걸린 결석을 출석·지각으로 고치는 것은 원장이 한다(코드 리뷰 권장 2 — 미리 보기와 같은 판정)
+    if (review && input.status !== "ABSENT") {
+      const seat = await findSeasonalSeatInSession(input.sessionId, input.attendanceKey);
+      if (seat?.studentId && seat.attendanceStatus === "ABSENT") {
+        const creditStatuses = await absenceCreditStatuses(seat.studentId, makeSourceKey({ sourceType: "SEASONAL", enrollmentDateId: seat.id }));
+        if (correctionCreditEffect({ previousStatus: "ABSENT", nextStatus: input.status, creditStatuses }) === "KEEP_USED") {
+          return { ok: false as const, message: STAFF_REVIEW_CREDIT_LOCKED_MESSAGE };
+        }
+      }
+    }
     const seatResult = await saveSeasonalSeatAttendance({
       session,
       enrollmentDateId: input.attendanceKey,
@@ -711,6 +757,8 @@ export async function saveStaffAttendance(input: {
       bulk: input.bulk,
       // 완료 뒤 정정은 학부모 출석 알림을 보내지 않는다
       notifyParents: !review,
+      // 완료 뒤 정정은 수업 중 적어 둔 출결 노트를 지킨다
+      keepNote: review,
     });
     if (review && seatResult.ok && "changed" in seatResult && seatResult.changed) {
       await recordReviewEdit(access.staff.appUserId, {
@@ -744,11 +792,24 @@ export async function saveStaffAttendance(input: {
   if (!enrolled && !isMakeup) return { ok: false as const, message: "이 수업의 확정 명단에 없는 학생입니다." };
   // 완료한 수업의 보강 온 아이 출결은 보강 예약·보강권 «사용» 처리가 걸려 있어 원장이 고친다
   if (review && isMakeup) return { ok: false as const, message: STAFF_REVIEW_ASK_OWNER_MESSAGE };
+  // 완료한 수업: 살아 있는 질병·부상 결석(출석부 표시·학부모 신고)을 출석·지각으로 바꾸는 정정은 원장이 한다(보안 검수 MEDIUM) —
+  // 결석→출석→결석 두 번으로 «이월 검토» 결석을 일반 결석(보강권 자동 발급)으로 바꾸는 길을 막는다.
+  if (review && input.status !== "ABSENT" && await hasLiveIllnessAbsence(studentId, session.classId, sessionYmd)) {
+    return { ok: false as const, message: STAFF_REVIEW_ASK_OWNER_MESSAGE };
+  }
 
   const previous = await prisma.$queryRawUnsafe<{ status: string }[]>(
     `SELECT status FROM "Attendance" WHERE "sessionId" = $1 AND "studentId" = $2 LIMIT 1`, input.sessionId, studentId,
   );
   const changed = previous[0]?.status !== input.status;
+  // 완료한 수업: 이미 예약·사용·불참 처리된 보강권이 걸린 결석을 출석·지각으로 고치는 것은 원장이 한다(코드 리뷰 권장 2).
+  // 진행 중 수업의 «다시 눌러 취소»가 같은 상황을 막는 것과 같은 기준이고, 미리 보기와 같은 순수 판정을 쓴다.
+  if (review && previous[0]?.status === "ABSENT" && input.status !== "ABSENT") {
+    const creditStatuses = await absenceCreditStatuses(studentId, makeSourceKey({ sourceType: "REGULAR", classId: session.classId, absenceYmd: sessionYmd }));
+    if (correctionCreditEffect({ previousStatus: "ABSENT", nextStatus: input.status, creditStatuses }) === "KEEP_USED") {
+      return { ok: false as const, message: STAFF_REVIEW_CREDIT_LOCKED_MESSAGE };
+    }
+  }
 
   // «전체 출석»으로 들어온 요청은 미확인 아이만 대상이다.
   //  ① 이미 출결이 있는 아이(다른 기기에서 먼저 찍음)는 덮어쓰지 않고 건너뛴다(검수 3) — «결석»이 «출석»으로 바뀌면 보강권·알림이 틀어진다.
@@ -770,12 +831,15 @@ export async function saveStaffAttendance(input: {
     }
   }
 
+  // 완료한 수업의 정정은 노트를 보내지 않으면 수업 중 적어 둔 출결 노트를 지킨다(보안 검수 LOW 3). 고정 문구 둘 중 하나라 값이 섞이지 않는다.
+  const noteSql = review ? `COALESCE(EXCLUDED.note, "Attendance".note)` : `EXCLUDED.note`;
   // 일괄($6=true)이면 «비어 있을 때만» 쓴다 — 확인과 저장 사이에 다른 기기가 찍어도 덮어쓰지 않는다(DO UPDATE 가 0행 → RETURNING 없음).
   const saved = await prisma.$queryRawUnsafe<{ id: string }[]>(
     `INSERT INTO "Attendance" (id, "sessionId", "studentId", status, note, "checkedAt", "arrivedAt", "checkedByUserId", "createdAt", "updatedAt")
      VALUES (gen_random_uuid()::text, $1, $2, $3, $4, NOW(), CASE WHEN $3 = 'LATE' THEN NOW() ELSE NULL END, $5, NOW(), NOW())
      ON CONFLICT ("sessionId", "studentId") DO UPDATE SET
-       status = EXCLUDED.status, note = EXCLUDED.note,
+       status = EXCLUDED.status,
+       note = ${noteSql},
        "checkedAt" = COALESCE("Attendance"."checkedAt", NOW()),
        "arrivedAt" = CASE WHEN EXCLUDED.status = 'LATE' THEN COALESCE("Attendance"."arrivedAt", NOW()) ELSE NULL END,
        "checkedByUserId" = EXCLUDED."checkedByUserId", "updatedAt" = NOW()
@@ -876,10 +940,11 @@ export async function saveStaffAttendance(input: {
 /**
  * 완료한 수업의 출결을 고치기 «전에» 무슨 일이 생기는지 알려 준다(아무것도 바꾸지 않는다) — 확인 창 한 줄용.
  * 저장(saveStaffAttendance)과 같은 권한·기간·대상 검사를 거치고, 보강권 영향은 순수 규칙(correctionCreditEffect)으로 계산한다:
- *   결석 → 출석·지각 = 안 쓴 보강권 회수(REVOKE) / 이미 예약·사용된 보강권은 그대로(KEEP_USED)
+ *   결석 → 출석·지각 = 안 쓴 보강권 회수(REVOKE) / 이미 예약·사용된 보강권이 걸려 있으면 거부(원장님께 요청)
  *   출석·지각 → 결석 = 보강권이 나갈 수 있음(ISSUE)
  */
 export async function previewStaffAttendanceCorrection(input: { sessionId: string; attendanceKey: string; status: AttendanceStatus }) {
+  if (!isPlainId(input?.sessionId) || !isPlainId(input?.attendanceKey, 200)) return { ok: false as const, message: BAD_REQUEST_MESSAGE };
   const gate = await trySessionAccess(input.sessionId);
   if (!gate.ok) return gate;
   const { session, access } = gate;
@@ -899,6 +964,7 @@ export async function previewStaffAttendanceCorrection(input: { sessionId: strin
     const effect = seat.studentId
       ? correctionCreditEffect({ previousStatus: seat.attendanceStatus, nextStatus: input.status, creditStatuses })
       : ("NONE" as const);
+    if (effect === "KEEP_USED") return { ok: false as const, message: STAFF_REVIEW_CREDIT_LOCKED_MESSAGE };
     return { ok: true as const, previousStatus: seat.attendanceStatus, effect };
   }
   // ② 체험 아이 — 원장이 고친다
@@ -912,12 +978,19 @@ export async function previewStaffAttendanceCorrection(input: { sessionId: strin
     const isMakeup = (await findMakeupBookings(prisma, { studentId, classId: session.classId, dateYmd: sessionYmd })).length > 0;
     return { ok: false as const, message: isMakeup ? STAFF_REVIEW_ASK_OWNER_MESSAGE : "이 수업의 확정 명단에 없는 학생입니다." };
   }
+  // 저장과 같은 검사 — 살아 있는 질병·부상 결석을 출석·지각으로 바꾸는 정정은 원장이 한다
+  if (input.status !== "ABSENT" && await hasLiveIllnessAbsence(studentId, session.classId, sessionYmd)) {
+    return { ok: false as const, message: STAFF_REVIEW_ASK_OWNER_MESSAGE };
+  }
   const previous = await prisma.$queryRawUnsafe<{ status: AttendanceStatus }[]>(
     `SELECT status FROM "Attendance" WHERE "sessionId" = $1 AND "studentId" = $2 LIMIT 1`, input.sessionId, studentId,
   );
   const previousStatus = previous[0]?.status ?? null;
   const creditStatuses = await absenceCreditStatuses(studentId, makeSourceKey({ sourceType: "REGULAR", classId: session.classId, absenceYmd: sessionYmd }));
-  return { ok: true as const, previousStatus, effect: correctionCreditEffect({ previousStatus, nextStatus: input.status, creditStatuses }) };
+  const effect = correctionCreditEffect({ previousStatus, nextStatus: input.status, creditStatuses });
+  // 이미 예약·사용된 보강권이 걸린 결석은 선생님이 고치지 못한다(저장과 같은 판정)
+  if (effect === "KEEP_USED") return { ok: false as const, message: STAFF_REVIEW_CREDIT_LOCKED_MESSAGE };
+  return { ok: true as const, previousStatus, effect };
 }
 
 /**
@@ -929,6 +1002,7 @@ export async function previewStaffAttendanceCorrection(input: { sessionId: strin
  * - 보낸 뒤 한 줄·사진·영상을 고쳐도 다시 알리지 않는다(내용만 바뀐다).
  */
 export async function publishStaffSessionReport(input: { sessionId: string }) {
+  if (!isPlainId(input?.sessionId)) return { ok: false as const, message: BAD_REQUEST_MESSAGE };
   const gate = await trySessionAccess(input.sessionId);
   if (!gate.ok) return gate;
   const { session, access } = gate;
@@ -940,9 +1014,9 @@ export async function publishStaffSessionReport(input: { sessionId: string }) {
   const published = await prisma.$queryRawUnsafe<{ id: string; previousPublishedAt: Date | string | null }[]>(
     `UPDATE "Session" s
         SET published = true, "publishedAt" = NOW(), "updatedAt" = NOW()
-       FROM "Session" old
-      WHERE old.id = s.id AND s.id = $1 AND s.status = 'COMPLETED' AND s.published = false
-      RETURNING s.id, old."publishedAt" AS "previousPublishedAt"`,
+       FROM "Session" prev
+      WHERE prev.id = s.id AND s.id = $1 AND s.status = 'COMPLETED' AND s.published = false
+      RETURNING s.id, prev."publishedAt" AS "previousPublishedAt"`,
     input.sessionId,
   );
   if (!published[0]) return { ok: true as const, published: true as const, alreadyPublished: true as const, notified: false };

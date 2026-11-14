@@ -327,6 +327,9 @@ function makeDb(overrides = {}) {
       const reasonNeedsReported = /"RegularAbsence"\.status = 'REPORTED' AND "RegularAbsence"\.reason IS DISTINCT FROM EXCLUDED\.reason/.test(sql);
       const mayUpdate = found.status === "CANCELLED" || (found.reason !== reason && (!reasonNeedsReported || found.status === "REPORTED"));
       if (!mayUpdate) return [];
+      // 취소됐던 행을 되살릴 때만 옛 기간 연결·메모를 지운다(SQL 의 CASE 그대로)
+      assert.match(sql, /"periodId" = CASE WHEN "RegularAbsence"\.status = 'CANCELLED' THEN NULL ELSE "RegularAbsence"\."periodId" END,\s+note = CASE WHEN "RegularAbsence"\.status = 'CANCELLED' THEN NULL ELSE "RegularAbsence"\.note END,/);
+      if (found.status === "CANCELLED") { found.periodId = null; found.note = null; }
       found.reason = reason; found.status = "REPORTED";
       return [{ id: found.id, eventVersion: stamp() }];
     }
@@ -455,6 +458,22 @@ function makeDb(overrides = {}) {
       if (!found) return 0;
       found.status = "CLOSED";
       return 1;
+    }
+    // 검토를 닫을 때: 같은 기간에 살아 있는 형제(취소 안 된 결석의 검토 중·결정됨)가 있으면 사진을 그 결석으로 옮긴다(하루 결석은 0행)
+    if (/UPDATE "RegularAbsenceEvidence" e SET "absenceId" = heir\.id/.test(sql)) {
+      assert.match(sql, /sibling\."periodId" = me\."periodId" AND sibling\.id <> me\.id AND sibling\.status <> 'CANCELLED'/);
+      assert.match(sql, /sr\.status IN \('PENDING', 'APPROVED', 'MAKEUP'\)/);
+      assert.match(sql, /WHERE e\."absenceId" = \$1 AND e\."removedAt" IS NULL/);
+      const me = db.absences.find((x) => x.id === args[0]);
+      if (!me?.periodId) return 0;
+      const heir = db.absences
+        .filter((x) => x.periodId === me.periodId && x.id !== me.id && x.status !== "CANCELLED"
+          && ["PENDING", "APPROVED", "MAKEUP"].includes(db.reviews.find((r) => r.absenceId === x.id)?.status))
+        .sort((x, y) => x.date.localeCompare(y.date))[0];
+      if (!heir) return 0;
+      let n = 0;
+      for (const e of db.evidence) if (e.absenceId === me.id && !e.removed) { e.absenceId = heir.id; n += 1; }
+      return n;
     }
     if (/UPDATE "RegularAbsenceEvidence" SET "removedAt" = now\(\) WHERE "absenceId" = \$1/.test(sql)) {
       let n = 0;
@@ -681,6 +700,21 @@ test("보강권으로 전환된 결석: 사유를 바꿨다 되돌려도 원장 
   const again = await absence.reportRegularAbsence("p1", { ...REPORT, reason: "ILLNESS_INJURY", reasonText: "독감" });
   assert.equal(again.carryReview, "PENDING");
   assert.deepEqual(db.credits.map((c) => c.status), ["REVOKED"], "검토 중에는 보강권이 없다");
+});
+
+test("취소됐던 결석을 다시 알리면 옛 기간 연결·메모가 딸려 오지 않는다 — 사유 변경은 그대로 둔다", async () => {
+  const db = makeDb();
+  freeze(MON, "10:00");
+  await absence.reportRegularAbsence("p1", { ...REPORT, reason: "PERSONAL" });
+  // 이 결석이 «여러 날 결석»의 한 날이었다고 치자
+  Object.assign(db.absences[0], { periodId: "per-old", note: "여러 날 결석 · 11/16(월)~11/30(월)" });
+  // 사유 변경(신고 → 신고): 기간 연결은 그대로
+  await absence.reportRegularAbsence("p1", { ...REPORT, reason: "FAMILY_TRIP" });
+  assert.deepEqual([db.absences[0].periodId, db.absences[0].note], ["per-old", "여러 날 결석 · 11/16(월)~11/30(월)"]);
+  // 취소 뒤 하루로 다시 알림: 옛 기간·메모를 지운다(끝난 기간의 «복귀했어요»·사진 묶음에 다시 묶이지 않게)
+  await absence.cancelRegularAbsence("p1", REPORT);
+  await absence.reportRegularAbsence("p1", { ...REPORT, reason: "PERSONAL" });
+  assert.deepEqual([db.absences[0].status, db.absences[0].periodId, db.absences[0].note], ["REPORTED", null, null]);
 });
 
 test("검토 표가 아직 없으면(마이그레이션 전) 질병·부상도 예전처럼 즉시 보강권 — 신고가 죽지 않는다", async () => {

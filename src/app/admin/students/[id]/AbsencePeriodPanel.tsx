@@ -5,6 +5,7 @@
 // 목록(한 줄 행, 눌러서 날짜·반 펼치기) + «+ 기간 결석»(모달/모바일 하단 시트) + 기간마다 «복귀 처리»·«등록 취소».
 import UiIcon from "@/components/common/UiIcon";
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import AdminModal from "@/components/admin/AdminModal";
 import { useAdminConfirm } from "@/components/admin/AdminConfirmDialog";
 import { statusToneClass } from "@/components/admin/StatusBadge";
@@ -147,6 +148,10 @@ export default function AbsencePeriodPanel({
                                         <b>{shortDateLabel(p.startDate)}~</b>
                                         <span className="text-[var(--color-academy-muted)]"> · {returnText} · {REASON_LABEL[p.reason] ?? p.reason} · 결석 {live.length}회</span>
                                     </span>
+                                    {/* 학부모가 «결석 알리기 › 여러 날»로 알린 기간 — 관리자 등록과 구분 */}
+                                    {p.parentReported && (
+                                        <span className={`shrink-0 rounded px-2 py-0.5 text-xs font-medium ${statusToneClass("info")}`}>학부모 신고</span>
+                                    )}
                                     <span className={`shrink-0 rounded px-2 py-0.5 text-xs font-medium ${chip.className}`}>{chip.label}</span>
                                     <span className="inline-flex shrink-0 text-[var(--color-academy-muted)]"><UiIcon name={open ? "expand_less" : "expand_more"} /></span>
                                 </button>
@@ -164,14 +169,20 @@ export default function AbsencePeriodPanel({
                                                         className={`rounded-md border border-[var(--color-academy-line)] px-2 py-1 text-xs ${a.status === "CANCELLED"
                                                             ? "text-[var(--color-academy-faint)] line-through"
                                                             : "text-[var(--color-academy-ink)]"}`}
-                                                        title={a.status === "CANCELLED" ? "취소됨" : "결석(확정)"}
+                                                        title={a.status === "CANCELLED" ? "취소됨" : a.status === "REPORTED" ? "결석(학부모 신고 — 확인 전)" : "결석(확정)"}
                                                     >
                                                         {shortDateLabel(a.date)} {a.className}
                                                     </li>
                                                 ))}
                                             </ul>
                                         )}
-                                        {p.status !== "CANCELLED" && (
+                                        {/* 학부모가 알린 기간은 날짜마다 학부모 결석이라 기간째로 고치지 않는다 — 결석 관리에서 날짜별로 */}
+                                        {p.parentReported && (
+                                            <p className="text-xs text-[var(--color-academy-muted)]">
+                                                학부모가 알린 기간입니다. 날짜별 확정·취소는 <Link href="/admin/absence" className="font-medium underline">결석 관리</Link>에서 해 주세요.
+                                            </p>
+                                        )}
+                                        {p.status !== "CANCELLED" && !p.parentReported && (
                                             <div className="flex items-center gap-2 pt-1">
                                                 {/* 복귀일이 이미 지난 기간은 다시 복귀 처리할 일이 없다 — 칩이 «복귀함» */}
                                                 {p.status === "ACTIVE" && !hasReturned(p, today) && (
@@ -233,7 +244,7 @@ export default function AbsencePeriodPanel({
 }
 
 // ── «+ 기간 결석» 모달(모바일은 하단 시트) ──
-function CreatePeriodModal({
+export function CreatePeriodModal({
     studentId,
     studentName,
     activeClasses,

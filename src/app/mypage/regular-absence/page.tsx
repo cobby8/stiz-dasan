@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { requireVerifiedParent } from "@/lib/auth-guard";
-import { getParentIllnessReviews, getUpcomingRegularClassDates } from "@/lib/regular/parent-regular-absence";
+import { loadParentAbsenceScreen } from "@/lib/regular/parent-absence-period";
 import { getAcademySettings } from "@/lib/queries";
 import { getRegularMakeupsForParent } from "@/lib/regular/parent-regular-makeup";
 import { parseRequestPreset } from "@/lib/mypage/requestPreset";
@@ -20,10 +20,9 @@ export default async function RegularAbsencePage({
   if (!parent) redirect("/mypage/continue?bounced=1");
 
   // 다가오는 수업일(결석 신고용) + 예정 보강(읽기 전용) 병렬 조회.
-  // 질병·부상 이월 검토(상태·사진)는 수업일 목록의 줄 상태에도 쓰여 먼저 읽는다.
-  const reviews = await getParentIllnessReviews(parent.appUserId);
-  const [children, makeups, settings] = await Promise.all([
-    getUpcomingRegularClassDates(parent.appUserId, undefined, reviews),
+  // 수업일·이월 검토·진행 중인 «여러 날 결석»은 API(GET)와 같은 함수 한 곳에서 읽는다.
+  const [screen, makeups, settings] = await Promise.all([
+    loadParentAbsenceScreen(parent.appUserId),
     getRegularMakeupsForParent(parent.appUserId),
     // 마감 뒤 «전화»·«카카오 채널로 문의» 버튼에 쓰는 학원 연락처(설정값). 못 읽어도 화면은 뜬다
     getAcademySettings().catch(() => null) as Promise<any>,
@@ -35,13 +34,15 @@ export default async function RegularAbsencePage({
     kakaoChannelUrl: typeof settings?.kakaoChannelUrl === "string" && settings.kakaoChannelUrl.trim() ? settings.kakaoChannelUrl.trim() : null,
   };
   // Date/BigInt 등 직렬화 안전화(서버 컴포넌트 → 클라이언트 전달)
-  const initial = JSON.parse(JSON.stringify(children));
+  const initial = JSON.parse(JSON.stringify(screen.children));
   const initialMakeups = JSON.parse(JSON.stringify(makeups));
   const preset = parseRequestPreset(searchParams ? await searchParams : null);
   return (
     <RegularAbsenceClient
       initial={initial}
-      initialReviews={JSON.parse(JSON.stringify(reviews))}
+      initialReviews={JSON.parse(JSON.stringify(screen.reviews))}
+      initialPeriods={JSON.parse(JSON.stringify(screen.periods))}
+      periodAvailable={screen.periodAvailable}
       makeups={initialMakeups}
       presetStudentId={preset.studentId}
       contact={contact}

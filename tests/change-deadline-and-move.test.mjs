@@ -27,6 +27,9 @@ const transpile = (file) => ts.transpileModule(read(file), {
 const OVERRIDES = {
   "@/lib/prisma": toDataUrl(`export const prisma = new Proxy({}, { get: (_t, key) => globalThis.__moveDb[key] });`),
   // 운영 알림(원장·코치·기사) — 무엇이 몇 통 가는지 세기만 한다
+  // 여러 날 결석(2026-11-15): 연간 일정(next/cache·DB)은 가짜 — 수업일 = 그 달의 그 요일 전부에서 휴무일(db.holidays)을 뺀 것
+  "@/lib/regular/absence-period-runner": toDataUrl(`export const ABSENCE_PERIOD_TX_OPTIONS = {};
+    export async function absencePeriodContext(actorUserId) { return { todayYmd: "", actorUserId, classDatesForMonth: (ym, dow) => globalThis.__moveDb.classDates(ym, dow) }; }`),
   "@/lib/operational-staff-notification": toDataUrl(`export async function notifyOperationalStaff(input) { globalThis.__moveDb.notices.push(input); return { ok: true }; }`),
 };
 
@@ -228,6 +231,9 @@ function makeDb(overrides = {}) {
     sessions: [],    // { id, studentId, makeupClassId, makeupDate(Date), status }
     exceptions: [],  // { id, studentId, serviceDate, direction, kind, location, note, canceled }
     notices: [],
+    periods: [],     // 기간 결석 { id, studentId, reason, startDate, returnDate, status, reportedByUserId, openEnded }
+    periodReady: false, // true = 학부모 «여러 날 결석» 칸이 있는 운영(마이그레이션 20261115100000 적용 뒤)
+    holidays: [],    // 연간 일정 휴무일("YYYY-MM-DD")
     reviews: [],     // 질병·부상 이월 검토 { absenceId, status, source, reasonText }
     evidence: [],    // 증빙 사진 { id, absenceId, removed }
     illnessReady: false, // true = 검토 표가 있는 운영(마이그레이션 적용 뒤)
@@ -251,7 +257,63 @@ function makeDb(overrides = {}) {
     assert.doesNotMatch(sql, /"makeupDate" AT TIME ZONE 'UTC'|"makeupDate"\) AT TIME ZONE/);
   };
 
+  // 가짜 연간 일정: 그 달(YYYY-MM)의 그 요일 날짜 전부 − 휴무일
+  db.classDates = (ym, dow) => {
+    const index = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(dow);
+    const out = [];
+    for (let ymd = `${ym}-01`; ymd.slice(0, 7) === ym; ymd = kst.addDaysKst(ymd, 1)) if (kst.kstDow(ymd) === index && !db.holidays.includes(ymd)) out.push(ymd);
+    return out;
+  };
+
   async function $queryRawUnsafe(sql, ...args) {
+    // ── 여러 날 결석(기간) ──
+    // 내 아이의 쓸 수 있는 반(하루 알리기 목록과 같은 조회 — listParentUsableClasses)
+    if (/FROM "Student" s\s+JOIN "Enrollment" e ON e\."studentId" = s\.id AND /.test(sql) && sql.includes('c."dayOfWeek" AS "dayOfWeek"')) {
+      assert.match(sql, /s\."parentId" = \$1/, "보호자 조건");
+      return db.enrollments.filter((e) => e.status === "ACTIVE" && owns(e.studentId, args[0])).map((e) => {
+        const c = cls(e.classId);
+        return { studentId: e.studentId, studentName: student(e.studentId).name, classId: c.id, className: c.name, dayOfWeek: c.dayOfWeek, startTime: c.startTime, enrollmentStatus: e.status, resumeFrom: null };
+      });
+    }
+    if (/information_schema\.columns/.test(sql)) return [{ n: db.periodReady ? 3 : 0 }];
+    if (/to_regclass/.test(sql) && /RegularAbsencePeriod/.test(sql)) return [{ found: db.periodReady ? "present" : null }];
+    if (/FROM "RegularAbsence" ra\s+WHERE ra\."studentId" = \$1 AND ra\.date BETWEEN \$2::date AND \$3::date AND ra\.status <> 'CANCELLED'/.test(sql)) {
+      return db.absences.filter((a) => a.studentId === args[0] && a.date >= args[1] && a.date <= args[2] && a.status !== "CANCELLED").map((a) => ({ classId: a.classId, date: a.date }));
+    }
+    if (/FROM "RegularAbsencePeriod" p WHERE p\."studentId" = \$1 AND p\.status IN \('ACTIVE','ENDED'\)/.test(sql)) {
+      return db.periods.filter((p) => p.studentId === args[0] && ["ACTIVE", "ENDED"].includes(p.status)).map((p) => ({
+        startDate: p.startDate, returnDate: p.returnDate, parentReported: Boolean(p.reportedByUserId),
+        live: db.absences.filter((a) => a.periodId === p.id && a.status !== "CANCELLED").length,
+      }));
+    }
+    // 오늘(KST) 그 아이로 만든 학부모 기간 수 — 취소한 것도 센다
+    if (/SELECT COUNT\(\*\)::int AS n FROM "RegularAbsencePeriod"/.test(sql)) {
+      assert.match(sql, /"reportedByUserId" IS NOT NULL\s+AND \("createdAt" AT TIME ZONE 'Asia\/Seoul'\)::date = \(now\(\) AT TIME ZONE 'Asia\/Seoul'\)::date/, "timestamptz → KST 변환은 한 번");
+      return [{ n: db.periods.filter((p) => p.studentId === args[0] && p.reportedByUserId && p.createdYmd === kst.todayKst()).length }];
+    }
+    if (/INSERT INTO "RegularAbsencePeriod"/.test(sql)) {
+      assert.ok(db.lockedInTx, "작업대 잠금 뒤에 기간을 만든다");
+      const row = { id: `per${++db.seq}`, studentId: args[0], reason: args[1], startDate: args[2], returnDate: args[3], coveredUntil: args[4], status: "ACTIVE", createdByUserId: args[5], reportedByUserId: args[5], openEnded: args[6], createdYmd: kst.todayKst() };
+      db.periods.push(row);
+      return [{ id: row.id, version: stamp() }];
+    }
+    if (/FROM "RegularAbsencePeriod" p\s+JOIN "Student" s ON s\.id = p\."studentId"/.test(sql) && /FOR UPDATE OF p/.test(sql)) {
+      assert.match(sql, /s\."parentId" = \$1/, "보호자 조건");
+      assert.match(sql, /p\."reportedByUserId" IS NOT NULL/, "학부모가 알린 기간만(관리자 기간은 건드리지 못한다)");
+      return db.periods.filter((p) => p.id === args[1] && p.reportedByUserId && owns(p.studentId, args[0]))
+        .map((p) => ({ id: p.id, studentId: p.studentId, studentName: student(p.studentId).name, startDate: p.startDate, returnDate: p.returnDate, status: p.status }));
+    }
+    if (/WHERE ra\."periodId" = \$1 AND ra\."studentId" = \$2 AND ra\.date >= \$3::date AND ra\.status = 'REPORTED'/.test(sql)) {
+      return db.absences.filter((a) => a.periodId === args[0] && a.studentId === args[1] && a.date >= args[2] && a.status === "REPORTED")
+        .sort((a, b) => a.date.localeCompare(b.date)).map((a) => ({ id: a.id, classId: a.classId, date: a.date, startTime: cls(a.classId).startTime }));
+    }
+    if (/UPDATE "RegularAbsencePeriod"\s+SET status = '(ENDED|CANCELLED)'/.test(sql)) {
+      const p = db.periods.find((x) => x.id === args[0]);
+      if (!p) return [];
+      if (/SET status = 'ENDED'/.test(sql)) Object.assign(p, { status: "ENDED", returnDate: args[1], endedByUserId: args[2] });
+      else Object.assign(p, { status: "CANCELLED", endedByUserId: args[2] });
+      return [{ version: stamp() }];
+    }
     boom(sql);
     // ── 결석: 소유·수강 확인 ──
     if (/FROM "Enrollment" e\s+JOIN "Student" s ON s\.id = e\."studentId"\s+JOIN "Class" c ON c\.id = e\."classId"/.test(sql)) {
@@ -283,6 +345,9 @@ function makeDb(overrides = {}) {
         return [{ id: row.id, eventVersion: stamp() }];
       }
       if (found.status !== "CANCELLED") return [];
+      // 취소 행을 되살릴 때 옛 기간 연결·메모는 지운다(SQL 에 그 초기화가 있어야 한다)
+      assert.match(sql, /"periodId" = (NULL|CASE WHEN "RegularAbsence"\.status = 'CANCELLED' THEN NULL)/);
+      found.periodId = null; found.note = null;
       found.reason = reason; found.status = "REPORTED";
       return [{ id: found.id, eventVersion: stamp() }];
     }
@@ -448,6 +513,42 @@ function makeDb(overrides = {}) {
   async function $executeRawUnsafe(sql, ...args) {
     boom(sql);
     if (/pg_advisory_xact_lock/.test(sql)) { db.lockedInTx = true; return 1; }
+    if (/UPDATE "RegularAbsence" SET "periodId" = \$2, note = \$3 WHERE id = \$1/.test(sql)) {
+      const a = db.absences.find((x) => x.id === args[0]);
+      if (!a) return 0;
+      a.periodId = args[1]; a.note = args[2];
+      return 1;
+    }
+    if (/UPDATE "RegularAbsence" SET status = 'CANCELLED', "updatedAt" = NOW\(\) WHERE id = \$1 AND status = 'REPORTED'/.test(sql)) {
+      const a = db.absences.find((x) => x.id === args[0] && x.status === "REPORTED");
+      if (!a) return 0;
+      a.status = "CANCELLED";
+      return 1;
+    }
+    // 검토를 닫을 때: 같은 기간에 살아 있는 형제(취소 안 된 결석의 검토 중·결정됨)가 있으면 사진을 그 결석으로 옮긴다(하루 결석은 0행)
+    if (/UPDATE "RegularAbsenceEvidence" e SET "absenceId" = heir\.id/.test(sql)) {
+      assert.match(sql, /sibling\."periodId" = me\."periodId" AND sibling\.id <> me\.id AND sibling\.status <> 'CANCELLED'/);
+      assert.match(sql, /sr\.status IN \('PENDING', 'APPROVED', 'MAKEUP'\)/);
+      assert.match(sql, /WHERE e\."absenceId" = \$1 AND e\."removedAt" IS NULL/);
+      const me = db.absences.find((x) => x.id === args[0]);
+      if (!me?.periodId) return 0;
+      const heir = db.absences
+        .filter((x) => x.periodId === me.periodId && x.id !== me.id && x.status !== "CANCELLED"
+          && ["PENDING", "APPROVED", "MAKEUP"].includes(db.reviews.find((r) => r.absenceId === x.id)?.status))
+        .sort((x, y) => x.date.localeCompare(y.date))[0];
+      if (!heir) return 0;
+      let n = 0;
+      for (const e of db.evidence) if (e.absenceId === me.id && !e.removed) { e.absenceId = heir.id; n += 1; }
+      return n;
+    }
+    // 여러 날 결석(2026-11-15): 옮긴 날을 같은 기간에 묶는다 — 기간 없는 하루 신고는 0행
+    if (/UPDATE "RegularAbsence" n SET "periodId" = o\."periodId", note = o\.note/.test(sql)) {
+      const from = db.absences.find((a) => a.id === args[0]);
+      const to = db.absences.find((a) => a.id === args[1]);
+      if (!from?.periodId || !to) return 0;
+      to.periodId = from.periodId; to.note = from.note;
+      return 1;
+    }
     // ── 질병·부상 이월 검토 ──
     if (/UPDATE "MakeupCredit"\s+SET status = 'REVOKED'/.test(sql) && /"sourceKey" = \$2 AND status = 'AVAILABLE'/.test(sql)) {
       const c = db.credits.find((x) => x.studentId === args[0] && x.sourceKey === args[1] && x.status === "AVAILABLE");
@@ -515,7 +616,7 @@ function makeDb(overrides = {}) {
 
   /** 트랜잭션: 안에서 오류가 나면 표를 통째로 되돌린다(진짜 DB 의 ROLLBACK 흉내) */
   async function $transaction(fn) {
-    const snapshot = structuredClone({ absences: db.absences, credits: db.credits, sessions: db.sessions, exceptions: db.exceptions, reviews: db.reviews, evidence: db.evidence });
+    const snapshot = structuredClone({ absences: db.absences, credits: db.credits, sessions: db.sessions, exceptions: db.exceptions, reviews: db.reviews, evidence: db.evidence, periods: db.periods });
     db.lockedInTx = false;
     db.transactions = (db.transactions ?? 0) + 1;
     try {
@@ -812,6 +913,227 @@ test("결석 날짜 바꾸기: 한 트랜잭션에서 옛 신고 취소 + 새 �
   assert.equal(kst.toKstYmd(db.credits[1].absenceDate), NEXT_MON, "새 보강권의 결석일·만료는 새 날짜 기준");
 });
 
+// ═════════════════════════════════════════════════════════════════════════
+// ④-2 학부모 «여러 날 결석»(2026-11-15 원장 결정: 한도 4주·모든 사유) — 실제 실행
+//   월요반(cO, 18:00) 아이가 11/16(월)부터 쉰다. 오늘 = 11/15(일).
+// ═════════════════════════════════════════════════════════════════════════
+const period = await import(load("src/lib/regular/parent-absence-period.ts"));
+const LAST_MON = "2026-11-30";
+const PERIOD_IN = { studentId: "s1", startDate: MON, endDate: "2026-12-06", reason: "FAMILY_TRIP" };
+
+test("여러 날 결석: 그 사이 수업일을 한 번에 알린다 — 날짜마다 하루 신고와 같은 결과(보강권 1장씩), 알림은 기간당 1회", async () => {
+  const db = makeDb({ periodReady: true });
+  freeze(SUN, "10:00");
+  const preview = await period.previewParentAbsencePeriod("p1", PERIOD_IN);
+  assert.deepEqual([preview.count, preview.datesLabel, preview.skippedNote], [3, "11/16(월) · 11/23(월) · 11/30(월) 3회", null]);
+  assert.equal(db.absences.length, 0, "미리보기는 아무것도 저장하지 않는다");
+
+  const result = await period.createParentAbsencePeriod("p1", PERIOD_IN);
+  assert.deepEqual([result.ok, result.count, result.makeupCredits, result.carryPending, result.evidenceAbsenceId], [true, 3, 3, false, null]);
+  assert.equal(db.transactions, 1, "기간·결석·보강권이 한 트랜잭션");
+  assert.deepEqual(db.periods.map((p) => [p.studentId, p.reason, p.startDate, p.returnDate, p.coveredUntil, p.status, p.reportedByUserId, p.openEnded]),
+    [["s1", "FAMILY_TRIP", MON, "2026-12-07", "2026-12-06", "ACTIVE", "p1", false]], "끝일(마지막으로 쉬는 날) 다음 날이 복귀일");
+  assert.deepEqual(db.absences.map((a) => [a.date, a.status, a.reason, a.periodId]), [MON, NEXT_MON, LAST_MON].map((d) => [d, "REPORTED", "FAMILY_TRIP", db.periods[0].id]));
+  assert.ok(db.absences.every((a) => a.note === "여러 날 결석 · 11/16(월)~12/6(일)"), "note 머리말 = 알림 재조정이 날짜마다 다시 알리지 않게 하는 표시");
+  assert.deepEqual(db.credits.map((c) => [c.sourceKey, c.status]), [MON, NEXT_MON, LAST_MON].map((d) => [`REGULAR:cO:${d}`, "AVAILABLE"]));
+  // 원장·코치·기사 알림은 날짜마다가 아니라 한 번
+  assert.equal(db.notices.length, 1);
+  assert.deepEqual([db.notices[0].eventType, db.notices[0].includeCoach, db.notices[0].includeDriver], ["REGULAR_ABSENCE_REPORTED", true, true]);
+  assert.match(db.notices[0].message, /지유 학생이 11\/16\(월\)~11\/30\(월\) 3회 결석 예정입니다\. \(가족 여행\)/);
+  assert.deepEqual(db.notices[0].driverContext, { studentId: "s1", serviceDate: MON });
+  assert.match(db.notices[0].stableEventKey, new RegExp(`^regular-absence-period:${db.periods[0].id}:REPORTED:`));
+});
+
+test("여러 날 결석: 휴무일·이미 알린 날·마감 지난 오늘 수업은 자동으로 빼고 그 사실을 한 줄로 알린다", async () => {
+  const db = makeDb({ periodReady: true, holidays: [NEXT_MON] });
+  seedAbsence(db, { date: LAST_MON }); // 11/30 은 이미 하루로 알렸다
+  freeze(MON, "17:30"); // 오늘(11/16) 18:00 수업 — 마감(1시간 전) 지남
+  const preview = await period.previewParentAbsencePeriod("p1", { ...PERIOD_IN, endDate: "2026-12-13" });
+  assert.equal(preview.datesLabel, "12/7(월) 1회");
+  assert.equal(preview.skippedNote, "휴무일 1회 · 이미 알린 날 1회 · 마감 지난 오늘 수업 1회는 뺐어요.");
+  const result = await period.createParentAbsencePeriod("p1", { ...PERIOD_IN, endDate: "2026-12-13" });
+  assert.equal(result.count, 1);
+  assert.deepEqual(db.absences.filter((a) => a.periodId).map((a) => a.date), ["2026-12-07"]);
+  // 알릴 수업이 하나도 없으면 기간도 만들지 않는다
+  const none = makeDb({ periodReady: true, holidays: [MON] });
+  freeze(SUN, "10:00");
+  await assert.rejects(() => period.createParentAbsencePeriod("p1", { ...PERIOD_IN, endDate: "2026-11-20" }), /^Error: PERIOD_NO_DATES$/);
+  assert.equal(none.periods.length, 0);
+});
+
+test("여러 날 결석 한도: 4주(28일)까지 — 넘으면 휴원 안내 코드, 끝일 «아직 몰라요»는 4주까지만 잡는다", async () => {
+  const db = makeDb({ periodReady: true });
+  freeze(SUN, "10:00");
+  // 오늘 11/15 → 알릴 수 있는 마지막 날 12/12(오늘 +27일). 시작일이 11/16 이어도 12/13 은 넘는다
+  await assert.rejects(() => period.previewParentAbsencePeriod("p1", { ...PERIOD_IN, endDate: "2026-12-13" }), /^Error: PERIOD_TOO_LONG$/, "오늘 +28일");
+  assert.equal((await period.previewParentAbsencePeriod("p1", { ...PERIOD_IN, endDate: "2026-12-12" })).count, 4, "오늘 +27일까지는 된다");
+  await assert.rejects(() => period.previewParentAbsencePeriod("p1", { ...PERIOD_IN, startDate: "2026-11-14" }), /^Error: PERIOD_START_PAST$/);
+  await assert.rejects(() => period.previewParentAbsencePeriod("p1", { ...PERIOD_IN, startDate: "2026-12-13", endDate: "2026-12-14" }), /^Error: PERIOD_START_TOO_FAR$/);
+  await assert.rejects(() => period.previewParentAbsencePeriod("p1", { ...PERIOD_IN, endDate: "2026-11-15" }), /^Error: PERIOD_END_BEFORE_START$/);
+  // 끝일 미정
+  const open = await period.createParentAbsencePeriod("p1", { ...PERIOD_IN, endDate: null });
+  assert.equal(open.count, 4);
+  assert.deepEqual([db.periods[0].openEnded, db.periods[0].returnDate], [true, "2026-12-13"], "오늘 +27일(12/12)까지 쉬고 다음 날이 복귀일");
+  assert.deepEqual(db.absences.map((a) => a.date), [MON, NEXT_MON, LAST_MON, "2026-12-07"]);
+});
+
+test("여러 날 결석(질병·부상): 사유 글 필수 · 날짜마다 «이월 검토 중»(보강권 없음) · 사진은 기간의 첫 결석에 한 묶음 · 알림에 사유 글 없음", async () => {
+  const db = makeDb({ periodReady: true, illnessReady: true });
+  freeze(SUN, "10:00");
+  await assert.rejects(() => period.createParentAbsencePeriod("p1", { ...PERIOD_IN, reason: "ILLNESS_INJURY" }), /^Error: ILLNESS_REASON_TEXT_REQUIRED$/);
+  assert.equal(db.periods.length, 0);
+  const result = await period.createParentAbsencePeriod("p1", { ...PERIOD_IN, reason: "ILLNESS_INJURY", reasonText: "발목 골절" });
+  assert.deepEqual([result.count, result.makeupCredits, result.carryPending], [3, 0, true]);
+  assert.equal(result.evidenceAbsenceId, db.absences[0].id, "화면이 사진을 올릴 결석 = 기간의 첫 결석");
+  assert.equal(db.credits.length, 0);
+  assert.deepEqual(db.reviews.map((r) => [r.status, r.source, r.reasonText]), Array(3).fill(["PENDING", "PARENT", "발목 골절"]));
+  assert.equal(db.notices.length, 1);
+  assert.equal(db.notices[0].linkUrl, "/admin/inbox?kind=ILLNESS_CARRY");
+  assert.doesNotMatch(JSON.stringify(db.notices[0]), /발목|골절/);
+});
+
+test("여러 날 결석 권한·중복: 내 아이만, 이미 알린 기간과 겹치면 거절, 준비 전(칸 없음)이면 기능 자체를 닫는다", async () => {
+  const db = makeDb({ periodReady: true });
+  freeze(SUN, "10:00");
+  await assert.rejects(() => period.createParentAbsencePeriod("p9", PERIOD_IN), /^Error: NOT_OWNER$/, "남의 아이");
+  await assert.rejects(() => period.previewParentAbsencePeriod("p9", PERIOD_IN), /^Error: NOT_OWNER$/);
+  await assert.rejects(() => period.createParentAbsencePeriod("p1", { ...PERIOD_IN, reason: "놀러감" }), /^Error: INVALID_REASON$/);
+  assert.equal(db.periods.length + db.absences.length, 0);
+  await period.createParentAbsencePeriod("p1", PERIOD_IN);
+  await assert.rejects(() => period.createParentAbsencePeriod("p1", { ...PERIOD_IN, startDate: "2026-12-01", endDate: "2026-12-10" }), /^Error: PERIOD_OVERLAP$/);
+  assert.deepEqual([db.periods.length, db.absences.length, db.notices.length], [1, 3, 1], "거절된 요청은 아무것도 남기지 않는다");
+  // 겹치지 않으면 된다(복귀일 12/7 부터)
+  assert.equal((await period.createParentAbsencePeriod("p1", { ...PERIOD_IN, startDate: "2026-12-07", endDate: "2026-12-12" })).count, 1);
+
+  const notReady = makeDb();
+  await assert.rejects(() => period.createParentAbsencePeriod("p1", PERIOD_IN), /^Error: PERIOD_NOT_READY$/);
+  await assert.rejects(() => period.previewParentAbsencePeriod("p1", PERIOD_IN), /^Error: PERIOD_NOT_READY$/);
+  assert.equal(notReady.periods.length, 0);
+});
+
+test("복귀했어요: 복귀일부터의 결석만 취소(보강권 회수·검토 닫기) — 지난 날·마감 지난 오늘 수업은 그대로, 알림 1회", async () => {
+  const db = makeDb({ periodReady: true, illnessReady: true });
+  freeze(SUN, "10:00");
+  await period.createParentAbsencePeriod("p1", PERIOD_IN);
+  const periodId = db.periods[0].id;
+  db.notices.length = 0;
+  // 11/23(월) 17:30 — 오늘 수업은 마감 지남. 오늘 복귀한다고 알린다
+  freeze(NEXT_MON, "17:30");
+  const result = await period.closeParentAbsencePeriod("p1", { periodId, returnDate: NEXT_MON });
+  assert.deepEqual([result.outcome, result.canceledCount, result.closedByDeadline, result.makeupKept], ["ENDED", 1, 1, 0]);
+  assert.deepEqual(db.absences.map((a) => [a.date, a.status]), [[MON, "REPORTED"], [NEXT_MON, "REPORTED"], [LAST_MON, "CANCELLED"]]);
+  assert.deepEqual(db.credits.map((c) => c.status), ["AVAILABLE", "AVAILABLE", "REVOKED"], "취소된 날의 보강권만 회수");
+  assert.deepEqual([db.periods[0].status, db.periods[0].returnDate], ["ENDED", NEXT_MON]);
+  assert.equal(db.notices.length, 1);
+  assert.equal(db.notices[0].eventType, "REGULAR_ABSENCE_CANCELED");
+  assert.match(db.notices[0].message, /11\/30\(월\) 1회 결석 신고가 취소되었습니다/);
+  // 이미 끝난 기간은 다시 못 닫는다 / 남의 아이 기간은 «없음»
+  await assert.rejects(() => period.closeParentAbsencePeriod("p1", { periodId, returnDate: NEXT_MON }), /^Error: PERIOD_ALREADY_CLOSED$/);
+  await assert.rejects(() => period.closeParentAbsencePeriod("p9", { periodId, returnDate: NEXT_MON }), /^Error: PERIOD_NOT_FOUND$/);
+});
+
+test("알림 취소·복귀일 범위: 시작 전에 접으면 기간째 취소, 보강이 예약된 날은 그대로 두고 개수로 알린다", async () => {
+  const db = makeDb({ periodReady: true });
+  freeze(SUN, "10:00");
+  await period.createParentAbsencePeriod("p1", PERIOD_IN);
+  const periodId = db.periods[0].id;
+  await assert.rejects(() => period.closeParentAbsencePeriod("p1", { periodId, returnDate: "2026-11-14" }), /^Error: PERIOD_RETURN_PAST$/);
+  await assert.rejects(() => period.closeParentAbsencePeriod("p1", { periodId, returnDate: "2026-12-08" }), /^Error: PERIOD_RETURN_AFTER_END$/);
+  await assert.rejects(() => period.closeParentAbsencePeriod("p1", { periodId, returnDate: "" }), /^Error: PERIOD_INVALID_DATE$/);
+  // 11/23 결석의 보강권으로 보강을 예약해 둔 상태
+  Object.assign(db.credits[1], { status: "RESERVED", makeupSessionId: "ms-1" });
+  const result = await period.closeParentAbsencePeriod("p1", { periodId, returnDate: SUN }); // 알림 취소 = 오늘부터
+  assert.deepEqual([result.outcome, result.canceledCount, result.makeupKept], ["CANCELLED", 2, 1]);
+  assert.deepEqual(db.absences.map((a) => a.status), ["CANCELLED", "REPORTED", "CANCELLED"], "보강이 예약된 날은 하루 취소 화면에서 확인하고 취소한다");
+  assert.deepEqual(db.credits.map((c) => c.status), ["REVOKED", "RESERVED", "REVOKED"]);
+  assert.equal(db.periods[0].status, "CANCELLED");
+  // 실패하면 통째로 되돌아간다
+  const broken = makeDb({ periodReady: true });
+  freeze(SUN, "10:00");
+  await period.createParentAbsencePeriod("p1", PERIOD_IN);
+  // 두 번째 날을 취소하는 순간 DB 오류 — 첫 날의 취소·보강권 회수까지 되돌아가야 한다
+  broken.failOn = { n: 0, test(sql) { return /UPDATE "RegularAbsence" SET status = 'CANCELLED', "updatedAt" = NOW\(\) WHERE id = \$1/.test(sql) && ++this.n === 2; } };
+  await assert.rejects(() => period.closeParentAbsencePeriod("p1", { periodId: broken.periods[0].id, returnDate: SUN }));
+  assert.deepEqual(broken.absences.map((a) => a.status), ["REPORTED", "REPORTED", "REPORTED"]);
+  assert.deepEqual(broken.credits.map((c) => c.status), ["AVAILABLE", "AVAILABLE", "AVAILABLE"]);
+});
+
+test("기간을 전부 취소하면 진단서 사진도 빠지고, 같은 날짜를 다시 알려도 옛 사진이 붙지 않는다", async () => {
+  const db = makeDb({ periodReady: true, illnessReady: true });
+  freeze(SUN, "10:00");
+  const first = await period.createParentAbsencePeriod("p1", { ...PERIOD_IN, reason: "ILLNESS_INJURY", reasonText: "독감" });
+  // 사진은 기간의 첫 결석에 붙는다
+  db.evidence.push({ id: "e1", absenceId: first.evidenceAbsenceId, removed: false });
+  // 뒤 두 날만 취소(복귀) — 첫 날이 아직 검토 중이라 사진은 남는다
+  await period.closeParentAbsencePeriod("p1", { periodId: first.periodId, returnDate: NEXT_MON });
+  assert.equal(db.evidence[0].removed, false);
+  assert.deepEqual(db.reviews.map((r) => r.status), ["PENDING", "CLOSED", "CLOSED"]);
+
+  // 통째로 취소한 경우: 사진이 붙은 날이 먼저 닫히고 나머지가 뒤에 닫혀도 마지막에 전부 빠진다
+  const all = makeDb({ periodReady: true, illnessReady: true });
+  freeze(SUN, "10:00");
+  const created = await period.createParentAbsencePeriod("p1", { ...PERIOD_IN, reason: "ILLNESS_INJURY", reasonText: "독감" });
+  all.evidence.push({ id: "e1", absenceId: created.evidenceAbsenceId, removed: false }, { id: "e2", absenceId: all.absences[2].id, removed: false });
+  const closed = await period.closeParentAbsencePeriod("p1", { periodId: created.periodId, returnDate: SUN });
+  assert.deepEqual([closed.outcome, closed.canceledCount], ["CANCELLED", 3]);
+  assert.deepEqual(all.evidence.map((e) => e.removed), [true, true], "전부 취소 뒤 살아 있는 사진 0장");
+
+  // 같은 날짜를 다시 알린다 — 결석 행은 되살아나지만(같은 id) 옛 사진은 빠진 상태 그대로
+  const again = await period.createParentAbsencePeriod("p1", { ...PERIOD_IN, reason: "ILLNESS_INJURY", reasonText: "독감" });
+  assert.notEqual(again.periodId, created.periodId);
+  const members = all.absences.filter((a) => a.periodId === again.periodId).map((a) => a.id);
+  assert.equal(members.length, 3);
+  assert.equal(all.evidence.filter((e) => members.includes(e.absenceId) && !e.removed).length, 0, "새 기간에 살아 있는 사진 0장");
+  assert.deepEqual(all.reviews.map((r) => r.status), ["PENDING", "PENDING", "PENDING"]);
+});
+
+test("겹침: 학원이 등록한 기간과 겹치면 다른 안내 코드, 결석이 하나도 안 남은 학부모 기간(복귀 처리됨)은 겹침으로 보지 않는다", async () => {
+  const db = makeDb({ periodReady: true });
+  freeze(SUN, "10:00");
+  // 학원(관리자)이 등록한 기간 11/23~11/29
+  db.periods.push({ id: "per-admin", studentId: "s1", reason: "ILLNESS_INJURY", startDate: NEXT_MON, returnDate: "2026-11-30", status: "ACTIVE", reportedByUserId: null, createdYmd: "2026-11-10" });
+  db.absences.push({ id: "ra-admin", studentId: "s1", classId: "cO", date: NEXT_MON, reason: "ILLNESS_INJURY", status: "CONFIRMED", periodId: "per-admin" });
+  await assert.rejects(() => period.createParentAbsencePeriod("p1", PERIOD_IN), /^Error: PERIOD_OVERLAP_ADMIN$/);
+  assert.equal(db.periods.length, 1);
+  // 겹치지 않는 날짜는 된다
+  assert.equal((await period.createParentAbsencePeriod("p1", { ...PERIOD_IN, endDate: "2026-11-22" })).count, 1);
+  // 복귀 처리(ENDED)됐고 살아 있는 결석이 없는 학부모 기간은 같은 날짜대를 막지 않는다
+  const other = makeDb({ periodReady: true });
+  other.periods.push({ id: "per-empty", studentId: "s1", reason: "PERSONAL", startDate: MON, returnDate: "2026-12-07", status: "ENDED", reportedByUserId: "p1", createdYmd: "2026-11-10" });
+  other.absences.push({ id: "ra-empty", studentId: "s1", classId: "cO", date: MON, reason: "PERSONAL", status: "CANCELLED", periodId: "per-empty", note: "여러 날 결석 · 옛 기간" });
+  const made = await period.createParentAbsencePeriod("p1", PERIOD_IN);
+  assert.equal(made.count, 3);
+  // 되살아난 11/16 결석은 옛 기간이 아니라 새 기간에 묶인다
+  const revived = other.absences.find((a) => a.id === "ra-empty");
+  assert.deepEqual([revived.status, revived.periodId], ["REPORTED", made.periodId]);
+});
+
+test("만들기·취소 반복 제한: 아이당 하루(KST) 5번까지 — 취소한 것도 세고, 날이 바뀌면 다시 된다", async () => {
+  const db = makeDb({ periodReady: true });
+  freeze(SUN, "10:00");
+  for (let i = 0; i < 5; i += 1) {
+    const made = await period.createParentAbsencePeriod("p1", PERIOD_IN);
+    await period.closeParentAbsencePeriod("p1", { periodId: made.periodId, returnDate: SUN }); // 바로 취소
+  }
+  await assert.rejects(() => period.createParentAbsencePeriod("p1", PERIOD_IN), /^Error: PERIOD_DAILY_LIMIT$/);
+  assert.equal(db.periods.length, 5, "여섯 번째는 기간도 결석도 만들지 않는다");
+  assert.ok(db.absences.every((a) => a.status === "CANCELLED"));
+  // KST 자정이 지나면 다시 알릴 수 있다(11/15 23:59 → 11/16 00:00)
+  freeze(SUN, "23:59");
+  await assert.rejects(() => period.createParentAbsencePeriod("p1", PERIOD_IN), /^Error: PERIOD_DAILY_LIMIT$/);
+  freeze(MON, "00:00");
+  assert.equal((await period.createParentAbsencePeriod("p1", PERIOD_IN)).ok, true);
+});
+
+test("여러 날 결석의 한 날을 날짜 바꾸기 하면 옮긴 날도 같은 기간에 묶인다(사진 묶음·복귀했어요가 그대로 닿게)", async () => {
+  const db = makeDb({ periodReady: true });
+  freeze(SUN, "10:00");
+  await period.createParentAbsencePeriod("p1", { ...PERIOD_IN, endDate: "2026-11-29" }); // 11/16·11/23
+  await absence.moveRegularAbsence("p1", { studentId: "s1", classId: "cO", date: NEXT_MON, toDate: LAST_MON });
+  const moved = db.absences.find((a) => a.date === LAST_MON);
+  assert.deepEqual([moved.status, moved.periodId, moved.note], ["REPORTED", db.periods[0].id, db.absences[0].note]);
+});
+
 // 질병·부상 이월 검토(2026-11-14) × 날짜 바꾸기 — 날짜를 바꿔도 «검토 대기» 규칙을 돌아갈 수 없다
 test("결석 날짜 바꾸기(질병·부상 검토 중): 사진·사유 글이 새 날짜로 옮겨 가고 새 날짜도 «검토 중» — 보강권은 나가지 않는다", async () => {
   const db = makeDb({ illnessReady: true });
@@ -840,15 +1162,23 @@ test("결석 날짜 바꾸기(원장이 이미 [보강권으로] 정한 결석):
   assert.deepEqual(db.reviews.map((r) => [r.absenceId, r.status]), [[old.id, "CLOSED"], [moved.id, "MAKEUP"]]);
 });
 
-test("결석 날짜 바꾸기(다른 사유·검토 줄 없는 옛 질병·부상 결석): 표가 있어도 예전 그대로 — 옛 보강권 회수·새 보강권 발급", async () => {
-  for (const reason of ["FAMILY_TRIP", "ILLNESS_INJURY"]) {
-    const db = makeDb({ illnessReady: true });
-    seedAbsence(db, { reason });
-    freeze(SUN, "10:00");
-    await absence.moveRegularAbsence("p1", MOVE);
-    assert.deepEqual(db.credits.map((c) => [c.sourceKey, c.status]), [[`REGULAR:cO:${MON}`, "REVOKED"], [`REGULAR:cO:${NEXT_MON}`, "AVAILABLE"]], reason);
-    assert.equal(db.reviews.length, 0, reason);
-  }
+test("결석 날짜 바꾸기(다른 사유): 표가 있어도 예전 그대로 — 옛 보강권 회수·새 보강권 발급", async () => {
+  const db = makeDb({ illnessReady: true });
+  seedAbsence(db, { reason: "FAMILY_TRIP" });
+  freeze(SUN, "10:00");
+  await absence.moveRegularAbsence("p1", MOVE);
+  assert.deepEqual(db.credits.map((c) => [c.sourceKey, c.status]), [[`REGULAR:cO:${MON}`, "REVOKED"], [`REGULAR:cO:${NEXT_MON}`, "AVAILABLE"]]);
+  assert.equal(db.reviews.length, 0);
+});
+
+test("결석 날짜 바꾸기(검토 줄 없는 옛 질병·부상 결석): 새 날짜에서 «검토 중»으로 통일 — 옛 보강권 회수, 새 보강권은 나가지 않는다", async () => {
+  const db = makeDb({ illnessReady: true });
+  seedAbsence(db, { reason: "ILLNESS_INJURY" }); // 이 기능 이전 신고: 보강권 있음·검토 줄 없음
+  freeze(SUN, "10:00");
+  await absence.moveRegularAbsence("p1", MOVE);
+  const moved = db.absences.find((a) => a.date === NEXT_MON);
+  assert.deepEqual(db.credits.map((c) => [c.sourceKey, c.status]), [[`REGULAR:cO:${MON}`, "REVOKED"]], "하루 신고와 같은 결과 — 보강권 대신 검토 대기");
+  assert.deepEqual(db.reviews.map((r) => [r.absenceId, r.status, r.source, r.reasonText]), [[moved.id, "PENDING", "PARENT", null]]);
 });
 
 test("결석 날짜 바꾸기 알림: 기존 알림 두 통(취소 + 새 신고), 다시 눌러도 더 가지 않는다", async () => {

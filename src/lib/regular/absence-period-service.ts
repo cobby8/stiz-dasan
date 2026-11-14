@@ -70,6 +70,31 @@ async function tableExists(db: AbsencePeriodDb, name: string): Promise<boolean> 
   return Boolean(rows[0]?.found);
 }
 
+/**
+ * 학부모 «여러 날 결석» 칸(reportedByUserId·openEnded·reminderSentAt)이 있는가 — 마이그레이션 20261115100000 적용 여부.
+ * 없으면 학부모 기간이 있을 수 없으므로 예전 그대로 돈다(새 칸 때문에 관리자 기간 결석·크론이 죽지 않게).
+ */
+export async function parentPeriodColumnsReady(db: AbsencePeriodDb): Promise<boolean> {
+  const rows = await db.$queryRawUnsafe<Array<{ n: number }>>(
+    `SELECT COUNT(*)::int AS n FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'RegularAbsencePeriod'
+        AND column_name IN ('reportedByUserId', 'openEnded', 'reminderSentAt')`,
+  );
+  return Number(rows[0]?.n ?? 0) === 3;
+}
+
+/** 학부모가 알린 기간인가(칸이 없으면 false). 관리자 복귀 처리·등록 취소·자동 연장은 관리자 기간만 다룬다 */
+async function isParentPeriod(db: AbsencePeriodDb, periodId: string): Promise<boolean> {
+  if (!(await parentPeriodColumnsReady(db))) return false;
+  const rows = await db.$queryRawUnsafe<Array<{ found: number }>>(
+    `SELECT 1 AS found FROM "RegularAbsencePeriod" WHERE id = $1 AND "reportedByUserId" IS NOT NULL`, periodId,
+  );
+  return rows.length > 0;
+}
+
+/** 학부모 기간은 날짜마다 학부모 결석 행이라 관리자가 기간째로 고치지 않는다 — 결석 관리에서 날짜별로 처리 */
+const PARENT_PERIOD_ADMIN_MESSAGE = "학부모가 알린 기간 결석입니다. 결석 관리에서 날짜별로 확정·취소해 주세요.";
+
 /** 그 학생의 수강 중(ACTIVE) 반 — 요일·개시일·이름 */
 async function activeClassesOf(db: AbsencePeriodDb, studentId: string) {
   return db.$queryRawUnsafe<Array<PeriodClass & { className: string }>>(
@@ -266,13 +291,23 @@ export async function createAbsencePeriodInTx(db: AbsencePeriodDb, input: {
   const storedClassIds = requested.length && requested.length < activeIds.size ? requested : [];
 
   // 같은 학생의 살아 있는 기간(진행 중·복귀 처리됨)과 날짜가 겹치면 막는다
-  const others = await db.$queryRawUnsafe<Array<{ startDate: string; returnDate: string | null }>>(
-    `SELECT to_char("startDate",'YYYY-MM-DD') AS "startDate", to_char("returnDate",'YYYY-MM-DD') AS "returnDate"
-       FROM "RegularAbsencePeriod" WHERE "studentId" = $1 AND status IN ('ACTIVE','ENDED')`,
+  // 학부모가 알린 기간(2026-11-15)은 끝일이 지나도 ACTIVE 로 남는다 — 살아 있는 결석이 하나도 없으면(전부 취소됨) 겹침으로 보지 않고,
+  // 겹칠 때는 학부모 기간임을 알려 준다(관리자가 기간째로 복귀 처리·등록 취소할 수 없는 기간이라 안내가 달라야 한다).
+  const parentSql = (await parentPeriodColumnsReady(db)) ? `(p."reportedByUserId" IS NOT NULL)` : `false`;
+  const others = (await db.$queryRawUnsafe<Array<{ startDate: string; returnDate: string | null; parentReported: boolean; live: number }>>(
+    `SELECT to_char(p."startDate",'YYYY-MM-DD') AS "startDate", to_char(p."returnDate",'YYYY-MM-DD') AS "returnDate",
+            ${parentSql} AS "parentReported",
+            (SELECT COUNT(*)::int FROM "RegularAbsence" ra WHERE ra."periodId" = p.id AND ra.status <> 'CANCELLED') AS live
+       FROM "RegularAbsencePeriod" p WHERE p."studentId" = $1 AND p.status IN ('ACTIVE','ENDED')`,
     studentId,
-  );
+  )).filter((o) => !(o.parentReported && Number(o.live) === 0));
   const mine = { startDate, returnDate };
   const clash = others.find((o) => periodsOverlap(mine, o));
+  if (clash?.parentReported) {
+    // returnDate = 끝일 다음 날 → 화면에는 마지막으로 쉬는 날로 보인다
+    const lastDay = clash.returnDate ? addDaysKst(clash.returnDate, -1) : clash.startDate;
+    throw new Error(`학부모가 알린 기간(${clash.startDate}~${lastDay})이 있습니다. 그 뒤 날짜부터 등록하거나 날짜별로 취소해 주세요.`);
+  }
   if (clash) {
     throw new Error(`이미 등록된 기간 결석(${clash.startDate}~${clash.returnDate ?? "복귀 미정"})과 날짜가 겹칩니다. 그 기간을 복귀 처리하거나 등록 취소한 뒤 다시 해 주세요.`);
   }
@@ -297,6 +332,7 @@ export async function endAbsencePeriodInTx(db: AbsencePeriodDb, input: { periodI
 
   await lockCompensation(db);
   const period = await readPeriodForUpdate(db, periodId);
+  if (await isParentPeriod(db, periodId)) throw new Error(PARENT_PERIOD_ADMIN_MESSAGE);
   if (period.status !== "ACTIVE") throw new Error("진행 중인 기간 결석만 복귀 처리할 수 있습니다.");
   const dateError = validatePeriodDates(period.startDate, returnDate);
   if (dateError) throw new Error(dateError);
@@ -328,6 +364,7 @@ export async function cancelAbsencePeriodInTx(db: AbsencePeriodDb, input: { peri
   if (!periodId) throw new Error("기간 결석을 찾을 수 없습니다.");
   await lockCompensation(db);
   const period = await readPeriodForUpdate(db, periodId);
+  if (await isParentPeriod(db, periodId)) throw new Error(PARENT_PERIOD_ADMIN_MESSAGE);
   if (period.status === "CANCELLED") throw new Error("이미 등록 취소된 기간 결석입니다.");
   const counts = await cancelPeriodRows(db, periodId, ctx.actorUserId, null);
   await db.$executeRawUnsafe(
@@ -344,9 +381,12 @@ export async function cancelAbsencePeriodInTx(db: AbsencePeriodDb, input: { peri
  */
 export async function listPeriodsToExtend(db: AbsencePeriodDb, todayYmd: string): Promise<string[]> {
   if (!(await tableExists(db, "RegularAbsencePeriod"))) return [];
+  // 학부모가 알린 기간(2026-11-15)은 알릴 때 날짜를 모두 만들어 둔다 — 자동 연장하면 학부모가 고르지 않은 날에
+  // 관리자 확정 결석이 생긴다. 칸이 있을 때만 거른다(마이그레이션 전에는 학부모 기간이 없다).
+  const adminOnly = (await parentPeriodColumnsReady(db)) ? `AND "reportedByUserId" IS NULL` : "";
   const rows = await db.$queryRawUnsafe<Array<{ id: string; returnDate: string | null; coveredUntil: string }>>(
     `SELECT id, to_char("returnDate",'YYYY-MM-DD') AS "returnDate", to_char("coveredUntil",'YYYY-MM-DD') AS "coveredUntil"
-       FROM "RegularAbsencePeriod" WHERE status = 'ACTIVE' ORDER BY "createdAt"`,
+       FROM "RegularAbsencePeriod" WHERE status = 'ACTIVE' ${adminOnly} ORDER BY "createdAt"`,
   );
   return rows
     .filter((r) => r.coveredUntil < periodTargetEnd({ returnDate: r.returnDate, todayYmd }) || !r.returnDate || r.returnDate > todayYmd)
@@ -357,7 +397,7 @@ export async function listPeriodsToExtend(db: AbsencePeriodDb, todayYmd: string)
 export async function extendAbsencePeriodInTx(db: AbsencePeriodDb, periodId: string, ctx: PeriodContext) {
   await lockCompensation(db);
   const period = await readPeriodForUpdate(db, periodId);
-  if (period.status !== "ACTIVE") return { periodId, studentId: period.studentId, created: 0 };
+  if (period.status !== "ACTIVE" || await isParentPeriod(db, periodId)) return { periodId, studentId: period.studentId, created: 0 };
   // 크론이 만든 행도 «그 기간을 등록한 관리자»가 확정한 것으로 남긴다
   const { counts } = await fillPeriodRows(db, period, { ...ctx, actorUserId: period.createdByUserId }, "EXTEND");
   return { periodId, studentId: period.studentId, created: counts.created };
@@ -375,6 +415,8 @@ export type AbsencePeriodView = {
   coveredUntil: string;
   classIds: string[];
   createdAt: string;
+  /** 학부모가 «결석 알리기 › 여러 날»로 알린 기간인가 — 화면에 «학부모 신고»로 표시하고 기간째 처리 버튼은 숨긴다 */
+  parentReported?: boolean;
   /** 이 기간이 만든 결석 날짜(취소된 것 포함 — 화면에서 구분) */
   absences: { id: string; classId: string; className: string; date: string; status: string }[];
 };
@@ -382,8 +424,10 @@ export type AbsencePeriodView = {
 export async function listAbsencePeriodsInDb(db: AbsencePeriodDb, studentId: string): Promise<{ available: boolean; periods: AbsencePeriodView[] }> {
   // 마이그레이션 전이면 화면이 깨지지 않게 «아직 사용 불가»로 돌려준다
   if (!(await tableExists(db, "RegularAbsencePeriod"))) return { available: false, periods: [] };
+  const parentSql = (await parentPeriodColumnsReady(db)) ? `(p."reportedByUserId" IS NOT NULL)` : `false`;
   const periods = await db.$queryRawUnsafe<Array<Omit<AbsencePeriodView, "absences">>>(
-    `SELECT ${PERIOD_COLUMNS}, p.note, to_char(p."createdAt" AT TIME ZONE 'Asia/Seoul','YYYY-MM-DD') AS "createdAt"
+    `SELECT ${PERIOD_COLUMNS}, p.note, to_char(p."createdAt" AT TIME ZONE 'Asia/Seoul','YYYY-MM-DD') AS "createdAt",
+            ${parentSql} AS "parentReported"
        FROM "RegularAbsencePeriod" p
       WHERE p."studentId" = $1
       ORDER BY p."startDate" DESC, p."createdAt" DESC

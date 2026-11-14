@@ -7,7 +7,7 @@ import {
   settleCreditOnAbsenceCancel,
 } from "@/lib/makeup/absence-report-credit";
 import { kstAt, kstHm, todayKst } from "@/lib/datetime/kst";
-import { lockCompensation } from "@/lib/billing/absence-compensation-guard";
+import { lockCompensation, type CompensationTransaction } from "@/lib/billing/absence-compensation-guard";
 import { createHash } from "node:crypto";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import { BeforeResumeError, parentUsableEnrollmentSql, resumeFromSql, usableOn } from "@/lib/enrollment/resumeWindow";
@@ -16,6 +16,8 @@ import {
   ILLNESS_REASON,
   canAddEvidence,
   canEditEvidence,
+  evidenceAnchorYmdSql,
+  evidenceScopeSql,
   evidenceDeadlineYmd,
   illnessReviewLabel,
   isValidReasonText,
@@ -120,6 +122,10 @@ export type ParentIllnessReview = {
   canAdd: boolean;
   /** 살아 있는 사진 — mine=내가 올린 것(내 것만 열어 볼 수 있다) */
   photos: { id: string; mine: boolean }[];
+  /** «여러 날 결석»의 한 날이면 그 기간 id(하루 결석은 null) — 화면은 같은 기간을 한 줄로 묶어 보인다 */
+  periodId: string | null;
+  /** 이 줄이 대표하는 결석 수(하루 결석 1, 묶인 기간이면 n) */
+  count?: number;
 };
 
 /**
@@ -134,9 +140,12 @@ export async function getParentIllnessReviews(parentUserId: string): Promise<Par
               ra."classId" AS "classId", c.name AS "className", to_char(ra.date, 'YYYY-MM-DD') AS "date",
               r.status AS status,
               to_char(r."requestedAt" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "requestedYmd",
+              ra."periodId" AS "periodId",
+              -- 여러 날 결석: 기한 기준은 기간의 마지막 결석일, 사진은 기간 한 묶음
+              ${evidenceAnchorYmdSql("ra")} AS "anchorYmd",
               COALESCE((SELECT json_agg(json_build_object('id', e.id, 'mine', e."uploadedByUserId" = $1) ORDER BY e."createdAt")
                           FROM "RegularAbsenceEvidence" e
-                         WHERE e."absenceId" = ra.id AND e."removedAt" IS NULL), '[]'::json) AS photos
+                         WHERE ${evidenceScopeSql("ra", "e")} AND e."removedAt" IS NULL), '[]'::json) AS photos
          FROM "RegularAbsenceCarryReview" r
          JOIN "RegularAbsence" ra ON ra.id = r."absenceId"
          JOIN "Student" s ON s.id = ra."studentId"
@@ -153,7 +162,8 @@ export async function getParentIllnessReviews(parentUserId: string): Promise<Par
     return rows.map((r) => {
       const photos: { id: string; mine: boolean }[] = (typeof r.photos === "string" ? JSON.parse(r.photos) : r.photos) ?? [];
       // 7일 기준점 = 알린 날과 결석일 중 더 늦은 날(규칙 함수 한 곳)
-      const window = { status: r.status, requestedYmd: r.requestedYmd, absenceYmd: r.date, todayYmd: today };
+      const anchorYmd: string = r.anchorYmd ?? r.date;
+      const window = { status: r.status, requestedYmd: r.requestedYmd, absenceYmd: anchorYmd, todayYmd: today };
       return {
         absenceId: r.absenceId,
         studentId: r.studentId,
@@ -164,10 +174,11 @@ export async function getParentIllnessReviews(parentUserId: string): Promise<Par
         dateLabel: dateLabel(r.date),
         status: r.status,
         statusLabel: illnessReviewLabel(r.status) ?? "",
-        deadlineLabel: dateLabel(evidenceDeadlineYmd(r.requestedYmd, r.date)),
+        deadlineLabel: dateLabel(evidenceDeadlineYmd(r.requestedYmd, anchorYmd)),
         canEdit: canEditEvidence(window),
         canAdd: canAddEvidence({ ...window, photoCount: photos.length }),
         photos: photos.map((photo) => ({ id: String(photo.id), mine: photo.mine === true })),
+        periodId: r.periodId ?? null,
       };
     });
   } catch (error) {
@@ -191,6 +202,31 @@ export type UpcomingChild = {
   }[];
 };
 
+/** 부모 자녀가 «쓸 수 있는» 수강 반 한 줄(다니는 반 + 복귀 승인된 휴원 반) */
+export type ParentUsableClass = {
+  studentId: string; studentName: string; classId: string; className: string;
+  dayOfWeek: string; startTime: string; enrollmentStatus: string; resumeFrom: string | null;
+};
+
+/**
+ * 부모 자녀의 «쓸 수 있는» 수강 반 — 하루 알리기 목록과 «여러 날 결석»이 같은 조회·같은 권한 조건을 쓴다.
+ * (IDOR: childAccessSql — 로그인 부모의 자녀만. 병합된 학생 제외)
+ */
+export async function listParentUsableClasses(parentUserId: string): Promise<ParentUsableClass[]> {
+  return prisma.$queryRawUnsafe<ParentUsableClass[]>(
+    `SELECT s.id AS "studentId", s.name AS "studentName",
+            c.id AS "classId", c.name AS "className",
+            c."dayOfWeek" AS "dayOfWeek", c."startTime" AS "startTime",
+            e.status AS "enrollmentStatus", ${resumeFromSql("e")} AS "resumeFrom"
+       FROM "Student" s
+       JOIN "Enrollment" e ON e."studentId" = s.id AND ${parentUsableEnrollmentSql("e")}
+       JOIN "Class" c ON c.id = e."classId"
+      WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")}
+      ORDER BY s.name ASC, c."startTime" ASC`,
+    parentUserId,
+  );
+}
+
 // ── 1) 다가오는 정규 수업일 목록 ─────────────────────────────────────────
 // 부모(appUserId)의 자녀별 ACTIVE Enrollment → 반 요일/시각으로 향후 N주 수업일 생성 +
 // 각 날짜에 기존 RegularAbsence(있으면 상태) 조인.
@@ -205,18 +241,7 @@ export async function getUpcomingRegularClassDates(
 
   // 부모 자녀가 «쓸 수 있는» 수강 반(IDOR: Student.parentId = 로그인 부모).
   // 2026-11-14 복귀 예정: 다니는 반(ACTIVE) + 복귀가 승인된 휴원 반. 복귀 예정 반은 아래에서 복귀일 이후 날짜만 남긴다.
-  const enrollRows = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT s.id AS "studentId", s.name AS "studentName",
-            c.id AS "classId", c.name AS "className",
-            c."dayOfWeek" AS "dayOfWeek", c."startTime" AS "startTime",
-            e.status AS "enrollmentStatus", ${resumeFromSql("e")} AS "resumeFrom"
-       FROM "Student" s
-       JOIN "Enrollment" e ON e."studentId" = s.id AND ${parentUsableEnrollmentSql("e")}
-       JOIN "Class" c ON c.id = e."classId"
-      WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")}
-      ORDER BY s.name ASC, c."startTime" ASC`,
-    parentUserId,
-  );
+  const enrollRows = await listParentUsableClasses(parentUserId);
   if (enrollRows.length === 0) return [];
 
   // 이 부모 자녀들의 기존 결석 신고(CANCELLED 제외)를 한 번에 조회해 키로 매핑.
@@ -387,6 +412,76 @@ export async function notifyAdminsOfAbsenceChange(input: {
   }
 }
 
+/**
+ * 결석 한 건 저장 + 그 결석의 보강권/이월 검토 처리 — «하루 알리기»와 «여러 날 결석»이 날짜마다 같이 쓰는 거래 본문.
+ * 반드시 호출부의 트랜잭션(tx) 안에서 부른다. 소유권·요일·마감·범위 검사는 호출부가 먼저 한다(여기는 저장만).
+ *   · 질병·부상(검토 표가 있을 때): 보강권 대신 «이월 검토 중»
+ *   · 그 밖: 지금처럼 즉시 보강권
+ */
+export async function saveReportedAbsenceInTx(
+  tx: CompensationTransaction,
+  input: {
+    studentId: string; classId: string; date: string; reason: string;
+    reasonText: string | null; source: Extract<IllnessReviewSource, "PARENT" | "KAKAO">; parentUserId: string;
+  },
+) {
+  const { studentId, classId, date, reason, reasonText, source, parentUserId } = input;
+  // 잠금 순서 통일(교착 방지): 작업대 잠금 → 결석 행. 관리자 취소(cancelRegularAbsenceByAdmin)와 같은 순서
+  await lockCompensation(tx);
+  // INSERT ... ON CONFLICT — 학생·반·날짜당 1건. 관리자 확정(CONFIRMED)건은 학부모가 못 덮게.
+  // (가드2) 덮어쓰는 경우는 둘뿐: 취소됐던 신고를 다시 신고 / 신고 상태(REPORTED)에서 «사유 변경».
+  //   2026-11-14: 예전 조건은 «사유가 다르면» 만 봐서 확정건도 사유가 다르면 REPORTED 로 되돌아갔다 —
+  //   화면에 «사유 변경»이 생기면서 그 구멍이 실제 길이 되므로 REPORTED 조건을 붙였다.
+  const saved = await tx.$queryRawUnsafe<{ id: string; eventVersion: string }[]>(
+    `INSERT INTO "RegularAbsence"
+        ("studentId","classId","date","reason","status","reportedByUserId")
+     VALUES ($1,$2,$3::date,$4,'REPORTED',$5)
+     ON CONFLICT ("studentId","classId","date") DO UPDATE
+        SET reason = EXCLUDED.reason,
+            status = 'REPORTED',
+            "reportedByUserId" = EXCLUDED."reportedByUserId",
+            -- 취소됐던 행을 되살릴 때만 옛 기간 연결·메모를 지운다(끝난 «여러 날 결석»·옛 기간 결석의 표시가 새 신고에 딸려 오지 않게).
+            -- 사유 변경(신고 → 신고)은 그대로 둔다. 여러 날 알리기는 바로 뒤에서 새 기간으로 다시 채운다.
+            "periodId" = CASE WHEN "RegularAbsence".status = 'CANCELLED' THEN NULL ELSE "RegularAbsence"."periodId" END,
+            note = CASE WHEN "RegularAbsence".status = 'CANCELLED' THEN NULL ELSE "RegularAbsence".note END,
+            "updatedAt" = now()
+      WHERE "RegularAbsence".status = 'CANCELLED'
+         OR ("RegularAbsence".status = 'REPORTED' AND "RegularAbsence".reason IS DISTINCT FROM EXCLUDED.reason)
+     RETURNING id, to_char("updatedAt", 'YYYYMMDDHH24MISSUS') AS "eventVersion"`,
+    studentId, classId, date, reason, parentUserId,
+  );
+  let noOp = false;
+  if (!saved[0]) {
+    const current = await tx.$queryRawUnsafe<{ status: string; reason: string }[]>(
+      `SELECT status, reason FROM "RegularAbsence"
+        WHERE "studentId"=$1 AND "classId"=$2 AND date=$3::date LIMIT 1`,
+      studentId, classId, date,
+    );
+    if (!(current[0]?.status === "REPORTED" && current[0].reason === reason)) throw new Error("ABSENCE_NOT_CANCELABLE");
+    noOp = true; // 같은 신고를 다시 보냄 — 보강권 발급은 멱등이라 아래에서 한 번 더 확인만 한다(이 기능 이전 신고분도 채워진다)
+  }
+  // 질병·부상(2026-11-14 원장 결정 a2): 보강권을 바로 주지 않고 «이월 검토»로 둔다.
+  //   새 신고·사유 변경(→질병·부상) 모두 여기를 지난다. 이미 나간 미사용 보강권은 거둬 두고,
+  //   보강을 이미 예약·사용한 결석이면 오류(ILLNESS_MAKEUP_IN_USE)로 저장까지 되돌린다.
+  //   검토 표가 아직 없으면(마이그레이션 전) 예전처럼 즉시 보강권 — 신고가 죽지 않게.
+  const reviewReady = await illnessReviewReady(tx);
+  if (reason === ILLNESS_REASON && reviewReady) {
+    // 같은 신고를 다시 보낸 경우(noOp)는 검토를 새로 열지 않는다 — 이 기능 이전에 보강권이 나간 결석은 원장이 신청함에서 고른다(a7)
+    const absenceId = saved[0]?.id ?? null;
+    if (!absenceId) return { saved: null, noOp, makeupCreditIssued: false, carryReview: null as string | null, absenceId: null as string | null };
+    const review = await openIllnessReviewInTx(tx, { absenceId, studentId, classId, absenceYmd: date, reasonText, source });
+    // 이미 [보강권으로] 결정이 났던 결석을 다시 질병·부상으로 바꾼 경우 — 그 결정(MAKEUP)을 그대로 따른다
+    return { saved: saved[0], noOp, makeupCreditIssued: false, carryReview: review.status as string | null, absenceId: absenceId as string | null };
+  }
+  // 다른 사유(또는 질병·부상에서 다른 사유로 변경): 열려 있던 검토를 닫고 지금처럼 즉시 보강권
+  if (reviewReady && saved[0]) await closeIllnessReviewInTx(tx, saved[0].id);
+  // 보강권 — 출결 기반 발급과 같은 키(REGULAR:{반}:{날짜})라 나중에 출결이 결석으로 저장돼도 한 장
+  const credit = isMakeupCreditIssuableYmd(date)
+    ? await issueCreditForReportedAbsence(tx, { studentId, classId, absenceYmd: date })
+    : { issued: false };
+  return { saved: saved[0] ?? null, noOp, makeupCreditIssued: credit.issued, carryReview: null as string | null, absenceId: (saved[0]?.id ?? null) as string | null };
+}
+
 // ── 2) 사전 결석 신고 ─────────────────────────────────────────────────────
 export async function reportRegularAbsence(
   parentUserId: string,
@@ -438,58 +533,7 @@ export async function reportRegularAbsence(
 
   // 결석 신고 저장 + 보강권 발급을 한 트랜잭션으로(2026-11-10 원장 결정 k4 — 신고 즉시 보강권).
   // 둘 중 하나만 남는 반쪽 상태(신고는 됐는데 보강권 없음 / 그 반대)를 만들지 않는다.
-  const outcome = await prisma.$transaction(async (tx) => {
-    // 잠금 순서 통일(교착 방지): 작업대 잠금 → 결석 행. 관리자 취소(cancelRegularAbsenceByAdmin)와 같은 순서
-    await lockCompensation(tx);
-    // INSERT ... ON CONFLICT — 학생·반·날짜당 1건. 관리자 확정(CONFIRMED)건은 학부모가 못 덮게.
-    // (가드2) 덮어쓰는 경우는 둘뿐: 취소됐던 신고를 다시 신고 / 신고 상태(REPORTED)에서 «사유 변경».
-    //   2026-11-14: 예전 조건은 «사유가 다르면» 만 봐서 확정건도 사유가 다르면 REPORTED 로 되돌아갔다 —
-    //   화면에 «사유 변경»이 생기면서 그 구멍이 실제 길이 되므로 REPORTED 조건을 붙였다.
-    const saved = await tx.$queryRawUnsafe<{ id: string; eventVersion: string }[]>(
-      `INSERT INTO "RegularAbsence"
-          ("studentId","classId","date","reason","status","reportedByUserId")
-       VALUES ($1,$2,$3::date,$4,'REPORTED',$5)
-       ON CONFLICT ("studentId","classId","date") DO UPDATE
-          SET reason = EXCLUDED.reason,
-              status = 'REPORTED',
-              "reportedByUserId" = EXCLUDED."reportedByUserId",
-              "updatedAt" = now()
-        WHERE "RegularAbsence".status = 'CANCELLED'
-           OR ("RegularAbsence".status = 'REPORTED' AND "RegularAbsence".reason IS DISTINCT FROM EXCLUDED.reason)
-       RETURNING id, to_char("updatedAt", 'YYYYMMDDHH24MISSUS') AS "eventVersion"`,
-      studentId, classId, date, reason, parentUserId,
-    );
-    let noOp = false;
-    if (!saved[0]) {
-      const current = await tx.$queryRawUnsafe<{ status: string; reason: string }[]>(
-        `SELECT status, reason FROM "RegularAbsence"
-          WHERE "studentId"=$1 AND "classId"=$2 AND date=$3::date LIMIT 1`,
-        studentId, classId, date,
-      );
-      if (!(current[0]?.status === "REPORTED" && current[0].reason === reason)) throw new Error("ABSENCE_NOT_CANCELABLE");
-      noOp = true; // 같은 신고를 다시 보냄 — 보강권 발급은 멱등이라 아래에서 한 번 더 확인만 한다(이 기능 이전 신고분도 채워진다)
-    }
-    // 질병·부상(2026-11-14 원장 결정 a2): 보강권을 바로 주지 않고 «이월 검토»로 둔다.
-    //   새 신고·사유 변경(→질병·부상) 모두 여기를 지난다. 이미 나간 미사용 보강권은 거둬 두고,
-    //   보강을 이미 예약·사용한 결석이면 오류(ILLNESS_MAKEUP_IN_USE)로 저장까지 되돌린다.
-    //   검토 표가 아직 없으면(마이그레이션 전) 예전처럼 즉시 보강권 — 신고가 죽지 않게.
-    const reviewReady = await illnessReviewReady(tx);
-    if (reason === ILLNESS_REASON && reviewReady) {
-      // 같은 신고를 다시 보낸 경우(noOp)는 검토를 새로 열지 않는다 — 이 기능 이전에 보강권이 나간 결석은 원장이 신청함에서 고른다(a7)
-      const absenceId = saved[0]?.id ?? null;
-      if (!absenceId) return { saved: null, noOp, makeupCreditIssued: false, carryReview: null as string | null, absenceId: null as string | null };
-      const review = await openIllnessReviewInTx(tx, { absenceId, studentId, classId, absenceYmd: date, reasonText, source });
-      // 이미 [보강권으로] 결정이 났던 결석을 다시 질병·부상으로 바꾼 경우 — 그 결정(MAKEUP)을 그대로 따른다
-      return { saved: saved[0], noOp, makeupCreditIssued: false, carryReview: review.status as string | null, absenceId: absenceId as string | null };
-    }
-    // 다른 사유(또는 질병·부상에서 다른 사유로 변경): 열려 있던 검토를 닫고 지금처럼 즉시 보강권
-    if (reviewReady && saved[0]) await closeIllnessReviewInTx(tx, saved[0].id);
-    // 보강권 — 출결 기반 발급과 같은 키(REGULAR:{반}:{날짜})라 나중에 출결이 결석으로 저장돼도 한 장
-    const credit = isMakeupCreditIssuableYmd(date)
-      ? await issueCreditForReportedAbsence(tx, { studentId, classId, absenceYmd: date })
-      : { issued: false };
-    return { saved: saved[0] ?? null, noOp, makeupCreditIssued: credit.issued, carryReview: null as string | null, absenceId: (saved[0]?.id ?? null) as string | null };
-  });
+  const outcome = await prisma.$transaction((tx) => saveReportedAbsenceInTx(tx, { studentId, classId, date, reason, reasonText, source, parentUserId }));
   if (outcome.noOp || !outcome.saved) {
     return { ok: true, reason, notification: null, noOp: true, makeupCreditIssued: outcome.makeupCreditIssued, carryReview: outcome.carryReview, absenceId: outcome.absenceId };
   }
@@ -587,7 +631,7 @@ export async function cancelRegularAbsence(
       throw new Error("ABSENCE_CHANGE_CLOSED");
     }
 
-    // 질병·부상 이월 검토 중이었으면 함께 닫는다(사진은 화면에서 빠지고 파일은 cron 이 지운다)
+    // 질병·부상 이월 검토 중이었으면 함께 닫는다(사진은 같은 기간의 살아 있는 결석으로 옮기거나 뺀다)
     if (await illnessReviewReady(tx)) await closeIllnessReviewInTx(tx, canceled[0].id, { canceled: true });
 
     // 보강권 되돌리기 — 막아야 하면 오류를 던져 위 취소까지 함께 되돌린다
@@ -727,46 +771,60 @@ export async function moveRegularAbsence(
           SET reason = EXCLUDED.reason,
               status = 'REPORTED',
               "reportedByUserId" = EXCLUDED."reportedByUserId",
+              -- 되살리는 취소 행의 옛 기간 연결·메모는 지운다(옮기는 결석이 기간에 속하면 바로 아래에서 그 기간으로 다시 묶는다)
+              "periodId" = NULL,
+              note = NULL,
               "updatedAt" = now()
         WHERE "RegularAbsence".status = 'CANCELLED'
        RETURNING id, to_char("updatedAt", 'YYYYMMDDHH24MISSUS') AS "eventVersion"`,
       studentId, classId, toDate, reason, parentUserId,
     );
     if (!saved[0]) throw new Error("ABSENCE_MOVE_TARGET_TAKEN");
+    // «여러 날 결석»의 한 날을 옮긴 경우 새 날짜도 같은 기간에 묶는다(2026-11-14) — 기간에 한 묶음으로 올린 증빙 사진·
+    // «복귀했어요»·기간 묶음 승인이 옮긴 날에도 그대로 닿게. 하루 신고(기간 없음)는 아무것도 바뀌지 않는다.
+    await tx.$executeRawUnsafe(
+      `UPDATE "RegularAbsence" n SET "periodId" = o."periodId", note = o.note
+         FROM "RegularAbsence" o
+        WHERE n.id = $2 AND o.id = $1 AND o."periodId" IS NOT NULL`,
+      canceled[0].id, saved[0].id,
+    );
 
     // ⑥ 질병·부상 이월 검토(2026-11-14)도 새 날짜로 옮긴다 — 날짜를 바꿨다고 보강권이 바로 나가면 «검토 대기» 규칙을 돌아가는 길이 된다.
     //   · 검토 중이던 결석: 올린 사진과 사유 글을 새 결석으로 옮기고 새 날짜에서 다시 «검토 중»(보강권 없음).
     //   · 원장이 이미 [보강권으로] 정한 결석: 그 결정을 새 날짜로 가져간다(보강권 1장).
-    //   · 검토 줄이 없던 결석(이 기능 이전 신고)·다른 사유: 아래 ⑦ 예전 그대로.
+    //   · 검토 줄이 없던 질병·부상 결석(이 기능 이전 신고): 새 날짜에서 검토를 새로 연다 — 하루 신고와 같은 결과로 통일.
+    //   · 다른 사유: 아래 ⑦ 예전 그대로.
     const reviewReady = await illnessReviewReady(tx);
     const oldReview = reviewReady && reason === ILLNESS_REASON
       ? (await tx.$queryRawUnsafe<{ status: string; source: string; reasonText: string | null }[]>(
           `SELECT status, source, "reasonText" FROM "RegularAbsenceCarryReview" WHERE "absenceId" = $1 FOR UPDATE`, canceled[0].id,
         ))[0] ?? null
       : null;
-    if (oldReview?.status === "PENDING") {
-      await tx.$executeRawUnsafe(
-        `UPDATE "RegularAbsenceEvidence" SET "absenceId" = $2 WHERE "absenceId" = $1 AND "removedAt" IS NULL`,
-        canceled[0].id, saved[0].id,
-      );
+    if (reviewReady && reason === ILLNESS_REASON && oldReview?.status !== "MAKEUP") {
+      if (oldReview?.status === "PENDING") {
+        await tx.$executeRawUnsafe(
+          `UPDATE "RegularAbsenceEvidence" SET "absenceId" = $2 WHERE "absenceId" = $1 AND "removedAt" IS NULL`,
+          canceled[0].id, saved[0].id,
+        );
+      }
       await closeIllnessReviewInTx(tx, canceled[0].id, { canceled: true });
-      const opened = await openIllnessReviewInTx(tx, {
+      await openIllnessReviewInTx(tx, {
         absenceId: saved[0].id, studentId, classId, absenceYmd: toDate,
-        reasonText: oldReview.reasonText, source: oldReview.source === "KAKAO" ? "KAKAO" : "PARENT",
+        reasonText: oldReview?.reasonText ?? null, source: oldReview?.source === "KAKAO" ? "KAKAO" : "PARENT",
       });
-      return { canceled: canceled[0], saved: saved[0], reason, makeupCreditIssued: false, carryReview: opened.status as string | null };
+      return { canceled: canceled[0], saved: saved[0], reason, makeupCreditIssued: false };
     }
     if (reviewReady) await closeIllnessReviewInTx(tx, canceled[0].id, { canceled: true });
     if (oldReview?.status === "MAKEUP") {
       const kept = await convertIllnessToMakeupInTx(tx, { absenceId: saved[0].id, by: "ADMIN", actorUserId: null, issuable: isMakeupCreditIssuableYmd });
-      return { canceled: canceled[0], saved: saved[0], reason, makeupCreditIssued: kept.converted && kept.creditIssued, carryReview: "MAKEUP" as string | null };
+      return { canceled: canceled[0], saved: saved[0], reason, makeupCreditIssued: kept.converted && kept.creditIssued };
     }
 
     // ⑦ 새 결석의 보강권(멱등 — 같은 키면 한 장)
     const credit = isMakeupCreditIssuableYmd(toDate)
       ? await issueCreditForReportedAbsence(tx, { studentId, classId, absenceYmd: toDate })
       : { issued: false };
-    return { canceled: canceled[0], saved: saved[0], reason, makeupCreditIssued: credit.issued, carryReview: null as string | null };
+    return { canceled: canceled[0], saved: saved[0], reason, makeupCreditIssued: credit.issued };
   });
 
   // 알림 — 기존 알림 두 통을 그대로 쓴다(취소 + 새 신고). 날짜마다 담당 기사님이 다를 수 있어 한 통으로 합치지 않는다.

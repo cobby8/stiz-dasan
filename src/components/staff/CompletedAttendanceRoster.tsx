@@ -33,7 +33,7 @@ function rosterKindOf(student: StaffSessionStudent, seasonal: boolean): ReviewRo
  * - 정정: 서버에 먼저 물어(아무것도 바꾸지 않는 미리 보기) 실제 결과에 맞는 한 줄로 한 번 확인한 뒤 저장한다.
  *   저장은 진행 중 수업과 같은 서버 기능(saveStaffAttendance → 결석 사유·보강권 규칙 함수)이다. 학부모 알림은 나가지 않는다.
  * - 같은 버튼을 다시 눌러도 미확인으로 되돌리지 않는다(완료한 수업에 미확인이 생기면 안 된다).
- * - 질병·부상 표시는 바꾸지 않고 보여 주기만 한다(이월 검토가 걸려 있어 원장이 고친다).
+ * - 질병·부상 결석이 걸린 줄은 버튼 없이 상태만(이월 검토가 걸려 있어 원장이 고친다 — 결석→출석→결석으로 일반 결석이 되면 보강권이 자동으로 나간다).
  */
 export function CompletedAttendanceRoster({ session, students, onStudentsChange, editable, people, infoRow, onToggleInfo, onOpenBilling, onNeedsLogin }: {
   session: StaffSessionDetail;
@@ -117,7 +117,9 @@ export function CompletedAttendanceRoster({ session, students, onStudentsChange,
       {students.map((student) => {
         const person = findRosterPerson(student, people.people);
         const infoOpen = infoRow === student.id;
-        const correctable = editable && canCorrectAfterCompletion(rosterKindOf(student, Boolean(session.sessionDateId)));
+        // 질병·부상 결석(출석부 표시·학부모 신고)이 걸린 줄은 이월 검토 대상이라 원장이 고친다 — 서버도 같은 이유로 거부한다
+        const illnessAbsence = student.absenceReport?.reason === "ILLNESS_INJURY";
+        const correctable = editable && !illnessAbsence && canCorrectAfterCompletion(rosterKindOf(student, Boolean(session.sessionDateId)));
         return (
           <li key={student.id} data-review-row className="border-b border-[var(--color-academy-line)] py-1 last:border-b-0">
             <div className="flex items-center gap-2">

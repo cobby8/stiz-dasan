@@ -80,6 +80,8 @@ export async function getStaffPastSessions(): Promise<PastSessionRow[]> {
        JOIN "Class" c ON c.id = s."classId"
        LEFT JOIN "SpecialProgramSessionDate" sd ON sd.id = s."specialProgramSessionDateId"
       WHERE s.status = 'COMPLETED'
+        -- 색인(status, date)을 탈 수 있게 넉넉한 하한을 먼저 건다(KST 날짜 판정은 아래 줄이 그대로 한다)
+        AND s.date >= NOW() - interval '${STAFF_PAST_SESSION_LIST_DAYS + 2} days'
         AND ${pastSessionListRangeSql("s")}
         AND (
           $1::boolean = true

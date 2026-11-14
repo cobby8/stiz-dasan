@@ -116,6 +116,7 @@ test("정정 대상·보강권 영향·확인 문구(순수 규칙)", () => {
   assert.equal(message("REVOKE"), "김하늘 결석 → 출석으로 고칠까요?\n안 쓴 보강권은 회수돼요.");
   assert.equal(message("KEEP_USED"), "김하늘 결석 → 출석으로 고칠까요?\n이미 쓴 보강권은 그대로 남아요.");
   assert.equal(message("NONE"), "김하늘 결석 → 출석으로 고칠까요?");
+  assert.equal(rules.correctionConfirmMessage({ name: "김하늘", previousStatus: "PRESENT", nextStatus: "ABSENT", effect: "ISSUE" }), "김하늘 출석 → 결석으로 고칠까요?\n결석 보강권이 나갈 수 있어요.");
 });
 
 test("지난 수업 목록: 오늘 포함 14일, 최근 날짜 먼저·같은 날은 시작 시간 순으로 묶는다", () => {
@@ -144,6 +145,8 @@ function makeWorld(options = {}) {
     makeupBookings: options.makeupBookings ?? [],
     attendance: options.attendance ?? "ABSENT",
     credits: options.credits ?? [],
+    // 살아 있는 질병·부상 결석(출석부 표시·학부모 신고)이 있는가
+    illness: options.illness ?? false,
     seat: options.seat ?? null,
     notes: options.notes ?? null,
     content: options.content ?? null,
@@ -159,11 +162,16 @@ function makeWorld(options = {}) {
     if (/FROM "Enrollment" e WHERE e\."classId" = \$1 AND e\."studentId" = \$2/.test(sql)) return world.enrolled ? [{ id: "e1" }] : [];
     if (/^SELECT status FROM "Attendance"/.test(sql)) return world.attendance ? [{ status: world.attendance }] : [];
     if (/^SELECT status FROM "MakeupCredit"/.test(sql)) { world.calls.push(["creditLookup", args[1]]); return world.credits; }
-    if (/^INSERT INTO "Attendance"/.test(sql)) { world.calls.push(["saveAttendance", args[2]]); world.attendance = args[2]; return [{ id: "a1" }]; }
+    if (/^INSERT INTO "Attendance"/.test(sql)) { world.calls.push(["saveAttendance", args[2]]); world.attendance = args[2]; world.attendanceInsert = { sql, args }; return [{ id: "a1" }]; }
+    if (/FROM "RegularAbsence" ra\s+WHERE ra\."studentId" = \$1 AND ra\."classId" = \$2 AND ra\.date = \$3::date\s+AND ra\.status <> 'CANCELLED' AND ra\.reason = 'ILLNESS_INJURY'/.test(sql)) {
+      world.calls.push(["illnessLookup"]);
+      return world.illness ? [{ id: "ra1" }] : [];
+    }
     if (/^SELECT "attendanceStatus" FROM "SpecialProgramEnrollmentDate"/.test(sql)) return world.seat ? [{ attendanceStatus: world.seat.attendanceStatus }] : [];
     if (/^UPDATE "SpecialProgramEnrollmentDate" e\s+SET "attendanceStatus" = \$3/.test(sql)) {
       if (!world.seat) return [];
       world.calls.push(["saveSeat", args[2]]);
+      world.seatUpdate = { sql, args };
       world.seat = { ...world.seat, attendanceStatus: args[2] };
       return [{ id: world.seat.id, studentId: world.seat.studentId }];
     }
@@ -249,9 +257,12 @@ test("완료한 수업의 출결 정정(7일 안) — 기존 규칙 함수(결�
   const result = await actions.saveStaffAttendance({ ...KEY, status: "PRESENT" });
   assert.equal(result.ok, true);
   assert.equal(world.attendance, "PRESENT");
-  // 진행 중 수업과 같은 순서: 출결 저장 → 결석 사유 정리 → 보강권 맞춤
-  assert.deepEqual(names(world), ["saveAttendance", "absenceReason", "syncRegularCredit"]);
-  assert.deepEqual(world.calls[2], ["syncRegularCredit", "PRESENT", "st1"]);
+  // 질병·부상 결석이 아닌지 먼저 보고, 진행 중 수업과 같은 순서: 출결 저장 → 결석 사유 정리 → 보강권 맞춤
+  assert.deepEqual(names(world), ["illnessLookup", "creditLookup", "saveAttendance", "absenceReason", "syncRegularCredit"]);
+  assert.deepEqual(world.calls[4], ["syncRegularCredit", "PRESENT", "st1"]);
+  // 수업 중 적어 둔 출결 노트는 지킨다 — 노트 없이 온 정정은 덮어쓰지 않는다($7 = true)
+  assert.match(world.attendanceInsert.sql, /note = COALESCE\(EXCLUDED\.note, "Attendance"\.note\),/);
+  assert.equal(world.attendanceInsert.args[3], null);
   // 알림: 응답 뒤에 돌 일이 하나도 없다
   await runAfter();
   assert.ok(!names(world).includes("notify"), "완료 뒤 정정은 출석 알림을 보내지 않는다");
@@ -269,6 +280,9 @@ test("진행 중 수업의 출결은 예전 그대로 — 출석 알림이 나�
   await runAfter();
   assert.deepEqual(world.calls.find((call) => call[0] === "notify"), ["notify", "ATTENDANCE_PRESENT", "attendance:a1:status:PRESENT:user:p1"]);
   assert.equal(world.audits.length, 0);
+  // 진행 중 수업은 노트를 예전처럼 보낸 값 그대로 쓴다, 질병·부상 검사도 타지 않는다
+  assert.match(world.attendanceInsert.sql, /note = EXCLUDED\.note,/);
+  assert.ok(!names(world).includes("illnessLookup"));
   // 진행 중 수업은 «오늘»을 DB 에 묻지 않는다(기간 판정을 타지 않는다) — 전체 출석·질병 표시도 그대로 받는다
   const bulk = makeWorld({ session: { status: "IN_PROGRESS", date: "2026-11-16" }, attendance: null });
   assert.equal((await bulk.actions.saveStaffAttendance({ ...KEY, status: "PRESENT", bulk: true })).ok, true);
@@ -343,15 +357,73 @@ test("완료한 수업: 보강 온 아이·체험 아이·전체 출석·질병 
   assert.equal(bulk.world.attendance, "ABSENT");
 });
 
+test("보안 검수 MEDIUM: 살아 있는 질병·부상 결석은 완료한 수업에서 출석·지각으로 정정할 수 없다(결석→출석→결석 우회 차단)", async () => {
+  // 출석부 표시든 학부모 신고든 reason=ILLNESS_INJURY·취소 안 됨 → 출석·지각 정정 거부
+  for (const status of ["PRESENT", "LATE"]) {
+    const { world, actions } = makeWorld({ attendance: "ABSENT", illness: true, credits: [] });
+    assert.deepEqual(await actions.saveStaffAttendance({ ...KEY, status }), { ok: false, message: rules.STAFF_REVIEW_ASK_OWNER_MESSAGE }, status);
+    assert.equal(world.attendance, "ABSENT", "출결을 바꾸지 않는다");
+    assert.deepEqual(names(world), ["illnessLookup"], "결석 사유·보강권 규칙을 타지 않는다(표시가 취소되지 않는다)");
+    assert.equal(world.audits.length, 0);
+    // 미리 보기도 같은 검사 — 화면은 그 줄에 «원장님께 요청»
+    assert.deepEqual(await actions.previewStaffAttendanceCorrection({ ...KEY, status }), { ok: false, message: rules.STAFF_REVIEW_ASK_OWNER_MESSAGE });
+  }
+  assert.match(rules.STAFF_REVIEW_ASK_OWNER_MESSAGE, /질병·부상 결석/);
+  // 결석으로의 정정은 질병·부상 표시를 건드리지 않으므로 받는다(검사도 하지 않는다)
+  const toAbsent = makeWorld({ attendance: "PRESENT", illness: true });
+  assert.equal((await toAbsent.actions.saveStaffAttendance({ ...KEY, status: "ABSENT" })).ok, true);
+  assert.ok(!names(toAbsent.world).includes("illnessLookup"));
+  // 화면: 질병·부상 결석이 걸린 줄은 출결 버튼을 그리지 않는다
+  const roster = read("src/components/staff/CompletedAttendanceRoster.tsx");
+  assert.match(roster, /const illnessAbsence = student\.absenceReport\?\.reason === "ILLNESS_INJURY";\s*const correctable = editable && !illnessAbsence && canCorrectAfterCompletion\(/);
+});
+
+test("보안 검수 LOW 2: 메모·출결 노트는 2000자까지, 새 기능의 id 는 모양·길이를 먼저 본다", async () => {
+  const long = "가".repeat(2001);
+  const { world, actions } = makeWorld({ attendance: "ABSENT" });
+  assert.match((await actions.saveSessionMemo({ sessionId: "se1", notes: long })).message, /2000자/);
+  assert.match((await actions.saveStaffAttendance({ ...KEY, status: "PRESENT", note: long })).message, /2000자/);
+  assert.equal((await actions.saveSessionMemo({ sessionId: "se1", notes: 123 })).ok, false);
+  assert.equal(world.notes, null);
+  assert.equal(world.attendance, "ABSENT");
+  // 2000자는 된다
+  assert.equal((await actions.saveSessionMemo({ sessionId: "se1", notes: "가".repeat(2000) })).ok, true);
+  // id 모양 — 권한 조회 전에 거른다
+  const denied = makeWorld({ accessError: "담당 수업에만 접근할 수 있습니다." });
+  for (const sessionId of ["", "x".repeat(101), "se1; DROP", "../se1", null, undefined, 7]) {
+    assert.equal((await denied.actions.publishStaffSessionReport({ sessionId })).message, "수업 정보를 다시 확인해 주세요.", String(sessionId));
+    assert.equal((await denied.actions.previewStaffAttendanceCorrection({ sessionId, attendanceKey: "st1", status: "PRESENT" })).message, "수업 정보를 다시 확인해 주세요.");
+  }
+  assert.equal((await denied.actions.previewStaffAttendanceCorrection({ sessionId: "se1", attendanceKey: "st 1'", status: "PRESENT" })).message, "수업 정보를 다시 확인해 주세요.");
+  // 체험 줄 키(trial:<id>)·uuid 는 통과해 다음 검사로 간다
+  assert.match((await denied.actions.previewStaffAttendanceCorrection({ sessionId: "0b1c2d3e-aaaa-4bbb-8ccc-1234567890ab", attendanceKey: "trial:lead1", status: "PRESENT" })).message, /담당 수업/);
+});
+
 test("정정 미리 보기 — 아무것도 바꾸지 않고 실제 보강권 결과를 알려 준다", async () => {
   const revoke = makeWorld({ attendance: "ABSENT", credits: [{ status: "AVAILABLE" }] });
   assert.deepEqual(await revoke.actions.previewStaffAttendanceCorrection({ ...KEY, status: "PRESENT" }), { ok: true, previousStatus: "ABSENT", effect: "REVOKE" });
-  assert.deepEqual(names(revoke.world), ["creditLookup"]);
-  assert.equal(revoke.world.calls[0][1], "REGULAR:c1:2026-11-14", "보강권 키는 발급과 같은 키(반·결석일)");
+  assert.deepEqual(names(revoke.world), ["illnessLookup", "creditLookup"]);
+  assert.equal(revoke.world.calls[1][1], "REGULAR:c1:2026-11-14", "보강권 키는 발급과 같은 키(반·결석일)");
   assert.equal(revoke.world.attendance, "ABSENT");
   assert.equal(revoke.world.audits.length, 0);
-  const used = makeWorld({ attendance: "ABSENT", credits: [{ status: "USED" }] });
-  assert.equal((await used.actions.previewStaffAttendanceCorrection({ ...KEY, status: "LATE" })).effect, "KEEP_USED");
+  // 코드 리뷰 권장 2: 이미 예약·사용·불참 처리된 보강권이 걸린 결석은 출석·지각으로 고치지 못한다(미리 보기·저장 같은 판정)
+  for (const status of ["RESERVED", "USED", "NO_SHOW"]) {
+    const locked = makeWorld({ attendance: "ABSENT", credits: [{ status }] });
+    assert.deepEqual(await locked.actions.previewStaffAttendanceCorrection({ ...KEY, status: "LATE" }), { ok: false, message: rules.STAFF_REVIEW_CREDIT_LOCKED_MESSAGE }, status);
+    assert.deepEqual(await locked.actions.saveStaffAttendance({ ...KEY, status: "PRESENT" }), { ok: false, message: rules.STAFF_REVIEW_CREDIT_LOCKED_MESSAGE }, status);
+    assert.equal(locked.world.attendance, "ABSENT");
+    assert.ok(!names(locked.world).includes("saveAttendance") && !names(locked.world).includes("syncRegularCredit"));
+    assert.equal(locked.world.audits.length, 0);
+  }
+  assert.match(rules.STAFF_REVIEW_CREDIT_LOCKED_MESSAGE, /원장님께 요청/);
+  // 특강 좌석도 같다
+  const lockedSeat = makeWorld({ session: { sessionDateId: "sd1" }, seat: { id: "seat1", studentId: "st1", attendanceStatus: "ABSENT" }, credits: [{ status: "USED" }] });
+  assert.equal((await lockedSeat.actions.saveStaffAttendance({ sessionId: "se1", attendanceKey: "seat1", status: "PRESENT" })).message, rules.STAFF_REVIEW_CREDIT_LOCKED_MESSAGE);
+  assert.equal((await lockedSeat.actions.previewStaffAttendanceCorrection({ sessionId: "se1", attendanceKey: "seat1", status: "PRESENT" })).message, rules.STAFF_REVIEW_CREDIT_LOCKED_MESSAGE);
+  assert.ok(!names(lockedSeat.world).includes("saveSeat"));
+  // 진행 중 수업의 정정은 예전 그대로(이 검사를 타지 않는다)
+  const liveLocked = makeWorld({ session: { status: "IN_PROGRESS", date: "2026-11-16" }, attendance: "ABSENT", credits: [{ status: "USED" }] });
+  assert.equal((await liveLocked.actions.saveStaffAttendance({ ...KEY, status: "PRESENT" })).ok, true);
   const issue = makeWorld({ attendance: "PRESENT", credits: [] });
   assert.equal((await issue.actions.previewStaffAttendanceCorrection({ ...KEY, status: "ABSENT" })).effect, "ISSUE");
   // 진행 중 수업에는 쓰지 않는다
@@ -366,6 +438,10 @@ test("특강 좌석도 정정할 수 있다 — 좌석 저장 경로를 타고 �
   const result = await actions.saveStaffAttendance({ sessionId: "se1", attendanceKey: "seat1", status: "PRESENT" });
   assert.equal(result.ok, true);
   assert.deepEqual(names(world).filter((name) => name !== "creditLookup"), ["saveSeat", "syncSeatCredit", "saveAttendance"]);
+  // 좌석 노트·정규 출석 노트도 지킨다
+  assert.match(world.seatUpdate.sql, /"attendanceNote" = CASE WHEN \$7::boolean THEN COALESCE\(\$4, e\."attendanceNote"\) ELSE \$4 END/);
+  assert.equal(world.seatUpdate.args[6], true);
+  assert.equal(world.attendanceInsert.args[5], true);
   await runAfter();
   assert.ok(!names(world).includes("notify"));
   assert.deepEqual(world.audits[0].details, { sessionId: "se1", item: "ATTENDANCE", kind: "SEASONAL", seatId: "seat1", before: "ABSENT", after: "PRESENT" });
@@ -410,7 +486,7 @@ test("학부모에게 보내기: 처음 발행만 앱 알림(중복 방지 키),
   assert.deepEqual(first.world.calls.filter((call) => call[0] === "notify"), [["notify", "REPORT", "session:se1:report-published:student:st1:user:p1"]]);
   assert.deepEqual(first.world.audits[0].details, { sessionId: "se1", item: "PUBLISH", before: "안 보냄", after: "보냄", firstPublish: true });
   // 안 보낸 수업만 바꾸는 한 문장(두 기기가 동시에 눌러도 한 번)
-  assert.match(first.world.updates[0].sql, /WHERE old\.id = s\.id AND s\.id = \$1 AND s\.status = 'COMPLETED' AND s\.published = false/);
+  assert.match(first.world.updates[0].sql, /FROM "Session" prev\s+WHERE prev\.id = s\.id AND s\.id = \$1 AND s\.status = 'COMPLETED' AND s\.published = false\s+RETURNING s\.id, prev\."publishedAt" AS "previousPublishedAt"/);
   // 한 번 더 누르면 아무 일도 없다
   assert.deepEqual(await first.actions.publishStaffSessionReport({ sessionId: "se1" }), { ok: true, published: true, alreadyPublished: true, notified: false });
   await first.runAfter();
@@ -448,6 +524,8 @@ test("완료한 수업 본문(다시 보기): 타이머·수업 종료·시작 �
   assert.match(done, /\{!embedded && \(\s*<section aria-label="완료한 수업"/);
   assert.match(done, /완료한 수업 · \{kstLabel\(session\.sessionYmd\)\} \{session\.startTime\}~\{session\.endTime\}/);
   assert.match(done, /\{published \? "학부모에게 보냄" : "아직 안 보냄"\}/);
+  // 수업 주소에서는 지난 수업 목록으로 돌아가는 링크
+  assert.match(done, /\{!embedded && \(\s*<Link href="\/staff\/sessions" className="inline-flex min-h-11[^"]*">← 지난 수업<\/Link>/);
   // 기간이 지나면 읽기 전용 + 한 줄, 안 보낸 수업만 «학부모에게 보내기»
   assert.match(done, /\{!editable && <p role="status"[^>]*>\{STAFF_EDIT_EXPIRED_MESSAGE\}<\/p>\}/);
   assert.match(done, /\{editable && !published && \(\s*<button[^>]*onClick=\{\(\) => void publishToParents\(\)\}[^>]*>/);
@@ -456,7 +534,7 @@ test("완료한 수업 본문(다시 보기): 타이머·수업 종료·시작 �
   // 메모는 자동 저장하지 않는다(버튼으로만)
   assert.doesNotMatch(done, /setTimeout|onBlur/);
   // 출결: 고칠 수 있는 줄만 버튼, 같은 버튼을 다시 눌러도 미확인으로 되돌리지 않는다, 미리 보기 뒤 한 번 확인하고 저장
-  assert.match(roster, /const correctable = editable && canCorrectAfterCompletion\(rosterKindOf\(student, Boolean\(session\.sessionDateId\)\)\);/);
+  assert.match(roster, /const correctable = editable && !illnessAbsence && canCorrectAfterCompletion\(rosterKindOf\(student, Boolean\(session\.sessionDateId\)\)\);/);
   assert.match(roster, /if \(!editable \|\| savingRows\[rowId\] \|\| target\.status === status\) return;/);
   const fn = roster.slice(roster.indexOf("async function correctAttendance"), roster.indexOf("return (\n    <ul"));
   assert.ok(fn.indexOf("previewStaffAttendanceCorrection(") < fn.indexOf("window.confirm(question)"));
@@ -485,7 +563,7 @@ test("진행 중 수업 화면은 그대로다(회귀) — 타이머·수업 종
 
 test("지난 수업 목록: 완료한 수업·최근 14일·«열 수 있는 수업»만, 값은 바인딩으로", () => {
   const query = read("src/lib/staff-past-sessions.ts");
-  assert.match(query, /WHERE s\.status = 'COMPLETED'\s+AND \$\{pastSessionListRangeSql\("s"\)\}/);
+  assert.match(query, /WHERE s\.status = 'COMPLETED'\s+--[^\n]*\n\s+AND s\.date >= NOW\(\) - interval '\$\{STAFF_PAST_SESSION_LIST_DAYS \+ 2\} days'\s+AND \$\{pastSessionListRangeSql\("s"\)\}/);
   // 날짜 범위 SQL = 순수 규칙과 같은 상수(오늘 포함 14일). 수업일은 무tz 칼럼 «두 번» 변환, 오늘은 DB 시계
   assert.match(query, /return `\(\$\{day\} <= \$\{TODAY_KST_SQL\} AND \$\{day\} > \$\{TODAY_KST_SQL\} - \$\{STAFF_PAST_SESSION_LIST_DAYS\}\)`;/);
   assert.match(query, /const day = sessionKstDateSql\("s"\);/);
@@ -509,7 +587,8 @@ test("지난 수업 목록: 완료한 수업·최근 14일·«열 수 있는 수
 
 test("결석 알림 스윕은 완료 뒤 정정한 출결을 건너뛴다 — 정정 기록의 이름이 저장 쪽과 같다", () => {
   const sweep = read("src/lib/regular/absence-parent-notice-sweep.ts");
-  assert.match(sweep, /AND NOT EXISTS \(SELECT 1 FROM "OperationsAuditLog" al\s+WHERE al\.action = \$5 AND al\."detailsJson"->>'attendanceId' = a\.id\)/);
+  // 보안 검수 LOW 1: 건너뛰는 것은 그 출결의 «마지막» 정정 기록이 «결석이 아니던 것 → 결석»일 때만(수업 중 원래 결석이던 알림은 막지 않는다)
+  assert.match(sweep, /AND NOT EXISTS \(SELECT 1 FROM "OperationsAuditLog" al\s+WHERE al\.action = \$5 AND al\."detailsJson"->>'attendanceId' = a\.id\s+AND al\."detailsJson"->>'after' = 'ABSENT'\s+AND al\."detailsJson"->>'before' <> 'ABSENT'[\s\S]{0,260}AND al\."createdAt" >= \(a\."updatedAt" AT TIME ZONE 'UTC'\)\s+AND NOT EXISTS \(SELECT 1 FROM "OperationsAuditLog" later\s+WHERE later\.action = \$5 AND later\."detailsJson"->>'attendanceId' = a\.id\s+AND later\."createdAt" > al\."createdAt"\)\)/);
   assert.match(sweep, /today, ABSENCE_NOTICE_DELAY_MINUTES, ABSENCE_NOTICE_EVENT, limit, STAFF_SESSION_REVIEW_AUDIT_ACTION,/);
   assert.equal(rules.STAFF_SESSION_REVIEW_AUDIT_ACTION, "STAFF_SESSION_REVIEW_EDIT");
   // 수정 기록 저장은 본문 없이 항목·전/후 상태만 받는 한 곳

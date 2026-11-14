@@ -31,8 +31,11 @@ export const STAFF_PAST_SESSION_LIST_DAYS = 14;
 /** 완료한 수업을 고친 기록(OperationsAuditLog.action) */
 export const STAFF_SESSION_REVIEW_AUDIT_ACTION = "STAFF_SESSION_REVIEW_EDIT";
 
-/** 완료한 수업에서 선생님이 고칠 수 없는 줄(보강 온 아이·체험 아이)에 보이는 말 */
-export const STAFF_REVIEW_ASK_OWNER_MESSAGE = "완료한 수업의 보강·체험 출결은 원장님께 요청해 주세요.";
+/** 완료한 수업에서 선생님이 고칠 수 없는 줄(보강 온 아이·체험 아이·질병·부상 결석)에 보이는 말 */
+export const STAFF_REVIEW_ASK_OWNER_MESSAGE = "완료한 수업의 보강·체험·질병·부상 결석 출결은 원장님께 요청해 주세요.";
+
+/** 완료한 수업: 이미 예약·사용·불참 처리된 보강권이 걸린 결석을 출석·지각으로 고치려 할 때 */
+export const STAFF_REVIEW_CREDIT_LOCKED_MESSAGE = "이 결석으로 나간 보강권이 이미 예약됐거나 사용돼 고칠 수 없습니다. 원장님께 요청해 주세요.";
 
 /** 고칠 수 있는 마지막 날(KST) 안내 «수업 뒤 7일 동안» — 입력 칸 아래 한 줄 */
 export const STAFF_EDIT_WINDOW_HINT = `수업 뒤 ${STAFF_SESSION_EDIT_DAYS}일 동안 고칠 수 있어요`;
@@ -51,7 +54,11 @@ export function canCorrectAfterCompletion(kind: ReviewRosterKind): boolean {
   return kind === "REGULAR" || kind === "SEASONAL";
 }
 
-/** 정정했을 때 보강권에 생기는 일 — REVOKE=안 쓴 권 회수 · KEEP_USED=이미 예약·사용된 권은 그대로 · ISSUE=새로 나감 · NONE=변화 없음 */
+/**
+ * 정정했을 때 보강권에 생기는 일 — REVOKE=안 쓴 권 회수 · KEEP_USED=이미 예약·사용·불참 처리된 권이 걸려 있음 ·
+ * ISSUE=새로 나갈 수 있음(질병·부상 보류·정산된 결석이면 안 나간다) · NONE=변화 없음.
+ * KEEP_USED 는 선생님이 고치지 못한다 — 서버가 정정을 거부하고 «원장님께 요청»을 돌려준다(진행 중 수업의 «다시 눌러 취소»가 같은 상황을 막는 것과 같다).
+ */
 export type CorrectionCreditEffect = "REVOKE" | "KEEP_USED" | "ISSUE" | "NONE";
 
 /**
@@ -91,7 +98,7 @@ export function correctionConfirmMessage(input: {
   const head = `${input.name} ${from} → ${to}으로 고칠까요?`;
   if (input.effect === "REVOKE") return `${head}\n안 쓴 보강권은 회수돼요.`;
   if (input.effect === "KEEP_USED") return `${head}\n이미 쓴 보강권은 그대로 남아요.`;
-  if (input.effect === "ISSUE") return `${head}\n결석 보강권이 나가요.`;
+  if (input.effect === "ISSUE") return `${head}\n결석 보강권이 나갈 수 있어요.`;
   return head;
 }
 
