@@ -196,6 +196,8 @@ export type UpcomingChild = {
     className: string;
     dayOfWeek: string;
     startTime: string;
+    // 수업 끝 시각 — 지각·조퇴 알리기(조퇴는 끝나기 전까지)가 쓴다. 옛 응답에는 없을 수 있다
+    endTime?: string | null;
     // 복귀 승인된 휴원 반이면 복귀일("YYYY-MM-DD") — 그날 이후 수업만 dates 에 들어 있다. 다니는 반은 null
     resumeFrom: string | null;
     dates: UpcomingClassDate[];
@@ -205,7 +207,7 @@ export type UpcomingChild = {
 /** 부모 자녀가 «쓸 수 있는» 수강 반 한 줄(다니는 반 + 복귀 승인된 휴원 반) */
 export type ParentUsableClass = {
   studentId: string; studentName: string; classId: string; className: string;
-  dayOfWeek: string; startTime: string; enrollmentStatus: string; resumeFrom: string | null;
+  dayOfWeek: string; startTime: string; endTime?: string | null; enrollmentStatus: string; resumeFrom: string | null;
 };
 
 /**
@@ -216,7 +218,7 @@ export async function listParentUsableClasses(parentUserId: string): Promise<Par
   return prisma.$queryRawUnsafe<ParentUsableClass[]>(
     `SELECT s.id AS "studentId", s.name AS "studentName",
             c.id AS "classId", c.name AS "className",
-            c."dayOfWeek" AS "dayOfWeek", c."startTime" AS "startTime",
+            c."dayOfWeek" AS "dayOfWeek", c."startTime" AS "startTime", c."endTime" AS "endTime",
             e.status AS "enrollmentStatus", ${resumeFromSql("e")} AS "resumeFrom"
        FROM "Student" s
        JOIN "Enrollment" e ON e."studentId" = s.id AND ${parentUsableEnrollmentSql("e")}
@@ -323,6 +325,7 @@ export async function getUpcomingRegularClassDates(
       className: r.className,
       dayOfWeek: r.dayOfWeek,
       startTime: r.startTime,
+      endTime: r.endTime ?? null,
       resumeFrom: r.enrollmentStatus === "PAUSED" ? resumeFrom : null,
       dates,
     });

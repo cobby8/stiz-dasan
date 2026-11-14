@@ -6,7 +6,7 @@ import { getEnrollmentChangeHistory } from "@/lib/enrollment/parent-change-reque
 import { parentKindName, shortMd } from "@/lib/enrollment/parentChangeStatus";
 import { deriveEnrollmentChangeStatus, deriveShuttleDayStatus } from "@/lib/requests/catalog";
 import { REASON_LABEL } from "@/lib/regular/regularAbsenceRules";
-import { PARENT_SHUTTLE_DIRECTION_LABEL, PARENT_SHUTTLE_EXCEPTION_KIND_LABEL } from "@/lib/shuttle/dayExceptionRules";
+import { PARENT_SHUTTLE_DIRECTION_LABEL, parentShuttleChangeLabel } from "@/lib/shuttle/dayExceptionRules";
 // 문의의 마지막 학원 글(대화) — «학원 답변» 칸용
 import { lastAdminAnswers } from "@/lib/requests/inquiry-thread";
 import { absenceCreditLine, sortTimeline, toTimelineView, type ParentTimelineRow, type ParentTimelineView } from "@/lib/requests/parent-timeline-rules";
@@ -177,7 +177,7 @@ export async function getParentRequestTimeline(parentUserId: string): Promise<Pa
     });
   }
   for (const r of shuttles) {
-    const what = PARENT_SHUTTLE_EXCEPTION_KIND_LABEL[r.kind as keyof typeof PARENT_SHUTTLE_EXCEPTION_KIND_LABEL] ?? "셔틀 변경";
+    const what = parentShuttleChangeLabel(r.kind, r.direction) ?? "셔틀 변경";
     rows.push({
       key: `SHUTTLE_DAY:${r.id}`, kind: "SHUTTLE_DAY", id: r.id, studentId: r.studentId, studentName: r.studentName,
       title: `셔틀 · ${what}`, when: kstLabel(r.date),

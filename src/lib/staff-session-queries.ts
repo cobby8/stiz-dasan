@@ -1,3 +1,4 @@
+import { getClassArrivalNoticeLabels } from "@/lib/regular/arrival-notice-read";
 import { prisma } from "@/lib/prisma";
 import {
   getAccessibleClassIds,
@@ -80,6 +81,8 @@ export type StaffSessionStudent = {
   // 정규 수업에만 있다(방학특강은 좌석 기준 별도 흐름이라 null).
   // source: SHEET=출석부에서 «질병·부상»으로 표시한 것 / PARENT=학부모 사전 신고(attendance-absence-reason.ts).
   absenceReport: { reason: string; status: string; source: "SHEET" | "PARENT" } | null;
+  // 학부모가 알린 지각·조퇴 예정(«지각 예정 17:20»·«조퇴 예정 18:00») — 정규 수업만. 결석을 알린 아이는 비어 있다(2026-11-14 묶음 B).
+  arrivalNotices?: string[];
   // 다른 반 아이가 이 수업에 보강 온 경우 true(정규 수업만). 출석 처리하면 보강 예약이 «참석»·보강권 «사용»이 된다.
   makeup: boolean;
   // 그날 이 수업으로 잡힌 체험수업 아이(정규 수업만). id·attendanceKey = «trial:<체험신청 id>».
@@ -428,6 +431,8 @@ export async function getStaffSessionStudents(
     classId,
     sessionKinds[0]?.date ?? null,
   );
+  // 지각·조퇴 예정 — 표가 없거나 못 읽으면 빈 결과(명단은 그대로 뜬다)
+  const arrivalLabels = await getClassArrivalNoticeLabels(classId, sessionKinds[0]?.date ?? null);
   // 정규는 studentId 가 곧 로스터 키다(기존과 동일). attendanceKey=studentId.
   const regular: StaffSessionStudent[] = rows.map((row) => ({
     id: row.id,
@@ -442,6 +447,7 @@ export async function getStaffSessionStudents(
     absenceReport: row.absenceReason
       ? absenceReportOf({ reason: row.absenceReason, status: row.absenceStatus ?? "REPORTED", note: row.absenceNote, reportedByUserId: row.absenceReportedBy })
       : null,
+    ...(arrivalLabels.get(row.id)?.length ? { arrivalNotices: arrivalLabels.get(row.id) } : {}),
     makeup: false,
     trial: false,
   }));

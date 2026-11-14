@@ -44,6 +44,7 @@ export default async function RegularAbsencePage({
       initialReviews={JSON.parse(JSON.stringify(screen.reviews))}
       initialPeriods={JSON.parse(JSON.stringify(screen.periods))}
       periodAvailable={screen.periodAvailable}
+      initialArrival={JSON.parse(JSON.stringify(screen.arrival))}
       makeups={initialMakeups}
       presetStudentId={preset.studentId}
       contact={contact}

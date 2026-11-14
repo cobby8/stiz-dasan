@@ -108,12 +108,28 @@
 💡 tester 참고: `node --test tests/parent-inquiry-thread.test.mjs tests/parent-news-annual.test.mjs tests/parent-apply-menu.test.mjs`. 마이그레이션 적용 «전»: 대화는 첫 글+옛 답변만·학부모 이어 쓰기는 «새 문의» 안내·학원 답은 adminNote 에 저장·환불 문의는 청구 연결 없이 접수. 주의 입력: 2,000/2,001자 · 남의 문의 id 주소 직접 입력(404) · 종결된 문의에 이어 쓰기(대기중 복귀) · 같은 청구 환불 문의 두 번 · 지난 공지 ?page=0/99/abc · 형제 계정의 특강 신청서(아이 칸 비움).
 ⚠️ reviewer 참고: ① 새 SQL 은 실제 Postgres 미실행 ② 앱 안 대관·특강 화면은 공개 테마를 /mypage 틀 안에 겹쳐 그린다 — 모양·하단 고정 바 위치는 실기기 확인 필요 ③ 요청함 답변 칸은 이제 빈칸으로 열린다(예전엔 저장된 답을 고쳐 덮어씀).
 
+### 구현 기록 (developer · 11-14 묶음 B 지각·조퇴·자차, claude/late-early-selfdrive)
+
+📝 구현한 기능: 학부모 «결석 알리기»에 «늦어요 · 일찍 가요»(예상 시각) · 조퇴/지각 날 셔틀 «안 타요» 연결 · 셔틀 변경 «안 타요» → 자차 문구 · 기사 화면 «자차·조퇴·지각» 표시 + 탑승·미탑승 잠금 · 선생님 출석부 «지각 예정 17:20»
+
+| 파일 경로 | 변경 내용 | 신규/수정 |
+|----------|----------|----------|
+| prisma/migrations/20261115140000_regular_arrival_notice/migration.sql · schema.prisma · studentMerge/tables.ts | 표 RegularArrivalNotice(RLS·권한 회수) | 신규/수정 |
+| src/lib/regular/arrivalNoticeRules.ts · parent-arrival-notice.ts · arrival-notice-read.ts | 규칙(순수)·알리기/취소·읽기 | 신규 |
+| src/app/api/mypage/regular-absence/arrival/route.ts · mypage/regular-absence/ArrivalNoticeArea.tsx · RegularAbsenceClient.tsx | 학부모 API·화면 | 신규/수정 |
+| src/lib/shuttle/{parent-shuttle-exception,regularDriverRouteLogic,unifiedDriverRunLogic,dayExceptionRules}.ts · components/shuttle/UnifiedDriverClient.tsx | 기사 화면 사유 글자·잠금, 학부모 자차 문구 | 수정 |
+| src/lib/staff-session-queries.ts · staff/sessions/[sessionId]/SessionInProgressClient.tsx | 출석부 줄 표시(배지 1개 추가) | 수정 |
+
+💡 tester 참고: 실행 테스트 tests/arrival-notice.test.mjs(20건 — 시간 경계·자정·보강권 미발급·조퇴+하원 셔틀·기사 잠금·화면 부품). 운영 DB 에 표가 없으면 «늦어요 · 일찍 가요» 입구만 숨는다(다른 화면 그대로).
+⚠️ reviewer 참고: ① 기사 화면 잠금은 화면만(체크 저장 서버는 건드리지 않음 — 다른 작업 영역) ② 알림에 딸린 셔틀 SKIP 은 셔틀 «1시간 전» 마감을 적용하지 않음 ③ 결석을 알린 날은 지각·조퇴 표시가 읽는 쪽에서 가려짐(행은 남음) ④ 방학특강·카카오 대화·관리자 출결 화면은 미적용
+
 ---
 
 ## 작업 로그 (최근 10건)
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-14 | developer(묶음 B 지각·조퇴·자차, claude/late-early-selfdrive): 학부모 «늦어요 · 일찍 가요»(RegularArrivalNotice, 지각=시작 전·조퇴=끝나기 전, 보강권 없음, 원장·담당 선생님 앱 알림) · 조퇴/지각 날 셔틀 SKIP 연결 · «안 타요»→자차 문구 · 기사 화면 «자차·조퇴·지각» 뱃지+버튼 잠금(화면만) · 출석부 «지각 예정 17:20». tsc 0 · tests 5287-0 · guards 337-0. 마이그레이션 20261115140000 운영 미적용 | 검수 대기 |
 | 11-14 | developer(재검수 권장, claude/merged-carry): 휴원 수강료 «남은 이월» 차감 대상을 처리 기록의 학생 + 병합된 대표 학생(mergedIntoStudentId 따라가기, 5단계) 청구로 넓힘(pause-settlement.ts CARRY_TARGET_STUDENTS_SQL) · 병합 결과(PairResult.carryNotice)에 «남은 이월 ○원은 대표 학생 청구에서 차감됩니다» 한 줄 · 관리자 수강 변경 화면은 신청 id 로 읽어 이미 보임(변경 없음). tsc 0·tests 5267-0·guards 337-0. 새 SQL(재귀 CTE) 실제 Postgres 미실행 | 검수 대기 |
 | 11-14 | developer(학부모 5단계, claude/parent-step5-inquiry): 보낸 문의 화면·대화·이어 쓰기(ParentRequestMessage, 관리자 요청함·신청함 답변 이어 쓰기, 앱 알림만) · 소식 사진 앱 안 크게 보기 · 지난 공지(/mypage/news 20건씩)·연간 일정(/mypage/annual) · 앱 안 «신청» 메뉴(유니폼=본사 쇼핑몰 바깥 링크, 대관·방학특강=공개 부품을 /mypage 아래에서) · 청구 탭 «환불 문의»(청구 id·금액 연결). **마이그레이션 20261115110000 운영 미적용**(없어도 동작). tsc 0·tests 5202-0·guards 82-0. 새 SQL 실제 Postgres 미실행·앱 안 신청 화면 실기기 미확인 | 검수 대기 |
 | 11-14 | developer(학부모 5단계, claude/parent-step5-enroll-shuttle): c2 수강 변경 화면에서 승인된 휴원·퇴원 «취소 요청» 한 번에(708ae954) · c8 «반 추가» 신청 — 학년 맞는 반·정원 차면 대기·원장 승인 때 수강 등록(6a00d594) · c5 셔틀 «계속 바꾸기» — 신청→원장 승인→적용일 명단 반영, 이용 시작·중단은 같은 목록(7fab2086). **마이그레이션 20261115120000 운영 미적용**(없으면 입구만 숨김). tsc 0·tests 5204-0·guards 82-0. 새 SQL 실제 Postgres 미실행 | 검수 대기 |

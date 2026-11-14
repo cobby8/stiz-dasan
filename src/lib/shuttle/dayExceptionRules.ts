@@ -37,6 +37,21 @@ export const PARENT_SHUTTLE_EXCEPTION_KIND_LABEL: Record<ShuttleExceptionKind, s
   LOCATION: "다른 곳에서 타요",
 };
 
+// «안 타요»를 학부모 말로(2026-11-14 원장 결정표 묶음 B): 셔틀을 안 타는 날은 보호자가 직접 데려다주거나 데리러 온다 —
+// 방향에 맞춰 «직접 데려다줘요 / 직접 데리러 가요(자차)»로 보인다. 저장 값(kind=SKIP)은 그대로다.
+// 기사님 화면에는 «자차»로 보이고 그 방향 탑승·미탑승 버튼이 잠긴다(arrivalNoticeRules.shuttleSkipLabel).
+export const PARENT_SHUTTLE_SKIP_LABEL: Record<ShuttleDirection, string> = {
+  PICKUP: "직접 데려다줘요(자차)",
+  DROPOFF: "직접 데리러 가요(자차)",
+  BOTH: "등원·하원 모두 자차",
+};
+
+/** 학부모 화면에 보이는 변경 내용 한마디 — SKIP 은 방향에 맞춘 자차 글자, LOCATION 은 «다른 곳에서 타요». 모르는 값이면 null */
+export function parentShuttleChangeLabel(kind: string, direction: string): string | null {
+  if (kind === "SKIP") return PARENT_SHUTTLE_SKIP_LABEL[direction as ShuttleDirection] ?? PARENT_SHUTTLE_EXCEPTION_KIND_LABEL.SKIP;
+  return PARENT_SHUTTLE_EXCEPTION_KIND_LABEL[kind as ShuttleExceptionKind] ?? null;
+}
+
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
 
 export function isYmd(value: unknown): value is string {

@@ -8,6 +8,8 @@ import {
   PARENT_SHUTTLE_DIRECTION_LABEL,
   SHUTTLE_EXCEPTION_KINDS,
   PARENT_SHUTTLE_EXCEPTION_KIND_LABEL,
+  PARENT_SHUTTLE_SKIP_LABEL,
+  parentShuttleChangeLabel,
   type ShuttleDirection,
   type ShuttleExceptionKind,
 } from "@/lib/shuttle/dayExceptionRules";
@@ -262,7 +264,7 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
                             {PARENT_SHUTTLE_DIRECTION_LABEL[item.direction as ShuttleDirection] ?? "등원·하원 확인 필요"}
                           </span>
                           <span className="rounded-full bg-[var(--color-academy-info-soft)] px-2 py-0.5 text-xs text-[var(--color-academy-info)]">
-                            {PARENT_SHUTTLE_EXCEPTION_KIND_LABEL[item.kind as ShuttleExceptionKind] ?? "변경 내용 확인 필요"}
+                            {parentShuttleChangeLabel(item.kind, item.direction) ?? "변경 내용 확인 필요"}
                           </span>
                         </div>
                         {/* 2줄: 바뀐 장소(줄바꿈 허용) — 목록에 있다는 것이 곧 «저장됨»이라 저장 상태 꼬리표는 뺐다 */}
@@ -415,7 +417,8 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
                 onClick={() => setKind(value)}
                 className="academy-choice break-keep"
               >
-                {PARENT_SHUTTLE_EXCEPTION_KIND_LABEL[value]}
+                {/* 안 타는 날 = 보호자가 직접 — 고른 방향에 맞춰 «직접 데려다줘요 / 직접 데리러 가요(자차)» */}
+                {value === "SKIP" ? PARENT_SHUTTLE_SKIP_LABEL[direction] : PARENT_SHUTTLE_EXCEPTION_KIND_LABEL[value]}
               </button>
             ))}
           </div>
@@ -486,7 +489,7 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
               <dt className="text-[var(--color-academy-muted)]">등원·하원</dt>
               <dd className="font-medium">{PARENT_SHUTTLE_DIRECTION_LABEL[item.direction as ShuttleDirection] ?? "등원·하원 확인 필요"}</dd>
               <dt className="text-[var(--color-academy-muted)]">변경</dt>
-              <dd className="font-medium">{PARENT_SHUTTLE_EXCEPTION_KIND_LABEL[item.kind as ShuttleExceptionKind] ?? "변경 내용 확인 필요"}</dd>
+              <dd className="font-medium">{parentShuttleChangeLabel(item.kind, item.direction) ?? "변경 내용 확인 필요"}</dd>
               {item.location && (
                 <>
                   <dt className="text-[var(--color-academy-muted)]">장소</dt>

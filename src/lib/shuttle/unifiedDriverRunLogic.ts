@@ -36,6 +36,8 @@ export type UnifiedRider = {
   shuttleNote?: string | null;
   /** 잠긴 줄 뱃지(정규 휴원·퇴원·첫 수업 전·휴무). 있으면 탑승·미탑승 버튼을 잠그고 체크 대상에서 뺀다. */
   blockedLabel?: string | null;
+  /** 그 방향 셔틀을 안 탄다고 기록된 아이의 사유 글자(«자차»·«조퇴»·«지각»). 있으면 버튼을 잠그고 글자로 보인다(2026-11-14 묶음 B). */
+  skipLabel?: string | null;
   /** 건강·알레르기·특이사항이 적힌 학생인가(2026-11-14 b5) — 이름 옆 «특이» 표시. 토큰 링크에도 내려가는 것은 이 표시뿐이다. */
   hasHealthNote?: boolean;
   /**
@@ -240,6 +242,7 @@ export function buildRegularRows(classes: DriverClass[]): UnifiedRow[] {
             shuttleNote: r.shuttleNote ?? null,
             // 잠긴 줄만 칸을 붙인다(잠금이 없으면 종전 모양 그대로 — 기존 비교 테스트 보존).
             ...(r.blockedLabel ? { blockedLabel: r.blockedLabel } : {}),
+            ...(r.skipLabel ? { skipLabel: r.skipLabel } : {}),
           })),
         });
       }
@@ -276,12 +279,24 @@ export type BoardingStatus = "BOARDED" | "NOSHOW" | "SELF";
  *   - absentDefault: 저장 기록 없이 기본 «결석»으로 보이는 중인가(되돌리기 버튼을 띄우지 않는 기준)
  *   - dimmed: 행을 흐리게 할지(결석 신고 + 탑승·자차로 바뀌지 않음)
  */
+/**
+ * 잠긴 줄에 보일 글자 — 휴원·퇴원·첫 수업 전·휴무(blockedLabel)가 먼저, 없으면 «안 탄다고 기록된» 사유(자차·조퇴·지각).
+ * 잠기지 않는 줄은 null. 결석 신고 아이의 «안 타요» 기록은 잠금으로 보지 않는다(결석 표시가 우선).
+ */
+export function riderLockLabel(rider: Pick<UnifiedRider, "kind" | "absent" | "blockedLabel" | "skipLabel">): string | null {
+  if (rider.kind !== "REGULAR") return null;
+  return rider.blockedLabel || (!rider.absent && rider.skipLabel) || null;
+}
+
 export function riderBoardingView(
-  rider: Pick<UnifiedRider, "kind" | "absent" | "blockedLabel">,
+  rider: Pick<UnifiedRider, "kind" | "absent" | "blockedLabel" | "skipLabel">,
   stored: BoardingStatus | null | undefined,
 ): { absentReported: boolean; status: BoardingStatus | null; absentDefault: boolean; dimmed: boolean; blocked: boolean } {
   // 원장 지시(2026-11-14): 휴원·퇴원·첫 수업 전·휴무 줄은 명단에 남기되 버튼을 잠근다 — 흐린 행, 기본 상태 없음, 체크 대상 아님.
-  const blocked = rider.kind === "REGULAR" && Boolean(rider.blockedLabel);
+  // 원장 메모(2026-11-14 묶음 B): 그 방향 셔틀을 «안 탄다고 기록된» 아이(자차·조퇴·지각)도 같은 방식으로 잠근다.
+  //   · 결석 신고 아이는 종전 «결석» 표시가 우선이다(버튼 그대로 — 실제로 탔으면 체크).
+  //   · 지각 «예정»만 알리고 셔틀은 그대로 타는 아이는 skipLabel 이 없어 잠기지 않는다.
+  const blocked = Boolean(riderLockLabel(rider));
   const absentReported = !blocked && rider.kind === "REGULAR" && Boolean(rider.absent);
   const saved = stored ?? null;
   const status: BoardingStatus | null = saved ?? (absentReported ? "NOSHOW" : null);
@@ -295,7 +310,7 @@ export function riderBoardingView(
 }
 
 /** 결석 학생 저장 기록이 없을 때 보일 기본 상태(정규 결석 = NOSHOW, 그 외 = 없음). */
-export function riderDefaultStatus(rider: Pick<UnifiedRider, "kind" | "absent" | "blockedLabel">): BoardingStatus | null {
+export function riderDefaultStatus(rider: Pick<UnifiedRider, "kind" | "absent" | "blockedLabel" | "skipLabel">): BoardingStatus | null {
   return riderBoardingView(rider, null).status;
 }
 

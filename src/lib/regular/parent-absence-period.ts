@@ -37,6 +37,7 @@ import {
   type ParentPeriodRange,
 } from "@/lib/regular/parentAbsencePeriodRules";
 import { REASON_LABEL, isAbsenceChangeOpen, isValidReason } from "@/lib/regular/regularAbsenceRules";
+import { loadParentArrivalScreen } from "@/lib/regular/parent-arrival-notice";
 
 const kstNow = () => { const ms = Date.now(); return { ymd: todayKst(ms), hm: kstHm(ms) }; };
 
@@ -398,7 +399,9 @@ export async function loadParentAbsenceScreen(parentUserId: string) {
     listParentAbsencePeriods(parentUserId),
     parentAbsencePeriodAvailable(),
   ]);
-  return { children, reviews: collapseReviewsByPeriod(reviewRows), periods, periodAvailable };
+  // 지각·조퇴 알리기(2026-11-14 묶음 B) — 표가 없거나 못 읽으면 available=false(입구만 숨는다)
+  const arrival = await loadParentArrivalScreen(parentUserId, children);
+  return { children, reviews: collapseReviewsByPeriod(reviewRows), periods, periodAvailable, arrival };
 }
 
 // ── 4) 내가 알린 기간(진행 중) ──

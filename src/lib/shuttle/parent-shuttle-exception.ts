@@ -5,6 +5,8 @@ import { notMergedStudent } from "@/lib/studentVisibility";
 import { earliestUsableFrom, parentUsableEnrollmentSql, resumeFromSql, resumeNotice, usableOn } from "@/lib/enrollment/resumeWindow";
 import { CHANGE_CLOSED_MESSAGE, isShuttleChangeOpen } from "@/lib/parent/changeDeadline";
 import { kstDow, kstHm, todayKst } from "@/lib/datetime/kst";
+import { getArrivalSkipKinds } from "@/lib/regular/arrival-notice-read";
+import { shuttleSkipLabel } from "@/lib/regular/arrivalNoticeRules";
 import { summarizeDeliveryStatus, type DeliveryStatusRow, type DeliveryStatusSummary } from "@/lib/parent-staff-status";
 import {
   SHUTTLE_EXCEPTION_MESSAGE,
@@ -512,17 +514,20 @@ export async function getParentShuttleExceptionStatus(parentUserId: string, id: 
  * 그래서 결석 매칭과 같은 방식으로 이름·전화로 이어 붙인다.
  */
 export async function getShuttleExceptionsForDate(date: string): Promise<
-  { name: string; phone: string | null; direction: string; kind: string; location: string | null }[]
+  { name: string; phone: string | null; direction: string; kind: string; location: string | null; skipLabel: string | null }[]
 > {
   try {
-    const rows = await prisma.$queryRawUnsafe<{ name: string; phone: string | null; direction: string; kind: string; location: string | null }[]>(
-      `SELECT s.name AS name, u.phone AS phone, x.direction, x.kind, x.location
+    const rows = await prisma.$queryRawUnsafe<{ id: string; name: string; phone: string | null; direction: string; kind: string; location: string | null }[]>(
+      `SELECT x.id, s.name AS name, u.phone AS phone, x.direction, x.kind, x.location
          FROM "ShuttleDayException" x
          JOIN "Student" s ON s.id = x."studentId"
          LEFT JOIN "User" u ON u.id = s."parentId"
         WHERE x."serviceDate" = $1::date AND x."canceledAt" IS NULL AND ${notMergedStudent("s")}`,
       date,
     );
+    // «안 타요»(SKIP) 줄의 사유 글자(2026-11-14 묶음 B): 지각·조퇴 알림과 함께 만든 기록이면 «지각»·«조퇴», 그 밖은 «자차».
+    // 기사님 화면이 이 글자를 보이고 탑승·미탑승 버튼을 잠근다. 알림 표를 못 읽으면 전부 «자차»로 보인다.
+    const skipKinds = rows.some((row) => row.kind === "SKIP") ? await getArrivalSkipKinds(date) : new Map<string, string>();
     return rows
       .map((row) => ({
         name: String(row.name ?? "").trim(),
@@ -530,6 +535,7 @@ export async function getShuttleExceptionsForDate(date: string): Promise<
         direction: row.direction,
         kind: row.kind,
         location: row.location ?? null,
+        skipLabel: row.kind === "SKIP" ? shuttleSkipLabel(skipKinds.get(String(row.id))) : null,
       }))
       .filter((row) => row.name.length > 0);
   } catch (error) {
