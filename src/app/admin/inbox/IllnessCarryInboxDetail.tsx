@@ -21,6 +21,15 @@ type Props = { absenceId: string; studentName: string; onChanged: () => void };
 
 const photoUrl = (id: string) => `/api/admin/absence-evidence/${encodeURIComponent(id)}`;
 
+const EVIDENCE_KIND_LABEL = { WORKBENCH_ISSUED: "사이트 발행", MONTHLY_REGISTER: "확정 장부", PAID_PAYMENT: "납부" } as const;
+const won = (value: number) => `${value.toLocaleString("ko-KR")}원`;
+/** «근거: 11월 납부 90,000원 ÷ 4회 = 1회 22,500원» — 금액이 없으면(부원장) 종류와 횟수만 */
+function evidenceLine(evidence: NonNullable<IllnessCarryDetail["evidence"]>): string {
+  const head = `근거: ${Number(evidence.month.slice(5, 7))}월 ${EVIDENCE_KIND_LABEL[evidence.kind]}`;
+  if (evidence.tuition === null || evidence.unit === null) return `${head} 수강료 ÷ ${evidence.sessions}회`;
+  return `${head} ${won(evidence.tuition)} ÷ ${evidence.sessions}회 = 1회 ${won(evidence.unit)}`;
+}
+
 export default function IllnessCarryInboxDetail({ absenceId, studentName, onChanged }: Props) {
   const [detail, setDetail] = useState<IllnessCarryDetail | null>(null);
   const [loadError, setLoadError] = useState("");
@@ -157,6 +166,16 @@ export default function IllnessCarryInboxDetail({ absenceId, studentName, onChan
 
       {detail.status === "PENDING" ? (
         <>
+          {/* 승인하면 쓰일 근거 한 줄 — 얼마를 몇 회로 나누는지 누르기 전에 본다(금액은 원장에게만 내려온다) */}
+          {detail.evidence && (
+            <div className="text-sm text-[var(--color-academy-ink)]">
+              <p>{evidenceLine(detail.evidence)}</p>
+              {detail.evidence.warnings.length > 0 && (
+                <p className="mt-1 text-xs text-[var(--color-academy-warning)]">확인: {detail.evidence.warnings.join(" · ")}</p>
+              )}
+            </div>
+          )}
+          {detail.evidenceNote && <p className="text-xs text-[var(--color-academy-muted)]">{detail.evidenceNote}</p>}
           {/* 아직 승인할 수 없는 이유 한 줄 — 이때는 승인 버튼을 꺼 둔다 */}
           {detail.blocker && (
             <p className="rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm text-[var(--color-academy-warning)]">{detail.blocker}</p>

@@ -574,7 +574,7 @@ test("사유 글: 앞뒤 공백·줄바꿈 정리, 1~100자", () => {
 });
 
 test("승인 버튼을 켤지: 결석일 전·보강 사용·청구 발행 전·저장 꺼짐이면 이유 한 줄, 아니면 null", () => {
-  const ok = { absenceYmd: "2026-11-09", todayYmd: "2026-11-14", creditStatus: null, billReady: true, writesEnabled: true };
+  const ok = { absenceYmd: "2026-11-09", todayYmd: "2026-11-14", creditStatus: null, bill: "READY", writesEnabled: true };
   assert.equal(rules.carryApprovalBlocker(ok), null);
   assert.equal(rules.carryApprovalBlocker({ ...ok, absenceYmd: "2026-11-14" }), null, "결석 당일은 지난 것으로 본다(기존 이월 규칙과 같은 기준)");
   assert.match(rules.carryApprovalBlocker({ ...ok, absenceYmd: "2026-11-15" }), /결석일이 지난 뒤/);
@@ -582,8 +582,10 @@ test("승인 버튼을 켤지: 결석일 전·보강 사용·청구 발행 전·
   assert.match(rules.carryApprovalBlocker({ ...ok, creditStatus: "NO_SHOW" }), /이미 보강을 들은/);
   assert.equal(rules.carryApprovalBlocker({ ...ok, creditStatus: "AVAILABLE" }), null, "이미 나간 미사용 보강권은 승인 때 회수된다(a7)");
   assert.equal(rules.carryApprovalBlocker({ ...ok, creditStatus: "RESERVED" }), null, "예약은 확인 창에서 함께 취소를 묻는다");
-  assert.match(rules.carryApprovalBlocker({ ...ok, billReady: false }), /청구를 발행한 뒤/);
-  assert.equal(rules.carryApprovalBlocker({ ...ok, billReady: null }), null, "근거 표를 모르면 막지 않는다 — 서버 규칙이 최종 판정");
+  assert.match(rules.carryApprovalBlocker({ ...ok, bill: "NONE" }), /그 달 수강료 청구를 발행한 뒤에 승인/);
+  // 청구는 있는데 아직 안 낸 달은 «발행»이 아니라 «납부»가 남은 일이다(2026-11-15)
+  assert.match(rules.carryApprovalBlocker({ ...ok, bill: "UNPAID" }), /그 달 수강료를 납부한 뒤에 승인/);
+  assert.equal(rules.carryApprovalBlocker({ ...ok, bill: null }), null, "근거 표를 모르면 막지 않는다 — 서버 규칙이 최종 판정");
   assert.match(rules.carryApprovalBlocker({ ...ok, writesEnabled: false }), /꺼져 있어/);
 });
 
