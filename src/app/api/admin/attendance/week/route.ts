@@ -7,10 +7,10 @@ import { compareWeekLessons, mapWithLimit, normalizeWeekStart, weekDays } from "
 
 export const dynamic = "force-dynamic";
 
-// 수업별 명단을 동시에 몇 개까지 부를지. 한 주 수업이 30회 안팎이라 6개씩이면 5~6 바퀴.
-// 한꺼번에 다 부르면 PgBouncer 연결이 몰려 다른 화면이 느려진다.
+// 수업별 명단·하루치 목록을 동시에 몇 개까지 부를지. 서버 한 대의 DB 연결이 5개(connection_limit=5)라
+// 3 으로 둔다 — 6 이면 연결 대기(P2024 «Timed out fetching a new connection», 운영 11-14 에 실제 발생)가 다른 화면까지 번진다.
 // (속도: 수업 1회 = 쿼리 3~4개. 운영에서 느리면 이 숫자보다 «한 번에 묶는 조회»를 검토할 것)
-const DETAIL_CONCURRENCY = 6;
+const DETAIL_CONCURRENCY = 3;
 
 /**
  * 출결 «주간 보드» — GET ?start=YYYY-MM-DD (월요일. 다른 요일이면 그 주 월요일로 보정)
@@ -32,8 +32,7 @@ export async function GET(request: NextRequest) {
         // 1) 7일치 수업 목록(날짜별 화면과 같은 캐시 함수).
         //    하루가 실패해도 주 전체를 500 으로 만들지 않는다 — 그날만 failedDays 에 담아 보드가 «다시 시도»를 띄운다
         const failedDays: string[] = [];
-        const perDay = await Promise.all(
-            days.map(async (date) => {
+        const perDay = await mapWithLimit(days, DETAIL_CONCURRENCY, async (date) => {
                 try {
                     const { classes } = await getCachedAdminAttendancePayload(date);
                     return classes.map((lesson) => ({ date, lesson }));
@@ -42,12 +41,11 @@ export async function GET(request: NextRequest) {
                     failedDays.push(date);
                     return [];
                 }
-            }),
-        );
+        });
         failedDays.sort();
         const occurrences = perDay.flat().sort(compareWeekLessons);
 
-        // 2) 수업마다 명단·출결 — 입력 패널과 같은 함수, 동시 6개 제한
+        // 2) 수업마다 명단·출결 — 입력 패널과 같은 함수, 동시 3개 제한
         const lessons = await mapWithLimit(occurrences, DETAIL_CONCURRENCY, async ({ date, lesson }) => {
             const detail = await getAttendanceByDateAndClass(date, lesson.id, lesson.sessionDateId ?? null);
             return { date, lesson, students: detail.students };
