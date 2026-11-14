@@ -262,13 +262,17 @@ const SHEET_RECONCILE_ACTION_LABELS: Record<string, string> = {
     UNCHANGED: "동일",
 };
 
-// 수납 목록 보기 방식(목록 | 상태별) — 이 화면은 위에 이미 월 선택이 있어서 «상태별» 묶음을 둔다
-const FINANCE_VIEW_STORAGE_KEY = "admin-finance-view-mode";
-const FINANCE_VIEW_VALUES = ["list", "status"] as const;
+// 수납 목록 보기 방식(반별 | 상태별 | 목록) — 이 화면은 위에 이미 월 선택이 있어서 «상태별» 묶음을 둔다
+// 2026-11-14 원장 요청: «반별» 보기 추가 + 기본값. 저장 키를 v2 로 바꿔 예전에 «목록»을 골라 둔 기기도 한 번은 반별로 연다.
+const FINANCE_VIEW_STORAGE_KEY = "admin-finance-view-mode-v2";
+const FINANCE_VIEW_VALUES = ["class", "status", "list"] as const;
 const FINANCE_VIEW_OPTIONS = [
-    { value: "list", label: "목록" },
+    { value: "class", label: "반별" },
     { value: "status", label: "상태별" },
+    { value: "list", label: "목록" },
 ] as const;
+// 반이 연결되지 않은 청구(유니폼·기타 등)를 모으는 묶음 이름
+const NO_CLASS_GROUP_LABEL = "반 없음";
 // 상태 칩·상태별 묶음 순서. 값은 필터 모달 «납부 상태» select 의 값과 같다(칩·select 가 한 상태를 공유)
 const PAYMENT_STATUS_ORDER = ["PENDING", "OVERDUE", "PAID", "REFUNDED", "CANCELED"] as const;
 
@@ -466,8 +470,8 @@ export default function FinanceClient({
     // 결제 취소(토스 POS) 창을 띄울 청구서
     const [posCancelTarget, setPosCancelTarget] = useState<Payment | null>(null);
     const [vaCloseTarget, setVaCloseTarget] = useState<Payment | null>(null); // «가상계좌 닫기» 확인창 대상
-    // 보기 방식(목록 | 상태별) — 브라우저에 기억
-    const [viewMode, changeViewMode] = useRememberedListView(FINANCE_VIEW_STORAGE_KEY, FINANCE_VIEW_VALUES, "list");
+    // 보기 방식(반별 | 상태별 | 목록) — 브라우저에 기억
+    const [viewMode, changeViewMode] = useRememberedListView(FINANCE_VIEW_STORAGE_KEY, FINANCE_VIEW_VALUES, "class");
     // 행을 눌러 연 상세 패널의 청구 id(재조회 뒤에도 최신 값을 보이게 id 로 들고 있다)
     const [detailPaymentId, setDetailPaymentId] = useState<string | null>(null);
 
@@ -935,6 +939,26 @@ export default function FinanceClient({
             };
         })
         .filter((group) => group.items.length > 0);
+    // 반별 보기 묶음: 반 이름순(«반 없음»은 맨 뒤), 반 안은 학생 이름순. 합계는 원장 화면에서만 그린다
+    const classGroupMap = new Map<string, { key: string; label: string; items: Payment[] }>();
+    for (const payment of visiblePayments) {
+        const key = payment.classId || "";
+        const label = payment.classId ? payment.className || "반 이름 없음" : NO_CLASS_GROUP_LABEL;
+        const group = classGroupMap.get(key) ?? { key, label, items: [] };
+        group.items.push(payment);
+        classGroupMap.set(key, group);
+    }
+    const classGroups = Array.from(classGroupMap.values())
+        .sort((a, b) => (a.key === "" ? 1 : 0) - (b.key === "" ? 1 : 0) || a.label.localeCompare(b.label, "ko"))
+        .map((group) => {
+            const items = [...group.items].sort((a, b) => a.studentName.localeCompare(b.studentName, "ko"));
+            return {
+                ...group,
+                items,
+                unpaidCount: items.filter((payment) => payment.status === "PENDING" || payment.status === "OVERDUE").length,
+                totalAmount: items.reduce((sum, payment) => sum + (payment.amount ?? 0), 0),
+            };
+        });
     // 상세 패널에 보일 청구(삭제·재조회로 사라지면 null → 패널이 닫힌다)
     const detailPayment = detailPaymentId ? payments.find((payment) => payment.id === detailPaymentId) ?? null : null;
 
@@ -1732,7 +1756,7 @@ export default function FinanceClient({
                 </div></details>
                 <span className="text-sm tabular-nums text-[var(--color-academy-muted)]">{visiblePayments.length} / {payments.length}건</span>
             </section>
-            {/* 상태 칩(누르면 그 상태만, 켜진 칩을 다시 누르면 전체) + 보기 전환(목록 | 상태별).
+            {/* 상태 칩(누르면 그 상태만, 켜진 칩을 다시 누르면 전체) + 보기 전환(반별 | 상태별 | 목록).
                 칩은 필터 모달의 «납부 상태»(paymentStatusFilter)와 같은 값을 공유한다. */}
             {/* 한 줄: 상태 칩(왼쪽) · 월 선택(가운데) · 보기 전환(오른쪽). 좁은 화면은 월 선택이 맨 위 한 줄. */}
             <div className="mb-2 flex min-w-0 flex-wrap items-center justify-between gap-2 lg:grid lg:grid-cols-[1fr_auto_1fr]">
@@ -1889,7 +1913,24 @@ export default function FinanceClient({
                                     <th className="admin-cell-center px-2 py-2">관리</th>
                                 </tr>
                             </thead>
-                            {viewMode === "status" ? (
+                            {viewMode === "class" ? (
+                                // 반별 보기: 머리줄 «월수 3부 · 12건 · 미납 3건 (· 합계 — 원장만)» 아래 그 반 청구들
+                                classGroups.map((group) => (
+                                    <tbody key={group.key || "no-class"} className="divide-y divide-[var(--color-academy-line)]">
+                                        <tr>
+                                            <th colSpan={paymentColumnCount} scope="rowgroup" className="bg-[var(--color-academy-soft)] px-2 py-1.5 text-left text-xs font-semibold text-[var(--color-academy-ink)]">
+                                                {group.label}
+                                                {/* 전체 건수는 원장만 — 부원장은 «미납 M건»만(상태별 보기의 건수 규칙과 같게, 검수 권장) */}
+                                                {canManageCriticalFinance && <>{" · "}<span className="tabular-nums">{group.items.length}</span>건</>}
+                                                {group.unpaidCount > 0 && <> · <span className="tabular-nums text-[var(--color-academy-danger)]">미납 {group.unpaidCount}건</span></>}
+                                                {/* 반 합계는 원장만 — 부원장에게 합계는 숨긴다(2026-11-14 결정) */}
+                                                {canManageCriticalFinance && <> · 합계 <span className="tabular-nums">{formatAmount(group.totalAmount)}</span></>}
+                                            </th>
+                                        </tr>
+                                        {group.items.map(renderPaymentRow)}
+                                    </tbody>
+                                ))
+                            ) : viewMode === "status" ? (
                                 // 상태별 보기: 머리줄 «미납 · 12건 · 합계 1,320,000원» 아래 그 상태 청구들
                                 statusGroups.map((group) => (
                                     <tbody key={group.status} className="divide-y divide-[var(--color-academy-line)]">
