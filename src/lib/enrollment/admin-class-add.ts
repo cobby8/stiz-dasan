@@ -41,17 +41,23 @@ export async function applyApprovedClassAddInTx(
   if (!request) return { ok: false, message: "반 추가 신청을 찾을 수 없어요. 새로고침해 주세요." };
   if (!request.toClassId) return { ok: false, message: "추가할 반이 비어 있는 신청이에요. 거절하고 다시 신청받아 주세요." };
 
-  // 대상 반을 잠그고 정원을 «지금» 다시 센다(병합된 학생은 세지 않는다 — 관리자 반 이동과 같은 셈)
-  const [target] = await tx.$queryRawUnsafe<Array<{
-    id: string; name: string; capacity: number; activeCount: number; deleted: boolean; seasonal: boolean;
+  // 대상 반을 «먼저» 잠근다. 인원은 잠금을 얻은 «뒤» 따로 센다(2026-11-15 리뷰 R3):
+  // 한 문장 안에서 세면 잠금을 기다리는 동안 다른 승인이 넣은 수강을 못 보고 정원을 1명 넘길 수 있다.
+  const [targetRow] = await tx.$queryRawUnsafe<Array<{
+    id: string; name: string; capacity: number; deleted: boolean; seasonal: boolean;
   }>>(
-    `SELECT c.id, c.name, c.capacity, (p."deletedAt" IS NOT NULL) AS deleted, (c."dayOfWeek" = 'Seasonal') AS seasonal,
-            (SELECT COUNT(*) FROM "Enrollment" e JOIN "Student" s ON s.id = e."studentId"
-              WHERE e."classId" = c.id AND e.status = 'ACTIVE' AND ${notMergedStudent("s")})::int AS "activeCount"
+    `SELECT c.id, c.name, c.capacity, (p."deletedAt" IS NOT NULL) AS deleted, (c."dayOfWeek" = 'Seasonal') AS seasonal
        FROM "Class" c JOIN "Program" p ON p.id = c."programId"
       WHERE c.id = $1 FOR UPDATE OF c`,
     request.toClassId,
   );
+  // 병합된 학생은 세지 않는다 — 관리자 반 이동과 같은 셈
+  const [counted] = targetRow ? await tx.$queryRawUnsafe<Array<{ n: number }>>(
+    `SELECT COUNT(*)::int AS n FROM "Enrollment" e JOIN "Student" s ON s.id = e."studentId"
+      WHERE e."classId" = $1 AND e.status = 'ACTIVE' AND ${notMergedStudent("s")}`,
+    targetRow.id,
+  ) : [];
+  const target = targetRow ? { ...targetRow, activeCount: Number(counted?.n ?? 0) } : undefined;
   const [existing] = await tx.$queryRawUnsafe<Array<{ id: string; status: EnrollmentStatus }>>(
     `SELECT id, status FROM "Enrollment" WHERE "studentId" = $1 AND "classId" = $2 FOR UPDATE`,
     request.studentId, request.toClassId,
@@ -87,10 +93,14 @@ export async function applyApprovedClassAddInTx(
   }
 
   // 사이트 반영 완료 = APPLIED + appliedAt(관리자 즉시 변경과 같은 뜻). 적용일 크론은 APPROVED 만 집으므로 다시 건드리지 않는다.
+  // 늦게 승인해 개시일이 신청한 날보다 뒤(오늘)가 됐으면 신청의 시작일도 «실제 개시일»로 맞춘다(R5) —
+  // 학부모 알림·신청 내역·원장 화면이 모두 이 칸을 읽는다. 그대로면 $2 가 비어 COALESCE 가 원래 값을 둔다.
   const marked = await tx.$executeRawUnsafe(
-    `UPDATE "EnrollmentChangeRequest" SET status = 'APPLIED', "appliedAt" = now(), "updatedAt" = now()
+    `UPDATE "EnrollmentChangeRequest"
+        SET status = 'APPLIED', "appliedAt" = now(), "updatedAt" = now(),
+            "effectiveFrom" = COALESCE($2::date, "effectiveFrom")
       WHERE id = $1 AND status = 'APPROVED' AND "appliedAt" IS NULL`,
-    input.requestId,
+    input.requestId, startsOn && startsOn !== request.effectiveFrom ? startsOn : null,
   );
   if (Number(marked) !== 1) return { ok: false, message: "그 사이 신청 상태가 바뀌었어요. 새로고침 후 다시 해 주세요." };
   return { ok: true, created: plan.action === "CREATE", enrollmentId, startsOn, studentId: request.studentId, classId: request.toClassId };

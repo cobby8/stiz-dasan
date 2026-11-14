@@ -119,6 +119,18 @@ export function startableWeekdays(ctx: RegularChangeContext, directions: readonl
     directions.some((direction) => !ctx.roster.some((r) => r.weekday === weekday && r.direction === direction)));
 }
 
+/**
+ * 종류를 골랐을 때 미리 켜 둘 방향(화면 기본값) — 그 아이에게 실제로 해당하는 쪽만.
+ * 위치 바꾸기·이용 중단 = 지금 타는 방향 / 이용 시작 = 수업 요일 중 아직 안 타는 방향.
+ * (등원만 타는 아이에게 «하원 위치»까지 고르라고 하면 신청이 거절된다.)
+ */
+export function defaultDirections(kind: RegularChangeKind, ctx: RegularChangeContext): RegularChangeDirection[] {
+  const picked = REGULAR_CHANGE_DIRECTIONS.filter((direction) => kind === "START"
+    ? ctx.classWeekdays.some((weekday) => !ctx.roster.some((r) => r.weekday === weekday && r.direction === direction))
+    : ctx.roster.some((r) => r.direction === direction));
+  return picked.length > 0 ? picked : [...REGULAR_CHANGE_DIRECTIONS];
+}
+
 /** 화면이 종류별로 보여 줄 요일 칩(고를 수 있는 요일). CHANGE·STOP = 타는 요일, START = 안 타는 수업 요일 */
 export function selectableWeekdays(kind: RegularChangeKind, ctx: RegularChangeContext, directions: readonly RegularChangeDirection[]): number[] {
   return kind === "START" ? startableWeekdays(ctx, directions) : rosterWeekdays(ctx, directions);
@@ -140,7 +152,11 @@ export type RegularChangeInput = {
 export type RegularChangeNormalized = {
   kind: RegularChangeKind;
   directions: RegularChangeDirection[];
-  /** null = 모든 요일 */
+  /**
+   * 위치 바꾸기: null = 모든 요일(아이의 기준 위치까지 바꾼다).
+   * 이용 시작·중단: 항상 요일을 «확정»해 담는다 — «모든 요일»로 신청해도 접수 시점의 대상 요일로 풀어 적는다.
+   * 그래야 나중에 «신청한 칸이 전부 명단에 올랐는가/빠졌는가»를 정확히 판정할 수 있다.
+   */
   weekdays: number[] | null;
   effectiveFrom: string;
   note: string | null;
@@ -156,7 +172,7 @@ export function validateRegularChange(input: RegularChangeInput, ctx: RegularCha
   if (!kind) return { ok: false, error: "INVALID_KIND" };
 
   const rawDirections = Array.isArray(input.directions) ? input.directions : [];
-  const directions = REGULAR_CHANGE_DIRECTIONS.filter((d) => rawDirections.includes(d));
+  let directions: RegularChangeDirection[] = REGULAR_CHANGE_DIRECTIONS.filter((d) => rawDirections.includes(d));
   if (directions.length === 0 || rawDirections.some((d) => !REGULAR_CHANGE_DIRECTIONS.includes(d as RegularChangeDirection))) {
     return { ok: false, error: "DIRECTION_REQUIRED" };
   }
@@ -176,10 +192,21 @@ export function validateRegularChange(input: RegularChangeInput, ctx: RegularCha
       if (weekdays.some((w) => !ctx.classWeekdays.includes(w))) return { ok: false, error: "WEEKDAY_NOT_CLASS_DAY" };
       if (weekdays.some((w) => !open.includes(w))) return { ok: false, error: "ALREADY_ON_ROSTER" };
     }
+    // 요일을 확정한다(«모든 요일» = 지금 안 타는 수업 요일 전부). 방향은 그 요일 중 한 곳이라도 아직 안 타는 쪽만 남긴다
+    // — 이미 타는 방향을 신청에 넣어 두면 «다 올랐다» 판정이 처음부터 참이 된다.
+    const days = weekdays ?? open;
+    weekdays = days;
+    directions = directions.filter((d) => days.some((w) => !ctx.roster.some((r) => r.weekday === w && r.direction === d)));
   } else {
     const riding = rosterWeekdays(ctx, directions);
     if (riding.length === 0) return { ok: false, error: "NOT_ON_ROSTER" };
     if (weekdays && weekdays.some((w) => !riding.includes(w))) return { ok: false, error: "WEEKDAY_NOT_ON_ROSTER" };
+    // 이용 중단도 요일을 확정한다(«모든 요일» = 지금 그 방향으로 타는 요일 전부) — 나중에 다른 요일을 새로 타도 이 신청과 무관하다.
+    if (kind === "STOP") {
+      const days = weekdays ?? riding;
+      weekdays = days;
+      directions = directions.filter((d) => days.some((w) => ctx.roster.some((r) => r.weekday === w && r.direction === d)));
+    }
   }
 
   if (kind !== "STOP") {
@@ -232,9 +259,17 @@ export function regularChangeStatusLine(row: { status: string; effectiveFrom: st
   return { text: "취소함", tone: "muted" };
 }
 
-/** 학부모가 직접 취소할 수 있는가 — 원장이 아직 결정하지 않은 건만 */
-export function canCancelRegularChange(status: string): boolean {
-  return status === "PENDING";
+/**
+ * 학부모가 직접 취소할 수 있는가(R9).
+ * - 확인 중: 언제든.
+ * - 승인됨: 아직 명단에 반영되기 전이고 적용 시작일이 «오늘보다 뒤»일 때만(취소하면 원장에게 알린다).
+ *   적용일 당일부터는 cron 이 반영했거나 반영하는 중이라 학부모가 되돌리지 못한다.
+ * 서버(cancelRegularChangeRequest)가 같은 조건을 SQL 로 다시 건다.
+ */
+export function canCancelRegularChange(row: { status: string; effectiveFrom?: string | null }, today?: string): boolean {
+  if (row.status === "PENDING") return true;
+  if (row.status === "APPROVED") return Boolean(today && row.effectiveFrom && row.effectiveFrom > today);
+  return false;
 }
 
 export type RegularChangeApplyPlan =
@@ -265,7 +300,15 @@ export function planRegularChangeApply(input: {
   const inScope = input.roster.filter((r) =>
     input.directions.includes(r.direction) && (!input.weekdays || input.weekdays.includes(r.weekday)));
   if (input.kind === "START") {
-    return inScope.length > 0 ? { action: "CLOSE" } : { action: "KEEP_OPEN", reason: "셔틀 명단에 아직 없음 — 명단에 추가해 주세요" };
+    // 신청한 «요일 × 방향» 칸이 «전부» 명단에 올라야 끝이다(2026-11-15 리뷰 M1).
+    // 일부 요일만 넣었거나, 예전부터 타던 칸이 하나 있다는 이유로 닫히면 원장 할 일이 목록에서 사라진다.
+    // (요일이 비어 있는 옛 신청은 칸을 특정할 수 없어 «하나라도 있으면»으로 본다 — 새 신청은 접수 때 요일을 확정해 담는다.)
+    const missing = (input.weekdays ?? []).flatMap((weekday) => input.directions
+      .filter((direction) => !input.roster.some((r) => r.weekday === weekday && r.direction === direction))
+      .map((direction) => `${weekdayLabel(weekday)} ${direction === "PICKUP" ? "등원" : "하원"}`));
+    const done = input.weekdays ? missing.length === 0 : inScope.length > 0;
+    return done ? { action: "CLOSE" }
+      : { action: "KEEP_OPEN", reason: `셔틀 명단에 아직 없음${missing.length > 0 ? `(${missing.join(", ")})` : ""} — 명단에 추가해 주세요` };
   }
   if (input.kind === "STOP") {
     return inScope.length === 0 ? { action: "CLOSE" } : { action: "KEEP_OPEN", reason: "셔틀 명단에 아직 있음 — 명단에서 빼 주세요" };

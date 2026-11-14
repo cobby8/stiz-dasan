@@ -135,7 +135,7 @@ function placeNameOf(json: unknown): string | null {
   return typeof pick === "string" ? pick.trim() : null;
 }
 
-function toRow(r: any): RegularChangeRow {
+function toRow(r: any, today: string): RegularChangeRow {
   const directions = (Array.isArray(r.directions) ? r.directions : []).filter((d: unknown): d is RegularChangeDirection => d === "PICKUP" || d === "DROPOFF");
   const weekdays = Array.isArray(r.weekdays) && r.weekdays.length > 0 ? r.weekdays.map(Number) : null;
   const line = regularChangeStatusLine({ status: r.status, effectiveFrom: r.effectiveFrom, decisionNote: r.decisionNote });
@@ -143,7 +143,7 @@ function toRow(r: any): RegularChangeRow {
     id: String(r.id), studentId: String(r.studentId), kind: r.kind, directions, weekdays,
     effectiveFrom: r.effectiveFrom, status: r.status,
     summary: regularChangeSummary({ kind: r.kind, directions, weekdays }),
-    statusText: line.text, statusTone: line.tone, canCancel: canCancelRegularChange(r.status),
+    statusText: line.text, statusTone: line.tone, canCancel: canCancelRegularChange({ status: r.status, effectiveFrom: r.effectiveFrom }, today),
     pickupName: placeNameOf(r.pickupJson), dropoffName: placeNameOf(r.dropoffJson),
     createdOn: r.createdOn ?? "",
   };
@@ -207,7 +207,7 @@ export async function getRegularChangeOptions(parentUserId: string, db: Db = pri
         pickup: placeOf(k.studentId, "PICKUP"), dropoff: placeOf(k.studentId, "DROPOFF"),
       };
     }),
-    requests: requests.map(toRow),
+    requests: requests.map((r) => toRow(r, today)),
   };
 }
 
@@ -301,8 +301,9 @@ export async function submitRegularChangeRequest(
            (id, "studentId", "requestedByUserId", kind, directions, weekdays, "pickupJson", "dropoffJson", "effectiveFrom", note, "consentVersion")
          VALUES ($1, $2, $3, $4, $5::text[], $6::int[], $7::jsonb, $8::jsonb, $9::date, $10, $11)`,
         id, studentId, parentUserId, value.kind, value.directions, value.weekdays,
-        value.kind !== "STOP" && pickup ? JSON.stringify(pickup) : null,
-        value.kind !== "STOP" && dropoff ? JSON.stringify(dropoff) : null,
+        // 확정된 방향 것만 저장한다(이용 시작은 이미 타는 방향이 접수 판정에서 빠진다)
+        value.kind !== "STOP" && pickup && value.directions.includes("PICKUP") ? JSON.stringify(pickup) : null,
+        value.kind !== "STOP" && dropoff && value.directions.includes("DROPOFF") ? JSON.stringify(dropoff) : null,
         value.effectiveFrom, value.note, value.kind === "STOP" ? null : SHUTTLE_LOCATION_CONSENT_VERSION,
       );
       return { ok: true as const, id, value, studentName: student.name };
@@ -333,19 +334,45 @@ export async function submitRegularChangeRequest(
   }
 }
 
-/** 학부모 취소 — 원장이 결정하기 전(확인 중)인 내 아이 신청만. 한 문장 UPDATE 로 확인과 쓰기를 같이 한다. */
+/**
+ * 학부모 취소 — 내 아이 신청 중 ① 확인 중이거나 ② 승인됐지만 아직 반영 전이고 적용 시작일이 오늘(KST)보다 뒤인 것(R9).
+ * 한 문장 UPDATE 의 WHERE 로 확인과 쓰기를 같이 한다(적용 cron 은 신청 행을 잠그므로 엇갈리지 않는다).
+ * 승인된 건을 취소하면 원장에게 앱 알림을 보낸다 — 이용 시작·중단은 원장이 이미 명단을 고쳤을 수 있다.
+ */
 export async function cancelRegularChangeRequest(parentUserId: string, requestId: unknown, db: Db = prisma as unknown as Db) {
   const id = typeof requestId === "string" ? requestId.trim() : "";
   if (!id) return { ok: false as const, message: "취소할 신청을 찾을 수 없습니다." };
   if (!(await regularChangeAvailable(db))) return { ok: false as const, message: "취소할 신청을 찾을 수 없습니다." };
-  const changed = Number(await db.$executeRawUnsafe(
+  const canceled = await db.$queryRawUnsafe<Array<{ kind: string; directions: string[]; weekdays: number[] | null; effectiveFrom: string; studentName: string; wasApproved: boolean }>>(
     `UPDATE ${TABLE} r SET status = 'CANCELED', "updatedAt" = now()
        FROM "Student" s
       WHERE r."studentId" = s.id AND ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")}
-        AND r.id = $2 AND r.status = 'PENDING'`,
+        AND r.id = $2
+        AND (r.status = 'PENDING'
+             OR (r.status = 'APPROVED' AND r."appliedAt" IS NULL
+                 AND r."effectiveFrom" > (now() AT TIME ZONE 'Asia/Seoul')::date))
+      RETURNING r.kind, r.directions, r.weekdays, to_char(r."effectiveFrom",'YYYY-MM-DD') AS "effectiveFrom",
+                s.name AS "studentName", (r."decidedAt" IS NOT NULL) AS "wasApproved"`,
     parentUserId, id,
-  ));
-  if (changed === 0) return { ok: false as const, message: "이미 처리된 신청은 취소할 수 없어요." };
+  );
+  const row = canceled[0];
+  if (!row) return { ok: false as const, message: "이미 반영됐거나 처리된 신청은 취소할 수 없어요." };
+  if (row.wasApproved) {
+    try {
+      const { notifyOperationalStaff } = await import("@/lib/operational-staff-notification");
+      const summary = regularChangeSummary({ kind: row.kind, directions: row.directions ?? [], weekdays: row.weekdays && row.weekdays.length > 0 ? row.weekdays : null });
+      await notifyOperationalStaff({
+        type: "SHUTTLE_REGULAR_CHANGE",
+        title: "승인된 셔틀 계속 바꾸기 취소",
+        message: `${row.studentName} 학생 ${summary}(${koreanMonthDay(row.effectiveFrom)}부터) 승인 건을 학부모가 취소했습니다.`
+          + (row.kind === "CHANGE" ? " 명단은 바뀌지 않았습니다." : " 명단을 이미 고쳤다면 되돌려 주세요."),
+        linkUrl: "/admin/shuttle/regular",
+        includeCoach: false,
+      });
+    } catch (error) {
+      console.error("[shuttle-regular-change] 취소 원장 알림 실패:", error instanceof Error ? error.name : "");
+    }
+  }
   return { ok: true as const };
 }
 
@@ -385,7 +412,7 @@ export async function listRegularChangeRequests(db: Db = prisma as unknown as Db
   );
   const cells = await readRosterCells(db, [...new Set(rows.map((r) => String(r.studentId)))], today);
   return rows.map((r) => {
-    const row = toRow(r);
+    const row = toRow(r, today);
     const mine = cells.filter((c) => c.studentId === row.studentId);
     const plan = row.status === "APPROVED"
       ? planRegularChangeApply({
@@ -394,7 +421,11 @@ export async function listRegularChangeRequests(db: Db = prisma as unknown as Db
         })
       : null;
     const todo = !plan ? null
-      : plan.action === "WAIT" ? `${koreanMonthDay(row.effectiveFrom)}에 반영 예정`
+      : plan.action === "WAIT"
+        ? (row.kind === "CHANGE"
+          ? `${koreanMonthDay(row.effectiveFrom)}에 반영 예정`
+          // 이용 시작·중단은 자동으로 넣거나 빼지 않는다 — «반영 예정»이라 쓰면 원장이 기다리기만 한다
+          : `${koreanMonthDay(row.effectiveFrom)}부터 — 명단을 직접 고쳐 주세요`)
       : plan.action === "KEEP_OPEN" ? plan.reason
       : "곧 반영됩니다";
     return {

@@ -36,7 +36,9 @@ const CLASS_GRADES_SQL = `SELECT c.id AS "classId", c.name AS "className", ss."g
             WHERE (cs.id = c."slotKey" OR ('custom-' || cs.id) = c."slotKey") AND cs."isHidden" = false LIMIT 1)
         ) AS "gradeRangeText",
         c.capacity,
-        (SELECT count(*)::int FROM "Enrollment" x WHERE x."classId" = c.id AND x.status = 'ACTIVE') AS enrolled
+        -- 정원 셈은 승인 때(admin-class-add)와 같은 기준: 병합된 옛 학생은 세지 않는다
+        (SELECT count(*)::int FROM "Enrollment" x JOIN "Student" xs ON xs.id = x."studentId"
+          WHERE x."classId" = c.id AND x.status = 'ACTIVE' AND ${notMergedStudent("xs")}) AS enrolled
    FROM "Class" c
    JOIN "Program" p ON p.id = c."programId"
    LEFT JOIN "ScheduleSlot" ss ON ss."slotKey" = c."slotKey"

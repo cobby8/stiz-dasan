@@ -27,7 +27,11 @@ export default function RegularChangeRequestsPanel({ rows }: { rows: AdminRegula
       const how = row.kind === "CHANGE"
         ? `${koreanMonthDay(row.effectiveFrom)}에 셔틀 명단의 정류장이 새 위치로 바뀝니다(순서·시각은 그대로).`
         : "명단은 자동으로 바뀌지 않습니다 — 아래 명단에서 직접 고쳐 주세요.";
-      if (!window.confirm(`${row.studentName} · ${row.summary}\n승인할까요? 학부모에게 앱 알림이 갑니다.\n${how}`)) return;
+      // 요일을 고른 위치 바꾸기는 그 요일 칸만 바뀐다 — 학생 기준 위치는 그대로라, 나중에 학생 위치를 저장하면 그 요일도 덮인다
+      const partial = row.kind === "CHANGE" && row.weekdays
+        ? "\n요일을 고른 변경은 학생 기준 위치는 그대로예요. 나중에 학생 위치를 저장하면 그 요일도 덮여요."
+        : "";
+      if (!window.confirm(`${row.studentName} · ${row.summary}\n승인할까요? 학부모에게 앱 알림이 갑니다.\n${how}${partial}`)) return;
     }
     setError("");
     startTransition(async () => {

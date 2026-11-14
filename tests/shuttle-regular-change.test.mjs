@@ -113,9 +113,9 @@ test("② 규칙: 이용 시작 = 수업은 있는데 안 타는 요일 · 이�
   assert.equal(rules.validateRegularChange(input({ kind: "START", hasPickup: false }), ctx()).error, "LOCATION_REQUIRED");
   // 셔틀을 아예 안 타던 아이의 시작
   assert.equal(rules.validateRegularChange(input({ kind: "START", directions: ["PICKUP", "DROPOFF"], hasDropoff: true }), ctx({ roster: [] })).ok, true);
-  // 이용 중단
+  // 이용 중단 — «모든 요일»도 접수 때 타는 요일로 확정해 담는다
   assert.deepEqual(rules.validateRegularChange(input({ kind: "STOP", hasPickup: false, consent: false, directions: ["DROPOFF"] }), ctx()).value,
-    { kind: "STOP", directions: ["DROPOFF"], weekdays: null, effectiveFrom: "2026-12-01", note: null });
+    { kind: "STOP", directions: ["DROPOFF"], weekdays: [1], effectiveFrom: "2026-12-01", note: null });
   assert.equal(rules.validateRegularChange(input({ kind: "STOP", hasPickup: false, consent: false }), ctx({ roster: [] })).error, "NOT_ON_ROSTER");
   for (const message of Object.values(rules.REGULAR_CHANGE_MESSAGE)) assert.doesNotMatch(message, /학원에 문의|학원으로 문의/, "막다른 문구 금지");
 });
@@ -132,8 +132,13 @@ test("② 규칙: 학부모 상태 한 줄 «확인 중 / 승인됨(○월 ○�
   assert.equal(rules.regularChangeSummary({ kind: "CHANGE", directions: ["PICKUP"], weekdays: null }), "등원 위치 바꾸기 · 모든 요일");
   assert.equal(rules.regularChangeSummary({ kind: "STOP", directions: ["DROPOFF"], weekdays: [5] }), "셔틀 이용 중단 · 하원 · 금");
   assert.equal(rules.regularChangeSummary({ kind: "START", directions: ["PICKUP", "DROPOFF"], weekdays: null }), "셔틀 이용 시작 · 등원·하원 · 모든 요일");
-  assert.equal(rules.canCancelRegularChange("PENDING"), true);
-  for (const s of ["APPROVED", "APPLIED", "REJECTED", "CANCELED"]) assert.equal(rules.canCancelRegularChange(s), false, `${s} 는 학부모가 못 되돌린다`);
+  // 취소(R9): 확인 중은 언제든 · 승인됨은 적용 시작일이 오늘보다 뒤일 때만 · 그 밖은 불가
+  const today = "2026-11-14";
+  assert.equal(rules.canCancelRegularChange({ status: "PENDING", effectiveFrom: "2026-12-01" }, today), true);
+  assert.equal(rules.canCancelRegularChange({ status: "APPROVED", effectiveFrom: "2026-12-01" }, today), true);
+  assert.equal(rules.canCancelRegularChange({ status: "APPROVED", effectiveFrom: today }, today), false, "적용일 당일은 늦었다");
+  assert.equal(rules.canCancelRegularChange({ status: "APPROVED", effectiveFrom: "2026-12-01" }), false, "오늘을 모르면 막는다");
+  for (const s of ["APPLIED", "REJECTED", "CANCELED"]) assert.equal(rules.canCancelRegularChange({ status: s, effectiveFrom: "2026-12-01" }, today), false, `${s} 는 학부모가 못 되돌린다`);
   assert.equal(rules.weekdayOfClassDay("Mon"), 1);
   assert.equal(rules.weekdayOfClassDay("Sun"), 0);
   assert.equal(rules.weekdayOfClassDay("Seasonal"), null);
@@ -154,6 +159,51 @@ test("② 규칙: 적용 판정 — 적용일 전엔 기다림 · 위치 바꾸�
   assert.deepEqual(plan({ kind: "STOP", roster: [] }), { action: "CLOSE" });
   assert.deepEqual(plan({ kind: "STOP", directions: ["DROPOFF"] }), { action: "CLOSE" }, "하원은 이미 안 탄다");
   assert.equal(plan({ kind: "STOP", today: "2026-11-20", roster: [] }).action, "WAIT");
+});
+
+test("② 리뷰 M1: 이용 시작은 신청한 «요일 × 방향» 칸이 전부 명단에 올라야 닫힌다 — 접수 때 요일·방향을 확정", () => {
+  const P = (weekday) => ({ weekday, direction: "PICKUP" });
+  const D = (weekday) => ({ weekday, direction: "DROPOFF" });
+  const start = (over, c) => rules.validateRegularChange(input({ kind: "START", directions: ["PICKUP", "DROPOFF"], hasDropoff: true, ...over }), c).value;
+  const close = (value, roster, today = "2026-12-01") => rules.planRegularChangeApply({ ...value, today, roster }).action;
+
+  // 경우 1 — 월요일만 타는 아이(수업은 월·수)가 «모든 요일»로 이용 시작: 확정 요일 = 수, 원장이 아무것도 안 했으면 열려 있다
+  const monOnly = ctx();
+  const v1 = start({}, monOnly);
+  assert.deepEqual({ weekdays: v1.weekdays, directions: v1.directions }, { weekdays: [3], directions: ["PICKUP", "DROPOFF"] });
+  assert.equal(close(v1, monOnly.roster), "KEEP_OPEN", "월요일 칸이 있다는 이유로 닫히면 안 된다");
+  assert.equal(close(v1, [...monOnly.roster, P(3)]), "KEEP_OPEN", "수 등원만 넣었다 — 하원이 남았다");
+  assert.equal(close(v1, [...monOnly.roster, P(3), D(3)]), "CLOSE");
+
+  // 경우 2 — 월 등원만 타는 아이의 하원 추가: 이미 타는 등원은 신청에서 빠지고(위치도 요구하지 않는다) 하원 칸만 본다
+  const pickupOnly = ctx({ classWeekdays: [1], roster: [P(1)] });
+  const v2 = rules.validateRegularChange(input({ kind: "START", directions: ["PICKUP", "DROPOFF"], hasPickup: false, hasDropoff: true }), pickupOnly).value;
+  assert.deepEqual({ weekdays: v2.weekdays, directions: v2.directions }, { weekdays: [1], directions: ["DROPOFF"] });
+  assert.equal(close(v2, pickupOnly.roster), "KEEP_OPEN", "등원 칸이 있다고 닫히면 안 된다");
+  assert.equal(close(v2, [P(1), D(1)]), "CLOSE");
+
+  // 경우 3 — 아예 안 타던 아이의 월·수 이용 시작에 원장이 월요일만 넣음: 수요일이 남아 열려 있다
+  const none = ctx({ roster: [] });
+  const v3 = start({}, none);
+  assert.deepEqual(v3.weekdays, [1, 3]);
+  const partial = rules.planRegularChangeApply({ ...v3, today: "2026-12-01", roster: [P(1), D(1)] });
+  assert.equal(partial.action, "KEEP_OPEN");
+  assert.match(partial.reason, /수 등원, 수 하원/, "무엇이 남았는지 원장에게 보인다");
+  assert.equal(close(v3, [P(1), D(1), P(3), D(3)]), "CLOSE");
+
+  // 이용 중단도 같은 정확도: 신청 범위 칸이 «전부» 빠졌을 때만 닫힌다 · 나중에 새로 탄 다른 요일은 이 신청과 무관
+  const both = ctx({ roster: [P(1), D(1), P(3), D(3)] });
+  const stop = rules.validateRegularChange(input({ kind: "STOP", directions: ["PICKUP", "DROPOFF"], hasPickup: false, consent: false }), both).value;
+  assert.deepEqual(stop.weekdays, [1, 3]);
+  assert.equal(close(stop, [P(3), D(3)]), "KEEP_OPEN", "월요일만 뺐다");
+  assert.equal(close(stop, [P(5), D(5)]), "CLOSE", "신청한 월·수가 다 빠졌으면 금요일 새 칸과 무관하게 닫힌다");
+
+  // 화면 기본 방향(R7): 위치 바꾸기·중단 = 실제 타는 쪽 · 이용 시작 = 아직 안 타는 쪽
+  assert.deepEqual(rules.defaultDirections("CHANGE", pickupOnly), ["PICKUP"]);
+  assert.deepEqual(rules.defaultDirections("STOP", pickupOnly), ["PICKUP"]);
+  assert.deepEqual(rules.defaultDirections("START", pickupOnly), ["DROPOFF"]);
+  assert.deepEqual(rules.defaultDirections("CHANGE", both), ["PICKUP", "DROPOFF"]);
+  assert.deepEqual(rules.defaultDirections("START", none), ["PICKUP", "DROPOFF"]);
 });
 
 // ── ③④ 가짜 DB 로 실제 실행 ──────────────────────────────────────────────────────
@@ -185,6 +235,17 @@ function harness(over = {}) {
         assert.doesNotMatch(sql, /status/, "취소한 것도 센다");
         return [{ n: state.requests.filter((r) => r.studentId === v[0]).length }];
       }
+      if (sql.includes("SET status = 'CANCELED'")) {
+        state.writes.push(sql);
+        assert.match(sql, /r\.status = 'PENDING'\s+OR \(r\.status = 'APPROVED' AND r\."appliedAt" IS NULL\s+AND r\."effectiveFrom" > \(now\(\) AT TIME ZONE 'Asia\/Seoul'\)::date\)/);
+        assert.match(sql, /s\."parentId" = \$1/, "내 아이 것만");
+        const row = state.requests.find((r) => r.id === v[1] && state.students.some((s) => s.id === r.studentId && s.parent === v[0])
+          && (r.status === "PENDING" || (r.status === "APPROVED" && !r.appliedAt && r.effectiveFrom > state.today)));
+        if (!row) return [];
+        const wasApproved = row.status === "APPROVED";
+        row.status = "CANCELED";
+        return [{ kind: row.kind, directions: row.directions, weekdays: row.weekdays, effectiveFrom: row.effectiveFrom, studentName: "합성", wasApproved }];
+      }
       if (sql.startsWith('UPDATE "ShuttleRegularChangeRequest" r') && sql.includes("SET status = $2")) {
         assert.match(sql, /r\.id = \$1 AND r\.status = 'PENDING'/, "확인 중일 때만 결정");
         const row = state.requests.find((r) => r.id === v[0] && r.status === "PENDING");
@@ -211,13 +272,6 @@ function harness(over = {}) {
           pickupJson: v[6] ? JSON.parse(v[6]) : null, dropoffJson: v[7] ? JSON.parse(v[7]) : null,
           effectiveFrom: v[8], note: v[9], consentVersion: v[10], status: "PENDING", appliedAt: null,
         });
-        return 1;
-      }
-      if (sql.includes("SET status = 'CANCELED'")) {
-        assert.match(sql, /r\.id = \$2 AND r\.status = 'PENDING'/);
-        const row = state.requests.find((r) => r.id === v[1] && r.status === "PENDING" && state.students.some((s) => s.id === r.studentId && s.parent === v[0]));
-        if (!row) return 0;
-        row.status = "CANCELED";
         return 1;
       }
       if (sql.includes("SET status = 'APPLIED'")) {
@@ -361,9 +415,6 @@ test("④ 전이: 승인 = 예약 — 적용일 전에는 명단이 그대로, �
   assert.equal(state.parentNotices[0].message, "합성 등원·하원 위치 바꾸기 · 모든 요일 신청이 승인됐어요(12월 1일부터)");
   assert.equal(state.parentNotices[0].recipientUserId, "parent-a");
   assert.equal(state.parentNotices[0].audienceScope, "EXTERNAL");
-  // 승인 뒤에는 학부모가 취소할 수 없다
-  assert.equal((await api.cancelRegularChangeRequest("parent-a", id, prisma)).ok, false);
-
   // 적용일 전날 cron — 아무것도 안 한다
   state.today = "2026-11-30";
   assert.deepEqual(await api.applyDueRegularChanges(), { applied: 0, waiting: 0, appliedIds: [] });
@@ -382,6 +433,38 @@ test("④ 전이: 승인 = 예약 — 적용일 전에는 명단이 그대로, �
   // 두 번 돌아도 한 번만
   assert.deepEqual(await api.applyDueRegularChanges(), { applied: 0, waiting: 0, appliedIds: [] });
   assert.equal(state.rosterCalls.filter((c) => !c.lock).length, 2);
+  // 반영된 뒤에는 학부모가 취소할 수 없다
+  assert.equal((await api.cancelRegularChangeRequest("parent-a", id, prisma)).ok, false);
+  assert.equal(state.requests[0].status, "APPLIED");
+});
+
+test("④ 리뷰 R9: 승인됐지만 적용 전이면 학부모가 취소할 수 있다 — 명단은 그대로, 원장에게 앱 알림 · 적용일 당일부터는 불가", async () => {
+  const { api, state, prisma } = harness();
+  const { id } = await api.submitRegularChangeRequest("parent-a", submitBody(), prisma);
+  await api.decideRegularChangeRequest({ adminUserId: "admin-a", requestId: id, approve: true });
+  assert.equal(state.staffNotices.length, 1, "접수 알림 1건");
+  assert.equal((await api.cancelRegularChangeRequest("parent-b", id, prisma)).ok, false, "남의 신청은 못 취소");
+  assert.deepEqual(await api.cancelRegularChangeRequest("parent-a", id, prisma), { ok: true });
+  assert.equal(state.requests[0].status, "CANCELED");
+  assert.equal(state.staffNotices.length, 2);
+  assert.match(state.staffNotices[1].message, /합성 학생 등원 위치 바꾸기 · 모든 요일\(12월 1일부터\) 승인 건을 학부모가 취소했습니다\. 명단은 바뀌지 않았습니다\./);
+  assert.equal(rosterTouched(state), 0);
+  state.today = "2026-12-01";
+  assert.equal((await api.applyDueRegularChanges()).applied, 0, "취소한 건은 적용되지 않는다");
+
+  // 확인 중일 때의 취소는 원장에게 따로 알리지 않는다(접수 알림만)
+  const quiet = harness();
+  const made = await quiet.api.submitRegularChangeRequest("parent-a", submitBody(), quiet.prisma);
+  await quiet.api.cancelRegularChangeRequest("parent-a", made.id, quiet.prisma);
+  assert.equal(quiet.state.staffNotices.length, 1);
+
+  // 적용일 당일에 승인돼 있는 건(아직 cron 전)은 취소 불가
+  const due = harness();
+  const dueMade = await due.api.submitRegularChangeRequest("parent-a", submitBody({ kind: "STOP", pickup: null, consentVersion: null, effectiveFrom: "2026-11-15" }), due.prisma);
+  await due.api.decideRegularChangeRequest({ adminUserId: "admin-a", requestId: dueMade.id, approve: true });
+  due.state.today = "2026-11-15";
+  assert.equal((await due.api.cancelRegularChangeRequest("parent-a", dueMade.id, due.prisma)).ok, false);
+  assert.equal(due.state.requests[0].status, "APPROVED");
 });
 
 test("④ 요일을 고른 위치 바꾸기는 그 요일 칸만 — 학생 기준 위치는 그대로 · 적용일이 지난 뒤 승인하면 바로 반영", async () => {
@@ -424,13 +507,31 @@ test("④ 이용 시작·중단: 승인해도 명단은 자동으로 안 바뀐�
   start.state.today = "2026-11-15";
   await start.api.decideRegularChangeRequest({ adminUserId: "admin-a", requestId: made.id, approve: true });
   assert.equal(start.state.requests[0].status, "APPROVED", "명단에 아직 없으니 열려 있다");
+  assert.deepEqual(start.state.requests[0].weekdays, [1, 3], "«모든 요일» 신청도 접수 때 수업 요일로 확정해 저장(M1)");
   assert.equal(start.state.rosterCalls.filter((c) => !c.lock).length, 0, "명단에 자동으로 넣지 않는다");
   assert.equal(start.state.locationWrites.length, 2, "원장의 «학생 추가»가 미리 채워지게 신청 위치만 학생 위치로");
   assert.equal(start.state.writes.filter((sql) => /"RegularShuttleStop"/.test(sql)).length, 0);
-  // 원장이 명단에 넣은 뒤 cron → 닫힌다
-  start.state.cells.push({ studentId: "student-a", weekday: 1, direction: "BOARD", stopName: "새 아파트 정문" });
+  // 원장이 월요일만 넣었다 → 수요일이 남아 닫히지 않는다(리뷰 M1 — 예전에는 한 칸만 있어도 닫혔다)
+  start.state.cells.push({ studentId: "student-a", weekday: 1, direction: "BOARD", stopName: "새 아파트 정문" }, { studentId: "student-a", weekday: 1, direction: "ALIGHT", stopName: "집 앞" });
+  assert.deepEqual(await start.api.applyDueRegularChanges(), { applied: 0, waiting: 1, appliedIds: [] });
+  assert.equal(start.state.requests[0].status, "APPROVED");
+  // 수요일 등원·하원까지 넣은 뒤 cron → 닫힌다
+  start.state.cells.push({ studentId: "student-a", weekday: 3, direction: "BOARD", stopName: "새 아파트 정문" }, { studentId: "student-a", weekday: 3, direction: "ALIGHT", stopName: "집 앞" });
   assert.equal((await start.api.applyDueRegularChanges()).applied, 1);
   assert.equal(start.state.requests[0].status, "APPLIED");
+
+  // 월 등원만 타는 아이의 하원 추가(등원·하원 둘 다 골라 보냈어도): 하원만 저장되고, 하원 칸이 생겨야 닫힌다
+  const add = harness({ cells: [{ studentId: "student-a", weekday: 1, direction: "BOARD", stopName: "옛 정류장" }], classes: [{ studentId: "student-a", dayOfWeek: "Mon" }] });
+  const addMade = await add.api.submitRegularChangeRequest("parent-a", submitBody({ kind: "START", directions: ["PICKUP", "DROPOFF"], pickup: place("필요 없는 위치"), dropoff: place("집 앞"), effectiveFrom: "2026-11-15" }), add.prisma);
+  assert.equal(addMade.ok, true);
+  assert.deepEqual({ directions: add.state.requests[0].directions, weekdays: add.state.requests[0].weekdays, pickupJson: add.state.requests[0].pickupJson },
+    { directions: ["DROPOFF"], weekdays: [1], pickupJson: null });
+  add.state.today = "2026-11-15";
+  await add.api.decideRegularChangeRequest({ adminUserId: "admin-a", requestId: addMade.id, approve: true });
+  assert.equal(add.state.requests[0].status, "APPROVED", "등원 칸이 있다는 이유로 닫히지 않는다");
+  assert.equal(add.state.locationWrites.length, 0, "이미 타는 아이의 기준 위치는 덮어쓰지 않는다");
+  add.state.cells.push({ studentId: "student-a", weekday: 1, direction: "ALIGHT", stopName: "집 앞" });
+  assert.equal((await add.api.applyDueRegularChanges()).applied, 1);
 
   // 이용 중단
   const stop = harness();
@@ -484,6 +585,11 @@ test("③ 조회: 내 아이만 — 지금 명단·저장된 위치·신청 한 
   const admin = await api.listRegularChangeRequests(withReads);
   assert.equal(admin[0].studentName, "합성");
   assert.equal(admin[0].todo, "12월 1일에 반영 예정");
+  // 리뷰 R2: 이용 시작·중단은 자동으로 반영되지 않는다 — 적용일 전 문구를 구분한다
+  state.requests.push({ id: "stop-1", studentId: "student-a", requestedByUserId: "parent-a", kind: "STOP", directions: ["PICKUP"], weekdays: [1], pickupJson: null, dropoffJson: null, effectiveFrom: "2026-12-01", note: null, status: "APPROVED", appliedAt: null });
+  const withStop = await api.listRegularChangeRequests(withReads);
+  assert.equal(withStop.find((r) => r.id === "stop-1").todo, "12월 1일부터 — 명단을 직접 고쳐 주세요");
+  assert.equal(withStop.find((r) => r.id === "stop-1").canCancel, true, "승인됐지만 적용 전 — 학부모 화면에 취소가 보인다");
   assert.deepEqual(admin[0].currentStops, ["월 등원 옛 정류장", "월 하원 옛 정류장"]);
   assert.equal(admin[0].pickupAddress, "다산중앙로 1");
 });
@@ -541,6 +647,31 @@ test("⑤ 연결: API 는 학부모만 · 액션은 관리자만 · cron 이 적
   assert.match(adminPage, /<RegularChangeRequestsPanel rows=\{changeRequests\} \/>/);
 });
 
+test("⑤ 리뷰 R10·R1: 신청함에도 한 줄(표가 없으면 빈 표로) · 학생 병합 목록 · 가드 명령이 하위 폴더까지", async () => {
+  const inbox = read("src/lib/requests/admin-inbox.ts");
+  const catalog = await loadTsModule("src/lib/requests/catalog.ts");
+  assert.equal(catalog.REQUEST_KINDS.at(-1).kind, "SHUTTLE_REGULAR", "종류 맨 끝에 추가");
+  assert.equal(catalog.REQUEST_KINDS.at(-1).adminHref, "/admin/shuttle/regular");
+  assert.equal(catalog.tabOfKind("SHUTTLE_REGULAR"), "CHANGE");
+  assert.deepEqual(catalog.statusesOf("SHUTTLE_REGULAR", "ACTION"), ["PENDING"]);
+  assert.deepEqual(catalog.statusesOf("SHUTTLE_REGULAR", "ONGOING"), ["APPROVED"]);
+  const adapter = inbox.slice(inbox.indexOf('kind: "SHUTTLE_REGULAR"'), inbox.indexOf("// 모든 catalog 종류에 어댑터가"));
+  assert.match(adapter, /from: `"ShuttleRegularChangeRequest" x \$\{studentJoin\("s", `x\."studentId"`\)\}`/, "병합된 학생 제외 조인");
+  assert.match(adapter, /fallback: \{\s+from: `\(SELECT NULL::text AS id[\s\S]*?WHERE false\) x/, "표가 없으면 빈 표");
+  assert.doesNotMatch(adapter, /skipCount/, "승인 대기는 메뉴 숫자에 들어간다");
+  assert.match(inbox, /original\.kind === "SHUTTLE_REGULAR" && !shuttleRegularReady \? legacyOf\(original\) : base/);
+  assert.match(inbox, /to_regclass\('public\."ShuttleRegularChangeRequest"'\)/);
+  assert.match(read("src/app/admin/inbox/InboxClient.tsx"), /open\.kind === "SHUTTLE_REGULAR"[\s\S]{0,160}href="\/admin\/shuttle\/regular"/);
+
+  const merge = read("src/lib/studentMerge/tables.ts");
+  assert.match(merge, /table: "ShuttleRegularChangeRequest",\s+column: "studentId",\s+conflictKeys: \["status"\],\s+conflictWhere: \(a\) => `\$\{a\}\.status = 'PENDING'`/);
+  assert.match(merge, /table: "StudentProfileChangeRequest",\s+column: "studentId",\s+conflictKeys: \["field"\],\s+conflictWhere: \(a\) => `\$\{a\}\.status = 'PENDING'`/);
+  for (const table of ["EnrollmentShuttleReview", "UniformFreeGrant", "GymRentalRequest", "EnrollmentChangeSettlement", "BillingNoticeDelivery"]) {
+    assert.match(merge, new RegExp(`table: "${table}"`), table);
+  }
+  assert.match(JSON.parse(read("package.json")).scripts["test:guards"], /"src\/lib\/\*\*\/\*\.test\.ts"/, "하위 폴더 가드(studentMerge 등)까지 돈다");
+});
+
 test("⑤ 화면 규칙: 이름·굵기·색 토큰·아이콘 없음 · 같은 지도 부품 · 규칙 함수로 고를 것을 정한다", () => {
   const parent = read("src/app/mypage/shuttle/regular/RegularChangeClient.tsx");
   const admin = read("src/app/admin/shuttle/regular/RegularChangeRequestsPanel.tsx");
@@ -558,7 +689,11 @@ test("⑤ 화면 규칙: 이름·굵기·색 토큰·아이콘 없음 · 같은 
   assert.match(parent, /requirePlaceName/, "장소명 필수(기사님 명단 이름)");
   assert.match(parent, /selectableWeekdays\(kind, ctx, directions\)/);
   assert.match(parent, /min-h-11/, "터치 44px");
-  assert.match(parent, /label="신청 취소"[\s\S]{0,160}onConfirm=\{\(\) => cancel\(r\.id\)\}/, "취소는 확인 1회");
+  assert.match(parent, /label="신청 취소"[\s\S]{0,400}onConfirm=\{\(\) => cancel\(r\.id\)\}/, "취소는 확인 1회");
+  assert.match(parent, /r\.status === "APPROVED" \? "승인된 신청이에요\. 취소할까요\? 학원에 알려요\."/, "R9: 승인된 건 취소는 묻는 말이 다르다");
+  assert.match(parent, /directionChoice \?\? \(kind \? defaultDirections\(kind, ctx\)/, "R7: 방향 기본값은 그 아이에게 해당하는 쪽만");
+  assert.match(admin, /요일을 고른 변경은 학생 기준 위치는 그대로예요\. 나중에 학생 위치를 저장하면 그 요일도 덮여요\./, "R8");
+  assert.match(admin, /row\.kind === "CHANGE" && row\.weekdays/);
   assert.match(admin, /disabled=\{pending \|\| !rejecting\.note\.trim\(\)\}/, "반려는 사유를 적어야 보낸다");
   assert.match(admin, /승인할까요\? 학부모에게 앱 알림이 갑니다\./);
 });

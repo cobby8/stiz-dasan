@@ -672,7 +672,8 @@ export default function EnrollmentChangesClient({
         {/* 반 추가는 승인하는 순간 수강이 등록된다(적용일을 기다리지 않는다) — 원장이 누르기 전에 알 수 있게 한 줄 */}
         {row.kind === "CLASS_ADD" && row.status === "PENDING" && (
           <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
-            지금 다니는 반은 그대로 · 승인하면 바로 수강이 등록돼요(개시일 {row.effectiveFrom}). 수강료는 청구 준비에서 확인
+            {/* 신청한 시작일이 이미 지났으면 개시일은 승인하는 날(오늘) — 지난 수업이 열리지 않게 */}
+            지금 다니는 반은 그대로 · 승인하면 바로 수강이 등록돼요(개시일 {row.effectiveDateReached ? "오늘" : row.effectiveFrom}). 수강료는 청구 준비에서 확인
           </p>
         )}
 

@@ -300,7 +300,7 @@ function approveHarness(over = {}) {
     request: { studentId: "student-a", studentName: "합성", toClassId: "c-34", effectiveFrom: "2026-12-01" },
     target: { id: "c-34", name: "수 2교시", capacity: 10, activeCount: 9, deleted: false, seasonal: false },
     existing: null,
-    writes: [], events: [],
+    writes: [], events: [], order: [], today: "2026-11-14",
     ...over,
   };
   const tx = {
@@ -311,7 +311,14 @@ function approveHarness(over = {}) {
       }
       if (sql.includes('FROM "Class" c JOIN "Program" p')) {
         assert.match(sql, /FOR UPDATE OF c/);
+        assert.doesNotMatch(sql, /COUNT\(/i, "R3: 잠그는 문장에서 인원을 세지 않는다");
+        state.order.push("lock");
         return state.target ? [state.target] : [];
+      }
+      if (sql.includes('COUNT(*)::int AS n FROM "Enrollment" e JOIN "Student" s')) {
+        assert.match(sql, /e\.status = 'ACTIVE' AND s\."mergedIntoStudentId" IS NULL/, "병합된 학생은 세지 않는다");
+        state.order.push("count");
+        return [{ n: state.target.activeCount }];
       }
       if (sql.startsWith('SELECT id, status FROM "Enrollment"')) return state.existing ? [state.existing] : [];
       if (sql.includes('INSERT INTO "Enrollment"')) {
@@ -327,7 +334,7 @@ function approveHarness(over = {}) {
   };
   const hooks = load("src/lib/operations-events/admin-hooks.ts");
   const api = load("src/lib/enrollment/admin-class-add.ts", {
-    "@/lib/datetime/kst": { ...kst, todayKst: () => "2026-11-14" },
+    "@/lib/datetime/kst": { ...kst, todayKst: () => state.today },
     "@/lib/enrollment/classAddRules": rules,
     "@/lib/operations-events/admin-hooks": hooks,
     "@/lib/operations-events": { enqueueWebsiteOperationsEventInTransaction: async (_tx, event) => { state.events.push(event); } },
@@ -383,6 +390,46 @@ test("③ 이미 그 반에 다니는 중이면 수강은 건드리지 않고 �
   const back = await revived.api.applyApprovedClassAddInTx(revived.tx, { requestId: "request-a", adminUserId: "admin-a" });
   assert.equal(back.enrollmentId, "enrollment-old");
   assert.equal(revived.state.events[0].kind, "RESUME");
+});
+
+test("③ 리뷰 R3·R4·R5·R6: 잠금 뒤에 인원 세기 · 수강 행 칼럼은 관리자 수강 등록과 같은 집합 · 늦은 승인은 실제 개시일로 · 접수 정원도 병합 학생 제외", async () => {
+  // R3: 반 행을 먼저 잠그고(다른 승인이 끝나길 기다린 뒤) 인원을 센다 — 한 문장이면 정원을 1명 넘길 수 있다
+  const { api, state, tx } = approveHarness();
+  await api.applyApprovedClassAddInTx(tx, { requestId: "request-a", adminUserId: "admin-a" });
+  assert.deepEqual(state.order, ["lock", "count"]);
+  // 제때 승인: 신청한 시작일 그대로 → 신청의 시작일 칸을 건드리지 않는다($2 = null → COALESCE 가 원래 값)
+  assert.deepEqual(state.writes.find((w) => w.kind === "request").values, ["request-a", null]);
+
+  // R5: 시작일(11/10)이 지난 뒤 승인(11/14) → 개시일·운영 원장·신청의 시작일 모두 오늘
+  const late = approveHarness({ request: { studentId: "student-a", studentName: "합성", toClassId: "c-34", effectiveFrom: "2026-11-10" } });
+  const done = await late.api.applyApprovedClassAddInTx(late.tx, { requestId: "request-a", adminUserId: "admin-a" });
+  assert.equal(done.startsOn, "2026-11-14");
+  assert.deepEqual(late.state.writes.find((w) => w.kind === "enrollment").values, ["student-a", "c-34", "2026-11-14"]);
+  assert.equal(late.state.events[0].effectiveDate, "2026-11-14");
+  const marked = late.state.writes.find((w) => w.kind === "request");
+  assert.match(marked.sql, /"effectiveFrom" = COALESCE\(\$2::date, "effectiveFrom"\)/);
+  assert.deepEqual(marked.values, ["request-a", "2026-11-14"], "학부모 알림·신청 내역이 읽는 날짜도 실제 개시일");
+  // 알림은 신청 행의 시작일을 읽는다 → 위 UPDATE 뒤라 «11/14부터»로 나간다
+  assert.match(read("src/lib/enrollment/change-decision-notify.ts"), /to_char\(r\."effectiveFrom",'YYYY-MM-DD'\) AS "effectiveFrom"/);
+  assert.match(read("src/app/admin/enrollment-changes/EnrollmentChangesClient.tsx"), /개시일 \{row\.effectiveDateReached \? "오늘" : row\.effectiveFrom\}/);
+
+  // R4: 수강 행 INSERT 의 칼럼 집합이 관리자 수강 등록(enrollStudent)과 같다 — 한쪽에만 칸이 늘면 여기서 걸린다
+  const columnsOf = (source, from) => {
+    const at = source.indexOf('INSERT INTO "Enrollment" (', from);
+    assert.ok(at >= 0, "수강 행 INSERT 를 찾지 못했다");
+    return source.slice(at + 'INSERT INTO "Enrollment" ('.length, source.indexOf(")", at)).split(",").map((c) => c.trim().replaceAll('"', "")).sort();
+  };
+  const adminActions = read("src/app/actions/admin.ts");
+  const enrollColumns = columnsOf(adminActions, adminActions.indexOf("export async function enrollStudent("));
+  const addColumns = columnsOf(read("src/lib/enrollment/admin-class-add.ts"), 0);
+  assert.deepEqual(addColumns, enrollColumns);
+  assert.deepEqual(addColumns, ["classId", "createdAt", "id", "startsOn", "status", "studentId", "updatedAt"]);
+  // 반 이동(같은 모양의 또 다른 등록 경로)도 같은 집합
+  assert.deepEqual(columnsOf(read("src/app/actions/enrollment-admin-edit.ts"), 0), enrollColumns);
+
+  // R6: 접수 때 정원 셈도 병합된 학생 제외(승인과 같은 기준)
+  const parentSrc = read("src/lib/enrollment/parent-class-add.ts");
+  assert.match(parentSrc, /FROM "Enrollment" x JOIN "Student" xs ON xs\.id = x\."studentId"\s+WHERE x\."classId" = c\.id AND x\.status = 'ACTIVE' AND \$\{notMergedStudent\("xs"\)\}\) AS enrolled/);
 });
 
 test("③ 승인 함수 연결: 승인과 같은 트랜잭션·막히면 승인까지 되돌림·적용 건수에 포함(캐시 비움)", () => {

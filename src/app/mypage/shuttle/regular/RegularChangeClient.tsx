@@ -12,6 +12,7 @@ import {
   REGULAR_CHANGE_DIRECTION_LABEL,
   REGULAR_CHANGE_KIND_LABEL,
   REGULAR_CHANGE_NOTE_MAX,
+  defaultDirections,
   koreanMonthDay,
   selectableWeekdays,
   startableWeekdays,
@@ -72,7 +73,8 @@ export default function RegularChangeClient({ initial, presetStudentId = null, a
     initial.children.find((c) => c.studentId === presetStudentId)?.studentId ?? initial.children[0]?.studentId ?? "",
   );
   const [kindChoice, setKindChoice] = useState<RegularChangeKind | null>(null);
-  const [directions, setDirections] = useState<RegularChangeDirection[]>(["PICKUP", "DROPOFF"]);
+  // 고른 방향. null = 아직 손대지 않음 → 그 아이·종류의 기본값(실제 타는 쪽 / 아직 안 타는 쪽)을 쓴다
+  const [directionChoice, setDirectionChoice] = useState<RegularChangeDirection[] | null>(null);
   // 빈 배열 = 모든 요일
   const [weekdays, setWeekdays] = useState<number[]>([]);
   const [pickup, setPickup] = useState<MapLocationData | null>(null);
@@ -112,6 +114,8 @@ export default function RegularChangeClient({ initial, presetStudentId = null, a
   };
   const kinds = kindsFor(child, ctx);
   const kind: RegularChangeKind | null = kindChoice && kinds.includes(kindChoice) ? kindChoice : kinds[0] ?? null;
+  // 등원만 타는 아이에게 «하원 위치»까지 고르게 하면 신청이 거절된다 → 기본은 해당하는 쪽만(2026-11-15 리뷰 R7)
+  const directions: RegularChangeDirection[] = directionChoice ?? (kind ? defaultDirections(kind, ctx) : [...REGULAR_CHANGE_DIRECTIONS]);
   const dayChoices = kind ? selectableWeekdays(kind, ctx, directions) : [];
   // 고른 요일 중 지금 고를 수 있는 것만(종류·방향을 바꾸면 못 고르는 요일이 빠진다)
   const chosenDays = weekdays.filter((w) => dayChoices.includes(w));
@@ -120,7 +124,7 @@ export default function RegularChangeClient({ initial, presetStudentId = null, a
   const locked = hasOpen || submittedFor === child.studentId;
 
   function reset() {
-    setKindChoice(null); setDirections(["PICKUP", "DROPOFF"]); setWeekdays([]);
+    setKindChoice(null); setDirectionChoice(null); setWeekdays([]);
     setPickup(null); setDropoff(null); setNote(""); setConsent(false);
     setEffectiveFrom(initial.minEffectiveFrom);
   }
@@ -149,11 +153,9 @@ export default function RegularChangeClient({ initial, presetStudentId = null, a
   }
 
   function toggleDirection(direction: RegularChangeDirection) {
-    setDirections((current) => {
-      const next = current.includes(direction) ? current.filter((d) => d !== direction) : [...current, direction];
-      // 하나는 남긴다(둘 다 끄면 바꿀 것이 없다)
-      return next.length === 0 ? current : REGULAR_CHANGE_DIRECTIONS.filter((d) => next.includes(d));
-    });
+    const next = directions.includes(direction) ? directions.filter((d) => d !== direction) : [...directions, direction];
+    // 하나는 남긴다(둘 다 끄면 바꿀 것이 없다)
+    if (next.length > 0) setDirectionChoice(REGULAR_CHANGE_DIRECTIONS.filter((d) => next.includes(d)));
   }
 
   function submit() {
@@ -230,7 +232,8 @@ export default function RegularChangeClient({ initial, presetStudentId = null, a
                 {r.canCancel && (
                   <InlineConfirm
                     label="신청 취소"
-                    question="이 신청을 취소할까요?"
+                    // 승인된 건은 적용 시작일 전까지만 취소할 수 있다(서버가 다시 확인) — 취소하면 학원에 알린다
+                    question={r.status === "APPROVED" ? "승인된 신청이에요. 취소할까요? 학원에 알려요." : "이 신청을 취소할까요?"}
                     confirmLabel="신청 취소"
                     onConfirm={() => cancel(r.id)}
                     pending={pending}
@@ -286,7 +289,7 @@ export default function RegularChangeClient({ initial, presetStudentId = null, a
           {kinds.length > 1 && (
             <div className="grid grid-cols-3 gap-2">
               {kinds.map((value) => (
-                <button key={value} type="button" aria-pressed={kind === value} onClick={() => { setKindChoice(value); setWeekdays([]); }} className="academy-choice break-keep px-1!">
+                <button key={value} type="button" aria-pressed={kind === value} onClick={() => { setKindChoice(value); setDirectionChoice(null); setWeekdays([]); }} className="academy-choice break-keep px-1!">
                   {REGULAR_CHANGE_KIND_LABEL[value]}
                 </button>
               ))}
