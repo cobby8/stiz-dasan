@@ -315,7 +315,8 @@ test("수업 리포트 목록은 KST 달별 묶음·한 줄 행(주제·날짜 �
       getGalleryByClassIds: async () => [],
     },
     "@/components/pwa/HideInInstalledApp": { default: ({ children }) => children },
-    "@/components/pwa/AppSafeLink": { default: Link },
+    // 2026-11-14 c4: 사진 타일은 앱 안 크게 보기 부품으로(이 테스트는 리포트 목록만 본다)
+    "@/components/parent/FeedPhotoGallery": { default: () => null },
     // 오늘을 고정 — 3개월 지난 공지 숨김이 실행 날짜에 따라 달라지지 않게
     "@/lib/datetime/kst": { ...kst, todayKst: () => "2026-11-09" },
     "@/lib/mypage/parentSchedule": parentSchedule,

@@ -213,3 +213,51 @@ export function recentNotices<T extends { createdAt: Date | string; isPinned?: b
     });
     return [...kept.filter((n) => n.isPinned), ...kept.filter((n) => !n.isPinned)];
 }
+
+// ── 연간 일정 한눈에 보기(/mypage/annual, 2026-11-14 원장 결정표 c10) ─────────────────
+
+/** 주소의 ?year= 를 읽는다. 숫자 4자리(2000~2100)가 아니면 오늘(KST)의 해 */
+export function parseYearParam(raw: unknown, todayYmd: string): number {
+    const text = typeof raw === "string" ? raw.trim() : "";
+    const year = /^\d{4}$/.test(text) ? Number(text) : NaN;
+    return year >= 2000 && year <= 2100 ? year : Number(todayYmd.slice(0, 4));
+}
+
+export type ParentYearMonth = { month: string; events: ScheduleEventRow[] };
+
+/**
+ * 한 해 12달의 행사·휴무 목록.
+ * 달마다 «일정» 탭 달력과 같은 함수(buildParentMonth)로 뽑는다 — 같은 원본·같은 규칙(주차 표시 제외·같은 날 같은 제목 한 번)이라
+ * 달력에서 본 줄과 연간 화면의 줄이 어긋나지 않는다. 여러 달에 걸친 일정(방학)은 걸친 달마다 보인다.
+ */
+export function buildParentYear(events: PlanEvent[], year: number): ParentYearMonth[] {
+    return Array.from({ length: 12 }, (_, index) => {
+        const month = `${year}-${String(index + 1).padStart(2, "0")}`;
+        const view = buildParentMonth({ month, todayYmd: `${month}-01`, events, classDates: [], attendance: [] });
+        return { month, events: view.events };
+    });
+}
+
+// ── 지난 공지(/mypage/news, 2026-11-14 원장 결정표 c10) ───────────────────────────────
+
+export type ListPage<T> = { items: T[]; page: number; totalPages: number; total: number };
+
+/**
+ * 목록을 쪽으로 나눈다. 쪽 번호가 범위를 벗어나면(0·음수·끝 다음·글자) 가장 가까운 쪽으로 붙인다 —
+ * 오래된 링크로 들어와도 빈 화면이 아니라 마지막 쪽이 보인다. 한 건도 없으면 1쪽·빈 목록.
+ */
+export function paginateList<T>(list: readonly T[], rawPage: unknown, size: number): ListPage<T> {
+    const pageSize = Math.max(1, Math.trunc(size));
+    const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
+    const text = String(rawPage ?? "").trim();
+    const asked = /^\d+$/.test(text) ? Number(text) : 1;
+    const page = Math.min(Math.max(1, asked), totalPages);
+    return { items: list.slice((page - 1) * pageSize, page * pageSize), page, totalPages, total: list.length };
+}
+
+/** 공지가 이 학부모에게 보이는가 — 전체 공지이거나, 우리 아이 반을 대상으로 한 반 공지(공지 상세 /mypage/news/[id] 와 같은 기준) */
+export function noticeVisibleToClasses(notice: { targetType: string; targetClassIds: string[] }, classIds: ReadonlySet<string>): boolean {
+    if (notice.targetType === "ALL") return true;
+    if (notice.targetType !== "CLASS") return false;
+    return notice.targetClassIds.some((id) => classIds.has(id));
+}

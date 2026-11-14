@@ -15,7 +15,7 @@ export const PARENT_TABS = [
     {
         href: "/mypage/classes",
         label: "수업",
-        also: ["/mypage/history", "/mypage/regular-absence", "/mypage/makeup", "/mypage/seasonal", "/mypage/shuttle", "/mypage/enrollment-change"],
+        also: ["/mypage/history", "/mypage/regular-absence", "/mypage/makeup", "/mypage/seasonal", "/mypage/shuttle", "/mypage/enrollment-change", "/mypage/annual"],
     },
     { href: "/mypage/payments", label: "청구", also: [] as string[] },
     { href: "/mypage/reports", label: "소식", also: ["/mypage/news"] },

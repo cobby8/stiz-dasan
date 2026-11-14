@@ -240,6 +240,12 @@ export default function ScheduleHub({
             {/* 한 달 달력 — 수업일(연한 칸) · 출결(점·고리·×) · 행사(별) · 휴무(회색 «휴») · 오늘(굵은 테두리) */}
             <MonthCalendar view={view} />
 
+            {/* 연간 일정 한눈에 보기 — 늘 보이는 한 줄(앱 안 화면 /mypage/annual, 2026-11-14 c10). 보고 있는 달의 해로 연다 */}
+            <Link href={`/mypage/annual?year=${view.month.slice(0, 4)}`} className="academy-panel flex min-h-11 items-center justify-between gap-2 px-3 py-2 text-sm hover:bg-[var(--color-academy-soft)]">
+                <span className="font-medium text-[var(--color-academy-ink)]">연간 일정</span>
+                <span aria-hidden="true" className="text-[var(--color-academy-faint)]">›</span>
+            </Link>
+
             {/* 이 달 행사·휴무 — 한 줄 행(날짜 · 제목). 행사·휴무가 없는 달은 칸째 그리지 않는다(2026-11-14 원장 결정 d7) */}
             {view.events.length > 0 && (
                 <section aria-labelledby="schedule-events-heading" className="academy-panel overflow-hidden">

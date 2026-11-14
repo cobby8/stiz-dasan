@@ -31,7 +31,10 @@ test("학부모 앱의 로고는 공개 홈페이지가 아니라 앱 홈으로 
 
 // 공지·사진은 2026-11-09 홈에서 «소식» 탭(/mypage/reports)으로 옮겼다 — 같은 약속을 그 화면에서 지킨다.
 test("학부모 앱의 공개 홈페이지 길잡이는 설치 앱에서 감춘다", () => {
-  for (const href of ["/notices", "/gallery"]) {
+  // 2026-11-14 c10: 공지 «전체보기»(공개 /notices)는 앱 안 «지난 공지»(/mypage/news)로 바뀌어 감출 것이 없다 — 사진 «전체보기»만 남는다
+  assert.doesNotMatch(newsPage, /href="\/notices"/);
+  assert.match(newsPage, /<Link href="\/mypage\/news" className="academy-button-text">지난 공지<\/Link>/);
+  for (const href of ["/gallery"]) {
     assert.match(
       newsPage,
       new RegExp(`<HideInInstalledApp>[\\s\\S]{0,200}href="${href}"[\\s\\S]{0,200}</HideInInstalledApp>`),
@@ -43,10 +46,11 @@ test("학부모 앱의 공개 홈페이지 길잡이는 설치 앱에서 감춘�
   assert.doesNotMatch(newsPage + mypageClient, /href=\{`\/notices\/\$\{n\.id\}`\}/);
 });
 
-test("사진 타일은 감추지 않고 이동만 막는다", () => {
-  // 감추면 수업 사진이 통째로 사라진다. 내용은 남기고 이동만 막아야 한다.
-  assert.match(newsPage, /<AppSafeLink key=\{g\.id\} href="\/gallery"/);
+test("사진 타일은 감추지 않고 앱 안에서 크게 본다(공개 갤러리로 보내지 않는다)", () => {
+  // 2026-11-14 c4: 예전엔 이동만 막아(AppSafeLink) 설치 앱에서 타일이 눌리지 않았다 → 같은 화면 안 크게 보기(FeedPhotoGallery)
+  assert.match(newsPage, /<FeedPhotoGallery photos=\{photos\} \/>/);
   assert.doesNotMatch(newsPage, /<Link key=\{g\.id\} href="\/gallery"/);
+  assert.doesNotMatch(newsPage, /<AppSafeLink/);
 });
 
 test("선생님 앱의 홈 버튼은 /staff 로 간다", () => {

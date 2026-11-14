@@ -6,9 +6,10 @@ import { kstLabel, formatKstDate, todayKst } from "@/lib/datetime/kst";
 // 공지 3개월 기준 — 일정 탭과 같은 순수 함수 모듈(KST 달력 날짜로 비교)
 import { recentNotices } from "@/lib/mypage/parentSchedule";
 // 설치된 학부모 앱은 /mypage 밖으로 나가면 돌아올 길이 없다 — 공개 홈페이지 길잡이는 감추고(HideInInstalledApp),
-// 사진처럼 링크가 곧 내용인 자리는 이동만 막는다(AppSafeLink).
+// 수업 사진은 공개 갤러리로 보내지 않고 이 화면 안에서 크게 본다(FeedPhotoGallery — 2026-11-14 c4).
 import HideInInstalledApp from "@/components/pwa/HideInInstalledApp";
-import AppSafeLink from "@/components/pwa/AppSafeLink";
+// 수업 사진 «크게 보기» — 소식 상세와 같은 부품(앱 안에서 연다. 저장 버튼은 없다)
+import FeedPhotoGallery from "@/components/parent/FeedPhotoGallery";
 // 달별 묶음 — 서버(UTC)에서 toLocaleDateString 을 쓰면 한국 자정 수업이 전날로 찍혀서 KST 모듈 기반 공용 함수를 쓴다
 import { groupByKstMonth } from "@/components/admin/list/monthDateGroups";
 // 행마다 «사진 n · 영상 n» — 상세 화면이 실제로 보여 주는 것과 같은 개수(수업 피드 공용 조회)
@@ -83,12 +84,19 @@ export default async function ParentReportsPage() {
     // 공지(2026-11-09 원장 지시): 3개월 넘은 공지는 숨기고, 처음엔 3개만 — 나머지는 «더보기»로 펼친다
     const notices = recentNotices(allNotices, todayKst());
     const NOTICE_FIRST = 3;
-    // 사진 묶음마다 첫 장만 타일로(홈에서 쓰던 방식 그대로)
-    const photos = gallery.flatMap((g: { id: string; title: string | null; mediaJSON: string }) => {
+    // 수업 사진(2026-11-14 c4) — 설치 앱에서는 타일이 눌리지 않았다(공개 갤러리가 앱 범위 밖이라 이동을 막아 둠).
+    // 이제 묶음의 사진을 모두 바둑판으로 보이고, 누르면 이 화면 안에서 크게 본다. 영상만 있는 묶음은 첫 장면 타일로 남긴다.
+    // 화면이 끝없이 길어지지 않게 사진은 30장까지(최신 묶음부터).
+    const PHOTO_LIMIT = 30;
+    const galleryMedia = gallery.map((g: { id: string; title: string | null; mediaJSON: string }) => {
         let media: { url: string; type: string }[] = [];
         try { media = JSON.parse(g.mediaJSON); } catch {}
-        return media[0] ? [{ id: g.id, title: g.title, first: media[0] }] : [];
+        return { id: g.id, title: g.title, media: Array.isArray(media) ? media.filter((m) => m && typeof m.url === "string" && m.url) : [] };
     });
+    const photos = [...new Set(galleryMedia.flatMap((g) => g.media.filter((m) => m.type === "image").map((m) => m.url)))]
+        .slice(0, PHOTO_LIMIT)
+        .map((src) => ({ src }));
+    const videoOnly = galleryMedia.flatMap((g) => (g.media.length > 0 && g.media.every((m) => m.type !== "image") ? [{ id: g.id, url: g.media[0].url }] : []));
 
     // 맨 위 칩 = 같은 화면 안의 칸으로 이동(접힌 칸 없음). 건수가 0 인 칸은 칩도 칸도 숨긴다.
     // 칩 이름은 짧게 — 좁은 휴대폰(360px)에서도 칩 4개가 한 줄에 들어가게(칸 제목은 그대로)
@@ -96,7 +104,7 @@ export default async function ParentReportsPage() {
         { id: "news-notices", label: "공지", count: notices.length },
         { id: "news-reports", label: "리포트", count: reports.length },
         { id: "news-feedback", label: "피드백", count: feedbacks.length },
-        { id: "news-photos", label: "사진", count: photos.length },
+        { id: "news-photos", label: "사진", count: photos.length + videoOnly.length },
     ].filter((s) => s.count > 0 || s.id === "news-reports");
 
     // 공지 한 줄 행 — 처음 3개와 «더보기» 안의 나머지가 같은 모양
@@ -137,9 +145,8 @@ export default async function ParentReportsPage() {
                 <section id="news-notices" aria-labelledby="news-notices-heading" className="scroll-mt-24 overflow-hidden rounded-2xl border border-[var(--color-academy-line)] bg-white">
                     <h2 id="news-notices-heading" className="academy-section-title flex items-center justify-between bg-[var(--color-academy-soft)] px-3 py-1.5">
                         <span>학원 공지</span>
-                        <HideInInstalledApp>
-                            <Link href="/notices" className="academy-button-text">전체보기</Link>
-                        </HideInInstalledApp>
+                        {/* 3개월 넘은 공지·10건 밖의 공지는 «지난 공지» 화면에서(앱 안 /mypage/news — 2026-11-14 c10) */}
+                        <Link href="/mypage/news" className="academy-button-text">지난 공지</Link>
                     </h2>
                     <ul className="divide-y divide-[var(--color-academy-line)]">
                         {notices.slice(0, NOTICE_FIRST).map((n) => noticeRow(n))}
@@ -157,6 +164,14 @@ export default async function ParentReportsPage() {
                         </details>
                     )}
                 </section>
+            )}
+
+            {/* 최근 공지가 없어 위 칸이 안 보일 때도 지난 공지로 가는 길은 남긴다 */}
+            {notices.length === 0 && (
+                <Link href="/mypage/news" className="academy-panel flex min-h-11 items-center justify-between gap-2 px-3 py-2 text-sm hover:bg-[var(--color-academy-soft)]">
+                    <span className="font-medium text-[var(--color-academy-ink)]">지난 공지</span>
+                    <span aria-hidden="true" className="text-[var(--color-academy-faint)]">›</span>
+                </Link>
             )}
 
             <h2 id="news-reports" className="academy-section-title scroll-mt-24 px-1">수업 리포트</h2>
@@ -245,8 +260,8 @@ export default async function ParentReportsPage() {
                 </section>
             )}
 
-            {/* 수업 사진 — 묶음마다 첫 장. 설치 앱에서는 공개 갤러리로 나가지 않게 이동만 막는다 */}
-            {photos.length > 0 && (
+            {/* 수업 사진 — 누르면 이 화면 안에서 크게 본다(설치 앱에서도 눌린다). 사진·영상 저장 버튼은 두지 않는다(원장 결정) */}
+            {photos.length + videoOnly.length > 0 && (
                 <section id="news-photos" aria-labelledby="news-photos-heading" className="scroll-mt-24">
                     <div className="mb-2 flex items-center justify-between px-1">
                         <h2 id="news-photos-heading" className="academy-section-title">수업 사진</h2>
@@ -254,19 +269,17 @@ export default async function ParentReportsPage() {
                             <Link href="/gallery" className="academy-button-text">전체보기</Link>
                         </HideInInstalledApp>
                     </div>
-                    <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-                        {photos.map((g) => (
-                            <AppSafeLink key={g.id} href="/gallery"
-                                className="relative aspect-square overflow-hidden rounded-xl bg-[var(--color-academy-soft)]">
-                                {g.first.type === "image" ? (
-                                    // eslint-disable-next-line @next/next/no-img-element
-                                    <img src={g.first.url} alt={g.title || "수업 사진"} loading="lazy" className="h-full w-full object-cover" />
-                                ) : (
-                                    <video src={g.first.url} className="h-full w-full object-cover" muted />
-                                )}
-                            </AppSafeLink>
-                        ))}
-                    </div>
+                    <FeedPhotoGallery photos={photos} />
+                    {/* 영상만 있는 묶음 — 첫 장면만(예전 타일과 같은 모양·누르는 동작 없음) */}
+                    {videoOnly.length > 0 && (
+                        <div className="mt-1.5 grid grid-cols-3 gap-1.5">
+                            {videoOnly.map((v) => (
+                                <span key={v.id} className="relative block aspect-square overflow-hidden rounded-lg bg-[var(--color-academy-soft)]">
+                                    <video src={v.url} className="h-full w-full object-cover" muted playsInline preload="metadata" controlsList="nodownload" disablePictureInPicture />
+                                </span>
+                            ))}
+                        </div>
+                    )}
                 </section>
             )}
         </div>
