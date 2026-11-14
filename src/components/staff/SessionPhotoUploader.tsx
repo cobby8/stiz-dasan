@@ -5,6 +5,7 @@ import Image from "next/image";
 import { SESSION_IMAGE_ALLOWED_TYPES } from "@/lib/clientImageCompression";
 import { uploadImagesWithProgress } from "@/lib/clientImageUpload";
 import { userErrorMessage } from "@/components/staff/userErrorMessage";
+import { fetchWithTimeout } from "@/components/staff/fetchWithTimeout";
 
 type ManagedPhoto = {
   id: string;
@@ -14,9 +15,13 @@ type ManagedPhoto = {
 };
 
 /** 바깥 버튼(수업 화면 아래 [사진]·[갤러리])이 이 부품의 올리기를 부를 때 쓰는 손잡이(2026-11-15) */
-export type SessionPhotoUploaderHandle = { upload: (files: File[]) => void };
+export type SessionPhotoUploaderHandle = { upload: (files: File[]) => void; reload: () => void };
 /** 바깥 버튼이 잠금·진행 문구를 맞추는 데 쓰는 상태 */
-export type SessionUploaderState = { busy: boolean; canUpload: boolean; count: number; message: string; windowMessage: string | null };
+export type SessionUploaderState = {
+  busy: boolean; canUpload: boolean; count: number; message: string; windowMessage: string | null;
+  /** 목록을 한 번이라도 다 읽었는가 · 읽지 못했을 때의 문구 — 바깥 버튼이 «왜 안 눌리는지» 보이는 데 쓴다 */
+  loaded: boolean; loadError: string;
+};
 
 /** 한 번에 고를 수 있는 사진 수(예전과 같은 10장) */
 const PHOTO_PICK_LIMIT = 10;
@@ -53,9 +58,22 @@ export function SessionPhotoUploader({
   // 마지막 올리기에서 실패한 파일 — «실패한 n장 다시 올리기» 버튼에 쓴다
   const [failedFiles, setFailedFiles] = useState<File[]>([]);
   const [retryDelete, setRetryDelete] = useState<ManagedPhoto | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState("");
+
+  // 화면이 사라지면 진행 중인 목록 조회를 끊는다
+  const unmountRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    unmountRef.current = controller;
+    return () => controller.abort();
+  }, []);
+  // 실패 문구로 칸 안에 띄운 글 — «다시 시도»가 성공하면 지운다
+  const failedTextRef = useRef("");
 
   const loadPhotos = useCallback(async () => {
-    const response = await fetch(`/api/staff/sessions/${encodeURIComponent(sessionId)}/photos`, { cache: "no-store" });
+    // 10초 안에 답이 없으면 실패로 떨어뜨린다(멈춘 조회 때문에 «준비 중…»에 머물지 않게)
+    const response = await fetchWithTimeout(`/api/staff/sessions/${encodeURIComponent(sessionId)}/photos`, { cache: "no-store" }, { signal: unmountRef.current?.signal });
     const body = await response.json().catch(() => ({})) as { photos?: ManagedPhoto[]; canUpload?: boolean; windowMessage?: string | null; error?: string };
     if (!response.ok) throw new Error(body.error || "사진 목록을 불러오지 못했습니다.");
     setPhotos(body.photos || []);
@@ -65,10 +83,30 @@ export function SessionPhotoUploader({
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void loadPhotos().catch((error) => setMessage(userErrorMessage(error, "사진 목록을 불러오지 못했습니다.")));
+      reloadRef.current();
     }, 0);
     return () => window.clearTimeout(timer);
   }, [loadPhotos]);
+
+  // 목록 읽기(처음 + «다시 시도») — 실패하면 바깥 버튼 옆에도 보이게 따로 적어 둔다
+  function reload() {
+    setLoadError("");
+    void loadPhotos().then(() => {
+      setLoaded(true);
+      // 앞서 실패해 띄운 문구가 그대로 남아 있으면 지운다(그사이 다른 안내로 바뀌었으면 둔다)
+      const failedText = failedTextRef.current;
+      failedTextRef.current = "";
+      if (failedText) setMessage((current) => (current === failedText ? "" : current));
+    }).catch((error) => {
+      if (unmountRef.current?.signal.aborted) return; // 화면이 사라져 끊은 것
+      const text = userErrorMessage(error, "사진 목록을 불러오지 못했습니다.");
+      failedTextRef.current = text;
+      setMessage(text);
+      setLoadError(text);
+    });
+  }
+  const reloadRef = useRef(reload);
+  useEffect(() => { reloadRef.current = reload; });
 
   async function upload(files: FileList | File[] | null) {
     const list = files ? Array.from(files) : [];
@@ -131,12 +169,12 @@ export function SessionPhotoUploader({
   // 바깥 버튼용: 같은 upload 함수를 그대로 부른다(압축·장수 제한·실패분 다시 올리기 모두 기존 로직)
   const uploadRef = useRef(upload);
   useEffect(() => { uploadRef.current = upload; });
-  useImperativeHandle(ref, () => ({ upload: (files: File[]) => void uploadRef.current(files) }), []);
+  useImperativeHandle(ref, () => ({ upload: (files: File[]) => void uploadRef.current(files), reload: () => reloadRef.current() }), []);
   useEffect(() => {
-    onStateChange?.({ busy, canUpload, count: photos.length, message, windowMessage });
+    onStateChange?.({ busy, canUpload, count: photos.length, message, windowMessage, loaded, loadError });
     // onStateChange 는 부모의 setState 를 그대로 받는다(매 렌더 새 함수여도 값이 같으면 다시 그리지 않는다)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [busy, canUpload, photos.length, message, windowMessage]);
+  }, [busy, canUpload, photos.length, message, windowMessage, loaded, loadError]);
 
   return (
     <div className="space-y-3">

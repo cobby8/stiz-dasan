@@ -276,7 +276,8 @@ test("④ 설정 화면: 원장 목록 항목 + 예전 ⋯ 메뉴 항목이 전�
   assert.match(page, /<Section title="계정">\s*<LinkRow href="\/account" label="내 계정" \/>\s*\{hasPasswordLogin && <PasswordRow \/>\}\s*<LinkRow href="\/mypage\/login-methods" label="간편로그인 연결" \/>/);
   assert.doesNotMatch(page, /\/mypage\/roles/, "역할 추가 신청은 링크하지 않는다(d4)");
   // 앱 정보: 앱 버전만 — 배포 번호(«화면 xxxxxxx»)는 보이지 않는다
-  assert.match(page, /\{version\.app && \(\s*<li className=\{ROW\}>/);
+  // (2026-11-15 버전 줄이 «최신 버전입니다/업데이트»를 붙이는 부품이 됐다 — 앱 버전이 있을 때만 보이는 것은 그대로)
+  assert.match(page, /\{version\.app && \(\s*<AppVersionRow appLabel=\{version\.app\} \/>/);
   assert.doesNotMatch(page, /version\.web/);
   // 종류별 스위치는 학부모 계정에만 보인다(발송 쪽 PARENT 한정과 같은 기준)
   assert.match(page, /prefsAvailable=\{pushPrefs\.available && me\?\.role === "PARENT"\}/);

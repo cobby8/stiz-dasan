@@ -9,11 +9,11 @@ import { profilePhotoUrl } from "@/lib/profilePhoto/rules";
 import { LessonTextEditor, type LessonTextSaveResult } from "@/components/staff/LessonTextEditor";
 import { RosterPersonInfo, useClassPeople } from "@/components/staff/RosterPersonInfo";
 import { SessionPhotoUploader } from "@/components/staff/SessionPhotoUploader";
-import { SessionVideoUploader } from "@/components/staff/SessionVideoUploader";
+import { SessionVideoUploader, type SessionVideoUploaderState } from "@/components/staff/SessionVideoUploader";
 import { StatusPill } from "@/components/staff/StatusChoiceButton";
 import { CompletedAttendanceRoster } from "@/components/staff/CompletedAttendanceRoster";
 import { WorkspaceSection } from "@/components/staff/WorkspaceSection";
-import { attendanceSummaryLine, resolveLessonText } from "@/components/staff/sessionWorkspaceRules";
+import { attendanceSummaryLine, mediaBlockReason, resolveLessonText } from "@/components/staff/sessionWorkspaceRules";
 import type { StaffSessionDetail, StaffSessionStudent } from "@/lib/staff-session-queries";
 import { kstLabel } from "@/lib/datetime/kst";
 import { staffReloginHref } from "@/lib/staff-session-rules";
@@ -216,6 +216,9 @@ export function CompletedSessionPanel({ session, students: initialStudents, onLi
   const [text, setText] = useState(initial.value);
   const [prefilled, setPrefilled] = useState(initial.prefilledFromPlan);
   const [open, setOpen] = useState({ lesson: true, roster: false, media: false, memo: false });
+  // 2026-11-15 원장 점검: 영상을 올릴 수 없는 이유(기간 지남·목록 읽기 실패)를 «사진·영상» 칸을 펼치지 않아도 머리줄에서 알 수 있게
+  const [videoState, setVideoState] = useState<SessionVideoUploaderState | null>(null);
+  const videoBlock = videoState && (videoState.loaded || videoState.loadError) ? mediaBlockReason("video", videoState) : null;
   const [rosterWanted, setRosterWanted] = useState(false);
   const [infoRow, setInfoRow] = useState<string | null>(null);
   const people = useClassPeople({ classId: session.classId, sessionId: session.id, sessionDateId: session.sessionDateId, enabled: rosterWanted });
@@ -354,7 +357,7 @@ export function CompletedSessionPanel({ session, students: initialStudents, onLi
         />
       </WorkspaceSection>
 
-      <WorkspaceSection id={`done-media-${session.id}`} title="사진·영상" summary={editable ? `수업 뒤 ${STAFF_SESSION_EDIT_DAYS}일 동안 올리고 지울 수 있어요` : "올린 사진·영상"} open={open.media} onToggle={() => setOpen((current) => ({ ...current, media: !current.media }))}>
+      <WorkspaceSection id={`done-media-${session.id}`} title="사진·영상" summary={videoBlock ? `영상: ${videoBlock.text}` : editable ? `수업 뒤 ${STAFF_SESSION_EDIT_DAYS}일 동안 올리고 지울 수 있어요` : "올린 사진·영상"} open={open.media} onToggle={() => setOpen((current) => ({ ...current, media: !current.media }))}>
         <div className="space-y-4">
           <div>
             <h3 className="mb-2 text-sm font-semibold text-[var(--color-academy-ink)]">수업 사진</h3>
@@ -362,7 +365,7 @@ export function CompletedSessionPanel({ session, students: initialStudents, onLi
           </div>
           <div>
             <h3 className="mb-2 text-sm font-semibold text-[var(--color-academy-ink)]">수업 영상</h3>
-            <SessionVideoUploader sessionId={session.id} />
+            <SessionVideoUploader sessionId={session.id} onStateChange={setVideoState} />
           </div>
         </div>
       </WorkspaceSection>

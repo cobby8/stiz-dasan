@@ -333,7 +333,7 @@ test("한 줄 저장 — 권한 함수 + 기간 조건(시작 전 당일·그 �
   assert.match(home, /savePlanned: \(text\) => savePlanned\(lesson, text\),/);
   assert.match(home, /onLineSaved=\{\(content\) => patchLesson\(lesson\.scheduleKey, \{ content \}\)\}/);
   const panels = read("src/components/staff/LessonWorkspacePanels.tsx");
-  assert.match(panels, /export function CompletedSessionPanel[\s\S]*?saveSessionFeedLine\(\{ sessionId: session\.id, content: value \}\)[\s\S]*?<SessionPhotoUploader sessionId=\{session\.id\} \/>[\s\S]*?<SessionVideoUploader sessionId=\{session\.id\} \/>/);
+  assert.match(panels, /export function CompletedSessionPanel[\s\S]*?saveSessionFeedLine\(\{ sessionId: session\.id, content: value \}\)[\s\S]*?<SessionPhotoUploader sessionId=\{session\.id\} \/>[\s\S]*?<SessionVideoUploader sessionId=\{session\.id\} onStateChange=\{setVideoState\} \/>/); // 2026-11-15 원장 점검: 영상이 막힌 이유를 머리줄에 보이려고 상태를 받는다
 });
 
 test("동의 UI 제거 — 학생 상세 링크·동의 화면·등록 창 질문이 없다(기록 표는 그대로)", () => {

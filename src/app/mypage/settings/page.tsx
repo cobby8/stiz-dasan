@@ -12,6 +12,8 @@ import { readPushPrefs } from "@/lib/parent-notification-preferences";
 import { formatPhoneInput } from "@/lib/application-display-format";
 import { FONT_SCALE_COOKIE, parseFontScale, SHOW_THEME_SETTING } from "@/lib/mypage/parentSettings";
 import { appVersionLabels } from "@/lib/storeApp";
+// 버전 줄 — 스토어 최신 버전과 견줘 «최신 버전입니다» / «새 버전 + 업데이트»를 보인다(맨 위 배너와 같은 판정, 2026-11-15)
+import AppVersionRow from "@/components/storeApp/AppVersionRow";
 import { readPreferredPaymentMethod } from "@/lib/payments/preferredMethodStore";
 import { NameRow, PasswordRow, NotificationRows, FontScaleRow, PaymentMethodRow, MyPhotoRow } from "./SettingsClient";
 import { profilePhotoUpdatedAtSql, profilePhotoVersion } from "@/lib/profilePhoto/rules";
@@ -182,10 +184,7 @@ export default async function ParentSettingsPage() {
             <Section title="앱 정보">
                 {/* 앱 버전만 보인다 — 배포 번호(«화면 xxxxxxx»)는 학부모에게 뜻 없는 값이라 뺐다. 브라우저(앱 버전 없음)면 줄째 숨김 */}
                 {version.app && (
-                    <li className={ROW}>
-                        <span className="flex-1 font-medium text-[var(--color-academy-ink)]">버전</span>
-                        <span className="shrink-0 tabular-nums text-[var(--color-academy-muted)]">{version.app}</span>
-                    </li>
+                    <AppVersionRow appLabel={version.app} />
                 )}
                 <LinkRow href="/terms" label="이용약관" />
                 <LinkRow href="/privacy" label="개인정보처리방침" />

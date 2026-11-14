@@ -209,3 +209,43 @@ export function planGalleryUpload<T>(input: {
     blocked: blocked.join(" "),
   };
 }
+
+type MediaSideState = {
+  busy: boolean;
+  canUpload: boolean;
+  windowMessage: string | null;
+  /** 목록(올릴 수 있는지 포함)을 한 번이라도 다 읽었는가 */
+  loaded: boolean;
+  /** 목록을 읽지 못했을 때의 문구(없으면 빈 문자열) */
+  loadError: string;
+} | null;
+
+/**
+ * 아래 막대의 [사진]·[동영상]이 «눌리지 않는 이유» 한 줄(2026-11-15 원장 점검 — 회색 버튼인데 이유가 안 보였다).
+ * - 아직 읽는 중 → «준비 중…» · 읽기 실패 → 안내 + 다시 시도 · 올릴 수 없는 기간 등 → 서버가 준 이유(없으면 기본 문구)
+ * - 올릴 수 있거나 올리는 중이면 null(올리는 중 표시는 진행 줄이 따로 한다)
+ */
+export function mediaBlockReason(kind: "photo" | "video", state: MediaSideState): { text: string; retry: boolean } | null {
+  const label = kind === "photo" ? "사진" : "영상";
+  if (state?.loadError) {
+    // 서버가 준 이유(로그인 만료·권한 없음·잠시 뒤 다시 등)가 있으면 그대로 보인다. 없을 때만 고정 문구.
+    const text = state.loadError.trim() || `${label} 정보를 불러오지 못했어요.`;
+    // 다시 로그인해야 풀리는 문제·권한 문제는 «다시 시도»가 헛돈다 → 버튼을 붙이지 않는다
+    return { text, retry: !/로그인|권한/.test(text) };
+  }
+  if (!state || !state.loaded) return { text: `${label} 올리기 준비 중…`, retry: false };
+  if (state.busy || state.canUpload) return null;
+  return { text: state.windowMessage?.trim() || `${label}은 지금 올릴 수 없어요.`, retry: false };
+}
+
+/** 본문의 기존 아래 여백이 감당하는 막대 높이(버튼 한 줄 + 안내 한 줄쯤) */
+export const MEDIA_BAR_BASE_HEIGHT_PX = 100;
+
+/**
+ * 아래 고정 막대가 안내 줄(옛 앱 업데이트·조회 실패 등)로 높아졌을 때 본문 끝에 «더» 띄울 높이(px).
+ * 기본 높이까지는 기존 여백이 감당하고, 넘는 만큼만 더한다. 아직 재지 못했으면(0) 더하지 않는다.
+ */
+export function mediaBarExtraSpace(barHeightPx: number): number {
+  if (!Number.isFinite(barHeightPx) || barHeightPx <= 0) return 0;
+  return Math.max(0, Math.ceil(barHeightPx) - MEDIA_BAR_BASE_HEIGHT_PX);
+}
