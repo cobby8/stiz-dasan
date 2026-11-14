@@ -34,6 +34,7 @@ const MESSAGES: Record<string, string> = {
   PERIOD_TOO_LONG: `오늘부터 ${WEEKS}주가 넘으면 휴원 신청을 이용해 주세요.`,
   PERIOD_NO_DATES: "이 기간에 알릴 수업이 없습니다. 날짜를 다시 확인해 주세요.",
   PERIOD_OVERLAP: "이미 알린 기간과 날짜가 겹칩니다. 그 기간을 먼저 «복귀했어요» 또는 «알림 취소»로 정리해 주세요.",
+  PERIOD_OVERLAP_ADMIN: "학원에 등록된 결석 기간과 겹쳐요. 학원에 문의해 주세요.",
   PERIOD_NOT_FOUND: "알린 기간을 찾을 수 없습니다.",
   PERIOD_ALREADY_CLOSED: "이미 끝났거나 취소된 기간입니다.",
   PERIOD_RETURN_PAST: "복귀일은 오늘부터 고를 수 있습니다.",
@@ -51,7 +52,7 @@ function failure(error: unknown, where: string) {
   return NextResponse.json(
     { error: known || "처리에 실패했습니다. 잠시 후 다시 시도해 주세요.", code: known ? code : undefined, tooLong: code === "PERIOD_TOO_LONG" || undefined,
       // 화면이 글만 두지 않고 전화·문의 버튼을 함께 보인다
-      needContact: code === "PERIOD_DAILY_LIMIT" || undefined },
+      needContact: code === "PERIOD_DAILY_LIMIT" || code === "PERIOD_OVERLAP_ADMIN" || undefined },
     { status: known ? 409 : 500, headers: noStore },
   );
 }

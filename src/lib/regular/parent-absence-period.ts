@@ -189,12 +189,16 @@ export async function createParentAbsencePeriod(
 
     // 같은 아이의 살아 있는 기간(학부모·관리자 모두)과 날짜가 겹치면 받지 않는다 — 기간 = [시작일, 끝일 다음 날)
     const mine = { startDate: range.startYmd, returnDate: addDaysKst(range.endYmd, 1) };
-    const others = await tx.$queryRawUnsafe<Array<{ startDate: string; returnDate: string | null }>>(
-      `SELECT to_char("startDate",'YYYY-MM-DD') AS "startDate", to_char("returnDate",'YYYY-MM-DD') AS "returnDate"
-         FROM "RegularAbsencePeriod" WHERE "studentId" = $1 AND status IN ('ACTIVE','ENDED')`,
+    // 살아 있는 결석이 하나도 없는 학부모 기간(전부 취소됨)은 겹침으로 보지 않는다. 겹친 상대가 학원이 등록한 기간이면 문구가 다르다
+    const others = (await tx.$queryRawUnsafe<Array<{ startDate: string; returnDate: string | null; parentReported: boolean; live: number }>>(
+      `SELECT to_char(p."startDate",'YYYY-MM-DD') AS "startDate", to_char(p."returnDate",'YYYY-MM-DD') AS "returnDate",
+              (p."reportedByUserId" IS NOT NULL) AS "parentReported",
+              (SELECT COUNT(*)::int FROM "RegularAbsence" ra WHERE ra."periodId" = p.id AND ra.status <> 'CANCELLED') AS live
+         FROM "RegularAbsencePeriod" p WHERE p."studentId" = $1 AND p.status IN ('ACTIVE','ENDED')`,
       studentId,
-    );
-    if (others.some((other) => periodsOverlap(mine, other))) throw new Error("PERIOD_OVERLAP");
+    )).filter((other) => !(other.parentReported && Number(other.live) === 0));
+    const clash = others.find((other) => periodsOverlap(mine, other));
+    if (clash) throw new Error(clash.parentReported ? "PERIOD_OVERLAP" : "PERIOD_OVERLAP_ADMIN");
 
     // 만들기·취소 반복 제한(보안 검수 2026-11-15): 아이당 하루(KST)에 학부모 기간 5개까지 — 취소한 것도 센다.
     // createdAt 은 timestamptz 라 변환은 한 번, 오늘도 DB 시계의 KST 날짜.

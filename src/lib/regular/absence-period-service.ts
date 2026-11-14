@@ -291,13 +291,23 @@ export async function createAbsencePeriodInTx(db: AbsencePeriodDb, input: {
   const storedClassIds = requested.length && requested.length < activeIds.size ? requested : [];
 
   // 같은 학생의 살아 있는 기간(진행 중·복귀 처리됨)과 날짜가 겹치면 막는다
-  const others = await db.$queryRawUnsafe<Array<{ startDate: string; returnDate: string | null }>>(
-    `SELECT to_char("startDate",'YYYY-MM-DD') AS "startDate", to_char("returnDate",'YYYY-MM-DD') AS "returnDate"
-       FROM "RegularAbsencePeriod" WHERE "studentId" = $1 AND status IN ('ACTIVE','ENDED')`,
+  // 학부모가 알린 기간(2026-11-15)은 끝일이 지나도 ACTIVE 로 남는다 — 살아 있는 결석이 하나도 없으면(전부 취소됨) 겹침으로 보지 않고,
+  // 겹칠 때는 학부모 기간임을 알려 준다(관리자가 기간째로 복귀 처리·등록 취소할 수 없는 기간이라 안내가 달라야 한다).
+  const parentSql = (await parentPeriodColumnsReady(db)) ? `(p."reportedByUserId" IS NOT NULL)` : `false`;
+  const others = (await db.$queryRawUnsafe<Array<{ startDate: string; returnDate: string | null; parentReported: boolean; live: number }>>(
+    `SELECT to_char(p."startDate",'YYYY-MM-DD') AS "startDate", to_char(p."returnDate",'YYYY-MM-DD') AS "returnDate",
+            ${parentSql} AS "parentReported",
+            (SELECT COUNT(*)::int FROM "RegularAbsence" ra WHERE ra."periodId" = p.id AND ra.status <> 'CANCELLED') AS live
+       FROM "RegularAbsencePeriod" p WHERE p."studentId" = $1 AND p.status IN ('ACTIVE','ENDED')`,
     studentId,
-  );
+  )).filter((o) => !(o.parentReported && Number(o.live) === 0));
   const mine = { startDate, returnDate };
   const clash = others.find((o) => periodsOverlap(mine, o));
+  if (clash?.parentReported) {
+    // returnDate = 끝일 다음 날 → 화면에는 마지막으로 쉬는 날로 보인다
+    const lastDay = clash.returnDate ? addDaysKst(clash.returnDate, -1) : clash.startDate;
+    throw new Error(`학부모가 알린 기간(${clash.startDate}~${lastDay})이 있습니다. 그 뒤 날짜부터 등록하거나 날짜별로 취소해 주세요.`);
+  }
   if (clash) {
     throw new Error(`이미 등록된 기간 결석(${clash.startDate}~${clash.returnDate ?? "복귀 미정"})과 날짜가 겹칩니다. 그 기간을 복귀 처리하거나 등록 취소한 뒤 다시 해 주세요.`);
   }

@@ -76,7 +76,7 @@ export default function IllnessCarryInboxDetail({ absenceId, studentName, onChan
     });
   }
 
-  // 학부모가 «여러 날»로 알린 결석 — 결석일이 지난 같은 기간의 결석들을 한 번에 승인(건마다 [이월 승인]과 같은 처리)
+  // 같은 기간의 결석(학부모 «여러 날»·관리자 기간 결석 모두) — 결석일이 지난 것들을 한 번에 승인(건마다 [이월 승인]과 같은 처리)
   async function approvePeriod() {
     if (!detail) return;
     const total = detail.periodPeerIds.length + (detail.blocker ? 0 : 1);
@@ -169,9 +169,9 @@ export default function IllnessCarryInboxDetail({ absenceId, studentName, onChan
           {/* 여러 날 결석: 결석일이 지난 같은 기간의 다른 결석이 있으면 한 번에 승인 */}
           {detail.periodPeerIds.length > 0 && (
             <div className="flex flex-wrap items-center justify-end gap-2">
-              <span className="text-xs text-[var(--color-academy-muted)]">같은 기간(여러 날 결석)의 결석이 더 있습니다.</span>
+              <span className="text-xs text-[var(--color-academy-muted)]">같은 기간의 결석이 더 있습니다.</span>
               <button type="button" disabled={pending} onClick={() => void approvePeriod()} className="academy-button-secondary">
-                같은 기간 {detail.periodPeerIds.length + (detail.blocker ? 0 : 1)}건 함께 승인
+                같은 기간 결석 {detail.periodPeerIds.length + (detail.blocker ? 0 : 1)}건 함께 승인
               </button>
             </div>
           )}

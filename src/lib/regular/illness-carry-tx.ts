@@ -107,29 +107,25 @@ export async function closeIllnessReviewInTx(
     absenceId, options.canceled ? ["PENDING", "MAKEUP"] : ["PENDING"],
   );
   if (Number(n) === 0) return { closed: false };
-  // 사진을 화면에서 뺀다. 단, 여러 날 결석(기간)의 다른 날이 아직 그 사진을 쓰고 있으면(검토 중·결정됨) 남긴다 — 기간 한 묶음
+  // 사진 정리(코드 리뷰·보안 검수 2026-11-15) — 살아 있는 사진은 언제나 «살아 있는 검토가 있는 결석»에 붙어 있게 한다.
+  //   ① 여러 날 결석(기간)에 살아 있는 형제(취소 안 된 결석의 검토 중·이월 승인·보강권 전환)가 있으면 사진을 그 결석으로 옮긴다
+  //      (날짜 바꾸기와 같은 방식). 사진이 붙은 날만 하루 취소해도 기간의 증빙은 그대로이고, 학부모의 사진 삭제·교체도 계속 된다.
+  //   ② 옮길 곳이 없으면(하루 결석이거나 기간의 마지막 검토였다) 화면에서 뺀다 — 파일은 cron 이 지운다.
+  //   그래서 기간을 전부 취소하면 마지막 날이 닫힐 때 사진도 함께 빠진다(진단서 사진이 살아남지 않는다).
   await tx.$executeRawUnsafe(
-    `UPDATE "RegularAbsenceEvidence" SET "removedAt" = now() WHERE "absenceId" = $1 AND "removedAt" IS NULL
-        AND NOT EXISTS (
-          SELECT 1 FROM "RegularAbsence" me
-            JOIN "RegularAbsence" sibling ON sibling."periodId" = me."periodId" AND sibling.id <> me.id AND sibling.status <> 'CANCELLED'
-            JOIN "RegularAbsenceCarryReview" sr ON sr."absenceId" = sibling.id AND sr.status IN ('PENDING', 'APPROVED', 'MAKEUP')
-           WHERE me.id = $1 AND me."periodId" IS NOT NULL)`,
+    `UPDATE "RegularAbsenceEvidence" e SET "absenceId" = heir.id
+       FROM (SELECT sibling.id
+               FROM "RegularAbsence" me
+               JOIN "RegularAbsence" sibling ON sibling."periodId" = me."periodId" AND sibling.id <> me.id AND sibling.status <> 'CANCELLED'
+               JOIN "RegularAbsenceCarryReview" sr ON sr."absenceId" = sibling.id AND sr.status IN ('PENDING', 'APPROVED', 'MAKEUP')
+              WHERE me.id = $1 AND me."periodId" IS NOT NULL
+              ORDER BY sibling.date, sibling.id
+              LIMIT 1) heir
+      WHERE e."absenceId" = $1 AND e."removedAt" IS NULL`,
     absenceId,
   );
-  // 여러 날 결석(기간): 방금 닫은 것이 그 기간의 «마지막» 살아 있는 검토였으면, 기간의 다른 날에 붙은 사진까지 전부 뺀다(보안 검수 2026-11-15).
-  // 위 문장은 «이 결석에 붙은 사진»만 보므로, 사진이 붙은 날을 먼저 닫고 나머지를 나중에 닫으면 진단서 사진이 살아남았다.
-  // 살아 있는 검토 = 취소 안 된 결석의 검토 중·이월 승인·보강권 전환. 하루 결석(기간 없음)은 0행이라 그대로다.
   await tx.$executeRawUnsafe(
-    `UPDATE "RegularAbsenceEvidence" e SET "removedAt" = now()
-       FROM "RegularAbsence" me
-       JOIN "RegularAbsence" member ON member."periodId" = me."periodId"
-      WHERE me.id = $1 AND me."periodId" IS NOT NULL
-        AND e."absenceId" = member.id AND e."removedAt" IS NULL
-        AND NOT EXISTS (
-          SELECT 1 FROM "RegularAbsence" live
-            JOIN "RegularAbsenceCarryReview" lr ON lr."absenceId" = live.id AND lr.status IN ('PENDING', 'APPROVED', 'MAKEUP')
-           WHERE live."periodId" = me."periodId" AND live.status <> 'CANCELLED')`,
+    `UPDATE "RegularAbsenceEvidence" SET "removedAt" = now() WHERE "absenceId" = $1 AND "removedAt" IS NULL`,
     absenceId,
   );
   return { closed: true };
@@ -182,6 +178,23 @@ export async function reopenClosedIllnessReviewInTx(
     input.studentId, input.classId, input.absenceYmd,
   );
   return { reopened: Number(n) > 0 };
+}
+
+/** 그 결석(살아 있음)에 닫힌 검토가 있는가 — 다시 열기 전에 잠금 없이 먼저 본다(없으면 전역 잠금을 잡지 않게) */
+export async function hasClosedIllnessReview(
+  tx: IllnessTx,
+  input: { studentId: string; classId: string; absenceYmd: string },
+): Promise<boolean> {
+  const rows = await tx.$queryRawUnsafe<Array<{ found: number }>>(
+    `SELECT 1 AS found
+       FROM "RegularAbsenceCarryReview" r
+       JOIN "RegularAbsence" ra ON ra.id = r."absenceId"
+      WHERE ra."studentId" = $1 AND ra."classId" = $2 AND ra.date = $3::date
+        AND ra.status <> 'CANCELLED' AND r.status = 'CLOSED'
+      LIMIT 1`,
+    input.studentId, input.classId, input.absenceYmd,
+  );
+  return rows.length > 0;
 }
 
 /**

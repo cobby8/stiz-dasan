@@ -163,9 +163,9 @@ export default function PeriodAbsencePanel({
   const [problem, setProblem] = useState<{ text: string; tooLong: boolean; needContact?: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // 시작일·끝일 모두 «오늘부터 4주 안»(하루 알리기와 같은 범위 — 서버도 같은 규칙으로 다시 본다)
+  // 시작일은 «오늘부터 4주 안»에서만 고른다. 끝일은 달력에서 막지 않는다 — 4주 넘는 날을 고르면 서버가
+  // «4주가 넘으면 휴원 신청» 안내와 [휴원 신청] 버튼을 돌려준다(막아 두면 왜 못 고르는지·어디로 가야 하는지 알 수 없다).
   const maxStart = useMemo(() => addDaysKst(today, PARENT_PERIOD_MAX_DAYS - 1), [today]);
-  const maxEnd = maxStart;
   const ready = Boolean(studentId && startDate && (unknownEnd || endDate));
   const illness = reason === ILLNESS_REASON;
 
@@ -249,7 +249,7 @@ export default function PeriodAbsencePanel({
         <label className="block text-sm font-medium text-[var(--color-academy-ink)]">
           끝일
           <input
-            type="date" value={unknownEnd ? "" : endDate} min={startDate || today} max={maxEnd} disabled={unknownEnd}
+            type="date" value={unknownEnd ? "" : endDate} min={startDate || today} disabled={unknownEnd}
             onChange={(e) => setEndDate(e.target.value)} className="academy-input mt-1 w-full"
           />
         </label>

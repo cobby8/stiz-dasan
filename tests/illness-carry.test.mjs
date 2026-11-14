@@ -101,6 +101,11 @@ function fakeDb(init = {}) {
         .filter((a) => !/COALESCE\(r\.status, ''\) NOT IN \('MAKEUP', 'CLOSED'\)/.test(sql) || !["MAKEUP", "CLOSED"].includes(db.reviews.find((r) => r.absenceId === a.id)?.status))
         .map(() => ({ found: 1 }));
     }
+    if (/FROM "RegularAbsenceCarryReview" r\s+JOIN "RegularAbsence" ra ON ra\.id = r\."absenceId"\s+WHERE ra\."studentId" = \$1 AND ra\."classId" = \$2 AND ra\.date = \$3::date\s+AND ra\.status <> 'CANCELLED' AND r\.status = 'CLOSED'/.test(sql)) {
+      db.order.push("peek-closed");
+      return db.absences.filter((a) => a.studentId === v[0] && a.classId === v[1] && a.date === v[2] && a.status !== "CANCELLED"
+        && db.reviews.find((r) => r.absenceId === a.id)?.status === "CLOSED").map(() => ({ found: 1 }));
+    }
     // cron ①: 7일 지난 검토 후보
     if (/FROM "RegularAbsenceCarryReview" r\s+JOIN "RegularAbsence" ra ON ra\.id = r\."absenceId"\s+WHERE r\.status = 'PENDING' AND r\.source IN \('PARENT', 'KAKAO'\)/.test(sql)) {
       // 결석일 기준 = 기간의 마지막 결석일(하루 결석이면 그 날) — date 칼럼이라 변환 없음. 사진은 기간 한 묶음으로 센다
@@ -173,7 +178,7 @@ function fakeDb(init = {}) {
 
   db.$executeRawUnsafe = async (sql, ...v) => {
     db.calls.push(sql);
-    if (/pg_advisory_xact_lock/.test(sql)) return 1;
+    if (/pg_advisory_xact_lock/.test(sql)) { db.order.push("global-lock"); return 1; }
     if (/UPDATE "MakeupCredit"\s+SET status = 'REVOKED'/.test(sql)) {
       assert.match(sql, /"sourceKey" = \$2 AND status = 'AVAILABLE'/, "미사용(AVAILABLE)만 거둔다 — 예약·사용분은 건드리지 않는다");
       const c = db.credits.find((x) => x.studentId === v[0] && x.sourceKey === v[1] && x.status === "AVAILABLE");
@@ -208,6 +213,7 @@ function fakeDb(init = {}) {
     // 닫힌 검토 다시 열기(출석부가 질병·부상으로 다시 표시)
     if (/UPDATE "RegularAbsenceCarryReview" r\s+SET status = 'PENDING', "requestedAt" = now\(\)/.test(sql)) {
       assert.match(sql, /ra\.status <> 'CANCELLED' AND r\.status = 'CLOSED'/, "닫힌 검토만 다시 연다(검토 중·끝난 결정은 그대로)");
+      db.order.push("reopen");
       assert.match(sql, /source = CASE WHEN ra\."reportedByUserId" IS NULL THEN 'STAFF' ELSE r\.source END/);
       let n = 0;
       for (const a of db.absences.filter((x) => x.studentId === v[0] && x.classId === v[1] && x.date === v[2] && x.status !== "CANCELLED")) {
@@ -225,25 +231,24 @@ function fakeDb(init = {}) {
       Object.assign(found, { status: "CLOSED", decidedYmd: db.today });
       return 1;
     }
-    // 기간의 마지막 살아 있는 검토가 닫히면 그 기간 결석들에 붙은 사진을 전부 뺀다(하루 결석은 0행)
-    if (/UPDATE "RegularAbsenceEvidence" e SET "removedAt" = now\(\)\s+FROM "RegularAbsence" me\s+JOIN "RegularAbsence" member ON member\."periodId" = me\."periodId"/.test(sql)) {
-      assert.match(sql, /lr\.status IN \('PENDING', 'APPROVED', 'MAKEUP'\)\s+WHERE live\."periodId" = me\."periodId" AND live\.status <> 'CANCELLED'/);
-      const me = db.absences.find((a) => a.id === v[0]);
+    // 검토를 닫을 때: 같은 기간에 살아 있는 형제(취소 안 된 결석의 검토 중·결정됨)가 있으면 사진을 그 결석으로 옮긴다(하루 결석은 0행)
+    if (/UPDATE "RegularAbsenceEvidence" e SET "absenceId" = heir\.id/.test(sql)) {
+      assert.match(sql, /sibling\."periodId" = me\."periodId" AND sibling\.id <> me\.id AND sibling\.status <> 'CANCELLED'/);
+      assert.match(sql, /sr\.status IN \('PENDING', 'APPROVED', 'MAKEUP'\)/);
+      assert.match(sql, /WHERE e\."absenceId" = \$1 AND e\."removedAt" IS NULL/);
+      const me = db.absences.find((x) => x.id === v[0]);
       if (!me?.periodId) return 0;
-      const members = db.absences.filter((a) => a.periodId === me.periodId);
-      const alive = members.some((a) => a.status !== "CANCELLED" && ["PENDING", "APPROVED", "MAKEUP"].includes(db.reviews.find((r) => r.absenceId === a.id)?.status));
-      if (alive) return 0;
+      const heir = db.absences
+        .filter((x) => x.periodId === me.periodId && x.id !== me.id && x.status !== "CANCELLED"
+          && ["PENDING", "APPROVED", "MAKEUP"].includes(db.reviews.find((r) => r.absenceId === x.id)?.status))
+        .sort((x, y) => x.date.localeCompare(y.date))[0];
+      if (!heir) return 0;
       let n = 0;
-      for (const e of db.evidence) if (members.some((m) => m.id === e.absenceId) && !e.removed) { e.removed = true; n += 1; }
+      for (const e of db.evidence) if (e.absenceId === me.id && !e.removed) { e.absenceId = heir.id; n += 1; }
       return n;
     }
     if (/UPDATE "RegularAbsenceEvidence" SET "removedAt" = now\(\) WHERE "absenceId" = \$1 AND "removedAt" IS NULL/.test(sql)) {
-      assert.match(sql, /sibling\."periodId" = me\."periodId" AND sibling\.id <> me\.id AND sibling\.status <> 'CANCELLED'/);
-      assert.match(sql, /sr\.status IN \('PENDING', 'APPROVED', 'MAKEUP'\)/);
-      const me = db.absences.find((a) => a.id === v[0]);
-      const stillUsed = Boolean(me?.periodId) && db.absences.some((a) => a.periodId === me.periodId && a.id !== me.id && a.status !== "CANCELLED"
-        && ["PENDING", "APPROVED", "MAKEUP"].includes(db.reviews.find((r) => r.absenceId === a.id)?.status));
-      if (stillUsed) return 0;
+      // (살아 있는 형제가 있으면 바로 앞 문장이 사진을 옮겨 갔다 — 여기 남은 것은 옮길 곳이 없는 사진뿐)
       let n = 0;
       for (const e of db.evidence) if (e.absenceId === v[0] && !e.removed) { e.removed = true; n += 1; }
       return n;
@@ -404,11 +409,17 @@ test("출석부가 질병·부상으로 다시 표시하면 닫혔던 검토를 
   assert.equal(again.plan, "NONE", "결석 행 자체는 바꿀 것이 없다");
   assert.deepEqual([parent.reviews[0].status, parent.reviews[0].source], ["PENDING", "PARENT"], "학부모 신고는 출처 그대로");
   assert.equal(parent.credits[0].status, "REVOKED", "다시 검토 중 — 보강권은 거둬 둔다");
+  // 잠금 순서(코드 리뷰): 닫힌 검토 유무를 잠금 없이 먼저 보고 → 전역 잠금 → 다시 열기(다른 경로와 같은 «전역 잠금 → 검토 행»)
+  assert.deepEqual(parent.order.filter((step) => ["peek-closed", "global-lock", "reopen"].includes(step)), ["peek-closed", "global-lock", "reopen"]);
   assert.equal(await carryTx.isIllnessCreditHeld(parent, { studentId: "s1", classId: "c1", absenceYmd: "2026-11-09" }), true);
   // 사유 표시 없이 결석만 찍으면(또는 검토가 닫혀 있지 않으면) 건드리지 않는다
   const plain = fakeDb({ absences: [{ ...ABSENCE, note: null, reportedByUserId: "p1" }], reviews: [pending({ status: "CLOSED" })] });
   await sheet.applyAttendanceAbsenceReasonInTx(plain, { ...key, attendanceStatus: "ABSENT", intent: undefined, confirmedByUserId: null });
   assert.equal(plain.reviews[0].status, "CLOSED");
+  // 닫힌 검토가 없으면 전역 잠금을 잡지 않는다(대부분의 출석 저장이 여기다)
+  const none = fakeDb({ absences: [{ ...ABSENCE, note: null, reportedByUserId: "p1" }], reviews: [pending()] });
+  await sheet.applyAttendanceAbsenceReasonInTx(none, { ...key, attendanceStatus: "ABSENT", intent: "ILLNESS_INJURY", confirmedByUserId: null });
+  assert.deepEqual(none.order.filter((step) => ["peek-closed", "global-lock", "reopen"].includes(step)), ["peek-closed"]);
   // 검토 중·끝난 결정은 지우지 않는다
   for (const status of ["PENDING", "APPROVED", "MAKEUP"]) {
     const keep = fakeDb({ absences: [{ ...ABSENCE, status: "CANCELLED", note: null, reportedByUserId: "p1" }], reviews: [pending({ status })] });
@@ -481,14 +492,18 @@ test("여러 날 결석 자동 전환: 사진이 한 장이라도 있으면 기�
 
 test("여러 날 결석: 한 날의 검토를 닫아도 기간의 다른 날이 쓰는 사진은 남고, 마지막 검토가 닫힐 때 빠진다", async () => {
   const db = fakeDb({ absences: PERIOD.map((a) => ({ ...a })), reviews: periodReviews(), evidence: [photo("e1", { absenceId: "d1" })] });
-  await carryTx.closeIllnessReviewInTx(db, "d1", { canceled: true }); // 사진이 붙은 날을 취소
-  assert.equal(db.evidence[0].removed, false, "d2·d3 가 아직 검토 중 — 사진을 남긴다");
   db.absences[0].status = "CANCELLED";
-  assert.equal((await access.findEvidenceTargetForParent(db, ACCESS, "p1", "d2")).photoCount, 1, "취소된 날에 붙은 사진도 기간의 증빙으로 센다");
+  await carryTx.closeIllnessReviewInTx(db, "d1", { canceled: true }); // 사진이 붙은 날을 취소
+  // 사진은 살아 있는 형제(가장 이른 d2)로 옮겨 간다 — 기간의 증빙은 그대로이고, 학부모가 계속 지우거나 바꿀 수 있다
+  assert.deepEqual([db.evidence[0].absenceId, db.evidence[0].removed], ["d2", false]);
+  assert.equal((await access.findEvidenceTargetForParent(db, ACCESS, "p1", "d3")).photoCount, 1);
+  const stillMine = await access.findEvidenceForParent(db, ACCESS, "p1", "e1");
+  assert.equal(stillMine.status, "PENDING", "사진이 붙은 결석의 검토가 살아 있어 삭제·교체(canEditEvidence)가 계속 된다");
+  assert.equal(rules.canEditEvidence(stillMine), true);
   db.absences[1].status = "CANCELLED";
   await carryTx.closeIllnessReviewInTx(db, "d2", { canceled: true });
-  assert.equal(db.evidence[0].removed, false, "d3 가 아직 검토 중");
-  // 기간의 마지막 검토가 닫히는 순간, 다른 날(d1)에 붙어 있던 사진까지 전부 빠진다(보안 검수 — 진단서 사진이 살아남지 않게)
+  assert.deepEqual([db.evidence[0].absenceId, db.evidence[0].removed], ["d3", false], "d3 가 아직 검토 중 — 다시 옮겨 간다");
+  // 기간의 마지막 검토가 닫히면 옮길 곳이 없어 사진도 빠진다(전부 취소 뒤 진단서 사진이 살아남지 않는다)
   db.absences[2].status = "CANCELLED";
   await carryTx.closeIllnessReviewInTx(db, "d3", { canceled: true });
   assert.deepEqual(db.reviews.map((r) => r.status), ["CLOSED", "CLOSED", "CLOSED"]);
@@ -499,7 +514,7 @@ test("여러 날 결석: 한 날의 검토를 닫아도 기간의 다른 날이 
     const part = fakeDb({ absences: PERIOD.map((a) => ({ ...a })), reviews: [...periodReviews().slice(0, 2), pending({ absenceId: "d3", status: kept })], evidence: [photo("e1", { absenceId: "d1" })] });
     await carryTx.closeIllnessReviewInTx(part, "d1", { canceled: true });
     await carryTx.closeIllnessReviewInTx(part, "d2", { canceled: true });
-    assert.equal(part.evidence[0].removed, false, kept);
+    assert.deepEqual([part.evidence[0].absenceId, part.evidence[0].removed], ["d3", false], `${kept}: 결정이 난 날로 옮겨 가 그 증빙으로 남는다`);
   }
   // 하루 결석(기간 없음)은 예전 그대로 — 닫으면 바로 뺀다
   const single = fakeDb({ absences: [{ ...ABSENCE }], reviews: [pending()], evidence: [photo("e1")] });

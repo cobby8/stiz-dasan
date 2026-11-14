@@ -21,6 +21,19 @@ import {
 // 청구 준비 화면과 같은 스위치 — 꺼져 있으면 이월을 적립하지 않는다
 const writesEnabled = () => process.env.STIZ_BILLING_WORKBENCH_WRITES_ENABLED === "true";
 
+const NOTIFY_FAILED_NOTE = " 승인됐지만 학부모 알림은 못 보냈어요.";
+
+/** 학부모 앱 알림(문자·알림톡 없음). 실패해도 던지지 않고 false — 이미 저장된 승인 결과를 뒤집지 않는다 */
+async function notifyParentSafely(studentId: string, title: string, message: string): Promise<boolean> {
+  try {
+    await notifyParentsOfStudents([studentId], "ABSENCE", title, message, "/mypage/regular-absence");
+    return true;
+  } catch (error) {
+    console.error("[illness-carry-admin] 학부모 알림 실패:", error instanceof Error ? error.name : "");
+    return false;
+  }
+}
+
 type ActionResult = { ok: true; message: string } | { ok: false; message: string };
 
 function failure(error: unknown, fallback: string): { ok: false; message: string } {
@@ -54,13 +67,13 @@ export async function approveIllnessCarryAction(input: {
       { absenceId: String(input?.absenceId ?? "").trim(), evidenceConfirmed: input?.evidenceConfirmed === true, cancelReservation: input?.cancelReservation === true },
       admin.appUserId, writesEnabled(), calendar,
     );
-    await notifyParentsOfStudents(
-      [done.studentId], "ABSENCE", "결석 이월 승인",
+    // 승인은 이미 저장됐다 — 알림이 실패해도 «승인 실패»로 보이면 원장이 다시 누르게 된다. 결과 글에만 알린다
+    const notified = await notifyParentSafely(
+      done.studentId, "결석 이월 승인",
       `${done.absenceYmd} 결석을 이월로 승인했어요. 다음 달 수강료에서 1회분을 빼 드려요.`,
-      "/mypage/regular-absence",
     );
     revalidatePath("/admin/inbox");
-    return { ok: true, message: "이월을 승인했습니다. 다음 달 청구에 «이월»로 차감됩니다." };
+    return { ok: true, message: `이월을 승인했습니다. 다음 달 청구에 «이월»로 차감됩니다.${notified ? "" : NOTIFY_FAILED_NOTE}` };
   } catch (error) {
     return failure(error, "이월을 승인하지 못했습니다. 목록을 새로고침한 뒤 다시 확인해 주세요.");
   }
@@ -92,14 +105,14 @@ export async function approveIllnessCarryPeriodAction(input: { absenceId: string
         failed.push(failure(error, "승인하지 못했습니다.").message);
       }
     }
+    let notified = true;
     if (done.length > 0) {
       const days = done.map((item) => item.absenceYmd).sort();
-      await notifyParentsOfStudents(
-        [done[0].studentId], "ABSENCE", "결석 이월 승인",
+      notified = await notifyParentSafely(
+        done[0].studentId, "결석 이월 승인",
         days.length === 1
           ? `${days[0]} 결석을 이월로 승인했어요. 다음 달 수강료에서 1회분을 빼 드려요.`
           : `${days[0]}~${days[days.length - 1]} 결석 ${days.length}회를 이월로 승인했어요. 다음 달 수강료에서 ${days.length}회분을 빼 드려요.`,
-        "/mypage/regular-absence",
       );
     }
     revalidatePath("/admin/inbox");
@@ -107,8 +120,8 @@ export async function approveIllnessCarryPeriodAction(input: { absenceId: string
     return {
       ok: true,
       message: failed.length
-        ? `${done.length}건 이월 승인 · ${failed.length}건은 승인하지 못했습니다(${failed[0]})`
-        : `${done.length}건을 이월 승인했습니다. 다음 달 청구에 «이월»로 차감됩니다.`,
+        ? `${done.length}건 이월 승인 · ${failed.length}건은 승인하지 못했습니다(${failed[0]})${notified ? "" : NOTIFY_FAILED_NOTE}`
+        : `${done.length}건을 이월 승인했습니다. 다음 달 청구에 «이월»로 차감됩니다.${notified ? "" : NOTIFY_FAILED_NOTE}`,
     };
   } catch (error) {
     return failure(error, "이월을 승인하지 못했습니다. 목록을 새로고침한 뒤 다시 확인해 주세요.");

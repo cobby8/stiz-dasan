@@ -440,6 +440,10 @@ export async function saveReportedAbsenceInTx(
         SET reason = EXCLUDED.reason,
             status = 'REPORTED',
             "reportedByUserId" = EXCLUDED."reportedByUserId",
+            -- 취소됐던 행을 되살릴 때만 옛 기간 연결·메모를 지운다(끝난 «여러 날 결석»·옛 기간 결석의 표시가 새 신고에 딸려 오지 않게).
+            -- 사유 변경(신고 → 신고)은 그대로 둔다. 여러 날 알리기는 바로 뒤에서 새 기간으로 다시 채운다.
+            "periodId" = CASE WHEN "RegularAbsence".status = 'CANCELLED' THEN NULL ELSE "RegularAbsence"."periodId" END,
+            note = CASE WHEN "RegularAbsence".status = 'CANCELLED' THEN NULL ELSE "RegularAbsence".note END,
             "updatedAt" = now()
       WHERE "RegularAbsence".status = 'CANCELLED'
          OR ("RegularAbsence".status = 'REPORTED' AND "RegularAbsence".reason IS DISTINCT FROM EXCLUDED.reason)
@@ -767,6 +771,9 @@ export async function moveRegularAbsence(
           SET reason = EXCLUDED.reason,
               status = 'REPORTED',
               "reportedByUserId" = EXCLUDED."reportedByUserId",
+              -- 되살리는 취소 행의 옛 기간 연결·메모는 지운다(옮기는 결석이 기간에 속하면 바로 아래에서 그 기간으로 다시 묶는다)
+              "periodId" = NULL,
+              note = NULL,
               "updatedAt" = now()
         WHERE "RegularAbsence".status = 'CANCELLED'
        RETURNING id, to_char("updatedAt", 'YYYYMMDDHH24MISSUS') AS "eventVersion"`,

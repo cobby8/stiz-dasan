@@ -280,8 +280,11 @@ function makeDb(overrides = {}) {
     if (/FROM "RegularAbsence" ra\s+WHERE ra\."studentId" = \$1 AND ra\.date BETWEEN \$2::date AND \$3::date AND ra\.status <> 'CANCELLED'/.test(sql)) {
       return db.absences.filter((a) => a.studentId === args[0] && a.date >= args[1] && a.date <= args[2] && a.status !== "CANCELLED").map((a) => ({ classId: a.classId, date: a.date }));
     }
-    if (/FROM "RegularAbsencePeriod" WHERE "studentId" = \$1 AND status IN \('ACTIVE','ENDED'\)/.test(sql)) {
-      return db.periods.filter((p) => p.studentId === args[0] && ["ACTIVE", "ENDED"].includes(p.status)).map((p) => ({ startDate: p.startDate, returnDate: p.returnDate }));
+    if (/FROM "RegularAbsencePeriod" p WHERE p\."studentId" = \$1 AND p\.status IN \('ACTIVE','ENDED'\)/.test(sql)) {
+      return db.periods.filter((p) => p.studentId === args[0] && ["ACTIVE", "ENDED"].includes(p.status)).map((p) => ({
+        startDate: p.startDate, returnDate: p.returnDate, parentReported: Boolean(p.reportedByUserId),
+        live: db.absences.filter((a) => a.periodId === p.id && a.status !== "CANCELLED").length,
+      }));
     }
     // 오늘(KST) 그 아이로 만든 학부모 기간 수 — 취소한 것도 센다
     if (/SELECT COUNT\(\*\)::int AS n FROM "RegularAbsencePeriod"/.test(sql)) {
@@ -342,6 +345,9 @@ function makeDb(overrides = {}) {
         return [{ id: row.id, eventVersion: stamp() }];
       }
       if (found.status !== "CANCELLED") return [];
+      // 취소 행을 되살릴 때 옛 기간 연결·메모는 지운다(SQL 에 그 초기화가 있어야 한다)
+      assert.match(sql, /"periodId" = (NULL|CASE WHEN "RegularAbsence"\.status = 'CANCELLED' THEN NULL)/);
+      found.periodId = null; found.note = null;
       found.reason = reason; found.status = "REPORTED";
       return [{ id: found.id, eventVersion: stamp() }];
     }
@@ -519,16 +525,20 @@ function makeDb(overrides = {}) {
       a.status = "CANCELLED";
       return 1;
     }
-    // 기간의 마지막 살아 있는 검토가 닫히면 그 기간 결석들에 붙은 사진을 전부 뺀다(하루 결석은 0행)
-    if (/UPDATE "RegularAbsenceEvidence" e SET "removedAt" = now\(\)\s+FROM "RegularAbsence" me\s+JOIN "RegularAbsence" member ON member\."periodId" = me\."periodId"/.test(sql)) {
-      assert.match(sql, /lr\.status IN \('PENDING', 'APPROVED', 'MAKEUP'\)\s+WHERE live\."periodId" = me\."periodId" AND live\.status <> 'CANCELLED'/);
-      const me = db.absences.find((a) => a.id === args[0]);
+    // 검토를 닫을 때: 같은 기간에 살아 있는 형제(취소 안 된 결석의 검토 중·결정됨)가 있으면 사진을 그 결석으로 옮긴다(하루 결석은 0행)
+    if (/UPDATE "RegularAbsenceEvidence" e SET "absenceId" = heir\.id/.test(sql)) {
+      assert.match(sql, /sibling\."periodId" = me\."periodId" AND sibling\.id <> me\.id AND sibling\.status <> 'CANCELLED'/);
+      assert.match(sql, /sr\.status IN \('PENDING', 'APPROVED', 'MAKEUP'\)/);
+      assert.match(sql, /WHERE e\."absenceId" = \$1 AND e\."removedAt" IS NULL/);
+      const me = db.absences.find((x) => x.id === args[0]);
       if (!me?.periodId) return 0;
-      const members = db.absences.filter((a) => a.periodId === me.periodId);
-      const alive = members.some((a) => a.status !== "CANCELLED" && ["PENDING", "APPROVED", "MAKEUP"].includes(db.reviews.find((r) => r.absenceId === a.id)?.status));
-      if (alive) return 0;
+      const heir = db.absences
+        .filter((x) => x.periodId === me.periodId && x.id !== me.id && x.status !== "CANCELLED"
+          && ["PENDING", "APPROVED", "MAKEUP"].includes(db.reviews.find((r) => r.absenceId === x.id)?.status))
+        .sort((x, y) => x.date.localeCompare(y.date))[0];
+      if (!heir) return 0;
       let n = 0;
-      for (const e of db.evidence) if (members.some((m) => m.id === e.absenceId) && !e.removed) { e.removed = true; n += 1; }
+      for (const e of db.evidence) if (e.absenceId === me.id && !e.removed) { e.absenceId = heir.id; n += 1; }
       return n;
     }
     // 여러 날 결석(2026-11-15): 옮긴 날을 같은 기간에 묶는다 — 기간 없는 하루 신고는 0행
@@ -1075,6 +1085,27 @@ test("기간을 전부 취소하면 진단서 사진도 빠지고, 같은 날짜
   assert.equal(members.length, 3);
   assert.equal(all.evidence.filter((e) => members.includes(e.absenceId) && !e.removed).length, 0, "새 기간에 살아 있는 사진 0장");
   assert.deepEqual(all.reviews.map((r) => r.status), ["PENDING", "PENDING", "PENDING"]);
+});
+
+test("겹침: 학원이 등록한 기간과 겹치면 다른 안내 코드, 결석이 하나도 안 남은 학부모 기간(복귀 처리됨)은 겹침으로 보지 않는다", async () => {
+  const db = makeDb({ periodReady: true });
+  freeze(SUN, "10:00");
+  // 학원(관리자)이 등록한 기간 11/23~11/29
+  db.periods.push({ id: "per-admin", studentId: "s1", reason: "ILLNESS_INJURY", startDate: NEXT_MON, returnDate: "2026-11-30", status: "ACTIVE", reportedByUserId: null, createdYmd: "2026-11-10" });
+  db.absences.push({ id: "ra-admin", studentId: "s1", classId: "cO", date: NEXT_MON, reason: "ILLNESS_INJURY", status: "CONFIRMED", periodId: "per-admin" });
+  await assert.rejects(() => period.createParentAbsencePeriod("p1", PERIOD_IN), /^Error: PERIOD_OVERLAP_ADMIN$/);
+  assert.equal(db.periods.length, 1);
+  // 겹치지 않는 날짜는 된다
+  assert.equal((await period.createParentAbsencePeriod("p1", { ...PERIOD_IN, endDate: "2026-11-22" })).count, 1);
+  // 복귀 처리(ENDED)됐고 살아 있는 결석이 없는 학부모 기간은 같은 날짜대를 막지 않는다
+  const other = makeDb({ periodReady: true });
+  other.periods.push({ id: "per-empty", studentId: "s1", reason: "PERSONAL", startDate: MON, returnDate: "2026-12-07", status: "ENDED", reportedByUserId: "p1", createdYmd: "2026-11-10" });
+  other.absences.push({ id: "ra-empty", studentId: "s1", classId: "cO", date: MON, reason: "PERSONAL", status: "CANCELLED", periodId: "per-empty", note: "여러 날 결석 · 옛 기간" });
+  const made = await period.createParentAbsencePeriod("p1", PERIOD_IN);
+  assert.equal(made.count, 3);
+  // 되살아난 11/16 결석은 옛 기간이 아니라 새 기간에 묶인다
+  const revived = other.absences.find((a) => a.id === "ra-empty");
+  assert.deepEqual([revived.status, revived.periodId], ["REPORTED", made.periodId]);
 });
 
 test("만들기·취소 반복 제한: 아이당 하루(KST) 5번까지 — 취소한 것도 세고, 날이 바뀌면 다시 된다", async () => {

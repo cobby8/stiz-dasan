@@ -56,9 +56,11 @@ test("기간: 끝일도 «오늘부터 4주 안» — 뒤늦게 시작해 8주 �
   assert.deepEqual(range("2026-12-01", "2026-12-13"), { ok: false, code: "PERIOD_TOO_LONG" }, "시작일 기준 4주(12/28)가 아니라 오늘 기준");
   assert.deepEqual(range("2026-12-01", "").range, { startYmd: "2026-12-01", endYmd: "2026-12-12", openEnded: true }, "끝일 미정도 오늘 +27일까지만");
   assert.deepEqual(range("2026-12-12", null).range, { startYmd: "2026-12-12", endYmd: "2026-12-12", openEnded: true });
-  // 화면의 날짜 선택 범위도 같은 끝(오늘 +27일)
+  // 화면: 시작일은 오늘 +27일까지만 고르고, 끝일은 달력에서 막지 않는다 — 넘는 날을 고르면 서버 안내(휴원 신청 버튼)가 뜬다(코드 리뷰)
   const panel = read("src/app/mypage/regular-absence/PeriodAbsencePanel.tsx");
-  assert.match(panel, /const maxStart = useMemo\(\(\) => addDaysKst\(today, PARENT_PERIOD_MAX_DAYS - 1\), \[today\]\);\s+const maxEnd = maxStart;/);
+  assert.match(panel, /value=\{startDate\} min=\{today\} max=\{maxStart\}/);
+  assert.match(panel, /type="date" value=\{unknownEnd \? "" : endDate\} min=\{startDate \|\| today\} disabled=\{unknownEnd\}/);
+  assert.doesNotMatch(panel, /maxEnd/);
 });
 
 test("기간: 시작일은 오늘부터 4주 안, 끝일은 시작일 이후, 날짜 형식", () => {
@@ -220,7 +222,7 @@ test("API: 로그인한 학부모만, 오류는 한국어 문구 — 4주 초과
   assert.match(route, /PERIOD_TOO_LONG: `오늘부터 \$\{WEEKS\}주가 넘으면 휴원 신청을 이용해 주세요\.`/);
   // 하루 만들기 횟수 제한: 글 + 그 자리 전화·문의 버튼
   assert.match(route, /PERIOD_DAILY_LIMIT: "오늘은 더 알릴 수 없어요\. 학원에 문의해 주세요\."/);
-  assert.match(route, /needContact: code === "PERIOD_DAILY_LIMIT" \|\| undefined/);
+  assert.match(route, /needContact: code === "PERIOD_DAILY_LIMIT" \|\| /);
   const panel = read("src/app/mypage/regular-absence/PeriodAbsencePanel.tsx");
   assert.match(panel, /\{problem\.needContact && contact\.phone && \(\s*<a href=\{`tel:\$\{contact\.phone\.replace\(\/\[\^0-9\+\]\/g, ""\)\}`\}/);
   assert.match(read("src/app/mypage/regular-absence/RegularAbsenceClient.tsx"), /onChanged=\{onPeriodChanged\} contact=\{contact\} \/>/);
@@ -271,6 +273,18 @@ test("관리자 기간 결석은 그대로 — 학부모 기간은 자동 연장
   assert.match(read("src/lib/requests/admin-inbox.ts"), /where: `\(x\."periodId" IS NULL OR x\."reportedByUserId" IS NOT NULL\)`,/);
 });
 
+test("겹침 안내: 살아 있는 결석이 없는 학부모 기간은 겹침에서 빼고, 겹친 상대에 맞는 말을 한다", () => {
+  const admin = read("src/lib/regular/absence-period-service.ts");
+  assert.match(admin, /\)\)\.filter\(\(o\) => !\(o\.parentReported && Number\(o\.live\) === 0\)\);/);
+  assert.match(admin, /if \(clash\?\.parentReported\) \{[\s\S]{0,260}학부모가 알린 기간\(\$\{clash\.startDate\}~\$\{lastDay\}\)이 있습니다\. 그 뒤 날짜부터 등록하거나 날짜별로 취소해 주세요\./);
+  assert.match(admin, /\(SELECT COUNT\(\*\)::int FROM "RegularAbsence" ra WHERE ra\."periodId" = p\.id AND ra\.status <> 'CANCELLED'\) AS live/);
+  const parent = read("src/lib/regular/parent-absence-period.ts");
+  assert.match(parent, /if \(clash\) throw new Error\(clash\.parentReported \? "PERIOD_OVERLAP" : "PERIOD_OVERLAP_ADMIN"\);/);
+  const route = read("src/app/api/mypage/regular-absence/period/route.ts");
+  assert.match(route, /PERIOD_OVERLAP_ADMIN: "학원에 등록된 결석 기간과 겹쳐요\. 학원에 문의해 주세요\."/);
+  assert.match(route, /needContact: code === "PERIOD_DAILY_LIMIT" \|\| code === "PERIOD_OVERLAP_ADMIN" \|\| undefined/);
+});
+
 test("관리자 입구: 결석 관리 위쪽 버튼·학생 목록 ⚡ 에서 기존 등록 창을 그대로 연다", () => {
   const quick = read("src/components/admin/AbsencePeriodQuickCreate.tsx");
   assert.match(quick, /import \{ CreatePeriodModal, type AbsencePeriodClassOption \} from "@\/app\/admin\/students\/\[id\]\/AbsencePeriodPanel";/);
@@ -289,9 +303,14 @@ test("관리자 입구: 결석 관리 위쪽 버튼·학생 목록 ⚡ 에서 �
   assert.match(bulk, /const admin = await requireAdmin\(\);/);
   assert.match(bulk, /const targets = \[\.\.\.\(detail\.status === "PENDING" && !detail\.blocker \? \[absenceId\] : \[\]\), \.\.\.detail\.periodPeerIds\];/);
   assert.match(bulk, /await approveIllnessCarry\(prisma, \{ absenceId: id, evidenceConfirmed: true \}, admin\.appUserId, writesEnabled\(\), calendar\)/);
-  assert.equal(bulk.split("await notifyParentsOfStudents(").length - 1, 1, "학부모 알림은 묶어서 1회");
+  assert.equal(bulk.split("await notifyParentSafely(").length - 1, 1, "학부모 알림은 묶어서 1회");
   assert.match(read("src/lib/regular/illness-carry-admin.ts"), /pa\.reason = \$2 AND pa\.status <> 'CANCELLED' AND pa\.date <= \$3::date\s+AND COALESCE\(pr\.status, 'PENDING'\) = 'PENDING'/);
-  assert.match(read("src/app/admin/inbox/IllnessCarryInboxDetail.tsx"), /같은 기간 \{detail\.periodPeerIds\.length \+ \(detail\.blocker \? 0 : 1\)\}건 함께 승인/);
+  // 문구 통일: 학부모 «여러 날»·관리자 기간 결석 모두 «같은 기간 결석 n건 함께 승인»
+  assert.match(read("src/app/admin/inbox/IllnessCarryInboxDetail.tsx"), /같은 기간 결석 \{detail\.periodPeerIds\.length \+ \(detail\.blocker \? 0 : 1\)\}건 함께 승인/);
+  // 승인 저장 뒤 학부모 알림 실패는 승인 결과를 뒤집지 않는다
+  assert.match(action, /async function notifyParentSafely\([\s\S]{0,260}\} catch \(error\) \{[\s\S]{0,160}return false;/);
+  assert.match(action, /const NOTIFY_FAILED_NOTE = " 승인됐지만 학부모 알림은 못 보냈어요\.";/);
+  assert.match(quick, /\{students && presetStudentId && !picked && \(\s*<p[^>]*>원생을 찾을 수 없습니다\.<\/p>/);
 });
 
 test("학부모 화면: 맨 위 «하루 / 여러 날», 미리보기는 서버 계산, 4주 초과는 휴원 신청 버튼, 복귀했어요·알림 취소 — 글자만", () => {

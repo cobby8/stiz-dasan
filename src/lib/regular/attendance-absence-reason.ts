@@ -20,7 +20,7 @@
 // DB 접근은 인자로 받은 db(트랜잭션) 로만 한다 — 테스트가 가짜 db 로 실제 실행해 본다.
 import { lockCompensation } from "@/lib/billing/absence-compensation-guard";
 import { isKstYmd } from "@/lib/datetime/kst";
-import { holdCreditForIllnessInTx, illnessReviewReady, reopenClosedIllnessReviewInTx } from "@/lib/regular/illness-carry-tx";
+import { hasClosedIllnessReview, holdCreditForIllnessInTx, illnessReviewReady, reopenClosedIllnessReviewInTx } from "@/lib/regular/illness-carry-tx";
 
 /** 출석부가 만든 결석 행 표시(관리자 결석 관리 화면에서도 출처를 알 수 있게 사람이 읽는 문장). */
 export const SHEET_ABSENCE_NOTE = "출석부에서 질병·부상 결석으로 표시";
@@ -153,10 +153,12 @@ export async function applyAttendanceAbsenceReasonInTx(
     // 열린 것이 있을 때만 보강권을 거둔다(뒤이어 도는 보강권 맞춤이 «검토 중»이라 발급하지 않는다).
     if (input.attendanceStatus === "ABSENT" && input.intent === SHEET_ABSENCE_REASON
       && peek && peek.status !== "CANCELLED" && peek.reason === SHEET_ABSENCE_REASON && await illnessReviewReady(db)) {
-      const reopened = await reopenClosedIllnessReviewInTx(db, { studentId: key.studentId, classId: key.classId, absenceYmd: key.dateYmd });
-      if (reopened.reopened) {
+      // 잠금 순서는 다른 경로와 같게 «전역 잠금 → 검토 행»: 닫힌 검토가 있는지 잠금 없이 먼저 보고, 있을 때만 전역 잠금을 잡은 뒤 다시 연다
+      const target = { studentId: key.studentId, classId: key.classId, absenceYmd: key.dateYmd };
+      if (await hasClosedIllnessReview(db, target)) {
         await lockCompensation(db);
-        await holdCreditForIllnessInTx(db, { studentId: key.studentId, classId: key.classId, absenceYmd: key.dateYmd });
+        const reopened = await reopenClosedIllnessReviewInTx(db, target);
+        if (reopened.reopened) await holdCreditForIllnessInTx(db, target);
       }
     }
     return { plan: "NONE", report: absenceReportOf(peek) };

@@ -75,6 +75,10 @@ export default function AbsencePeriodQuickCreate({
       </div>
       {error && <p role="alert" className="text-sm font-medium text-[var(--color-academy-danger)]">{error}</p>}
       {!error && !students && <p className="text-sm text-[var(--color-academy-muted)]">불러오는 중…</p>}
+      {/* 학생 목록 ⚡ 에서 왔는데 그 원생이 목록에 없다(그 사이 삭제·통합 등) */}
+      {students && presetStudentId && !picked && (
+        <p role="alert" className="text-sm font-medium text-[var(--color-academy-danger)]">원생을 찾을 수 없습니다.</p>
+      )}
       {picked && picked.classes.length === 0 && (
         <p role="alert" className="mb-2 text-sm font-medium text-[var(--color-academy-danger)]">{picked.name} 원생은 수강 중인 반이 없어 기간 결석을 만들 수 없습니다.</p>
       )}
