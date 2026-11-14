@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import {
   cancelClassSession,
+  clearStaffAttendance,
   completeClassSession,
   saveSessionMemo,
   saveStaffAttendance,
@@ -433,10 +434,55 @@ export default function SessionInProgressClient({
     return "recordWarning" in result ? String((result as { recordWarning?: string }).recordWarning || "") || null : null;
   }
 
+  // 선택된 버튼을 다시 눌렀을 때 — 출결을 «미확인»으로 되돌린다(2026-11-14 원장 지시).
+  // 결석을 되돌릴 때만 한 번 묻는다. 그 결석으로 나간 보강권이 실제로 있을 때만 «회수» 문장을 붙인다(서버가 미리 알려 준다).
+  // 이미 예약·사용된 보강권이 걸렸거나 정산된 결석이면 서버가 막고, 그 이유를 이 줄 아래에 보인다.
+  async function clearAttendance(target: StaffSessionStudent) {
+    const rowId = target.id;
+    setRowNotice(rowId, "");
+    setSavingRows((current) => ({ ...current, [rowId]: true }));
+    try {
+      if (target.status === "ABSENT") {
+        const preview = await clearStaffAttendance({ sessionId: session.id, attendanceKey: target.attendanceKey, dryRun: true });
+        if (!preview.ok) {
+          setRowNotice(rowId, preview.message);
+          if (isLoginFailure(preview)) setNeedsLogin(true);
+          return;
+        }
+        const question = preview.creditRevoke
+          ? `${target.name} 결석을 취소할까요? 이 결석으로 나간 보강권이 회수됩니다.`
+          : `${target.name} 결석을 취소할까요?`;
+        if (!window.confirm(question)) return;
+      }
+      const result = await clearStaffAttendance({ sessionId: session.id, attendanceKey: target.attendanceKey });
+      if (!result.ok) {
+        setRowNotice(rowId, result.message);
+        if (isLoginFailure(result)) setNeedsLogin(true);
+        return;
+      }
+      setStudents((current) => current.map((student) => (
+        student.id === rowId ? { ...student, status: null, arrivedAt: null, ...absenceReportPatch(result) } : student
+      )));
+    } catch {
+      setRowNotice(rowId, "저장하지 못했습니다. 연결을 확인하고 다시 눌러 주세요.");
+    } finally {
+      setSavingRows((current) => {
+        const next = { ...current };
+        delete next[rowId];
+        return next;
+      });
+    }
+  }
+
   // 한 줄 저장 — 그 줄만 잠그고(다른 아이는 계속 누를 수 있다), 실패 문구는 그 줄 아래에 보인다(b5).
   async function updateAttendance(rowId: string, status: AttendanceStatus, absenceReason?: "ILLNESS_INJURY" | null) {
     const target = students.find((student) => student.id === rowId);
     if (!target || savingRows[rowId]) return;
+    // 이미 선택된 버튼을 다시 누름 = 취소(미확인). «질병·부상» 칩(absenceReason 을 보냄)은 결석을 유지한 채 사유만 바꾸므로 해당 없음.
+    // 단, 그 줄에 오류 안내가 떠 있으면(예: «출결은 저장됐지만 정규 출석 기록이 실패했어요. 다시 눌러 주세요.»)
+    // 같은 버튼을 다시 누르는 것은 «다시 저장»이다 — 안내대로 눌렀는데 출결이 지워지면 안 된다.
+    const retryAfterError = rowNotices[rowId]?.tone === "error";
+    if (target.status === status && absenceReason === undefined && !retryAfterError) return clearAttendance(target);
     setRowNotice(rowId, "");
     setSavingRows((current) => ({ ...current, [rowId]: true }));
     try {
