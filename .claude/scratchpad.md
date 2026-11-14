@@ -120,7 +120,12 @@
 | tests/shuttle-boarding-notice(신규 17건) · staff-session-completion-policy · staff-session-review · staff-attendance-toggle · parent-signup-guide | 테스트 | 신규/수정 |
 
 💡 tester 참고: 기사 화면에서 «탑승» → 1분 뒤 대표 보호자 앱 알림(등원 줄 «셔틀에 탔어요», 하원 줄 «셔틀에서 내렸어요»). 1분 안에 되돌리거나 미탑승으로 고치면 안 옴. 보낸 뒤 고쳐도 정정 알림 없음. 설정 «셔틀» 끄면 휴대폰 울림 없음(종 목록에는 남음). 관리자 출결: 오늘 수업에서 상태가 바뀐 출석·지각 아이만 «○○ 학생이 출석했습니다», 같은 저장 반복·지난 날짜는 조용. 주의: 형제·보호자 없는 아이·방학특강 미전환 신청·자정 직후.
-⚠️ reviewer 참고: ① 새 SQL 2개 실제 Postgres 미실행 ② ShuttleBoarding.checkedAt 타입이 schema 와 마이그레이션이 달라 초(EXTRACT EPOCH)로만 비교 ③ 30분 한도는 내가 넣은 안전장치(배포 직후·크론 장애 뒤 몰아 보내기 방지) ④ 관리자 방학특강 출결도 같은 규칙으로 바꿈(예전 «방학특강 출석이 기록되었습니다» 전원 발송 제거).
+#### 수정 이력
+| 회차 | 날짜 | 수정 내용 | 수정 파일 | 사유 |
+|------|------|----------|----------|------|
+| 1차 | 11-14 | 관리자 출결 알림: 수업 시작 전 저장은 알리지 않음(classStarted·startsAtMs) · 응답 뒤(after)·한 명씩 차례로 · 학부모를 학생으로 바로 찾기 / ShuttleBoarding.checkedAt `@db.Timestamptz(6)` 표기 | attendanceNoticeRules.ts · actions/admin.ts · schema.prisma · tests/shuttle-boarding-notice | 검수 권장 4건 |
+
+⚠️ reviewer 참고: ① 새 SQL 2개 실제 Postgres 미실행 ② ShuttleBoarding.checkedAt 은 운영 timestamptz 확인(11-14) — 코드는 초(EXTRACT EPOCH)로만 비교 ③ 30분 한도는 내가 넣은 안전장치(배포 직후·크론 장애 뒤 몰아 보내기 방지) ④ 관리자 방학특강 출결도 같은 규칙으로 바꿈(예전 «방학특강 출석이 기록되었습니다» 전원 발송 제거).
 
 ---
 

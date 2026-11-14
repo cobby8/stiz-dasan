@@ -342,6 +342,53 @@ test("관리자 출결 저장: 바뀐 아이만·출석/지각만·오늘 수업
   assert.equal(attendanceRules.attendanceNoticeNeeded({ changed: true, status: "LATE", sessionYmd: "2026-11-15", nowMs: now }), false);
 });
 
+test("관리자 출결 저장: 수업 시작 시각 전에 저장한 출석(기본값 포함)은 알리지 않는다 — 시작 1분 전/정각/1분 후", () => {
+  // 17:00 수업. 반 전체를 한 번에 저장 — 아무 기록도 없던 반에 기본값 «출석» 3명
+  const records = ["a", "b", "c"].map((studentId) => ({ studentId, status: "PRESENT" }));
+  const startsAtMs = kst.kstAt("2026-11-16", "17:00");
+  assert.equal(startsAtMs, kstMs("2026-11-16T17:00:00"));
+  const pick = (nowIso, over = {}) => attendanceRules.pickAttendanceNoticeTargets({
+    records, previousByStudent: new Map(), sessionYmd: "2026-11-16", todayOnly: true, startsAtMs, nowMs: kstMs(nowIso), ...over,
+  });
+  assert.deepEqual(pick("2026-11-16T16:59:00"), [], "시작 1분 전 = 아무도 안 받는다");
+  assert.deepEqual(pick("2026-11-16T09:00:00"), [], "아침에 미리 저장");
+  assert.equal(pick("2026-11-16T17:00:00").length, 3, "시작 정각부터");
+  assert.equal(pick("2026-11-16T17:01:00").length, 3, "시작 1분 후");
+  // 시작 전에 미리 저장해 둔 반: 시작 뒤 다시 저장하면 «바뀐 아이만»
+  const saved = new Map(records.map((r) => [r.studentId, r.status]));
+  assert.deepEqual(pick("2026-11-16T17:05:00", { previousByStudent: saved }), []);
+  assert.deepEqual(
+    pick("2026-11-16T17:05:00", { previousByStudent: saved, records: [{ studentId: "a", status: "PRESENT" }, { studentId: "b", status: "LATE" }] }),
+    [{ studentId: "b", status: "LATE" }],
+  );
+  // 시작 시각을 모르면(빈 값·잘못된 값) 막지 않는다
+  assert.equal(pick("2026-11-16T09:00:00", { startsAtMs: null }).length, 3);
+  assert.equal(pick("2026-11-16T09:00:00", { startsAtMs: kst.kstAt("2026-11-16", "") }).length, 3, "시각이 비면 그날 자정 = 이미 시작");
+  assert.equal(pick("2026-11-16T09:00:00", { startsAtMs: NaN }).length, 3);
+  // 자정 넘긴 직후(00:10)에 그날 17:00 수업을 저장 = 시작 전
+  assert.deepEqual(pick("2026-11-16T00:10:00"), []);
+  assert.equal(attendanceRules.classStarted(startsAtMs, kstMs("2026-11-16T16:59:59")), false);
+  assert.equal(attendanceRules.classStarted(startsAtMs, kstMs("2026-11-16T17:00:00")), true);
+});
+
+test("관리자 출결 알림: 저장 응답 뒤에·한 명씩 차례로·학생으로 바로 학부모를 찾는다", () => {
+  const admin = read("src/app/actions/admin.ts");
+  const start = admin.indexOf("function notifyAttendanceChanges(");
+  const helper = admin.slice(start, admin.indexOf("export async function saveAttendance(", start));
+  assert.match(admin, /import \{ after \} from "next\/server";/);
+  assert.match(helper, /const savedAtMs = Date\.now\(\);\s*\/\/[^\n]*\n\s*after\(async \(\) => \{/, "저장한 순간을 기준으로 잡고 응답 뒤에 돈다");
+  assert.match(helper, /const startsAtMs = input\.startsAtMs \?\? kstAt\(input\.sessionYmd, classRows\[0\]\?\.startTime\);/, "정규는 반 시작 시각(kst.ts)");
+  assert.match(helper, /todayOnly: true, startsAtMs, nowMs: savedAtMs,/);
+  assert.match(helper, /await getStudentParentRecipients\(targets\.map/, "반 수강 조회가 아니라 학생으로 바로");
+  assert.doesNotMatch(admin.slice(start), /getClassParentRecipients/);
+  assert.match(helper, /for \(const target of targets\) \{/, "차례로 보낸다(DB 연결 한도 5)");
+  assert.doesNotMatch(helper, /Promise\.all/);
+  // 방학특강은 회차 시작 시각
+  assert.match(admin, /startsAtMs: new Date\(context\.startsAt\)\.getTime\(\),/);
+  // 탑승 표 시각 칼럼 표기 = 운영(timestamptz)
+  assert.match(read("prisma/schema.prisma"), /model ShuttleBoarding \{[\s\S]*?checkedAt\s+DateTime @default\(now\(\)\) @db\.Timestamptz\(6\)/);
+});
+
 test("출석 알림 한 통의 문구·키는 한 곳 — 같은 출결·같은 상태·같은 학부모는 한 번만", () => {
   const recipient = { studentId: "st1", studentName: "김하늘", userId: "p1" };
   const payload = attendanceRules.attendanceNoticePayload({ recipient, status: "LATE", className: "초등 A반", sessionId: "s1", attendanceId: "a1" });
@@ -361,11 +408,11 @@ test("관리자·선생님 저장 경로가 같은 규칙 함수를 쓰고, «�
   const body = admin.slice(start, admin.indexOf("// ── 수납 관리", start));
   assert.doesNotMatch(body, /notifyParentsOfStudents\(/, "반 전원에게 매번 보내던 알림 제거");
   assert.doesNotMatch(admin, /출결이 기록되었습니다|방학특강 출석이 기록되었습니다/);
-  assert.equal((body.match(/await notifyAttendanceChanges\(\{/g) ?? []).length, 2, "정규·방학특강 두 길 모두");
+  assert.equal((body.match(/\n\s+notifyAttendanceChanges\(\{/g) ?? []).length, 2, "정규·방학특강 두 길 모두");
   assert.equal((body.match(/const previousByStudent = await readAttendanceStatuses\(sessionId\);/g) ?? []).length, 2);
   // 저장 «전» 상태를 읽은 뒤에 저장한다(순서가 바뀌면 전부 «안 바뀜»이 된다)
   assert.ok(body.indexOf("readAttendanceStatuses(sessionId)") < body.indexOf('INSERT INTO "Attendance"'));
-  const helper = admin.slice(admin.indexOf("async function notifyAttendanceChanges"), start);
+  const helper = admin.slice(admin.indexOf("function notifyAttendanceChanges("), start);
   assert.match(helper, /pickAttendanceNoticeTargets\(\{[\s\S]*?todayOnly: true,/);
   assert.match(helper, /await deliverParentNotification\(attendanceNoticePayload\(\{/);
   assert.match(helper, /catch \(error\) \{/, "알림 실패가 출결 저장을 실패로 만들지 않는다");

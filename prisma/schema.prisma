@@ -3232,7 +3232,8 @@ model ShuttleBoarding {
   studentName      String?
   status           String // 'BOARDED' | 'NOSHOW'
   checkedVia       String?
-  checkedAt        DateTime @default(now())
+  // 운영·마이그레이션(20260727000000) 모두 timestamptz — 표기만 맞춘다(DB 변경 없음, 2026-11-14 운영 확인)
+  checkedAt        DateTime @default(now()) @db.Timestamptz(6)
 
   @@unique([serviceDate, direction, shuttleRequestId])
 }

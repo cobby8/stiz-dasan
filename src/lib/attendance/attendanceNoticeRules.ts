@@ -21,6 +21,12 @@ export function attendanceNoticeNeeded(input: { changed: boolean; status: string
   return shouldNotifyParentsForSession(input.sessionYmd, input.nowMs);
 }
 
+/** 수업이 시작됐나 — 시작 시각 정각부터 true. 시작 시각을 모르면(null·NaN) true(막지 않는다). */
+export function classStarted(startsAtMs: number | null | undefined, nowMs: number = Date.now()): boolean {
+  if (startsAtMs == null || !Number.isFinite(startsAtMs)) return true;
+  return nowMs >= startsAtMs;
+}
+
 /**
  * 여러 명을 한 번에 저장하는 화면(관리자 출결)용 — 저장 «전» 상태와 견줘 알림 보낼 아이만 고른다.
  * previousByStudent: 저장 전 출결(없던 아이는 키 없음). 같은 아이가 두 번 들어오면 마지막 값 하나만.
@@ -31,9 +37,16 @@ export function pickAttendanceNoticeTargets(input: {
   sessionYmd: string;
   /** true 면 오늘(KST) 수업일 때만 — 날짜를 골라 저장하는 관리자 화면용(앞날을 미리 입력해도 알리지 않는다). */
   todayOnly?: boolean;
+  /**
+   * 수업 시작 시각(ms, kst.ts 의 kstAt 으로 만든 값). 주면 «시작 전» 저장은 아무도 알리지 않는다 —
+   * 관리자 화면은 반 전체를 한 번에 저장해, 수업 전에 미리 저장하면 기본값 «출석»이 전원에게 나간다.
+   * 시작 시각을 모르면(null·NaN) 막지 않는다.
+   */
+  startsAtMs?: number | null;
   nowMs?: number;
 }): { studentId: string; status: AttendanceNoticeStatus }[] {
   if (input.todayOnly && String(input.sessionYmd).slice(0, 10) !== todayKst(input.nowMs)) return [];
+  if (!classStarted(input.startsAtMs, input.nowMs)) return [];
   const last = new Map<string, string>();
   for (const record of input.records) last.set(record.studentId, record.status);
   const out: { studentId: string; status: AttendanceNoticeStatus }[] = [];

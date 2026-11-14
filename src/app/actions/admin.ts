@@ -8,10 +8,11 @@ import { createHash } from "crypto";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { assertRegularMakeupAllowed, assertMakeupSessionAllowed, CompensationConflict, lockCompensation } from "@/lib/billing/absence-compensation-guard";
-import { isKstYmd, todayKst } from "@/lib/datetime/kst";
+import { isKstYmd, kstAt, todayKst } from "@/lib/datetime/kst";
 // 관리자 출결 저장의 학부모 알림 = 선생님 화면과 같은 규칙·같은 발송 함수
 import { attendanceNoticePayload, pickAttendanceNoticeTargets } from "@/lib/attendance/attendanceNoticeRules";
-import { deliverParentNotification, getClassParentRecipients, getStudentParentRecipients, type ParentRecipient } from "@/lib/staff-notifications";
+import { deliverParentNotification, getStudentParentRecipients } from "@/lib/staff-notifications";
+import { after } from "next/server";
 import { normalizeApprovalClassIds } from "@/lib/enrollment/approval-classes";
 // 정원 경고·셔틀 위치 저장 = 신청서 승인과 새 «원생 등록»이 같이 쓰는 한 곳
 import { findOverCapacityClasses } from "@/lib/enrollment/class-capacity";
@@ -1600,38 +1601,54 @@ async function readAttendanceStatuses(sessionId: string): Promise<Map<string, st
  * 관리자 출결 저장 뒤 학부모 출석 알림 — 선생님 화면과 같은 규칙 함수(attendanceNoticeRules)·같은 발송 함수를 쓴다.
  * 알림이 실패해도 출결 저장은 성공으로 둔다(장부에 남은 실패분은 push-outbox 크론이 다시 보낸다).
  */
-async function notifyAttendanceChanges(input: {
+function notifyAttendanceChanges(input: {
     classId: string;
     sessionId: string;
     sessionYmd: string;
     records: readonly { studentId: string; status: string }[];
     previousByStudent: ReadonlyMap<string, string>;
     attendanceIdByStudent: ReadonlyMap<string, string>;
-    findRecipients: (studentIds: string[]) => Promise<ParentRecipient[]>;
+    /** 방학특강 회차의 시작 시각(ms). 정규 수업은 생략 — 반의 시작 시각(Class.startTime)으로 계산한다. */
+    startsAtMs?: number | null;
 }) {
-    try {
-        // 관리자 화면은 날짜를 골라 저장한다 — 오늘(KST) 수업일 때만 알린다(todayOnly: 지난 날 정리·앞날 미리 입력은 조용히).
-        const targets = pickAttendanceNoticeTargets({
-            records: input.records, previousByStudent: input.previousByStudent, sessionYmd: input.sessionYmd, todayOnly: true,
-        });
-        if (targets.length === 0) return;
-        const [recipients, classRows] = await Promise.all([
-            input.findRecipients(targets.map((target) => target.studentId)),
-            prisma.$queryRawUnsafe<{ name: string }[]>(`SELECT name FROM "Class" WHERE id = $1 LIMIT 1`, input.classId),
-        ]);
-        const className = classRows[0]?.name ?? "수업";
-        const recipientByStudent = new Map(recipients.map((recipient) => [recipient.studentId, recipient]));
-        await Promise.allSettled(targets.map(async (target) => {
-            const recipient = recipientByStudent.get(target.studentId);
-            const attendanceId = input.attendanceIdByStudent.get(target.studentId);
-            if (!recipient || !attendanceId) return;
-            await deliverParentNotification(attendanceNoticePayload({
-                recipient, status: target.status, className, sessionId: input.sessionId, attendanceId,
-            }));
-        }));
-    } catch (error) {
-        console.error("[saveAttendance] 출석 알림 실패(출결은 저장됨)", { sessionId: input.sessionId, error });
-    }
+    // «저장한 순간»을 기준으로 수업 시작 전인지 본다(응답 뒤에 도는 동안 시각이 흘러도 판정이 바뀌지 않게).
+    const savedAtMs = Date.now();
+    // 저장 응답 뒤에 보낸다(Next after — 선생님 화면의 runAfterResponse 와 같은 방식). 알림이 느려도 저장 화면이 기다리지 않는다.
+    after(async () => {
+        try {
+            const classRows = await prisma.$queryRawUnsafe<{ name: string; startTime: string | null }[]>(
+                `SELECT name, "startTime" FROM "Class" WHERE id = $1 LIMIT 1`, input.classId,
+            );
+            const className = classRows[0]?.name ?? "수업";
+            // 관리자 화면은 반 전체를 한 번에 저장한다 — 수업 시작 전에 저장한 출석(기본값 «출석» 포함)은 알리지 않는다.
+            const startsAtMs = input.startsAtMs ?? kstAt(input.sessionYmd, classRows[0]?.startTime);
+            // 오늘(KST) 수업일 때만(todayOnly: 지난 날 정리·앞날 미리 입력은 조용히) · 바뀐 아이만 · 출석/지각만.
+            const targets = pickAttendanceNoticeTargets({
+                records: input.records, previousByStudent: input.previousByStudent, sessionYmd: input.sessionYmd,
+                todayOnly: true, startsAtMs, nowMs: savedAtMs,
+            });
+            if (targets.length === 0) return;
+            // 받는 사람은 선생님 화면처럼 학생으로 바로 찾는다 — 보강·체험으로 온 아이(이 반 수강생이 아님)의 알림이 빠지지 않게.
+            const recipients = await getStudentParentRecipients(targets.map((target) => target.studentId));
+            const recipientByStudent = new Map(recipients.map((recipient) => [recipient.studentId, recipient]));
+            // 한 명씩 차례로 보낸다 — 한꺼번에 보내면 DB 연결 한도(5)를 넘길 수 있다.
+            for (const target of targets) {
+                const recipient = recipientByStudent.get(target.studentId);
+                const attendanceId = input.attendanceIdByStudent.get(target.studentId);
+                if (!recipient || !attendanceId) continue;
+                try {
+                    await deliverParentNotification(attendanceNoticePayload({
+                        recipient, status: target.status, className, sessionId: input.sessionId, attendanceId,
+                    }));
+                } catch (error) {
+                    // 한 명 실패가 나머지를 막지 않게. 장부에 남은 실패분은 push-outbox 크론이 다시 보낸다.
+                    console.error("[saveAttendance] 출석 알림 한 건 실패", { sessionId: input.sessionId, studentId: target.studentId, error });
+                }
+            }
+        } catch (error) {
+            console.error("[saveAttendance] 출석 알림 실패(출결은 저장됨)", { sessionId: input.sessionId, error });
+        }
+    });
 }
 
 // absenceReason(정규만): "ILLNESS_INJURY"=질병·부상 결석 표시 / null=표시 끄기 / 생략=그대로.
@@ -1697,10 +1714,10 @@ export async function saveAttendance(classId: string, date: string, records: { s
                 }
             }
             // 출석 알림 — 선생님 화면과 같은 규칙·같은 문구(바뀐 아이만·출석/지각만·오늘 수업만·한 번만).
-            await notifyAttendanceChanges({
+            notifyAttendanceChanges({
                 classId, sessionId, sessionYmd: date, records: allowedRecords, previousByStudent, attendanceIdByStudent,
-                // 특강 회차 학부모는 학생으로 바로 찾는다(이 반의 정규 수강생이 아니다)
-                findRecipients: (ids) => getStudentParentRecipients(ids),
+                // 특강 회차는 그 회차의 시작 시각(timestamptz)이 기준이다
+                startsAtMs: new Date(context.startsAt).getTime(),
             });
         } catch (e) {
             console.error("Failed to save seasonal attendance:", e);
@@ -1770,10 +1787,8 @@ export async function saveAttendance(classId: string, date: string, records: { s
         // 출석 알림 — 선생님 화면과 같은 규칙·같은 문구(2026-11-14 원장 결정표).
         // 예전엔 저장할 때마다 반 학부모 전원에게 «출결 기록» 알림이 나갔다 → 바뀐 아이만·출석/지각만·오늘 수업만·한 번만.
         // 결석은 여기서 보내지 않는다 — 3분 뒤에도 결석이면 결석 알림 훑기(absence-parent-notice-sweep)가 출결 표를 보고 보낸다.
-        await notifyAttendanceChanges({
-            classId, sessionId, sessionYmd: date, records, previousByStudent, attendanceIdByStudent,
-            findRecipients: (ids) => getClassParentRecipients(classId, ids, date),
-        });
+        // 수업 시작 시각 전에 저장한 출석(기본값 «출석» 포함)은 알리지 않는다 — 시작 뒤 저장부터 «바뀐 아이만».
+        notifyAttendanceChanges({ classId, sessionId, sessionYmd: date, records, previousByStudent, attendanceIdByStudent });
     } catch (e) {
         console.error("Failed to save attendance:", e);
         throw new Error("출결 저장 실패");
