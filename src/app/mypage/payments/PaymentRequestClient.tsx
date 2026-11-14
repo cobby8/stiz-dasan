@@ -62,7 +62,7 @@ export default function PaymentRequestClient({
   // 환불 문의 — 사유 칸을 연 청구·쓴 사유·보낸 결과(청구 id → 문의 id)·오류. 결제 흐름의 상태(openId 등)와 섞지 않는다
   const [refundOpenId, setRefundOpenId] = useState<string | null>(null);
   const [refundReason, setRefundReason] = useState("");
-  const [refundSent, setRefundSent] = useState<Record<string, string>>({});
+  const [refundSent, setRefundSent] = useState<Record<string, { id: string; notice?: string }>>({});
   const [refundError, setRefundError] = useState("");
   // 열려 있는 세부 시트의 청구 달
   const [openYm, setOpenYm] = useState<string | null>(initialOpenYm);
@@ -129,7 +129,7 @@ export default function PaymentRequestClient({
           setRefundError(customerMessage(result.error, "보내지 못했어요. 다시 시도해 주세요."));
           return;
         }
-        setRefundSent((prev) => ({ ...prev, [paymentId]: result.requestId }));
+        setRefundSent((prev) => ({ ...prev, [paymentId]: { id: result.requestId, notice: result.notice } }));
         setRefundOpenId(null);
         setRefundReason("");
       } catch {
@@ -463,8 +463,9 @@ export default function PaymentRequestClient({
         {/* 환불 문의(납부 완료 항목만) — 보내면 «보낸 문의»의 대화로 이어진다. 결제·입금 알림·영수증 흐름과는 따로 논다 */}
         {row.status === "PAID" && (refundSent[row.paymentId] ? (
           <p role="status" className="mt-2 rounded-lg bg-[var(--color-academy-success-soft)] p-2 text-xs font-medium text-[var(--color-academy-success)]">
-            환불 문의를 보냈어요.{" "}
-            <Link href={`/mypage/requests/${refundSent[row.paymentId]}`} className="inline-flex min-h-11 items-center underline">보낸 문의에서 보기</Link>
+            {/* 이미 열린 환불 문의가 있었으면 그 안내(«이미 보낸 환불 문의에 덧붙였어요» 등)를 보인다 */}
+            {refundSent[row.paymentId].notice ?? "환불 문의를 보냈어요."}{" "}
+            <Link href={`/mypage/requests/${refundSent[row.paymentId].id}`} className="inline-flex min-h-11 items-center underline">보낸 문의에서 보기</Link>
           </p>
         ) : (
           <button

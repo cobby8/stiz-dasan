@@ -15,6 +15,7 @@ import { billItemLabel } from "@/lib/payments/monthBills";
 import {
   buildInquiryThread,
   canAskRefund,
+  appendLegacyAnswer,
   cleanInquiryBody,
   INQUIRY_PARENT_STREAK_MAX,
   INQUIRY_WAITING_LIMIT_MESSAGE,
@@ -75,9 +76,18 @@ export type MyInquiryRow = {
   studentName: string | null;
   createdAt: string;
   status: InquiryParentStatus;
+  /** 마지막 글이 학원 답일 때 그 답이 달린 시각(옛 답변만 있으면 문의가 마지막으로 바뀐 시각). 아니면 null — 홈 «답변 옴» 최근 7일 판정용 */
+  answeredAt: string | null;
 };
 
-type HeadRow = { id: string; userId: string; title: string; content: string; status: string; adminNote: string | null; createdAt: Date | string; studentName: string | null };
+type HeadRow = { id: string; userId: string; title: string; content: string; status: string; adminNote: string | null; createdAt: Date | string; updatedAt?: Date | string | null; studentName: string | null };
+
+/** 날짜 값을 ISO 로. 비었거나 이상한 값이면 null(던지지 않는다) */
+const isoOrNull = (value: unknown): string | null => {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(String(value));
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+};
 
 const lastAuthorOf = (messages: readonly InquiryMessageRow[] | undefined): InquiryAuthor | null => {
   const last = messages?.[messages.length - 1];
@@ -89,7 +99,7 @@ export async function listMyInquiries(db: InquiryDb, parentUserId: string): Prom
   let heads: HeadRow[] = [];
   try {
     heads = await db.$queryRawUnsafe<HeadRow[]>(
-      `SELECT r.id, r."userId", r.title, r.content, r.status, r."adminNote", r."createdAt", s.name AS "studentName"
+      `SELECT r.id, r."userId", r.title, r.content, r.status, r."adminNote", r."createdAt", r."updatedAt", s.name AS "studentName"
          FROM "ParentRequest" r
          LEFT JOIN "Student" s ON s.id = r."studentId" AND ${notMergedStudent("s")}
         WHERE r."userId" = $1
@@ -102,14 +112,22 @@ export async function listMyInquiries(db: InquiryDb, parentUserId: string): Prom
     return [];
   }
   const { byRequest } = await readInquiryMessages(db, heads.map((head) => head.id));
-  return heads.map((head) => ({
-    id: head.id,
-    title: head.title,
-    firstLine: inquiryFirstLine(head.content),
-    studentName: head.studentName ?? null,
-    createdAt: iso(head.createdAt),
-    status: inquiryParentStatus(head, lastAuthorOf(byRequest.get(head.id))),
-  }));
+  return heads.map((head) => {
+    const messages = byRequest.get(head.id) ?? [];
+    const last = messages[messages.length - 1];
+    const answeredAt = last
+      ? (last.authorRole === "ADMIN" ? last.createdAt : null)
+      : ((head.adminNote ?? "").trim() ? isoOrNull(head.updatedAt) : null);
+    return {
+      id: head.id,
+      title: head.title,
+      firstLine: inquiryFirstLine(head.content),
+      studentName: head.studentName ?? null,
+      createdAt: iso(head.createdAt),
+      status: inquiryParentStatus(head, lastAuthorOf(messages)),
+      answeredAt,
+    };
+  });
 }
 
 export type MyInquiryDetail = {
@@ -237,13 +255,14 @@ export type AdminReplyResult =
 
 /**
  * 학원이 문의에 답을 이어 쓴다(+ 상태를 같이 고르면 그 상태로).
- * 새 표가 아직 없으면 예전처럼 adminNote 한 줄에 저장한다(답변 기능이 마이그레이션 적용을 기다리며 멈추지 않게).
+ * 새 표가 아직 없으면 예전 칸(adminNote)에 저장하되 «덮어쓰지 않고 뒤에 이어 붙인다»(앞선 답이 사라지지 않게 — 코드 리뷰 F1).
+ * 합친 글이 2,000자를 넘으면 거절한다.
  */
 export async function addAdminInquiryReply(db: InquiryDb, adminUserId: string, requestId: string, rawBody: unknown, chosenStatus?: string | null): Promise<AdminReplyResult> {
   const cleaned = cleanInquiryBody(rawBody);
   if (!cleaned.ok) return cleaned;
-  const heads = await db.$queryRawUnsafe<{ id: string; userId: string; title: string; status: string }[]>(
-    `SELECT id, "userId", title, status FROM "ParentRequest" WHERE id = $1 LIMIT 1`,
+  const heads = await db.$queryRawUnsafe<{ id: string; userId: string; title: string; status: string; adminNote: string | null }[]>(
+    `SELECT id, "userId", title, status, "adminNote" FROM "ParentRequest" WHERE id = $1 LIMIT 1`,
     requestId,
   );
   const head = heads[0];
@@ -266,10 +285,15 @@ export async function addAdminInquiryReply(db: InquiryDb, adminUserId: string, r
   }
   try {
     if (legacy) {
-      await db.$executeRawUnsafe(
-        `UPDATE "ParentRequest" SET "adminNote" = $2, status = $3, "updatedAt" = NOW() WHERE id = $1`,
-        head.id, cleaned.body, nextStatus,
+      const merged = appendLegacyAnswer(head.adminNote, cleaned.body);
+      if (!merged.ok) return merged;
+      // 읽은 뒤 다른 관리자가 답을 바꿨으면 0행 — 그 답을 덮지 않는다
+      const updated = await db.$queryRawUnsafe<{ id: string }[]>(
+        `UPDATE "ParentRequest" SET "adminNote" = $2, status = $3, "updatedAt" = NOW()
+          WHERE id = $1 AND "adminNote" IS NOT DISTINCT FROM $4 RETURNING id`,
+        head.id, merged.note, nextStatus, head.adminNote,
       );
+      if (updated.length === 0) return { ok: false, error: "그 사이 답변이 바뀌었습니다. 대화를 다시 열어 확인한 뒤 보내 주세요." };
     } else {
       await db.$executeRawUnsafe(
         `UPDATE "ParentRequest" SET status = $2, "updatedAt" = NOW() WHERE id = $1`,
@@ -284,6 +308,17 @@ export async function addAdminInquiryReply(db: InquiryDb, adminUserId: string, r
     return { ok: true, parentUserId: head.userId, title: head.title, status: head.status, legacy };
   }
   return { ok: true, parentUserId: head.userId, title: head.title, status: nextStatus, legacy };
+}
+
+/** 문의마다 «마지막 학원 글» — 학부모 신청 내역(타임라인)의 «학원 답변» 칸용. 표가 없거나 학원 글이 없으면 그 문의는 지도에 없다 */
+export async function lastAdminAnswers(db: InquiryDb, requestIds: readonly string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const { byRequest } = await readInquiryMessages(db, requestIds);
+  for (const [requestId, messages] of byRequest) {
+    const last = [...messages].reverse().find((message) => message.authorRole === "ADMIN");
+    if (last) out.set(requestId, last.body);
+  }
+  return out;
 }
 
 /** 신청함(inbox) 줄에 붙일 «이어 쓴 글» — [라벨, 글] 목록. 표가 없으면 빈 지도 */
@@ -302,7 +337,7 @@ export const REFUND_PAYMENT_NOT_FOUND = "청구를 찾을 수 없어요. 청구 
 export const REFUND_NOT_PAID = "납부 완료된 청구만 환불을 문의할 수 있어요.";
 
 export type RefundInquiryResult =
-  | { ok: true; requestId: string; title: string; studentName: string; /** 이미 열려 있던 문의로 안내했는가(새로 만들지 않음) */ existing: boolean }
+  | { ok: true; requestId: string; title: string; studentName: string; /** 이미 열려 있던 문의로 안내했는가(새로 만들지 않음) */ existing: boolean; /** 그 문의에 새 사유를 이어 붙였는가 */ appended?: boolean; /** 덧붙인 글에 원장 알림을 만들 것인가 */ notifyAdmins?: boolean }
   | { ok: false; error: string };
 
 /**
@@ -348,7 +383,13 @@ export async function createRefundInquiry(db: InquiryDb, parentUserId: string, p
   const existingResult = async (): Promise<RefundInquiryResult> => {
     try {
       const open = await findOpen();
-      return open[0] ? { ok: true, requestId: open[0].id, title: open[0].title, studentName: payment.studentName, existing: true } : failed;
+      if (!open[0]) return failed;
+      // 새로 쓴 사유를 버리지 않는다 — 열려 있는 그 문의에 이어 쓰기로 붙인다(코드 리뷰 F6). 연속 글 한도 등으로 못 붙이면 안내만 한다
+      const added = reason ? await addParentInquiryMessage(db, parentUserId, open[0].id, reason) : null;
+      return {
+        ok: true, requestId: open[0].id, title: open[0].title, studentName: payment.studentName, existing: true,
+        appended: added?.ok === true, notifyAdmins: added?.ok === true && added.notifyAdmins,
+      };
     } catch (error) {
       console.error("[inquiry-thread] 열린 환불 문의 조회 실패:", error);
       return failed;

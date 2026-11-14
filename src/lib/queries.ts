@@ -2367,38 +2367,7 @@ export const getUnreadNotificationCount = cache(async (userId: string) => {
 
 // ── 학부모 요청 조회 ──────────────────────────────────────────────────────────
 
-// 학부모 본인의 요청 목록
-export const getMyRequests = cache(async (userId: string) => {
-    try {
-        const rows = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT r.id, r."userId", r."studentId", r.type, r.title, r.content,
-                    r.date, r.status, r."adminNote", r."createdAt", r."updatedAt",
-                    s.name AS student_name
-             FROM "ParentRequest" r
-             LEFT JOIN "Student" s ON r."studentId" = s.id
-             WHERE r."userId" = $1
-             ORDER BY r."createdAt" DESC
-             LIMIT 30`,
-            userId
-        );
-        return rows.map((r: any) => ({
-            id: r.id,
-            userId: r.userId ?? r.userid,
-            studentId: r.studentId ?? r.studentid,
-            type: r.type,
-            title: r.title,
-            content: r.content,
-            date: r.date,
-            status: r.status,
-            adminNote: r.adminNote ?? r.adminnote ?? null,
-            createdAt: r.createdAt ?? r.createdat,
-            updatedAt: r.updatedAt ?? r.updatedat,
-            studentName: r.student_name,
-        }));
-    } catch {
-        return [];
-    }
-});
+// (학부모 본인의 문의 목록은 src/lib/requests/inquiry-thread.ts 의 listMyInquiries — 대화·상태까지 한 곳에서 읽는다)
 
 // 관리자용: 전체 요청 목록 (최신순)
 export const getAllRequests = cache(async (options?: string | { statusFilter?: string; limit?: number; offset?: number }) => {

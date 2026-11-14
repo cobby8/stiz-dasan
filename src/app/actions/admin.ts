@@ -2801,9 +2801,11 @@ export async function updateRequestStatus(id: string, status: string, adminNote?
         // 이 액션만 알림 등록 결과를 반환한다. 공용 알림 함수의 다른 호출은 변경하지 않는다.
         await prisma.$executeRawUnsafe(
             `INSERT INTO "Notification" (id, "userId", type, title, message, "linkUrl", "isRead", "createdAt")
-             VALUES (gen_random_uuid()::text, $1, 'REQUEST', '메시지 상담 상태 안내', $2, '/mypage', false, NOW())`,
+             VALUES (gen_random_uuid()::text, $1, 'REQUEST', '메시지 상담 상태 안내', $2, $3, false, NOW())`,
             before.userId,
             `"${before.title}" → ${({ PENDING: "상담 대기", CONFIRMED: "내용 확인", COMPLETED: "상담 종결", REJECTED: "반려" } as Record<string, string>)[status]}. 출결·셔틀 변경 여부는 해당 화면에서 확인해 주세요.`,
+            // 누르면 그 문의의 대화 화면으로(2026-11-14 — 예전엔 홈으로 갔다)
+            `/mypage/requests/${id}`,
         );
         notification = "REGISTERED";
     } catch {
@@ -2815,7 +2817,7 @@ export async function updateRequestStatus(id: string, status: string, adminNote?
         try {
             const { sendPushToUser } = await import("@/lib/pushNotification");
             push = (await sendPushToUser(before.userId, {
-                title: "메시지 상담 상태 안내", body: "상담 상태가 변경되었습니다. 보낸 메시지에서 확인해 주세요.", url: "/mypage", tag: "REQUEST",
+                title: "메시지 상담 상태 안내", body: "상담 상태가 변경되었습니다. 보낸 문의에서 확인해 주세요.", url: `/mypage/requests/${id}`, tag: "REQUEST",
             })).status;
         } catch { push = "UNKNOWN"; }
     }

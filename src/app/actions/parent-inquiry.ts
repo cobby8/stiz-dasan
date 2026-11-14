@@ -77,12 +77,17 @@ export async function sendRefundInquiry(paymentIdRaw: string, reason: string): P
   if (!paymentId) return { ok: false, error: "청구를 찾을 수 없어요. 청구 화면을 새로 열어 주세요." };
   const result = await createRefundInquiry(prisma, parent.appUserId, paymentId, reason);
   if (!result.ok) return result;
-  // 이미 열려 있던 문의로 안내한 경우에는 알림을 다시 만들지 않는다
+  // 이미 열려 있던 문의로 안내한 경우에는 «접수» 알림을 다시 만들지 않는다.
+  // 그 문의에 새 사유를 덧붙였으면 이어 쓰기와 같은 규칙(학원 답 뒤 첫 글에만 알림)
   if (!result.existing) {
     await notifyAdminsOfInquiry("환불 문의 접수", `${result.studentName} - ${result.title}`);
     refreshRequestViews(result.requestId);
+  } else if (result.appended) {
+    if (result.notifyAdmins) await notifyAdminsOfInquiry("문의 추가 글", `${result.studentName} - ${result.title}`);
+    refreshRequestViews(result.requestId);
   }
-  return { ok: true, requestId: result.requestId, notice: result.existing ? "이미 보낸 환불 문의가 있어요." : undefined };
+  const notice = !result.existing ? undefined : result.appended ? "이미 보낸 환불 문의에 덧붙였어요" : "이미 보낸 환불 문의가 있어요.";
+  return { ok: true, requestId: result.requestId, notice };
 }
 
 // ── 관리자 ───────────────────────────────────────────────────────────────────

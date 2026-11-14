@@ -166,20 +166,6 @@ export function summarizePendingPayments(children: { payments: PaymentLite[] }[]
     return { count: seen.size, total, canCheckoutAny };
 }
 
-/** 최근 days 일 안에 «학원 답변»이 달린 보낸 메시지 수. 답변(adminNote)이 비어 있으면 세지 않는다. */
-export function countRecentAnswers(
-    requests: { adminNote: string | null; updatedAt: Date | string }[],
-    nowMs: number,
-    days = 7,
-): number {
-    const since = nowMs - days * 86_400_000;
-    return requests.filter((r) => {
-        if (!r.adminNote || !r.adminNote.trim()) return false;
-        const at = new Date(r.updatedAt).getTime();
-        return Number.isFinite(at) && at >= since;
-    }).length;
-}
-
 /** 최근 days 일 안에 올라온 공지 수(«새 공지 N건» 줄). */
 export function countRecentNotices(notices: { createdAt: Date | string }[], nowMs: number, days = 7): number {
     const since = nowMs - days * 86_400_000;

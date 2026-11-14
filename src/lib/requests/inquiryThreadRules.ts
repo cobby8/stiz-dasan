@@ -110,6 +110,32 @@ export function shouldNotifyAdminsOfFollowUp(previousAuthor: InquiryAuthor | nul
   return previous === "ADMIN";
 }
 
+/**
+ * 홈 «답변 옴 N건» — 최근 days 일 안에 학원 답이 달린 문의만 센다(코드 리뷰 F3).
+ * 기간 조건이 없으면 예전에 답을 받고 읽은 문의가 종결 전까지 계속 «답변 옴»으로 세어져 숫자가 줄지 않는다.
+ */
+export function countRecentAnswered(rows: readonly { status: InquiryParentStatus; answeredAt: string | null }[], nowMs: number, days = 7): number {
+  const since = nowMs - days * 86_400_000;
+  return rows.filter((row) => {
+    if (row.status !== "ANSWERED" || !row.answeredAt) return false;
+    const at = new Date(row.answeredAt).getTime();
+    return Number.isFinite(at) && at >= since;
+  }).length;
+}
+
+/** 옛 답변 칸(adminNote) 한도 — 새 표가 없는 환경에서 답을 이어 붙일 때 쓴다(글 한 개 한도와 같은 값) */
+export const LEGACY_ANSWER_MAX = INQUIRY_BODY_MAX;
+
+/**
+ * 새 표가 없는 환경의 학원 답: 옛 답변 «뒤에» 줄을 바꿔 이어 붙인다(덮어쓰지 않는다 — 앞선 답이 사라지면 안 된다).
+ * 합친 글이 한도를 넘으면 거절한다(잘라 저장하지 않는다).
+ */
+export function appendLegacyAnswer(current: string | null | undefined, added: string): { ok: true; note: string } | { ok: false; error: string } {
+  const note = [(current ?? "").trim(), added.trim()].filter(Boolean).join("\n\n");
+  if (note.length > LEGACY_ANSWER_MAX) return { ok: false, error: "답변 칸이 가득 찼습니다. 지금은 더 이어 쓸 수 없어 전화로 안내해 주세요." };
+  return { ok: true, note };
+}
+
 /** 목록 한 줄의 «첫 줄» — 글의 첫 줄만(빈 줄 제외), 길면 화면이 줄여 보인다 */
 export function inquiryFirstLine(content: string): string {
   return String(content ?? "").split("\n").map((line) => line.trim()).find(Boolean) ?? "";

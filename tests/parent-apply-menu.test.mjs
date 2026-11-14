@@ -94,7 +94,13 @@ test("① 홈에 «신청» 줄이 늘 있다 · 아래 탭은 홈이 켜진다"
   assert.match(always.slice(0, 1800), /<Link href="\/mypage\/apply" className=\{TODO_ROW\}>\s*<span[^>]*>신청<\/span>/);
   const nav = load("src/app/mypage/MyPageBottomNav.tsx", { "next/link": { default: Link }, "next/navigation": { usePathname: () => "/mypage" } });
   const tabOf = (path) => nav.PARENT_TABS.find((tab) => nav.isParentTabActive(tab, path))?.label;
-  assert.deepEqual([tabOf("/mypage/apply"), tabOf("/mypage/rental"), tabOf("/mypage/seasonal/apply/winter-2027")], ["홈", "홈", "수업"]);
+  // 신청 메뉴에서 들어간 화면은 모두 «홈» — 방학특강 신청은 더 긴 주소가 이겨 수업 탭(/mypage/seasonal 결석·보강)에 먹히지 않는다
+  assert.deepEqual([tabOf("/mypage/apply"), tabOf("/mypage/rental"), tabOf("/mypage/seasonal/apply"), tabOf("/mypage/seasonal/apply/winter-2027/apply")], ["홈", "홈", "홈", "홈"]);
+  assert.deepEqual([tabOf("/mypage/seasonal"), tabOf("/mypage"), tabOf("/mypage/payments/checkout"), tabOf("/mypage/settings")], ["수업", "홈", "청구", undefined]);
+  // 어느 경로에서도 탭은 하나만 켜진다
+  for (const path of ["/mypage", "/mypage/seasonal", "/mypage/seasonal/apply/x", "/mypage/news/1", "/mypage/requests/r1", "/mypage/history"]) {
+    assert.equal(nav.PARENT_TABS.filter((tab) => nav.isParentTabActive(tab, path)).length, 1, path);
+  }
 });
 
 // ── ② 유니폼 ─────────────────────────────────────────────────────────────────

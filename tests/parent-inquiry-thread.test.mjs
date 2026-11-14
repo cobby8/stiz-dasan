@@ -93,10 +93,13 @@ function fakeDb(seed = {}) {
       return [{ title: row.title, studentName: row.studentName ?? null, adminNote: row.adminNote ?? null }];
     }
     if (/UPDATE "ParentRequest" SET "adminNote" = \$2, status = \$3/.test(sql)) {
-      const row = state.requests.find((r) => r.id === args[0]);
+      // 읽은 뒤 바뀌었으면 0행(다른 관리자의 답을 덮지 않는다)
+      assert.match(sql, /WHERE id = \$1 AND "adminNote" IS NOT DISTINCT FROM \$4 RETURNING id/);
+      const row = state.requests.find((r) => r.id === args[0] && (r.adminNote ?? null) === (args[3] ?? null));
+      if (!row) return [];
       row.adminNote = args[1];
       row.status = args[2];
-      return 1;
+      return [{ id: row.id }];
     }
     if (/UPDATE "ParentRequest" SET status = \$2/.test(sql)) {
       state.requests.find((r) => r.id === args[0]).status = args[1];
@@ -271,6 +274,17 @@ test("③ 새 표가 없으면 예전처럼 adminNote 한 줄에 저장한다(�
   assert.equal(result.legacy, true);
   assert.equal(db.state.requests[0].adminNote, "답변입니다");
   assert.equal(db.state.requests[0].status, "CONFIRMED");
+  // 두 번째 답은 덮어쓰지 않고 뒤에 이어 붙는다(코드 리뷰 F1)
+  assert.equal((await service.addAdminInquiryReply(db, "admin-1", "r1", "추가 안내")).ok, true);
+  assert.equal(db.state.requests[0].adminNote, "답변입니다\n\n추가 안내");
+  // 합쳐서 2,000자를 넘으면 거절(앞선 답은 그대로)
+  const full = await service.addAdminInquiryReply(db, "admin-1", "r1", "가".repeat(1995));
+  assert.equal(full.ok, false);
+  assert.match(full.error, /가득 찼습니다/);
+  assert.equal(db.state.requests[0].adminNote, "답변입니다\n\n추가 안내");
+  assert.deepEqual(rules.appendLegacyAnswer(null, " 첫 답 "), { ok: true, note: "첫 답" });
+  assert.equal(rules.appendLegacyAnswer("가".repeat(1000), "나".repeat(998)).ok, true, "딱 2,000자");
+  assert.equal(rules.appendLegacyAnswer("가".repeat(1000), "나".repeat(999)).ok, false);
   assert.equal((await service.inquiryFollowUpFacts(db, ["r1"])).size, 0);
 });
 
@@ -560,6 +574,86 @@ test("⑨ 새 문의 하루(KST) 20건 상한: 넣는 문장 안에서 센다", 
   assert.match(body, /allowedTypes = new Set\(\["ABSENCE", "SHUTTLE", "EARLY_LEAVE", "OTHER"\]\)/);
 });
 
+// ── ⑩ 코드 리뷰 권장(2026-11-14) ─────────────────────────────────────────────
+
+test("⑩ F2 상태만 바꿀 때 가는 학부모 알림도 그 문의 대화로(«보낸 문의»)", () => {
+  const admin = read("src/app/actions/admin.ts");
+  const body = admin.slice(admin.indexOf("export async function updateRequestStatus"), admin.indexOf("export async function getParentRequestStatusForAdmin"));
+  assert.match(body, /'메시지 상담 상태 안내', \$2, \$3, false, NOW\(\)\)/);
+  assert.match(body, /`\/mypage\/requests\/\$\{id\}`,\s*\);/);
+  assert.match(body, /보낸 문의에서 확인해 주세요\.", url: `\/mypage\/requests\/\$\{id\}`, tag: "REQUEST"/);
+  assert.doesNotMatch(body, /보낸 메시지|'\/mypage'|url: "\/mypage"/);
+});
+
+test("⑩ F3 홈 «답변 옴 N건»: 최근 7일 안에 답이 달린 문의만", async () => {
+  const now = Date.parse("2026-11-20T03:00:00Z");
+  const c = rules.countRecentAnswered;
+  assert.equal(c([
+    { status: "ANSWERED", answeredAt: "2026-11-19T00:00:00.000Z" },
+    { status: "ANSWERED", answeredAt: "2026-11-13T03:00:00.000Z" }, // 딱 7일 전 = 포함
+    { status: "ANSWERED", answeredAt: "2026-11-13T02:59:59.000Z" }, // 7일 넘음
+    { status: "ANSWERED", answeredAt: null },
+    { status: "ANSWERED", answeredAt: "엉뚱한 값" },
+    { status: "WAITING", answeredAt: "2026-11-19T00:00:00.000Z" },
+    { status: "DONE", answeredAt: "2026-11-19T00:00:00.000Z" },
+  ], now), 2);
+  // 목록이 «마지막 글이 학원 답일 때 그 시각»을 준다 · 옛 답변만 있으면 문의가 마지막으로 바뀐 시각
+  const db = fakeDb({ requests: [
+    baseRequest({ id: "r1" }),
+    baseRequest({ id: "r2", adminNote: "옛 답변", updatedAt: new Date("2026-11-12T00:00:00Z") }),
+    baseRequest({ id: "r3" }),
+  ] });
+  await service.addAdminInquiryReply(db, "admin-1", "r1", "답");
+  await service.addAdminInquiryReply(db, "admin-1", "r3", "답");
+  await service.addParentInquiryMessage(db, "parent-a", "r3", "다시 여쭤요");
+  const rows = Object.fromEntries((await service.listMyInquiries(db, "parent-a")).map((row) => [row.id, row]));
+  assert.match(rows.r1.answeredAt, /^2026-11-20T/);
+  assert.equal(rows.r2.answeredAt, "2026-11-12T00:00:00.000Z");
+  assert.equal(rows.r3.answeredAt, null, "내가 마지막으로 썼으면 답변 대기");
+  assert.match(read("src/app/mypage/page.tsx"), /answered: countRecentAnswered\(myInquiries, Date\.now\(\)\)/);
+  // 안 쓰게 된 옛 함수는 지웠다
+  assert.doesNotMatch(read("src/lib/queries.ts"), /getMyRequests/);
+  assert.doesNotMatch(read("src/lib/mypage/summary.ts"), /countRecentAnswers/);
+});
+
+test("⑩ F4 신청 내역의 «학원 답변» = 마지막 학원 글 · 문의는 «대화 보기 ▸»", async () => {
+  const db = fakeDb({ requests: [baseRequest({ adminNote: "옛 답변" }), baseRequest({ id: "r2", adminNote: "옛 답변만" })] });
+  await service.addAdminInquiryReply(db, "admin-1", "r1", "첫 답");
+  await service.addParentInquiryMessage(db, "parent-a", "r1", "추가 글");
+  await service.addAdminInquiryReply(db, "admin-1", "r1", "마지막 답");
+  const last = await service.lastAdminAnswers(db, ["r1", "r2"]);
+  assert.equal(last.get("r1"), "마지막 답");
+  assert.equal(last.has("r2"), false, "이어 쓴 학원 글이 없으면 옛 답변 칸을 쓴다");
+  const timeline = read("src/lib/requests/parent-timeline.ts");
+  assert.match(timeline, /lastAdminAnswers\(prisma, inquiries\.map\(\(r\) => r\.id\)\)\.catch/);
+  assert.match(timeline, /answer: lastAnswers\.get\(r\.id\) \?\? r\.adminNote \?\? null, openHref: `\/mypage\/requests\/\$\{r\.id\}`/);
+  assert.match(read("src/app/mypage/classes/RequestTimeline.tsx"), /row\.kind === "PARENT_REQUEST" \? "대화 보기 ▸" : "신청 화면에서 보기"/);
+});
+
+test("⑩ F6 열린 환불 문의가 있으면 새 사유를 그 문의에 덧붙인다", async () => {
+  const db = fakeDb({ payments: [paidBill()] });
+  const { actions, sent } = loadActions(db);
+  const first = await actions.sendRefundInquiry("pay-1", "이사 갑니다");
+  const second = await actions.sendRefundInquiry("pay-1", "계좌는 국민 123 입니다");
+  assert.deepEqual([second.ok, second.requestId, second.notice], [true, first.requestId, "이미 보낸 환불 문의에 덧붙였어요"]);
+  assert.equal(db.state.requests.length, 1);
+  assert.deepEqual(db.state.messages.map((m) => [m.requestId, m.authorRole, m.body]), [[first.requestId, "PARENT", "계좌는 국민 123 입니다"]]);
+  assert.equal(sent.adminNotices.length, 2, "학원 답 전이라 덧붙인 글에는 알림을 더 만들지 않는다(접수 알림 2건뿐)");
+  // 사유 없이 다시 누르면 덧붙이지 않는다
+  const third = await actions.sendRefundInquiry("pay-1", "  ");
+  assert.equal(third.notice, "이미 보낸 환불 문의가 있어요.");
+  assert.equal(db.state.messages.length, 1);
+});
+
+test("⑩ F7·F8 목록 날짜 칸 폭 · 계좌 안내 링크는 실제 문의 폼으로", () => {
+  assert.match(read("src/app/mypage/requests/page.tsx"), /<span className="w-14 shrink-0 whitespace-nowrap text-sm tabular-nums/);
+  // 링크 목적지(/mypage#parent-request-form)를 홈이 받아 폼을 편다
+  assert.match(read("src/app/mypage/payments/PaymentRequestClient.tsx"), /입금 계좌는 <Link href="\/mypage#parent-request-form"/);
+  const home = read("src/app/mypage/MyPageClient.tsx");
+  assert.match(home, /if \(id === "parent-request-form"\) setShowRequestForm\(true\);/);
+  assert.match(home, /<div id="parent-request-form"/);
+});
+
 // ── ⑧ 청구 화면의 «환불 문의»(c11) ──────────────────────────────────────────────
 
 test("⑧ 청구 세부 시트: 납부 완료 항목에만 «환불 문의» · 결제·입금 알림·영수증 흐름은 그대로", () => {
@@ -586,7 +680,8 @@ test("⑧ 청구 세부 시트: 납부 완료 항목에만 «환불 문의» · 
 
   const source = read("src/app/mypage/payments/PaymentRequestClient.tsx");
   assert.match(source, /await sendRefundInquiry\(paymentId, refundReason\)/);
-  assert.match(source, /href=\{`\/mypage\/requests\/\$\{refundSent\[row\.paymentId\]\}`\}/, "보낸 뒤 그 문의 대화로");
+  assert.match(source, /href=\{`\/mypage\/requests\/\$\{refundSent\[row\.paymentId\]\.id\}`\}/, "보낸 뒤 그 문의 대화로");
+  assert.match(source, /\{refundSent\[row\.paymentId\]\.notice \?\? "환불 문의를 보냈어요\."\}/, "이미 열린 문의가 있었으면 그 안내를 보인다");
   // 결제 동작은 건드리지 않았다(같은 주소·같은 요청 몸통)
   assert.match(source, /href=\{`\/payments\/\$\{encodeURIComponent\(row\.invoiceId!\)\}`\}/);
   assert.match(source, /send\(\{ paymentId, kind: "PAYMENT_CLAIM", method, paidOn, depositorName, note \}\)/);

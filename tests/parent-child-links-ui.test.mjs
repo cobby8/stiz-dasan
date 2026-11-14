@@ -103,6 +103,7 @@ test("서버 홈은 빈 자녀 판정 전에 특강 내역을 조회하고 해�
     // 홈 «보낸 문의» 건수(2026-11-14 c3) — 자녀가 없으면 부르지 않는다
     "@/lib/prisma": { prisma: {} },
     "@/lib/requests/inquiry-thread": {},
+    "@/lib/requests/inquiryThreadRules": {},
     "@/lib/seasonal/parent-pending": { getPendingSeasonalChildren: async (id, students) => { calls.push([id, students]); return []; } },
     "@/components/account/EmptyParentState": { default: Empty },
     "./MyPageClient": { default: () => null },

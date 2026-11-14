@@ -2,6 +2,7 @@ import { getMyPageData, getNoticesByClassIds } from "@/lib/queries";
 import { prisma } from "@/lib/prisma";
 // 보낸 문의 건수(답변 옴·답변 대기) — «보낸 문의» 화면과 같은 판정(2026-11-14 c3)
 import { listMyInquiries } from "@/lib/requests/inquiry-thread";
+import { countRecentAnswered } from "@/lib/requests/inquiryThreadRules";
 import { getUsableAcademyPhone } from "@/lib/academyPhone";
 import { getMakeupOverviewForParent } from "@/lib/makeup/parent-makeup";
 import { getUpcomingSeasonalSeats } from "@/lib/seasonal/parent-absence";
@@ -94,5 +95,5 @@ export default async function MyPageDashboard({
     const childParam = (await searchParams)?.child;
     const initialChildId = data.children.find((c) => c.id === childParam)?.id ?? data.children[0].id;
 
-    return <MyPageClient initialChildId={initialChildId} data={data} notices={notices} inquiryCounts={{ answered: myInquiries.filter((row) => row.status === "ANSWERED").length, waiting: myInquiries.filter((row) => row.status === "WAITING").length }} parentShuttleOverview={shuttleOverview} shuttleDriverContact={driverContact} pendingSeasonalChildren={pendingSeasonalChildren} makeupAvailable={makeup?.counts.available ?? 0} seasonalUpcoming={seasonal?.seats.length ?? 0} pendingPayments={pendingPayments} classStatusLines={classStatusLines} recordLines={recordLines} feedCandidates={feedCandidates} />;
+    return <MyPageClient initialChildId={initialChildId} data={data} notices={notices} inquiryCounts={{ answered: countRecentAnswered(myInquiries, Date.now()), waiting: myInquiries.filter((row) => row.status === "WAITING").length }} parentShuttleOverview={shuttleOverview} shuttleDriverContact={driverContact} pendingSeasonalChildren={pendingSeasonalChildren} makeupAvailable={makeup?.counts.available ?? 0} seasonalUpcoming={seasonal?.seats.length ?? 0} pendingPayments={pendingPayments} classStatusLines={classStatusLines} recordLines={recordLines} feedCandidates={feedCandidates} />;
 }

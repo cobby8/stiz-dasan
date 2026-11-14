@@ -7,6 +7,8 @@ import { parentKindName, shortMd } from "@/lib/enrollment/parentChangeStatus";
 import { deriveEnrollmentChangeStatus, deriveShuttleDayStatus } from "@/lib/requests/catalog";
 import { REASON_LABEL } from "@/lib/regular/regularAbsenceRules";
 import { PARENT_SHUTTLE_DIRECTION_LABEL, PARENT_SHUTTLE_EXCEPTION_KIND_LABEL } from "@/lib/shuttle/dayExceptionRules";
+// 문의의 마지막 학원 글(대화) — «학원 답변» 칸용
+import { lastAdminAnswers } from "@/lib/requests/inquiry-thread";
 import { absenceCreditLine, sortTimeline, toTimelineView, type ParentTimelineRow, type ParentTimelineView } from "@/lib/requests/parent-timeline-rules";
 
 // ── 학부모 «수업» 탭 신청 내역 타임라인(최근 3개월) — 2026-11-10 원장 결정 설계 B ─────────────
@@ -198,6 +200,8 @@ export async function getParentRequestTimeline(parentUserId: string): Promise<Pa
       openHref: "/mypage/seasonal",
     });
   }
+  // 문의의 «학원 답변» = 마지막 학원 글(이어 쓴 대화가 있으면 그 글, 없으면 옛 답변 칸). 못 읽으면 옛 답변 칸 그대로
+  const lastAnswers = await lastAdminAnswers(prisma, inquiries.map((r) => r.id)).catch(() => new Map<string, string>());
   for (const r of inquiries) {
     rows.push({
       key: `PARENT_REQUEST:${r.id}`, kind: "PARENT_REQUEST", id: r.id, studentId: r.studentId, studentName: r.studentName,
@@ -205,7 +209,7 @@ export async function getParentRequestTimeline(parentUserId: string): Promise<Pa
       createdOn: r.createdOn, createdAt: iso(r.createdAt), rawStatus: r.status, details: [],
       // 문의 답변은 학부모에게 보내는 말(홈 «내 문의»에도 보인다)
       // 누르면 그 문의의 대화 화면(이어 쓰기) — 2026-11-14 c3
-      answer: r.adminNote ?? null, openHref: `/mypage/requests/${r.id}`,
+      answer: lastAnswers.get(r.id) ?? r.adminNote ?? null, openHref: `/mypage/requests/${r.id}`,
     });
   }
   return sortTimeline(rows).map((row) => toTimelineView(row, today));

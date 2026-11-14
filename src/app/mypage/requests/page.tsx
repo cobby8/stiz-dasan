@@ -44,7 +44,7 @@ export default async function ParentRequestsPage() {
                     {rows.map((row) => (
                         <li key={row.id}>
                             <Link href={`/mypage/requests/${row.id}`} className="flex min-h-12 items-center gap-2 px-3 py-2 hover:bg-[var(--color-academy-soft)]">
-                                <span className="w-11 shrink-0 text-sm tabular-nums text-[var(--color-academy-muted)]">
+                                <span className="w-14 shrink-0 whitespace-nowrap text-sm tabular-nums text-[var(--color-academy-muted)]">
                                     {formatKstDate(row.createdAt, { month: "numeric", day: "numeric" })}
                                 </span>
                                 {/* 환불 문의는 제목(«환불 문의 · 2026-11 수강료 72,000원»)이 곧 내용이라 제목을 보인다 */}
