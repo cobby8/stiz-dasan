@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
+import ParentBackLink from "@/components/parent/ParentBackLink";
 import type { ParentIllnessReview, UpcomingChild, UpcomingClassDate } from "@/lib/regular/parent-regular-absence";
 import type { RegularMakeupRow } from "@/lib/regular/parent-regular-makeup";
 import { groupByUpcomingDate } from "@/components/admin/list/upcomingDateGroups";
@@ -423,9 +424,7 @@ export default function RegularAbsenceClient({
       {/* 헤더 */}
       <div className="mb-2 flex items-center gap-2">
         {/* 뒤로가기 = 누르는 영역 44×44(academy-back-link) */}
-        <Link href="/mypage" aria-label="마이페이지로" className="academy-back-link">
-          <span aria-hidden="true">←</span>
-        </Link>
+        <ParentBackLink fallbackHref="/mypage" ariaLabel="마이페이지로" className="academy-back-link" />
         <h1 className="academy-heading">
           결석 알리기
         </h1>

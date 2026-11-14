@@ -24,6 +24,8 @@ function compileModule(path, imports = {}) {
 }
 const Link = ({ children, ...props }) => React.createElement("a", props, children);
 const kst = compileModule("src/lib/datetime/kst.ts");
+// 학부모 화면 «←» = 기록 우선 뒤로 링크(2026-11-14) — 진짜 부품(기록 없을 때 주소 = 예전 고정 주소)
+const parentBackLink = compileModule("src/components/parent/ParentBackLink.tsx", { "next/link": { default: Link }, "@/lib/navigation/inAppHistory": compileModule("src/lib/navigation/inAppHistory.ts") });
 const chips = compileModule("src/components/admin/list/StatusCountChips.tsx");
 // 상태색 공용 지도(2026-11-09 색상 정리) — 학부모 보강·방학특강 배지가 쓴다
 const statusTones = compileModule("src/lib/ui/statusTones.ts");
@@ -33,6 +35,8 @@ const feedRules = compileModule("src/lib/feed/rules.ts", {
   "@/lib/datetime/kst": kst,
   "@/lib/sessionVideo/rules": compileModule("src/lib/sessionVideo/rules.ts", { "@/lib/datetime/kst": kst }),
 });
+// 2026-11-14 리포트 줄 → «수업 리포트 피드»(그 수업 자리) — 주소는 피드 순수 규칙이 만든다
+const reportFeedRules = compileModule("src/lib/feed/reportFeedRules.ts", { "@/lib/datetime/kst": kst });
 // 취소·거절의 «그 자리 확인» 공용 부품(게슈탈트 C-M1) — 취소 버튼을 쓰는 화면이 함께 불러온다
 const inlineConfirm = compileModule("src/components/parent/InlineConfirm.tsx");
 // 오류 원문 대신 고객용 한국어를 고르는 공용 함수(개발 언어 제거) — 오류를 보여 주는 화면이 함께 불러온다
@@ -132,6 +136,7 @@ test("일정 탭 달 계산: 잘못된 ?month 는 이번 달, 수강월이 달�
 
 test("보강 예약은 4칸 집계판 대신 상태 칩(서버 집계와 같은 판정)과 한 목록의 행으로 보이고 예약·취소 흐름은 그대로다", () => {
   const Makeup = compileModule("src/app/mypage/makeup/MakeupClient.tsx", {
+    "@/components/parent/ParentBackLink": parentBackLink,
     "@/lib/ui/statusTones": statusTones, "@/lib/seats/seatLevel": seatLevelModule,
     "@/lib/mypage/requestPreset": { presetIndex: () => 0, presetFirst: (list) => [...list] }, "@/components/parent/customerMessage": customerMessageModule, 
     "next/link": { default: Link },
@@ -175,6 +180,7 @@ test("보강 예약은 4칸 집계판 대신 상태 칩(서버 집계와 같은 
 test("정규 결석 신고는 반 카드 속 작은 카드 대신 날짜 묶음(오늘/이번 주/다음 주/이후)의 한 줄 행이고 신고 흐름은 그대로다", () => {
   const groups = compileModule("src/components/admin/list/upcomingDateGroups.ts", { "@/lib/datetime/kst": kst });
   const Absence = compileModule("src/app/mypage/regular-absence/RegularAbsenceClient.tsx", {
+    "@/components/parent/ParentBackLink": parentBackLink,
     "@/lib/mypage/requestPreset": { presetIndex: () => 0, presetFirst: (list) => [...list] }, "@/components/parent/customerMessage": customerMessageModule, 
     "next/link": { default: Link },
     "@/components/admin/list/upcomingDateGroups": groups,
@@ -293,7 +299,7 @@ test("정규 결석 신고는 반 카드 속 작은 카드 대신 날짜 묶음(
   assert.doesNotMatch(source, /"\/api\/upload"/);
 });
 
-test("수업 리포트 목록은 KST 달별 묶음·한 줄 행(주제·날짜 오른쪽 / 반·시간·담당)이고 상세 링크는 그대로다", async () => {
+test("수업 리포트 목록은 KST 달별 묶음·한 줄 행(주제·날짜 오른쪽 / 반·시간·담당)이고 누르면 리포트 피드의 그 수업 자리로 간다", async () => {
   const Page = compileModule("src/app/mypage/reports/page.tsx", {
     "next/link": { default: Link },
     // 프로필 사진(2026-11-14 피드백 줄 연결) — 화면 검사와 무관해 빈 부품·주소 없음
@@ -330,6 +336,7 @@ test("수업 리포트 목록은 KST 달별 묶음·한 줄 행(주제·날짜 �
     // 2026-11-14 수업 피드: 행마다 «사진 n · 영상 n» — 개수는 공용 조회(상세가 실제로 보여 주는 것과 같은 집합)
     "@/lib/feed/server": { countSessionFeedMedia: async (sessions) => new Map(sessions.map((s) => [s.sessionId ?? s.id, s.id === "s1" ? { photoCount: 2, videoCount: 1 } : { photoCount: 0, videoCount: 0 }])) },
     "@/lib/feed/rules": feedRules,
+    "@/lib/feed/reportFeedRules": reportFeedRules,
   }).default;
   const html = renderToStaticMarkup(await Page());
   assert.match(html, /사진 2 · 영상 1/);
@@ -338,7 +345,7 @@ test("수업 리포트 목록은 KST 달별 묶음·한 줄 행(주제·날짜 �
   assert.match(html, /aria-label="2026년 9월"/);
   assert.match(html, /10\/1\(목\)/);
   assert.match(html, /9\/11\(금\)/);
-  assert.match(html, /href="\/mypage\/reports\/s1"/);
+  assert.match(html, /href="\/mypage\/reports\/feed\?start=s1"/);
   assert.match(html, />수업 리포트</);
   assert.match(html, /담당: 합성 코치/);
   assert.doesNotMatch(html, / \| 초등/,"«날짜 | 반 (요일 시간)» 이어 붙인 글은 요소로 나눴다");

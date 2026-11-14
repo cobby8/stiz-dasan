@@ -17,6 +17,8 @@ import { groupByKstMonth } from "@/components/admin/list/monthDateGroups";
 // 행마다 «사진 n · 영상 n» — 상세 화면이 실제로 보여 주는 것과 같은 개수(수업 피드 공용 조회)
 import { countSessionFeedMedia } from "@/lib/feed/server";
 import { feedMediaCountLabel } from "@/lib/feed/rules";
+// 리포트 줄을 누르면 상세가 아니라 «수업 리포트 피드»의 그 수업 자리로(2026-11-14 원장 요청)
+import { reportFeedHref } from "@/lib/feed/reportFeedRules";
 
 // 학부모 리포트 목록은 실시간 데이터 필요 (자녀 보안 체크)
 export const dynamic = "force-dynamic";
@@ -33,7 +35,8 @@ const FB_CATEGORIES: Record<string, string> = {
 
 // «소식» 탭 (2026-11-09 원장 결정 D7) — 공지·수업 리포트·학습 피드백·수업 사진을 한 화면에 모은다.
 // 예전엔 리포트만 이 화면에 있고, 공지·피드백·사진은 홈 아래쪽에 흩어져 있었다(피드백은 접힌 칸).
-// 주소 /mypage/reports 는 그대로(문자로 나간 링크·앱 바로가기 보호), 리포트 상세 링크도 그대로다.
+// 주소 /mypage/reports 는 그대로(문자로 나간 링크·앱 바로가기 보호). 리포트 줄은 2026-11-14 부터
+// «수업 리포트 피드»(/mypage/reports/feed?start=<id>)의 그 수업 자리로 간다 — 상세(/mypage/reports/<id>)는 피드의 «자세히»에서.
 
 export default async function ParentReportsPage() {
     // 로그인 확인
@@ -196,9 +199,9 @@ export default async function ParentReportsPage() {
                             <ul className="divide-y divide-[var(--color-academy-line)]">
                                 {group.items.map(({ item: r, ymd }) => (
                                     <li key={r.sessionId}>
-                                        {/* 행 전체가 상세 리포트로 가는 링크(기존과 같은 주소). 터치 44px 이상 */}
+                                        {/* 행 전체가 리포트 피드(그 수업 자리에서 시작)로 가는 링크. 터치 44px 이상 */}
                                         <Link
-                                            href={`/mypage/reports/${r.sessionId}`}
+                                            href={reportFeedHref(r.sessionId)}
                                             className="flex min-h-14 items-center gap-2 px-3 py-2 hover:bg-[var(--color-academy-soft)]"
                                         >
                                             <div className="min-w-0 flex-1">

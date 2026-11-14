@@ -1,4 +1,5 @@
 import Link from "next/link";
+import ParentBackLink from "@/components/parent/ParentBackLink";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { logout } from "@/app/actions/auth";
@@ -97,9 +98,7 @@ export default async function ParentSettingsPage() {
         <div className="mx-auto grid max-w-2xl gap-4">
             <div className="flex items-center gap-2">
                 {/* 뒤로가기 = 누르는 영역 44×44(academy-back-link) */}
-                <Link href="/mypage" aria-label="홈으로" className="academy-back-link">
-                    <span aria-hidden="true">←</span>
-                </Link>
+                <ParentBackLink fallbackHref="/mypage" ariaLabel="홈으로" className="academy-back-link" />
                 <h1 className="academy-heading">설정</h1>
             </div>
 

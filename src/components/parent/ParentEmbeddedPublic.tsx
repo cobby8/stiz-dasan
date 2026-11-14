@@ -1,4 +1,4 @@
-import Link from "next/link";
+import ParentBackLink from "@/components/parent/ParentBackLink";
 import PublicSiteTheme from "@/components/PublicSiteTheme";
 
 /**
@@ -28,9 +28,7 @@ export default function ParentEmbeddedPublic({
     <div className="grid gap-3">
       <div className="flex items-center gap-2">
         {/* 뒤로가기 = 누르는 영역 44×44(academy-back-link) */}
-        <Link href={backHref} aria-label={backLabel} className="academy-back-link">
-          <span aria-hidden="true">←</span>
-        </Link>
+        <ParentBackLink fallbackHref={backHref} ariaLabel={backLabel} className="academy-back-link" />
         <h1 className="academy-heading min-w-0 flex-1">{title}</h1>
       </div>
       <style>{`@media (max-width: 767.98px){.parent-embedded-public [data-public-bottom-bar]{bottom:calc(3rem + env(safe-area-inset-bottom)) !important}}`}</style>

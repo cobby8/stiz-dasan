@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import Link from "next/link";
+import ParentBackLink from "@/components/parent/ParentBackLink";
 import { useRouter } from "next/navigation";
 import { cancelStaffRoleRequest, requestStaffRoles } from "@/app/actions/role-requests";
 import InlineConfirm from "@/components/parent/InlineConfirm";
@@ -81,9 +81,7 @@ export default function RolesClient({
     <div className="mx-auto max-w-2xl px-4 py-6">
       <div className="mb-2 flex items-center gap-2">
         {/* 뒤로가기 = 누르는 영역 44×44(academy-back-link) */}
-        <Link href="/mypage" aria-label="마이페이지로" className="academy-back-link">
-          <span aria-hidden="true">←</span>
-        </Link>
+        <ParentBackLink fallbackHref="/mypage" ariaLabel="마이페이지로" className="academy-back-link" />
         <h1 className="academy-heading">
           역할 추가 신청
         </h1>

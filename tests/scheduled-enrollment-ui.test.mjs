@@ -122,6 +122,8 @@ test("관리자 원생 목록 «활성» 필터·반별 인원은 개시일 미�
 test("학부모 홈은 개시일 미래인 ACTIVE 반을 수강 중으로 세고 수업 시작일을 안내한다", () => {
   const summary = load("src/lib/mypage/summary.ts", {});
   const Client = load("src/app/mypage/MyPageClient.tsx", {
+    // 옛 홈 칸 주소 넘기기의 «바꿔 끼우기» 표시(2026-11-14 학부모 뒤로) — 렌더 검사에서는 아무 일도 안 한다
+    "@/lib/navigation/inAppHistory": { markNextNavigationAsReplace() {} },
     "next/navigation": { useRouter: () => ({ push() {}, replace() {}, refresh() {} }) },
     "@/app/actions/parent-notifications": {}, "./useRememberedChild": { useRememberedChild: (_ids, init) => [init, () => {}] },
     "@/lib/mypage/parentNav": { safeInternalHref: (v) => (typeof v === "string" && v.startsWith("/") && !v.startsWith("//") ? v : null) },

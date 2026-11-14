@@ -1,4 +1,4 @@
-import Link from "next/link";
+import ParentBackLink from "@/components/parent/ParentBackLink";
 import { notFound } from "next/navigation";
 import { requireVerifiedParent } from "@/lib/auth-guard";
 import { getMyPageData, getNoticeById } from "@/lib/queries";
@@ -39,10 +39,10 @@ export default async function ParentNoticeDetailPage({ params }: { params: Promi
 
     return (
         <article className="space-y-4">
-            <Link href="/mypage/reports#news-notices" className="academy-back-link gap-1 px-2 text-sm text-[var(--color-academy-muted)]">
+            <ParentBackLink fallbackHref="/mypage/reports#news-notices" className="academy-back-link gap-1 px-2 text-sm text-[var(--color-academy-muted)]">
                 <span aria-hidden="true">←</span>
                 소식
-            </Link>
+            </ParentBackLink>
             <header>
                 {notice.isPinned && (
                     <p className="mb-1 text-xs font-semibold text-[var(--color-academy-warning)]">중요 공지</p>

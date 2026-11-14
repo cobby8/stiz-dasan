@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
+import ParentBackLink from "@/components/parent/ParentBackLink";
 import { useRouter } from "next/navigation";
 import { customerMessage } from "@/components/parent/customerMessage";
 import {
@@ -137,9 +138,7 @@ export default function WithdrawClient({
       {/* 헤더 — 컴팩트하게 제목 1줄 + 설명 1줄 */}
       <div className="mb-2 flex items-center gap-2">
         {/* 뒤로가기 = 누르는 영역 44×44(academy-back-link) */}
-        <Link href={backHref} aria-label="이전 화면으로" className="academy-back-link">
-          <span aria-hidden="true">←</span>
-        </Link>
+        <ParentBackLink fallbackHref={backHref} ariaLabel="이전 화면으로" className="academy-back-link" />
         <h1 className="academy-heading">
           회원 탈퇴
         </h1>

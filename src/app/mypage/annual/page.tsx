@@ -1,4 +1,5 @@
 import Link from "next/link";
+import ParentBackLink from "@/components/parent/ParentBackLink";
 import { redirect } from "next/navigation";
 import { requireVerifiedParent } from "@/lib/auth-guard";
 import { todayKst } from "@/lib/datetime/kst";
@@ -30,9 +31,7 @@ export default async function ParentAnnualPage({ searchParams }: { searchParams:
     return (
         <div className="mx-auto grid max-w-2xl gap-3">
             <div className="flex items-center gap-2">
-                <Link href="/mypage/history" aria-label="일정으로" className="academy-back-link">
-                    <span aria-hidden="true">←</span>
-                </Link>
+                <ParentBackLink fallbackHref="/mypage/history" ariaLabel="일정으로" className="academy-back-link" />
                 <h1 className="academy-heading min-w-0 flex-1">연간 일정</h1>
                 <nav aria-label="해 이동" className="flex shrink-0 items-center">
                     <Link href={`/mypage/annual?year=${year - 1}`} aria-label="이전 해" className={YEAR_LINK}>

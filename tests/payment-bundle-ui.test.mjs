@@ -216,7 +216,7 @@ test("④ 옛 홈 해시는 옮겨 간 탭으로", () => {
   assert.equal(legacyHomeHashTarget("mypage-feedback"), "/mypage/reports#news-feedback");
   assert.equal(legacyHomeHashTarget("mypage-notifications"), null, "알림은 홈에 그대로");
   assert.equal(legacyHomeHashTarget("constructor"), null);
-  assert.match(read("src/app/mypage/MyPageClient.tsx"), /const moved = legacyHomeHashTarget\(id\);\s*if \(moved\) \{\s*window\.location\.replace\(moved\);/);
+  assert.match(read("src/app/mypage/MyPageClient.tsx"), /const moved = legacyHomeHashTarget\(id\);\s*if \(moved\) \{[\s\S]{0,200}?window\.location\.replace\(moved\);/);
 });
 
 test("④ 학부모 «납부 신청» 승인은 MANUAL 로 표시 — 옛 토스 묶음 주문의 전액 취소가 이 청구를 환불하지 않게", () => {

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import ParentBackLink from "@/components/parent/ParentBackLink";
 import { redirect } from "next/navigation";
 import { requireVerifiedParent } from "@/lib/auth-guard";
 import { PARENT_APPLY_ITEMS } from "@/lib/mypage/parentApplyMenu";
@@ -19,9 +20,7 @@ export default async function ParentApplyMenuPage() {
     return (
         <div className="mx-auto grid max-w-2xl gap-3">
             <div className="flex items-center gap-2">
-                <Link href="/mypage" aria-label="홈으로" className="academy-back-link">
-                    <span aria-hidden="true">←</span>
-                </Link>
+                <ParentBackLink fallbackHref="/mypage" ariaLabel="홈으로" className="academy-back-link" />
                 <h1 className="academy-heading">신청</h1>
             </div>
             <ul className="academy-panel divide-y divide-[var(--color-academy-line)] overflow-hidden">

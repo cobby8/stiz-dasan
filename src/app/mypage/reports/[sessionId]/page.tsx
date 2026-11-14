@@ -2,12 +2,14 @@ import { prisma } from "@/lib/prisma";
 import { requireVerifiedParent } from "@/lib/auth-guard";
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import ParentBackLink from "@/components/parent/ParentBackLink";
 import ProfileAvatar from "@/components/common/ProfileAvatar";
 import { profilePhotoUrl } from "@/lib/profilePhoto/rules";
 import FeedPhotoGallery from "@/components/parent/FeedPhotoGallery";
 import { SessionVideoList } from "@/components/parent/SessionVideoPlayer";
 import { countSessionVideos, listViewableSessionPhotos, loadParentViewableSession } from "@/lib/feed/server";
 import { formatKstDate } from "@/lib/datetime/kst";
+import { loadOrDefault } from "@/lib/server/loadOrDefault";
 import { ATTENDANCE_TONE, statusBadgeClass } from "@/lib/ui/statusTones";
 
 // 학부모 리포트 상세는 실시간 데이터 필요 (보안 체크)
@@ -67,19 +69,21 @@ export default async function ParentReportDetailPage({
     const childIds = children.map((c) => c.id);
 
     // ── 4. 내 아이 출결·코멘트 · 볼 수 있는 사진 · 영상 수 ──
+    // 권한 판정(3)은 위에서 끝났다. 여기부터는 «보조 조회»라 한 번 흔들려도 화면 전체를 오류로 만들지 않는다
+    // (2026-11-14 리포트 화면 일시 오류). 실패한 칸만 비워 그리고(출결은 «확인 중») 어느 단계인지 기록을 남긴다.
     const [attendances, notes, photoMap, videoCounts] = await Promise.all([
-        prisma.$queryRawUnsafe<Array<{ studentId: string; status: string }>>(
+        loadOrDefault("리포트 상세: 출결", () => prisma.$queryRawUnsafe<Array<{ studentId: string; status: string }>>(
             `SELECT a."studentId", a.status FROM "Attendance" a
               WHERE a."sessionId" = $1 AND a."studentId" = ANY($2::text[])`,
             sessionId, childIds,
-        ),
-        prisma.$queryRawUnsafe<Array<{ studentId: string; note: string | null; rating: number | null }>>(
+        ), []),
+        loadOrDefault("리포트 상세: 코치 코멘트", () => prisma.$queryRawUnsafe<Array<{ studentId: string; note: string | null; rating: number | null }>>(
             `SELECT ssn."studentId", ssn.note, ssn.rating FROM "StudentSessionNote" ssn
               WHERE ssn."sessionId" = $1 AND ssn."studentId" = ANY($2::text[])`,
             sessionId, childIds,
-        ),
-        listViewableSessionPhotos([{ id: session.id, classId: session.classId, photosJSON: session.photosJSON }]),
-        countSessionVideos([session.id]),
+        ), []),
+        loadOrDefault("리포트 상세: 사진", () => listViewableSessionPhotos([{ id: session.id, classId: session.classId, photosJSON: session.photosJSON }]), new Map()),
+        loadOrDefault("리포트 상세: 영상 수", () => countSessionVideos([session.id]), new Map<string, number>()),
     ]);
     const statusMap = new Map(attendances.map((a) => [a.studentId, a.status]));
     const noteMap = new Map(notes.map((n) => [n.studentId, n]));
@@ -95,13 +99,10 @@ export default async function ParentReportDetailPage({
     return (
         <div className="space-y-3">
             {/* 뒤로가기 — 누르는 영역 44px(academy-back-link) */}
-            <Link
-                href="/mypage/reports"
-                className="academy-back-link gap-1 px-2 text-sm text-[var(--color-academy-muted)]"
-            >
+            <ParentBackLink fallbackHref="/mypage/reports" className="academy-back-link gap-1 px-2 text-sm text-[var(--color-academy-muted)]">
                 <span aria-hidden="true">←</span>
                 소식
-            </Link>
+            </ParentBackLink>
 
             {/* 수업 정보 머리 — 제목 1줄 + 날짜·반·시간 1줄 + 담당 */}
             <header className="rounded-xl border border-[var(--color-academy-line)] bg-white p-4">
