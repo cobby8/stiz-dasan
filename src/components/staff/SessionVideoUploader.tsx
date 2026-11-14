@@ -61,9 +61,9 @@ function putWithProgress(url: string, file: File, mimeType: string, onProgress: 
  *
  * 순서: ① 서버에 «업로드 주소» 요청(권한·시간·형식·크기 확인) ② 브라우저 → 저장소 직접 업로드(진행률)
  *       ③ 서버에 «등록»(서버가 저장소 파일 크기·형식을 다시 확인) ④ 목록 새로 불러오기.
- * 업로드·삭제는 수업 당일 KST 자정까지만(서버가 판정, 화면은 그 결과만 보인다).
+ * 업로드·삭제는 수업일 포함 7일 동안(원장·부원장은 제한 없음 — 서버가 판정, 화면은 그 결과만 보인다).
  */
-export function SessionVideoUploader({ sessionId }: { sessionId: string }) {
+export function SessionVideoUploader({ sessionId, quiet = false }: { sessionId: string; /** true 면 «지금은 올릴 수 없는 이유» 한 줄을 숨긴다(화면 위에 같은 안내가 이미 있을 때) */ quiet?: boolean }) {
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
   const [videos, setVideos] = useState<SessionVideoPlayback[]>([]);
@@ -211,7 +211,7 @@ export function SessionVideoUploader({ sessionId }: { sessionId: string }) {
           <p className="text-xs text-[var(--color-academy-muted)]">{uploadHintMessage(maxBytes)}</p>
         </>
       ) : (
-        windowMessage && <p className="text-sm text-[var(--color-academy-muted)]">{windowMessage}</p>
+        !quiet && windowMessage && <p className="text-sm text-[var(--color-academy-muted)]">{windowMessage}</p>
       )}
 
       {progress !== null && (

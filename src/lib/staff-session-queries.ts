@@ -12,6 +12,7 @@ import { kstDow } from "@/lib/datetime/kst";
 import { makeupOnClassDateSql } from "@/lib/makeup/makeup-attendance";
 import { absenceReportOf } from "@/lib/regular/attendance-absence-reason";
 import { TRIAL_ROSTER_STATUSES, trialRosterKey } from "@/lib/staff-session-rules";
+import { sessionKstDateSql, TODAY_KST_SQL } from "@/lib/feed/rules";
 
 export type StaffTodayClass = {
   id: string;
@@ -50,6 +51,12 @@ export type StaffSessionDetail = {
   endedAt: string | null;
   // 방학특강 회차 식별자(정규 수업이면 null). 진행 화면에서 시작 취소 후 이동 경로 분기에 사용.
   sessionDateId: string | null;
+  /** 학부모에게 보냈는가(발행) — 완료한 수업 화면의 «학부모에게 보냄 / 아직 안 보냄» */
+  published: boolean;
+  /** 수업일(KST "YYYY-MM-DD") — 무tz 칼럼을 «두 번» 변환한 값 */
+  sessionYmd: string;
+  /** 오늘(KST) — DB 시계. 수정 기간 판정(staffSessionEditWindow)에 쓴다 */
+  todayYmd: string;
 };
 
 export type StaffSessionStudent = {
@@ -233,6 +240,9 @@ export async function getStaffSessionDetail(sessionId: string): Promise<StaffSes
             s.status, s."plannedContent", s.content, s.notes, s."photosJSON",
             s."startedAt", s."endedAt",
             s."specialProgramSessionDateId" AS "sessionDateId",
+            COALESCE(s.published, false) AS published,
+            ${sessionKstDateSql("s")}::text AS "sessionYmd",
+            ${TODAY_KST_SQL}::text AS "todayYmd",
             CASE WHEN sd.id IS NOT NULL
               THEN COUNT(DISTINCT ed.id)
               ELSE COUNT(DISTINCT e.id)

@@ -8,16 +8,17 @@ import { listSessionVideos, loadSessionForVideo, sessionVideoMaxBytes, toPlaybac
 
 /**
  * 선생님 화면의 영상 목록(미리보기 재생 정보 + 지금 올리거나 지울 수 있는지).
- * 보기는 수업 권한만 있으면 되고, 올리기·지우기는 «수업 당일 KST 자정까지»만(canManage).
+ * 보기는 수업 권한만 있으면 되고, 올리기·지우기는 «수업 기록 수정 기간»(선생님 수업일 포함 7일·원장·부원장 제한 없음) 안에서만(canManage).
  */
 export async function GET(_req: Request, context: { params: Promise<{ sessionId: string }> }) {
   try {
     const { sessionId } = await context.params;
     const session = await loadSessionForVideo(sessionId);
     if (!session) return NextResponse.json({ error: "수업 기록을 찾을 수 없습니다." }, { status: 404 });
-    await requireStaffSessionAccess(sessionId);
+    const { access } = await requireStaffSessionAccess(sessionId);
     const [videos, maxBytes] = await Promise.all([listSessionVideos(sessionId).then(toPlayback), sessionVideoMaxBytes()]);
-    const windowError = uploadWindowError(session);
+    // 원장·부원장은 수정 기간 제한이 없다(선생님은 수업일 포함 7일)
+    const windowError = uploadWindowError(session, access.canAccessAllClasses);
     return NextResponse.json(
       { videos, canManage: windowError === null, windowMessage: windowError, maxBytes },
       { headers: { "Cache-Control": "private, no-store" } },
@@ -38,8 +39,8 @@ export async function POST(req: Request, context: { params: Promise<{ sessionId:
     const { sessionId } = await context.params;
     const session = await loadSessionForVideo(sessionId);
     if (!session) return NextResponse.json({ error: "수업 기록을 찾을 수 없습니다." }, { status: 404 });
-    await requireStaffSessionAccess(sessionId);
-    const windowError = uploadWindowError(session);
+    const { access } = await requireStaffSessionAccess(sessionId);
+    const windowError = uploadWindowError(session, access.canAccessAllClasses);
     if (windowError) return NextResponse.json({ error: windowError }, { status: 409 });
 
     const body = await req.json().catch(() => null) as { videoId?: unknown; durationSec?: unknown } | null;

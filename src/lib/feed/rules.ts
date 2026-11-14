@@ -11,7 +11,15 @@
  * ⚠️ 이 파일은 순수 모듈(sessionVideo/rules → datetime/kst 만 import). prisma·next 를 들이지 않는다.
  *    테스트(tests/feed-rules.test.mjs)가 실제로 돌린다.
  */
-import { canManageSessionVideo, type UploadWindowInput, type UploadWindowResult } from "@/lib/sessionVideo/rules";
+import {
+  STAFF_EDIT_EXPIRED_MESSAGE,
+  STAFF_SESSION_EDIT_DAYS,
+  canManageSessionVideo,
+  staffSessionEditWindow,
+  type SessionEditWindowReason,
+  type UploadWindowInput,
+  type UploadWindowResult,
+} from "@/lib/sessionVideo/rules";
 import { isKstYmd } from "@/lib/datetime/kst";
 
 // ── 학부모 공개 범위 ──────────────────────────────────────────────────
@@ -112,35 +120,57 @@ export function isFeedParticipant(input: {
 
 // ── 선생님: 사진·영상·한 줄 가능 시간 ──────────────────────────────────
 
-/** 사진·영상 올리기·지우기 가능 시간 — 영상과 같은 규칙(수업 중 또는 끝난 당일 KST 자정까지) */
+/**
+ * 사진·영상 올리기·지우기 가능 기간 — 영상과 같은 규칙(수업 중 또는 끝난 수업, 선생님은 수업일 포함 7일·원장·부원장은 제한 없음).
+ * 판정은 «수업 기록 수정 기간» 공용 함수(staffSessionEditWindow) 하나다.
+ */
 export function canManageSessionMedia(input: UploadWindowInput): UploadWindowResult {
   return canManageSessionVideo(input);
 }
 
 /** 사진 쪽 안내 문장(영상 문장과 같은 뜻) */
-export function photoWindowMessage(reason: "NOT_STARTED" | "NOT_TODAY" | "INVALID"): string {
+export function photoWindowMessage(reason: SessionEditWindowReason): string {
   if (reason === "NOT_STARTED") return "수업을 시작한 뒤에 사진을 올릴 수 있습니다.";
-  if (reason === "NOT_TODAY") return "사진은 수업 당일 자정까지만 올리거나 지울 수 있습니다.";
+  if (reason === "EXPIRED") return STAFF_EDIT_EXPIRED_MESSAGE;
+  if (reason === "NOT_TODAY") return "사진은 수업 날짜부터 올리거나 지울 수 있습니다.";
   return "수업 날짜를 확인하지 못했습니다.";
 }
 
-export type FeedLineWindowResult = { ok: true } | { ok: false; reason: "NOT_TODAY" | "INVALID" };
+export type FeedLineWindowResult = { ok: true } | { ok: false; reason: "NOT_TODAY" | "EXPIRED" | "INVALID" };
 
 /**
- * «오늘 수업 한 줄»(Session.content)을 쓰고 고칠 수 있는가 — 수업 전·중·후, 수업 당일(KST) 자정까지.
- * (예전엔 수업 종료 확인 창에서만 쓸 수 있었고, 종료 뒤에는 수업 화면 자체가 닫혀 못 고쳤다.)
+ * «오늘 수업 한 줄»(Session.content)을 쓰고 고칠 수 있는가.
+ * - 시작 전(PLANNED): 지금처럼 수업 당일(KST)만.
+ * - 진행 중·완료: «수업 기록 수정 기간» 공용 판정(선생님 수업일 포함 7일·원장·부원장 제한 없음).
  */
 export function canEditFeedLine(input: UploadWindowInput): FeedLineWindowResult {
   if (!isKstYmd(input.sessionYmd) || !isKstYmd(input.todayYmd)) return { ok: false, reason: "INVALID" };
   if (!["PLANNED", "IN_PROGRESS", "COMPLETED"].includes(input.status)) return { ok: false, reason: "INVALID" };
-  if (input.sessionYmd !== input.todayYmd) return { ok: false, reason: "NOT_TODAY" };
-  return { ok: true };
+  if (input.status === "PLANNED") {
+    return input.sessionYmd === input.todayYmd ? { ok: true } : { ok: false, reason: "NOT_TODAY" };
+  }
+  const window = staffSessionEditWindow(input);
+  if (window.ok) return window;
+  return { ok: false, reason: window.reason === "EXPIRED" ? "EXPIRED" : window.reason === "NOT_TODAY" ? "NOT_TODAY" : "INVALID" };
 }
 
-export function feedLineWindowMessage(reason: "NOT_TODAY" | "INVALID"): string {
-  if (reason === "NOT_TODAY") return "수업 한 줄은 수업 당일 자정까지만 쓰거나 고칠 수 있습니다.";
+export function feedLineWindowMessage(reason: "NOT_TODAY" | "EXPIRED" | "INVALID"): string {
+  if (reason === "EXPIRED") return STAFF_EDIT_EXPIRED_MESSAGE;
+  if (reason === "NOT_TODAY") return "시작 전 수업의 한 줄은 수업 당일에만 쓸 수 있습니다.";
   return "수업 상태를 확인하지 못했습니다.";
 }
+
+/**
+ * «수업 기록 수정 기간 안»(SQL) — staffSessionEditWindow 의 날짜 조건과 같은 문장
+ * (수업일 ≤ 오늘, 그리고 원장·부원장이거나 오늘 < 수업일 + 7일). 상태(진행 중·완료)는 호출부가 함께 건다.
+ * 날짜 − 정수 = 날짜(Postgres).
+ * @param se Session 별칭 · @param unlimitedParam 원장·부원장 여부를 담은 바인딩 자리("$3" 등)
+ */
+export function staffSessionEditWindowSql(se: string, unlimitedParam: string): string {
+  const day = sessionKstDateSql(se);
+  return `(${day} <= ${TODAY_KST_SQL} AND (${unlimitedParam}::boolean OR ${day} > ${TODAY_KST_SQL} - ${STAFF_SESSION_EDIT_DAYS}))`;
+}
+
 
 /** 한 줄 최대 길이(수업 종료 저장과 같은 2000자) */
 export const FEED_LINE_MAX = 2000;

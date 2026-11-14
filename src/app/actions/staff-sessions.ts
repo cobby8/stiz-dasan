@@ -8,7 +8,14 @@ import { makeSourceKey } from "@/lib/makeup/credit-rules";
 import { applyMakeupAttendanceInTx, findMakeupBookings, makeupOnClassDateSql } from "@/lib/makeup/makeup-attendance";
 import { requireStaffClassAccess, requireStaffSeasonalSessionAccess, requireStaffSessionAccess } from "@/lib/staff-class-access";
 import { todayKst } from "@/lib/datetime/kst";
-import { canEditFeedLine, feedLineWindowMessage, normalizeFeedLine, sessionKstDateSql, TODAY_KST_SQL } from "@/lib/feed/rules";
+import { canEditFeedLine, feedLineWindowMessage, normalizeFeedLine, sessionKstDateSql, staffSessionEditWindowSql, TODAY_KST_SQL } from "@/lib/feed/rules";
+import {
+  STAFF_EDIT_EXPIRED_MESSAGE,
+  STAFF_REVIEW_ASK_OWNER_MESSAGE,
+  STAFF_SESSION_REVIEW_AUDIT_ACTION,
+  correctionCreditEffect,
+  staffSessionEditWindow,
+} from "@/lib/staff/sessionEditWindow";
 import {
   BULK_ALREADY_RECORDED_MESSAGE,
   BULK_SKIPPED_MESSAGE,
@@ -63,6 +70,49 @@ async function trySessionAccess(sessionId: string) {
     const failure = staffAccessFailure(error);
     if (failure) return failure;
     throw error;
+  }
+}
+
+// ── 완료한 수업 다시 열기(2026-11-14 원장 지시 «완료한 수업도 들어가면 볼 수 있고 수정할 수 있게») ──────────
+
+/** 오늘(KST) — DB 시계로(서버 UTC 시계를 믿지 않는다). NOW() 는 timestamptz 라 한 번만 변환 */
+async function todayKstFromDb(): Promise<string> {
+  const rows = await prisma.$queryRawUnsafe<{ todayYmd: string }[]>(`SELECT ${TODAY_KST_SQL}::text AS "todayYmd"`);
+  return rows[0]?.todayYmd ?? "";
+}
+
+/**
+ * 완료한 수업을 지금 고칠 수 있는가 — 사진·영상·한 줄과 같은 판정 함수(staffSessionEditWindow) 하나를 쓴다.
+ * 선생님은 수업일 포함 7일, 원장·부원장(canAccessAllClasses)은 제한 없음. 못 고치면 거부 문구, 고칠 수 있으면 null.
+ */
+async function completedEditError(
+  session: { status: string; date: Date | string },
+  access: { canAccessAllClasses: boolean },
+): Promise<string | null> {
+  const window = staffSessionEditWindow({
+    status: session.status,
+    sessionYmd: String(session.date).slice(0, 10),
+    todayYmd: await todayKstFromDb(),
+    unlimited: access.canAccessAllClasses,
+  });
+  if (window.ok) return null;
+  return window.reason === "EXPIRED" ? STAFF_EDIT_EXPIRED_MESSAGE : "수업 날짜를 확인하지 못했습니다.";
+}
+
+/**
+ * 완료한 수업을 고친 기록을 남긴다(OperationsAuditLog — 마이그레이션 없음).
+ * 건강·사유 글, 메모·한 줄 본문은 싣지 않는다 — «무엇을»(항목 이름)과 전/후 상태값만.
+ * 기록 실패가 이미 끝난 저장을 되돌리지 않게 삼킨다(서버 로그에만 남긴다).
+ */
+async function recordReviewEdit(actorUserId: string, details: Record<string, string | boolean | null>) {
+  try {
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "OperationsAuditLog" (id, action, "actorType", "actorUserId", "detailsJson")
+       VALUES (gen_random_uuid()::text, $1, 'STAFF', $2, $3::jsonb)`,
+      STAFF_SESSION_REVIEW_AUDIT_ACTION, actorUserId, JSON.stringify(details),
+    );
+  } catch (error) {
+    console.error("[staff-session-review] 수정 기록 저장 실패", { details, error });
   }
 }
 
@@ -149,6 +199,8 @@ async function saveSeasonalSeatAttendance(input: {
   checkedByUserId: string | null;
   /** «전체 출석» 요청 — 이미 찍힌 좌석은 덮어쓰지 않는다(검수 3). */
   bulk?: boolean;
+  /** false 면 학부모 출석 알림을 보내지 않는다 — 완료한 수업의 정정(«방금 출석했어요»가 뒤늦게 울리지 않게). */
+  notifyParents?: boolean;
 }) {
   // 알림 전송 여부 판정용 이전 좌석 상태(변경 없으면 알림 생략).
   const prev = await prisma.$queryRawUnsafe<{ attendanceStatus: string | null }[]>(
@@ -156,6 +208,7 @@ async function saveSeasonalSeatAttendance(input: {
     input.enrollmentDateId,
   );
   const changed = prev[0]?.attendanceStatus !== input.status;
+  const previousStatus = prev[0]?.attendanceStatus ?? null;
 
   // 좌석을 이 세션 스코프(형제 반 포함) 안에서만 갱신한다. 스코프 밖 좌석ID면 0행 → 명단 외 처리.
   const updated = await prisma.$queryRawUnsafe<{ id: string; studentId: string | null }[]>(
@@ -228,7 +281,7 @@ async function saveSeasonalSeatAttendance(input: {
 
   // 미전환(Student 없음) 좌석은 여기서 끝. 정규 Attendance/학부모 알림은 없다.
   if (!studentId) {
-    return { ok: true as const, attendanceId: updated[0].id, changed };
+    return { ok: true as const, attendanceId: updated[0].id, changed, previousStatus };
   }
 
   // 전환된 학생: 정규 Attendance 에도 기록(정규 출결 소비처·통계용). 좌석 저장은 이미 성공했으므로
@@ -251,7 +304,7 @@ async function saveSeasonalSeatAttendance(input: {
     // 출석 알림은 응답 뒤에 보낸다(2026-11-13 b5) — 선생님이 다음 아이를 바로 찍을 수 있게.
     // 지난 날짜 수업을 뒤늦게 정리하는 경우엔 «방금 출석» 알림을 보내지 않는다(b6).
     const sessionYmd = input.session.date ? String(input.session.date).slice(0, 10) : todayKst();
-    if (changed && (input.status === "PRESENT" || input.status === "LATE") && shouldNotifyParentsForSession(sessionYmd)) {
+    if (input.notifyParents !== false && changed && (input.status === "PRESENT" || input.status === "LATE") && shouldNotifyParentsForSession(sessionYmd)) {
       const status = input.status;
       const notifyAttendanceId = attendanceId;
       runAfterResponse("saveSeasonalSeatAttendance", async () => {
@@ -278,9 +331,9 @@ async function saveSeasonalSeatAttendance(input: {
       studentId,
       error,
     });
-    return { ok: true as const, attendanceId, changed, recordWarning: SEAT_RECORD_WARNING_MESSAGE };
+    return { ok: true as const, attendanceId, changed, previousStatus, recordWarning: SEAT_RECORD_WARNING_MESSAGE };
   }
-  return { ok: true as const, attendanceId, changed };
+  return { ok: true as const, attendanceId, changed, previousStatus };
 }
 
 async function getSessionParentRecipients(session: { classId: string; sessionDateId: string | null; date?: Date | string }, studentIds?: string[]) {
@@ -395,50 +448,80 @@ export async function savePlannedClassContent(input: {
 export async function saveSessionMemo(input: { sessionId: string; notes: string }) {
   const gate = await trySessionAccess(input.sessionId);
   if (!gate.ok) return gate;
-  const { session } = gate;
-  if (session.status !== "IN_PROGRESS") {
+  const { session, access } = gate;
+  // 완료한 수업도 수정 기간 안이면 메모를 고칠 수 있다(2026-11-14) — 진행 중 수업은 예전 그대로.
+  const review = session.status === "COMPLETED";
+  if (session.status !== "IN_PROGRESS" && !review) {
     return { ok: false as const, message: "진행 중인 수업에서만 메모할 수 있습니다." };
+  }
+  const notes = input.notes.trim() || null;
+  let before: string | null = null;
+  if (review) {
+    const blocked = await completedEditError(session, access);
+    if (blocked) return { ok: false as const, message: blocked };
+    const rows = await prisma.$queryRawUnsafe<{ notes: string | null }[]>(`SELECT notes FROM "Session" WHERE id = $1 LIMIT 1`, input.sessionId);
+    before = rows[0]?.notes?.trim() || null;
   }
 
   await prisma.$executeRawUnsafe(
     `UPDATE "Session" SET notes = $2, "updatedAt" = NOW() WHERE id = $1`,
     input.sessionId,
-    input.notes.trim() || null,
+    notes,
   );
+  // 완료 뒤 수정은 기록을 남긴다 — 메모 본문은 싣지 않고 «있음/없음»만
+  if (review && before !== notes) {
+    await recordReviewEdit(access.staff.appUserId, {
+      sessionId: input.sessionId, item: "MEMO", before: before ? "있음" : "없음", after: notes ? "있음" : "없음",
+    });
+  }
   revalidatePath(`/staff/sessions/${input.sessionId}`);
   return { ok: true as const };
 }
 
 /**
  * «오늘 수업 한 줄»(Session.content — 학부모 소식·홈 카드에 보이는 본문) 저장(2026-11-14 원장 결정).
- * - 수업 전·중·후 언제든, 단 수업 당일(KST) 자정까지 — canEditFeedLine 과 같은 규칙을 UPDATE 조건에도 건다.
+ * - 시작 전 수업은 수업 당일(KST)만, 진행 중·완료한 수업은 «수업 기록 수정 기간»(선생님 수업일 포함 7일·
+ *   원장·부원장 제한 없음) — canEditFeedLine 과 같은 규칙을 UPDATE 조건에도 건다.
  * - 예전엔 수업 종료 확인 창에서만 쓸 수 있었다(종료 뒤엔 수업 화면이 닫혀 못 고쳤다).
  * - 학부모 알림은 보내지 않는다(종료 때 한 번 나간 알림으로 충분 — 고칠 때마다 울리지 않게).
+ *   이미 학부모에게 보낸 수업이면 내용만 바뀐다.
+ * - 완료한 수업을 고치면 기록(OperationsAuditLog)을 남긴다 — 본문은 싣지 않는다.
  */
 export async function saveSessionFeedLine(input: { sessionId: string; content: string }) {
   const gate = await trySessionAccess(input.sessionId);
   if (!gate.ok) return gate;
   // 오늘(KST)은 DB 시계로 — 서버(UTC) 시계를 믿지 않는다. NOW() 는 timestamptz 라 한 번만 변환.
   // 수업일은 무tz 칼럼 Session.date 라 «두 번» 변환(sessionKstDateSql) — 옛 기록 모양에서도 하루 밀리지 않게.
-  const rows = await prisma.$queryRawUnsafe<{ status: string; sessionYmd: string; todayYmd: string }[]>(
-    `SELECT status, ${sessionKstDateSql('"Session"')}::text AS "sessionYmd", ${TODAY_KST_SQL}::text AS "todayYmd"
+  const rows = await prisma.$queryRawUnsafe<{ status: string; sessionYmd: string; todayYmd: string; content: string | null }[]>(
+    `SELECT status, ${sessionKstDateSql('"Session"')}::text AS "sessionYmd", ${TODAY_KST_SQL}::text AS "todayYmd", content
        FROM "Session" WHERE id = $1 LIMIT 1`,
     input.sessionId,
   );
   if (!rows[0]) return { ok: false as const, message: "수업 기록을 찾을 수 없습니다." };
-  const window = canEditFeedLine(rows[0]);
+  // 원장·부원장은 기간 제한 없음(시작 전 수업의 «당일만»은 누구에게나 같다)
+  const unlimited = gate.access.canAccessAllClasses;
+  const window = canEditFeedLine({ ...rows[0], unlimited });
   if (!window.ok) return { ok: false as const, message: feedLineWindowMessage(window.reason) };
   const content = normalizeFeedLine(input.content);
   const updated = await prisma.$queryRawUnsafe<{ id: string }[]>(
     `UPDATE "Session" SET content = $2, "updatedAt" = NOW()
       WHERE id = $1
-        AND status IN ('PLANNED', 'IN_PROGRESS', 'COMPLETED')
-        AND ${sessionKstDateSql('"Session"')} = ${TODAY_KST_SQL}
+        AND (
+          (status = 'PLANNED' AND ${sessionKstDateSql('"Session"')} = ${TODAY_KST_SQL})
+          OR (status IN ('IN_PROGRESS', 'COMPLETED') AND ${staffSessionEditWindowSql('"Session"', "$3")})
+        )
       RETURNING id`,
     input.sessionId,
     content,
+    unlimited,
   );
-  if (!updated[0]) return { ok: false as const, message: feedLineWindowMessage("NOT_TODAY") };
+  if (!updated[0]) return { ok: false as const, message: feedLineWindowMessage("EXPIRED") };
+  const before = rows[0].content?.trim() || null;
+  if (rows[0].status === "COMPLETED" && before !== content) {
+    await recordReviewEdit(gate.access.staff.appUserId, {
+      sessionId: input.sessionId, item: "FEED_LINE", before: before ? "있음" : "없음", after: content ? "있음" : "없음",
+    });
+  }
   revalidatePath("/staff");
   revalidatePath(`/staff/sessions/${input.sessionId}`);
   return { ok: true as const, content };
@@ -508,29 +591,49 @@ export async function saveStaffAttendance(input: {
   const gate = await trySessionAccess(input.sessionId);
   if (!gate.ok) return gate;
   const { session, access } = gate;
-  if (session.status !== "IN_PROGRESS") return { ok: false as const, message: "진행 중인 수업에서만 출결을 기록할 수 있습니다." };
+  // 완료한 수업의 «정정»(2026-11-14) — 수정 기간 안에서 정규 수강생·특강 좌석만. 진행 중 수업은 예전 그대로다.
+  const review = session.status === "COMPLETED";
+  if (session.status !== "IN_PROGRESS" && !review) return { ok: false as const, message: "진행 중인 수업에서만 출결을 기록할 수 있습니다." };
   if (!["PRESENT", "LATE", "ABSENT"].includes(input.status)) return { ok: false as const, message: "올바른 출결 상태가 아닙니다." };
   if (input.absenceReason !== undefined && input.absenceReason !== null && input.absenceReason !== "ILLNESS_INJURY") {
     return { ok: false as const, message: "올바른 결석 사유가 아닙니다." };
+  }
+  if (review) {
+    const blocked = await completedEditError(session, access);
+    if (blocked) return { ok: false as const, message: blocked };
+    // 완료한 수업은 한 명씩 정정만 받는다. «전체 출석»과 질병·부상 표시 변경(이월 검토가 걸린다)은 받지 않는다.
+    if (input.bulk) return { ok: false as const, message: "완료한 수업은 한 명씩 고쳐 주세요." };
+    if (input.absenceReason !== undefined) return { ok: false as const, message: "완료한 수업의 질병·부상 표시는 원장님께 요청해 주세요." };
   }
 
   // 방학특강(seasonal) 세션은 좌석(SpecialProgramEnrollmentDate)이 출결 정본이다.
   //  - attendanceKey = enrollmentDateId(좌석). 미전환 신청자도 좌석이 있어 여기서 처리된다.
   //  - 좌석을 먼저 저장하고, 전환된 학생(studentId 있음)만 정규 Attendance + 학부모 알림을 병행한다.
   if (session.sessionDateId) {
-    return saveSeasonalSeatAttendance({
+    const seatResult = await saveSeasonalSeatAttendance({
       session,
       enrollmentDateId: input.attendanceKey,
       status: input.status,
       note: input.note?.trim() || null,
       checkedByUserId: access.staff.appUserId,
       bulk: input.bulk,
+      // 완료 뒤 정정은 학부모 출석 알림을 보내지 않는다
+      notifyParents: !review,
     });
+    if (review && seatResult.ok && "changed" in seatResult && seatResult.changed) {
+      await recordReviewEdit(access.staff.appUserId, {
+        sessionId: input.sessionId, item: "ATTENDANCE", kind: "SEASONAL", seatId: input.attendanceKey,
+        before: seatResult.previousStatus ?? "UNCHECKED", after: input.status,
+      });
+    }
+    return seatResult;
   }
 
   // 체험수업 아이(f1): attendanceKey = «trial:<체험신청 id>». 정규 출석 표에 넣지 않고 체험 장부에만 남긴다.
   const trialLeadId = parseTrialRosterKey(input.attendanceKey);
   if (trialLeadId) {
+    // 완료한 수업의 체험 아이 출결은 체험 단계(체험 완료 ↔ 일정 확정)가 걸려 있어 원장이 고친다
+    if (review) return { ok: false as const, message: STAFF_REVIEW_ASK_OWNER_MESSAGE };
     return saveTrialAttendance({
       session,
       trialLeadId,
@@ -547,6 +650,8 @@ export async function saveStaffAttendance(input: {
   const sessionYmd = String(session.date).slice(0, 10);
   const isMakeup = !enrolled && (await findMakeupBookings(prisma, { studentId, classId: session.classId, dateYmd: sessionYmd })).length > 0;
   if (!enrolled && !isMakeup) return { ok: false as const, message: "이 수업의 확정 명단에 없는 학생입니다." };
+  // 완료한 수업의 보강 온 아이 출결은 보강 예약·보강권 «사용» 처리가 걸려 있어 원장이 고친다
+  if (review && isMakeup) return { ok: false as const, message: STAFF_REVIEW_ASK_OWNER_MESSAGE };
 
   const previous = await prisma.$queryRawUnsafe<{ status: string }[]>(
     `SELECT status FROM "Attendance" WHERE "sessionId" = $1 AND "studentId" = $2 LIMIT 1`, input.sessionId, studentId,
@@ -638,9 +743,19 @@ export async function saveStaffAttendance(input: {
   }
   const extra = { absenceReport, ...(absenceMessage ? { absenceMessage } : {}) };
 
+  // 완료 뒤 정정은 기록을 남긴다(누가·어느 수업·누구를·무엇에서 무엇으로). 사유 글은 싣지 않는다.
+  // 결석 알림 스윕(absence-parent-notice-sweep)은 이 기록(attendanceId)이 있는 출결을 건너뛴다 — 정정이 «방금 결석» 알림으로 나가지 않게.
+  if (review && changed) {
+    await recordReviewEdit(access.staff.appUserId, {
+      sessionId: input.sessionId, item: "ATTENDANCE", kind: "REGULAR", studentId, attendanceId: saved[0].id,
+      before: previous[0]?.status ?? "UNCHECKED", after: input.status,
+    });
+  }
+
   // 출석 알림은 응답 뒤에 보낸다(2026-11-13 b5) — 알림이 느려도 선생님이 다음 아이를 바로 찍을 수 있게.
   // 알림 장부에 먼저 기록되고 실패분은 push-outbox 크론이 다시 보낸다. 지난 날짜 수업이면 보내지 않는다(b6).
-  if (changed && (input.status === "PRESENT" || input.status === "LATE") && shouldNotifyParentsForSession(sessionYmd)) {
+  // 완료한 수업의 정정(review)은 보내지 않는다 — 수업이 진행 중일 때만 «출석했어요»가 나간다.
+  if (!review && changed && (input.status === "PRESENT" || input.status === "LATE") && shouldNotifyParentsForSession(sessionYmd)) {
     const status = input.status;
     const attendanceId = saved[0].id;
     runAfterResponse("saveStaffAttendance", async () => {
@@ -674,12 +789,18 @@ const CLEAR_RACE_MESSAGE = "그사이 출결이 바뀌었습니다. 화면을 �
 
 /** 이 결석으로 나간 보강권이 지금 어떤 상태인가 — locked=취소 불가, revocable=취소하면 회수됨, none=보강권 없음(또는 이미 회수·소멸) */
 async function absenceCreditState(studentId: string, sourceKey: string): Promise<"locked" | "revocable" | "none"> {
+  const statuses = await absenceCreditStatuses(studentId, sourceKey);
+  if (statuses.some((status) => CREDIT_LOCKED_STATUSES.includes(status))) return "locked";
+  return statuses.includes("AVAILABLE") ? "revocable" : "none";
+}
+
+/** 이 결석(같은 sourceKey)에 걸린 보강권 상태들 — 출결 취소 미리 보기와 완료 뒤 정정 미리 보기가 같이 쓴다 */
+async function absenceCreditStatuses(studentId: string, sourceKey: string): Promise<string[]> {
   const rows = await prisma.$queryRawUnsafe<{ status: string }[]>(
     `SELECT status FROM "MakeupCredit" WHERE "studentId" = $1 AND "sourceKey" = $2`,
     studentId, sourceKey,
   );
-  if (rows.some((row) => CREDIT_LOCKED_STATUSES.includes(row.status))) return "locked";
-  return rows.some((row) => row.status === "AVAILABLE") ? "revocable" : "none";
+  return rows.map((row) => row.status);
 }
 
 /**
@@ -882,6 +1003,114 @@ export async function clearStaffAttendance(input: { sessionId: string; attendanc
     }
   }
   return { ok: true as const, cleared: true as const, previousStatus, creditRevoke, absenceReport };
+}
+
+// ── 완료한 수업: 출결 정정 미리 보기 · 학부모에게 보내기 ──────────────────────────────
+
+/**
+ * 완료한 수업의 출결을 고치기 «전에» 무슨 일이 생기는지 알려 준다(아무것도 바꾸지 않는다) — 확인 창 한 줄용.
+ * 저장(saveStaffAttendance)과 같은 권한·기간·대상 검사를 거치고, 보강권 영향은 순수 규칙(correctionCreditEffect)으로 계산한다:
+ *   결석 → 출석·지각 = 안 쓴 보강권 회수(REVOKE) / 이미 예약·사용된 보강권은 그대로(KEEP_USED)
+ *   출석·지각 → 결석 = 보강권이 나갈 수 있음(ISSUE)
+ */
+export async function previewStaffAttendanceCorrection(input: { sessionId: string; attendanceKey: string; status: AttendanceStatus }) {
+  const gate = await trySessionAccess(input.sessionId);
+  if (!gate.ok) return gate;
+  const { session, access } = gate;
+  if (session.status !== "COMPLETED") return { ok: false as const, message: "완료한 수업에서만 쓸 수 있습니다." };
+  if (!["PRESENT", "LATE", "ABSENT"].includes(input.status)) return { ok: false as const, message: "올바른 출결 상태가 아닙니다." };
+  const blocked = await completedEditError(session, access);
+  if (blocked) return { ok: false as const, message: blocked };
+
+  // ① 특강 좌석
+  if (session.sessionDateId) {
+    const seat = await findSeasonalSeatInSession(input.sessionId, input.attendanceKey);
+    if (!seat) return { ok: false as const, message: "이 수업의 확정 명단에 없는 좌석입니다." };
+    const creditStatuses = seat.studentId
+      ? await absenceCreditStatuses(seat.studentId, makeSourceKey({ sourceType: "SEASONAL", enrollmentDateId: seat.id }))
+      : [];
+    // 전환 전 신청자(학생 기록 없음)는 보강권 대상이 아니다
+    const effect = seat.studentId
+      ? correctionCreditEffect({ previousStatus: seat.attendanceStatus, nextStatus: input.status, creditStatuses })
+      : ("NONE" as const);
+    return { ok: true as const, previousStatus: seat.attendanceStatus, effect };
+  }
+  // ② 체험 아이 — 원장이 고친다
+  if (parseTrialRosterKey(input.attendanceKey)) return { ok: false as const, message: STAFF_REVIEW_ASK_OWNER_MESSAGE };
+
+  // ③ 정규 수강생(보강 온 아이는 원장이 고친다)
+  const studentId = input.attendanceKey;
+  const sessionYmd = String(session.date).slice(0, 10);
+  const enrolled = await isSessionRosterStudent(session.classId, session.sessionDateId, studentId, session.date);
+  if (!enrolled) {
+    const isMakeup = (await findMakeupBookings(prisma, { studentId, classId: session.classId, dateYmd: sessionYmd })).length > 0;
+    return { ok: false as const, message: isMakeup ? STAFF_REVIEW_ASK_OWNER_MESSAGE : "이 수업의 확정 명단에 없는 학생입니다." };
+  }
+  const previous = await prisma.$queryRawUnsafe<{ status: AttendanceStatus }[]>(
+    `SELECT status FROM "Attendance" WHERE "sessionId" = $1 AND "studentId" = $2 LIMIT 1`, input.sessionId, studentId,
+  );
+  const previousStatus = previous[0]?.status ?? null;
+  const creditStatuses = await absenceCreditStatuses(studentId, makeSourceKey({ sourceType: "REGULAR", classId: session.classId, absenceYmd: sessionYmd }));
+  return { ok: true as const, previousStatus, effect: correctionCreditEffect({ previousStatus, nextStatus: input.status, creditStatuses }) };
+}
+
+/**
+ * «아직 안 보낸» 완료 수업을 학부모에게 보낸다(발행) — 선생님이 종료 때 «바로 보내기»를 껐던 수업.
+ * - 수업 종료 때의 발행과 같은 칸(published·publishedAt)을 쓴다. 이미 보낸 수업이면 아무것도 하지 않는다(alreadyPublished).
+ * - 앱 안 알림은 «처음 발행»에만: 한 번도 발행된 적 없던 수업(publishedAt 이 비어 있던 수업)일 때만 나간다.
+ *   관리자 발행(publishSessionReport)과 같은 종류·제목·문구·주소이고, 중복 방지 키(수업+학생+보호자)가 있어 두 번 눌러도 한 번만 간다.
+ *   문자·알림톡은 보내지 않는다(deliverParentNotification = 앱 알림 + 푸시).
+ * - 보낸 뒤 한 줄·사진·영상을 고쳐도 다시 알리지 않는다(내용만 바뀐다).
+ */
+export async function publishStaffSessionReport(input: { sessionId: string }) {
+  const gate = await trySessionAccess(input.sessionId);
+  if (!gate.ok) return gate;
+  const { session, access } = gate;
+  if (session.status !== "COMPLETED") return { ok: false as const, message: "완료한 수업만 학부모에게 보낼 수 있습니다." };
+  const blocked = await completedEditError(session, access);
+  if (blocked) return { ok: false as const, message: blocked };
+
+  // 한 문장으로 «안 보낸 수업만» 발행한다 — 두 기기가 동시에 눌러도 한 번만 바뀐다. 예전 발행 시각을 함께 돌려받아 «처음»인지 본다.
+  const published = await prisma.$queryRawUnsafe<{ id: string; previousPublishedAt: Date | string | null }[]>(
+    `UPDATE "Session" s
+        SET published = true, "publishedAt" = NOW(), "updatedAt" = NOW()
+       FROM "Session" old
+      WHERE old.id = s.id AND s.id = $1 AND s.status = 'COMPLETED' AND s.published = false
+      RETURNING s.id, old."publishedAt" AS "previousPublishedAt"`,
+    input.sessionId,
+  );
+  if (!published[0]) return { ok: true as const, published: true as const, alreadyPublished: true as const, notified: false };
+
+  const firstPublish = published[0].previousPublishedAt === null;
+  await recordReviewEdit(access.staff.appUserId, {
+    sessionId: input.sessionId, item: "PUBLISH", before: "안 보냄", after: "보냄", firstPublish,
+  });
+  revalidatePath("/staff");
+  revalidatePath("/staff/sessions");
+  revalidatePath(`/staff/sessions/${input.sessionId}`);
+  revalidatePath("/mypage/reports");
+
+  if (firstPublish) {
+    const ymd = /^\d{4}-(\d{2})-(\d{2})$/.exec(String(session.date).slice(0, 10));
+    const dateLabel = ymd ? `${Number(ymd[1])}월 ${Number(ymd[2])}일` : "오늘";
+    runAfterResponse("publishStaffSessionReport", async () => {
+      // 받는 사람 = 이 수업에 출결 기록이 있는 학생의 보호자(관리자 발행과 같은 범위)
+      const students = await prisma.$queryRawUnsafe<{ studentId: string }[]>(
+        `SELECT DISTINCT "studentId" FROM "Attendance" WHERE "sessionId" = $1`, input.sessionId,
+      );
+      const recipients = await getStudentParentRecipients(students.map((row) => row.studentId));
+      await Promise.allSettled(recipients.map((recipient) => deliverParentNotification({
+        eventType: "REPORT",
+        dedupeKey: `session:${input.sessionId}:report-published:student:${recipient.studentId}:user:${recipient.userId}`,
+        recipient,
+        title: "수업 리포트 발행",
+        message: `${dateLabel} 수업 리포트가 발행되었습니다.`,
+        linkUrl: `/mypage/reports/${input.sessionId}`,
+        sessionId: input.sessionId,
+      })));
+    });
+  }
+  return { ok: true as const, published: true as const, alreadyPublished: false as const, notified: firstPublish };
 }
 
 /**

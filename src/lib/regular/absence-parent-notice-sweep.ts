@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { todayKst } from "@/lib/datetime/kst";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import { deliverParentNotification } from "@/lib/staff-notifications";
+import { STAFF_SESSION_REVIEW_AUDIT_ACTION } from "@/lib/staff/sessionEditWindow";
 import {
   ABSENCE_NOTICE_DELAY_MINUTES,
   ABSENCE_NOTICE_EVENT,
@@ -56,9 +57,13 @@ export async function sweepAbsenceParentNotices(limit = 50, nowMs: number = Date
         AND NOT EXISTS (SELECT 1 FROM "NotificationDelivery" nd
                          WHERE nd."eventType" = $3 AND nd."studentId" = st.id AND nd.channel = 'PUSH'
                            AND starts_with(nd."dedupeKey", ${absenceNoticeKeyPrefixSql('s."classId"', "$1::text", "st.id")}))
+        -- 완료한 수업을 선생님이 뒤늦게 «결석»으로 정정한 출결은 보내지 않는다(2026-11-14 — 정정은 «방금 결석» 알림이 아니다).
+        -- 정정 기록(OperationsAuditLog, saveStaffAttendance 가 남긴다)에 이 출결 id 가 있으면 건너뛴다.
+        AND NOT EXISTS (SELECT 1 FROM "OperationsAuditLog" al
+                         WHERE al.action = $5 AND al."detailsJson"->>'attendanceId' = a.id)
       ORDER BY a."updatedAt"
       LIMIT $4`,
-    today, ABSENCE_NOTICE_DELAY_MINUTES, ABSENCE_NOTICE_EVENT, limit,
+    today, ABSENCE_NOTICE_DELAY_MINUTES, ABSENCE_NOTICE_EVENT, limit, STAFF_SESSION_REVIEW_AUDIT_ACTION,
   );
   result.candidates = rows.length;
   for (const row of rows) {

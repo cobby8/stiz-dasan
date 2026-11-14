@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import {
@@ -80,7 +81,7 @@ export default function StaffHomeClient({
   const [billingTarget, setBillingTarget] = useState<{ lesson: StaffTodayClass; student?: { id: string; name: string } } | null>(null);
   // 남은·완료 수업 행을 누르면 여는 하단 시트(장소·수업 내용·빠른 메뉴는 여기서)
   const [detailTarget, setDetailTarget] = useState<StaffTodayClass | null>(null);
-  // «수업 피드» 시트(2026-11-14) — 시작 전엔 한 줄만, 끝난 수업은 한 줄·사진·영상(당일 자정까지).
+  // «수업 피드» 시트(2026-11-14) — 시작 전엔 한 줄만, 끝난 수업은 한 줄·사진·영상(수업일 포함 7일).
   // sessionId 가 null 이면 수업 기록을 만드는 중이다.
   const [feedTarget, setFeedTarget] = useState<{ lesson: StaffTodayClass; sessionId: string | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -406,6 +407,13 @@ export default function StaffHomeClient({
           onClose={() => setDetailTarget(null)}
           // 시트를 먼저 닫고 기존 동작을 그대로 부른다(두 창이 겹치지 않게)
           onAction={(action) => {
+            // 완료한 수업 화면(다시 보기·고치기)으로 — 출결·한 줄·사진·영상·특이사항을 한 화면에서
+            if (action === "review") {
+              const sessionId = detailTarget.sessionId;
+              setDetailTarget(null);
+              if (sessionId) router.push(`/staff/sessions/${sessionId}`);
+              return;
+            }
             const lesson = detailTarget;
             setDetailTarget(null);
             if (action === "start") openPrimaryAction(lesson);
@@ -417,6 +425,12 @@ export default function StaffHomeClient({
           }}
         />
       )}
+
+      {/* 지난 수업(최근 14일) — 완료한 수업을 다시 열어 보고 고친다(2026-11-14 원장 지시) */}
+      <Link href="/staff/sessions" className="flex min-h-12 items-center justify-between gap-3 rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-4 text-sm font-medium text-[var(--color-academy-ink)]">
+        <span>지난 수업</span>
+        <span className="text-xs font-normal text-[var(--color-academy-muted)]">최근 14일 ›</span>
+      </Link>
 
       {feedTarget && (
         <ListDetailPanel onClose={() => setFeedTarget(null)} titleId="staff-feed-title">
@@ -546,7 +560,7 @@ function ClassRow({ lesson, startLocked, onOpen, onStart }: { lesson: StaffToday
   </li>;
 }
 
-type ClassDetailAction = "start" | "content" | "feed" | "contacts" | "billing" | "notice";
+type ClassDetailAction = "start" | "content" | "feed" | "review" | "contacts" | "billing" | "notice";
 
 // 행을 누르면 여는 하단 시트: 기존 카드에 있던 정보·빠른 메뉴를 그대로 옮긴 것
 function ClassDetailSheet({ lesson, startLocked, showFees, onClose, onAction }: { lesson: StaffTodayClass; startLocked: boolean; showFees: boolean; onClose: () => void; onAction: (action: ClassDetailAction) => void }) {
@@ -565,10 +579,12 @@ function ClassDetailSheet({ lesson, startLocked, showFees, onClose, onAction }: 
         <span>{lesson.location || "장소 미정"}</span>
       </div>
       {lesson.plannedContent && <p className="whitespace-pre-wrap text-sm leading-6 text-[var(--color-academy-ink)]">{lesson.plannedContent}</p>}
-      {/* 끝난 수업 — 당일 자정까지 «수업 피드»(한 줄·사진·영상)를 이어 쓴다. 학부모 알림은 다시 안 보낸다 */}
+      {/* 끝난 수업 — «수업 기록 열기»로 그 수업 화면(출결·한 줄·사진·영상·특이사항)을 다시 연다(수업일 포함 7일 동안 고칠 수 있다).
+          «수업 피드»(한 줄·사진·영상)만 빨리 쓰는 시트도 그대로 둔다. 학부모 알림은 다시 안 보낸다 */}
       {completed && <>
         {lesson.content && <p className="whitespace-pre-wrap text-sm leading-6 text-[var(--color-academy-muted)]">{lesson.content}</p>}
-        <button type="button" onClick={() => onAction("feed")} className="academy-button-primary min-h-12! w-full text-base!">수업 피드 쓰기·사진 추가</button>
+        {lesson.sessionId && <button type="button" onClick={() => onAction("review")} className="academy-button-primary min-h-12! w-full text-base!">수업 기록 열기</button>}
+        <button type="button" onClick={() => onAction("feed")} className="academy-button-secondary min-h-12! w-full">수업 피드 쓰기·사진 추가</button>
       </>}
       {!completed && <>
         <div className="grid grid-cols-2 gap-2" aria-label={`${lesson.name} 수업 빠른 메뉴`}>

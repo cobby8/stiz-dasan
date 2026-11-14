@@ -7,6 +7,8 @@ import {
   cancelClassSession,
   clearStaffAttendance,
   completeClassSession,
+  previewStaffAttendanceCorrection,
+  publishStaffSessionReport,
   saveSessionMemo,
   saveStaffAttendance,
 } from "@/app/actions/staff-sessions";
@@ -17,7 +19,7 @@ import { FeedLineEditor } from "@/components/staff/SessionFeedPanel";
 import { SessionStudentSheet } from "@/components/staff/SessionStudentSheet";
 import { VoiceToTextButton } from "@/components/staff/VoiceToTextButton";
 import { useStaffDialog } from "@/components/staff/useStaffDialog";
-import { StatusChoiceButton, type StatusTone } from "@/components/staff/StatusChoiceButton";
+import { StatusChoiceButton, StatusPill, type StatusTone } from "@/components/staff/StatusChoiceButton";
 import { LiveStatusPill } from "@/components/staff/LiveStatusPill";
 import { ATTENDANCE_TONE, TONE_BADGE_CLASS } from "@/lib/ui/statusTones";
 import { loadStaffSessionMonthlyFees } from "@/app/actions/staff-billing";
@@ -31,6 +33,7 @@ import type {
 } from "@/lib/staff-session-queries";
 import { userErrorMessage } from "@/components/staff/userErrorMessage";
 import { bulkReportedNotice, splitBulkPresent, staffReloginHref } from "@/lib/staff-session-rules";
+import { STAFF_EDIT_EXPIRED_MESSAGE, canCorrectAfterCompletion, correctionConfirmMessage } from "@/lib/staff/sessionEditWindow";
 
 /** 서버 기능이 «로그인이 풀렸다»고 돌려줬는가(b5) — 던지지 않고 { ok:false, needsLogin:true } 로 온다. */
 function isLoginFailure(result: object): boolean {
@@ -53,7 +56,7 @@ type RowNoticeTone = "error" | "notice";
 /** 화면이 뜬 뒤 학생 정보를 부르기까지 기다리는 시간 — 수업 시작 직후의 첫 출결 누름이 먼저 나가게 */
 const PEOPLE_IDLE_DELAY_MS = 2500;
 /** 하단 안내 중 «잘 됐다»는 문구 — 이 밖의 안내는 전부 실패·주의로 본다(주의색 + role="alert") */
-const SUCCESS_MESSAGE = /^(특이사항을 저장했습니다|전체 출석을 저장했습니다)/;
+const SUCCESS_MESSAGE = /^(특이사항을 저장했습니다|전체 출석을 저장했습니다|학부모에게 보냈습니다)/;
 type AttendanceStatus = "PRESENT" | "LATE" | "ABSENT";
 
 const STATUS_LABEL: Record<AttendanceStatus, string> = {
@@ -89,14 +92,27 @@ export default function SessionInProgressClient({
   initialStudents,
   initialView,
   showFees,
+  mode = "live",
+  review,
 }: {
   session: StaffSessionDetail;
   initialStudents: StaffSessionStudent[];
   initialView: View;
   /** f3: 출석부에 수강료·미납 줄을 보일지 — 원장·부원장만 true(선생님은 조회 자체를 하지 않는다). */
   showFees: boolean;
+  /**
+   * live = 진행 중인 수업(예전 그대로) / review = 완료한 수업 다시 보기·고치기(2026-11-14 원장 지시).
+   * review 에서는 타이머·수업 종료 바·뒤로가기 가드·«수업 시작 취소»·전체 출석이 없다.
+   */
+  mode?: "live" | "review";
+  /** review 일 때만: 고칠 수 있는가(수정 기간·서버와 같은 판정)·학부모에게 보냈는가·머리에 보일 날짜 */
+  review?: { editable: boolean; published: boolean; dateLabel: string };
 }) {
   const router = useRouter();
+  const isReview = mode === "review";
+  // 완료한 수업을 고칠 수 있는가 — 기간이 지났으면 읽기 전용. 진행 중 수업은 항상 true.
+  const canEdit = !isReview || review?.editable === true;
+  const [published, setPublished] = useState(review?.published ?? false);
   // 명단의 이름을 눌러 연 학생(상세 시트) · «더보기» 창 · 종료 창의 한 줄 입력 칸 열림 여부
   const [detailId, setDetailId] = useState<string | null>(null);
   const [showMore, setShowMore] = useState(false);
@@ -306,6 +322,8 @@ export default function SessionInProgressClient({
   }, [persistMemo, voiceBusy]);
 
   useEffect(() => {
+    // 완료한 수업(다시 보기)은 «수업 진행 중» 뒤로가기 가드를 걸지 않는다
+    if (isReview) return;
     const guardKey = `staff-session-${session.id}`;
     const currentState = typeof history.state === "object" && history.state ? history.state : {};
     const alreadyGuarded = currentState.staffSessionGuard === guardKey;
@@ -359,21 +377,22 @@ export default function SessionInProgressClient({
       allowNavigation = true;
       window.removeEventListener("popstate", handlePopState);
     };
-  }, [persistMemo, session.id]);
+  }, [isReview, persistMemo, session.id]);
 
+  // 메모 자동 저장은 진행 중 수업에서만 — 완료한 수업은 고칠 때마다 수정 기록이 남으므로 «메모 지금 저장»(또는 화면을 떠날 때)만 저장한다.
   useEffect(() => {
-    if (memo === lastSavedMemoRef.current) return;
+    if (isReview || memo === lastSavedMemoRef.current) return;
     const timer = window.setTimeout(() => void persistMemo(memo), 900);
     return () => window.clearTimeout(timer);
-  }, [memo, persistMemo]);
+  }, [isReview, memo, persistMemo]);
 
   useEffect(() => {
     const reconnected = online && !wasOnlineRef.current;
     wasOnlineRef.current = online;
-    if (reconnected && memoRef.current !== lastSavedMemoRef.current) {
+    if (!isReview && reconnected && memoRef.current !== lastSavedMemoRef.current) {
       void persistMemo(memoRef.current);
     }
-  }, [online, persistMemo]);
+  }, [isReview, online, persistMemo]);
 
   useEffect(() => {
     const warnBeforeLeave = (event: BeforeUnloadEvent) => {
@@ -385,7 +404,8 @@ export default function SessionInProgressClient({
   }, [memoStatus, voiceBusy]);
 
   useEffect(() => {
-    if (!session.startedAt) return;
+    // 경과 시간 타이머는 진행 중 수업에만
+    if (isReview || !session.startedAt) return;
     const update = () => {
       const startedAt = new Date(session.startedAt!).getTime();
       setElapsed(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
@@ -399,12 +419,13 @@ export default function SessionInProgressClient({
       window.removeEventListener("focus", update);
       document.removeEventListener("visibilitychange", update);
     };
-  }, [session.startedAt]);
+  }, [isReview, session.startedAt]);
 
   // 아직 안 찍은 보강 온 아이 수 — «전체 출석» 버튼에 함께 처리된다고 보여 준다.
   const uncheckedMakeup = useMemo(() => students.filter((student) => student.makeup && !student.status).length, [students]);
   // 아직 안 찍은 체험 아이 수 — 전체 출석 대상이 아니라 따로 안내한다.
-  const uncheckedTrial = useMemo(() => students.filter((student) => student.trial && !student.status).length, [students]);
+  // 완료한 수업(다시 보기)에는 전체 출석이 없다 → 안내도 띄우지 않는다(0명).
+  const uncheckedTrial = useMemo(() => (isReview ? 0 : students.filter((student) => student.trial && !student.status).length), [isReview, students]);
 
   const counts = useMemo(
     () => ({
@@ -474,10 +495,66 @@ export default function SessionInProgressClient({
     }
   }
 
+  // 완료한 수업의 출결 «정정»(2026-11-14) — 서버에 먼저 물어(바꾸지 않는 미리 보기) 실제 결과에 맞는 한 줄로 한 번 확인한 뒤 저장한다.
+  // 저장은 진행 중 수업과 같은 서버 기능(saveStaffAttendance → 결석 사유·보강권 규칙 함수)을 탄다. 학부모 알림은 나가지 않는다.
+  async function correctAttendance(target: StaffSessionStudent, status: AttendanceStatus) {
+    const rowId = target.id;
+    setRowNotice(rowId, "");
+    setSavingRows((current) => ({ ...current, [rowId]: true }));
+    try {
+      const preview = await previewStaffAttendanceCorrection({ sessionId: session.id, attendanceKey: target.attendanceKey, status });
+      if (!preview.ok) {
+        setRowNotice(rowId, preview.message);
+        if (isLoginFailure(preview)) setNeedsLogin(true);
+        return;
+      }
+      // 다른 기기에서 이미 같은 값으로 고쳤으면 화면만 맞춘다
+      if (preview.previousStatus === status) {
+        setStudents((current) => current.map((student) => (student.id === rowId ? { ...student, status } : student)));
+        return;
+      }
+      const question = correctionConfirmMessage({ name: target.name, previousStatus: preview.previousStatus, nextStatus: status, effect: preview.effect });
+      if (!window.confirm(question)) return;
+      const result = await saveStaffAttendance({ sessionId: session.id, attendanceKey: target.attendanceKey, status });
+      if (!result.ok) {
+        setRowNotice(rowId, result.message);
+        if (isLoginFailure(result)) setNeedsLogin(true);
+        return;
+      }
+      if ("skipped" in result) {
+        setRowNotice(rowId, result.message ?? "", "notice");
+        return;
+      }
+      setStudents((current) => current.map((student) => (
+        student.id === rowId
+          ? { ...student, status, arrivedAt: status === "LATE" ? student.arrivedAt || new Date().toISOString() : null, ...absenceReportPatch(result) }
+          : student
+      )));
+      const recordWarning = recordWarningOf(result);
+      const absenceMessage = (result as AbsenceResultExtra).absenceMessage;
+      if (recordWarning) setRowNotice(rowId, recordWarning, "error");
+      else if (absenceMessage) setRowNotice(rowId, absenceMessage, "notice");
+      else setRowNotice(rowId, "고쳤습니다.", "notice");
+    } catch {
+      setRowNotice(rowId, "저장하지 못했습니다. 연결을 확인하고 다시 눌러 주세요.");
+    } finally {
+      setSavingRows((current) => {
+        const next = { ...current };
+        delete next[rowId];
+        return next;
+      });
+    }
+  }
+
   // 한 줄 저장 — 그 줄만 잠그고(다른 아이는 계속 누를 수 있다), 실패 문구는 그 줄 아래에 보인다(b5).
   async function updateAttendance(rowId: string, status: AttendanceStatus, absenceReason?: "ILLNESS_INJURY" | null) {
     const target = students.find((student) => student.id === rowId);
     if (!target || savingRows[rowId]) return;
+    if (isReview) {
+      // 완료한 수업: 같은 버튼을 다시 눌러도 미확인으로 되돌리지 않는다(무시). 다른 값이면 확인 뒤 정정.
+      if (!canEdit || target.status === status) return;
+      return correctAttendance(target, status);
+    }
     // 이미 선택된 버튼을 다시 누름 = 취소(미확인). «질병·부상» 칩(absenceReason 을 보냄)은 결석을 유지한 채 사유만 바꾸므로 해당 없음.
     if (target.status === status && absenceReason === undefined) return clearAttendance(target);
     setRowNotice(rowId, "");
@@ -524,7 +601,8 @@ export default function SessionInProgressClient({
 
   // 전체 출석 — 결석 신고(학부모 신고·원장 기간 결석)가 있는 아이는 빼고 보낸다(b1).
   // 서버도 bulk 표시를 보고 한 번 더 걸러, 그사이 새로 들어온 신고도 건너뛴다.
-  const bulkSplit = useMemo(() => splitBulkPresent(students), [students]);
+  // 완료한 수업(다시 보기)에는 전체 출석이 없다 — 대상·신고 목록을 비워 버튼과 안내가 뜨지 않게 한다.
+  const bulkSplit = useMemo(() => splitBulkPresent(isReview ? [] : students), [isReview, students]);
   const bulkBusy = Boolean(bulkAttendanceProgress);
   const anyRowSaving = Object.keys(savingRows).length > 0;
 
@@ -577,6 +655,27 @@ export default function SessionInProgressClient({
 
   function saveMemo() {
     void persistMemo(memo, true);
+  }
+
+  // «아직 안 보낸» 완료 수업을 학부모에게 보낸다 — 한 번 확인. 처음 보낼 때만 앱 알림이 가고, 뒤에 고쳐도 다시 알리지 않는다.
+  function publishToParents() {
+    if (pending || published) return;
+    if (!window.confirm("이 수업을 학부모에게 보낼까요? 수업 한 줄·사진·영상이 보이고 앱 알림이 한 번 갑니다.")) return;
+    setMessage("");
+    startTransition(async () => {
+      try {
+        const result = await publishStaffSessionReport({ sessionId: session.id });
+        if (!result.ok) {
+          setMessage(result.message);
+          if (isLoginFailure(result)) setNeedsLogin(true);
+          return;
+        }
+        setPublished(true);
+        setMessage(result.alreadyPublished ? "학부모에게 보냈습니다(이미 보낸 수업이에요)." : "학부모에게 보냈습니다.");
+      } catch {
+        setMessage("보내지 못했습니다. 네트워크 연결을 확인하고 다시 눌러 주세요.");
+      }
+    });
   }
 
   // 실수/테스트로 시작한 수업을 '시작 전' 상태로 되돌린다.
@@ -663,22 +762,43 @@ export default function SessionInProgressClient({
   const actionsLocked = pending || voiceBusy || memoStatus === "saving";
 
   return (
-    <main className="mx-auto max-w-lg space-y-3 px-4 pb-28">
+    <main className={`mx-auto max-w-lg space-y-3 px-4 ${isReview ? "pb-10" : "pb-28"}`}>
       {/* 머리는 한 덩이로 작게 — 반 이름·시간과 경과 시간만. 명단이 첫 화면에 바로 보이게 높이를 줄였다(2026-11-14). */}
       <section className="sticky top-0 z-30 -mx-4 border-b border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] px-5 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] text-[var(--color-academy-ink)]">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="academy-heading">{session.className}</h1>
-            <p className="mt-0.5 text-xs tabular-nums text-[var(--color-academy-muted)]">{session.startTime}~{session.endTime} · {session.location || "장소 미정"} · 학생 {session.studentCount}명</p>
+        {isReview ? (
+          // 완료한 수업: 타이머 대신 «완료한 수업 · 날짜 시간»과 학부모 발행 상태. 뒤로는 맨 위 «←»(선생님 화면 공통)로 간다.
+          <div className="flex items-center justify-between gap-3" data-session-review-head>
+            <div className="min-w-0">
+              <p className="text-xs font-medium tabular-nums text-[var(--color-academy-muted)]">완료한 수업 · {review?.dateLabel}</p>
+              <h1 className="academy-heading mt-0.5">{session.className}</h1>
+            </div>
+            <StatusPill tone={published ? "success" : "neutral"}>{published ? "학부모에게 보냄" : "아직 안 보냄"}</StatusPill>
           </div>
-          <div className="flex shrink-0 flex-col items-end gap-1">
-            <LiveStatusPill>수업 중</LiveStatusPill>
-            <p className="font-mono text-lg font-semibold tabular-nums" aria-label={`수업 경과 ${formatElapsed(elapsed)}`}>{formatElapsed(elapsed)}</p>
+        ) : (
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h1 className="academy-heading">{session.className}</h1>
+              <p className="mt-0.5 text-xs tabular-nums text-[var(--color-academy-muted)]">{session.startTime}~{session.endTime} · {session.location || "장소 미정"} · 학생 {session.studentCount}명</p>
+            </div>
+            <div className="flex shrink-0 flex-col items-end gap-1">
+              <LiveStatusPill>수업 중</LiveStatusPill>
+              <p className="font-mono text-lg font-semibold tabular-nums" aria-label={`수업 경과 ${formatElapsed(elapsed)}`}>{formatElapsed(elapsed)}</p>
+            </div>
           </div>
-        </div>
+        )}
       </section>
 
       {reloginBanner}
+
+      {/* 완료한 수업: 수정 기간이 지났으면 읽기 전용 안내 한 줄, 아직 안 보낸 수업이면 «학부모에게 보내기» */}
+      {isReview && !canEdit && (
+        <p role="status" className="rounded-xl bg-[var(--color-academy-soft)] px-3 py-3 text-sm text-[var(--color-academy-muted)]">{STAFF_EDIT_EXPIRED_MESSAGE}</p>
+      )}
+      {isReview && canEdit && !published && (
+        <button type="button" disabled={pending || !online} aria-busy={pending} onClick={publishToParents} className="academy-button-primary min-h-12! w-full">
+          {pending ? "보내는 중…" : "학부모에게 보내기"}
+        </button>
+      )}
 
       {!online && (
         <div className="flex items-center gap-2 rounded-2xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-4 text-sm font-medium text-[var(--color-academy-danger)]" role="status">
@@ -722,6 +842,9 @@ export default function SessionInProgressClient({
           {students.length === 0 && <p className="px-3 py-4 text-sm text-[var(--color-academy-muted)]">이 수업에 등록된 학생이 없습니다.</p>}
           {students.map((student) => {
             const person = people.get(student.studentId || student.id);
+            // 완료한 수업에서 선생님이 고칠 수 있는 줄 = 정규 수강생·특강 좌석(보강 온 아이·체험 아이는 원장이 고친다)
+            const rosterKind = student.trial ? "TRIAL" : student.makeup ? "MAKEUP" : session.sessionDateId ? "SEASONAL" : "REGULAR";
+            const showButtons = !isReview || (canEdit && canCorrectAfterCompletion(rosterKind));
             return <article key={student.id} data-student-row className="border-b border-[var(--color-academy-line)] px-3 py-1.5 last:border-b-0">
               <div className="flex items-center gap-2">
                 {/* 이름 쪽을 누르면 상세 시트 — 연락처·수강료·메모·최근 출결은 거기서 본다 */}
@@ -748,19 +871,33 @@ export default function SessionInProgressClient({
                   {(person?.memo || student.attendanceNote) && (
                     <span className={`rounded px-1.5 py-0.5 text-xs ${TONE_BADGE_CLASS.neutral}`}>특이</span>
                   )}
+                  {/* 완료한 수업은 질병·부상 표시를 바꾸지 않고 보여 주기만 한다 */}
+                  {isReview && student.status === "ABSENT" && student.absenceReport?.reason === "ILLNESS_INJURY" && (
+                    <span className={`rounded px-1.5 py-0.5 text-xs ${TONE_BADGE_CLASS.neutral}`}>질병·부상</span>
+                  )}
                   <span className="text-sm text-[var(--color-academy-faint)]" aria-hidden="true">›</span>
                 </button>
-                <div className="grid shrink-0 grid-cols-3 gap-2">
-                  {(["PRESENT", "LATE", "ABSENT"] as AttendanceStatus[]).map((status) => (
-                    <StatusChoiceButton key={status} tone={STATUS_TONE[status]} ariaLabel={`${student.name} ${STATUS_LABEL[status]}`} active={student.status === status} disabled={bulkBusy || Boolean(savingRows[student.id])} onClick={() => void updateAttendance(student.id, status)} className="min-w-12">
-                      {STATUS_LABEL[status]}
-                    </StatusChoiceButton>
-                  ))}
-                </div>
+                {showButtons ? (
+                  <div className="grid shrink-0 grid-cols-3 gap-2">
+                    {(["PRESENT", "LATE", "ABSENT"] as AttendanceStatus[]).map((status) => (
+                      <StatusChoiceButton key={status} tone={STATUS_TONE[status]} ariaLabel={`${student.name} ${STATUS_LABEL[status]}`} active={student.status === status} disabled={bulkBusy || Boolean(savingRows[student.id])} onClick={() => void updateAttendance(student.id, status)} className="min-w-12">
+                        {STATUS_LABEL[status]}
+                      </StatusChoiceButton>
+                    ))}
+                  </div>
+                ) : (
+                  // 읽기 전용 줄(수정 기간 지남 · 보강 온 아이 · 체험 아이) — 버튼 대신 지금 상태만. 고칠 일은 원장님께.
+                  <div className="flex shrink-0 flex-col items-end gap-0.5" data-review-readonly>
+                    {student.status
+                      ? <StatusPill tone={STATUS_TONE[student.status]}>{STATUS_LABEL[student.status]}</StatusPill>
+                      : <StatusPill tone="neutral">미확인</StatusPill>}
+                    {canEdit && <span className="text-xs text-[var(--color-academy-muted)]">원장님께 요청</span>}
+                  </div>
+                )}
               </div>
               {/* 결석일 때만: 질병·부상 표시 → 청구 작업대 «이월 검토» 후보가 된다(이월 적용은 원장이 증빙 확인 후).
                   정규 수강생만(보강 온 아이·방학특강은 대상 아님). 학부모가 이미 신고한 날은 그 사유를 따른다. */}
-              {student.status === "ABSENT" && !student.makeup && !student.trial && !session.sessionDateId && (() => {
+              {!isReview && student.status === "ABSENT" && !student.makeup && !student.trial && !session.sessionDateId && (() => {
                 const illness = student.absenceReport?.reason === "ILLNESS_INJURY";
                 const parentLocked = student.absenceReport?.source === "PARENT";
                 return <button
@@ -797,7 +934,9 @@ export default function SessionInProgressClient({
           따로 있어 같은 칸처럼 보였다. 계획은 이 칸 안의 접힌 한 줄로 두고, 계획이 없으면 그 줄을 아예 숨긴다.
           사진·영상은 이 수업에 참여한 학생의 보호자만 본다. 수업이 끝나도 당일 자정까지 오늘 수업 홈에서 이어 쓴다. */}
       <section id="session-photos" aria-labelledby="session-feed-title" className="scroll-mt-28 space-y-4 rounded-2xl border border-[var(--color-academy-line)] bg-white p-4">
-        <h2 id="session-feed-title" className="academy-section-title">오늘 수업</h2>
+        {isReview
+          ? <h2 id="session-feed-title" className="academy-section-title">수업 기록</h2>
+          : <h2 id="session-feed-title" className="academy-section-title">오늘 수업</h2>}
         {plan && (
           <div className="rounded-xl bg-[var(--color-academy-soft)]">
             <button type="button" onClick={() => setShowPlan((current) => !current)} aria-expanded={showPlan} aria-controls="session-plan" className="flex min-h-11 w-full items-center justify-between px-3 text-left text-sm font-medium">
@@ -807,43 +946,47 @@ export default function SessionInProgressClient({
             {showPlan && (
               <div id="session-plan" className="border-t border-[var(--color-academy-line)] px-3 py-3">
                 <p className="whitespace-pre-wrap text-sm leading-6 text-[var(--color-academy-muted)]">{plan}</p>
-                {report.trim() !== plan && (
+                {canEdit && report.trim() !== plan && (
                   <button type="button" onClick={loadPlanIntoLine} className="academy-button-secondary academy-button-sm mt-2">한 줄 칸에 불러오기</button>
                 )}
               </div>
             )}
           </div>
         )}
-        <FeedLineEditor sessionId={session.id} value={report} onChange={setReport} onBusyChange={setFeedBusy} />
+        <FeedLineEditor sessionId={session.id} value={report} onChange={setReport} onBusyChange={setFeedBusy} disabled={!canEdit} />
         <div id="session-photo-uploader">
           <h3 className="mb-2 text-sm font-semibold text-[var(--color-academy-ink)]">수업 사진</h3>
-          <SessionPhotoUploader sessionId={session.id} />
+          {/* 수정 기간이 지난 수업은 위에 안내가 한 번 있으므로 칸마다 같은 말을 되풀이하지 않는다(quiet) */}
+          <SessionPhotoUploader sessionId={session.id} quiet={!canEdit} />
         </div>
         {/* 2026-11-14 수업 영상(원장 결정) — 찍어 올리면 이 수업 학생의 보호자만 학부모 화면에서 본다 */}
         <div id="session-videos" className="scroll-mt-28">
           <h3 className="mb-2 text-sm font-semibold text-[var(--color-academy-ink)]">수업 영상</h3>
-          <SessionVideoUploader sessionId={session.id} />
+          <SessionVideoUploader sessionId={session.id} quiet={!canEdit} />
         </div>
       </section>
 
       <section id="session-memo" className="scroll-mt-28 rounded-2xl border border-[var(--color-academy-line)] bg-white p-4">
         <div className="flex items-start justify-between gap-3">
-          <h2 className="academy-section-title">수업 중 특이사항</h2>
-          <VoiceToTextButton
+          <h2 className="academy-section-title">{isReview ? "수업 특이사항" : "수업 중 특이사항"}</h2>
+          {canEdit && <VoiceToTextButton
             onBusyChange={setVoiceBusy}
             onText={(text) => {
               setMemoStatus("dirty");
               setMemo((current) => current ? `${current}\n${text}` : text);
             }}
-          />
+          />}
         </div>
-        <textarea value={memo} onChange={(event) => { setMemoStatus("dirty"); setMemo(event.target.value); }} onBlur={() => void persistMemo(memoRef.current)} aria-label="수업 중 특이사항" rows={3} className="academy-input mt-3 leading-6" />
-        <div className="mt-2 flex items-center justify-between gap-3 text-xs" aria-live="polite">
-          <span className={memoStatus === "error" ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-muted)]"}>
-            {memoStatus === "saving" ? "저장 중…" : memoStatus === "dirty" ? "변경사항 자동 저장 대기 중" : memoStatus === "error" ? "저장 실패 · 다시 시도해 주세요" : "저장됨"}
-          </span>
-        </div>
-        <button type="button" disabled={pending || memoStatus === "saving" || !online} onClick={saveMemo} className="academy-button-secondary mt-3 w-full">메모 지금 저장</button>
+        {/* 완료한 수업은 자동 저장하지 않는다(고칠 때마다 수정 기록이 남는다) — «메모 지금 저장»으로 저장 */}
+        <textarea value={memo} disabled={!canEdit} onChange={(event) => { setMemoStatus("dirty"); setMemo(event.target.value); }} onBlur={() => { if (!isReview) void persistMemo(memoRef.current); }} aria-label="수업 중 특이사항" rows={3} className="academy-input mt-3 leading-6" />
+        {canEdit && <>
+          <div className="mt-2 flex items-center justify-between gap-3 text-xs" aria-live="polite">
+            <span className={memoStatus === "error" ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-muted)]"}>
+              {memoStatus === "saving" ? "저장 중…" : memoStatus === "dirty" ? (isReview ? "저장하지 않은 변경이 있어요" : "변경사항 자동 저장 대기 중") : memoStatus === "error" ? "저장 실패 · 다시 시도해 주세요" : "저장됨"}
+            </span>
+          </div>
+          <button type="button" disabled={pending || memoStatus === "saving" || !online} onClick={saveMemo} className="academy-button-secondary mt-3 w-full">메모 지금 저장</button>
+        </>}
       </section>
 
       {/* 학생 상세 시트 — 명단의 이름을 누르면 열린다. 청구 확인을 누르면 이 시트를 닫고 청구 시트를 연다. */}
@@ -881,9 +1024,9 @@ export default function SessionInProgressClient({
               {showFees && <button type="button" onClick={() => { setShowMore(false); setBillingStudent(null); }} className="flex min-h-11 items-center gap-2 rounded-lg px-2 text-left text-sm font-medium">
                 청구 확인 <span className="ml-auto text-xs font-normal text-[var(--color-academy-muted)]">반 전체</span>
               </button>}
-              <button type="button" disabled={actionsLocked} onClick={() => { setShowMore(false); cancelStart(); }} className="flex min-h-11 items-center gap-2 rounded-lg px-2 text-left text-sm font-medium text-[var(--color-academy-danger)] disabled:opacity-50">
+              {!isReview && <button type="button" disabled={actionsLocked} onClick={() => { setShowMore(false); cancelStart(); }} className="flex min-h-11 items-center gap-2 rounded-lg px-2 text-left text-sm font-medium text-[var(--color-academy-danger)] disabled:opacity-50">
                 수업 시작 취소 <span className="ml-auto text-xs font-normal text-[var(--color-academy-muted)]">기록한 출결은 유지</span>
-              </button>
+              </button>}
             </div>
           </div>
         </div>
@@ -907,13 +1050,13 @@ export default function SessionInProgressClient({
             <button type="button" onClick={() => setMessage("")} className="academy-button-text academy-button-sm min-h-11! shrink-0">닫기</button>
           </div>
         ))}
-        <div className="rounded-2xl border border-[var(--color-academy-line)] bg-white/95 p-2 shadow-lg backdrop-blur">
+        {!isReview && <div className="rounded-2xl border border-[var(--color-academy-line)] bg-white/95 p-2 shadow-lg backdrop-blur" data-session-end-bar>
           <button type="button" disabled={actionsLocked || feedBusy || !online} onClick={openEndConfirm} style={{ minHeight: 56, borderWidth: 2 }} className="academy-button-danger w-full text-base! font-semibold!">수업 종료 확인</button>
           {(voiceBusy || memoStatus === "saving" || !online) && <p className="mt-1 text-center text-xs text-[var(--color-academy-warning)]">{voiceBusy ? "음성 메모 처리 후 종료할 수 있습니다." : memoStatus === "saving" ? "메모 저장 후 종료할 수 있습니다." : "온라인 연결 후 종료할 수 있습니다."}</p>}
-        </div>
+        </div>}
       </div>
 
-      {showEndConfirm && (
+      {!isReview && showEndConfirm && (
         <div className="fixed inset-0 z-50 flex items-end bg-black/50 p-4 sm:items-center sm:justify-center" role="dialog" aria-modal="true" aria-labelledby="end-session-title">
           <div ref={endDialogRef} className="max-h-[calc(100dvh-2rem)] min-h-0 w-full max-w-md overflow-y-auto rounded-2xl bg-white p-5 shadow-xl">
             <h2 id="end-session-title" className="text-xl font-bold">수업을 종료하시겠습니까?</h2>
