@@ -142,7 +142,7 @@ test("③ 셔틀은 «그날 그 방향을 타는 아이»에게만 묻는다", 
 
 // ── ④ 서버(가짜 DB) ─────────────────────────────────────────────────────────
 function fakeWorld({ owned = true, roster = ["BOARD", "ALIGHT"], absent = false, exceptions = [] } = {}) {
-  const world = { sql: [], notices: [], exceptions: exceptions.map((x) => ({ ...x })), staffNotices: [], shuttleNotices: [], shuttleSaves: [], seq: 0 };
+  const world = { sql: [], locks: [], notices: [], exceptions: exceptions.map((x) => ({ ...x })), staffNotices: [], shuttleNotices: [], shuttleSaves: [], seq: 0 };
   const query = async (sql, ...args) => {
     world.sql.push(sql);
     if (sql.includes("to_regclass")) return [{ ready: true }];
@@ -151,7 +151,7 @@ function fakeWorld({ owned = true, roster = ["BOARD", "ALIGHT"], absent = false,
     }
     if (sql.includes('FROM "RegularAbsence"')) return absent ? [{ id: "abs1" }] : [];
     if (sql.includes('FROM "RegularShuttleStop"')) return roster.map((direction) => ({ studentId: "s1", weekday: 4, direction }));
-    if (sql.includes('FROM "ShuttleDayException" x')) return world.exceptions.filter((x) => !x.canceled).map((x) => ({ ...x }));
+    if (sql.includes('FROM "ShuttleDayException" x') && !sql.includes("SUM(")) return world.exceptions.filter((x) => !x.canceled).map((x) => ({ ...x }));
     if (sql.includes('INSERT INTO "RegularArrivalNotice"')) {
       const [studentId, classId, date, kind, expectedTime] = args;
       let row = world.notices.find((n) => n.studentId === studentId && n.classId === classId && n.date === date && n.kind === kind);
@@ -179,9 +179,14 @@ function fakeWorld({ owned = true, roster = ["BOARD", "ALIGHT"], absent = false,
         .filter((n) => n.studentId === studentId && n.classId === classId && n.date === date && n.kind === kind && n.status === "REPORTED")
         .map((n) => ({ id: n.id, expectedTime: n.expectedTime, startTime: START, endTime: END, studentName: "합성", className: "목 5시" }));
     }
-    if (sql.includes('SUM("changeCount")')) {
+    if (sql.includes("FOR UPDATE")) { world.locks.push(args[0]); return [{ id: args[0] }]; }
+    if (sql.includes('SUM(n."changeCount")')) {
       const [studentId, classId, date] = args;
-      return [{ total: world.notices.filter((n) => n.studentId === studentId && n.classId === classId && n.date === date).reduce((sum, n) => sum + n.changeCount, 0) }];
+      const mine = world.notices.filter((n) => n.studentId === studentId && n.classId === classId && n.date === date);
+      return [{
+        total: mine.reduce((sum, n) => sum + n.changeCount, 0),
+        shuttleLive: mine.some((n) => n.status === "REPORTED" && world.exceptions.some((x) => x.id === n.shuttleExceptionId && !x.canceled)),
+      }];
     }
     if (sql.includes('FROM "RegularArrivalNotice"')) {
       const [studentId, classId, date] = args;
@@ -520,7 +525,10 @@ test("⑧ 하루 변경 상한: 알리기·시각 바꾸기·취소 합계 5번 
   const before = { staff: world.staffNotices.length, shuttle: world.shuttleNotices.length, saves: world.shuttleSaves.length };
   assert.equal(before.staff, 5);
   // 6번째: 시각 바꾸기·취소·다른 종류 모두 거절
-  await assert.rejects(late("17:40"), /ARRIVAL_CHANGE_LIMIT/);
+  // 딸린 셔틀 자차 기록(조퇴)이 살아 있는 채 막혔다 → «셔틀도 전화로» 코드
+  await assert.rejects(late("17:40"), /^Error: ARRIVAL_CHANGE_LIMIT_SHUTTLE$/);
+  // 상한 판정은 저장과 같은 트랜잭션에서, 그 학생 행을 잠근 뒤 센다(동시 요청으로 넘지 않게)
+  assert.ok(world.locks.length >= 6 && world.locks.every((id) => id === "s1"));
   await assert.rejects(service.cancelArrivalNotice("p1", { ...INPUT, kind: "LATE" }), /ARRIVAL_CHANGE_LIMIT/);
   await assert.rejects(service.cancelArrivalNotice("p1", { ...INPUT, kind: "EARLY" }), /ARRIVAL_CHANGE_LIMIT/);
   await assert.rejects(service.submitArrivalNotice("p1", { ...INPUT, kind: "EARLY", expectedTime: "18:10" }), /ARRIVAL_CHANGE_LIMIT/);
@@ -541,9 +549,11 @@ test("⑧ 하루 변경 상한: 알리기·시각 바꾸기·취소 합계 5번 
 test("⑧ 상한 안내: 서버 글자 + 화면의 «학원에 전화하기»(번호 없으면 글자만)", () => {
   const route = read("src/app/api/mypage/regular-absence/arrival/route.ts");
   assert.match(route, /ARRIVAL_CHANGE_LIMIT: ARRIVAL_CHANGE_LIMIT_MESSAGE/);
-  assert.equal(rules.ARRIVAL_CHANGE_LIMIT_MESSAGE, "오늘은 더 바꿀 수 없어요. 학원에 전화해 주세요.");
+  assert.equal(rules.ARRIVAL_CHANGE_LIMIT_MESSAGE, "이 날짜는 더 바꿀 수 없어요. 학원에 전화해 주세요.");
+  assert.equal(rules.ARRIVAL_CHANGE_LIMIT_SHUTTLE_MESSAGE, "이 날짜는 더 바꿀 수 없어요. 학원에 전화해 주세요. 셔틀도 전화로 알려 주세요.");
+  assert.match(route, /ARRIVAL_CHANGE_LIMIT_SHUTTLE: ARRIVAL_CHANGE_LIMIT_SHUTTLE_MESSAGE/);
   const area = read("src/app/mypage/regular-absence/ArrivalNoticeArea.tsx");
-  assert.match(area, /result\?\.code === "ARRIVAL_CHANGE_LIMIT"/);
+  assert.match(area, /result\?\.code === "ARRIVAL_CHANGE_LIMIT" \|\| result\?\.code === "ARRIVAL_CHANGE_LIMIT_SHUTTLE"/);
   assert.match(area, /academyTel\(academyPhone\) && \(/);
   assert.match(area, /학원에 전화하기/);
   assert.match(read("src/app/mypage/regular-absence/RegularAbsenceClient.tsx"), /academyPhone=\{contact\.phone\}/);
@@ -568,29 +578,49 @@ test("⑧ 그날 그 방향에 미리 낸 셔틀 변경(다른 곳에서 타요)
   assert.equal(world.shuttleNotices.length, 0);
 });
 
-test("⑧ 학부모 홈 «오늘 셔틀»·아이 기록: 자차로 신청한 방향은 «자차»로 보인다", () => {
+test("⑧ 학부모 홈 «오늘 셔틀»·아이 기록: 자차로 신청한 방향은 «자차»로 보인다(표시 전용 값 — 항목은 늘지 않는다)", () => {
   const summary = load("src/lib/mypage/summary.ts");
-  const item = (extra) => ({ id: "x", serviceDate: DAY, direction: "PICKUP", status: "CONFIRMED", pickupEtaLabel: "16:40 승차", dropoffEtaLabel: null, ...extra });
+  const item = (extra) => ({ id: "x", serviceDate: DAY, direction: "PICKUP", status: "CONFIRMED", sourceType: "REGULAR_CLASS", pickupEtaLabel: "16:40 승차", dropoffEtaLabel: null, ...extra });
   // 하원만 자차: 등원은 예정 시각 그대로, 하원 줄은 «하원 자차»
-  assert.deepEqual(summary.todayShuttleLineTexts([item({ selfRideDirections: ["DROPOFF"] })]), ["등원 16:40 승차", "하원 자차"]);
+  assert.deepEqual(summary.todayShuttleLineTexts([item({})], ["DROPOFF"]), ["등원 16:40 승차", "하원 자차"]);
   // 등원만 자차
   assert.deepEqual(
-    summary.todayShuttleLineTexts([item({ direction: "DROPOFF", pickupEtaLabel: null, dropoffEtaLabel: "18:40 하차", selfRideDirections: ["PICKUP"] })]),
+    summary.todayShuttleLineTexts([item({ direction: "DROPOFF", pickupEtaLabel: null, dropoffEtaLabel: "18:40 하차" })], ["PICKUP"]),
     ["등원 자차", "하원 18:40 하차"],
   );
-  // 표시가 없으면 종전 그대로
+  // 등원·하원 모두 자차: 타는 항목이 없어도 한 줄
+  assert.deepEqual(summary.todayShuttleLineTexts([], ["PICKUP", "DROPOFF"]), ["등원·하원 자차"]);
+  // 자차는 정규 셔틀에만 — 같은 날 방학특강 셔틀 시각은 가리지 않는다
+  const seasonal = item({ sourceType: "SPECIAL_PROGRAM", pickupEtaLabel: "08:53 승차" });
+  assert.deepEqual(summary.todayShuttleLineTexts([seasonal], ["PICKUP", "DROPOFF"]), ["등원 08:53 승차", "하원 자차"]);
+  assert.deepEqual(summary.todayShuttleLineTexts([item({ sourceType: "SPECIAL_PROGRAM", actualTimeLabel: "08:55" })], ["PICKUP"]), ["탑승 08:55"]);
+  // 자차 값이 없으면 종전 그대로
   assert.deepEqual(summary.todayShuttleLineTexts([item({})]), ["등원 16:40 승차"]);
 
   const childRules = load("src/lib/shuttle/childShuttleRules.ts");
   const leg = (state, time) => ({ stopName: "푸르지오", time, state, note: null, changedTo: null });
-  const day = (board, alight) => ({ ymd: DAY, weekday: 4, dayLabel: "목", classId: "c1", className: "목 5시", classTime: "17:00", status: "RUN", statusText: "운행", board, alight });
-  const items = childRules.rosterOverviewItems("s1", "합성", [day(leg("RUN", "16:40"), leg("SKIP", "18:40"))]);
-  assert.equal(items.length, 1, "타지 않는 방향은 항목을 만들지 않는다(종전 그대로)");
-  assert.deepEqual(items[0].selfRideDirections, ["DROPOFF"]);
-  const plain = childRules.rosterOverviewItems("s1", "합성", [day(leg("RUN", "16:40"), leg("RUN", "18:40"))]);
-  assert.equal(plain.length, 2);
-  assert.equal("selfRideDirections" in plain[0], false, "자차가 없으면 칸 자체가 없다");
+  const day = (board, alight, extra = {}) => ({ ymd: DAY, weekday: 4, dayLabel: "목", classId: "c1", className: "목 5시", classTime: "17:00", status: "RUN", statusText: "운행", board, alight, ...extra });
+  const oneSkip = [day(leg("RUN", "16:40"), leg("SKIP", "18:40"))];
+  const items = childRules.rosterOverviewItems("s1", "합성", oneSkip);
+  assert.equal(items.length, 1, "타지 않는 방향은 항목을 만들지 않는다(«운행 N건» 셈 그대로)");
+  assert.equal("selfRideDirections" in items[0], false, "항목에는 자차 표시를 싣지 않는다");
+  assert.deepEqual(childRules.todaySelfRideDirections(oneSkip, DAY), ["DROPOFF"]);
+  const bothSkip = [day(leg("SKIP", "16:40"), leg("SKIP", "18:40"))];
+  assert.equal(childRules.rosterOverviewItems("s1", "합성", bothSkip).length, 0);
+  assert.deepEqual(childRules.todaySelfRideDirections(bothSkip, DAY), ["PICKUP", "DROPOFF"]);
+  // 오늘이 아닌 날·운행하지 않는 날(결석·휴무)은 해당 없음
+  assert.deepEqual(childRules.todaySelfRideDirections(bothSkip, "2026-11-20"), []);
+  assert.deepEqual(childRules.todaySelfRideDirections([day(leg("SKIP", "16:40"), null, { status: "ABSENT" })], DAY), []);
   assert.equal(childRules.SHUTTLE_SELF_STATUS_TEXT, "자차(신청)");
+
+  // 홈까지 가는 길: 개요 결과에 딸린 표시 전용 값(명단 항목이 걸러져도 사라지지 않는다) → 홈 줄
+  const parent = read("src/lib/shuttle/parent.ts");
+  assert.match(parent, /SELF_RIDE_BY_RESULT\.set\(sorted, todaySelfRide\)/);
+  assert.match(parent, /selfRide: todaySelfRideDirections\(shuttle\.days, today\)/);
+  assert.match(read("src/app/mypage/page.tsx"), /todaySelfRide=\{todaySelfRideOf\(shuttleOverview\)\}/);
+  const home = read("src/app/mypage/MyPageClient.tsx");
+  assert.match(home, /const showTodayShuttle = todayShuttles\.length > 0 \|\| childSelfRide\.length > 0;/);
+  assert.match(home, /todayShuttleLineTexts\(todayShuttles, childSelfRide\)/);
 });
 
 test("⑧ 카카오 대화의 «안 타요» 글자 — 보이는 글자만 자차로, 받는 말은 그대로", () => {

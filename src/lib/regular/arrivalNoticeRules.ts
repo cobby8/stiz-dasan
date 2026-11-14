@@ -102,7 +102,9 @@ export function expectedTimeOptions(
 // 시각을 번갈아 바꾸거나 알리기·취소를 되풀이해 알림을 쏟아내지 못하게, 한 아이·한 반·하루에 합계 5번까지만 받는다.
 // 넘으면 저장도 알림도 하지 않고 학원 전화로 안내한다.
 export const ARRIVAL_DAILY_CHANGE_LIMIT = 5;
-export const ARRIVAL_CHANGE_LIMIT_MESSAGE = "오늘은 더 바꿀 수 없어요. 학원에 전화해 주세요.";
+export const ARRIVAL_CHANGE_LIMIT_MESSAGE = "이 날짜는 더 바꿀 수 없어요. 학원에 전화해 주세요.";
+/** 딸린 «셔틀 자차» 기록이 살아 있는 채 막힌 경우 — 셔틀도 여기서 못 바꾸니 함께 전화로 알리게 한다 */
+export const ARRIVAL_CHANGE_LIMIT_SHUTTLE_MESSAGE = `${ARRIVAL_CHANGE_LIMIT_MESSAGE} 셔틀도 전화로 알려 주세요.`;
 
 /** 그 아이·반·날짜의 알림 행들(지각·조퇴)의 변경 횟수 합이 상한에 닿았나 */
 export function arrivalChangeLimitReached(changeCounts: readonly (number | null | undefined)[]): boolean {

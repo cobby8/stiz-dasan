@@ -206,6 +206,30 @@ export async function loadParentArrivalScreen(parentUserId: string, children: Up
   }
 }
 
+type Tx = Pick<typeof prisma, "$queryRawUnsafe" | "$executeRawUnsafe">;
+
+/**
+ * 하루 변경 상한 확인 — 반드시 저장과 같은 트랜잭션 안에서 부른다.
+ * 그 학생 행을 먼저 잠근 뒤 세므로, 같은 아이의 요청이 동시에 와도 한 건씩 차례로 세어 상한을 넘지 못한다(재검수 권장 2).
+ * 딸린 «셔틀 자차» 기록이 살아 있는 채 막히면 코드를 나눠 «셔틀도 전화로» 한마디가 붙게 한다.
+ */
+async function assertUnderChangeLimit(tx: Tx, studentId: string, classId: string, date: string) {
+  // (호출부가 이미 «내 자녀·병합되지 않은 학생»으로 확인한 id 다 — 같은 조건을 그대로 걸어 잠근다)
+  await tx.$queryRawUnsafe(`SELECT s.id FROM "Student" s WHERE s.id = $1 AND ${notMergedStudent("s")} FOR UPDATE`, studentId);
+  const rows = await tx.$queryRawUnsafe<{ total: number; shuttleLive: boolean }[]>(
+    `SELECT COALESCE(SUM(n."changeCount"), 0)::int AS total,
+            COALESCE(bool_or(n.status = 'REPORTED' AND EXISTS (
+              SELECT 1 FROM "ShuttleDayException" x
+               WHERE x.id = n."shuttleExceptionId" AND x."canceledAt" IS NULL)), false) AS "shuttleLive"
+       FROM "RegularArrivalNotice" n
+      WHERE n."studentId" = $1 AND n."classId" = $2 AND n.date = $3::date`,
+    studentId, classId, date,
+  );
+  if (arrivalChangeLimitReached([rows[0]?.total])) {
+    throw new Error(rows[0]?.shuttleLive === true ? "ARRIVAL_CHANGE_LIMIT_SHUTTLE" : "ARRIVAL_CHANGE_LIMIT");
+  }
+}
+
 type OwnedClass = {
   dayOfWeek: string; startTime: string | null; endTime: string | null;
   studentName: string; className: string; status: string; resumeFrom: string | null;
@@ -330,13 +354,13 @@ export async function submitArrivalNotice(parentUserId: string, input: SubmitArr
   if (same && same.expectedTime === expectedTime && !wantSkip) {
     return { ok: true as const, noOp: true as const, kind, expectedTime, shuttleSkipped: false };
   }
-  // 하루 변경 상한(알리기·시각 바꾸기·취소 합계 5번) — 넘으면 저장도 알림도 하지 않는다
-  if (arrivalChangeLimitReached(existing.map((row) => row.changeCount))) throw new Error("ARRIVAL_CHANGE_LIMIT");
 
   const direction = shuttleDirectionOf(kind);
   // 셔틀 기록의 한마디 — 학부모 «셔틀 변경» 목록·기사님 알림에서 왜 안 타는지 보이게
   const shuttleNote = kind === "LATE" ? "지각으로 등원 셔틀 안 타요" : "조퇴로 하원 셔틀 안 타요";
   const outcome = await prisma.$transaction(async (tx) => {
+    // 하루 변경 상한(알리기·시각 바꾸기·취소 합계 5번) — 넘으면 저장도 알림도 하지 않는다(던지면 전부 되돌려진다)
+    await assertUnderChangeLimit(tx, studentId, classId, date);
     // 한 아이·한 반·하루·종류당 1건 — 취소했던 줄은 되살리고(옛 셔틀 연결은 지운다), 알린 줄은 시각만 바꾼다
     const saved = await tx.$queryRawUnsafe<{ id: string; eventVersion: string }[]>(
       `INSERT INTO "RegularArrivalNotice"
@@ -419,15 +443,10 @@ export async function cancelArrivalNotice(parentUserId: string, input: { student
   if (!isArrivalNoticeOpen(kind, date, current[0].startTime, current[0].endTime, now.ymd, now.hm)) {
     throw new Error(kind === "LATE" ? "ARRIVAL_CLOSED_LATE" : "ARRIVAL_CLOSED_EARLY");
   }
-  // 하루 변경 상한 — 취소도 한 번으로 센다(알리기·취소를 되풀이해 알림을 쏟아내지 못하게)
-  const counts = await prisma.$queryRawUnsafe<{ total: number }[]>(
-    `SELECT COALESCE(SUM("changeCount"), 0)::int AS total FROM "RegularArrivalNotice"
-      WHERE "studentId" = $1 AND "classId" = $2 AND date = $3::date`,
-    studentId, classId, date,
-  );
-  if (arrivalChangeLimitReached([counts[0]?.total])) throw new Error("ARRIVAL_CHANGE_LIMIT");
 
   const outcome = await prisma.$transaction(async (tx) => {
+    // 하루 변경 상한 — 취소도 한 번으로 센다(알리기·취소를 되풀이해 알림을 쏟아내지 못하게)
+    await assertUnderChangeLimit(tx, studentId, classId, date);
     const canceled = await tx.$queryRawUnsafe<{ id: string; shuttleExceptionId: string | null; eventVersion: string }[]>(
       `UPDATE "RegularArrivalNotice"
           SET status = 'CANCELLED', "changeCount" = "changeCount" + 1, "updatedAt" = now()

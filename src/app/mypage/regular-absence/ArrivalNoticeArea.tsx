@@ -57,7 +57,7 @@ export default function ArrivalNoticeArea({
   const [skipShuttle, setSkipShuttle] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   // 하루 변경 상한(5번)에 닿았나 — 닿으면 이 줄에 안내 글과 전화 버튼을 보인다
-  const [limitHit, setLimitHit] = useState(false);
+  const [limitHit, setLimitHit] = useState("");
 
   // 결석을 알린 날은 지각·조퇴를 보이지 않는다(결석이 우선 — 서버도 같은 규칙)
   if (!info || d.reported || d.locked) return null;
@@ -76,9 +76,9 @@ export default function ArrivalNoticeArea({
         body: JSON.stringify({ studentId: d.studentId, classId: d.classId, date: d.date, ...body }),
       });
       const result = (await res.json().catch(() => null)) as Record<string, unknown> | null;
-      if (!res.ok && result?.code === "ARRIVAL_CHANGE_LIMIT") {
+      if (!res.ok && (result?.code === "ARRIVAL_CHANGE_LIMIT" || result?.code === "ARRIVAL_CHANGE_LIMIT_SHUTTLE")) {
         // 저장도 알림도 되지 않았다 — 글과 전화 버튼은 이 줄에서 보인다(위쪽 오류 칸에는 겹쳐 쓰지 않는다)
-        setLimitHit(true);
+        setLimitHit(typeof result?.error === "string" ? result.error : ARRIVAL_CHANGE_LIMIT_MESSAGE);
         await onChanged("", "");
         return;
       }
@@ -121,7 +121,7 @@ export default function ArrivalNoticeArea({
       {/* 하루 변경 상한 — 여기서 더 바꿀 수 없으니 바로 전화로 잇는다(번호가 없으면 글자만) */}
       {limitHit && (
         <div role="alert" className="flex flex-wrap items-center gap-2 rounded-xl bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm font-medium text-[var(--color-academy-warning)]">
-          <span className="min-w-0 flex-1 break-keep">{ARRIVAL_CHANGE_LIMIT_MESSAGE}</span>
+          <span className="min-w-0 flex-1 break-keep">{limitHit}</span>
           {academyTel(academyPhone) && (
             <a href={`tel:${academyTel(academyPhone)}`} className="academy-button-secondary shrink-0">
               학원에 전화하기

@@ -131,8 +131,8 @@ export type ShuttleLite = {
     plannedAt?: string | null;
     /** 오늘 기사님이 «탑승»을 찍은 실제 시각 "HH:MM"(KST). 등원 줄이면 탄 시각, 하원 줄이면 내린 시각. 없으면 아직 안 찍힘 */
     actualTimeLabel?: string | null;
-    /** 같은 날 «자차»로 신청해 타지 않는 방향 — 그 방향 줄은 시각 대신 «자차» */
-    selfRideDirections?: readonly ("PICKUP" | "DROPOFF")[];
+    /** 정규 수업 셔틀인가 방학특강 셔틀인가 — 자차 표시는 정규 셔틀에만 적용한다 */
+    sourceType?: string | null;
 };
 
 /**
@@ -141,18 +141,29 @@ export type ShuttleLite = {
  *   아직이면 예정 시각(종전 그대로): «등원 08:40 승차» · «하원 17:30 하차»
  * 둘 다 없으면 빈 배열(화면은 «운행 N건»을 보인다).
  */
-export function todayShuttleLineTexts(items: readonly ShuttleLite[]): string[] {
+export function todayShuttleLineTexts(
+    items: readonly ShuttleLite[],
+    // 오늘 «자차»로 신청해 정규 셔틀을 타지 않는 방향(2026-11-14 묶음 B) — 표시 전용 값(항목이 아니다)
+    selfRide: readonly ("PICKUP" | "DROPOFF")[] = [],
+): string[] {
+    // 자차는 정규 셔틀에만 적용한다 — 그 방향은 정규 항목을 빼고 본다(같은 날 방학특강 셔틀 시각은 가리지 않는다)
+    const poolOf = (direction: "PICKUP" | "DROPOFF") =>
+        selfRide.includes(direction) ? items.filter((i) => i.sourceType === "SPECIAL_PROGRAM") : items;
     const actual = (direction: "PICKUP" | "DROPOFF") =>
-        items.find((i) => i.direction === direction && i.actualTimeLabel)?.actualTimeLabel ?? null;
-    const pickupEta = items.map((i) => i.pickupEtaLabel).find(Boolean) ?? null;
-    const dropoffEta = items.map((i) => i.dropoffEtaLabel).find(Boolean) ?? null;
+        poolOf(direction).find((i) => i.direction === direction && i.actualTimeLabel)?.actualTimeLabel ?? null;
+    const pickupEta = poolOf("PICKUP").map((i) => i.pickupEtaLabel).find(Boolean) ?? null;
+    const dropoffEta = poolOf("DROPOFF").map((i) => i.dropoffEtaLabel).find(Boolean) ?? null;
     const boardedAt = actual("PICKUP");
     const alightedAt = actual("DROPOFF");
-    // 자차로 신청한 방향(2026-11-14 묶음 B) — 예정·탑승 시각 대신 «등원 자차»·«하원 자차»
-    const selfRide = (direction: "PICKUP" | "DROPOFF") => items.some((i) => i.selfRideDirections?.includes(direction));
+    const pickupLine = boardedAt ? `탑승 ${boardedAt}` : pickupEta ? `등원 ${pickupEta}` : null;
+    const dropoffLine = alightedAt ? `하차 ${alightedAt}` : dropoffEta ? `하원 ${dropoffEta}` : null;
+    const pickupSelf = !pickupLine && selfRide.includes("PICKUP");
+    const dropoffSelf = !dropoffLine && selfRide.includes("DROPOFF");
+    // 등원·하원 모두 자차인 날은 한 줄로
+    if (pickupSelf && dropoffSelf) return ["등원·하원 자차"];
     return [
-        selfRide("PICKUP") ? "등원 자차" : boardedAt ? `탑승 ${boardedAt}` : pickupEta ? `등원 ${pickupEta}` : null,
-        selfRide("DROPOFF") ? "하원 자차" : alightedAt ? `하차 ${alightedAt}` : dropoffEta ? `하원 ${dropoffEta}` : null,
+        pickupSelf ? "등원 자차" : pickupLine,
+        dropoffSelf ? "하원 자차" : dropoffLine,
     ].filter((v): v is string => Boolean(v));
 }
 

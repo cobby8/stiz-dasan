@@ -266,9 +266,21 @@ export type RosterOverviewItem = {
   rideStatus: null;
   pickupEtaLabel: string | null;
   dropoffEtaLabel: string | null;
-  /** 같은 날 «자차»로 신청해 타지 않는 방향 — 홈 «오늘 셔틀» 줄이 «등원 자차»·«하원 자차»로 보인다. 없으면 칸 자체가 없다 */
-  selfRideDirections?: ("PICKUP" | "DROPOFF")[];
 };
+
+/**
+ * 오늘 «자차»로 신청해 타지 않는 방향(운행하는 날만) — 홈 «오늘 셔틀» 줄의 표시 전용 값.
+ * 항목을 만들지 않는다: 수업 탭·일정 탭의 «운행 N건» 셈에 들어가면 안 된다. 같은 날 반이 둘이면 합친다.
+ */
+export function todaySelfRideDirections(days: readonly ShuttleDayRow[], today: string): ("PICKUP" | "DROPOFF")[] {
+  const out = new Set<"PICKUP" | "DROPOFF">();
+  for (const d of days) {
+    if (d.ymd !== today || d.status !== "RUN") continue;
+    if (d.board?.state === "SKIP") out.add("PICKUP");
+    if (d.alight?.state === "SKIP") out.add("DROPOFF");
+  }
+  return (["PICKUP", "DROPOFF"] as const).filter((direction) => out.has(direction));
+}
 
 /**
  * 운행 일정 → 홈·수업 탭 셔틀 항목. 실제로 타는 칸만(운행 날 + 안 탐 신청이 아닌 방향).
@@ -278,8 +290,6 @@ export function rosterOverviewItems(studentId: string, studentName: string, days
   const items: RosterOverviewItem[] = [];
   for (const d of days) {
     if (d.status !== "RUN") continue;
-    // 그날 자차로 신청한 방향(항목은 만들지 않고, 같은 날 타는 방향 항목에 표시만 싣는다)
-    const selfRide = ([["PICKUP", d.board], ["DROPOFF", d.alight]] as const).filter(([, l]) => l?.state === "SKIP").map(([dir]) => dir);
     for (const [direction, leg] of [["PICKUP", d.board], ["DROPOFF", d.alight]] as const) {
       if (!leg || leg.state === "SKIP") continue;
       items.push({
@@ -301,7 +311,6 @@ export function rosterOverviewItems(studentId: string, studentName: string, days
         rideStatus: null,
         pickupEtaLabel: direction === "PICKUP" && leg.time ? `${leg.time} 승차` : null,
         dropoffEtaLabel: direction === "DROPOFF" && leg.time ? `${leg.time} 하차` : null,
-        ...(selfRide.length > 0 ? { selfRideDirections: selfRide } : {}),
       });
     }
   }
