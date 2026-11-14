@@ -14,6 +14,7 @@ import { prisma } from "@/lib/prisma";
 import { childAccessSql, childConnectionsAvailable } from "@/lib/account/child-access";
 import { payerAccessSql } from "@/lib/payments/payerAccess";
 import { notMergedStudent } from "@/lib/studentVisibility";
+import { profilePhotoUpdatedAtSql, profilePhotoVersion } from "@/lib/profilePhoto/rules";
 import { getStudentTenure } from "@/lib/student-tenure-query";
 import { todayKst, toKstYmd } from "@/lib/datetime/kst";
 import { loadChildClasses, type ChildClassRow } from "@/lib/parent/childClassesQuery";
@@ -68,7 +69,8 @@ export type ChildShuttle = {
 };
 
 export type ChildRecord = {
-  student: { id: string; name: string; canPay: boolean; hasBaseline: boolean };
+  /** photoVersion = 프로필 사진 캐시 버전(사진 없으면 null). 화면 렌더 테스트의 옛 모양은 칸이 없을 수 있다 */
+  student: { id: string; name: string; canPay: boolean; hasBaseline: boolean; photoVersion?: string | null };
   /** 화면 렌더 테스트의 옛 모양(칸 없음)도 받는다 — 없으면 «불러오지 못했어요» 없이 칸을 숨긴다 */
   profile?: ChildProfile | null;
   shuttle?: ChildShuttle | null;
@@ -99,14 +101,16 @@ async function section<T>(label: string, run: () => Promise<T>): Promise<T | nul
 }
 
 /** 기록 화면의 아이 칩 — 로그인 보호자의 아이만(가족 연결 포함), 병합된 옛 학생 제외 */
-export async function listRecordChildren(parentUserId: string, db: Reader = prisma): Promise<{ id: string; name: string }[]> {
+export async function listRecordChildren(parentUserId: string, db: Reader = prisma): Promise<{ id: string; name: string; photoVersion: string | null }[]> {
   if (!parentUserId) return [];
-  return db.$queryRawUnsafe<{ id: string; name: string }[]>(
-    `SELECT s.id, s.name FROM "Student" s
+  const rows = await db.$queryRawUnsafe<{ id: string; name: string; photoUpdatedAt?: Date | string | null }[]>(
+    `SELECT s.id, s.name, ${profilePhotoUpdatedAtSql("s")} AS "photoUpdatedAt" FROM "Student" s
       WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")}
       ORDER BY s."createdAt" ASC`,
     parentUserId,
   );
+  // 프로필 사진 캐시 버전(사진 없으면 null → 칩은 이름 첫 글자)
+  return rows.map((row) => ({ id: row.id, name: row.name, photoVersion: profilePhotoVersion(row.photoUpdatedAt) }));
 }
 
 /** 출결을 달(KST)·상태별로 센다. 보강으로 대체된 «미리 알린 결석»은 따로 센다(분모에서 뺀다) */
@@ -155,6 +159,7 @@ export async function getChildRecord(parentUserId: string, studentId: string, db
     `SELECT s.id, s.name,
             (s."tenureBaselineMonths" IS NOT NULL AND COALESCE(s."tenureBaselineThrough", '') ~ '^[0-9]{4}-(0[1-9]|1[0-2])$') AS "hasBaseline",
             s."uniformStatus",
+            ${profilePhotoUpdatedAtSql("s")} AS "photoUpdatedAt",
             to_char(${kstNaive(`s."birthDate"`)}, 'YYYY-MM-DD') AS "birthYmd",
             s.gender, s.school, s.grade AS "gradeText",
             to_char(${kstNaive(`s."enrollDate"`)}, 'YYYY-MM-DD') AS "enrollYmd",
@@ -366,7 +371,7 @@ export async function getChildRecord(parentUserId: string, studentId: string, db
 
   const g = grant?.[0];
   return {
-    student: { id: sid, name: String(row.name ?? ""), canPay, hasBaseline: row.hasBaseline === true },
+    student: { id: sid, name: String(row.name ?? ""), canPay, hasBaseline: row.hasBaseline === true, photoVersion: profilePhotoVersion(row.photoUpdatedAt) },
     profile: {
       birthYmd: row.birthYmd ?? null,
       gender: row.gender ?? null,

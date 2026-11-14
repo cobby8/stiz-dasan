@@ -12,7 +12,8 @@ import { formatPhoneInput } from "@/lib/application-display-format";
 import { FONT_SCALE_COOKIE, parseFontScale, SHOW_THEME_SETTING } from "@/lib/mypage/parentSettings";
 import { appVersionLabels } from "@/lib/storeApp";
 import { readPreferredPaymentMethod } from "@/lib/payments/preferredMethodStore";
-import { NameRow, PasswordRow, NotificationRows, FontScaleRow, FeedbackRow, PaymentMethodRow } from "./SettingsClient";
+import { NameRow, PasswordRow, NotificationRows, FontScaleRow, FeedbackRow, PaymentMethodRow, MyPhotoRow } from "./SettingsClient";
+import { profilePhotoUpdatedAtSql, profilePhotoVersion } from "@/lib/profilePhoto/rules";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "설정 | 스티즈 농구교실" };
@@ -55,8 +56,9 @@ export default async function ParentSettingsPage() {
     const supabase = await createClient();
     // 모든 조회의 대상 = 서버가 확인한 로그인 사용자(parent.appUserId) — 화면 값으로 남의 정보를 열 수 없다
     const [userRows, authResult, childRows, pushPrefs, cookieStore, preferredMethod, headerStore] = await Promise.all([
-        prisma.$queryRawUnsafe<{ name: string; phone: string | null; username: string | null; role: string }[]>(
-            `SELECT name, phone, username, role::text AS role FROM "User" WHERE id = $1 LIMIT 1`,
+        prisma.$queryRawUnsafe<{ name: string; phone: string | null; username: string | null; role: string; photoUpdatedAt: Date | string | null }[]>(
+            // photoUpdatedAt = 내 프로필 사진을 바꾼 시각(사진이 있을 때만) — 사진 주소의 캐시 버전으로 쓴다(2026-11-15)
+            `SELECT name, phone, username, role::text AS role, ${profilePhotoUpdatedAtSql("u")} AS "photoUpdatedAt" FROM "User" u WHERE id = $1 LIMIT 1`,
             parent.appUserId,
         ),
         supabase.auth.getUser(),
@@ -93,6 +95,8 @@ export default async function ParentSettingsPage() {
 
             {/* 내 정보 — 이름은 고칠 수 있고, 연락처는 보기만(가입·자녀 연결의 본인 확인 번호라 학원에서 바꾼다) */}
             <Section title="내 정보">
+                {/* 내 사진 — 올리기·바꾸기·지우기(주인은 서버가 확인한 로그인 사용자) */}
+                <MyPhotoRow userId={parent.appUserId} name={me?.name ?? parent.appUserName} version={profilePhotoVersion(me?.photoUpdatedAt)} />
                 <NameRow name={me?.name ?? parent.appUserName} />
                 <li className={ROW}>
                     <span className="w-16 shrink-0 font-medium text-[var(--color-academy-ink)]">연락처</span>

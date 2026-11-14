@@ -92,6 +92,8 @@ function loadSettings({ appLacksPush = true, view = "unavailable", bridge: hasBr
   return load("src/app/mypage/settings/SettingsClient.tsx", {
     "next/link": { __esModule: true, default: ({ children, ...props }) => React.createElement("a", props, children) },
     "next/navigation": { useRouter: () => ({ refresh() {} }) },
+    // «내 사진» 칸(2026-11-15) — 이 검사와 무관해 비워 둔다(부품은 profile-photo.test.mjs 가 그려 본다)
+    "@/components/parent/ProfilePhotoEditor": { __esModule: true, default: () => null },
     "@/app/actions/parent-settings": { updateMyName: async () => ({ ok: true }), changeMyPassword: async () => ({ ok: true }), saveMyPushPrefs: async () => ({ ok: true }), saveMyPreferredPaymentMethod: async () => ({ ok: true }) },
     "@/lib/payments/preferredMethod": load("src/lib/payments/preferredMethod.ts"),
     "@/app/actions/admin": { createParentRequest: async () => ({}) },

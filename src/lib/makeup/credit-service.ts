@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { calcExpiry, makeSourceKey } from "./credit-rules";
 import { assertRegularMakeupAllowed, lockCompensation } from "@/lib/billing/absence-compensation-guard";
 import { kstAt, toKstYmd } from "@/lib/datetime/kst";
+import { isIllnessCreditHeld } from "@/lib/regular/illness-carry-tx";
 
 // 보강권 발급·회수 — 출결이 바뀔 때 호출된다.
 //
@@ -221,6 +222,12 @@ export async function syncCreditForRegularSession(input: {
 
   // 결석일(YYYY-MM-DD) — 발급 키·absenceDate·만료일이 모두 이 한 값에서 나온다.
   const absenceYmd = row.absenceYmd;
+  // 질병·부상 결석(2026-11-14 원장 결정 a2)은 출결을 결석으로 찍어도 보강권을 자동으로 주지 않는다 —
+  // 원장이 신청함에서 [이월 승인]/[보강권으로]를 고를 때까지 «검토 대기». [보강권으로] 결정이 난 결석은 예전처럼 발급한다.
+  // 출석·지각으로 정정할 때의 회수는 사유와 상관없이 아래에서 그대로 한다.
+  if (input.status === "ABSENT" && await isIllnessCreditHeld(prisma, { studentId: input.studentId, classId: row.classId, absenceYmd })) {
+    return { action: "held" };
+  }
   return syncMakeupCreditForAttendance({
     studentId: input.studentId,
     status: input.status,

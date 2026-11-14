@@ -1,6 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import {
+import { loadTsModule } from "./_ts-module.mjs";
+
+// 2026-11-15 마감 통일·날짜 바꾸기: 규칙 파일이 마감 공용 모듈(@/lib/parent/changeDeadline)을 import 하게 됐다.
+// «@/» 별칭은 node 가 직접 못 풀어 공용 로더로 올린다 — 아래 단언은 한 줄도 바꾸지 않았다.
+const {
   isValidReason,
   ymdToDayIndex,
   addDaysYmd,
@@ -8,7 +12,7 @@ import {
   computeUpcomingDates,
   isReportableDate,
   dayIndexOf,
-} from "../src/lib/regular/regularAbsenceRules.ts";
+} = await loadTsModule("src/lib/regular/regularAbsenceRules.ts");
 
 test("사유 검증 — 5종만 허용", () => {
   assert.equal(isValidReason("ILLNESS_INJURY"), true);

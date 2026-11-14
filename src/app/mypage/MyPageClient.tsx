@@ -21,6 +21,9 @@ import type { ParentClassStatusLine } from "@/lib/enrollment/parent-change-reque
 // «최신 수업 피드» 카드 — 고른 아이의 최신 공개 수업 1건(2026-11-14)
 import LatestFeedCard from "@/components/parent/LatestFeedCard";
 import { pickFeedCard, type FeedCandidate } from "@/lib/feed/rules";
+// 프로필 사진(2026-11-15) — 히어로 이름 왼쪽 64px · 자녀 칩 28px
+import ProfileAvatar from "@/components/common/ProfileAvatar";
+import { profilePhotoUrl } from "@/lib/profilePhoto/rules";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 학부모 홈 = «오늘 할 일» 판 (2026-11-09 원장 결정 D1 안 A)
@@ -52,6 +55,8 @@ type ChildData = {
     name: string;
     birthDate: Date | string;
     gender: string | null;
+    /** 프로필 사진 캐시 버전(사진 없으면 null → 이름 첫 글자) */
+    photoVersion?: string | null;
     enrollments: {
         id: string;
         classId: string;
@@ -270,12 +275,21 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                 window.location.replace(moved);
                 return;
             }
+            // 다른 화면의 «학원에 문의» 버튼(/mypage#parent-request-form)으로 오면 메시지 폼을 펴서 보인다
+            // (폼은 접혀 있으면 화면에 없어서, 펴지 않으면 갈 자리가 없다)
+            if (id === "parent-request-form") setShowRequestForm(true);
             requestAnimationFrame(() => scrollToSection(id));
         };
         revealHash();
         window.addEventListener("hashchange", revealHash);
         return () => window.removeEventListener("hashchange", revealHash);
     }, []);
+
+    // 메시지 폼이 «펴진 뒤»에 그 자리로 간다 — 폼은 펴져야 화면에 생기므로, 펴는 것과 같은 순간에 찾으면 아직 없다.
+    // (주소가 #parent-request-form 일 때만. 홈에서 «문의»를 직접 누른 경우는 openRequestForm 이 맡는다)
+    useEffect(() => {
+        if (showRequestForm && window.location.hash === "#parent-request-form") scrollToSection("parent-request-form");
+    }, [showRequestForm]);
 
     function openRequests() {
         // 보낸 메시지 목록을 펼치고 그 자리로
@@ -325,8 +339,10 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
 
             {/* ② 전경과 배경(M-06): 이름 + 다음 수업 + 오늘 셔틀을 히어로 한 덩어리로. */}
             <section aria-labelledby="parent-child-heading" className="academy-hero p-4 sm:p-5">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div className="min-w-0">
+                <div className="flex items-center gap-3">
+                    {/* 아이 사진(64px) — 이름 + 아래 한 줄 높이 안에 들어가 히어로가 커지지 않는다. 사진이 없으면 이름 첫 글자 */}
+                    <ProfileAvatar decorative name={child.name} size={64} src={profilePhotoUrl({ kind: "student", id: child.id }, child.photoVersion, true)} />
+                    <div className="min-w-0 flex-1">
                         <h1 id="parent-child-heading" className="academy-heading">{child.name} 학생</h1>
                         <p className="mt-1 text-sm leading-relaxed text-[var(--color-academy-muted)]">
                             {/* 전부 복귀 예정인 아이는 «수강 중인 반이 없습니다» 대신 복귀 예정을 말한다(2026-11-14) */}
@@ -351,6 +367,8 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                                 // 고른 자녀 = academy-choice(연한 바탕+체크). 꽉 찬 색은 납부 버튼 몫(M-07)
                                 className="academy-choice"
                             >
+                                {/* 칩 사진 28px — 칩 높이(44px) 안이라 줄이 커지지 않는다 */}
+                                <ProfileAvatar decorative name={c.name} size={28} src={profilePhotoUrl({ kind: "student", id: c.id }, c.photoVersion, true)} />
                                 {c.name}
                             </button>
                         ))}
@@ -577,7 +595,7 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                         기능이 있는 것은 그 기능으로 보내고, 나머지는 자유 메시지 하나로 받는다. */}
                     <div className="rounded-xl bg-[var(--color-academy-warning-soft)] border border-[var(--color-academy-line)] px-3 py-2 text-xs text-[var(--color-academy-warning)] leading-relaxed">
                         결석은 여기 적지 마시고{" "}
-                        <Link href="/mypage/regular-absence" className="font-semibold underline">결석 신고</Link>·
+                        <Link href="/mypage/regular-absence" className="font-semibold underline">결석 알리기</Link>·
                         <Link href="/mypage/seasonal" className="font-semibold underline">방학특강 결석</Link>·
                         <Link href="/mypage/shuttle" className="font-semibold underline">셔틀 변경</Link>
                         에서 신청해 주세요.

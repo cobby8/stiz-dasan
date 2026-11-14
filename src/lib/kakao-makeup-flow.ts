@@ -2,7 +2,10 @@ import { prisma } from "@/lib/prisma";
 import { bookMakeup, cancelMakeupBooking, getMakeupOptionsForCredit } from "@/lib/makeup/parent-makeup";
 import { notifyAdminsOfKakaoIntake } from "@/lib/kakao-intake-admin-alert";
 import { buildKakaoSkillResponse, classifyParentUtterance, KAKAO_TEXT_CARD_DESCRIPTION_MAX, type KakaoQuickReply } from "@/lib/kakao-chatbot-contract";
-import { addDaysKst, kstAt, kstLabel, todayKst, toKstYmd } from "@/lib/datetime/kst";
+import { addDaysKst, kstAt, kstHm, kstLabel, todayKst, toKstYmd } from "@/lib/datetime/kst";
+// 보강 취소 마감 = 보강 수업 시작 1시간 전 — 웹(parent-makeup)과 같은 함수로 판정한다
+// (2026-11-15 마감 1시간 전 통일 — 원장 결정. 그 전에는 보강 당일에는 카톡으로 취소할 수 없었다)
+import { isMakeupChangeOpen, PARENT_CHANGE_CUTOFF_TEXT } from "@/lib/parent/changeDeadline";
 // 새 보강 대화를 열 때 결석·셔틀 대화도 함께 닫는다(동시에 두 흐름이 살아 있으면 「네」가 엉뚱한 흐름을 확정한다).
 import { KAKAO_OPEN_FLOW_CLOSE_SQL } from "@/lib/kakao-flow-store";
 
@@ -28,7 +31,7 @@ import { KAKAO_OPEN_FLOW_CLOSE_SQL } from "@/lib/kakao-flow-store";
 export const MAKEUP_FLOW_STATUS = "MAKEUP_FLOW";
 /** 대화 상태가 살아 있는 시간(분) */
 export const MAKEUP_FLOW_TTL_MINUTES = 30;
-/** 후보 수업을 보여 주는 기간 — 내일부터 14일 */
+/** 후보 수업을 보여 주는 기간 — 오늘부터 14일(오늘 수업은 시작 1시간 전까지만 후보 — parent-makeup 이 거른다) */
 export const MAKEUP_LOOKAHEAD_DAYS = 14;
 /** 한 번에 보여 주는 후보 수(바로가기 10개 안에서 번호 + 「그만하기」·「다른 보강권」) */
 export const MAKEUP_MAX_CANDIDATES = 8;
@@ -40,7 +43,14 @@ type WebLink = { label: string; url: string };
 
 export type MakeupCandidate = { classId: string; dateYmd: string; label: string };
 type CreditItem = { id: string; label: string; absenceLabel: string; expiresLabel: string };
-type ReservationItem = { creditId: string; studentName: string; dateYmd: string; label: string; expiresLabel: string };
+// startTime: 취소 마감(수업 시작 1시간 전) 판정용 — 없으면(옛 대화 상태·시각 없는 반) 당일은 닫힌 것으로 본다
+type ReservationItem = { creditId: string; studentName: string; dateYmd: string; startTime?: string | null; label: string; expiresLabel: string };
+
+/** 지금 이 예약을 취소할 수 있나 — 웹과 같은 함수(보강 수업 시작 1시간 전까지) */
+function reservationOpen(item: ReservationItem): boolean {
+  const nowMs = Date.now();
+  return isMakeupChangeOpen(item.dateYmd, item.startTime ?? null, todayKst(nowMs), kstHm(nowMs));
+}
 
 type FlowState = {
   v: 1;
@@ -108,7 +118,7 @@ export function parsePick(text: string, prefix: string): number | null {
 
 /**
  * parent-makeup 이 준 반별 날짜 목록을 「날짜·시간 순 후보」로 펼친다(순수 함수 — 테스트 대상).
- * 내일부터(parent-makeup 이 이미 보장) 14일 안의 날짜만, 최대 8개.
+ * 오늘부터(오늘 수업의 마감 여부는 parent-makeup 이 이미 걸렀다) 14일 안의 날짜만, 최대 8개.
  */
 export function buildMakeupCandidates(
   options: Array<{ classId: string; className: string; startTime: string; dates: { ymd: string }[] }>,
@@ -117,7 +127,7 @@ export function buildMakeupCandidates(
 ): MakeupCandidate[] {
   const until = addDaysKst(todayYmd, MAKEUP_LOOKAHEAD_DAYS);
   const flat = options.flatMap((option) => option.dates
-    .filter((date) => date.ymd > todayYmd && date.ymd <= until)
+    .filter((date) => date.ymd >= todayYmd && date.ymd <= until)
     .map((date) => ({
       classId: option.classId,
       dateYmd: date.ymd,
@@ -153,7 +163,7 @@ async function availableCredits(parentUserId: string, studentId: string): Promis
   });
 }
 
-/** 이 보호자 자녀의 예약된(아직 안 지난) 보강. 오늘 것도 포함한다(당일 취소 불가 안내용). */
+/** 이 보호자 자녀의 예약된(아직 안 지난) 보강. 오늘 것도 포함한다(취소 마감이 지났으면 그 안내가 나간다). */
 async function upcomingReservations(parentUserId: string, studentId: string | null, today: string): Promise<ReservationItem[]> {
   const rows = await prisma.$queryRawUnsafe<Array<{ creditId: string; studentName: string; expiresAt: Date; makeupDate: Date; className: string | null; startTime: string | null }>>(
     `SELECT mc.id AS "creditId", s.name AS "studentName", mc."expiresAt", ms."makeupDate", c.name AS "className", c."startTime"
@@ -175,6 +185,7 @@ async function upcomingReservations(parentUserId: string, studentId: string | nu
         creditId: row.creditId,
         studentName: row.studentName,
         dateYmd,
+        startTime: row.startTime ?? null,
         expiresLabel: kstLabel(row.expiresAt),
         label: `${kstLabel(dateYmd)} ${row.startTime ?? ""} ${clipName(row.className, 12)}`.replace(/\s+/g, " ").trim(),
       };
@@ -280,7 +291,7 @@ function optionListReply(state: FlowState, webLink: WebLink | null, lead = ""): 
 
 function confirmReply(state: FlowState, lead = ""): Reply {
   return reply(
-    `${lead}${state.studentName} 학생 보강 신청 내용이에요.\n\n· 보강 수업: ${state.chosen?.label}\n· 사용 보강권: ${state.credit?.absenceLabel} 결석분\n\n이 수업으로 보강 신청할까요? 신청 후 당일 취소는 안 돼요.`,
+    `${lead}${state.studentName} 학생 보강 신청 내용이에요.\n\n· 보강 수업: ${state.chosen?.label}\n· 사용 보강권: ${state.credit?.absenceLabel} 결석분\n\n이 수업으로 보강 신청할까요? 취소는 수업 시작 ${PARENT_CHANGE_CUTOFF_TEXT} 전까지 할 수 있어요.`,
     [{ label: "신청할게요", messageText: CONFIRM_BOOK }, { label: "다른 수업", messageText: OTHER_OPTION }, STOP_REPLY],
   );
 }
@@ -289,7 +300,7 @@ function reservationListReply(state: FlowState, today: string, webLink: WebLink 
   const items = state.reservations ?? [];
   const many = new Set(items.map((item) => item.studentName)).size > 1;
   const lines = items.map((item, index) =>
-    `${index + 1}. ${many ? `${item.studentName} · ` : ""}${item.label}${item.dateYmd === today ? " (오늘·취소 불가)" : ""}`).join("\n");
+    `${index + 1}. ${many ? `${item.studentName} · ` : ""}${item.label}${reservationOpen(item) ? "" : " (취소 마감)"}`).join("\n");
   return reply(
     `${lead}예약된 보강이에요. 취소할 번호를 골라 주세요. 미리 취소하면 보강권은 그대로 남아요.\n\n${lines}`,
     [...numberReplies(items.length, PICK_RESERVATION), STOP_REPLY],
@@ -307,7 +318,7 @@ function cancelConfirmReply(state: FlowState, lead = ""): Reply {
 
 function sameDayRefusal(item: ReservationItem): Reply {
   return reply(
-    `${item.label} 보강은 오늘이라 취소할 수 없어요(당일 취소 불가). 오늘 못 오시면 원장님께 꼭 알려 주세요. 연락 없이 빠지면 보강권이 사용 처리돼요.`,
+    `${item.label} 보강은 수업 시작 ${PARENT_CHANGE_CUTOFF_TEXT} 전이 지나 카톡으로 취소할 수 없어요. 못 오시면 원장님께 꼭 알려 주세요. 연락 없이 빠지면 보강권이 사용 처리돼요.`,
     [{ label: "원장님께 알리기", messageText: "원장님께 오늘 보강 불참 알릴게요" }, "메뉴"],
   );
 }
@@ -429,7 +440,7 @@ async function confirmBooking(input: FlowInput, flow: FlowRow, today: string): P
       linkUrl: "/admin/makeup",
     }).catch(() => undefined);
     return reply(
-      `보강 예약 완료: ${state.studentName} 학생 ${chosen.label}\n\n당일 취소는 안 되고, 못 오시면 하루 전까지 카톡으로 알려 주세요(「보강 취소」). 연락 없이 빠지면 보강권이 사용 처리돼요.`,
+      `보강 예약 완료: ${state.studentName} 학생 ${chosen.label}\n\n못 오시면 수업 시작 ${PARENT_CHANGE_CUTOFF_TEXT} 전까지 카톡으로 취소해 주세요(「보강 취소」). 연락 없이 빠지면 보강권이 사용 처리돼요.`,
       ["보강 취소", "메뉴"],
     );
   }
@@ -451,8 +462,8 @@ async function confirmBooking(input: FlowInput, flow: FlowRow, today: string): P
 async function confirmCancel(input: FlowInput, flow: FlowRow, today: string): Promise<Reply> {
   const item = flow.state.reservation;
   if (!item) return renderStep({ ...flow.state, step: "CANCEL_PICK" }, today, input.webLink);
-  // 날짜가 바뀌어 오늘이 됐을 수 있다 — 확인 순간에도 당일 여부를 다시 본다.
-  if (item.dateYmd <= today) {
+  // 목록을 본 뒤 시간이 흘러 마감(수업 시작 1시간 전)이 지났을 수 있다 — 확인 순간에도 같은 함수로 다시 본다.
+  if (!reservationOpen(item)) {
     await closeFlow(flow.id, "CANCELED");
     return sameDayRefusal(item);
   }
@@ -523,7 +534,7 @@ async function continueFlow(input: FlowInput, flow: FlowRow): Promise<Reply | nu
       if (pick === null) break;
       const item = state.reservations?.[pick - 1];
       if (!item) return reservationListReply(state, today, webLink, "목록에 있는 번호를 골라 주세요.\n\n");
-      if (item.dateYmd <= today) {
+      if (!reservationOpen(item)) {
         await closeFlow(flow.id, "CANCELED");
         return sameDayRefusal(item);
       }

@@ -210,6 +210,10 @@ export async function executeAccountWithdrawal(userId: string) {
     const self = target === account.appUserId;
     if (!self && !["ADMIN", "VICE_ADMIN"].includes(account.appUserRole))
       return { error: "본인 계정만 처리할 수 있습니다." };
+    // 프로필 사진(2026-11-15, 개인정보): 익명화와 같은 트랜잭션에서 경로를 비우며 옛 경로를 받아 두고,
+    // 트랜잭션이 확정된 «뒤에» 파일을 지운다(파일 삭제 실패가 탈퇴를 실패시키지 않는다).
+    const photoCleanup = await import("@/lib/profilePhoto/cleanup");
+    let withdrawnPhotoPath: string | null = null;
     const result = await prisma.$transaction(
       async (tx) => {
         // 관리자·대상 계정의 역할 변경과 탈퇴 처리가 동시에 진행되지 않도록 같은 행을 잠근다.
@@ -271,6 +275,8 @@ export async function executeAccountWithdrawal(userId: string) {
           anonymizedEmail(target),
           ANONYMIZED_NAME,
         );
+        // 내 사진 경로를 비운다(행은 익명화돼 남으므로 경로도 지워야 한다) — 파일은 확정 뒤에 지운다
+        withdrawnPhotoPath = await photoCleanup.takeProfilePhotoPath({ kind: "user", id: target }, tx);
         await anonymizeChildConnections(tx, target);
         await tx.$executeRawUnsafe(
           `DELETE FROM "PushSubscription" WHERE "userId" = $1`,
@@ -298,6 +304,8 @@ export async function executeAccountWithdrawal(userId: string) {
       },
       { isolationLevel: "Serializable", timeout: 30000 },
     );
+    // 탈퇴가 확정된 뒤 사진 파일 삭제 — 실패해도 탈퇴는 성공이다(남은 파일 경로는 기록된다)
+    if (result.ok) await photoCleanup.removeProfilePhotoFiles({ kind: "user", id: target }, withdrawnPhotoPath, "account-withdraw");
     if (self && result.ok) {
       const supabase = await createClient();
       await supabase.auth.signOut({ scope: "local" }).catch(() => undefined);

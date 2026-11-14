@@ -244,7 +244,7 @@ test("결석 신청: 날짜 → 사유 → 확정 → reportRegularAbsence 한 �
   assert.match(textOf(done), /결석 신청 완료/);
   const reports = db.calls.filter((c) => c[0] === "report");
   assert.equal(reports.length, 1);
-  assert.deepEqual(reports[0], ["report", "p1", { studentId: "s1", classId: "cA", date: day(8), reason: "FAMILY_TRIP" }]);
+  assert.deepEqual(reports[0], ["report", "p1", { studentId: "s1", classId: "cA", date: day(8), reason: "FAMILY_TRIP", source: "KAKAO" }]);
   assert.equal(db.intakes.find((row) => row.status === "APPLIED")?.kind, "REGULAR_ABSENCE");
 
   // 같은 확정 버튼을 다시 눌러도 두 번 신청되지 않는다(처음부터 다시 안내)
@@ -259,7 +259,7 @@ test("「내일 결석할게요」는 내일 수업이 하나면 날짜를 건�
   assert.match(textOf(res), /사유를 골라/);
   await absenceSay("아파서요");
   await absenceSay("네");
-  assert.deepEqual(db.calls.find((c) => c[0] === "report")[2], { studentId: "s1", classId: "cA", date: day(1), reason: "ILLNESS_INJURY" });
+  assert.deepEqual(db.calls.find((c) => c[0] === "report")[2], { studentId: "s1", classId: "cA", date: day(1), reason: "ILLNESS_INJURY", source: "KAKAO" });
 });
 
 test("「오늘 결석」은 목록 + 원장님께 알리기, 그 버튼은 결석 흐름이 붙잡지 않는다", async () => {

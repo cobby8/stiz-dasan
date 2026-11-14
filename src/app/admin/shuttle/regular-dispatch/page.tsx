@@ -11,6 +11,9 @@ import { isKoreanCoordinate } from "@/lib/shuttle/academyLocation";
 // 휴원 뱃지·이 달 휴무 — 기사님 화면과 같은 판정(regularRunDayRules)
 import { getRegularRosterMonthMarks } from "@/lib/shuttle/regularRunDay";
 import { todayKst } from "@/lib/datetime/kst";
+// 셔틀 당일 변경(학부모 입력분 + 학원 입력분) 목록과 «당일 변경 입력»(2026-11-15 원장 요청)
+import ShuttleDayExceptionAdminPanel from "./ShuttleDayExceptionAdminPanel";
+import { getShuttleExceptionBoardForAdmin } from "@/lib/shuttle/admin-shuttle-exception";
 
 export const dynamic = "force-dynamic";
 
@@ -59,10 +62,17 @@ export default async function RegularDispatchPage({ searchParams }: { searchPara
     return { labelByRowId: {}, holidays: [] };
   });
 
+  // 셔틀 당일 변경 목록 — 조회에 실패해도 운행표는 떠야 한다(빈 목록으로 두고 입력 버튼은 그대로 보인다)
+  const dayExceptions = await getShuttleExceptionBoardForAdmin().catch((e) => {
+    console.error("[admin/shuttle/regular-dispatch] 셔틀 당일 변경 조회 실패", e);
+    return { today, maxDate: today, rows: [] };
+  });
+
   return (
     <>
       <SeasonalHeader eyebrow="SHUTTLE" title="셔틀 관리" />
       <ShuttleSectionTabs />
+      <ShuttleDayExceptionAdminPanel initial={JSON.parse(JSON.stringify(dayExceptions))} />
       <RegularRunEditor
         key={`${serviceMonth}:${exactStop?.id ?? initialStudentId ?? ""}`}
         stops={JSON.parse(JSON.stringify(stops))}

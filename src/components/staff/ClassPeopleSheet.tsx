@@ -72,7 +72,7 @@ function PersonCard({ person, onOpenBilling: openBilling }: { person: StaffClass
 }
 
 // accent(학부모 전화) = 보조 버튼(흰 바탕·입력선 테두리·검정 글자) — 학생마다 반복되는 버튼이라 검정 채움을 걷었다. 전화 버튼은 어느 화면이든 같은 모양(2026-11-09)
-function ContactLink({ phone, label, accent = false, sms = false }: { phone: string | null; label: string; accent?: boolean; sms?: boolean }) {
+export function ContactLink({ phone, label, accent = false, sms = false }: { phone: string | null; label: string; accent?: boolean; sms?: boolean }) {
   if (!phone) return <span className="flex min-h-11 items-center justify-center rounded-xl bg-[var(--color-academy-soft)] px-1 text-center text-xs text-[var(--color-academy-faint)]">연락처 없음</span>;
   return <a href={`${sms ? "sms" : "tel"}:${phoneHref(phone)}`} className={`flex min-h-11 items-center justify-center rounded-xl px-1 text-center text-xs font-medium ${accent ? "border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)]" : "border border-[var(--color-academy-line)]"}`}>{label}</a>;
 }

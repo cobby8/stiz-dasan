@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireVerifiedParent } from "@/lib/auth-guard";
-import { getUpcomingRegularClassDates } from "@/lib/regular/parent-regular-absence";
+import { getParentIllnessReviews, getUpcomingRegularClassDates } from "@/lib/regular/parent-regular-absence";
+import { getAcademySettings } from "@/lib/queries";
 import { getRegularMakeupsForParent } from "@/lib/regular/parent-regular-makeup";
 import { parseRequestPreset } from "@/lib/mypage/requestPreset";
 import RegularAbsenceClient from "./RegularAbsenceClient";
@@ -19,13 +20,31 @@ export default async function RegularAbsencePage({
   if (!parent) redirect("/mypage/continue?bounced=1");
 
   // 다가오는 수업일(결석 신고용) + 예정 보강(읽기 전용) 병렬 조회.
-  const [children, makeups] = await Promise.all([
-    getUpcomingRegularClassDates(parent.appUserId),
+  // 질병·부상 이월 검토(상태·사진)는 수업일 목록의 줄 상태에도 쓰여 먼저 읽는다.
+  const reviews = await getParentIllnessReviews(parent.appUserId);
+  const [children, makeups, settings] = await Promise.all([
+    getUpcomingRegularClassDates(parent.appUserId, undefined, reviews),
     getRegularMakeupsForParent(parent.appUserId),
+    // 마감 뒤 «전화»·«카카오 채널로 문의» 버튼에 쓰는 학원 연락처(설정값). 못 읽어도 화면은 뜬다
+    getAcademySettings().catch(() => null) as Promise<any>,
   ]);
+  // 설정을 안 채운 기본값(010-0000-0000)이면 전화 버튼을 보이지 않는다(청구 탭과 같은 기준)
+  const phone = typeof settings?.contactPhone === "string" ? settings.contactPhone.trim() : "";
+  const contact = {
+    phone: phone && phone !== "010-0000-0000" ? phone : null,
+    kakaoChannelUrl: typeof settings?.kakaoChannelUrl === "string" && settings.kakaoChannelUrl.trim() ? settings.kakaoChannelUrl.trim() : null,
+  };
   // Date/BigInt 등 직렬화 안전화(서버 컴포넌트 → 클라이언트 전달)
   const initial = JSON.parse(JSON.stringify(children));
   const initialMakeups = JSON.parse(JSON.stringify(makeups));
   const preset = parseRequestPreset(searchParams ? await searchParams : null);
-  return <RegularAbsenceClient initial={initial} makeups={initialMakeups} presetStudentId={preset.studentId} />;
+  return (
+    <RegularAbsenceClient
+      initial={initial}
+      initialReviews={JSON.parse(JSON.stringify(reviews))}
+      makeups={initialMakeups}
+      presetStudentId={preset.studentId}
+      contact={contact}
+    />
+  );
 }

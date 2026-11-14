@@ -41,5 +41,5 @@ test("수업 종료 알림이 실제로 있는 화면을 가리킨다", () => {
 
 test("출결을 다 확인해야 리포트 칸이 열린다", () => {
   // 미확인이 남았으면 종료 자체가 막히므로, 그 상태에서 리포트를 쓰게 하면 헛수고가 된다.
-  assert.match(client, /counts\.UNCHECKED === 0 && \([\s\S]{0,600}session-report/);
+  assert.match(client, /counts\.UNCHECKED === 0 && \(\s*<div className="mt-4" data-end-report>[\s\S]{0,400}session-report/);
 });

@@ -6,7 +6,8 @@ import { useRouter } from "next/navigation";
 import type { ParentMakeupOverview, ParentCredit, MakeupOption } from "@/lib/makeup/parent-makeup";
 // 남은 자리는 숫자 대신 3단계(여유/임박/마감)로(재원생 수 비공개 · 2026-11-13 f9)
 import { SEAT_LEVEL_LABEL, SEAT_LEVEL_TEXT_CLASS } from "@/lib/seats/seatLevel";
-import { fetchMakeupOptions, bookMakeupAction, cancelMakeupAction } from "@/app/actions/parent-makeup";
+import { fetchMakeupOptions, bookMakeupAction, cancelMakeupAction, rescheduleMakeupAction } from "@/app/actions/parent-makeup";
+import { CHANGE_CLOSED_MESSAGE, PARENT_CHANGE_CUTOFF_TEXT } from "@/lib/parent/changeDeadline";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
 import { todayKst } from "@/lib/datetime/kst";
 import InlineConfirm from "@/components/parent/InlineConfirm";
@@ -20,13 +21,26 @@ const DOW_KO: Record<string, string> = {
 
 // 후보가 0건일 때 이유별 안내(2026-11-14) — 서버(parent-makeup)가 준 emptyReason 을 그대로 글로 바꾼다.
 // 이유를 모르는 옛 응답은 기본 글로.
+// 원장 지시(2026-11-14): «학원에 문의하지 않고 해결할 수 있는 기능은 바로 해당 화면에서 해결» —
+// 글 끝에 «학원으로 문의해 주세요»를 붙이지 않고, 글 아래에 «여기서 할 수 있는 일» 버튼을 둔다(EMPTY_REASON_ACTIONS).
 const EMPTY_REASON_TEXT: Record<string, string> = {
-  NO_GRADE: "학년 정보가 없어 수업을 고를 수 없습니다. 학원으로 문의해 주세요.",
-  NO_MATCH: "학년대가 맞는 다른 수업이 없습니다. 학원으로 문의해 주세요.",
-  NO_DATE: "사용 기한 안에 열리는 수업 날짜가 없습니다. 학원으로 문의해 주세요.",
-  FULL: "학년대가 맞는 수업이 지금은 모두 마감입니다. 며칠 뒤 다시 확인하거나 학원으로 문의해 주세요.",
+  NO_GRADE: "아이 학년을 알 수 없어 수업을 고르지 못했어요.",
+  NO_MATCH: "학년이 맞는 다른 수업이 아직 없어요.",
+  NO_DATE: "사용 기한 안에 열리는 수업 날짜가 없어요.",
+  FULL: "학년이 맞는 수업이 지금은 모두 마감이에요. 자리가 나면 다시 보여요.",
 };
-const EMPTY_DEFAULT_TEXT = "지금 예약할 수 있는 수업이 없습니다. 학원으로 문의해 주세요.";
+const EMPTY_DEFAULT_TEXT = "지금 예약할 수 있는 수업이 없어요.";
+
+// 이유별로 «이 자리에서 할 수 있는 일» — record = 아이 정보에서 학년 확인 · retry = 다시 확인(자리는 수시로 바뀐다).
+// «학원에 문의» 버튼은 이유와 상관없이 하나만 붙는다(학원만 풀 수 있는 일: 반 개설·기한 연장·학년 정정).
+const EMPTY_REASON_ACTIONS: Record<string, readonly ("record" | "retry")[]> = {
+  NO_GRADE: ["record"],
+  NO_MATCH: [],
+  NO_DATE: [],
+  FULL: ["retry"],
+};
+// 홈의 «학원에 메시지 보내기» 폼을 바로 연다(MyPageClient 가 이 #주소를 받아 폼을 편다)
+const ACADEMY_ASK_HREF = "/mypage#parent-request-form";
 
 /** 상태 뱃지 — 학부모가 한눈에 "쓸 수 있나"를 알아야 한다. */
 function statusBadge(c: ParentCredit, expired: boolean) {
@@ -62,6 +76,8 @@ const CREDIT_GROUPS: { value: CreditGroup; label: string }[] = [
 export default function MakeupClient({ initial, presetStudentId = null }: { initial: ParentMakeupOverview; presetStudentId?: string | null }) {
   const router = useRouter();
   const [openId, setOpenId] = useState("");            // 반 선택이 열린 보강권
+  // 반 선택을 연 까닭: 새 예약("book") / 예약한 보강의 날짜 바꾸기("move" · 2026-11-15)
+  const [openMode, setOpenMode] = useState<"book" | "move">("book");
   const [options, setOptions] = useState<MakeupOption[]>([]);
   const [emptyReason, setEmptyReason] = useState("");   // 후보 0건인 이유(서버가 준 값)
   const [pick, setPick] = useState<{ classId: string; ymd: string } | null>(null);
@@ -74,14 +90,15 @@ export default function MakeupClient({ initial, presetStudentId = null }: { init
   // 오늘은 KST 로 구한다(toISOString 은 새벽 0~9시에 어제가 나와 만료 판정이 하루 늦어진다)
   const today = todayKst();
 
-  // 보강권을 펼치면서 그 학생이 갈 수 있는 반을 불러온다.
-  const open = useCallback(async (credit: ParentCredit) => {
-    if (openId === credit.id) { setOpenId(""); return; }
+  // 그 보강권으로 갈 수 있는 반을 불러온다 — 처음 펼칠 때와 «다시 확인»이 같은 길을 쓴다.
+  // mode "move" = 예약 중인 보강의 날짜 바꾸기(2026-11-15) — 서버가 지금 예약한 반·날짜를 뺀 후보를 준다.
+  const load = useCallback(async (creditId: string, mode: "book" | "move" = "book") => {
     setErr(""); setMsg(""); setPick(null); setOptions([]); setEmptyReason("");
-    setOpenId(credit.id);
-    setBusy(credit.id);
+    setOpenMode(mode);
+    setOpenId(creditId);
+    setBusy(creditId);
     try {
-      const r = await fetchMakeupOptions(credit.id);
+      const r = await fetchMakeupOptions(creditId, mode === "move");
       if (!r.ok) { setErr(customerMessage(r.message, "불러오지 못했습니다.")); setOpenId(""); return; }
       setOptions(r.options || []);
       setEmptyReason(r.emptyReason || "");
@@ -91,13 +108,34 @@ export default function MakeupClient({ initial, presetStudentId = null }: { init
     } finally {
       setBusy("");
     }
-  }, [openId]);
+  }, []);
+
+  // 보강권을 펼치면서 그 학생이 갈 수 있는 반을 불러온다(열려 있으면 닫는다).
+  const open = useCallback(async (credit: ParentCredit, mode: "book" | "move" = "book") => {
+    if (openId === credit.id) { setOpenId(""); return; }
+    await load(credit.id, mode);
+  }, [openId, load]);
 
   const book = useCallback(async (creditId: string) => {
     if (!pick) { setErr("보강받을 수업과 날짜를 골라 주세요."); return; }
     setErr(""); setMsg(""); setBusy(creditId);
     try {
       const r = await bookMakeupAction({ creditId, classId: pick.classId, dateYmd: pick.ymd });
+      if (!r.ok) { setErr(customerMessage(r.message, "처리하지 못했습니다. 잠시 후 다시 시도해 주세요.")); return; }
+      setMsg(r.message);
+      setOpenId(""); setPick(null);
+      router.refresh();
+    } finally {
+      setBusy("");
+    }
+  }, [pick, router]);
+
+  // 날짜 바꾸기 — 서버가 «옛 예약 취소 + 새 예약»을 한 번에 한다(보강권은 예약 상태 그대로. 실패하면 옛 예약이 남는다).
+  const reschedule = useCallback(async (creditId: string) => {
+    if (!pick) { setErr("바꿀 수업과 날짜를 골라 주세요."); return; }
+    setErr(""); setMsg(""); setBusy(creditId);
+    try {
+      const r = await rescheduleMakeupAction({ creditId, classId: pick.classId, dateYmd: pick.ymd });
       if (!r.ok) { setErr(customerMessage(r.message, "처리하지 못했습니다. 잠시 후 다시 시도해 주세요.")); return; }
       setMsg(r.message);
       setOpenId(""); setPick(null);
@@ -118,6 +156,78 @@ export default function MakeupClient({ initial, presetStudentId = null }: { init
       setBusy("");
     }
   }, [router]);
+
+  // 후보 목록(반 · 날짜 칩) — 새 예약과 날짜 바꾸기가 같은 모양을 쓴다(최종 버튼은 부르는 쪽이 붙인다)
+  const optionList = (c: ParentCredit) => (
+    <>
+      {busy === c.id && options.length === 0 && (
+        <p className="text-xs text-[var(--color-academy-muted)]">수업을 불러오는 중…</p>
+      )}
+      {busy !== c.id && options.length === 0 && (
+        // 빈 목록 = 이유 한 줄 + 그 자리에서 할 수 있는 일(막다른 곳을 만들지 않는다) — 새 예약·날짜 바꾸기 공통
+        <div className="rounded-xl bg-[var(--color-academy-soft)] px-3 py-3">
+          <p className="break-keep text-center text-sm text-[var(--color-academy-ink)]">
+            {EMPTY_REASON_TEXT[emptyReason] ?? EMPTY_DEFAULT_TEXT}
+          </p>
+          <div className="mt-2 flex flex-wrap justify-center gap-2">
+            {(EMPTY_REASON_ACTIONS[emptyReason] ?? []).includes("record") && (
+              // 학년은 생년월일로 계산한다 — 아이 정보에서 생년월일·학년이 맞는지 본다
+              <Link href={`/mypage/record?child=${encodeURIComponent(c.studentId)}`} className="academy-button-secondary">
+                아이 정보에서 학년 확인
+              </Link>
+            )}
+            {(EMPTY_REASON_ACTIONS[emptyReason] ?? []).includes("retry") && (
+              // 다시 확인 — 지금 열려 있는 까닭(새 예약 / 날짜 바꾸기) 그대로 다시 부른다
+              <button type="button" onClick={() => load(c.id, openMode)} className="academy-button-secondary">
+                다시 확인
+              </button>
+            )}
+            {/* 학원만 풀 수 있는 일은 이 버튼 하나로 — 홈의 메시지 폼이 바로 열린다 */}
+            <Link href={ACADEMY_ASK_HREF} className="academy-button-secondary">
+              학원에 문의
+            </Link>
+          </div>
+        </div>
+      )}
+      {options.map((o) => (
+        // 후보 한 줄 행: 반 이름 · 요일 시간 · 대상 학년 · 남은 자리(글자 — 학생 수 숫자는 싣지 않는다) / 아래에 날짜 칩
+        <div key={o.classId} className="rounded-xl border border-[var(--color-academy-line)] bg-white px-3 py-2">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <span className="break-keep text-sm font-semibold text-[var(--color-academy-ink)]">{o.className}</span>
+            <span className="text-xs tabular-nums text-[var(--color-academy-muted)]">
+              {DOW_KO[o.dayOfWeek] ?? o.dayOfWeek} {o.startTime}
+              {o.endTime ? `~${o.endTime}` : ""}
+            </span>
+            {(o.gradeLabel || o.grades.length > 0) && (
+              <span className="text-xs text-[var(--color-academy-muted)]">
+                대상 {o.gradeLabel || o.grades.join("·")}
+              </span>
+            )}
+            <span className={`ml-auto shrink-0 text-xs font-medium ${SEAT_LEVEL_TEXT_CLASS[o.seatLevel]}`}>
+              {SEAT_LEVEL_LABEL[o.seatLevel]}
+            </span>
+          </div>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {o.dates.map((d) => {
+              const on = pick?.classId === o.classId && pick?.ymd === d.ymd;
+              return (
+                <button
+                  key={d.ymd}
+                  type="button"
+                  // 고른 날짜 칩 = academy-choice(체크·연한 바탕), 제출 버튼과 구분(C-M2)
+                  aria-pressed={on}
+                  onClick={() => setPick({ classId: o.classId, ymd: d.ymd })}
+                  className="academy-choice tabular-nums"
+                >
+                  {d.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </>
+  );
 
   const credits = presetFirst(initial.credits, presetStudentId, (c) => c.studentId);
   const creditChips = CREDIT_GROUPS.map((g) => ({
@@ -141,8 +251,7 @@ export default function MakeupClient({ initial, presetStudentId = null }: { init
       </div>
       {/* 화면 맨 위 설명 한 줄 = 본문 14px */}
       <p className="mb-4 text-sm text-[var(--color-academy-muted)]">
-        결석 1회당 보강권 1장이 발급됩니다. <strong>결석일로부터 2개월</strong> 안에 사용해 주세요.
-        기간이 지나면 자동으로 소멸합니다.
+        보강권은 결석일부터 2개월 안에 써 주세요.
       </p>
 
       {/* 잔여 집계 — 예전 4칸 판(약 70px)을 상태 칩 한 줄로. 칩을 누르면 그 상태만 본다. */}
@@ -192,18 +301,52 @@ export default function MakeupClient({ initial, presetStudentId = null }: { init
 
                 {/* 예약 완료 상태 */}
                 {c.booking && c.status === "RESERVED" && (
-                  <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl bg-[var(--color-academy-info-soft)] py-1 pl-3 pr-1">
-                    {/* 예약한 반(왼쪽, 줄바꿈 허용) · 날짜(오른쪽) · 취소 버튼 */}
-                    <span className="min-w-0 flex-1 break-keep text-sm font-medium text-[var(--color-academy-info)]">{c.booking.className}</span>
-                    <span className="shrink-0 text-sm tabular-nums text-[var(--color-academy-info)]">{c.booking.dateLabel}</span>
-                    {/* 예약 취소 = 그 자리 확인(C-M1) 후 기존 cancel(c.id) 그대로 */}
-                    <InlineConfirm
-                      label="예약 취소"
-                      question="이 보강 예약을 취소할까요?"
-                      confirmLabel="예약 취소하기"
-                      onConfirm={() => cancel(c.id)}
-                      pending={busy === c.id}
-                    />
+                  <div className="mt-2 rounded-xl bg-[var(--color-academy-info-soft)] py-1 pl-3 pr-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* 예약한 반(왼쪽, 줄바꿈 허용) · 날짜(오른쪽) · 동작 버튼 */}
+                      <span className="min-w-0 flex-1 break-keep text-sm font-medium text-[var(--color-academy-info)]">{c.booking.className}</span>
+                      <span className="shrink-0 text-sm tabular-nums text-[var(--color-academy-info)]">{c.booking.dateLabel}</span>
+                      {c.booking.changeOpen === false ? (
+                        // 마감 뒤(보강 수업 시작 1시간 전이 지남·지난 보강) — 버튼 대신 안내 글(서버도 같은 규칙으로 막는다 · 2026-11-15)
+                        <span className="basis-full py-1 pr-2 text-xs text-[var(--color-academy-muted)]">{CHANGE_CLOSED_MESSAGE}</span>
+                      ) : (
+                        // 동작 버튼 한 묶음(날짜 바꾸기 · 예약 취소) — 좁은 화면(360px)에서는 다음 줄로 내려간다
+                        <span className="ml-auto flex flex-wrap items-center justify-end gap-1">
+                          <button
+                            type="button"
+                            onClick={() => open(c, "move")}
+                            disabled={busy === c.id}
+                            className="academy-button-text shrink-0"
+                          >
+                            {openId === c.id && openMode === "move" ? "닫기" : "날짜 바꾸기"}
+                          </button>
+                          {/* 예약 취소 = 그 자리 확인(C-M1) 후 기존 cancel(c.id) 그대로 */}
+                          <InlineConfirm
+                            label="예약 취소"
+                            question="이 보강 예약을 취소할까요?"
+                            confirmLabel="예약 취소하기"
+                            onConfirm={() => cancel(c.id)}
+                            pending={busy === c.id}
+                          />
+                        </span>
+                      )}
+                    </div>
+                    {/* 날짜 바꾸기 칸 — 지금 예약한 반·날짜를 뺀 후보에서 고른다 */}
+                    {openId === c.id && openMode === "move" && c.booking.changeOpen !== false && (
+                      <div className="mt-2 space-y-2 pb-1 pr-2">
+                        {optionList(c)}
+                        {options.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => reschedule(c.id)}
+                            disabled={busy === c.id || !pick}
+                            className="academy-button-primary w-full"
+                          >
+                            이 날짜로 바꾸기
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -222,51 +365,8 @@ export default function MakeupClient({ initial, presetStudentId = null }: { init
 
                     {openId === c.id && (
                       <div className="mt-3 space-y-2">
-                        {busy === c.id && options.length === 0 && (
-                          <p className="text-xs text-[var(--color-academy-muted)]">수업을 불러오는 중…</p>
-                        )}
-                        {busy !== c.id && options.length === 0 && (
-                          <p className="rounded-xl bg-[var(--color-academy-soft)] px-3 py-4 text-center text-xs text-[var(--color-academy-muted)]">
-                            {EMPTY_REASON_TEXT[emptyReason] ?? EMPTY_DEFAULT_TEXT}
-                          </p>
-                        )}
-                        {options.map((o) => (
-                          // 후보 한 줄 행: 반 이름 · 요일 시간 · 대상 학년 · 남은 자리(글자 — 학생 수 숫자는 싣지 않는다) / 아래에 날짜 칩
-                          <div key={o.classId} className="rounded-xl border border-[var(--color-academy-line)] px-3 py-2">
-                            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                              <span className="break-keep text-sm font-semibold text-[var(--color-academy-ink)]">{o.className}</span>
-                              <span className="text-xs tabular-nums text-[var(--color-academy-muted)]">
-                                {DOW_KO[o.dayOfWeek] ?? o.dayOfWeek} {o.startTime}
-                                {o.endTime ? `~${o.endTime}` : ""}
-                              </span>
-                              {(o.gradeLabel || o.grades.length > 0) && (
-                                <span className="text-xs text-[var(--color-academy-muted)]">
-                                  대상 {o.gradeLabel || o.grades.join("·")}
-                                </span>
-                              )}
-                              <span className={`ml-auto shrink-0 text-xs font-medium ${SEAT_LEVEL_TEXT_CLASS[o.seatLevel]}`}>
-                                {SEAT_LEVEL_LABEL[o.seatLevel]}
-                              </span>
-                            </div>
-                            <div className="mt-1.5 flex flex-wrap gap-1.5">
-                              {o.dates.map((d) => {
-                                const on = pick?.classId === o.classId && pick?.ymd === d.ymd;
-                                return (
-                                  <button
-                                    key={d.ymd}
-                                    type="button"
-                                    // 고른 날짜 칩 = academy-choice(체크·연한 바탕), 제출 버튼과 구분(C-M2)
-                                    aria-pressed={on}
-                                    onClick={() => setPick({ classId: o.classId, ymd: d.ymd })}
-                                    className="academy-choice tabular-nums"
-                                  >
-                                    {d.label}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ))}
+                        {/* 후보 목록·빈 목록 화면은 날짜 바꾸기와 함께 쓰는 optionList 한 곳에 있다 */}
+                        {optionList(c)}
                         {options.length > 0 && (
                           <button
                             type="button"
@@ -288,9 +388,8 @@ export default function MakeupClient({ initial, presetStudentId = null }: { init
       )}
 
       <p className="mt-5 text-xs leading-relaxed text-[var(--color-academy-faint)]">
-        · 보강은 학년대가 비슷한(대상 학년 앞뒤 1학년까지) 다른 수업의 빈자리로 예약할 수 있습니다.<br />
-        · 예약을 미리 취소하면 보강권은 그대로 유지됩니다.<br />
-        · 예약 후 알리지 않고 오지 않으면 보강권을 사용한 것으로 처리됩니다.
+        예약·예약 취소·날짜 바꾸기는 수업 시작 {PARENT_CHANGE_CUTOFF_TEXT} 전까지 할 수 있어요.<br />
+        알리지 않고 빠지면 보강권이 사용 처리돼요.
       </p>
     </div>
   );

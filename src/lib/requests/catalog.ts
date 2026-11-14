@@ -40,6 +40,7 @@ export const PARENT_BUCKET_LABEL: Record<InboxBucket, string> = {
 export type RequestKind =
   | "ENROLLMENT_CHANGE" // 수강 변경(반 변경·휴원·퇴원) EnrollmentChangeRequest
   | "REGULAR_ABSENCE" // 정규 결석 RegularAbsence
+  | "ILLNESS_CARRY" // 질병·부상 결석 이월 검토 RegularAbsence(reason=ILLNESS_INJURY) + RegularAbsenceCarryReview
   | "MAKEUP" // 보강 예약 MakeupSession
   | "SHUTTLE_DAY" // 셔틀 오늘만 ShuttleDayException(정보용 — 승인 없음)
   | "SEASONAL_ABSENCE" // 방학특강 결석 SpecialProgramAbsence
@@ -102,6 +103,18 @@ export const REQUEST_KINDS: readonly KindEntry[] = [
   {
     kind: "REGULAR_ABSENCE", label: "결석", icon: "event_busy", adminHref: "/admin/absence", parentFacing: true,
     statuses: { REPORTED: act("확인 대기"), CONFIRMED: ok("확인됨"), CANCELLED: off("취소") },
+  },
+  {
+    // 질병·부상 결석 «이월 검토»(2026-11-14 원장 결정 a3) — 원장이 증빙을 보고 [이월 승인]/[보강권으로]를 고른다.
+    // 파생 상태: 검토 줄(RegularAbsenceCarryReview)의 결정 + 결석일. 결석일이 아직 안 지났으면 승인할 수 없어 «진행 중»에 둔다.
+    // 학부모가 낸 신청이지만 학부모 화면에는 «결석 알리기»의 상태 한 단어로 보인다(타임라인 종류가 아니다).
+    kind: "ILLNESS_CARRY", label: "질병·부상 결석", icon: "medical_services", adminHref: "/admin/inbox?kind=ILLNESS_CARRY", parentFacing: false,
+    statuses: {
+      PENDING: act("이월 검토"),
+      WAITING: going("결석일 대기"),
+      APPROVED: ok("이월 승인"),
+      MAKEUP: off("보강권으로 전환"),
+    },
   },
   {
     kind: "MAKEUP", label: "보강 예약", icon: "event_repeat", adminHref: "/admin/makeup", parentFacing: true,
@@ -340,6 +353,7 @@ export const KIND_TAB: Record<RequestKind, InboxTab> = {
   // 변경 = 결석·보강·셔틀(오늘만·정류장)·반 이동·휴원·복귀·퇴원·특강 결석/보강
   ENROLLMENT_CHANGE: "CHANGE",
   REGULAR_ABSENCE: "CHANGE",
+  ILLNESS_CARRY: "CHANGE",
   MAKEUP: "CHANGE",
   SHUTTLE_DAY: "CHANGE",
   SEASONAL_ABSENCE: "CHANGE",
@@ -370,7 +384,7 @@ export const TAB_SUBS: Partial<Record<InboxTab, readonly InboxSubTab[]>> = {
     { key: "WAITLIST", label: "대기" },
   ],
   CHANGE: [
-    { key: "ABSENCE", label: "결석·보강", kinds: ["REGULAR_ABSENCE", "MAKEUP", "SEASONAL_ABSENCE", "SEASONAL_MAKEUP"] },
+    { key: "ABSENCE", label: "결석·보강", kinds: ["REGULAR_ABSENCE", "ILLNESS_CARRY", "MAKEUP", "SEASONAL_ABSENCE", "SEASONAL_MAKEUP"] },
     { key: "SHUTTLE", label: "셔틀", kinds: ["SHUTTLE_DAY"] },
     { key: "ENROLLMENT", label: "수강", kinds: ["ENROLLMENT_CHANGE"] },
   ],

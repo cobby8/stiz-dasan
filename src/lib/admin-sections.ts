@@ -37,6 +37,7 @@ export const ADMIN_SECTIONS = {
       { href: "/admin/absence", label: "정규 결석 신고", icon: "event_busy" },
       { href: "/admin/makeup", label: "보강", icon: "event_repeat" },
       { href: "/admin/attendance/report", label: "수업 리포트", icon: "edit_document" },
+      { href: "/admin/attendance/feed", label: "수업 피드", icon: "photo_library" },
     ],
   },
   // 사이드바 «청구·수납» — 옛 «돈·수납» 묶음을 없애고 이 탭 줄로 모았다

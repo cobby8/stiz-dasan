@@ -107,6 +107,8 @@ export type PairResult = {
   billingFrozenLeftBehind: number;
   parentAction: string;
   logRows: number;
+  /** 흡수된 학생의 프로필 사진 경로(없으면 null). 적용이 COMMIT 된 뒤 removeMergedStudentPhotos 로 파일을 지운다 */
+  loserPhotoPath: string | null;
 };
 
 /** 학생 한 명의 병합 판단 재료를 DB에서 읽어온다 (읽기 전용) */
@@ -537,6 +539,35 @@ export async function mergePair(
     }
   }
 
+  // --- 6-1) 흡수되는 쪽의 프로필 사진(2026-11-15, 개인정보) ---
+  // 사라지는 학생의 사진은 «지우는 쪽»이다(대표 쪽에 사진이 없어도 옮기지 않는다 — 단순·안전).
+  // 여기서는 DB 경로만 비우고 옛 경로를 로그에 남긴 뒤 결과로 돌려준다.
+  // ⚠️ 파일은 여기서 지우지 않는다 — DRY-RUN(ROLLBACK)에서도 이 코드가 돈다. 실제 적용이 COMMIT 된 «뒤에»
+  //    호출부가 removeMergedStudentPhotos(결과 목록)을 부른다(src/lib/studentMerge/photoCleanup.ts).
+  const [loserPhoto] = await runner.query<{ photoPath: string | null }>(
+    `SELECT "photoPath" AS "photoPath" FROM "Student" WHERE id = ${l} AND "mergedIntoStudentId" IS NULL`,
+  );
+  const loserPhotoPath = loserPhoto?.photoPath ?? null;
+  if (loserPhotoPath) {
+    await runner.execute(
+      `UPDATE "Student" SET "photoPath" = NULL, "photoUpdatedAt" = NOW() WHERE id = ${l}`,
+    );
+    await runner.execute(
+      logInsert({
+        mergeId,
+        winnerId: winner.id,
+        loserId: loser.id,
+        table: "Student",
+        rowId: loser.id,
+        column: "photoPath",
+        oldValue: loserPhotoPath,
+        newValue: null,
+        action: "UPDATE",
+        note: "흡수되는 학생의 프로필 사진 — 적용 확정 뒤 저장소 파일 삭제",
+      }),
+    );
+  }
+
   // --- 7) 흡수 레코드 표시 (삭제하지 않는다) ---
   await runner.execute(
     `UPDATE "Student" SET "mergedIntoStudentId" = ${w}, "mergedAt" = NOW(), "updatedAt" = NOW()
@@ -589,6 +620,7 @@ export async function mergePair(
     billingFrozenLeftBehind: Number(frozenLeft?.n ?? 0),
     parentAction,
     logRows: Number(logCount?.n ?? 0),
+    loserPhotoPath,
   };
 }
 

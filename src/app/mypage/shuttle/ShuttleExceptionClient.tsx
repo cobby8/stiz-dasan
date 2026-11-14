@@ -18,6 +18,8 @@ import { kstLabel } from "@/lib/datetime/kst";
 import InlineConfirm from "@/components/parent/InlineConfirm";
 import { customerMessage } from "@/components/parent/customerMessage";
 import { resumeNotice } from "@/lib/enrollment/resumeWindow";
+// 마감 안내 글자(«1시간»)는 마감 상수에서 나온다 — 상수를 바꾸면 안내도 같이 바뀐다
+import { CHANGE_CLOSED_MESSAGE, PARENT_CHANGE_CUTOFF_TEXT } from "@/lib/parent/changeDeadline";
 
 // 예정된 변경의 날짜 묶음 이름(오늘 → 이번 주 → 다음 주 → 이후)
 const DATE_GROUP_LABELS = { today: "오늘", thisWeek: "이번 주", nextWeek: "다음 주", later: "이후", past: "지난 변경" };
@@ -38,6 +40,11 @@ function parentDeliveryText(summary: DeliveryStatusSummary | null | undefined): 
     notSet ? `휴대폰 알림 꺼짐 ${notSet}건` : "",
     summary.unknownCount ? `확인 중 ${summary.unknownCount}건` : "",
   ].filter(Boolean).join(" · ");
+}
+
+// 저장 결과 글의 앞머리 — 취소 / 날짜 변경 / 변경
+function actionLabel(body: Record<string, unknown>): string {
+  return body.action === "cancel" ? "취소" : body.action === "move" ? "날짜 변경" : "변경";
 }
 
 // presetStudentId = 수업 탭 반 카드에서 온 아이 — 그 아이를 미리 고른다(내 자녀 목록에 있을 때만)
@@ -66,6 +73,9 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
   const [uncertain, setUncertain] = useState<Record<string, unknown> | null>(null);
   // 하단 시트로 자세히 보고 있는 예정 변경 id (없으면 닫힘)
   const [detailId, setDetailId] = useState<string | null>(null);
+  // 날짜 바꾸기(2026-11-15): 날짜 칸이 열린 예정 변경 id · 고른 새 날짜
+  const [moveId, setMoveId] = useState<string | null>(null);
+  const [moveDate, setMoveDate] = useState("");
 
   // 행 키보드(Enter·Space) = 상세 시트. 행 안의 «취소» 버튼에서 누른 키는 가로채지 않는다.
   function handleRowKeyDown(event: KeyboardEvent<HTMLElement>, id: string) {
@@ -84,7 +94,7 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
       const found = body.action === "cancel" ? (data.record?.canceled ? data.record : null) :
         (data.upcoming as ShuttleExceptionOptions["upcoming"]).find((row) => matchesShuttleChange(row, body));
       if (!found) throw new Error("NOT_CONFIRMED");
-      setDone(`${body.action === "cancel" ? "취소" : "변경"} 저장 완료 · 셔틀 명단에 반영됨. ${parentDeliveryText(found.notificationStatus)}`);
+      setDone(`${actionLabel(body)} 저장 완료 · 셔틀 명단에 반영됨. ${parentDeliveryText(found.notificationStatus)}`);
       setUncertain(null);
       setError("");
       router.refresh();
@@ -113,7 +123,7 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
     }
     if (!data.ok) return reconcile(body);
     const status: DeliveryStatusSummary | null = data.notificationStatus ?? null;
-    setDone(`${body.action === "cancel" ? "취소" : "변경"} 저장 완료 · 셔틀 명단에 반영됨.${data.noOp ? " 동일한 내용이 이미 저장되어 있습니다." : ""} ${parentDeliveryText(status)}${status && !status.driverLinked ? " · 담당 기사님 배정은 학원에서 확인 중" : ""}`);
+    setDone(`${actionLabel(body)} 저장 완료 · 셔틀 명단에 반영됨.${data.noOp ? " 동일한 내용이 이미 저장되어 있습니다." : ""} ${parentDeliveryText(status)}${status && !status.driverLinked ? " · 담당 기사님 배정은 학원에서 확인 중" : ""}`);
     setUncertain(null);
     return true;
     } catch {
@@ -145,6 +155,27 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
     });
   }
 
+  // 날짜 바꾸기 — 서버가 «옛 신청 취소 + 새 날짜 신청»을 한 번에 한다(내용은 그대로, 날짜만. 실패하면 옛 신청이 남는다).
+  // 방향·종류·장소·한마디를 함께 싣는 것은 «저장 결과 다시 확인»(reconcile)이 새 날짜 줄을 찾을 수 있게 하려는 것 — 서버는 id·날짜만 본다.
+  function move(item: ShuttleExceptionOptions["upcoming"][number]) {
+    if (!moveDate) return;
+    startTransition(async () => {
+      const ok = await send({
+        action: "move",
+        id: item.id,
+        serviceDate: moveDate,
+        studentId: item.studentId,
+        direction: item.direction,
+        kind: item.kind,
+        location: item.location ?? undefined,
+        note: item.note ?? "",
+      });
+      if (!ok) return;
+      setMoveId(null);
+      router.refresh();
+    });
+  }
+
   if (initial.children.length === 0) {
     return (
       <main className="mx-auto max-w-lg px-4 py-6">
@@ -165,6 +196,10 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
           수업은 오지만 <b>셔틀만</b> 바꿀 때 쓰세요. 변경은 운행 명단에 사용할 기록으로 저장됩니다.
           <br />
           수업 자체를 빠지시면 <b>결석 미리 알리기</b>에서 신고해 주세요.
+        </p>
+        {/* 마감 안내(2026-11-15) — 서버가 같은 규칙으로 막는다 */}
+        <p className="mt-1 break-keep text-xs text-[var(--color-academy-muted)]">
+          신청·취소·날짜 바꾸기는 수업 시작 {PARENT_CHANGE_CUTOFF_TEXT} 전까지 할 수 있습니다. 수업이 없는 날은 전날까지입니다.
         </p>
       </div>
 
@@ -214,17 +249,73 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
                         {item.notificationStatus && !item.notificationStatus.driverLinked && <p className="text-xs text-[var(--color-academy-muted)]">담당 기사님 배정은 학원에서 확인 중</p>}
                       </div>
                       <span className="shrink-0 text-right text-sm tabular-nums text-[var(--color-academy-ink)]">{kstLabel(item.serviceDate)}</span>
-                      {/* 취소 = 그 자리 확인(C-M1) 후 기존 cancel(item.id) 그대로. 행 탭(시트 열기)으로 번지지 않게 stopPropagation 유지 */}
-                      <InlineConfirm
-                        label="취소"
-                        question="이 셔틀 변경을 취소할까요?"
-                        confirmLabel="취소하기"
-                        onConfirm={() => cancel(item.id)}
-                        disabled={Boolean(uncertain)}
-                        pending={pending}
-                        stopPropagation
-                        openClassName="basis-full"
-                      />
+                      {item.changeOpen === false ? (
+                        // 마감 뒤 — 버튼 대신 안내 글(서버도 같은 규칙으로 막는다 · 2026-11-15)
+                        <span className="basis-full text-xs text-[var(--color-academy-muted)]">{CHANGE_CLOSED_MESSAGE}</span>
+                      ) : (
+                        // 동작 버튼 한 묶음(날짜 바꾸기 · 취소) — 행의 flex-wrap 으로 좁은 화면(360px)에서는 다음 줄로 내려간다.
+                        // 감싸는 칸을 두지 않는다: «취소» 확인 칸이 펼쳐질 때 행 한 줄을 다 써야 한다(basis-full)
+                        <>
+                          {/* 날짜 바꾸기 = 아래에 날짜 칸을 연다(글자 버튼). 행 탭(시트 열기)으로 번지지 않게 막는다 */}
+                          {moveId !== item.id && (
+                            <button
+                              type="button"
+                              disabled={pending || Boolean(uncertain)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setMoveDate("");
+                                setMoveId(item.id);
+                              }}
+                              onKeyDown={(event) => event.stopPropagation()}
+                              className="academy-button-text shrink-0"
+                            >
+                              날짜 바꾸기
+                            </button>
+                          )}
+                          {/* 취소 = 그 자리 확인(C-M1) 후 기존 cancel(item.id) 그대로. 행 탭(시트 열기)으로 번지지 않게 stopPropagation 유지 */}
+                          <InlineConfirm
+                            label="취소"
+                            question="이 셔틀 변경을 취소할까요?"
+                            confirmLabel="취소하기"
+                            onConfirm={() => cancel(item.id)}
+                            disabled={Boolean(uncertain)}
+                            pending={pending}
+                            stopPropagation
+                            openClassName="basis-full"
+                          />
+                        </>
+                      )}
+                      {/* 날짜 바꾸기 칸 — 날짜만 새로 고른다(방향·내용은 그대로 옮겨진다) */}
+                      {moveId === item.id && item.changeOpen !== false && (
+                        <span
+                          role="group"
+                          aria-label="셔틀 변경 날짜 바꾸기"
+                          onClick={(event) => event.stopPropagation()}
+                          onKeyDown={(event) => event.stopPropagation()}
+                          className="flex basis-full cursor-default flex-wrap items-center gap-2"
+                        >
+                          <input
+                            type="date"
+                            value={moveDate}
+                            min={earliestDateOf(item.studentId)}
+                            max={initial.maxDate}
+                            onChange={(event) => setMoveDate(event.target.value)}
+                            aria-label="바꿀 날짜"
+                            className="academy-input min-w-36 flex-1"
+                          />
+                          <button
+                            type="button"
+                            disabled={pending || Boolean(uncertain) || !moveDate || moveDate === item.serviceDate}
+                            onClick={() => move(item)}
+                            className="academy-button-primary"
+                          >
+                            {pending ? "바꾸는 중…" : "바꾸기"}
+                          </button>
+                          <button type="button" disabled={pending} onClick={() => setMoveId(null)} className="academy-button-text">
+                            닫기
+                          </button>
+                        </span>
+                      )}
                     </div>
                   </li>
                 ))}
