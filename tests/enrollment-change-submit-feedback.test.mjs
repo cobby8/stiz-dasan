@@ -34,7 +34,7 @@ const rules = load("src/lib/enrollment/changeRequestRules.ts");
 const changeStatus = load("src/lib/enrollment/parentChangeStatus.ts");
 
 // 상태 이름 = useState 호출 순서. 순서가 바뀌면 아래 길이 검사가 먼저 깨진다.
-const STATE_NAMES = ["childIdx", "kind", "toClassId", "effectiveFrom", "resumeOn", "reason", "error", "done", "uncertainSource", "submittedFor", "localPending", "canceledId", "resumeFrom", "pauseFrom", "additionalPauseIds"];
+const STATE_NAMES = ["childIdx", "kind", "toClassId", "effectiveFrom", "resumeOn", "reason", "error", "done", "uncertainSource", "submittedFor", "localPending", "canceledId", "resumeFrom", "pauseFrom", "additionalPauseIds", "cancelRequested"];
 
 function harness() {
   let state = {};
@@ -180,6 +180,8 @@ test("신청을 취소하면 잠금이 풀려 다시 신청할 수 있다", asyn
 
 // ── 2026-11-09 원장 점검: «접수 후 복귀 신청도 떠야 해. 휴원 신청 취소도 필요하고» ─────────────
 const confirmOf = (list) => list.find((x) => x.el?.type?.name === "InlineConfirm")?.el;
+/** 그 자리 확인 버튼(InlineConfirm) — 가짜 부품이라 글자는 props.label 에 있다 */
+const confirmButton = (list, label) => list.find((x) => x.el?.props?.label === label && typeof x.el.props.onConfirm === "function")?.el;
 const allText = (list) => list.filter((x) => x.text).map((x) => x.text).join("");
 const pauseChild = (over = {}) => ({
   effectiveFrom: "2026-12-01", minEffectiveFrom: "2026-11-10", maxEffectiveFrom: "2027-02-09",
@@ -262,16 +264,85 @@ test("복귀 희망일이 범위를 벗어나면(아이폰 min 무시) 보내지
 test("승인됐지만 시작 전인 휴원은 «휴원 예정»과 «취소 요청» 버튼을 보여 준다", () => {
   const h = harness();
   const data = initial(null);
-  data.children[0].scheduled = { kind: "PAUSE", effectiveFrom: "2026-12-01", resumeOn: "2027-01-05" };
-  const text = allText(flatten(h.render(data)));
+  data.children[0].scheduled = { kind: "PAUSE", effectiveFrom: "2026-12-01", resumeOn: "2027-01-05", id: "request-s", canRequestCancel: true, cancelLine: null };
+  const list = flatten(h.render(data));
+  const text = allText(list);
   assert.match(text, /휴원 예정 · 2026-12-01부터/);
-  assert.match(text, /취소 요청/); assert.doesNotMatch(text, /학원에 연락해 주세요/); // 2026-11-14 결정표 c2: 연락 안내 문장 대신 «취소 요청» 버튼(신청 내역으로)
+  // 2026-11-14 결정표 c2: 연락 안내 문장·«신청 내역으로 가는 버튼» 대신 이 자리에서 바로 «취소 요청»(확인 1회)
+  assert.ok(confirmButton(list, "취소 요청"), "«취소 요청» 확인 버튼");
+  assert.doesNotMatch(text, /학원에 연락해 주세요|신청 내역에서 취소 요청/);
+  assert.match(text, /날짜 변경은 학원에 문의/, "날짜 변경 문의 링크는 유지");
   assert.match(text, /2027-01-05 복귀 예정/);
   // 휴원 중 반에 복귀가 이미 승인돼 기다리는 중이면 복귀 신청 양식은 숨긴다(중복 방지)
   const h2 = harness();
   const waiting = flatten(h2.render(pauseChild({ scheduled: { kind: "RESUME", effectiveFrom: "2026-11-20", resumeOn: null } })));
   assert.equal(findButton(waiting, "복귀 신청하기"), undefined);
   assert.match(allText(waiting), /복귀 예정 · 2026-11-20부터/);
+});
+
+// ── 2026-11-14 결정표 c2: 승인된 휴원·퇴원 «취소 요청»을 수강 변경 화면에서 한 번에 ──────────────────────
+const scheduledChild = (scheduled) => {
+  const data = initial(null);
+  data.children[0] = { ...data.children[0], enrollmentStatus: "ACTIVE", scheduled };
+  return data;
+};
+
+test("c2 «취소 요청»을 누르면 수업 탭과 같은 액션(cancel-request)을 한 번 보내고, 그 자리에서 상태 한 줄로 바뀐다", async () => {
+  const h = harness();
+  const data = scheduledChild({ kind: "WITHDRAW", effectiveFrom: "2026-12-01", resumeOn: null, id: "request-s", canRequestCancel: true, cancelLine: null });
+  const bodies = [];
+  globalThis.fetch = async (url, init) => {
+    assert.equal(url, "/api/mypage/enrollment-change");
+    bodies.push(JSON.parse(init.body));
+    return { status: 200, ok: true, json: async () => ({ ok: true, cancelLine: "취소 요청을 보냈어요 (11/14) · 원장님 확인 중" }) };
+  };
+  const button = confirmButton(flatten(h.render(data)), "취소 요청");
+  assert.match(String(button.props.question), /12\/1부터 예정된 퇴원을 취소해 달라고 요청할까요\?/, "확인 1회");
+  button.props.onConfirm();
+  await Promise.all(h.transitions);
+  assert.deepEqual(bodies, [{ action: "cancel-request", id: "request-s" }]);
+  assert.equal(h.refreshes.count, 1);
+
+  // 새로고침이 늦게 와도(서버 자료는 아직 «요청 가능») 버튼은 사라지고 상태 한 줄이 보인다 → 두 번 못 보낸다
+  const after = flatten(h.render(data));
+  assert.equal(confirmButton(after, "취소 요청"), undefined, "중복 요청 차단");
+  assert.match(allText(after), /취소 요청을 보냈어요 \(11\/14\) · 원장님 확인 중/);
+  assert.match(allText(after), /날짜 변경은 학원에 문의/);
+});
+
+test("c2 이미 요청했거나 거절된 예정은 버튼 없이 수업 탭과 같은 문구만 — 번호가 없는 옛 자료도 버튼 없음", () => {
+  const waiting = flatten(harness().render(scheduledChild({ kind: "PAUSE", effectiveFrom: "2026-12-01", resumeOn: null, id: "request-s", canRequestCancel: false, cancelLine: "취소 요청을 보냈어요 (11/13) · 원장님 확인 중" })));
+  assert.equal(confirmButton(waiting, "취소 요청"), undefined);
+  assert.match(allText(waiting), /취소 요청을 보냈어요 \(11\/13\) · 원장님 확인 중/);
+
+  const rejected = flatten(harness().render(scheduledChild({ kind: "PAUSE", effectiveFrom: "2026-12-01", resumeOn: null, id: "request-s", canRequestCancel: false, cancelLine: "취소 요청이 받아들여지지 않았어요: 이미 자리를 배정했습니다" })));
+  assert.equal(confirmButton(rejected, "취소 요청"), undefined, "거절된 요청은 다시 못 낸다");
+  assert.match(allText(rejected), /받아들여지지 않았어요: 이미 자리를 배정했습니다/);
+
+  // 반 변경·복귀 예정 = 취소 요청 길이 없음(서버가 canRequestCancel=false) · 옛 자료(id 없음) = 버튼 없음
+  for (const scheduled of [
+    { kind: "CLASS_CHANGE", effectiveFrom: "2026-12-01", resumeOn: null, id: "request-c", canRequestCancel: false, cancelLine: null },
+    { kind: "PAUSE", effectiveFrom: "2026-12-01", resumeOn: null },
+    { kind: "PAUSE", effectiveFrom: "2026-12-01", resumeOn: null, canRequestCancel: true },
+  ]) {
+    const list = flatten(harness().render(scheduledChild(scheduled)));
+    assert.equal(confirmButton(list, "취소 요청"), undefined);
+    assert.match(allText(list), /날짜 변경은 학원에 문의/);
+  }
+});
+
+test("c2 취소 요청이 거부되면(이미 적용·이미 요청) 오류를 그 상자에 보이고 버튼은 남는다", async () => {
+  const h = harness();
+  const data = scheduledChild({ kind: "PAUSE", effectiveFrom: "2026-12-01", resumeOn: null, id: "request-s", canRequestCancel: true, cancelLine: null });
+  globalThis.fetch = async () => ({ status: 400, ok: false, json: async () => ({ error: "취소 요청을 보낼 수 없는 신청입니다. 이미 적용됐거나 요청을 보냈을 수 있어요." }) });
+  confirmButton(flatten(h.render(data)), "취소 요청").props.onConfirm();
+  await Promise.all(h.transitions);
+  assert.match(h.state.error, /취소 요청을 보낼 수 없는 신청입니다/);
+  assert.equal(h.state.cancelRequested, null);
+  const list = flatten(h.render(data));
+  const box = list.findIndex((x) => x.el?.props?.role === "alert");
+  const button = list.findIndex((x) => x.el?.props?.label === "취소 요청");
+  assert.ok(box >= 0 && box < button, "오류는 버튼 바로 위");
 });
 
 // ── 2026-11-10 원장 재점검: 김루빈(한 학생·월/수 두 반·둘 다 다니는 중) 휴원 → «복귀 버튼 안 보여» ─────────

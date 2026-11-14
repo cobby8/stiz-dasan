@@ -64,6 +64,8 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
   // 휴원 시작일(2026-11-10 원장 결정 m7). 비어 있으면 그 반의 가장 이른 날(오늘 수업 전이면 오늘, 아니면 내일).
   const [pauseFrom, setPauseFrom] = useState("");
   const [additionalPauseIds, setAdditionalPauseIds] = useState<string[]>([]);
+  // 방금 이 화면에서 보낸 «취소 요청»(결정표 c2) — 새로고침이 늦어도 버튼 대신 상태 한 줄을 바로 보여 준다.
+  const [cancelRequested, setCancelRequested] = useState<{ id: string; line: string } | null>(null);
 
   const child = initial.children[childIdx];
   // 화면에 보일 «검토 중» 신청 = 서버 내역(방금 취소한 건 제외) → 없으면 방금 접수한 건
@@ -210,6 +212,16 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
     });
   }
 
+  /** 승인된 휴원·퇴원 «취소 요청» — 수업 탭 «신청 내역»과 같은 액션(cancel-request). 학원이 승인해야 취소된다. */
+  function requestScheduledCancel(id: string) {
+    startTransition(async () => {
+      const data = await send({ action: "cancel-request", id });
+      if (!data) return;
+      setCancelRequested({ id, line: typeof data.cancelLine === "string" && data.cancelLine ? data.cancelLine : "취소 요청을 보냈어요 · 원장님 확인 중" });
+      router.refresh();
+    });
+  }
+
   // 결과 문구는 방금 누른 버튼 바로 위에 둔다(2026-11-09 휴원 신청 «동작 안 함» 신고).
   // 화면 맨 위에 두면 휴대폰에서 아래로 내려 «신청하기»를 누른 사람에게는
   // 오류(예: 복귀일이 휴원 시작일 이전)도 접수 완료도 보이지 않아 «무반응»으로 느껴진다.
@@ -233,10 +245,13 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
   );
 
   // 원장이 승인했지만 아직 적용 전인 신청(휴원 예정 등).
-  // 2026-11-14 결정표 c2: «취소하거나 날짜를 바꾸려면 학원에 연락해 주세요» 문장 대신 버튼 하나.
-  //  휴원·퇴원 예정 = 수업 탭 «신청 내역»의 «취소 요청»으로 보낸다(그 버튼이 신청 번호·이미 요청했는지를 알고 있다 — 이 화면의 자료에는 없다).
+  // 2026-11-14 결정표 c2: 휴원·퇴원 예정은 이 자리에서 바로 «취소 요청»(확인 1회) → 상태 한 줄.
+  //  버튼을 보일지(canRequestCancel)·이미 낸 요청의 문구(cancelLine)는 서버가 수업 탭 «신청 내역»과 같은 규칙으로 정해 내려 준다.
   //  그 밖(반 변경·복귀 예정) = 취소 요청 길이 없어 학원 문의 폼으로.
-  const scheduledCancelable = child?.scheduled?.kind === "PAUSE" || child?.scheduled?.kind === "WITHDRAW";
+  const scheduledId = child?.scheduled?.id ?? "";
+  const justRequested = cancelRequested && cancelRequested.id === scheduledId ? cancelRequested.line : null;
+  const scheduledCancelLineText = child?.scheduled?.cancelLine ?? justRequested;
+  const scheduledCancelable = Boolean(scheduledId && child?.scheduled?.canRequestCancel && !justRequested);
   const scheduledBox = child?.scheduled ? (
     <section className="rounded-2xl border border-[var(--color-academy-line)] bg-white p-4">
       <p className="text-sm font-semibold text-[var(--color-academy-ink)]">
@@ -246,12 +261,23 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
       {child.scheduled.kind === "PAUSE" && (
         <p className="mt-1 text-sm text-[var(--color-academy-muted)]">{pauseResumeLabel(child.scheduled.resumeOn)}</p>
       )}
-      {/* 버튼 글자는 «다른 화면으로 간다»가 드러나게(▸) — 여기서 바로 취소되는 버튼이 아니다. 날짜 변경은 문의로 */}
+      {/* 이미 낸 취소 요청의 상태(확인 중·받아들여지지 않음) — 수업 탭 «신청 내역»과 같은 문구 */}
+      {scheduledCancelLineText && (
+        <p role="status" className="mt-2 break-keep text-sm font-semibold text-[var(--color-academy-ink)]">{scheduledCancelLineText}</p>
+      )}
+      {/* 이 상자의 버튼이 낸 오류·결과 확인은 버튼 바로 위에(아래 양식의 안내 줄은 화면 밖일 수 있다) */}
+      {scheduledCancelable && (error || uncertain) && <div className="mt-2 space-y-2">{notice}</div>}
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
         {scheduledCancelable && (
-          <Link href={`/mypage/classes?child=${encodeURIComponent(child.studentId)}#request-timeline-heading`} className="academy-button-secondary">
-            신청 내역에서 취소 요청 ▸
-          </Link>
+          <InlineConfirm
+            label="취소 요청"
+            question={`${shortMd(child.scheduled.effectiveFrom)}부터 예정된 ${kindLabel(child.scheduled.kind)}을 취소해 달라고 요청할까요?`}
+            confirmLabel="요청 보내기"
+            onConfirm={() => requestScheduledCancel(scheduledId)}
+            disabled={uncertain}
+            pending={pending}
+            openClassName="basis-full"
+          />
         )}
         <Link href="/mypage#parent-request-form" className="academy-button-text">
           날짜 변경은 학원에 문의
