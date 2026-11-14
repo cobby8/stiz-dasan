@@ -24,6 +24,8 @@ import {
   normalizeReasonText,
   type IllnessReviewSource,
 } from "@/lib/regular/illnessCarryRules";
+import { periodCarryColumnsReady } from "@/lib/regular/absence-period-service";
+import { PERIOD_APPROVED_PARENT_LABEL } from "@/lib/regular/illnessPeriodRules";
 import {
   REASON_LABEL,
   DAY_KO,
@@ -101,6 +103,8 @@ export type UpcomingClassDate = {
   makeupCredit: string | null;
   // 질병·부상 결석의 이월 검토 상태(PENDING·APPROVED·MAKEUP, 없으면 null) — 줄에 «이월 검토 중» 같은 한 단어로 보인다
   carryReview: string | null;
+  // 기간 결석을 학원이 «인정»만 한 날(금액은 복귀 뒤) — 줄의 글자가 «이월 승인» 대신 «부상 결석 인정»이 된다
+  carryAmountPending?: boolean;
 };
 
 /** 질병·부상 결석 한 건의 이월 검토(학부모 화면 «질병·부상 결석» 칸) */
@@ -126,6 +130,11 @@ export type ParentIllnessReview = {
   periodId: string | null;
   /** 이 줄이 대표하는 결석 수(하루 결석 1, 묶인 기간이면 n) */
   count?: number;
+  /**
+   * 부상·질병 «기간 결석»을 학원이 인정했지만 금액은 아직 정하지 않았다(복귀 뒤 한 번에 정산) — 2026-11-15.
+   * true 면 화면이 «다음 달 수강료에서 1회분» 대신 «금액은 복귀 뒤» 안내를 보인다.
+   */
+  amountPending?: boolean;
 };
 
 /**
@@ -135,12 +144,17 @@ export type ParentIllnessReview = {
  */
 export async function getParentIllnessReviews(parentUserId: string): Promise<ParentIllnessReview[]> {
   try {
+    // 기간 정산 칸(마이그레이션 20261116100000)이 있을 때만 기간의 승인 상태를 함께 읽는다 — 없으면 예전 그대로
+    const periodCarrySql = (await periodCarryColumnsReady(prisma).catch(() => false))
+      ? `(SELECT ap."carryState" FROM "RegularAbsencePeriod" ap WHERE ap.id = ra."periodId")`
+      : `NULL::text`;
     const rows = await prisma.$queryRawUnsafe<any[]>(
       `SELECT ra.id AS "absenceId", s.id AS "studentId", s.name AS "studentName",
               ra."classId" AS "classId", c.name AS "className", to_char(ra.date, 'YYYY-MM-DD') AS "date",
               r.status AS status,
               to_char(r."requestedAt" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "requestedYmd",
               ra."periodId" AS "periodId",
+              ${periodCarrySql} AS "periodCarryState",
               -- 여러 날 결석: 기한 기준은 기간의 마지막 결석일, 사진은 기간 한 묶음
               ${evidenceAnchorYmdSql("ra")} AS "anchorYmd",
               COALESCE((SELECT json_agg(json_build_object('id', e.id, 'mine', e."uploadedByUserId" = $1) ORDER BY e."createdAt")
@@ -164,6 +178,8 @@ export async function getParentIllnessReviews(parentUserId: string): Promise<Par
       // 7일 기준점 = 알린 날과 결석일 중 더 늦은 날(규칙 함수 한 곳)
       const anchorYmd: string = r.anchorYmd ?? r.date;
       const window = { status: r.status, requestedYmd: r.requestedYmd, absenceYmd: anchorYmd, todayYmd: today };
+      // 기간 승인으로 «인정»만 된 결석 — 금액은 복귀 뒤에 정한다(하루씩 이월 승인된 결석과 글자가 달라야 한다)
+      const amountPending = r.status === "APPROVED" && r.periodCarryState === "APPROVED";
       return {
         absenceId: r.absenceId,
         studentId: r.studentId,
@@ -173,12 +189,13 @@ export async function getParentIllnessReviews(parentUserId: string): Promise<Par
         date: r.date,
         dateLabel: dateLabel(r.date),
         status: r.status,
-        statusLabel: illnessReviewLabel(r.status) ?? "",
+        statusLabel: amountPending ? PERIOD_APPROVED_PARENT_LABEL : illnessReviewLabel(r.status) ?? "",
         deadlineLabel: dateLabel(evidenceDeadlineYmd(r.requestedYmd, anchorYmd)),
         canEdit: canEditEvidence(window),
         canAdd: canAddEvidence({ ...window, photoCount: photos.length }),
         photos: photos.map((photo) => ({ id: String(photo.id), mine: photo.mine === true })),
         periodId: r.periodId ?? null,
+        ...(amountPending ? { amountPending: true } : {}),
       };
     });
   } catch (error) {
@@ -281,7 +298,12 @@ export async function getUpcomingRegularClassDates(
 
   // 질병·부상 결석의 이월 검토 상태(줄에 한 단어로 보인다)
   const reviewByKey = new Map<string, string>();
-  for (const review of reviews) reviewByKey.set(`${review.studentId}|${review.classId}|${review.date}`, review.status);
+  const amountPendingKeys = new Set<string>();
+  for (const review of reviews) {
+    const key = `${review.studentId}|${review.classId}|${review.date}`;
+    reviewByKey.set(key, review.status);
+    if (review.amountPending) amountPendingKeys.add(key);
+  }
 
   // 자녀별 → 반별 → 다가오는 날짜 목록으로 조립.
   const childMap = new Map<string, UpcomingChild>();
@@ -317,6 +339,7 @@ export async function getUpcomingRegularClassDates(
         makeupCredit: status ? creditByKey.get(`${r.studentId}|${regularAbsenceSourceKey(r.classId, ymd)}`) ?? null : null,
         // 사유가 질병·부상일 때만(다른 사유로 바뀐 뒤 남은 옛 검토 상태를 보이지 않게)
         carryReview: status && reason === ILLNESS_REASON ? reviewByKey.get(`${r.studentId}|${r.classId}|${ymd}`) ?? null : null,
+        ...(status && reason === ILLNESS_REASON && amountPendingKeys.has(`${r.studentId}|${r.classId}|${ymd}`) ? { carryAmountPending: true } : {}),
       } as UpcomingClassDate;
     });
 

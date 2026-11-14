@@ -3120,6 +3120,13 @@ model RegularAbsencePeriod {
   reportedByUserId String?
   openEnded        Boolean   @default(false) // 끝일 «아직 몰라요»(4주까지만 잡음)
   reminderSentAt   DateTime? @db.Timestamptz(6) // 끝나기 전 «연장/복귀» 안내를 보낸 시각
+  // 부상·질병 기간 «복귀 정산»(2026-11-15) — 승인(금액 없음)과 금액 확정을 나눈다. 상세는 20261116100000 마이그레이션
+  carryState            String    @default("NONE") // NONE | APPROVED | SETTLED | REFUND_REVIEW | REFUND_DONE (illnessPeriodRules.PERIOD_CARRY_STATES)
+  carryApprovedAt       DateTime? @db.Timestamptz(6)
+  carryApprovedByUserId String?
+  carrySettledAt        DateTime? @db.Timestamptz(6)
+  carrySettledByUserId  String?
+  carrySettlement       Json? // 확정 때의 달별 표 사본
   createdAt       DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt       DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
   student         Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)

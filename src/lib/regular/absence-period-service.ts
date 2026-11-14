@@ -83,6 +83,19 @@ export async function parentPeriodColumnsReady(db: AbsencePeriodDb): Promise<boo
   return Number(rows[0]?.n ?? 0) === 3;
 }
 
+/**
+ * 부상·질병 기간 «복귀 정산» 칸(carryState 등 6개)이 있는가 — 마이그레이션 20261116100000 적용 여부.
+ * 없으면 기간 승인·신청함 «기간 한 줄»만 숨기고 나머지(하루짜리 이월 검토·기간 결석 등록)는 예전 그대로 돈다.
+ */
+export async function periodCarryColumnsReady(db: Pick<AbsencePeriodDb, "$queryRawUnsafe">): Promise<boolean> {
+  const rows = await db.$queryRawUnsafe<Array<{ n: number }>>(
+    `SELECT COUNT(*)::int AS n FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'RegularAbsencePeriod'
+        AND column_name IN ('carryState', 'carryApprovedAt', 'carryApprovedByUserId', 'carrySettledAt', 'carrySettledByUserId', 'carrySettlement')`,
+  );
+  return Number(rows[0]?.n ?? 0) === 6;
+}
+
 /** 학부모가 알린 기간인가(칸이 없으면 false). 관리자 복귀 처리·등록 취소·자동 연장은 관리자 기간만 다룬다 */
 async function isParentPeriod(db: AbsencePeriodDb, periodId: string): Promise<boolean> {
   if (!(await parentPeriodColumnsReady(db))) return false;

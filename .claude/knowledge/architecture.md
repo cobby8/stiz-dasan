@@ -365,3 +365,9 @@
 - **발견자**: developer
 - **내용**: updateEnrollmentStatus·moveEnrollmentToClass 가 같은 트랜잭션에서 (A) 처리 중 신청 planOpenChangeRequests(같은 방향 승인=SUPERSEDED / 대기·반대=OPEN_REQUESTS 확인 / 청구서·정산·원장=BLOCKED) (B) cleanupEndedClassInTx(효력일 포함 이후 결석 취소·미사용 보강권 회수, 정산·이월·보강·출석은 보호) (C) 미납 청구 목록만. 잠금 순서 = lockCompensation → 신청 FOR UPDATE → 수강(크론과 같은 순서). 취소 결석 note 머리말 «수강 종료로 정리»는 알림 재조정이 거른다. 학부모 자동 적용 크론(applyDue…)은 아직 이 정리를 안 부른다.
 - **참조횟수**: 0
+
+### [2026-11-15] 신청함 종류가 «새 칸»에 기대면 식을 세 벌로 — 기본·칸 없는 DB(beforePeriodCarry)·표 없는 DB(fallback)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 부상·질병 기간 결석(ILLNESS_PERIOD)은 RegularAbsencePeriod.carryState 를 읽는다. 하루짜리 목록(ILLNESS_CARRY)에서 «질병 기간에 묶인 결석 제외»와 «기간 한 줄에 올리는 기간»은 같은 SQL 조각(illnessPeriodRules.illnessPeriodVisibleSql)을 써야 한쪽에만 뜨거나 어디에도 안 뜨는 일이 없다. 칸이 없는 DB 는 admin-inbox 의 beforePeriodCarry 로 «기간 줄은 비우고 하루짜리는 제외 없이» 읽는다. ⚠️ 빈 표로 바꿀 때 where 도 함께 바꿀 것 — from 만 바꾸면 원래 where 가 없는 칸을 읽어 그 종류가 통째로 실패한다(실행 테스트가 잡았다). 승인(금액 없음)은 illness-period-admin.ts, 금액 정산은 다음 단계.
+- **참조횟수**: 0

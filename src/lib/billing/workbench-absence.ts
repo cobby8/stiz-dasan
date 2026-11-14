@@ -30,6 +30,13 @@ export async function resolveWorkbenchAbsence(db: WorkbenchDb, input: unknown, a
     if (view.sourceVersion !== b.sourceVersion) throw new WorkbenchError("결석·보강 자료가 변경됐습니다. 다시 조회해 주세요.",409,true);
     const absence = view.absences.find(a => a.id === b.absenceId);
     if (!absence || absence.status !== "CONFIRMED" || absence.resolution) throw new WorkbenchError("확인된 미처리 결석만 처리할 수 있습니다.",409);
+    // 부상·질병 «기간 결석»을 승인·정산한 기간의 결석은 하루씩 처리하지 않는다(2026-11-15) — 기간 정산과 이중으로 적립되는 길을 막는다.
+    // 기간 정산 칸(마이그레이션 20261116100000)이 아직 없으면 그대로 통과한다. 문구는 illnessPeriodRules.PERIOD_DAY_RESOLVE_BLOCKED 와 같다(테스트가 비교).
+    const periodCarryColumn=await tx.$queryRawUnsafe<Array<{n:number}>>(`SELECT COUNT(*)::int AS n FROM information_schema.columns WHERE table_schema='public' AND table_name='RegularAbsencePeriod' AND column_name='carryState'`);
+    if(Number(periodCarryColumn[0]?.n??0)>0){
+      const periodDecided=await tx.$queryRawUnsafe<Array<{found:number}>>(`SELECT 1 AS found FROM "RegularAbsencePeriod" p JOIN "RegularAbsence" a ON a."periodId"=p.id WHERE a.id=$1 AND p."carryState"<>'NONE' LIMIT 1`,absence.id);
+      if(periodDecided.length>0) throw new WorkbenchError("기간 정산에서 한 번에 처리합니다. 신청함의 «부상 결석(기간)»에서 확인해 주세요.",409);
+    }
     const today = new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Seoul"}).format(new Date());
     if(absence.date>today) throw new WorkbenchError("아직 지나지 않은 수업은 결석 정산할 수 없습니다.",409);
     const lockedStudent=await tx.$queryRawUnsafe<Array<{id:string}>>(`SELECT s.id FROM "Student" s WHERE s.id=$1 AND ${notMergedStudent("s")} FOR UPDATE`,absence.studentId);

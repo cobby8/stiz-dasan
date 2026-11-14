@@ -16,9 +16,21 @@ import { STATUS_TONES, TONE_BADGE_CLASS } from '../src/lib/ui/statusTones.ts';
 test('원장 결정 d1 의 14종류 + k1 학부모 연결·상담 + 질병·부상 이월 검토 = 17종류가 모두 있고 이름이 겹치지 않는다', () => {
   const kinds = REQUEST_KINDS.map((k) => k.kind);
   // 2026-11-15: 셔틀 «계속 바꾸기»(SHUTTLE_REGULAR) 추가로 18종류 — 맨 끝에 붙였다
-  assert.equal(kinds.length, 18);
-  assert.equal(new Set(kinds).size, 18);
-  assert.equal(new Set(REQUEST_KINDS.map((k) => k.label)).size, 18);
+  // 2026-11-15: 부상·질병 «기간 결석»(ILLNESS_PERIOD) 추가로 19종류 — 하루짜리(ILLNESS_CARRY) 바로 뒤
+  assert.equal(kinds.length, 19);
+  assert.equal(new Set(kinds).size, 19);
+  assert.equal(new Set(REQUEST_KINDS.map((k) => k.label)).size, 19);
+  assert.equal(kinds[kinds.indexOf('ILLNESS_CARRY') + 1], 'ILLNESS_PERIOD');
+  assert.ok(isRequestKind('ILLNESS_PERIOD'));
+  assert.equal(kindLabel('ILLNESS_PERIOD'), '부상 결석(기간)');
+  assert.equal(bucketFor('ILLNESS_PERIOD', 'PENDING'), 'ACTION');
+  assert.equal(statusLabel('ILLNESS_PERIOD', 'PENDING'), '승인 대기');
+  // 승인은 금액 없이 «인정»만 — 복귀·정산을 기다리므로 완료가 아니라 진행 중
+  assert.equal(bucketFor('ILLNESS_PERIOD', 'APPROVED'), 'ONGOING');
+  assert.equal(statusLabel('ILLNESS_PERIOD', 'APPROVED'), '인정 · 금액은 복귀 뒤');
+  assert.equal(bucketFor('ILLNESS_PERIOD', 'DAY_DONE'), 'DONE');
+  assert.equal(tabOfKind('ILLNESS_PERIOD'), 'CHANGE');
+  assert.ok(kindsOfTab('CHANGE', 'ABSENCE').includes('ILLNESS_PERIOD'));
   assert.equal(kinds.at(-1), 'SHUTTLE_REGULAR');
   assert.equal(bucketFor('SHUTTLE_REGULAR', 'PENDING'), 'ACTION');
   assert.equal(bucketFor('SHUTTLE_REGULAR', 'APPROVED'), 'ONGOING');

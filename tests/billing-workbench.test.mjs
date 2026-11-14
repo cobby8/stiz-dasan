@@ -45,6 +45,9 @@ function database({credit=0,secondClass=false}={}){
   // 2026-11-14: 읽기용 표 확인은 한 번에 묶어 묻는다(name 목록 → 표마다 found)
   if(sql.includes("unnest($1::text[]) AS name"))return v[0].map(name=>({name,found:true}));
   if(sql.includes("to_regclass"))return [{found:"present"}];
+  // 2026-11-15 부상·질병 기간 결석: 기간 정산 칸이 있는가 / 그 결석의 기간이 승인·정산됐는가(state.periodCarry: 칸 있음, state.periodDecided: 승인된 기간의 결석 id)
+  if(sql.includes("information_schema.columns"))return [{n:state.periodCarry?1:0}];
+  if(sql.includes('FROM "RegularAbsencePeriod" p JOIN "RegularAbsence" a ON a."periodId"=p.id')){assert.match(sql,/p\."carryState"<>'NONE'/);return (state.periodDecided??[]).includes(v[0])?[{found:1}]:[];}
   if(sql.includes('FROM "Enrollment"'))return structuredClone(state.enrollments);
   if(sql.includes('FROM "PaymentInvoice"'))return structuredClone(state.invoices);
   if(sql.includes('FROM "Payment"'))return sql.includes("type='SHUTTLE'")?state.payments.filter(p=>p.type==="SHUTTLE"):structuredClone(state.payments);
@@ -585,4 +588,35 @@ test("청구 준비 화면에서 «보강»으로 정산하면 신청함 검토�
  const other=absenceDatabase();other.state.absences[0].reason="FAMILY_TRIP";view=await readWorkbench(other.tx,"2026-11",true);
  await resolveWorkbenchAbsence(other,{...resolveCommand(view),eligibility:"DIRECT_FAMILY_EVENT"},"admin",true);
  assert.equal(other.state.carryCredits.length,1);assert.equal((other.state.reviews??[]).length,0);
+});
+// ── 부상·질병 «기간 결석» 복귀 정산 1b(2026-11-15) — 기간 가드 ──────────────────────────
+test("부상·질병 «기간 결석»을 승인한 기간의 결석은 하루씩 처리하지 않는다 — 이월·보강 모두 «기간 정산에서 한 번에»로 거절, 칸이 없는 DB 는 예전 그대로",async()=>{
+ // 문구는 규칙 모듈의 상수와 같다(코드 두 곳이 어긋나지 않게)
+ const periodRules=await readFile("src/lib/regular/illnessPeriodRules.ts","utf8");
+ const message=periodRules.match(/export const PERIOD_DAY_RESOLVE_BLOCKED = "([^"]+)";/)[1];
+ assert.ok(absenceSource.includes(`throw new WorkbenchError("${message}",409)`),"가드 문구 = PERIOD_DAY_RESOLVE_BLOCKED");
+ assert.match(message,/^기간 정산에서 한 번에 처리합니다/);
+ const blocked=new RegExp(message.slice(0,18));
+ // ① 칸이 있고 그 결석의 기간이 승인됨 → 이월(CARRY) 거절, 아무것도 적립되지 않는다
+ let db=absenceDatabase();db.state.periodCarry=true;db.state.periodDecided=["absence-a"];
+ let view=await readWorkbench(db.tx,"2026-11",true);
+ await assert.rejects(()=>resolveWorkbenchAbsence(db,resolveCommand(view),"admin",true),blocked);
+ assert.equal(db.state.carryCredits.length,0);assert.equal(db.state.resolutions.length,0);assert.equal((db.state.reviews??[]).length,0);
+ assert.equal(db.state.makeupCredits[0].status,"AVAILABLE","보강권도 그대로");
+ // ② 보강(MAKEUP)으로 하루씩 돌리는 길도 같은 문구로 막는다
+ await assert.rejects(()=>resolveWorkbenchAbsence(db,{...resolveCommand(view),requestId:"resolve-period-makeup",resolution:"MAKEUP",eligibility:"NONE",evidenceConfirmed:false},"admin",true),blocked);
+ assert.equal(db.state.resolutions.length,0);
+ // ③ 신청함 [이월 승인](하루짜리)도 같은 함수를 지나므로 막힌다 — 그 앞의 «결석 확정»까지 되돌아간다
+ db=reportedAbsence();db.state.periodCarry=true;db.state.periodDecided=["absence-a"];
+ await assert.rejects(()=>approve(db),blocked);
+ assert.equal(db.state.absences[0].status,"REPORTED");assert.equal(db.state.carryCredits.length,0);
+ // ④ 칸은 있지만 승인되지 않은 기간(또는 하루짜리 결석) → 예전처럼 적립
+ db=absenceDatabase();db.state.periodCarry=true;view=await readWorkbench(db.tx,"2026-11",true);
+ await resolveWorkbenchAbsence(db,resolveCommand(view),"admin",true);assert.equal(db.state.carryCredits.length,1);
+ // ⑤ 칸이 없는 DB(마이그레이션 전) → 기간 표를 읽지 않고 통과
+ db=absenceDatabase();db.state.periodDecided=["absence-a"];view=await readWorkbench(db.tx,"2026-11",true);
+ await resolveWorkbenchAbsence(db,resolveCommand(view),"admin",true);assert.equal(db.state.carryCredits.length,1);
+ // 가드는 결석을 찾은 직후·적립 근거를 읽기 전에 있다
+ assert.ok(absenceSource.indexOf("확인된 미처리 결석만 처리할 수 있습니다.")<absenceSource.indexOf("p.\"carryState\"<>'NONE'"));
+ assert.ok(absenceSource.indexOf("p.\"carryState\"<>'NONE'")<absenceSource.indexOf('INSERT INTO "BillingCarryCredit"'));
 });

@@ -37,6 +37,8 @@ import type { StatusTone } from "@/lib/ui/statusTones";
 import { countConsultAction } from "@/lib/requests/consult-inbox";
 import { illnessReviewReady } from "@/lib/regular/illness-carry-tx";
 import { evidenceScopeSql } from "@/lib/regular/illnessCarryRules";
+import { periodCarryColumnsReady } from "@/lib/regular/absence-period-service";
+import { boundToIllnessPeriodSql, illnessPeriodAbsenceSql, illnessPeriodVisibleSql, periodInboxSummary, periodRangeText } from "@/lib/regular/illnessPeriodRules";
 // 문의에 이어 쓴 글(학부모 추가 글·학원 답) — 상세 줄에 붙인다(2026-11-14 c3)
 import { inquiryFollowUpFacts } from "@/lib/requests/inquiry-thread";
 
@@ -114,6 +116,12 @@ type Adapter = {
    * 첫 조회가 실패하면 이 식으로 한 번 더 읽는다 — 새 칸 때문에 신청함·메뉴 숫자가 통째로 죽지 않게.
    */
   fallback?: Pick<Adapter, "rawExpr" | "createdAtExpr" | "extra"> & Partial<Pick<Adapter, "from" | "where">>;
+  /**
+   * 부상·질병 기간 «복귀 정산» 칸(마이그레이션 20261116100000)이 아직 없는 DB 에서 쓰는 식.
+   * 기간 한 줄(ILLNESS_PERIOD)은 비우고, 하루짜리 목록(ILLNESS_CARRY)은 기간 결석을 빼지 않은 예전 조건으로 읽는다 —
+   * 칸이 없다고 기간 결석이 두 목록 어디에도 안 뜨는 일이 없게.
+   */
+  beforePeriodCarry?: Partial<Pick<Adapter, "from" | "where" | "rawExpr" | "createdAtExpr" | "extra">>;
   /** true 면 메뉴 숫자(UNION ALL 한 번) 계산에서 뺀다 — 처리 필요 상태가 없는 종류(원장 손이 필요 없다) */
   skipCount?: boolean;
   format: (row: RawRow, extra: Record<string, unknown>) => { title: string; summary: string; facts: InboxFact[]; ref?: Record<string, string | null> };
@@ -161,6 +169,27 @@ const enrollmentChangeExtra = `
      -- 2026-11-14 랠리즈 은퇴: 시트·랠리즈 모두 건너뜀(SKIPPED)은 끝난 것(공용 조건 하나)
      AND ${externalSyncPendingSql("a")}
   )`;
+
+// 질병·부상 결석(하루짜리) 목록의 기본 조건 — 기간 결석 제외 조건을 붙이기 전의 식(기간 정산 칸이 없는 DB 는 이 식 그대로 읽는다)
+// 2026-10-05 = 보강권 발급·청구 작업대 결석 정산이 시작된 날(그 전 결석은 대상이 아니다)
+// 닫힌 검토(CLOSED — 그날 출석으로 기록돼 자동으로 닫힌 건 등)는 고를 것이 없어 뺀다(결석 신고 자체는 «결석» 줄에 그대로 있다)
+const ILLNESS_CARRY_WHERE = `x.reason = 'ILLNESS_INJURY' AND x.status <> 'CANCELLED' AND x.date >= '2026-10-05'::date
+            AND COALESCE(r.status, '') <> 'CLOSED'
+            AND NOT (r."absenceId" IS NULL AND EXISTS (
+              SELECT 1 FROM "MakeupCredit" used WHERE used."studentId" = x."studentId"
+                 AND used."sourceKey" = 'REGULAR:' || x."classId" || ':' || to_char(x.date, 'YYYY-MM-DD')
+                 AND used.status IN ('USED', 'NO_SHOW')))`;
+
+// 부상·질병 기간 결석 한 줄 — 표·칸이 아직 없는 DB 에서 쓰는 빈 표(이 종류만 비우고 신청함·메뉴 숫자는 그대로)
+const ILLNESS_PERIOD_EMPTY = {
+  from: `(SELECT NULL::text AS id, NULL::timestamptz AS "createdAt", NULL::date AS "startDate" WHERE false) x
+         LEFT JOIN (SELECT NULL::text AS name) s ON false`,
+  // 원래 조건(where)은 없는 칸(carryState)을 읽으므로 반드시 함께 바꾼다
+  where: "false",
+  rawExpr: `'NOT_READY'::text`,
+  createdAtExpr: `x."createdAt"`,
+  extra: `'count', 0`,
+} as const;
 
 // ── 종류별 어댑터 ──────────────────────────────────────────────────────────
 
@@ -249,14 +278,9 @@ const ADAPTERS: Adapter[] = [
     // 결정이 났으면 그 결정, 아니면 결석일이 지났는지(KST — date 칼럼은 이미 달력 값이라 now() 쪽만 한 번 변환)
     rawExpr: `CASE WHEN r.status = 'APPROVED' THEN 'APPROVED' WHEN r.status = 'MAKEUP' THEN 'MAKEUP'
                    WHEN x.date > (now() AT TIME ZONE 'Asia/Seoul')::date THEN 'WAITING' ELSE 'PENDING' END`,
-    // 2026-10-05 = 보강권 발급·청구 작업대 결석 정산이 시작된 날(그 전 결석은 대상이 아니다)
-    // 닫힌 검토(CLOSED — 그날 출석으로 기록돼 자동으로 닫힌 건 등)는 고를 것이 없어 뺀다(결석 신고 자체는 «결석» 줄에 그대로 있다)
-    where: `x.reason = 'ILLNESS_INJURY' AND x.status <> 'CANCELLED' AND x.date >= '2026-10-05'::date
-            AND COALESCE(r.status, '') <> 'CLOSED'
-            AND NOT (r."absenceId" IS NULL AND EXISTS (
-              SELECT 1 FROM "MakeupCredit" used WHERE used."studentId" = x."studentId"
-                 AND used."sourceKey" = 'REGULAR:' || x."classId" || ':' || to_char(x.date, 'YYYY-MM-DD')
-                 AND used.status IN ('USED', 'NO_SHOW')))`,
+    // 부상·질병 «기간 결석»에 묶인 결석은 뺀다(2026-11-15) — 기간 1건이 아래 ILLNESS_PERIOD 한 줄로 뜬다. 여기는 하루짜리만 남는다
+    where: `${ILLNESS_CARRY_WHERE} AND NOT ${boundToIllnessPeriodSql("x")}`,
+    beforePeriodCarry: { where: ILLNESS_CARRY_WHERE },
     studentNameExpr: "s.name",
     createdAtExpr: `COALESCE(r."requestedAt", x."createdAt")`,
     targetDateExpr: `x.date::text`,
@@ -284,6 +308,45 @@ const ADAPTERS: Adapter[] = [
           ...fact("보강권", CREDIT_LABEL[text(e.creditStatus)]),
           ...(row.raw === "WAITING" ? [["안내", "결석일이 지난 뒤에 이월을 승인할 수 있습니다."] as InboxFact] : [])],
         ref: { source: text(e.source) || "STAFF", photoCount: String(photos), creditStatus: text(e.creditStatus) || null },
+      };
+    },
+  },
+  {
+    // 부상·질병 «기간 결석»(2026-11-15 원장 승인) — 기간 1건 = 1줄 «윤수영 · 부상 결석 11/6 ~ · 16회 · 사진 2장».
+    // 날짜마다 한 줄씩 뜨던 것(16줄)을 대신한다. 승인은 금액 없이 «인정»만, 금액은 복귀 뒤 한 번에 정산한다.
+    // 사유 글(건강 정보)·금액은 목록에 싣지 않는다 — 상세를 열 때 따로 읽는다.
+    kind: "ILLNESS_PERIOD",
+    from: `"RegularAbsencePeriod" x ${studentJoin("s", `x."studentId"`)}`,
+    // 기간의 정산 상태 그대로. 아직 결정 전(NONE)이면 «결정 전인 결석이 남았는가»로 나눈다 — 전부 하루씩 처리했으면 고를 것이 없다
+    rawExpr: `CASE WHEN x."carryState" <> 'NONE' THEN x."carryState"
+                   WHEN EXISTS (SELECT 1 FROM "RegularAbsence" pa LEFT JOIN "RegularAbsenceCarryReview" pr ON pr."absenceId" = pa.id
+                                 WHERE ${illnessPeriodAbsenceSql("x", "pa")} AND COALESCE(pr.status, 'PENDING') = 'PENDING') THEN 'PENDING'
+                   ELSE 'DAY_DONE' END`,
+    // 살아 있는 질병·부상 결석이 하나라도 있는 기간만(전부 취소된 기간은 올리지 않는다)
+    where: `${illnessPeriodVisibleSql("x")} AND EXISTS (SELECT 1 FROM "RegularAbsence" pa WHERE ${illnessPeriodAbsenceSql("x", "pa")})`,
+    studentNameExpr: "s.name",
+    createdAtExpr: `x."createdAt"`,
+    targetDateExpr: `x."startDate"::text`,
+    extra: `'returnDate', x."returnDate"::text, 'parentReported', (x."reportedByUserId" IS NOT NULL), 'periodStatus', x.status,
+            'count', (SELECT COUNT(*)::int FROM "RegularAbsence" pa WHERE ${illnessPeriodAbsenceSql("x", "pa")}),
+            'photoCount', (SELECT COUNT(*)::int FROM "RegularAbsenceEvidence" e JOIN "RegularAbsence" pa ON pa.id = e."absenceId"
+                            WHERE pa."periodId" = x.id AND e."removedAt" IS NULL)`,
+    // 검토 표(20261114130000) 또는 기간 정산 칸(20261116100000)이 아직 없으면 이 종류만 비운다
+    fallback: ILLNESS_PERIOD_EMPTY,
+    beforePeriodCarry: ILLNESS_PERIOD_EMPTY,
+    format: (row, e) => {
+      const photos = Number(e.photoCount ?? 0);
+      const count = Number(e.count ?? 0);
+      const startYmd = text(row.targetDate);
+      const returnYmd = text(e.returnDate) || null;
+      const source = e.parentReported ? "학부모 앱(여러 날)" : "학원 등록(기간 결석)";
+      return {
+        title: "부상 결석",
+        summary: periodInboxSummary({ startYmd, returnYmd, count, photoCount: photos }),
+        facts: [["기간", `${periodRangeText(startYmd, returnYmd)}${returnYmd ? "" : " 복귀 미정"}`], ["결석", `${count}회`], ["접수", source],
+          ["증빙", photos > 0 ? `사진 ${photos}장` : e.parentReported ? "사진 아직 없음" : "학부모 증빙 없음"],
+          ...(e.periodStatus === "CANCELLED" ? [["안내", "등록 취소된 기간입니다. 승인을 취소하면 목록에서 빠집니다."] as InboxFact] : [])],
+        ref: { photoCount: String(photos), count: String(count) },
       };
     },
   },
@@ -564,6 +627,11 @@ function sqlTextArray(values: string[]): string {
   return safe.length ? `ARRAY[${safe.map((v) => `'${v}'`).join(",")}]::text[]` : `ARRAY[]::text[]`;
 }
 
+/** 기간 정산 칸이 없는 DB 용 — 기간 한 줄은 비우고 하루짜리 목록은 기간 결석을 빼지 않는다(beforePeriodCarry 가 없으면 그대로) */
+function beforePeriodCarryOf(adapter: Adapter): Adapter {
+  return adapter.beforePeriodCarry ? { ...adapter, ...adapter.beforePeriodCarry } : adapter;
+}
+
 /** 마이그레이션 전 대비용 — 예전 식으로 바꾼 어댑터(fallback 이 없으면 그대로) */
 function legacyOf(adapter: Adapter): Adapter {
   return adapter.fallback ? { ...adapter, ...adapter.fallback } : adapter;
@@ -593,6 +661,8 @@ const inboxSettlementTableReady = cache(() => settlementTablesReady(prisma).catc
 // 질병·부상 이월 검토 표(마이그레이션 20261114130000)가 있는가 — 없으면 그 종류만 예전 식(빈 목록)으로 센다
 const inboxIllnessTableReady = cache(() => illnessReviewReady(prisma).catch(() => false));
 // 셔틀 «계속 바꾸기» 표(마이그레이션 20261115120000)가 있는가 — 없으면 그 종류만 빈 표로 센다
+// 부상·질병 기간 «복귀 정산» 칸(마이그레이션 20261116100000)이 있는가 — 없으면 기간 한 줄을 비우고 하루짜리 목록을 예전 조건으로 읽는다
+const inboxPeriodCarryReady = cache(() => periodCarryColumnsReady(prisma).catch(() => false));
 const inboxShuttleRegularReady = cache(() => prisma.$queryRawUnsafe<Array<{ found: string | null }>>(
   `SELECT to_regclass('public."ShuttleRegularChangeRequest"')::text AS found`,
 ).then((rows) => Boolean(rows[0]?.found)).catch(() => false));
@@ -633,8 +703,11 @@ export async function getInboxRows(query: InboxQuery): Promise<{ rows: InboxRow[
   const to = isKstYmd(query.to) ? query.to : null;
   const failedKinds: RequestKind[] = [];
   const settlementTableReady = wanted.has("ENROLLMENT_CHANGE") && await inboxSettlementTableReady();
+  // 기간 정산 칸이 없으면 질병·부상 두 종류를 예전 식으로 바꿔 읽는다(그 두 종류를 볼 때만 확인한다)
+  const periodCarryReady = !(wanted.has("ILLNESS_CARRY") || wanted.has("ILLNESS_PERIOD")) || await inboxPeriodCarryReady();
 
-  const parts = await Promise.all(ADAPTERS.filter((a) => wanted.has(a.kind)).map(async (adapter) => {
+  const parts = await Promise.all(ADAPTERS.filter((a) => wanted.has(a.kind)).map(async (declared) => {
+    const adapter = periodCarryReady ? declared : beforePeriodCarryOf(declared);
     const statuses = statusesOf(adapter.kind, query.bucket);
     if (!statuses.length) return [] as InboxRow[];
     const read = (a: Adapter, settlements = false) => prisma.$queryRawUnsafe<RawRow[]>(
@@ -726,8 +799,11 @@ function enrollmentChangeMembers(row: RawRow, extra: Record<string, unknown>): I
  * 처리 필요·진행 중 개수를 세는 SQL — 종류별 조각을 UNION ALL 로 붙여 «한 번»에 센다.
  * legacy=true 면 마이그레이션 전 식(fallback)으로 만든다.
  */
-export function buildInboxCountsSql(legacy = false, settlementTableReady = false, illnessTableReady = true, shuttleRegularReady = true): string {
-  const pieces = ADAPTERS.filter((original) => !original.skipCount).map((original) => {
+export function buildInboxCountsSql(legacy = false, settlementTableReady = false, illnessTableReady = true, shuttleRegularReady = true, periodCarryReady = true): string {
+  const pieces = ADAPTERS.filter((declared) => !declared.skipCount).map((declared) => {
+    // 기간 정산 칸이 없으면: 기간 한 줄은 비우고 하루짜리 목록은 기간 결석을 빼지 않는다. 기간 한 줄은 검토 표도 읽으므로 그 표가 없어도 비운다
+    const original = !periodCarryReady ? beforePeriodCarryOf(declared)
+      : declared.kind === "ILLNESS_PERIOD" && !illnessTableReady ? legacyOf(declared) : declared;
     // 질병·부상 검토 표·셔틀 계속 바꾸기 표가 아직 없으면 그 종류만 예전 식으로 — 새 표 하나 때문에 메뉴 숫자 전체가 예전 식으로 떨어지지 않게
     const base = legacy || (original.kind === "ILLNESS_CARRY" && !illnessTableReady) ? legacyOf(original) : original;
     const adapter = original.kind === "SHUTTLE_REGULAR" && !shuttleRegularReady ? legacyOf(original) : base;
@@ -779,7 +855,9 @@ async function readInboxCounts(): Promise<InboxCounts | null> {
   type CountRow = { kind: RequestKind; raw: string; n: number };
   const readCatalog = async (): Promise<CountRow[] | null> => {
     try {
-      return await prisma.$queryRawUnsafe<CountRow[]>(buildInboxCountsSql(false, await inboxSettlementTableReady(), await inboxIllnessTableReady(), await inboxShuttleRegularReady()));
+      return await prisma.$queryRawUnsafe<CountRow[]>(buildInboxCountsSql(
+        false, await inboxSettlementTableReady(), await inboxIllnessTableReady(), await inboxShuttleRegularReady(), await inboxPeriodCarryReady(),
+      ));
     } catch (error) {
       // 취소 요청 칸(마이그레이션 20261110130000) 적용 전이면 예전 식으로 다시 센다
       try {

@@ -38,6 +38,25 @@
 - 운영 배포 = `git push origin HEAD:main` fast-forward.
 - 테스트는 `node --test tests/*.test.mjs` **+ 가드 `node --experimental-strip-types --test src/lib/*.test.ts`**(=`npm test`). ⚠️ 2026-10-25 실측: `tests/` 만 돌려 **학생 병합 필터 가드(src/lib/studentVisibility.test.ts)를 놓쳤다** — 회원 탈퇴 배포 후 release:preflight 가 실패하던 상태였다. **`npx vitest`는 이 프로젝트에 없음**(설정도 없어 worktree까지 긁어 전부 오탐).
 
+### 구현 기록 (developer · 11-15 부상·질병 기간 결석 1b 승인 분리, claude/illness-period-approve)
+📝 구현한 기능: 신청함 «부상 결석(기간)» 한 줄(기간 1건 = 1줄) + 금액 없는 [부상 결석 승인]·[승인 취소] + 하루씩 이월 승인 가드 + 학부모 상태 글자
+
+| 파일 경로 | 변경 내용 | 신규/수정 |
+|----------|----------|----------|
+| prisma/migrations/20261116100000_absence_period_carry_state/migration.sql · prisma/schema.prisma | RegularAbsencePeriod 칸 6개·CHECK·부분 색인(운영은 PM 이 적용함) | 신규/수정 |
+| src/lib/regular/illnessPeriodRules.ts | 상태 상수(PERIOD_CARRY_STATES)·문구·기간 글자·공용 SQL 조각 | 신규 |
+| src/lib/regular/illness-period-admin.ts · src/app/actions/illness-period-admin.ts | 승인(NONE→APPROVED)·승인 취소·상세 읽기 + 서버 액션(requireAdmin) | 신규 |
+| src/lib/regular/absence-period-service.ts | periodCarryColumnsReady(6칸 확인) | 수정 |
+| src/lib/requests/catalog.ts · admin-inbox.ts | 종류 ILLNESS_PERIOD + ILLNESS_CARRY 에서 질병 기간 결석 제외 + 칸 없는 DB 용 식(beforePeriodCarry) | 수정 |
+| src/app/admin/inbox/IllnessPeriodInboxDetail.tsx · InboxClient.tsx | 상세 칸(증빙 확인 체크 → 승인, 승인 뒤 승인 취소) | 신규/수정 |
+| src/lib/billing/workbench-absence.ts | 결석을 찾은 직후 기간 가드 7줄(근거·적립부는 안 건드림) | 수정 |
+| src/lib/regular/illness-carry-cron.ts | 승인된 기간의 결석은 7일 자동 전환 후보에서 제외 | 수정 |
+| src/lib/regular/parent-regular-absence.ts · parent-absence-period.ts · mypage/regular-absence/RegularAbsenceClient.tsx | 학부모 글자 «부상 결석 인정 · 금액은 복귀 뒤 확정», 여러 날 질병 알림 링크 → 기간 줄 | 수정 |
+| tests/illness-period.test.mjs(신규 20건) · billing-workbench·illness-carry·request-catalog·list-stage8b 테스트 | 실행 테스트 | 신규/수정 |
+
+💡 tester 참고: 신청함 › 변경 › 결석·보강에서 윤수영이 16줄이 아니라 «부상 결석 11/6 ~ · n회 · 사진 n장» 1줄 → 상세에서 체크 후 [부상 결석 승인] → «진행 중»으로 이동·상태 «인정 · 금액은 복귀 뒤» → [승인 취소]로 «승인 대기» 복귀. 승인 뒤 청구 준비의 결석 정산에서 그 기간의 날짜를 이월 처리하면 «기간 정산에서 한 번에 처리합니다»로 거절. 미래 날짜·그 달 청구 미발행·저장 스위치 꺼짐에서도 승인돼야 정상.
+⚠️ reviewer 참고: 새 SQL 은 실제 Postgres 에서 못 돌렸다(가짜 DB 실행만). 승인 때 학원 등록 기간의 결석에는 검토 줄을 새로 만든다(source STAFF) — 승인 취소하면 그 줄이 «검토 중»으로 남는다. 승인 뒤 복귀 처리로 취소된 날의 검토는 APPROVED 로 남는다(3단계 정산에서 정리 필요).
+
 ### 구현 기록 (developer · 11-15 학부모 여러 날 결석, claude/absence-period-parent)
 📝 구현한 기능: 학부모 «결석 알리기 › 여러 날»(4주 한도·모든 사유) + 관리자 «기간 결석 등록» 빠른 입구 + 이월 재검수 권장 ②~⑤
 
@@ -167,6 +186,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-15 | developer(부상·질병 기간 결석 1b, claude/illness-period-approve): 신청함 기간 한 줄(ILLNESS_PERIOD)·금액 없는 승인/승인 취소·하루씩 이월 가드·7일 자동 전환 제외·학부모 글자. tsc 0 · tests 5422-0 · guards 337-0. 새 SQL 실제 Postgres 미실행 | 검수 대기 |
 | 11-14 | developer(묶음 B 지각·조퇴·자차, claude/late-early-selfdrive): 학부모 «늦어요 · 일찍 가요»(RegularArrivalNotice, 지각=시작 전·조퇴=끝나기 전, 보강권 없음, 원장·담당 선생님 앱 알림) · 조퇴/지각 날 셔틀 SKIP 연결 · «안 타요»→자차 문구 · 기사 화면 «자차·조퇴·지각» 뱃지+버튼 잠금(화면만) · 출석부 «지각 예정 17:20». tsc 0 · tests 5312-0 · guards 337-0. 마이그레이션 20261115140000(changeCount 포함) 운영 미적용. 2차(보안·리뷰 반영): 하루 변경 5회 상한 · 기존 셔틀 변경 있으면 묻지 않음 · 홈/아이 기록/카카오 자차 문구 · 먼 날짜 셔틀 안내 | 재검수 대기 |
 | 11-14 | developer(셔틀 탑승 알림 묶음 A, claude/shuttle-board-notify): 셔틀 «탔어요·내렸어요» 앱 알림(탑승 체크 1분 뒤·30분 한도·대표 보호자·정규+방학특강·SHUTTLE_ 이벤트, push-outbox 크론 훑기) · «수업 종료»를 «출결» 스위치로 · 홈 «오늘 셔틀» 실제 시각(탑승 08:52·하차 18:40) · 관리자 출결 저장 알림 = 선생님과 같은 규칙 함수(바뀐 아이만·출석/지각만·오늘만·한 번만, «출결이 기록되었습니다» 전체 발송 제거) · 가입 안내문 «결석 알리기». DB 변경 없음. tsc 0·tests 5284-0·guards 337-0. 새 SQL 2개(훑기·홈 시각) 실제 Postgres 미실행 | 검수 대기 |
 | 11-14 | developer(재검수 권장, claude/merged-carry): 휴원 수강료 «남은 이월» 차감 대상을 처리 기록의 학생 + 병합된 대표 학생(mergedIntoStudentId 따라가기, 5단계) 청구로 넓힘(pause-settlement.ts CARRY_TARGET_STUDENTS_SQL) · 병합 결과(PairResult.carryNotice)에 «남은 이월 ○원은 대표 학생 청구에서 차감됩니다» 한 줄 · 관리자 수강 변경 화면은 신청 id 로 읽어 이미 보임(변경 없음). tsc 0·tests 5267-0·guards 337-0. 새 SQL(재귀 CTE) 실제 Postgres 미실행 | 검수 대기 |
