@@ -288,6 +288,8 @@ test("정규 결석 신고는 반 카드 속 작은 카드 대신 날짜 묶음(
 test("수업 리포트 목록은 KST 달별 묶음·한 줄 행(주제·날짜 오른쪽 / 반·시간·담당)이고 상세 링크는 그대로다", async () => {
   const Page = compileModule("src/app/mypage/reports/page.tsx", {
     "next/link": { default: Link },
+    // 2026-11-15 아이콘 예외(화살표·종·톱니): 공용 아이콘 부품은 실제 코드를 그대로 쓴다
+    "@/components/common/UiIcon": compileModule("src/components/common/UiIcon.tsx"),
     "@/lib/supabase/server": { createClient: async () => ({ auth: { getUser: async () => ({ data: { user: { id: "u1" } } }) } }) },
     "@/lib/auth-guard": { requireVerifiedParent: async () => ({ appUserId: "p1" }) },
     "@/lib/queries": { getStudentReports: async () => [

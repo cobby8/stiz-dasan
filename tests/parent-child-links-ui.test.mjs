@@ -123,6 +123,8 @@ test("학부모 권한이 없는 단일 직원 역할도 가족 연결 온보딩
   const Switcher = compile("src/components/AccountViewSwitcher.tsx", {
     "next/link": { default: Link }, "next/navigation": { usePathname: () => "/staff" },
     "@/components/pwa/useInstalledApp": { useInstalledApp: () => true },
+    // 2026-11-15 아이콘 예외(화살표·종·톱니): 공용 아이콘 부품은 실제 코드를 그대로 쓴다
+    "@/components/common/UiIcon": { default: compile("src/components/common/UiIcon.tsx") },
   });
   const html = renderToStaticMarkup(React.createElement(Switcher, { views: [{ key: "teacher", label: "선생님", href: "/staff" }], variant: "list" }));
   assert.match(html, /href="\/account\/children"/);

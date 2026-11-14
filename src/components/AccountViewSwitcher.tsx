@@ -1,5 +1,6 @@
 "use client";
 
+import UiIcon from "@/components/common/UiIcon";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
@@ -104,7 +105,7 @@ export default function AccountViewSwitcher({ views, variant = "menu", placement
       }}
         className="inline-flex min-h-11 items-center justify-center gap-1 whitespace-nowrap rounded-xl px-2 text-xs font-medium text-[var(--color-academy-secondary-ink)] hover:bg-[var(--color-academy-secondary-soft)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-academy-primary)]">
         <span>{current?.label || "화면 전환"}</span>
-        <span className="shrink-0" aria-hidden="true">▾</span>
+        <UiIcon name={open ? "expand_less" : "expand_more"} />
       </button>
       {open && <div style={{ right: placement === "above" ? 0 : popupRight }} className={`absolute z-[70] max-w-[calc(100vw-2rem)] rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-2 shadow-xl ${placement === "above" ? "bottom-full mb-1 w-full" : "top-full mt-1 w-64"}`}>{options}</div>}
     </div>

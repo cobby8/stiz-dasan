@@ -1,5 +1,6 @@
 "use client";
 
+import UiIcon from "@/components/common/UiIcon";
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -30,9 +31,9 @@ import {
 // 한 줄 행 공통 모양 — 높이 44px 이상, 왼쪽 이름, 오른쪽 값/버튼(2026-11-13 UI 통일: 줄 앞 장식 아이콘을 뺐다. 펼침 화살표만 남긴다)
 const ROW = "flex min-h-12 w-full items-center gap-3 px-4 py-1.5 text-left text-sm";
 
-/** 펼침 줄 오른쪽 끝 글자 — 아이콘 대신 «펼치기»/«접기»(2026-11-14 아이콘 완전 제거) */
+/** 펼침 줄 오른쪽 끝 화살표 — 접힘 = 아래, 펼침 = 위(2026-11-15 아이콘 예외). 버튼 이름은 줄 제목 글자가 준다 */
 function RowToggleLabel({ open }: { open: boolean }) {
-    return <span className="shrink-0 text-xs text-[var(--color-academy-muted)]">{open ? "접기" : "펼치기"}</span>;
+    return <span className="inline-flex shrink-0 text-[var(--color-academy-muted)]"><UiIcon name={open ? "expand_less" : "expand_more"} /></span>;
 }
 
 function Message({ text, tone }: { text: string; tone: "ok" | "error" }) {

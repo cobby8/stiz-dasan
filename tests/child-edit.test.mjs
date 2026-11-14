@@ -585,6 +585,7 @@ test("⑦ 건강 특이사항은 정해진 파일에서만 다루고, 알림·�
     "src/app/mypage/record/ChildProfileSections.tsx",
     "src/app/staff/sessions/[sessionId]/SessionInProgressClient.tsx", // 선생님(자기 반 명단)
     "src/components/staff/ClassPeopleSheet.tsx",
+    "src/components/staff/RosterPersonInfo.tsx",             // 출석부 줄 아래 «펼친 학생 정보»(2026-11-15 시트 대신)
     "src/components/staff/SessionStudentSheet.tsx",
     "src/components/shuttle/UnifiedDriverClient.tsx",        // 기사님(그날 운행표 승객)
     "src/lib/parent/childEdit.ts",
@@ -849,6 +850,10 @@ test("⑧ 선생님 상세 시트·기사님 줄·관리자 칸에 건강 특이
   assert.match(html, /건강·알레르기 <\/span>견과류 알레르기/);
   // 값이 없으면 칸 자체가 없다
   assert.doesNotMatch(renderToStaticMarkup(React.createElement(Sheet, { ...props, person: { ...person, healthNote: null } })), /메모·특이사항/);
+  // 수업 화면의 학생 상세는 줄 아래 «펼친 학생 정보»(RosterPersonInfo)로 바뀌었다 — 거기에도 건강 글이 메모보다 먼저 나온다
+  const rosterInfo = read("src/components/staff/RosterPersonInfo.tsx");
+  assert.ok(rosterInfo.indexOf("{person.healthNote && <p") > 0 && rosterInfo.indexOf("{person.healthNote && <p") < rosterInfo.indexOf("{person.memo && <p"));
+  assert.match(read("src/components/staff/ClassPeopleSheet.tsx"), /\{person\.healthNote && <p/);
   // 기사님: 이름 옆 글자 «특이»(44px) → 누르면 줄 아래 글
   const driver = read("src/components/shuttle/UnifiedDriverClient.tsx");
   assert.match(driver, /\{\(rider\.hasHealthNote \|\| rider\.healthNote\) && \(\s*<button type="button" aria-expanded=\{healthKey === rowKey\}/);

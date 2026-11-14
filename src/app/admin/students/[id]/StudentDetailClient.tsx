@@ -1,4 +1,5 @@
 "use client";
+import UiIcon from "@/components/common/UiIcon";
 import { adminErrorText, paymentMethodLabel } from "@/components/admin/adminDisplayText";
 
 import { useCallback, useEffect, useState, useTransition, type FormEvent } from "react";
@@ -1895,7 +1896,7 @@ export default function StudentDetailClient({
                                                         ))}
                                                     </div>
                                                     <span className="shrink-0 text-right text-sm font-semibold tabular-nums text-[var(--color-academy-ink)]">{formatKRW(history.paymentAmount)}</span>
-                                                    <span aria-hidden="true" className="inline-block shrink-0 text-[var(--color-academy-faint)] transition-transform group-open:rotate-90">›</span>
+                                                    <span className="inline-flex shrink-0 text-[var(--color-academy-faint)]"><UiIcon name="expand_more" className="transition-transform group-open:rotate-180" /></span>
                                                 </summary>
                                                 <div className="space-y-2.5 border-t border-dashed border-[var(--color-academy-line)] p-3.5">
                                                     <div className="grid gap-3 sm:grid-cols-2">

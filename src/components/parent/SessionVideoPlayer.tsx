@@ -85,16 +85,21 @@ export function SessionVideoPlayer({ video, onPlaybackError }: { video: SessionV
  * 영상이 없거나 권한이 없으면 아무것도 그리지 않는다(빈 칸으로 화면을 차지하지 않게).
  * 서명 주소는 10분이면 만료된다 — 재생 오류가 나면 한 번만 다시 불러온다.
  */
-export function SessionVideoList({ sessionId, className }: { sessionId: string; className?: string }) {
+export function SessionVideoList({ sessionId, className, endpoint }: {
+  sessionId: string;
+  className?: string;
+  /** 재생 정보를 받을 주소 — 기본은 학부모 라우트. 관리자 피드는 선생님 라우트(/api/staff/sessions/{id}/videos, 관리자 = 전체 반)를 넘긴다 */
+  endpoint?: string;
+}) {
   const [videos, setVideos] = useState<SessionVideoPlayback[]>([]);
   const reloadedRef = useRef(false);
 
   const load = useCallback(async () => {
-    const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/videos`, { cache: "no-store" });
+    const response = await fetch(endpoint ?? `/api/sessions/${encodeURIComponent(sessionId)}/videos`, { cache: "no-store" });
     if (!response.ok) { setVideos([]); return; }
     const body = await response.json().catch(() => ({})) as { videos?: SessionVideoPlayback[] };
     setVideos(Array.isArray(body.videos) ? body.videos : []);
-  }, [sessionId]);
+  }, [sessionId, endpoint]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => { void load().catch(() => setVideos([])); }, 0);

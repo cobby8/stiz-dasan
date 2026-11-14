@@ -104,6 +104,8 @@ function loadSettings({ appLacksPush = true, view = "unavailable", bridge: hasBr
     "@/lib/storeApp": storeApp,
     "@/lib/app-install-links": { appUpdateTarget: () => update },
     "@/lib/mypage/parentSettings": load("src/lib/mypage/parentSettings.ts"),
+    // 2026-11-15 아이콘 예외(화살표·종·톱니): 공용 아이콘 부품은 실제 코드를 그대로 쓴다
+    "@/components/common/UiIcon": load("src/components/common/UiIcon.tsx"),
   });
 }
 

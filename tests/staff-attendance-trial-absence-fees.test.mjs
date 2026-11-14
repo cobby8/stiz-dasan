@@ -161,16 +161,31 @@ test("f3 선생님 출석부 화면은 수강료 줄을 숨기고 조회도 하�
 test("MED-1 출석부·홈의 청구 확인·학생 정보 미납은 원장·부원장만 — 서버도 금액을 주지 않는다", () => {
   const client = read("src/app/staff/sessions/[sessionId]/SessionInProgressClient.tsx");
   // 2026-11-14: 반 전체 «청구 확인»은 «더보기» 창으로 옮겼다(누르면 창을 닫고 청구 시트를 연다)
-  assert.match(client, /\{showFees && <button type="button" onClick=\{\(\) => \{ setShowMore\(false\); setBillingStudent\(null\); \}\}/);
+  // 2026-11-15 접이식 구조와 병합: «더보기» 창 대신 출석부 칸 아래 글자 버튼 — 원장·부원장(showFees) 조건은 그대로.
+  assert.match(client, /\{showFees && <button type="button" onClick=\{\(\) => setBillingStudent\(null\)\}/);
+  // 학생 상세는 시트 대신 줄 아래에 펼친다 — 수강료 줄 조건(원장·부원장 + 이 반 수강생)과 미납 건수 조건이 펼침 부품에도 그대로 있다.
+  const inline = read("src/components/staff/SessionStudentInfo.tsx");
+  assert.match(inline, /\{showFees && !student\.makeup && !student\.trial && <button/);
+  assert.match(inline, /\{showFees && feeError && \(/);
+  assert.match(inline, /showUnpaidCount=\{showFees\}/);
+  assert.match(inline, /fee\?\.amount != null \? `\$\{fee\.amount\.toLocaleString\("ko-KR"\)\}원` : fee\?\.status === "PAID" \? "—" : "금액 확인 필요"/);
   assert.match(client, /onOpenBilling=\{showFees \? /);
   assert.match(client, /\{showFees && billingStudent !== undefined && <ClassBillingSheet/);
   assert.match(client, /const attendanceBillingSheet = showFees && attendanceBillingTarget/);
 
   const home = read("src/app/staff/StaffHomeClient.tsx");
-  // 2026-11-13 UI 통일: 빠른 메뉴 버튼의 아이콘(icon prop)을 뺐다 — showFees 조건은 그대로 지킨다
-  assert.match(home, /\{showFees && <SecondaryButton label="청구 확인" onClick=\{\(\) => setBillingTarget/);
-  assert.match(home, /\{showFees && <SecondaryButton label="청구 확인" onClick=\{\(\) => onAction\("billing"\)\}/);
+  // 2026-11-15 선생님 수업 화면 한 화면 구조: 빠른 메뉴·아래 시트가 수업 줄 안의 본문으로 옮겨졌다.
+  // showFees 조건은 그대로 — 홈은 원장·부원장일 때만 청구 진입(openBilling)을 본문에 넘기고, 본문은 넘겨받았을 때만 버튼을 그린다.
+  assert.match(home, /const openBilling = showFees \? \(student\?: \{ id: string; name: string \}\) => setBillingTarget\(\{ lesson, student \}\) : undefined;/);
+  assert.match(home, /onOpenBilling: openBilling,/);
   assert.match(home, /onOpenBilling=\{showFees \? /);
+  const panels = read("src/components/staff/LessonWorkspacePanels.tsx");
+  assert.match(panels, /\{onOpenBilling && <button type="button" onClick=\{onOpenBilling\}[^>]*>청구 확인<\/button>\}/);
+  assert.match(panels, /<WorkspaceLinks onOpenNotice=\{onOpenNotice\} onOpenBilling=\{onOpenBilling \? \(\) => onOpenBilling\(\) : undefined\} \/>/);
+  // 출석부에 통합한 학생 정보도 예전 시트와 같은 규칙: 청구 진입이 없으면 미납 배지·청구 버튼을 숨긴다
+  const info = read("src/components/staff/RosterPersonInfo.tsx");
+  assert.match(info, /const billing = openBilling \? person\.billing : null;/);
+  assert.doesNotMatch(info, /person\.billing\.unpaid/);
   assert.match(home, /\{showFees && billingTarget && <ClassBillingSheet/);
   assert.match(read("src/app/staff/page.tsx"), /showFees=\{canSeeStaffFees\(access\.staff\.appUserRole\)\}/);
 

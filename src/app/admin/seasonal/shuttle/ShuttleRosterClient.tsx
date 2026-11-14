@@ -1,5 +1,6 @@
 "use client";
 
+import UiIcon from "@/components/common/UiIcon";
 import { useMemo, useState } from "react";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
 import StudentDetailModal from "@/components/seasonal/StudentDetailModal";
@@ -526,9 +527,9 @@ export default function ShuttleRosterClient({
                 <>
                   <tr className="border-t border-[var(--color-academy-line)]">
                     <td colSpan={colCount} className="bg-[var(--color-academy-success-soft)]/70 p-0">
-                      <button type="button" onClick={() => setHubOpen((v) => !v)}
+                      <button type="button" onClick={() => setHubOpen((v) => !v)} aria-expanded={hubOpen}
                         className="flex w-full items-center gap-2 px-3 py-2 text-left">
-                        <span className="text-xs text-[var(--color-academy-success)]">{hubOpen ? "▴" : "▾"}</span>
+                        <span className="inline-flex shrink-0 text-[var(--color-academy-success)]"><UiIcon name={hubOpen ? "expand_less" : "expand_more"} /></span>
                         <span className="text-sm font-semibold text-[var(--color-academy-success)]">1호점(무료탑승)</span>
                         <span className="rounded bg-[var(--color-academy-surface)] px-2 py-0.5 text-xs tabular-nums text-[var(--color-academy-success)]">{hubRows.length}명</span>
                         <span className="text-xs text-[var(--color-academy-success)]">1호점 거점에서 무료로 탑승하는 학생</span>

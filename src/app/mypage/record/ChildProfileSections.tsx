@@ -1,5 +1,6 @@
 "use client";
 
+import UiIcon from "@/components/common/UiIcon";
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -20,10 +21,10 @@ const ChildInfoEditSheet = dynamic(() => import("./ChildInfoEditSheet"), { ssr: 
 
 // 학부모 «아이 기록» 위쪽 칸(2026-11-14 원장 «관리자 원생 상세 참고해서 아이 정보 모두 + 셔틀 정확하게»):
 //  아이 정보 → (요약 4칸은 ChildRecordClient) → 수강 반 → 셔틀.
-// 컴팩트 UI: 머리줄을 누르면 접기/펼치기(글자로 — 아이콘 금지 가드) · «라벨 : 값» 한 줄 행 · 터치 44px · 글자 12px 이상.
+// 컴팩트 UI: 머리줄을 누르면 접기/펼치기(화살표 — 2026-11-15 아이콘 예외) · «라벨 : 값» 한 줄 행 · 터치 44px · 글자 12px 이상.
 // 계산은 전부 순수 규칙(childProfileRules·childShuttleRules)에서 — 여기는 그리기만.
 
-/** 접히는 칸 — 머리줄 전체가 버튼(44px). 오른쪽 «접기/펼치기»는 글자 */
+/** 접히는 칸 — 머리줄 전체가 버튼(44px). 오른쪽 끝은 펼침 화살표(이름은 제목 글자) */
 export function CollapsibleSection({ id, title, note, defaultOpen = true, children }: { id: string; title: string; note?: string | null; defaultOpen?: boolean; children: ReactNode }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
@@ -38,7 +39,7 @@ export function CollapsibleSection({ id, title, note, defaultOpen = true, childr
         >
           <span className="academy-section-title min-w-0 flex-1">{title}</span>
           {note && <span className="shrink-0 text-xs tabular-nums text-[var(--color-academy-muted)]">{note}</span>}
-          <span className="shrink-0 text-xs text-[var(--color-academy-muted)]">{open ? "접기" : "펼치기"}</span>
+          <span className="inline-flex shrink-0 text-[var(--color-academy-muted)]"><UiIcon name={open ? "expand_less" : "expand_more"} /></span>
         </button>
       </h2>
       {open && <div id={`${id}-body`} className="border-t border-[var(--color-academy-line)]">{children}</div>}

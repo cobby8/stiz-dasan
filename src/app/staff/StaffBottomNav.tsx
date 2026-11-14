@@ -1,7 +1,8 @@
 "use client";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState, type MouseEvent } from "react";
+import { prepareStaffNavigation } from "./staffNavigation";
 import { isStoreApp } from "@/lib/storeApp";
 import { DRIVER_ENTRY_PATH, shouldShowIosDriverNotice } from "@/lib/staff-session-rules";
 
@@ -28,6 +29,24 @@ export default function StaffBottomNav({ canTeach, canShuttle }: { canTeach: boo
     if (shouldShowIosDriverNotice(isStoreApp(), navigator.userAgent)) setShuttleHref(DRIVER_ENTRY_PATH);
   }, []);
 
+  // 2026-11-15 수업 한 화면: 오늘 수업 홈에 진행 중 수업 칸이 펼쳐져 있을 수 있다 →
+  // 다른 탭으로 옮기기 전에 쓰던 메모를 저장한다(수업 주소의 «이동 전 저장»과 같은 신호). 저장하지 못하면 머문다.
+  const router = useRouter();
+  const [blocked, setBlocked] = useState("");
+  async function leaveHome(event: MouseEvent<HTMLAnchorElement>, href: string) {
+    if (pathname !== "/staff" || href === "/staff") return;
+    // 새 탭·새 창으로 여는 누름은 지금 화면을 떠나지 않으므로 그대로 둔다
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+    event.preventDefault();
+    setBlocked("");
+    const result = await prepareStaffNavigation();
+    if (!result.ok) {
+      setBlocked(result.message || "수업 기록을 저장하지 못해 이동을 멈췄습니다.");
+      return;
+    }
+    router.push(href);
+  }
+
   // 수업 진행 화면은 종료 버튼 등 수업 조작에 집중할 수 있도록 메뉴를 숨깁니다.
   if (pathname.startsWith("/staff/sessions/")) return null;
 
@@ -44,10 +63,11 @@ export default function StaffBottomNav({ canTeach, canShuttle }: { canTeach: boo
 
   // 공통 표면을 사용하되 현재 메뉴의 접근성·이동 규칙은 유지합니다.
   return <nav aria-label="교사용 주요 메뉴" className="academy-staff-nav fixed inset-x-0 bottom-0 z-30 border-t px-3 pb-[max(0.625rem,env(safe-area-inset-bottom))] backdrop-blur-xl">
+    {blocked && <p role="alert" className="mx-auto max-w-lg px-1 pt-1 text-center text-xs text-[var(--color-academy-danger)]">{blocked}</p>}
     <div className={`mx-auto grid max-w-lg ${gridClass} gap-2`}>{items.map((item) => {
       const active = isActive(item);
       // 2026-11-13 UI 통일: 아이콘 없이 글자만. 지금 있는 탭 = 보조 색(하늘색) 글자 + 위쪽 띠 + 조금 굵게. 누르는 높이(56px)는 그대로.
-      return <Link key={item.label} href={item.href} aria-current={active ? "page" : undefined} className={`flex min-h-14 items-center justify-center border-t-2 text-sm transition-colors ${active ? "border-[var(--color-academy-secondary-strong)] font-semibold text-[var(--color-academy-secondary-ink)]" : "border-transparent font-medium text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"}`}>{item.label}<span className="sr-only">{active ? "현재 메뉴" : "메뉴로 이동"}</span></Link>;
+      return <Link key={item.label} href={item.href} onClick={(event) => void leaveHome(event, item.href)} aria-current={active ? "page" : undefined} className={`flex min-h-14 items-center justify-center border-t-2 text-sm transition-colors ${active ? "border-[var(--color-academy-secondary-strong)] font-semibold text-[var(--color-academy-secondary-ink)]" : "border-transparent font-medium text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"}`}>{item.label}<span className="sr-only">{active ? "현재 메뉴" : "메뉴로 이동"}</span></Link>;
     })}</div>
   </nav>;
 }

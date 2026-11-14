@@ -6,6 +6,7 @@
  * 누를 수 있는 버튼은 규칙 모듈의 상태 전이표(allowedRentalActions)에서 나온다 — 서버도 같은 표로 다시 검사한다.
  * 2026-11-08: 재원생 무료 배지 · 거절 사유(필수) · 확인창 문자 미리보기 · 환불 계좌(사용 완료 단계) · «문자 실패» 표시.
  */
+import UiIcon from "@/components/common/UiIcon";
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { adminMessageText } from "@/components/admin/adminDisplayText";
@@ -378,7 +379,7 @@ export default function RentalAdminClient({ rows, bankAccount, smsOn, embedded =
       {embedded && doneRows.length > 0 && (
         <button type="button" onClick={() => setShowDone((value) => !value)} aria-expanded={showDone} className="academy-button-text">
           {showDone ? "완료 접기" : `완료 보기 ${doneRows.length}`}
-          <span aria-hidden="true">{showDone ? "▴" : "▾"}</span>
+          <UiIcon name={showDone ? "expand_less" : "expand_more"} />
         </button>
       )}
 

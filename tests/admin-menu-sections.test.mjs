@@ -35,7 +35,7 @@ test('«홈페이지 보기»는 메뉴 묶음이 아니라 맨 아래(로그아
 // 탭 연결 표 — 사이드바 메뉴(부모) → 묶인 화면들(탭)
 const PARENT = { attendance: '/admin/attendance', finance: '/admin/finance', homepage: '/admin/settings', messaging: '/admin/sms', policy: '/admin/terms' };
 const EXPECTED_TABS = {
-  attendance: ['/admin/attendance', '/admin/absence', '/admin/makeup', '/admin/attendance/report', '/admin/attendance/feed'],
+  attendance: ['/admin/attendance', '/admin/absence', '/admin/makeup', '/admin/attendance/feed'],
   finance: ['/admin/finance', '/admin/payment-requests', '/admin/payment-confirmations', '/admin/pos-reconcile'],
   homepage: ['/admin/settings', '/admin/coaches', '/admin/programs', '/admin/gallery', '/admin/media-revocations', '/admin/faq', '/admin/testimonials'],
   messaging: ['/admin/sms', '/admin/notification-deliveries', '/admin/kakao-policy'],
@@ -62,8 +62,11 @@ test('묶인 화면마다: 위에 탭 줄이 뜨고, 그 탭과 부모 메뉴가
   }
 });
 
-test('하위 주소·가장 긴 주소 판정 — 리포트 상세는 «수업 리포트», 청구 하위는 «청구·수납»', () => {
-  assert.equal(findAdminSection('/admin/attendance/report/abc')?.activeHref, '/admin/attendance/report');
+test('하위 주소·가장 긴 주소 판정 — 수업 피드는 «수업 피드», 옛 리포트 편집은 «출결» 묶음, 청구 하위는 «청구·수납»', () => {
+  // 2026-11-14 «수업 리포트» 탭을 수업 피드로 합쳤다 — 옛 편집 주소는 탭 없이 «출결» 묶음 안에 남는다
+  assert.equal(findAdminSection('/admin/attendance/feed')?.activeHref, '/admin/attendance/feed');
+  assert.equal(findAdminSection('/admin/attendance/report/abc')?.activeHref, '/admin/attendance');
+  assert.ok(!ADMIN_SECTIONS.attendance.tabs.some((t) => t.href === '/admin/attendance/report'), '수업 리포트 탭은 없다');
   assert.equal(findAdminSection('/admin/attendance')?.activeHref, '/admin/attendance');
   assert.equal(findAdminSection('/admin/finance/monthly-ledger')?.activeHref, '/admin/finance');
   assert.equal(findAdminSection('/admin/settings-x'), null, '접두사만 같은 주소는 아니다');

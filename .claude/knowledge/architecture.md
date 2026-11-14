@@ -317,3 +317,9 @@
 - **발견자**: developer
 - **내용**: 사유가 질병·부상(`ILLNESS_INJURY`)인 정규 결석은 보강권을 바로 주지 않고 `RegularAbsenceCarryReview`(결석 1건당 1줄: PENDING→APPROVED/MAKEUP/CLOSED) 로 «검토 대기»에 둔다. 증빙 사진은 `RegularAbsenceEvidence` + 비공개 버킷 `absence-evidence`(권한 확인 API 가 대신 내려 줌 — 올린 학부모 본인·관리자만). 파일: 순수 규칙 `src/lib/regular/illnessCarryRules.ts`(7일·3장·90일·상태 글자) · 트랜잭션 쓰기 `illness-carry-tx.ts`(prisma import 없음 — 열기/닫기/보강권 전환/출결 보류 판정) · 원장 처리 `illness-carry-admin.ts` · cron `illness-carry-cron.ts`(기존 `/api/cron/makeup-credits` KST 00:30 에 붙음) · 사진 권한 `illness-evidence-access.ts`. ★ [이월 승인]은 새 계산이 아니라 `resolveWorkbenchAbsence`(CARRY)를 «같은 트랜잭션»에서 그대로 부른다(결석 확정 → readWorkbench 로 sourceVersion → resolve). 그 함수가 끝에서 검토 줄을 APPROVED/MAKEUP 으로 맞추므로 청구 준비 화면에서 정산해도 신청함과 어긋나지 않는다. 승인 예약은 없다 — 조건(결석일 지남·원래 달 청구 발행)이 맞을 때만 버튼이 켜진다. 신청함 종류 `ILLNESS_CARRY`(어댑터 = RegularAbsence + 검토 줄, 기간 결석·출석부 표시 행 포함, 결석일 전은 WAITING=진행 중). 출결 경로는 «사유 저장 → 보강권 맞춤» 순서이고 `syncCreditForRegularSession` 이 `isIllnessCreditHeld` 로 자동 발급을 멈춘다. 두 표가 없으면(마이그레이션 전) 전부 예전 방식(즉시 보강권)으로 동작한다 — `illnessReviewReady` 한 곳에서 판정. 사유 글(reasonText)은 건강 정보라 목록·알림·로그에 싣지 않고 관리자 상세 action 만 읽는다. 테스트: `tests/illness-carry.test.mjs` + absence-change·billing-workbench·list-stage8b 에 추가분.
 - **참조횟수**: 0
+
+### [2026-11-14] 관리자 수업 피드 = 커서 페이지 API + 공용 리포트 편집 부품
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: /admin/attendance/feed 는 첫 20개만 서버에서 그리고 다음은 GET /api/admin/feed(?cursor·필터, ?sessionId=카드 하나). 커서 = «수업일~시작 시각~id» 세 값 모두 내림차순이라 SQL 행 비교 (a,b,c) < ($1,$2,$3) 하나로 자른다(adminFeedRules.encode/decodeAdminFeedCursor). 필터는 전부 SQL(담당 선생님은 CROSS JOIN LATERAL 로 classCoachNameSql 한 번 계산). 리포트 편집 본문은 src/components/admin/SessionReportEditor.tsx 한 벌 — /admin/attendance/report/[sessionId] 화면과 피드 패널(SessionReportEditorLoader, compact)이 같이 쓴다. 관리자 영상 재생 = SessionVideoList endpoint 에 /api/staff/sessions/{id}/videos(관리자 = 전체 반).
+- **참조횟수**: 0
