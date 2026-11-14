@@ -111,13 +111,17 @@ export function isEvidencePurgeDue(decidedYmd: string | null | undefined, todayY
  * 원장이 [이월 승인]을 누르기 전에 화면이 먼저 알려 주는 «아직 안 되는 이유» 한 줄. 없으면 null.
  * (최종 판정은 서버의 기존 이월 규칙 resolveWorkbenchAbsence 가 한다 — 여기는 버튼을 켤지 정하는 미리보기)
  */
+/** 그 달 수강료 근거 상태: READY 근거 있음 · UNPAID 청구는 있는데 아직 안 냄 · NONE 청구 자체가 없음 · null 모름(막지 않는다) */
+export type CarryBillState = "READY" | "UNPAID" | "NONE" | null;
 export function carryApprovalBlocker(input: {
-  absenceYmd: string; todayYmd: string; creditStatus: string | null; billReady: boolean | null; writesEnabled: boolean;
+  absenceYmd: string; todayYmd: string; creditStatus: string | null; bill: CarryBillState; writesEnabled: boolean;
 }): string | null {
   if (!input.writesEnabled) return "청구 준비 저장이 꺼져 있어 이월을 적립할 수 없어요.";
   if (input.absenceYmd > input.todayYmd) return "결석일이 지난 뒤에 승인할 수 있어요.";
   if (input.creditStatus === "USED" || input.creditStatus === "NO_SHOW") return "이미 보강을 들은 결석이라 이월할 수 없어요.";
-  if (input.billReady === false) return "그 달 수강료 청구를 발행한 뒤에 승인할 수 있어요.";
+  // 이월은 «낸 수강료»를 돌려주는 것이라, 청구가 있어도 아직 안 냈으면 근거가 없다
+  if (input.bill === "UNPAID") return "그 달 수강료를 납부한 뒤에 승인할 수 있어요.";
+  if (input.bill === "NONE") return "그 달 수강료 청구를 발행한 뒤에 승인할 수 있어요.";
   return null;
 }
 
