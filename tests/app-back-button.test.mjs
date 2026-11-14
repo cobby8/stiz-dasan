@@ -25,7 +25,8 @@ test("공개, 관리자, 스태프, 마이페이지 헤더에 뒤로가기 버�
   assert.match(publicHeaderSource, /<AppBackButton[^>]*fallbackHref="\/"[^>]*size="sm"/);
   assert.match(adminShellSource, /<AppBackButton[^>]*fallbackHref="\/admin"/);
   assert.match(staffLayoutSource, /<AppBackButton[^>]*fallbackHref="\/staff"/);
-  assert.match(mypageLayoutSource, /<AppBackButton[^>]*fallbackHref="\/"[^>]*size="sm"/);
+  // 2026-11-15 원장 결정: 학부모 화면은 돌아갈 기록이 없으면 학부모 홈(/mypage)으로
+  assert.match(mypageLayoutSource, /<AppBackButton[^>]*fallbackHref="\/mypage"[^>]*size="sm"/);
   assert.equal((mypageLayoutSource.match(/<AppBackButton/g) || []).length, 2, "모바일·데스크탑 헤더 둘 다");
 });
 
