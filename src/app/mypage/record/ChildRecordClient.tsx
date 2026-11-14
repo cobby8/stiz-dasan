@@ -14,6 +14,9 @@ import { groupBillsByMonth } from "@/lib/payments/monthBills";
 import type { ChildRecord } from "@/lib/parent/childRecordQuery";
 // 아이 정보·수강 반·셔틀 칸(2026-11-14 «아이 정보 + 기록» 한 장)
 import { ChildClassesSection, ChildInfoSection, ChildShuttleSection } from "./ChildProfileSections";
+// 프로필 사진(2026-11-15) — 제목 왼쪽 64px · 형제 칩 28px
+import ProfileAvatar from "@/components/common/ProfileAvatar";
+import { profilePhotoUrl } from "@/lib/profilePhoto/rules";
 import {
   EMPTY_PAYMENT_FILTER,
   PAYMENT_KIND_LABEL,
@@ -81,7 +84,8 @@ export default function ChildRecordClient({
   initialYear,
 }: {
   record: ChildRecord;
-  childList: { id: string; name: string }[];
+  /** photoVersion = 프로필 사진 캐시 버전(사진 없으면 null → 이름 첫 글자) */
+  childList: { id: string; name: string; photoVersion?: string | null }[];
   initialYear: string | null;
 }) {
   const today = record.today;
@@ -133,7 +137,11 @@ export default function ChildRecordClient({
     <div className="space-y-3">
       {/* 머리줄 — 제목 + 형제 칩(히어로 없음) */}
       <div>
-        <h1 className="academy-heading">{record.student.name} 기록</h1>
+        {/* 아이 사진(64px) + 제목 — 사진이 없으면 이름 첫 글자. 올리기·바꾸기는 바로 아래 «아이 정보» 칸에서 */}
+        <div className="flex items-center gap-3">
+          <ProfileAvatar decorative name={record.student.name} size={64} src={profilePhotoUrl({ kind: "student", id: childId }, record.student.photoVersion, true)} />
+          <h1 className="academy-heading min-w-0 flex-1 break-keep">{record.student.name} 기록</h1>
+        </div>
         {childList.length > 1 && (
           <div role="group" aria-label="자녀 선택" className="mt-2 flex flex-wrap gap-1.5">
             {childList.map((c) => (
@@ -143,6 +151,8 @@ export default function ChildRecordClient({
                 aria-current={c.id === childId ? "page" : undefined}
                 className={`academy-choice ${c.id === childId ? "is-selected" : ""}`}
               >
+                {/* 형제 칩 사진 28px */}
+                <ProfileAvatar decorative name={c.name} size={28} src={profilePhotoUrl({ kind: "student", id: c.id }, c.photoVersion, true)} />
                 {c.name}
               </Link>
             ))}
@@ -151,7 +161,8 @@ export default function ChildRecordClient({
       </div>
 
       {/* 아이 정보 — 관리자 원생 상세 중 학부모에게 보여도 되는 것만(맨 위) */}
-      <ChildInfoSection profile={record.profile} today={today} studentId={childId} />
+      {/* key = 아이 id — 형제로 바꾸면 사진 올리기 칸의 진행·확인 상태를 새로 시작한다 */}
+      <ChildInfoSection key={childId} profile={record.profile} today={today} studentId={childId} photo={{ name: record.student.name, version: record.student.photoVersion ?? null }} />
 
       {/* 요약 4칸(2×2) — 다닌 기간 · 출석률 · 납부 · 미납 */}
       <section aria-label="요약" className="grid grid-cols-2 gap-2">

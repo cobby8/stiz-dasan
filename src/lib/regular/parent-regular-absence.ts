@@ -11,7 +11,7 @@ import { lockCompensation } from "@/lib/billing/absence-compensation-guard";
 import { createHash } from "node:crypto";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import { BeforeResumeError, parentUsableEnrollmentSql, resumeFromSql, usableOn } from "@/lib/enrollment/resumeWindow";
-import { closeIllnessReviewInTx, illnessReviewReady, openIllnessReviewInTx } from "@/lib/regular/illness-carry-tx";
+import { closeIllnessReviewInTx, convertIllnessToMakeupInTx, illnessReviewReady, openIllnessReviewInTx } from "@/lib/regular/illness-carry-tx";
 import {
   ILLNESS_REASON,
   canAddEvidence,
@@ -619,4 +619,179 @@ export async function cancelRegularAbsence(
     makeupCreditRevoked: creditAction === "REVOKE" || creditAction === "CANCEL_BOOKING_AND_REVOKE",
     makeupBookingCanceled: creditAction === "CANCEL_BOOKING_AND_REVOKE",
   };
+}
+
+// ── 4) 결석 신고 «날짜 바꾸기» (2026-11-15 마감 통일·날짜 바꾸기) ─────────────────────────
+// 예전에는 «취소한 뒤 다시 신고»였다 — 두 번 누르는 사이에 한쪽만 되는 반쪽 상태가 생길 수 있었다.
+// 이제 한 트랜잭션에서 «옛 신고 취소 + 새 날짜 신고»를 함께 한다. 어느 단계든 실패하면 전부 되돌아가
+// 옛 신고(와 그 보강권)가 그대로 남는다.
+//
+// 규칙
+//   · 같은 반의 다른 수업일로만(목록에 보이는 4주 범위 안, 그 반 요일, 복귀 예정 반은 복귀일 이후).
+//   · 마감(수업 1시간 전)은 옛 날짜·새 날짜 양쪽에 적용한다.
+//   · 확정(CONFIRMED)된 신고는 옮길 수 없다(취소와 같은 조건 — REPORTED 만).
+//   · 그 결석의 보강권으로 이미 보강이 예약돼 있으면 옮기지 않는다 → «보강 예약을 먼저 취소하거나 바꿔 주세요».
+//     (보강을 이미 들었으면 취소와 같은 MAKEUP_ALREADY_USED)
+//   · 새 날짜에 이미 신고(또는 확정)가 있으면 옮기지 않는다.
+//   · 사유는 옛 신고의 것을 그대로 가져간다.
+//   · 보강권: 옛 결석분은 회수, 새 결석분은 발급 — 기존 함수(settleCreditOnAbsenceCancel·issueCreditForReportedAbsence) 그대로.
+export async function moveRegularAbsence(
+  parentUserId: string,
+  input: { studentId?: string; classId?: string; date?: string; toDate?: string },
+) {
+  const studentId = input?.studentId?.trim();
+  const classId = input?.classId?.trim();
+  const date = input?.date?.trim() ?? "";
+  const toDate = input?.toDate?.trim() ?? "";
+
+  if (!studentId || !classId) throw new Error("STUDENT_OR_CLASS_MISSING");
+  if (!isYmd(date) || !isYmd(toDate)) throw new Error("INVALID_DATE");
+  if (date === toDate) throw new Error("ABSENCE_MOVE_SAME_DATE");
+
+  // 가드1: 소유권 + 반 소속(취소·신고와 같은 검사)
+  const owned = await verifyOwnershipAndClass(parentUserId, studentId, classId);
+  if (!owned) throw new Error("NOT_OWNER");
+
+  // 복귀 예정 반: 옛 날짜·새 날짜 모두 복귀일 이후여야 한다
+  for (const ymd of [date, toDate]) {
+    if (!usableOn(owned.status, owned.resumeFrom, ymd)) {
+      if (owned.resumeFrom) throw new BeforeResumeError(owned.resumeFrom);
+      throw new Error("NOT_OWNER");
+    }
+  }
+
+  // 가드3(새 날짜): 그 반 요일 + 마감 전 + 목록 범위(4주) 안 — 새 신고와 같은 기준
+  const now = kstNow();
+  if (!isReportableAt(toDate, owned.dayOfWeek, owned.startTime, now.ymd, now.hm)) {
+    throw new Error(toDate === now.ymd && ymdToDayIndex(toDate) != null ? "ABSENCE_CHANGE_CLOSED" : "NOT_REPORTABLE_DATE");
+  }
+  if (!computeUpcomingDates(now.ymd, owned.dayOfWeek, ABSENCE_REPORT_WEEKS, true).includes(toDate)) {
+    throw new Error("ABSENCE_TOO_FAR");
+  }
+  // 마감(옛 날짜): 이미 마감된 신고는 옮기지 못한다 — 트랜잭션을 열기 전에 먼저 본다(안에서도 다시 본다)
+  if (!isAbsenceChangeOpen(date, owned.startTime, now.ymd, now.hm)) throw new Error("ABSENCE_CHANGE_CLOSED");
+
+  const access = await childAccessSql("s", "$1");
+  type MovedRow = { id: string; reason: string; eventVersion: string };
+
+  const outcome = await prisma.$transaction(async (tx) => {
+    // 잠금 순서는 신고·취소와 같다(작업대 잠금 → 결석 행)
+    await lockCompensation(tx);
+
+    // ① 옛 신고 취소 — 이 부모 자녀의 REPORTED 건만(확정건·남의 자녀는 0행)
+    const canceled = await tx.$queryRawUnsafe<MovedRow[]>(
+      `UPDATE "RegularAbsence" ra
+          SET status = 'CANCELLED', "updatedAt" = NOW()
+         FROM "Student" s
+        WHERE ra."studentId" = s.id
+          AND ${access} AND ${notMergedStudent("s")}
+          AND ra."studentId" = $2
+          AND ra."classId" = $3
+          AND ra.date = $4::date
+          AND ra.status = 'REPORTED'
+        RETURNING ra.id, ra.reason AS reason, to_char(ra."updatedAt",'YYYYMMDDHH24MISSUS') AS "eventVersion"`,
+      parentUserId, studentId, classId, date,
+    );
+    if (canceled.length === 0) throw new Error("ABSENCE_NOT_CANCELABLE");
+
+    // ② 마감 다시 확인(옛 날짜) — 던지면 위 취소도 되돌려진다
+    const inTx = kstNow();
+    if (!isAbsenceChangeOpen(date, owned.startTime, inTx.ymd, inTx.hm)) throw new Error("ABSENCE_CHANGE_CLOSED");
+
+    // ③ 새 날짜에 이미 신고·확정이 있으면 옮기지 않는다(취소된 옛 줄은 아래에서 되살린다)
+    const target = await tx.$queryRawUnsafe<{ status: string; reason: string }[]>(
+      `SELECT status, reason FROM "RegularAbsence"
+        WHERE "studentId"=$1 AND "classId"=$2 AND date=$3::date LIMIT 1`,
+      studentId, classId, toDate,
+    );
+    if (target[0] && target[0].status !== "CANCELLED") throw new Error("ABSENCE_MOVE_TARGET_TAKEN");
+
+    // ④ 옛 결석의 보강권 되돌리기 — 보강이 예약돼 있으면(확인 없이) 막힌다 → «보강 예약을 먼저» 안내로 바꿔 던진다
+    try {
+      await settleCreditOnAbsenceCancel(tx, {
+        actor: "PARENT", studentId, classId, absenceYmd: date, confirmBookingCancel: false,
+      });
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "";
+      if (code === "MAKEUP_BOOKING_CONFIRM_REQUIRED" || code === "MAKEUP_BOOKING_PAST") throw new Error("ABSENCE_MOVE_MAKEUP_BOOKED");
+      throw error;
+    }
+
+    // ⑤ 새 날짜 신고 — 사유는 옛 신고 그대로. 덮어쓰는 것은 «취소됐던 줄» 뿐이다(③에서 확인)
+    const reason = canceled[0].reason;
+    const saved = await tx.$queryRawUnsafe<{ id: string; eventVersion: string }[]>(
+      `INSERT INTO "RegularAbsence"
+          ("studentId","classId","date","reason","status","reportedByUserId")
+       VALUES ($1,$2,$3::date,$4,'REPORTED',$5)
+       ON CONFLICT ("studentId","classId","date") DO UPDATE
+          SET reason = EXCLUDED.reason,
+              status = 'REPORTED',
+              "reportedByUserId" = EXCLUDED."reportedByUserId",
+              "updatedAt" = now()
+        WHERE "RegularAbsence".status = 'CANCELLED'
+       RETURNING id, to_char("updatedAt", 'YYYYMMDDHH24MISSUS') AS "eventVersion"`,
+      studentId, classId, toDate, reason, parentUserId,
+    );
+    if (!saved[0]) throw new Error("ABSENCE_MOVE_TARGET_TAKEN");
+
+    // ⑥ 질병·부상 이월 검토(2026-11-14)도 새 날짜로 옮긴다 — 날짜를 바꿨다고 보강권이 바로 나가면 «검토 대기» 규칙을 돌아가는 길이 된다.
+    //   · 검토 중이던 결석: 올린 사진과 사유 글을 새 결석으로 옮기고 새 날짜에서 다시 «검토 중»(보강권 없음).
+    //   · 원장이 이미 [보강권으로] 정한 결석: 그 결정을 새 날짜로 가져간다(보강권 1장).
+    //   · 검토 줄이 없던 결석(이 기능 이전 신고)·다른 사유: 아래 ⑦ 예전 그대로.
+    const reviewReady = await illnessReviewReady(tx);
+    const oldReview = reviewReady && reason === ILLNESS_REASON
+      ? (await tx.$queryRawUnsafe<{ status: string; source: string; reasonText: string | null }[]>(
+          `SELECT status, source, "reasonText" FROM "RegularAbsenceCarryReview" WHERE "absenceId" = $1 FOR UPDATE`, canceled[0].id,
+        ))[0] ?? null
+      : null;
+    if (oldReview?.status === "PENDING") {
+      await tx.$executeRawUnsafe(
+        `UPDATE "RegularAbsenceEvidence" SET "absenceId" = $2 WHERE "absenceId" = $1 AND "removedAt" IS NULL`,
+        canceled[0].id, saved[0].id,
+      );
+      await closeIllnessReviewInTx(tx, canceled[0].id, { canceled: true });
+      const opened = await openIllnessReviewInTx(tx, {
+        absenceId: saved[0].id, studentId, classId, absenceYmd: toDate,
+        reasonText: oldReview.reasonText, source: oldReview.source === "KAKAO" ? "KAKAO" : "PARENT",
+      });
+      return { canceled: canceled[0], saved: saved[0], reason, makeupCreditIssued: false, carryReview: opened.status as string | null };
+    }
+    if (reviewReady) await closeIllnessReviewInTx(tx, canceled[0].id, { canceled: true });
+    if (oldReview?.status === "MAKEUP") {
+      const kept = await convertIllnessToMakeupInTx(tx, { absenceId: saved[0].id, by: "ADMIN", actorUserId: null, issuable: isMakeupCreditIssuableYmd });
+      return { canceled: canceled[0], saved: saved[0], reason, makeupCreditIssued: kept.converted && kept.creditIssued, carryReview: "MAKEUP" as string | null };
+    }
+
+    // ⑦ 새 결석의 보강권(멱등 — 같은 키면 한 장)
+    const credit = isMakeupCreditIssuableYmd(toDate)
+      ? await issueCreditForReportedAbsence(tx, { studentId, classId, absenceYmd: toDate })
+      : { issued: false };
+    return { canceled: canceled[0], saved: saved[0], reason, makeupCreditIssued: credit.issued, carryReview: null as string | null };
+  });
+
+  // 알림 — 기존 알림 두 통을 그대로 쓴다(취소 + 새 신고). 날짜마다 담당 기사님이 다를 수 있어 한 통으로 합치지 않는다.
+  // 키는 결석 행 id + 그 행의 변경 시각이라, 같은 옮기기를 다시 눌러도(두 번째는 위에서 거절된다) 중복 발송되지 않는다.
+  await notifyAdminsOfAbsenceChange({
+    kind: "CANCELED",
+    studentName: owned.studentName,
+    className: owned.className,
+    classId,
+    studentId,
+    date,
+    recordId: outcome.canceled.id,
+    eventVersion: outcome.canceled.eventVersion,
+  });
+  const notification = await notifyAdminsOfAbsenceChange({
+    kind: "REPORTED",
+    studentName: owned.studentName,
+    className: owned.className,
+    classId,
+    studentId,
+    date: toDate,
+    reason: outcome.reason,
+    recordId: outcome.saved.id,
+    eventVersion: `${outcome.saved.eventVersion}-${createHash("sha256").update(String(outcome.reason)).digest("hex")}`,
+  });
+
+  return { ok: true, moved: true, from: date, to: toDate, reason: outcome.reason, notification, makeupCreditIssued: outcome.makeupCreditIssued };
 }

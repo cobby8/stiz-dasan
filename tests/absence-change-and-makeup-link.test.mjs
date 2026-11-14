@@ -53,6 +53,8 @@ function load(file) {
 const kst = await import(load("src/lib/datetime/kst.ts"));
 const rules = await import(load("src/lib/regular/regularAbsenceRules.ts"));
 const creditRules = await import(load("src/lib/makeup/credit-rules.ts"));
+// 2026-11-15 마감 통일·날짜 바꾸기: 마감 판정·문구의 공용 모듈
+const deadline = await import(load("src/lib/parent/changeDeadline.ts"));
 const absence = await import(load("src/lib/regular/parent-regular-absence.ts"));
 const makeup = await import(load("src/lib/makeup/parent-makeup.ts"));
 // 2026-11-14 복귀 예정: 학부모가 쓸 수 있는 수강 = ACTIVE 또는 복귀 승인된 휴원 반(공용 규칙)
@@ -374,8 +376,12 @@ function makeDb(overrides = {}) {
       return c && owns(c.studentId, args[1]) && c.status === "AVAILABLE" ? [{ ...c, studentGrade: student(c.studentId).grade }] : [];
     }
     if (/WHERE mc\.id = \$1 AND s\."parentId" = \$2\s+LIMIT 1/.test(sql)) {
+      // 2026-11-14 학년은 생년월일로: birthDate(무tz timestamp)는 KST 변환을 «두 번» 걸어 날짜 글자로 읽는다
+      assert.ok(sql.includes(`to_char(((s."birthDate" AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Seoul'), 'YYYY-MM-DD') AS "birthYmd"`), "생년월일을 아이 기록 조회와 같은 식으로 읽는다");
+      // 휴원(PAUSED) 중에도 예약할 수 있다 — 후보 조회가 학생·수강 상태로 막지 않는다
+      assert.doesNotMatch(sql, /s\.status|'PAUSED'|'ACTIVE'/, "학생 상태로 보강 예약을 막지 않는다");
       const c = db.credits.find((x) => x.id === args[0]);
-      return c && owns(c.studentId, args[1]) ? [{ ...c, studentGrade: student(c.studentId).grade }] : [];
+      return c && owns(c.studentId, args[1]) ? [{ ...c, studentGrade: student(c.studentId).grade, birthYmd: student(c.studentId).birthYmd ?? null }] : [];
     }
     // ── 보강: 반 목록 ──
     if (/FROM "Class" c\s+JOIN "Program" p ON p\.id = c\."programId"\s+LEFT JOIN "ScheduleSlot" ss ON ss\."slotKey" = c\."slotKey"/.test(sql)) {
@@ -389,8 +395,10 @@ function makeDb(overrides = {}) {
         gradesJson: c.grades ? JSON.stringify(c.grades) : null, gradeRangeText: c.gradeRangeText ?? null, enrolled: c.enrolled,
       }));
     }
-    if (/SELECT e\."classId" AS "classId" FROM "Enrollment" e WHERE e\."studentId" = \$1 AND e\.status = 'ACTIVE'/.test(sql)) {
-      return db.enrollments.filter((e) => e.studentId === args[0] && e.status === "ACTIVE").map((e) => ({ classId: e.classId }));
+    if (/SELECT e\."classId" AS "classId" FROM "Enrollment" e WHERE e\."studentId" = \$1 AND e\.status IN \(([^)]*)\)/.test(sql)) {
+      // 제외할 수강 상태를 SQL 문구에서 읽는다(수강 중 = ACTIVE + 휴원 중 PAUSED, 퇴원은 아니다)
+      const statuses = [.../e\.status IN \(([^)]*)\)/.exec(sql)[1].matchAll(/'([A-Z_]+)'/g)].map((m) => m[1]);
+      return db.enrollments.filter((e) => e.studentId === args[0] && statuses.includes(e.status)).map((e) => ({ classId: e.classId }));
     }
     if (/FROM "MakeupSession" m/.test(sql) && /GROUP BY 1, 2/.test(sql)) {
       // timestamptz → KST 변환은 «한 번»
@@ -817,15 +825,19 @@ test("후보 조회: 학년대가 비슷한(±1) 반 — 슬롯 없는 반도 �
 
 test("후보 0건의 이유를 나눠 알려 준다: 학년 정보 없음 / 맞는 반 없음 / 날짜 없음 / 자리 없음", async () => {
   freeze(SAT, "10:00");
-  // 학년 정보 없음(NULL·성인)
-  for (const grade of [null, "성인", ""]) {
+  // 학년 정보 없음(학년 글자도 생년월일도 없다)
+  for (const grade of [null, ""]) {
     const db = makeDb();
     db.students[0].grade = grade;
     const res = await makeup.getMakeupOptionsForCredit("p1", creditFor(db).id);
     assert.deepEqual([res.ok, res.options.length, res.emptyReason], [true, 0, "NO_GRADE"], `${grade}`);
   }
-  // 맞는 반 없음(고2 — 어느 반 범위에서도 2학년 이상 떨어져 있다)
+  // 성인은 이제 «학년 정보 없음»이 아니다 — 성인반이 없으면 «맞는 반 없음»(2026-11-14 원장 결정: 성인반끼리)
   let db = makeDb();
+  db.students[0].grade = "성인";
+  assert.equal((await makeup.getMakeupOptionsForCredit("p1", creditFor(db).id)).emptyReason, "NO_MATCH");
+  // 맞는 반 없음(고2 — 어느 반 범위에서도 2학년 이상 떨어져 있다)
+  db = makeDb();
   db.students[0].grade = "고2";
   assert.equal((await makeup.getMakeupOptionsForCredit("p1", creditFor(db).id)).emptyReason, "NO_MATCH");
   // 날짜 없음(사용 기한이 내일 0시 = 일요일 — 화·수·목 수업이 그 안에 없다)
@@ -903,6 +915,217 @@ test("예약 검증: 없는 날짜·그 반 요일이 아닌 날·갈 수 없는
 });
 
 // ═════════════════════════════════════════════════════════════════════════
+// ⑤ 학년은 생년월일로 · 포함되는 반 먼저 · 미취학 위로 2학년 · 성인반끼리 (2026-11-14 원장 결정)
+//    원장 메모: «같은 학년이 포함되는 반은 모두 추천, 김루빈처럼 6세인 경우 1학년이 있는반(위로 2개학년)까지 포함»
+// ═════════════════════════════════════════════════════════════════════════
+const studentGrade = await import(load("src/lib/makeup/student-grade.ts"));
+const statsRules = await import(load("src/lib/stats/statsRules.ts"));
+
+test("학생 학년: 생년월일로 계산한다 — 3월에 학년이 바뀌고, 학년 글자가 비어 있어도 된다", () => {
+  const g = studentGrade.studentMakeupGrade;
+  // 김루빈(2021년생, 학년 칸 빈 값): 2026학년도 = 6세(-1)
+  assert.equal(g("2021-06-10", null, "2026-11-14"), -1);
+  assert.equal(g("2021-06-10", "", "2026-11-14"), -1);
+  // 3월 학년도 경계 — 2월 말까지는 전 학년도, 3월 1일부터 새 학년
+  assert.equal(g("2019-12-31", null, "2026-02-28"), 0, "2월 = 아직 7세");
+  assert.equal(g("2019-12-31", null, "2026-03-01"), 1, "3월 1일 = 초1");
+  assert.equal(g("2014-05-10", null, "2027-02-28"), 6);
+  assert.equal(g("2014-05-10", null, "2027-03-01"), 7, "초6 → 중1");
+  assert.equal(g("2014-01-15", null, "2026-12-31"), 6, "연말");
+  assert.equal(g("2014-01-15", null, "2027-01-01"), 6, "연초(1·2월은 전 학년도)");
+  // 생년월일이 학년 글자보다 먼저다(글자는 해가 바뀌어도 그대로 남아 있다)
+  assert.equal(g("2015-05-01", "초6", "2026-11-14"), 5);
+  // 고등학교를 마친 나이는 모두 성인(13)
+  assert.equal(studentGrade.PLACEHOLDER_BIRTH_YMD, "2000-01-01");
+  assert.equal(creditRules.MAKEUP_ADULT_GRADE, 13);
+  assert.equal(g("1990-03-03", null, "2026-11-14"), 13);
+  assert.equal(g("2007-07-07", null, "2026-11-14"), 13, "2026-2007-6 = 13");
+  assert.equal(g("2008-07-07", null, "2026-11-14"), 12, "고3");
+});
+
+test("학생 학년: 임시 생일(2000-01-01)·빈 생일·오입력은 계산에서 빼고 학년 글자로 대신한다", () => {
+  const g = studentGrade.studentMakeupGrade;
+  assert.equal(g("2000-01-01", "초5", "2026-11-14"), 5, "임시 생일이면 성인으로 보지 않는다");
+  assert.equal(g("2000-01-01", "성인", "2026-11-14"), 13);
+  assert.equal(g("2000-01-01", null, "2026-11-14"), null, "둘 다 없으면 모른다");
+  assert.equal(g(null, "초5", "2026-11-14"), 5);
+  assert.equal(g(undefined, "2026년 초등 5학년", "2026-11-14"), 5);
+  assert.equal(g("2014/05/10", "중1", "2026-11-14"), 7, "형식이 틀린 생일");
+  assert.equal(g("2030-01-01", "초1", "2026-11-14"), 1, "미래 생일 = 오입력");
+  assert.equal(g(null, null, "2026-11-14"), null);
+  assert.equal(g(null, "대학생", "2026-11-14"), null);
+  // 5세보다 어리게 계산되면(생일 칸에 등록한 해를 적은 경우 등) 학년 글자를 믿는다 — 글자도 없으면 계산값 그대로
+  assert.equal(studentGrade.YOUNGEST_CLASS_GRADE, -2);
+  assert.equal(g("2025-03-02", "초3", "2026-11-14"), 3, "2025년생(-5)으로 계산되지만 글자가 초3");
+  assert.equal(g("2023-01-01", "7세", "2026-11-14"), 0, "-3 → 글자 7세");
+  assert.equal(g("2023-01-01", null, "2026-11-14"), -3, "글자가 없으면 계산값");
+  assert.equal(g("2023-01-01", "대학생", "2026-11-14"), -3, "글자를 못 읽어도 계산값");
+  assert.equal(g("2022-01-01", "초3", "2026-11-14"), -2, "5세(-2)부터는 생년월일이 먼저");
+  assert.equal(creditRules.makeupGradeFromText("성인"), 13);
+  assert.equal(creditRules.makeupGradeFromText("성인반"), 13);
+  assert.equal(creditRules.makeupGradeFromText("초5"), 5);
+});
+
+test("학생 학년: 아이 정보 화면과 같은 계산이다(같은 함수 schoolGradeNumber)", () => {
+  const source = read("src/lib/makeup/student-grade.ts");
+  assert.match(source, /import \{ schoolGradeNumber \} from "@\/lib\/stats\/statsRules";/);
+  for (const [birth, today] of [["2021-06-10", "2026-11-14"], ["2019-12-31", "2026-02-28"], ["2019-12-31", "2026-03-01"], ["2014-05-10", "2027-03-01"], ["2010-07-07", "2026-11-14"], ["1990-01-01", "2026-11-14"]]) {
+    const n = studentGrade.studentMakeupGrade(birth, null, today);
+    assert.equal(statsRules.gradeLabelOfNumber(n), statsRules.schoolGradeFromBirth(birth, today), `${birth} @ ${today}`);
+  }
+});
+
+test("후보 판정: 포함(0) → 가까운 학년(1) → 불가(null) · 미취학은 위로 2학년 · 성인은 성인반만", () => {
+  const fit = (grade, grades, extra = {}) => creditRules.makeupGradeFit(grade, { grades, ...extra });
+  // 포함되는 반 = 0, 기존 ±1 = 1(없애지 않았다)
+  assert.equal(fit(5, ["초4", "초5", "초6"]), 0);
+  assert.equal(fit(5, ["초6", "중1"]), 1);
+  assert.equal(fit(4, ["초1", "초2", "초3"]), 1);
+  assert.equal(fit(5, ["중1", "중2"]), null);
+  assert.equal(fit(5, ["초1", "초2", "초3"]), null);
+  assert.equal(fit(5, [], { gradeRangeText: "초4~초6" }), 0);
+  assert.equal(fit(null, ["초5"]), null);
+  assert.equal(fit(5, []), null, "학년을 모르는 반");
+  // 미취학(숫자 ≤ 0): 위로 2개 학년 — 6세(-1)는 초1 이 들어 있는 반까지
+  assert.equal(creditRules.MAKEUP_PRESCHOOL_UPWARD, 2);
+  assert.equal(fit(-1, ["6세", "7세"]), 0);
+  assert.equal(fit(-1, ["7세", "초1"]), 1);
+  assert.equal(fit(-1, ["초1", "초2", "초3"]), 1, "김루빈(6세) → 초1 이 있는 반");
+  assert.equal(fit(-1, ["초2", "초3"]), null, "초2 부터인 반은 3학년 차이");
+  assert.equal(fit(0, ["초2", "초3"]), 1, "7세 → 초2 가 있는 반까지");
+  assert.equal(fit(0, ["초3", "초4"]), null);
+  assert.equal(fit(-2, ["7세", "초1"]), 1, "5세 → 7세가 있는 반까지");
+  assert.equal(fit(-2, ["초1", "초2"]), null);
+  // 초등학생은 위로 1학년 그대로
+  assert.equal(fit(1, ["초2", "초3"]), 1);
+  assert.equal(fit(1, ["초3", "초4"]), null, "초1 은 위로 2학년이 아니다");
+  // 성인: 학년 구성·대상 학년 글자·반 이름 중 한 곳에 «성인»
+  assert.equal(fit(13, ["성인"]), 0);
+  assert.equal(fit(13, [], { gradeRangeText: "성인" }), 0);
+  assert.equal(fit(13, [], { className: "화요일 8교시(성인)" }), 0);
+  assert.equal(fit(13, ["고3", "성인"]), 0);
+  assert.equal(fit(13, ["고2", "고3"]), null, "성인은 ±1 로 고등반에 붙지 않는다");
+  assert.equal(fit(13, []), null);
+  // 학생(성인 아님)은 성인만 받는 반에 가지 않는다
+  assert.equal(fit(12, ["성인"]), null);
+  assert.equal(fit(12, ["고3", "성인"]), 0, "고3 도 받는 반이면 간다");
+  // 글자로 줘도 숫자로 줘도 같은 반이 나온다
+  const classes = [{ classId: "a", grades: ["초4", "초5"] }, { classId: "adult", grades: ["성인"] }, { classId: "k", grades: ["초1", "초2"] }];
+  const ids = (grade) => creditRules.matchClassesByGrade(classes, grade).map((c) => c.classId);
+  assert.deepEqual(ids("초5"), ids(5));
+  assert.deepEqual(ids("성인"), ["adult"]);
+  assert.deepEqual(ids(13), ["adult"]);
+  assert.deepEqual(ids(-1), ["k"]);
+  assert.deepEqual(ids("6세"), ["k"]);
+});
+
+/** 미취학·성인 반을 더한 가짜 DB */
+function makeGradeDb() {
+  const db = makeDb();
+  db.classes.push(
+    { id: "cK0", name: "유치반", dayOfWeek: "Mon", startTime: "15:00", endTime: "15:55", capacity: 10, enrolled: 9, grades: ["6세", "7세"] },
+    { id: "cK1", name: "7세초1반", dayOfWeek: "Tue", startTime: "15:00", endTime: "15:55", capacity: 10, enrolled: 5, grades: ["7세", "초1", "초2"] },
+    { id: "cK2", name: "초저반", dayOfWeek: "Wed", startTime: "15:00", endTime: "15:55", capacity: 10, enrolled: 0, grades: ["초1", "초2", "초3"] },
+    { id: "cK3", name: "초2부터반", dayOfWeek: "Thu", startTime: "15:00", endTime: "15:55", capacity: 10, enrolled: 0, grades: ["초2", "초3"] },
+    { id: "cAd1", name: "성인반", dayOfWeek: "Tue", startTime: "20:30", endTime: "21:45", capacity: 10, enrolled: 4, grades: ["성인"] },
+    { id: "cAd2", name: "수요일 8교시(성인)", dayOfWeek: "Wed", startTime: "20:30", endTime: "21:45", capacity: 10, enrolled: 2, grades: null, gradeRangeText: null },
+  );
+  return db;
+}
+
+test("김루빈(2021년생·학년 칸 빈 값): 예전엔 «학년 정보 없음»으로 막혔다 → 6세로 계산돼 초1 이 있는 반까지 보인다", async () => {
+  const db = makeGradeDb();
+  freeze(SAT, "10:00");
+  Object.assign(db.students[0], { grade: null, birthYmd: "2021-06-10" });
+  const credit = creditFor(db);
+  const res = await makeup.getMakeupOptionsForCredit("p1", credit.id);
+  assert.equal(res.emptyReason, null);
+  // 유치반(6세 포함) 먼저 → 가까운 학년 반은 자리 많은 순(초저반 12 → 7세초1반 7). 초2부터반·초4 이상·성인반은 없다
+  assert.deepEqual(res.options.map((o) => o.classId), ["cK0", "cK2", "cK1"]);
+  // 목록과 예약이 같은 판정: 목록에 있는 반은 예약되고, 없는 반은 거절된다
+  const no = await makeup.bookMakeup("p1", { creditId: credit.id, classId: "cK3", dateYmd: "2026-11-19" });
+  assert.deepEqual(no, { ok: false, message: "이 학생이 갈 수 있는 수업이 아닙니다." });
+  const adult = await makeup.bookMakeup("p1", { creditId: credit.id, classId: "cAd1", dateYmd: "2026-11-17" });
+  assert.equal(adult.ok, false);
+  const ok = await makeup.bookMakeup("p1", { creditId: credit.id, classId: "cK2", dateYmd: "2026-11-18" });
+  assert.deepEqual(ok, { ok: true, message: "초저반 11/18(수) 보강이 예약되었습니다." });
+});
+
+test("생년월일이 먼저, 임시 생일(2000-01-01)이면 학년 글자 — 조회 결과가 «초5»와 같다", async () => {
+  freeze(SAT, "10:00");
+  const idsFor = async (patch) => {
+    const db = makeDb();
+    Object.assign(db.students[0], patch);
+    const res = await makeup.getMakeupOptionsForCredit("p1", creditFor(db).id);
+    return res.options.map((o) => o.classId);
+  };
+  const base = await idsFor({});
+  assert.deepEqual(base, ["cD", "cA", "cC"]);
+  assert.deepEqual(await idsFor({ grade: "", birthYmd: "2015-04-01" }), base, "학년 칸이 비어도 2015년생 = 초5");
+  assert.deepEqual(await idsFor({ grade: "초5", birthYmd: "2000-01-01" }), base, "임시 생일은 무시하고 학년 글자");
+  assert.deepEqual(await idsFor({ grade: "초2", birthYmd: "2015-04-01" }), base, "글자가 옛 학년이어도 생년월일 기준");
+  // 3월에 학년이 바뀐다: 2월 말엔 초5, 3월엔 초6 → 중등반(중1~중2)이 ±1 로 더 보인다
+  freeze("2027-03-06", "10:00");
+  const db = makeDb();
+  Object.assign(db.students[0], { grade: "초5", birthYmd: "2015-04-01" });
+  const march = await makeup.getMakeupOptionsForCredit("p1", creditFor(db, { expiresYmd: "2027-04-20" }).id);
+  assert.ok(march.options.some((o) => o.classId === "cB"), "초6 이 되면 중1~중2 반이 가까운 학년 반으로 보인다");
+});
+
+test("포함되는 반이 먼저: 가까운 학년(±1) 반에 자리가 더 많아도 아래에 보인다", async () => {
+  const db = makeDb();
+  freeze(SAT, "10:00");
+  db.classes.find((c) => c.id === "cC").enrolled = 0; // 초6중1반(±1) = 12자리로 가장 여유
+  const res = await makeup.getMakeupOptionsForCredit("p1", creditFor(db).id);
+  assert.deepEqual(res.options.map((o) => o.classId), ["cD", "cA", "cC"]);
+});
+
+test("성인: 성인반끼리 예약된다(학년 글자 «성인» 또는 생년월일) — 학생 반은 목록에 없고 예약도 거절", async () => {
+  freeze(SAT, "10:00");
+  for (const patch of [{ grade: "성인", birthYmd: "2000-01-01" }, { grade: null, birthYmd: "1990-03-03" }, { grade: "성인", birthYmd: null }]) {
+    const db = makeGradeDb();
+    Object.assign(db.students[0], patch);
+    const credit = creditFor(db);
+    const res = await makeup.getMakeupOptionsForCredit("p1", credit.id);
+    // 반 이름에만 «성인»이 적힌 반(cAd2)도 성인반이다. 자리 많은 순: cAd2(10) → cAd1(8)
+    assert.deepEqual(res.options.map((o) => o.classId), ["cAd2", "cAd1"], JSON.stringify(patch));
+    assert.equal((await makeup.bookMakeup("p1", { creditId: credit.id, classId: "cA", dateYmd: "2026-11-17" })).message, "이 학생이 갈 수 있는 수업이 아닙니다.");
+    assert.equal((await makeup.bookMakeup("p1", { creditId: credit.id, classId: "cAd1", dateYmd: "2026-11-17" })).ok, true);
+  }
+  // 초5 학생에게는 성인반이 보이지 않는다
+  const db = makeGradeDb();
+  const kid = await makeup.getMakeupOptionsForCredit("p1", creditFor(db).id);
+  assert.equal(kid.options.some((o) => o.classId.startsWith("cAd")), false);
+});
+
+test("휴원(PAUSED) 중에도 보강 예약이 된다 — 조회·예약이 수강 상태로 막지 않는다", async () => {
+  const db = makeDb();
+  freeze(SAT, "10:00");
+  for (const e of db.enrollments.filter((row) => row.studentId === "s1")) e.status = "PAUSED";
+  const credit = creditFor(db);
+  const res = await makeup.getMakeupOptionsForCredit("p1", credit.id);
+  assert.equal(res.emptyReason, null);
+  assert.ok(res.options.some((o) => o.classId === "cA"));
+  // 원장 지시: «자기가 수강 중인 반은 보강 대상이 아니야» — 휴원 중인 자기 반(cE)은 목록에 없고 예약도 거절된다
+  assert.equal(res.options.some((o) => o.classId === "cE"), false, "휴원 중인 자기 반은 후보가 아니다");
+  assert.deepEqual(res.options.map((o) => o.classId).sort(), ["cA", "cC", "cD"], "다른 반은 그대로 뜬다");
+  assert.equal((await makeup.bookMakeup("p1", { creditId: credit.id, classId: "cE", dateYmd: "2026-11-20" })).message, "이 학생이 갈 수 있는 수업이 아닙니다.");
+  assert.equal((await makeup.bookMakeup("p1", { creditId: credit.id, classId: "cA", dateYmd: "2026-11-17" })).ok, true);
+});
+
+test("퇴원한 반은 자기 반이 아니다 — 후보에 남는다(수강 중 = ACTIVE·PAUSED 만 뺀다)", async () => {
+  const db = makeDb();
+  freeze(SAT, "10:00");
+  db.enrollments.find((e) => e.studentId === "s1" && e.classId === "cE").status = "WITHDRAWN";
+  const credit = creditFor(db);
+  const res = await makeup.getMakeupOptionsForCredit("p1", credit.id);
+  assert.ok(res.options.some((o) => o.classId === "cE"), "퇴원한 반은 다시 후보가 된다");
+  assert.equal((await makeup.bookMakeup("p1", { creditId: credit.id, classId: "cE", dateYmd: "2026-11-20" })).ok, true);
+  // 조회 문구: 수강 중 두 상태만 뺀다
+  assert.match(read("src/lib/makeup/parent-makeup.ts"), /WHERE e\."studentId" = \$1 AND e\.status IN \('ACTIVE', 'PAUSED'\)`/);
+});
+
+// ═════════════════════════════════════════════════════════════════════════
 // 화면·연결부 — 소스 계약
 // ═════════════════════════════════════════════════════════════════════════
 test("결석 화면: 보강 예약으로 이어지는 버튼 · 사유 변경 · 마감 글 · 옛 문구 삭제", () => {
@@ -924,6 +1147,8 @@ test("결석 화면: 보강 예약으로 이어지는 버튼 · 사유 변경 ·
   assert.match(client, /d\.locked \? \(\s*(\/\/[^\n]*\n\s*)*<ContactActions label="학원 확정" contact=\{contact\} \/>/);
   assert.match(client, /href=\{`tel:\$\{contact\.phone\.replace\(\/\[\^0-9\+\]\/g, ""\)\}`\}/);
   assert.doesNotMatch(client, /학원으로 연락해 주세요|변경은 문의|학원 문의\)/);
+  // 2026-11-15 날짜 바꾸기: 그 자리에서 날짜를 바꾼다(tests/change-deadline-and-move.test.mjs)
+  assert.match(client, />\s*날짜 바꾸기\s*</);
   assert.match(client, /if \(j\?\.code === "ABSENCE_CHANGE_CLOSED"\) await reload\(\);/);
   // 아이콘·굵은 글씨 규칙
   assert.doesNotMatch(client, /font-(extrabold|black)|material-symbols/);
@@ -932,7 +1157,8 @@ test("결석 화면: 보강 예약으로 이어지는 버튼 · 사유 변경 ·
 test("결석 API: 마감 오류를 학부모 말로 돌려준다(코드도 함께 — 화면이 다시 읽는다)", () => {
   const route = read("src/app/api/mypage/regular-absence/route.ts");
   assert.match(route, /ABSENCE_CHANGE_CLOSED: ABSENCE_CHANGE_CLOSED_MESSAGE/);
-  assert.equal(rules.ABSENCE_CHANGE_CLOSED_MESSAGE, "수업 1시간 전이 지나 여기서 바꿀 수 없습니다. 학원으로 연락해 주세요.");
+  // 2026-11-15 마감 통일·날짜 바꾸기: 결석·셔틀·보강 세 화면 공통 문구로 바꿨다(예전: «수업 1시간 전이 지나 …»)
+  assert.equal(rules.ABSENCE_CHANGE_CLOSED_MESSAGE, "마감 시간이 지나 여기서 바꿀 수 없습니다. 학원으로 연락해 주세요.");
 });
 
 test("서버: 신고·취소 양쪽이 같은 마감 함수를 쓴다 — 화면 숨김만으로 끝내지 않는다", () => {
@@ -953,8 +1179,28 @@ test("서버: 신고·취소 양쪽이 같은 마감 함수를 쓴다 — 화면
 test("보강 화면: 0건이면 이유별 글, 후보 행에 대상 학년·자리 단계(숫자 없음)", () => {
   const client = read("src/app/mypage/makeup/MakeupClient.tsx");
   for (const key of ["NO_GRADE", "NO_MATCH", "NO_DATE", "FULL"]) assert.match(client, new RegExp(`${key}: "`));
-  assert.match(client, /NO_GRADE: "학년 정보가 없어[^"]*학원으로 문의/);
+  assert.match(client, /NO_GRADE: "아이 학년을 알 수 없어/);
   assert.match(client, /\{EMPTY_REASON_TEXT\[emptyReason\] \?\? EMPTY_DEFAULT_TEXT\}/);
+  // 2026-11-14 막다른 곳 없애기: 이유 글에 «학원으로 문의해 주세요»를 붙이지 않고, 그 자리에 할 수 있는 일을 둔다
+  const reasonBlock = client.slice(client.indexOf("const EMPTY_REASON_TEXT"), client.indexOf("const ACADEMY_ASK_HREF"));
+  assert.doesNotMatch(reasonBlock, /"[^"]*학원으로 문의[^"]*"/, "이유 글이 «문의하세요»로 끝나지 않는다");
+  assert.match(client, /NO_GRADE: \["record"\]/);
+  assert.match(client, /FULL: \["retry"\]/);
+  assert.match(client, /href=\{`\/mypage\/record\?child=\$\{encodeURIComponent\(c\.studentId\)\}`\} className="academy-button-secondary">\s*아이 정보에서 학년 확인/);
+  // 2026-11-15 날짜 바꾸기 병합: «다시 확인»은 지금 열려 있는 까닭(새 예약 / 날짜 바꾸기) 그대로 다시 부른다 — 빈 목록 화면은 두 경우가 함께 쓴다
+  assert.match(client, /onClick=\{\(\) => load\(c\.id, openMode\)\} className="academy-button-secondary">\s*다시 확인/);
+  assert.equal((client.match(/학원에 문의\s*<\/Link>/g) || []).length, 1, "«학원에 문의» 버튼은 하나");
+  assert.match(client, /const ACADEMY_ASK_HREF = "\/mypage#parent-request-form";/);
+  // 홈이 그 주소를 받아 메시지 폼을 편다(폼은 접혀 있으면 화면에 없다)
+  assert.match(read("src/app/mypage/MyPageClient.tsx"), /if \(id === "parent-request-form"\) setShowRequestForm\(true\);/);
+  assert.match(read("src/app/mypage/MyPageClient.tsx"), /\{showRequestForm && \(\s*<div id="parent-request-form"/);
+  // 문구 정리(결정표 d1·d2): 설명은 한 줄씩
+  assert.match(client, />\s*보강권은 결석일부터 2개월 안에 써 주세요\.\s*<\/p>/);
+  assert.match(client, />\s*알리지 않고 빠지면 보강권이 사용 처리돼요\.\s*<\/p>/);
+  // 폼이 펴진 뒤(showRequestForm 이 참이 된 뒤) 그 자리로 간다 — 렌더가 한 박자 늦어도 스크롤된다
+  assert.match(read("src/app/mypage/MyPageClient.tsx"), /useEffect\(\(\) => \{\s*if \(showRequestForm && window\.location\.hash === "#parent-request-form"\) scrollToSection\("parent-request-form"\);\s*\}, \[showRequestForm\]\);/);
+  assert.doesNotMatch(client, /자동으로 소멸합니다|대상 학년 앞뒤 1학년까지|<strong>/);
+  assert.match(client, /<h1 className="academy-heading">\s*보강 예약\s*<\/h1>/);
   assert.match(client, /setEmptyReason\(r\.emptyReason \|\| ""\)/);
   assert.match(client, /대상 \{o\.gradeLabel \|\| o\.grades\.join\("·"\)\}/);
   assert.match(client, /SEAT_LEVEL_LABEL\[o\.seatLevel\]/);

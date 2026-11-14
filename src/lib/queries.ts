@@ -18,6 +18,7 @@ import { findParentCheckoutActivePaymentIds, txCoversPaymentSql } from "@/lib/pa
 import { isPosRequestLocking } from "@/lib/payments/studentBillingRules";
 import { parseNoticeTargetClassIds } from "@/lib/noticeTargets";
 import { notMergedStudent, notMergedStudentOptional } from "@/lib/studentVisibility";
+import { profilePhotoUpdatedAtSql, profilePhotoVersion } from "@/lib/profilePhoto/rules";
 import { todayKst, kstDow, addMonthsYm } from "@/lib/datetime/kst";
 // 수업 피드 공용 기준(학부모 공개 수업·참여 판정) — 소식 목록이 사진·영상 권한과 같은 문장을 쓰게
 import { feedParticipantSql, feedVisibleSessionSql } from "@/lib/feed/rules";
@@ -1185,6 +1186,8 @@ export async function getMyPageData(parentUserId: string) {
         // 자녀 목록
         const students = await prisma.$queryRawUnsafe<any[]>(
             `SELECT id, name, "birthDate", gender, "parentId",
+                    -- 프로필 사진을 바꾼 시각(사진이 있을 때만) — 화면이 사진 주소의 캐시 버전으로 쓴다(2026-11-15)
+                    ${profilePhotoUpdatedAtSql("s")} AS "photoUpdatedAt",
                     -- 결제 권한(대표 보호자 + 승인된 가족, payerAccess 한 곳 — 2026-11-13 f8)
                     (${await payerAccessSql("s", "$1")}) AS "canPay"
                FROM "Student" s
@@ -1272,6 +1275,8 @@ export async function getMyPageData(parentUserId: string) {
                     name: s.name,
                     birthDate: s.birthDate ?? s.birthdate,
                     gender: s.gender,
+                    // 프로필 사진 캐시 버전(사진 없으면 null → 화면은 이름 첫 글자)
+                    photoVersion: profilePhotoVersion(s.photoUpdatedAt ?? s.photoupdatedat ?? null),
                     enrollments: enrollments.map((e: any) => ({
                         id: e.id,
                         classId: e.classId ?? e.classid,

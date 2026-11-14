@@ -1,6 +1,13 @@
 // 정규 수업 "사전 결석 신고"(#3 Step B)용 순수 로직.
-// ⚠️ import 의존성 0 — 요일/날짜 계산과 사유 검증은 실수하기 쉬워 유닛 테스트로 고정한다.
+// ⚠️ 순수 모듈 — 요일/날짜 계산과 사유 검증은 실수하기 쉬워 유닛 테스트로 고정한다.
+//    import 는 마감 공용 규칙(changeDeadline, 그쪽은 import 0) 하나뿐이다.
 // (방학특강 parentAbsenceRules 와 같은 역할이나, 정규는 "달력 날짜(YYYY-MM-DD)" 기준이다.)
+import {
+  ABSENCE_CUTOFF_MINUTES,
+  CHANGE_CLOSED_MESSAGE,
+  hmToMinutes as sharedHmToMinutes,
+  isChangeOpen,
+} from "@/lib/parent/changeDeadline";
 
 // ── 결석 사유 5종(방학특강과 동일 집합) ────────────────────────────────────
 export const VALID_REASONS = [
@@ -78,22 +85,17 @@ export function isFutureYmd(a: string, todayYmd: string): boolean {
 // ★ 입력은 전부 KST 로 바꾼 «글자»다(날짜 YYYY-MM-DD, 시각 HH:mm). 이 함수는 시간대를 모른다 —
 //   서버(UTC)에서도 PC(KST)에서도 같은 답이 나온다. «지금»은 호출부가 kst.ts 로 만들어 넘긴다.
 
-/** 수업 시작 몇 분 전까지 신고·취소·사유 변경을 받는가 */
-export const ABSENCE_CHANGE_CUTOFF_MINUTES = 60;
+// (2026-11-15 마감 통일·날짜 바꾸기) 판정 본문은 셔틀·보강과 함께 쓰는 @/lib/parent/changeDeadline 으로 옮겼다.
+//   이 파일의 이름들은 그대로 남아 그쪽을 부르기만 한다 — 결석 쪽 호출부·테스트는 바뀌지 않는다.
 
-/** 마감 뒤 학부모에게 보이는 글(화면·서버 오류 문구 공용) */
-export const ABSENCE_CHANGE_CLOSED_MESSAGE =
-  "수업 1시간 전이 지나 여기서 바꿀 수 없습니다. 학원으로 연락해 주세요.";
+/** 수업 시작 몇 분 전까지 신고·취소·사유 변경을 받는가 */
+export const ABSENCE_CHANGE_CUTOFF_MINUTES = ABSENCE_CUTOFF_MINUTES;
+
+/** 마감 뒤 학부모에게 보이는 글(화면·서버 오류 문구 공용 — 셔틀·보강 화면과 같은 글) */
+export const ABSENCE_CHANGE_CLOSED_MESSAGE = CHANGE_CLOSED_MESSAGE;
 
 /** "HH:mm"(또는 "H:mm", 뒤에 초가 붙어도 됨) → 자정부터의 분. 읽을 수 없으면 null. */
-export function hmToMinutes(hm: unknown): number | null {
-  const m = /^(\d{1,2}):(\d{2})/.exec(typeof hm === "string" ? hm.trim() : "");
-  if (!m) return null;
-  const h = Number(m[1]);
-  const min = Number(m[2]);
-  if (h > 23 || min > 59) return null;
-  return h * 60 + min;
-}
+export const hmToMinutes = sharedHmToMinutes;
 
 /**
  * 지금 이 수업의 결석을 신고·취소·사유 변경할 수 있는가.
@@ -113,20 +115,8 @@ export function isAbsenceChangeOpen(
   nowYmd: string,
   nowHm: string,
 ): boolean {
-  if (!isYmd(classYmd) || !isYmd(nowYmd)) return false;
-  const nowMin = hmToMinutes(nowHm);
-  if (nowMin == null) return false;
-  // 날짜 차이(일) — 날짜만 UTC 자정으로 놓고 빼므로 시간대가 끼어들지 않는다
-  const dayDiff = Math.round(
-    (new Date(`${classYmd}T00:00:00Z`).getTime() - new Date(`${nowYmd}T00:00:00Z`).getTime()) / 86_400_000,
-  );
-  if (!Number.isFinite(dayDiff)) return false;
-  const startMin = hmToMinutes(startTime);
-  // 시작 시각을 모르면 수업 날짜 0시가 마감 — 지금이 그 전날 이전이어야 한다
-  if (startMin == null) return dayDiff > 0;
-  // 지금부터 수업 시작까지 남은 분(자정을 넘어가는 경우도 같은 식으로 계산된다)
-  const minutesUntilStart = dayDiff * 1440 + startMin - nowMin;
-  return minutesUntilStart >= ABSENCE_CHANGE_CUTOFF_MINUTES;
+  // 얇은 껍데기 — 공용 마감 함수에 결석 마감(60분)을 넣어 부른다
+  return isChangeOpen(classYmd, startTime, nowYmd, nowHm, ABSENCE_CHANGE_CUTOFF_MINUTES);
 }
 
 /**

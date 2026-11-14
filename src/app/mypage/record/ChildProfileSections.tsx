@@ -8,6 +8,7 @@ import { classTimeText, dotYmd, genderText, gradeLine, guardianRows, koreanAge, 
 import type { ShuttleDayLeg, ShuttleDayRow, ShuttleDayStatus } from "@/lib/shuttle/childShuttleRules";
 import { presetHref } from "@/lib/parent/classCards";
 import { kstLabel } from "@/lib/datetime/kst";
+import ProfilePhotoEditor from "@/components/parent/ProfilePhotoEditor";
 
 // 학부모 «아이 기록» 위쪽 칸(2026-11-14 원장 «관리자 원생 상세 참고해서 아이 정보 모두 + 셔틀 정확하게»):
 //  아이 정보 → (요약 4칸은 ChildRecordClient) → 수강 반 → 셔틀.
@@ -66,10 +67,22 @@ function LinkBar({ links }: { links: { href: string; label: string }[] }) {
 
 // ── 아이 정보 ───────────────────────────────────────────────────────────────
 
-export function ChildInfoSection({ profile, today, studentId }: { profile: ChildProfile | null | undefined; today: string; studentId: string }) {
+export function ChildInfoSection({ profile, today, studentId, photo }: {
+  profile: ChildProfile | null | undefined;
+  today: string;
+  studentId: string;
+  /** 프로필 사진 올리기 칸(이름·지금 사진의 캐시 버전) — 없으면 칸을 그리지 않는다 */
+  photo?: { name: string; version: string | null };
+}) {
   if (profile === undefined) return null; // 옛 모양 데이터(칸 없음)
   return (
     <CollapsibleSection id="record-info" title="아이 정보">
+      {/* 아이 사진 올리기·바꾸기·지우기(2026-11-15) — 아이 정보를 못 불러와도 사진은 올릴 수 있게 맨 위에 따로 */}
+      {photo && (
+        <div className="border-b border-[var(--color-academy-line)]">
+          <ProfilePhotoEditor target="student" studentId={studentId} ownerId={studentId} name={photo.name} initialVersion={photo.version} />
+        </div>
+      )}
       {profile === null ? (
         <p role="alert" className="px-3 py-3 text-sm text-[var(--color-academy-muted)]">아이 정보를 불러오지 못했어요.</p>
       ) : (

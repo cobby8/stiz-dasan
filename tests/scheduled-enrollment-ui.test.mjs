@@ -120,6 +120,8 @@ test("학부모 홈은 개시일 미래인 ACTIVE 반을 수강 중으로 세고
     "@/components/parent/VirtualAccountNotice": nullComponent,
     // 최신 수업 피드 카드(2026-11-14) — 이 검사와 무관해 비워 둔다
     "@/components/parent/LatestFeedCard": nullComponent, "@/lib/feed/rules": { pickFeedCard: () => null },
+    // 프로필 사진 동그라미(2026-11-15) — 이 검사와 무관해 비워 둔다(부품 자체는 profile-photo.test.mjs 가 그려 본다)
+    "@/components/common/ProfileAvatar": nullComponent, "@/lib/profilePhoto/rules": { profilePhotoUrl: () => null },
   }).default;
   const html = renderToStaticMarkup(React.createElement(Client, { data: {
     parent: { id: "parent-a", name: "합성 부모" },

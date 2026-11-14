@@ -108,6 +108,9 @@ export default function RegularAbsenceClient({
   const [reasonText, setReasonText] = useState<Record<string, string>>({}); // 날짜별 사유 글(질병·부상)
   const [photos, setPhotos] = useState<Record<string, File[]>>({}); // 날짜별 고른 증빙 사진(질병·부상)
   const [busyKey, setBusyKey] = useState<string>("");
+  // 날짜 바꾸기(2026-11-15): 날짜 고르는 칸이 열린 줄의 키 · 줄마다 고른 새 날짜
+  const [moveKey, setMoveKey] = useState<string>("");
+  const [moveTo, setMoveTo] = useState<Record<string, string>>({});
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
 
@@ -302,6 +305,51 @@ export default function RegularAbsenceClient({
       }
     },
     [reload],
+  );
+
+  // 날짜 바꾸기 후보: 같은 반의 다른 수업일 중 아직 신고하지 않았고 마감 전인 날(서버도 같은 조건으로 다시 본다)
+  const moveCandidates = useCallback(
+    (d: UpcomingClassDate) =>
+      (children.find((c) => c.studentId === d.studentId)?.classes.find((cl) => cl.classId === d.classId)?.dates ?? [])
+        .filter((x) => x.date !== d.date && !x.reported && changeOpen(x)),
+    [children],
+  );
+
+  // 결석 신고 날짜 바꾸기 — 서버가 «옛 신고 취소 + 새 날짜 신고»를 한 번에 한다(실패하면 옛 신고가 그대로 남는다).
+  const move = useCallback(
+    async (d: UpcomingClassDate) => {
+      const key = dateKey(d);
+      const toDate = moveTo[key];
+      if (!toDate) {
+        setErr("바꿀 날짜를 골라 주세요.");
+        return;
+      }
+      setErr("");
+      setMsg("");
+      setBusyKey(key);
+      try {
+        const res = await fetch("/api/mypage/regular-absence", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "move", studentId: d.studentId, classId: d.classId, date: d.date, toDate }),
+        });
+        const j = await res.json();
+        if (!res.ok) {
+          // 그 사이 마감·보강 예약·다른 신고가 생겼을 수 있다 — 최신 상태로 다시 읽는다
+          await reload();
+          throw new Error(j?.error || "날짜를 바꾸지 못했습니다.");
+        }
+        const label = moveCandidates(d).find((x) => x.date === toDate)?.dateLabel ?? toDate;
+        setMsg(`결석 알림을 ${label}(으)로 바꿨어요.`);
+        setMoveKey("");
+        await reload();
+      } catch (e) {
+        setErr(customerMessage(e, "날짜를 바꾸지 못했습니다. 잠시 후 다시 시도해 주세요."));
+      } finally {
+        setBusyKey("");
+      }
+    },
+    [moveTo, moveCandidates, reload],
   );
 
   const hasAnyClass = useMemo(
@@ -598,12 +646,27 @@ export default function RegularAbsenceClient({
                                       type="button"
                                       disabled={busy}
                                       onClick={() => {
+                                        setMoveKey("");
                                         setReason((prev) => ({ ...prev, [key]: d.reason || "" }));
                                         setOpenKey(key);
                                       }}
                                       className="academy-button-text shrink-0"
                                     >
                                       사유 변경
+                                    </button>
+                                  )}
+                                  {/* 날짜 바꾸기 = 아래에 날짜 고르는 칸을 연다(글자 버튼 — 꽉 찬 색은 칸 안 «바꾸기»만) */}
+                                  {moveKey !== key && (
+                                    <button
+                                      type="button"
+                                      disabled={busy}
+                                      onClick={() => {
+                                        setOpenKey("");
+                                        setMoveKey(key);
+                                      }}
+                                      className="academy-button-text shrink-0"
+                                    >
+                                      날짜 바꾸기
                                     </button>
                                   )}
                                   {/* 신고 취소 = 그 자리 확인(C-M1) 후 기존 cancel(d) 그대로 */}
@@ -708,6 +771,62 @@ export default function RegularAbsenceClient({
                                     </p>
                                   </div>
                                 )}
+                              </div>
+                            )}
+
+                            {/* 날짜 바꾸기 칸(2026-11-15) — 같은 반의 다른 수업일을 골라 «바꾸기». 사유는 그대로 옮겨진다 */}
+                            {moveKey === key && d.reported && !d.locked && changeOpen(d) && !creditBlocksCancel(d) && (
+                              <div className="mb-1.5 mt-1 flex flex-wrap items-center gap-2">
+                                {d.makeupCredit === "RESERVED" ? (
+                                  // 그 결석의 보강이 예약돼 있으면 옮길 수 없다(서버도 같은 규칙으로 막는다)
+                                  <>
+                                    <p className="min-w-0 flex-1 break-keep text-xs text-[var(--color-academy-muted)]">
+                                      이 결석의 보강권으로 보강이 예약돼 있어요. 보강 예약을 먼저 취소하거나 바꿔 주세요.
+                                    </p>
+                                    <Link
+                                      href={`/mypage/makeup?studentId=${encodeURIComponent(d.studentId)}`}
+                                      className="academy-button-tonal shrink-0"
+                                    >
+                                      보강 예약 보기
+                                    </Link>
+                                  </>
+                                ) : moveCandidates(d).length === 0 ? (
+                                  <p className="min-w-0 flex-1 break-keep text-xs text-[var(--color-academy-muted)]">
+                                    옮길 수 있는 다른 수업일이 없습니다.
+                                  </p>
+                                ) : (
+                                  <>
+                                    <select
+                                      value={moveTo[key] || ""}
+                                      onChange={(e) => setMoveTo((prev) => ({ ...prev, [key]: e.target.value }))}
+                                      className="academy-input min-w-32 flex-1"
+                                      aria-label="바꿀 날짜"
+                                    >
+                                      <option value="">날짜 선택</option>
+                                      {moveCandidates(d).map((x) => (
+                                        <option key={x.date} value={x.date}>
+                                          {x.dateLabel}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <button
+                                      type="button"
+                                      disabled={busy || !moveTo[key]}
+                                      onClick={() => move(d)}
+                                      className="academy-button-primary"
+                                    >
+                                      {busy ? "바꾸는 중…" : "바꾸기"}
+                                    </button>
+                                  </>
+                                )}
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={() => setMoveKey("")}
+                                  className="academy-button-text"
+                                >
+                                  닫기
+                                </button>
                               </div>
                             )}
                           </li>

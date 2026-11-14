@@ -1288,6 +1288,14 @@ export async function deleteStudent(id: string) {
         throw new Error("원생 삭제 실패");
     }
     if (deleteBlock) throw new Error("실제 결제로 받은 청구가 있어 원생을 삭제할 수 없어요. 결제 취소·환불을 먼저 해 주세요(그만둔 원생은 «퇴원»으로 두세요).");
+    // 프로필 사진(2026-11-15, 개인정보): 행을 지우기 «전에» 사진 경로를 읽어 두고, 삭제가 성공한 «뒤에» 파일을 지운다.
+    // 이 함수에서만 쓰는 부품이라 여기서 불러온다. 경로를 못 읽어도 원생 삭제는 그대로 진행한다(기록만).
+    const photoCleanup = await import("@/lib/profilePhoto/cleanup");
+    const photoOwner = { kind: "student" as const, id };
+    const photoPath = await photoCleanup.readProfilePhotoPath(photoOwner).catch(() => {
+        console.error("[profile-photo] 삭제 전 사진 경로 조회 실패 — 남은 파일 확인 필요", `student:${id}`);
+        return null;
+    });
     try {
         // FK 제약 순서: Student를 참조하는 모든 테이블을 먼저 삭제해야 함
         await prisma.$executeRawUnsafe(`DELETE FROM "Guardian" WHERE "studentId" = $1`, id);
@@ -1304,6 +1312,8 @@ export async function deleteStudent(id: string) {
         console.error("Failed to delete student:", e);
         throw new Error("원생 삭제 실패");
     }
+    // 원생 행이 지워진 뒤에만 사진 파일을 지운다 — 실패해도 삭제는 성공이다(남은 파일 경로는 기록된다)
+    await photoCleanup.removeProfilePhotoFiles(photoOwner, photoPath, "student-delete");
     revalidatePath("/admin/students");
     revalidatePath("/admin");
     revalidateStudentAdminCaches();

@@ -26,6 +26,9 @@ model User {
   // TOSSPAY/KAKAOPAY/NAVERPAY/CARD/TRANSFER/VIRTUAL_ACCOUNT, null=정하지 않음 (DB CHECK, migration 20261113160000)
   preferredPaymentMethod          String?
   preferredPaymentMethodUpdatedAt DateTime?                   @db.Timestamptz(6)
+  // 프로필 사진(2026-11-15) — 비공개 버킷 profile-private 안의 «경로»만 저장한다(주소 아님). migration 20261115010000
+  photoPath                   String?
+  photoUpdatedAt              DateTime?                     @db.Timestamptz(3)
   createdAt                   DateTime                      @default(now())
   updatedAt                   DateTime                      @updatedAt
   classes                     Class[]
@@ -219,6 +222,9 @@ model Student {
   tenureBaselineMonths     Int?
   tenureBaselineThrough    String?
   tenureFirstMonth         String?
+  // 프로필 사진(2026-11-15) — 비공개 버킷 profile-private 안의 «경로»만 저장한다(주소 아님). migration 20261115010000
+  photoPath                String?
+  photoUpdatedAt           DateTime?                     @db.Timestamptz(3)
   createdAt                DateTime                      @default(now())
   updatedAt                DateTime                      @updatedAt
   attendances              Attendance[]
