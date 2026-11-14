@@ -231,6 +231,7 @@ model Student {
   updatedAt                DateTime                      @updatedAt
   profileChangeRequests    StudentProfileChangeRequest[]
   shuttleRegularChangeRequests ShuttleRegularChangeRequest[]
+  regularArrivalNotices    RegularArrivalNotice[] // 학부모 지각·조퇴 알림(back-relation)
   attendances              Attendance[]
   enrollments              Enrollment[]
   guardians                Guardian[]
@@ -3232,7 +3233,8 @@ model ShuttleBoarding {
   studentName      String?
   status           String // 'BOARDED' | 'NOSHOW'
   checkedVia       String?
-  checkedAt        DateTime @default(now())
+  // 운영·마이그레이션(20260727000000) 모두 timestamptz — 표기만 맞춘다(DB 변경 없음, 2026-11-14 운영 확인)
+  checkedAt        DateTime @default(now()) @db.Timestamptz(6)
 
   @@unique([serviceDate, direction, shuttleRequestId])
 }
@@ -3732,6 +3734,28 @@ model ShuttleRegularChangeRequest {
   student           Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
   @@index([studentId, createdAt(sort: Desc)], map: "ShuttleRegularChangeRequest_studentId_createdAt_idx")
+}
+
+/// 학부모 «지각·조퇴 알리기»(2026-11-14 원장 결정표 묶음 B) — 결석이 아니라 보강권과 무관하다.
+/// 서버 raw SQL(src/lib/regular/parent-arrival-notice.ts · arrival-notice-read.ts)만 사용한다. RLS 켜짐·anon/authenticated 권한 회수.
+/// CHECK(kind·status 값 목록, expectedTime HH:mm)와 FK(Class)는 migration 20261115140000_regular_arrival_notice 에 있다.
+model RegularArrivalNotice {
+  id                 String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  studentId          String
+  classId            String // 정규 반(Class.id) — FK 는 DB 에만 있다
+  date               DateTime @db.Date
+  kind               String // LATE(늦어요) | EARLY(일찍 가요)
+  expectedTime       String // 예상 시각 "HH:mm"(KST 글자)
+  status             String   @default("REPORTED") // REPORTED | CANCELLED
+  shuttleExceptionId String? // 함께 만든 «셔틀 안 타요»(ShuttleDayException.id, 기록용·FK 없음)
+  reportedByUserId   String? // 알린 보호자 User.id (기록용, FK 없음)
+  changeCount        Int      @default(0) // 알리기·시각 바꾸기·취소 횟수(아이·반·하루 합계 5번 상한)
+  createdAt          DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  student            Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, classId, date, kind], map: "RegularArrivalNotice_student_class_date_kind_key")
+  @@index([classId, date], map: "RegularArrivalNotice_classId_date_idx")
 }
 
 /// 앱 간편로그인 인계 원장(a1, 2026-11-13) — 1회용 앱 로그인 요청(5분)과 암호화 세션(소비 즉시 삭제).

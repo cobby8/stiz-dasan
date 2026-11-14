@@ -10,10 +10,12 @@ import { getConfirmedRegularRosterEtas } from "@/lib/shuttle/regularRosterEta";
 import { regularEtaKey } from "@/lib/shuttle/regularRosterEtaLogic";
 // 정규 셔틀 «운행 일정»은 셔틀 명단(기사님·관리자 운행표의 정본)에서 만든다(2026-11-14 — 노선 승객 표는 운영 0행이었다).
 import { getRosterStudentIds, loadChildRegularShuttle } from "@/lib/shuttle/childShuttleQuery";
-import { rosterOverviewItems } from "@/lib/shuttle/childShuttleRules";
+import { rosterOverviewItems, todaySelfRideDirections } from "@/lib/shuttle/childShuttleRules";
 import { loadChildClasses } from "@/lib/parent/childClassesQuery";
 import { getMonthlyClassDates, loadAnnualPlanEvents } from "@/lib/enrollment/monthlyClassDates";
 import { todayKst } from "@/lib/datetime/kst";
+// 기사님이 찍은 실제 탑승·하차 시각(홈 «오늘 셔틀» 줄) — 알림과 같은 규칙 파일로 «어느 아이의 등원/하원인가»를 푼다.
+import { boardingTimeKey, boardingTimeLabels, type BoardingRow } from "@/lib/shuttle/boardingNoticeRules";
 
 export type ParentShuttleOverviewItem = {
   id: string;
@@ -38,7 +40,40 @@ export type ParentShuttleOverviewItem = {
   dropoffEtaLabel?: string | null;
   /** 셔틀 명단에서 만든 7일 운행 항목 — 일정 탭은 요일별 한 줄로 줄여 보인다(노선·차량 칸이 없다) */
   fromRoster?: boolean;
+  /** 오늘 항목에만: 기사님이 «탑승»을 찍은 실제 시각 "HH:MM"(KST) — 등원이면 탄 시각, 하원이면 내린 시각. 아직이면 null */
+  actualTimeLabel?: string | null;
 };
+
+/**
+ * 오늘 내 자녀의 실제 탑승·하차 시각(«아이:방향 → "08:52"»). 정규(셔틀 명단 줄)·방학특강(셔틀 신청) 모두.
+ * studentIds 는 getParentShuttleOverview 가 childAccessWhere 로 고른 내 자녀뿐이고, 방학특강 신청 id 도 그 자녀 것만 넘긴다(IDOR 안전).
+ * 탑승 표를 못 읽으면 빈 값 — 홈은 예정 시각만 보인다.
+ */
+async function loadTodayBoardingTimes(
+  today: string,
+  studentIds: string[],
+  seasonalStudentByRequest: Map<string, string | null>,
+): Promise<Map<string, string>> {
+  try {
+    // checkedAt 은 초(epoch)로 읽어 kst.ts 로 «HH:MM» 을 만든다 — 칼럼이 timestamp(UTC 저장)든 timestamptz 든 같은 값이다.
+    const rows = await prisma.$queryRawUnsafe<BoardingRow[]>(
+      `SELECT b.direction, b."shuttleRequestId", b.status,
+              r."studentId" AS "rosterStudentId", r.direction AS "stopDirection",
+              EXTRACT(EPOCH FROM b."checkedAt")::float8 AS "checkedEpoch"
+         FROM "ShuttleBoarding" b
+         LEFT JOIN "RegularShuttleStop" r ON b.direction = 'REGULAR' AND r.id = b."shuttleRequestId"
+        WHERE b."serviceDate" = $1
+          AND b.status = 'BOARDED'
+          AND (r."studentId" = ANY($2::text[])
+               OR (b.direction IN ('PICKUP','DROPOFF') AND b."shuttleRequestId" = ANY($3::text[])))`,
+      today, studentIds, [...seasonalStudentByRequest.keys()],
+    );
+    return boardingTimeLabels(rows, seasonalStudentByRequest);
+  } catch (error) {
+    console.error("[parent shuttle] 오늘 탑승 시각 조회 실패", error instanceof Error ? error.name : "");
+    return new Map();
+  }
+}
 
 type RouteStatus = "DRAFT" | "CONFIRMED" | "COMPLETED";
 type RegularApplicationRow = {
@@ -103,9 +138,14 @@ export async function getParentShuttleOverview(
 
   // 명단 기준 정규 항목(7일)과 «명단에 이름이 있는 학생»은 다른 조회와 함께 처음부터 돌린다(기다림 줄이기).
   // 실패하면 빈 값 — 홈·수업 탭 전체가 오류로 바뀌지 않게.
+  // 오늘 «자차»로 신청한 방향(아이별) — 항목과 따로 들고 간다: 명단 항목이 아래 필터에서 빠져도 사라지지 않고, «운행 N건» 셈에도 안 들어간다
+  let todaySelfRide: TodaySelfRide = {};
   const rosterItemsP: Promise<ParentShuttleOverviewItem[]> = options.includeRoster === false
     ? Promise.resolve([])
-    : rosterOverviewForStudents(students).catch((error) => {
+    : rosterOverviewForStudents(students).then((roster) => {
+        todaySelfRide = roster.todaySelfRide;
+        return roster.items;
+      }).catch((error) => {
         console.error("[parent shuttle] 명단 기준 셔틀 조회 실패", error instanceof Error ? error.name : "");
         return [];
       });
@@ -352,16 +392,46 @@ export async function getParentShuttleOverview(
     }];
   });
 
-  return [...regularItems, ...rosterOnly, ...specialItems, ...regularRequestItems].sort((left, right) => {
+  // 오늘 항목에 기사님이 찍은 실제 시각을 붙인다(홈 «오늘 셔틀» 줄: 탑승 08:52 · 하차 18:40). 정규·방학특강 같은 길.
+  const today = todayKst();
+  const allItems = [...regularItems, ...rosterOnly, ...specialItems, ...regularRequestItems];
+  const hasToday = allItems.some((item) => item.direction && item.serviceDate?.slice(0, 10) === today);
+  const boardingTimes = hasToday
+    ? await loadTodayBoardingTimes(today, studentIds, new Map(seasonalEntries.map((entry) => [entry.shuttleRequestId, entry.studentId])))
+    : new Map<string, string>();
+  const withActual = boardingTimes.size === 0 ? allItems : allItems.map((item) => (
+    item.direction && item.serviceDate?.slice(0, 10) === today
+      ? { ...item, actualTimeLabel: boardingTimes.get(boardingTimeKey(item.studentId, item.direction)) ?? null }
+      : item
+  ));
+
+  const sorted = withActual.sort((left, right) => {
     return (right.serviceDate ?? "").localeCompare(left.serviceDate ?? "") || left.label.localeCompare(right.label, "ko");
   });
+  SELF_RIDE_BY_RESULT.set(sorted, todaySelfRide);
+  return sorted;
+}
+
+/** 아이 id → 오늘 «자차»로 신청해 타지 않는 방향 */
+export type TodaySelfRide = Record<string, ("PICKUP" | "DROPOFF")[]>;
+
+// 개요 결과(배열)에 딸린 표시 전용 값. 반환 모양(항목 배열)을 바꾸지 않으려고 결과 배열을 열쇠로 따로 들고 있는다 —
+// 수업 탭·일정 탭·아이 기록 등 기존 호출부는 그대로다. 결과 배열이 버려지면 이 값도 함께 사라진다(WeakMap).
+const SELF_RIDE_BY_RESULT = new WeakMap<object, TodaySelfRide>();
+
+/**
+ * getParentShuttleOverview 가 «방금 돌려준 그 배열»의 오늘 자차 방향(홈 «오늘 셔틀» 줄 전용).
+ * 다른 배열(조회 실패 때의 빈 배열 등)을 넘기면 빈 값 — 자차 표시 없이 종전대로 보인다.
+ */
+export function todaySelfRideOf(overview: readonly ParentShuttleOverviewItem[]): TodaySelfRide {
+  return SELF_RIDE_BY_RESULT.get(overview) ?? {};
 }
 
 /**
  * 자녀들의 명단 기준 정규 셔틀 항목. students 는 getParentShuttleOverview 가 childAccessWhere 로 고른 내 자녀뿐이다(IDOR 안전).
  * 연간일정을 못 읽으면 휴무 판정 없이(명단대로) 만든다.
  */
-async function rosterOverviewForStudents(students: { id: string; name: string }[]): Promise<ParentShuttleOverviewItem[]> {
+async function rosterOverviewForStudents(students: { id: string; name: string }[]): Promise<{ items: ParentShuttleOverviewItem[]; todaySelfRide: TodaySelfRide }> {
   const today = todayKst();
   const planEvents = await loadAnnualPlanEvents().catch(() => null);
   const monthlyDates = planEvents ? (ym: string, dow: string) => getMonthlyClassDates(planEvents, ym, dow) : null;
@@ -369,10 +439,12 @@ async function rosterOverviewForStudents(students: { id: string; name: string }[
     students.map(async (student) => {
       const classes = await loadChildClasses(prisma, student.id, today);
       const shuttle = await loadChildRegularShuttle(prisma, { studentId: student.id, today, classes, monthlyDates });
-      return rosterOverviewItems(student.id, student.name, shuttle.days);
+      return { studentId: student.id, items: rosterOverviewItems(student.id, student.name, shuttle.days), selfRide: todaySelfRideDirections(shuttle.days, today) };
     }),
   );
-  return perStudent.flat();
+  const todaySelfRide: TodaySelfRide = {};
+  for (const entry of perStudent) if (entry.selfRide.length > 0) todaySelfRide[entry.studentId] = entry.selfRide;
+  return { items: perStudent.flatMap((entry) => entry.items), todaySelfRide };
 }
 
 // 학부모에게 제공하는 셔틀 기사님 연락처. 공용 DRIVER 계정의 이름·전화만 노출한다(민감정보 최소화).

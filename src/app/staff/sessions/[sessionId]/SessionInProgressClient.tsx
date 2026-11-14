@@ -907,6 +907,10 @@ function LiveSessionWorkspace({
                     {student.absenceReport?.source === "PARENT" && (
                       <span className="rounded bg-[var(--color-academy-warning-soft)] px-1.5 py-0.5 text-xs font-medium text-[var(--color-academy-warning)]">결석 신고</span>
                     )}
+                    {/* 학부모가 알린 지각·조퇴 예정(«지각 예정 17:20») — 결석 신고가 있으면 그쪽이 우선(서버가 비워 보낸다) */}
+                    {student.arrivalNotices?.map((label) => (
+                      <span key={label} className="rounded bg-[var(--color-academy-info-soft)] px-1.5 py-0.5 text-xs font-medium tabular-nums text-[var(--color-academy-info)]">{label}</span>
+                    ))}
                     {/* 미납은 원장·부원장(showFees)에게만 — 선생님은 수강료 조회 자체를 하지 않아 값도 없다(f3). 금액·청구는 펼친 학생 정보에. */}
                     {showFees && !student.makeup && !student.trial && feesByRoster.get(student.id)?.status === "UNPAID" && (
                       <span className="rounded bg-[var(--color-academy-warning-soft)] px-1.5 py-0.5 text-xs font-medium text-[var(--color-academy-warning)]">미납</span>

@@ -57,6 +57,12 @@
 - **내용**: 표 `ClassSubstitute`(date TEXT "YYYY-MM-DD"·classId·substituteUserId, 유니크(date,classId), RLS). 판정은 `requireStaffClassAccess(classId, ctx, { substituteDate })` 한 곳 — **substituteDate 를 넘긴 경로만** 대타를 본다(수업 시작=date·계획=input.date·requireStaffSessionAccess=기록 날짜·출석부 상세/명단·학생 정보 시트·사진 보기). 공지·연락처·청구는 넘기지 않아 대타에게 안 열린다(테스트로 고정). 홈 목록은 `getSubstituteClassIds(access, dateKey)` 를 합치고 `substitute: true` 행은 «대타» 배지·수업 공지 숨김. 날짜 규칙=`src/lib/staff/classSubstitute.ts`(순수). 관리자 UI=스태프 관리 아래 `ClassSubstitutePanel`(액션 `class-substitute-admin.ts`, requireAdmin+선생님 역할 SQL 재확인). 새 출석부 경로를 만들면 substituteDate 를 같이 넘길 것 — 빠뜨리면 «화면은 보이는데 저장 막힘». 보안 검수 반영: 대타는 **판정 날짜 == 대타 날짜 == 오늘(KST)** 일 때만(`substituteAllowedNow`, 자정에 닫힘·지난 기록 ID 재사용 차단), 판정 시점에 `SUBSTITUTE_TEACHER_SQL` 로 선생님 역할 재확인, 담당(코치) 확인 뒤에만 대타 조회·조회 오류=거부, 그날 특강 회차가 연결된 반은 지정 거부(명단이 특강 기준으로 바뀌어서).
 - **참조횟수**: 0
 
+### [2026-11-14] 셔틀 «탔어요·내렸어요» 알림(매분 훑기) · 출석 알림 규칙 한 곳(선생님=관리자)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: ① 셔틀 탑승 알림은 저장 때 보내지 않고 push-outbox 크론이 `sweepShuttleBoardingNotices`(src/lib/shuttle/boardingNoticeSweep.ts)로 «오늘·BOARDED·찍은 지 1~30분»인 ShuttleBoarding 만 골라 `deliverParentNotification`(대표 보호자·문자 없음). 규칙·문구·키는 순수 `boardingNoticeRules.ts` — 정규는 명단 줄 방향(BOARD=등원 SHUTTLE_BOARDED / ALIGHT=하원 SHUTTLE_ALIGHTED), 방학특강은 확정 명단 게이트웨이로 신청 id→학생. 키 = `shuttle-boarding:{날짜}:{방향}:student:…:user:…`(줄 id 무관). ⚠️ `ShuttleBoarding.checkedAt` 은 schema(timestamp)와 마이그레이션(timestamptz)이 달라 **`EXTRACT(EPOCH …)` 초로만** 다룬다(AT TIME ZONE 금지). 학부모 홈 «오늘 셔틀» 실제 시각도 같은 규칙 파일(`boardingTimeLabels` → `ParentShuttleOverviewItem.actualTimeLabel` → `summary.todayShuttleLineTexts`). ② 출석 알림 판정·문구·키는 `src/lib/attendance/attendanceNoticeRules.ts` 한 곳(`attendanceNoticeNeeded`·`pickAttendanceNoticeTargets`·`attendanceNoticePayload`) — 선생님 `saveStaffAttendance`·좌석 저장과 관리자 `saveAttendance`(저장 전 상태를 먼저 읽고 `notifyAttendanceChanges`, todayOnly)가 같이 쓴다. staff-sessions.ts 를 실행하는 테스트 하네스 2개에 이 모듈 대역이 필요하다. ③ `CLASS_COMPLETED` 는 pushCategoryOf 에서 «출결». 강제 `tests/shuttle-boarding-notice.test.mjs`.
+- **참조횟수**: 0
+
 ### [2026-11-13] 선생님 출석부 — 체험 아이(trial: 키)·결석 학부모 알림(매분 훑기)·수강료는 원장만
 - **분류**: architecture
 - **발견자**: developer
@@ -348,4 +354,10 @@
 - **분류**: architecture
 - **발견자**: developer
 - **내용**: 앱(웹뷰)은 /auth/oauth/* 를 로그인 용도로만 가로채 연결(linkIdentity)을 못 한다. 앱(UA ` STIZApp/`)+`nativeAuthEnabled()` 면 /mypage/login-methods 가 제공자별 1회용 표(`AccountLinkHandoff`, id=토큰 sha256, 5분, 새로 발급하면 옛 표 무효)를 만들고 `https://stiz-dasan.kr/auth/link-handoff?t=`(www 없는 apex — 앱이 «누르면» 휴대폰 브라우저로 연다, www 면 앱 안에서 열림) 일반 `<a>` 로 그린다. 확인 화면 GET 은 읽기만(링크 미리보기 안전) → [계속] POST `/auth/link-handoff/start`(Origin·조건부 UPDATE 소비·admin generateLink magiclink → verifyOtp → 같은 계정 확인 → linkIdentity redirectTo `/auth/callback?...&via=app`) → linkIdentity 주소를 받은 즉시 `admin.auth.admin.signOut(accessToken,'local')` + 세션 쿠키(sb-*-auth-token·조각)만 삭제(PKCE `-code-verifier` 는 남김 — 교환은 그 열쇠만 읽는다. 클라이언트 `signOut()` 은 열쇠까지 지우므로 금지) + 표시 쿠키 `stiz-link-app`(path=/auth) → 콜백은 via=app «그리고» 표시 쿠키일 때만 `signOut local` 후 `/auth/link-handoff/done?e=코드|linked&acct=가린아이디`. 발급·사용 모두 계정 재확인(PARENT·직원 추가 역할 없음·휴대폰 인증·탈퇴 아님). 확인 화면 referrer 는 same-origin(no-referrer 면 Origin null 로 POST 거절). 순수 규칙 `src/lib/account-link-handoff/rules.ts`(화면도 import → node:crypto 금지, 토큰은 token.ts), DB `store.ts`. 앱 링크(AASA·assetlinks)에 /auth/link-handoff·apex 를 넣으면 바깥 브라우저가 앱으로 되돌아와 기능이 깨진다(테스트로 못박음). 테스트 `tests/account-link-handoff.test.mjs`.
+- **참조횟수**: 0
+
+### [2026-11-14] 학부모 지각·조퇴 알리기(RegularArrivalNotice) · 기사 화면 «안 타는 사유» 잠금
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 지각·조퇴 = 결석과 다른 표(RegularArrivalNotice, 마이그레이션 20261115140000) — 보강권·RegularAbsence 에 쓰지 않는다. 규칙은 순수 `src/lib/regular/arrivalNoticeRules.ts`(지각 = 수업 시작 전, 조퇴 = 끝나기 전 — 공용 isChangeOpen 에 마감 0분), 쓰기 `parent-arrival-notice.ts`, 읽기(선생님 출석부·기사 운행표) `arrival-notice-read.ts`(표 없으면 빈 결과). 화면 데이터는 결석 알리기 묶음(loadParentAbsenceScreen.arrival)에 실린다. «셔틀도 안 타요»는 같은 트랜잭션에서 saveShuttleException(SKIP)을 부르고 알림 행의 shuttleExceptionId 로 잇는다(셔틀 1시간 전 마감은 적용 안 함). 기사 화면: SKIP 예외 줄에 skipLabel(자차·조퇴·지각)이 실리고 `riderLockLabel` 이 잠금 글자를 정한다 — **화면 잠금(skipLabel)과 서버 저장 거부(blockedLabel)는 별개**다(체크 저장 API 는 skipLabel 을 보지 않는다). 학부모 «안 타요» 글자는 `parentShuttleChangeLabel`(방향별 자차 문구), 저장 값은 SKIP 그대로.
 - **참조횟수**: 0

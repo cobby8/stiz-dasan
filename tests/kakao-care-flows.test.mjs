@@ -399,7 +399,8 @@ test("「내일 셔틀 안 타요」: 날짜·종류는 첫 문장에서, 방향
   assert.match(textOf(ask), /등원·하원 중 어느 쪽/);
   const confirm = await shuttleSay("셔틀변경 하원");
   assert.match(textOf(confirm), /이대로 바꿀까요/);
-  assert.match(textOf(confirm), /안 타요/);
+  // 2026-11-14 묶음 B: 확인 글의 «안 타요»는 화면과 같은 자차 문구(하원 = 직접 데리러 가요)
+  assert.match(textOf(confirm), /직접 데리러 가요\(자차\)/);
   assert.equal(db.calls.filter((c) => c[0] === "submitShuttle").length, 0, "확정 전에는 저장하지 않는다");
   const done = await shuttleSay("셔틀변경 확정");
   assert.match(textOf(done), /셔틀 변경 완료/);

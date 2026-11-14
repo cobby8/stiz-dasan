@@ -10,7 +10,7 @@ import MyPageClient from "./MyPageClient";
 import EmptyParentState from "@/components/account/EmptyParentState";
 import Link from "next/link";
 import { requireVerifiedParent } from "@/lib/auth-guard";
-import { getParentShuttleOverview, getShuttleDriverContact } from "@/lib/shuttle/parent";
+import { getParentShuttleOverview, getShuttleDriverContact, todaySelfRideOf } from "@/lib/shuttle/parent";
 import { getPendingSeasonalChildren } from "@/lib/seasonal/parent-pending";
 import { getParentPaymentRequests } from "@/lib/payments/parent-payment-request";
 import { getParentClassStatusLines } from "@/lib/enrollment/parent-change-request";
@@ -95,5 +95,5 @@ export default async function MyPageDashboard({
     const childParam = (await searchParams)?.child;
     const initialChildId = data.children.find((c) => c.id === childParam)?.id ?? data.children[0].id;
 
-    return <MyPageClient initialChildId={initialChildId} data={data} notices={notices} inquiryCounts={{ answered: countRecentAnswered(myInquiries, Date.now()), waiting: myInquiries.filter((row) => row.status === "WAITING").length }} parentShuttleOverview={shuttleOverview} shuttleDriverContact={driverContact} pendingSeasonalChildren={pendingSeasonalChildren} makeupAvailable={makeup?.counts.available ?? 0} seasonalUpcoming={seasonal?.seats.length ?? 0} pendingPayments={pendingPayments} classStatusLines={classStatusLines} recordLines={recordLines} feedCandidates={feedCandidates} />;
+    return <MyPageClient initialChildId={initialChildId} data={data} notices={notices} inquiryCounts={{ answered: countRecentAnswered(myInquiries, Date.now()), waiting: myInquiries.filter((row) => row.status === "WAITING").length }} parentShuttleOverview={shuttleOverview} todaySelfRide={todaySelfRideOf(shuttleOverview)} shuttleDriverContact={driverContact} pendingSeasonalChildren={pendingSeasonalChildren} makeupAvailable={makeup?.counts.available ?? 0} seasonalUpcoming={seasonal?.seats.length ?? 0} pendingPayments={pendingPayments} classStatusLines={classStatusLines} recordLines={recordLines} feedCandidates={feedCandidates} />;
 }

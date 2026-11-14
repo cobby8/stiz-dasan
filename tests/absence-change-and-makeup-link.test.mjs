@@ -1177,7 +1177,7 @@ test("결석 화면: 보강 예약으로 이어지는 버튼 · 사유 변경 ·
   assert.doesNotMatch(client, /openKey === key && !d\.reported && \(/, "신고된 줄에 폼을 안 열던 조건은 없다");
   assert.doesNotMatch(client, /날짜를 바꾸려면 취소한 뒤 다시 신고해 주세요/, "2026-11-14 원장 문구 정리로 삭제");
   // 마감이면 버튼 대신 «마감» + 그 자리 전화·문의 버튼(2026-11-14 원장: «학원에 문의» 글만 두지 않는다). 서버 오류 문구는 그대로다
-  assert.match(client, /!changeOpen\(d\) \? \(\s*(\/\/[^\n]*\n\s*)*<ContactActions label="마감" contact=\{contact\} \/>/);
+  assert.match(client, /!changeOpen\(d\) \? \(\s*(\/\/[^\n]*\n\s*)*<ContactActions label=\{[^}]*"마감"\} contact=\{contact\} \/>/);
   assert.match(client, /d\.locked \? \(\s*(\/\/[^\n]*\n\s*)*<ContactActions label="학원 확정" contact=\{contact\} \/>/);
   assert.match(client, /href=\{`tel:\$\{contact\.phone\.replace\(\/\[\^0-9\+\]\/g, ""\)\}`\}/);
   assert.doesNotMatch(client, /학원으로 연락해 주세요|변경은 문의|학원 문의\)/);

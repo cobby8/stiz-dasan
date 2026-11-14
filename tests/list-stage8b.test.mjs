@@ -187,6 +187,9 @@ test("정규 결석 신고는 반 카드 속 작은 카드 대신 날짜 묶음(
     "@/lib/clientImageCompression": { compressImageForUpload: async (file) => file },
     // 2026-11-15 여러 날 결석 칸 — 이 테스트는 «하루» 화면을 본다(여러 날 칸은 tests/parent-absence-period.test.mjs)
     "./PeriodAbsencePanel": { __esModule: true, default: () => null, ActivePeriodList: () => null },
+    // 2026-11-14 묶음 B: 지각·조퇴 칸(이 테스트는 결석 줄만 본다 — 정보가 없으면 아무것도 그리지 않는다)
+    "./ArrivalNoticeArea": { __esModule: true, default: () => null, arrivalAddableKinds: () => [] },
+    "@/lib/regular/arrivalNoticeRules": compileModule("src/lib/regular/arrivalNoticeRules.ts", { "@/lib/parent/changeDeadline": changeDeadline }),
   }).default;
   const today = kst.todayKst();
   const date = (offset, extra = {}) => {
@@ -259,7 +262,8 @@ test("정규 결석 신고는 반 카드 속 작은 카드 대신 날짜 묶음(
   assert.match(source, /const today = todayKst\(\);/);
   assert.doesNotMatch(source, /min-h-9/, "버튼·선택칸은 터치 44px");
   // 신고 = «결석 알리기»로 폼 열기 → 사유 선택 → «알리기» (기존 단계 보존, 2026-11-14 이름 통일)
-  assert.match(source, /onClick=\{\(\) => setOpenKey\(key\)\}/);
+  // (2026-11-14 묶음 B: 결석 칸을 열 때 열려 있던 지각·조퇴 칸을 함께 닫는다)
+  assert.match(source, /onClick=\{\(\) => \{ setArrivalForm\(null\); setOpenKey\(key\); \}\}/);
   assert.match(source, /if \(!r\) \{\s*setErr\("결석 사유를 선택해 주세요\."\);/);
   assert.match(source, /onClick=\{\(\) => report\(d\)\}/);
   assert.match(source, /onConfirm=\{\(\) => cancel\(d\)\}/);
@@ -385,10 +389,12 @@ test("셔틀 예정 변경은 날짜 묶음의 한 줄 행이고 행 탭=하단 
   assert.match(html, /다산초 정문 앞/);
   // 2026-11-14 문구 정리: 줄마다 붙던 꼬리표(«변경 저장 완료»·«담당 기사님 배정은 학원에서 확인 중»)와 건수 나열은 없앴다
   assert.doesNotMatch(html, /담당 기사님 배정은 학원에서 확인 중|변경 저장 완료|알림함 등록|휴대폰 알림 \d+건/);
-  // 이름 통일(d2)·짧은 라벨: 제목 «셔틀 변경», 칩 «등원»·«안 타요», 버튼 «변경 신청», 결석은 «결석 알리기»로 보낸다
+  // 이름 통일(d2)·짧은 라벨: 제목 «셔틀 변경», 칩 «등원», 버튼 «변경 신청», 결석은 «결석 알리기»로 보낸다
+  // 2026-11-14 묶음 B: «안 타요» 칩은 방향에 맞춘 «직접 데려다줘요 / 직접 데리러 가요(자차)»로 바뀌었다(처음 고른 방향 = 등원)
   assert.match(html, /<h1[^>]*>셔틀 변경<\/h1>/);
   assert.match(html, />등원<\/button>/);
-  assert.match(html, />안 타요<\/button>/);
+  assert.match(html, />직접 데려다줘요\(자차\)<\/button>/);
+  assert.doesNotMatch(html, />안 타요</);
   assert.doesNotMatch(html, /셔틀 당일 변경|타러 갈 때|데려다줄 때|오늘 안 타요|결석 미리 알리기|알림 요청/);
   assert.match(html, /수업에 빠지면 <a[^>]*href="\/mypage\/regular-absence"[^>]*>결석 알리기<\/a>로 알려 주세요/);
   assert.match(html, />변경 신청<\/button>/);

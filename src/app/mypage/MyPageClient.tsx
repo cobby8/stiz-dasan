@@ -12,7 +12,7 @@ import type { ParentShuttleOverviewItem } from "@/lib/shuttle/parent";
 import type { PendingSeasonalChild } from "@/lib/seasonal/pendingSeasonalChildren";
 // "오늘/이번주 우리 아이" 요약 + «오늘 할 일» 집계용 순수 로직(표시 전용, 기존 데이터 재조합).
 import {
-    getKstNow, getKstDateStr, computeNextClass, nextClassWhenLabel, filterTodayShuttle,
+    getKstNow, getKstDateStr, computeNextClass, nextClassWhenLabel, filterTodayShuttle, todayShuttleLineTexts,
     summarizePendingPayments, countRecentNotices, legacyHomeHashTarget,
 } from "@/lib/mypage/summary";
 import { formatKstDate } from "@/lib/datetime/kst";
@@ -149,12 +149,14 @@ export function formatShortDate(value: Date | string): string {
 // «처리할 일» 한 줄 — 왼쪽 제목, 오른쪽 숫자/설명, 끝에 «›». 터치 44px.
 const TODO_ROW = "flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-[var(--color-academy-soft)]";
 
-export default function MyPageClient({ data, notices = [], inquiryCounts = { answered: 0, waiting: 0 }, parentShuttleOverview = [], shuttleDriverContact = null, pendingSeasonalChildren = [], makeupAvailable = 0, seasonalUpcoming = 0, pendingPayments = null, classStatusLines = [], initialChildId, recordLines, feedCandidates = [] }: {
+export default function MyPageClient({ data, notices = [], inquiryCounts = { answered: 0, waiting: 0 }, parentShuttleOverview = [], todaySelfRide = {}, shuttleDriverContact = null, pendingSeasonalChildren = [], makeupAvailable = 0, seasonalUpcoming = 0, pendingPayments = null, classStatusLines = [], initialChildId, recordLines, feedCandidates = [] }: {
     data: MyPageData;
     notices?: NoticeItem[];
     /** 보낸 문의 중 «답변 옴»·«답변 대기» 건수(보낸 문의 화면과 같은 판정) */
     inquiryCounts?: InquiryCounts;
     parentShuttleOverview?: ParentShuttleOverviewItem[];
+    /** 아이 id → 오늘 «자차»로 신청해 타지 않는 방향(표시 전용 — 항목이 아니라 «운행 N건» 셈에 들어가지 않는다) */
+    todaySelfRide?: Record<string, ("PICKUP" | "DROPOFF")[]>;
     shuttleDriverContact?: { name: string; phone: string } | null;
     // 방학특강만 신청하고 아직 정식 학생으로 전환되지 않은 자녀(별도 칸에 표시)
     pendingSeasonalChildren?: PendingSeasonalChild[];
@@ -220,9 +222,12 @@ export default function MyPageClient({ data, notices = [], inquiryCounts = { ans
     const resumingEnrollments = child.resumingEnrollments ?? [];
     const nextClass = computeNextClass(child.scheduleEnrollments ?? child.enrollments, kstNow, todayStr);
     const todayShuttles = filterTodayShuttle(childShuttleOverview, todayStr);
+    // 오늘 자차로 신청한 방향 — 타는 항목이 하나도 없어도(등원·하원 모두 자차) «오늘 셔틀» 줄은 보인다
+    const childSelfRide = todaySelfRide[child.id] ?? [];
+    const showTodayShuttle = todayShuttles.length > 0 || childSelfRide.length > 0;
     // 고른 아이의 반 상태 한 줄(휴원 예정 · 12/1부터 등). 눌러서 수강 변경 화면(결과·사유)으로.
     const childStatusLines = classStatusLines.filter((line) => line.studentId === child.id);
-    const hasSummary = Boolean(nextClass) || todayShuttles.length > 0 || childStatusLines.length > 0;
+    const hasSummary = Boolean(nextClass) || showTodayShuttle || childStatusLines.length > 0;
     // 이름 아래 한 줄 — «다음 수업» 줄이 보이면 반 개수는 겹치는 말이라 뺀다(복귀 예정 수만 남긴다).
     // 전부 복귀 예정인 아이는 «수강 중인 반이 없습니다» 대신 복귀 예정을 말한다(2026-11-14)
     const heroEnrollLine = currentEnrollments.length > 0
@@ -232,10 +237,8 @@ export default function MyPageClient({ data, notices = [], inquiryCounts = { ans
         : resumingEnrollments.length > 0
             ? `복귀 예정인 반 ${resumingEnrollments.length}개 · ${[...resumingEnrollments].sort((a, b) => a.resumeFrom.localeCompare(b.resumeFrom))[0].resumeFromLabel}부터`
             : "수강 중인 반이 없습니다";
-    // 오늘 셔틀 줄의 «등원 08:40»·«하원 17:30» — 확정 시각이 있는 것만
-    const todayPickup = todayShuttles.map((s) => s.pickupEtaLabel).find(Boolean);
-    const todayDropoff = todayShuttles.map((s) => s.dropoffEtaLabel).find(Boolean);
-    const todayShuttleLines = [todayPickup ? `등원 ${todayPickup}` : null, todayDropoff ? `하원 ${todayDropoff}` : null].filter((v): v is string => Boolean(v));
+    // 오늘 셔틀 줄 — 기사님이 찍었으면 실제 시각(«탑승 08:52»·«하차 18:40»), 아직이면 예정 시각(«등원 08:40 승차»·«하원 17:30 하차»)
+    const todayShuttleLines = todayShuttleLineTexts(todayShuttles, childSelfRide);
     // 다음 수업·오늘 셔틀을 누르면 «일정» 탭의 그 칸으로(홈 아래 접힌 칸으로 뛰지 않는다)
     const scheduleHref = `/mypage/history?child=${encodeURIComponent(child.id)}`;
 
@@ -400,7 +403,7 @@ export default function MyPageClient({ data, notices = [], inquiryCounts = { ans
                         ))}
 
                         {/* 2) 오늘 셔틀 → 일정 탭의 셔틀 배정. 기사님 전화는 같은 줄 끝(예전엔 접힌 칸 안에 숨어 있었다) */}
-                        {todayShuttles.length > 0 && (
+                        {showTodayShuttle && (
                             <div className="flex items-stretch gap-1.5">
                                 <Link
                                     href={`${scheduleHref}#mypage-shuttle`}

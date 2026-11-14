@@ -183,6 +183,8 @@ export const STUDENT_REF_TABLES: StudentRefTable[] = [
     conflictWhere: (a) => `${a}.status = 'PENDING'`,
     mayBeMissing: true,
   },
+  // 학부모 지각·조퇴 알림(2026-11-14 묶음 B). 유일 키 = 학생·반·날짜·종류 — 대표 쪽에 같은 알림이 있으면 흡수 쪽 행은 남긴다.
+  { table: "RegularArrivalNotice", column: "studentId", conflictKeys: ["classId", "date", "kind"], mayBeMissing: true },
   // 아이 정보 변경 신청. StudentProfileChangeRequest_pending_unique: ("studentId", field) WHERE status='PENDING'
   {
     table: "StudentProfileChangeRequest",
