@@ -14,6 +14,9 @@ import { appVersionLabels } from "@/lib/storeApp";
 import { readPreferredPaymentMethod } from "@/lib/payments/preferredMethodStore";
 import { NameRow, PasswordRow, NotificationRows, FontScaleRow, FeedbackRow, PaymentMethodRow, MyPhotoRow } from "./SettingsClient";
 import { profilePhotoUpdatedAtSql, profilePhotoVersion } from "@/lib/profilePhoto/rules";
+import PhoneChangeButton from "@/components/account/PhoneChangeButton";
+import { phoneChangeAvailable } from "@/lib/account/phone-change";
+import { looksLikeLegalName } from "@/lib/account/phone-change-rules";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "설정 | 스티즈 농구교실" };
@@ -55,7 +58,7 @@ export default async function ParentSettingsPage() {
 
     const supabase = await createClient();
     // 모든 조회의 대상 = 서버가 확인한 로그인 사용자(parent.appUserId) — 화면 값으로 남의 정보를 열 수 없다
-    const [userRows, authResult, childRows, pushPrefs, cookieStore, preferredMethod, headerStore] = await Promise.all([
+    const [userRows, authResult, childRows, pushPrefs, cookieStore, preferredMethod, headerStore, canChangePhone] = await Promise.all([
         prisma.$queryRawUnsafe<{ name: string; phone: string | null; username: string | null; role: string; photoUpdatedAt: Date | string | null }[]>(
             // photoUpdatedAt = 내 프로필 사진을 바꾼 시각(사진이 있을 때만) — 사진 주소의 캐시 버전으로 쓴다(2026-11-15)
             `SELECT name, phone, username, role::text AS role, ${profilePhotoUpdatedAtSql("u")} AS "photoUpdatedAt" FROM "User" u WHERE id = $1 LIMIT 1`,
@@ -72,6 +75,8 @@ export default async function ParentSettingsPage() {
         readPreferredPaymentMethod(parent.appUserId),
         // 요청 머리말 — 스토어 앱 버전 표식(« STIZApp/1.0.2 (ios)»)을 읽는다
         headers(),
+        // 연락처 바꾸기(2026-11-14 b6) — 본인인증 설정이 켜진 환경에서만 버튼. 꺼져 있으면 기존 안내 그대로
+        phoneChangeAvailable().catch(() => false),
     ]);
     const me = userRows[0];
     const authUser = authResult.data?.user;
@@ -93,18 +98,19 @@ export default async function ParentSettingsPage() {
                 <h1 className="academy-heading">설정</h1>
             </div>
 
-            {/* 내 정보 — 이름은 고칠 수 있고, 연락처는 보기만(가입·자녀 연결의 본인 확인 번호라 학원에서 바꾼다) */}
+            {/* 내 정보 — 이름은 바로 고치고, 연락처는 본인 명의 휴대폰 인증을 통과한 번호로만 바꾼다(가입·자녀 연결의 본인 확인 번호) */}
             <Section title="내 정보">
                 {/* 내 사진 — 올리기·바꾸기·지우기(주인은 서버가 확인한 로그인 사용자) */}
                 <MyPhotoRow userId={parent.appUserId} name={me?.name ?? parent.appUserName} version={profilePhotoVersion(me?.photoUpdatedAt)} />
                 <NameRow name={me?.name ?? parent.appUserName} />
-                <li className={ROW}>
+                <li id="my-phone" className={`${ROW} scroll-mt-20 flex-wrap`}>
                     <span className="w-16 shrink-0 font-medium text-[var(--color-academy-ink)]">연락처</span>
-                    {/* 안내는 번호 아래 줄 — 큰 글자·좁은 화면에서도 번호가 잘리지 않게 */}
+                    {/* 번호 아래 한 줄 안내 — 큰 글자·좁은 화면에서도 번호가 잘리지 않게 */}
                     <span className="min-w-0 flex-1">
                         <span className="block tabular-nums text-[var(--color-academy-muted)]">{me?.phone ? formatPhoneInput(me.phone) : "없음"}</span>
-                        <span className="block text-xs text-[var(--color-academy-faint)]">변경은 학원 문의</span>
+                        <span className="block text-xs text-[var(--color-academy-faint)]">{canChangePhone ? "본인 명의 휴대폰 인증 후 바뀌어요" : "변경은 학원 문의"}</span>
                     </span>
+                    <PhoneChangeButton enabled={canChangePhone} nameOk={looksLikeLegalName(me?.name ?? parent.appUserName)} onSettingsPage label="바꾸기" className="academy-button-secondary shrink-0" />
                 </li>
                 {me?.username && (
                     <li className={ROW}>

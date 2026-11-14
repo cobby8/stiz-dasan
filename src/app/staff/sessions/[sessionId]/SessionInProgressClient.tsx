@@ -907,8 +907,8 @@ function LiveSessionWorkspace({
                     {showFees && !student.makeup && !student.trial && feesByRoster.get(student.id)?.status === "UNPAID" && (
                       <span className="rounded bg-[var(--color-academy-warning-soft)] px-1.5 py-0.5 text-xs font-medium text-[var(--color-academy-warning)]">미납</span>
                     )}
-                    {/* 학생 메모·오늘 출결 메모가 있으면 «특이» — 내용은 펼친 학생 정보에 */}
-                    {(person?.memo || student.attendanceNote) && (
+                    {/* 학생 메모·건강 특이사항(학부모 입력)·오늘 출결 메모가 있으면 «특이» — 내용은 펼친 학생 정보에 */}
+                    {(person?.memo || person?.healthNote || student.attendanceNote) && (
                       <span className={`rounded px-1.5 py-0.5 text-xs ${TONE_BADGE_CLASS.neutral}`}>특이</span>
                     )}
                     <span className="flex text-[var(--color-academy-faint)]">
@@ -1075,11 +1075,12 @@ function LiveSessionWorkspace({
       </WorkspaceSection>
 
       {/* ⑧ 수업 시작 취소 — 메모 아래(2026-11-15). 확인 창은 그대로, 기록한 출결·사진·메모는 유지된다 */}
-      <div id="session-cancel-start" className="text-center">
-        <button type="button" disabled={actionsLocked} onClick={cancelStart} className="academy-button-text">
+      {/* 2026-11-15 원장 점검: 위험 작업으로 보이게 빨간 위험 버튼 하나(칸 전체 폭·44px 이상). 꽉 찬 빨강은 «종료 확인» 창의 최종 버튼뿐이라 테두리형을 쓴다. */}
+      <div id="session-cancel-start">
+        <p className="mb-1 text-xs text-[var(--color-academy-muted)]">시작을 취소해도 기록한 출결은 유지됩니다.</p>
+        <button type="button" disabled={actionsLocked} onClick={cancelStart} className="academy-button-danger min-h-12! w-full">
           수업 시작 취소 (시작 전으로 되돌리기)
         </button>
-        <p className="text-xs text-[var(--color-academy-muted)]">시작을 취소해도 기록한 출결은 유지됩니다.</p>
       </div>
 
       {showPeople && <ClassPeopleSheet open classId={session.classId} sessionId={session.id} className={session.className} onClose={() => setShowPeople(false)} onOpenBilling={showFees ? (student) => { setShowPeople(false); setBillingStudent(student); } : undefined} />}
@@ -1093,7 +1094,6 @@ function LiveSessionWorkspace({
         videoRef={videoUploaderRef}
         photoState={photoState}
         videoState={videoState}
-        aboveBottomNav={embedded}
         onPicked={() => setOpenSections((current) => ({ ...current, media: true }))}
       />
 

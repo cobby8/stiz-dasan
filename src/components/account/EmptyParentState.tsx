@@ -7,7 +7,13 @@ import type { PendingSeasonalChild } from "@/lib/seasonal/pendingSeasonalChildre
 import { childLinkRequest, isChildLinkState, type ChildLinkState } from "./child-link-api";
 import { customerMessage } from "@/components/parent/customerMessage";
 
-export default function EmptyParentState({ pendingSeasonalChildren }: { pendingSeasonalChildren: PendingSeasonalChild[] }) {
+export default function EmptyParentState({ pendingSeasonalChildren, academyPhone }: {
+  pendingSeasonalChildren: PendingSeasonalChild[];
+  /** 학원 대표 번호 — 설정값(AcademySettings.contactPhone). 없으면 전화 링크 없이 글만 보인다 */
+  academyPhone?: string | null;
+}) {
+  // 번호를 코드에 박지 않는다(2026-11-14 c1) — 설정에서 바꾸면 여기도 바뀐다
+  const academyTel = String(academyPhone ?? "").replace(/[^0-9]/g, "");
   const installed = useInstalledApp();
   const [state, setState] = useState<ChildLinkState | null>(null);
   const [error, setError] = useState("");
@@ -43,7 +49,7 @@ export default function EmptyParentState({ pendingSeasonalChildren }: { pendingS
         <h2 id="new-enrollment-title" className="academy-section-title">처음 오셨나요?</h2>
         <div className="mt-3 flex flex-wrap gap-2"><Link href="/apply/enroll" target={installed ? "_blank" : undefined} rel={installed ? "noopener" : undefined} className="academy-button-primary">수강 신청하기</Link><Link href="/apply/trial" target={installed ? "_blank" : undefined} rel={installed ? "noopener" : undefined} className="academy-button-secondary">체험 수업 신청</Link></div>
         {installed && <p className="mt-2 text-xs text-[var(--color-academy-muted)]">신청 화면은 브라우저에서 열립니다. 신청 후에는 스티즈 앱 아이콘을 눌러 돌아와 주세요.</p>}
-        <p className="mt-3 text-xs text-[var(--color-academy-muted)]">등록 내용이 다르거나 연결에 어려움이 있으면 <a className="underline" href="tel:07088245712">학원에 문의해 주세요.</a></p>
+        <p className="mt-3 text-xs text-[var(--color-academy-muted)]">등록 내용이 다르거나 연결에 어려움이 있으면 {academyTel.length >= 8 ? <a className="inline-flex min-h-11 items-center underline" href={`tel:${academyTel}`}>학원에 전화하기</a> : "학원에 문의해 주세요."}</p>
       </section>
     </div>
   );

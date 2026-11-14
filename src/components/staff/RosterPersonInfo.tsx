@@ -135,6 +135,7 @@ export function RosterPersonInfo({
         최근 {person.recentAttendance.total}회: 출석 {person.recentAttendance.present} · 지각 {person.recentAttendance.late} · 결석 {person.recentAttendance.absent}
       </p>
 
+      {/* 학부모가 적은 건강·알레르기·특이사항(2026-11-14 b5) — 메모보다 먼저 */}{person.healthNote && <p className="whitespace-pre-wrap rounded-lg bg-[var(--color-academy-warning-soft)] p-3 text-[var(--color-academy-ink)]"><span className="font-medium text-[var(--color-academy-warning)]">건강·알레르기 </span>{person.healthNote}</p>}
       {person.memo && <p className="whitespace-pre-wrap rounded-lg bg-[var(--color-academy-surface)] p-3 text-[var(--color-academy-ink)]">{person.memo}</p>}
 
       <ul aria-label={`${person.name} 보호자`} className="space-y-1">

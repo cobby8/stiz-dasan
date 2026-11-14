@@ -86,7 +86,8 @@ export default async function UnifiedDriverRunPage({ token, searchDate, remember
   const nextDate = addDays(viewDate, 1);
 
   const [{ rows, boarding, boardingReliable, driverLabel, holiday }, settings] = await Promise.all([
-    loadUnifiedDriverRun(viewDate),
+    // 건강 글 전문은 로그인 경로(viaAccount)에서만 — 토큰 링크는 «특이» 표시만 받는다(보안 검수 2026-11-14)
+    loadUnifiedDriverRun(viewDate, { withHealthText: viaAccount }),
     getSettings().catch(() => null), // 학원 좌표 — 순서를 옮길 때 시각 다시 계산용(없으면 학원 구간 없이 계산)
   ]);
   const academy = settings?.academy && isKoreanCoordinate(settings.academy.lat, settings.academy.lng)
@@ -108,6 +109,7 @@ export default async function UnifiedDriverRunPage({ token, searchDate, remember
         focusDirection={focusDirection}
         academy={academy}
         holiday={holiday}
+        healthHint={viaAccount ? "오늘·어제·내일 운행표에서만 내용이 보여요" : "앱에 로그인하면 내용이 보여요"}
       />
       {/* 토큰 검증을 통과한 뒤에만 기억한다. 만료된 링크를 기억하면 홈 화면
           아이콘이 매번 "유효하지 않은 링크" 화면을 여는 꼴이 된다.

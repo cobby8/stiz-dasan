@@ -3,6 +3,12 @@
 <!-- 프로젝트의 폴더 구조, 파일 역할, 핵심 패턴을 기록 -->
 <!-- 2026-11-10 정리: 48항목 → 주제별 19묶음. 원래 항목은 묶음 안 하위 항목(원래 날짜·제목)으로 내용 그대로 보존. 새 항목은 맞는 묶음에 하위 항목으로 넣는다 -->
 
+### [2026-11-14] 학부모 아이 정보 수정 = «바로 반영 4칸» + «변경 신청 → 승인» · 건강 특이사항 · 연락처 바꾸기
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 순수 `src/lib/parent/childEditRules.ts`(DIRECT_FIELDS=학교·학생 전화·주소·healthNote / REQUEST_FIELDS=이름·생년월일 — DB CHECK 와 같은 집합, 신청·승인 두 번 같은 검증) + 연결부 `childEdit.ts`(모든 UPDATE·INSERT 문 «안»에 childAccessSql — 남의 아이 id 는 0행, 승인은 트랜잭션+FOR UPDATE). 표 StudentProfileChangeRequest 가 곧 변경 이력(마이그레이션 20261114140000, 확인 중은 항목당 하나=부분 유니크). 건강 글(Student.healthNote 300자)은 `src/lib/student/healthNote.ts` 한 곳에서 «이미 권한 확인된 학생 id»로만 따로 읽는다(선생님=getStaffClassPeople 명단, 기사님=그날 운행표 승객 줄 id → attachRiderHealthNotes) — 큰 SQL 에 칸을 넣지 않아 칸이 없어도 화면이 산다. 알림·로그 금지는 tests/child-edit.test.mjs 가 «healthNote 를 쓰는 파일 목록»으로 강제(새 파일이 쓰면 실패). 보호자 연락처 = `src/lib/account/phone-change.ts`(포트원 재조회 통과 번호로만 User.phone 변경 · 인증 원장 ChildIdentityChallenge 재사용하되 id 머리말 stizphone_·기기 해시 종류를 달리해 자녀 연결과 안 섞임 · 이름 불일치·다른 계정 번호 거절 · 내 아이 Guardian 의 옛 번호 줄 동기화). 연결 가족 끊기 = family-access-parent.ts(대표 보호자만, 해제는 관리자와 같은 revokeFamilyAccess). 임시 생일 2000-01-01 은 `student-grade.realBirthYmd` 하나로 거른다(보강·아이 정보 공용).
+- **참조횟수**: 0
+
 ### [2026-11-14] 수업 피드 = «볼 수 있는가» 판정 하나(src/lib/feed) — 사진·영상·소식·홈 카드 공용
 - **분류**: architecture
 - **발견자**: developer

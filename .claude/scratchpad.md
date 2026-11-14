@@ -72,6 +72,32 @@
 |------|------|------|------|
 | tester | lib/enrollment/admin-change-request.ts NEEDS_CHECK_SQL | 반 이동 뒤 새 반 수강을 삭제하면 그 CLASS_ADD(이동 신청에 afterJson.enrollmentChangeRequestId 로 연결)의 RALLYZ 칸이 SKIPPED 가 되는데, NEEDS_CHECK 는 RALLYZ 를 `<> 'SUCCEEDED'` 로 세어 이동 신청이 «확인 필요»에 영구히 남음. 직원이 지우려면 «랠리즈 반영 확인»을 거짓으로 눌러야 함. 삭제 사유로 닫힌 명령(holdReason=DELETED_ENROLLMENT_CLOSE_REASON) 제외 등 | 대기(권장) |
 
+### 구현 기록 (developer · 11-14 아이 정보 수정 claude/child-edit)
+
+📝 구현한 기능: 학부모 아이 정보 수정(b4)·건강 특이사항(b5)·연락처 바꾸기(b6)·연결된 가족 보기/끊기(b7)·막다른 문구(c1)
+
+| 파일 경로 | 변경 내용 | 신규/수정 |
+|----------|----------|----------|
+| prisma/migrations/20261114140000_child_profile_edit · schema.prisma | Student.healthNote + StudentProfileChangeRequest(RLS FORCE) | 신규/수정 |
+| src/lib/parent/childEditRules.ts · childEdit.ts | 입력 규칙 / 저장·신청·취소·승인 | 신규 |
+| src/lib/student/healthNote.ts | 건강 글 읽기·관리자 저장 한 곳 | 신규 |
+| src/lib/account/phone-change(.ts·-rules.ts) · api/account/phone-change | 본인인증 뒤 번호 변경 | 신규 |
+| src/lib/account/family-access-parent.ts | 가족 목록·대표만 끊기 | 신규 |
+| src/app/actions/child-edit.ts · student-profile-admin.ts | 학부모·관리자 서버 동작 | 신규 |
+| mypage/record(ChildProfileSections·ChildInfoEditSheet) · children/FamilyMembersSection · settings/page · seasonal · EmptyParentState · PhoneChangeButton | 학부모 화면 | 신규/수정 |
+| admin/students/[id](StudentDetailClient·StudentProfilePanels) | 변경 요청·건강 칸 | 신규/수정 |
+| staff-class-people · SessionStudentSheet · SessionInProgressClient · ClassPeopleSheet · unifiedDriverRun(+Logic) · UnifiedDriverClient | 선생님·기사님 표시 | 수정 |
+| tests/child-edit.test.mjs (+기존 3개 가짜 부품 보강) | 20건 | 신규/수정 |
+
+💡 tester 참고:
+- 테스트 방법: `node --test tests/child-edit.test.mjs` · 실기기는 마이그레이션 적용 뒤(적용 전에는 건강 칸·변경 신청 버튼이 숨는다)
+- 정상 동작: 저장 즉시 아이 정보 줄 갱신 / 신청하면 «확인 중» 줄 → 관리자 승인 시 이름·생일 변경 + 학부모 앱 알림
+- 주의할 입력: 건강 글 300/301자 · 학생 전화 유선번호 · 같은 항목 두 번 신청 · 연결 가족 계정으로 끊기 시도 · 계정 이름≠인증 이름
+
+⚠️ reviewer 참고:
+- 연락처 변경이 Guardian 의 «옛 내 번호» 줄도 새 번호로 맞춘다(phone-change.ts) · 인증 원장 재사용(stizphone_) 이 자녀 연결 증명과 안 섞이는지
+- 신청함(inbox) 종류는 추가하지 않음(동시 작업 충돌 회피) — 학생 상세 칸 + 관리자 앱 알림만
+
 ---
 
 ## 작업 로그 (최근 10건)
@@ -80,6 +106,7 @@
 |------|----------|------|
 | 11-14 | developer(완료한 수업 다시 보기·고치기, claude/staff-session-review): 수정 기간 규칙 한 곳(staffSessionEditWindow — 수업일 포함 7일·원장/부원장 무제한, 사진·영상·한 줄·메모·출결 정정 공통) · 수업 주소가 완료한 수업도 연다(CompletedSessionPanel: 발행 상태·[학부모에게 보내기]·출결 정정(정규·특강 좌석만, 미리 보기+확인 1회)·메모) · «지난 수업» 목록(/staff/sessions, 최근 14일) · 완료 뒤 수정은 OperationsAuditLog(STAFF_SESSION_REVIEW_EDIT)·알림 없음. tsc 0·tests 5088-0·guards 82-0. 새 SQL 은 실제 Postgres 미실행 | 검수 대기 |
 | 11-14 | developer(출결 다시 누르면 취소, claude/attendance-toggle): 선생님 수업 화면에서 선택된 출결 버튼을 다시 누르면 미확인(출결 기록 삭제) — 새 액션 clearStaffAttendance(정규·보강·체험·특강 좌석, dryRun 미리 보기). 결석 취소는 확인 1회·안 쓴 보강권 회수(기존 규칙 함수), 예약·사용된 보강권/정산된 결석이면 거부, 학부모 신고와 그 보강권은 유지, 알림 없음. tsc 0·tests 5023-0 | 완료(main 머지 전) |
+| 11-14 | developer(아이 정보 수정, claude/child-edit): 학부모 «수정» 시트(학교·학생 전화·주소·건강 특이사항 바로 반영 / 이름·생년월일 변경 신청→학생 상세 «정보 변경 요청» 승인·반려) · 건강 글 선생님 «특이»+상세 시트·기사님 줄 «특이» · 연락처 바꾸기(본인인증) · 연결된 가족 보기·끊기(대표만) · 막다른 문구 3곳 · 임시 생일 학년. 마이그레이션 20261114140000 **운영 미적용**. tsc 0·tests 4938-0·guards 82-0 | 검수 대기 |
 | 11-14 | developer(질병·부상 결석 이월, claude/illness-carry): 질병·부상 결석 = 보강권 대신 «이월 검토 중»(RegularAbsenceCarryReview) · 사유 글 필수+증빙 사진 1~3장(비공개 버킷 absence-evidence, 7일 안 추가) · 신청함 «질병·부상 결석»(ILLNESS_CARRY) [이월 승인]=기존 resolveWorkbenchAbsence 재사용 / [보강권으로] · 7일 사진 없음 자동 전환·90일 뒤 사진 삭제(cron/makeup-credits) · 출결 결석 시 보류 · 카카오 안내·FAQ·«결석 알리기» 문구. **마이그레이션 20261114130000 운영 미적용**(없어도 예전 방식으로 동작). tsc 0·tests 4827-0·guards 82-0. 새 SQL 은 실제 Postgres 에서 미실행 — 적용 후 읽기 검증 필요 | 검수 대기 |
 | 11-14 | developer(수업 진행 화면 간결화, claude/staff-session-compact): 출석부 화면·«출석 확인» 칸·«학생 정보·수업 관리» 펼침을 없애고 학생 한 줄 명단(이름+출결 3버튼)+상세 시트(SessionStudentSheet)+«더보기» · «오늘 수업 내용»+«수업 피드» → «오늘 수업» 한 칸(계획 접힘·불러오기) · 종료 창 중복 입력 제거 · 옛 안드로이드 앱(1.0.3 미만) 영상 촬영 안내. 서버·액션 변경 없음. tsc 0·tests 4808-0 | 완료(main 머지 전·실기기 점검 필요) |
 | 11-14 | developer(보강 예약 학년 판정, claude/makeup-grade): 학생 학년 = 생년월일 계산(student-grade.ts, 임시 생일 2000-01-01·빈 값이면 학년 글자), 후보 = 포함 먼저+±1 유지·미취학 위로 2학년·성인반끼리(credit-rules.makeupGradeFit, 목록·예약 같은 판정), 빈 목록 4종 그 자리 버튼(학년 확인·다시 확인·학원에 문의→홈 메시지 폼), 문구 한 줄씩. 휴원 차단 조건 없음. tsc 0·node --test 4795/0 | 검수 대기 |
