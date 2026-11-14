@@ -160,6 +160,17 @@ export async function readIllnessCarryDetail(tx: WorkbenchTx, absenceId: string,
     );
     billReady = confirmed.length > 0;
   }
+  // 납부 Payment 근거(2026-11-15): 초안·장부가 없어도 그 반·그 달의 납부완료 수강료 청구가 있으면 서버가 근거로 받는다
+  // (랠리즈에서 넘어온 달). 2건 이상이면 서버가 사유를 알려 주며 거절한다 — 여기는 버튼을 켤지만 정한다.
+  if (!billReady) {
+    const [year, monthNumber] = month.split("-").map(Number);
+    const paid = await tx.$queryRawUnsafe<Array<{ found: number }>>(
+      `SELECT 1 AS found FROM "Payment"
+        WHERE "studentId" = $1 AND "classId" = $2 AND year = $3 AND month = $4 AND type = 'MONTHLY' AND status = 'PAID' LIMIT 1`,
+      absence.studentId, absence.classId, year, monthNumber,
+    );
+    if (paid.length > 0) billReady = true;
+  }
 
   // 같은 기간의 다른 결석 중 결석일이 지났고(오늘 포함) 아직 결정 전(이월·보강 정산 없음)인 질병·부상 결석
   const peers = ready
