@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { childAccessSql, hasGrantedChildren } from "@/lib/account/child-access";
 import { requireAuth } from "@/lib/auth-guard";
 import { resolveAccountViews } from "@/lib/account-views";
@@ -49,7 +50,10 @@ async function getActiveGrantsForViews(appUserId: string | null): Promise<RoleGr
 }
 
 /** 화면명과 안전한 고정 주소만 공개하며 계정 ID나 자녀 정보는 전달하지 않습니다. */
-export async function getAccountViewAccess() {
+// 한 요청 안에서는 한 번만 계산한다(레이아웃과 화면이 같이 부를 수 있다, 2026-11-14 속도 개선).
+export const getAccountViewAccess = cache(readAccountViewAccess);
+
+async function readAccountViewAccess() {
   try {
     const user = await requireAuth();
     const [role, parent] = await Promise.all([getPublicAccountRole(), getParentViewAccessForAuthUser(user)]);

@@ -133,7 +133,9 @@ function calcAge(birthDate: Date | string): number {
     if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
     return age;
 }
-function formatKRW(n: number): string {
+function formatKRW(n: number | null): string {
+    // 서버가 가린 금액(부원장에게 월별 낸 돈·이월액)은 «—»
+    if (n == null) return "—";
     return n.toLocaleString("ko-KR") + "원";
 }
 
@@ -221,10 +223,11 @@ type StudentActivityData = {
             endTime: string | null;
             programName: string | null;
         }[];
-        paymentAmount: number;
+        // 부원장에게는 null(서버 maskStudentActivityForRole — 2026-11-14 원장 결정)
+        paymentAmount: number | null;
         tuitionAmount: number;
         shuttleFee: number;
-        carryOverAmount: number;
+        carryOverAmount: number | null;
         paymentMethods: string[];
         paymentDate: Date | string | null;
         shuttle: {
@@ -291,6 +294,12 @@ function formatClassLabel(classItem: StudentActivityData["monthlyHistory"][numbe
 
 function getMonthlyPaymentInfo(history: StudentActivityData["monthlyHistory"][number]) {
     const hasUnpaidMethod = history.paymentMethods.some((method) => method.includes("미결제"));
+    // 낸 돈이 가려진(부원장) 달은 금액 비교를 하지 않는다 — 결제수단 표시(«미결제»)만 본다
+    if (history.paymentAmount == null) {
+        return hasUnpaidMethod
+            ? { label: "미납 확인", className: statusToneClass(PAYMENT_TONE.PENDING) }
+            : { label: "수납 정보 없음", className: statusToneClass("neutral") };
+    }
     const hasTuitionGap = history.tuitionAmount > 0 && history.paymentAmount < history.tuitionAmount;
 
     if (hasUnpaidMethod || hasTuitionGap) {
@@ -1108,7 +1117,7 @@ export default function StudentDetailClient({
     const currentMonthPaymentInfo = currentMonthHistory ? getMonthlyPaymentInfo(currentMonthHistory) : null;
     // 장부 수납(시트 원장) — 금액/청구/셔틀 신호가 있는 월만 노출
     const ledgerHistory = monthlyHistory.filter(
-        (h) => h.paymentAmount > 0 || h.tuitionAmount > 0 || h.shuttleFee > 0 || h.paymentMethods.length > 0,
+        (h) => (h.paymentAmount ?? 0) > 0 || h.tuitionAmount > 0 || h.shuttleFee > 0 || h.paymentMethods.length > 0,
     );
 
 
@@ -1123,7 +1132,8 @@ export default function StudentDetailClient({
     const tabs: { key: TabKey; label: string; count?: number }[] = [
         { key: "overview", label: "개요" },
         { key: "class", label: "수강·출결", count: attendances.length },
-        { key: "pay", label: "청구/수납" },
+        // 청구/수납 탭은 원장만(부원장은 서버가 청구 목록을 비워 보낸다 — 2026-11-14 원장 결정)
+        ...(canManageFinance ? [{ key: "pay" as const, label: "청구/수납" }] : []),
         { key: "history", label: "월별 히스토리", count: monthlyHistory.length },
         { key: "photo", label: "사진", count: galleryPosts.length },
     ];
@@ -1246,6 +1256,13 @@ export default function StudentDetailClient({
                             전화
                         </a>
                     )}
+                    {/* 부원장용 «청구서 발행»(검수 M3, 2026-11-14 원장 결정) — «청구/수납» 탭은 닫혀 있어 머리에 둔다.
+                        같은 발행 창을 그대로 쓰고, 서버 createPayment 가 부원장 청구를 미납으로 강제한다. 원장은 탭 안 버튼 그대로 */}
+                    {!canManageFinance && (
+                        <button type="button" onClick={() => setIssueOpen(true)} className="academy-button-secondary">
+                            청구서 발행
+                        </button>
+                    )}
                     {editSection === "header" ? renderEditControls("header") : (
                         <button type="button" onClick={() => setDetailModal("profile")} className="academy-button-secondary">
                             기본 정보
@@ -1257,7 +1274,8 @@ export default function StudentDetailClient({
             {/* ===== 요약 3칸 (출석률 · 수납 · 미납) =====
                 2차 정리: «수강 중 N개 반» 칸은 «수강 반» 카드 제목과 겹쳐 뺐다. 칸을 누르면 그 내용이 있는 탭(또는 창)으로 간다.
                 휴대폰도 한 줄 3칸 — 이름·상태 바로 아래에서 미납이 보이게. */}
-            <div className="grid grid-cols-3 gap-2 md:gap-4">
+            {/* 부원장은 수납·미납 칸이 없어 출석률 한 칸만(원장은 그대로 3칸) */}
+            <div className={`grid ${canManageFinance ? "grid-cols-3" : "grid-cols-1"} gap-2 md:gap-4`}>
                 {/* 출석률 → 수강·출결 탭 */}
                 <button type="button" onClick={() => goTab("class")} className="academy-panel flex min-h-11 items-center gap-3 p-3 text-left transition hover:bg-[var(--color-academy-soft)] md:p-4">
                     <span className="hidden sm:block"><MiniDonut rate={attendanceStats.rate} /></span>
@@ -1270,7 +1288,8 @@ export default function StudentDetailClient({
                     </span>
                 </button>
 
-                {/* 이번 달(없으면 최근 장부) 수납 → 요약 창(수납 내역·변동 기록 전체) */}
+                {/* 이번 달(없으면 최근 장부) 수납 → 요약 창(수납 내역·변동 기록 전체) — 원장만 */}
+                {canManageFinance && (
                 <button
                     type="button"
                     onClick={() => setDetailModal("month")}
@@ -1294,8 +1313,10 @@ export default function StudentDetailClient({
                         )}
                     </span>
                 </button>
+                )}
 
-                {/* 미납 → 수납 탭(청구·납부 목록이 정본) */}
+                {/* 미납 → 수납 탭(청구·납부 목록이 정본) — 원장만 */}
+                {canManageFinance && (
                 <button type="button" onClick={() => goTab("pay")} className="academy-panel flex min-h-11 items-center gap-3 p-3 text-left transition hover:bg-[var(--color-academy-soft)] md:p-4">
                     <span className="min-w-0">
                         <span className="block text-xs font-medium text-[var(--color-academy-faint)]">미납</span>
@@ -1305,6 +1326,7 @@ export default function StudentDetailClient({
                         <span className="block truncate text-xs text-[var(--color-academy-faint)]">누적 납부 {formatKRW(totalPaid)}</span>
                     </span>
                 </button>
+                )}
             </div>
 
             {/* ===== 본문 2열 그리드 ===== */}
@@ -1615,7 +1637,7 @@ export default function StudentDetailClient({
                     )}
 
                     {/* ===== 수납 탭 — 청구·납부(정본) + 시트 장부 바로가기 ===== */}
-                    {activeTab === "pay" && (
+                    {activeTab === "pay" && canManageFinance && (
                         <div className="space-y-4">
                             {/* 청구·납부(시스템) */}
                             <div className={CARD_CLASS}>
@@ -1868,7 +1890,7 @@ export default function StudentDetailClient({
                                                             <p className="mt-0.5 text-xs text-[var(--color-academy-faint)]">
                                                                 {history.paymentMethods.length > 0 ? history.paymentMethods.join(" · ") : "결제수단 없음"}
                                                                 {history.shuttleFee > 0 ? ` · 셔틀 ${formatKRW(history.shuttleFee)}` : ""}
-                                                                {history.carryOverAmount > 0 ? ` · 이월 ${formatKRW(history.carryOverAmount)}` : ""}
+                                                                {(history.carryOverAmount ?? 0) > 0 ? ` · 이월 ${formatKRW(history.carryOverAmount)}` : ""}
                                                                 {history.paymentDate ? ` · ${toDateStr(history.paymentDate)} 납부` : ""}
                                                             </p>
                                                         </div>
@@ -2010,7 +2032,7 @@ export default function StudentDetailClient({
                         <DetailRow label="내역">
                             수강 {formatKRW(currentMonthHistory.tuitionAmount)}
                             {currentMonthHistory.shuttleFee > 0 ? ` + 셔틀 ${formatKRW(currentMonthHistory.shuttleFee)}` : ""}
-                            {currentMonthHistory.carryOverAmount > 0 ? ` · 이월 ${formatKRW(currentMonthHistory.carryOverAmount)}` : ""}
+                            {(currentMonthHistory.carryOverAmount ?? 0) > 0 ? ` · 이월 ${formatKRW(currentMonthHistory.carryOverAmount)}` : ""}
                         </DetailRow>
                         <DetailRow label="결제">
                             {[currentMonthHistory.paymentMethods.join(" · "), currentMonthHistory.paymentDate ? toDateStr(currentMonthHistory.paymentDate) : ""].filter(Boolean).join(" · ") || "-"}

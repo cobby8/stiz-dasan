@@ -54,7 +54,7 @@ test("월 발행은 이번에 생성된 Payment ID만 전달하고 0건도 빈 �
     } };
     const testModule = { exports: {} };
     const compiled = ts.transpile(generateSource, { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 });
-    new Function("module", "exports", "prisma", "requireAdmin", "ensurePaymentColumns", "ensureBillingTemplateTable", "previewMonthlyInvoices", "MONTHLY_INVOICE_TARGETS_SQL", "monthlyBillingDueDate", "ensureInvoicesForMonth", "revalidateFinanceCaches", "ensurePaymentInfrastructure", compiled)(
+    new Function("module", "exports", "prisma", "requireFinanceOwner", "ensurePaymentColumns", "ensureBillingTemplateTable", "previewMonthlyInvoices", "MONTHLY_INVOICE_TARGETS_SQL", "monthlyBillingDueDate", "ensureInvoicesForMonth", "revalidateFinanceCaches", "ensurePaymentInfrastructure", compiled)(
       testModule, testModule.exports,
       { $transaction: async (callback) => callback(tx) },
       async () => {}, async () => {}, async () => {},
@@ -90,7 +90,7 @@ test("청구서 실패 시 신규 납부도 롤백하고 재시도할 수 있다
   } };
   const testModule = { exports: {} };
   const compiled = ts.transpile(generateSource, { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 });
-  new Function("module", "exports", "prisma", "requireAdmin", "ensurePaymentColumns", "ensureBillingTemplateTable", "previewMonthlyInvoices", "MONTHLY_INVOICE_TARGETS_SQL", "monthlyBillingDueDate", "ensureInvoicesForMonth", "revalidateFinanceCaches", "ensurePaymentInfrastructure", "console", compiled)(
+  new Function("module", "exports", "prisma", "requireFinanceOwner", "ensurePaymentColumns", "ensureBillingTemplateTable", "previewMonthlyInvoices", "MONTHLY_INVOICE_TARGETS_SQL", "monthlyBillingDueDate", "ensureInvoicesForMonth", "revalidateFinanceCaches", "ensurePaymentInfrastructure", "console", compiled)(
     testModule, testModule.exports, prisma, async () => {}, async () => {}, async () => {},
     async () => ({ activeTemplateCount: 1, skipCount: 0 }), "WITH fixture AS ()", () => "2026-08-31",
     async (_year, _month, ids, tx) => {
@@ -124,7 +124,7 @@ test("미리보기는 CREATE/SKIP/REVIEW 및 전체 반 정보를 직렬화한�
   } };
   const testModule = { exports: {} };
   const compiled = ts.transpile(previewSource, { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 });
-  new Function("module", "exports", "prisma", "requireAdmin", "ensurePaymentColumns", "ensureBillingTemplateTable", "MONTHLY_INVOICE_TARGETS_SQL", "monthlyBillingDueDate", compiled)(
+  new Function("module", "exports", "prisma", "requireFinanceOwner", "ensurePaymentColumns", "ensureBillingTemplateTable", "MONTHLY_INVOICE_TARGETS_SQL", "monthlyBillingDueDate", compiled)(
     testModule, testModule.exports, prisma, async () => {}, async () => {}, async () => {}, "WITH fixture AS ()", () => "2026-08-31",
   );
   const result = await testModule.exports.previewMonthlyInvoices(2026, 9);
@@ -158,7 +158,7 @@ test("새 청구 구조 설치 후 구형 생성 API로 이월 정산을 우회�
       inserts++; return [];
     },
   }) };
-  new Function('module', 'exports', 'prisma', 'requireAdmin', 'ensurePaymentColumns', 'ensureBillingTemplateTable', 'previewMonthlyInvoices', 'ensurePaymentInfrastructure', 'console', compiled)(
+  new Function('module', 'exports', 'prisma', 'requireFinanceOwner', 'ensurePaymentColumns', 'ensureBillingTemplateTable', 'previewMonthlyInvoices', 'ensurePaymentInfrastructure', 'console', compiled)(
     loaded, loaded.exports, prisma, async () => {}, async () => {}, async () => {}, async () => ({ activeTemplateCount: 1 }), async () => {}, { error() {} },
   );
   await assert.rejects(loaded.exports.generateMonthlyInvoices(2026, 10), /월별 청구서 생성 실패/);

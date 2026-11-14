@@ -3,6 +3,7 @@ import { createNotificationRecord } from "@/lib/notification";
 import { todayKst } from "@/lib/datetime/kst";
 import { countEnrollmentChangesNeedingCheck } from "@/lib/enrollment/admin-change-request";
 import { buildAdminDailyDigest, type UnpaidMonthRow } from "@/lib/admin-daily-digest";
+import { canSeeAllMoney } from "@/lib/auth/moneyAccess";
 
 // ── 원장 아침 요약 알림 (매일 KST 08:30, 크론) ─────────────────────────────
 //
@@ -75,13 +76,17 @@ export async function runAdminDailyDigest(): Promise<AdminDailyDigestResult> {
     countPendingKakaoIntakes(),
   ]);
 
-  const digest = buildAdminDailyDigest({ todayYmd: todayKst(), unpaid, needsCheckCount, pendingChangeCount, kakaoPendingCount });
+  const digestInput = { todayYmd: todayKst(), unpaid, needsCheckCount, pendingChangeCount, kakaoPendingCount };
+  // 2026-11-14 부원장 금액 가림: 원장용(미납 금액 포함)과 부원장용(건수만) 두 벌을 만든다.
+  //   «보낼 일이 있는가»는 두 벌이 같다(금액은 줄의 꼬리일 뿐) → 원장용으로 판단한다.
+  const digest = buildAdminDailyDigest(digestInput);
+  const digestWithoutMoney = buildAdminDailyDigest({ ...digestInput, showMoney: false });
   // 확인할 일이 하나도 없으면 아무것도 보내지 않는다
-  if (!digest) return { sent: 0, skippedDuplicate: 0, empty: true };
+  if (!digest || !digestWithoutMoney) return { sent: 0, skippedDuplicate: 0, empty: true };
 
-  // 받는 사람 = 원장·부원장 계정만 (학부모 PARENT·코치 COACH 등은 대상 아님)
-  const admins = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
-    `SELECT id FROM "User" WHERE role IN ('ADMIN', 'VICE_ADMIN')`,
+  // 받는 사람 = 원장·부원장 계정만 (학부모 PARENT·코치 COACH 등은 대상 아님). 역할로 문구 벌을 고른다
+  const admins = await prisma.$queryRawUnsafe<Array<{ id: string; role: string }>>(
+    `SELECT id, role FROM "User" WHERE role IN ('ADMIN', 'VICE_ADMIN')`,
   );
 
   let sent = 0;
@@ -104,13 +109,14 @@ export async function runAdminDailyDigest(): Promise<AdminDailyDigestResult> {
       skippedDuplicate += 1;
       continue;
     }
-    // 앱 알림 저장 + 웹 푸시 (문자 없음)
+    // 앱 알림 저장 + 웹 푸시 (문자 없음). 원장만 미납 금액이 들어간 문구를 받는다
+    const mine = canSeeAllMoney(admin.role) ? digest : digestWithoutMoney;
     await createNotificationRecord({
       userId: admin.id,
       type: ADMIN_DIGEST_TYPE,
-      title: digest.title,
-      message: digest.message,
-      linkUrl: digest.linkUrl,
+      title: mine.title,
+      message: mine.message,
+      linkUrl: mine.linkUrl,
     });
     sent += 1;
     } catch (error) {

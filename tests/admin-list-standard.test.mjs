@@ -127,7 +127,8 @@ test("청구·수납: 공통 표 규칙(금액·날짜 오른쪽)·상태 칩(pa
   // 보기 전환 «목록 | 상태별», 상태별 머리줄은 건수 + 금액 합계
   assert.match(financeClient, /<ListViewToggle/);
   assert.match(financeClient, /useRememberedListView\(FINANCE_VIEW_STORAGE_KEY/);
-  assert.match(financeClient, /scope="rowgroup"[\s\S]*?건 · 합계/);
+  // 묶음 합계는 원장만(2026-11-14 부원장 금액 가림) — «건» 뒤 « · 합계»가 canManageCriticalFinance 조건 안에
+  assert.match(financeClient, /scope="rowgroup"[\s\S]*?건[\s\S]*?canManageCriticalFinance && <> · 합계/);
   // 행 클릭 패널, 행 키보드는 안쪽 체크박스·⚡ 를 가로채지 않는다, 패널 작업은 행 ⚡ 와 같은 목록
   assert.match(financeClient, /<ListDetailPanel onClose=\{\(\) => setDetailPaymentId\(null\)\} titleId="payment-detail-panel-title"/);
   assert.match(financeClient, /function handleRowKeyDown[\s\S]*?if \(event\.target !== event\.currentTarget\) return;/);

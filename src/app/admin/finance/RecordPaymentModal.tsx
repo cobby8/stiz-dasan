@@ -57,6 +57,11 @@ type Props = {
     onRecorded: (message: string) => void;
     /** true 면 방법 고르기를 건너뛰고 «현장 결제 확인» 화면으로 바로 연다(POS 바로가기) */
     preferPos?: boolean;
+    /**
+     * true 면 «현장 결제만» — 계좌이체 기록 길(버튼·안내)을 숨기고 현장 결제 확인 화면으로만 연다.
+     * 부원장용(2026-11-14 원장 결정): 계좌이체 기록은 서버가 원장만 받으므로 눌러도 실패하는 길을 보이지 않는다.
+     */
+    posOnly?: boolean;
 };
 
 type Step = "choose" | "transfer" | "pos";
@@ -127,9 +132,9 @@ function WarnBox({ children }: { children: React.ReactNode }) {
     );
 }
 
-export default function RecordPaymentModal({ targets, onClose, onChoosePos, onRecorded, preferPos = false }: Props) {
-    // 단계: 방법 고르기 → 계좌이체 입력 / 현장 결제 확인(preferPos 면 바로 여기서 시작)
-    const [step, setStep] = useState<Step>(() => (preferPos ? "pos" : "choose"));
+export default function RecordPaymentModal({ targets, onClose, onChoosePos, onRecorded, preferPos = false, posOnly = false }: Props) {
+    // 단계: 방법 고르기 → 계좌이체 입력 / 현장 결제 확인(preferPos·posOnly 면 바로 여기서 시작)
+    const [step, setStep] = useState<Step>(() => (preferPos || posOnly ? "pos" : "choose"));
     const [depositDate, setDepositDate] = useState(() => todayKst()); // 기본값 = 오늘(KST)
     const [depositorName, setDepositorName] = useState("");
     const [memo, setMemo] = useState("");
@@ -205,7 +210,7 @@ export default function RecordPaymentModal({ targets, onClose, onChoosePos, onRe
     const posNone = (
         <p className="mt-2 rounded-lg bg-[var(--color-academy-soft)] px-3 py-2 text-sm text-[var(--color-academy-ink)]">
             <span className="font-semibold">현장 결제할 수 있는 청구가 없어요: {posNoneReason || "대상 없음"}.</span>
-            {transfer.recordable.length > 0 && " 입금을 받았다면 계좌이체로 기록해 주세요."}
+            {!posOnly && transfer.recordable.length > 0 && " 입금을 받았다면 계좌이체로 기록해 주세요."}
         </p>
     );
 
@@ -309,7 +314,8 @@ export default function RecordPaymentModal({ targets, onClose, onChoosePos, onRe
                             </>
                         )}
                         {pos.groups.length === 0 && posNone}
-                        {transfer.recordable.length > 0 && (
+                        {/* 현장 결제만(부원장)이면 계좌이체로 넘어가는 길을 숨긴다 */}
+                        {!posOnly && transfer.recordable.length > 0 && (
                             <div className="mt-3 flex">
                                 <button type="button" onClick={() => setStep("transfer")} className="academy-button-text">
                                     다른 방법(계좌이체)
