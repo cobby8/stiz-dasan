@@ -1,3 +1,4 @@
+import UiIcon from "@/components/common/UiIcon";
 import { getStudentReports, getMyPageData, getNoticesByClassIds, getChildrenFeedbacks, getGalleryByClassIds } from "@/lib/queries";
 import { requireVerifiedParent } from "@/lib/auth-guard";
 import Link from "next/link";
@@ -152,7 +153,7 @@ export default async function ParentReportsPage() {
                         <details className="group border-t border-[var(--color-academy-line)]">
                             <summary className="flex min-h-11 cursor-pointer list-none items-center justify-center gap-1 text-sm font-medium text-[var(--color-academy-ink)] group-open:hidden">
                                 더보기 <span className="tabular-nums">{notices.length - NOTICE_FIRST}</span>
-                                <span aria-hidden="true">▾</span>
+                                <UiIcon name="expand_more" />
                             </summary>
                             <ul className="divide-y divide-[var(--color-academy-line)]">
                                 {notices.slice(NOTICE_FIRST).map((n) => noticeRow(n))}

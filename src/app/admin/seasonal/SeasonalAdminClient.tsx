@@ -1,4 +1,5 @@
 "use client";
+import UiIcon from "@/components/common/UiIcon";
 import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { FormEvent, type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -687,10 +688,10 @@ function ColHeader({
     <div className="relative inline-flex items-center gap-1">
       <span className="font-medium">{title}</span>
       {sortDir && <span className="text-xs text-[var(--color-academy-secondary-strong)]">{sortDir === "asc" ? "▲" : "▼"}</span>}
-      {/* 표 머리 칸이 좁아 글자 라벨을 둘 자리가 없다 — 펼침 화살표(▾)만 두고 aria-label 로 뜻을 알린다. 걸린 필터는 보조 색. */}
+      {/* 표 머리 칸이 좁아 글자 라벨을 둘 자리가 없다 — 펼침 화살표만 두고(2026-11-15 아이콘 예외) aria-label 로 뜻을 알린다. 걸린 필터는 보조 색. */}
       <button type="button" aria-label={`${title} 필터`} aria-expanded={open} onClick={onToggleOpen}
         className={`grid h-6 w-6 place-items-center rounded text-xs ${active ? "bg-[var(--color-academy-secondary-soft)] text-[var(--color-academy-secondary-ink)]" : "text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)]"}`}>
-        ▾
+        <UiIcon name={open ? "expand_less" : "expand_more"} />
       </button>
       {open && (
         <>
@@ -1394,7 +1395,7 @@ export default function SeasonalAdminClient({ initialData }: SeasonalAdminClient
 
       <nav className="relative flex min-w-0 items-center justify-between gap-2" aria-label="방학특강 관리 메뉴">
         <select aria-label="방학특강 업무" value={tab} onChange={(event) => setTab(event.target.value as Tab)} className="h-11 min-h-11 max-w-full shrink-0 rounded-md border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 text-base font-medium text-[var(--color-academy-ink)]">{TABS.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select>
-        <details className="relative shrink-0"><summary className="academy-button-secondary cursor-pointer list-none">관련 업무 <span aria-hidden="true">▾</span></summary><div className="absolute right-0 top-full z-20 mt-1 w-44 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-1 shadow-lg">
+        <details className="group/related relative shrink-0"><summary className="academy-button-secondary cursor-pointer list-none">관련 업무 <UiIcon name="expand_more" className="transition-transform group-open/related:rotate-180" /></summary><div className="absolute right-0 top-full z-20 mt-1 w-44 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-1 shadow-lg">
         <a href="/admin/seasonal/attendance" className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]">출석 관리</a>
         <a href="/admin/seasonal/attendance?view=makeup" className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]">보강 관리</a>
         <a href="/admin/shuttle" className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]">셔틀 관리</a>

@@ -72,6 +72,32 @@
 |------|------|------|------|
 | tester | lib/enrollment/admin-change-request.ts NEEDS_CHECK_SQL | 반 이동 뒤 새 반 수강을 삭제하면 그 CLASS_ADD(이동 신청에 afterJson.enrollmentChangeRequestId 로 연결)의 RALLYZ 칸이 SKIPPED 가 되는데, NEEDS_CHECK 는 RALLYZ 를 `<> 'SUCCEEDED'` 로 세어 이동 신청이 «확인 필요»에 영구히 남음. 직원이 지우려면 «랠리즈 반영 확인»을 거짓으로 눌러야 함. 삭제 사유로 닫힌 명령(holdReason=DELETED_ENROLLMENT_CLOSE_REASON) 제외 등 | 대기(권장) |
 
+### 구현 기록 (developer · 11-14 아이 정보 수정 claude/child-edit)
+
+📝 구현한 기능: 학부모 아이 정보 수정(b4)·건강 특이사항(b5)·연락처 바꾸기(b6)·연결된 가족 보기/끊기(b7)·막다른 문구(c1)
+
+| 파일 경로 | 변경 내용 | 신규/수정 |
+|----------|----------|----------|
+| prisma/migrations/20261114140000_child_profile_edit · schema.prisma | Student.healthNote + StudentProfileChangeRequest(RLS FORCE) | 신규/수정 |
+| src/lib/parent/childEditRules.ts · childEdit.ts | 입력 규칙 / 저장·신청·취소·승인 | 신규 |
+| src/lib/student/healthNote.ts | 건강 글 읽기·관리자 저장 한 곳 | 신규 |
+| src/lib/account/phone-change(.ts·-rules.ts) · api/account/phone-change | 본인인증 뒤 번호 변경 | 신규 |
+| src/lib/account/family-access-parent.ts | 가족 목록·대표만 끊기 | 신규 |
+| src/app/actions/child-edit.ts · student-profile-admin.ts | 학부모·관리자 서버 동작 | 신규 |
+| mypage/record(ChildProfileSections·ChildInfoEditSheet) · children/FamilyMembersSection · settings/page · seasonal · EmptyParentState · PhoneChangeButton | 학부모 화면 | 신규/수정 |
+| admin/students/[id](StudentDetailClient·StudentProfilePanels) | 변경 요청·건강 칸 | 신규/수정 |
+| staff-class-people · SessionStudentSheet · SessionInProgressClient · ClassPeopleSheet · unifiedDriverRun(+Logic) · UnifiedDriverClient | 선생님·기사님 표시 | 수정 |
+| tests/child-edit.test.mjs (+기존 3개 가짜 부품 보강) | 20건 | 신규/수정 |
+
+💡 tester 참고:
+- 테스트 방법: `node --test tests/child-edit.test.mjs` · 실기기는 마이그레이션 적용 뒤(적용 전에는 건강 칸·변경 신청 버튼이 숨는다)
+- 정상 동작: 저장 즉시 아이 정보 줄 갱신 / 신청하면 «확인 중» 줄 → 관리자 승인 시 이름·생일 변경 + 학부모 앱 알림
+- 주의할 입력: 건강 글 300/301자 · 학생 전화 유선번호 · 같은 항목 두 번 신청 · 연결 가족 계정으로 끊기 시도 · 계정 이름≠인증 이름
+
+⚠️ reviewer 참고:
+- 연락처 변경이 Guardian 의 «옛 내 번호» 줄도 새 번호로 맞춘다(phone-change.ts) · 인증 원장 재사용(stizphone_) 이 자녀 연결 증명과 안 섞이는지
+- 신청함(inbox) 종류는 추가하지 않음(동시 작업 충돌 회피) — 학생 상세 칸 + 관리자 앱 알림만
+
 ---
 
 ## 작업 로그 (최근 10건)
@@ -79,6 +105,8 @@
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
 | 11-15 | developer(학부모 여러 날 결석, claude/absence-period-parent): 이월 재검수 권장 ②~⑤(564ce9bc) + 학부모 «결석 알리기 › 여러 날»(4주·모든 사유, 날짜마다 saveReportedAbsenceInTx·알림 기간당 1회·복귀했어요/알림 취소·끝나기 전 앱 알림) · 질병·부상 증빙 기간 한 묶음·같은 기간 함께 승인 · 관리자 «기간 결석 등록» 입구 2곳·학부모 신고 표시. **마이그레이션 20261115100000 운영 미적용**(없으면 여러 날만 숨김). tsc 0·tests 5000-0·guards 82-0. 새 SQL 실제 Postgres 미실행 | 검수 대기 |
+| 11-14 | developer(출결 다시 누르면 취소, claude/attendance-toggle): 선생님 수업 화면에서 선택된 출결 버튼을 다시 누르면 미확인(출결 기록 삭제) — 새 액션 clearStaffAttendance(정규·보강·체험·특강 좌석, dryRun 미리 보기). 결석 취소는 확인 1회·안 쓴 보강권 회수(기존 규칙 함수), 예약·사용된 보강권/정산된 결석이면 거부, 학부모 신고와 그 보강권은 유지, 알림 없음. tsc 0·tests 5023-0 | 완료(main 머지 전) |
+| 11-14 | developer(아이 정보 수정, claude/child-edit): 학부모 «수정» 시트(학교·학생 전화·주소·건강 특이사항 바로 반영 / 이름·생년월일 변경 신청→학생 상세 «정보 변경 요청» 승인·반려) · 건강 글 선생님 «특이»+상세 시트·기사님 줄 «특이» · 연락처 바꾸기(본인인증) · 연결된 가족 보기·끊기(대표만) · 막다른 문구 3곳 · 임시 생일 학년. 마이그레이션 20261114140000 **운영 미적용**. tsc 0·tests 4938-0·guards 82-0 | 검수 대기 |
 | 11-14 | developer(질병·부상 결석 이월, claude/illness-carry): 질병·부상 결석 = 보강권 대신 «이월 검토 중»(RegularAbsenceCarryReview) · 사유 글 필수+증빙 사진 1~3장(비공개 버킷 absence-evidence, 7일 안 추가) · 신청함 «질병·부상 결석»(ILLNESS_CARRY) [이월 승인]=기존 resolveWorkbenchAbsence 재사용 / [보강권으로] · 7일 사진 없음 자동 전환·90일 뒤 사진 삭제(cron/makeup-credits) · 출결 결석 시 보류 · 카카오 안내·FAQ·«결석 알리기» 문구. **마이그레이션 20261114130000 운영 미적용**(없어도 예전 방식으로 동작). tsc 0·tests 4827-0·guards 82-0. 새 SQL 은 실제 Postgres 에서 미실행 — 적용 후 읽기 검증 필요 | 검수 대기 |
 | 11-14 | developer(수업 진행 화면 간결화, claude/staff-session-compact): 출석부 화면·«출석 확인» 칸·«학생 정보·수업 관리» 펼침을 없애고 학생 한 줄 명단(이름+출결 3버튼)+상세 시트(SessionStudentSheet)+«더보기» · «오늘 수업 내용»+«수업 피드» → «오늘 수업» 한 칸(계획 접힘·불러오기) · 종료 창 중복 입력 제거 · 옛 안드로이드 앱(1.0.3 미만) 영상 촬영 안내. 서버·액션 변경 없음. tsc 0·tests 4808-0 | 완료(main 머지 전·실기기 점검 필요) |
 | 11-14 | developer(보강 예약 학년 판정, claude/makeup-grade): 학생 학년 = 생년월일 계산(student-grade.ts, 임시 생일 2000-01-01·빈 값이면 학년 글자), 후보 = 포함 먼저+±1 유지·미취학 위로 2학년·성인반끼리(credit-rules.makeupGradeFit, 목록·예약 같은 판정), 빈 목록 4종 그 자리 버튼(학년 확인·다시 확인·학원에 문의→홈 메시지 폼), 문구 한 줄씩. 휴원 차단 조건 없음. tsc 0·node --test 4795/0 | 검수 대기 |
@@ -86,5 +114,3 @@
 | 11-14 | developer(기사님 운행표 휴원·휴무, claude/driver-paused-holiday): 휴원·퇴원·첫 수업 전 = 회색 뱃지+탑승·미탑승 잠금(명단 유지), 휴무일 = 맨 위 «오늘은 휴무(사유)»+정규 줄 잠금, 저장 API 2곳 409, 관리자 운행표 뱃지+«이 달 휴무». 판정 = regularRunDayRules(학부모 childShuttleRules 재사용). 운영 읽기: 휴원 3명·6행 뱃지 대상. 리뷰 반영(월말 다음 달 미입력=모름·반 0개는 퇴원 기록 있을 때만 퇴원·409 문구 표시) tsc 0·node --test 4672/0·guards 5/0 | 재검수 대기 |
 | 11-14 | developer(청구 월 카드, claude/billing-cards): 학부모 청구 탭·아이 기록 = 한 달 한 줄(청구월·합계·상태) + 세부 시트(할인 «원래−할인=낼 금액»·기존 결제 버튼 그대로 시트 안) · 할인 원인 = Payment 에 할인 칸 없음, 글(description) 안에만 있어 카드가 원문을 통째로 보였음 → 해석 156/157건 · 청구 탭 날짜 두 번 변환 · tests 4661-0·guards 5-0·tsc 0 | 검수 대기 |
 | 11-14 | developer(아이 정보+셔틀, claude/child-profile): /mypage/record 위에 아이 정보(생년월일·학년(생일 기준+등록 학년)·학교·성별·등록일·대표 보호자·내 연락처·연결 가족 이름·보강권)·수강 반(수업 탭 칩)·셔틀(요일별 승하차·7일 운행: 휴무·휴원·결석·안 탐·다른 곳, 방학특강·신청 접수, 기사님 전화) 접기 칸 · **버그 수정: 학부모 홈·수업 탭 정규 셔틀이 빈 옛 표(ShuttleRoutePassenger 0행)만 읽어 60명 전원 미표시 → 명단 기준(childShuttleRules) 항목 추가** · 운영 읽기 대조 6명 요일별 불일치 0 · **1차 수정(검수)**: 신청 접수 카드 = 명단 등재 여부(getRosterStudentIds)로 제외 · 일정 탭 명단 항목 요일별 한 줄+«아이 기록 › 셔틀» · 반 없음/못 찾음 = 운행 아님(NO_CLASS·CHECK) · 명단 조회 첫 병렬 묶음·기록은 그 아이만 · 빈 studentId 11행 = 2호점 운영 정차(학생 행 아님, 채울 것 없음) · tests 4583-0·tsc 0 | 검수 대기 |
-| 11-14 | reviewer(수업 피드 ab61a2db): 통과 — 필수 0·권장 3(종료 창 비우기 COALESCE·대타 날짜 조각·자정 넘긴 진행 수업 사진). 운영 대조 날짜 불일치 0·소식 20→20 | 통과 |
-| 11-14 | developer(수업 피드, claude/feed-ui): 동의 제거·볼 수 있는가 판정 통일(feed/rules·server)·선생님 수업 피드 칸·홈 최신 수업 피드 카드·소식 상세 재작성·동의 UI 제거·공개 게시 동의 스위치 끔. tsc 0·tests 4620-0·guards 5-0 | 완료(검수 대기) |

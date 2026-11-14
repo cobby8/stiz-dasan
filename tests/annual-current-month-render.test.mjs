@@ -30,6 +30,8 @@ function load(file, now) {
         }
         if (id === "./AnnualCalendarView") return load("src/app/annual/AnnualCalendarView.tsx", now);
         if (id === "./annualCalendar") return load("src/app/annual/annualCalendar.ts", now);
+        // 2026-11-15 아이콘 예외(화살표·종·톱니): 공용 아이콘 부품은 실제 코드를 그대로 쓴다
+        if (id === "@/components/common/UiIcon") return load("src/components/common/UiIcon.tsx", now);
         if (id === "./AnnualEventsClient") return {};
         return require(id);
     }, exports);

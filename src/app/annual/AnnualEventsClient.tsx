@@ -1,5 +1,6 @@
 "use client";
 
+import UiIcon from "@/components/common/UiIcon";
 import { useState, useMemo, useEffect, useRef, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import EventDetailPanel from "./EventDetailPanel";
@@ -297,7 +298,7 @@ export default function AnnualEventsClient({ allEvents, yearlySchedules, default
                                                 >
                                                     수업일자 확인
                                                     {/* 게슈탈트 P-13: 작은 글자 최소 12px */}
-                                                    <span className="text-xs">{isScheduleOpen ? "▲" : "▼"}</span>
+                                                    <UiIcon name={isScheduleOpen ? "expand_less" : "expand_more"} />
                                                 </button>
                                             </div>
                                         )}

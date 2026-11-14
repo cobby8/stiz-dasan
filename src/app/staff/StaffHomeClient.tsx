@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import {
+  loadStaffSessionWorkspace,
   savePlannedClassContent,
   startClassSession,
 } from "@/app/actions/staff-sessions";
@@ -11,20 +12,34 @@ import { createStaffClassNotice, getStaffClassNoticeStatus } from "@/app/actions
 import { deliveryStatusText, type DeliveryStatusSummary } from "@/lib/parent-staff-status";
 import { VoiceToTextButton } from "@/components/staff/VoiceToTextButton";
 import { useStaffDialog } from "@/components/staff/useStaffDialog";
-import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import { LiveStatusPill } from "@/components/staff/LiveStatusPill";
-import { SessionFeedPanel } from "@/components/staff/SessionFeedPanel";
-import type { StaffTodayClass } from "@/lib/staff-session-queries";
+// 2026-11-15 수업 한 화면: 수업 줄을 누르면 페이지 이동·아래 시트 대신 그 자리에서 수업 부품을 펼친다
+import SessionWorkspace from "@/app/staff/sessions/[sessionId]/SessionInProgressClient";
+import UiIcon from "@/components/common/UiIcon";
+import type { LessonTextSaveResult } from "@/components/staff/LessonTextEditor";
+import { retainSessionData } from "@/components/staff/sessionWorkspaceRules";
+import { prepareStaffNavigation } from "./staffNavigation";
+import type { StaffSessionDetail, StaffSessionStudent, StaffTodayClass } from "@/lib/staff-session-queries";
 import { isStaleDateKey, STALE_DATE_MESSAGE, staffReloginHref } from "@/lib/staff-session-rules";
 
 function isSeasonalLesson(lesson: StaffTodayClass) {
   return lesson.kind === "SEASONAL";
 }
 
-const ClassPeopleSheet = dynamic(
-  () => import("@/components/staff/ClassPeopleSheet").then((module) => module.ClassPeopleSheet),
-  { ssr: false },
-);
+/** 펼친 수업 줄의 본문(수업 정보·출석부) — 펼칠 때 읽는다 */
+type SessionData =
+  | { state: "loading" }
+  | { state: "ready"; session: StaffSessionDetail; students: StaffSessionStudent[] }
+  | { state: "error"; message: string };
+
+function isStarted(lesson: StaffTodayClass) {
+  return Boolean(lesson.sessionId) && (lesson.sessionStatus === "IN_PROGRESS" || lesson.sessionStatus === "COMPLETED");
+}
+
+/** 펼친 본문의 id — 줄 머리의 aria-controls 가 가리킨다 */
+function lessonBodyId(lesson: StaffTodayClass) {
+  return `lesson-body-${lesson.scheduleKey}`;
+}
 const ClassBillingSheet = dynamic(
   () => import("@/components/staff/ClassBillingSheet").then((module) => module.ClassBillingSheet),
   { ssr: false },
@@ -66,8 +81,6 @@ export default function StaffHomeClient({
   }, [dateKey, router]);
   const [classes, setClasses] = useState(initialClasses);
   const [startTarget, setStartTarget] = useState<StaffTodayClass | null>(null);
-  const [contentTarget, setContentTarget] = useState<StaffTodayClass | null>(null);
-  const [plannedContent, setPlannedContent] = useState("");
   const [noticeTarget, setNoticeTarget] = useState<StaffTodayClass | null>(null);
   const [noticeTitle, setNoticeTitle] = useState("");
   const [noticeContent, setNoticeContent] = useState("");
@@ -76,13 +89,18 @@ export default function StaffHomeClient({
   const [noticeSaved, setNoticeSaved] = useState(false);
   const [noticeUncertain, setNoticeUncertain] = useState(false);
   const [noticeResumeNeeded, setNoticeResumeNeeded] = useState(false);
-  const [peopleTarget, setPeopleTarget] = useState<StaffTodayClass | null>(null);
   const [billingTarget, setBillingTarget] = useState<{ lesson: StaffTodayClass; student?: { id: string; name: string } } | null>(null);
-  // 남은·완료 수업 행을 누르면 여는 하단 시트(장소·수업 내용·빠른 메뉴는 여기서)
-  const [detailTarget, setDetailTarget] = useState<StaffTodayClass | null>(null);
-  // «수업 피드» 시트(2026-11-14) — 시작 전엔 한 줄만, 끝난 수업은 한 줄·사진·영상(당일 자정까지).
-  // sessionId 가 null 이면 수업 기록을 만드는 중이다.
-  const [feedTarget, setFeedTarget] = useState<{ lesson: StaffTodayClass; sessionId: string | null } | null>(null);
+  // 펼친 수업 줄(한 번에 하나). 진행 중 수업이 있으면 그 줄을 펼친 채로 연다 — 예전 «수업으로 돌아가기» 한 번을 없앤다.
+  const [expandedKey, setExpandedKey] = useState<string | null>(() => initialClasses.find((lesson) => lesson.sessionStatus === "IN_PROGRESS")?.scheduleKey ?? null);
+  // 수업 기록 id → 펼친 본문. 진행 중 수업의 본문은 줄을 접어도 버리지 않는다(출석 저장 중·실패 표시를 잃지 않게).
+  const [sessionData, setSessionData] = useState<Record<string, SessionData>>({});
+  // 방금 시작한 수업 — 출석부 칸을 펼친 채로 연다(예전엔 출석 화면으로 이동했다)
+  const [justStartedId, setJustStartedId] = useState<string | null>(null);
+  // 진행 중 수업 줄을 접었을 때 머리줄에 보일 출결 요약·저장 상태
+  const [liveStatus, setLiveStatus] = useState<{ summary: string; saving: string; failed: string } | null>(null);
+  const [showCompleted, setShowCompleted] = useState(false);
+  // 수업 종료 같은 완료 안내 한 줄
+  const [flash, setFlash] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -143,63 +161,103 @@ export default function StaffHomeClient({
   const completedClasses = classes.filter((lesson) => lesson.sessionStatus === "COMPLETED");
   const completedCount = completedClasses.length;
 
-  function openContent(lesson: StaffTodayClass) {
-    setError(null);
-    setContentTarget(lesson);
-    setPlannedContent(lesson.plannedContent || "");
+  // 수업 줄의 값 일부를 고친다(저장한 수업 내용·상태를 목록에도 반영)
+  function patchLesson(scheduleKey: string, patch: Partial<StaffTodayClass>) {
+    setClasses((current) => current.map((item) => item.scheduleKey === scheduleKey ? { ...item, ...patch } : item));
   }
 
-  function saveContent() {
-    if (!contentTarget) return;
-    setError(null);
-    startTransition(async () => {
-      // 특강은 회차(sessionDateId)를 함께 보내야 특강 기록에 저장된다(G11) — 빠지면 정규 수업 기록으로 들어갔다.
-      const result = await savePlannedClassContent({
-        classId: contentTarget.id,
-        date: dateKey,
-        plannedContent,
-        ...(contentTarget.sessionDateId ? { sessionDateId: contentTarget.sessionDateId } : {}),
-      });
-      if (!result.ok) {
-        setError(result.message);
-        if ("needsLogin" in result && result.needsLogin) setNeedsLogin(true);
-        // 날짜가 바뀐 화면이면 오늘 화면으로 새로 불러온다(b2).
-        if (result.message === STALE_DATE_MESSAGE) router.refresh();
-        return;
-      }
-      setClasses((current) => current.map((lesson) => lesson.id === contentTarget.id
-        ? { ...lesson, sessionId: result.sessionId, sessionStatus: "PLANNED", plannedContent }
-        : lesson));
-      setContentTarget(null);
+  function dropSessionData(sessionId: string | null) {
+    if (!sessionId) return;
+    setSessionData((current) => {
+      const next = { ...current };
+      delete next[sessionId];
+      return next;
     });
   }
 
-  // 수업 피드 열기 — 시작 전 수업에 기록이 아직 없으면 «수업 내용» 저장과 같은 길(savePlannedClassContent)로
-  // 기록부터 만든다(적어 둔 수업 내용은 그대로 다시 저장 — 바뀌지 않는다). 그래야 한 줄을 그 기록에 저장할 수 있다.
-  function openFeed(lesson: StaffTodayClass) {
+  // 수업 전 «수업 내용» 저장 — 통합 글칸이 부른다(미리 쓴 내용은 시작 전에만 저장된다. 선생님만 본다).
+  async function savePlanned(lesson: StaffTodayClass, text: string): Promise<LessonTextSaveResult> {
+    // 목록의 값을 먼저 고친다 — 줄을 접을 때 하는 저장이 끝나기 전에 다시 펼쳐도 방금 쓴 글로 시작하게(실패하면 되돌린다).
+    const previous = lesson.plannedContent;
+    patchLesson(lesson.scheduleKey, { plannedContent: text.trim() || null });
+    // 특강은 회차(sessionDateId)를 함께 보내야 특강 기록에 저장된다(G11) — 빠지면 정규 수업 기록으로 들어갔다.
+    const result = await savePlannedClassContent({
+      classId: lesson.id,
+      date: dateKey,
+      plannedContent: text,
+      ...(lesson.sessionDateId ? { sessionDateId: lesson.sessionDateId } : {}),
+    });
+    if (!result.ok) {
+      patchLesson(lesson.scheduleKey, { plannedContent: previous });
+      if ("needsLogin" in result && result.needsLogin) setNeedsLogin(true);
+      // 날짜가 바뀐 화면이면 오늘 화면으로 새로 불러온다(b2).
+      if (result.message === STALE_DATE_MESSAGE) router.refresh();
+      return { ok: false, message: result.message };
+    }
+    patchLesson(lesson.scheduleKey, { sessionId: result.sessionId, sessionStatus: lesson.sessionStatus ?? "PLANNED", plannedContent: text.trim() || null });
+    return { ok: true };
+  }
+
+  // 펼친 수업의 본문을 읽는다(시작한 수업만 — 시작 전 수업은 목록에 있는 값으로 충분하다)
+  const loadSession = useCallback((sessionId: string) => {
+    setSessionData((current) => ({ ...current, [sessionId]: { state: "loading" } }));
+    void loadStaffSessionWorkspace({ sessionId })
+      .then((result) => {
+        if (!result.ok) {
+          if (result.needsLogin) setNeedsLogin(true);
+          setSessionData((current) => ({ ...current, [sessionId]: { state: "error", message: result.message } }));
+          return;
+        }
+        setSessionData((current) => ({ ...current, [sessionId]: { state: "ready", session: result.session, students: result.students } }));
+      })
+      .catch(() => {
+        setSessionData((current) => ({ ...current, [sessionId]: { state: "error", message: "수업 정보를 불러오지 못했습니다. 연결을 확인한 뒤 다시 눌러 주세요." } }));
+      });
+  }, []);
+
+  const expandedLesson = classes.find((lesson) => lesson.scheduleKey === expandedKey) ?? null;
+  const expandedSessionId = expandedLesson && isStarted(expandedLesson) ? expandedLesson.sessionId : null;
+  const expandedLoaded = expandedSessionId ? Boolean(sessionData[expandedSessionId]) : true;
+  useEffect(() => {
+    if (expandedSessionId && !expandedLoaded) loadSession(expandedSessionId);
+  }, [expandedLoaded, expandedSessionId, loadSession]);
+  // 끝난 수업의 본문은 줄을 접으면 버린다 — 다시 펼칠 때 서버에서 새로 읽어, 접기 전에 저장한 수업 내용·사진·영상이
+  // 처음 읽은 옛 값으로 되돌아가 보이지 않게 한다(옛 값 위에 저장하면 학부모에게 보이는 글이 덮인다). 진행 중 수업은 그대로 둔다.
+  useEffect(() => {
+    setSessionData((current) => retainSessionData(current, classes, expandedKey));
+  }, [classes, expandedKey]);
+
+  // 줄을 누르면 그 자리에서 펼친다(한 번에 하나). 다른 줄을 펼치기 전에 진행 중 수업 칸의 메모를 저장한다.
+  async function toggleLesson(lesson: StaffTodayClass) {
     setError(null);
-    if (lesson.sessionId) {
-      setFeedTarget({ lesson, sessionId: lesson.sessionId });
+    setFlash("");
+    // 같은 줄을 다시 누르면 접는다 — 진행 중 수업 칸은 접힐 때 스스로 메모를 저장한다
+    if (expandedKey === lesson.scheduleKey) { setExpandedKey(null); return; }
+    const ready = await prepareStaffNavigation();
+    if (!ready.ok) {
+      setError(ready.message || "수업 기록을 저장하지 못했습니다. 잠시 후 다시 눌러 주세요.");
       return;
     }
-    setFeedTarget({ lesson, sessionId: null });
-    startTransition(async () => {
-      const result = await savePlannedClassContent({
-        classId: lesson.id,
-        date: dateKey,
-        plannedContent: lesson.plannedContent || "",
-        ...(lesson.sessionDateId ? { sessionDateId: lesson.sessionDateId } : {}),
-      });
-      if (!result.ok) {
-        setError(result.message);
-        if ("needsLogin" in result && result.needsLogin) setNeedsLogin(true);
-        if (result.message === STALE_DATE_MESSAGE) router.refresh();
-        return;
-      }
-      const created = { ...lesson, sessionId: result.sessionId, sessionStatus: lesson.sessionStatus ?? "PLANNED" };
-      setClasses((current) => current.map((item) => item.scheduleKey === lesson.scheduleKey ? created : item));
-      setFeedTarget({ lesson: created, sessionId: result.sessionId });
-    });
+    setExpandedKey(lesson.scheduleKey);
+  }
+
+  // 수업 종료 — 이동하지 않고 그 줄이 «완료»로 바뀐다(완료한 수업 목록으로 내려간다)
+  function handleFinished(lesson: StaffTodayClass, content: string | null) {
+    patchLesson(lesson.scheduleKey, { sessionStatus: "COMPLETED", content });
+    dropSessionData(lesson.sessionId);
+    setLiveStatus(null);
+    setExpandedKey(null);
+    setFlash(`${lesson.name} 수업을 종료했습니다.`);
+    router.refresh();
+  }
+
+  // 수업 시작 취소 — 그 줄이 «시작 전» 모양으로 돌아간다(기록한 출결·사진·메모는 그대로)
+  function handleCancelled(lesson: StaffTodayClass) {
+    patchLesson(lesson.scheduleKey, { sessionStatus: "PLANNED", startedAt: null });
+    dropSessionData(lesson.sessionId);
+    setLiveStatus(null);
+    setFlash(`${lesson.name} 수업 시작을 취소했습니다.`);
+    router.refresh();
   }
 
   function startLesson() {
@@ -216,6 +274,14 @@ export default function StaffHomeClient({
           // 어제 끝내지 못한 수업일 수 있다(b6) — 말없이 넘기면 선생님이 왜 다른 수업이 열렸는지 모른다.
           // «○○반(○월 ○일) 수업이 아직 진행 중입니다. 먼저 끝내 주세요» 를 먼저 보이고 이동한다.
           setStartTarget(null);
+          // 오늘 목록에 있는 수업이면(다른 기기에서 먼저 시작) 이동하지 않고 그 줄을 펼친다
+          const here = classes.find((lesson) => lesson.sessionId === result.activeSessionId);
+          if (here) {
+            patchLesson(here.scheduleKey, { sessionStatus: "IN_PROGRESS" });
+            setExpandedKey(here.scheduleKey);
+            setError(result.message);
+            return;
+          }
           if (window.confirm(`${result.message}\n\n그 수업 화면으로 이동할까요?`)) {
             router.push(`/staff/sessions/${result.activeSessionId}`);
           } else {
@@ -232,12 +298,14 @@ export default function StaffHomeClient({
         }
         return;
       }
-      router.push(`/staff/sessions/${result.sessionId}?view=attendance`);
+      // 2026-11-15: 출석 화면으로 이동하지 않는다 — 그 줄이 «수업 중» 모양으로 바뀌고 출석부 칸이 펼쳐진다
+      const started = startTarget;
+      dropSessionData(result.sessionId);
+      patchLesson(started.scheduleKey, { sessionId: result.sessionId, sessionStatus: "IN_PROGRESS", startedAt: result.startedAt });
+      setJustStartedId(result.sessionId);
+      setExpandedKey(started.scheduleKey);
+      setStartTarget(null);
     });
-  }
-
-  function openContacts(lesson: StaffTodayClass) {
-    setPeopleTarget(lesson);
   }
 
   function sendNotice(resumeDelivery = false) {
@@ -269,7 +337,8 @@ export default function StaffHomeClient({
 
   function openPrimaryAction(lesson: StaffTodayClass) {
     if (lesson.sessionStatus === "IN_PROGRESS" && lesson.sessionId) {
-      router.push(`/staff/sessions/${lesson.sessionId}`);
+      // 진행 중 수업은 이동하지 않고 그 줄을 펼친다
+      setExpandedKey(lesson.scheduleKey);
       return;
     }
     if (runningClass) {
@@ -277,6 +346,80 @@ export default function StaffHomeClient({
       return;
     }
     setStartTarget(lesson);
+  }
+
+  // 수업 줄 아래에 펼쳐지는 본문 — 수업 주소(/staff/sessions/[id])와 같은 수업 부품을 끼운다.
+  // 예전 아래 시트(수업 내용·수업 피드·학생 정보·청구 확인·수업 공지·수업 시작)의 기능은 전부 이 본문 안에 있다.
+  function renderLessonBody(lesson: StaffTodayClass, startPrimary: boolean, className: string) {
+    const expanded = expandedKey === lesson.scheduleKey;
+    const openNotice = lesson.substitute ? undefined : () => { setError(null); setNoticeTarget(lesson); };
+    // f4: 대타로만 보이는 반은 수업 공지를 숨긴다 — 서버도 대타에게는 공지 권한을 주지 않는다.
+    // 청구 확인은 원장·부원장만(f3 보완) — 선생님에게는 진입 자체를 넘기지 않는다.
+    const openBilling = showFees ? (student?: { id: string; name: string }) => setBillingTarget({ lesson, student }) : undefined;
+
+    if (!isStarted(lesson)) {
+      // 시작 전: 수업 시작 → 수업 내용(미리 쓰기) → 출석부(명단·학생 정보) → 수업 공지·청구 확인
+      if (!expanded) return null;
+      return (
+        <div id={lessonBodyId(lesson)} className={className}>
+          <SessionWorkspace
+            key={`planned:${lesson.scheduleKey}`}
+            planned={{
+              lesson: {
+                classId: lesson.id,
+                className: lesson.name,
+                sessionId: lesson.sessionId,
+                // 특강은 회차를 넘겨 그 회차의 명단·학생 정보를 읽는다
+                sessionDateId: lesson.sessionDateId,
+                plannedContent: lesson.plannedContent,
+                content: lesson.content,
+                studentCount: lesson.studentCount,
+              },
+              startLocked: Boolean(runningClass),
+              startPrimary,
+              onStart: () => openPrimaryAction(lesson),
+              savePlanned: (text) => savePlanned(lesson, text),
+              onOpenNotice: openNotice,
+              onOpenBilling: openBilling,
+            }}
+          />
+        </div>
+      );
+    }
+
+    const sessionId = lesson.sessionId as string;
+    const data = sessionData[sessionId];
+    const live = lesson.sessionStatus === "IN_PROGRESS";
+    // 진행 중 수업 칸은 한 번 읽으면 줄을 접어도 화면에서만 숨긴다(hidden) — 출석 저장 중·실패 표시, 쓰던 메모, 올리던 사진을 잃지 않게.
+    if (!expanded && !(live && data?.state === "ready")) return null;
+    return (
+      <div id={lessonBodyId(lesson)} hidden={!expanded} className={className}>
+        {!data || data.state === "loading" ? (
+          <p role="status" className="py-3 text-sm text-[var(--color-academy-muted)]">수업 정보를 불러오는 중입니다.</p>
+        ) : data.state === "error" ? (
+          <div role="alert" className="rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm text-[var(--color-academy-danger)]">
+            <p>{data.message}</p>
+            <button type="button" onClick={() => loadSession(sessionId)} className="academy-button-secondary academy-button-sm mt-2">다시 불러오기</button>
+          </div>
+        ) : (
+          <SessionWorkspace
+            key={sessionId}
+            session={data.session}
+            initialStudents={data.students}
+            initialView={justStartedId === sessionId ? "attendance" : "main"}
+            showFees={showFees}
+            embedded
+            active={expanded}
+            onFinished={(content) => handleFinished(lesson, content)}
+            onCancelled={() => handleCancelled(lesson)}
+            onLineSaved={(content) => patchLesson(lesson.scheduleKey, { content })}
+            onOpenNotice={openNotice}
+            onOpenBilling={showFees ? (student) => setBillingTarget({ lesson, student }) : undefined}
+            onAttendanceStatus={live ? setLiveStatus : undefined}
+          />
+        )}
+      </div>
+    );
   }
 
   return (
@@ -301,6 +444,10 @@ export default function StaffHomeClient({
         </div>
       )}
 
+      {flash && <p role="status" className="rounded-xl bg-[var(--color-academy-success-soft)] p-3 text-sm text-[var(--color-academy-success)]">{flash}</p>}
+      {/* 창이 열려 있지 않을 때의 안내(다른 수업 시작 잠금·저장 실패 등) — 창이 열려 있으면 창 안에 보인다 */}
+      {!startTarget && !noticeTarget && <ErrorMessage error={error} />}
+
       {classes.length === 0 ? (
         coachLinkMissing ? (
           // 코치 연결이 없으면 수업이 하나도 안 보인다 — «오늘 수업 없음»과 구분해 알려 준다(b4).
@@ -324,7 +471,19 @@ export default function StaffHomeClient({
               className="academy-focus-class overflow-hidden rounded-3xl border border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-ink)]"
               style={focusClass.sessionStatus === "IN_PROGRESS" ? { border: "2px solid var(--color-academy-secondary-strong)" } : undefined}
             >
-              <div className="p-4">
+              {/* 2026-11-15: 카드 머리를 누르면 페이지 이동 없이 그 자리에서 수업 칸이 펼쳐진다(화살표 = 펼침 표시) */}
+              <div
+                role="button"
+                tabIndex={0}
+                aria-expanded={expandedKey === focusClass.scheduleKey}
+                aria-controls={lessonBodyId(focusClass)}
+                onClick={() => void toggleLesson(focusClass)}
+                onKeyDown={(event) => {
+                  if (event.target !== event.currentTarget) return;
+                  if (event.key === "Enter" || event.key === " ") { event.preventDefault(); void toggleLesson(focusClass); }
+                }}
+                className="cursor-pointer p-4"
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-base font-semibold tabular-nums text-[var(--color-academy-ink)]">{focusClass.startTime}–{focusClass.endTime}</p>
@@ -334,39 +493,34 @@ export default function StaffHomeClient({
                       {focusClass.substitute && <SubstituteBadge />}
                     </div>
                   </div>
-                  <StatusBadge status={focusClass.sessionStatus} />
+                  <span className="flex shrink-0 items-center gap-1 text-[var(--color-academy-muted)]">
+                    <StatusBadge status={focusClass.sessionStatus} />
+                    <UiIcon name={expandedKey === focusClass.scheduleKey ? "expand_less" : "expand_more"} />
+                  </span>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-sm text-[var(--color-academy-muted)]">
                   <span>학생 <span className="tabular-nums">{focusClass.studentCount}</span>명</span>
                   <span>{focusClass.location || "장소 미정"}</span>
                 </div>
-                {focusClass.plannedContent && <p className="mt-3 line-clamp-2 text-sm leading-5 text-[var(--color-academy-muted)]">{focusClass.plannedContent}</p>}
+                {/* 접혀 있을 때만 미리 쓴 내용을 두 줄로 보인다(펼치면 «수업 내용» 칸에 전체가 있다) */}
+                {expandedKey !== focusClass.scheduleKey && focusClass.plannedContent && <p className="mt-3 line-clamp-2 text-sm leading-5 text-[var(--color-academy-muted)]">{focusClass.plannedContent}</p>}
               </div>
-              {focusClass.sessionStatus !== "COMPLETED" && (
-                <div className="space-y-2 px-4 pb-4">
+              {/* 접혀 있을 때: 시작 전이면 바로 시작(이 화면의 주 버튼), 진행 중이면 출결 요약·저장 상태 한 줄 */}
+              {expandedKey !== focusClass.scheduleKey && focusClass.sessionStatus !== "IN_PROGRESS" && (
+                <div className="px-4 pb-4">
                   <button type="button" onClick={() => openPrimaryAction(focusClass)} className="academy-button-primary min-h-12! w-full text-base!">
-                    {focusClass.sessionStatus === "IN_PROGRESS" ? "수업으로 돌아가기" : "수업 시작"}
+                    수업 시작
                   </button>
-                  {/* 다른 수업 시작 잠금 안내 — 버튼 바로 아래 한 줄(근접성). 잠금 동작 자체는 openPrimaryAction 그대로. */}
-                  {runningClass && (
-                    <p role="status" className="text-xs text-[var(--color-academy-muted)]">
-                      현재 수업을 종료한 뒤 다음 수업을 시작할 수 있습니다.
-                    </p>
-                  )}
-                  <details className="rounded-xl bg-[var(--color-academy-surface)]">
-                    <summary className="min-h-11 cursor-pointer px-3 py-3 text-sm font-medium text-[var(--color-academy-muted)]">수업 준비·관리</summary>
-                    <div className="grid grid-cols-2 gap-2 p-2" aria-label="수업 빠른 메뉴">
-                      <SecondaryButton label="수업 내용" onClick={() => openContent(focusClass)} disabled={focusClass.sessionStatus === "IN_PROGRESS"} />
-                      {/* 수업 중이면 수업 화면의 «수업 피드» 칸에서 쓴다 */}
-                      {focusClass.sessionStatus !== "IN_PROGRESS" && <SecondaryButton label="수업 피드" onClick={() => openFeed(focusClass)} />}
-                      <SecondaryButton label="학생 정보" onClick={() => setPeopleTarget(focusClass)} />
-                      {showFees && <SecondaryButton label="청구 확인" onClick={() => setBillingTarget({ lesson: focusClass })} />}
-                      {/* f4: 대타로만 보이는 반은 수업 공지를 숨긴다 — 서버도 대타에게는 공지 권한을 주지 않는다. */}
-                      {!focusClass.substitute && <SecondaryButton label="수업 공지" onClick={() => { setError(null); setNoticeTarget(focusClass); }} />}
-                    </div>
-                  </details>
                 </div>
               )}
+              {expandedKey !== focusClass.scheduleKey && focusClass.sessionStatus === "IN_PROGRESS" && liveStatus && (
+                <p role="status" className="px-4 pb-4 text-xs tabular-nums text-[var(--color-academy-muted)]">
+                  {liveStatus.summary}
+                  {liveStatus.saving && <span className="ml-2 rounded bg-[var(--color-academy-soft)] px-2 py-0.5 font-medium text-[var(--color-academy-muted)]">{liveStatus.saving}</span>}
+                  {liveStatus.failed && <span className="ml-2 rounded bg-[var(--color-academy-danger-soft)] px-2 py-0.5 font-medium text-[var(--color-academy-danger)]">{liveStatus.failed}</span>}
+                </p>
+              )}
+              {renderLessonBody(focusClass, true, "px-4 pb-4")}
             </article>
           </section>
 
@@ -376,10 +530,12 @@ export default function StaffHomeClient({
                 <h2 className="academy-section-title">남은 수업</h2>
                 <span className="text-sm tabular-nums text-[var(--color-academy-muted)]">{otherClasses.length}개</span>
               </div>
-              {/* 한 수업 = 한 줄 행(시간 | 반 | 인원 | 시작). 빠른 메뉴는 행을 눌러 시트에서 */}
+              {/* 한 수업 = 한 줄 행(시간 | 반 | 인원 | 시작). 행을 누르면 그 아래에 수업 칸이 펼쳐진다 */}
               <ul aria-label="남은 수업 목록" className="overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
                 {otherClasses.map((lesson) => (
-                  <ClassRow key={lesson.scheduleKey} lesson={lesson} startLocked={Boolean(runningClass && lesson.sessionStatus !== "IN_PROGRESS")} onOpen={setDetailTarget} onStart={openPrimaryAction} />
+                  <ClassRow key={lesson.scheduleKey} lesson={lesson} expanded={expandedKey === lesson.scheduleKey} startLocked={Boolean(runningClass && lesson.sessionStatus !== "IN_PROGRESS")} onOpen={(target) => void toggleLesson(target)} onStart={openPrimaryAction}>
+                    {renderLessonBody(lesson, false, "border-t border-[var(--color-academy-line)] px-3 py-3")}
+                  </ClassRow>
                 ))}
               </ul>
             </section>
@@ -390,63 +546,28 @@ export default function StaffHomeClient({
       )}
 
       {completedClasses.length > 0 && (
-        <details className="rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
-          <summary className="min-h-11 cursor-pointer px-4 py-3 text-sm font-medium text-[var(--color-academy-muted)]">완료한 수업 {completedCount}개</summary>
-          <ul aria-label="완료한 수업 목록" className="border-t border-[var(--color-academy-line)]">
-            {completedClasses.map((lesson) => <ClassRow key={lesson.scheduleKey} lesson={lesson} startLocked={false} onOpen={setDetailTarget} onStart={openPrimaryAction} />)}
-          </ul>
-        </details>
+        <section className="overflow-hidden rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
+          {/* 2026-11-15: 펼침 표시는 화살표 아이콘(칸 제목이 버튼 이름) */}
+          <button type="button" aria-expanded={showCompleted} aria-controls="completed-lessons" onClick={() => setShowCompleted((current) => !current)} className="flex min-h-11 w-full items-center justify-between gap-2 px-4 py-3 text-left text-sm font-medium text-[var(--color-academy-muted)]">
+            <span>완료한 수업 {completedCount}개</span>
+            <UiIcon name={showCompleted ? "expand_less" : "expand_more"} />
+          </button>
+          {showCompleted && (
+            <ul aria-label="완료한 수업 목록" id="completed-lessons" className="border-t border-[var(--color-academy-line)]">
+              {completedClasses.map((lesson) => (
+                <ClassRow key={lesson.scheduleKey} lesson={lesson} expanded={expandedKey === lesson.scheduleKey} startLocked={false} onOpen={(target) => void toggleLesson(target)} onStart={openPrimaryAction}>
+                  {renderLessonBody(lesson, false, "border-t border-[var(--color-academy-line)] px-3 py-3")}
+                </ClassRow>
+              ))}
+            </ul>
+          )}
+        </section>
       )}
 
-      {detailTarget && (
-        <ClassDetailSheet
-          lesson={detailTarget}
-          startLocked={Boolean(runningClass && detailTarget.sessionStatus !== "IN_PROGRESS")}
-          showFees={showFees}
-          onClose={() => setDetailTarget(null)}
-          // 시트를 먼저 닫고 기존 동작을 그대로 부른다(두 창이 겹치지 않게)
-          onAction={(action) => {
-            const lesson = detailTarget;
-            setDetailTarget(null);
-            if (action === "start") openPrimaryAction(lesson);
-            else if (action === "content") openContent(lesson);
-            else if (action === "feed") openFeed(lesson);
-            else if (action === "contacts") openContacts(lesson);
-            else if (action === "billing") { if (showFees) setBillingTarget({ lesson }); }
-            else { setError(null); setNoticeTarget(lesson); }
-          }}
-        />
-      )}
+      {/* 진행 중 수업 칸이 펼쳐져 있으면 아래 고정 막대(사진·동영상·갤러리)가 떠 있다 — 막대 높이만큼 페이지 끝을 더 띄워
+          마지막 줄(«완료한 수업» 등)이 막대에 가리지 않게 한다. 아래 탭·안전 영역 몫은 레이아웃의 아래 여백이 이미 잡고 있다. */}
+      {expandedLesson?.sessionStatus === "IN_PROGRESS" && <div aria-hidden="true" className="h-28" />}
 
-      {feedTarget && (
-        <ListDetailPanel onClose={() => setFeedTarget(null)} titleId="staff-feed-title">
-          <div className="flex items-start justify-between gap-3 border-b border-[var(--color-academy-line)] px-4 py-3">
-            <div className="min-w-0">
-              <p className="text-sm font-medium tabular-nums text-[var(--color-academy-ink)]">{feedTarget.lesson.startTime}–{feedTarget.lesson.endTime} · {feedTarget.lesson.name}</p>
-              <h2 id="staff-feed-title" className="text-lg font-bold text-[var(--color-academy-ink)]">수업 피드</h2>
-            </div>
-            <button type="button" aria-label="닫기" onClick={() => setFeedTarget(null)} className="academy-button-text academy-button-sm shrink-0">닫기</button>
-          </div>
-          <div className="px-4 pb-4 pt-3">
-            {feedTarget.sessionId ? (
-              <SessionFeedPanel
-                key={feedTarget.sessionId}
-                sessionId={feedTarget.sessionId}
-                initialLine={feedTarget.lesson.content}
-                started={feedTarget.lesson.sessionStatus === "IN_PROGRESS" || feedTarget.lesson.sessionStatus === "COMPLETED"}
-                // 저장한 한 줄을 목록에도 반영 — 시트를 다시 열어도 방금 쓴 내용이 보이게
-                onLineSaved={(content) => {
-                  const key = feedTarget.lesson.scheduleKey;
-                  setClasses((current) => current.map((item) => item.scheduleKey === key ? { ...item, content } : item));
-                  setFeedTarget((current) => current ? { ...current, lesson: { ...current.lesson, content } } : current);
-                }}
-              />
-            ) : error ? <ErrorMessage error={error} /> : <p role="status" className="text-sm text-[var(--color-academy-muted)]">준비 중…</p>}
-          </div>
-        </ListDetailPanel>
-      )}
-
-      {peopleTarget && <ClassPeopleSheet key={`${peopleTarget.id}:${peopleTarget.sessionId || peopleTarget.sessionDateId || "today"}`} open classId={peopleTarget.id} sessionId={peopleTarget.sessionId} sessionDateId={peopleTarget.sessionDateId} className={peopleTarget.name} onClose={() => setPeopleTarget(null)} onOpenBilling={showFees ? (student) => { const lesson = peopleTarget; setPeopleTarget(null); setBillingTarget({ lesson, student }); } : undefined} />}
       {showFees && billingTarget && <ClassBillingSheet key={`${billingTarget.lesson.id}:${billingTarget.student?.id || "all"}`} open classId={billingTarget.lesson.id} className={billingTarget.lesson.name} student={billingTarget.student} onClose={() => setBillingTarget(null)} />}
 
       {noticeTarget && (
@@ -460,15 +581,6 @@ export default function StaffHomeClient({
           {noticeSaved && noticeResumeNeeded && <button type="button" disabled={pending} onClick={() => sendNotice(true)} className="academy-button-secondary ml-2 mt-3">빠진 알림 다시 보내기</button>}
           {noticeSaved && <button type="button" disabled={pending} onClick={() => { noticeOperation.current = null; try { sessionStorage.removeItem(`staff-notice-operation:${noticeTarget.id}`); } catch {} setNoticeSaved(false); setNoticeUncertain(false); setNoticeResult(""); setNoticeTitle(""); setNoticeContent(""); setError(null); }} className="academy-button-secondary ml-2 mt-3">새 공지 작성</button>}
           <ModalActions pending={pending} onCancel={() => setNoticeTarget(null)} onConfirm={() => sendNotice()} confirmLabel="공지 저장·알림 요청" disabled={noticeSaved || noticeUncertain || !noticeTitle.trim() || !noticeContent.trim()} />
-        </Modal>
-      )}
-
-      {contentTarget && (
-        <Modal title="수업 내용 미리 작성" subtitle={contentTarget.name} onClose={() => setContentTarget(null)} labelledBy="content-title">
-          <textarea value={plannedContent} onChange={(event) => setPlannedContent(event.target.value)} rows={7} placeholder="오늘 진행할 내용, 교재 페이지, 준비물 등을 입력하세요." className="academy-input mt-4 leading-6" />
-          <VoiceToTextButton onText={(text) => setPlannedContent((current) => current ? `${current}\n${text}` : text)} />
-          <ErrorMessage error={error} />
-          <ModalActions pending={pending} onCancel={() => setContentTarget(null)} onConfirm={saveContent} confirmLabel="저장" />
         </Modal>
       )}
 
@@ -506,84 +618,49 @@ function SubstituteBadge() {
   return <span className="rounded-full bg-[var(--color-academy-surface)] px-2.5 py-1 text-xs text-[var(--color-academy-muted)] ring-1 ring-[var(--color-academy-line)]">대타</span>;
 }
 
-// 2026-11-13 UI 통일: 아이콘 없이 글자만(테마 보조 버튼 44px)
-function SecondaryButton({ label, onClick, disabled = false }: { label: string; onClick: () => void; disabled?: boolean }) {
-  return <button type="button" disabled={disabled} onClick={onClick} className="academy-button-secondary">{label}</button>;
-}
-
-// 남은·완료 수업 한 줄 행. 행 탭 = 상세 시트, 시작 버튼은 행 열기와 섞이지 않게 전파 차단
-function ClassRow({ lesson, startLocked, onOpen, onStart }: { lesson: StaffTodayClass; startLocked: boolean; onOpen: (lesson: StaffTodayClass) => void; onStart: (lesson: StaffTodayClass) => void }) {
+// 남은·완료 수업 한 줄 행. 행 탭 = 그 아래에 수업 칸 펼치기(children), 시작 버튼은 행 열기와 섞이지 않게 전파 차단
+function ClassRow({ lesson, startLocked, expanded, onOpen, onStart, children }: { lesson: StaffTodayClass; startLocked: boolean; expanded: boolean; onOpen: (lesson: StaffTodayClass) => void; onStart: (lesson: StaffTodayClass) => void; children?: React.ReactNode }) {
   const completed = lesson.sessionStatus === "COMPLETED";
-  const startLabel = lesson.sessionStatus === "IN_PROGRESS" ? "수업으로 돌아가기" : startLocked ? "현재 수업 종료 후 시작" : "수업 시작";
-  return <li
-    role="button"
-    tabIndex={0}
-    aria-label={`${lesson.name} 수업 상세`}
-    onClick={() => onOpen(lesson)}
-    onKeyDown={(event) => {
-      // 행 안의 시작 버튼에서 누른 Enter 를 행이 가로채지 않게
-      if (event.target !== event.currentTarget) return;
-      if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(lesson); }
-    }}
-    className="flex min-h-14 cursor-pointer items-center gap-2 border-b border-[var(--color-academy-line)] px-3 py-1.5 last:border-b-0 hover:bg-[var(--color-academy-soft)]"
-  >
-    <span className="shrink-0 text-xs font-medium tabular-nums text-[var(--color-academy-ink)]">{lesson.startTime}–{lesson.endTime}</span>
-    {/* 반 이름은 자르지 않고 줄바꿈 허용(말줄임 금지) */}
-    <span className="flex min-w-0 flex-1 flex-wrap items-center gap-1"><span className="break-keep font-semibold text-[var(--color-academy-ink)]">{lesson.name}</span>{isSeasonalLesson(lesson) && <SeasonalBadge />}{lesson.substitute && <SubstituteBadge />}</span>
-    <span className="shrink-0 text-right text-xs tabular-nums text-[var(--color-academy-muted)]">{lesson.studentCount}명</span>
-    {completed ? <StatusBadge status={lesson.sessionStatus} /> : (
-      <button
-        type="button"
-        disabled={startLocked}
-        aria-label={`${lesson.name} ${startLabel}`}
-        title={startLocked ? "진행 중인 수업을 먼저 종료해 주세요." : undefined}
-        onClick={(event) => { event.stopPropagation(); onStart(lesson); }}
-        className="academy-button-tonal academy-button-sm shrink-0"
-      >
-        {startLocked ? "대기" : lesson.sessionStatus === "IN_PROGRESS" ? "이어하기" : "시작"}
-      </button>
-    )}
-  </li>;
-}
-
-type ClassDetailAction = "start" | "content" | "feed" | "contacts" | "billing" | "notice";
-
-// 행을 누르면 여는 하단 시트: 기존 카드에 있던 정보·빠른 메뉴를 그대로 옮긴 것
-function ClassDetailSheet({ lesson, startLocked, showFees, onClose, onAction }: { lesson: StaffTodayClass; startLocked: boolean; showFees: boolean; onClose: () => void; onAction: (action: ClassDetailAction) => void }) {
-  const completed = lesson.sessionStatus === "COMPLETED";
-  return <ListDetailPanel onClose={onClose} titleId="staff-class-detail-title">
-    <div className="flex items-start justify-between gap-3 border-b border-[var(--color-academy-line)] px-4 py-3">
-      <div className="min-w-0">
-        <p className="text-sm font-medium tabular-nums text-[var(--color-academy-ink)]">{lesson.startTime}–{lesson.endTime}</p>
-        <div className="flex flex-wrap items-center gap-2"><h2 id="staff-class-detail-title" className="text-lg font-bold text-[var(--color-academy-ink)]">{lesson.name}</h2>{isSeasonalLesson(lesson) && <SeasonalBadge />}{lesson.substitute && <SubstituteBadge />}<StatusBadge status={lesson.sessionStatus} /></div>
-      </div>
-      <button type="button" aria-label="닫기" onClick={onClose} className="academy-button-text academy-button-sm shrink-0">닫기</button>
-    </div>
-    <div className="space-y-3 px-4 pb-4 pt-3">
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-[var(--color-academy-muted)]">
-        <span>학생 <span className="tabular-nums">{lesson.studentCount}</span>명</span>
-        <span>{lesson.location || "장소 미정"}</span>
-      </div>
-      {lesson.plannedContent && <p className="whitespace-pre-wrap text-sm leading-6 text-[var(--color-academy-ink)]">{lesson.plannedContent}</p>}
-      {/* 끝난 수업 — 당일 자정까지 «수업 피드»(한 줄·사진·영상)를 이어 쓴다. 학부모 알림은 다시 안 보낸다 */}
-      {completed && <>
-        {lesson.content && <p className="whitespace-pre-wrap text-sm leading-6 text-[var(--color-academy-muted)]">{lesson.content}</p>}
-        <button type="button" onClick={() => onAction("feed")} className="academy-button-primary min-h-12! w-full text-base!">수업 피드 쓰기·사진 추가</button>
-      </>}
-      {!completed && <>
-        <div className="grid grid-cols-2 gap-2" aria-label={`${lesson.name} 수업 빠른 메뉴`}>
-          <SecondaryButton label="수업 내용" onClick={() => onAction("content")} />
-          {lesson.sessionStatus !== "IN_PROGRESS" && <SecondaryButton label="수업 피드" onClick={() => onAction("feed")} />}
-          <SecondaryButton label="학생 정보" onClick={() => onAction("contacts")} />
-          {showFees && <SecondaryButton label="청구 확인" onClick={() => onAction("billing")} />}
-          {!lesson.substitute && <SecondaryButton label="수업 공지" onClick={() => onAction("notice")} />}
-        </div>
-        <button type="button" disabled={startLocked} title={startLocked ? "진행 중인 수업을 먼저 종료해 주세요." : undefined} onClick={() => onAction("start")} className="academy-button-primary min-h-12! w-full text-base!">
-          {lesson.sessionStatus === "IN_PROGRESS" ? "수업으로 돌아가기" : startLocked ? "현재 수업 종료 후 시작" : "수업 시작"}
+  const startLabel = lesson.sessionStatus === "IN_PROGRESS" ? "수업 이어하기" : startLocked ? "현재 수업 종료 후 시작" : "수업 시작";
+  return <li className="border-b border-[var(--color-academy-line)] last:border-b-0">
+    <div
+      role="button"
+      tabIndex={0}
+      aria-expanded={expanded}
+      aria-controls={lessonBodyId(lesson)}
+      aria-label={`${lesson.name} 수업`}
+      onClick={() => onOpen(lesson)}
+      onKeyDown={(event) => {
+        // 행 안의 시작 버튼에서 누른 Enter 를 행이 가로채지 않게
+        if (event.target !== event.currentTarget) return;
+        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(lesson); }
+      }}
+      className="flex min-h-14 cursor-pointer items-center gap-2 px-3 py-1.5 hover:bg-[var(--color-academy-soft)]"
+    >
+      <span className="shrink-0 text-xs font-medium tabular-nums text-[var(--color-academy-ink)]">{lesson.startTime}–{lesson.endTime}</span>
+      {/* 반 이름은 자르지 않고 줄바꿈 허용(말줄임 금지) */}
+      <span className="flex min-w-0 flex-1 flex-wrap items-center gap-1"><span className="break-keep font-semibold text-[var(--color-academy-ink)]">{lesson.name}</span>{isSeasonalLesson(lesson) && <SeasonalBadge />}{lesson.substitute && <SubstituteBadge />}</span>
+      <span className="shrink-0 text-right text-xs tabular-nums text-[var(--color-academy-muted)]">{lesson.studentCount}명</span>
+      {/* 펼쳐진 줄에서는 머리의 «시작»을 숨긴다 — 본문의 [수업 시작]이 쓰던 수업 내용을 먼저 저장하고 시작하기 때문(머리 버튼으로 시작하면 쓰던 글이 사라졌다) */}
+      {completed ? <StatusBadge status={lesson.sessionStatus} /> : expanded ? null : (
+        <button
+          type="button"
+          disabled={startLocked}
+          aria-label={`${lesson.name} ${startLabel}`}
+          title={startLocked ? "진행 중인 수업을 먼저 종료해 주세요." : undefined}
+          onClick={(event) => { event.stopPropagation(); onStart(lesson); }}
+          className="academy-button-tonal academy-button-sm shrink-0"
+        >
+          {startLocked ? "대기" : lesson.sessionStatus === "IN_PROGRESS" ? "이어하기" : "시작"}
         </button>
-      </>}
+      )}
+      {/* 줄 머리의 펼침 표시 */}
+      <span className="flex shrink-0 text-[var(--color-academy-muted)]">
+        <UiIcon name={expanded ? "expand_less" : "expand_more"} />
+      </span>
     </div>
-  </ListDetailPanel>;
+    {children}
+  </li>;
 }
 
 function Modal({ title, subtitle, onClose, labelledBy, children }: { title: string; subtitle: string; onClose: () => void; labelledBy: string; children: React.ReactNode }) {

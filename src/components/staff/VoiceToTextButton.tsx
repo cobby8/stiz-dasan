@@ -18,7 +18,7 @@ export function VoiceToTextButton({
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [message, setMessage] = useState("");
-  // 스토어 앱(현재 버전)은 마이크 녹음을 못 한다 → 버튼을 숨긴다(글로 적으면 된다). 판정은 @/lib/storeApp 한 곳(d2)
+  // 스토어 앱(현재 버전)은 마이크 녹음을 못 한다 → 버튼 대신 안내 한 줄을 보인다(글로 적으면 된다). 판정은 @/lib/storeApp 한 곳(d2)
   const appLacksVoice = useStoreAppLacks("voice");
 
   useEffect(() => {
@@ -87,7 +87,8 @@ export function VoiceToTextButton({
     }
   }
 
-  if (appLacksVoice) return null;
+  // 2026-11-15 원장 지시: 스토어 앱에서 버튼을 말없이 숨기면 «음성 버튼이 없다»로 보인다 → 이유를 한 줄로 알린다(글로 적으면 된다).
+  if (appLacksVoice) return <p className="max-w-48 text-right text-xs text-[var(--color-academy-muted)]">음성 입력은 앱 다음 버전부터 됩니다</p>;
   return <div className="flex flex-col items-end gap-1">
     <button
       type="button"

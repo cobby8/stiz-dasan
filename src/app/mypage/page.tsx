@@ -1,4 +1,4 @@
-import { getMyPageData, getNoticesByClassIds, getMyRequests } from "@/lib/queries";
+import { getMyPageData, getNoticesByClassIds, getMyRequests, getAcademySettings } from "@/lib/queries";
 import { getMakeupOverviewForParent } from "@/lib/makeup/parent-makeup";
 import { getUpcomingSeasonalSeats } from "@/lib/seasonal/parent-absence";
 import MyPageClient from "./MyPageClient";
@@ -49,7 +49,10 @@ export default async function MyPageDashboard({
     const studentIds = data?.children.map(c => c.id) ?? [];
     const pendingSeasonalChildren = await getPendingSeasonalChildren(parentAuth.appUserId, studentIds);
     if (!data || data.children.length === 0) {
-        return <EmptyParentState pendingSeasonalChildren={pendingSeasonalChildren} />;
+        // 학원 번호는 설정값에서(코드에 박지 않는다). 못 읽었을 때의 자리채움 번호(010-0000-0000)는 쓰지 않는다
+        const academyPhone = await getAcademySettings().then((s) => s?.contactPhone ?? null).catch(() => null);
+        const usablePhone = academyPhone && academyPhone.replace(/[^0-9]/g, "") !== "01000000000" ? academyPhone : null;
+        return <EmptyParentState pendingSeasonalChildren={pendingSeasonalChildren} academyPhone={usablePhone} />;
     }
 
     // 자녀의 수강 중인 반 ID 목록 추출

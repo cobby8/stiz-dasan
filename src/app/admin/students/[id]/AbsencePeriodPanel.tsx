@@ -3,6 +3,7 @@
 // 학생 상세 «수강·출결» 탭의 «기간 결석» 카드 (2026-11-09 원장 결정 «기간 결석 만들기»).
 // 부상·질병은 휴원이 아니라 결석 — 반 자리·셔틀 명단은 그대로 두고, 그 기간 수업일만 날짜별 결석(확정)으로 남긴다.
 // 목록(한 줄 행, 눌러서 날짜·반 펼치기) + «+ 기간 결석»(모달/모바일 하단 시트) + 기간마다 «복귀 처리»·«등록 취소».
+import UiIcon from "@/components/common/UiIcon";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import AdminModal from "@/components/admin/AdminModal";
@@ -152,7 +153,7 @@ export default function AbsencePeriodPanel({
                                         <span className={`shrink-0 rounded px-2 py-0.5 text-xs font-medium ${statusToneClass("info")}`}>학부모 신고</span>
                                     )}
                                     <span className={`shrink-0 rounded px-2 py-0.5 text-xs font-medium ${chip.className}`}>{chip.label}</span>
-                                    <span aria-hidden="true" className="shrink-0 text-[var(--color-academy-muted)]">{open ? "▴" : "▾"}</span>
+                                    <span className="inline-flex shrink-0 text-[var(--color-academy-muted)]"><UiIcon name={open ? "expand_less" : "expand_more"} /></span>
                                 </button>
 
                                 {open && (

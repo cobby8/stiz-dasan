@@ -287,10 +287,13 @@ test("유튜브 관리 API — 원장 전용, state 쿠키, cron 은 CRON_SECRET
 
 test("수업 진행 화면에 영상 칸 — 사진 칸 바로 아래", () => {
   const page = read("src/app/staff/sessions/[sessionId]/SessionInProgressClient.tsx");
-  const photo = page.indexOf('id="session-photos"');
-  const video = page.indexOf('id="session-videos"');
-  const memo = page.indexOf('id="session-memo"');
-  assert.ok(photo > 0 && video > photo && memo > video);
+  // 2026-11-15 선생님 수업 화면 한 화면 구조: 칸 순서 = 수업 종료 → 경과 시간 → 출석부 → 수업 내용 → 사진·영상 → 메모 → 시작 취소 → 아래 막대.
+  // 영상 칸이 사진 칸 바로 아래(같은 «사진·영상» 칸 안)라는 약속은 그대로다.
+  const order = ['id="session-end"', 'id="session-elapsed"', 'id="session-attendance"', 'id="session-lesson"', 'id="session-photos"', 'id="session-photo-uploader"', 'id="session-videos"', 'id="session-memo"', 'id="session-cancel-start"', "<SessionMediaBar"].map((mark) => page.indexOf(mark));
+  assert.ok(order.every((at) => at > 0), "칸 표시를 모두 찾아야 한다");
+  assert.deepEqual(order, [...order].sort((a, b) => a - b), "칸 순서가 바뀌었다");
+  // 아래 막대의 [동영상]도 카메라로 바로 찍는다
+  assert.match(read("src/components/staff/SessionMediaBar.tsx"), /accept="video\/\*" capture="environment"/);
   const uploader = read("src/components/staff/SessionVideoUploader.tsx");
   assert.match(uploader, /accept="video\/\*" capture="environment"/);
   const player = read("src/components/parent/SessionVideoPlayer.tsx");

@@ -8,6 +8,7 @@ import { markMyNotificationRead, markAllMyNotificationsRead } from "@/app/action
 import { safeInternalHref } from "@/lib/mypage/parentNav";
 import { formatKstDate } from "@/lib/datetime/kst";
 import { unreadBadgeText } from "@/lib/mypage/parentSettings";
+import UiIcon from "@/components/common/UiIcon";
 
 // 학부모 머리줄 🔔 알림 (2026-11-10 원장 결정 k7).
 // 예전엔 홈 «처리할 일» 맨 끝 줄에서 펼쳐 봤다 → 어느 화면에서든 머리줄 종을 눌러 바로 본다.
@@ -89,11 +90,12 @@ export default function ParentNotificationBell({ notifications, unreadCount }: {
                 aria-haspopup="dialog"
                 aria-expanded={open}
                 onClick={() => setOpen((v) => !v)}
-                // 2026-11-13 UI 통일: 종 아이콘 → «알림» 글자. 누르는 높이 44px(터치 최소 크기)
-                className="inline-flex min-h-11 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-lg px-2 text-sm font-medium text-[var(--color-academy-muted)] transition-colors hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)]"
+                title="알림"
+                // 2026-11-15 아이콘 예외(알림 = 종): «알림» 글자 → 종. 글자가 없으니 이름은 aria-label, 누르는 영역 44×44(터치 최소 크기)
+                className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-lg px-2 text-sm font-medium text-[var(--color-academy-muted)] transition-colors hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)]"
             >
-                알림
-                {/* 안 읽은 수 배지 — 글자 옆에 붙는다. 10건 이상은 9+ */}
+                <UiIcon name="notifications" size={24} />
+                {/* 안 읽은 수 배지 — 종 옆에 붙는다. 10건 이상은 9+ */}
                 {badge && (
                     <span
                         aria-hidden="true"

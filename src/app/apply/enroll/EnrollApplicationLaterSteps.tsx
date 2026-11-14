@@ -1,5 +1,6 @@
 "use client";
 
+import UiIcon from "@/components/common/UiIcon";
 import { useState, type ReactNode } from "react";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
 import { nextPlaceNameAfterRepick } from "@/lib/enrollment/shuttle-place-name";
@@ -405,8 +406,9 @@ function TermsAccordion({ title, required, checked, onCheck, children }: { title
                     <input type="checkbox" checked={checked} onChange={(event) => onCheck(event.target.checked)} className="h-5 w-5 rounded border-gray-300 text-[var(--color-public-accent)] focus:ring-[var(--color-public-accent)] dark:text-brand-neon-lime dark:focus:ring-brand-neon-lime/50" />
                     <span className="text-sm font-medium text-[var(--color-public-ink)] dark:text-white">{title} {required && <span className="text-red-500">*</span>}</span>
                 </label>
-                <button type="button" onClick={() => setIsOpen(!isOpen)} aria-expanded={isOpen} aria-label={`${title} ${isOpen ? "접기" : "펼쳐 보기"}`} className="flex min-h-11 shrink-0 items-center px-2 text-sm font-medium text-[var(--color-public-muted)] hover:text-[var(--color-public-ink)] dark:text-[var(--color-public-muted)]">
-                    {isOpen ? "접기" : "펼치기"}
+                <button type="button" onClick={() => setIsOpen(!isOpen)} aria-expanded={isOpen} aria-label={`${title} ${isOpen ? "접기" : "펼치기"}`} className="flex size-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-public-muted)] hover:text-[var(--color-public-ink)] dark:text-[var(--color-public-muted)]">
+                    {/* 2026-11-15 아이콘 예외(펼침 화살표) — 글자가 없는 버튼이라 이름은 aria-label 로 준다 */}
+                    <UiIcon name={isOpen ? "expand_less" : "expand_more"} size={24} />
                 </button>
             </div>
             {isOpen && <div className="max-h-48 overflow-y-auto border-t border-[var(--color-public-line)] px-4 py-3 text-xs leading-relaxed text-[var(--color-public-muted)] dark:border-[var(--color-public-line)] dark:text-[var(--color-public-muted)]">{children}</div>}

@@ -3,6 +3,12 @@
 <!-- 프로젝트의 폴더 구조, 파일 역할, 핵심 패턴을 기록 -->
 <!-- 2026-11-10 정리: 48항목 → 주제별 19묶음. 원래 항목은 묶음 안 하위 항목(원래 날짜·제목)으로 내용 그대로 보존. 새 항목은 맞는 묶음에 하위 항목으로 넣는다 -->
 
+### [2026-11-14] 학부모 아이 정보 수정 = «바로 반영 4칸» + «변경 신청 → 승인» · 건강 특이사항 · 연락처 바꾸기
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 순수 `src/lib/parent/childEditRules.ts`(DIRECT_FIELDS=학교·학생 전화·주소·healthNote / REQUEST_FIELDS=이름·생년월일 — DB CHECK 와 같은 집합, 신청·승인 두 번 같은 검증) + 연결부 `childEdit.ts`(모든 UPDATE·INSERT 문 «안»에 childAccessSql — 남의 아이 id 는 0행, 승인은 트랜잭션+FOR UPDATE). 표 StudentProfileChangeRequest 가 곧 변경 이력(마이그레이션 20261114140000, 확인 중은 항목당 하나=부분 유니크). 건강 글(Student.healthNote 300자)은 `src/lib/student/healthNote.ts` 한 곳에서 «이미 권한 확인된 학생 id»로만 따로 읽는다(선생님=getStaffClassPeople 명단, 기사님=그날 운행표 승객 줄 id → attachRiderHealthNotes) — 큰 SQL 에 칸을 넣지 않아 칸이 없어도 화면이 산다. 알림·로그 금지는 tests/child-edit.test.mjs 가 «healthNote 를 쓰는 파일 목록»으로 강제(새 파일이 쓰면 실패). 보호자 연락처 = `src/lib/account/phone-change.ts`(포트원 재조회 통과 번호로만 User.phone 변경 · 인증 원장 ChildIdentityChallenge 재사용하되 id 머리말 stizphone_·기기 해시 종류를 달리해 자녀 연결과 안 섞임 · 이름 불일치·다른 계정 번호 거절 · 내 아이 Guardian 의 옛 번호 줄 동기화). 연결 가족 끊기 = family-access-parent.ts(대표 보호자만, 해제는 관리자와 같은 revokeFamilyAccess). 임시 생일 2000-01-01 은 `student-grade.realBirthYmd` 하나로 거른다(보강·아이 정보 공용).
+- **참조횟수**: 0
+
 ### [2026-11-14] 수업 피드 = «볼 수 있는가» 판정 하나(src/lib/feed) — 사진·영상·소식·홈 카드 공용
 - **분류**: architecture
 - **발견자**: developer
@@ -316,4 +322,10 @@
 - **분류**: architecture
 - **발견자**: developer
 - **내용**: 학부모 기간 결석은 표를 새로 만들지 않고 `RegularAbsencePeriod` 에 칸 3개(`reportedByUserId`·`openEnded`·`reminderSentAt`, 마이그레이션 20261115100000)만 더했다. 결석 행은 날짜마다 «하루 알리기»와 같은 함수 `saveReportedAbsenceInTx`(parent-regular-absence.ts — 거래 본문을 뽑은 것)로 저장하므로 보강권/이월 검토 분기가 한 곳이다(REPORTED·학부모 표시·periodId·note «여러 날 결석 · …»). 파일: 순수 규칙 `src/lib/regular/parentAbsencePeriodRules.ts`(4주 한도·수업일 계산 = 관리자와 같은 `planAbsencePeriodDates`·복귀·안내 시점) · 서비스 `parent-absence-period.ts`(미리보기·알리기·복귀/취소·목록·끝나기 전 안내) · API `/api/mypage/regular-absence/period` · 화면 `mypage/regular-absence/PeriodAbsencePanel.tsx`. ★ 관리자 기간 결석(CONFIRMED·보강권 없음·매일 자동 연장)과 섞이지 않게: `absence-period-service.ts` 가 `parentPeriodColumnsReady`(information_schema)로 칸 유무를 보고 학부모 기간을 자동 연장·복귀 처리·등록 취소에서 뺀다(칸이 없으면 예전 그대로). ★ note 머리말이 둘이다 — 관리자 «기간 결석 · », 학부모 «여러 날 결석 · »; 알림 재조정(operational-notification-reconciliation)이 둘 다 건너뛴다(학부모 기간은 원장·코치·기사 알림을 기간당 1회로 따로 보낸다). ★ 질병·부상 증빙은 «기간 한 묶음»: 사진은 결석 한 건에 붙지만 `evidenceScopeSql`·`evidenceAnchorYmdSql`(illnessCarryRules.ts)로 같은 periodId 의 결석이 함께 쓰고 기한은 기간의 마지막 결석일 +7일 — 증빙을 세거나 나열하는 조회는 반드시 이 두 조각을 쓴다. 신청함 «같은 기간 n건 함께 승인» = 건마다 `approveIllnessCarry`. 날짜 바꾸기는 옮긴 날에 periodId 를 이어 붙인다. 테스트: `tests/parent-absence-period.test.mjs`·change-deadline-and-move «④-2»·illness-carry(기간 묶음).
+- **참조횟수**: 0
+
+### [2026-11-14] 관리자 수업 피드 = 커서 페이지 API + 공용 리포트 편집 부품
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: /admin/attendance/feed 는 첫 20개만 서버에서 그리고 다음은 GET /api/admin/feed(?cursor·필터, ?sessionId=카드 하나). 커서 = «수업일~시작 시각~id» 세 값 모두 내림차순이라 SQL 행 비교 (a,b,c) < ($1,$2,$3) 하나로 자른다(adminFeedRules.encode/decodeAdminFeedCursor). 필터는 전부 SQL(담당 선생님은 CROSS JOIN LATERAL 로 classCoachNameSql 한 번 계산). 리포트 편집 본문은 src/components/admin/SessionReportEditor.tsx 한 벌 — /admin/attendance/report/[sessionId] 화면과 피드 패널(SessionReportEditorLoader, compact)이 같이 쓴다. 관리자 영상 재생 = SessionVideoList endpoint 에 /api/staff/sessions/{id}/videos(관리자 = 전체 반).
 - **참조횟수**: 0

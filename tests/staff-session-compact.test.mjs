@@ -16,6 +16,12 @@ const client = read("src/app/staff/sessions/[sessionId]/SessionInProgressClient.
 const sheet = read("src/components/staff/SessionStudentSheet.tsx");
 const uploader = read("src/components/staff/SessionVideoUploader.tsx");
 const feed = read("src/components/staff/SessionFeedPanel.tsx");
+// 2026-11-15 접이식 구조와 병합 — 화면 구조는 한 화면 접이식(원장의 더 나중 지시)이고, 이 파일이 지키는 규칙(권한·가림·잠금·조회 시점)은 그대로다.
+//   학생 상세 = 시트 대신 줄 아래 펼침(SessionStudentInfo) · «더보기» = 출석부 칸 아래 글자 버튼 · «오늘 수업» = «수업 내용» 접는 칸
+const inlineInfo = read("src/components/staff/SessionStudentInfo.tsx");
+const peopleHook = read("src/components/staff/RosterPersonInfo.tsx");
+const lessonEditor = read("src/components/staff/LessonTextEditor.tsx");
+const mediaBar = read("src/components/staff/SessionMediaBar.tsx");
 
 // 실제 모듈을 돌린다(.ts/.tsx 를 그 자리에서 변환) — «@/…» 의존은 대역을 넘긴 것만 허용
 const require = createRequire(import.meta.url);
@@ -89,6 +95,11 @@ test("영상 촬영 칸: accept 는 video/* 하나 + capture, 안내는 판정 �
   const notice = uploader.indexOf("앱을 업데이트하면 바로 촬영돼요");
   const hint = uploader.indexOf("uploadHintMessage(maxBytes)}</p>");
   assert.ok(shoot > 0 && notice > shoot && hint > notice);
+  // 2026-11-15 접이식 구조와 병합: 수업 중에는 아래 고정 막대의 [동영상]이 촬영을 연다 — 같은 accept·capture, 같은 판정 결과로 버튼 바로 아래에 안내
+  assert.match(mediaBar, /<input ref=\{videoCameraRef\} hidden type="file" accept="video\/\*" capture="environment" onChange/);
+  assert.match(mediaBar, /\{videoState\?\.needsAppUpdate && videoState\.canUpload && \(\s*<p role="status"[^>]*>\s*앱을 업데이트하면 \[동영상\]이 바로 촬영돼요\./);
+  assert.match(uploader, /onStateChange\?\.\(\{ busy, canUpload: canManage, count: videos\.length, message, progress, windowMessage, needsAppUpdate \}\)/);
+  assert.ok(mediaBar.indexOf(">동영상</button>") < mediaBar.indexOf("앱을 업데이트하면 [동영상]이 바로 촬영돼요"));
 });
 
 // ── B. «오늘 수업» 한 칸 ──────────────────────────────────────
@@ -96,13 +107,14 @@ test("영상 촬영 칸: accept 는 video/* 하나 + capture, 안내는 판정 �
 test("«오늘 수업 내용»·«수업 피드» 두 칸이 «오늘 수업» 한 칸이 됐다", () => {
   assert.doesNotMatch(client, />오늘 수업 내용</);
   assert.doesNotMatch(client, />수업 피드</);
-  assert.equal(count(client, /className="academy-section-title">오늘 수업<\/h2>/g), 1);
+  // 2026-11-15 접이식 구조와 병합: 한 칸의 이름은 «수업 내용»(접는 칸) — 칸이 하나라는 약속은 그대로
+  assert.equal(count(client, /id="session-lesson"\s+title="수업 내용"/g), 1);
   // 수업 계획은 그 칸 안의 접힌 한 줄 — 계획 글이 없으면 줄 자체를 그리지 않는다
   assert.match(client, /const plan = \(session\.plannedContent \|\| ""\)\.trim\(\);/);
   assert.match(client, /\{plan && \(\s*<div[^>]*>\s*<button type="button" onClick=\{\(\) => setShowPlan/);
   assert.doesNotMatch(client, /미리 등록한 수업 내용이 없습니다/);
   // 순서: 계획 → 학부모에게 보낼 한 줄 → 사진 → 영상 → 특이사항
-  const order = ["수업 계획 보기", "<FeedLineEditor", "<SessionPhotoUploader", "<SessionVideoUploader", 'id="session-memo"'].map((mark) => client.indexOf(mark));
+  const order = ["수업 계획 보기", "<LessonTextEditor ", "<SessionPhotoUploader ref=", "<SessionVideoUploader ref=", 'id="session-memo"'].map((mark) => client.indexOf(mark));
   assert.ok(order.every((at) => at > 0), "칸이 빠졌다");
   assert.deepEqual(order, [...order].sort((a, b) => a - b));
 });
@@ -112,6 +124,11 @@ test("수업 계획 불러오기: 한 줄 칸에 채우기만 한다(저장 흐�
   assert.match(fn, /if \(report\.trim\(\) && !window\.confirm\(/, "쓴 글이 있으면 덮어쓰기 전에 묻는다");
   assert.match(fn, /setReport\(Array\.from\(planText\)\.slice\(0, FEED_LINE_MAX\)\.join\(""\)\)/);
   assert.doesNotMatch(fn, /saveSessionFeedLine|completeClassSession/);
+  // 2026-11-15 접이식 구조와 병합: 불러온 글은 «채운 그대로»로 표시해 두어, 고치지 않고 종료하려 하면 종료 창에서 알린다
+  assert.match(fn, /setPrefillSource\(filled\);/);
+  // 수업 중 글칸(통합 글칸)도 같은 저장 기능·같은 «저장 안 됨» 규칙
+  assert.match(client, /await saveSessionFeedLine\(\{ sessionId: session\.id, content: text \}\)/);
+  assert.match(lessonEditor, /const unsaved = value !== savedValue;/);
   // 한 줄 저장은 여전히 FeedLineEditor 의 saveSessionFeedLine 하나
   assert.match(feed, /await saveSessionFeedLine\(\{ sessionId, content: sending \}\)/);
   // 바깥에서 채운 글도 «저장 안 됨»으로 보인다
@@ -121,8 +138,10 @@ test("수업 계획 불러오기: 한 줄 칸에 채우기만 한다(저장 흐�
 test("종료 창: 이미 쓴 한 줄이 있으면 입력 칸을 또 보이지 않는다", () => {
   assert.doesNotMatch(client, /수업 피드 칸과 같은 내용/);
   // 열 때 정한다 — 쓴 글이 있으면 읽기 전용, 없으면 입력 칸
-  assert.match(client, /function openEndConfirm\(\) \{\s*setFinishError\(""\);\s*setEditReport\(!report\.trim\(\)\);\s*setShowEndConfirm\(true\);/);
-  assert.match(client, /onClick=\{openEndConfirm\}[^>]*>수업 종료 확인</);
+  // 2026-11-15 접이식 구조와 병합: 미리 쓴 내용이 «채워진 그대로»(선생님이 쓴 글이 아님)면 읽기 전용으로 넘기지 않고 입력 칸 + 안내로 연다
+  assert.match(client, /function openEndConfirm\(\) \{\s*setFinishError\(""\);\s*setEditReport\(!report\.trim\(\) \|\| lessonPrefilled\);\s*setShowEndConfirm\(true\);/);
+  assert.match(client, /onClick=\{openEndConfirm\}[^>]*>수업 종료</);
+  assert.match(client, /id="session-report"[\s\S]{0,500}\{lessonPrefilled && \(\s*<p role="alert"[^>]*>\{PLAN_PREFILL_END_NOTICE\}<\/p>/);
   const dialog = client.slice(client.indexOf("data-end-report"));
   assert.match(dialog, /\{editReport \? \(/);
   assert.equal(count(client, /id="session-report"/g), 1, "입력 칸은 하나");
@@ -145,12 +164,13 @@ test("학생은 화면에 한 번만 나온다 — 명단 하나, 출석부 화�
   // 수업 시작 직후 주소(?view=attendance)는 그대로 받아 명단으로 맞춘다
   assert.match(client, /if \(initialView === "attendance"\) scrollToRoster\(\);/);
   // 명단이 «오늘 수업» 칸보다 위
-  assert.ok(client.indexOf('aria-label="학생 출결 명단"') < client.indexOf('id="session-feed-title"'));
+  assert.ok(client.indexOf('aria-label="학생 출결 명단"') < client.indexOf('id="session-lesson"'));
 });
 
 test("명단 한 줄: 이름(누르면 상세) + 표시 + 출결 버튼 3개, 터치 44px", () => {
   const row = clientCode.slice(clientCode.indexOf("data-student-row"), clientCode.indexOf("</article>"));
-  assert.match(row, /aria-label=\{`\$\{student\.name\} 상세 정보`\} onClick=\{\(\) => \{ setPeopleWanted\(true\); setDetailId\(student\.id\); \}\} className="flex min-h-11 /);
+  // 2026-11-15 접이식 구조와 병합: 이름을 누르면 시트가 아니라 그 줄 아래에 펼친다(aria-expanded) — 누를 때 학생 정보 조회를 켜는 것, 44px 은 그대로
+  assert.match(row, /aria-expanded=\{infoOpen\} aria-controls=\{`roster-info-\$\{student\.id\}`\} aria-label=\{`\$\{student\.name\} 상세 정보`\} onClick=\{\(\) => \{ setPeopleWanted\(true\); setInfoRow\(infoOpen \? null : student\.id\); \}\} className="flex min-h-11 /);
   // 출결 버튼 사이는 8px 이상(오터치 방지), 버튼 폭 48px 이상
   assert.match(row, /grid shrink-0 grid-cols-3 gap-2">/);
   assert.match(row, /className="min-w-12">/);
@@ -163,8 +183,15 @@ test("명단 한 줄: 이름(누르면 상세) + 표시 + 출결 버튼 3개, �
 });
 
 test("학생 상세 시트: 연락처·수강료·메모·최근 출결·보호자를 한 곳에 모은다", () => {
-  assert.match(client, /\{detailStudent && <SessionStudentSheet/);
-  assert.match(client, /person=\{people\.get\(detailStudent\.studentId \|\| detailStudent\.id\) \?\? null\}/);
+  // 2026-11-15 접이식 구조와 병합: 수업 화면은 시트 대신 줄 아래 펼침 부품을 쓴다(내용은 같다). 시트 부품은 그대로 남아 있다(아래 렌더 테스트).
+  assert.match(client, /\{infoOpen && \(\s*<div id=\{`roster-info-\$\{student\.id\}`\}>\s*<SessionStudentInfo/);
+  assert.match(client, /const person = findRosterPerson\(student, people\.people\);/);
+  for (const mark of ["학부모 결석 알림", "<RosterPersonInfo person={person}", 'label="전화" accent', "수강료·청구 확인", "오늘 출결 메모", "체험 학생은 이름·학년만 보입니다", "연락처를 불러오지 못했습니다"]) {
+    assert.ok(inlineInfo.includes(mark), `펼침 부품에 ${mark}`);
+  }
+  for (const mark of ['label="학생 전화"', 'label="학부모 전화"', 'label="문자" sms', "person.memo &&", "person.recentAttendance.total", "person.guardians.map("]) {
+    assert.ok(peopleHook.includes(mark), `학생 정보에 ${mark}`);
+  }
   for (const mark of ['label="학생 전화"', 'label="학부모 전화"', 'label="문자" sms', "메모·특이사항", "최근 출결", "보호자 {person.guardians.length}명", "수강료·청구 확인"]) {
     assert.ok(sheet.includes(mark), `시트에 ${mark}`);
   }
@@ -174,7 +201,7 @@ test("학생 상세 시트: 연락처·수강료·메모·최근 출결·보호�
   assert.match(sheet, /flex items-end bg-black\/55 sm:items-center sm:justify-center" role="dialog" aria-modal="true"/);
   assert.match(sheet, /useStaffDialog\(true, sheetRef, onClose\);/);
   // 청구 확인을 누르면 시트를 닫고 기존 청구 시트(출결 맥락 포함)를 연다
-  assert.match(client, /onOpenBilling=\{\(student\) => \{ setDetailId\(null\); setAttendanceBillingTarget\(student\); \}\}/);
+  assert.match(client, /onOpenBilling=\{\(target\) => setAttendanceBillingTarget\(target\)\}/);
   assert.match(client, /attendanceContext=\{\{ sessionId: session\.id, rosterId: attendanceBillingTarget\.id \}\}/);
 });
 
@@ -235,16 +262,21 @@ test("명단 줄 «미납» 표시는 원장·부원장에게만 — 선생님�
 });
 
 test("학생 정보 조회는 한가할 때 — 첫 출결 저장 앞에 줄 서지 않는다, 상세 시트는 일반 import", () => {
-  assert.match(clientCode, /import \{ SessionStudentSheet \} from "@\/components\/staff\/SessionStudentSheet";/);
-  assert.doesNotMatch(clientCode, /const SessionStudentSheet = dynamic/);
+  // 2026-11-15 접이식 구조와 병합: 펼침 부품도 일반 import(나눠 받지 않는다)
+  assert.match(clientCode, /import \{ SessionStudentInfo \} from "@\/components\/staff\/SessionStudentInfo";/);
+  assert.doesNotMatch(clientCode, /const SessionStudentInfo = dynamic/);
   // 화면이 뜬 직후가 아니라 잠시 뒤 또는 첫 이름 누름 때
   assert.match(clientCode, /window\.setTimeout\(\(\) => setPeopleWanted\(true\), PEOPLE_IDLE_DELAY_MS\)/);
   assert.match(clientCode, /const PEOPLE_IDLE_DELAY_MS = (\d+);/);
   assert.ok(Number(/const PEOPLE_IDLE_DELAY_MS = (\d+);/.exec(clientCode)[1]) >= 1000);
   // 출결 저장 중이면 미루고, 같은 차례를 두 번 부르지 않는다
   assert.match(clientCode, /const attendanceBusy = Object\.keys\(savingRows\)\.length > 0 \|\| Boolean\(bulkAttendanceProgress\);/);
-  assert.match(clientCode, /if \(!peopleWanted \|\| attendanceBusy\) return;\s*if \(peopleStartedRef\.current === peopleReload\) return;/);
-  assert.equal(count(clientCode, /loadStaffClassPeople\(\{/g), 1);
+  // 2026-11-15 접이식 구조와 병합: 조회는 공용 훅(useClassPeople)이 한다 — 화면이 «불러도 됨»(enabled)과 «출결 저장 중이면 미룸»(hold)을 넘긴다
+  assert.match(clientCode, /enabled: peopleWanted, hold: attendanceBusy \}\)/);
+  const hookCode = stripComments(peopleHook);
+  assert.match(hookCode, /if \(!enabled \|\| hold\) return;\s*if \(startedRef\.current === attempt\) return;/);
+  assert.equal(count(hookCode, /loadStaffClassPeople\(\{/g), 1);
+  assert.equal(count(clientCode, /loadStaffClassPeople\(\{/g), 0);
 });
 
 test("하단 안내: 실패 문구일 때만 주의색 + role=alert, 44px 버튼", () => {
@@ -258,23 +290,28 @@ test("하단 안내: 실패 문구일 때만 주의색 + role=alert, 44px 버튼
   assert.match(clientCode, /<p role="alert" className="min-w-0 text-sm font-medium text-\[var\(--color-academy-warning\)\]">\{message\}<\/p>/);
   assert.match(clientCode, /<p aria-live="polite" className="min-w-0 text-sm text-\[var\(--color-academy-info\)\]">\{message\}<\/p>/);
   // «더보기»·«닫기»는 44px
-  assert.match(clientCode, /academy-button-sm min-h-11! shrink-0">더보기</);
+  // 2026-11-15 접이식 구조와 병합: «더보기» 대신 출석부 칸 아래 글자 버튼 — 44px 은 그대로
+  assert.match(clientCode, /className="academy-button-text academy-button-sm min-h-11! underline underline-offset-2">\s*연락처 모아 보기/);
   assert.equal(count(clientCode, /academy-button-sm shrink-0">닫기</g), 0);
   assert.equal(count(sheetCode, /academy-button-sm shrink-0">닫기</g), 0);
   assert.match(sheetCode, /academy-button-sm min-h-11! shrink-0">닫기</);
 });
 
-test("기능 보존: 옮긴 기능이 «더보기»에 전부 있고 저장 함수는 그대로다", () => {
-  const more = client.slice(client.indexOf('aria-labelledby="session-more-title"'), client.indexOf("{showPeople && <ClassPeopleSheet"));
-  assert.match(more, /setShowMore\(false\); setShowPeople\(true\);/, "연락처 모아 보기(기존 학생 정보 시트)");
-  assert.match(more, /setShowMore\(false\); setBillingStudent\(null\);/, "반 전체 청구 확인");
-  assert.match(more, /setShowMore\(false\); cancelStart\(\);/, "수업 시작 취소");
-  assert.match(client, /aria-haspopup="dialog" onClick=\{\(\) => setShowMore\(true\)\}[^>]*>더보기</);
+// 2026-11-15 접이식 구조와 병합: «더보기» 창이 없어지고, 그 안의 기능은 출석부 칸 아래(연락처 모아 보기·반 전체 청구 확인)와 메모 칸 아래(수업 시작 취소 — 원장 지시)로 옮겼다
+test("기능 보존: «더보기»에 있던 기능이 전부 있고 저장 함수는 그대로다", () => {
+  const links = client.slice(client.indexOf('aria-label="수업 관리"'), client.indexOf('id="session-lesson"'));
+  assert.match(links, /aria-haspopup="dialog" onClick=\{\(\) => setShowPeople\(true\)\}[^>]*>\s*연락처 모아 보기/, "연락처 모아 보기(기존 학생 정보 시트)");
+  assert.match(links, /\{showFees && <button type="button" onClick=\{\(\) => setBillingStudent\(null\)\}[^>]*>\s*반 전체 청구 확인/, "반 전체 청구 확인");
+  assert.match(client, /id="session-cancel-start"[\s\S]{0,200}disabled=\{actionsLocked\} onClick=\{cancelStart\}/, "수업 시작 취소");
+  assert.match(client, /const actionsLocked = pending \|\| voiceBusy \|\| memoStatus === "saving";/);
+  assert.ok(client.indexOf('id="session-memo"') < client.indexOf('id="session-cancel-start"'), "시작 취소는 메모 아래");
+  assert.doesNotMatch(clientCode, /더보기|setShowMore/);
   // 서버 기능 호출은 하나도 빠지지 않았다
-  for (const call of ["saveStaffAttendance(", "saveSessionMemo(", "cancelClassSession(", "completeClassSession(", "loadStaffSessionMonthlyFees(", "loadStaffClassPeople("]) {
+  for (const call of ["saveStaffAttendance(", "saveSessionMemo(", "cancelClassSession(", "completeClassSession(", "loadStaffSessionMonthlyFees(", "saveSessionFeedLine("]) {
     assert.ok(client.includes(call), `${call} 호출이 사라졌다`);
   }
-  for (const part of ["<ClassPeopleSheet", "<ClassBillingSheet", "<SessionPhotoUploader", "<SessionVideoUploader", "<FeedLineEditor", "<VoiceToTextButton", "markAllPresent", "수업 중 특이사항"]) {
+  assert.ok(peopleHook.includes("loadStaffClassPeople("), "학생 정보 조회가 사라졌다");
+  for (const part of ["<ClassPeopleSheet", "<ClassBillingSheet", "<SessionPhotoUploader", "<SessionVideoUploader", "<LessonTextEditor", "<VoiceToTextButton", "markAllPresent", "수업 중 특이사항"]) {
     assert.ok(client.includes(part), `${part} 가 사라졌다`);
   }
 });

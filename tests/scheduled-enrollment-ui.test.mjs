@@ -55,6 +55,8 @@ test("관리자 원생 상세는 개시일이 미래인 ACTIVE 반을 «수강 �
     "@/components/admin/AdminPageHeader": nullComponent,
     "@/components/admin/StatusBadge": { statusToneClass: () => "" },
     "./ParentRequestLinkPanel": nullComponent, "./GuardianPanel": nullComponent, "./AbsencePeriodPanel": nullComponent,
+    // 2026-11-14: 학부모 «정보 변경 요청»·건강 특이사항 칸이 늘었다(화면이 열린 뒤 따로 읽는 칸이라 이 테스트에서는 빈 부품)
+    "./StudentProfilePanels": { ProfileChangeRequestsPanel: () => null, StudentHealthNotePanel: () => null }, "@/app/actions/student-profile-admin": {},
     "@/components/admin/CustomerNoticeSender": nullComponent,
     // 청구/수납 탭의 발행·수정·삭제 창(2026-11-09) — 이 테스트는 수강 줄만 보므로 빈 부품·판정으로 둔다
     "./StudentBillingModals": { IssueInvoiceModal: () => null, EditInvoiceModal: () => null, CancelInvoiceModal: () => null },
@@ -62,6 +64,8 @@ test("관리자 원생 상세는 개시일이 미래인 ACTIVE 반을 «수강 �
     // 납부완료 상태 버튼 잠금(2026-11-10) — 이 테스트는 결제가 없으므로 빈 판정·빈 부품
     "@/lib/payments/paidStatusGuard": { paidStatusLock: () => "NONE" },
     "./PaidStatusNotice": nullComponent,
+    // 2026-11-15 아이콘 예외(화살표·종·톱니): 공용 아이콘 부품은 실제 코드를 그대로 쓴다
+    "@/components/common/UiIcon": load("src/components/common/UiIcon.tsx", {}),
   }).default;
   const html = renderToStaticMarkup(React.createElement(Client, { data: {
     student: { id: "student-a", name: "합성 학생", birthDate: "2016-01-01", gender: "남", createdAt: "2026-11-03", parentId: "parent-a", parent: {}, memo: null },
@@ -95,6 +99,8 @@ test("관리자 원생 목록 «활성» 필터·반별 인원은 개시일 미�
     "@/components/admin/list/ListDetailPanel": nullComponent,
     "@/components/admin/list/StatusCountChips": nullComponent,
     "@/components/admin/list/ListViewToggle": { __esModule: true, default: () => null, useRememberedListView: () => ["class", () => {}] },
+    // 2026-11-15 아이콘 예외(화살표·종·톱니): 공용 아이콘 부품은 실제 코드를 그대로 쓴다
+    "@/components/common/UiIcon": load("src/components/common/UiIcon.tsx", {}),
   }).default;
   const html = renderToStaticMarkup(React.createElement(Client, { students: [{
     id: "student-a", name: "합성 예정 학생", birthDate: "2016-01-01", createdAt: "2026-11-03", parentId: "parent-a", parent: {}, enrollments: [enrollment],

@@ -321,8 +321,11 @@ test("④ 셔틀 없음: 아이 정보 칸(라벨:값)·셔틀 «이용하지 �
   const order = ["아이 정보", "다닌 기간", "수강 반", "셔틀", "청구 이력", "출석 · 최근 12개월", "수강 반 이력"].map((t) => html.indexOf(t));
   assert.deepEqual([...order].sort((a, b) => a - b), order, "위에서 아래 순서");
   assert.ok(order.every((i) => i >= 0));
-  assert.match(html, /aria-expanded="true"[^>]*>[\s\S]*?접기/, "머리줄을 눌러 접는다(글자)");
-  assert.doesNotMatch(html, /material-symbols/);
+  // 2026-11-15 아이콘 예외(화살표·종·톱니): 글자 «접기» → 펼침 화살표. 버튼 이름은 칸 제목 글자가 준다
+  assert.match(html, /aria-expanded="true"[^>]*>[\s\S]*?<span aria-hidden="true" class="ui-icon[^"]*"><span class="material-symbols-outlined text-xl">expand_less<\/span><span class="ui-icon-fallback">▴<\/span><\/span>/, "머리줄을 눌러 접는다(펼친 칸 = 위 화살표)");
+  assert.match(html, /<button[^>]*aria-expanded="true"[^>]*><span class="academy-section-title[^"]*">아이 정보<\/span>/, "버튼 안에 제목 글자가 있다");
+  const icons = [...html.matchAll(/class="material-symbols-outlined[^"]*">([^<]*)</g)].map((m) => m[1]);
+  assert.ok(icons.length > 0 && icons.every((name) => name === "expand_less" || name === "expand_more"), `펼침 화살표 말고 다른 아이콘이 있다: ${icons.join(", ")}`);
 });
 
 test("④ 여러 반 + 휴원: 반마다 한 줄(상태 칩·요일 시간·코치), 셔틀 요일별·7일 일정(휴원·휴무·결석·안 탐)", () => {

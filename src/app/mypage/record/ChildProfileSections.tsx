@@ -1,21 +1,30 @@
 "use client";
 
+import UiIcon from "@/components/common/UiIcon";
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { TONE_BADGE_CLASS, type StatusTone } from "@/lib/ui/statusTones";
 import type { ChildProfile, ChildShuttle } from "@/lib/parent/childRecordQuery";
-import { classTimeText, dotYmd, genderText, gradeLine, guardianRows, koreanAge, makeupLine } from "@/lib/parent/childProfileRules";
+import { birthLine, classTimeText, dotYmd, genderText, gradeLine, guardianRows, makeupLine } from "@/lib/parent/childProfileRules";
+import { changeLine } from "@/lib/parent/childEditRules";
+import { realBirthYmd } from "@/lib/makeup/student-grade";
+import { formatPhoneInput } from "@/lib/application-display-format";
+import PhoneChangeButton from "@/components/account/PhoneChangeButton";
 import type { ShuttleDayLeg, ShuttleDayRow, ShuttleDayStatus } from "@/lib/shuttle/childShuttleRules";
 import { presetHref } from "@/lib/parent/classCards";
 import { kstLabel } from "@/lib/datetime/kst";
 import ProfilePhotoEditor from "@/components/parent/ProfilePhotoEditor";
 
+// 수정 시트는 «수정»을 눌렀을 때만 내려받는다(서버 동작을 부르는 부품이라 첫 화면 묶음에 넣지 않는다)
+const ChildInfoEditSheet = dynamic(() => import("./ChildInfoEditSheet"), { ssr: false });
+
 // 학부모 «아이 기록» 위쪽 칸(2026-11-14 원장 «관리자 원생 상세 참고해서 아이 정보 모두 + 셔틀 정확하게»):
 //  아이 정보 → (요약 4칸은 ChildRecordClient) → 수강 반 → 셔틀.
-// 컴팩트 UI: 머리줄을 누르면 접기/펼치기(글자로 — 아이콘 금지 가드) · «라벨 : 값» 한 줄 행 · 터치 44px · 글자 12px 이상.
+// 컴팩트 UI: 머리줄을 누르면 접기/펼치기(화살표 — 2026-11-15 아이콘 예외) · «라벨 : 값» 한 줄 행 · 터치 44px · 글자 12px 이상.
 // 계산은 전부 순수 규칙(childProfileRules·childShuttleRules)에서 — 여기는 그리기만.
 
-/** 접히는 칸 — 머리줄 전체가 버튼(44px). 오른쪽 «접기/펼치기»는 글자 */
+/** 접히는 칸 — 머리줄 전체가 버튼(44px). 오른쪽 끝은 펼침 화살표(이름은 제목 글자) */
 export function CollapsibleSection({ id, title, note, defaultOpen = true, children }: { id: string; title: string; note?: string | null; defaultOpen?: boolean; children: ReactNode }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
@@ -30,7 +39,7 @@ export function CollapsibleSection({ id, title, note, defaultOpen = true, childr
         >
           <span className="academy-section-title min-w-0 flex-1">{title}</span>
           {note && <span className="shrink-0 text-xs tabular-nums text-[var(--color-academy-muted)]">{note}</span>}
-          <span className="shrink-0 text-xs text-[var(--color-academy-muted)]">{open ? "접기" : "펼치기"}</span>
+          <span className="inline-flex shrink-0 text-[var(--color-academy-muted)]"><UiIcon name={open ? "expand_less" : "expand_more"} /></span>
         </button>
       </h2>
       {open && <div id={`${id}-body`} className="border-t border-[var(--color-academy-line)]">{children}</div>}
@@ -52,10 +61,11 @@ function Badge({ tone, children }: { tone: StatusTone; children: ReactNode }) {
   return <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs ${TONE_BADGE_CLASS[tone]}`}>{children}</span>;
 }
 
-/** 칸 아래 링크 줄 — 기존 신청·설정 화면으로만 보낸다(새 쓰기 기능 없음) */
-function LinkBar({ links }: { links: { href: string; label: string }[] }) {
+/** 칸 아래 링크 줄 — 기존 신청·설정 화면으로 보낸다. before = 링크 앞에 둘 버튼(그 자리에서 끝나는 일) */
+function LinkBar({ links, before }: { links: { href: string; label: string }[]; before?: ReactNode }) {
   return (
-    <div className="flex flex-wrap gap-x-1 border-t border-[var(--color-academy-line)] px-1.5 py-1">
+    <div className="flex flex-wrap items-center gap-x-1 border-t border-[var(--color-academy-line)] px-1.5 py-1">
+      {before}
       {links.map((l) => (
         <Link key={l.href + l.label} href={l.href} className="academy-button-text whitespace-nowrap">
           {l.label} ▸
@@ -74,7 +84,15 @@ export function ChildInfoSection({ profile, today, studentId, photo }: {
   /** 프로필 사진 올리기 칸(이름·지금 사진의 캐시 버전) — 없으면 칸을 그리지 않는다 */
   photo?: { name: string; version: string | null };
 }) {
+  // 수정 시트(2026-11-14 b4·b5) — 수정용 값을 읽은 경우에만 «수정» 버튼이 보인다
+  const [editing, setEditing] = useState(false);
   if (profile === undefined) return null; // 옛 모양 데이터(칸 없음)
+  const edit = profile?.edit ?? null;
+  const childName = photo?.name ?? "아이";
+  // 확인 중인 이름·생년월일 변경 신청(학원이 승인하면 바뀐다)
+  const waiting = edit?.requests.filter((r) => r.status === "PENDING") ?? [];
+  // 최근 반려된 신청 — 결과를 모르고 기다리지 않게 한 줄로 알린다(같은 항목을 다시 신청했으면 숨긴다)
+  const rejected = (edit?.requests ?? []).filter((r) => r.status === "REJECTED" && !waiting.some((w) => w.field === r.field)).slice(0, 1);
   return (
     <CollapsibleSection id="record-info" title="아이 정보">
       {/* 아이 사진 올리기·바꾸기·지우기(2026-11-15) — 아이 정보를 못 불러와도 사진은 올릴 수 있게 맨 위에 따로 */}
@@ -88,11 +106,17 @@ export function ChildInfoSection({ profile, today, studentId, photo }: {
       ) : (
         <>
           <div className="divide-y divide-[var(--color-academy-line)]">
-            <Row label="생년월일">
-              {profile.birthYmd ? `${dotYmd(profile.birthYmd)}${koreanAge(profile.birthYmd, today) !== null ? ` · 만 ${koreanAge(profile.birthYmd, today)}세` : ""}` : "-"}
-            </Row>
+            {/* 임시 생일(2000-01-01)은 진짜 생일이 아니라 «-» — 학년도 같은 규칙(realBirthYmd)으로 거른다 */}
+            <Row label="생년월일">{birthLine(profile.birthYmd, today)}</Row>
             <Row label="학년">{gradeLine(profile.birthYmd, profile.gradeText, today)}</Row>
             <Row label="학교">{profile.school?.trim() || "-"}</Row>
+            {edit && <Row label="학생 전화">{edit.phone ? formatPhoneInput(edit.phone) : "-"}</Row>}
+            {edit && <Row label="주소">{edit.address?.trim() || "-"}</Row>}
+            {edit?.healthAvailable && (
+              <Row label="건강·특이">
+                <span className="whitespace-pre-wrap">{edit.healthNote?.trim() || "-"}</span>
+              </Row>
+            )}
             <Row label="성별">{genderText(profile.gender) ?? "-"}</Row>
             <Row label="등록일">{dotYmd(profile.enrollYmd) || "-"}</Row>
             {profile.guardians ? (
@@ -104,8 +128,56 @@ export function ChildInfoSection({ profile, today, studentId, photo }: {
               <Row label="보강권">{profile.makeup ? makeupLine(profile.makeup) : "불러오지 못했어요"}</Row>
             </Link>
           </div>
-          {/* 고칠 수 있는 것은 기존 화면으로만(이름·생년월일 등은 학원이 고친다) */}
-          <LinkBar links={[{ href: "/mypage/settings", label: "내 연락처 바꾸기" }, { href: "/mypage/children", label: "가족 연결" }]} />
+          {/* 변경 신청 상태 — 확인 중 / 최근 반려(사유) */}
+          {(waiting.length > 0 || rejected.length > 0) && (
+            <ul className="border-t border-[var(--color-academy-line)]">
+              {waiting.map((r) => (
+                <li key={r.id} className="flex min-h-11 items-center gap-2 px-3 py-1.5 text-sm">
+                  <Badge tone="warning">확인 중</Badge>
+                  <span className="min-w-0 flex-1 break-keep text-[var(--color-academy-ink)]">{changeLine(r)}</span>
+                </li>
+              ))}
+              {rejected.map((r) => (
+                <li key={r.id} className="flex min-h-11 items-center gap-2 px-3 py-1.5 text-sm">
+                  <Badge tone="neutral">반려</Badge>
+                  <span className="min-w-0 flex-1 break-keep text-[var(--color-academy-ink)]">
+                    {changeLine(r)}
+                    {r.note && <span className="block text-xs text-[var(--color-academy-muted)]">{r.note}</span>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {/* 그 자리에서 고친다: 아이 정보 «수정»(시트) · 내 연락처(본인인증). 본인인증이 꺼진 환경이면 설정 화면 링크 */}
+          <LinkBar
+            before={
+              <>
+                {edit && (
+                  <button type="button" onClick={() => setEditing(true)} className="academy-button-tonal whitespace-nowrap" aria-haspopup="dialog">
+                    수정
+                  </button>
+                )}
+                <PhoneChangeButton
+                  label="내 연락처 바꾸기"
+                  className="academy-button-text whitespace-nowrap"
+                  messageClassName="px-2 text-xs"
+                  fallback={<Link href="/mypage/settings#my-phone" className="academy-button-text whitespace-nowrap">내 연락처 보기 ▸</Link>}
+                />
+              </>
+            }
+            links={[{ href: "/mypage/children", label: "가족 연결" }]}
+          />
+          {editing && edit && (
+            <ChildInfoEditSheet
+              studentId={studentId}
+              name={childName}
+              birthYmd={realBirthYmd(profile.birthYmd)}
+              school={profile.school}
+              gradeText={gradeLine(profile.birthYmd, profile.gradeText, today)}
+              edit={edit}
+              onClose={() => setEditing(false)}
+            />
+          )}
         </>
       )}
     </CollapsibleSection>
@@ -176,7 +248,8 @@ function legText(name: "등원" | "하원", leg: ShuttleDayLeg | null): string |
 
 function dayDetail(d: ShuttleDayRow): string {
   // 명단 요일·시간에 맞는 반이 없다 — 운행으로 치지 않고 학원 확인을 안내한다
-  if (d.status === "CHECK") return "명단과 수강 반이 맞지 않아요 · 학원에 확인해 주세요";
+  // 학부모가 할 일은 없다(학원이 명단을 맞춘다) — 행동을 요구하지 않는 한 줄
+  if (d.status === "CHECK") return "학원 확인 중";
   if (d.status === "NO_CLASS") return "다니는 반이 없어요";
   if (d.status !== "RUN") return d.className ?? "";
   return [legText("등원", d.board), legText("하원", d.alight)].filter(Boolean).join(" · ");
