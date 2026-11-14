@@ -18,7 +18,7 @@ import SessionWorkspace from "@/app/staff/sessions/[sessionId]/SessionInProgress
 import UiIcon from "@/components/common/UiIcon";
 import type { LessonTextSaveResult } from "@/components/staff/LessonTextEditor";
 import { retainSessionData } from "@/components/staff/sessionWorkspaceRules";
-import { prepareStaffNavigation } from "./staffNavigation";
+import { prepareStaffNavigation, setStaffLiveLessonOpen } from "./staffNavigation";
 import type { StaffSessionDetail, StaffSessionStudent, StaffTodayClass } from "@/lib/staff-session-queries";
 import { isStaleDateKey, STALE_DATE_MESSAGE, staffReloginHref } from "@/lib/staff-session-rules";
 
@@ -221,6 +221,14 @@ export default function StaffHomeClient({
   useEffect(() => {
     if (expandedSessionId && !expandedLoaded) loadSession(expandedSessionId);
   }, [expandedLoaded, expandedSessionId, loadSession]);
+  // 2026-11-15 원장 점검: 진행 중 수업 칸이 펼쳐져 있는 동안 아래 탭을 숨긴다(아래 고정 막대가 화면 바닥에 붙는다).
+  // 줄을 접거나·수업이 끝나거나·시작을 취소하면 풀리고, 다른 화면으로 가면(이 화면이 사라질 때) 반드시 푼다.
+  const liveLessonOpen = expandedLesson?.sessionStatus === "IN_PROGRESS";
+  useEffect(() => {
+    if (!liveLessonOpen) return;
+    setStaffLiveLessonOpen(true);
+    return () => setStaffLiveLessonOpen(false);
+  }, [liveLessonOpen]);
   // 끝난 수업의 본문은 줄을 접으면 버린다 — 다시 펼칠 때 서버에서 새로 읽어, 접기 전에 저장한 수업 내용·사진·영상이
   // 처음 읽은 옛 값으로 되돌아가 보이지 않게 한다(옛 값 위에 저장하면 학부모에게 보이는 글이 덮인다). 진행 중 수업은 그대로 둔다.
   useEffect(() => {
@@ -566,7 +574,8 @@ export default function StaffHomeClient({
 
       {/* 진행 중 수업 칸이 펼쳐져 있으면 아래 고정 막대(사진·동영상·갤러리)가 떠 있다 — 막대 높이만큼 페이지 끝을 더 띄워
           마지막 줄(«완료한 수업» 등)이 막대에 가리지 않게 한다. 아래 탭·안전 영역 몫은 레이아웃의 아래 여백이 이미 잡고 있다. */}
-      {expandedLesson?.sessionStatus === "IN_PROGRESS" && <div aria-hidden="true" className="h-28" />}
+      {/* 아래 탭이 숨은 동안 막대는 화면 바닥에 붙는다 — 레이아웃의 아래 여백(탭 몫)에 조금만 더하면 마지막 줄(수업 시작 취소 등)이 가리지 않는다 */}
+      {liveLessonOpen && <div aria-hidden="true" className="h-12" />}
 
       {showFees && billingTarget && <ClassBillingSheet key={`${billingTarget.lesson.id}:${billingTarget.student?.id || "all"}`} open classId={billingTarget.lesson.id} className={billingTarget.lesson.name} student={billingTarget.student} onClose={() => setBillingTarget(null)} />}
 
