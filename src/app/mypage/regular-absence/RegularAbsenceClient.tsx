@@ -551,7 +551,8 @@ export default function RegularAbsenceClient({
                     <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
                       {/* 기간 결석을 «인정»만 한 상태면 금액은 복귀 뒤에 정한다(2026-11-15) */}
                       {/* 학원이 이월을 확정했으면 확정된 합계(3단계) */}
-                      {typeof review.settledTotal === "number" ? periodSettledParentText(review.settledTotal)
+                      {/* 퇴원 정산(4단계)이면 이월이 아니라 환불 검토 상태를 그대로 보인다 */}
+                      {review.refundText ? review.refundText : typeof review.settledTotal === "number" ? periodSettledParentText(review.settledTotal)
                         : review.amountPending ? PERIOD_APPROVED_PARENT_NOTE : "다음 달 수강료에서 1회분을 빼 드려요."}
                     </p>
                   )}

@@ -1,4 +1,4 @@
-import { isKstYmd } from "@/lib/datetime/kst";
+import { addMonthsYm, isKstYmd } from "@/lib/datetime/kst";
 /** 청구 검토표의 공통 계약. 화면 입력과 서버의 계산 근거를 분리한다. */
 export type WorkbenchAmounts = { baseAmount: number; discountAmount: number; prorationAmount: number; carryAmount: number; shuttleAmount: number };
 export type WorkbenchCalendarSnapshot = { kind:"DB"|"DB_AND_ICS"; events:Array<{title:string;date:string;endDate?:string}>; fingerprint:string };
@@ -17,6 +17,8 @@ export type WorkbenchRow = WorkbenchAmounts & {
   hold?: true;
   /** 보류를 만든 기간 id — 화면이 신청함 기간 상세로 보낸다 */
   holdPeriodId?: string;
+  /** 부상 결석 안내에서 «달 가운데만 빠진 날» — 이 날들은 수업일 목록(scheduledDates)에서 빠져 있다(다닌 날만). 저장할 때 근거에 함께 적는다 */
+  guideMissedDates?: string[];
 };
 export type WorkbenchAbsence = {
   id: string; studentId: string; studentName: string; classId: string; date: string;
@@ -88,6 +90,26 @@ export function attendedOnlyProration(net: number, shortProration: number, sessi
   const count = Math.min(Math.max(0, Math.trunc(attended) || 0), sessions);
   const payable = Math.max(0, net - Math.max(0, Number.isSafeInteger(shortProration) ? shortProration : 0));
   return net - Math.round(payable * count / sessions);
+}
+/**
+ * 발행 초안의 근거(calculationBasis)에서 «부상 결석으로 뺀 날»을 꺼낸다 — 달 가운데만 빠진 달로 발행한 초안에만 있다.
+ * 그 초안의 수업일 사본(scheduledDates)에는 다닌 날만 들어 있어, 지금 일정과 견줄 때 같은 날을 빼고 견줘야 한다(청구 준비 · 이월 근거 공용).
+ */
+export function illnessMissedDatesOf(calculationBasis: unknown): string[] {
+  const list = calculationBasis && typeof calculationBasis === "object" ? (calculationBasis as { illnessMissedDates?: unknown }).illnessMissedDates : null;
+  return Array.isArray(list) ? list.filter((date): date is string => typeof date === "string" && isKstYmd(date)) : [];
+}
+/**
+ * 결석일이 속한 «수강월»(YYYY-MM)을 연간 일정으로 정한다 — 청구(Payment.year/month)·이월 근거의 달이다(하루짜리 이월 · 기간 정산 공용).
+ * 달력 월과 다를 수 있다(예: 12월 1주차가 11/30 에 시작하면 11/30 결석은 12월 수강월). 그래서 달력 월 → 다음 달 → 이전 달 순으로
+ * «그 달 수업일에 이 날이 있는가»를 본다. 어느 달에도 없으면(휴무일 등) 달력 월 — 뒤의 규칙이 «수업일 아님»으로 거른다.
+ * 달력 월을 먼저 보므로, 달력 월에 수업일이 있는 날(대부분)은 예전과 같은 달이 나온다 — 이미 적립된 이월의 근거 달은 바뀌지 않는다.
+ * @param datesOfMonth 그 반 요일의 그 달 수업일 목록(연간 일정 함수)
+ */
+export function billingMonthOfDate(dateYmd: string, datesOfMonth: (month: string) => readonly string[]): string {
+  const calendarMonth = dateYmd.slice(0, 7);
+  return [calendarMonth, addMonthsYm(calendarMonth, 1), addMonthsYm(calendarMonth, -1)]
+    .find((month) => month && datesOfMonth(month).includes(dateYmd)) ?? calendarMonth;
 }
 /** 결석별 반올림을 피하기 위해 분수로 합산하고 마지막 합계에서 한 번 반올림한다. */
 export function roundCarryTotal(values: readonly { numerator: string; denominator: string }[]): number {

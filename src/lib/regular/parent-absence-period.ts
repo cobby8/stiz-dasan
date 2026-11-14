@@ -18,7 +18,8 @@ import { periodsOverlap } from "@/lib/regular/absence-period-plan";
 import { absencePeriodContext, ABSENCE_PERIOD_TX_OPTIONS } from "@/lib/regular/absence-period-runner";
 import { parentPeriodColumnsReady, periodCarryColumnsReady } from "@/lib/regular/absence-period-service";
 import {
-  ILLNESS_PERIOD_INBOX_HREF, PERIOD_APPROVED_PARENT_LABEL, PERIOD_RETURNED_PARENT_LABEL, periodSettledParentText,
+  ILLNESS_PERIOD_INBOX_HREF, PERIOD_APPROVED_PARENT_LABEL, PERIOD_REFUND_DONE_PARENT_LABEL, PERIOD_REFUND_REVIEW_PARENT_LABEL, PERIOD_RETURNED_PARENT_LABEL,
+  periodRefundDoneParentText, periodRefundReviewParentText, periodSettledParentText,
 } from "@/lib/regular/illnessPeriodRules";
 import { closeIllnessReviewInTx, illnessReviewReady } from "@/lib/regular/illness-carry-tx";
 import { ILLNESS_REASON, collapseReviewsByPeriod, isValidReasonText, normalizeReasonText } from "@/lib/regular/illnessCarryRules";
@@ -438,7 +439,8 @@ export type ParentAbsencePeriodRow = {
    * 부상 결석 정산 상태(3단계): APPROVED = 인정 · 금액은 복귀 뒤 / RETURNED = 복귀했고 학원 확정 대기 / SETTLED = 이월 확정.
    * 승인 전이면 null.
    */
-  carry?: "APPROVED" | "RETURNED" | "SETTLED" | null;
+  // 4단계(퇴원 정산): REFUND_REVIEW = 환불 검토 중 / REFUND_DONE = 환불 처리 완료
+  carry?: "APPROVED" | "RETURNED" | "SETTLED" | "REFUND_REVIEW" | "REFUND_DONE" | null;
   /** 정산 상태 한 줄 글자(«이월 84,000원 확정 · 다음 수강료에서 빼 드려요» 등) */
   carryLabel?: string | null;
 };
@@ -480,7 +482,9 @@ export async function listParentAbsencePeriods(parentUserId: string): Promise<Pa
                 AND (p."returnDate" IS NULL OR p."returnDate" > (now() AT TIME ZONE 'Asia/Seoul')::date))
             -- ③ 인정됐고 금액 확정 대기 · 최근 60일 안에 이월이 확정된 기간(carrySettledAt 은 timestamptz 라 now() 와 바로 견준다)
             OR (p.reason = '${ILLNESS_REASON}' AND p.status <> 'CANCELLED'
-                AND (p."carryState" = 'APPROVED' OR (p."carryState" = 'SETTLED' AND p."carrySettledAt" > now() - interval '60 days')))` : ""}
+                AND (p."carryState" = 'APPROVED' OR (p."carryState" = 'SETTLED' AND p."carrySettledAt" > now() - interval '60 days')
+                     -- 퇴원 정산(4단계): 환불 검토 중은 끝날 때까지, 환불 처리함은 검토로 넘긴 날부터 60일
+                     OR p."carryState" = 'REFUND_REVIEW' OR (p."carryState" = 'REFUND_DONE' AND p."carrySettledAt" > now() - interval '60 days')))` : ""}
           )
         ORDER BY p."startDate", s.name
         LIMIT 20`,
@@ -489,8 +493,11 @@ export async function listParentAbsencePeriods(parentUserId: string): Promise<Pa
     return rows.map((row) => {
       // 복귀 미정(학원 등록 기간)은 끝일이 없다 — 시작일만 보이고 «복귀 미정»을 붙인다
       const endDate = row.returnDate ? addDaysKst(row.returnDate, -1) : "";
-      const active = row.active === true;
+      // 퇴원 정산으로 넘어간 기간(환불 검토 중·환불 처리함)은 «복귀했어요»·«알림 취소»를 누르지 않는다(금액이 이미 정해졌다)
+      const active = row.active === true && row.carryState !== "REFUND_REVIEW" && row.carryState !== "REFUND_DONE";
       const carry = row.carryState === "SETTLED" ? "SETTLED" as const
+        : row.carryState === "REFUND_REVIEW" ? "REFUND_REVIEW" as const
+        : row.carryState === "REFUND_DONE" ? "REFUND_DONE" as const
         : row.carryState === "APPROVED" ? (active ? "APPROVED" as const : "RETURNED" as const) : null;
       return {
         id: row.id,
@@ -507,7 +514,10 @@ export async function listParentAbsencePeriods(parentUserId: string): Promise<Pa
         returnMax: parentReturnDateMax({ todayYmd: todayKst(), storedReturnYmd: row.returnDate, coveredUntilYmd: row.coveredUntil }),
         canCancel: active && row.parentReported === true,
         carry,
-        carryLabel: carry === "SETTLED" ? periodSettledParentText(Number.isSafeInteger(row.settledTotal) ? Number(row.settledTotal) : 0)
+        // 환불 검토 금액 = 확정된 정산표 합계(본인 아이만 — 위 childAccessSql)
+        carryLabel: carry === "REFUND_REVIEW" ? `${PERIOD_REFUND_REVIEW_PARENT_LABEL} · ${periodRefundReviewParentText(Number.isSafeInteger(row.settledTotal) ? Number(row.settledTotal) : 0)}`
+          : carry === "REFUND_DONE" ? `${PERIOD_REFUND_DONE_PARENT_LABEL} · ${periodRefundDoneParentText(Number.isSafeInteger(row.settledTotal) ? Number(row.settledTotal) : 0)}`
+          : carry === "SETTLED" ? periodSettledParentText(Number.isSafeInteger(row.settledTotal) ? Number(row.settledTotal) : 0)
           : carry === "RETURNED" ? PERIOD_RETURNED_PARENT_LABEL : carry === "APPROVED" ? PERIOD_APPROVED_PARENT_LABEL : null,
       };
     });

@@ -244,6 +244,6 @@ export async function runBillingWorkbenchPostgresTests({pool,database,root}){
  checks.push('승인 취소 뒤 다시 발행 가능 — 살아 있는 청구 정확히 1건(새 청구 번호), 취소된 청구는 그대로');
  // ── 부상·질병 기간 결석 «복귀 정산»(3단계, 2026-11-15) — 승인 → 보류 전환 → 복귀 → 확정 → 청구 준비 재발행에서 이월 한 번 차감 ──
  const {runIllnessSettlementPostgresTests}=await import('./illness-period-settlement-postgres.mjs');
- await runIllnessSettlementPostgresTests({pool,database,root,checks,readWorkbench,mutateWorkbench,cmd,absenceModuleUrl,modelUrl:modules.model,calendarUrl:calendar,periodAdmin});
+ await runIllnessSettlementPostgresTests({pool,database,root,checks,readWorkbench,mutateWorkbench,cmd,absenceModuleUrl,modelUrl:modules.model,serviceUrl:service,calendarUrl:calendar,periodAdmin});
  return {checks};
 }

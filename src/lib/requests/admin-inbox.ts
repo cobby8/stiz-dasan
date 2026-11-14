@@ -40,6 +40,7 @@ import { evidenceScopeSql } from "@/lib/regular/illnessCarryRules";
 import { periodCarryColumnsReady } from "@/lib/regular/absence-period-service";
 import {
   PERIOD_DECLINED_INBOX_STATUS, PERIOD_HOLD_INBOX_STATUS, PERIOD_SETTLED_INBOX_STATUS, PERIOD_SETTLE_NEEDED_INBOX_STATUS,
+  PERIOD_REFUND_DONE_INBOX_STATUS, PERIOD_REFUND_REVIEW_INBOX_STATUS, PERIOD_WITHDRAWN_INBOX_STATUS, illnessWithdrawnSql,
   boundToIllnessPeriodSql, illnessHoldPeriodSql, illnessPeriodAbsenceSql, illnessPeriodDeclinedSql, illnessPeriodVisibleSql, illnessSettleNeededSql,
   periodInboxSummary, periodRangeText,
 } from "@/lib/regular/illnessPeriodRules";
@@ -324,8 +325,13 @@ const ADAPTERS: Adapter[] = [
     // 기간의 정산 상태 그대로. 아직 결정 전(NONE)이면 «결정 전인 결석이 남았는가»로 나눈다 — 전부 하루씩 처리했으면 고를 것이 없다
     // 승인됐고 청구 발행 보류 중이면(판정 조각 illnessHoldPeriodSql 한 곳) «인정 · 발행 보류 중»
     // 3단계: 확정됨 → SETTLED · 복귀했는데 금액 미확정 → SETTLE_NEEDED(처리 필요) · «인정 안 함»으로 정해 둔 기간 → DECLINED
-    // 아직 지도에 없는 정산 상태(4단계 REFUND_*)는 APPROVED 로 읽어 목록에서 사라지지 않게만 한다
+    // 4단계(퇴원 정산): 환불 검토로 넘김 → REFUND_REVIEW(처리 필요) · 환불 처리함 → REFUND_DONE(완료)
+    //   · 승인됐는데 대상 반이 모두 수강 종료 → SETTLE_WITHDRAWN(처리 필요 — 복귀일이 지났어도 퇴원이 먼저다: 다음 청구가 없다)
+    // 지도에 없는 정산 상태는 APPROVED 로 읽어 목록에서 사라지지 않게만 한다
     rawExpr: `CASE WHEN x."carryState" = 'SETTLED' THEN '${PERIOD_SETTLED_INBOX_STATUS}'
+                   WHEN x."carryState" = 'REFUND_REVIEW' THEN '${PERIOD_REFUND_REVIEW_INBOX_STATUS}'
+                   WHEN x."carryState" = 'REFUND_DONE' THEN '${PERIOD_REFUND_DONE_INBOX_STATUS}'
+                   WHEN ${illnessWithdrawnSql("x")} THEN '${PERIOD_WITHDRAWN_INBOX_STATUS}'
                    WHEN ${illnessSettleNeededSql("x")} THEN '${PERIOD_SETTLE_NEEDED_INBOX_STATUS}'
                    WHEN ${illnessHoldPeriodSql("x")} THEN '${PERIOD_HOLD_INBOX_STATUS}'
                    WHEN x."carryState" <> 'NONE' THEN 'APPROVED'
@@ -358,7 +364,10 @@ const ADAPTERS: Adapter[] = [
           ["증빙", photos > 0 ? `사진 ${photos}장` : e.parentReported ? "사진 아직 없음" : "학부모 증빙 없음"],
           ...(e.periodStatus === "CANCELLED" ? [["안내", "등록 취소된 기간입니다. 승인을 취소하면 목록에서 빠집니다."] as InboxFact] : []),
           // 복귀했는데 금액이 아직 확정되지 않았다(3단계) — 원장이 할 일을 그대로 말한다. 금액은 목록에 싣지 않는다
-          ...(row.raw === PERIOD_SETTLE_NEEDED_INBOX_STATUS ? [["안내", "복귀했습니다. 아래 «정산하기»에서 표를 확인하고 이월을 확정해 주세요."] as InboxFact] : [])],
+          ...(row.raw === PERIOD_SETTLE_NEEDED_INBOX_STATUS ? [["안내", "복귀했습니다. 아래 «정산하기»에서 표를 확인하고 이월을 확정해 주세요."] as InboxFact] : []),
+          // 퇴원 정산(4단계) — 원장이 할 일을 그대로 말한다. 금액은 목록에 싣지 않는다(상세에서 원장에게만)
+          ...(row.raw === PERIOD_WITHDRAWN_INBOX_STATUS ? [["안내", "수강을 종료했습니다. 아래 «정산하기»에서 표를 확인하고 환불 검토로 넘겨 주세요."] as InboxFact] : []),
+          ...(row.raw === PERIOD_REFUND_REVIEW_INBOX_STATUS ? [["안내", "수납 관리에서 환불한 뒤 아래 «환불 처리함»을 눌러 주세요."] as InboxFact] : [])],
         ref: { photoCount: String(photos), count: String(count) },
       };
     },

@@ -155,8 +155,9 @@ test("미리보기: 읽기만 한다 — 잠금·쓰기 없음, 복귀일 규칙
   assert.match(returnRule, /if \(period\.parentReported\) \{[\s\S]{0,200}학부모가 알린 기간은 여기서 복귀일을 바꿀 수 없습니다/);
   assert.match(returnRule, /if \(period\.status !== "ACTIVE"\) throw new IllnessPeriodError\("이미 복귀 처리된 기간입니다\. 저장된 복귀일로 정산합니다\."\);/);
   assert.equal((service.match(/resolveReturnDate\(period, /g) ?? []).length, 2, "미리보기와 확정이 같은 규칙");
-  // 수강월: 달력 월 → 다음 달 → 이전 달 순으로 «그 달 그 요일 수업일에 이 날이 있는가»
-  assert.match(service, /return \[calendarMonth, addMonthsYm\(calendarMonth, 1\), addMonthsYm\(calendarMonth, -1\)\]\s+\.find\(\(month\) => datesOf\(month, dayOfWeek\)\.includes\(date\)\) \?\? calendarMonth;/);
+  // 수강월: 달력 월 → 다음 달 → 이전 달 순으로 «그 달 그 요일 수업일에 이 날이 있는가» — 4단계부터 하루짜리 이월과 같은 함수 한 곳(workbench.billingMonthOfDate)
+  assert.match(service, /return \(date, dayOfWeek\) => billingMonthOfDate\(date, \(month\) => datesOf\(month, dayOfWeek\)\);/);
+  assert.match(read("src/lib/billing/workbench.ts"), /return \[calendarMonth, addMonthsYm\(calendarMonth, 1\), addMonthsYm\(calendarMonth, -1\)\]\s+\.find\(\(month\) => month && datesOfMonth\(month\)\.includes\(dateYmd\)\) \?\? calendarMonth;/);
 });
 
 test("학부모 미리보기: 본인 아이의 기간만(서버가 다시 확인) · 금액은 서버 계산 · 원장이 뺀 날 없이 «예정» — 근거 불명이면 금액 대신 상태", () => {

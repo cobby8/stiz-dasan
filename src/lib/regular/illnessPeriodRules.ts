@@ -126,12 +126,14 @@ export function parentPeriodDayStatus(input: {
 }): { status: string; amountPending: boolean; excluded?: boolean } {
   const review = input.reviewStatus ?? "PENDING";
   const illnessPeriodDay = input.reason === "ILLNESS_INJURY" && !input.settled && (review === "PENDING" || review === "APPROVED");
+  // 금액이 정해진 기간 — 이월 확정(SETTLED) 또는 퇴원 정산(환불 검토 중·환불 처리함, 4단계)
+  const decided = input.periodCarryState === "SETTLED" || input.periodCarryState === "REFUND_REVIEW" || input.periodCarryState === "REFUND_DONE";
   // 보강을 예약·사용한 날은 정산이 «보강 완료/예약 중»으로 뺀다 — 학부모 글자도 같은 뜻(보강권으로)으로 맞춘다(3단계)
-  if (illnessPeriodDay && input.makeupInUse && (input.periodCarryState === "APPROVED" || input.periodCarryState === "SETTLED")) {
+  if (illnessPeriodDay && input.makeupInUse && (input.periodCarryState === "APPROVED" || decided)) {
     return { status: "MAKEUP", amountPending: false };
   }
-  // 확정된 기간(SETTLED)인데 정산 기록이 없는 날 = 정산에서 빠진 날(출석 기록·학원이 뺀 날 등) — «이월 승인»으로 보이면 틀린다
-  if (illnessPeriodDay && input.periodCarryState === "SETTLED") return { status: "EXCLUDED", amountPending: false, excluded: true };
+  // 금액이 정해진 기간인데 정산 기록이 없는 날 = 정산에서 빠진 날(출석 기록·학원이 뺀 날 등) — «이월 승인»으로 보이면 틀린다
+  if (illnessPeriodDay && decided) return { status: "EXCLUDED", amountPending: false, excluded: true };
   const recognized = input.periodCarryState === "APPROVED" && illnessPeriodDay;
   return recognized ? { status: "APPROVED", amountPending: true } : { status: review, amountPending: false };
 }
@@ -351,4 +353,86 @@ export function boundToIllnessPeriodSql(abs: string): string {
 export function periodCarryDecidedSql(abs: string): string {
   return `EXISTS (SELECT 1 FROM "RegularAbsencePeriod" decided_period
                    WHERE decided_period.id = ${abs}."periodId" AND decided_period."carryState" <> 'NONE')`;
+}
+
+// ── 퇴원 정산 = 환불 검토(4단계, 2026-11-15 원장 결정) ─────────────────────────────────────
+// 부상 결석 중에 복귀하지 않고 퇴원하면 복귀 정산과 «같은 계산»으로 표를 만들어 «환불 검토 ○원»으로 올린다.
+// 이 기능은 돈을 움직이지 않는다 — 환불은 원장이 수납 관리의 «환불»로 직접 하고, 끝나면 «환불 처리함»(메모)으로 닫는다.
+// 비유: 계산서만 뽑아 원장 책상에 올려 두는 일이다. 돈을 내주는 것은 원장이 금고(수납 관리)에서 직접 한다.
+
+/** 학생 상세 기간 줄의 상태 글자(퇴원 정산) — WITHDRAWN 은 «승인됐는데 대상 반 수강 종료», 나머지는 기간의 정산 상태 값 */
+export const PERIOD_REFUND_STUDENT_LABELS: Record<"WITHDRAWN" | "REFUND_REVIEW" | "REFUND_DONE", string> = {
+  WITHDRAWN: "퇴원 · 정산 필요",
+  REFUND_REVIEW: "환불 검토",
+  REFUND_DONE: "환불 처리 완료",
+};
+/** 신청함 목록의 상태 값 — catalog.ts 의 ILLNESS_PERIOD 상태 지도와 같은 값이어야 한다(테스트가 비교) */
+export const PERIOD_WITHDRAWN_INBOX_STATUS = "SETTLE_WITHDRAWN";
+export const PERIOD_REFUND_REVIEW_INBOX_STATUS = "REFUND_REVIEW";
+export const PERIOD_REFUND_DONE_INBOX_STATUS = "REFUND_DONE";
+/** 정산 기록(BillingAbsenceResolution.reason)에 남기는 사유 — 환불 검토 취소가 이 글자로 자기 기록만 지운다 */
+export const REFUND_RESOLUTION_REASON = "퇴원 정산 — 환불 검토";
+/** 수강 종료 정리 결과 문구에 붙는 한 줄 */
+export const ENROLLMENT_END_ILLNESS_NOTE = "부상 결석 정산이 남아 있어요 — 신청함 «부상 결석(기간)»에서 환불 검토로 넘겨 주세요";
+/** 환불 처리 메모 길이 한도 */
+export const REFUND_MEMO_MAX = 500;
+
+/**
+ * 그 기간(period)이 «정산 필요 · 퇴원»인가 — 승인됐고 금액 미확정인데, 그 기간의 대상 반이 모두 수강 종료됐다
+ * (대상 반이 빈 배열이면 그 학생의 반 전부). 수강 행이 없는 반(반 이동으로 지워진 수강)도 끝난 것으로 본다.
+ * 신청함 상태식 · 학생 상세 · 정산 칸 · 환불 검토 실행이 이 조각 하나로 판정한다.
+ */
+export function illnessWithdrawnSql(period: string): string {
+  return `(${illnessHoldPeriodSql(period)} AND NOT EXISTS (
+            SELECT 1 FROM "Enrollment" live_enrollment
+             WHERE live_enrollment."studentId" = ${period}."studentId" AND live_enrollment.status <> 'WITHDRAWN'
+               AND (cardinality(${period}."classIds") = 0 OR live_enrollment."classId" = ANY(${period}."classIds"))))`;
+}
+
+/**
+ * 수강 종료 정리가 «지우지 않을» 결석(abs)인가 — 승인된(금액 미확정) 질병·부상 기간에 묶였고 이미 지난 날(오늘 포함).
+ * 이 날들이 지워지면 퇴원 정산의 대상이 사라진다(환불할 수업이 0회가 된다). 오늘은 DB 시계의 KST 날짜(date 칼럼과 그대로 견준다).
+ */
+export function illnessPendingSettleAbsenceSql(abs: string): string {
+  return `(${abs}.reason = 'ILLNESS_INJURY' AND ${abs}.date <= (now() AT TIME ZONE 'Asia/Seoul')::date AND EXISTS (
+            SELECT 1 FROM "RegularAbsencePeriod" pending_period
+             WHERE pending_period.id = ${abs}."periodId" AND ${illnessHoldPeriodSql("pending_period")}))`;
+}
+
+/**
+ * 퇴원 정산의 «세는 끝» — 복귀일 자리에 넣는 날(그날부터는 세지 않는다).
+ * 퇴원한 아이는 복귀일이 없다: 오늘까지 빠진 수업만 센다(= 내일). 복귀일이 이미 저장돼 있고 더 이르면 그날.
+ * 글자 비교만 한다(시간대 계산 없음 — 오늘은 호출부가 KST 날짜로 넘긴다).
+ */
+export function refundCountUntil(todayYmd: string, storedReturnYmd: string | null | undefined): string {
+  const tomorrow = addDaysKst(todayYmd, 1);
+  return storedReturnYmd && isKstYmd(storedReturnYmd) && storedReturnYmd < tomorrow ? storedReturnYmd : tomorrow;
+}
+
+/** 학부모 화면·앱 알림: 환불 검토로 넘겼을 때 «부상 결석 기간 수강료 84,000원을 환불 검토 중이에요» (0원이면 금액 없이) */
+export function periodRefundReviewParentText(total: number): string {
+  return total > 0
+    ? `부상 결석 기간 수강료 ${total.toLocaleString("ko-KR")}원을 환불 검토 중이에요`
+    : "부상 결석 정산을 확인하고 있어요 · 환불할 수강료는 없어요";
+}
+/** 학부모 화면·앱 알림: 환불 처리함 뒤 «부상 결석 기간 수강료 84,000원 환불 처리를 마쳤어요» */
+export function periodRefundDoneParentText(total: number): string {
+  return total > 0
+    ? `부상 결석 기간 수강료 ${total.toLocaleString("ko-KR")}원 환불 처리를 마쳤어요`
+    : "부상 결석 정산을 마쳤어요 · 환불할 수강료는 없어요";
+}
+/** 학부모 기간 줄의 짧은 상태 글자 */
+export const PERIOD_REFUND_REVIEW_PARENT_LABEL = "환불 검토 중";
+export const PERIOD_REFUND_DONE_PARENT_LABEL = "환불 처리 완료";
+
+/** 기간 행의 carrySettlement.refund(환불 처리함 기록)를 꺼낸다. 없거나 모양이 다르면 null */
+export function parseRefundRecord(value: unknown): { memo: string; doneAt: string | null; doneByUserId: string | null } | null {
+  let parsed: unknown = value;
+  if (typeof value === "string") { try { parsed = JSON.parse(value); } catch { parsed = null; } }
+  const refund = parsed && typeof parsed === "object" ? (parsed as { refund?: unknown }).refund : null;
+  if (!refund || typeof refund !== "object" || Array.isArray(refund)) return null;
+  const record = refund as Record<string, unknown>;
+  if (typeof record.memo !== "string" || !record.memo) return null;
+  const text = (item: unknown) => (typeof item === "string" && item ? item : null);
+  return { memo: record.memo, doneAt: text(record.doneAt), doneByUserId: text(record.doneByUserId) };
 }

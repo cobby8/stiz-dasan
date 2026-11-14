@@ -9,6 +9,8 @@
  * - 증빙은 기간 전체에 한 번만 확인한다(체크해야 승인 버튼이 켜진다).
  * - 승인 뒤에는 상태 글자와 «승인 취소»(위험 작업 — 기존 확인 창 부품).
  * - 승인 뒤 «복귀 정산» 칸(IllnessPeriodSettlementBox): 결석 중에는 «지금까지 예상 이월»(원장만), 복귀하면 달별 표 → [이월 확정].
+ * - 퇴원 정산(4단계): 승인된 기간의 대상 반이 모두 수강 종료됐으면 정산 칸이 «환불 검토로 넘기기» 길로 열리고,
+ *   넘긴 뒤에는 «환불 검토» 칸(IllnessPeriodRefundBox — 수납 관리 링크 · 환불 처리함 · 환불 검토 취소)이 보인다.
  * - 색은 토큰만, 아이콘 없이 글자, 버튼 등급·확인 창은 기존 부품(useAdminConfirm·AdminModal).
  */
 
@@ -20,8 +22,10 @@ import {
   approveIllnessPeriodAction, cancelIllnessPeriodApprovalAction, convertIllnessPeriodToMakeupAction, holdIllnessPeriodBillsAction,
   loadIllnessPeriodDetail, loadIllnessPeriodHold, type IllnessPeriodHoldView,
 } from "@/app/actions/illness-period-admin";
+import { loadIllnessPeriodWithdrawal } from "@/app/actions/illness-period-refund";
 import type { IllnessPeriodDetail } from "@/lib/regular/illness-period-admin";
 import { BILLING_HOLD_LABEL, PERIOD_APPROVED_ADMIN_NOTE } from "@/lib/regular/illnessPeriodRules";
+import IllnessPeriodRefundBox from "./IllnessPeriodRefundBox";
 import IllnessPeriodSettlementBox from "./IllnessPeriodSettlementBox";
 
 type Props = { periodId: string; studentName: string; onChanged: () => void };
@@ -39,6 +43,10 @@ export default function IllnessPeriodInboxDetail({ periodId, studentName, onChan
   const { confirm, confirmDialog } = useAdminConfirm();
   // 청구 발행 보류 칸(승인 뒤에만) — 이미 발행된 미납 청구 목록과 보류로 돌린 건수. 못 읽으면 칸만 숨긴다
   const [hold, setHold] = useState<IllnessPeriodHoldView | null>(null);
+  // 퇴원 정산 길인가(승인 뒤에만 읽는다) — 대상 반이 모두 수강 종료됐는가 · 다른 반은 아직 다니는가. 못 읽으면 복귀 정산 길 그대로
+  const [withdrawal, setWithdrawal] = useState<{ withdrawn: boolean; stillEnrolled: boolean } | null>(null);
+  // 반만 옮긴 아이(다른 반 수강 중)는 원장이 이월로 정산할 수도 있다 — 그때 고르는 값
+  const [useCarry, setUseCarry] = useState(false);
 
   // 칸을 열 때 한 번 읽는다(처리 뒤에는 아래 reload 가 다시 읽는다).
   // 보류 칸은 승인된 기간일 때만, 상세를 읽은 «뒤에» 읽는다(DB 연결을 동시에 늘리지 않는다)
@@ -52,6 +60,9 @@ export default function IllnessPeriodInboxDetail({ periodId, studentName, onChan
         if (result.detail.carryState !== "APPROVED") return;
         const holdResult = await loadIllnessPeriodHold(periodId).catch(() => null);
         if (alive) setHold(holdResult?.ok ? holdResult.hold : null);
+        // 보류 칸을 읽은 «뒤에» 읽는다(DB 연결을 동시에 늘리지 않는다)
+        const withdrawalResult = await loadIllnessPeriodWithdrawal(periodId).catch(() => null);
+        if (alive) setWithdrawal(withdrawalResult?.ok ? { withdrawn: withdrawalResult.withdrawn, stillEnrolled: withdrawalResult.stillEnrolled } : null);
       })
       .catch(() => { if (alive) setLoadError("내용을 불러오지 못했습니다. 잠시 뒤 다시 열어 주세요."); });
     return () => { alive = false; };
@@ -63,6 +74,8 @@ export default function IllnessPeriodInboxDetail({ periodId, studentName, onChan
     setDetail(result.detail);
     const holdResult = result.detail.carryState === "APPROVED" ? await loadIllnessPeriodHold(periodId).catch(() => null) : null;
     setHold(holdResult?.ok ? holdResult.hold : null);
+    const withdrawalResult = result.detail.carryState === "APPROVED" ? await loadIllnessPeriodWithdrawal(periodId).catch(() => null) : null;
+    setWithdrawal(withdrawalResult?.ok ? { withdrawn: withdrawalResult.withdrawn, stillEnrolled: withdrawalResult.stillEnrolled } : null);
   };
 
   if (loadError) return <p role="alert" className="mt-4 text-sm text-[var(--color-academy-danger)]">{loadError}</p>;
@@ -71,6 +84,8 @@ export default function IllnessPeriodInboxDetail({ periodId, studentName, onChan
   const hasPhotos = detail.photoIds.length > 0;
   const classes = detail.classes.map((item) => `${item.className} ${item.count}회`).join(" · ");
   const approved = detail.carryState === "APPROVED";
+  // 퇴원 정산 길 — 대상 반이 모두 수강 종료됐고, 원장이 «이월로 정산»을 고르지 않았다
+  const refundPath = approved && withdrawal?.withdrawn === true && !useCarry;
 
   function approve() {
     if (!detail || !evidenceChecked) return;
@@ -284,11 +299,24 @@ export default function IllnessPeriodInboxDetail({ periodId, studentName, onChan
               )}
             </div>
           )}
+          {/* 퇴원(대상 반 수강 종료) — 복귀 정산 대신 환불 검토로 넘긴다. 다른 반을 아직 다니면 이월로 정산하는 길도 고를 수 있다 */}
+          {withdrawal?.withdrawn && (
+            <div className="flex flex-wrap items-center gap-x-2 rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-1 text-sm text-[var(--color-academy-warning)]">
+              <p className="min-w-0 flex-1 break-keep font-medium">
+                정산 필요 · 퇴원 — 이 기간의 반 수강이 끝났습니다. {refundPath ? "정산표를 확인하고 환불 검토로 넘겨 주세요." : "이월로 정산합니다(다른 반 수강료에서 차감)."}
+              </p>
+              {withdrawal.stillEnrolled && (
+                <button type="button" disabled={pending} onClick={() => setUseCarry((value) => !value)} className="academy-button-text">
+                  {refundPath ? "이월로 정산하기" : "환불 검토로 정산하기"}
+                </button>
+              )}
+            </div>
+          )}
           {/* 복귀 정산 — 금액은 여기서 한 번 확정한다(3단계). 확정하면 이 기간이 «완료(이월 확정)»로 바뀐다 */}
           {/* key: 보류로 돌린 건수가 바뀌면 정산 칸을 새로 읽는다(미납 청구가 남아 막혔던 확정이 풀린다) */}
           <IllnessPeriodSettlementBox
             key={`settle-${hold?.heldCount ?? 0}`}
-            periodId={periodId} studentName={studentName} carryState="APPROVED"
+            periodId={periodId} studentName={studentName} carryState="APPROVED" refund={refundPath}
             onChanged={async () => { await reload(); onChanged(); }}
             onGoHold={async () => { await reload(); document.getElementById("illness-period-hold-box")?.scrollIntoView({ behavior: "smooth", block: "center" }); }}
           />
@@ -300,6 +328,9 @@ export default function IllnessPeriodInboxDetail({ periodId, studentName, onChan
       ) : detail.carryState === "SETTLED" ? (
         // 확정된 기간 — 그때의 표 사본 · 청구 준비로 이동 · 확정 취소(이월이 쓰이기 전에만)
         <IllnessPeriodSettlementBox periodId={periodId} studentName={studentName} carryState="SETTLED" onChanged={async () => { await reload(); onChanged(); }} />
+      ) : detail.carryState === "REFUND_REVIEW" || detail.carryState === "REFUND_DONE" ? (
+        // 퇴원 정산 — 환불 검토 중(수납 관리 링크 · 환불 처리함 · 환불 검토 취소) 또는 환불 처리함(메모와 표 사본)
+        <IllnessPeriodRefundBox key={`refund-${detail.carryState}`} periodId={periodId} studentName={studentName} onChanged={async () => { await reload(); onChanged(); }} />
       ) : (
         <p className="text-sm text-[var(--color-academy-muted)]">정산이 끝난 기간 결석입니다.</p>
       )}

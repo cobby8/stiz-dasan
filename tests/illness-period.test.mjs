@@ -990,7 +990,8 @@ test("종류 등록: 신청함 탭·작은 분류·어댑터·상세 칸·알림
   // 일괄 처리 대상이 아니다(증빙 확인이 필요하다)
   assert.ok(!catalog.BULK_ACTION_KINDS.includes("ILLNESS_PERIOD"));
   // 아직 만들지 않은 정산 상태(4단계 REFUND_*)는 지도에 없다. 2단계 «승인 + 발행 보류 중», 3단계 «정산 필요·이월 확정·인정 안 함»은 있다
-  assert.deepEqual(catalog.statusesOf("ILLNESS_PERIOD").sort(), ["APPROVED", "APPROVED_HOLD", "DAY_DONE", "DECLINED", "PENDING", "SETTLED", "SETTLE_NEEDED"]);
+  // 4단계(퇴원 정산)에서 REFUND_DONE · REFUND_REVIEW · SETTLE_WITHDRAWN 이 더해졌다
+  assert.deepEqual(catalog.statusesOf("ILLNESS_PERIOD").sort(), ["APPROVED", "APPROVED_HOLD", "DAY_DONE", "DECLINED", "PENDING", "REFUND_DONE", "REFUND_REVIEW", "SETTLED", "SETTLE_NEEDED", "SETTLE_WITHDRAWN"]);
   assert.deepEqual([rules.PERIOD_SETTLE_NEEDED_INBOX_STATUS, rules.PERIOD_SETTLED_INBOX_STATUS, rules.PERIOD_DECLINED_INBOX_STATUS], ["SETTLE_NEEDED", "SETTLED", "DECLINED"], "목록 SQL 이 만드는 값 = 상태 지도의 값");
   assert.deepEqual(["SETTLE_NEEDED", "SETTLED", "DECLINED"].map((status) => [catalog.bucketFor("ILLNESS_PERIOD", status), catalog.statusLabel("ILLNESS_PERIOD", status)]),
     [["ACTION", "정산 필요"], ["DONE", "완료(이월 확정)"], ["DONE", "보강권으로 전환"]]);

@@ -13,7 +13,7 @@ import { addDaysKst, todayKst } from "@/lib/datetime/kst";
 import { REASON_LABEL, VALID_REASONS } from "@/lib/regular/regularAbsenceRules";
 import { DEFAULT_PERIOD_REASON, shortDateLabel } from "@/lib/regular/absence-period-plan";
 import type { AbsencePeriodView } from "@/lib/regular/absence-period-service";
-import { BILLING_HOLD_STUDENT_LABEL, ILLNESS_PERIOD_INBOX_HREF, PERIOD_CARRY_STUDENT_LABELS } from "@/lib/regular/illnessPeriodRules";
+import { BILLING_HOLD_STUDENT_LABEL, ILLNESS_PERIOD_INBOX_HREF, PERIOD_CARRY_STUDENT_LABELS, PERIOD_REFUND_STUDENT_LABELS } from "@/lib/regular/illnessPeriodRules";
 import {
     cancelAbsencePeriod,
     createAbsencePeriod,
@@ -161,10 +161,13 @@ export default function AbsencePeriodPanel({
                                 {p.billingHold && (
                                     <p className="flex flex-wrap items-center gap-x-1 text-xs font-medium text-[var(--color-academy-warning)]">
                                         {/* 정산 상태 글자(3단계): 결석 중 «이월 대상 · 금액 미정» → 복귀하면 «복귀 · 정산 필요» */}
-                                        <span>{p.settleNeeded ? PERIOD_CARRY_STUDENT_LABELS.SETTLE_NEEDED : PERIOD_CARRY_STUDENT_LABELS.APPROVED}</span>
-                                        <span className="font-normal text-[var(--color-academy-muted)]">· {BILLING_HOLD_STUDENT_LABEL} · 복귀 정산 뒤 다시 발행합니다.</span>
+                                        {/* 퇴원(대상 반 수강 종료)이면 복귀 정산이 아니라 환불 검토로 넘길 일이다(4단계) */}
+                                        {p.withdrawnSettle
+                                            ? <span>{PERIOD_REFUND_STUDENT_LABELS.WITHDRAWN}</span>
+                                            : <span>{p.settleNeeded ? PERIOD_CARRY_STUDENT_LABELS.SETTLE_NEEDED : PERIOD_CARRY_STUDENT_LABELS.APPROVED}</span>}
+                                        <span className="font-normal text-[var(--color-academy-muted)]">· {p.withdrawnSettle ? "정산표를 확인하고 환불 검토로 넘겨 주세요." : `${BILLING_HOLD_STUDENT_LABEL} · 복귀 정산 뒤 다시 발행합니다.`}</span>
                                         {/* 누르는 곳은 높이 44px */}
-                                        <Link href={`${ILLNESS_PERIOD_INBOX_HREF}&open=${encodeURIComponent(p.id)}`} className="inline-flex min-h-11 items-center font-medium text-[var(--color-academy-primary)] underline">{p.settleNeeded ? "정산하기" : "신청함에서 보기"}</Link>
+                                        <Link href={`${ILLNESS_PERIOD_INBOX_HREF}&open=${encodeURIComponent(p.id)}`} className="inline-flex min-h-11 items-center font-medium text-[var(--color-academy-primary)] underline">{p.withdrawnSettle ? "정산하기" : <>{p.settleNeeded ? "정산하기" : "신청함에서 보기"}</>}</Link>
                                     </p>
                                 )}
                                 {/* 이월을 확정한 기간 — 상태 글자와 표를 볼 곳 */}
@@ -173,6 +176,15 @@ export default function AbsencePeriodPanel({
                                         <span>{PERIOD_CARRY_STUDENT_LABELS.SETTLED}</span>
                                         {/* 확정된 기간은 신청함 «완료» 칸에 있다 — 완료 목록까지 읽게 done=1 을 붙인다 */}
                                         <Link href={`${ILLNESS_PERIOD_INBOX_HREF}&done=1&open=${encodeURIComponent(p.id)}`} className="inline-flex min-h-11 items-center font-medium text-[var(--color-academy-primary)] underline">정산 표 보기</Link>
+                                    </p>
+                                )}
+
+                                {/* 퇴원 정산 — 환불 검토 중(처리 필요 칸) · 환불 처리 완료(완료 칸) */}
+                                {(p.carryState === "REFUND_REVIEW" || p.carryState === "REFUND_DONE") && (
+                                    <p className={`flex flex-wrap items-center gap-x-1 text-xs font-medium ${p.carryState === "REFUND_DONE" ? "text-[var(--color-academy-success)]" : "text-[var(--color-academy-warning)]"}`}>
+                                        <span>{PERIOD_REFUND_STUDENT_LABELS[p.carryState]}</span>
+                                        {p.carryState === "REFUND_REVIEW" && <span className="font-normal text-[var(--color-academy-muted)]">· 수납 관리에서 환불한 뒤 «환불 처리함»으로 닫아 주세요.</span>}
+                                        <Link href={`${ILLNESS_PERIOD_INBOX_HREF}${p.carryState === "REFUND_DONE" ? "&done=1" : ""}&open=${encodeURIComponent(p.id)}`} className="inline-flex min-h-11 items-center font-medium text-[var(--color-academy-primary)] underline">{p.carryState === "REFUND_DONE" ? "정산 표 보기" : "환불 검토 보기"}</Link>
                                     </p>
                                 )}
 

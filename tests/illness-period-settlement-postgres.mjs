@@ -11,7 +11,7 @@ import path from 'node:path';
 //   → 미리보기(지금까지 예상 · 복귀일 기준 · 날짜 빼기) → 학부모 미리보기(같은 숫자 · 남의 아이 거절)
 //   → 확정(지문 불일치·결석 취소·스위치 꺼짐 거절 → 성공) → 청구 준비 4월(다닌 만큼만 제안 · 이월 한 번 차감) → 5월(남은 이월 그대로)
 //   → 확정 취소(쓰인 뒤 거절 / 안 쓰였으면 되돌림) → 다시 확정
-export async function runIllnessSettlementPostgresTests({ pool, database, root, checks, readWorkbench, mutateWorkbench, cmd, absenceModuleUrl, modelUrl, calendarUrl, periodAdmin }) {
+export async function runIllnessSettlementPostgresTests({ pool, database, root, checks, readWorkbench, mutateWorkbench, cmd, absenceModuleUrl, modelUrl, serviceUrl, calendarUrl, periodAdmin }) {
   const { loadTsModule } = await import('./_ts-module.mjs');
   // 정산 연결부 — 이월 근거·적립은 통합 테스트가 이미 조립한 «같은» 모듈을 쓴다(식이 둘로 갈리지 않는지 실제로 본다)
   const settlement = await loadTsModule('src/lib/regular/illness-period-settlement.ts', { overrides: { '@/lib/billing/workbench-absence': absenceModuleUrl, '@/lib/billing/workbench': modelUrl } });
@@ -357,8 +357,9 @@ export async function runIllnessSettlementPostgresTests({ pool, database, root, 
   await settlement.settleIllnessPeriod(database, { periodId: 'middle-period', expectedFingerprint: middle.fingerprint }, 'admin', true, ctx(TODAY));
   let middleApril = await view('2027-04');
   const middleRow = middleApril.rows.find((r) => r.id === 's13:m7');
-  // 수강 기간은 그대로(3/29~4/19, 4회), 기간 조정 = 105,000 × 빠진 2회 ÷ 4회 = 52,500 → 52,500원(전액 105,000 이 아니다)
-  assert.deepEqual([middleRow.periodStart, middleRow.periodEnd, middleRow.scheduledDates.length, middleRow.prorationAmount, middleRow.totalAmount], ['2027-03-29', '2027-04-19', 4, 52500, 52500]);
+  // 수강 기간은 그대로(3/29~4/19), 기간 조정 = 105,000 × 빠진 2회 ÷ 4회 = 52,500 → 52,500원(전액 105,000 이 아니다)
+  // 수업일 목록에는 «다닌 날만» 남는다(4단계 숙제 — 이 달이 나중에 이월 근거가 될 때 한 번 값 = 52,500 ÷ 2회)
+  assert.deepEqual([middleRow.periodStart, middleRow.periodEnd, middleRow.scheduledDates, middleRow.prorationAmount, middleRow.totalAmount], ['2027-03-29', '2027-04-19', ['2027-03-29', '2027-04-19'], 52500, 52500]);
   assert.ok(middleRow.basis.includes('부상 결석 2회(2027-04-05, 2027-04-12) 제외 → 기간 조정 52,500원 제안(다닌 2회 · 달 가운데가 빠져 수강 기간은 그대로)'));
   // 화면에 보이는 값 그대로 저장 → 확정 → 발행
   middleApril = (await mutateWorkbench(database, cmd('SAVE', middleApril, ['s13:m7'], { periodStart: middleRow.periodStart, periodEnd: middleRow.periodEnd }), 'admin', true)).view;
@@ -366,4 +367,8 @@ export async function runIllnessSettlementPostgresTests({ pool, database, root, 
   const middleIssued = await mutateWorkbench(database, cmd('ISSUE', middleApril, ['s13:m7']), 'admin', true);
   assert.equal((await one(`SELECT amount FROM "Payment" WHERE id=$1`, [middleIssued.operationResult.paymentIds[0]])).amount, 52500);
   checks.push('달 가운데만 빠진 달: 기간은 그대로·기간 조정 52,500 자동 제안 → 화면 값 그대로 저장·확정·발행 = 52,500원(전액 아님)');
+
+  // ── 4단계: 퇴원 정산(환불 검토) + 3단계 검수 숙제 — 같은 임시 DB·같은 모듈 조립으로 이어서 돌린다 ──
+  const { runIllnessRefundPostgresTests } = await import('./illness-period-refund-postgres.mjs');
+  await runIllnessRefundPostgresTests({ pool, database, checks, readWorkbench, mutateWorkbench, cmd, absenceModuleUrl, modelUrl, serviceUrl, periodAdmin, settlement, rules, periodPlan, classDatesForMonth, issue, view });
 }

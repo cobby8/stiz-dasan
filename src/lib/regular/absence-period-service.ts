@@ -32,7 +32,7 @@ import {
   type PeriodClass,
 } from "@/lib/regular/absence-period-plan";
 // 청구 발행 보류 판정 조각(순수 모듈 — 이 파일을 다시 가져오지 않는다)
-import { illnessHoldPeriodSql, illnessSettleNeededSql } from "@/lib/regular/illnessPeriodRules";
+import { illnessHoldPeriodSql, illnessSettleNeededSql, illnessWithdrawnSql } from "@/lib/regular/illnessPeriodRules";
 
 export type AbsencePeriodDb = {
   $queryRawUnsafe<T = unknown>(sql: string, ...values: unknown[]): Promise<T>;
@@ -438,6 +438,8 @@ export type AbsencePeriodView = {
   carryState?: string | null;
   /** 승인됐고 이미 복귀했는데 금액이 아직 확정되지 않았다 = «정산 필요» — 판정은 illnessSettleNeededSql 한 곳 */
   settleNeeded?: boolean;
+  /** 승인됐는데 이 기간의 대상 반이 모두 수강 종료됐다 = «퇴원 · 정산 필요»(4단계) — 판정은 illnessWithdrawnSql 한 곳 */
+  withdrawnSettle?: boolean;
   /** 이 기간이 만든 결석 날짜(취소된 것 포함 — 화면에서 구분) */
   absences: { id: string; classId: string; className: string; date: string; status: string }[];
 };
@@ -452,9 +454,11 @@ export async function listAbsencePeriodsInDb(db: AbsencePeriodDb, studentId: str
   // 정산 상태 글자용(학생 상세 기간 줄) — 칸이 없으면 읽지 않는다
   const carrySql = carryReady ? `p."carryState"` : `NULL::text`;
   const settleNeededSql = carryReady ? illnessSettleNeededSql("p") : `false`;
+  const withdrawnSql = carryReady ? illnessWithdrawnSql("p") : `false`;
   const periods = await db.$queryRawUnsafe<Array<Omit<AbsencePeriodView, "absences">>>(
     `SELECT ${PERIOD_COLUMNS}, p.note, to_char(p."createdAt" AT TIME ZONE 'Asia/Seoul','YYYY-MM-DD') AS "createdAt",
-            ${parentSql} AS "parentReported", ${holdSql} AS "billingHold", ${carrySql} AS "carryState", ${settleNeededSql} AS "settleNeeded"
+            ${parentSql} AS "parentReported", ${holdSql} AS "billingHold", ${carrySql} AS "carryState", ${settleNeededSql} AS "settleNeeded",
+            ${withdrawnSql} AS "withdrawnSettle"
        FROM "RegularAbsencePeriod" p
       WHERE p."studentId" = $1
       ORDER BY p."startDate" DESC, p."createdAt" DESC

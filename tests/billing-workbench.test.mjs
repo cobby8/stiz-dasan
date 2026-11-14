@@ -1034,8 +1034,9 @@ test("정산 안내: 앞쪽·뒤쪽이 빠진 달은 수강 기간과 기간 조
  assert.deepEqual([whole.periodStart,whole.periodEnd,whole.prorationAmount,whole.totalAmount],["2026-11-07","2026-11-28",100000,0]);
  assert.ok(whole.basis.includes("부상 결석 4회 제외(다닌 수업 없음) → 기간 조정 100,000원 제안(청구 0원)"));
  // 가운데만 빠짐 → 수강 기간은 그대로(기간으로 나타낼 수 없다), 기간 조정은 빠진 1회분 25,000 자동 제안 → 75,000(전액 100,000 이 아니다)
+ // 수업일 목록에는 «다닌 날만» 남는다(4단계 — 이 달이 나중에 이월 근거가 될 때 한 번 값 = 청구 금액 ÷ 다닌 횟수)
  const middle=await rowOf(["2026-11-14"]);
- assert.deepEqual([middle.periodStart,middle.periodEnd,middle.scheduledDates.length,middle.prorationAmount,middle.totalAmount],["2026-11-07","2026-11-28",4,25000,75000]);
+ assert.deepEqual([middle.periodStart,middle.periodEnd,middle.scheduledDates,middle.guideMissedDates,middle.prorationAmount,middle.totalAmount],["2026-11-07","2026-11-28",["2026-11-07","2026-11-21","2026-11-28"],["2026-11-14"],25000,75000]);
  assert.ok(middle.basis.includes("부상 결석 1회(2026-11-14) 제외 → 기간 조정 25,000원 제안(다닌 3회 · 달 가운데가 빠져 수강 기간은 그대로)"));
  // 앞뒤가 모두 빠진 달(첫 주·마지막 주)도 가운데와 같은 방식 — 빠진 2회분
  const ends=await rowOf(["2026-11-07","2026-11-28"]);
@@ -1108,7 +1109,7 @@ test("정산 안내: 정산 전에 저장해 둔 초안(보류로 돌렸던 청�
  //   (100,000 − 10,000) × 2 ÷ 4 = 45,000 → 화면 값 그대로 저장 → 확정 → 발행 = 45,000(전액 90,000 이 아니다)
  const middle=guideDatabase(["2026-11-14","2026-11-21"]);middle.state.drafts.push(held());
  let middleView=await readWorkbench(middle.tx,"2026-11",true);let middleRow=middleView.rows[0];
- assert.deepEqual([middleRow.prorationAmount,middleRow.periodStart,middleRow.periodEnd,middleRow.scheduledDates.length,middleRow.totalAmount],[45000,"2026-11-07","2026-11-28",4,45000]);
+ assert.deepEqual([middleRow.prorationAmount,middleRow.periodStart,middleRow.periodEnd,middleRow.scheduledDates,middleRow.totalAmount],[45000,"2026-11-07","2026-11-28",["2026-11-07","2026-11-28"],45000]);
  assert.ok(middleRow.reviewReasons.some(reason=>reason.startsWith("부상 결석 정산 뒤라 저장해 둔 금액 대신 제안값으로 바꿨습니다 — 기간 조정 45,000원(저장값 0원)")));
  const middleCmd=(action)=>({action,month:middleView.month,sourceVersion:middleView.sourceVersion,requestId:`request-middle-${action}-${Math.random().toString(36).slice(2)}`,rows:[{id:middleRow.id,expectedVersion:middleRow.version,
   ...(action==="SAVE"?{baseAmount:middleRow.baseAmount,discountAmount:middleRow.discountAmount,prorationAmount:middleRow.prorationAmount,carryAmount:middleRow.carryAmount,shuttleAmount:middleRow.shuttleAmount,periodStart:middleRow.periodStart,periodEnd:middleRow.periodEnd,reason:"정산 뒤 확인"}:{})}]});
@@ -1212,4 +1213,94 @@ test("반 이동 경고: 보류 중인 기간의 대상 반을 지금 하나도 
  everything.state.holdPeriods=[{id:"period-a",studentId:"student-a",reason:"ILLNESS_INJURY",carryState:"APPROVED",status:"ACTIVE",startDate:"2026-11-06",classIds:[]}];
  const heldRow=(await readWorkbench(everything.tx,"2026-11",true)).rows[0];
  assert.equal(heldRow.hold,true);assert.ok(!heldRow.reviewReasons.includes(rules.BILLING_HOLD_MOVED_NOTE));
+});
+
+// ── 3단계 검수 숙제(4단계에서 함께, 2026-11-15) — 청구 준비 쪽 3건 ─────────────────────────────────
+test("숙제: 월중 등록 달과 부상 결석 안내가 겹치면 다닌 횟수는 «개시일 이후 수업일»로만 센다 — 개시일 조정분과 안내분이 한 금액에 합쳐진다",async()=>{
+ // 4회 달(11/7·14·21·28) · 수강 개시일 11/14 · 11/21 결석 → 다닌 날은 11/14·11/28 두 번 → 청구 50,000원(개시일 전 11/7 을 다닌 것으로 세면 75,000원 과다 청구)
+ const fresh=guideDatabase(["2026-11-21"]);fresh.state.enrollments[0].startsOn="2026-11-14";
+ const row=(await readWorkbench(fresh.tx,"2026-11",true)).rows[0];
+ assert.deepEqual([row.baseAmount,row.prorationAmount,row.totalAmount,row.periodStart,row.scheduledDates],[100000,50000,50000,"2026-11-14",["2026-11-14","2026-11-28"]]);
+ assert.ok(row.basis.includes("부상 결석 1회(2026-11-21) 제외 → 기간 조정 50,000원 제안(다닌 2회 · 달 가운데가 빠져 수강 기간은 그대로)"));
+ assert.ok(row.basis.includes("수강 개시일 전 1회도 다닌 횟수에서 빼 기간 조정에 넣었어요"));
+ // 개시일 이후를 전부 빠졌으면 다닌 수업이 없다 → 0원(개시일 전 회차 때문에 25,000원이 청구되지 않는다)
+ const whole=guideDatabase(["2026-11-14","2026-11-21","2026-11-28"]);whole.state.enrollments[0].startsOn="2026-11-14";
+ const wholeRow=(await readWorkbench(whole.tx,"2026-11",true)).rows[0];
+ assert.deepEqual([wholeRow.prorationAmount,wholeRow.totalAmount],[100000,0]);
+ // 정산 전에 저장해 둔 옛 초안(개시일 조정 25,000원 · 수강 11/14~11/28) + 안내분 25,000원 → 합쳐서 50,000원
+ const held=guideDatabase(["2026-11-21"]);held.state.enrollments[0].startsOn="2026-11-14";
+ held.state.drafts.push({id:"student-a:class-a",month:"2026-11",studentId:"student-a",classId:"class-a",version:2,status:"DRAFT",payload:{...draft(),prorationAmount:25000},reason:"월중 등록",sourceVersion:"stale",paymentId:null,updatedAt:"2026-11-10T00:00:00.000Z",periodStart:"2026-11-14",periodEnd:"2026-11-28",scheduledDates:["2026-11-14","2026-11-21","2026-11-28"]});
+ const heldRow=(await readWorkbench(held.tx,"2026-11",true)).rows[0];
+ assert.deepEqual([heldRow.prorationAmount,heldRow.totalAmount,heldRow.scheduledDates],[50000,50000,["2026-11-14","2026-11-28"]]);
+ assert.ok(heldRow.reviewReasons.some(reason=>reason.startsWith("부상 결석 정산 뒤라 저장해 둔 금액 대신 제안값으로 바꿨습니다 — 기간 조정 50,000원(저장값 25,000원)")));
+ // 개시일이 없는 아이는 예전과 같다(빠진 1회만 뺀다)
+ const plain=(await readWorkbench(guideDatabase(["2026-11-21"]).tx,"2026-11",true)).rows[0];
+ assert.deepEqual([plain.prorationAmount,plain.totalAmount],[25000,75000]);
+});
+test("숙제: 안내는 있는데 확정 시각을 못 읽으면 저장값(전액)을 유지하지 않는다 — 제안값으로 덮고, 확정 시각 자체가 없으면 확정·발행도 막는다",async()=>{
+ const {GUIDE_TIME_UNKNOWN_REASON}=await import(serviceUrl);
+ const held=(over={})=>({id:"student-a:class-a",month:"2026-11",studentId:"student-a",classId:"class-a",version:4,status:"DRAFT",payload:draft(),reason:"발행",sourceVersion:"stale",paymentId:null,updatedAt:"2026-11-10T00:00:00.000Z",periodStart:"2026-11-07",periodEnd:"2026-11-28",scheduledDates:["2026-11-07","2026-11-14","2026-11-21","2026-11-28"],...over});
+ // ① 확정 시각이 없다(읽지 못함) + 저장해 둔 전액 초안 → 화면 값은 제안값(50,000), 그 행은 확정·발행 차단
+ const noTime=guideDatabase(["2026-11-07","2026-11-14"]);delete noTime.state.settledGuides[0].settledAt;noTime.state.drafts.push(held());
+ let view=await readWorkbench(noTime.tx,"2026-11",true);let row=view.rows[0];
+ assert.deepEqual([row.prorationAmount,row.totalAmount,row.periodStart],[50000,50000,"2026-11-21"],"전액 100,000 이 아니다");
+ assert.ok(row.blockingReasons.includes(GUIDE_TIME_UNKNOWN_REASON));
+ const cmdOf=(action)=>({action,month:view.month,sourceVersion:view.sourceVersion,requestId:`request-notime-${action}-${Math.random().toString(36).slice(2)}`,rows:[{id:row.id,expectedVersion:row.version,
+  ...(action==="SAVE"?{baseAmount:row.baseAmount,discountAmount:row.discountAmount,prorationAmount:row.prorationAmount,carryAmount:row.carryAmount,shuttleAmount:row.shuttleAmount,periodStart:row.periodStart,periodEnd:row.periodEnd,reason:"확인"}:{})}]});
+ ({view}=await mutateWorkbench(noTime,cmdOf("SAVE"),"admin",true));row=view.rows[0];
+ await assert.rejects(mutateWorkbench(noTime,cmdOf("CONFIRM"),"admin",true),e=>e.message===GUIDE_TIME_UNKNOWN_REASON);
+ assert.equal(noTime.state.payments.length,0,"발행되지 않는다");
+ // ② 초안의 저장 시각만 못 읽는다(확정 시각은 있다) → «정산 전 초안»으로 보고 제안값으로 덮는다. 차단은 없다(다시 저장하면 풀린다)
+ const noSaved=guideDatabase(["2026-11-07","2026-11-14"]);noSaved.state.drafts.push(held({updatedAt:null}));
+ const savedRow=(await readWorkbench(noSaved.tx,"2026-11",true)).rows[0];
+ assert.deepEqual([savedRow.prorationAmount,savedRow.totalAmount],[50000,50000]);
+ assert.ok(!savedRow.blockingReasons.includes(GUIDE_TIME_UNKNOWN_REASON));
+ // ③ 시각을 모두 읽을 수 있고 확정 «뒤»에 저장한 초안은 예전처럼 저장값 그대로(덮지 않는다)
+ const after=guideDatabase(["2026-11-07","2026-11-14"]);after.state.drafts.push(held({updatedAt:"2026-11-13T00:00:00.000Z",payload:{...draft(),prorationAmount:10000}}));
+ const afterRow=(await readWorkbench(after.tx,"2026-11",true)).rows[0];
+ assert.deepEqual([afterRow.prorationAmount,afterRow.blockingReasons.includes(GUIDE_TIME_UNKNOWN_REASON)],[10000,false]);
+ // ④ 저장해 둔 초안이 없으면 확정 시각이 없어도 제안값만 쓰므로 막지 않는다
+ const fresh=guideDatabase(["2026-11-07","2026-11-14"]);delete fresh.state.settledGuides[0].settledAt;
+ const freshRow=(await readWorkbench(fresh.tx,"2026-11",true)).rows[0];
+ assert.deepEqual([freshRow.prorationAmount,freshRow.blockingReasons.includes(GUIDE_TIME_UNKNOWN_REASON)],[50000,false]);
+});
+test("숙제: 달 가운데가 빠진 달의 발행 근거 수업일 사본에는 «다닌 날만» 남고, 빠진 날은 근거에 따로 적힌다 · 수강월 묶기 규칙",async()=>{
+ const db=guideDatabase(["2026-11-14","2026-11-21"]);let view=await readWorkbench(db.tx,"2026-11",true);let row=view.rows[0];
+ assert.deepEqual([row.scheduledDates,row.guideMissedDates,row.periodStart,row.periodEnd],[["2026-11-07","2026-11-28"],["2026-11-14","2026-11-21"],"2026-11-07","2026-11-28"]);
+ const cmdOf=(action)=>({action,month:view.month,sourceVersion:view.sourceVersion,requestId:`request-copy-${action}-${Math.random().toString(36).slice(2)}`,rows:[{id:row.id,expectedVersion:row.version,
+  ...(action==="SAVE"?{baseAmount:row.baseAmount,discountAmount:row.discountAmount,prorationAmount:row.prorationAmount,carryAmount:row.carryAmount,shuttleAmount:row.shuttleAmount,periodStart:row.periodStart,periodEnd:row.periodEnd,reason:"확인"}:{})}]});
+ for(const action of ["SAVE","CONFIRM","ISSUE"]){({view}=await mutateWorkbench(db,cmdOf(action),"admin",true));row=view.rows[0];}
+ const stored=db.state.drafts[0];
+ assert.equal(stored.status,"ISSUED");
+ assert.deepEqual(stored.scheduledDates,["2026-11-07","2026-11-28"],"다닌 날만");
+ assert.deepEqual(stored.calculationBasis.illnessMissedDates,["2026-11-14","2026-11-21"]);
+ // 한 번 값 = 발행 금액 50,000 ÷ 다닌 2회 = 25,000 (전체 4회로 나누면 12,500 — 과소 보상)
+ assert.equal(stored.calculationBasis.discountedTuition/stored.scheduledDates.length,25000);
+ assert.deepEqual(db.state.payments.map(p=>p.amount),[50000]);
+ // 앞쪽이 빠진 달·안내가 없는 달은 그 칸이 없다(모양이 예전과 같다)
+ const prefix=guideDatabase(["2026-11-07"]);let pv=await readWorkbench(prefix.tx,"2026-11",true);const pr=pv.rows[0];
+ assert.equal(pr.guideMissedDates,undefined);
+ ({view:pv}=await mutateWorkbench(prefix,{action:"SAVE",month:pv.month,sourceVersion:pv.sourceVersion,requestId:"request-copy-prefix-save",rows:[{id:pr.id,expectedVersion:pr.version,baseAmount:pr.baseAmount,discountAmount:pr.discountAmount,prorationAmount:pr.prorationAmount,carryAmount:pr.carryAmount,shuttleAmount:pr.shuttleAmount,periodStart:pr.periodStart,periodEnd:pr.periodEnd,reason:"확인"}]},"admin",true));
+ assert.equal("illnessMissedDates" in prefix.state.drafts[0].calculationBasis,false);
+ // 규칙 함수: 근거에서 빠진 날을 꺼낸다 — 모양이 다르면 빈 목록
+ const {illnessMissedDatesOf,billingMonthOfDate}=await import(modelUrl);
+ assert.deepEqual(illnessMissedDatesOf({illnessMissedDates:["2026-11-14","x",3]}),["2026-11-14"]);
+ for(const bad of [null,undefined,"x",{},{illnessMissedDates:"2026-11-14"}])assert.deepEqual(illnessMissedDatesOf(bad),[]);
+ // 이월 근거를 읽는 쪽·청구 준비의 이월 유효성 검사도 같은 함수로 그 날을 빼고 견준다
+ assert.match(absenceSource,/const issuedMissed=issuedSnapshot\?illnessMissedDatesOf\(issuedRow\?\.calculationBasis\):\[\];/);
+ assert.match(serviceSource,/const issuedMissed=!paidEvidence\?illnessMissedDatesOf\(issued\?\.calculationBasis\):\[\];\s+if\(issuedMissed\.length\)currentDates=currentDates\.filter\(date=>!issuedMissed\.includes\(date\)\);/);
+ // 수강월 묶기(하루짜리 이월 · 기간 정산 공용): 달력 월 → 다음 달 → 이전 달
+ const cal={"2026-11":["2026-11-02","2026-11-09","2026-11-16","2026-11-23"],"2026-12":["2026-11-30","2026-12-07","2026-12-14","2026-12-21"],"2027-01":["2026-12-28","2027-01-04","2027-01-11","2027-01-18"],"2028-02":["2028-02-07","2028-02-14","2028-02-21","2028-02-28"],"2028-03":["2028-03-06"]};
+ const monthOf=(date)=>billingMonthOfDate(date,(month)=>cal[month]??[]);
+ assert.equal(monthOf("2026-11-09"),"2026-11","달력 월에 수업일이 있으면 예전과 같은 달");
+ assert.equal(monthOf("2026-11-30"),"2026-12","12월 수강월의 첫 수업(11/30)");
+ assert.equal(monthOf("2026-12-28"),"2027-01","해를 넘기는 수강월");
+ assert.equal(monthOf("2028-02-28"),"2028-02","윤년 2월");
+ assert.equal(monthOf("2028-02-29"),"2028-02","어느 달 수업일도 아니면 달력 월(뒤의 규칙이 «수업일 아님»으로 거른다)");
+ assert.equal(billingMonthOfDate("2026-12-01",(month)=>month==="2026-11"?["2026-12-01"]:[]),"2026-11","이전 달 수강월에 든 날");
+ // 신청함 하루짜리 이월 승인·상세가 달력 월이 아니라 이 규칙으로 원기간을 정한다
+ const admin=await readFile("src/lib/regular/illness-carry-admin.ts","utf8");
+ assert.match(admin,/const month = await readAbsenceBillingMonthInTx\(tx, absence, calendar\);/);
+ assert.match(admin,/const month = calendar === null \? absence\.date\.slice\(0, 7\) : await readAbsenceBillingMonthInTx\(tx, absence, calendar\);/);
+ assert.match(absenceSource,/return billingMonthOfDate\(input\.date, month => getMonthlyClassDates\(eventValues,month,classData\[0\]\?\.dayOfWeek \?\? ""\)\);/);
 });

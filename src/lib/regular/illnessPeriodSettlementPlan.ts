@@ -274,6 +274,11 @@ export function unpaidGuideAdminText(guide: UnpaidGuide): string {
   return `${head} → 다닌 ${guide.attended}회만 청구(달 가운데가 빠져 수강 기간은 그대로, 기간 조정 금액으로 제안)`;
 }
 
+/** 퇴원 정산(환불 검토)에서 낸 돈이 없는 달의 원장 문구 — 환불할 돈이 없다는 것만 알린다 */
+export function unpaidGuideRefundText(guide: Pick<UnpaidGuide, "month" | "className" | "sessions" | "missedDates">): string {
+  return `${monthLabel(guide.month)} ${guide.className} · ${guide.sessions}회 중 ${guide.missedDates.length}회 결석 → 낸 돈이 없는 달이라 환불 대상이 아니에요(청구 없음)`;
+}
+
 export function parentSettlementView(plan: SettlementPlan): ParentSettlementView {
   // 금액을 정할 수 없는 달이 하나라도 있으면 숫자를 보이지 않는다(틀린 숫자를 보이지 않는다)
   const pendingCheck = plan.problems.some((problem) => problem.code === "EVIDENCE" || problem.code === "NO_SESSIONS");

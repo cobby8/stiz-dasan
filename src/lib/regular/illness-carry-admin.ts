@@ -13,7 +13,7 @@ import { randomUUID } from "node:crypto";
 import { todayKst } from "@/lib/datetime/kst";
 import { WorkbenchError, type WorkbenchCalendarSnapshot } from "@/lib/billing/workbench";
 import { readWorkbench, type WorkbenchDb, type WorkbenchTx } from "@/lib/billing/workbench-service";
-import { CARRY_UNPAID_MESSAGE, previewCarryEvidence, resolveWorkbenchAbsence } from "@/lib/billing/workbench-absence";
+import { CARRY_UNPAID_MESSAGE, previewCarryEvidence, readAbsenceBillingMonthInTx, resolveWorkbenchAbsence } from "@/lib/billing/workbench-absence";
 import { regularAbsenceSourceKey } from "@/lib/makeup/absence-report-credit";
 import { convertIllnessToMakeupInTx, illnessReviewReady, type ConvertOutcome } from "@/lib/regular/illness-carry-tx";
 import { ILLNESS_REASON, carryApprovalBlocker, evidenceAnchorYmdSql, evidenceDeadlineYmd, evidenceScopeSql, type CarryBillState } from "@/lib/regular/illnessCarryRules";
@@ -63,13 +63,17 @@ export async function approveIllnessCarry(
     }
 
     // 기존 이월 규칙이 요구하는 «최신 자료 버전»을 같은 트랜잭션에서 읽어 넘긴다(다른 작업이 끼면 직렬화 오류로 통째로 되돌아간다)
-    const month = absence.date.slice(0, 7);
-    const view = await readWorkbench(tx, month, enabled, calendar);
+    // 원기간 = 그 결석일이 속한 «수강월»(연간 일정 기준 — 기간 정산과 같은 묶기). 11/30 처럼 다음 달 수강월의 첫 수업인 날은 그 다음 달이다
+    const month = await readAbsenceBillingMonthInTx(tx, absence, calendar);
+    // 자료를 읽는 달은 그 결석이 목록에 들어오는 달이어야 한다(청구 준비는 «그 달 말까지»의 결석을 읽는다) — 수강월과 달력 월 중 늦은 달
+    const calendarMonth = absence.date.slice(0, 7);
+    const viewMonth = month > calendarMonth ? month : calendarMonth;
+    const view = await readWorkbench(tx, viewMonth, enabled, calendar);
     await resolveWorkbenchAbsence(
       // 이미 연 트랜잭션을 그대로 쓰게 한다 — 결석 확정과 이월 적립이 한 거래로 묶인다
       { $transaction: (work: (inner: WorkbenchTx) => Promise<any>) => work(tx) } as WorkbenchDb,
       {
-        action: "RESOLVE_ABSENCE", month, sourceVersion: view.sourceVersion, requestId: `illness-${randomUUID()}`,
+        action: "RESOLVE_ABSENCE", month: viewMonth, sourceVersion: view.sourceVersion, requestId: `illness-${randomUUID()}`,
         absenceId, resolution: "CARRY", evidenceConfirmed: true, eligibility: "ILLNESS_INJURY",
         reason: "신청함에서 질병·부상 증빙 확인 후 이월 승인", cancelReservation: input.cancelReservation === true, originMonth: month,
       },
@@ -149,7 +153,8 @@ export async function readIllnessCarryDetail(tx: WorkbenchTx, absenceId: string,
   );
 
   // 원래 달 수강료 근거(발행된 청구 또는 확정 장부)가 있는가 — 없으면 기존 이월 규칙이 거절한다. 표가 없으면 «모름»(null)
-  const month = absence.date.slice(0, 7);
+  // 승인 때와 같은 «수강월»(연간 일정 기준). 공식 일정을 못 읽었으면(calendar === null) 추측하지 않고 달력 월 — 아래 미리보기도 내지 않는다
+  const month = calendar === null ? absence.date.slice(0, 7) : await readAbsenceBillingMonthInTx(tx, absence, calendar);
   const tables = await tx.$queryRawUnsafe<Array<{ draftTable: string | null; registerTable: string | null }>>(
     `SELECT to_regclass('public."BillingWorkbenchDraft"')::text AS "draftTable", to_regclass('public."MonthlyEnrollmentRegister"')::text AS "registerTable"`,
   );

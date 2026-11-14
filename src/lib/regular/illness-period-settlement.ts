@@ -17,11 +17,11 @@
 // DB 는 인자(db)로만 받는다 — 테스트가 실제 PostgreSQL 로 실행한다. 이 파일은 prisma 를 import 하지 않는다.
 import { lockCompensation } from "@/lib/billing/absence-compensation-guard";
 import type { MonthEvidence } from "@/lib/billing/carryEvidence";
-import type { WorkbenchCalendarSnapshot } from "@/lib/billing/workbench";
+import { billingMonthOfDate, type WorkbenchCalendarSnapshot } from "@/lib/billing/workbench";
 import {
   CARRY_NO_EVIDENCE_MESSAGE, CARRY_UNPAID_MESSAGE, insertCarryCreditInTx, readClassMonthEvidenceInTx, type ResolvedCarryEvidence,
 } from "@/lib/billing/workbench-absence";
-import { addDaysKst, addMonthsYm, isKstYmd } from "@/lib/datetime/kst";
+import { addDaysKst, isKstYmd } from "@/lib/datetime/kst";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import { endAbsencePeriodInTx, periodCarryColumnsReady, type PeriodContext } from "@/lib/regular/absence-period-service";
 import { illnessReviewReady, type IllnessTx } from "@/lib/regular/illness-carry-tx";
@@ -46,33 +46,33 @@ export type SettlementDb = IllnessTx & {
 export type SettlementContext = PeriodContext & { calendar?: WorkbenchCalendarSnapshot };
 
 // 격리 수준을 지정하지 않는다(DB 기본 READ COMMITTED). ⚠️ Serializable/RepeatableRead 를 걸지 말 것(테스트가 고정)
-const SETTLE_TX_OPTIONS = { timeout: 60_000 };
-const READ_TX_OPTIONS = { timeout: 30_000 };
+export const SETTLE_TX_OPTIONS = { timeout: 60_000 };
+export const READ_TX_OPTIONS = { timeout: 30_000 };
 
-type PeriodRow = {
+export type PeriodRow = {
   id: string; studentId: string; reason: string; status: string; carryState: string;
   startDate: string; returnDate: string | null; coveredUntil: string | null; parentReported: boolean;
   carrySettlement: unknown;
 };
 
 // date 칼럼은 달력 값이라 시간대 변환이 없다
-const PERIOD_SELECT = `SELECT p.id, p."studentId" AS "studentId", p.reason, p.status, p."carryState" AS "carryState",
+export const PERIOD_SELECT = `SELECT p.id, p."studentId" AS "studentId", p.reason, p.status, p."carryState" AS "carryState",
        to_char(p."startDate", 'YYYY-MM-DD') AS "startDate", to_char(p."returnDate", 'YYYY-MM-DD') AS "returnDate",
        to_char(p."coveredUntil", 'YYYY-MM-DD') AS "coveredUntil",
        (p."reportedByUserId" IS NOT NULL) AS "parentReported", p."carrySettlement" AS "carrySettlement"
   FROM "RegularAbsencePeriod" p`;
 
-function cleanId(value: unknown): string {
+export function cleanId(value: unknown): string {
   const id = typeof value === "string" ? value.trim() : "";
   if (!id || id.length > 200) throw new IllnessPeriodError("기간 결석을 찾을 수 없습니다.", 404);
   return id;
 }
-function cleanIds(value: unknown): string[] {
+export function cleanIds(value: unknown): string[] {
   return Array.isArray(value)
     ? [...new Set(value.filter((id): id is string => typeof id === "string" && id.length > 0 && id.length <= 200))].sort()
     : [];
 }
-async function tableExists(tx: IllnessTx, name: string): Promise<boolean> {
+export async function tableExists(tx: IllnessTx, name: string): Promise<boolean> {
   const rows = await tx.$queryRawUnsafe<Array<{ found: string | null }>>(`SELECT to_regclass($1)::text AS found`, `public."${name}"`);
   return Boolean(rows[0]?.found);
 }
@@ -99,11 +99,8 @@ function billingMonthResolver(ctx: SettlementContext): (date: string, dayOfWeek:
     if (!dates) { dates = ctx.classDatesForMonth(month, dayOfWeek); memo.set(key, dates); }
     return dates;
   };
-  return (date, dayOfWeek) => {
-    const calendarMonth = date.slice(0, 7);
-    return [calendarMonth, addMonthsYm(calendarMonth, 1), addMonthsYm(calendarMonth, -1)]
-      .find((month) => datesOf(month, dayOfWeek).includes(date)) ?? calendarMonth;
-  };
+  // 달력 월 → 다음 달 → 이전 달 순으로 찾는 규칙은 하루짜리 이월과 같은 함수 한 곳(workbench.billingMonthOfDate)
+  return (date, dayOfWeek) => billingMonthOfDate(date, (month) => datesOf(month, dayOfWeek));
 }
 
 /** 그 기간에 묶인 살아 있는 질병·부상 결석과, 날짜마다의 출결·보강·정산 상태. lock=true 면 결석 행을 잠근다(확정) */
@@ -184,11 +181,11 @@ type PlanRead = {
 };
 
 /**
- * 재료를 읽어 정산 표를 만든다 — 미리보기(lock=false)와 확정(lock=true)이 같은 함수다.
+ * 재료를 읽어 정산 표를 만든다 — 미리보기(lock=false)와 확정(lock=true)이 같은 함수다(퇴원 정산도 이 함수를 쓴다).
  * 반·달마다 근거를 «하루짜리 이월과 같은 함수»(readClassMonthEvidenceInTx)로 읽는다:
  *   근거 있음 → 이월 대상 / «청구 없음·아직 안 냄» → 낸 돈이 없는 달 / 그 밖의 사유 → 근거를 정할 수 없음(확정 차단)
  */
-async function readSettlementPlan(
+export async function readSettlementPlan(
   tx: IllnessTx, period: PeriodRow, returnDate: string | null, omitAbsenceIds: readonly string[], ctx: SettlementContext, lock: boolean,
 ): Promise<PlanRead> {
   const absences = await readPeriodAbsences(tx, period, lock, ctx);
@@ -660,8 +657,11 @@ export async function readSettledIllnessPeriod(tx: IllnessTx, periodIdInput: str
 
 export type ParentSettlementPreview = {
   periodId: string; studentId: string; studentName: string;
-  /** NOT_APPROVED = 아직 부상 결석으로 인정 전(금액 안내 없음) · ESTIMATE = 예정 금액 · SETTLED = 학원이 확정함 */
-  state: "NOT_APPROVED" | "ESTIMATE" | "SETTLED";
+  /**
+   * NOT_APPROVED = 아직 부상 결석으로 인정 전(금액 안내 없음) · ESTIMATE = 예정 금액 · SETTLED = 학원이 확정함
+   * REFUND_REVIEW = 퇴원 정산 · 환불 검토 중 · REFUND_DONE = 환불 처리 완료(둘 다 settledTotal = 확정된 정산표 합계)
+   */
+  state: "NOT_APPROVED" | "ESTIMATE" | "SETTLED" | "REFUND_REVIEW" | "REFUND_DONE";
   returnDate: string | null;
   /** ESTIMATE 일 때의 예정 금액(원장 미리보기와 같은 계산) */
   view: ParentSettlementView | null;
@@ -692,6 +692,11 @@ export async function previewParentIllnessSettlement(
     if (period.carryState === "SETTLED") {
       const summary = parseSettlementSummary(period.carrySettlement);
       return { ...base, state: "SETTLED" as const, returnDate: summary?.returnDate ?? period.returnDate, view: null, settledTotal: summary?.carryTotal ?? null };
+    }
+    // 퇴원 정산(4단계): 환불 검토로 넘긴 뒤에는 다시 계산하지 않고 그때의 합계만 보인다(본인 아이만 — 위 accessSql)
+    if (period.carryState === "REFUND_REVIEW" || period.carryState === "REFUND_DONE") {
+      const summary = parseSettlementSummary(period.carrySettlement);
+      return { ...base, state: period.carryState, returnDate: period.returnDate, view: null, settledTotal: summary?.carryTotal ?? null };
     }
     if (period.carryState !== "APPROVED") return { ...base, state: "NOT_APPROVED" as const, returnDate: period.returnDate, view: null, settledTotal: null };
     // 복귀일: 학부모가 고른 날(오늘 이후는 호출부가 확인) 또는 기간에 저장된 날. 시작일 다음 날 이후 · 저장된 복귀일보다 늦을 수 없다

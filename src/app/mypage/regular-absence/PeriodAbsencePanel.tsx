@@ -175,7 +175,7 @@ export function ActivePeriodList({ periods, onChanged }: { periods: ParentAbsenc
               </div>
               {/* 부상 결석 정산 상태 한 줄 — 인정(금액 미정) → 복귀(확정 대기) → 이월 ○원 확정 */}
               {period.carryLabel && (
-                <p className={`break-keep text-xs font-medium ${period.carry === "SETTLED" ? "text-[var(--color-academy-success)]" : "text-[var(--color-academy-info)]"}`}>{period.carryLabel}</p>
+                <p className={`break-keep text-xs font-medium ${period.carry === "SETTLED" || period.carry === "REFUND_DONE" ? "text-[var(--color-academy-success)]" : "text-[var(--color-academy-info)]"}`}>{period.carryLabel}</p>
               )}
               {period.openEnded && canReturn && (
                 <p className="text-xs text-[var(--color-academy-muted)]">끝일을 정하지 않아 {WEEKS}주까지만 알렸어요.</p>

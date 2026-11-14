@@ -126,8 +126,10 @@ export const REQUEST_KINDS: readonly KindEntry[] = [
     // 파생 상태: 기간의 carryState. NONE 이면 아직 결정 전인 결석이 남았는지로 나눈다(전부 하루씩 처리했으면 DAY_DONE).
     // 3단계(복귀 정산): SETTLE_NEEDED(복귀했고 금액 미확정 — 원장이 «정산하기»를 눌러야 한다 → 처리 필요) · SETTLED(이월 확정 → 완료)
     //   · DECLINED(«인정 안 함» — 보강권으로 전환해 둔 기간. 매일 연장으로 생긴 새 날이 다시 «승인 대기»로 올라오지 않는다)
-    // ⚠️ 4단계(퇴원 정산)가 생기면 REFUND_REVIEW·REFUND_DONE 을 여기에 먼저 넣는다(지도에 없는 상태는 신청함 SQL 이 읽지 않는다).
-    //    그때까지 신청함 상태식(admin-inbox)은 모르는 정산 상태를 APPROVED 로 읽어 두 목록 어디에서도 사라지지 않게만 한다.
+    // 4단계(퇴원 정산 = 환불 검토): SETTLE_WITHDRAWN(승인된 기간의 대상 반이 모두 수강 종료 — 원장이 환불 검토로 넘겨야 한다 → 처리 필요)
+    //   · REFUND_REVIEW(환불 검토 중 — 원장이 수납 관리에서 환불하고 «환불 처리함»을 눌러야 한다 → 처리 필요) · REFUND_DONE(환불 처리함 → 완료)
+    // ⚠️ 정산 상태가 더 생기면 여기에 먼저 넣는다(지도에 없는 상태는 신청함 SQL 이 읽지 않는다).
+    //    신청함 상태식(admin-inbox)은 모르는 정산 상태를 APPROVED 로 읽어 두 목록 어디에서도 사라지지 않게만 한다.
     kind: "ILLNESS_PERIOD", label: "부상 결석(기간)", icon: "medical_services", adminHref: "/admin/inbox?kind=ILLNESS_PERIOD", parentFacing: false,
     statuses: {
       PENDING: act("승인 대기"),
@@ -138,6 +140,10 @@ export const REQUEST_KINDS: readonly KindEntry[] = [
       // 값은 illnessPeriodRules 의 PERIOD_SETTLE_NEEDED_INBOX_STATUS · PERIOD_SETTLED_INBOX_STATUS · PERIOD_DECLINED_INBOX_STATUS 와 같아야 한다(테스트가 비교)
       SETTLE_NEEDED: act("정산 필요"),
       SETTLED: ok("완료(이월 확정)"),
+      // 값은 illnessPeriodRules 의 PERIOD_WITHDRAWN_INBOX_STATUS · PERIOD_REFUND_REVIEW_INBOX_STATUS · PERIOD_REFUND_DONE_INBOX_STATUS 와 같아야 한다(테스트가 비교)
+      SETTLE_WITHDRAWN: act("정산 필요 · 퇴원"),
+      REFUND_REVIEW: act("환불 검토"),
+      REFUND_DONE: ok("완료(환불 처리)"),
       DECLINED: off("보강권으로 전환"),
       DAY_DONE: off("날짜별로 처리함"),
     },

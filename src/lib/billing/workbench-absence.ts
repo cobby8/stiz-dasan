@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import { validateMonthlyRegisterDraft } from "./monthly-register";
-import { WorkbenchError, workbenchTotal, filterWorkbenchDates, type WorkbenchAmounts, type WorkbenchView, type WorkbenchCalendarSnapshot } from "./workbench";
+import { WorkbenchError, workbenchTotal, filterWorkbenchDates, billingMonthOfDate, illnessMissedDatesOf, type WorkbenchAmounts, type WorkbenchView, type WorkbenchCalendarSnapshot } from "./workbench";
 import { readWorkbench, type WorkbenchDb, type WorkbenchTx } from "./workbench-service";
 import { resolveMonthEvidence, type PaidPaymentEvidence } from "./carryEvidence";
 
@@ -71,6 +71,11 @@ export async function resolveWorkbenchAbsence(db: WorkbenchDb, input: unknown, a
   },{isolationLevel:"Serializable",timeout:30_000});
 }
 
+/** 연간 일정으로 그 달 수업일을 세는 함수 — 이 파일에서 불러오는 곳은 여기 한 곳(근거 읽기 · 수강월 정하기가 같은 함수를 쓴다) */
+async function loadMonthlyClassDates() {
+  const { getMonthlyClassDates } = await import("@/lib/enrollment/monthlyClassDates");
+  return getMonthlyClassDates;
+}
 /** 이월 적립 대상 결석(잠금·자격 확인은 부르는 쪽이 끝낸 뒤 넘긴다) */
 export type CarryAbsenceTarget = { id: string; studentId: string; classId: string; date: string; reason: string };
 export type CarryEvidenceSource = "WORKBENCH_ISSUED" | "MONTHLY_REGISTER" | "PAID_PAYMENT";
@@ -160,7 +165,7 @@ export async function readClassMonthEvidenceInTx(tx: WorkbenchTx, input: { stude
   const classData = await tx.$queryRawUnsafe<Array<{ dayOfWeek: string }>>(`SELECT "dayOfWeek" FROM "Class" WHERE id=$1${share()}`,absence.classId);
   const events = await tx.$queryRawUnsafe<Array<{ title: string; date: Date | string; endDate: Date | string | null }>>(`SELECT title,date,"endDate" FROM "AnnualEvent" ORDER BY date,id`);
   // 실제 청구 화면과 같은 연간 일정 함수가 산정한 회차만 허용한다.
-  const { getMonthlyClassDates } = await import("@/lib/enrollment/monthlyClassDates");
+  const getMonthlyClassDates = await loadMonthlyClassDates();
   const allDates = getMonthlyClassDates(calendar?.events??events.map(e => ({ title:e.title,date:new Date(e.date).toISOString(),...(e.endDate ? {endDate:new Date(e.endDate).toISOString()} : {}) })),originMonth,classData[0]?.dayOfWeek ?? "");
   // 납부 Payment 근거의 금액·수업일은 순수 규칙(carryEvidence) 한 곳에서 정한다: 2건 이상 차단 · 이미 줄인 금액은 원래 금액 기준 · 월중 등록은 개시일 이후.
   const paidEvidence=paidPayments?resolveMonthEvidence({issuedDraft:null,paidPayments,monthDates:allDates,enrollmentStartsOn,shuttleMayBeIncluded}):null;
@@ -168,7 +173,10 @@ export async function readClassMonthEvidenceInTx(tx: WorkbenchTx, input: { stude
   const paid=paidEvidence?.kind==="PAID_PAYMENT"?paidEvidence:null;
   if(paidPayments && !paid) throw new WorkbenchError(CARRY_NO_EVIDENCE_MESSAGE,409);
   const periodStart=paid?paid.periodStart:issuedSnapshot?.periodStart??registeredRow?.periodStart??null,periodEnd=paid?paid.periodEnd:issuedSnapshot?.periodEnd??registeredRow?.periodEnd??null;
-  const currentDates=paid?paid.scheduledDates:periodStart&&periodEnd?filterWorkbenchDates(allDates,periodStart,periodEnd):allDates;
+  // 달 가운데가 빠진 달로 발행한 초안(부상 결석 안내)은 수업일 사본에 다닌 날만 있다 — 지금 일정에서도 그 빠진 날을 빼고 견준다.
+  // 그래야 이 달이 이월 근거가 될 때 한 번 값 = 청구 금액 ÷ 다닌 횟수가 된다(전체 횟수로 나누면 과소 보상).
+  const issuedMissed=issuedSnapshot?illnessMissedDatesOf(issuedRow?.calculationBasis):[];
+  const currentDates=paid?paid.scheduledDates:(periodStart&&periodEnd?filterWorkbenchDates(allDates,periodStart,periodEnd):allDates).filter(date=>!issuedMissed.includes(date));
   if(issuedSnapshot && JSON.stringify([...issuedSnapshot.scheduledDates].sort())!==JSON.stringify(currentDates))throw new WorkbenchError("원기간 발행 당시 수업일과 현재 일정이 달라 재정산 확인이 필요합니다.",409);
   const dates=issuedSnapshot?.scheduledDates??currentDates;
   const row=paid?null:issuedRow?.payload??registeredRow!;
@@ -183,6 +191,18 @@ export async function readClassMonthEvidenceInTx(tx: WorkbenchTx, input: { stude
     paidCopy: paid ? {paymentAmount:paidPayments![0].amount,priorReduction:paidPayments![0].priorReduction,warnings:paid.warnings} : null,
     warnings: paid?.warnings ?? [],
   };
+}
+/**
+ * 결석 한 건의 «수강월»(이월 근거의 달)을 연간 일정으로 정한다 — 신청함 하루짜리 이월 승인이 쓴다(2026-11-15).
+ * 달력 월로만 잡으면 11/30 처럼 «다음 달 수강월의 첫 수업»인 날이 «수업일 아님»으로 거절된다. 기간 정산과 같은 규칙(billingMonthOfDate)이다.
+ * 일정은 근거를 읽는 함수와 같은 것(공식 일정 사본 → 없으면 DB 연간 일정)을 쓴다. 읽기만 한다.
+ */
+export async function readAbsenceBillingMonthInTx(tx: WorkbenchTx, input: { classId: string; date: string }, calendar?: WorkbenchCalendarSnapshot): Promise<string> {
+  const classData = await tx.$queryRawUnsafe<Array<{ dayOfWeek: string }>>(`SELECT "dayOfWeek" FROM "Class" WHERE id=$1`,input.classId);
+  const events = await tx.$queryRawUnsafe<Array<{ title: string; date: Date | string; endDate: Date | string | null }>>(`SELECT title,date,"endDate" FROM "AnnualEvent" ORDER BY date,id`);
+  const getMonthlyClassDates = await loadMonthlyClassDates();
+  const eventValues = calendar?.events??events.map(e => ({ title:e.title,date:new Date(e.date).toISOString(),...(e.endDate ? {endDate:new Date(e.endDate).toISOString()} : {}) }));
+  return billingMonthOfDate(input.date, month => getMonthlyClassDates(eventValues,month,classData[0]?.dayOfWeek ?? ""));
 }
 /**
  * 결석 한 건의 근거를 확인하고 이월(BillingCarryCredit) 1행을 적립한다 — 하루짜리 이월과 기간 정산이 같이 쓴다.
