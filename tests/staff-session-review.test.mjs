@@ -273,6 +273,21 @@ test("완료한 수업의 출결 정정(7일 안) — 기존 규칙 함수(결�
   }]);
 });
 
+test("완료한 수업: 상태가 그대로이고 노트도 없으면 아무것도 쓰지 않는다(updatedAt 을 올리지 않는다)", async () => {
+  const { world, actions } = makeWorld({ attendance: "ABSENT" });
+  assert.deepEqual(await actions.saveStaffAttendance({ ...KEY, status: "ABSENT" }), { ok: true, changed: false });
+  assert.ok(!names(world).includes("saveAttendance"), "출결 표를 다시 쓰지 않는다");
+  assert.ok(!names(world).includes("absenceReason") && !names(world).includes("syncRegularCredit"));
+  assert.equal(world.audits.length, 0);
+  // 노트를 보냈으면 저장한다(노트 고치기)
+  assert.equal((await actions.saveStaffAttendance({ ...KEY, status: "ABSENT", note: "병원" })).ok, true);
+  assert.ok(names(world).includes("saveAttendance"));
+  // 진행 중 수업은 같은 값을 다시 보내도 예전처럼 저장한다
+  const live = makeWorld({ session: { status: "IN_PROGRESS", date: "2026-11-16" }, attendance: "PRESENT" });
+  await live.actions.saveStaffAttendance({ ...KEY, status: "PRESENT" });
+  assert.ok(names(live.world).includes("saveAttendance"));
+});
+
 test("진행 중 수업의 출결은 예전 그대로 — 출석 알림이 나가고 수정 기록은 남기지 않는다(회귀)", async () => {
   const { world, actions, runAfter } = makeWorld({ session: { status: "IN_PROGRESS", date: "2026-11-16" }, attendance: null });
   const result = await actions.saveStaffAttendance({ ...KEY, status: "PRESENT" });

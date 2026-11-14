@@ -802,6 +802,11 @@ export async function saveStaffAttendance(input: {
     `SELECT status FROM "Attendance" WHERE "sessionId" = $1 AND "studentId" = $2 LIMIT 1`, input.sessionId, studentId,
   );
   const changed = previous[0]?.status !== input.status;
+  // 완료한 수업: 상태가 그대로이고 노트도 없으면 아무것도 쓰지 않는다 — 출결의 updatedAt 을 올리면
+  // 결석 알림 스윕의 «정정 기록 뒤로 출결이 바뀌지 않았다» 조건이 어긋나 뒤늦은 결석 알림이 나갈 수 있다.
+  if (review && previous[0] && !changed && !input.note?.trim()) {
+    return { ok: true as const, changed: false };
+  }
   // 완료한 수업: 이미 예약·사용·불참 처리된 보강권이 걸린 결석을 출석·지각으로 고치는 것은 원장이 한다(코드 리뷰 권장 2).
   // 진행 중 수업의 «다시 눌러 취소»가 같은 상황을 막는 것과 같은 기준이고, 미리 보기와 같은 순수 판정을 쓴다.
   if (review && previous[0]?.status === "ABSENT" && input.status !== "ABSENT") {
@@ -900,7 +905,8 @@ export async function saveStaffAttendance(input: {
   const extra = { absenceReport, ...(absenceMessage ? { absenceMessage } : {}) };
 
   // 완료 뒤 정정은 기록을 남긴다(누가·어느 수업·누구를·무엇에서 무엇으로). 사유 글은 싣지 않는다.
-  // 결석 알림 스윕(absence-parent-notice-sweep)은 이 기록(attendanceId)이 있는 출결을 건너뛴다 — 정정이 «방금 결석» 알림으로 나가지 않게.
+  // 결석 알림 스윕(absence-parent-notice-sweep)은 그 출결의 «마지막» 기록이 «결석 아님 → 결석»이고
+  // 그 뒤로 출결이 다시 바뀌지 않았을 때만 건너뛴다 — 정정이 «방금 결석» 알림으로 나가지 않게.
   if (review && changed) {
     await recordReviewEdit(access.staff.appUserId, {
       sessionId: input.sessionId, item: "ATTENDANCE", kind: "REGULAR", studentId, attendanceId: saved[0].id,

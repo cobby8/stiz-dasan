@@ -97,6 +97,7 @@ export function correctionConfirmMessage(input: {
   const to = STATUS_WORD[input.nextStatus] ?? input.nextStatus;
   const head = `${input.name} ${from} → ${to}으로 고칠까요?`;
   if (input.effect === "REVOKE") return `${head}\n안 쓴 보강권은 회수돼요.`;
+  // 방어 문구 — KEEP_USED 는 서버(미리 보기·저장)가 정정을 거부하므로 지금은 화면에 닿지 않는다
   if (input.effect === "KEEP_USED") return `${head}\n이미 쓴 보강권은 그대로 남아요.`;
   if (input.effect === "ISSUE") return `${head}\n결석 보강권이 나갈 수 있어요.`;
   return head;
