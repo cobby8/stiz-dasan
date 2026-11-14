@@ -444,3 +444,24 @@ test("화면 안 이동으로 학부모 화면 밖을 다녀오면(로그인 등
   assert.equal(h.isParentScopePath("/mypagex"), false);
   assert.equal(h.isParentScopePath("/login"), false);
 });
+
+test("기록 없이 연 학부모 하위 화면의 머리줄 «←» 는 학부모 홈(/mypage)으로 — 설치 앱·브라우저 모두(2026-11-15 원장 결정)", async () => {
+  const layout = await readFile("src/app/mypage/layout.tsx", "utf8");
+  const buttons = layout.match(/<AppBackButton[^>]*\/>/g) ?? [];
+  assert.equal(buttons.length, 2, "모바일·PC 머리줄 두 곳");
+  for (const b of buttons) {
+    assert.match(b, /fallbackHref="\/mypage"/);
+    assert.match(b, /scopeHref="\/mypage"/);
+  }
+  for (const isInstalledApp of [false, true]) {
+    assert.deepEqual(
+      resolveBackAction({ hasHistory: false, pathname: "/mypage/settings", fallbackHref: "/mypage", scopeHref: "/mypage", isInstalledApp }),
+      { type: "push", href: "/mypage" },
+    );
+  }
+  // 학부모 홈 자체(브라우저)는 기존 규칙 그대로 — 제자리걸음 대신 공개 홈
+  assert.deepEqual(
+    resolveBackAction({ hasHistory: false, pathname: "/mypage", fallbackHref: "/mypage", scopeHref: "/mypage", isInstalledApp: false }),
+    { type: "push", href: "/" },
+  );
+});

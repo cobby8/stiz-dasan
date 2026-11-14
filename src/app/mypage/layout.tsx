@@ -80,9 +80,9 @@ export default async function MyPageLayout({
             </Suspense>
             {/* 모바일 상단 헤더 — [뒤로 · 로고 · 학부모] …… [알림 N] [설정] (2026-11-10 원장 결정 k7) */}
             <header className="bg-[var(--color-academy-surface)] sticky top-0 z-50 border-b border-[var(--color-academy-line)] grid grid-cols-[auto_auto_minmax(0,1fr)_auto_auto] items-center gap-1 px-3 py-2 md:hidden">
-                {/* 설치된 학부모 앱에서는 /mypage 밖으로 나가지 않는다.
-                    브라우저로 들어온 사람은 홈페이지에서 왔을 수 있어 기존대로 둔다. */}
-                <AppBackButton fallbackHref="/" scopeHref="/mypage" size="sm" />
+                {/* 돌아갈 기록이 없으면 학부모 홈(/mypage)으로 — 설치 앱·스토어 앱·브라우저 모두(2026-11-15 원장 결정).
+                    예전엔 브라우저에서 공개 홈 «/» 로 나갔다. 학부모 홈 자체에서는 기존 규칙대로 «/». */}
+                <AppBackButton fallbackHref="/mypage" scopeHref="/mypage" size="sm" />
                 {/* 로고는 앱의 홈(/mypage)으로. 공개 홈페이지로 보내면 설치된 앱이
                     제 범위를 벗어나 주소표시줄이 뜨고 돌아올 길이 없어진다.
                     (선생님 앱의 로고가 /staff 로 가는 것과 같은 구조) */}
@@ -102,7 +102,7 @@ export default async function MyPageLayout({
             {/* 데스크탑 헤더 — 기존 구조 유지, 호버 트랜지션 통일 */}
             <header className="bg-[var(--color-academy-surface)] sticky top-0 z-50 border-b border-[var(--color-academy-line)] hidden md:flex items-center justify-between px-8 py-4">
                 <div className="flex min-w-0 items-center gap-3">
-                    <AppBackButton fallbackHref="/" scopeHref="/mypage" />
+                    <AppBackButton fallbackHref="/mypage" scopeHref="/mypage" />
                     <Link href="/mypage" className="flex min-w-0 items-center gap-2">
                         <Image src="/stiz-logo.png" alt="STIZ" width={140} height={61} className="h-12 w-auto object-contain" />
                         <span className="hidden lg:inline font-bold text-lg text-[var(--color-academy-ink)]">
