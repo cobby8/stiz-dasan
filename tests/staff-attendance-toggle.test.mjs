@@ -31,6 +31,7 @@ function load(path, mocks = {}) {
 const kst = load("src/lib/datetime/kst.ts");
 const creditRules = load("src/lib/makeup/credit-rules.ts", { "@/lib/datetime/kst": kst });
 const sessionRules = load("src/lib/staff-session-rules.ts", { "@/lib/datetime/kst": kst, "@/lib/auth/moneyAccess": load("src/lib/auth/moneyAccess.ts") });
+const editWindowRules = load("src/lib/staff/sessionEditWindow.ts", { "@/lib/datetime/kst": kst, "@/lib/sessionVideo/rules": load("src/lib/sessionVideo/rules.ts", { "@/lib/datetime/kst": kst }) });
 
 const SHEET_NOTE = "출석부에서 질병·부상 결석으로 표시";
 
@@ -125,7 +126,9 @@ function makeWorld(options = {}) {
       requireStaffSeasonalSessionAccess: async () => ({ access: world.access, seasonal: {} }),
     },
     "@/lib/datetime/kst": kst,
-    "@/lib/feed/rules": { canEditFeedLine: () => ({ ok: true }), feedLineWindowMessage: () => "", normalizeFeedLine: (v) => v, sessionKstDateSql: () => "date", TODAY_KST_SQL: "today" },
+    "@/lib/feed/rules": { canEditFeedLine: () => ({ ok: true }), feedLineWindowMessage: () => "", normalizeFeedLine: (v) => v, sessionKstDateSql: () => "date", staffSessionEditWindowSql: () => "true", TODAY_KST_SQL: "today" },
+    // 완료한 수업 다시 보기 규칙(순수 모듈)은 진짜를 쓴다
+    "@/lib/staff/sessionEditWindow": editWindowRules,
     "@/lib/staff-session-rules": sessionRules,
     "@/lib/staff-session-queries": { trialOnClassDateSql: () => "true" },
     "@/lib/staff-notifications": { deliverParentNotification: async () => { world.calls.push(["notify"]); return {}; }, getClassParentRecipients: async () => [], getStudentParentRecipients: async () => [] },

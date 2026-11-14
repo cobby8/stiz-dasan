@@ -7,7 +7,7 @@ import { isValidSessionVideoRef } from "@/lib/sessionVideo/rules";
 import { loadSessionForVideo, uploadWindowError } from "@/lib/sessionVideo/server";
 
 /**
- * 영상 삭제(선생님) — 올리기와 같은 시간 범위(수업 당일 KST 자정까지)만.
+ * 영상 삭제(선생님) — 올리기와 같은 기간(수업일 포함 7일, 원장·부원장은 제한 없음)만.
  * 1) DB 에서 먼저 «지움» 표시(deletedAt) → 학부모 화면에서 바로 사라진다.
  * 2) 저장소 사본은 여기서 바로 지워 보고, 실패하면 cron 이 다시 지운다.
  * 3) 유튜브에 이미 올라간 영상은 cron 이 유튜브에서 지운다(구글 호출을 이 요청에 붙이지 않는다).
@@ -17,8 +17,8 @@ export async function DELETE(_req: Request, context: { params: Promise<{ session
     const { sessionId, videoId } = await context.params;
     const session = await loadSessionForVideo(sessionId);
     if (!session) return NextResponse.json({ error: "수업 기록을 찾을 수 없습니다." }, { status: 404 });
-    await requireStaffSessionAccess(sessionId);
-    const windowError = uploadWindowError(session);
+    const { access } = await requireStaffSessionAccess(sessionId);
+    const windowError = uploadWindowError(session, access.canAccessAllClasses);
     if (windowError) return NextResponse.json({ error: windowError }, { status: 409 });
 
     // 주소의 수업에 속한 영상만(다른 수업 영상 ID 로 지우기 차단 — IDOR)

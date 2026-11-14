@@ -25,8 +25,8 @@ import {
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const MAX_BYTES = 1024 * 1024;
 /**
- * 사진 관리 가능 시간 판정용 수업 행(2026-11-14 원장 결정) — 영상과 같은 규칙:
- * 수업 중 또는 끝난 수업의 당일 KST 자정까지. 오늘(KST)은 DB 시계로(NOW() 는 timestamptz 라 한 번만 변환).
+ * 사진 관리 가능 기간 판정용 수업 행(2026-11-14 원장 결정) — 영상과 같은 규칙:
+ * 수업 중 또는 끝난 수업, 선생님은 수업일 포함 7일·원장·부원장은 제한 없음. 오늘(KST)은 DB 시계로(NOW() 는 timestamptz 라 한 번만 변환).
  * 수업일은 무tz 칼럼 Session.date 를 «두 번» 변환(sessionKstDateSql) — 옛 기록 모양에서도 하루 밀리지 않게.
  */
 const MEDIA_WINDOW_COLUMNS = `"classId", status, "photosJSON", ${sessionKstDateSql('"Session"')}::text AS "sessionYmd",
@@ -44,9 +44,10 @@ export async function GET(_req: Request, context: { params: Promise<{ sessionId:
     const session = sessions[0];
     if (!session) return NextResponse.json({ error: "수업 기록을 찾을 수 없습니다." }, { status: 404 });
     // 수업 시작·출석과 같은 권한 함수(특강 회차면 특강 담당 강사 기준) — 2026-11-13 G11
-    await requireStaffSessionAccess(sessionId);
+    const { access: viewer } = await requireStaffSessionAccess(sessionId);
     // 목록은 읽기만이라 언제든 보여 주고, 올리기·지우기 가능 여부를 함께 알려 준다(화면이 버튼을 잠근다)
-    const window = canManageSessionMedia(session);
+    // 원장·부원장은 수정 기간 제한이 없다(선생님은 수업일 포함 7일)
+    const window = canManageSessionMedia({ ...session, unlimited: viewer.canAccessAllClasses });
     const drafts = await prisma.$queryRawUnsafe<SessionPhotoDraftRow[]>(
       `SELECT id, status, "mediaJSON", "subjectStudentIdsJSON", "galleryPostId", "instagramMediaId"
          FROM "SocialPostDraft"
@@ -75,7 +76,8 @@ export async function POST(req: Request, context: { params: Promise<{ sessionId:
     if (!session) return NextResponse.json({ error: "수업 기록을 찾을 수 없습니다." }, { status: 404 });
     // 수업 시작·출석과 같은 권한 함수(특강 회차면 특강 담당 강사 기준) — 2026-11-13 G11
     const { access } = await requireStaffSessionAccess(sessionId);
-    const window = canManageSessionMedia(session);
+    const unlimited = access.canAccessAllClasses;
+    const window = canManageSessionMedia({ ...session, unlimited });
     if (!window.ok) return NextResponse.json({ error: photoWindowMessage(window.reason) }, { status: 409 });
 
     await ensureSocialPostDraftTable();
@@ -125,8 +127,8 @@ export async function POST(req: Request, context: { params: Promise<{ sessionId:
         const locked = await tx.$queryRawUnsafe<MediaWindowRow[]>(
           `SELECT ${MEDIA_WINDOW_COLUMNS} FROM "Session" WHERE id = $1 FOR UPDATE`, sessionId,
         );
-        // 잠근 뒤 한 번 더 — 올리는 사이 자정이 지났거나 수업이 취소됐으면 저장하지 않는다
-        const lockedWindow = locked[0] ? canManageSessionMedia(locked[0]) : null;
+        // 잠근 뒤 한 번 더 — 올리는 사이 수정 기간이 끝났거나 수업이 취소됐으면 저장하지 않는다
+        const lockedWindow = locked[0] ? canManageSessionMedia({ ...locked[0], unlimited }) : null;
         if (!lockedWindow?.ok || locked[0]?.classId !== session.classId) {
           throw new Error(lockedWindow && !lockedWindow.ok ? photoWindowMessage(lockedWindow.reason) : "수업 기록을 다시 확인해 주세요.");
         }
@@ -158,6 +160,6 @@ export async function POST(req: Request, context: { params: Promise<{ sessionId:
     return NextResponse.json({ url, type: "image", reviewStatus: "READY" });
   } catch (error) {
     const message = userFacingError(error, "사진 등록에 실패했습니다.");
-    return NextResponse.json({ error: message }, { status: error instanceof Error && error.message.includes("권한") ? 403 : error instanceof Error && /자정|시작한 뒤/.test(error.message) ? 409 : 500 });
+    return NextResponse.json({ error: message }, { status: error instanceof Error && error.message.includes("권한") ? 403 : error instanceof Error && /수정 기간|수업 날짜부터|시작한 뒤/.test(error.message) ? 409 : 500 });
   }
 }

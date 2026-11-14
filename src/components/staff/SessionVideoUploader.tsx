@@ -61,7 +61,7 @@ function putWithProgress(url: string, file: File, mimeType: string, onProgress: 
  *
  * 순서: ① 서버에 «업로드 주소» 요청(권한·시간·형식·크기 확인) ② 브라우저 → 저장소 직접 업로드(진행률)
  *       ③ 서버에 «등록»(서버가 저장소 파일 크기·형식을 다시 확인) ④ 목록 새로 불러오기.
- * 업로드·삭제는 수업 당일 KST 자정까지만(서버가 판정, 화면은 그 결과만 보인다).
+ * 업로드·삭제는 수업일 포함 7일 동안(원장·부원장은 제한 없음 — 서버가 판정, 화면은 그 결과만 보인다).
  */
 /** 바깥 버튼(수업 화면 아래 [동영상]·[갤러리])이 이 부품의 올리기를 부를 때 쓰는 손잡이(2026-11-15) */
 export type SessionVideoUploaderHandle = { upload: (file: File) => void };

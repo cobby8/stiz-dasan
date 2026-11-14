@@ -1,13 +1,13 @@
 /**
  * 수업 영상 순수 규칙(2026-11-14) — DB·네트워크 없이 «입력 → 결과»만 계산한다.
  *
- * 왜 따로 두나: 업로드 가능 시간(수업 당일 KST 자정까지)·유튜브 하루 할당량·유튜브 응답 해석은
+ * 왜 따로 두나: 업로드 가능 기간(수업일 포함 7일 — staff/sessionEditWindow)·유튜브 하루 할당량·유튜브 응답 해석은
  * 눈으로 읽어서는 틀린 걸 못 찾는다(자정 경계·«비공개 강제»). 그래서 이 파일만 테스트가 실제로 돌린다
  * (tests/session-video-rules.test.mjs). 라우트·cron 은 여기 결과를 그대로 따른다.
  *
  * ⚠️ 이 파일은 순수 모듈(@/lib/datetime/kst 만 import). prisma·next 를 들이지 않는다.
  */
-import { addDaysKst, isKstYmd, kstAt, todayKst } from "@/lib/datetime/kst";
+import { addDaysKst, diffDaysKst, isKstYmd, kstAt, todayKst } from "@/lib/datetime/kst";
 
 // ── 상수 ──────────────────────────────────────────────────────────────
 
@@ -40,33 +40,65 @@ export const YOUTUBE_CATEGORY_SPORTS = "17";
 
 // ── 업로드 가능 시간 ──────────────────────────────────────────────────
 
-export type UploadWindowInput = {
+// ── 수업 기록 수정 기간(선생님) — 사진·영상·한 줄·메모·출결 정정이 함께 쓰는 판정 하나 ──────────
+// 설명과 나머지 «완료한 수업 다시 보기» 규칙은 @/lib/staff/sessionEditWindow 에 있다(그 파일이 이 함수를 다시 내보낸다).
+
+/** 선생님이 끝난 수업을 고칠 수 있는 날수(수업일 포함) */
+export const STAFF_SESSION_EDIT_DAYS = 7;
+
+export type SessionEditWindowInput = {
   /** Session.status (PLANNED · IN_PROGRESS · COMPLETED) */
   status: string;
-  /** 수업 날짜(KST 달력, "YYYY-MM-DD") — SQL `s.date::date::text` */
+  /** 수업 날짜(KST 달력, "YYYY-MM-DD") */
   sessionYmd: string;
-  /** 오늘(KST) — SQL `(NOW() AT TIME ZONE 'Asia/Seoul')::date::text` (서버 시계를 믿지 않는다) */
+  /** 오늘(KST) — DB 시계 기준 */
   todayYmd: string;
+  /** 원장·부원장(canAccessAllClasses)이면 true — 기간 제한 없음 */
+  unlimited?: boolean;
 };
 
-export type UploadWindowResult = { ok: true } | { ok: false; reason: "NOT_STARTED" | "NOT_TODAY" | "INVALID" };
+/** NOT_STARTED=시작 전 · NOT_TODAY=아직 오지 않은 날짜(또는 시작 전 수업의 한 줄을 다른 날에) · EXPIRED=수정 기간 지남 · INVALID=날짜를 못 읽음 */
+export type SessionEditWindowReason = "NOT_STARTED" | "NOT_TODAY" | "EXPIRED" | "INVALID";
+export type SessionEditWindowResult = { ok: true } | { ok: false; reason: SessionEditWindowReason };
 
 /**
- * 영상을 올리거나 지울 수 있는가.
- * - 수업 중(IN_PROGRESS) 또는 끝난 수업(COMPLETED)
- * - 그리고 수업 날짜 = 오늘(KST). 즉 수업이 끝나도 «그날 자정 전까지»는 추가할 수 있다.
+ * 이 수업 기록을 지금 고칠 수 있는가(진행 중·완료한 수업).
+ * 수업일로부터 지난 날수 = 0(당일) … 6 이면 가능, 7 이상이면 EXPIRED.
  */
-export function canManageSessionVideo(input: UploadWindowInput): UploadWindowResult {
+export function staffSessionEditWindow(input: SessionEditWindowInput): SessionEditWindowResult {
   if (!isKstYmd(input.sessionYmd) || !isKstYmd(input.todayYmd)) return { ok: false, reason: "INVALID" };
   if (input.status !== "IN_PROGRESS" && input.status !== "COMPLETED") return { ok: false, reason: "NOT_STARTED" };
-  if (input.sessionYmd !== input.todayYmd) return { ok: false, reason: "NOT_TODAY" };
+  const days = diffDaysKst(input.sessionYmd, input.todayYmd);
+  if (!Number.isFinite(days)) return { ok: false, reason: "INVALID" };
+  // 수업일이 아직 오지 않았다(기록 날짜가 내일 이후) — 누구도 고치지 않는다
+  if (days < 0) return { ok: false, reason: "NOT_TODAY" };
+  if (input.unlimited === true) return { ok: true };
+  if (days >= STAFF_SESSION_EDIT_DAYS) return { ok: false, reason: "EXPIRED" };
   return { ok: true };
 }
 
+/** 수정 기간이 지났을 때 보이는 한 줄(화면·서버 거부 문구 공통) */
+export const STAFF_EDIT_EXPIRED_MESSAGE = `수정 기간(${STAFF_SESSION_EDIT_DAYS}일)이 지났어요. 고칠 내용은 원장님께 말씀해 주세요.`;
+
+/** 판정 입력·결과는 «수업 기록 수정 기간» 공용 모양 그대로다 */
+export type UploadWindowInput = SessionEditWindowInput;
+export type UploadWindowResult = SessionEditWindowResult;
+
+/**
+ * 영상을 올리거나 지울 수 있는가 — «수업 기록 수정 기간» 공용 판정(staffSessionEditWindow)에 맡긴다.
+ * - 수업 중(IN_PROGRESS) 또는 끝난 수업(COMPLETED)
+ * - 선생님은 수업일 포함 7일 동안, 원장·부원장(unlimited)은 기간 제한 없음.
+ * (2026-11-14 원장 지시 — 예전엔 «수업 당일 자정까지»였다)
+ */
+export function canManageSessionVideo(input: UploadWindowInput): UploadWindowResult {
+  return staffSessionEditWindow(input);
+}
+
 /** 업로드 가능 시간 판정 결과를 선생님에게 보일 문장으로 */
-export function uploadWindowMessage(reason: "NOT_STARTED" | "NOT_TODAY" | "INVALID"): string {
+export function uploadWindowMessage(reason: SessionEditWindowReason): string {
   if (reason === "NOT_STARTED") return "수업을 시작한 뒤에 영상을 올릴 수 있습니다.";
-  if (reason === "NOT_TODAY") return "영상은 수업 당일 자정까지만 올리거나 지울 수 있습니다.";
+  if (reason === "EXPIRED") return STAFF_EDIT_EXPIRED_MESSAGE;
+  if (reason === "NOT_TODAY") return "영상은 수업 날짜부터 올리거나 지울 수 있습니다.";
   return "수업 날짜를 확인하지 못했습니다.";
 }
 
@@ -110,7 +142,7 @@ export function oversizeMessage(maxBytes: number): string {
 
 /** 업로드 칸 안내 한 줄 */
 export function uploadHintMessage(maxBytes: number): string {
-  return `30초 이내로 짧게(최대 ${bytesToMb(maxBytes)}MB) 찍어 주세요. 수업 당일 자정 전에 올려 주세요.`;
+  return `30초 이내로 짧게(최대 ${bytesToMb(maxBytes)}MB) 찍어 주세요. 수업 뒤 ${STAFF_SESSION_EDIT_DAYS}일 안에 올릴 수 있어요.`;
 }
 
 export type VideoFileCheck = { ok: true; mimeType: SessionVideoMimeType } | { ok: false; message: string };

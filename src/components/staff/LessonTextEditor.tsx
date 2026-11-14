@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { VoiceToTextButton } from "@/components/staff/VoiceToTextButton";
 import { FEED_LINE_MAX } from "@/lib/feed/rules";
 import { PLAN_PREFILL_NOTICE, type WorkspacePhase } from "@/components/staff/sessionWorkspaceRules";
+import { STAFF_SESSION_EDIT_DAYS } from "@/lib/staff/sessionEditWindow";
 
 export type LessonTextSaveResult = { ok: true } | { ok: false; message: string };
 
@@ -23,6 +24,7 @@ export function LessonTextEditor({
   save,
   prefilledFromPlan = false,
   onBusyChange,
+  disabled = false,
 }: {
   inputId: string;
   phase: WorkspacePhase;
@@ -34,6 +36,8 @@ export function LessonTextEditor({
   prefilledFromPlan?: boolean;
   /** 음성 변환·저장 중 여부(수업 종료 버튼 잠금용) */
   onBusyChange?: (busy: boolean) => void;
+  /** 읽기 전용 — 완료한 수업의 수정 기간이 지났을 때(글은 보이고 음성·저장 버튼은 없다) */
+  disabled?: boolean;
 }) {
   const [status, setStatus] = useState<"idle" | "dirty" | "saving" | "saved" | "error">("idle");
   const [error, setError] = useState("");
@@ -73,7 +77,7 @@ export function LessonTextEditor({
   const hint = phase === "PLANNED"
     // 사실대로: 수업 전에는 선생님만 보지만, 수업을 시작하면 이 글이 수업 내용 칸에 채워지고 그대로 종료하면 학부모에게 나간다
     ? "수업을 종료하면 이 내용이 학부모에게 보일 수 있어요(종료할 때 고칠 수 있습니다)"
-    : "수업 종료 뒤 학부모에게 보여요 · 수업 당일 자정까지 고칠 수 있어요";
+    : `수업 종료 뒤 학부모에게 보여요 · 수업 뒤 ${STAFF_SESSION_EDIT_DAYS}일 동안 고칠 수 있어요`;
 
   return (
     <div>
@@ -81,14 +85,15 @@ export function LessonTextEditor({
         <label htmlFor={inputId} className="pt-1 text-xs text-[var(--color-academy-muted)]">
           {phase === "PLANNED" ? "오늘 진행할 내용·준비물" : "오늘 수업 한 줄"}
         </label>
-        <VoiceToTextButton
+        {!disabled && <VoiceToTextButton
           onBusyChange={(busy) => reportBusy("voice", busy)}
           onText={(text) => { setStatus("dirty"); onChange(value ? `${value}\n${text}` : text); }}
-        />
+        />}
       </div>
       <textarea
         id={inputId}
         value={value}
+        disabled={disabled}
         onChange={(event) => { setStatus("dirty"); onChange(event.target.value); }}
         rows={3}
         maxLength={FEED_LINE_MAX}
@@ -99,14 +104,14 @@ export function LessonTextEditor({
       {prefilledFromPlan && unsaved && (
         <p role="status" className="mt-1.5 text-xs text-[var(--color-academy-info)]">{PLAN_PREFILL_NOTICE}</p>
       )}
-      <div className="mt-1.5 flex items-center justify-between gap-2">
+      {!disabled && <div className="mt-1.5 flex items-center justify-between gap-2">
         <span aria-live="polite" className={`min-w-0 text-xs ${status === "error" ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-muted)]"}`}>
           {status === "saving" ? "저장 중…" : status === "error" ? error : unsaved || status === "dirty" ? "저장하지 않은 변경이 있어요" : status === "saved" ? "저장됨" : hint}
         </span>
         <button type="button" disabled={status === "saving"} onClick={() => void submit()} className="academy-button-secondary academy-button-sm shrink-0">
           수업 내용 저장
         </button>
-      </div>
+      </div>}
     </div>
   );
 }

@@ -329,3 +329,9 @@
 - **발견자**: developer
 - **내용**: /admin/attendance/feed 는 첫 20개만 서버에서 그리고 다음은 GET /api/admin/feed(?cursor·필터, ?sessionId=카드 하나). 커서 = «수업일~시작 시각~id» 세 값 모두 내림차순이라 SQL 행 비교 (a,b,c) < ($1,$2,$3) 하나로 자른다(adminFeedRules.encode/decodeAdminFeedCursor). 필터는 전부 SQL(담당 선생님은 CROSS JOIN LATERAL 로 classCoachNameSql 한 번 계산). 리포트 편집 본문은 src/components/admin/SessionReportEditor.tsx 한 벌 — /admin/attendance/report/[sessionId] 화면과 피드 패널(SessionReportEditorLoader, compact)이 같이 쓴다. 관리자 영상 재생 = SessionVideoList endpoint 에 /api/staff/sessions/{id}/videos(관리자 = 전체 반).
 - **참조횟수**: 0
+
+### [2026-11-14] 선생님 «완료한 수업 다시 보기» = 수정 기간 판정 하나 + 완료 본문 부품
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 선생님이 수업 기록을 고칠 수 있는 기간은 `staffSessionEditWindow`(몸통 `src/lib/sessionVideo/rules.ts`, 창구 `src/lib/staff/sessionEditWindow.ts` 가 다시 내보냄) 한 곳 — 수업일 포함 `STAFF_SESSION_EDIT_DAYS`(7)일, 원장·부원장(`canAccessAllClasses` → `unlimited`)은 제한 없음, 시작 전 수업의 한 줄만 «당일»(feed/rules.canEditFeedLine). 사진·영상 API 6곳·`saveSessionFeedLine`(UPDATE 조건 `staffSessionEditWindowSql`)·`saveSessionMemo`·`saveStaffAttendance`·`publishStaffSessionReport` 가 모두 이 함수로 막는다. 몸통을 sessionVideo/rules 에 둔 이유 = 학부모 화면 테스트 3개가 feed/rules 를 «kst + sessionVideo/rules»만으로 싣기 때문(새 의존 금지). 화면은 `CompletedSessionPanel`(LessonWorkspacePanels — 홈의 완료 줄 + 수업 주소 `/staff/sessions/[id]`, `embedded` 로 머리 유무) + 출결 정정 명단 `CompletedAttendanceRoster`(따로 둔 이유: LessonWorkspacePanels 에 `saveStaffAttendance` 를 들이지 않는다는 테스트). 완료 뒤 출결 정정 = 정규 수강생·특강 좌석만(보강·체험·전체 출석·질병 표시·미확인 되돌리기 거부), `previewStaffAttendanceCorrection`(바꾸지 않음) → 확인 1회 → 기존 저장 경로. 완료 뒤 수정(출결·한 줄·메모·발행)은 `OperationsAuditLog` action `STAFF_SESSION_REVIEW_EDIT`(본문 없이 항목·전/후), 학부모 출석 알림 없음, 결석 알림 스윕은 그 기록의 attendanceId 를 건너뜀. 발행 알림은 «처음 발행»(publishedAt 이 비어 있던 수업)만. 지난 수업 목록 `/staff/sessions` = `getStaffPastSessions`(최근 14일·완료·«열 수 있는 수업»만 — 지난 날 대타 수업은 권한이 자정에 닫혀 목록에도 없음).
+- **참조횟수**: 0

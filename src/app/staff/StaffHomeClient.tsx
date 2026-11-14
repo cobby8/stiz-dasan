@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import {
@@ -571,6 +572,12 @@ export default function StaffHomeClient({
           )}
         </section>
       )}
+
+      {/* 지난 수업(최근 14일) — 완료한 수업을 다시 열어 보고 고친다(2026-11-14 원장 지시) */}
+      <Link href="/staff/sessions" className="flex min-h-12 items-center justify-between gap-3 rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-4 text-sm font-medium text-[var(--color-academy-ink)]">
+        <span>지난 수업</span>
+        <span className="text-xs font-normal text-[var(--color-academy-muted)]">최근 14일 ›</span>
+      </Link>
 
       {/* 진행 중 수업 칸이 펼쳐져 있으면 아래 고정 막대(사진·동영상·갤러리)가 떠 있다 — 막대 높이만큼 페이지 끝을 더 띄워
           마지막 줄(«완료한 수업» 등)이 막대에 가리지 않게 한다. 아래 탭·안전 영역 몫은 레이아웃의 아래 여백이 이미 잡고 있다. */}

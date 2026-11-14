@@ -115,6 +115,8 @@ type LiveSessionProps = {
   onOpenBilling?: (student?: { id: string; name: string }) => void;
   /** 홈: 줄을 접어도 보이게 출결 요약·저장 상태를 알린다 */
   onAttendanceStatus?: (status: { summary: string; saving: string; failed: string }) => void;
+  /** 완료한 수업: 원장·부원장이면 true — 수정 기간(선생님 수업일 포함 7일) 제한 없음. 서버도 같은 기준으로 다시 막는다 */
+  editUnlimited?: boolean;
 };
 
 export type SessionWorkspaceProps =
@@ -129,7 +131,8 @@ export type SessionWorkspaceProps =
 export default function SessionWorkspace(props: SessionWorkspaceProps) {
   if (!props.session) return <PlannedLessonPanel {...props.planned} />;
   if (props.session.status === "COMPLETED") {
-    return <CompletedSessionPanel session={props.session} students={props.initialStudents} onLineSaved={props.onLineSaved} onOpenBilling={props.onOpenBilling} />;
+    // 완료한 수업 다시 보기·고치기 — 홈의 줄 안(embedded)과 수업 주소(지난 수업에서 연 화면) 양쪽에서 같은 부품
+    return <CompletedSessionPanel session={props.session} students={props.initialStudents} onLineSaved={props.onLineSaved} onOpenBilling={props.onOpenBilling} embedded={props.embedded === true} editUnlimited={props.editUnlimited === true} />;
   }
   return <LiveSessionWorkspace {...props} />;
 }
