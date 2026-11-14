@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireVerifiedParent } from "@/lib/auth-guard";
 import {
+  getParentIllnessReviews,
   getUpcomingRegularClassDates,
   reportRegularAbsence,
   cancelRegularAbsence,
   ABSENCE_REPORT_WEEKS,
 } from "@/lib/regular/parent-regular-absence";
 import { ABSENCE_CHANGE_CLOSED_MESSAGE } from "@/lib/regular/regularAbsenceRules";
+import { ILLNESS_MAKEUP_IN_USE } from "@/lib/regular/illness-carry-tx";
 import { BEFORE_RESUME_CODE, resumeFromOfError, resumeNotice } from "@/lib/enrollment/resumeWindow";
 
 export const dynamic = "force-dynamic";
@@ -20,8 +22,10 @@ export async function GET() {
     return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   }
   try {
-    const children = await getUpcomingRegularClassDates(parent.appUserId);
-    return NextResponse.json({ children }, { headers: { "Cache-Control": "no-store" } });
+    // 질병·부상 이월 검토(상태·사진 장수)를 먼저 읽어 줄의 상태 글자에도 쓴다
+    const reviews = await getParentIllnessReviews(parent.appUserId);
+    const children = await getUpcomingRegularClassDates(parent.appUserId, undefined, reviews);
+    return NextResponse.json({ children, reviews }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("[api/mypage/regular-absence] GET failed:", error);
     return NextResponse.json({ error: "조회에 실패했습니다." }, { status: 500 });
@@ -61,6 +65,9 @@ export async function POST(request: NextRequest) {
         classId: body.classId,
         date: body.date,
         reason: body.reason,
+        // 질병·부상이면 사유 글(예: 독감) — 서버가 필수·길이를 다시 본다
+        reasonText: typeof body.reasonText === "string" ? body.reasonText : null,
+        source: "PARENT",
       });
     }
     return NextResponse.json(result);
@@ -87,6 +94,9 @@ export async function POST(request: NextRequest) {
       MAKEUP_BOOKING_CONFIRM_REQUIRED: "이 결석의 보강권으로 보강이 예약돼 있어요. 보강 예약도 함께 취소돼요.",
       MAKEUP_ALREADY_USED: "이 결석의 보강을 이미 들어서 결석 신고를 취소할 수 없어요. 학원으로 문의해 주세요.",
       MAKEUP_BOOKING_PAST: "예약한 보강 날짜가 지나 결석 신고를 취소할 수 없어요. 학원으로 문의해 주세요.",
+      // 질병·부상 이월 검토(2026-11-14)
+      ILLNESS_REASON_TEXT_REQUIRED: "어디가 아픈지 한 줄로 적어 주세요. (예: 독감, 발목 염좌 · 100자까지)",
+      [ILLNESS_MAKEUP_IN_USE]: "이 결석의 보강을 이미 예약했거나 들어서 질병·부상으로 바꿀 수 없어요. 보강 예약을 먼저 취소해 주세요.",
     };
     const known = map[code];
     if (!known) console.error("[api/mypage/regular-absence] POST failed:", error);

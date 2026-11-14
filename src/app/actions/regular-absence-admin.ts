@@ -6,6 +6,7 @@ import { requireAdmin } from "@/lib/auth-guard";
 import { assertAbsenceCompensationEditable, lockCompensation } from "@/lib/billing/absence-compensation-guard";
 import { getRegularAbsences, type RegularAbsenceRow } from "@/lib/regular/admin-regular-absence";
 import { settleCreditOnAbsenceCancel } from "@/lib/makeup/absence-report-credit";
+import { closeIllnessReviewInTx, illnessReviewReady } from "@/lib/regular/illness-carry-tx";
 import {
   bookMakeupSession,
   cancelMakeupSession,
@@ -100,6 +101,8 @@ export async function cancelRegularAbsenceByAdmin(input: { id: string }) {
     // 보강권(2026-11-10 k4): 신고로 나간 보강권을 기존 회수 규칙과 같게 되돌린다 —
     //   미사용(AVAILABLE)만 회수, 예약 중·사용 완료는 그대로, 출결이 결석이면 그대로(같은 트랜잭션).
     if (rows[0]) {
+      // 질병·부상 이월 검토 중이었으면 함께 닫는다(2026-11-14 — 학부모 취소와 같은 함수. 이월 승인된 결석은 위 가드가 먼저 막는다)
+      if (await illnessReviewReady(tx)) await closeIllnessReviewInTx(tx, id, { canceled: true });
       await settleCreditOnAbsenceCancel(tx, {
         actor: "ADMIN", studentId: rows[0].studentId, classId: rows[0].classId, absenceYmd: rows[0].date,
       });

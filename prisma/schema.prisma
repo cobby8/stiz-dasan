@@ -3062,6 +3062,9 @@ model RegularAbsence {
   student          Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
   class            Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
   period           RegularAbsencePeriod? @relation(fields: [periodId], references: [id], onDelete: SetNull)
+  // 질병·부상 «이월 검토»(2026-11-14) — 결석 1건당 검토 1줄 + 증빙 사진
+  carryReview      RegularAbsenceCarryReview?
+  evidences        RegularAbsenceEvidence[]
 
   @@unique([studentId, classId, date]) // 학생·반·날짜당 신고 1건
   @@index([classId, date], map: "RegularAbsence_classId_date_idx") // 기사/관리자 날짜별 조회
@@ -3091,6 +3094,45 @@ model RegularAbsencePeriod {
 
   @@index([studentId, status], map: "RegularAbsencePeriod_studentId_status_idx")
   @@index([status], map: "RegularAbsencePeriod_status_idx")
+}
+
+// 질병·부상 결석 «이월 검토»(2026-11-14 원장 결정표 a1~a8) — 결석 1건당 1줄.
+// 사유가 질병·부상이면 보강권을 바로 주지 않고, 원장이 증빙을 보고 [이월 승인]/[보강권으로]를 고른다.
+// 상세 근거는 prisma/migrations/20261114130000_illness_carry_review/migration.sql 참고.
+model RegularAbsenceCarryReview {
+  absenceId       String         @id
+  status          String         @default("PENDING") // PENDING | APPROVED | MAKEUP | CLOSED
+  source          String         @default("PARENT") // PARENT | KAKAO | STAFF
+  reasonText      String? // 학부모가 적은 사유 글(건강 정보 — 로그·알림 본문 금지)
+  requestedAt     DateTime       @default(now()) @db.Timestamptz(6) // «7일 안에 사진» 기준점
+  decidedAt       DateTime?      @db.Timestamptz(6)
+  decidedBy       String? // ADMIN | AUTO
+  decidedByUserId String?
+  convertReason   String? // REJECTED | NO_EVIDENCE
+  createdAt       DateTime       @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime       @default(now()) @updatedAt @db.Timestamptz(6)
+  absence         RegularAbsence @relation(fields: [absenceId], references: [id], onDelete: Cascade)
+
+  @@index([status, requestedAt], map: "RegularAbsenceCarryReview_status_requestedAt_idx")
+}
+
+// 질병·부상 결석 증빙 사진(비공개 버킷 absence-evidence). 올린 학부모 본인과 관리자만 연다.
+// 처리 끝나고 90일 뒤 cron 이 저장소 파일을 지운다(purgedAt).
+model RegularAbsenceEvidence {
+  id               String          @id @default(dbgenerated("(gen_random_uuid())::text"))
+  absenceId        String?
+  storageBucket    String
+  storagePath      String
+  sizeBytes        Int
+  uploadedByUserId String
+  createdAt        DateTime        @default(now()) @db.Timestamptz(6)
+  removedAt        DateTime?       @db.Timestamptz(6) // 화면에서 뺀 시각(NULL = 살아 있는 사진)
+  purgedAt         DateTime?       @db.Timestamptz(6) // 저장소 파일까지 지운 시각
+  absence          RegularAbsence? @relation(fields: [absenceId], references: [id], onDelete: SetNull)
+
+  @@unique([storageBucket, storagePath], map: "RegularAbsenceEvidence_storagePath_key")
+  @@index([absenceId], map: "RegularAbsenceEvidence_absenceId_idx")
+  @@index([createdAt], map: "RegularAbsenceEvidence_purge_idx")
 }
 
 // 저장된 배차 노선 — 원장이 자동 제안을 손으로 조정한 뒤 저장한 결과(날짜×방향 1행).

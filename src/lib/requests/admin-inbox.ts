@@ -34,6 +34,7 @@ import {
 import type { StatusTone } from "@/lib/ui/statusTones";
 // 상담 탭(신설) — 이 파일의 두 함수만 부른다. 상담 작업이 그 파일만 채운다(원장 결정 k1)
 import { countConsultAction } from "@/lib/requests/consult-inbox";
+import { illnessReviewReady } from "@/lib/regular/illness-carry-tx";
 
 export type InboxFact = [label: string, value: string];
 export type InboxEnrollmentChangeMember = {
@@ -108,7 +109,7 @@ type Adapter = {
    * 운영 DB 에 아직 없는 칸을 읽는 어댑터의 «예전 식»(마이그레이션 적용 전 대비).
    * 첫 조회가 실패하면 이 식으로 한 번 더 읽는다 — 새 칸 때문에 신청함·메뉴 숫자가 통째로 죽지 않게.
    */
-  fallback?: Pick<Adapter, "rawExpr" | "createdAtExpr" | "extra">;
+  fallback?: Pick<Adapter, "rawExpr" | "createdAtExpr" | "extra"> & Partial<Pick<Adapter, "from" | "where">>;
   /** true 면 메뉴 숫자(UNION ALL 한 번) 계산에서 뺀다 — 처리 필요 상태가 없는 종류(원장 손이 필요 없다) */
   skipCount?: boolean;
   format: (row: RawRow, extra: Record<string, unknown>) => { title: string; summary: string; facts: InboxFact[]; ref?: Record<string, string | null> };
@@ -137,6 +138,8 @@ const KAKAO_KIND: Record<string, string> = {
   PAUSE: "휴원", WITHDRAW: "퇴원", RESUME: "복귀", CLASS_CHANGE: "반 변경", CLASS_ADD: "반 추가", SHUTTLE_START_STOP: "셔틀 이용 변경",
   SHUTTLE_CHANGE: "탑승 정보 변경", SHUTTLE_FEE: "셔틀비", CONTACT_CHANGE: "연락처 변경", BILLING_CORRECTION: "청구 정정", MAKEUP: "보강", OTHER: "기타 문의",
 };
+const ILLNESS_SOURCE: Record<string, string> = { PARENT: "학부모 앱", KAKAO: "카카오 대화", STAFF: "학원 등록" };
+const CREDIT_LABEL: Record<string, string> = { AVAILABLE: "보강권 있음(미사용)", RESERVED: "보강 예약됨", USED: "보강 완료", NO_SHOW: "보강 불참", EXPIRED: "보강권 만료", REVOKED: "보강권 보류" };
 const ROLE_LABEL: Record<string, string> = { INSTRUCTOR: "선생님", DRIVER: "기사님" };
 const CHANNEL_LABEL: Record<string, string> = { GALLERY: "갤러리", INSTAGRAM: "인스타그램" };
 
@@ -225,6 +228,51 @@ const ADAPTERS: Adapter[] = [
       summary: join(row.targetDate, e.className, ABSENCE_REASON[text(e.reason)] ?? ""),
       facts: [...fact("결석일", row.targetDate), ...fact("반", e.className), ...fact("사유", ABSENCE_REASON[text(e.reason)] ?? e.reason), ...fact("메모", e.note)],
     }),
+  },
+  {
+    // 질병·부상 결석 «이월 검토»(2026-11-14 원장 결정 a3·a7) — 학부모 신고·카카오 접수·기간 결석·출석부 표시가 모두 같은 표라 한 줄로 모인다.
+    // 이 기능 이전에 보강권이 나간 결석(검토 줄 없음)도 뜬다 — 이월 승인 시 기존 규칙이 보강권을 회수한다.
+    // 검토 줄 없이 이미 보강을 들은 결석은 고를 것이 없어 뺀다. 사유 글(건강 정보)은 목록에 싣지 않고 상세를 열 때 따로 읽는다.
+    kind: "ILLNESS_CARRY",
+    from: `"RegularAbsence" x ${studentJoin("s", `x."studentId"`)} LEFT JOIN "Class" c ON c.id = x."classId"
+           LEFT JOIN "RegularAbsenceCarryReview" r ON r."absenceId" = x.id`,
+    // 결정이 났으면 그 결정, 아니면 결석일이 지났는지(KST — date 칼럼은 이미 달력 값이라 now() 쪽만 한 번 변환)
+    rawExpr: `CASE WHEN r.status = 'APPROVED' THEN 'APPROVED' WHEN r.status = 'MAKEUP' THEN 'MAKEUP'
+                   WHEN x.date > (now() AT TIME ZONE 'Asia/Seoul')::date THEN 'WAITING' ELSE 'PENDING' END`,
+    // 2026-10-05 = 보강권 발급·청구 작업대 결석 정산이 시작된 날(그 전 결석은 대상이 아니다)
+    where: `x.reason = 'ILLNESS_INJURY' AND x.status <> 'CANCELLED' AND x.date >= '2026-10-05'::date
+            AND NOT (r."absenceId" IS NULL AND EXISTS (
+              SELECT 1 FROM "MakeupCredit" used WHERE used."studentId" = x."studentId"
+                 AND used."sourceKey" = 'REGULAR:' || x."classId" || ':' || to_char(x.date, 'YYYY-MM-DD')
+                 AND used.status IN ('USED', 'NO_SHOW')))`,
+    studentNameExpr: "s.name",
+    createdAtExpr: `COALESCE(r."requestedAt", x."createdAt")`,
+    targetDateExpr: `x.date::text`,
+    extra: `'className', c.name, 'source', COALESCE(r.source, 'STAFF'), 'period', (x."periodId" IS NOT NULL),
+            'photoCount', (SELECT COUNT(*)::int FROM "RegularAbsenceEvidence" e WHERE e."absenceId" = x.id AND e."removedAt" IS NULL),
+            'creditStatus', (SELECT mc.status FROM "MakeupCredit" mc WHERE mc."studentId" = x."studentId"
+                              AND mc."sourceKey" = 'REGULAR:' || x."classId" || ':' || to_char(x.date, 'YYYY-MM-DD') LIMIT 1)`,
+    // 마이그레이션(20261114130000) 적용 전: 검토 표가 없다 — 이 종류만 비운다(다른 종류·메뉴 숫자는 그대로)
+    fallback: {
+      from: `"RegularAbsence" x ${studentJoin("s", `x."studentId"`)}`,
+      where: "false",
+      rawExpr: `'NOT_READY'::text`,
+      createdAtExpr: `x."createdAt"`,
+      extra: `'className', NULL`,
+    },
+    format: (row, e) => {
+      const photos = Number(e.photoCount ?? 0);
+      const source = e.period ? "학원 등록(기간 결석)" : ILLNESS_SOURCE[text(e.source)] ?? "학원 등록";
+      const evidence = photos > 0 ? `사진 ${photos}장` : e.source === "STAFF" ? "학부모 증빙 없음" : "사진 아직 없음";
+      return {
+        title: "질병·부상 결석",
+        summary: join(row.targetDate, e.className, evidence),
+        facts: [...fact("결석일", row.targetDate), ...fact("반", e.className), ["접수", source], ["증빙", evidence],
+          ...fact("보강권", CREDIT_LABEL[text(e.creditStatus)]),
+          ...(row.raw === "WAITING" ? [["안내", "결석일이 지난 뒤에 이월을 승인할 수 있습니다."] as InboxFact] : [])],
+        ref: { source: text(e.source) || "STAFF", photoCount: String(photos), creditStatus: text(e.creditStatus) || null },
+      };
+    },
   },
   {
     kind: "MAKEUP",
@@ -495,6 +543,8 @@ function inboxRowsSql(adapter: Adapter, settlementTableReady: boolean): string {
 }
 
 const inboxSettlementTableReady = cache(() => settlementTablesReady(prisma).catch(() => false));
+// 질병·부상 이월 검토 표(마이그레이션 20261114130000)가 있는가 — 없으면 그 종류만 예전 식(빈 목록)으로 센다
+const inboxIllnessTableReady = cache(() => illnessReviewReady(prisma).catch(() => false));
 
 export type InboxQuery = {
   bucket: InboxBucket;
@@ -601,9 +651,10 @@ function enrollmentChangeMembers(row: RawRow, extra: Record<string, unknown>): I
  * 처리 필요·진행 중 개수를 세는 SQL — 종류별 조각을 UNION ALL 로 붙여 «한 번»에 센다.
  * legacy=true 면 마이그레이션 전 식(fallback)으로 만든다.
  */
-export function buildInboxCountsSql(legacy = false, settlementTableReady = false): string {
+export function buildInboxCountsSql(legacy = false, settlementTableReady = false, illnessTableReady = true): string {
   const pieces = ADAPTERS.filter((original) => !original.skipCount).map((original) => {
-    const adapter = legacy ? legacyOf(original) : original;
+    // 질병·부상 검토 표가 아직 없으면 그 종류만 예전 식으로 — 새 표 하나 때문에 메뉴 숫자 전체가 예전 식으로 떨어지지 않게
+    const adapter = legacy || (original.kind === "ILLNESS_CARRY" && !illnessTableReady) ? legacyOf(original) : original;
     const open = [...statusesOf(adapter.kind, "ACTION"), ...statusesOf(adapter.kind, "ONGOING")];
     const rows = adapter.kind === "ENROLLMENT_CHANGE"
       ? inboxRowsSql(adapter, settlementTableReady)
@@ -652,7 +703,7 @@ async function readInboxCounts(): Promise<InboxCounts | null> {
   type CountRow = { kind: RequestKind; raw: string; n: number };
   const readCatalog = async (): Promise<CountRow[] | null> => {
     try {
-      return await prisma.$queryRawUnsafe<CountRow[]>(buildInboxCountsSql(false, await inboxSettlementTableReady()));
+      return await prisma.$queryRawUnsafe<CountRow[]>(buildInboxCountsSql(false, await inboxSettlementTableReady(), await inboxIllnessTableReady()));
     } catch (error) {
       // 취소 요청 칸(마이그레이션 20261110130000) 적용 전이면 예전 식으로 다시 센다
       try {

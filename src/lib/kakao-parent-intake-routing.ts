@@ -136,6 +136,8 @@ async function routeOne(intake: ClaimedIntake): Promise<"APPLIED" | "HELD" | "FA
         classId: text(checked.data.classId),
         date: text(checked.data.date),
         reason: text(checked.data.reason),
+        // 카카오 접수 — 질병·부상이면 사유 글·사진 없이 «이월 검토»로 들어가고, 학부모가 앱에서 사진을 올린다
+        source: "KAKAO",
       });
       delivery = result.notification;
     } else {
