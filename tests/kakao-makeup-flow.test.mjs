@@ -177,7 +177,7 @@ function makeDb({ credits = null, students = null } = {}) {
       }));
     }
     // 그 학생이 이미 다니는 반
-    if (/SELECT e\."classId" AS "classId" FROM "Enrollment" e WHERE e\."studentId" = \$1 AND e\.status = 'ACTIVE'/.test(sql)) {
+    if (/SELECT e\."classId" AS "classId" FROM "Enrollment" e WHERE e\."studentId" = \$1 AND e\.status IN \('ACTIVE', 'PAUSED'\)/.test(sql)) {
       return (db.enrollments ?? []).filter((row) => row.studentId === args[0]).map((row) => ({ classId: row.classId }));
     }
     // 반·날짜별 보강 예약 수(취소 제외, 오늘 KST 자정 이후) — makeupDate 는 timestamptz 라 KST 변환 한 번

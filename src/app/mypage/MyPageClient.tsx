@@ -275,12 +275,21 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                 window.location.replace(moved);
                 return;
             }
+            // 다른 화면의 «학원에 문의» 버튼(/mypage#parent-request-form)으로 오면 메시지 폼을 펴서 보인다
+            // (폼은 접혀 있으면 화면에 없어서, 펴지 않으면 갈 자리가 없다)
+            if (id === "parent-request-form") setShowRequestForm(true);
             requestAnimationFrame(() => scrollToSection(id));
         };
         revealHash();
         window.addEventListener("hashchange", revealHash);
         return () => window.removeEventListener("hashchange", revealHash);
     }, []);
+
+    // 메시지 폼이 «펴진 뒤»에 그 자리로 간다 — 폼은 펴져야 화면에 생기므로, 펴는 것과 같은 순간에 찾으면 아직 없다.
+    // (주소가 #parent-request-form 일 때만. 홈에서 «문의»를 직접 누른 경우는 openRequestForm 이 맡는다)
+    useEffect(() => {
+        if (showRequestForm && window.location.hash === "#parent-request-form") scrollToSection("parent-request-form");
+    }, [showRequestForm]);
 
     function openRequests() {
         // 보낸 메시지 목록을 펼치고 그 자리로

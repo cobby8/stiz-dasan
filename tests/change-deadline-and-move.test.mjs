@@ -244,7 +244,8 @@ function makeDb(overrides = {}) {
   const kstOnce = (sql) => {
     // timestamptz → KST 변환은 «한 번»(두 번 걸면 9시간 밀린다)
     assert.match(sql, /"makeupDate" AT TIME ZONE 'Asia\/Seoul'/);
-    assert.doesNotMatch(sql, /AT TIME ZONE 'UTC'/);
+    // (main 병합: 같은 문장이 학생 생년월일 — 시간대 없는 timestamp — 을 «두 번» 변환해 읽는다. 그쪽은 맞는 규칙이라 makeupDate 만 본다)
+    assert.doesNotMatch(sql, /"makeupDate" AT TIME ZONE 'UTC'|"makeupDate"\) AT TIME ZONE/);
   };
 
   async function $queryRawUnsafe(sql, ...args) {
@@ -348,8 +349,9 @@ function makeDb(overrides = {}) {
         gradesJson: JSON.stringify(c.grades), gradeRangeText: null, enrolled: c.enrolled,
       }));
     }
-    if (/SELECT e\."classId" AS "classId" FROM "Enrollment" e WHERE e\."studentId" = \$1 AND e\.status = 'ACTIVE'/.test(sql)) {
-      return db.enrollments.filter((e) => e.studentId === args[0] && e.status === "ACTIVE").map((e) => ({ classId: e.classId }));
+    // main 병합: 수강 중인 반 = 다니는 반 + 휴원 중인 자기 반(ACTIVE·PAUSED) — 둘 다 보강 후보에서 뺀다
+    if (/SELECT e\."classId" AS "classId" FROM "Enrollment" e WHERE e\."studentId" = \$1 AND e\.status IN \('ACTIVE', 'PAUSED'\)/.test(sql)) {
+      return db.enrollments.filter((e) => e.studentId === args[0] && ["ACTIVE", "PAUSED"].includes(e.status)).map((e) => ({ classId: e.classId }));
     }
     if (/FROM "MakeupSession" m/.test(sql) && /GROUP BY 1, 2/.test(sql)) {
       const counts = new Map();
@@ -1178,7 +1180,9 @@ test("화면 세 곳: «날짜 바꾸기» 글자 버튼 + 그 자리에서 고�
   assert.match(shuttleUi, /action: "move",\s*id: item\.id,\s*serviceDate: moveDate,/);
   assert.match(shuttleUi, /event\.stopPropagation\(\);\s*setMoveDate\(""\);\s*setMoveId\(item\.id\);/);
   // 보강: 반·날짜 후보를 다시 불러 고른다
-  assert.match(makeupUi, /fetchMakeupOptions\(credit\.id, mode === "move"\)/);
+  // (main 병합: 불러오기는 «다시 확인»과 함께 쓰는 load(creditId, mode) 한 곳)
+  assert.match(makeupUi, /fetchMakeupOptions\(creditId, mode === "move"\)/);
+  assert.match(makeupUi, /await load\(credit\.id, mode\);/);
   assert.match(makeupUi, /rescheduleMakeupAction\(\{ creditId, classId: pick\.classId, dateYmd: pick\.ymd \}\)/);
   assert.match(makeupUi, /c\.booking\.changeOpen === false \? \(/);
   assert.match(makeupUi, /onClick=\{\(\) => reschedule\(c\.id\)\}[\s\S]{0,160}className="academy-button-primary w-full"[\s\S]{0,60}이 날짜로 바꾸기/);
