@@ -11,6 +11,7 @@
  * - 유입 통계·안내 설정·입학 점검은 오른쪽 위 ⚙ «신청 설정»으로(k4).
  */
 
+import UiIcon from "@/components/common/UiIcon";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -526,8 +527,9 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
             );
           })}
         </nav>
-        <Link href="/admin/inbox/settings" prefetch={false} className="academy-button-secondary col-start-2 row-start-1 whitespace-nowrap md:col-start-3" aria-label="신청 설정(유입 통계·안내 설정·입학 점검)">
-          신청 설정
+        <Link href="/admin/inbox/settings" prefetch={false} className="academy-button-secondary col-start-2 row-start-1 min-h-11! min-w-11! justify-center px-0! md:col-start-3" aria-label="신청 설정(유입 통계·안내 설정·입학 점검)" title="신청 설정">
+          {/* 2026-11-15 아이콘 예외(설정 = 톱니) — 글자가 없으니 이름은 aria-label */}
+          <UiIcon name="settings" size={24} />
         </Link>
       </header>
 
@@ -688,7 +690,7 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
           ) : null}
           <button type="button" onClick={() => go({ done: !showDone })} aria-expanded={showDone} className="academy-button-text">
             {showDone ? "완료 접기" : "완료 보기"}
-            <span aria-hidden="true">{showDone ? "▴" : "▾"}</span>
+            <UiIcon name={showDone ? "expand_less" : "expand_more"} />
           </button>
         </>
       )}

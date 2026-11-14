@@ -12,6 +12,7 @@
  *   + FAQ, 이용약관은 "소식/안내" 드롭다운 하위에 배치
  */
 
+import UiIcon from "@/components/common/UiIcon";
 import { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -296,7 +297,7 @@ export default function PublicHeader({
                 >
                   {group.label}
                   {/* 화살표 — hover 시 회전 */}
-                  <span aria-hidden="true" className="inline-flex items-center justify-center leading-none transition-transform duration-200 group-hover:rotate-180">▾</span>
+                  <UiIcon name="expand_more" className="transition-transform duration-200 group-hover:rotate-180 group-focus-within:rotate-180" />
                 </button>
 
                 {/* 드롭다운 패널 — group-hover로 보이기/숨기기 */}

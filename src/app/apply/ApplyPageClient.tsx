@@ -1,5 +1,6 @@
 "use client";
 
+import UiIcon from "@/components/common/UiIcon";
 import { useState } from "react";
 import Link from "next/link";
 import Card from "@/components/ui/Card";
@@ -86,8 +87,8 @@ function FAQItem({ question, answer }: { question: string; answer: string }) {
                 className="w-full flex items-center justify-between py-5 px-1 text-left hover:text-[var(--color-public-accent)] dark:hover:text-brand-neon-lime transition-colors cursor-pointer"
             >
                 <span className="font-semibold text-[var(--color-public-ink)] dark:text-white pr-4">{question}</span>
-                {/* 2026-11-14 아이콘 완전 제거: 화살표 대신 글자로 상태를 말한다 */}
-                <span aria-hidden="true" className="shrink-0 text-sm text-[var(--color-public-muted)]">{isOpen ? "접기" : "펼치기"}</span>
+                {/* 2026-11-15 아이콘 예외(펼침 화살표): 접힘 = 아래, 펼침 = 위. 이름은 질문 글자가 준다 */}
+                <span className="inline-flex shrink-0 text-[var(--color-public-muted)]"><UiIcon name={isOpen ? "expand_less" : "expand_more"} /></span>
             </button>
             {/* 답변 영역 — isOpen일 때만 표시 */}
             {isOpen && (

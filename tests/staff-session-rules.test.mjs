@@ -117,7 +117,8 @@ test("b6 진행 중 수업으로 이동하기 전에 안내를 보인다", () =>
 });
 
 test("G11 특강 미리 작성은 회차를 보내고, 사진 권한은 수업 시작·출석과 같은 함수", () => {
-  assert.match(home, /contentTarget\.sessionDateId \? \{ sessionDateId: contentTarget\.sessionDateId \}/);
+  // 2026-11-15 선생님 수업 화면 한 화면 구조: «미리 작성» 창이 수업 줄 안의 통합 글칸으로 옮겨졌다 — 회차를 함께 보내는 약속은 그대로.
+  assert.match(home, /savePlannedClassContent\(\{[\s\S]{0,160}lesson\.sessionDateId \? \{ sessionDateId: lesson\.sessionDateId \}/);
   assert.doesNotMatch(photos, /requireStaffClassAccess/);
   assert.equal((photos.match(/requireStaffSessionAccess\(sessionId\)/g) ?? []).length, 2);
   assert.match(photoItem, /requireManageablePhoto[\s\S]*?await requireStaffSessionAccess\(sessionId\)/);

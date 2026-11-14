@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import UiIcon from "@/components/common/UiIcon";
 
 const NOTIFICATION_CACHE_MS = 60_000;
 
@@ -114,11 +115,12 @@ export default function AdminNotificationBell() {
                 type="button"
                 onClick={handleToggle}
                 aria-expanded={open}
-                // 글자 버튼 «알림» + 안 읽은 건수(2026-11-14 아이콘 완전 제거). 건수는 글자 옆에 나란히 둔다
-                className="academy-button-text academy-button-sm min-h-11! shrink-0 whitespace-nowrap"
+                // 종 아이콘 + 안 읽은 건수(2026-11-15 아이콘 예외: 알림 = 종). 글자가 없으니 이름은 aria-label, 누르는 영역 44×44
+                className="academy-button-text academy-button-sm min-h-11! min-w-11! shrink-0 justify-center whitespace-nowrap"
                 aria-label={unreadCount > 0 ? `알림, 안 읽은 알림 ${unreadCount}건` : "알림"}
+                title="알림"
             >
-                알림
+                <UiIcon name="notifications" size={24} />
                 {unreadCount > 0 && (
                     <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[var(--color-academy-danger)] px-1 text-xs font-semibold tabular-nums text-white">
                         {unreadCount > 99 ? "99+" : unreadCount}

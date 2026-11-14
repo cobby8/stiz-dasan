@@ -149,6 +149,8 @@ function renderClasses(props, timelineMock) {
     "../history/ScheduleHub": scheduleHub, "@/lib/mypage/parentSchedule": parentSchedule,
     // 아이 기억(주소·localStorage)은 브라우저에서만 — 서버 그리기는 서버가 고른 아이(initialChildId) 그대로
     "../useRememberedChild": { useRememberedChild: (_ids, init) => [init, () => {}] },
+    // 2026-11-15 아이콘 예외(화살표·종·톱니): 공용 아이콘 부품은 실제 코드를 그대로 쓴다
+    "@/components/common/UiIcon": load("src/components/common/UiIcon.tsx"),
   }).default;
   return renderToStaticMarkup(React.createElement(Client, props));
 }

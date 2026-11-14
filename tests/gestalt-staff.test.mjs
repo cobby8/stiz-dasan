@@ -52,7 +52,9 @@ test("T-02 선생님 탑승: 탑승(넓게)|미탑승 12px, 대기는 아래 되
 test("T-03 출석부: 출석 success·지각 warning·결석 danger + 아이콘, 12px 간격, 이름 옆 같은 색 알약", () => {
   assert.match(session, /PRESENT: "success",\s*LATE: "warning",\s*ABSENT: "danger"/);
   // 2026-11-14 아이콘 완전 제거: 아이콘 이름 표(STATUS_ICON)를 없앴다 — 버튼·알약은 글자(출석·지각·결석·미확인)만 보인다.
+  // 2026-11-15 선생님 수업 화면 한 화면 구조: 아이콘 글꼴을 직접 쓰지 않는 것은 그대로, 펼침 화살표만 공용 UiIcon 으로 허용(원장 지정 예외).
   assert.doesNotMatch(session, /STATUS_ICON|icon=|material-symbols-outlined/);
+  assert.deepEqual([...new Set([...session.matchAll(/<UiIcon name=\{[^}]*\}/g)].map((m) => m[0]))], ['<UiIcon name={infoOpen ? "expand_less" : "expand_more"}', '<UiIcon name={showPlan ? "expand_less" : "expand_more"}'], "수업 화면의 아이콘은 펼침 화살표뿐이다");
   assert.match(session, /<StatusPill tone="neutral">미확인<\/StatusPill>/);
   assert.match(session, /grid grid-cols-3 gap-3">\s*\{\(\["PRESENT", "LATE", "ABSENT"\] as AttendanceStatus\[\]\)\.map\(\(status\) => \(\s*<StatusChoiceButton/);
   assert.match(session, /<StatusPill tone=\{STATUS_TONE\[student\.status\]\}/);
@@ -92,14 +94,22 @@ test("T-07 진행 알약: 수업 진행·홈·기사님 헤더가 같은 LiveSta
   assert.match(driver, /runState === "running" && <LiveStatusPill>운행 중<\/LiveStatusPill>/);
 });
 
-test("T-06 수업 화면 보조 버튼: 메모 저장 secondary, 미확인 0명이면 출석부 확인도 secondary", () => {
+test("T-06 수업 화면 보조 버튼: 메모 저장 secondary, 미확인 0명이면 전체 출석도 secondary", async () => {
   assert.match(session, /className="academy-button-secondary[^"]*">메모 지금 저장/);
-  assert.match(session, /counts\.UNCHECKED > 0 \? "academy-button-primary" : "academy-button-secondary"/);
+  // 2026-11-15 선생님 수업 화면 한 화면 구조: «출석부 확인» 이동 버튼이 없어지고 출석부 칸 안의 «전체 출석»이 그 자리를 잇는다 —
+  // 확인할 학생이 남았을 때만 꽉 찬 버튼, 다 끝났으면 보조 버튼(같은 규칙).
+  assert.match(session, /onClick=\{markAllPresent\} className=\{`\$\{counts\.UNCHECKED > 0 \? "academy-button-primary" : "academy-button-secondary"\} min-h-12! w-full`\}/);
+  // 수업 종료는 위험색이 아닌 보조 버튼, 아래 막대 세 버튼은 같은 등급(옅은 바탕) — 꽉 찬 주 버튼은 하나뿐
+  assert.match(session, /<button id="session-end"[\s\S]{0,200}className="academy-button-secondary [^"]*">수업 종료<\/button>/);
+  assert.doesNotMatch(await read("src/components/staff/SessionMediaBar.tsx"), /academy-button-primary/);
 });
 
-test("T-08 홈: 경고 상자 대신 카드 안 한 줄 안내, 진행 중 카드 주황 2px", () => {
+test("T-08 홈: 경고 상자 대신 카드 안 한 줄 안내, 진행 중 카드 주황 2px", async () => {
   assert.doesNotMatch(home, /bg-amber-50 p-4 text-sm font-bold leading-6 text-amber-900/);
-  assert.match(home, /수업으로 돌아가기" : "수업 시작"\}\s*<\/button>[\s\S]{0,200}\{runningClass && \(\s*<p role="status" className="text-xs text-\[var\(--color-academy-muted\)\]">/);
+  // 2026-11-15 선생님 수업 화면 한 화면 구조: 시작 버튼과 잠금 안내 한 줄이 수업 줄 본문(시작 전 칸)으로 옮겨졌다 — 버튼 바로 아래 한 줄(근접성)은 그대로.
+  const panels = await read("src/components/staff/LessonWorkspacePanels.tsx");
+  assert.match(panels, /"현재 수업 종료 후 시작" : starting \? "수업 내용 저장 중…" : "수업 시작"\}\s*<\/button>\s*\{startLocked && <p role="status" className="mt-1 text-xs text-\[var\(--color-academy-muted\)\]">/);
+  assert.match(home, /startLocked: Boolean\(runningClass\),/);
   // 2026-11-13 UI 통일: 진행 중 카드 테두리 = 보조 색(«지금 이것»). 안내 줄 굵기는 본문(굵기 클래스 없음).
   assert.match(home, /\{ border: "2px solid var\(--color-academy-secondary-strong\)" \}/);
   // 시작 잠금은 그대로

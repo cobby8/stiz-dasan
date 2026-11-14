@@ -11,6 +11,7 @@ import ParentNotificationBell from "./ParentNotificationBell";
 import { getNotifications, getUnreadNotificationCount } from "@/lib/queries";
 import { FONT_SCALE_COOKIE, fontScalePercent, parseFontScale } from "@/lib/mypage/parentSettings";
 import AcademyTheme from "@/components/academy/AcademyTheme";
+import UiIcon from "@/components/common/UiIcon";
 import AccountLinks from "@/components/account/AccountLinks";
 import AccountViewSwitcher from "@/components/AccountViewSwitcher";
 import { getAccountViewAccess } from "@/lib/account-view-access";
@@ -53,14 +54,15 @@ export default async function MyPageLayout({
     const bellItems = notifications.map((n) => ({
         id: n.id, type: n.type, title: n.title, message: n.message, linkUrl: n.linkUrl, isRead: n.isRead, createdAt: n.createdAt,
     }));
-    // «설정» 버튼 — 예전 «⋯» 메뉴 자리. 2026-11-13 UI 통일: 톱니 아이콘 → 글자. 누르는 높이 44px
+    // «설정» 버튼 — 예전 «⋯» 메뉴 자리. 2026-11-15 아이콘 예외(설정 = 톱니): 글자 → 톱니. 이름은 aria-label, 누르는 영역 44×44
     const settingsLink = (
         <Link
             href="/mypage/settings"
             aria-label="설정"
-            className="inline-flex min-h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-lg px-2 text-sm font-medium text-[var(--color-academy-muted)] transition-colors hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)]"
+            title="설정"
+            className="inline-flex size-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] transition-colors hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)]"
         >
-            설정
+            <UiIcon name="settings" size={24} />
         </Link>
     );
 

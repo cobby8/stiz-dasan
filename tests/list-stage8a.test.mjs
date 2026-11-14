@@ -66,18 +66,26 @@ test("선생님 특강: 한 줄 행(시간·반·인원 오른쪽·행동 버튼
 
 const homeClient = read("../src/app/staff/StaffHomeClient.tsx");
 
-test("선생님 홈: 남은·완료 수업은 한 줄 행 + 시트, 시작 잠금·빠른 메뉴 4개는 같은 함수 그대로", () => {
+// 2026-11-15 선생님 수업 화면 한 화면 구조: 행을 누르면 아래 시트 대신 «그 자리에서» 수업 칸이 펼쳐진다(원장 지시 — 이동했다 돌아오는 게 불편).
+// 한 줄 행·키보드·전파 차단·시작 잠금·공지 발송은 그대로 지킨다.
+test("선생님 홈: 남은·완료 수업은 한 줄 행 + 그 자리 펼침, 시작 잠금·수업 메뉴는 같은 함수 그대로", () => {
   assert.match(homeClient, /<ul aria-label="남은 수업 목록"/);
   assert.match(homeClient, /<ul aria-label="완료한 수업 목록"/);
   assert.doesNotMatch(homeClient, /CompactClassCard/);
-  assert.match(homeClient, /<ListDetailPanel onClose=\{onClose\} titleId="staff-class-detail-title"/);
+  // 아래 시트·페이지 이동이 아니라 줄 아래 본문(aria-expanded + aria-controls)
+  assert.doesNotMatch(homeClient, /ListDetailPanel|ClassDetailSheet/);
+  assert.match(homeClient, /function ClassRow[\s\S]*?aria-expanded=\{expanded\}\s+aria-controls=\{lessonBodyId\(lesson\)\}/);
+  assert.match(homeClient, /<UiIcon name=\{expanded \? "expand_less" : "expand_more"\} \/>/);
   // 행 키보드는 안쪽 버튼을 가로채지 않고, 행 안 시작 버튼은 전파 차단
   assert.match(homeClient, /function ClassRow[\s\S]*?if \(event\.target !== event\.currentTarget\) return;/);
   assert.match(homeClient, /onClick=\{\(event\) => \{ event\.stopPropagation\(\); onStart\(lesson\); \}\}/);
-  // 시트의 동작은 기존 함수로(시트를 먼저 닫고)
-  assert.match(homeClient, /setDetailTarget\(null\);\s*if \(action === "start"\) openPrimaryAction\(lesson\);\s*else if \(action === "content"\) openContent\(lesson\);\s*else if \(action === "feed"\) openFeed\(lesson\);\s*else if \(action === "contacts"\) openContacts\(lesson\);\s*else if \(action === "billing"\) \{ if \(showFees\) setBillingTarget\(\{ lesson \}\); \}\s*else \{ setError\(null\); setNoticeTarget\(lesson\); \}/);
-  // 시트 시작 버튼도 진행 중 수업이 있으면 잠근다
-  assert.match(homeClient, /startLocked=\{Boolean\(runningClass && detailTarget\.sessionStatus !== "IN_PROGRESS"\)\}/);
+  // 본문의 동작은 기존 함수로: 시작 = openPrimaryAction, 수업 내용 = savePlanned, 청구 = setBillingTarget(원장·부원장만), 공지 = setNoticeTarget(대타 반 제외)
+  assert.match(homeClient, /onStart: \(\) => openPrimaryAction\(lesson\),\s*savePlanned: \(text\) => savePlanned\(lesson, text\),\s*onOpenNotice: openNotice,\s*onOpenBilling: openBilling,/);
+  assert.match(homeClient, /const openNotice = lesson\.substitute \? undefined : \(\) => \{ setError\(null\); setNoticeTarget\(lesson\); \};/);
+  assert.match(homeClient, /const openBilling = showFees \? /);
+  // 본문의 시작 버튼도 진행 중 수업이 있으면 잠근다(행의 시작 버튼 잠금은 위 startLocked 그대로)
+  assert.match(homeClient, /startLocked: Boolean\(runningClass\),/);
+  assert.match(homeClient, /startLocked=\{Boolean\(runningClass && lesson\.sessionStatus !== "IN_PROGRESS"\)\}/);
   // 시간·인원은 tabular-nums, 인원은 오른쪽
   // 2026-11-13 UI 통일: 인원 칸은 본문 굵기(굵기 클래스 없음)
   assert.match(homeClient, /text-right text-xs tabular-nums[^"]*">\{lesson\.studentCount\}명/);

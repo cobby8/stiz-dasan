@@ -1,5 +1,6 @@
 "use client";
 
+import UiIcon from "@/components/common/UiIcon";
 import Image from "next/image";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -154,10 +155,10 @@ export default function AdminShellClient({
                     <NavItem href="/admin/shuttle/regular-dispatch" active={isShuttlePath(pathname)} label="셔틀" />
                     {EXTRA_GROUPS.map((group) => (
                         <details key={`${group.label}-${pathname}`} className="group border-t border-[var(--color-academy-line)] pt-1" open={group.items.some((item) => isExtraItemActive(pathname, item))}>
-                            {/* 묶음 이름 — 글자만. 펼침 표시는 글자 기호 ▾(열리면 뒤집힌다) */}
+                            {/* 묶음 이름은 글자. 펼침 표시는 화살표(2026-11-15 아이콘 예외) — 열리면 뒤집힌다 */}
                             <summary className="flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-lg px-4 py-2 text-xs font-medium text-[var(--color-academy-faint)] hover:bg-[var(--color-academy-soft)]">
                                 <span className="min-w-0 flex-1">{group.label}</span>
-                                <span aria-hidden="true" className="inline-block transition-transform group-open:rotate-180">▾</span>
+                                <UiIcon name="expand_more" className="transition-transform group-open:rotate-180" />
                             </summary>
                             <div className="space-y-1 border-l border-[var(--color-academy-line)] pl-2">
                                 {group.items.map((item) => (
@@ -165,7 +166,7 @@ export default function AdminShellClient({
                                 ))}
                                 {group.label === "설정" && <>
                                     <button type="button" aria-controls="admin-system-tools" aria-expanded={systemToolsOpen} onClick={() => setSystemToolsOpen((current) => !current)} className="flex min-h-11 w-full items-center gap-3 rounded-lg px-4 py-2 text-left text-sm text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
-                                        <span className="flex-1">시스템 도구</span><span aria-hidden="true">{systemToolsOpen ? "▴" : "▾"}</span>
+                                        <span className="flex-1">시스템 도구</span><UiIcon name={systemToolsOpen ? "expand_less" : "expand_more"} />
                                     </button>
                                     {systemToolsOpen && <div id="admin-system-tools"><LazyBackupButtons sheetRetired={sheetRetired} /></div>}
                                 </>}

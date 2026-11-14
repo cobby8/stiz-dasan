@@ -117,7 +117,9 @@ test("디자인: 학원 토큰 색만 · 글자 12px 이상 · 터치 44px · �
   // 2026-11-13 UI 통일(원장 «아이콘 빼고 글자로»): 장식 아이콘을 뺐다 — 남은 아이콘은 펼침/접힘 화살표(패널)뿐이고 Material Symbols 다.
   // 2026-11-14 아이콘 완전 제거: 펼침 화살표 아이콘 → 글자 «접기»/«펼치기»(aria-expanded 는 그대로). 패널에도 아이콘 글꼴이 없다.
   assert.match(PANEL, /aria-expanded=\{expanded\}/);
-  assert.match(PANEL, /\{expanded \? "접기" : "펼치기"\}/);
+  // 2026-11-15 아이콘 예외(화살표·종·톱니): 글자 «접기»/«펼치기» → 펼침 화살표(공용 부품). 버튼 이름은 안의 «배정 필요 N명» 글자가 준다
+  assert.match(PANEL, /<UiIcon name=\{expanded \? "expand_less" : "expand_more"\} \/>/);
+  assert.match(PANEL, /aria-expanded=\{expanded\} aria-controls="new-student-dispatch-list"[\s\S]{0,400}?<span className="font-semibold">배정 필요 \{students\.length\}명<\/span>/);
   assert.doesNotMatch(PANEL, /material-symbols-outlined/);
   assert.doesNotMatch(LEG, /material-symbols-outlined/);
   assert.match(PANEL, /const CHIP = "inline-flex min-h-11/);

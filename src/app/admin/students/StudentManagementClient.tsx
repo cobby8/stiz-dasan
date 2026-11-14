@@ -1,4 +1,5 @@
 "use client";
+import UiIcon from "@/components/common/UiIcon";
 import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -1152,7 +1153,7 @@ export default function StudentManagementClient({
                                     <span className="ml-auto text-xs tabular-nums text-[var(--color-academy-ink)]">
                                         {`${group.students.length}명`}
                                     </span>
-                                    <span className="text-[var(--color-academy-muted)]" aria-hidden="true">{collapsed ? "▾" : "▴"}</span>
+                                    <span className="inline-flex shrink-0 text-[var(--color-academy-muted)]"><UiIcon name={!collapsed ? "expand_less" : "expand_more"} /></span>
                                 </button>
                                 {/* 학생 한 줄 행: 이름 · 학년 · 학교 · 학부모 연락처. 행을 누르면 목록과 같은 상세 패널 */}
                                 {!collapsed && (
