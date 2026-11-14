@@ -35,7 +35,7 @@ test('«홈페이지 보기»는 메뉴 묶음이 아니라 맨 아래(로그아
 // 탭 연결 표 — 사이드바 메뉴(부모) → 묶인 화면들(탭)
 const PARENT = { attendance: '/admin/attendance', finance: '/admin/finance', homepage: '/admin/settings', messaging: '/admin/sms', policy: '/admin/terms' };
 const EXPECTED_TABS = {
-  attendance: ['/admin/attendance', '/admin/absence', '/admin/makeup', '/admin/attendance/report'],
+  attendance: ['/admin/attendance', '/admin/absence', '/admin/makeup', '/admin/attendance/report', '/admin/attendance/feed'],
   finance: ['/admin/finance', '/admin/payment-requests', '/admin/payment-confirmations', '/admin/pos-reconcile'],
   homepage: ['/admin/settings', '/admin/coaches', '/admin/programs', '/admin/gallery', '/admin/media-revocations', '/admin/faq', '/admin/testimonials'],
   messaging: ['/admin/sms', '/admin/notification-deliveries', '/admin/kakao-policy'],
