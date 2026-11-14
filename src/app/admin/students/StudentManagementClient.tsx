@@ -1,4 +1,5 @@
 "use client";
+import AbsencePeriodQuickCreate from "@/components/admin/AbsencePeriodQuickCreate";
 import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -402,6 +403,8 @@ export default function StudentManagementClient({
     const [busy, setBusy] = useState(false);
     const [search, setSearch] = useState("");
     const [enrollModal, setEnrollModal] = useState<string | null>(null);
+    // ⚡ «기간 결석 등록»(2026-11-15) — 그 원생의 등록 창을 바로 연다
+    const [absencePeriodFor, setAbsencePeriodFor] = useState<string | null>(null);
     // 엑셀 업로드 모달 열기/닫기 상태
     const [showExcelUpload, setShowExcelUpload] = useState(false);
 
@@ -760,6 +763,13 @@ export default function StudentManagementClient({
                 label: "수정",
                 icon: "edit",
                 onSelect: () => startEdit(s),
+            },
+            {
+                // 부상·질병 등으로 며칠 쉬는 원생 — 학생 상세의 등록 창을 그대로 연다
+                key: "absence-period",
+                label: "기간 결석 등록",
+                icon: "event_busy",
+                onSelect: () => setAbsencePeriodFor(s.id),
             },
             {
                 key: "delete",
@@ -1391,6 +1401,13 @@ export default function StudentManagementClient({
             })()}
 
             {/* 수강 등록 모달 — 프로그램별 그룹화 + 요일/시간 표시 */}
+            {absencePeriodFor && (
+                <AbsencePeriodQuickCreate
+                    presetStudentId={absencePeriodFor}
+                    onClose={() => setAbsencePeriodFor(null)}
+                    onDone={() => setAbsencePeriodFor(null)}
+                />
+            )}
             {enrollModal && (
                 <AdminModal onClose={() => setEnrollModal(null)} titleId="student-enroll-title" panelClassName="max-w-lg p-6">
                         <h3 id="student-enroll-title" className="font-bold text-lg text-[var(--color-academy-ink)] mb-4">

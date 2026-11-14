@@ -14,7 +14,7 @@ import { useEffect, useState, useTransition } from "react";
 import AdminModal from "@/components/admin/AdminModal";
 import { kstAt, kstLabel } from "@/lib/datetime/kst";
 import { useAdminConfirm } from "@/components/admin/AdminConfirmDialog";
-import { approveIllnessCarryAction, convertIllnessCarryAction, loadIllnessCarryDetail } from "@/app/actions/illness-carry-admin";
+import { approveIllnessCarryAction, approveIllnessCarryPeriodAction, convertIllnessCarryAction, loadIllnessCarryDetail } from "@/app/actions/illness-carry-admin";
 import type { IllnessCarryDetail } from "@/lib/regular/illness-carry-admin";
 
 type Props = { absenceId: string; studentName: string; onChanged: () => void };
@@ -69,6 +69,27 @@ export default function IllnessCarryInboxDetail({ absenceId, studentName, onChan
     if (!ok) return;
     startTransition(async () => {
       const result = await approveIllnessCarryAction({ absenceId, evidenceConfirmed: true, cancelReservation: reserved })
+        .catch(() => ({ ok: false as const, message: "이월을 승인하지 못했습니다. 잠시 뒤 다시 시도해 주세요." }));
+      setMessage({ tone: result.ok ? "ok" : "error", text: result.message });
+      await reload();
+      if (result.ok) onChanged();
+    });
+  }
+
+  // 학부모가 «여러 날»로 알린 결석 — 결석일이 지난 같은 기간의 결석들을 한 번에 승인(건마다 [이월 승인]과 같은 처리)
+  async function approvePeriod() {
+    if (!detail) return;
+    const total = detail.periodPeerIds.length + (detail.blocker ? 0 : 1);
+    const ok = await confirm({
+      title: `${studentName} · 같은 기간 결석 ${total}건 이월 승인`,
+      description: `결석일이 지난 ${total}건을 함께 승인합니다. 건마다 다음 달 수강료에서 1회분을 빼 드립니다. 보강 예약이 있는 결석은 빠지니 따로 승인해 주세요.`,
+      confirmLabel: `${total}건 이월 승인`,
+      tone: "primary",
+      acknowledgeLabel: hasPhotos ? "증빙 사진을 확인했습니다" : "증빙(진단서·처방전 등)을 직접 확인했습니다",
+    });
+    if (!ok) return;
+    startTransition(async () => {
+      const result = await approveIllnessCarryPeriodAction({ absenceId, evidenceConfirmed: true })
         .catch(() => ({ ok: false as const, message: "이월을 승인하지 못했습니다. 잠시 뒤 다시 시도해 주세요." }));
       setMessage({ tone: result.ok ? "ok" : "error", text: result.message });
       await reload();
@@ -145,6 +166,15 @@ export default function IllnessCarryInboxDetail({ absenceId, studentName, onChan
             <button type="button" disabled={pending} onClick={() => void toMakeup()} className="academy-button-secondary">보강권으로</button>
             <button type="button" disabled={pending || Boolean(detail.blocker)} onClick={() => void approve()} className="academy-button-primary">이월 승인</button>
           </div>
+          {/* 여러 날 결석: 결석일이 지난 같은 기간의 다른 결석이 있으면 한 번에 승인 */}
+          {detail.periodPeerIds.length > 0 && (
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <span className="text-xs text-[var(--color-academy-muted)]">같은 기간(여러 날 결석)의 결석이 더 있습니다.</span>
+              <button type="button" disabled={pending} onClick={() => void approvePeriod()} className="academy-button-secondary">
+                같은 기간 {detail.periodPeerIds.length + (detail.blocker ? 0 : 1)}건 함께 승인
+              </button>
+            </div>
+          )}
         </>
       ) : (
         <p className="text-sm text-[var(--color-academy-muted)]">

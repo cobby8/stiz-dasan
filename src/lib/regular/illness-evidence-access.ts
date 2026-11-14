@@ -6,7 +6,9 @@
 // DB 는 인자(db)로만 받는다 — 테스트가 가짜 db 로 권한 조건을 실제 실행해 본다.
 // accessSql 은 호출부가 childAccessSql("s", "$1") 로 만든 조각이다($1 = 로그인한 학부모 계정).
 import { notMergedStudent } from "@/lib/studentVisibility";
-import { ILLNESS_REASON, canAddEvidence, canEditEvidence, EVIDENCE_MAX_PHOTOS } from "@/lib/regular/illnessCarryRules";
+import {
+  ILLNESS_REASON, canAddEvidence, canEditEvidence, evidenceAnchorYmdSql, evidenceScopeSql, EVIDENCE_MAX_PHOTOS,
+} from "@/lib/regular/illnessCarryRules";
 
 export type EvidenceDb = {
   $queryRawUnsafe<T = unknown>(sql: string, ...values: unknown[]): Promise<T>;
@@ -29,9 +31,10 @@ export async function findEvidenceTargetForParent(
   const rows = await db.$queryRawUnsafe<EvidenceTarget[]>(
     `SELECT ra.id AS "absenceId", r.status,
             to_char(r."requestedAt" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "requestedYmd",
-            to_char(ra.date, 'YYYY-MM-DD') AS "absenceYmd",
+            -- 여러 날 결석이면 기간의 마지막 결석일이 기준이고, 사진 3장도 기간 전체로 센다(한 묶음)
+            ${evidenceAnchorYmdSql("ra")} AS "absenceYmd",
             to_char(now() AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "todayYmd",
-            (SELECT COUNT(*)::int FROM "RegularAbsenceEvidence" e WHERE e."absenceId" = ra.id AND e."removedAt" IS NULL) AS "photoCount"
+            (SELECT COUNT(*)::int FROM "RegularAbsenceEvidence" e WHERE ${evidenceScopeSql("ra", "e")} AND e."removedAt" IS NULL) AS "photoCount"
        FROM "RegularAbsence" ra
        JOIN "Student" s ON s.id = ra."studentId"
        JOIN "RegularAbsenceCarryReview" r ON r."absenceId" = ra.id
@@ -61,7 +64,7 @@ export async function findEvidenceForParent(
     `SELECT e.id, e."storageBucket" AS "storageBucket", e."storagePath" AS "storagePath", e."absenceId" AS "absenceId",
             r.status,
             to_char(r."requestedAt" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "requestedYmd",
-            to_char(ra.date, 'YYYY-MM-DD') AS "absenceYmd",
+            ${evidenceAnchorYmdSql("ra")} AS "absenceYmd",
             to_char(now() AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "todayYmd"
        FROM "RegularAbsenceEvidence" e
        JOIN "RegularAbsence" ra ON ra.id = e."absenceId"

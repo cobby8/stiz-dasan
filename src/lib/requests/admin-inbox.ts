@@ -35,6 +35,7 @@ import type { StatusTone } from "@/lib/ui/statusTones";
 // 상담 탭(신설) — 이 파일의 두 함수만 부른다. 상담 작업이 그 파일만 채운다(원장 결정 k1)
 import { countConsultAction } from "@/lib/requests/consult-inbox";
 import { illnessReviewReady } from "@/lib/regular/illness-carry-tx";
+import { evidenceScopeSql } from "@/lib/regular/illnessCarryRules";
 
 export type InboxFact = [label: string, value: string];
 export type InboxEnrollmentChangeMember = {
@@ -218,7 +219,8 @@ const ADAPTERS: Adapter[] = [
     kind: "REGULAR_ABSENCE",
     from: `"RegularAbsence" x ${studentJoin("s", `x."studentId"`)} LEFT JOIN "Class" c ON c.id = x."classId"`,
     rawExpr: "x.status",
-    where: `x."periodId" IS NULL`, // 관리자 «기간 결석»이 만든 행은 신청이 아니다
+    // 관리자 «기간 결석»이 만든 행은 신청이 아니다. 학부모가 «여러 날»로 알린 행(학부모 표시 있음)은 하루 신고와 같이 확인 대상이다
+    where: `(x."periodId" IS NULL OR x."reportedByUserId" IS NOT NULL)`,
     studentNameExpr: "s.name",
     createdAtExpr: `x."createdAt"`,
     targetDateExpr: `x.date::text`,
@@ -250,8 +252,9 @@ const ADAPTERS: Adapter[] = [
     studentNameExpr: "s.name",
     createdAtExpr: `COALESCE(r."requestedAt", x."createdAt")`,
     targetDateExpr: `x.date::text`,
-    extra: `'className', c.name, 'source', COALESCE(r.source, 'STAFF'), 'period', (x."periodId" IS NOT NULL),
-            'photoCount', (SELECT COUNT(*)::int FROM "RegularAbsenceEvidence" e WHERE e."absenceId" = x.id AND e."removedAt" IS NULL),
+    extra: `'className', c.name, 'source', COALESCE(r.source, 'STAFF'), 'period', (x."periodId" IS NOT NULL AND x."reportedByUserId" IS NULL),
+            'parentPeriod', (x."periodId" IS NOT NULL AND x."reportedByUserId" IS NOT NULL),
+            'photoCount', (SELECT COUNT(*)::int FROM "RegularAbsenceEvidence" e WHERE ${evidenceScopeSql("x", "e")} AND e."removedAt" IS NULL),
             'creditStatus', (SELECT mc.status FROM "MakeupCredit" mc WHERE mc."studentId" = x."studentId"
                               AND mc."sourceKey" = 'REGULAR:' || x."classId" || ':' || to_char(x.date, 'YYYY-MM-DD') LIMIT 1)`,
     // 마이그레이션(20261114130000) 적용 전: 검토 표가 없다 — 이 종류만 비운다(다른 종류·메뉴 숫자는 그대로)
@@ -264,7 +267,7 @@ const ADAPTERS: Adapter[] = [
     },
     format: (row, e) => {
       const photos = Number(e.photoCount ?? 0);
-      const source = e.period ? "학원 등록(기간 결석)" : ILLNESS_SOURCE[text(e.source)] ?? "학원 등록";
+      const source = e.period ? "학원 등록(기간 결석)" : e.parentPeriod ? `${ILLNESS_SOURCE[text(e.source)] ?? "학부모 앱"}(여러 날)` : ILLNESS_SOURCE[text(e.source)] ?? "학원 등록";
       const evidence = photos > 0 ? `사진 ${photos}장` : e.source === "STAFF" ? "학부모 증빙 없음" : "사진 아직 없음";
       return {
         title: "질병·부상 결석",

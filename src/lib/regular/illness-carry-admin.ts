@@ -16,7 +16,7 @@ import { readWorkbench, type WorkbenchDb, type WorkbenchTx } from "@/lib/billing
 import { resolveWorkbenchAbsence } from "@/lib/billing/workbench-absence";
 import { regularAbsenceSourceKey } from "@/lib/makeup/absence-report-credit";
 import { convertIllnessToMakeupInTx, illnessReviewReady, type ConvertOutcome } from "@/lib/regular/illness-carry-tx";
-import { ILLNESS_REASON, carryApprovalBlocker, evidenceDeadlineYmd } from "@/lib/regular/illnessCarryRules";
+import { ILLNESS_REASON, carryApprovalBlocker, evidenceAnchorYmdSql, evidenceDeadlineYmd, evidenceScopeSql } from "@/lib/regular/illnessCarryRules";
 
 type AbsenceRow = { id: string; studentId: string; classId: string; date: string; reason: string; status: string };
 
@@ -107,6 +107,11 @@ export type IllnessCarryDetail = {
   creditStatus: string | null;
   /** 지금 [이월 승인]을 누를 수 없는 이유 한 줄(없으면 null) */
   blocker: string | null;
+  /**
+   * 같은 «여러 날 결석»(기간)에서 지금 함께 승인할 수 있는 다른 결석 id — 결석일이 지났고 아직 결정 전인 것.
+   * 화면이 «같은 기간 n건 함께 승인»을 보인다. 하루 결석이면 빈 배열.
+   */
+  periodPeerIds: string[];
   /** 학부모가 사진을 올릴 수 있는 마지막 날(«YYYY-MM-DD») — 검토 중이고 학부모가 알린 결석일 때만. 지나면 보강권으로 자동 전환 */
   evidenceDeadlineYmd: string | null;
 };
@@ -125,7 +130,9 @@ export async function readIllnessCarryDetail(tx: WorkbenchTx, absenceId: string,
     : [];
   const photos = ready
     ? await tx.$queryRawUnsafe<Array<{ id: string }>>(
-        `SELECT id FROM "RegularAbsenceEvidence" WHERE "absenceId" = $1 AND "removedAt" IS NULL ORDER BY "createdAt"`, absenceId)
+        // 여러 날 결석은 기간에 올린 사진을 함께 보인다(한 묶음)
+        `SELECT e.id FROM "RegularAbsenceEvidence" e JOIN "RegularAbsence" ra ON ra.id = $1
+          WHERE ${evidenceScopeSql("ra", "e")} AND e."removedAt" IS NULL ORDER BY e."createdAt"`, absenceId)
     : [];
   const credits = await tx.$queryRawUnsafe<Array<{ status: string }>>(
     `SELECT status FROM "MakeupCredit" WHERE "studentId" = $1 AND "sourceKey" = $2 LIMIT 1`,
@@ -154,6 +161,22 @@ export async function readIllnessCarryDetail(tx: WorkbenchTx, absenceId: string,
     billReady = confirmed.length > 0;
   }
 
+  // 같은 기간의 다른 결석 중 결석일이 지났고(오늘 포함) 아직 결정 전(이월·보강 정산 없음)인 질병·부상 결석
+  const peers = ready
+    ? await tx.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT pa.id
+           FROM "RegularAbsence" me
+           JOIN "RegularAbsence" pa ON pa."periodId" = me."periodId" AND pa.id <> me.id
+           LEFT JOIN "RegularAbsenceCarryReview" pr ON pr."absenceId" = pa.id
+          WHERE me.id = $1 AND me."periodId" IS NOT NULL
+            AND pa.reason = $2 AND pa.status <> 'CANCELLED' AND pa.date <= $3::date
+            AND COALESCE(pr.status, 'PENDING') = 'PENDING'
+          ORDER BY pa.date`,
+        absenceId, ILLNESS_REASON, todayKst())
+    : [];
+  const anchors = await tx.$queryRawUnsafe<Array<{ anchorYmd: string }>>(
+    `SELECT ${evidenceAnchorYmdSql("ra")} AS "anchorYmd" FROM "RegularAbsence" ra WHERE ra.id = $1`, absenceId,
+  );
   const review = reviews[0] ?? null;
   const status = review?.status === "APPROVED" || review?.status === "MAKEUP" ? review.status : "PENDING";
   const creditStatus = credits[0]?.status ?? null;
@@ -168,9 +191,10 @@ export async function readIllnessCarryDetail(tx: WorkbenchTx, absenceId: string,
     blocker: status === "PENDING"
       ? carryApprovalBlocker({ absenceYmd: absence.date, todayYmd: todayKst(), creditStatus, billReady, writesEnabled: enabled })
       : null,
-    // 화면이 «○월 ○일까지»로 보여 준다 — 학부모 화면·자동 전환과 같은 함수
+    periodPeerIds: status === "PENDING" ? peers.map((peer) => peer.id) : [],
+    // 화면이 «○월 ○일까지»로 보여 준다 — 학부모 화면·자동 전환과 같은 함수(여러 날 결석은 기간의 마지막 결석일 기준)
     evidenceDeadlineYmd: review?.status === "PENDING" && review.source !== "STAFF" && review.requestedYmd
-      ? evidenceDeadlineYmd(review.requestedYmd, absence.date)
+      ? evidenceDeadlineYmd(review.requestedYmd, anchors[0]?.anchorYmd ?? absence.date)
       : null,
   };
 }

@@ -38,7 +38,20 @@ function fakeDb(init = {}) {
     seq: 0,
     ...init,
   };
-  const liveCount = (absenceId) => db.evidence.filter((e) => e.absenceId === absenceId && !e.removed).length;
+  // 여러 날 결석(기간): 같은 기간의 결석들은 사진을 함께 쓴다 / 기한 기준은 기간의 마지막(취소 안 된) 결석일
+  const scopeIds = (absenceId) => {
+    const me = db.absences.find((a) => a.id === absenceId);
+    return me?.periodId ? db.absences.filter((a) => a.periodId === me.periodId).map((a) => a.id) : [absenceId];
+  };
+  const liveCount = (absenceId) => db.evidence.filter((e) => scopeIds(absenceId).includes(e.absenceId) && !e.removed).length;
+  const anchorYmd = (absenceId) => {
+    const me = db.absences.find((a) => a.id === absenceId);
+    if (!me?.periodId) return me?.date;
+    return db.absences.filter((a) => a.periodId === me.periodId && a.status !== "CANCELLED").map((a) => a.date).sort().pop() ?? me.date;
+  };
+  /** 증빙을 세는 SQL 은 반드시 «기간 한 묶음» 조각을 쓴다(그 결석에 붙은 사진만 세면 기간의 다른 날이 사진 없음으로 전환된다) */
+  const assertScope = (sql) => assert.match(sql, /"absenceId" = \w+\.id OR \(\w+\."periodId" IS NOT NULL AND e\."absenceId" IN \(\s*SELECT period_absence\.id FROM "RegularAbsence" period_absence WHERE period_absence\."periodId" = \w+\."periodId"\)\)/);
+  const assertAnchor = (sql) => assert.match(sql, /to_char\(COALESCE\(\(SELECT max\(period_last\.date\) FROM "RegularAbsence" period_last\s+WHERE period_last\."periodId" = ra\."periodId" AND period_last\.status <> 'CANCELLED'\), ra\.date\), 'YYYY-MM-DD'\) AS "absenceYmd"/);
   const parentOf = (studentId) => db.students.find((s) => s.id === studentId)?.parentId;
 
   db.$queryRawUnsafe = async (sql, ...v) => {
@@ -60,7 +73,8 @@ function fakeDb(init = {}) {
     if (/SELECT status FROM "MakeupCredit" WHERE "studentId" = \$1 AND "sourceKey" = \$2 FOR UPDATE/.test(sql)) {
       return db.credits.filter((c) => c.studentId === v[0] && c.sourceKey === v[1]).map((c) => ({ status: c.status }));
     }
-    if (/SELECT COUNT\(\*\)::int AS n FROM "RegularAbsenceEvidence" WHERE "absenceId" = \$1 AND "removedAt" IS NULL/.test(sql)) {
+    if (/SELECT COUNT\(\*\)::int AS n FROM "RegularAbsenceEvidence" e JOIN "RegularAbsence" ra ON ra\.id = \$1/.test(sql)) {
+      assertScope(sql);
       return [{ n: liveCount(v[0]) }];
     }
     // 그날 출석·지각으로 기록됐나 — Session.date 는 변환 없이 글자 그대로 비교한다
@@ -89,14 +103,15 @@ function fakeDb(init = {}) {
     }
     // cron ①: 7일 지난 검토 후보
     if (/FROM "RegularAbsenceCarryReview" r\s+JOIN "RegularAbsence" ra ON ra\.id = r\."absenceId"\s+WHERE r\.status = 'PENDING' AND r\.source IN \('PARENT', 'KAKAO'\)/.test(sql)) {
-      // 결석일은 date 칼럼 — 변환 없이 글자 그대로
-      assert.match(sql, /to_char\(ra\.date, 'YYYY-MM-DD'\) AS "absenceYmd"/);
+      // 결석일 기준 = 기간의 마지막 결석일(하루 결석이면 그 날) — date 칼럼이라 변환 없음. 사진은 기간 한 묶음으로 센다
+      assertAnchor(sql);
+      assertScope(sql);
       // timestamptz → KST 는 «한 번»만 건다. 오늘도 DB 시계의 KST 날짜
       assert.match(sql, /to_char\(r\."requestedAt" AT TIME ZONE 'Asia\/Seoul', 'YYYY-MM-DD'\) AS "requestedYmd"/);
       assert.match(sql, /to_char\(now\(\) AT TIME ZONE 'Asia\/Seoul', 'YYYY-MM-DD'\) AS "todayYmd"/);
       assert.doesNotMatch(sql, /AT TIME ZONE 'UTC'/);
       return db.reviews.filter((r) => r.status === "PENDING" && ["PARENT", "KAKAO"].includes(r.source))
-        .map((r) => ({ absenceId: r.absenceId, status: r.status, source: r.source, photoCount: liveCount(r.absenceId), requestedYmd: r.requestedYmd, absenceYmd: db.absences.find((a) => a.id === r.absenceId)?.date, todayYmd: db.today }));
+        .map((r) => ({ absenceId: r.absenceId, status: r.status, source: r.source, photoCount: liveCount(r.absenceId), requestedYmd: r.requestedYmd, absenceYmd: anchorYmd(r.absenceId), todayYmd: db.today }));
     }
     // cron ②: 지울 사진 후보
     if (/FROM "RegularAbsenceEvidence" e\s+LEFT JOIN "RegularAbsenceCarryReview" r ON r\."absenceId" = e\."absenceId"\s+WHERE e\."purgedAt" IS NULL/.test(sql)) {
@@ -114,12 +129,14 @@ function fakeDb(init = {}) {
     if (/FROM "RegularAbsence" ra\s+JOIN "Student" s ON s\.id = ra\."studentId"\s+JOIN "RegularAbsenceCarryReview" r ON r\."absenceId" = ra\.id/.test(sql)) {
       db.order.push("count");
       assert.doesNotMatch(sql, /FOR UPDATE/, "장수를 세는 문장에는 잠금을 붙이지 않는다(잠금은 앞 문장)");
+      assertAnchor(sql);
+      assertScope(sql);
       assert.match(sql, /s\."parentId" = \$1/, "보호자 조건(childAccessSql 조각)");
       assert.match(sql, /"mergedIntoId" IS NULL|mergedInto/i, "병합된 학생 제외");
       return db.absences.filter((a) => a.id === v[1] && parentOf(a.studentId) === v[0])
         .filter((a) => !/ra\.status <> 'CANCELLED'/.test(sql) || a.status !== "CANCELLED")
         .filter((a) => !/ra\.reason = 'ILLNESS_INJURY'/.test(sql) || a.reason === "ILLNESS_INJURY")
-        .flatMap((a) => db.reviews.filter((r) => r.absenceId === a.id).map((r) => ({ absenceId: a.id, status: r.status, requestedYmd: r.requestedYmd, absenceYmd: a.date, todayYmd: db.today, photoCount: liveCount(a.id) })));
+        .flatMap((a) => db.reviews.filter((r) => r.absenceId === a.id).map((r) => ({ absenceId: a.id, status: r.status, requestedYmd: r.requestedYmd, absenceYmd: anchorYmd(a.id), todayYmd: db.today, photoCount: liveCount(a.id) })));
     }
     // 사진 권한: 학부모가 열거나 지울 사진
     if (/FROM "RegularAbsenceEvidence" e\s+JOIN "RegularAbsence" ra ON ra\.id = e\."absenceId"\s+JOIN "Student" s/.test(sql)) {
@@ -129,7 +146,7 @@ function fakeDb(init = {}) {
         .filter((e) => !/e\."removedAt" IS NULL/.test(sql) || !e.removed)
         .filter((e) => !/e\."purgedAt" IS NULL/.test(sql) || !e.purged)
         .filter((e) => parentOf(db.absences.find((a) => a.id === e.absenceId)?.studentId) === v[0])
-        .map((e) => { const r = db.reviews.find((x) => x.absenceId === e.absenceId); return { id: e.id, storageBucket: e.storageBucket, storagePath: e.storagePath, absenceId: e.absenceId, status: r?.status, requestedYmd: r?.requestedYmd, absenceYmd: db.absences.find((a) => a.id === e.absenceId)?.date, todayYmd: db.today }; });
+        .map((e) => { const r = db.reviews.find((x) => x.absenceId === e.absenceId); return { id: e.id, storageBucket: e.storageBucket, storagePath: e.storagePath, absenceId: e.absenceId, status: r?.status, requestedYmd: r?.requestedYmd, absenceYmd: anchorYmd(e.absenceId), todayYmd: db.today }; });
     }
     // 사진 권한: 관리자
     if (/FROM "RegularAbsenceEvidence" e\s+WHERE e\.id = \$1/.test(sql)) {
@@ -207,6 +224,12 @@ function fakeDb(init = {}) {
       return 1;
     }
     if (/UPDATE "RegularAbsenceEvidence" SET "removedAt" = now\(\) WHERE "absenceId" = \$1 AND "removedAt" IS NULL/.test(sql)) {
+      assert.match(sql, /sibling\."periodId" = me\."periodId" AND sibling\.id <> me\.id AND sibling\.status <> 'CANCELLED'/);
+      assert.match(sql, /sr\.status IN \('PENDING', 'APPROVED', 'MAKEUP'\)/);
+      const me = db.absences.find((a) => a.id === v[0]);
+      const stillUsed = Boolean(me?.periodId) && db.absences.some((a) => a.periodId === me.periodId && a.id !== me.id && a.status !== "CANCELLED"
+        && ["PENDING", "APPROVED", "MAKEUP"].includes(db.reviews.find((r) => r.absenceId === a.id)?.status));
+      if (stillUsed) return 0;
       let n = 0;
       for (const e of db.evidence) if (e.absenceId === v[0] && !e.removed) { e.removed = true; n += 1; }
       return n;
@@ -302,9 +325,10 @@ test("7일 기준점 = 알린 날과 결석일 중 더 늦은 날 — 미리 알
   assert.equal(rules.shouldAutoConvertToMakeup({ ...auto, todayYmd: "2026-12-12" }), false, "마지막 날");
   assert.equal(rules.shouldAutoConvertToMakeup({ ...auto, todayYmd: "2026-12-13" }), true, "마지막 날 다음 날 자정 뒤");
   // 호출부가 모두 결석일을 넘긴다
-  assert.match(read("src/lib/regular/parent-regular-absence.ts"), /evidenceDeadlineYmd\(r\.requestedYmd, r\.date\)/);
-  assert.match(read("src/lib/regular/parent-regular-absence.ts"), /requestedYmd: r\.requestedYmd, absenceYmd: r\.date, todayYmd: today/);
-  assert.equal((read("src/lib/regular/illness-evidence-access.ts").match(/to_char\(ra\.date, 'YYYY-MM-DD'\) AS "absenceYmd"/g) ?? []).length, 2);
+  // (여러 날 결석은 기간의 마지막 결석일이 기준 — anchorYmd)
+  assert.match(read("src/lib/regular/parent-regular-absence.ts"), /evidenceDeadlineYmd\(r\.requestedYmd, anchorYmd\)/);
+  assert.match(read("src/lib/regular/parent-regular-absence.ts"), /requestedYmd: r\.requestedYmd, absenceYmd: anchorYmd, todayYmd: today/);
+  assert.equal((read("src/lib/regular/illness-evidence-access.ts").match(/\$\{evidenceAnchorYmdSql\("ra"\)\} AS "absenceYmd"/g) ?? []).length, 2);
 });
 
 test("cron 자동 전환: 미리 알린 결석은 결석일 +7일이 지나야 전환된다(결석일 전에는 그대로)", async () => {
@@ -397,6 +421,65 @@ test("cron 실패 알림: 전환 실패·알림 실패·사진 삭제 실패(5�
 
 test("청구 준비 화면에서 검토 중 결석을 «보강»으로 정산하려 하면 신청함의 [보강권으로]를 안내한다", () => {
   assert.match(read("src/lib/billing/workbench-absence.ts"), /과거 결석의 보강권을 소급 발급하지 않습니다\. 질병·부상 이월 검토 중인 결석은 신청함의 \[보강권으로\]를 눌러 주세요\.",409\)/);
+});
+
+// ── 여러 날 결석(기간, 2026-11-15): 증빙은 기간 한 묶음 · 기한은 기간의 마지막 결석일 기준 ──
+const PERIOD = [
+  { ...ABSENCE, id: "d1", date: "2026-11-16", periodId: "per1" },
+  { ...ABSENCE, id: "d2", date: "2026-11-23", periodId: "per1" },
+  { ...ABSENCE, id: "d3", date: "2026-11-30", periodId: "per1" },
+];
+const periodReviews = (extra = {}) => PERIOD.map((a) => pending({ absenceId: a.id, requestedYmd: "2026-11-14", ...extra }));
+
+test("여러 날 결석: 기간의 한 날에 올린 사진이 기간 전체에 쓰인다 — 장수 3장도 기간 전체로, 기한은 마지막 결석일 +7일", async () => {
+  const db = fakeDb({ today: "2026-12-07", absences: PERIOD.map((a) => ({ ...a })), reviews: periodReviews(), evidence: [photo("e1", { absenceId: "d1" })] });
+  // 어느 날짜로 물어도 사진 1장·기준일은 11/30(마지막 결석일)
+  for (const id of ["d1", "d2", "d3"]) {
+    const target = await access.findEvidenceTargetForParent(db, ACCESS, "p1", id);
+    assert.deepEqual([target.photoCount, target.absenceYmd], [1, "2026-11-30"], id);
+    assert.equal(access.evidenceAddRefusal(target), null, "12/7 = 마지막 결석일 +7일(마지막 날)까지 올릴 수 있다");
+  }
+  // 기간 전체로 3장이 차면 어느 날짜에도 더 못 올린다
+  db.evidence.push(photo("e2", { absenceId: "d2" }), photo("e3", { absenceId: "d3" }));
+  assert.match(access.evidenceAddRefusal(await access.findEvidenceTargetForParent(db, ACCESS, "p1", "d1")), /3장까지/);
+  // 12/8 부터는 닫힌다(날짜마다 따로가 아니라 기간 단위로 한 번에)
+  db.today = "2026-12-08";
+  for (const id of ["d1", "d3"]) assert.match(access.evidenceAddRefusal({ ...(await access.findEvidenceTargetForParent(db, ACCESS, "p1", id)), photoCount: 0 }), /지났어요/, id);
+});
+
+test("여러 날 결석 자동 전환: 사진이 한 장이라도 있으면 기간의 어느 날도 전환하지 않고, 없으면 마지막 결석일 +7일 뒤 한 번에 전환한다", async () => {
+  // 사진 1장(첫 날에 붙음) — 3주 뒤에도 기간의 다른 날이 «사진 없음»으로 전환되지 않는다
+  const withPhoto = fakeDb({ today: "2026-12-20", absences: PERIOD.map((a) => ({ ...a })), reviews: periodReviews(), evidence: [photo("e1", { absenceId: "d1" })] });
+  assert.equal((await cron.autoConvertOverdueIllnessReviews(withPhoto, issuable)).converted.length, 0);
+  assert.deepEqual(withPhoto.reviews.map((r) => r.status), ["PENDING", "PENDING", "PENDING"]);
+  // 사진 없음 — 첫 결석일(11/16)+7일이 지나도 기간이 끝나기 전에는 전환하지 않는다
+  for (const today of ["2026-11-24", "2026-11-30", "2026-12-07"]) {
+    const db = fakeDb({ today, absences: PERIOD.map((a) => ({ ...a })), reviews: periodReviews() });
+    assert.equal((await cron.autoConvertOverdueIllnessReviews(db, issuable)).converted.length, 0, today);
+  }
+  const due = fakeDb({ today: "2026-12-08", absences: PERIOD.map((a) => ({ ...a })), reviews: periodReviews() });
+  assert.deepEqual((await cron.autoConvertOverdueIllnessReviews(due, issuable)).converted.map((c) => c.absenceYmd), ["2026-11-16", "2026-11-23", "2026-11-30"]);
+  assert.equal(due.credits.length, 3, "날짜마다 보강권 1장(하루 신고와 같은 결과)");
+  // «복귀했어요»로 뒤 날짜가 취소되면 기준일도 앞당겨진다(남은 마지막 결석일 11/16 +7일 = 11/23)
+  const returned = fakeDb({ today: "2026-11-24", absences: PERIOD.map((a, i) => ({ ...a, status: i === 0 ? "REPORTED" : "CANCELLED" })), reviews: [pending({ absenceId: "d1", requestedYmd: "2026-11-14" })] });
+  assert.deepEqual((await cron.autoConvertOverdueIllnessReviews(returned, issuable)).converted.map((c) => c.absenceYmd), ["2026-11-16"]);
+});
+
+test("여러 날 결석: 한 날의 검토를 닫아도 기간의 다른 날이 쓰는 사진은 남고, 마지막 검토가 닫힐 때 빠진다", async () => {
+  const db = fakeDb({ absences: PERIOD.map((a) => ({ ...a })), reviews: periodReviews(), evidence: [photo("e1", { absenceId: "d1" })] });
+  await carryTx.closeIllnessReviewInTx(db, "d1", { canceled: true }); // 사진이 붙은 날을 취소
+  assert.equal(db.evidence[0].removed, false, "d2·d3 가 아직 검토 중 — 사진을 남긴다");
+  db.absences[0].status = "CANCELLED";
+  assert.equal((await access.findEvidenceTargetForParent(db, ACCESS, "p1", "d2")).photoCount, 1, "취소된 날에 붙은 사진도 기간의 증빙으로 센다");
+  await carryTx.closeIllnessReviewInTx(db, "d2", { canceled: true });
+  assert.equal(db.evidence[0].removed, false);
+  // 남은 사진이 붙은 날(d1)은 이미 닫혔으므로, 마지막 날을 닫을 때는 그 날에 붙은 사진만 본다 — 기간이 모두 닫히면 cron 이 닫힌 검토의 사진을 90일 뒤 지운다
+  await carryTx.closeIllnessReviewInTx(db, "d3", { canceled: true });
+  assert.deepEqual(db.reviews.map((r) => r.status), ["CLOSED", "CLOSED", "CLOSED"]);
+  // 하루 결석(기간 없음)은 예전 그대로 — 닫으면 바로 뺀다
+  const single = fakeDb({ absences: [{ ...ABSENCE }], reviews: [pending()], evidence: [photo("e1")] });
+  await carryTx.closeIllnessReviewInTx(single, "a1");
+  assert.equal(single.evidence[0].removed, true);
 });
 
 test("자동 전환 대상: 학부모가 알린 검토 중 + 사진 0장 + 7일 지남일 때만", () => {
@@ -923,7 +1006,7 @@ test("신청함: «질병·부상 결석» 종류 — 결석일 전은 진행 �
   assert.match(detail, /useAdminConfirm\(\)/);
   // 사진 기한은 «결석일부터 7일» 같은 설명이 아니라 실제 날짜로(학부모 화면·자동 전환과 같은 함수)
   assert.match(detail, /kstLabel\(kstAt\(detail\.evidenceDeadlineYmd\)\)\}까지 사진이 없으면 보강권 1장으로 바뀝니다\./);
-  assert.match(read("src/lib/regular/illness-carry-admin.ts"), /evidenceDeadlineYmd\(review\.requestedYmd, absence\.date\)/);
+  assert.match(read("src/lib/regular/illness-carry-admin.ts"), /evidenceDeadlineYmd\(review\.requestedYmd, anchors\[0\]\?\.anchorYmd \?\? absence\.date\)/);
   assert.match(detail, /\/api\/admin\/absence-evidence\//);
   // 아이콘 없이 글자 · 굵기 4단계 · 색은 토큰만
   assert.doesNotMatch(detail, /material-symbols|font-(extrabold|black)|#[0-9a-fA-F]{3,6}\b|lucide/);

@@ -11,7 +11,7 @@
 //   · [이월 승인]은 기존 이월 규칙(resolveWorkbenchAbsence)이 처리하고, 그 함수가 검토를 «APPROVED»로 맞춘다.
 import { lockCompensation, type CompensationTransaction } from "@/lib/billing/absence-compensation-guard";
 import { issueCreditForReportedAbsence, regularAbsenceSourceKey } from "@/lib/makeup/absence-report-credit";
-import { ILLNESS_REASON, type IllnessReviewSource } from "@/lib/regular/illnessCarryRules";
+import { ILLNESS_REASON, evidenceScopeSql, type IllnessReviewSource } from "@/lib/regular/illnessCarryRules";
 
 export type IllnessTx = CompensationTransaction;
 
@@ -107,8 +107,14 @@ export async function closeIllnessReviewInTx(
     absenceId, options.canceled ? ["PENDING", "MAKEUP"] : ["PENDING"],
   );
   if (Number(n) === 0) return { closed: false };
+  // 사진을 화면에서 뺀다. 단, 여러 날 결석(기간)의 다른 날이 아직 그 사진을 쓰고 있으면(검토 중·결정됨) 남긴다 — 기간 한 묶음
   await tx.$executeRawUnsafe(
-    `UPDATE "RegularAbsenceEvidence" SET "removedAt" = now() WHERE "absenceId" = $1 AND "removedAt" IS NULL`,
+    `UPDATE "RegularAbsenceEvidence" SET "removedAt" = now() WHERE "absenceId" = $1 AND "removedAt" IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM "RegularAbsence" me
+            JOIN "RegularAbsence" sibling ON sibling."periodId" = me."periodId" AND sibling.id <> me.id AND sibling.status <> 'CANCELLED'
+            JOIN "RegularAbsenceCarryReview" sr ON sr."absenceId" = sibling.id AND sr.status IN ('PENDING', 'APPROVED', 'MAKEUP')
+           WHERE me.id = $1 AND me."periodId" IS NOT NULL)`,
     absenceId,
   );
   return { closed: true };
@@ -233,8 +239,10 @@ export async function convertIllnessToMakeupInTx(
   if (current === "APPROVED" || current === "MAKEUP") return { converted: false, reason: "DECIDED" };
   if (input.by === "AUTO") {
     if (current !== "PENDING") return { converted: false, reason: "NOT_PENDING" };
+    // 여러 날 결석은 기간에 올린 사진을 함께 센다(한 묶음)
     const photos = await tx.$queryRawUnsafe<Array<{ n: number }>>(
-      `SELECT COUNT(*)::int AS n FROM "RegularAbsenceEvidence" WHERE "absenceId" = $1 AND "removedAt" IS NULL`, input.absenceId,
+      `SELECT COUNT(*)::int AS n FROM "RegularAbsenceEvidence" e JOIN "RegularAbsence" ra ON ra.id = $1
+        WHERE ${evidenceScopeSql("ra", "e")} AND e."removedAt" IS NULL`, input.absenceId,
     );
     if (Number(photos[0]?.n ?? 0) > 0) return { converted: false, reason: "HAS_EVIDENCE" };
   }

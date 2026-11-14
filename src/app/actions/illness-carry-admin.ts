@@ -66,6 +66,55 @@ export async function approveIllnessCarryAction(input: {
   }
 }
 
+/**
+ * [같은 기간 n건 함께 승인] — 학부모가 «여러 날»로 알린 질병·부상 결석 중 결석일이 지난 것들을 한 번에 이월 승인한다.
+ * 건마다 [이월 승인]과 같은 함수·같은 거래로 처리한다(한 건이 조건에 안 맞아도 나머지는 승인). 대상은 서버가 다시 고른다.
+ * 학부모 앱 알림은 묶어서 1회.
+ */
+export async function approveIllnessCarryPeriodAction(input: { absenceId: string; evidenceConfirmed: boolean }): Promise<ActionResult> {
+  const admin = await requireAdmin();
+  try {
+    const absenceId = String(input?.absenceId ?? "").trim();
+    if (input?.evidenceConfirmed !== true) return { ok: false, message: "증빙을 확인했는지 체크해 주세요." };
+    const detail = await readIllnessCarryDetail(prisma, absenceId, writesEnabled());
+    if (!detail) return { ok: false, message: "결석을 찾을 수 없거나 질병·부상 결석이 아닙니다." };
+    // 화면이 보낸 목록을 믿지 않고 서버가 읽은 «같은 기간·결석일 지남·결정 전» 목록으로 처리한다(지금 연 결석 포함)
+    const targets = [...(detail.status === "PENDING" && !detail.blocker ? [absenceId] : []), ...detail.periodPeerIds];
+    if (targets.length === 0) return { ok: false, message: detail.blocker ?? "함께 승인할 결석이 없습니다." };
+    const calendar = await loadWorkbenchCalendar(true);
+    const done: Array<{ studentId: string; absenceYmd: string }> = [];
+    const failed: string[] = [];
+    for (const id of targets) {
+      try {
+        // 보강 예약이 있는 결석은 함께 취소 확인이 필요해 여기서 넘기지 않는다 — 그 건은 실패 사유로 남아 따로 승인한다
+        done.push(await approveIllnessCarry(prisma, { absenceId: id, evidenceConfirmed: true }, admin.appUserId, writesEnabled(), calendar));
+      } catch (error) {
+        failed.push(failure(error, "승인하지 못했습니다.").message);
+      }
+    }
+    if (done.length > 0) {
+      const days = done.map((item) => item.absenceYmd).sort();
+      await notifyParentsOfStudents(
+        [done[0].studentId], "ABSENCE", "결석 이월 승인",
+        days.length === 1
+          ? `${days[0]} 결석을 이월로 승인했어요. 다음 달 수강료에서 1회분을 빼 드려요.`
+          : `${days[0]}~${days[days.length - 1]} 결석 ${days.length}회를 이월로 승인했어요. 다음 달 수강료에서 ${days.length}회분을 빼 드려요.`,
+        "/mypage/regular-absence",
+      );
+    }
+    revalidatePath("/admin/inbox");
+    if (done.length === 0) return { ok: false, message: failed[0] ?? "승인하지 못했습니다." };
+    return {
+      ok: true,
+      message: failed.length
+        ? `${done.length}건 이월 승인 · ${failed.length}건은 승인하지 못했습니다(${failed[0]})`
+        : `${done.length}건을 이월 승인했습니다. 다음 달 청구에 «이월»로 차감됩니다.`,
+    };
+  } catch (error) {
+    return failure(error, "이월을 승인하지 못했습니다. 목록을 새로고침한 뒤 다시 확인해 주세요.");
+  }
+}
+
 /** [보강권으로] — 이월 대신 보강권 1장 */
 export async function convertIllnessCarryAction(input: { absenceId: string }): Promise<ActionResult> {
   const admin = await requireAdmin();

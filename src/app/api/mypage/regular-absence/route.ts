@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireVerifiedParent } from "@/lib/auth-guard";
+import { loadParentAbsenceScreen } from "@/lib/regular/parent-absence-period";
 import {
-  getParentIllnessReviews,
-  getUpcomingRegularClassDates,
   reportRegularAbsence,
   cancelRegularAbsence,
   moveRegularAbsence,
@@ -23,10 +22,8 @@ export async function GET() {
     return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   }
   try {
-    // 질병·부상 이월 검토(상태·사진 장수)를 먼저 읽어 줄의 상태 글자에도 쓴다
-    const reviews = await getParentIllnessReviews(parent.appUserId);
-    const children = await getUpcomingRegularClassDates(parent.appUserId, undefined, reviews);
-    return NextResponse.json({ children, reviews }, { headers: { "Cache-Control": "no-store" } });
+    // 수업일·이월 검토(여러 날 결석은 한 줄로 묶음)·진행 중인 여러 날 결석을 한 묶음으로(페이지와 같은 함수)
+    return NextResponse.json(await loadParentAbsenceScreen(parent.appUserId), { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("[api/mypage/regular-absence] GET failed:", error);
     return NextResponse.json({ error: "조회에 실패했습니다." }, { status: 500 });

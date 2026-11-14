@@ -11,6 +11,8 @@ import { customerMessage } from "@/components/parent/customerMessage";
 import { presetFirst } from "@/lib/mypage/requestPreset";
 import { resumeNotice } from "@/lib/enrollment/resumeWindow";
 import { compressImageForUpload } from "@/lib/clientImageCompression";
+import type { ParentAbsencePeriodRow } from "@/lib/regular/parent-absence-period";
+import PeriodAbsencePanel, { ActivePeriodList } from "./PeriodAbsencePanel";
 import { EVIDENCE_MAX_PHOTOS, ILLNESS_REASON, REASON_TEXT_MAX, illnessReviewLabel } from "@/lib/regular/illnessCarryRules";
 
 // 날짜 묶음 이름 — 가까운 수업일이 먼저 보이게(오늘 → 이번 주 → 다음 주 → 이후)
@@ -89,6 +91,8 @@ function ContactActions({ label, contact }: { label: string; contact: AbsenceCon
 export default function RegularAbsenceClient({
   initial,
   initialReviews = [],
+  initialPeriods = [],
+  periodAvailable = false,
   makeups = [],
   presetStudentId = null,
   contact = { phone: null, kakaoChannelUrl: null },
@@ -96,6 +100,10 @@ export default function RegularAbsenceClient({
   initial: UpcomingChild[];
   /** 질병·부상 결석의 이월 검토(상태·사진) */
   initialReviews?: ParentIllnessReview[];
+  /** 진행 중인 «여러 날 결석»(학부모가 알린 기간) */
+  initialPeriods?: ParentAbsencePeriodRow[];
+  /** «여러 날» 알리기를 쓸 수 있나(서버 준비 여부) — false 면 선택 칸을 보이지 않는다 */
+  periodAvailable?: boolean;
   makeups?: RegularMakeupRow[];
   /** 수업 탭 반 카드에서 온 아이 — 그 아이 날짜를 맨 위에(나머지 순서는 그대로) */
   presetStudentId?: string | null;
@@ -103,6 +111,9 @@ export default function RegularAbsenceClient({
 }) {
   const [children, setChildren] = useState<UpcomingChild[]>(initial);
   const [reviews, setReviews] = useState<ParentIllnessReview[]>(initialReviews);
+  const [periods, setPeriods] = useState<ParentAbsencePeriodRow[]>(initialPeriods);
+  // 맨 위 선택: 하루씩 알리기 / 여러 날 한 번에 알리기(2026-11-15)
+  const [mode, setMode] = useState<"day" | "period">("day");
   const [openKey, setOpenKey] = useState<string>(""); // 신고 폼이 열린 날짜 키
   const [reason, setReason] = useState<Record<string, string>>({}); // 날짜별 선택 사유
   const [reasonText, setReasonText] = useState<Record<string, string>>({}); // 날짜별 사유 글(질병·부상)
@@ -122,6 +133,7 @@ export default function RegularAbsenceClient({
       if (r.ok) {
         setChildren(j.children || []);
         setReviews(j.reviews || []);
+        setPeriods(j.periods || []);
       }
     } catch {
       /* noop */
@@ -352,6 +364,21 @@ export default function RegularAbsenceClient({
     [moveTo, moveCandidates, reload],
   );
 
+  // «여러 날» 칸·기간 목록이 일을 마치면 결과 글을 보이고 화면을 다시 읽는다
+  const onPeriodChanged = useCallback(
+    async (message: string, error?: string) => {
+      setMsg(message);
+      setErr(error || "");
+      await reload();
+    },
+    [reload],
+  );
+  // «여러 날»에서 고를 아이(쓸 수 있는 반이 있는 아이만)
+  const periodKids = useMemo(
+    () => children.filter((c) => c.classes.length > 0).map((c) => ({ studentId: c.studentId, studentName: c.studentName })),
+    [children],
+  );
+
   const hasAnyClass = useMemo(
     () => children.some((c) => c.classes.some((cl) => cl.dates.length > 0)),
     [children],
@@ -397,6 +424,25 @@ export default function RegularAbsenceClient({
       <p className="mb-4 text-sm text-[var(--color-academy-muted)]">
         수업 1시간 전까지 알리거나 취소할 수 있어요.
       </p>
+
+      {/* 하루 / 여러 날 — 고른 쪽은 보조 색(지금 있는 곳), 글자만 */}
+      {periodAvailable && (
+        <div role="group" aria-label="알리는 방법" className="mb-4 grid grid-cols-2 gap-1 rounded-xl bg-[var(--color-academy-soft)] p-1">
+          {([["day", "하루"], ["period", "여러 날"]] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={mode === value}
+              onClick={() => setMode(value)}
+              className={`min-h-11 rounded-lg text-sm font-medium ${mode === value
+                ? "bg-[var(--color-academy-secondary-soft)] text-[var(--color-academy-secondary-ink)] ring-1 ring-inset ring-[var(--color-academy-secondary-strong)]"
+                : "text-[var(--color-academy-muted)]"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* 예정 보강(읽기 전용) — 관리자가 지정한 자녀의 보강 일정 */}
       {makeups.length > 0 && (
@@ -451,6 +497,9 @@ export default function RegularAbsenceClient({
           ))}
         </ul>
       )}
+
+      {/* 알린 여러 날 결석 — 복귀했어요·알림 취소(어느 쪽을 고르든 보인다) */}
+      <ActivePeriodList periods={periods} onChanged={onPeriodChanged} />
 
       {/* 질병·부상 결석(2026-11-14) — 이월 검토 상태 한 단어 + 증빙 사진 추가·삭제(알린 날부터 7일 안) */}
       {reviews.length > 0 && (
@@ -548,7 +597,9 @@ export default function RegularAbsenceClient({
         </section>
       )}
 
-      {!hasAnyClass ? (
+      {mode === "period" ? (
+        <PeriodAbsencePanel kids={periodKids} presetStudentId={presetStudentId} uploadEvidence={uploadEvidence} onChanged={onPeriodChanged} />
+      ) : !hasAnyClass ? (
         <div className="rounded-2xl border border-dashed border-[var(--color-academy-line-input)] bg-white px-6 py-16 text-center text-sm text-[var(--color-academy-muted)]">
           다가오는 정규수업이 없습니다.
         </div>
