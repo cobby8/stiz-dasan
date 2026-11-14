@@ -29,6 +29,8 @@ import {
 import { autoLinkApplicationsForTrialLead, getTrialLinkSuggestions, linkTrialLeadToApplication } from "@/lib/enrollment/trialLeadLinkService";
 import type { TrialLinkSuggestion } from "@/lib/enrollment/trialLeadMatch";
 import { forgetAppUserRoleCache, requireAdmin, requireOwner, requireVerifiedParent } from "@/lib/auth-guard";
+// 하루 새 문의 상한(문의 규칙 한 곳)
+import { INQUIRY_DAILY_NEW_MAX } from "@/lib/requests/inquiryThreadRules";
 import { maskPaymentAmount } from "@/lib/auth/moneyAccess";
 import {
     RETIRED_LOGIN_BAN_DURATION,
@@ -2713,16 +2715,23 @@ export async function createParentRequest(data: {
         select: { id: true, name: true },
     });
     if (!ownedStudent) throw new Error("본인 자녀에 대해서만 요청할 수 있습니다.");
+    // 하루(KST) 새 문의 상한 — 넣는 문장 안에서 센다(한 사람이 문의를 끝없이 만들지 못하게, 보안 검수 권장 2026-11-14).
+    // createdAt 은 timestamptz 라 AT TIME ZONE 을 한 번만 건다.
+    let insertedCount = 0;
     try {
-        await prisma.$executeRawUnsafe(
+        insertedCount = Number(await prisma.$executeRawUnsafe(
             `INSERT INTO "ParentRequest" (id, "userId", "studentId", type, title, content, date, status, "createdAt", "updatedAt")
-             VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6::timestamptz, 'PENDING', NOW(), NOW())`,
-            parent.appUserId, ownedStudent.id, type, title, content, requestedDate,
-        );
+             SELECT gen_random_uuid()::text, $1, $2, $3, $4, $5, $6::timestamptz, 'PENDING', NOW(), NOW()
+              WHERE (SELECT COUNT(*) FROM "ParentRequest" d
+                      WHERE d."userId" = $1
+                        AND (d."createdAt" AT TIME ZONE 'Asia/Seoul')::date = (NOW() AT TIME ZONE 'Asia/Seoul')::date) < $7`,
+            parent.appUserId, ownedStudent.id, type, title, content, requestedDate, INQUIRY_DAILY_NEW_MAX,
+        ));
     } catch (e) {
         console.error("Failed to create parent request:", e);
         throw new Error("요청 접수에 실패했습니다.");
     }
+    if (insertedCount === 0) throw new Error("오늘은 문의를 더 보낼 수 없어요. 급한 일은 학원에 전화해 주세요.");
     try {
         // 관리자(ADMIN)에게 알림
         const admins = await prisma.$queryRawUnsafe<any[]>(

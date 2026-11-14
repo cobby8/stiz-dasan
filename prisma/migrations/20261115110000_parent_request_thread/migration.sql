@@ -20,7 +20,7 @@
 --
 -- ── 되돌림 SQL(필요할 때만) ─────────────────────────────────────────────────────
 -- DROP TABLE IF EXISTS public."ParentRequestMessage";
--- DROP INDEX IF EXISTS public."ParentRequest_paymentId_idx";
+-- DROP INDEX IF EXISTS public."ParentRequest_open_refund_key";
 -- ALTER TABLE public."ParentRequest" DROP COLUMN IF EXISTS "paymentAmount";
 -- ALTER TABLE public."ParentRequest" DROP COLUMN IF EXISTS "paymentId";
 
@@ -51,7 +51,9 @@ REVOKE ALL ON TABLE public."ParentRequestMessage" FROM anon, authenticated;
 ALTER TABLE public."ParentRequest" ADD COLUMN IF NOT EXISTS "paymentId" TEXT;
 ALTER TABLE public."ParentRequest" ADD COLUMN IF NOT EXISTS "paymentAmount" INTEGER;
 
--- «이 청구에 열려 있는 환불 문의가 있는가»를 찾는다(환불 문의만 색인)
-CREATE INDEX IF NOT EXISTS "ParentRequest_paymentId_idx"
-  ON public."ParentRequest" ("paymentId")
-  WHERE "paymentId" IS NOT NULL;
+-- 한 사람이 같은 청구에 «열려 있는» 환불 문의는 하나만(동시에 두 번 눌러도 하나) — 열린 상태 = PENDING·CONFIRMED
+-- (코드 createRefundInquiry 의 NOT EXISTS 조건과 같은 집합. 종결·반려된 뒤에는 다시 문의할 수 있다)
+-- «이 청구에 열려 있는 내 환불 문의»를 찾는 조회도 이 색인을 쓴다.
+CREATE UNIQUE INDEX IF NOT EXISTS "ParentRequest_open_refund_key"
+  ON public."ParentRequest" ("userId", "paymentId")
+  WHERE "paymentId" IS NOT NULL AND status IN ('PENDING', 'CONFIRMED');

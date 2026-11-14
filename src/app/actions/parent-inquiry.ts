@@ -21,7 +21,9 @@ import {
 } from "@/lib/requests/inquiry-thread";
 import type { InquiryBubble } from "@/lib/requests/inquiryThreadRules";
 
-type ParentResult = { ok: true; requestId: string; notice?: string } | { ok: false; error: string };
+type ParentResult =
+  | { ok: true; requestId: string; notice?: string }
+  | { ok: false; error: string; /** 연속 글 한도 — 화면이 학원 전화 버튼을 보인다 */ waitingLimit?: boolean };
 
 const SIGN_IN_AGAIN = "다시 로그인해 주세요.";
 
@@ -61,7 +63,8 @@ export async function sendInquiryFollowUp(requestIdRaw: string, body: string): P
   if (!requestId) return { ok: false, error: "문의를 찾을 수 없어요. 목록에서 다시 열어 주세요." };
   const result = await addParentInquiryMessage(prisma, parent.appUserId, requestId, body);
   if (!result.ok) return result;
-  await notifyAdminsOfInquiry("문의 추가 글", `${result.studentName ?? "원생"} - ${result.title}`);
+  // 원장 앱 알림은 «학원 답 뒤 첫 글»에만 — 연달아 쓰는 글마다 알림을 만들지 않는다(처음 문의 때 이미 알림이 갔다)
+  if (result.notifyAdmins) await notifyAdminsOfInquiry("문의 추가 글", `${result.studentName ?? "원생"} - ${result.title}`);
   refreshRequestViews(requestId);
   return { ok: true, requestId };
 }

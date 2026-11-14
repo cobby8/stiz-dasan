@@ -61,7 +61,7 @@ function fakeDb(seed = {}) {
   const now = () => new Date(Date.UTC(2026, 10, 20, 3, 0, state.tick++));
   const run = async (sql, ...args) => {
     state.calls.push({ sql, args });
-    if (/FROM "ParentRequestMessage"/.test(sql)) {
+    if (/^\s*SELECT m\.id, m\."requestId"/.test(sql)) {
       if (state.noMessageTable) throw missingTable();
       return state.messages.filter((m) => args[0].includes(m.requestId)).sort((a, b) => a.createdAt - b.createdAt);
     }
@@ -73,6 +73,11 @@ function fakeDb(seed = {}) {
         const [requestId, userId, body] = args;
         const owned = state.requests.find((r) => r.id === requestId && r.userId === userId);
         if (!owned) return [];
+        // 횟수 제한도 같은 INSERT 문 안: 마지막 학원 글 뒤의 학부모 글 수 < $4
+        assert.match(sql, /m\."authorRole" = 'PARENT'[\s\S]*a\."authorRole" = 'ADMIN'[\s\S]*< \$4/);
+        const mine = state.messages.filter((m) => m.requestId === requestId);
+        const lastAdmin = mine.map((m) => m.authorRole).lastIndexOf("ADMIN");
+        if (mine.slice(lastAdmin + 1).length >= args[3]) return [];
         state.messages.push({ id: `m${state.messages.length + 1}`, requestId, authorRole: "PARENT", authorUserId: userId, body, createdAt: now() });
         return [{ id: requestId }];
       }
@@ -85,7 +90,7 @@ function fakeDb(seed = {}) {
       const row = state.requests.find((r) => r.id === requestId && r.userId === userId);
       if (!row) return [];
       row.status = status;
-      return [{ title: row.title, studentName: row.studentName ?? null }];
+      return [{ title: row.title, studentName: row.studentName ?? null, adminNote: row.adminNote ?? null }];
     }
     if (/UPDATE "ParentRequest" SET "adminNote" = \$2, status = \$3/.test(sql)) {
       const row = state.requests.find((r) => r.id === args[0]);
@@ -97,20 +102,27 @@ function fakeDb(seed = {}) {
       state.requests.find((r) => r.id === args[0]).status = args[1];
       return 1;
     }
-    if (/UPDATE "ParentRequest" SET "paymentId" = \$2/.test(sql)) {
-      if (state.noPaymentColumn) throw missingColumn();
-      const row = state.requests.find((r) => r.id === args[0] && r.userId === args[3]);
-      row.paymentId = args[1];
-      row.paymentAmount = args[2];
-      return 1;
-    }
     if (/FROM "ParentRequest"\s+WHERE "userId" = \$1 AND "paymentId" = \$2/.test(sql)) {
       if (state.noPaymentColumn) throw missingColumn();
       return state.requests.filter((r) => r.userId === args[0] && r.paymentId === args[1] && ["PENDING", "CONFIRMED"].includes(r.status));
     }
     if (/INSERT INTO "ParentRequest"/.test(sql)) {
-      const [userId, studentId, title, content] = args;
-      const row = { id: `r${state.requests.length + 1}`, userId, studentId, type: "OTHER", title, content, status: "PENDING", adminNote: null, createdAt: now() };
+      const [userId, studentId, title, content, paymentId, paymentAmount] = args;
+      const linked = /"paymentId", "paymentAmount"\)/.test(sql);
+      if (linked) {
+        if (state.noPaymentColumn) throw missingColumn();
+        // 청구 연결과 중복 확인이 같은 문장 안에 있다
+        assert.match(sql, /WHERE NOT EXISTS \(SELECT 1 FROM "ParentRequest" x\s+WHERE x\."userId" = \$1 AND x\."paymentId" = \$5::text AND x\.status IN \('PENDING', 'CONFIRMED'\)\)/);
+        const open = state.requests.some((r) => r.userId === userId && r.paymentId === paymentId && ["PENDING", "CONFIRMED"].includes(r.status));
+        // raceOnce = «확인할 때는 없었는데 넣는 순간 다른 요청이 먼저 넣었다» → 유일 색인 위반(23505)
+        if (state.raceOnce) {
+          state.raceOnce = false;
+          state.requests.push({ id: "r-race", userId, studentId, type: "OTHER", title, content, status: "PENDING", adminNote: null, createdAt: now(), paymentId, paymentAmount });
+          throw Object.assign(new Error('duplicate key value violates unique constraint "ParentRequest_open_refund_key"'), { code: "P2010", meta: { code: "23505" } });
+        }
+        if (open) return [];
+      }
+      const row = { id: `r${state.requests.length + 1}`, userId, studentId, type: "OTHER", title, content, status: "PENDING", adminNote: null, createdAt: now(), ...(linked ? { paymentId, paymentAmount } : {}) };
       state.requests.push(row);
       return [{ id: row.id }];
     }
@@ -216,7 +228,7 @@ test("② 이어 쓰기: 대화 끝에 붙고 · 종결된 문의도 대기중�
   assert.equal(db.state.messages.length, 0);
 
   const ok = await service.addParentInquiryMessage(db, "parent-a", "r1", "  한 가지 더 여쭤요  ");
-  assert.deepEqual(ok, { ok: true, requestId: "r1", title: "김하늘 문의", studentName: "김하늘" });
+  assert.deepEqual(ok, { ok: true, requestId: "r1", title: "김하늘 문의", studentName: "김하늘", notifyAdmins: true });
   assert.equal(db.state.requests[0].status, "PENDING", "관리자 요청함 «대기중»에 다시 뜬다");
   const detail = await service.getMyInquiry(db, "parent-a", "r1");
   assert.deepEqual(detail.bubbles.map((b) => [b.author, b.body]), [["PARENT", "첫 글"], ["ADMIN", "옛 답변"], ["PARENT", "한 가지 더 여쭤요"]]);
@@ -303,6 +315,8 @@ test("④ 관리자만 답할 수 있다 · 학부모 추가 글은 원장 앱 �
   await assert.rejects(loadActions(db, { admin: false }).actions.getParentRequestThreadForAdmin("r1"), /FORBIDDEN/);
   assert.equal(db.state.messages.length, 0);
 
+  // 학원 답(여기서는 옛 답변) 뒤 첫 글이라 원장 알림이 간다
+  db.state.requests[0].adminNote = "옛 답변";
   const { actions, sent } = loadActions(db);
   assert.deepEqual(await actions.sendInquiryFollowUp("r1", "추가 글"), { ok: true, requestId: "r1" });
   assert.deepEqual(sent.adminNotices.map((n) => [n.userId, n.type, n.title, n.linkUrl]), [
@@ -454,12 +468,96 @@ test("⑦ 마이그레이션: 여러 번 돌려도 같은 결과 · RLS 강제 �
   assert.match(sql, /REVOKE ALL ON TABLE public\."ParentRequestMessage" FROM anon, authenticated;/);
   assert.match(sql, /ADD COLUMN IF NOT EXISTS "paymentId" TEXT;/);
   assert.match(sql, /ADD COLUMN IF NOT EXISTS "paymentAmount" INTEGER;/);
-  assert.match(sql, /CREATE INDEX IF NOT EXISTS "ParentRequest_paymentId_idx"/);
+  // 열린 환불 문의는 사람·청구당 하나 — 열린 상태 집합은 코드(NOT EXISTS)와 같다
+  assert.match(sql, /CREATE UNIQUE INDEX IF NOT EXISTS "ParentRequest_open_refund_key"\s+ON public\."ParentRequest" \("userId", "paymentId"\)\s+WHERE "paymentId" IS NOT NULL AND status IN \('PENDING', 'CONFIRMED'\);/);
+  assert.match(sql, /-- DROP INDEX IF EXISTS public\."ParentRequest_open_refund_key";/);
   for (const undo of [/-- DROP TABLE IF EXISTS public\."ParentRequestMessage";/, /-- ALTER TABLE public\."ParentRequest" DROP COLUMN IF EXISTS "paymentId";/, /-- ALTER TABLE public\."ParentRequest" DROP COLUMN IF EXISTS "paymentAmount";/]) assert.match(sql, undo);
   assert.doesNotMatch(sql.replace(/^--.*$/gm, ""), /\bDROP\b|\bTRUNCATE\b|\bDELETE FROM\b/, "실행되는 줄에는 지우는 문이 없다");
   const schema = read("prisma/schema.prisma");
   assert.match(schema, /model ParentRequestMessage \{/);
   assert.match(schema, /paymentId\s+String\?/);
+});
+
+// ── ⑨ 보안 검수 권장(2026-11-14) ─────────────────────────────────────────────
+
+test("⑨ 연속 글 한도: 학원 답 전 학부모 글 5개까지 · 6번째는 안내(전화) · 학원이 답하면 다시 쓸 수 있다", async () => {
+  assert.equal(rules.INQUIRY_PARENT_STREAK_MAX, 5);
+  const db = fakeDb({ requests: [baseRequest()] });
+  for (let i = 1; i <= 5; i++) assert.equal((await service.addParentInquiryMessage(db, "parent-a", "r1", `글 ${i}`)).ok, true, `${i}번째`);
+  const sixth = await service.addParentInquiryMessage(db, "parent-a", "r1", "글 6");
+  assert.deepEqual(sixth, { ok: false, error: rules.INQUIRY_WAITING_LIMIT_MESSAGE, waitingLimit: true });
+  assert.equal(db.state.messages.length, 5, "6번째는 저장되지 않는다");
+  // 남의 문의는 한도 안내가 아니라 «찾을 수 없음»(있는지 없는지를 알려 주지 않는다)
+  assert.deepEqual(await service.addParentInquiryMessage(db, "parent-b", "r1", "남의 글"), { ok: false, error: service.INQUIRY_NOT_FOUND });
+  await service.addAdminInquiryReply(db, "admin-1", "r1", "답변");
+  assert.equal((await service.addParentInquiryMessage(db, "parent-a", "r1", "답 뒤 첫 글")).ok, true);
+  // 화면: 한도 안내에 전화 버튼(막다른 곳 금지)
+  const form = read("src/app/mypage/requests/[id]/InquiryReplyForm.tsx");
+  assert.match(form, /if \(result\.waitingLimit\) setWaitingLimit\(true\);/);
+  assert.match(form, /\{waitingLimit && tel && \(\s*<a href=\{`tel:\$\{tel\}`\}/);
+  assert.match(read("src/app/mypage/requests/[id]/page.tsx"), /academyPhone=\{await getUsableAcademyPhone\(\)\}/);
+});
+
+test("⑨ 원장 알림은 «학원 답 뒤 첫 글»에만 — 연달아 쓴 글에는 만들지 않는다", async () => {
+  const n = rules.shouldNotifyAdminsOfFollowUp;
+  assert.deepEqual([n(null, null), n(null, " 옛 답변 "), n("ADMIN", null), n("PARENT", "옛 답변")], [false, true, true, false]);
+
+  // 답이 아직 없는 문의: 처음 문의 때 이미 알림이 갔다 → 이어 쓴 글은 알림 없음
+  const fresh = fakeDb({ requests: [baseRequest()] });
+  const a = loadActions(fresh);
+  assert.equal((await a.actions.sendInquiryFollowUp("r1", "추가 1")).ok, true);
+  assert.equal(a.sent.adminNotices.length, 0);
+  // 학원 답 뒤 첫 글만 알림, 그다음 글은 없음
+  await service.addAdminInquiryReply(fresh, "admin-1", "r1", "답변");
+  await a.actions.sendInquiryFollowUp("r1", "답 뒤 첫 글");
+  assert.equal(a.sent.adminNotices.length, 2, "원장 계정 2개에 한 번씩");
+  await a.actions.sendInquiryFollowUp("r1", "답 뒤 둘째 글");
+  assert.equal(a.sent.adminNotices.length, 2);
+  assert.equal(fresh.state.requests[0].status, "PENDING", "알림이 없어도 요청함 «대기중»에는 다시 뜬다");
+  // 한도에 걸리면 알림도 없다
+  for (let i = 0; i < 5; i++) await a.actions.sendInquiryFollowUp("r1", `더 ${i}`);
+  const blocked = await a.actions.sendInquiryFollowUp("r1", "한도 밖");
+  assert.deepEqual([blocked.ok, blocked.waitingLimit], [false, true]);
+  assert.equal(a.sent.adminNotices.length, 2);
+});
+
+test("⑨ 환불 문의 중복: 동시에 두 번 눌러 유일 색인에 걸리면 먼저 만들어진 문의로 안내 · 조회 실패를 삼켜 새로 만들지 않는다", async () => {
+  const db = fakeDb({ payments: [paidBill()] });
+  db.state.raceOnce = true;
+  const raced = await service.createRefundInquiry(db, "parent-a", "pay-1", "");
+  assert.deepEqual([raced.ok, raced.existing, raced.requestId], [true, true, "r-race"]);
+  assert.equal(db.state.requests.length, 1, "두 번째 문의는 만들어지지 않았다");
+  assert.equal(service.isUniqueViolation(Object.assign(new Error("x"), { meta: { code: "23505" } })), true);
+  assert.equal(service.isUniqueViolation(new Error("relation does not exist")), false);
+  // 종결된 뒤에는 다시 문의할 수 있다
+  db.state.requests[0].status = "COMPLETED";
+  const again = await service.createRefundInquiry(db, "parent-a", "pay-1", "");
+  assert.deepEqual([again.ok, again.existing], [true, false]);
+  const source = read("src/lib/requests/inquiry-thread.ts");
+  assert.doesNotMatch(source, /UPDATE "ParentRequest" SET "paymentId"/, "만든 뒤 따로 연결하지 않는다(한 문장)");
+  assert.doesNotMatch(source, /status IN \('PENDING', 'CONFIRMED'\)[\s\S]{0,160}\.catch\(\(\) => \[\]/, "조회 실패를 빈 목록으로 삼키지 않는다");
+});
+
+test("⑨ 환불 사유 길이는 문의 글과 같은 함수로(빈 값만 허용)", async () => {
+  assert.deepEqual(rules.cleanInquiryBody("  ", { allowEmpty: true }), { ok: true, body: "" });
+  assert.equal(rules.cleanInquiryBody("가".repeat(2001), { allowEmpty: true }).ok, false);
+  assert.equal(rules.cleanInquiryBody("").ok, false, "기본은 빈 글 거절 그대로");
+  const db = fakeDb({ payments: [paidBill()] });
+  assert.equal((await service.createRefundInquiry(db, "parent-a", "pay-1", "가".repeat(2001))).ok, false);
+  assert.equal(db.state.requests.length, 0);
+  assert.match(read("src/lib/requests/inquiry-thread.ts"), /cleanInquiryBody\(rawReason, \{ allowEmpty: true \}\)/);
+});
+
+test("⑨ 새 문의 하루(KST) 20건 상한: 넣는 문장 안에서 센다", () => {
+  assert.equal(rules.INQUIRY_DAILY_NEW_MAX, 20);
+  const admin = read("src/app/actions/admin.ts");
+  const body = admin.slice(admin.indexOf("export async function createParentRequest"), admin.indexOf("export async function updateRequestStatus"));
+  assert.match(body, /SELECT gen_random_uuid\(\)::text, \$1, \$2, \$3, \$4, \$5, \$6::timestamptz, 'PENDING', NOW\(\), NOW\(\)\s+WHERE \(SELECT COUNT\(\*\) FROM "ParentRequest" d\s+WHERE d\."userId" = \$1\s+AND \(d\."createdAt" AT TIME ZONE 'Asia\/Seoul'\)::date = \(NOW\(\) AT TIME ZONE 'Asia\/Seoul'\)::date\) < \$7/);
+  assert.match(body, /requestedDate, INQUIRY_DAILY_NEW_MAX,/);
+  assert.match(body, /if \(insertedCount === 0\) throw new Error\("오늘은 문의를 더 보낼 수 없어요/);
+  // 권한 확인(내 아이)·허용 유형은 그대로
+  assert.match(body, /childAccessWhere\(parent\.appUserId\)/);
+  assert.match(body, /allowedTypes = new Set\(\["ABSENCE", "SHUTTLE", "EARLY_LEAVE", "OTHER"\]\)/);
 });
 
 // ── ⑧ 청구 화면의 «환불 문의»(c11) ──────────────────────────────────────────────

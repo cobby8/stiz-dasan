@@ -6,23 +6,29 @@ import { sendInquiryFollowUp } from "@/app/actions/parent-inquiry";
 import { INQUIRY_BODY_MAX } from "@/lib/requests/inquiryThreadRules";
 // 서버 안내를 그대로 띄우지 않고 고객용 문장인지 한 번 거른다(오류 원문·개발 용어 차단)
 import { customerMessage } from "@/components/parent/customerMessage";
+import { academyTel } from "@/lib/academyPhoneRules";
 
 /**
  * 문의 «이어 쓰기» 입력칸 (2026-11-14 원장 결정표 c3).
  * 보내면 그 자리에서 대화에 붙는다(router.refresh). 실패하면 쓴 글은 그대로 두고 한 줄 안내만 보인다.
  */
-export default function InquiryReplyForm({ requestId }: { requestId: string }) {
+export default function InquiryReplyForm({ requestId, academyPhone = null }: { requestId: string; /** 학원 대표 번호(걸 수 있는 값만) — 연속 글 한도 안내의 전화 버튼 */ academyPhone?: string | null }) {
   const router = useRouter();
   const [body, setBody] = useState("");
   const [error, setError] = useState("");
+  // 학원 답을 기다리는 동안 연달아 쓴 글이 한도(5개)에 닿았는가 — 안내 + 전화 버튼을 보인다
+  const [waitingLimit, setWaitingLimit] = useState(false);
+  const tel = academyTel(academyPhone);
   const [pending, startTransition] = useTransition();
 
   function submit() {
     setError("");
+    setWaitingLimit(false);
     startTransition(async () => {
       try {
         const result = await sendInquiryFollowUp(requestId, body);
         if (!result.ok) {
+          if (result.waitingLimit) setWaitingLimit(true);
           setError(customerMessage(result.error, "보내지 못했어요. 다시 시도해 주세요."));
           return;
         }
@@ -59,6 +65,10 @@ export default function InquiryReplyForm({ requestId }: { requestId: string }) {
         {pending ? "보내는 중..." : "보내기"}
       </button>
       {error && <p role="alert" className="text-xs font-semibold text-[var(--color-academy-danger)]">{error}</p>}
+      {/* 한도 안내는 막다른 곳으로 두지 않는다 — 급하면 그 자리에서 전화 */}
+      {waitingLimit && tel && (
+        <a href={`tel:${tel}`} className="academy-button-secondary w-full tabular-nums">학원에 전화 {academyPhone}</a>
+      )}
     </div>
   );
 }

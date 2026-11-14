@@ -8,6 +8,8 @@ import { getMyInquiry } from "@/lib/requests/inquiry-thread";
 import { INQUIRY_PARENT_STATUS_LABEL, INQUIRY_PARENT_STATUS_TONE } from "@/lib/requests/inquiryThreadRules";
 import InquiryThread from "@/components/parent/InquiryThread";
 import InquiryReplyForm from "./InquiryReplyForm";
+// 학원 대표 번호(설정값) — 연속 글 한도 안내의 전화 버튼용. 못 읽으면 null(버튼 없이 글자만)
+import { getUsableAcademyPhone } from "@/lib/academyPhone";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "보낸 문의 | 스티즈 농구교실" };
@@ -47,7 +49,7 @@ export default async function ParentRequestDetailPage({ params }: { params: Prom
             />
 
             {inquiry.canReply ? (
-                <InquiryReplyForm requestId={inquiry.id} />
+                <InquiryReplyForm requestId={inquiry.id} academyPhone={await getUsableAcademyPhone()} />
             ) : (
                 // 이어 쓰기를 쓸 수 없는 환경 — 막다른 곳으로 두지 않고 새 문의로 보낸다
                 <Link href="/mypage#parent-request-form" className="academy-button-secondary w-full">새 문의 보내기</Link>

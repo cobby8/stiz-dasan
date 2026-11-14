@@ -47,12 +47,12 @@ export const INQUIRY_PARENT_STATUS_TONE: Record<InquiryParentStatus, "warning" |
  * 글 정리: 줄바꿈을 \n 으로 맞추고, 앞뒤 빈칸을 떼고, 빈 줄은 두 줄까지만.
  * 비었거나 한도를 넘으면 거절(넘긴 글을 잘라 저장하지 않는다 — 학부모가 쓴 말이 조용히 잘리면 안 된다).
  */
-export function cleanInquiryBody(raw: unknown): { ok: true; body: string } | { ok: false; error: string } {
+export function cleanInquiryBody(raw: unknown, options: { /** 빈 글 허용(환불 사유처럼 «선택» 칸) */ allowEmpty?: boolean } = {}): { ok: true; body: string } | { ok: false; error: string } {
   const body = String(raw ?? "")
     .replace(/\r\n?/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-  if (!body) return { ok: false, error: "내용을 적어 주세요." };
+  if (!body && !options.allowEmpty) return { ok: false, error: "내용을 적어 주세요." };
   if (body.length > INQUIRY_BODY_MAX) return { ok: false, error: "2,000자 이내로 적어 주세요." };
   return { ok: true, body };
 }
@@ -88,6 +88,26 @@ export function inquiryParentStatus(head: Pick<InquiryHead, "status" | "adminNot
   if (head.status === "REJECTED") return "REJECTED";
   const last = lastAuthor ?? ((head.adminNote ?? "").trim() ? "ADMIN" : "PARENT");
   return last === "ADMIN" ? "ANSWERED" : "WAITING";
+}
+
+/**
+ * 학원 답이 오기 전에 학부모가 연달아 이어 쓸 수 있는 글 수(보안 검수 권장 — 같은 문의에 글을 끝없이 쌓지 못하게).
+ * 학원이 답하면 다시 0부터 센다. 처음 문의 글(ParentRequest.content)은 세지 않는다.
+ */
+export const INQUIRY_PARENT_STREAK_MAX = 5;
+export const INQUIRY_WAITING_LIMIT_MESSAGE = "답변을 기다리고 있어요. 급하면 학원에 전화해 주세요";
+
+/** 새 문의는 한 사람이 하루(KST)에 이만큼까지(환불 문의 포함 — 같은 표의 건수로 센다) */
+export const INQUIRY_DAILY_NEW_MAX = 20;
+
+/**
+ * 학부모가 이어 쓴 글에 원장 앱 알림을 만들 것인가 — «바로 앞 글이 학원 글일 때만».
+ * 처음 문의 때 이미 알림이 갔고, 학부모가 연달아 쓰는 글마다 알림을 만들면 알림이 쏟아진다.
+ * previousAuthor = 방금 쓴 글 바로 앞의 «이어 쓴 글» 글쓴이(없으면 null → 옛 답변이 있으면 학원, 없으면 학부모의 처음 글).
+ */
+export function shouldNotifyAdminsOfFollowUp(previousAuthor: InquiryAuthor | null, adminNote: string | null | undefined): boolean {
+  const previous = previousAuthor ?? ((adminNote ?? "").trim() ? "ADMIN" : "PARENT");
+  return previous === "ADMIN";
 }
 
 /** 목록 한 줄의 «첫 줄» — 글의 첫 줄만(빈 줄 제외), 길면 화면이 줄여 보인다 */
