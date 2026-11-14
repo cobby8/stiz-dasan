@@ -98,12 +98,31 @@
 - 연락처 변경이 Guardian 의 «옛 내 번호» 줄도 새 번호로 맞춘다(phone-change.ts) · 인증 원장 재사용(stizphone_) 이 자녀 연결 증명과 안 섞이는지
 - 신청함(inbox) 종류는 추가하지 않음(동시 작업 충돌 회피) — 학생 상세 칸 + 관리자 앱 알림만
 
+### 구현 기록 (developer · 11-14 학부모 5단계 claude/parent-step5-inquiry)
+
+📝 구현한 기능: 보낸 문의 다시 보기·이어 쓰기(c3) · 소식 사진 앱 안 크게 보기(c4) · 지난 공지·연간 일정(c10) · 앱 안 «신청» 메뉴(c9) · 환불 문의(c11)
+
+| 파일 경로 | 변경 내용 | 신규/수정 |
+|----------|----------|----------|
+| prisma/migrations/20261115110000_parent_request_thread · schema.prisma | ParentRequestMessage(RLS FORCE) + ParentRequest.paymentId·paymentAmount | 신규/수정 |
+| src/lib/requests/inquiryThreadRules.ts · inquiry-thread.ts · actions/parent-inquiry.ts | 대화 규칙 / DB / 서버 동작(이어 쓰기·학원 답·환불 문의) | 신규 |
+| mypage/requests(page·[id]·InquiryReplyForm) · components/parent/InquiryThread | 보낸 문의 목록·대화 | 신규 |
+| admin/requests/RequestsAdminClient · admin/inbox/InboxClient · lib/requests/admin-inbox | 대화 표시·답변 이어 쓰기 | 수정 |
+| mypage/news/page · mypage/annual/page · lib/mypage/parentNotices · parentSchedule | 지난 공지·연간 일정 | 신규/수정 |
+| mypage/apply · rental · seasonal/apply/** · components/parent/ParentEmbeddedPublic · lib/mypage/parentApplyMenu·parentApplyPrefill · app/rental/RentalGuide | 앱 안 신청 | 신규 |
+| components/seasonal/Seasonal{List,Detail,Apply}Client · app/rental/RentalClient·page | basePath·homeHref 선택 속성(기본값 그대로) | 수정 |
+| mypage/MyPageClient·page · settings/page · reports/page · history/ScheduleHub · MyPageBottomNav · payments/PaymentRequestClient | 입구·사진·환불 문의 | 수정 |
+
+💡 tester 참고: `node --test tests/parent-inquiry-thread.test.mjs tests/parent-news-annual.test.mjs tests/parent-apply-menu.test.mjs`. 마이그레이션 적용 «전»: 대화는 첫 글+옛 답변만·학부모 이어 쓰기는 «새 문의» 안내·학원 답은 adminNote 에 저장·환불 문의는 청구 연결 없이 접수. 주의 입력: 2,000/2,001자 · 남의 문의 id 주소 직접 입력(404) · 종결된 문의에 이어 쓰기(대기중 복귀) · 같은 청구 환불 문의 두 번 · 지난 공지 ?page=0/99/abc · 형제 계정의 특강 신청서(아이 칸 비움).
+⚠️ reviewer 참고: ① 새 SQL 은 실제 Postgres 미실행 ② 앱 안 대관·특강 화면은 공개 테마를 /mypage 틀 안에 겹쳐 그린다 — 모양·하단 고정 바 위치는 실기기 확인 필요 ③ 요청함 답변 칸은 이제 빈칸으로 열린다(예전엔 저장된 답을 고쳐 덮어씀).
+
 ---
 
 ## 작업 로그 (최근 10건)
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-14 | developer(학부모 5단계, claude/parent-step5-inquiry): 보낸 문의 화면·대화·이어 쓰기(ParentRequestMessage, 관리자 요청함·신청함 답변 이어 쓰기, 앱 알림만) · 소식 사진 앱 안 크게 보기 · 지난 공지(/mypage/news 20건씩)·연간 일정(/mypage/annual) · 앱 안 «신청» 메뉴(유니폼=본사 쇼핑몰 바깥 링크, 대관·방학특강=공개 부품을 /mypage 아래에서) · 청구 탭 «환불 문의»(청구 id·금액 연결). **마이그레이션 20261115110000 운영 미적용**(없어도 동작). tsc 0·tests 5202-0·guards 82-0. 새 SQL 실제 Postgres 미실행·앱 안 신청 화면 실기기 미확인 | 검수 대기 |
 | 11-14 | developer(학부모 문구 정리, claude/parent-copy-cleanup): 원장 결정표 d1~d7 — 이름 통일(결석 알리기·셔틀 변경·보강 예약)·맨 아래 계정 링크 줄 삭제(설정 «계정» 묶음으로)·역할 신청 링크 제거·옛 기록 안내 삭제·빈 칸/«○○ 확인 중» 줄 숨김·셔틀 알림 결과 한 줄. 학부모용 셔틀 라벨 분리(PARENT_SHUTTLE_*), 가드 tests/parent-copy-names-guard. 미완: 수강 변경 «취소 요청»은 신청 내역으로 가는 버튼(조회에 신청 id 없음) | tsc 0 · fail 0 |
 | 11-15 | developer(학부모 여러 날 결석, claude/absence-period-parent): 이월 재검수 권장 ②~⑤(564ce9bc) + 학부모 «결석 알리기 › 여러 날»(4주·모든 사유, 날짜마다 saveReportedAbsenceInTx·알림 기간당 1회·복귀했어요/알림 취소·끝나기 전 앱 알림) · 질병·부상 증빙 기간 한 묶음·같은 기간 함께 승인 · 관리자 «기간 결석 등록» 입구 2곳·학부모 신고 표시. **마이그레이션 20261115100000 운영 미적용**(없으면 여러 날만 숨김). tsc 0·tests 5000-0·guards 82-0. 새 SQL 실제 Postgres 미실행 | 검수 대기 |
 | 11-14 | developer(완료한 수업 다시 보기·고치기, claude/staff-session-review): 수정 기간 규칙 한 곳(staffSessionEditWindow — 수업일 포함 7일·원장/부원장 무제한, 사진·영상·한 줄·메모·출결 정정 공통) · 수업 주소가 완료한 수업도 연다(CompletedSessionPanel: 발행 상태·[학부모에게 보내기]·출결 정정(정규·특강 좌석만, 미리 보기+확인 1회)·메모) · «지난 수업» 목록(/staff/sessions, 최근 14일) · 완료 뒤 수정은 OperationsAuditLog(STAFF_SESSION_REVIEW_EDIT)·알림 없음. tsc 0·tests 5088-0·guards 82-0. 새 SQL 은 실제 Postgres 미실행 | 검수 대기 |
@@ -113,5 +132,3 @@
 | 11-14 | developer(수업 진행 화면 간결화, claude/staff-session-compact): 출석부 화면·«출석 확인» 칸·«학생 정보·수업 관리» 펼침을 없애고 학생 한 줄 명단(이름+출결 3버튼)+상세 시트(SessionStudentSheet)+«더보기» · «오늘 수업 내용»+«수업 피드» → «오늘 수업» 한 칸(계획 접힘·불러오기) · 종료 창 중복 입력 제거 · 옛 안드로이드 앱(1.0.3 미만) 영상 촬영 안내. 서버·액션 변경 없음. tsc 0·tests 4808-0 | 완료(main 머지 전·실기기 점검 필요) |
 | 11-14 | developer(보강 예약 학년 판정, claude/makeup-grade): 학생 학년 = 생년월일 계산(student-grade.ts, 임시 생일 2000-01-01·빈 값이면 학년 글자), 후보 = 포함 먼저+±1 유지·미취학 위로 2학년·성인반끼리(credit-rules.makeupGradeFit, 목록·예약 같은 판정), 빈 목록 4종 그 자리 버튼(학년 확인·다시 확인·학원에 문의→홈 메시지 폼), 문구 한 줄씩. 휴원 차단 조건 없음. tsc 0·node --test 4795/0 | 검수 대기 |
 | 11-14 | PM: 청구 월 카드(f8bc4572+결제하기 안전장치 87c09363·중복 누름 8e43b575)·기사 운행표 휴원·휴무(067011c5)·앱 1.0.3 버전(5175e8ec) 묶음 배포 a2ce24e READY·오류 0. 안드로이드 vc6 내부 테스트 게시·iOS Codemagic #6 TestFlight 처리 완료(외부 베타 정보 미입력 경고만) | 완료 |
-| 11-14 | developer(기사님 운행표 휴원·휴무, claude/driver-paused-holiday): 휴원·퇴원·첫 수업 전 = 회색 뱃지+탑승·미탑승 잠금(명단 유지), 휴무일 = 맨 위 «오늘은 휴무(사유)»+정규 줄 잠금, 저장 API 2곳 409, 관리자 운행표 뱃지+«이 달 휴무». 판정 = regularRunDayRules(학부모 childShuttleRules 재사용). 운영 읽기: 휴원 3명·6행 뱃지 대상. 리뷰 반영(월말 다음 달 미입력=모름·반 0개는 퇴원 기록 있을 때만 퇴원·409 문구 표시) tsc 0·node --test 4672/0·guards 5/0 | 재검수 대기 |
-| 11-14 | developer(청구 월 카드, claude/billing-cards): 학부모 청구 탭·아이 기록 = 한 달 한 줄(청구월·합계·상태) + 세부 시트(할인 «원래−할인=낼 금액»·기존 결제 버튼 그대로 시트 안) · 할인 원인 = Payment 에 할인 칸 없음, 글(description) 안에만 있어 카드가 원문을 통째로 보였음 → 해석 156/157건 · 청구 탭 날짜 두 번 변환 · tests 4661-0·guards 5-0·tsc 0 | 검수 대기 |
