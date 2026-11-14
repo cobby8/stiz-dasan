@@ -631,7 +631,7 @@ export async function cancelRegularAbsence(
       throw new Error("ABSENCE_CHANGE_CLOSED");
     }
 
-    // 질병·부상 이월 검토 중이었으면 함께 닫는다(사진은 화면에서 빠지고 파일은 cron 이 지운다)
+    // 질병·부상 이월 검토 중이었으면 함께 닫는다(사진은 같은 기간의 살아 있는 결석으로 옮기거나 뺀다)
     if (await illnessReviewReady(tx)) await closeIllnessReviewInTx(tx, canceled[0].id, { canceled: true });
 
     // 보강권 되돌리기 — 막아야 하면 오류를 던져 위 취소까지 함께 되돌린다
@@ -780,7 +780,7 @@ export async function moveRegularAbsence(
       studentId, classId, toDate, reason, parentUserId,
     );
     if (!saved[0]) throw new Error("ABSENCE_MOVE_TARGET_TAKEN");
-    // «여러 날 결석»의 한 날을 옮긴 경우 새 날짜도 같은 기간에 묶는다(2026-11-15) — 기간에 한 묶음으로 올린 증빙 사진·
+    // «여러 날 결석»의 한 날을 옮긴 경우 새 날짜도 같은 기간에 묶는다(2026-11-14) — 기간에 한 묶음으로 올린 증빙 사진·
     // «복귀했어요»·기간 묶음 승인이 옮긴 날에도 그대로 닿게. 하루 신고(기간 없음)는 아무것도 바뀌지 않는다.
     await tx.$executeRawUnsafe(
       `UPDATE "RegularAbsence" n SET "periodId" = o."periodId", note = o.note

@@ -309,7 +309,7 @@ export default function PeriodAbsencePanel({
           <p className="min-w-0 flex-1 break-keep text-sm text-[var(--color-academy-danger)]">{problem.text}</p>
           {/* 4주가 넘으면 글만 두지 않고 휴원 신청으로 바로 잇는다 */}
           {problem.tooLong && <Link href="/mypage/enrollment-change" className="academy-button-secondary shrink-0">휴원 신청</Link>}
-          {/* 오늘 알릴 수 있는 횟수를 넘었다 — 그 자리에서 전화·문의로 잇는다(학원 연락처가 설정돼 있을 때) */}
+          {/* 오늘 알릴 수 있는 횟수를 넘었거나 학원이 등록한 결석 기간과 겹친다 — 그 자리에서 전화·문의로 잇는다(학원 연락처가 설정돼 있을 때) */}
           {problem.needContact && contact.phone && (
             <a href={`tel:${contact.phone.replace(/[^0-9+]/g, "")}`} className="academy-button-secondary shrink-0 whitespace-nowrap">전화</a>
           )}

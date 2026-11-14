@@ -6,7 +6,7 @@
 //
 // 규칙(원장 결정표 2026-11-14):
 //   · 질병·부상 결석이 생기면(학부모 신고·사유 변경) → 검토 «PENDING», 이미 나간 미사용 보강권은 거둬 둔다.
-//   · 다른 사유로 바뀌거나 신고가 취소되면 → 검토 «CLOSED», 사진은 화면에서 뺀다(파일은 cron 이 지운다).
+//   · 다른 사유로 바뀌거나 신고가 취소되면 → 검토 «CLOSED», 사진은 같은 기간의 살아 있는 결석으로 옮기거나 뺀다(뺀 파일은 cron 이 지운다).
 //   · [보강권으로] / 7일 지나 사진 없음 → 보강권 1장 발급 + 검토 «MAKEUP».
 //   · [이월 승인]은 기존 이월 규칙(resolveWorkbenchAbsence)이 처리하고, 그 함수가 검토를 «APPROVED»로 맞춘다.
 import { lockCompensation, type CompensationTransaction } from "@/lib/billing/absence-compensation-guard";
@@ -89,7 +89,7 @@ export async function openIllnessReviewInTx(
 }
 
 /**
- * 검토 닫기 — 사진은 화면에서 빼고(removedAt), 저장소 파일은 cron 이 지운다.
+ * 검토 닫기 — 사진은 같은 기간의 살아 있는 결석으로 옮기거나 뺀다(removedAt — 뺀 파일은 cron 이 지운다).
  *
  * - 다른 사유로 바뀜(기본): «검토 중»만 닫는다. 원장이 이미 [보강권으로] 정한 결석은 그 결정을 그대로 둔다
  *   (사유를 바꿨다 되돌려 원장 결정을 다시 열 수 없게).
@@ -107,7 +107,7 @@ export async function closeIllnessReviewInTx(
     absenceId, options.canceled ? ["PENDING", "MAKEUP"] : ["PENDING"],
   );
   if (Number(n) === 0) return { closed: false };
-  // 사진 정리(코드 리뷰·보안 검수 2026-11-15) — 살아 있는 사진은 언제나 «살아 있는 검토가 있는 결석»에 붙어 있게 한다.
+  // 사진 정리(코드 리뷰·보안 검수 2026-11-14) — 살아 있는 사진은 언제나 «살아 있는 검토가 있는 결석»에 붙어 있게 한다.
   //   ① 여러 날 결석(기간)에 살아 있는 형제(취소 안 된 결석의 검토 중·이월 승인·보강권 전환)가 있으면 사진을 그 결석으로 옮긴다
   //      (날짜 바꾸기와 같은 방식). 사진이 붙은 날만 하루 취소해도 기간의 증빙은 그대로이고, 학부모의 사진 삭제·교체도 계속 된다.
   //   ② 옮길 곳이 없으면(하루 결석이거나 기간의 마지막 검토였다) 화면에서 뺀다 — 파일은 cron 이 지운다.
@@ -119,7 +119,8 @@ export async function closeIllnessReviewInTx(
                JOIN "RegularAbsence" sibling ON sibling."periodId" = me."periodId" AND sibling.id <> me.id AND sibling.status <> 'CANCELLED'
                JOIN "RegularAbsenceCarryReview" sr ON sr."absenceId" = sibling.id AND sr.status IN ('PENDING', 'APPROVED', 'MAKEUP')
               WHERE me.id = $1 AND me."periodId" IS NOT NULL
-              ORDER BY sibling.date, sibling.id
+              -- 검토 중인 날을 먼저 고른다 — 결정이 끝난 날(이월 승인·보강권 전환)로 옮기면 학부모가 사진을 지우거나 바꿀 수 없게 된다
+              ORDER BY (sr.status = 'PENDING') DESC, sibling.date, sibling.id
               LIMIT 1) heir
       WHERE e."absenceId" = $1 AND e."removedAt" IS NULL`,
     absenceId,

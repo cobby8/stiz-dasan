@@ -18,9 +18,12 @@ export type EvidenceDb = {
 /** 결석 한 건의 사진 올리기를 줄 세우는 잠금(검토 줄 한 행). 반드시 거래 안에서, 장수를 세기 «전»에 따로 실행한다 */
 export const EVIDENCE_LOCK_SQL = `SELECT 1 AS locked FROM "RegularAbsenceCarryReview" WHERE "absenceId" = $1 FOR UPDATE`;
 
-/** 여러 날 결석(기간)의 사진 올리기를 줄 세우는 잠금 — 그 결석이 속한 기간 행. 하루 결석이면 잠글 행이 없다(0행) */
+/**
+ * 여러 날 결석(기간)의 사진 올리기를 줄 세우는 잠금 — 그 결석이 속한 기간 행. 하루 결석이면 잠글 행이 없다(0행).
+ * NO KEY UPDATE: 줄만 세우면 되므로 키를 바꾸는 잠금(FOR UPDATE)까지 잡지 않는다 — 그 기간을 가리키는 결석 행 쓰기(FK 확인)를 막지 않는다.
+ */
 export const EVIDENCE_PERIOD_LOCK_SQL = `SELECT 1 AS locked FROM "RegularAbsencePeriod" p
-  JOIN "RegularAbsence" ra ON ra."periodId" = p.id WHERE ra.id = $1 FOR UPDATE OF p`;
+  JOIN "RegularAbsence" ra ON ra."periodId" = p.id WHERE ra.id = $1 FOR NO KEY UPDATE OF p`;
 
 export type EvidenceTarget = { absenceId: string; status: string; requestedYmd: string; absenceYmd: string; todayYmd: string; photoCount: number };
 
