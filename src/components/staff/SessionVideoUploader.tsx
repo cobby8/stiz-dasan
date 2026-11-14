@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
 import { userErrorMessage } from "@/components/staff/userErrorMessage";
 import { SessionVideoPlayer } from "@/components/parent/SessionVideoPlayer";
 import { isStoreApp, needsAppUpdateForVideoCapture } from "@/lib/storeApp";
@@ -63,7 +63,21 @@ function putWithProgress(url: string, file: File, mimeType: string, onProgress: 
  *       ③ 서버에 «등록»(서버가 저장소 파일 크기·형식을 다시 확인) ④ 목록 새로 불러오기.
  * 업로드·삭제는 수업일 포함 7일 동안(원장·부원장은 제한 없음 — 서버가 판정, 화면은 그 결과만 보인다).
  */
-export function SessionVideoUploader({ sessionId, quiet = false }: { sessionId: string; /** true 면 «지금은 올릴 수 없는 이유» 한 줄을 숨긴다(화면 위에 같은 안내가 이미 있을 때) */ quiet?: boolean }) {
+/** 바깥 버튼(수업 화면 아래 [동영상]·[갤러리])이 이 부품의 올리기를 부를 때 쓰는 손잡이(2026-11-15) */
+export type SessionVideoUploaderHandle = { upload: (file: File) => void };
+export type SessionVideoUploaderState = {
+  busy: boolean; canUpload: boolean; count: number; message: string; progress: number | null; windowMessage: string | null;
+  /** 옛 안드로이드 앱(1.0.3 미만) — «영상 촬영»이 파일 선택으로 떨어진다. 바깥 [동영상] 버튼 옆에 업데이트 안내를 보이는 데 쓴다 */
+  needsAppUpdate: boolean;
+};
+
+export function SessionVideoUploader({ sessionId, hideButtons = false, onStateChange, ref }: {
+  sessionId: string;
+  /** true 면 [영상 촬영]·[영상 선택] 버튼을 그리지 않는다 — 수업 화면 아래 고정 막대가 대신 올린다. 목록·삭제·진행률은 그대로 */
+  hideButtons?: boolean;
+  onStateChange?: (state: SessionVideoUploaderState) => void;
+  ref?: Ref<SessionVideoUploaderHandle>;
+}) {
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
   const [videos, setVideos] = useState<SessionVideoPlayback[]>([]);
@@ -167,6 +181,15 @@ export function SessionVideoUploader({ sessionId, quiet = false }: { sessionId: 
     }
   }
 
+  // 바깥 버튼용: 같은 upload 함수를 그대로 부른다(크기·형식 확인·진행률·다시 시도 모두 기존 로직)
+  const uploadRef = useRef(upload);
+  useEffect(() => { uploadRef.current = upload; });
+  useImperativeHandle(ref, () => ({ upload: (file: File) => void uploadRef.current(file) }), []);
+  useEffect(() => {
+    onStateChange?.({ busy, canUpload: canManage, count: videos.length, message, progress, windowMessage, needsAppUpdate });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy, canManage, videos.length, message, progress, windowMessage, needsAppUpdate]);
+
   return (
     <div className="space-y-3">
       {videos.length > 0 && (
@@ -189,6 +212,8 @@ export function SessionVideoUploader({ sessionId, quiet = false }: { sessionId: 
 
       {canManage ? (
         <>
+          {/* hideButtons(수업 중 화면): 촬영·선택 버튼과 업데이트 안내는 아래 고정 막대(SessionMediaBar)가 그린다 — 여기는 크기 안내만 */}
+          {!hideButtons && <>
           {/* 촬영: 휴대폰 카메라(후면)로 바로 / 선택: 갤러리에 있는 영상
               ⚠️ 촬영 칸의 accept 는 «video/*» 하나만 둔다. 안드로이드(크롬·앱 1.0.3+)는 받는 형식이 «전부 영상»일 때만
               동영상 카메라를 열고, 구체 형식 목록(mp4,quicktime…)을 섞거나 multiple 을 붙이면 파일 선택으로 떨어진다.
@@ -208,10 +233,11 @@ export function SessionVideoUploader({ sessionId, quiet = false }: { sessionId: 
               앱을 업데이트하면 바로 촬영돼요. 지금은 휴대폰 카메라로 찍은 뒤 «영상 선택»으로 올려 주세요.
             </p>
           )}
+          </>}
           <p className="text-xs text-[var(--color-academy-muted)]">{uploadHintMessage(maxBytes)}</p>
         </>
       ) : (
-        !quiet && windowMessage && <p className="text-sm text-[var(--color-academy-muted)]">{windowMessage}</p>
+        windowMessage && <p className="text-sm text-[var(--color-academy-muted)]">{windowMessage}</p>
       )}
 
       {progress !== null && (

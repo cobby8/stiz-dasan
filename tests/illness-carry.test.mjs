@@ -636,19 +636,25 @@ test("출결 저장 경로: 정규 결석은 발급 전에 보류 여부를 보�
   assert.ok(fn.indexOf("isIllnessCreditHeld(") < fn.indexOf("return syncMakeupCreditForAttendance("), "발급 함수보다 먼저 본다");
   // 출석·지각으로 정정할 때의 회수는 사유와 상관없이 그대로(ABSENT 일 때만 보류를 본다)
   assert.doesNotMatch(fn, /status !== "ABSENT" && await isIllnessCreditHeld/);
-  // 2026-11-14 출결 취소(clearStaffAttendance)가 생겨 선생님 쪽은 «저장»·«취소» 두 함수가 각각 한 번씩 부른다.
-  // 함수마다 «사유 정리 → 보강권 맞춤» 순서이고 한 번뿐인지를 따로 본다.
-  const staffSource = read("src/app/actions/staff-sessions.ts");
-  const adminSource = read("src/app/actions/admin.ts");
-  const staffSave = staffSource.slice(staffSource.indexOf("export async function saveStaffAttendance"), staffSource.indexOf("// ── 출결 취소(미확인으로 되돌리기)"));
-  const staffClear = staffSource.slice(staffSource.indexOf("export async function clearStaffAttendance"), staffSource.indexOf("async function getMakeupCompletedParentRecipients"));
-  assert.equal(staffSource.split("await syncCreditForRegularSession(").length - 1, 2, "선생님 쪽 정규 보강권 맞춤은 저장·취소 두 곳뿐");
-  for (const [source, name] of [[staffSave, "saveStaffAttendance"], [staffClear, "clearStaffAttendance"], [adminSource, "saveAttendance"]]) {
+  for (const [path, name] of [["src/app/actions/staff-sessions.ts", "saveStaffAttendance"], ["src/app/actions/admin.ts", "saveAttendance"]]) {
+    const source = read(path);
     const reasonAt = source.indexOf("applyAttendanceAbsenceReasonInTx(tx,");
     const syncAt = source.indexOf("await syncCreditForRegularSession(");
     assert.ok(reasonAt > 0 && syncAt > reasonAt, `${name}: 사유(질병·부상 표시) 저장 뒤에 보강권을 맞춘다`);
     assert.equal(source.split("await syncCreditForRegularSession(").length - 1, 1, `${name}: 정규 보강권 맞춤은 한 곳`);
   }
+  // 2026-11-14 출결 취소(clearStaffAttendance)는 따로 도는 맞춤 함수를 부르지 않는다 —
+  // 사유 정리 → 출결 삭제 → 안 쓴 보강권 회수를 «같은 트랜잭션»에서 이 순서로 한다(회수는 결석이 사라질 때뿐이라 보류 판정이 필요 없다).
+  const staffSource = read("src/app/actions/staff-sessions.ts");
+  const staffClear = staffSource.slice(staffSource.indexOf("export async function clearStaffAttendance"), staffSource.indexOf("async function getMakeupCompletedParentRecipients"));
+  assert.ok(staffClear.length > 500, "clearStaffAttendance 를 찾지 못했다");
+  assert.doesNotMatch(staffClear, /syncCreditForRegularSession\(/);
+  const clearReasonAt = staffClear.indexOf("applyAttendanceAbsenceReasonInTx(tx,");
+  const clearDeleteAt = staffClear.indexOf(`DELETE FROM "Attendance" WHERE "sessionId" = $1 AND "studentId" = $2 AND status = $3 RETURNING id`);
+  const clearRevokeAt = staffClear.indexOf("await revokeMakeupCreditInTx(tx,");
+  assert.ok(clearReasonAt > 0 && clearDeleteAt > clearReasonAt && clearRevokeAt > clearDeleteAt, "clearStaffAttendance: 사유 정리 → 출결 삭제 → 보강권 회수 순서");
+  assert.equal(staffClear.split("await revokeMakeupCreditInTx(").length - 1, 1, "clearStaffAttendance: 보강권 회수는 한 곳");
+  assert.equal(staffSource.split("revokeMakeupCreditInTx(").length - 1, 1, "선생님 쪽에서 보강권을 직접 회수하는 곳은 출결 취소 하나뿐");
   // 랠리즈 출결 동기화도 같은 함수를 쓴다(분기가 따로 필요 없다)
   assert.match(read("src/app/actions/rallyz-attendance-sync.ts"), /await syncCreditForRegularSession\(target\)/);
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
 import Image from "next/image";
 import { SESSION_IMAGE_ALLOWED_TYPES } from "@/lib/clientImageCompression";
 import { uploadImagesWithProgress } from "@/lib/clientImageUpload";
@@ -13,6 +13,11 @@ type ManagedPhoto = {
   requiresDeletionQueue: boolean;
 };
 
+/** 바깥 버튼(수업 화면 아래 [사진]·[갤러리])이 이 부품의 올리기를 부를 때 쓰는 손잡이(2026-11-15) */
+export type SessionPhotoUploaderHandle = { upload: (files: File[]) => void };
+/** 바깥 버튼이 잠금·진행 문구를 맞추는 데 쓰는 상태 */
+export type SessionUploaderState = { busy: boolean; canUpload: boolean; count: number; message: string; windowMessage: string | null };
+
 /** 한 번에 고를 수 있는 사진 수(예전과 같은 10장) */
 const PHOTO_PICK_LIMIT = 10;
 
@@ -20,18 +25,22 @@ const PHOTO_PICK_LIMIT = 10;
  * 수업 사진 올리기(선생님) — 2026-11-14 수업 피드 개편(원장 결정).
  * - «사진에 나온 학생» 선택을 없앴다: 학부모는 «그 수업에 참여한 아이의 보호자»만 보므로 태그·동의가 필요 없다.
  * - 촬영·갤러리 여러 장은 그대로. 실패한 사진만 따로 «다시 올리기»(성공한 사진을 두 번 올리지 않게).
- * - 올리기·지우기 가능 기간은 영상과 같다(수업 중 또는 끝난 뒤 수업일 포함 7일, 원장·부원장은 제한 없음) — 서버가 canUpload 로 알려 준다.
+ * - 올리기·지우기 가능 시간은 영상과 같다(수업 중 또는 끝난 뒤 수업일 포함 7일, 원장·부원장은 제한 없음) — 서버가 canUpload 로 알려 준다.
  * - 사진을 올려도 학부모 알림은 다시 보내지 않는다(수업 종료 알림 한 번).
  */
 export function SessionPhotoUploader({
   sessionId,
   onUploaded,
-  quiet = false,
+  hideButtons = false,
+  onStateChange,
+  ref,
 }: {
   sessionId: string;
   onUploaded?: (urls: string[]) => void;
-  /** true 면 «지금은 올릴 수 없는 이유» 한 줄을 숨긴다 — 화면 위에 같은 안내가 이미 있을 때(완료한 수업·수정 기간 지남) */
-  quiet?: boolean;
+  /** true 면 [사진 촬영]·[갤러리 선택] 버튼을 그리지 않는다 — 수업 화면 아래 고정 막대가 대신 올린다. 목록·지우기·안내는 그대로 */
+  hideButtons?: boolean;
+  onStateChange?: (state: SessionUploaderState) => void;
+  ref?: Ref<SessionPhotoUploaderHandle>;
 }) {
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
@@ -119,6 +128,16 @@ export function SessionPhotoUploader({
 
   const locked = busy || !canUpload;
 
+  // 바깥 버튼용: 같은 upload 함수를 그대로 부른다(압축·장수 제한·실패분 다시 올리기 모두 기존 로직)
+  const uploadRef = useRef(upload);
+  useEffect(() => { uploadRef.current = upload; });
+  useImperativeHandle(ref, () => ({ upload: (files: File[]) => void uploadRef.current(files) }), []);
+  useEffect(() => {
+    onStateChange?.({ busy, canUpload, count: photos.length, message, windowMessage });
+    // onStateChange 는 부모의 setState 를 그대로 받는다(매 렌더 새 함수여도 값이 같으면 다시 그리지 않는다)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy, canUpload, photos.length, message, windowMessage]);
+
   return (
     <div className="space-y-3">
       {photos.length > 0 && (
@@ -142,6 +161,7 @@ export function SessionPhotoUploader({
         </ul>
       )}
 
+      {!hideButtons && <>
       <input ref={cameraRef} hidden type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={(event) => void upload(event.target.files)} />
       <input ref={galleryRef} hidden type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => void upload(event.target.files)} />
       <div className="grid grid-cols-2 gap-2">
@@ -152,7 +172,8 @@ export function SessionPhotoUploader({
           갤러리 선택
         </button>
       </div>
-      {!quiet && !canUpload && windowMessage && <p className="text-xs text-[var(--color-academy-muted)]">{windowMessage}</p>}
+      </>}
+      {!canUpload && windowMessage && <p className="text-xs text-[var(--color-academy-muted)]">{windowMessage}</p>}
       {message && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[var(--color-academy-soft)] p-3">
           <p aria-live="polite" className="min-w-0 flex-1 text-sm text-[var(--color-academy-muted)]">{message}</p>

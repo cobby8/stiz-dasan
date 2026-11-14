@@ -1,5 +1,6 @@
 "use client";
 
+import UiIcon from "@/components/common/UiIcon";
 import { useState } from "react";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import type { AdminCreditOverview } from "@/lib/makeup/admin-credits";
@@ -62,7 +63,7 @@ export default function CreditPanel({ data }: { data: AdminCreditOverview }) {
               className="academy-button-secondary academy-button-sm"
             >
               학생별 보기 <span className="tabular-nums">{students.length}</span>명
-              <span aria-hidden="true">{listOpen ? "▴" : "▾"}</span>
+              <UiIcon name={listOpen ? "expand_less" : "expand_more"} />
             </button>
           )}
         </div>

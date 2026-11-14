@@ -135,6 +135,26 @@ h1, h2, h3, h4, h5, h6 {
   -webkit-font-smoothing: antialiased;
 }
 
+/* 아이콘 글꼴을 못 받았을 때(주소 막힘·4초 초과 — DeferredFontStyles 가 html 에 material-symbols-fallback 을 붙인다):
+   투명한 아이콘 자리를 치우고 대체 글자(▾ · «알림» · «설정» · ⚡)를 보인다. 아이콘만 있는 버튼이 빈칸이 되지 않게.
+   글꼴이 늦게 도착하면 클래스가 ready 로 바뀌어 아이콘으로 돌아간다. */
+.ui-icon-fallback {
+  display: none;
+}
+
+.material-symbols-fallback .material-symbols-outlined {
+  display: none;
+}
+
+.material-symbols-fallback .ui-icon-fallback {
+  display: inline;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: normal;
+  white-space: nowrap;
+}
+
 /* Admin tables share the compact, one-line rule from the application CRM table. */
 .admin-table-scope :is(.overflow-x-auto, .overflow-auto):has(> table) {
   overflow-y: visible;

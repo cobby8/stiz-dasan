@@ -100,7 +100,18 @@ export async function revokeMakeupCredit(input: {
   sourceKey: string;
   note?: string | null;
 }): Promise<{ revoked: number }> {
-  const n = await prisma.$executeRawUnsafe(
+  return revokeMakeupCreditInTx(prisma, input);
+}
+
+/**
+ * revokeMakeupCredit 의 트랜잭션판 — 출결 취소처럼 «출결 삭제와 보강권 회수가 같이 되거나 같이 안 되어야» 할 때 쓴다.
+ * 규칙(SQL)은 이 한 곳뿐이다. 위 함수는 여기를 그대로 부른다.
+ */
+export async function revokeMakeupCreditInTx(
+  db: { $executeRawUnsafe(sql: string, ...values: unknown[]): Promise<unknown> },
+  input: { studentId: string; sourceKey: string; note?: string | null },
+): Promise<{ revoked: number }> {
+  const n = await db.$executeRawUnsafe(
     `UPDATE "MakeupCredit"
         SET "status" = 'REVOKED',
             "note" = COALESCE($3, "note"),

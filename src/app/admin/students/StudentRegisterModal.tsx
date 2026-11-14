@@ -9,9 +9,10 @@
  * 저장은 서버 액션 registerStudent 하나(트랜잭션 하나)라 중간에 실패하면 아무것도 남지 않는다.
  * 목록 «원생 등록»과 체험 «원생 등록»(체험 정보를 미리 채움)이 같은 창을 쓴다.
  *
- * 화면 규칙: 색은 학원 토큰(var(--color-academy-*)), 아이콘은 Material Symbols, 터치 44px·글자 12px 이상.
+ * 화면 규칙: 색은 학원 토큰(var(--color-academy-*)), 아이콘 없이 글자(펼침 화살표만 공용 UiIcon — 2026-11-15 예외), 터치 44px·글자 12px 이상.
  */
 
+import UiIcon from "@/components/common/UiIcon";
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import AdminModal from "@/components/admin/AdminModal";
@@ -375,7 +376,7 @@ export default function StudentRegisterModal({
                             </label>
                         </div>
                         <button type="button" onClick={() => setShowMore((v) => !v)} aria-expanded={showMore} className="academy-button-text">
-                            <span aria-hidden="true">{showMore ? "▴" : "▾"}</span>
+                            <UiIcon name={showMore ? "expand_less" : "expand_more"} />
                             더 입력(학생 휴대폰·주소·가입 경로)
                         </button>
                         {showMore && (

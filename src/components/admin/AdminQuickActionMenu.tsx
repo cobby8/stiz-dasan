@@ -182,6 +182,8 @@ export default function AdminQuickActionMenu({
                 className="relative inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)] transition before:absolute before:-inset-1 before:content-[''] hover:bg-[var(--color-academy-soft)] aria-expanded:border-[var(--color-academy-secondary-strong)] aria-expanded:bg-[var(--color-academy-secondary-soft)]"
             >
                 <span className="material-symbols-outlined text-xl" aria-hidden="true">{icon}</span>
+                {/* 아이콘 글꼴을 못 받았을 때만 보이는 대체 글자(globals.css) — 버튼이 빈 원이 되지 않게. 이름은 aria-label */}
+                <span className="ui-icon-fallback" aria-hidden="true">{icon === "more_horiz" ? "⋯" : "⚡"}</span>
             </button>
 
             {open && (

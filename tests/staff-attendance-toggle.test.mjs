@@ -31,6 +31,7 @@ function load(path, mocks = {}) {
 const kst = load("src/lib/datetime/kst.ts");
 const creditRules = load("src/lib/makeup/credit-rules.ts", { "@/lib/datetime/kst": kst });
 const sessionRules = load("src/lib/staff-session-rules.ts", { "@/lib/datetime/kst": kst, "@/lib/auth/moneyAccess": load("src/lib/auth/moneyAccess.ts") });
+const editWindowRules = load("src/lib/staff/sessionEditWindow.ts", { "@/lib/datetime/kst": kst, "@/lib/sessionVideo/rules": load("src/lib/sessionVideo/rules.ts", { "@/lib/datetime/kst": kst }) });
 
 const SHEET_NOTE = "출석부에서 질병·부상 결석으로 표시";
 
@@ -49,6 +50,7 @@ function makeWorld(options = {}) {
     credits: options.credits ?? [],                  // [{ status }]
     standingReport: options.standingReport ?? false, // 학부모 신고·기간 결석
     reasonPlan: options.reasonPlan ?? "NONE",
+    makeupRevertError: options.makeupRevertError ?? null, // 보강 예약 되돌림이 규칙에 막힐 때
     seat: options.seat ?? null,                      // 특강 좌석 { id, studentId, attendanceStatus }
     trial: options.trial ?? null,                    // 체험 { status, staffAttendanceStatus }
     calls: [],
@@ -86,22 +88,32 @@ function makeWorld(options = {}) {
       throw new Error(`가짜 DB 가 모르는 실행문: ${sql.slice(0, 90)}`);
     },
     $transaction: async (fn) => {
-      // 되돌림 흉내 — 안에서 던지면 출결·기록을 원래대로
+      // 되돌림 흉내 — 안에서 던지면 출결·기록을 원래대로. 트랜잭션 안의 db 는 바깥 prisma 와 «다른 객체»로 넘겨 구분한다.
       const snapshot = { attendance: world.attendance, calls: world.calls.length };
-      try { return await fn(prisma); } catch (error) { world.attendance = snapshot.attendance; world.calls.length = snapshot.calls; throw error; }
+      const tx = { $queryRawUnsafe: query, $executeRawUnsafe: prisma.$executeRawUnsafe };
+      world.txClient = tx;
+      world.transactions += 1;
+      try { return await fn(tx); } catch (error) { world.attendance = snapshot.attendance; world.calls.length = snapshot.calls; throw error; }
     },
   };
+  world.transactions = 0;
   const actions = load("src/app/actions/staff-sessions.ts", {
     "next/cache": { revalidatePath() {} },
     "next/server": { after() {} },
     "@/lib/prisma": { prisma },
     "@/lib/makeup/credit-service": {
       syncCreditForRegularSession: async (input) => { world.calls.push(["syncRegularCredit", input.status, input.studentId]); return { action: "revoked" }; },
+      // 트랜잭션판 회수 — 넘겨받은 db 가 트랜잭션 안의 것인지도 본다
+      revokeMakeupCreditInTx: async (db, input) => { world.calls.push(["revokeCredit", input.sourceKey, input.studentId, db === world.txClient]); return { revoked: 1 }; },
       syncCreditForSeasonalSeat: async (input) => { world.calls.push(["syncSeatCredit", input.status, input.enrollmentDateId]); return { action: "revoked" }; },
     },
     "@/lib/makeup/credit-rules": creditRules,
     "@/lib/makeup/makeup-attendance": {
-      applyMakeupAttendanceInTx: async (_tx, input) => { world.calls.push(["makeupAttendance", input.status]); return []; },
+      applyMakeupAttendanceInTx: async (db, input) => {
+        if (world.makeupRevertError) throw new Error(world.makeupRevertError);
+        world.calls.push(["makeupAttendance", input.status, db === world.txClient]);
+        return [];
+      },
       findMakeupBookings: async () => world.makeupBookings,
       makeupOnClassDateSql: () => "true",
     },
@@ -114,11 +126,15 @@ function makeWorld(options = {}) {
       requireStaffSeasonalSessionAccess: async () => ({ access: world.access, seasonal: {} }),
     },
     "@/lib/datetime/kst": kst,
-    "@/lib/feed/rules": { canEditFeedLine: () => ({ ok: true }), feedLineWindowMessage: () => "", normalizeFeedLine: (v) => v, sessionKstDateSql: () => "date", TODAY_KST_SQL: "today" },
+    "@/lib/feed/rules": { canEditFeedLine: () => ({ ok: true }), feedLineWindowMessage: () => "", normalizeFeedLine: (v) => v, sessionKstDateSql: () => "date", staffSessionEditWindowSql: () => "true", TODAY_KST_SQL: "today" },
+    // 완료한 수업 다시 보기 규칙(순수 모듈)은 진짜를 쓴다
+    "@/lib/staff/sessionEditWindow": editWindowRules,
     "@/lib/staff-session-rules": sessionRules,
     "@/lib/staff-session-queries": { trialOnClassDateSql: () => "true" },
     "@/lib/staff-notifications": { deliverParentNotification: async () => { world.calls.push(["notify"]); return {}; }, getClassParentRecipients: async () => [], getStudentParentRecipients: async () => [] },
     "@/lib/studentVisibility": { notMergedStudent: () => "true" },
+    // 2026-11-15 병합: staff-sessions.ts 가 출석부 프로필 사진 버전 조회(loadStaffRosterPhotoVersions)를 위해 이 모듈을 쓴다 — 이 테스트와는 무관한 의존
+    "@/lib/profilePhoto/rules": { profilePhotoVersion: () => null },
     "@/lib/regular/regularSession": { adoptRegularSessionKey: async () => {}, regularSessionKey: () => "key" },
     "@/lib/regular/attendance-absence-reason": {
       SHEET_ABSENCE_NOTE: SHEET_NOTE,
@@ -167,14 +183,19 @@ test("결석 → 미확인: 결석 사유 정리 → 출결 삭제 → 보강권
   assert.equal(result.ok, true);
   assert.equal(result.creditRevoke, true);
   assert.equal(world.attendance, null);
-  assert.deepEqual(names(world), ["creditLookup", "absenceReason", "deleteAttendance", "syncRegularCredit"]);
+  // 사유 정리 → 출결 삭제 → 보강권 회수가 «한 트랜잭션» 안에서 이 순서로
+  assert.deepEqual(names(world), ["creditLookup", "absenceReason", "deleteAttendance", "revokeCredit"]);
+  assert.equal(world.transactions, 1);
   // 규칙 함수에는 결석이 아닌 상태를 넘긴다 → 출석·지각으로 정정할 때와 같은 길(회수·표시 취소)
   const reason = world.calls.find((call) => call[0] === "absenceReason");
   assert.notEqual(reason[1], "ABSENT");
   assert.equal(reason[2], undefined, "사유 요청 없이 — 출석부가 만든 표시만 지워진다");
-  const sync = world.calls.find((call) => call[0] === "syncRegularCredit");
-  assert.notEqual(sync[1], "ABSENT");
-  assert.equal(sync[2], "st1");
+  const revoke = world.calls.find((call) => call[0] === "revokeCredit");
+  assert.equal(revoke[1], "REGULAR:c1:2026-11-14", "발급과 같은 키의 보강권을 회수한다");
+  assert.equal(revoke[2], "st1");
+  assert.equal(revoke[3], true, "출결 삭제와 같은 트랜잭션의 db 로 회수한다");
+  // 트랜잭션 밖의 따로 도는 맞춤 함수는 부르지 않는다(반쪽 상태 방지)
+  assert.ok(!names(world).includes("syncRegularCredit"));
 });
 
 test("예약·사용된 보강권이 걸린 결석은 취소를 거부하고 이유를 돌려준다(출결 그대로)", async () => {
@@ -197,7 +218,7 @@ test("이미 이월·보강으로 정산된 결석은 취소를 막는다 — �
   assert.match(result.message, /정산된 결석이라 취소할 수 없습니다/);
   assert.equal(world.attendance, "ABSENT");
   assert.ok(!names(world).includes("deleteAttendance"));
-  assert.ok(!names(world).includes("syncRegularCredit"));
+  assert.ok(!names(world).includes("revokeCredit"));
 });
 
 test("학부모가 미리 알린 결석: 출결만 미확인으로 — 신고와 그 보강권은 건드리지 않는다", async () => {
@@ -208,7 +229,7 @@ test("학부모가 미리 알린 결석: 출결만 미확인으로 — 신고와
   assert.equal(result.ok, true);
   assert.equal(world.attendance, null);
   assert.ok(!names(world).includes("creditLookup"));
-  assert.ok(!names(world).includes("syncRegularCredit"), "신고로 나간 보강권을 회수하지 않는다");
+  assert.ok(!names(world).includes("revokeCredit") && !names(world).includes("syncRegularCredit"), "신고로 나간 보강권을 회수하지 않는다");
   // 화면이 «결석 신고» 표시를 그대로 두도록 신고 상태를 돌려준다
   assert.equal(result.absenceReport.source, "PARENT");
 });
@@ -232,7 +253,7 @@ test("그사이 다른 기기가 출결을 바꿨으면 지우지 않는다", as
   assert.equal(raced.ok, false);
   assert.match(raced.message, /그사이 출결이 바뀌었습니다/);
   assert.ok(!names(world).includes("deleteAttendance"));
-  assert.ok(!names(world).includes("syncRegularCredit"));
+  assert.ok(!names(world).includes("revokeCredit"), "출결을 못 지웠으면 보강권도 그대로");
 });
 
 // ── 보강 온 아이 · 체험 · 특강 좌석 ───────────────────────────
@@ -243,6 +264,23 @@ test("보강 온 아이: 참석 표시를 «예약됨»으로 되돌리는 기�
   assert.equal(result.ok, true);
   assert.deepEqual(names(world), ["deleteAttendance", "makeupAttendance"]);
   assert.equal(world.calls[1][1], "ABSENT", "결석으로 고칠 때와 같은 되돌림(참석 → 예약됨, 보강권 사용 → 예약 중)");
+  assert.equal(world.calls[1][2], true, "출결 삭제와 같은 트랜잭션에서 되돌린다");
+  assert.equal(world.transactions, 1);
+});
+
+test("보강 온 아이: 예약 되돌림이 규칙에 막히면 출결 삭제도 함께 되돌아간다", async () => {
+  const { world, clear } = makeWorld({ enrolled: false, makeupBookings: [{ id: "m1", status: "ATTENDED" }], attendance: "PRESENT", makeupRevertError: "이월로 정산된 결석의 보강입니다." });
+  const quiet = console.error;
+  console.error = () => {};
+  try {
+    const result = await clear({});
+    assert.equal(result.ok, false);
+    assert.match(result.message, /보강 예약을 되돌리지 못해 출결을 취소하지 않았습니다/);
+  } finally {
+    console.error = quiet;
+  }
+  assert.equal(world.attendance, "PRESENT", "출결이 그대로 남는다");
+  assert.deepEqual(names(world), []);
 });
 
 test("체험 아이: 체험 장부만 되돌린다(선생님이 올린 «체험 완료» → «일정 확정»)", async () => {
@@ -276,6 +314,21 @@ test("특강 좌석: 좌석 출결을 비우고 정규 출석 기록·보강권�
   assert.equal((await outside.clear({ attendanceKey: "other" })).ok, false);
 });
 
+test("특강 좌석: 이미 미확인이어도 남은 정규 출석 기록은 지운다(여러 번 눌러도 같은 결과), 미리 보기는 지우지 않는다", async () => {
+  const blank = { id: "seat1", studentId: "st1", attendanceStatus: null };
+  const again = makeWorld({ session: { sessionDateId: "sd1" }, seat: blank });
+  const result = await again.clear({ attendanceKey: "seat1" });
+  assert.deepEqual({ ok: result.ok, cleared: result.cleared, previousStatus: result.previousStatus }, { ok: true, cleared: true, previousStatus: null });
+  assert.deepEqual(again.world.calls, [["deleteSeatAttendance", "st1"]]);
+  const preview = makeWorld({ session: { sessionDateId: "sd1" }, seat: blank });
+  await preview.clear({ attendanceKey: "seat1", dryRun: true });
+  assert.deepEqual(preview.world.calls, []);
+  // 미전환 신청자(학생 없음)는 지울 정규 기록이 없다
+  const unconverted = makeWorld({ session: { sessionDateId: "sd1" }, seat: { ...blank, studentId: null } });
+  await unconverted.clear({ attendanceKey: "seat1" });
+  assert.deepEqual(unconverted.world.calls, []);
+});
+
 // ── 권한·상태 ─────────────────────────────────────────────────
 
 test("권한: 남의 수업·로그인 풀림·명단 밖 학생·끝난 수업은 거부", async () => {
@@ -307,7 +360,15 @@ const action = read("src/app/actions/staff-sessions.ts");
 test("화면: 선택된 버튼을 다시 누르면 취소, 다른 버튼은 기존대로 변경", () => {
   // 버튼은 그대로 updateAttendance 하나를 부른다 — 같은 상태를 다시 누른 경우만 취소로 갈린다
   assert.match(client, /active=\{student\.status === status\} disabled=\{bulkBusy \|\| Boolean\(savingRows\[student\.id\]\)\} onClick=\{\(\) => void updateAttendance\(student\.id, status\)\}/);
-  assert.match(client, /if \(target\.status === status && absenceReason === undefined\) return clearAttendance\(target\);/);
+  assert.match(client, /if \(target\.status === status && absenceReason === undefined && !retryAfterError\) return clearAttendance\(target\);/);
+  // 그 줄에 오류 안내(«다시 눌러 주세요»)가 떠 있으면 같은 버튼 재누름은 취소가 아니라 «다시 저장»
+  assert.match(client, /const retryAfterError = rowNotices\[rowId\]\?\.tone === "error";/);
+  const update = client.slice(client.indexOf("async function updateAttendance"), client.indexOf("// 전체 출석 —"));
+  assert.ok(update.indexOf("retryAfterError") < update.indexOf("saveStaffAttendance({"), "판정이 저장보다 먼저");
+  // 판정은 안내를 지우기(setRowNotice(rowId, \"\")) «전»에 읽는다 — 지운 뒤에 읽으면 늘 취소로 간다
+  assert.ok(update.indexOf("retryAfterError") < update.indexOf('setRowNotice(rowId, "");'));
+  // 참고 안내(notice — 결석 신고 등)는 재저장으로 돌리지 않는다
+  assert.doesNotMatch(update, /tone === "notice"/);
   // «질병·부상» 칩은 사유를 보내므로 취소로 가지 않는다
   assert.match(client, /updateAttendance\(student\.id, "ABSENT", illness \? null : "ILLNESS_INJURY"\)/);
   const fn = client.slice(client.indexOf("async function clearAttendance"), client.indexOf("async function updateAttendance"));
@@ -335,4 +396,12 @@ test("서버: 미확인은 «기록 없음» — 종료 검사와 같은 뜻, �
   assert.match(fn, /const gate = await trySessionAccess\(input\.sessionId\);\s*if \(!gate\.ok\) return gate;/);
   assert.doesNotMatch(fn, /deliverParentNotification|runAfterResponse/, "취소는 알림을 보내지 않는다");
   assert.doesNotMatch(fn, /UPDATE "RegularAbsence"|DELETE FROM "RegularAbsence"/, "결석 신고는 규칙 함수만 건드린다");
+  // 비운 좌석의 확인 시각은 NULL — 관리자 쪽(setSeasonalAttendance)과 같은 모양
+  assert.match(fn, /SET "attendanceStatus" = NULL, "attendanceNote" = NULL, "arrivedAt" = NULL,\s*"attendanceCheckedAt" = NULL, "attendanceCheckedByUserId" = \$3/);
+  assert.match(read("src/lib/seasonal/attendance.ts"), /"attendanceCheckedAt" = CASE WHEN \$2 IS NULL THEN NULL ELSE now\(\) END/);
+  // 보강권 회수 SQL 은 한 곳(트랜잭션판)이고, 기존 함수는 그것을 그대로 부른다
+  const service = read("src/lib/makeup/credit-service.ts");
+  assert.match(service, /export async function revokeMakeupCredit\([\s\S]{0,160}return revokeMakeupCreditInTx\(prisma, input\);/);
+  assert.equal(service.split(`SET "status" = 'REVOKED'`).length - 1, 1);
+  assert.match(service, /WHERE "studentId" = \$1 AND "sourceKey" = \$2\s*AND "status" = 'AVAILABLE'/);
 });

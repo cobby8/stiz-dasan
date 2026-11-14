@@ -235,7 +235,8 @@ test("토스 심사 중 /programs·결제·푸터는 이번 작업에서 바뀌�
 });
 
 test("P-13 작은 글자 12px·닫기/글씨 버튼 44px", () => {
-  assert.match(read("src/app/annual/AnnualEventsClient.tsx"), /<span className="text-xs">\{isScheduleOpen \? "▲" : "▼"\}<\/span>/);
+  // 2026-11-15 아이콘 예외(화살표·종·톱니): ▲▼ 글자 기호 → 펼침 화살표(20px). 버튼 이름은 «수업일자 확인» 글자, 상태는 aria-expanded
+  assert.match(read("src/app/annual/AnnualEventsClient.tsx"), /aria-expanded=\{isScheduleOpen\}[\s\S]{0,1200}?수업일자 확인[\s\S]{0,300}?<UiIcon name=\{isScheduleOpen \? "expand_less" : "expand_more"\} \/>/);
   assert.match(read("src/components/PublicHeader.tsx"), /"public-mobile-font md:hidden flex h-11 w-11 /);
   // 2026-11-14 아이콘 완전 제거: ✕ → 글자 «닫기». 폭 고정(w-11)만 풀고 높이 44px(min-h-11)는 그대로 지킨다.
   assert.match(read("src/app/annual/EventDetailPanel.tsx"), /className="shrink-0 min-h-11 px-3 flex items-center justify-center rounded-full[^"]*"\s*aria-label="닫기"\s*>\s*닫기/);
