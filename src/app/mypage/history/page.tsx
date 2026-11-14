@@ -68,7 +68,8 @@ export default async function MyPageHistoryPage({
     const selectedId = selected?.id ?? data.children[0].id;
 
     // 우리 아이 수업일 — 수강 반 요일마다 연간일정(개강·종강·주차·휴무)으로 계산(공개 연간일정·청구와 같은 함수)
-    const classDates = (selected?.enrollments ?? []).flatMap((e) =>
+    // 복귀 예정 반은 복귀일 당일부터 수업일로 잡는다(startsOn 자리에 복귀일 — 2026-11-14)
+    const classDates = (selected?.scheduleEnrollments ?? selected?.enrollments ?? []).flatMap((e) =>
         classDatesForCalendarMonth(month, e.dayOfWeek, e.startsOn, (ym, dow) => getMonthlyClassDates(planEvents, ym, dow)),
     );
     const attendance = data.children.find((c) => c.id === selectedId)?.attendance.records ?? [];

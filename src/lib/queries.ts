@@ -1,6 +1,8 @@
 import { commencementYmd, currentEnrollmentSql, enrollmentDisplayStatus, enrollmentStartsLater } from "@/lib/enrollment/commencement";
 import { getEnrollmentShuttleProgress } from "@/lib/enrollment/shuttle-progress-query";
 import { childAccessSql } from "@/lib/account/child-access";
+import { parentUsableEnrollmentSql, resumeFromSql, withResumingForSchedule } from "@/lib/enrollment/resumeWindow";
+import { shortMd } from "@/lib/enrollment/parentChangeStatus";
 import { payerAccessSql } from "@/lib/payments/payerAccess";
 /**
  * 순수 DB 조회 함수들 (mutations 제외)
@@ -1207,6 +1209,38 @@ export async function getMyPageData(parentUserId: string) {
                     studentId
                 );
 
+                // 복귀 예정 반(2026-11-14 홈·달력) — 휴원 중이지만 복귀가 승인돼 아직 반영 전인 반.
+                // ★ 위 enrollments(수강 중 = ACTIVE 만)에는 섞지 않는다 — 결제·수강 변경·특강이 그 뜻에 기댄다. 홈·달력만 이 칸을 읽는다.
+                // 판정은 공용 조각(resumeWindow) 그대로: 승인·미반영·크론 미처리·복귀일이 오늘(KST) 이후.
+                // 소유 조건은 위와 같다(studentId 는 childAccessSql·병합 제외를 통과한 자녀 목록에서 온 값). 실패해도 홈은 열리게 빈 목록.
+                const resumingRows = await prisma.$queryRawUnsafe<any[]>(
+                    `SELECT e.id, e."classId", e."startsOn", c.name AS class_name, c."dayOfWeek", c."startTime", c."endTime",
+                            p.name AS program_name, ${resumeFromSql("e")} AS "resumeFrom"
+                     FROM "Enrollment" e
+                     JOIN "Class" c ON e."classId" = c.id
+                     LEFT JOIN "Program" p ON c."programId" = p.id
+                     WHERE e."studentId" = $1 AND e.status = 'PAUSED' AND ${parentUsableEnrollmentSql("e")}`,
+                    studentId
+                ).catch(() => [] as any[]);
+                const resumingEnrollments = resumingRows
+                    .map((e: any) => {
+                        const resumeFrom = String(e.resumeFrom ?? e.resumefrom ?? "");
+                        return {
+                            id: e.id as string,
+                            classId: (e.classId ?? e.classid) as string,
+                            startsOn: commencementYmd(e.startsOn ?? e.startson),
+                            className: e.class_name as string,
+                            dayOfWeek: (e.dayOfWeek ?? e.dayofweek) as string,
+                            startTime: (e.startTime ?? e.starttime) as string,
+                            endTime: (e.endTime ?? e.endtime) as string,
+                            programName: e.program_name as string,
+                            resumeFrom,
+                            resumeFromLabel: shortMd(resumeFrom),
+                        };
+                    })
+                    // 복귀일이 날짜 형식이 아니면 버린다(shortMd 가 빈 글자를 준다 — 추측해서 그럴듯한 날짜를 만들지 않는다)
+                    .filter((e) => e.resumeFromLabel !== "");
+
                 // 이번 달 출결 — «이번 달»은 KST 달력 기준(서버는 UTC 라 getFullYear/getMonth 를 쓰면 매달 1일 00~09시에 지난달이 된다)
                 const monthStart = `${todayKst().slice(0, 7)}-01`;
                 const attendances = await prisma.$queryRawUnsafe<any[]>(
@@ -1252,6 +1286,21 @@ export async function getMyPageData(parentUserId: string) {
                         endTime: e.endTime ?? e.endtime,
                         programName: e.program_name,
                     })),
+                    // 복귀 예정 반 — 반 정보 + 복귀일("YYYY-MM-DD"). 복귀일 이후 수업 일정 표시에만 쓴다(수강 중 목록 아님)
+                    resumingEnrollments: resumingEnrollments,
+                    // 일정 계산용 목록(홈 «다음 수업»·달력) = 수강 중인 반 + 복귀 예정 반(개시일 자리에 복귀일 → 복귀일 당일부터 수업일).
+                    // ★ «수강 중인 반» 목록이 아니다 — 결제·수강 변경·특강은 위 enrollments 만 읽는다.
+                    scheduleEnrollments: withResumingForSchedule(
+                        enrollments.map((e: any) => ({
+                            id: e.id as string,
+                            className: e.class_name as string,
+                            dayOfWeek: (e.dayOfWeek ?? e.dayofweek) as string,
+                            startTime: (e.startTime ?? e.starttime) as string,
+                            endTime: (e.endTime ?? e.endtime) as string,
+                            startsOn: commencementYmd(e.startsOn ?? e.startson),
+                        })),
+                        resumingEnrollments,
+                    ),
                     attendance: {
                         total: attendances.length,
                         present: attendances.filter((a: any) => a.status === "PRESENT").length,

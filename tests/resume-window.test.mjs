@@ -557,3 +557,195 @@ test("셔틀 «휴원» 판정 — 승인된 복귀일부터 정상 운행", () 
   assert.equal(st(cls({ pausedResumeOn: "2026-11-16" }), "2026-11-16"), "ACTIVE");
   assert.match(read("src/lib/parent/childClassesQuery.ts"), /\$\{resumeFromSql\("e"\)\} AS "resumeFrom"/);
 });
+
+// ═════════════════════════════════════════════════════════════════════════
+// ⑥ 학부모 홈·달력 — 복귀 예정 반의 복귀일 이후 일정 (2026-11-14 원장 승인)
+//    getMyPageData 의 enrollments(수강 중 = ACTIVE 만) 뜻은 그대로, 별도 칸 resumingEnrollments 를 홈·달력만 읽는다.
+// ═════════════════════════════════════════════════════════════════════════
+const schedule = await import(load("src/lib/mypage/parentSchedule.ts"));
+const summary = await import(load("src/lib/mypage/summary.ts"));
+
+/** 연간일정 대신: 그 달의 그 요일 날짜 전부(휴무 없음) */
+function weekdayDates(ym, dayOfWeek) {
+  const target = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(dayOfWeek);
+  const [y, m] = ym.split("-").map(Number);
+  const out = [];
+  for (let d = 1; d <= 31; d++) {
+    const date = new Date(Date.UTC(y, m - 1, d));
+    if (date.getUTCMonth() !== m - 1) break;
+    if (date.getUTCDay() === target) out.push(`${ym}-${String(d).padStart(2, "0")}`);
+  }
+  return out;
+}
+const calendarDates = (month, enrollments, resuming) =>
+  rw.withResumingForSchedule(enrollments, resuming)
+    .flatMap((e) => schedule.classDatesForCalendarMonth(month, e.dayOfWeek, e.startsOn, weekdayDates))
+    .sort();
+
+test("달력 — 복귀 예정 반은 복귀일 전날까지 없고 당일부터 수업일이다", () => {
+  const mon = { id: "e1", dayOfWeek: "Mon", startsOn: "2026-03-02" };
+  // 복귀일 11-16(월) — 11-02·11-09 는 없고 11-16 부터
+  assert.deepEqual(calendarDates("2026-11", [], [{ ...mon, resumeFrom: "2026-11-16" }]), ["2026-11-16", "2026-11-23", "2026-11-30"]);
+  // 복귀일이 수업 요일 다음 날(11-17 화)이면 11-16 수업은 아직 휴원
+  assert.deepEqual(calendarDates("2026-11", [], [{ ...mon, resumeFrom: "2026-11-17" }]), ["2026-11-23", "2026-11-30"]);
+  // 복귀일 전 달은 비어 있고, 다음 달은 전부
+  assert.deepEqual(calendarDates("2026-10", [], [{ ...mon, resumeFrom: "2026-11-16" }]), []);
+  assert.equal(calendarDates("2026-12", [], [{ ...mon, resumeFrom: "2026-11-16" }]).length, 4);
+  // 개시일이 복귀일보다 늦으면 개시일이 기준(둘 중 늦은 날)
+  assert.deepEqual(calendarDates("2026-11", [], [{ ...mon, startsOn: "2026-11-23", resumeFrom: "2026-11-16" }]), ["2026-11-23", "2026-11-30"]);
+});
+
+test("달력 — 반 2개의 복귀일이 다르면 반마다 따로, 수강 중인 반은 그대로", () => {
+  const resuming = [
+    { id: "e1", dayOfWeek: "Mon", startsOn: null, resumeFrom: "2026-11-16" },
+    { id: "e2", dayOfWeek: "Wed", startsOn: null, resumeFrom: "2026-11-18" },
+  ];
+  assert.deepEqual(calendarDates("2026-11", [], resuming), ["2026-11-16", "2026-11-18", "2026-11-23", "2026-11-25", "2026-11-30"]);
+  const active = [{ id: "e9", dayOfWeek: "Fri", startsOn: null }];
+  const withActive = calendarDates("2026-11", active, resuming);
+  assert.ok(withActive.includes("2026-11-06") && withActive.includes("2026-11-13"), "다니는 반(금)은 달 처음부터");
+  assert.equal(withActive.includes("2026-11-09"), false, "복귀 예정 반(월)의 복귀일 전 수업은 없다");
+  // 복귀 예정 반이 없으면 예전과 같은 목록 — 형식이 틀린 복귀일은 버린다
+  assert.deepEqual(rw.withResumingForSchedule(active, []), active);
+  assert.deepEqual(rw.withResumingForSchedule(active, undefined), active);
+  assert.deepEqual(rw.withResumingForSchedule(active, [{ id: "x", dayOfWeek: "Mon", resumeFrom: "" }, { id: "y", dayOfWeek: "Mon", resumeFrom: "11/16" }]), active);
+  assert.deepEqual(rw.withResumingForSchedule(null, [{ id: "x", dayOfWeek: "Mon", startsOn: null, resumeFrom: "2026-11-16" }]), [{ id: "x", dayOfWeek: "Mon", startsOn: "2026-11-16", resumeFrom: "2026-11-16" }]);
+});
+
+test("홈 «다음 수업» — 전부 복귀 예정인 아이도 복귀일 이후 첫 수업이 잡힌다", () => {
+  const sat = { dayIndex: 6, minutes: 10 * 60 }; // 2026-11-14(토) 10:00
+  const cls = { className: "월요반", dayOfWeek: "Mon", startTime: "18:00", endTime: "19:30" };
+  assert.equal(summary.computeNextClass([], sat, TODAY), null, "예전: 수강 중인 반이 없으면 다음 수업 없음");
+  const next = summary.computeNextClass(rw.withResumingForSchedule([], [{ ...cls, startsOn: null, resumeFrom: "2026-11-16" }]), sat, TODAY);
+  assert.equal(next.serviceDate, "2026-11-16");
+  assert.equal(next.className, "월요반");
+  // 복귀일이 한 주 뒤면 그 주차로 밀린다(복귀일 전 월요일은 건너뛴다)
+  assert.equal(summary.computeNextClass(rw.withResumingForSchedule([], [{ ...cls, startsOn: null, resumeFrom: "2026-11-17" }]), sat, TODAY).serviceDate, "2026-11-23");
+  // 다니는 반이 더 가까우면 그 반이 다음 수업
+  const active = [{ className: "일요반", dayOfWeek: "Sun", startTime: "10:00", endTime: "11:00" }];
+  assert.equal(summary.computeNextClass(rw.withResumingForSchedule(active, [{ ...cls, startsOn: null, resumeFrom: "2026-11-16" }]), sat, TODAY).className, "일요반");
+});
+
+// getMyPageData 를 «실제 실행» — queries.ts 는 딸린 모듈이 많아, 이 함수가 쓰는 것만 진짜(resumeWindow·commencement·kst)로 넣고 나머지는 빈 대역을 준다.
+async function runMyPageData(db) {
+  const { createRequire } = await import("node:module");
+  const nodeRequire = createRequire(import.meta.url);
+  const cjs = (file, requireFn) => {
+    const code = ts.transpileModule(read(file), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
+    const module = { exports: {} };
+    new Function("require", "module", "exports", code)(requireFn, module, module.exports);
+    return module.exports;
+  };
+  // 아무 이름이나 받아 주는 대역: 함수를 넘기면 그 함수를 그대로 돌려준다(cache·unstable_cache), SQL 에 끼우면 TRUE
+  const blank = new Proxy(function () {}, {
+    get: (_t, key) => (key === Symbol.toPrimitive ? () => "TRUE" : key === "then" ? undefined : blank),
+    apply: (_t, _this, args) => (typeof args[0] === "function" ? args[0] : blank),
+  });
+  const real = {
+    "@/lib/datetime/kst": cjs("src/lib/datetime/kst.ts", nodeRequire),
+    "@/lib/enrollment/resumeWindow": cjs("src/lib/enrollment/resumeWindow.ts", nodeRequire),
+    "@/lib/enrollment/parentChangeStatus": cjs("src/lib/enrollment/parentChangeStatus.ts", nodeRequire),
+    "@/lib/prisma": { prisma: db },
+    "@/lib/account/child-access": { childAccessSql: async (alias, expr) => `${alias}."parentId" = ${expr}` },
+    "@/lib/payments/payerAccess": { payerAccessSql: async () => "TRUE" },
+    "@/lib/payment-ledger": { ensurePaymentInfrastructure: async () => {} },
+    "@/lib/studentVisibility": { notMergedStudent: (alias) => `${alias}."mergedIntoStudentId" IS NULL`, notMergedStudentOptional: () => "TRUE" },
+  };
+  real["@/lib/enrollment/commencement"] = cjs("src/lib/enrollment/commencement.ts", (name) => real[name] ?? blank);
+  const queries = cjs("src/lib/queries.ts", (name) => real[name] ?? blank);
+  return queries.getMyPageData("p1");
+}
+
+test("getMyPageData — 복귀 예정 반은 별도 칸으로 오고, enrollments 에는 PAUSED 가 섞이지 않는다", async () => {
+  const base = makeDb();
+  freeze(TODAY);
+  const seen = [];
+  const cls = (id) => base.classes.find((c) => c.id === id);
+  const db = {
+    async $queryRawUnsafe(sql, ...args) {
+      if (/FROM "User" WHERE id = \$1/.test(sql)) return [{ id: "p1", name: "보호자", email: null, phone: null }];
+      if (/FROM "Student" s/.test(sql) && /"canPay"/.test(sql)) {
+        assert.match(sql, /s\."parentId" = \$1 AND s\."mergedIntoStudentId" IS NULL/, "자녀 목록의 소유·병합 조건은 그대로");
+        return base.students.filter((s) => s.parentId === args[0]).map((s) => ({ id: s.id, name: s.name, canPay: true }));
+      }
+      if (/FROM "Enrollment" e/.test(sql)) {
+        seen.push(sql);
+        const row = (e) => ({ id: e.id, classId: e.classId, status: e.status, startsOn: null, class_name: cls(e.classId).name, dayOfWeek: cls(e.classId).dayOfWeek, startTime: "18:00", endTime: "19:30", program_name: null });
+        // 수강 중: 맨 ACTIVE 조건 그대로
+        if (/WHERE e\."studentId" = \$1 AND e\.status = 'ACTIVE'$/.test(sql.trim())) {
+          return base.enrollments.filter((e) => e.studentId === args[0] && e.status === "ACTIVE").map(row);
+        }
+        // 복귀 예정: PAUSED + 공용 조각(가짜 DB 는 그 뜻 — 승인·미반영·미처리·오늘 이후 — 을 그대로 흉내 낸다)
+        assert.ok(sql.includes(`WHERE e."studentId" = $1 AND e.status = 'PAUSED' AND ${USABLE_SQL}`), "복귀 예정 조회 = PAUSED + 공용 조각");
+        assert.ok(sql.includes(`${RESUME_FROM_SQL} AS "resumeFrom"`));
+        const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+        return base.enrollments.filter((e) => e.studentId === args[0] && e.status === "PAUSED").flatMap((e) => {
+          const from = base.requests.filter((r) => r.enrollmentId === e.id && r.kind === "RESUME" && r.status === "APPROVED" && r.appliedAt == null
+            && r.effectiveFrom >= today && !base.commands.some((c) => c.idempotencyKey === `enrollment-change:rq-${e.id}`)).map((r) => r.effectiveFrom).sort()[0];
+          return from ? [{ ...row(e), resumeFrom: from }] : [];
+        });
+      }
+      if (/FROM "Attendance" a/.test(sql) || /FROM "Payment" p/.test(sql)) return [];
+      throw new Error(`예상하지 않은 조회: ${sql.replace(/\s+/g, " ").slice(0, 120)}`);
+    },
+  };
+  const data = await runMyPageData(db);
+  assert.ok(data, "getMyPageData 가 null 이 아니다(안에서 오류가 나면 null 이 된다)");
+  const child = (id) => data.children.find((c) => c.id === id);
+  // 전부 복귀 예정(s1): 수강 중 목록은 비고, 별도 칸에 반 2개가 복귀일과 함께
+  assert.deepEqual(child("s1").enrollments, []);
+  assert.deepEqual(child("s1").resumingEnrollments.map((e) => [e.classId, e.className, e.dayOfWeek, e.resumeFrom, e.resumeFromLabel]).sort(), [["cMon", "월요반", "Mon", "2026-11-16", "11/16"], ["cWed", "수요반", "Wed", "2026-11-25", "11/25"]]);
+  // 일정 계산용 목록: 복귀 예정 반이 «개시일 자리에 복귀일»로 들어 있다 → 달력이 복귀일 당일부터 그린다
+  assert.deepEqual(child("s1").scheduleEnrollments.map((e) => [e.dayOfWeek, e.startsOn]).sort(), [["Mon", "2026-11-16"], ["Wed", "2026-11-25"]]);
+  assert.deepEqual(
+    child("s1").scheduleEnrollments.flatMap((e) => schedule.classDatesForCalendarMonth("2026-11", e.dayOfWeek, e.startsOn, weekdayDates)).sort(),
+    ["2026-11-16", "2026-11-23", "2026-11-25", "2026-11-30"], "11-02·11-09(월)·11-18(수)은 복귀일 전이라 없다",
+  );
+  assert.deepEqual(child("s4").scheduleEnrollments.map((e) => [e.dayOfWeek, e.startsOn]), [["Mon", null]], "다니는 반은 그대로");
+  assert.deepEqual(child("s5").scheduleEnrollments.map((e) => [e.dayOfWeek, e.startsOn]), [["Fri", null], ["Wed", "2026-11-25"]]);
+  assert.deepEqual(child("s2").scheduleEnrollments, []);
+  // 홈 «다음 수업»: 전부 복귀 예정인 s1 도 복귀일 수업이 잡힌다(토요일 10시 기준)
+  assert.equal(summary.computeNextClass(child("s1").scheduleEnrollments, { dayIndex: 6, minutes: 600 }, TODAY).serviceDate, "2026-11-16");
+  // 복귀 대기(s2)·복귀 신청 없음(s3): 어느 칸에도 없다
+  for (const id of ["s2", "s3"]) { assert.deepEqual(child(id).enrollments, []); assert.deepEqual(child(id).resumingEnrollments, []); }
+  // 다니는 아이(s4)·섞인 아이(s5): enrollments 는 ACTIVE 만
+  assert.deepEqual(child("s4").enrollments.map((e) => [e.classId, e.status]), [["cMon", "ACTIVE"]]);
+  assert.deepEqual(child("s4").resumingEnrollments, []);
+  assert.deepEqual(child("s5").enrollments.map((e) => [e.classId, e.status]), [["cFri", "ACTIVE"]]);
+  assert.deepEqual(child("s5").resumingEnrollments.map((e) => e.classId), ["cWed"]);
+  for (const c of data.children) assert.ok(c.enrollments.every((e) => e.status === "ACTIVE"), "enrollments 에 PAUSED 가 섞이지 않는다");
+  assert.equal(seen.filter((sql) => /e\.status = 'ACTIVE'$/.test(sql.trim())).length, data.children.length, "수강 중 조회는 자녀마다 예전 조건 그대로");
+
+  // 보류된(크론이 원장을 만든) 신청은 홈·달력에도 안 보인다
+  base.commands.push({ idempotencyKey: "enrollment-change:rq-e1" });
+  const held = await runMyPageData(db);
+  const s1 = held.children.find((c) => c.id === "s1");
+  assert.deepEqual(s1.resumingEnrollments.map((e) => e.classId), ["cWed"]);
+  // 달력까지 이어서: s1 의 11월 = 수요반 11-25 하나뿐(월요반은 보류, 수요반은 복귀일 전 제외)
+  assert.deepEqual(calendarDates("2026-11", s1.enrollments, s1.resumingEnrollments), ["2026-11-25"]);
+  assert.deepEqual(s1.scheduleEnrollments.map((e) => [e.dayOfWeek, e.startsOn]), [["Wed", "2026-11-25"]]);
+});
+
+test("홈·달력 화면 — 별도 칸만 읽고, 전부 복귀 예정인 아이를 «수강 중인 반이 없습니다»로 보이지 않는다", () => {
+  const queries = read("src/lib/queries.ts");
+  // 수강 중 조회는 글자 그대로 남아 있다(다른 사용처가 이 뜻에 기댄다)
+  assert.match(queries, /WHERE e\."studentId" = \$1 AND e\.status = 'ACTIVE'`/);
+  assert.match(queries, /WHERE e\."studentId" = \$1 AND e\.status = 'PAUSED' AND \$\{parentUsableEnrollmentSql\("e"\)\}`/);
+  // 일정 계산용 목록은 서버 한 곳(getMyPageData)에서 공용 도우미로 만든다 — 화면은 받아서 쓰기만 한다
+  assert.match(queries, /scheduleEnrollments: withResumingForSchedule\(/);
+  assert.match(read("src/lib/mypage/parentMonthViews.ts"), /const scheduled = child\.scheduleEnrollments \?\? child\.enrollments \?\? \[\];/);
+  // 2026-11-14 검수: «연간일정 확정 후 보여요» 안내는 수강 중인 반이 있을 때만(복귀 예정만 있으면 틀린 안내)
+  assert.match(read("src/lib/mypage/parentMonthViews.ts"), /hasEnrollments: \(child\.enrollments \?\? \[\]\)\.length > 0/);
+  assert.match(read("src/app/mypage/history/page.tsx"), /\(selected\?\.scheduleEnrollments \?\? selected\?\.enrollments \?\? \[\]\)\.flatMap/);
+  const home = read("src/app/mypage/MyPageClient.tsx");
+  assert.match(home, /computeNextClass\(child\.scheduleEnrollments \?\? child\.enrollments, kstNow, todayStr\)/);
+  assert.match(home, /복귀 예정인 반 \$\{resumingEnrollments\.length\}개/);
+  assert.match(home, /const currentEnrollments = child\.enrollments;/, "«수강 중인 반 N개»는 여전히 ACTIVE 만 센다");
+  const hub = read("src/app/mypage/history/ScheduleHub.tsx");
+  assert.match(hub, /hasEnrollments=\{enrollments\.length > 0\}/);
+  assert.match(hub, /복귀 예정 · \{e\.resumeFromLabel\}부터/);
+  // 결제·수강 변경 쪽은 새 칸을 읽지 않는다
+  for (const file of ["src/lib/enrollment/parent-change-request.ts", "src/lib/payments/parent-payment-request.ts"]) {
+    assert.doesNotMatch(read(file), /resumingEnrollments/, file);
+  }
+});

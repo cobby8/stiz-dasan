@@ -26,13 +26,16 @@ export async function getParentMonthViews(
 
   const byChild: Record<string, ChildMonthView> = {};
   for (const child of home?.children ?? []) {
-    const classDates = (child.enrollments ?? []).flatMap((e) =>
+    // 수강 중인 반 + 복귀 예정 반(복귀일 당일부터 — startsOn 자리에 복귀일이 들어간다. 2026-11-14)
+    const scheduled = child.scheduleEnrollments ?? child.enrollments ?? [];
+    const classDates = scheduled.flatMap((e) =>
       classDatesForCalendarMonth(month, e.dayOfWeek, e.startsOn, (ym, dow) => getMonthlyClassDates(planEvents, ym, dow)),
     );
     const attendance = history?.children.find((c) => c.id === child.id)?.attendance.records ?? [];
     byChild[child.id] = {
       view: buildParentMonth({ month, todayYmd, events: planEvents, classDates, attendance }),
       planReady: classDates.length > 0,
+      // «연간일정 확정 후 보여요» 안내는 수강 중인 반이 있을 때만 — 복귀 예정 반만 있으면 수업일이 없는 이유가 휴원이라 틀린 안내가 된다
       hasEnrollments: (child.enrollments ?? []).length > 0,
     };
   }

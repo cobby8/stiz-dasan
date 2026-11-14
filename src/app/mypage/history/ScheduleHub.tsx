@@ -31,6 +31,17 @@ export type ScheduleChild = {
         startsOn?: string | null;
         startsLater?: boolean;
     }[];
+    /** 복귀 예정 반(휴원 중 + 복귀 승인·반영 전, 2026-11-14) — 복귀일부터 달력에 수업일로 보인다. 수강 중 목록과 따로 온다 */
+    resumingEnrollments?: {
+        id: string;
+        className: string;
+        dayOfWeek: string;
+        startTime: string;
+        endTime: string;
+        resumeFrom: string;
+        /** 화면용 «11/16»(서버가 만들어 준다) */
+        resumeFromLabel: string;
+    }[];
 };
 
 // 달력 표시 — 색만으로 구분하지 않는다(색약·작은 화면). 상태마다 «모양»이 다르다 (2026-11-09 원장 «색상 구분이 잘 안 돼»).
@@ -204,6 +215,7 @@ export default function ScheduleHub({
     const child = childList.find((c) => c.id === selectedChildId) ?? childList[0];
     const childNames = Object.fromEntries(childList.map((c) => [c.id, c.name]));
     const enrollments = child?.enrollments ?? [];
+    const resuming = child?.resumingEnrollments ?? [];
     // 달 이동·자녀 바꾸기 주소 — 서버가 다시 그린다
     const hrefFor = (month: string, childId = child?.id ?? "") =>
         `/mypage/history?${childId ? `child=${encodeURIComponent(childId)}&` : ""}month=${month}`;
@@ -263,10 +275,10 @@ export default function ScheduleHub({
             </section>
 
             {/* 수강 반 — 한 줄 행(반 이름 · 요일 시간). 홈 «다음 수업»이 이 자리로 데려온다 */}
-            {enrollments.length > 0 && (
+            {enrollments.length + resuming.length > 0 && (
                 <section id="mypage-enrollments" aria-labelledby="schedule-enrollments-heading" className="academy-panel scroll-mt-24 overflow-hidden">
                     <h2 id="schedule-enrollments-heading" className="academy-section-title border-b border-[var(--color-academy-line)] px-3 py-2">
-                        수강 반 <span className="text-sm font-normal tabular-nums text-[var(--color-academy-muted)]">{enrollments.length}</span>
+                        수강 반 <span className="text-sm font-normal tabular-nums text-[var(--color-academy-muted)]">{enrollments.length + resuming.length}</span>
                     </h2>
                     <ul className="divide-y divide-[var(--color-academy-line)]">
                         {enrollments.map((e) => (
@@ -275,6 +287,18 @@ export default function ScheduleHub({
                                     <p className="break-keep text-sm font-medium text-[var(--color-academy-ink)]">{e.className}</p>
                                     {/* 승인된 반은 개시일 전에도 수강 중 — 첫 수업 전이면 개시일만 안내 */}
                                     {e.startsLater && <p className="text-xs text-[var(--color-academy-info)]">{formatKstDate(e.startsOn, { month: "long", day: "numeric" })}부터 수업 시작</p>}
+                                </div>
+                                <span className="shrink-0 whitespace-nowrap text-right text-sm tabular-nums text-[var(--color-academy-muted)]">
+                                    {DAY_LABELS[e.dayOfWeek] || e.dayOfWeek} {e.startTime}~{e.endTime}
+                                </span>
+                            </li>
+                        ))}
+                        {/* 복귀 예정 반 — 같은 한 줄 행 + «복귀 예정 · M/D부터»(홈·수업 탭 칩과 같은 말) */}
+                        {resuming.map((e) => (
+                            <li key={e.id} className="flex min-h-11 items-center gap-2 px-3 py-2">
+                                <div className="min-w-0 flex-1">
+                                    <p className="break-keep text-sm font-medium text-[var(--color-academy-ink)]">{e.className}</p>
+                                    <p className="text-xs text-[var(--color-academy-info)]">복귀 예정 · {e.resumeFromLabel}부터</p>
                                 </div>
                                 <span className="shrink-0 whitespace-nowrap text-right text-sm tabular-nums text-[var(--color-academy-muted)]">
                                     {DAY_LABELS[e.dayOfWeek] || e.dayOfWeek} {e.startTime}~{e.endTime}

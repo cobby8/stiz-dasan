@@ -65,6 +65,22 @@ type ChildData = {
         startsOn?: string | null;
         startsLater?: boolean;
     }[];
+    // 복귀 예정 반(휴원 중 + 복귀 승인·반영 전, 2026-11-14) — «다음 수업»을 복귀일 이후 수업으로 잡는 데만 쓴다(수강 중 목록 아님)
+    resumingEnrollments?: {
+        id: string;
+        classId: string;
+        className: string;
+        dayOfWeek: string;
+        startTime: string;
+        endTime: string;
+        programName: string;
+        startsOn?: string | null;
+        resumeFrom: string;
+        /** 화면용 «11/16»(서버가 만들어 준다) */
+        resumeFromLabel: string;
+    }[];
+    // 일정 계산용 목록 = 수강 중인 반 + 복귀 예정 반(개시일 자리에 복귀일). 서버(getMyPageData)가 만들어 준다
+    scheduleEnrollments?: { className: string; dayOfWeek: string; startTime: string; endTime: string; startsOn?: string | null }[];
     attendance: {
         total: number;
         present: number;
@@ -216,7 +232,9 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
     // 2026-11-09 새 기준: 승인돼 등록된 반은 개시일 전이어도 «수강 중». 개시일은 첫 수업 안내에만 쓴다
     const currentEnrollments = child.enrollments;
     const startsLaterEnrollment = child.enrollments.find((enrollment) => enrollment.startsLater && enrollment.startsOn);
-    const nextClass = computeNextClass(child.enrollments, kstNow, todayStr);
+    // 복귀 예정 반은 복귀일 당일부터 수업이 있는 반으로 넣는다(개시일 자리에 복귀일 — computeNextClass 가 그 전 주차를 건너뛴다)
+    const resumingEnrollments = child.resumingEnrollments ?? [];
+    const nextClass = computeNextClass(child.scheduleEnrollments ?? child.enrollments, kstNow, todayStr);
     const todayShuttles = filterTodayShuttle(childShuttleOverview, todayStr);
     // 고른 아이의 반 상태 한 줄(휴원 예정 · 12/1부터 등). 눌러서 수강 변경 화면(결과·사유)으로.
     const childStatusLines = classStatusLines.filter((line) => line.studentId === child.id);
@@ -236,7 +254,8 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
     const hasTodo = makeupAvailable > 0 || seasonalUpcoming > 0 || answerCount > 0 || pendingRequestCount > 0 || newNoticeCount > 0;
 
     // ── ④ 빠른 실행 «결석 알리기» — 정규 반이 없고 방학특강만 다니면 바로 방학특강 결석으로 ──
-    const hasRegularClass = data.children.some((c) => c.enrollments.length > 0);
+    // 복귀 예정 반도 정규 반이다(복귀일 이후 수업은 결석 신고를 받는다)
+    const hasRegularClass = data.children.some((c) => c.enrollments.length > 0 || (c.resumingEnrollments ?? []).length > 0);
     const absenceHref = !hasRegularClass && seasonalUpcoming > 0 ? "/mypage/seasonal" : "/mypage/regular-absence";
 
     // 주소에 #칸 이름이 붙어 오면 그 자리로 간다(옛 홈 칸 주소는 옮겨 간 탭으로).
@@ -310,7 +329,12 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                     <div className="min-w-0">
                         <h1 id="parent-child-heading" className="academy-heading">{child.name} 학생</h1>
                         <p className="mt-1 text-sm leading-relaxed text-[var(--color-academy-muted)]">
-                            {currentEnrollments.length > 0 ? `수강 중인 반 ${currentEnrollments.length}개` : "수강 중인 반이 없습니다"}
+                            {/* 전부 복귀 예정인 아이는 «수강 중인 반이 없습니다» 대신 복귀 예정을 말한다(2026-11-14) */}
+                            {currentEnrollments.length > 0
+                                ? `수강 중인 반 ${currentEnrollments.length}개${resumingEnrollments.length > 0 ? ` · 복귀 예정 ${resumingEnrollments.length}개` : ""}`
+                                : resumingEnrollments.length > 0
+                                    ? `복귀 예정인 반 ${resumingEnrollments.length}개 · ${[...resumingEnrollments].sort((a, b) => a.resumeFrom.localeCompare(b.resumeFrom))[0].resumeFromLabel}부터`
+                                    : "수강 중인 반이 없습니다"}
                             {/* 첫 수업 전인 반이 있으면 개시일만 덧붙인다(상태는 수강 중) */}
                             {startsLaterEnrollment && <span className="ml-2">{formatKstDate(startsLaterEnrollment.startsOn, { month: "long", day: "numeric" })}부터 수업 시작</span>}
                         </p>

@@ -82,6 +82,25 @@ export function earliestUsableFrom(rows: readonly { status: string; resumeFrom: 
   return dates[0] ?? null;
 }
 
+/**
+ * 일정 계산용: 복귀 예정 반을 «그 날짜부터 수업이 있는 반»으로 바꿔 수강 중인 반 뒤에 붙인다(2026-11-14 홈·달력).
+ * 달력·«다음 수업» 계산은 이미 startsOn(개시일) 전 수업을 빼므로, 그 자리에 «개시일과 복귀일 중 늦은 날»을 넣으면
+ * 복귀일 전 날짜에는 표시되지 않고 복귀일 당일부터 일반 수업처럼 보인다. 복귀일이 형식에 안 맞는 행은 버린다(추측하지 않는다).
+ * ※ 일정 표시에만 쓴다 — «수강 중인 반» 목록(결제·수강 변경·특강)에는 섞지 않는다.
+ */
+export function withResumingForSchedule<T extends { startsOn?: string | null }, R extends { startsOn?: string | null; resumeFrom: string }>(
+  enrollments: readonly T[] | null | undefined,
+  resuming: readonly R[] | null | undefined,
+): (T | R)[] {
+  const out: (T | R)[] = [...(enrollments ?? [])];
+  for (const r of resuming ?? []) {
+    if (!r.resumeFrom || !YMD.test(r.resumeFrom)) continue;
+    const startsOn = r.startsOn && YMD.test(r.startsOn) && r.startsOn > r.resumeFrom ? r.startsOn : r.resumeFrom;
+    out.push({ ...r, startsOn });
+  }
+  return out;
+}
+
 /** 복귀일 전 날짜로 신청했을 때의 오류 코드(서버 검사) */
 export const BEFORE_RESUME_CODE = "BEFORE_RESUME_DATE";
 
