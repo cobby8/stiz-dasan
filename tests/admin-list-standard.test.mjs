@@ -124,11 +124,18 @@ test("청구·수납: 공통 표 규칙(금액·날짜 오른쪽)·상태 칩(pa
   // 실제 저장되는 취소 값은 CANCELED(옛 select 의 CANCELLED 는 아무것도 못 찾았다)
   assert.match(financeClient, /<option value="CANCELED">/);
   assert.doesNotMatch(financeClient, /"CANCELLED"/);
-  // 보기 전환 «목록 | 상태별», 상태별 머리줄은 건수 + 금액 합계
+  // 보기 전환 «반별 | 상태별 | 목록», 머리줄은 건수 + 금액 합계(합계는 원장만)
   assert.match(financeClient, /<ListViewToggle/);
   assert.match(financeClient, /useRememberedListView\(FINANCE_VIEW_STORAGE_KEY/);
   // 묶음 합계는 원장만(2026-11-14 부원장 금액 가림) — «건» 뒤 « · 합계»가 canManageCriticalFinance 조건 안에
-  assert.match(financeClient, /scope="rowgroup"[\s\S]*?건[\s\S]*?canManageCriticalFinance && <> · 합계/);
+  // 반별·상태별 머리줄을 따로 잘라 각각 «합계는 원장만»을 확인한다(반별이 먼저 나와 한 정규식으로는 상태별을 못 본다)
+  const classBlock = financeClient.slice(financeClient.indexOf('viewMode === "class" ?'), financeClient.indexOf('viewMode === "status" ?'));
+  const statusBlock = financeClient.slice(financeClient.indexOf('viewMode === "status" ?'), financeClient.indexOf("visiblePayments.map(renderPaymentRow)"));
+  assert.match(classBlock, /scope="rowgroup"[\s\S]*?canManageCriticalFinance && <> · 합계/);
+  assert.match(statusBlock, /scope="rowgroup"[\s\S]*?건[\s\S]*?canManageCriticalFinance && <> · 합계/);
+  // 반별 보기가 기본, 부원장은 반 머리줄 전체 건수도 숨김
+  assert.match(financeClient, /useRememberedListView\(FINANCE_VIEW_STORAGE_KEY, FINANCE_VIEW_VALUES, "class"\)/);
+  assert.match(classBlock, /canManageCriticalFinance && <>\{" · "\}<span className="tabular-nums">\{group\.items\.length\}/);
   // 행 클릭 패널, 행 키보드는 안쪽 체크박스·⚡ 를 가로채지 않는다, 패널 작업은 행 ⚡ 와 같은 목록
   assert.match(financeClient, /<ListDetailPanel onClose=\{\(\) => setDetailPaymentId\(null\)\} titleId="payment-detail-panel-title"/);
   assert.match(financeClient, /function handleRowKeyDown[\s\S]*?if \(event\.target !== event\.currentTarget\) return;/);
