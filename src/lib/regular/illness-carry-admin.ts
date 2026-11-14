@@ -13,10 +13,10 @@ import { randomUUID } from "node:crypto";
 import { todayKst } from "@/lib/datetime/kst";
 import { WorkbenchError, type WorkbenchCalendarSnapshot } from "@/lib/billing/workbench";
 import { readWorkbench, type WorkbenchDb, type WorkbenchTx } from "@/lib/billing/workbench-service";
-import { resolveWorkbenchAbsence } from "@/lib/billing/workbench-absence";
+import { previewCarryEvidence, resolveWorkbenchAbsence } from "@/lib/billing/workbench-absence";
 import { regularAbsenceSourceKey } from "@/lib/makeup/absence-report-credit";
 import { convertIllnessToMakeupInTx, illnessReviewReady, type ConvertOutcome } from "@/lib/regular/illness-carry-tx";
-import { ILLNESS_REASON, carryApprovalBlocker, evidenceAnchorYmdSql, evidenceDeadlineYmd, evidenceScopeSql } from "@/lib/regular/illnessCarryRules";
+import { ILLNESS_REASON, carryApprovalBlocker, evidenceAnchorYmdSql, evidenceDeadlineYmd, evidenceScopeSql, type CarryBillState } from "@/lib/regular/illnessCarryRules";
 
 type AbsenceRow = { id: string; studentId: string; classId: string; date: string; reason: string; status: string };
 
@@ -108,6 +108,14 @@ export type IllnessCarryDetail = {
   /** 지금 [이월 승인]을 누를 수 없는 이유 한 줄(없으면 null) */
   blocker: string | null;
   /**
+   * 승인하면 쓰일 근거 미리보기(검토 중이고 근거가 있을 때만) — 화면이 «근거: 11월 납부 90,000원 ÷ 4회 = 1회 22,500원» 한 줄로 보인다.
+   * kind: WORKBENCH_ISSUED 사이트 발행 · MONTHLY_REGISTER 확정 장부 · PAID_PAYMENT 납부 청구. unit 은 표시용 반올림(적립은 분수 그대로).
+   * 금액(tuition·unit)은 금액을 볼 수 없는 역할이면 액션이 null 로 지운다.
+   */
+  evidence: { kind: "WORKBENCH_ISSUED" | "MONTHLY_REGISTER" | "PAID_PAYMENT"; month: string; tuition: number | null; sessions: number; unit: number | null; warnings: string[] } | null;
+  /** 근거 미리보기를 내지 못한 이유 한 줄(공식 일정을 못 읽음) — 없으면 null. 승인 버튼은 막지 않는다 */
+  evidenceNote: string | null;
+  /**
    * 같은 «여러 날 결석»(기간)에서 지금 함께 승인할 수 있는 다른 결석 id — 결석일이 지났고 아직 결정 전인 것.
    * 화면이 «같은 기간 n건 함께 승인»을 보인다. 하루 결석이면 빈 배열.
    */
@@ -117,7 +125,8 @@ export type IllnessCarryDetail = {
 };
 
 /** 신청함 상세 칸 — 사유 글·사진 목록·승인 가능 여부. 관리자만 부른다(호출부가 requireAdmin) */
-export async function readIllnessCarryDetail(tx: WorkbenchTx, absenceId: string, enabled: boolean): Promise<IllnessCarryDetail | null> {
+/** calendar: 승인 때와 같은 공식 일정. null = 공식 일정을 읽으려 했지만 실패 → 근거 미리보기·거절 사유를 내지 않는다(승인 때 서버가 판정) */
+export async function readIllnessCarryDetail(tx: WorkbenchTx, absenceId: string, enabled: boolean, calendar?: WorkbenchCalendarSnapshot | null): Promise<IllnessCarryDetail | null> {
   const rows = await tx.$queryRawUnsafe<AbsenceRow[]>(ABSENCE_SELECT, absenceId);
   const absence = rows.find((row) => row.id === absenceId) ?? null;
   if (!absence || absence.status === "CANCELLED" || absence.reason !== ILLNESS_REASON) return null;
@@ -144,21 +153,38 @@ export async function readIllnessCarryDetail(tx: WorkbenchTx, absenceId: string,
   const tables = await tx.$queryRawUnsafe<Array<{ draftTable: string | null; registerTable: string | null }>>(
     `SELECT to_regclass('public."BillingWorkbenchDraft"')::text AS "draftTable", to_regclass('public."MonthlyEnrollmentRegister"')::text AS "registerTable"`,
   );
-  let billReady: boolean | null = null;
-  if (tables[0]?.draftTable) {
-    const issued = await tx.$queryRawUnsafe<Array<{ found: number }>>(
-      `SELECT 1 AS found FROM "BillingWorkbenchDraft"
-        WHERE "studentId" = $1 AND "classId" = $2 AND month = $3 AND status IN ('ISSUED','ZERO') LIMIT 1`,
-      absence.studentId, absence.classId, month,
-    );
-    billReady = issued.length > 0;
-  }
-  if (!billReady && tables[0]?.registerTable) {
-    const confirmed = await tx.$queryRawUnsafe<Array<{ found: number }>>(
-      `SELECT 1 AS found FROM "MonthlyEnrollmentRegister" WHERE "studentId" = $1 AND month = $2 AND status = 'CONFIRMED' LIMIT 1`,
-      absence.studentId, month,
-    );
-    billReady = confirmed.length > 0;
+  // 근거 미리보기(2026-11-15): 적립과 «같은 규칙 함수»로 읽기만 한다(발행 초안·확정 장부 → 납부완료 청구 1건).
+  // 원장이 승인 전에 «얼마를 몇 회로 나누는지»를 보고, 조건이 안 맞으면 적립 때 나올 사유를 버튼 위에 미리 보인다.
+  let bill: CarryBillState = null;
+  let evidence: IllnessCarryDetail["evidence"] = null;
+  let evidenceProblem: string | null = null;
+  let evidenceNote: string | null = null;
+  // 공식 일정을 못 읽었으면 DB 일정으로 대신 세지 않는다 — 수업 횟수가 승인 때와 달라 틀린 금액·틀린 거절 사유를 보일 수 있다.
+  if (calendar === null) evidenceNote = "공식 일정을 확인하지 못했어요. 승인할 때 다시 확인합니다.";
+  // 미리보기의 예상 못 한 오류(조회 실패 등)는 상세 칸 전체를 막지 않는다 — 근거만 «모름»으로 두고 사유 글·사진·[보강권으로]는 그대로.
+  const preview = tables[0]?.draftTable && calendar !== null
+    ? await previewCarryEvidence(tx, { absence, originMonth: month, calendar }).catch((error: unknown) => {
+        console.error("[illness-carry-admin] 근거 미리보기 실패:", error instanceof Error ? error.name : "");
+        return null;
+      })
+    : null;
+  if (preview) {
+    if (preview.ok) {
+      bill = "READY";
+      evidence = { kind: preview.source, month, tuition: preview.tuition, sessions: preview.sessions, unit: preview.unit, warnings: preview.warnings };
+    } else if (preview.noEvidence) {
+      // 근거가 없는 실제 이유를 가른다: 청구는 있는데 아직 안 냈나(납부 뒤 승인) · 청구 자체가 없나(발행 뒤 승인)
+      const [year, monthNumber] = month.split("-").map(Number);
+      const unpaid = await tx.$queryRawUnsafe<Array<{ found: number }>>(
+        `SELECT 1 AS found FROM "Payment"
+          WHERE "studentId" = $1 AND "classId" = $2 AND year = $3 AND month = $4 AND type = 'MONTHLY' AND status IN ('PENDING','OVERDUE') LIMIT 1`,
+        absence.studentId, absence.classId, year, monthNumber,
+      );
+      bill = unpaid.length > 0 ? "UNPAID" : "NONE";
+    } else {
+      // 그 밖의 사유(납부 청구 여러 건·휴원 정산에서 처리한 날·일정 불일치 등)는 서버 문구 그대로 보인다
+      evidenceProblem = preview.reason;
+    }
   }
 
   // 같은 기간의 다른 결석 중 결석일이 지났고(오늘 포함) 아직 결정 전(이월·보강 정산 없음)인 질병·부상 결석
@@ -189,8 +215,10 @@ export async function readIllnessCarryDetail(tx: WorkbenchTx, absenceId: string,
     photoIds: photos.map((photo) => photo.id),
     creditStatus,
     blocker: status === "PENDING"
-      ? carryApprovalBlocker({ absenceYmd: absence.date, todayYmd: todayKst(), creditStatus, billReady, writesEnabled: enabled })
+      ? carryApprovalBlocker({ absenceYmd: absence.date, todayYmd: todayKst(), creditStatus, bill, writesEnabled: enabled }) ?? evidenceProblem
       : null,
+    evidence: status === "PENDING" ? evidence : null,
+    evidenceNote: status === "PENDING" ? evidenceNote : null,
     periodPeerIds: status === "PENDING" ? peers.map((peer) => peer.id) : [],
     // 화면이 «○월 ○일까지»로 보여 준다 — 학부모 화면·자동 전환과 같은 함수(여러 날 결석은 기간의 마지막 결석일 기준)
     evidenceDeadlineYmd: review?.status === "PENDING" && review.source !== "STAFF" && review.requestedYmd

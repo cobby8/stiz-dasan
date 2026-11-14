@@ -9,6 +9,8 @@ import { convertIllnessToMakeupInTx, illnessReviewReady, type IllnessTx } from "
 import {
   evidenceAnchorYmdSql, evidenceScopeSql, isEvidencePurgeDue, isValidEvidencePath, shouldAutoConvertToMakeup, EVIDENCE_BUCKET,
 } from "@/lib/regular/illnessCarryRules";
+import { periodCarryColumnsReady } from "@/lib/regular/absence-period-service";
+import { periodCarryDecidedSql } from "@/lib/regular/illnessPeriodRules";
 
 export type IllnessCronDb = IllnessTx & {
   $transaction<T>(work: (tx: IllnessTx) => Promise<T>, options?: { isolationLevel: "Serializable" | "RepeatableRead"; timeout?: number }): Promise<T>;
@@ -22,6 +24,10 @@ export async function autoConvertOverdueIllnessReviews(
   issuable: (absenceYmd: string) => boolean,
 ): Promise<{ checked: number; converted: Array<{ studentId: string; absenceYmd: string; creditIssued: boolean }>; failed: number }> {
   if (!(await illnessReviewReady(db))) return { checked: 0, converted: [], failed: 0 };
+  // 부상·질병 «기간 결석»을 원장이 승인(또는 정산)한 기간의 결석은 자동 전환하지 않는다(2026-11-15) —
+  // 승인 뒤 학부모가 기간을 늘려 새로 생긴 «검토 중» 결석이 보강권으로 바뀌면 기간 정산과 이중 보상이 된다.
+  // 기간 정산 칸이 아직 없으면(마이그레이션 전) 예전 그대로.
+  const notPeriodDecided = (await periodCarryColumnsReady(db)) ? `AND NOT ${periodCarryDecidedSql("ra")}` : "";
   // 후보: 검토 중 + 학부모가 알린 것. 사진 수·알린 날(KST)·오늘(KST)을 함께 읽어 규칙 함수(순수)가 판정한다
   const rows = await db.$queryRawUnsafe<OverdueRow[]>(
     `SELECT r."absenceId" AS "absenceId", r.status, r.source,
@@ -33,7 +39,7 @@ export async function autoConvertOverdueIllnessReviews(
             to_char(now() AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "todayYmd"
        FROM "RegularAbsenceCarryReview" r
        JOIN "RegularAbsence" ra ON ra.id = r."absenceId"
-      WHERE r.status = 'PENDING' AND r.source IN ('PARENT', 'KAKAO')
+      WHERE r.status = 'PENDING' AND r.source IN ('PARENT', 'KAKAO') ${notPeriodDecided}
       ORDER BY r."requestedAt" ASC
       LIMIT 500`,
   );

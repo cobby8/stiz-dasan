@@ -16,7 +16,8 @@ import { settleCreditOnAbsenceCancel } from "@/lib/makeup/absence-report-credit"
 import { notMergedStudent } from "@/lib/studentVisibility";
 import { periodsOverlap } from "@/lib/regular/absence-period-plan";
 import { absencePeriodContext, ABSENCE_PERIOD_TX_OPTIONS } from "@/lib/regular/absence-period-runner";
-import { parentPeriodColumnsReady } from "@/lib/regular/absence-period-service";
+import { parentPeriodColumnsReady, periodCarryColumnsReady } from "@/lib/regular/absence-period-service";
+import { ILLNESS_PERIOD_INBOX_HREF } from "@/lib/regular/illnessPeriodRules";
 import { closeIllnessReviewInTx, illnessReviewReady } from "@/lib/regular/illness-carry-tx";
 import { ILLNESS_REASON, collapseReviewsByPeriod, isValidReasonText, normalizeReasonText } from "@/lib/regular/illnessCarryRules";
 import {
@@ -154,7 +155,11 @@ async function notifyStaffOfPeriod(input: {
       message: input.kind === "REPORTED"
         ? `${input.studentName} 학생이 ${dates} 결석 예정입니다.${reasonLabel ? ` (${reasonLabel})` : ""}`
         : `${input.studentName} 학생의 ${dates} 결석 신고가 취소되었습니다.`,
-      linkUrl: input.kind === "REPORTED" && input.reason === ILLNESS_REASON ? ILLNESS_INBOX_HREF : "/admin/absence",
+      // 질병·부상 «여러 날» 결석은 신청함에 기간 한 줄로 뜬다(2026-11-15) — 그 줄만 보는 주소로 연다.
+      // 기간 정산 칸이 아직 없는 DB 는 예전처럼 날짜별 목록으로(그때는 기간 한 줄이 비어 있다)
+      linkUrl: input.kind === "REPORTED" && input.reason === ILLNESS_REASON
+        ? (await periodCarryColumnsReady(prisma).catch(() => false)) ? ILLNESS_PERIOD_INBOX_HREF : ILLNESS_INBOX_HREF
+        : "/admin/absence",
       staffLinkUrl: "/staff",
       classIds: Array.from(new Set(input.items.map((item) => item.classId))),
       includeCoach: true,

@@ -58,6 +58,8 @@ function fakeDb(init = {}) {
     db.calls.push(sql);
     // 2026-11-14: 청구 준비 읽기용 표 확인은 한 번에 묶어 묻는다(name 목록 → 표마다 found)
     if (/unnest\(\$1::text\[\]\) AS name/.test(sql)) return v[0].map((name) => ({ name, found: true }));
+    // 2026-11-15 부상·질병 기간 결석: 기간 정산 칸(6개)이 있는가 — db.periodCarry 가 참일 때만 «있음»
+    if (/information_schema\.columns/.test(sql)) return [{ n: /'carryState'/.test(sql) && db.periodCarry ? 6 : 0 }];
     if (/to_regclass/.test(sql)) {
       if (/RegularAbsenceCarryReview/.test(sql)) return [db.ready ? { review: "present", evidence: "present", found: "present" } : { review: null, evidence: null, found: null }];
       return [{ found: "present" }];
@@ -117,7 +119,11 @@ function fakeDb(init = {}) {
       assert.match(sql, /to_char\(r\."requestedAt" AT TIME ZONE 'Asia\/Seoul', 'YYYY-MM-DD'\) AS "requestedYmd"/);
       assert.match(sql, /to_char\(now\(\) AT TIME ZONE 'Asia\/Seoul', 'YYYY-MM-DD'\) AS "todayYmd"/);
       assert.doesNotMatch(sql, /AT TIME ZONE 'UTC'/);
+      // 원장이 승인(정산)한 기간의 결석은 후보에서 뺀다 — 그 조건 문구가 있을 때만 거른다(db.decidedPeriods: 승인된 기간 id)
+      const skipDecided = /AND NOT EXISTS \(SELECT 1 FROM "RegularAbsencePeriod" decided_period\s+WHERE decided_period\.id = ra\."periodId" AND decided_period\."carryState" <> 'NONE'\)/.test(sql);
+      assert.equal(skipDecided, Boolean(db.periodCarry), "기간 정산 칸이 있을 때만 승인된 기간을 거른다");
       return db.reviews.filter((r) => r.status === "PENDING" && ["PARENT", "KAKAO"].includes(r.source))
+        .filter((r) => !skipDecided || !(db.decidedPeriods ?? []).includes(db.absences.find((a) => a.id === r.absenceId)?.periodId))
         .map((r) => ({ absenceId: r.absenceId, status: r.status, source: r.source, photoCount: liveCount(r.absenceId), requestedYmd: r.requestedYmd, absenceYmd: anchorYmd(r.absenceId), todayYmd: db.today }));
     }
     // cron ②: 지울 사진 후보
@@ -574,7 +580,7 @@ test("사유 글: 앞뒤 공백·줄바꿈 정리, 1~100자", () => {
 });
 
 test("승인 버튼을 켤지: 결석일 전·보강 사용·청구 발행 전·저장 꺼짐이면 이유 한 줄, 아니면 null", () => {
-  const ok = { absenceYmd: "2026-11-09", todayYmd: "2026-11-14", creditStatus: null, billReady: true, writesEnabled: true };
+  const ok = { absenceYmd: "2026-11-09", todayYmd: "2026-11-14", creditStatus: null, bill: "READY", writesEnabled: true };
   assert.equal(rules.carryApprovalBlocker(ok), null);
   assert.equal(rules.carryApprovalBlocker({ ...ok, absenceYmd: "2026-11-14" }), null, "결석 당일은 지난 것으로 본다(기존 이월 규칙과 같은 기준)");
   assert.match(rules.carryApprovalBlocker({ ...ok, absenceYmd: "2026-11-15" }), /결석일이 지난 뒤/);
@@ -582,8 +588,10 @@ test("승인 버튼을 켤지: 결석일 전·보강 사용·청구 발행 전·
   assert.match(rules.carryApprovalBlocker({ ...ok, creditStatus: "NO_SHOW" }), /이미 보강을 들은/);
   assert.equal(rules.carryApprovalBlocker({ ...ok, creditStatus: "AVAILABLE" }), null, "이미 나간 미사용 보강권은 승인 때 회수된다(a7)");
   assert.equal(rules.carryApprovalBlocker({ ...ok, creditStatus: "RESERVED" }), null, "예약은 확인 창에서 함께 취소를 묻는다");
-  assert.match(rules.carryApprovalBlocker({ ...ok, billReady: false }), /청구를 발행한 뒤/);
-  assert.equal(rules.carryApprovalBlocker({ ...ok, billReady: null }), null, "근거 표를 모르면 막지 않는다 — 서버 규칙이 최종 판정");
+  assert.match(rules.carryApprovalBlocker({ ...ok, bill: "NONE" }), /그 달 수강료 청구를 발행한 뒤에 승인/);
+  // 청구는 있는데 아직 안 낸 달은 «발행»이 아니라 «납부»가 남은 일이다(2026-11-15)
+  assert.match(rules.carryApprovalBlocker({ ...ok, bill: "UNPAID" }), /그 달 수강료를 납부한 뒤에 승인/);
+  assert.equal(rules.carryApprovalBlocker({ ...ok, bill: null }), null, "근거 표를 모르면 막지 않는다 — 서버 규칙이 최종 판정");
   assert.match(rules.carryApprovalBlocker({ ...ok, writesEnabled: false }), /꺼져 있어/);
 });
 
@@ -1038,6 +1046,7 @@ test("알림·로그에 사유 글(건강 정보)을 싣지 않는다", () => {
   // 신청함 목록(어댑터)에도 싣지 않는다 — 상세를 열 때만 관리자 action 이 읽는다
   const inbox = read("src/lib/requests/admin-inbox.ts");
   const adapter = inbox.slice(inbox.indexOf('kind: "ILLNESS_CARRY"'), inbox.indexOf('kind: "MAKEUP"'));
+  assert.match(adapter, /kind: "ILLNESS_PERIOD"/, "기간 한 줄 어댑터도 같은 구간에 있다 — 사유 글을 싣지 않는다");
   assert.doesNotMatch(adapter, /reasonText/);
   assert.match(read("src/app/actions/illness-carry-admin.ts"), /export async function loadIllnessCarryDetail[\s\S]{0,200}await requireAdmin\(\);/);
 });
@@ -1056,16 +1065,20 @@ test("신청함: «질병·부상 결석» 종류 — 결석일 전은 진행 �
   assert.ok(!catalog.statusesOf("ILLNESS_CARRY").includes("NOT_READY"));
 
   const inbox = read("src/lib/requests/admin-inbox.ts");
-  const adapter = inbox.slice(inbox.indexOf('kind: "ILLNESS_CARRY"'), inbox.indexOf('kind: "MAKEUP"'));
-  // 학부모 신고·기간 결석·출석부 표시가 모두 같은 표 — 기간 결석을 빼지 않는다(일반 결석 어댑터와 다르다)
-  assert.match(adapter, /x\.reason = 'ILLNESS_INJURY' AND x\.status <> 'CANCELLED'/);
-  assert.doesNotMatch(adapter, /"periodId" IS NULL/);
+  const adapter = inbox.slice(inbox.indexOf('kind: "ILLNESS_CARRY"'), inbox.indexOf('kind: "ILLNESS_PERIOD"'));
+  // 기본 조건은 상수 한 곳(ILLNESS_CARRY_WHERE) — 기간 정산 칸이 없는 DB 는 이 식 그대로 읽는다
+  const baseWhere = inbox.slice(inbox.indexOf("const ILLNESS_CARRY_WHERE = `"), inbox.indexOf("const ILLNESS_PERIOD_EMPTY"));
+  assert.match(baseWhere, /x\.reason = 'ILLNESS_INJURY' AND x\.status <> 'CANCELLED'/);
+  // 2026-11-15: 부상·질병 «기간 결석»에 묶인 결석은 뺀다(기간 1건이 ILLNESS_PERIOD 한 줄로 뜬다). 하루짜리·다른 사유 기간의 결석은 그대로 남는다
+  assert.match(adapter, /where: `\$\{ILLNESS_CARRY_WHERE\} AND NOT \$\{boundToIllnessPeriodSql\("x"\)\}`/);
+  assert.match(adapter, /beforePeriodCarry: \{ where: ILLNESS_CARRY_WHERE \}/, "칸이 없는 DB 는 기간 결석을 빼지 않는다");
+  assert.doesNotMatch(adapter, /"periodId" IS NULL/, "기간에 묶였다는 이유만으로 빼지 않는다(질병·부상 기간일 때만)");
   // 결석일 비교: date 칼럼은 달력 값 그대로, now() 만 KST 로 한 번 변환
   assert.match(adapter, /WHEN x\.date > \(now\(\) AT TIME ZONE 'Asia\/Seoul'\)::date THEN 'WAITING' ELSE 'PENDING' END/);
   // 이미 보강을 들은(검토 줄 없는) 결석은 고를 것이 없어 뺀다 / 미사용 보강권이 나간 결석은 남는다(a7)
-  assert.match(adapter, /used\.status IN \('USED', 'NO_SHOW'\)/);
+  assert.match(baseWhere, /used\.status IN \('USED', 'NO_SHOW'\)/);
   // 닫힌 검토(그날 출석으로 자동으로 닫힌 건 등)는 «이월 검토»에 남지 않는다
-  assert.match(adapter, /where: `[^`]*AND COALESCE\(r\.status, ''\) <> 'CLOSED'/);
+  assert.match(baseWhere, /AND COALESCE\(r\.status, ''\) <> 'CLOSED'/);
   // 마이그레이션 전: 그 종류만 빈 목록
   assert.match(adapter, /fallback: \{[\s\S]*where: "false",[\s\S]*rawExpr: `'NOT_READY'::text`/);
   assert.match(inbox, /original\.kind === "ILLNESS_CARRY" && !illnessTableReady\) \? legacyOf\(original\) : original/);

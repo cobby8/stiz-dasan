@@ -55,6 +55,8 @@ const EnrollmentChangeInboxDetail = dynamic(() => import("@/app/admin/enrollment
 const InboxSpecializedActions = dynamic(() => import("./InboxSpecializedActions"), { loading: () => <TabLoading /> });
 // 질병·부상 결석 이월 검토(2026-11-14) — 사유 글·증빙 사진·[이월 승인]/[보강권으로]. 그 줄을 열 때만 내려받는다
 const IllnessCarryInboxDetail = dynamic(() => import("./IllnessCarryInboxDetail"), { loading: () => <TabLoading /> });
+// 부상·질병 기간 결석(2026-11-15) — 기간 1건 = 1줄. 기간·사유 글·증빙 사진·[부상 결석 승인](금액 없음)
+const IllnessPeriodInboxDetail = dynamic(() => import("./IllnessPeriodInboxDetail"), { loading: () => <TabLoading /> });
 const RoleRequestCoachLink = dynamic(() => import("./RoleRequestCoachLink"), { loading: () => <TabLoading /> });
 const SPECIALIZED_KINDS = new Set<RequestKind>(["SEASONAL_ABSENCE", "SEASONAL_MAKEUP", "KAKAO", "WITHDRAWAL", "MEDIA_REVOCATION"]);
 
@@ -343,7 +345,7 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
   // 상세가 자체 조회하는 작업은 완료 목록으로 옮겨진 뒤에도 후속 처리를 이어갈 수 있다.
   const open = freshOpen ?? (openSelection && (
     // 이월 검토도 처리 뒤 완료 칸으로 옮겨 가지만, 결과 문구를 보이려고 상세를 열어 둔다
-    openSelection.kind === "ENROLLMENT_CHANGE" || openSelection.kind === "ILLNESS_CARRY" || SPECIALIZED_KINDS.has(openSelection.kind)
+    openSelection.kind === "ENROLLMENT_CHANGE" || openSelection.kind === "ILLNESS_CARRY" || openSelection.kind === "ILLNESS_PERIOD" || SPECIALIZED_KINDS.has(openSelection.kind)
   ) ? openSelection : null);
   const openActions = open && (open.kind !== "ROLE_GRANT" || canDecideStaffRoles) ? actionsFor(open) : [];
   const filterCount = from || to ? 1 : 0;
@@ -734,6 +736,9 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
           {SPECIALIZED_KINDS.has(open.kind) && <InboxSpecializedActions key={keyOf(open)} row={open} onChanged={refreshCounts} />}
           {open.kind === "ILLNESS_CARRY" && (
             <IllnessCarryInboxDetail key={keyOf(open)} absenceId={open.id} studentName={open.studentName ?? "원생"} onChanged={refreshCounts} />
+          )}
+          {open.kind === "ILLNESS_PERIOD" && (
+            <IllnessPeriodInboxDetail key={keyOf(open)} periodId={open.id} studentName={open.studentName ?? "원생"} onChanged={refreshCounts} />
           )}
           {open.kind === "CHILD_LINK" && open.rawStatus === "PENDING" && (
             <p className="mt-3 text-sm text-[var(--color-academy-muted)]">먼저 연결된 보호자가 학부모 화면에서 승인합니다.</p>

@@ -20,7 +20,9 @@ type Enrollment = { studentId: string; studentName: string; classId: string; cla
 type Register = { studentId: string; month: string; status: string; payload: unknown; version: number };
 type Stored = { id: string; month: string; studentId: string; classId: string; version: number; status: "DRAFT" | "CONFIRMED" | "ISSUED" | "ZERO"; payload: WorkbenchAmounts; reason: string; sourceVersion: string; paymentId: string | null; periodStart?:string|null;periodEnd?:string|null;scheduledDates?:string[];calculationBasis?:Record<string,unknown> };
 type Absence = { id: string; studentId: string; studentName: string; classId: string; date: string; reason: string; status: string; makeupStatus: string | null; resolution: string | null };
-type Credit = { id: string; studentId: string; numerator: string; denominator: string; availableMonth: string; absenceId?: string; valid?: boolean; basis?:{originMonth?:string;classId?:string;discountedTuition?:number;sourcePaymentId?:string|null;scheduledDates?:string[];periodStart?:string|null;periodEnd?:string|null} };
+type Credit = { id: string; studentId: string; numerator: string; denominator: string; availableMonth: string; absenceId?: string; valid?: boolean; basis?:{originMonth?:string;classId?:string;discountedTuition?:number;sourcePaymentId?:string|null;scheduledDates?:string[];periodStart?:string|null;periodEnd?:string|null;
+  // 납부 Payment 근거 이월에만 있는 칸: source='PAID_PAYMENT' · 적립 때 청구 금액 · 그 청구에서 이미 줄인 금액
+  source?:string;paymentAmount?:number;priorReduction?:number} };
 type Usage = { studentId: string; amount: number; month?: string; paymentId?: string | null; paymentStatus?: string | null; invoiceStatus?:string|null; basis?:unknown; sourceCreditIds?:string[] };
 const hash = (v: unknown) => createHash("sha256").update(JSON.stringify(v)).digest("hex");
 const limit = 5001;
@@ -110,15 +112,25 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
     const b=credit.basis,issued=[...originDrafts,...drafts].find(d=>d.studentId===credit.studentId&&d.classId===b.classId&&d.month===b.originMonth&&["ISSUED","ZERO"].includes(d.status));
     const reg=registers.find(r=>r.studentId===credit.studentId&&r.month===b.originMonth&&r.status==="CONFIRMED");
     let monthly:ReturnType<typeof validateMonthlyRegisterDraft>["classes"][number]|undefined;
+    // 납부 Payment 근거 이월(2026-11-15 — 랠리즈에서 넘어온 달처럼 발행 초안·확정 장부가 없는 달).
+    // 초안·장부 대신 «그 청구가 지금도 그 학생·그 반·그 달의 납부완료이고 금액이 적립 때 사본과 같은가»로 본다.
+    // 환불·취소되거나 금액이 바뀌면 무효 → 아래 «원결석 취소·출석 정정된 이월» 차단 사유로 이어진다.
+    const paidEvidence=b.source==="PAID_PAYMENT";
+    if(paidEvidence){
+      const p=originPayments.find(p=>p.id===b.sourcePaymentId);
+      if(!p||p.status!=="PAID"||p.studentId!==credit.studentId||p.classId!==b.classId||`${p.year}-${String(p.month).padStart(2,"0")}`!==b.originMonth||p.amount!==b.paymentAmount||b.discountedTuition!==p.amount+(b.priorReduction??0))credit.valid=false;
+    } else {
     try{monthly=reg?validateMonthlyRegisterDraft(reg.payload).classes.find(c=>c.classId===b.classId):undefined;}catch{credit.valid=false;}
-    const latest=issued?.payload??monthly;
-    if(!latest || latest.baseAmount-latest.discountAmount-latest.prorationAmount!==b.discountedTuition || (monthly&&["baseAmount","discountAmount","prorationAmount"].some(k=>issued&&issued.payload[k as keyof WorkbenchAmounts]!==monthly[k as "baseAmount"|"discountAmount"|"prorationAmount"])))credit.valid=false;
+    const latest=issued?.payload??monthly,monthlyRow=monthly;
+    if(!latest || latest.baseAmount-latest.discountAmount-latest.prorationAmount!==b.discountedTuition || (monthlyRow&&["baseAmount","discountAmount","prorationAmount"].some(k=>issued&&issued.payload[k as keyof WorkbenchAmounts]!==monthlyRow[k as "baseAmount"|"discountAmount"|"prorationAmount"])))credit.valid=false;
     if(b.sourcePaymentId){
       const p=originPayments.find(p=>p.id===b.sourcePaymentId),invoice=originInvoices.find(i=>i.paymentId===b.sourcePaymentId);
       if(!p||!issued||p.amount!==workbenchTotal(issued.payload)||!invoice||invoice.amount!==p.amount||["CANCELED","CANCELLED","REFUNDED"].includes(p.status)||["CANCELED","CANCELLED","REFUNDED"].includes(invoice.status))credit.valid=false;
     }
-    const periodStart=issued?.periodStart??monthly?.periodStart??b.periodStart;
-    const periodEnd=issued?.periodEnd??monthly?.periodEnd??b.periodEnd;
+    }
+    // 납부 Payment 근거의 수강 기간은 적립 때 사본(월중 등록이면 개시일~그 달 마지막 수업일)만 본다.
+    const periodStart=paidEvidence?b.periodStart:issued?.periodStart??monthly?.periodStart??b.periodStart;
+    const periodEnd=paidEvidence?b.periodEnd:issued?.periodEnd??monthly?.periodEnd??b.periodEnd;
     const day=enrollments.find(e=>e.classId===b.classId)?.dayOfWeek;
     // 적립 후 휴강·원기간 조정으로 실제 분모가 바뀌면 새 사유 저장으로 우회하지 않는다.
     let currentDates=day?classDates(b.originMonth!,day):[];

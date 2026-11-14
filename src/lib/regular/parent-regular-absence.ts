@@ -24,6 +24,8 @@ import {
   normalizeReasonText,
   type IllnessReviewSource,
 } from "@/lib/regular/illnessCarryRules";
+import { periodCarryColumnsReady } from "@/lib/regular/absence-period-service";
+import { PERIOD_APPROVED_PARENT_LABEL, parentPeriodDayStatus } from "@/lib/regular/illnessPeriodRules";
 import {
   REASON_LABEL,
   DAY_KO,
@@ -101,6 +103,8 @@ export type UpcomingClassDate = {
   makeupCredit: string | null;
   // 질병·부상 결석의 이월 검토 상태(PENDING·APPROVED·MAKEUP, 없으면 null) — 줄에 «이월 검토 중» 같은 한 단어로 보인다
   carryReview: string | null;
+  // 기간 결석을 학원이 «인정»만 한 날(금액은 복귀 뒤) — 줄의 글자가 «이월 승인» 대신 «부상 결석 인정»이 된다
+  carryAmountPending?: boolean;
 };
 
 /** 질병·부상 결석 한 건의 이월 검토(학부모 화면 «질병·부상 결석» 칸) */
@@ -126,6 +130,11 @@ export type ParentIllnessReview = {
   periodId: string | null;
   /** 이 줄이 대표하는 결석 수(하루 결석 1, 묶인 기간이면 n) */
   count?: number;
+  /**
+   * 부상·질병 «기간 결석»을 학원이 인정했지만 금액은 아직 정하지 않았다(복귀 뒤 한 번에 정산) — 2026-11-15.
+   * true 면 화면이 «다음 달 수강료에서 1회분» 대신 «금액은 복귀 뒤» 안내를 보인다.
+   */
+  amountPending?: boolean;
 };
 
 /**
@@ -135,23 +144,42 @@ export type ParentIllnessReview = {
  */
 export async function getParentIllnessReviews(parentUserId: string): Promise<ParentIllnessReview[]> {
   try {
+    // 기간 정산 칸(마이그레이션 20261116100000)이 있을 때만 기간의 승인 상태를 함께 읽는다 — 없으면 예전 그대로
+    const periodCarryReady = await periodCarryColumnsReady(prisma).catch(() => false);
+    const periodCarrySql = periodCarryReady
+      ? `(SELECT ap."carryState" FROM "RegularAbsencePeriod" ap WHERE ap.id = ra."periodId")`
+      : `NULL::text`;
+    // 학부모 글자는 «검토 줄»이 아니라 기간 상태 기준(2026-11-15 코드 리뷰): 승인된 기간에 묶인 질병·부상 결석은
+    // 검토 줄이 없어도(승인 뒤 매일 연장으로 생긴 날 등) 목록에 올린다. 칸이 없으면 예전처럼 검토 줄이 있는 결석만.
+    const approvedPeriodDaySql = periodCarryReady
+      ? `OR (r."absenceId" IS NULL AND ra.reason = '${ILLNESS_REASON}' AND ${periodCarrySql} = 'APPROVED')`
+      : "";
+    // 하루씩 실제로 이월 적립된 날(정산 기록 있음)은 기존 «이월 승인» 글자를 유지한다 — 정산 표가 없으면 그런 날도 없다
+    const resolutionTable = periodCarryReady
+      ? await prisma.$queryRawUnsafe<Array<{ found: string | null }>>(`SELECT to_regclass('public."BillingAbsenceResolution"')::text AS found`)
+      : [];
+    const settledSql = resolutionTable[0]?.found
+      ? `EXISTS (SELECT 1 FROM "BillingAbsenceResolution" settled WHERE settled."absenceId" = ra.id)`
+      : `false`;
     const rows = await prisma.$queryRawUnsafe<any[]>(
       `SELECT ra.id AS "absenceId", s.id AS "studentId", s.name AS "studentName",
               ra."classId" AS "classId", c.name AS "className", to_char(ra.date, 'YYYY-MM-DD') AS "date",
-              r.status AS status,
-              to_char(r."requestedAt" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "requestedYmd",
+              r.status AS status, ra.reason AS reason, ${settledSql} AS settled,
+              -- 검토 줄이 없는 날은 결석 행을 만든 날을 기준으로(둘 다 timestamptz — KST 변환 한 번)
+              to_char(COALESCE(r."requestedAt", ra."createdAt") AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "requestedYmd",
               ra."periodId" AS "periodId",
+              ${periodCarrySql} AS "periodCarryState",
               -- 여러 날 결석: 기한 기준은 기간의 마지막 결석일, 사진은 기간 한 묶음
               ${evidenceAnchorYmdSql("ra")} AS "anchorYmd",
               COALESCE((SELECT json_agg(json_build_object('id', e.id, 'mine', e."uploadedByUserId" = $1) ORDER BY e."createdAt")
                           FROM "RegularAbsenceEvidence" e
                          WHERE ${evidenceScopeSql("ra", "e")} AND e."removedAt" IS NULL), '[]'::json) AS photos
-         FROM "RegularAbsenceCarryReview" r
-         JOIN "RegularAbsence" ra ON ra.id = r."absenceId"
+         FROM "RegularAbsence" ra
+         LEFT JOIN "RegularAbsenceCarryReview" r ON r."absenceId" = ra.id
          JOIN "Student" s ON s.id = ra."studentId"
          LEFT JOIN "Class" c ON c.id = ra."classId"
         WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")}
-          AND r.status IN ('PENDING', 'APPROVED', 'MAKEUP')
+          AND (r.status IN ('PENDING', 'APPROVED', 'MAKEUP') ${approvedPeriodDaySql})
           AND ra.status <> 'CANCELLED'
           AND ra.date >= ((now() AT TIME ZONE 'Asia/Seoul')::date - 90)
         ORDER BY ra.date DESC, s.name ASC
@@ -163,7 +191,14 @@ export async function getParentIllnessReviews(parentUserId: string): Promise<Par
       const photos: { id: string; mine: boolean }[] = (typeof r.photos === "string" ? JSON.parse(r.photos) : r.photos) ?? [];
       // 7일 기준점 = 알린 날과 결석일 중 더 늦은 날(규칙 함수 한 곳)
       const anchorYmd: string = r.anchorYmd ?? r.date;
-      const window = { status: r.status, requestedYmd: r.requestedYmd, absenceYmd: anchorYmd, todayYmd: today };
+      // 기간 승인으로 «인정»만 된 결석 — 금액은 복귀 뒤에 정한다(하루씩 이월 승인된 결석과 글자가 달라야 한다).
+      // 판정은 규칙 함수 한 곳: 기간 상태 기준, 검토 줄이 없거나 «검토 중»이어도 인정으로 보이고, 실제 이월 적립된 날은 «이월 승인» 그대로
+      const shown = parentPeriodDayStatus({
+        reviewStatus: r.status ?? null, reason: r.reason, periodCarryState: r.periodCarryState ?? null, settled: r.settled === true,
+      });
+      const status = shown.status;
+      const amountPending = shown.amountPending;
+      const window = { status, requestedYmd: r.requestedYmd, absenceYmd: anchorYmd, todayYmd: today };
       return {
         absenceId: r.absenceId,
         studentId: r.studentId,
@@ -172,13 +207,14 @@ export async function getParentIllnessReviews(parentUserId: string): Promise<Par
         className: r.className ?? "",
         date: r.date,
         dateLabel: dateLabel(r.date),
-        status: r.status,
-        statusLabel: illnessReviewLabel(r.status) ?? "",
+        status,
+        statusLabel: amountPending ? PERIOD_APPROVED_PARENT_LABEL : illnessReviewLabel(status) ?? "",
         deadlineLabel: dateLabel(evidenceDeadlineYmd(r.requestedYmd, anchorYmd)),
         canEdit: canEditEvidence(window),
         canAdd: canAddEvidence({ ...window, photoCount: photos.length }),
         photos: photos.map((photo) => ({ id: String(photo.id), mine: photo.mine === true })),
         periodId: r.periodId ?? null,
+        ...(amountPending ? { amountPending: true } : {}),
       };
     });
   } catch (error) {
@@ -281,7 +317,12 @@ export async function getUpcomingRegularClassDates(
 
   // 질병·부상 결석의 이월 검토 상태(줄에 한 단어로 보인다)
   const reviewByKey = new Map<string, string>();
-  for (const review of reviews) reviewByKey.set(`${review.studentId}|${review.classId}|${review.date}`, review.status);
+  const amountPendingKeys = new Set<string>();
+  for (const review of reviews) {
+    const key = `${review.studentId}|${review.classId}|${review.date}`;
+    reviewByKey.set(key, review.status);
+    if (review.amountPending) amountPendingKeys.add(key);
+  }
 
   // 자녀별 → 반별 → 다가오는 날짜 목록으로 조립.
   const childMap = new Map<string, UpcomingChild>();
@@ -317,6 +358,7 @@ export async function getUpcomingRegularClassDates(
         makeupCredit: status ? creditByKey.get(`${r.studentId}|${regularAbsenceSourceKey(r.classId, ymd)}`) ?? null : null,
         // 사유가 질병·부상일 때만(다른 사유로 바뀐 뒤 남은 옛 검토 상태를 보이지 않게)
         carryReview: status && reason === ILLNESS_REASON ? reviewByKey.get(`${r.studentId}|${r.classId}|${ymd}`) ?? null : null,
+        ...(status && reason === ILLNESS_REASON && amountPendingKeys.has(`${r.studentId}|${r.classId}|${ymd}`) ? { carryAmountPending: true } : {}),
       } as UpcomingClassDate;
     });
 

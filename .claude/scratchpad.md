@@ -38,6 +38,30 @@
 - 운영 배포 = `git push origin HEAD:main` fast-forward.
 - 테스트는 `node --test tests/*.test.mjs` **+ 가드 `node --experimental-strip-types --test src/lib/*.test.ts`**(=`npm test`). ⚠️ 2026-10-25 실측: `tests/` 만 돌려 **학생 병합 필터 가드(src/lib/studentVisibility.test.ts)를 놓쳤다** — 회원 탈퇴 배포 후 release:preflight 가 실패하던 상태였다. **`npx vitest`는 이 프로젝트에 없음**(설정도 없어 worktree까지 긁어 전부 오탐).
 
+### 구현 기록 (developer · 11-15 부상·질병 기간 결석 1b 승인 분리, claude/illness-period-approve)
+📝 구현한 기능: 신청함 «부상 결석(기간)» 한 줄(기간 1건 = 1줄) + 금액 없는 [부상 결석 승인]·[승인 취소] + 하루씩 이월 승인 가드 + 학부모 상태 글자
+
+| 파일 경로 | 변경 내용 | 신규/수정 |
+|----------|----------|----------|
+| prisma/migrations/20261116100000_absence_period_carry_state/migration.sql · prisma/schema.prisma | RegularAbsencePeriod 칸 6개·CHECK·부분 색인(운영은 PM 이 적용함) | 신규/수정 |
+| src/lib/regular/illnessPeriodRules.ts | 상태 상수(PERIOD_CARRY_STATES)·문구·기간 글자·공용 SQL 조각 | 신규 |
+| src/lib/regular/illness-period-admin.ts · src/app/actions/illness-period-admin.ts | 승인(NONE→APPROVED)·승인 취소·상세 읽기 + 서버 액션(requireAdmin) | 신규 |
+| src/lib/regular/absence-period-service.ts | periodCarryColumnsReady(6칸 확인) | 수정 |
+| src/lib/requests/catalog.ts · admin-inbox.ts | 종류 ILLNESS_PERIOD + ILLNESS_CARRY 에서 질병 기간 결석 제외 + 칸 없는 DB 용 식(beforePeriodCarry) | 수정 |
+| src/app/admin/inbox/IllnessPeriodInboxDetail.tsx · InboxClient.tsx | 상세 칸(증빙 확인 체크 → 승인, 승인 뒤 승인 취소) | 신규/수정 |
+| src/lib/billing/workbench-absence.ts | 결석을 찾은 직후 기간 가드 7줄(근거·적립부는 안 건드림) | 수정 |
+| src/lib/regular/illness-carry-cron.ts | 승인된 기간의 결석은 7일 자동 전환 후보에서 제외 | 수정 |
+| src/lib/regular/parent-regular-absence.ts · parent-absence-period.ts · mypage/regular-absence/RegularAbsenceClient.tsx | 학부모 글자 «부상 결석 인정 · 금액은 복귀 뒤 확정», 여러 날 질병 알림 링크 → 기간 줄 | 수정 |
+| tests/illness-period.test.mjs(신규 20건) · billing-workbench·illness-carry·request-catalog·list-stage8b 테스트 | 실행 테스트 | 신규/수정 |
+
+💡 tester 참고: 신청함 › 변경 › 결석·보강에서 윤수영이 16줄이 아니라 «부상 결석 11/6 ~ · n회 · 사진 n장» 1줄 → 상세에서 체크 후 [부상 결석 승인] → «진행 중»으로 이동·상태 «인정 · 금액은 복귀 뒤» → [승인 취소]로 «승인 대기» 복귀. 승인 뒤 청구 준비의 결석 정산에서 그 기간의 날짜를 이월 처리하면 «기간 정산에서 한 번에 처리합니다»로 거절. 미래 날짜·그 달 청구 미발행·저장 스위치 꺼짐에서도 승인돼야 정상.
+⚠️ reviewer 참고: 새 SQL 은 실제 Postgres 에서 못 돌렸다(가짜 DB 실행만). 승인 때 학원 등록 기간의 결석에는 검토 줄을 새로 만든다(source STAFF) — 승인 취소하면 그 줄이 «검토 중»으로 남는다. 승인 뒤 복귀 처리로 취소된 날의 검토는 APPROVED 로 남는다(3단계 정산에서 정리 필요).
+
+#### 수정 이력
+| 회차 | 날짜 | 수정 내용 | 수정 파일 | 사유 |
+|------|------|----------|----------|------|
+| 1차 | 11-15 | «보강권으로 전환»(기간의 결정 전인 날 일괄) 추가 · 승인 때 거둔 보강권 id·새 검토 줄 id 를 carrySettlement.approval+감사 기록에 남기고 승인 취소 때 되돌림 · 취소된 결석의 승인 검토는 닫음 · 보강 예약/사용한 날은 승인 대상 제외 · 가드에 질병 사유 조건 · 학부모 글자를 기간 상태 기준으로 · 정산 시작일 상수화 · 알림 24시간 중복 방지 | illness-period-admin.ts · actions/illness-period-admin.ts · IllnessPeriodInboxDetail.tsx · illnessPeriodRules.ts · parent-regular-absence.ts · workbench-absence.ts · tests | reviewer 필수 1 + 권장 5 + 보안 LOW |
+
 ### 구현 기록 (developer · 11-15 학부모 여러 날 결석, claude/absence-period-parent)
 📝 구현한 기능: 학부모 «결석 알리기 › 여러 날»(4주 한도·모든 사유) + 관리자 «기간 결석 등록» 빠른 입구 + 이월 재검수 권장 ②~⑤
 
@@ -167,6 +191,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-15 | developer(부상·질병 기간 결석 1b, claude/illness-period-approve): 신청함 기간 한 줄(ILLNESS_PERIOD)·금액 없는 승인/승인 취소·하루씩 이월 가드·7일 자동 전환 제외·학부모 글자. tsc 0 · tests 5422-0 · guards 337-0. 새 SQL 실제 Postgres 미실행 | 검수 대기 |
 | 11-14 | developer(묶음 B 지각·조퇴·자차, claude/late-early-selfdrive): 학부모 «늦어요 · 일찍 가요»(RegularArrivalNotice, 지각=시작 전·조퇴=끝나기 전, 보강권 없음, 원장·담당 선생님 앱 알림) · 조퇴/지각 날 셔틀 SKIP 연결 · «안 타요»→자차 문구 · 기사 화면 «자차·조퇴·지각» 뱃지+버튼 잠금(화면만) · 출석부 «지각 예정 17:20». tsc 0 · tests 5312-0 · guards 337-0. 마이그레이션 20261115140000(changeCount 포함) 운영 미적용. 2차(보안·리뷰 반영): 하루 변경 5회 상한 · 기존 셔틀 변경 있으면 묻지 않음 · 홈/아이 기록/카카오 자차 문구 · 먼 날짜 셔틀 안내 | 재검수 대기 |
 | 11-14 | developer(셔틀 탑승 알림 묶음 A, claude/shuttle-board-notify): 셔틀 «탔어요·내렸어요» 앱 알림(탑승 체크 1분 뒤·30분 한도·대표 보호자·정규+방학특강·SHUTTLE_ 이벤트, push-outbox 크론 훑기) · «수업 종료»를 «출결» 스위치로 · 홈 «오늘 셔틀» 실제 시각(탑승 08:52·하차 18:40) · 관리자 출결 저장 알림 = 선생님과 같은 규칙 함수(바뀐 아이만·출석/지각만·오늘만·한 번만, «출결이 기록되었습니다» 전체 발송 제거) · 가입 안내문 «결석 알리기». DB 변경 없음. tsc 0·tests 5284-0·guards 337-0. 새 SQL 2개(훑기·홈 시각) 실제 Postgres 미실행 | 검수 대기 |
 | 11-14 | developer(재검수 권장, claude/merged-carry): 휴원 수강료 «남은 이월» 차감 대상을 처리 기록의 학생 + 병합된 대표 학생(mergedIntoStudentId 따라가기, 5단계) 청구로 넓힘(pause-settlement.ts CARRY_TARGET_STUDENTS_SQL) · 병합 결과(PairResult.carryNotice)에 «남은 이월 ○원은 대표 학생 청구에서 차감됩니다» 한 줄 · 관리자 수강 변경 화면은 신청 id 로 읽어 이미 보임(변경 없음). tsc 0·tests 5267-0·guards 337-0. 새 SQL(재귀 CTE) 실제 Postgres 미실행 | 검수 대기 |
@@ -187,4 +212,5 @@
 | 11-14 | developer(수업 진행 화면 간결화, claude/staff-session-compact): 출석부 화면·«출석 확인» 칸·«학생 정보·수업 관리» 펼침을 없애고 학생 한 줄 명단(이름+출결 3버튼)+상세 시트(SessionStudentSheet)+«더보기» · «오늘 수업 내용»+«수업 피드» → «오늘 수업» 한 칸(계획 접힘·불러오기) · 종료 창 중복 입력 제거 · 옛 안드로이드 앱(1.0.3 미만) 영상 촬영 안내. 서버·액션 변경 없음. tsc 0·tests 4808-0 | 완료(main 머지 전·실기기 점검 필요) |
 | 11-14 | developer(보강 예약 학년 판정, claude/makeup-grade): 학생 학년 = 생년월일 계산(student-grade.ts, 임시 생일 2000-01-01·빈 값이면 학년 글자), 후보 = 포함 먼저+±1 유지·미취학 위로 2학년·성인반끼리(credit-rules.makeupGradeFit, 목록·예약 같은 판정), 빈 목록 4종 그 자리 버튼(학년 확인·다시 확인·학원에 문의→홈 메시지 폼), 문구 한 줄씩. 휴원 차단 조건 없음. tsc 0·node --test 4795/0 | 검수 대기 |
 | 11-14 | PM: 청구 월 카드(f8bc4572+결제하기 안전장치 87c09363·중복 누름 8e43b575)·기사 운행표 휴원·휴무(067011c5)·앱 1.0.3 버전(5175e8ec) 묶음 배포 a2ce24e READY·오류 0. 안드로이드 vc6 내부 테스트 게시·iOS Codemagic #6 TestFlight 처리 완료(외부 베타 정보 미입력 경고만) | 완료 |
+| 11-15 | developer(부상·질병 복귀 정산 1a, claude/illness-carry-payment-evidence): 결석 이월 근거에 «납부완료 Payment 1건» 허용(초안·장부 없을 때만 — 2건 이상 차단·취소/환불/미납은 기존 문구·이미 줄인 금액은 원래 금액·월중 등록은 개시일 이후). 새 carryEvidence.ts(순수)·creditCarryForAbsenceInTx 추출·readWorkbench 유효성 PAID_PAYMENT 갈래·신청함 billReady. DB 변경 없음. tsc 0·tests 5426-0·guards 337-0. 새 SQL 4개는 임시 로컬 Postgres 16 에서 실행 확인(운영 DB 미실행). **검수 권장 반영**: 휴원 정산이 처리한 날 거절(공통) · 신청함 상세 근거 미리보기 한 줄(금액은 원장만) · 셔틀비 섞임 경고 · 버튼 꺼짐 문구 «납부한 뒤/발행한 뒤» 구분 · 통합 실행기 임시 스키마 보정(로컬 Postgres 24개 통과). tsc 0·tests 5430-0·guards 337-0 | 재검수 대기 |
 | 11-14 | developer(기사님 운행표 휴원·휴무, claude/driver-paused-holiday): 휴원·퇴원·첫 수업 전 = 회색 뱃지+탑승·미탑승 잠금(명단 유지), 휴무일 = 맨 위 «오늘은 휴무(사유)»+정규 줄 잠금, 저장 API 2곳 409, 관리자 운행표 뱃지+«이 달 휴무». 판정 = regularRunDayRules(학부모 childShuttleRules 재사용). 운영 읽기: 휴원 3명·6행 뱃지 대상. 리뷰 반영(월말 다음 달 미입력=모름·반 0개는 퇴원 기록 있을 때만 퇴원·409 문구 표시) tsc 0·node --test 4672/0·guards 5/0 | 재검수 대기 |
