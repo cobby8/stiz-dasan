@@ -469,6 +469,7 @@ export async function runSettlementTossRefunds(db: SettlementSql, input: {
  * 이월을 다음 청구에서 뺀다(승인 직후 + 매일 크론). 남은 이월이 있는 처리마다
  * 그 학생의 «carryAfterYm 보다 뒤» 미납 수강료 청구(랠리즈 사본·결제 진행 중 제외)를 수강월 순으로 줄인다.
  * 랠리즈 청구뿐이면 줄일 사이트 청구가 없어 이월이 남는다 → 관리자 «이월 직접 처리»로 닫는다.
+ * 학생 병합 뒤에는 처리 기록이 흡수된 학생에 남고 새 청구는 대표 학생에게 생기므로, 대표 학생 청구도 차감 대상이다.
  */
 export async function applyOpenPauseCarries(db: SettlementDb, input: { studentId?: string | null } = {}): Promise<{ applied: number; amount: number }> {
   if (!(await settlementTablesReady(db))) return { applied: 0, amount: 0 };
@@ -492,6 +493,19 @@ export async function applyOpenPauseCarries(db: SettlementDb, input: { studentId
   return sum;
 }
 
+/**
+ * 차감 대상 학생 = 처리 기록의 학생($1) + 그 학생이 병합된 대표 학생(mergedIntoStudentId 를 따라간다).
+ * 왜: 학생 병합은 처리 기록(EnrollmentChangeSettlement)을 흡수 쪽에 남기는데(studentMerge/tables.ts) 새 청구는 대표 학생에게 발행된다.
+ * 대표가 다시 병합된 경우까지 따라가되 5단계에서 멈춘다(잘못된 순환 방지). 병합 안 된 학생은 자기 자신 하나뿐이라 예전과 같다.
+ */
+export const CARRY_TARGET_STUDENTS_SQL = `WITH RECURSIVE chain(id, depth) AS (
+              SELECT $1::text, 0
+              UNION ALL
+              SELECT st."mergedIntoStudentId", chain.depth + 1
+                FROM chain JOIN "Student" st ON st.id = chain.id
+               WHERE st."mergedIntoStudentId" IS NOT NULL AND chain.depth < 5)
+            SELECT id FROM chain`;
+
 /** 한 학생의 남은 이월을 한 트랜잭션에서 차감한다(전역 잠금 → 처리 행 → 결제 잠금 → 청구 행) */
 async function applyCarriesForStudent(db: SettlementDb, studentId: string): Promise<{ applied: number; amount: number }> {
   return db.$transaction(async (tx) => {
@@ -509,8 +523,9 @@ async function applyCarriesForStudent(db: SettlementDb, studentId: string): Prom
     for (const s of open) {
       let remaining = Number(s.carryRemaining);
       const after = s.carryAfterYm && /^\d{4}-\d{2}$/.test(s.carryAfterYm) ? ymNumber(s.carryAfterYm) : 0;
-      // 차감 대상 조건(별칭 p) — $1 학생 · $2 기준 수강월 · $3 처리 id
-      const targetScope = `p."studentId" = $1 AND COALESCE(p.type, 'MONTHLY') = 'MONTHLY'
+      // 차감 대상 조건(별칭 p) — $1 처리 기록의 학생(+병합된 대표 학생) · $2 기준 수강월 · $3 처리 id
+      // 같은 처리(s.id)가 같은 청구에서 두 번 빼지 않게 CARRY_APPLY 줄로 막는 것은 그대로다.
+      const targetScope = `p."studentId" IN (${CARRY_TARGET_STUDENTS_SQL}) AND COALESCE(p.type, 'MONTHLY') = 'MONTHLY'
             AND p.status IN ('PENDING','OVERDUE') AND p.amount > 0
             AND p.year IS NOT NULL AND p.month IS NOT NULL AND (p.year * 100 + p.month) > $2
             AND ${rallyzMirrorExclusionSql("p")}

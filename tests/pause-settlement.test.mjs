@@ -255,7 +255,14 @@ test("토스 부분 취소 함수 계약: 재조회 → 감사 → cancelAmount+
 });
 
 // ── 4) 실행부(가짜 DB 로 실제 실행) ───────────────────────────────────────
-function fakeDb({ payments, request, existing = false, active = [], priorLines = [] }) {
+function fakeDb({ payments, request, existing = false, active = [], priorLines = [], mergedInto = {} }) {
+  // 이월 차감 대상 학생 = 처리 기록의 학생 + 병합된 대표 학생(CARRY_TARGET_STUDENTS_SQL 과 같은 뜻). 청구에 studentId 가 없으면 stu-1
+  const carryStudents = (studentId) => {
+    const chain = [studentId];
+    while (mergedInto[chain.at(-1)] && chain.length <= 5) chain.push(mergedInto[chain.at(-1)]);
+    return chain;
+  };
+  const carryTarget = (p, studentId) => carryStudents(studentId).includes(p.studentId ?? "stu-1");
   const state = {
     locks: [], settlements: [], lines: [], paymentUpdates: [], invoiceUpdates: [], audits: [], opsAudits: [],
     payments: payments.map((p) => ({ ...p })), events: [], active: new Set(active),
@@ -318,7 +325,11 @@ function fakeDb({ payments, request, existing = false, active = [], priorLines =
       if (sql.startsWith('SELECT p.id FROM "Payment" p WHERE')) {
         state.events.push("candidates");
         assert.doesNotMatch(sql, /FOR UPDATE/);
-        if (sql.includes("p.amount > 0")) return state.payments.filter((p) => unpaid(p) && p.amount > 0 && p.year * 100 + p.month > v[1] && !p.rallyzMirror).map((p) => ({ id: p.id }));
+        if (sql.includes("p.amount > 0")) {
+          assert.match(sql, /"mergedIntoStudentId"/, "병합된 대표 학생 청구도 후보");
+          return state.payments.filter((p) => carryTarget(p, v[0]) && unpaid(p) && p.amount > 0 && p.year * 100 + p.month > v[1] && !p.rallyzMirror
+            && !state.lines.some((l) => l.settlementId === v[2] && l.paymentId === p.id && l.kind === "CARRY_APPLY")).map((p) => ({ id: p.id }));
+        }
         return state.payments.filter((p) => p.year * 100 + p.month >= v[2]).map((p) => ({ id: p.id }));
       }
       if (sql.includes('FROM "Payment" p') && sql.includes("LEFT JOIN LATERAL")) {
@@ -329,17 +340,21 @@ function fakeDb({ payments, request, existing = false, active = [], priorLines =
         return state.payments.filter((p) => p.year * 100 + p.month >= v[2] && (!v[3] || v[3].includes(p.id)))
           .map((p) => ({ ...p, posBusy: Boolean(p.busy) }));
       }
-      if (sql.includes('FROM "EnrollmentChangeSettlementLine" l') && sql.includes("JOIN")) return priorLines;
+      // (이월 행 잠금 조회도 병합 학생 따라가기 때문에 JOIN 을 품는다 → 아래 전용 분기로 보낸다)
+      if (sql.includes('FROM "EnrollmentChangeSettlementLine" l') && sql.includes("JOIN") && !sql.startsWith("SELECT p.id, p.amount")) return priorLines;
       if (sql.includes("kind = 'REFUND' AND channel = 'TOSS'")) {
         return state.lines.filter((l) => l.settlementId === v[0] && l.kind === "REFUND" && l.channel === "TOSS" && ["REQUESTED", "FAILED"].includes(l.status)).map((l) => ({ ...l }));
       }
       if (sql.includes('FROM "EnrollmentChangeSettlement"') && sql.includes('"carryRemaining" > 0') && sql.includes("FOR UPDATE")) {
-        return state.settlements.filter((s) => s.carryRemaining > 0);
+        return state.settlements.filter((s) => s.carryRemaining > 0 && s.studentId === v[0]);
       }
       if (sql.includes('SELECT p.id, p.amount, p.year, p.month FROM "Payment" p')) {
         state.events.push("carry-rows-for-update");
         assert.match(sql, /FOR UPDATE OF p/);
-        return state.payments.filter((p) => unpaid(p) && p.amount > 0 && p.year * 100 + p.month > v[1] && !p.rallyzMirror && v[3].includes(p.id));
+        assert.match(sql, /"mergedIntoStudentId"/, "행 잠금도 같은 범위");
+        return state.payments.filter((p) => carryTarget(p, v[0]) && unpaid(p) && p.amount > 0 && p.year * 100 + p.month > v[1] && !p.rallyzMirror && v[3].includes(p.id)
+          && !state.lines.some((l) => l.settlementId === v[2] && l.paymentId === p.id && l.kind === "CARRY_APPLY"))
+          .sort((a, b) => a.year * 100 + a.month - (b.year * 100 + b.month));
       }
       throw new Error(`예상 못한 읽기: ${sql.slice(0, 80)}`);
     },
@@ -454,6 +469,80 @@ test("이월: 적립 뒤 휴원 수강월 «뒤»의 미납 청구에서 차감,
   assert.ok(db.state.lines.some((l) => l.kind === "CARRY_APPLY" && l.paymentId === "jan" && l.amount === 50000));
   // 다시 돌려도(크론) 더 뺄 청구가 없으면 그대로
   assert.deepEqual(await service.applyOpenPauseCarries(db, { studentId: "stu-1" }), { applied: 0, amount: 0 });
+});
+
+// 학생 병합 뒤: 처리 기록은 흡수된 학생(stu-1)에 남고 새 청구는 대표 학생(stu-rep)에게 생긴다
+const MERGED_ROWS = () => [
+  { id: "nov", year: 2026, month: 11, amount: 140000, status: "PAID", paidProvider: "MANUAL", method: "CASH", rallyzMirror: false, tossTxId: null, tossTxMethod: null, busy: false },
+  { id: "dec", year: 2026, month: 12, amount: 140000, status: "PAID", paidProvider: "MANUAL", method: "CASH", rallyzMirror: false, tossTxId: null, tossTxMethod: null, busy: false },
+  // 흡수 쪽에 동결돼 남은 미납(1월 30,000) · 대표 학생의 새 청구(2월 100,000 · 3월 140,000) · 남의 학생 청구(2월)
+  { id: "jan-old", year: 2027, month: 1, amount: 30000, status: "PENDING", paidProvider: null, method: null, rallyzMirror: false, tossTxId: null, tossTxMethod: null, busy: false },
+  { id: "feb-rep", studentId: "stu-rep", year: 2027, month: 2, amount: 100000, status: "PENDING", paidProvider: null, method: null, rallyzMirror: false, tossTxId: null, tossTxMethod: null, busy: false },
+  { id: "mar-rep", studentId: "stu-rep", year: 2027, month: 3, amount: 140000, status: "PENDING", paidProvider: null, method: null, rallyzMirror: false, tossTxId: null, tossTxMethod: null, busy: false },
+  { id: "feb-other", studentId: "stu-other", year: 2027, month: 2, amount: 140000, status: "PENDING", paidProvider: null, method: null, rallyzMirror: false, tossTxId: null, tossTxMethod: null, busy: false },
+];
+async function carryDb(mergedInto) {
+  const db = fakeDb({ payments: MERGED_ROWS(), request: { ...REQ, resumeOn: "2027-01-01" }, mergedInto });
+  const key = (await service.previewPauseSettlement(db, "req-1", classDatesFor)).previewKey;
+  const done = await service.executePauseSettlementInTx(db, { requestId: "req-1", adminUserId: "a", mode: "CARRY", expectedPreviewKey: key, classDatesFor });
+  assert.equal(done.ok, true);
+  assert.equal(db.state.settlements[0].carryRemaining, 210000);
+  return db;
+}
+const amountOf = (db, id) => db.state.payments.find((p) => p.id === id).amount;
+
+test("병합된 학생의 남은 이월은 대표 학생의 새 청구에서도 차감된다(흡수 쪽 미납 차감은 그대로 · 남의 학생은 안 건드림)", async () => {
+  const db = await carryDb({ "stu-1": "stu-rep" });
+  // 크론(학생 지정 없음) — 처리 기록의 학생은 흡수된 stu-1 이지만 대표 학생 청구까지 수강월 순으로 뺀다
+  const applied = await service.applyOpenPauseCarries(db);
+  assert.deepEqual(applied, { applied: 3, amount: 210000 });
+  assert.equal(amountOf(db, "jan-old"), 0, "흡수 쪽에 남은 미납 차감 유지");
+  assert.equal(amountOf(db, "feb-rep"), 0);
+  assert.equal(amountOf(db, "mar-rep"), 60000, "210,000 − 30,000 − 100,000 = 80,000 만 차감");
+  assert.equal(amountOf(db, "feb-other"), 140000);
+  assert.equal(db.state.settlements[0].carryRemaining, 0);
+  // 이중 차감 없음: 차감 줄 합계 = 이월 전액, 청구마다 한 줄, 다시 돌려도 그대로
+  const carryLines = db.state.lines.filter((l) => l.kind === "CARRY_APPLY");
+  assert.equal(carryLines.reduce((sum, l) => sum + l.amount, 0), 210000);
+  assert.equal(new Set(carryLines.map((l) => l.paymentId)).size, carryLines.length);
+  assert.deepEqual(await service.applyOpenPauseCarries(db), { applied: 0, amount: 0 });
+  assert.deepEqual(await service.applyOpenPauseCarries(db, { studentId: "stu-rep" }), { applied: 0, amount: 0 });
+  assert.equal(amountOf(db, "mar-rep"), 60000);
+});
+
+test("이월 이중 차감 없음: 한 번 차감한 청구는 남은 이월이 있어도 같은 처리로 다시 빼지 않는다", async () => {
+  const db = await carryDb({ "stu-1": "stu-rep" });
+  db.state.payments.find((p) => p.id === "mar-rep").status = "PAID"; // 대표 학생 청구는 2월 하나만 미납
+  assert.deepEqual(await service.applyOpenPauseCarries(db, { studentId: "stu-1" }), { applied: 2, amount: 130000 });
+  assert.equal(db.state.settlements[0].carryRemaining, 80000);
+  // 차감된 2월 청구가 다시 금액을 얻어도(관리자 수정) 같은 처리의 이월은 그 청구에서 또 빠지지 않는다
+  Object.assign(db.state.payments.find((p) => p.id === "feb-rep"), { amount: 50000, status: "PENDING" });
+  assert.deepEqual(await service.applyOpenPauseCarries(db), { applied: 0, amount: 0 });
+  assert.equal(amountOf(db, "feb-rep"), 50000);
+  assert.equal(db.state.settlements[0].carryRemaining, 80000);
+});
+
+test("병합 안 된 학생은 예전과 같다: 자기 청구만 차감하고 남은 이월은 남는다", async () => {
+  const db = await carryDb({});
+  assert.deepEqual(await service.applyOpenPauseCarries(db), { applied: 1, amount: 30000 });
+  assert.equal(amountOf(db, "feb-rep"), 100000, "병합되지 않았으면 다른 학생 청구는 그대로");
+  assert.equal(amountOf(db, "mar-rep"), 140000);
+  assert.equal(db.state.settlements[0].carryRemaining, 180000);
+  // 대표 학생(stu-rep) 쪽에서 불러도 흡수 학생의 처리 기록·청구를 건드리지 않는다(처리 기록의 학생 기준)
+  assert.deepEqual(await service.applyOpenPauseCarries(db, { studentId: "stu-rep" }), { applied: 0, amount: 0 });
+});
+
+test("이월 차감 대상 SQL: 처리 기록의 학생에서 mergedIntoStudentId 를 따라가고 5단계에서 멈춘다", () => {
+  const sql = service.CARRY_TARGET_STUDENTS_SQL;
+  assert.match(sql, /WITH RECURSIVE chain\(id, depth\)/);
+  assert.match(sql, /SELECT \$1::text, 0/);
+  assert.match(sql, /st\."mergedIntoStudentId" IS NOT NULL AND chain\.depth < 5/);
+  const src = readFileSync("src/lib/enrollment/pause-settlement.ts", "utf8");
+  // 후보 읽기·행 잠금이 같은 조건(targetScope)을 쓴다 — 한쪽만 넓히면 잠그지 않은 청구를 줄이게 된다
+  assert.match(src, /const targetScope = `p\."studentId" IN \(\$\{CARRY_TARGET_STUDENTS_SQL\}\)/);
+  assert.equal(src.split("${targetScope}").length - 1, 2);
+  // 처리 기록 잠금은 여전히 그 학생 것만(FOR UPDATE), 전역 잠금·트랜잭션 유지
+  assert.match(src, /WHERE "carryRemaining" > 0 AND "studentId" = \$1\s+ORDER BY "createdAt", id\s+LIMIT 200\s+FOR UPDATE/);
 });
 
 // ── 5) 연결 계약(승인·알림·취소 요청·화면) ─────────────────────────────────
