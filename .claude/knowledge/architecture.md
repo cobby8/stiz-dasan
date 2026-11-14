@@ -371,3 +371,9 @@
 - **발견자**: developer
 - **내용**: 부상·질병 기간 결석(ILLNESS_PERIOD)은 RegularAbsencePeriod.carryState 를 읽는다. 하루짜리 목록(ILLNESS_CARRY)에서 «질병 기간에 묶인 결석 제외»와 «기간 한 줄에 올리는 기간»은 같은 SQL 조각(illnessPeriodRules.illnessPeriodVisibleSql)을 써야 한쪽에만 뜨거나 어디에도 안 뜨는 일이 없다. 칸이 없는 DB 는 admin-inbox 의 beforePeriodCarry 로 «기간 줄은 비우고 하루짜리는 제외 없이» 읽는다. ⚠️ 빈 표로 바꿀 때 where 도 함께 바꿀 것 — from 만 바꾸면 원래 where 가 없는 칸을 읽어 그 종류가 통째로 실패한다(실행 테스트가 잡았다). 승인(금액 없음)은 illness-period-admin.ts, 금액 정산은 다음 단계.
 - **참조횟수**: 0
+
+### [2026-11-15] 부상 결석 복귀 정산 = 순수 계산 한 곳 + 반·«수강월» 근거 한 곳(결석일의 달력 월로 묶으면 틀린다)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 기간 정산 금액은 `illnessPeriodSettlementPlan.ts`(순수) 한 곳에서만 만든다 — 원장 미리보기·학부모 «복귀했어요» 미리보기·확정이 `illness-period-settlement.ts` 의 같은 읽기 함수(readSettlementPlan)를 지난다. 반·달 근거는 하루짜리 이월과 같은 `workbench-absence.readClassMonthEvidenceInTx`(발행 초안도 «납부된 것만»), 이월 INSERT 는 `insertCarryCreditInTx` 한 곳. ⚠️ 결석을 달로 묶을 때 `date.slice(0,7)`(달력 월)을 쓰면 틀린다 — 연간 일정의 «수강월»은 달력 월과 다를 수 있다(예: 12월 1주차가 11/30 에 시작하면 11/30 결석의 청구 달은 12월). 그 달 그 요일 수업일에 그 날이 있는 달(달력 월 → 다음 달 → 이전 달)을 수강월로 쓴다. 하루짜리 이월(approveIllnessCarry 의 originMonth)은 아직 달력 월이라 그런 날은 «수업일에 포함되는지 확인»으로 거절된다(미해결). 확정·확정 취소는 READ COMMITTED(잠근 뒤 다시 읽기), 이월의 수업 횟수는 청구 준비와 같은 공식 일정(loadWorkbenchCalendar)으로 세야 readWorkbench 유효성 검사를 통과한다.
+- **참조횟수**: 0

@@ -38,6 +38,25 @@
 - 운영 배포 = `git push origin HEAD:main` fast-forward.
 - 테스트는 `node --test tests/*.test.mjs` **+ 가드 `node --experimental-strip-types --test src/lib/*.test.ts`**(=`npm test`). ⚠️ 2026-10-25 실측: `tests/` 만 돌려 **학생 병합 필터 가드(src/lib/studentVisibility.test.ts)를 놓쳤다** — 회원 탈퇴 배포 후 release:preflight 가 실패하던 상태였다. **`npx vitest`는 이 프로젝트에 없음**(설정도 없어 worktree까지 긁어 전부 오탐).
 
+### 구현 기록 (developer · 11-15 부상·질병 기간 결석 3단계 복귀 정산, claude/illness-period-settle)
+📝 구현한 기능: 복귀 정산 미리보기·이월 확정·확정 취소(원장) + 학부모 «복귀했어요» 예정 금액 + 청구 준비 «다닌 만큼만» 제안. DB 스키마 변경 없음.
+
+| 파일 경로 | 변경 내용 | 신규/수정 |
+|----------|----------|----------|
+| src/lib/regular/illnessPeriodSettlementPlan.ts | 순수 계산(달별 표·합계·제외 사유·낸 돈 없는 달 안내·지문·학부모 모양) | 신규 |
+| src/lib/regular/illness-period-settlement.ts · -runner.ts | 미리보기·확정·확정 취소·학부모 미리보기(db 인자) / 공식 일정·스위치 묶음 | 신규 |
+| src/lib/billing/workbench-absence.ts · illness-carry-admin.ts | 반·달 근거 함수 분리(readClassMonthEvidenceInTx)·INSERT 한 곳(insertCarryCreditInTx)·**발행 초안도 납부된 것만** | 수정 |
+| src/lib/billing/workbench-service.ts · workbench.ts | 낸 돈 없는 달 «다닌 만큼만» 제안(attendedOnlyProration)·저장 초안과 다르면 알림·반 이동 경고·지문 | 수정 |
+| src/lib/regular/illnessPeriodRules.ts · illness-period-admin.ts | 상태 글자·SQL 조각·«인정 안 함» 표시·새 날 보강권 전환·현장 결제 재확인 | 수정 |
+| src/lib/requests/catalog.ts · admin-inbox.ts | 신청함 상태 SETTLE_NEEDED(처리 필요)·SETTLED·DECLINED | 수정 |
+| src/app/actions/illness-period-admin.ts · admin/inbox/IllnessPeriodSettlementBox.tsx · IllnessPeriodInboxDetail.tsx · students/[id]/AbsencePeriodPanel.tsx | 정산 칸(날짜 칩·합계·이월 확정·확정 취소)·학생 상세 상태 글자 | 신규/수정 |
+| src/lib/regular/parent-period-settlement.ts · parent-absence-period.ts · parent-regular-absence.ts · api/mypage/regular-absence/period · mypage/regular-absence/* | 학부모: 학원 등록 기간 «복귀했어요»·예정 금액·확정 뒤 글자·정산 제외 글자 | 신규/수정 |
+| src/app/api/cron/absence-periods/route.ts | «인정 안 함» 기간의 새 날 보강권 전환 | 수정 |
+| tests/illness-period-settlement-plan(14)·illness-period-settlement(11)·billing-workbench(+4)·illness-billing-hold(+1)·illness-period · illness-period-settlement-postgres.mjs(로컬 PG 12개) · _ts-module(overrides) | 실행 테스트 | 신규/수정 |
+
+💡 tester 참고: 신청함 › 부상 결석(기간) 승인된 줄 → «지금까지 예상 이월 ○원»(원장만) → [정산하기] → 복귀일 → 달별 표(날짜 칩 눌러 빼기/넣기) → [이월 확정] → «완료(이월 확정)»·[청구 준비로 이동]. 청구 준비: 복귀 달 행에 이월 차감 제안, 낸 돈 없는 달은 «부상 결석 n회 제외 → 기간 조정 ○원 제안». 보류로 돌렸던 초안은 저장값이 남아 «제안과 다릅니다» 알림 → 다시 저장해야 한다. 학부모: 결석 알리기 › 여러 날 결석 줄 [복귀했어요] → 복귀일 → «이월 예정 ○원». 주의 입력: 11/30 처럼 다음 달 수강월에 속한 날·출석 기록 있는 날·보강 예약한 날·복귀일을 미래로·부원장 계정(금액 안 보임)·저장 스위치 꺼짐.
+⚠️ reviewer 참고: ① 확정·확정 취소는 READ COMMITTED(Serializable 금지 — 테스트 고정) ② 하루짜리 이월도 «미납 발행 초안»은 이제 거절(이미 적립된 이월의 유효성 판정은 그대로) ③ 낸 돈 없는 달의 결석에도 정산 기록(CARRY)을 남긴다(이월 행 없음 — 이중 보상 방지) ④ 실제 Postgres 미실행 SQL: 학부모 목록(listParentAbsencePeriods)·학부모 검토 조회·학생 상세 목록·신청함 상태식 전체·returnAcademyIllnessPeriod·convertDeclinedPeriodNewDays 의 전환 반복 ⑤ 윤수영 실제 금액은 운영 연간 일정의 11월 월요일 수업 횟수에 달렸다(테스트에 일정 두 모양 모두 기재: 168,750 / 174,000).
+
 ### 구현 기록 (developer · 11-15 부상·질병 기간 결석 1b 승인 분리, claude/illness-period-approve)
 📝 구현한 기능: 신청함 «부상 결석(기간)» 한 줄(기간 1건 = 1줄) + 금액 없는 [부상 결석 승인]·[승인 취소] + 하루씩 이월 승인 가드 + 학부모 상태 글자
 
@@ -216,6 +235,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-15 | developer(부상·질병 기간 결석 3단계 복귀 정산, claude/illness-period-settle): 순수 계산 모듈·미리보기/이월 확정/확정 취소·학부모 예정 금액·청구 준비 «다닌 만큼만» 제안·신청함 «정산 필요»·1·2단계 숙제(납부된 것만·인정 안 함 표시·현장 결제 재확인·반 이동 경고). tsc 0 · tests 5543-0 · guards 337-0 · 로컬 Postgres 45개 통과. 스키마 변경 없음 | 검수 대기 |
 | 11-15 | developer(부상·질병 기간 결석 2단계 청구 발행 보류, claude/illness-billing-hold): 청구 준비 보류(차단 사유·hold·지문)·이미 발행된 미납 청구 «발행 보류로 돌리기»(원장만, 결제 진행 중 등은 건너뜀)·학생 상세/학부모 결제 화면 한 줄·신청함 «인정 · 발행 보류 중»·1단계 숙제 3건. tsc 0 · tests 5484-0 · guards 337-0 · 로컬 Postgres 31개 통과. 스키마 변경 없음 | 검수 대기 |
 | 11-15 | developer(부상·질병 기간 결석 1b, claude/illness-period-approve): 신청함 기간 한 줄(ILLNESS_PERIOD)·금액 없는 승인/승인 취소·하루씩 이월 가드·7일 자동 전환 제외·학부모 글자. tsc 0 · tests 5422-0 · guards 337-0. 새 SQL 실제 Postgres 미실행 | 검수 대기 |
 | 11-14 | developer(묶음 B 지각·조퇴·자차, claude/late-early-selfdrive): 학부모 «늦어요 · 일찍 가요»(RegularArrivalNotice, 지각=시작 전·조퇴=끝나기 전, 보강권 없음, 원장·담당 선생님 앱 알림) · 조퇴/지각 날 셔틀 SKIP 연결 · «안 타요»→자차 문구 · 기사 화면 «자차·조퇴·지각» 뱃지+버튼 잠금(화면만) · 출석부 «지각 예정 17:20». tsc 0 · tests 5312-0 · guards 337-0. 마이그레이션 20261115140000(changeCount 포함) 운영 미적용. 2차(보안·리뷰 반영): 하루 변경 5회 상한 · 기존 셔틀 변경 있으면 묻지 않음 · 홈/아이 기록/카카오 자차 문구 · 먼 날짜 셔틀 안내 | 재검수 대기 |
