@@ -73,6 +73,7 @@ function fakeWindow({ historyLength = 2, storageThrows = false } = {}) {
     setItem: (k, v) => { if (storageThrows) throw new Error("blocked"); data.set(k, String(v)); },
   };
   globalThis.window = { sessionStorage: storage, history: { length: historyLength } };
+  hist.resetPageLoadStateForTest(); // 새 페이지를 불러온 직후로(첫 기록 판정은 document 가 없어 건너뜀)
   return { data };
 }
 
@@ -200,7 +201,9 @@ test("학부모 layout 에 기록 부품이 마운트되고, 공통 뒤로 버�
   assert.match(layout, /<Suspense fallback=\{null\}>\s*<ParentHistoryTracker \/>/);
   const button = await read("src/components/AppBackButton.tsx");
   assert.match(button, /parentHistoryDecision\(pathname\)/);
-  assert.match(button, /parentDecision === false && isInstalledApp/);
+  // 학부모 범위에서 «기록 없음»이면 설치 여부와 관계없이(스토어 앱 포함) referrer·idx 로 넘어가지 않는다
+  assert.ok(button.includes("if (parentDecision !== null) return parentDecision;"));
+  assert.doesNotMatch(button, /parentDecision === false && isInstalledApp/);
   assert.match(button, /useSyncExternalStore\(subscribeInAppHistory/);
   // 공개 사이트 기록 판단은 그대로 남아 있다
   assert.match(button, /hasSameOriginPreviousEntry/);
@@ -321,4 +324,106 @@ test("error.tsx — 1초 뒤 자동 refresh+reset 1회, 판정은 claimAutoRetry
   assert.doesNotMatch(src, /\{error\.message\}|\{String\(error\)\}|\{error\.stack\}/);
   // 효과가 router·reset 바뀜으로 다시 돌아 1회 판정을 소모하지 않게
   assert.match(src, /\}, \[error, pathname\]\);/);
+});
+
+// ── A-5. 학부모 화면 밖을 거쳐 들어온 경우(2026-11-14 검수 [높음]) ─────────────────
+
+const ORIGIN = "https://stiz.example";
+const env = (referrer, historyLength = 5) => ({ referrer, origin: ORIGIN, historyLength });
+function seeded(stack) {
+  const store = memStorage();
+  store.setItem(hist.IN_APP_HISTORY_KEY, JSON.stringify(stack));
+  hist.resetPageLoadStateForTest();
+  return store;
+}
+
+test("shouldRestartOnPageLoad — 바깥·빈 앞 주소·기록 1칸이면 새로 시작, 학부모 화면 앞 주소·새로고침은 이어 간다", () => {
+  const stack = ["/mypage", "/mypage/payments/checkout"];
+  assert.equal(hist.shouldRestartOnPageLoad(stack, "/mypage/payments/done", env("https://pay.toss.example/redirect")), true, "결제창(다른 사이트)");
+  assert.equal(hist.shouldRestartOnPageLoad(stack, "/mypage/payments/done", env("")), true, "앞 주소 없음(redirect 가 referrer 를 지움)");
+  assert.equal(hist.shouldRestartOnPageLoad(stack, "/mypage", env(ORIGIN + "/login?next=/mypage")), true, "같은 사이트지만 /mypage 밖(로그인)");
+  assert.equal(hist.shouldRestartOnPageLoad(stack, "/mypage", env(ORIGIN + "/")), true, "공개 홈페이지");
+  assert.equal(hist.shouldRestartOnPageLoad(stack, "/mypage", env(ORIGIN + "/mypagex")), true, "비슷한 이름의 다른 경로");
+  assert.equal(hist.shouldRestartOnPageLoad(stack, "/mypage/history", env(ORIGIN + "/mypage")), false, "학부모 화면 안에서 전체 새로 불러오기");
+  assert.equal(hist.shouldRestartOnPageLoad(stack, "/mypage/payments/checkout", env("https://pay.toss.example/")), false, "새로고침(맨 끝 = 지금 주소)");
+  assert.equal(hist.shouldRestartOnPageLoad(stack, "/mypage/payments/checkout", env(ORIGIN + "/mypage", 1)), true, "브라우저 기록 1칸이면 새로고침이라도 새로");
+  assert.equal(hist.shouldRestartOnPageLoad(stack, "/mypage/x", env("not a url")), true);
+});
+
+test("결제 완료(/mypage/payments/done)로 돌아오면 «←»는 결제창이 아니라 고정 주소로", () => {
+  const store = seeded(["/mypage", "/mypage/payments", "/mypage/payments/checkout"]);
+  const stack = hist.recordInAppNavigation("/mypage/payments/done", store, env("https://pay.toss.example/v1/redirect"));
+  assert.deepEqual(stack, ["/mypage/payments/done"]);
+  assert.equal(hist.hasInAppHistory(stack, "/mypage/payments/done"), false);
+  const action = (isInstalledApp) => resolveBackAction({ hasHistory: false, pathname: "/mypage/payments/done", fallbackHref: "/", scopeHref: "/mypage", isInstalledApp });
+  assert.deepEqual(action(true), { type: "push", href: "/mypage" });
+  assert.deepEqual(action(false), { type: "push", href: "/" }, "브라우저는 기존 fallback(머리줄 버튼) — 결제창으로 back 하지 않는다");
+  // 결제 완료 화면 안에서 다시 이동하면 그때부터 정상적으로 쌓인다(첫 기록만 새로 시작)
+  assert.deepEqual(hist.recordInAppNavigation("/mypage/payments", store, env("https://pay.toss.example/v1/redirect")), ["/mypage/payments/done", "/mypage/payments"]);
+});
+
+test("로그인·공개 홈페이지를 거쳐 들어와도 예전 기록을 이어 붙이지 않는다", () => {
+  for (const referrer of [ORIGIN + "/login?next=%2Fmypage%2Fsettings", ORIGIN + "/", "https://pf.kakao.example/x"]) {
+    const store = seeded(["/mypage", "/mypage/news", "/mypage/news/1"]);
+    assert.deepEqual(hist.recordInAppNavigation("/mypage/settings", store, env(referrer)), ["/mypage/settings"], referrer);
+  }
+});
+
+test("새 탭(sessionStorage 복사·브라우저 기록 1칸) — 기록이 새로 시작돼 «←»가 죽은 버튼이 되지 않는다", () => {
+  try {
+    fakeWindow({ historyLength: 1 });
+    const store = window.sessionStorage;
+    store.setItem(hist.IN_APP_HISTORY_KEY, JSON.stringify(["/mypage", "/mypage/news"]));
+    const stack = hist.recordInAppNavigation("/mypage/news/7", store, env(ORIGIN + "/mypage/news", 1));
+    assert.deepEqual(stack, ["/mypage/news/7"]);
+    assert.equal(hist.parentHistoryDecision("/mypage/news/7"), false, "back 대신 고정 주소(ParentBackLink 는 Link 그대로 이동)");
+  } finally {
+    delete globalThis.window;
+  }
+});
+
+test("학부모 화면 안 전체 새로 불러오기·새로고침은 기록을 이어 간다", () => {
+  let store = seeded(["/mypage", "/mypage/news"]);
+  assert.deepEqual(hist.recordInAppNavigation("/mypage/news/2", store, env(ORIGIN + "/mypage/news")), ["/mypage", "/mypage/news", "/mypage/news/2"]);
+  store = seeded(["/mypage", "/mypage/news"]);
+  assert.deepEqual(hist.recordInAppNavigation("/mypage/news", store, env("")), ["/mypage", "/mypage/news"], "새로고침");
+});
+
+test("location.replace(옛 홈 칸 주소 넘기기)는 쌓지 않고 바꿔 끼운다", async () => {
+  const store = seeded(["/mypage/settings", "/mypage"]);
+  hist.markNextNavigationAsReplace(store);
+  hist.resetPageLoadStateForTest(); // 새 페이지가 열린 직후(메모리 표시는 사라지고 저장소 표시만 남는다)
+  assert.deepEqual(hist.recordInAppNavigation("/mypage/history", store, env(ORIGIN + "/mypage")), ["/mypage/settings", "/mypage/history"]);
+  assert.equal(store.getItem(hist.IN_APP_REPLACE_KEY), "", "표시는 한 번 쓰면 지운다");
+  const client = await read("src/app/mypage/MyPageClient.tsx");
+  assert.match(client, /markNextNavigationAsReplace\(\);\s*window\.location\.replace\(moved\)/);
+});
+
+// ── B 보강(검수 [낮음]) ──────────────────────────────────────────────────────
+
+test("fetchWithRetry — 부르는 쪽 취소 신호를 시간 제한과 합치고, 스스로 취소했으면 다시 시도하지 않는다", async () => {
+  const controller = new AbortController();
+  let seen;
+  let calls = 0;
+  const fetchImpl = (_url, init) => {
+    calls += 1;
+    seen = init.signal;
+    return new Promise((_, reject) => init.signal.addEventListener("abort", () => reject(init.signal.reason)));
+  };
+  const pending = resilience.fetchWithRetry("https://example.test/e", { signal: controller.signal }, { fetchImpl, timeoutMs: 5_000, retryDelayMs: 0 });
+  controller.abort(new Error("caller-cancel"));
+  await assert.rejects(pending, /caller-cancel/);
+  assert.equal(calls, 1, "취소는 재시도하지 않는다");
+  assert.notEqual(seen, controller.signal, "AbortSignal.any 로 합친 신호");
+  assert.equal(seen.aborted, true);
+});
+
+test("canAutoRetry — 판정만 하고 기록은 남기지 않는다(오류 화면 첫 그림용)", async () => {
+  const s = memStorage();
+  assert.equal(autoRetry.canAutoRetry(s, "/mypage/peek", 10), true);
+  assert.equal(autoRetry.canAutoRetry(s, "/mypage/peek", 20), true, "몇 번 물어도 그대로");
+  assert.equal(autoRetry.claimAutoRetry(s, "/mypage/peek", 30), true);
+  assert.equal(autoRetry.canAutoRetry(s, "/mypage/peek", 40), false);
+  const src = await read("src/app/mypage/error.tsx");
+  assert.ok(src.includes("useState(() => peekAutoRetry(pathname))"), "첫 그림부터 판정 결과대로");
 });

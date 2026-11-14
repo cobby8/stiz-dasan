@@ -8,6 +8,7 @@ import type { PublicVirtualAccountView } from "@/lib/payments/virtualAccount";
 import VirtualAccountNotice from "@/components/parent/VirtualAccountNotice";
 import { createParentRequest } from "@/app/actions/admin";
 import { useRememberedChild } from "./useRememberedChild";
+import { markNextNavigationAsReplace } from "@/lib/navigation/inAppHistory";
 import type { ParentShuttleOverviewItem } from "@/lib/shuttle/parent";
 import type { PendingSeasonalChild } from "@/lib/seasonal/pendingSeasonalChildren";
 // "오늘/이번주 우리 아이" 요약 + «오늘 할 일» 집계용 순수 로직(표시 전용, 기존 데이터 재조합).
@@ -262,6 +263,8 @@ export default function MyPageClient({ data, notices = [], inquiryCounts = { ans
             // 옛 홈 칸 주소(#mypage-shuttle 등)는 그 칸이 옮겨 간 «일정»·«소식» 탭으로 넘긴다(뒤로가기에 빈 홈이 남지 않게 replace)
             const moved = legacyHomeHashTarget(id);
             if (moved) {
+                // 학부모 «←» 기록에도 «바꿔 끼우기»로 남긴다(쌓으면 뒤로가 빈 홈으로 돌아간다)
+                markNextNavigationAsReplace();
                 window.location.replace(moved);
                 return;
             }

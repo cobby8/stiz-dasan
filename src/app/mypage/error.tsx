@@ -3,7 +3,19 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
-import { AUTO_RETRY_DELAY_MS, claimAutoRetry } from "@/lib/mypage/errorAutoRetry";
+import { AUTO_RETRY_DELAY_MS, canAutoRetry, claimAutoRetry } from "@/lib/mypage/errorAutoRetry";
+
+/** 자동 재시도를 할 수 있나(기록은 남기지 않음) — 저장소 접근이 막혀도 throw 하지 않는다 */
+function peekAutoRetry(pathname: string): boolean {
+  if (typeof window === "undefined") return true;
+  let storage: Storage | null = null;
+  try {
+    storage = window.sessionStorage;
+  } catch {
+    storage = null;
+  }
+  return canAutoRetry(storage, pathname, Date.now());
+}
 
 /**
  * 학부모 화면 오류 안내(d1, 2026-11-13).
@@ -26,8 +38,9 @@ export default function MyPageError({
   const router = useRouter();
   const pathname = usePathname() || "/mypage";
   const [retrying, startTransition] = useTransition();
-  // 처음엔 «다시 불러오는 중» 한 줄 — 자동 재시도를 할지 화면에 붙은 뒤(sessionStorage) 정한다
-  const [autoRetrying, setAutoRetrying] = useState(true);
+  // 첫 그림부터 판정 결과대로 — 자동 재시도를 이미 한 화면이면 «다시 불러오는 중» 없이 바로 안내.
+  // (오류 화면은 브라우저에서만 그려진다. 서버라면 true — 효과의 타이머가 곧 바로잡는다)
+  const [autoRetrying, setAutoRetrying] = useState(() => peekAutoRetry(pathname));
 
   // 최신 router·reset 을 담아 둔다 — 효과(useEffect)가 이 둘의 바뀜으로 다시 돌면 1회 판정이 두 번 소모된다
   const latest = useRef({ router, reset });

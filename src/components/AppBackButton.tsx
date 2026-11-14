@@ -25,16 +25,15 @@ type AppBackButtonProps = {
 };
 
 
-function canGoBackWithinApp(pathname: string, isInstalledApp: boolean) {
+function canGoBackWithinApp(pathname: string) {
   if (typeof window === "undefined") return false;
 
   // 학부모 화면은 우리가 남긴 이동 기록을 먼저 본다(2026-11-14). null = 학부모 화면이 아니거나
   // 아직 이 화면을 기록하기 전 → 아래 옛 판단 그대로(공개 사이트·선생님 화면 동작은 바뀌지 않는다)
+  // false = 기록 없음 → 설치 앱·스토어 앱·브라우저 모두 고정 주소로(referrer·idx 로 넘어가지 않는다 —
+  // referrer 는 결제창·로그인 등 학부모 화면 밖 주소일 수 있어, back 하면 그 바깥으로 돌아간다)
   const parentDecision = parentHistoryDecision(pathname);
-  if (parentDecision === true) return true;
-  // 설치된 앱은 «기록 없음»이 정답이다(referrer 는 앱을 연 첫 주소에 멈춰 있어 믿을 수 없다).
-  // 브라우저는 홈페이지에서 들어왔을 수 있어 아래 옛 판단(referrer)도 본다.
-  if (parentDecision === false && isInstalledApp) return false;
+  if (parentDecision !== null) return parentDecision;
 
   if (isPublicSitePath(pathname) && hasSameOriginPreviousEntry(
     (window as Window & { navigation?: PublicNavigation }).navigation,
@@ -70,7 +69,7 @@ export default function AppBackButton({
   // (헤더가 격자 배치라 그냥 지우면 로고·제목이 밀린다).
   const nothingToGoBackTo =
     resolveBackAction({
-      hasHistory: canGoBackWithinApp(pathname, isInstalledApp),
+      hasHistory: canGoBackWithinApp(pathname),
       pathname,
       fallbackHref: backFallback,
       scopeHref,
@@ -85,7 +84,7 @@ export default function AppBackButton({
 
   const handleClick = () => {
     const action = resolveBackAction({
-      hasHistory: canGoBackWithinApp(pathname, isInstalledApp),
+      hasHistory: canGoBackWithinApp(pathname),
       pathname,
       fallbackHref: backFallback,
       scopeHref,

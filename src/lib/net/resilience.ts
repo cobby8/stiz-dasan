@@ -24,6 +24,17 @@ export type RetryFetchOptions = {
 
 export const DEFAULT_FETCH_TIMEOUT_MS = 5_000;
 
+/**
+ * 부르는 쪽 취소 신호 + 시간 제한을 하나로 합친다(AbortSignal.any — Node 20.3+·최신 브라우저).
+ * any 가 없는 오래된 환경이면 부르는 쪽 취소를 우선한다(그 경우 시간 제한은 빠진다 — 부르는 쪽이 이미 끊을 수단을 가진 경우라).
+ */
+function withTimeout(callerSignal: AbortSignal | null | undefined, timeoutMs: number): AbortSignal {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  if (!callerSignal) return timeout;
+  const any = (AbortSignal as typeof AbortSignal & { any?: (signals: AbortSignal[]) => AbortSignal }).any;
+  return typeof any === "function" ? any.call(AbortSignal, [callerSignal, timeout]) : callerSignal;
+}
+
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -44,9 +55,11 @@ export async function fetchWithRetry(input: string, init: FetchInit = {}, option
   for (let attempt = 0; attempt <= retries; attempt += 1) {
     try {
       // 시도마다 새 시간 제한(앞 시도의 제한 시간이 다음 시도를 끊지 않게)
-      return await fetchImpl(input, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+      return await fetchImpl(input, { ...init, signal: withTimeout(init.signal, timeoutMs) });
     } catch (error) {
       lastError = error;
+      // 부르는 쪽이 스스로 취소했으면 다시 시도하지 않는다
+      if (init.signal?.aborted) break;
       if (attempt < retries) await delay(retryDelayMs);
     }
   }

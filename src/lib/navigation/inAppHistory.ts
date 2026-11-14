@@ -96,9 +96,107 @@ export function readInAppHistory(storage: StorageLike | null = sessionStore()): 
   }
 }
 
+/** 페이지를 «처음 불러온 직후»의 판단 재료(테스트에서 바꿔 넣을 수 있게 따로 받는다) */
+export type PageLoadEnv = {
+  /** document.referrer — 이 페이지를 불러오게 한 앞 주소(없으면 "") */
+  referrer: string;
+  /** window.location.origin */
+  origin: string;
+  /** window.history.length */
+  historyLength: number;
+};
+
+/**
+ * 페이지를 새로 불러온 직후의 첫 기록에서, 이어 오던 기록을 버리고 [지금 화면]으로 새로 시작할지.
+ * 왜: sessionStorage 는 학부모 화면 «밖»(결제창 redirect·로그인·공개 홈페이지·카카오 등)을 거쳐 와도 남아 있다.
+ *     그대로 이어 붙이면 «←» 가 history.back() 으로 그 바깥 화면(예: 결제창)에 돌아간다.
+ * - 새로고침(기록 맨 끝 = 지금 주소)은 이어 간다 — 단, 브라우저 기록이 1칸뿐이면 새로 시작
+ * - 브라우저 기록이 1칸뿐(앱을 막 열었거나 새 탭 — 새 탭은 sessionStorage 가 복사돼 올 수 있다) → 새로 시작
+ * - 앞 주소가 없거나·다른 사이트거나·같은 사이트라도 /mypage 밖 → 새로 시작
+ * - 앞 주소가 학부모 화면(/mypage/…) → 이어 간다(학부모 화면 안 전체 새로 불러오기)
+ */
+export function shouldRestartOnPageLoad(stack: readonly string[], entry: string, env: PageLoadEnv): boolean {
+  if (env.historyLength <= 1) return true;
+  if (stack.length > 0 && stack[stack.length - 1] === entry) return false; // 새로고침
+  if (!env.referrer) return true;
+  try {
+    const ref = new URL(env.referrer);
+    if (ref.origin !== env.origin) return true;
+    return ref.pathname !== PARENT_HISTORY_SCOPE && !ref.pathname.startsWith(`${PARENT_HISTORY_SCOPE}/`);
+  } catch {
+    return true;
+  }
+}
+
+/** 다음에 열리는 주소가 지금 칸을 «바꿔 끼우는»(location.replace) 이동이라는 표시 — 새 페이지의 첫 기록이 읽는다 */
+export const IN_APP_REPLACE_KEY = "stiz:parent-nav-replace:v1";
+
+/**
+ * location.replace 직전에 부른다(예: MyPageClient 의 옛 홈 칸 주소 넘기기).
+ * 실제 브라우저 기록에서 지금 칸이 새 주소로 바뀌므로, 우리 기록도 쌓지 않고 맨 끝을 바꿔 끼운다.
+ */
+export function markNextNavigationAsReplace(storage: StorageLike | null = sessionStore()) {
+  replacePending = true;
+  try {
+    storage?.setItem(IN_APP_REPLACE_KEY, "1");
+  } catch {
+    // 저장이 막히면 표시가 사라진다 — 그 경우 한 칸 더 쌓일 뿐(뒤로가 학부모 화면 안에 머문다)
+  }
+}
+
+/** 이 페이지(문서)에서 아직 첫 기록 전인가 — 전체 새로 불러오기마다 모듈이 새로 올라와 true 로 돌아온다 */
+let firstRecordOfPage = true;
+let replacePending = false;
+
+function currentEnv(): PageLoadEnv | null {
+  try {
+    if (typeof window === "undefined" || typeof document === "undefined") return null;
+    return { referrer: document.referrer || "", origin: window.location.origin, historyLength: window.history.length };
+  } catch {
+    return null;
+  }
+}
+
+function takeReplaceFlag(storage: StorageLike | null): boolean {
+  let flagged = replacePending;
+  replacePending = false;
+  try {
+    if (storage?.getItem(IN_APP_REPLACE_KEY) === "1") flagged = true;
+    storage?.setItem(IN_APP_REPLACE_KEY, "");
+  } catch {
+    // 읽기·쓰기 실패 — 메모리 표시로만 판단
+  }
+  return flagged;
+}
+
+/** 테스트 전용 — «페이지를 새로 불러온 직후» 상태로 되돌린다 */
+export function resetPageLoadStateForTest() {
+  firstRecordOfPage = true;
+  replacePending = false;
+  memoryStack = [];
+}
+
 /** 화면이 바뀔 때 부른다(ParentHistoryTracker). 저장 실패는 조용히 메모리로만 */
-export function recordInAppNavigation(entry: string, storage: StorageLike | null = sessionStore()): string[] {
-  const next = nextInAppHistory(readInAppHistory(storage), entry);
+export function recordInAppNavigation(
+  entry: string,
+  storage: StorageLike | null = sessionStore(),
+  env: PageLoadEnv | null = currentEnv(),
+): string[] {
+  const prev = readInAppHistory(storage);
+  let next: string[];
+  if (firstRecordOfPage) {
+    firstRecordOfPage = false;
+    const replaced = takeReplaceFlag(storage);
+    if (env && shouldRestartOnPageLoad(prev, entry, env)) {
+      next = [entry]; // 학부모 화면 밖을 거쳐 왔다 → 바깥으로 돌아가는 «←» 를 만들지 않는다
+    } else if (replaced && prev.length > 0) {
+      next = [...prev.slice(0, -1), entry]; // location.replace — 지금 칸을 바꿔 끼움
+    } else {
+      next = nextInAppHistory(prev, entry);
+    }
+  } else {
+    next = nextInAppHistory(prev, entry);
+  }
   memoryStack = next;
   try {
     storage?.setItem(IN_APP_HISTORY_KEY, JSON.stringify(next));

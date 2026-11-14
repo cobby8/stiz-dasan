@@ -86,6 +86,8 @@ test("② 머리줄 🔔·⚙(휴대폰·PC 둘 다), 둘 다 44×44 — 로그�
 
 function renderHome(props) {
   const Client = load("src/app/mypage/MyPageClient.tsx", {
+    // 옛 홈 칸 주소 넘기기의 «바꿔 끼우기» 표시(2026-11-14 학부모 뒤로) — 렌더 검사에서는 아무 일도 안 한다
+    "@/lib/navigation/inAppHistory": { markNextNavigationAsReplace() {} },
     "next/navigation": { useRouter: () => ({ push() {}, replace() {}, refresh() {} }) },
     "@/app/actions/parent-notifications": {}, "./useRememberedChild": { useRememberedChild: (_ids, init) => [init, () => {}] },
     "@/lib/mypage/parentNav": { safeInternalHref: (v) => (typeof v === "string" && v.startsWith("/") && !v.startsWith("//") ? v : null) },

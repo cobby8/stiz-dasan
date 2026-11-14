@@ -18,12 +18,7 @@ type StorageLike = Pick<Storage, "getItem" | "setItem">;
 /** sessionStorage 가 막힌 브라우저용 — 이 탭이 살아 있는 동안만 기억 */
 const memory = new Map<string, number>();
 
-/**
- * 이번 오류에 자동 재시도를 해도 되나 — 된다면 그 사실을 바로 기록한다(두 번째부터는 false).
- * storage 접근이 실패해도 메모리 기록으로 1회 제한은 지킨다.
- */
-export function claimAutoRetry(storage: StorageLike | null, pathname: string, nowMs: number): boolean {
-  const key = `${AUTO_RETRY_KEY_PREFIX}${pathname}`;
+function lastAutoRetryAt(storage: StorageLike | null, key: string): number {
   let last = memory.get(key) ?? 0;
   try {
     const stored = Number(storage?.getItem(key) ?? 0);
@@ -31,6 +26,22 @@ export function claimAutoRetry(storage: StorageLike | null, pathname: string, no
   } catch {
     // 읽기 실패 — 메모리 값으로 판단
   }
+  return last;
+}
+
+/** 자동 재시도를 할 수 있는 상태인가 — 기록은 남기지 않는다(첫 그림을 판정 결과대로 그리는 데 쓴다) */
+export function canAutoRetry(storage: StorageLike | null, pathname: string, nowMs: number): boolean {
+  const last = lastAutoRetryAt(storage, `${AUTO_RETRY_KEY_PREFIX}${pathname}`);
+  return !(last > 0 && nowMs - last < AUTO_RETRY_WINDOW_MS);
+}
+
+/**
+ * 이번 오류에 자동 재시도를 해도 되나 — 된다면 그 사실을 바로 기록한다(두 번째부터는 false).
+ * storage 접근이 실패해도 메모리 기록으로 1회 제한은 지킨다.
+ */
+export function claimAutoRetry(storage: StorageLike | null, pathname: string, nowMs: number): boolean {
+  const key = `${AUTO_RETRY_KEY_PREFIX}${pathname}`;
+  const last = lastAutoRetryAt(storage, key);
   if (last > 0 && nowMs - last < AUTO_RETRY_WINDOW_MS) return false;
   memory.set(key, nowMs);
   try {
