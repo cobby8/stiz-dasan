@@ -1,4 +1,5 @@
 import { requireAdmin } from "@/lib/auth-guard";
+import { canSeeAllMoney } from "@/lib/auth/moneyAccess";
 import { isKstYmd } from "@/lib/datetime/kst";
 import { getInboxCounts, getInboxRows, type InboxRow } from "@/lib/requests/admin-inbox";
 import { listConsultInboxRows } from "@/lib/requests/consult-inbox";
@@ -56,13 +57,13 @@ export default async function AdminInboxPage({ searchParams }: { searchParams?: 
     // 탭이 주소에 있으면 개수와 탭 데이터를 동시에 읽는다(서로 기다릴 이유가 없다)
     tab = explicitTab;
     const { kind, sub } = scope(tab);
-    [counts, data] = await Promise.all([getInboxCounts(), loadTabData(tab, sub, kind, { from, to, showDone })]);
+    [counts, data] = await Promise.all([getInboxCounts(), loadTabData(tab, sub, kind, { from, to, showDone, role: admin.appUserRole })]);
   } else {
     // 탭을 안 골랐으면 처리할 게 있는 첫 탭부터(없으면 체험) — 개수를 먼저 봐야 한다
     counts = await getInboxCounts();
     tab = INBOX_TABS.find((entry) => (counts?.byTab[entry.tab] ?? 0) > 0)?.tab ?? "TRIAL";
     const { kind, sub } = scope(tab);
-    data = await loadTabData(tab, sub, kind, { from, to, showDone });
+    data = await loadTabData(tab, sub, kind, { from, to, showDone, role: admin.appUserRole });
   }
   const { kind, sub } = scope(tab);
 
@@ -88,7 +89,8 @@ async function loadTabData(
   tab: InboxTab,
   sub: string | null,
   kind: RequestKind | null,
-  { from, to, showDone }: { from: string | null; to: string | null; showDone: boolean },
+  // role = 보는 사람 역할 — 부원장이면 처리된 입금·현장 수납 금액과 휴원 수강료 처리 건수를 뺀다(2026-11-14 원장 결정)
+  { from, to, showDone, role }: { from: string | null; to: string | null; showDone: boolean; role: string },
 ): Promise<InboxTabData> {
   if (tab === "TRIAL") {
     // 체험 = /admin/apply «체험 문의» 화면 그대로(같은 첫 50건 캐시)
@@ -123,11 +125,12 @@ async function loadTabData(
   // «?kind=» 로 한 종류만 고른 경우 그 종류만
   const kinds = kind ? [kind] : kindsOfTab(tab, sub);
   const [action, ongoing, done, openSettlementCount] = await Promise.all([
-    getInboxRows({ bucket: "ACTION", kinds, from, to }),
-    getInboxRows({ bucket: "ONGOING", kinds, from, to }),
-    showDone ? getInboxRows({ bucket: "DONE", kinds, from, to, limitPerKind: 100 }) : Promise.resolve({ rows: [] as InboxRow[], failedKinds: [] as RequestKind[] }),
+    getInboxRows({ bucket: "ACTION", kinds, from, to, viewerRole: role }),
+    getInboxRows({ bucket: "ONGOING", kinds, from, to, viewerRole: role }),
+    showDone ? getInboxRows({ bucket: "DONE", kinds, from, to, limitPerKind: 100, viewerRole: role }) : Promise.resolve({ rows: [] as InboxRow[], failedKinds: [] as RequestKind[] }),
     // 수강 변경이 보이는 «변경» 탭이면 휴원 수강료 처리 남은 일 건수(표가 없거나 실패하면 0 — 화면은 그대로 열린다)
-    kinds.includes("ENROLLMENT_CHANGE") ? countOpenPauseSettlements() : Promise.resolve(0),
+    // 부원장은 휴원 수강료 처리를 못 하므로 남은 일 건수도 보이지 않는다(0)
+    kinds.includes("ENROLLMENT_CHANGE") && canSeeAllMoney(role) ? countOpenPauseSettlements() : Promise.resolve(0),
   ]);
   const failedKinds = [...new Set([...action.failedKinds, ...ongoing.failedKinds, ...done.failedKinds])];
   return { type: "ROWS", open: [...action.rows, ...ongoing.rows], done: done.rows, failedKinds, consultFailed: false, openSettlementCount };

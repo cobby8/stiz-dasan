@@ -5,9 +5,10 @@ import { normalizePhoneNumber } from "@/lib/staff-contacts";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import { todayKst } from "@/lib/datetime/kst";
 import { resolveBillingMonth, splitBillingMonth, unlinkedMonthlyBillScopeSql } from "@/lib/staff-billing-lookup";
+import { maskStaffBillAmounts } from "@/lib/staff-session-rules";
 
 export type StaffStudentListItem = { id: string; name: string; school: string | null; grade: string | null; studentPhone: string | null; parentName: string; parentPhone: string | null; classNames: string[] };
-export type StaffBillingListItem = { id: string; classId: string; paymentClassId: string | null; studentName: string; className: string; title: string; amount: number; invoiceAmount: number; amountMismatch: boolean; studentMismatch: boolean; status: string; dueDate: Date; paidDate: Date | null; invoiceNo: string | null; confirmationStatus: string | null; confirmable: boolean; blockReason: string | null };
+export type StaffBillingListItem = { id: string; classId: string; paymentClassId: string | null; studentName: string; className: string; title: string; amount: number | null; invoiceAmount: number | null; amountMismatch: boolean; studentMismatch: boolean; status: string; dueDate: Date; paidDate: Date | null; invoiceNo: string | null; confirmationStatus: string | null; confirmable: boolean; blockReason: string | null };
 type StaffBillingRow = Omit<StaffBillingListItem, "confirmable" | "blockReason">;
 type StudentRow = Omit<StaffStudentListItem, "classNames"> & { classNames: string[] | null };
 
@@ -74,12 +75,15 @@ export async function getStaffBilling(options: { month?: string } = {}): Promise
      ORDER BY CASE WHEN b.status IN ('OVERDUE','PENDING') THEN 0 ELSE 1 END,b."dueDate" DESC,b."studentName"`, classIds, access.canAccessAllClasses, year, month,
   );
 
-  return rows.map((row) => ({
+  // 2026-11-14 부원장 금액 가림: 부원장이면 미납이 아닌(납부 완료·환불) 청구의 금액을 서버에서 null 로 바꿔 보낸다.
+  //   선생님·원장은 기존 그대로(maskStaffBillAmounts 가 부원장에게만 동작).
+  const role = access.staff.appUserRole;
+  return rows.map((row) => maskStaffBillAmounts({
     ...row,
     ...resolveStaffBillingGuard({
       paymentClassId: row.paymentClassId,
       amountMismatch: row.amountMismatch,
       studentMismatch: row.studentMismatch,
     }),
-  }));
+  }, role, row.status));
 }

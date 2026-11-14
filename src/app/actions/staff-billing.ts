@@ -6,7 +6,7 @@ import { requireAdmin, requireStaff } from "@/lib/auth-guard";
 import { getStaffClassAccessContext, requireStaffStudentAccess } from "@/lib/staff-class-access";
 import { resolveStaffBillingGuard } from "@/lib/staff-billing-policy";
 import { STAFF_FEES_HIDDEN_MESSAGE, getStaffAttendanceBilling, getStaffSessionMonthlyFees } from "@/lib/staff-monthly-fees";
-import { canSeeStaffFees } from "@/lib/staff-session-rules";
+import { canSeeStaffFees, maskStaffBillAmounts, maskStaffMonthlyFeeAmount } from "@/lib/staff-session-rules";
 import type { StaffSessionMonthlyFees } from "@/lib/staff-monthly-fee-types";
 import {
   getStaffClassBilling,
@@ -16,21 +16,33 @@ import {
 const METHODS = new Set(["CASH", "BANK_TRANSFER"]);
 
 export async function loadStaffSessionMonthlyFees(input: { sessionId: string }): Promise<StaffSessionMonthlyFees> {
-  return getStaffSessionMonthlyFees(input.sessionId?.trim());
+  const [fees, access] = await Promise.all([getStaffSessionMonthlyFees(input.sessionId?.trim()), getStaffClassAccessContext()]);
+  // 2026-11-14 부원장 금액 가림: 부원장은 아직 안 낸 줄만 금액을 받는다(납부 완료 등은 null → 화면 «—»)
+  return { ...fees, items: fees.items.map((item) => maskStaffMonthlyFeeAmount(item, access.staff.appUserRole)) };
 }
 
 export async function loadStaffAttendanceBilling(input: { sessionId: string; rosterId: string }) {
   const rosterId = input.rosterId?.trim();
   if (!rosterId || rosterId.length > 128) throw new Error('학생 정보가 올바르지 않습니다.');
-  return getStaffAttendanceBilling(input.sessionId?.trim(), rosterId);
+  const [result, access] = await Promise.all([getStaffAttendanceBilling(input.sessionId?.trim(), rosterId), getStaffClassAccessContext()]);
+  // 2026-11-14 부원장 금액 가림: 요약 줄과 청구 건별 금액 모두 «미납 1건»만 남긴다
+  const role = access.staff.appUserRole;
+  return {
+    ...result,
+    summary: maskStaffMonthlyFeeAmount(result.summary, role),
+    items: result.items.map((item) => maskStaffBillAmounts(item, role, item.paymentStatus)),
+  };
 }
 
 export type SerializedStaffClassBillingItem = Omit<
   StaffClassBillingItem,
-  "dueDate" | "paidDate"
+  "dueDate" | "paidDate" | "amount" | "invoiceAmount"
 > & {
   dueDate: string;
   paidDate: string | null;
+  // 부원장에게는 미납이 아닌 청구 금액을 null 로 보낸다(2026-11-14). 화면은 null 이면 «—»
+  amount: number | null;
+  invoiceAmount: number | null;
 };
 
 export async function loadStaffClassBilling(input: {
@@ -51,11 +63,12 @@ export async function loadStaffClassBilling(input: {
   const items = await getStaffClassBilling(classId, studentId);
   return {
     ok: true,
-    items: items.map((item) => ({
+    // 2026-11-14 부원장 금액 가림: 납부 완료 등 미납이 아닌 청구 금액은 부원장에게 null 로
+    items: items.map((item) => maskStaffBillAmounts({
       ...item,
       dueDate: item.dueDate.toISOString(),
       paidDate: item.paidDate?.toISOString() ?? null,
-    })),
+    } as SerializedStaffClassBillingItem, access.staff.appUserRole, item.paymentStatus)),
   };
 }
 

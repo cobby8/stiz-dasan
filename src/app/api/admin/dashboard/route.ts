@@ -1,4 +1,5 @@
 import { getCachedAdminDashboardPayload } from "@/lib/adminReadPayloads";
+import { stripDashboardMoneyForRole } from "@/lib/auth/dashboardMoneyStrip";
 import { createAdminTiming, requireTimedAdmin, timedJson } from "@/lib/adminTiming";
 
 const ADMIN_DASHBOARD_CACHE_SECONDS = 300;
@@ -9,14 +10,17 @@ const ADMIN_DASHBOARD_CACHE_HEADERS = {
 export async function GET() {
     const timing = createAdminTiming("admin-dashboard");
 
+    let role: string;
     try {
-        await requireTimedAdmin(timing);
+        role = (await requireTimedAdmin(timing)).appUserRole;
     } catch {
         return timedJson(timing, { error: "Authentication required" }, { status: 401 });
     }
 
     try {
-        const data = await timing.measure("data", () => getCachedAdminDashboardPayload());
+        const cached = await timing.measure("data", () => getCachedAdminDashboardPayload());
+        // 2026-11-14 부원장 금액 가림: 캐시는 역할과 무관하게 공유되므로 꺼낸 «뒤»에 매출·미납·통계 칸을 뺀다
+        const data = stripDashboardMoneyForRole(cached, role);
 
         return timedJson(timing, data, { headers: ADMIN_DASHBOARD_CACHE_HEADERS });
     } catch (error) {

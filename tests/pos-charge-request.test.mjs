@@ -921,18 +921,24 @@ test("웹훅 처리: 매칭 결과로 처리된 결제만 알림에서 빼고, �
   assert.match(src, /expireStaleChargeRequests\(null\)/, "10분 스윕이 만료를 처리한다");
 });
 
-test("관리자 동작: 원장(ADMIN)만 + 오류는 문구로 돌려준다, ⚡ 메뉴는 수강료·셔틀비 미납에만", async () => {
+// 2026-11-14 원장 결정(부원장 카운터 수납): 현장 결제 요청 만들기·조회·결제 전 취소·정리 확인 = 원장·부원장,
+// 결제 취소(환불)·POS 연결 코드 = 원장만. 함수마다 어느 문지기를 쓰는지 못박는다.
+const POS_COUNTER_ACTIONS = ["loadPosChargeRequest", "createPosChargeRequest", "cancelPosChargeRequest", "acknowledgePosChargeDismissal"];
+const POS_OWNER_ACTIONS = ["loadPosChargeCancel", "requestPosChargeCancel", "loadPosPluginTokens", "issuePosPluginTokenAction", "revokePosPluginTokenAction"];
+test("관리자 동작: 카운터 동작은 원장·부원장, 환불·POS 연결은 원장만 + 오류는 문구로 돌려준다, ⚡ 메뉴는 수강료·셔틀비 미납에만", async () => {
   const actions = await readFile(ACTIONS, "utf8");
   assert.match(actions, /^"use server";/);
   const exported = [...actions.matchAll(/export async function (\w+)/g)].map((m) => m[1]);
   assert.equal(exported.length, 9);
-  assert.ok(exported.includes("acknowledgePosChargeDismissal"));
+  assert.deepEqual([...exported].sort(), [...POS_COUNTER_ACTIONS, ...POS_OWNER_ACTIONS].sort(), "모든 동작이 둘 중 한 묶음에 속한다");
   for (const name of exported) {
     const body = actions.slice(actions.indexOf(`export async function ${name}`));
     const head = body.slice(0, body.indexOf("\n}\n"));
-    assert.match(head, /await requireFinanceOwner\(\)/, `${name} 첫머리에서 권한 확인`);
+    const guard = POS_OWNER_ACTIONS.includes(name) ? /await requireFinanceOwner\(\)/ : /await requirePosCounter\(\)/;
+    assert.match(head, guard, `${name} 첫머리에서 권한 확인`);
   }
   assert.match(actions, /admin\.appUserRole !== "ADMIN"/);
+  assert.match(actions, /admin\.appUserRole !== "ADMIN" && admin\.appUserRole !== "VICE_ADMIN"/);
   const finance = await readFile(FINANCE, "utf8");
   assert.match(finance, /\["MONTHLY", "SHUTTLE", "OTHER"\]\.includes\(p\.type\) && \["PENDING", "OVERDUE"\]\.includes\(p\.status\)/);
   assert.match(finance, /key: "pos-charge"/);

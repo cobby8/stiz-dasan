@@ -1,5 +1,7 @@
 import { runPosReconcileNow } from "@/app/actions/pos-reconcile";
+import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth-guard";
+import { canSeeAllMoney } from "@/lib/auth/moneyAccess";
 import {
     getPosReconcileReport,
     listPosReconcileRuns,
@@ -38,7 +40,9 @@ function formatWonText(value: string | null | undefined): string {
 }
 
 export default async function PosReconcilePage() {
-    await requireAdmin();
+    const admin = await requireAdmin();
+    // 부원장 차단(2026-11-14 원장 결정): POS 대사는 원장만 — 부원장은 관리자 첫 화면으로
+    if (!canSeeAllMoney(admin.appUserRole)) redirect("/admin");
 
     const runs = await listPosReconcileRuns(12);
     const latest: PosReconcileRunRow | undefined = runs[0];

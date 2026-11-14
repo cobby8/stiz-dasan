@@ -52,7 +52,8 @@ test("입금 확인·영수증 요청: 카드 → 한 줄 표, 입력칸·처리
   assertListStandard(source, "입금 확인");
   // 예전 «항목 · 금액 · 기한» 을 칸으로 나눠 금액은 오른쪽
   assert.doesNotMatch(source, /\{row\.description \|\| "수강료"\} · /);
-  assert.match(source, /admin-cell-num[^"]*">\{row\.amount\.toLocaleString\(\)\}원/);
+  // 2026-11-14: 부원장에게 처리된 요청 금액은 null → «—»
+  assert.match(source, /admin-cell-num[^"]*">\{row\.amount == null \? "—" : `\$\{row\.amount\.toLocaleString\(\)\}원`\}/);
   // 처리 함수와 인자(전할 말·영수증 링크)는 그대로
   assert.match(source, /decidePaymentRequest\(\{\s*requestId,\s*approve,\s*note: notes\[requestId\],\s*receiptUrl: receipts\[requestId\],\s*\}\)/);
   assert.match(source, /onSelect: \(\) => decide\(id, true\)/);

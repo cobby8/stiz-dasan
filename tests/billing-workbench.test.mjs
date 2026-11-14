@@ -122,7 +122,7 @@ test("이월 잔액 초과·한 학생 두 반의 셔틀 중복 차단",async()=
 });
 test("서버 보안 계약: 기본 꺼짐·권한·동일출처·크기제한·서버 거래",async()=>{
  const route=await readFile("src/app/api/admin/billing-workbench/route.ts","utf8"),schema=await readFile("src/lib/billing/workbench-schema.sql","utf8");
- assert.match(route,/requireAdmin\(\)/);assert.match(route,/STIZ_BILLING_WORKBENCH_WRITES_ENABLED === "true"/);assert.match(route,/sec-fetch-site/);assert.match(route,/length>limit/);
+ assert.match(route,/requireOwner\(\)/);assert.match(route,/STIZ_BILLING_WORKBENCH_WRITES_ENABLED === "true"/);assert.match(route,/sec-fetch-site/);assert.match(route,/length>limit/);
  assert.equal((schema.match(/ENABLE ROW LEVEL SECURITY/g)||[]).length,6);assert.match(schema,/FROM PUBLIC/);assert.match(schema,/'anon','authenticated'/);
  assert.doesNotMatch(serviceSource,/ensurePaymentInfrastructure|fetch\(|sendSMS|sendNotification|rallyz.*fetch/i);
 });

@@ -285,7 +285,8 @@ test("planBankTransfer·문구: 미납 아닌 건은 사유와 함께 빼고, �
 
 test("납부 처리 창: preferPos 면 현장 결제 확인 화면으로 바로 열리고 계좌이체로 돌아갈 수 있다 · 같은 입금 정보 문구는 계좌이체 화면에", () => {
   assert.match(modal, /preferPos\?: boolean/);
-  assert.match(modal, /useState<Step>\(\(\) => \(preferPos \? "pos" : "choose"\)\)/);
+  // posOnly(부원장 «현장 결제만»)도 현장 결제 확인 화면에서 시작한다(2026-11-14)
+  assert.match(modal, /useState<Step>\(\(\) => \(preferPos \|\| posOnly \? "pos" : "choose"\)\)/);
   assert.match(modal, /POS로 결제 요청/);
   assert.match(modal, /다른 방법\(계좌이체\)/);
   const transferAt = modal.indexOf('step === "transfer" && (');

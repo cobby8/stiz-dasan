@@ -11,6 +11,7 @@
  * - 상태 목록은 catalog 의 영문 대문자 상수뿐이라(테스트가 /^[A-Z_]+$/ 확인) SQL 배열 글자로 넣어도 안전하다.
  */
 import { cache } from "react";
+import { canSeeAllMoney } from "@/lib/auth/moneyAccess";
 import { prisma } from "@/lib/prisma";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import { isKstYmd } from "@/lib/datetime/kst";
@@ -504,7 +505,20 @@ export type InboxQuery = {
   to?: string | null;
   /** 종류마다 최대 몇 줄(완료 칸이 끝없이 길어지지 않게) */
   limitPerKind?: number;
+  /**
+   * 보는 사람 역할(requireAdmin 의 appUserRole). 원장(ADMIN)이 아니면 이미 처리된 입금 확인·현장 수납의
+   * «금액» 줄을 뺀다(대기 건 금액은 승인 판단에 필요해 그대로) — 2026-11-14 원장 결정. 안 넘기면 가린 쪽으로 본다.
+   */
+  viewerRole?: string | null;
 };
+
+/** 금액 줄이 있는 신청 종류 — 대기(PENDING)가 아니면 부원장에게 금액을 뺀다 */
+const MONEY_KINDS: ReadonlySet<RequestKind> = new Set<RequestKind>(["PAYMENT_REQUEST", "STAFF_PAYMENT"]);
+
+/** 이 행의 금액을 이 역할에게 숨겨야 하는가(순수 판정 — 테스트용으로도 내보낸다) */
+export function hideInboxAmount(kind: RequestKind, rawStatus: string, role: string | null | undefined): boolean {
+  return !canSeeAllMoney(role) && MONEY_KINDS.has(kind) && rawStatus !== "PENDING";
+}
 
 /**
  * 신청함 목록 — 종류마다 따로 읽어(한 종류의 표가 아직 없어도 나머지는 보이게) 코드에서 합쳐 정렬한다.
@@ -534,13 +548,13 @@ export async function getInboxRows(query: InboxQuery): Promise<{ rows: InboxRow[
     );
     try {
       const rows = await read(adapter, settlementTableReady);
-      return rows.map((row) => toInboxRow(adapter, row));
+      return rows.map((row) => toInboxRow(adapter, row, query.viewerRole));
     } catch (error) {
       // 새 칸이 아직 없는 운영 DB(마이그레이션 전)면 예전 식으로 한 번 더 — 그래도 실패면 그 종류만 비운다
       if (adapter.fallback) {
         try {
           const rows = await read(legacyOf(adapter));
-          return rows.map((row) => toInboxRow(adapter, row));
+          return rows.map((row) => toInboxRow(adapter, row, query.viewerRole));
         } catch { /* 아래에서 기록 */ }
       }
       console.error(`[admin-inbox] ${adapter.kind} 조회 실패:`, error);
@@ -554,8 +568,10 @@ export async function getInboxRows(query: InboxQuery): Promise<{ rows: InboxRow[
   return { rows, failedKinds };
 }
 
-function toInboxRow(adapter: Adapter, row: RawRow): InboxRow {
-  const extra = (typeof row.extra === "string" ? JSON.parse(row.extra) : row.extra) ?? {};
+function toInboxRow(adapter: Adapter, row: RawRow, viewerRole: string | null | undefined): InboxRow {
+  const parsed = (typeof row.extra === "string" ? JSON.parse(row.extra) : row.extra) ?? {};
+  // 부원장: 처리 끝난 입금 확인·현장 수납은 금액을 비운 채 형식을 만든다(요약·«금액» 줄 둘 다 빠진다)
+  const extra = hideInboxAmount(adapter.kind, row.raw, viewerRole) ? { ...parsed, amount: null } : parsed;
   const members = adapter.kind === "ENROLLMENT_CHANGE" ? enrollmentChangeMembers(row, extra) : undefined;
   const formatted = adapter.format(row, members && members.length > 1
     ? { ...extra, fromClass: members.map((member) => member.className).join(" · ") }

@@ -285,10 +285,16 @@ export async function decideEnrollmentChangeRequest(input: {
   note?: string | null;
   /** 휴원 승인 때만. 처리할 금액이 있으면 승인과 함께 선택해야 한다. */
   settlement?: PauseSettlementChoice | null;
+  /**
+   * true 면 «승인만» — 수강료 처리 선택을 요구하지 않고 승인한다(처리는 나중에 원장이 settlePauseTuition 으로).
+   * 부원장 승인용(2026-11-14 원장 결정): 부원장은 금액을 못 보므로 이월·환불을 고를 수 없다.
+   * 승인된 휴원은 수강 변경 화면에 수강료 처리 미리보기가 다시 떠서 원장이 이어서 처리한다.
+   */
+  deferSettlementChoice?: boolean;
 }) {
   const note = (input.note ?? "").trim().slice(0, 500) || null;
-  const settlementChoice = input.approve && input.settlement ? input.settlement : null;
-  const pendingKind = input.approve && !settlementChoice && todayKst() >= PAUSE_SETTLEMENT_SINCE
+  const settlementChoice = input.approve && input.settlement && !input.deferSettlementChoice ? input.settlement : null;
+  const pendingKind = input.approve && !settlementChoice && !input.deferSettlementChoice && todayKst() >= PAUSE_SETTLEMENT_SINCE
     ? (await prisma.$queryRawUnsafe<Array<{ kind: string }>>(
       `SELECT kind FROM "EnrollmentChangeRequest" WHERE id = $1 AND status = 'PENDING'`, input.requestId,
     ))[0]?.kind
