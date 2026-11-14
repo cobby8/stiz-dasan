@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { updateRequestStatus, getParentRequestStatusForAdmin, deleteParentRequest } from "@/app/actions/admin";
+// 문의 대화(학부모 추가 글·학원 답 이어 쓰기) — 2026-11-14 원장 결정표 c3
+import { getParentRequestThreadForAdmin, replyToParentRequest } from "@/app/actions/parent-inquiry";
+import InquiryThread from "@/components/parent/InquiryThread";
+import type { InquiryBubble } from "@/lib/requests/inquiryThreadRules";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
@@ -166,6 +170,19 @@ export default function RequestsAdminClient({
     const [uncertain, setUncertain] = useState<Record<string, { status: string; note: string }>>({});
     const [isPending, startTransition] = useTransition();
     const requestedInitialLoad = useRef(false);
+    // 열어 본 문의의 대화(첫 글 → 옛 답변 → 이어 쓴 글). 못 불러오면 예전처럼 첫 글만 보인다
+    const [threads, setThreads] = useState<Record<string, InquiryBubble[]>>({});
+    const loadThread = useCallback(async (id: string) => {
+        try {
+            const thread = await getParentRequestThreadForAdmin(id);
+            if (thread) setThreads((prev) => ({ ...prev, [id]: thread.bubbles }));
+        } catch (error) {
+            console.error("Failed to load request thread:", error);
+        }
+    }, []);
+    useEffect(() => {
+        if (expandedId) void loadThread(expandedId);
+    }, [expandedId, loadThread]);
 
     const loadRequests = useCallback(async ({
         status = filter,
@@ -222,6 +239,28 @@ export default function RequestsAdminClient({
         setExpandedId(null); // 목록이 바뀌므로 열린 패널은 닫는다
         setFilter(value);
         void loadRequests({ status: value, offset: 0 });
+    }
+
+    // 답변 보내기(+상태를 같이 고르면 그 상태로). 실패하면 쓴 글은 그대로 두고 안내만 보인다
+    async function sendReplyNow(id: string, status?: string) {
+        const draft = (adminNotes[id] ?? "").trim();
+        if (!draft) return;
+        setFeedback(null);
+        try {
+            const result = await replyToParentRequest(id, draft, status);
+            if (!result.saved) {
+                setFeedback(`${result.error} 입력한 답변은 유지됩니다.`);
+                return;
+            }
+            setAdminNotes((prev) => { const next = { ...prev }; delete next[id]; return next; });
+            setFeedback(result.notification === "REGISTERED" ? "답변 저장 완료 · 학부모 앱 알림 등록 완료" : "답변 저장 완료 · 알림 등록 결과 확인 필요. 자동 재발송하지 않습니다.");
+            await Promise.all([loadThread(id), loadRequests({ status: filter, offset: 0 })]);
+        } catch {
+            setFeedback("답변 저장 응답을 확인하지 못했습니다. 입력한 답변은 유지됩니다. 대화를 다시 열어 저장됐는지 확인해 주세요.");
+        }
+    }
+    function sendReply(id: string) {
+        startTransition(() => sendReplyNow(id));
     }
 
     // 행 키보드(Enter·Space) = 상세 패널. 안쪽 요소에서 누른 키는 가로채지 않는다.
@@ -392,19 +431,45 @@ export default function RequestsAdminClient({
                                     </>
                                 )}
                             </dl>
-                            <p className="whitespace-pre-wrap break-words rounded-lg bg-[var(--color-academy-soft)] p-3 text-sm text-[var(--color-academy-ink)]">{req.content}</p>
+                            {/* 대화 — 학부모 첫 글 → 학원 답 → 학부모 추가 글 … (불러오기 전·실패 때는 예전처럼 첫 글과 저장된 답변) */}
+                            {threads[req.id] ? (
+                                <InquiryThread
+                                    viewer="ADMIN"
+                                    bubbles={threads[req.id].map((bubble) => ({
+                                        key: bubble.key,
+                                        author: bubble.author,
+                                        body: bubble.body,
+                                        timeLabel: bubble.at ? `${kstLabel(bubble.at)} ${formatKstTime(bubble.at)}` : "",
+                                    }))}
+                                />
+                            ) : (
+                                <>
+                                    <p className="whitespace-pre-wrap break-words rounded-lg bg-[var(--color-academy-soft)] p-3 text-sm text-[var(--color-academy-ink)]">{req.content}</p>
+                                    {req.adminNote && <p className="whitespace-pre-wrap break-words rounded-lg bg-[var(--color-academy-info-soft)] p-3 text-sm text-[var(--color-academy-ink)]">{req.adminNote}</p>}
+                                </>
+                            )}
 
-                            {/* 관리자 메모 */}
+                            {/* 답변 이어 쓰기 — 보낼 때마다 대화에 한 줄씩 쌓인다(예전 «메모/답변» 한 줄 덮어쓰기를 대신함) */}
                             <div>
-                                <label className="text-xs font-medium text-[var(--color-academy-muted)] mb-1 block">관리자 메모/답변</label>
+                                <label htmlFor={`request-reply-${req.id}`} className="text-xs font-medium text-[var(--color-academy-muted)] mb-1 block">답변 쓰기(학부모에게 보임)</label>
                                 <textarea
+                                    id={`request-reply-${req.id}`}
                                     disabled={isPending || !!uncertain[req.id]}
-                                    value={adminNotes[req.id] ?? req.adminNote ?? ""}
+                                    value={adminNotes[req.id] ?? ""}
                                     onChange={e => setAdminNotes(prev => ({ ...prev, [req.id]: e.target.value }))}
                                     placeholder="학부모에게 전달할 답변을 작성하세요"
                                     rows={3}
+                                    maxLength={2000}
                                     className="academy-input resize-none"
                                 />
+                                <button
+                                    type="button"
+                                    disabled={isPending || !!uncertain[req.id] || !(adminNotes[req.id] ?? "").trim()}
+                                    onClick={() => sendReply(req.id)}
+                                    className="academy-button-primary mt-2"
+                                >
+                                    답변 보내기
+                                </button>
                             </div>
 
                             {uncertain[req.id] && <button type="button" disabled={isPending} className="academy-button-text" onClick={() => startTransition(async () => {
@@ -428,7 +493,10 @@ export default function RequestsAdminClient({
                                         <button key={s.value}
                                             disabled={isPending || !!uncertain[req.id]}
                                             onClick={() => startTransition(async () => {
-                                                const note = adminNotes[req.id] ?? req.adminNote ?? "";
+                                                // 답변 초안이 있으면 «답 + 상태»를 한 번에 보낸다(학부모 알림 1건)
+                                                if ((adminNotes[req.id] ?? "").trim()) { await sendReplyNow(req.id, s.value); return; }
+                                                // 초안이 없으면 기존 상태 변경 그대로(저장된 옛 답변은 건드리지 않는다)
+                                                const note = req.adminNote ?? "";
                                                 setFeedback(null);
                                                 try {
                                                     const result = await updateRequestStatus(req.id, s.value, note);

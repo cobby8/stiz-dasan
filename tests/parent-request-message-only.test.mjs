@@ -46,7 +46,8 @@ test("서버는 기존 유형을 계속 받아들인다", () => {
 });
 
 test("문구가 메시지 형태로 통일됐다", () => {
-  for (const label of ["학원에 메시지 보내기", "보낸 메시지", "메시지 보내기", "보낸 메시지가 없습니다"]) {
+  // 2026-11-14 c3: 보낸 글 목록은 «보낸 문의» 화면(/mypage/requests)으로 옮겼다 — 홈에는 그 화면으로 가는 링크만 있다
+  for (const label of ["학원에 메시지 보내기", "보낸 문의", "메시지 보내기"]) {
     assert.ok(client.includes(label), `${label} 문구가 있어야 합니다.`);
   }
   assert.doesNotMatch(client, /요청 접수하기/);

@@ -41,6 +41,8 @@ import type { getCachedAdminTrialPayload } from "@/lib/adminReadPayloads";
 import { updateConsultRequest } from "@/app/actions/consult";
 import { cancelRegularAbsenceByAdmin, confirmRegularAbsence } from "@/app/actions/regular-absence-admin";
 import { cancelMakeupSession, deleteParentRequest, updateMakeupStatus, updateRequestStatus } from "@/app/actions/admin";
+// 문의 답변 = 대화에 한 줄 추가(2026-11-14 c3) — 예전엔 답변 한 줄(adminNote)을 덮어썼다
+import { replyToParentRequest } from "@/app/actions/parent-inquiry";
 import { decidePaymentRequest } from "@/app/actions/payment-requests";
 import { approveRoleRequest, rejectRoleRequest, revokeRoleGrant } from "@/app/actions/role-requests-admin";
 import { reviewStaffPaymentConfirmation } from "@/app/actions/staff-billing";
@@ -167,7 +169,8 @@ export function actionsFor(row: InboxRow): PanelAction[] {
         },
         ...statuses.filter(({ status }) => status !== row.rawStatus).map(({ key, label, status, look }): PanelAction => ({
           key, label, look,
-          run: (note) => updateRequestStatus(row.id, status, note === (row.ref?.adminNote ?? "") ? undefined : note.trim()),
+          // 답변을 적었으면 «답 + 상태»를 한 번에(학부모 알림 1건), 비었으면 상태만 바꾼다(기존 동작)
+          run: (note) => (note.trim() ? replyToParentRequest(row.id, note.trim(), status) : updateRequestStatus(row.id, status)),
         })),
       ];
     }
@@ -481,7 +484,8 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
           // 저장된 메모를 채워 열고, 사용자가 수정했을 때만 새 값을 저장한다.
           onClick={() => {
             setOpenSelection(row);
-            setNote(row.kind === "CONSULT" || row.kind === "PARENT_REQUEST" ? row.ref?.adminNote ?? "" : "");
+            // 상담 메모는 저장된 값을 채워 연다. 문의 답변은 «이어 쓰기»라 빈칸으로 연다(앞선 답은 위 대화 줄에 보인다)
+            setNote(row.kind === "CONSULT" ? row.ref?.adminNote ?? "" : "");
             setMessage(null);
           }}
           className={`flex min-h-12 min-w-0 flex-1 items-center gap-2 py-1.5 pr-3 text-left hover:bg-[var(--color-academy-soft)] ${gutter ? "pl-0" : "pl-3"}`}
@@ -743,7 +747,7 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
           )}
           {wantsNote(open, openActions) && (
             <label className="mt-4 block text-sm font-medium text-[var(--color-academy-ink)]">
-              {open.kind === "PARENT_REQUEST" ? "답변(학부모에게 보임)" : open.kind === "CONSULT" ? "원장 메모(학부모에게 안 보임)" : "메모·거절 사유(선택)"}
+              {open.kind === "PARENT_REQUEST" ? "답변 쓰기(학부모에게 보임)" : open.kind === "CONSULT" ? "원장 메모(학부모에게 안 보임)" : "메모·거절 사유(선택)"}
               <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={2} maxLength={open.kind === "PARENT_REQUEST" ? 2000 : open.kind === "CONSULT" ? 1000 : 500} className="academy-input mt-1 w-full" />
             </label>
           )}

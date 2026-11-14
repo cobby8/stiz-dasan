@@ -204,7 +204,8 @@ export async function getParentRequestTimeline(parentUserId: string): Promise<Pa
       title: ["문의", r.title].filter(Boolean).join(" · "), when: "",
       createdOn: r.createdOn, createdAt: iso(r.createdAt), rawStatus: r.status, details: [],
       // 문의 답변은 학부모에게 보내는 말(홈 «내 문의»에도 보인다)
-      answer: r.adminNote ?? null, openHref: "/mypage",
+      // 누르면 그 문의의 대화 화면(이어 쓰기) — 2026-11-14 c3
+      answer: r.adminNote ?? null, openHref: `/mypage/requests/${r.id}`,
     });
   }
   return sortTimeline(rows).map((row) => toTimelineView(row, today));

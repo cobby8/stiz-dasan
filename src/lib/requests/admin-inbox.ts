@@ -37,6 +37,8 @@ import type { StatusTone } from "@/lib/ui/statusTones";
 import { countConsultAction } from "@/lib/requests/consult-inbox";
 import { illnessReviewReady } from "@/lib/regular/illness-carry-tx";
 import { evidenceScopeSql } from "@/lib/regular/illnessCarryRules";
+// 문의에 이어 쓴 글(학부모 추가 글·학원 답) — 상세 줄에 붙인다(2026-11-14 c3)
+import { inquiryFollowUpFacts } from "@/lib/requests/inquiry-thread";
 
 export type InboxFact = [label: string, value: string];
 export type InboxEnrollmentChangeMember = {
@@ -620,6 +622,15 @@ export async function getInboxRows(query: InboxQuery): Promise<{ rows: InboxRow[
 
   const rows = parts.flat().sort((a, b) =>
     query.bucket === "DONE" ? b.createdAt.localeCompare(a.createdAt) : a.createdAt.localeCompare(b.createdAt));
+  // 문의에 이어 쓴 글(학부모 추가 글·학원 답)을 상세 줄 끝에 붙인다 — 글 표가 없거나 조회가 실패해도 목록은 그대로(2026-11-14 c3)
+  const inquiryIds = rows.filter((row) => row.kind === "PARENT_REQUEST").map((row) => row.id);
+  if (inquiryIds.length) {
+    const followUps = await inquiryFollowUpFacts(prisma, inquiryIds).catch(() => new Map<string, InboxFact[]>());
+    for (const row of rows) {
+      const extra = row.kind === "PARENT_REQUEST" ? followUps.get(row.id) : undefined;
+      if (extra?.length) row.facts = [...row.facts, ...extra];
+    }
+  }
   return { rows, failedKinds };
 }
 

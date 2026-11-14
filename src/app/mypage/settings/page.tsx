@@ -108,7 +108,14 @@ export default async function ParentSettingsPage() {
                     {/* 번호 아래 한 줄 안내 — 큰 글자·좁은 화면에서도 번호가 잘리지 않게 */}
                     <span className="min-w-0 flex-1">
                         <span className="block tabular-nums text-[var(--color-academy-muted)]">{me?.phone ? formatPhoneInput(me.phone) : "없음"}</span>
-                        <span className="block text-xs text-[var(--color-academy-faint)]">{canChangePhone ? "본인 명의 휴대폰 인증 후 바뀌어요" : "변경은 학원 문의"}</span>
+                        {/* 본인인증을 쓸 수 없는 환경 — «학원 문의» 글자만 두지 않고 문의 폼으로 바로 보낸다(자녀가 없으면 폼이 없어 글자만) */}
+                        {canChangePhone ? (
+                            <span className="block text-xs text-[var(--color-academy-faint)]">본인 명의 휴대폰 인증 후 바뀌어요</span>
+                        ) : childRows.length > 0 ? (
+                            <Link href="/mypage#parent-request-form" className="inline-flex min-h-11 items-center text-xs text-[var(--color-academy-muted)] underline">변경은 문의로 요청</Link>
+                        ) : (
+                            <span className="block text-xs text-[var(--color-academy-faint)]">변경은 학원 문의</span>
+                        )}
                     </span>
                     <PhoneChangeButton enabled={canChangePhone} nameOk={looksLikeLegalName(me?.name ?? parent.appUserName)} onSettingsPage label="바꾸기" className="academy-button-secondary shrink-0" />
                 </li>
@@ -154,6 +161,8 @@ export default async function ParentSettingsPage() {
             {/* 도움 — 홈 «문의»와 같은 기능(학원에 메시지 보내기)이라 폼을 따로 두지 않고 홈 문의 폼으로 보낸다(2026-11-14 문구 정리) */}
             {/* 홈 문의 폼은 자녀가 연결된 계정에만 있다 — 자녀가 없으면 갈 곳이 없으니 연결 안내를 보인다(예전 문의 폼과 같은 취지) */}
             <Section title="도움">
+                {/* 보낸 문의 — 답변을 다시 보고 이어 쓴다(늘 보인다, 2026-11-14 c3) */}
+                <LinkRow href="/mypage/requests" label="보낸 문의" />
                 {childRows.length > 0 ? (
                     <LinkRow href="/mypage#parent-request-form" label="문의" />
                 ) : (

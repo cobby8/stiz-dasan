@@ -13,10 +13,9 @@ import type { PendingSeasonalChild } from "@/lib/seasonal/pendingSeasonalChildre
 // "오늘/이번주 우리 아이" 요약 + «오늘 할 일» 집계용 순수 로직(표시 전용, 기존 데이터 재조합).
 import {
     getKstNow, getKstDateStr, computeNextClass, nextClassWhenLabel, filterTodayShuttle,
-    summarizePendingPayments, countRecentAnswers, countRecentNotices, legacyHomeHashTarget,
+    summarizePendingPayments, countRecentNotices, legacyHomeHashTarget,
 } from "@/lib/mypage/summary";
 import { formatKstDate } from "@/lib/datetime/kst";
-import { REQUEST_TONE, TONE_BADGE_CLASS } from "@/lib/ui/statusTones";
 import type { ParentClassStatusLine } from "@/lib/enrollment/parent-change-request";
 // «최신 수업 피드» 카드 — 고른 아이의 최신 공개 수업 1건(2026-11-14)
 import LatestFeedCard from "@/components/parent/LatestFeedCard";
@@ -123,20 +122,8 @@ type NoticeItem = {
     attachmentsJSON: string | null;
 };
 
-type RequestItem = {
-    id: string;
-    userId: string;
-    studentId: string;
-    type: string;
-    title: string;
-    content: string;
-    date: Date | string | null;
-    status: string;
-    adminNote: string | null;
-    createdAt: Date | string;
-    updatedAt: Date | string;
-    studentName: string;
-};
+/** 보낸 문의 건수(답변 옴·답변 대기) — «보낸 문의» 줄 오른쪽 글자용. 목록·대화는 /mypage/requests 화면이 그린다 */
+type InquiryCounts = { answered: number; waiting: number };
 
 type MyPageData = {
     parent: { id: string; name: string; email: string; phone: string | null };
@@ -148,14 +135,6 @@ type MyPageData = {
 // 결석처럼 진짜 기능이 있는 것은 그 기능으로 보내고, 나머지는 자유 메시지 하나로 받는다.
 // 서버는 type 을 계속 받으므로(다른 경로 호환) 여기서는 항상 "OTHER" 로 보낸다.
 
-// 2026-11-13 UI 통일: 상태 배지의 장식 아이콘을 뺐다 — 글자(대기중·확인됨…)와 색이 뜻을 전한다.
-const REQUEST_STATUS: Record<string, { label: string; color: string }> = {
-    // 색 = 공용 지도(statusTones): 대기 주의 · 확인됨(진행 중) 정보 · 종결 정상 · 반려 위험
-    PENDING: { label: "대기중", color: TONE_BADGE_CLASS[REQUEST_TONE.PENDING] },
-    CONFIRMED: { label: "확인됨", color: TONE_BADGE_CLASS[REQUEST_TONE.CONFIRMED] },
-    COMPLETED: { label: "상담 종결", color: TONE_BADGE_CLASS[REQUEST_TONE.COMPLETED] },
-    REJECTED: { label: "반려", color: TONE_BADGE_CLASS[REQUEST_TONE.REJECTED] },
-};
 
 /** 알림·요청 시각 "10월 31일 AM 12:05" — 예전 모양 그대로, KST 기준. */
 export function formatAlertTime(value: Date | string): string {
@@ -170,10 +149,11 @@ export function formatShortDate(value: Date | string): string {
 // «처리할 일» 한 줄 — 왼쪽 제목, 오른쪽 숫자/설명, 끝에 «›». 터치 44px.
 const TODO_ROW = "flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-[var(--color-academy-soft)]";
 
-export default function MyPageClient({ data, notices = [], myRequests = [], parentShuttleOverview = [], shuttleDriverContact = null, pendingSeasonalChildren = [], makeupAvailable = 0, seasonalUpcoming = 0, pendingPayments = null, classStatusLines = [], initialChildId, recordLines, feedCandidates = [] }: {
+export default function MyPageClient({ data, notices = [], inquiryCounts = { answered: 0, waiting: 0 }, parentShuttleOverview = [], shuttleDriverContact = null, pendingSeasonalChildren = [], makeupAvailable = 0, seasonalUpcoming = 0, pendingPayments = null, classStatusLines = [], initialChildId, recordLines, feedCandidates = [] }: {
     data: MyPageData;
     notices?: NoticeItem[];
-    myRequests?: RequestItem[];
+    /** 보낸 문의 중 «답변 옴»·«답변 대기» 건수(보낸 문의 화면과 같은 판정) */
+    inquiryCounts?: InquiryCounts;
     parentShuttleOverview?: ParentShuttleOverviewItem[];
     shuttleDriverContact?: { name: string; phone: string } | null;
     // 방학특강만 신청하고 아직 정식 학생으로 전환되지 않은 자녀(별도 칸에 표시)
@@ -199,7 +179,6 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
     const selectedIdx = Math.max(0, childIds.indexOf(selectedChildId));
     const setSelectedIdx = (i: number) => { const id = childIds[i]; if (id) selectChild(id); };
     const [showRequestForm, setShowRequestForm] = useState(false);
-    const [showRequests, setShowRequests] = useState(false);
     const [isPending, startTransition] = useTransition();
     // 요청 폼 상태
     const [reqContent, setReqContent] = useState("");
@@ -261,11 +240,10 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
     const scheduleHref = `/mypage/history?child=${encodeURIComponent(child.id)}`;
 
     // ── ③ 처리할 일 ──
-    const answerCount = countRecentAnswers(myRequests, now.getTime());
-    const pendingRequestCount = myRequests.filter(r => r.status === "PENDING").length;
     const newNoticeCount = countRecentNotices(notices, now.getTime());
     // 알림 줄이 머리줄 🔔 로 옮겨 가(2026-11-10) 처리할 일이 하나도 없을 수 있다 → 빈 칸 대신 한 줄 안내
-    const hasTodo = makeupAvailable > 0 || seasonalUpcoming > 0 || answerCount > 0 || pendingRequestCount > 0 || newNoticeCount > 0;
+    // «보낸 문의»는 처리할 일에서 빼고 빠른 실행 아래 «늘 보이는 줄»로 옮겼다(2026-11-14 c3 — 끝난 문의도 다시 볼 수 있게)
+    const hasTodo = makeupAvailable > 0 || seasonalUpcoming > 0 || newNoticeCount > 0;
 
     // ── ④ 빠른 실행 «결석 알리기» — 정규 반이 없고 방학특강만 다니면 바로 방학특강 결석으로 ──
     // 복귀 예정 반도 정규 반이다(복귀일 이후 수업은 결석 신고를 받는다)
@@ -299,12 +277,6 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
     useEffect(() => {
         if (showRequestForm && window.location.hash === "#parent-request-form") scrollToSection("parent-request-form");
     }, [showRequestForm]);
-
-    function openRequests() {
-        // 보낸 메시지 목록을 펼치고 그 자리로
-        setShowRequests(true);
-        requestAnimationFrame(() => scrollToSection("parent-request-list"));
-    }
 
     function openRequestForm() {
         setShowRequestForm((v) => !v);
@@ -483,17 +455,6 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                             </Link>
                         </li>
                     )}
-                    {(answerCount > 0 || pendingRequestCount > 0) && (
-                        <li>
-                            <button type="button" onClick={openRequests} className={TODO_ROW}>
-                                <span className="min-w-0 flex-1 font-medium text-[var(--color-academy-ink)]">보낸 메시지</span>
-                                <span className="shrink-0 text-[var(--color-academy-muted)]">
-                                    {answerCount > 0 ? <>학원 답변 <span className="tabular-nums">{answerCount}</span>건</> : <>답변 대기 <span className="tabular-nums">{pendingRequestCount}</span>건</>}
-                                </span>
-                                <span aria-hidden="true" className="shrink-0 text-[var(--color-academy-faint)]">›</span>
-                            </button>
-                        </li>
-                    )}
                     {newNoticeCount > 0 && (
                         <li>
                             <Link href="/mypage/reports#news-notices" className={TODO_ROW}>
@@ -585,17 +546,27 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                 </button>
             </nav>
 
+            {/* 늘 보이는 한 줄 행 — 보낸 문의(끝난 문의도 다시 보고 이어 쓴다, 2026-11-14 c3). 오른쪽 글자는 건수가 있을 때만 */}
+            <ul aria-label="더 보기" className="academy-panel divide-y divide-[var(--color-academy-line)] overflow-hidden">
+                <li>
+                    <Link href="/mypage/requests" className={TODO_ROW}>
+                        <span className="min-w-0 flex-1 font-medium text-[var(--color-academy-ink)]">보낸 문의</span>
+                        {(inquiryCounts.answered > 0 || inquiryCounts.waiting > 0) && (
+                            <span className="shrink-0 text-[var(--color-academy-muted)]">
+                                {inquiryCounts.answered > 0 ? <>답변 옴 <span className="tabular-nums">{inquiryCounts.answered}</span>건</> : <>답변 대기 <span className="tabular-nums">{inquiryCounts.waiting}</span>건</>}
+                            </span>
+                        )}
+                        <span aria-hidden="true" className="shrink-0 text-[var(--color-academy-faint)]">›</span>
+                    </Link>
+                </li>
+            </ul>
+
             {/* 학원에 메시지 보내기 — «문의»를 누르면 열린다 */}
             {showRequestForm && (
                 <div id="parent-request-form" className="scroll-mt-4 bg-white border border-[var(--color-academy-line)] rounded-2xl p-4 shadow-sm space-y-3">
                     <div className="flex items-center justify-between gap-2">
                         <h3 className="academy-section-title">학원에 메시지 보내기</h3>
-                        <button type="button" onClick={() => (showRequests ? setShowRequests(false) : openRequests())} className="academy-button-text">
-                            보낸 메시지
-                            {pendingRequestCount > 0 && (
-                                <span className="bg-[var(--color-academy-warning)] text-white text-xs tabular-nums px-1.5 py-0.5 rounded-full">{pendingRequestCount}</span>
-                            )}
-                        </button>
+                        <Link href="/mypage/requests" className="academy-button-text">보낸 문의</Link>
                     </div>
 
                     {/* 유형 선택을 없앤 이유: 유형별로 나눠 받으면 학원이 그 유형대로 처리해 줄 것처럼
@@ -689,50 +660,11 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
             {/* 보낸 뒤 안내 — 폼이 닫혀도 «보냈다»는 걸 알 수 있게 */}
             {reqSent && !showRequestForm && (
                 <div role="status" className="flex items-center justify-between gap-2 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-success-soft)] px-3 py-2 text-xs font-medium text-[var(--color-academy-success)]">
-                    <span className="min-w-0 break-keep">보냈어요. 답변은 «보낸 메시지»에서 볼 수 있어요</span>
+                    <span className="min-w-0 break-keep">보냈어요. 답변은 <Link href="/mypage/requests" className="underline">보낸 문의</Link>에서 볼 수 있어요</span>
                     <button type="button" onClick={() => setReqSent(false)} className="academy-button-text shrink-0" aria-label="안내 닫기">닫기</button>
                 </div>
             )}
 
-            {/* 보낸 메시지 — «처리할 일»의 «보낸 메시지» 줄이나 폼 위 «보낸 메시지»로 연다 */}
-            {showRequests && (
-                <section id="parent-request-list" aria-label="보낸 메시지" className="scroll-mt-4 bg-white border border-[var(--color-academy-line)] rounded-2xl shadow-sm overflow-hidden">
-                    <div className="flex items-center justify-between border-b border-[var(--color-academy-line)] px-4 py-1">
-                        <h3 className="academy-section-title">보낸 메시지</h3>
-                        <button type="button" onClick={() => setShowRequests(false)} className="academy-button-text">닫기</button>
-                    </div>
-                    {myRequests.length === 0 ? (
-                        <div className="p-6 text-center text-[var(--color-academy-faint)] text-sm">보낸 메시지가 없습니다</div>
-                    ) : (
-                        <div className="divide-y divide-[var(--color-academy-line)] max-h-96 overflow-y-auto">
-                            {myRequests.map(r => {
-                                const st = REQUEST_STATUS[r.status] || REQUEST_STATUS.PENDING;
-                                return (
-                                    <div key={r.id} className="px-4 py-3">
-                                        <div className="flex items-center justify-between mb-1">
-                                            <span className="text-sm font-semibold text-[var(--color-academy-ink)]">{r.title}</span>
-                                            <span className={`text-xs px-2 py-0.5 rounded shrink-0 ${st.color}`}>
-                                                {st.label}
-                                            </span>
-                                        </div>
-                                        <p className="text-xs text-[var(--color-academy-muted)] line-clamp-2">{r.content}</p>
-                                        {r.adminNote && (
-                                            <div className="mt-2 bg-[var(--color-academy-info-soft)] rounded-lg px-3 py-2">
-                                                <p className="text-xs text-[var(--color-academy-info)]">
-                                                    <span className="font-semibold">학원 답변:</span> {r.adminNote}
-                                                </p>
-                                            </div>
-                                        )}
-                                        <p className="text-xs text-[var(--color-academy-faint)] mt-1">
-                                            {formatAlertTime(r.createdAt)}
-                                        </p>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    )}
-                </section>
-            )}
         </div>
     );
 }

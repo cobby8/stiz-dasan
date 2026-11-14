@@ -43,7 +43,8 @@ test("A 상담: updateConsultRequest 연결 — ref.actions 에 있는 버튼만
 });
 
 test("A 상담: 메모 칸 초기값 = ref.adminNote · 전화 버튼 = tel:ref.phone", () => {
-  assert.match(client, /setNote\(row\.kind === "CONSULT" \|\| row\.kind === "PARENT_REQUEST"/);
+  // 2026-11-14 c3: 문의 답변은 «이어 쓰기»라 빈칸으로 연다(상담 메모만 저장된 값을 채운다)
+  assert.match(client, /setNote\(row\.kind === "CONSULT" \? row\.ref\?\.adminNote \?\? "" : ""\)/);
   assert.match(client, /open\.kind === "CONSULT" && open\.ref\?\.phone && \(\s*<a href=\{`tel:\$\{open\.ref\.phone\}`\}/);
   assert.match(client, /"원장 메모\(학부모에게 안 보임\)"/);
 });

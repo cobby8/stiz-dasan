@@ -264,7 +264,8 @@ test("④ 설정 화면: 원장 목록 항목 + 예전 ⋯ 메뉴 항목이 전�
   assert.match(page, /SHOW_THEME_SETTING \?/, "테마 자리는 스위치 뒤에 숨김");
   // 2026-11-14 문구 정리: 설정의 «문제 신고·문의» 폼은 홈 «문의»와 같은 기능이라 없애고, 홈 문의 폼으로 가는 링크 한 줄로 바꿨다
   // 홈 문의 폼은 자녀가 연결된 계정에만 있다 → 자녀가 있으면 링크, 없으면 «자녀 연결» 안내(갈 곳 없는 링크 금지)
-  assert.match(page, /<Section title="도움">\s*\{childRows\.length > 0 \? \(\s*<LinkRow href="\/mypage#parent-request-form" label="문의" \/>\s*\) : \(/);
+  // 2026-11-14 c3: «보낸 문의»(답변 다시 보기·이어 쓰기)는 자녀 유무와 상관없이 늘 보인다
+  assert.match(page, /<Section title="도움">[\s\S]{0,200}<LinkRow href="\/mypage\/requests" label="보낸 문의" \/>\s*\{childRows\.length > 0 \? \(\s*<LinkRow href="\/mypage#parent-request-form" label="문의" \/>\s*\) : \(/);
   assert.match(page, /자녀를 연결한 뒤 문의를 보낼 수 있어요<\/span>\s*<Link href="\/mypage\/children" className="academy-button-secondary shrink-0">자녀 연결<\/Link>/);
   assert.doesNotMatch(client, /createParentRequest|FeedbackRow|불편 신고/);
   // 그 링크가 닿는 홈 폼은 주소의 #parent-request-form 으로 펴지고, 보내는 값은 자유 메시지(OTHER) 그대로다

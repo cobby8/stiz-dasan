@@ -104,7 +104,8 @@ test("마이페이지 통신 실패는 그 자리 안내(d1)·첫 화면 부분 
   const home = read("src/app/mypage/MyPageClient.tsx");
   assert.match(home, /catch \{[\s\S]*?setReqError\("보내지 못했습니다\. 다시 시도해 주세요\."\);\s*return;/);
   // 보낸 뒤 안내(2026-11-14 문구 정리: «보냈어요. 답변은 «보낸 메시지»에서 볼 수 있어요»)
-  assert.match(home, /role="status"[\s\S]{0,400}보냈어요\. 답변은 «보낸 메시지»에서 볼 수 있어요/);
+  // 2026-11-14 c3: «보낸 메시지» → «보낸 문의» 화면 링크
+  assert.match(home, /role="status"[\s\S]{0,400}보냈어요\. 답변은 <Link href="\/mypage\/requests" className="underline">보낸 문의<\/Link>에서 볼 수 있어요/);
   const settings = read("src/app/mypage/settings/SettingsClient.tsx");
   assert.equal((settings.match(/\.catch\(\(\) => \(\{ ok: false as const, error: "보내지 못했습니다\. 다시 시도해 주세요\." \}\)\)/g) ?? []).length, 4, "이름·비밀번호·알림·자주 쓰는 결제 방법(2026-11-13)");
   const bell = read("src/app/mypage/ParentNotificationBell.tsx");
@@ -113,7 +114,7 @@ test("마이페이지 통신 실패는 그 자리 안내(d1)·첫 화면 부분 
   const roles = read("src/app/mypage/roles/RolesClient.tsx");
   assert.equal((roles.match(/\.catch\(\(\) => \(\{ error: "NETWORK" as const \}\)\)/g) ?? []).length, 2);
   const page = read("src/app/mypage/page.tsx");
-  for (const call of ["getNoticesByClassIds(classIds, 10)", "getMyRequests(data.parent.id)", "getParentShuttleOverview(parentAuth.appUserId)", "getShuttleDriverContact()"]) {
+  for (const call of ["getNoticesByClassIds(classIds, 10)", "listMyInquiries(prisma, parentAuth.appUserId)", "getParentShuttleOverview(parentAuth.appUserId)", "getShuttleDriverContact()"]) {
     assert.ok(page.includes(`${call}.catch(`), call);
   }
   // 오류 화면: 마이페이지(레이아웃 안 — 하단 탭 유지) + 전체(html/body 포함·한국어)
