@@ -464,4 +464,9 @@ test("기록 없이 연 학부모 하위 화면의 머리줄 «←» 는 학부�
     resolveBackAction({ hasHistory: false, pathname: "/mypage", fallbackHref: "/mypage", scopeHref: "/mypage", isInstalledApp: false }),
     { type: "push", href: "/" },
   );
+  // 설치 앱의 학부모 홈은 돌아갈 곳이 없어 버튼을 숨긴다(기존 규칙 유지)
+  assert.deepEqual(
+    resolveBackAction({ hasHistory: false, pathname: "/mypage", fallbackHref: "/mypage", scopeHref: "/mypage", isInstalledApp: true }),
+    { type: "none" },
+  );
 });
