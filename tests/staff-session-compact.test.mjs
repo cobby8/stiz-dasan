@@ -150,7 +150,10 @@ test("학생은 화면에 한 번만 나온다 — 명단 하나, 출석부 화�
 
 test("명단 한 줄: 이름(누르면 상세) + 표시 + 출결 버튼 3개, 터치 44px", () => {
   const row = clientCode.slice(clientCode.indexOf("data-student-row"), clientCode.indexOf("</article>"));
-  assert.match(row, /aria-label=\{`\$\{student\.name\} 상세 정보`\} onClick=\{\(\) => setDetailId\(student\.id\)\} className="flex min-h-11 /);
+  assert.match(row, /aria-label=\{`\$\{student\.name\} 상세 정보`\} onClick=\{\(\) => \{ setPeopleWanted\(true\); setDetailId\(student\.id\); \}\} className="flex min-h-11 /);
+  // 출결 버튼 사이는 8px 이상(오터치 방지), 버튼 폭 48px 이상
+  assert.match(row, /grid shrink-0 grid-cols-3 gap-2">/);
+  assert.match(row, /className="min-w-12">/);
   for (const badge of ["보강", "체험", "결석 신고", "특이"]) assert.match(row, new RegExp(`>${badge}</span>`), `${badge} 표시`);
   assert.match(row, /active=\{student\.status === status\} disabled=\{bulkBusy \|\| Boolean\(savingRows\[student\.id\]\)\} onClick=\{\(\) => void updateAttendance\(student\.id, status\)\}/);
   // 한 줄에는 연락처·수강료·보호자가 없다(시트에만)
@@ -210,6 +213,55 @@ test("학생 상세 시트 렌더: 체험·보강 아이는 연락처·수강료
   // 학생 정보가 아직 안 왔을 때·실패했을 때
   assert.match(renderSheet({ person: null, peopleState: "loading" }), /연락처를 불러오는 중입니다/);
   assert.match(renderSheet({ person: null, peopleState: "error" }), /다시 불러오기/);
+  // 명단이 준 전화가 있으면 조회가 늦거나 실패해도 바로 전화·문자를 건다
+  for (const peopleState of ["loading", "error"]) {
+    const html = renderSheet({ person: null, peopleState, student: { ...baseStudent, phone: "010-3333-4444" } });
+    assert.match(html, /href="tel:010-3333-4444"/, peopleState);
+    assert.match(html, /grid-cols-2/);
+    assert.doesNotMatch(html, /불러오는 중|불러오지 못했습니다/);
+  }
+});
+
+test("명단 줄 «미납» 표시는 원장·부원장에게만 — 선생님에겐 값도 조건도 닿지 않는다", () => {
+  const row = clientCode.slice(clientCode.indexOf("data-student-row"), clientCode.indexOf("</article>"));
+  // 표시 조건의 맨 앞이 showFees — 이 반 수강생(보강·체험 아님)이고 그 달 청구가 미납일 때만
+  assert.match(row, /\{showFees && !student\.makeup && !student\.trial && feesByRoster\.get\(student\.id\)\?\.status === "UNPAID" && \(\s*<span[^>]*text-\[var\(--color-academy-warning\)\]">미납<\/span>/);
+  assert.equal(count(row, /미납/g), 1, "미납 글자는 그 조건 안 한 곳뿐");
+  // 선생님 화면은 수강료 조회 자체를 하지 않는다 → feesByRoster 가 비어 있다(이중 잠금)
+  assert.match(clientCode, /if \(!showFees\) return;\s*let active = true;/);
+  assert.match(clientCode, /const feesByRoster = useMemo\(\(\) => new Map\(feeData\?\.items\.map/);
+  // 학생 정보의 미납(billing)은 명단 줄에서 쓰지 않는다
+  assert.doesNotMatch(row, /billing/);
+});
+
+test("학생 정보 조회는 한가할 때 — 첫 출결 저장 앞에 줄 서지 않는다, 상세 시트는 일반 import", () => {
+  assert.match(clientCode, /import \{ SessionStudentSheet \} from "@\/components\/staff\/SessionStudentSheet";/);
+  assert.doesNotMatch(clientCode, /const SessionStudentSheet = dynamic/);
+  // 화면이 뜬 직후가 아니라 잠시 뒤 또는 첫 이름 누름 때
+  assert.match(clientCode, /window\.setTimeout\(\(\) => setPeopleWanted\(true\), PEOPLE_IDLE_DELAY_MS\)/);
+  assert.match(clientCode, /const PEOPLE_IDLE_DELAY_MS = (\d+);/);
+  assert.ok(Number(/const PEOPLE_IDLE_DELAY_MS = (\d+);/.exec(clientCode)[1]) >= 1000);
+  // 출결 저장 중이면 미루고, 같은 차례를 두 번 부르지 않는다
+  assert.match(clientCode, /const attendanceBusy = Object\.keys\(savingRows\)\.length > 0 \|\| Boolean\(bulkAttendanceProgress\);/);
+  assert.match(clientCode, /if \(!peopleWanted \|\| attendanceBusy\) return;\s*if \(peopleStartedRef\.current === peopleReload\) return;/);
+  assert.equal(count(clientCode, /loadStaffClassPeople\(\{/g), 1);
+});
+
+test("하단 안내: 실패 문구일 때만 주의색 + role=alert, 44px 버튼", () => {
+  const pattern = new RegExp(/const SUCCESS_MESSAGE = \/(.+)\/;/.exec(clientCode)[1]);
+  assert.equal(pattern.test("특이사항을 저장했습니다."), true);
+  assert.equal(pattern.test("전체 출석을 저장했습니다. 2명은 건너뛰었어요(결석 신고·이미 기록됨) — 그 줄의 안내를 확인해 주세요."), true);
+  for (const failure of ["특이사항을 저장하지 못했습니다. 네트워크 연결을 확인해 주세요.", "3명은 저장됐습니다. 로그인이 필요합니다.", "저장 중 연결이 끊겼습니다.", "음성 메모 처리가 끝난 뒤 이동해 주세요.", "수업 시작 취소 처리 중 문제가 발생했습니다."]) {
+    assert.equal(pattern.test(failure), false, failure);
+  }
+  assert.match(clientCode, /\{message && \(SUCCESS_MESSAGE\.test\(message\) \? \(/);
+  assert.match(clientCode, /<p role="alert" className="min-w-0 text-sm font-medium text-\[var\(--color-academy-warning\)\]">\{message\}<\/p>/);
+  assert.match(clientCode, /<p aria-live="polite" className="min-w-0 text-sm text-\[var\(--color-academy-info\)\]">\{message\}<\/p>/);
+  // «더보기»·«닫기»는 44px
+  assert.match(clientCode, /academy-button-sm min-h-11! shrink-0">더보기</);
+  assert.equal(count(clientCode, /academy-button-sm shrink-0">닫기</g), 0);
+  assert.equal(count(sheetCode, /academy-button-sm shrink-0">닫기</g), 0);
+  assert.match(sheetCode, /academy-button-sm min-h-11! shrink-0">닫기</);
 });
 
 test("기능 보존: 옮긴 기능이 «더보기»에 전부 있고 저장 함수는 그대로다", () => {

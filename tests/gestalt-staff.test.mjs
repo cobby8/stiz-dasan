@@ -56,7 +56,7 @@ test("T-03 출석부: 출석 success·지각 warning·결석 danger + 아이콘,
   assert.doesNotMatch(session, /STATUS_ICON|icon=|material-symbols-outlined/);
   // 2026-11-14 수업 화면 간결화: 명단은 학생 한 줄(이름 + 출결 버튼 3개), «지금 상태» 알약은 학생 상세 시트에 있다.
   assert.match(studentSheet, /<StatusPill tone="neutral">미확인<\/StatusPill>/);
-  assert.match(session, /grid shrink-0 grid-cols-3 gap-1\.5">\s*\{\(\["PRESENT", "LATE", "ABSENT"\] as AttendanceStatus\[\]\)\.map\(\(status\) => \(\s*<StatusChoiceButton/);
+  assert.match(session, /grid shrink-0 grid-cols-3 gap-2">\s*\{\(\["PRESENT", "LATE", "ABSENT"\] as AttendanceStatus\[\]\)\.map\(\(status\) => \(\s*<StatusChoiceButton/);
   assert.match(studentSheet, /<StatusPill tone=\{STATUS_TONE\[student\.status\]\}/);
   // 저장 함수는 그대로
   assert.match(session, /onClick=\{\(\) => void updateAttendance\(student\.id, status\)\}/);

@@ -70,7 +70,7 @@ export function SessionStudentSheet({
             <h2 id="session-student-title" className="mt-0.5 text-xl font-bold">{student.name}</h2>
             <p className="mt-0.5 text-xs text-[var(--color-academy-muted)]">{schoolLine || "학교·학년 미등록"}</p>
           </div>
-          <button type="button" data-dialog-initial-focus onClick={onClose} className="academy-button-text academy-button-sm shrink-0">닫기</button>
+          <button type="button" data-dialog-initial-focus onClick={onClose} className="academy-button-text academy-button-sm min-h-11! shrink-0">닫기</button>
         </header>
 
         {/* 오늘 상태 한 줄 — 출결 + 보강·체험·미납 표시 */}
@@ -101,17 +101,18 @@ export function SessionStudentSheet({
             <ContactLink phone={guardian?.phone ?? null} label="학부모 전화" accent />
             <ContactLink phone={guardian?.phone ?? null} label="문자" sms />
           </div>
+        ) : student.phone ? (
+          // 명단이 이미 준 전화가 있으면 학생 정보 조회(늦거나 실패할 수 있다)를 기다리지 않고 바로 보인다
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <ContactLink phone={student.phone} label="전화" accent />
+            <ContactLink phone={student.phone} label="문자" sms />
+          </div>
         ) : peopleState === "loading" ? (
           <p aria-live="polite" className="mt-4 text-sm text-[var(--color-academy-muted)]">연락처를 불러오는 중입니다.</p>
         ) : peopleState === "error" ? (
           <div role="alert" className="mt-4 flex items-center justify-between gap-2 rounded-xl bg-[var(--color-academy-soft)] p-3 text-sm text-[var(--color-academy-muted)]">
             <span>연락처를 불러오지 못했습니다.</span>
-            <button type="button" onClick={onReloadPeople} className="academy-button-secondary academy-button-sm shrink-0">다시 불러오기</button>
-          </div>
-        ) : student.phone ? (
-          <div className="mt-4 grid grid-cols-3 gap-2">
-            <ContactLink phone={student.phone} label="전화" accent />
-            <ContactLink phone={student.phone} label="문자" sms />
+            <button type="button" onClick={onReloadPeople} className="academy-button-secondary academy-button-sm min-h-11! shrink-0">다시 불러오기</button>
           </div>
         ) : (
           <p className="mt-4 text-sm text-[var(--color-academy-muted)]">
