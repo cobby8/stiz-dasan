@@ -126,7 +126,8 @@ export function SessionStudentSheet({
           <span className="text-sm tabular-nums text-[var(--color-academy-ink)]">
             {feeLoading ? "수강료 조회 중…" : feeError ? "수강료 확인 필요" : <>
               <span className="text-[var(--color-academy-muted)]">{feeMonth ? monthlyFeeLabel(feeMonth, fee?.period, fee?.sourceLabel) : "수강료"} </span>
-              {fee?.amount != null ? `${fee.amount.toLocaleString("ko-KR")}원` : "금액 확인 필요"}
+              {/* 부원장에게는 납부 완료 금액이 null 로 온다(2026-11-14) → «—» */}
+              {fee?.amount != null ? `${fee.amount.toLocaleString("ko-KR")}원` : fee?.status === "PAID" ? "—" : "금액 확인 필요"}
             </>}
           </span>
           <span className="text-sm font-medium text-[var(--brand-accent)]">

@@ -5,6 +5,7 @@ import AdminShellClient from "./AdminShellClient";
 import { isSheetSyncRetired } from "@/lib/operations-sync/sheetRetirement";
 import { getAccountViewAccess } from "@/lib/account-view-access";
 import { getInboxCounts } from "@/lib/requests/admin-inbox";
+import { canSeeAllMoney, canSeeStats } from "@/lib/auth/moneyAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +38,9 @@ export default async function AdminLayout({
             inboxCount={inboxCounts?.action ?? null}
             // 시트 원장 은퇴(2026-10~) 면 시스템 도구의 「시트 동기화」 버튼을 숨긴다("0" 이면 옛 화면)
             sheetRetired={isSheetSyncRetired(process.env)}
+            // 2026-11-14 부원장 금액 가림: 부원장이면 통계 메뉴·시스템 도구·원장 전용 탭(POS 대사)을 숨긴다
+            canSeeStats={canSeeStats(adminUser.appUserRole)}
+            isOwner={canSeeAllMoney(adminUser.appUserRole)}
         >
             {children}
         </AdminShellClient>

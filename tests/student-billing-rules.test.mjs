@@ -162,6 +162,8 @@ function loadCreatePayment({ workbenchEnabled = false, existing = [] } = {}) {
   const deps = {
     module: loaded, exports: loaded.exports, prisma,
     requireAdmin: async () => ({ appUserId: "admin", appUserRole: "ADMIN" }),
+    // 중복 안내 금액 가림(2026-11-14) — 원장이면 그대로라 통과 함수로 충분하다
+    maskPaymentAmount: (row) => row,
     normalizeDueYmd: rules.normalizeDueYmd,
     resolveBillingPeriod: rules.resolveBillingPeriod,
     manualChargeBlockedByWorkbench: rules.manualChargeBlockedByWorkbench,
@@ -263,7 +265,8 @@ test("updateUnpaidPayment: 재무 권한 · 학생·미납 조건을 UPDATE 에 
 
 // ── 화면 계약 ────────────────────────────────────────────────────────────────
 test("상세 탭 이름은 «청구/수납»(key 는 pay 그대로)", () => {
-  assert.match(detail, /\{ key: "pay", label: "청구\/수납" \}/);
+  // 청구/수납 탭은 원장만(2026-11-14) — 조건부 펼치기 안의 같은 key·이름
+  assert.match(detail, /\.\.\.\(canManageFinance \? \[\{ key: "pay" as const, label: "청구\/수납" \}\] : \[\]\)/);
   assert.match(detail, /청구서 발행/);
   assert.match(detail, /unpaidEditBlockReason\(/);
 });

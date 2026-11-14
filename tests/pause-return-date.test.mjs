@@ -199,7 +199,10 @@ test("신청함 상세는 관리자 확인 후 선택한 신청 ID만 조회한�
   const { readEnrollmentChangesForInbox } = load("src/app/actions/enrollment-changes.ts", {
     "next/cache": {},
     "@/lib/user-facing-error": {},
-    "@/lib/auth-guard": { requireAdmin: async () => { if (!admin) throw new Error("권한 없음"); } },
+    // 역할을 돌려줘야 부원장 금액 가림(2026-11-14)이 원장 원본 그대로를 고른다
+    "@/lib/auth-guard": { requireAdmin: async () => { if (!admin) throw new Error("권한 없음"); return { appUserRole: "ADMIN" }; } },
+    "@/lib/auth/moneyAccess": { canSeeAllMoney: (role) => role === "ADMIN" },
+    "@/lib/payments/financeRoleMask": { maskEnrollmentChangeRowForRole: (row, role) => (role === "ADMIN" ? row : { ...row, proration: null, settlementPreview: null, settlement: null }) },
     "@/lib/enrollment/admin-change-request": {
       getEnrollmentChangeRequests: async (status, ids) => { calls.push([status, ids]); return ids.map((id) => ({ id })); },
       getEnrollmentCancelRequests: async (ids) => { calls.push(["CANCEL", ids]); return []; },

@@ -13,7 +13,8 @@ function loadRoute(authorized = true) {
   const require = (name) => {
     if (name === '@/lib/user-facing-error') return publicErrors;
     if (name === 'next/server') return { NextResponse: { json: (body, options) => ({ body, status: options?.status ?? 200 }) } };
-    if (name === '@/lib/auth-guard') return { requireAdmin: async () => { if (!authorized) throw Error('DENIED'); } };
+    // 시트 대조는 원장 전용(2026-11-14) — 라우트가 requireOwner 를 부른다
+    if (name === '@/lib/auth-guard') return { requireOwner: async () => { if (!authorized) throw Error('DENIED'); } };
     if (name === '@/lib/prisma') return { prisma: new Proxy({}, { get: (_, key) => async (...args) => { calls.push([key, ...args]); throw Error('Unexpected database access'); } }) };
     throw Error('Unexpected dependency: ' + name);
   };

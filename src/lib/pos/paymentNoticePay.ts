@@ -68,12 +68,18 @@ export async function recordWarningOnce(input: {
     });
 }
 
-/** 관리자 알림 벨(ADMIN·VICE_ADMIN) 한 줄 — 슬랙을 놓쳐도 사이트에서 보이게. 실패는 호출한 쪽이 잡는다. */
+/**
+ * 원장 알림 벨 한 줄 — 슬랙을 놓쳐도 사이트에서 보이게. 실패는 호출한 쪽이 잡는다.
+ * 2026-11-14 부원장 금액 가림: 받는 사람을 원장(ADMIN)만으로 줄였다(전엔 ADMIN·VICE_ADMIN).
+ *   부르는 곳 2곳(이중 수납 확인·취소된 POS 결제) 모두 «이미 납부된 금액»이 문구에 들어가고,
+ *   후속 조치(환불·재청구)도 부원장에게 닫힌 업무라 금액을 지운 문구를 따로 만드는 것보다 원장에게만 보내는 쪽이 단순하다.
+ *   ⚠️ 부원장도 받아야 하는 새 알림이면 이 함수 말고 notifyAdmins 를 쓴다(금액이 «미납 1건»뿐일 때).
+ */
 export async function notifyAdminBell(title: string, message: string, linkUrl = "/admin/finance"): Promise<void> {
     await prisma.$executeRawUnsafe(
         `INSERT INTO "Notification" (id, "userId", type, title, message, "linkUrl", "isRead", "createdAt")
          SELECT gen_random_uuid()::text, u.id, 'PAYMENT', $1, $2, $3, false, NOW()
-           FROM "User" u WHERE u.role IN ('ADMIN', 'VICE_ADMIN')`,
+           FROM "User" u WHERE u.role = 'ADMIN'`,
         title,
         message,
         linkUrl,

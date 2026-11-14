@@ -11,7 +11,8 @@ function harness({ authorized = true, result = {}, failure = null } = {}) {
   }).outputText;
   const modules = {
     'next/server': { NextResponse: { json: (body, init) => ({ body, ...init }) } },
-    '@/lib/auth-guard': { requireAdmin: async () => { events.push('auth'); if (!authorized) throw new Error('private-auth-detail'); } },
+    // 월 장부는 원장 전용(2026-11-14) — 라우트가 requireOwner 를 부른다
+    '@/lib/auth-guard': { requireOwner: async () => { events.push('auth'); if (!authorized) throw new Error('private-auth-detail'); } },
     '@/lib/prisma': { prisma: { $transaction: async (fn, options) => {
       events.push(options);
       return fn({ $executeRawUnsafe: async sql => { events.push(sql); } });

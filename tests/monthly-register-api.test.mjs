@@ -19,7 +19,8 @@ function harness({ authorized = true, enabled = "true", failure = null } = {}) {
   const events = [];
   const modules = {
     "next/server": { NextResponse: { json: (body, init) => ({ body, status: 200, ...init }) } },
-    "@/lib/auth-guard": { requireAdmin: async () => { events.push("auth"); if (!authorized) throw new Error("private-auth"); return { appUserId: "admin-from-auth" }; } },
+    // 월 대장은 원장 전용(2026-11-14) — 라우트가 requireOwner 를 부른다
+    "@/lib/auth-guard": { requireOwner: async () => { events.push("auth"); if (!authorized) throw new Error("private-auth"); return { appUserId: "admin-from-auth" }; } },
     "@/lib/prisma": { prisma: { $transaction: async (fn, options) => {
       events.push(options);
       return fn({ $executeRawUnsafe: async sql => { events.push(sql); } });
