@@ -10,6 +10,8 @@
 --   status             : REPORTED(알림) | CANCELLED(학부모 취소)
 --   shuttleExceptionId : 이 알림과 함께 만든 «셔틀 안 타요»(ShuttleDayException.id). 조퇴 → 하원, 지각 → 등원.
 --                        기사님 화면이 사유(«조퇴»·«지각»)를 글자로 보이는 데 쓴다. 기록용이라 FK 없이 둔다.
+--   changeCount        : 이 행을 알리기·시각 바꾸기·취소한 횟수. 한 아이·한 반·하루의 합(지각 행 + 조퇴 행)이 5 에 닿으면
+--                        더 받지 않는다 — 번갈아 바꾸기로 원장·선생님·기사님 알림을 쏟아내지 못하게(보안 검수)
 --   reportedByUserId   : 알린 학부모 앱 계정(User.id) — 기록용이라 FK 없이 둔다(탈퇴해도 이력은 남긴다)
 --   시간 칸은 모두 timestamptz
 --
@@ -30,6 +32,7 @@ CREATE TABLE IF NOT EXISTS public."RegularArrivalNotice" (
   status TEXT NOT NULL DEFAULT 'REPORTED',
   "shuttleExceptionId" TEXT,
   "reportedByUserId" TEXT,
+  "changeCount" INTEGER NOT NULL DEFAULT 0,
   "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT NOW(),
   "updatedAt" TIMESTAMPTZ(6) NOT NULL DEFAULT NOW(),
   CONSTRAINT "RegularArrivalNotice_kind_check" CHECK (kind IN ('LATE', 'EARLY')),
@@ -42,6 +45,9 @@ CREATE TABLE IF NOT EXISTS public."RegularArrivalNotice" (
     FOREIGN KEY ("classId") REFERENCES public."Class" (id)
     ON DELETE CASCADE ON UPDATE CASCADE
 );
+
+-- 표를 먼저 만든 환경에서도 같은 모양이 되게(멱등)
+ALTER TABLE public."RegularArrivalNotice" ADD COLUMN IF NOT EXISTS "changeCount" INTEGER NOT NULL DEFAULT 0;
 
 -- 한 아이·한 반·하루에 지각 1건 + 조퇴 1건까지(다시 알리면 같은 행의 시각만 바뀐다)
 CREATE UNIQUE INDEX IF NOT EXISTS "RegularArrivalNotice_student_class_date_kind_key"

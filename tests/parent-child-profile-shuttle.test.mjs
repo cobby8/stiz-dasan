@@ -101,7 +101,7 @@ test("① 7일 운행: 휴무(연간일정 수업일 아님)·결석·안 탐·�
     today: "2026-11-16", days: 1, rowsForDate: () => ROWS, classes: [cls()], isClassDay: always, absences: [],
     exceptions: [{ ymd: "2026-11-16", direction: "BOTH", kind: "SKIP", location: null }],
   });
-  assert.equal(skipBoth[0].statusText, "안 탐(신청)");
+  assert.equal(skipBoth[0].statusText, "자차(신청)"); // 2026-11-14 묶음 B: «안 탐» → 자차
   assert.equal(skipBoth[0].board.state, "SKIP");
   assert.equal(skipBoth[0].alight.state, "SKIP");
 
@@ -351,7 +351,7 @@ test("④ 여러 반 + 휴원: 반마다 한 줄(상태 칩·요일 시간·코�
   assert.match(html, /11월 명단/);
   assert.match(html, /승차 17:45 · 푸르지오/);
   assert.match(html, /하차 19:35 · 푸르지오/);
-  assert.match(html, /등원 17:45 푸르지오 · 하원 안 탐\(신청\)/);
+  assert.match(html, /등원 17:45 푸르지오 · 하원 자차\(신청\)/);
   assert.match(html, /11\/19\(목\)/);
   assert.match(html, />휴원</);
   assert.match(html, /href="tel:01000000000"/);

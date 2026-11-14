@@ -1580,7 +1580,7 @@ test("화면 세 곳: «날짜 바꾸기» 글자 버튼 + 그 자리에서 고�
   for (const [name, ui] of [["결석", absenceUi], ["셔틀", shuttleUi], ["보강", makeupUi]]) {
     // 결석 화면만 예외(2026-11-14 원장 지시 «학원에 문의 글 대신 그 자리에서 해결»): 마감 줄 = «마감» 한 단어 + 전화·문의 버튼.
     // 서버가 돌려주는 마감 오류 문구는 세 화면 모두 공용 상수 그대로다.
-    if (name === "결석") assert.match(ui, /<ContactActions label="마감" contact=\{contact\} \/>/, "결석: 마감 줄은 «마감» + 전화·문의 버튼");
+    if (name === "결석") assert.match(ui, /<ContactActions label=\{[^}]*"마감"\} contact=\{contact\} \/>/, "결석: 마감 줄은 «마감» + 전화·문의 버튼");
     else assert.match(ui, /import \{ CHANGE_CLOSED_MESSAGE[^}]*\} from "@\/lib\/parent\/changeDeadline";/, `${name}: 마감 글은 공용 상수`);
     assert.doesNotMatch(ui, /"마감 시간이 지나/, `${name}: 마감 글을 화면에 따로 적지 않는다`);
     assert.match(ui, /날짜 바꾸기/, `${name}: 날짜 바꾸기`);

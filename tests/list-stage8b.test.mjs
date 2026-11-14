@@ -262,7 +262,8 @@ test("정규 결석 신고는 반 카드 속 작은 카드 대신 날짜 묶음(
   assert.match(source, /const today = todayKst\(\);/);
   assert.doesNotMatch(source, /min-h-9/, "버튼·선택칸은 터치 44px");
   // 신고 = «결석 알리기»로 폼 열기 → 사유 선택 → «알리기» (기존 단계 보존, 2026-11-14 이름 통일)
-  assert.match(source, /onClick=\{\(\) => setOpenKey\(key\)\}/);
+  // (2026-11-14 묶음 B: 결석 칸을 열 때 열려 있던 지각·조퇴 칸을 함께 닫는다)
+  assert.match(source, /onClick=\{\(\) => \{ setArrivalForm\(null\); setOpenKey\(key\); \}\}/);
   assert.match(source, /if \(!r\) \{\s*setErr\("결석 사유를 선택해 주세요\."\);/);
   assert.match(source, /onClick=\{\(\) => report\(d\)\}/);
   assert.match(source, /onConfirm=\{\(\) => cancel\(d\)\}/);

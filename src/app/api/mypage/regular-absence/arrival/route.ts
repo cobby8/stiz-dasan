@@ -3,6 +3,7 @@ import { requireVerifiedParent } from "@/lib/auth-guard";
 import { cancelArrivalNotice, submitArrivalNotice } from "@/lib/regular/parent-arrival-notice";
 import { ABSENCE_REPORT_WEEKS } from "@/lib/regular/parent-regular-absence";
 import { BEFORE_RESUME_CODE, resumeFromOfError, resumeNotice } from "@/lib/enrollment/resumeWindow";
+import { ARRIVAL_CHANGE_LIMIT_MESSAGE } from "@/lib/regular/arrivalNoticeRules";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +58,8 @@ export async function POST(request: NextRequest) {
       ARRIVAL_CLOSED_LATE: "수업이 이미 시작돼 여기서 바꿀 수 없어요.",
       ARRIVAL_CLOSED_EARLY: "수업이 이미 끝나 여기서 바꿀 수 없어요.",
       ARRIVAL_ABSENT: "이 날은 결석으로 알려 두었어요. 결석 알림을 먼저 취소해 주세요.",
+      // 하루 변경 상한(5번) — 화면은 이 코드를 보고 «학원에 전화하기» 버튼을 함께 보인다
+      ARRIVAL_CHANGE_LIMIT: ARRIVAL_CHANGE_LIMIT_MESSAGE,
       ARRIVAL_NOT_FOUND: "알림을 찾을 수 없어요. 화면을 새로 고쳐 주세요.",
       ARRIVAL_UNAVAILABLE: "지금은 이 기능을 쓸 수 없어요. 잠시 후 다시 시도해 주세요.",
     };

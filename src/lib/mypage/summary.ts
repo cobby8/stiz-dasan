@@ -131,6 +131,8 @@ export type ShuttleLite = {
     plannedAt?: string | null;
     /** 오늘 기사님이 «탑승»을 찍은 실제 시각 "HH:MM"(KST). 등원 줄이면 탄 시각, 하원 줄이면 내린 시각. 없으면 아직 안 찍힘 */
     actualTimeLabel?: string | null;
+    /** 같은 날 «자차»로 신청해 타지 않는 방향 — 그 방향 줄은 시각 대신 «자차» */
+    selfRideDirections?: readonly ("PICKUP" | "DROPOFF")[];
 };
 
 /**
@@ -146,9 +148,11 @@ export function todayShuttleLineTexts(items: readonly ShuttleLite[]): string[] {
     const dropoffEta = items.map((i) => i.dropoffEtaLabel).find(Boolean) ?? null;
     const boardedAt = actual("PICKUP");
     const alightedAt = actual("DROPOFF");
+    // 자차로 신청한 방향(2026-11-14 묶음 B) — 예정·탑승 시각 대신 «등원 자차»·«하원 자차»
+    const selfRide = (direction: "PICKUP" | "DROPOFF") => items.some((i) => i.selfRideDirections?.includes(direction));
     return [
-        boardedAt ? `탑승 ${boardedAt}` : pickupEta ? `등원 ${pickupEta}` : null,
-        alightedAt ? `하차 ${alightedAt}` : dropoffEta ? `하원 ${dropoffEta}` : null,
+        selfRide("PICKUP") ? "등원 자차" : boardedAt ? `탑승 ${boardedAt}` : pickupEta ? `등원 ${pickupEta}` : null,
+        selfRide("DROPOFF") ? "하원 자차" : alightedAt ? `하차 ${alightedAt}` : dropoffEta ? `하원 ${dropoffEta}` : null,
     ].filter((v): v is string => Boolean(v));
 }
 

@@ -3749,6 +3749,7 @@ model RegularArrivalNotice {
   status             String   @default("REPORTED") // REPORTED | CANCELLED
   shuttleExceptionId String? // 함께 만든 «셔틀 안 타요»(ShuttleDayException.id, 기록용·FK 없음)
   reportedByUserId   String? // 알린 보호자 User.id (기록용, FK 없음)
+  changeCount        Int      @default(0) // 알리기·시각 바꾸기·취소 횟수(아이·반·하루 합계 5번 상한)
   createdAt          DateTime @default(now()) @db.Timestamptz(6)
   updatedAt          DateTime @default(now()) @updatedAt @db.Timestamptz(6)
   student            Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)

@@ -38,6 +38,8 @@ export type ParentShuttleOverviewItem = {
   // 정규반 항목이나 미배차/미저장이면 null(있으면 표시, 없으면 종전과 동일).
   pickupEtaLabel?: string | null;
   dropoffEtaLabel?: string | null;
+  /** 같은 날 «자차»로 신청해 타지 않는 방향(정규 명단 항목만) — 홈 «오늘 셔틀» 줄의 «등원 자차»·«하원 자차» */
+  selfRideDirections?: ("PICKUP" | "DROPOFF")[];
   /** 셔틀 명단에서 만든 7일 운행 항목 — 일정 탭은 요일별 한 줄로 줄여 보인다(노선·차량 칸이 없다) */
   fromRoster?: boolean;
   /** 오늘 항목에만: 기사님이 «탑승»을 찍은 실제 시각 "HH:MM"(KST) — 등원이면 탄 시각, 하원이면 내린 시각. 아직이면 null */

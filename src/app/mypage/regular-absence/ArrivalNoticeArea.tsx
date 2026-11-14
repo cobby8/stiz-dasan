@@ -1,11 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import InlineConfirm from "@/components/parent/InlineConfirm";
 import { customerMessage } from "@/components/parent/customerMessage";
+import { academyTel } from "@/lib/academyPhoneRules";
 import type { UpcomingClassDate } from "@/lib/regular/parent-regular-absence";
 import type { ArrivalDateInfo } from "@/lib/regular/parent-arrival-notice";
 import {
+  ARRIVAL_CHANGE_LIMIT_MESSAGE,
   ARRIVAL_KINDS,
   ARRIVAL_KIND_LABEL,
   ARRIVAL_NOTICE_NAME,
@@ -35,6 +38,7 @@ export default function ArrivalNoticeArea({
   onOpen,
   onClose,
   onChanged,
+  academyPhone = null,
 }: {
   d: UpcomingClassDate;
   info: ArrivalDateInfo | undefined;
@@ -44,12 +48,16 @@ export default function ArrivalNoticeArea({
   onClose: () => void;
   /** 일을 마치면 결과 글을 넘긴다(부모가 보이고 화면을 다시 읽는다) */
   onChanged: (message: string, error?: string) => Promise<void> | void;
+  /** 학원 대표 번호(설정값) — 하루 변경 상한에 닿았을 때의 «학원에 전화하기» 버튼용. 없으면 글자만 보인다 */
+  academyPhone?: string | null;
 }) {
   // 부모가 이 부품을 «줄·열린 칸» 키로 다시 만들어 준다 — 시각 바꾸기로 열면 지금 시각이 미리 골라져 있다
   const [time, setTime] = useState(() => (formKind ? info?.notices.find((notice) => notice.kind === formKind)?.expectedTime ?? "" : ""));
   // 셔틀 질문의 답: null = 아직 안 고름
   const [skipShuttle, setSkipShuttle] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
+  // 하루 변경 상한(5번)에 닿았나 — 닿으면 이 줄에 안내 글과 전화 버튼을 보인다
+  const [limitHit, setLimitHit] = useState(false);
 
   // 결석을 알린 날은 지각·조퇴를 보이지 않는다(결석이 우선 — 서버도 같은 규칙)
   if (!info || d.reported || d.locked) return null;
@@ -68,6 +76,12 @@ export default function ArrivalNoticeArea({
         body: JSON.stringify({ studentId: d.studentId, classId: d.classId, date: d.date, ...body }),
       });
       const result = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+      if (!res.ok && result?.code === "ARRIVAL_CHANGE_LIMIT") {
+        // 저장도 알림도 되지 않았다 — 글과 전화 버튼은 이 줄에서 보인다(위쪽 오류 칸에는 겹쳐 쓰지 않는다)
+        setLimitHit(true);
+        await onChanged("", "");
+        return;
+      }
       if (!res.ok) throw new Error(typeof result?.error === "string" ? result.error : fallback);
       setTime("");
       setSkipShuttle(null);
@@ -104,6 +118,17 @@ export default function ArrivalNoticeArea({
 
   return (
     <div className="mb-1.5 space-y-1.5">
+      {/* 하루 변경 상한 — 여기서 더 바꿀 수 없으니 바로 전화로 잇는다(번호가 없으면 글자만) */}
+      {limitHit && (
+        <div role="alert" className="flex flex-wrap items-center gap-2 rounded-xl bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm font-medium text-[var(--color-academy-warning)]">
+          <span className="min-w-0 flex-1 break-keep">{ARRIVAL_CHANGE_LIMIT_MESSAGE}</span>
+          {academyTel(academyPhone) && (
+            <a href={`tel:${academyTel(academyPhone)}`} className="academy-button-secondary shrink-0">
+              학원에 전화하기
+            </a>
+          )}
+        </div>
+      )}
       {/* 알린 내용 — 한 줄: «지각 예정 17:20» + (열려 있으면) 시각 바꾸기 · 알림 취소 */}
       {info.notices.map((notice) => (
         <div key={notice.kind} className="flex min-h-11 flex-wrap items-center justify-end gap-2">
@@ -160,6 +185,15 @@ export default function ArrivalNoticeArea({
               ))}
             </select>
           </label>
+
+          {/* 셔틀 변경을 받는 범위(14일) 밖 날짜 — 질문 대신 한 줄 안내 + 셔틀 변경으로 가는 길 */}
+          {!editing && !askShuttle && info.shuttleLater?.[formKind] && (
+            <p className="basis-full break-keep text-xs text-[var(--color-academy-muted)]">
+              {ARRIVAL_SHUTTLE_WORD[formKind]} 셔틀을 안 타면 날짜가 가까워졌을 때(2주 전부터){" "}
+              <Link href={`/mypage/shuttle?studentId=${encodeURIComponent(d.studentId)}`} className="font-semibold underline">셔틀 변경</Link>
+              에서 따로 알려 주세요.
+            </p>
+          )}
 
           {askShuttle && (
             <div role="group" aria-label={`${ARRIVAL_SHUTTLE_WORD[formKind]} 셔틀`} className="basis-full">

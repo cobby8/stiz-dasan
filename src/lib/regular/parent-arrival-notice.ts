@@ -11,6 +11,7 @@
 //   1) IDOR — studentId 가 그 부모의 자녀(childAccessSql)이고 classId 가 그 학생의 «쓸 수 있는» 수강인지 SQL 로 재검증.
 //   2) 날짜·시각은 서버 시계(KST)로 판정 — 그 반 요일, 목록 범위(오늘 포함 4주), 복귀 예정 반은 복귀일 이후.
 //   3) 한 아이·한 반·하루에 지각 1건 + 조퇴 1건(DB 유일 키) — 다시 알리면 같은 행의 시각만 바뀐다.
+//   4) 하루 변경 상한 — 알리기·시각 바꾸기·취소 합계 5번(changeCount). 넘으면 저장·알림 없이 ARRIVAL_CHANGE_LIMIT.
 // ★ 표(RegularArrivalNotice)가 아직 없으면: 화면 데이터는 «쓸 수 없음»(입구 숨김), 쓰기는 ARRIVAL_UNAVAILABLE.
 // ⚠️ PgBouncer → $queryRawUnsafe / $executeRawUnsafe 만.
 import { childAccessSql } from "@/lib/account/child-access";
@@ -24,12 +25,14 @@ import { arrivalNoticeReady } from "@/lib/regular/arrival-notice-read";
 import {
   ARRIVAL_KINDS,
   ARRIVAL_NOTICE_NAME,
+  arrivalChangeLimitReached,
   arrivalNoticeLabel,
   arrivalTimesConsistent,
   isArrivalKind,
   isArrivalNoticeOpen,
   isValidExpectedTime,
   shuttleAskNeeded,
+  shuttleLaterNoticeNeeded,
   shuttleDirectionOf,
   type ArrivalKind,
 } from "@/lib/regular/arrivalNoticeRules";
@@ -57,6 +60,8 @@ export type ArrivalDateInfo = {
   open: Record<ArrivalKind, boolean>;
   /** 알릴 때 셔틀을 물어볼 날인가(조퇴 → 하원 셔틀, 지각 → 등원 셔틀) */
   ask: Record<ArrivalKind, boolean>;
+  /** 셔틀 질문이 안 뜨는 먼 날짜인데 그 방향 셔틀을 타는 아이인가 — «셔틀 변경에서 따로 알려 주세요» 한 줄을 보인다 */
+  shuttleLater?: Record<ArrivalKind, boolean>;
   notices: ArrivalNoticeView[];
 };
 export type ParentArrivalScreen = { available: boolean; byKey: Record<string, ArrivalDateInfo> };
@@ -109,14 +114,30 @@ function askFlags(
   return { LATE: flag("LATE"), EARLY: flag("EARLY") };
 }
 
+/**
+ * 셔틀 질문이 뜨지 않는 먼 날짜(셔틀 변경을 받는 14일 범위 밖)에 그 방향 셔틀을 타는 아이인가 —
+ * 화면이 «셔틀은 셔틀 변경에서 따로 알려 주세요» 한 줄을 보인다. 먼 달의 명단은 아직 없을 수 있어 읽어 둔 가장 늦은 달 명단으로 본다.
+ */
+function laterFlags(
+  studentId: string, date: string, today: string, rosterByMonth: Map<string, RosterRow[]>,
+): Record<ArrivalKind, boolean> {
+  const weekday = kstDow(date);
+  const lastMonth = [...rosterByMonth.keys()].sort().at(-1);
+  const roster = rosterByMonth.get(date.slice(0, 7)) ?? (lastMonth ? rosterByMonth.get(lastMonth) : undefined) ?? [];
+  const rosterDirections = roster.filter((row) => row.studentId === studentId && Number(row.weekday) === weekday).map((row) => row.direction);
+  const withinShuttleWindow = date >= today && date <= addDays(today, MAX_DAYS_AHEAD);
+  const flag = (kind: ArrivalKind) => shuttleLaterNoticeNeeded({ kind, rosterDirections, withinShuttleWindow });
+  return { LATE: flag("LATE"), EARLY: flag("EARLY") };
+}
+
 async function loadShuttleMaterial(studentIds: string[], today: string) {
   const end = addDays(today, MAX_DAYS_AHEAD);
   const months = [...new Set([today.slice(0, 7), end.slice(0, 7)])];
-  const [rosters, exceptions] = await Promise.all([
-    Promise.all(months.map(async (month) => [month, await loadRosterDirections(studentIds, month)] as const)),
-    loadLiveExceptions(studentIds, today, end),
-  ]);
-  return { rosterByMonth: new Map(rosters), exceptions };
+  // 하나씩 차례로 읽는다 — DB 연결 한도(5)를 이 화면 하나가 한꺼번에 차지하지 않게(코드 리뷰 R4)
+  const rosterByMonth = new Map<string, RosterRow[]>();
+  for (const month of months) rosterByMonth.set(month, await loadRosterDirections(studentIds, month));
+  const exceptions = await loadLiveExceptions(studentIds, today, end);
+  return { rosterByMonth, exceptions };
 }
 
 /**
@@ -172,6 +193,7 @@ export async function loadParentArrivalScreen(parentUserId: string, children: Up
               EARLY: isArrivalNoticeOpen("EARLY", d.date, d.startTime, endTime, now.ymd, now.hm),
             },
             ask: askFlags(d.studentId, d.date, now.ymd, shuttle.rosterByMonth, shuttle.exceptions),
+            shuttleLater: laterFlags(d.studentId, d.date, now.ymd, shuttle.rosterByMonth),
             notices,
           };
         }
@@ -223,6 +245,8 @@ async function notifyStaffOfArrivalNotice(input: {
       stableEventKey: `arrival-notice:${input.recordId}:${input.action}:${input.eventVersion}`,
       eventType: `ARRIVAL_NOTICE_${input.action}`,
       studentId: input.studentId,
+      // 분류는 결석과 같은 «ABSENCE»(출결 묶음) — 이 값은 발송 장부의 trigger 로만 쓰이고, 관리자 «운영 알림 전달 현황»이
+      // ABSENCE·SHUTTLE_EXCEPTION 두 묶음만 읽는다. 새 값을 만들면 그 화면에서 지각·조퇴 알림이 보이지 않는다(코드 리뷰 R6).
       type: "ABSENCE",
       title: input.action === "REPORTED" ? `${name} 알림` : `${name} 알림 취소`,
       message: input.action === "REPORTED"
@@ -285,8 +309,8 @@ export async function submitArrivalNotice(parentUserId: string, input: SubmitArr
   if (absent[0]) throw new Error("ARRIVAL_ABSENT");
 
   // 같은 날의 기존 알림(지각·조퇴) — 같은 내용 다시 보내기 판정 + 지각·조퇴 시각 순서 확인
-  const existing = await prisma.$queryRawUnsafe<{ kind: string; expectedTime: string; status: string }[]>(
-    `SELECT kind, "expectedTime" AS "expectedTime", status FROM "RegularArrivalNotice"
+  const existing = await prisma.$queryRawUnsafe<{ kind: string; expectedTime: string; status: string; changeCount: number }[]>(
+    `SELECT kind, "expectedTime" AS "expectedTime", status, "changeCount" AS "changeCount" FROM "RegularArrivalNotice"
       WHERE "studentId" = $1 AND "classId" = $2 AND date = $3::date`,
     studentId, classId, date,
   );
@@ -306,6 +330,8 @@ export async function submitArrivalNotice(parentUserId: string, input: SubmitArr
   if (same && same.expectedTime === expectedTime && !wantSkip) {
     return { ok: true as const, noOp: true as const, kind, expectedTime, shuttleSkipped: false };
   }
+  // 하루 변경 상한(알리기·시각 바꾸기·취소 합계 5번) — 넘으면 저장도 알림도 하지 않는다
+  if (arrivalChangeLimitReached(existing.map((row) => row.changeCount))) throw new Error("ARRIVAL_CHANGE_LIMIT");
 
   const direction = shuttleDirectionOf(kind);
   // 셔틀 기록의 한마디 — 학부모 «셔틀 변경» 목록·기사님 알림에서 왜 안 타는지 보이게
@@ -314,14 +340,15 @@ export async function submitArrivalNotice(parentUserId: string, input: SubmitArr
     // 한 아이·한 반·하루·종류당 1건 — 취소했던 줄은 되살리고(옛 셔틀 연결은 지운다), 알린 줄은 시각만 바꾼다
     const saved = await tx.$queryRawUnsafe<{ id: string; eventVersion: string }[]>(
       `INSERT INTO "RegularArrivalNotice"
-          ("studentId","classId",date,kind,"expectedTime",status,"reportedByUserId")
-       VALUES ($1,$2,$3::date,$4,$5,'REPORTED',$6)
+          ("studentId","classId",date,kind,"expectedTime",status,"reportedByUserId","changeCount")
+       VALUES ($1,$2,$3::date,$4,$5,'REPORTED',$6,1)
        ON CONFLICT ("studentId","classId",date,kind) DO UPDATE
           SET "expectedTime" = EXCLUDED."expectedTime",
               status = 'REPORTED',
               "reportedByUserId" = EXCLUDED."reportedByUserId",
               "shuttleExceptionId" = CASE WHEN "RegularArrivalNotice".status = 'CANCELLED' THEN NULL
                                           ELSE "RegularArrivalNotice"."shuttleExceptionId" END,
+              "changeCount" = "RegularArrivalNotice"."changeCount" + 1,
               "updatedAt" = now()
        RETURNING id, to_char("updatedAt",'YYYYMMDDHH24MISSUS') AS "eventVersion"`,
       studentId, classId, date, kind, expectedTime, parentUserId,
@@ -392,11 +419,18 @@ export async function cancelArrivalNotice(parentUserId: string, input: { student
   if (!isArrivalNoticeOpen(kind, date, current[0].startTime, current[0].endTime, now.ymd, now.hm)) {
     throw new Error(kind === "LATE" ? "ARRIVAL_CLOSED_LATE" : "ARRIVAL_CLOSED_EARLY");
   }
+  // 하루 변경 상한 — 취소도 한 번으로 센다(알리기·취소를 되풀이해 알림을 쏟아내지 못하게)
+  const counts = await prisma.$queryRawUnsafe<{ total: number }[]>(
+    `SELECT COALESCE(SUM("changeCount"), 0)::int AS total FROM "RegularArrivalNotice"
+      WHERE "studentId" = $1 AND "classId" = $2 AND date = $3::date`,
+    studentId, classId, date,
+  );
+  if (arrivalChangeLimitReached([counts[0]?.total])) throw new Error("ARRIVAL_CHANGE_LIMIT");
 
   const outcome = await prisma.$transaction(async (tx) => {
     const canceled = await tx.$queryRawUnsafe<{ id: string; shuttleExceptionId: string | null; eventVersion: string }[]>(
       `UPDATE "RegularArrivalNotice"
-          SET status = 'CANCELLED', "updatedAt" = now()
+          SET status = 'CANCELLED', "changeCount" = "changeCount" + 1, "updatedAt" = now()
         WHERE id = $1 AND "studentId" = $2 AND status = 'REPORTED'
         RETURNING id, "shuttleExceptionId" AS "shuttleExceptionId", to_char("updatedAt",'YYYYMMDDHH24MISSUS') AS "eventVersion"`,
       current[0].id, studentId,

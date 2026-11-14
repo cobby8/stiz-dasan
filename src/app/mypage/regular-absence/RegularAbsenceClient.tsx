@@ -715,7 +715,7 @@ export default function RegularAbsenceClient({
                                 <ContactActions label="학원 확정" contact={contact} />
                               ) : !changeOpen(d) ? (
                                 // 마감 뒤(수업 1시간 전 지남) — 버튼 대신 «마감» + 전화·문의(서버도 같은 규칙으로 막는다)
-                                <ContactActions label="마감" contact={contact} />
+                                <ContactActions label={arrivalKinds.length > 0 || (arrivalInfo?.notices.length ?? 0) > 0 ? "결석 알리기 마감" : "마감"} contact={contact} />
                               ) : d.reported && creditBlocksCancel(d) ? (
                                 // 이미 그 결석의 보강을 들었다 — 신고 취소 불가(서버도 막는다)
                                 <ContactActions label="보강을 이미 들어 취소할 수 없어요" contact={contact} />
@@ -764,7 +764,7 @@ export default function RegularAbsenceClient({
                                 <button
                                   type="button"
                                   disabled={busy}
-                                  onClick={() => setOpenKey(key)}
+                                  onClick={() => { setArrivalForm(null); setOpenKey(key); }}
                                   // 행의 «여는» 버튼 = 옅은 바탕(tonal). 꽉 찬 색은 폼 안 «알리기»만(M-08)
                                   className="academy-button-tonal shrink-0"
                                 >
@@ -784,6 +784,7 @@ export default function RegularAbsenceClient({
                                 onOpen={(kind) => { setOpenKey(""); setMoveKey(""); setArrivalForm({ key, kind }); }}
                                 onClose={() => setArrivalForm(null)}
                                 onChanged={onPeriodChanged}
+                                academyPhone={contact.phone}
                               />
                             )}
 

@@ -11,7 +11,7 @@ import { changeLine } from "@/lib/parent/childEditRules";
 import { realBirthYmd } from "@/lib/makeup/student-grade";
 import { formatPhoneInput } from "@/lib/application-display-format";
 import PhoneChangeButton from "@/components/account/PhoneChangeButton";
-import type { ShuttleDayLeg, ShuttleDayRow, ShuttleDayStatus } from "@/lib/shuttle/childShuttleRules";
+import { SHUTTLE_SELF_STATUS_TEXT, type ShuttleDayLeg, type ShuttleDayRow, type ShuttleDayStatus } from "@/lib/shuttle/childShuttleRules";
 import { presetHref } from "@/lib/parent/classCards";
 import { kstLabel } from "@/lib/datetime/kst";
 import ProfilePhotoEditor from "@/components/parent/ProfilePhotoEditor";
@@ -238,10 +238,10 @@ const DAY_TONE: Record<ShuttleDayStatus, StatusTone> = {
   CHECK: "warning",
 };
 
-/** 운행 일정 한 다리 «등원 17:45 다산푸르지오» / «등원 안 탐(신청)» / «등원 다른 곳: 학교 정문» */
+/** 운행 일정 한 다리 «등원 17:45 다산푸르지오» / «등원 자차(신청)» / «등원 다른 곳: 학교 정문» */
 function legText(name: "등원" | "하원", leg: ShuttleDayLeg | null): string | null {
   if (!leg) return null;
-  if (leg.state === "SKIP") return `${name} 안 탐(신청)`;
+  if (leg.state === "SKIP") return `${name} 자차(신청)`;
   if (leg.state === "CHANGED") return `${name} 다른 곳: ${leg.changedTo ?? "-"}`;
   return [name, leg.time, leg.stopName].filter(Boolean).join(" ");
 }
@@ -309,7 +309,7 @@ export function ChildShuttleSection({ shuttle, studentId }: { shuttle: ChildShut
                   {days.map((d) => (
                     <li key={`${d.ymd}|${d.classTime ?? ""}`} className="flex min-h-11 items-center gap-2 px-3 py-1.5 text-sm">
                       <span className="w-16 shrink-0 text-xs tabular-nums text-[var(--color-academy-muted)]">{kstLabel(d.ymd)}</span>
-                      <Badge tone={d.statusText === "안 탐(신청)" ? "info" : DAY_TONE[d.status]}>{d.statusText}</Badge>
+                      <Badge tone={d.statusText === SHUTTLE_SELF_STATUS_TEXT ? "info" : DAY_TONE[d.status]}>{d.statusText}</Badge>
                       <span className="min-w-0 flex-1 break-keep tabular-nums text-[var(--color-academy-ink)]">
                         {dayDetail(d)}
                       </span>

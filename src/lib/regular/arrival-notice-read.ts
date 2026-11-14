@@ -6,13 +6,18 @@
 import { prisma } from "@/lib/prisma";
 import { arrivalNoticeLabel } from "@/lib/regular/arrivalNoticeRules";
 
+// 표가 «있다»는 답만 기억한다(한 번 생긴 표는 사라지지 않는다). «없다»는 기억하지 않는다 — 마이그레이션을 적용하면 재배포 없이 바로 켜진다.
+let tableReady = false;
+
 /** 표가 있는가(마이그레이션 적용 여부). 확인 자체가 실패해도 false */
 export async function arrivalNoticeReady(): Promise<boolean> {
+  if (tableReady) return true;
   try {
     const rows = await prisma.$queryRawUnsafe<{ ready: boolean }[]>(
       `SELECT to_regclass('public."RegularArrivalNotice"') IS NOT NULL AS ready`,
     );
-    return rows[0]?.ready === true;
+    tableReady = rows[0]?.ready === true;
+    return tableReady;
   } catch {
     return false;
   }

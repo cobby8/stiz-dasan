@@ -126,15 +126,23 @@ test("③ 셔틀은 «그날 그 방향을 타는 아이»에게만 묻는다", 
   assert.equal(ask("EARLY", ["ALIGHT"], [{ direction: "DROPOFF", kind: "SKIP" }]), false);
   assert.equal(ask("EARLY", ["ALIGHT"], [{ direction: "BOTH", kind: "SKIP" }]), false);
   assert.equal(ask("EARLY", ["ALIGHT"], [{ direction: "PICKUP", kind: "SKIP" }]), true, "등원만 안 타는 날");
-  assert.equal(ask("EARLY", ["ALIGHT"], [{ direction: "DROPOFF", kind: "LOCATION" }]), true, "다른 곳에서 내리는 날은 묻는다");
+  // 보안 검수: 그날 그 방향에 학부모가 이미 낸 변경(다른 곳에서 타요 포함)이 있으면 묻지도 건드리지도 않는다
+  assert.equal(ask("EARLY", ["ALIGHT"], [{ direction: "DROPOFF", kind: "LOCATION" }]), false, "다른 곳에서 내리는 날");
+  assert.equal(ask("EARLY", ["ALIGHT"], [{ direction: "BOTH", kind: "LOCATION" }]), false);
+  assert.equal(ask("EARLY", ["ALIGHT"], [{ direction: "PICKUP", kind: "LOCATION" }]), true, "반대 방향 변경은 상관없다");
+  // 셔틀 변경을 받는 범위(14일) 밖: 질문 대신 «셔틀 변경에서 따로» 안내 — 그 방향을 타는 아이에게만
+  const later = (kind, rosterDirections, withinShuttleWindow) => rules.shuttleLaterNoticeNeeded({ kind, rosterDirections, withinShuttleWindow });
+  assert.equal(later("EARLY", ["ALIGHT"], false), true);
+  assert.equal(later("EARLY", ["BOARD"], false), false);
+  assert.equal(later("EARLY", ["ALIGHT"], true), false, "범위 안이면 질문이 뜬다");
   assert.equal(ask("EARLY", ["ALIGHT"], [], false), false, "셔틀 변경을 받는 범위(14일) 밖");
   assert.equal(rules.shuttleDirectionOf("EARLY"), "DROPOFF");
   assert.equal(rules.shuttleDirectionOf("LATE"), "PICKUP");
 });
 
 // ── ④ 서버(가짜 DB) ─────────────────────────────────────────────────────────
-function fakeWorld({ owned = true, roster = ["BOARD", "ALIGHT"], absent = false } = {}) {
-  const world = { sql: [], notices: [], exceptions: [], staffNotices: [], shuttleNotices: [], shuttleSaves: [], seq: 0 };
+function fakeWorld({ owned = true, roster = ["BOARD", "ALIGHT"], absent = false, exceptions = [] } = {}) {
+  const world = { sql: [], notices: [], exceptions: exceptions.map((x) => ({ ...x })), staffNotices: [], shuttleNotices: [], shuttleSaves: [], seq: 0 };
   const query = async (sql, ...args) => {
     world.sql.push(sql);
     if (sql.includes("to_regclass")) return [{ ready: true }];
@@ -147,15 +155,16 @@ function fakeWorld({ owned = true, roster = ["BOARD", "ALIGHT"], absent = false 
     if (sql.includes('INSERT INTO "RegularArrivalNotice"')) {
       const [studentId, classId, date, kind, expectedTime] = args;
       let row = world.notices.find((n) => n.studentId === studentId && n.classId === classId && n.date === date && n.kind === kind);
-      if (!row) { row = { id: `n${++world.seq}`, studentId, classId, date, kind, shuttleExceptionId: null }; world.notices.push(row); }
+      if (!row) { row = { id: `n${++world.seq}`, studentId, classId, date, kind, shuttleExceptionId: null, changeCount: 0 }; world.notices.push(row); }
       else if (row.status === "CANCELLED") row.shuttleExceptionId = null;
-      Object.assign(row, { expectedTime, status: "REPORTED" });
+      Object.assign(row, { expectedTime, status: "REPORTED", changeCount: row.changeCount + 1 });
       return [{ id: row.id, eventVersion: `v${++world.seq}` }];
     }
     if (sql.includes('UPDATE "RegularArrivalNotice"') && sql.includes("'CANCELLED'")) {
       const row = world.notices.find((n) => n.id === args[0] && n.status === "REPORTED");
       if (!row) return [];
       row.status = "CANCELLED";
+      row.changeCount += 1;
       return [{ id: row.id, shuttleExceptionId: row.shuttleExceptionId, eventVersion: `v${++world.seq}` }];
     }
     if (sql.includes('UPDATE "ShuttleDayException"')) {
@@ -169,6 +178,10 @@ function fakeWorld({ owned = true, roster = ["BOARD", "ALIGHT"], absent = false 
       return world.notices
         .filter((n) => n.studentId === studentId && n.classId === classId && n.date === date && n.kind === kind && n.status === "REPORTED")
         .map((n) => ({ id: n.id, expectedTime: n.expectedTime, startTime: START, endTime: END, studentName: "합성", className: "목 5시" }));
+    }
+    if (sql.includes('SUM("changeCount")')) {
+      const [studentId, classId, date] = args;
+      return [{ total: world.notices.filter((n) => n.studentId === studentId && n.classId === classId && n.date === date).reduce((sum, n) => sum + n.changeCount, 0) }];
     }
     if (sql.includes('FROM "RegularArrivalNotice"')) {
       const [studentId, classId, date] = args;
@@ -492,4 +505,113 @@ test("⑦ 결석 알리기 화면의 지각·조퇴 칸 — 알린 내용 줄 ·
   // 아이콘·이모지 없이 글자만, 굵기는 400·500·600·700 만
   const source = read("src/app/mypage/regular-absence/ArrivalNoticeArea.tsx");
   assert.doesNotMatch(source, /UiIcon|material-symbols|lucide|font-extrabold|font-black/);
+});
+
+// ── ⑧ 보안 검수·코드 리뷰 반영 ───────────────────────────────────────────────
+test("⑧ 하루 변경 상한: 알리기·시각 바꾸기·취소 합계 5번 — 6번째는 저장도 알림도 하지 않는다", async () => {
+  const { world, service } = fakeWorld();
+  setClock(DAY, "12:00");
+  const late = (expectedTime) => service.submitArrivalNotice("p1", { ...INPUT, kind: "LATE", expectedTime });
+  await late("17:10"); // 1
+  await late("17:20"); // 2
+  await service.cancelArrivalNotice("p1", { ...INPUT, kind: "LATE" }); // 3
+  await service.submitArrivalNotice("p1", { ...INPUT, kind: "EARLY", expectedTime: "18:00", skipShuttle: true }); // 4 — 조퇴 행도 같은 합계
+  await late("17:30"); // 5
+  const before = { staff: world.staffNotices.length, shuttle: world.shuttleNotices.length, saves: world.shuttleSaves.length };
+  assert.equal(before.staff, 5);
+  // 6번째: 시각 바꾸기·취소·다른 종류 모두 거절
+  await assert.rejects(late("17:40"), /ARRIVAL_CHANGE_LIMIT/);
+  await assert.rejects(service.cancelArrivalNotice("p1", { ...INPUT, kind: "LATE" }), /ARRIVAL_CHANGE_LIMIT/);
+  await assert.rejects(service.cancelArrivalNotice("p1", { ...INPUT, kind: "EARLY" }), /ARRIVAL_CHANGE_LIMIT/);
+  await assert.rejects(service.submitArrivalNotice("p1", { ...INPUT, kind: "EARLY", expectedTime: "18:10" }), /ARRIVAL_CHANGE_LIMIT/);
+  assert.deepEqual({ staff: world.staffNotices.length, shuttle: world.shuttleNotices.length, saves: world.shuttleSaves.length }, before, "알림·셔틀 기록이 늘지 않는다");
+  assert.equal(world.notices.find((n) => n.kind === "LATE").expectedTime, "17:30", "저장도 바뀌지 않는다");
+  assert.equal(world.notices.find((n) => n.kind === "EARLY").status, "REPORTED");
+  assert.equal(world.exceptions[0].canceled, false, "딸린 셔틀 기록도 그대로");
+  // 같은 내용을 다시 보내는 것은 변경이 아니라 그대로 성공(noOp)
+  assert.equal((await late("17:30")).noOp, true);
+  // 다른 날짜는 따로 센다
+  assert.equal((await service.submitArrivalNotice("p1", { ...INPUT, date: "2026-11-26", kind: "LATE", expectedTime: "17:10" })).ok, true);
+  assert.equal(rules.ARRIVAL_DAILY_CHANGE_LIMIT, 5);
+  assert.equal(rules.arrivalChangeLimitReached([2, 3]), true);
+  assert.equal(rules.arrivalChangeLimitReached([2, 2]), false);
+  assert.equal(rules.arrivalChangeLimitReached([null, undefined]), false);
+});
+
+test("⑧ 상한 안내: 서버 글자 + 화면의 «학원에 전화하기»(번호 없으면 글자만)", () => {
+  const route = read("src/app/api/mypage/regular-absence/arrival/route.ts");
+  assert.match(route, /ARRIVAL_CHANGE_LIMIT: ARRIVAL_CHANGE_LIMIT_MESSAGE/);
+  assert.equal(rules.ARRIVAL_CHANGE_LIMIT_MESSAGE, "오늘은 더 바꿀 수 없어요. 학원에 전화해 주세요.");
+  const area = read("src/app/mypage/regular-absence/ArrivalNoticeArea.tsx");
+  assert.match(area, /result\?\.code === "ARRIVAL_CHANGE_LIMIT"/);
+  assert.match(area, /academyTel\(academyPhone\) && \(/);
+  assert.match(area, /학원에 전화하기/);
+  assert.match(read("src/app/mypage/regular-absence/RegularAbsenceClient.tsx"), /academyPhone=\{contact\.phone\}/);
+  const sql = read("prisma/migrations/20261115140000_regular_arrival_notice/migration.sql");
+  assert.match(sql, /"changeCount" INTEGER NOT NULL DEFAULT 0/);
+  assert.match(sql, /ADD COLUMN IF NOT EXISTS "changeCount" INTEGER NOT NULL DEFAULT 0/);
+});
+
+test("⑧ 그날 그 방향에 미리 낸 셔틀 변경(다른 곳에서 타요)이 있으면 «셔틀도 안 타요»를 보내도 건드리지 않는다", async () => {
+  const { world, service } = fakeWorld({ exceptions: [{ id: "loc1", studentId: "s1", ymd: DAY, direction: "DROPOFF", kind: "LOCATION", canceled: false }] });
+  setClock(DAY, "12:00");
+  const result = await service.submitArrivalNotice("p1", { ...INPUT, kind: "EARLY", expectedTime: "18:00", skipShuttle: true });
+  assert.equal(result.ok, true);
+  assert.equal(result.shuttleSkipped, false);
+  assert.equal(world.shuttleSaves.length, 0, "기존 변경을 SKIP 으로 덮어쓰지 않는다");
+  assert.equal(world.exceptions.length, 1);
+  assert.equal(world.exceptions[0].canceled, false);
+  assert.equal(world.notices[0].shuttleExceptionId, null);
+  // 알림을 취소해도 기존 변경은 그대로
+  await service.cancelArrivalNotice("p1", { ...INPUT, kind: "EARLY" });
+  assert.equal(world.exceptions[0].canceled, false);
+  assert.equal(world.shuttleNotices.length, 0);
+});
+
+test("⑧ 학부모 홈 «오늘 셔틀»·아이 기록: 자차로 신청한 방향은 «자차»로 보인다", () => {
+  const summary = load("src/lib/mypage/summary.ts");
+  const item = (extra) => ({ id: "x", serviceDate: DAY, direction: "PICKUP", status: "CONFIRMED", pickupEtaLabel: "16:40 승차", dropoffEtaLabel: null, ...extra });
+  // 하원만 자차: 등원은 예정 시각 그대로, 하원 줄은 «하원 자차»
+  assert.deepEqual(summary.todayShuttleLineTexts([item({ selfRideDirections: ["DROPOFF"] })]), ["등원 16:40 승차", "하원 자차"]);
+  // 등원만 자차
+  assert.deepEqual(
+    summary.todayShuttleLineTexts([item({ direction: "DROPOFF", pickupEtaLabel: null, dropoffEtaLabel: "18:40 하차", selfRideDirections: ["PICKUP"] })]),
+    ["등원 자차", "하원 18:40 하차"],
+  );
+  // 표시가 없으면 종전 그대로
+  assert.deepEqual(summary.todayShuttleLineTexts([item({})]), ["등원 16:40 승차"]);
+
+  const childRules = load("src/lib/shuttle/childShuttleRules.ts");
+  const leg = (state, time) => ({ stopName: "푸르지오", time, state, note: null, changedTo: null });
+  const day = (board, alight) => ({ ymd: DAY, weekday: 4, dayLabel: "목", classId: "c1", className: "목 5시", classTime: "17:00", status: "RUN", statusText: "운행", board, alight });
+  const items = childRules.rosterOverviewItems("s1", "합성", [day(leg("RUN", "16:40"), leg("SKIP", "18:40"))]);
+  assert.equal(items.length, 1, "타지 않는 방향은 항목을 만들지 않는다(종전 그대로)");
+  assert.deepEqual(items[0].selfRideDirections, ["DROPOFF"]);
+  const plain = childRules.rosterOverviewItems("s1", "합성", [day(leg("RUN", "16:40"), leg("RUN", "18:40"))]);
+  assert.equal(plain.length, 2);
+  assert.equal("selfRideDirections" in plain[0], false, "자차가 없으면 칸 자체가 없다");
+  assert.equal(childRules.SHUTTLE_SELF_STATUS_TEXT, "자차(신청)");
+});
+
+test("⑧ 카카오 대화의 «안 타요» 글자 — 보이는 글자만 자차로, 받는 말은 그대로", () => {
+  const source = read("src/lib/kakao-shuttle-flow.ts");
+  assert.match(source, /label: "안 타요\(자차\)", messageText: `\$\{P\} 안 타요`/);
+  assert.match(source, /parentShuttleChangeLabel\("SKIP", state\.direction \?\? ""\)/);
+});
+
+test("⑧ 표 확인은 «있다»만 기억하고, 셔틀 재료는 차례로 읽는다(DB 연결 한도)", async () => {
+  let calls = 0;
+  let ready = false;
+  const reader = load("src/lib/regular/arrival-notice-read.ts", {
+    "@/lib/prisma": { prisma: { $queryRawUnsafe: async () => { calls += 1; return [{ ready }]; } } },
+  });
+  assert.equal(await reader.arrivalNoticeReady(), false);
+  assert.equal(await reader.arrivalNoticeReady(), false);
+  assert.equal(calls, 2, "«없다»는 기억하지 않는다 — 마이그레이션 뒤 바로 켜진다");
+  ready = true;
+  assert.equal(await reader.arrivalNoticeReady(), true);
+  assert.equal(await reader.arrivalNoticeReady(), true);
+  assert.equal(calls, 3, "«있다»는 한 번만 묻는다");
+  const service = read("src/lib/regular/parent-arrival-notice.ts");
+  assert.match(service, /for \(const month of months\) rosterByMonth\.set\(month, await loadRosterDirections\(studentIds, month\)\);/);
 });

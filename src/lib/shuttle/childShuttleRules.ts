@@ -17,7 +17,7 @@
 
 import { addDaysKst, kstDow } from "@/lib/datetime/kst";
 import { dowToRosterWeekday, hhmm } from "@/lib/shuttle/regularRosterEtaLogic";
-import { appliesToDirection, describeException } from "@/lib/shuttle/dayExceptionRules";
+import { PARENT_SHUTTLE_SKIP_LABEL, appliesToDirection, describeException } from "@/lib/shuttle/dayExceptionRules";
 import { usableOn } from "@/lib/enrollment/resumeWindow";
 
 /** 명단 한 행에서 쓰는 칸만 */
@@ -62,6 +62,9 @@ export type WeeklyShuttleRow = {
 
 // NO_CLASS: 다니는 정규 반이 하나도 없다(퇴원) · CHECK: 명단 요일·시간에 맞는 반을 못 찾았다 — 둘 다 «운행»으로 치지 않는다(안전한 쪽)
 export type ShuttleDayStatus = "RUN" | "HOLIDAY" | "PAUSED" | "ENDED" | "NOT_STARTED" | "ABSENT" | "NO_CLASS" | "CHECK";
+/** 그날 등원·하원을 모두 «자차»로 신청한 날의 상태 글자(학부모 화면) — 셔틀 변경 화면의 «자차»와 같은 말 */
+export const SHUTTLE_SELF_STATUS_TEXT = "자차(신청)";
+
 export type ShuttleDayLeg = ShuttleLeg & {
   /** RUN 운행 · SKIP 안 탐(«오늘만» 신청) · CHANGED 다른 곳에서 탐 */
   state: "RUN" | "SKIP" | "CHANGED";
@@ -217,7 +220,8 @@ export function buildShuttleDays(input: {
         if (status !== "RUN") return { ...base, state: "RUN", note: null, changedTo: null };
         const ex = input.exceptions.find((e) => e.ymd === ymd && appliesToDirection(e.direction, dir));
         if (!ex) return { ...base, state: "RUN", note: null, changedTo: null };
-        if (ex.kind === "SKIP") return { ...base, state: "SKIP", note: describeException(ex), changedTo: null };
+        // 학부모에게는 방향에 맞는 자차 글자로(«직접 데려다줘요 / 직접 데리러 가요(자차)») — 셔틀 변경 화면과 같은 말
+        if (ex.kind === "SKIP") return { ...base, state: "SKIP", note: PARENT_SHUTTLE_SKIP_LABEL[dir], changedTo: null };
         return { ...base, state: "CHANGED", note: describeException(ex), changedTo: ex.location ?? null };
       };
       const board = leg(p.board, "PICKUP");
@@ -231,7 +235,7 @@ export function buildShuttleDays(input: {
         className: p.className,
         classTime: p.classTime,
         status,
-        statusText: allSkipped ? "안 탐(신청)" : SHUTTLE_DAY_STATUS_TEXT[status],
+        statusText: allSkipped ? SHUTTLE_SELF_STATUS_TEXT : SHUTTLE_DAY_STATUS_TEXT[status],
         board,
         alight,
         planMissing,
@@ -262,6 +266,8 @@ export type RosterOverviewItem = {
   rideStatus: null;
   pickupEtaLabel: string | null;
   dropoffEtaLabel: string | null;
+  /** 같은 날 «자차»로 신청해 타지 않는 방향 — 홈 «오늘 셔틀» 줄이 «등원 자차»·«하원 자차»로 보인다. 없으면 칸 자체가 없다 */
+  selfRideDirections?: ("PICKUP" | "DROPOFF")[];
 };
 
 /**
@@ -272,6 +278,8 @@ export function rosterOverviewItems(studentId: string, studentName: string, days
   const items: RosterOverviewItem[] = [];
   for (const d of days) {
     if (d.status !== "RUN") continue;
+    // 그날 자차로 신청한 방향(항목은 만들지 않고, 같은 날 타는 방향 항목에 표시만 싣는다)
+    const selfRide = ([["PICKUP", d.board], ["DROPOFF", d.alight]] as const).filter(([, l]) => l?.state === "SKIP").map(([dir]) => dir);
     for (const [direction, leg] of [["PICKUP", d.board], ["DROPOFF", d.alight]] as const) {
       if (!leg || leg.state === "SKIP") continue;
       items.push({
@@ -293,6 +301,7 @@ export function rosterOverviewItems(studentId: string, studentName: string, days
         rideStatus: null,
         pickupEtaLabel: direction === "PICKUP" && leg.time ? `${leg.time} 승차` : null,
         dropoffEtaLabel: direction === "DROPOFF" && leg.time ? `${leg.time} 하차` : null,
+        ...(selfRide.length > 0 ? { selfRideDirections: selfRide } : {}),
       });
     }
   }

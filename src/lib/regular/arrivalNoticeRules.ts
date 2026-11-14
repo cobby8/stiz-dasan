@@ -97,6 +97,19 @@ export function expectedTimeOptions(
   return out;
 }
 
+// ── 하루 변경 상한(보안 검수 2026-11-14) ──────────────────────────────────────
+// 알리기·시각 바꾸기·취소는 그때마다 원장·선생님(셔틀이 딸리면 기사님)에게 알림이 간다.
+// 시각을 번갈아 바꾸거나 알리기·취소를 되풀이해 알림을 쏟아내지 못하게, 한 아이·한 반·하루에 합계 5번까지만 받는다.
+// 넘으면 저장도 알림도 하지 않고 학원 전화로 안내한다.
+export const ARRIVAL_DAILY_CHANGE_LIMIT = 5;
+export const ARRIVAL_CHANGE_LIMIT_MESSAGE = "오늘은 더 바꿀 수 없어요. 학원에 전화해 주세요.";
+
+/** 그 아이·반·날짜의 알림 행들(지각·조퇴)의 변경 횟수 합이 상한에 닿았나 */
+export function arrivalChangeLimitReached(changeCounts: readonly (number | null | undefined)[]): boolean {
+  const total = changeCounts.reduce<number>((sum, value) => sum + (Number.isFinite(Number(value)) ? Number(value) : 0), 0);
+  return total >= ARRIVAL_DAILY_CHANGE_LIMIT;
+}
+
 // ── 셔틀 연결 ───────────────────────────────────────────────────────────────
 // 조퇴로 알린 날, 그 아이가 하원 셔틀을 타는 아이면 «하원 셔틀도 안 타나요?»를 한 번 묻는다(지각 → 등원 셔틀도 같은 방식).
 // 안 탄다고 하면 «셔틀 변경 › 자차»와 같은 기록(ShuttleDayException · SKIP)을 만들어 기사님 화면에도 반영한다.
@@ -114,7 +127,9 @@ export const ARRIVAL_SHUTTLE_WORD: Record<ArrivalKind, string> = { LATE: "등원
  *   rosterDirections: 그 날짜(요일)의 셔틀 명단에 있는 방향들('BOARD'=등원·'ALIGHT'=하원)
  *   exceptions: 그 날짜의 살아 있는 셔틀 변경(방향·종류)
  *   withinShuttleWindow: 셔틀 변경을 받을 수 있는 날짜 범위(오늘부터 14일) 안인가
- * 명단에 그 방향이 없거나, 이미 그 방향을 안 탄다고 해 두었으면(SKIP) 묻지 않는다.
+ * 명단에 그 방향이 없거나, 그날 그 방향에 학부모가 이미 낸 셔틀 변경(안 타요·다른 곳에서 타요)이 있으면 묻지 않는다.
+ *   (보안 검수 2026-11-14: «다른 곳에서 타요»를 SKIP 으로 덮어쓰면 알림을 취소해도 원래 변경이 되살아나지 않는다 —
+ *    이미 변경이 있는 날은 묻지도 건드리지도 않는다. 바꾸려면 «셔틀 변경» 화면에서 직접 한다)
  */
 export function shuttleAskNeeded(input: {
   kind: ArrivalKind;
@@ -126,7 +141,13 @@ export function shuttleAskNeeded(input: {
   const direction = shuttleDirectionOf(input.kind);
   const rosterDirection = direction === "PICKUP" ? "BOARD" : "ALIGHT";
   if (!input.rosterDirections.includes(rosterDirection)) return false;
-  return !input.exceptions.some((x) => x.kind === "SKIP" && (x.direction === "BOTH" || x.direction === direction));
+  return !input.exceptions.some((x) => x.direction === "BOTH" || x.direction === direction);
+}
+
+/** 셔틀 변경을 받는 범위(14일) 밖 날짜에 그 방향 셔틀을 타는 아이인가 — 질문 대신 «셔틀 변경에서 따로 알려 주세요» 안내를 보인다 */
+export function shuttleLaterNoticeNeeded(input: { kind: ArrivalKind; rosterDirections: readonly string[]; withinShuttleWindow: boolean }): boolean {
+  if (input.withinShuttleWindow) return false;
+  return input.rosterDirections.includes(shuttleDirectionOf(input.kind) === "PICKUP" ? "BOARD" : "ALIGHT");
 }
 
 // ── 기사님 화면의 «안 타는 사유» 글자 ─────────────────────────────────────────
