@@ -173,7 +173,14 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
         }
     }, [date]);
 
+    // 서버가 «오늘(KST)» 수업 목록을 이미 넘겨줬으면 첫 화면에서는 같은 목록을 다시 부르지 않는다
+    // (2026-11-14 속도 개선 — 서버와 이 API 는 같은 함수·같은 날짜라 결과가 같다). 날짜를 바꾸면 예전처럼 새로 부른다.
+    const skipFirstClassesLoadRef = useRef(hasInitialClasses);
     useEffect(() => {
+        if (skipFirstClassesLoadRef.current) {
+            skipFirstClassesLoadRef.current = false;
+            return;
+        }
         void loadClasses(date);
     }, [date, loadClasses]);
 

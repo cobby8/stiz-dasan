@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth-guard";
 import { reviewStaffPaymentConfirmation } from "@/app/actions/staff-billing";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
+import { canSeeAllMoney } from "@/lib/auth/moneyAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,9 @@ export default async function PaymentConfirmationsPage({
 }: {
   searchParams?: Promise<Record<string, string | undefined>>;
 }) {
-  await requireAdmin();
+  const admin = await requireAdmin();
+  // 부원장도 승인한다(대기 건 금액은 보임). 다만 대기 합계는 원장만(2026-11-14 원장 결정)
+  const showTotal = canSeeAllMoney(admin.appUserRole);
 
   const params = (await (searchParams ?? Promise.resolve({}))) as Record<string, string | undefined>;
   const filterClass = params["class"] ?? "";
@@ -63,7 +66,7 @@ export default async function PaymentConfirmationsPage({
           rows.length > 0 ? (
             <div className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-warning-soft)] px-4 py-2 text-right text-sm">
               <p className="font-semibold tabular-nums text-[var(--color-academy-warning)]">대기 중 {rows.length}건</p>
-              <p className="text-xs tabular-nums text-[var(--color-academy-warning)]">{totalAmount.toLocaleString()}원</p>
+              {showTotal && <p className="text-xs tabular-nums text-[var(--color-academy-warning)]">{totalAmount.toLocaleString()}원</p>}
             </div>
           ) : undefined
         }

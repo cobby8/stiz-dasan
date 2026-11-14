@@ -148,7 +148,7 @@ export default function PaymentRequestsClient({
                     </td>
                     <td className="px-2 py-1.5 text-[var(--color-academy-ink)]">{row.kindLabel}</td>
                     <td className="hidden px-2 py-1.5 text-[var(--color-academy-ink)] md:table-cell">{row.description || "수강료"}</td>
-                    <td className="admin-cell-num px-2 py-1.5 font-semibold text-[var(--color-academy-ink)]">{row.amount.toLocaleString()}원</td>
+                    <td className="admin-cell-num px-2 py-1.5 font-semibold text-[var(--color-academy-ink)]">{row.amount == null ? "—" : `${row.amount.toLocaleString()}원`}</td>
                     <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] lg:table-cell">{row.dueDate || "-"}</td>
                     <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-ink)] sm:table-cell">{row.kind === "PAYMENT_CLAIM" ? row.paidOn || "-" : "-"}</td>
                     <td className="hidden px-2 py-1.5 text-[var(--color-academy-ink)] sm:table-cell">{(row.kind === "PAYMENT_CLAIM" ? row.methodLabel : row.receiptTypeLabel) || "-"}</td>
@@ -199,7 +199,7 @@ export default function PaymentRequestsClient({
               <dt className="font-medium text-[var(--color-academy-muted)]">항목</dt>
               <dd className="break-keep text-[var(--color-academy-ink)]">{row.description || "수강료"}</dd>
               <dt className="font-medium text-[var(--color-academy-muted)]">금액</dt>
-              <dd className="tabular-nums font-semibold text-[var(--color-academy-ink)]">{row.amount.toLocaleString()}원</dd>
+              <dd className="tabular-nums font-semibold text-[var(--color-academy-ink)]">{row.amount == null ? "—" : `${row.amount.toLocaleString()}원`}</dd>
               {row.dueDate && (
                 <>
                   <dt className="font-medium text-[var(--color-academy-muted)]">납부 기한</dt>

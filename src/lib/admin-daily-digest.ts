@@ -17,6 +17,8 @@ export type AdminDigestInput = {
   needsCheckCount: number; // 수강 변경: 사이트엔 반영됐지만 확인이 남은 건(2026-11-14 랠리즈 은퇴 뒤에는 옛 대기·보류 건만)
   pendingChangeCount: number; // 수강 변경: 승인 대기
   kakaoPendingCount?: number; // 카카오 접수: 원장 확인 대기(접수·보류·실패)
+  /** 미납 금액(합계·월별 합계)을 문구에 넣을까 — 원장 true(기본), 부원장 false(건수만, 2026-11-14 부원장 금액 가림) */
+  showMoney?: boolean;
 };
 
 export type AdminDigest = { title: string; message: string; linkUrl: string };
@@ -57,24 +59,28 @@ export function buildAdminDailyDigest(input: AdminDigestInput): AdminDigest | nu
   const lines: string[] = [];
   const titleParts: string[] = [];
 
+  // 부원장용 요약(showMoney=false)은 미납 «합계 금액»을 빼고 건수만 쓴다
+  const showMoney = input.showMoney !== false;
+  const won = (amount: number) => (showMoney ? ` · ${formatWon(amount)}` : "");
+
   if (totalCount > 0) {
     titleParts.push(`미납 ${totalCount}건`);
     const overdueText = overdueCount > 0 ? ` (기한 지남 ${overdueCount}건)` : "";
-    lines.push(`[사이트 장부 미납] ${totalCount}건 · ${formatWon(totalAmount)}${overdueText}`);
+    lines.push(`[사이트 장부 미납] ${totalCount}건${won(totalAmount)}${overdueText}`);
 
     // 최근 월은 최신 달이 위로 오도록 내림차순
     const recent = rows
       .filter((r) => monthIndex(r.year, r.month) >= recentFrom)
       .sort((a, b) => monthIndex(b.year, b.month) - monthIndex(a.year, a.month));
     for (const r of recent) {
-      lines.push(`- ${monthLabel(r.year, r.month)}: ${r.count}건 · ${formatWon(r.amount)}`);
+      lines.push(`- ${monthLabel(r.year, r.month)}: ${r.count}건${won(r.amount)}`);
     }
     // 오래된 달은 한 줄로 합친다
     const older = rows.filter((r) => monthIndex(r.year, r.month) < recentFrom);
     if (older.length > 0) {
       const c = older.reduce((s, r) => s + r.count, 0);
       const a = older.reduce((s, r) => s + Number(r.amount || 0), 0);
-      lines.push(`- 그 이전: ${c}건 · ${formatWon(a)}`);
+      lines.push(`- 그 이전: ${c}건${won(a)}`);
     }
   }
 

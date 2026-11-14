@@ -1,7 +1,8 @@
 import { userFacingError } from "@/lib/user-facing-error";
 import { NextRequest, NextResponse } from "next/server";
 
-import { requireAdmin } from "@/lib/auth-guard";
+import { requireOwner } from "@/lib/auth-guard";
+// 부원장 차단(2026-11-14 원장 결정): 원장(ADMIN)만 — requireOwner 가 부원장을 거절한다
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -300,8 +301,13 @@ async function getPreview(year: number, month: number) {
 
 
 export async function GET(request: NextRequest) {
+  // 권한 실패는 500 이 아니라 403 으로 — 부원장에게 반별 금액 대조가 나가지 않게 먼저 끊는다
   try {
-    await requireAdmin();
+    await requireOwner();
+  } catch {
+    return NextResponse.json({ error: "원장 권한이 필요합니다." }, { status: 403 });
+  }
+  try {
     const { year, month } = parseTarget(request.nextUrl.searchParams);
     return NextResponse.json(await getPreview(year, month));
   } catch (error) {
@@ -315,7 +321,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    await requireAdmin();
+    await requireOwner();
     parseTarget(request.nextUrl.searchParams);
     // Monthly aggregates cannot safely identify individual class payments.
     return NextResponse.json(

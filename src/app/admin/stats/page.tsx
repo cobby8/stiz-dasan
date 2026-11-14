@@ -1,4 +1,6 @@
+import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth-guard";
+import { canSeeStats } from "@/lib/auth/moneyAccess";
 import StatsClient from "./StatsClient";
 import { getCachedAdminStatsTab } from "@/lib/adminReadPayloads";
 import { isStatsTabKey, normalizeStatsPeriod } from "@/lib/stats/statsRules";
@@ -12,7 +14,9 @@ type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
 export default async function StatsPage({ searchParams }: { searchParams: SearchParams }) {
     // 레이아웃 검사만 믿지 않고 화면마다 관리자 확인(d3 — 레이아웃이 바뀌거나 우회돼도 데이터가 새지 않게)
-    await requireAdmin();
+    const admin = await requireAdmin();
+    // 2026-11-14 부원장 금액 가림: 통계는 원장 전용 — 부원장이면 데이터를 읽기 «전에» 대시보드로 돌려보낸다
+    if (!canSeeStats(admin.appUserRole)) redirect("/admin");
     const params = await searchParams;
     const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
     // 모르는 값은 기본값으로(주소를 손으로 고쳐도 화면이 깨지지 않게)

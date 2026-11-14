@@ -66,7 +66,8 @@ test('재무: 은퇴면 「시트 점검」 버튼과 점검 패널을 숨기고
   assert.ok(passesSwitch(read('src/app/admin/finance/page.tsx')));
   const src = read('src/app/admin/finance/FinanceClient.tsx');
   assert.match(src, /sheetRetired = false,/);
-  assert.match(src, /\{!sheetRetired && \(\s*<button\s+type="button"\s+onClick=\{loadSheetPreview\}/);
+  // 시트 점검 버튼은 원장 전용이기도 하다(2026-11-14)
+  assert.match(src, /\{!sheetRetired && canManageCriticalFinance && \(\s*<button\s+type="button"\s+onClick=\{loadSheetPreview\}/);
   assert.match(src, /\{!sheetRetired && \(sheetError \|\| sheetPreview\) && \(/);
   assert.ok(existsSync('src/app/api/admin/finance/sheet-reconcile/route.ts'));
 });

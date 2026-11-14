@@ -1,4 +1,3 @@
-import { createClient } from "@/lib/supabase/server";
 import { getStudentReports, getMyPageData, getNoticesByClassIds, getChildrenFeedbacks, getGalleryByClassIds } from "@/lib/queries";
 import { requireVerifiedParent } from "@/lib/auth-guard";
 import Link from "next/link";
@@ -34,10 +33,10 @@ const FB_CATEGORIES: Record<string, string> = {
 
 export default async function ParentReportsPage() {
     // 로그인 확인
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    // 로그인·학부모 확인은 레이아웃이 이미 한 확인을 그대로 쓴다(요청 단위 기억, 2026-11-14 속도 개선)
+    const parentAuth = await requireVerifiedParent().catch(() => null);
 
-    if (!user) {
+    if (!parentAuth) {
         return (
             <div className="flex flex-col items-center justify-center py-20 text-center">
                 <h2 className="academy-heading mb-2">로그인이 필요합니다</h2>
@@ -54,7 +53,6 @@ export default async function ParentReportsPage() {
 
     // 인증 게이트가 검증한 부모 User.id(appUserId)를 조회 기준으로 사용
     // (이메일 매칭 제거 — 소셜/이메일 불일치 시 자녀를 못 찾던 버그 수정)
-    const parentAuth = await requireVerifiedParent();
     const parentId = parentAuth.appUserId;
     if (!parentId) {
         return (

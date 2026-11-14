@@ -8,6 +8,7 @@ import {
   type PaymentRequestKind,
   type ReceiptType,
 } from "@/lib/payments/parentRequestRules";
+import { canSeeAllMoney } from "@/lib/auth/moneyAccess";
 
 // ── 원장의 입금 확인·영수증 요청 처리 ────────────────────────────────────────
 //
@@ -20,7 +21,8 @@ export type AdminPaymentRequestRow = {
   kindLabel: string;
   studentName: string;
   description: string | null;
-  amount: number;
+  /** 부원장에게는 이미 처리된(대기 아님) 요청의 금액이 null — 2026-11-14 원장 결정 */
+  amount: number | null;
   paymentStatus: string;
   dueDate: string | null;
   paidOn: string | null;
@@ -34,7 +36,11 @@ export type AdminPaymentRequestRow = {
   createdAt: string;
 };
 
-export async function getPaymentParentRequests(status = "PENDING"): Promise<AdminPaymentRequestRow[]> {
+/**
+ * role: 보는 사람 역할(requireAdmin 의 appUserRole). 부원장이면 대기(PENDING) 아닌 요청의 금액을 null 로 가린다.
+ * 대기 건 금액은 승인 판단에 필요해 그대로 보인다.
+ */
+export async function getPaymentParentRequests(status: string, role: string | null | undefined): Promise<AdminPaymentRequestRow[]> {
   const rows = await prisma.$queryRawUnsafe<any[]>(
     `SELECT r.id, r.kind, r.status, r."decisionNote", r.note,
             r."depositorName", r.method, r."receiptType", r."receiptTarget",
@@ -57,7 +63,8 @@ export async function getPaymentParentRequests(status = "PENDING"): Promise<Admi
     kindLabel: PAYMENT_REQUEST_KIND_LABEL[row.kind as PaymentRequestKind] ?? row.kind,
     studentName: row.studentName,
     description: row.description ?? null,
-    amount: Number(row.amount ?? 0),
+    // 원장 = 모든 금액 · 부원장 = 대기 중 요청의 금액만
+    amount: canSeeAllMoney(role) || row.status === "PENDING" ? Number(row.amount ?? 0) : null,
     paymentStatus: row.paymentStatus,
     dueDate: row.dueDate ?? null,
     paidOn: row.paidOn ?? null,

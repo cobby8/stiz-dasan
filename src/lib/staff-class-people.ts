@@ -27,7 +27,8 @@ export type StaffClassAttendanceSummary = {
 export type StaffClassBillingSummary = {
   unpaidCount: number;
   pendingConfirmationCount: number;
-  unpaidAmount: number;
+  // 학생별 미납 «합계» — 부원장에게는 null(2026-11-14, 건수만 보인다). 원장만 숫자
+  unpaidAmount: number | null;
 };
 
 export type StaffClassPerson = {

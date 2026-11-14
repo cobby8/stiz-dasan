@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import AdminModal from "@/components/admin/AdminModal";
 import { useAdminConfirm } from "@/components/admin/AdminConfirmDialog";
 import { acknowledgePosChargeDismissal, cancelPosChargeRequest, createPosChargeRequest, loadPosChargeRequest } from "@/app/actions/pos-charge";
-import type { AdminChargeRequestView } from "@/lib/pos/chargeRequestService";
+import type { PosChargeRequestView } from "@/app/actions/pos-charge";
 
 /**
  * «현장 결제» 창 — 청구서 1건을 토스 POS 로 보내 카드 결제를 받는다.
@@ -34,7 +34,8 @@ type Target = {
     title: string;
 };
 
-const won = (n: number) => `${Math.round(n).toLocaleString("ko-KR")}원`;
+// 서버가 가린 금액(부원장에게 이미 결제된 요청)은 «—»
+const won = (n: number | null) => (n == null ? "—" : `${Math.round(n).toLocaleString("ko-KR")}원`);
 
 /** 자동으로 상태를 다시 읽는 간격(밀리초) */
 const POS_CHARGE_POLL_MS = 3000;
@@ -63,7 +64,7 @@ export default function PosChargeRequestModal({
     const heading = isBundle
         ? `${target.studentName} · ${target.title} · 합계 ${won(target.amount)}`
         : `${target.studentName} · ${won(target.amount)}`;
-    const [request, setRequest] = useState<AdminChargeRequestView | null>(null);
+    const [request, setRequest] = useState<PosChargeRequestView | null>(null);
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
     const [message, setMessage] = useState("");

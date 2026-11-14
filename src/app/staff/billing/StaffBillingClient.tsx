@@ -187,7 +187,8 @@ export default function StaffBillingClient({ bills, month, currentMonth, seesAll
                   {waiting ? "확인 대기" : statusLabel(bill.status)}
                 </span>
                 <span className="shrink-0 text-right font-semibold tabular-nums text-[var(--color-academy-ink)]">
-                  {bill.amount.toLocaleString("ko-KR")}원
+                  {/* 부원장에게는 미납이 아닌 청구 금액이 null 로 온다(2026-11-14) → «—» */}
+                  {bill.amount == null ? "—" : `${bill.amount.toLocaleString("ko-KR")}원`}
                   {(bill.amountMismatch || blocked) && <span className="ml-1 text-xs font-normal text-[var(--color-academy-warning)]" title={blocked ? "수납 확인 불가 — 상세에서 사유 확인" : "청구서 금액 다름"}>{blocked ? "확인 불가" : "금액 다름"}</span>}
                 </span>
                 {/* 게슈탈트 T-09: 행마다 반복되는 작은 작업은 옅은 tonal(꽉 찬 색은 화면의 주인공 하나만) */}
@@ -213,11 +214,11 @@ export default function StaffBillingClient({ bills, month, currentMonth, seesAll
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 px-4 py-3 text-sm">
             <dt className="text-[var(--color-academy-muted)]">청구</dt><dd className="font-medium">{detail.title}</dd>
             <dt className="text-[var(--color-academy-muted)]">상태</dt><dd className="font-medium">{detail.confirmationStatus === "PENDING" ? "관리자 확인 대기" : statusLabel(detail.status)}</dd>
-            <dt className="text-[var(--color-academy-muted)]">금액</dt><dd className="font-semibold tabular-nums">{detail.amount.toLocaleString("ko-KR")}원</dd>
+            <dt className="text-[var(--color-academy-muted)]">금액</dt><dd className="font-semibold tabular-nums">{detail.amount == null ? "—" : `${detail.amount.toLocaleString("ko-KR")}원`}</dd>
             <dt className="text-[var(--color-academy-muted)]">납부 기한</dt><dd className="tabular-nums">{formatKstDate(detail.dueDate, undefined, "-")}</dd>
           </dl>
           <div className="space-y-2 px-4 pb-4">
-            {detail.amountMismatch && <p className="text-xs font-medium tabular-nums text-[var(--color-academy-warning)]">청구서에는 {detail.invoiceAmount.toLocaleString("ko-KR")}원으로 되어 있습니다.</p>}
+            {detail.amountMismatch && detail.invoiceAmount != null && <p className="text-xs font-medium tabular-nums text-[var(--color-academy-warning)]">청구서에는 {detail.invoiceAmount.toLocaleString("ko-KR")}원으로 되어 있습니다.</p>}
             {/* 문제가 있는 청구도 목록에서는 보여 주고, 수납 확인 버튼만 사유와 함께 막습니다. */}
             {detail.confirmationStatus === "PENDING" ? <p className="rounded-xl bg-[var(--color-academy-warning-soft)] p-3 text-sm font-medium text-[var(--color-academy-warning)]">관리자 확인 대기 중</p> : OPEN_STATUSES.includes(detail.status) && (detail.confirmable ? <button type="button" onClick={() => openRequest(detail)} className="academy-button-primary min-h-12! w-full">납부 확인 요청</button> : <p className="rounded-xl bg-[var(--color-academy-warning-soft)] p-3 text-sm font-medium text-[var(--color-academy-warning)]">{detail.blockReason}</p>)}
           </div>
@@ -261,7 +262,7 @@ export default function StaffBillingClient({ bills, month, currentMonth, seesAll
         <div className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/50 p-4 sm:items-center" onMouseDown={(event) => { if (event.target === event.currentTarget && !pending) setTarget(null); }}>
           <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="payment-dialog-title" aria-describedby="payment-dialog-description" className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-xl">
             <h2 id="payment-dialog-title" className="text-xl font-bold">납부 확인 요청</h2>
-            <p id="payment-dialog-description" className="mt-1 text-sm tabular-nums text-[var(--color-academy-muted)]">{target.studentName} · {target.amount.toLocaleString("ko-KR")}원</p>
+            <p id="payment-dialog-description" className="mt-1 text-sm tabular-nums text-[var(--color-academy-muted)]">{target.studentName}{target.amount != null && ` · ${target.amount.toLocaleString("ko-KR")}원`}</p>
             <label className="mt-4 block text-sm font-medium" htmlFor="payment-method">납부 방법</label>
             <select id="payment-method" value={method} onChange={(event) => setMethod(event.target.value)} className="academy-input mt-2"><option value="BANK_TRANSFER">계좌이체</option><option value="CASH">현금</option></select>
             <label className="mt-3 block text-sm font-medium" htmlFor="payment-note">수납 메모</label>

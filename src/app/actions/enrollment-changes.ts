@@ -2,7 +2,9 @@
 
 import { userFacingError } from "@/lib/user-facing-error";
 import { revalidatePath } from "next/cache";
-import { requireAdmin } from "@/lib/auth-guard";
+import { requireAdmin, requireOwner } from "@/lib/auth-guard";
+import { canSeeAllMoney } from "@/lib/auth/moneyAccess";
+import { maskEnrollmentChangeRowForRole } from "@/lib/payments/financeRoleMask";
 import {
   decideEnrollmentCancelRequest,
   decideEnrollmentChangeRequest,
@@ -23,7 +25,7 @@ import { isRallyzSyncRetired, RALLYZ_RETIRED_MESSAGE } from "@/lib/operations-sy
 
 /** 신청함에서 열어 본 반만 조회한다. 기존 수강 변경 화면과 같은 금액·처리 상태를 사용한다. */
 export async function readEnrollmentChangesForInbox(requestIds: string[]) {
-  await requireAdmin();
+  const admin = await requireAdmin();
   if (!Array.isArray(requestIds) || requestIds.length === 0 || requestIds.length > 100
       || requestIds.some((id) => typeof id !== "string" || !id.trim() || id.length > 128)) {
     throw new Error("신청을 다시 선택해 주세요.");
@@ -38,7 +40,8 @@ export async function readEnrollmentChangesForInbox(requestIds: string[]) {
     }),
   ]);
   return {
-    rows,
+    // 부원장에게는 반 변경 차액·휴원 수강료 처리(미리보기·기록) 금액을 뺀다(2026-11-14 원장 결정)
+    rows: rows.map((row) => maskEnrollmentChangeRowForRole(row, admin.appUserRole)),
     cancelRequests,
     sheetRetired: isSheetSyncRetired(process.env),
     // 2026-11-14 랠리즈 은퇴: 화면이 «랠리즈 반영 확인» 버튼·배지를 숨길 때 쓰는 값
@@ -65,12 +68,15 @@ export async function decideEnrollmentChange(input: {
   settlement?: PauseSettlementChoice | null;
 }) {
   const admin = await requireAdmin();
+  // 부원장은 승인·거절만 — 수강료 처리(이월·환불)는 고르지 못하고 원장이 나중에 처리한다(2026-11-14 원장 결정)
+  const owner = canSeeAllMoney(admin.appUserRole);
   const result = await decideEnrollmentChangeRequest({
     adminUserId: admin.appUserId,
     requestId: input.requestId,
     approve: input.approve,
     note: input.note ?? null,
-    settlement: input.settlement ?? null,
+    settlement: owner ? input.settlement ?? null : null,
+    deferSettlementChoice: !owner,
   });
   revalidatePath("/admin/enrollment-changes");
   // 승인 직후 처리에서 이 신청이든 다른 밀린 신청이든 한 건이라도 사이트에 적용됐으면
@@ -93,7 +99,8 @@ function revalidateSettlementCaches() {
  * 휴원이 아니면 preview = null. 읽기 실패는 승인을 막도록 ok:false 로 돌려준다(금액을 모른 채 승인하지 않게).
  */
 export async function getPauseTuitionPreview(requestId: string) {
-  await requireAdmin();
+  // 부원장 차단(2026-11-14 원장 결정): 휴원 수강료 금액 미리보기는 원장만
+  await requireOwner();
   try {
     return { ok: true as const, preview: await getPauseSettlementPreview(requestId) };
   } catch (error) {
@@ -107,7 +114,8 @@ export async function getPauseTuitionPreview(requestId: string) {
  * 입력은 승인 때와 같은 { mode, expectedPreviewKey }.
  */
 export async function settlePauseTuition(input: { requestId: string; settlement: PauseSettlementChoice }) {
-  const admin = await requireAdmin();
+  // 부원장 차단(2026-11-14 원장 결정): 휴원 수강료 처리(이월·환불)는 원장만
+  const admin = await requireOwner();
   const result = await settleApprovedPause({ adminUserId: admin.appUserId, requestId: input.requestId, settlement: input.settlement });
   revalidatePath("/admin/enrollment-changes");
   if (result.ok) revalidateSettlementCaches();
@@ -116,7 +124,8 @@ export async function settlePauseTuition(input: { requestId: string; settlement:
 
 /** 토스 부분 취소 «다시 시도»(결과 확인 중·실패) */
 export async function retryPauseTuitionRefund(settlementId: string) {
-  const admin = await requireAdmin();
+  // 부원장 차단: 환불 재시도는 원장만
+  const admin = await requireOwner();
   const result = await retryPauseSettlementRefunds({ adminUserId: admin.appUserId, settlementId });
   revalidatePath("/admin/enrollment-changes");
   revalidateSettlementCaches();
@@ -125,7 +134,8 @@ export async function retryPauseTuitionRefund(settlementId: string) {
 
 /** 사람 할 일(현금 환불·랠리즈 반영·POS 취소 등)을 «직접 처리함»으로 닫는다 */
 export async function markPauseTuitionLineDone(input: { lineId: string; note?: string }) {
-  const admin = await requireAdmin();
+  // 부원장 차단: 환불·이월 남은 일 닫기는 원장만
+  const admin = await requireOwner();
   const result = await markSettlementLineDone(prisma, { lineId: input.lineId, adminUserId: admin.appUserId, note: input.note ?? null });
   revalidatePath("/admin/enrollment-changes");
   return result;
@@ -133,7 +143,8 @@ export async function markPauseTuitionLineDone(input: { lineId: string; note?: s
 
 /** 사이트에서 줄일 청구가 없는 이월(랠리즈 청구 등)을 직접 차감했다고 닫는다 */
 export async function markPauseCarryHandled(input: { settlementId: string; note?: string }) {
-  const admin = await requireAdmin();
+  // 부원장 차단: 이월 직접 차감 확인은 원장만
+  const admin = await requireOwner();
   const result = await markCarryHandledManually(prisma, { settlementId: input.settlementId, adminUserId: admin.appUserId, note: input.note ?? null });
   revalidatePath("/admin/enrollment-changes");
   return result;
@@ -162,7 +173,8 @@ export async function decideEnrollmentChangeCancelRequest(input: { requestId: st
  * 원장 결정: 자동 발행하지 않고 원장이 금액과 근거를 보고 누른다.
  */
 export async function issueEnrollmentChangeInvoice(requestId: string, expectedPreviewKey: string) {
-  const admin = await requireAdmin();
+  // 부원장 차단(2026-11-14 원장 결정): 반 변경 차액 청구는 원장만(차액 금액을 부원장에게 보이지 않는다)
+  const admin = await requireOwner();
   const result = await issueProrationInvoice({ adminUserId: admin.appUserId, requestId, expectedPreviewKey });
   revalidatePath("/admin/enrollment-changes");
   revalidatePath("/admin/finance");
