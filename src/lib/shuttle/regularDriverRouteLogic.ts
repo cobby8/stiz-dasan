@@ -23,7 +23,12 @@ export type DriverRow = { rowId: string; name: string; parentPhone: string | nul
   /** "오늘만" 셔틀 변경(안 탐·다른 곳에서 탐). 결석과 다르다 — 아이는 수업에 온다. */
   shuttleNote?: string | null;
   /** 잠긴 줄의 뱃지(휴원·퇴원·첫 수업 전·휴무). 명단에서 빼지 않고 뱃지 + 탑승·미탑승 버튼 잠금(원장 지시 2026-11-14). */
-  blockedLabel?: string | null };
+  blockedLabel?: string | null;
+  /**
+   * 그 방향 셔틀을 «안 탄다고 기록된» 아이의 사유 글자(«자차»·«조퇴»·«지각») — 2026-11-14 묶음 B.
+   * 있으면 기사님 화면이 탑승·미탑승 버튼을 잠그고 이 글자를 보인다. 서버 저장 거부(blockedLabel)와는 별개다.
+   */
+  skipLabel?: string | null };
 export type DriverStop = { label: string; arriveTime: string | null; lat: number | null; lng: number | null; direction: "BOARD" | "ALIGHT"; rows: DriverRow[] };
 /** classTime: 섹션 구분 키(=React key). title 이 있으면 화면 제목으로 그것을 쓴다. pending=확정 전(임시 순서). */
 export type DriverClass = { classTime: string; title?: string; pending?: boolean; board: DriverStop[]; alight: DriverStop[] };
@@ -40,6 +45,8 @@ export type ShuttleDayExceptionEntry = {
   direction: string; // PICKUP | DROPOFF | BOTH
   kind: string; // SKIP | LOCATION
   location: string | null;
+  /** SKIP 일 때 기사님 화면에 보일 사유 글자(«자차»·«조퇴»·«지각»). 호출부(서버)가 채운다 — 없으면 줄에 싣지 않는다 */
+  skipLabel?: string | null;
 };
 
 /**
@@ -57,21 +64,25 @@ export function attachShuttleDayNotes(
 ): DriverClass[] {
   if (exceptions.length === 0) return classes;
 
-  const noteFor = (row: DriverRow, runDirection: "PICKUP" | "DROPOFF"): string | null => {
+  const hitFor = (row: DriverRow, runDirection: "PICKUP" | "DROPOFF"): ShuttleDayExceptionEntry | null => {
     const hit = exceptions.find(
       (entry) =>
         (entry.direction === "BOTH" || entry.direction === runDirection) &&
         matches({ name: row.name, phone: row.parentPhone }, entry),
     );
-    return hit ? describe(hit) : null;
+    return hit ?? null;
   };
 
   const withNotes = (stops: DriverStop[], runDirection: "PICKUP" | "DROPOFF"): DriverStop[] =>
     stops.map((stop) => ({
       ...stop,
       rows: stop.rows.map((row) => {
-        const note = noteFor(row, runDirection);
-        return note ? { ...row, shuttleNote: note } : row;
+        const hit = hitFor(row, runDirection);
+        if (!hit) return row;
+        // «안 타요»(SKIP)에 사유 글자가 실려 오면 줄에도 싣는다(없으면 종전 모양 그대로 — 기존 비교 테스트 보존)
+        return hit.kind === "SKIP" && hit.skipLabel
+          ? { ...row, shuttleNote: describe(hit), skipLabel: hit.skipLabel }
+          : { ...row, shuttleNote: describe(hit) };
       }),
     }));
 

@@ -101,7 +101,7 @@ test("① 7일 운행: 휴무(연간일정 수업일 아님)·결석·안 탐·�
     today: "2026-11-16", days: 1, rowsForDate: () => ROWS, classes: [cls()], isClassDay: always, absences: [],
     exceptions: [{ ymd: "2026-11-16", direction: "BOTH", kind: "SKIP", location: null }],
   });
-  assert.equal(skipBoth[0].statusText, "안 탐(신청)");
+  assert.equal(skipBoth[0].statusText, "자차(신청)"); // 2026-11-14 묶음 B: «안 탐» → 자차
   assert.equal(skipBoth[0].board.state, "SKIP");
   assert.equal(skipBoth[0].alight.state, "SKIP");
 
@@ -317,7 +317,7 @@ test("④ 셔틀 없음: 아이 정보 칸(라벨:값)·셔틀 «이용하지 �
   assert.match(html, /2015\.5\.1 · 만 11세/);
   assert.match(html, /엄마 \(나\)/);
   assert.match(html, /셔틀을 이용하지 않아요/);
-  assert.doesNotMatch(html, /이날 안 타요/, "타지 않는 아이에겐 변경 링크 없음");
+  assert.doesNotMatch(html, /이날 안 타요|셔틀 변경|href="\/mypage\/shuttle/, "타지 않는 아이에겐 변경 링크 없음");
   const order = ["아이 정보", "다닌 기간", "수강 반", "셔틀", "청구 이력", "출석 · 최근 12개월", "수강 반 이력"].map((t) => html.indexOf(t));
   assert.deepEqual([...order].sort((a, b) => a - b), order, "위에서 아래 순서");
   assert.ok(order.every((i) => i >= 0));
@@ -351,7 +351,7 @@ test("④ 여러 반 + 휴원: 반마다 한 줄(상태 칩·요일 시간·코�
   assert.match(html, /11월 명단/);
   assert.match(html, /승차 17:45 · 푸르지오/);
   assert.match(html, /하차 19:35 · 푸르지오/);
-  assert.match(html, /등원 17:45 푸르지오 · 하원 안 탐\(신청\)/);
+  assert.match(html, /등원 17:45 푸르지오 · 하원 자차\(신청\)/);
   assert.match(html, /11\/19\(목\)/);
   assert.match(html, />휴원</);
   assert.match(html, /href="tel:01000000000"/);
@@ -424,7 +424,7 @@ test("⑥ 소스 가드: «신청 접수» 카드는 명단 등재 여부로 빼
   assert.match(read("src/lib/parent/childRecordQuery.ts"), /getParentShuttleOverview\(parentUserId, \{ includeRoster: false, studentIds: \[sid\] \}\)/);
 });
 
-test("⑥ 일정 탭: 명단 항목은 요일별 한 줄 + «아이 기록 › 셔틀» 링크, 노선·시간·차량 «확인 중» 줄 없음, 다른 카드는 그대로", () => {
+test("⑥ 일정 탭: 명단 항목은 요일별 한 줄 + «날짜별 보기» 링크, 값 없는 «○○ 확인 중» 줄 없음, 다른 카드는 그대로", () => {
   const Detail = load("src/app/mypage/ParentShuttleDetail.tsx", { "next/link": link });
   const roster = (date, direction, eta, extra = {}) => ({
     id: `roster:kid:${date}:${direction}`, fromRoster: true, studentId: "kid", sourceType: "REGULAR_CLASS", classId: "MON", direction, status: "CONFIRMED",
@@ -442,10 +442,13 @@ test("⑥ 일정 탭: 명단 항목은 요일별 한 줄 + «아이 기록 › �
     ["목", "등원 16:45 승차 푸르지오"],
   ]);
   const html = renderToStaticMarkup(React.createElement(Detail.default, { items }));
-  assert.match(html, /정규 셔틀 · 요일별/);
-  assert.match(html, /href="\/mypage\/record\?child=kid#record-shuttle-heading"/);
-  assert.match(html, /아이 기록 › 셔틀/);
-  assert.doesNotMatch(html, /노선 확인 중|차량 확인 중|시간 확인 중/, "명단 항목에 빈 칸 줄 없음");
+  // 2026-11-14 문구 정리: 칸 이름 «정규 셔틀», 링크 «날짜별 보기 ▸», 버튼 «셔틀 변경»
+  assert.match(html, />정규 셔틀<\/p>/);
+  assert.match(html, /href="\/mypage\/record\?child=kid#record-shuttle-heading"[^>]*>날짜별 보기 ▸/);
+  assert.match(html, /href="\/mypage\/shuttle"[^>]*>\s*셔틀 변경/);
+  assert.doesNotMatch(html, /요일별\(다가오는 7일\)|아이 기록 › 셔틀|셔틀 당일 변경/);
+  // 값이 없는 줄은 줄째 숨긴다(d7) — 운행일이 아직 없는 방학특강 카드에도 «운행일 확인 중» 줄이 없다
+  assert.doesNotMatch(html, /운행일 확인 중|노선 확인 중|정류장 확인 중|차량 확인 중|시간 확인 중|>운행일</, "값 없는 줄 없음");
   assert.match(html, /겨울특강/, "방학특강 카드는 그대로");
   assert.match(html, />3건</, "요약 2줄 + 카드 1장");
 });

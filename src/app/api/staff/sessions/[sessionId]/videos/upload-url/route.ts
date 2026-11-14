@@ -24,7 +24,7 @@ export async function POST(req: Request, context: { params: Promise<{ sessionId:
     if (!session) return NextResponse.json({ error: "수업 기록을 찾을 수 없습니다." }, { status: 404 });
     // 수업 시작·출석·사진과 같은 권한 함수(특강 회차면 특강 담당 강사 기준)
     const { access } = await requireStaffSessionAccess(sessionId);
-    const windowError = uploadWindowError(session);
+    const windowError = uploadWindowError(session, access.canAccessAllClasses);
     if (windowError) return NextResponse.json({ error: windowError }, { status: 409 });
 
     const body = await req.json().catch(() => null) as { mimeType?: unknown; sizeBytes?: unknown; fileName?: unknown } | null;

@@ -171,7 +171,8 @@ export default function RequestTimeline({ rows }: { rows: ParentTimelineView[] }
               />
             )}
             <Link href={row.openHref} className="academy-button-text">
-              신청 화면에서 보기
+              {/* 문의는 대화 화면으로(이어 쓰기) — 위 «학원 답변» 칸은 마지막 학원 글만 보인다 */}
+              {row.kind === "PARENT_REQUEST" ? "대화 보기 ▸" : "신청 화면에서 보기"}
             </Link>
           </div>
         </ListDetailPanel>

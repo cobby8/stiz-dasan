@@ -129,7 +129,43 @@ export type ShuttleLite = {
     pickupEtaLabel?: string | null;
     dropoffEtaLabel?: string | null;
     plannedAt?: string | null;
+    /** 오늘 기사님이 «탑승»을 찍은 실제 시각 "HH:MM"(KST). 등원 줄이면 탄 시각, 하원 줄이면 내린 시각. 없으면 아직 안 찍힘 */
+    actualTimeLabel?: string | null;
+    /** 정규 수업 셔틀인가 방학특강 셔틀인가 — 자차 표시는 정규 셔틀에만 적용한다 */
+    sourceType?: string | null;
 };
+
+/**
+ * 홈 «오늘 셔틀» 줄 글자(2026-11-14 원장 결정표) — 방향마다 한 줄.
+ *   기사님이 찍었으면 실제 시각: «탑승 08:52» · «하차 18:40»
+ *   아직이면 예정 시각(종전 그대로): «등원 08:40 승차» · «하원 17:30 하차»
+ * 둘 다 없으면 빈 배열(화면은 «운행 N건»을 보인다).
+ */
+export function todayShuttleLineTexts(
+    items: readonly ShuttleLite[],
+    // 오늘 «자차»로 신청해 정규 셔틀을 타지 않는 방향(2026-11-14 묶음 B) — 표시 전용 값(항목이 아니다)
+    selfRide: readonly ("PICKUP" | "DROPOFF")[] = [],
+): string[] {
+    // 자차는 정규 셔틀에만 적용한다 — 그 방향은 정규 항목을 빼고 본다(같은 날 방학특강 셔틀 시각은 가리지 않는다)
+    const poolOf = (direction: "PICKUP" | "DROPOFF") =>
+        selfRide.includes(direction) ? items.filter((i) => i.sourceType === "SPECIAL_PROGRAM") : items;
+    const actual = (direction: "PICKUP" | "DROPOFF") =>
+        poolOf(direction).find((i) => i.direction === direction && i.actualTimeLabel)?.actualTimeLabel ?? null;
+    const pickupEta = poolOf("PICKUP").map((i) => i.pickupEtaLabel).find(Boolean) ?? null;
+    const dropoffEta = poolOf("DROPOFF").map((i) => i.dropoffEtaLabel).find(Boolean) ?? null;
+    const boardedAt = actual("PICKUP");
+    const alightedAt = actual("DROPOFF");
+    const pickupLine = boardedAt ? `탑승 ${boardedAt}` : pickupEta ? `등원 ${pickupEta}` : null;
+    const dropoffLine = alightedAt ? `하차 ${alightedAt}` : dropoffEta ? `하원 ${dropoffEta}` : null;
+    const pickupSelf = !pickupLine && selfRide.includes("PICKUP");
+    const dropoffSelf = !dropoffLine && selfRide.includes("DROPOFF");
+    // 등원·하원 모두 자차인 날은 한 줄로
+    if (pickupSelf && dropoffSelf) return ["등원·하원 자차"];
+    return [
+        pickupSelf ? "등원 자차" : pickupLine,
+        dropoffSelf ? "하원 자차" : dropoffLine,
+    ].filter((v): v is string => Boolean(v));
+}
 
 // 오늘(KST) 운행에 해당하는 셔틀 항목만 추린다. serviceDate 앞 10자리(YYYY-MM-DD)로 매칭.
 export function filterTodayShuttle<T extends ShuttleLite>(items: T[], todayStr: string): T[] {
@@ -164,20 +200,6 @@ export function summarizePendingPayments(children: { payments: PaymentLite[] }[]
         }
     }
     return { count: seen.size, total, canCheckoutAny };
-}
-
-/** 최근 days 일 안에 «학원 답변»이 달린 보낸 메시지 수. 답변(adminNote)이 비어 있으면 세지 않는다. */
-export function countRecentAnswers(
-    requests: { adminNote: string | null; updatedAt: Date | string }[],
-    nowMs: number,
-    days = 7,
-): number {
-    const since = nowMs - days * 86_400_000;
-    return requests.filter((r) => {
-        if (!r.adminNote || !r.adminNote.trim()) return false;
-        const at = new Date(r.updatedAt).getTime();
-        return Number.isFinite(at) && at >= since;
-    }).length;
 }
 
 /** 최근 days 일 안에 올라온 공지 수(«새 공지 N건» 줄). */

@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { todayKst } from "@/lib/datetime/kst";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import { deliverParentNotification } from "@/lib/staff-notifications";
+import { STAFF_SESSION_REVIEW_AUDIT_ACTION } from "@/lib/staff/sessionEditWindow";
 import {
   ABSENCE_NOTICE_DELAY_MINUTES,
   ABSENCE_NOTICE_EVENT,
@@ -56,9 +57,22 @@ export async function sweepAbsenceParentNotices(limit = 50, nowMs: number = Date
         AND NOT EXISTS (SELECT 1 FROM "NotificationDelivery" nd
                          WHERE nd."eventType" = $3 AND nd."studentId" = st.id AND nd.channel = 'PUSH'
                            AND starts_with(nd."dedupeKey", ${absenceNoticeKeyPrefixSql('s."classId"', "$1::text", "st.id")}))
+        -- 완료한 수업을 선생님이 뒤늦게 «결석»으로 정정한 출결은 보내지 않는다(2026-11-14 — 정정은 «방금 결석» 알림이 아니다).
+        -- 건너뛰는 것은 그 출결의 «마지막» 정정 기록(OperationsAuditLog, saveStaffAttendance 가 남긴다)이
+        -- «결석이 아니던 것 → 결석»일 때만이다. 수업 중 원래 결석이었던 출결의 알림은 막지 않는다(보안 검수 LOW 1).
+        AND NOT EXISTS (SELECT 1 FROM "OperationsAuditLog" al
+                         WHERE al.action = $5 AND al."detailsJson"->>'attendanceId' = a.id
+                           AND al."detailsJson"->>'after' = 'ABSENT'
+                           AND al."detailsJson"->>'before' <> 'ABSENT'
+                           -- 그 정정 «뒤에» 출결이 다시 바뀌었으면(관리자가 고침) 건너뛰지 않는다 — 기록은 출결 저장 뒤에 남는다.
+                           -- Attendance.updatedAt 은 시간대 없는 칸(UTC 로 저장), 기록의 createdAt 은 timestamptz.
+                           AND al."createdAt" >= (a."updatedAt" AT TIME ZONE 'UTC')
+                           AND NOT EXISTS (SELECT 1 FROM "OperationsAuditLog" later
+                                            WHERE later.action = $5 AND later."detailsJson"->>'attendanceId' = a.id
+                                              AND later."createdAt" > al."createdAt"))
       ORDER BY a."updatedAt"
       LIMIT $4`,
-    today, ABSENCE_NOTICE_DELAY_MINUTES, ABSENCE_NOTICE_EVENT, limit,
+    today, ABSENCE_NOTICE_DELAY_MINUTES, ABSENCE_NOTICE_EVENT, limit, STAFF_SESSION_REVIEW_AUDIT_ACTION,
   );
   result.candidates = rows.length;
   for (const row of rows) {

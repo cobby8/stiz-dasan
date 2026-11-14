@@ -20,6 +20,8 @@ function fixture(options = {}) {
         if (sql.startsWith('SELECT')) { if (options.readFails) throw new Error('unavailable'); return row ? [{ ...row }] : []; }
         calls.update++;
         if (options.writeFails) throw new Error('response lost');
+        // 같은 청구에 열린 환불 문의가 이미 있다(부분 유일 색인)
+        if (options.uniqueFails) throw Object.assign(new Error('duplicate key value violates unique constraint "ParentRequest_open_refund_key"'), { code: 'P2010', meta: { code: '23505' } });
         if (options.conflict) return [];
         row = { ...row, status: args[0], adminNote: args[1] };
         return [{ id: row.id }];
@@ -39,6 +41,16 @@ test('관리자 외 사용자는 조회·변경을 할 수 없다', async () => 
   await assert.rejects(f.updateRequestStatus('request-test', 'COMPLETED'), /FORBIDDEN/);
   await assert.rejects(f.getParentRequestStatusForAdmin('request-test'), /FORBIDDEN/);
   assert.equal(f.calls.update, 0);
+});
+test('«대기로 변경»이 열린 환불 문의 유일 제약에 걸리면 전용 안내를 돌려주고 알림은 보내지 않는다', async () => {
+  const f = fixture({ uniqueFails: true });
+  const result = await f.updateRequestStatus('request-test', 'CONFIRMED');
+  assert.equal(result.saved, false);
+  assert.match(result.error, /같은 청구에 이미 열려 있는 환불 문의가 있습니다/);
+  assert.deepEqual(f.calls, { update: 1, notification: 0, push: 0 });
+  assert.equal(f.row().status, 'PENDING');
+  // 다른 저장 실패는 예전처럼 사유 없이 «결과 확인 필요»
+  assert.equal((await fixture({ writeFails: true }).updateRequestStatus('request-test', 'CONFIRMED')).error, undefined);
 });
 test('잘못된 상태·과도한 메모·없는 대상을 쓰기 전에 거부한다', async () => {
   const f = fixture();

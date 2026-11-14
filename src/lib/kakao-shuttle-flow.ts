@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { classifyParentUtterance, type KakaoQuickReply, type ParentRequestKind } from "@/lib/kakao-chatbot-contract";
 import { cancelShuttleException, submitShuttleException } from "@/lib/shuttle/parent-shuttle-exception";
-import { MAX_DAYS_AHEAD, SHUTTLE_DIRECTION_LABEL, type ShuttleDirection, type ShuttleExceptionKind } from "@/lib/shuttle/dayExceptionRules";
+import { MAX_DAYS_AHEAD, SHUTTLE_DIRECTION_LABEL, parentShuttleChangeLabel, type ShuttleDirection, type ShuttleExceptionKind } from "@/lib/shuttle/dayExceptionRules";
 import { DAY_INDEX, DAY_KO } from "@/lib/regular/regularAbsenceRules";
 import { notifyAdminsOfKakaoIntake } from "@/lib/kakao-intake-admin-alert";
 import { shuttleRosterTaskHref } from "@/lib/kakaoShuttleRosterTask";
@@ -85,7 +85,7 @@ const DIRECTION_REPLIES: KakaoQuickReply[] = [
   { label: "등·하원 모두", messageText: `${P} 등하원` },
 ];
 const KIND_REPLIES: KakaoQuickReply[] = [
-  { label: "안 타요", messageText: `${P} 안 타요` },
+  { label: "안 타요(자차)", messageText: `${P} 안 타요` },
   { label: "다른 곳에서 타요", messageText: `${P} 다른 장소` },
 ];
 
@@ -229,14 +229,15 @@ async function upcomingExceptions(parentUserId: string, studentId: string | null
     id: row.id,
     studentName: row.studentName,
     serviceDate: row.serviceDate,
-    label: `${dayName(row.serviceDate, today)} ${SHUTTLE_DIRECTION_LABEL[row.direction as ShuttleDirection] ?? row.direction} · ${row.kind === "SKIP" ? "안 탐" : `다른 곳(${row.location ?? "-"})`}`,
+    label: `${dayName(row.serviceDate, today)} ${SHUTTLE_DIRECTION_LABEL[row.direction as ShuttleDirection] ?? row.direction} · ${row.kind === "SKIP" ? "자차" : `다른 곳(${row.location ?? "-"})`}`,
   }));
 }
 
 // ── 말풍선 ─────────────────────────────────────────────────────────────
 
 function summary(state: ShuttleState, today: string): string {
-  const what = state.kind === "SKIP" ? "안 타요" : `다른 곳에서 타요 → ${state.location ?? ""}`;
+  // 학부모 «셔틀 변경» 화면과 같은 말: 방향에 맞춘 «직접 데려다줘요 / 직접 데리러 가요(자차)»
+  const what = state.kind === "SKIP" ? parentShuttleChangeLabel("SKIP", state.direction ?? "") ?? "안 타요(자차)" : `다른 곳에서 타요 → ${state.location ?? ""}`;
   return `· 날짜: ${state.date ? dayName(state.date, today) : ""}\n· 방향: ${state.direction ? SHUTTLE_DIRECTION_LABEL[state.direction] : ""}\n· 변경: ${what}`;
 }
 

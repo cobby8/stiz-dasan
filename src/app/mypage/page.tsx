@@ -1,11 +1,16 @@
-import { getMyPageData, getNoticesByClassIds, getMyRequests, getAcademySettings } from "@/lib/queries";
+import { getMyPageData, getNoticesByClassIds } from "@/lib/queries";
+import { prisma } from "@/lib/prisma";
+// 보낸 문의 건수(답변 옴·답변 대기) — «보낸 문의» 화면과 같은 판정(2026-11-14 c3)
+import { listMyInquiries } from "@/lib/requests/inquiry-thread";
+import { countRecentAnswered } from "@/lib/requests/inquiryThreadRules";
+import { getUsableAcademyPhone } from "@/lib/academyPhone";
 import { getMakeupOverviewForParent } from "@/lib/makeup/parent-makeup";
 import { getUpcomingSeasonalSeats } from "@/lib/seasonal/parent-absence";
 import MyPageClient from "./MyPageClient";
 import EmptyParentState from "@/components/account/EmptyParentState";
 import Link from "next/link";
 import { requireVerifiedParent } from "@/lib/auth-guard";
-import { getParentShuttleOverview, getShuttleDriverContact } from "@/lib/shuttle/parent";
+import { getParentShuttleOverview, getShuttleDriverContact, todaySelfRideOf } from "@/lib/shuttle/parent";
 import { getPendingSeasonalChildren } from "@/lib/seasonal/parent-pending";
 import { getParentPaymentRequests } from "@/lib/payments/parent-payment-request";
 import { getParentClassStatusLines } from "@/lib/enrollment/parent-change-request";
@@ -49,9 +54,8 @@ export default async function MyPageDashboard({
     const studentIds = data?.children.map(c => c.id) ?? [];
     const pendingSeasonalChildren = await getPendingSeasonalChildren(parentAuth.appUserId, studentIds);
     if (!data || data.children.length === 0) {
-        // 학원 번호는 설정값에서(코드에 박지 않는다). 못 읽었을 때의 자리채움 번호(010-0000-0000)는 쓰지 않는다
-        const academyPhone = await getAcademySettings().then((s) => s?.contactPhone ?? null).catch(() => null);
-        const usablePhone = academyPhone && academyPhone.replace(/[^0-9]/g, "") !== "01000000000" ? academyPhone : null;
+        // 학원 번호는 설정값에서(코드에 박지 않는다). 걸 수 없는 값(자리채움 번호·이상한 길이)은 쓰지 않는다 — 판정은 공용 한 곳
+        const usablePhone = await getUsableAcademyPhone();
         return <EmptyParentState pendingSeasonalChildren={pendingSeasonalChildren} academyPhone={usablePhone} />;
     }
 
@@ -68,10 +72,10 @@ export default async function MyPageDashboard({
     // 알림 목록·안 읽은 수는 머리줄 🔔(layout)이 읽는다(2026-11-10) — 홈에서는 읽지 않는다
     // 아이 기록 한 줄(다닌 기간·올해 출석률) — 실패하면 빈 값(줄은 «전체 기록»으로 남는다)
     // 최신 수업 피드 후보 — 실패하면 빈 목록(카드만 숨는다)
-    const [notices, myRequests, shuttleOverview, driverContact, makeup, seasonal, paymentRows, classStatusLines, recordLines, feedCandidates] = await Promise.all([
+    const [notices, myInquiries, shuttleOverview, driverContact, makeup, seasonal, paymentRows, classStatusLines, recordLines, feedCandidates] = await Promise.all([
         // 공지·보낸 메시지·셔틀·기사 연락처도 아래 4개처럼 실패하면 빈 값 — 한 칸 조회가 실패해도 홈 전체가 오류로 바뀌지 않게(d5)
         getNoticesByClassIds(classIds, 10).catch(() => []),
-        getMyRequests(data.parent.id).catch(() => []),
+        listMyInquiries(prisma, parentAuth.appUserId).catch(() => []),
         getParentShuttleOverview(parentAuth.appUserId).catch(() => []),
         getShuttleDriverContact().catch(() => null),
         getMakeupOverviewForParent(parentAuth.appUserId).catch(() => null),
@@ -91,5 +95,5 @@ export default async function MyPageDashboard({
     const childParam = (await searchParams)?.child;
     const initialChildId = data.children.find((c) => c.id === childParam)?.id ?? data.children[0].id;
 
-    return <MyPageClient initialChildId={initialChildId} data={data} notices={notices} myRequests={myRequests} parentShuttleOverview={shuttleOverview} shuttleDriverContact={driverContact} pendingSeasonalChildren={pendingSeasonalChildren} makeupAvailable={makeup?.counts.available ?? 0} seasonalUpcoming={seasonal?.seats.length ?? 0} pendingPayments={pendingPayments} classStatusLines={classStatusLines} recordLines={recordLines} feedCandidates={feedCandidates} />;
+    return <MyPageClient initialChildId={initialChildId} data={data} notices={notices} inquiryCounts={{ answered: countRecentAnswered(myInquiries, Date.now()), waiting: myInquiries.filter((row) => row.status === "WAITING").length }} parentShuttleOverview={shuttleOverview} todaySelfRide={todaySelfRideOf(shuttleOverview)} shuttleDriverContact={driverContact} pendingSeasonalChildren={pendingSeasonalChildren} makeupAvailable={makeup?.counts.available ?? 0} seasonalUpcoming={seasonal?.seats.length ?? 0} pendingPayments={pendingPayments} classStatusLines={classStatusLines} recordLines={recordLines} feedCandidates={feedCandidates} />;
 }

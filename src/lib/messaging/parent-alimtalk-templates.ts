@@ -378,13 +378,13 @@ export const BILLING_ALIMTALK_TEMPLATES = {
     defaults: { academyPhone: DEFAULT_ACADEMY_PHONE },
   },
   /**
-   * B2 미납 안내 — 초안(원장 확인 필요). 발송 대상에 «기한 전 미납(PENDING)»도 섞여 있어
+   * B2 미납 안내 — 원장 확정 문구(2026-11-14 «니가 알아서해» 위임으로 초안 그대로 확정). 발송 대상에 «기한 전 미납(PENDING)»도 섞여 있어
    * «납부 기한이 지난» 대신 «아직 납부가 확인되지 않은» 으로 썼다(기한 전 학부모에게 틀린 말이 되지 않게).
    */
   UNPAID_PARENT: {
     name: "수강료 미납 안내",
     envKey: "ALIMTALK_TPL_BILLING_UNPAID",
-    status: "DRAFT",
+    status: "APPROVED",
     body: [
       `${P} #{학생명} 학생 수강료 납부 안내`,
       "",
@@ -498,7 +498,7 @@ export const SMS_ONLY_PARENT_TRIGGERS: Record<string, string> = {
   TRIAL_PAID_GUIDE_PARENT: "체험비 결제 완료 → 체험 확정 안내(src/lib/trial-fee/guideMessages.ts, 스위치 기본 꺼짐)",
   ENROLL_WELCOME_GUIDE_PARENT: "등록 안내 — 담당 코치·셔틀 기사님 연락처 자동(guideMessages.ts, 스위치 기본 꺼짐)",
   ENROLL_CONFIRM_PARENT: "공개 폼 접수 확인(꺼짐 유지). 3차 후보",
-  // 2026-11-12: 알림톡 틀은 BILLING_ALIMTALK_TEMPLATES.UNPAID_PARENT(초안). id 가 비면 아래 옛 DB 문자 그대로
+  // 2026-11-12: 알림톡 틀은 BILLING_ALIMTALK_TEMPLATES.UNPAID_PARENT(11-14 확정). id 가 비면 아래 옛 DB 문자 그대로
   UNPAID_PARENT: "미납 안내(잠금 — 토스 라이브 때 전환). 알림톡 id(ALIMTALK_TPL_BILLING_UNPAID)가 없으면 옛 DB 문자",
   SPECIAL_APPLICATION_REJECTED_PARENT: "특강 반려(꺼짐). 2차 후보",
   SPECIAL_ACCOUNT_ACTIVATION_PARENT: "특강 보호자 가입 링크(꺼짐). 2차 후보",

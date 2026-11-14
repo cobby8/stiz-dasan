@@ -24,6 +24,8 @@ function compileModule(path, imports = {}) {
 }
 const Link = ({ children, ...props }) => React.createElement("a", props, children);
 const kst = compileModule("src/lib/datetime/kst.ts");
+// 학부모 화면 «←» = 기록 우선 뒤로 링크(2026-11-14) — 진짜 부품(기록 없을 때 주소 = 예전 고정 주소)
+const parentBackLink = compileModule("src/components/parent/ParentBackLink.tsx", { "next/link": { default: Link }, "@/lib/navigation/inAppHistory": compileModule("src/lib/navigation/inAppHistory.ts") });
 const chips = compileModule("src/components/admin/list/StatusCountChips.tsx");
 // 상태색 공용 지도(2026-11-09 색상 정리) — 학부모 보강·방학특강 배지가 쓴다
 const statusTones = compileModule("src/lib/ui/statusTones.ts");
@@ -33,6 +35,8 @@ const feedRules = compileModule("src/lib/feed/rules.ts", {
   "@/lib/datetime/kst": kst,
   "@/lib/sessionVideo/rules": compileModule("src/lib/sessionVideo/rules.ts", { "@/lib/datetime/kst": kst }),
 });
+// 2026-11-14 리포트 줄 → «수업 리포트 피드»(그 수업 자리) — 주소는 피드 순수 규칙이 만든다
+const reportFeedRules = compileModule("src/lib/feed/reportFeedRules.ts", { "@/lib/datetime/kst": kst });
 // 취소·거절의 «그 자리 확인» 공용 부품(게슈탈트 C-M1) — 취소 버튼을 쓰는 화면이 함께 불러온다
 const inlineConfirm = compileModule("src/components/parent/InlineConfirm.tsx");
 // 오류 원문 대신 고객용 한국어를 고르는 공용 함수(개발 언어 제거) — 오류를 보여 주는 화면이 함께 불러온다
@@ -132,6 +136,7 @@ test("일정 탭 달 계산: 잘못된 ?month 는 이번 달, 수강월이 달�
 
 test("보강 예약은 4칸 집계판 대신 상태 칩(서버 집계와 같은 판정)과 한 목록의 행으로 보이고 예약·취소 흐름은 그대로다", () => {
   const Makeup = compileModule("src/app/mypage/makeup/MakeupClient.tsx", {
+    "@/components/parent/ParentBackLink": parentBackLink,
     "@/lib/ui/statusTones": statusTones, "@/lib/seats/seatLevel": seatLevelModule,
     "@/lib/mypage/requestPreset": { presetIndex: () => 0, presetFirst: (list) => [...list] }, "@/components/parent/customerMessage": customerMessageModule, 
     "next/link": { default: Link },
@@ -175,6 +180,7 @@ test("보강 예약은 4칸 집계판 대신 상태 칩(서버 집계와 같은 
 test("정규 결석 신고는 반 카드 속 작은 카드 대신 날짜 묶음(오늘/이번 주/다음 주/이후)의 한 줄 행이고 신고 흐름은 그대로다", () => {
   const groups = compileModule("src/components/admin/list/upcomingDateGroups.ts", { "@/lib/datetime/kst": kst });
   const Absence = compileModule("src/app/mypage/regular-absence/RegularAbsenceClient.tsx", {
+    "@/components/parent/ParentBackLink": parentBackLink,
     "@/lib/mypage/requestPreset": { presetIndex: () => 0, presetFirst: (list) => [...list] }, "@/components/parent/customerMessage": customerMessageModule, 
     "next/link": { default: Link },
     "@/components/admin/list/upcomingDateGroups": groups,
@@ -185,6 +191,11 @@ test("정규 결석 신고는 반 카드 속 작은 카드 대신 날짜 묶음(
     // 2026-11-14 질병·부상 이월 검토: 상태 글자는 진짜 규칙, 사진 압축은 브라우저 전용이라 그대로 통과
     "@/lib/regular/illnessCarryRules": compileModule("src/lib/regular/illnessCarryRules.ts", { "@/lib/datetime/kst": kst }),
     "@/lib/clientImageCompression": { compressImageForUpload: async (file) => file },
+    // 2026-11-15 여러 날 결석 칸 — 이 테스트는 «하루» 화면을 본다(여러 날 칸은 tests/parent-absence-period.test.mjs)
+    "./PeriodAbsencePanel": { __esModule: true, default: () => null, ActivePeriodList: () => null },
+    // 2026-11-14 묶음 B: 지각·조퇴 칸(이 테스트는 결석 줄만 본다 — 정보가 없으면 아무것도 그리지 않는다)
+    "./ArrivalNoticeArea": { __esModule: true, default: () => null, arrivalAddableKinds: () => [] },
+    "@/lib/regular/arrivalNoticeRules": compileModule("src/lib/regular/arrivalNoticeRules.ts", { "@/lib/parent/changeDeadline": changeDeadline }),
   }).default;
   const today = kst.todayKst();
   const date = (offset, extra = {}) => {
@@ -257,7 +268,8 @@ test("정규 결석 신고는 반 카드 속 작은 카드 대신 날짜 묶음(
   assert.match(source, /const today = todayKst\(\);/);
   assert.doesNotMatch(source, /min-h-9/, "버튼·선택칸은 터치 44px");
   // 신고 = «결석 알리기»로 폼 열기 → 사유 선택 → «알리기» (기존 단계 보존, 2026-11-14 이름 통일)
-  assert.match(source, /onClick=\{\(\) => setOpenKey\(key\)\}/);
+  // (2026-11-14 묶음 B: 결석 칸을 열 때 열려 있던 지각·조퇴 칸을 함께 닫는다)
+  assert.match(source, /onClick=\{\(\) => \{ setArrivalForm\(null\); setOpenKey\(key\); \}\}/);
   assert.match(source, /if \(!r\) \{\s*setErr\("결석 사유를 선택해 주세요\."\);/);
   assert.match(source, /onClick=\{\(\) => report\(d\)\}/);
   assert.match(source, /onConfirm=\{\(\) => cancel\(d\)\}/);
@@ -277,7 +289,9 @@ test("정규 결석 신고는 반 카드 속 작은 카드 대신 날짜 묶음(
   // 화면에 보이는 글에 «신고»가 남지 않는다(주석·코드 식별자는 제외하고 따옴표·JSX 글자만 본다)
   for (const text of ["결석 신고됨", "신고 취소", "결석 신고를", "신고에 실패", "신고·취소할 수"]) assert.ok(!source.includes(`"${text}`) && !source.includes(`>${text}`) && !new RegExp(`^\\s+${text}`, "m").test(source), text);
   // 홈의 길 안내 링크 글자도 «결석 알리기»
-  assert.match(read("src/app/mypage/MyPageClient.tsx"), /<Link href="\/mypage\/regular-absence" className="font-semibold underline">결석 알리기<\/Link>/);
+  // 홈 문의 폼의 길 안내는 한 줄로 줄였다(2026-11-14 문구 정리) — 결석·셔틀 버튼이 바로 위 «빠른 실행»에 있다
+  assert.match(read("src/app/mypage/MyPageClient.tsx"), /결석·셔틀은 위 버튼으로 알려 주세요/);
+  assert.match(read("src/app/mypage/MyPageClient.tsx"), /{ href: absenceHref, label: "결석 알리기" }/);
   assert.match(source, /\`\$\{head\} 보강권 1장이 생겼어요\.\`/);
   // 사진은 줄여서 보내고(서버가 다시 인코딩), 공개 업로드 주소는 쓰지 않는다
   assert.match(source, /compressImageForUpload\(file, \{ maxEdge: 2000,/);
@@ -285,9 +299,11 @@ test("정규 결석 신고는 반 카드 속 작은 카드 대신 날짜 묶음(
   assert.doesNotMatch(source, /"\/api\/upload"/);
 });
 
-test("수업 리포트 목록은 KST 달별 묶음·한 줄 행(주제·날짜 오른쪽 / 반·시간·담당)이고 상세 링크는 그대로다", async () => {
+test("수업 리포트 목록은 KST 달별 묶음·한 줄 행(주제·날짜 오른쪽 / 반·시간·담당)이고 누르면 리포트 피드의 그 수업 자리로 간다", async () => {
   const Page = compileModule("src/app/mypage/reports/page.tsx", {
     "next/link": { default: Link },
+    // 프로필 사진(2026-11-14 피드백 줄 연결) — 화면 검사와 무관해 빈 부품·주소 없음
+    "@/components/common/ProfileAvatar": { default: () => null }, "@/lib/profilePhoto/rules": { profilePhotoUrl: () => null },
     // 2026-11-15 아이콘 예외(화살표·종·톱니): 공용 아이콘 부품은 실제 코드를 그대로 쓴다
     "@/components/common/UiIcon": compileModule("src/components/common/UiIcon.tsx"),
     "@/lib/supabase/server": { createClient: async () => ({ auth: { getUser: async () => ({ data: { user: { id: "u1" } } }) } }) },
@@ -311,7 +327,8 @@ test("수업 리포트 목록은 KST 달별 묶음·한 줄 행(주제·날짜 �
       getGalleryByClassIds: async () => [],
     },
     "@/components/pwa/HideInInstalledApp": { default: ({ children }) => children },
-    "@/components/pwa/AppSafeLink": { default: Link },
+    // 2026-11-14 c4: 사진 타일은 앱 안 크게 보기 부품으로(이 테스트는 리포트 목록만 본다)
+    "@/components/parent/FeedPhotoGallery": { default: () => null },
     // 오늘을 고정 — 3개월 지난 공지 숨김이 실행 날짜에 따라 달라지지 않게
     "@/lib/datetime/kst": { ...kst, todayKst: () => "2026-11-09" },
     "@/lib/mypage/parentSchedule": parentSchedule,
@@ -319,6 +336,7 @@ test("수업 리포트 목록은 KST 달별 묶음·한 줄 행(주제·날짜 �
     // 2026-11-14 수업 피드: 행마다 «사진 n · 영상 n» — 개수는 공용 조회(상세가 실제로 보여 주는 것과 같은 집합)
     "@/lib/feed/server": { countSessionFeedMedia: async (sessions) => new Map(sessions.map((s) => [s.sessionId ?? s.id, s.id === "s1" ? { photoCount: 2, videoCount: 1 } : { photoCount: 0, videoCount: 0 }])) },
     "@/lib/feed/rules": feedRules,
+    "@/lib/feed/reportFeedRules": reportFeedRules,
   }).default;
   const html = renderToStaticMarkup(await Page());
   assert.match(html, /사진 2 · 영상 1/);
@@ -327,7 +345,7 @@ test("수업 리포트 목록은 KST 달별 묶음·한 줄 행(주제·날짜 �
   assert.match(html, /aria-label="2026년 9월"/);
   assert.match(html, /10\/1\(목\)/);
   assert.match(html, /9\/11\(금\)/);
-  assert.match(html, /href="\/mypage\/reports\/s1"/);
+  assert.match(html, /href="\/mypage\/reports\/feed\?start=s1"/);
   assert.match(html, />수업 리포트</);
   assert.match(html, /담당: 합성 코치/);
   assert.doesNotMatch(html, / \| 초등/,"«날짜 | 반 (요일 시간)» 이어 붙인 글은 요소로 나눴다");
@@ -353,6 +371,8 @@ test("셔틀 예정 변경은 날짜 묶음의 한 줄 행이고 행 탭=하단 
   const Shuttle = compileModule("src/app/mypage/shuttle/ShuttleExceptionClient.tsx", {
     "@/lib/mypage/requestPreset": { presetIndex: () => 0, presetFirst: (list) => [...list] }, "@/components/parent/customerMessage": customerMessageModule, 
     "next/navigation": { useRouter: () => ({ refresh() {} }) },
+    "@/lib/academyPhoneRules": compileModule("src/lib/academyPhoneRules.ts"), // 2026-11-15 «학원에 전화하기» 번호 판정(진짜 규칙)
+    "next/link": { __esModule: true, default: Link }, // 2026-11-14: «결석 알리기» 링크
     "@/lib/shuttle/dayExceptionRules": compileModule("src/lib/shuttle/dayExceptionRules.ts"),
     "@/lib/parent-staff-status": { deliveryStatusText: () => "사이트 알림 등록 1건 · 푸시 전송 접수 1건", matchesShuttleChange: () => false },
     "@/components/admin/list/ListDetailPanel": { default: ({ children }) => React.createElement("div", { "data-sheet": "" }, children) },
@@ -374,8 +394,17 @@ test("셔틀 예정 변경은 날짜 묶음의 한 줄 행이고 행 탭=하단 
   assert.match(html, /11\/3\(화\)/);
   assert.doesNotMatch(html, /2026-10-29 · 합성/, "«날짜 · 학생» 이어 붙인 글은 요소로 나눴다");
   assert.match(html, /다산초 정문 앞/);
-  assert.match(html, /담당 기사님 배정은 학원에서 확인 중/);
-  assert.doesNotMatch(html, /알림함 등록/, "긴 알림 결과는 행이 아니라 시트에서");
+  // 2026-11-14 문구 정리: 줄마다 붙던 꼬리표(«변경 저장 완료»·«담당 기사님 배정은 학원에서 확인 중»)와 건수 나열은 없앴다
+  assert.doesNotMatch(html, /담당 기사님 배정은 학원에서 확인 중|변경 저장 완료|알림함 등록|휴대폰 알림 \d+건/);
+  // 이름 통일(d2)·짧은 라벨: 제목 «셔틀 변경», 칩 «등원», 버튼 «변경 신청», 결석은 «결석 알리기»로 보낸다
+  // 2026-11-14 묶음 B: «안 타요» 칩은 방향에 맞춘 «직접 데려다줘요 / 직접 데리러 가요(자차)»로 바뀌었다(처음 고른 방향 = 등원)
+  assert.match(html, /<h1[^>]*>셔틀 변경<\/h1>/);
+  assert.match(html, />등원<\/button>/);
+  assert.match(html, />직접 데려다줘요\(자차\)<\/button>/);
+  assert.doesNotMatch(html, />안 타요</);
+  assert.doesNotMatch(html, /셔틀 당일 변경|타러 갈 때|데려다줄 때|오늘 안 타요|결석 미리 알리기|알림 요청/);
+  assert.match(html, /수업에 빠지면 <a[^>]*href="\/mypage\/regular-absence"[^>]*>결석 알리기<\/a>로 알려 주세요/);
+  assert.match(html, />변경 신청<\/button>/);
   assert.doesNotMatch(html, /data-sheet/, "처음엔 시트가 닫혀 있다");
 
   const source = read("src/app/mypage/shuttle/ShuttleExceptionClient.tsx");
@@ -402,7 +431,15 @@ test("방학특강 결석·보강은 세 목록이 한 목록의 행이고 배�
   assert.doesNotMatch(html, /· 겨울 방학특강/, "«자녀 · 특강» 이어 붙인 글은 요소로 나눴다");
   assert.match(html, /1\/5\(월\) 결석/);
   assert.match(html, />보강 신청</);
-  assert.match(html, /신청 접수 \(승인 대기\)/);
+  // 2026-11-14 문구 정리: 상태는 «승인 대기» 한마디, 제목 아래 설명 문단·빈 칸 안내 상자는 없앴다
+  assert.match(html, />승인 대기</);
+  assert.doesNotMatch(html, /신청 접수 \(승인 대기\)|현재 보강이 필요한 결석이 없습니다|예정된 방학특강 회차가 없습니다|미리 결석 신고|최종 처리는 학원과 협의/);
+  assert.match(html, /방학특강 결석 알리기 · 보강/);
+  // 예정 회차 칸은 불러온 뒤 있을 때만 제목째 그린다 — 처음 그림(불러오는 중)에는 «없어요»가 아니라 «불러오는 중»이 보인다
+  assert.doesNotMatch(html, /예정 회차 · 결석 알리기|예정된 회차나 보강할 결석이 없어요/);
+  assert.match(html, /예정 회차를 불러오는 중이에요/);
+  // 보강 기한(결석일부터 2개월)은 제목 옆 한마디로 남긴다
+  assert.match(html, /보강이 필요한 결석<span[^>]*>결석일부터 2개월 안에<\/span>/);
 
   const source = read("src/app/mypage/seasonal/SeasonalMakeupClient.tsx");
   assert.doesNotMatch(source, /결석 신고됨 · /);
@@ -412,7 +449,10 @@ test("방학특강 결석·보강은 세 목록이 한 목록의 행이고 배�
   assert.match(source, /onClick=\{\(\) => request\(ab\.enrollmentDateId, "REGULAR", c\)\}/);
   assert.match(source, /onClick=\{\(\) => reportAbsence\(s\.enrollmentDateId\)\} disabled=\{busy \|\| !seatReason\[s\.enrollmentDateId\]\}/);
   assert.match(source, /onConfirm=\{\(\) => cancelAbsence\(s\.enrollmentDateId\)\}/);
-  assert.match(source, /신고하면 그날 셔틀 배차에서도 자동 제외됩니다\./);
+  // 2026-11-14 원장 결정(문구 정리 62번): 칸 제목 아래 설명 문장(«…미리 신고할 수 있어요. 신고하면 그날 셔틀 배차에서도 자동 제외됩니다.»)은 없앴다
+  assert.doesNotMatch(source, /셔틀 배차에서도 자동 제외됩니다|미리 신고할 수 있어요/);
+  // 이름 통일(d2): 방학특강 화면도 «결석 알리기» — 화면에 보이는 글에 «결석 신고»가 남지 않는다(주석 제외)
+  for (const text of ["결석 신고", "신고 취소", "결석 미리 신고"]) assert.ok(!source.includes(`"${text}`) && !source.includes(`>${text}`), text);
 });
 
 test("가족 연결의 받은 요청·보낸 요청 행은 요소로 나뉘고 상태 칩·요청일(오른쪽)을 보이며 승인 확인 단계는 그대로다", () => {

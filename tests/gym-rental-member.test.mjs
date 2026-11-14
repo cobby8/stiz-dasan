@@ -512,7 +512,8 @@ test("화면: 시간 고르기는 버튼 하나 + 시트, 시작칩 나열·30�
   assert.match(sheet, /이 시간으로/);
   // 막힘 규칙을 화면에서 새로 만들지 않는다 — 서버가 준 available/maxMinutes 만 읽는다
   assert.doesNotMatch(sheet, /hmToMinutes|dayOfWeek|buildRentalDay\(/);
-  const page = read("src/app/rental/page.tsx");
+  // 2026-11-14 c9: 요금·규칙 안내는 공용 부품(RentalGuide)으로 옮겼다 — 공개 화면과 학부모 앱 안 화면이 같이 쓴다
+  const page = read("src/app/rental/page.tsx") + read("src/app/rental/RentalGuide.tsx");
   assert.match(page, /"이후 1시간마다"/);
   assert.doesNotMatch(page, /30분당|30분마다|PerHalfHour/);
   // 개인정보 동의 문구(수집 항목·목적·보유 기간·거부 시 불이익)

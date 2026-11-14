@@ -81,9 +81,10 @@ async function requireManageablePhoto(sessionId: string, photoId: string) {
   const session = sessions[0];
   if (!session) return { response: NextResponse.json({ error: "수업 기록을 찾을 수 없습니다." }, { status: 404 }) };
   // 사진 등록과 같은 권한 함수(특강 회차면 특강 담당 강사 기준) — 2026-11-13 G11
-  await requireStaffSessionAccess(sessionId);
-  // 2026-11-14: 영상과 같은 시간 규칙 — 수업 중 또는 끝난 수업의 당일 KST 자정까지
-  const window = canManageSessionMedia(session);
+  const { access } = await requireStaffSessionAccess(sessionId);
+  // 2026-11-14: 영상과 같은 기간 규칙 — 수업 중 또는 끝난 수업(선생님 수업일 포함 7일·원장·부원장 제한 없음)
+  const unlimited = access.canAccessAllClasses;
+  const window = canManageSessionMedia({ ...session, unlimited });
   if (!window.ok) {
     return { response: NextResponse.json({ error: photoWindowMessage(window.reason) }, { status: 409 }) };
   }
@@ -107,7 +108,7 @@ async function requireManageablePhoto(sessionId: string, photoId: string) {
       ),
     };
   }
-  return { session, photo };
+  return { session, photo, unlimited };
 }
 
 // 2026-11-14: «나온 학생» 수정(PATCH)은 없앴다 — 학부모 보기는 수업 참여 기준이라 학생 태그가 필요 없다(원장 결정).
@@ -133,8 +134,8 @@ export async function DELETE(_request: Request, context: { params: Promise<{ ses
            FROM "Session" WHERE id = $1 FOR UPDATE`,
         sessionId,
       );
-      // 잠근 뒤 한 번 더 — 그 사이 자정이 지났거나 수업 상태가 바뀌었으면 지우지 않는다
-      const lockedWindow = sessionRows[0] ? canManageSessionMedia(sessionRows[0]) : null;
+      // 잠근 뒤 한 번 더 — 그 사이 수정 기간이 끝났거나 수업 상태가 바뀌었으면 지우지 않는다
+      const lockedWindow = sessionRows[0] ? canManageSessionMedia({ ...sessionRows[0], unlimited: manageable.unlimited }) : null;
       if (!lockedWindow?.ok) throw new Error(lockedWindow ? photoWindowMessage(lockedWindow.reason) : "수업 기록을 찾을 수 없습니다.");
       const draftRows = await tx.$queryRawUnsafe<SessionPhotoDraftRow[]>(
         `SELECT id, status, "mediaJSON", "subjectStudentIdsJSON", "galleryPostId", "instagramMediaId"
@@ -184,6 +185,6 @@ export async function DELETE(_request: Request, context: { params: Promise<{ ses
     return NextResponse.json({ ok: true });
   } catch (error) {
     const message = userFacingError(error, "사진을 삭제하지 못했습니다.");
-    return NextResponse.json({ error: message }, { status: error instanceof Error && /대기열|자정|시작한 뒤/.test(error.message) ? 409 : 403 });
+    return NextResponse.json({ error: message }, { status: error instanceof Error && /대기열|수정 기간|수업 날짜부터|시작한 뒤/.test(error.message) ? 409 : 403 });
   }
 }

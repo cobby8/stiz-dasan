@@ -24,6 +24,34 @@ export const SHUTTLE_EXCEPTION_KIND_LABEL: Record<ShuttleExceptionKind, string> 
   LOCATION: "다른 곳에서 타요",
 };
 
+// 학부모 화면 전용 짧은 라벨(2026-11-14 문구 정리) — «등원(타러 갈 때)»→«등원», «오늘 안 타요»→«안 타요»(오늘이 아닌 날도 고른다).
+// 위 SHUTTLE_*_LABEL 은 관리자 화면·카카오 대화·기사님 알림 글이 그대로 쓰므로 건드리지 않는다.
+export const PARENT_SHUTTLE_DIRECTION_LABEL: Record<ShuttleDirection, string> = {
+  PICKUP: "등원",
+  DROPOFF: "하원",
+  BOTH: "등원·하원 모두",
+};
+
+export const PARENT_SHUTTLE_EXCEPTION_KIND_LABEL: Record<ShuttleExceptionKind, string> = {
+  SKIP: "안 타요",
+  LOCATION: "다른 곳에서 타요",
+};
+
+// «안 타요»를 학부모 말로(2026-11-14 원장 결정표 묶음 B): 셔틀을 안 타는 날은 보호자가 직접 데려다주거나 데리러 온다 —
+// 방향에 맞춰 «직접 데려다줘요 / 직접 데리러 가요(자차)»로 보인다. 저장 값(kind=SKIP)은 그대로다.
+// 기사님 화면에는 «자차»로 보이고 그 방향 탑승·미탑승 버튼이 잠긴다(arrivalNoticeRules.shuttleSkipLabel).
+export const PARENT_SHUTTLE_SKIP_LABEL: Record<ShuttleDirection, string> = {
+  PICKUP: "직접 데려다줘요(자차)",
+  DROPOFF: "직접 데리러 가요(자차)",
+  BOTH: "등원·하원 모두 자차",
+};
+
+/** 학부모 화면에 보이는 변경 내용 한마디 — SKIP 은 방향에 맞춘 자차 글자, LOCATION 은 «다른 곳에서 타요». 모르는 값이면 null */
+export function parentShuttleChangeLabel(kind: string, direction: string): string | null {
+  if (kind === "SKIP") return PARENT_SHUTTLE_SKIP_LABEL[direction as ShuttleDirection] ?? PARENT_SHUTTLE_EXCEPTION_KIND_LABEL.SKIP;
+  return PARENT_SHUTTLE_EXCEPTION_KIND_LABEL[kind as ShuttleExceptionKind] ?? null;
+}
+
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
 
 export function isYmd(value: unknown): value is string {

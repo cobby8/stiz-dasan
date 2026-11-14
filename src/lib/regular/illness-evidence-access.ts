@@ -6,7 +6,9 @@
 // DB 는 인자(db)로만 받는다 — 테스트가 가짜 db 로 권한 조건을 실제 실행해 본다.
 // accessSql 은 호출부가 childAccessSql("s", "$1") 로 만든 조각이다($1 = 로그인한 학부모 계정).
 import { notMergedStudent } from "@/lib/studentVisibility";
-import { ILLNESS_REASON, canAddEvidence, canEditEvidence, EVIDENCE_MAX_PHOTOS } from "@/lib/regular/illnessCarryRules";
+import {
+  ILLNESS_REASON, canAddEvidence, canEditEvidence, evidenceAnchorYmdSql, evidenceScopeSql, EVIDENCE_MAX_PHOTOS,
+} from "@/lib/regular/illnessCarryRules";
 
 export type EvidenceDb = {
   $queryRawUnsafe<T = unknown>(sql: string, ...values: unknown[]): Promise<T>;
@@ -15,6 +17,13 @@ export type EvidenceDb = {
 
 /** 결석 한 건의 사진 올리기를 줄 세우는 잠금(검토 줄 한 행). 반드시 거래 안에서, 장수를 세기 «전»에 따로 실행한다 */
 export const EVIDENCE_LOCK_SQL = `SELECT 1 AS locked FROM "RegularAbsenceCarryReview" WHERE "absenceId" = $1 FOR UPDATE`;
+
+/**
+ * 여러 날 결석(기간)의 사진 올리기를 줄 세우는 잠금 — 그 결석이 속한 기간 행. 하루 결석이면 잠글 행이 없다(0행).
+ * NO KEY UPDATE: 줄만 세우면 되므로 키를 바꾸는 잠금(FOR UPDATE)까지 잡지 않는다 — 그 기간을 가리키는 결석 행 쓰기(FK 확인)를 막지 않는다.
+ */
+export const EVIDENCE_PERIOD_LOCK_SQL = `SELECT 1 AS locked FROM "RegularAbsencePeriod" p
+  JOIN "RegularAbsence" ra ON ra."periodId" = p.id WHERE ra.id = $1 FOR NO KEY UPDATE OF p`;
 
 export type EvidenceTarget = { absenceId: string; status: string; requestedYmd: string; absenceYmd: string; todayYmd: string; photoCount: number };
 
@@ -25,13 +34,18 @@ export async function findEvidenceTargetForParent(
   // 잠금은 «따로 한 문장»으로 먼저 잡는다(보안 검수 2026-11-14).
   // 잠금(FOR UPDATE)과 장수 세기(COUNT)가 한 문장이면, READ COMMITTED 에서 기다리던 쪽이 «기다리기 전»에 센 장수를
   // 그대로 써서 동시에 올린 사진이 3장 제한을 넘는다. 잠금을 얻은 «뒤»의 새 문장은 앞 거래가 확정한 사진까지 센다.
-  if (lock) await db.$queryRawUnsafe(EVIDENCE_LOCK_SQL, absenceId);
+  if (lock) {
+    // 여러 날 결석은 3장을 «기간 전체»로 센다 — 같은 기간의 다른 날짜로 동시에 올려도 줄을 서게 기간 행을 먼저 잠근다(하루 결석은 0행)
+    await db.$queryRawUnsafe(EVIDENCE_PERIOD_LOCK_SQL, absenceId);
+    await db.$queryRawUnsafe(EVIDENCE_LOCK_SQL, absenceId);
+  }
   const rows = await db.$queryRawUnsafe<EvidenceTarget[]>(
     `SELECT ra.id AS "absenceId", r.status,
             to_char(r."requestedAt" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "requestedYmd",
-            to_char(ra.date, 'YYYY-MM-DD') AS "absenceYmd",
+            -- 여러 날 결석이면 기간의 마지막 결석일이 기준이고, 사진 3장도 기간 전체로 센다(한 묶음)
+            ${evidenceAnchorYmdSql("ra")} AS "absenceYmd",
             to_char(now() AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "todayYmd",
-            (SELECT COUNT(*)::int FROM "RegularAbsenceEvidence" e WHERE e."absenceId" = ra.id AND e."removedAt" IS NULL) AS "photoCount"
+            (SELECT COUNT(*)::int FROM "RegularAbsenceEvidence" e WHERE ${evidenceScopeSql("ra", "e")} AND e."removedAt" IS NULL) AS "photoCount"
        FROM "RegularAbsence" ra
        JOIN "Student" s ON s.id = ra."studentId"
        JOIN "RegularAbsenceCarryReview" r ON r."absenceId" = ra.id
@@ -61,7 +75,7 @@ export async function findEvidenceForParent(
     `SELECT e.id, e."storageBucket" AS "storageBucket", e."storagePath" AS "storagePath", e."absenceId" AS "absenceId",
             r.status,
             to_char(r."requestedAt" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "requestedYmd",
-            to_char(ra.date, 'YYYY-MM-DD') AS "absenceYmd",
+            ${evidenceAnchorYmdSql("ra")} AS "absenceYmd",
             to_char(now() AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "todayYmd"
        FROM "RegularAbsenceEvidence" e
        JOIN "RegularAbsence" ra ON ra.id = e."absenceId"

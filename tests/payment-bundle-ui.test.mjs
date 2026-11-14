@@ -161,6 +161,9 @@ test("④ 청구 탭: 대표 보호자 미납이 있으면 «한 번에 결제»
     "@/lib/datetime/kst": kst,
     // 2026-11-14 월 카드 + 세부 시트(공용 부품) — 진짜 파일로
     ...billingMocks,
+    // 2026-11-14 c11: 납부 완료 항목의 «환불 문의»(서버 동작·문구 거르기) — 이 테스트는 결제 진입만 본다
+    "@/app/actions/parent-inquiry": { sendRefundInquiry: async () => ({ ok: false, error: "" }) },
+    "@/components/parent/customerMessage": { customerMessage: (_value, fallback) => fallback },
   }).default;
   const row = (id, extra = {}) => ({ paymentId: id, studentId: "s", studentName: "합성", description: "11월 수강료", amount: 100000, status: "PENDING", dueDate: null, paidDate: null, invoiceNo: null, invoiceId: `i-${id}`, canCheckout: true, receiptUrl: null, virtualAccount: null, pending: [], resolved: [], ...extra });
   const va = { bankName: "합성은행", accountNumber: "777", customerName: null, amount: 250000, dueDate: "2026-11-20", dueLabel: "", expired: false };
@@ -213,7 +216,7 @@ test("④ 옛 홈 해시는 옮겨 간 탭으로", () => {
   assert.equal(legacyHomeHashTarget("mypage-feedback"), "/mypage/reports#news-feedback");
   assert.equal(legacyHomeHashTarget("mypage-notifications"), null, "알림은 홈에 그대로");
   assert.equal(legacyHomeHashTarget("constructor"), null);
-  assert.match(read("src/app/mypage/MyPageClient.tsx"), /const moved = legacyHomeHashTarget\(id\);\s*if \(moved\) \{\s*window\.location\.replace\(moved\);/);
+  assert.match(read("src/app/mypage/MyPageClient.tsx"), /const moved = legacyHomeHashTarget\(id\);\s*if \(moved\) \{[\s\S]{0,200}?window\.location\.replace\(moved\);/);
 });
 
 test("④ 학부모 «납부 신청» 승인은 MANUAL 로 표시 — 옛 토스 묶음 주문의 전액 취소가 이 청구를 환불하지 않게", () => {

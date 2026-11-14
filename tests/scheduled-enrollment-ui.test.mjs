@@ -49,10 +49,14 @@ test("관리자 원생 상세는 개시일이 미래인 ACTIVE 반을 «수강 �
     "@/components/admin/AdminQuickActionMenu": { __esModule: true, default: ({ actions }) => React.createElement("div", {}, actions.map((a) => a.label).join("|")) },
     "@/components/admin/AdminConfirmDialog": { useAdminConfirm: () => ({ confirm: async () => false, confirmDialog: null }) },
     "@/app/actions/enrollment-admin-edit": {}, "./EnrollmentMoveModal": nullComponent,
+    // 2026-11-14: 수강 변경 뒤 정리 결과·처리 중 신청 확인 상자(이 테스트에서는 빈 부품)
+    "./EnrollmentCleanupNotice": { EnrollmentCleanupNotice: () => null, OpenRequestsBox: () => null, hasCleanupNotice: () => false },
     "@/app/actions/guest-pay-link": {},
     "@/components/maps/LocationPickerModal": nullComponent, "@/components/admin/AdminModal": nullComponent,
     // 2026-11-13 UI 통일 2단계: 페이지 제목이 공용 부품(AdminPageHeader)으로 옮겨져 가짜 부품 목록에 추가(단언은 그대로)
     "@/components/admin/AdminPageHeader": nullComponent,
+    // 프로필 사진(2026-11-14 연결) — 화면 검사와 무관해 빈 부품·주소 없음으로 둔다
+    "@/components/common/ProfileAvatar": nullComponent, "@/lib/profilePhoto/rules": { profilePhotoUrl: () => null },
     "@/components/admin/StatusBadge": { statusToneClass: () => "" },
     "./ParentRequestLinkPanel": nullComponent, "./GuardianPanel": nullComponent, "./AbsencePeriodPanel": nullComponent,
     // 2026-11-14: 학부모 «정보 변경 요청»·건강 특이사항 칸이 늘었다(화면이 열린 뒤 따로 읽는 칸이라 이 테스트에서는 빈 부품)
@@ -92,7 +96,10 @@ test("관리자 원생 목록 «활성» 필터·반별 인원은 개시일 미�
     "@/app/actions/admin": {}, "@/components/admin/AdminModal": nullComponent,
     // 2026-11-13 UI 통일 2단계: 페이지 제목이 공용 부품(AdminPageHeader)으로 옮겨져 가짜 부품 목록에 추가(단언은 그대로)
     "@/components/admin/AdminPageHeader": nullComponent,
+    // 프로필 사진(2026-11-14 연결) — 화면 검사와 무관해 빈 부품·주소 없음으로 둔다
+    "@/components/common/ProfileAvatar": nullComponent, "@/lib/profilePhoto/rules": { profilePhotoUrl: () => null },
     "@/components/admin/AdminQuickActionMenu": nullComponent,
+    "@/components/admin/AbsencePeriodQuickCreate": nullComponent, // 2026-11-15 ⚡ «기간 결석 등록»
     "@/components/admin/AdminConfirmDialog": { useAdminConfirm: () => ({ confirm: async () => false, confirmDialog: null }) },
     "@/components/academy/CompactListFilters": { __esModule: true, default: ({ children }) => React.createElement("div", {}, children) },
     "@/components/admin/list/ListDetailPanel": nullComponent,
@@ -115,6 +122,8 @@ test("관리자 원생 목록 «활성» 필터·반별 인원은 개시일 미�
 test("학부모 홈은 개시일 미래인 ACTIVE 반을 수강 중으로 세고 수업 시작일을 안내한다", () => {
   const summary = load("src/lib/mypage/summary.ts", {});
   const Client = load("src/app/mypage/MyPageClient.tsx", {
+    // 옛 홈 칸 주소 넘기기의 «바꿔 끼우기» 표시(2026-11-14 학부모 뒤로) — 렌더 검사에서는 아무 일도 안 한다
+    "@/lib/navigation/inAppHistory": { markNextNavigationAsReplace() {} },
     "next/navigation": { useRouter: () => ({ push() {}, replace() {}, refresh() {} }) },
     "@/app/actions/parent-notifications": {}, "./useRememberedChild": { useRememberedChild: (_ids, init) => [init, () => {}] },
     "@/lib/mypage/parentNav": { safeInternalHref: (v) => (typeof v === "string" && v.startsWith("/") && !v.startsWith("//") ? v : null) },
@@ -133,7 +142,10 @@ test("학부모 홈은 개시일 미래인 ACTIVE 반을 수강 중으로 세고
     parent: { id: "parent-a", name: "합성 부모" },
     children: [{ id: "student-a", name: "합성 학생", birthDate: "2016-01-01", enrollments: [enrollment], attendance: { total: 0, present: 0, absent: 0, late: 0, records: [] }, payments: [] }],
   } }));
-  assert.match(html, /수강 중인 반 1개/);
+  // 2026-11-14 문구 정리: 바로 아래 «다음 수업» 줄이 같은 말을 해서 «수강 중인 반 1개»는 그 줄이 있을 때 뺐다 — 개시 전 반도 «다음 수업»으로 잡히고 개시일 안내가 붙는다
+  assert.match(html, /다음 수업/);
+  assert.match(html, /부터 수업 시작/, "개시일 안내는 그대로(이 검사의 날짜 도우미는 값을 그대로 돌려준다)");
+  assert.doesNotMatch(html, /수강 중인 반 1개|수강 중인 반이 없습니다/);
   assert.doesNotMatch(html, /수강 예정|수강 시작을 기다리고 있어요/);
   // 수강 반 목록은 «일정» 탭(ScheduleHub)으로 옮겨졌다 — 개시일 안내도 그 목록 행에서 확인한다
   const parentSchedule = load("src/lib/mypage/parentSchedule.ts", { "@/lib/datetime/kst": kstModule, "@/lib/classSchedule": load("src/lib/classSchedule.ts", {}) });

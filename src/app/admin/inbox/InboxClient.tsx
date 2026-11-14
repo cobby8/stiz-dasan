@@ -41,6 +41,8 @@ import type { getCachedAdminTrialPayload } from "@/lib/adminReadPayloads";
 import { updateConsultRequest } from "@/app/actions/consult";
 import { cancelRegularAbsenceByAdmin, confirmRegularAbsence } from "@/app/actions/regular-absence-admin";
 import { cancelMakeupSession, deleteParentRequest, updateMakeupStatus, updateRequestStatus } from "@/app/actions/admin";
+// 문의 답변 = 대화에 한 줄 추가(2026-11-14 c3) — 예전엔 답변 한 줄(adminNote)을 덮어썼다
+import { replyToParentRequest } from "@/app/actions/parent-inquiry";
 import { decidePaymentRequest } from "@/app/actions/payment-requests";
 import { approveRoleRequest, rejectRoleRequest, revokeRoleGrant } from "@/app/actions/role-requests-admin";
 import { reviewStaffPaymentConfirmation } from "@/app/actions/staff-billing";
@@ -167,7 +169,8 @@ export function actionsFor(row: InboxRow): PanelAction[] {
         },
         ...statuses.filter(({ status }) => status !== row.rawStatus).map(({ key, label, status, look }): PanelAction => ({
           key, label, look,
-          run: (note) => updateRequestStatus(row.id, status, note === (row.ref?.adminNote ?? "") ? undefined : note.trim()),
+          // 답변을 적었으면 «답 + 상태»를 한 번에(학부모 알림 1건), 비었으면 상태만 바꾼다(기존 동작)
+          run: (note) => (note.trim() ? replyToParentRequest(row.id, note.trim(), status) : updateRequestStatus(row.id, status)),
         })),
       ];
     }
@@ -365,7 +368,9 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
           setMessage({ tone: "error", text: failure });
           return;
         }
-        setMessage({ tone: "ok", text: `${row.studentName ?? row.title} · ${action.label} 처리했습니다.` });
+        // 일부만 처리된 경우의 덧붙임(예: 문의 답은 저장했지만 상태는 못 바꿈) — 서버 동작이 note 로 돌려준다
+        const partial = result && typeof result === "object" && typeof (result as { note?: unknown }).note === "string" ? (result as { note: string }).note : "";
+        setMessage({ tone: "ok", text: partial || `${row.studentName ?? row.title} · ${action.label} 처리했습니다.` });
         setOpenSelection(null);
         setNote("");
         router.refresh();
@@ -481,7 +486,8 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
           // 저장된 메모를 채워 열고, 사용자가 수정했을 때만 새 값을 저장한다.
           onClick={() => {
             setOpenSelection(row);
-            setNote(row.kind === "CONSULT" || row.kind === "PARENT_REQUEST" ? row.ref?.adminNote ?? "" : "");
+            // 상담 메모는 저장된 값을 채워 연다. 문의 답변은 «이어 쓰기»라 빈칸으로 연다(앞선 답은 위 대화 줄에 보인다)
+            setNote(row.kind === "CONSULT" ? row.ref?.adminNote ?? "" : "");
             setMessage(null);
           }}
           className={`flex min-h-12 min-w-0 flex-1 items-center gap-2 py-1.5 pr-3 text-left hover:bg-[var(--color-academy-soft)] ${gutter ? "pl-0" : "pl-3"}`}
@@ -732,6 +738,10 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
           {open.kind === "CHILD_LINK" && open.rawStatus === "PENDING" && (
             <p className="mt-3 text-sm text-[var(--color-academy-muted)]">먼저 연결된 보호자가 학부모 화면에서 승인합니다.</p>
           )}
+          {/* 셔틀 계속 바꾸기 — 승인·반려·명단 확인은 셔틀 명단 화면에서(신청함은 알림 줄) */}
+          {open.kind === "SHUTTLE_REGULAR" && (open.rawStatus === "PENDING" || open.rawStatus === "APPROVED") && (
+            <Link href="/admin/shuttle/regular" className="academy-button-secondary mt-3">셔틀 명단에서 처리</Link>
+          )}
           {open.kind === "SHUTTLE_DAY" && open.rawStatus === "ACTIVE" && (
             <p className="mt-3 text-sm text-[var(--color-academy-muted)]">당일 운행 명단에 자동으로 반영됩니다.</p>
           )}
@@ -743,7 +753,7 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
           )}
           {wantsNote(open, openActions) && (
             <label className="mt-4 block text-sm font-medium text-[var(--color-academy-ink)]">
-              {open.kind === "PARENT_REQUEST" ? "답변(학부모에게 보임)" : open.kind === "CONSULT" ? "원장 메모(학부모에게 안 보임)" : "메모·거절 사유(선택)"}
+              {open.kind === "PARENT_REQUEST" ? "답변 쓰기(학부모에게 보임)" : open.kind === "CONSULT" ? "원장 메모(학부모에게 안 보임)" : "메모·거절 사유(선택)"}
               <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={2} maxLength={open.kind === "PARENT_REQUEST" ? 2000 : open.kind === "CONSULT" ? 1000 : 500} className="academy-input mt-1 w-full" />
             </label>
           )}

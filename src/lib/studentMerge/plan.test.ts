@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 // @ts-expect-error -- Node's type-stripping runner needs the runtime extension.
-import { chooseRepresentative, countActive, finalEnrollmentStatuses, conflictPairsSql, isBillingRowMovable, moveGuardSql, moveSkipNote, promoteRowSql, shouldPromoteOnConflict, planEnrollmentMerge, SOFT_SKIP_STATUS, statusPriority, type EnrollmentRow, type MergeCandidate } from "./plan.ts";
+import { carryNoticeLine, chooseRepresentative, countActive, finalEnrollmentStatuses, conflictPairsSql, isBillingRowMovable, moveGuardSql, moveSkipNote, promoteRowSql, shouldPromoteOnConflict, planEnrollmentMerge, SOFT_SKIP_STATUS, statusPriority, type EnrollmentRow, type MergeCandidate } from "./plan.ts";
 // @ts-expect-error -- Node's type-stripping runner needs the runtime extension.
 import { STUDENT_REF_TABLES, type StudentRefTable } from "./tables.ts";
 
@@ -241,4 +241,11 @@ test("결석 충돌 승계 SQL: 같은 반·날짜 쌍을 찾고, updatedAt·학
   for (const forbidden of ["updatedAt", "studentId", "classId", "date", "createdAt"]) {
     assert.doesNotMatch(upd, new RegExp(`"${forbidden}" =`), `${forbidden} 는 승계하면 안 된다`);
   }
+});
+
+test("병합 미리보기: 흡수 학생에 남은 이월이 있을 때만 안내 한 줄(글자만)", () => {
+  assert.equal(carryNoticeLine(160000), "남은 이월 160,000원은 대표 학생 청구에서 차감됩니다");
+  assert.equal(carryNoticeLine(0), null);
+  assert.equal(carryNoticeLine(-1), null);
+  assert.equal(carryNoticeLine(Number.NaN), null);
 });

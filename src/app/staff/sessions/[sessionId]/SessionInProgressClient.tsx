@@ -15,6 +15,8 @@ import { SessionPhotoUploader, type SessionPhotoUploaderHandle, type SessionUplo
 import { SessionVideoUploader, type SessionVideoUploaderHandle, type SessionVideoUploaderState } from "@/components/staff/SessionVideoUploader";
 // 2026-11-15 수업 한 화면: 접는 칸·통합 글칸·학생 정보·아래 올리기 막대
 import UiIcon from "@/components/common/UiIcon";
+import ProfileAvatar from "@/components/common/ProfileAvatar";
+import { profilePhotoUrl } from "@/lib/profilePhoto/rules";
 import { WorkspaceSection } from "@/components/staff/WorkspaceSection";
 import { LessonTextEditor, type LessonTextSaveResult } from "@/components/staff/LessonTextEditor";
 import { useClassPeople } from "@/components/staff/RosterPersonInfo";
@@ -115,6 +117,8 @@ type LiveSessionProps = {
   onOpenBilling?: (student?: { id: string; name: string }) => void;
   /** 홈: 줄을 접어도 보이게 출결 요약·저장 상태를 알린다 */
   onAttendanceStatus?: (status: { summary: string; saving: string; failed: string }) => void;
+  /** 완료한 수업: 원장·부원장이면 true — 수정 기간(선생님 수업일 포함 7일) 제한 없음. 서버도 같은 기준으로 다시 막는다 */
+  editUnlimited?: boolean;
 };
 
 export type SessionWorkspaceProps =
@@ -129,7 +133,8 @@ export type SessionWorkspaceProps =
 export default function SessionWorkspace(props: SessionWorkspaceProps) {
   if (!props.session) return <PlannedLessonPanel {...props.planned} />;
   if (props.session.status === "COMPLETED") {
-    return <CompletedSessionPanel session={props.session} students={props.initialStudents} onLineSaved={props.onLineSaved} onOpenBilling={props.onOpenBilling} />;
+    // 완료한 수업 다시 보기·고치기 — 홈의 줄 안(embedded)과 수업 주소(지난 수업에서 연 화면) 양쪽에서 같은 부품
+    return <CompletedSessionPanel session={props.session} students={props.initialStudents} onLineSaved={props.onLineSaved} onOpenBilling={props.onOpenBilling} embedded={props.embedded === true} editUnlimited={props.editUnlimited === true} />;
   }
   return <LiveSessionWorkspace {...props} />;
 }
@@ -886,6 +891,8 @@ function LiveSessionWorkspace({
                 <div className="flex items-center gap-2">
                   {/* 이름 쪽을 누르면 이 줄 아래에 학생 정보가 펼쳐진다 — 연락처·수강료·메모·최근 출결은 거기서 본다 */}
                   <button type="button" aria-expanded={infoOpen} aria-controls={`roster-info-${student.id}`} aria-label={`${student.name} 상세 정보`} onClick={() => { setPeopleWanted(true); setInfoRow(infoOpen ? null : student.id); }} className="flex min-h-11 min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-left">
+                    {/* 아이 사진 28px(없으면 이름 첫 글자, 2026-11-14) — 체험·미전환 아이는 학생 id 가 없어 첫 글자 */}
+                    <ProfileAvatar decorative name={student.name} size={28} src={student.studentId ? profilePhotoUrl({ kind: "student", id: student.studentId }, student.photoVersion ?? null, true) : null} />
                     <span className="break-keep text-base font-semibold">{student.name}</span>
                     {/* 다른 반 아이가 보강 온 경우. 출석을 찍으면 보강권이 사용 처리되고, 결석이면 보강권은 그대로 남는다. */}
                     {student.makeup && (
@@ -900,6 +907,10 @@ function LiveSessionWorkspace({
                     {student.absenceReport?.source === "PARENT" && (
                       <span className="rounded bg-[var(--color-academy-warning-soft)] px-1.5 py-0.5 text-xs font-medium text-[var(--color-academy-warning)]">결석 신고</span>
                     )}
+                    {/* 학부모가 알린 지각·조퇴 예정(«지각 예정 17:20») — 결석 신고가 있으면 그쪽이 우선(서버가 비워 보낸다) */}
+                    {student.arrivalNotices?.map((label) => (
+                      <span key={label} className="rounded bg-[var(--color-academy-info-soft)] px-1.5 py-0.5 text-xs font-medium tabular-nums text-[var(--color-academy-info)]">{label}</span>
+                    ))}
                     {/* 미납은 원장·부원장(showFees)에게만 — 선생님은 수강료 조회 자체를 하지 않아 값도 없다(f3). 금액·청구는 펼친 학생 정보에. */}
                     {showFees && !student.makeup && !student.trial && feesByRoster.get(student.id)?.status === "UNPAID" && (
                       <span className="rounded bg-[var(--color-academy-warning-soft)] px-1.5 py-0.5 text-xs font-medium text-[var(--color-academy-warning)]">미납</span>

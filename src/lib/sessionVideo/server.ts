@@ -44,9 +44,12 @@ export async function loadSessionForVideo(sessionId: string): Promise<SessionVid
   return rows[0] ?? null;
 }
 
-/** 업로드·삭제 가능 시간이 아니면 409 로 보낼 문장, 맞으면 null */
-export function uploadWindowError(session: SessionVideoSessionRow): string | null {
-  const result = canManageSessionVideo({ status: session.status, sessionYmd: session.sessionYmd, todayYmd: session.todayYmd });
+/**
+ * 업로드·삭제 가능 기간이 아니면 409 로 보낼 문장, 맞으면 null.
+ * @param unlimited 원장·부원장(access.canAccessAllClasses) — 기간 제한 없음
+ */
+export function uploadWindowError(session: SessionVideoSessionRow, unlimited: boolean): string | null {
+  const result = canManageSessionVideo({ status: session.status, sessionYmd: session.sessionYmd, todayYmd: session.todayYmd, unlimited });
   return result.ok ? null : uploadWindowMessage(result.reason);
 }
 

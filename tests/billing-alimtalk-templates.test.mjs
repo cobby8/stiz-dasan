@@ -1,4 +1,4 @@
-// 수강료 청구 알림톡 2종(2026-11-12) — 청구서 발행 안내(원장 승인 원문)·미납 안내(초안).
+// 수강료 청구 알림톡 2종(2026-11-12) — 청구서 발행 안내(원장 승인 원문)·미납 안내(11-14 확정).
 // «금고 틀 = 심사 문서 = 문자 대체 본문»을 실제로 실행해 대조하고, 발송부는 «가짜 발송자»(fetch·문자 함수 대체)로
 // 돌려 알림톡 text·버튼·문자 대체 본문이 맞게 나가는지 본다. 실제 발송은 하지 않는다.
 import assert from "node:assert/strict";
@@ -28,14 +28,14 @@ const APPROVED_INVOICE_BODY = `[스티즈농구교실] #{학생명} 학생 #{청
 아래 버튼에서 청구 내용 확인과 결제(카드·계좌이체)를 하실 수 있어요.
 문의: #{학원전화}`;
 
-test("청구 2종: 청구서 안내는 원장 승인 원문 그대로, 미납은 초안 표시", () => {
+test("청구 2종: 청구서 안내는 원장 승인 원문 그대로, 미납도 확정(11-14)", () => {
   assert.deepEqual(KINDS.sort(), ["BILLING_INVOICE_PARENT", "UNPAID_PARENT"]);
   const invoice = reg.BILLING_ALIMTALK_TEMPLATES.BILLING_INVOICE_PARENT;
   assert.equal(invoice.body, APPROVED_INVOICE_BODY);
   assert.equal(invoice.status, "APPROVED");
   assert.equal(invoice.envKey, "ALIMTALK_TPL_BILLING_INVOICE");
   const unpaid = reg.BILLING_ALIMTALK_TEMPLATES.UNPAID_PARENT;
-  assert.equal(unpaid.status, "DRAFT");
+  assert.equal(unpaid.status, "APPROVED");
   assert.equal(unpaid.envKey, "ALIMTALK_TPL_BILLING_UNPAID");
   // 기한 전 미납도 섞여 있어 «기한이 지난» 이라고 단정하지 않는다
   assert.doesNotMatch(unpaid.body, /기한이 지난/);
@@ -108,7 +108,7 @@ test("납부기한 표기: YYYY-MM-DD 달력 숫자만 읽는다(시간대 개�
   assert.equal(reg.formatBillingDueDate("2026-12-10T00:00:00Z"), "");
 });
 
-test("심사 문서: 두 틀 본문이 코드와 글자까지 같고 환경변수·트리거·버튼·초안 표시가 있다", () => {
+test("심사 문서: 두 틀 본문이 코드와 글자까지 같고 환경변수·트리거·버튼·확정 표시가 있다", () => {
   const doc = read("docs/kakao-alimtalk-parent-templates.md");
   for (const kind of KINDS) {
     const spec = reg.BILLING_ALIMTALK_TEMPLATES[kind];
@@ -119,7 +119,7 @@ test("심사 문서: 두 틀 본문이 코드와 글자까지 같고 환경변�
   assert.ok(doc.includes(reg.BILLING_BUTTON_LINK_TEMPLATE));
   assert.equal(reg.BILLING_BUTTON_LINK_TEMPLATE, "https://www.stiz-dasan.kr/#{청구서경로}");
   assert.match(doc, /웹링크 «청구서 확인하기»/);
-  assert.match(doc, /B2\. 수강료 미납 안내 \(초안 — 원장 확인 필요\)/);
+  assert.match(doc, /B2\. 수강료 미납 안내 \(확정 2026-11-14\)/);
   assert.match(doc, /### 검수자 의견\(청구 2종\)/);
   assert.match(doc, /BILLING_PARENT_SEND_ENABLED=1/);
 });

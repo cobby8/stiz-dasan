@@ -230,6 +230,8 @@ model Student {
   createdAt                DateTime                      @default(now())
   updatedAt                DateTime                      @updatedAt
   profileChangeRequests    StudentProfileChangeRequest[]
+  shuttleRegularChangeRequests ShuttleRegularChangeRequest[]
+  regularArrivalNotices    RegularArrivalNotice[] // 학부모 지각·조퇴 알림(back-relation)
   attendances              Attendance[]
   enrollments              Enrollment[]
   guardians                Guardian[]
@@ -1863,11 +1865,29 @@ model ParentRequest {
   adminNote String?
   createdAt DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  // 환불 문의가 가리키는 청구와 그때 금액(원) — 일반 문의는 둘 다 NULL (migration 20261115110000, FK 없음)
+  paymentId     String?
+  paymentAmount Int?
+  messages      ParentRequestMessage[]
 
   @@index([userId])
   @@index([status])
   @@index([createdAt])
   @@index([status, createdAt])
+}
+
+/// 학부모 문의에 이어 붙인 글(2026-11-14 c3) — 한 행 = 글 1개. 서버 raw SQL(src/lib/requests/inquiry-thread.ts)만 사용한다.
+/// RLS 켜짐·anon/authenticated 권한 회수. CHECK(authorRole 값·body 1~2000자)는 migration 20261115110000_parent_request_thread 에 있다.
+model ParentRequestMessage {
+  id           String        @id @default(dbgenerated("(gen_random_uuid())::text"))
+  requestId    String
+  authorRole   String // PARENT | ADMIN
+  authorUserId String? // 쓴 사람 User.id (기록용, FK 없음)
+  body         String
+  createdAt    DateTime      @default(now()) @db.Timestamptz(6)
+  request      ParentRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId, createdAt], map: "ParentRequestMessage_requestId_createdAt_idx")
 }
 
 model Faq {
@@ -3096,6 +3116,10 @@ model RegularAbsencePeriod {
   classIds        String[]  @default([]) // 대상 반. 빈 배열 = 그 학생의 수강 중(ACTIVE) 반 전부(나중에 생긴 반 포함)
   createdByUserId String
   endedByUserId   String?
+  // 학부모 «여러 날 결석»(2026-11-15) — 학부모가 알린 기간이면 그 계정(NULL = 관리자 등록). 상세는 20261115100000 마이그레이션
+  reportedByUserId String?
+  openEnded        Boolean   @default(false) // 끝일 «아직 몰라요»(4주까지만 잡음)
+  reminderSentAt   DateTime? @db.Timestamptz(6) // 끝나기 전 «연장/복귀» 안내를 보낸 시각
   createdAt       DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt       DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
   student         Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
@@ -3209,7 +3233,8 @@ model ShuttleBoarding {
   studentName      String?
   status           String // 'BOARDED' | 'NOSHOW'
   checkedVia       String?
-  checkedAt        DateTime @default(now())
+  // 운영·마이그레이션(20260727000000) 모두 timestamptz — 표기만 맞춘다(DB 변경 없음, 2026-11-14 운영 확인)
+  checkedAt        DateTime @default(now()) @db.Timestamptz(6)
 
   @@unique([serviceDate, direction, shuttleRequestId])
 }
@@ -3682,6 +3707,57 @@ model StudentProfileChangeRequest {
   @@index([studentId, createdAt(sort: Desc)], map: "StudentProfileChangeRequest_studentId_createdAt_idx")
 }
 
+/// 셔틀 타는 곳·내리는 곳을 «앞으로 계속» 바꾸는 학부모 신청(c5, 2026-11-14) — 원장 승인 뒤 적용 시작일에 셔틀 명단에 반영한다.
+/// 서버 raw SQL(src/lib/shuttle/regularChangeRequest.ts)만 사용한다. RLS 켜짐·anon/authenticated 권한 회수.
+/// CHECK(kind·status·directions·weekdays 값 목록, note 300자)와 «확인 중은 아이당 하나» 부분 유니크 인덱스,
+/// 적용일 처리용 부분 인덱스는 migration 20261115120000_shuttle_regular_change_request 에 있다.
+model ShuttleRegularChangeRequest {
+  id                String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  studentId         String
+  requestedByUserId String // 신청한 보호자 User.id (기록용, FK 없음)
+  kind              String // CHANGE | START | STOP
+  directions        String[] // PICKUP | DROPOFF
+  weekdays          Int[] // 0=일 … 6=토. DB 에서는 NULL 가능(= 모든 요일)
+  pickupJson        Json?
+  dropoffJson       Json?
+  effectiveFrom     DateTime  @db.Date
+  note              String?
+  consentVersion    String?
+  status            String    @default("PENDING") // PENDING | APPROVED | APPLIED | REJECTED | CANCELED
+  decidedByUserId   String? // 승인·반려한 원장·부원장 User.id
+  decidedAt         DateTime? @db.Timestamptz(6)
+  decisionNote      String?
+  appliedAt         DateTime? @db.Timestamptz(6)
+  applyResultJson   Json?
+  createdAt         DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  student           Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([studentId, createdAt(sort: Desc)], map: "ShuttleRegularChangeRequest_studentId_createdAt_idx")
+}
+
+/// 학부모 «지각·조퇴 알리기»(2026-11-14 원장 결정표 묶음 B) — 결석이 아니라 보강권과 무관하다.
+/// 서버 raw SQL(src/lib/regular/parent-arrival-notice.ts · arrival-notice-read.ts)만 사용한다. RLS 켜짐·anon/authenticated 권한 회수.
+/// CHECK(kind·status 값 목록, expectedTime HH:mm)와 FK(Class)는 migration 20261115140000_regular_arrival_notice 에 있다.
+model RegularArrivalNotice {
+  id                 String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  studentId          String
+  classId            String // 정규 반(Class.id) — FK 는 DB 에만 있다
+  date               DateTime @db.Date
+  kind               String // LATE(늦어요) | EARLY(일찍 가요)
+  expectedTime       String // 예상 시각 "HH:mm"(KST 글자)
+  status             String   @default("REPORTED") // REPORTED | CANCELLED
+  shuttleExceptionId String? // 함께 만든 «셔틀 안 타요»(ShuttleDayException.id, 기록용·FK 없음)
+  reportedByUserId   String? // 알린 보호자 User.id (기록용, FK 없음)
+  changeCount        Int      @default(0) // 알리기·시각 바꾸기·취소 횟수(아이·반·하루 합계 5번 상한)
+  createdAt          DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  student            Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, classId, date, kind], map: "RegularArrivalNotice_student_class_date_kind_key")
+  @@index([classId, date], map: "RegularArrivalNotice_classId_date_idx")
+}
+
 /// 앱 간편로그인 인계 원장(a1, 2026-11-13) — 1회용 앱 로그인 요청(5분)과 암호화 세션(소비 즉시 삭제).
 /// 서버 raw SQL(src/lib/native-auth/store.ts)만 사용한다. RLS 켜짐·anon/authenticated 권한 회수.
 /// CHECK 제약(platform·provider·status 값 목록)은 migration 20261114000000_native_auth_flow 에 있다.
@@ -3701,6 +3777,20 @@ model NativeAuthFlow {
   createdAt     DateTime  @default(now()) @db.Timestamptz(6)
 
   @@index([expiresAt], map: "NativeAuthFlow_expiry")
+}
+
+/// 앱 간편로그인 «연결하기» 1회용 표(2026-11-15 A안) — 토큰 hash·계정·제공자를 5분만 보관, 한 번 쓰면 consumedAt.
+/// 서버 raw SQL(src/lib/account-link-handoff/store.ts)만 사용한다. RLS 켜짐·anon/authenticated 권한 회수.
+/// CHECK 제약(provider 값 목록)은 migration 20261115020000_account_link_handoff 에 있다.
+model AccountLinkHandoff {
+  id         String    @id
+  authUserId String
+  provider   String
+  expiresAt  DateTime  @db.Timestamptz(6)
+  consumedAt DateTime? @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([expiresAt], map: "AccountLinkHandoff_expiry")
 }
 
 /// 수업 영상(2026-11-14) — 선생님이 수업 화면에서 찍어 올리고, 그 수업 학생의 보호자만 본다.

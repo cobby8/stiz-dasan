@@ -7,6 +7,7 @@ import { getAccountViewAccess } from "@/lib/account-view-access";
 import AcademyTheme from "@/components/academy/AcademyTheme";
 import AccountViewSwitcher from "@/components/AccountViewSwitcher";
 import ChildConnectionsClient from "@/app/mypage/children/ChildConnectionsClient";
+import { getUsableAcademyPhone } from "@/lib/academyPhone";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "자녀·가족 연결 | 스티즈 농구교실" };
@@ -21,6 +22,6 @@ export default async function AccountChildrenPage() {
       <Link href={backHref} aria-label="내 화면으로"><Image src="/stiz-logo.png" alt="STIZ" width={120} height={52} className="h-10 w-auto object-contain" /></Link>
       <AccountViewSwitcher views={views} />
     </header>
-    <main className="mx-auto max-w-3xl p-4 sm:p-6"><ChildConnectionsClient backHref={backHref} /></main>
+    <main className="mx-auto max-w-3xl p-4 sm:p-6"><ChildConnectionsClient backHref={backHref} academyPhone={await getUsableAcademyPhone()} /></main>
   </AcademyTheme>;
 }

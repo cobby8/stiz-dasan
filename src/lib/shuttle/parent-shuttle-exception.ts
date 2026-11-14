@@ -5,6 +5,8 @@ import { notMergedStudent } from "@/lib/studentVisibility";
 import { earliestUsableFrom, parentUsableEnrollmentSql, resumeFromSql, resumeNotice, usableOn } from "@/lib/enrollment/resumeWindow";
 import { CHANGE_CLOSED_MESSAGE, isShuttleChangeOpen } from "@/lib/parent/changeDeadline";
 import { kstDow, kstHm, todayKst } from "@/lib/datetime/kst";
+import { getArrivalSkipKinds } from "@/lib/regular/arrival-notice-read";
+import { shuttleSkipLabel } from "@/lib/regular/arrivalNoticeRules";
 import { summarizeDeliveryStatus, type DeliveryStatusRow, type DeliveryStatusSummary } from "@/lib/parent-staff-status";
 import {
   SHUTTLE_EXCEPTION_MESSAGE,
@@ -470,10 +472,17 @@ export function shuttleEventVersion(input: { direction: string; kind: string; lo
   return createHash("sha256").update(JSON.stringify({ direction: input.direction, kind: input.kind, location: input.location, note: input.note })).digest("hex");
 }
 
+// «받은 사람이 기사님인가» — 알림을 보내는 쪽(operational-staff-notification 의 DRIVER_CONDITION)과 글자까지 같은 조건.
+// 주 역할만 보면, 추가 역할(UserRoleGrant)로 기사인 분이 받았는데도 학부모 화면이 «학원에 알렸어요»라고 틀리게 말한다.
+// 두 글자가 어긋나지 않게 tests/parent-delivery-view.test.mjs 가 비교한다(보내는 쪽 파일은 건드리지 않는다).
+const DRIVER_CONDITION = `(u.role::text='DRIVER' OR EXISTS (SELECT 1 FROM "UserRoleGrant" g WHERE g."userId"=u.id AND g.role='DRIVER' AND g.status='ACTIVE'))`;
+
 async function readShuttleNotificationStatus(id: string, action: "SUBMITTED" | "CANCELED", version: string) {
   try {
     const rows = await prisma.$queryRawUnsafe<DeliveryStatusRow[]>(
-      `SELECT d."recipientUserId", d."studentId", d.channel, d.status, d."errorCode", u.role::text AS role
+      // isDriver = 읽기 전용 컬럼 하나(발송 동작은 그대로). 사용자 행이 없으면(LEFT JOIN) false
+      `SELECT d."recipientUserId", d."studentId", d.channel, d.status, d."errorCode", u.role::text AS role,
+              COALESCE(u.id IS NOT NULL AND ${DRIVER_CONDITION}, false) AS "isDriver"
        FROM "NotificationDelivery" d LEFT JOIN "User" u ON u.id=d."recipientUserId"
        WHERE d."stableEventKey"=$1 AND d."audienceScope"='INTERNAL'`,
       `shuttle-day-exception:${id}:${action}:${version}`,
@@ -505,17 +514,20 @@ export async function getParentShuttleExceptionStatus(parentUserId: string, id: 
  * 그래서 결석 매칭과 같은 방식으로 이름·전화로 이어 붙인다.
  */
 export async function getShuttleExceptionsForDate(date: string): Promise<
-  { name: string; phone: string | null; direction: string; kind: string; location: string | null }[]
+  { name: string; phone: string | null; direction: string; kind: string; location: string | null; skipLabel: string | null }[]
 > {
   try {
-    const rows = await prisma.$queryRawUnsafe<{ name: string; phone: string | null; direction: string; kind: string; location: string | null }[]>(
-      `SELECT s.name AS name, u.phone AS phone, x.direction, x.kind, x.location
+    const rows = await prisma.$queryRawUnsafe<{ id: string; name: string; phone: string | null; direction: string; kind: string; location: string | null }[]>(
+      `SELECT x.id, s.name AS name, u.phone AS phone, x.direction, x.kind, x.location
          FROM "ShuttleDayException" x
          JOIN "Student" s ON s.id = x."studentId"
          LEFT JOIN "User" u ON u.id = s."parentId"
         WHERE x."serviceDate" = $1::date AND x."canceledAt" IS NULL AND ${notMergedStudent("s")}`,
       date,
     );
+    // «안 타요»(SKIP) 줄의 사유 글자(2026-11-14 묶음 B): 지각·조퇴 알림과 함께 만든 기록이면 «지각»·«조퇴», 그 밖은 «자차».
+    // 기사님 화면이 이 글자를 보이고 탑승·미탑승 버튼을 잠근다. 알림 표를 못 읽으면 전부 «자차»로 보인다.
+    const skipKinds = rows.some((row) => row.kind === "SKIP") ? await getArrivalSkipKinds(date) : new Map<string, string>();
     return rows
       .map((row) => ({
         name: String(row.name ?? "").trim(),
@@ -523,6 +535,7 @@ export async function getShuttleExceptionsForDate(date: string): Promise<
         direction: row.direction,
         kind: row.kind,
         location: row.location ?? null,
+        skipLabel: row.kind === "SKIP" ? shuttleSkipLabel(skipKinds.get(String(row.id))) : null,
       }))
       .filter((row) => row.name.length > 0);
   } catch (error) {

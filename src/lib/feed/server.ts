@@ -11,6 +11,7 @@
 import { prisma } from "@/lib/prisma";
 import { childAccessSql } from "@/lib/account/child-access";
 import { notMergedStudent } from "@/lib/studentVisibility";
+import { profilePhotoUpdatedAtSql, profilePhotoVersion } from "@/lib/profilePhoto/rules";
 import { isValidPrivateSessionPhotoRef } from "@/lib/sessionPhotoStorage";
 import { parseStoredSessionPhotos, toSessionReportPhotoViews } from "@/lib/sessionPhotoEntries";
 import {
@@ -46,7 +47,7 @@ export type ParentFeedSession = {
 export async function loadParentViewableSession(
   appUserId: string,
   sessionId: string,
-): Promise<{ session: ParentFeedSession; children: Array<{ id: string; name: string }> } | null> {
+): Promise<{ session: ParentFeedSession; children: Array<{ id: string; name: string; photoVersion?: string | null }> } | null> {
   if (!appUserId || !sessionId) return null;
   const sessions = await prisma.$queryRawUnsafe<ParentFeedSession[]>(
     `SELECT se.id, se."classId", ${sessionKstDateSql("se")}::text AS ymd, se.topic, se.content, se."photosJSON",
@@ -61,8 +62,9 @@ export async function loadParentViewableSession(
   );
   const session = sessions[0];
   if (!session) return null;
-  const children = await prisma.$queryRawUnsafe<Array<{ id: string; name: string }>>(
-    `SELECT st.id, st.name
+  const rows = await prisma.$queryRawUnsafe<Array<{ id: string; name: string; photoUpdatedAt?: Date | string | null }>>(
+    // 프로필 사진 바꾼 시각(사진 있을 때만) — 리포트 상세의 아이 이름 옆 사진 캐시 버전(2026-11-14)
+    `SELECT st.id, st.name, ${profilePhotoUpdatedAtSql("st")} AS "photoUpdatedAt"
        FROM "User" u
        JOIN "Student" st ON ${await childAccessSql("st", 'u."id"')} AND ${notMergedStudent("st")}
        JOIN "Session" se ON se.id = $2
@@ -71,7 +73,8 @@ export async function loadParentViewableSession(
     appUserId,
     sessionId,
   );
-  if (children.length === 0) return null;
+  if (rows.length === 0) return null;
+  const children = rows.map((row) => ({ id: row.id, name: row.name, photoVersion: profilePhotoVersion(row.photoUpdatedAt ?? null) }));
   return { session, children };
 }
 

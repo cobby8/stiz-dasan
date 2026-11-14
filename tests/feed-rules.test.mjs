@@ -128,24 +128,36 @@ test("수업일 SQL = 무tz 칼럼 «두 번» 변환 — 새 기록(자정)·�
   ]) assert.doesNotMatch(read(file), /\bdate::date::text AS "sessionYmd"|date::date::text AS ymd/, file);
 });
 
-test("사진·영상 올리기 가능 시간 = 수업 중 또는 끝난 당일 KST 자정까지(영상과 같은 함수)", () => {
+// 2026-11-14 원장 지시 «완료한 수업도 … 수정할 수 있게» — «당일 자정»이던 기간이 «수업일 포함 7일»로 바뀌었다(원장·부원장은 제한 없음).
+test("사진·영상 올리기 가능 기간 = 수업 중 또는 끝난 뒤 수업일 포함 7일(영상과 같은 함수), 원장·부원장은 제한 없음", () => {
   assert.deepEqual(r.canManageSessionMedia({ status: "IN_PROGRESS", sessionYmd: "2026-11-14", todayYmd: "2026-11-14" }), { ok: true });
   assert.deepEqual(r.canManageSessionMedia({ status: "COMPLETED", sessionYmd: "2026-11-14", todayYmd: "2026-11-14" }), { ok: true });
-  assert.deepEqual(r.canManageSessionMedia({ status: "COMPLETED", sessionYmd: "2026-11-14", todayYmd: "2026-11-15" }), { ok: false, reason: "NOT_TODAY" });
+  assert.deepEqual(r.canManageSessionMedia({ status: "COMPLETED", sessionYmd: "2026-11-14", todayYmd: "2026-11-15" }), { ok: true }, "다음 날도 고칠 수 있다");
+  assert.deepEqual(r.canManageSessionMedia({ status: "COMPLETED", sessionYmd: "2026-11-14", todayYmd: "2026-11-20" }), { ok: true }, "7일째(수업일 포함)");
+  assert.deepEqual(r.canManageSessionMedia({ status: "COMPLETED", sessionYmd: "2026-11-14", todayYmd: "2026-11-21" }), { ok: false, reason: "EXPIRED" });
+  assert.deepEqual(r.canManageSessionMedia({ status: "COMPLETED", sessionYmd: "2026-11-14", todayYmd: "2026-11-21", unlimited: true }), { ok: true }, "원장·부원장");
   assert.deepEqual(r.canManageSessionMedia({ status: "PLANNED", sessionYmd: "2026-11-14", todayYmd: "2026-11-14" }), { ok: false, reason: "NOT_STARTED" });
-  // 자정 경계 — 오늘은 한국 날짜
+  // 자정 경계 — 오늘은 한국 날짜(7일째 밤 23:59 까지, 8일째 0시부터 닫힌다)
   const at = (iso) => r.canManageSessionMedia({ status: "COMPLETED", sessionYmd: "2026-11-14", todayYmd: k.todayKst(kstMs(iso)) }).ok;
-  assert.equal(at("2026-11-14T23:59:59"), true);
-  assert.equal(at("2026-11-15T00:00:00"), false);
-  assert.match(r.photoWindowMessage("NOT_TODAY"), /자정/);
+  assert.equal(at("2026-11-20T23:59:59"), true);
+  assert.equal(at("2026-11-21T00:00:00"), false);
+  assert.match(r.photoWindowMessage("EXPIRED"), /수정 기간\(7일\)이 지났어요/);
   assert.match(r.photoWindowMessage("NOT_STARTED"), /시작한 뒤/);
 });
 
-test("«오늘 수업 한 줄» = 수업 전·중·후 모두, 수업 당일 자정까지", () => {
+test("«오늘 수업 한 줄» = 시작 전은 당일만, 진행 중·완료는 수업일 포함 7일", () => {
   for (const status of ["PLANNED", "IN_PROGRESS", "COMPLETED"]) {
     assert.deepEqual(r.canEditFeedLine({ status, sessionYmd: "2026-11-14", todayYmd: "2026-11-14" }), { ok: true }, status);
-    assert.deepEqual(r.canEditFeedLine({ status, sessionYmd: "2026-11-14", todayYmd: "2026-11-15" }), { ok: false, reason: "NOT_TODAY" }, status);
   }
+  // 시작 전 수업의 한 줄은 지금처럼 당일만 — 원장·부원장도 같다
+  assert.deepEqual(r.canEditFeedLine({ status: "PLANNED", sessionYmd: "2026-11-14", todayYmd: "2026-11-15" }), { ok: false, reason: "NOT_TODAY" });
+  assert.deepEqual(r.canEditFeedLine({ status: "PLANNED", sessionYmd: "2026-11-14", todayYmd: "2026-11-15", unlimited: true }), { ok: false, reason: "NOT_TODAY" });
+  for (const status of ["IN_PROGRESS", "COMPLETED"]) {
+    assert.deepEqual(r.canEditFeedLine({ status, sessionYmd: "2026-11-14", todayYmd: "2026-11-20" }), { ok: true }, status);
+    assert.deepEqual(r.canEditFeedLine({ status, sessionYmd: "2026-11-14", todayYmd: "2026-11-21" }), { ok: false, reason: "EXPIRED" }, status);
+    assert.deepEqual(r.canEditFeedLine({ status, sessionYmd: "2026-11-14", todayYmd: "2027-03-01", unlimited: true }), { ok: true }, status);
+  }
+  assert.match(r.feedLineWindowMessage("EXPIRED"), /수정 기간\(7일\)이 지났어요/);
   assert.equal(r.canEditFeedLine({ status: "CANCELLED", sessionYmd: "2026-11-14", todayYmd: "2026-11-14" }).ok, false);
   assert.equal(r.canEditFeedLine({ status: "COMPLETED", sessionYmd: "bad", todayYmd: "2026-11-14" }).ok, false);
   // 저장 값: 앞뒤 공백 제거·빈 값은 null(지우기)·2000자 상한
@@ -280,7 +292,7 @@ test("사진 보기 라우트에는 동의·«나온 학생» 검사가 없고, 
   assert.match(src, /if \(!await parentCanViewSession\(parent\.appUserId, sessionId\)\) throw/);
   assert.doesNotMatch(src, /export async function PATCH/, "«나온 학생» 수정 API 는 없앴다");
   // 지우기는 영상과 같은 시간 규칙(잠근 뒤 한 번 더)
-  assert.match(src, /const lockedWindow = sessionRows\[0\] \? canManageSessionMedia\(sessionRows\[0\]\) : null;/);
+  assert.match(src, /const lockedWindow = sessionRows\[0\] \? canManageSessionMedia\(\{ \.\.\.sessionRows\[0\], unlimited: manageable\.unlimited \}\) : null;/);
 });
 
 // ── 선생님: 사진 올리기·한 줄 저장 ───────────────────────────────────
@@ -289,21 +301,23 @@ test("사진 올리기 — 학생 선택 필수 없음, 영상과 같은 시간 
   const src = read("src/app/api/staff/sessions/[sessionId]/photos/route.ts");
   assert.doesNotMatch(src, /사진에 나온 학생을 한 명 이상/);
   assert.match(src, /subjectStudentIds: \[\],/);
-  assert.match(src, /const window = canManageSessionMedia\(session\);\s*if \(!window\.ok\) return NextResponse\.json\(\{ error: photoWindowMessage\(window\.reason\) \}, \{ status: 409 \}\);/);
-  assert.match(src, /const lockedWindow = locked\[0\] \? canManageSessionMedia\(locked\[0\]\) : null;/);
+  // 원장·부원장 여부(unlimited)는 권한 함수가 돌려준 값으로만 정한다(화면이 보낸 값이 아니다)
+  assert.match(src, /const unlimited = access\.canAccessAllClasses;\s*const window = canManageSessionMedia\(\{ \.\.\.session, unlimited \}\);\s*if \(!window\.ok\) return NextResponse\.json\(\{ error: photoWindowMessage\(window\.reason\) \}, \{ status: 409 \}\);/);
+  assert.match(src, /const lockedWindow = locked\[0\] \? canManageSessionMedia\(\{ \.\.\.locked\[0\], unlimited \}\) : null;/);
   assert.doesNotMatch(src, /deliverParentNotification|notifyParents/, "끝난 뒤 추가해도 학부모 알림은 다시 보내지 않는다");
   assert.doesNotMatch(read("src/app/api/staff/sessions/[sessionId]/videos/route.ts"), /deliverParentNotification|notifyParents/);
 });
 
-test("한 줄 저장 — 권한 함수 + 당일 자정 조건을 UPDATE 에도 걸고, 알림을 보내지 않는다", () => {
+test("한 줄 저장 — 권한 함수 + 기간 조건(시작 전 당일·그 밖 7일)을 UPDATE 에도 걸고, 알림을 보내지 않는다", () => {
   const src = read("src/app/actions/staff-sessions.ts");
   const start = src.indexOf("export async function saveSessionFeedLine");
   const end = src.slice(start).search(/\r?\n\}\r?\n/);
   const body = src.slice(start, start + end);
   assert.match(body, /await trySessionAccess\(input\.sessionId\)/);
-  assert.match(body, /canEditFeedLine\(rows\[0\]\)/);
-  assert.match(body, /status IN \('PLANNED', 'IN_PROGRESS', 'COMPLETED'\)/);
-  assert.match(body, /AND \$\{sessionKstDateSql\('"Session"'\)\} = \$\{TODAY_KST_SQL\}/);
+  assert.match(body, /const unlimited = gate\.access\.canAccessAllClasses;\s*const window = canEditFeedLine\(\{ \.\.\.rows\[0\], unlimited \}\);/);
+  // 시작 전 = 당일만 / 진행 중·완료 = 수정 기간(판정 함수와 같은 SQL 조각)
+  assert.match(body, /\(status = 'PLANNED' AND \$\{sessionKstDateSql\('"Session"'\)\} = \$\{TODAY_KST_SQL\}\)\s*OR \(status IN \('IN_PROGRESS', 'COMPLETED'\) AND \$\{staffSessionEditWindowSql\('"Session"', "\$3"\)\}\)/);
+  assert.equal(r.staffSessionEditWindowSql("s", "$3"), `(${r.sessionKstDateSql("s")} <= ${r.TODAY_KST_SQL} AND ($3::boolean OR ${r.sessionKstDateSql("s")} > ${r.TODAY_KST_SQL} - 7))`);
   assert.doesNotMatch(body, /deliverParentNotification|runAfterResponse/);
   // 2026-11-15 선생님 수업 화면 한 화면 구조: «수업 피드»와 «수업 내용»이 통합 글칸 하나가 됐다.
   // 글칸과 종료 확인 창은 여전히 같은 값(report)을 쓰고, 저장된 수업 내용으로 시작한다(없으면 미리 쓴 내용을 채워 보여 줄 뿐 저장하지 않는다).

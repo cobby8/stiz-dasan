@@ -85,7 +85,7 @@ const REVIEWED_NOT_SECRET = {
   // 결제 증빙 — 토스 비밀키 없이는 쓸 수 없고 환불·대조에 필요
   paymentKey: '토스 결제 키(증빙)', providerPaymentKey: '결제사 결제 키(증빙)',
   // 사용자 연결 — Supabase 사용자 번호(비밀 아님)
-  authUserId: '로그인 사용자 번호', pendingAuthUserId: '가입 중 사용자 번호', recoveryAuthUserId: '복구 사용자 번호', authorUserId: '작성자 번호',
+  authUserId: '로그인 사용자 번호', pendingAuthUserId: '가입 중 사용자 번호', recoveryAuthUserId: '복구 사용자 번호', authorUserId: '작성자 번호', authorRole: '문의 글쓴이 구분(PARENT/ADMIN)',
   claimedByTokenId: 'POS 기기 토큰 행 번호', cancelClaimedByTokenId: 'POS 기기 토큰 행 번호', tokenPrefix: 'POS 토큰 앞 몇 글자(식별용)',
   // 인증 진행 상태(값 아님)
   otpExpiresAt: '인증번호 만료 시각', otpSentAt: '인증번호 발송 시각', otpAttempts: '인증 시도 횟수', otpVerifiedAt: '인증 완료 시각',

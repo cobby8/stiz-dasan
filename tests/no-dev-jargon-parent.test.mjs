@@ -97,13 +97,23 @@ test("고객 문장에 개발 용어·내부 시스템 이름을 쓰지 않는�
   }
 });
 
-test("셔틀 당일 변경 화면은 관리자용 알림 결과 문장 대신 학부모용 문장을 쓴다(건수·저장 흐름은 그대로)", () => {
+test("셔틀 변경 화면은 관리자용 알림 결과 문장 대신 학부모용 한 줄을 쓴다(저장 흐름은 그대로)", () => {
   const source = read("src/app/mypage/shuttle/ShuttleExceptionClient.tsx");
   assert.doesNotMatch(source, /deliveryStatusText\(|import \{[^}]*deliveryStatusText/);
   assert.match(source, /function parentDeliveryText\(summary: DeliveryStatusSummary \| null \| undefined\): string/);
   assert.match(source, /parentDeliveryText\(item\.notificationStatus\)/);
   assert.match(source, /if \(response\.status >= 500\) return reconcile\(body\);/);
-  assert.match(source, /담당 기사님 배정은 학원에서 확인 중/);
+  // 2026-11-14 문구 정리: 건수 나열 대신 한 줄. 판정은 순수 규칙 parentDeliveryView 한 곳(실행 테스트 = parent-delivery-view.test.mjs)
+  assert.match(source, /return parentDeliveryView\(summary\)\?\.text \?\? "";/);
+  const rules = read("src/lib/parent-staff-status.ts");
+  for (const text of ["기사님께 알렸어요", "기사님 알림함에 남겼어요. 급하면 학원에 전화해 주세요", "학원에 알렸어요", "알림을 못 보냈어요. 학원에 전화해 주세요"]) {
+    assert.ok(rules.includes(`text: "${text}"`), text);
+  }
+  // 전화가 필요할 수 있는 결과만 경고 줄 + «학원에 전화하기»(설정값 번호)
+  assert.match(source, /\{done && notifyCall && \([\s\S]{0,500}<CallAcademy phone=\{academyPhone\} \/>/);
+  for (const old of ["알림함 등록", "휴대폰 알림 꺼짐", "변경 저장 완료", "셔틀 명단에 반영됨", "담당 기사님 배정은 학원에서 확인 중", "결과 확인 필요:", "변경 저장하고 알림 요청"]) {
+    assert.ok(!source.includes(old), old);
+  }
 });
 
 test("카카오 요청 화면: 쉬운 말로 바꿔도 확인 단계·안전 안내는 그대로", () => {

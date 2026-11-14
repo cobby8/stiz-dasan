@@ -6,9 +6,10 @@ import { VoiceToTextButton } from "@/components/staff/VoiceToTextButton";
 import { SessionPhotoUploader } from "@/components/staff/SessionPhotoUploader";
 import { SessionVideoUploader } from "@/components/staff/SessionVideoUploader";
 import { FEED_LINE_MAX } from "@/lib/feed/rules";
+import { STAFF_EDIT_WINDOW_HINT } from "@/lib/staff/sessionEditWindow";
 
 /**
- * «오늘 수업 한 줄»(Session.content) 입력 칸 — 수업 전·중·후, 수업 당일 자정까지 쓰고 고친다(2026-11-14 원장 결정).
+ * «오늘 수업 한 줄»(Session.content) 입력 칸 — 수업 전(당일)·중·후(수업일 포함 7일, 원장·부원장은 제한 없음) 쓰고 고친다.
  * 학부모 소식·홈 카드의 본문이 된다. 값은 부모가 들고(value/onChange) — 수업 종료 확인 창과 같은 값을 쓰게.
  */
 export function FeedLineEditor({
@@ -83,7 +84,7 @@ export function FeedLineEditor({
       />
       <div className="mt-1.5 flex items-center justify-between gap-2">
         <span aria-live="polite" className={`text-xs ${status === "error" ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-muted)]"}`}>
-          {status === "saving" ? "저장 중…" : status === "error" ? error : unsaved || status === "dirty" ? "저장하지 않은 변경이 있어요" : status === "saved" ? "저장됨" : "수업 당일 자정까지 고칠 수 있어요"}
+          {status === "saving" ? "저장 중…" : status === "error" ? error : unsaved || status === "dirty" ? "저장하지 않은 변경이 있어요" : status === "saved" ? "저장됨" : disabled ? "" : STAFF_EDIT_WINDOW_HINT}
         </span>
         <button type="button" disabled={disabled || status === "saving"} onClick={() => void save()} className="academy-button-secondary academy-button-sm shrink-0">
           한 줄 저장
@@ -97,7 +98,7 @@ export function FeedLineEditor({
  * 선생님 «수업 피드» 칸 — 한 줄 + 사진 + 영상(2026-11-14).
  * 수업 진행 화면 밖(오늘 수업 홈의 수업 시트: 시작 전·끝난 수업)에서 쓴다.
  * - 시작 전: 한 줄만(사진·영상은 수업을 시작한 뒤에 올린다)
- * - 끝난 뒤: 한 줄·사진·영상 모두 당일 자정까지. 추가해도 학부모 알림은 다시 보내지 않는다.
+ * - 끝난 뒤: 한 줄·사진·영상 모두 수업일 포함 7일 동안. 추가해도 학부모 알림은 다시 보내지 않는다.
  */
 export function SessionFeedPanel({
   sessionId,

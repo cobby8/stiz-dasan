@@ -87,7 +87,8 @@ test("④ 조회 가드: 표마다 childAccessSql + notMergedStudent, 최근 3�
   assert.doesNotMatch(src, /prisma\.\w+\.(findMany|findFirst|create|update|upsert)/);
   // 수강 변경 이력: 기본은 예전 그대로(결정된 것만), 타임라인만 검토 중·적용 전 포함
   const lib = read("src/lib/enrollment/parent-change-request.ts");
-  assert.match(lib, /options\.includeOpen\s*\?\s*`\('PENDING','APPROVED','APPLIED','REJECTED','CANCELED'\)`\s*:\s*`\('APPROVED','APPLIED','REJECTED','CANCELED'\)`/);
+  // 2026-11-14: 관리자 직접 변경으로 정리된 신청(SUPERSEDED)도 결과로 보인다(빼면 학부모 신청이 말없이 사라진다)
+  assert.match(lib, /options\.includeOpen\s*\?\s*`\('PENDING','APPROVED','APPLIED','REJECTED','CANCELED','SUPERSEDED'\)`\s*:\s*`\('APPROVED','APPLIED','REJECTED','CANCELED','SUPERSEDED'\)`/);
   assert.match(lib, /const history = await getEnrollmentChangeHistory\(parentUserId\);/);
 });
 

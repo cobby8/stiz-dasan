@@ -5,6 +5,8 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import type { SessionInitialData } from "./SessionLogModal";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
+import ProfileAvatar from "@/components/common/ProfileAvatar";
+import { profilePhotoUrl } from "@/lib/profilePhoto/rules";
 
 const SessionLogModal = dynamic(() => import("./SessionLogModal"), {
     loading: () => null,
@@ -43,6 +45,8 @@ type ClassData = {
         enrolledAt: Date | string;
         studentId: string;
         studentName: string;
+        /** 프로필 사진 캐시 버전(사진 없으면 null) */
+        photoVersion?: string | null;
         phone: string | null;
         school: string | null;
         grade: string | null;
@@ -403,8 +407,10 @@ function StudentsTab({ students }: { students: ClassData["students"] }) {
                                     <Link
                                         href={`/admin/students/${s.studentId}`}
                                         prefetch={false}
-                                        className="font-medium text-[var(--color-academy-ink)] hover:text-[var(--color-academy-primary)] transition"
+                                        className="inline-flex items-center gap-2 font-medium text-[var(--color-academy-ink)] hover:text-[var(--color-academy-primary)] transition"
                                     >
+                                        {/* 아이 사진 28px(없으면 이름 첫 글자, 2026-11-14) */}
+                                        <ProfileAvatar decorative name={s.studentName} size={28} src={profilePhotoUrl({ kind: "student", id: s.studentId }, s.photoVersion ?? null, true)} />
                                         {s.studentName}
                                     </Link>
                                 </td>

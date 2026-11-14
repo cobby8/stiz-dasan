@@ -322,9 +322,13 @@ function fnBody(source, name) {
 }
 
 test("학부모 신고: 결석 저장과 보강권 발급이 한 트랜잭션, 발급 시작일 판정을 거친다", () => {
+  // 2026-11-15: 거래 본문을 saveReportedAbsenceInTx 로 뽑았다(여러 날 결석이 날짜마다 같은 함수를 쓴다) — 한 트랜잭션인 것은 그대로
   const body = fnBody(parentAbsence, "reportRegularAbsence");
-  assert.match(body, /prisma\.\$transaction\(async \(tx\) => \{[\s\S]*INSERT INTO "RegularAbsence"[\s\S]*isMakeupCreditIssuableYmd\(date\)[\s\S]*issueCreditForReportedAbsence\(tx,/);
+  assert.match(body, /prisma\.\$transaction\(\(tx\) => saveReportedAbsenceInTx\(tx, \{ studentId, classId, date, reason, reasonText, source, parentUserId \}\)\)/);
   assert.match(body, /makeupCreditIssued/);
+  const save = fnBody(parentAbsence, "saveReportedAbsenceInTx");
+  assert.match(save, /INSERT INTO "RegularAbsence"[\s\S]*isMakeupCreditIssuableYmd\(date\)[\s\S]*issueCreditForReportedAbsence\(tx,/);
+  assert.doesNotMatch(save, /\$transaction\(/, "저장 함수는 호출부의 트랜잭션 안에서만 돈다");
 });
 
 test("학부모 취소: 권한 조건 유지 + 같은 트랜잭션에서 보강권 되돌리기(PARENT)", () => {
@@ -363,7 +367,13 @@ test("잠금 순서 통일(교착 방지): 학부모 신고·취소·관리자 �
     const row = body.search(/(INSERT INTO|UPDATE) "RegularAbsence"/);
     assert.ok(lock > tx && row > lock, `${label}: 결석 행을 건드리기 전에 lockCompensation 을 먼저 잡아야 한다`);
   };
-  order(fnBody(parentAbsence, "reportRegularAbsence"), "reportRegularAbsence");
+  // 신고의 거래 본문은 saveReportedAbsenceInTx — 그 함수 첫 쓰기 전에 잠금을 잡는다
+  {
+    const save = fnBody(parentAbsence, "saveReportedAbsenceInTx");
+    const lock = save.indexOf("await lockCompensation(tx);");
+    const row = save.search(/(INSERT INTO|UPDATE) "RegularAbsence"/);
+    assert.ok(lock > 0 && row > lock, "saveReportedAbsenceInTx: 결석 행을 건드리기 전에 lockCompensation 을 먼저 잡아야 한다");
+  }
   order(fnBody(parentAbsence, "cancelRegularAbsence"), "cancelRegularAbsence");
   order(fnBody(adminAbsence, "cancelRegularAbsenceByAdmin"), "cancelRegularAbsenceByAdmin");
 });

@@ -57,7 +57,8 @@ test("parent notice is an explicit opt-in for manual payment creation", () => {
 });
 
 test("enrollment status changes retain effective date and reason history", () => {
-  assert.match(actions, /change\?: \{ effectiveFrom\?: string; reason\?: string \}/);
+  // 2026-11-14: 처리 중 신청 «함께 정리» 확인값(화면에 보여 준 신청 id 목록 closeOpenRequests)이 같은 인자에 붙었다
+  assert.match(actions, /change\?: \{ effectiveFrom\?: string; reason\?: string; closeOpenRequests\?: string\[\] \}/);
   assert.match(actions, /INSERT INTO "EnrollmentChangeRequest"/);
   assert.match(actions, /"effectiveFrom".*\$5::date/s);
   assert.match(actions, /status, "requestedByUserId", "decidedByUserId"/);

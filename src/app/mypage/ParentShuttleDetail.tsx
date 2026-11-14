@@ -115,14 +115,14 @@ export default function ParentShuttleDetail({
                     )}
                     <Link href="/mypage/shuttle"
                         className="academy-button-secondary">
-                        셔틀 당일 변경
+                        셔틀 변경
                     </Link>
                 </div>
             </div>
 
             {weekLines.length > 0 && (
                 <div className="mb-2 overflow-hidden rounded-xl bg-[var(--color-academy-soft)]">
-                    <p className="px-3 pt-2 text-xs font-medium text-[var(--color-academy-muted)]">정규 셔틀 · 요일별(다가오는 7일)</p>
+                    <p className="px-3 pt-2 text-xs font-medium text-[var(--color-academy-muted)]">정규 셔틀</p>
                     <ul className="divide-y divide-[var(--color-academy-line)]">
                         {weekLines.map((line) => (
                             <li key={line.key} className="flex min-h-11 items-center gap-2 px-3 py-1.5 text-sm">
@@ -138,7 +138,7 @@ export default function ParentShuttleDetail({
                     <div className="flex flex-wrap gap-x-1 px-1.5 pb-1">
                         {rosterChildren.map((id) => (
                             <Link key={id} href={`/mypage/record?child=${encodeURIComponent(id)}#record-shuttle-heading`} className="academy-button-text whitespace-nowrap">
-                                {showChild && childNames[id] ? `${childNames[id]} ` : ""}아이 기록 › 셔틀 ▸
+                                {showChild && childNames[id] ? `${childNames[id]} ` : ""}날짜별 보기 ▸
                             </Link>
                         ))}
                     </div>
@@ -165,10 +165,15 @@ export default function ParentShuttleDetail({
                             </div>
 
                             <dl className="mt-2 grid grid-cols-[6rem_1fr] gap-x-3 gap-y-1.5 text-sm">
-                                <dt className="text-[var(--color-academy-muted)]">운행일</dt>
-                                <dd className="text-[var(--color-academy-ink)]">
-                                    {item.serviceDate ? <time dateTime={item.serviceDate}>{formatShuttleDate(item.serviceDate)}</time> : "운행일 확인 중"}
-                                </dd>
+                                {/* 값이 없는 줄은 «○○ 확인 중» 대신 줄째 숨긴다(2026-11-14 원장 결정 d7) — 운행일·노선·정류장·시간·차량 모두 */}
+                                {item.serviceDate && (
+                                    <>
+                                        <dt className="text-[var(--color-academy-muted)]">운행일</dt>
+                                        <dd className="text-[var(--color-academy-ink)]">
+                                            <time dateTime={item.serviceDate}>{formatShuttleDate(item.serviceDate)}</time>
+                                        </dd>
+                                    </>
+                                )}
                                 {/* 셔틀 확정 승·하차 시각(저장된 배차 노선 기준). 방학특강·정규 공통, 값이 있을 때만 노출한다. */}
                                 {(item.pickupEtaLabel || item.dropoffEtaLabel) && (
                                     <>
@@ -183,21 +188,37 @@ export default function ParentShuttleDetail({
                                 )}
                                 {showDetails && (
                                     <>
-                                        <dt className="text-[var(--color-academy-muted)]">노선</dt>
-                                        <dd className="text-[var(--color-academy-ink)]">{item.routeName || "노선 확인 중"}</dd>
-                                        <dt className="text-[var(--color-academy-muted)]">
-                                            {item.direction === "PICKUP" ? "탑승 장소" : item.direction === "DROPOFF" ? "하차 장소" : "정류장"}
-                                        </dt>
-                                        <dd className="text-[var(--color-academy-ink)]">
-                                            {item.stopName || "정류장 확인 중"}
-                                            {item.stopAddress && <span className="mt-0.5 block text-xs font-normal text-[var(--color-academy-muted)]">{item.stopAddress}</span>}
-                                        </dd>
-                                        <dt className="text-[var(--color-academy-muted)]">확정 시간</dt>
-                                        <dd className="text-[var(--color-academy-ink)]">
-                                            {item.plannedAt ? <time dateTime={item.plannedAt}>{formatShuttleTime(item.plannedAt)}</time> : "시간 확인 중"}
-                                        </dd>
-                                        <dt className="text-[var(--color-academy-muted)]">차량</dt>
-                                        <dd className="text-[var(--color-academy-ink)]">{item.vehicleName || "차량 확인 중"}</dd>
+                                        {item.routeName && (
+                                            <>
+                                                <dt className="text-[var(--color-academy-muted)]">노선</dt>
+                                                <dd className="text-[var(--color-academy-ink)]">{item.routeName}</dd>
+                                            </>
+                                        )}
+                                        {(item.stopName || item.stopAddress) && (
+                                            <>
+                                                <dt className="text-[var(--color-academy-muted)]">
+                                                    {item.direction === "PICKUP" ? "탑승 장소" : item.direction === "DROPOFF" ? "하차 장소" : "정류장"}
+                                                </dt>
+                                                <dd className="text-[var(--color-academy-ink)]">
+                                                    {item.stopName}
+                                                    {item.stopAddress && <span className="mt-0.5 block text-xs font-normal text-[var(--color-academy-muted)]">{item.stopAddress}</span>}
+                                                </dd>
+                                            </>
+                                        )}
+                                        {item.plannedAt && (
+                                            <>
+                                                <dt className="text-[var(--color-academy-muted)]">확정 시간</dt>
+                                                <dd className="text-[var(--color-academy-ink)]">
+                                                    <time dateTime={item.plannedAt}>{formatShuttleTime(item.plannedAt)}</time>
+                                                </dd>
+                                            </>
+                                        )}
+                                        {item.vehicleName && (
+                                            <>
+                                                <dt className="text-[var(--color-academy-muted)]">차량</dt>
+                                                <dd className="text-[var(--color-academy-ink)]">{item.vehicleName}</dd>
+                                            </>
+                                        )}
                                         {item.rideStatus && (
                                             <>
                                                 <dt className="text-[var(--color-academy-muted)]">탑승 상태</dt>

@@ -129,9 +129,10 @@ test("취소 7종은 InlineConfirm 뒤에 기존 함수·인자를 그대로 부
 
 test("수강 변경 «퇴원»만 위험 버튼 + 한 번 더 확인, 다른 신청은 주인공 버튼 그대로 같은 submit (M-03)", () => {
   const source = read("src/app/mypage/enrollment-change/EnrollmentChangeClient.tsx");
-  assert.match(source, /\{kind === "WITHDRAW" \? \([\s\S]*?<InlineConfirm[\s\S]*?label="퇴원 신청하기"[\s\S]*?onConfirm=\{submit\}[\s\S]*?\) : \([\s\S]*?onClick=\{submit\}[\s\S]*?className="academy-button-primary w-full"[\s\S]*?"신청하기"/);
+  assert.match(source, /activeKind === "WITHDRAW" \? \([\s\S]*?<InlineConfirm[\s\S]*?label="퇴원 신청하기"[\s\S]*?onConfirm=\{submit\}[\s\S]*?\) : \([\s\S]*?onClick=\{submit\}[\s\S]*?className="academy-button-primary w-full"[\s\S]*?"신청하기"/);
   // 고른 종류 칩 = academy-choice, 꽉 찬 색은 제출 버튼만
-  assert.match(source, /aria-pressed=\{kind === value\}\s*onClick=\{\(\) => setKind\(value\)\}\s*className="academy-choice/);
+  // (2026-11-14 c8: «반 추가» 칩이 생겨 종류를 바꾸면 고른 반도 비운다 — 반 변경용 반이 반 추가로 넘어가지 않게)
+  assert.match(source, /aria-pressed=\{activeKind === value\}\s*onClick=\{\(\) => \{ setKind\(value\); setToClassId\(""\); \}\}\s*className="academy-choice/);
 });
 
 test("가족 연결 거절 확정은 꽉 찬 위험색, 승인은 주인공 버튼 (M-04)", () => {
@@ -149,10 +150,13 @@ test("회원 탈퇴: «돌아가기» 먼저, 계정 삭제는 24px 아래 전�
   assert.match(withdraw, /className="academy-button-secondary mt-3"[\s\S]{0,80}신청 취소하기/);
   assert.match(withdraw, /className="academy-back-link"/);
 
-  const links = read("src/components/account/AccountLinks.tsx");
+  // 2026-11-14 d3: 맨 아래 링크 줄(AccountLinks)은 설정 화면으로 모았다 — 회원 탈퇴는 설정 화면 맨 끝, 다른 묶음과 떨어진 칸에 위험색으로
+  const links = read("src/app/mypage/settings/page.tsx");
   const hrefs = [...links.matchAll(/href="([^"]+)"/g)].map((m) => m[1]);
   assert.equal(hrefs.at(-1), "/mypage/withdraw", "회원 탈퇴는 맨 끝");
-  assert.match(links, /ml-auto[^"]*pl-4[^"]*text-\[var\(--color-academy-danger\)\][^"]*" href="\/mypage\/withdraw"/);
+  assert.match(links, /<Link href="\/mypage\/withdraw" className=\{`\$\{LINK_ROW\} font-medium text-\[var\(--color-academy-danger\)\]`\}>/);
+  // «앱 정보» 묶음(</Section>)이 닫힌 뒤의 별도 칸(로그아웃·탈퇴)에 있다 — 자주 쓰는 링크 묶음 안이 아니다
+  assert.ok(links.lastIndexOf("</Section>") < links.indexOf('href="/mypage/withdraw"'), "탈퇴는 묶음 밖 별도 칸");
 
   const account = read("src/app/account/page.tsx");
   assert.ok(account.indexOf("</nav>") < account.indexOf('href="/account/withdraw"'), "/account 에서도 묶음 밖 별도 칸");
@@ -179,12 +183,12 @@ test("결석·보강 행의 «여는» 버튼은 보조, 꽉 찬 색은 폼 안 
   assert.match(makeup, /className=\{`\$\{openId === c\.id \? "academy-button-text" : "academy-button-secondary"\} w-full`\}/);
   assert.match(makeup, /onClick=\{\(\) => book\(c\.id\)\}[\s\S]{0,120}className="academy-button-primary w-full"[\s\S]{0,120}이 날짜로 예약/);
   const regular = read("src/app/mypage/regular-absence/RegularAbsenceClient.tsx");
-  assert.match(regular, /onClick=\{\(\) => setOpenKey\(key\)\}[\s\S]{0,200}className="academy-button-tonal shrink-0"/);
+  assert.match(regular, /onClick=\{\(\) => \{ setArrivalForm\(null\); setOpenKey\(key\); \}\}[\s\S]{0,200}className="academy-button-tonal shrink-0"/);
   assert.match(regular, /onClick=\{\(\) => report\(d\)\}\s*className="academy-button-primary"/);
   assert.match(regular, /onClick=\{\(\) => setOpenKey\(""\)\}\s*className="academy-button-text"/);
   const seasonal = read("src/app/mypage/seasonal/SeasonalMakeupClient.tsx");
   assert.equal((seasonal.match(/"academy-button-text" : "academy-button-tonal"/g) || []).length, 2);
-  assert.match(seasonal, /className="academy-button-primary w-full">결석 신고하기/);
+  assert.match(seasonal, /className="academy-button-primary w-full">결석 알리기/);
   assert.doesNotMatch(seasonal, /bg-\[var\(--brand-accent\)\]/);
 });
 

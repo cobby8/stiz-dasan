@@ -27,11 +27,14 @@ export function pushCategoryOf(tag: string | null | undefined): PushCategory | n
     if (!t) return null;
     // 출결: 출석·지각·결석 처리 알림(ATTENDANCE…)
     if (t.startsWith("ATTENDANCE")) return "attendance";
+    // 수업 종료 안내(CLASS_COMPLETED)도 «오늘 수업에 왔다 갔다»는 출결 소식이라 같은 스위치로 끈다(2026-11-14 원장 결정).
+    // 수업 공지(CLASS_NOTICE)는 여기 넣지 않는다 — 글자 그대로 CLASS_COMPLETED 로 시작하는 것만.
+    if (t.startsWith("CLASS_COMPLETED")) return "attendance";
     // 청구: 청구서·납부 안내(PAYMENT, PAYMENT_REQUEST …)
     if (t.startsWith("PAYMENT")) return "billing";
     // 공지: 학원 공지(NOTICE…)
     if (t.startsWith("NOTICE")) return "notice";
-    // 셔틀: 배정·시간 확정·명단 변경(SHUTTLE_…)
+    // 셔틀: 배정·시간 확정·명단 변경·«탔어요·내렸어요»(SHUTTLE_…)
     if (t.startsWith("SHUTTLE")) return "shuttle";
     return null;
 }

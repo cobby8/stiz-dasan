@@ -5,6 +5,8 @@ import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import { useStoreAppLacks } from "@/components/storeApp/useStoreAppLacks";
 import { copyText, showAppToast } from "@/lib/outsideLink";
 import type { StaffStudentListItem } from "@/lib/staff-portal-queries";
+import ProfileAvatar from "@/components/common/ProfileAvatar";
+import { profilePhotoUrl } from "@/lib/profilePhoto/rules";
 
 export default function StaffStudentsClient({ students }: { students: StaffStudentListItem[] }) {
   const [query, setQuery] = useState("");
@@ -48,6 +50,8 @@ export default function StaffStudentsClient({ students }: { students: StaffStude
               onKeyDown={(event) => handleRowKeyDown(event, student.id)}
               className="flex min-h-14 cursor-pointer items-center gap-2 border-b border-[var(--color-academy-line)] px-3 py-1.5 last:border-b-0 hover:bg-[var(--color-academy-soft)]"
             >
+              {/* 아이 사진 28px(없으면 이름 첫 글자, 2026-11-14) */}
+              <ProfileAvatar decorative name={student.name} size={28} src={profilePhotoUrl({ kind: "student", id: student.id }, student.photoVersion ?? null, true)} />
               <span className="shrink-0 text-base font-semibold text-[var(--color-academy-ink)]">{student.name}</span>
               {student.grade && <span className="shrink-0 text-xs text-[var(--color-academy-muted)]">{student.grade}</span>}
               {/* 반 이름은 자르지 않고 줄바꿈 허용(말줄임 금지) */}

@@ -12,16 +12,17 @@ import { getNotifications, getUnreadNotificationCount } from "@/lib/queries";
 import { FONT_SCALE_COOKIE, fontScalePercent, parseFontScale } from "@/lib/mypage/parentSettings";
 import AcademyTheme from "@/components/academy/AcademyTheme";
 import UiIcon from "@/components/common/UiIcon";
-import AccountLinks from "@/components/account/AccountLinks";
 import AccountViewSwitcher from "@/components/AccountViewSwitcher";
 import { getAccountViewAccess } from "@/lib/account-view-access";
+import { Suspense } from "react";
+import ParentHistoryTracker from "@/components/parent/ParentHistoryTracker";
 
 // 학부모 앱의 시작 주소가 /mypage 다. 여기서 공용 manifest(id "/")를 내려주면
 // 브라우저가 "이 앱은 공식 앱이었나?" 하고 신원을 헷갈린다. 교사용(/staff)과 같은 구조로
 // 자기 manifest 를 명시한다.
 export const metadata: Metadata = {
   title: "스티즈 학부모",
-  description: "자녀의 출결과 셔틀 시각, 결석 신고와 청구를 확인하는 스티즈 학부모 화면",
+  description: "자녀의 출결과 셔틀 시각, 결석 알리기와 청구를 확인하는 스티즈 학부모 화면",
   manifest: "/manifest-parent.json",
   appleWebApp: {
     capable: true,
@@ -72,11 +73,16 @@ export default async function MyPageLayout({
         <AcademyTheme role="parent" className="min-h-screen flex flex-col pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0">
             {/* 글자 크기 «크게·아주 크게» — html 글자 배율. 학부모 화면을 떠나면 이 줄도 사라져 다른 화면엔 영향 없음 */}
             {fontPercent !== 100 && <style>{`html{font-size:${fontPercent}%}`}</style>}
+            {/* 학부모 화면 안 이동 기록(탭마다) — «←» 가 방금 있던 화면으로 돌아가게. 보이지 않는 부품
+                (쿼리 읽기 부품이라 Suspense 로 감싼다 — 감싸지 않으면 화면 전체가 클라이언트 렌더로 밀린다) */}
+            <Suspense fallback={null}>
+                <ParentHistoryTracker />
+            </Suspense>
             {/* 모바일 상단 헤더 — [뒤로 · 로고 · 학부모] …… [알림 N] [설정] (2026-11-10 원장 결정 k7) */}
             <header className="bg-[var(--color-academy-surface)] sticky top-0 z-50 border-b border-[var(--color-academy-line)] grid grid-cols-[auto_auto_minmax(0,1fr)_auto_auto] items-center gap-1 px-3 py-2 md:hidden">
-                {/* 설치된 학부모 앱에서는 /mypage 밖으로 나가지 않는다.
-                    브라우저로 들어온 사람은 홈페이지에서 왔을 수 있어 기존대로 둔다. */}
-                <AppBackButton fallbackHref="/" scopeHref="/mypage" size="sm" />
+                {/* 돌아갈 기록이 없으면 학부모 홈(/mypage)으로 — 설치 앱·스토어 앱·브라우저 모두(2026-11-15 원장 결정).
+                    예전엔 브라우저에서 공개 홈 «/» 로 나갔다. 학부모 홈 자체에서는 기존 규칙대로 «/». */}
+                <AppBackButton fallbackHref="/mypage" scopeHref="/mypage" size="sm" />
                 {/* 로고는 앱의 홈(/mypage)으로. 공개 홈페이지로 보내면 설치된 앱이
                     제 범위를 벗어나 주소표시줄이 뜨고 돌아올 길이 없어진다.
                     (선생님 앱의 로고가 /staff 로 가는 것과 같은 구조) */}
@@ -89,14 +95,14 @@ export default async function MyPageLayout({
                 </div>
                 {/* 알림 — 안 읽은 수 배지, 누르면 알림 목록(아래 «알림 설정») */}
                 <ParentNotificationBell notifications={bellItems} unreadCount={unreadCount} />
-                {/* 설정 — 계정·비밀번호·가족·알림·글자 크기·앱 정보·문제 신고·로그아웃(예전 «⋯» 메뉴를 대신함) */}
+                {/* 설정 — 계정·비밀번호·가족·알림·글자 크기·앱 정보·문의·로그아웃(예전 «⋯» 메뉴를 대신함) */}
                 {settingsLink}
             </header>
 
             {/* 데스크탑 헤더 — 기존 구조 유지, 호버 트랜지션 통일 */}
             <header className="bg-[var(--color-academy-surface)] sticky top-0 z-50 border-b border-[var(--color-academy-line)] hidden md:flex items-center justify-between px-8 py-4">
                 <div className="flex min-w-0 items-center gap-3">
-                    <AppBackButton fallbackHref="/" scopeHref="/mypage" />
+                    <AppBackButton fallbackHref="/mypage" scopeHref="/mypage" />
                     <Link href="/mypage" className="flex min-w-0 items-center gap-2">
                         <Image src="/stiz-logo.png" alt="STIZ" width={140} height={61} className="h-12 w-auto object-contain" />
                         <span className="hidden lg:inline font-bold text-lg text-[var(--color-academy-ink)]">
@@ -121,8 +127,8 @@ export default async function MyPageLayout({
 
             {/* 메인 콘텐츠 영역 */}
             <main className="flex-1 max-w-5xl w-full mx-auto p-4 md:p-8">
+                {/* 맨 아래 계정 링크 줄은 없앴다(2026-11-14 원장 결정 d3) — 계정·가족·탈퇴는 머리줄 «설정» 화면 안에 있다 */}
                 {children}
-                <AccountLinks />
             </main>
 
             {/* 모바일 하단 탭 — 홈·수업·청구·소식(2026-11-10 원장 결정 d5).

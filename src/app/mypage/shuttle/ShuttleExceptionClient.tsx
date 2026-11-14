@@ -1,54 +1,60 @@
 "use client";
 
 import { useState, useTransition, type KeyboardEvent } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   SHUTTLE_DIRECTIONS,
-  SHUTTLE_DIRECTION_LABEL,
+  PARENT_SHUTTLE_DIRECTION_LABEL,
   SHUTTLE_EXCEPTION_KINDS,
-  SHUTTLE_EXCEPTION_KIND_LABEL,
+  PARENT_SHUTTLE_EXCEPTION_KIND_LABEL,
+  PARENT_SHUTTLE_SKIP_LABEL,
+  parentShuttleChangeLabel,
   type ShuttleDirection,
   type ShuttleExceptionKind,
 } from "@/lib/shuttle/dayExceptionRules";
 import type { ShuttleExceptionOptions } from "@/lib/shuttle/parent-shuttle-exception";
-import { matchesShuttleChange, type DeliveryStatusSummary } from "@/lib/parent-staff-status";
+import { matchesShuttleChange, parentDeliveryView, type DeliveryStatusSummary, type ParentDeliveryView } from "@/lib/parent-staff-status";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import { groupByUpcomingDate } from "@/components/admin/list/upcomingDateGroups";
 import { kstLabel } from "@/lib/datetime/kst";
 import InlineConfirm from "@/components/parent/InlineConfirm";
 import { customerMessage } from "@/components/parent/customerMessage";
 import { resumeNotice } from "@/lib/enrollment/resumeWindow";
+import { academyTel } from "@/lib/academyPhoneRules";
 // 마감 안내 글자(«1시간»)는 마감 상수에서 나온다 — 상수를 바꾸면 안내도 같이 바뀐다
 import { CHANGE_CLOSED_MESSAGE, PARENT_CHANGE_CUTOFF_TEXT } from "@/lib/parent/changeDeadline";
 
 // 예정된 변경의 날짜 묶음 이름(오늘 → 이번 주 → 다음 주 → 이후)
 const DATE_GROUP_LABELS = { today: "오늘", thisWeek: "이번 주", nextWeek: "다음 주", later: "이후", past: "지난 변경" };
 
-// 선생님·기사님께 간 알림 결과를 학부모가 읽는 말로 바꾼다.
-// 관리자 화면용 deliveryStatusText 는 «푸시 구독 미등록» 같은 개발 용어를 써서 고객 화면에는 쓰지 않는다(건수는 그대로).
+// 선생님·기사님께 간 알림 결과를 학부모가 읽는 말 한 줄로 바꾼다(2026-11-14 문구 정리).
+// 예전엔 알림함·휴대폰 알림 건수를 길게 늘어놓았다 — 학부모가 알고 싶은 것은 «알렸나, 못 알렸나» 하나다.
+// 관리자 화면용 deliveryStatusText 는 «푸시 구독 미등록» 같은 개발 용어를 써서 고객 화면에는 쓰지 않는다.
+
+// 판정은 순수 규칙 parentDeliveryView(실행 테스트 있음) 한 곳 — «기사님께 실제로 갔는지»를 본다(2026-11-15 리뷰 반영).
+//  기사님 휴대폰 알림 나감 → «기사님께 알렸어요» / 알림함에만 → «기사님 알림함에 남겼어요…» + 전화 버튼
+//  선생님만 받음 → «학원에 알렸어요» / 아무에게도 못 감 → «알림을 못 보냈어요…» + 전화 버튼 / 아직 모름 → 줄 없음
 function parentDeliveryText(summary: DeliveryStatusSummary | null | undefined): string {
-  if (!summary) return "선생님·기사님께 알림이 갔는지 확인하고 있어요. 변경 저장과는 별개입니다.";
-  if (summary.recipientCount === 0) return "아직 알림을 받을 담당자가 없어요. 학원에서 확인합니다.";
-  // 알림을 꺼 둔 휴대폰(구독 없음)은 «건너뜀»에 포함된다 — 둘 중 큰 값만 센다
-  const notSet = Math.max(summary.skippedCount, summary.noSubscriptionCount);
-  return [
-    `알림함 등록 ${summary.inAppCount}건`,
-    `휴대폰 알림 ${summary.pushAcceptedCount}건 보냄`,
-    summary.pushPartialCount ? `일부 휴대폰 못 받음 ${summary.pushPartialCount}건` : "",
-    summary.pushFailedCount ? `휴대폰 알림 전달 안 됨 ${summary.pushFailedCount}건` : "",
-    summary.pendingCount ? `휴대폰 알림 보내는 중 ${summary.pendingCount}건` : "",
-    notSet ? `휴대폰 알림 꺼짐 ${notSet}건` : "",
-    summary.unknownCount ? `확인 중 ${summary.unknownCount}건` : "",
-  ].filter(Boolean).join(" · ");
+  return parentDeliveryView(summary)?.text ?? "";
 }
 
-// 저장 결과 글의 앞머리 — 취소 / 날짜 변경 / 변경
-function actionLabel(body: Record<string, unknown>): string {
-  return body.action === "cancel" ? "취소" : body.action === "move" ? "날짜 변경" : "변경";
+/** «학원에 전화하기» — 번호(설정값)가 있으면 전화 버튼, 없으면 아무것도 그리지 않는다(문장이 이미 할 일을 말한다) */
+function CallAcademy({ phone, className = "academy-button-secondary shrink-0" }: { phone: string | null | undefined; className?: string }) {
+  const tel = academyTel(phone); // 걸 수 있는 번호인지는 규칙 한 곳(academyPhoneRules)이 정한다
+  if (!tel) return null;
+  return <a href={`tel:${tel}`} className={className}>학원에 전화하기</a>;
+}
+
+// 저장 결과 한마디 — 취소 / 그 밖(신청·날짜 바꾸기)
+function savedText(body: Record<string, unknown>): string {
+  return body.action === "cancel" ? "취소했어요" : "저장했어요";
 }
 
 // presetStudentId = 수업 탭 반 카드에서 온 아이 — 그 아이를 미리 고른다(내 자녀 목록에 있을 때만)
-export default function ShuttleExceptionClient({ initial, presetStudentId = null }: { initial: ShuttleExceptionOptions; presetStudentId?: string | null }) {
+// academyPhone = 학원 대표 번호(설정값) — 알림이 기사님께 못 갔을 때의 «학원에 전화하기» 버튼용. 없으면 글자만 보인다
+// regularChangeHref = 타는 곳·내리는 곳을 «앞으로 계속» 바꾸는 신청 화면(2026-11-14 c5). 없으면(표 미적용) 입구를 보이지 않는다
+export default function ShuttleExceptionClient({ initial, presetStudentId = null, academyPhone = null, regularChangeHref = null }: { initial: ShuttleExceptionOptions; presetStudentId?: string | null; academyPhone?: string | null; regularChangeHref?: string | null }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [studentId, setStudentId] = useState(
@@ -70,6 +76,8 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const [done, setDone] = useState("");
+  // 저장은 됐지만 학부모가 전화해야 할 수 있는 알림 결과(기사님 알림함에만 / 아무에게도 못 감) — 경고 줄 + «학원에 전화하기»
+  const [notifyCall, setNotifyCall] = useState<ParentDeliveryView | null>(null);
   const [uncertain, setUncertain] = useState<Record<string, unknown> | null>(null);
   // 하단 시트로 자세히 보고 있는 예정 변경 id (없으면 닫힘)
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -86,6 +94,13 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
     }
   }
 
+  // 저장 결과 한 줄 — «저장했어요. 기사님께 알렸어요». 전화가 필요할 수 있는 결과(call)는 따로 경고 줄 + «학원에 전화하기»로 보인다
+  function showSaved(body: Record<string, unknown>, status: DeliveryStatusSummary | null | undefined) {
+    const view = parentDeliveryView(status);
+    setDone(view && !view.call ? `${savedText(body)}. ${view.text}` : savedText(body));
+    setNotifyCall(view?.call ? view : null);
+  }
+
   async function reconcile(body: Record<string, unknown>) {
     try {
       const response = await fetch(`/api/mypage/shuttle-exception${body.action === "cancel" ? `?id=${encodeURIComponent(String(body.id))}` : ""}`, { cache: "no-store" });
@@ -94,13 +109,13 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
       const found = body.action === "cancel" ? (data.record?.canceled ? data.record : null) :
         (data.upcoming as ShuttleExceptionOptions["upcoming"]).find((row) => matchesShuttleChange(row, body));
       if (!found) throw new Error("NOT_CONFIRMED");
-      setDone(`${actionLabel(body)} 저장 완료 · 셔틀 명단에 반영됨. ${parentDeliveryText(found.notificationStatus)}`);
+      showSaved(body, found.notificationStatus);
       setUncertain(null);
       setError("");
       router.refresh();
       return true;
     } catch {
-      setError("결과 확인 필요: 저장 여부를 아직 확인하지 못했습니다. 다시 제출하지 말고 저장 결과를 확인해 주세요.");
+      setError("저장됐는지 확인하지 못했어요. 아래 «다시 확인»을 눌러 주세요");
       setUncertain(body);
       return false;
     }
@@ -109,6 +124,7 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
   async function send(body: Record<string, unknown>) {
     setError("");
     setDone("");
+    setNotifyCall(null);
     try {
     const response = await fetch("/api/mypage/shuttle-exception", {
       method: "POST",
@@ -118,12 +134,12 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
     const data = await response.json();
     if (!response.ok) {
       if (response.status >= 500) return reconcile(body);
-      setError(customerMessage(data?.error, "처리에 실패했습니다. 잠시 후 다시 시도해 주세요."));
+      setError(customerMessage(data?.error, "처리하지 못했어요. 잠시 후 다시 시도해 주세요."));
       return false;
     }
     if (!data.ok) return reconcile(body);
     const status: DeliveryStatusSummary | null = data.notificationStatus ?? null;
-    setDone(`${actionLabel(body)} 저장 완료 · 셔틀 명단에 반영됨.${data.noOp ? " 동일한 내용이 이미 저장되어 있습니다." : ""} ${parentDeliveryText(status)}${status && !status.driverLinked ? " · 담당 기사님 배정은 학원에서 확인 중" : ""}`);
+    showSaved(body, status);
     setUncertain(null);
     return true;
     } catch {
@@ -179,9 +195,9 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
   if (initial.children.length === 0) {
     return (
       <main className="mx-auto max-w-lg px-4 py-6">
-        <h1 className="academy-heading">셔틀 당일 변경</h1>
+        <h1 className="academy-heading">셔틀 변경</h1>
         <p className="mt-3 rounded-2xl bg-white p-5 text-sm text-[var(--color-academy-muted)] shadow-sm">
-          지금 다니고 있는 반이 없습니다. 학원으로 문의해 주세요.
+          지금 다니고 있는 반이 없어요. 학원에 문의해 주세요.
         </p>
       </main>
     );
@@ -190,22 +206,33 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
   return (
     <main className="mx-auto max-w-lg space-y-4 px-4 py-6">
       <div>
-        <h1 className="academy-heading">셔틀 당일 변경</h1>
+        <h1 className="academy-heading">셔틀 변경</h1>
         {/* 결석과 헷갈리지 않게 선을 긋는다. 안 그러면 결석인데 여기에 적는다. */}
         <p className="mt-1 text-sm text-[var(--color-academy-muted)]">
-          수업은 오지만 <b>셔틀만</b> 바꿀 때 쓰세요. 변경은 운행 명단에 사용할 기록으로 저장됩니다.
-          <br />
-          수업 자체를 빠지시면 <b>결석 미리 알리기</b>에서 신고해 주세요.
+          수업에 빠지면 <Link href="/mypage/regular-absence" className="font-semibold underline">결석 알리기</Link>로 알려 주세요
         </p>
+        {/* 여기는 하루만 바꾸는 곳 — 이사처럼 계속 바뀌면 따로 신청한다(원장 승인 뒤 반영) */}
+        {regularChangeHref && (
+          <p className="mt-1 text-sm text-[var(--color-academy-muted)]">
+            타는 곳·내리는 곳이 앞으로 계속 바뀌면 <Link href={regularChangeHref} className="font-semibold underline">계속 바꾸기</Link>
+          </p>
+        )}
         {/* 마감 안내(2026-11-15) — 서버가 같은 규칙으로 막는다 */}
         <p className="mt-1 break-keep text-xs text-[var(--color-academy-muted)]">
-          신청·취소·날짜 바꾸기는 수업 시작 {PARENT_CHANGE_CUTOFF_TEXT} 전까지 할 수 있습니다. 수업이 없는 날은 전날까지입니다.
+          신청·취소·날짜 바꾸기는 수업 시작 {PARENT_CHANGE_CUTOFF_TEXT} 전까지 할 수 있어요. 수업이 없는 날은 전날까지예요.
         </p>
       </div>
 
       {done && <p role="status" className="rounded-xl bg-[var(--color-academy-success-soft)] p-3 text-sm font-medium text-[var(--color-academy-success)]">{done}</p>}
+      {/* 저장은 됐지만 기사님이 휴대폰 알림을 못 받았을 때만 — 학부모가 할 일(학원에 전화)과 그 버튼. 번호가 없으면 글자만 */}
+      {done && notifyCall && (
+        <div role="alert" className="flex flex-wrap items-center gap-2 rounded-xl bg-[var(--color-academy-warning-soft)] p-3 text-sm font-medium text-[var(--color-academy-warning)]">
+          <span className="min-w-0 flex-1 break-keep">{notifyCall.text}</span>
+          <CallAcademy phone={academyPhone} />
+        </div>
+      )}
       {error && <p role="alert" className="rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm font-medium text-[var(--color-academy-danger)]">{error}</p>}
-      {uncertain && <button type="button" disabled={pending} onClick={() => startTransition(async () => { await reconcile(uncertain); })} className="academy-button-secondary">저장 결과 다시 확인</button>}
+      {uncertain && <button type="button" disabled={pending} onClick={() => startTransition(async () => { await reconcile(uncertain); })} className="academy-button-secondary">다시 확인</button>}
 
       {initial.upcoming.length > 0 && (
         <section className="space-y-2">
@@ -234,19 +261,16 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span className="text-sm font-semibold text-[var(--color-academy-ink)]">{item.studentName}</span>
                           <span className="rounded-full bg-[var(--color-academy-neutral-soft)] px-2 py-0.5 text-xs text-[var(--color-academy-neutral)]">
-                            {SHUTTLE_DIRECTION_LABEL[item.direction as ShuttleDirection] ?? "등원·하원 확인 필요"}
+                            {PARENT_SHUTTLE_DIRECTION_LABEL[item.direction as ShuttleDirection] ?? "등원·하원 확인 필요"}
                           </span>
                           <span className="rounded-full bg-[var(--color-academy-info-soft)] px-2 py-0.5 text-xs text-[var(--color-academy-info)]">
-                            {SHUTTLE_EXCEPTION_KIND_LABEL[item.kind as ShuttleExceptionKind] ?? "변경 내용 확인 필요"}
+                            {parentShuttleChangeLabel(item.kind, item.direction) ?? "변경 내용 확인 필요"}
                           </span>
                         </div>
-                        {/* 2줄: 저장 상태 · 바뀐 장소(줄바꿈 허용) */}
-                        <p className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-[var(--color-academy-muted)]">
-                          <span>변경 저장 완료</span>
-                          {item.location && <span className="break-keep font-medium text-[var(--color-academy-ink)]">{item.location}</span>}
-                        </p>
-                        {/* 기사 연결 경고는 놓치면 안 돼서 행에 그대로 둔다 */}
-                        {item.notificationStatus && !item.notificationStatus.driverLinked && <p className="text-xs text-[var(--color-academy-muted)]">담당 기사님 배정은 학원에서 확인 중</p>}
+                        {/* 2줄: 바뀐 장소(줄바꿈 허용) — 목록에 있다는 것이 곧 «저장됨»이라 저장 상태 꼬리표는 뺐다 */}
+                        {item.location && (
+                          <p className="mt-0.5 break-keep text-xs font-medium text-[var(--color-academy-ink)]">{item.location}</p>
+                        )}
                       </div>
                       <span className="shrink-0 text-right text-sm tabular-nums text-[var(--color-academy-ink)]">{kstLabel(item.serviceDate)}</span>
                       {item.changeOpen === false ? (
@@ -376,7 +400,7 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
                 onClick={() => setDirection(value)}
                 className="academy-choice break-keep px-1!"
               >
-                {SHUTTLE_DIRECTION_LABEL[value]}
+                {PARENT_SHUTTLE_DIRECTION_LABEL[value]}
               </button>
             ))}
           </div>
@@ -393,7 +417,8 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
                 onClick={() => setKind(value)}
                 className="academy-choice break-keep"
               >
-                {SHUTTLE_EXCEPTION_KIND_LABEL[value]}
+                {/* 안 타는 날 = 보호자가 직접 — 고른 방향에 맞춰 «직접 데려다줘요 / 직접 데리러 가요(자차)» */}
+                {value === "SKIP" ? PARENT_SHUTTLE_SKIP_LABEL[direction] : PARENT_SHUTTLE_EXCEPTION_KIND_LABEL[value]}
               </button>
             ))}
           </div>
@@ -436,7 +461,7 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
           onClick={submit}
           className="academy-button-primary w-full"
         >
-          {pending ? "저장·알림 결과 확인 중..." : "변경 저장하고 알림 요청"}
+          {pending ? "저장 중…" : "변경 신청"}
         </button>
       </fieldset>
 
@@ -462,9 +487,9 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
             </div>
             <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
               <dt className="text-[var(--color-academy-muted)]">등원·하원</dt>
-              <dd className="font-medium">{SHUTTLE_DIRECTION_LABEL[item.direction as ShuttleDirection] ?? "등원·하원 확인 필요"}</dd>
+              <dd className="font-medium">{PARENT_SHUTTLE_DIRECTION_LABEL[item.direction as ShuttleDirection] ?? "등원·하원 확인 필요"}</dd>
               <dt className="text-[var(--color-academy-muted)]">변경</dt>
-              <dd className="font-medium">{SHUTTLE_EXCEPTION_KIND_LABEL[item.kind as ShuttleExceptionKind] ?? "변경 내용 확인 필요"}</dd>
+              <dd className="font-medium">{parentShuttleChangeLabel(item.kind, item.direction) ?? "변경 내용 확인 필요"}</dd>
               {item.location && (
                 <>
                   <dt className="text-[var(--color-academy-muted)]">장소</dt>
@@ -477,13 +502,17 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
                   <dd className="whitespace-pre-wrap break-keep">{item.note}</dd>
                 </>
               )}
-              <dt className="text-[var(--color-academy-muted)]">저장</dt>
-              <dd>변경 저장 완료</dd>
-              <dt className="text-[var(--color-academy-muted)]">알림</dt>
-              <dd className="break-keep">
-                {parentDeliveryText(item.notificationStatus)}
-                {item.notificationStatus && !item.notificationStatus.driverLinked && <span className="block">담당 기사님 배정은 학원에서 확인 중</span>}
-              </dd>
+              {/* 알림 결과 한 줄 — 결과를 아직 모르면 줄째 숨긴다 */}
+              {parentDeliveryText(item.notificationStatus) && (
+                <>
+                  <dt className="text-[var(--color-academy-muted)]">알림</dt>
+                  <dd className="break-keep">
+                    {parentDeliveryText(item.notificationStatus)}
+                    {/* 전화가 필요할 수 있는 결과면 그 자리에 전화 버튼 */}
+                    {parentDeliveryView(item.notificationStatus)?.call && <CallAcademy phone={academyPhone} className="academy-button-secondary mt-2" />}
+                  </dd>
+                </>
+              )}
             </dl>
           </ListDetailPanel>
         );

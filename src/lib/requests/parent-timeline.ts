@@ -6,7 +6,9 @@ import { getEnrollmentChangeHistory } from "@/lib/enrollment/parent-change-reque
 import { parentKindName, shortMd } from "@/lib/enrollment/parentChangeStatus";
 import { deriveEnrollmentChangeStatus, deriveShuttleDayStatus } from "@/lib/requests/catalog";
 import { REASON_LABEL } from "@/lib/regular/regularAbsenceRules";
-import { SHUTTLE_DIRECTION_LABEL, SHUTTLE_EXCEPTION_KIND_LABEL } from "@/lib/shuttle/dayExceptionRules";
+import { PARENT_SHUTTLE_DIRECTION_LABEL, parentShuttleChangeLabel } from "@/lib/shuttle/dayExceptionRules";
+// 문의의 마지막 학원 글(대화) — «학원 답변» 칸용
+import { lastAdminAnswers } from "@/lib/requests/inquiry-thread";
 import { absenceCreditLine, sortTimeline, toTimelineView, type ParentTimelineRow, type ParentTimelineView } from "@/lib/requests/parent-timeline-rules";
 
 // ── 학부모 «수업» 탭 신청 내역 타임라인(최근 3개월) — 2026-11-10 원장 결정 설계 B ─────────────
@@ -132,7 +134,10 @@ export async function getParentRequestTimeline(parentUserId: string): Promise<Pa
   const rows: ParentTimelineRow[] = [];
   for (const r of changes) {
     const name = parentKindName(r.kind);
-    const classes = r.toClassName ? `${r.fromClassName ?? "기존 반"} → ${r.toClassName}` : (r.fromClassName ?? "");
+    // 반 추가(CLASS_ADD)는 떠나는 반이 없다 — 추가할 반 이름만 적는다.
+    const classes = r.kind === "CLASS_ADD"
+      ? (r.toClassName ?? "")
+      : r.toClassName ? `${r.fromClassName ?? "기존 반"} → ${r.toClassName}` : (r.fromClassName ?? "");
     rows.push({
       key: `ENROLLMENT_CHANGE:${r.id}`, kind: "ENROLLMENT_CHANGE", id: r.id, studentId: r.studentId, studentName: r.studentName,
       title: [name, classes].filter(Boolean).join(" · "),
@@ -172,12 +177,12 @@ export async function getParentRequestTimeline(parentUserId: string): Promise<Pa
     });
   }
   for (const r of shuttles) {
-    const what = SHUTTLE_EXCEPTION_KIND_LABEL[r.kind as keyof typeof SHUTTLE_EXCEPTION_KIND_LABEL] ?? "셔틀 변경";
+    const what = parentShuttleChangeLabel(r.kind, r.direction) ?? "셔틀 변경";
     rows.push({
       key: `SHUTTLE_DAY:${r.id}`, kind: "SHUTTLE_DAY", id: r.id, studentId: r.studentId, studentName: r.studentName,
       title: `셔틀 · ${what}`, when: kstLabel(r.date),
       createdOn: r.createdOn, createdAt: iso(r.createdAt), rawStatus: deriveShuttleDayStatus(r.canceledAt),
-      details: [SHUTTLE_DIRECTION_LABEL[r.direction as keyof typeof SHUTTLE_DIRECTION_LABEL], r.location].filter(Boolean) as string[],
+      details: [PARENT_SHUTTLE_DIRECTION_LABEL[r.direction as keyof typeof PARENT_SHUTTLE_DIRECTION_LABEL], r.location].filter(Boolean) as string[],
       answer: null, openHref: "/mypage/shuttle",
     });
   }
@@ -198,13 +203,16 @@ export async function getParentRequestTimeline(parentUserId: string): Promise<Pa
       openHref: "/mypage/seasonal",
     });
   }
+  // 문의의 «학원 답변» = 마지막 학원 글(이어 쓴 대화가 있으면 그 글, 없으면 옛 답변 칸). 못 읽으면 옛 답변 칸 그대로
+  const lastAnswers = await lastAdminAnswers(prisma, inquiries.map((r) => r.id)).catch(() => new Map<string, string>());
   for (const r of inquiries) {
     rows.push({
       key: `PARENT_REQUEST:${r.id}`, kind: "PARENT_REQUEST", id: r.id, studentId: r.studentId, studentName: r.studentName,
       title: ["문의", r.title].filter(Boolean).join(" · "), when: "",
       createdOn: r.createdOn, createdAt: iso(r.createdAt), rawStatus: r.status, details: [],
       // 문의 답변은 학부모에게 보내는 말(홈 «내 문의»에도 보인다)
-      answer: r.adminNote ?? null, openHref: "/mypage",
+      // 누르면 그 문의의 대화 화면(이어 쓰기) — 2026-11-14 c3
+      answer: lastAnswers.get(r.id) ?? r.adminNote ?? null, openHref: `/mypage/requests/${r.id}`,
     });
   }
   return sortTimeline(rows).map((row) => toTimelineView(row, today));

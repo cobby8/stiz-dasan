@@ -29,12 +29,12 @@ test("수업 종료 저장 뒤 학부모 알림 실패를 성공 응답과 분�
 test("출석 알림도 응답 뒤에 보내고, 지난 날짜 수업이면 보내지 않는다", () => {
   const fn = source.slice(source.indexOf("export async function saveStaffAttendance"));
   const body = fn.slice(0, fn.indexOf("\n}\n"));
-  assert.match(body, /shouldNotifyParentsForSession\(sessionYmd\)\) \{[\s\S]*?runAfterResponse\("saveStaffAttendance"/);
+  assert.match(body, /attendanceNoticeNeeded\(\{ changed, status: input\.status, sessionYmd \}\)\) \{[\s\S]*?runAfterResponse\("saveStaffAttendance"/);
   // 알림 발송을 기다리는 곳은 after 안쪽 한 곳뿐(응답 전에는 기다리지 않는다)
   assert.equal((body.match(/await deliverParentNotification/g) ?? []).length, 1);
   assert.ok(body.indexOf("await deliverParentNotification") > body.indexOf('runAfterResponse("saveStaffAttendance"'));
   const seat = source.slice(source.indexOf("async function saveSeasonalSeatAttendance"));
-  assert.match(seat.slice(0, seat.indexOf("\n}\n")), /shouldNotifyParentsForSession\(sessionYmd\)\) \{[\s\S]*?runAfterResponse\("saveSeasonalSeatAttendance"/);
+  assert.match(seat.slice(0, seat.indexOf("\n}\n")), /attendanceNoticeNeeded\(\{ changed, status: input\.status, sessionYmd \}\)\) \{[\s\S]*?runAfterResponse\("saveSeasonalSeatAttendance"/);
 });
 
 test("전체 출석 요청(bulk)은 결석 신고 아이를 저장 전에 건너뛴다(개별 출석은 그대로 받는다)", () => {

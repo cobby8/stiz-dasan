@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { summarizePendingPayments, countRecentAnswers, countRecentNotices } from "../src/lib/mypage/summary.ts";
+import { summarizePendingPayments, countRecentNotices } from "../src/lib/mypage/summary.ts";
 
 test("납부할 청구 합계: 미납·연체만, 형제 합산, 같은 청구는 한 번만, 0원은 뺀다", () => {
   const s = summarizePendingPayments([
@@ -27,18 +27,6 @@ test("납부할 청구가 없거나 전부 추가 가족(대표 보호자 아님
     summarizePendingPayments([{ payments: [{ id: "x", amount: 1000, status: "PENDING", canCheckout: false }] }]),
     { count: 1, total: 1000, canCheckoutAny: false },
   );
-});
-
-test("학원 답변 수: 최근 7일 안·답변 글이 있는 것만", () => {
-  const now = Date.parse("2026-11-09T03:00:00Z");
-  const n = countRecentAnswers([
-    { adminNote: "확인했습니다", updatedAt: "2026-11-08T10:00:00Z" },
-    { adminNote: "   ", updatedAt: "2026-11-08T10:00:00Z" },
-    { adminNote: null, updatedAt: "2026-11-08T10:00:00Z" },
-    { adminNote: "오래된 답변", updatedAt: "2026-10-20T10:00:00Z" },
-    { adminNote: "이상한 날짜", updatedAt: "엉뚱한 값" },
-  ], now);
-  assert.equal(n, 1);
 });
 
 test("새 공지 수: 최근 7일 경계 포함", () => {

@@ -2,11 +2,10 @@
 
 import UiIcon from "@/components/common/UiIcon";
 import { useEffect, useState, useTransition } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { updateMyName, changeMyPassword, saveMyPushPrefs, saveMyPreferredPaymentMethod } from "@/app/actions/parent-settings";
 import { PAYMENT_METHOD_OPTIONS, type PreferredPaymentMethod } from "@/lib/payments/preferredMethod";
-import { createParentRequest } from "@/app/actions/admin";
 import { usePushSubscription } from "@/lib/push/usePushSubscription";
 import { useStoreAppLacks } from "@/components/storeApp/useStoreAppLacks";
 import ProfilePhotoEditor from "@/components/parent/ProfilePhotoEditor";
@@ -50,9 +49,16 @@ function Message({ text, tone }: { text: string; tone: "ok" | "error" }) {
 export function MyPhotoRow({ userId, name, version }: { userId: string; name: string; version: string | null }) {
     return (
         <li>
-            <p className="px-4 pt-2 text-sm font-medium text-[var(--color-academy-ink)]">내 사진</p>
+            <p className="px-4 pt-2 text-sm font-medium text-[var(--color-academy-ink)]">내 사진(보호자)</p>
             <div className="px-1">
                 <ProfilePhotoEditor target="me" ownerId={userId} name={name} initialVersion={version} />
+            </div>
+            {/* 아이 사진은 여기가 아니다 — 실제로 아이 사진을 이 칸에 올린 일이 있었다(2026-11-14) */}
+            <div className="flex flex-wrap items-center gap-x-2 px-4 pb-2">
+                <span className="break-keep text-xs text-[var(--color-academy-muted)]">아이 사진은 «우리 아이 기록 → 아이 정보»에서 올려요.</span>
+                <Link href="/mypage/record#record-info" className="academy-button-text min-h-11! inline-flex items-center">
+                    아이 사진 올리러 가기
+                </Link>
             </div>
         </li>
     );
@@ -341,79 +347,3 @@ export function FontScaleRow({ current }: { current: FontScaleKey }) {
     );
 }
 
-// ── 도움: 문제 신고·문의(펼침) — 학원에 보내는 메시지(ParentRequest, 홈 «문의»와 같은 경로) ──
-type ChildLite = { id: string; name: string };
-const FEEDBACK_KINDS = [
-    { key: "question", label: "문의" },
-    { key: "problem", label: "불편 신고" },
-] as const;
-
-export function FeedbackRow({ childList }: { childList: ChildLite[] }) {
-    const [open, setOpen] = useState(false);
-    const [kind, setKind] = useState<(typeof FEEDBACK_KINDS)[number]["key"]>("problem");
-    const [childId, setChildId] = useState(childList[0]?.id ?? "");
-    const [content, setContent] = useState("");
-    const [msg, setMsg] = useState<{ text: string; tone: "ok" | "error" }>({ text: "", tone: "ok" });
-    const [isPending, startTransition] = useTransition();
-
-    function send() {
-        const child = childList.find((c) => c.id === childId);
-        if (!child) return;
-        const label = FEEDBACK_KINDS.find((k) => k.key === kind)!.label;
-        startTransition(async () => {
-            try {
-                // 서버는 로그인한 본인·본인 자녀만 받는다(createParentRequest 가 확인). 종류는 자유 메시지(OTHER) 그대로.
-                await createParentRequest({ userId: "", studentId: child.id, type: "OTHER", title: `${child.name} ${label}`, content });
-                setContent("");
-                setOpen(false);
-                setMsg({ text: "학원에 보냈어요. 답변은 홈 «보낸 메시지»에서 볼 수 있어요.", tone: "ok" });
-            } catch {
-                setMsg({ text: "보내지 못했습니다. 잠시 후 다시 시도해 주세요.", tone: "error" });
-            }
-        });
-    }
-
-    return (
-        <li>
-            <button type="button" aria-expanded={open} onClick={() => { setOpen((v) => !v); setMsg({ text: "", tone: "ok" }); }} className={`${ROW} hover:bg-[var(--color-academy-soft)]`}>
-                <span className="flex-1 font-medium text-[var(--color-academy-ink)]">문제 신고·문의</span>
-                <RowToggleLabel open={open} />
-            </button>
-            {open && (
-                childList.length === 0 ? (
-                    <p className="px-4 pb-3 text-sm text-[var(--color-academy-muted)]">
-                        자녀를 연결한 뒤 보낼 수 있어요. <Link href="/mypage/children" className="font-semibold underline">자녀 연결</Link>
-                    </p>
-                ) : (
-                    <div className="grid gap-2 px-4 pb-3">
-                        <div role="group" aria-label="종류" className="flex gap-1">
-                            {FEEDBACK_KINDS.map((k) => (
-                                <button key={k.key} type="button" aria-pressed={kind === k.key} onClick={() => setKind(k.key)} className="academy-choice min-h-11 px-3 text-sm">
-                                    {k.label}
-                                </button>
-                            ))}
-                        </div>
-                        {childList.length > 1 && (
-                            <select aria-label="자녀" value={childId} onChange={(e) => setChildId(e.target.value)} className="academy-input min-h-11">
-                                {childList.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                            </select>
-                        )}
-                        <textarea
-                            aria-label="내용"
-                            value={content}
-                            maxLength={2000}
-                            rows={4}
-                            onChange={(e) => setContent(e.target.value)}
-                            placeholder={kind === "problem" ? "어떤 화면에서 무엇이 불편했는지 적어 주세요" : "궁금한 점을 적어 주세요"}
-                            className="academy-input resize-none py-2"
-                        />
-                        <button type="button" onClick={send} disabled={isPending || !content.trim() || !childId} className="academy-button-primary w-full">
-                            {isPending ? "보내는 중..." : "보내기"}
-                        </button>
-                    </div>
-                )
-            )}
-            <Message {...msg} />
-        </li>
-    );
-}

@@ -1,3 +1,5 @@
+// 구글 시트 CSV 요청 — 시간 제한(5초) + 연결 끊김 때 1회 재시도(2026-11-14). 실패 시 기존대로 빈 목록
+import { fetchWithRetry } from "@/lib/net/resilience";
 /**
  * 구글시트 "통합시간표" 탭 파싱 모듈
  *
@@ -204,7 +206,7 @@ export async function fetchSheetSchedule(sheetUrl: string): Promise<SheetClassSl
     const csvUrl = extractCsvUrl(sheetUrl);
     if (!csvUrl) return [];
     try {
-        const res = await fetch(csvUrl, { next: { revalidate: 300 } });
+        const res = await fetchWithRetry(csvUrl, { next: { revalidate: 300 } });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return parseSheetCSV(await res.text());
     } catch (e) {
@@ -218,7 +220,7 @@ export async function fetchSheetScheduleNoCache(sheetUrl: string): Promise<Sheet
     const csvUrl = extractCsvUrl(sheetUrl);
     if (!csvUrl) return [];
     try {
-        const res = await fetch(csvUrl, { cache: "no-store" });
+        const res = await fetchWithRetry(csvUrl, { cache: "no-store" });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return parseSheetCSV(await res.text());
     } catch (e) {
@@ -232,7 +234,7 @@ export async function fetchSheetScheduleAdmin(sheetUrl: string): Promise<SheetCl
     const csvUrl = extractCsvUrl(sheetUrl);
     if (!csvUrl) return [];
     try {
-        const res = await fetch(csvUrl, { next: { revalidate: 30 } });
+        const res = await fetchWithRetry(csvUrl, { next: { revalidate: 30 } });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return parseSheetCSV(await res.text());
     } catch (e) {

@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireVerifiedParent } from "@/lib/auth-guard";
+import { loadParentAbsenceScreen } from "@/lib/regular/parent-absence-period";
 import {
-  getParentIllnessReviews,
-  getUpcomingRegularClassDates,
   reportRegularAbsence,
   cancelRegularAbsence,
   moveRegularAbsence,
@@ -20,16 +19,14 @@ export async function GET() {
   try {
     parent = await requireVerifiedParent();
   } catch {
-    return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+    return NextResponse.json({ error: "로그인이 필요해요." }, { status: 401 });
   }
   try {
-    // 질병·부상 이월 검토(상태·사진 장수)를 먼저 읽어 줄의 상태 글자에도 쓴다
-    const reviews = await getParentIllnessReviews(parent.appUserId);
-    const children = await getUpcomingRegularClassDates(parent.appUserId, undefined, reviews);
-    return NextResponse.json({ children, reviews }, { headers: { "Cache-Control": "no-store" } });
+    // 수업일·이월 검토(여러 날 결석은 한 줄로 묶음)·진행 중인 여러 날 결석을 한 묶음으로(페이지와 같은 함수)
+    return NextResponse.json(await loadParentAbsenceScreen(parent.appUserId), { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("[api/mypage/regular-absence] GET failed:", error);
-    return NextResponse.json({ error: "조회에 실패했습니다." }, { status: 500 });
+    return NextResponse.json({ error: "불러오지 못했어요." }, { status: 500 });
   }
 }
 
@@ -39,7 +36,7 @@ export async function POST(request: NextRequest) {
   try {
     parent = await requireVerifiedParent();
   } catch {
-    return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+    return NextResponse.json({ error: "로그인이 필요해요." }, { status: 401 });
   }
 
   let body: any;
@@ -91,26 +88,26 @@ export async function POST(request: NextRequest) {
     }
     // 에러코드 → 학부모용 한국어 메시지
     const map: Record<string, string> = {
-      NOT_OWNER: "본인 자녀의 수업만 신고할 수 있습니다.",
+      NOT_OWNER: "본인 자녀의 수업만 알릴 수 있어요.",
       INVALID_REASON: "결석 사유를 선택해 주세요.",
-      INVALID_DATE: "날짜 형식이 올바르지 않습니다.",
+      INVALID_DATE: "날짜 형식이 올바르지 않아요.",
       STUDENT_OR_CLASS_MISSING: "자녀와 반을 선택해 주세요.",
-      NOT_REPORTABLE_DATE: "지난 날짜이거나 그 반 수업 요일이 아니라 신고할 수 없습니다.",
+      NOT_REPORTABLE_DATE: "지난 날짜이거나 그 반 수업 요일이 아니라 알릴 수 없어요.",
       // 2026-11-14: 목록에 보이는 범위(4주) 밖 날짜는 받지 않는다
-      ABSENCE_TOO_FAR: `앞으로 ${ABSENCE_REPORT_WEEKS}주 안의 수업만 신고할 수 있습니다.`,
+      ABSENCE_TOO_FAR: `앞으로 ${ABSENCE_REPORT_WEEKS}주 안의 수업만 알릴 수 있어요.`,
       // 2026-11-14: 신고·취소·사유 변경은 수업 시작 1시간 전까지(서버가 강제 — regularAbsenceRules.isAbsenceChangeOpen)
       ABSENCE_CHANGE_CLOSED: ABSENCE_CHANGE_CLOSED_MESSAGE,
       // 2026-11-15 날짜 바꾸기
-      ABSENCE_MOVE_SAME_DATE: "지금 신고한 날짜와 같습니다. 다른 날짜를 골라 주세요.",
-      ABSENCE_MOVE_TARGET_TAKEN: "그 날짜에는 이미 결석 신고가 있습니다. 다른 날짜를 골라 주세요.",
+      ABSENCE_MOVE_SAME_DATE: "지금 알린 날짜와 같아요. 다른 날짜를 골라 주세요.",
+      ABSENCE_MOVE_TARGET_TAKEN: "그 날짜에는 이미 결석 알림이 있어요. 다른 날짜를 골라 주세요.",
       ABSENCE_MOVE_MAKEUP_BOOKED: "이 결석의 보강권으로 보강이 예약돼 있어요. 보강 예약을 먼저 취소하거나 바꿔 주세요.",
-      ABSENCE_NOT_FOUND: "결석 신고를 찾을 수 없습니다.",
-      ABSENCE_NOT_CANCELABLE: "이미 학원에서 확정된 신고라 바꾸거나 취소할 수 없습니다.",
+      ABSENCE_NOT_FOUND: "결석 알림을 찾을 수 없어요.",
+      ABSENCE_NOT_CANCELABLE: "이미 학원에서 확정된 결석이라 바꾸거나 취소할 수 없어요.",
       // 보강권(2026-11-10): 신고 취소 시 보강권 되돌리기에서 막힌 경우
       MAKEUP_BOOKING_CONFIRM_REQUIRED: "이 결석의 보강권으로 보강이 예약돼 있어요. 보강 예약도 함께 취소돼요.",
-      MAKEUP_ALREADY_USED: "이 결석의 보강을 이미 들어서 결석 신고를 취소할 수 없어요. 학원으로 문의해 주세요.",
+      MAKEUP_ALREADY_USED: "이 결석의 보강을 이미 들어서 결석 알림을 취소할 수 없어요. 학원으로 문의해 주세요.",
       // 2026-11-15 마감 1시간 전 통일: 예약한 보강의 취소 마감(수업 시작 1시간 전)이 지난 경우
-      MAKEUP_BOOKING_PAST: "예약한 보강의 취소 마감(수업 시작 1시간 전)이 지나 결석 신고를 취소할 수 없어요. 학원으로 문의해 주세요.",
+      MAKEUP_BOOKING_PAST: "예약한 보강의 취소 마감(수업 시작 1시간 전)이 지나 결석 알림을 취소할 수 없어요. 학원으로 문의해 주세요.",
       // 질병·부상 이월 검토(2026-11-14)
       ILLNESS_REASON_TEXT_REQUIRED: "어디가 아픈지 한 줄로 적어 주세요. (예: 독감, 발목 염좌 · 100자까지)",
       [ILLNESS_MAKEUP_IN_USE]: "이 결석의 보강을 이미 예약했거나 들어서 질병·부상으로 바꿀 수 없어요. 보강 예약을 먼저 취소해 주세요.",
@@ -118,6 +115,6 @@ export async function POST(request: NextRequest) {
     const known = map[code];
     if (!known) console.error("[api/mypage/regular-absence] POST failed:", error);
     // code: 화면이 «보강 예약도 함께 취소» 확인을 다시 띄울지 판단할 때 쓴다(알려진 코드만 내보낸다)
-    return NextResponse.json({ error: known || "처리에 실패했습니다.", code: known ? code : undefined }, { status: known ? 409 : 500 });
+    return NextResponse.json({ error: known || "처리하지 못했어요.", code: known ? code : undefined }, { status: known ? 409 : 500 });
   }
 }

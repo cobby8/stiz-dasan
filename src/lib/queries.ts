@@ -409,7 +409,9 @@ export const getStudents = cache(async (limit?: number) => {
             `WITH selected_students AS (
                 SELECT s.id, s.name, s."birthDate", s.gender, s."parentId",
                        s.phone, s.school, s.grade, s.address, s."enrollDate",
-                       s."createdAt", s."updatedAt"
+                       s."createdAt", s."updatedAt",
+                       -- 프로필 사진 바꾼 시각(사진 있을 때만) — 목록 줄 사진의 캐시 버전(2026-11-14)
+                       ${profilePhotoUpdatedAtSql("s")} AS "photoUpdatedAt"
                 FROM "Student" s
                 WHERE ${notMergedStudent("s")}
                 ORDER BY s.name ASC${normalizedLimit ? ` LIMIT ${normalizedLimit}` : ""}
@@ -500,7 +502,7 @@ export const getStudents = cache(async (limit?: number) => {
              )
              SELECT s.id, s.name, s."birthDate", s.gender, s."parentId",
                     s.phone, s.school, s.grade, s.address, s."enrollDate",
-                    s."createdAt", s."updatedAt",
+                    s."createdAt", s."updatedAt", s."photoUpdatedAt",
                     u.name AS parent_name, u.phone AS parent_phone, u.email AS parent_email,
                     COALESCE(ej.enrollments, '[]'::json) AS enrollments,
                     CASE WHEN EXISTS (SELECT 1 FROM "Enrollment" due WHERE due."studentId"=s.id AND ${currentEnrollmentSql("due")}) THEN 'ACTIVE'
@@ -526,6 +528,8 @@ export const getStudents = cache(async (limit?: number) => {
             enrollDate: r.enrollDate ?? r.enrolldate ?? null,
             createdAt: r.createdAt ?? r.createdat,
             updatedAt: r.updatedAt ?? r.updatedat,
+            // 프로필 사진 캐시 버전(사진 없으면 null → 이름 첫 글자)
+            photoVersion: profilePhotoVersion(r.photoUpdatedAt ?? r.photoupdatedat ?? null),
             parent: {
                 name: r.parent_name ?? null,
                 phone: r.parent_phone ?? null,
@@ -777,7 +781,8 @@ export const getAttendanceByDateAndClass = cache(async (date: string, classId: s
             const session = sessions[0] ?? null;
 
             const roster = await prisma.$queryRawUnsafe<any[]>(
-                `SELECT DISTINCT st.id AS "studentId", st.name AS student_name
+                `SELECT DISTINCT st.id AS "studentId", st.name AS student_name,
+                        ${profilePhotoUpdatedAtSql("st")} AS "photoUpdatedAt"
                    FROM "SpecialProgramSessionDate" anchor_sd
                    JOIN "SpecialProgramOffering" anchor_o ON anchor_o.id = anchor_sd."offeringId"
                    JOIN "SpecialProgramSessionDate" sd
@@ -826,6 +831,8 @@ export const getAttendanceByDateAndClass = cache(async (date: string, classId: s
                     return {
                         studentId,
                         studentName: student.student_name,
+                        // 프로필 사진 캐시 버전(사진 없으면 null, 2026-11-14)
+                        photoVersion: profilePhotoVersion(student.photoUpdatedAt ?? student.photoupdatedat ?? null),
                         status: attendance?.status ?? null,
                         attendanceId: attendance?.id ?? null,
                     };
@@ -844,7 +851,9 @@ export const getAttendanceByDateAndClass = cache(async (date: string, classId: s
 
         // 해당 반 수강생 목록
         const enrolled = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT e."studentId", s.name AS student_name
+            `SELECT e."studentId", s.name AS student_name,
+                    -- 프로필 사진 바꾼 시각(사진 있을 때만) — 출석부 사진의 캐시 버전(2026-11-14)
+                    ${profilePhotoUpdatedAtSql("s")} AS "photoUpdatedAt"
              FROM "Enrollment" e
              JOIN "Student" s ON e."studentId" = s.id AND ${notMergedStudent("s")}
              WHERE e."classId" = $1 AND e.status = 'ACTIVE'
@@ -883,6 +892,7 @@ export const getAttendanceByDateAndClass = cache(async (date: string, classId: s
                 absenceReport: absenceByStudent.get(e.studentId ?? e.studentid) ?? null,
                 studentId: e.studentId ?? e.studentid,
                 studentName: e.student_name,
+                photoVersion: profilePhotoVersion(e.photoUpdatedAt ?? e.photoupdatedat ?? null),
                 status: attendances.find(
                     (a: any) => (a.studentId ?? a.studentid) === (e.studentId ?? e.studentid)
                 )?.status ?? null,
@@ -2046,6 +2056,8 @@ export async function getStudentActivity(studentId: string) {
                     s."uniformStatus", s."uniformAppliedAt", s."uniformOrderedAt",
                     s."uniformReceivedAt", s."uniformSource", s."uniformNote",
                     s."createdAt", s."updatedAt",
+                    -- 프로필 사진 바꾼 시각(사진 있을 때만) — 학생 상세 머리 사진의 캐시 버전(2026-11-14)
+                    ${profilePhotoUpdatedAtSql("s")} AS "photoUpdatedAt",
                     u.name AS parent_name, u.phone AS parent_phone, u.email AS parent_email
              FROM "Student" s
              LEFT JOIN "User" u ON s."parentId" = u.id
@@ -2196,6 +2208,8 @@ export async function getStudentActivity(studentId: string) {
                 uniformSource: r.uniformSource ?? r.uniformsource ?? null,
                 uniformNote: r.uniformNote ?? r.uniformnote ?? null,
                 createdAt: r.createdAt ?? r.createdat,
+                // 프로필 사진 캐시 버전(사진 없으면 null → 화면은 이름 첫 글자)
+                photoVersion: profilePhotoVersion(r.photoUpdatedAt ?? r.photoupdatedat ?? null),
                 parent: {
                     name: r.parent_name ?? null,
                     phone: r.parent_phone ?? null,
@@ -2367,38 +2381,7 @@ export const getUnreadNotificationCount = cache(async (userId: string) => {
 
 // ── 학부모 요청 조회 ──────────────────────────────────────────────────────────
 
-// 학부모 본인의 요청 목록
-export const getMyRequests = cache(async (userId: string) => {
-    try {
-        const rows = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT r.id, r."userId", r."studentId", r.type, r.title, r.content,
-                    r.date, r.status, r."adminNote", r."createdAt", r."updatedAt",
-                    s.name AS student_name
-             FROM "ParentRequest" r
-             LEFT JOIN "Student" s ON r."studentId" = s.id
-             WHERE r."userId" = $1
-             ORDER BY r."createdAt" DESC
-             LIMIT 30`,
-            userId
-        );
-        return rows.map((r: any) => ({
-            id: r.id,
-            userId: r.userId ?? r.userid,
-            studentId: r.studentId ?? r.studentid,
-            type: r.type,
-            title: r.title,
-            content: r.content,
-            date: r.date,
-            status: r.status,
-            adminNote: r.adminNote ?? r.adminnote ?? null,
-            createdAt: r.createdAt ?? r.createdat,
-            updatedAt: r.updatedAt ?? r.updatedat,
-            studentName: r.student_name,
-        }));
-    } catch {
-        return [];
-    }
-});
+// (학부모 본인의 문의 목록은 src/lib/requests/inquiry-thread.ts 의 listMyInquiries — 대화·상태까지 한 곳에서 읽는다)
 
 // 관리자용: 전체 요청 목록 (최신순)
 export const getAllRequests = cache(async (options?: string | { statusFilter?: string; limit?: number; offset?: number }) => {
@@ -2738,7 +2721,9 @@ export const getClassWithStudents = cache(async (classId: string) => {
             prisma.$queryRawUnsafe<any[]>(
                 `SELECT e.id AS enrollment_id, e.status, e."startsOn", e."createdAt" AS enrolled_at,
                         s.id AS student_id, s.name AS student_name, s.phone, s.school, s.grade,
-                        s."birthDate", s.gender
+                        s."birthDate", s.gender,
+                        -- 프로필 사진 바꾼 시각(사진 있을 때만) — 반 명단 사진의 캐시 버전(2026-11-14)
+                        ${profilePhotoUpdatedAtSql("s")} AS "photoUpdatedAt"
                  FROM "Enrollment" e
                  JOIN "Student" s ON e."studentId" = s.id AND ${notMergedStudent("s")}
                  WHERE e."classId" = $1 AND e.status = 'ACTIVE'
@@ -2772,6 +2757,7 @@ export const getClassWithStudents = cache(async (classId: string) => {
                 enrolledAt: s.enrolled_at,
                 studentId: s.student_id,
                 studentName: s.student_name,
+                photoVersion: profilePhotoVersion(s.photoUpdatedAt ?? s.photoupdatedat ?? null),
                 phone: s.phone ?? null,
                 school: s.school ?? null,
                 grade: s.grade ?? null,

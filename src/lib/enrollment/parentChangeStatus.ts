@@ -14,6 +14,7 @@ const KIND_NAME: Record<string, string> = {
   PAUSE: "휴원",
   WITHDRAW: "퇴원",
   RESUME: "복귀",
+  CLASS_ADD: "반 추가",
 };
 
 export function parentKindName(kind: string): string {
@@ -77,6 +78,38 @@ export function buildClassStatusLine(input: ClassStatusInput): { text: string; t
   return null;
 }
 
+/** 학부모 «취소 요청»(원장 결정 d8) 상태 — 승인됐지만 적용 전인 휴원·퇴원에 낸 되돌림 요청 */
+export type ScheduledCancelInfo = {
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  requestedOn: string | null;
+  /** 원장이 남긴 말(거절 사유 등) */
+  decisionNote: string | null;
+};
+
+/**
+ * [취소 요청] 버튼을 보일까 — 승인됐지만 아직 적용 전(적용일 > 오늘 KST)인 휴원·퇴원이고,
+ * 취소 요청을 아직 안 냈을 때만. 한 번 거절된 요청은 다시 내지 않는다.
+ * 수업 탭 «신청 내역»과 수강 변경 화면이 같은 판정을 쓴다(2026-11-14 결정표 c2) — 서버도 같은 조건을 SQL 로 다시 건다.
+ */
+export function canRequestScheduledCancel(
+  change: { kind: string; effectiveFrom: string; applied: boolean },
+  cancelRequest: ScheduledCancelInfo | null | undefined,
+  today: string,
+): boolean {
+  if (change.applied) return false;
+  if (change.kind !== "PAUSE" && change.kind !== "WITHDRAW") return false;
+  if (!(change.effectiveFrom > today)) return false;
+  return !cancelRequest;
+}
+
+/** 취소 요청 상태 한 줄 — 수업 탭 «신청 내역» 상세 칸과 수강 변경 화면이 같은 말을 쓴다 */
+export function scheduledCancelLine(info: ScheduledCancelInfo | null | undefined): string | null {
+  if (!info) return null;
+  if (info.status === "PENDING") return `취소 요청을 보냈어요${info.requestedOn ? ` (${shortMd(info.requestedOn)})` : ""} · 원장님 확인 중`;
+  if (info.status === "APPROVED") return "취소 요청이 받아들여졌어요";
+  return `취소 요청이 받아들여지지 않았어요${info.decisionNote ? `: ${info.decisionNote}` : ""}`;
+}
+
 /** 알림 사유 한 줄 길이 상한 — 휴대폰 알림 칸에서 잘리지 않을 만큼. */
 const NOTE_MAX = 80;
 
@@ -131,6 +164,7 @@ export function buildChangeDecisionNotice(input: {
     WITHDRAW: "퇴원이 처리됐어요",
     RESUME: "복귀가 반영됐어요",
     CLASS_CHANGE: "반 변경이 반영됐어요",
+    CLASS_ADD: "반 추가가 반영됐어요",
   };
   return { title: "수강 변경 반영", message: `${who} ${applied[input.kind] ?? "수강 변경이 반영됐어요"}${when}` };
 }

@@ -2,7 +2,7 @@ import { childAccessSql, childConnectionsAvailable } from "@/lib/account/child-a
 import { prisma } from "@/lib/prisma";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import { createHash } from "node:crypto";
-import { CHANGE_KIND_LABEL, type ChangeKind } from "@/lib/enrollment/changeRequestRules";
+import { CHANGE_KIND_LABEL, CLASS_ADD_KIND, REQUEST_KIND_LABEL, type ChangeKind } from "@/lib/enrollment/changeRequestRules";
 import { computeClassChangeProration, describeProration, type ProrationResult } from "@/lib/enrollment/proration";
 import { getMonthlyClassDates, loadAnnualPlanEvents } from "@/lib/enrollment/monthlyClassDates";
 import { DEFAULT_HOLD_REASON, planDueEnrollmentChange } from "@/lib/enrollment/due-change-plan";
@@ -155,7 +155,8 @@ export async function getEnrollmentChangeRequests(status = "PENDING", requestIds
     studentName: row.studentName,
     kind: row.kind,
     // 복귀(RESUME)는 관리자 직접 변경 + 학부모 복귀 신청(휴원 중인 반, 2026-11-09~)에서 생긴다.
-    kindLabel: CHANGE_KIND_LABEL[row.kind as ChangeKind] ?? (row.kind === "RESUME" ? "복귀" : row.kind),
+    // 반 추가(CLASS_ADD)는 학부모 «반 추가» 신청(2026-11-14 결정표 c8) — 이름은 학부모 화면과 같은 표(REQUEST_KIND_LABEL).
+    kindLabel: CHANGE_KIND_LABEL[row.kind as ChangeKind] ?? (row.kind === "RESUME" ? "복귀" : REQUEST_KIND_LABEL[row.kind] ?? row.kind),
     fromClassName: row.fromClassName ?? null,
     toClassName: row.toClassName ?? null,
     effectiveFrom: row.effectiveFrom,
@@ -326,7 +327,7 @@ export async function decideEnrollmentChangeRequest(input: {
   // 일정은 잠금을 잡기 전에 읽고, 청구는 거래 안에서 잠근 뒤 다시 읽는다.
   const classDatesFor = settlementChoice || mustCheckChoice || checkDeferred ? await loadClassDatesFor() : null;
   // 콜백 안에서 채우므로 객체로 둔다(let 이면 TS 가 콜백 밖에서 null 로만 본다)
-  const holder: { settled: ExecutedSettlement | null; settlementDeferred: boolean } = { settled: null, settlementDeferred: false };
+  const holder: { settled: ExecutedSettlement | null; settlementDeferred: boolean; classAdded: boolean } = { settled: null, settlementDeferred: false, classAdded: false };
   let rows: any[];
   try {
   rows = await prisma.$transaction(async (tx) => {
@@ -361,6 +362,14 @@ export async function decideEnrollmentChangeRequest(input: {
       // 부원장이 수강료 처리 없이 승인한 휴원 — countOpenPauseSettlements 가 정산 행이 생길 때까지 센다
       ...(holder.settlementDeferred ? { settlementDeferred: true } : {}) },
   }});
+  // 반 추가(2026-11-14 결정표 c8) — 떠나는 반이 없어 적용일을 기다리지 않는다. 승인과 «같은 트랜잭션»에서
+  // 수강 등록(개시일 = 신청한 시작일)까지 마친다. 정원이 찼거나 반이 없으면 승인도 되돌려 «검토 중»(= 대기)으로 남긴다.
+  if (decided[0] && input.approve && decided[0].kind === CLASS_ADD_KIND) {
+    const { applyApprovedClassAddInTx } = await import("@/lib/enrollment/admin-class-add");
+    const added = await applyApprovedClassAddInTx(tx, { requestId: input.requestId, adminUserId: input.adminUserId });
+    if (!added.ok) throw new SettlementRejected(added.message);
+    holder.classAdded = true;
+  }
   // 휴원 수강료 처리(2026-11-10 m6) — 승인과 «같은 트랜잭션». 처리가 막히면 승인도 되돌린다(원장이 확인한 뒤 다시 승인).
   if (decided[0] && settlementChoice && classDatesFor) {
     if (decided[0].kind !== "PAUSE") throw new SettlementRejected("수강료 처리는 휴원 신청에만 고를 수 있어요.");
@@ -401,9 +410,10 @@ export async function decideEnrollmentChangeRequest(input: {
   const summary = input.approve ? await applyDueEnrollmentChangesWithSummary() : null;
   return {
     ok: true as const,
-    appliedNow: Boolean(summary?.appliedIds.includes(input.requestId)),
+    // 반 추가는 승인과 함께 수강이 등록됐다(위 트랜잭션) — 적용일 처리 목록에는 없다.
+    appliedNow: holder.classAdded || Boolean(summary?.appliedIds.includes(input.requestId)),
     // 이번 처리에서 사이트에 적용된 전체 건수(밀린 다른 신청 포함). 캐시를 비울지 판단하는 데 쓴다.
-    appliedCount: summary?.applied ?? 0,
+    appliedCount: (summary?.applied ?? 0) + (holder.classAdded ? 1 : 0),
     notificationStatus,
     settlement: settlementResult,
     settlementDeferred: holder.settlementDeferred,

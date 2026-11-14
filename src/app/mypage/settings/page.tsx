@@ -1,4 +1,5 @@
 import Link from "next/link";
+import ParentBackLink from "@/components/parent/ParentBackLink";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { logout } from "@/app/actions/auth";
@@ -12,11 +13,14 @@ import { formatPhoneInput } from "@/lib/application-display-format";
 import { FONT_SCALE_COOKIE, parseFontScale, SHOW_THEME_SETTING } from "@/lib/mypage/parentSettings";
 import { appVersionLabels } from "@/lib/storeApp";
 import { readPreferredPaymentMethod } from "@/lib/payments/preferredMethodStore";
-import { NameRow, PasswordRow, NotificationRows, FontScaleRow, FeedbackRow, PaymentMethodRow, MyPhotoRow } from "./SettingsClient";
+import { NameRow, PasswordRow, NotificationRows, FontScaleRow, PaymentMethodRow, MyPhotoRow } from "./SettingsClient";
 import { profilePhotoUpdatedAtSql, profilePhotoVersion } from "@/lib/profilePhoto/rules";
 import PhoneChangeButton from "@/components/account/PhoneChangeButton";
 import { phoneChangeAvailable } from "@/lib/account/phone-change";
 import { looksLikeLegalName } from "@/lib/account/phone-change-rules";
+// 학원 대표 번호(설정값) — 문의 폼도 쓸 수 없는 계정에게 «전화»라는 길을 남긴다
+import { getUsableAcademyPhone } from "@/lib/academyPhone";
+import { academyTel } from "@/lib/academyPhoneRules";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "설정 | 스티즈 농구교실" };
@@ -79,6 +83,8 @@ export default async function ParentSettingsPage() {
         phoneChangeAvailable().catch(() => false),
     ]);
     const me = userRows[0];
+    // 연락처를 앱에서 못 바꾸고(본인인증 꺼짐) 문의 폼도 없는(자녀 없음) 계정에만 학원 번호를 읽는다 — 그 밖에는 조회하지 않는다
+    const academyPhone = !canChangePhone && childRows.length === 0 ? await getUsableAcademyPhone() : null;
     const authUser = authResult.data?.user;
     // 아이디·비밀번호로 로그인하는 계정인가(간편로그인만 쓰는 계정은 비밀번호가 없다)
     const hasPasswordLogin = (authUser?.identities ?? []).some((identity) => identity.provider === "email");
@@ -92,9 +98,7 @@ export default async function ParentSettingsPage() {
         <div className="mx-auto grid max-w-2xl gap-4">
             <div className="flex items-center gap-2">
                 {/* 뒤로가기 = 누르는 영역 44×44(academy-back-link) */}
-                <Link href="/mypage" aria-label="홈으로" className="academy-back-link">
-                    <span aria-hidden="true">←</span>
-                </Link>
+                <ParentBackLink fallbackHref="/mypage" ariaLabel="홈으로" className="academy-back-link" />
                 <h1 className="academy-heading">설정</h1>
             </div>
 
@@ -108,7 +112,16 @@ export default async function ParentSettingsPage() {
                     {/* 번호 아래 한 줄 안내 — 큰 글자·좁은 화면에서도 번호가 잘리지 않게 */}
                     <span className="min-w-0 flex-1">
                         <span className="block tabular-nums text-[var(--color-academy-muted)]">{me?.phone ? formatPhoneInput(me.phone) : "없음"}</span>
-                        <span className="block text-xs text-[var(--color-academy-faint)]">{canChangePhone ? "본인 명의 휴대폰 인증 후 바뀌어요" : "변경은 학원 문의"}</span>
+                        {/* 본인인증을 쓸 수 없는 환경 — «학원 문의» 글자만 두지 않고 문의 폼으로 바로 보낸다(자녀가 없어 폼이 없으면 학원 전화, 번호도 없으면 글자만) */}
+                        {canChangePhone ? (
+                            <span className="block text-xs text-[var(--color-academy-faint)]">본인 명의 휴대폰 인증 후 바뀌어요</span>
+                        ) : childRows.length > 0 ? (
+                            <Link href="/mypage#parent-request-form" className="inline-flex min-h-11 items-center text-xs text-[var(--color-academy-muted)] underline">변경은 문의로 요청</Link>
+                        ) : academyPhone ? (
+                            <a href={`tel:${academyTel(academyPhone)}`} className="inline-flex min-h-11 items-center text-xs tabular-nums text-[var(--color-academy-muted)] underline">변경은 학원 전화 {academyPhone}</a>
+                        ) : (
+                            <span className="block text-xs text-[var(--color-academy-faint)]">변경은 학원 문의</span>
+                        )}
                     </span>
                     <PhoneChangeButton enabled={canChangePhone} nameOk={looksLikeLegalName(me?.name ?? parent.appUserName)} onSettingsPage label="바꾸기" className="academy-button-secondary shrink-0" />
                 </li>
@@ -120,7 +133,10 @@ export default async function ParentSettingsPage() {
                 )}
             </Section>
 
-            <Section title="로그인">
+            {/* 계정 — 예전엔 모든 화면 맨 아래 링크 줄(AccountLinks)에 있던 것을 여기로 모았다(2026-11-14 원장 결정 d3).
+                자녀·가족은 아래 «가족», 회원 탈퇴는 맨 끝 줄에 이미 있어 다시 넣지 않는다. «역할 추가 신청»은 원장이 직접 지정하므로 링크하지 않는다(d4) */}
+            <Section title="계정">
+                <LinkRow href="/account" label="내 계정" />
                 {hasPasswordLogin && <PasswordRow />}
                 <LinkRow href="/mypage/login-methods" label="간편로그인 연결" />
             </Section>
@@ -148,19 +164,29 @@ export default async function ParentSettingsPage() {
                 {SHOW_THEME_SETTING ? <li className={ROW}><span className="flex-1 font-medium text-[var(--color-academy-ink)]">테마</span></li> : null}
             </Section>
 
+            {/* 도움 — 홈 «문의»와 같은 기능(학원에 메시지 보내기)이라 폼을 따로 두지 않고 홈 문의 폼으로 보낸다(2026-11-14 문구 정리) */}
+            {/* 홈 문의 폼은 자녀가 연결된 계정에만 있다 — 자녀가 없으면 갈 곳이 없으니 연결 안내를 보인다(예전 문의 폼과 같은 취지) */}
             <Section title="도움">
-                <FeedbackRow childList={childRows} />
+                {/* 보낸 문의 — 답변을 다시 보고 이어 쓴다(늘 보인다, 2026-11-14 c3) */}
+                <LinkRow href="/mypage/requests" label="보낸 문의" />
+                {childRows.length > 0 ? (
+                    <LinkRow href="/mypage#parent-request-form" label="문의" />
+                ) : (
+                    <li className={`${ROW} flex-wrap`}>
+                        <span className="min-w-0 flex-1 text-[var(--color-academy-muted)]">자녀를 연결한 뒤 문의를 보낼 수 있어요</span>
+                        <Link href="/mypage/children" className="academy-button-secondary shrink-0">자녀 연결</Link>
+                    </li>
+                )}
             </Section>
 
             <Section title="앱 정보">
-                <li className={ROW}>
-                    <span className="flex-1 font-medium text-[var(--color-academy-ink)]">버전</span>
-                    {/* 앱 버전이 주인공, 화면(웹) 배포 번호는 작게 — 브라우저면 배포 번호만 */}
-                    <span className="flex shrink-0 items-baseline gap-2 tabular-nums text-[var(--color-academy-muted)]">
-                        {version.app && <span>{version.app}</span>}
-                        <span className="text-xs text-[var(--color-academy-faint)]">{version.web}</span>
-                    </span>
-                </li>
+                {/* 앱 버전만 보인다 — 배포 번호(«화면 xxxxxxx»)는 학부모에게 뜻 없는 값이라 뺐다. 브라우저(앱 버전 없음)면 줄째 숨김 */}
+                {version.app && (
+                    <li className={ROW}>
+                        <span className="flex-1 font-medium text-[var(--color-academy-ink)]">버전</span>
+                        <span className="shrink-0 tabular-nums text-[var(--color-academy-muted)]">{version.app}</span>
+                    </li>
+                )}
                 <LinkRow href="/terms" label="이용약관" />
                 <LinkRow href="/privacy" label="개인정보처리방침" />
             </Section>

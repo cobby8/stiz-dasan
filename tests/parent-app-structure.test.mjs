@@ -34,7 +34,9 @@ const summary = load("src/lib/mypage/summary.ts");
 // 2026-11-14 «최신 수업 피드» 카드 — 순수 규칙·카드 부품을 실제로 돌린다
 const sessionVideoRules = load("src/lib/sessionVideo/rules.ts", { "@/lib/datetime/kst": kst });
 const feedRules = load("src/lib/feed/rules.ts", { "@/lib/datetime/kst": kst, "@/lib/sessionVideo/rules": sessionVideoRules });
-const latestFeedCard = load("src/components/parent/LatestFeedCard.tsx", { "next/link": link, "@/lib/datetime/kst": kst });
+// 2026-11-14 카드·더보기가 «수업 리포트 피드»로 간다 — 주소는 피드 순수 규칙이 만든다
+const reportFeedRules = load("src/lib/feed/reportFeedRules.ts", { "@/lib/datetime/kst": kst });
+const latestFeedCard = load("src/components/parent/LatestFeedCard.tsx", { "next/link": link, "@/lib/datetime/kst": kst, "@/lib/feed/reportFeedRules": reportFeedRules });
 
 test("① 메뉴 4개 — 하위 화면에서도 소속 탭이 켜지고 방학특강 탭은 없다", () => {
   const nav = load("src/app/mypage/MyPageBottomNav.tsx", { "next/link": link, "next/navigation": { usePathname: () => "/mypage" } });
@@ -84,6 +86,8 @@ test("② 머리줄 🔔·⚙(휴대폰·PC 둘 다), 둘 다 44×44 — 로그�
 
 function renderHome(props) {
   const Client = load("src/app/mypage/MyPageClient.tsx", {
+    // 옛 홈 칸 주소 넘기기의 «바꿔 끼우기» 표시(2026-11-14 학부모 뒤로) — 렌더 검사에서는 아무 일도 안 한다
+    "@/lib/navigation/inAppHistory": { markNextNavigationAsReplace() {} },
     "next/navigation": { useRouter: () => ({ push() {}, replace() {}, refresh() {} }) },
     "@/app/actions/parent-notifications": {}, "./useRememberedChild": { useRememberedChild: (_ids, init) => [init, () => {}] },
     "@/lib/mypage/parentNav": { safeInternalHref: (v) => (typeof v === "string" && v.startsWith("/") && !v.startsWith("//") ? v : null) },
@@ -104,18 +108,26 @@ const feedCandidate = (extra = {}) => ({
   content: "드리블 기본기 연습했습니다.", topic: null, photos: [], videoCount: 0, ...extra,
 });
 
-test("홈 피드 카드: «처리할 일» 바로 아래, 날짜·반·코치·본문 + 소식 더보기, 누르면 상세", () => {
-  const html = renderHome({ data: { parent: { id: "p" }, children: [childA([])] }, feedCandidates: [feedCandidate({ photos: [{ src: "/api/staff/sessions/s-a/photos/p1" }] })] });
+test("홈 피드 카드: «처리할 일» 바로 아래, 날짜·반·코치·본문 + 피드 더보기, 누르면 리포트 피드의 그 수업 자리", () => {
+  const feed = [feedCandidate({ photos: [{ src: "/api/staff/sessions/s-a/photos/p1" }] })];
+  // 처리할 일이 있을 때(보강권 1장) — 카드는 그 칸 바로 아래
+  const html = renderHome({ data: { parent: { id: "p" }, children: [childA([])] }, makeupAvailable: 1, feedCandidates: feed });
   const todo = html.indexOf("처리할 일");
   const card = html.indexOf("최신 수업 피드");
   assert.ok(todo > 0 && card > todo, "처리할 일 다음");
+  // 2026-11-14 원장 결정 d7: 처리할 일이 0건이면 «처리할 일» 칸째 숨긴다(«지금 처리할 일이 없어요» 줄 없음) — 카드는 그대로 보인다
+  const idle = renderHome({ data: { parent: { id: "p" }, children: [childA([])] }, feedCandidates: feed });
+  assert.doesNotMatch(idle, /처리할 일|parent-todo-heading/);
+  assert.match(idle, /최신 수업 피드/);
+  assert.match(idle, /결석 알리기/, "빠른 실행은 그대로");
   assert.ok(html.indexOf("결석 알리기") > card, "빠른 실행보다 위");
   assert.match(html, /11\/13\(금\)/);
   assert.match(html, /초등 저학년반/);
   assert.match(html, /합성 코치 코치/);
   assert.match(html, /line-clamp-2[^"]*">드리블 기본기 연습했습니다\./);
-  assert.match(html, /href="\/mypage\/reports\/s-a"/);
-  assert.match(html, /href="\/mypage\/reports#news-reports"[^>]*>소식에서 더보기/);
+  assert.match(html, /href="\/mypage\/reports\/feed\?start=s-a"/);
+  assert.match(html, /href="\/mypage\/reports\/feed"[^>]*>더보기</);
+  assert.doesNotMatch(html, /소식에서 더보기/);
   assert.match(html, /src="\/api\/staff\/sessions\/s-a\/photos\/p1"/);
   assert.equal((html.match(/academy-button-primary/g) || []).length, 0, "카드는 꽉 찬 버튼을 늘리지 않는다");
 });
@@ -243,15 +255,17 @@ test("④ 일정 달력: 달력·수강 반·셔틀 배정만, 신청 줄은 없
   assert.match(html, /12월 5일부터 수업 시작/, "승인된 반은 개시일 전에도 수강 중 — 개시일만 안내");
   assert.doesNotMatch(html, /수강 예정/);
   assert.match(html, /14일 수업/);
-  assert.match(html, /이 달 행사·휴무 없음/);
+  // 2026-11-14 원장 결정 d7: 행사·휴무가 없는 달은 그 칸을 제목째 그리지 않는다
+  assert.doesNotMatch(html, /이 달 행사·휴무 없음|schedule-events-heading/);
   // 셔틀 배정은 남는다(홈 «오늘 셔틀»이 데려오는 자리) — 셔틀 변경 화면 링크는 배정 칸 안에만
   assert.match(html, /id="mypage-shuttle"/);
   assert.match(html, /2026년 11월 14일 토/);
   assert.match(html, /dateTime="2026-11-14T00:40:00.000Z">[^<]*09:40</, "확정 시간은 KST(UTC 00:40 = 09:40)");
   assert.match(html, /href="tel:01000001111"/);
-  const empty = renderToStaticMarkup(React.createElement(Hub, { childList: children, selectedChildId: "a", view, planReady: false, shuttleItems: [] }));
+  const empty = renderToStaticMarkup(React.createElement(Hub, { childList: children, selectedChildId: "a", view, shuttleItems: [] }));
   assert.doesNotMatch(empty, /id="mypage-shuttle"/);
-  assert.match(empty, /이 달 수업일은 연간일정 확정 후 보여요/);
+  // 연간일정이 없을 때의 «이 달 수업일은 연간일정 확정 후 보여요» 안내는 없앴다(학부모가 할 일이 없는 안내)
+  assert.doesNotMatch(empty, /연간일정 확정/);
   // «수강 변경 신청»은 «⋯» 메뉴에서 빠지고(2026-11-10 d5) 수업 탭 반 카드의 [반 변경·휴원 ▾]가 길이다
   assert.doesNotMatch(read("src/app/mypage/settings/page.tsx"), /\/mypage\/enrollment-change/);
   assert.match(read("src/lib/parent/classCards.ts"), /presetHref\("\/mypage\/enrollment-change"/);
@@ -272,6 +286,8 @@ test("⑤ 앱 안 공지 상세: 전체 공지·우리 아이 반 공지만 보�
   let sanitized = 0;
   const Page = load("src/app/mypage/news/[id]/page.tsx", {
     "next/link": link,
+    // «← 소식» = 기록 우선 뒤로 링크(2026-11-14) — 진짜 부품을 그린다(기록 없을 때 주소 = 예전 고정 주소)
+    "@/components/parent/ParentBackLink": load("src/components/parent/ParentBackLink.tsx", { "next/link": link, "@/lib/navigation/inAppHistory": load("src/lib/navigation/inAppHistory.ts") }),
     "next/navigation": { notFound: () => { throw NOT_FOUND; } },
     "@/lib/auth-guard": { requireVerifiedParent: async () => ({ appUserId: "p1" }) },
     "@/lib/queries": {

@@ -7,7 +7,7 @@
  * 날짜는 "YYYY-MM-DD" 문자열만. 오늘은 부르는 쪽이 todayKst() 로 넣는다.
  */
 import { deriveEnrollmentChangeStatus, kindLabel, statusEntry, type RequestKind } from "@/lib/requests/catalog";
-import { parentKindName, shortMd } from "@/lib/enrollment/parentChangeStatus";
+import { canRequestScheduledCancel, parentKindName, scheduledCancelLine, shortMd } from "@/lib/enrollment/parentChangeStatus";
 import type { StatusTone } from "@/lib/ui/statusTones";
 
 /** 학부모 «취소 요청»(원장 결정 d8) 상태 — 승인됐지만 적용 전인 휴원·퇴원에 학부모가 낸 되돌림 요청 */
@@ -120,18 +120,13 @@ export function canCancelNow(row: Pick<ParentTimelineRow, "kind" | "rawStatus" |
  */
 export function canRequestCancel(row: Pick<ParentTimelineRow, "kind" | "rawStatus" | "change" | "cancelRequest">, today: string): boolean {
   if (row.kind !== "ENROLLMENT_CHANGE" || row.rawStatus !== "APPROVED" || !row.change) return false;
-  if (row.change.applied) return false;
-  if (row.change.kind !== "PAUSE" && row.change.kind !== "WITHDRAW") return false;
-  if (!(row.change.effectiveFrom > today)) return false;
-  return !row.cancelRequest;
+  // 판정 본문은 parentChangeStatus 한 곳 — 수강 변경 화면의 «취소 요청» 버튼도 같은 함수를 쓴다(결정표 c2)
+  return canRequestScheduledCancel(row.change, row.cancelRequest, today);
 }
 
 /** 취소 요청 상태 한 줄(상세 칸) */
 export function cancelRequestLine(info: CancelRequestInfo | null | undefined): string | null {
-  if (!info) return null;
-  if (info.status === "PENDING") return `취소 요청을 보냈어요${info.requestedOn ? ` (${shortMd(info.requestedOn)})` : ""} · 원장님 확인 중`;
-  if (info.status === "APPROVED") return "취소 요청이 받아들여졌어요";
-  return `취소 요청이 받아들여지지 않았어요${info.decisionNote ? `: ${info.decisionNote}` : ""}`;
+  return scheduledCancelLine(info);
 }
 
 /** 화면에 넘길 완성본 — 화면(클라이언트)은 catalog 를 직접 부르지 않고 이 값만 그린다 */

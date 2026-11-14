@@ -14,16 +14,21 @@ const read = (path) => readFileSync(path, "utf8");
 // KST 시각 → epoch ms (테스트 입력 전용)
 const kst = (iso) => new Date(`${iso}+09:00`).getTime();
 
-test("업로드 가능: 수업 중·끝난 수업 + 수업일 = 오늘(KST)", () => {
+// 2026-11-14 원장 지시 «완료한 수업도 … 수정할 수 있게» — 기간이 «당일 자정»에서 «수업일 포함 7일»로 바뀌었다.
+test("업로드 가능: 수업 중·끝난 수업 + 수업일 포함 7일(KST), 원장·부원장은 제한 없음", () => {
   assert.deepEqual(r.canManageSessionVideo({ status: "IN_PROGRESS", sessionYmd: "2026-11-14", todayYmd: "2026-11-14" }), { ok: true });
-  // 수업이 끝나도 그날 자정 전까지는 추가 가능(원장 결정)
   assert.deepEqual(r.canManageSessionVideo({ status: "COMPLETED", sessionYmd: "2026-11-14", todayYmd: "2026-11-14" }), { ok: true });
-  // 다음 날(자정 넘음)은 불가
-  assert.deepEqual(r.canManageSessionVideo({ status: "COMPLETED", sessionYmd: "2026-11-14", todayYmd: "2026-11-15" }), { ok: false, reason: "NOT_TODAY" });
+  // 다음 날부터 7일째(11/20)까지 가능, 8일째(11/21)부터 불가
+  assert.deepEqual(r.canManageSessionVideo({ status: "COMPLETED", sessionYmd: "2026-11-14", todayYmd: "2026-11-15" }), { ok: true });
+  assert.deepEqual(r.canManageSessionVideo({ status: "COMPLETED", sessionYmd: "2026-11-14", todayYmd: "2026-11-20" }), { ok: true });
+  assert.deepEqual(r.canManageSessionVideo({ status: "COMPLETED", sessionYmd: "2026-11-14", todayYmd: "2026-11-21" }), { ok: false, reason: "EXPIRED" });
+  assert.deepEqual(r.canManageSessionVideo({ status: "COMPLETED", sessionYmd: "2026-11-14", todayYmd: "2026-11-21", unlimited: true }), { ok: true });
+  // 아직 오지 않은 날짜의 기록은 누구도 고치지 않는다
+  assert.deepEqual(r.canManageSessionVideo({ status: "COMPLETED", sessionYmd: "2026-11-14", todayYmd: "2026-11-13", unlimited: true }), { ok: false, reason: "NOT_TODAY" });
   // 시작 전 수업은 불가
   assert.deepEqual(r.canManageSessionVideo({ status: "PLANNED", sessionYmd: "2026-11-14", todayYmd: "2026-11-14" }), { ok: false, reason: "NOT_STARTED" });
   assert.equal(r.canManageSessionVideo({ status: "COMPLETED", sessionYmd: "2026-02-30", todayYmd: "2026-02-30" }).ok, false);
-  assert.match(r.uploadWindowMessage("NOT_TODAY"), /자정/);
+  assert.match(r.uploadWindowMessage("EXPIRED"), /수정 기간\(7일\)이 지났어요/);
 });
 
 test("자정 경계 — 오늘(KST)은 서버(UTC) 날짜가 아니라 한국 날짜", async () => {
@@ -32,8 +37,9 @@ test("자정 경계 — 오늘(KST)은 서버(UTC) 날짜가 아니라 한국 �
   assert.equal(k.todayKst(kst("2026-11-14T23:59:59")), "2026-11-14");
   assert.equal(k.todayKst(kst("2026-11-15T00:00:00")), "2026-11-15");
   const at = (iso) => r.canManageSessionVideo({ status: "COMPLETED", sessionYmd: "2026-11-14", todayYmd: k.todayKst(kst(iso)) }).ok;
-  assert.equal(at("2026-11-14T23:59:59"), true);
-  assert.equal(at("2026-11-15T00:00:00"), false);
+  // 7일째(11/20) 밤 23:59 까지 열리고, 8일째 0시(KST)에 닫힌다 — 서버(UTC) 날짜로는 아직 11/20 이다
+  assert.equal(at("2026-11-20T23:59:59"), true);
+  assert.equal(at("2026-11-21T00:00:00"), false);
   // 서버가 SQL 로 오늘을 정한다 — 서버 시계로 «오늘»을 만들지 않는다.
   // 2026-11-14: 사진·한 줄 저장과 같은 SQL 조각을 쓴다(수업일 = 무tz 칼럼 «두 번» 변환, 오늘 = timestamptz «한 번»)
   const videoServer = read("src/lib/sessionVideo/server.ts");
@@ -54,7 +60,7 @@ test("파일 검사: 형식 화이트리스트·크기 상한·친절한 안내"
   assert.equal(big.ok, false);
   assert.match(big.message, /30초 이내/);
   assert.match(r.uploadHintMessage(max), /30초 이내로 짧게\(최대 50MB\)/);
-  assert.match(r.uploadHintMessage(max), /당일 자정 전에 올려 주세요/);
+  assert.match(r.uploadHintMessage(max), /수업 뒤 7일 안에 올릴 수 있어요/);
   assert.match(big.message, /50MB/);
   assert.equal(r.checkSessionVideoFile({ mimeType: "video/mp4", sizeBytes: 0, maxBytes: max }).ok, false);
 });
@@ -263,7 +269,8 @@ test("선생님 영상 API — 수업 권한 함수 + 주소의 수업으로 범
   assert.match(register, /\.info\(video\.storagePath\)/);
   assert.match(read(files[2]), /WHERE id = \$1 AND "sessionId" = \$2 AND "deletedAt" IS NULL/);
   // 올리기·지우기는 업로드 가능 시간 판정을 거친다
-  for (const file of files) assert.match(read(file), /uploadWindowError\(session\)/, file);
+  // 원장·부원장 여부는 권한 함수가 돌려준 값으로만 넘긴다
+  for (const file of files) assert.match(read(file), /uploadWindowError\(session, access\.canAccessAllClasses\)/, file);
   // 영상 본문은 서버로 받지 않는다(Vercel 4.5MB) — 서명 업로드 주소만
   const uploadUrl = read(files[1]);
   assert.match(uploadUrl, /createSignedUploadUrl\(storagePath, \{ upsert: false \}\)/);

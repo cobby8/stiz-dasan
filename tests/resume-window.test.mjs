@@ -103,7 +103,7 @@ test("earliestUsableFrom — 반 2개의 복귀일이 다르면 이른 날, 다�
 
 test("안내 문구·오류 — 복귀일(M/D)을 넣는다", () => {
   assert.equal(rw.resumeNotice("2026-11-16"), "복귀일(11/16) 이후 수업부터 신청할 수 있어요");
-  assert.equal(rw.resumeNotice("2026-11-16", "신고"), "복귀일(11/16) 이후 수업부터 신고할 수 있어요");
+  assert.equal(rw.resumeNotice("2026-11-16", "신고"), "복귀일(11/16) 이후 수업부터 알릴 수 있어요");
   assert.equal(rw.resumeNotice(null), "복귀일 이후 수업부터 신청할 수 있어요");
   const error = new rw.BeforeResumeError("2026-12-01");
   assert.equal(error.message, "BEFORE_RESUME_DATE");
@@ -410,7 +410,7 @@ test("결석 신고 — 목록 범위(4주) 밖 날짜는 거절, 경계일은 �
   assert.equal((await absence.reportRegularAbsence("p1", { ...body, date: "2026-12-14" })).ok, true, "목록 마지막 날");
   await assert.rejects(absence.reportRegularAbsence("p1", { ...body, date: "2026-12-21" }), /^Error: ABSENCE_TOO_FAR$/);
   // 문구
-  assert.match(read("src/app/api/mypage/regular-absence/route.ts"), /ABSENCE_TOO_FAR: `앞으로 \$\{ABSENCE_REPORT_WEEKS\}주 안의 수업만 신고할 수 있습니다\.`/);
+  assert.match(read("src/app/api/mypage/regular-absence/route.ts"), /ABSENCE_TOO_FAR: `앞으로 \$\{ABSENCE_REPORT_WEEKS\}주 안의 수업만 알릴 수 있어요\.`/);
   const kakao = read("src/lib/kakao-absence-flow.ts");
   assert.match(kakao, /if \(code === "ABSENCE_TOO_FAR"\)/);
   assert.match(kakao, /export const ABSENCE_WEEKS = 4;/, "카카오 결석 후보도 같은 4주 — 상한 때문에 깨지지 않는다");
@@ -757,7 +757,9 @@ test("홈·달력 화면 — 별도 칸만 읽고, 전부 복귀 예정인 아�
   assert.match(home, /복귀 예정인 반 \$\{resumingEnrollments\.length\}개/);
   assert.match(home, /const currentEnrollments = child\.enrollments;/, "«수강 중인 반 N개»는 여전히 ACTIVE 만 센다");
   const hub = read("src/app/mypage/history/ScheduleHub.tsx");
-  assert.match(hub, /hasEnrollments=\{enrollments\.length > 0\}/);
+  // 달력의 «연간일정 확정 후 보여요» 안내를 없애(2026-11-14 문구 정리) 달력 부품은 그 조건값을 더 받지 않는다
+  assert.ok(hub.includes("<MonthCalendar view={view} />"));
+  assert.doesNotMatch(hub, /planReady|hasEnrollments/);
   assert.match(hub, /복귀 예정 · \{e\.resumeFromLabel\}부터/);
   // 결제·수강 변경 쪽은 새 칸을 읽지 않는다
   for (const file of ["src/lib/enrollment/parent-change-request.ts", "src/lib/payments/parent-payment-request.ts"]) {

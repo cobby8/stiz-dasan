@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
+import ParentBackLink from "@/components/parent/ParentBackLink";
 import type { ParentIllnessReview, UpcomingChild, UpcomingClassDate } from "@/lib/regular/parent-regular-absence";
 import type { RegularMakeupRow } from "@/lib/regular/parent-regular-makeup";
 import { groupByUpcomingDate } from "@/components/admin/list/upcomingDateGroups";
@@ -11,6 +12,11 @@ import { customerMessage } from "@/components/parent/customerMessage";
 import { presetFirst } from "@/lib/mypage/requestPreset";
 import { resumeNotice } from "@/lib/enrollment/resumeWindow";
 import { compressImageForUpload } from "@/lib/clientImageCompression";
+import type { ParentAbsencePeriodRow } from "@/lib/regular/parent-absence-period";
+import PeriodAbsencePanel, { ActivePeriodList } from "./PeriodAbsencePanel";
+import ArrivalNoticeArea, { arrivalAddableKinds } from "./ArrivalNoticeArea";
+import type { ParentArrivalScreen } from "@/lib/regular/parent-arrival-notice";
+import { ARRIVAL_KIND_LABEL, type ArrivalKind } from "@/lib/regular/arrivalNoticeRules";
 import { EVIDENCE_MAX_PHOTOS, ILLNESS_REASON, REASON_TEXT_MAX, illnessReviewLabel } from "@/lib/regular/illnessCarryRules";
 
 // 날짜 묶음 이름 — 가까운 수업일이 먼저 보이게(오늘 → 이번 주 → 다음 주 → 이후)
@@ -89,6 +95,9 @@ function ContactActions({ label, contact }: { label: string; contact: AbsenceCon
 export default function RegularAbsenceClient({
   initial,
   initialReviews = [],
+  initialPeriods = [],
+  periodAvailable = false,
+  initialArrival = { available: false, byKey: {} },
   makeups = [],
   presetStudentId = null,
   contact = { phone: null, kakaoChannelUrl: null },
@@ -96,6 +105,12 @@ export default function RegularAbsenceClient({
   initial: UpcomingChild[];
   /** 질병·부상 결석의 이월 검토(상태·사진) */
   initialReviews?: ParentIllnessReview[];
+  /** 진행 중인 «여러 날 결석»(학부모가 알린 기간) */
+  initialPeriods?: ParentAbsencePeriodRow[];
+  /** «여러 날» 알리기를 쓸 수 있나(서버 준비 여부) — false 면 선택 칸을 보이지 않는다 */
+  periodAvailable?: boolean;
+  /** 지각·조퇴 알리기(«늦어요 · 일찍 가요») 정보 — available=false 면 입구를 보이지 않는다 */
+  initialArrival?: ParentArrivalScreen;
   makeups?: RegularMakeupRow[];
   /** 수업 탭 반 카드에서 온 아이 — 그 아이 날짜를 맨 위에(나머지 순서는 그대로) */
   presetStudentId?: string | null;
@@ -103,6 +118,12 @@ export default function RegularAbsenceClient({
 }) {
   const [children, setChildren] = useState<UpcomingChild[]>(initial);
   const [reviews, setReviews] = useState<ParentIllnessReview[]>(initialReviews);
+  const [periods, setPeriods] = useState<ParentAbsencePeriodRow[]>(initialPeriods);
+  // 지각·조퇴 알리기: 줄마다의 정보 + 지금 열린 알리는 칸(한 번에 한 칸)
+  const [arrival, setArrival] = useState<ParentArrivalScreen>(initialArrival);
+  const [arrivalForm, setArrivalForm] = useState<{ key: string; kind: ArrivalKind } | null>(null);
+  // 맨 위 선택: 하루씩 알리기 / 여러 날 한 번에 알리기(2026-11-15)
+  const [mode, setMode] = useState<"day" | "period">("day");
   const [openKey, setOpenKey] = useState<string>(""); // 신고 폼이 열린 날짜 키
   const [reason, setReason] = useState<Record<string, string>>({}); // 날짜별 선택 사유
   const [reasonText, setReasonText] = useState<Record<string, string>>({}); // 날짜별 사유 글(질병·부상)
@@ -122,6 +143,8 @@ export default function RegularAbsenceClient({
       if (r.ok) {
         setChildren(j.children || []);
         setReviews(j.reviews || []);
+        setPeriods(j.periods || []);
+        setArrival(j.arrival?.available ? j.arrival : { available: false, byKey: {} });
       }
     } catch {
       /* noop */
@@ -352,6 +375,21 @@ export default function RegularAbsenceClient({
     [moveTo, moveCandidates, reload],
   );
 
+  // «여러 날» 칸·기간 목록이 일을 마치면 결과 글을 보이고 화면을 다시 읽는다
+  const onPeriodChanged = useCallback(
+    async (message: string, error?: string) => {
+      setMsg(message);
+      setErr(error || "");
+      await reload();
+    },
+    [reload],
+  );
+  // «여러 날»에서 고를 아이(쓸 수 있는 반이 있는 아이만)
+  const periodKids = useMemo(
+    () => children.filter((c) => c.classes.length > 0).map((c) => ({ studentId: c.studentId, studentName: c.studentName })),
+    [children],
+  );
+
   const hasAnyClass = useMemo(
     () => children.some((c) => c.classes.some((cl) => cl.dates.length > 0)),
     [children],
@@ -386,9 +424,7 @@ export default function RegularAbsenceClient({
       {/* 헤더 */}
       <div className="mb-2 flex items-center gap-2">
         {/* 뒤로가기 = 누르는 영역 44×44(academy-back-link) */}
-        <Link href="/mypage" aria-label="마이페이지로" className="academy-back-link">
-          <span aria-hidden="true">←</span>
-        </Link>
+        <ParentBackLink fallbackHref="/mypage" ariaLabel="마이페이지로" className="academy-back-link" />
         <h1 className="academy-heading">
           결석 알리기
         </h1>
@@ -396,7 +432,27 @@ export default function RegularAbsenceClient({
       {/* 화면 맨 위 설명 한 줄 = 본문 14px */}
       <p className="mb-4 text-sm text-[var(--color-academy-muted)]">
         수업 1시간 전까지 알리거나 취소할 수 있어요.
+        {arrival.available && " 늦거나 일찍 가는 날은 수업 시작 전(일찍 가는 날은 끝나기 전)까지 알릴 수 있어요."}
       </p>
+
+      {/* 하루 / 여러 날 — 고른 쪽은 보조 색(지금 있는 곳), 글자만 */}
+      {periodAvailable && (
+        <div role="group" aria-label="알리는 방법" className="mb-4 grid grid-cols-2 gap-1 rounded-xl bg-[var(--color-academy-soft)] p-1">
+          {([["day", "하루"], ["period", "여러 날"]] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={mode === value}
+              onClick={() => setMode(value)}
+              className={`min-h-11 rounded-lg text-sm font-medium ${mode === value
+                ? "bg-[var(--color-academy-secondary-soft)] text-[var(--color-academy-secondary-ink)] ring-1 ring-inset ring-[var(--color-academy-secondary-strong)]"
+                : "text-[var(--color-academy-muted)]"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* 예정 보강(읽기 전용) — 관리자가 지정한 자녀의 보강 일정 */}
       {makeups.length > 0 && (
@@ -451,6 +507,9 @@ export default function RegularAbsenceClient({
           ))}
         </ul>
       )}
+
+      {/* 알린 여러 날 결석 — 복귀했어요·알림 취소(어느 쪽을 고르든 보인다) */}
+      <ActivePeriodList periods={periods} onChanged={onPeriodChanged} />
 
       {/* 질병·부상 결석(2026-11-14) — 이월 검토 상태 한 단어 + 증빙 사진 추가·삭제(알린 날부터 7일 안) */}
       {reviews.length > 0 && (
@@ -548,7 +607,9 @@ export default function RegularAbsenceClient({
         </section>
       )}
 
-      {!hasAnyClass ? (
+      {mode === "period" ? (
+        <PeriodAbsencePanel kids={periodKids} presetStudentId={presetStudentId} uploadEvidence={uploadEvidence} onChanged={onPeriodChanged} contact={contact} />
+      ) : !hasAnyClass ? (
         <div className="rounded-2xl border border-dashed border-[var(--color-academy-line-input)] bg-white px-6 py-16 text-center text-sm text-[var(--color-academy-muted)]">
           다가오는 정규수업이 없습니다.
         </div>
@@ -579,6 +640,11 @@ export default function RegularAbsenceClient({
                         // 사유 글·사진 칸(눌러도 저장되지 않는 막다른 길)을 숨기고 사진 올리는 곳만 알려 준다
                         const sameIllness = illnessChosen && d.reported && d.reason === ILLNESS_REASON;
                         const chosenPhotos = photos[key] || [];
+                        // 지각·조퇴(2026-11-14): 이 줄의 정보와 새로 알릴 수 있는 종류(«늦어요»·«일찍 가요»)
+                        const arrivalInfo = arrival.available ? arrival.byKey[key] : undefined;
+                        const arrivalKinds = arrivalAddableKinds(d, arrivalInfo);
+                        // 결석 알리는 칸이 열려 있는 줄에서는 지각·조퇴 칸을 닫아 둔다(한 줄에 한 칸)
+                        const arrivalFormKind = arrivalForm?.key === key && openKey !== key ? arrivalForm.kind : null;
                         return (
                           <li key={key} className="px-3 py-1.5">
                             {/* 한 줄 행: 반·시각(왼쪽, 줄바꿈 허용) · 날짜(오른쪽, 숫자 폭 고정) · 동작 버튼 */}
@@ -628,13 +694,27 @@ export default function RegularAbsenceClient({
                                 </Link>
                               )}
 
+                              {/* 늦어요 · 일찍 가요(2026-11-14) — 결석이 아니라 글자 버튼(아래에 시각 고르는 칸이 열린다). 열린 칸의 종류는 숨긴다.
+                                  결석 알리기 마감(수업 1시간 전) 뒤에도 수업 시작 전(일찍 가는 날은 끝나기 전)까지 보인다 */}
+                              {openKey !== key && arrivalKinds.filter((kind) => kind !== arrivalFormKind).map((kind) => (
+                                <button
+                                  key={kind}
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={() => setArrivalForm({ key, kind })}
+                                  className="academy-button-text shrink-0"
+                                >
+                                  {ARRIVAL_KIND_LABEL[kind]}
+                                </button>
+                              ))}
+
                               {/* 액션 — 신고 취소 · 사유 변경 / 결석 알리기 폼 열기. 여기서 못 바꾸는 줄은 한 단어 + 전화·문의 버튼 */}
                               {d.locked ? (
                                 // 학원이 확정한 결석 — 여기서 바꿀 수 없다(서버도 막는다). 바로 전화·문의로 잇는다
                                 <ContactActions label="학원 확정" contact={contact} />
                               ) : !changeOpen(d) ? (
                                 // 마감 뒤(수업 1시간 전 지남) — 버튼 대신 «마감» + 전화·문의(서버도 같은 규칙으로 막는다)
-                                <ContactActions label="마감" contact={contact} />
+                                <ContactActions label={arrivalKinds.length > 0 || (arrivalInfo?.notices.length ?? 0) > 0 ? "결석 알리기 마감" : "마감"} contact={contact} />
                               ) : d.reported && creditBlocksCancel(d) ? (
                                 // 이미 그 결석의 보강을 들었다 — 신고 취소 불가(서버도 막는다)
                                 <ContactActions label="보강을 이미 들어 취소할 수 없어요" contact={contact} />
@@ -683,7 +763,7 @@ export default function RegularAbsenceClient({
                                 <button
                                   type="button"
                                   disabled={busy}
-                                  onClick={() => setOpenKey(key)}
+                                  onClick={() => { setArrivalForm(null); setOpenKey(key); }}
                                   // 행의 «여는» 버튼 = 옅은 바탕(tonal). 꽉 찬 색은 폼 안 «알리기»만(M-08)
                                   className="academy-button-tonal shrink-0"
                                 >
@@ -692,6 +772,20 @@ export default function RegularAbsenceClient({
                               )}
                               </div>
                             </div>
+
+                            {/* 지각·조퇴 — 알린 내용 줄 + 알리는 칸(결석을 알린 줄에는 보이지 않는다). 키가 바뀌면 칸의 고른 값이 새로 시작된다 */}
+                            {openKey !== key && (
+                              <ArrivalNoticeArea
+                                key={`${key}:${arrivalFormKind ?? ""}`}
+                                d={d}
+                                info={arrivalInfo}
+                                formKind={arrivalFormKind}
+                                onOpen={(kind) => { setOpenKey(""); setMoveKey(""); setArrivalForm({ key, kind }); }}
+                                onClose={() => setArrivalForm(null)}
+                                onChanged={onPeriodChanged}
+                                academyPhone={contact.phone}
+                              />
+                            )}
 
                             {/* 사유 칸 — 새 신고: 사유 고르고 «알리기» / 신고된 줄: 다른 사유를 골라 «사유 바꾸기»(같은 report 길) */}
                             {openKey === key && !d.locked && changeOpen(d) && !(d.reported && creditBlocksCancel(d)) && (

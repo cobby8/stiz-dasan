@@ -6,7 +6,9 @@
 // DB·저장소·알림은 인자로 받는다 — 테스트가 가짜로 실제 실행한다. 이 파일은 prisma 를 import 하지 않는다.
 // 날짜 판정은 «DB 시계»의 KST 날짜로 한다(서버 시계를 믿지 않는다). requestedAt·decidedAt 은 timestamptz 라 변환은 한 번.
 import { convertIllnessToMakeupInTx, illnessReviewReady, type IllnessTx } from "@/lib/regular/illness-carry-tx";
-import { isEvidencePurgeDue, isValidEvidencePath, shouldAutoConvertToMakeup, EVIDENCE_BUCKET } from "@/lib/regular/illnessCarryRules";
+import {
+  evidenceAnchorYmdSql, evidenceScopeSql, isEvidencePurgeDue, isValidEvidencePath, shouldAutoConvertToMakeup, EVIDENCE_BUCKET,
+} from "@/lib/regular/illnessCarryRules";
 
 export type IllnessCronDb = IllnessTx & {
   $transaction<T>(work: (tx: IllnessTx) => Promise<T>, options?: { isolationLevel: "Serializable" | "RepeatableRead"; timeout?: number }): Promise<T>;
@@ -23,10 +25,11 @@ export async function autoConvertOverdueIllnessReviews(
   // 후보: 검토 중 + 학부모가 알린 것. 사진 수·알린 날(KST)·오늘(KST)을 함께 읽어 규칙 함수(순수)가 판정한다
   const rows = await db.$queryRawUnsafe<OverdueRow[]>(
     `SELECT r."absenceId" AS "absenceId", r.status, r.source,
-            (SELECT COUNT(*)::int FROM "RegularAbsenceEvidence" e WHERE e."absenceId" = r."absenceId" AND e."removedAt" IS NULL) AS "photoCount",
+            -- 여러 날 결석은 기간에 올린 사진을 함께 센다(한 묶음)
+            (SELECT COUNT(*)::int FROM "RegularAbsenceEvidence" e WHERE ${evidenceScopeSql("ra", "e")} AND e."removedAt" IS NULL) AS "photoCount",
             to_char(r."requestedAt" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "requestedYmd",
-            -- 결석일(date 칼럼 — 이미 달력 값이라 변환 없음). 7일 기준점 = 알린 날과 결석일 중 더 늦은 날(규칙 함수가 판정)
-            to_char(ra.date, 'YYYY-MM-DD') AS "absenceYmd",
+            -- 결석일(여러 날 결석이면 기간의 마지막 결석일). 7일 기준점 = 알린 날과 이 날 중 더 늦은 날(규칙 함수가 판정)
+            ${evidenceAnchorYmdSql("ra")} AS "absenceYmd",
             to_char(now() AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "todayYmd"
        FROM "RegularAbsenceCarryReview" r
        JOIN "RegularAbsence" ra ON ra.id = r."absenceId"

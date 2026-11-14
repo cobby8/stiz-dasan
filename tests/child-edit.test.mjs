@@ -556,7 +556,8 @@ test("⑥ 번호를 화면에서 받는 길이 없다 · 꺼진 환경은 기존
   assert.ok(lib.indexOf("fetchPortoneIdentityVerification(id, config)") < lib.indexOf(`UPDATE "User" SET phone=$1`));
   assert.ok(lib.indexOf("phoneChangeOutcome(") < lib.indexOf(`UPDATE "User" SET phone=$1`));
   const settings = read("src/app/mypage/settings/page.tsx");
-  assert.match(settings, /canChangePhone \? "본인 명의 휴대폰 인증 후 바뀌어요" : "변경은 학원 문의"/);
+  // 2026-11-14 c3: 꺼진 환경의 «학원 문의» 글자는 문의 폼으로 가는 링크가 됐다(자녀가 없어 폼이 없으면 글자 그대로)
+  assert.match(settings, /\{canChangePhone \? \(\s*<span[^>]*>본인 명의 휴대폰 인증 후 바뀌어요<\/span>\s*\) : childRows\.length > 0 \? \(\s*<Link href="\/mypage#parent-request-form"[^>]*>변경은 문의로 요청<\/Link>\s*\) : academyPhone \? \(\s*<a href=\{`tel:\$\{academyTel\(academyPhone\)\}`\}/);
   assert.match(settings, /<PhoneChangeButton enabled=\{canChangePhone\}/);
   const button = read("src/components/account/PhoneChangeButton.tsx");
   assert.match(button, /if \(!available\) return <>\{fallback\}<\/>/);
@@ -833,7 +834,9 @@ test("⑧ 막다른 곳 3곳: 셔틀 «학원 확인 중» · 방학특강 연�
   assert.doesNotMatch(noPhone, /href="tel:/);
   assert.match(noPhone, /학원에 문의해 주세요/);
   const page = read("src/app/mypage/page.tsx");
-  assert.match(page, /getAcademySettings\(\)\.then\(\(s\) => s\?\.contactPhone \?\? null\)/);
+  // 번호는 설정값(contactPhone)에서 — 읽기·판정은 공용 한 곳(academyPhone → academyPhoneRules, 실행 테스트 = parent-delivery-view.test.mjs)
+  assert.match(page, /const usablePhone = await getUsableAcademyPhone\(\);/);
+  assert.match(read("src/lib/academyPhone.ts"), /getAcademySettings\(\)\s*\.then\(\(settings\) => \(settings as \{ contactPhone\?: string \| null \} \| null\)\?\.contactPhone \?\? null\)/);
   assert.match(page, /academyPhone=\{usablePhone\}/);
 });
 

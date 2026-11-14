@@ -161,13 +161,17 @@ function applicantPrice(item: SeasonalClass, applicantType: ApplicantType | "") 
   return item.price;
 }
 
-export default function SeasonalApplyClient({ slug }: { slug: string }) {
+/** 학부모 앱 안에서 열 때 미리 채우는 값(로그인한 학부모의 이름·연락처·아이). 고칠 수 있다 */
+export type SeasonalApplyPrefill = Partial<Pick<FormState, "childName" | "childBirthDate" | "parentName" | "parentPhone">>;
+
+// basePath·homeHref = 화면 사이 이동 주소. 공개 화면은 "/seasonal"·"/"(기본), 학부모 앱 안은 "/mypage/seasonal/apply"·"/mypage"(2026-11-14 c9)
+export default function SeasonalApplyClient({ slug, basePath = "/seasonal", homeHref = "/", prefill }: { slug: string; basePath?: string; homeHref?: string; prefill?: SeasonalApplyPrefill }) {
   const [state, setState] = useState<LoadState>("loading");
   const [program, setProgram] = useState<SeasonalProgram | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedWeekdayKeys, setSelectedWeekdayKeys] = useState<SeasonalWeekday[]>([]);
   const [applicantType, setApplicantType] = useState<ApplicantType | "">("");
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [form, setForm] = useState<FormState>(() => ({ ...EMPTY_FORM, ...prefill }));
   const [shuttle, setShuttle] = useState<Record<string, ShuttleDraft>>({});
   const [locationPicker, setLocationPicker] = useState<LocationPickerTarget | null>(null);
   const [locationConsent, setLocationConsent] = useState(false);
@@ -400,7 +404,7 @@ export default function SeasonalApplyClient({ slug }: { slug: string }) {
 
   if (state === "loading") return <StatusBox text="신청 정보를 불러오고 있어요." />;
   if (state === "error" || !program) return <StatusBox text={message || "신청 정보를 불러오지 못했습니다."} retry />;
-  if (submitState === "done") return <DoneView slug={slug} result={result} offerings={offerings} message={message} />;
+  if (submitState === "done") return <DoneView slug={slug} basePath={basePath} homeHref={homeHref} result={result} offerings={offerings} message={message} />;
   const display = seasonalDisplayState(program);
   if (!display.canApply) return (
     <section className="public-content-section bg-[var(--color-public-tint)] px-4 py-8 dark:bg-[var(--color-public-paper)]">
@@ -409,7 +413,7 @@ export default function SeasonalApplyClient({ slug }: { slug: string }) {
         <h1 className="text-2xl font-bold break-keep">{program.title}</h1>
         <p>{display.message}</p>
         <p className="text-sm text-[var(--color-public-muted)]">운영 기간 · {formatSeasonalPeriod(program.operationStart, program.operationEnd)}</p>
-        <div className="public-actions"><Link href={`/seasonal/${slug}`} className="public-btn-secondary">특강 내용 보기</Link><Link href="/seasonal" className="public-btn-secondary">다른 특강 보기</Link></div>
+        <div className="public-actions"><Link href={`${basePath}/${slug}`} className="public-btn-secondary">특강 내용 보기</Link><Link href={basePath} className="public-btn-secondary">다른 특강 보기</Link></div>
       </div>
     </section>
   );
@@ -418,7 +422,7 @@ export default function SeasonalApplyClient({ slug }: { slug: string }) {
     <form onSubmit={handleSubmit} className="public-seasonal-form bg-[var(--color-public-tint)] px-4 py-8 pb-28 dark:bg-[var(--color-public-paper)]">
       <div className="mx-auto max-w-5xl space-y-6">
         <header>
-          <Link href={`/seasonal/${slug}`} className="text-sm font-medium text-[var(--color-public-accent)] dark:text-brand-neon-lime">특강 상세로 돌아가기</Link>
+          <Link href={`${basePath}/${slug}`} className="text-sm font-medium text-[var(--color-public-accent)] dark:text-brand-neon-lime">특강 상세로 돌아가기</Link>
           <p className="mt-5 text-sm font-medium text-[var(--color-public-accent)] dark:text-brand-neon-lime">방학특강 신청</p>
           <h1 className="mt-2 text-3xl font-bold text-[var(--color-public-ink)] dark:text-white">{program.title}</h1>
           {program.summary && <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">{program.summary}</p>}
@@ -670,7 +674,7 @@ export default function SeasonalApplyClient({ slug }: { slug: string }) {
             <p className="truncate text-sm font-medium text-[var(--color-public-ink)] dark:text-white">{selectedOfferings.length}개 수업 선택 · {formatWon(totalPrice)}</p>
             <p className="text-xs text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">제출 후 학원에서 확인 연락을 드립니다.</p>
           </div>
-          <Link href={`/seasonal/${slug}`} className="public-btn-secondary">취소</Link>
+          <Link href={`${basePath}/${slug}`} className="public-btn-secondary">취소</Link>
           {incompleteItems.length > 0 && submitState !== "submitting" && <p id="seasonal-apply-incomplete" role="status" className="order-first w-full text-xs text-[var(--color-academy-warning)] sm:order-none sm:min-w-0 sm:flex-1">미완료: {incompleteItems.join(" · ")}</p>}
           <button
             type="submit"
@@ -696,7 +700,7 @@ export default function SeasonalApplyClient({ slug }: { slug: string }) {
   );
 }
 
-function DoneView({ slug, result, offerings, message }: { slug: string; result: SubmitResult | null; offerings: SeasonalClass[]; message: string }) {
+function DoneView({ slug, basePath, homeHref, result, offerings, message }: { slug: string; basePath: string; homeHref: string; result: SubmitResult | null; offerings: SeasonalClass[]; message: string }) {
   const byId = new Map(offerings.map((item) => [item.id, item]));
   return (
     <main className="bg-[var(--color-public-tint)] px-4 py-12 dark:bg-[var(--color-public-paper)]">
@@ -725,8 +729,8 @@ function DoneView({ slug, result, offerings, message }: { slug: string; result: 
           </div>
         )}
         <div className="mt-6 flex flex-wrap justify-center gap-2">
-          <Link href={`/seasonal/${slug}`} className="public-btn-secondary">상세 보기</Link>
-          <Link href="/" className="public-btn-primary">홈으로</Link>
+          <Link href={`${basePath}/${slug}`} className="public-btn-secondary">상세 보기</Link>
+          <Link href={homeHref} className="public-btn-primary">홈으로</Link>
         </div>
       </section>
     </main>

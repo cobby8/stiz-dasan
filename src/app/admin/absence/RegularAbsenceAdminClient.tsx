@@ -19,6 +19,7 @@ import AdminModal from "@/components/admin/AdminModal";
 import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
 import AdminPanelActions from "@/components/admin/AdminPanelActions";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
+import AbsencePeriodQuickCreate from "@/components/admin/AbsencePeriodQuickCreate";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import ListViewToggle, { useRememberedListView } from "@/components/admin/list/ListViewToggle";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
@@ -75,6 +76,9 @@ export default function RegularAbsenceAdminClient({
   const [classId, setClassId] = useState<string>(""); // "" = 전체 반
   const [busyId, setBusyId] = useState<string>("");
   const [err, setErr] = useState("");
+  // 기간 결석 등록 빠른 입구(2026-11-15) — 창 열림 여부와 등록 결과 한 줄
+  const [periodCreateOpen, setPeriodCreateOpen] = useState(false);
+  const [periodNotice, setPeriodNotice] = useState("");
   // 보강 지정 폼: 열린 결석 id + 입력값(반/날짜).
   const [makeupOpenId, setMakeupOpenId] = useState<string>("");
   const [makeupClassId, setMakeupClassId] = useState<string>("");
@@ -315,6 +319,11 @@ export default function RegularAbsenceAdminClient({
           </>
         }
         actions={
+          <>
+          {/* 기간 결석 등록(2026-11-15) — 학생을 찾아 학생 상세의 등록 창을 그대로 연다 */}
+          <button type="button" onClick={() => setPeriodCreateOpen(true)} className="academy-button-secondary whitespace-nowrap">
+            기간 결석 등록
+          </button>
           <select
             value={classId}
             onChange={(e) => {
@@ -331,8 +340,15 @@ export default function RegularAbsenceAdminClient({
               </option>
             ))}
           </select>
+          </>
         }
       />
+
+      {periodNotice && (
+        <p role="status" className="mb-2 rounded-xl bg-[var(--color-academy-success-soft)] px-4 py-2 text-sm font-medium text-[var(--color-academy-success)]">
+          {periodNotice}
+        </p>
+      )}
 
       {err && !makeupTarget && (
         <div className="mb-2 rounded-xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] px-4 py-2 text-sm font-medium text-[var(--color-academy-danger)]">
@@ -505,6 +521,16 @@ export default function RegularAbsenceAdminClient({
             </button>
           </div>
         </AdminModal>
+      )}
+      {periodCreateOpen && (
+        <AbsencePeriodQuickCreate
+          onClose={() => setPeriodCreateOpen(false)}
+          onDone={async (message) => {
+            setPeriodCreateOpen(false);
+            setPeriodNotice(message);
+            await reload(classId); // 방금 만든 결석이 목록에 바로 보이게
+          }}
+        />
       )}
     </div>
   );

@@ -9,6 +9,8 @@ import KakaoShuttleRosterTasks from "./KakaoShuttleRosterTasks";
 import DriverRunLinkControls from "./DriverRunLinkControls";
 import { isDriverRunLinkEnabled } from "@/lib/shuttle/driverLinkAccess";
 import { getOpenKakaoShuttleRosterTasks, type KakaoShuttleRosterTaskItem } from "@/lib/kakao-shuttle-roster-task-query";
+import RegularChangeRequestsPanel from "./RegularChangeRequestsPanel";
+import { listRegularChangeRequests, type AdminRegularChangeRow } from "@/lib/shuttle/regularChangeRequest";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +32,10 @@ export default async function RegularShuttlePage({ searchParams }: { searchParam
   let rosterTasks: KakaoShuttleRosterTaskItem[] = [];
   try { rosterTasks = await getOpenKakaoShuttleRosterTasks(); } catch (e) { console.error("[admin/shuttle/regular] 카카오 셔틀 신청 할 일 조회 실패", e); }
 
+  // 학부모 «셔틀 계속 바꾸기» 신청(2026-11-14 c5) — 승인·반려는 이 화면에서. 조회 실패·표 없음이어도 명단 화면은 떠야 한다.
+  let changeRequests: AdminRegularChangeRow[] = [];
+  try { changeRequests = await listRegularChangeRequests(); } catch (e) { console.error("[admin/shuttle/regular] 셔틀 계속 바꾸기 신청 조회 실패", e instanceof Error ? e.name : ""); }
+
   // 기사님 운행 링크(문자 주소) 스위치 — 서버가 실제로 막는 값과 같은 함수로 읽는다.
   const driverRunLinkEnabled = await isDriverRunLinkEnabled();
 
@@ -38,6 +44,7 @@ export default async function RegularShuttlePage({ searchParams }: { searchParam
       <SeasonalHeader eyebrow="SHUTTLE" title="셔틀 관리" subtitle="정규 수업 셔틀 이용 학생 명단을 요일·수업별로 관리합니다." />
       <ShuttleSectionTabs />
       <KakaoShuttleRosterTasks tasks={rosterTasks} />
+      <RegularChangeRequestsPanel rows={changeRequests} />
       <DriverRunLinkControls initialEnabled={driverRunLinkEnabled} />
       <RegularShuttleClient initialStops={initial.stops} initialMonth={initialMonth} months={initial.months} currentMonth={currentMonth} initialStudentId={requested.studentId?.slice(0,64)} initialWeekday={/^[0-6]$/.test(requested.weekday ?? "") ? Number(requested.weekday) : undefined} initialAdd={requested.add === "1"} />
     </>

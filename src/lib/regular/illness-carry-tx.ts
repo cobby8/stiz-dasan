@@ -6,12 +6,12 @@
 //
 // 규칙(원장 결정표 2026-11-14):
 //   · 질병·부상 결석이 생기면(학부모 신고·사유 변경) → 검토 «PENDING», 이미 나간 미사용 보강권은 거둬 둔다.
-//   · 다른 사유로 바뀌거나 신고가 취소되면 → 검토 «CLOSED», 사진은 화면에서 뺀다(파일은 cron 이 지운다).
+//   · 다른 사유로 바뀌거나 신고가 취소되면 → 검토 «CLOSED», 사진은 같은 기간의 살아 있는 결석으로 옮기거나 뺀다(뺀 파일은 cron 이 지운다).
 //   · [보강권으로] / 7일 지나 사진 없음 → 보강권 1장 발급 + 검토 «MAKEUP».
 //   · [이월 승인]은 기존 이월 규칙(resolveWorkbenchAbsence)이 처리하고, 그 함수가 검토를 «APPROVED»로 맞춘다.
 import { lockCompensation, type CompensationTransaction } from "@/lib/billing/absence-compensation-guard";
 import { issueCreditForReportedAbsence, regularAbsenceSourceKey } from "@/lib/makeup/absence-report-credit";
-import { ILLNESS_REASON, type IllnessReviewSource } from "@/lib/regular/illnessCarryRules";
+import { ILLNESS_REASON, evidenceScopeSql, type IllnessReviewSource } from "@/lib/regular/illnessCarryRules";
 
 export type IllnessTx = CompensationTransaction;
 
@@ -89,7 +89,7 @@ export async function openIllnessReviewInTx(
 }
 
 /**
- * 검토 닫기 — 사진은 화면에서 빼고(removedAt), 저장소 파일은 cron 이 지운다.
+ * 검토 닫기 — 사진은 같은 기간의 살아 있는 결석으로 옮기거나 뺀다(removedAt — 뺀 파일은 cron 이 지운다).
  *
  * - 다른 사유로 바뀜(기본): «검토 중»만 닫는다. 원장이 이미 [보강권으로] 정한 결석은 그 결정을 그대로 둔다
  *   (사유를 바꿨다 되돌려 원장 결정을 다시 열 수 없게).
@@ -107,6 +107,24 @@ export async function closeIllnessReviewInTx(
     absenceId, options.canceled ? ["PENDING", "MAKEUP"] : ["PENDING"],
   );
   if (Number(n) === 0) return { closed: false };
+  // 사진 정리(코드 리뷰·보안 검수 2026-11-14) — 살아 있는 사진은 언제나 «살아 있는 검토가 있는 결석»에 붙어 있게 한다.
+  //   ① 여러 날 결석(기간)에 살아 있는 형제(취소 안 된 결석의 검토 중·이월 승인·보강권 전환)가 있으면 사진을 그 결석으로 옮긴다
+  //      (날짜 바꾸기와 같은 방식). 사진이 붙은 날만 하루 취소해도 기간의 증빙은 그대로이고, 학부모의 사진 삭제·교체도 계속 된다.
+  //   ② 옮길 곳이 없으면(하루 결석이거나 기간의 마지막 검토였다) 화면에서 뺀다 — 파일은 cron 이 지운다.
+  //   그래서 기간을 전부 취소하면 마지막 날이 닫힐 때 사진도 함께 빠진다(진단서 사진이 살아남지 않는다).
+  await tx.$executeRawUnsafe(
+    `UPDATE "RegularAbsenceEvidence" e SET "absenceId" = heir.id
+       FROM (SELECT sibling.id
+               FROM "RegularAbsence" me
+               JOIN "RegularAbsence" sibling ON sibling."periodId" = me."periodId" AND sibling.id <> me.id AND sibling.status <> 'CANCELLED'
+               JOIN "RegularAbsenceCarryReview" sr ON sr."absenceId" = sibling.id AND sr.status IN ('PENDING', 'APPROVED', 'MAKEUP')
+              WHERE me.id = $1 AND me."periodId" IS NOT NULL
+              -- 검토 중인 날을 먼저 고른다 — 결정이 끝난 날(이월 승인·보강권 전환)로 옮기면 학부모가 사진을 지우거나 바꿀 수 없게 된다
+              ORDER BY (sr.status = 'PENDING') DESC, sibling.date, sibling.id
+              LIMIT 1) heir
+      WHERE e."absenceId" = $1 AND e."removedAt" IS NULL`,
+    absenceId,
+  );
   await tx.$executeRawUnsafe(
     `UPDATE "RegularAbsenceEvidence" SET "removedAt" = now() WHERE "absenceId" = $1 AND "removedAt" IS NULL`,
     absenceId,
@@ -140,12 +158,55 @@ export async function isIllnessCreditHeld(
 }
 
 /**
- * 검토 중이던 결석 신고를 «관리자»가 취소했는데 그날 출결은 결석이다 → 보류해 둔 보강권을 되살린다.
+ * 닫혔던 검토(CLOSED)를 다시 «검토 중»으로 연다 — 출석부가 그 결석을 질병·부상으로 (다시) 표시했을 때.
+ *   · 학부모가 알린 결석의 검토가 «그날 출석»으로 자동으로 닫혔는데, 뒤에 출결이 결석+질병·부상으로 정정된 경우
+ *   · 취소됐던 결석 행을 출석부가 질병·부상으로 되살린 경우
+ * 닫힌 검토는 신청함에서 빠지므로 다시 열어야 원장이 고를 수 있다. «7일» 기준점은 지금으로 새로 잡는다.
+ * 출석부 행(학부모 표시 없음)은 학원 등록(STAFF)으로 바꿔 7일 자동 전환 대상에서 뺀다. 닫을 때 뺀 사진은 되살리지 않는다.
+ */
+export async function reopenClosedIllnessReviewInTx(
+  tx: IllnessTx,
+  input: { studentId: string; classId: string; absenceYmd: string },
+): Promise<{ reopened: boolean }> {
+  const n = await tx.$executeRawUnsafe(
+    `UPDATE "RegularAbsenceCarryReview" r
+        SET status = 'PENDING', "requestedAt" = now(),
+            source = CASE WHEN ra."reportedByUserId" IS NULL THEN 'STAFF' ELSE r.source END,
+            "decidedAt" = NULL, "decidedBy" = NULL, "decidedByUserId" = NULL, "convertReason" = NULL, "updatedAt" = now()
+       FROM "RegularAbsence" ra
+      WHERE ra.id = r."absenceId" AND ra."studentId" = $1 AND ra."classId" = $2 AND ra.date = $3::date
+        AND ra.status <> 'CANCELLED' AND r.status = 'CLOSED'`,
+    input.studentId, input.classId, input.absenceYmd,
+  );
+  return { reopened: Number(n) > 0 };
+}
+
+/** 그 결석(살아 있음)에 닫힌 검토가 있는가 — 다시 열기 전에 잠금 없이 먼저 본다(없으면 전역 잠금을 잡지 않게) */
+export async function hasClosedIllnessReview(
+  tx: IllnessTx,
+  input: { studentId: string; classId: string; absenceYmd: string },
+): Promise<boolean> {
+  const rows = await tx.$queryRawUnsafe<Array<{ found: number }>>(
+    `SELECT 1 AS found
+       FROM "RegularAbsenceCarryReview" r
+       JOIN "RegularAbsence" ra ON ra.id = r."absenceId"
+      WHERE ra."studentId" = $1 AND ra."classId" = $2 AND ra.date = $3::date
+        AND ra.status <> 'CANCELLED' AND r.status = 'CLOSED'
+      LIMIT 1`,
+    input.studentId, input.classId, input.absenceYmd,
+  );
+  return rows.length > 0;
+}
+
+/**
+ * 검토 중이던 결석 신고를 «관리자»가 취소했는데 그날 출결은 결석이다 → 보강권 1장을 보장한다.
+ *   · 검토 때문에 거둬 둔 보강권이 있으면 그 «같은 한 장»을 되살리고,
+ *   · 처음부터 보강권이 없던 결석(질병·부상으로 바로 알려 한 번도 발급된 적 없음)이면 «새로 한 장 발급»한다.
  * 왜: 이월 검토 전에는 «신고 취소 + 출결 결석 = 보강권 유지»였다(실제로 빠졌으니 권리는 그대로).
- *     검토 중에는 보강권을 거둬 두므로, 취소로 검토를 닫을 때 여기서 돌려주지 않으면 결석했는데 아무것도 못 받는다.
+ *     검토 중에는 보강권이 없으므로, 취소로 검토를 닫을 때 여기서 주지 않으면 결석했는데 아무것도 못 받는다.
  * 호출부는 검토를 닫은 «같은 트랜잭션»에서 부른다. 출결이 결석이 아니면 아무것도 하지 않는다.
  */
-export async function restoreHeldCreditIfAbsentInTx(
+export async function ensureCreditForAbsentAfterCancelInTx(
   tx: IllnessTx,
   input: { studentId: string; classId: string; absenceYmd: string; issuable: (absenceYmd: string) => boolean },
 ): Promise<{ restored: boolean }> {
@@ -207,8 +268,10 @@ export async function convertIllnessToMakeupInTx(
   if (current === "APPROVED" || current === "MAKEUP") return { converted: false, reason: "DECIDED" };
   if (input.by === "AUTO") {
     if (current !== "PENDING") return { converted: false, reason: "NOT_PENDING" };
+    // 여러 날 결석은 기간에 올린 사진을 함께 센다(한 묶음)
     const photos = await tx.$queryRawUnsafe<Array<{ n: number }>>(
-      `SELECT COUNT(*)::int AS n FROM "RegularAbsenceEvidence" WHERE "absenceId" = $1 AND "removedAt" IS NULL`, input.absenceId,
+      `SELECT COUNT(*)::int AS n FROM "RegularAbsenceEvidence" e JOIN "RegularAbsence" ra ON ra.id = $1
+        WHERE ${evidenceScopeSql("ra", "e")} AND e."removedAt" IS NULL`, input.absenceId,
     );
     if (Number(photos[0]?.n ?? 0) > 0) return { converted: false, reason: "HAS_EVIDENCE" };
   }

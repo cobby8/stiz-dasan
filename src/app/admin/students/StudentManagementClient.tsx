@@ -1,4 +1,5 @@
 "use client";
+import AbsencePeriodQuickCreate from "@/components/admin/AbsencePeriodQuickCreate";
 import UiIcon from "@/components/common/UiIcon";
 import { adminErrorText } from "@/components/admin/adminDisplayText";
 
@@ -12,6 +13,8 @@ import {
 } from "@/app/actions/admin";
 import AdminModal from "@/components/admin/AdminModal";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
+import ProfileAvatar from "@/components/common/ProfileAvatar";
+import { profilePhotoUrl } from "@/lib/profilePhoto/rules";
 import type { StudentRegistered } from "./StudentRegisterModal";
 import AdminQuickActionMenu from "@/components/admin/AdminQuickActionMenu";
 import { useAdminConfirm } from "@/components/admin/AdminConfirmDialog";
@@ -35,6 +38,8 @@ const StudentRegisterModal = dynamic(() => import("./StudentRegisterModal"), {
 type Student = {
     id: string;
     name: string;
+    /** 프로필 사진 캐시 버전(사진 없으면 null → 이름 첫 글자) */
+    photoVersion?: string | null;
     birthDate: Date | string;
     gender: string | null;
     parentId: string;
@@ -403,6 +408,8 @@ export default function StudentManagementClient({
     const [busy, setBusy] = useState(false);
     const [search, setSearch] = useState("");
     const [enrollModal, setEnrollModal] = useState<string | null>(null);
+    // ⚡ «기간 결석 등록»(2026-11-15) — 그 원생의 등록 창을 바로 연다
+    const [absencePeriodFor, setAbsencePeriodFor] = useState<string | null>(null);
     // 엑셀 업로드 모달 열기/닫기 상태
     const [showExcelUpload, setShowExcelUpload] = useState(false);
 
@@ -761,6 +768,13 @@ export default function StudentManagementClient({
                 label: "수정",
                 icon: "edit",
                 onSelect: () => startEdit(s),
+            },
+            {
+                // 부상·질병 등으로 며칠 쉬는 원생 — 학생 상세의 등록 창을 그대로 연다
+                key: "absence-period",
+                label: "기간 결석 등록",
+                icon: "event_busy",
+                onSelect: () => setAbsencePeriodFor(s.id),
             },
             {
                 key: "delete",
@@ -1172,8 +1186,10 @@ export default function StudentManagementClient({
                                                     href={`/admin/students/${s.id}`}
                                                     prefetch={false}
                                                     onClick={(event) => event.stopPropagation()}
-                                                    className="block whitespace-nowrap leading-[2.75rem] font-semibold text-[var(--color-academy-ink)] hover:text-[var(--color-academy-primary)]"
+                                                    className="flex min-h-11 items-center gap-2 whitespace-nowrap font-semibold text-[var(--color-academy-ink)] hover:text-[var(--color-academy-primary)]"
                                                 >
+                                                    {/* 아이 사진 28px(없으면 이름 첫 글자) — 행 높이(44px) 안이라 줄이 커지지 않는다 */}
+                                                    <ProfileAvatar decorative name={s.name} size={28} src={profilePhotoUrl({ kind: "student", id: s.id }, s.photoVersion ?? null, true)} />
                                                     {s.name}
                                                     {s.enrollments.some((enrollment) => enrollment.classId === group.key && enrollment.startsLater) && <span className="ml-1 text-xs font-normal text-[var(--color-academy-ink)]">개시 전</span>}
                                                 </Link>
@@ -1225,8 +1241,9 @@ export default function StudentManagementClient({
                                                 href={`/admin/students/${s.id}`}
                                                 prefetch={false}
                                                 onClick={(event) => event.stopPropagation()}
-                                                className="font-semibold text-[var(--color-academy-ink)] hover:text-[var(--color-academy-primary)] transition-colors"
+                                                className="inline-flex items-center gap-2 font-semibold text-[var(--color-academy-ink)] hover:text-[var(--color-academy-primary)] transition-colors"
                                             >
+                                                <ProfileAvatar decorative name={s.name} size={28} src={profilePhotoUrl({ kind: "student", id: s.id }, s.photoVersion ?? null, true)} />
                                                 {s.name}
                                             </Link>
                                         </td>
@@ -1392,6 +1409,13 @@ export default function StudentManagementClient({
             })()}
 
             {/* 수강 등록 모달 — 프로그램별 그룹화 + 요일/시간 표시 */}
+            {absencePeriodFor && (
+                <AbsencePeriodQuickCreate
+                    presetStudentId={absencePeriodFor}
+                    onClose={() => setAbsencePeriodFor(null)}
+                    onDone={() => setAbsencePeriodFor(null)}
+                />
+            )}
             {enrollModal && (
                 <AdminModal onClose={() => setEnrollModal(null)} titleId="student-enroll-title" panelClassName="max-w-lg p-6">
                         <h3 id="student-enroll-title" className="font-bold text-lg text-[var(--color-academy-ink)] mb-4">

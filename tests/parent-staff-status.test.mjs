@@ -146,6 +146,9 @@ function shuttleFixture(options = {}) {
     // 2026-11-15 마감 통일·날짜 바꾸기: 마감 판정(공용 규칙)과 KST 시계도 진짜 모듈 그대로
     '@/lib/parent/changeDeadline': load('src/lib/parent/changeDeadline.ts'),
     '@/lib/datetime/kst': load('src/lib/datetime/kst.ts'),
+    // 2026-11-14 묶음 B: 기사님 명단의 «안 타는 사유» 글자(이 테스트의 신청·취소 길에서는 쓰이지 않는다)
+    '@/lib/regular/arrival-notice-read': { getArrivalSkipKinds: async () => new Map() },
+    '@/lib/regular/arrivalNoticeRules': { shuttleSkipLabel: () => '자차' },
     '@/lib/shuttle/dayExceptionRules': { SHUTTLE_EXCEPTION_MESSAGE: {}, validateShuttleException: () => ({ ok: true, direction: 'PICKUP', kind: 'SKIP' }), SHUTTLE_DIRECTION_LABEL: { PICKUP: '등원' }, SHUTTLE_EXCEPTION_KIND_LABEL: { SKIP: '안 타요' } },
     '@/lib/operational-staff-notification': { async notifyOperationalStaff() { notified++; if (options.notifyFails) throw new Error('synthetic notification failure'); return { driver: 'NOTIFIED' }; } },
   });

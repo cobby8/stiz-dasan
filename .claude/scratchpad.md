@@ -38,19 +38,19 @@
 - 운영 배포 = `git push origin HEAD:main` fast-forward.
 - 테스트는 `node --test tests/*.test.mjs` **+ 가드 `node --experimental-strip-types --test src/lib/*.test.ts`**(=`npm test`). ⚠️ 2026-10-25 실측: `tests/` 만 돌려 **학생 병합 필터 가드(src/lib/studentVisibility.test.ts)를 놓쳤다** — 회원 탈퇴 배포 후 release:preflight 가 실패하던 상태였다. **`npx vitest`는 이 프로젝트에 없음**(설정도 없어 worktree까지 긁어 전부 오탐).
 
-### 구현 기록 (developer · 11-14 질병·부상 결석 이월, claude/illness-carry)
-📝 구현한 기능: 질병·부상 결석 = 증빙 사진 → 원장 [이월 승인](다음 달 수강료 1회분 차감) / [보강권으로], 7일 사진 없으면 보강권 자동 전환
+### 구현 기록 (developer · 11-15 학부모 여러 날 결석, claude/absence-period-parent)
+📝 구현한 기능: 학부모 «결석 알리기 › 여러 날»(4주 한도·모든 사유) + 관리자 «기간 결석 등록» 빠른 입구 + 이월 재검수 권장 ②~⑤
 
 | 파일 경로 | 변경 내용 | 신규/수정 |
 |----------|----------|----------|
-| prisma/migrations/20261114130000_illness_carry_review/migration.sql · schema.prisma | 검토·증빙 표 2개(RLS FORCE, 되돌림 주석, 기존 정산 채우기) | 신규/수정 |
-| src/lib/regular/illnessCarryRules.ts · illness-carry-tx.ts · illness-carry-admin.ts · illness-carry-cron.ts · illness-evidence-access.ts · illness-evidence-storage.ts | 규칙·쓰기·승인·cron·사진 권한/저장 | 신규 |
-| src/lib/regular/parent-regular-absence.ts · api/mypage/regular-absence(+evidence) · mypage/regular-absence/* | 신고 분기·사유 글·사진·상태 표시·문구 정리 | 수정/신규 |
-| src/lib/requests/catalog.ts · admin-inbox.ts · admin/inbox/IllnessCarryInboxDetail.tsx · actions/illness-carry-admin.ts · api/admin/absence-evidence/[id] | 신청함 «질병·부상 결석» | 수정/신규 |
-| src/lib/makeup/credit-service.ts · regular/attendance-absence-reason.ts · actions/staff-sessions.ts · actions/admin.ts · billing/workbench-absence.ts · api/cron/makeup-credits | 출결 보류·순서·검토 상태 맞춤·cron | 수정 |
+| prisma/migrations/20261115100000_parent_absence_period · schema.prisma | RegularAbsencePeriod 칸 3개(되돌림 주석) | 신규/수정 |
+| src/lib/regular/parentAbsencePeriodRules.ts · parent-absence-period.ts · api/mypage/regular-absence/period | 규칙·서비스·API | 신규 |
+| src/app/mypage/regular-absence/PeriodAbsencePanel.tsx · RegularAbsenceClient.tsx · page.tsx | 하루/여러 날 선택·미리보기·복귀했어요 | 신규/수정 |
+| src/lib/regular/absence-period-service.ts · parent-regular-absence.ts · illness-*.ts · requests/admin-inbox.ts · operational-notification-reconciliation.ts | 관리자 기간과 분리·저장 함수 공용·증빙 기간 묶음·알림 재조정 | 수정 |
+| src/components/admin/AbsencePeriodQuickCreate.tsx · admin/absence · admin/students(⚡) · AbsencePeriodPanel · inbox 상세 | 빠른 입구·학부모 신고 표시·같은 기간 함께 승인 | 신규/수정 |
 
-💡 tester 참고: 마이그레이션 적용 «전»은 예전 방식(즉시 보강권)·신청함에 새 종류 0건이 정상. 적용 «후» 질병·부상 신고 → 보강권 없음+«이월 검토 중», 사진 올리기/지우기(7일·3장), 신청함 [이월 승인] 뒤 다음 달 청구 준비 화면 «이월 잔액». 주의 입력: 결석일 전 승인(버튼 꺼짐)·보강 예약된 결석(함께 취소 확인)·원래 달 청구 미발행(사유 한 줄).
-⚠️ reviewer 참고: ① 새 SQL 전부 실제 Postgres 미실행(가짜 DB·문구 검증만) ② approveIllnessCarry 가 readWorkbench 를 한 거래에서 3~4번 읽음(무거움·45초 제한) ③ 신청함에 같은 결석이 «결석»·«질병·부상 결석» 두 줄로 보임 ④ 옛 질병·부상 결석(10-05 이후·검토 줄 없음)이 «이월 검토»에 한꺼번에 뜸.
+💡 tester 참고: 마이그레이션 적용 «전»은 «하루/여러 날» 선택이 안 보이고 나머지는 그대로. 적용 «후» 여러 날 → 미리보기(휴무일·이미 알린 날 제외) → n회 알리기 → 날짜마다 보강권(또는 이월 검토), 원장 알림 1통. 주의 입력: 29일째 끝일(휴원 안내)·끝일 미정·형제·마감 지난 오늘 수업·보강 예약된 날이 낀 «알림 취소».
+⚠️ reviewer 참고: ① 새 SQL 은 실제 Postgres 미실행 ② 학부모 기간은 status ACTIVE 로 남는다(끝일이 지나도 — 목록은 날짜로 거른다) ③ 관리자 등록의 겹침 검사가 학부모 기간도 본다 ④ 증빙 묶음 SQL 조각을 안 쓰는 새 조회가 생기면 기간의 다른 날이 «사진 없음»으로 전환된다.
 
 ## 미해결 리뷰 수정 사항 (이월)
 | 번호 | 파일 | 심각도 | 내용 |
@@ -72,31 +72,94 @@
 |------|------|------|------|
 | tester | lib/enrollment/admin-change-request.ts NEEDS_CHECK_SQL | 반 이동 뒤 새 반 수강을 삭제하면 그 CLASS_ADD(이동 신청에 afterJson.enrollmentChangeRequestId 로 연결)의 RALLYZ 칸이 SKIPPED 가 되는데, NEEDS_CHECK 는 RALLYZ 를 `<> 'SUCCEEDED'` 로 세어 이동 신청이 «확인 필요»에 영구히 남음. 직원이 지우려면 «랠리즈 반영 확인»을 거짓으로 눌러야 함. 삭제 사유로 닫힌 명령(holdReason=DELETED_ENROLLMENT_CLOSE_REASON) 제외 등 | 대기(권장) |
 
-### 구현 기록 (developer · 11-14 아이 정보 수정 claude/child-edit)
-
-📝 구현한 기능: 학부모 아이 정보 수정(b4)·건강 특이사항(b5)·연락처 바꾸기(b6)·연결된 가족 보기/끊기(b7)·막다른 문구(c1)
+### 구현 기록 (developer · 11-14 학부모 5단계, claude/parent-step5-enroll-shuttle)
+📝 구현한 기능: c2 승인된 휴원·퇴원 «취소 요청» 한 번에 · c8 «반 추가» 신청 · c5 셔틀 «계속 바꾸기» 신청
 
 | 파일 경로 | 변경 내용 | 신규/수정 |
 |----------|----------|----------|
-| prisma/migrations/20261114140000_child_profile_edit · schema.prisma | Student.healthNote + StudentProfileChangeRequest(RLS FORCE) | 신규/수정 |
-| src/lib/parent/childEditRules.ts · childEdit.ts | 입력 규칙 / 저장·신청·취소·승인 | 신규 |
-| src/lib/student/healthNote.ts | 건강 글 읽기·관리자 저장 한 곳 | 신규 |
-| src/lib/account/phone-change(.ts·-rules.ts) · api/account/phone-change | 본인인증 뒤 번호 변경 | 신규 |
-| src/lib/account/family-access-parent.ts | 가족 목록·대표만 끊기 | 신규 |
-| src/app/actions/child-edit.ts · student-profile-admin.ts | 학부모·관리자 서버 동작 | 신규 |
-| mypage/record(ChildProfileSections·ChildInfoEditSheet) · children/FamilyMembersSection · settings/page · seasonal · EmptyParentState · PhoneChangeButton | 학부모 화면 | 신규/수정 |
-| admin/students/[id](StudentDetailClient·StudentProfilePanels) | 변경 요청·건강 칸 | 신규/수정 |
-| staff-class-people · SessionStudentSheet · SessionInProgressClient · ClassPeopleSheet · unifiedDriverRun(+Logic) · UnifiedDriverClient | 선생님·기사님 표시 | 수정 |
-| tests/child-edit.test.mjs (+기존 3개 가짜 부품 보강) | 20건 | 신규/수정 |
+| src/lib/enrollment/parentChangeStatus.ts · requests/parent-timeline-rules.ts · enrollment/parent-change-request.ts | c2 판정·문구 한 곳, «예정»에 신청 번호·취소 요청 상태 | 수정 |
+| src/lib/enrollment/classAddRules.ts · parent-class-add.ts · admin-class-add.ts | c8 규칙·접수·승인(수강 등록) | 신규 |
+| src/lib/enrollment/admin-change-request.ts · change-decision-notify.ts · changeRequestRules.ts · requests/admin-inbox.ts · parent-timeline.ts | c8 승인 연결·이름·표시 | 수정 |
+| src/app/mypage/enrollment-change(page·EnrollmentChangeClient) · api/mypage/enrollment-change · admin/enrollment-changes/EnrollmentChangesClient | c2·c8 화면 | 수정 |
+| prisma/migrations/20261115120000_shuttle_regular_change_request · schema.prisma | c5 새 표(되돌림 주석·RLS) | 신규/수정 |
+| src/lib/shuttle/regularChangeRules.ts · regularChangeRequest.ts · regularRosterEdit.ts(onlyWeekdays) | c5 규칙·접수·승인·적용 | 신규/수정 |
+| src/app/mypage/shuttle/regular(page·RegularChangeClient) · mypage/shuttle(page·ShuttleExceptionClient 입구 한 줄) · api/mypage/shuttle-regular | c5 학부모 화면 | 신규/수정 |
+| src/app/admin/shuttle/regular(page·RegularChangeRequestsPanel) · actions/shuttle-regular-change.ts · api/cron/enrollment-changes | c5 원장 승인 목록·적용일 처리 | 신규/수정 |
+| tests/enrollment-class-add · shuttle-regular-change (+기존 4개 보강) | 35건 신규 | 신규/수정 |
 
-💡 tester 참고:
-- 테스트 방법: `node --test tests/child-edit.test.mjs` · 실기기는 마이그레이션 적용 뒤(적용 전에는 건강 칸·변경 신청 버튼이 숨는다)
-- 정상 동작: 저장 즉시 아이 정보 줄 갱신 / 신청하면 «확인 중» 줄 → 관리자 승인 시 이름·생일 변경 + 학부모 앱 알림
-- 주의할 입력: 건강 글 300/301자 · 학생 전화 유선번호 · 같은 항목 두 번 신청 · 연결 가족 계정으로 끊기 시도 · 계정 이름≠인증 이름
+💡 tester 참고: c2 = 수강 변경 화면 «○○ 예정» 상자의 «취소 요청»(확인 1회) → 한 줄로 바뀜·수업 탭과 같은 문구. c8 = 종류 칩 «반 추가» → 학년 맞는 반·시작일 → «검토 중» 줄·취소 → 원장 승인 시 바로 수강 등록(정원 차면 승인 막힘). c5 = 마이그레이션 «전»은 입구가 안 보인다. «후» 셔틀 변경 › 계속 바꾸기 → 신청 → /admin/shuttle/regular 맨 위 승인 → 적용일에 정류장 이름 변경. 주의 입력: 형제·휴원 중인 반만 있는 아이·정원 찬 반·오늘 날짜·요일 한정·이용 시작/중단.
+⚠️ reviewer 참고: ① 새 SQL 은 실제 Postgres 미실행 ② 운영 EnrollmentChangeRequest.kind 에 CHECK 가 있으면 CLASS_ADD 접수가 실패(표 생성 SQL 이 저장소에 없음 — 적용 전 확인) ③ 반 추가는 enrollmentId NULL — enrollmentId 로 묶는 조회에는 안 잡힌다 ④ c5 이용 시작·중단은 명단을 자동으로 안 바꾼다(원장이 고치면 닫힘) ⑤ applyLocationToRosterInTx 6번째 인자 추가(기본 동작 불변).
 
-⚠️ reviewer 참고:
-- 연락처 변경이 Guardian 의 «옛 내 번호» 줄도 새 번호로 맞춘다(phone-change.ts) · 인증 원장 재사용(stizphone_) 이 자녀 연결 증명과 안 섞이는지
-- 신청함(inbox) 종류는 추가하지 않음(동시 작업 충돌 회피) — 학생 상세 칸 + 관리자 앱 알림만
+### 구현 기록 (developer · 11-14 학부모 5단계 claude/parent-step5-inquiry)
+
+📝 구현한 기능: 보낸 문의 다시 보기·이어 쓰기(c3) · 소식 사진 앱 안 크게 보기(c4) · 지난 공지·연간 일정(c10) · 앱 안 «신청» 메뉴(c9) · 환불 문의(c11)
+
+| 파일 경로 | 변경 내용 | 신규/수정 |
+|----------|----------|----------|
+| prisma/migrations/20261115110000_parent_request_thread · schema.prisma | ParentRequestMessage(RLS FORCE) + ParentRequest.paymentId·paymentAmount | 신규/수정 |
+| src/lib/requests/inquiryThreadRules.ts · inquiry-thread.ts · actions/parent-inquiry.ts | 대화 규칙 / DB / 서버 동작(이어 쓰기·학원 답·환불 문의) | 신규 |
+| mypage/requests(page·[id]·InquiryReplyForm) · components/parent/InquiryThread | 보낸 문의 목록·대화 | 신규 |
+| admin/requests/RequestsAdminClient · admin/inbox/InboxClient · lib/requests/admin-inbox | 대화 표시·답변 이어 쓰기 | 수정 |
+| mypage/news/page · mypage/annual/page · lib/mypage/parentNotices · parentSchedule | 지난 공지·연간 일정 | 신규/수정 |
+| mypage/apply · rental · seasonal/apply/** · components/parent/ParentEmbeddedPublic · lib/mypage/parentApplyMenu·parentApplyPrefill · app/rental/RentalGuide | 앱 안 신청 | 신규 |
+| components/seasonal/Seasonal{List,Detail,Apply}Client · app/rental/RentalClient·page | basePath·homeHref 선택 속성(기본값 그대로) | 수정 |
+| mypage/MyPageClient·page · settings/page · reports/page · history/ScheduleHub · MyPageBottomNav · payments/PaymentRequestClient | 입구·사진·환불 문의 | 수정 |
+
+💡 tester 참고: `node --test tests/parent-inquiry-thread.test.mjs tests/parent-news-annual.test.mjs tests/parent-apply-menu.test.mjs`. 마이그레이션 적용 «전»: 대화는 첫 글+옛 답변만·학부모 이어 쓰기는 «새 문의» 안내·학원 답은 adminNote 에 저장·환불 문의는 청구 연결 없이 접수. 주의 입력: 2,000/2,001자 · 남의 문의 id 주소 직접 입력(404) · 종결된 문의에 이어 쓰기(대기중 복귀) · 같은 청구 환불 문의 두 번 · 지난 공지 ?page=0/99/abc · 형제 계정의 특강 신청서(아이 칸 비움).
+⚠️ reviewer 참고: ① 새 SQL 은 실제 Postgres 미실행 ② 앱 안 대관·특강 화면은 공개 테마를 /mypage 틀 안에 겹쳐 그린다 — 모양·하단 고정 바 위치는 실기기 확인 필요 ③ 요청함 답변 칸은 이제 빈칸으로 열린다(예전엔 저장된 답을 고쳐 덮어씀).
+
+### 구현 기록 (developer · 11-14 묶음 B 지각·조퇴·자차, claude/late-early-selfdrive)
+
+📝 구현한 기능: 학부모 «결석 알리기»에 «늦어요 · 일찍 가요»(예상 시각) · 조퇴/지각 날 셔틀 «안 타요» 연결 · 셔틀 변경 «안 타요» → 자차 문구 · 기사 화면 «자차·조퇴·지각» 표시 + 탑승·미탑승 잠금 · 선생님 출석부 «지각 예정 17:20»
+
+| 파일 경로 | 변경 내용 | 신규/수정 |
+|----------|----------|----------|
+| prisma/migrations/20261115140000_regular_arrival_notice/migration.sql · schema.prisma · studentMerge/tables.ts | 표 RegularArrivalNotice(RLS·권한 회수) | 신규/수정 |
+| src/lib/regular/arrivalNoticeRules.ts · parent-arrival-notice.ts · arrival-notice-read.ts | 규칙(순수)·알리기/취소·읽기 | 신규 |
+| src/app/api/mypage/regular-absence/arrival/route.ts · mypage/regular-absence/ArrivalNoticeArea.tsx · RegularAbsenceClient.tsx | 학부모 API·화면 | 신규/수정 |
+| src/lib/shuttle/{parent-shuttle-exception,regularDriverRouteLogic,unifiedDriverRunLogic,dayExceptionRules}.ts · components/shuttle/UnifiedDriverClient.tsx | 기사 화면 사유 글자·잠금, 학부모 자차 문구 | 수정 |
+| src/lib/staff-session-queries.ts · staff/sessions/[sessionId]/SessionInProgressClient.tsx | 출석부 줄 표시(배지 1개 추가) | 수정 |
+
+💡 tester 참고: 실행 테스트 tests/arrival-notice.test.mjs(20건 — 시간 경계·자정·보강권 미발급·조퇴+하원 셔틀·기사 잠금·화면 부품). 운영 DB 에 표가 없으면 «늦어요 · 일찍 가요» 입구만 숨는다(다른 화면 그대로).
+⚠️ reviewer 참고: ① 기사 화면 잠금은 화면만(체크 저장 서버는 건드리지 않음 — 다른 작업 영역) ② 알림에 딸린 셔틀 SKIP 은 셔틀 «1시간 전» 마감을 적용하지 않음 ③ 결석을 알린 날은 지각·조퇴 표시가 읽는 쪽에서 가려짐(행은 남음) ④ 방학특강·카카오 대화·관리자 출결 화면은 미적용
+### 구현 기록 (developer · 11-14 셔틀 탑승 알림 묶음 A, claude/shuttle-board-notify)
+📝 구현한 기능: 셔틀 «탔어요·내렸어요» 알림 · «수업 종료» 출결 스위치 · 홈 «오늘 셔틀» 실제 시각 · 관리자 출결 저장 알림 규칙 통일 · 가입 안내문 문구
+
+| 파일 경로 | 변경 내용 | 신규/수정 |
+|----------|----------|----------|
+| src/lib/shuttle/boardingNoticeRules.ts · boardingNoticeSweep.ts · api/cron/push-outbox/route.ts | 탑승 알림 규칙(순수)·훑기·크론 연결 | 신규/수정 |
+| src/lib/attendance/attendanceNoticeRules.ts · actions/staff-sessions.ts · actions/admin.ts(saveAttendance) | 출석 알림 규칙 한 곳, 선생님·관리자 공용 | 신규/수정 |
+| src/lib/shuttle/parent.ts · lib/mypage/summary.ts · app/mypage/MyPageClient.tsx | 홈 «오늘 셔틀» 실제 시각 | 수정 |
+| src/lib/mypage/parentSettings.ts · lib/customer-notice/templates.ts | CLASS_COMPLETED=출결 · «결석 알리기» | 수정 |
+| tests/shuttle-boarding-notice(신규 17건) · staff-session-completion-policy · staff-session-review · staff-attendance-toggle · parent-signup-guide | 테스트 | 신규/수정 |
+
+💡 tester 참고: 기사 화면에서 «탑승» → 1분 뒤 대표 보호자 앱 알림(등원 줄 «셔틀에 탔어요», 하원 줄 «셔틀에서 내렸어요»). 1분 안에 되돌리거나 미탑승으로 고치면 안 옴. 보낸 뒤 고쳐도 정정 알림 없음. 설정 «셔틀» 끄면 휴대폰 울림 없음(종 목록에는 남음). 관리자 출결: 오늘 수업에서 상태가 바뀐 출석·지각 아이만 «○○ 학생이 출석했습니다», 같은 저장 반복·지난 날짜는 조용. 주의: 형제·보호자 없는 아이·방학특강 미전환 신청·자정 직후.
+#### 수정 이력
+| 회차 | 날짜 | 수정 내용 | 수정 파일 | 사유 |
+|------|------|----------|----------|------|
+| 1차 | 11-14 | 관리자 출결 알림: 수업 시작 전 저장은 알리지 않음(classStarted·startsAtMs) · 응답 뒤(after)·한 명씩 차례로 · 학부모를 학생으로 바로 찾기 / ShuttleBoarding.checkedAt `@db.Timestamptz(6)` 표기 | attendanceNoticeRules.ts · actions/admin.ts · schema.prisma · tests/shuttle-boarding-notice | 검수 권장 4건 |
+
+⚠️ reviewer 참고: ① 새 SQL 2개 실제 Postgres 미실행 ② ShuttleBoarding.checkedAt 은 운영 timestamptz 확인(11-14) — 코드는 초(EXTRACT EPOCH)로만 비교 ③ 30분 한도는 내가 넣은 안전장치(배포 직후·크론 장애 뒤 몰아 보내기 방지) ④ 관리자 방학특강 출결도 같은 규칙으로 바꿈(예전 «방학특강 출석이 기록되었습니다» 전원 발송 제거).
+
+---
+
+### 리뷰 결과 (reviewer · 11-15 앱 간편로그인 연결 A안, claude/app-link-handoff)
+
+📊 종합 판정: 수정 필요(필수 1)
+
+✅ 잘된 점: 웹(앱 아님) 경로 무회귀(mode=client·via 없으면 기존 함수 그대로) · 발급 실패 catch→옛 숨김 폴백 · raw SQL 만·조건부 UPDATE 원자 소비·hash 저장 · @supabase/ssr 0.8.0 확인: code-verifier 는 즉시 setAll, 세션은 SIGNED_IN 이벤트로 setAll, getItem 이 setItems 먼저 읽어 verifyOtp→linkIdentity 같은 클라이언트 OK · 유니버설/앱 링크 경로에 /auth/link-handoff 없음 · 아이콘·hex·800/900 없음 · KST 금지 패턴 없음 · node --test 38-0
+
+🔴 필수 수정:
+- src/app/auth/link-handoff/page.tsx:22 `referrer: "no-referrer"` + start/route.ts:39 Origin 검사 → Fetch 규격상 referrer policy 가 no-referrer 인 문서의 POST 는 같은 출처여도 `Origin: null` 을 보낸다(Chrome·Firefox, Rails 의 유명한 CSRF 오류 사례). 그러면 [계속]이 항상 «이 화면에서 바로 시작할 수 없어요»로 끝나 기능 전체가 막힌다. 수정: 확인 화면 referrer 를 `same-origin`(또는 `strict-origin`)으로 바꾸거나, Origin 이 "null" 일 때 `Sec-Fetch-Site: same-origin` 을 대안으로 받기. 실기기(안드 Chrome·iOS Safari)로 확인 필수.
+
+🟡 권장 수정:
+- start/route.ts:69~89 — verifyOtp 뒤 사용자가 카카오/구글 화면에서 창을 닫거나 뒤로 가면 콜백이 안 와서 휴대폰 브라우저에 학부모 로그인(갱신 토큰)이 그대로 남는다. 확인 화면 문구 «자동으로 로그아웃됩니다»와 어긋남. 완화안: done/확인 화면 재방문 시 signOut, 또는 linkIdentity URL 받은 직후 세션 쿠키만 지우고 code-verifier 는 남기기(동작 검증 필요).
+- 같은 이유로 1회용 표 = 10분짜리 «로그인 열쇠»다(연결뿐 아니라 그 브라우저 전체 로그인·타인 소셜 연결 가능). 노출 경로는 앱 화면뿐이라 낮음이지만 문서·주석에 명시 권장. 연결 알림(SOCIAL_LOGIN_LINKED)은 유지돼 있어 좋음.
+- 바깥 브라우저가 이미 다른 계정(가족)으로 로그인돼 있으면 verifyOtp 가 덮고 콜백에서 로그아웃 → 그 브라우저의 원래 로그인이 사라진다(안내 문구 정도).
+- LinkProviderButton.tsx:151 visibilitychange 마다 router.refresh → 매번 표 1~3행 INSERT(이전 표는 10분간 계속 유효). 정리 크론이 있어 치명적이진 않음.
+- start/route.ts:56 getEnabledParentOAuthProviders 예외 시 표는 이미 소비된 채 500 — try/catch→"failed" 권장.
+- iOS NavigationPolicy: paymentActive 중이면 apex 링크가 .paymentPage 로 웹뷰 안에서 열린다(드문 경우).
+- 테스트 대부분이 소스 문자열 정규식 확인이라 위 Origin:null 같은 실제 동작은 못 잡는다(규칙 함수 실행 테스트는 의미 있음).
 
 ---
 
@@ -104,6 +167,20 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-14 | developer(묶음 B 지각·조퇴·자차, claude/late-early-selfdrive): 학부모 «늦어요 · 일찍 가요»(RegularArrivalNotice, 지각=시작 전·조퇴=끝나기 전, 보강권 없음, 원장·담당 선생님 앱 알림) · 조퇴/지각 날 셔틀 SKIP 연결 · «안 타요»→자차 문구 · 기사 화면 «자차·조퇴·지각» 뱃지+버튼 잠금(화면만) · 출석부 «지각 예정 17:20». tsc 0 · tests 5312-0 · guards 337-0. 마이그레이션 20261115140000(changeCount 포함) 운영 미적용. 2차(보안·리뷰 반영): 하루 변경 5회 상한 · 기존 셔틀 변경 있으면 묻지 않음 · 홈/아이 기록/카카오 자차 문구 · 먼 날짜 셔틀 안내 | 재검수 대기 |
+| 11-14 | developer(셔틀 탑승 알림 묶음 A, claude/shuttle-board-notify): 셔틀 «탔어요·내렸어요» 앱 알림(탑승 체크 1분 뒤·30분 한도·대표 보호자·정규+방학특강·SHUTTLE_ 이벤트, push-outbox 크론 훑기) · «수업 종료»를 «출결» 스위치로 · 홈 «오늘 셔틀» 실제 시각(탑승 08:52·하차 18:40) · 관리자 출결 저장 알림 = 선생님과 같은 규칙 함수(바뀐 아이만·출석/지각만·오늘만·한 번만, «출결이 기록되었습니다» 전체 발송 제거) · 가입 안내문 «결석 알리기». DB 변경 없음. tsc 0·tests 5284-0·guards 337-0. 새 SQL 2개(훑기·홈 시각) 실제 Postgres 미실행 | 검수 대기 |
+| 11-14 | developer(재검수 권장, claude/merged-carry): 휴원 수강료 «남은 이월» 차감 대상을 처리 기록의 학생 + 병합된 대표 학생(mergedIntoStudentId 따라가기, 5단계) 청구로 넓힘(pause-settlement.ts CARRY_TARGET_STUDENTS_SQL) · 병합 결과(PairResult.carryNotice)에 «남은 이월 ○원은 대표 학생 청구에서 차감됩니다» 한 줄 · 관리자 수강 변경 화면은 신청 id 로 읽어 이미 보임(변경 없음). tsc 0·tests 5267-0·guards 337-0. 새 SQL(재귀 CTE) 실제 Postgres 미실행 | 검수 대기 |
+| 11-14 | developer(학부모 5단계, claude/parent-step5-inquiry): 보낸 문의 화면·대화·이어 쓰기(ParentRequestMessage, 관리자 요청함·신청함 답변 이어 쓰기, 앱 알림만) · 소식 사진 앱 안 크게 보기 · 지난 공지(/mypage/news 20건씩)·연간 일정(/mypage/annual) · 앱 안 «신청» 메뉴(유니폼=본사 쇼핑몰 바깥 링크, 대관·방학특강=공개 부품을 /mypage 아래에서) · 청구 탭 «환불 문의»(청구 id·금액 연결). **마이그레이션 20261115110000 운영 미적용**(없어도 동작). tsc 0·tests 5202-0·guards 82-0. 새 SQL 실제 Postgres 미실행·앱 안 신청 화면 실기기 미확인 | 검수 대기 |
+| 11-14 | developer(학부모 5단계, claude/parent-step5-enroll-shuttle): c2 수강 변경 화면에서 승인된 휴원·퇴원 «취소 요청» 한 번에(708ae954) · c8 «반 추가» 신청 — 학년 맞는 반·정원 차면 대기·원장 승인 때 수강 등록(6a00d594) · c5 셔틀 «계속 바꾸기» — 신청→원장 승인→적용일 명단 반영, 이용 시작·중단은 같은 목록(7fab2086). **마이그레이션 20261115120000 운영 미적용**(없으면 입구만 숨김). tsc 0·tests 5204-0·guards 82-0. 새 SQL 실제 Postgres 미실행 | 검수 대기 |
+| 11-14 | developer(학부모 문구 정리, claude/parent-copy-cleanup): 원장 결정표 d1~d7 — 이름 통일(결석 알리기·셔틀 변경·보강 예약)·맨 아래 계정 링크 줄 삭제(설정 «계정» 묶음으로)·역할 신청 링크 제거·옛 기록 안내 삭제·빈 칸/«○○ 확인 중» 줄 숨김·셔틀 알림 결과 한 줄. 학부모용 셔틀 라벨 분리(PARENT_SHUTTLE_*), 가드 tests/parent-copy-names-guard. 미완: 수강 변경 «취소 요청»은 신청 내역으로 가는 버튼(조회에 신청 id 없음) | tsc 0 · fail 0 |
+| 11-15 | developer(학부모 여러 날 결석, claude/absence-period-parent): 이월 재검수 권장 ②~⑤(564ce9bc) + 학부모 «결석 알리기 › 여러 날»(4주·모든 사유, 날짜마다 saveReportedAbsenceInTx·알림 기간당 1회·복귀했어요/알림 취소·끝나기 전 앱 알림) · 질병·부상 증빙 기간 한 묶음·같은 기간 함께 승인 · 관리자 «기간 결석 등록» 입구 2곳·학부모 신고 표시. **마이그레이션 20261115100000 운영 미적용**(없으면 여러 날만 숨김). tsc 0·tests 5000-0·guards 82-0. 새 SQL 실제 Postgres 미실행 | 검수 대기 |
+| 11-14 | developer(완료한 수업 다시 보기·고치기, claude/staff-session-review): 수정 기간 규칙 한 곳(staffSessionEditWindow — 수업일 포함 7일·원장/부원장 무제한, 사진·영상·한 줄·메모·출결 정정 공통) · 수업 주소가 완료한 수업도 연다(CompletedSessionPanel: 발행 상태·[학부모에게 보내기]·출결 정정(정규·특강 좌석만, 미리 보기+확인 1회)·메모) · «지난 수업» 목록(/staff/sessions, 최근 14일) · 완료 뒤 수정은 OperationsAuditLog(STAFF_SESSION_REVIEW_EDIT)·알림 없음. tsc 0·tests 5088-0·guards 82-0. 새 SQL 은 실제 Postgres 미실행 | 검수 대기 |
+| 11-15 | reviewer(앱 연결 A안): 수정 필요 — 확인 화면 no-referrer 로 POST Origin:null → 시작 항상 거절(필수 1) · 중도 이탈 시 바깥 브라우저 로그인 잔존 등 권장 6 | 수정 요청 |
+| 11-15 | developer(앱에서 간편로그인 연결 A안, claude/app-link-handoff): 앱(UA STIZApp/)+nativeAuthEnabled 이면 /mypage/login-methods 가 제공자별 1회용 표(AccountLinkHandoff, hash 저장·10분) 발급 → apex https://stiz-dasan.kr/auth/link-handoff?t= 링크(바깥 브라우저) → 확인 화면(읽기만)·[계속] POST /start(Origin·원자 소비·magiclink 로그인·같은 계정 확인·linkIdentity via=app) → 콜백 via=app 은 이 브라우저 signOut local + /auth/link-handoff/done. 마이그레이션 20261115020000 **운영 미적용**. tsc 0·tests 5105-0 · **검수 1차 반영**: referrer same-origin+Origin null 은 Sec-Fetch-Site same-origin 만 · linkIdentity 직후 관리자 signOut(local)+세션 쿠키만 삭제(PKCE 열쇠 유지) · 발급·사용 모두 계정 재확인(PARENT·직원 역할 없음·휴대폰 인증·탈퇴 아님) · 옛 표 무효화·5분 · 주소 t 지우기 · 표시 쿠키 stiz-link-app 게이트 · 완료 화면 코드 문구+가린 아이디 · 확인 화면 가린 이름. tsc 0·tests 5108-0 | 재검수 대기 |
+| 2026-11-14 | 수강 정리 검수 권장 2건 확인·마무리(developer) — 취소 요청 대기 건 REJECTED+안내 문구(«…정리되었습니다»로 맞춤), closeOpenRequests=보여 준 신청 id 목록 대조(관리자 상태 변경·반 이동·화면 2곳) · tsc 0 · npm test 5145/fail 0 | 완료 |
+| 11-15 | developer(학부모 여러 날 결석, claude/absence-period-parent): 이월 재검수 권장 ②~⑤(564ce9bc) + 학부모 «결석 알리기 › 여러 날»(4주·모든 사유, 날짜마다 saveReportedAbsenceInTx·알림 기간당 1회·복귀했어요/알림 취소·끝나기 전 앱 알림) · 질병·부상 증빙 기간 한 묶음·같은 기간 함께 승인 · 관리자 «기간 결석 등록» 입구 2곳·학부모 신고 표시. **마이그레이션 20261115100000 운영 미적용**(없으면 여러 날만 숨김). tsc 0·tests 5000-0·guards 82-0. 새 SQL 실제 Postgres 미실행 | 검수 대기 |
+| 11-14 | reviewer(수강 변경 뒤 정리, 미커밋): 조건부 통과 — 필수 0·권장 4(①학부모 «취소 요청 대기» 걸린 승인 건을 SUPERSEDED 하면 cancelRequestStatus=PENDING 이 남아 «수강 변경 신청» 취소 요청 목록에 찌꺼기로 남음 → 함께 닫거나 ask 로 ②«함께 정리» 확인 시 화면에 보인 신청 id 를 서버에 넘겨 그 사이 새로 생긴 신청은 다시 묻기 ③쓰는 곳 없는 deleteEnrollment 반환형 정리 ④이미 ACTIVE 인 수강의 묵은 승인 신청은 같은 상태 저장으로는 안 닫힘(반 이동·신청함으로만)). tsc 0·관련 테스트 34/34 | 통과(권장 남음) |
+| 11-14 | developer(수강 변경 뒤 정리, claude/supersede-stale-change-requests): 관리자 상태 변경·반 이동 때 같은 수강의 처리 중 신청 = 같은 방향 승인 건 SUPERSEDED·대기/반대는 확인창·청구서/정산/원장 걸린 건 차단, 수강 종료·이동 시 옛 반 효력일(포함) 이후 결석 CANCELLED(note «수강 종료로 정리» → 알림 재조정 제외)·미사용 보강권 REVOKED(정산·이월·보강 예약·출석 기록은 보호), 미납 청구는 목록 안내만. 새 enrollment-end-cleanup.ts·EnrollmentCleanupNotice.tsx·테스트 15개, SUPERSEDED 이름표(신청함·학부모 내역). tsc·전체 5104 fail 0. 미커밋 | 검수 대기 |
 | 11-14 | developer(출결 다시 누르면 취소, claude/attendance-toggle): 선생님 수업 화면에서 선택된 출결 버튼을 다시 누르면 미확인(출결 기록 삭제) — 새 액션 clearStaffAttendance(정규·보강·체험·특강 좌석, dryRun 미리 보기). 결석 취소는 확인 1회·안 쓴 보강권 회수(기존 규칙 함수), 예약·사용된 보강권/정산된 결석이면 거부, 학부모 신고와 그 보강권은 유지, 알림 없음. tsc 0·tests 5023-0 | 완료(main 머지 전) |
 | 11-14 | developer(아이 정보 수정, claude/child-edit): 학부모 «수정» 시트(학교·학생 전화·주소·건강 특이사항 바로 반영 / 이름·생년월일 변경 신청→학생 상세 «정보 변경 요청» 승인·반려) · 건강 글 선생님 «특이»+상세 시트·기사님 줄 «특이» · 연락처 바꾸기(본인인증) · 연결된 가족 보기·끊기(대표만) · 막다른 문구 3곳 · 임시 생일 학년. 마이그레이션 20261114140000 **운영 미적용**. tsc 0·tests 4938-0·guards 82-0 | 검수 대기 |
 | 11-14 | developer(질병·부상 결석 이월, claude/illness-carry): 질병·부상 결석 = 보강권 대신 «이월 검토 중»(RegularAbsenceCarryReview) · 사유 글 필수+증빙 사진 1~3장(비공개 버킷 absence-evidence, 7일 안 추가) · 신청함 «질병·부상 결석»(ILLNESS_CARRY) [이월 승인]=기존 resolveWorkbenchAbsence 재사용 / [보강권으로] · 7일 사진 없음 자동 전환·90일 뒤 사진 삭제(cron/makeup-credits) · 출결 결석 시 보류 · 카카오 안내·FAQ·«결석 알리기» 문구. **마이그레이션 20261114130000 운영 미적용**(없어도 예전 방식으로 동작). tsc 0·tests 4827-0·guards 82-0. 새 SQL 은 실제 Postgres 에서 미실행 — 적용 후 읽기 검증 필요 | 검수 대기 |
@@ -111,6 +188,3 @@
 | 11-14 | developer(보강 예약 학년 판정, claude/makeup-grade): 학생 학년 = 생년월일 계산(student-grade.ts, 임시 생일 2000-01-01·빈 값이면 학년 글자), 후보 = 포함 먼저+±1 유지·미취학 위로 2학년·성인반끼리(credit-rules.makeupGradeFit, 목록·예약 같은 판정), 빈 목록 4종 그 자리 버튼(학년 확인·다시 확인·학원에 문의→홈 메시지 폼), 문구 한 줄씩. 휴원 차단 조건 없음. tsc 0·node --test 4795/0 | 검수 대기 |
 | 11-14 | PM: 청구 월 카드(f8bc4572+결제하기 안전장치 87c09363·중복 누름 8e43b575)·기사 운행표 휴원·휴무(067011c5)·앱 1.0.3 버전(5175e8ec) 묶음 배포 a2ce24e READY·오류 0. 안드로이드 vc6 내부 테스트 게시·iOS Codemagic #6 TestFlight 처리 완료(외부 베타 정보 미입력 경고만) | 완료 |
 | 11-14 | developer(기사님 운행표 휴원·휴무, claude/driver-paused-holiday): 휴원·퇴원·첫 수업 전 = 회색 뱃지+탑승·미탑승 잠금(명단 유지), 휴무일 = 맨 위 «오늘은 휴무(사유)»+정규 줄 잠금, 저장 API 2곳 409, 관리자 운행표 뱃지+«이 달 휴무». 판정 = regularRunDayRules(학부모 childShuttleRules 재사용). 운영 읽기: 휴원 3명·6행 뱃지 대상. 리뷰 반영(월말 다음 달 미입력=모름·반 0개는 퇴원 기록 있을 때만 퇴원·409 문구 표시) tsc 0·node --test 4672/0·guards 5/0 | 재검수 대기 |
-| 11-14 | developer(청구 월 카드, claude/billing-cards): 학부모 청구 탭·아이 기록 = 한 달 한 줄(청구월·합계·상태) + 세부 시트(할인 «원래−할인=낼 금액»·기존 결제 버튼 그대로 시트 안) · 할인 원인 = Payment 에 할인 칸 없음, 글(description) 안에만 있어 카드가 원문을 통째로 보였음 → 해석 156/157건 · 청구 탭 날짜 두 번 변환 · tests 4661-0·guards 5-0·tsc 0 | 검수 대기 |
-| 11-14 | developer(아이 정보+셔틀, claude/child-profile): /mypage/record 위에 아이 정보(생년월일·학년(생일 기준+등록 학년)·학교·성별·등록일·대표 보호자·내 연락처·연결 가족 이름·보강권)·수강 반(수업 탭 칩)·셔틀(요일별 승하차·7일 운행: 휴무·휴원·결석·안 탐·다른 곳, 방학특강·신청 접수, 기사님 전화) 접기 칸 · **버그 수정: 학부모 홈·수업 탭 정규 셔틀이 빈 옛 표(ShuttleRoutePassenger 0행)만 읽어 60명 전원 미표시 → 명단 기준(childShuttleRules) 항목 추가** · 운영 읽기 대조 6명 요일별 불일치 0 · **1차 수정(검수)**: 신청 접수 카드 = 명단 등재 여부(getRosterStudentIds)로 제외 · 일정 탭 명단 항목 요일별 한 줄+«아이 기록 › 셔틀» · 반 없음/못 찾음 = 운행 아님(NO_CLASS·CHECK) · 명단 조회 첫 병렬 묶음·기록은 그 아이만 · 빈 studentId 11행 = 2호점 운영 정차(학생 행 아님, 채울 것 없음) · tests 4583-0·tsc 0 | 검수 대기 |
-| 11-14 | reviewer(수업 피드 ab61a2db): 통과 — 필수 0·권장 3(종료 창 비우기 COALESCE·대타 날짜 조각·자정 넘긴 진행 수업 사진). 운영 대조 날짜 불일치 0·소식 20→20 | 통과 |

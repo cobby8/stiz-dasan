@@ -25,11 +25,14 @@ export async function notifyParentOfEnrollmentChange(requestId: string, event: C
       requestedByUserId: string; decidedByUserId: string | null; studentId: string; studentName: string;
       className: string | null; kind: string; effectiveFrom: string; decisionNote: string | null;
     }>>(
-      `SELECT r."requestedByUserId", r."decidedByUserId", r."studentId", s.name AS "studentName", fc.name AS "className",
+      // 반 추가(CLASS_ADD)는 떠나는 반이 없어 fromClass 가 비어 있다 → 추가할 반(toClass) 이름으로 부른다.
+      `SELECT r."requestedByUserId", r."decidedByUserId", r."studentId", s.name AS "studentName",
+              COALESCE(fc.name, CASE WHEN r.kind = 'CLASS_ADD' THEN tc.name END) AS "className",
               r.kind, to_char(r."effectiveFrom",'YYYY-MM-DD') AS "effectiveFrom", r."decisionNote"
          FROM "EnrollmentChangeRequest" r
          JOIN "Student" s ON s.id = r."studentId" AND ${notMergedStudent("s")}
          LEFT JOIN "Class" fc ON fc.id = r."fromClassId"
+         LEFT JOIN "Class" tc ON tc.id = r."toClassId"
         WHERE r.id = $1
         LIMIT 1`,
       requestId,

@@ -16,7 +16,7 @@ import styles from "./DriverWorkspace.module.css";
 import { StatusChoiceButton, StatusUndoButton } from "@/components/staff/StatusChoiceButton";
 import { LiveStatusPill } from "@/components/staff/LiveStatusPill";
 import { readBoardingResult, saveAndVerifyBoarding } from "@/lib/shuttle/driverStatusClient";
-import { riderBoardingView, riderDefaultStatus, stopAbsenceSummary, type UnifiedRider, type UnifiedRow } from "@/lib/shuttle/unifiedDriverRunLogic";
+import { riderBoardingView, riderDefaultStatus, riderLockLabel, stopAbsenceSummary, type UnifiedRider, type UnifiedRow } from "@/lib/shuttle/unifiedDriverRunLogic";
 import { userErrorMessage } from "@/components/staff/userErrorMessage";
 import { todayKst } from "@/lib/datetime/kst";
 import type { RunHoliday } from "@/lib/shuttle/regularRunDayRules";
@@ -350,6 +350,12 @@ export default function UnifiedDriverClient({
     const rowKey = `${row.key}:${rider.checkId}`;
     // 원장 지시(2026-11-14): 휴원·퇴원·첫 수업 전·휴무 줄은 명단에 남기고 회색 행 + 뱃지, 탑승·미탑승 버튼은 잠근다.
     const locked = view.blocked;
+    // 원장 메모(2026-11-14 묶음 B): 그 방향 셔틀을 «안 탄다고 기록된» 아이(자차·조퇴·지각)도 버튼을 잠그고 사유를 글자로 보인다.
+    // skipLocked = 잠금 이유가 휴원·휴무가 아니라 «안 타요» 기록인 줄. 지각 예정만 알리고 셔틀을 타는 아이는 해당 없음(잠기지 않는다).
+    const skipLocked = locked && !rider.blockedLabel;
+    // 사유 뱃지(«자차» 등)가 이미 같은 뜻이라 «오늘 셔틀 안 탐» 메모는 겹쳐 보이지 않는다
+    const shuttleNote = skipLocked ? null : rider.shuttleNote;
+    const lockLabel = riderLockLabel(rider);
     const rowTone = locked ? "bg-[var(--color-academy-neutral-soft)]" : view.dimmed ? "bg-[var(--color-academy-danger-soft)]" : "bg-[var(--color-academy-soft)]";
     return (
       <div key={rowKey} data-blocked={locked ? "true" : undefined} className={`${styles.rider} academy-driver-rider rounded-xl ${rowTone}`}>
@@ -366,8 +372,8 @@ export default function UnifiedDriverClient({
               )}
               {/* 잠금 뱃지(휴원·퇴원·첫 수업 전·휴무) — 결석(빨강)과 구분되는 회색 채움 + 흰 글자 14px */}
               {locked && (
-                <span className="inline-flex items-center rounded-md bg-[var(--color-academy-neutral)] px-2 py-0.5 text-sm font-semibold text-[var(--color-academy-on-primary)]">
-                  {rider.blockedLabel}
+                <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-sm font-semibold text-[var(--color-academy-on-primary)] ${skipLocked ? "bg-[var(--color-driver-self)]" : "bg-[var(--color-academy-neutral)]"}`}>
+                  {lockLabel}
                 </span>
               )}
               {rider.grade && <span className="text-sm text-[var(--color-academy-muted)]">{rider.grade}</span>}
@@ -403,7 +409,7 @@ export default function UnifiedDriverClient({
             ? <p className="mt-2 whitespace-pre-wrap rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-base text-[var(--color-academy-ink)]">{rider.healthNote}</p>
             : <p className="mt-2 rounded-lg bg-[var(--color-academy-soft)] px-3 py-2 text-sm text-[var(--color-academy-muted)]">{healthHint}</p>
         )}
-        {(rider.shuttleNote || (rider.absent && !view.absentReported && status !== "BOARDED" && status !== "SELF") || (!view.absentReported && status === "NOSHOW") || status === "SELF") && <div className={styles.riderNotes}>
+        {(shuttleNote || (rider.absent && !view.absentReported && status !== "BOARDED" && status !== "SELF") || (!view.absentReported && status === "NOSHOW") || status === "SELF") && <div className={styles.riderNotes}>
               {/* 특강 «결석예정»은 종전대로(체크 대상 · 정규 결석 뱃지와 구분) */}
               {rider.absent && !view.absentReported && status !== "BOARDED" && status !== "SELF" && (
                 <span className="rounded-md bg-[var(--color-academy-warning)] px-2 py-0.5 text-sm font-semibold text-[var(--color-academy-on-primary)]">결석예정</span>
@@ -413,11 +419,11 @@ export default function UnifiedDriverClient({
               {status === "SELF" && <span className="rounded-md bg-[var(--color-driver-self)] px-2 py-0.5 text-sm font-semibold text-[var(--color-academy-on-primary)]">{selfLabel}</span>}
               {/* "오늘만" 셔틀 변경. 결석과 다른 색으로 둔다 — 아이는 수업에 오고,
                   기사님이 태우지 않거나 다른 곳으로 가야 한다는 뜻이다. */}
-              {rider.shuttleNote && <span className="rounded-md bg-[var(--color-driver-note)] px-2 py-0.5 text-sm font-semibold text-[var(--color-academy-on-primary)]">{rider.shuttleNote}</span>}
+              {!skipLocked && rider.shuttleNote && <span className="rounded-md bg-[var(--color-driver-note)] px-2 py-0.5 text-sm font-semibold text-[var(--color-academy-on-primary)]">{rider.shuttleNote}</span>}
         </div>}
         {(saveState || stored || view.absentDefault || locked) && <div className={styles.riderStatusLine}>
           {saveState ? <p role="status" className={`text-xs font-semibold ${saveState.state === "failed" || saveState.state === "unknown" ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-muted)]"}`}>{saveState.message}{saveState.state === "unknown" && <button type="button" disabled={busy[rider.key]} onClick={() => void setStatus(rider, "BOARDED", true)} className="ml-2 inline-flex min-h-11 min-w-11 items-center underline">저장 상태 확인</button>}</p>
-            : locked ? <p className="text-sm font-semibold text-[var(--color-academy-muted)]">{rider.blockedLabel === "휴무" ? "오늘은 수업이 없어 체크하지 않아요" : `${rider.blockedLabel}이라 체크하지 않아요`}</p>
+            : locked ? <p className="text-sm font-semibold text-[var(--color-academy-muted)]">{skipLocked ? `${lockLabel} · 이 셔틀은 타지 않아 체크하지 않아요` : rider.blockedLabel === "휴무" ? "오늘은 수업이 없어 체크하지 않아요" : `${rider.blockedLabel}이라 체크하지 않아요`}</p>
             : view.absentDefault ? <p className="text-sm font-semibold text-[var(--color-academy-muted)]">이 아이는 안 태워도 돼요 (탔으면 «{isPickup ? "탑승" : "하차"}»)</p> : <span />}
           {/* 잘못 눌렀을 때만 쓰는 되돌리기 — 상태 버튼과 떨어진 작은 글자 버튼(결석 학생은 기본 «결석»으로 돌아간다) */}
           {stored && <StatusUndoButton disabled={isBusy} ariaLabel={`${rider.name} ${view.absentReported ? "결석으로" : "대기로"} 되돌리기`} onClick={() => { setMenuKey(null); void setStatus(rider, null); }} />}

@@ -11,7 +11,7 @@ import { changeLine } from "@/lib/parent/childEditRules";
 import { realBirthYmd } from "@/lib/makeup/student-grade";
 import { formatPhoneInput } from "@/lib/application-display-format";
 import PhoneChangeButton from "@/components/account/PhoneChangeButton";
-import type { ShuttleDayLeg, ShuttleDayRow, ShuttleDayStatus } from "@/lib/shuttle/childShuttleRules";
+import { SHUTTLE_SELF_STATUS_TEXT, type ShuttleDayLeg, type ShuttleDayRow, type ShuttleDayStatus } from "@/lib/shuttle/childShuttleRules";
 import { presetHref } from "@/lib/parent/classCards";
 import { kstLabel } from "@/lib/datetime/kst";
 import ProfilePhotoEditor from "@/components/parent/ProfilePhotoEditor";
@@ -28,7 +28,8 @@ const ChildInfoEditSheet = dynamic(() => import("./ChildInfoEditSheet"), { ssr: 
 export function CollapsibleSection({ id, title, note, defaultOpen = true, children }: { id: string; title: string; note?: string | null; defaultOpen?: boolean; children: ReactNode }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <section aria-labelledby={`${id}-heading`} className="academy-panel overflow-hidden">
+    // id = 바로가기 주소(#record-info 등) — 마이페이지 «사진 올리기»가 이 칸으로 바로 온다(2026-11-14)
+    <section id={id} aria-labelledby={`${id}-heading`} className="academy-panel scroll-mt-4 overflow-hidden">
       <h2 id={`${id}-heading`} className="m-0">
         <button
           type="button"
@@ -238,10 +239,10 @@ const DAY_TONE: Record<ShuttleDayStatus, StatusTone> = {
   CHECK: "warning",
 };
 
-/** 운행 일정 한 다리 «등원 17:45 다산푸르지오» / «등원 안 탐(신청)» / «등원 다른 곳: 학교 정문» */
+/** 운행 일정 한 다리 «등원 17:45 다산푸르지오» / «등원 자차(신청)» / «등원 다른 곳: 학교 정문» */
 function legText(name: "등원" | "하원", leg: ShuttleDayLeg | null): string | null {
   if (!leg) return null;
-  if (leg.state === "SKIP") return `${name} 안 탐(신청)`;
+  if (leg.state === "SKIP") return `${name} 자차(신청)`;
   if (leg.state === "CHANGED") return `${name} 다른 곳: ${leg.changedTo ?? "-"}`;
   return [name, leg.time, leg.stopName].filter(Boolean).join(" ");
 }
@@ -289,8 +290,9 @@ export function ChildShuttleSection({ shuttle, studentId }: { shuttle: ChildShut
                       {w.classTime ? ` ${w.classTime.split(/[~\-–]/)[0]} 수업` : ""}
                     </span>
                     <span className="min-w-0 flex-1 break-keep tabular-nums text-[var(--color-academy-ink)]">
-                      <span className="block">{w.board ? `승차 ${w.board.time ?? "시각 미정"} · ${w.board.stopName}` : "등원 셔틀 없음"}</span>
-                      <span className="block">{w.alight ? `하차 ${w.alight.time ?? "시각 미정"} · ${w.alight.stopName}` : "하원 셔틀 없음"}</span>
+                      {/* 타는 쪽만 보인다 — «등원 셔틀 없음»·«하원 셔틀 없음» 줄은 그리지 않는다(2026-11-14 문구 정리) */}
+                      {w.board && <span className="block">{`승차 ${w.board.time ?? "시각 미정"} · ${w.board.stopName}`}</span>}
+                      {w.alight && <span className="block">{`하차 ${w.alight.time ?? "시각 미정"} · ${w.alight.stopName}`}</span>}
                     </span>
                   </li>
                 ))}
@@ -308,10 +310,9 @@ export function ChildShuttleSection({ shuttle, studentId }: { shuttle: ChildShut
                   {days.map((d) => (
                     <li key={`${d.ymd}|${d.classTime ?? ""}`} className="flex min-h-11 items-center gap-2 px-3 py-1.5 text-sm">
                       <span className="w-16 shrink-0 text-xs tabular-nums text-[var(--color-academy-muted)]">{kstLabel(d.ymd)}</span>
-                      <Badge tone={d.statusText === "안 탐(신청)" ? "info" : DAY_TONE[d.status]}>{d.statusText}</Badge>
+                      <Badge tone={d.statusText === SHUTTLE_SELF_STATUS_TEXT ? "info" : DAY_TONE[d.status]}>{d.statusText}</Badge>
                       <span className="min-w-0 flex-1 break-keep tabular-nums text-[var(--color-academy-ink)]">
                         {dayDetail(d)}
-                        {d.planMissing && <span className="block text-xs text-[var(--color-academy-muted)]">연간일정 확정 전 — 명단대로 표시</span>}
                       </span>
                     </li>
                   ))}
@@ -361,11 +362,11 @@ export function ChildShuttleSection({ shuttle, studentId }: { shuttle: ChildShut
             </a>
           )}
           <p className="border-t border-[var(--color-academy-line)] px-3 py-1.5 text-xs text-[var(--color-academy-muted)]">
-            시각은 셔틀 명단의 예정 시각이에요. 길 사정에 따라 조금 달라질 수 있어요.
+            길 사정에 따라 시각이 조금 달라질 수 있어요
           </p>
         </>
       )}
-      {uses && <LinkBar links={[{ href: presetHref("/mypage/shuttle", { studentId }), label: "이날 안 타요·다른 곳에서 타요" }]} />}
+      {uses && <LinkBar links={[{ href: presetHref("/mypage/shuttle", { studentId }), label: "셔틀 변경" }]} />}
     </CollapsibleSection>
   );
 }

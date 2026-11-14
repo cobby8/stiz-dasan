@@ -22,8 +22,15 @@ export const CHANGE_KIND_LABEL: Record<ChangeKind, string> = {
  */
 export const RESUME_KIND = "RESUME" as const;
 
-/** 학부모 화면·원장 알림에 쓰는 종류 이름. 복귀까지 포함한다. */
-export const REQUEST_KIND_LABEL: Record<string, string> = { ...CHANGE_KIND_LABEL, [RESUME_KIND]: "복귀" };
+/**
+ * 반 추가(CLASS_ADD) — 지금 다니는 반은 그대로 두고 다른 반을 하나 더(2026-11-14 결정표 c8).
+ * 떠나는 반이 없어 접수·승인 길이 다르다(classAddRules·parent-class-add·admin-class-add) — 그래서 CHANGE_KINDS 에 넣지 않는다.
+ * (이 파일은 테스트가 단독으로 불러오므로 import 없이 적는다. classAddRules.CLASS_ADD_KIND 와 같은 값인지 테스트가 대조한다.)
+ */
+export const CLASS_ADD_KIND = "CLASS_ADD" as const;
+
+/** 학부모 화면·원장 알림에 쓰는 종류 이름. 복귀·반 추가까지 포함한다. */
+export const REQUEST_KIND_LABEL: Record<string, string> = { ...CHANGE_KIND_LABEL, [RESUME_KIND]: "복귀", [CLASS_ADD_KIND]: "반 추가" };
 
 export const CHANGE_STATUS_LABEL: Record<string, string> = {
   PENDING: "검토 중",
@@ -32,6 +39,8 @@ export const CHANGE_STATUS_LABEL: Record<string, string> = {
   CANCELED: "취소함",
   // 사이트 수강 상태까지 반영된 건(관리자 즉시 변경 · 적용일 자동 적용). 시트·랠리즈 확인은 운영 동기화에서 이어진다.
   APPLIED: "반영 완료",
+  // 관리자가 같은 수강을 직접 바꿔(상태 변경·반 이동) 더 적용할 필요가 없어진 신청(2026-11-14 김루빈 사례)
+  SUPERSEDED: "학원에서 처리함",
 };
 
 /**

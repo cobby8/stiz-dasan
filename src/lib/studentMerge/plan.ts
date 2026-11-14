@@ -313,3 +313,14 @@ export function moveSkipNote(t: StudentRefTable): string {
   }
   return `${reasons.join(" 또는 ") || "이동 조건 불충족"}으로 이동하지 않음`;
 }
+
+/**
+ * 병합 미리보기 안내 한 줄 — 흡수 학생에게 휴원 수강료 «남은 이월»이 있을 때.
+ * 처리 기록은 흡수 쪽에 남지만(tables.ts keepOnLoser) 차감은 대표 학생의 새 청구에서 이어진다
+ * (pause-settlement.ts CARRY_TARGET_STUDENTS_SQL). 남은 이월이 없으면 null.
+ */
+export function carryNoticeLine(carryRemaining: number): string | null {
+  const amount = Math.trunc(Number(carryRemaining));
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  return `남은 이월 ${amount.toLocaleString("ko-KR")}원은 대표 학생 청구에서 차감됩니다`;
+}

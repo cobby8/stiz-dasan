@@ -30,7 +30,6 @@ function compileModuleWith(path, imports) {
 }
 const Link = ({ children, ...props }) => React.createElement("a", props, children);
 const Empty = compile("src/components/account/EmptyParentState.tsx", { "next/link": { default: Link }, "@/components/account/child-link-api": {}, "./child-link-api": {}, "@/components/parent/customerMessage": { customerMessage: (_raw, fallback) => fallback }, "@/components/pwa/useInstalledApp": { useInstalledApp: () => false } });
-const AccountLinks = compile("src/components/account/AccountLinks.tsx", { "next/link": { default: Link } });
 
 test("비로그인 가족 연결 진입은 로그인 화면이 읽는 복귀 주소를 보존한다", async () => {
   let location = "";
@@ -42,6 +41,7 @@ test("비로그인 가족 연결 진입은 로그인 화면이 읽는 복귀 주
     "@/components/academy/AcademyTheme": { default: () => null },
     "@/components/AccountViewSwitcher": { default: () => null },
     "@/app/mypage/children/ChildConnectionsClient": { default: () => null },
+    "@/lib/academyPhone": { getUsableAcademyPhone: async () => { throw new Error("로그인 전 조회 금지"); } }, // 학원 번호도 로그인 확인 뒤에만 읽는다
   });
   await assert.rejects(Page(), /TEST_REDIRECT/);
   const target = new URL(location, "https://fixture.invalid");
@@ -66,12 +66,17 @@ test("정식 자녀가 없고 특강만 신청한 경우 신청 내역과 연결
   assert.match(html, /href="\/mypage\/seasonal"/);
 });
 
-test("공통 계정 메뉴는 연결·간편로그인·역할·탈퇴의 실제 링크를 모두 제공한다", () => {
-  const html = renderToStaticMarkup(React.createElement(AccountLinks));
-  for (const path of ["children", "login-methods", "roles", "withdraw"]) assert.ok(html.includes(`href="/mypage/${path}"`));
+test("계정 메뉴는 설정 화면 안에 있다 — 내 계정·연결·간편로그인·탈퇴의 실제 링크(맨 아래 링크 줄은 없앰, 역할 신청은 링크하지 않음)", () => {
+  // 2026-11-14 원장 결정 d3·d4: 모든 화면 맨 아래 링크 줄(AccountLinks)을 없애고 설정 화면으로 모았다.
+  const settings = readFileSync("src/app/mypage/settings/page.tsx", "utf8");
+  assert.ok(settings.includes('href="/account"'), "내 계정");
+  for (const path of ["children", "login-methods", "withdraw"]) assert.ok(settings.includes(`href="/mypage/${path}"`), path);
+  // «역할 추가 신청»은 원장이 직접 지정한다 — 학부모 화면 어디에서도 링크하지 않는다(d4)
+  assert.ok(!settings.includes("/mypage/roles"), "설정 화면에 역할 신청 링크 없음");
   const layout = readFileSync("src/app/mypage/layout.tsx", "utf8");
-  assert.match(layout, /\{children\}\s*<AccountLinks\s*\/>/);
-  assert.doesNotMatch(readFileSync("src/app/mypage/MyPageClient.tsx", "utf8"), /href="\/mypage\/withdraw"/);
+  assert.match(layout, /href="\/mypage\/settings"/, "설정으로 가는 길은 머리줄");
+  assert.doesNotMatch(layout, /AccountLinks|\/mypage\/roles/);
+  assert.doesNotMatch(readFileSync("src/app/mypage/MyPageClient.tsx", "utf8"), /href="\/mypage\/(withdraw|roles)"/);
 });
 
 test("서버 홈은 빈 자녀 판정 전에 특강 내역을 조회하고 해당 계정만 전달한다", async () => {
@@ -80,6 +85,8 @@ test("서버 홈은 빈 자녀 판정 전에 특강 내역을 조회하고 해�
     "@/lib/supabase/server": { createClient: async () => ({ auth: { getUser: async () => ({ data: { user: { id: "auth-fixture" } } }) } }) },
     // 2026-11-14: 자녀 없음 화면의 학원 번호를 코드가 아니라 설정값에서 읽는다(getAcademySettings)
     "@/lib/queries": { getMyPageData: async (id) => { calls.push(id); return { children: [] }; }, getAcademySettings: async () => ({ contactPhone: null }) },
+    // 2026-11-15: 번호 읽기·판정은 공용 한 곳(academyPhone)
+    "@/lib/academyPhone": { getUsableAcademyPhone: async () => null },
     "@/lib/auth-guard": { requireVerifiedParent: async () => ({ appUserId: "verified-app-fixture" }) },
     "@/lib/shuttle/parent": {},
     // 홈 «처리할 일»(보강권·방학특강 회차) — 자녀가 없으면 부르지 않는다
@@ -93,6 +100,10 @@ test("서버 홈은 빈 자녀 판정 전에 특강 내역을 조회하고 해�
     "@/lib/parent/childRecordQuery": {},
     // 홈 «최신 수업 피드» 후보(2026-11-14) — 자녀가 없으면 부르지 않는다
     "@/lib/feed/server": {},
+    // 홈 «보낸 문의» 건수(2026-11-14 c3) — 자녀가 없으면 부르지 않는다
+    "@/lib/prisma": { prisma: {} },
+    "@/lib/requests/inquiry-thread": {},
+    "@/lib/requests/inquiryThreadRules": {},
     "@/lib/seasonal/parent-pending": { getPendingSeasonalChildren: async (id, students) => { calls.push([id, students]); return []; } },
     "@/components/account/EmptyParentState": { default: Empty },
     "./MyPageClient": { default: () => null },
@@ -145,6 +156,7 @@ test("직원 연결 페이지는 로그인만 요구하고 자녀 목록의 기�
     "@/components/academy/AcademyTheme": { default: ({ children }) => React.createElement("div", { className: "academy-app" }, children) },
     "@/components/AccountViewSwitcher": { default: () => null },
     "@/app/mypage/children/ChildConnectionsClient": { default: EmptyClient },
+    "@/lib/academyPhone": { getUsableAcademyPhone: async () => null }, // 학원 번호(설정값) — 못 읽으면 null(글자만)
   });
   const html = renderToStaticMarkup(await Page());
   assert.equal(authenticated, 1);

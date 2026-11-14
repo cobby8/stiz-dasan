@@ -7,7 +7,8 @@ import { PublicBottomBar } from "@/components/public-floating";
 import { SEAT_LEVEL_BADGE_CLASS, SEAT_LEVEL_LABEL } from "@/lib/seats/seatLevel";
 import { formatSeasonalDate, formatSeasonalPeriod, formatWon, normalizeProgram, programClasses, seasonalDisplayState, type SeasonalClass, type SeasonalProgram } from "./types";
 
-export default function SeasonalDetailClient({ slug }: { slug: string }) {
+// basePath = 목록·신청 화면 주소 머리. 공개 화면은 "/seasonal"(기본), 학부모 앱 안은 "/mypage/seasonal/apply"(2026-11-14 c9)
+export default function SeasonalDetailClient({ slug, basePath = "/seasonal" }: { slug: string; basePath?: string }) {
   const [program, setProgram] = useState<SeasonalProgram | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -56,7 +57,7 @@ export default function SeasonalDetailClient({ slug }: { slug: string }) {
       </section>
       {/* 하단 고정 바 — 높이를 --public-bottom-bar 로 알려 플로팅 버튼이 바 위로 올라간다(게슈탈트 C-P3) */}
       <PublicBottomBar className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--color-public-line)] bg-white/95 p-3 backdrop-blur dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)]/95">
-        <div className="mx-auto flex max-w-4xl gap-2"><Link href="/seasonal" className="public-btn-secondary">목록</Link>{display.canApply ? <Link href={`/seasonal/${slug}/apply`} className="public-btn-primary flex-1">신청하기</Link> : <span role="status" className="flex min-h-11 flex-1 items-center justify-center rounded bg-[var(--color-public-line)] px-5 text-[var(--color-public-muted)]">{display.label}</span>}</div>
+        <div className="mx-auto flex max-w-4xl gap-2"><Link href={basePath} className="public-btn-secondary">목록</Link>{display.canApply ? <Link href={`${basePath}/${slug}/apply`} className="public-btn-primary flex-1">신청하기</Link> : <span role="status" className="flex min-h-11 flex-1 items-center justify-center rounded bg-[var(--color-public-line)] px-5 text-[var(--color-public-muted)]">{display.label}</span>}</div>
       </PublicBottomBar>
     </>
   );

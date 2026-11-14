@@ -1,22 +1,24 @@
 import Link from "next/link";
 import { kstLabel } from "@/lib/datetime/kst";
 import type { FeedCard } from "@/lib/feed/rules";
+// 카드·사진을 누르면 리포트 피드의 그 수업 자리로, «더보기»는 피드 맨 위로(2026-11-14 원장 요청)
+import { reportFeedHref } from "@/lib/feed/reportFeedRules";
 
 /**
  * 학부모 홈 «최신 수업 피드» 카드(2026-11-14 원장 결정) — 고른 아이의 최신 공개 수업 1건.
  * 높이 ~180px 이하: 제목줄(더보기) · 날짜·반·코치 1줄 · 본문 2줄 · 사진 최대 3장 가로 넘김 + «영상 n».
- * 사진·본문·영상을 누르면 소식 상세로 간다. 카드가 없으면(card=null) 부모가 칸 자체를 그리지 않는다.
+ * 사진·본문·영상을 누르면 수업 리포트 피드의 그 수업 자리로 간다. 카드가 없으면(card=null) 부모가 칸 자체를 그리지 않는다.
  * 사진은 서버가 «이 보호자가 실제로 열 수 있는 것만» 넘긴다(수업 피드 공용 판정).
  */
 export default function LatestFeedCard({ card }: { card: FeedCard }) {
-  const href = `/mypage/reports/${encodeURIComponent(card.sessionId)}`;
+  const href = reportFeedHref(card.sessionId);
   const body = card.content || card.topic || "수업 소식이 올라왔어요.";
   return (
     <section aria-labelledby="latest-feed-heading" className="academy-panel overflow-hidden">
       <div className="flex items-center justify-between gap-2 border-b border-[var(--color-academy-line)] pl-3">
         <h2 id="latest-feed-heading" className="academy-section-title py-2">최신 수업 피드</h2>
-        <Link href="/mypage/reports#news-reports" className="academy-button-text academy-button-sm shrink-0">
-          소식에서 더보기
+        <Link href={reportFeedHref()} className="academy-button-text academy-button-sm shrink-0">
+          더보기
         </Link>
       </div>
       <div className="space-y-1.5 px-3 py-2">

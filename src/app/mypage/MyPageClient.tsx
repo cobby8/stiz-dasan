@@ -8,15 +8,15 @@ import type { PublicVirtualAccountView } from "@/lib/payments/virtualAccount";
 import VirtualAccountNotice from "@/components/parent/VirtualAccountNotice";
 import { createParentRequest } from "@/app/actions/admin";
 import { useRememberedChild } from "./useRememberedChild";
+import { markNextNavigationAsReplace } from "@/lib/navigation/inAppHistory";
 import type { ParentShuttleOverviewItem } from "@/lib/shuttle/parent";
 import type { PendingSeasonalChild } from "@/lib/seasonal/pendingSeasonalChildren";
 // "오늘/이번주 우리 아이" 요약 + «오늘 할 일» 집계용 순수 로직(표시 전용, 기존 데이터 재조합).
 import {
-    getKstNow, getKstDateStr, computeNextClass, nextClassWhenLabel, filterTodayShuttle,
-    summarizePendingPayments, countRecentAnswers, countRecentNotices, legacyHomeHashTarget,
+    getKstNow, getKstDateStr, computeNextClass, nextClassWhenLabel, filterTodayShuttle, todayShuttleLineTexts,
+    summarizePendingPayments, countRecentNotices, legacyHomeHashTarget,
 } from "@/lib/mypage/summary";
 import { formatKstDate } from "@/lib/datetime/kst";
-import { REQUEST_TONE, TONE_BADGE_CLASS } from "@/lib/ui/statusTones";
 import type { ParentClassStatusLine } from "@/lib/enrollment/parent-change-request";
 // «최신 수업 피드» 카드 — 고른 아이의 최신 공개 수업 1건(2026-11-14)
 import LatestFeedCard from "@/components/parent/LatestFeedCard";
@@ -123,20 +123,8 @@ type NoticeItem = {
     attachmentsJSON: string | null;
 };
 
-type RequestItem = {
-    id: string;
-    userId: string;
-    studentId: string;
-    type: string;
-    title: string;
-    content: string;
-    date: Date | string | null;
-    status: string;
-    adminNote: string | null;
-    createdAt: Date | string;
-    updatedAt: Date | string;
-    studentName: string;
-};
+/** 보낸 문의 건수(답변 옴·답변 대기) — «보낸 문의» 줄 오른쪽 글자용. 목록·대화는 /mypage/requests 화면이 그린다 */
+type InquiryCounts = { answered: number; waiting: number };
 
 type MyPageData = {
     parent: { id: string; name: string; email: string; phone: string | null };
@@ -148,14 +136,6 @@ type MyPageData = {
 // 결석처럼 진짜 기능이 있는 것은 그 기능으로 보내고, 나머지는 자유 메시지 하나로 받는다.
 // 서버는 type 을 계속 받으므로(다른 경로 호환) 여기서는 항상 "OTHER" 로 보낸다.
 
-// 2026-11-13 UI 통일: 상태 배지의 장식 아이콘을 뺐다 — 글자(대기중·확인됨…)와 색이 뜻을 전한다.
-const REQUEST_STATUS: Record<string, { label: string; color: string }> = {
-    // 색 = 공용 지도(statusTones): 대기 주의 · 확인됨(진행 중) 정보 · 종결 정상 · 반려 위험
-    PENDING: { label: "대기중", color: TONE_BADGE_CLASS[REQUEST_TONE.PENDING] },
-    CONFIRMED: { label: "확인됨", color: TONE_BADGE_CLASS[REQUEST_TONE.CONFIRMED] },
-    COMPLETED: { label: "상담 종결", color: TONE_BADGE_CLASS[REQUEST_TONE.COMPLETED] },
-    REJECTED: { label: "반려", color: TONE_BADGE_CLASS[REQUEST_TONE.REJECTED] },
-};
 
 /** 알림·요청 시각 "10월 31일 AM 12:05" — 예전 모양 그대로, KST 기준. */
 export function formatAlertTime(value: Date | string): string {
@@ -170,11 +150,14 @@ export function formatShortDate(value: Date | string): string {
 // «처리할 일» 한 줄 — 왼쪽 제목, 오른쪽 숫자/설명, 끝에 «›». 터치 44px.
 const TODO_ROW = "flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-[var(--color-academy-soft)]";
 
-export default function MyPageClient({ data, notices = [], myRequests = [], parentShuttleOverview = [], shuttleDriverContact = null, pendingSeasonalChildren = [], makeupAvailable = 0, seasonalUpcoming = 0, pendingPayments = null, classStatusLines = [], initialChildId, recordLines, feedCandidates = [] }: {
+export default function MyPageClient({ data, notices = [], inquiryCounts = { answered: 0, waiting: 0 }, parentShuttleOverview = [], todaySelfRide = {}, shuttleDriverContact = null, pendingSeasonalChildren = [], makeupAvailable = 0, seasonalUpcoming = 0, pendingPayments = null, classStatusLines = [], initialChildId, recordLines, feedCandidates = [] }: {
     data: MyPageData;
     notices?: NoticeItem[];
-    myRequests?: RequestItem[];
+    /** 보낸 문의 중 «답변 옴»·«답변 대기» 건수(보낸 문의 화면과 같은 판정) */
+    inquiryCounts?: InquiryCounts;
     parentShuttleOverview?: ParentShuttleOverviewItem[];
+    /** 아이 id → 오늘 «자차»로 신청해 타지 않는 방향(표시 전용 — 항목이 아니라 «운행 N건» 셈에 들어가지 않는다) */
+    todaySelfRide?: Record<string, ("PICKUP" | "DROPOFF")[]>;
     shuttleDriverContact?: { name: string; phone: string } | null;
     // 방학특강만 신청하고 아직 정식 학생으로 전환되지 않은 자녀(별도 칸에 표시)
     pendingSeasonalChildren?: PendingSeasonalChild[];
@@ -199,7 +182,6 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
     const selectedIdx = Math.max(0, childIds.indexOf(selectedChildId));
     const setSelectedIdx = (i: number) => { const id = childIds[i]; if (id) selectChild(id); };
     const [showRequestForm, setShowRequestForm] = useState(false);
-    const [showRequests, setShowRequests] = useState(false);
     const [isPending, startTransition] = useTransition();
     // 요청 폼 상태
     const [reqContent, setReqContent] = useState("");
@@ -241,22 +223,31 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
     const resumingEnrollments = child.resumingEnrollments ?? [];
     const nextClass = computeNextClass(child.scheduleEnrollments ?? child.enrollments, kstNow, todayStr);
     const todayShuttles = filterTodayShuttle(childShuttleOverview, todayStr);
+    // 오늘 자차로 신청한 방향 — 타는 항목이 하나도 없어도(등원·하원 모두 자차) «오늘 셔틀» 줄은 보인다
+    const childSelfRide = todaySelfRide[child.id] ?? [];
+    const showTodayShuttle = todayShuttles.length > 0 || childSelfRide.length > 0;
     // 고른 아이의 반 상태 한 줄(휴원 예정 · 12/1부터 등). 눌러서 수강 변경 화면(결과·사유)으로.
     const childStatusLines = classStatusLines.filter((line) => line.studentId === child.id);
-    const hasSummary = Boolean(nextClass) || todayShuttles.length > 0 || childStatusLines.length > 0;
-    // 오늘 셔틀 줄의 «등원 08:40»·«하원 17:30» — 확정 시각이 있는 것만
-    const todayPickup = todayShuttles.map((s) => s.pickupEtaLabel).find(Boolean);
-    const todayDropoff = todayShuttles.map((s) => s.dropoffEtaLabel).find(Boolean);
-    const todayShuttleLines = [todayPickup ? `등원 ${todayPickup}` : null, todayDropoff ? `하원 ${todayDropoff}` : null].filter((v): v is string => Boolean(v));
+    const hasSummary = Boolean(nextClass) || showTodayShuttle || childStatusLines.length > 0;
+    // 이름 아래 한 줄 — «다음 수업» 줄이 보이면 반 개수는 겹치는 말이라 뺀다(복귀 예정 수만 남긴다).
+    // 전부 복귀 예정인 아이는 «수강 중인 반이 없습니다» 대신 복귀 예정을 말한다(2026-11-14)
+    const heroEnrollLine = currentEnrollments.length > 0
+        ? nextClass
+            ? (resumingEnrollments.length > 0 ? `복귀 예정 ${resumingEnrollments.length}개` : "")
+            : `수강 중인 반 ${currentEnrollments.length}개${resumingEnrollments.length > 0 ? ` · 복귀 예정 ${resumingEnrollments.length}개` : ""}`
+        : resumingEnrollments.length > 0
+            ? `복귀 예정인 반 ${resumingEnrollments.length}개 · ${[...resumingEnrollments].sort((a, b) => a.resumeFrom.localeCompare(b.resumeFrom))[0].resumeFromLabel}부터`
+            : "수강 중인 반이 없습니다";
+    // 오늘 셔틀 줄 — 기사님이 찍었으면 실제 시각(«탑승 08:52»·«하차 18:40»), 아직이면 예정 시각(«등원 08:40 승차»·«하원 17:30 하차»)
+    const todayShuttleLines = todayShuttleLineTexts(todayShuttles, childSelfRide);
     // 다음 수업·오늘 셔틀을 누르면 «일정» 탭의 그 칸으로(홈 아래 접힌 칸으로 뛰지 않는다)
     const scheduleHref = `/mypage/history?child=${encodeURIComponent(child.id)}`;
 
     // ── ③ 처리할 일 ──
-    const answerCount = countRecentAnswers(myRequests, now.getTime());
-    const pendingRequestCount = myRequests.filter(r => r.status === "PENDING").length;
     const newNoticeCount = countRecentNotices(notices, now.getTime());
     // 알림 줄이 머리줄 🔔 로 옮겨 가(2026-11-10) 처리할 일이 하나도 없을 수 있다 → 빈 칸 대신 한 줄 안내
-    const hasTodo = makeupAvailable > 0 || seasonalUpcoming > 0 || answerCount > 0 || pendingRequestCount > 0 || newNoticeCount > 0;
+    // «보낸 문의»는 처리할 일에서 빼고 빠른 실행 아래 «늘 보이는 줄»로 옮겼다(2026-11-14 c3 — 끝난 문의도 다시 볼 수 있게)
+    const hasTodo = makeupAvailable > 0 || seasonalUpcoming > 0 || newNoticeCount > 0;
 
     // ── ④ 빠른 실행 «결석 알리기» — 정규 반이 없고 방학특강만 다니면 바로 방학특강 결석으로 ──
     // 복귀 예정 반도 정규 반이다(복귀일 이후 수업은 결석 신고를 받는다)
@@ -272,6 +263,8 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
             // 옛 홈 칸 주소(#mypage-shuttle 등)는 그 칸이 옮겨 간 «일정»·«소식» 탭으로 넘긴다(뒤로가기에 빈 홈이 남지 않게 replace)
             const moved = legacyHomeHashTarget(id);
             if (moved) {
+                // 학부모 «←» 기록에도 «바꿔 끼우기»로 남긴다(쌓으면 뒤로가 빈 홈으로 돌아간다)
+                markNextNavigationAsReplace();
                 window.location.replace(moved);
                 return;
             }
@@ -290,12 +283,6 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
     useEffect(() => {
         if (showRequestForm && window.location.hash === "#parent-request-form") scrollToSection("parent-request-form");
     }, [showRequestForm]);
-
-    function openRequests() {
-        // 보낸 메시지 목록을 펼치고 그 자리로
-        setShowRequests(true);
-        requestAnimationFrame(() => scrollToSection("parent-request-list"));
-    }
 
     function openRequestForm() {
         setShowRequestForm((v) => !v);
@@ -344,16 +331,25 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                     <ProfileAvatar decorative name={child.name} size={64} src={profilePhotoUrl({ kind: "student", id: child.id }, child.photoVersion, true)} />
                     <div className="min-w-0 flex-1">
                         <h1 id="parent-child-heading" className="academy-heading">{child.name} 학생</h1>
-                        <p className="mt-1 text-sm leading-relaxed text-[var(--color-academy-muted)]">
-                            {/* 전부 복귀 예정인 아이는 «수강 중인 반이 없습니다» 대신 복귀 예정을 말한다(2026-11-14) */}
-                            {currentEnrollments.length > 0
-                                ? `수강 중인 반 ${currentEnrollments.length}개${resumingEnrollments.length > 0 ? ` · 복귀 예정 ${resumingEnrollments.length}개` : ""}`
-                                : resumingEnrollments.length > 0
-                                    ? `복귀 예정인 반 ${resumingEnrollments.length}개 · ${[...resumingEnrollments].sort((a, b) => a.resumeFrom.localeCompare(b.resumeFrom))[0].resumeFromLabel}부터`
-                                    : "수강 중인 반이 없습니다"}
-                            {/* 첫 수업 전인 반이 있으면 개시일만 덧붙인다(상태는 수강 중) */}
-                            {startsLaterEnrollment && <span className="ml-2">{formatKstDate(startsLaterEnrollment.startsOn, { month: "long", day: "numeric" })}부터 수업 시작</span>}
-                        </p>
+                        {/* 아이 사진이 아직 없으면 사진 칸(아이 기록 → 아이 정보)으로 바로 가는 글자 버튼(2026-11-14).
+                            설정의 «내 사진»에 아이 사진을 올리는 헷갈림이 실제로 있었다 */}
+                        {!child.photoVersion && (
+                            <Link
+                                href={`/mypage/record?child=${encodeURIComponent(child.id)}#record-info`}
+                                className="academy-button-text min-h-11! -my-2 inline-flex items-center"
+                            >
+                                아이 사진 올리기
+                            </Link>
+                        )}
+                        {/* 2026-11-14 문구 정리: 바로 아래 «다음 수업» 줄이 있으면 «수강 중인 반 N개»는 같은 말이라 뺀다.
+                            복귀 예정·개시일처럼 아래 줄에 없는 내용만 남기고, 남길 말이 없으면 줄째 그리지 않는다. */}
+                        {(heroEnrollLine || startsLaterEnrollment) && (
+                            <p className="mt-1 text-sm leading-relaxed text-[var(--color-academy-muted)]">
+                                {heroEnrollLine}
+                                {/* 첫 수업 전인 반이 있으면 개시일만 덧붙인다(상태는 수강 중) */}
+                                {startsLaterEnrollment && <span className={heroEnrollLine ? "ml-2" : undefined}>{formatKstDate(startsLaterEnrollment.startsOn, { month: "long", day: "numeric" })}부터 수업 시작</span>}
+                            </p>
+                        )}
                     </div>
                 </div>
                 {data.children.length > 1 && (
@@ -410,7 +406,7 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                         ))}
 
                         {/* 2) 오늘 셔틀 → 일정 탭의 셔틀 배정. 기사님 전화는 같은 줄 끝(예전엔 접힌 칸 안에 숨어 있었다) */}
-                        {todayShuttles.length > 0 && (
+                        {showTodayShuttle && (
                             <div className="flex items-stretch gap-1.5">
                                 <Link
                                     href={`${scheduleHref}#mypage-shuttle`}
@@ -451,7 +447,9 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                 <span aria-hidden="true" className="shrink-0 text-[var(--color-academy-faint)]">▸</span>
             </Link>
 
-            {/* ③ 처리할 일 — 해야 할 일이 있는 줄만 보인다. 알림·설정은 머리줄의 «알림»·«설정»으로 옮겼다 */}
+            {/* ③ 처리할 일 — 해야 할 일이 있는 줄만 보인다. 알림·설정은 머리줄의 «알림»·«설정»으로 옮겼다.
+                할 일이 0건이면 칸째 그리지 않는다(2026-11-14 원장 결정 d7 — «처리할 일이 없어요» 한 줄을 위해 칸을 두지 않는다) */}
+            {hasTodo && (
             <section aria-labelledby="parent-todo-heading" className="academy-panel overflow-hidden">
                 <h2 id="parent-todo-heading" className="academy-section-title border-b border-[var(--color-academy-line)] px-3 py-2">처리할 일</h2>
                 <ul className="divide-y divide-[var(--color-academy-line)]">
@@ -473,17 +471,6 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                             </Link>
                         </li>
                     )}
-                    {(answerCount > 0 || pendingRequestCount > 0) && (
-                        <li>
-                            <button type="button" onClick={openRequests} className={TODO_ROW}>
-                                <span className="min-w-0 flex-1 font-medium text-[var(--color-academy-ink)]">보낸 메시지</span>
-                                <span className="shrink-0 text-[var(--color-academy-muted)]">
-                                    {answerCount > 0 ? <>학원 답변 <span className="tabular-nums">{answerCount}</span>건</> : <>답변 대기 <span className="tabular-nums">{pendingRequestCount}</span>건</>}
-                                </span>
-                                <span aria-hidden="true" className="shrink-0 text-[var(--color-academy-faint)]">›</span>
-                            </button>
-                        </li>
-                    )}
                     {newNoticeCount > 0 && (
                         <li>
                             <Link href="/mypage/reports#news-notices" className={TODO_ROW}>
@@ -493,11 +480,9 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                             </Link>
                         </li>
                     )}
-                    {!hasTodo && (
-                        <li className="flex min-h-11 items-center px-3 text-sm text-[var(--color-academy-muted)]">지금 처리할 일이 없어요</li>
-                    )}
                 </ul>
             </section>
+            )}
 
             {/* 최신 수업 피드 — «처리할 일» 바로 아래, 고른 아이의 최신 공개 수업 1건. 없으면 칸을 그리지 않는다 */}
             {(() => {
@@ -511,9 +496,6 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                 <section aria-labelledby="pending-seasonal-heading" className="rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-warning-soft)] p-4 shadow-sm">
                     <div className="mb-3">
                         <h2 id="pending-seasonal-heading" className="academy-section-title">방학특강 신청 자녀</h2>
-                        <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
-                            학생 등록 후 정규 수업·청구가 보여요.
-                        </p>
                     </div>
                     <div className="space-y-2">
                         {pendingSeasonalChildren.map((c, idx) => (
@@ -537,13 +519,16 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                                         {c.offeringTitles.join(", ")}
                                     </p>
                                 )}
-                                <Link
-                                    href="/mypage/seasonal"
-                                    // 보조 버튼(테두리) — 홈의 꽉 찬 색은 납부 몫(M-07)
-                                    className="academy-button-secondary mt-2"
-                                >
-                                    방학특강 결석·보강
-                                </Link>
+                                {/* 위 «처리할 일»에 같은 목적지(/mypage/seasonal) 줄이 이미 보이면 버튼은 그리지 않는다 — 같은 길 하나만 */}
+                                {seasonalUpcoming <= 0 && (
+                                    <Link
+                                        href="/mypage/seasonal"
+                                        // 보조 버튼(테두리) — 홈의 꽉 찬 색은 납부 몫(M-07)
+                                        className="academy-button-secondary mt-2"
+                                    >
+                                        방학특강 결석·보강
+                                    </Link>
+                                )}
                             </div>
                         ))}
                     </div>
@@ -577,28 +562,42 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                 </button>
             </nav>
 
+            {/* 늘 보이는 한 줄 행 — 보낸 문의(끝난 문의도 다시 보고 이어 쓴다, c3) · 신청(유니폼·대관·방학특강으로 가는 길, c9). 2026-11-14 */}
+            <ul aria-label="더 보기" className="academy-panel divide-y divide-[var(--color-academy-line)] overflow-hidden">
+                <li>
+                    <Link href="/mypage/requests" className={TODO_ROW}>
+                        <span className="min-w-0 flex-1 font-medium text-[var(--color-academy-ink)]">보낸 문의</span>
+                        {(inquiryCounts.answered > 0 || inquiryCounts.waiting > 0) && (
+                            <span className="shrink-0 text-[var(--color-academy-muted)]">
+                                {inquiryCounts.answered > 0 ? <>답변 옴 <span className="tabular-nums">{inquiryCounts.answered}</span>건</> : <>답변 대기 <span className="tabular-nums">{inquiryCounts.waiting}</span>건</>}
+                            </span>
+                        )}
+                        <span aria-hidden="true" className="shrink-0 text-[var(--color-academy-faint)]">›</span>
+                    </Link>
+                </li>
+                <li>
+                    {/* 신청 메뉴 화면(/mypage/apply) — 세 가지 신청을 앱 안에서 연다(공개 홈페이지로 나가지 않는다) */}
+                    <Link href="/mypage/apply" className={TODO_ROW}>
+                        <span className="min-w-0 flex-1 font-medium text-[var(--color-academy-ink)]">신청</span>
+                        <span className="shrink-0 text-[var(--color-academy-muted)]">유니폼 · 대관 · 방학특강</span>
+                        <span aria-hidden="true" className="shrink-0 text-[var(--color-academy-faint)]">›</span>
+                    </Link>
+                </li>
+            </ul>
+
             {/* 학원에 메시지 보내기 — «문의»를 누르면 열린다 */}
             {showRequestForm && (
                 <div id="parent-request-form" className="scroll-mt-4 bg-white border border-[var(--color-academy-line)] rounded-2xl p-4 shadow-sm space-y-3">
                     <div className="flex items-center justify-between gap-2">
                         <h3 className="academy-section-title">학원에 메시지 보내기</h3>
-                        <button type="button" onClick={() => (showRequests ? setShowRequests(false) : openRequests())} className="academy-button-text">
-                            보낸 메시지
-                            {pendingRequestCount > 0 && (
-                                <span className="bg-[var(--color-academy-warning)] text-white text-xs tabular-nums px-1.5 py-0.5 rounded-full">{pendingRequestCount}</span>
-                            )}
-                        </button>
+                        <Link href="/mypage/requests" className="academy-button-text">보낸 문의</Link>
                     </div>
 
                     {/* 유형 선택을 없앤 이유: 유형별로 나눠 받으면 학원이 그 유형대로 처리해 줄 것처럼
                         보이는데, 실제로는 전부 사람이 읽고 손으로 처리하는 메모였다. 결석처럼 진짜
                         기능이 있는 것은 그 기능으로 보내고, 나머지는 자유 메시지 하나로 받는다. */}
                     <div className="rounded-xl bg-[var(--color-academy-warning-soft)] border border-[var(--color-academy-line)] px-3 py-2 text-xs text-[var(--color-academy-warning)] leading-relaxed">
-                        결석은 여기 적지 마시고{" "}
-                        <Link href="/mypage/regular-absence" className="font-semibold underline">결석 알리기</Link>·
-                        <Link href="/mypage/seasonal" className="font-semibold underline">방학특강 결석</Link>·
-                        <Link href="/mypage/shuttle" className="font-semibold underline">셔틀 변경</Link>
-                        에서 신청해 주세요.
+                        결석·셔틀은 위 버튼으로 알려 주세요
                     </div>
 
                     {/* 자녀 선택 (여러 명일 때) */}
@@ -620,7 +619,7 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                     {/* 날짜 */}
                     <div>
                         <label className="text-xs font-medium text-[var(--color-academy-muted)] mb-1 block">
-                            해당 날짜 (선택)
+                            날짜 (선택)
                         </label>
                         <input type="date" min="2020-01-01" max="2030-12-31" value={reqDate} onChange={e => setReqDate(e.target.value)}
                             className="academy-input" />
@@ -638,7 +637,10 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                             maxLength={2000}
                             className="academy-input resize-none"
                         />
-                        <p className="mt-0.5 text-right text-xs tabular-nums text-[var(--color-academy-faint)]" aria-live="polite">{reqContent.length.toLocaleString("ko-KR")} / 2,000자</p>
+                        {/* 글자 수는 한도(2,000자)에 가까워질 때만(1,800자 초과) 보인다 — 평소엔 필요 없는 숫자 */}
+                        {reqContent.length > 1800 && (
+                            <p className="mt-0.5 text-right text-xs tabular-nums text-[var(--color-academy-faint)]" aria-live="polite">{reqContent.length.toLocaleString("ko-KR")} / 2,000자</p>
+                        )}
                     </div>
 
                     {/* 제출 */}
@@ -682,50 +684,11 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
             {/* 보낸 뒤 안내 — 폼이 닫혀도 «보냈다»는 걸 알 수 있게 */}
             {reqSent && !showRequestForm && (
                 <div role="status" className="flex items-center justify-between gap-2 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-success-soft)] px-3 py-2 text-xs font-medium text-[var(--color-academy-success)]">
-                    <span className="min-w-0 break-keep">학원에 메시지를 보냈어요. 답변은 «보낸 메시지»에서 볼 수 있어요.</span>
+                    <span className="min-w-0 break-keep">보냈어요. 답변은 <Link href="/mypage/requests" className="underline">보낸 문의</Link>에서 볼 수 있어요</span>
                     <button type="button" onClick={() => setReqSent(false)} className="academy-button-text shrink-0" aria-label="안내 닫기">닫기</button>
                 </div>
             )}
 
-            {/* 보낸 메시지 — «처리할 일»의 «보낸 메시지» 줄이나 폼 위 «보낸 메시지»로 연다 */}
-            {showRequests && (
-                <section id="parent-request-list" aria-label="보낸 메시지" className="scroll-mt-4 bg-white border border-[var(--color-academy-line)] rounded-2xl shadow-sm overflow-hidden">
-                    <div className="flex items-center justify-between border-b border-[var(--color-academy-line)] px-4 py-1">
-                        <h3 className="academy-section-title">보낸 메시지</h3>
-                        <button type="button" onClick={() => setShowRequests(false)} className="academy-button-text">닫기</button>
-                    </div>
-                    {myRequests.length === 0 ? (
-                        <div className="p-6 text-center text-[var(--color-academy-faint)] text-sm">보낸 메시지가 없습니다</div>
-                    ) : (
-                        <div className="divide-y divide-[var(--color-academy-line)] max-h-96 overflow-y-auto">
-                            {myRequests.map(r => {
-                                const st = REQUEST_STATUS[r.status] || REQUEST_STATUS.PENDING;
-                                return (
-                                    <div key={r.id} className="px-4 py-3">
-                                        <div className="flex items-center justify-between mb-1">
-                                            <span className="text-sm font-semibold text-[var(--color-academy-ink)]">{r.title}</span>
-                                            <span className={`text-xs px-2 py-0.5 rounded shrink-0 ${st.color}`}>
-                                                {st.label}
-                                            </span>
-                                        </div>
-                                        <p className="text-xs text-[var(--color-academy-muted)] line-clamp-2">{r.content}</p>
-                                        {r.adminNote && (
-                                            <div className="mt-2 bg-[var(--color-academy-info-soft)] rounded-lg px-3 py-2">
-                                                <p className="text-xs text-[var(--color-academy-info)]">
-                                                    <span className="font-semibold">학원 답변:</span> {r.adminNote}
-                                                </p>
-                                            </div>
-                                        )}
-                                        <p className="text-xs text-[var(--color-academy-faint)] mt-1">
-                                            {formatAlertTime(r.createdAt)}
-                                        </p>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    )}
-                </section>
-            )}
         </div>
     );
 }

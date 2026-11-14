@@ -10,21 +10,30 @@ import { usePathname } from "next/navigation";
 // also = 이 탭에 속하는 하위 화면. 그 화면에 있을 때도 탭이 켜져 «지금 어디 있는지» 알 수 있다.
 export const PARENT_TABS = [
     // 아이 기록(/mypage/record)은 홈 소속 — 홈 히어로 아래 한 줄에서 들어간다(2026-11-14 원장 결정 w1, 탭은 4개 그대로)
-    { href: "/mypage", label: "홈", also: ["/mypage/record"] as string[] },
+    // 보낸 문의(/mypage/requests)·신청 메뉴(/mypage/apply)·체육관 대관(/mypage/rental)·방학특강 신청(/mypage/seasonal/apply)도 홈 소속 — 홈의 한 줄 행에서 들어간다(2026-11-14 c3·c9)
+    { href: "/mypage", label: "홈", also: ["/mypage/record", "/mypage/requests", "/mypage/apply", "/mypage/rental", "/mypage/seasonal/apply"] as string[] },
     {
         href: "/mypage/classes",
         label: "수업",
-        also: ["/mypage/history", "/mypage/regular-absence", "/mypage/makeup", "/mypage/seasonal", "/mypage/shuttle", "/mypage/enrollment-change"],
+        also: ["/mypage/history", "/mypage/regular-absence", "/mypage/makeup", "/mypage/seasonal", "/mypage/shuttle", "/mypage/enrollment-change", "/mypage/annual"],
     },
     { href: "/mypage/payments", label: "청구", also: [] as string[] },
     { href: "/mypage/reports", label: "소식", also: ["/mypage/news"] },
 ] as const;
 
-/** 현재 경로에서 이 탭이 켜져야 하는지. 홈은 정확히 /mypage 이거나 홈 소속 화면(also)일 때만(모든 /mypage/* 를 먹지 않게). */
+/**
+ * 현재 경로에서 이 탭이 켜져야 하는지. 홈은 정확히 /mypage 이거나 홈 소속 화면(also)일 때만(모든 /mypage/* 를 먹지 않게).
+ * 여러 탭의 주소가 겹치면 «더 긴 주소»가 이긴다 — 방학특강 신청(/mypage/seasonal/apply, 홈 «신청» 메뉴 소속)이
+ * 수업 탭의 /mypage/seasonal(결석·보강)에 먹히지 않게(코드 리뷰 F9). 탭은 언제나 하나만 켜진다.
+ */
 export function isParentTabActive(tab: (typeof PARENT_TABS)[number], pathname: string): boolean {
     const under = (base: string) => pathname === base || pathname.startsWith(`${base}/`);
-    if (tab.href === "/mypage") return pathname === "/mypage" || tab.also.some(under);
-    return under(tab.href) || tab.also.some(under);
+    if (pathname === "/mypage") return tab.href === "/mypage";
+    // 탭마다 이 경로와 맞는 가장 긴 주소 길이(홈의 /mypage 자체는 정확히 일치할 때만이라 여기서는 뺀다)
+    const best = (t: (typeof PARENT_TABS)[number]) =>
+        Math.max(0, ...[...(t.href === "/mypage" ? [] : [t.href]), ...t.also].filter(under).map((base) => base.length));
+    const mine = best(tab);
+    return mine > 0 && PARENT_TABS.every((other) => other === tab || best(other) < mine);
 }
 
 // variant="bottom" = 휴대폰 아래 탭(기본) · variant="top" = PC 헤더 가로 메뉴

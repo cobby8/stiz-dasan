@@ -225,7 +225,7 @@ export default function EnrollmentChangesClient({
       if (!window.confirm(`${settlementConfirmText(row, mode)}\n\n승인할까요?`)) return;
     }
     if (inline && approve && row && !needsSettlementChoice(row)
-        && !window.confirm(`${row.fromClassName ?? "선택한 반"}의 ${row.kindLabel} 신청을 승인할까요?`)) return;
+        && !window.confirm(`${row.fromClassName ?? row.toClassName ?? "선택한 반"}의 ${row.kindLabel} 신청을 승인할까요?`)) return;
     setError("");
     startTransition(async () => {
       const settlement = approve && row && needsSettlementChoice(row) && mode
@@ -351,7 +351,10 @@ export default function EnrollmentChangesClient({
           <section key={row.id} className="rounded-xl border border-[var(--color-academy-line)] p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-sm font-semibold text-[var(--color-academy-ink)]">
-                {row.fromClassName ?? "수강 반 확인 필요"}{row.toClassName ? ` → ${row.toClassName}` : ""}
+                {/* 반 추가(CLASS_ADD)는 떠나는 반이 없다 — 추가할 반만 적는다 */}
+                {row.kind === "CLASS_ADD"
+                  ? `${row.toClassName ?? "반 확인 필요"} 추가`
+                  : <>{row.fromClassName ?? "수강 반 확인 필요"}{row.toClassName ? ` → ${row.toClassName}` : ""}</>}
               </h3>
               {statusBadge(row)}
             </div>
@@ -568,7 +571,7 @@ export default function EnrollmentChangesClient({
     const enrollmentStatus = row.enrollmentStatus && ENROLLMENT_STATUS_LABEL[row.enrollmentStatus];
     return (
       <>
-        {inline && (
+        {inline && row.kind !== "CLASS_ADD" && (
           <p className="mt-1 text-xs font-medium text-[var(--color-academy-muted)]">
             사이트 수강 상태 · {enrollmentStatus ?? "확인 필요"}
             {row.appliedAt ? ` · 신청 반영 ${row.appliedAt}` : ""}
@@ -661,10 +664,18 @@ export default function EnrollmentChangesClient({
         )}
 
         <p className="mt-2 text-sm text-[var(--color-academy-ink)]">
-          {row.fromClassName ?? "-"}
-          {row.toClassName ? ` → ${row.toClassName}` : ""} · {row.effectiveFrom}부터
+          {row.kind === "CLASS_ADD"
+            ? `${row.toClassName ?? "-"} 추가`
+            : <>{row.fromClassName ?? "-"}{row.toClassName ? ` → ${row.toClassName}` : ""}</>} · {row.effectiveFrom}부터
           {row.kind === "PAUSE" ? ` · ${pauseResumeLabel(row.resumeOn)}` : ""}
         </p>
+        {/* 반 추가는 승인하는 순간 수강이 등록된다(적용일을 기다리지 않는다) — 원장이 누르기 전에 알 수 있게 한 줄 */}
+        {row.kind === "CLASS_ADD" && row.status === "PENDING" && (
+          <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
+            {/* 신청한 시작일이 이미 지났으면 개시일은 승인하는 날(오늘) — 지난 수업이 열리지 않게 */}
+            지금 다니는 반은 그대로 · 승인하면 바로 수강이 등록돼요(개시일 {row.effectiveDateReached ? "오늘" : row.effectiveFrom}). 수강료는 청구 준비에서 확인
+          </p>
+        )}
 
         {/* 정원은 신청 당시가 아니라 지금 기준으로 다시 센다. 그 사이 자리가 났을 수 있다. */}
         {row.toClassName && row.toClassFull && (

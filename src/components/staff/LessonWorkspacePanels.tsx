@@ -1,16 +1,23 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { saveSessionFeedLine } from "@/app/actions/staff-sessions";
+import Link from "next/link";
+import { publishStaffSessionReport, saveSessionFeedLine, saveSessionMemo } from "@/app/actions/staff-sessions";
 import UiIcon from "@/components/common/UiIcon";
+import ProfileAvatar from "@/components/common/ProfileAvatar";
+import { profilePhotoUrl } from "@/lib/profilePhoto/rules";
 import { LessonTextEditor, type LessonTextSaveResult } from "@/components/staff/LessonTextEditor";
 import { RosterPersonInfo, useClassPeople } from "@/components/staff/RosterPersonInfo";
 import { SessionPhotoUploader } from "@/components/staff/SessionPhotoUploader";
 import { SessionVideoUploader } from "@/components/staff/SessionVideoUploader";
-import { StatusPill, type StatusTone } from "@/components/staff/StatusChoiceButton";
+import { StatusPill } from "@/components/staff/StatusChoiceButton";
+import { CompletedAttendanceRoster } from "@/components/staff/CompletedAttendanceRoster";
 import { WorkspaceSection } from "@/components/staff/WorkspaceSection";
-import { attendanceSummaryLine, findRosterPerson, resolveLessonText } from "@/components/staff/sessionWorkspaceRules";
+import { attendanceSummaryLine, resolveLessonText } from "@/components/staff/sessionWorkspaceRules";
 import type { StaffSessionDetail, StaffSessionStudent } from "@/lib/staff-session-queries";
+import { kstLabel } from "@/lib/datetime/kst";
+import { staffReloginHref } from "@/lib/staff-session-rules";
+import { STAFF_EDIT_EXPIRED_MESSAGE, STAFF_SESSION_EDIT_DAYS, staffSessionEditWindow } from "@/lib/staff/sessionEditWindow";
 
 type BillingOpener = (student?: { id: string; name: string }) => void;
 
@@ -42,13 +49,12 @@ export type PlannedLessonProps = {
   onOpenBilling?: BillingOpener;
 };
 
-const STATUS_LABEL = { PRESENT: "출석", LATE: "지각", ABSENT: "결석" } as const;
-const STATUS_TONE: Record<keyof typeof STATUS_LABEL, StatusTone> = { PRESENT: "success", LATE: "warning", ABSENT: "danger" };
-
 /** 이름을 누르면 그 자리에서 학생 정보가 펼쳐지는 한 줄(출결 버튼 없는 명단용) */
-function RosterInfoRow({ rowId, name, trailing, open, onToggle, children }: {
+function RosterInfoRow({ rowId, name, photoSrc, trailing, open, onToggle, children }: {
   rowId: string;
   name: string;
+  /** 아이 사진 주소(없으면 이름 첫 글자) */
+  photoSrc?: string | null;
   trailing?: React.ReactNode;
   open: boolean;
   onToggle: () => void;
@@ -57,6 +63,7 @@ function RosterInfoRow({ rowId, name, trailing, open, onToggle, children }: {
   return (
     <li className="border-b border-[var(--color-academy-line)] py-1 last:border-b-0">
       <button type="button" aria-expanded={open} aria-controls={`roster-info-${rowId}`} onClick={onToggle} className="flex min-h-11 w-full items-center gap-2 text-left">
+        <ProfileAvatar decorative name={name} size={28} src={photoSrc ?? null} />
         <span className="min-w-0 flex-1 break-keep font-semibold text-[var(--color-academy-ink)]">{name}</span>
         {trailing}
         <span className="flex shrink-0 text-[var(--color-academy-muted)]">
@@ -163,7 +170,7 @@ export function PlannedLessonPanel({ lesson, startLocked, startPrimary, onStart,
         {people.loaded && people.people.length === 0 && <p className="py-2 text-xs text-[var(--color-academy-muted)]">표시할 학생이 없습니다.</p>}
         <ul aria-label="학생 명단">
           {people.people.map((person) => (
-            <RosterInfoRow key={person.id} rowId={person.id} name={person.name} open={infoRow === person.id} onToggle={() => setInfoRow(infoRow === person.id ? null : person.id)}>
+            <RosterInfoRow key={person.id} rowId={person.id} name={person.name} photoSrc={profilePhotoUrl({ kind: "student", id: person.id }, people.photoVersions[person.id] ?? null, true)} open={infoRow === person.id} onToggle={() => setInfoRow(infoRow === person.id ? null : person.id)}>
               <RosterPersonInfo person={person} photoVersion={people.photoVersions[person.id]} onOpenBilling={onOpenBilling} />
             </RosterInfoRow>
           ))}
@@ -175,24 +182,54 @@ export function PlannedLessonPanel({ lesson, startLocked, startPrimary, onStart,
   );
 }
 
+/** 서버 기능이 «로그인이 풀렸다»고 돌려줬는가 — 던지지 않고 { ok:false, needsLogin:true } 로 온다 */
+function isLoginFailure(result: object): boolean {
+  return "needsLogin" in result && (result as { needsLogin?: boolean }).needsLogin === true;
+}
+
 /**
- * 끝난 수업 본문 — 출결 요약 · 수업 내용 · 출석부(읽기) · 사진·영상.
- * 수업 내용·사진·영상은 기존 허용 시간(수업 당일 자정까지) 그대로 — 판정은 서버가 한다. 추가해도 학부모 알림은 다시 보내지 않는다.
+ * 끝난 수업 본문 — 출결 요약·학부모 발행 상태 · 수업 내용 · 출석부 · 사진·영상 · 메모.
+ * 오늘 수업 홈의 완료한 수업 줄과, 수업 주소(/staff/sessions/[id] — «지난 수업» 목록에서 연다) 양쪽에 끼운다.
+ *
+ * 2026-11-14 원장 지시 «완료한 수업도 들어가면 내용을 볼 수 있고 수정할 수 있게»:
+ *  - 고칠 수 있는 기간은 사진·영상·수업 내용·메모·출결 정정이 모두 같은 판정(staffSessionEditWindow) —
+ *    선생님은 수업일 포함 7일, 원장·부원장(editUnlimited)은 제한 없음. 서버도 같은 함수로 다시 막는다.
+ *  - 출결 정정은 정규 수강생·특강 좌석만(명단과 정정 흐름은 CompletedAttendanceRoster). 학부모 알림은 나가지 않는다.
+ *    보강 온 아이·체험 아이는 원장이 고친다. 같은 버튼을 다시 눌러도 미확인으로 되돌리지 않는다.
+ *  - «아직 안 보낸» 수업은 [학부모에게 보내기] — 처음 보낼 때만 앱 알림, 그 뒤 고쳐도 다시 알리지 않는다.
+ *  - 기간이 지나면 읽기 전용 + 안내 한 줄.
  */
-export function CompletedSessionPanel({ session, students, onLineSaved, onOpenBilling }: {
+export function CompletedSessionPanel({ session, students: initialStudents, onLineSaved, onOpenBilling, embedded = true, editUnlimited = false }: {
   session: StaffSessionDetail;
   students: StaffSessionStudent[];
   onLineSaved?: (content: string | null) => void;
   /** 청구 확인 — 원장·부원장만 넘긴다(f3) */
   onOpenBilling?: BillingOpener;
+  /** 오늘 수업 홈의 한 줄 안에 끼웠는가 — 아니면 수업 주소 한 화면(머리에 날짜·반 이름을 그린다) */
+  embedded?: boolean;
+  /** 원장·부원장 — 수정 기간 제한 없음 */
+  editUnlimited?: boolean;
 }) {
+  // 고칠 수 있는가 — 서버 저장과 같은 판정 함수(오늘은 서버가 DB 시계로 구해 준 값)
+  const editable = staffSessionEditWindow({ status: session.status, sessionYmd: session.sessionYmd, todayYmd: session.todayYmd, unlimited: editUnlimited }).ok;
   const initial = resolveLessonText({ status: "COMPLETED", content: session.content, plannedContent: session.plannedContent });
   const [text, setText] = useState(initial.value);
   const [prefilled, setPrefilled] = useState(initial.prefilledFromPlan);
-  const [open, setOpen] = useState({ lesson: true, roster: false, media: false });
+  const [open, setOpen] = useState({ lesson: true, roster: false, media: false, memo: false });
   const [rosterWanted, setRosterWanted] = useState(false);
   const [infoRow, setInfoRow] = useState<string | null>(null);
   const people = useClassPeople({ classId: session.classId, sessionId: session.id, sessionDateId: session.sessionDateId, enabled: rosterWanted });
+  // 출결 정정이 바로 보이게 명단은 이 부품이 들고 있다
+  const [students, setStudents] = useState(initialStudents);
+  const [published, setPublished] = useState(session.published === true);
+  const [publishing, setPublishing] = useState(false);
+  // 보내기·메모 저장 결과 한 줄(ok=잘 됨 / warn=실패·주의)
+  const [notice, setNotice] = useState<{ text: string; tone: "ok" | "warn" } | null>(null);
+  const [needsLogin, setNeedsLogin] = useState(false);
+  // 메모(수업 특이사항) — 완료한 수업은 자동 저장하지 않는다(고칠 때마다 수정 기록이 남는다). «메모 저장»을 눌러 저장한다.
+  const [memo, setMemo] = useState(session.notes || "");
+  const [savedMemo, setSavedMemo] = useState(session.notes || "");
+  const [memoStatus, setMemoStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   const counts = useMemo(() => ({
     PRESENT: students.filter((student) => student.status === "PRESENT").length,
@@ -203,45 +240,121 @@ export function CompletedSessionPanel({ session, students, onLineSaved, onOpenBi
 
   async function save(value: string): Promise<LessonTextSaveResult> {
     const result = await saveSessionFeedLine({ sessionId: session.id, content: value });
-    if (!result.ok) return { ok: false, message: result.message };
+    if (!result.ok) {
+      if (isLoginFailure(result)) setNeedsLogin(true);
+      return { ok: false, message: result.message };
+    }
     setPrefilled(false);
     onLineSaved?.(result.content);
     return { ok: true };
   }
 
+  // «아직 안 보낸» 수업을 학부모에게 보낸다 — 한 번 확인. 처음 보낼 때만 앱 알림이 가고, 뒤에 고쳐도 다시 알리지 않는다.
+  async function publishToParents() {
+    if (publishing || published || !editable) return;
+    if (!window.confirm("이 수업을 학부모에게 보낼까요? 수업 내용·사진·영상이 보이고 앱 알림이 한 번 갑니다.")) return;
+    setPublishing(true);
+    setNotice(null);
+    try {
+      const result = await publishStaffSessionReport({ sessionId: session.id });
+      if (!result.ok) {
+        setNotice({ text: result.message, tone: "warn" });
+        if (isLoginFailure(result)) setNeedsLogin(true);
+        return;
+      }
+      setPublished(true);
+      setNotice({ text: "학부모에게 보냈습니다.", tone: "ok" });
+    } catch {
+      setNotice({ text: "보내지 못했습니다. 네트워크 연결을 확인하고 다시 눌러 주세요.", tone: "warn" });
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  async function saveMemo() {
+    if (memoStatus === "saving" || !editable) return;
+    const sending = memo;
+    setMemoStatus("saving");
+    try {
+      const result = await saveSessionMemo({ sessionId: session.id, notes: sending });
+      if (!result.ok) {
+        setMemoStatus("error");
+        setNotice({ text: result.message, tone: "warn" });
+        if (isLoginFailure(result)) setNeedsLogin(true);
+        return;
+      }
+      setSavedMemo(sending);
+      setMemoStatus("saved");
+    } catch {
+      setMemoStatus("error");
+      setNotice({ text: "메모를 저장하지 못했습니다. 네트워크 연결을 확인해 주세요.", tone: "warn" });
+    }
+  }
+
+  const memoDirty = memo !== savedMemo;
+  const memoFirstLine = memo.trim().split("\n")[0];
+  // 수업 주소에서는 이 부품이 화면 전체(main), 홈에서는 수업 줄 안의 한 칸(div)이다
+  const Wrapper = embedded ? "div" : "main";
+
   return (
-    <div className="space-y-3">
-      <p className="text-xs tabular-nums text-[var(--color-academy-muted)]">끝난 수업 · {attendanceSummaryLine(counts)}</p>
+    <Wrapper className={embedded ? "space-y-3" : "mx-auto max-w-lg space-y-3 px-4 pb-10 pt-4"} data-session-review>
+      {/* 수업 주소(지난 수업에서 연 화면): 머리에 «완료한 수업 · 날짜 시간»과 반 이름. 홈에서는 수업 줄 머리에 이미 있어 되풀이하지 않는다 */}
+      {/* 수업 주소에서만: 지난 수업 목록으로 돌아가는 글자 링크(터치 44px) */}
+      {!embedded && (
+        <Link href="/staff/sessions" className="inline-flex min-h-11 items-center text-sm font-medium text-[var(--color-academy-muted)]">← 지난 수업</Link>
+      )}
+      {!embedded && (
+        <section aria-label="완료한 수업" className="rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] p-4 text-[var(--color-academy-ink)]">
+          <p className="text-sm font-medium tabular-nums text-[var(--color-academy-ink)]">완료한 수업 · {kstLabel(session.sessionYmd)} {session.startTime}~{session.endTime}</p>
+          <h1 className="academy-heading mt-0.5">{session.className}</h1>
+          <p className="mt-1 text-xs text-[var(--color-academy-muted)]">{session.location || "장소 미정"} · 학생 {session.studentCount}명</p>
+        </section>
+      )}
+
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs tabular-nums text-[var(--color-academy-muted)]">끝난 수업 · {attendanceSummaryLine(counts)}</p>
+        <StatusPill tone={published ? "success" : "neutral"}>{published ? "학부모에게 보냄" : "아직 안 보냄"}</StatusPill>
+      </div>
+
+      {needsLogin && (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-3 text-sm text-[var(--color-academy-danger)]">
+          <span>로그인이 풀렸습니다. 다시 로그인해 주세요.</span>
+          <button type="button" onClick={() => window.location.assign(staffReloginHref(`${window.location.pathname}${window.location.search}`))} className="academy-button-primary">다시 로그인</button>
+        </div>
+      )}
+
+      {/* 수정 기간이 지났으면 읽기 전용 안내 한 줄, 아직 안 보낸 수업이면 «학부모에게 보내기» */}
+      {!editable && <p role="status" className="rounded-xl bg-[var(--color-academy-soft)] px-3 py-3 text-sm text-[var(--color-academy-muted)]">{STAFF_EDIT_EXPIRED_MESSAGE}</p>}
+      {editable && !published && (
+        <button type="button" disabled={publishing} aria-busy={publishing} onClick={() => void publishToParents()} className="academy-button-primary min-h-12! w-full">
+          {publishing ? "보내는 중…" : "학부모에게 보내기"}
+        </button>
+      )}
+      {notice && (notice.tone === "ok"
+        ? <p aria-live="polite" className="rounded-xl bg-[var(--color-academy-info-soft)] px-3 py-2 text-sm text-[var(--color-academy-info)]">{notice.text}</p>
+        : <p role="alert" className="rounded-xl bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm font-medium text-[var(--color-academy-warning)]">{notice.text}</p>)}
 
       <WorkspaceSection id={`done-lesson-${session.id}`} title="수업 내용" summary={text.trim() ? text.trim().split("\n")[0] : "아직 쓰지 않았어요"} open={open.lesson} onToggle={() => setOpen((current) => ({ ...current, lesson: !current.lesson }))}>
-        <LessonTextEditor inputId={`done-lesson-input-${session.id}`} phase="COMPLETED" value={text} onChange={setText} save={save} prefilledFromPlan={prefilled} />
+        <LessonTextEditor inputId={`done-lesson-input-${session.id}`} phase="COMPLETED" value={text} onChange={setText} save={save} prefilledFromPlan={prefilled} disabled={!editable} />
       </WorkspaceSection>
 
       <WorkspaceSection id={`done-roster-${session.id}`} title="출석부" summary={attendanceSummaryLine(counts)} open={open.roster} onToggle={() => setOpen((current) => ({ ...current, roster: !current.roster }))}>
         <PeopleNotice loading={people.loading} error={people.error} onRetry={people.reload} />
-        <ul aria-label="학생 출결 명단">
-          {students.map((student) => {
-            const person = findRosterPerson(student, people.people);
-            return (
-              <RosterInfoRow
-                key={student.id}
-                rowId={student.id}
-                name={student.name}
-                open={infoRow === student.id}
-                onToggle={() => { setRosterWanted(true); setInfoRow(infoRow === student.id ? null : student.id); }}
-                trailing={student.status ? <StatusPill tone={STATUS_TONE[student.status]}>{STATUS_LABEL[student.status]}</StatusPill> : <StatusPill tone="neutral">미확인</StatusPill>}
-              >
-                {person
-                  ? <RosterPersonInfo person={person} photoVersion={people.photoVersions[person.id]} todayStatus={student.status} onOpenBilling={onOpenBilling} />
-                  : !people.loaded ? !people.error && <p role="status" className="py-2 text-xs text-[var(--color-academy-muted)]">학생 정보를 불러오는 중입니다.</p>
-                  : <p className="py-2 text-xs text-[var(--color-academy-muted)]">이 반 학생 정보에 없는 학생입니다{student.makeup ? "(보강)" : student.trial ? "(체험)" : ""}.{student.grade ? ` ${student.grade}` : ""}</p>}
-              </RosterInfoRow>
-            );
-          })}
-        </ul>
+        {/* 출결 명단 — 고칠 수 있는 줄(정규 수강생·특강 좌석)은 출결 버튼, 그 밖은 지금 상태만. 정정 흐름은 CompletedAttendanceRoster 가 맡는다 */}
+        <CompletedAttendanceRoster
+          session={session}
+          students={students}
+          onStudentsChange={setStudents}
+          editable={editable}
+          people={people}
+          infoRow={infoRow}
+          onToggleInfo={(rowId) => { setRosterWanted(true); setInfoRow(infoRow === rowId ? null : rowId); }}
+          onOpenBilling={onOpenBilling}
+          onNeedsLogin={() => setNeedsLogin(true)}
+        />
       </WorkspaceSection>
 
-      <WorkspaceSection id={`done-media-${session.id}`} title="사진·영상" summary="수업 당일 자정까지 올리고 지울 수 있어요" open={open.media} onToggle={() => setOpen((current) => ({ ...current, media: !current.media }))}>
+      <WorkspaceSection id={`done-media-${session.id}`} title="사진·영상" summary={editable ? `수업 뒤 ${STAFF_SESSION_EDIT_DAYS}일 동안 올리고 지울 수 있어요` : "올린 사진·영상"} open={open.media} onToggle={() => setOpen((current) => ({ ...current, media: !current.media }))}>
         <div className="space-y-4">
           <div>
             <h3 className="mb-2 text-sm font-semibold text-[var(--color-academy-ink)]">수업 사진</h3>
@@ -254,7 +367,28 @@ export function CompletedSessionPanel({ session, students, onLineSaved, onOpenBi
         </div>
       </WorkspaceSection>
 
+      {/* 메모(수업 특이사항) — 선생님·원장만 본다. 저장은 «메모 저장»으로(자동 저장 없음) */}
+      <WorkspaceSection
+        id={`done-memo-${session.id}`}
+        title="메모"
+        summary={memoFirstLine || "수업 특이사항"}
+        badge={memoStatus === "error" ? <span role="status" className="shrink-0 rounded bg-[var(--color-academy-danger-soft)] px-2 py-0.5 text-xs font-medium text-[var(--color-academy-danger)]">저장 실패</span> : memoDirty ? <span className="shrink-0 text-xs text-[var(--color-academy-muted)]">저장 전</span> : undefined}
+        open={open.memo}
+        onToggle={() => setOpen((current) => ({ ...current, memo: !current.memo }))}
+      >
+        <p className="text-xs text-[var(--color-academy-muted)]">수업 특이사항 — 선생님·원장만 봅니다</p>
+        <textarea value={memo} disabled={!editable} onChange={(event) => { setMemo(event.target.value); setMemoStatus("idle"); }} aria-label="수업 특이사항" rows={3} className="academy-input mt-2 leading-6" />
+        {editable && (
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <span aria-live="polite" className={`min-w-0 text-xs ${memoStatus === "error" ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-muted)]"}`}>
+              {memoStatus === "saving" ? "저장 중…" : memoStatus === "error" ? "저장 실패 · 다시 눌러 주세요" : memoDirty ? "저장하지 않은 변경이 있어요" : memoStatus === "saved" ? "저장됨" : ""}
+            </span>
+            <button type="button" disabled={memoStatus === "saving" || !memoDirty} onClick={() => void saveMemo()} className="academy-button-secondary academy-button-sm shrink-0">메모 저장</button>
+          </div>
+        )}
+      </WorkspaceSection>
+
       <WorkspaceLinks onOpenBilling={onOpenBilling ? () => onOpenBilling() : undefined} />
-    </div>
+    </Wrapper>
   );
 }

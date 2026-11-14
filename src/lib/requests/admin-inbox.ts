@@ -36,6 +36,9 @@ import type { StatusTone } from "@/lib/ui/statusTones";
 // 상담 탭(신설) — 이 파일의 두 함수만 부른다. 상담 작업이 그 파일만 채운다(원장 결정 k1)
 import { countConsultAction } from "@/lib/requests/consult-inbox";
 import { illnessReviewReady } from "@/lib/regular/illness-carry-tx";
+import { evidenceScopeSql } from "@/lib/regular/illnessCarryRules";
+// 문의에 이어 쓴 글(학부모 추가 글·학원 답) — 상세 줄에 붙인다(2026-11-14 c3)
+import { inquiryFollowUpFacts } from "@/lib/requests/inquiry-thread";
 
 export type InboxFact = [label: string, value: string];
 export type InboxEnrollmentChangeMember = {
@@ -131,7 +134,9 @@ const hm = (minutes: unknown) => {
 const ABSENCE_REASON: Record<string, string> = {
   ILLNESS_INJURY: "아픔·부상", PERSONAL: "개인 사정", FAMILY_TRIP: "가족 여행", SCHOOL_EVENT: "학교 행사", ETC: "기타",
 };
-const CHANGE_KIND: Record<string, string> = { CLASS_CHANGE: "반 변경", PAUSE: "휴원", WITHDRAW: "퇴원", RESUME: "복귀" };
+const CHANGE_KIND: Record<string, string> = { CLASS_CHANGE: "반 변경", PAUSE: "휴원", WITHDRAW: "퇴원", RESUME: "복귀", CLASS_ADD: "반 추가" };
+const SHUTTLE_REGULAR_KIND: Record<string, string> = { CHANGE: "위치 바꾸기", START: "이용 시작", STOP: "이용 중단" };
+const SHUTTLE_REGULAR_WEEKDAY = ["일", "월", "화", "수", "목", "금", "토"];
 const REQUEST_TYPE: Record<string, string> = { ABSENCE: "결석", SHUTTLE: "셔틀", EARLY_LEAVE: "조퇴", OTHER: "기타" };
 const DIRECTION: Record<string, string> = { PICKUP: "등원", DROPOFF: "하원", BOTH: "등·하원" };
 const PAY_METHOD: Record<string, string> = { TRANSFER: "계좌이체", RALLYZ: "랠리즈", CARD: "카드", CASH: "현금", MANUAL: "직접" };
@@ -193,7 +198,10 @@ const ADAPTERS: Adapter[] = [
     },
     format: (row, e) => {
       const kind = CHANGE_KIND[text(e.changeKind)] ?? "수강 변경";
-      const classes = e.toClass ? `${text(e.fromClass) || "?"} → ${text(e.toClass)}` : text(e.fromClass);
+      // 반 추가(CLASS_ADD)는 떠나는 반이 없다 — «? → 반»이 아니라 추가할 반 이름만.
+      const classes = text(e.changeKind) === "CLASS_ADD"
+        ? text(e.toClass)
+        : e.toClass ? `${text(e.fromClass) || "?"} → ${text(e.toClass)}` : text(e.fromClass);
       if (row.raw === ENROLLMENT_CANCEL_REQUESTED) {
         // 학부모 «취소 요청»(d8) — 승인된 휴원·퇴원을 되돌려 달라는 요청. 적용일이 왔으면 취소는 못 하고 거절만.
         return {
@@ -219,7 +227,8 @@ const ADAPTERS: Adapter[] = [
     kind: "REGULAR_ABSENCE",
     from: `"RegularAbsence" x ${studentJoin("s", `x."studentId"`)} LEFT JOIN "Class" c ON c.id = x."classId"`,
     rawExpr: "x.status",
-    where: `x."periodId" IS NULL`, // 관리자 «기간 결석»이 만든 행은 신청이 아니다
+    // 관리자 «기간 결석»이 만든 행은 신청이 아니다. 학부모가 «여러 날»로 알린 행(학부모 표시 있음)은 하루 신고와 같이 확인 대상이다
+    where: `(x."periodId" IS NULL OR x."reportedByUserId" IS NOT NULL)`,
     studentNameExpr: "s.name",
     createdAtExpr: `x."createdAt"`,
     targetDateExpr: `x.date::text`,
@@ -251,8 +260,9 @@ const ADAPTERS: Adapter[] = [
     studentNameExpr: "s.name",
     createdAtExpr: `COALESCE(r."requestedAt", x."createdAt")`,
     targetDateExpr: `x.date::text`,
-    extra: `'className', c.name, 'source', COALESCE(r.source, 'STAFF'), 'period', (x."periodId" IS NOT NULL),
-            'photoCount', (SELECT COUNT(*)::int FROM "RegularAbsenceEvidence" e WHERE e."absenceId" = x.id AND e."removedAt" IS NULL),
+    extra: `'className', c.name, 'source', COALESCE(r.source, 'STAFF'), 'period', (x."periodId" IS NOT NULL AND x."reportedByUserId" IS NULL),
+            'parentPeriod', (x."periodId" IS NOT NULL AND x."reportedByUserId" IS NOT NULL),
+            'photoCount', (SELECT COUNT(*)::int FROM "RegularAbsenceEvidence" e WHERE ${evidenceScopeSql("x", "e")} AND e."removedAt" IS NULL),
             'creditStatus', (SELECT mc.status FROM "MakeupCredit" mc WHERE mc."studentId" = x."studentId"
                               AND mc."sourceKey" = 'REGULAR:' || x."classId" || ':' || to_char(x.date, 'YYYY-MM-DD') LIMIT 1)`,
     // 마이그레이션(20261114130000) 적용 전: 검토 표가 없다 — 이 종류만 비운다(다른 종류·메뉴 숫자는 그대로)
@@ -265,7 +275,7 @@ const ADAPTERS: Adapter[] = [
     },
     format: (row, e) => {
       const photos = Number(e.photoCount ?? 0);
-      const source = e.period ? "학원 등록(기간 결석)" : ILLNESS_SOURCE[text(e.source)] ?? "학원 등록";
+      const source = e.period ? "학원 등록(기간 결석)" : e.parentPeriod ? `${ILLNESS_SOURCE[text(e.source)] ?? "학부모 앱"}(여러 날)` : ILLNESS_SOURCE[text(e.source)] ?? "학원 등록";
       const evidence = photos > 0 ? `사진 ${photos}장` : e.source === "STAFF" ? "학부모 증빙 없음" : "사진 아직 없음";
       return {
         title: "질병·부상 결석",
@@ -509,6 +519,40 @@ const ADAPTERS: Adapter[] = [
       };
     },
   },
+  {
+    // 셔틀 «계속 바꾸기»(2026-11-14 c5) — 승인 대기를 신청함에도 한 줄로 올린다. 처리는 셔틀 명단 화면(adminHref)에서.
+    // 표가 아직 없으면(마이그레이션 20261115120000 전) fallback 의 빈 표로 읽는다 — 이 표 하나 때문에 신청함·메뉴 숫자가 죽지 않게.
+    kind: "SHUTTLE_REGULAR",
+    from: `"ShuttleRegularChangeRequest" x ${studentJoin("s", `x."studentId"`)}`,
+    rawExpr: "x.status",
+    studentNameExpr: "s.name",
+    createdAtExpr: `x."createdAt"`,
+    targetDateExpr: `x."effectiveFrom"::text`,
+    extra: `'changeKind', x.kind, 'directions', x.directions, 'weekdays', x.weekdays, 'note', x.note, 'decisionNote', x."decisionNote",
+            'pickup', x."pickupJson"->>'name', 'dropoff', x."dropoffJson"->>'name'`,
+    fallback: {
+      from: `(SELECT NULL::text AS id, NULL::text AS status, NULL::timestamptz AS "createdAt", NULL::date AS "effectiveFrom" WHERE false) x
+             LEFT JOIN (SELECT NULL::text AS name) s ON false`,
+      rawExpr: "x.status",
+      createdAtExpr: `x."createdAt"`,
+      extra: `'changeKind', NULL::text`,
+    },
+    format: (row, e) => {
+      const kind = SHUTTLE_REGULAR_KIND[text(e.changeKind)] ?? "셔틀 신청";
+      const dirs = Array.isArray(e.directions) ? e.directions.map(String) : [];
+      const side = dirs.includes("PICKUP") && dirs.includes("DROPOFF") ? "등원·하원" : dirs.includes("PICKUP") ? "등원" : dirs.includes("DROPOFF") ? "하원" : "";
+      const days = Array.isArray(e.weekdays) && e.weekdays.length > 0
+        ? e.weekdays.map((w) => SHUTTLE_REGULAR_WEEKDAY[Number(w)] ?? "").filter(Boolean).join("·")
+        : "모든 요일";
+      return {
+        title: `셔틀 ${kind}`,
+        summary: join(side, days, row.targetDate ? `${row.targetDate}부터` : ""),
+        facts: [["종류", kind], ...fact("방향", side), ["요일", days], ...fact("적용 시작일", row.targetDate),
+          ...fact("새 타는 곳", e.pickup), ...fact("새 내리는 곳", e.dropoff), ...fact("학부모 말", e.note), ...fact("반려 사유", e.decisionNote),
+          ["안내", "승인·반려는 셔틀 명단 화면 맨 위 목록에서 합니다. 승인 전에는 명단이 바뀌지 않습니다."]],
+      };
+    },
+  },
 ];
 
 // 모든 catalog 종류에 어댑터가 하나씩 있어야 한다(빠지면 그 종류가 신청함에서 조용히 사라진다 — 테스트가 확인)
@@ -548,6 +592,10 @@ function inboxRowsSql(adapter: Adapter, settlementTableReady: boolean): string {
 const inboxSettlementTableReady = cache(() => settlementTablesReady(prisma).catch(() => false));
 // 질병·부상 이월 검토 표(마이그레이션 20261114130000)가 있는가 — 없으면 그 종류만 예전 식(빈 목록)으로 센다
 const inboxIllnessTableReady = cache(() => illnessReviewReady(prisma).catch(() => false));
+// 셔틀 «계속 바꾸기» 표(마이그레이션 20261115120000)가 있는가 — 없으면 그 종류만 빈 표로 센다
+const inboxShuttleRegularReady = cache(() => prisma.$queryRawUnsafe<Array<{ found: string | null }>>(
+  `SELECT to_regclass('public."ShuttleRegularChangeRequest"')::text AS found`,
+).then((rows) => Boolean(rows[0]?.found)).catch(() => false));
 
 export type InboxQuery = {
   bucket: InboxBucket;
@@ -617,6 +665,15 @@ export async function getInboxRows(query: InboxQuery): Promise<{ rows: InboxRow[
 
   const rows = parts.flat().sort((a, b) =>
     query.bucket === "DONE" ? b.createdAt.localeCompare(a.createdAt) : a.createdAt.localeCompare(b.createdAt));
+  // 문의에 이어 쓴 글(학부모 추가 글·학원 답)을 상세 줄 끝에 붙인다 — 글 표가 없거나 조회가 실패해도 목록은 그대로(2026-11-14 c3)
+  const inquiryIds = rows.filter((row) => row.kind === "PARENT_REQUEST").map((row) => row.id);
+  if (inquiryIds.length) {
+    const followUps = await inquiryFollowUpFacts(prisma, inquiryIds).catch(() => new Map<string, InboxFact[]>());
+    for (const row of rows) {
+      const extra = row.kind === "PARENT_REQUEST" ? followUps.get(row.id) : undefined;
+      if (extra?.length) row.facts = [...row.facts, ...extra];
+    }
+  }
   return { rows, failedKinds };
 }
 
@@ -669,10 +726,11 @@ function enrollmentChangeMembers(row: RawRow, extra: Record<string, unknown>): I
  * 처리 필요·진행 중 개수를 세는 SQL — 종류별 조각을 UNION ALL 로 붙여 «한 번»에 센다.
  * legacy=true 면 마이그레이션 전 식(fallback)으로 만든다.
  */
-export function buildInboxCountsSql(legacy = false, settlementTableReady = false, illnessTableReady = true): string {
+export function buildInboxCountsSql(legacy = false, settlementTableReady = false, illnessTableReady = true, shuttleRegularReady = true): string {
   const pieces = ADAPTERS.filter((original) => !original.skipCount).map((original) => {
-    // 질병·부상 검토 표가 아직 없으면 그 종류만 예전 식으로 — 새 표 하나 때문에 메뉴 숫자 전체가 예전 식으로 떨어지지 않게
-    const adapter = legacy || (original.kind === "ILLNESS_CARRY" && !illnessTableReady) ? legacyOf(original) : original;
+    // 질병·부상 검토 표·셔틀 계속 바꾸기 표가 아직 없으면 그 종류만 예전 식으로 — 새 표 하나 때문에 메뉴 숫자 전체가 예전 식으로 떨어지지 않게
+    const base = legacy || (original.kind === "ILLNESS_CARRY" && !illnessTableReady) ? legacyOf(original) : original;
+    const adapter = original.kind === "SHUTTLE_REGULAR" && !shuttleRegularReady ? legacyOf(original) : base;
     const open = [...statusesOf(adapter.kind, "ACTION"), ...statusesOf(adapter.kind, "ONGOING")];
     const rows = adapter.kind === "ENROLLMENT_CHANGE"
       ? inboxRowsSql(adapter, settlementTableReady)
@@ -721,7 +779,7 @@ async function readInboxCounts(): Promise<InboxCounts | null> {
   type CountRow = { kind: RequestKind; raw: string; n: number };
   const readCatalog = async (): Promise<CountRow[] | null> => {
     try {
-      return await prisma.$queryRawUnsafe<CountRow[]>(buildInboxCountsSql(false, await inboxSettlementTableReady(), await inboxIllnessTableReady()));
+      return await prisma.$queryRawUnsafe<CountRow[]>(buildInboxCountsSql(false, await inboxSettlementTableReady(), await inboxIllnessTableReady(), await inboxShuttleRegularReady()));
     } catch (error) {
       // 취소 요청 칸(마이그레이션 20261110130000) 적용 전이면 예전 식으로 다시 센다
       try {

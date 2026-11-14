@@ -121,6 +121,58 @@ export function carryApprovalBlocker(input: {
   return null;
 }
 
+// ── 여러 날 결석(기간)의 증빙 = 기간 한 묶음(2026-11-15) ──────────────────────────────
+// 왜 SQL 조각인가: 사진은 결석 한 건에 붙어 저장되지만, 같은 기간(periodId)의 결석들은 그 사진을 «함께» 쓴다.
+// 날짜마다 따로 올리게 하면 3주 쉬는 아이는 같은 진단서를 여섯 번 올려야 하고 기한도 날짜마다 달라진다.
+// 그래서 «이 결석의 증빙»을 묻는 모든 조회(장수 세기·목록·자동 전환 판정)가 아래 두 조각을 쓴다 — 표·칸을 늘리지 않는 가장 단순한 방법.
+// 인자는 코드에 적힌 별칭만 받는다(사용자 입력 아님).
+
+/** 결석(abs)의 증빙 사진(ev)인가 — 그 결석에 붙은 사진 + 같은 기간의 다른 결석에 붙은 사진 */
+export function evidenceScopeSql(abs: string, ev: string): string {
+  return `(${ev}."absenceId" = ${abs}.id OR (${abs}."periodId" IS NOT NULL AND ${ev}."absenceId" IN (
+    SELECT period_absence.id FROM "RegularAbsence" period_absence WHERE period_absence."periodId" = ${abs}."periodId")))`;
+}
+
+/**
+ * 7일 기한의 «결석일» 쪽 기준 — 기간 결석이면 그 기간의 마지막(취소 안 된) 결석일, 하루 결석이면 그 결석일.
+ * 긴 기간도 날짜마다 기한이 달라지지 않고 한 번에 끝난다(기한 = 더 늦은 날(알린 날, 이 날) + 7일 — evidenceBaseYmd).
+ * date 칼럼은 달력 값이라 시간대 변환이 없다.
+ */
+export function evidenceAnchorYmdSql(abs: string): string {
+  return `to_char(COALESCE((SELECT max(period_last.date) FROM "RegularAbsence" period_last
+     WHERE period_last."periodId" = ${abs}."periodId" AND period_last.status <> 'CANCELLED'), ${abs}.date), 'YYYY-MM-DD')`;
+}
+
+/**
+ * 학부모 화면용 — 같은 기간(여러 날 결석)의 검토를 «상태별 한 줄»로 묶는다. 하루 결석은 그대로 한 줄.
+ * 대표는 그 묶음의 가장 이른 결석(사진을 올릴 때 이 결석에 붙인다 — 어느 날에 붙여도 기간 전체에 쓰인다).
+ * 날짜 글자는 «11/17(월)~11/28(금) 3회». 입력 순서(최신순)를 유지한다.
+ */
+export function collapseReviewsByPeriod<T extends { absenceId: string; periodId: string | null; status: string; date: string; dateLabel: string; className: string }>(
+  rows: T[],
+): Array<T & { count: number }> {
+  const groups = new Map<string, T[]>();
+  const order: string[] = [];
+  for (const row of rows) {
+    const key = row.periodId ? `period:${row.periodId}:${row.status}` : `single:${row.absenceId}`;
+    if (!groups.has(key)) { groups.set(key, []); order.push(key); }
+    groups.get(key)!.push(row);
+  }
+  return order.map((key) => {
+    const members = [...groups.get(key)!].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    const first = members[0];
+    const last = members[members.length - 1];
+    if (members.length === 1) return { ...first, count: 1 };
+    const classNames = Array.from(new Set(members.map((member) => member.className).filter(Boolean)));
+    return {
+      ...first,
+      className: classNames.join(" · "),
+      dateLabel: `${first.dateLabel}~${last.dateLabel} ${members.length}회`,
+      count: members.length,
+    };
+  });
+}
+
 /** 증빙 사진으로 받는 «실제» 파일 형식(파일 머리를 읽어 확인한 값 — 브라우저가 보낸 형식 이름은 믿지 않는다) */
 export const EVIDENCE_IMAGE_FORMATS = ["jpeg", "png", "webp"] as const;
 export function isAllowedEvidenceFormat(format: unknown): boolean {
