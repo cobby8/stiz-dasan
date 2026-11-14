@@ -576,6 +576,10 @@ export default function StaffHomeClient({
           마지막 줄(«완료한 수업» 등)이 막대에 가리지 않게 한다. 아래 탭·안전 영역 몫은 레이아웃의 아래 여백이 이미 잡고 있다. */}
       {/* 아래 탭이 숨은 동안 막대는 화면 바닥에 붙는다 — 레이아웃의 아래 여백(탭 몫)에 조금만 더하면 마지막 줄(수업 시작 취소 등)이 가리지 않는다 */}
       {liveLessonOpen && <div aria-hidden="true" className="h-12" />}
+      {/* 2026-11-15 원장 점검: 새로고침 직후 아래 탭이 잠깐 보였다 사라지지 않게 — 진행 중 수업 칸이 펼쳐진 채로 열리는 경우
+          (서버가 그릴 때부터 liveLessonOpen 이 참) 이 화면의 첫 그림에 «탭 숨김» 규칙을 같이 실어 보낸다.
+          화면이 뜬 뒤에는 위의 신호(setStaffLiveLessonOpen)가 이어받고, 줄을 접거나 다른 화면으로 가면 이 규칙도 함께 사라진다. */}
+      {liveLessonOpen && <style>{".academy-app .academy-staff-nav{display:none!important}"}</style>}
 
       {showFees && billingTarget && <ClassBillingSheet key={`${billingTarget.lesson.id}:${billingTarget.student?.id || "all"}`} open classId={billingTarget.lesson.id} className={billingTarget.lesson.name} student={billingTarget.student} onClose={() => setBillingTarget(null)} />}
 
