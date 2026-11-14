@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireStaffSessionAccess } from "@/lib/staff-class-access";
 import { userFacingError } from "@/lib/user-facing-error";
+import { classifyStaffFailure, staffAccessFailure } from "@/lib/staff-session-rules";
 import { checkSessionVideoFile, isValidSessionVideoRef, oversizeMessage } from "@/lib/sessionVideo/rules";
 import { listSessionVideos, loadSessionForVideo, sessionVideoMaxBytes, toPlayback, uploadWindowError } from "@/lib/sessionVideo/server";
 
@@ -11,8 +12,9 @@ import { listSessionVideos, loadSessionForVideo, sessionVideoMaxBytes, toPlaybac
  * 보기는 수업 권한만 있으면 되고, 올리기·지우기는 «수업 기록 수정 기간»(선생님 수업일 포함 7일·원장·부원장 제한 없음) 안에서만(canManage).
  */
 export async function GET(_req: Request, context: { params: Promise<{ sessionId: string }> }) {
+  let sessionId = "";
   try {
-    const { sessionId } = await context.params;
+    ({ sessionId } = await context.params);
     const session = await loadSessionForVideo(sessionId);
     if (!session) return NextResponse.json({ error: "수업 기록을 찾을 수 없습니다." }, { status: 404 });
     const { access } = await requireStaffSessionAccess(sessionId);
@@ -24,8 +26,20 @@ export async function GET(_req: Request, context: { params: Promise<{ sessionId:
       { headers: { "Cache-Control": "private, no-store" } },
     );
   } catch (error) {
-    const message = userFacingError(error, "영상 목록을 불러오지 못했습니다.");
-    return NextResponse.json({ error: message }, { status: 403 });
+    // 2026-11-15 검수: 예전엔 모든 오류를 403 으로 돌려, DB·저장소 문제도 «권한 없음»처럼 보여 원인을 알 수 없었다.
+    // 권한 판정 자체는 그대로(requireStaffSessionAccess) — 돌려주는 상태 코드와 문구만 가른다.
+    const raw = error instanceof Error ? error.message : String(error ?? "");
+    const kind = classifyStaffFailure(raw);
+    const access = staffAccessFailure(error);
+    if (kind === "login" && access) return NextResponse.json({ error: access.message }, { status: 401 });
+    if (kind === "forbidden" && access) return NextResponse.json({ error: access.message }, { status: 403 });
+    // 서버 내부 오류(DB·저장소 서명 등) — 원인은 서버 로그에만 남긴다. 주소의 서명·토큰이 섞이지 않게 물음표 뒤는 지운다.
+    console.error("[staff videos GET] 영상 목록 조회 실패", {
+      sessionId,
+      name: error instanceof Error ? error.name : typeof error,
+      reason: raw.replace(/\?[^\s"']*/g, "?…").slice(0, 200),
+    });
+    return NextResponse.json({ error: "영상 목록을 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요." }, { status: 500 });
   }
 }
 

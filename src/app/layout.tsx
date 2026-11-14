@@ -13,6 +13,7 @@ import { buildPublicMetadata } from "@/lib/publicMetadata";
 import StandaloneBackButton from "@/components/StandaloneBackButton";
 import OutsideLinkListener from "@/components/storeApp/OutsideLinkListener";
 import NativePushRegistrar from "@/components/push/NativePushRegistrar";
+import AppUpdateBanner from "@/components/storeApp/AppUpdateBanner";
 
 export const metadata: Metadata = {
     ...buildPublicMetadata({
@@ -97,6 +98,8 @@ export default async function RootLayout({
                     <OutsideLinkListener />
                     {/* 스토어 앱 알림: 알림이 켜진 앱이면 토큰을 로그인한 사람에게 등록한다(e2) */}
                     <NativePushRegistrar />
+                    {/* 스토어 앱 업데이트 안내: 앱 안에서만 최신 버전을 물어보고 맨 위 한 줄을 띄운다(서버 조회 없음 — 브라우저에는 아무것도 안 한다) */}
+                    <AppUpdateBanner />
                     {children}
                 </ThemeProvider>
             </body>

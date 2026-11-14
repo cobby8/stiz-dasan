@@ -508,3 +508,132 @@ test("원장 점검 3: 진행 중 수업이 있으면 서버가 그린 첫 화�
   assert.equal((page.match(/getTodayStaffClasses\(/g) ?? []).length, 1);
   assert.doesNotMatch(read("src/app/staff/layout.tsx"), /getTodayStaffClasses/);
 });
+
+// ── 2026-11-15 원장 점검: [동영상]이 회색인데 이유가 안 보이던 문제 ──
+
+test("원장 점검 4: [사진]·[동영상]이 눌리지 않는 이유를 막대에 항상 보인다(영상만 막힌 경우·조회 실패 포함)", () => {
+  const ready = { busy: false, canUpload: true, windowMessage: null, loaded: true, loadError: "" };
+  // 사진은 되고 영상만 막힌 상태 → 영상 이유가 나온다(예전엔 사진 쪽 이유만 보였다)
+  assert.equal(rules.mediaBlockReason("photo", ready), null);
+  assert.deepEqual(rules.mediaBlockReason("video", { ...ready, canUpload: false, windowMessage: "수정 기간이 지났습니다." }), { text: "수정 기간이 지났습니다.", retry: false });
+  // 이유 문구가 없어도 빈 줄로 두지 않는다
+  assert.deepEqual(rules.mediaBlockReason("video", { ...ready, canUpload: false }), { text: "영상은 지금 올릴 수 없어요.", retry: false });
+  // 아직 읽는 중(상태 없음 포함) → 준비 중
+  assert.deepEqual(rules.mediaBlockReason("video", null), { text: "영상 올리기 준비 중…", retry: false });
+  assert.deepEqual(rules.mediaBlockReason("photo", { ...ready, canUpload: false, loaded: false }), { text: "사진 올리기 준비 중…", retry: false });
+  // 조회 실패 → 안내 + 다시 시도
+  // (2026-11-15 검수) 서버가 준 문구가 있으면 그것을 보이고, 없을 때만 고정 문구
+  assert.deepEqual(rules.mediaBlockReason("video", { ...ready, canUpload: false, loaded: false, loadError: "영상 목록을 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요." }), { text: "영상 목록을 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.", retry: true });
+  assert.deepEqual(rules.mediaBlockReason("video", { ...ready, canUpload: false, loaded: false, loadError: "  " }), { text: "영상 정보를 불러오지 못했어요.", retry: true });
+  // 다시 로그인해야 풀리는 문제·권한 문제에는 «다시 시도»를 붙이지 않는다(헛돈다)
+  assert.deepEqual(rules.mediaBlockReason("video", { ...ready, canUpload: false, loaded: false, loadError: "로그인이 풀렸습니다. 다시 로그인해 주세요." }), { text: "로그인이 풀렸습니다. 다시 로그인해 주세요.", retry: false });
+  assert.equal(rules.mediaBlockReason("photo", { ...ready, canUpload: false, loaded: false, loadError: "담당 수업에만 접근할 수 있습니다. 권한을 확인해 주세요." }).retry, false);
+  // 올릴 수 있거나 올리는 중이면 이유 줄이 없다(진행 줄이 따로 있다)
+  assert.equal(rules.mediaBlockReason("video", ready), null);
+  assert.equal(rules.mediaBlockReason("video", { ...ready, canUpload: false, busy: true }), null);
+
+  // 막대: 두 쪽 이유를 한 줄씩, 다시 시도는 그 부품의 재조회를 부른다
+  assert.match(mediaBar, /reason: mediaBlockReason\("photo", photoState\) \}/);
+  assert.match(mediaBar, /reason: mediaBlockReason\("video", videoState\) \}/);
+  assert.match(mediaBar, /if \(kind === "photo"\) photoRef\.current\?\.reload\(\);\s*else videoRef\.current\?\.reload\(\);/);
+  assert.match(mediaBar, /\{reason\.retry && <button type="button" onClick=\{\(\) => retryLoad\(kind\)\} className="[^"]*min-h-11![^"]*">다시 시도<\/button>\}/);
+  // 영상 부품: 읽었는가·읽기 실패를 알리고, 다시 읽으면 실패 표시를 지우고 성공하면 «읽음»이 된다
+  const video = read("src/components/staff/SessionVideoUploader.tsx");
+  assert.match(video, /function reload\(\) \{\s*setLoadError\(""\);\s*void load\(\)\.then\(\(\) => \{\s*setLoaded\(true\);[\s\S]{0,700}setLoadError\(text\);/);
+  assert.match(video, /needsAppUpdate, loaded, loadError \}\)/);
+  assert.match(read("src/components/staff/SessionPhotoUploader.tsx"), /windowMessage, loaded, loadError \}\)/);
+  // 끝난 수업: 칸을 펼치지 않아도 머리줄에 영상 이유
+  assert.match(panels, /summary=\{videoBlock \? `영상: \$\{videoBlock\.text\}` : editable \? /);
+});
+
+test("원장 점검 5: 옛 안드로이드 앱 안내에 스토어 «업데이트» 링크(앱이 열 수 있는 https 주소만)", async () => {
+  assert.match(mediaBar, /const updateUrl = videoState\?\.needsAppUpdate \? appUpdateTarget\(window\.navigator\.userAgent\)\.url : null;/);
+  assert.match(mediaBar, /\{updateUrl && <> <a href=\{updateUrl\} className="[^"]*min-h-11[^"]*">업데이트<\/a><\/>\}/);
+  assert.doesNotMatch(mediaBar, /market:\/\//);
+  const links = await loadTsModule("src/lib/app-install-links.ts");
+  const ANDROID = "Mozilla/5.0 (Linux; Android 14; SM-S911N) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36";
+  const withMark = links.appUpdateTarget(`${ANDROID} STIZApp/1.0.2 (android)`).url;
+  assert.match(withMark, /^https:\/\/play\.google\.com\//);
+  // 표식 없는 옛 앱은 바깥 주소를 못 연다 → 주소 없음(글자 안내만)
+  assert.equal(links.appUpdateTarget(ANDROID).url, null);
+});
+
+// ── 2026-11-15 검수: 멈춘 조회·멈춘 올리기·막대 높이·라우트 오류 구분 ──
+
+test("검수 1: 목록 조회가 답 없이 멈추면 제한 시간 뒤 실패로 떨어진다(«준비 중…»에 머물지 않는다)", async () => {
+  const net = await loadTsModule("src/components/staff/fetchWithTimeout.ts");
+  assert.equal(net.LIST_FETCH_TIMEOUT_MS, 10_000);
+  // 끝내 답하지 않는 조회(끊으면 그제야 실패) — 20ms 제한으로 돌려 본다
+  const hang = (_url, init) => new Promise((_resolve, reject) => init.signal.addEventListener("abort", () => reject(new Error("aborted"))));
+  await assert.rejects(net.fetchWithTimeout("/x", {}, { timeoutMs: 20, fetchImpl: hang }), { message: net.FETCH_TIMEOUT_MESSAGE });
+  // 제때 답하면 그대로 돌려주고, 다른 오류는 문구를 바꾸지 않는다
+  assert.equal(await net.fetchWithTimeout("/x", {}, { timeoutMs: 1000, fetchImpl: async () => "ok" }), "ok");
+  await assert.rejects(net.fetchWithTimeout("/x", {}, { timeoutMs: 1000, fetchImpl: async () => { throw new Error("Failed to fetch"); } }), { message: "Failed to fetch" });
+  // 화면이 사라져 바깥 신호가 끊기면 함께 끊긴다(시간 초과 문구가 아니다)
+  const outer = new AbortController();
+  const pending = net.fetchWithTimeout("/x", {}, { timeoutMs: 1000, signal: outer.signal, fetchImpl: hang });
+  outer.abort();
+  await assert.rejects(pending, { message: "aborted" });
+  // 실패 상태 → 막대에 안내 + 다시 시도
+  const failed = rules.mediaBlockReason("video", { busy: false, canUpload: false, windowMessage: null, loaded: false, loadError: net.FETCH_TIMEOUT_MESSAGE });
+  assert.deepEqual(failed, { text: net.FETCH_TIMEOUT_MESSAGE, retry: true });
+  // 사진·영상 목록 조회 둘 다 이 함수를 쓰고, 화면이 사라지면 끊는다
+  for (const file of ["src/components/staff/SessionVideoUploader.tsx", "src/components/staff/SessionPhotoUploader.tsx"]) {
+    const source = read(file);
+    assert.match(source, /await fetchWithTimeout\([\s\S]{0,120}\{ cache: "no-store" \}, \{ signal: unmountRef\.current\?\.signal \}\)/, file);
+    assert.match(source, /unmountRef\.current = controller;\s*return \(\) => controller\.abort\(\);/, file);
+    // 다시 시도가 성공하면 앞서 띄운 실패 문구를 지운다
+    assert.match(source, /if \(failedText\) setMessage\(\(current\) => \(current === failedText \? "" : current\)\);/, file);
+  }
+});
+
+test("검수 6: 올리기가 60초 동안 나아가지 않으면 끊고 실패로 알린다(진행이 있으면 시간을 다시 잰다)", async () => {
+  const net = await loadTsModule("src/components/staff/fetchWithTimeout.ts");
+  assert.equal(net.UPLOAD_STALL_TIMEOUT_MS, 60_000);
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  let stalls = 0;
+  const watch = net.createStallWatch(() => { stalls += 1; }, 40);
+  watch.touch();
+  await wait(25); watch.touch(); // 진행이 있었다 → 다시 잰다
+  await wait(25);
+  assert.equal(stalls, 0);
+  await wait(40);
+  assert.equal(stalls, 1, "무진행이면 한 번 알린다");
+  watch.touch(); await wait(60);
+  assert.equal(stalls, 1, "한 번 멈춘 뒤에는 다시 알리지 않는다");
+  // 끝낸 감시는 알리지 않는다
+  let late = 0;
+  const done = net.createStallWatch(() => { late += 1; }, 20);
+  done.touch(); done.stop(); await wait(40);
+  assert.equal(late, 0);
+  const video = read("src/components/staff/SessionVideoUploader.tsx");
+  assert.match(video, /const watch = createStallWatch\(\(\) => \{ stalled = true; xhr\.abort\(\); \}\);/);
+  assert.match(video, /xhr\.upload\.onprogress = \(event\) => \{\s*watch\.touch\(\);/);
+  assert.match(video, /reject\(new Error\(stalled \? UPLOAD_STALLED_MESSAGE : "영상 업로드가 취소되었습니다\."\)\)/);
+});
+
+test("검수 2: 막대가 안내 줄로 높아지면 그만큼 본문 끝을 더 띄운다", () => {
+  assert.equal(rules.MEDIA_BAR_BASE_HEIGHT_PX, 100);
+  assert.equal(rules.mediaBarExtraSpace(0), 0, "아직 재지 못함");
+  assert.equal(rules.mediaBarExtraSpace(72), 0, "버튼 한 줄");
+  assert.equal(rules.mediaBarExtraSpace(100), 0);
+  assert.equal(rules.mediaBarExtraSpace(154.2), 55, "옛 앱 안내 + 업데이트 링크");
+  assert.equal(rules.mediaBarExtraSpace(170), 70, "사진·영상 둘 다 조회 실패");
+  assert.equal(rules.mediaBarExtraSpace(Number.NaN), 0);
+  assert.match(mediaBar, /new ResizeObserver\(\(\) => setBarHeight\(bar\.offsetHeight\)\);\s*observer\.observe\(bar\);\s*return \(\) => observer\.disconnect\(\);/);
+  assert.match(mediaBar, /<div aria-hidden="true" style=\{\{ height: mediaBarExtraSpace\(barHeight\) \}\} \/>/);
+});
+
+test("검수 7: 영상 목록 라우트는 로그인 만료 401 · 권한 403 · 그 밖 500 으로 가르고, 원인은 서버 로그에만 남긴다", () => {
+  const route = read("src/app/api/staff/sessions/[sessionId]/videos/route.ts");
+  const get = route.slice(route.indexOf("export async function GET"), route.indexOf("export async function POST"));
+  // 권한 판정은 그대로
+  assert.match(get, /const \{ access \} = await requireStaffSessionAccess\(sessionId\);/);
+  assert.match(get, /if \(kind === "login" && access\) return NextResponse\.json\(\{ error: access\.message \}, \{ status: 401 \}\);/);
+  assert.match(get, /if \(kind === "forbidden" && access\) return NextResponse\.json\(\{ error: access\.message \}, \{ status: 403 \}\);/);
+  assert.match(get, /잠시 뒤 다시 시도해 주세요\." \}, \{ status: 500 \}\);/);
+  assert.equal((get.match(/status: 403/g) ?? []).length, 1, "403 은 권한 문제 하나뿐");
+  // 로그: 수업 id·오류 종류·주소의 물음표 뒤를 지운 짧은 글만(토큰·서명이 섞이지 않게), 화면에는 원문을 보내지 않는다
+  assert.match(get, /reason: raw\.replace\(\/\\\?\[\^\\s"'\]\*\/g, "\?…"\)\.slice\(0, 200\),/);
+  assert.doesNotMatch(get, /error: raw/);
+});

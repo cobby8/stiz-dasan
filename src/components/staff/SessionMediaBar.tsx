@@ -1,9 +1,10 @@
 "use client";
 
-import { useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import type { SessionPhotoUploaderHandle, SessionUploaderState } from "@/components/staff/SessionPhotoUploader";
 import type { SessionVideoUploaderHandle, SessionVideoUploaderState } from "@/components/staff/SessionVideoUploader";
-import { galleryLeftoverNotice, planGalleryUpload, splitGalleryFiles } from "@/components/staff/sessionWorkspaceRules";
+import { galleryLeftoverNotice, mediaBarExtraSpace, mediaBlockReason, planGalleryUpload, splitGalleryFiles } from "@/components/staff/sessionWorkspaceRules";
+import { appUpdateTarget } from "@/lib/app-install-links";
 
 /**
  * 수업 중 화면 아래 고정 막대 — [사진] [동영상] [갤러리] (2026-11-15 원장 지시: 예전 «수업 종료 확인» 자리).
@@ -35,6 +36,16 @@ export function SessionMediaBar({
   const videoCameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
   const [notice, setNotice] = useState("");
+  // 막대의 실제 높이 — 안내 줄이 붙어 높아지면 본문 끝을 그만큼 더 띄워 마지막 버튼(수업 시작 취소)이 가리지 않게 한다
+  const barRef = useRef<HTMLDivElement>(null);
+  const [barHeight, setBarHeight] = useState(0);
+  useEffect(() => {
+    const bar = barRef.current;
+    if (!bar || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => setBarHeight(bar.offsetHeight));
+    observer.observe(bar);
+    return () => observer.disconnect();
+  }, []);
 
   // 목록을 읽기 전(상태 없음)에는 잠근다 — 시간 밖에서 눌렀다 실패하지 않게(기존 부품과 같은 원칙)
   const photoLocked = !photoState?.canUpload || photoState.busy;
@@ -71,16 +82,34 @@ export function SessionMediaBar({
     if (galleryRef.current) galleryRef.current.value = "";
   }
 
-  // 막대에 보일 한 줄: 올리는 중이면 진행, 아니면 올릴 수 없는 이유(시간 밖), 갤러리에서 빠진 파일 안내
+  // 막대에 보일 진행 한 줄: 올리는 중이면 진행, 아니면 갤러리에서 빠진 파일 안내
   const status = photoState?.busy
     ? photoState.message
     : videoState?.busy
       ? `영상 올리는 중${videoState.progress ? ` ${videoState.progress}%` : ""}`
-      : notice || (photoState && !photoState.canUpload ? photoState.windowMessage ?? "" : "");
+      : notice;
+  // 2026-11-15 원장 점검: [사진]·[동영상]이 회색일 때 «왜 안 눌리는지»를 버튼 바로 아래에 항상 보인다(사진·영상 이유를 한 줄씩).
+  // 예전엔 사진 쪽 이유만 보여, 영상만 막혔을 때·영상 목록을 못 읽었을 때 이유를 알 수 없었다.
+  const blocks = [
+    { kind: "photo" as const, reason: mediaBlockReason("photo", photoState) },
+    { kind: "video" as const, reason: mediaBlockReason("video", videoState) },
+  ];
+  // «다시 시도» — 그 부품의 목록 다시 읽기를 부른다
+  function retryLoad(kind: "photo" | "video") {
+    if (kind === "photo") photoRef.current?.reload();
+    else videoRef.current?.reload();
+  }
+  // 옛 안드로이드 앱 → 스토어 «업데이트» 주소(앱이 바깥 https 주소를 열 수 있을 때만. 표식 없는 옛 앱은 null → 글자만).
+  // needsAppUpdate 는 화면이 뜬 뒤에만 참이라 여기서 기기 정보를 읽어도 서버 그림과 어긋나지 않는다.
+  const updateUrl = videoState?.needsAppUpdate ? appUpdateTarget(window.navigator.userAgent).url : null;
 
   return (
+    <>
+    {/* 본문 흐름 안의 빈 칸 — 막대가 기본 높이보다 높아진 만큼만(평소엔 0) */}
+    <div aria-hidden="true" style={{ height: mediaBarExtraSpace(barHeight) }} />
     <div
       id="session-media-bar"
+      ref={barRef}
       className="fixed inset-x-0 z-30 mx-auto max-w-lg px-4"
       // 수업 주소에서는 아래 탭이 숨으므로 화면 바닥(홈 인디케이터만 비움), 홈에서는 아래 탭(56px + 여백) 위
       style={{ bottom: aboveBottomNav ? "calc(3.75rem + max(0.625rem, env(safe-area-inset-bottom)))" : "max(0.5rem, env(safe-area-inset-bottom))" }}
@@ -100,10 +129,18 @@ export function SessionMediaBar({
         {videoState?.needsAppUpdate && videoState.canUpload && (
           <p role="status" className="mt-1 text-center text-xs text-[var(--color-academy-warning)]">
             앱을 업데이트하면 [동영상]이 바로 촬영돼요. 지금은 휴대폰 카메라로 찍은 뒤 «갤러리»로 올려 주세요.
+            {updateUrl && <> <a href={updateUrl} className="inline-flex min-h-11 items-center px-1 font-medium underline underline-offset-2">업데이트</a></>}
           </p>
         )}
+        {blocks.map(({ kind, reason }) => reason && (
+          <p key={kind} role="status" className="mt-1 flex flex-wrap items-center justify-center gap-x-2 text-center text-xs text-[var(--color-academy-muted)]">
+            <span>{reason.text}</span>
+            {reason.retry && <button type="button" onClick={() => retryLoad(kind)} className="academy-button-text academy-button-sm min-h-11! underline underline-offset-2">다시 시도</button>}
+          </p>
+        ))}
         {status && <p aria-live="polite" className="mt-1 text-center text-xs text-[var(--color-academy-muted)]">{status}</p>}
       </div>
     </div>
+    </>
   );
 }

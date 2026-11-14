@@ -98,7 +98,7 @@ test("영상 촬영 칸: accept 는 video/* 하나 + capture, 안내는 판정 �
   // 2026-11-15 접이식 구조와 병합: 수업 중에는 아래 고정 막대의 [동영상]이 촬영을 연다 — 같은 accept·capture, 같은 판정 결과로 버튼 바로 아래에 안내
   assert.match(mediaBar, /<input ref=\{videoCameraRef\} hidden type="file" accept="video\/\*" capture="environment" onChange/);
   assert.match(mediaBar, /\{videoState\?\.needsAppUpdate && videoState\.canUpload && \(\s*<p role="status"[^>]*>\s*앱을 업데이트하면 \[동영상\]이 바로 촬영돼요\./);
-  assert.match(uploader, /onStateChange\?\.\(\{ busy, canUpload: canManage, count: videos\.length, message, progress, windowMessage, needsAppUpdate \}\)/);
+  assert.match(uploader, /onStateChange\?\.\(\{ busy, canUpload: canManage, count: videos\.length, message, progress, windowMessage, needsAppUpdate, loaded, loadError \}\)/); // 2026-11-15 원장 점검: 읽었는가·읽기 실패도 함께 알린다
   assert.ok(mediaBar.indexOf(">동영상</button>") < mediaBar.indexOf("앱을 업데이트하면 [동영상]이 바로 촬영돼요"));
 });
 
