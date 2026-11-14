@@ -8,6 +8,8 @@ import { upsertStudentShuttleLocation } from "@/lib/students/student-shuttle-loc
 import { RegularLocationLinkError, validateRegularLocation, type RegularLocationInput } from "@/lib/shuttle/regularLocationLink";
 import { applyLocationToRosterInTx, flushRosterNotices, lockRosterForLocationInTx } from "./regularRosterEdit";
 import {
+  REGULAR_CHANGE_DAILY_LIMIT,
+  REGULAR_CHANGE_DAILY_LIMIT_MESSAGE,
   REGULAR_CHANGE_KIND_LABEL,
   REGULAR_CHANGE_MESSAGE,
   ROSTER_DIRECTION,
@@ -280,6 +282,18 @@ export async function submitRegularChangeRequest(
         `SELECT id FROM ${TABLE} WHERE "studentId" = $1 AND status = 'PENDING' LIMIT 1`, studentId,
       );
       if (open.length > 0) return { ok: false as const, message: "이미 확인 중인 신청이 있어요. 취소한 뒤 다시 신청해 주세요." };
+
+      // 하루 상한(L1): 오늘(KST) 이 아이로 낸 신청 수 — 취소한 것도 센다. createdAt 은 timestamptz 라 변환은 한 번.
+      // 학생 행을 잠근 뒤에 세므로 동시에 여러 번 눌러도 상한을 넘지 못한다.
+      const [todayRows] = await tx.$queryRawUnsafe<Array<{ n: number }>>(
+        `SELECT count(*)::int AS n FROM ${TABLE}
+          WHERE "studentId" = $1
+            AND ("createdAt" AT TIME ZONE 'Asia/Seoul')::date = (now() AT TIME ZONE 'Asia/Seoul')::date`,
+        studentId,
+      );
+      if (Number(todayRows?.n ?? 0) >= REGULAR_CHANGE_DAILY_LIMIT) {
+        return { ok: false as const, message: REGULAR_CHANGE_DAILY_LIMIT_MESSAGE, code: "DAILY_LIMIT" as const };
+      }
 
       const id = crypto.randomUUID();
       await tx.$executeRawUnsafe(

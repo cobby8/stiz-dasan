@@ -57,7 +57,8 @@ export async function POST(request: NextRequest) {
           : body?.kind === CLASS_ADD_KIND
             ? await submitClassAddRequest(parent.appUserId, body ?? {})
             : await submitEnrollmentChangeRequest(parent.appUserId, body ?? {});
-    if (!result.ok) return NextResponse.json({ error: result.message }, { status: 400 });
+    // code(예: DAILY_LIMIT — 하루 접수 상한)가 있으면 함께 내려 화면이 «학원에 전화하기» 버튼을 보이게 한다
+    if (!result.ok) return NextResponse.json({ error: result.message, ...("code" in result && result.code ? { code: result.code } : {}) }, { status: 400 });
     return NextResponse.json(result);
   } catch (error) {
     console.error("[api/mypage/enrollment-change] POST failed:", error);

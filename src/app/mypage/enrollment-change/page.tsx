@@ -3,6 +3,8 @@ import { requireVerifiedParent } from "@/lib/auth-guard";
 import { getEnrollmentChangeOptions } from "@/lib/enrollment/parent-change-request";
 import { getClassAddOptions } from "@/lib/enrollment/parent-class-add";
 import { parseRequestPreset } from "@/lib/mypage/requestPreset";
+import { getUsableAcademyPhone } from "@/lib/academyPhone";
+import { academyTel } from "@/lib/academyPhoneRules";
 import EnrollmentChangeClient from "./EnrollmentChangeClient";
 
 export const dynamic = "force-dynamic";
@@ -19,10 +21,12 @@ export default async function EnrollmentChangePage({
   if (!parent) redirect("/mypage/continue?bounced=1");
 
   // 반 추가 후보(학년 맞는 반·검토 중 신청)는 따로 읽는다 — 실패해도 빈 값이라 나머지 신청은 그대로 쓸 수 있다.
-  const [initial, classAdd] = await Promise.all([
+  // 학원 번호(설정값) — 하루 접수 상한에 걸렸을 때의 «학원에 전화하기» 버튼용. 못 읽으면 null(글자만 보인다)
+  const [initial, classAdd, academyPhone] = await Promise.all([
     getEnrollmentChangeOptions(parent.appUserId),
     getClassAddOptions(parent.appUserId),
+    getUsableAcademyPhone().catch(() => null),
   ]);
   const preset = parseRequestPreset(searchParams ? await searchParams : null);
-  return <EnrollmentChangeClient initial={initial} classAdd={classAdd} preset={preset} />;
+  return <EnrollmentChangeClient initial={initial} classAdd={classAdd} preset={preset} academyTel={academyTel(academyPhone)} />;
 }

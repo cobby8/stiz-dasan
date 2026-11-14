@@ -40,11 +40,13 @@ type FormKind = ChangeKind | typeof CLASS_ADD;
 /** 종류 이름(복귀 포함). 모르는 값이면 «수강 변경». */
 const kindLabel = (kind: string) => REQUEST_KIND_LABEL[kind] ?? "수강 변경";
 
-export default function EnrollmentChangeClient({ initial, classAdd, preset }: {
+export default function EnrollmentChangeClient({ initial, classAdd, preset, academyTel = null }: {
   initial: EnrollmentChangeOptions;
   /** 반 추가 후보(학년 맞는 반)·검토 중인 반 추가 신청. 없으면 «반 추가»를 보이지 않는다(읽기 실패·옛 호출) */
   classAdd?: ClassAddOptions;
   preset?: RequestPreset;
+  /** 걸 수 있는 학원 번호(서버가 규칙 함수로 다듬은 값) — 하루 접수 상한 안내 옆 «학원에 전화하기». 없으면 글자만 */
+  academyTel?: string | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -81,6 +83,8 @@ export default function EnrollmentChangeClient({ initial, classAdd, preset }: {
   const [cancelRequested, setCancelRequested] = useState<{ id: string; line: string } | null>(null);
   // 이 화면에서 방금 낸·취소한 «반 추가» 신청 — 새로고침이 늦어도 «확인 중» 줄과 후보 목록이 바로 맞게.
   const [addState, setAddState] = useState<{ added: ClassAddPending[]; canceled: string[] }>({ added: [], canceled: [] });
+  // 서버가 «오늘은 더 신청할 수 없어요»(하루 접수 상한)로 답했는가 — 안내 옆에 전화 버튼을 보인다
+  const [limitHit, setLimitHit] = useState(false);
 
   const child = initial.children[childIdx];
   // 화면에 보일 «검토 중» 신청 = 서버 내역(방금 취소한 건 제외) → 없으면 방금 접수한 건
@@ -132,6 +136,7 @@ export default function EnrollmentChangeClient({ initial, classAdd, preset }: {
     sending.current = true;
     setError("");
     setDone("");
+    setLimitHit(false);
     try {
       const response = await fetch("/api/mypage/enrollment-change", {
         method: "POST",
@@ -143,6 +148,7 @@ export default function EnrollmentChangeClient({ initial, classAdd, preset }: {
       const data = await response.json();
       if (!response.ok) {
         setError(customerMessage(data?.error, "요청을 처리할 수 없습니다. 입력 내용을 확인해 주세요."));
+        setLimitHit(data?.code === "DAILY_LIMIT");
         return null;
       }
       if (data?.ok !== true) throw new Error("결과 확인 필요");
@@ -302,6 +308,8 @@ export default function EnrollmentChangeClient({ initial, classAdd, preset }: {
   const notice = (
     <>
       {error && <p role="alert" className="rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm font-medium text-[var(--color-academy-danger)]">{error}</p>}
+      {/* 하루 접수 상한 — 문장이 «전화해 주세요»로 끝나므로 그 자리에서 걸 수 있게 */}
+      {limitHit && academyTel && <a href={`tel:${academyTel}`} className="academy-button-secondary">학원에 전화하기</a>}
       {uncertain && (
         <div className="flex flex-wrap gap-2">
           <button type="button" disabled={pending} onClick={() => startTransition(() => router.refresh())} className="academy-button-secondary">

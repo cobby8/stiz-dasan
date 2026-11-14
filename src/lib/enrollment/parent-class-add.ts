@@ -175,6 +175,14 @@ export async function submitClassAddRequest(parentUserId: string, input: SubmitC
         WHERE "studentId" = $1 AND kind = '${CLASS_ADD_KIND}' AND status = 'PENDING' AND "toClassId" IS NOT NULL`,
       studentId,
     );
+    // 하루 상한(L1): 오늘(KST) 이 아이로 낸 반 추가 신청 수 — 취소한 것도 센다. createdAt 은 timestamptz 라 변환은 한 번.
+    // 학생 행을 잠근 뒤에 세므로 동시에 여러 번 눌러도 상한을 넘지 못한다.
+    const [today_] = await tx.$queryRawUnsafe<Array<{ n: number }>>(
+      `SELECT count(*)::int AS n FROM "EnrollmentChangeRequest"
+        WHERE "studentId" = $1 AND kind = '${CLASS_ADD_KIND}'
+          AND ("createdAt" AT TIME ZONE 'Asia/Seoul')::date = (now() AT TIME ZONE 'Asia/Seoul')::date`,
+      studentId,
+    );
     const classRows = await tx.$queryRawUnsafe<ClassGradeRow[]>(CLASS_GRADES_SQL);
     const pendingClassIds = pendingRows.map((row) => row.toClassId);
     const candidates = classAddCandidateIds({
@@ -188,8 +196,11 @@ export async function submitClassAddRequest(parentUserId: string, input: SubmitC
     const checked = validateClassAdd({
       toClassId: input.toClassId, reason: input.reason,
       enrollments, pendingClassIds, targetExists: Boolean(target), candidateIds: candidates.classIds,
+      todayCount: Number(today_?.n ?? 0),
     });
-    if (!checked.ok) return { ok: false as const, message: CLASS_ADD_MESSAGE[checked.error] };
+    if (!checked.ok) {
+      return { ok: false as const, message: CLASS_ADD_MESSAGE[checked.error], ...(checked.error === "DAILY_LIMIT" ? { code: "DAILY_LIMIT" as const } : {}) };
+    }
 
     // 정원이 찬 반도 받는다(반 변경과 같은 대기 규칙) — 원장 화면에 «희망 반 만석»으로 보인다.
     const waitlisted = Number(target!.enrolled ?? 0) >= Number(target!.capacity ?? 0);

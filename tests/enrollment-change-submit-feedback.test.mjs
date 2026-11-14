@@ -34,7 +34,7 @@ const rules = load("src/lib/enrollment/changeRequestRules.ts");
 const changeStatus = load("src/lib/enrollment/parentChangeStatus.ts");
 
 // 상태 이름 = useState 호출 순서. 순서가 바뀌면 아래 길이 검사가 먼저 깨진다.
-const STATE_NAMES = ["childIdx", "kind", "toClassId", "effectiveFrom", "resumeOn", "reason", "error", "done", "uncertainSource", "submittedFor", "localPending", "canceledId", "resumeFrom", "pauseFrom", "additionalPauseIds", "cancelRequested", "addState"];
+const STATE_NAMES = ["childIdx", "kind", "toClassId", "effectiveFrom", "resumeOn", "reason", "error", "done", "uncertainSource", "submittedFor", "localPending", "canceledId", "resumeFrom", "pauseFrom", "additionalPauseIds", "cancelRequested", "addState", "limitHit"];
 
 function harness() {
   let state = {};

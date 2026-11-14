@@ -180,6 +180,11 @@ function harness(over = {}) {
       if (sql.includes('FROM "Enrollment" e JOIN "Class" c')) return state.classes.filter((c) => c.studentId === v[0]);
       if (sql.includes('FROM "RegularShuttleStop" r')) return state.cells.filter((c) => v[0].includes(c.studentId));
       if (sql.includes(`WHERE "studentId" = $1 AND status = 'PENDING' LIMIT 1`)) return state.requests.filter((r) => r.studentId === v[0] && r.status === "PENDING").map((r) => ({ id: r.id }));
+      if (sql.includes("count(*)::int AS n")) {
+        assert.match(sql, /\("createdAt" AT TIME ZONE 'Asia\/Seoul'\)::date = \(now\(\) AT TIME ZONE 'Asia\/Seoul'\)::date/, "timestamptz 는 변환 한 번");
+        assert.doesNotMatch(sql, /status/, "취소한 것도 센다");
+        return [{ n: state.requests.filter((r) => r.studentId === v[0]).length }];
+      }
       if (sql.startsWith('UPDATE "ShuttleRegularChangeRequest" r') && sql.includes("SET status = $2")) {
         assert.match(sql, /r\.id = \$1 AND r\.status = 'PENDING'/, "확인 중일 때만 결정");
         const row = state.requests.find((r) => r.id === v[0] && r.status === "PENDING");
@@ -318,6 +323,31 @@ test("④ 전이: 신청 → 학부모 취소(확인 중일 때만·내 아이 �
   assert.equal(rosterTouched(state), 0);
   // 취소 뒤에는 다시 신청할 수 있다
   assert.equal((await api.submitRegularChangeRequest("parent-a", submitBody(), prisma)).ok, true);
+});
+
+test("③ 하루 상한(보안 검수 L1): 신청→취소를 되풀이해도 아이당 하루 5건까지 — 여섯 번째는 쓰지 않고 code 와 전화 안내", async () => {
+  const { api, state, prisma } = harness();
+  assert.equal(rules.REGULAR_CHANGE_DAILY_LIMIT, 5);
+  for (let i = 0; i < 5; i++) {
+    const made = await api.submitRegularChangeRequest("parent-a", submitBody(), prisma);
+    assert.equal(made.ok, true, `${i + 1}번째`);
+    assert.equal((await api.cancelRegularChangeRequest("parent-a", made.id, prisma)).ok, true);
+  }
+  assert.equal(state.staffNotices.length, 5);
+  const sixth = await api.submitRegularChangeRequest("parent-a", submitBody(), prisma);
+  assert.deepEqual(sixth, { ok: false, message: "오늘은 더 신청할 수 없어요. 학원에 전화해 주세요.", code: "DAILY_LIMIT" });
+  assert.equal(state.requests.length, 5, "여섯 번째는 저장되지 않는다");
+  assert.equal(state.staffNotices.length, 5, "원장 알림도 더 가지 않는다");
+  // 세는 곳은 학생 행 잠금 «뒤»(접수 트랜잭션 안)
+  const submit = serverSrc.slice(serverSrc.indexOf("export async function submitRegularChangeRequest"), serverSrc.indexOf("export async function cancelRegularChangeRequest"));
+  assert.ok(submit.indexOf("FOR UPDATE OF s") < submit.indexOf("count(*)::int AS n"));
+  assert.ok(submit.indexOf("count(*)::int AS n") < submit.indexOf("INSERT INTO ${TABLE}"));
+  // API·화면: code 가 오면 전화 버튼(번호가 있을 때만)
+  assert.match(read("src/app/api/mypage/shuttle-regular/route.ts"), /"code" in result && result\.code \? \{ code: result\.code \} : \{\}/);
+  const client = read("src/app/mypage/shuttle/regular/RegularChangeClient.tsx");
+  assert.match(client, /setLimitHit\(data\?\.code === "DAILY_LIMIT"\)/);
+  assert.match(client, /\{limitHit && academyTel && <a href=\{`tel:\$\{academyTel\}`\} className="academy-button-secondary">학원에 전화하기<\/a>\}/);
+  assert.match(read("src/app/mypage/shuttle/regular/page.tsx"), /academyTel=\{academyTel\(academyPhone\)\}/);
 });
 
 test("④ 전이: 승인 = 예약 — 적용일 전에는 명단이 그대로, 적용일에 기존 관리자 반영 함수로 반영(모든 요일이면 학생 위치도)", async () => {

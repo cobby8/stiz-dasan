@@ -12,6 +12,13 @@ import { makeupGradeFit } from "@/lib/makeup/credit-rules";
 /** EnrollmentChangeRequest.kind 값. 운영 원장(OperationsCommand.kind)의 «수강 등록»과 같은 낱말이다. */
 export const CLASS_ADD_KIND = "CLASS_ADD" as const;
 
+/** 아이당 «검토 중» 반 추가 신청 상한(보안 검수 L2) — 넘으면 결과를 기다리거나 취소한 뒤 신청한다 */
+export const CLASS_ADD_MAX_PENDING = 3;
+/** 아이당 하루(KST) 접수 상한(보안 검수 L1) — 신청→취소→재신청을 되풀이해 원장 알림이 쏟아지는 것을 막는다. 취소한 것도 센다 */
+export const CLASS_ADD_DAILY_LIMIT = 5;
+/** 하루 상한 문구 — 화면이 이 답(code=DAILY_LIMIT)을 받으면 «학원에 전화하기» 버튼을 함께 보인다 */
+export const DAILY_LIMIT_MESSAGE = "오늘은 더 신청할 수 없어요. 학원에 전화해 주세요.";
+
 export type ClassAddCandidateClass = {
   classId: string;
   className?: string | null;
@@ -51,6 +58,8 @@ export type ClassAddSubmitError =
   | "NO_ACTIVE_CLASS"
   | "ALREADY_ENROLLED"
   | "ALREADY_REQUESTED"
+  | "TOO_MANY_PENDING"
+  | "DAILY_LIMIT"
   | "CLASS_NOT_FOUND"
   | "GRADE_NOT_MATCHED";
 
@@ -60,6 +69,8 @@ export const CLASS_ADD_MESSAGE: Record<ClassAddSubmitError, string> = {
   NO_ACTIVE_CLASS: "지금 다니는 반이 있어야 반을 추가할 수 있어요.",
   ALREADY_ENROLLED: "이미 다니고 있는 반이에요. 다른 반을 선택해 주세요.",
   ALREADY_REQUESTED: "이미 추가 신청한 반이에요. 학원 확인을 기다려 주세요.",
+  TOO_MANY_PENDING: `검토 중인 신청이 있어요. ${CLASS_ADD_MAX_PENDING}건까지 신청할 수 있어요 — 결과를 기다리거나 취소한 뒤 신청해 주세요.`,
+  DAILY_LIMIT: DAILY_LIMIT_MESSAGE,
   CLASS_NOT_FOUND: "선택한 반을 찾을 수 없습니다.",
   GRADE_NOT_MATCHED: "아이 학년에 맞는 반만 추가할 수 있어요. 목록을 새로고침해 다시 골라 주세요.",
 };
@@ -78,6 +89,8 @@ export function validateClassAdd(input: {
   /** 대상 반이 실재하는 정규 반인가 */
   targetExists: boolean;
   candidateIds: readonly string[];
+  /** 그 아이가 오늘(KST) 낸 반 추가 신청 수(취소한 것 포함). 안 주면 세지 않는다 */
+  todayCount?: number;
 }): { ok: true; toClassId: string } | { ok: false; error: ClassAddSubmitError } {
   const toClassId = typeof input.toClassId === "string" ? input.toClassId.trim() : "";
   if (!toClassId) return { ok: false, error: "TO_CLASS_REQUIRED" };
@@ -86,6 +99,8 @@ export function validateClassAdd(input: {
   if (!input.enrollments.some((e) => e.status === "ACTIVE")) return { ok: false, error: "NO_ACTIVE_CLASS" };
   if (input.enrollments.some((e) => e.classId === toClassId)) return { ok: false, error: "ALREADY_ENROLLED" };
   if (input.pendingClassIds.includes(toClassId)) return { ok: false, error: "ALREADY_REQUESTED" };
+  if (input.pendingClassIds.length >= CLASS_ADD_MAX_PENDING) return { ok: false, error: "TOO_MANY_PENDING" };
+  if ((input.todayCount ?? 0) >= CLASS_ADD_DAILY_LIMIT) return { ok: false, error: "DAILY_LIMIT" };
   if (!input.targetExists) return { ok: false, error: "CLASS_NOT_FOUND" };
   if (!input.candidateIds.includes(toClassId)) return { ok: false, error: "GRADE_NOT_MATCHED" };
   return { ok: true, toClassId };

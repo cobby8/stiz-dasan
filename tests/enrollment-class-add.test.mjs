@@ -140,6 +140,12 @@ function submitHarness(over = {}) {
       if (sql.includes('SELECT "toClassId" FROM "EnrollmentChangeRequest"')) {
         return state.pending.filter((p) => p.studentId === values[0]).map((p) => ({ toClassId: p.toClassId }));
       }
+      if (sql.includes("count(*)::int AS n")) {
+        assert.match(sql, /\("createdAt" AT TIME ZONE 'Asia\/Seoul'\)::date = \(now\(\) AT TIME ZONE 'Asia\/Seoul'\)::date/, "timestamptz 는 변환 한 번");
+        assert.match(sql, /"studentId" = \$1 AND kind = 'CLASS_ADD'/);
+        assert.doesNotMatch(sql, /status/, "취소한 것도 센다");
+        return [{ n: state.todayCount ?? state.inserts.length }];
+      }
       if (sql.includes('ss."gradesJSON"')) return state.classRows;
       if (sql.includes('INSERT INTO "EnrollmentChangeRequest"')) {
         state.inserts.push(values);
@@ -230,6 +236,62 @@ test("② 정원이 찬 반은 대기로 접수(반 변경과 같은 규칙) · 
   // 날짜를 비우면 다음 달 1일(반 변경과 같다)
   const blank = submitHarness();
   assert.equal((await blank.api.submitClassAddRequest("parent-a", { studentId: "student-a", toClassId: "c-34" })).effectiveFrom, "2026-12-01");
+});
+
+test("② 상한(보안 검수 L1·L2): 아이당 «검토 중» 3건 · 하루 5건(취소 포함) — 넘으면 쓰지 않고 거절, 하루 상한은 code 와 전화 안내", async () => {
+  assert.equal(rules.CLASS_ADD_MAX_PENDING, 3);
+  assert.equal(rules.CLASS_ADD_DAILY_LIMIT, 5);
+  const base = { toClassId: "c-34", reason: "", enrollments: [{ classId: "c-12", status: "ACTIVE" }], targetExists: true, candidateIds: ["c-34"] };
+  assert.equal(rules.validateClassAdd({ ...base, pendingClassIds: ["a", "b"] }).ok, true, "2건까지는 더 낼 수 있다");
+  assert.equal(rules.validateClassAdd({ ...base, pendingClassIds: ["a", "b", "c"] }).error, "TOO_MANY_PENDING");
+  assert.match(rules.CLASS_ADD_MESSAGE.TOO_MANY_PENDING, /검토 중인 신청이 있어요/);
+  assert.equal(rules.validateClassAdd({ ...base, pendingClassIds: [], todayCount: 4 }).ok, true);
+  assert.equal(rules.validateClassAdd({ ...base, pendingClassIds: [], todayCount: 5 }).error, "DAILY_LIMIT");
+  assert.equal(rules.CLASS_ADD_MESSAGE.DAILY_LIMIT, "오늘은 더 신청할 수 없어요. 학원에 전화해 주세요.");
+
+  // 접수(실행): 검토 중 3건이면 네 번째는 거절
+  const many = submitHarness({ pending: [{ studentId: "student-a", toClassId: "x1" }, { studentId: "student-a", toClassId: "x2" }, { studentId: "student-a", toClassId: "x3" }], todayCount: 3 });
+  const fourth = await many.api.submitClassAddRequest("parent-a", { studentId: "student-a", toClassId: "c-34", effectiveFrom: "2026-12-01" });
+  assert.equal(fourth.ok, false);
+  assert.match(fourth.message, /검토 중인 신청이 있어요/);
+  assert.equal(fourth.code, undefined);
+  assert.equal(many.state.inserts.length, 0);
+
+  // 접수(실행): 신청→취소를 되풀이해 오늘 5건을 채웠으면(검토 중은 0건이어도) 거절 + code
+  const spam = submitHarness({ todayCount: 5 });
+  const sixth = await spam.api.submitClassAddRequest("parent-a", { studentId: "student-a", toClassId: "c-34", effectiveFrom: "2026-12-01" });
+  assert.deepEqual(sixth, { ok: false, message: "오늘은 더 신청할 수 없어요. 학원에 전화해 주세요.", code: "DAILY_LIMIT" });
+  assert.equal(spam.state.inserts.length, 0);
+  assert.equal(spam.state.notices.length, 0, "원장 알림도 가지 않는다");
+  // 세는 곳은 학생 행 잠금 «뒤» — 동시에 눌러도 상한을 못 넘는다
+  const src = read("src/lib/enrollment/parent-class-add.ts");
+  assert.ok(src.indexOf("FOR UPDATE OF s") < src.indexOf("count(*)::int AS n"));
+  // API 가 code 를 내려 주고, 화면은 그 답일 때만 전화 버튼(번호가 있을 때)을 보인다
+  assert.match(read("src/app/api/mypage/enrollment-change/route.ts"), /"code" in result && result\.code \? \{ code: result\.code \} : \{\}/);
+  const client = read("src/app/mypage/enrollment-change/EnrollmentChangeClient.tsx");
+  assert.match(client, /setLimitHit\(data\?\.code === "DAILY_LIMIT"\)/);
+  assert.match(client, /\{limitHit && academyTel && <a href=\{`tel:\$\{academyTel\}`\} className="academy-button-secondary">학원에 전화하기<\/a>\}/);
+  assert.match(read("src/app/mypage/enrollment-change/page.tsx"), /academyTel=\{academyTel\(academyPhone\)\}/, "번호 판정은 규칙 한 곳(academyPhoneRules)");
+});
+
+test("⑤ 화면: 하루 상한 답을 받으면 안내 옆에 «학원에 전화하기»(번호가 있을 때만)", async () => {
+  const h = screen();
+  h.set({ kind: "CLASS_ADD", toClassId: "c-34" });
+  globalThis.fetch = async () => ({ status: 400, ok: false, json: async () => ({ error: "오늘은 더 신청할 수 없어요. 학원에 전화해 주세요.", code: "DAILY_LIMIT" }) });
+  findButton(h.render({ initial: initial(), classAdd: classAdd(), academyTel: "0311234567" }), "반 추가 신청하기").props.onClick();
+  await Promise.all(h.transitions);
+  assert.equal(h.state.limitHit, true);
+  const withTel = h.render({ initial: initial(), classAdd: classAdd(), academyTel: "0311234567" });
+  assert.match(allText(withTel), /오늘은 더 신청할 수 없어요/);
+  assert.ok(withTel.some((x) => x.el?.type === "a" && x.el.props.href === "tel:0311234567"), "전화 버튼");
+  const noTel = h.render({ initial: initial(), classAdd: classAdd() });
+  assert.ok(!noTel.some((x) => x.el?.type === "a" && String(x.el.props.href).startsWith("tel:")), "번호가 없으면 글자만");
+  // 다른 거절(예: 이미 신청한 반)에는 전화 버튼이 없다
+  globalThis.fetch = async () => ({ status: 400, ok: false, json: async () => ({ error: "이미 추가 신청한 반이에요." }) });
+  h.set({ toClassId: "c-34" });
+  findButton(h.render({ initial: initial(), classAdd: classAdd(), academyTel: "0311234567" }), "반 추가 신청하기").props.onClick();
+  await Promise.all(h.transitions);
+  assert.equal(h.state.limitHit, false);
 });
 
 // ── ③ 승인(실제 실행 — 가짜 거래) ────────────────────────────────────────────────
@@ -370,7 +432,7 @@ test("④ 표시: 신청함·학부모 신청 내역·결정 알림이 «추가�
 
 // ── ⑤ 화면(컴포넌트 함수를 직접 불러 요소 트리를 본다) ─────────────────────────────
 const realReact = nodeRequire("react");
-const STATE_NAMES = ["childIdx", "kind", "toClassId", "effectiveFrom", "resumeOn", "reason", "error", "done", "uncertainSource", "submittedFor", "localPending", "canceledId", "resumeFrom", "pauseFrom", "additionalPauseIds", "cancelRequested", "addState"];
+const STATE_NAMES = ["childIdx", "kind", "toClassId", "effectiveFrom", "resumeOn", "reason", "error", "done", "uncertainSource", "submittedFor", "localPending", "canceledId", "resumeFrom", "pauseFrom", "additionalPauseIds", "cancelRequested", "addState", "limitHit"];
 function screen() {
   const state = {};
   let calls = 0;

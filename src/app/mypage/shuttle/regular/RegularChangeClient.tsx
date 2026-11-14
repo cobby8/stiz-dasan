@@ -63,7 +63,8 @@ function kindsFor(child: RegularChangeChild, ctx: RegularChangeContext): Regular
   return kinds;
 }
 
-export default function RegularChangeClient({ initial, presetStudentId = null }: { initial: RegularChangeOptions; presetStudentId?: string | null }) {
+// academyTel = 걸 수 있는 학원 번호(서버가 다듬은 값) — 하루 접수 상한 안내 옆 «학원에 전화하기». 없으면 글자만
+export default function RegularChangeClient({ initial, presetStudentId = null, academyTel = null }: { initial: RegularChangeOptions; presetStudentId?: string | null; academyTel?: string | null }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const sending = useRef(false);
@@ -86,6 +87,8 @@ export default function RegularChangeClient({ initial, presetStudentId = null }:
   const [submittedFor, setSubmittedFor] = useState<string | null>(null);
   // 방금 취소한 신청 — 새로고침이 늦어도 다시 보이지 않게
   const [canceledIds, setCanceledIds] = useState<string[]>([]);
+  // 서버가 «오늘은 더 신청할 수 없어요»(하루 접수 상한)로 답했는가 — 안내 옆에 전화 버튼을 보인다
+  const [limitHit, setLimitHit] = useState(false);
 
   const child = initial.children.find((c) => c.studentId === studentId) ?? null;
   const requests = initial.requests.filter((r) => !canceledIds.includes(r.id));
@@ -125,7 +128,7 @@ export default function RegularChangeClient({ initial, presetStudentId = null }:
   async function send(body: Record<string, unknown>): Promise<boolean> {
     if (sending.current) return false;
     sending.current = true;
-    setError(""); setDone("");
+    setError(""); setDone(""); setLimitHit(false);
     try {
       const response = await fetch("/api/mypage/shuttle-regular", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
@@ -133,6 +136,7 @@ export default function RegularChangeClient({ initial, presetStudentId = null }:
       const data = await response.json().catch(() => null);
       if (!response.ok || data?.ok !== true) {
         setError(customerMessage(data?.error, "요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요."));
+        setLimitHit(data?.code === "DAILY_LIMIT");
         return false;
       }
       return true;
@@ -196,6 +200,8 @@ export default function RegularChangeClient({ initial, presetStudentId = null }:
   const notice = (
     <>
       {error && <p role="alert" className="rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm font-medium text-[var(--color-academy-danger)]">{error}</p>}
+      {/* 하루 접수 상한 — 문장이 «전화해 주세요»로 끝나므로 그 자리에서 걸 수 있게 */}
+      {limitHit && academyTel && <a href={`tel:${academyTel}`} className="academy-button-secondary">학원에 전화하기</a>}
       {done && <p role="status" className="rounded-xl bg-[var(--color-academy-success-soft)] p-3 text-sm font-medium text-[var(--color-academy-success)]">{done}</p>}
     </>
   );

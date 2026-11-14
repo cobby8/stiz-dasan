@@ -34,6 +34,11 @@ export const ROSTER_DIRECTION: Record<RegularChangeDirection, "BOARD" | "ALIGHT"
 export const REGULAR_CHANGE_STATUSES = ["PENDING", "APPROVED", "APPLIED", "REJECTED", "CANCELED"] as const;
 export type RegularChangeStatus = (typeof REGULAR_CHANGE_STATUSES)[number];
 
+/** 아이당 하루(KST) 접수 상한(보안 검수 L1) — 신청→취소→재신청을 되풀이해 원장 알림이 쏟아지는 것을 막는다. 취소한 것도 센다 */
+export const REGULAR_CHANGE_DAILY_LIMIT = 5;
+/** 하루 상한 문구 — 화면이 이 답(code=DAILY_LIMIT)을 받으면 «학원에 전화하기» 버튼을 함께 보인다 */
+export const REGULAR_CHANGE_DAILY_LIMIT_MESSAGE = "오늘은 더 신청할 수 없어요. 학원에 전화해 주세요.";
+
 /** 전할 말 길이 상한(DB CHECK 와 같은 값) */
 export const REGULAR_CHANGE_NOTE_MAX = 300;
 /** 적용 시작일을 고를 수 있는 가장 먼 날(오늘부터 몇 달) — 수강 변경과 같은 3개월 */
