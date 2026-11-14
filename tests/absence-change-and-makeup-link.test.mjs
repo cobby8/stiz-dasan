@@ -383,8 +383,10 @@ function makeDb(overrides = {}) {
         gradesJson: c.grades ? JSON.stringify(c.grades) : null, gradeRangeText: c.gradeRangeText ?? null, enrolled: c.enrolled,
       }));
     }
-    if (/SELECT e\."classId" AS "classId" FROM "Enrollment" e WHERE e\."studentId" = \$1 AND e\.status = 'ACTIVE'/.test(sql)) {
-      return db.enrollments.filter((e) => e.studentId === args[0] && e.status === "ACTIVE").map((e) => ({ classId: e.classId }));
+    if (/SELECT e\."classId" AS "classId" FROM "Enrollment" e WHERE e\."studentId" = \$1 AND e\.status IN \(([^)]*)\)/.test(sql)) {
+      // 제외할 수강 상태를 SQL 문구에서 읽는다(수강 중 = ACTIVE + 휴원 중 PAUSED, 퇴원은 아니다)
+      const statuses = [.../e\.status IN \(([^)]*)\)/.exec(sql)[1].matchAll(/'([A-Z_]+)'/g)].map((m) => m[1]);
+      return db.enrollments.filter((e) => e.studentId === args[0] && statuses.includes(e.status)).map((e) => ({ classId: e.classId }));
     }
     if (/FROM "MakeupSession" m/.test(sql) && /GROUP BY 1, 2/.test(sql)) {
       // timestamptz → KST 변환은 «한 번»
@@ -936,7 +938,23 @@ test("휴원(PAUSED) 중에도 보강 예약이 된다 — 조회·예약이 수
   const res = await makeup.getMakeupOptionsForCredit("p1", credit.id);
   assert.equal(res.emptyReason, null);
   assert.ok(res.options.some((o) => o.classId === "cA"));
+  // 원장 지시: «자기가 수강 중인 반은 보강 대상이 아니야» — 휴원 중인 자기 반(cE)은 목록에 없고 예약도 거절된다
+  assert.equal(res.options.some((o) => o.classId === "cE"), false, "휴원 중인 자기 반은 후보가 아니다");
+  assert.deepEqual(res.options.map((o) => o.classId).sort(), ["cA", "cC", "cD"], "다른 반은 그대로 뜬다");
+  assert.equal((await makeup.bookMakeup("p1", { creditId: credit.id, classId: "cE", dateYmd: "2026-11-20" })).message, "이 학생이 갈 수 있는 수업이 아닙니다.");
   assert.equal((await makeup.bookMakeup("p1", { creditId: credit.id, classId: "cA", dateYmd: "2026-11-17" })).ok, true);
+});
+
+test("퇴원한 반은 자기 반이 아니다 — 후보에 남는다(수강 중 = ACTIVE·PAUSED 만 뺀다)", async () => {
+  const db = makeDb();
+  freeze(SAT, "10:00");
+  db.enrollments.find((e) => e.studentId === "s1" && e.classId === "cE").status = "WITHDRAWN";
+  const credit = creditFor(db);
+  const res = await makeup.getMakeupOptionsForCredit("p1", credit.id);
+  assert.ok(res.options.some((o) => o.classId === "cE"), "퇴원한 반은 다시 후보가 된다");
+  assert.equal((await makeup.bookMakeup("p1", { creditId: credit.id, classId: "cE", dateYmd: "2026-11-20" })).ok, true);
+  // 조회 문구: 수강 중 두 상태만 뺀다
+  assert.match(read("src/lib/makeup/parent-makeup.ts"), /WHERE e\."studentId" = \$1 AND e\.status IN \('ACTIVE', 'PAUSED'\)`/);
 });
 
 // ═════════════════════════════════════════════════════════════════════════

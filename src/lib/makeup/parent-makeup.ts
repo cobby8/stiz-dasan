@@ -191,9 +191,11 @@ export async function getMakeupOptionsForCredit(
       WHERE c."dayOfWeek" <> 'Seasonal' AND p."deletedAt" IS NULL`,
   );
 
-  // ③ 그 학생이 이미 다니는 반(같은 반에서 보강을 받는 것은 보강이 아니다)
+  // ③ 그 학생이 수강 중인 반(같은 반에서 보강을 받는 것은 보강이 아니다)
+  //   원장 지시(2026-11-14): «자기가 수강 중인 반은 보강 대상이 아니야» — 휴원 중(PAUSED)인 자기 반도 뺀다.
+  //   퇴원한 반(WITHDRAWN)은 더 이상 자기 반이 아니므로 후보에 남는다.
   const enrolledRows = await prisma.$queryRawUnsafe<Array<{ classId: string }>>(
-    `SELECT e."classId" AS "classId" FROM "Enrollment" e WHERE e."studentId" = $1 AND e.status = 'ACTIVE'`,
+    `SELECT e."classId" AS "classId" FROM "Enrollment" e WHERE e."studentId" = $1 AND e.status IN ('ACTIVE', 'PAUSED')`,
     credit.studentId,
   );
 
