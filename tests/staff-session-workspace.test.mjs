@@ -114,7 +114,7 @@ test("통합 글칸: 채운 값은 자동 저장하지 않고, 수업 전은 미
   // 글칸은 저장 버튼을 눌렀을 때만 저장한다(값이 바뀌었다고 저장하지 않는다)
   assert.doesNotMatch(editor, /useEffect/);
   assert.match(editor, /onClick=\{\(\) => void submit\(\)\}/);
-  assert.match(editor, /\{prefilledFromPlan && status !== "saved" && \(\s*<p role="status"[^>]*>\{PLAN_PREFILL_NOTICE\}<\/p>/);
+  assert.match(editor, /\{prefilledFromPlan && unsaved && \(\s*<p role="status"[^>]*>\{PLAN_PREFILL_NOTICE\}<\/p>/);
   // 수업 중: 채운 상태로 시작 → 저장하면 안내가 사라진다
   assert.match(workspace, /useState<string \| null>\(initialLessonText\.prefilledFromPlan \? initialLessonText\.value : null\)/);
   assert.match(workspace, /const lessonPrefilled = isUntouchedPrefill\(prefillSource, report\);/);
@@ -177,12 +177,12 @@ test("종료 잠금·확인 창·이동 전 저장은 그대로, 홈에서는 �
   // 종료 버튼 잠금: 음성 입력 중·수업 내용 저장 중·메모 저장 중·오프라인 + 사진·영상 올리는 중(검수 8)
   assert.match(workspace, /const endLocked = pending \|\| voiceBusy \|\| feedBusy \|\| memoStatus === "saving" \|\| !online \|\| mediaBusy;/);
   assert.match(workspace, /사진·영상을 올리는 중이에요\./);
-  assert.match(workspace, /<button id="session-end" type="button" disabled=\{endLocked\} onClick=\{\(\) => \{ setFinishError\(""\); setShowEndConfirm\(true\); \}\}/);
+  assert.match(workspace, /<button id="session-end" type="button" disabled=\{endLocked\} onClick=\{openEndConfirm\}/);
   // 확인 창: 출결 4칸·미확인 차단·바로 보내기·최종 확정만 위험색
   assert.match(workspace, /출결 미확인 학생 \{counts\.UNCHECKED\}명이 있어 아직 종료할 수 없습니다\./);
   assert.match(workspace, /학부모에게 바로 보내기/);
   assert.match(workspace, /onClick=\{finishSession\} className="academy-button-danger-solid"/);
-  assert.match(workspace, /onClick=\{\(\) => \{ setShowEndConfirm\(false\); openAttendance\(\); \}\}/);
+  assert.match(workspace, /onClick=\{\(\) => \{ setShowEndConfirm\(false\); scrollToRoster\(\); \}\}/);
   // 미확인 출결이 있으면 종료를 거절하는 서버 규칙은 그대로
   assert.match(functionBody(actions, "completeClassSession"), /출결을 확인하지 않은 학생이 있습니다\(보강 온 아이 포함\)\./);
   // 수업 주소 전용: 뒤로 가기 확인. 홈에 끼운 칸은 이력을 건드리지 않는다
@@ -286,12 +286,13 @@ test("홈은 수업 줄을 누르거나 수업을 시작해도 수업 주소로 
 
 test("출석부 줄의 이름을 누르면 그 자리에서 학생 정보가 펼쳐진다 — 예전 시트의 내용 전부", () => {
   // 학생 정보는 «이름을 눌러 처음 펼칠 때» 한 번 읽는다(검수 10 — 출석부를 열자마자 읽으면 그 조회가 첫 출석 저장보다 먼저 줄을 선다)
-  assert.match(workspace, /aria-expanded=\{infoOpen\} aria-controls=\{`roster-info-\$\{student\.id\}`\} onClick=\{\(\) => \{ setPeopleWanted\(true\); setInfoRow\(infoOpen \? null : student\.id\); \}\}/);
+  assert.match(workspace, /aria-expanded=\{infoOpen\} aria-controls=\{`roster-info-\$\{student\.id\}`\} aria-label=\{`\$\{student\.name\} 상세 정보`\} onClick=\{\(\) => \{ setPeopleWanted\(true\); setInfoRow\(infoOpen \? null : student\.id\); \}\}/);
   assert.match(workspace, /const \[peopleWanted, setPeopleWanted\] = useState\(false\);/);
-  assert.match(workspace, /useClassPeople\(\{ classId: session\.classId, sessionId: session\.id, sessionDateId: session\.sessionDateId, enabled: peopleWanted \}\)/);
+  // 2026-11-15 접이식 구조와 병합: 화면이 뜨고 잠시 뒤 또는 첫 이름 누름 때 읽고, 출결 저장 중이면 미룬다(더 보수적인 쪽)
+  assert.match(workspace, /useClassPeople\(\{ classId: session\.classId, sessionId: session\.id, sessionDateId: session\.sessionDateId, enabled: peopleWanted, hold: attendanceBusy \}\)/);
   assert.doesNotMatch(workspace, /if \(name === "attendance"\) setPeopleWanted\(true\);/);
   const info = read("src/components/staff/RosterPersonInfo.tsx");
-  assert.match(info, /if \(!enabled\) return;/);
+  assert.match(info, /if \(!enabled \|\| hold\) return;/);
   for (const piece of ["<ProfileAvatar decorative name={person.name} src={photoSrc} size={40} />", "학교·학년 미등록", 'label="학생 전화"', 'label="학부모 전화"', 'label="문자" sms', "person.memo &&", "person.recentAttendance.total", "person.guardians.map(", "오늘 {status ? TODAY_LABEL[status] : \"미확인\"}"]) {
     assert.ok(info.includes(piece), piece);
   }
@@ -411,7 +412,7 @@ test("권장 3·4: 펼쳐진 줄 머리의 «시작»은 숨기고, 접힌 줄 �
 });
 
 test("권장 5·6·9: 수업 중에도 미리 쓴 내용을 읽을 수 있고, 홈은 막대만큼 끝 여백을 두며, 글칸은 음성·저장을 따로 센다", () => {
-  assert.match(workspace, /\{session\.plannedContent\?\.trim\(\) && \([\s\S]{0,400}aria-expanded=\{showPlan\} aria-controls="session-plan"[\s\S]{0,500}\{showPlan && <p id="session-plan"[^>]*>\{session\.plannedContent\}<\/p>\}/);
+  assert.match(workspace, /\{plan && \([\s\S]{0,300}aria-expanded=\{showPlan\} aria-controls="session-plan"[\s\S]{0,500}\{showPlan && \(\s*<div id="session-plan"[^>]*>\s*<p[^>]*>\{plan\}<\/p>/);
   assert.match(home, /\{expandedLesson\?\.sessionStatus === "IN_PROGRESS" && <div aria-hidden="true" className="h-28" \/>\}/);
   assert.match(editor, /busyRef\.current\[kind\] = busy;\s*onBusyChange\?\.\(busyRef\.current\.voice \|\| busyRef\.current\.saving\);/);
   assert.match(editor, /onBusyChange=\{\(busy\) => reportBusy\("voice", busy\)\}/);

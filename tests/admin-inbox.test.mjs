@@ -166,8 +166,9 @@ test('체험·수강·대관 탭은 기존 화면 컴포넌트를 그대로 끼�
 });
 
 test('탭 안: 처리할 것(처리 필요→진행 중) 먼저, 완료는 «완료 보기»를 눌렀을 때만 읽는다(k2)', () => {
-  assert.match(page, /getInboxRows\(\{ bucket: "ACTION", kinds, from, to \}\)/);
-  assert.match(page, /getInboxRows\(\{ bucket: "ONGOING", kinds, from, to \}\)/);
+  // 2026-11-14 부원장 금액 가림: 보는 사람 역할(viewerRole)을 같이 넘긴다
+  assert.match(page, /getInboxRows\(\{ bucket: "ACTION", kinds, from, to, viewerRole: role \}\)/);
+  assert.match(page, /getInboxRows\(\{ bucket: "ONGOING", kinds, from, to, viewerRole: role \}\)/);
   assert.match(page, /showDone \? getInboxRows\(\{ bucket: "DONE"/);
   assert.match(client, /\{showDone \? "완료 접기" : "완료 보기"\}/);
 });

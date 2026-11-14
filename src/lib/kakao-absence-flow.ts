@@ -259,6 +259,9 @@ async function startCancel(input: AbsenceFlowInput, child: FlowChild | null, lea
   return recordListReply(state, input.webLink, lead);
 }
 
+/** 질병·부상 결석 완료 안내 — 카톡으로는 사진을 받을 수 없어 앱으로 이끈다(사유 글은 싣지 않는다) */
+export const ILLNESS_KAKAO_NOTICE = "질병·부상 결석은 앱 「결석 알리기」에서 결석일부터 7일 안에 증빙 사진(진단서·처방전·약 봉투 등)을 올려 주세요. 확인 후 다음 달 수강료에서 빼 드려요. 사진이 없으면 보강권 1장으로 바뀌어요.";
+
 /** 확정 → 실제 결석 신청(reportRegularAbsence — 웹과 같은 함수) */
 async function confirmReport(flow: FlowRow<AbsenceState>): Promise<Reply> {
   const state = flow.state;
@@ -269,17 +272,20 @@ async function confirmReport(flow: FlowRow<AbsenceState>): Promise<Reply> {
     return flowReply("이미 처리 중이거나 처리된 신청이에요.", ["결석 취소", "메뉴"]);
   }
   let creditIssued = false;
+  // 질병·부상 결석(2026-11-14): 보강권 대신 «이월 검토 중» — 카톡은 사진을 못 받으니 앱에서 올리라고 한 줄 안내한다
+  let carryPending = false;
   try {
     // ★ 서버 재검증: 소유권·쓸 수 있는 수강(ACTIVE 또는 복귀 승인된 휴원 반 — 복귀일 이후만)·요일·마감(수업 1시간 전)은 reportRegularAbsence 가 다시 본다(대화 상태를 믿지 않는다).
-    const result = await reportRegularAbsence(state.parentUserId, { studentId: state.studentId, classId: chosen.classId, date: chosen.date, reason: state.reason });
+    const result = await reportRegularAbsence(state.parentUserId, { studentId: state.studentId, classId: chosen.classId, date: chosen.date, reason: state.reason, source: "KAKAO" });
     creditIssued = Boolean(result?.makeupCreditIssued);
+    carryPending = result?.carryReview === "PENDING";
   } catch (error) {
     await store.close(flow.id, "CANCELED");
     return flowReply(`결석 신청을 못 했어요: ${absenceErrorMessage(error)} 「결석 신청」으로 다시 확인해 주세요.`, ["결석 신청", "메뉴"]);
   }
   await store.close(flow.id, "APPLIED", { ...state, step: "SAVING" });
   return flowReply(
-    `결석 신청 완료: ${state.studentName} 학생 ${chosen.label} (${REASON_LABEL[state.reason]})\n\n그날 셔틀은 자동으로 빠지고 원장님·코치님께 전달됐어요. ${creditIssued ? "보강권 1장이 생겼어요 — 「보강 신청」으로 바로 예약할 수 있어요." : "보강은 결석 처리 후 「보강 신청」으로 하실 수 있어요."}`,
+    `결석 신청 완료: ${state.studentName} 학생 ${chosen.label} (${REASON_LABEL[state.reason]})\n\n그날 셔틀은 자동으로 빠지고 원장님·코치님께 전달됐어요. ${carryPending ? ILLNESS_KAKAO_NOTICE : creditIssued ? "보강권 1장이 생겼어요 — 「보강 신청」으로 바로 예약할 수 있어요." : "보강은 결석 처리 후 「보강 신청」으로 하실 수 있어요."}`,
     ["결석 취소", "메뉴"],
   );
 }

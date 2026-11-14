@@ -16,20 +16,21 @@ import { SessionVideoUploader, type SessionVideoUploaderHandle, type SessionVide
 import UiIcon from "@/components/common/UiIcon";
 import { WorkspaceSection } from "@/components/staff/WorkspaceSection";
 import { LessonTextEditor, type LessonTextSaveResult } from "@/components/staff/LessonTextEditor";
-import { RosterPersonInfo, useClassPeople } from "@/components/staff/RosterPersonInfo";
+import { useClassPeople } from "@/components/staff/RosterPersonInfo";
+// 2026-11-15 접이식 구조와 병합: 학생 상세는 시트(SessionStudentSheet) 대신 출석부 줄 아래에 펼친다(내용은 같다).
+// 일반 import 다 — 수업 중 연결이 끊겨도 이름을 누르면 바로 열려야 한다(나눠 받다 실패하면 화면 전체가 오류).
+import { SessionStudentInfo } from "@/components/staff/SessionStudentInfo";
 import { SessionMediaBar } from "@/components/staff/SessionMediaBar";
 import { CompletedSessionPanel, PlannedLessonPanel, WorkspaceLinks, type PlannedLessonProps } from "@/components/staff/LessonWorkspacePanels";
 import { PLAN_PREFILL_END_NOTICE, attendanceSaveBadge, attendanceSummaryLine, countRowErrors, findRosterPerson, isUntouchedPrefill, reportForFinish, resolveLessonText, workspaceSaveStatus } from "@/components/staff/sessionWorkspaceRules";
-// 사유 라벨은 학부모 신고 화면과 같은 표를 쓴다(두 화면의 표기가 갈리면 안 된다).
-import { REASON_LABEL as ABSENCE_REASON_LABEL } from "@/lib/regular/regularAbsenceRules";
 import { VoiceToTextButton } from "@/components/staff/VoiceToTextButton";
 import { useStaffDialog } from "@/components/staff/useStaffDialog";
-import { StatusChoiceButton, StatusPill, type StatusTone } from "@/components/staff/StatusChoiceButton";
+import { StatusChoiceButton, type StatusTone } from "@/components/staff/StatusChoiceButton";
 import { LiveStatusPill } from "@/components/staff/LiveStatusPill";
 import { ATTENDANCE_TONE, TONE_BADGE_CLASS } from "@/lib/ui/statusTones";
 import { loadStaffSessionMonthlyFees } from "@/app/actions/staff-billing";
 import type { StaffMonthlyFeeSummary } from "@/lib/staff-monthly-fee-types";
-import { monthlyFeeLabel } from "@/components/staff/StaffMonthlyFeeSummary";
+import { FEED_LINE_MAX } from "@/lib/feed/rules";
 import type {
   StaffSessionDetail,
   StaffSessionStudent,
@@ -42,12 +43,22 @@ function isLoginFailure(result: object): boolean {
   return "needsLogin" in result && (result as { needsLogin?: boolean }).needsLogin === true;
 }
 
+// «연락처 모아 보기»(이름 검색·전화·문자) — 기존 학생 정보 시트 그대로
+const ClassPeopleSheet = dynamic(
+  () => import("@/components/staff/ClassPeopleSheet").then((module) => module.ClassPeopleSheet),
+  { ssr: false },
+);
 const ClassBillingSheet = dynamic(
   () => import("@/components/staff/ClassBillingSheet").then((module) => module.ClassBillingSheet),
   { ssr: false },
 );
 
+// 예전에는 «수업»·«출석부» 두 화면이었다. 지금은 한 화면이고, attendance 는 «출석부 칸을 펼치고 그리로 맞춰 열기» 뜻으로만 남았다.
 type View = "main" | "attendance";
+/** 화면이 뜬 뒤 학생 정보를 부르기까지 기다리는 시간 — 수업 시작 직후의 첫 출결 누름이 먼저 나가게 */
+const PEOPLE_IDLE_DELAY_MS = 2500;
+/** 안내 중 «잘 됐다»는 문구 — 이 밖의 안내는 전부 실패·주의로 본다(주의색 + role="alert") */
+const SUCCESS_MESSAGE = /^(특이사항을 저장했습니다|전체 출석을 저장했습니다)/;
 /** 출석부 줄 안내의 종류 — 저장 실패(error)와 건너뜀·참고(notice)를 다른 색으로 보인다. */
 type RowNoticeTone = "error" | "notice";
 type AttendanceStatus = "PRESENT" | "LATE" | "ABSENT";
@@ -144,13 +155,13 @@ function LiveSessionWorkspace({
     media: false,
     memo: false,
   }));
-  // 학생 정보는 «이름을 눌러 처음 펼칠 때»(또는 이름 검색을 쓸 때) 한 번만 읽는다.
-  // 출석부를 열자마자 읽으면 그 조회가 출석 저장 요청보다 먼저 줄을 서서 첫 출석 저장이 늦어진다(서버 요청은 한 줄로 처리된다).
+  // 반 학생 정보(연락처·학교·메모·최근 출결) — 펼친 학생 정보와 명단의 «특이» 표시에 쓴다. 늦거나 실패해도 출결은 계속 된다.
   const [peopleWanted, setPeopleWanted] = useState(false);
-  const people = useClassPeople({ classId: session.classId, sessionId: session.id, sessionDateId: session.sessionDateId, enabled: peopleWanted });
   // 이름을 눌러 학생 정보를 펼친 줄(한 번에 하나)
   const [infoRow, setInfoRow] = useState<string | null>(null);
-  const [rosterQuery, setRosterQuery] = useState("");
+  // «연락처 모아 보기» 시트 · 종료 창의 한 줄 입력 칸 열림 여부
+  const [showPeople, setShowPeople] = useState(false);
+  const [editReport, setEditReport] = useState(false);
   // 아래 고정 막대([사진]·[동영상]·[갤러리])가 부르는 올리기 손잡이와 진행 상태
   const photoUploaderRef = useRef<SessionPhotoUploaderHandle>(null);
   const videoUploaderRef = useRef<SessionVideoUploaderHandle>(null);
@@ -164,6 +175,17 @@ function LiveSessionWorkspace({
   const [savingRows, setSavingRows] = useState<Record<string, true>>({});
   // 줄마다의 저장 실패·주의 문구 — 맨 위 한 칸에 띄우면 어느 아이 얘기인지 몰랐다.
   const [rowNotices, setRowNotices] = useState<Record<string, { text: string; tone: RowNoticeTone }>>({});
+  // 반 학생 정보(기존 «학생 정보» 시트와 같은 조회·같은 권한 검사)는 «한가할 때» 부른다.
+  // 서버 기능은 순서대로 처리돼서, 화면이 뜨자마자 부르면 첫 출결 저장이 그 뒤에 줄을 선다.
+  //   - 화면이 뜨고 잠시 뒤(PEOPLE_IDLE_DELAY_MS) 또는 이름을 처음 눌렀을 때 «불러도 됨»으로 바뀐다
+  //   - 출결 저장 중(한 줄·전체 출석)이면 끝날 때까지 미룬다(hold). «특이» 표시는 늦게 떠도 된다.
+  const attendanceBusy = Object.keys(savingRows).length > 0 || Boolean(bulkAttendanceProgress);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setPeopleWanted(true), PEOPLE_IDLE_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, []);
+  const people = useClassPeople({ classId: session.classId, sessionId: session.id, sessionDateId: session.sessionDateId, enabled: peopleWanted, hold: attendanceBusy });
+  const peopleState: "loading" | "ready" | "error" = people.error ? "error" : people.loaded ? "ready" : "loading";
   // 로그인이 풀리면 «다시 로그인» 버튼을 보인다(b5).
   const [needsLogin, setNeedsLogin] = useState(false);
   const [finishError, setFinishError] = useState("");
@@ -203,6 +225,34 @@ function LiveSessionWorkspace({
   // 출석 저장(한 줄·전체)이 진행 중인가 — 홈에서 탭을 옮기기 전에 확인한다
   const attendanceSavingRef = useRef(false);
   const closeEndDialog = useCallback(() => setShowEndConfirm(false), []);
+  /** 출석부 칸을 펼치고 그 자리로 옮긴다 */
+  const scrollToRoster = useCallback(() => {
+    setOpenSections((current) => ({ ...current, attendance: true }));
+    window.requestAnimationFrame(() => document.getElementById("session-attendance")?.scrollIntoView({ block: "start" }));
+  }, []);
+  // 수업을 막 시작하고 들어온 경우(?view=attendance) 명단으로 맞춘다 — 예전의 «출석부» 화면 주소를 그대로 받는다.
+  useEffect(() => {
+    if (initialView === "attendance") scrollToRoster();
+  }, [initialView, scrollToRoster]);
+
+  // 종료 창을 열 때: 이미 쓴 한 줄이 있으면 읽기 전용으로, 없으면 입력 칸으로 연다(같은 칸을 두 번 쓰게 하지 않는다).
+  // 단, 미리 쓴 내용이 «채워진 그대로»면 선생님이 쓴 글이 아니다 → 입력 칸을 연 채 안내와 함께 보인다(모르고 내보내지 않게).
+  function openEndConfirm() {
+    setFinishError("");
+    setEditReport(!report.trim() || lessonPrefilled);
+    setShowEndConfirm(true);
+  }
+
+  // 수업 계획을 «수업 내용» 칸에 채운다 — 저장은 «수업 내용 저장» 또는 수업 종료 때 한다.
+  function loadPlanIntoLine() {
+    const planText = (session.plannedContent || "").trim();
+    if (!planText) return;
+    if (report.trim() && !window.confirm("지금 쓴 글을 지우고 수업 계획으로 바꿀까요?")) return;
+    const filled = Array.from(planText).slice(0, FEED_LINE_MAX).join("");
+    setReport(Array.from(planText).slice(0, FEED_LINE_MAX).join(""));
+    // 불러온 글도 «채운 그대로»다 — 고치거나 저장하기 전에 종료하려 하면 종료 창에서 알린다
+    setPrefillSource(filled);
+  }
   useStaffDialog(showEndConfirm, endDialogRef, closeEndDialog, !pending);
 
   // 수강료 조회가 늦거나 실패해도 출석 버튼과 수업 저장은 계속 사용할 수 있습니다.
@@ -527,12 +577,6 @@ function LiveSessionWorkspace({
     setOpenSections((current) => ({ ...current, [name]: !current[name] }));
   }
 
-  /** 출석부 칸을 펼치고 그 자리로 옮긴다(종료 확인 창의 «출석부 확인하기») */
-  function openAttendance() {
-    setOpenSections((current) => ({ ...current, attendance: true }));
-    window.requestAnimationFrame(() => document.getElementById("session-attendance")?.scrollIntoView({ block: "start", behavior: "smooth" }));
-  }
-
   // 통합 글칸 저장 — 수업 중에는 수업 내용(Session.content)으로. 학부모는 수업 종료·발행 뒤에만 본다
   async function saveLessonText(text: string): Promise<LessonTextSaveResult> {
     try {
@@ -552,23 +596,6 @@ function LiveSessionWorkspace({
       throw error;
     }
   }
-
-  // 이름 검색(학생이 많은 반) — 학생·보호자 이름, 학교·학년
-  const visibleStudents = useMemo(() => {
-    const keyword = rosterQuery.trim().toLocaleLowerCase("ko");
-    if (!keyword) return students;
-    return students.filter((student) => {
-      const person = findRosterPerson(student, people.people);
-      return [student.name, person?.school, person?.grade, ...(person?.guardians.map((guardian) => guardian.name) ?? [])]
-        .filter(Boolean)
-        .some((value) => value!.toLocaleLowerCase("ko").includes(keyword));
-    });
-  }, [people.people, rosterQuery, students]);
-  // 학생 정보에는 있는데 출석부 줄과 이어지지 않은 학생(드문 경우) — 정보가 빠지지 않게 명단 아래에 따로 보인다
-  const unmatchedPeople = useMemo(() => {
-    const matched = new Set(students.map((student) => findRosterPerson(student, people.people)?.id).filter(Boolean));
-    return people.people.filter((person) => !matched.has(person.id));
-  }, [people.people, students]);
 
   function markAllPresent() {
     const targets = bulkSplit.targets;
@@ -664,9 +691,9 @@ function LiveSessionWorkspace({
           setFinishError("특이사항 메모를 저장하지 못했습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.");
           return;
         }
+        // 글칸에 보이는 값 그대로 보낸다(선생님이 지웠으면 빈 값 — 미리 쓴 내용이 몰래 따라 나가지 않는다)
         const result = await completeClassSession({
           sessionId: session.id,
-          // 글칸에 보이는 값 그대로(선생님이 지웠으면 빈 값 — 미리 쓴 내용이 몰래 따라 나가지 않는다)
           report,
           publishReport,
         });
@@ -715,6 +742,9 @@ function LiveSessionWorkspace({
   // 종료 잠금: 음성 입력 중·수업 내용 저장 중·메모 저장 중·오프라인 + 사진·영상을 올리는 중
   // (홈에서는 종료하면 이 칸이 바로 닫혀 올리던 영상이 끊긴다)
   const endLocked = pending || voiceBusy || feedBusy || memoStatus === "saving" || !online || mediaBusy;
+  // 시작 취소 잠금(들어온 쪽 «더보기»의 actionsLocked 와 같은 조건)
+  const actionsLocked = pending || voiceBusy || memoStatus === "saving";
+  const plan = (session.plannedContent || "").trim();
   const memoFirstLine = memo.trim().split("\n")[0];
   const reportFirstLine = report.trim().split("\n")[0];
   // 수업 주소에서는 이 부품이 화면 전체(main), 홈에서는 수업 줄 안의 한 칸(div)이다
@@ -737,7 +767,7 @@ function LiveSessionWorkspace({
           </div>
         )}
         {/* 종료는 위험색이 아닌 보조 버튼 — 눌러도 확인 창(출결 4칸·미확인 차단·한 줄·바로 보내기)을 거친다. 최종 확정만 위험색 */}
-        <button id="session-end" type="button" disabled={endLocked} onClick={() => { setFinishError(""); setShowEndConfirm(true); }} className="academy-button-secondary min-h-12! w-full text-base!">수업 종료</button>
+        <button id="session-end" type="button" disabled={endLocked} onClick={openEndConfirm} className="academy-button-secondary min-h-12! w-full text-base!">수업 종료</button>
         {(voiceBusy || memoStatus === "saving" || !online || mediaBusy) && <p className="mt-1 text-center text-xs text-[var(--color-academy-warning)]">{voiceBusy ? "음성 메모 처리 후 종료할 수 있습니다." : memoStatus === "saving" ? "메모 저장 후 종료할 수 있습니다." : !online ? "온라인 연결 후 종료할 수 있습니다." : "사진·영상을 올리는 중이에요. 다 올린 뒤 종료할 수 있습니다."}</p>}
         <div id="session-elapsed" className="mt-3 flex items-end justify-between border-t border-[var(--color-academy-line)] pt-3">
           <p className="text-xs text-[var(--color-academy-muted)]">수업 경과 시간</p>
@@ -753,14 +783,26 @@ function LiveSessionWorkspace({
         </div>
       )}
 
-      {/* 전체 출석 결과·메모 저장·시작 취소 안내 — 칸을 접어도 보이게 칸 밖 위쪽에 둔다 */}
-      {message && <p role="alert" aria-live="assertive" className="rounded-xl bg-[var(--color-academy-warning-soft)] p-3 text-sm font-medium text-[var(--color-academy-warning)]">{message}</p>}
+      {/* 저장 결과 안내(전체 출석·메모 저장·시작 취소) — 칸을 접어도 보이게 칸 밖 위쪽에 둔다.
+          «잘 됐다»는 문구만 안내색, 그 밖(실패·주의)은 주의색 + role="alert"(2026-11-14 리뷰 반영). */}
+      {message && (SUCCESS_MESSAGE.test(message) ? (
+        <div className="flex items-center justify-between gap-2 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-info-soft)] p-3">
+          <p aria-live="polite" className="min-w-0 text-sm text-[var(--color-academy-info)]">{message}</p>
+          <button type="button" onClick={() => setMessage("")} className="academy-button-text academy-button-sm min-h-11! shrink-0">닫기</button>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between gap-2 rounded-xl border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] p-3">
+          <p role="alert" className="min-w-0 text-sm font-medium text-[var(--color-academy-warning)]">{message}</p>
+          <button type="button" onClick={() => setMessage("")} className="academy-button-text academy-button-sm min-h-11! shrink-0">닫기</button>
+        </div>
+      ))}
 
-      {/* ④ 출석부 — 접힘: 요약 한 줄(+ 저장 중·저장 실패), 펼침: 전체 출석 + 학생 줄. 이름을 누르면 그 자리에서 학생 정보 */}
+      {/* ④ 출석부 — 접힘: 요약 한 줄(+ 저장 중·저장 실패), 펼침: 전체 출석 + 명단.
+          명단은 학생 한 명 = 한 줄(이름·표시·출결 버튼, 2026-11-14 간결화). 이름을 누르면 «그 자리에서» 학생 정보가 펼쳐진다(시트가 아니다). */}
       <WorkspaceSection
         id="session-attendance"
         title="출석부"
-        summary={<span className={`tabular-nums ${counts.UNCHECKED > 0 ? "text-[var(--color-academy-warning)]" : ""}`}>{attendanceSummary}</span>}
+        summary={<span aria-label="출결 현황" className={`tabular-nums ${counts.UNCHECKED > 0 ? "text-[var(--color-academy-warning)]" : ""}`}>{attendanceSummary}</span>}
         badge={saveBadge.text ? <span role="status" className="flex shrink-0 items-center gap-1 text-xs font-medium">
           {saveBadge.saving && <span className="rounded bg-[var(--color-academy-soft)] px-2 py-0.5 text-[var(--color-academy-muted)]">저장 중</span>}
           {saveBadge.failed > 0 && <span className="rounded bg-[var(--color-academy-danger-soft)] px-2 py-0.5 text-[var(--color-academy-danger)]">저장 실패 {saveBadge.failed}</span>}
@@ -768,13 +810,14 @@ function LiveSessionWorkspace({
         open={openSections.attendance}
         onToggle={() => toggleSection("attendance")}
       >
-        <div className="space-y-3">
-          {/* 게슈탈트 T-06: 확인할 학생이 남았을 때만 꽉 찬 버튼(이 화면의 주인공). 다 끝났으면 보조 버튼으로 낮춘다. */}
-          <button type="button" disabled={pending || anyRowSaving || bulkSplit.targets.length === 0} aria-busy={pending && bulkBusy} onClick={markAllPresent} className={`${counts.UNCHECKED > 0 ? "academy-button-primary" : "academy-button-secondary"} min-h-12! w-full`}>
-            {/* 미확인이면 보강 온 아이도 함께 출석 처리된다(원장 2026-11-09 «보강도 전체 출석에서 체크»). */}
-            {bulkAttendanceProgress || (uncheckedMakeup > 0 ? `미확인 학생 전체 출석 (보강 ${uncheckedMakeup}명 포함)` : "미확인 학생 전체 출석")}
-          </button>
-          {counts.UNCHECKED > 0 && <p className="text-xs text-[var(--color-academy-warning)]">수업 종료 전에 모든 학생의 출결을 확인해 주세요.</p>}
+        <div className="space-y-2">
+          {/* 게슈탈트 T-06: 확인할 학생이 남았을 때만 꽉 찬 버튼(주인공)이 보인다. 다 끝나면 사라져 명단이 올라온다. */}
+          {(bulkSplit.targets.length > 0 || bulkBusy) && (
+            <button type="button" disabled={pending || anyRowSaving || bulkSplit.targets.length === 0} aria-busy={pending && bulkBusy} onClick={markAllPresent} className="academy-button-primary min-h-12! w-full">
+              {/* 미확인이면 보강 온 아이도 함께 출석 처리된다(원장 2026-11-09 «보강도 전체 출석에서 체크»). */}
+              {bulkAttendanceProgress || (uncheckedMakeup > 0 ? `미확인 학생 전체 출석 (보강 ${uncheckedMakeup}명 포함)` : "미확인 학생 전체 출석")}
+            </button>
+          )}
           {/* 결석 신고 아이는 전체 출석에서 빠진다(b1). 실제로 왔으면 그 줄의 «출석»을 직접 누르면 된다. */}
           {bulkSplit.reported.length > 0 && (
             <p role="status" className="text-xs text-[var(--color-academy-warning)]">
@@ -787,39 +830,17 @@ function LiveSessionWorkspace({
               체험 {uncheckedTrial}명은 전체 출석에서 빠집니다. 그 줄에서 직접 눌러 주세요.
             </p>
           )}
-          <p className="text-xs text-[var(--color-academy-muted)]">잘못 찍었으면 다른 버튼을 눌러 바로 고칠 수 있어요. 보강권도 함께 맞춰집니다. 이름을 누르면 학생 정보가 펼쳐집니다.</p>
-
-          {showFees && <div aria-live="polite" className="text-xs text-[var(--color-academy-muted)]">
-            {feeLoading ?"수강료 조회 중 · 출석 확인은 바로 할 수 있습니다." : feeError ? <div role="alert" className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-3">
-              <p>{feeError}</p>
-              <button type="button" onClick={() => setFeeReload((value) => value + 1)} className="academy-button-tonal academy-button-sm mt-1">수강료 다시 불러오기</button>
-            </div> : feeData ? `${feeData.month.replace("-", "년 ")}월 기준 · 발행된 청구 또는 수강 정보` : "수강료 확인 필요"}
-          </div>}
-
-          {/* 학생 정보를 못 읽었을 때 — 출석 버튼은 그대로 쓸 수 있다 */}
-          {people.error && (
-            <div role="alert" className="rounded-xl bg-[var(--color-academy-soft)] p-3 text-xs text-[var(--color-academy-muted)]">
-              <p>{people.error}</p>
-              <button type="button" onClick={people.reload} className="academy-button-tonal academy-button-sm mt-1">학생 정보 다시 불러오기</button>
-            </div>
-          )}
-
-          {/* 학생이 많은 반만 이름 검색을 보인다(예전 학생 정보 시트의 검색) */}
-          {students.length > 8 && (
-            <input value={rosterQuery} onFocus={() => setPeopleWanted(true)} onChange={(event) => setRosterQuery(event.target.value)} aria-label="학생·학부모 이름 검색" placeholder="학생·학부모 이름 검색" className="academy-input" />
-          )}
 
           <section aria-label="학생 출결 명단" className="overflow-hidden rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
-            {visibleStudents.length === 0 && <p className="px-3 py-4 text-center text-xs text-[var(--color-academy-muted)]">표시할 학생이 없습니다.</p>}
-            {visibleStudents.map((student) => {
-              const fee = feesByRoster.get(student.id);
-              const infoOpen = infoRow === student.id;
+            {students.length === 0 && <p className="px-3 py-4 text-sm text-[var(--color-academy-muted)]">이 수업에 등록된 학생이 없습니다.</p>}
+            {students.map((student) => {
               const person = findRosterPerson(student, people.people);
-              return <article key={student.id} className="border-b border-[var(--color-academy-line)] px-3 py-3 last:border-b-0">
-                <div className="flex items-center justify-between gap-2">
-                  {/* 이름 쪽을 누르면 이 줄 아래에 학생 정보가 펼쳐진다(예전엔 별도 시트). 출결 버튼은 그대로 이 줄에 있다 */}
-                  <button type="button" aria-expanded={infoOpen} aria-controls={`roster-info-${student.id}`} onClick={() => { setPeopleWanted(true); setInfoRow(infoOpen ? null : student.id); }} className="flex min-h-11 min-w-0 flex-1 flex-wrap items-center gap-1.5 text-left">
-                    <strong className="text-base font-semibold">{student.name}</strong>
+              const infoOpen = infoRow === student.id;
+              return <article key={student.id} data-student-row className="border-b border-[var(--color-academy-line)] px-3 py-1.5 last:border-b-0">
+                <div className="flex items-center gap-2">
+                  {/* 이름 쪽을 누르면 이 줄 아래에 학생 정보가 펼쳐진다 — 연락처·수강료·메모·최근 출결은 거기서 본다 */}
+                  <button type="button" aria-expanded={infoOpen} aria-controls={`roster-info-${student.id}`} aria-label={`${student.name} 상세 정보`} onClick={() => { setPeopleWanted(true); setInfoRow(infoOpen ? null : student.id); }} className="flex min-h-11 min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-left">
+                    <span className="break-keep text-base font-semibold">{student.name}</span>
                     {/* 다른 반 아이가 보강 온 경우. 출석을 찍으면 보강권이 사용 처리되고, 결석이면 보강권은 그대로 남는다. */}
                     {student.makeup && (
                       <span className={`rounded px-1.5 py-0.5 text-xs ${TONE_BADGE_CLASS[ATTENDANCE_TONE.MAKEUP]}`}>보강</span>
@@ -829,68 +850,29 @@ function LiveSessionWorkspace({
                       // 보강(정보색)과 헷갈리지 않게 브랜드 색으로 구분한다.
                       <span className="rounded bg-[var(--color-academy-primary-soft)] px-1.5 py-0.5 text-xs text-[var(--brand-accent)]">체험</span>
                     )}
-                    {student.trial && student.grade && (
-                      <span className="text-xs text-[var(--color-academy-muted)]">{student.grade}</span>
+                    {/* 학부모가 미리 넣은 결석 신고 — 이게 안 보이면 선생님이 모르고 출석을 찍는다. 사유·확정 여부는 펼친 학생 정보에. */}
+                    {student.absenceReport?.source === "PARENT" && (
+                      <span className="rounded bg-[var(--color-academy-warning-soft)] px-1.5 py-0.5 text-xs font-medium text-[var(--color-academy-warning)]">결석 신고</span>
                     )}
-                    <span className="flex text-[var(--color-academy-muted)]">
+                    {/* 미납은 원장·부원장(showFees)에게만 — 선생님은 수강료 조회 자체를 하지 않아 값도 없다(f3). 금액·청구는 펼친 학생 정보에. */}
+                    {showFees && !student.makeup && !student.trial && feesByRoster.get(student.id)?.status === "UNPAID" && (
+                      <span className="rounded bg-[var(--color-academy-warning-soft)] px-1.5 py-0.5 text-xs font-medium text-[var(--color-academy-warning)]">미납</span>
+                    )}
+                    {/* 학생 메모·오늘 출결 메모가 있으면 «특이» — 내용은 펼친 학생 정보에 */}
+                    {(person?.memo || student.attendanceNote) && (
+                      <span className={`rounded px-1.5 py-0.5 text-xs ${TONE_BADGE_CLASS.neutral}`}>특이</span>
+                    )}
+                    <span className="flex text-[var(--color-academy-faint)]">
                       <UiIcon name={infoOpen ? "expand_less" : "expand_more"} />
                     </span>
                   </button>
-                  {student.status
-                    ? <StatusPill tone={STATUS_TONE[student.status]}>{STATUS_LABEL[student.status]}</StatusPill>
-                    : <StatusPill tone="neutral">미확인</StatusPill>}
-                </div>
-                {infoOpen && (
-                  <div id={`roster-info-${student.id}`}>
-                    {person ? (
-                      <RosterPersonInfo
-                        person={person}
-                        photoVersion={people.photoVersions[person.id]}
-                        todayStatus={student.status}
-                        onOpenBilling={showFees ? (target) => setBillingStudent(target) : undefined}
-                      />
-                    ) : people.loading || !people.loaded ? (
-                      <p role="status" className="py-2 text-xs text-[var(--color-academy-muted)]">{people.error ? "학생 정보를 불러오지 못했습니다." : "학생 정보를 불러오는 중입니다."}</p>
-                    ) : (
-                      // 보강·체험·특강 미전환 신청자는 이 반 학생 정보에 없다 — 출석부가 가진 것(학년·연락처)만 보인다
-                      <p className="py-2 text-xs text-[var(--color-academy-muted)]">
-                        이 반 학생 정보에 없는 학생입니다{student.makeup ? "(보강)" : student.trial ? "(체험)" : ""}.
-                        {student.grade ? ` ${student.grade}` : ""}
-                        {student.phone && <> · <a href={`tel:${student.phone.replace(/[^\d+]/g, "")}`} className="tabular-nums text-[var(--color-academy-primary)] underline underline-offset-2">{student.phone}</a></>}
-                      </p>
-                    )}
+                  <div className="grid shrink-0 grid-cols-3 gap-2">
+                    {(["PRESENT", "LATE", "ABSENT"] as AttendanceStatus[]).map((status) => (
+                      <StatusChoiceButton key={status} tone={STATUS_TONE[status]} ariaLabel={`${student.name} ${STATUS_LABEL[status]}`} active={student.status === status} disabled={bulkBusy || Boolean(savingRows[student.id])} onClick={() => void updateAttendance(student.id, status)} className="min-w-12">
+                        {STATUS_LABEL[status]}
+                      </StatusChoiceButton>
+                    ))}
                   </div>
-                )}
-                {/* 보강 온 아이·체험 아이는 이 반 수강생이 아니라 수강료를 보여주지 않는다.
-                    선생님 화면(showFees=false)은 수강료·미납 줄 자체를 숨긴다(f3). */}
-                {showFees && !student.makeup && !student.trial && <button type="button" aria-label={`${student.name} 수강료·청구 확인`} onClick={() => setAttendanceBillingTarget(student)} className="mt-1 flex min-h-11 w-full flex-wrap items-center justify-between gap-x-2 gap-y-1 rounded-lg bg-[var(--color-academy-primary-soft)] px-2 py-2 text-left">
-                  <span className="text-xs tabular-nums text-[var(--color-academy-ink)]">
-                    {feeLoading ? "수강료 조회 중…" : feeError ? "수강료 확인 필요" : <>
-                      <span className="text-[var(--color-academy-muted)]">{feeData ? monthlyFeeLabel(feeData.month, fee?.period, fee?.sourceLabel) : "수강료"} </span>
-                      {fee?.amount != null ? `${fee.amount.toLocaleString("ko-KR")}원` : "금액 확인 필요"}
-                    </>}
-                  </span>
-                  <span className="text-xs font-medium text-[var(--brand-accent)]">
-                    {!feeLoading && !feeError && (fee?.statusLabel || "확인 필요")}
-                  </span>
-                </button>}
-                {/* 학부모가 미리 넣은 결석 신고. 이게 안 보이면 선생님이 모르고 출석을 찍어
-                    학부모가 미리 알린 의미가 사라진다. 확정건은 원장이 확인한 것이라 따로 표시한다. */}
-                {student.absenceReport?.source === "PARENT" && (
-                  <p className="mt-2 inline-flex items-center gap-1 rounded-lg bg-[var(--color-academy-warning-soft)] px-2 py-1 text-xs font-medium text-[var(--color-academy-warning)]">
-                    학부모 결석 알림
-                    {ABSENCE_REASON_LABEL[student.absenceReport.reason]
-                      ? ` · ${ABSENCE_REASON_LABEL[student.absenceReport.reason]}`
-                      : ""}
-                    {student.absenceReport.status === "CONFIRMED" ? " · 확정" : ""}
-                  </p>
-                )}
-                <div className="mt-2 grid grid-cols-3 gap-3">
-                  {(["PRESENT", "LATE", "ABSENT"] as AttendanceStatus[]).map((status) => (
-                    <StatusChoiceButton key={status} tone={STATUS_TONE[status]} ariaLabel={`${student.name} ${STATUS_LABEL[status]}`} active={student.status === status} disabled={bulkBusy || Boolean(savingRows[student.id])} onClick={() => void updateAttendance(student.id, status)}>
-                      {STATUS_LABEL[status]}
-                    </StatusChoiceButton>
-                  ))}
                 </div>
                 {/* 결석일 때만: 질병·부상 표시 → 청구 작업대 «이월 검토» 후보가 된다(이월 적용은 원장이 증빙 확인 후).
                     정규 수강생만(보강 온 아이·방학특강은 대상 아님). 학부모가 이미 신고한 날은 그 사유를 따른다. */}
@@ -903,7 +885,7 @@ function LiveSessionWorkspace({
                     disabled={bulkBusy || Boolean(savingRows[student.id]) || parentLocked}
                     onClick={() => void updateAttendance(student.id, "ABSENT", illness ? null : "ILLNESS_INJURY")}
                     // 2026-11-13 UI 통일: 고르는 칩 공용 모양(고르면 ✓ + 보조 색). 눌림 여부는 aria-pressed 그대로. 높이 min-h-11 은 테마가 지킨다.
-                    className="academy-choice mt-2 w-full disabled:opacity-60"
+                    className="academy-choice mb-1 mt-1 w-full disabled:opacity-60"
                   >
                     질병·부상 결석
                     {parentLocked && <span className="text-xs">(학부모 신고)</span>}
@@ -911,7 +893,7 @@ function LiveSessionWorkspace({
                 })()}
                 {/* 이 아이 줄의 저장 상태·실패 문구(b5) — 어느 아이 얘기인지 바로 보이게 그 줄 아래에 둔다. */}
                 {savingRows[student.id] && <p aria-live="polite" className="mt-1 text-xs text-[var(--color-academy-muted)]">저장 중…</p>}
-                {/* 저장 실패=빨강·error 아이콘, 건너뜀·참고 안내=주의색·info 아이콘(검수 4 — 결석 신고 안내를 오류처럼 보이지 않게) */}
+                {/* 저장 실패=빨강, 건너뜀·참고 안내=주의색(검수 4 — 결석 신고 안내를 오류처럼 보이지 않게) */}
                 {rowNotices[student.id] && (rowNotices[student.id].tone === "error" ? (
                   <p role="alert" className="mt-1 text-xs font-semibold text-[var(--color-academy-danger)]">
                     {rowNotices[student.id].text}
@@ -921,24 +903,39 @@ function LiveSessionWorkspace({
                     {rowNotices[student.id].text}
                   </p>
                 ))}
+                {/* 학생 정보 — 이름을 누르면 이 줄 아래에 펼쳐진다. 학생별 청구는 여기서 기존 청구 창(출결 맥락 포함)을 연다 */}
+                {infoOpen && (
+                  <div id={`roster-info-${student.id}`}>
+                    <SessionStudentInfo
+                      student={student}
+                      person={person}
+                      photoVersion={person ? people.photoVersions[person.id] : null}
+                      peopleState={peopleState}
+                      onReloadPeople={people.reload}
+                      showFees={showFees}
+                      feeLoading={feeLoading}
+                      feeError={feeError}
+                      feeMonth={feeData?.month ?? null}
+                      fee={feesByRoster.get(student.id)}
+                      onReloadFees={() => setFeeReload((value) => value + 1)}
+                      onOpenBilling={(target) => setAttendanceBillingTarget(target)}
+                    />
+                  </div>
+                )}
               </article>;
             })}
           </section>
+          <p className="text-xs text-[var(--color-academy-muted)]">잘못 찍었으면 다른 버튼을 눌러 바로 고칠 수 있어요. 보강권도 함께 맞춰집니다.</p>
 
-          {/* 학생 정보에는 있는데 출석부 줄과 이어지지 않은 학생 — 정보가 빠지지 않게 따로 보인다(드문 경우) */}
-          {!rosterQuery && unmatchedPeople.length > 0 && (
-            <div className="space-y-2">
-              <p className="text-xs text-[var(--color-academy-muted)]">출석부 줄과 이어지지 않은 학생 정보 {unmatchedPeople.length}명</p>
-              {unmatchedPeople.map((person) => (
-                <RosterPersonInfo key={person.id} person={person} photoVersion={people.photoVersions[person.id]} onOpenBilling={showFees ? (target) => setBillingStudent(target) : undefined} />
-              ))}
-            </div>
-          )}
-
-          {/* 예전 «학생 정보·수업 관리» 메뉴의 나머지 진입 — 청구 확인은 원장·부원장만(f3 보완), 수업 공지는 홈에서만 */}
-          <div className="flex flex-wrap gap-2">
-            {showFees && <button type="button" onClick={() => setBillingStudent(null)} className="academy-button-text academy-button-sm underline underline-offset-2">
-              청구 확인
+          {/* 예전 «더보기»·«학생 정보·수업 관리»에 있던 진입을 출석부 칸 아래 글자 버튼으로 옮겼다(2026-11-15 접이식 구조와 병합):
+              연락처 모아 보기(이름 검색·전화·문자) · 반 전체 청구 확인(원장·부원장만, f3 보완) · 수업 공지(홈에서만).
+              수업 시작 취소는 원장 지시대로 메모 칸 아래에 있다. */}
+          <div className="flex flex-wrap gap-2" aria-label="수업 관리">
+            <button type="button" aria-haspopup="dialog" onClick={() => setShowPeople(true)} className="academy-button-text academy-button-sm min-h-11! underline underline-offset-2">
+              연락처 모아 보기
+            </button>
+            {showFees && <button type="button" onClick={() => setBillingStudent(null)} className="academy-button-text academy-button-sm min-h-11! underline underline-offset-2">
+              반 전체 청구 확인
             </button>}
             <WorkspaceLinks onOpenNotice={onOpenNotice} />
           </div>
@@ -955,17 +952,25 @@ function LiveSessionWorkspace({
         open={openSections.lesson}
         onToggle={() => toggleSection("lesson")}
       >
-        <LessonTextEditor inputId={`lesson-text-${session.id}`} phase="IN_PROGRESS" value={report} onChange={setReport} save={saveLessonText} prefilledFromPlan={lessonPrefilled} onBusyChange={setFeedBusy} />
-        {/* 수업 전에 미리 쓴 내용은 수업 중에도 읽을 수 있다(읽기 전용) — 예전 «오늘 수업 내용» 칸. 수업 내용을 따로 저장한 뒤에도 남는다 */}
-        {session.plannedContent?.trim() && (
-          <div className="mt-3 rounded-xl bg-[var(--color-academy-soft)]">
-            <button type="button" aria-expanded={showPlan} aria-controls="session-plan" onClick={() => setShowPlan((current) => !current)} className="flex min-h-11 w-full items-center justify-between gap-2 px-3 text-left text-xs font-medium text-[var(--color-academy-muted)]">
-              <span>미리 쓴 내용</span>
+        {/* 수업 계획(수업 전에 미리 쓴 내용)은 이 칸 안의 접힌 한 줄 — 계획이 없으면 줄 자체를 그리지 않는다(2026-11-14 «오늘 수업» 한 칸).
+            수업 내용을 따로 저장한 뒤에도 읽을 수 있고, «불러오기»로 글칸에 다시 채울 수 있다(저장은 «수업 내용 저장» 또는 수업 종료 때). */}
+        {plan && (
+          <div className="mb-3 rounded-xl bg-[var(--color-academy-soft)]">
+            <button type="button" onClick={() => setShowPlan((current) => !current)} aria-expanded={showPlan} aria-controls="session-plan" className="flex min-h-11 w-full items-center justify-between gap-2 px-3 text-left text-sm font-medium text-[var(--color-academy-muted)]">
+              <span>수업 계획 보기</span>
               <UiIcon name={showPlan ? "expand_less" : "expand_more"} />
             </button>
-            {showPlan && <p id="session-plan" className="whitespace-pre-wrap border-t border-[var(--color-academy-line)] px-3 py-3 text-sm leading-6 text-[var(--color-academy-ink)]">{session.plannedContent}</p>}
+            {showPlan && (
+              <div id="session-plan" className="border-t border-[var(--color-academy-line)] px-3 py-3">
+                <p className="whitespace-pre-wrap text-sm leading-6 text-[var(--color-academy-muted)]">{plan}</p>
+                {report.trim() !== plan && (
+                  <button type="button" onClick={loadPlanIntoLine} className="academy-button-secondary academy-button-sm mt-2">수업 내용 칸에 불러오기</button>
+                )}
+              </div>
+            )}
           </div>
         )}
+        <LessonTextEditor inputId={`lesson-text-${session.id}`} phase="IN_PROGRESS" value={report} onChange={setReport} save={saveLessonText} prefilledFromPlan={lessonPrefilled} onBusyChange={setFeedBusy} />
       </WorkspaceSection>
 
       {/* ⑥ 올린 사진·영상 목록(지우기 포함). 올리기 버튼은 아래 고정 막대에 있다 — 이 칸은 접어도 안의 부품이 살아 있어 올리기가 끊기지 않는다.
@@ -1022,12 +1027,13 @@ function LiveSessionWorkspace({
 
       {/* ⑧ 수업 시작 취소 — 메모 아래(2026-11-15). 확인 창은 그대로, 기록한 출결·사진·메모는 유지된다 */}
       <div id="session-cancel-start" className="text-center">
-        <button type="button" disabled={pending || voiceBusy || memoStatus === "saving"} onClick={cancelStart} className="academy-button-text">
+        <button type="button" disabled={actionsLocked} onClick={cancelStart} className="academy-button-text">
           수업 시작 취소 (시작 전으로 되돌리기)
         </button>
         <p className="text-xs text-[var(--color-academy-muted)]">시작을 취소해도 기록한 출결은 유지됩니다.</p>
       </div>
 
+      {showPeople && <ClassPeopleSheet open classId={session.classId} sessionId={session.id} className={session.className} onClose={() => setShowPeople(false)} onOpenBilling={showFees ? (student) => { setShowPeople(false); setBillingStudent(student); } : undefined} />}
       {showFees && billingStudent !== undefined && <ClassBillingSheet key={`${session.classId}:${billingStudent?.id || "all"}`} open classId={session.classId} className={session.className} student={billingStudent} onClose={() => setBillingStudent(undefined)} />}
       {attendanceBillingSheet}
 
@@ -1056,30 +1062,43 @@ function LiveSessionWorkspace({
             {counts.UNCHECKED > 0 && (
               <div className="mt-3 rounded-xl bg-[var(--color-academy-warning-soft)] p-3 text-sm text-[var(--color-academy-warning)]">
                 <p className="font-semibold">출결 미확인 학생 {counts.UNCHECKED}명이 있어 아직 종료할 수 없습니다.</p>
-                <p className="mt-1 text-xs">출석부에서 출석·지각·결석 중 하나를 선택해 주세요.</p>
+                <p className="mt-1 text-xs">명단에서 출석·지각·결석 중 하나를 선택해 주세요.</p>
               </div>
             )}
-            {/* 리포트를 여기서 끝낸다. 지금까지는 원장이 PC 에서 따로 써야 나가서
-                운영 100회차 동안 발행이 0건이었다. 한 줄은 선택이고, 비워도 출결·사진이
-                리포트가 된다. */}
+            {/* 리포트를 여기서 끝낸다. 지금까지는 원장이 PC 에서 따로 써야 나가서 운영 100회차 동안 발행이 0건이었다.
+                한 줄은 선택이고, 비워도 출결·사진이 리포트가 된다.
+                2026-11-14: 수업 내용 칸에서 이미 쓴 글이 있으면 같은 입력 칸을 또 보이지 않는다 — 읽기 전용 한 줄 + «고치기».
+                쓴 글이 없을 때(또는 «고치기»를 눌렀을 때)만 입력 칸이 열린다. 종료할 때 보내는 값(report)은 어느 쪽이든 같다.
+                2026-11-15 병합: 미리 쓴 내용이 «채워진 그대로»(선생님이 고치거나 저장한 적 없음)면 읽기 전용으로 넘기지 않고
+                입력 칸을 연 채 바로 아래에서 알린다 — 모르고 학부모에게 내보내지 않게. */}
             {counts.UNCHECKED === 0 && (
-              <div className="mt-4">
-                <label htmlFor="session-report" className="text-sm font-medium text-[var(--color-academy-ink)]">
-                  오늘 수업 한 줄 <span className="font-normal text-[var(--color-academy-faint)]">(선택 · 수업 내용 칸과 같은 내용)</span>
-                </label>
-                <textarea
-                  id="session-report"
-                  value={report}
-                  onChange={(event) => setReport(event.target.value)}
-                  rows={2}
-                  maxLength={2000}
-                  placeholder="예: 드리블 기본기 연습했습니다. 다들 잘 따라왔어요."
-                  className="academy-input mt-1.5"
-                />
-                {/* 미리 쓴 내용을 채운 그대로(고치거나 저장한 적 없이) 종료하려는 경우 — 모르고 학부모에게 내보내지 않게 글칸 바로 아래에서 알린다.
-                    이 글칸에서 바로 고치거나 지울 수 있고, 한 글자라도 바꾸면 이 안내는 사라진다. */}
-                {lessonPrefilled && (
-                  <p role="alert" className="mt-1.5 rounded-lg border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] p-2 text-xs font-medium text-[var(--color-academy-warning)]">{PLAN_PREFILL_END_NOTICE}</p>
+              <div className="mt-4" data-end-report>
+                {editReport ? (
+                  <>
+                    <label htmlFor="session-report" className="text-sm font-medium text-[var(--color-academy-ink)]">
+                      학부모에게 보낼 글 <span className="font-normal text-[var(--color-academy-faint)]">(선택)</span>
+                    </label>
+                    <textarea
+                      id="session-report"
+                      value={report}
+                      onChange={(event) => setReport(event.target.value)}
+                      rows={2}
+                      maxLength={FEED_LINE_MAX}
+                      placeholder="예: 드리블 기본기 연습했습니다. 다들 잘 따라왔어요."
+                      className="academy-input mt-1.5"
+                    />
+                    {/* 이 글칸에서 바로 고치거나 지울 수 있고, 한 글자라도 바꾸면 이 안내는 사라진다. */}
+                    {lessonPrefilled && (
+                      <p role="alert" className="mt-1.5 rounded-lg border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] p-2 text-xs font-medium text-[var(--color-academy-warning)]">{PLAN_PREFILL_END_NOTICE}</p>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex items-start justify-between gap-2 rounded-xl bg-[var(--color-academy-soft)] p-3">
+                    <p className="min-w-0 whitespace-pre-wrap break-words text-sm text-[var(--color-academy-ink)]">
+                      <span className="text-[var(--color-academy-muted)]">학부모에게 보낼 글: </span>{report.trim()}
+                    </p>
+                    <button type="button" disabled={pending} onClick={() => setEditReport(true)} className="academy-button-text academy-button-sm shrink-0">고치기</button>
+                  </div>
                 )}
                 <label className="mt-2 flex min-h-11 items-center gap-2 text-sm font-medium text-[var(--color-academy-ink)]">
                   <input
@@ -1096,7 +1115,7 @@ function LiveSessionWorkspace({
             <div className="mt-5 grid grid-cols-2 gap-2">
               <button type="button" disabled={pending} data-dialog-initial-focus onClick={() => setShowEndConfirm(false)} className="academy-button-secondary">돌아가기</button>
               {counts.UNCHECKED > 0 ? (
-                <button type="button" disabled={pending} onClick={() => { setShowEndConfirm(false); openAttendance(); }} className="academy-button-primary">출석부 확인하기</button>
+                <button type="button" disabled={pending} onClick={() => { setShowEndConfirm(false); scrollToRoster(); }} className="academy-button-primary">명단으로 가기</button>
               ) : (
                 <button type="button" disabled={pending || voiceBusy || memoStatus === "saving" || !online} aria-busy={pending || memoStatus === "saving"} onClick={finishSession} className="academy-button-danger-solid">{pending ? "종료 처리 중…" : memoStatus === "saving" ? "메모 저장 중…" : "종료 확인"}</button>
               )}

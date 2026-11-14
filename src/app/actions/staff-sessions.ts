@@ -684,15 +684,6 @@ export async function saveStaffAttendance(input: {
         sessionId: input.sessionId, studentId, error,
       });
     }
-  } else {
-    // 보강권 — 결석이면 발급, 출석·지각으로 정정되면 회수. 실패해도 출결은 유지한다(위와 같은 이유).
-    try {
-      await syncCreditForRegularSession({ sessionId: input.sessionId, studentId, status: input.status });
-    } catch (error) {
-      console.error("[saveStaffAttendance] 보강권 처리 실패(출결은 저장됨)", {
-        sessionId: input.sessionId, studentId, error,
-      });
-    }
   }
 
   // 결석 사유(질병·부상) — 정규 수강생만. 보강 온 아이의 결석은 자기 반 결석이 아니라 이월 대상이 아니다.
@@ -711,6 +702,18 @@ export async function saveStaffAttendance(input: {
     } catch (error) {
       console.error("[saveStaffAttendance] 결석 사유 저장 실패(출결은 저장됨)", { sessionId: input.sessionId, studentId, error });
       if (input.absenceReason !== undefined) absenceMessage = "출결은 저장됐지만 질병·부상 표시는 저장하지 못했습니다. 다시 눌러 주세요.";
+    }
+  }
+  if (!isMakeup) {
+    // 보강권 — 결석이면 발급, 출석·지각으로 정정되면 회수. 실패해도 출결은 유지한다(위와 같은 이유).
+    // ★ 순서: 결석 사유(질병·부상 표시)를 먼저 저장한 «뒤»에 맞춘다(2026-11-14 a2) —
+    //   질병·부상 결석은 보강권을 자동으로 주지 않고(원장이 신청함에서 고른다), 표시를 끄면 여기서 다시 발급된다.
+    try {
+      await syncCreditForRegularSession({ sessionId: input.sessionId, studentId, status: input.status });
+    } catch (error) {
+      console.error("[saveStaffAttendance] 보강권 처리 실패(출결은 저장됨)", {
+        sessionId: input.sessionId, studentId, error,
+      });
     }
   }
   const extra = { absenceReport, ...(absenceMessage ? { absenceMessage } : {}) };

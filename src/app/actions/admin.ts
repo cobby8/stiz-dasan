@@ -29,6 +29,7 @@ import {
 import { autoLinkApplicationsForTrialLead, getTrialLinkSuggestions, linkTrialLeadToApplication } from "@/lib/enrollment/trialLeadLinkService";
 import type { TrialLinkSuggestion } from "@/lib/enrollment/trialLeadMatch";
 import { forgetAppUserRoleCache, requireAdmin, requireOwner, requireVerifiedParent } from "@/lib/auth-guard";
+import { maskPaymentAmount } from "@/lib/auth/moneyAccess";
 import {
     RETIRED_LOGIN_BAN_DURATION,
     decideRetiredReinvite,
@@ -1680,17 +1681,6 @@ export async function saveAttendance(classId: string, date: string, records: { s
                 sessionId, rec.studentId, rec.status
             );
         }
-        // 보강권 — 결석이면 발급, 출석·지각으로 정정되면 회수(코치 화면과 같은 함수).
-        // ★ 출결은 이미 저장됐다. 보강권이 실패해도 출결 저장을 실패로 만들지 않는다.
-        for (const rec of records) {
-            try {
-                await syncCreditForRegularSession({ sessionId, studentId: rec.studentId, status: rec.status });
-            } catch (error) {
-                console.error("[saveAttendance] 보강권 처리 실패(출결은 저장됨)", {
-                    sessionId, studentId: rec.studentId, error,
-                });
-            }
-        }
         // 결석 사유(질병·부상) — 코치 출석부와 같은 함수·같은 저장 위치(RegularAbsence). 실패해도 출결은 유지.
         if (isKstYmd(date)) {
             for (const rec of records) {
@@ -1705,6 +1695,18 @@ export async function saveAttendance(classId: string, date: string, records: { s
                     console.error("[saveAttendance] 결석 사유 저장 실패(출결은 저장됨)", { sessionId, studentId: rec.studentId, error });
                     if (rec.absenceReason !== undefined) absenceMessages.push("일부 학생의 질병·부상 표시를 저장하지 못했습니다. 다시 저장해 주세요.");
                 }
+            }
+        }
+        // 보강권 — 결석이면 발급, 출석·지각으로 정정되면 회수(코치 화면과 같은 함수).
+        // ★ 출결은 이미 저장됐다. 보강권이 실패해도 출결 저장을 실패로 만들지 않는다.
+        // ★ 순서: 결석 사유(질병·부상 표시)를 저장한 «뒤»에 맞춘다(2026-11-14 a2) — 질병·부상 결석은 자동 발급하지 않고 원장이 신청함에서 고른다.
+        for (const rec of records) {
+            try {
+                await syncCreditForRegularSession({ sessionId, studentId: rec.studentId, status: rec.status });
+            } catch (error) {
+                console.error("[saveAttendance] 보강권 처리 실패(출결은 저장됨)", {
+                    sessionId, studentId: rec.studentId, error,
+                });
             }
         }
         // 출결 완료 알림 → 학부모에게 전송
@@ -1750,7 +1752,8 @@ async function requireFinanceOwner() {
 // 화면이 «그래도 발행»을 확인받아 force: true 로 다시 부른다(서버는 force 없이 중복을 만들지 않는다).
 export type CreatePaymentResult =
     | { ok: true; invoiceId: string }
-    | { ok: false; duplicates: Array<{ id: string; status: string; amount: number; description: string | null }> };
+    // amount: 부원장에게는 이미 납부·취소·환불된 중복 청구의 금액을 null 로 가린다(moneyAccess, 2026-11-14)
+    | { ok: false; duplicates: Array<{ id: string; status: string; amount: number | null; description: string | null }> };
 
 export async function createPayment(data: {
     studentId: string;
@@ -1880,7 +1883,8 @@ export async function createPayment(data: {
 
         if (created.kind === "duplicate") {
             // 중복이라 발행하지 않았다 — 캐시 무효화·알림 없이 바로 돌려준다
-            return { ok: false, duplicates: created.duplicates };
+            // 부원장에게는 미납이 아닌 중복 청구 금액을 가린다(원장은 그대로)
+            return { ok: false, duplicates: created.duplicates.map((row) => maskPaymentAmount(row, admin.appUserRole)) };
         }
         const invoice = created.invoice;
         result = { ok: true, invoiceId: invoice.id };
@@ -3764,7 +3768,8 @@ const MONTHLY_INVOICE_TARGETS_SQL = `
 `;
 
 export async function previewMonthlyInvoices(year: number, month: number): Promise<MonthlyInvoicePreview> {
-    await requireAdmin();
+    // 부원장 차단(2026-11-14 원장 결정): 월 일괄 발행·미리보기·일괄 문자·발송 진행은 원장만 — 학원 전체 청구 규모가 보인다
+    await requireFinanceOwner();
     await ensurePaymentColumns();
     await ensureBillingTemplateTable();
 
@@ -3876,7 +3881,8 @@ export async function previewMonthlyInvoices(year: number, month: number): Promi
 // 활성 템플릿 기준으로 ACTIVE 수강생에게 청구서를 생성한다.
 // 중복 방지: 같은 학생+같은 year+month+type 조합이 이미 있으면 건너뜀
 export async function generateMonthlyInvoices(year: number, month: number, excludeStudentIds?: string[]) {
-    await requireAdmin();
+    // 부원장 차단(2026-11-14 원장 결정): 월 일괄 발행·미리보기·일괄 문자·발송 진행은 원장만 — 학원 전체 청구 규모가 보인다
+    await requireFinanceOwner();
     await ensurePaymentColumns();
     await ensureBillingTemplateTable();
 
@@ -4015,7 +4021,8 @@ const UNPAID_NOTICE_LABEL = "수강료 미납 안내";
 const INVOICE_NOTICE_LABEL = "수강료 청구서 안내";
 
 export async function sendInvoiceLinksForMonth(year: number, month: number, forceResend?: boolean) {
-    const admin = await requireAdmin();
+    // 부원장 차단(2026-11-14 원장 결정): 월 일괄 발행·미리보기·일괄 문자·발송 진행은 원장만 — 학원 전체 청구 규모가 보인다
+    const admin = await requireFinanceOwner();
     // 학부모 청구 안내는 랠리즈 전담 — 잠금이면 DB 를 건드리기 전에 바로 돌려보낸다.
     // (throw 대신 결과로 돌려줘야 운영 빌드에서도 안내 문구가 가려지지 않는다)
     if (!isBillingParentSendEnabled()) {
@@ -4195,7 +4202,8 @@ export async function sendInvoiceLinksForMonth(year: number, month: number, forc
 }
 
 export async function sendUnpaidReminders() {
-    const admin = await requireAdmin();
+    // 부원장 차단(2026-11-14 원장 결정): 월 일괄 발행·미리보기·일괄 문자·발송 진행은 원장만 — 학원 전체 청구 규모가 보인다
+    const admin = await requireFinanceOwner();
     // 학부모 청구 안내는 랠리즈 전담 — 잠금이면 미납 상태 갱신·발송 전에 바로 돌려보낸다.
     // (throw 대신 결과로 돌려줘야 운영 빌드에서도 안내 문구가 가려지지 않는다)
     if (!isBillingParentSendEnabled()) {
@@ -4328,7 +4336,8 @@ export async function sendUnpaidReminders() {
 
 // 화면 진행 상황 — 이번 달 청구서 안내·오늘 미납 안내의 예약 N·발송 N·실패 N(지난 결과를 먼저 반영한다)
 export async function getBillingNoticeProgress(year: number, month: number) {
-    await requireAdmin();
+    // 부원장 차단(2026-11-14 원장 결정): 월 일괄 발행·미리보기·일괄 문자·발송 진행은 원장만 — 학원 전체 청구 규모가 보인다
+    await requireFinanceOwner();
     try {
         await settleBillingNoticeResults();
         const periodKey = `${year}-${String(month).padStart(2, "0")}`;

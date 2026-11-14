@@ -20,6 +20,7 @@
 // DB 접근은 인자로 받은 db(트랜잭션) 로만 한다 — 테스트가 가짜 db 로 실제 실행해 본다.
 import { lockCompensation } from "@/lib/billing/absence-compensation-guard";
 import { isKstYmd } from "@/lib/datetime/kst";
+import { holdCreditForIllnessInTx, illnessReviewReady } from "@/lib/regular/illness-carry-tx";
 
 /** 출석부가 만든 결석 행 표시(관리자 결석 관리 화면에서도 출처를 알 수 있게 사람이 읽는 문장). */
 export const SHEET_ABSENCE_NOTE = "출석부에서 질병·부상 결석으로 표시";
@@ -113,6 +114,24 @@ async function readAbsence(
 }
 
 /**
+ * 출석부가 질병·부상으로 표시한 결석의 미사용 보강권을 거둬 둔다(검토 표가 있을 때만 — 마이그레이션 전에는 예전 그대로).
+ * 표시를 끄면(출결은 결석 그대로) 뒤이어 도는 보강권 맞춤(syncCreditForRegularSession)이 같은 한 장을 되살린다
+ * — 그래서 호출부는 «사유 저장 → 보강권 맞춤» 순서로 부른다.
+ */
+async function holdSheetIllnessCredit(db: AbsenceReasonDb, key: { studentId: string; classId: string; dateYmd: string }) {
+  if (!(await illnessReviewReady(db))) return;
+  // 예전에 닫힌 검토 줄(신고 취소 등)이 남아 있으면 지운다 — 닫힌 검토는 신청함에서 빠지므로, 새로 표시한 결석이 다시 «이월 검토»에 뜨게
+  await db.$executeRawUnsafe(
+    `DELETE FROM "RegularAbsenceCarryReview" r
+      USING "RegularAbsence" ra
+      WHERE ra.id = r."absenceId" AND ra."studentId" = $1 AND ra."classId" = $2 AND ra.date = $3::date
+        AND r.status = 'CLOSED'`,
+    key.studentId, key.classId, key.dateYmd,
+  );
+  await holdCreditForIllnessInTx(db, { studentId: key.studentId, classId: key.classId, absenceYmd: key.dateYmd });
+}
+
+/**
  * 출결 저장 뒤 결석 사유를 맞춘다. 반드시 트랜잭션(db) 안에서 부른다 — 보강·이월 정산과 같은 잠금을 잡는다.
  * @param confirmedByUserId 관리자가 찍었으면 그 계정(→ 바로 CONFIRMED). 코치면 null(→ REPORTED).
  * @param actorUserId 처리한 계정(취소 기록용). 없으면 null.
@@ -154,6 +173,8 @@ export async function applyAttendanceAbsenceReasonInTx(
       input.confirmedByUserId ?? null,
     );
     if (!inserted[0]) return { plan: "NONE", report: absenceReportOf(await readAbsence(db, key, false)) };
+    // 질병·부상으로 표시한 순간, 먼저 나가 있던 미사용 보강권은 거둬 둔다(2026-11-14 a2 — 원장이 신청함에서 이월/보강권을 고른다)
+    await holdSheetIllnessCredit(db, key);
     return { plan, report: { reason: SHEET_ABSENCE_REASON, status, source: "SHEET" } };
   }
   if (plan === "REACTIVATE" && row) {
@@ -173,6 +194,7 @@ export async function applyAttendanceAbsenceReasonInTx(
       row.id, SHEET_ABSENCE_REASON, status, SHEET_ABSENCE_NOTE, input.confirmedByUserId ?? null,
     );
     if (Number(n) === 0) return { plan: "NONE", report: absenceReportOf(row) };
+    await holdSheetIllnessCredit(db, key);
     return { plan, report: { reason: SHEET_ABSENCE_REASON, status, source: "SHEET" } };
   }
   if (plan === "CANCEL" && row) {

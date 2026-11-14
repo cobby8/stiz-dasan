@@ -10,6 +10,7 @@ const livePill = await read("src/components/staff/LiveStatusPill.tsx");
 const rideButtons = await read("src/app/staff/shuttle/ShuttleRideStatusButtons.tsx");
 const shuttleDashboard = await read("src/app/staff/shuttle/StaffShuttleDashboardClient.tsx");
 const session = await read("src/app/staff/sessions/[sessionId]/SessionInProgressClient.tsx");
+const studentSheet = await read("src/components/staff/SessionStudentSheet.tsx");
 const driver = await read("src/components/shuttle/UnifiedDriverClient.tsx");
 const driverCss = await read("src/components/shuttle/DriverWorkspace.module.css");
 const home = await read("src/app/staff/StaffHomeClient.tsx");
@@ -54,10 +55,12 @@ test("T-03 출석부: 출석 success·지각 warning·결석 danger + 아이콘,
   // 2026-11-14 아이콘 완전 제거: 아이콘 이름 표(STATUS_ICON)를 없앴다 — 버튼·알약은 글자(출석·지각·결석·미확인)만 보인다.
   // 2026-11-15 선생님 수업 화면 한 화면 구조: 아이콘 글꼴을 직접 쓰지 않는 것은 그대로, 펼침 화살표만 공용 UiIcon 으로 허용(원장 지정 예외).
   assert.doesNotMatch(session, /STATUS_ICON|icon=|material-symbols-outlined/);
+  // 2026-11-15 접이식 구조와 병합: 수업 화면의 아이콘은 펼침 화살표뿐이다(학생 정보 펼침·수업 계획 펼침).
   assert.deepEqual([...new Set([...session.matchAll(/<UiIcon name=\{[^}]*\}/g)].map((m) => m[0]))], ['<UiIcon name={infoOpen ? "expand_less" : "expand_more"}', '<UiIcon name={showPlan ? "expand_less" : "expand_more"}'], "수업 화면의 아이콘은 펼침 화살표뿐이다");
-  assert.match(session, /<StatusPill tone="neutral">미확인<\/StatusPill>/);
-  assert.match(session, /grid grid-cols-3 gap-3">\s*\{\(\["PRESENT", "LATE", "ABSENT"\] as AttendanceStatus\[\]\)\.map\(\(status\) => \(\s*<StatusChoiceButton/);
-  assert.match(session, /<StatusPill tone=\{STATUS_TONE\[student\.status\]\}/);
+  // 2026-11-14 수업 화면 간결화: 명단은 학생 한 줄(이름 + 출결 버튼 3개), «지금 상태» 알약은 학생 상세 시트에 있다.
+  assert.match(studentSheet, /<StatusPill tone="neutral">미확인<\/StatusPill>/);
+  assert.match(session, /grid shrink-0 grid-cols-3 gap-2">\s*\{\(\["PRESENT", "LATE", "ABSENT"\] as AttendanceStatus\[\]\)\.map\(\(status\) => \(\s*<StatusChoiceButton/);
+  assert.match(studentSheet, /<StatusPill tone=\{STATUS_TONE\[student\.status\]\}/);
   // 저장 함수는 그대로
   assert.match(session, /onClick=\{\(\) => void updateAttendance\(student\.id, status\)\}/);
   assert.match(session, /saveStaffAttendance\(\{ sessionId: session\.id, attendanceKey: target\.attendanceKey, status, absenceReason \}\)/);
@@ -94,12 +97,12 @@ test("T-07 진행 알약: 수업 진행·홈·기사님 헤더가 같은 LiveSta
   assert.match(driver, /runState === "running" && <LiveStatusPill>운행 중<\/LiveStatusPill>/);
 });
 
-test("T-06 수업 화면 보조 버튼: 메모 저장 secondary, 미확인 0명이면 전체 출석도 secondary", async () => {
+test("T-06 수업 화면 보조 버튼: 메모 저장 secondary, 전체 출석은 미확인이 남았을 때만 보인다", async () => {
   assert.match(session, /className="academy-button-secondary[^"]*">메모 지금 저장/);
-  // 2026-11-15 선생님 수업 화면 한 화면 구조: «출석부 확인» 이동 버튼이 없어지고 출석부 칸 안의 «전체 출석»이 그 자리를 잇는다 —
-  // 확인할 학생이 남았을 때만 꽉 찬 버튼, 다 끝났으면 보조 버튼(같은 규칙).
-  assert.match(session, /onClick=\{markAllPresent\} className=\{`\$\{counts\.UNCHECKED > 0 \? "academy-button-primary" : "academy-button-secondary"\} min-h-12! w-full`\}/);
-  // 수업 종료는 위험색이 아닌 보조 버튼, 아래 막대 세 버튼은 같은 등급(옅은 바탕) — 꽉 찬 주 버튼은 하나뿐
+  // 2026-11-14: «출석부 확인» 버튼이 없어졌다(명단이 바로 보인다). 주인공 버튼(전체 출석)은 처리할 학생이 있을 때만 그린다.
+  assert.match(session, /\{\(bulkSplit\.targets\.length > 0 \|\| bulkBusy\) && \(\s*<button[^>]*className="academy-button-primary/);
+  assert.doesNotMatch(session, /출석부 확인/);
+  // 2026-11-15 접이식 구조와 병합: 수업 종료는 위험색이 아닌 보조 버튼, 아래 막대 세 버튼은 같은 등급(옅은 바탕) — 꽉 찬 주 버튼은 전체 출석 하나뿐
   assert.match(session, /<button id="session-end"[\s\S]{0,200}className="academy-button-secondary [^"]*">수업 종료<\/button>/);
   assert.doesNotMatch(await read("src/components/staff/SessionMediaBar.tsx"), /academy-button-primary/);
 });

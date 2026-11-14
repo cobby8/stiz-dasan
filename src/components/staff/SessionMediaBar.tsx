@@ -87,6 +87,8 @@ export function SessionMediaBar({
     >
       <div className="rounded-2xl border border-[var(--color-academy-line)] bg-white/95 p-2 shadow-lg backdrop-blur">
         <input ref={photoCameraRef} hidden type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={(event) => { sendPhotos(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
+        {/* ⚠️ 영상 촬영 칸의 accept 는 «video/*» 하나만 둔다 — 안드로이드는 받는 형식이 «전부 영상»일 때만 동영상 카메라를 열고,
+            구체 형식 목록을 섞거나 multiple 을 붙이면 파일 선택으로 떨어진다(그래서 갤러리 칸과 따로 둔다). */}
         <input ref={videoCameraRef} hidden type="file" accept="video/*" capture="environment" onChange={(event) => { sendVideo(event.target.files?.[0]); event.target.value = ""; }} />
         <input ref={galleryRef} hidden type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm" multiple onChange={(event) => pickedFromGallery(event.target.files)} />
         <div className="grid grid-cols-3 gap-2" role="group" aria-label="수업 사진·영상 올리기">
@@ -94,6 +96,12 @@ export function SessionMediaBar({
           <button type="button" disabled={videoLocked} onClick={() => { setNotice(""); videoCameraRef.current?.click(); }} className="academy-button-tonal min-h-12!">동영상</button>
           <button type="button" disabled={galleryLocked} onClick={() => { setNotice(""); galleryRef.current?.click(); }} className="academy-button-tonal min-h-12!">갤러리</button>
         </div>
+        {/* 옛 안드로이드 앱(1.0.3 미만)은 [동영상]이 촬영 화면 대신 파일 선택으로 떨어진다 → 버튼 바로 아래에 안내(판정은 영상 부품의 needsAppUpdateForVideoCapture) */}
+        {videoState?.needsAppUpdate && videoState.canUpload && (
+          <p role="status" className="mt-1 text-center text-xs text-[var(--color-academy-warning)]">
+            앱을 업데이트하면 [동영상]이 바로 촬영돼요. 지금은 휴대폰 카메라로 찍은 뒤 «갤러리»로 올려 주세요.
+          </p>
+        )}
         {status && <p aria-live="polite" className="mt-1 text-center text-xs text-[var(--color-academy-muted)]">{status}</p>}
       </div>
     </div>

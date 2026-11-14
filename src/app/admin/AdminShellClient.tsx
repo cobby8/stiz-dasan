@@ -12,7 +12,7 @@ import AppBackButton from "@/components/AppBackButton";
 import AccountViewSwitcher from "@/components/AccountViewSwitcher";
 import SectionTabs from "@/components/admin/SectionTabs";
 import type { AccountViewOption } from "@/lib/account-views";
-import { findAdminSection, isInAdminSection, type AdminSectionKey } from "@/lib/admin-sections";
+import { findAdminSection, isInAdminSection, visibleSectionTabs, type AdminSectionKey } from "@/lib/admin-sections";
 
 const LazyBackupButtons = dynamic(() => import("./AdminBackupButtons"), {
     ssr: false,
@@ -83,6 +83,8 @@ export default function AdminShellClient({
     sheetRetired = false,
     accountViews = [],
     inboxCount = null,
+    canSeeStats = true,
+    isOwner = true,
 }: {
     children: React.ReactNode;
     initialUserName: string;
@@ -92,6 +94,10 @@ export default function AdminShellClient({
     accountViews?: AccountViewOption[];
     /** 신청함 «처리 필요» 건수(getInboxCounts) — 읽지 못했으면 null(배지만 숨긴다) */
     inboxCount?: number | null;
+    /** 통계 메뉴를 그릴까 — 부원장(VICE_ADMIN)은 false(2026-11-14). 화면·API 는 서버에서 따로 막는다 */
+    canSeeStats?: boolean;
+    /** 원장(ADMIN)인가 — 아니면 «시스템 도구»(백업, 서버도 원장 전용)와 원장 전용 탭(POS 대사)을 숨긴다 */
+    isOwner?: boolean;
 }) {
     const pathname = usePathname() || "/admin";
     const userName = initialUserName;
@@ -144,7 +150,8 @@ export default function AdminShellClient({
                     {/* 2026-11-13 «오늘 업무» → «대시보드»(원장 점검표) */}
                     <NavItem href="/admin" active={pathname === "/admin"} label="대시보드" />
                     {/* 2026-11-13 통계 개편(원장 결정표): «통계»는 설정 묶음에서 빼 대시보드 바로 아래로 — 카드 «자세히 →»가 가는 곳 */}
-                    <NavItem href="/admin/stats" active={matchesNavPath(pathname, "/admin/stats")} label="통계" />
+                    {/* 2026-11-14 부원장에게는 통계 메뉴를 그리지 않는다(돈 규모가 보이는 화면) */}
+                    {canSeeStats && <NavItem href="/admin/stats" active={matchesNavPath(pathname, "/admin/stats")} label="통계" />}
                     {/* 신청함 — 체험·수강·상담·대관·변경·기타 6탭. 배지 = 처리 필요 건수 */}
                     <NavItem href="/admin/inbox" active={matchesNavPath(pathname, "/admin/inbox") || INBOX_LEGACY_PATHS.some((path) => matchesNavPath(pathname, path))} label="신청함" badge={inboxCount ?? undefined} />
                     <NavItem href="/admin/students" active={matchesNavPath(pathname, "/admin/students")} label="원생" />
@@ -164,7 +171,8 @@ export default function AdminShellClient({
                                 {group.items.map((item) => (
                                     <NavItem key={item.href} href={item.href} label={item.label} compact active={isExtraItemActive(pathname, item)} />
                                 ))}
-                                {group.label === "설정" && <>
+                                {/* 시스템 도구(백업·복원)는 원장 전용 — 부원장은 눌러도 서버가 거절하므로 아예 숨긴다 */}
+                                {group.label === "설정" && isOwner && <>
                                     <button type="button" aria-controls="admin-system-tools" aria-expanded={systemToolsOpen} onClick={() => setSystemToolsOpen((current) => !current)} className="flex min-h-11 w-full items-center gap-3 rounded-lg px-4 py-2 text-left text-sm text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
                                         <span className="flex-1">시스템 도구</span><UiIcon name={systemToolsOpen ? "expand_less" : "expand_more"} />
                                     </button>
@@ -229,7 +237,8 @@ export default function AdminShellClient({
                 </header>
                 <div className="admin-table-scope w-full min-w-0 flex-1 p-4 md:p-6 xl:p-8">
                     {/* 묶인 화면이면 맨 위에 탭 줄(같은 묶음의 다른 화면으로 바로 이동). 화면 파일은 건드리지 않는다 */}
-                    {activeSection && <SectionTabs label={activeSection.section.label} tabs={activeSection.section.tabs} activeHref={activeSection.activeHref} />}
+                    {/* 원장 전용 탭(POS 대사)은 부원장 탭 줄에서 뺀다 */}
+                    {activeSection && <SectionTabs label={activeSection.section.label} tabs={visibleSectionTabs(activeSection.section.tabs, isOwner)} activeHref={activeSection.activeHref} />}
                     {children}
                 </div>
             </main>

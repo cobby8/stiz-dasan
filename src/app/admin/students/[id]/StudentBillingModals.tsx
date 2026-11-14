@@ -196,7 +196,7 @@ export function IssueInvoiceModal({
                         <p className="font-semibold">같은 달 같은 청구가 이미 있어요</p>
                         <ul className="mt-1 space-y-0.5">
                             {duplicates.map((d) => (
-                                <li key={d.id}>{d.description || BILLING_TYPE_LABELS[type as keyof typeof BILLING_TYPE_LABELS]} · {formatWon(d.amount)} · {STATUS_LABEL[d.status] ?? d.status}</li>
+                                <li key={d.id}>{d.description || BILLING_TYPE_LABELS[type as keyof typeof BILLING_TYPE_LABELS]} · {d.amount == null ? "—" : formatWon(d.amount)} · {STATUS_LABEL[d.status] ?? d.status}</li>
                             ))}
                         </ul>
                         <p className="mt-1">그래도 하나 더 발행하려면 아래 «그래도 발행»을 눌러 주세요.</p>

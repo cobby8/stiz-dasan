@@ -68,6 +68,8 @@ test('회수된 보강권은 기존 예약 상태 동기화에서 부활하지 �
     if (id === '@/lib/billing/absence-compensation-guard') return exports;
     // 2026-11-14: 날짜 손 조립을 공용 모듈(kstAt·toKstYmd)로 옮겼다 — 이 테스트가 부르는 함수는 날짜를 쓰지 않는다
     if (id === '@/lib/datetime/kst') return {};
+    // 2026-11-14: 질병·부상 결석은 출결 결석에도 보강권을 자동 발급하지 않는다(정규 출결 경로만 — 여기서 부르는 함수와 무관)
+    if (id === '@/lib/regular/illness-carry-tx') return {};
     throw new Error(`격리하지 않은 의존성: ${id}`);
   }, module);
   for (const status of ['CANCELLED', 'BOOKED', 'ATTENDED', 'NO_SHOW']) {

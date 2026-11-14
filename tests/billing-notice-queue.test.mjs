@@ -319,7 +319,8 @@ test("화면: 진행 상황 한 줄(예약·발송·실패)과 보내는 중 자
   assert.match(client, /getBillingNoticeProgress\(y, m\)/);
   assert.match(client, /`예약 \$\{p\.queued\}`, `발송 \$\{p\.sent\}`, `실패 \$\{p\.failed\}`/);
   assert.match(client, /window\.setInterval\(\(\) => void loadNoticeProgress\(year, month\), 20_000\)/);
-  assert.match(client, /if \(parentSendLocked\) return;/);
+  // 발송 진행 조회는 원장 전용(2026-11-14) — 잠금이거나 부원장이면 부르지 않는다
+  assert.match(client, /if \(parentSendLocked \|\| !canManageCriticalFinance\) return;/);
 });
 
 // ── 7) 운영 테스트 키 차단(10번) ───────────────────────────────────────────

@@ -147,15 +147,28 @@ test("f3 선생님 출석부 화면은 수강료 줄을 숨기고 조회도 하�
   assert.match(page, /showFees=\{canSeeStaffFees\(access\.staff\.appUserRole\)\}/);
   const client = read("src/app/staff/sessions/[sessionId]/SessionInProgressClient.tsx");
   assert.match(client, /if \(!showFees\) return;\s*let active = true;/);
-  assert.match(client, /\{showFees && !student\.makeup && !student\.trial && <button/);
-  assert.match(client, /\{showFees && <div aria-live="polite"/);
+  // 2026-11-14 수업 화면 간결화: 수강료 줄은 학생 상세 시트로 옮겼다 — 조건(원장·부원장 + 이 반 수강생)은 그대로.
+  const sheet = read("src/components/staff/SessionStudentSheet.tsx");
+  assert.match(sheet, /\{showFees && !student\.makeup && !student\.trial && <button/);
+  assert.match(sheet, /\{showFees && feeError && \(/);
+  assert.match(client, /showFees=\{showFees\}/);
+  // 명단 화면에는 수강료 글자가 없다(시트에만)
+  assert.doesNotMatch(client, /monthlyFeeLabel|수강료 조회 중/);
 });
 
 // ── 검수 보완(2026-11-13 PM) ──────────────────────────────────
 
 test("MED-1 출석부·홈의 청구 확인·학생 정보 미납은 원장·부원장만 — 서버도 금액을 주지 않는다", () => {
   const client = read("src/app/staff/sessions/[sessionId]/SessionInProgressClient.tsx");
+  // 2026-11-14: 반 전체 «청구 확인»은 «더보기» 창으로 옮겼다(누르면 창을 닫고 청구 시트를 연다)
+  // 2026-11-15 접이식 구조와 병합: «더보기» 창 대신 출석부 칸 아래 글자 버튼 — 원장·부원장(showFees) 조건은 그대로.
   assert.match(client, /\{showFees && <button type="button" onClick=\{\(\) => setBillingStudent\(null\)\}/);
+  // 학생 상세는 시트 대신 줄 아래에 펼친다 — 수강료 줄 조건(원장·부원장 + 이 반 수강생)과 미납 건수 조건이 펼침 부품에도 그대로 있다.
+  const inline = read("src/components/staff/SessionStudentInfo.tsx");
+  assert.match(inline, /\{showFees && !student\.makeup && !student\.trial && <button/);
+  assert.match(inline, /\{showFees && feeError && \(/);
+  assert.match(inline, /showUnpaidCount=\{showFees\}/);
+  assert.match(inline, /fee\?\.amount != null \? `\$\{fee\.amount\.toLocaleString\("ko-KR"\)\}원` : fee\?\.status === "PAID" \? "—" : "금액 확인 필요"/);
   assert.match(client, /onOpenBilling=\{showFees \? /);
   assert.match(client, /\{showFees && billingStudent !== undefined && <ClassBillingSheet/);
   assert.match(client, /const attendanceBillingSheet = showFees && attendanceBillingTarget/);

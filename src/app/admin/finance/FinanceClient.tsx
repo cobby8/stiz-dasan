@@ -48,7 +48,8 @@ type Payment = {
     studentName: string;
     classId?: string | null;
     className?: string | null;
-    amount: number;
+    // 부원장에게는 납부 완료·취소·환불 청구 금액이 null 로 온다(서버 financeRoleMask, 2026-11-14)
+    amount: number | null;
     status: string;
     dueDate: Date | string;
     paidDate: Date | string | null;
@@ -92,13 +93,14 @@ type Student = {
     }[];
 };
 
+// 부원장에게는 모든 칸이 null 로 온다(서버 financeRoleMask) — 화면은 요약 줄을 통째로 숨긴다
 type Summary = {
-    totalCount: number;
-    totalAmount: number;
-    paidAmount: number;
-    unpaidAmount: number;
-    paidCount: number;
-    unpaidCount: number;
+    totalCount: number | null;
+    totalAmount: number | null;
+    paidAmount: number | null;
+    unpaidAmount: number | null;
+    paidCount: number | null;
+    unpaidCount: number | null;
 };
 
 type PaymentProviderStatus = {
@@ -281,7 +283,9 @@ export function toDateStr(d: Date | string | null): string {
     return toKstYmd(d) || "-";
 }
 
-function formatAmount(n: number): string {
+function formatAmount(n: number | null): string {
+    // 서버가 가린 금액(부원장에게 납부 완료 건 등)은 «—»
+    if (n == null) return "—";
     return n.toLocaleString("ko-KR") + "원";
 }
 
@@ -511,8 +515,11 @@ export default function FinanceClient({
     const [cancelReason, setCancelReason] = useState("");
     const [cancelError, setCancelError] = useState<string | null>(null);
 
-    const hasAnyData = payments.length > 0 || summary.totalCount > 0;
+    const hasAnyData = payments.length > 0 || (summary.totalCount ?? 0) > 0;
     const canManageCriticalFinance = currentAdminRole === "ADMIN";
+    // ⚡현장 결제(1건·학생 미납 묶음)는 부원장도 한다 — 카운터 수납 흐름(2026-11-14 원장 결정).
+    // 결제 취소(환불)·계좌이체 기록·상태 변경은 계속 원장만(canManageCriticalFinance).
+    const canUsePosCharge = currentAdminRole === "ADMIN" || currentAdminRole === "VICE_ADMIN";
     const selectedStudent = students.find((student) => student.id === studentId);
     const classRequired = paymentType === "MONTHLY" || paymentType === "SHUTTLE";
 
@@ -553,14 +560,15 @@ export default function FinanceClient({
     // 청구서 안내·미납 안내 진행 상황(예약 N·발송 N·실패 N) — 발송은 매분 서버가 묶음으로 처리한다(2026-11-13).
     // 발송 잠금이면 부르지 않는다. 아직 나가는 중(예약 > 0)이면 20초마다 다시 읽고, 다 끝나면 멈춘다.
     const loadNoticeProgress = useCallback(async (y: number, m: number) => {
-        if (parentSendLocked) return;
+        // 발송 진행 조회는 원장 전용(서버도 막는다) — 부원장은 부르지 않는다
+        if (parentSendLocked || !canManageCriticalFinance) return;
         try {
             const result = await getBillingNoticeProgress(y, m);
             setNoticeProgress(result.ok ? { invoice: result.invoice, unpaid: result.unpaid } : null);
         } catch {
             setNoticeProgress(null);
         }
-    }, [parentSendLocked]);
+    }, [parentSendLocked, canManageCriticalFinance]);
 
     useEffect(() => {
         void loadNoticeProgress(year, month);
@@ -923,7 +931,7 @@ export default function FinanceClient({
                 status: value,
                 label: STATUS_LABELS[value]?.label ?? value,
                 items,
-                totalAmount: items.reduce((sum, payment) => sum + payment.amount, 0),
+                totalAmount: items.reduce((sum, payment) => sum + (payment.amount ?? 0), 0),
             };
         })
         .filter((group) => group.items.length > 0);
@@ -970,7 +978,7 @@ export default function FinanceClient({
                 },
             ] : []),
             // 현장 결제: 수강료·셔틀비·기타 미납만(모두 면세 — D2, 기타는 2026-11-08 추가). 서버가 한 번 더 확인한다.
-            ...(canManageCriticalFinance && ["MONTHLY", "SHUTTLE", "OTHER"].includes(p.type) && ["PENDING", "OVERDUE"].includes(p.status) ? [
+            ...(canUsePosCharge && ["MONTHLY", "SHUTTLE", "OTHER"].includes(p.type) && ["PENDING", "OVERDUE"].includes(p.status) ? [
                 {
                     key: "pos-charge",
                     label: "현장 결제",
@@ -997,7 +1005,8 @@ export default function FinanceClient({
             ] : []),
             // 이 학생 미납 모두 현장 결제(원장 의견 2026-11-08): 지금 목록의 같은 학생 미납·연체가 2건 이상일 때만.
             // 바로 결제하지 않고 «납부 처리» 창을 «현장 결제» 확인 화면으로 열어 청구 목록·금액·합계를 보고 누르게 한다.
-            ...(canManageCriticalFinance && ["PENDING", "OVERDUE"].includes(p.status) && studentUnpaid.length >= 2 ? [
+            // 부원장도 쓴다 — 창은 «현장 결제만» 모드(계좌이체 기록 길 없음)로 열린다
+            ...(canUsePosCharge && ["PENDING", "OVERDUE"].includes(p.status) && studentUnpaid.length >= 2 ? [
                 {
                     key: "pos-charge-student",
                     label: `이 학생 미납 모두 현장 결제 (${studentUnpaid.length}건)`,
@@ -1182,8 +1191,8 @@ export default function FinanceClient({
     }
 
     // 수납률 계산
-    const payRate = summary.totalAmount > 0
-        ? Math.round((summary.paidAmount / summary.totalAmount) * 100)
+    const payRate = summary.totalAmount != null && summary.totalAmount > 0
+        ? Math.round(((summary.paidAmount ?? 0) / summary.totalAmount) * 100)
         : 0;
     const sheetApplyCount = sheetPreview
         ? sheetPreview.summary.create + sheetPreview.summary.update
@@ -1232,7 +1241,7 @@ export default function FinanceClient({
         <div className="max-w-5xl mx-auto">
             {vaCloseTarget && (
                 <VirtualAccountCloseDialog
-                    target={{ id: vaCloseTarget.id, studentName: vaCloseTarget.studentName, amount: vaCloseTarget.amount }}
+                    target={{ id: vaCloseTarget.id, studentName: vaCloseTarget.studentName, amount: vaCloseTarget.amount ?? 0 }}
                     onClose={() => setVaCloseTarget(null)}
                     onClosed={() => void loadMonth(year, month)}
                 />
@@ -1244,7 +1253,7 @@ export default function FinanceClient({
                             id: posChargeTargets[0].id,
                             paymentIds: [posChargeTargets[0].id],
                             studentName: posChargeTargets[0].studentName,
-                            amount: posChargeTargets[0].amount,
+                            amount: posChargeTargets[0].amount ?? 0,
                             title: posChargeTargets[0].description
                                 || `${posChargeTargets[0].year ?? year}년 ${posChargeTargets[0].month ?? month}월 ${posChargeTargets[0].type === "SHUTTLE" ? "셔틀비" : "수강료"}`,
                         }
@@ -1255,7 +1264,7 @@ export default function FinanceClient({
                                 id: sorted[0].id,
                                 paymentIds: sorted.map((p) => p.id),
                                 studentName: sorted[0].studentName,
-                                amount: sorted.reduce((sum, p) => sum + p.amount, 0),
+                                amount: sorted.reduce((sum, p) => sum + (p.amount ?? 0), 0),
                                 title: chargeItemsSummary(sorted.map((p) => ({ year: p.year ?? year, month: p.month ?? month, type: p.type }))),
                             };
                         })()}
@@ -1268,7 +1277,7 @@ export default function FinanceClient({
                     target={{
                         id: posCancelTarget.id,
                         studentName: posCancelTarget.studentName,
-                        amount: posCancelTarget.amount,
+                        amount: posCancelTarget.amount ?? 0,
                         title: posCancelTarget.description
                             || `${posCancelTarget.year ?? year}년 ${posCancelTarget.month ?? month}월 ${posCancelTarget.type === "SHUTTLE" ? "셔틀비" : "수강료"}`,
                     }}
@@ -1279,9 +1288,11 @@ export default function FinanceClient({
             {recordTargets && (
                 <RecordPaymentModal
                     // label = «2026년 11월 수강료»처럼 사람이 읽는 청구 이름(창의 청구 목록·«이미 납부» 안내에 쓴다)
-                    targets={recordTargets.map((t) => ({ id: t.id, studentId: t.studentId, studentName: t.studentName, amount: t.amount, type: t.type, status: t.status, month: t.month, year: t.year, label: paymentLabel(t) }))}
+                    targets={recordTargets.map((t) => ({ id: t.id, studentId: t.studentId, studentName: t.studentName, amount: t.amount ?? 0, type: t.type, status: t.status, month: t.month, year: t.year, label: paymentLabel(t) }))}
                     // true 면 «현장 결제» 확인 화면으로 바로 연다(청구 목록·금액·합계 → «POS로 결제 요청»)
                     preferPos={recordPreferPos}
+                    // 부원장은 계좌이체 기록을 못 한다(서버 원장 전용) — 창에서 그 길을 숨긴다
+                    posOnly={!canManageCriticalFinance}
                     onClose={() => setRecordTargets(null)}
                     onChoosePos={(chosen) => {
                         // 이 창을 닫고 기존 현장 결제(토스 POS) 창을 연다 — 여러 건이면 같은 학생 묶음(POS 결제 한 번)
@@ -1333,16 +1344,20 @@ export default function FinanceClient({
 
             <section className="mb-4 rounded-xl border border-[var(--color-academy-line)] bg-white p-3 shadow-sm">
                 <div className="flex flex-wrap items-center gap-2">
+                    {/* 청구 준비는 원장 전용(서버도 막는다) — 부원장에게는 버튼을 숨긴다 */}
+                    {canManageCriticalFinance && (
                     <Link href={`/admin/finance/prepare?month=${year}-${String(month).padStart(2, "0")}`} className="academy-button-primary">
                         이번 달 청구 준비
                     </Link>
+                    )}
                     {/* 운영 서버에 테스트 키가 들어 있으면 결제를 막고 눈에 띄게 알린다(테스트 카드로 «납부 완료»가 되는 사고 방지) */}
                     {paymentProvider.productionTestKeyBlocked
                         ? <span role="alert" className="text-xs font-semibold text-[var(--color-academy-danger)]">운영 서버에 테스트 결제 키가 들어 있어 온라인 결제를 막았습니다 — 실거래(live) 키로 바꿔 주세요</span>
                         : !paymentProvider.providerReady && <span className="text-xs text-[var(--color-academy-muted)]">온라인 결제 준비 중</span>}
                     <div className="ml-auto flex flex-wrap items-center gap-2">
                         {/* 시트 원장 은퇴(2026-10~) 면 대조할 시트 자료가 없으므로 「시트 점검」 버튼을 숨긴다 */}
-                        {!sheetRetired && (
+                        {/* 시트 점검도 원장 전용(서버 sheet-reconcile 가 막는다) */}
+                        {!sheetRetired && canManageCriticalFinance && (
                         <button
                             type="button"
                             onClick={loadSheetPreview}
@@ -1357,6 +1372,8 @@ export default function FinanceClient({
                             <AdminQuickActionMenu
                                 label="청구 빠른 작업"
                                 actions={[
+                                    // 링크·미납 일괄 문자는 원장 전용(서버도 막는다) — 부원장에게는 «상태 새로고침»만
+                                    ...(canManageCriticalFinance ? [
                                     {
                                         key: "send-links",
                                         label: parentSendLocked ? "링크 발송 · 발송 잠금" : "링크 발송",
@@ -1371,6 +1388,7 @@ export default function FinanceClient({
                                         disabled: parentSendLocked || busy || invoiceOpenCount === 0,
                                         onSelect: handleSendReminders,
                                     },
+                                    ] : []),
                                     {
                                         key: "refresh-ledger",
                                         label: "상태 새로고침",
@@ -1381,7 +1399,7 @@ export default function FinanceClient({
                                 ]}
                             />
                             {/* 야간 발송 금지 안내(KST 21:00~08:00 · 문구는 quietHours.ts 한 곳) */}
-                            {!parentSendLocked && (
+                            {!parentSendLocked && canManageCriticalFinance && (
                                 <p className="mt-2 max-w-[220px] text-xs font-normal leading-snug text-[var(--color-academy-muted)]">{BILLING_QUIET_HINT}</p>
                             )}
                         </div></details>
@@ -1519,6 +1537,8 @@ export default function FinanceClient({
                 </div>
             )}
 
+            {/* 월 요약(합계·수납률)은 원장 전용 — 부원장은 서버가 null 로 보내고 줄 자체를 숨긴다 */}
+            {canManageCriticalFinance && (
             <section className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-[var(--color-academy-line)] bg-white p-3 text-xs font-medium tabular-nums shadow-sm">
                 <span className="inline-flex h-8 items-center rounded-full bg-[var(--color-academy-soft)] px-3 text-[var(--color-academy-ink)]">
                     총 청구 {formatAmount(summary.totalAmount)} · {summary.totalCount}건
@@ -1536,12 +1556,18 @@ export default function FinanceClient({
                     </span>
                 </span>
             </section>
+            )}
 
             {/* 수동 생성 폼 */}
             {showForm && (
                 <form onSubmit={handleCreate} className="bg-white border border-[var(--color-academy-line)] rounded-xl p-6 mb-6 shadow-sm space-y-4">
                     <h3 className="academy-section-title">새 수납 기록</h3>
-                    <p className="text-sm text-[var(--color-academy-muted)]">월 수강료·셔틀비는 <Link href={`/admin/finance/prepare?month=${year}-${String(month).padStart(2, "0")}`} className="font-medium underline">청구 준비에서 계산·발행</Link>해주세요.</p>
+                    {canManageCriticalFinance ? (
+                        <p className="text-sm text-[var(--color-academy-muted)]">월 수강료·셔틀비는 <Link href={`/admin/finance/prepare?month=${year}-${String(month).padStart(2, "0")}`} className="font-medium underline">청구 준비에서 계산·발행</Link>해주세요.</p>
+                    ) : (
+                        // 부원장: 청구 준비 화면이 닫혀 있어 링크 없이 안내만
+                        <p className="text-sm text-[var(--color-academy-muted)]">월 수강료·셔틀비는 원장님이 청구 준비에서 발행합니다.</p>
+                    )}
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                         <div>
                             <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">원생 *</label>
@@ -1869,7 +1895,11 @@ export default function FinanceClient({
                                     <tbody key={group.status} className="divide-y divide-[var(--color-academy-line)]">
                                         <tr>
                                             <th colSpan={paymentColumnCount} scope="rowgroup" className="bg-[var(--color-academy-soft)] px-2 py-1.5 text-xs font-semibold text-[var(--color-academy-ink)]">
-                                                {group.label} · <span className="tabular-nums">{group.items.length}</span>건 · 합계 <span className="tabular-nums">{formatAmount(group.totalAmount)}</span>
+                                                {group.label}
+                                                {/* 건수: 부원장은 미납·연체 묶음만(납부완료·취소·환불 건수는 월 요약처럼 숨김 — 검수 L4). 원장은 그대로 */}
+                                                {(canManageCriticalFinance || ["PENDING", "OVERDUE"].includes(group.status)) && <> · <span className="tabular-nums">{group.items.length}</span>건</>}
+                                                {/* 묶음 합계는 원장만 — 부원장에게 합계는 숨긴다(미납 합계 포함) */}
+                                                {canManageCriticalFinance && <> · 합계 <span className="tabular-nums">{formatAmount(group.totalAmount)}</span></>}
                                             </th>
                                         </tr>
                                         {group.items.map(renderPaymentRow)}

@@ -228,6 +228,9 @@ function makeDb(overrides = {}) {
     sessions: [],    // { id, studentId, makeupClassId, makeupDate(Date), status }
     exceptions: [],  // { id, studentId, serviceDate, direction, kind, location, note, canceled }
     notices: [],
+    reviews: [],     // 질병·부상 이월 검토 { absenceId, status, source, reasonText }
+    evidence: [],    // 증빙 사진 { id, absenceId, removed }
+    illnessReady: false, // true = 검토 표가 있는 운영(마이그레이션 적용 뒤)
     creditStatusLog: [], // 보강권 상태가 바뀔 때마다 적는다 — «AVAILABLE 로 돌아간 순간»이 없었는지 본다
     seatRechecks: 0,
     raceBooked: {},
@@ -284,7 +287,17 @@ function makeDb(overrides = {}) {
       return [{ id: found.id, eventVersion: stamp() }];
     }
     // ── 보강권 발급·되돌리기 ──
-    if (/to_regclass/.test(sql)) return [{ found: null, ready: false }];
+    // 질병·부상 이월 검토 표(2026-11-14) — 기본은 표 없음(예전 방식)
+    if (/to_regclass/.test(sql)) return /RegularAbsenceCarryReview/.test(sql) && db.illnessReady ? [{ review: "present", evidence: "present" }] : [{ found: null, ready: false }];
+    if (/FROM "RegularAbsenceCarryReview" WHERE "absenceId" = \$1 FOR UPDATE/.test(sql)) {
+      return db.reviews.filter((r) => r.absenceId === args[0]).map((r) => ({ status: r.status, source: r.source, reasonText: r.reasonText }));
+    }
+    if (/SELECT status FROM "MakeupCredit" WHERE "studentId" = \$1 AND "sourceKey" = \$2 FOR UPDATE/.test(sql)) {
+      return db.credits.filter((c) => c.studentId === args[0] && c.sourceKey === args[1]).map((c) => ({ status: c.status }));
+    }
+    if (/FROM "RegularAbsence" WHERE id = \$1 FOR UPDATE/.test(sql)) {
+      return db.absences.filter((a) => a.id === args[0]).map((a) => ({ studentId: a.studentId, classId: a.classId, absenceYmd: a.date, reason: a.reason, status: a.status }));
+    }
     if (/INSERT INTO "MakeupCredit"/.test(sql)) {
       const found = db.credits.find((c) => c.studentId === args[0] && c.sourceKey === args[1]);
       if (!found) {
@@ -435,6 +448,38 @@ function makeDb(overrides = {}) {
   async function $executeRawUnsafe(sql, ...args) {
     boom(sql);
     if (/pg_advisory_xact_lock/.test(sql)) { db.lockedInTx = true; return 1; }
+    // ── 질병·부상 이월 검토 ──
+    if (/UPDATE "MakeupCredit"\s+SET status = 'REVOKED'/.test(sql) && /"sourceKey" = \$2 AND status = 'AVAILABLE'/.test(sql)) {
+      const c = db.credits.find((x) => x.studentId === args[0] && x.sourceKey === args[1] && x.status === "AVAILABLE");
+      if (!c) return 0;
+      setCredit(c, "REVOKED");
+      return 1;
+    }
+    if (/UPDATE "RegularAbsenceEvidence" SET "absenceId" = \$2 WHERE "absenceId" = \$1 AND "removedAt" IS NULL/.test(sql)) {
+      let n = 0;
+      for (const e of db.evidence) if (e.absenceId === args[0] && !e.removed) { e.absenceId = args[1]; n += 1; }
+      return n;
+    }
+    if (/UPDATE "RegularAbsenceEvidence" SET "removedAt" = now\(\) WHERE "absenceId" = \$1/.test(sql)) {
+      let n = 0;
+      for (const e of db.evidence) if (e.absenceId === args[0] && !e.removed) { e.removed = true; n += 1; }
+      return n;
+    }
+    if (/UPDATE "RegularAbsenceCarryReview"\s+SET status = 'CLOSED'/.test(sql)) {
+      const found = db.reviews.find((r) => r.absenceId === args[0] && args[1].includes(r.status));
+      if (!found) return 0;
+      found.status = "CLOSED";
+      return 1;
+    }
+    if (/INSERT INTO "RegularAbsenceCarryReview"/.test(sql)) {
+      const toMakeup = /VALUES \(\$1, 'MAKEUP'/.test(sql);
+      const found = db.reviews.find((r) => r.absenceId === args[0]);
+      const next = toMakeup ? { status: "MAKEUP", source: "STAFF", reasonText: null } : { status: "PENDING", source: args[1], reasonText: args[2] };
+      if (!found) { db.reviews.push({ absenceId: args[0], ...next }); return 1; }
+      if (!["PENDING", "CLOSED"].includes(found.status)) return 0;
+      Object.assign(found, toMakeup ? { status: "MAKEUP" } : next);
+      return 1;
+    }
     if (/UPDATE "MakeupCredit"\s+SET status = 'REVOKED'/.test(sql)) {
       const need = /status = 'RESERVED'/.test(sql) ? "RESERVED" : "AVAILABLE";
       const c = db.credits.find((x) => x.id === args[0] && x.status === need);
@@ -470,7 +515,7 @@ function makeDb(overrides = {}) {
 
   /** 트랜잭션: 안에서 오류가 나면 표를 통째로 되돌린다(진짜 DB 의 ROLLBACK 흉내) */
   async function $transaction(fn) {
-    const snapshot = structuredClone({ absences: db.absences, credits: db.credits, sessions: db.sessions, exceptions: db.exceptions });
+    const snapshot = structuredClone({ absences: db.absences, credits: db.credits, sessions: db.sessions, exceptions: db.exceptions, reviews: db.reviews, evidence: db.evidence });
     db.lockedInTx = false;
     db.transactions = (db.transactions ?? 0) + 1;
     try {
@@ -765,6 +810,45 @@ test("결석 날짜 바꾸기: 한 트랜잭션에서 옛 신고 취소 + 새 �
   assert.deepEqual(db.absences.map((a) => [a.date, a.status, a.reason]), [[MON, "CANCELLED", "FAMILY_TRIP"], [NEXT_MON, "REPORTED", "FAMILY_TRIP"]]);
   assert.deepEqual(db.credits.map((c) => [c.sourceKey, c.status]), [[`REGULAR:cO:${MON}`, "REVOKED"], [`REGULAR:cO:${NEXT_MON}`, "AVAILABLE"]]);
   assert.equal(kst.toKstYmd(db.credits[1].absenceDate), NEXT_MON, "새 보강권의 결석일·만료는 새 날짜 기준");
+});
+
+// 질병·부상 이월 검토(2026-11-14) × 날짜 바꾸기 — 날짜를 바꿔도 «검토 대기» 규칙을 돌아갈 수 없다
+test("결석 날짜 바꾸기(질병·부상 검토 중): 사진·사유 글이 새 날짜로 옮겨 가고 새 날짜도 «검토 중» — 보강권은 나가지 않는다", async () => {
+  const db = makeDb({ illnessReady: true });
+  const old = seedAbsence(db, { reason: "ILLNESS_INJURY", creditStatus: null });
+  db.reviews.push({ absenceId: old.id, status: "PENDING", source: "PARENT", reasonText: "독감" });
+  db.evidence.push({ id: "e1", absenceId: old.id, removed: false }, { id: "e-gone", absenceId: old.id, removed: true });
+  freeze(SUN, "10:00");
+  const result = await absence.moveRegularAbsence("p1", MOVE);
+  assert.equal(result.ok, true);
+  const moved = db.absences.find((a) => a.date === NEXT_MON);
+  assert.deepEqual([moved.status, moved.reason], ["REPORTED", "ILLNESS_INJURY"]);
+  assert.equal(db.credits.length, 0, "새 날짜에도 보강권이 바로 나가지 않는다");
+  assert.deepEqual(db.reviews.map((r) => [r.absenceId, r.status, r.source, r.reasonText]),
+    [[old.id, "CLOSED", "PARENT", "독감"], [moved.id, "PENDING", "PARENT", "독감"]]);
+  assert.deepEqual(db.evidence.map((e) => [e.id, e.absenceId, e.removed]), [["e1", moved.id, false], ["e-gone", old.id, true]], "살아 있는 사진만 새 결석으로 옮긴다");
+});
+
+test("결석 날짜 바꾸기(원장이 이미 [보강권으로] 정한 결석): 결정을 새 날짜로 가져간다 — 옛 보강권 회수·새 보강권 1장", async () => {
+  const db = makeDb({ illnessReady: true });
+  const old = seedAbsence(db, { reason: "ILLNESS_INJURY" });
+  db.reviews.push({ absenceId: old.id, status: "MAKEUP", source: "PARENT", reasonText: "독감" });
+  freeze(SUN, "10:00");
+  await absence.moveRegularAbsence("p1", MOVE);
+  const moved = db.absences.find((a) => a.date === NEXT_MON);
+  assert.deepEqual(db.credits.map((c) => [c.sourceKey, c.status]), [[`REGULAR:cO:${MON}`, "REVOKED"], [`REGULAR:cO:${NEXT_MON}`, "AVAILABLE"]]);
+  assert.deepEqual(db.reviews.map((r) => [r.absenceId, r.status]), [[old.id, "CLOSED"], [moved.id, "MAKEUP"]]);
+});
+
+test("결석 날짜 바꾸기(다른 사유·검토 줄 없는 옛 질병·부상 결석): 표가 있어도 예전 그대로 — 옛 보강권 회수·새 보강권 발급", async () => {
+  for (const reason of ["FAMILY_TRIP", "ILLNESS_INJURY"]) {
+    const db = makeDb({ illnessReady: true });
+    seedAbsence(db, { reason });
+    freeze(SUN, "10:00");
+    await absence.moveRegularAbsence("p1", MOVE);
+    assert.deepEqual(db.credits.map((c) => [c.sourceKey, c.status]), [[`REGULAR:cO:${MON}`, "REVOKED"], [`REGULAR:cO:${NEXT_MON}`, "AVAILABLE"]], reason);
+    assert.equal(db.reviews.length, 0, reason);
+  }
 });
 
 test("결석 날짜 바꾸기 알림: 기존 알림 두 통(취소 + 새 신고), 다시 눌러도 더 가지 않는다", async () => {
@@ -1164,7 +1248,10 @@ test("화면 세 곳: «날짜 바꾸기» 글자 버튼 + 그 자리에서 고�
   const shuttleUi = read("src/app/mypage/shuttle/ShuttleExceptionClient.tsx");
   const makeupUi = read("src/app/mypage/makeup/MakeupClient.tsx");
   for (const [name, ui] of [["결석", absenceUi], ["셔틀", shuttleUi], ["보강", makeupUi]]) {
-    assert.match(ui, /import \{ CHANGE_CLOSED_MESSAGE[^}]*\} from "@\/lib\/parent\/changeDeadline";/, `${name}: 마감 글은 공용 상수`);
+    // 결석 화면만 예외(2026-11-14 원장 지시 «학원에 문의 글 대신 그 자리에서 해결»): 마감 줄 = «마감» 한 단어 + 전화·문의 버튼.
+    // 서버가 돌려주는 마감 오류 문구는 세 화면 모두 공용 상수 그대로다.
+    if (name === "결석") assert.match(ui, /<ContactActions label="마감" contact=\{contact\} \/>/, "결석: 마감 줄은 «마감» + 전화·문의 버튼");
+    else assert.match(ui, /import \{ CHANGE_CLOSED_MESSAGE[^}]*\} from "@\/lib\/parent\/changeDeadline";/, `${name}: 마감 글은 공용 상수`);
     assert.doesNotMatch(ui, /"마감 시간이 지나/, `${name}: 마감 글을 화면에 따로 적지 않는다`);
     assert.match(ui, /날짜 바꾸기/, `${name}: 날짜 바꾸기`);
     assert.match(ui, /className="academy-button-text shrink-0"\s*>\s*(\{[^}]*"날짜 바꾸기"\}|날짜 바꾸기)/, `${name}: 글자 버튼`);

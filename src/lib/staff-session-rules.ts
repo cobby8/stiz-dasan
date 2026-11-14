@@ -7,6 +7,7 @@
 //
 // ⚠️ prisma·next import 금지(테스트가 이 파일을 그대로 실행한다). 날짜는 @/lib/datetime/kst 만 쓴다.
 import { todayKst } from "@/lib/datetime/kst";
+import { canSeePaymentAmount } from "@/lib/auth/moneyAccess";
 
 // ── b1. 전체 출석 ─────────────────────────────────────────────
 
@@ -221,4 +222,41 @@ export function trialLeadStatusAfterStaffMark(input: {
  */
 export function canSeeStaffFees(role: string | null | undefined): boolean {
   return role === "ADMIN" || role === "VICE_ADMIN";
+}
+
+// ── 부원장 금액 가림(2026-11-14 원장 결정) ─────────────────────────
+
+/**
+ * 직원 화면 금액을 «미납 청구 1건 금액만» 남기고 가려야 하는 역할인가 — 부원장(VICE_ADMIN)만.
+ * 원장은 다 보고, 선생님(INSTRUCTOR)·기사님은 기존 동작(f3 — 출석부 금액은 아예 안 받음, 청구 탭은 그대로)을 바꾸지 않는다.
+ */
+export function staffMasksSettledAmounts(role: string | null | undefined): boolean {
+  return role === "VICE_ADMIN";
+}
+
+/**
+ * 직원 화면 청구 한 건의 금액을 역할에 맞게 가린다 — 부원장이면 미납(PENDING·OVERDUE)이 아닌 청구의
+ * amount·invoiceAmount 를 null 로. 판정은 moneyAccess.canSeePaymentAmount 를 그대로 쓴다(규칙 한 곳).
+ * statusKey = 결제 상태가 들어 있는 칸 이름(화면마다 status / paymentStatus 로 다르다).
+ */
+export function maskStaffBillAmounts<T extends { amount: number | null; invoiceAmount: number | null }>(
+  item: T,
+  role: string | null | undefined,
+  paymentStatus: string | null | undefined,
+): T {
+  if (!staffMasksSettledAmounts(role) || canSeePaymentAmount(role, paymentStatus)) return item;
+  return { ...item, amount: null, invoiceAmount: null };
+}
+
+/**
+ * 출석부 월 수강료 요약 한 줄 — 부원장은 아직 안 낸 것(미납·납부 확인 대기)과 청구 미생성(예정 수강료 = 가격표 성격)만
+ * 금액을 본다. 납부 완료·확인 필요·미확인 줄은 금액을 null 로(납부 완료는 화면 «—»). 선생님은 이 값을 아예 받지 않는다(f3).
+ */
+export function maskStaffMonthlyFeeAmount<T extends { amount: number | null; status: string }>(
+  summary: T,
+  role: string | null | undefined,
+): T {
+  if (!staffMasksSettledAmounts(role)) return summary;
+  if (summary.status === "UNPAID" || summary.status === "PENDING_CONFIRMATION" || summary.status === "UNISSUED") return summary;
+  return { ...summary, amount: null };
 }

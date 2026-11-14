@@ -97,7 +97,7 @@ function financeFixture(failure) {
   const route = load("src/app/api/admin/finance/sheet-reconcile/route.ts", {
     "@/lib/user-facing-error": errors,
     "next/server": { NextResponse: { json: (body, options) => ({ body, status: options?.status ?? 200 }) } },
-    "@/lib/auth-guard": { requireAdmin: async () => undefined },
+    "@/lib/auth-guard": { requireAdmin: async () => undefined, requireOwner: async () => undefined },
     "@/lib/prisma": { prisma: { $queryRawUnsafe: async (...args) => { calls.push(args); throw failure; } } },
   });
   return { route, calls };

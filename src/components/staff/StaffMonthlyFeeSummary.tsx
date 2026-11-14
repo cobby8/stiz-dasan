@@ -12,7 +12,7 @@ export function StaffMonthlyFeeSummaryCard({ month, summary }: { month: string; 
   return <section aria-label="학생 수강료 요약" className="mb-4 rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] p-4">
     <p className="text-xs text-[var(--color-academy-muted)]">{monthlyFeeLabel(month, summary.period, summary.sourceLabel)}</p>
     <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-      <p className="text-2xl font-bold tabular-nums text-[var(--color-academy-ink)]">{summary.amount === null ? "금액 확인 필요" : `${summary.amount.toLocaleString("ko-KR")}원`}</p>
+      <p className="text-2xl font-bold tabular-nums text-[var(--color-academy-ink)]">{summary.amount === null ? (summary.status === "PAID" ? "—" : "금액 확인 필요") : `${summary.amount.toLocaleString("ko-KR")}원`}</p>
       <span className="rounded-full bg-[var(--color-academy-surface)] px-3 py-1 text-xs text-[var(--color-academy-ink)]">{summary.statusLabel}</span>
     </div>
     <p className="mt-2 text-xs text-[var(--color-academy-muted)]">금액 근거 · {summary.sourceLabel}</p>

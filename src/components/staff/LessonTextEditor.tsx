@@ -37,6 +37,9 @@ export function LessonTextEditor({
 }) {
   const [status, setStatus] = useState<"idle" | "dirty" | "saving" | "saved" | "error">("idle");
   const [error, setError] = useState("");
+  // 마지막으로 저장된 글 — 바깥에서 값이 바뀌어도(수업 계획 불러오기 등) «저장 안 됨»을 알아보게 한다. 채운 값은 아직 저장 전이다.
+  const [savedValue, setSavedValue] = useState<string | null>(prefilledFromPlan ? null : value);
+  const unsaved = value !== savedValue;
   // 음성 변환과 저장을 따로 센다 — 한쪽이 끝났다고 다른 쪽이 진행 중인데 «안 바쁨»으로 알리지 않게(수업 종료 잠금이 먼저 풀리던 문제)
   const busyRef = useRef({ voice: false, saving: false });
   function reportBusy(kind: "voice" | "saving", busy: boolean) {
@@ -46,17 +49,19 @@ export function LessonTextEditor({
 
   async function submit() {
     if (status === "saving") return;
+    const sending = value;
     setStatus("saving");
     setError("");
     reportBusy("saving", true);
     try {
-      const result = await save(value);
+      const result = await save(sending);
       if (!result.ok) {
         setStatus("error");
         setError(result.message);
         return;
       }
       setStatus("saved");
+      setSavedValue(sending);
     } catch {
       setStatus("error");
       setError("저장하지 못했습니다. 네트워크를 확인한 뒤 다시 눌러 주세요.");
@@ -91,12 +96,12 @@ export function LessonTextEditor({
         className="academy-input mt-1.5 leading-6"
       />
       {/* 미리 쓴 내용을 채워 보여 줄 뿐 아직 저장 전이라는 것을 알린다(저장하면 사라진다) */}
-      {prefilledFromPlan && status !== "saved" && (
+      {prefilledFromPlan && unsaved && (
         <p role="status" className="mt-1.5 text-xs text-[var(--color-academy-info)]">{PLAN_PREFILL_NOTICE}</p>
       )}
       <div className="mt-1.5 flex items-center justify-between gap-2">
         <span aria-live="polite" className={`min-w-0 text-xs ${status === "error" ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-muted)]"}`}>
-          {status === "saving" ? "저장 중…" : status === "saved" ? "저장됨" : status === "dirty" ? "저장하지 않은 변경이 있어요" : status === "error" ? error : hint}
+          {status === "saving" ? "저장 중…" : status === "error" ? error : unsaved || status === "dirty" ? "저장하지 않은 변경이 있어요" : status === "saved" ? "저장됨" : hint}
         </span>
         <button type="button" disabled={status === "saving"} onClick={() => void submit()} className="academy-button-secondary academy-button-sm shrink-0">
           수업 내용 저장

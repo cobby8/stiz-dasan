@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { loadStaffClassPeople } from "@/app/actions/staff-class-people";
 import { loadStaffRosterPhotoVersions } from "@/app/actions/staff-sessions";
 import type { StaffClassPerson } from "@/lib/staff-class-people";
@@ -26,8 +26,15 @@ export type ClassPeopleState = {
  * 출석부에 통합한 «학생 정보»(2026-11-15) — 예전 학생 정보 시트(ClassPeopleSheet)가 읽던 것과 같은 서버 기능을 쓴다.
  * 출석부를 처음 펼칠 때(enabled) 한 번만 읽는다. 연락처가 들어 있어 화면을 닫으면 버린다(따로 저장하지 않는다).
  */
-export function useClassPeople(input: { classId: string; sessionId?: string | null; sessionDateId?: string | null; enabled: boolean }): ClassPeopleState {
-  const { classId, sessionId, sessionDateId, enabled } = input;
+export function useClassPeople(input: {
+  classId: string;
+  sessionId?: string | null;
+  sessionDateId?: string | null;
+  enabled: boolean;
+  /** 참이면 조회를 «시작»하지 않고 미룬다(출결 저장 중) — 서버 기능은 순서대로 처리돼 먼저 부르면 출결 저장이 그 뒤에 줄을 선다. 이미 시작한 조회는 끊지 않는다 */
+  hold?: boolean;
+}): ClassPeopleState {
+  const { classId, sessionId, sessionDateId, enabled, hold = false } = input;
   const [people, setPeople] = useState<StaffClassPerson[]>([]);
   const [photoVersions, setPhotoVersions] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
@@ -35,23 +42,32 @@ export function useClassPeople(input: { classId: string; sessionId?: string | nu
   const [loaded, setLoaded] = useState(false);
   const [attempt, setAttempt] = useState(0);
 
+  // 같은 차례를 두 번 부르지 않고, 한 번 시작한 조회는 hold 가 다시 켜져도 끝까지 받는다(2026-11-14 리뷰 반영 규칙과 같은 모양)
+  const startedRef = useRef(-1);
+  const mountedRef = useRef(true);
   useEffect(() => {
-    if (!enabled) return;
-    let active = true;
-    queueMicrotask(() => { if (active) { setLoading(true); setError(""); } });
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+  useEffect(() => {
+    if (!enabled || hold) return;
+    if (startedRef.current === attempt) return; // 이번 차례는 이미 불렀다
+    const turn = attempt;
+    startedRef.current = turn;
+    const stale = () => !mountedRef.current || startedRef.current !== turn;
+    queueMicrotask(() => { if (!stale()) { setLoading(true); setError(""); } });
     void loadStaffClassPeople({ classId, sessionId, sessionDateId })
       .then((result) => {
         if (!result.ok) throw new Error(result.message);
-        if (active) { setPeople(result.people); setLoaded(true); }
+        if (!stale()) { setPeople(result.people); setLoaded(true); }
       })
-      .catch((reason: unknown) => { if (active) setError(userErrorMessage(reason, "학생 정보를 불러오지 못했습니다.")); })
-      .finally(() => { if (active) setLoading(false); });
+      .catch((reason: unknown) => { if (!stale()) setError(userErrorMessage(reason, "학생 정보를 불러오지 못했습니다.")); })
+      .finally(() => { if (!stale()) setLoading(false); });
     // 프로필 사진은 없어도 되는 정보라 실패해도 조용히 첫 글자로 그린다
     void loadStaffRosterPhotoVersions({ classId, sessionId, sessionDateId })
-      .then((result) => { if (active && result.ok) setPhotoVersions(result.versions); })
+      .then((result) => { if (!stale() && result.ok) setPhotoVersions(result.versions); })
       .catch(() => undefined);
-    return () => { active = false; };
-  }, [attempt, classId, enabled, sessionDateId, sessionId]);
+  }, [attempt, classId, enabled, hold, sessionDateId, sessionId]);
 
   return { people, photoVersions, loading, error, loaded, reload: () => setAttempt((value) => value + 1) };
 }
@@ -67,6 +83,7 @@ export function RosterPersonInfo({
   photoVersion,
   todayStatus,
   onOpenBilling: openBilling,
+  showUnpaidCount = false,
 }: {
   person: StaffClassPerson;
   photoVersion?: string | null;
@@ -74,9 +91,14 @@ export function RosterPersonInfo({
   todayStatus?: "PRESENT" | "LATE" | "ABSENT" | null;
   /** 없으면(선생님 화면) 미납 배지·청구 버튼을 숨긴다(f3 보완). */
   onOpenBilling?: (student: { id: string; name: string }) => void;
+  /** 청구 버튼 없이 미납 «건수» 표시만 보인다 — 수업 중 출석부(청구는 수강료 줄에서 연다). 원장·부원장(showFees)일 때만 참을 넘긴다 */
+  showUnpaidCount?: boolean;
 }) {
   // 청구 정보는 «서버가 값을 보냈고(원장·부원장) + 화면이 청구 시트를 열 수 있을 때»만 보인다.
   const billing = openBilling ? person.billing : null;
+  // 건수 표시만(선생님에게는 서버가 billing=null 로 보내 이 값도 없다)
+  const countSource = openBilling || showUnpaidCount ? person.billing : null;
+  const unpaidCount = countSource?.unpaidCount ?? 0;
   const guardian = person.guardians.find((item) => item.isPrimary) ?? person.guardians[0];
   const status = todayStatus === undefined ? person.todayStatus : todayStatus;
   const statusClass = status === "PRESENT" ? TONE_BADGE_CLASS[ATTENDANCE_TONE.PRESENT] : status === "LATE" ? TONE_BADGE_CLASS[ATTENDANCE_TONE.LATE] : status === "ABSENT" ? TONE_BADGE_CLASS[ATTENDANCE_TONE.ABSENT] : TONE_BADGE_CLASS.neutral;
@@ -93,7 +115,7 @@ export function RosterPersonInfo({
         </div>
         <div className="flex flex-wrap justify-end gap-1.5">
           <span className={`rounded px-2 py-0.5 text-xs ${statusClass}`}>오늘 {status ? TODAY_LABEL[status] : "미확인"}</span>
-          {billing && billing.unpaidCount > 0 && <span className={`rounded px-2 py-0.5 text-xs tabular-nums ${TONE_BADGE_CLASS[PAYMENT_TONE.UNPAID]}`}>미납 {billing.unpaidCount}건</span>}
+          {unpaidCount > 0 && <span className={`rounded px-2 py-0.5 text-xs tabular-nums ${TONE_BADGE_CLASS[PAYMENT_TONE.UNPAID]}`}>미납 {unpaidCount}건</span>}
         </div>
       </div>
 
@@ -105,7 +127,7 @@ export function RosterPersonInfo({
 
       {billing && (
         <button type="button" onClick={() => openBilling?.({ id: person.id, name: person.name })} className="academy-button-secondary w-full">
-          {billing.unpaidCount > 0 ? <span className="tabular-nums">미납 {billing.unpaidAmount.toLocaleString("ko-KR")}원 · 청구 확인</span> : "청구 내역"}
+          {billing.unpaidCount > 0 ? <span className="tabular-nums">{billing.unpaidAmount == null ? `미납 ${billing.unpaidCount}건` : `미납 ${billing.unpaidAmount.toLocaleString("ko-KR")}원`} · 청구 확인</span> : "청구 내역"}
         </button>
       )}
 
