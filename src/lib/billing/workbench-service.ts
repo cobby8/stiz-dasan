@@ -3,12 +3,12 @@ import { getMonthlyClassDates } from "@/lib/enrollment/monthlyClassDates";
 import { monthlyBillingDueDate } from "@/lib/billing-due-date";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import { validateMonthlyRegisterDraft } from "./monthly-register";
-import { WorkbenchError, carryPool, allocateCarry, filterWorkbenchDates, validateWorkbenchCommand, validateWorkbenchMonth, workbenchTotal, shortMonthProration, STANDARD_MONTHLY_SESSIONS,
+import { WorkbenchError, carryPool, allocateCarry, filterWorkbenchDates, validateWorkbenchCommand, validateWorkbenchMonth, workbenchTotal, shortMonthProration, attendedOnlyProration, STANDARD_MONTHLY_SESSIONS,
   type WorkbenchAmounts, type WorkbenchView, type WorkbenchRow, type WorkbenchOperation, type WorkbenchCalendarSnapshot } from "./workbench";
 // 주N회 요금·셔틀비·형제할인 «제안값» 규칙은 순수 모듈 한 곳에서만 정한다.
 import { planWeeklyTuition, planShuttleFee, siblingDiscountStudents, siblingDiscountAmount, REGULAR_SIBLING_DISCOUNT_PERCENT, type ShuttlePlan } from "./workbench-pricing";
 // 부상·질병 기간 결석의 «청구 발행 보류» 판정 조각·글자(순수 모듈 한 곳)
-import { BILLING_HOLD_LABEL, illnessHoldPeriodSql } from "@/lib/regular/illnessPeriodRules";
+import { BILLING_HOLD_LABEL, BILLING_HOLD_MOVED_NOTE, illnessHoldPeriodSql, parseUnpaidGuides, unpaidGuideShape } from "@/lib/regular/illnessPeriodRules";
 
 export type WorkbenchTx = {
   $queryRawUnsafe<T>(sql: string, ...values: unknown[]): Promise<T>;
@@ -24,7 +24,9 @@ type Stored = { id: string; month: string; studentId: string; classId: string; v
 type Absence = { id: string; studentId: string; studentName: string; classId: string; date: string; reason: string; status: string; makeupStatus: string | null; resolution: string | null };
 type Credit = { id: string; studentId: string; numerator: string; denominator: string; availableMonth: string; absenceId?: string; valid?: boolean; basis?:{originMonth?:string;classId?:string;discountedTuition?:number;sourcePaymentId?:string|null;scheduledDates?:string[];periodStart?:string|null;periodEnd?:string|null;
   // 납부 Payment 근거 이월에만 있는 칸: source='PAID_PAYMENT' · 적립 때 청구 금액 · 그 청구에서 이미 줄인 금액
-  source?:string;paymentAmount?:number;priorReduction?:number} };
+  source?:string;paymentAmount?:number;priorReduction?:number;
+  // 부상 결석 기간 정산이 적립한 이월이면 그 기간 id
+  periodId?:string} };
 type Usage = { studentId: string; amount: number; month?: string; paymentId?: string | null; paymentStatus?: string | null; invoiceStatus?:string|null; basis?:unknown; sourceCreditIds?:string[] };
 const hash = (v: unknown) => createHash("sha256").update(JSON.stringify(v)).digest("hex");
 const limit = 5001;
@@ -110,6 +112,14 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
   // 그 학생·그 반을 보류로 만드는 기간 id(없으면 undefined). 대상 반이 빈 배열인 기간은 그 학생의 모든 반을 막는다
   const holdPeriodFor = (studentId: string, classId: string) => illnessHolds.find(held => held.studentId === studentId
     && (!Array.isArray(held.classIds) || held.classIds.length === 0 || held.classIds.includes(classId)))?.periodId;
+  // 부상 결석 복귀 정산(3단계)이 남긴 «낸 돈이 없는 달» 안내 — 이월을 만들지 않은 대신 이 달 청구를 «다닌 횟수만큼만» 제안한다.
+  // 확정된(SETTLED) 기간의 carrySettlement.unpaidGuides 중 이 달 것만 읽는다(칸이 없는 DB 는 읽지 않는다).
+  const illnessGuides = holdReady ? take(await tx.$queryRawUnsafe<Array<{ studentId: string; periodId: string; guides: unknown }>>(
+    `SELECT sp."studentId", sp.id AS "periodId", sp."carrySettlement"->'unpaidGuides' AS guides FROM "RegularAbsencePeriod" sp
+      WHERE sp.reason = 'ILLNESS_INJURY' AND sp."carryState" = 'SETTLED'
+        AND sp."carrySettlement"->'unpaidGuides' @> jsonb_build_array(jsonb_build_object('month', $1::text))
+      ORDER BY sp."studentId", sp.id LIMIT ${limit}`, month))
+    .flatMap(row => parseUnpaidGuides(row.guides, month).map(guide => ({ studentId: row.studentId, periodId: row.periodId, ...guide }))) : [];
   const shuttleRiders = new Set(shuttleStops.map(r=>r.studentId).filter((v):v is string=>Boolean(v)));
   const unlinkedShuttleNames = [...new Set(shuttleStops.filter(r=>!r.studentId).map(r=>r.studentName))];
   const calendar = await calendarInput;
@@ -164,7 +174,9 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
   const officialCalendarFingerprint=calendar?hash({kind:calendar.kind,events:calendar.events,fingerprint:calendar.fingerprint}):null;
   // 보류 목록도 원본이다 — 화면을 연 뒤 승인(보류)이 끼면 지문이 달라져 확정·발행이 거절된다.
   // 보류가 한 건도 없으면 키를 넣지 않는다: 보류가 없는 달의 지문이 예전과 같아야 이미 저장·확정해 둔 초안이 그대로 유효하다.
-  const sourceVersion = hash({ month, enrollments, payments, invoices, registers, events, officialCalendarFingerprint, calendarSource, credits, usages, absences, bookings, originDrafts, completedCurrentDrafts, originPayments, originInvoices, makeupSource, attendance, seasonalCredits, shuttleStops, ...(illnessHolds.length ? { illnessHolds } : {}) });
+  const sourceVersion = hash({ month, enrollments, payments, invoices, registers, events, officialCalendarFingerprint, calendarSource, credits, usages, absences, bookings, originDrafts, completedCurrentDrafts, originPayments, originInvoices, makeupSource, attendance, seasonalCredits, shuttleStops, ...(illnessHolds.length ? { illnessHolds } : {}),
+    // 정산 안내도 원본이다 — 화면을 연 뒤 확정·확정 취소가 끼면 지문이 달라진다. 안내가 없는 달의 지문은 예전 그대로
+    ...(illnessGuides.length ? { illnessGuides } : {}) });
   const pool = (studentId:string)=>carryPool(credits.filter(c=>c.studentId===studentId),usages.filter(u=>u.studentId===studentId),month);
   const available = (studentId: string) => pool(studentId).available;
   const assignedShuttle = new Set<string>(), assignedCarry = new Map<string, number>();
@@ -199,11 +211,18 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
     const id = `${e.studentId}:${e.classId}`, saved = drafts.find(d => d.id === id);
     const { register, reg, allScheduledDates, classReg, startsOn, futurePeriod, excluded } = scopes.get(id)!;
     const basis: string[] = [], reviewReasons: string[] = [], blockingReasons: string[] = [];
-    const proposedStart=saved?.periodStart??classReg?.periodStart??allScheduledDates[0]??null;
+    // 부상 결석 복귀 정산의 «낸 돈이 없는 달» 안내가 이 반·이 달에 있으면, 빠진 날의 모양(앞쪽·뒤쪽·전부·가운데)을 지금 일정으로 다시 본다.
+    // 확정 장부가 있는 행은 장부가 정본이라 건드리지 않는다. 사람이 저장한 기간이 있으면 그 값이 우선한다(아래에서 다르면 알린다).
+    const illnessGuide = !excluded && !classReg ? illnessGuides.find(g => g.studentId === e.studentId && g.classId === e.classId) : undefined;
+    const guideShape = illnessGuide ? unpaidGuideShape(allScheduledDates, illnessGuide.missedDates) : null;
+    const guided = guideShape && guideShape.shape !== "NONE" ? guideShape : null;
+    const proposedStart=saved?.periodStart??(guided?.shape==="PREFIX"?guided.periodStart:null)??classReg?.periodStart??allScheduledDates[0]??null;
     const periodStart=futurePeriod ? null : startsOn && proposedStart && startsOn > proposedStart ? startsOn : proposedStart;
-    const periodEnd=futurePeriod ? null : saved?.periodEnd??classReg?.periodEnd??allScheduledDates.at(-1)??null;
+    const periodEnd=futurePeriod ? null : saved?.periodEnd??(guided?.shape==="SUFFIX"?guided.periodEnd:null)??classReg?.periodEnd??allScheduledDates.at(-1)??null;
     const scheduledDates=periodStart&&periodEnd&&periodStart<=periodEnd?filterWorkbenchDates(allScheduledDates,periodStart,periodEnd):[];
     let amounts: WorkbenchAmounts = { baseAmount: excluded ? 0 : e.price, discountAmount: 0, prorationAmount: 0, carryAmount: 0, shuttleAmount: 0 };
+    // 부상 결석 제외로 제안한 기간 조정 금액(자동 제안한 경우만 — 저장값과 다르면 아래에서 알린다)
+    let guidedProration: number | null = null;
     // 정가는 월 4회 기준. 연간 일정상 그달 전체 수업이 4회 미만이면 모자란 회차만큼 뺀다(설 주간·연휴가 낀 달).
     const monthSessions = allScheduledDates.length;
     const isShortMonth = monthSessions > 0 && monthSessions < STANDARD_MONTHLY_SESSIONS;
@@ -234,6 +253,22 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
       if (isShortMonth && !tuition?.fixedFee) {
         amounts.prorationAmount = shortMonthProration(amounts.baseAmount, monthSessions, amounts.discountAmount);
         basis.push(`월 ${STANDARD_MONTHLY_SESSIONS}회 기준 중 ${STANDARD_MONTHLY_SESSIONS - monthSessions}회 적은 달 → ${amounts.prorationAmount.toLocaleString("ko-KR")}원 차감`);
+      }
+      // 부상 결석 복귀 정산: 낸 돈이 없는 달은 이월이 아니라 «다닌 횟수만큼만 청구»(원장 결정 2026-11-15).
+      // 한 번 값 = (할인 후 금액 − 3회 달 차감) ÷ 그 달 수업 횟수 — 낸 달의 이월 한 번 값과 같은 단가다.
+      if (guided && monthSessions > 0) {
+        const missed = guided.missedDates.length, attended = guided.attendedDates.length;
+        const proposed = attendedOnlyProration(amounts.baseAmount - amounts.discountAmount, amounts.prorationAmount, monthSessions, attended);
+        if (guided.shape === "MIDDLE") {
+          // 달 가운데만 빠지면 수강 기간(시작·종료일)으로 나타낼 수 없다 — 자동으로 넣지 않고 참고 금액만 알린다
+          const note = `부상 결석 ${missed}회(${guided.missedDates.join(", ")})가 달 가운데라 자동 제안하지 않았습니다. 기간 조정 금액을 직접 넣어 주세요(참고 ${proposed.toLocaleString("ko-KR")}원).`;
+          reviewReasons.push(note); basis.push(`확인: ${note}`);
+        } else {
+          amounts.prorationAmount = proposed; guidedProration = proposed;
+          basis.push(guided.shape === "WHOLE"
+            ? `부상 결석 ${missed}회 제외(다닌 수업 없음) → 기간 조정 ${proposed.toLocaleString("ko-KR")}원 제안(청구 0원)`
+            : `부상 결석 ${missed}회 제외 → 기간 조정 ${proposed.toLocaleString("ko-KR")}원 제안(다닌 ${attended}회 · 수강 ${guided.periodStart}~${guided.periodEnd})`);
+        }
       }
     }
     if (startsOn) basis.push(`수강 개시일 ${startsOn}`);
@@ -281,13 +316,22 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
           // 사람이 확인한 값으로 보고 걸러진다(의도한 별도 할인·셔틀 무료가 근거에 영구 경고로 남지 않게).
           reviewReasons.push(note);
         }
+        // 부상 결석 복귀 정산 뒤: 저장해 둔 초안(보류로 돌렸던 청구의 금액 메모 등)은 정산 «전» 금액이다.
+        // 저장값이 우선하므로 조용히 옛 금액으로 발행되지 않게, 제안과 다른 칸을 알린다(다시 저장하면 사람이 확인한 값으로 본다).
+        if (guidedProration !== null && (saved.payload?.prorationAmount ?? 0) !== guidedProration) {
+          reviewReasons.push(`기간 조정: 부상 결석 제외 제안 ${guidedProration.toLocaleString("ko-KR")}원과 다릅니다(저장값 ${(saved.payload?.prorationAmount ?? 0).toLocaleString("ko-KR")}원). 수강 기간과 금액을 다시 확인해 주세요.`);
+        }
+        if (amounts.carryAmount > (saved.payload?.carryAmount ?? 0) && credits.some(c => c.studentId === e.studentId && c.valid !== false && typeof c.basis?.periodId === "string")) {
+          reviewReasons.push(`이월: 부상 결석 이월 ${amounts.carryAmount.toLocaleString("ko-KR")}원을 쓸 수 있습니다(저장값 ${(saved.payload?.carryAmount ?? 0).toLocaleString("ko-KR")}원). 이월 칸을 확인해 주세요.`);
+        }
       }
       amounts = saved.payload;
     }
     if (saved && ["ISSUED", "ZERO"].includes(saved.status)) amounts = saved.payload;
     // 3회 달을 그달 전체로 청구하는데 기간 조정이 할인 후 금액 기준과 다르면 알린다(장부·저장 초안 포함).
     // 기간을 좁힌 경우(일부 수강)는 관리자가 직접 계산한 값이라 비교하지 않는다.
-    if (isShortMonth && participates && scheduledDates.length === monthSessions) {
+    // (부상 결석 제외로 «청구 0원»을 제안한 행은 기간 조정이 전액이라 3회 달 기준과 다른 것이 정상 — 비교하지 않는다)
+    if (isShortMonth && participates && scheduledDates.length === monthSessions && guidedProration === null) {
       // 대회준비반 고정 요금 행은 3회 달 차감이 없으므로 기대값 0(장부 확정 행은 제안이 없어 일반 기준).
       const fixed = !classReg && !excluded && Boolean(tuitionPlans.get(id)?.fixedFee);
       const expected = fixed ? 0 : shortMonthProration(amounts.baseAmount, monthSessions, amounts.discountAmount);
@@ -304,6 +348,12 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
     // 차단 사유 맨 앞에 넣어, 확정·발행을 요청하면 이 글자로 거절된다(mutateWorkbench 가 첫 차단 사유를 돌려준다).
     const holdPeriodId = participates ? holdPeriodFor(e.studentId, e.classId) : undefined;
     if (holdPeriodId) blockingReasons.unshift(BILLING_HOLD_LABEL);
+    // 반 이동 경고(차단 아님): 그 아이에게 보류 중인 기간이 있는데 대상 반이 따로 정해져 있고, 그 대상 반을 지금은 하나도 다니지 않는다
+    // = 결석 중에 반을 옮겼다. 새 반 청구는 보류되지 않으므로 원장이 한 번 보게 한다.
+    if (!holdPeriodId && participates && illnessHolds.some(held => held.studentId === e.studentId && Array.isArray(held.classIds) && held.classIds.length > 0
+      && !held.classIds.some(classId => enrollments.some(other => other.studentId === e.studentId && other.classId === classId && other.status === "ACTIVE")))) {
+      reviewReasons.push(BILLING_HOLD_MOVED_NOTE);
+    }
     if(credits.some(c=>c.studentId===e.studentId && c.valid===false)) blockingReasons.push("원결석 취소·출석 정정된 이월이 있습니다. 정산을 확인해 주세요.");
     if(usages.some(u=>u.studentId===e.studentId && (["CANCELED","CANCELLED","REFUNDED"].includes(u.paymentStatus??"") || ["CANCELED","CANCELLED","REFUNDED"].includes(u.invoiceStatus??"") || (u.paymentId && (!u.paymentStatus || !u.invoiceStatus))))) blockingReasons.push("이월 사용 청구의 취소·환불 내역을 재정산해야 합니다.");
     if(seasonalCredits.some(c=>c.studentId===e.studentId)) blockingReasons.push("기존 특강 이월액은 원결석·사용액 대조 후 옮겨야 합니다. 중복 차감을 막기 위해 보류합니다.");

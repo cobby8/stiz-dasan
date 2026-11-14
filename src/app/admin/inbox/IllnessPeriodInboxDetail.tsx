@@ -8,6 +8,7 @@
  * - 사유 글·사진은 건강 정보라 목록에 싣지 않고, 원장이 이 칸을 열 때만 서버에서 읽는다.
  * - 증빙은 기간 전체에 한 번만 확인한다(체크해야 승인 버튼이 켜진다).
  * - 승인 뒤에는 상태 글자와 «승인 취소»(위험 작업 — 기존 확인 창 부품).
+ * - 승인 뒤 «복귀 정산» 칸(IllnessPeriodSettlementBox): 결석 중에는 «지금까지 예상 이월»(원장만), 복귀하면 달별 표 → [이월 확정].
  * - 색은 토큰만, 아이콘 없이 글자, 버튼 등급·확인 창은 기존 부품(useAdminConfirm·AdminModal).
  */
 
@@ -21,6 +22,7 @@ import {
 } from "@/app/actions/illness-period-admin";
 import type { IllnessPeriodDetail } from "@/lib/regular/illness-period-admin";
 import { BILLING_HOLD_LABEL, PERIOD_APPROVED_ADMIN_NOTE } from "@/lib/regular/illnessPeriodRules";
+import IllnessPeriodSettlementBox from "./IllnessPeriodSettlementBox";
 
 type Props = { periodId: string; studentName: string; onChanged: () => void };
 
@@ -204,6 +206,12 @@ export default function IllnessPeriodInboxDetail({ periodId, studentName, onChan
           <p className="rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm text-[var(--color-academy-warning)]">{detail.blocker}</p>
         ) : (
           <>
+            {/* «인정 안 함»으로 정해 둔 기간 — 새로 생기는 날도 보강권으로 처리된다(다시 승인하면 이 결정은 지워진다) */}
+            {detail.declined && (
+              <p className="rounded-lg bg-[var(--color-academy-soft)] px-3 py-2 text-xs text-[var(--color-academy-muted)]">
+                보강권으로 전환해 둔 기간입니다. 새로 생기는 결석도 보강권으로 처리돼요.
+              </p>
+            )}
             {detail.pendingCount < detail.absenceCount && (
               <p className="text-xs text-[var(--color-academy-muted)]">
                 {detail.absenceCount - detail.pendingCount}회는 이미 날짜별로 처리돼 그대로 둡니다.
@@ -276,11 +284,16 @@ export default function IllnessPeriodInboxDetail({ periodId, studentName, onChan
               )}
             </div>
           )}
+          {/* 복귀 정산 — 금액은 여기서 한 번 확정한다(3단계). 확정하면 이 기간이 «완료(이월 확정)»로 바뀐다 */}
+          <IllnessPeriodSettlementBox periodId={periodId} studentName={studentName} carryState="APPROVED" onChanged={async () => { await reload(); onChanged(); }} />
           {/* 위험 작업(되돌리기)은 위험 등급 버튼 + 확인 창 */}
           <div className="flex justify-end">
             <button type="button" disabled={pending} onClick={() => void cancelApproval()} className="academy-button-danger">승인 취소</button>
           </div>
         </>
+      ) : detail.carryState === "SETTLED" ? (
+        // 확정된 기간 — 그때의 표 사본 · 청구 준비로 이동 · 확정 취소(이월이 쓰이기 전에만)
+        <IllnessPeriodSettlementBox periodId={periodId} studentName={studentName} carryState="SETTLED" onChanged={async () => { await reload(); onChanged(); }} />
       ) : (
         <p className="text-sm text-[var(--color-academy-muted)]">정산이 끝난 기간 결석입니다.</p>
       )}

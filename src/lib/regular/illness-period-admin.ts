@@ -26,7 +26,8 @@ import {
 } from "@/lib/regular/illness-carry-tx";
 import { ILLNESS_REASON } from "@/lib/regular/illnessCarryRules";
 import {
-  HOLD_SKIP_REASONS, IllnessPeriodError, illnessPeriodAbsenceSql, makeupInUseSql, parseHeldBills, parsePeriodApprovalRecord, periodApprovalBlocker,
+  HOLD_SKIP_REASONS, IllnessPeriodError, illnessPeriodAbsenceSql, illnessPeriodDeclinedSql, makeupInUseSql, parseHeldBills, parsePeriodApprovalRecord,
+  parsePeriodDeclined, periodApprovalBlocker,
   type HeldBillRecord, type HoldSkipCode,
 } from "@/lib/regular/illnessPeriodRules";
 
@@ -352,9 +353,79 @@ export async function convertIllnessPeriodToMakeup(
       // 그 밖(이미 결정됨·이월 정산됨 등)은 잠근 뒤 상태가 달라진 것 — 그대로 둔다
     }
 
+    // «인정 안 함»을 기간 행에 남긴다(3단계) — 매일 연장으로 생긴 새 날(검토 줄 없음)이 다시 «승인 대기»로 올라오지 않게.
+    // 새 칸 없이 carrySettlement(jsonb) 안의 표시로 둔다. 병합 저장, 아직 결정 전(NONE)일 때만.
+    // 나중에 [부상 결석 승인]을 누르면 승인이 carrySettlement 를 새로 쓰면서 이 표시는 사라진다(다시 인정한 것).
+    await tx.$executeRawUnsafe(
+      `UPDATE "RegularAbsencePeriod"
+          SET "carrySettlement" = COALESCE("carrySettlement", '{}'::jsonb) || $2::jsonb, "updatedAt" = now()
+        WHERE id = $1 AND "carryState" = 'NONE'`,
+      periodId, JSON.stringify({ declined: { byUserId: actorId, at: new Date().toISOString() } }),
+    );
     await writeAudit(tx, "ILLNESS_PERIOD_TO_MAKEUP", actorId, { periodId, studentId: period.studentId, converted, creditsIssued, attendedClosed });
     return { periodId, studentId: period.studentId, startDate: period.startDate, returnDate: period.returnDate, converted, creditsIssued, attendedClosed };
   }, CONVERT_TX_OPTIONS);
+}
+
+/**
+ * «인정 안 함»으로 결정해 둔 기간에 그 뒤 새로 생긴 날(매일 연장·새로 수강 시작한 반)을 보강권으로 돌린다 — 매일 크론이 부른다.
+ * 원장이 이미 «이 기간은 보강권으로»라고 정했으므로 새 날도 같은 처리다(하루짜리 [보강권으로]와 같은 함수 — 보강권 1장, 그날 출석이면 닫기).
+ * 기간마다 거래 하나. 한 기간이 실패해도 나머지는 계속한다.
+ */
+export async function convertDeclinedPeriodNewDays(
+  db: IllnessPeriodDb, issuable: (absenceYmd: string) => boolean,
+): Promise<{ periods: number; converted: number; failed: number }> {
+  if (!(await periodCarryColumnsReady(db)) || !(await illnessReviewReady(db))) return { periods: 0, converted: 0, failed: 0 };
+  const targets = await db.$queryRawUnsafe<Array<{ id: string }>>(
+    `SELECT DISTINCT p.id
+       FROM "RegularAbsencePeriod" p
+       JOIN "RegularAbsence" ra ON ${illnessPeriodAbsenceSql("p", "ra")}
+       LEFT JOIN "RegularAbsenceCarryReview" r ON r."absenceId" = ra.id
+      WHERE ${illnessPeriodDeclinedSql("p")} AND p.reason = '${ILLNESS_REASON}' AND p.status <> 'CANCELLED'
+        AND COALESCE(r.status, 'PENDING') = 'PENDING'
+      ORDER BY p.id LIMIT 200`,
+  );
+  let converted = 0;
+  let failed = 0;
+  for (const target of targets) {
+    try {
+      converted += await db.$transaction(async (tx) => {
+        const period = await lockPeriod(tx, target.id);
+        const declined = parsePeriodDeclined(period.carrySettlement);
+        // 잠근 뒤 다시 확인 — 그 사이 승인했거나 표시가 사라졌으면 손대지 않는다
+        if (period.carryState !== "NONE" || !declined) return 0;
+        const absences = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+          `SELECT ra.id
+             FROM "RegularAbsencePeriod" p
+             JOIN "RegularAbsence" ra ON ${illnessPeriodAbsenceSql("p", "ra")}
+             LEFT JOIN "RegularAbsenceCarryReview" r ON r."absenceId" = ra.id
+            WHERE p.id = $1 AND COALESCE(r.status, 'PENDING') = 'PENDING'
+            ORDER BY ra.date, ra.id
+            FOR UPDATE OF ra`,
+          target.id,
+        );
+        let done = 0;
+        for (const absence of absences) {
+          const outcome = await convertIllnessToMakeupInTx(tx, { absenceId: absence.id, by: "ADMIN", actorUserId: declined.byUserId, issuable });
+          if (outcome.converted) done += 1;
+          else if (outcome.reason === "ATTENDED") {
+            await closeIllnessReviewInTx(tx, absence.id);
+            await tx.$executeRawUnsafe(
+              `INSERT INTO "RegularAbsenceCarryReview" ("absenceId", status, source, "decidedAt", "decidedBy", "decidedByUserId")
+               VALUES ($1, 'CLOSED', 'STAFF', now(), 'ADMIN', $2)
+               ON CONFLICT ("absenceId") DO NOTHING`,
+              absence.id, declined.byUserId,
+            );
+          }
+        }
+        return done;
+      }, CONVERT_TX_OPTIONS);
+    } catch (error) {
+      failed += 1;
+      console.error("[illness-period-admin] 인정 안 한 기간의 새 날 보강권 전환 실패:", target.id, error instanceof Error ? error.name : "");
+    }
+  }
+  return { periods: targets.length, converted, failed };
 }
 
 // ── 청구 발행 보류: 이미 발행된 미납 청구를 «보류로 돌리기» (2단계, 2026-11-15 원장 결정) ─────────────
@@ -517,7 +588,8 @@ export type HoldBillsResult = {
  * 잠금 순서(휴원 정산·관리자 청구서 수정과 같게 — 교착 금지):
  *   작업대 전역 잠금 → 기간 행 → ① 대상 청구 id 를 잠금 없이 읽고 → ② 결제 잠금(lockPaymentsForCheckout, id 정렬순)
  *   → ③ 그 id 만 청구 행 FOR UPDATE → ④ 범위를 다시 읽어 처음 목록과 같은지 확인.
- * 결제 시작·승인 직전도 같은 결제 잠금을 잡고 상태를 다시 읽으므로, «취소한 청구가 결제되는» 엇갈림이 없다.
+ * 학부모 결제 시작·승인 직전도 같은 결제 잠금을 잡고 상태를 다시 읽으므로, «취소한 청구가 결제되는» 엇갈림이 없다.
+ * 현장 결제(POS) 요청은 이 결제 잠금을 잡지 않는다 — 그래서 청구를 취소한 뒤 POS 요청을 한 번 더 읽어, 그 사이 생겼으면 전체를 되돌린다.
  * 반대 방향(«결제가 막 시작된 청구를 취소»)은 이 거래가 READ COMMITTED 라서 막힌다 — 결제 잠금을 얻은 «뒤에» 읽는
  * 결제 거래·현장 결제 요청은 그 사이 커밋된 것까지 보인다. ⚠️ 이 함수에 Serializable/RepeatableRead 를 걸지 말 것(테스트가 고정).
  *
@@ -620,6 +692,16 @@ export async function holdIssuedBillsForPeriod(
       held.push({ paymentId: bill.paymentId, invoiceId: invoice.id, year: bill.year, month: bill.month, classId: bill.classId, amount: bill.amount, draftId, heldAt });
     }
 
+    // 현장 결제(POS) 요청 재확인(2단계 검수 숙제): POS 요청 만들기는 결제 잠금(lockPaymentsForCheckout)을 잡지 않는다.
+    // 그래서 위에서 «요청 없음»을 읽은 뒤 청구를 취소하기 전 사이에 요청이 새로 생길 수 있다 — 청구를 취소한 «뒤에» 한 번 더 읽어
+    // 그 사이 생긴 요청이 있으면 던진다(거래 전체가 되돌아가 청구는 그대로 남는다). READ COMMITTED 라 방금 커밋된 요청이 보인다.
+    if (held.length > 0 && (await tableExists(tx, "PosChargeRequest")) && (await tableExists(tx, "PosChargeRequestItem"))) {
+      const posBusy = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT p.id FROM "Payment" p WHERE p.id = ANY($1::text[]) AND ${HOLD_POS_BUSY_SQL}`, held.map((bill) => bill.paymentId),
+      );
+      if (posBusy.length > 0) throw new IllnessPeriodError("현장 결제 요청이 방금 시작된 청구가 있어 처리하지 않았습니다. 요청이 끝난 뒤 다시 확인해 주세요.");
+    }
+
     // 돌린 목록을 기간 행에 «병합» 저장한다 — 승인 때 남긴 approval 키(되돌릴 재료)를 지우지 않는다.
     // 두 번째 실행이면 앞서 돌린 목록 뒤에 잇는다
     const allHeld = [...parseHeldBills(period.carrySettlement), ...held];
@@ -696,6 +778,8 @@ export type IllnessPeriodDetail = {
   heldCreditCount: number;
   /** 지금 [부상 결석 승인]을 누를 수 없는 이유(없으면 null) */
   blocker: string | null;
+  /** «인정 안 함»(보강권으로 전환)으로 결정해 둔 기간인가 — 새로 생기는 날도 보강권으로 처리된다 */
+  declined: boolean;
 };
 
 /** 신청함 상세 칸 — 기간·사유 글·사진·승인 가능 여부. 관리자만 부른다(호출부가 requireAdmin). 금액은 싣지 않는다 */
@@ -759,5 +843,6 @@ export async function readIllnessPeriodDetail(tx: IllnessTx, periodIdInput: stri
     approvedYmd: period.approvedYmd ?? null,
     heldCreditCount: period.carryState === "APPROVED" ? parsePeriodApprovalRecord(period.carrySettlement).revokedCreditIds.length : 0,
     blocker: periodApprovalBlocker({ reason: period.reason, periodStatus: period.status, carryState: period.carryState }),
+    declined: period.carryState === "NONE" && parsePeriodDeclined(period.carrySettlement) !== null,
   };
 }

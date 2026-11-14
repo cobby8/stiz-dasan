@@ -28,6 +28,8 @@ function fakeDb(init = {}) {
     invoices: [],      // { id, paymentId, status }
     transactions: [],  // { id, paymentId, status, updatedAt, approvedPending }
     posBusy: [],       // 현장 결제 요청 중인 청구 id
+    posBusyAfter: [],  // 청구를 취소하는 사이 현장 결제 요청이 새로 생긴 청구 id(재확인 때만 보인다)
+    posRechecks: [],   // 재확인한 청구 id 묶음
     drafts: [],        // { id, month, paymentId, status, version, payload }
     usages: [],        // { draftId, month, paymentId }
     carryCredits: [],  // { sourcePaymentId }
@@ -66,6 +68,12 @@ function fakeDb(init = {}) {
         startDate: p.startDate, returnDate: p.returnDate ?? null, note: null, parentReported: false,
         carrySettlement: p.carrySettlement ?? null, classIds: p.classIds ?? [],
       }));
+    }
+    // 청구를 취소한 «뒤» 현장 결제 요청 재확인(3단계 숙제) — 그 사이 생긴 요청(posBusyAfter)이 있으면 그 청구 id 를 돌려준다
+    if (/^SELECT p\.id FROM "Payment" p WHERE p\.id = ANY\(\$1::text\[\]\) AND \(EXISTS \(SELECT 1 FROM "PosChargeRequestItem" pi WHERE pi\."paymentId" = p\.id AND pi\."open"\)\s+OR EXISTS \(SELECT 1 FROM "PosChargeRequest" pr WHERE pr\."paymentId" = p\.id AND pr\.status IN \('PENDING','SENT'\)\)\)$/.test(sql)) {
+      assert.ok(v[0].every((id) => state.payments.find((p) => p.id === id)?.status === "CANCELED"), "재확인은 청구를 취소한 뒤에 한다");
+      state.posRechecks.push([...v[0]]);
+      return v[0].filter((id) => state.posBusyAfter.includes(id)).map((id) => ({ id }));
     }
     // ① 대상 청구 id(잠금 없이)
     if (/^SELECT p\.id FROM "Payment" p WHERE /.test(sql)) {
@@ -551,7 +559,7 @@ test("화면: 신청함 상세의 보류 칸(원장만 버튼·확인 창)·학�
   assert.match(panel, /\{p\.billingHold && \(/);
   assert.match(panel, /\{BILLING_HOLD_STUDENT_LABEL\}/);
   const service = read("src/lib/regular/absence-period-service.ts");
-  assert.match(service, /const holdSql = \(await periodCarryColumnsReady\(db\)\) \? illnessHoldPeriodSql\("p"\) : `false`;/, "칸이 없으면 false");
+  assert.match(service, /const carryReady = await periodCarryColumnsReady\(db\);\s+const holdSql = carryReady \? illnessHoldPeriodSql\("p"\) : `false`;/, "칸이 없으면 false");
 
   const parentQuery = read("src/lib/payments/parent-payment-request.ts");
   const holds = parentQuery.slice(parentQuery.indexOf("export async function getParentBillingHolds("), parentQuery.indexOf("export async function getParentPaymentRequests("));
@@ -589,4 +597,37 @@ test("미납 안내·알림: 취소된 청구는 어느 경로에서도 대상�
   // 카카오 대화·푸시 발송함은 청구 표를 직접 읽지 않는다(미납을 스스로 찾아 보내는 경로가 아니다)
   assert.doesNotMatch(read("src/lib/kakao-parent-chatbot.ts"), /FROM "Payment"/);
   assert.doesNotMatch(read("src/lib/push-outbox.ts"), /FROM "Payment"/);
+});
+
+// ── 3단계에서 넘겨받은 숙제: 청구를 취소한 «뒤» 현장 결제 요청을 한 번 더 읽는다 ──────────────────────
+test("현장 결제 재확인: 청구를 취소하는 사이 현장 결제 요청이 생겼으면 던져서 전체를 되돌린다 — 요청이 없으면 그대로 진행", async () => {
+  // 현장 결제(POS) 요청 만들기는 결제 잠금을 잡지 않는다 — 대상 판정 뒤·취소 전 사이에 요청이 새로 생길 수 있다
+  const raced = yoonCase({ posBusyAfter: ["pay-dec-mon"] });
+  await assert.rejects(
+    () => admin.holdIssuedBillsForPeriod(raced, { periodId: "p1", expectedPaymentIds: DEC }, "owner-1", NOW),
+    (error) => error instanceof rules.IllnessPeriodError && /현장 결제 요청이 방금 시작된 청구가 있어 처리하지 않았습니다/.test(error.message),
+  );
+  // 아무것도 남지 않는다: 두 청구 모두 미납 그대로, 초안은 발행 상태 그대로, 기록 없음
+  assert.deepEqual(raced.state.payments.filter((p) => DEC.includes(p.id)).map((p) => p.status), ["PENDING", "PENDING"]);
+  assert.deepEqual(raced.state.invoices.filter((i) => DEC.includes(i.paymentId)).map((i) => i.status), ["ISSUED", "ISSUED"]);
+  assert.deepEqual(raced.state.drafts.map((d) => [d.status, d.paymentId]), [["ISSUED", "pay-dec-mon"], ["ISSUED", "pay-dec-fri"]]);
+  assert.deepEqual([raced.state.paymentAudit.length, raced.state.audit.length, raced.state.revisions.length], [0, 0, 0]);
+  assert.equal(rules.parseHeldBills(raced.state.periods[0].carrySettlement).length, 0);
+
+  // 요청이 없으면: 돌린 청구 전부를 한 번 재확인하고(취소한 뒤에) 끝까지 간다
+  const ok = yoonCase();
+  const done = await admin.holdIssuedBillsForPeriod(ok, { periodId: "p1", expectedPaymentIds: DEC }, "owner-1", NOW);
+  assert.equal(done.held.length, 2);
+  assert.deepEqual(ok.state.posRechecks, [DEC]);
+  // 현장 결제 표가 아직 없는 DB 는 재확인을 건너뛴다(없는 표를 읽지 않는다)
+  const noPos = yoonCase({ missingTables: ["PosChargeRequest"] });
+  await admin.holdIssuedBillsForPeriod(noPos, { periodId: "p1", expectedPaymentIds: DEC }, "owner-1", NOW);
+  assert.deepEqual(noPos.state.posRechecks, []);
+  // 주석도 사실대로: 현장 결제 요청은 결제 잠금을 잡지 않는다
+  const source = read("src/lib/regular/illness-period-admin.ts");
+  assert.match(source, /현장 결제\(POS\) 요청은 이 결제 잠금을 잡지 않는다 — 그래서 청구를 취소한 뒤 POS 요청을 한 번 더 읽어, 그 사이 생겼으면 전체를 되돌린다\./);
+  // 재확인은 청구 취소 반복문 «뒤», 기간 행 저장 «앞»
+  const hold = source.slice(source.indexOf("export async function holdIssuedBillsForPeriod("), source.indexOf("/** 학부모 앱 알림 본문에 넣을 아이 이름"));
+  assert.ok(hold.indexOf("held.push({ paymentId: bill.paymentId") < hold.indexOf("SELECT p.id FROM \"Payment\" p WHERE p.id = ANY($1::text[]) AND ${HOLD_POS_BUSY_SQL}"));
+  assert.ok(hold.indexOf("SELECT p.id FROM \"Payment\" p WHERE p.id = ANY($1::text[]) AND ${HOLD_POS_BUSY_SQL}") < hold.indexOf("JSON.stringify({ held: allHeld })"));
 });

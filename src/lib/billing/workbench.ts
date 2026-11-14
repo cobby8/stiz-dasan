@@ -75,6 +75,18 @@ export function shortMonthProration(baseAmount: number, sessions: number, discou
   if (!Number.isInteger(sessions) || sessions <= 0 || sessions >= STANDARD_MONTHLY_SESSIONS) return 0;
   return Math.round(net * (STANDARD_MONTHLY_SESSIONS - sessions) / STANDARD_MONTHLY_SESSIONS);
 }
+/**
+ * 부상 결석 복귀 정산(2026-11-15): 낸 돈이 없는 달을 «다닌 횟수만큼만» 청구할 때의 기간 조정 금액.
+ * 한 번 값 = (할인 후 금액 − 3회 달 차감) ÷ 그 달 수업 횟수 → 청구 = 한 번 값 × 다닌 횟수(한 번 반올림) → 기간 조정 = 할인 후 금액 − 청구.
+ * 예: 105,000원·4회 달·2회 다님 → 청구 52,500 → 기간 조정 52,500 / 전부 빠짐 → 기간 조정 105,000(청구 0원).
+ * 낸 달의 이월 한 번 값(낸 금액 ÷ 수업 횟수)과 같은 단가다.
+ */
+export function attendedOnlyProration(net: number, shortProration: number, sessions: number, attended: number): number {
+  if (!Number.isSafeInteger(net) || net <= 0 || !Number.isInteger(sessions) || sessions <= 0) return 0;
+  const count = Math.min(Math.max(0, Math.trunc(attended) || 0), sessions);
+  const payable = Math.max(0, net - Math.max(0, Number.isSafeInteger(shortProration) ? shortProration : 0));
+  return net - Math.round(payable * count / sessions);
+}
 /** 결석별 반올림을 피하기 위해 분수로 합산하고 마지막 합계에서 한 번 반올림한다. */
 export function roundCarryTotal(values: readonly { numerator: string; denominator: string }[]): number {
   let n = BigInt(0), d = BigInt(1);

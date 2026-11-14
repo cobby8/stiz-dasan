@@ -17,7 +17,12 @@ import {
   readStudentName,
   type IllnessPeriodDetail,
 } from "@/lib/regular/illness-period-admin";
-import { IllnessPeriodError, PERIOD_APPROVED_PARENT_NOTE, billingHoldParentText, periodRangeText } from "@/lib/regular/illnessPeriodRules";
+import { IllnessPeriodError, PERIOD_APPROVED_PARENT_NOTE, billingHoldParentText, periodRangeText, periodSettledParentText } from "@/lib/regular/illnessPeriodRules";
+import {
+  cancelIllnessPeriodSettlement, previewIllnessPeriodSettlement, readSettledIllnessPeriod, settleIllnessPeriod,
+} from "@/lib/regular/illness-period-settlement";
+import { settlementContext, settlementWritesEnabled } from "@/lib/regular/illness-period-settlement-runner";
+import { unpaidGuideAdminText, type SettlementRow, type UnpaidGuide } from "@/lib/regular/illnessPeriodSettlementPlan";
 
 // 신청함 «부상 결석(기간)» — 원장이 기간 전체의 사유 글·증빙 사진을 보고 [부상 결석 승인] 또는 [보강권으로 전환]을 고른다(2026-11-15 원장 승인).
 // 승인은 금액 없이 «인정»만 기록한다 — 돈이 움직이지 않아 청구 준비 저장 스위치와 무관하다. 금액은 복귀 뒤 한 번에 정산한다.
@@ -29,6 +34,8 @@ type ActionResult = { ok: true; message: string } | { ok: false; message: string
 function failure(error: unknown, fallback: string): { ok: false; message: string } {
   // 규칙이 알려 주는 사유(한국어)는 그대로 보인다. 그 밖의 오류는 이름만 기록한다
   if (error instanceof IllnessPeriodError) return { ok: false, message: error.message };
+  // 이월 근거·공식 일정 쪽 규칙(청구 준비와 같은 함수)이 알려 주는 사유도 한국어 그대로 보인다
+  if (error instanceof Error && error.name === "WorkbenchError") return { ok: false, message: error.message };
   console.error("[illness-period-admin]", error instanceof Error ? error.name : "");
   return { ok: false, message: fallback };
 }
@@ -207,5 +214,155 @@ export async function holdIllnessPeriodBillsAction(input: { periodId: string; ex
     };
   } catch (error) {
     return failure(error, "발행 보류로 돌리지 못했습니다. 목록을 새로고침한 뒤 다시 확인해 주세요.");
+  }
+}
+
+// ── 복귀 정산(3단계) ────────────────────────────────────────────────────────────────────
+// 금액은 복귀가 확정됐을 때 한 번 계산한다. 미리보기는 원장·부원장이 열 수 있지만 금액은 원장에게만 내려보낸다
+// (부원장 응답에서는 금액 칸을 뺀다 — 화면만 가리면 개발자도구로 보인다). [이월 확정]·[확정 취소]는 원장만.
+
+export type IllnessPeriodSettlementView = {
+  /** ESTIMATE = 복귀일 미정(지금까지 예상) · READY = 복귀일이 정해져 확정할 수 있는 표 · SETTLED = 확정됨(그때의 표 사본) */
+  state: "ESTIMATE" | "READY" | "SETTLED";
+  /** 금액을 볼 수 있는 역할인가(원장) — 아니면 아래 금액 칸은 모두 null */
+  canSeeMoney: boolean;
+  /** [이월 확정]·[확정 취소]를 누를 수 있는 역할인가(원장) */
+  canSettle: boolean;
+  /** 청구 준비 저장 스위치가 켜져 있는가(꺼져 있으면 확정·취소 불가) */
+  writesEnabled: boolean;
+  returnDate: string | null;
+  storedReturnDate: string | null;
+  /** 진행 중인 학원 등록 기간 — 복귀일을 여기서 받아 함께 복귀 처리한다 */
+  canSetReturnDate: boolean;
+  /** 이월을 쓸 수 있게 되는 달 */
+  availableMonth: string | null;
+  fingerprint: string | null;
+  rows: Array<{
+    key: string; month: string; className: string; evidence: string; sessions: number;
+    tuition: number | null; unit: number | null; subtotal: number | null;
+    dates: Array<{ absenceId: string; date: string }>;
+    excluded: Array<{ absenceId: string; date: string; code: string; why: string }>;
+    warnings: string[]; blockedReason: string | null;
+  }>;
+  carryTotal: number | null;
+  /** 낸 돈이 없는 달 안내(금액 없음) */
+  unpaid: string[];
+  /** 지금 [이월 확정]을 누를 수 없는 이유 */
+  blockers: string[];
+  /** 확정된 기간: 이월이 이미 청구에서 차감됐는가(차감됐으면 확정 취소 불가) */
+  used: boolean;
+};
+
+function settlementRows(rows: SettlementRow[], money: boolean): IllnessPeriodSettlementView["rows"] {
+  return rows.map((row) => {
+    const paid = row.evidence === "WORKBENCH_ISSUED" || row.evidence === "PAID_PAYMENT";
+    return {
+      key: `${row.classId}|${row.month}`, month: row.month, className: row.className, evidence: row.evidence, sessions: row.sessions,
+      // 금액은 서버 응답에서 뺀다(부원장)
+      tuition: money && paid ? row.tuition : null, unit: money && paid ? row.unitDisplay : null, subtotal: money && paid ? row.subtotal : null,
+      dates: row.dates.map((date, index) => ({ absenceId: row.absenceIds[index], date })),
+      excluded: row.excluded.map((item) => ({ absenceId: item.absenceId, date: item.date, code: item.code, why: item.why })),
+      warnings: row.warnings ?? [], blockedReason: row.blockedReason ?? null,
+    };
+  });
+}
+
+/**
+ * 정산 칸을 열 때 — 승인된 기간은 미리보기(복귀일 미정이면 «지금까지 예상»), 확정된 기간은 그때의 표 사본.
+ * omitAbsenceIds = 원장이 뺀 날, returnDate = 진행 중인 기간에서 원장이 넣은 복귀일.
+ */
+export async function loadIllnessPeriodSettlement(input: {
+  periodId: string; omitAbsenceIds?: string[]; returnDate?: string | null;
+}): Promise<{ ok: true; settlement: IllnessPeriodSettlementView } | { ok: false; message: string }> {
+  const admin = await requireAdmin();
+  const money = canSeeAllMoney(admin.appUserRole);
+  const periodId = String(input?.periodId ?? "").trim();
+  try {
+    const settled = await readSettledIllnessPeriod(prisma, periodId);
+    if (settled) {
+      return { ok: true, settlement: {
+        state: "SETTLED", canSeeMoney: money, canSettle: money, writesEnabled: settlementWritesEnabled(),
+        returnDate: settled.returnDate, storedReturnDate: settled.returnDate, canSetReturnDate: false, availableMonth: settled.availableMonth,
+        fingerprint: null, rows: settlementRows(settled.rows, money), carryTotal: money ? settled.carryTotal : null,
+        unpaid: settled.unpaidGuides.map((guide: UnpaidGuide) => unpaidGuideAdminText(guide)), blockers: [], used: settled.used,
+      } };
+    }
+    const preview = await previewIllnessPeriodSettlement(
+      prisma,
+      {
+        periodId,
+        omitAbsenceIds: Array.isArray(input?.omitAbsenceIds) ? input.omitAbsenceIds.map(String) : [],
+        returnDate: input?.returnDate ? String(input.returnDate) : null,
+      },
+      await settlementContext(admin.appUserId),
+    );
+    return { ok: true, settlement: {
+      state: preview.returnDate ? "READY" : "ESTIMATE", canSeeMoney: money, canSettle: money, writesEnabled: settlementWritesEnabled(),
+      returnDate: preview.returnDate, storedReturnDate: preview.storedReturnDate, canSetReturnDate: preview.canSetReturnDate,
+      availableMonth: preview.availableMonth, fingerprint: preview.fingerprint,
+      rows: settlementRows(preview.plan.rows, money), carryTotal: money ? preview.plan.carryTotal : null,
+      unpaid: preview.plan.unpaidGuides.map((guide) => unpaidGuideAdminText(guide)), blockers: preview.blockers, used: false,
+    } };
+  } catch (error) {
+    return failure(error, "정산 내용을 불러오지 못했습니다. 잠시 뒤 다시 열어 주세요.");
+  }
+}
+
+/**
+ * [이월 확정] — 원장만. 화면에서 본 표의 지문을 함께 받아, 잠근 뒤 다시 계산한 표와 다르면 실행하지 않는다.
+ * 금액은 서버가 다시 계산한다(화면이 보낸 금액을 받지 않는다). 학부모에게는 앱 안 알림 1회(문자·알림톡 없음, 24시간 중복 방지).
+ */
+export async function settleIllnessPeriodAction(input: {
+  periodId: string; omitAbsenceIds?: string[]; expectedFingerprint: string; returnDate?: string | null;
+}): Promise<ActionResult> {
+  let owner: Awaited<ReturnType<typeof requireOwner>>;
+  try { owner = await requireOwner(); } catch { return { ok: false, message: "이월 확정은 원장만 할 수 있습니다." }; }
+  try {
+    const done = await settleIllnessPeriod(
+      prisma,
+      {
+        periodId: String(input?.periodId ?? "").trim(),
+        omitAbsenceIds: Array.isArray(input?.omitAbsenceIds) ? input.omitAbsenceIds.map(String) : [],
+        expectedFingerprint: String(input?.expectedFingerprint ?? ""),
+        returnDate: input?.returnDate ? String(input.returnDate) : null,
+      },
+      owner.appUserId, settlementWritesEnabled(),
+      // 확정 직전에는 공식 일정을 새로 읽는다(청구 준비의 저장·발행과 같다)
+      await settlementContext(owner.appUserId, true),
+    );
+    await notifyParentOnce(
+      done.studentId, "부상 결석 이월 확정",
+      `${await childPrefix(done.studentId)}${periodRangeText(done.startDate, done.returnDate)} 결석 · ${periodSettledParentText(done.carryTotal)}`,
+      "/mypage/regular-absence",
+    );
+    // 이월·청구 보류 상태가 바뀌었다 — 신청함·청구 준비·학생 상세·학부모 화면을 다시 그린다
+    revalidatePath("/admin/inbox");
+    revalidatePath("/admin/finance");
+    revalidatePath("/admin/students/[id]", "page");
+    revalidatePath("/admin/absence");
+    revalidatePath("/mypage");
+    return {
+      ok: true,
+      message: `이월 ${done.carryTotal.toLocaleString("ko-KR")}원을 확정했습니다(결석 ${done.credited}회). ${Number(done.availableMonth.slice(5, 7))}월 청구부터 차감이 제안돼요.${done.unpaidMonths > 0 ? ` 낸 돈이 없는 달 ${done.unpaidMonths}건은 청구 준비에서 다닌 만큼만 발행해 주세요.` : ""}`,
+    };
+  } catch (error) {
+    return failure(error, "이월을 확정하지 못했습니다. 표를 다시 확인한 뒤 눌러 주세요.");
+  }
+}
+
+/** [확정 취소] — 원장만. 이월이 한 번도 쓰이지 않았을 때만 확정 직전(인정 · 금액 미정)으로 되돌린다. 알림은 보내지 않는다 */
+export async function cancelIllnessPeriodSettlementAction(input: { periodId: string }): Promise<ActionResult> {
+  let owner: Awaited<ReturnType<typeof requireOwner>>;
+  try { owner = await requireOwner(); } catch { return { ok: false, message: "확정 취소는 원장만 할 수 있습니다." }; }
+  try {
+    const done = await cancelIllnessPeriodSettlement(prisma, { periodId: String(input?.periodId ?? "").trim() }, owner.appUserId, settlementWritesEnabled());
+    revalidatePath("/admin/inbox");
+    revalidatePath("/admin/finance");
+    revalidatePath("/admin/students/[id]", "page");
+    revalidatePath("/admin/absence");
+    revalidatePath("/mypage");
+    return { ok: true, message: `이월 확정을 취소했습니다(이월 ${done.creditsRemoved}건 삭제). 다시 «정산 필요»로 돌아가고, 청구 발행은 보류됩니다.` };
+  } catch (error) {
+    return failure(error, "확정을 취소하지 못했습니다. 목록을 새로고침한 뒤 다시 확인해 주세요.");
   }
 }

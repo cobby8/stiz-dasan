@@ -5,6 +5,7 @@ import {
   createParentAbsencePeriod,
   previewParentAbsencePeriod,
 } from "@/lib/regular/parent-absence-period";
+import { previewParentPeriodSettlement, returnAcademyIllnessPeriod } from "@/lib/regular/parent-period-settlement";
 import { PARENT_PERIOD_MAX_DAYS } from "@/lib/regular/parentAbsencePeriodRules";
 import { ILLNESS_MAKEUP_IN_USE } from "@/lib/regular/illness-carry-tx";
 import { todayKst } from "@/lib/datetime/kst";
@@ -39,6 +40,7 @@ const MESSAGES: Record<string, string> = {
   PERIOD_ALREADY_CLOSED: "이미 끝났거나 취소된 기간이에요.",
   PERIOD_RETURN_PAST: "복귀일은 오늘부터 고를 수 있어요.",
   PERIOD_RETURN_AFTER_END: "복귀일이 알린 기간보다 뒤예요. 날짜를 다시 골라 주세요.",
+  PERIOD_RETURN_BEFORE_START: "복귀일은 결석 시작일 다음 날부터 고를 수 있어요.",
 };
 
 function failure(error: unknown, where: string) {
@@ -66,6 +68,16 @@ export async function GET(request: NextRequest) {
   const parent = await parentOrNull();
   if (!parent) return NextResponse.json({ error: "로그인이 필요해요." }, { status: 401, headers: noStore });
   const q = request.nextUrl.searchParams;
+  // 부상 결석 «복귀했어요» 미리보기(2026-11-15 원장 결정 H) — ?settle=1&periodId=&returnDate=
+  // 금액은 서버가 계산한다(원장 미리보기와 같은 함수). 본인 아이의 기간만 — 아니면 «찾을 수 없어요»
+  if (q.get("settle")) {
+    try {
+      const settlement = await previewParentPeriodSettlement(parent.appUserId, { periodId: q.get("periodId") ?? "", returnDate: q.get("returnDate") || null });
+      return NextResponse.json({ settlement }, { headers: noStore });
+    } catch (error) {
+      return failure(error, "GET settle");
+    }
+  }
   try {
     const preview = await previewParentAbsencePeriod(parent.appUserId, {
       studentId: q.get("studentId") ?? "", startDate: q.get("startDate") ?? "", endDate: q.get("endDate") || null,
@@ -84,7 +96,13 @@ export async function POST(request: NextRequest) {
   try { body = await request.json(); } catch { return NextResponse.json({ error: "invalid body" }, { status: 400, headers: noStore }); }
   try {
     if (body?.action === "return") {
-      return NextResponse.json(await closeParentAbsencePeriod(parent.appUserId, { periodId: body.periodId, returnDate: body.returnDate }), { headers: noStore });
+      try {
+        return NextResponse.json(await closeParentAbsencePeriod(parent.appUserId, { periodId: body.periodId, returnDate: body.returnDate }), { headers: noStore });
+      } catch (error) {
+        if (!(error instanceof Error) || error.message !== "PERIOD_NOT_FOUND") throw error;
+        // 학부모가 알린 기간이 아니다 — 학원이 등록한 질병·부상 기간이면 같은 «복귀했어요»로 닫는다(본인 아이만, 서버가 다시 확인)
+        return NextResponse.json(await returnAcademyIllnessPeriod(parent.appUserId, { periodId: body.periodId, returnDate: body.returnDate }), { headers: noStore });
+      }
     }
     if (body?.action === "cancel") {
       // 알림 취소 = 오늘부터의 결석을 취소(지난 날짜는 그대로). 오늘은 KST 공용 모듈로만 만든다

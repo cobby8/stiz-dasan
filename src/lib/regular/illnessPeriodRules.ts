@@ -121,10 +121,18 @@ export function makeupInUseSql(abs: string, withSessions = true): string {
  */
 export function parentPeriodDayStatus(input: {
   reviewStatus: string | null; reason: string; periodCarryState: string | null; settled: boolean;
-}): { status: string; amountPending: boolean } {
+  /** 그 결석의 보강이 이미 예약·사용됐다(makeupInUseSql) — 정산에서 빠지는 날이라 «인정»으로 보이지 않는다 */
+  makeupInUse?: boolean;
+}): { status: string; amountPending: boolean; excluded?: boolean } {
   const review = input.reviewStatus ?? "PENDING";
-  const recognized = input.periodCarryState === "APPROVED" && input.reason === "ILLNESS_INJURY" && !input.settled
-    && (review === "PENDING" || review === "APPROVED");
+  const illnessPeriodDay = input.reason === "ILLNESS_INJURY" && !input.settled && (review === "PENDING" || review === "APPROVED");
+  // 보강을 예약·사용한 날은 정산이 «보강 완료/예약 중»으로 뺀다 — 학부모 글자도 같은 뜻(보강권으로)으로 맞춘다(3단계)
+  if (illnessPeriodDay && input.makeupInUse && (input.periodCarryState === "APPROVED" || input.periodCarryState === "SETTLED")) {
+    return { status: "MAKEUP", amountPending: false };
+  }
+  // 확정된 기간(SETTLED)인데 정산 기록이 없는 날 = 정산에서 빠진 날(출석 기록·학원이 뺀 날 등) — «이월 승인»으로 보이면 틀린다
+  if (illnessPeriodDay && input.periodCarryState === "SETTLED") return { status: "EXCLUDED", amountPending: false, excluded: true };
+  const recognized = input.periodCarryState === "APPROVED" && illnessPeriodDay;
   return recognized ? { status: "APPROVED", amountPending: true } : { status: review, amountPending: false };
 }
 
@@ -149,6 +157,8 @@ export function parsePeriodApprovalRecord(value: unknown): PeriodApprovalRecord 
 
 /** 청구 준비 행·차단 사유에 쓰는 글자 */
 export const BILLING_HOLD_LABEL = "부상 결석 중 · 발행 보류";
+/** 청구 준비: 보류 중인 기간의 대상 반이 아닌 행(아이가 반을 옮김)에 붙는 경고 — 차단이 아니라 확인 한 줄 */
+export const BILLING_HOLD_MOVED_NOTE = "부상 결석 기간 중(반 이동) · 확인 — 결석 기간의 대상 반이 아니라 발행 보류가 걸리지 않았습니다.";
 /** 학생 상세 수강·출결 카드에 쓰는 글자 */
 export const BILLING_HOLD_STUDENT_LABEL = "부상 결석 중 · 청구 보류";
 /** 신청함 목록의 상태 값(승인 + 보류 중) — catalog.ts 의 ILLNESS_PERIOD 상태 지도와 같은 값이어야 한다(테스트가 비교) */
@@ -219,6 +229,117 @@ export const HOLD_SKIP_REASONS = {
   INVOICE: "청구서 상태를 확인할 수 없어 건너뜁니다.",
 } as const;
 export type HoldSkipCode = keyof typeof HOLD_SKIP_REASONS;
+
+// ── 복귀 정산(3단계, 2026-11-15 원장 결정) ─────────────────────────────────────────────
+// 금액은 복귀가 확정됐을 때 한 번 계산한다. 낸 돈이 있는 달은 «이월», 낸 돈이 없는 달은 이월이 아니라
+// «다닌 횟수만큼만 청구»다. 계산식은 illnessPeriodSettlementPlan.ts 한 곳, 여기는 글자·SQL 조각·작은 순수 도우미.
+
+/** 신청함 목록의 상태 값 — catalog.ts 의 ILLNESS_PERIOD 상태 지도와 같은 값이어야 한다(테스트가 비교) */
+export const PERIOD_SETTLE_NEEDED_INBOX_STATUS = "SETTLE_NEEDED";
+export const PERIOD_SETTLED_INBOX_STATUS = "SETTLED";
+export const PERIOD_DECLINED_INBOX_STATUS = "DECLINED";
+/** 학생 상세 기간 줄의 상태 글자 */
+export const PERIOD_CARRY_STUDENT_LABELS: Record<string, string> = {
+  APPROVED: "이월 대상 · 금액 미정",
+  SETTLE_NEEDED: "복귀 · 정산 필요",
+  SETTLED: "이월 확정",
+};
+/** 학부모 화면: 확정 뒤 글자 «이월 84,000원 확정 · 다음 수강료에서 빼 드려요» (이월이 0원이면 금액 없이) */
+export function periodSettledParentText(carryTotal: number): string {
+  return carryTotal > 0
+    ? `이월 ${carryTotal.toLocaleString("ko-KR")}원 확정 · 다음 수강료에서 빼 드려요`
+    : "부상 결석 정산 완료 · 수강료는 다닌 만큼만 안내해요";
+}
+/** 학부모 화면: 근거를 정할 수 없는 달이 있을 때 — 틀린 숫자 대신 상태를 그대로 말한다 */
+export const PERIOD_SETTLE_PARENT_PENDING_CHECK = "학원에서 확인한 뒤 알려 드려요.";
+/** 학부모 화면: 복귀는 알렸고 학원 확정을 기다리는 중 */
+export const PERIOD_RETURNED_PARENT_LABEL = "복귀 · 이월 금액 확정 대기";
+/** 정산이 확정된 기간에서 이월·청구 조정에 들지 않은 날(보강 사용·출석 기록·학원이 뺀 날)의 학부모 글자 */
+export const PERIOD_DAY_EXCLUDED_LABEL = "정산 제외";
+
+/**
+ * 그 기간(period)이 «정산 필요»인가 — 승인됐고 금액 미확정인데 이미 복귀했다(복귀 처리됨 또는 복귀일이 오늘 이전).
+ * returnDate 는 date 칼럼(달력 값)이라 now() 쪽만 KST 로 한 번 바꾼다.
+ */
+export function illnessSettleNeededSql(period: string): string {
+  return `(${illnessHoldPeriodSql(period)} AND (${period}.status = 'ENDED'
+            OR (${period}."returnDate" IS NOT NULL AND ${period}."returnDate" <= (now() AT TIME ZONE 'Asia/Seoul')::date)))`;
+}
+
+/**
+ * 그 기간(period)을 «인정 안 함»(보강권으로 전환)으로 결정해 뒀는가 — 기간 행 carrySettlement.declined 표시.
+ * 매일 연장으로 생긴 새 날(검토 줄 없음)이 다시 «승인 대기»로 올라오지 않게 신청함 상태식이 먼저 본다.
+ */
+export function illnessPeriodDeclinedSql(period: string): string {
+  return `(${period}."carryState" = 'NONE' AND jsonb_typeof(${period}."carrySettlement"->'declined') = 'object')`;
+}
+
+/** 기간 행의 carrySettlement.declined(«인정 안 함» 표시)를 꺼낸다. 없거나 모양이 다르면 null */
+export function parsePeriodDeclined(value: unknown): { byUserId: string | null; at: string | null } | null {
+  let parsed: unknown = value;
+  if (typeof value === "string") { try { parsed = JSON.parse(value); } catch { parsed = null; } }
+  const declined = parsed && typeof parsed === "object" ? (parsed as { declined?: unknown }).declined : null;
+  if (!declined || typeof declined !== "object" || Array.isArray(declined)) return null;
+  const record = declined as Record<string, unknown>;
+  return { byUserId: typeof record.byUserId === "string" && record.byUserId ? record.byUserId : null, at: typeof record.at === "string" ? record.at : null };
+}
+
+/** 낸 돈이 없는 달에서 빠진 날의 모양 — 달 전체 / 앞쪽 / 뒤쪽 / 가운데 / 없음 */
+export type UnpaidShape = "WHOLE" | "PREFIX" | "SUFFIX" | "MIDDLE" | "NONE";
+
+/**
+ * 그 달 수업일(scheduled) 중 빠진 날(missed)의 모양과, 다닌 날만 남기는 수강 기간 제안.
+ *   · 전부 빠짐(WHOLE) = 청구 없음 · 앞쪽(PREFIX) = 수강 시작일을 첫 다닌 날로 · 뒤쪽(SUFFIX) = 수강 종료일을 마지막 다닌 날로
+ *   · 가운데(MIDDLE) = 기간으로 표현할 수 없어 자동 제안하지 않는다(원장이 금액을 직접 조정)
+ * 날짜는 «YYYY-MM-DD» 글자 비교만 한다(시간대 계산 없음).
+ */
+export function unpaidGuideShape(scheduled: readonly string[], missed: readonly string[]): {
+  shape: UnpaidShape; missedDates: string[]; attendedDates: string[]; periodStart: string | null; periodEnd: string | null;
+} {
+  const dates = [...new Set(scheduled)].sort();
+  const gone = new Set(missed);
+  const missedDates = dates.filter((date) => gone.has(date));
+  const attendedDates = dates.filter((date) => !gone.has(date));
+  if (missedDates.length === 0) return { shape: "NONE", missedDates, attendedDates, periodStart: null, periodEnd: null };
+  if (attendedDates.length === 0) return { shape: "WHOLE", missedDates, attendedDates, periodStart: null, periodEnd: null };
+  const firstAttended = attendedDates[0];
+  const lastAttended = attendedDates[attendedDates.length - 1];
+  const lastScheduled = dates[dates.length - 1];
+  // 빠진 날이 모두 첫 다닌 날보다 앞 = 달 앞쪽이 빠졌다
+  if (missedDates.every((date) => date < firstAttended)) return { shape: "PREFIX", missedDates, attendedDates, periodStart: firstAttended, periodEnd: lastScheduled };
+  // 빠진 날이 모두 마지막 다닌 날보다 뒤 = 달 뒤쪽이 빠졌다
+  if (missedDates.every((date) => date > lastAttended)) return { shape: "SUFFIX", missedDates, attendedDates, periodStart: dates[0], periodEnd: lastAttended };
+  return { shape: "MIDDLE", missedDates, attendedDates, periodStart: null, periodEnd: null };
+}
+
+/** 확정 때 기간 행에 남기는 «낸 돈이 없는 달» 안내 한 줄 — 청구 준비가 읽어 그 달 청구를 다닌 만큼만 제안한다 */
+export type UnpaidGuideRecord = { month: string; classId: string; missedDates: string[] };
+
+/** 기간 행의 carrySettlement.unpaidGuides 에서 그 달 안내만 꺼낸다. 모양이 다르면 그 줄은 버린다 */
+export function parseUnpaidGuides(value: unknown, month?: string): UnpaidGuideRecord[] {
+  let parsed: unknown = value;
+  if (typeof value === "string") { try { parsed = JSON.parse(value); } catch { parsed = null; } }
+  const list = Array.isArray(parsed) ? parsed : parsed && typeof parsed === "object" ? (parsed as { unpaidGuides?: unknown }).unpaidGuides : null;
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((item): item is UnpaidGuideRecord => Boolean(item) && typeof item === "object"
+      && typeof (item as UnpaidGuideRecord).month === "string" && typeof (item as UnpaidGuideRecord).classId === "string"
+      && Array.isArray((item as UnpaidGuideRecord).missedDates))
+    .filter((item) => !month || item.month === month)
+    .map((item) => ({ month: item.month, classId: item.classId, missedDates: item.missedDates.filter((date): date is string => typeof date === "string") }));
+}
+
+/** 기간 행의 carrySettlement.settlement(확정 때의 표 사본)에서 화면에 쓰는 값만 꺼낸다. 없으면 null */
+export function parseSettlementSummary(value: unknown): { carryTotal: number; returnDate: string | null; availableMonth: string | null; settledAt: string | null } | null {
+  let parsed: unknown = value;
+  if (typeof value === "string") { try { parsed = JSON.parse(value); } catch { parsed = null; } }
+  const settlement = parsed && typeof parsed === "object" ? (parsed as { settlement?: unknown }).settlement : null;
+  if (!settlement || typeof settlement !== "object") return null;
+  const record = settlement as Record<string, unknown>;
+  if (!Number.isSafeInteger(record.carryTotal)) return null;
+  const text = (item: unknown) => (typeof item === "string" && item ? item : null);
+  return { carryTotal: Number(record.carryTotal), returnDate: text(record.returnDate), availableMonth: text(record.availableMonth), settledAt: text(record.settledAt) };
+}
 
 /** 하루짜리 목록(ILLNESS_CARRY)에서 뺄 결석(abs)인가 — 신청함에 기간 한 줄로 올라가는 기간에 묶인 결석 */
 export function boundToIllnessPeriodSql(abs: string): string {

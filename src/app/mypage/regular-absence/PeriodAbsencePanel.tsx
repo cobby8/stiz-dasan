@@ -17,6 +17,7 @@ import { customerMessage } from "@/components/parent/customerMessage";
 import { addDaysKst, todayKst } from "@/lib/datetime/kst";
 import { EVIDENCE_MAX_PHOTOS, ILLNESS_REASON, REASON_TEXT_MAX } from "@/lib/regular/illnessCarryRules";
 import { PARENT_PERIOD_MAX_DAYS } from "@/lib/regular/parentAbsencePeriodRules";
+import { PERIOD_SETTLE_PARENT_PENDING_CHECK } from "@/lib/regular/illnessPeriodRules";
 import type { ParentAbsencePeriodRow, ParentPeriodPreview } from "@/lib/regular/parent-absence-period";
 
 const REASONS: { value: string; label: string }[] = [
@@ -41,12 +42,91 @@ async function postPeriod(body: Record<string, unknown>) {
   return json;
 }
 
-/** 진행 중인 «여러 날 결석» — «복귀했어요»(복귀일 고르기) · «알림 취소»(아직 안 지난 날만) */
+/** 서버가 계산한 부상 결석 «예정 이월» — 원장 미리보기와 같은 계산 결과에서 학부모에게 보이는 값만 */
+type SettlementEstimate = {
+  state: "NOT_APPROVED" | "ESTIMATE" | "SETTLED";
+  view: {
+    pendingCheck: boolean; total: number | null;
+    months: Array<{ month: string; className: string; missed: number; subtotal: number }>;
+    unpaid: Array<{ month: string; className: string; text: string }>;
+  } | null;
+  settledTotal: number | null;
+};
+
+const won = (value: number) => `${value.toLocaleString("ko-KR")}원`;
+
+/**
+ * 부상 결석 «예정 이월» 칸(2026-11-15 원장 결정 H) — 금액은 서버가 계산해 준 것만 보인다(화면이 계산하지 않는다).
+ * 예정 금액이다 — 학원이 확정하면 앱 알림이 가고 이 줄이 «이월 ○원 확정»으로 바뀐다.
+ * 근거를 정할 수 없는 달이 있으면 금액 대신 상태를 그대로 말한다.
+ */
+function SettlementEstimateBox({ estimate }: { estimate: SettlementEstimate }) {
+  if (estimate.state !== "ESTIMATE" || !estimate.view) return null;
+  const view = estimate.view;
+  if (view.pendingCheck) {
+    return <p className="basis-full rounded-xl bg-[var(--color-academy-soft)] px-3 py-2 text-sm text-[var(--color-academy-ink)]">이월 금액은 {PERIOD_SETTLE_PARENT_PENDING_CHECK}</p>;
+  }
+  return (
+    <div className="basis-full rounded-xl bg-[var(--color-academy-secondary-soft)] px-3 py-2" aria-label="이월 예정 금액">
+      <p className="flex items-baseline justify-between gap-2 text-sm font-semibold text-[var(--color-academy-secondary-ink)]">
+        <span>이월 예정</span>
+        <span className="tabular-nums">{won(view.total ?? 0)}</span>
+      </p>
+      {view.months.length > 0 && (
+        <ul className="mt-1 space-y-0.5 text-xs tabular-nums text-[var(--color-academy-ink)]">
+          {view.months.map((row) => (
+            <li key={`${row.month}|${row.className}`} className="flex justify-between gap-2">
+              <span className="min-w-0 break-keep">{Number(row.month.slice(5, 7))}월 {row.className} · {row.missed}회 빠짐</span>
+              <span className="shrink-0">{won(row.subtotal)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {view.unpaid.map((row) => <p key={`${row.month}|${row.className}`} className="mt-1 break-keep text-xs text-[var(--color-academy-ink)]">{row.text}</p>)}
+      <p className="mt-1 break-keep text-xs text-[var(--color-academy-muted)]">예정 금액이에요. 학원이 확정하면 알려 드리고, 다음 수강료에서 빼 드려요.</p>
+    </div>
+  );
+}
+
+/**
+ * «여러 날 결석» 줄 — «복귀했어요»(복귀일 고르기) · «알림 취소»(내가 알린 기간의 아직 안 지난 날만).
+ * 학원이 등록한 질병·부상 기간도 «복귀했어요»를 누를 수 있다. 부상 결석으로 인정된 기간은 복귀일을 고르면
+ * 그 자리에서 «이월 예정 ○원»을 보여 준 뒤 알린다(2026-11-15 원장 결정 H).
+ */
 export function ActivePeriodList({ periods, onChanged }: { periods: ParentAbsencePeriodRow[]; onChanged: Notice }) {
   const today = todayKst();
   const [returnId, setReturnId] = useState("");
   const [returnDate, setReturnDate] = useState(today);
   const [busyId, setBusyId] = useState("");
+  // 예정 금액 — 어느 기간·어느 복귀일의 것인지 함께 든다(날짜를 바꾸면 다시 묻는다)
+  const [estimate, setEstimate] = useState<{ key: string; data: SettlementEstimate | null; error: string } | null>(null);
+  // 복귀는 이미 알렸고 학원 확정을 기다리는 줄에서 «예정 금액 보기»를 연 기간
+  const [peekId, setPeekId] = useState("");
+
+  const askId = returnId || peekId;
+  const askPeriod = periods.find((period) => period.id === askId);
+  // 부상 결석으로 인정된 기간만 예정 금액을 묻는다(인정 전이면 금액 안내가 없다)
+  const askKey = askPeriod && (askPeriod.carry === "APPROVED" || askPeriod.carry === "RETURNED")
+    ? `${askId}|${returnId ? returnDate : ""}` : "";
+
+  useEffect(() => {
+    if (!askKey) { setEstimate(null); return; }
+    let alive = true;
+    const [periodId, date] = askKey.split("|");
+    const timer = setTimeout(async () => {
+      try {
+        const query = new URLSearchParams({ settle: "1", periodId, ...(date ? { returnDate: date } : {}) });
+        const res = await fetch(`/api/mypage/regular-absence/period?${query}`, { cache: "no-store" });
+        const json = await res.json().catch(() => null);
+        if (!alive) return;
+        setEstimate(res.ok ? { key: askKey, data: json.settlement, error: "" } : { key: askKey, data: null, error: json?.error || "예정 금액을 확인하지 못했어요." });
+      } catch {
+        if (alive) setEstimate({ key: askKey, data: null, error: "예정 금액을 확인하지 못했어요. 잠시 후 다시 시도해 주세요." });
+      }
+    }, 250);
+    return () => { alive = false; clearTimeout(timer); };
+  }, [askKey]);
+
   if (periods.length === 0) return null;
 
   const close = async (period: ParentAbsencePeriodRow, action: "return" | "cancel") => {
@@ -57,6 +137,8 @@ export function ActivePeriodList({ periods, onChanged }: { periods: ParentAbsenc
       // 그대로 둔 날이 있으면 이유와 함께 알린다 — 아래 날짜 목록에서 하루씩 정리할 수 있다
       if (result.makeupKept > 0) parts.push(`보강이 예약된 ${result.makeupKept}회는 그대로예요. 아래에서 하루씩 취소해 주세요.`);
       if (result.closedByDeadline > 0) parts.push(`마감이 지난 오늘 수업 ${result.closedByDeadline}회는 그대로예요.`);
+      // 부상 결석으로 인정된 기간이면 금액이 언제 정해지는지 함께 알린다
+      if (action === "return" && period.carry === "APPROVED") parts.push("이월 금액은 학원이 확정한 뒤 알려 드려요.");
       setReturnId("");
       await onChanged(parts.join(" "));
     } catch (e) {
@@ -67,27 +149,35 @@ export function ActivePeriodList({ periods, onChanged }: { periods: ParentAbsenc
   };
 
   return (
-    <section aria-label="알린 여러 날 결석" className="mb-4 overflow-hidden rounded-2xl border border-[var(--color-academy-line)] bg-white">
+    <section aria-label="여러 날 결석" className="mb-4 overflow-hidden rounded-2xl border border-[var(--color-academy-line)] bg-white">
       <h2 className="flex items-center justify-between bg-[var(--color-academy-soft)] px-3 py-1.5 text-sm font-semibold text-[var(--color-academy-ink)]">
-        <span>알린 여러 날 결석</span>
+        <span>여러 날 결석</span>
         <span className="font-normal tabular-nums text-[var(--color-academy-muted)]">{periods.length}</span>
       </h2>
       <ul className="divide-y divide-[var(--color-academy-line)]">
         {periods.map((period) => {
           const busy = busyId === period.id;
+          // 내가 알린 기간·예전 응답(칸 없음)은 예전처럼 둘 다 누를 수 있다
+          const canReturn = period.canReturn ?? true;
+          const canCancel = period.canCancel ?? true;
+          const shown = estimate && estimate.key.startsWith(`${period.id}|`) ? estimate : null;
           return (
             <li key={period.id} className="px-3 py-2">
               {/* 한 줄: 아이·사유(왼쪽) · 기간·횟수(오른쪽) */}
               <div className="flex min-h-11 items-center gap-2">
                 <p className="min-w-0 flex-1 break-keep text-sm font-medium text-[var(--color-academy-ink)]">
                   {period.studentName}
-                  <span className="ml-1.5 font-normal text-[var(--color-academy-muted)]">{period.reasonLabel}</span>
+                  <span className="ml-1.5 font-normal text-[var(--color-academy-muted)]">{period.reasonLabel}{period.academyRegistered ? " · 학원 등록" : ""}</span>
                 </p>
                 <span className="shrink-0 text-right text-sm tabular-nums text-[var(--color-academy-ink)]">
                   {period.rangeLabel} <span className="text-[var(--color-academy-muted)]">{period.count}회</span>
                 </span>
               </div>
-              {period.openEnded && (
+              {/* 부상 결석 정산 상태 한 줄 — 인정(금액 미정) → 복귀(확정 대기) → 이월 ○원 확정 */}
+              {period.carryLabel && (
+                <p className={`break-keep text-xs font-medium ${period.carry === "SETTLED" ? "text-[var(--color-academy-success)]" : "text-[var(--color-academy-info)]"}`}>{period.carryLabel}</p>
+              )}
+              {period.openEnded && canReturn && (
                 <p className="text-xs text-[var(--color-academy-muted)]">끝일을 정하지 않아 {WEEKS}주까지만 알렸어요.</p>
               )}
               <div className="mt-1 flex flex-wrap items-center justify-end gap-2">
@@ -100,7 +190,8 @@ export function ActivePeriodList({ periods, onChanged }: { periods: ParentAbsenc
                         type="date"
                         value={returnDate}
                         min={today}
-                        max={addDaysKst(period.endDate, 1)}
+                        // 복귀 미정(학원 등록 기간)은 끝일이 없어 위쪽 제한을 두지 않는다
+                        max={period.endDate ? addDaysKst(period.endDate, 1) : undefined}
                         onChange={(e) => setReturnDate(e.target.value)}
                         className="academy-input min-w-0 flex-1"
                       />
@@ -109,25 +200,40 @@ export function ActivePeriodList({ periods, onChanged }: { periods: ParentAbsenc
                       {busy ? "알리는 중…" : "복귀 알리기"}
                     </button>
                     <button type="button" disabled={busy} onClick={() => setReturnId("")} className="academy-button-text">닫기</button>
+                    {/* 부상 결석으로 인정된 기간 — 고른 복귀일 기준 예정 금액(서버 계산) */}
+                    {shown?.data && <SettlementEstimateBox estimate={shown.data} />}
+                    {shown?.error && <p role="alert" className="basis-full text-xs text-[var(--color-academy-danger)]">{shown.error}</p>}
                   </>
                 ) : (
                   <>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => { setReturnDate(today); setReturnId(period.id); }}
-                      className="academy-button-tonal shrink-0"
-                    >
-                      복귀했어요
-                    </button>
-                    <InlineConfirm
-                      label="알림 취소"
-                      question="아직 지나지 않은 날의 결석 알림을 모두 취소할까요?"
-                      confirmLabel="알림 취소하기"
-                      onConfirm={() => close(period, "cancel")}
-                      pending={busy}
-                      openClassName="basis-full"
-                    />
+                    {canReturn && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => { setReturnDate(today); setPeekId(""); setReturnId(period.id); }}
+                        className="academy-button-tonal shrink-0"
+                      >
+                        복귀했어요
+                      </button>
+                    )}
+                    {canCancel && (
+                      <InlineConfirm
+                        label="알림 취소"
+                        question="아직 지나지 않은 날의 결석 알림을 모두 취소할까요?"
+                        confirmLabel="알림 취소하기"
+                        onConfirm={() => close(period, "cancel")}
+                        pending={busy}
+                        openClassName="basis-full"
+                      />
+                    )}
+                    {/* 복귀는 알렸고 학원 확정을 기다리는 중 — 예정 금액을 다시 볼 수 있다 */}
+                    {period.carry === "RETURNED" && (
+                      <button type="button" onClick={() => setPeekId(peekId === period.id ? "" : period.id)} className="academy-button-tonal shrink-0" aria-expanded={peekId === period.id}>
+                        {peekId === period.id ? "예정 금액 접기" : "예정 금액 보기"}
+                      </button>
+                    )}
+                    {peekId === period.id && shown?.data && <SettlementEstimateBox estimate={shown.data} />}
+                    {peekId === period.id && shown?.error && <p role="alert" className="basis-full text-xs text-[var(--color-academy-danger)]">{shown.error}</p>}
                   </>
                 )}
               </div>

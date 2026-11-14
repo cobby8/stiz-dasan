@@ -17,7 +17,9 @@ import { notMergedStudent } from "@/lib/studentVisibility";
 import { periodsOverlap } from "@/lib/regular/absence-period-plan";
 import { absencePeriodContext, ABSENCE_PERIOD_TX_OPTIONS } from "@/lib/regular/absence-period-runner";
 import { parentPeriodColumnsReady, periodCarryColumnsReady } from "@/lib/regular/absence-period-service";
-import { ILLNESS_PERIOD_INBOX_HREF } from "@/lib/regular/illnessPeriodRules";
+import {
+  ILLNESS_PERIOD_INBOX_HREF, PERIOD_APPROVED_PARENT_LABEL, PERIOD_RETURNED_PARENT_LABEL, periodSettledParentText,
+} from "@/lib/regular/illnessPeriodRules";
 import { closeIllnessReviewInTx, illnessReviewReady } from "@/lib/regular/illness-carry-tx";
 import { ILLNESS_REASON, collapseReviewsByPeriod, isValidReasonText, normalizeReasonText } from "@/lib/regular/illnessCarryRules";
 import {
@@ -423,31 +425,68 @@ export type ParentAbsencePeriodRow = {
   rangeLabel: string;
   /** 살아 있는 결석 수(취소된 날 제외) */
   count: number;
+  /** 학원이 등록한 기간인가 — «알림 취소»는 내가 알린 기간에만 있다 */
+  academyRegistered?: boolean;
+  /** 지금 «복귀했어요»를 누를 수 있나(아직 끝나지 않은 기간) */
+  canReturn?: boolean;
+  /** 지금 «알림 취소»를 누를 수 있나(내가 알린, 아직 끝나지 않은 기간) */
+  canCancel?: boolean;
+  /**
+   * 부상 결석 정산 상태(3단계): APPROVED = 인정 · 금액은 복귀 뒤 / RETURNED = 복귀했고 학원 확정 대기 / SETTLED = 이월 확정.
+   * 승인 전이면 null.
+   */
+  carry?: "APPROVED" | "RETURNED" | "SETTLED" | null;
+  /** 정산 상태 한 줄 글자(«이월 84,000원 확정 · 다음 수강료에서 빼 드려요» 등) */
+  carryLabel?: string | null;
 };
 
-/** 내 아이들의 진행 중인 «여러 날 결석»(끝일이 오늘 이후). 표·칸이 없거나 조회가 실패하면 빈 목록 — 결석 화면은 떠야 한다 */
+/**
+ * 내 아이들의 «여러 날 결석» — ① 내가 알린 진행 중인 기간(끝일이 오늘 이후)
+ *   ② 학원이 등록한 질병·부상 기간 중 진행 중인 것(«복귀했어요»를 누를 수 있게 — 2026-11-15 원장 결정 H)
+ *   ③ 부상 결석으로 인정됐거나(금액 확정 대기) 최근 60일 안에 이월이 확정된 기간(금액 상태를 보여 준다)
+ * ②③은 기간 정산 칸이 있을 때만. 표·칸이 없거나 조회가 실패하면 빈 목록 — 결석 화면은 떠야 한다
+ */
 export async function listParentAbsencePeriods(parentUserId: string): Promise<ParentAbsencePeriodRow[]> {
   try {
     if (!(await parentAbsencePeriodAvailable())) return [];
+    const carryReady = await periodCarryColumnsReady(prisma).catch(() => false);
     const rows = await prisma.$queryRawUnsafe<Array<{
-      id: string; studentId: string; studentName: string; reason: string; startDate: string; returnDate: string; openEnded: boolean; count: number;
+      id: string; studentId: string; studentName: string; reason: string; startDate: string; returnDate: string | null; openEnded: boolean; count: number;
+      parentReported: boolean; active: boolean; carryState: string | null; settledTotal: number | null;
     }>>(
       `SELECT p.id, p."studentId" AS "studentId", s.name AS "studentName", p.reason,
               to_char(p."startDate",'YYYY-MM-DD') AS "startDate", to_char(p."returnDate",'YYYY-MM-DD') AS "returnDate",
               p."openEnded" AS "openEnded",
-              (SELECT COUNT(*)::int FROM "RegularAbsence" ra WHERE ra."periodId" = p.id AND ra.status <> 'CANCELLED') AS count
+              (SELECT COUNT(*)::int FROM "RegularAbsence" ra WHERE ra."periodId" = p.id AND ra.status <> 'CANCELLED') AS count,
+              (p."reportedByUserId" IS NOT NULL) AS "parentReported",
+              -- 아직 끝나지 않은 기간(진행 중이고 복귀일이 없거나 오늘보다 뒤). 오늘은 DB 시계의 KST 날짜
+              (p.status = 'ACTIVE' AND (p."returnDate" IS NULL OR p."returnDate" > (now() AT TIME ZONE 'Asia/Seoul')::date)) AS active,
+              ${carryReady ? `p."carryState"` : `NULL::text`} AS "carryState",
+              ${carryReady ? `(p."carrySettlement"->'settlement'->>'carryTotal')::int` : `NULL::int`} AS "settledTotal"
          FROM "RegularAbsencePeriod" p
          JOIN "Student" s ON s.id = p."studentId"
         WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")}
-          AND p."reportedByUserId" IS NOT NULL AND p.status = 'ACTIVE'
-          -- 복귀일(끝일 다음 날)이 오늘보다 뒤 = 아직 끝나지 않은 기간. 오늘은 DB 시계의 KST 날짜
-          AND p."returnDate" > (now() AT TIME ZONE 'Asia/Seoul')::date
+          AND (
+            -- ① 내가 알린, 아직 끝나지 않은 기간(복귀일 = 끝일 다음 날이 오늘보다 뒤)
+            (p."reportedByUserId" IS NOT NULL AND p.status = 'ACTIVE' AND p."returnDate" > (now() AT TIME ZONE 'Asia/Seoul')::date)
+            ${carryReady ? `
+            -- ② 학원이 등록한 질병·부상 기간(진행 중)
+            OR (p."reportedByUserId" IS NULL AND p.reason = '${ILLNESS_REASON}' AND p.status = 'ACTIVE'
+                AND (p."returnDate" IS NULL OR p."returnDate" > (now() AT TIME ZONE 'Asia/Seoul')::date))
+            -- ③ 인정됐고 금액 확정 대기 · 최근 60일 안에 이월이 확정된 기간(carrySettledAt 은 timestamptz 라 now() 와 바로 견준다)
+            OR (p.reason = '${ILLNESS_REASON}' AND p.status <> 'CANCELLED'
+                AND (p."carryState" = 'APPROVED' OR (p."carryState" = 'SETTLED' AND p."carrySettledAt" > now() - interval '60 days')))` : ""}
+          )
         ORDER BY p."startDate", s.name
         LIMIT 20`,
       parentUserId,
     );
     return rows.map((row) => {
-      const endDate = addDaysKst(row.returnDate, -1);
+      // 복귀 미정(학원 등록 기간)은 끝일이 없다 — 시작일만 보이고 «복귀 미정»을 붙인다
+      const endDate = row.returnDate ? addDaysKst(row.returnDate, -1) : "";
+      const active = row.active === true;
+      const carry = row.carryState === "SETTLED" ? "SETTLED" as const
+        : row.carryState === "APPROVED" ? (active ? "APPROVED" as const : "RETURNED" as const) : null;
       return {
         id: row.id,
         studentId: row.studentId,
@@ -456,8 +495,14 @@ export async function listParentAbsencePeriods(parentUserId: string): Promise<Pa
         startDate: row.startDate,
         endDate,
         openEnded: row.openEnded === true,
-        rangeLabel: periodRangeLabel(row.startDate, endDate),
+        rangeLabel: endDate ? periodRangeLabel(row.startDate, endDate < row.startDate ? row.startDate : endDate) : `${periodRangeLabel(row.startDate, row.startDate)}~ 복귀 미정`,
         count: Number(row.count) || 0,
+        academyRegistered: row.parentReported !== true,
+        canReturn: active,
+        canCancel: active && row.parentReported === true,
+        carry,
+        carryLabel: carry === "SETTLED" ? periodSettledParentText(Number.isSafeInteger(row.settledTotal) ? Number(row.settledTotal) : 0)
+          : carry === "RETURNED" ? PERIOD_RETURNED_PARENT_LABEL : carry === "APPROVED" ? PERIOD_APPROVED_PARENT_LABEL : null,
       };
     });
   } catch (error) {

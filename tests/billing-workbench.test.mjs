@@ -52,6 +52,8 @@ function database({credit=0,secondClass=false}={}){
   if(sql.includes("information_schema.columns"))return [{n:state.periodCarry?1:0}];
   // 2단계 발행 보류: 승인됐고 금액 미확정인 질병·부상 기간(state.holdPeriods) — 판정 조건 문구가 SQL 에 있을 때만, 그 달까지 시작한 기간만 답한다
   if(sql.includes('FROM "RegularAbsencePeriod" hp')){assert.match(sql,/hp\.reason = 'ILLNESS_INJURY' AND hp\."carryState" = 'APPROVED' AND hp\.status IN \('ACTIVE', 'ENDED'\)/);assert.match(sql,/to_char\(hp\."startDate",'YYYY-MM'\) <= \$1/);return (state.holdPeriods??[]).filter(p=>p.reason==="ILLNESS_INJURY"&&p.carryState==="APPROVED"&&["ACTIVE","ENDED"].includes(p.status)&&p.startDate.slice(0,7)<=v[0]).sort((a,b)=>a.studentId.localeCompare(b.studentId)||a.startDate.localeCompare(b.startDate)||a.id.localeCompare(b.id)).map(p=>({studentId:p.studentId,periodId:p.id,startMonth:p.startDate.slice(0,7),...(sql.includes('hp."classIds" AS "classIds"')?{classIds:p.classIds??[]}:{})}));}
+  // 부상 결석 복귀 정산(3단계)이 남긴 «낸 돈이 없는 달» 안내 — 확정된(SETTLED) 기간의 이 달 것만
+  if(sql.includes('FROM "RegularAbsencePeriod" sp')){assert.match(sql,/sp\.reason = 'ILLNESS_INJURY' AND sp\."carryState" = 'SETTLED'/);assert.match(sql,/sp\."carrySettlement"->'unpaidGuides' @> jsonb_build_array\(jsonb_build_object\('month', \$1::text\)\)/);return (state.settledGuides??[]).filter(g=>g.guides.some(x=>x.month===v[0])).map(g=>({studentId:g.studentId,periodId:g.periodId,guides:g.guides}));}
   if(sql.includes('FROM "RegularAbsencePeriod" p JOIN "RegularAbsence" a ON a."periodId"=p.id')){assert.match(sql,/p\."carryState"<>'NONE'/);return (state.periodDecided??[]).includes(v[0])?[{found:1}]:[];}
   // 납부 Payment 근거(2026-11-15): 그 학생·그 반의 수강 개시일 / 그 반·그 달 납부완료 수강료 청구 / 그 청구에서 이미 줄인 금액
   if(sql.includes('FROM "Enrollment" e WHERE e."studentId"=$1 AND e."classId"=$2'))return state.enrollments.filter(e=>e.studentId===v[0]&&e.classId===v[1]).map(e=>({startsOn:e.startsOn??null}));
@@ -996,4 +998,106 @@ test("발행 보류: 화면 — 보류 요약·필터·행 글자·선택 불가
  assert.equal(rules.illnessHoldPeriodSql("p"),`(p.reason = 'ILLNESS_INJURY' AND p."carryState" = 'APPROVED' AND p.status IN ('ACTIVE', 'ENDED'))`);
  assert.equal(rules.illnessBillingHoldSql("s",false),"false","기간 정산 칸이 없으면 항상 false");
  assert.match(rules.illnessBillingHoldSql("s"),/hold_period\."studentId" = s\.id AND \(hold_period\.reason = 'ILLNESS_INJURY' AND hold_period\."carryState" = 'APPROVED' AND hold_period\.status IN \('ACTIVE', 'ENDED'\)\)/);
+});
+
+// ── 부상 결석 복귀 정산(3단계, 2026-11-15 원장 결정) — 청구 준비 쪽 ─────────────────────────────
+// 낸 돈이 없는 달은 이월이 아니라 «다닌 횟수만큼만 청구»: 확정된 기간이 남긴 안내(state.settledGuides)로 그 달 행을 제안한다.
+// 가짜 달력의 2026-11 토요일 수업 = 11/7·14·21·28(4회), 정가 100,000원 → 한 번 25,000원.
+function guideDatabase(missedDates,options={}){
+ const db=database(options);db.state.periodCarry=true;
+ db.state.settledGuides=[{studentId:"student-a",periodId:"period-s",guides:[{month:"2026-11",classId:"class-a",missedDates}]}];
+ return db;
+}
+test("정산 안내: 앞쪽·뒤쪽이 빠진 달은 수강 기간과 기간 조정을 제안하고, 전부 빠진 달은 0원, 가운데만 빠진 달은 자동 제안하지 않는다",async()=>{
+ const rowOf=async missed=>(await readWorkbench(guideDatabase(missed).tx,"2026-11",true)).rows[0];
+ // 앞 2회 빠짐 → 수강 11/21~11/28, 기간 조정 50,000 → 청구 50,000(다닌 2회 × 25,000)
+ const prefix=await rowOf(["2026-11-07","2026-11-14"]);
+ assert.deepEqual([prefix.periodStart,prefix.periodEnd,prefix.scheduledDates,prefix.prorationAmount,prefix.totalAmount],["2026-11-21","2026-11-28",["2026-11-21","2026-11-28"],50000,50000]);
+ assert.ok(prefix.basis.includes("부상 결석 2회 제외 → 기간 조정 50,000원 제안(다닌 2회 · 수강 2026-11-21~2026-11-28)"));
+ // 뒤 1회 빠짐 → 수강 11/7~11/21, 기간 조정 25,000
+ const suffix=await rowOf(["2026-11-28"]);
+ assert.deepEqual([suffix.periodStart,suffix.periodEnd,suffix.scheduledDates.length,suffix.prorationAmount,suffix.totalAmount],["2026-11-07","2026-11-21",3,25000,75000]);
+ // 전부 빠짐 → 기간은 그대로, 기간 조정 전액 → 청구 0원
+ const whole=await rowOf(["2026-11-07","2026-11-14","2026-11-21","2026-11-28"]);
+ assert.deepEqual([whole.periodStart,whole.periodEnd,whole.prorationAmount,whole.totalAmount],["2026-11-07","2026-11-28",100000,0]);
+ assert.ok(whole.basis.includes("부상 결석 4회 제외(다닌 수업 없음) → 기간 조정 100,000원 제안(청구 0원)"));
+ // 가운데만 빠짐 → 금액·기간을 자동으로 넣지 않고 참고 금액만 알린다
+ const middle=await rowOf(["2026-11-14"]);
+ assert.deepEqual([middle.periodStart,middle.periodEnd,middle.prorationAmount,middle.totalAmount],["2026-11-07","2026-11-28",0,100000]);
+ assert.ok(middle.reviewReasons.some(reason=>/^부상 결석 1회\(2026-11-14\)가 달 가운데라 자동 제안하지 않았습니다\. 기간 조정 금액을 직접 넣어 주세요\(참고 25,000원\)\.$/.test(reason)));
+ // 수업일이 아닌 날짜만 적힌 안내는 아무것도 바꾸지 않는다(일정이 바뀌어 그 날이 휴무가 된 경우)
+ const none=await rowOf(["2026-11-01"]),plain=(await readWorkbench(database().tx,"2026-11",true)).rows[0];
+ assert.deepEqual([none.periodStart,none.periodEnd,none.prorationAmount,none.totalAmount,none.basis,none.reviewReasons],[plain.periodStart,plain.periodEnd,plain.prorationAmount,plain.totalAmount,plain.basis,plain.reviewReasons]);
+});
+test("정산 안내: 3회 달은 3회 달 차감 뒤 금액을 횟수로 나눈다 — 한 번 값이 4회 달과 같다 / 안내는 그 달·그 반에만 / 안내가 있으면 지문이 바뀐다",async()=>{
+ // 3회 달(11/7·14·21): 정가 100,000 → 3회 달 차감 25,000 → 75,000 ÷ 3 = 25,000. 앞 1회 빠짐 → 청구 50,000 → 기간 조정 50,000
+ const short=guideDatabase(["2026-11-07"]);short.state.events=[{title:"SHORT_MONTH",date:"2026-11-01"}];
+ const row=(await readWorkbench(short.tx,"2026-11",true)).rows[0];
+ assert.deepEqual([row.periodStart,row.periodEnd,row.prorationAmount,row.totalAmount],["2026-11-14","2026-11-21",50000,50000]);
+ // 3회 달 전부 빠짐 → 전액 차감(0원). «3회 달 기준과 다릅니다» 경고를 붙이지 않는다
+ const all=guideDatabase(["2026-11-07","2026-11-14","2026-11-21"]);all.state.events=[{title:"SHORT_MONTH",date:"2026-11-01"}];
+ const zeroRow=(await readWorkbench(all.tx,"2026-11",true)).rows[0];
+ assert.equal(zeroRow.totalAmount,0);assert.ok(!zeroRow.reviewReasons.some(reason=>reason.includes("연간 일정 3회인 달은")));
+ // 다른 달·다른 반·다른 학생의 안내는 이 행에 닿지 않는다
+ for(const guide of [{month:"2026-12",classId:"class-a"},{month:"2026-11",classId:"class-x"}]){
+  const db=database();db.state.periodCarry=true;db.state.settledGuides=[{studentId:"student-a",periodId:"period-s",guides:[{...guide,missedDates:["2026-11-07"]}]}];
+  assert.equal((await readWorkbench(db.tx,"2026-11",true)).rows[0].prorationAmount,0,JSON.stringify(guide));
+ }
+ const other=database();other.state.periodCarry=true;other.state.settledGuides=[{studentId:"student-z",periodId:"period-s",guides:[{month:"2026-11",classId:"class-a",missedDates:["2026-11-07"]}]}];
+ assert.equal((await readWorkbench(other.tx,"2026-11",true)).rows[0].prorationAmount,0);
+ // 안내도 원본이다 — 화면을 연 뒤 확정·확정 취소가 끼면 지문이 달라진다. 안내가 없는 달의 지문은 예전 그대로
+ const base=database();base.state.periodCarry=true;
+ const plainVersion=(await readWorkbench(base.tx,"2026-11",true)).sourceVersion;
+ assert.equal(plainVersion,(await readWorkbench(database().tx,"2026-11",true)).sourceVersion,"안내 0건이면 지문에 키가 없다");
+ assert.notEqual((await readWorkbench(guideDatabase(["2026-11-07"]).tx,"2026-11",true)).sourceVersion,plainVersion);
+ assert.match(serviceSource,/\.\.\.\(illnessGuides\.length \? \{ illnessGuides \} : \{\}\) \}\);/);
+ // 기간 정산 칸이 없는 DB 는 안내를 읽지 않는다(없는 칸을 읽으면 조회 전체가 실패한다)
+ const legacy=guideDatabase(["2026-11-07"]);legacy.state.periodCarry=false;
+ assert.equal((await readWorkbench(legacy.tx,"2026-11",true)).rows[0].prorationAmount,0);
+});
+test("정산 안내: 저장해 둔 초안(보류로 돌렸던 청구의 금액 메모)은 저장값이 우선하되, 제안과 다른 기간 조정·쓸 수 있는 부상 결석 이월을 알린다",async()=>{
+ const db=guideDatabase(["2026-11-07","2026-11-14"]);
+ // 보류로 돌려 둔 초안 = 정산 전 금액(기간 조정 0·이월 0·전체 기간), 원본은 그 뒤 바뀌었다
+ db.state.drafts.push({id:"student-a:class-a",month:"2026-11",studentId:"student-a",classId:"class-a",version:4,status:"DRAFT",payload:draft(),reason:"발행",sourceVersion:"stale",paymentId:null,periodStart:"2026-11-07",periodEnd:"2026-11-28",scheduledDates:["2026-11-07","2026-11-14","2026-11-21","2026-11-28"]});
+ // 이 기간 정산이 적립한 이월 30,000원(basis.periodId)
+ db.state.carryCredits.push({id:"period-credit",studentId:"student-a",numerator:"30000",denominator:"1",availableMonth:"2026-11",basis:{periodId:"period-s"}});
+ const row=(await readWorkbench(db.tx,"2026-11",true)).rows[0];
+ // 저장값 그대로(조용히 바꾸지 않는다)
+ assert.deepEqual([row.prorationAmount,row.carryAmount,row.totalAmount,row.periodStart,row.draftStatus],[0,0,100000,"2026-11-07","DRAFT"]);
+ assert.ok(row.reviewReasons.includes("기간 조정: 부상 결석 제외 제안 50,000원과 다릅니다(저장값 0원). 수강 기간과 금액을 다시 확인해 주세요."));
+ assert.ok(row.reviewReasons.includes("이월: 부상 결석 이월 30,000원을 쓸 수 있습니다(저장값 0원). 이월 칸을 확인해 주세요."));
+ assert.equal(row.status,"REVIEW");
+ // 기간 정산과 무관한 이월(하루짜리)만 있으면 이월 알림은 붙이지 않는다(기존 동작 그대로)
+ const plainCredit=guideDatabase(["2026-11-07","2026-11-14"]);
+ plainCredit.state.drafts.push({...db.state.drafts[0]});plainCredit.state.carryCredits.push({id:"day-credit",studentId:"student-a",numerator:"30000",denominator:"1",availableMonth:"2026-11",basis:{}});
+ assert.ok(!(await readWorkbench(plainCredit.tx,"2026-11",true)).rows[0].reviewReasons.some(reason=>reason.startsWith("이월: 부상 결석 이월")));
+ // 제안과 같은 값을 저장해 둔 초안에는 기간 조정 알림이 없다
+ const same=guideDatabase(["2026-11-07","2026-11-14"]);
+ same.state.drafts.push({...db.state.drafts[0],payload:{...draft(),prorationAmount:50000},periodStart:"2026-11-21",scheduledDates:["2026-11-21","2026-11-28"]});
+ assert.ok(!(await readWorkbench(same.tx,"2026-11",true)).rows[0].reviewReasons.some(reason=>reason.startsWith("기간 조정: 부상 결석")));
+});
+test("반 이동 경고: 보류 중인 기간의 대상 반을 지금 하나도 다니지 않으면 그 아이의 다른 반 행에 확인 한 줄(차단 아님)",async()=>{
+ const rules=await import(periodRulesUrl);
+ // 기간 대상 반은 class-old(이미 그만둔 반), 지금은 class-a 만 다닌다 = 결석 중에 반을 옮겼다
+ const moved=database();moved.state.periodCarry=true;
+ moved.state.enrollments.push({...moved.state.enrollments[0],classId:"class-old",status:"WITHDRAWN"});
+ moved.state.holdPeriods=[{id:"period-m",studentId:"student-a",reason:"ILLNESS_INJURY",carryState:"APPROVED",status:"ACTIVE",startDate:"2026-11-06",classIds:["class-old"]}];
+ let view=await readWorkbench(moved.tx,"2026-11",true);
+ const row=view.rows.find(r=>r.id==="student-a:class-a");
+ assert.ok(!row.hold,"대상 반이 아니라 보류되지 않는다");assert.deepEqual(row.blockingReasons,[]);
+ assert.ok(row.reviewReasons.includes(rules.BILLING_HOLD_MOVED_NOTE));
+ assert.match(rules.BILLING_HOLD_MOVED_NOTE,/^부상 결석 기간 중\(반 이동\) · 확인/);
+ // 차단이 아니다 — 저장 → 확정 → 발행이 된다
+ ({view}=await mutateWorkbench(moved,commandFor("SAVE",view,"student-a:class-a"),"admin",true));
+ ({view}=await mutateWorkbench(moved,commandFor("CONFIRM",view,"student-a:class-a"),"admin",true));
+ await mutateWorkbench(moved,commandFor("ISSUE",view,"student-a:class-a"),"admin",true);
+ assert.equal(moved.state.payments.length,1);
+ // 대상 반을 여전히 다니면(그 반만 결석 중) 다른 반에는 경고가 없다 / 대상 반이 빈 배열(반 전부)이면 보류라 경고가 아니다
+ const still=database({secondClass:true});still.state.periodCarry=true;
+ still.state.holdPeriods=[{id:"period-a",studentId:"student-a",reason:"ILLNESS_INJURY",carryState:"APPROVED",status:"ACTIVE",startDate:"2026-11-06",classIds:["class-b"]}];
+ assert.ok(!(await readWorkbench(still.tx,"2026-11",true)).rows.find(r=>r.id==="student-a:class-a").reviewReasons.includes(rules.BILLING_HOLD_MOVED_NOTE));
+ const everything=database();everything.state.periodCarry=true;
+ everything.state.holdPeriods=[{id:"period-a",studentId:"student-a",reason:"ILLNESS_INJURY",carryState:"APPROVED",status:"ACTIVE",startDate:"2026-11-06",classIds:[]}];
+ const heldRow=(await readWorkbench(everything.tx,"2026-11",true)).rows[0];
+ assert.equal(heldRow.hold,true);assert.ok(!heldRow.reviewReasons.includes(rules.BILLING_HOLD_MOVED_NOTE));
 });

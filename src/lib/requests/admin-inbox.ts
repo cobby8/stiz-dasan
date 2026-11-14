@@ -39,7 +39,9 @@ import { illnessReviewReady } from "@/lib/regular/illness-carry-tx";
 import { evidenceScopeSql } from "@/lib/regular/illnessCarryRules";
 import { periodCarryColumnsReady } from "@/lib/regular/absence-period-service";
 import {
-  PERIOD_HOLD_INBOX_STATUS, boundToIllnessPeriodSql, illnessHoldPeriodSql, illnessPeriodAbsenceSql, illnessPeriodVisibleSql, periodInboxSummary, periodRangeText,
+  PERIOD_DECLINED_INBOX_STATUS, PERIOD_HOLD_INBOX_STATUS, PERIOD_SETTLED_INBOX_STATUS, PERIOD_SETTLE_NEEDED_INBOX_STATUS,
+  boundToIllnessPeriodSql, illnessHoldPeriodSql, illnessPeriodAbsenceSql, illnessPeriodDeclinedSql, illnessPeriodVisibleSql, illnessSettleNeededSql,
+  periodInboxSummary, periodRangeText,
 } from "@/lib/regular/illnessPeriodRules";
 // 문의에 이어 쓴 글(학부모 추가 글·학원 답) — 상세 줄에 붙인다(2026-11-14 c3)
 import { inquiryFollowUpFacts } from "@/lib/requests/inquiry-thread";
@@ -321,8 +323,13 @@ const ADAPTERS: Adapter[] = [
     from: `"RegularAbsencePeriod" x ${studentJoin("s", `x."studentId"`)}`,
     // 기간의 정산 상태 그대로. 아직 결정 전(NONE)이면 «결정 전인 결석이 남았는가»로 나눈다 — 전부 하루씩 처리했으면 고를 것이 없다
     // 승인됐고 청구 발행 보류 중이면(판정 조각 illnessHoldPeriodSql 한 곳) «인정 · 발행 보류 중»
-    rawExpr: `CASE WHEN ${illnessHoldPeriodSql("x")} THEN '${PERIOD_HOLD_INBOX_STATUS}'
-                   WHEN x."carryState" <> 'NONE' THEN x."carryState"
+    // 3단계: 확정됨 → SETTLED · 복귀했는데 금액 미확정 → SETTLE_NEEDED(처리 필요) · «인정 안 함»으로 정해 둔 기간 → DECLINED
+    // 아직 지도에 없는 정산 상태(4단계 REFUND_*)는 APPROVED 로 읽어 목록에서 사라지지 않게만 한다
+    rawExpr: `CASE WHEN x."carryState" = 'SETTLED' THEN '${PERIOD_SETTLED_INBOX_STATUS}'
+                   WHEN ${illnessSettleNeededSql("x")} THEN '${PERIOD_SETTLE_NEEDED_INBOX_STATUS}'
+                   WHEN ${illnessHoldPeriodSql("x")} THEN '${PERIOD_HOLD_INBOX_STATUS}'
+                   WHEN x."carryState" <> 'NONE' THEN 'APPROVED'
+                   WHEN ${illnessPeriodDeclinedSql("x")} THEN '${PERIOD_DECLINED_INBOX_STATUS}'
                    WHEN EXISTS (SELECT 1 FROM "RegularAbsence" pa LEFT JOIN "RegularAbsenceCarryReview" pr ON pr."absenceId" = pa.id
                                  WHERE ${illnessPeriodAbsenceSql("x", "pa")} AND COALESCE(pr.status, 'PENDING') = 'PENDING') THEN 'PENDING'
                    ELSE 'DAY_DONE' END`,
@@ -349,7 +356,9 @@ const ADAPTERS: Adapter[] = [
         summary: periodInboxSummary({ startYmd, returnYmd, count, photoCount: photos }),
         facts: [["기간", `${periodRangeText(startYmd, returnYmd)}${returnYmd ? "" : " 복귀 미정"}`], ["결석", `${count}회`], ["접수", source],
           ["증빙", photos > 0 ? `사진 ${photos}장` : e.parentReported ? "사진 아직 없음" : "학부모 증빙 없음"],
-          ...(e.periodStatus === "CANCELLED" ? [["안내", "등록 취소된 기간입니다. 승인을 취소하면 목록에서 빠집니다."] as InboxFact] : [])],
+          ...(e.periodStatus === "CANCELLED" ? [["안내", "등록 취소된 기간입니다. 승인을 취소하면 목록에서 빠집니다."] as InboxFact] : []),
+          // 복귀했는데 금액이 아직 확정되지 않았다(3단계) — 원장이 할 일을 그대로 말한다. 금액은 목록에 싣지 않는다
+          ...(row.raw === PERIOD_SETTLE_NEEDED_INBOX_STATUS ? [["안내", "복귀했습니다. 아래 «정산하기»에서 표를 확인하고 이월을 확정해 주세요."] as InboxFact] : [])],
         ref: { photoCount: String(photos), count: String(count) },
       };
     },

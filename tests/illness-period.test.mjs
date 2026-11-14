@@ -143,6 +143,13 @@ function fakeDb(init = {}) {
       return 1;
     }
     // 승인: 되돌릴 재료(거둔 보강권·새로 만든 검토 줄)를 기간 행에 남긴다
+    // 보강권으로 전환(3단계): «인정 안 함» 표시를 기간 행에 병합 저장 — 아직 결정 전(NONE)일 때만
+    if (/UPDATE "RegularAbsencePeriod"\s+SET "carrySettlement" = COALESCE\("carrySettlement", '\{\}'::jsonb\) \|\| \$2::jsonb, "updatedAt" = now\(\)\s+WHERE id = \$1 AND "carryState" = 'NONE'/.test(sql)) {
+      const period = state.periods.find((p) => p.id === v[0] && p.carryState === "NONE");
+      if (!period) return 0;
+      period.carrySettlement = { ...(period.carrySettlement ?? {}), ...JSON.parse(v[1]) };
+      return 1;
+    }
     if (/UPDATE "RegularAbsencePeriod" SET "carrySettlement" = \$2::jsonb WHERE id = \$1 AND "carryState" = 'APPROVED'/.test(sql)) {
       const period = state.periods.find((p) => p.id === v[0] && p.carryState === "APPROVED");
       if (!period) return 0;
@@ -382,8 +389,11 @@ test("승인: 미래 날짜·청구 기록 없음·청구 준비 저장 스위�
   const approveAction = actions.slice(actions.indexOf("export async function approveIllnessPeriodAction("), actions.indexOf("export async function cancelIllnessPeriodApprovalAction("));
   assert.ok(approveLib.length > 500 && approveAction.length > 200, "승인 구간을 찾았다");
   assert.doesNotMatch(approveLib + approveAction, /STIZ_BILLING_WORKBENCH_WRITES_ENABLED|writesEnabled|readWorkbench|resolveWorkbenchAbsence|todayKst|"Payment"|BillingCarryCredit|holdIssuedBillsForPeriod/);
-  // 파일 전체에도 청구 준비 저장 스위치·청구 준비 읽기·이월 적립은 없다(보류 전환은 스위치와 무관하고 이월을 만들지 않는다)
-  assert.doesNotMatch(lib + actions, /STIZ_BILLING_WORKBENCH_WRITES_ENABLED|writesEnabled|readWorkbench|resolveWorkbenchAbsence|INSERT INTO "BillingCarryCredit"/);
+  // 승인·보류 전환 쪽(연결부 파일 전체 + 액션 파일의 «복귀 정산» 구간 앞)에는 청구 준비 저장 스위치·청구 준비 읽기·이월 적립이 없다
+  // (보류 전환은 스위치와 무관하고 이월을 만들지 않는다). 3단계 «복귀 정산»은 스위치가 필요하다 — 그 구간은 tests/illness-period-settlement.test.mjs 가 본다
+  const beforeSettle = actions.slice(0, actions.indexOf("// ── 복귀 정산(3단계)"));
+  assert.ok(beforeSettle.includes("export async function holdIllnessPeriodBillsAction("), "정산 구간 앞에 승인·보류 액션이 다 있다");
+  assert.doesNotMatch(lib + beforeSettle, /STIZ_BILLING_WORKBENCH_WRITES_ENABLED|writesEnabled|readWorkbench|resolveWorkbenchAbsence|INSERT INTO "BillingCarryCredit"/);
 });
 
 test("승인: 두 번 누르면 두 번째는 «이미 승인» — 검토·보강권·감사 기록이 한 번만 바뀐다", async () => {
@@ -623,6 +633,12 @@ test("보강권으로 전환: 결정 전인 날마다 보강권 1장(기존 [보
   assert.ok(!db.state.credits.some((credit) => credit.sourceKey === KEY("mon", "2026-11-09")), "출석한 날은 보강권이 없다");
   // 결정 전인 날이 하나도 남지 않는다 → 신청함에서 «날짜별로 처리함»(완료)
   assert.equal((await admin.readIllnessPeriodDetail(db, "p1")).pendingCount, 0);
+  // 3단계: «인정 안 함»을 기간 행에 남긴다(누가·언제) — 매일 연장으로 생긴 새 날이 다시 «승인 대기»로 올라오지 않게
+  assert.equal(db.state.periods[0].carrySettlement.declined.byUserId, "admin-1");
+  assert.deepEqual(rules.parsePeriodDeclined(db.state.periods[0].carrySettlement).byUserId, "admin-1");
+  assert.equal((await admin.readIllnessPeriodDetail(db, "p1")).declined, true);
+  assert.equal(rules.parsePeriodDeclined(null), null);
+  assert.equal(rules.parsePeriodDeclined({ approval: {} }), null);
   assert.equal(db.state.periods[0].carryState, "NONE", "기간 상태는 그대로(인정하지 않았다)");
   assert.equal(db.state.audit.at(-1).action, "ILLNESS_PERIOD_TO_MAKEUP");
   assert.deepEqual(db.state.audit.at(-1).details, { periodId: "p1", studentId: "s1", converted: 14, creditsIssued: 13, attendedClosed: 1 });
@@ -742,9 +758,19 @@ function loadInbox(state) {
           .map(({ period, days }) => ({
             id: period.id,
             // 2단계: 승인됐고 등록 취소되지 않은 기간은 «발행 보류 중» — 그 판정 문구가 SQL 에 있을 때만
-            raw: /CASE WHEN \(x\.reason = 'ILLNESS_INJURY' AND x\."carryState" = 'APPROVED' AND x\.status IN \('ACTIVE', 'ENDED'\)\) THEN 'APPROVED_HOLD'/.test(sql)
-              && period.carryState === "APPROVED" && ["ACTIVE", "ENDED"].includes(period.status) ? "APPROVED_HOLD"
-              : period.carryState !== "NONE" ? period.carryState : days.some((day) => (reviewStatus(day.id) ?? "PENDING") === "PENDING") ? "PENDING" : "DAY_DONE",
+            // 3단계: 확정 → SETTLED · 복귀했는데 금액 미확정 → SETTLE_NEEDED · «인정 안 함» → DECLINED — 역시 그 문구가 SQL 에 있을 때만
+            raw: (() => {
+              const hold = period.carryState === "APPROVED" && ["ACTIVE", "ENDED"].includes(period.status);
+              const holdSql = `\\(x\\.reason = 'ILLNESS_INJURY' AND x\\."carryState" = 'APPROVED' AND x\\.status IN \\('ACTIVE', 'ENDED'\\)\\)`;
+              if (/CASE WHEN x\."carryState" = 'SETTLED' THEN 'SETTLED'/.test(sql) && period.carryState === "SETTLED") return "SETTLED";
+              if (new RegExp(`WHEN \\(${holdSql} AND \\(x\\.status = 'ENDED'\\s+OR \\(x\\."returnDate" IS NOT NULL AND x\\."returnDate" <= \\(now\\(\\) AT TIME ZONE 'Asia/Seoul'\\)::date\\)\\)\\) THEN 'SETTLE_NEEDED'`).test(sql)
+                && hold && (period.status === "ENDED" || (period.returnDate && period.returnDate <= state.today))) return "SETTLE_NEEDED";
+              if (new RegExp(`WHEN ${holdSql} THEN 'APPROVED_HOLD'`).test(sql) && hold) return "APPROVED_HOLD";
+              // 아직 지도에 없는 정산 상태(4단계)도 APPROVED 로 읽어 목록에서 사라지지 않는다
+              if (period.carryState !== "NONE") { assert.match(sql, /WHEN x\."carryState" <> 'NONE' THEN 'APPROVED'/); return "APPROVED"; }
+              if (/WHEN \(x\."carryState" = 'NONE' AND jsonb_typeof\(x\."carrySettlement"->'declined'\) = 'object'\) THEN 'DECLINED'/.test(sql) && period.carrySettlement?.declined) return "DECLINED";
+              return days.some((day) => (reviewStatus(day.id) ?? "PENDING") === "PENDING") ? "PENDING" : "DAY_DONE";
+            })(),
             studentName: period.studentName, createdAt: "2026-11-06T01:00:00.000Z", targetDate: period.startDate,
             extra: { returnDate: period.returnDate ?? null, parentReported: Boolean(period.reportedByUserId), periodStatus: period.status, count: days.length,
               photoCount: state.evidence.filter((photo) => !photo.removed && state.absences.find((absence) => absence.id === photo.absenceId)?.periodId === period.id).length },
@@ -843,6 +869,36 @@ test("신청함: 기간 결석 16건이 «기간 한 줄»로 — 하루짜리 �
   const cancelledApproved = (await inbox.getInboxRows({ bucket: "ONGOING", kinds: ["ILLNESS_PERIOD"] })).rows;
   assert.equal(cancelledApproved[0].statusLabel, "인정 · 금액은 복귀 뒤");
   state.periods[0].status = "ACTIVE";
+  // 3단계: 복귀하면(복귀 처리됨 또는 복귀일이 오늘 이전) «정산 필요» — 메뉴 «처리 필요» 숫자에 들어간다
+  for (const returned of [{ status: "ENDED", returnDate: "2026-12-14" }, { status: "ACTIVE", returnDate: state.today }]) {
+    Object.assign(state.periods[0], returned);
+    const needed = (await inbox.getInboxRows({ bucket: "ACTION", kinds: ["ILLNESS_PERIOD"] })).rows;
+    assert.equal(needed.length, 1, JSON.stringify(returned));
+    assert.deepEqual([needed[0].rawStatus, needed[0].statusLabel], [rules.PERIOD_SETTLE_NEEDED_INBOX_STATUS, "정산 필요"]);
+    assert.equal((await inbox.getInboxRows({ bucket: "ONGOING", kinds: ["ILLNESS_PERIOD"] })).rows.length, 0);
+  }
+  // 복귀일이 아직 오지 않은 진행 중 기간은 «발행 보류 중» 그대로
+  Object.assign(state.periods[0], { status: "ACTIVE", returnDate: "2099-01-01" });
+  assert.equal((await inbox.getInboxRows({ bucket: "ONGOING", kinds: ["ILLNESS_PERIOD"] })).rows[0].rawStatus, rules.PERIOD_HOLD_INBOX_STATUS);
+  // 이월을 확정하면 «완료(이월 확정)»
+  Object.assign(state.periods[0], { status: "ENDED", returnDate: "2026-12-14", carryState: "SETTLED" });
+  const settledRows = (await inbox.getInboxRows({ bucket: "DONE", kinds: ["ILLNESS_PERIOD"] })).rows;
+  assert.deepEqual([settledRows[0].rawStatus, settledRows[0].statusLabel], [rules.PERIOD_SETTLED_INBOX_STATUS, "완료(이월 확정)"]);
+  assert.equal((await inbox.getInboxRows({ bucket: "ACTION", kinds: ["ILLNESS_PERIOD"] })).rows.length, 0);
+  // 4단계 상태(아직 지도에 없음)도 목록에서 사라지지 않는다 — «인정 · 금액은 복귀 뒤»로 읽는다
+  state.periods[0].carryState = "REFUND_REVIEW";
+  assert.equal((await inbox.getInboxRows({ bucket: "ONGOING", kinds: ["ILLNESS_PERIOD"] })).rows[0].rawStatus, "APPROVED");
+  // «인정 안 함»(보강권으로 전환)으로 정해 둔 기간: 매일 연장으로 결정 전인 새 날이 생겨도 다시 «승인 대기»로 올라오지 않는다
+  Object.assign(state.periods[0], { status: "ACTIVE", returnDate: null, carryState: "NONE", carrySettlement: { declined: { byUserId: "admin-1", at: "2026-11-15T00:00:00.000Z" } } });
+  state.reviews.length = 0; // 검토 줄이 없는 새 날들(전부 결정 전)
+  assert.equal((await inbox.getInboxRows({ bucket: "ACTION", kinds: ["ILLNESS_PERIOD"] })).rows.length, 0);
+  const declinedRows = (await inbox.getInboxRows({ bucket: "DONE", kinds: ["ILLNESS_PERIOD"] })).rows;
+  assert.deepEqual([declinedRows[0].rawStatus, declinedRows[0].statusLabel], [rules.PERIOD_DECLINED_INBOX_STATUS, "보강권으로 전환"]);
+  // 표시가 없으면 예전처럼 «승인 대기»
+  state.periods[0].carrySettlement = null;
+  assert.equal((await inbox.getInboxRows({ bucket: "ACTION", kinds: ["ILLNESS_PERIOD"] })).rows.length, 1);
+  Object.assign(state.periods[0], { carryState: "APPROVED" });
+  for (const absence of state.absences.filter((item) => item.periodId === "p1")) state.reviews.push({ absenceId: absence.id, status: "APPROVED" });
   // 승인된 기간의 날짜들이 하루짜리 «완료(이월 승인)» 목록에 16줄로 다시 뜨지 않는다
   assert.equal((await inbox.getInboxRows({ bucket: "DONE", kinds: ["ILLNESS_CARRY"] })).rows.length, 0);
   assert.equal(inbox.summarizeCounts([{ kind: "ILLNESS_PERIOD", raw: "APPROVED", n: 1 }]).action, 0);
@@ -930,8 +986,11 @@ test("종류 등록: 신청함 탭·작은 분류·어댑터·상세 칸·알림
   assert.ok(catalog.kindsOfTab("CHANGE").includes("ILLNESS_PERIOD"));
   // 일괄 처리 대상이 아니다(증빙 확인이 필요하다)
   assert.ok(!catalog.BULK_ACTION_KINDS.includes("ILLNESS_PERIOD"));
-  // 아직 만들지 않은 정산 상태는 지도에 없다 — 목록 SQL 이 읽지 않는다. 2단계의 «승인 + 발행 보류 중»은 있다
-  assert.deepEqual(catalog.statusesOf("ILLNESS_PERIOD").sort(), ["APPROVED", "APPROVED_HOLD", "DAY_DONE", "PENDING"]);
+  // 아직 만들지 않은 정산 상태(4단계 REFUND_*)는 지도에 없다. 2단계 «승인 + 발행 보류 중», 3단계 «정산 필요·이월 확정·인정 안 함»은 있다
+  assert.deepEqual(catalog.statusesOf("ILLNESS_PERIOD").sort(), ["APPROVED", "APPROVED_HOLD", "DAY_DONE", "DECLINED", "PENDING", "SETTLED", "SETTLE_NEEDED"]);
+  assert.deepEqual([rules.PERIOD_SETTLE_NEEDED_INBOX_STATUS, rules.PERIOD_SETTLED_INBOX_STATUS, rules.PERIOD_DECLINED_INBOX_STATUS], ["SETTLE_NEEDED", "SETTLED", "DECLINED"], "목록 SQL 이 만드는 값 = 상태 지도의 값");
+  assert.deepEqual(["SETTLE_NEEDED", "SETTLED", "DECLINED"].map((status) => [catalog.bucketFor("ILLNESS_PERIOD", status), catalog.statusLabel("ILLNESS_PERIOD", status)]),
+    [["ACTION", "정산 필요"], ["DONE", "완료(이월 확정)"], ["DONE", "보강권으로 전환"]]);
   assert.equal(rules.PERIOD_HOLD_INBOX_STATUS, "APPROVED_HOLD", "목록 SQL 이 만드는 값 = 상태 지도의 값");
   assert.equal(catalog.statusLabel("ILLNESS_PERIOD", rules.PERIOD_HOLD_INBOX_STATUS), "인정 · 발행 보류 중");
   assert.equal(catalog.bucketFor("ILLNESS_PERIOD", rules.PERIOD_HOLD_INBOX_STATUS), "ONGOING");
@@ -966,8 +1025,10 @@ test("상세 화면: 증빙 확인 체크 → 주 버튼 «부상 결석 승인�
   // 승인 뒤 안내 한 줄
   assert.equal(rules.PERIOD_APPROVED_ADMIN_NOTE, "금액은 복귀한 뒤 한 번에 정산해요");
   assert.match(detail, /PERIOD_APPROVED_ADMIN_NOTE/);
-  // 아직 만들지 않는다(3단계): 정산하기·예상 이월 금액. 2단계의 «발행 보류로 돌리기»는 tests/illness-billing-hold.test.mjs 가 본다
-  assert.doesNotMatch(detail, /정산하기|예상 이월/);
+  // 3단계: 정산하기·예상 이월 금액은 «복귀 정산» 칸(IllnessPeriodSettlementBox)에 있다 — 승인된 기간과 확정된 기간에서만 연다.
+  // 2단계의 «발행 보류로 돌리기»는 tests/illness-billing-hold.test.mjs, 정산 칸은 tests/illness-period-settlement.test.mjs 가 본다
+  assert.match(detail, /<IllnessPeriodSettlementBox periodId=\{periodId\} studentName=\{studentName\} carryState="APPROVED"/);
+  assert.match(detail, /detail\.carryState === "SETTLED" \? \(\s+\/\/[^\n]*\n\s+<IllnessPeriodSettlementBox periodId=\{periodId\} studentName=\{studentName\} carryState="SETTLED"/);
   assert.match(detail, /\/api\/admin\/absence-evidence\//);
   // 아이콘 없이 글자 · 굵기 4단계 · 색은 토큰만
   assert.doesNotMatch(detail, /material-symbols|UiIcon|font-(extrabold|black)|#[0-9a-fA-F]{3,6}\b|lucide/);
@@ -1004,8 +1065,8 @@ test("학부모 화면: 승인된 기간의 상태 글자는 «부상 결석 인
   const parent = read("src/lib/regular/parent-regular-absence.ts");
   const list = parent.slice(parent.indexOf("export async function getParentIllnessReviews"), parent.indexOf("export type UpcomingChild"));
   // 글자는 «검토 줄»이 아니라 기간 상태 기준 — 판정은 규칙 함수 한 곳
-  assert.match(list, /const shown = parentPeriodDayStatus\(\{\s+reviewStatus: r\.status \?\? null, reason: r\.reason, periodCarryState: r\.periodCarryState \?\? null, settled: r\.settled === true,\s+\}\);/);
-  assert.match(list, /statusLabel: amountPending \? PERIOD_APPROVED_PARENT_LABEL : illnessReviewLabel\(status\) \?\? ""/);
+  assert.match(list, /const shown = parentPeriodDayStatus\(\{\s+reviewStatus: r\.status \?\? null, reason: r\.reason, periodCarryState: r\.periodCarryState \?\? null, settled: r\.settled === true,\s+makeupInUse: r\.makeupInUse === true,\s+\}\);/);
+  assert.match(list, /amountPending \? PERIOD_APPROVED_PARENT_LABEL : illnessReviewLabel\(status\) \?\? ""/);
   const day = (reviewStatus, periodCarryState, settled = false, reason = ILLNESS) => rules.parentPeriodDayStatus({ reviewStatus, reason, periodCarryState, settled });
   // 승인된 기간: 검토 줄이 없는 날(승인 뒤 매일 연장)·검토 중(학부모 연장)·승인 모두 «인정»
   assert.deepEqual(day(null, "APPROVED"), { status: "APPROVED", amountPending: true });
@@ -1019,7 +1080,19 @@ test("학부모 화면: 승인된 기간의 상태 글자는 «부상 결석 인
   assert.deepEqual(day("APPROVED", null), { status: "APPROVED", amountPending: false });
   assert.deepEqual(day("PENDING", "APPROVED", false, "PERSONAL"), { status: "PENDING", amountPending: false });
   // 승인된 기간에 묶인 질병·부상 결석은 검토 줄이 없어도 목록에 올린다
-  assert.match(list, /`OR \(r\."absenceId" IS NULL AND ra\.reason = '\$\{ILLNESS_REASON\}' AND \$\{periodCarrySql\} = 'APPROVED'\)`/);
+  assert.match(list, /`OR \(r\."absenceId" IS NULL AND ra\.reason = '\$\{ILLNESS_REASON\}' AND \$\{periodCarrySql\} IN \('APPROVED', 'SETTLED'\)\)`/);
+  // 3단계: 보강을 예약·사용한 날은 정산에서 빠진다 — 학부모 글자도 «인정»이 아니라 보강 쪽(승인과 같은 판정 조각)
+  assert.match(list, /const makeupInUse = periodCarryReady \? makeupInUseSql\("ra", Boolean\(sessionTable\[0\]\?\.found\)\) : `false`;/);
+  const dayWith = (input) => rules.parentPeriodDayStatus({ reviewStatus: null, reason: ILLNESS, periodCarryState: "APPROVED", settled: false, ...input });
+  assert.deepEqual(dayWith({ makeupInUse: true }), { status: "MAKEUP", amountPending: false });
+  assert.deepEqual(dayWith({ makeupInUse: true, periodCarryState: "NONE" }), { status: "PENDING", amountPending: false }, "승인 전 기간은 예전 그대로");
+  // 확정된 기간: 정산 기록이 있는 날은 «이월 승인»(화면이 «이월 확정» 글자와 합계를 붙인다), 없는 날은 «정산 제외»
+  assert.deepEqual(dayWith({ periodCarryState: "SETTLED", reviewStatus: "APPROVED", settled: true }), { status: "APPROVED", amountPending: false });
+  assert.deepEqual(dayWith({ periodCarryState: "SETTLED", reviewStatus: "APPROVED" }), { status: "EXCLUDED", amountPending: false, excluded: true });
+  assert.deepEqual(dayWith({ periodCarryState: "SETTLED", reviewStatus: "MAKEUP" }), { status: "MAKEUP", amountPending: false });
+  assert.match(list, /statusLabel: shown\.excluded \? PERIOD_DAY_EXCLUDED_LABEL : settledTotal !== null \? "이월 확정" : amountPending \?/);
+  assert.equal(rules.periodSettledParentText(174000), "이월 174,000원 확정 · 다음 수강료에서 빼 드려요");
+  assert.doesNotMatch(rules.periodSettledParentText(0) + rules.PERIOD_SETTLE_PARENT_PENDING_CHECK, /학원에 문의/);
   assert.match(list, /FROM "RegularAbsence" ra\s+LEFT JOIN "RegularAbsenceCarryReview" r ON r\."absenceId" = ra\.id/);
   // 검토 줄이 없는 날의 기준일 — 둘 다 timestamptz 라 KST 변환 한 번
   assert.match(list, /to_char\(COALESCE\(r\."requestedAt", ra\."createdAt"\) AT TIME ZONE 'Asia\/Seoul', 'YYYY-MM-DD'\) AS "requestedYmd"/);
@@ -1028,7 +1101,7 @@ test("학부모 화면: 승인된 기간의 상태 글자는 «부상 결석 인
   assert.match(list, /const approvedPeriodDaySql = periodCarryReady\s+\? `OR[^`]+`\s+: "";/);
   assert.doesNotMatch(list, /reasonText/);
   const client = read("src/app/mypage/regular-absence/RegularAbsenceClient.tsx");
-  assert.match(client, /review\.amountPending \? PERIOD_APPROVED_PARENT_NOTE : "다음 달 수강료에서 1회분을 빼 드려요\."/);
+  assert.match(client, /typeof review\.settledTotal === "number" \? periodSettledParentText\(review\.settledTotal\)\s+: review\.amountPending \? PERIOD_APPROVED_PARENT_NOTE : "다음 달 수강료에서 1회분을 빼 드려요\."/);
   assert.match(client, /d\.carryAmountPending \? PERIOD_APPROVED_DAY_LABEL : illnessReviewLabel\(d\.carryReview\)/);
   assert.doesNotMatch(rules.PERIOD_APPROVED_PARENT_NOTE, /학원에 문의/);
 });

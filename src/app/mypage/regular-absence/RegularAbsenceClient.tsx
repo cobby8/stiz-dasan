@@ -18,7 +18,7 @@ import ArrivalNoticeArea, { arrivalAddableKinds } from "./ArrivalNoticeArea";
 import type { ParentArrivalScreen } from "@/lib/regular/parent-arrival-notice";
 import { ARRIVAL_KIND_LABEL, type ArrivalKind } from "@/lib/regular/arrivalNoticeRules";
 import { EVIDENCE_MAX_PHOTOS, ILLNESS_REASON, REASON_TEXT_MAX, illnessReviewLabel } from "@/lib/regular/illnessCarryRules";
-import { PERIOD_APPROVED_DAY_LABEL, PERIOD_APPROVED_PARENT_NOTE } from "@/lib/regular/illnessPeriodRules";
+import { PERIOD_APPROVED_DAY_LABEL, PERIOD_APPROVED_PARENT_NOTE, periodSettledParentText } from "@/lib/regular/illnessPeriodRules";
 
 // 날짜 묶음 이름 — 가까운 수업일이 먼저 보이게(오늘 → 이번 주 → 다음 주 → 이후)
 const DATE_GROUP_LABELS = { today: "오늘", thisWeek: "이번 주", nextWeek: "다음 주", later: "이후", past: "지난 수업" };
@@ -45,6 +45,8 @@ const REVIEW_BADGE: Record<string, string> = {
   PENDING: "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]",
   APPROVED: "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]",
   MAKEUP: "bg-[var(--color-academy-info-soft)] text-[var(--color-academy-info)]",
+  // 확정된 기간에서 정산에 들지 않은 날(보류/취소 계열 회색)
+  EXCLUDED: "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]",
 };
 
 // 증빙 사진으로 받는 형식(서버와 같은 집합 — gif 제외)
@@ -548,7 +550,9 @@ export default function RegularAbsenceClient({
                   {review.status === "APPROVED" && (
                     <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
                       {/* 기간 결석을 «인정»만 한 상태면 금액은 복귀 뒤에 정한다(2026-11-15) */}
-                      {review.amountPending ? PERIOD_APPROVED_PARENT_NOTE : "다음 달 수강료에서 1회분을 빼 드려요."}
+                      {/* 학원이 이월을 확정했으면 확정된 합계(3단계) */}
+                      {typeof review.settledTotal === "number" ? periodSettledParentText(review.settledTotal)
+                        : review.amountPending ? PERIOD_APPROVED_PARENT_NOTE : "다음 달 수강료에서 1회분을 빼 드려요."}
                     </p>
                   )}
                   {review.status === "MAKEUP" && (

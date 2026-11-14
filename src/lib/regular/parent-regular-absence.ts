@@ -25,7 +25,7 @@ import {
   type IllnessReviewSource,
 } from "@/lib/regular/illnessCarryRules";
 import { periodCarryColumnsReady } from "@/lib/regular/absence-period-service";
-import { PERIOD_APPROVED_PARENT_LABEL, parentPeriodDayStatus } from "@/lib/regular/illnessPeriodRules";
+import { PERIOD_APPROVED_PARENT_LABEL, PERIOD_DAY_EXCLUDED_LABEL, makeupInUseSql, parentPeriodDayStatus } from "@/lib/regular/illnessPeriodRules";
 import {
   REASON_LABEL,
   DAY_KO,
@@ -116,7 +116,7 @@ export type ParentIllnessReview = {
   className: string;
   date: string;
   dateLabel: string;
-  status: string; // PENDING | APPROVED | MAKEUP
+  status: string; // PENDING | APPROVED | MAKEUP | EXCLUDED(확정된 기간에서 정산에 들지 않은 날)
   statusLabel: string;
   /** 사진을 올릴 수 있는 마지막 날 라벨(예: "11/21(토)") */
   deadlineLabel: string;
@@ -135,6 +135,11 @@ export type ParentIllnessReview = {
    * true 면 화면이 «다음 달 수강료에서 1회분» 대신 «금액은 복귀 뒤» 안내를 보인다.
    */
   amountPending?: boolean;
+  /**
+   * 그 기간의 이월을 학원이 확정했다(3단계) — 확정된 이월 합계(원). 화면이 «이월 ○원 확정 · 다음 수강료에서 빼 드려요»를 보인다.
+   * 기간 전체의 합계다(이 줄이 대표하는 날만의 금액이 아니다).
+   */
+  settledTotal?: number;
 };
 
 /**
@@ -152,7 +157,7 @@ export async function getParentIllnessReviews(parentUserId: string): Promise<Par
     // 학부모 글자는 «검토 줄»이 아니라 기간 상태 기준(2026-11-15 코드 리뷰): 승인된 기간에 묶인 질병·부상 결석은
     // 검토 줄이 없어도(승인 뒤 매일 연장으로 생긴 날 등) 목록에 올린다. 칸이 없으면 예전처럼 검토 줄이 있는 결석만.
     const approvedPeriodDaySql = periodCarryReady
-      ? `OR (r."absenceId" IS NULL AND ra.reason = '${ILLNESS_REASON}' AND ${periodCarrySql} = 'APPROVED')`
+      ? `OR (r."absenceId" IS NULL AND ra.reason = '${ILLNESS_REASON}' AND ${periodCarrySql} IN ('APPROVED', 'SETTLED'))`
       : "";
     // 하루씩 실제로 이월 적립된 날(정산 기록 있음)은 기존 «이월 승인» 글자를 유지한다 — 정산 표가 없으면 그런 날도 없다
     const resolutionTable = periodCarryReady
@@ -161,6 +166,15 @@ export async function getParentIllnessReviews(parentUserId: string): Promise<Par
     const settledSql = resolutionTable[0]?.found
       ? `EXISTS (SELECT 1 FROM "BillingAbsenceResolution" settled WHERE settled."absenceId" = ra.id)`
       : `false`;
+    // 3단계: 보강을 예약·사용한 날은 정산에서 빠진다 — 학부모 글자도 «인정»이 아니라 보강 쪽으로 맞춘다(판정 조각은 승인과 같은 것)
+    const sessionTable = periodCarryReady
+      ? await prisma.$queryRawUnsafe<Array<{ found: string | null }>>(`SELECT to_regclass('public."MakeupSession"')::text AS found`)
+      : [];
+    const makeupInUse = periodCarryReady ? makeupInUseSql("ra", Boolean(sessionTable[0]?.found)) : `false`;
+    // 확정된 기간의 이월 합계(기간 행의 표 사본) — 확정 전이면 NULL
+    const settledTotalSql = periodCarryReady
+      ? `(SELECT (ap."carrySettlement"->'settlement'->>'carryTotal')::int FROM "RegularAbsencePeriod" ap WHERE ap.id = ra."periodId" AND ap."carryState" = 'SETTLED')`
+      : `NULL::int`;
     const rows = await prisma.$queryRawUnsafe<any[]>(
       `SELECT ra.id AS "absenceId", s.id AS "studentId", s.name AS "studentName",
               ra."classId" AS "classId", c.name AS "className", to_char(ra.date, 'YYYY-MM-DD') AS "date",
@@ -168,7 +182,7 @@ export async function getParentIllnessReviews(parentUserId: string): Promise<Par
               -- 검토 줄이 없는 날은 결석 행을 만든 날을 기준으로(둘 다 timestamptz — KST 변환 한 번)
               to_char(COALESCE(r."requestedAt", ra."createdAt") AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "requestedYmd",
               ra."periodId" AS "periodId",
-              ${periodCarrySql} AS "periodCarryState",
+              ${periodCarrySql} AS "periodCarryState", ${makeupInUse} AS "makeupInUse", ${settledTotalSql} AS "periodSettledTotal",
               -- 여러 날 결석: 기한 기준은 기간의 마지막 결석일, 사진은 기간 한 묶음
               ${evidenceAnchorYmdSql("ra")} AS "anchorYmd",
               COALESCE((SELECT json_agg(json_build_object('id', e.id, 'mine', e."uploadedByUserId" = $1) ORDER BY e."createdAt")
@@ -197,7 +211,10 @@ export async function getParentIllnessReviews(parentUserId: string): Promise<Par
       // 판정은 규칙 함수 한 곳: 기간 상태 기준, 검토 줄이 없거나 «검토 중»이어도 인정으로 보이고, 실제 이월 적립된 날은 «이월 승인» 그대로
       const shown = parentPeriodDayStatus({
         reviewStatus: r.status ?? null, reason: r.reason, periodCarryState: r.periodCarryState ?? null, settled: r.settled === true,
+        makeupInUse: r.makeupInUse === true,
       });
+      // 학원이 이월을 확정한 기간의 정산된 날 — «이월 확정» 글자와 합계(3단계)
+      const settledTotal = r.periodCarryState === "SETTLED" && r.settled === true && Number.isSafeInteger(r.periodSettledTotal) ? Number(r.periodSettledTotal) : null;
       const status = shown.status;
       const amountPending = shown.amountPending;
       const window = { status, requestedYmd: r.requestedYmd, absenceYmd: anchorYmd, todayYmd: today };
@@ -210,13 +227,14 @@ export async function getParentIllnessReviews(parentUserId: string): Promise<Par
         date: r.date,
         dateLabel: dateLabel(r.date),
         status,
-        statusLabel: amountPending ? PERIOD_APPROVED_PARENT_LABEL : illnessReviewLabel(status) ?? "",
+        statusLabel: shown.excluded ? PERIOD_DAY_EXCLUDED_LABEL : settledTotal !== null ? "이월 확정" : amountPending ? PERIOD_APPROVED_PARENT_LABEL : illnessReviewLabel(status) ?? "",
         deadlineLabel: dateLabel(evidenceDeadlineYmd(r.requestedYmd, anchorYmd)),
         canEdit: canEditEvidence(window),
         canAdd: canAddEvidence({ ...window, photoCount: photos.length }),
         photos: photos.map((photo) => ({ id: String(photo.id), mine: photo.mine === true })),
         periodId: r.periodId ?? null,
         ...(amountPending ? { amountPending: true } : {}),
+        ...(settledTotal !== null ? { settledTotal } : {}),
       };
     });
   } catch (error) {

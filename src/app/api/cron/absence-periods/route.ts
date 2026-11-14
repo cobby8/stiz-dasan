@@ -4,6 +4,9 @@ import { withCronAlert } from "@/lib/cron/withCronAlert";
 import { claimOpenEndedPeriodReminders } from "@/lib/regular/parent-absence-period";
 import { notifyParentsOfStudents } from "@/lib/notification";
 import { kstAt, kstLabel } from "@/lib/datetime/kst";
+import { prisma } from "@/lib/prisma";
+import { isMakeupCreditIssuableYmd } from "@/lib/makeup/credit-service";
+import { convertDeclinedPeriodNewDays } from "@/lib/regular/illness-period-admin";
 
 export const dynamic = "force-dynamic";
 
@@ -43,10 +46,19 @@ async function handleGet(req: NextRequest) {
   } catch (error) {
     console.error("[cron/absence-periods] 기간 종료 안내 대상 조회 실패:", error instanceof Error ? error.name : "");
   }
+  // 부상 결석으로 «인정 안 함»(보강권으로 전환)이라고 정해 둔 기간(2026-11-15 3단계): 위 연장으로 새로 생긴 날도 같은 결정대로 보강권으로 돌린다.
+  // (안 하면 새 날이 결정 전으로 남는다 — 신청함에는 «보강권으로 전환»으로 보이는데 보강권은 없는 상태)
+  // 자동 연장과 따로 실패한다. 학부모 알림은 보내지 않는다(처음 전환할 때 이미 안내했다).
+  let declinedConverted = 0;
+  try {
+    declinedConverted = (await convertDeclinedPeriodNewDays(prisma, isMakeupCreditIssuableYmd)).converted;
+  } catch (error) {
+    console.error("[cron/absence-periods] 인정 안 한 기간의 새 날 보강권 전환 실패:", error instanceof Error ? error.name : "");
+  }
   if (result.created > 0 || result.results.some((r) => r.error)) {
     console.log(`[cron/absence-periods] 기간 ${result.checked}건 확인 · 결석 ${result.created}회 추가`);
   }
-  return NextResponse.json({ ok: true, ...result, reminded });
+  return NextResponse.json({ ok: true, ...result, reminded, declinedConverted });
 }
 
 // 실패(예외·500 이상)하면 원장 슬랙으로 한 줄 알림 — 같은 작업은 1시간에 1번(d4)
