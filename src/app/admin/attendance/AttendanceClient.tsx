@@ -350,7 +350,7 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
     return (
         // 주간 보드는 PC 화면을 넓게(3열) 쓰고, 날짜별은 예전 폭 그대로
         <div className={viewMode === "week" ? "" : "max-w-4xl mx-auto"}>
-            {/* 페이지 제목은 공용 머리말 부품. 이 화면의 주 버튼은 패널의 «출결 저장» 하나라 «수업 리포트» 이동은 보조 버튼 */}
+            {/* 페이지 제목은 공용 머리말 부품. 이 화면의 주 버튼은 패널의 «출결 저장» 하나라 «수업 피드» 이동은 보조 버튼 */}
             <AdminPageHeader
                 className="mb-3"
                 title="출결 관리"
@@ -362,8 +362,8 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
                             ariaLabel="출결 보기 방식"
                             onChange={changeViewMode}
                         />
-                        <Link href="/admin/attendance/report" prefetch={false} className="academy-button-secondary">
-                            수업 리포트
+                        <Link href="/admin/attendance/feed" prefetch={false} className="academy-button-secondary">
+                            수업 피드
                         </Link>
                     </div>
                 }
