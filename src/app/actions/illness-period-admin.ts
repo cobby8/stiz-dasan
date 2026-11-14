@@ -299,7 +299,8 @@ export async function loadIllnessPeriodSettlement(input: {
     return { ok: true, settlement: {
       state: preview.returnDate ? "READY" : "ESTIMATE", canSeeMoney: money, canSettle: money, writesEnabled: settlementWritesEnabled(),
       returnDate: preview.returnDate, storedReturnDate: preview.storedReturnDate, canSetReturnDate: preview.canSetReturnDate,
-      availableMonth: preview.availableMonth, fingerprint: preview.fingerprint,
+      // 지문은 금액을 넣어 만든 해시다 — 금액을 못 보는 역할에는 내려보내지 않는다(대입으로 금액을 맞힐 수 있다). 확정은 원장만 하므로 부원장에게는 쓸 곳도 없다
+      availableMonth: preview.availableMonth, fingerprint: money ? preview.fingerprint : null,
       rows: settlementRows(preview.plan.rows, money), carryTotal: money ? preview.plan.carryTotal : null,
       unpaid: preview.plan.unpaidGuides.map((guide) => unpaidGuideAdminText(guide)), blockers: preview.blockers, used: false,
     } };

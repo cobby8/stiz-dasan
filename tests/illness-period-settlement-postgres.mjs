@@ -121,7 +121,15 @@ export async function runIllnessSettlementPostgresTests({ pool, database, root, 
   assert.equal(await settlement.previewParentIllnessSettlement(database, { parentUserId: 'parent8', periodId: 'settle-period', returnDate: '2027-04-12' }, ctx(TODAY, 'parent8'), ownChild), null, '남의 아이 기간');
   assert.equal(await settlement.previewParentIllnessSettlement(database, { parentUserId: 'parent7', periodId: '없는기간' }, ctx(TODAY, 'parent7'), ownChild), null);
   await assert.rejects(settlement.previewParentIllnessSettlement(database, { parentUserId: 'parent7', periodId: 'settle-period', returnDate: '2027-03-12' }, ctx(TODAY, 'parent7'), ownChild), /복귀일을 다시 골라/);
-  checks.push('학부모 미리보기 = 원장 미리보기 같은 숫자(합계·달별 소계·미납 달 문구) · 남의 아이·없는 기간은 null · 시작일 이전 복귀일 거절');
+  // 복귀일 상한(보안 검수): 오늘(4/12) + 28일 = 5/10 까지 — 2099·하루 넘는 날은 거절, 상한 당일은 통과
+  for (const far of ['2099-01-01', '2027-05-11']) await assert.rejects(settlement.previewParentIllnessSettlement(database, { parentUserId: 'parent7', periodId: 'settle-period', returnDate: far }, ctx(TODAY, 'parent7'), ownChild), /복귀일을 다시 골라/, far);
+  assert.equal((await settlement.previewParentIllnessSettlement(database, { parentUserId: 'parent7', periodId: 'settle-period', returnDate: '2027-05-10' }, ctx(TODAY, 'parent7'), ownChild)).state, 'ESTIMATE');
+  // 결석을 만들어 둔 끝(coveredUntil) 다음 날이 더 이르면 그날이 상한
+  await pool.query(`UPDATE "RegularAbsencePeriod" SET "coveredUntil"='2027-04-20' WHERE id='settle-period'`);
+  await assert.rejects(settlement.previewParentIllnessSettlement(database, { parentUserId: 'parent7', periodId: 'settle-period', returnDate: '2027-04-22' }, ctx(TODAY, 'parent7'), ownChild), /복귀일을 다시 골라/);
+  assert.equal((await settlement.previewParentIllnessSettlement(database, { parentUserId: 'parent7', periodId: 'settle-period', returnDate: '2027-04-21' }, ctx(TODAY, 'parent7'), ownChild)).state, 'ESTIMATE');
+  await pool.query(`UPDATE "RegularAbsencePeriod" SET "coveredUntil"='2027-05-31' WHERE id='settle-period'`);
+  checks.push('학부모 미리보기 = 원장 미리보기 같은 숫자(합계·달별 소계·미납 달 문구) · 남의 아이·없는 기간은 null · 시작일 이전 복귀일 거절 · 복귀일 상한(2099 거절·경계일 통과)');
 
   // ── 확정: 거절 사례 ──
   const settleInput = { periodId: 'settle-period', expectedFingerprint: preview.fingerprint, returnDate: '2027-04-12' };

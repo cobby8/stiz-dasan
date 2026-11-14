@@ -31,6 +31,7 @@ import {
   parentPeriodNote,
   periodDatesLabel,
   periodRangeLabel,
+  parentReturnDateMax,
   periodSkippedNote,
   planParentPeriod,
   resolveParentPeriodRange,
@@ -200,7 +201,7 @@ export async function createParentAbsencePeriod(
     // 살아 있는 결석이 하나도 없는 학부모 기간(전부 취소됨)은 겹침으로 보지 않는다. 겹친 상대가 학원이 등록한 기간이면 문구가 다르다
     const others = (await tx.$queryRawUnsafe<Array<{ startDate: string; returnDate: string | null; parentReported: boolean; live: number }>>(
       `SELECT to_char(p."startDate",'YYYY-MM-DD') AS "startDate", to_char(p."returnDate",'YYYY-MM-DD') AS "returnDate",
-              (p."reportedByUserId" IS NOT NULL) AS "parentReported",
+              (p."reportedByUserId" IS NOT NULL) AS "parentReported", to_char(p."coveredUntil",'YYYY-MM-DD') AS "coveredUntil",
               (SELECT COUNT(*)::int FROM "RegularAbsence" ra WHERE ra."periodId" = p.id AND ra.status <> 'CANCELLED') AS live
          FROM "RegularAbsencePeriod" p WHERE p."studentId" = $1 AND p.status IN ('ACTIVE','ENDED')`,
       studentId,
@@ -429,6 +430,8 @@ export type ParentAbsencePeriodRow = {
   academyRegistered?: boolean;
   /** 지금 «복귀했어요»를 누를 수 있나(아직 끝나지 않은 기간) */
   canReturn?: boolean;
+  /** «복귀했어요»에서 고를 수 있는 가장 늦은 복귀일 — 서버 규칙(parentReturnDateMax)과 같은 값 */
+  returnMax?: string;
   /** 지금 «알림 취소»를 누를 수 있나(내가 알린, 아직 끝나지 않은 기간) */
   canCancel?: boolean;
   /**
@@ -452,7 +455,7 @@ export async function listParentAbsencePeriods(parentUserId: string): Promise<Pa
     const carryReady = await periodCarryColumnsReady(prisma).catch(() => false);
     const rows = await prisma.$queryRawUnsafe<Array<{
       id: string; studentId: string; studentName: string; reason: string; startDate: string; returnDate: string | null; openEnded: boolean; count: number;
-      parentReported: boolean; active: boolean; carryState: string | null; settledTotal: number | null;
+      parentReported: boolean; active: boolean; carryState: string | null; settledTotal: number | null; coveredUntil: string | null;
     }>>(
       `SELECT p.id, p."studentId" AS "studentId", s.name AS "studentName", p.reason,
               to_char(p."startDate",'YYYY-MM-DD') AS "startDate", to_char(p."returnDate",'YYYY-MM-DD') AS "returnDate",
@@ -499,6 +502,7 @@ export async function listParentAbsencePeriods(parentUserId: string): Promise<Pa
         count: Number(row.count) || 0,
         academyRegistered: row.parentReported !== true,
         canReturn: active,
+        returnMax: parentReturnDateMax({ todayYmd: todayKst(), storedReturnYmd: row.returnDate, coveredUntilYmd: row.coveredUntil }),
         canCancel: active && row.parentReported === true,
         carry,
         carryLabel: carry === "SETTLED" ? periodSettledParentText(Number.isSafeInteger(row.settledTotal) ? Number(row.settledTotal) : 0)

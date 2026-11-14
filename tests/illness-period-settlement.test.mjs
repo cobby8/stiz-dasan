@@ -268,7 +268,7 @@ test("학부모 화면: «복귀했어요» → 복귀일 → 예정 금액(서�
   // 학원 등록 기간: «복귀했어요»는 있고 «알림 취소»는 없다 / 복귀 미정이면 달력 위쪽 제한 없음
   assert.match(panel, /\{canReturn && \(\s+<button/);
   assert.match(panel, /\{canCancel && \(\s+<InlineConfirm\s+label="알림 취소"/);
-  assert.match(panel, /max=\{period\.endDate \? addDaysKst\(period\.endDate, 1\) : undefined\}/);
+  assert.match(panel, /max=\{period\.returnMax \?\? \(period\.endDate \? addDaysKst\(period\.endDate, 1\) : undefined\)\}/);
   assert.match(panel, /\{period\.carryLabel && \(/);
   // 화면이 금액을 계산하지 않는다 · 아이콘·굵은 글자·색 코드 없음 · 누르는 것은 기존 버튼 등급(44px)
   assert.doesNotMatch(panel, /Math\.round|roundCarryTotal|material-symbols|UiIcon|font-(extrabold|black|bold)|#[0-9a-fA-F]{3,6}\b|lucide|학원에 문의/);
@@ -299,4 +299,120 @@ test("크론·기타: «인정 안 함» 기간의 새 날은 매일 보강권�
     { carryTotal: 84000, returnDate: "2026-12-01", availableMonth: "2026-12", settledAt: null });
   assert.equal(rules.parseSettlementSummary({ approval: {} }), null);
   assert.equal(rules.parseSettlementSummary({ settlement: { carryTotal: "84000" } }), null, "금액이 숫자가 아니면 읽지 않는다");
+});
+
+// ── 보안 검수 반영(2026-11-15): 학부모 복귀일 상한 · 부원장 응답의 지문 · 미리보기 간격 제한 ─────────────────
+const periodRules = await loadTsModule("src/lib/regular/parentAbsencePeriodRules.ts");
+const kst = await loadTsModule("src/lib/datetime/kst.ts");
+
+test("복귀일 상한(규칙): 오늘 + 4주 · 저장된 복귀일 · 결석을 만들어 둔 끝 다음 날 중 가장 이른 날 — 2099 같은 날짜는 넘는다", () => {
+  const max = periodRules.parentReturnDateMax;
+  assert.equal(periodRules.PARENT_PERIOD_MAX_DAYS, 28);
+  // 복귀 미정(저장된 복귀일 없음): 오늘 + 28일
+  assert.equal(max({ todayYmd: "2026-11-15", storedReturnYmd: null, coveredUntilYmd: "2026-12-31" }), "2026-12-13");
+  assert.ok("2099-01-01" > max({ todayYmd: "2026-11-15", storedReturnYmd: null, coveredUntilYmd: null }), "먼 미래 날짜는 상한을 넘는다");
+  // 결석을 만들어 둔 끝(coveredUntil) 다음 날이 더 이르면 그날 — 그 뒤로는 복귀 처리 때 결석이 새로 만들어지지 않게
+  assert.equal(max({ todayYmd: "2026-11-15", storedReturnYmd: null, coveredUntilYmd: "2026-11-30" }), "2026-12-01");
+  // 저장된 복귀일이 더 이르면 그날
+  assert.equal(max({ todayYmd: "2026-11-15", storedReturnYmd: "2026-11-20", coveredUntilYmd: "2026-12-31" }), "2026-11-20");
+  // 달·해 경계
+  assert.equal(max({ todayYmd: "2026-12-20" }), "2027-01-17");
+  assert.equal(max({ todayYmd: "2028-02-10" }), "2028-03-09", "윤년 2월");
+  // 모양이 다른 값은 무시한다
+  assert.equal(max({ todayYmd: "2026-11-15", storedReturnYmd: "없음", coveredUntilYmd: "" }), "2026-12-13");
+});
+
+test("복귀일 상한(실행): 학원 등록 기간 «복귀했어요» — 2099 는 거절(결석을 만들지 않는다), 상한 당일은 통과, 하루 넘으면 거절", async () => {
+  // prisma·일정·알림만 가짜다. 권한 조각·복귀일 규칙·기간 조회 SQL 은 진짜 파일을 그대로 실행한다
+  const url = (code) => `data:text/javascript;base64,${Buffer.from(code).toString("base64")}`;
+  const today = kst.todayKst();
+  const state = { ended: [], period: { id: "p1", studentId: "s1", studentName: "윤수영", startDate: kst.addDaysKst(today, -10), returnDate: null, coveredUntil: kst.addDaysKst(today, 60), status: "ACTIVE", carryState: "APPROVED" } };
+  globalThis.__returnDb = {
+    state,
+    $queryRawUnsafe: async (sql) => {
+      if (/to_regclass\('public\."RegularAbsencePeriod"'\)/.test(sql)) return [{ found: "present" }];
+      if (/FROM "RegularAbsencePeriod" p\s+JOIN "Student" s ON s\.id = p\."studentId"/.test(sql)) {
+        // 본인 아이만 · 학원 등록 질병·부상 기간만 · 행 잠금 — 그 조건이 SQL 에 있을 때만 준다
+        assert.match(sql, /WHERE s\."parentId" = \$1 AND /);
+        assert.match(sql, /p\.id = \$2 AND p\."reportedByUserId" IS NULL AND p\.reason = 'ILLNESS_INJURY'\s+FOR UPDATE OF p/);
+        assert.match(sql, /to_char\(p\."coveredUntil",'YYYY-MM-DD'\) AS "coveredUntil"/);
+        return [{ ...state.period }];
+      }
+      throw new Error(`모르는 조회: ${sql.replace(/\s+/g, " ").slice(0, 120)}`);
+    },
+    $executeRawUnsafe: async (sql) => { assert.match(sql, /pg_advisory_xact_lock/); return 1; },
+    $transaction: async (work) => work(globalThis.__returnDb),
+  };
+  const mod = await loadTsModule("src/lib/regular/parent-period-settlement.ts", { overrides: {
+    "@/lib/prisma": url(`export const prisma = new Proxy({}, { get: (_t, key) => globalThis.__returnDb[key] });`),
+    "@/lib/account/child-access": url(`export async function childAccessSql(alias, parent) { return alias + '."parentId" = ' + parent; }`),
+    "@/lib/regular/absence-period-runner": url(`export const ABSENCE_PERIOD_TX_OPTIONS = {}; export async function absencePeriodContext(actorUserId) { return { todayYmd: "", actorUserId, classDatesForMonth: () => [] }; }`),
+    "@/lib/regular/absence-period-service": url(`export async function periodCarryColumnsReady() { return true; }
+      export async function endAbsencePeriodInTx(tx, input, ctx) { globalThis.__returnDb.state.ended.push({ ...input, todayYmd: ctx.todayYmd }); return { counts: { cancelled: 3, makeup: 0 } }; }`),
+    "@/lib/regular/parent-absence-period": url(`export async function parentAbsencePeriodAvailable() { return true; }`),
+    "@/lib/regular/illness-period-settlement": url(`export async function previewParentIllnessSettlement() { return null; }`),
+    "@/lib/regular/illness-period-settlement-runner": url(`export async function settlementContext() { return {}; }`),
+  } });
+  const limit = kst.addDaysKst(today, periodRules.PARENT_PERIOD_MAX_DAYS);
+  // 2099 · 상한 다음 날 → 거절, 복귀 처리(결석 생성·기간 종료)는 부르지 않는다
+  for (const date of ["2099-01-01", kst.addDaysKst(limit, 1)]) {
+    await assert.rejects(() => mod.returnAcademyIllnessPeriod("parent-1", { periodId: "p1", returnDate: date }), /^Error: PERIOD_INVALID_DATE$/, date);
+  }
+  assert.deepEqual(state.ended, []);
+  // 결석을 만들어 둔 끝 다음 날이 더 이르면 그날이 상한
+  state.period.coveredUntil = kst.addDaysKst(today, 5);
+  await assert.rejects(() => mod.returnAcademyIllnessPeriod("parent-1", { periodId: "p1", returnDate: kst.addDaysKst(today, 7) }), /PERIOD_INVALID_DATE/);
+  assert.deepEqual(state.ended, []);
+  const originalError = console.error; console.error = () => {}; // 알림 모듈은 이 테스트에 없다(실패해도 복귀 처리는 그대로)
+  try {
+    const edge = await mod.returnAcademyIllnessPeriod("parent-1", { periodId: "p1", returnDate: kst.addDaysKst(today, 6) });
+    assert.deepEqual([edge.ok, edge.outcome, edge.canceledCount], [true, "ENDED", 3]);
+    // 상한 당일(오늘 + 28일)도 통과
+    state.period.coveredUntil = kst.addDaysKst(today, 60);
+    await mod.returnAcademyIllnessPeriod("parent-1", { periodId: "p1", returnDate: limit });
+  } finally { console.error = originalError; }
+  assert.deepEqual(state.ended.map((call) => [call.returnDate, call.todayYmd]), [[kst.addDaysKst(today, 6), today], [limit, today]]);
+  // 지난 날짜·시작일 이전은 기존 코드 그대로
+  await assert.rejects(() => mod.returnAcademyIllnessPeriod("parent-1", { periodId: "p1", returnDate: kst.addDaysKst(today, -1) }), /PERIOD_RETURN_PAST/);
+  delete globalThis.__returnDb;
+});
+
+test("복귀일 상한(연결): 미리보기·화면 날짜 선택도 같은 함수 — 한쪽만 넓지 않다", () => {
+  const wrapper = read("src/lib/regular/parent-period-settlement.ts");
+  const run = slice(wrapper, "export async function returnAcademyIllnessPeriod(");
+  // 상한 검사는 복귀 처리(결석 생성·기간 종료) «앞»
+  assert.ok(run.indexOf("if (returnDate > parentReturnDateMax({ todayYmd, storedReturnYmd: period.returnDate, coveredUntilYmd: period.coveredUntil })) throw new Error(\"PERIOD_INVALID_DATE\");") > 0);
+  assert.ok(run.indexOf("parentReturnDateMax(") < run.indexOf("await endAbsencePeriodInTx("));
+  assert.match(parentLib, /if \(requested && requested > parentReturnDateMax\(\{ todayYmd: ctx\.todayYmd, storedReturnYmd: period\.returnDate, coveredUntilYmd: period\.coveredUntil \}\)\) \{\s+throw new IllnessPeriodError\("복귀일을 다시 골라 주세요\.", 400\);/);
+  assert.ok(parentLib.indexOf("parentReturnDateMax(") < parentLib.indexOf("await readSettlementPlan("), "무거운 읽기 전에 거절");
+  // 화면: 서버가 내려준 상한을 달력의 max 로
+  const list = slice(read("src/lib/regular/parent-absence-period.ts"), "export async function listParentAbsencePeriods(");
+  assert.match(list, /returnMax: parentReturnDateMax\(\{ todayYmd: todayKst\(\), storedReturnYmd: row\.returnDate, coveredUntilYmd: row\.coveredUntil \}\),/);
+  assert.match(read("src/app/mypage/regular-absence/PeriodAbsencePanel.tsx"), /max=\{period\.returnMax \?\? \(period\.endDate \? addDaysKst\(period\.endDate, 1\) : undefined\)\}/);
+  // 초과 코드는 기존 학부모 문구로 이어진다
+  assert.match(read("src/app/api/mypage/regular-absence/period/route.ts"), /PERIOD_INVALID_DATE: "날짜를 다시 골라 주세요\."/);
+});
+
+test("부원장 응답: 금액으로 만든 지문도 내려보내지 않는다 / 학부모 예정 금액 미리보기는 사용자별 분당 10회", async () => {
+  const load = slice(actions, "export async function loadIllnessPeriodSettlement(", "/**\n * [이월 확정]");
+  assert.match(load, /fingerprint: money \? preview\.fingerprint : null,/);
+  assert.doesNotMatch(load, /fingerprint: preview\.fingerprint,/);
+  // 지문에는 근거 금액·합계가 들어 있다(그래서 가린다)
+  assert.match(read("src/lib/regular/illnessPeriodSettlementPlan.ts"), /carryTotal: plan\.carryTotal,\s+rows: plan\.rows\.map\(\(row\) => \[row\.month, row\.classId, row\.evidence, row\.tuition,/);
+  // 간격 제한: 로그인 확인 뒤, 계산(미리보기) 앞 — 계정 단위 키, 넘으면 429 와 한국어 문구
+  const route = read("src/app/api/mypage/regular-absence/period/route.ts");
+  const get = slice(route, "export async function GET(", "// 알리기(create)");
+  assert.match(route, /const SETTLE_PREVIEW_RATE_LIMIT = \{ limit: 10, windowMs: 60_000 \} as const;/);
+  assert.match(get, /if \(!takePublicRateLimit\(`parent-settle-preview:\$\{parent\.appUserId\}`, SETTLE_PREVIEW_RATE_LIMIT\)\.allowed\) \{\s+return NextResponse\.json\(\{ error: "잠시 뒤 다시 시도해 주세요\." \}, \{ status: 429, headers: noStore \}\);/);
+  const order = ["if (!parent) return NextResponse.json", "takePublicRateLimit(", "await previewParentPeriodSettlement("];
+  order.reduce((from, piece) => { const at = get.indexOf(piece, from); assert.ok(at >= from, `순서가 어긋남: ${piece}`); return at; }, 0);
+  // 기존 제한 함수 실행: 같은 키로 10번까지만, 창이 지나면 다시, 다른 사용자는 따로 센다
+  const limiter = await loadTsModule("src/lib/seasonal/public-rate-limit.ts");
+  limiter.resetPublicRateLimitsForTests();
+  const take = (user, now) => limiter.takePublicRateLimit(`parent-settle-preview:${user}`, { limit: 10, windowMs: 60_000, now }).allowed;
+  assert.deepEqual(Array.from({ length: 11 }, () => take("u1", 1_000)), [...Array(10).fill(true), false]);
+  assert.equal(take("u2", 1_000), true);
+  assert.equal(take("u1", 59_999), false);
+  assert.equal(take("u1", 61_001), true);
+  limiter.resetPublicRateLimitsForTests();
 });

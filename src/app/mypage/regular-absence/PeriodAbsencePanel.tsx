@@ -190,8 +190,8 @@ export function ActivePeriodList({ periods, onChanged }: { periods: ParentAbsenc
                         type="date"
                         value={returnDate}
                         min={today}
-                        // 복귀 미정(학원 등록 기간)은 끝일이 없어 위쪽 제한을 두지 않는다
-                        max={period.endDate ? addDaysKst(period.endDate, 1) : undefined}
+                        // 서버가 받는 범위와 같게: 오늘 + 4주 · 저장된 복귀일 · 결석을 만들어 둔 끝 다음 날 중 가장 이른 날(서버가 내려준 값)
+                        max={period.returnMax ?? (period.endDate ? addDaysKst(period.endDate, 1) : undefined)}
                         onChange={(e) => setReturnDate(e.target.value)}
                         className="academy-input min-w-0 flex-1"
                       />

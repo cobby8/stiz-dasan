@@ -27,6 +27,7 @@ import { endAbsencePeriodInTx, periodCarryColumnsReady, type PeriodContext } fro
 import { illnessReviewReady, type IllnessTx } from "@/lib/regular/illness-carry-tx";
 import { ILLNESS_REASON } from "@/lib/regular/illnessCarryRules";
 import { IllnessPeriodError, illnessPeriodAbsenceSql, parsePeriodApprovalRecord, parseSettlementSummary } from "@/lib/regular/illnessPeriodRules";
+import { parentReturnDateMax } from "@/lib/regular/parentAbsencePeriodRules";
 import {
   parentSettlementView, planIllnessPeriodSettlement, settlementFingerprint,
   type ParentSettlementView, type PeriodAbsenceInput, type SettlementPlan,
@@ -638,6 +639,10 @@ export async function previewParentIllnessSettlement(
     // 복귀일: 학부모가 고른 날(오늘 이후는 호출부가 확인) 또는 기간에 저장된 날. 시작일 다음 날 이후 · 저장된 복귀일보다 늦을 수 없다
     const requested = input.returnDate ? String(input.returnDate).trim() : null;
     if (requested && (!isKstYmd(requested) || requested <= period.startDate || (period.returnDate && requested > period.returnDate))) {
+      throw new IllnessPeriodError("복귀일을 다시 골라 주세요.", 400);
+    }
+    // «복귀했어요» 실행과 같은 상한(오늘 + 4주 · 저장된 복귀일 · 결석을 만들어 둔 끝 다음 날) — 미리보기만 먼 날짜를 받지 않게
+    if (requested && requested > parentReturnDateMax({ todayYmd: ctx.todayYmd, storedReturnYmd: period.returnDate, coveredUntilYmd: period.coveredUntil })) {
       throw new IllnessPeriodError("복귀일을 다시 골라 주세요.", 400);
     }
     const returnDate = requested ?? period.returnDate;

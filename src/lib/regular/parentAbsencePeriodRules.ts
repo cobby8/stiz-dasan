@@ -174,3 +174,17 @@ export function resolveParentPeriodReturn(input: {
   if (ret > addDaysKst(input.endYmd, 1)) return { ok: false, code: "PERIOD_RETURN_AFTER_END" };
   return { ok: true, fromYmd: ret, outcome: ret <= input.startYmd ? "CANCELLED" : "ENDED" };
 }
+
+/**
+ * 학부모가 «복귀했어요»에서 고를 수 있는 가장 늦은 복귀일(보안 검수 2026-11-15).
+ * 왜: 복귀 미정 기간은 저장된 복귀일이 없어 상한이 없으면 먼 미래 날짜(예: 2099)가 통과한다 — 그러면 연간 일정 끝까지
+ * 결석이 한꺼번에 만들어지고 기간이 «복귀 처리됨»으로 굳어 학부모가 되돌릴 수 없다.
+ * 상한 = 오늘 + 학부모 한도(4주) · 저장된 복귀일 · 결석을 만들어 둔 끝(coveredUntil) 다음 날 중 «가장 이른 날».
+ * 실행(복귀 알리기)·예정 금액 미리보기·화면의 날짜 선택이 모두 이 함수를 쓴다.
+ */
+export function parentReturnDateMax(input: { todayYmd: string; storedReturnYmd?: string | null; coveredUntilYmd?: string | null }): string {
+  const candidates = [addDaysKst(input.todayYmd, PARENT_PERIOD_MAX_DAYS)];
+  if (input.storedReturnYmd && isKstYmd(input.storedReturnYmd)) candidates.push(input.storedReturnYmd);
+  if (input.coveredUntilYmd && isKstYmd(input.coveredUntilYmd)) candidates.push(addDaysKst(input.coveredUntilYmd, 1));
+  return candidates.sort()[0];
+}

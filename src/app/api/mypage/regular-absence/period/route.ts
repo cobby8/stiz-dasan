@@ -9,6 +9,7 @@ import { previewParentPeriodSettlement, returnAcademyIllnessPeriod } from "@/lib
 import { PARENT_PERIOD_MAX_DAYS } from "@/lib/regular/parentAbsencePeriodRules";
 import { ILLNESS_MAKEUP_IN_USE } from "@/lib/regular/illness-carry-tx";
 import { todayKst } from "@/lib/datetime/kst";
+import { takePublicRateLimit } from "@/lib/seasonal/public-rate-limit";
 import { BEFORE_RESUME_CODE, resumeFromOfError, resumeNotice } from "@/lib/enrollment/resumeWindow";
 
 // 학부모 «여러 날 결석»(2026-11-15 원장 결정) — 미리보기(GET) · 알리기/복귀했어요/알림 취소(POST)
@@ -18,6 +19,8 @@ export const dynamic = "force-dynamic";
 
 const noStore = { "Cache-Control": "private, no-store, max-age=0" };
 const WEEKS = PARENT_PERIOD_MAX_DAYS / 7;
+/** 예정 금액 미리보기는 청구 근거·공식 일정을 읽는 무거운 조회다 — 사용자별 분당 10회까지(보안 검수 2026-11-15) */
+const SETTLE_PREVIEW_RATE_LIMIT = { limit: 10, windowMs: 60_000 } as const;
 
 /** 오류 코드 → 학부모용 한국어 문구. tooLong 은 화면이 «휴원 신청» 버튼을 함께 보이게 하는 표시 */
 const MESSAGES: Record<string, string> = {
@@ -71,6 +74,10 @@ export async function GET(request: NextRequest) {
   // 부상 결석 «복귀했어요» 미리보기(2026-11-15 원장 결정 H) — ?settle=1&periodId=&returnDate=
   // 금액은 서버가 계산한다(원장 미리보기와 같은 함수). 본인 아이의 기간만 — 아니면 «찾을 수 없어요»
   if (q.get("settle")) {
+    // 로그인한 사용자 id 로 센다(주소·기기가 아니라 계정 단위) — 넘으면 계산하지 않고 바로 돌려보낸다
+    if (!takePublicRateLimit(`parent-settle-preview:${parent.appUserId}`, SETTLE_PREVIEW_RATE_LIMIT).allowed) {
+      return NextResponse.json({ error: "잠시 뒤 다시 시도해 주세요." }, { status: 429, headers: noStore });
+    }
     try {
       const settlement = await previewParentPeriodSettlement(parent.appUserId, { periodId: q.get("periodId") ?? "", returnDate: q.get("returnDate") || null });
       return NextResponse.json({ settlement }, { headers: noStore });

@@ -14,6 +14,7 @@ import { ILLNESS_PERIOD_INBOX_HREF, IllnessPeriodError } from "@/lib/regular/ill
 import { previewParentIllnessSettlement, type ParentSettlementPreview } from "@/lib/regular/illness-period-settlement";
 import { settlementContext } from "@/lib/regular/illness-period-settlement-runner";
 import { parentAbsencePeriodAvailable } from "@/lib/regular/parent-absence-period";
+import { parentReturnDateMax } from "@/lib/regular/parentAbsencePeriodRules";
 
 /**
  * «복귀했어요»(복귀일 선택)를 누르면 보는 예정 이월 금액 — 원장 미리보기와 같은 읽기·같은 계산.
@@ -60,9 +61,10 @@ export async function returnAcademyIllnessPeriod(parentUserId: string, input: { 
   const returnDate = typeof input?.returnDate === "string" ? input.returnDate.trim() : "";
   const outcome = await prisma.$transaction(async (tx) => {
     await lockCompensation(tx);
-    const periods = await tx.$queryRawUnsafe<Array<{ id: string; studentId: string; studentName: string; startDate: string; returnDate: string | null; status: string; carryState: string | null }>>(
+    const periods = await tx.$queryRawUnsafe<Array<{ id: string; studentId: string; studentName: string; startDate: string; returnDate: string | null; coveredUntil: string | null; status: string; carryState: string | null }>>(
       `SELECT p.id, p."studentId" AS "studentId", s.name AS "studentName",
               to_char(p."startDate",'YYYY-MM-DD') AS "startDate", to_char(p."returnDate",'YYYY-MM-DD') AS "returnDate", p.status,
+              to_char(p."coveredUntil",'YYYY-MM-DD') AS "coveredUntil",
               ${(await periodCarryColumnsReady(tx)) ? `p."carryState"` : `NULL::text`} AS "carryState"
          FROM "RegularAbsencePeriod" p
          JOIN "Student" s ON s.id = p."studentId"
@@ -78,6 +80,8 @@ export async function returnAcademyIllnessPeriod(parentUserId: string, input: { 
     if (returnDate < todayYmd) throw new Error("PERIOD_RETURN_PAST");
     if (returnDate <= period.startDate) throw new Error("PERIOD_RETURN_BEFORE_START");
     if (period.returnDate && returnDate > period.returnDate) throw new Error("PERIOD_RETURN_AFTER_END");
+    // 상한(보안 검수): 오늘 + 4주 · 결석을 만들어 둔 끝 다음 날을 넘는 날짜는 받지 않는다 — 먼 미래 날짜로 결석이 한꺼번에 생기고 기간이 굳는 것을 막는다
+    if (returnDate > parentReturnDateMax({ todayYmd, storedReturnYmd: period.returnDate, coveredUntilYmd: period.coveredUntil })) throw new Error("PERIOD_INVALID_DATE");
     const done = await endAbsencePeriodInTx(tx, { periodId, returnDate }, { ...ctx, todayYmd });
     return { period, done };
   }, ABSENCE_PERIOD_TX_OPTIONS);
