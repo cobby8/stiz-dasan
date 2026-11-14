@@ -833,7 +833,9 @@ test("⑧ 막다른 곳 3곳: 셔틀 «학원 확인 중» · 방학특강 연�
   assert.doesNotMatch(noPhone, /href="tel:/);
   assert.match(noPhone, /학원에 문의해 주세요/);
   const page = read("src/app/mypage/page.tsx");
-  assert.match(page, /getAcademySettings\(\)\.then\(\(s\) => s\?\.contactPhone \?\? null\)/);
+  // 번호는 설정값(contactPhone)에서 — 읽기·판정은 공용 한 곳(academyPhone → academyPhoneRules, 실행 테스트 = parent-delivery-view.test.mjs)
+  assert.match(page, /const usablePhone = await getUsableAcademyPhone\(\);/);
+  assert.match(read("src/lib/academyPhone.ts"), /getAcademySettings\(\)\s*\.then\(\(settings\) => \(settings as \{ contactPhone\?: string \| null \} \| null\)\?\.contactPhone \?\? null\)/);
   assert.match(page, /academyPhone=\{usablePhone\}/);
 });
 

@@ -19,6 +19,7 @@ import { kstLabel } from "@/lib/datetime/kst";
 import InlineConfirm from "@/components/parent/InlineConfirm";
 import { customerMessage } from "@/components/parent/customerMessage";
 import { resumeNotice } from "@/lib/enrollment/resumeWindow";
+import { academyTel } from "@/lib/academyPhoneRules";
 // 마감 안내 글자(«1시간»)는 마감 상수에서 나온다 — 상수를 바꾸면 안내도 같이 바뀐다
 import { CHANGE_CLOSED_MESSAGE, PARENT_CHANGE_CUTOFF_TEXT } from "@/lib/parent/changeDeadline";
 
@@ -38,8 +39,8 @@ function parentDeliveryText(summary: DeliveryStatusSummary | null | undefined): 
 
 /** «학원에 전화하기» — 번호(설정값)가 있으면 전화 버튼, 없으면 아무것도 그리지 않는다(문장이 이미 할 일을 말한다) */
 function CallAcademy({ phone, className = "academy-button-secondary shrink-0" }: { phone: string | null | undefined; className?: string }) {
-  const tel = String(phone ?? "").replace(/[^0-9]/g, "");
-  if (tel.length < 8) return null;
+  const tel = academyTel(phone); // 걸 수 있는 번호인지는 규칙 한 곳(academyPhoneRules)이 정한다
+  if (!tel) return null;
   return <a href={`tel:${tel}`} className={className}>학원에 전화하기</a>;
 }
 

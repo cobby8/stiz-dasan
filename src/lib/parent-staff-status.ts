@@ -16,7 +16,10 @@ export type DeliveryStatusSummary = {
   driverInApp?: boolean;
 };
 
-export type DeliveryStatusRow = { recipientUserId: string; studentId?: string | null; channel: string; status: string; errorCode?: string | null; role?: string };
+export type DeliveryStatusRow = { recipientUserId: string; studentId?: string | null; channel: string; status: string; errorCode?: string | null; role?: string; /** 추가 역할(UserRoleGrant)까지 본 기사 여부 — 조회가 주면 쓴다(없으면 주 역할로만 판정) */ isDriver?: boolean | null };
+
+/** 기사님 행인가 — 주 역할이 기사이거나, 조회가 «추가 역할로 기사»라고 알려 준 행 */
+const isDriverRow = (row: DeliveryStatusRow) => row.role === "DRIVER" || row.isDriver === true;
 
 export function summarizeDeliveryStatus(rows: DeliveryStatusRow[]): DeliveryStatusSummary {
   const count = (channel: string, statuses: string[]) => rows.filter((row) => row.channel === channel && statuses.includes(row.status)).length;
@@ -34,10 +37,10 @@ export function summarizeDeliveryStatus(rows: DeliveryStatusRow[]): DeliveryStat
     skippedCount: count("PUSH", ["SKIPPED"]),
     pendingCount: count("PUSH", ["PENDING", "PROCESSING", "RETRYING"]),
     unknownCount: recipientCount - new Set(rows.filter((row) => row.channel === "PUSH").map(key)).size + rows.filter((row) => row.channel === "PUSH" && !["SENT", "PARTIAL", "FAILED", "SKIPPED", "PENDING", "PROCESSING", "RETRYING"].includes(row.status)).length,
-    driverLinked: rows.some((row) => row.role === "DRIVER"),
+    driverLinked: rows.some(isDriverRow),
     // 읽기 전용 파생값 — 전달 동작은 그대로다. 기사 행만 따로 본다(선생님이 받은 것을 «기사님께 알렸다»고 하지 않게)
-    driverPushDelivered: rows.some((row) => row.role === "DRIVER" && row.channel === "PUSH" && (row.status === "SENT" || row.status === "PARTIAL")),
-    driverInApp: rows.some((row) => row.role === "DRIVER" && row.channel === "IN_APP" && row.status === "SENT"),
+    driverPushDelivered: rows.some((row) => isDriverRow(row) && row.channel === "PUSH" && (row.status === "SENT" || row.status === "PARTIAL")),
+    driverInApp: rows.some((row) => isDriverRow(row) && row.channel === "IN_APP" && row.status === "SENT"),
   };
 }
 

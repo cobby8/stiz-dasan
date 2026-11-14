@@ -37,7 +37,7 @@ async function postPeriod(body: Record<string, unknown>) {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
   const json = await res.json().catch(() => null);
-  if (!res.ok) throw Object.assign(new Error(json?.error || "처리에 실패했습니다."), { tooLong: json?.tooLong === true, needContact: json?.needContact === true });
+  if (!res.ok) throw Object.assign(new Error(json?.error || "처리하지 못했어요."), { tooLong: json?.tooLong === true, needContact: json?.needContact === true });
   return json;
 }
 
@@ -60,7 +60,7 @@ export function ActivePeriodList({ periods, onChanged }: { periods: ParentAbsenc
       setReturnId("");
       await onChanged(parts.join(" "));
     } catch (e) {
-      await onChanged("", customerMessage(e, "처리하지 못했습니다. 잠시 후 다시 시도해 주세요."));
+      await onChanged("", customerMessage(e, "처리하지 못했어요. 잠시 후 다시 시도해 주세요."));
     } finally {
       setBusyId("");
     }
@@ -180,9 +180,9 @@ export default function PeriodAbsencePanel({
         const json = await res.json().catch(() => null);
         if (!alive) return;
         if (res.ok) { setPreview(json.preview); setProblem(null); }
-        else { setPreview(null); setProblem({ text: json?.error || "수업일을 확인하지 못했습니다.", tooLong: json?.tooLong === true }); }
+        else { setPreview(null); setProblem({ text: json?.error || "수업일을 확인하지 못했어요.", tooLong: json?.tooLong === true }); }
       } catch {
-        if (alive) { setPreview(null); setProblem({ text: "수업일을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.", tooLong: false }); }
+        if (alive) { setPreview(null); setProblem({ text: "수업일을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.", tooLong: false }); }
       }
     }, 250);
     return () => { alive = false; clearTimeout(timer); };
@@ -211,12 +211,12 @@ export default function PeriodAbsencePanel({
         ? uploaded > 0
           ? "사진을 확인한 뒤 다음 달 수강료에서 빼 드려요."
           : "마지막 결석일부터 7일 안에 증빙 사진을 올려 주시면 확인한 뒤 다음 달 수강료에서 빼 드려요."
-        : result.makeupCredits > 0 ? `보강권 ${result.makeupCredits}장이 생겼어요.` : "학원에서 확인합니다.";
+        : result.makeupCredits > 0 ? `보강권 ${result.makeupCredits}장이 생겼어요.` : "학원에서 확인해요.";
       setEndDate(""); setUnknownEnd(false); setReason(""); setReasonText(""); setFiles([]); setPreview(null);
       await onChanged(`${head} ${tail}`, uploadError ? `${uploadError} 위 «질병·부상 결석»에서 다시 올려 주세요.` : undefined);
     } catch (e) {
       const flags = e as { tooLong?: boolean; needContact?: boolean };
-      setProblem({ text: customerMessage(e, "결석을 알리지 못했습니다. 잠시 후 다시 시도해 주세요."), tooLong: flags?.tooLong === true, needContact: flags?.needContact === true });
+      setProblem({ text: customerMessage(e, "결석을 알리지 못했어요. 잠시 후 다시 시도해 주세요."), tooLong: flags?.tooLong === true, needContact: flags?.needContact === true });
     } finally {
       setBusy(false);
     }
@@ -225,7 +225,7 @@ export default function PeriodAbsencePanel({
   if (kids.length === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-[var(--color-academy-line-input)] bg-white px-6 py-16 text-center text-sm text-[var(--color-academy-muted)]">
-        다가오는 정규수업이 없습니다.
+        다가오는 정규수업이 없어요.
       </div>
     );
   }
@@ -299,7 +299,7 @@ export default function PeriodAbsencePanel({
           {preview.count > 0 ? (
             <p className="break-keep text-sm font-medium tabular-nums text-[var(--color-academy-secondary-ink)]">{preview.datesLabel}</p>
           ) : (
-            <p className="text-sm text-[var(--color-academy-muted)]">이 기간에 알릴 수업이 없습니다.</p>
+            <p className="text-sm text-[var(--color-academy-muted)]">이 기간에 알릴 수업이 없어요.</p>
           )}
           {preview.skippedNote && <p className="mt-0.5 break-keep text-xs text-[var(--color-academy-muted)]">{preview.skippedNote}</p>}
         </div>

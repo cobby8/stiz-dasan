@@ -77,21 +77,63 @@ test("화면은 이 판정 한 곳만 쓴다 — 전화 버튼은 설정값 번�
   const client = fs.readFileSync("src/app/mypage/shuttle/ShuttleExceptionClient.tsx", "utf8");
   assert.match(client, /function parentDeliveryText\(summary: DeliveryStatusSummary \| null \| undefined\): string \{\s*return parentDeliveryView\(summary\)\?\.text \?\? "";/);
   assert.match(client, /\{done && notifyCall && \([\s\S]{0,500}<CallAcademy phone=\{academyPhone\} \/>/);
-  assert.match(client, /if \(tel\.length < 8\) return null;\s*return <a href=\{`tel:\$\{tel\}`\}/);
-  assert.doesNotMatch(client, /parent-request-form|driverLinked === false/);
-  // 번호는 코드에 박지 않고 설정값에서 — 자리채움 번호(010-0000-0000)는 쓰지 않는다
-  const page = fs.readFileSync("src/app/mypage/shuttle/page.tsx", "utf8");
-  assert.match(page, /getUsableAcademyPhone\(\)/);
-  const phone = fs.readFileSync("src/lib/academyPhone.ts", "utf8");
-  assert.match(phone, /digits\.length < 8 \|\| digits === "01000000000"\) return null;/);
+  assert.match(client, /const tel = academyTel\(phone\);[^\n]*\n\s*if \(!tel\) return null;\s*return <a href=\{`tel:\$\{tel\}`\}/);
+  assert.doesNotMatch(client, /parent-request-form|driverLinked === false|replace\(\/\[\^0-9\]/);
+  // 번호는 코드에 박지 않고 설정값에서 — 판정은 공용 한 곳(홈 «자녀 없음»·결석 알리기·셔틀 변경·가족 연결이 같은 기준)
+  for (const page of ["src/app/mypage/shuttle/page.tsx", "src/app/mypage/page.tsx", "src/app/mypage/regular-absence/page.tsx"]) {
+    const source = fs.readFileSync(page, "utf8");
+    assert.match(source, /getUsableAcademyPhone\(\)/, page);
+    assert.doesNotMatch(source, /010-0000-0000"|"01000000000"/, `${page}: 자리채움 번호 판정을 따로 두지 않는다`);
+  }
+});
+
+test("학원 번호 판정(실행): 8~12자리만 전화 링크, +82 는 0 으로, 자리채움·이어 붙은 번호·빈 값은 링크 없음", () => {
+  const rules = load("src/lib/academyPhoneRules.ts");
+  assert.equal(rules.academyTel("031-555-1234"), "0315551234");
+  assert.equal(rules.academyTel("010-1234-5678"), "01012345678");
+  assert.equal(rules.academyTel("1588-1234"), "15881234", "8자리 대표번호");
+  assert.equal(rules.academyTel("0507-1234-5678"), "050712345678", "12자리 안심번호");
+  assert.equal(rules.academyTel("+82 10-1234-5678"), "01012345678", "국가번호는 0 으로");
+  assert.equal(rules.academyTel("+82-31-555-1234"), "0315551234");
+  assert.equal(rules.academyTel("010-0000-0000"), null, "자리채움 번호");
+  assert.equal(rules.academyTel("031-555-1234 / 010-1234-5678"), null, "번호 두 개가 이어 붙은 값은 잘못 걸릴 수 있다");
+  assert.equal(rules.academyTel("555-1234"), null, "7자리");
+  for (const empty of ["", "   ", null, undefined, "문의는 카카오톡"]) assert.equal(rules.academyTel(empty), null);
+  // 화면에 넘기는 값: 걸 수 있을 때만 원래 글자 그대로
+  assert.equal(rules.usableAcademyPhone(" 031-555-1234 "), "031-555-1234");
+  assert.equal(rules.usableAcademyPhone("010-0000-0000"), null);
+  assert.equal(rules.usableAcademyPhone(null), null);
+  // 서버 조회는 이 판정만 쓴다
+  assert.match(fs.readFileSync("src/lib/academyPhone.ts", "utf8"), /return usableAcademyPhone\(phone\);/);
+});
+
+test("기사 여부: 읽는 쪽 조건이 보내는 쪽과 글자까지 같고, 추가 역할(UserRoleGrant) 기사도 기사로 센다", () => {
+  const pick = (file) => /const DRIVER_CONDITION = `([^`]+)`;/.exec(fs.readFileSync(file, "utf8"))?.[1];
+  const sendSide = pick("src/lib/operational-staff-notification.ts");
+  const readSide = pick("src/lib/shuttle/parent-shuttle-exception.ts");
+  assert.ok(sendSide && sendSide.includes('"UserRoleGrant"') && sendSide.includes("g.status='ACTIVE'"));
+  assert.equal(readSide, sendSide, "보내는 조건과 읽는 조건이 어긋나면 화면 문구가 틀린다");
+  // 조회에 기사 여부 컬럼 하나만 더했다(사용자 행이 없으면 false)
+  assert.match(fs.readFileSync("src/lib/shuttle/parent-shuttle-exception.ts", "utf8"), /COALESCE\(u\.id IS NOT NULL AND \$\{DRIVER_CONDITION\}, false\) AS "isDriver"/);
+  // 주 역할은 선생님이지만 추가 역할로 기사인 분이 휴대폰 알림을 받은 경우 → «기사님께 알렸어요»
+  const granted = [row("INSTRUCTOR", "IN_APP", "SENT", { isDriver: true }), row("INSTRUCTOR", "PUSH", "SENT", { isDriver: true })];
+  assert.equal(view(granted).kind, "DRIVER");
+  assert.equal(status.summarizeDeliveryStatus(granted).driverLinked, true);
+  // 컬럼이 없거나 false 면 예전처럼 주 역할로만(선생님 = 학원)
+  assert.equal(view([row("INSTRUCTOR", "PUSH", "SENT", { isDriver: false })]).kind, "ACADEMY");
+  assert.equal(view([row("INSTRUCTOR", "PUSH", "SENT")]).kind, "ACADEMY");
 });
 
 test("가족 연결 화면: 문의는 «학원에 전화하기»(설정값 번호) — 자녀 없는 계정이 못 쓰는 홈 문의 폼 링크는 없다", () => {
   const client = fs.readFileSync("src/app/mypage/children/ChildConnectionsClient.tsx", "utf8");
   assert.doesNotMatch(client, /parent-request-form/);
-  assert.match(client, /academyTel\.length >= 8\s*\? <a href=\{`tel:\$\{academyTel\}`\}[^>]*>학원에 전화하기<\/a>\s*: null;/);
+  assert.match(client, /const tel = academyTel\(academyPhone\);\s*const callAcademy = tel\s*\? <a href=\{`tel:\$\{tel\}`\}[^>]*>학원에 전화하기<\/a>\s*: null;/);
   assert.equal((client.match(/\{callAcademy\}/g) || []).length, 2, "목록에 없는 아이 · 가족에게 요청 두 곳");
-  assert.match(client, /먼저 연결된 보호자가 없는 미성년 자녀는 이 요청으로 연결되지 않아요/);
+  // 번호가 없어도(전화 버튼 없음) 다음 할 일이 문장에 남는다 — 두 곳 모두 «학원에 문의해 주세요» + 조건부 버튼
+  assert.equal((client.match(/학원에 문의해 주세요\. \{callAcademy\}/g) || []).length, 2);
+  assert.match(client, /먼저 연결된 보호자가 없는 미성년 자녀는 이 요청으로 연결되지 않아요 — 학원에 문의해 주세요\. \{callAcademy\}/);
+  // 말투는 이 화면 안에서 «~요» 체로 통일
+  assert.doesNotMatch(client.replace(/\/\/[^\n]*/g, "").replace(/\{\/\*[\s\S]*?\*\/\}/g, ""), /습니다/);
   // 성인 수강생 안내는 /account/children 맥락에서만
   assert.match(client, /const accountContext = backHref !== "\/mypage";/);
   assert.match(client, /\{accountContext \? " 성인 수강생은 본인 이름·생년월일·등록된 휴대폰 번호로 확인해요\." : ""\}/);

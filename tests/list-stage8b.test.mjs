@@ -357,7 +357,8 @@ test("셔틀 예정 변경은 날짜 묶음의 한 줄 행이고 행 탭=하단 
   const Shuttle = compileModule("src/app/mypage/shuttle/ShuttleExceptionClient.tsx", {
     "@/lib/mypage/requestPreset": { presetIndex: () => 0, presetFirst: (list) => [...list] }, "@/components/parent/customerMessage": customerMessageModule, 
     "next/navigation": { useRouter: () => ({ refresh() {} }) },
-    "next/link": { __esModule: true, default: Link }, // 2026-11-14: «결석 알리기» 링크·«학원에 문의» 버튼
+    "@/lib/academyPhoneRules": compileModule("src/lib/academyPhoneRules.ts"), // 2026-11-15 «학원에 전화하기» 번호 판정(진짜 규칙)
+    "next/link": { __esModule: true, default: Link }, // 2026-11-14: «결석 알리기» 링크
     "@/lib/shuttle/dayExceptionRules": compileModule("src/lib/shuttle/dayExceptionRules.ts"),
     "@/lib/parent-staff-status": { deliveryStatusText: () => "사이트 알림 등록 1건 · 푸시 전송 접수 1건", matchesShuttleChange: () => false },
     "@/components/admin/list/ListDetailPanel": { default: ({ children }) => React.createElement("div", { "data-sheet": "" }, children) },

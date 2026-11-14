@@ -470,10 +470,17 @@ export function shuttleEventVersion(input: { direction: string; kind: string; lo
   return createHash("sha256").update(JSON.stringify({ direction: input.direction, kind: input.kind, location: input.location, note: input.note })).digest("hex");
 }
 
+// «받은 사람이 기사님인가» — 알림을 보내는 쪽(operational-staff-notification 의 DRIVER_CONDITION)과 글자까지 같은 조건.
+// 주 역할만 보면, 추가 역할(UserRoleGrant)로 기사인 분이 받았는데도 학부모 화면이 «학원에 알렸어요»라고 틀리게 말한다.
+// 두 글자가 어긋나지 않게 tests/parent-delivery-view.test.mjs 가 비교한다(보내는 쪽 파일은 건드리지 않는다).
+const DRIVER_CONDITION = `(u.role::text='DRIVER' OR EXISTS (SELECT 1 FROM "UserRoleGrant" g WHERE g."userId"=u.id AND g.role='DRIVER' AND g.status='ACTIVE'))`;
+
 async function readShuttleNotificationStatus(id: string, action: "SUBMITTED" | "CANCELED", version: string) {
   try {
     const rows = await prisma.$queryRawUnsafe<DeliveryStatusRow[]>(
-      `SELECT d."recipientUserId", d."studentId", d.channel, d.status, d."errorCode", u.role::text AS role
+      // isDriver = 읽기 전용 컬럼 하나(발송 동작은 그대로). 사용자 행이 없으면(LEFT JOIN) false
+      `SELECT d."recipientUserId", d."studentId", d.channel, d.status, d."errorCode", u.role::text AS role,
+              COALESCE(u.id IS NOT NULL AND ${DRIVER_CONDITION}, false) AS "isDriver"
        FROM "NotificationDelivery" d LEFT JOIN "User" u ON u.id=d."recipientUserId"
        WHERE d."stableEventKey"=$1 AND d."audienceScope"='INTERNAL'`,
       `shuttle-day-exception:${id}:${action}:${version}`,
