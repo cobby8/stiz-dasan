@@ -6,4 +6,6 @@ const kakaoPolicyQaLogs=await prisma.$executeRawUnsafe(`DELETE FROM "KakaoPolicy
 // 기사님 앱 운행 세션(기기 ID·전송 시각)은 30일만 보관한다(원장 결정 2026-11-10). 세션 수명이 12시간이라 만료 30일 뒤면 끝난 운행만 지워진다.
 const driverMobileSessions=await prisma.$executeRawUnsafe(`DELETE FROM "DriverMobileTrackingSession" WHERE "expiresAt" < NOW()-INTERVAL '30 days'`).catch((e:{message?:string})=>{console.error("[data retention] DriverMobileTrackingSession cleanup failed:",e?.message??"UNKNOWN");return 0});// 앱 간편로그인 1회용 요청(5분 수명)은 하루 지나면 지운다(a1, 2026-11-13). 암호화 세션이 남은 행도 함께 정리된다. 표가 아직 없으면(마이그레이션 전) 건너뛴다.
 const nativeAuthFlows=await prisma.$executeRawUnsafe(`DELETE FROM "NativeAuthFlow" WHERE "expiresAt" < NOW()-INTERVAL '1 day'`).catch((e:{message?:string})=>{if(!/relation "NativeAuthFlow" does not exist/.test(e?.message??""))console.error("[data retention] NativeAuthFlow cleanup failed:",e?.message??"UNKNOWN");return 0});
-return{notificationDeliveries,storageJobs,privatePhotoJobs,kakaoPolicyQaLogs,driverMobileSessions,nativeAuthFlows}}
+// 앱 «연결하기» 1회용 표(5분 수명)도 하루 지나면 지운다(2026-11-15 A안). 표가 아직 없으면(마이그레이션 전) 건너뛴다.
+const accountLinkHandoffs=await prisma.$executeRawUnsafe(`DELETE FROM "AccountLinkHandoff" WHERE "expiresAt" < NOW()-INTERVAL '1 day'`).catch((e:{message?:string})=>{if(!/relation "AccountLinkHandoff" does not exist/.test(e?.message??""))console.error("[data retention] AccountLinkHandoff cleanup failed:",e?.message??"UNKNOWN");return 0});
+return{notificationDeliveries,storageJobs,privatePhotoJobs,kakaoPolicyQaLogs,driverMobileSessions,nativeAuthFlows,accountLinkHandoffs}}

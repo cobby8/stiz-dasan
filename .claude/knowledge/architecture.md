@@ -323,3 +323,9 @@
 - **발견자**: developer
 - **내용**: /admin/attendance/feed 는 첫 20개만 서버에서 그리고 다음은 GET /api/admin/feed(?cursor·필터, ?sessionId=카드 하나). 커서 = «수업일~시작 시각~id» 세 값 모두 내림차순이라 SQL 행 비교 (a,b,c) < ($1,$2,$3) 하나로 자른다(adminFeedRules.encode/decodeAdminFeedCursor). 필터는 전부 SQL(담당 선생님은 CROSS JOIN LATERAL 로 classCoachNameSql 한 번 계산). 리포트 편집 본문은 src/components/admin/SessionReportEditor.tsx 한 벌 — /admin/attendance/report/[sessionId] 화면과 피드 패널(SessionReportEditorLoader, compact)이 같이 쓴다. 관리자 영상 재생 = SessionVideoList endpoint 에 /api/staff/sessions/{id}/videos(관리자 = 전체 반).
 - **참조횟수**: 0
+
+### [2026-11-15] 앱에서 간편로그인 연결 = 1회용 표 + apex 바깥 브라우저 + 연결 후 즉시 로그아웃
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 앱(웹뷰)은 /auth/oauth/* 를 로그인 용도로만 가로채 연결(linkIdentity)을 못 한다. 앱(UA ` STIZApp/`)+`nativeAuthEnabled()` 면 /mypage/login-methods 가 제공자별 1회용 표(`AccountLinkHandoff`, id=토큰 sha256, 5분, 새로 발급하면 옛 표 무효)를 만들고 `https://stiz-dasan.kr/auth/link-handoff?t=`(www 없는 apex — 앱이 «누르면» 휴대폰 브라우저로 연다, www 면 앱 안에서 열림) 일반 `<a>` 로 그린다. 확인 화면 GET 은 읽기만(링크 미리보기 안전) → [계속] POST `/auth/link-handoff/start`(Origin·조건부 UPDATE 소비·admin generateLink magiclink → verifyOtp → 같은 계정 확인 → linkIdentity redirectTo `/auth/callback?...&via=app`) → linkIdentity 주소를 받은 즉시 `admin.auth.admin.signOut(accessToken,'local')` + 세션 쿠키(sb-*-auth-token·조각)만 삭제(PKCE `-code-verifier` 는 남김 — 교환은 그 열쇠만 읽는다. 클라이언트 `signOut()` 은 열쇠까지 지우므로 금지) + 표시 쿠키 `stiz-link-app`(path=/auth) → 콜백은 via=app «그리고» 표시 쿠키일 때만 `signOut local` 후 `/auth/link-handoff/done?e=코드|linked&acct=가린아이디`. 발급·사용 모두 계정 재확인(PARENT·직원 추가 역할 없음·휴대폰 인증·탈퇴 아님). 확인 화면 referrer 는 same-origin(no-referrer 면 Origin null 로 POST 거절). 순수 규칙 `src/lib/account-link-handoff/rules.ts`(화면도 import → node:crypto 금지, 토큰은 token.ts), DB `store.ts`. 앱 링크(AASA·assetlinks)에 /auth/link-handoff·apex 를 넣으면 바깥 브라우저가 앱으로 되돌아와 기능이 깨진다(테스트로 못박음). 테스트 `tests/account-link-handoff.test.mjs`.
+- **참조횟수**: 0

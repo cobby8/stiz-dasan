@@ -3703,6 +3703,20 @@ model NativeAuthFlow {
   @@index([expiresAt], map: "NativeAuthFlow_expiry")
 }
 
+/// 앱 간편로그인 «연결하기» 1회용 표(2026-11-15 A안) — 토큰 hash·계정·제공자를 5분만 보관, 한 번 쓰면 consumedAt.
+/// 서버 raw SQL(src/lib/account-link-handoff/store.ts)만 사용한다. RLS 켜짐·anon/authenticated 권한 회수.
+/// CHECK 제약(provider 값 목록)은 migration 20261115020000_account_link_handoff 에 있다.
+model AccountLinkHandoff {
+  id         String    @id
+  authUserId String
+  provider   String
+  expiresAt  DateTime  @db.Timestamptz(6)
+  consumedAt DateTime? @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([expiresAt], map: "AccountLinkHandoff_expiry")
+}
+
 /// 수업 영상(2026-11-14) — 선생님이 수업 화면에서 찍어 올리고, 그 수업 학생의 보호자만 본다.
 /// 서버 raw SQL(src/lib/sessionVideo/*)만 사용한다. RLS 켜짐(FORCE)·anon/authenticated 권한 회수.
 /// CHECK 제약(youtubeStatus·mimeType 값 목록)과 비공개 버킷 session-videos 는 migration 20261114120000_session_video 에 있다.

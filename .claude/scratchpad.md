@@ -100,10 +100,32 @@
 
 ---
 
+### 리뷰 결과 (reviewer · 11-15 앱 간편로그인 연결 A안, claude/app-link-handoff)
+
+📊 종합 판정: 수정 필요(필수 1)
+
+✅ 잘된 점: 웹(앱 아님) 경로 무회귀(mode=client·via 없으면 기존 함수 그대로) · 발급 실패 catch→옛 숨김 폴백 · raw SQL 만·조건부 UPDATE 원자 소비·hash 저장 · @supabase/ssr 0.8.0 확인: code-verifier 는 즉시 setAll, 세션은 SIGNED_IN 이벤트로 setAll, getItem 이 setItems 먼저 읽어 verifyOtp→linkIdentity 같은 클라이언트 OK · 유니버설/앱 링크 경로에 /auth/link-handoff 없음 · 아이콘·hex·800/900 없음 · KST 금지 패턴 없음 · node --test 38-0
+
+🔴 필수 수정:
+- src/app/auth/link-handoff/page.tsx:22 `referrer: "no-referrer"` + start/route.ts:39 Origin 검사 → Fetch 규격상 referrer policy 가 no-referrer 인 문서의 POST 는 같은 출처여도 `Origin: null` 을 보낸다(Chrome·Firefox, Rails 의 유명한 CSRF 오류 사례). 그러면 [계속]이 항상 «이 화면에서 바로 시작할 수 없어요»로 끝나 기능 전체가 막힌다. 수정: 확인 화면 referrer 를 `same-origin`(또는 `strict-origin`)으로 바꾸거나, Origin 이 "null" 일 때 `Sec-Fetch-Site: same-origin` 을 대안으로 받기. 실기기(안드 Chrome·iOS Safari)로 확인 필수.
+
+🟡 권장 수정:
+- start/route.ts:69~89 — verifyOtp 뒤 사용자가 카카오/구글 화면에서 창을 닫거나 뒤로 가면 콜백이 안 와서 휴대폰 브라우저에 학부모 로그인(갱신 토큰)이 그대로 남는다. 확인 화면 문구 «자동으로 로그아웃됩니다»와 어긋남. 완화안: done/확인 화면 재방문 시 signOut, 또는 linkIdentity URL 받은 직후 세션 쿠키만 지우고 code-verifier 는 남기기(동작 검증 필요).
+- 같은 이유로 1회용 표 = 10분짜리 «로그인 열쇠»다(연결뿐 아니라 그 브라우저 전체 로그인·타인 소셜 연결 가능). 노출 경로는 앱 화면뿐이라 낮음이지만 문서·주석에 명시 권장. 연결 알림(SOCIAL_LOGIN_LINKED)은 유지돼 있어 좋음.
+- 바깥 브라우저가 이미 다른 계정(가족)으로 로그인돼 있으면 verifyOtp 가 덮고 콜백에서 로그아웃 → 그 브라우저의 원래 로그인이 사라진다(안내 문구 정도).
+- LinkProviderButton.tsx:151 visibilitychange 마다 router.refresh → 매번 표 1~3행 INSERT(이전 표는 10분간 계속 유효). 정리 크론이 있어 치명적이진 않음.
+- start/route.ts:56 getEnabledParentOAuthProviders 예외 시 표는 이미 소비된 채 500 — try/catch→"failed" 권장.
+- iOS NavigationPolicy: paymentActive 중이면 apex 링크가 .paymentPage 로 웹뷰 안에서 열린다(드문 경우).
+- 테스트 대부분이 소스 문자열 정규식 확인이라 위 Origin:null 같은 실제 동작은 못 잡는다(규칙 함수 실행 테스트는 의미 있음).
+
+---
+
 ## 작업 로그 (최근 10건)
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-15 | reviewer(앱 연결 A안): 수정 필요 — 확인 화면 no-referrer 로 POST Origin:null → 시작 항상 거절(필수 1) · 중도 이탈 시 바깥 브라우저 로그인 잔존 등 권장 6 | 수정 요청 |
+| 11-15 | developer(앱에서 간편로그인 연결 A안, claude/app-link-handoff): 앱(UA STIZApp/)+nativeAuthEnabled 이면 /mypage/login-methods 가 제공자별 1회용 표(AccountLinkHandoff, hash 저장·10분) 발급 → apex https://stiz-dasan.kr/auth/link-handoff?t= 링크(바깥 브라우저) → 확인 화면(읽기만)·[계속] POST /start(Origin·원자 소비·magiclink 로그인·같은 계정 확인·linkIdentity via=app) → 콜백 via=app 은 이 브라우저 signOut local + /auth/link-handoff/done. 마이그레이션 20261115020000 **운영 미적용**. tsc 0·tests 5105-0 · **검수 1차 반영**: referrer same-origin+Origin null 은 Sec-Fetch-Site same-origin 만 · linkIdentity 직후 관리자 signOut(local)+세션 쿠키만 삭제(PKCE 열쇠 유지) · 발급·사용 모두 계정 재확인(PARENT·직원 역할 없음·휴대폰 인증·탈퇴 아님) · 옛 표 무효화·5분 · 주소 t 지우기 · 표시 쿠키 stiz-link-app 게이트 · 완료 화면 코드 문구+가린 아이디 · 확인 화면 가린 이름. tsc 0·tests 5108-0 | 재검수 대기 |
 | 11-14 | developer(출결 다시 누르면 취소, claude/attendance-toggle): 선생님 수업 화면에서 선택된 출결 버튼을 다시 누르면 미확인(출결 기록 삭제) — 새 액션 clearStaffAttendance(정규·보강·체험·특강 좌석, dryRun 미리 보기). 결석 취소는 확인 1회·안 쓴 보강권 회수(기존 규칙 함수), 예약·사용된 보강권/정산된 결석이면 거부, 학부모 신고와 그 보강권은 유지, 알림 없음. tsc 0·tests 5023-0 | 완료(main 머지 전) |
 | 11-14 | developer(아이 정보 수정, claude/child-edit): 학부모 «수정» 시트(학교·학생 전화·주소·건강 특이사항 바로 반영 / 이름·생년월일 변경 신청→학생 상세 «정보 변경 요청» 승인·반려) · 건강 글 선생님 «특이»+상세 시트·기사님 줄 «특이» · 연락처 바꾸기(본인인증) · 연결된 가족 보기·끊기(대표만) · 막다른 문구 3곳 · 임시 생일 학년. 마이그레이션 20261114140000 **운영 미적용**. tsc 0·tests 4938-0·guards 82-0 | 검수 대기 |
 | 11-14 | developer(질병·부상 결석 이월, claude/illness-carry): 질병·부상 결석 = 보강권 대신 «이월 검토 중»(RegularAbsenceCarryReview) · 사유 글 필수+증빙 사진 1~3장(비공개 버킷 absence-evidence, 7일 안 추가) · 신청함 «질병·부상 결석»(ILLNESS_CARRY) [이월 승인]=기존 resolveWorkbenchAbsence 재사용 / [보강권으로] · 7일 사진 없음 자동 전환·90일 뒤 사진 삭제(cron/makeup-credits) · 출결 결석 시 보류 · 카카오 안내·FAQ·«결석 알리기» 문구. **마이그레이션 20261114130000 운영 미적용**(없어도 예전 방식으로 동작). tsc 0·tests 4827-0·guards 82-0. 새 SQL 은 실제 Postgres 에서 미실행 — 적용 후 읽기 검증 필요 | 검수 대기 |
@@ -112,5 +134,3 @@
 | 11-14 | PM: 청구 월 카드(f8bc4572+결제하기 안전장치 87c09363·중복 누름 8e43b575)·기사 운행표 휴원·휴무(067011c5)·앱 1.0.3 버전(5175e8ec) 묶음 배포 a2ce24e READY·오류 0. 안드로이드 vc6 내부 테스트 게시·iOS Codemagic #6 TestFlight 처리 완료(외부 베타 정보 미입력 경고만) | 완료 |
 | 11-14 | developer(기사님 운행표 휴원·휴무, claude/driver-paused-holiday): 휴원·퇴원·첫 수업 전 = 회색 뱃지+탑승·미탑승 잠금(명단 유지), 휴무일 = 맨 위 «오늘은 휴무(사유)»+정규 줄 잠금, 저장 API 2곳 409, 관리자 운행표 뱃지+«이 달 휴무». 판정 = regularRunDayRules(학부모 childShuttleRules 재사용). 운영 읽기: 휴원 3명·6행 뱃지 대상. 리뷰 반영(월말 다음 달 미입력=모름·반 0개는 퇴원 기록 있을 때만 퇴원·409 문구 표시) tsc 0·node --test 4672/0·guards 5/0 | 재검수 대기 |
 | 11-14 | developer(청구 월 카드, claude/billing-cards): 학부모 청구 탭·아이 기록 = 한 달 한 줄(청구월·합계·상태) + 세부 시트(할인 «원래−할인=낼 금액»·기존 결제 버튼 그대로 시트 안) · 할인 원인 = Payment 에 할인 칸 없음, 글(description) 안에만 있어 카드가 원문을 통째로 보였음 → 해석 156/157건 · 청구 탭 날짜 두 번 변환 · tests 4661-0·guards 5-0·tsc 0 | 검수 대기 |
-| 11-14 | developer(아이 정보+셔틀, claude/child-profile): /mypage/record 위에 아이 정보(생년월일·학년(생일 기준+등록 학년)·학교·성별·등록일·대표 보호자·내 연락처·연결 가족 이름·보강권)·수강 반(수업 탭 칩)·셔틀(요일별 승하차·7일 운행: 휴무·휴원·결석·안 탐·다른 곳, 방학특강·신청 접수, 기사님 전화) 접기 칸 · **버그 수정: 학부모 홈·수업 탭 정규 셔틀이 빈 옛 표(ShuttleRoutePassenger 0행)만 읽어 60명 전원 미표시 → 명단 기준(childShuttleRules) 항목 추가** · 운영 읽기 대조 6명 요일별 불일치 0 · **1차 수정(검수)**: 신청 접수 카드 = 명단 등재 여부(getRosterStudentIds)로 제외 · 일정 탭 명단 항목 요일별 한 줄+«아이 기록 › 셔틀» · 반 없음/못 찾음 = 운행 아님(NO_CLASS·CHECK) · 명단 조회 첫 병렬 묶음·기록은 그 아이만 · 빈 studentId 11행 = 2호점 운영 정차(학생 행 아님, 채울 것 없음) · tests 4583-0·tsc 0 | 검수 대기 |
-| 11-14 | reviewer(수업 피드 ab61a2db): 통과 — 필수 0·권장 3(종료 창 비우기 COALESCE·대타 날짜 조각·자정 넘긴 진행 수업 사진). 운영 대조 날짜 불일치 0·소식 20→20 | 통과 |

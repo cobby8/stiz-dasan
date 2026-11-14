@@ -100,8 +100,9 @@ test("a1 스토어 앱: 로그인·가입·연결 화면 모두 브라우저로 
   const linkButton = await read("src/app/mypage/login-methods/LinkProviderButton.tsx");
   assert.match(linkButton, /if \(storeApp !== false\) return null;/);
   const page = await read("src/app/mypage/login-methods/page.tsx");
-  assert.match(page, /<LinkProviderButton provider=\{provider\} \/>/);
-  assert.match(page, /<StoreAppLinkNotice \/>/);
+  // 2026-11-15 A안: 서버가 앱 연결용 바깥 브라우저 주소를 만들었을 때만 handoffHref 가 실린다(없으면 지금처럼 숨김)
+  assert.match(page, /<LinkProviderButton provider=\{provider\} handoffHref=\{handoffHrefs\[provider\]\} \/>/);
+  assert.match(page, /\{appCanLink \? <LinkHandoffRefresher \/> : <StoreAppLinkNotice \/>\}/);
 });
 
 // ── a3 활성화 약관 동의 · a4 번호 인증 시각 ──────────────────────────────────
