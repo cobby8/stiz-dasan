@@ -249,7 +249,8 @@ test("관리자 화면은 권한 확인 후 읽기만 한다", async () => {
 
     const action = await readFile("src/app/actions/pos-reconcile.ts", "utf8");
     assert.match(action, /^"use server";/);
-    assert.match(action, /await requireAdmin\(\)/);
+    // POS 대사 «지금 대조»는 원장 전용(2026-11-14)
+    assert.match(action, /await requireOwner\(\)/);
     assert.match(action, /source:\s*"MANUAL"/);
 
     // 중복 클릭 방지: 전송 중에는 버튼이 잠겨야 한다.

@@ -49,7 +49,9 @@ test('정규·특강 결석 안내는 자동 배차 제외를 약속하지 않�
   const absence = read('src/app/mypage/regular-absence/RegularAbsenceClient.tsx');
   assert.equal((home.match(/신고한 결석은 선생님과 기사님에게 표시됩니다/g)||[]).length, 0);
   assert.doesNotMatch(home, /셔틀에서도 자동으로 빠집니다/, "메시지 폼 안내도 자동 제외를 약속하지 않는다");
-  assert.match(absence, /신고한 결석은 선생님과 기사님에게 표시됩니다/);
+  // 2026-11-14 원장 문구 정리: 맨 위 설명은 «수업 1시간 전까지 알리거나 취소할 수 있어요» 한 줄(용어 «결석 알리기» 통일)
+  assert.doesNotMatch(absence, /신고한 결석은 선생님과 기사님에게 표시됩니다/);
+  assert.match(absence, /수업 1시간 전까지 알리거나 취소할 수 있어요\./);
   assert.doesNotMatch(home, /그날 셔틀 배차에서 자동 제외돼요|그날 셔틀에서도 자동으로 빠집니다/);
   assert.doesNotMatch(absence, /다음 단계에서 연동 예정|자동으로 제외되도록 준비 중/);
 });

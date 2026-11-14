@@ -5,7 +5,7 @@ import {
   type StaffClassPerson,
 } from "@/lib/staff-class-people";
 import { getStaffClassAccessContext } from "@/lib/staff-class-access";
-import { canSeeStaffFees } from "@/lib/staff-session-rules";
+import { canSeeStaffFees, staffMasksSettledAmounts } from "@/lib/staff-session-rules";
 
 export type LoadStaffClassPeopleResult =
   | { ok: true; people: StaffClassPerson[] }
@@ -33,6 +33,10 @@ export async function loadStaffClassPeople(input: {
   // 화면만 숨기면 응답에 값이 남으므로 서버에서 null 로 바꿔 보낸다.
   if (!canSeeStaffFees(access.staff.appUserRole)) {
     return { ok: true, people: people.map((person) => ({ ...person, billing: null })) };
+  }
+  // 2026-11-14 부원장 금액 가림: 부원장은 미납 «건수»만 받고 학생별 미납 합계 금액은 서버에서 뺀다
+  if (staffMasksSettledAmounts(access.staff.appUserRole)) {
+    return { ok: true, people: people.map((person) => ({ ...person, billing: person.billing ? { ...person.billing, unpaidAmount: null } : null })) };
   }
   return { ok: true, people };
 }

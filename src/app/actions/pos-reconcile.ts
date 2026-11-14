@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin } from "@/lib/auth-guard";
+import { requireOwner } from "@/lib/auth-guard";
 import { runPosReconcile } from "@/lib/pos/reconcileService";
 
 /**
@@ -14,7 +14,8 @@ import { runPosReconcile } from "@/lib/pos/reconcileService";
  * (중복 클릭은 화면 쪽 버튼이 비활성화로 막는다.)
  */
 export async function runPosReconcileNow(): Promise<void> {
-    await requireAdmin();
+    // 부원장 차단(2026-11-14 원장 결정): POS 대사는 원장만
+    await requireOwner();
     // 결과는 화면이 DB 에서 다시 읽는다. form action 은 값을 돌려주지 않는다(반환하면 타입이 맞지 않는다).
     await runPosReconcile({ source: "MANUAL" });
     revalidatePath("/admin/pos-reconcile");

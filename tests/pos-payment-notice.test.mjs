@@ -799,7 +799,9 @@ test("취소 경고: 납부 반영된 POS 결제가 취소되면 원장 DM + 관
   assert.equal(calls[auditAt].args[2], "POS_NOTICE_CANCELLED_WHILE_PAID");
   const bell = calls.find((c) => /INSERT INTO "Notification"/.test(c.sql));
   assert.ok(bell, "관리자 알림 벨");
-  assert.match(bell.sql, /role IN \('ADMIN', 'VICE_ADMIN'\)/);
+  // 2026-11-14 부원장 금액 가림: 이미 납부된 금액이 들어간 경고라 원장(ADMIN)에게만
+  assert.match(bell.sql, /u\.role = 'ADMIN'/);
+  assert.doesNotMatch(bell.sql, /VICE_ADMIN/);
   assert.equal(bell.args[0], "취소된 POS 결제가 사이트 납부로 남아 있음");
   const posts = slack.filter((s) => s.op === "post");
   assert.equal(posts.length, 1);

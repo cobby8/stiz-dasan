@@ -240,7 +240,7 @@ test("토큰으로 인증하는 API 는 전부 운행 링크 문지기를 거친
 test("토큰 주소 화면은 스위치를 먼저 보고, 건너뛰기(viaAccount)는 권한 확인한 계정 화면 한 곳만", () => {
   const page = fs.readFileSync("src/components/shuttle/UnifiedDriverRunPage.tsx", "utf8");
   const gateAt = page.indexOf("if (!viaAccount && !(await isDriverRunLinkEnabled()))");
-  assert.ok(gateAt > 0 && gateAt < page.indexOf("await isAnyDriverRunToken(token)") && gateAt < page.indexOf("loadUnifiedDriverRun(viewDate)"),"명단을 읽기 전에 스위치를 봐야 한다");
+  assert.ok(gateAt > 0 && gateAt < page.indexOf("await isAnyDriverRunToken(token)") && gateAt < page.indexOf("loadUnifiedDriverRun(viewDate"),"명단을 읽기 전에 스위치를 봐야 한다"); // 2026-11-14: 둘째 인자({ withHealthText })가 생겨 여는 괄호까지만 찾는다
   assert.match(page, /이 주소는 더 이상 쓰지 않습니다|DRIVER_LINK_DISABLED_MESSAGE/);
   const users = walk("src").filter((f) => !f.endsWith("UnifiedDriverRunPage.tsx")).filter((f) => /\bviaAccount\b/.test(fs.readFileSync(f, "utf8")));
   assert.deepEqual(users, ["src/app/staff/run/page.tsx"]);

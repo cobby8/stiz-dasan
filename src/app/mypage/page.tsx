@@ -1,4 +1,3 @@
-import { createClient } from "@/lib/supabase/server";
 import { getMyPageData, getNoticesByClassIds, getMyRequests, getAcademySettings } from "@/lib/queries";
 import { getMakeupOverviewForParent } from "@/lib/makeup/parent-makeup";
 import { getUpcomingSeasonalSeats } from "@/lib/seasonal/parent-absence";
@@ -22,10 +21,12 @@ export default async function MyPageDashboard({
     // ?child=<studentId> — 마지막으로 고른 아이(내 자녀일 때만 쓴다, 아니면 첫째)
     searchParams?: Promise<{ child?: string }>;
 }) {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    // 로그인·학부모 확인은 레이아웃이 이미 한 확인을 그대로 쓴다(요청 단위 기억 — 2026-11-14 속도 개선).
+    // 예전엔 여기서 로그인 서버에 한 번 더 물어봐(getUser) 화면마다 왕복이 하나 더 붙었다.
+    // 레이아웃이 확인 실패를 먼저 /mypage/continue 로 보내므로 아래 안내는 만일을 위한 것이다.
+    const parentAuth = await requireVerifiedParent().catch(() => null);
 
-    if (!user) {
+    if (!parentAuth) {
         return (
             <div className="flex flex-col items-center justify-center py-20 text-center">
                 <h2 className="academy-heading mb-2">로그인이 필요합니다</h2>
@@ -42,7 +43,6 @@ export default async function MyPageDashboard({
 
     // 인증 게이트가 검증한 부모 User.id(appUserId)를 자녀 조회 기준으로 사용한다.
     // (이메일 매칭은 소셜/이메일 불일치 시 자녀를 못 찾는 버그가 있었다)
-    const parentAuth = await requireVerifiedParent();
     const data = await getMyPageData(parentAuth.appUserId);
 
     // 정식 자녀가 없어도 특강 신청 내역과 연결 요청 경로는 확인할 수 있어야 한다.

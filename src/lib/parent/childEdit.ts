@@ -137,7 +137,7 @@ export async function saveChildDirect(db: Db, userId: string, studentId: string,
   const where = `s.id = $2 AND ${access} AND ${notMergedStudent("s")}`;
   // 지금 학생 전화와 «대표 보호자인가» — 권한 조건을 같이 건다(남의 아이면 0행)
   const current = await db.$queryRawUnsafe<Array<{ phone: string | null; isRep: boolean }>>(
-    `SELECT s.phone, (s."parentId" = $1) AS "isRep" FROM "Student" s WHERE ${where} LIMIT 1`,
+    `SELECT s.phone, (s."parentId" = $1) AS "isRep" FROM "Student" s WHERE s.id = $2 AND ${access} AND ${notMergedStudent("s")} LIMIT 1`,
     userId,
     studentId,
   );

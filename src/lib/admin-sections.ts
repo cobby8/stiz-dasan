@@ -18,6 +18,8 @@ export type AdminSectionTab = {
   label: string;
   /** Material Symbols 아이콘 이름 */
   icon: string;
+  /** 원장(ADMIN) 전용 탭 — 부원장에게는 탭 줄에서 뺀다(2026-11-14 부원장 금액 가림). 화면 자체는 서버에서 막는다 */
+  ownerOnly?: boolean;
 };
 
 export type AdminSection = {
@@ -45,7 +47,8 @@ export const ADMIN_SECTIONS = {
       { href: "/admin/finance", label: "청구·수납", icon: "payments" },
       { href: "/admin/payment-requests", label: "입금 확인·영수증", icon: "receipt_long" },
       { href: "/admin/payment-confirmations", label: "현장 수납 승인", icon: "account_balance_wallet" },
-      { href: "/admin/pos-reconcile", label: "POS 결제 대사", icon: "calculate" },
+      // POS 대사 = 하루 결제 합계를 맞추는 화면이라 원장 전용(부원장 탭 줄에서 숨김)
+      { href: "/admin/pos-reconcile", label: "POS 결제 대사", icon: "calculate", ownerOnly: true },
     ],
   },
   // 사이드바 «홈페이지 관리» — 학원 소개(/admin/settings)가 첫 탭. 사진 공개 회수는 갤러리 바로 뒤에 둔다
@@ -107,4 +110,12 @@ export function findAdminSection(pathname: string): { key: AdminSectionKey; sect
 /** 지금 주소가 이 묶음 안인가 — 사이드바 부모 메뉴를 켤 때 쓴다 */
 export function isInAdminSection(pathname: string, key: AdminSectionKey): boolean {
   return findAdminSection(pathname)?.key === key;
+}
+
+/**
+ * 이 사람에게 보일 탭만 남긴다 — 원장이 아니면 ownerOnly 탭을 뺀다(2026-11-14 부원장 금액 가림).
+ * ⚠️ 이 파일은 import 를 하지 않으므로 역할 문자열 대신 «원장인가» 불리언을 받는다(판정은 moneyAccess 쪽).
+ */
+export function visibleSectionTabs(tabs: readonly AdminSectionTab[], isOwner: boolean): AdminSectionTab[] {
+  return tabs.filter((tab) => isOwner || !tab.ownerOnly);
 }

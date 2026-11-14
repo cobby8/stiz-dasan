@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/auth-guard";
+import { requireOwner } from "@/lib/auth-guard";
+// 부원장 차단(2026-11-14 원장 결정): 원장(ADMIN)만 — requireOwner 가 부원장을 거절한다
 import { prisma } from "@/lib/prisma";
 import { MonthlyRegisterError } from "@/lib/billing/monthly-register";
 import { mutateMonthlyRegister, readMonthlyRegister, validateRegisterTarget } from "@/lib/billing/monthly-register-service";
@@ -12,7 +13,7 @@ const fail = (error: unknown) => NextResponse.json({ error: error instanceof Mon
 { status: error instanceof MonthlyRegisterError ? error.status : 500, headers });
 
 export async function GET(request: NextRequest) {
-  try { await requireAdmin(); } catch { return NextResponse.json({ error: "관리자 로그인이 필요합니다." }, { status: 403, headers }); }
+  try { await requireOwner(); } catch { return NextResponse.json({ error: "원장 권한이 필요합니다." }, { status: 403, headers }); }
   try {
     const { studentId, month } = validateRegisterTarget(request.nextUrl.searchParams.get("studentId"), request.nextUrl.searchParams.get("month"));
     const view = await prisma.$transaction(async (tx) => {
@@ -46,7 +47,7 @@ async function readBody(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   let admin;
-  try { admin = await requireAdmin(); } catch { return NextResponse.json({ error: "관리자 로그인이 필요합니다." }, { status: 403, headers }); }
+  try { admin = await requireOwner(); } catch { return NextResponse.json({ error: "원장 권한이 필요합니다." }, { status: 403, headers }); }
   try {
     if (!writesEnabled()) throw new MonthlyRegisterError("월 장부 저장은 운영 적용 승인 전까지 잠겨 있습니다.", 503);
     if (request.headers.get("origin") !== request.nextUrl.origin || request.headers.get("sec-fetch-site") === "cross-site") {

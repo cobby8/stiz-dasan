@@ -70,6 +70,10 @@ function database({credit=0,secondClass=false}={}){
   if(sql.startsWith('INSERT INTO "BillingCarryUsage"')){state.usages.push({studentId:v[1],month:v[2],amount:v[4],paymentId:v[5],sourceCreditIds:v[7],basis:JSON.parse(v[8])});return 1;}
   if(sql.startsWith('INSERT INTO "BillingCarryCredit"')){state.carryCredits.push({id:v[0],studentId:v[1],absenceId:v[2],numerator:v[3],denominator:v[4],availableMonth:v[5],basis:JSON.parse(v[6])});return 1;}
   if(sql.startsWith('INSERT INTO "BillingAbsenceResolution"')){state.resolutions.push({id:v[0],resolution:v[2]});return 1;}
+  // 질병·부상 이월 검토(2026-11-14): 정산과 같은 거래에서 검토 상태를 맞춘다(질병·부상 결석만)
+  if(sql.startsWith('INSERT INTO "RegularAbsenceCarryReview"')){assert.match(sql,/a\.reason='ILLNESS_INJURY'/);const a=state.absences.find(x=>x.id===v[0]&&x.reason==="ILLNESS_INJURY");if(!a)return 0;state.reviews=(state.reviews??[]).filter(r=>r.absenceId!==v[0]);state.reviews.push({absenceId:v[0],status:v[1],decidedByUserId:v[2],convertReason:v[3]});return 1;}
+  // 신청함 [이월 승인]: 신고 상태 결석을 확정으로(같은 거래)
+  if(sql.startsWith('UPDATE "RegularAbsence" SET status = \'CONFIRMED\'')){const a=state.absences.find(x=>x.id===v[0]&&x.status==="REPORTED");if(a)a.status="CONFIRMED";return a?1:0;}
   if(sql.startsWith('UPDATE "MakeupSession"')){for(const b of state.bookings)if(b.status==="BOOKED")b.status="CANCELLED";return 1;}
   if(sql.startsWith('UPDATE "MakeupCredit"')){for(const c of state.makeupCredits)if(["AVAILABLE","RESERVED","EXPIRED"].includes(c.status)){c.status="REVOKED";c.makeupSessionId=null;}return 1;}
   if(sql.startsWith('INSERT INTO "Payment"')){state.payments.push({id:v[0],studentId:v[1],classId:v[2],amount:v[3],status:"PENDING",type:"MONTHLY",updatedAt:"now"});return 1;}
@@ -122,7 +126,7 @@ test("이월 잔액 초과·한 학생 두 반의 셔틀 중복 차단",async()=
 });
 test("서버 보안 계약: 기본 꺼짐·권한·동일출처·크기제한·서버 거래",async()=>{
  const route=await readFile("src/app/api/admin/billing-workbench/route.ts","utf8"),schema=await readFile("src/lib/billing/workbench-schema.sql","utf8");
- assert.match(route,/requireAdmin\(\)/);assert.match(route,/STIZ_BILLING_WORKBENCH_WRITES_ENABLED === "true"/);assert.match(route,/sec-fetch-site/);assert.match(route,/length>limit/);
+ assert.match(route,/requireOwner\(\)/);assert.match(route,/STIZ_BILLING_WORKBENCH_WRITES_ENABLED === "true"/);assert.match(route,/sec-fetch-site/);assert.match(route,/length>limit/);
  assert.equal((schema.match(/ENABLE ROW LEVEL SECURITY/g)||[]).length,6);assert.match(schema,/FROM PUBLIC/);assert.match(schema,/'anon','authenticated'/);
  assert.doesNotMatch(serviceSource,/ensurePaymentInfrastructure|fetch\(|sendSMS|sendNotification|rallyz.*fetch/i);
 });
@@ -139,6 +143,8 @@ test("정규 결석 이월은 할인 후 원기간 금액/실제 예정 회수, 
  const result=await resolveWorkbenchAbsence(db,resolveCommand(view),"admin",true);
  assert.equal(db.state.carryCredits[0].numerator,"90000");assert.equal(db.state.carryCredits[0].denominator,"4");
  assert.equal(db.state.makeupCredits[0].status,"REVOKED");assert.equal(result.view.rows[0].carryAvailable,22500);
+ // 신청함 검토 상태도 같은 거래에서 «이월 승인»으로
+ assert.deepEqual(db.state.reviews,[{absenceId:"absence-a",status:"APPROVED",decidedByUserId:"admin",convertReason:null}]);
  await resolveWorkbenchAbsence(db,resolveCommand(view),"admin",true);assert.equal(db.state.carryCredits.length,1);
 });
 test("보강 예약은 명시 취소 확인 후 같은 거래에서 좌석 해제와 권 회수",async()=>{
@@ -518,4 +524,63 @@ test("대회준비반 수요일+일반 반: 대회준비반 150,000 고정(할�
  // 일반 반은 대회준비반을 빼고 주1회 → 100,000, 형제할인 10%
  assert.deepEqual([row("ace:c-mon").baseAmount,row("ace:c-mon").discountAmount],[100000,10000]);
  assert.ok(row("ace:c-mon").reviewReasons.some(x=>/평일 대회준비반\(150,000원 고정\)과 일반 반 1개/.test(x)));
+});
+
+// ── 신청함 [이월 승인](2026-11-14 원장 결정 a3) — 기존 CARRY 규칙을 «그대로» 부르는 연결부를 실제로 돌려 본다 ──
+// src/lib/regular/illness-carry-admin.ts: 결석 확정 + 최신 자료 버전 읽기 + resolveWorkbenchAbsence 를 한 거래로 묶는다.
+const guardUrl=url(await readFile("src/lib/billing/absence-compensation-guard.ts","utf8"));
+const creditRulesUrl=url(await readFile("src/lib/makeup/credit-rules.ts","utf8"));
+const reportCreditUrl=url((await readFile("src/lib/makeup/absence-report-credit.ts","utf8")).replace('from "./credit-rules"',`from "${creditRulesUrl}"`).replace('from "@/lib/billing/absence-compensation-guard"',`from "${guardUrl}"`).replace('from "@/lib/datetime/kst"',`from "${kstUrl}"`).replace('from "@/lib/parent/changeDeadline"',`from "${url(await readFile("src/lib/parent/changeDeadline.ts","utf8"))}"`));
+const illnessRulesUrl=url((await readFile("src/lib/regular/illnessCarryRules.ts","utf8")).replace('from "@/lib/datetime/kst"',`from "${kstUrl}"`));
+const illnessTxUrl=url((await readFile("src/lib/regular/illness-carry-tx.ts","utf8")).replace('from "@/lib/billing/absence-compensation-guard"',`from "${guardUrl}"`).replace('from "@/lib/makeup/absence-report-credit"',`from "${reportCreditUrl}"`).replace('from "@/lib/regular/illnessCarryRules"',`from "${illnessRulesUrl}"`));
+const illnessAdminUrl=url((await readFile("src/lib/regular/illness-carry-admin.ts","utf8")).replace('from "@/lib/datetime/kst"',`from "${kstUrl}"`).replace('from "@/lib/billing/workbench"',`from "${modelUrl}"`).replace('from "@/lib/billing/workbench-service"',`from "${serviceUrl}"`).replace('from "@/lib/billing/workbench-absence"',`from "${absenceUrl}"`).replace('from "@/lib/makeup/absence-report-credit"',`from "${reportCreditUrl}"`).replace('from "@/lib/regular/illness-carry-tx"',`from "${illnessTxUrl}"`).replace('from "@/lib/regular/illnessCarryRules"',`from "${illnessRulesUrl}"`));
+const {approveIllnessCarry}=await import(illnessAdminUrl);
+const approve=(db,input={})=>approveIllnessCarry(db,{absenceId:"absence-a",evidenceConfirmed:true,...input},"admin",true);
+// 학부모가 알린(아직 «신고» 상태인) 질병·부상 결석 — 원래 달(10월) 확정 장부 있음, 보강권 상태는 인자로
+const reportedAbsence=(status="AVAILABLE")=>{const db=absenceDatabase(status);db.state.absences[0].status="REPORTED";return db;};
+test("신청함 이월 승인: 신고 상태 결석을 확정하고 기존 규칙으로 적립(할인 후 수강료÷그 달 수업 횟수) + 보강권 회수 + 검토 «이월 승인»",async()=>{
+ const db=reportedAbsence();
+ const done=await approve(db);
+ assert.deepEqual(done,{studentId:"student-a",classId:"class-a",absenceYmd:"2026-10-10"});
+ assert.equal(db.state.absences[0].status,"CONFIRMED","원장이 증빙을 보고 승인 = 결석 확정");
+ assert.equal(db.state.carryCredits.length,1);
+ assert.deepEqual([db.state.carryCredits[0].numerator,db.state.carryCredits[0].denominator,db.state.carryCredits[0].availableMonth],["90000","4","2026-11"],"(100,000−할인 10,000)÷10월 4회 → 다음 달(11월)부터 차감");
+ assert.equal(db.state.carryCredits[0].basis.eligibility,"ILLNESS_INJURY");assert.equal(db.state.carryCredits[0].basis.evidenceConfirmed,true);
+ assert.equal(db.state.makeupCredits[0].status,"REVOKED","이미 나간 보강권은 회수(a7)");
+ assert.deepEqual(db.state.resolutions,[{id:"absence-a",resolution:"CARRY"}]);
+ assert.deepEqual(db.state.reviews,[{absenceId:"absence-a",status:"APPROVED",decidedByUserId:"admin",convertReason:null}]);
+ // 다음 달 청구 준비 화면에 이월 잔액으로 잡힌다(기존 «이월 차감» 표시 재사용)
+ const next=await readWorkbench(db.tx,"2026-11",true);assert.equal(next.rows[0].carryAvailable,22500);
+ // 두 번 누르면 기존 규칙이 막는다(이중 적립 없음)
+ await assert.rejects(()=>approve(db),/미처리 결석만/);assert.equal(db.state.carryCredits.length,1);
+});
+test("신청함 이월 승인: 이미 확정된 결석(기간 결석·출석부 표시)도 같은 길로 적립된다",async()=>{
+ const db=absenceDatabase();await approve(db);
+ assert.equal(db.state.carryCredits.length,1);assert.equal(db.state.reviews[0].status,"APPROVED");
+});
+test("신청함 이월 승인: 조건이 안 맞으면 기존 규칙의 사유로 거절하고 아무것도 남기지 않는다(결석 확정도 되돌림)",async()=>{
+ const untouched=db=>{assert.equal(db.state.absences[0].status,"REPORTED");assert.equal(db.state.carryCredits.length,0);assert.equal(db.state.resolutions.length,0);assert.equal((db.state.reviews??[]).length,0);};
+ // 증빙 확인 체크 없음 · 저장 스위치 꺼짐 — DB 를 건드리기 전에 막는다
+ let db=reportedAbsence();await assert.rejects(()=>approve(db,{evidenceConfirmed:false}),/증빙을 확인했는지/);untouched(db);
+ db=reportedAbsence();await assert.rejects(()=>approveIllnessCarry(db,{absenceId:"absence-a",evidenceConfirmed:true},"admin",false),/꺼져 있어/);untouched(db);
+ // 아직 오지 않은 결석일
+ db=reportedAbsence();db.state.absences[0].date="2099-01-03";await assert.rejects(()=>approve(db),/결석일이 지난 뒤/);untouched(db);
+ // 질병·부상이 아닌 결석
+ db=reportedAbsence();db.state.absences[0].reason="PERSONAL";await assert.rejects(()=>approve(db),/질병·부상 결석만/);untouched(db);
+ // 이미 보강을 들은 결석 — 기존 규칙이 막고, 그 앞에서 한 «결석 확정»까지 통째로 되돌아간다
+ for(const status of ["USED","NO_SHOW"]){db=reportedAbsence(status);await assert.rejects(()=>approve(db),/사용된/);untouched(db);assert.equal(db.state.makeupCredits[0].status,status);}
+ // 원래 달 수강료 근거(확정 장부·발행 청구)가 없다 = 청구 발행 전
+ db=reportedAbsence();db.state.registers=[];await assert.rejects(()=>approve(db),/원결석 기간/);untouched(db);
+ // 보강 예약이 있으면 «함께 취소» 확인이 있어야 한다
+ db=reportedAbsence("RESERVED");db.state.bookings.push({id:"booking-a",status:"BOOKED",studentId:"student-a",originalClassId:"class-a",originalDate:"2026-10-09T15:00:00Z",updatedAt:"2026-10-11"});
+ await assert.rejects(()=>approve(db),/좌석 해제/);untouched(db);
+ await approve(db,{cancelReservation:true});assert.equal(db.state.bookings[0].status,"CANCELLED");assert.equal(db.state.makeupCredits[0].status,"REVOKED");assert.equal(db.state.carryCredits.length,1);
+});
+test("청구 준비 화면에서 «보강»으로 정산하면 신청함 검토도 «보강권으로 전환»으로 맞춰진다(경조사 등 다른 사유 결석은 적지 않는다)",async()=>{
+ const db=absenceDatabase();let view=await readWorkbench(db.tx,"2026-11",true);
+ await resolveWorkbenchAbsence(db,{...resolveCommand(view),resolution:"MAKEUP",eligibility:"NONE",evidenceConfirmed:false},"admin",true);
+ assert.deepEqual(db.state.reviews,[{absenceId:"absence-a",status:"MAKEUP",decidedByUserId:"admin",convertReason:"REJECTED"}]);
+ const other=absenceDatabase();other.state.absences[0].reason="FAMILY_TRIP";view=await readWorkbench(other.tx,"2026-11",true);
+ await resolveWorkbenchAbsence(other,{...resolveCommand(view),eligibility:"DIRECT_FAMILY_EVENT"},"admin",true);
+ assert.equal(other.state.carryCredits.length,1);assert.equal((other.state.reviews??[]).length,0);
 });

@@ -514,7 +514,8 @@ test("관리자 화면: 방식 고르기 → 확인창(금액·토스 즉시 취
   assert.match(ui, /needsSettlementChoice\(row\) && \(!modes\[row\.id\] \|\| !row\.settlementPreview\?\.ready\)/, "방식을 안 고르면 승인 버튼이 잠긴다");
   const actions = readFileSync("src/app/actions/enrollment-changes.ts", "utf8");
   for (const name of ["settlePauseTuition", "retryPauseTuitionRefund", "markPauseTuitionLineDone", "markPauseCarryHandled"]) {
-    assert.match(actions, new RegExp(`export async function ${name}[\\s\\S]{0,200}await requireAdmin\\(\\)`), name);
+    // 휴원 수강료 처리·환불은 원장 전용(2026-11-14 부원장 금액 가림) — requireOwner
+    assert.match(actions, new RegExp(`export async function ${name}[\\s\\S]{0,200}await requireOwner\\(\\)`), name);
   }
 });
 

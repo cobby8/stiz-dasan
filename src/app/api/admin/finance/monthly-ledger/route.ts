@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/auth-guard";
+import { requireOwner } from "@/lib/auth-guard";
+// 부원장 차단(2026-11-14 원장 결정): 원장(ADMIN)만 — requireOwner 가 부원장을 거절한다
 import { prisma } from "@/lib/prisma";
 import { parseMonthlyLedgerMonth, readMonthlyClassLedger } from "@/lib/billing/monthly-class-ledger-read";
 
@@ -8,9 +9,9 @@ const headers = { "Cache-Control": "private, no-store, max-age=0" };
 
 export async function GET(request: NextRequest) {
   try {
-    await requireAdmin();
+    await requireOwner();
   } catch {
-    return NextResponse.json({ error: "관리자 로그인이 필요합니다." }, { status: 403, headers });
+    return NextResponse.json({ error: "원장 권한이 필요합니다." }, { status: 403, headers });
   }
   const targetMonth = request.nextUrl.searchParams.get("month") ?? "";
   try {

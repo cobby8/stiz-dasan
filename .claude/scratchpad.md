@@ -38,6 +38,20 @@
 - 운영 배포 = `git push origin HEAD:main` fast-forward.
 - 테스트는 `node --test tests/*.test.mjs` **+ 가드 `node --experimental-strip-types --test src/lib/*.test.ts`**(=`npm test`). ⚠️ 2026-10-25 실측: `tests/` 만 돌려 **학생 병합 필터 가드(src/lib/studentVisibility.test.ts)를 놓쳤다** — 회원 탈퇴 배포 후 release:preflight 가 실패하던 상태였다. **`npx vitest`는 이 프로젝트에 없음**(설정도 없어 worktree까지 긁어 전부 오탐).
 
+### 구현 기록 (developer · 11-14 질병·부상 결석 이월, claude/illness-carry)
+📝 구현한 기능: 질병·부상 결석 = 증빙 사진 → 원장 [이월 승인](다음 달 수강료 1회분 차감) / [보강권으로], 7일 사진 없으면 보강권 자동 전환
+
+| 파일 경로 | 변경 내용 | 신규/수정 |
+|----------|----------|----------|
+| prisma/migrations/20261114130000_illness_carry_review/migration.sql · schema.prisma | 검토·증빙 표 2개(RLS FORCE, 되돌림 주석, 기존 정산 채우기) | 신규/수정 |
+| src/lib/regular/illnessCarryRules.ts · illness-carry-tx.ts · illness-carry-admin.ts · illness-carry-cron.ts · illness-evidence-access.ts · illness-evidence-storage.ts | 규칙·쓰기·승인·cron·사진 권한/저장 | 신규 |
+| src/lib/regular/parent-regular-absence.ts · api/mypage/regular-absence(+evidence) · mypage/regular-absence/* | 신고 분기·사유 글·사진·상태 표시·문구 정리 | 수정/신규 |
+| src/lib/requests/catalog.ts · admin-inbox.ts · admin/inbox/IllnessCarryInboxDetail.tsx · actions/illness-carry-admin.ts · api/admin/absence-evidence/[id] | 신청함 «질병·부상 결석» | 수정/신규 |
+| src/lib/makeup/credit-service.ts · regular/attendance-absence-reason.ts · actions/staff-sessions.ts · actions/admin.ts · billing/workbench-absence.ts · api/cron/makeup-credits | 출결 보류·순서·검토 상태 맞춤·cron | 수정 |
+
+💡 tester 참고: 마이그레이션 적용 «전»은 예전 방식(즉시 보강권)·신청함에 새 종류 0건이 정상. 적용 «후» 질병·부상 신고 → 보강권 없음+«이월 검토 중», 사진 올리기/지우기(7일·3장), 신청함 [이월 승인] 뒤 다음 달 청구 준비 화면 «이월 잔액». 주의 입력: 결석일 전 승인(버튼 꺼짐)·보강 예약된 결석(함께 취소 확인)·원래 달 청구 미발행(사유 한 줄).
+⚠️ reviewer 참고: ① 새 SQL 전부 실제 Postgres 미실행(가짜 DB·문구 검증만) ② approveIllnessCarry 가 readWorkbench 를 한 거래에서 3~4번 읽음(무거움·45초 제한) ③ 신청함에 같은 결석이 «결석»·«질병·부상 결석» 두 줄로 보임 ④ 옛 질병·부상 결석(10-05 이후·검토 줄 없음)이 «이월 검토»에 한꺼번에 뜸.
+
 ## 미해결 리뷰 수정 사항 (이월)
 | 번호 | 파일 | 심각도 | 내용 |
 |------|------|--------|------|
@@ -91,6 +105,7 @@
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
 | 11-14 | developer(아이 정보 수정, claude/child-edit): 학부모 «수정» 시트(학교·학생 전화·주소·건강 특이사항 바로 반영 / 이름·생년월일 변경 신청→학생 상세 «정보 변경 요청» 승인·반려) · 건강 글 선생님 «특이»+상세 시트·기사님 줄 «특이» · 연락처 바꾸기(본인인증) · 연결된 가족 보기·끊기(대표만) · 막다른 문구 3곳 · 임시 생일 학년. 마이그레이션 20261114140000 **운영 미적용**. tsc 0·tests 4938-0·guards 82-0 | 검수 대기 |
+| 11-14 | developer(질병·부상 결석 이월, claude/illness-carry): 질병·부상 결석 = 보강권 대신 «이월 검토 중»(RegularAbsenceCarryReview) · 사유 글 필수+증빙 사진 1~3장(비공개 버킷 absence-evidence, 7일 안 추가) · 신청함 «질병·부상 결석»(ILLNESS_CARRY) [이월 승인]=기존 resolveWorkbenchAbsence 재사용 / [보강권으로] · 7일 사진 없음 자동 전환·90일 뒤 사진 삭제(cron/makeup-credits) · 출결 결석 시 보류 · 카카오 안내·FAQ·«결석 알리기» 문구. **마이그레이션 20261114130000 운영 미적용**(없어도 예전 방식으로 동작). tsc 0·tests 4827-0·guards 82-0. 새 SQL 은 실제 Postgres 에서 미실행 — 적용 후 읽기 검증 필요 | 검수 대기 |
 | 11-14 | developer(수업 진행 화면 간결화, claude/staff-session-compact): 출석부 화면·«출석 확인» 칸·«학생 정보·수업 관리» 펼침을 없애고 학생 한 줄 명단(이름+출결 3버튼)+상세 시트(SessionStudentSheet)+«더보기» · «오늘 수업 내용»+«수업 피드» → «오늘 수업» 한 칸(계획 접힘·불러오기) · 종료 창 중복 입력 제거 · 옛 안드로이드 앱(1.0.3 미만) 영상 촬영 안내. 서버·액션 변경 없음. tsc 0·tests 4808-0 | 완료(main 머지 전·실기기 점검 필요) |
 | 11-14 | developer(보강 예약 학년 판정, claude/makeup-grade): 학생 학년 = 생년월일 계산(student-grade.ts, 임시 생일 2000-01-01·빈 값이면 학년 글자), 후보 = 포함 먼저+±1 유지·미취학 위로 2학년·성인반끼리(credit-rules.makeupGradeFit, 목록·예약 같은 판정), 빈 목록 4종 그 자리 버튼(학년 확인·다시 확인·학원에 문의→홈 메시지 폼), 문구 한 줄씩. 휴원 차단 조건 없음. tsc 0·node --test 4795/0 | 검수 대기 |
 | 11-14 | PM: 청구 월 카드(f8bc4572+결제하기 안전장치 87c09363·중복 누름 8e43b575)·기사 운행표 휴원·휴무(067011c5)·앱 1.0.3 버전(5175e8ec) 묶음 배포 a2ce24e READY·오류 0. 안드로이드 vc6 내부 테스트 게시·iOS Codemagic #6 TestFlight 처리 완료(외부 베타 정보 미입력 경고만) | 완료 |

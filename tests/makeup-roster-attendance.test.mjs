@@ -159,12 +159,17 @@ test("코치 출결 저장: 보강 아이는 보강 예약 전이 + 기존 보�
   const b = staff.slice(start, staff.indexOf("\nexport ", start + 1));
   assert.match(b, /findMakeupBookings\(prisma,/);
   // 주석은 빼고 실제 코드만 본다(주석에 함수 이름이 설명으로 적혀 있다).
-  const makeupBranch = b.slice(b.indexOf("if (isMakeup) {"), b.indexOf("} else {", b.indexOf("if (isMakeup) {")))
+  const makeupBranch = b.slice(b.indexOf("if (isMakeup) {"), b.indexOf("// 결석 사유(질병·부상)", b.indexOf("if (isMakeup) {")))
     .split(/\r?\n/).filter((line) => !line.trim().startsWith("//")).join("\n");
   assert.match(makeupBranch, /applyMakeupAttendanceInTx\(tx,/);
   // 보강권 전이는 applyMakeupAttendanceInTx 안 같은 트랜잭션에서 한다 — 트랜잭션 뒤 따로 부르지 않는다.
   assert.doesNotMatch(makeupBranch, /syncCreditForMakeupSession/);
   assert.doesNotMatch(makeupBranch, /syncCreditForRegularSession/);
+  // 2026-11-14: 정규 보강권 맞춤은 보강 아이가 아닐 때만, 결석 사유(질병·부상 표시)를 저장한 «뒤»에 부른다
+  const reasonAt = b.indexOf("applyAttendanceAbsenceReasonInTx(tx,");
+  const syncAt = b.indexOf("await syncCreditForRegularSession(");
+  assert.ok(reasonAt > 0 && syncAt > reasonAt, "사유 저장 → 보강권 맞춤 순서");
+  assert.match(b.slice(syncAt - 700, syncAt), /if \(!isMakeup\) \{/);
 });
 
 // ── 검수 권장 반영(2026-11-08) ──
