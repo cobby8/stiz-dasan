@@ -13,6 +13,8 @@ import { getStudentRegisterOptions, type RegisterClassOption } from "@/app/actio
 import { moveEnrollmentToClass } from "@/app/actions/enrollment-admin-edit";
 import { todayKst, toKstYmd } from "@/lib/datetime/kst";
 import { moveEffectiveMinYmd } from "@/lib/enrollment/admin-enrollment-edit";
+import type { EnrollmentEndCleanupSummary, OpenRequestView } from "@/lib/enrollment/enrollment-end-cleanup";
+import { OpenRequestsBox } from "./EnrollmentCleanupNotice";
 
 const DAY_KEYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 const DAY_LABELS: Record<string, string> = { Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금", Sat: "토", Sun: "일" };
@@ -32,8 +34,8 @@ export default function EnrollmentMoveModal({
     studentName: string;
     source: EnrollmentMoveSource;
     onClose: () => void;
-    /** 이동 성공 — 부모가 목록을 다시 읽고 안내를 띄운다 */
-    onMoved: (message: string) => void;
+    /** 이동 성공 — 부모가 목록을 다시 읽고 안내를 띄운다(옛 반 결석·보강권 정리 결과·미납 청구 포함) */
+    onMoved: (message: string, cleanup: EnrollmentEndCleanupSummary) => void;
 }) {
     const [classes, setClasses] = useState<RegisterClassOption[] | null>(null);
     const [loadError, setLoadError] = useState<string | null>(null);
@@ -45,6 +47,10 @@ export default function EnrollmentMoveModal({
     const [error, setError] = useState<string | null>(null);
     // 정원 초과 반을 골랐을 때 «그래도 옮기기» 확인 단계
     const [overCapacityAsk, setOverCapacityAsk] = useState<string | null>(null);
+    // 처리 중 수강 변경 신청 확인 상자(함께 정리할지 묻기 / 막힘 안내)
+    const [openRequests, setOpenRequests] = useState<{ code: "OPEN_REQUESTS" | "BLOCKED_REQUESTS"; message: string; requests: OpenRequestView[] } | null>(null);
+    // 정원 확인과 신청 확인을 둘 다 거칠 수 있어, 앞에서 고른 답을 기억해 다음 저장에 같이 보낸다
+    const [allowOverCapacityChosen, setAllowOverCapacityChosen] = useState(false);
 
     useEffect(() => {
         let alive = true;
@@ -61,7 +67,9 @@ export default function EnrollmentMoveModal({
     // 적용일 하한(기존 수강 시작일) — 서버도 같은 함수로 다시 막는다
     const minDate = moveEffectiveMinYmd(source.startsOn ?? null, source.createdAt ? toKstYmd(source.createdAt) : null, todayKst());
 
-    async function submit(allowOverCapacity = false) {
+    // closeOpenRequests: 확인 상자에 보여 준 신청 id 목록(서버가 다시 읽은 것과 다르면 다시 묻는다)
+    async function submit(allowOverCapacityInput = false, closeOpenRequests?: string[]) {
+        const allowOverCapacity = allowOverCapacityInput || allowOverCapacityChosen;
         if (!picked || saving) return;
         if (effectiveFrom > todayKst()) {
             setError("미래 날짜 이동은 «수강 변경 신청»(예약)으로 해 주세요.");
@@ -74,12 +82,16 @@ export default function EnrollmentMoveModal({
         setSaving(true);
         setError(null);
         try {
-            const result = await moveEnrollmentToClass({ enrollmentId: source.enrollmentId, toClassId: picked.id, effectiveFrom, reason, allowOverCapacity });
+            const result = await moveEnrollmentToClass({ enrollmentId: source.enrollmentId, toClassId: picked.id, effectiveFrom, reason, allowOverCapacity, closeOpenRequests });
             if (result.ok) {
-                onMoved(`${source.className} → ${picked.name} 으로 옮겼어요(${effectiveFrom} 적용).`);
+                onMoved(`${source.className} → ${picked.name} 으로 옮겼어요(${effectiveFrom} 적용).`, result.cleanup);
                 return;
             }
-            if (result.code === "OVER_CAPACITY") setOverCapacityAsk(result.message);
+            if (allowOverCapacity) setAllowOverCapacityChosen(true);
+            if (result.code === "OPEN_REQUESTS" || result.code === "BLOCKED_REQUESTS") {
+                setOverCapacityAsk(null);
+                setOpenRequests({ code: result.code, message: result.message, requests: result.requests });
+            } else if (result.code === "OVER_CAPACITY") setOverCapacityAsk(result.message);
             else setError(result.message);
         } catch {
             setError("반 이동에 실패했어요. 잠시 후 다시 해 주세요.");
@@ -129,7 +141,7 @@ export default function EnrollmentMoveModal({
                         return (
                             <li key={c.id}>
                                 <label className={`flex min-h-11 cursor-pointer items-center gap-2 px-3 py-1.5 text-sm ${checked ? "bg-[var(--color-academy-secondary-soft)]" : "hover:bg-[var(--color-academy-soft)]"}`}>
-                                    <input type="radio" name="move-to-class" checked={checked} onChange={() => { setToClassId(c.id); setOverCapacityAsk(null); }} className="h-5 w-5 shrink-0 accent-[var(--color-academy-primary)]" />
+                                    <input type="radio" name="move-to-class" checked={checked} onChange={() => { setToClassId(c.id); setOverCapacityAsk(null); setOpenRequests(null); setAllowOverCapacityChosen(false); }} className="h-5 w-5 shrink-0 accent-[var(--color-academy-primary)]" />
                                     <span className="min-w-0 flex-1 truncate font-medium text-[var(--color-academy-ink)]">{c.name}</span>
                                     {c.gradeRange && <span className="max-w-[6.5rem] shrink-0 truncate text-xs text-[var(--color-academy-ink)]" title={`대상 ${c.gradeRange}`}>{c.gradeRange}</span>}
                                     <span className="hidden shrink-0 text-xs text-[var(--color-academy-muted)] sm:inline">{c.startTime}~{c.endTime}</span>
@@ -172,6 +184,15 @@ export default function EnrollmentMoveModal({
                     <p role="alert" className="rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-medium text-[var(--color-academy-danger)]">
                         {overCapacityAsk} 그래도 옮기려면 «정원 넘겨 옮기기»를 눌러 주세요.
                     </p>
+                )}
+                {openRequests && (
+                    <OpenRequestsBox
+                        code={openRequests.code}
+                        message={openRequests.message}
+                        requests={openRequests.requests}
+                        busy={saving}
+                        onConfirm={() => void submit(false, openRequests.requests.map((r) => r.id))}
+                    />
                 )}
                 <div className="flex items-center gap-3 pt-1">
                     <button type="button" onClick={onClose} disabled={saving} className="academy-button-text">그만</button>

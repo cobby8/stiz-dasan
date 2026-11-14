@@ -360,4 +360,8 @@
 - **분류**: architecture
 - **발견자**: developer
 - **내용**: 지각·조퇴 = 결석과 다른 표(RegularArrivalNotice, 마이그레이션 20261115140000) — 보강권·RegularAbsence 에 쓰지 않는다. 규칙은 순수 `src/lib/regular/arrivalNoticeRules.ts`(지각 = 수업 시작 전, 조퇴 = 끝나기 전 — 공용 isChangeOpen 에 마감 0분), 쓰기 `parent-arrival-notice.ts`, 읽기(선생님 출석부·기사 운행표) `arrival-notice-read.ts`(표 없으면 빈 결과). 화면 데이터는 결석 알리기 묶음(loadParentAbsenceScreen.arrival)에 실린다. «셔틀도 안 타요»는 같은 트랜잭션에서 saveShuttleException(SKIP)을 부르고 알림 행의 shuttleExceptionId 로 잇는다(셔틀 1시간 전 마감은 적용 안 함). 기사 화면: SKIP 예외 줄에 skipLabel(자차·조퇴·지각)이 실리고 `riderLockLabel` 이 잠금 글자를 정한다 — **화면 잠금(skipLabel)과 서버 저장 거부(blockedLabel)는 별개**다(체크 저장 API 는 skipLabel 을 보지 않는다). 학부모 «안 타요» 글자는 `parentShuttleChangeLabel`(방향별 자차 문구), 저장 값은 SKIP 그대로.
+### [2026-11-14] 관리자 직접 수강 변경 뒤 정리 = enrollment-end-cleanup.ts 한 곳
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: updateEnrollmentStatus·moveEnrollmentToClass 가 같은 트랜잭션에서 (A) 처리 중 신청 planOpenChangeRequests(같은 방향 승인=SUPERSEDED / 대기·반대=OPEN_REQUESTS 확인 / 청구서·정산·원장=BLOCKED) (B) cleanupEndedClassInTx(효력일 포함 이후 결석 취소·미사용 보강권 회수, 정산·이월·보강·출석은 보호) (C) 미납 청구 목록만. 잠금 순서 = lockCompensation → 신청 FOR UPDATE → 수강(크론과 같은 순서). 취소 결석 note 머리말 «수강 종료로 정리»는 알림 재조정이 거른다. 학부모 자동 적용 크론(applyDue…)은 아직 이 정리를 안 부른다.
 - **참조횟수**: 0
