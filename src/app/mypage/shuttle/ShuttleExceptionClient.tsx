@@ -51,7 +51,8 @@ function savedText(body: Record<string, unknown>): string {
 
 // presetStudentId = 수업 탭 반 카드에서 온 아이 — 그 아이를 미리 고른다(내 자녀 목록에 있을 때만)
 // academyPhone = 학원 대표 번호(설정값) — 알림이 기사님께 못 갔을 때의 «학원에 전화하기» 버튼용. 없으면 글자만 보인다
-export default function ShuttleExceptionClient({ initial, presetStudentId = null, academyPhone = null }: { initial: ShuttleExceptionOptions; presetStudentId?: string | null; academyPhone?: string | null }) {
+// regularChangeHref = 타는 곳·내리는 곳을 «앞으로 계속» 바꾸는 신청 화면(2026-11-14 c5). 없으면(표 미적용) 입구를 보이지 않는다
+export default function ShuttleExceptionClient({ initial, presetStudentId = null, academyPhone = null, regularChangeHref = null }: { initial: ShuttleExceptionOptions; presetStudentId?: string | null; academyPhone?: string | null; regularChangeHref?: string | null }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [studentId, setStudentId] = useState(
@@ -208,6 +209,12 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
         <p className="mt-1 text-sm text-[var(--color-academy-muted)]">
           수업에 빠지면 <Link href="/mypage/regular-absence" className="font-semibold underline">결석 알리기</Link>로 알려 주세요
         </p>
+        {/* 여기는 하루만 바꾸는 곳 — 이사처럼 계속 바뀌면 따로 신청한다(원장 승인 뒤 반영) */}
+        {regularChangeHref && (
+          <p className="mt-1 text-sm text-[var(--color-academy-muted)]">
+            타는 곳·내리는 곳이 앞으로 계속 바뀌면 <Link href={regularChangeHref} className="font-semibold underline">계속 바꾸기</Link>
+          </p>
+        )}
         {/* 마감 안내(2026-11-15) — 서버가 같은 규칙으로 막는다 */}
         <p className="mt-1 break-keep text-xs text-[var(--color-academy-muted)]">
           신청·취소·날짜 바꾸기는 수업 시작 {PARENT_CHANGE_CUTOFF_TEXT} 전까지 할 수 있어요. 수업이 없는 날은 전날까지예요.

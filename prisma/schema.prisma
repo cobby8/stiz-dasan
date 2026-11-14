@@ -230,6 +230,7 @@ model Student {
   createdAt                DateTime                      @default(now())
   updatedAt                DateTime                      @updatedAt
   profileChangeRequests    StudentProfileChangeRequest[]
+  shuttleRegularChangeRequests ShuttleRegularChangeRequest[]
   attendances              Attendance[]
   enrollments              Enrollment[]
   guardians                Guardian[]
@@ -3684,6 +3685,35 @@ model StudentProfileChangeRequest {
   student           Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
   @@index([studentId, createdAt(sort: Desc)], map: "StudentProfileChangeRequest_studentId_createdAt_idx")
+}
+
+/// 셔틀 타는 곳·내리는 곳을 «앞으로 계속» 바꾸는 학부모 신청(c5, 2026-11-14) — 원장 승인 뒤 적용 시작일에 셔틀 명단에 반영한다.
+/// 서버 raw SQL(src/lib/shuttle/regularChangeRequest.ts)만 사용한다. RLS 켜짐·anon/authenticated 권한 회수.
+/// CHECK(kind·status·directions·weekdays 값 목록, note 300자)와 «확인 중은 아이당 하나» 부분 유니크 인덱스,
+/// 적용일 처리용 부분 인덱스는 migration 20261115120000_shuttle_regular_change_request 에 있다.
+model ShuttleRegularChangeRequest {
+  id                String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  studentId         String
+  requestedByUserId String // 신청한 보호자 User.id (기록용, FK 없음)
+  kind              String // CHANGE | START | STOP
+  directions        String[] // PICKUP | DROPOFF
+  weekdays          Int[] // 0=일 … 6=토. DB 에서는 NULL 가능(= 모든 요일)
+  pickupJson        Json?
+  dropoffJson       Json?
+  effectiveFrom     DateTime  @db.Date
+  note              String?
+  consentVersion    String?
+  status            String    @default("PENDING") // PENDING | APPROVED | APPLIED | REJECTED | CANCELED
+  decidedByUserId   String? // 승인·반려한 원장·부원장 User.id
+  decidedAt         DateTime? @db.Timestamptz(6)
+  decisionNote      String?
+  appliedAt         DateTime? @db.Timestamptz(6)
+  applyResultJson   Json?
+  createdAt         DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  student           Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([studentId, createdAt(sort: Desc)], map: "ShuttleRegularChangeRequest_studentId_createdAt_idx")
 }
 
 /// 앱 간편로그인 인계 원장(a1, 2026-11-13) — 1회용 앱 로그인 요청(5분)과 암호화 세션(소비 즉시 삭제).

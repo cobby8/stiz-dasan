@@ -4,6 +4,7 @@ import { revalidateEnrollmentStatusCaches } from "@/lib/enrollment/change-cache"
 import { applyOpenPauseCarries } from "@/lib/enrollment/pause-settlement";
 import { prisma } from "@/lib/prisma";
 import { withCronAlert } from "@/lib/cron/withCronAlert";
+import { applyDueRegularChanges } from "@/lib/shuttle/regularChangeRequest";
 
 export const dynamic = "force-dynamic";
 
@@ -32,8 +33,14 @@ async function handleGet(req: NextRequest) {
     console.error("[cron/enrollment-changes] 휴원 이월 차감 실패", error instanceof Error ? error.name : "");
     return { applied: 0, amount: 0 };
   });
+  // 승인된 셔틀 «계속 바꾸기»(2026-11-14 c5) — 적용 시작일이 된 건을 셔틀 명단에 반영한다.
+  // 표가 없으면(마이그레이션 전) 0건으로 끝난다. 실패가 수강 변경 결과를 가리지 않게 따로 잡는다(남은 건은 다음 날 다시).
+  const shuttle = await applyDueRegularChanges().catch((error) => {
+    console.error("[cron/enrollment-changes] 셔틀 계속 바꾸기 적용 실패", error instanceof Error ? error.name : "");
+    return { applied: 0, waiting: 0, appliedIds: [] as string[] };
+  });
   // applied = 사이트에 실제 적용한 건수, held = 사람 확인이 필요해 보류 원장만 만든 건수, carryApplied = 이월을 뺀 청구 수
-  return NextResponse.json({ ok: true, applied, held, carryApplied: carry.applied });
+  return NextResponse.json({ ok: true, applied, held, carryApplied: carry.applied, shuttleApplied: shuttle.applied });
 }
 
 // 실패(예외·500 이상)하면 원장 슬랙으로 한 줄 알림 — 같은 작업은 1시간에 1번(d4)

@@ -737,6 +737,11 @@ export async function applyLocationToRosterInTx(
   currentMonth: string = koreaServiceMonth(),
   /** lockRosterForLocationInTx 로 이미 잠갔으면 그 결과(이후 달 목록). 없으면 여기서 잠근다. */
   lockedLaterMonths?: readonly string[],
+  /**
+   * 이 요일(0=일 … 6=토) 칸만 바꾼다 — 학부모 «계속 바꾸기» 신청이 요일을 골랐을 때(2026-11-14 c5).
+   * 비우면 예전 그대로 그 방향의 모든 요일 칸(관리자 학생 위치 저장은 비워서 부른다).
+   */
+  onlyWeekdays?: readonly number[],
 ): Promise<LocationRosterApplyResult & { notices: RosterChangeEvent[] }> {
   const found = await tx.$queryRawUnsafe<{ name: string; parentPhone: string | null }[]>(
     `SELECT s."name",
@@ -755,16 +760,21 @@ export async function applyLocationToRosterInTx(
     const rows = await monthPlacementRows(tx, m);
     const plan = planLocationApply(rows as unknown as RegularShuttleStop[], student, args.kind, { name: args.name, latitude: args.latitude, longitude: args.longitude });
     if (!plan || plan.rowIds.length === 0) continue;
+    // 요일을 골랐으면 그 요일 칸만(정류장 결정은 위 계획 그대로 — 바꿀 행만 좁힌다)
+    const rowIds = onlyWeekdays
+      ? plan.rowIds.filter((id) => { const row = rows.find((r) => r.id === id); return row ? onlyWeekdays.includes(row.weekday) : false; })
+      : plan.rowIds;
+    if (rowIds.length === 0) continue;
     const n = Number(await tx.$executeRawUnsafe(
       `UPDATE "RegularShuttleStop" SET "stopName"=$1,"latitude"=$2,"longitude"=$3
         WHERE "id" = ANY($4::text[]) AND "serviceMonth"=$5 AND "direction"=$6`,
-      plan.stopName, plan.latitude, plan.longitude, plan.rowIds, m, plan.direction,
+      plan.stopName, plan.latitude, plan.longitude, rowIds, m, plan.direction,
     )) || 0;
     if (n === 0) continue;
     out.appliedMonths.push(m);
     out.updated += n;
-    out.months.push({ month: m, by: plan.by, stopName: plan.stopName, rowIds: plan.rowIds });
-    const changed = rows.filter((r) => plan.rowIds.includes(r.id));
+    out.months.push({ month: m, by: plan.by, stopName: plan.stopName, rowIds });
+    const changed = rows.filter((r) => rowIds.includes(r.id));
     // 알림은 가장 이른 달 하나만(이번 달·다음 달이 같이 바뀌어도 기사님께는 한 번).
     if (notices.length === 0) notices.push({
       actorId, month: m, studentId: args.studentId, cells: cellsOf(changed),
