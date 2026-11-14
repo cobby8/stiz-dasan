@@ -22,6 +22,7 @@ import { profilePhotoUpdatedAtSql, profilePhotoVersion } from "@/lib/profilePhot
 import { todayKst, kstDow, addMonthsYm } from "@/lib/datetime/kst";
 // 수업 피드 공용 기준(학부모 공개 수업·참여 판정) — 소식 목록이 사진·영상 권한과 같은 문장을 쓰게
 import { feedParticipantSql, feedVisibleSessionSql } from "@/lib/feed/rules";
+import { classCoachNameSql } from "@/lib/feed/adminFeedRules";
 // 보강 잔여석 계산은 화면·조회·저장 검증이 같은 식을 쓰도록 공용 모듈로 분리해 둔다.
 import { activeMakeupSql, computeRemainingSeats } from "@/lib/makeup/capacity";
 import type { SheetClassSlot } from "@/lib/googleSheetsSchedule";
@@ -2954,11 +2955,10 @@ export async function getStudentReports(parentId: string, studentId?: string) {
                     se."publishedAt", se."photosJSON",
                     c.name AS class_name, c."dayOfWeek", c."startTime", c."endTime",
                     p.name AS program_name,
-                    co.name AS coach_name
+                    ${classCoachNameSql("se", "c")} AS coach_name
              FROM "Session" se
              JOIN "Class" c ON se."classId" = c.id
              LEFT JOIN "Program" p ON c."programId" = p.id
-             LEFT JOIN "Coach" co ON se."coachId" = co.id
              WHERE ${feedVisibleSessionSql("se")}
                AND EXISTS (
                  SELECT 1 FROM "Student" st

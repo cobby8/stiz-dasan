@@ -21,6 +21,7 @@ import {
   type FeedCandidate,
   type FeedPhotoView,
 } from "@/lib/feed/rules";
+import { classCoachNameSql } from "@/lib/feed/adminFeedRules";
 
 export type ParentFeedSession = {
   id: string;
@@ -50,11 +51,10 @@ export async function loadParentViewableSession(
   const sessions = await prisma.$queryRawUnsafe<ParentFeedSession[]>(
     `SELECT se.id, se."classId", ${sessionKstDateSql("se")}::text AS ymd, se.topic, se.content, se."photosJSON",
             c.name AS "className", c."dayOfWeek", c."startTime", c."endTime",
-            p.name AS "programName", co.name AS "coachName"
+            p.name AS "programName", ${classCoachNameSql("se", "c")} AS "coachName"
        FROM "Session" se
        JOIN "Class" c ON c.id = se."classId"
        LEFT JOIN "Program" p ON p.id = c."programId"
-       LEFT JOIN "Coach" co ON co.id = se."coachId"
       WHERE se.id = $1 AND ${feedVisibleSessionSql("se")}
       LIMIT 1`,
     sessionId,
@@ -159,12 +159,11 @@ export async function getLatestFeedCandidates(appUserId: string): Promise<FeedCa
   }>>(
     `SELECT DISTINCT ON (st.id)
             st.id AS "studentId", se.id AS "sessionId", se."classId", ${sessionKstDateSql("se")}::text AS ymd, se."publishedAt",
-            c.name AS "className", co.name AS "coachName", se.content, se.topic, se."photosJSON"
+            c.name AS "className", ${classCoachNameSql("se", "c")} AS "coachName", se.content, se.topic, se."photosJSON"
        FROM "User" u
        JOIN "Student" st ON ${await childAccessSql("st", 'u."id"')} AND ${notMergedStudent("st")}
        JOIN "Session" se ON ${feedVisibleSessionSql("se")} AND ${feedParticipantSql("st", "se")}
        JOIN "Class" c ON c.id = se."classId"
-       LEFT JOIN "Coach" co ON co.id = se."coachId"
       WHERE u.id = $1
       ORDER BY st.id, se.date DESC, se."publishedAt" DESC NULLS LAST`,
     appUserId,
