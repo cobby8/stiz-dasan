@@ -331,6 +331,8 @@ test("③ 청구 탭: 요약 줄(올해 납부·미납·연도별 보기)·형�
     "next/link": link,
     "next/navigation": { useRouter: () => ({ refresh() {} }) },
     "@/components/parent/VirtualAccountNotice": { __esModule: true, default: () => null },
+    // 2026-11-15: 청구 탭 «환불 문의»(71acd25e)가 서버 액션을 import 한다 — 대역이 없으면 알림·푸시 모듈까지 실제로 불러와 깨진다
+    "@/app/actions/parent-inquiry": { sendRefundInquiry: async () => ({ ok: true }) },
   }).default;
   const ym = `${thisYear}-${String(thisMonth).padStart(2, "0")}`;
   const row = (id, extra = {}) => ({ paymentId: id, studentId: "s1", studentName: "첫째", description: "수강료", amount: 100000, status: "PAID", dueDate: `${ym}-10`, paidDate: `${ym}-03`, invoiceNo: null, invoiceId: `i-${id}`, canCheckout: true, receiptUrl: null, virtualAccount: null, pending: [], resolved: [], ...extra });

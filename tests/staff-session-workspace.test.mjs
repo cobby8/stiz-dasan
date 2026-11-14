@@ -485,3 +485,26 @@ test("원장 점검 2: «수업 시작 취소»는 빨간 위험 버튼 하나(�
   assert.match(workspace, /window\.confirm\("수업 시작을 취소하고 '시작 전' 상태로 되돌릴까요\? \(기록한 출결은 그대로 유지됩니다\)"\)/);
   assert.match(workspace, /const memoSaved = await persistMemo\(memoRef\.current\);[\s\S]{0,300}await cancelClassSession\(\{ sessionId: session\.id \}\)/);
 });
+
+// ── 2026-11-15 원장 점검: 새로고침 직후 아래 탭 깜빡임 ──
+
+test("원장 점검 3: 진행 중 수업이 있으면 서버가 그린 첫 화면부터 아래 탭이 숨어 있다(보였다 사라지지 않는다)", () => {
+  // 첫 그림의 값은 서버가 넘긴 오늘 수업 목록에서 바로 나온다 — 진행 중 수업이 있으면 그 줄이 펼쳐진 채로 열리고(초기값), 그때만 참이다
+  assert.match(home, /useState<string \| null>\(\(\) => initialClasses\.find\(\(lesson\) => lesson\.sessionStatus === "IN_PROGRESS"\)\?\.scheduleKey \?\? null\)/);
+  assert.match(home, /const expandedLesson = classes\.find\(\(lesson\) => lesson\.scheduleKey === expandedKey\) \?\? null;/);
+  assert.match(home, /const liveLessonOpen = expandedLesson\?\.sessionStatus === "IN_PROGRESS";/);
+  // 효과(화면이 뜬 뒤)가 아니라 «그림 자체»에 탭 숨김 규칙이 들어 있다 → 서버 그림에도 실린다
+  assert.match(home, /\{liveLessonOpen && <style>\{"\.academy-app \.academy-staff-nav\{display:none!important\}"\}<\/style>\}/);
+  // 규칙이 가리키는 것이 실제 아래 탭과 테마 루트다
+  const nav = read("src/app/staff/StaffBottomNav.tsx");
+  assert.match(nav, /<nav aria-label="교사용 주요 메뉴" className="academy-staff-nav /);
+  assert.match(read("src/components/academy/AcademyTheme.tsx"), /className=\{`academy-app \$\{className\}`\}/);
+  // 탭은 서버에서 «보임»으로 그려지고(진행 중 수업이 없는 평소 홈은 처음부터 보인다) 위 규칙이 있을 때만 가려진다 — 반대 방향 깜빡임 없음
+  assert.match(nav, /useSyncExternalStore\(subscribeStaffLiveLesson, isStaffLiveLessonOpen, \(\) => false\)/);
+  // 끝 여백도 같은 값으로 첫 그림부터 맞는다
+  assert.match(home, /\{liveLessonOpen && <div aria-hidden="true" className="h-12" \/>\}/);
+  // 새 조회를 더하지 않았다 — 홈 페이지의 오늘 수업 조회 한 번 그대로
+  const page = read("src/app/staff/page.tsx");
+  assert.equal((page.match(/getTodayStaffClasses\(/g) ?? []).length, 1);
+  assert.doesNotMatch(read("src/app/staff/layout.tsx"), /getTodayStaffClasses/);
+});

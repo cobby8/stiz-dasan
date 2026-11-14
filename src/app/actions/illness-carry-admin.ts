@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth-guard";
+import { canSeeAllMoney } from "@/lib/auth/moneyAccess";
 import { prisma } from "@/lib/prisma";
 import { WorkbenchError } from "@/lib/billing/workbench";
 import { loadWorkbenchCalendar } from "@/lib/billing/workbench-calendar";
@@ -45,10 +46,14 @@ function failure(error: unknown, fallback: string): { ok: false; message: string
 
 /** 상세 칸을 열 때 — 사유 글·사진 id·승인 가능 여부 */
 export async function loadIllnessCarryDetail(absenceId: string): Promise<{ ok: true; detail: IllnessCarryDetail } | { ok: false; message: string }> {
-  await requireAdmin();
+  const admin = await requireAdmin();
   try {
-    const detail = await readIllnessCarryDetail(prisma, String(absenceId ?? "").trim(), writesEnabled());
+    // 근거 미리보기의 수업 횟수는 승인 때와 같은 공식 일정으로 센다. 일정을 못 읽으면(null) 미리보기·거절 사유를 내지 않는다(승인 때 서버가 판정).
+    const calendar = await loadWorkbenchCalendar().catch(() => null);
+    const detail = await readIllnessCarryDetail(prisma, String(absenceId ?? "").trim(), writesEnabled(), calendar);
     if (!detail) return { ok: false, message: "결석을 찾을 수 없거나 질병·부상 결석이 아닙니다." };
+    // 금액은 원장만 — 화면만 가리지 않고 서버 응답에서 지운다(부원장 금액 숨김 규칙). 횟수·경고 글은 그대로 보인다.
+    if (detail.evidence && !canSeeAllMoney(admin.appUserRole)) detail.evidence = { ...detail.evidence, tuition: null, unit: null };
     return { ok: true, detail };
   } catch (error) {
     return failure(error, "내용을 불러오지 못했습니다. 잠시 뒤 다시 열어 주세요.");
@@ -89,12 +94,13 @@ export async function approveIllnessCarryPeriodAction(input: { absenceId: string
   try {
     const absenceId = String(input?.absenceId ?? "").trim();
     if (input?.evidenceConfirmed !== true) return { ok: false, message: "증빙을 확인했는지 체크해 주세요." };
-    const detail = await readIllnessCarryDetail(prisma, absenceId, writesEnabled());
+    // 승인과 같은 공식 일정으로 «지금 승인할 수 있는가»를 판정한다(일정이 다르면 수업 횟수·사유가 달라진다)
+    const calendar = await loadWorkbenchCalendar(true);
+    const detail = await readIllnessCarryDetail(prisma, absenceId, writesEnabled(), calendar);
     if (!detail) return { ok: false, message: "결석을 찾을 수 없거나 질병·부상 결석이 아닙니다." };
     // 화면이 보낸 목록을 믿지 않고 서버가 읽은 «같은 기간·결석일 지남·결정 전» 목록으로 처리한다(지금 연 결석 포함)
     const targets = [...(detail.status === "PENDING" && !detail.blocker ? [absenceId] : []), ...detail.periodPeerIds];
     if (targets.length === 0) return { ok: false, message: detail.blocker ?? "함께 승인할 결석이 없습니다." };
-    const calendar = await loadWorkbenchCalendar(true);
     const done: Array<{ studentId: string; absenceYmd: string }> = [];
     const failed: string[] = [];
     for (const id of targets) {

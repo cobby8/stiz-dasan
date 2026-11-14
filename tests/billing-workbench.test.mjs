@@ -14,7 +14,8 @@ const serviceSource=await readFile("src/lib/billing/workbench-service.ts","utf8"
 const serviceUrl=url(serviceSource.replace('import { getMonthlyClassDates } from "@/lib/enrollment/monthlyClassDates";','const getMonthlyClassDates=(events,month)=>events.some(e=>e.title==="NO_SCHEDULE")?[]:events.some(e=>e.title==="SHORT_MONTH")&&month==="2026-11"?["2026-11-07","2026-11-14","2026-11-21"]:(month==="2026-10"?["2026-10-03","2026-10-10","2026-10-17","2026-10-24"]:["2026-11-07","2026-11-14","2026-11-21","2026-11-28"]).filter(d=>!(d==="2026-10-10"&&events.some(e=>e.title==="CLOSE_OCT_10")));').replace('from "@/lib/billing-due-date"',`from "${dueUrl}"`).replace('from "@/lib/studentVisibility"',`from "${visibilityUrl}"`).replace('from "./monthly-register"',`from "${registerUrl}"`).replace('from "./workbench"',`from "${modelUrl}"`).replace('from "./workbench-pricing"',`from "${pricingUrl}"`));
 const {readWorkbench,mutateWorkbench}=await import(serviceUrl);
 const absenceSource=await readFile("src/lib/billing/workbench-absence.ts","utf8");
-const absenceUrl=url(absenceSource.replace('from "@/lib/studentVisibility"',`from "${visibilityUrl}"`).replace('from "./monthly-register"',`from "${registerUrl}"`).replace('from "./workbench"',`from "${modelUrl}"`).replace('from "./workbench-service"',`from "${serviceUrl}"`).replace('await import("@/lib/enrollment/monthlyClassDates")','({getMonthlyClassDates:()=>["2026-10-03","2026-10-10","2026-10-17","2026-10-24"]})'));
+const evidenceUrl=url(await readFile("src/lib/billing/carryEvidence.ts","utf8"));
+const absenceUrl=url(absenceSource.replace('from "./carryEvidence"',`from "${evidenceUrl}"`).replace('from "@/lib/studentVisibility"',`from "${visibilityUrl}"`).replace('from "./monthly-register"',`from "${registerUrl}"`).replace('from "./workbench"',`from "${modelUrl}"`).replace('from "./workbench-service"',`from "${serviceUrl}"`).replace('await import("@/lib/enrollment/monthlyClassDates")','({getMonthlyClassDates:()=>["2026-10-03","2026-10-10","2026-10-17","2026-10-24"]})'));
 const {resolveWorkbenchAbsence}=await import(absenceUrl);
 const zero={baseAmount:0,discountAmount:0,prorationAmount:0,carryAmount:0,shuttleAmount:0};
 const draft=()=>({...zero,baseAmount:100000});
@@ -48,9 +49,17 @@ function database({credit=0,secondClass=false}={}){
   // 2026-11-15 부상·질병 기간 결석: 기간 정산 칸이 있는가 / 그 결석의 기간이 승인·정산됐는가(state.periodCarry: 칸 있음, state.periodDecided: 승인된 기간의 결석 id)
   if(sql.includes("information_schema.columns"))return [{n:state.periodCarry?1:0}];
   if(sql.includes('FROM "RegularAbsencePeriod" p JOIN "RegularAbsence" a ON a."periodId"=p.id')){assert.match(sql,/p\."carryState"<>'NONE'/);return (state.periodDecided??[]).includes(v[0])?[{found:1}]:[];}
+  // 납부 Payment 근거(2026-11-15): 그 학생·그 반의 수강 개시일 / 그 반·그 달 납부완료 수강료 청구 / 그 청구에서 이미 줄인 금액
+  if(sql.includes('FROM "Enrollment" e WHERE e."studentId"=$1 AND e."classId"=$2'))return state.enrollments.filter(e=>e.studentId===v[0]&&e.classId===v[1]).map(e=>({startsOn:e.startsOn??null}));
+  // 휴원 정산이 이미 처리한 날(그 학생·그 반, 취소된 휴원 신청 제외)
+  if(sql.includes(`l."missedDates" @> to_jsonb($3::text)`)){assert.match(sql,/s\."studentId"=\$1 AND r\."fromClassId"=\$2 AND r\.status<>'CANCELED'/);return (state.pauseSettled??[]).filter(l=>l.studentId===v[0]&&l.classId===v[1]&&l.requestStatus!=="CANCELED"&&l.missedDates.includes(v[2])).map(l=>({kind:l.kind??"REFUND"}));}
+  // 그 달 셔틀 명단에 그 학생이 있는가(셔틀비 섞임 경고)
+  if(sql.includes('FROM "RegularShuttleStop" WHERE "serviceMonth"=$1 AND "studentId"=$2'))return (state.shuttleStops??[]).filter(r=>r.serviceMonth===v[0]&&r.studentId===v[1]&&["BOARD","ALIGHT"].includes(r.direction)).slice(0,1).map(()=>({found:1}));
+  if(sql.includes(`p.type='MONTHLY' AND p.status='PAID' ORDER BY p.id`))return state.payments.filter(p=>p.studentId===v[0]&&p.classId===v[1]&&p.year===v[2]&&p.month===v[3]&&p.type==="MONTHLY"&&p.status==="PAID").sort((a,b)=>a.id.localeCompare(b.id)).map(p=>({id:p.id,amount:p.amount}));
+  if(sql.includes('FROM "EnrollmentChangeSettlementLine"')){assert.match(sql,/l\.kind='CARRY_APPLY' OR \(l\.kind='UNPAID_REDUCE' AND l\.channel='SITE'\)/);const totals=new Map();for(const l of state.settlementLines??[])if(v[0].includes(l.paymentId)&&(l.kind==="CARRY_APPLY"||(l.kind==="UNPAID_REDUCE"&&l.channel==="SITE")))totals.set(l.paymentId,(totals.get(l.paymentId)??0)+l.amount);return [...totals].map(([paymentId,total])=>({paymentId,total}));}
   if(sql.includes('FROM "Enrollment"'))return structuredClone(state.enrollments);
   if(sql.includes('FROM "PaymentInvoice"'))return structuredClone(state.invoices);
-  if(sql.includes('FROM "Payment"'))return sql.includes("type='SHUTTLE'")?state.payments.filter(p=>p.type==="SHUTTLE"):structuredClone(state.payments);
+  if(sql.includes('FROM "Payment"'))return sql.includes("type='SHUTTLE'")?state.payments.filter(p=>p.type==="SHUTTLE"):structuredClone(state.strictPaymentMonth&&sql.includes("WHERE year=$1 AND month=$2")?state.payments.filter(p=>p.year===v[0]&&p.month===v[1]):state.payments);
   if(sql.includes('FROM "MonthlyEnrollmentRegister"'))return structuredClone(v.length?state.registers.filter(r=>r.month===v[1]):state.registers);
   if(sql.includes('FROM "AnnualEvent"'))return structuredClone(state.events);
   if(sql.includes('FROM "BillingWorkbenchDraft"'))return structuredClone(state.drafts.filter(d=>sql.includes('"studentId"=$1')? d.studentId===v[0]&&d.classId===v[1]&&d.month===v[2]&&["ISSUED","ZERO"].includes(d.status):sql.includes("WHERE id=")?d.id===v[0]&&d.month===v[1]:sql.includes("month<>")?d.month!==v[0]&&["ISSUED","ZERO"].includes(d.status):d.month===v[0]));
@@ -621,4 +630,224 @@ test("부상·질병 «기간 결석»을 승인한 기간의 결석은 하루�
  // 가드는 결석을 찾은 직후·적립 근거를 읽기 전에 있다
  assert.ok(absenceSource.indexOf("확인된 미처리 결석만 처리할 수 있습니다.")<absenceSource.indexOf("p.\"carryState\"<>'NONE'"));
  assert.ok(absenceSource.indexOf("p.\"carryState\"<>'NONE'")<absenceSource.indexOf('INSERT INTO "BillingCarryCredit"'));
+});
+
+// ── 납부 Payment 근거(2026-11-15) — 랠리즈에서 넘어온 달처럼 발행 초안·확정 장부가 없어도 납부완료 청구 1건이면 이월한다 ──
+// 가짜 DB 는 실제 조회처럼 «그 달 청구»를 연·월로 거른다(strictPaymentMonth) — 10월 근거 청구가 11월 청구로 잡히면 발행 검증이 안 된다.
+const paidOct=(over={})=>({id:"rz-oct",studentId:"student-a",classId:"class-a",amount:105000,status:"PAID",type:"MONTHLY",year:2026,month:10,updatedAt:"2026-10-01",...over});
+function paidEvidenceDatabase(payments=[paidOct()],makeup="AVAILABLE"){
+ const db=absenceDatabase(makeup);db.state.registers=[];db.state.strictPaymentMonth=true;db.state.payments.push(...payments);return db;
+}
+const OCT_DATES=["2026-10-03","2026-10-10","2026-10-17","2026-10-24"];
+test("납부 근거: 초안·장부 없음 + 납부완료 1건 → 청구 금액÷그 달 수업 횟수로 적립, 사본(청구 id·금액·수업일) 저장",async()=>{
+ const db=paidEvidenceDatabase();const view=await readWorkbench(db.tx,"2026-11",true);
+ const result=await resolveWorkbenchAbsence(db,resolveCommand(view),"admin",true);
+ assert.equal(db.state.carryCredits.length,1);const credit=db.state.carryCredits[0];
+ assert.deepEqual([credit.numerator,credit.denominator,credit.availableMonth],["105000","4","2026-11"]);
+ assert.deepEqual([credit.basis.source,credit.basis.sourcePaymentId,credit.basis.paymentAmount,credit.basis.priorReduction,credit.basis.discountedTuition],["PAID_PAYMENT","rz-oct",105000,0,105000]);
+ assert.deepEqual(credit.basis.scheduledDates,OCT_DATES);assert.deepEqual([credit.basis.periodStart,credit.basis.periodEnd],[null,null]);
+ assert.equal(db.state.makeupCredits[0].status,"REVOKED");assert.deepEqual(db.state.resolutions,[{id:"absence-a",resolution:"CARRY"}]);
+ assert.deepEqual(db.state.reviews,[{absenceId:"absence-a",status:"APPROVED",decidedByUserId:"admin",convertReason:null}]);
+ // 105,000 ÷ 4 = 26,250 — 청구 준비가 이 이월을 유효로 보고 잔액·차감 제안에 올린다
+ assert.equal(result.view.rows[0].carryAvailable,26250);assert.equal(result.view.rows[0].carryAmount,26250);assert.deepEqual(result.view.rows[0].blockingReasons,[]);
+ // 같은 요청을 다시 보내도 한 번만 적립
+ await resolveWorkbenchAbsence(db,resolveCommand(view),"admin",true);assert.equal(db.state.carryCredits.length,1);
+});
+test("납부 근거: 적립 뒤 그 학생 청구가 막히지 않는다 — 저장→확정→발행, 이월은 한 번만 빠진다",async()=>{
+ const db=paidEvidenceDatabase();let view=await readWorkbench(db.tx,"2026-11",true);
+ ({view}=await resolveWorkbenchAbsence(db,resolveCommand(view),"admin",true));
+ const save=command("SAVE",view);save.rows[0].carryAmount=26250;
+ ({view}=await mutateWorkbench(db,save,"admin",true));assert.deepEqual(view.rows[0].blockingReasons,[]);
+ ({view}=await mutateWorkbench(db,command("CONFIRM",view),"admin",true));
+ const issued=await mutateWorkbench(db,command("ISSUE",view),"admin",true);
+ const november=db.state.payments.find(p=>p.id!=="rz-oct");assert.equal(november.amount,73750);
+ assert.deepEqual(db.state.usages[0].sourceCreditIds,[db.state.carryCredits[0].id]);assert.equal(db.state.usages[0].amount,26250);
+ assert.equal(issued.view.rows[0].carryAvailable,0,"쓴 이월은 잔액에서 빠진다");
+ // 다음 달에도 다시 제안되지 않는다(이중 차감 없음)
+ const december=await readWorkbench(db.tx,"2026-12",true);assert.equal(december.rows[0].carryAvailable,0);assert.equal(december.rows[0].carryAmount,0);
+});
+test("납부 근거: 같은 반·같은 달 납부완료가 2건 이상이면 차단하고 아무것도 남기지 않는다",async()=>{
+ const db=paidEvidenceDatabase([paidOct(),paidOct({id:"rz-oct-2",amount:90000})]);const view=await readWorkbench(db.tx,"2026-11",true);
+ await assert.rejects(()=>resolveWorkbenchAbsence(db,resolveCommand(view),"admin",true),e=>/여러 건/.test(e.message)&&e.status===409);
+ assert.equal(db.state.carryCredits.length,0);assert.equal(db.state.resolutions.length,0);assert.equal(db.state.makeupCredits[0].status,"AVAILABLE");
+});
+test("납부 근거: 취소·환불·미납 청구, 다른 반·다른 달·다른 종류 청구는 근거가 아니다 — 기존 문구로 차단",async()=>{
+ const notEvidence=[[paidOct({status:"CANCELED"})],[paidOct({status:"REFUNDED"})],[paidOct({status:"CANCELED"}),paidOct({id:"r2",status:"REFUNDED"})],[paidOct({status:"PENDING"})],[paidOct({status:"OVERDUE"})],
+  [paidOct({classId:"class-b"})],[paidOct({classId:null})],[paidOct({month:9})],[paidOct({year:2025})],[paidOct({type:"SHUTTLE"})],[paidOct({studentId:"student-b"})]];
+ for(const payments of notEvidence){
+  const db=paidEvidenceDatabase(payments);const view=await readWorkbench(db.tx,"2026-11",true);
+  await assert.rejects(()=>resolveWorkbenchAbsence(db,resolveCommand(view),"admin",true),/원결석 기간의 확정 수강료·실제 수업일 근거가 필요합니다/,JSON.stringify(payments));
+  assert.equal(db.state.carryCredits.length,0);
+ }
+ // 취소 1건 + 납부완료 1건이면 납부완료 1건이 근거
+ const db=paidEvidenceDatabase([paidOct({id:"old",status:"CANCELED",amount:999}),paidOct()]);const view=await readWorkbench(db.tx,"2026-11",true);
+ await resolveWorkbenchAbsence(db,resolveCommand(view),"admin",true);assert.equal(db.state.carryCredits[0].basis.sourcePaymentId,"rz-oct");
+});
+test("납부 근거: 그 청구에서 이미 줄인 금액(휴원 미납 감액·휴원 이월 차감)이 있으면 원래 금액 기준",async()=>{
+ // 원래 105,000 → 사이트가 26,250 줄여 78,750 납부. 랠리즈 쪽 할 일 줄(사이트 금액은 안 줄었다)·환불 줄은 세지 않는다
+ const db=paidEvidenceDatabase([paidOct({amount:78750})]);
+ db.state.settlementLines=[{paymentId:"rz-oct",kind:"UNPAID_REDUCE",channel:"SITE",amount:16250},{paymentId:"rz-oct",kind:"CARRY_APPLY",channel:"SITE",amount:10000},
+  {paymentId:"rz-oct",kind:"UNPAID_REDUCE",channel:"RALLYZ",amount:7000},{paymentId:"rz-oct",kind:"REFUND",channel:"TOSS",amount:5000},{paymentId:"other",kind:"CARRY_APPLY",channel:"SITE",amount:3000}];
+ const view=await readWorkbench(db.tx,"2026-11",true);const result=await resolveWorkbenchAbsence(db,resolveCommand(view),"admin",true);
+ const credit=db.state.carryCredits[0];
+ assert.deepEqual([credit.numerator,credit.denominator,credit.basis.paymentAmount,credit.basis.priorReduction,credit.basis.discountedTuition],["105000","4",78750,26250,105000]);
+ assert.equal(result.view.rows[0].carryAvailable,26250);assert.deepEqual(result.view.rows[0].blockingReasons,[]);
+});
+test("납부 근거: 월중 등록이면 개시일 이후 수업만 분모 — 개시일 전 결석은 거절",async()=>{
+ const db=paidEvidenceDatabase([paidOct({amount:75000})]);db.state.enrollments[0].startsOn="2026-10-10";
+ let view=await readWorkbench(db.tx,"2026-11",true);const result=await resolveWorkbenchAbsence(db,resolveCommand(view),"admin",true);
+ const credit=db.state.carryCredits[0];
+ assert.deepEqual([credit.numerator,credit.denominator],["75000","3"]);assert.deepEqual(credit.basis.scheduledDates,OCT_DATES.slice(1));
+ assert.deepEqual([credit.basis.periodStart,credit.basis.periodEnd],["2026-10-10","2026-10-24"]);assert.match(credit.basis.warnings[0],/월중 등록/);
+ assert.equal(result.view.rows[0].carryAvailable,25000,"청구 준비도 같은 기간으로 다시 세어 유효로 본다");assert.deepEqual(result.view.rows[0].blockingReasons,[]);
+ const before=paidEvidenceDatabase([paidOct({amount:75000})]);before.state.enrollments[0].startsOn="2026-10-17";
+ view=await readWorkbench(before.tx,"2026-11",true);await assert.rejects(()=>resolveWorkbenchAbsence(before,resolveCommand(view),"admin",true),/예정 수업일/);assert.equal(before.state.carryCredits.length,0);
+});
+test("납부 근거: 적립 뒤 그 청구가 환불·취소되거나 금액이 바뀌면 이월 무효 → 잔액 0 · 그 학생 확정·발행 보류",async()=>{
+ for(const change of [p=>{p.status="REFUNDED";},p=>{p.status="CANCELED";},p=>{p.status="PENDING";},p=>{p.amount=95000;},p=>{p.classId="class-b";},p=>{p.month=9;}]){
+  const db=paidEvidenceDatabase();let view=await readWorkbench(db.tx,"2026-11",true);
+  ({view}=await resolveWorkbenchAbsence(db,resolveCommand(view),"admin",true));assert.equal(view.rows[0].carryAvailable,26250);
+  const stale=view;change(db.state.payments.find(p=>p.id==="rz-oct"));
+  view=await readWorkbench(db.tx,"2026-11",true);
+  assert.notEqual(view.sourceVersion,stale.sourceVersion,"근거 청구가 바뀌면 화면 원본 버전도 바뀐다");
+  assert.equal(view.rows[0].carryAvailable,0);assert.match(view.rows[0].blockingReasons.join(" "),/원결석 취소·출석 정정된 이월/);
+  const save=command("SAVE",view);({view}=await mutateWorkbench(db,save,"admin",true));
+  await assert.rejects(()=>mutateWorkbench(db,command("CONFIRM",view),"admin",true),/원결석/);
+ }
+ // 근거 청구가 사라져도 무효
+ const db=paidEvidenceDatabase();let view=await readWorkbench(db.tx,"2026-11",true);await resolveWorkbenchAbsence(db,resolveCommand(view),"admin",true);
+ db.state.payments=[];view=await readWorkbench(db.tx,"2026-11",true);assert.equal(view.rows[0].carryAvailable,0);assert.ok(view.rows[0].blockingReasons.length);
+});
+test("납부 근거: 적립 뒤 원기간 휴강이 생겨 수업 횟수가 달라지면 무효(초안 근거와 같은 규칙)",async()=>{
+ const db=paidEvidenceDatabase();let view=await readWorkbench(db.tx,"2026-11",true);await resolveWorkbenchAbsence(db,resolveCommand(view),"admin",true);
+ db.state.events.push({title:"CLOSE_OCT_10",date:"2026-10-10",endDate:null});view=await readWorkbench(db.tx,"2026-11",true);
+ assert.equal(view.rows[0].carryAvailable,0);assert.match(view.rows[0].blockingReasons.join(" "),/원결석/);
+});
+test("납부 근거: 발행 초안·확정 장부가 있으면 그쪽이 먼저다 — 납부 청구가 있어도 기존 계산 그대로",async()=>{
+ // 확정 장부(100,000 − 할인 10,000) + 납부완료 청구 105,000 → 장부 기준 90,000
+ const withRegister=absenceDatabase();withRegister.state.strictPaymentMonth=true;withRegister.state.payments.push(paidOct());
+ let view=await readWorkbench(withRegister.tx,"2026-11",true);await resolveWorkbenchAbsence(withRegister,resolveCommand(view),"admin",true);
+ assert.deepEqual([withRegister.state.carryCredits[0].numerator,withRegister.state.carryCredits[0].basis.source,withRegister.state.carryCredits[0].basis.sourcePaymentId],["90000","MONTHLY_REGISTER",null]);
+ assert.equal("paymentAmount" in withRegister.state.carryCredits[0].basis,false,"기존 근거의 사본 모양은 그대로");
+ // 발행 초안(할인 20,000) + 그 청구가 납부완료 → 초안 기준 80,000
+ const withDraft=paidEvidenceDatabase([]);
+ withDraft.state.drafts.push({id:"student-a:class-a",studentId:"student-a",classId:"class-a",month:"2026-10",version:3,status:"ISSUED",payload:{...draft(),discountAmount:20000},reason:"원기간",sourceVersion:"old",paymentId:"origin-payment"});
+ withDraft.state.payments.push({id:"origin-payment",studentId:"student-a",classId:"class-a",status:"PAID",amount:80000,type:"MONTHLY",year:2026,month:10,invoiceAmount:80000,invoiceStatus:"PAID"});
+ withDraft.state.invoices.push({id:"origin-invoice",paymentId:"origin-payment",status:"PAID",amount:80000});
+ view=await readWorkbench(withDraft.tx,"2026-11",true);const result=await resolveWorkbenchAbsence(withDraft,resolveCommand(view),"admin",true);
+ assert.deepEqual([withDraft.state.carryCredits[0].numerator,withDraft.state.carryCredits[0].basis.source],["80000","WORKBENCH_ISSUED"]);assert.equal(result.view.rows[0].carryAvailable,20000);
+});
+test("납부 근거: 신청함 [이월 승인]도 같은 길로 적립된다(신고 상태 결석 확정 포함)",async()=>{
+ const db=paidEvidenceDatabase();db.state.absences[0].status="REPORTED";
+ await approve(db);
+ assert.equal(db.state.absences[0].status,"CONFIRMED");assert.equal(db.state.carryCredits[0].basis.source,"PAID_PAYMENT");assert.equal(db.state.carryCredits[0].numerator,"105000");
+ // 2건이면 사유와 함께 거절하고 결석 확정까지 되돌린다
+ const two=paidEvidenceDatabase([paidOct(),paidOct({id:"rz-oct-2"})]);two.state.absences[0].status="REPORTED";
+ await assert.rejects(()=>approve(two),/여러 건/);assert.equal(two.state.absences[0].status,"REPORTED");assert.equal(two.state.carryCredits.length,0);
+});
+// 신청함 상세(readIllnessCarryDetail)를 «같은 가짜 DB»로 실제 실행한다 — 근거 미리보기는 적립과 같은 규칙 함수를 읽기 전용으로 부른다.
+// 쓰기 함수가 없고(부르면 오류), 행 잠금(FOR SHARE/UPDATE) SQL 이 나가면 실패한다.
+const {readIllnessCarryDetail}=await import(illnessAdminUrl);
+const detailOf=(db,calendar,failOn)=>readIllnessCarryDetail({async $queryRawUnsafe(sql,...v){
+ assert.doesNotMatch(sql,/FOR SHARE|FOR UPDATE/,"미리보기는 행을 잠그지 않는다");
+ if(failOn&&sql.includes(failOn))throw new TypeError("합성 조회 실패");
+ if(sql.includes('"draftTable"'))return [{draftTable:"present",registerTable:null}];
+ if(sql.includes(`status IN ('PENDING','OVERDUE') LIMIT 1`)){assert.match(sql,/type = 'MONTHLY'/);return db.state.payments.filter(p=>p.studentId===v[0]&&p.classId===v[1]&&p.year===v[2]&&p.month===v[3]&&p.type==="MONTHLY"&&["PENDING","OVERDUE"].includes(p.status)).slice(0,1).map(()=>({found:1}));}
+ return db.tx.$queryRawUnsafe(sql,...v);
+}},"absence-a",true,calendar);
+test("신청함 상세: 공식 일정을 못 읽었으면(null) 근거 미리보기·거절 사유를 내지 않고 안내 한 줄만 — 승인 버튼은 막지 않는다",async()=>{
+ // 평소라면 «여러 건»으로 버튼이 꺼질 자료도, 일정을 모르면 판정하지 않는다(승인 때 서버가 판정)
+ for(const payments of [[paidOct()],[paidOct(),paidOct({id:"rz-oct-2"})],[]]){
+  const d=await detailOf(paidEvidenceDatabase(payments),null);
+  assert.deepEqual([d.evidence,d.blocker,d.evidenceNote],[null,null,"공식 일정을 확인하지 못했어요. 승인할 때 다시 확인합니다."],JSON.stringify(payments));
+ }
+ // 일정이 있으면(또는 안 넘기면) 안내 줄은 없다
+ const calendar={kind:"DB",events:[],fingerprint:"a".repeat(64)};
+ const ok=await detailOf(paidEvidenceDatabase(),calendar);assert.equal(ok.evidenceNote,null);assert.equal(ok.evidence.tuition,105000);
+ assert.equal((await detailOf(paidEvidenceDatabase())).evidenceNote,null);
+ // 결석일 전 같은 일정과 무관한 사유는 그대로 막는다
+ const future=paidEvidenceDatabase();future.state.absences[0].date="2099-01-03";assert.match((await detailOf(future,null)).blocker,/결석일이 지난 뒤/);
+ assert.match(await readFile("src/app/actions/illness-carry-admin.ts","utf8"),/const calendar = await loadWorkbenchCalendar\(\)\.catch\(\(\) => null\);/);
+});
+test("신청함 상세: 근거 미리보기의 예상 못 한 오류는 상세 칸을 막지 않는다 — 근거만 모름, 사유 글·보강권 상태는 그대로",async()=>{
+ const logged=[],original=console.error;console.error=(...args)=>logged.push(args);
+ try{
+  const d=await detailOf(paidEvidenceDatabase(),undefined,'FROM "BillingWorkbenchDraft"');
+  assert.deepEqual([d.evidence,d.blocker,d.evidenceNote],[null,null,null]);
+  assert.deepEqual([d.absenceId,d.absenceYmd,d.status,d.creditStatus],["absence-a","2026-10-10","PENDING","AVAILABLE"]);
+  assert.deepEqual(logged,[["[illness-carry-admin] 근거 미리보기 실패:","TypeError"]],"오류 이름만 남긴다(내용·학생 정보 없음)");
+ }finally{console.error=original;}
+});
+test("휴원 처리 방식 «없음» 줄에 걸린 날은 막되 문구를 사실대로 — 보상이 있었던 줄이 섞이면 기존 문구",async()=>{
+ const line=(kind)=>({studentId:"student-a",classId:"class-a",requestStatus:"APPROVED",missedDates:["2026-10-10"],kind});
+ const attempt=async(lines)=>{const db=paidEvidenceDatabase();db.state.pauseSettled=lines;const view=await readWorkbench(db.tx,"2026-11",true);
+  const error=await resolveWorkbenchAbsence(db,resolveCommand(view),"admin",true).then(()=>null,e=>e);assert.equal(db.state.carryCredits.length,0);return error;};
+ const none=await attempt([line("NONE")]);assert.equal(none.message,"휴원 기간 중인 날입니다. 휴원 신청을 먼저 확인해 주세요.");assert.equal(none.status,409);
+ for(const kind of ["REFUND","CARRY_CREDIT","UNPAID_REDUCE","CARRY_APPLY","CARRY_MANUAL"])assert.match((await attempt([line(kind)])).message,/^휴원 정산에서 처리한 날입니다/,kind);
+ assert.match((await attempt([line("NONE"),line("REFUND")])).message,/^휴원 정산에서 처리한 날입니다/);
+ // 신청함 상세도 같은 문구를 미리 보인다
+ const db=paidEvidenceDatabase();db.state.pauseSettled=[line("NONE")];assert.equal((await detailOf(db)).blocker,"휴원 기간 중인 날입니다. 휴원 신청을 먼저 확인해 주세요.");
+});
+test("신청함 상세: 승인 전 근거 미리보기 — 납부 청구 금액 ÷ 횟수 = 1회 값, 적립될 값과 같다",async()=>{
+ const db=paidEvidenceDatabase();const detail=await detailOf(db);
+ assert.equal(detail.blocker,null,"납부완료 1건 → 버튼 켜짐");
+ assert.deepEqual(detail.evidence,{kind:"PAID_PAYMENT",month:"2026-10",tuition:105000,sessions:4,unit:26250,warnings:[]});
+ assert.equal(db.state.carryCredits.length,0,"미리보기는 아무것도 쓰지 않는다");
+ await approve(db);assert.deepEqual([db.state.carryCredits[0].numerator,db.state.carryCredits[0].denominator],[String(detail.evidence.tuition),String(detail.evidence.sessions)]);
+ // 확정 장부 근거(기존)도 같은 한 줄로 보인다: (100,000 − 10,000) ÷ 4
+ assert.deepEqual((await detailOf(absenceDatabase())).evidence,{kind:"MONTHLY_REGISTER",month:"2026-10",tuition:90000,sessions:4,unit:22500,warnings:[]});
+ // 1회 값은 표시용 반올림(적립은 분수 그대로): 100,000 ÷ 3
+ const third=paidEvidenceDatabase([paidOct({amount:100000})]);third.state.enrollments[0].startsOn="2026-10-10";
+ const narrowed=(await detailOf(third)).evidence;
+ assert.deepEqual([narrowed.tuition,narrowed.sessions,narrowed.unit],[100000,3,33333]);assert.match(narrowed.warnings[0],/월중 등록\(개시일 2026-10-10\).*3회/,"개시일로 분모를 좁힌 것을 승인 전에 본다");
+});
+test("신청함 상세: 근거가 없는 실제 이유를 가른다 — 미납이면 «납부한 뒤», 청구가 없으면 «발행한 뒤», 그 밖은 서버 사유 그대로",async()=>{
+ for(const status of ["PENDING","OVERDUE"]){const d=await detailOf(paidEvidenceDatabase([paidOct({status})]));assert.match(d.blocker,/수강료를 납부한 뒤에 승인/,status);assert.equal(d.evidence,null);}
+ for(const payments of [[],[paidOct({status:"CANCELED"})],[paidOct({status:"REFUNDED"})],[paidOct({classId:"class-b"})],[paidOct({month:11})],[paidOct({status:"PENDING",type:"SHUTTLE"})]])
+  assert.match((await detailOf(paidEvidenceDatabase(payments))).blocker,/청구를 발행한 뒤/,JSON.stringify(payments));
+ const two=await detailOf(paidEvidenceDatabase([paidOct(),paidOct({id:"rz-oct-2"})]));assert.match(two.blocker,/여러 건/);assert.equal(two.evidence,null);
+ const settled=paidEvidenceDatabase();settled.state.pauseSettled=[{studentId:"student-a",classId:"class-a",requestStatus:"APPROVED",missedDates:["2026-10-10"]}];
+ assert.match((await detailOf(settled)).blocker,/휴원 정산에서 처리한 날/);
+ // 결석일 전·보강 사용 같은 앞선 사유가 있으면 그 사유가 먼저다
+ const used=paidEvidenceDatabase([paidOct(),paidOct({id:"rz-oct-2"})],"USED");assert.match((await detailOf(used)).blocker,/이미 보강을 들은/);
+});
+test("휴원 정산이 이미 처리한 날은 이월로 다시 보상하지 않는다 — 초안·장부 근거와 납부 근거 공통, 취소된 휴원은 제외",async()=>{
+ const line=(over={})=>({studentId:"student-a",classId:"class-a",requestStatus:"APPROVED",missedDates:["2026-10-03","2026-10-10"],...over});
+ for(const make of [()=>absenceDatabase(),()=>paidEvidenceDatabase()]){
+  const db=make();db.state.pauseSettled=[line()];const view=await readWorkbench(db.tx,"2026-11",true);
+  await assert.rejects(()=>resolveWorkbenchAbsence(db,resolveCommand(view),"admin",true),e=>/^휴원 정산에서 처리한 날입니다/.test(e.message)&&e.status===409);
+  assert.equal(db.state.carryCredits.length,0);assert.equal(db.state.resolutions.length,0);assert.equal(db.state.makeupCredits[0].status,"AVAILABLE","보강권도 그대로");
+  // 취소된 휴원 신청의 정산 · 다른 날 · 다른 반 · 다른 학생의 정산은 막지 않는다
+  for(const other of [line({requestStatus:"CANCELED"}),line({missedDates:["2026-10-17"]}),line({classId:"class-b"}),line({studentId:"student-b"})]){
+   const ok=make();ok.state.pauseSettled=[other];const v=await readWorkbench(ok.tx,"2026-11",true);
+   await resolveWorkbenchAbsence(ok,resolveCommand(v),"admin",true);assert.equal(ok.state.carryCredits.length,1,JSON.stringify(other));
+  }
+ }
+ // 신청함 [이월 승인]도 같은 사유로 거절하고 결석 확정까지 되돌린다
+ const db=paidEvidenceDatabase();db.state.absences[0].status="REPORTED";db.state.pauseSettled=[line()];
+ await assert.rejects(()=>approve(db),/휴원 정산에서 처리한 날/);assert.equal(db.state.absences[0].status,"REPORTED");
+});
+test("납부 근거: 그 달 셔틀 명단에 있고 별도 셔틀비 청구가 없으면 «셔틀비가 포함된 금액일 수 있어요» 경고(금액은 그대로)",async()=>{
+ const stop=(over={})=>({serviceMonth:"2026-10",studentId:"student-a",studentName:"합성 원생",direction:"BOARD",stopName:"정류장",...over});
+ const db=paidEvidenceDatabase([paidOct({amount:125000})]);db.state.shuttleStops=[stop()];
+ const detail=await detailOf(db);
+ assert.deepEqual([detail.evidence.tuition,detail.evidence.warnings],[125000,["셔틀비가 포함된 금액일 수 있어요."]]);assert.equal(detail.blocker,null,"경고만 — 승인은 막지 않는다");
+ const view=await readWorkbench(db.tx,"2026-11",true);const result=await resolveWorkbenchAbsence(db,resolveCommand(view),"admin",true);
+ assert.deepEqual(db.state.carryCredits[0].basis.warnings,["셔틀비가 포함된 금액일 수 있어요."]);assert.equal(db.state.carryCredits[0].numerator,"125000");assert.equal(result.view.rows[0].carryAvailable,31250);
+ // 별도 셔틀비 청구가 있으면 · 다른 달 명단 · 다른 학생 · 명단 없음이면 경고 없음
+ const billed=paidEvidenceDatabase([paidOct(),paidOct({id:"sh",type:"SHUTTLE",amount:20000})]);billed.state.shuttleStops=[stop()];assert.deepEqual((await detailOf(billed)).evidence.warnings,[]);
+ for(const stops of [[],[stop({serviceMonth:"2026-11"})],[stop({studentId:"student-b"})],[stop({studentId:null})]]){const none=paidEvidenceDatabase();none.state.shuttleStops=stops;assert.deepEqual((await detailOf(none)).evidence.warnings,[],JSON.stringify(stops));}
+ // 발행 초안·확정 장부 근거는 셔틀비가 분리돼 있어 경고가 없다
+ const reg=absenceDatabase();reg.state.shuttleStops=[stop()];assert.deepEqual((await detailOf(reg)).evidence.warnings,[]);
+});
+test("신청함 상세 연결부: 금액은 원장에게만(서버 응답에서 지움) · 화면은 근거 한 줄 + 경고 한 줄",async()=>{
+ const action=await readFile("src/app/actions/illness-carry-admin.ts","utf8"),screen=await readFile("src/app/admin/inbox/IllnessCarryInboxDetail.tsx","utf8"),admin=await readFile("src/lib/regular/illness-carry-admin.ts","utf8");
+ assert.match(action,/if \(detail\.evidence && !canSeeAllMoney\(admin\.appUserRole\)\) detail\.evidence = \{ \.\.\.detail\.evidence, tuition: null, unit: null \};/);
+ // 같은 기간 함께 승인의 «지금 승인할 수 있는가»도 승인과 같은 공식 일정으로 판정한다
+ assert.match(action,/const calendar = await loadWorkbenchCalendar\(true\);\s+const detail = await readIllnessCarryDetail\(prisma, absenceId, writesEnabled\(\), calendar\);/);
+ // 미리보기는 적립과 같은 규칙 함수를 부른다 — 금액 계산을 따로 만들지 않는다
+ assert.match(admin,/await previewCarryEvidence\(tx, \{ absence, originMonth: month, calendar \}\)/);
+ assert.match(screen,/\$\{head\} \$\{won\(evidence\.tuition\)\} ÷ \$\{evidence\.sessions\}회 = 1회 \$\{won\(evidence\.unit\)\}/);
+ assert.match(screen,/if \(evidence\.tuition === null \|\| evidence\.unit === null\) return `\$\{head\} 수강료 ÷ \$\{evidence\.sessions\}회`;/);
+ assert.match(screen,/\{detail\.evidence\.warnings\.join\(" · "\)\}/);
 });
