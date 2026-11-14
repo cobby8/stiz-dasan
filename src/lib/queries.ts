@@ -21,8 +21,7 @@ import { notMergedStudent, notMergedStudentOptional } from "@/lib/studentVisibil
 import { profilePhotoUpdatedAtSql, profilePhotoVersion } from "@/lib/profilePhoto/rules";
 import { todayKst, kstDow, addMonthsYm } from "@/lib/datetime/kst";
 // 수업 피드 공용 기준(학부모 공개 수업·참여 판정) — 소식 목록이 사진·영상 권한과 같은 문장을 쓰게
-import { feedParticipantSql, feedVisibleSessionSql } from "@/lib/feed/rules";
-import { classCoachNameSql } from "@/lib/feed/adminFeedRules";
+import { classCoachNameSql, feedParticipantSql, feedVisibleSessionSql } from "@/lib/feed/rules";
 // 보강 잔여석 계산은 화면·조회·저장 검증이 같은 식을 쓰도록 공용 모듈로 분리해 둔다.
 import { activeMakeupSql, computeRemainingSeats } from "@/lib/makeup/capacity";
 import type { SheetClassSlot } from "@/lib/googleSheetsSchedule";

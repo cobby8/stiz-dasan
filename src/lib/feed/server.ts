@@ -14,6 +14,7 @@ import { notMergedStudent } from "@/lib/studentVisibility";
 import { isValidPrivateSessionPhotoRef } from "@/lib/sessionPhotoStorage";
 import { parseStoredSessionPhotos, toSessionReportPhotoViews } from "@/lib/sessionPhotoEntries";
 import {
+  classCoachNameSql,
   feedParticipantSql,
   feedVisibleSessionSql,
   sessionKstDateSql,
@@ -21,7 +22,6 @@ import {
   type FeedCandidate,
   type FeedPhotoView,
 } from "@/lib/feed/rules";
-import { classCoachNameSql } from "@/lib/feed/adminFeedRules";
 
 export type ParentFeedSession = {
   id: string;

@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { kstLabel } from "@/lib/datetime/kst";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import AdminModal from "@/components/admin/AdminModal";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import ListViewToggle, { useRememberedListView } from "@/components/admin/list/ListViewToggle";
 import {
+    ADMIN_FEED_DAYS_DEFAULT,
     ADMIN_FEED_DAYS_OPTIONS,
     applyAdminFeedFilter,
     countActiveFilters,
@@ -65,6 +66,8 @@ export default function AdminFeedClient({ items, days }: { items: AdminFeedItem[
     const [draftDays, setDraftDays] = useState<number>(days);
     const [filterOpen, setFilterOpen] = useState(false);
     const [detailId, setDetailId] = useState<string | null>(null);
+    // 기간을 바꿔 서버에서 다시 읽는 동안 «불러오는 중» 표시
+    const [reloading, startReload] = useTransition();
 
     const contentCount = useMemo(() => items.filter(hasFeedContent).length, [items]);
     const teachers = useMemo(
@@ -87,10 +90,14 @@ export default function AdminFeedClient({ items, days }: { items: AdminFeedItem[
     }
 
     function applyFilter() {
-        setFilter(draft);
         setFilterOpen(false);
-        // 기간이 바뀌면 서버에서 다시 읽는다(나머지 조건은 화면에서 거른다)
-        if (draftDays !== days) router.push(`/admin/attendance/feed?days=${draftDays}`);
+        if (draftDays !== days) {
+            // 기간이 바뀌면 서버에서 다시 읽는다. 새 기간에 없는 선생님이 남아 목록이 비지 않게 선생님 조건은 푼다
+            setFilter({ ...draft, teacher: "" });
+            startReload(() => router.push(`/admin/attendance/feed?days=${draftDays}`));
+            return;
+        }
+        setFilter(draft);
     }
 
     function handleRowKeyDown(event: React.KeyboardEvent<HTMLElement>, id: string) {
@@ -132,7 +139,7 @@ export default function AdminFeedClient({ items, days }: { items: AdminFeedItem[
             <AdminPageHeader
                 className="mb-3"
                 title="수업 피드"
-                description={<>최근 <span className="tabular-nums">{days}</span>일 · 내용 있는 수업 <span className="tabular-nums">{contentCount}</span>개 / 전체 <span className="tabular-nums">{items.length}</span>개</>}
+                description={<>{reloading && "불러오는 중 · "}최근 <span className="tabular-nums">{days}</span>일 · 내용 있는 수업 <span className="tabular-nums">{contentCount}</span>개 / 전체 <span className="tabular-nums">{items.length}</span>개</>}
             />
 
             {/* 보기 전환(전체·요일별·선생님별) + 필터 버튼 하나 */}
@@ -147,7 +154,7 @@ export default function AdminFeedClient({ items, days }: { items: AdminFeedItem[
                 <div className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-4 text-center text-sm text-[var(--color-academy-muted)]">
                     {items.length === 0
                         ? "이 기간에 진행한 수업이 없습니다."
-                        : filter.includeEmpty
+                        : filter.includeEmpty || countActiveFilters(filter) > 0
                             ? "조건에 맞는 수업이 없습니다."
                             : "선생님이 올린 사진·영상·한 줄이 없습니다. 필터에서 «내용 없는 수업도 보기»를 켜면 모든 수업이 보입니다."}
                 </div>
@@ -219,7 +226,7 @@ export default function AdminFeedClient({ items, days }: { items: AdminFeedItem[
                         </label>
                     </div>
                     <div className="mt-5 flex justify-end gap-2">
-                        <button type="button" onClick={() => { setDraft(DEFAULT_ADMIN_FEED_FILTER); setDraftDays(30); }} className="academy-button-text">초기화</button>
+                        <button type="button" onClick={() => { setDraft(DEFAULT_ADMIN_FEED_FILTER); setDraftDays(ADMIN_FEED_DAYS_DEFAULT); }} className="academy-button-text">초기화</button>
                         <button type="button" onClick={() => setFilterOpen(false)} className="academy-button-secondary">닫기</button>
                         <button type="button" onClick={applyFilter} className="academy-button-primary">적용</button>
                     </div>

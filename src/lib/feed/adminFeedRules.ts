@@ -11,22 +11,8 @@
  */
 import { isKstYmd, kstDow } from "@/lib/datetime/kst";
 
-/**
- * 반의 담당 선생님 이름(SQL 식) — 선생님 화면 권한(requireStaffClassAccess)과 같은 출처.
- * 우선순위: 수업 기록의 코치 → 시간표 칸 덮어쓰기 → 시간표 칸 → 직접 만든 칸 → 반 담당 강사(User).
- * @param se Session 별칭 · @param c Class 별칭
- */
-export function classCoachNameSql(se: string, c: string): string {
-  return `COALESCE(
-    (SELECT k.name FROM "Coach" k WHERE k.id = ${se}."coachId"),
-    (SELECT k.name FROM "Coach" k WHERE k.id = COALESCE(
-      (SELECT cso."coachId" FROM "ClassSlotOverride" cso WHERE cso."slotKey" = ${c}."slotKey"),
-      (SELECT ss."coachId" FROM "ScheduleSlot" ss WHERE ss."slotKey" = ${c}."slotKey"),
-      (SELECT ccs."coachId" FROM "CustomClassSlot" ccs WHERE ccs.id = ${c}."slotKey")
-    )),
-    (SELECT iu.name FROM "User" iu WHERE iu.id = ${c}."instructorId")
-  )`;
-}
+// 담당 선생님 SQL 은 학부모 피드와 같이 쓰므로 rules.ts 에 둔다(학부모 리포트 검사가 허용하는 순수 모듈).
+export { classCoachNameSql } from "@/lib/feed/rules";
 
 export type AdminFeedItem = {
   sessionId: string;
