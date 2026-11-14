@@ -13,7 +13,7 @@ import { randomUUID } from "node:crypto";
 import { todayKst } from "@/lib/datetime/kst";
 import { WorkbenchError, type WorkbenchCalendarSnapshot } from "@/lib/billing/workbench";
 import { readWorkbench, type WorkbenchDb, type WorkbenchTx } from "@/lib/billing/workbench-service";
-import { previewCarryEvidence, resolveWorkbenchAbsence } from "@/lib/billing/workbench-absence";
+import { CARRY_UNPAID_MESSAGE, previewCarryEvidence, resolveWorkbenchAbsence } from "@/lib/billing/workbench-absence";
 import { regularAbsenceSourceKey } from "@/lib/makeup/absence-report-credit";
 import { convertIllnessToMakeupInTx, illnessReviewReady, type ConvertOutcome } from "@/lib/regular/illness-carry-tx";
 import { ILLNESS_REASON, carryApprovalBlocker, evidenceAnchorYmdSql, evidenceDeadlineYmd, evidenceScopeSql, type CarryBillState } from "@/lib/regular/illnessCarryRules";
@@ -172,6 +172,9 @@ export async function readIllnessCarryDetail(tx: WorkbenchTx, absenceId: string,
     if (preview.ok) {
       bill = "READY";
       evidence = { kind: preview.source, month, tuition: preview.tuition, sessions: preview.sessions, unit: preview.unit, warnings: preview.warnings };
+    } else if (preview.reason === CARRY_UNPAID_MESSAGE) {
+      // 발행은 됐지만 아직 안 낸 달(2026-11-15 «납부된 것만» 규칙) — 청구가 없는 달과 같은 안내(납부 뒤 승인)로 보인다
+      bill = "UNPAID";
     } else if (preview.noEvidence) {
       // 근거가 없는 실제 이유를 가른다: 청구는 있는데 아직 안 냈나(납부 뒤 승인) · 청구 자체가 없나(발행 뒤 승인)
       const [year, monthNumber] = month.split("-").map(Number);

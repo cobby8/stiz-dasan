@@ -75,8 +75,10 @@ export async function resolveWorkbenchAbsence(db: WorkbenchDb, input: unknown, a
 export type CarryAbsenceTarget = { id: string; studentId: string; classId: string; date: string; reason: string };
 export type CarryEvidenceSource = "WORKBENCH_ISSUED" | "MONTHLY_REGISTER" | "PAID_PAYMENT";
 type CarryEvidenceInput = { absence: CarryAbsenceTarget; originMonth: string; calendar?: WorkbenchCalendarSnapshot };
-type ResolvedCarryEvidence = { source: CarryEvidenceSource; numerator: number; dates: string[]; periodStart: string | null; periodEnd: string | null; sourcePaymentId: string | null; paidCopy: { paymentAmount: number; priorReduction: number; warnings: string[] } | null; warnings: string[] };
+export type ResolvedCarryEvidence = { source: CarryEvidenceSource; numerator: number; dates: string[]; periodStart: string | null; periodEnd: string | null; sourcePaymentId: string | null; paidCopy: { paymentAmount: number; priorReduction: number; warnings: string[] } | null; warnings: string[] };
 export const CARRY_NO_EVIDENCE_MESSAGE = "원결석 기간의 확정 수강료·실제 수업일 근거가 필요합니다.";
+// 발행은 됐지만 아직 납부되지 않은 달(2026-11-15 원장 결정) — 낸 돈이 없는 달은 이월 근거가 아니다(하루짜리·기간 정산 공통).
+export const CARRY_UNPAID_MESSAGE = "원기간 수강료가 아직 납부되지 않았습니다. 납부된 뒤에 이월할 수 있습니다.";
 export const CARRY_PAUSE_SETTLED_MESSAGE = "휴원 정산에서 처리한 날입니다. 같은 날을 이월로 다시 보상할 수 없습니다.";
 // 휴원 처리 방식이 «없음»(환불·이월·감액 없이 넘긴 날)이면 보상이 있었던 것이 아니다 — 막되 사실대로 말한다.
 export const CARRY_PAUSE_PERIOD_MESSAGE = "휴원 기간 중인 날입니다. 휴원 신청을 먼저 확인해 주세요.";
@@ -87,8 +89,6 @@ export const CARRY_PAUSE_PERIOD_MESSAGE = "휴원 기간 중인 날입니다. �
  */
 async function readCarryEvidenceInTx(tx: WorkbenchTx, input: CarryEvidenceInput, lock: boolean): Promise<ResolvedCarryEvidence> {
   const { absence, originMonth, calendar } = input;
-  // 미리보기(lock=false)는 행을 잠그지 않는다 — 읽기만 하는 화면이 결제·발행 거래를 기다리게 하지 않는다.
-  const share=(of="")=>lock?` FOR SHARE${of}`:"";
   // 휴원 정산이 이미 처리한 날(환불·이월·미납 감액으로 보상이 끝난 날)은 이월로 다시 보상하지 않는다 — 초안·장부·납부 근거 공통.
   // 취소된 휴원 신청의 정산은 실제로 빠지지 않은 날이라 제외한다. 정산 표가 아직 없으면(마이그레이션 전) 통과.
   const lineTable=await tx.$queryRawUnsafe<Array<{found:string|null}>>(`SELECT to_regclass($1)::text AS found`,'public."EnrollmentChangeSettlementLine"');
@@ -97,6 +97,24 @@ async function readCarryEvidenceInTx(tx: WorkbenchTx, input: CarryEvidenceInput,
     if(settled.some(l=>l.kind!=="NONE")) throw new WorkbenchError(CARRY_PAUSE_SETTLED_MESSAGE,409);
     if(settled.length) throw new WorkbenchError(CARRY_PAUSE_PERIOD_MESSAGE,409);
   }
+  const evidence=await readClassMonthEvidenceInTx(tx,{studentId:absence.studentId,classId:absence.classId,originMonth,calendar},lock,Boolean(lineTable[0]?.found));
+  // 그 결석일이 근거의 수업일(확정 수강 기간·연간 일정)에 들어 있어야 한다
+  if(!evidence.dates.includes(absence.date)) throw new WorkbenchError(CARRY_OUT_OF_PERIOD_MESSAGE,409);
+  return evidence;
+}
+export const CARRY_OUT_OF_PERIOD_MESSAGE = "원결석이 확정 수강 기간·예정 수업일에 포함되는지 확인해 주세요.";
+/**
+ * 그 학생·그 반·그 달의 «원기간 근거»(한 번 값의 분자·분모) — 결석 날짜와 무관한 부분(2026-11-15 분리).
+ * 하루짜리 이월은 결석 한 건마다, 기간 정산은 반·달마다 한 번 이 함수를 부른다(규칙은 여기 한 곳).
+ * 날짜별 검사(휴원 정산이 처리한 날·수업일 포함 여부)는 부르는 쪽이 한다.
+ * @param lineTableReady 휴원 정산 표가 있는가(부르는 쪽이 이미 확인했으면 넘긴다 — 없으면 여기서 확인)
+ */
+export async function readClassMonthEvidenceInTx(tx: WorkbenchTx, input: { studentId: string; classId: string; originMonth: string; calendar?: WorkbenchCalendarSnapshot }, lock: boolean, lineTableReady?: boolean): Promise<ResolvedCarryEvidence> {
+  const { originMonth, calendar } = input;
+  const absence = { studentId: input.studentId, classId: input.classId };
+  // 미리보기(lock=false)는 행을 잠그지 않는다 — 읽기만 하는 화면이 결제·발행 거래를 기다리게 하지 않는다.
+  const share=(of="")=>lock?` FOR SHARE${of}`:"";
+  const lineTable=[{found:lineTableReady??Boolean((await tx.$queryRawUnsafe<Array<{found:string|null}>>(`SELECT to_regclass($1)::text AS found`,'public."EnrollmentChangeSettlementLine"'))[0]?.found)}];
   const registerExists=await tx.$queryRawUnsafe<Array<{found:string|null}>>(`SELECT to_regclass($1)::text AS found`,'public."MonthlyEnrollmentRegister"');
   const source = registerExists[0]?.found ? await tx.$queryRawUnsafe<Array<{ payload: unknown; status: string }>>(`SELECT payload,status FROM "MonthlyEnrollmentRegister" WHERE "studentId"=$1 AND month=$2${share()}`,absence.studentId,originMonth) : [];
   const register = source[0]?.status==="CONFIRMED" ? validateMonthlyRegisterDraft(source[0].payload) : null;
@@ -108,6 +126,9 @@ async function readCarryEvidenceInTx(tx: WorkbenchTx, input: CarryEvidenceInput,
     const money=await tx.$queryRawUnsafe<Array<{amount:number;status:string;invoiceAmount:number|null;invoiceStatus:string|null}>>(`SELECT p.amount,p.status,i.amount AS "invoiceAmount",i.status AS "invoiceStatus" FROM "Payment" p LEFT JOIN "PaymentInvoice" i ON i."paymentId"=p.id WHERE p.id=$1 AND p."studentId"=$2 AND p."classId"=$3${share(" OF p")}`,issuedRow.paymentId,absence.studentId,absence.classId);
     const p=money[0];
     if(!p || p.amount!==workbenchTotal(issuedRow.payload) || p.invoiceAmount!==p.amount || ["CANCELED","CANCELLED","REFUNDED"].includes(p.status) || ["CANCELED","CANCELLED"].includes(p.invoiceStatus??"")) throw new WorkbenchError("원기간 청구·납부 정본이 일치하지 않습니다. 이월 적립을 보류합니다.",409);
+    // «납부된 것만» 이월 근거(2026-11-15 원장 결정 — 하루짜리와 기간 정산 규칙을 하나로): 발행됐지만 아직 안 낸 달은 이월하지 않는다.
+    // 이미 적립된 이월의 유효성(readWorkbench)은 바꾸지 않는다 — 예전에 미납 초안을 근거로 적립한 이월이 무효가 되지 않게.
+    if(p.status!=="PAID") throw new WorkbenchError(CARRY_UNPAID_MESSAGE,409);
   }
   // 납부 Payment 근거(2026-11-15): 초안·장부가 둘 다 없을 때만 본다 — 랠리즈에서 넘어온 달은 청구 준비 초안이 없다.
   // 그 학생·그 반·그 수강월의 납부완료(PAID) 수강료 청구만 근거다. 취소·환불·미납은 근거가 아니다(기존 문구로 차단).
@@ -144,7 +165,7 @@ async function readCarryEvidenceInTx(tx: WorkbenchTx, input: CarryEvidenceInput,
   if(issuedSnapshot && JSON.stringify([...issuedSnapshot.scheduledDates].sort())!==JSON.stringify(currentDates))throw new WorkbenchError("원기간 발행 당시 수업일과 현재 일정이 달라 재정산 확인이 필요합니다.",409);
   const dates=issuedSnapshot?.scheduledDates??currentDates;
   const row=paid?null:issuedRow?.payload??registeredRow!;
-  if ((registeredRow && registeredRow.status !== "ACTIVE") || !dates.includes(absence.date) || !dates.length || (row && row.prorationAmount > row.baseAmount-row.discountAmount)) throw new WorkbenchError("원결석이 확정 수강 기간·예정 수업일에 포함되는지 확인해 주세요.",409);
+  if ((registeredRow && registeredRow.status !== "ACTIVE") || !dates.length || (row && row.prorationAmount > row.baseAmount-row.discountAmount)) throw new WorkbenchError(CARRY_OUT_OF_PERIOD_MESSAGE,409);
   // 이월·셔틀을 빼기 전 할인 후 수강료. 기간 조정은 실제 수강분에서만 산정한다.
   // 납부 Payment 근거는 «실제 청구 금액(+이미 줄인 금액)»이 분자다 — 할인은 낸 금액에 이미 반영돼 있다.
   const numerator = row ? row.baseAmount-row.discountAmount-row.prorationAmount : paid!.tuition;
@@ -161,12 +182,22 @@ async function readCarryEvidenceInTx(tx: WorkbenchTx, input: CarryEvidenceInput,
  * 보강 예약 취소·보강권 회수·정산 기록(BillingAbsenceResolution)은 부르는 쪽 몫이다.
  */
 export async function creditCarryForAbsenceInTx(tx: WorkbenchTx, input: CarryEvidenceInput & { eligibility: string; actorId: string }): Promise<{ source: CarryEvidenceSource; numerator: number; denominator: number; availableMonth: string }> {
+  return insertCarryCreditInTx(tx, { ...input, evidence: await readCarryEvidenceInTx(tx, input, true) });
+}
+/**
+ * 이미 확인한 근거로 이월 1행을 넣는다 — INSERT 는 여기 한 곳(하루짜리·기간 정산 공용).
+ * @param input.availableMonth 쓸 수 있게 되는 달. 없으면 원기간 다음 달(하루짜리 규칙). 기간 정산은 «복귀일이 속한 달»을 넘긴다.
+ * @param input.periodId 기간 정산이 적립한 이월이면 그 기간 id(basis.periodId) — 확정 취소 때 이 값으로 찾는다
+ */
+export async function insertCarryCreditInTx(tx: WorkbenchTx, input: CarryEvidenceInput & { eligibility: string; actorId: string; evidence: ResolvedCarryEvidence; availableMonth?: string; periodId?: string }): Promise<{ id: string; source: CarryEvidenceSource; numerator: number; denominator: number; availableMonth: string }> {
   const { absence, originMonth, eligibility, actorId, calendar } = input;
-  const { source: evidenceSource, numerator, dates, periodStart, periodEnd, sourcePaymentId, paidCopy } = await readCarryEvidenceInTx(tx, input, true);
+  const { source: evidenceSource, numerator, dates, periodStart, periodEnd, sourcePaymentId, paidCopy } = input.evidence;
+  if(!dates.includes(absence.date)) throw new WorkbenchError(CARRY_OUT_OF_PERIOD_MESSAGE,409);
   const [y,m] = originMonth.split("-").map(Number);
-  const availableMonth = `${m === 12 ? y+1:y}-${String(m === 12 ? 1:m+1).padStart(2,"0")}`;
-  await tx.$executeRawUnsafe(`INSERT INTO "BillingCarryCredit" (id,"studentId","absenceId",numerator,denominator,"availableMonth",basis,"actorUserId") VALUES ($1,$2,$3,$4::numeric,$5::numeric,$6,$7::jsonb,$8)`,randomUUID(),absence.studentId,absence.id,String(numerator),String(dates.length),availableMonth,JSON.stringify({originMonth:originMonth,classId:absence.classId,absenceDate:absence.date,periodStart,periodEnd,scheduledDates:dates,discountedTuition:numerator,evidenceConfirmed:true,eligibility:eligibility,originalReason:absence.reason,source:evidenceSource,calendarSource:calendar?.kind??"DB",calendarFingerprint:calendar?.fingerprint??null,sourcePaymentId,...(paidCopy??{})}),actorId);
-  return { source: evidenceSource, numerator, denominator: dates.length, availableMonth };
+  const availableMonth = input.availableMonth ?? `${m === 12 ? y+1:y}-${String(m === 12 ? 1:m+1).padStart(2,"0")}`;
+  const id = randomUUID();
+  await tx.$executeRawUnsafe(`INSERT INTO "BillingCarryCredit" (id,"studentId","absenceId",numerator,denominator,"availableMonth",basis,"actorUserId") VALUES ($1,$2,$3,$4::numeric,$5::numeric,$6,$7::jsonb,$8)`,id,absence.studentId,absence.id,String(numerator),String(dates.length),availableMonth,JSON.stringify({originMonth:originMonth,classId:absence.classId,absenceDate:absence.date,periodStart,periodEnd,scheduledDates:dates,discountedTuition:numerator,evidenceConfirmed:true,eligibility:eligibility,originalReason:absence.reason,source:evidenceSource,calendarSource:calendar?.kind??"DB",calendarFingerprint:calendar?.fingerprint??null,sourcePaymentId,...(paidCopy??{}),...(input.periodId?{periodId:input.periodId}:{})}),actorId);
+  return { id, source: evidenceSource, numerator, denominator: dates.length, availableMonth };
 }
 export type CarryEvidencePreview =
   | { ok: true; source: CarryEvidenceSource; tuition: number; sessions: number; unit: number; warnings: string[] }
