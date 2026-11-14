@@ -784,6 +784,13 @@ test("학생 학년: 임시 생일(2000-01-01)·빈 생일·오입력은 계산�
   assert.equal(g("2030-01-01", "초1", "2026-11-14"), 1, "미래 생일 = 오입력");
   assert.equal(g(null, null, "2026-11-14"), null);
   assert.equal(g(null, "대학생", "2026-11-14"), null);
+  // 5세보다 어리게 계산되면(생일 칸에 등록한 해를 적은 경우 등) 학년 글자를 믿는다 — 글자도 없으면 계산값 그대로
+  assert.equal(studentGrade.YOUNGEST_CLASS_GRADE, -2);
+  assert.equal(g("2025-03-02", "초3", "2026-11-14"), 3, "2025년생(-5)으로 계산되지만 글자가 초3");
+  assert.equal(g("2023-01-01", "7세", "2026-11-14"), 0, "-3 → 글자 7세");
+  assert.equal(g("2023-01-01", null, "2026-11-14"), -3, "글자가 없으면 계산값");
+  assert.equal(g("2023-01-01", "대학생", "2026-11-14"), -3, "글자를 못 읽어도 계산값");
+  assert.equal(g("2022-01-01", "초3", "2026-11-14"), -2, "5세(-2)부터는 생년월일이 먼저");
   assert.equal(creditRules.makeupGradeFromText("성인"), 13);
   assert.equal(creditRules.makeupGradeFromText("성인반"), 13);
   assert.equal(creditRules.makeupGradeFromText("초5"), 5);
@@ -994,8 +1001,10 @@ test("보강 화면: 0건이면 이유별 글, 후보 행에 대상 학년·자�
   assert.match(read("src/app/mypage/MyPageClient.tsx"), /if \(id === "parent-request-form"\) setShowRequestForm\(true\);/);
   assert.match(read("src/app/mypage/MyPageClient.tsx"), /\{showRequestForm && \(\s*<div id="parent-request-form"/);
   // 문구 정리(결정표 d1·d2): 설명은 한 줄씩
-  assert.match(client, />\s*보강권은 결석일부터 2개월 안에 써 주세요\s*<\/p>/);
-  assert.match(client, />\s*알리지 않고 빠지면 보강권이 사용 처리돼요\s*<\/p>/);
+  assert.match(client, />\s*보강권은 결석일부터 2개월 안에 써 주세요\.\s*<\/p>/);
+  assert.match(client, />\s*알리지 않고 빠지면 보강권이 사용 처리돼요\.\s*<\/p>/);
+  // 폼이 펴진 뒤(showRequestForm 이 참이 된 뒤) 그 자리로 간다 — 렌더가 한 박자 늦어도 스크롤된다
+  assert.match(read("src/app/mypage/MyPageClient.tsx"), /useEffect\(\(\) => \{\s*if \(showRequestForm && window\.location\.hash === "#parent-request-form"\) scrollToSection\("parent-request-form"\);\s*\}, \[showRequestForm\]\);/);
   assert.doesNotMatch(client, /자동으로 소멸합니다|대상 학년 앞뒤 1학년까지|<strong>/);
   assert.match(client, /<h1 className="academy-heading">\s*보강 예약\s*<\/h1>/);
   assert.match(client, /setEmptyReason\(r\.emptyReason \|\| ""\)/);

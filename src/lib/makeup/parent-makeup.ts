@@ -299,9 +299,10 @@ export async function bookMakeup(
   if (!isKstYmd(input.dateYmd)) return { ok: false, message: "날짜가 올바르지 않습니다." };
 
   const own = await prisma.$queryRawUnsafe<Array<{
-    id: string; studentId: string; originClassId: string | null; absenceDate: Date; expiresAt: Date; studentGrade: string | null;
+    id: string; studentId: string; originClassId: string | null; absenceDate: Date; expiresAt: Date;
   }>>(
-    `SELECT mc.id, mc."studentId", mc."originClassId", mc."absenceDate", mc."expiresAt", s.grade AS "studentGrade"
+    // 학년은 여기서 읽지 않는다 — 학년·정원 판정은 아래 getMakeupOptionsForCredit 한 곳에서만 한다
+    `SELECT mc.id, mc."studentId", mc."originClassId", mc."absenceDate", mc."expiresAt"
        FROM "MakeupCredit" mc JOIN "Student" s ON s.id = mc."studentId"
       WHERE mc.id = $1 AND ${await childAccessSql("s", "$2")} AND mc.status = 'AVAILABLE' LIMIT 1`,
     input.creditId, parentUserId,

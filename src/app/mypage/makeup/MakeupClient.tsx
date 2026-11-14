@@ -159,7 +159,7 @@ export default function MakeupClient({ initial, presetStudentId = null }: { init
       </div>
       {/* 화면 맨 위 설명 한 줄 = 본문 14px */}
       <p className="mb-4 text-sm text-[var(--color-academy-muted)]">
-        보강권은 결석일부터 2개월 안에 써 주세요
+        보강권은 결석일부터 2개월 안에 써 주세요.
       </p>
 
       {/* 잔여 집계 — 예전 4칸 판(약 70px)을 상태 칩 한 줄로. 칩을 누르면 그 상태만 본다. */}
@@ -325,7 +325,7 @@ export default function MakeupClient({ initial, presetStudentId = null }: { init
       )}
 
       <p className="mt-5 text-xs leading-relaxed text-[var(--color-academy-faint)]">
-        알리지 않고 빠지면 보강권이 사용 처리돼요
+        알리지 않고 빠지면 보강권이 사용 처리돼요.
       </p>
     </div>
   );
