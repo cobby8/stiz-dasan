@@ -30,20 +30,25 @@ export function FeedLineEditor({
 }) {
   const [status, setStatus] = useState<"idle" | "dirty" | "saving" | "saved" | "error">("idle");
   const [error, setError] = useState("");
+  // 마지막으로 저장된 글 — 바깥에서 값이 바뀌어도(수업 계획 불러오기 등) «저장 안 됨»을 알아보게 한다
+  const [savedValue, setSavedValue] = useState(value);
+  const unsaved = value !== savedValue;
 
   async function save() {
     if (status === "saving") return;
+    const sending = value;
     setStatus("saving");
     setError("");
     onBusyChange?.(true);
     try {
-      const result = await saveSessionFeedLine({ sessionId, content: value });
+      const result = await saveSessionFeedLine({ sessionId, content: sending });
       if (!result.ok) {
         setStatus("error");
         setError(result.message);
         return;
       }
       setStatus("saved");
+      setSavedValue(sending);
       onSaved?.(result.content);
     } catch {
       setStatus("error");
@@ -78,7 +83,7 @@ export function FeedLineEditor({
       />
       <div className="mt-1.5 flex items-center justify-between gap-2">
         <span aria-live="polite" className={`text-xs ${status === "error" ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-muted)]"}`}>
-          {status === "saving" ? "저장 중…" : status === "saved" ? "저장됨" : status === "dirty" ? "저장하지 않은 변경이 있어요" : status === "error" ? error : "수업 당일 자정까지 고칠 수 있어요"}
+          {status === "saving" ? "저장 중…" : status === "error" ? error : unsaved || status === "dirty" ? "저장하지 않은 변경이 있어요" : status === "saved" ? "저장됨" : "수업 당일 자정까지 고칠 수 있어요"}
         </span>
         <button type="button" disabled={disabled || status === "saving"} onClick={() => void save()} className="academy-button-secondary academy-button-sm shrink-0">
           한 줄 저장

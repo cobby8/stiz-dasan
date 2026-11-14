@@ -10,6 +10,7 @@ const livePill = await read("src/components/staff/LiveStatusPill.tsx");
 const rideButtons = await read("src/app/staff/shuttle/ShuttleRideStatusButtons.tsx");
 const shuttleDashboard = await read("src/app/staff/shuttle/StaffShuttleDashboardClient.tsx");
 const session = await read("src/app/staff/sessions/[sessionId]/SessionInProgressClient.tsx");
+const studentSheet = await read("src/components/staff/SessionStudentSheet.tsx");
 const driver = await read("src/components/shuttle/UnifiedDriverClient.tsx");
 const driverCss = await read("src/components/shuttle/DriverWorkspace.module.css");
 const home = await read("src/app/staff/StaffHomeClient.tsx");
@@ -53,9 +54,10 @@ test("T-03 출석부: 출석 success·지각 warning·결석 danger + 아이콘,
   assert.match(session, /PRESENT: "success",\s*LATE: "warning",\s*ABSENT: "danger"/);
   // 2026-11-14 아이콘 완전 제거: 아이콘 이름 표(STATUS_ICON)를 없앴다 — 버튼·알약은 글자(출석·지각·결석·미확인)만 보인다.
   assert.doesNotMatch(session, /STATUS_ICON|icon=|material-symbols-outlined/);
-  assert.match(session, /<StatusPill tone="neutral">미확인<\/StatusPill>/);
-  assert.match(session, /grid grid-cols-3 gap-3">\s*\{\(\["PRESENT", "LATE", "ABSENT"\] as AttendanceStatus\[\]\)\.map\(\(status\) => \(\s*<StatusChoiceButton/);
-  assert.match(session, /<StatusPill tone=\{STATUS_TONE\[student\.status\]\}/);
+  // 2026-11-14 수업 화면 간결화: 명단은 학생 한 줄(이름 + 출결 버튼 3개), «지금 상태» 알약은 학생 상세 시트에 있다.
+  assert.match(studentSheet, /<StatusPill tone="neutral">미확인<\/StatusPill>/);
+  assert.match(session, /grid shrink-0 grid-cols-3 gap-2">\s*\{\(\["PRESENT", "LATE", "ABSENT"\] as AttendanceStatus\[\]\)\.map\(\(status\) => \(\s*<StatusChoiceButton/);
+  assert.match(studentSheet, /<StatusPill tone=\{STATUS_TONE\[student\.status\]\}/);
   // 저장 함수는 그대로
   assert.match(session, /onClick=\{\(\) => void updateAttendance\(student\.id, status\)\}/);
   assert.match(session, /saveStaffAttendance\(\{ sessionId: session\.id, attendanceKey: target\.attendanceKey, status, absenceReason \}\)/);
@@ -92,9 +94,11 @@ test("T-07 진행 알약: 수업 진행·홈·기사님 헤더가 같은 LiveSta
   assert.match(driver, /runState === "running" && <LiveStatusPill>운행 중<\/LiveStatusPill>/);
 });
 
-test("T-06 수업 화면 보조 버튼: 메모 저장 secondary, 미확인 0명이면 출석부 확인도 secondary", () => {
+test("T-06 수업 화면 보조 버튼: 메모 저장 secondary, 전체 출석은 미확인이 남았을 때만 보인다", () => {
   assert.match(session, /className="academy-button-secondary[^"]*">메모 지금 저장/);
-  assert.match(session, /counts\.UNCHECKED > 0 \? "academy-button-primary" : "academy-button-secondary"/);
+  // 2026-11-14: «출석부 확인» 버튼이 없어졌다(명단이 바로 보인다). 주인공 버튼(전체 출석)은 처리할 학생이 있을 때만 그린다.
+  assert.match(session, /\{\(bulkSplit\.targets\.length > 0 \|\| bulkBusy\) && \(\s*<button[^>]*className="academy-button-primary/);
+  assert.doesNotMatch(session, /출석부 확인/);
 });
 
 test("T-08 홈: 경고 상자 대신 카드 안 한 줄 안내, 진행 중 카드 주황 2px", () => {
