@@ -305,7 +305,8 @@ test("③ 형제 + 미납 있음: 아이 칩(지금 아이 표시)·미납 칸 �
   }));
   assert.match(html, /aria-label="자녀 선택"/);
   assert.match(html, /href="\/mypage\/record\?child=kid2"/);
-  assert.match(html, /aria-current="page"[^>]*>합성</);
+  // 칩 안: 사진 동그라미(사진이 없어 이름 첫 글자) + 이름 (2026-11-15 프로필 사진)
+  assert.match(html, /aria-current="page"[^>]*><span[^>]*><span[^>]*>합<\/span><\/span>합성</);
   assert.match(html, /실제 수강 1년 8개월/);
   assert.match(html, /첫 등록 2025\.03/);
   assert.match(html, /100%/, "올해 출석률(출석3+지각1 / 4)");

@@ -53,6 +53,8 @@ function load(file) {
 const kst = await import(load("src/lib/datetime/kst.ts"));
 const rules = await import(load("src/lib/regular/regularAbsenceRules.ts"));
 const creditRules = await import(load("src/lib/makeup/credit-rules.ts"));
+// 2026-11-15 마감 통일·날짜 바꾸기: 마감 판정·문구의 공용 모듈
+const deadline = await import(load("src/lib/parent/changeDeadline.ts"));
 const absence = await import(load("src/lib/regular/parent-regular-absence.ts"));
 const makeup = await import(load("src/lib/makeup/parent-makeup.ts"));
 // 2026-11-14 복귀 예정: 학부모가 쓸 수 있는 수강 = ACTIVE 또는 복귀 승인된 휴원 반(공용 규칙)
@@ -750,9 +752,14 @@ test("결석 화면: 보강 예약으로 이어지는 버튼 · 사유 변경 ·
   assert.match(client, /setReason\(\(prev\) => \(\{ \.\.\.prev, \[key\]: d\.reason \|\| "" \}\)\);\s*setOpenKey\(key\);[\s\S]{0,200}사유 변경/);
   assert.match(client, /\{d\.reported \? "사유 바꾸기" : "신고하기"\}/);
   assert.doesNotMatch(client, /openKey === key && !d\.reported && \(/, "신고된 줄에 폼을 안 열던 조건은 없다");
-  assert.match(client, /날짜를 바꾸려면 취소한 뒤 다시 신고해 주세요/);
+  // 2026-11-15 마감 통일·날짜 바꾸기: «취소한 뒤 다시 신고» 안내는 지웠다 — 그 자리에서 날짜를 바꾼다(tests/change-deadline-and-move.test.mjs)
+  assert.doesNotMatch(client, /날짜를 바꾸려면 취소한 뒤 다시 신고해 주세요/);
+  assert.match(client, />\s*날짜 바꾸기\s*</);
   // 마감 글 = 서버 문구와 같은 글, 마감이면 버튼 대신 글
-  assert.ok(client.includes(`const CHANGE_CLOSED_TEXT = "${rules.ABSENCE_CHANGE_CLOSED_MESSAGE}";`));
+  // 2026-11-15: 글자를 화면에 따로 적지 않고 공용 모듈의 상수를 그대로 쓴다(세 화면이 같은 글)
+  assert.match(client, /import \{ CHANGE_CLOSED_MESSAGE \} from "@\/lib\/parent\/changeDeadline";/);
+  assert.match(client, /const CHANGE_CLOSED_TEXT = CHANGE_CLOSED_MESSAGE;/);
+  assert.equal(rules.ABSENCE_CHANGE_CLOSED_MESSAGE, deadline.CHANGE_CLOSED_MESSAGE, "결석 서버 문구도 같은 상수");
   assert.match(client, /d\.locked \? null : !changeOpen\(d\) \? \(/);
   assert.match(client, /if \(j\?\.code === "ABSENCE_CHANGE_CLOSED"\) await reload\(\);/);
   // 아이콘·굵은 글씨 규칙
@@ -762,7 +769,8 @@ test("결석 화면: 보강 예약으로 이어지는 버튼 · 사유 변경 ·
 test("결석 API: 마감 오류를 학부모 말로 돌려준다(코드도 함께 — 화면이 다시 읽는다)", () => {
   const route = read("src/app/api/mypage/regular-absence/route.ts");
   assert.match(route, /ABSENCE_CHANGE_CLOSED: ABSENCE_CHANGE_CLOSED_MESSAGE/);
-  assert.equal(rules.ABSENCE_CHANGE_CLOSED_MESSAGE, "수업 1시간 전이 지나 여기서 바꿀 수 없습니다. 학원으로 연락해 주세요.");
+  // 2026-11-15 마감 통일·날짜 바꾸기: 결석·셔틀·보강 세 화면 공통 문구로 바꿨다(예전: «수업 1시간 전이 지나 …»)
+  assert.equal(rules.ABSENCE_CHANGE_CLOSED_MESSAGE, "마감 시간이 지나 여기서 바꿀 수 없습니다. 학원으로 연락해 주세요.");
 });
 
 test("서버: 신고·취소 양쪽이 같은 마감 함수를 쓴다 — 화면 숨김만으로 끝내지 않는다", () => {

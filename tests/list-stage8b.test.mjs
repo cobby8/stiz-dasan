@@ -37,6 +37,8 @@ const feedRules = compileModule("src/lib/feed/rules.ts", {
 const inlineConfirm = compileModule("src/components/parent/InlineConfirm.tsx");
 // 오류 원문 대신 고객용 한국어를 고르는 공용 함수(개발 언어 제거) — 오류를 보여 주는 화면이 함께 불러온다
 const customerMessageModule = compileModule("src/components/parent/customerMessage.ts");
+// 2026-11-15 마감 통일·날짜 바꾸기: 결석·셔틀·보강 화면이 함께 쓰는 마감 글(순수 모듈)
+const changeDeadline = compileModule("src/lib/parent/changeDeadline.ts");
 
 // 2026-11-09 원장 지시: «일정» 탭 = 연간일정·수업일·출결을 한 달 달력으로. 수납 기록·신청 줄은 뺐다.
 const classSchedule = compileModule("src/lib/classSchedule.ts");
@@ -133,6 +135,7 @@ test("보강 예약은 4칸 집계판 대신 상태 칩(서버 집계와 같은 
     "@/lib/ui/statusTones": statusTones, "@/lib/seats/seatLevel": seatLevelModule,
     "@/lib/mypage/requestPreset": { presetIndex: () => 0, presetFirst: (list) => [...list] }, "@/components/parent/customerMessage": customerMessageModule, 
     "next/link": { default: Link },
+    "@/lib/parent/changeDeadline": changeDeadline, // 2026-11-15 마감 통일·날짜 바꾸기: 마감 글(진짜 모듈)
     "next/navigation": { useRouter: () => ({ refresh() {} }) },
     "@/app/actions/parent-makeup": { fetchMakeupOptions: async () => ({ ok: true, options: [] }), bookMakeupAction: async () => ({ ok: true }), cancelMakeupAction: async () => ({ ok: true }) },
     "@/components/admin/list/StatusCountChips": chips,
@@ -176,6 +179,7 @@ test("정규 결석 신고는 반 카드 속 작은 카드 대신 날짜 묶음(
     "next/link": { default: Link },
     "@/components/admin/list/upcomingDateGroups": groups,
     "@/lib/datetime/kst": kst,
+    "@/lib/parent/changeDeadline": changeDeadline, // 2026-11-15 마감 통일·날짜 바꾸기: 마감 글(진짜 모듈)
     "@/components/parent/InlineConfirm": inlineConfirm,
     "@/lib/enrollment/resumeWindow": compileModule("src/lib/enrollment/resumeWindow.ts"), // 2026-11-14 복귀 예정 안내 문구(진짜 규칙)
   }).default;
@@ -282,6 +286,7 @@ test("셔틀 예정 변경은 날짜 묶음의 한 줄 행이고 행 탭=하단 
     "@/components/admin/list/ListDetailPanel": { default: ({ children }) => React.createElement("div", { "data-sheet": "" }, children) },
     "@/components/admin/list/upcomingDateGroups": groups,
     "@/lib/datetime/kst": kst,
+    "@/lib/parent/changeDeadline": changeDeadline, // 2026-11-15 마감 통일·날짜 바꾸기: 마감 글(진짜 모듈)
     "@/components/parent/InlineConfirm": inlineConfirm,
     "@/lib/enrollment/resumeWindow": compileModule("src/lib/enrollment/resumeWindow.ts"), // 2026-11-14 복귀 예정 안내 문구(진짜 규칙)
   }).default;

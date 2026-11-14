@@ -3,6 +3,7 @@ import { requireVerifiedParent } from "@/lib/auth-guard";
 import {
   submitShuttleException,
   cancelShuttleException,
+  moveShuttleException,
   getShuttleExceptionOptions,
   getParentShuttleExceptionStatus,
 } from "@/lib/shuttle/parent-shuttle-exception";
@@ -26,7 +27,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// 신청(submit) / 취소(cancel) — body.action 으로 분기
+// 신청(submit) / 취소(cancel) / 날짜 바꾸기(move) — body.action 으로 분기
 export async function POST(request: NextRequest) {
   let parent;
   try {
@@ -48,7 +49,10 @@ export async function POST(request: NextRequest) {
     const result =
       body?.action === "cancel"
         ? await cancelShuttleException(parent.appUserId, String(body?.id ?? ""))
-        : await submitShuttleException(parent.appUserId, body ?? {});
+        : body?.action === "move"
+          // 2026-11-15 날짜 바꾸기: 옛 신청 취소 + 새 날짜 신청을 한 트랜잭션으로(내용은 그대로, 날짜만)
+          ? await moveShuttleException(parent.appUserId, { id: body?.id, serviceDate: body?.serviceDate })
+          : await submitShuttleException(parent.appUserId, body ?? {});
     if (!result.ok) return NextResponse.json({ error: result.message }, { status: 400 });
     // 장부 원본에는 내부 수신자 ID가 있으므로 부모에게는 요약만 반환한다.
     const { notification, ...safeResult } = result;

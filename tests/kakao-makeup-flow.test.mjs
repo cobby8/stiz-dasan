@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import test from "node:test";
+import test, { mock } from "node:test";
 import ts from "typescript";
 
 // 카카오 「보강 신청·취소」 대화 흐름을 가짜 DB 로 **실제 실행**해 검증한다.
@@ -58,6 +58,14 @@ const TODAY = kst.todayKst();
 const day = (n) => kst.addDaysKst(TODAY, n);
 const at = (ymd) => new Date(kst.kstAt(ymd));
 const dowOf = (n) => DOW[kst.kstDow(day(n))];
+// 2026-11-15 마감 1시간 전 통일: 보강 마감이 «전날까지»에서 «수업 시작 1시간 전»으로 바뀌어 결과가 «지금 몇 시인가»에 달려 있다.
+// 테스트가 도는 시각에 따라 답이 달라지지 않게 시계를 오늘(KST) 정오로 고정한다(시각이 필요한 테스트는 clock 으로 옮긴다).
+function clock(hm = "12:00") {
+  mock.timers.reset();
+  mock.timers.enable({ apis: ["Date"], now: kst.kstAt(TODAY, hm) });
+}
+clock();
+test.afterEach(() => clock());
 
 function makeDb({ credits = null, students = null } = {}) {
   const db = {
@@ -147,7 +155,14 @@ function makeDb({ credits = null, students = null } = {}) {
       const row = credit(args[0]);
       if (!owns(row, args[1]) || row.status !== "RESERVED") return [];
       const session = db.sessions.find((s) => s.id === row.makeupSessionId);
-      return [{ id: row.id, makeupSessionId: row.makeupSessionId, makeupDate: session?.makeupDate ?? null }];
+      // 2026-11-15 마감 1시간 전 통일: 취소 판정은 보강 날짜의 KST 글자 + 보강 가는 반의 시작 시각
+      assert.match(sql, /to_char\(ms\."makeupDate" AT TIME ZONE 'Asia\/Seoul', 'YYYY-MM-DD'\) AS "makeupYmd"/);
+      assert.match(sql, /bc\."startTime" AS "makeupStartTime"/);
+      return [{
+        id: row.id, makeupSessionId: row.makeupSessionId, makeupDate: session?.makeupDate ?? null,
+        makeupYmd: session ? kst.toKstYmd(session.makeupDate) : null,
+        makeupStartTime: session ? db.classes.find((c) => c.id === session.makeupClassId)?.startTime ?? null : null,
+      }];
     }
     if (/WHERE mc\.id = \$1 AND s\."parentId" = \$2\s+LIMIT 1/.test(sql)) {
       const row = credit(args[0]);
@@ -276,14 +291,17 @@ function assertKakaoFormat(res) {
 const flowRow = (db) => db.intakes.filter((row) => row.kind === "MAKEUP").at(-1);
 
 // ── 순수 함수 ───────────────────────────────────────────────────────────
-test("후보 수업: 내일부터 14일 안, 날짜·시간 순, 최대 8개", () => {
+// 2026-11-15 마감 1시간 전 통일: 후보는 «내일부터»가 아니라 «오늘부터»다(오늘 수업의 마감 여부는 parent-makeup 이 이미 걸러서 준다)
+test("후보 수업: 오늘부터 14일 안, 날짜·시간 순, 최대 8개", () => {
   const options = [
     { classId: "a", className: "주중경기반", startTime: "18:00", dates: [day(0), day(1), day(8), day(15)].map((ymd) => ({ ymd })) },
     { classId: "b", className: "주말기본반", startTime: "10:00", dates: [day(1), day(14)].map((ymd) => ({ ymd })) },
   ];
   const picked = flowModule.buildMakeupCandidates(options, TODAY);
-  assert.deepEqual(picked.map((item) => `${item.classId}@${item.dateYmd}`), [`b@${day(1)}`, `a@${day(1)}`, `a@${day(8)}`, `b@${day(14)}`]);
-  assert.equal(picked[1].label, `${kst.kstLabel(day(1))} 18:00 주중경기반`);
+  assert.deepEqual(picked.map((item) => `${item.classId}@${item.dateYmd}`), [`a@${day(0)}`, `b@${day(1)}`, `a@${day(1)}`, `a@${day(8)}`, `b@${day(14)}`]);
+  assert.equal(picked[2].label, `${kst.kstLabel(day(1))} 18:00 주중경기반`);
+  // 지난 날짜는 여전히 빠진다
+  assert.deepEqual(flowModule.buildMakeupCandidates([{ classId: "p", className: "반", startTime: "09:00", dates: [{ ymd: day(-1) }] }], TODAY), []);
   const many = [{ classId: "x", className: "반", startTime: "09:00", dates: Array.from({ length: 14 }, (_, i) => ({ ymd: day(i + 1) })) }];
   assert.equal(flowModule.buildMakeupCandidates(many, TODAY).length, 8);
   assert.equal(flowModule.parsePick("보강 수업 3번", "보강 수업"), 3);
@@ -323,7 +341,9 @@ test("보강 신청 → 보강권 선택 → 수업 선택 → 확인 → 웹과
   const done = await say("보강 신청 확정");
   assertKakaoFormat(done);
   assert.match(textOf(done), new RegExp(`^보강 예약 완료: 지유 학생 ${kst.kstLabel(day(2)).replace(/[()]/g, "\\$&")} 10:00 주말기본반`));
-  assert.match(textOf(done), /당일 취소는 안 되고, 못 오시면 하루 전까지 카톡으로 알려 주세요/);
+  // 2026-11-15 마감 1시간 전 통일: 예전 문구 «당일 취소는 안 되고, 못 오시면 하루 전까지…»
+  assert.match(textOf(done), /못 오시면 수업 시작 1시간 전까지 카톡으로 취소해 주세요\(「보강 취소」\)/);
+  assert.doesNotMatch(textOf(done), /당일 취소는 안 되고/);
   // DB: 웹과 같은 결과(보강권 RESERVED + 세션 BOOKED, 날짜는 KST 자정)
   assert.equal(db.credits.find((row) => row.id === "mc1").status, "RESERVED");
   assert.equal(db.sessions.length, 1);
@@ -446,7 +466,9 @@ test("IDOR: 대화 상태에 다른 가정의 보강권 id 를 넣어도 예약�
   assert.ok(!JSON.stringify(flowRow(db3).structuredJson).includes("\"other\""));
 });
 
-test("보강 취소: 하루 전까지는 취소(보강권 복구), 당일은 불가 안내", async () => {
+// 2026-11-15 마감 1시간 전 통일: 예전에는 «당일은 불가»였다. 이제 당일도 수업 시작 1시간 전까지는 취소되고, 그 뒤에만 불가 안내가 나간다.
+test("보강 취소: 수업 시작 1시간 전까지는 취소(보강권 복구), 그 뒤는 불가 안내", async () => {
+  clock("17:01"); // 오늘 18:00 주중경기반 — 59분 전
   const db = makeDb();
   db.credits.find((row) => row.id === "mc1").status = "RESERVED";
   db.credits.find((row) => row.id === "mc1").makeupSessionId = "ms-today";
@@ -459,11 +481,12 @@ test("보강 취소: 하루 전까지는 취소(보강권 복구), 당일은 불
 
   const list = await say("보강 취소");
   assertKakaoFormat(list);
-  assert.match(textOf(list), /1\. .*주중경기반 \(오늘·취소 불가\)/);
+  assert.match(textOf(list), /1\. .*주중경기반 \(취소 마감\)/);
+  assert.doesNotMatch(textOf(list), /2\. .*\(취소 마감\)/, "모레 보강은 열려 있다");
   assert.deepEqual(replies(list), ["보강 취소 1번", "보강 취소 2번", "보강 그만"]);
 
   const refuse = await say("보강 취소 1번");
-  assert.match(textOf(refuse), /오늘이라 취소할 수 없어요\(당일 취소 불가\)/);
+  assert.match(textOf(refuse), /보강은 수업 시작 1시간 전이 지나 카톡으로 취소할 수 없어요/);
   assert.equal(db.sessions.find((s) => s.id === "ms-today").status, "BOOKED");
   assert.equal(contract.classifyParentUtterance(replies(refuse)[0]), "HUMAN", "당일 불참 알림은 원장님 접수로");
 
@@ -477,6 +500,21 @@ test("보강 취소: 하루 전까지는 취소(보강권 복구), 당일은 불
   assert.equal(db.sessions.find((s) => s.id === "ms-later").status, "CANCELLED");
   assert.equal(db.credits.find((row) => row.id === "mc2").status, "AVAILABLE");
   assert.equal(db.alerts.at(-1).kindLabel, "보강 예약 취소");
+});
+
+// 2026-11-15 마감 1시간 전 통일: 당일 보강도 정확히 1시간 전(17:00)까지는 카톡으로 취소된다
+test("보강 취소: 당일 보강도 수업 시작 1시간 전까지는 취소된다", async () => {
+  clock("17:00");
+  const db = makeDb();
+  db.credits.find((row) => row.id === "mc1").status = "RESERVED";
+  db.credits.find((row) => row.id === "mc1").makeupSessionId = "ms-today";
+  db.sessions.push({ id: "ms-today", studentId: "s1", makeupClassId: "cA", makeupDate: at(TODAY), status: "BOOKED" });
+  const list = await say("보강 취소");
+  assert.doesNotMatch(textOf(list), /취소 마감/);
+  assert.match(textOf(await say("보강 취소 1번")), /보강 예약을 취소할까요/);
+  assert.match(textOf(await say("보강 취소 확정")), /^보강 예약을 취소했어요/);
+  assert.equal(db.sessions[0].status, "CANCELLED");
+  assert.equal(db.credits.find((row) => row.id === "mc1").status, "AVAILABLE");
 });
 
 test("「취소할게요」는 보강 신청 확인으로 읽지 않는다(그만두기)", async () => {

@@ -292,6 +292,8 @@ test("③ 내 아이 → 아이 정보·반·보강권·셔틀(명단 제외 옵
 const link = { __esModule: true, default: ({ children, prefetch, ...props }) => React.createElement("a", props, children) };
 const ChildRecordClient = load("src/app/mypage/record/ChildRecordClient.tsx", {
   "next/link": link,
+  // 아이 정보 칸의 사진 올리기 부품(2026-11-15)이 올린 뒤 화면을 새로 그릴 때 쓴다
+  "next/navigation": { useRouter: () => ({ refresh() {} }) },
   "@/components/admin/list/ListDetailPanel": { __esModule: true, default: ({ children }) => React.createElement("div", null, children) },
 }).default;
 const today = "2026-11-16";

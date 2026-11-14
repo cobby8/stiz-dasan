@@ -175,6 +175,11 @@ function loadActions(initialRows, { raceTo = null, raceIds = null, posBlocked = 
         revalidatePath: () => {},
         revalidateStudentAdminCaches: () => {},
         console: { error() {} },
+        // 원생 삭제가 불러오는 프로필 사진 정리 부품(2026-11-15) — 사진 없는 원생으로 둔다(동작은 profile-photo.test.mjs 가 본다)
+        require: (name) => {
+            if (name === "@/lib/profilePhoto/cleanup") return { readProfilePhotoPath: async () => null, removeProfilePhotoFiles: async () => {} };
+            throw new Error("대역 없는 의존: " + name);
+        },
     };
     const compiled = ts.transpile(`${guardSource}\n${bulkSource}\n${deletePaymentSource}\n${deleteStudentSource}`, { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 });
     const loaded = { exports: {} };

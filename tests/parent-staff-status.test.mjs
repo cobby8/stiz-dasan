@@ -129,6 +129,8 @@ function shuttleFixture(options = {}) {
     if (sql.includes('FROM "NotificationDelivery"')) { if (options.ledgerFails) throw new Error('synthetic ledger failure'); return rows; }
     // 2026-11-14 복귀 예정: 소유 검증이 수강 상태·복귀일도 함께 읽는다(다니는 학생 = ACTIVE, 복귀일 없음)
     if (sql.includes('SELECT s.id, s.name')) return options.unowned ? [] : [{ id: row.studentId, name: row.studentName, status: 'ACTIVE', resumeFrom: null }];
+    // 2026-11-15 마감 통일·날짜 바꾸기: 마감 기준 반 시각 조회 — 이 픽스처의 날짜(2099년)는 한참 뒤라 수업이 없어도 열려 있다
+    if (sql.includes('WHERE e."studentId" = ANY($1::text[])')) return [];
     if (sql.includes('WITH guard AS MATERIALIZED')) return [{ id: row.id, changed: !options.noOp }];
     if (sql.includes('UPDATE "ShuttleDayException" x')) {
       assert.match(sql, /s\."parentId" = \$1/); if (row.canceled || options.unowned) return []; row.canceled = true; return [row];
@@ -141,6 +143,9 @@ function shuttleFixture(options = {}) {
   const actions = load('src/lib/shuttle/parent-shuttle-exception.ts', {
     '@/lib/prisma': { prisma }, '@/lib/studentVisibility': { notMergedStudent: () => 'TRUE' }, '@/lib/parent-staff-status': summary,
     '@/lib/enrollment/resumeWindow': load('src/lib/enrollment/resumeWindow.ts'), // 진짜 규칙을 그대로 올린다(2026-11-14 복귀 예정)
+    // 2026-11-15 마감 통일·날짜 바꾸기: 마감 판정(공용 규칙)과 KST 시계도 진짜 모듈 그대로
+    '@/lib/parent/changeDeadline': load('src/lib/parent/changeDeadline.ts'),
+    '@/lib/datetime/kst': load('src/lib/datetime/kst.ts'),
     '@/lib/shuttle/dayExceptionRules': { SHUTTLE_EXCEPTION_MESSAGE: {}, validateShuttleException: () => ({ ok: true, direction: 'PICKUP', kind: 'SKIP' }), SHUTTLE_DIRECTION_LABEL: { PICKUP: '등원' }, SHUTTLE_EXCEPTION_KIND_LABEL: { SKIP: '안 타요' } },
     '@/lib/operational-staff-notification': { async notifyOperationalStaff() { notified++; if (options.notifyFails) throw new Error('synthetic notification failure'); return { driver: 'NOTIFIED' }; } },
   });

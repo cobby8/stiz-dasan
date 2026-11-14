@@ -7,10 +7,22 @@ import {
 } from "./credit-rules";
 import { activeMakeupSql } from "./capacity";
 // 달력 값(오늘·요일·날짜 더하기·KST 자정)은 공용 모듈에서만 만든다 — 서버는 UTC 로 돈다
-import { addDaysKst, isKstYmd, kstAt, kstDow, kstLabel, todayKst, toKstYmd } from "@/lib/datetime/kst";
-import { assertMakeupSessionAllowed, assertRegularMakeupAllowed, CompensationConflict, lockCompensation } from "@/lib/billing/absence-compensation-guard";
+import { addDaysKst, isKstYmd, kstAt, kstDow, kstHm, kstLabel, todayKst, toKstYmd } from "@/lib/datetime/kst";
+import { assertMakeupSessionAllowed, assertRegularMakeupAllowed, CompensationConflict, lockCompensation, type CompensationTransaction } from "@/lib/billing/absence-compensation-guard";
 // 학부모 응답의 남은 자리는 숫자 대신 3단계(재원생 수 비공개 · 2026-11-13 f9)
 import { seatLevel, type SeatLevel } from "@/lib/seats/seatLevel";
+// 예약·취소·날짜 바꾸기 마감 = 보강 수업 시작 1시간 전(당일도 그 전이면 된다) — 결석·셔틀과 함께 쓰는 공용 규칙
+// (2026-11-15 마감 1시간 전 통일 — 원장 결정. 그 전에는 «전날까지»였다)
+import { isMakeupChangeOpen, makeupClosedMessage, PARENT_CHANGE_CUTOFF_TEXT } from "@/lib/parent/changeDeadline";
+
+/** 예약 마감이 지난 날짜를 골랐을 때의 글(예약·날짜 바꾸기 공용) */
+const MAKEUP_BOOK_CLOSED_MESSAGE = `보강은 수업 시작 ${PARENT_CHANGE_CUTOFF_TEXT} 전까지 예약할 수 있습니다. 다른 날짜를 골라 주세요.`;
+
+// «지금»을 KST 글자(날짜·시각)로 — 마감 판정에 넣는다(서버는 UTC 로 돈다. 달력 값은 kst.ts 에서만)
+function kstNow(): { ymd: string; hm: string } {
+  const nowMs = Date.now();
+  return { ymd: todayKst(nowMs), hm: kstHm(nowMs) };
+}
 
 // 학부모용 보강 — 보강권 조회 · 반 추천 · 예약 · 취소.
 //
@@ -41,8 +53,12 @@ export type ParentCredit = {
   expiresLabel: string;     // "10/3(금)"
   expiresYmd: string;
   status: string;
-  /** 예약된 경우 그 내용 */
-  booking: { sessionId: string; className: string; dateLabel: string } | null;
+  /**
+   * 예약된 경우 그 내용.
+   * changeOpen: 지금 예약을 취소하거나 날짜를 바꿀 수 있나(보강 수업 시작 1시간 전까지 — 그 뒤·지난 날은 false).
+   *   서버도 같은 함수로 다시 막는다 — 이 값은 화면 표시용일 뿐이다.
+   */
+  booking: { sessionId: string; classId: string; className: string; dateYmd: string; dateLabel: string; changeOpen: boolean } | null;
 };
 
 export type ParentMakeupOverview = {
@@ -56,11 +72,15 @@ export async function getMakeupOverviewForParent(parentUserId: string): Promise<
     id: string; studentId: string; studentName: string; studentGrade: string | null;
     sourceType: string; absenceDate: Date; expiresAt: Date; status: MakeupCreditStatus;
     makeupSessionId: string | null; bookedDate: Date | null; bookedClassName: string | null;
+    bookedClassId: string | null; bookedYmd: string | null; bookedStartTime?: string | null;
   }>>(
+    // bookedYmd: 보강 날짜의 KST 달력 날짜(timestamptz 라 변환은 «한 번») — 관리자가 UTC 자정으로 잡은 보강도 같은 날짜가 된다
     `SELECT mc.id, mc."studentId", s.name AS "studentName", s.grade AS "studentGrade",
             mc."sourceType", mc."absenceDate", mc."expiresAt", mc.status,
             mc."makeupSessionId",
-            ms."makeupDate" AS "bookedDate", bc.name AS "bookedClassName"
+            ms."makeupDate" AS "bookedDate", bc.name AS "bookedClassName",
+            ms."makeupClassId" AS "bookedClassId", bc."startTime" AS "bookedStartTime",
+            to_char(ms."makeupDate" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "bookedYmd"
        FROM "MakeupCredit" mc
        JOIN "Student" s ON s.id = mc."studentId"
        LEFT JOIN "MakeupSession" ms ON ms.id = mc."makeupSessionId"
@@ -71,6 +91,7 @@ export async function getMakeupOverviewForParent(parentUserId: string): Promise<
   );
 
   const now = new Date();
+  const kstClock = kstNow();
   const credits: ParentCredit[] = rows.map((r) => ({
     id: r.id,
     studentId: r.studentId,
@@ -82,7 +103,14 @@ export async function getMakeupOverviewForParent(parentUserId: string): Promise<
     expiresYmd: toKstYmd(r.expiresAt),
     status: r.status,
     booking: r.makeupSessionId && r.bookedDate
-      ? { sessionId: r.makeupSessionId, className: r.bookedClassName ?? "", dateLabel: kstLabel(r.bookedDate) }
+      ? (() => {
+          // 날짜 글자는 SQL 이 준 KST 날짜를 쓴다(옛 응답·테스트처럼 없으면 같은 뜻의 공용 변환으로)
+          const dateYmd = r.bookedYmd ?? toKstYmd(r.bookedDate);
+          return {
+            sessionId: r.makeupSessionId, classId: r.bookedClassId ?? "", className: r.bookedClassName ?? "",
+            dateYmd, dateLabel: kstLabel(r.bookedDate), changeOpen: isMakeupChangeOpen(dateYmd, r.bookedStartTime ?? null, kstClock.ymd, kstClock.hm),
+          };
+        })()
       : null,
   }));
 
@@ -124,30 +152,41 @@ function gradeLabelOf(grades: string[], gradeRangeText: string | null): string {
  *      (ScheduleSlot.gradeRange → 직접 만든 슬롯 CustomClassSlot.gradeRange). 끝내 없으면 그 반은 뺀다.
  *      프로그램 대상연령("초등저~고 (일부 중학생 가능)")은 자유 문장이라 절대 파싱하지 않는다.
  *   ③ 결석한 원래 반, 그 학생이 이미 다니는 반은 뺀다
- *   ④ 내일부터 사용 기한까지 그 요일 날짜 중, «그 날짜에» 자리가 남은 날만(정원 +2 − 수강 인원 − 그날 보강 예약)
+ *   ④ 오늘부터 사용 기한까지 그 요일 날짜 중, «그 날짜에» 자리가 남은 날만(정원 +2 − 수강 인원 − 그날 보강 예약)
+ *      오늘 수업은 시작 1시간 전까지만 후보다(2026-11-15 마감 1시간 전 통일 — 그 전에는 «내일부터»였다)
  *
  * 0건이면 emptyReason 으로 이유를 알려 준다(화면이 나눠 보인다).
+ *
+ * forReschedule(2026-11-15 날짜 바꾸기): «예약 중(RESERVED)» 보강권의 후보를 준다.
+ *   지금 예약한 반·날짜는 후보에서 뺀다(같은 곳으로 «바꾸는» 것은 바꾸기가 아니다). 나머지 조건은 새 예약과 같다.
  */
 export async function getMakeupOptionsForCredit(
   parentUserId: string,
   creditId: string,
+  opts: { forReschedule?: boolean } = {},
 ): Promise<{ ok: true; options: MakeupOption[]; expiresYmd: string; emptyReason: MakeupEmptyReason | null } | { ok: false; message: string }> {
   // ★ 부모 소유 확인이 여기서 끝난다. 이후 쿼리는 이 결과만 신뢰한다.
   const own = await prisma.$queryRawUnsafe<Array<{
     id: string; studentId: string; studentGrade: string | null; originClassId: string | null;
-    status: MakeupCreditStatus; expiresAt: Date;
+    status: MakeupCreditStatus; expiresAt: Date; bookedClassId?: string | null; bookedYmd?: string | null;
   }>>(
     `SELECT mc.id, mc."studentId", s.grade AS "studentGrade", mc."originClassId",
-            mc.status, mc."expiresAt"
+            mc.status, mc."expiresAt",
+            ms."makeupClassId" AS "bookedClassId",
+            to_char(ms."makeupDate" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "bookedYmd"
        FROM "MakeupCredit" mc
        JOIN "Student" s ON s.id = mc."studentId"
+       LEFT JOIN "MakeupSession" ms ON ms.id = mc."makeupSessionId"
       WHERE mc.id = $1 AND ${await childAccessSql("s", "$2")}
       LIMIT 1`,
     creditId, parentUserId,
   );
   const credit = own[0];
   if (!credit) return { ok: false, message: "보강권을 찾을 수 없습니다." };
-  if (credit.status !== "AVAILABLE") return { ok: false, message: "이미 예약했거나 사용할 수 없는 보강권입니다." };
+  if (opts.forReschedule) {
+    // 날짜 바꾸기: 예약 중인 보강권만
+    if (credit.status !== "RESERVED") return { ok: false, message: "날짜를 바꿀 수 있는 예약이 없습니다." };
+  } else if (credit.status !== "AVAILABLE") return { ok: false, message: "이미 예약했거나 사용할 수 없는 보강권입니다." };
   if (new Date(credit.expiresAt).getTime() < Date.now()) {
     return { ok: false, message: "사용 기간이 지난 보강권입니다." };
   }
@@ -203,10 +242,15 @@ export async function getMakeupOptionsForCredit(
   });
   if (matched.length === 0) return empty("NO_MATCH");
 
-  // ④-1 만료 전에 열리는 날짜(내일부터)
-  const today = todayKst();
+  // ④-1 만료 전에 열리는 날짜(오늘부터 — 오늘 수업은 시작 1시간 전이 지났으면 뺀다)
+  const clock = kstNow();
+  const today = clock.ymd;
   const withDates = matched
-    .map((c) => ({ c, dateYmds: upcomingDateYmds(c.dayOfWeek, today, expiresAt) }))
+    .map((c) => ({
+      c,
+      dateYmds: upcomingDateYmds(c.dayOfWeek, today, expiresAt)
+        .filter((ymd) => isMakeupChangeOpen(ymd, c.startTime, clock.ymd, clock.hm)),
+    }))
     .filter((item) => item.dateYmds.length > 0);
   if (withDates.length === 0) return empty("NO_DATE");
 
@@ -231,7 +275,10 @@ export async function getMakeupOptionsForCredit(
   const endTimeByClass = new Map(rows.map((r) => [r.classId, r.endTime as string]));
   const built = withDates.map(({ c, dateYmds }) => {
     // 날짜마다 남은 자리를 세고, 마감된 날짜만 뺀다(다른 주의 예약 때문에 빈 날까지 막히지 않게)
-    const open = remainingSeatsByDate(c, dateYmds, bookedByClass.get(c.classId) ?? new Map()).filter((d) => d.remaining > 0);
+    // 날짜 바꾸기: 지금 예약한 반·날짜는 후보에서 뺀다
+    const open = remainingSeatsByDate(c, dateYmds, bookedByClass.get(c.classId) ?? new Map())
+      .filter((d) => d.remaining > 0)
+      .filter((d) => !(opts.forReschedule && c.classId === credit.bookedClassId && d.ymd === credit.bookedYmd));
     const best = open.reduce((max, d) => Math.max(max, d.remaining), 0);
     const option: MakeupOption = {
       classId: c.classId,
@@ -258,20 +305,41 @@ export async function getMakeupOptionsForCredit(
 }
 
 /**
- * 내일부터 만료 시각까지, 그 요일에 해당하는 KST 날짜들(최대 8개). 오늘은 제외 — 내일부터 예약 가능.
+ * 오늘부터 만료 시각까지, 그 요일에 해당하는 KST 날짜들(최대 8개).
+ * 2026-11-15 마감 1시간 전 통일: 오늘도 포함한다(예전에는 내일부터) — 오늘 수업의 마감 여부는 호출부가 반의 시작 시각으로 거른다.
  * 2026-11-14: `T00:00:00+09:00` 을 손으로 조립하던 것을 공용 모듈(addDaysKst·kstAt·kstDow)로 옮겼다(결과 동일).
  */
 function upcomingDateYmds(dayOfWeek: string, todayYmd: string, expiresAt: Date): string[] {
   const dow = DOW_INDEX[dayOfWeek];
   if (dow === undefined) return [];
   const out: string[] = [];
-  for (let i = 1; i <= 70 && out.length < 8; i++) {
+  for (let i = 0; i <= 70 && out.length < 8; i++) {
     const ymd = addDaysKst(todayYmd, i);
     // 그 날 KST 자정이 만료 시각을 넘으면 끝(만료일 당일 자정까지는 예약 가능 — 기존과 같은 경계)
     if (kstAt(ymd) > expiresAt.getTime()) break;
     if (kstDow(ymd) === dow) out.push(ymd);
   }
   return out;
+}
+
+/**
+ * 트랜잭션 안에서(작업대 잠금 뒤) «그 반·그 날짜»에 남은 자리를 다시 센다 — 예약·날짜 바꾸기 공용.
+ * 기준은 그대로 정원 +2(remainingSeatsByDate). 반이 없으면 0.
+ */
+async function seatsLeftInTx(tx: CompensationTransaction, classId: string, dateYmd: string): Promise<number> {
+  const seat = await tx.$queryRawUnsafe<Array<{ capacity: number; enrolled: number; booked: number }>>(
+    `SELECT c.capacity,
+            (SELECT COUNT(*) FROM "Enrollment" e
+              WHERE e."classId" = c.id AND e.status = 'ACTIVE')::int AS enrolled,
+            (SELECT COUNT(*) FROM "MakeupSession" m
+              WHERE m."makeupClassId" = c.id AND ${activeMakeupSql("m")}
+                AND to_char(m."makeupDate" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') = $2)::int AS booked
+       FROM "Class" c WHERE c.id = $1 LIMIT 1`,
+    classId, dateYmd,
+  );
+  return seat[0]
+    ? remainingSeatsByDate(seat[0], [dateYmd], { [dateYmd]: Number(seat[0].booked) })[0].remaining
+    : 0;
 }
 
 /**
@@ -298,6 +366,9 @@ export async function bookMakeup(
   const credit = own[0];
   if (!credit) return { ok: false, message: "예약할 수 있는 보강권이 아닙니다." };
 
+  // 지난 날짜는 후보를 계산하기 전에 바로 거절한다(KST 날짜 글자끼리 비교)
+  if (input.dateYmd < todayKst()) return { ok: false, message: MAKEUP_BOOK_CLOSED_MESSAGE };
+
   // 보강 날짜 = 그 날 KST 자정(공용 모듈 kstAt — 예전 손 조립과 같은 시각)
   const bookAt = new Date(kstAt(input.dateYmd));
   if (bookAt.getTime() > new Date(credit.expiresAt).getTime()) {
@@ -309,6 +380,11 @@ export async function bookMakeup(
   if (!opts.ok) return { ok: false, message: opts.message };
   const target = opts.options.find((o) => o.classId === input.classId);
   if (!target) return { ok: false, message: "이 학생이 갈 수 있는 수업이 아닙니다." };
+  // 마감(2026-11-15 마감 1시간 전 통일): 그 반 수업 시작 1시간 전까지 — 오늘 수업도 그 전이면 예약된다
+  const clock = kstNow();
+  if (!isMakeupChangeOpen(input.dateYmd, target.startTime, clock.ymd, clock.hm)) {
+    return { ok: false, message: MAKEUP_BOOK_CLOSED_MESSAGE };
+  }
   if (!target.dates.some((d) => d.ymd === input.dateYmd)) {
     // 목록에는 «자리가 남은 날짜»만 있다 — 열리지 않는 날이거나 그 사이 마감된 날
     return { ok: false, message: "그 수업이 열리지 않거나 이미 마감된 날짜입니다." };
@@ -324,19 +400,7 @@ export async function bookMakeup(
       // 정원 재확인(2026-11-14) — 위의 후보 조회는 트랜잭션 밖이라, 두 학부모가 마지막 한 자리를 동시에 누르면
       // 둘 다 통과할 수 있었다. 여기는 lockCompensation(작업대 잠금) 뒤라 예약이 한 줄로 서므로,
       // 이 안에서 «그 반·그 날짜» 인원을 다시 세면 초과 예약이 생기지 않는다. 기준은 그대로 정원 +2.
-      const seat = await tx.$queryRawUnsafe<Array<{ capacity: number; enrolled: number; booked: number }>>(
-        `SELECT c.capacity,
-                (SELECT COUNT(*) FROM "Enrollment" e
-                  WHERE e."classId" = c.id AND e.status = 'ACTIVE')::int AS enrolled,
-                (SELECT COUNT(*) FROM "MakeupSession" m
-                  WHERE m."makeupClassId" = c.id AND ${activeMakeupSql("m")}
-                    AND to_char(m."makeupDate" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') = $2)::int AS booked
-           FROM "Class" c WHERE c.id = $1 LIMIT 1`,
-        input.classId, input.dateYmd,
-      );
-      const left = seat[0]
-        ? remainingSeatsByDate(seat[0], [input.dateYmd], { [input.dateYmd]: Number(seat[0].booked) })[0].remaining
-        : 0;
+      const left = await seatsLeftInTx(tx, input.classId, input.dateYmd);
       if (left <= 0) throw new Error("MAKEUP_CLASS_FULL");
       const locked = await tx.$executeRawUnsafe(
         `UPDATE "MakeupCredit" SET status='RESERVED', "updatedAt"=now()
@@ -370,27 +434,37 @@ export async function bookMakeup(
 
 /**
  * 예약 취소 — 보강권이 그대로 돌아온다(약관 명시).
- * 이미 지난 보강은 취소할 수 없다(무단 불참 처리를 우회하는 길이 되면 안 된다).
+ * 보강 수업 시작 1시간 전이 지났거나 이미 지난 보강은 취소할 수 없다(무단 불참 처리를 우회하는 길이 되면 안 된다).
+ *
+ * 2026-11-15 마감 통일: 예전에는 저장된 «시각»이 지났는지로 판정해, 관리자가 잡은 보강(UTC 자정 = KST 09:00 저장)은
+ *   당일 오전 9시까지 취소됐고 학부모가 잡은 보강(KST 자정 저장)은 당일 0시부터 막혔다. 카카오 대화는 당일 전부 거절했다.
+ *   이제 «보강 날짜의 KST 달력 날짜 + 보강 가는 반의 시작 시각»으로 본다 — 웹·카카오가 같은 함수(isMakeupChangeOpen)다.
+ * 2026-11-15 마감 1시간 전 통일(원장 결정): «전날까지»가 아니라 «수업 시작 1시간 전까지» — 당일도 그 전이면 취소된다.
  */
 export async function cancelMakeupBooking(
   parentUserId: string,
   creditId: string,
 ): Promise<{ ok: boolean; message: string }> {
   const own = await prisma.$queryRawUnsafe<Array<{
-    id: string; makeupSessionId: string | null; makeupDate: Date | null;
+    id: string; makeupSessionId: string | null; makeupYmd: string | null; makeupStartTime: string | null;
   }>>(
-    `SELECT mc.id, mc."makeupSessionId", ms."makeupDate"
+    // makeupYmd: timestamptz → KST 달력 날짜(변환은 «한 번») · makeupStartTime: 보강 가는 반의 시작 시각
+    `SELECT mc.id, mc."makeupSessionId", bc."startTime" AS "makeupStartTime",
+            to_char(ms."makeupDate" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "makeupYmd"
        FROM "MakeupCredit" mc
        JOIN "Student" s ON s.id = mc."studentId"
        LEFT JOIN "MakeupSession" ms ON ms.id = mc."makeupSessionId"
+       LEFT JOIN "Class" bc ON bc.id = ms."makeupClassId"
       WHERE mc.id = $1 AND ${await childAccessSql("s", "$2")} AND mc.status = 'RESERVED' LIMIT 1`,
     creditId, parentUserId,
   );
   const row = own[0];
   if (!row) return { ok: false, message: "취소할 예약이 없습니다." };
 
-  if (row.makeupDate && new Date(row.makeupDate).getTime() < Date.now()) {
-    return { ok: false, message: "이미 지난 보강은 취소할 수 없습니다. 학원으로 문의해 주세요." };
+  // 마감 뒤면 공통 마감 글, 날짜가 지났으면 «이미 지난 보강…» — 사실과 다른 말을 하지 않는다
+  const clock = kstNow();
+  if (row.makeupYmd && !isMakeupChangeOpen(row.makeupYmd, row.makeupStartTime, clock.ymd, clock.hm)) {
+    return { ok: false, message: makeupClosedMessage(row.makeupYmd, clock.ymd) };
   }
 
   try {
@@ -418,4 +492,120 @@ export async function cancelMakeupBooking(
     return { ok: false, message: "예약 상태가 변경됐습니다. 다시 확인해 주세요." };
   }
   return { ok: true, message: "예약을 취소했습니다. 보강권은 그대로 유지됩니다." };
+}
+
+/**
+ * 보강 «날짜 바꾸기» (2026-11-15 마감 통일·날짜 바꾸기) — 예약을 새 반·날짜로 갈아 끼운다.
+ *
+ * 예전에는 «예약 취소 → 다시 예약»이었다. 그 사이 보강권이 잠깐 «사용 가능»이 되어 다른 기기에서 다른 예약이 끼어들거나,
+ * 취소만 되고 새 예약이 실패하는 반쪽 상태가 생길 수 있었다.
+ * 여기서는 보강권을 RESERVED 그대로 둔 채 한 트랜잭션에서 «옛 예약 취소 + 새 예약 생성 + 보강권 연결 교체»를 한다.
+ * 어느 단계든 실패하면 전부 되돌아가 옛 예약이 그대로 남는다.
+ *
+ * 규칙: 마감(보강 수업 시작 1시간 전)은 옛 날짜·새 날짜 양쪽 · 새 날짜는 보강권 사용 기한 안 · 학년·정원(정원 +2)은 새 예약과 같은 검사 ·
+ *       정원은 작업대 잠금 뒤 다시 센다 · 소유 검사는 기존과 같은 childAccessSql.
+ */
+export async function rescheduleMakeup(
+  parentUserId: string,
+  input: { creditId: string; classId: string; dateYmd: string },
+): Promise<{ ok: boolean; message: string }> {
+  if (!isKstYmd(input.dateYmd)) return { ok: false, message: "날짜가 올바르지 않습니다." };
+
+  // ★ 부모 소유 확인 + 지금 예약(반·KST 날짜)
+  const own = await prisma.$queryRawUnsafe<Array<{
+    id: string; studentId: string; originClassId: string | null; absenceDate: Date; expiresAt: Date;
+    makeupSessionId: string | null; bookedClassId: string | null; makeupYmd: string | null; makeupStartTime: string | null;
+  }>>(
+    `SELECT mc.id, mc."studentId", mc."originClassId", mc."absenceDate", mc."expiresAt", mc."makeupSessionId",
+            ms."makeupClassId" AS "bookedClassId", bc."startTime" AS "makeupStartTime",
+            to_char(ms."makeupDate" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "makeupYmd"
+       FROM "MakeupCredit" mc
+       JOIN "Student" s ON s.id = mc."studentId"
+       JOIN "MakeupSession" ms ON ms.id = mc."makeupSessionId"
+       LEFT JOIN "Class" bc ON bc.id = ms."makeupClassId"
+      WHERE mc.id = $1 AND ${notMergedStudent("s")} AND ${await childAccessSql("s", "$2")} AND mc.status = 'RESERVED' LIMIT 1`,
+    input.creditId, parentUserId,
+  );
+  const credit = own[0];
+  if (!credit || !credit.makeupSessionId) return { ok: false, message: "날짜를 바꿀 수 있는 예약이 없습니다." };
+  const oldSessionId = credit.makeupSessionId;
+
+  // 마감 — 옛 날짜(옛 보강 수업 시작 1시간 전이 지났으면 못 바꾼다)
+  const clock = kstNow();
+  if (!isMakeupChangeOpen(credit.makeupYmd, credit.makeupStartTime, clock.ymd, clock.hm)) {
+    return { ok: false, message: makeupClosedMessage(credit.makeupYmd, clock.ymd) };
+  }
+  // 새 날짜가 지난 날이면 후보를 계산하기 전에 거절(마감 시각은 아래에서 그 반의 시작 시각으로 본다)
+  if (input.dateYmd < clock.ymd) return { ok: false, message: MAKEUP_BOOK_CLOSED_MESSAGE };
+  if (input.classId === credit.bookedClassId && input.dateYmd === credit.makeupYmd) {
+    return { ok: false, message: "지금 예약한 수업·날짜와 같습니다. 다른 날짜를 골라 주세요." };
+  }
+  // 사용 기한 — 새 예약과 같은 경계(그 날 KST 자정이 만료 시각을 넘으면 거절)
+  const bookAt = new Date(kstAt(input.dateYmd));
+  if (bookAt.getTime() > new Date(credit.expiresAt).getTime()) {
+    return { ok: false, message: "보강권 사용 기간이 지난 날짜입니다." };
+  }
+
+  // 반 검증 — 학년·정원을 서버에서 다시 확인한다(클라이언트 값 신뢰 금지). 예약 중인 보강권용 후보.
+  const opts = await getMakeupOptionsForCredit(parentUserId, input.creditId, { forReschedule: true });
+  if (!opts.ok) return { ok: false, message: opts.message };
+  const target = opts.options.find((o) => o.classId === input.classId);
+  if (!target) return { ok: false, message: "이 학생이 갈 수 있는 수업이 아닙니다." };
+  // 마감 — 새 날짜(그 반 수업 시작 1시간 전까지)
+  if (!isMakeupChangeOpen(input.dateYmd, target.startTime, clock.ymd, clock.hm)) {
+    return { ok: false, message: MAKEUP_BOOK_CLOSED_MESSAGE };
+  }
+  if (!target.dates.some((d) => d.ymd === input.dateYmd)) {
+    return { ok: false, message: "그 수업이 열리지 않거나 이미 마감된 날짜입니다." };
+  }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await lockCompensation(tx);
+      // 이월(CARRY)로 정산된 결석의 보강은 손대지 않는다 — 예약·취소와 같은 가드
+      await assertMakeupSessionAllowed(tx, oldSessionId);
+      if (credit.originClassId) await assertRegularMakeupAllowed(tx, {
+        studentId: credit.studentId, classId: credit.originClassId, dateYmd: toKstYmd(credit.absenceDate),
+      });
+      // ① 보강권 행 잠금 — 여전히 «이 예약»에 묶인 RESERVED 이고 내 자녀 것인지(그 사이 취소·변경됐으면 중단)
+      const locked = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT id FROM "MakeupCredit" WHERE id=$1 AND status='RESERVED'
+          AND "makeupSessionId" IS NOT DISTINCT FROM $2
+          AND EXISTS (SELECT 1 FROM "Student" s WHERE s.id="MakeupCredit"."studentId" AND ${await childAccessSql("s", "$3")} AND s."mergedIntoStudentId" IS NULL)
+          FOR UPDATE`, input.creditId, oldSessionId, parentUserId,
+      );
+      if (!locked.length) throw new Error("MAKEUP_NOT_RESERVED");
+      // ② 새 날짜 정원 — 잠금 뒤에 다시 센다(동시 예약 초과 방지, 기준은 정원 +2 그대로)
+      if ((await seatsLeftInTx(tx, input.classId, input.dateYmd)) <= 0) throw new Error("MAKEUP_CLASS_FULL");
+      // ③ 옛 예약 취소 — 아직 «예약(BOOKED)»인 것만(이미 출석·불참 처리됐으면 0행 → 중단)
+      const closed = await tx.$executeRawUnsafe(
+        `UPDATE "MakeupSession" SET status='CANCELLED', "updatedAt"=now() WHERE id=$1 AND status='BOOKED'`,
+        oldSessionId,
+      );
+      if (Number(closed) === 0) throw new Error("MAKEUP_NOT_RESERVED");
+      // ④ 새 예약 생성
+      const created = await tx.$queryRawUnsafe<{ id: string }[]>(
+        `INSERT INTO "MakeupSession"
+           (id,"studentId","originalClassId","originalDate","makeupClassId","makeupDate",status,"createdAt","updatedAt")
+         VALUES (gen_random_uuid()::text,$1,$2,$3::timestamptz,$4,$5::timestamptz,'BOOKED',now(),now())
+         RETURNING id`,
+        credit.studentId, credit.originClassId ?? input.classId,
+        new Date(credit.absenceDate).toISOString(), input.classId, bookAt.toISOString(),
+      );
+      // ⑤ 보강권은 RESERVED 그대로 — 연결만 새 예약으로 바꾼다(«사용 가능»으로 돌아가는 틈이 없다)
+      const relinked = await tx.$executeRawUnsafe(
+        `UPDATE "MakeupCredit" SET "makeupSessionId"=$2, "updatedAt"=now() WHERE id=$1 AND status='RESERVED'`,
+        input.creditId, created[0].id,
+      );
+      if (Number(relinked) === 0) throw new Error("MAKEUP_NOT_RESERVED");
+    });
+    return { ok: true, message: `보강을 ${target.className} ${kstLabel(input.dateYmd)}(으)로 바꿨습니다.` };
+  } catch (error) {
+    // 실패한 거래는 통째로 되돌아간다 — 옛 예약이 그대로 남는다
+    if (error instanceof CompensationConflict) return { ok: false, message: error.message };
+    if (error instanceof Error && error.message === "MAKEUP_NOT_RESERVED") return { ok: false, message: "예약 상태가 변경됐습니다. 다시 확인해 주세요." };
+    if (error instanceof Error && error.message === "MAKEUP_CLASS_FULL") return { ok: false, message: "방금 그 날짜가 마감됐습니다. 다른 날짜나 수업을 골라 주세요." };
+    console.error("[rescheduleMakeup] 날짜 바꾸기 실패 — 거래 취소", error);
+    return { ok: false, message: "날짜를 바꾸지 못했습니다. 잠시 후 다시 시도해 주세요." };
+  }
 }

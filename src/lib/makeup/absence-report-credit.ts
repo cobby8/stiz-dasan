@@ -5,7 +5,8 @@ import {
   lockCompensation,
   type CompensationTransaction,
 } from "@/lib/billing/absence-compensation-guard";
-import { kstAt } from "@/lib/datetime/kst";
+import { kstAt, kstHm, todayKst } from "@/lib/datetime/kst";
+import { isMakeupChangeOpen } from "@/lib/parent/changeDeadline";
 
 // ── 정규 결석 «신고» 기반 보강권 발급·되돌리기 (2026-11-10 원장 결정 k4) ─────────────────
 //
@@ -36,7 +37,7 @@ export type CreditOnAbsenceCancel =
   | "CANCEL_BOOKING_AND_REVOKE" // 보강 예약을 취소하고 보강권 회수(학부모가 확인한 경우)
   | "NEED_BOOKING_CONFIRM"      // 보강 예약이 있다 — 학부모 확인이 먼저 필요
   | "BLOCK_USED"                // 이미 보강을 들었다(또는 무단 불참 처리) — 신고 취소를 막는다
-  | "BLOCK_PAST_BOOKING";       // 예약한 보강일이 이미 지났다 — 무단 불참 처리를 우회하지 못하게 막는다
+  | "BLOCK_PAST_BOOKING";       // 예약한 보강의 취소 마감(수업 시작 1시간 전)이 지났다 — 무단 불참 처리를 우회하지 못하게 막는다
 
 export function decideCreditOnAbsenceCancel(input: {
   /** 누가 취소하나 — 학부모(PARENT) / 관리자(ADMIN) */
@@ -45,7 +46,7 @@ export function decideCreditOnAbsenceCancel(input: {
   creditStatus: string | null;
   /** 그 수업 출결이 이미 «결석»으로 저장됐나 — 그렇다면 실제로 결석했으므로 보강권은 그대로 둔다 */
   attendanceAbsent: boolean;
-  /** 예약된 보강 날짜가 이미 지났나(DB now() 기준) */
+  /** 예약된 보강의 취소 마감이 지났나(보강 수업 시작 1시간 전 — 학부모 보강 취소와 같은 함수 isMakeupChangeOpen) */
   bookingPast: boolean;
   /** 학부모가 «보강 예약도 함께 취소돼요»를 확인했나 */
   confirmBookingCancel: boolean;
@@ -142,12 +143,18 @@ export async function settleCreditOnAbsenceCancel(
   await lockCompensation(tx);
   const sourceKey = regularAbsenceSourceKey(input.classId, input.absenceYmd);
 
-  // 보강권(+ 연결된 예약) — 행 잠금. 예약 날짜가 지났는지는 DB 시계로 판정한다(서버 시계 불신)
-  const credits = await tx.$queryRawUnsafe<Array<{ id: string; status: string; makeupSessionId: string | null; bookingPast: boolean }>>(
+  // 보강권(+ 연결된 예약) — 행 잠금.
+  // 2026-11-15 마감 1시간 전 통일: «예약한 보강의 취소 마감이 지났나»를 학부모 보강 취소와 같은 함수로 판정한다
+  //   (보강 날짜의 KST 달력 날짜 + 보강 가는 반의 시작 시각 → 수업 시작 1시간 전까지 열림).
+  //   예전의 makeupDate < now() 는 저장 시각에 따라 달랐다(관리자가 UTC 자정으로 잡은 보강은 당일 09시까지 «안 지남»).
+  //   makeupDate 는 timestamptz 라 변환은 «한 번»만 건다. «지금»은 kst.ts 로 만든 KST 글자다.
+  const credits = await tx.$queryRawUnsafe<Array<{ id: string; status: string; makeupSessionId: string | null; bookingYmd: string | null; bookingStartTime: string | null }>>(
     `SELECT mc.id, mc.status, mc."makeupSessionId" AS "makeupSessionId",
-            COALESCE(ms."makeupDate" < now(), false) AS "bookingPast"
+            to_char(ms."makeupDate" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "bookingYmd",
+            bc."startTime" AS "bookingStartTime"
        FROM "MakeupCredit" mc
        LEFT JOIN "MakeupSession" ms ON ms.id = mc."makeupSessionId"
+       LEFT JOIN "Class" bc ON bc.id = ms."makeupClassId"
       WHERE mc."studentId" = $1 AND mc."sourceKey" = $2
       LIMIT 1
       FOR UPDATE OF mc`,
@@ -169,11 +176,15 @@ export async function settleCreditOnAbsenceCancel(
     input.studentId, input.classId, input.absenceYmd,
   );
 
+  const nowMs = Date.now();
   const action = decideCreditOnAbsenceCancel({
     actor: input.actor,
     creditStatus: credit.status,
     attendanceAbsent: absentRows.length > 0,
-    bookingPast: Boolean(credit.bookingPast),
+    // 예약이 없으면 «지남»이 아니다. 있으면 취소 마감(수업 시작 1시간 전)이 지났는지
+    bookingPast: credit.bookingYmd
+      ? !isMakeupChangeOpen(credit.bookingYmd, credit.bookingStartTime, todayKst(nowMs), kstHm(nowMs))
+      : false,
     confirmBookingCancel: input.confirmBookingCancel === true,
   });
 

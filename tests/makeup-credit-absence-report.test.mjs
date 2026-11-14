@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import test from "node:test";
+import test, { mock } from "node:test";
 import { loadTsModule } from "./_ts-module.mjs";
 
 // 결석 신고 즉시 보강권(2026-11-10 원장 결정 k4) — 실행 테스트.
@@ -17,6 +17,10 @@ const creditServiceSource = readFileSync("src/lib/makeup/credit-service.ts", "ut
 
 /** 메모리 «MakeupCredit»·«MakeupSession»·출결 결석 표를 흉내 내는 가짜 트랜잭션 */
 function fakeDb({ carry = false, absentAttendance = [], nowIso = "2026-11-10T03:00:00.000Z" } = {}) {
+  // 2026-11-15 마감 1시간 전 통일: «예약한 보강의 취소 마감이 지났나»를 이제 앱이 판정한다(보강 날짜의 KST 글자 + 반 시작 시각 vs 지금).
+  // 가짜 DB 의 «지금»(nowIso)으로 시계를 고정해, 테스트가 도는 날짜에 따라 답이 달라지지 않게 한다.
+  mock.timers.reset();
+  mock.timers.enable({ apis: ["Date"], now: new Date(nowIso).getTime() });
   const credits = []; // { id, studentId, sourceKey, status, absenceDate, expiresAt, originClassId, makeupSessionId, note }
   const sessions = []; // { id, makeupDate, status }
   const calls = [];
@@ -78,7 +82,11 @@ function fakeDb({ carry = false, absentAttendance = [], nowIso = "2026-11-10T03:
         const c = credits.find((x) => x.studentId === v[0] && x.sourceKey === v[1]);
         if (!c) return [];
         const s = c.makeupSessionId ? sessions.find((x) => x.id === c.makeupSessionId) : null;
-        return [{ id: c.id, status: c.status, makeupSessionId: c.makeupSessionId, bookingPast: Boolean(s && s.makeupDate < nowIso) }];
+        // 2026-11-15 마감 1시간 전 통일: SQL 은 판정하지 않고 «보강 날짜(KST 글자)·반 시작 시각»만 준다(예전: makeupDate < now() 를 SQL 이 판정)
+        assert.match(sql, /to_char\(ms\."makeupDate" AT TIME ZONE 'Asia\/Seoul', 'YYYY-MM-DD'\) AS "bookingYmd"/);
+        assert.match(sql, /bc\."startTime" AS "bookingStartTime"/);
+        assert.doesNotMatch(sql, /"makeupDate" < now\(\)/);
+        return [{ id: c.id, status: c.status, makeupSessionId: c.makeupSessionId, bookingYmd: s ? kst.toKstYmd(s.makeupDate) : null, bookingStartTime: s?.startTime ?? null }];
       }
       if (/FROM "Attendance" a/.test(sql)) {
         // Session."date" 는 글자 그대로 비교(시간대 변환 없음)해야 한다
@@ -202,6 +210,8 @@ test("보강 예약에 쓰인 경우: 확인 없이 취소하면 막고(확인 �
   assert.equal(db.credits[0].status, "REVOKED");
   assert.equal(db.credits[0].makeupSessionId, null);
 });
+
+test.afterEach(() => mock.timers.reset());
 
 test("예약한 보강 날짜가 이미 지났으면(출결 미처리) 확인해도 신고 취소를 막는다", async () => {
   const db = fakeDb({ nowIso: "2026-11-15T03:00:00.000Z" });

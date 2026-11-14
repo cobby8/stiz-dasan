@@ -8,6 +8,7 @@ import { PAYMENT_METHOD_OPTIONS, type PreferredPaymentMethod } from "@/lib/payme
 import { createParentRequest } from "@/app/actions/admin";
 import { usePushSubscription } from "@/lib/push/usePushSubscription";
 import { useStoreAppLacks } from "@/components/storeApp/useStoreAppLacks";
+import ProfilePhotoEditor from "@/components/parent/ProfilePhotoEditor";
 // 스토어 앱 알림(FCM) 상태 — 앱 안에서는 브라우저 웹푸시 대신 이것으로 그린다(d2, 2026-11-14)
 import { useNativePush } from "@/lib/push/useNativePush";
 import { NATIVE_PUSH_NOTES, NATIVE_PUSH_UPDATE_NOTE, nativePushNotice } from "@/lib/push/nativePushBridge";
@@ -40,6 +41,19 @@ function Message({ text, tone }: { text: string; tone: "ok" | "error" }) {
         <p role={tone === "error" ? "alert" : "status"} className={`px-4 pb-2 text-xs font-medium ${tone === "error" ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-success)]"}`}>
             {text}
         </p>
+    );
+}
+
+// ── 내 정보: 내 사진(올리기·바꾸기·지우기, 2026-11-15) ─────────────────────
+// 아이 기록의 아이 사진 칸과 같은 부품. 주인(userId)은 서버가 확인한 로그인 사용자다 — 사진 주소를 만드는 데만 쓴다.
+export function MyPhotoRow({ userId, name, version }: { userId: string; name: string; version: string | null }) {
+    return (
+        <li>
+            <p className="px-4 pt-2 text-sm font-medium text-[var(--color-academy-ink)]">내 사진</p>
+            <div className="px-1">
+                <ProfilePhotoEditor target="me" ownerId={userId} name={name} initialVersion={version} />
+            </div>
+        </li>
     );
 }
 

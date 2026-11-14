@@ -4,6 +4,7 @@ import {
   getUpcomingRegularClassDates,
   reportRegularAbsence,
   cancelRegularAbsence,
+  moveRegularAbsence,
   ABSENCE_REPORT_WEEKS,
 } from "@/lib/regular/parent-regular-absence";
 import { ABSENCE_CHANGE_CLOSED_MESSAGE } from "@/lib/regular/regularAbsenceRules";
@@ -28,7 +29,7 @@ export async function GET() {
   }
 }
 
-// 결석 신고(report) / 신고 취소(cancel) — body.action 으로 분기
+// 결석 신고(report) / 신고 취소(cancel) / 날짜 바꾸기(move) — body.action 으로 분기
 export async function POST(request: NextRequest) {
   let parent;
   try {
@@ -55,6 +56,14 @@ export async function POST(request: NextRequest) {
         // «보강 예약도 함께 취소돼요» 확인을 누른 경우에만 true(서버가 예약 여부를 다시 본다)
         confirmMakeupCancel: body.confirmMakeupCancel === true,
       });
+    } else if (body?.action === "move") {
+      // 2026-11-15 날짜 바꾸기: 옛 신고 취소 + 새 날짜 신고를 한 트랜잭션으로(같은 반의 다른 수업일로만)
+      result = await moveRegularAbsence(parent.appUserId, {
+        studentId: body.studentId,
+        classId: body.classId,
+        date: body.date,
+        toDate: body.toDate,
+      });
     } else {
       result = await reportRegularAbsence(parent.appUserId, {
         studentId: body.studentId,
@@ -63,7 +72,10 @@ export async function POST(request: NextRequest) {
         reason: body.reason,
       });
     }
-    return NextResponse.json(result);
+    // 알림 장부 원본에는 원장·코치·기사님의 내부 계정 id 가 들어 있다 — 학부모 응답에서는 뺀다(화면은 이 값을 쓰지 않는다. 2026-11-15 보안 검수)
+    const safeResult: Record<string, unknown> = { ...(result as Record<string, unknown>) };
+    delete safeResult.notification;
+    return NextResponse.json(safeResult);
   } catch (error) {
     const code = error instanceof Error ? error.message : "UNKNOWN";
     // 복귀 예정 반(2026-11-14): 복귀일 전 날짜 — 문구에 복귀일(M/D)을 넣어야 해서 표 밖에서 먼저 답한다
@@ -81,12 +93,17 @@ export async function POST(request: NextRequest) {
       ABSENCE_TOO_FAR: `앞으로 ${ABSENCE_REPORT_WEEKS}주 안의 수업만 신고할 수 있습니다.`,
       // 2026-11-14: 신고·취소·사유 변경은 수업 시작 1시간 전까지(서버가 강제 — regularAbsenceRules.isAbsenceChangeOpen)
       ABSENCE_CHANGE_CLOSED: ABSENCE_CHANGE_CLOSED_MESSAGE,
+      // 2026-11-15 날짜 바꾸기
+      ABSENCE_MOVE_SAME_DATE: "지금 신고한 날짜와 같습니다. 다른 날짜를 골라 주세요.",
+      ABSENCE_MOVE_TARGET_TAKEN: "그 날짜에는 이미 결석 신고가 있습니다. 다른 날짜를 골라 주세요.",
+      ABSENCE_MOVE_MAKEUP_BOOKED: "이 결석의 보강권으로 보강이 예약돼 있어요. 보강 예약을 먼저 취소하거나 바꿔 주세요.",
       ABSENCE_NOT_FOUND: "결석 신고를 찾을 수 없습니다.",
       ABSENCE_NOT_CANCELABLE: "이미 학원에서 확정된 신고라 바꾸거나 취소할 수 없습니다.",
       // 보강권(2026-11-10): 신고 취소 시 보강권 되돌리기에서 막힌 경우
       MAKEUP_BOOKING_CONFIRM_REQUIRED: "이 결석의 보강권으로 보강이 예약돼 있어요. 보강 예약도 함께 취소돼요.",
       MAKEUP_ALREADY_USED: "이 결석의 보강을 이미 들어서 결석 신고를 취소할 수 없어요. 학원으로 문의해 주세요.",
-      MAKEUP_BOOKING_PAST: "예약한 보강 날짜가 지나 결석 신고를 취소할 수 없어요. 학원으로 문의해 주세요.",
+      // 2026-11-15 마감 1시간 전 통일: 예약한 보강의 취소 마감(수업 시작 1시간 전)이 지난 경우
+      MAKEUP_BOOKING_PAST: "예약한 보강의 취소 마감(수업 시작 1시간 전)이 지나 결석 신고를 취소할 수 없어요. 학원으로 문의해 주세요.",
     };
     const known = map[code];
     if (!known) console.error("[api/mypage/regular-absence] POST failed:", error);

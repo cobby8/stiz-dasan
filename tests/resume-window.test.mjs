@@ -272,6 +272,14 @@ function makeDb(overrides = {}) {
         .filter((e) => usable(e) && owns(e.studentId, parentId) && (!single || e.studentId === args[0]))
         .map((e) => ({ id: e.studentId, name: student(e.studentId).name, studentId: e.studentId, studentName: student(e.studentId).name, status: e.status, resumeFrom: resumeFrom(e) }));
     }
+    // ── 셔틀: 마감 기준 시각(2026-11-15 마감 통일·날짜 바꾸기) — 쓸 수 있는 수강 반의 요일·시작 시각 ──
+    if (/FROM "Enrollment" e\s+JOIN "Class" c ON c\.id = e\."classId"\s+WHERE e\."studentId" = ANY\(\$1::text\[\]\)/.test(sql)) {
+      needsFragments(sql);
+      return db.enrollments.filter((e) => usable(e) && args[0].includes(e.studentId)).map((e) => {
+        const c = cls(e.classId);
+        return { studentId: e.studentId, dayOfWeek: c.dayOfWeek, startTime: c.startTime, status: e.status, resumeFrom: resumeFrom(e) };
+      });
+    }
     if (/FROM "ShuttleDayException" x\s+JOIN "Student" s/.test(sql)) return [];
     if (/INSERT INTO "ShuttleDayException"/.test(sql)) {
       const row = { id: `x${++db.seq}`, studentId: args[0], serviceDate: args[1], direction: args[2], kind: args[3] };
@@ -478,9 +486,15 @@ test("셔틀 변경 — 복귀일 전 날짜는 서버가 거절, 복귀일부�
   assert.equal(db.exceptions.length, 0);
   assert.equal((await shuttle.submitShuttleException("p1", { ...body, studentId: "s1", serviceDate: "2026-11-16" })).ok, true, "복귀일 당일");
   assert.equal((await shuttle.submitShuttleException("p1", { ...body, studentId: "s1", serviceDate: "2026-11-17" })).ok, true, "다음 날");
-  // 다니는 반이 있는 학생은 오늘도 된다
-  assert.equal((await shuttle.submitShuttleException("p1", { ...body, studentId: "s5", serviceDate: TODAY })).ok, true);
-  assert.equal((await shuttle.submitShuttleException("p1", { ...body, studentId: "s4", serviceDate: TODAY })).ok, true);
+  // 2026-11-15 마감 통일·날짜 바꾸기: 예전에는 «다니는 반이 있는 학생은 오늘도 된다»였다(시각·요일 검사 없음).
+  // 이제 그 날짜에 수업이 없는 학생은 전날까지만 받는다 — 오늘(토)은 s5(금·수반)·s4(월반) 모두 수업이 없어 마감이다.
+  const CLOSED = { ok: false, message: "마감 시간이 지나 여기서 바꿀 수 없습니다. 학원으로 연락해 주세요." };
+  assert.deepEqual(await shuttle.submitShuttleException("p1", { ...body, studentId: "s5", serviceDate: TODAY }), CLOSED);
+  assert.deepEqual(await shuttle.submitShuttleException("p1", { ...body, studentId: "s4", serviceDate: TODAY }), CLOSED);
+  assert.equal(db.exceptions.length, 2, "마감된 신청은 저장되지 않는다");
+  // 복귀일 제한이 없는(다니는) 학생은 다가오는 수업일에 그대로 신청된다 — 복귀일 검사에 걸리지 않는다
+  assert.equal((await shuttle.submitShuttleException("p1", { ...body, studentId: "s5", serviceDate: "2026-11-20" })).ok, true, "금요반 수업일");
+  assert.equal((await shuttle.submitShuttleException("p1", { ...body, studentId: "s4", serviceDate: "2026-11-16" })).ok, true, "월요반 수업일");
   assert.equal(db.exceptions.length, 4);
   // 대기·미신청 휴원·남의 아이는 그대로 막힌다
   for (const studentId of ["s2", "s3", "s9"]) {
@@ -496,7 +510,8 @@ test("셔틀 — 웹·카카오 두 경로가 같은 규칙을 쓴다", () => {
   const web = read("src/lib/shuttle/parent-shuttle-exception.ts");
   const kakao = read("src/lib/kakao-shuttle-flow.ts");
   // 수강 조건: 두 파일 모두 공용 조각, 맨 ACTIVE 조건 없음
-  assert.equal((web.match(/\$\{parentUsableEnrollmentSql\("e"\)\}/g) ?? []).length, 2, "자녀 목록 + 소유 검증");
+  // 2026-11-15 마감 통일·날짜 바꾸기: 마감 기준 시각을 읽는 조회(loadClassTimes)가 같은 공용 조각을 한 번 더 쓴다 → 2곳에서 3곳
+  assert.equal((web.match(/\$\{parentUsableEnrollmentSql\("e"\)\}/g) ?? []).length, 3, "자녀 목록 + 소유 검증 + 마감 기준 반 시각");
   assert.match(kakao, /WHERE e\."studentId"=\$2 AND \$\{parentUsableEnrollmentSql\("e"\)\}`/, "카카오 정규 셔틀의 «다니는 요일»");
   for (const src of [web, kakao]) {
     assert.match(src, /from "@\/lib\/enrollment\/resumeWindow"/);
