@@ -32,7 +32,10 @@ function fakeDb(init = {}) {
     periods: [],         // { id, studentId, reason, status, carryState, startDate, returnDate, note, reportedByUserId, approvedBy }
     absences: [],        // { id, periodId, studentId, classId, date, reason, status }
     reviews: [],         // { absenceId, status, source, requestedTick, decidedByUserId }
-    credits: [],         // { studentId, sourceKey, status }
+    credits: [],         // { id, studentId, sourceKey, status, expired, makeupSessionId }
+    bookings: [],        // 보강 예약 { studentId, classId, date, status }
+    attendance: [],      // 출결 { studentId, classId, date, status }
+    notifications: [],   // 앱 알림 { studentId, title, message, hoursAgo }
     evidence: [],        // { id, absenceId, removed }
     resolutions: [],     // 하루씩 실제로 이월 적립된 결석 id
     audit: [],
@@ -43,6 +46,10 @@ function fakeDb(init = {}) {
   const db = { state, calls: [] };
   const live = (periodId) => state.absences.filter((a) => a.periodId === periodId && a.status !== "CANCELLED" && a.reason === ILLNESS && a.date >= "2026-10-05");
   const reviewOf = (absenceId) => state.reviews.find((r) => r.absenceId === absenceId);
+  const creditOf = (a) => state.credits.find((c) => c.studentId === a.studentId && c.sourceKey === KEY(a.classId, a.date));
+  // 보강을 이미 예약·사용한 날인가(보강권 RESERVED/USED/NO_SHOW 또는 보강 예약 BOOKED/ATTENDED/NO_SHOW)
+  const makeupInUse = (a) => ["RESERVED", "USED", "NO_SHOW"].includes(creditOf(a)?.status)
+    || state.bookings.some((b) => b.studentId === a.studentId && b.classId === a.classId && b.date === a.date && ["BOOKED", "ATTENDED", "NO_SHOW"].includes(b.status));
 
   db.$queryRawUnsafe = async (sql, ...v) => {
     db.calls.push(sql);
@@ -57,13 +64,44 @@ function fakeDb(init = {}) {
       return state.periods.filter((p) => p.id === v[0]).map((p) => ({
         id: p.id, studentId: p.studentId, reason: p.reason, status: p.status, carryState: p.carryState,
         startDate: p.startDate, returnDate: p.returnDate ?? null, note: p.note ?? null, parentReported: Boolean(p.reportedByUserId), approvedYmd: p.approvedYmd ?? null,
+        carrySettlement: p.carrySettlement ?? null,
       }));
     }
     // 승인: 그 기간의 살아 있는 질병·부상 결석 중 아직 결정 전인 것
     if (/FROM "RegularAbsencePeriod" p\s+JOIN "RegularAbsence" ra ON \(ra\."periodId" = p\.id AND ra\.status <> 'CANCELLED' AND ra\.reason = 'ILLNESS_INJURY'/.test(sql) && /FOR UPDATE OF ra/.test(sql)) {
       assert.match(sql, /COALESCE\(r\.status, 'PENDING'\) = 'PENDING'/, "결정이 난 결석(하루씩 이월·보강권 전환·닫힘)은 건드리지 않는다");
+      // 승인은 «보강을 이미 예약·사용한 날»을 뺀다 — 그 조건 문구가 있을 때만 거른다(보강권으로 전환은 그런 날도 함께 닫는다)
+      const skipInUse = /AND NOT \(EXISTS \(SELECT 1 FROM "MakeupCredit" used_credit[\s\S]+used_credit\.status IN \('RESERVED', 'USED', 'NO_SHOW'\)\) OR EXISTS \(SELECT 1 FROM "MakeupSession" used_session[\s\S]+to_char\(used_session\."originalDate" AT TIME ZONE 'Asia\/Seoul', 'YYYY-MM-DD'\) = to_char\(ra\.date, 'YYYY-MM-DD'\)\s+AND used_session\.status IN \('BOOKED', 'ATTENDED', 'NO_SHOW'\)\)\)/.test(sql);
       return live(v[0]).filter((a) => (reviewOf(a.id)?.status ?? "PENDING") === "PENDING")
-        .map((a) => ({ id: a.id, studentId: a.studentId, classId: a.classId, absenceYmd: a.date }));
+        .filter((a) => !skipInUse || !makeupInUse(a))
+        .map((a) => ({ id: a.id, studentId: a.studentId, classId: a.classId, absenceYmd: a.date, noReview: !reviewOf(a.id) }));
+    }
+    // 승인: 거둘 미사용 보강권(id 를 남겨 승인 취소 때 돌려준다)
+    if (/JOIN "MakeupCredit" mc ON mc\."studentId" = ra\."studentId"/.test(sql)) {
+      assert.match(sql, /WHERE ra\.id = ANY\(\$1::text\[\]\) AND mc\.status = 'AVAILABLE'\s+FOR UPDATE OF mc/);
+      return state.absences.filter((a) => v[0].includes(a.id)).map((a) => ({ a, c: creditOf(a) }))
+        .filter(({ c }) => c?.status === "AVAILABLE").map(({ a, c }) => ({ id: c.id, absenceId: a.id }));
+    }
+    // 보강권으로 전환(기존 convertIllnessToMakeupInTx)이 읽는 것들
+    if (/FROM "RegularAbsence" WHERE id = \$1 FOR UPDATE/.test(sql)) {
+      return state.absences.filter((a) => a.id === v[0]).map((a) => ({ studentId: a.studentId, classId: a.classId, absenceYmd: a.date, reason: a.reason, status: a.status }));
+    }
+    if (/SELECT status FROM "RegularAbsenceCarryReview" WHERE "absenceId" = \$1 FOR UPDATE/.test(sql)) {
+      return state.reviews.filter((r) => r.absenceId === v[0]).map((r) => ({ status: r.status }));
+    }
+    if (/FROM "Attendance" a\s+JOIN "Session" se ON se\.id = a\."sessionId"/.test(sql)) {
+      return state.attendance.filter((t) => t.studentId === v[0] && t.classId === v[1] && t.date === v[2] && ["PRESENT", "LATE"].includes(t.status)).map(() => ({ found: 1 }));
+    }
+    if (/INSERT INTO "MakeupCredit"/.test(sql)) {
+      const found = state.credits.find((c) => c.studentId === v[0] && c.sourceKey === v[1]);
+      if (!found) { const row = { id: `new-${state.credits.length + 1}`, studentId: v[0], sourceKey: v[1], status: "AVAILABLE", makeupSessionId: null }; state.credits.push(row); return [{ id: row.id }]; }
+      if (found.status === "REVOKED" && found.makeupSessionId == null) { found.status = "AVAILABLE"; return [{ id: found.id }]; }
+      return [];
+    }
+    // 승인 알림을 최근 24시간 안에 보냈는가
+    if (/FROM "Notification" n\s+JOIN "Student" s ON s\."parentId" = n\."userId"/.test(sql)) {
+      assert.match(sql, /n\.type = 'ABSENCE' AND n\.title = \$2 AND n\.message = \$3\s+AND n\."createdAt" > now\(\) - interval '24 hours'/);
+      return state.notifications.filter((n) => n.studentId === v[0] && n.title === v[1] && n.message === v[2] && n.hoursAgo < 24).map(() => ({ found: 1 }));
     }
     // 상세: 그 기간의 살아 있는 결석 + 반 이름 + 검토
     if (/FROM "RegularAbsencePeriod" p\s+JOIN "RegularAbsence" ra ON \(ra\."periodId" = p\.id/.test(sql)) {
@@ -100,15 +138,79 @@ function fakeDb(init = {}) {
       assert.match(sql, /"carryApprovedAt" = NULL, "carryApprovedByUserId" = NULL/);
       const period = state.periods.find((p) => p.id === v[0] && p.carryState === "APPROVED");
       if (!period) return 0;
-      period.carryState = "NONE"; period.approvedBy = null; period.approvedYmd = null;
+      assert.match(sql, /"carrySettlement" = NULL/, "승인 기록도 함께 비운다");
+      period.carryState = "NONE"; period.approvedBy = null; period.approvedYmd = null; period.carrySettlement = null;
       return 1;
     }
+    // 승인: 되돌릴 재료(거둔 보강권·새로 만든 검토 줄)를 기간 행에 남긴다
+    if (/UPDATE "RegularAbsencePeriod" SET "carrySettlement" = \$2::jsonb WHERE id = \$1 AND "carryState" = 'APPROVED'/.test(sql)) {
+      const period = state.periods.find((p) => p.id === v[0] && p.carryState === "APPROVED");
+      if (!period) return 0;
+      period.carrySettlement = JSON.parse(v[1]);
+      return 1;
+    }
+    // 승인 취소: 거둔 보강권 돌려주기 — 조건 문구가 있을 때만 그 조건으로 거른다
+    if (/UPDATE "MakeupCredit" mc\s+SET status = CASE WHEN mc\."expiresAt" < now\(\) THEN 'EXPIRED' ELSE 'AVAILABLE' END/.test(sql)) {
+      assert.match(sql, /mc\.id = ANY\(\$1::text\[\]\) AND mc\."studentId" = \$2 AND mc\.status = 'REVOKED' AND mc\."makeupSessionId" IS NULL/);
+      const liveOnly = /ra\."periodId" = \$3 AND ra\."studentId" = mc\."studentId" AND ra\.status <> 'CANCELLED'/.test(sql);
+      const keepSettled = /NOT EXISTS \(SELECT 1 FROM "BillingAbsenceResolution" settled WHERE settled\."absenceId" = ra\.id\)/.test(sql);
+      let n = 0;
+      for (const credit of state.credits.filter((c) => v[0].includes(c.id) && c.studentId === v[1] && c.status === "REVOKED" && c.makeupSessionId == null)) {
+        const absence = state.absences.find((a) => a.periodId === v[2] && a.studentId === credit.studentId && KEY(a.classId, a.date) === credit.sourceKey);
+        if (!absence) continue;
+        if (liveOnly && absence.status === "CANCELLED") continue;
+        if (keepSettled && state.resolutions.includes(absence.id)) continue;
+        credit.status = credit.expired ? "EXPIRED" : "AVAILABLE"; n += 1;
+      }
+      return n;
+    }
+    // 승인 취소: 승인 때 새로 만든 검토 줄 지우기
+    if (/DELETE FROM "RegularAbsenceCarryReview" r\s+USING "RegularAbsence" ra/.test(sql)) {
+      assert.match(sql, /ra\."periodId" = \$1 AND r\."absenceId" = ANY\(\$2::text\[\]\)\s+AND r\.status = 'APPROVED'/);
+      const keepSettled = /NOT EXISTS \(SELECT 1 FROM "BillingAbsenceResolution" settled/.test(sql);
+      const before = state.reviews.length;
+      state.reviews = state.reviews.filter((r) => !(v[1].includes(r.absenceId) && r.status === "APPROVED"
+        && state.absences.find((a) => a.id === r.absenceId)?.periodId === v[0] && !(keepSettled && state.resolutions.includes(r.absenceId))));
+      return before - state.reviews.length;
+    }
+    // 승인 취소: 그 사이 취소된 결석의 승인 검토는 닫는다
+    if (/UPDATE "RegularAbsenceCarryReview" r\s+SET status = 'CLOSED', "decidedAt" = now\(\), "updatedAt" = now\(\)\s+FROM "RegularAbsence" ra/.test(sql)) {
+      assert.match(sql, /ra\."periodId" = \$1 AND ra\.status = 'CANCELLED'\s+AND r\.status = 'APPROVED'/);
+      let n = 0;
+      for (const a of state.absences.filter((x) => x.periodId === v[0] && x.status === "CANCELLED")) {
+        const found = reviewOf(a.id);
+        if (found?.status === "APPROVED" && !state.resolutions.includes(a.id)) { found.status = "CLOSED"; n += 1; }
+      }
+      return n;
+    }
+    // 기존 닫기(closeIllnessReviewInTx) — «검토 중»만 닫는다
+    if (/UPDATE "RegularAbsenceCarryReview"\s+SET status = 'CLOSED'/.test(sql)) {
+      const found = reviewOf(v[0]);
+      if (!found || !v[1].includes(found.status)) return 0;
+      found.status = "CLOSED";
+      return 1;
+    }
+    if (/UPDATE "RegularAbsenceEvidence"/.test(sql)) return 0;
     // 미사용 보강권 거두기(기존 holdCreditForIllnessInTx)
     if (/UPDATE "MakeupCredit"\s+SET status = 'REVOKED'/.test(sql)) {
       assert.match(sql, /AND status = 'AVAILABLE'/, "예약·사용 중인 보강권은 건드리지 않는다");
       const hit = state.credits.filter((c) => c.studentId === v[0] && c.sourceKey === v[1] && c.status === "AVAILABLE");
       for (const credit of hit) credit.status = "REVOKED";
       return hit.length;
+    }
+    // 보강권으로 전환(기존 함수): 검토를 «보강권으로 전환»으로
+    if (/INSERT INTO "RegularAbsenceCarryReview"[\s\S]+VALUES \(\$1, 'MAKEUP', 'STAFF'/.test(sql)) {
+      const found = reviewOf(v[0]);
+      if (!found) state.reviews.push({ absenceId: v[0], status: "MAKEUP", source: "STAFF", decidedByUserId: v[2], convertReason: v[3] });
+      else if (["PENDING", "CLOSED"].includes(found.status)) { found.status = "MAKEUP"; found.decidedByUserId = v[2]; found.convertReason = v[3]; }
+      return 1;
+    }
+    // 보강권으로 전환: 그날 출석한 날은 닫힌 검토 줄을 만든다(이미 줄이 있으면 그대로)
+    if (/INSERT INTO "RegularAbsenceCarryReview"[\s\S]+VALUES \(\$1, 'CLOSED', 'STAFF'/.test(sql)) {
+      assert.match(sql, /ON CONFLICT \("absenceId"\) DO NOTHING/);
+      if (reviewOf(v[0])) return 0;
+      state.reviews.push({ absenceId: v[0], status: "CLOSED", source: "STAFF", decidedByUserId: v[1] });
+      return 1;
     }
     if (/INSERT INTO "RegularAbsenceCarryReview"/.test(sql)) {
       assert.match(sql, /unnest\(\$1::text\[\]\)/);
@@ -187,6 +289,15 @@ test("기간 정산 상태 상수 = 마이그레이션 CHECK 제약 집합, sche
   assert.match(ready, /=== 6/);
 });
 
+test("정산 시작일 상수는 보강권 발급 시작일(MAKEUP_CREDIT_ISSUE_FROM_YMD)과 같은 값", () => {
+  const creditService = read("src/lib/makeup/credit-service.ts");
+  const issueFrom = creditService.match(/export const MAKEUP_CREDIT_ISSUE_FROM_YMD = "(\d{4}-\d{2}-\d{2})";/)[1];
+  assert.equal(rules.ILLNESS_PERIOD_FROM_YMD, issueFrom);
+  assert.match(rules.illnessPeriodAbsenceSql("p", "ra"), new RegExp(`ra\\.date >= '${issueFrom}'::date`));
+  // 규칙 파일에 날짜 글자를 한 번만 적는다(SQL 조각은 상수를 쓴다)
+  assert.equal((read("src/lib/regular/illnessPeriodRules.ts").match(/2026-10-05/g) ?? []).length, 1);
+});
+
 test("칸 확인: 6칸이 모두 있을 때만 준비됨", async () => {
   assert.equal(await service.periodCarryColumnsReady(fakeDb()), true);
   assert.equal(await service.periodCarryColumnsReady(fakeDb({ periodCarry: false })), false);
@@ -227,13 +338,22 @@ test("승인: 미래 날짜·청구 기록 없음·청구 준비 저장 스위�
     const db = sixteenDayPeriod();
     // 전부 앞으로 올 날짜로 — 하루짜리 승인이라면 «결석일이 지난 뒤에»로 거절된다
     db.state.absences.forEach((absence, index) => { absence.date = `2099-01-${String(index + 1).padStart(2, "0")}`; });
-    db.state.credits.push({ studentId: "s1", sourceKey: KEY("fri", "2099-01-01"), status: "AVAILABLE" }, { studentId: "s1", sourceKey: KEY("mon", "2099-01-02"), status: "RESERVED" });
+    db.state.credits.push({ id: "c1", studentId: "s1", sourceKey: KEY("fri", "2099-01-01"), status: "AVAILABLE" }, { id: "c2", studentId: "s1", sourceKey: KEY("mon", "2099-01-02"), status: "RESERVED" });
     const done = await admin.approveIllnessPeriod(db, { periodId: "p1", evidenceConfirmed: true }, "admin-1");
-    assert.deepEqual(done, { periodId: "p1", studentId: "s1", startDate: "2026-11-06", returnDate: null, reviewed: 16, creditsHeld: 1 });
+    // 보강이 이미 예약된 날(a2)은 승인 대상에서 빠진다 — 검토 줄을 만들지 않는다
+    assert.deepEqual(done, { periodId: "p1", studentId: "s1", startDate: "2026-11-06", returnDate: null, reviewed: 15, creditsHeld: 1 });
     assert.equal(db.state.periods[0].carryState, "APPROVED");
     assert.equal(db.state.periods[0].approvedBy, "admin-1");
-    // 검토 16건이 «승인»으로 — 7일 자동 보강권 전환이 멈춘다
-    assert.equal(db.state.reviews.length, 16);
+    // 검토 15건이 «승인»으로 — 7일 자동 보강권 전환이 멈춘다
+    assert.equal(db.state.reviews.length, 15);
+    assert.ok(!db.state.reviews.some((review) => review.absenceId === "a2"));
+    // 되돌릴 재료: 거둔 보강권 id 와 새로 만든 검토 줄의 결석 id 를 기간 행과 감사 기록에 남긴다
+    const record = db.state.periods[0].carrySettlement.approval;
+    assert.deepEqual(record.revokedCreditIds, ["c1"]);
+    assert.equal(record.createdReviewAbsenceIds.length, 15);
+    assert.ok(!record.createdReviewAbsenceIds.includes("a2"));
+    assert.deepEqual(db.state.audit[0].details.revokedCreditIds, ["c1"]);
+    assert.deepEqual(db.state.audit[0].details.createdReviewAbsenceIds, record.createdReviewAbsenceIds);
     assert.ok(db.state.reviews.every((review) => review.status === "APPROVED" && review.decidedByUserId === "admin-1"));
     // 미사용 보강권만 거둔다. 예약된 보강권은 그대로
     assert.deepEqual(db.state.credits.map((credit) => credit.status), ["REVOKED", "RESERVED"]);
@@ -243,7 +363,7 @@ test("승인: 미래 날짜·청구 기록 없음·청구 준비 저장 스위�
     assert.equal(db.state.audit.length, 1);
     assert.equal(db.state.audit[0].action, "ILLNESS_PERIOD_APPROVED");
     assert.equal(db.state.audit[0].actor, "admin-1");
-    assert.deepEqual(Object.keys(db.state.audit[0].details).sort(), ["creditsHeld", "periodId", "returnDate", "reviewed", "startDate", "studentId"]);
+    assert.deepEqual(Object.keys(db.state.audit[0].details).sort(), ["createdReviewAbsenceIds", "creditsHeld", "periodId", "returnDate", "reviewed", "revokedCreditIds", "startDate", "studentId"]);
     // 청구 표는 읽지도 쓰지도 않는다(가짜 DB 가 모르는 조회를 오류로 던지므로 여기까지 왔으면 안 읽은 것) — 문구로도 한 번 더
     assert.ok(!db.calls.some((sql) => /"Payment"|"PaymentInvoice"|BillingWorkbench|BillingCarryCredit|MonthlyEnrollmentRegister/.test(sql)));
     assert.equal(db.txOptions.isolationLevel, "Serializable");
@@ -357,7 +477,8 @@ test("승인 취소: 기간은 NONE 으로, 검토는 «검토 중»으로 돌�
   assert.equal(db.state.reviews.filter((review) => review.status === "APPROVED").length, 16);
 
   const done = await admin.cancelIllnessPeriodApproval(db, { periodId: "p1" }, "admin-2");
-  assert.deepEqual(done, { periodId: "p1", studentId: "s1", reopened: 15 });
+  assert.deepEqual(done, { periodId: "p1", studentId: "s1", reopened: 15, creditsRestored: 0, reviewsRemoved: 0, closed: 0 });
+  assert.equal(db.state.periods[0].carrySettlement, null);
   assert.equal(db.state.periods[0].carryState, "NONE");
   assert.equal(db.state.periods[0].approvedBy, null);
   const settled = db.state.reviews.find((review) => review.absenceId === "a1");
@@ -387,6 +508,137 @@ test("승인 취소: 정산이 끝난 기간·없는 기간·권한 없음은 �
   const db = sixteenDayPeriod();
   await assert.rejects(() => admin.cancelIllnessPeriodApproval(db, { periodId: "없는기간" }, "admin-1"), /찾을 수 없습니다/);
   await assert.rejects(() => admin.cancelIllnessPeriodApproval(db, { periodId: "p1" }, ""), /관리자 확인/);
+});
+
+test("승인 취소: 승인 때 거둔 보강권을 돌려주고(만료일 지난 것은 만료), 새로 만든 검토 줄은 지우고, 취소된 결석의 승인 검토는 닫는다", async () => {
+  // 학원이 등록한 기간 — 검토 줄 없음. 미사용 보강권 3장(c1·c2·c3), 그중 c3 은 만료일이 지났다
+  const db = sixteenDayPeriod();
+  db.state.credits.push(
+    { id: "c1", studentId: "s1", sourceKey: KEY("fri", "2026-11-06"), status: "AVAILABLE", makeupSessionId: null },
+    { id: "c2", studentId: "s1", sourceKey: KEY("mon", "2026-11-09"), status: "AVAILABLE", makeupSessionId: null },
+    { id: "c3", studentId: "s1", sourceKey: KEY("fri", "2026-11-13"), status: "AVAILABLE", makeupSessionId: null, expired: true },
+    // 승인과 무관하게 예전에 회수된 보강권 — 승인 취소가 되살리면 안 된다
+    { id: "old", studentId: "s1", sourceKey: KEY("mon", "2026-11-16"), status: "REVOKED", makeupSessionId: null },
+  );
+  // a5 는 학부모가 알려 검토 줄이 이미 있던 날(승인 취소 때 지우지 않고 «검토 중»으로 되돌린다)
+  db.state.reviews.push({ absenceId: "a5", status: "PENDING", source: "PARENT", requestedTick: 1 });
+  await admin.approveIllnessPeriod(db, { periodId: "p1", evidenceConfirmed: true }, "admin-1");
+  assert.deepEqual(db.state.credits.map((credit) => credit.status), ["REVOKED", "REVOKED", "REVOKED", "REVOKED"]);
+  assert.deepEqual(db.state.periods[0].carrySettlement.approval.revokedCreditIds, ["c1", "c2", "c3"]);
+  assert.equal(db.state.periods[0].carrySettlement.approval.createdReviewAbsenceIds.length, 15);
+  assert.equal((await admin.readIllnessPeriodDetail(db, "p1")).heldCreditCount, 3);
+
+  // 승인 뒤 원장이 «복귀 처리»해 a16 이 취소됐다 / a2(c2 의 결석)도 취소됐다
+  db.state.absences.find((absence) => absence.id === "a16").status = "CANCELLED";
+  db.state.absences.find((absence) => absence.id === "a2").status = "CANCELLED";
+  // a5 도 취소 — 원래 있던 검토 줄이라 지우지 않고 닫는다
+  db.state.absences.find((absence) => absence.id === "a5").status = "CANCELLED";
+
+  const done = await admin.cancelIllnessPeriodApproval(db, { periodId: "p1" }, "admin-2");
+  // 새로 만든 15줄은 지움 · 취소된 결석의 원래 있던 검토(a5)는 닫음 · 보강권은 살아 있는 결석 것만(c1·c3) 돌려줌
+  assert.deepEqual(done, { periodId: "p1", studentId: "s1", reopened: 0, creditsRestored: 2, reviewsRemoved: 15, closed: 1 });
+  assert.deepEqual(db.state.reviews.map((review) => [review.absenceId, review.status]), [["a5", "CLOSED"]]);
+  const status = (id) => db.state.credits.find((credit) => credit.id === id).status;
+  assert.equal(status("c1"), "AVAILABLE", "원래 상태로");
+  assert.equal(status("c3"), "EXPIRED", "만료일이 지났으면 만료");
+  assert.equal(status("c2"), "REVOKED", "그 사이 취소된 결석의 보강권은 돌려주지 않는다");
+  assert.equal(status("old"), "REVOKED", "승인이 거둔 것이 아닌 보강권은 건드리지 않는다");
+  assert.equal(db.state.periods[0].carrySettlement, null);
+  assert.deepEqual(db.state.audit[1].details.revokedCreditIds, ["c1", "c2", "c3"]);
+  assert.equal(db.state.audit[1].details.creditsRestored, 2);
+  // 다시 승인 → 다시 취소해도 같은 결과(두 번 돌려주지 않는다)
+  await admin.approveIllnessPeriod(db, { periodId: "p1", evidenceConfirmed: true }, "admin-1");
+  assert.deepEqual(db.state.periods[0].carrySettlement.approval.revokedCreditIds, ["c1"], "만료된 c3 은 다시 거두지 않는다");
+  const again = await admin.cancelIllnessPeriodApproval(db, { periodId: "p1" }, "admin-2");
+  assert.equal(again.creditsRestored, 1);
+  assert.equal(status("c1"), "AVAILABLE");
+});
+
+test("승인 기록(carrySettlement.approval) 읽기 — 모양이 다르거나 없으면 아무것도 되돌리지 않는다", () => {
+  const empty = { revokedCreditIds: [], createdReviewAbsenceIds: [] };
+  assert.deepEqual(rules.parsePeriodApprovalRecord(null), empty);
+  assert.deepEqual(rules.parsePeriodApprovalRecord("깨진 글자"), empty);
+  assert.deepEqual(rules.parsePeriodApprovalRecord({ approval: { revokedCreditIds: "c1" } }), empty);
+  assert.deepEqual(rules.parsePeriodApprovalRecord({ approval: { revokedCreditIds: ["c1", "c1", 3, "", null], createdReviewAbsenceIds: ["a1"] } }), { revokedCreditIds: ["c1"], createdReviewAbsenceIds: ["a1"] });
+  // 글자로 내려와도(드라이버에 따라) 읽는다
+  assert.deepEqual(rules.parsePeriodApprovalRecord(JSON.stringify({ approval: { revokedCreditIds: ["c9"] } })), { revokedCreditIds: ["c9"], createdReviewAbsenceIds: [] });
+});
+
+// ── 보강권으로 전환 ───────────────────────────────────────────────────────
+
+test("보강권으로 전환: 결정 전인 날마다 보강권 1장(기존 [보강권으로]와 같은 함수) — 출석한 날은 닫고, 기간은 «날짜별로 처리함»이 된다", async () => {
+  const db = sixteenDayPeriod();
+  // a1: 거둬 둔 보강권이 있는 날(같은 한 장을 되살린다) · a2: 그날 출석으로 기록됨 · a3: 이미 하루씩 이월 승인됨 · a4: 보강을 이미 들음
+  db.state.credits.push(
+    { id: "c1", studentId: "s1", sourceKey: KEY("fri", "2026-11-06"), status: "REVOKED", makeupSessionId: null },
+    { id: "c4", studentId: "s1", sourceKey: KEY("mon", "2026-11-16"), status: "USED", makeupSessionId: "ms1" },
+  );
+  db.state.attendance.push({ studentId: "s1", classId: "mon", date: "2026-11-09", status: "PRESENT" });
+  db.state.reviews.push({ absenceId: "a3", status: "APPROVED", source: "STAFF" }, { absenceId: "a5", status: "PENDING", source: "PARENT" });
+  db.state.resolutions.push("a3");
+  const issuable = (ymd) => ymd >= "2026-10-05";
+
+  const done = await admin.convertIllnessPeriodToMakeup(db, { periodId: "p1" }, "admin-1", issuable);
+  // 대상 15일(이월 승인된 a3 제외) 중 출석한 a2 를 뺀 14일이 보강권으로 — 그중 보강을 이미 들은 a4 는 새 보강권 없음
+  assert.deepEqual(done, { periodId: "p1", studentId: "s1", startDate: "2026-11-06", returnDate: null, converted: 14, creditsIssued: 13, attendedClosed: 1 });
+  const review = (id) => db.state.reviews.find((item) => item.absenceId === id);
+  assert.equal(review("a1").status, "MAKEUP");
+  assert.equal(review("a1").convertReason, "REJECTED", "원장이 인정하지 않음");
+  assert.equal(review("a2").status, "CLOSED", "그날 출석 — 보강권 없이 닫는다");
+  assert.equal(review("a3").status, "APPROVED", "이미 이월 승인된 날은 그대로");
+  assert.equal(review("a4").status, "MAKEUP");
+  assert.equal(review("a5").status, "MAKEUP");
+  assert.equal(db.state.credits.find((credit) => credit.id === "c1").status, "AVAILABLE", "거둬 둔 같은 한 장을 되살린다");
+  assert.equal(db.state.credits.find((credit) => credit.id === "c4").status, "USED");
+  assert.equal(db.state.credits.filter((credit) => credit.status === "AVAILABLE").length, 13);
+  assert.ok(!db.state.credits.some((credit) => credit.sourceKey === KEY("mon", "2026-11-09")), "출석한 날은 보강권이 없다");
+  // 결정 전인 날이 하나도 남지 않는다 → 신청함에서 «날짜별로 처리함»(완료)
+  assert.equal((await admin.readIllnessPeriodDetail(db, "p1")).pendingCount, 0);
+  assert.equal(db.state.periods[0].carryState, "NONE", "기간 상태는 그대로(인정하지 않았다)");
+  assert.equal(db.state.audit.at(-1).action, "ILLNESS_PERIOD_TO_MAKEUP");
+  assert.deepEqual(db.state.audit.at(-1).details, { periodId: "p1", studentId: "s1", converted: 14, creditsIssued: 13, attendedClosed: 1 });
+  // 한 거래(Serializable) — 중간에 실패하면 전부 되돌아간다
+  assert.equal(db.txOptions.isolationLevel, "Serializable");
+  // 두 번 누르면 돌릴 것이 없다
+  await assert.rejects(() => admin.convertIllnessPeriodToMakeup(db, { periodId: "p1" }, "admin-1", issuable), /보강권으로 돌릴 결석이 없습니다/);
+  // 코드: 기존 함수를 그대로 부른다(규칙을 둘로 만들지 않는다)
+  assert.match(read("src/lib/regular/illness-period-admin.ts"), /await convertIllnessToMakeupInTx\(tx, \{ absenceId: absence\.id, by: "ADMIN", actorUserId: actorId, issuable \}\)/);
+});
+
+test("보강권으로 전환: 승인된 기간·다른 사유·없는 기간·권한 없음은 거절하고, 도중에 실패하면 아무것도 남기지 않는다", async () => {
+  const issuable = () => true;
+  let db = sixteenDayPeriod(); db.state.periods[0].carryState = "APPROVED";
+  await assert.rejects(() => admin.convertIllnessPeriodToMakeup(db, { periodId: "p1" }, "admin-1", issuable), /승인을 취소한 뒤 보강권으로/);
+  db = sixteenDayPeriod(); db.state.periods[0].reason = "FAMILY_TRIP";
+  await assert.rejects(() => admin.convertIllnessPeriodToMakeup(db, { periodId: "p1" }, "admin-1", issuable), /질병·부상으로 등록한 기간/);
+  db = sixteenDayPeriod();
+  await assert.rejects(() => admin.convertIllnessPeriodToMakeup(db, { periodId: "없는기간" }, "admin-1", issuable), /찾을 수 없습니다/);
+  await assert.rejects(() => admin.convertIllnessPeriodToMakeup(db, { periodId: "p1" }, "", issuable), /관리자 확인/);
+  assert.equal(db.state.reviews.length, 0);
+  // 8번째 날에서 실패 → 앞의 7일도 되돌아간다
+  let count = 0;
+  const failing = sixteenDayPeriod();
+  const execute = failing.$executeRawUnsafe;
+  failing.$executeRawUnsafe = async (sql, ...values) => {
+    if (/VALUES \(\$1, 'MAKEUP', 'STAFF'/.test(sql) && ++count === 8) throw new Error("연결 끊김");
+    return execute(sql, ...values);
+  };
+  await assert.rejects(() => admin.convertIllnessPeriodToMakeup(failing, { periodId: "p1" }, "admin-1", issuable), /연결 끊김/);
+  assert.equal(failing.state.reviews.length, 0);
+  assert.equal(failing.state.credits.length, 0);
+  assert.equal(failing.state.audit.length, 0);
+});
+
+test("승인 알림: 같은 학부모·같은 제목·같은 본문을 24시간 안에 보냈으면 다시 보내지 않는다", async () => {
+  const db = fakeDb({ notifications: [
+    { studentId: "s1", title: "부상 결석 인정", message: "11/6 ~ 결석을 부상 결석으로 인정했어요.", hoursAgo: 2 },
+    { studentId: "s1", title: "부상 결석 인정", message: "10/1 ~ 결석을 부상 결석으로 인정했어요.", hoursAgo: 30 },
+  ] });
+  const sent = (message, studentId = "s1") => admin.parentNoticeSentRecently(db, { studentId, title: "부상 결석 인정", message });
+  assert.equal(await sent("11/6 ~ 결석을 부상 결석으로 인정했어요."), true);
+  assert.equal(await sent("10/1 ~ 결석을 부상 결석으로 인정했어요."), false, "24시간이 지났으면 다시 보낸다");
+  assert.equal(await sent("11/20 ~ 결석을 부상 결석으로 인정했어요."), false, "다른 기간(본문이 다르다)");
+  assert.equal(await sent("11/6 ~ 결석을 부상 결석으로 인정했어요.", "s2"), false, "다른 아이");
 });
 
 // ── 상세 ──────────────────────────────────────────────────────────────────
@@ -658,6 +910,11 @@ test("상세 화면: 증빙 확인 체크 → 주 버튼 «부상 결석 승인�
   const detail = read("src/app/admin/inbox/IllnessPeriodInboxDetail.tsx");
   assert.match(detail, /disabled=\{pending \|\| !evidenceChecked\} onClick=\{approve\} className="academy-button-primary"/, "체크해야 승인 버튼이 켜진다");
   assert.equal((detail.match(/academy-button-primary/g) ?? []).length, 1, "주 버튼은 하나");
+  // 인정하지 않는 기간을 닫는 길: 보조 버튼 «보강권으로 전환»(확인 창) — 결정 전인 날이 있을 때만
+  assert.match(detail, /\{detail\.pendingCount > 0 && \(\s+<button type="button" disabled=\{pending\} onClick=\{\(\) => void toMakeup\(\)\} className="academy-button-secondary">보강권으로 전환<\/button>/);
+  assert.match(detail, /confirmLabel: "보강권으로 전환",\s+tone: "primary"/);
+  // 승인 취소 확인 창 글 = 실제 동작(거둔 보강권을 돌려준다)
+  assert.match(detail, /detail\.heldCreditCount > 0 \? `승인하며 거둔 보강권 \$\{detail\.heldCreditCount\}장은 돌려줍니다/);
   assert.match(detail, /"부상 결석 승인"/);
   assert.match(detail, /hasPhotos \? "증빙 사진을 확인했습니다" : "증빙\(진단서·처방전 등\)을 직접 확인했습니다"/);
   assert.match(detail, /<label className="flex min-h-11 /, "체크 칸은 터치 44px");
@@ -677,11 +934,15 @@ test("상세 화면: 증빙 확인 체크 → 주 버튼 «부상 결석 승인�
 
   // 서버 액션: 둘 다 관리자 권한(원장·부원장) 확인이 맨 먼저, 문자·알림톡 없이 앱 알림만
   const action = read("src/app/actions/illness-period-admin.ts");
-  for (const name of ["loadIllnessPeriodDetail", "approveIllnessPeriodAction", "cancelIllnessPeriodApprovalAction"]) {
+  for (const name of ["loadIllnessPeriodDetail", "approveIllnessPeriodAction", "cancelIllnessPeriodApprovalAction", "convertIllnessPeriodToMakeupAction"]) {
     assert.match(action, new RegExp(`export async function ${name}\\b[^\\n]*\\{\\n  (const admin = )?await requireAdmin\\(\\);`), name);
   }
   assert.doesNotMatch(action, /requireOwner|canSeeAllMoney/, "승인·승인 취소는 원장·부원장 모두");
-  assert.match(action, /notifyParentsOfStudents\(\[studentId\], "ABSENCE", title, message, "\/mypage\/regular-absence"\)/);
+  assert.match(action, /notifyParentsOfStudents\(\[studentId\], "ABSENCE", title, message, linkUrl\)/);
+  // 같은 알림을 24시간 안에 보냈으면 다시 보내지 않는다 / «알림은 못 보냈어요» 분기는 없다(알림 함수는 실패를 알려 주지 않는다)
+  assert.match(action, /const already = await parentNoticeSentRecently\(prisma, \{ studentId, title, message \}\)\.catch\(\(\) => false\);\s+if \(already\) return;/);
+  assert.doesNotMatch(action, /알림은 못 보냈어요|notifyParentSafely/);
+  assert.match(action, /`\$\{done\.converted\}회를 보강권으로 돌렸어요\./);
   for (const path of ["src/app/actions/illness-period-admin.ts", "src/lib/regular/illness-period-admin.ts"]) {
     assert.doesNotMatch(read(path), /sendParentSms|sendTrackedSms|sendFailClosedTrackedSms|alimtalk|sendSms/i, path);
     // Prisma ORM 기본 메서드 금지
@@ -691,18 +952,36 @@ test("상세 화면: 증빙 확인 체크 → 주 버튼 «부상 결석 승인�
   }
   // 승인 한 번에 학부모 알림 한 번
   const approve = action.slice(action.indexOf("export async function approveIllnessPeriodAction"), action.indexOf("/** [승인 취소]"));
-  assert.equal((approve.match(/notifyParentSafely\(/g) ?? []).length, 1);
+  assert.equal((approve.match(/notifyParentOnce\(/g) ?? []).length, 1);
 });
 
 test("학부모 화면: 승인된 기간의 상태 글자는 «부상 결석 인정 · 금액은 복귀 뒤 확정»(하루씩 이월 승인과 구분)", () => {
   assert.equal(rules.PERIOD_APPROVED_PARENT_LABEL, "부상 결석 인정 · 금액은 복귀 뒤 확정");
   const parent = read("src/lib/regular/parent-regular-absence.ts");
   const list = parent.slice(parent.indexOf("export async function getParentIllnessReviews"), parent.indexOf("export type UpcomingChild"));
-  // 기간이 승인(APPROVED)이고 그 결석의 검토도 승인일 때만
-  assert.match(list, /const amountPending = r\.status === "APPROVED" && r\.periodCarryState === "APPROVED";/);
-  assert.match(list, /statusLabel: amountPending \? PERIOD_APPROVED_PARENT_LABEL : illnessReviewLabel\(r\.status\) \?\? ""/);
-  // 칸이 없는 DB 는 그 칸을 읽지 않는다(결석 화면이 빈 목록으로 떨어지지 않게)
-  assert.match(list, /\(await periodCarryColumnsReady\(prisma\)\.catch\(\(\) => false\)\)\s+\? `\(SELECT ap\."carryState" FROM "RegularAbsencePeriod" ap WHERE ap\.id = ra\."periodId"\)`\s+: `NULL::text`/);
+  // 글자는 «검토 줄»이 아니라 기간 상태 기준 — 판정은 규칙 함수 한 곳
+  assert.match(list, /const shown = parentPeriodDayStatus\(\{\s+reviewStatus: r\.status \?\? null, reason: r\.reason, periodCarryState: r\.periodCarryState \?\? null, settled: r\.settled === true,\s+\}\);/);
+  assert.match(list, /statusLabel: amountPending \? PERIOD_APPROVED_PARENT_LABEL : illnessReviewLabel\(status\) \?\? ""/);
+  const day = (reviewStatus, periodCarryState, settled = false, reason = ILLNESS) => rules.parentPeriodDayStatus({ reviewStatus, reason, periodCarryState, settled });
+  // 승인된 기간: 검토 줄이 없는 날(승인 뒤 매일 연장)·검토 중(학부모 연장)·승인 모두 «인정»
+  assert.deepEqual(day(null, "APPROVED"), { status: "APPROVED", amountPending: true });
+  assert.deepEqual(day("PENDING", "APPROVED"), { status: "APPROVED", amountPending: true });
+  assert.deepEqual(day("APPROVED", "APPROVED"), { status: "APPROVED", amountPending: true });
+  // 하루씩 실제로 이월 적립된 날은 기존 «이월 승인» 그대로
+  assert.deepEqual(day("APPROVED", "APPROVED", true), { status: "APPROVED", amountPending: false });
+  // 보강권으로 전환된 날·승인되지 않은 기간·하루 결석·다른 사유는 검토 상태 그대로
+  assert.deepEqual(day("MAKEUP", "APPROVED"), { status: "MAKEUP", amountPending: false });
+  assert.deepEqual(day("PENDING", "NONE"), { status: "PENDING", amountPending: false });
+  assert.deepEqual(day("APPROVED", null), { status: "APPROVED", amountPending: false });
+  assert.deepEqual(day("PENDING", "APPROVED", false, "PERSONAL"), { status: "PENDING", amountPending: false });
+  // 승인된 기간에 묶인 질병·부상 결석은 검토 줄이 없어도 목록에 올린다
+  assert.match(list, /`OR \(r\."absenceId" IS NULL AND ra\.reason = '\$\{ILLNESS_REASON\}' AND \$\{periodCarrySql\} = 'APPROVED'\)`/);
+  assert.match(list, /FROM "RegularAbsence" ra\s+LEFT JOIN "RegularAbsenceCarryReview" r ON r\."absenceId" = ra\.id/);
+  // 검토 줄이 없는 날의 기준일 — 둘 다 timestamptz 라 KST 변환 한 번
+  assert.match(list, /to_char\(COALESCE\(r\."requestedAt", ra\."createdAt"\) AT TIME ZONE 'Asia\/Seoul', 'YYYY-MM-DD'\) AS "requestedYmd"/);
+  // 칸이 없는 DB 는 그 칸을 읽지 않는다(결석 화면이 빈 목록으로 떨어지지 않게) — 예전처럼 검토 줄이 있는 결석만
+  assert.match(list, /const periodCarrySql = periodCarryReady\s+\? `\(SELECT ap\."carryState" FROM "RegularAbsencePeriod" ap WHERE ap\.id = ra\."periodId"\)`\s+: `NULL::text`/);
+  assert.match(list, /const approvedPeriodDaySql = periodCarryReady\s+\? `OR[^`]+`\s+: "";/);
   assert.doesNotMatch(list, /reasonText/);
   const client = read("src/app/mypage/regular-absence/RegularAbsenceClient.tsx");
   assert.match(client, /review\.amountPending \? PERIOD_APPROVED_PARENT_NOTE : "다음 달 수강료에서 1회분을 빼 드려요\."/);

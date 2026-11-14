@@ -34,7 +34,7 @@ export async function resolveWorkbenchAbsence(db: WorkbenchDb, input: unknown, a
     // 기간 정산 칸(마이그레이션 20261116100000)이 아직 없으면 그대로 통과한다. 문구는 illnessPeriodRules.PERIOD_DAY_RESOLVE_BLOCKED 와 같다(테스트가 비교).
     const periodCarryColumn=await tx.$queryRawUnsafe<Array<{n:number}>>(`SELECT COUNT(*)::int AS n FROM information_schema.columns WHERE table_schema='public' AND table_name='RegularAbsencePeriod' AND column_name='carryState'`);
     if(Number(periodCarryColumn[0]?.n??0)>0){
-      const periodDecided=await tx.$queryRawUnsafe<Array<{found:number}>>(`SELECT 1 AS found FROM "RegularAbsencePeriod" p JOIN "RegularAbsence" a ON a."periodId"=p.id WHERE a.id=$1 AND p."carryState"<>'NONE' LIMIT 1`,absence.id);
+      const periodDecided=await tx.$queryRawUnsafe<Array<{found:number}>>(`SELECT 1 AS found FROM "RegularAbsencePeriod" p JOIN "RegularAbsence" a ON a."periodId"=p.id WHERE a.id=$1 AND a.reason='ILLNESS_INJURY' AND p."carryState"<>'NONE' LIMIT 1`,absence.id);
       if(periodDecided.length>0) throw new WorkbenchError("기간 정산에서 한 번에 처리합니다. 신청함의 «부상 결석(기간)»에서 확인해 주세요.",409);
     }
     const today = new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Seoul"}).format(new Date());

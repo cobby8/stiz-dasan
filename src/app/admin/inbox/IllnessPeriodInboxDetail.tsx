@@ -15,7 +15,9 @@ import { useEffect, useState, useTransition } from "react";
 import AdminModal from "@/components/admin/AdminModal";
 import { useAdminConfirm } from "@/components/admin/AdminConfirmDialog";
 import { kstAt, kstLabel } from "@/lib/datetime/kst";
-import { approveIllnessPeriodAction, cancelIllnessPeriodApprovalAction, loadIllnessPeriodDetail } from "@/app/actions/illness-period-admin";
+import {
+  approveIllnessPeriodAction, cancelIllnessPeriodApprovalAction, convertIllnessPeriodToMakeupAction, loadIllnessPeriodDetail,
+} from "@/app/actions/illness-period-admin";
 import type { IllnessPeriodDetail } from "@/lib/regular/illness-period-admin";
 import { PERIOD_APPROVED_ADMIN_NOTE } from "@/lib/regular/illnessPeriodRules";
 
@@ -73,7 +75,12 @@ export default function IllnessPeriodInboxDetail({ periodId, studentName, onChan
     if (!detail) return;
     const ok = await confirm({
       title: `${studentName} · 부상 결석 승인 취소`,
-      description: "기간이 다시 «승인 대기»로 돌아갑니다. 날짜마다 «검토 중»이 되고, 학부모가 알린 결석은 사진 기한(7일)이 새로 시작합니다.",
+      // 실제로 일어나는 일 그대로: 상태 되돌림 · 거둔 보강권 돌려줌 · 학부모가 알린 결석은 다시 검토 중
+      description: [
+        "기간이 다시 «승인 대기»로 돌아갑니다.",
+        detail.heldCreditCount > 0 ? `승인하며 거둔 보강권 ${detail.heldCreditCount}장은 돌려줍니다(만료일이 지난 것은 만료).` : "",
+        "학부모가 알린 결석은 «검토 중»으로 돌아가 사진 기한(7일)이 새로 시작합니다.",
+      ].filter(Boolean).join(" "),
       confirmLabel: "승인 취소",
       tone: "danger",
     });
@@ -82,6 +89,26 @@ export default function IllnessPeriodInboxDetail({ periodId, studentName, onChan
       const result = await cancelIllnessPeriodApprovalAction({ periodId })
         .catch(() => ({ ok: false as const, message: "승인을 취소하지 못했습니다. 잠시 뒤 다시 시도해 주세요." }));
       setMessage({ tone: result.ok ? "ok" : "error", text: result.message });
+      await reload();
+      if (result.ok) onChanged();
+    });
+  }
+
+  // 부상 결석으로 인정하지 않는 기간 — 결정 전인 날마다 보강권 1장(하루짜리 [보강권으로]와 같은 처리)
+  async function toMakeup() {
+    if (!detail) return;
+    const ok = await confirm({
+      title: `${studentName} · 결석 ${detail.pendingCount}회를 보강권으로`,
+      description: "부상 결석으로 인정하지 않고, 아직 결정 전인 날마다 보강권 1장으로 처리합니다. 그날 출석으로 기록된 날은 보강권 없이 닫습니다. 학부모에게 앱 알림이 갑니다.",
+      confirmLabel: "보강권으로 전환",
+      tone: "primary",
+    });
+    if (!ok) return;
+    startTransition(async () => {
+      const result = await convertIllnessPeriodToMakeupAction({ periodId })
+        .catch(() => ({ ok: false as const, message: "보강권으로 돌리지 못했습니다. 잠시 뒤 다시 시도해 주세요." }));
+      setMessage({ tone: result.ok ? "ok" : "error", text: result.message });
+      setEvidenceChecked(false);
       await reload();
       if (result.ok) onChanged();
     });
@@ -154,8 +181,11 @@ export default function IllnessPeriodInboxDetail({ periodId, studentName, onChan
               <span>{hasPhotos ? "증빙 사진을 확인했습니다" : "증빙(진단서·처방전 등)을 직접 확인했습니다"}</span>
             </label>
             <p className="text-xs text-[var(--color-academy-muted)]">승인하면 부상 결석으로 인정만 됩니다. {PERIOD_APPROVED_ADMIN_NOTE}.</p>
-            {/* 주 버튼 하나 — 오른쪽 끝 */}
-            <div className="flex justify-end">
+            {/* 버튼 — 보조(인정하지 않음 → 보강권으로)는 왼쪽, 주 버튼(승인) 하나는 오른쪽 끝 */}
+            <div className="flex flex-wrap justify-end gap-2">
+              {detail.pendingCount > 0 && (
+                <button type="button" disabled={pending} onClick={() => void toMakeup()} className="academy-button-secondary">보강권으로 전환</button>
+              )}
               <button type="button" disabled={pending || !evidenceChecked} onClick={approve} className="academy-button-primary">
                 {pending ? "처리 중…" : "부상 결석 승인"}
               </button>

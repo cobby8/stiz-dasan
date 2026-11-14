@@ -82,9 +82,65 @@ export function illnessPeriodVisibleSql(period: string): string {
   return `(${period}.reason = 'ILLNESS_INJURY' AND (${period}.status <> 'CANCELLED' OR ${period}."carryState" <> 'NONE'))`;
 }
 
-/** 그 기간(period)에 묶인 살아 있는 질병·부상 결석(abs)인가 — 2026-10-05 = 결석 정산이 시작된 날(그 전 결석은 대상이 아니다) */
+/**
+ * 결석 정산·보강권 발급이 시작된 날 — 그 전 결석은 대상이 아니다.
+ * 보강권 쪽 상수 MAKEUP_CREDIT_ISSUE_FROM_YMD(credit-service.ts)와 «같은 값»이어야 한다(테스트가 비교).
+ * 그 파일은 prisma 를 부르고 이 파일은 순수 모듈(화면·node 테스트가 바로 읽는다)이라 가져오지 못하고 값을 맞춰 둔다.
+ */
+export const ILLNESS_PERIOD_FROM_YMD = "2026-10-05";
+
+/** 그 기간(period)에 묶인 살아 있는 질병·부상 결석(abs)인가 — 정산이 시작된 날(ILLNESS_PERIOD_FROM_YMD) 이후만 */
 export function illnessPeriodAbsenceSql(period: string, abs: string): string {
-  return `(${abs}."periodId" = ${period}.id AND ${abs}.status <> 'CANCELLED' AND ${abs}.reason = 'ILLNESS_INJURY' AND ${abs}.date >= '2026-10-05'::date)`;
+  return `(${abs}."periodId" = ${period}.id AND ${abs}.status <> 'CANCELLED' AND ${abs}.reason = 'ILLNESS_INJURY' AND ${abs}.date >= '${ILLNESS_PERIOD_FROM_YMD}'::date)`;
+}
+
+/**
+ * 그 결석(abs)의 보강이 이미 예약·사용됐는가 — 보강권 RESERVED/USED/NO_SHOW 또는 보강 예약 BOOKED/ATTENDED/NO_SHOW.
+ * 기간 승인은 이런 날을 «이월 대상»으로 표시하지 않는다(보강으로 보상이 진행 중이다).
+ * 보강권 키·보강 예약의 결석일 비교는 기존 규칙과 같다(originalDate 는 timestamptz 라 KST 변환 한 번, date 칼럼은 그대로).
+ * withSessions=false 는 보강 예약 표가 아직 없는 DB 용.
+ */
+export function makeupInUseSql(abs: string, withSessions = true): string {
+  const credit = `EXISTS (SELECT 1 FROM "MakeupCredit" used_credit
+                   WHERE used_credit."studentId" = ${abs}."studentId"
+                     AND used_credit."sourceKey" = 'REGULAR:' || ${abs}."classId" || ':' || to_char(${abs}.date, 'YYYY-MM-DD')
+                     AND used_credit.status IN ('RESERVED', 'USED', 'NO_SHOW'))`;
+  if (!withSessions) return `(${credit})`;
+  return `(${credit} OR EXISTS (SELECT 1 FROM "MakeupSession" used_session
+                   WHERE used_session."studentId" = ${abs}."studentId" AND used_session."originalClassId" = ${abs}."classId"
+                     AND to_char(used_session."originalDate" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') = to_char(${abs}.date, 'YYYY-MM-DD')
+                     AND used_session.status IN ('BOOKED', 'ATTENDED', 'NO_SHOW')))`;
+}
+
+/**
+ * 학부모 화면에 보일 그 결석의 상태 — «검토 줄»이 아니라 «기간 상태» 기준.
+ *   · 승인된 기간(APPROVED)에 묶인 질병·부상 결석: 검토 줄이 없거나 «검토 중»·«승인»이면 «부상 결석 인정 · 금액은 복귀 뒤»
+ *     (승인 뒤 매일 연장·학부모 연장으로 생긴 날도 같은 글자)
+ *   · 단, 하루씩 실제로 이월 적립된 날(settled)은 기존 «이월 승인» 그대로
+ *   · 보강권으로 전환된 날(MAKEUP)·승인되지 않은 기간·하루 결석은 검토 상태 그대로
+ */
+export function parentPeriodDayStatus(input: {
+  reviewStatus: string | null; reason: string; periodCarryState: string | null; settled: boolean;
+}): { status: string; amountPending: boolean } {
+  const review = input.reviewStatus ?? "PENDING";
+  const recognized = input.periodCarryState === "APPROVED" && input.reason === "ILLNESS_INJURY" && !input.settled
+    && (review === "PENDING" || review === "APPROVED");
+  return recognized ? { status: "APPROVED", amountPending: true } : { status: review, amountPending: false };
+}
+
+/** 승인 때 남긴 «되돌릴 재료» — 거둔 보강권 id 와 새로 만든 검토 줄의 결석 id */
+export type PeriodApprovalRecord = { revokedCreditIds: string[]; createdReviewAbsenceIds: string[] };
+
+/** 기간 행의 carrySettlement(jsonb) 에서 승인 기록을 꺼낸다. 모양이 다르거나 없으면 빈 목록(아무것도 되돌리지 않는다) */
+export function parsePeriodApprovalRecord(value: unknown): PeriodApprovalRecord {
+  let parsed: unknown = value;
+  if (typeof value === "string") { try { parsed = JSON.parse(value); } catch { parsed = null; } }
+  const approval = parsed && typeof parsed === "object" ? (parsed as { approval?: unknown }).approval : null;
+  const ids = (list: unknown): string[] => (Array.isArray(list)
+    ? Array.from(new Set(list.filter((item): item is string => typeof item === "string" && item.length > 0 && item.length <= 200)))
+    : []);
+  const record = approval && typeof approval === "object" ? approval as Record<string, unknown> : {};
+  return { revokedCreditIds: ids(record.revokedCreditIds), createdReviewAbsenceIds: ids(record.createdReviewAbsenceIds) };
 }
 
 /** 하루짜리 목록(ILLNESS_CARRY)에서 뺄 결석(abs)인가 — 신청함에 기간 한 줄로 올라가는 기간에 묶인 결석 */

@@ -616,6 +616,8 @@ test("부상·질병 «기간 결석»을 승인한 기간의 결석은 하루�
  // ⑤ 칸이 없는 DB(마이그레이션 전) → 기간 표를 읽지 않고 통과
  db=absenceDatabase();db.state.periodDecided=["absence-a"];view=await readWorkbench(db.tx,"2026-11",true);
  await resolveWorkbenchAbsence(db,resolveCommand(view),"admin",true);assert.equal(db.state.carryCredits.length,1);
+ // 질병·부상 결석만 막는다 — 승인된 기간에 묶였어도 다른 사유(경조사 등)로 바뀐 날은 기간 정산 대상이 아니라 하루씩 처리한다
+ assert.ok(absenceSource.includes(`WHERE a.id=$1 AND a.reason='ILLNESS_INJURY' AND p."carryState"<>'NONE' LIMIT 1`));
  // 가드는 결석을 찾은 직후·적립 근거를 읽기 전에 있다
  assert.ok(absenceSource.indexOf("확인된 미처리 결석만 처리할 수 있습니다.")<absenceSource.indexOf("p.\"carryState\"<>'NONE'"));
  assert.ok(absenceSource.indexOf("p.\"carryState\"<>'NONE'")<absenceSource.indexOf('INSERT INTO "BillingCarryCredit"'));
