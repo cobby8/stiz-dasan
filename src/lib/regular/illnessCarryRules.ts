@@ -111,6 +111,12 @@ export function carryApprovalBlocker(input: {
   return null;
 }
 
+/** 증빙 사진으로 받는 «실제» 파일 형식(파일 머리를 읽어 확인한 값 — 브라우저가 보낸 형식 이름은 믿지 않는다) */
+export const EVIDENCE_IMAGE_FORMATS = ["jpeg", "png", "webp"] as const;
+export function isAllowedEvidenceFormat(format: unknown): boolean {
+  return typeof format === "string" && (EVIDENCE_IMAGE_FORMATS as readonly string[]).includes(format);
+}
+
 /** 증빙 사진 저장 경로 — 결석 id 아래 사진 id. 다른 모양의 경로는 읽지도 지우지도 않는다 */
 export const EVIDENCE_BUCKET = "absence-evidence";
 export function evidenceStoragePath(absenceId: string, photoId: string): string {

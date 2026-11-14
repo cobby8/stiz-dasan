@@ -4,7 +4,7 @@
 // 화면에는 권한을 확인한 API(학부모 본인·관리자)가 대신 내려 준다 — 서명 URL·공개 주소를 만들지 않는다.
 import sharp from "sharp";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { EVIDENCE_BUCKET, isValidEvidencePath } from "@/lib/regular/illnessCarryRules";
+import { EVIDENCE_BUCKET, isAllowedEvidenceFormat, isValidEvidencePath } from "@/lib/regular/illnessCarryRules";
 
 /** 올릴 수 있는 원본 형식(수업 사진과 같은 집합 — gif 제외) */
 export const EVIDENCE_ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -12,6 +12,9 @@ export const EVIDENCE_ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image
 export const EVIDENCE_MAX_INPUT_BYTES = 4 * 1024 * 1024;
 /** 서버가 다시 인코딩한 결과 상한 = 버킷 파일 크기 제한 */
 export const EVIDENCE_MAX_STORED_BYTES = 2 * 1024 * 1024;
+
+/** 실제 형식이 JPG·PNG·WebP 가 아니다 — 라우트가 400 으로 답한다 */
+export const EVIDENCE_FORMAT_REJECTED = "EVIDENCE_FORMAT_REJECTED";
 
 let bucketEnsured = false;
 
@@ -32,6 +35,9 @@ export async function ensureEvidenceBucket() {
  * 서류 사진이라 긴 변 2000px 까지 남긴다.
  */
 export async function encodeEvidencePhoto(input: Buffer): Promise<Buffer> {
+  // 인코딩 «전»에 실제 형식을 본다(보안 검수 2026-11-14) — 형식 이름만 jpeg 로 속인 SVG·GIF·TIFF 등은 받지 않는다
+  const meta = await sharp(input, { limitInputPixels: 40_000_000 }).metadata();
+  if (!isAllowedEvidenceFormat(meta.format)) throw new Error(EVIDENCE_FORMAT_REJECTED);
   return sharp(input, { limitInputPixels: 40_000_000 })
     .rotate()
     .resize({ width: 2000, height: 2000, fit: "inside", withoutEnlargement: true })

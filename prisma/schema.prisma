@@ -3135,6 +3135,16 @@ model RegularAbsenceEvidence {
   @@index([createdAt], map: "RegularAbsenceEvidence_purge_idx")
 }
 
+// 관리자가 증빙 사진을 연 기록(누가·어느 사진·언제). 사진 행과 FK 로 묶지 않아 사진을 지워도 기록은 남는다.
+model RegularAbsenceEvidenceView {
+  id           String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  evidenceId   String
+  viewerUserId String
+  viewedAt     DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([evidenceId, viewedAt], map: "RegularAbsenceEvidenceView_evidenceId_viewedAt_idx")
+}
+
 // 저장된 배차 노선 — 원장이 자동 제안을 손으로 조정한 뒤 저장한 결과(날짜×방향 1행).
 // 상세 근거는 prisma/migrations/20260726160000_add_seasonal_dispatch_route/migration.sql 참고.
 model SeasonalDispatchRoute {

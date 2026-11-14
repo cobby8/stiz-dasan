@@ -4,9 +4,10 @@
 -- 사유가 «질병·부상»이면 보강권을 바로 주지 않고, 증빙 사진을 본 원장이 [이월 승인](다음 달 수강료에서
 -- 1회분 차감) 또는 [보강권으로]를 고른다. 알린 뒤 7일 안에 사진이 없으면 보강권 1장으로 자동 전환한다.
 --
--- 표 2개:
+-- 표 3개:
 --   RegularAbsenceCarryReview   결석 1건당 검토 1줄(상태·사유 글·알린 시각·결정)
 --   RegularAbsenceEvidence      증빙 사진(비공개 버킷 경로) — 결석당 살아 있는 사진 최대 3장(코드가 강제)
+--   RegularAbsenceEvidenceView  관리자가 증빙 사진을 연 기록(누가·어느 사진·언제) — 건강 정보 열람 추적
 --
 -- 이월 금액·적립은 새로 만들지 않는다 — 기존 BillingCarryCredit / BillingAbsenceResolution 을 그대로 쓴다
 -- (src/lib/billing/workbench-absence.ts resolveWorkbenchAbsence 의 CARRY 규칙).
@@ -14,6 +15,7 @@
 -- 시간 칼럼은 모두 timestamptz(시간대 변환을 한 번만 건다). 멱등(IF NOT EXISTS)이라 다시 실행해도 안전하다.
 --
 -- ── 되돌림(운영에서 문제가 생기면 아래를 그대로 실행) ─────────────────────────────
+--   DROP TABLE IF EXISTS public."RegularAbsenceEvidenceView";
 --   DROP TABLE IF EXISTS public."RegularAbsenceEvidence";
 --   DROP TABLE IF EXISTS public."RegularAbsenceCarryReview";
 --   -- 저장소: Supabase Storage 의 비공개 버킷 «absence-evidence» 는 코드가 처음 올릴 때 만든다.
@@ -87,11 +89,25 @@ CREATE INDEX IF NOT EXISTS "RegularAbsenceEvidence_purge_idx"
 CREATE UNIQUE INDEX IF NOT EXISTS "RegularAbsenceEvidence_storagePath_key"
   ON public."RegularAbsenceEvidence" ("storageBucket", "storagePath");
 
+-- 관리자 열람 기록(보안 검수 2026-11-14). 사진 행과 FK 로 묶지 않는다 — 90일 뒤 사진 파일을 지워도 기록(사진 id)은 남긴다.
+-- 사유 글·파일 내용은 담지 않는다.
+CREATE TABLE IF NOT EXISTS public."RegularAbsenceEvidenceView" (
+  id TEXT PRIMARY KEY DEFAULT (gen_random_uuid())::text,
+  "evidenceId" TEXT NOT NULL,
+  "viewerUserId" TEXT NOT NULL,
+  "viewedAt" TIMESTAMPTZ(6) NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS "RegularAbsenceEvidenceView_evidenceId_viewedAt_idx"
+  ON public."RegularAbsenceEvidenceView" ("evidenceId", "viewedAt");
+
 -- 서버(서비스 키·Prisma 직결)만 접근한다 — 다른 표와 같은 방식(RLS 켜고 정책 없음 + 권한 회수)
 ALTER TABLE public."RegularAbsenceCarryReview" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."RegularAbsenceCarryReview" FORCE ROW LEVEL SECURITY;
 ALTER TABLE public."RegularAbsenceEvidence" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."RegularAbsenceEvidence" FORCE ROW LEVEL SECURITY;
+ALTER TABLE public."RegularAbsenceEvidenceView" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public."RegularAbsenceEvidenceView" FORCE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public."RegularAbsenceEvidenceView" FROM PUBLIC;
 REVOKE ALL ON TABLE public."RegularAbsenceCarryReview" FROM PUBLIC;
 REVOKE ALL ON TABLE public."RegularAbsenceEvidence" FROM PUBLIC;
 DO $$
@@ -101,6 +117,7 @@ BEGIN
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
       EXECUTE format('REVOKE ALL ON TABLE public."RegularAbsenceCarryReview" FROM %I', r);
       EXECUTE format('REVOKE ALL ON TABLE public."RegularAbsenceEvidence" FROM %I', r);
+      EXECUTE format('REVOKE ALL ON TABLE public."RegularAbsenceEvidenceView" FROM %I', r);
     END IF;
   END LOOP;
 END $$;

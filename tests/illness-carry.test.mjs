@@ -34,6 +34,7 @@ function fakeDb(init = {}) {
     students: [{ id: "s1", parentId: "p1" }, { id: "s9", parentId: "p9" }],
     today: "2026-11-14",
     calls: [],
+    order: [],
     seq: 0,
     ...init,
   };
@@ -104,8 +105,12 @@ function fakeDb(init = {}) {
         return { e, review, row: { id: e.id, storageBucket: e.storageBucket, storagePath: e.storagePath, removed: Boolean(e.removed), orphan: e.absenceId == null, decidedYmd: decided, todayYmd: db.today } };
       }).filter(({ e, row }) => (e.removed && (e.removedMinutes ?? 60) > 10) || row.orphan || row.decidedYmd != null).map(({ row }) => row);
     }
+    // 사진 올리기 줄 세우기 잠금(따로 한 문장)
+    if (sql === access.EVIDENCE_LOCK_SQL) { db.order.push("lock"); db.onLock?.(); return [{ locked: 1 }]; }
     // 사진 권한: 학부모가 올릴 결석
     if (/FROM "RegularAbsence" ra\s+JOIN "Student" s ON s\.id = ra\."studentId"\s+JOIN "RegularAbsenceCarryReview" r ON r\."absenceId" = ra\.id/.test(sql)) {
+      db.order.push("count");
+      assert.doesNotMatch(sql, /FOR UPDATE/, "장수를 세는 문장에는 잠금을 붙이지 않는다(잠금은 앞 문장)");
       assert.match(sql, /s\."parentId" = \$1/, "보호자 조건(childAccessSql 조각)");
       assert.match(sql, /"mergedIntoId" IS NULL|mergedInto/i, "병합된 학생 제외");
       return db.absences.filter((a) => a.id === v[1] && parentOf(a.studentId) === v[0])
@@ -317,12 +322,23 @@ test("마이그레이션: 상태·출처 제약 = 코드 상수, 멱등, RLS, ti
   assert.deepEqual(inList("RegularAbsenceCarryReview_convertReason_check").sort(), ["NO_EVIDENCE", "REJECTED"]);
   assert.match(migration, new RegExp(`char_length\\("reasonText"\\) <= ${rules.REASON_TEXT_MAX}\\)`));
   // 멱등 — 다시 실행해도 안전
-  assert.equal((migration.match(/CREATE TABLE IF NOT EXISTS public\./g) ?? []).length, 2);
+  assert.equal((migration.match(/CREATE TABLE IF NOT EXISTS public\./g) ?? []).length, 3);
   assert.doesNotMatch(migration, /CREATE (UNIQUE )?INDEX (?!IF NOT EXISTS)/);
   assert.match(migration, /ON CONFLICT \("absenceId"\) DO NOTHING/, "기존 정산 채우기도 다시 실행해 같은 결과");
   // 서버만 접근(RLS 켜고 정책 없음 + 권한 회수)
-  assert.equal((migration.match(/ENABLE ROW LEVEL SECURITY/g) ?? []).length, 2);
-  assert.equal((migration.match(/FORCE ROW LEVEL SECURITY/g) ?? []).length, 2);
+  assert.equal((migration.match(/ENABLE ROW LEVEL SECURITY/g) ?? []).length, 3);
+  assert.equal((migration.match(/FORCE ROW LEVEL SECURITY/g) ?? []).length, 3);
+  for (const table of ["RegularAbsenceCarryReview", "RegularAbsenceEvidence", "RegularAbsenceEvidenceView"]) {
+    assert.ok(migration.includes(`REVOKE ALL ON TABLE public."${table}" FROM PUBLIC;`), table);
+    assert.ok(migration.includes(`EXECUTE format('REVOKE ALL ON TABLE public."${table}" FROM %I', r);`), table);
+    assert.ok(new RegExp(`--\\s+DROP TABLE IF EXISTS public\\."${table}";`).test(migration), `되돌림 주석: ${table}`);
+  }
+  // 열람 기록 표: 누가·어느 사진·언제만(사유 글·파일 내용 없음), 사진 행과 FK 로 묶지 않는다(사진을 지워도 기록은 남는다)
+  const viewTable = migration.slice(migration.indexOf('CREATE TABLE IF NOT EXISTS public."RegularAbsenceEvidenceView"'), migration.indexOf('"RegularAbsenceEvidenceView_evidenceId_viewedAt_idx"'));
+  assert.deepEqual([...viewTable.matchAll(/^\s+"?(\w+)"? (?:TEXT|TIMESTAMPTZ)/gm)].map((m) => m[1]), ["id", "evidenceId", "viewerUserId", "viewedAt"]);
+  assert.match(viewTable, /"viewedAt" TIMESTAMPTZ\(6\) NOT NULL DEFAULT NOW\(\)/);
+  assert.doesNotMatch(viewTable, /REFERENCES|reasonText/);
+  assert.match(read("prisma/schema.prisma"), /model RegularAbsenceEvidenceView \{/);
   assert.match(migration, /REVOKE ALL ON TABLE public\."RegularAbsenceEvidence" FROM %I/);
   assert.doesNotMatch(migration, /CREATE POLICY/);
   // 새 시간 칼럼은 전부 timestamptz
@@ -547,6 +563,52 @@ test("사진 올리기 대상: 내 아이의 검토 중인 질병·부상 결석
   assert.equal(await access.findEvidenceTargetForParent(fakeDb({ absences: [{ ...ABSENCE, reason: "PERSONAL" }], reviews: [pending()] }), ACCESS, "p1", "a1"), null);
   assert.equal(await access.findEvidenceTargetForParent(fakeDb({ absences: [{ ...ABSENCE, status: "CANCELLED" }], reviews: [pending()] }), ACCESS, "p1", "a1"), null);
   assert.equal(await access.findEvidenceTargetForParent(fakeDb({ absences: [{ ...ABSENCE }] }), ACCESS, "p1", "a1"), null, "검토 줄이 없는 결석(학원 등록)");
+});
+
+test("동시 업로드: 잠금을 «먼저 따로» 잡고 그 뒤에 장수를 센다 — 기다리는 동안 올라온 사진까지 세어 3장을 넘지 않는다", async () => {
+  const db = fakeDb({ absences: [{ ...ABSENCE }], reviews: [pending()], evidence: [photo("e1"), photo("e2")] });
+  // 잠금을 기다리는 사이 다른 요청이 세 번째 사진을 확정한 상황
+  db.onLock = () => db.evidence.push(photo("e3"));
+  const locked = await access.findEvidenceTargetForParent(db, ACCESS, "p1", "a1", true);
+  assert.deepEqual(db.order, ["lock", "count"], "잠금 → 세기 순서");
+  assert.equal(locked.photoCount, 3);
+  assert.match(access.evidenceAddRefusal(locked), /3장까지/);
+  // 잠금 없이 부르면 잠금 문장을 보내지 않는다(거래 밖 미리보기)
+  const plain = fakeDb({ absences: [{ ...ABSENCE }], reviews: [pending()] });
+  await access.findEvidenceTargetForParent(plain, ACCESS, "p1", "a1");
+  assert.deepEqual(plain.order, ["count"]);
+  assert.equal(access.EVIDENCE_LOCK_SQL, 'SELECT 1 AS locked FROM "RegularAbsenceCarryReview" WHERE "absenceId" = $1 FOR UPDATE');
+  // 호출부: 확정 거래 안에서 잠금 포함으로 다시 본다
+  const route = read("src/app/api/mypage/regular-absence/evidence/route.ts");
+  assert.match(route, /prisma\.\$transaction\(async \(tx\) => \{\s*const locked = await findEvidenceTargetForParent\(tx, access, parent\.appUserId, absenceId, true\);/);
+});
+
+test("업로드 형식: 인코딩 전에 실제 형식(jpeg·png·webp)을 확인하고 아니면 400", () => {
+  for (const ok of ["jpeg", "png", "webp"]) assert.equal(rules.isAllowedEvidenceFormat(ok), true, ok);
+  for (const bad of ["gif", "svg", "tiff", "heif", "pdf", "", undefined, null, "JPEG"]) assert.equal(rules.isAllowedEvidenceFormat(bad), false, String(bad));
+  const storage = read("src/lib/regular/illness-evidence-storage.ts");
+  const fn = storage.slice(storage.indexOf("export async function encodeEvidencePhoto"), storage.indexOf("export async function uploadEvidencePhoto"));
+  assert.match(fn, /\.metadata\(\);\s*if \(!isAllowedEvidenceFormat\(meta\.format\)\) throw new Error\(EVIDENCE_FORMAT_REJECTED\);/);
+  assert.ok(fn.indexOf(".metadata()") < fn.indexOf(".jpeg("), "형식 확인이 인코딩보다 먼저");
+  const route = read("src/app/api/mypage/regular-absence/evidence/route.ts");
+  assert.match(route, /error\.message === EVIDENCE_FORMAT_REJECTED;\s*return json\(\{ error: badFormat \? "사진은 JPG, PNG, WebP 만 올릴 수 있어요\." : "[^"]+" \}, 400\);/);
+  assert.ok(route.indexOf("encodeEvidencePhoto(") < route.indexOf("uploadEvidencePhoto("), "거절된 파일은 저장소에 올라가지 않는다");
+});
+
+test("관리자 열람 기록: 누가·어느 사진을 열었는지 남기고, 기록이 실패해도 열람은 막지 않는다", () => {
+  const route = read("src/app/api/admin/absence-evidence/[id]/route.ts");
+  assert.match(route, /INSERT INTO "RegularAbsenceEvidenceView" \("evidenceId", "viewerUserId"\) VALUES \(\$1, \$2\)`,\s*photo\.id, admin\.appUserId,\s*\)\.catch\(/);
+  assert.match(route, /admin = await requireAdmin\(\);/);
+  // 권한 확인 → 사진 찾기 → 파일 읽기 → 기록 → 응답 순서(없는 사진·못 읽은 사진은 기록하지 않는다)
+  const at = (text) => route.indexOf(text);
+  assert.ok(at("await requireAdmin()") < at("findEvidenceForAdmin(prisma, id)"));
+  assert.ok(at("downloadEvidencePhoto(photo.storagePath)") < at('INSERT INTO "RegularAbsenceEvidenceView"'));
+  assert.ok(at('INSERT INTO "RegularAbsenceEvidenceView"') < at("return new NextResponse(bytes"));
+  // 사유 글·파일 경로·내용은 기록하지 않는다
+  const insert = route.slice(at('INSERT INTO "RegularAbsenceEvidenceView"'), at("return new NextResponse(bytes"));
+  assert.doesNotMatch(insert, /reasonText|storagePath|bytes/);
+  // 90일 삭제는 사진 파일·사진 행 표시만 — 열람 기록은 건드리지 않는다
+  assert.doesNotMatch(read("src/lib/regular/illness-carry-cron.ts"), /RegularAbsenceEvidenceView/);
 });
 
 test("사진 올리기 거절 사유: 3장 참 · 7일 지남 · 처리 끝남", () => {

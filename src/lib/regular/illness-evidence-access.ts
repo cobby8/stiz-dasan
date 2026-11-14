@@ -13,12 +13,19 @@ export type EvidenceDb = {
   $executeRawUnsafe(sql: string, ...values: unknown[]): Promise<number>;
 };
 
+/** 결석 한 건의 사진 올리기를 줄 세우는 잠금(검토 줄 한 행). 반드시 거래 안에서, 장수를 세기 «전»에 따로 실행한다 */
+export const EVIDENCE_LOCK_SQL = `SELECT 1 AS locked FROM "RegularAbsenceCarryReview" WHERE "absenceId" = $1 FOR UPDATE`;
+
 export type EvidenceTarget = { absenceId: string; status: string; requestedYmd: string; todayYmd: string; photoCount: number };
 
 /** 학부모가 사진을 올리려는 결석 — 내 아이의 살아 있는 질병·부상 결석이고 검토 줄이 있을 때만 */
 export async function findEvidenceTargetForParent(
   db: EvidenceDb, accessSql: string, parentUserId: string, absenceId: string, lock = false,
 ): Promise<EvidenceTarget | null> {
+  // 잠금은 «따로 한 문장»으로 먼저 잡는다(보안 검수 2026-11-14).
+  // 잠금(FOR UPDATE)과 장수 세기(COUNT)가 한 문장이면, READ COMMITTED 에서 기다리던 쪽이 «기다리기 전»에 센 장수를
+  // 그대로 써서 동시에 올린 사진이 3장 제한을 넘는다. 잠금을 얻은 «뒤»의 새 문장은 앞 거래가 확정한 사진까지 센다.
+  if (lock) await db.$queryRawUnsafe(EVIDENCE_LOCK_SQL, absenceId);
   const rows = await db.$queryRawUnsafe<EvidenceTarget[]>(
     `SELECT ra.id AS "absenceId", r.status,
             to_char(r."requestedAt" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "requestedYmd",
@@ -29,7 +36,7 @@ export async function findEvidenceTargetForParent(
        JOIN "RegularAbsenceCarryReview" r ON r."absenceId" = ra.id
       WHERE ${accessSql} AND ${notMergedStudent("s")}
         AND ra.id = $2 AND ra.status <> 'CANCELLED' AND ra.reason = '${ILLNESS_REASON}'
-      LIMIT 1 ${lock ? "FOR UPDATE OF r" : ""}`,
+      LIMIT 1`,
     parentUserId, absenceId,
   );
   return rows[0] ? { ...rows[0], photoCount: Number(rows[0].photoCount) } : null;

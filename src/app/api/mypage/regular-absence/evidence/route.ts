@@ -10,6 +10,7 @@ import {
   encodeEvidencePhoto,
   ensureEvidenceBucket,
   EVIDENCE_ALLOWED_TYPES,
+  EVIDENCE_FORMAT_REJECTED,
   EVIDENCE_MAX_INPUT_BYTES,
   EVIDENCE_MAX_STORED_BYTES,
   EVIDENCE_RESPONSE_HEADERS,
@@ -74,8 +75,10 @@ export async function POST(request: NextRequest) {
     let encoded: Buffer;
     try {
       encoded = await encodeEvidencePhoto(Buffer.from(await file.arrayBuffer()));
-    } catch {
-      return json({ error: "사진을 읽지 못했어요. 다른 사진으로 다시 올려 주세요." }, 400);
+    } catch (error) {
+      // 실제 형식이 JPG·PNG·WebP 가 아니거나(형식 이름만 속인 파일) 깨진 사진 — 저장하지 않는다
+      const badFormat = error instanceof Error && error.message === EVIDENCE_FORMAT_REJECTED;
+      return json({ error: badFormat ? "사진은 JPG, PNG, WebP 만 올릴 수 있어요." : "사진을 읽지 못했어요. 다른 사진으로 다시 올려 주세요." }, 400);
     }
     if (encoded.byteLength > EVIDENCE_MAX_STORED_BYTES) return json({ error: "사진이 너무 커요. 다시 찍거나 다른 사진을 골라 주세요." }, 400);
 
