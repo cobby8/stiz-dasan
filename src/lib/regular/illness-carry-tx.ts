@@ -139,7 +139,7 @@ export async function isIllnessCreditHeld(
 
 export type ConvertOutcome =
   | { converted: true; studentId: string; classId: string; absenceYmd: string; creditIssued: boolean }
-  | { converted: false; reason: "NOT_FOUND" | "NOT_ILLNESS" | "DECIDED" | "CARRY" | "HAS_EVIDENCE" | "NOT_PENDING" };
+  | { converted: false; reason: "NOT_FOUND" | "NOT_ILLNESS" | "DECIDED" | "CARRY" | "HAS_EVIDENCE" | "NOT_PENDING" | "ATTENDED" };
 
 /**
  * 보강권으로 전환 — 원장이 [보강권으로]를 눌렀거나(ADMIN), 7일 안에 사진이 없었다(AUTO).
@@ -179,6 +179,25 @@ export async function convertIllnessToMakeupInTx(
       `SELECT COUNT(*)::int AS n FROM "RegularAbsenceEvidence" WHERE "absenceId" = $1 AND "removedAt" IS NULL`, input.absenceId,
     );
     if (Number(photos[0]?.n ?? 0) > 0) return { converted: false, reason: "HAS_EVIDENCE" };
+  }
+
+  // 그날 출석·지각으로 기록됐으면 실제로는 수업을 들었다 — 보강권을 주지 않는다.
+  // (예전에는 신고 때 나간 보강권을 출결 정정이 회수했다. 지금은 검토 중이라 회수할 보강권이 없으므로 여기서 막는다)
+  // Session."date" 는 무tz timestamp 에 KST 달력 자정을 담는다 — 변환 없이 글자 그대로 비교(absence-report-credit 과 같은 규칙)
+  const attended = await tx.$queryRawUnsafe<Array<{ found: number }>>(
+    `SELECT 1 AS found
+       FROM "Attendance" a
+       JOIN "Session" se ON se.id = a."sessionId"
+      WHERE a."studentId" = $1 AND se."classId" = $2
+        AND to_char(se."date", 'YYYY-MM-DD') = $3
+        AND a.status IN ('PRESENT', 'LATE')
+      LIMIT 1`,
+    absence.studentId, absence.classId, absence.absenceYmd,
+  );
+  if (attended.length > 0) {
+    // 자동 전환이면 검토를 닫아 매일 다시 후보로 잡히지 않게 한다. 원장이 누른 경우는 그대로 두고 이유를 알린다
+    if (input.by === "AUTO") await closeIllnessReviewInTx(tx, input.absenceId);
+    return { converted: false, reason: "ATTENDED" };
   }
 
   let creditIssued = false;

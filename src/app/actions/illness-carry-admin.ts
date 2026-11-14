@@ -79,6 +79,7 @@ export async function convertIllnessCarryAction(input: { absenceId: string }): P
         NOT_ILLNESS: "질병·부상 결석이 아닙니다.",
         DECIDED: "이미 처리가 끝난 결석입니다.",
         CARRY: "이미 이월로 정산된 결석입니다.",
+        ATTENDED: "그날 출석(지각)으로 기록돼 있어 보강권을 줄 수 없습니다. 출결을 확인하거나 결석 신고를 취소해 주세요.",
       };
       return { ok: false, message: why[outcome.reason] ?? "보강권으로 바꾸지 못했습니다." };
     }

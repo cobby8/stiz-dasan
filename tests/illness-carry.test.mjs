@@ -30,6 +30,7 @@ function fakeDb(init = {}) {
     evidence: [],   // { id, absenceId, storageBucket, storagePath, uploadedByUserId, removed, removedMinutes, purged }
     credits: [],    // { id, studentId, sourceKey, status, makeupSessionId, note }
     carried: [],    // 이월(CARRY)로 정산된 결석 id
+    attendance: [], // 출결 { studentId, classId, date, status }
     students: [{ id: "s1", parentId: "p1" }, { id: "s9", parentId: "p9" }],
     today: "2026-11-14",
     calls: [],
@@ -60,6 +61,13 @@ function fakeDb(init = {}) {
     }
     if (/SELECT COUNT\(\*\)::int AS n FROM "RegularAbsenceEvidence" WHERE "absenceId" = \$1 AND "removedAt" IS NULL/.test(sql)) {
       return [{ n: liveCount(v[0]) }];
+    }
+    // 그날 출석·지각으로 기록됐나 — Session.date 는 변환 없이 글자 그대로 비교한다
+    if (/FROM "Attendance" a\s+JOIN "Session" se ON se\.id = a\."sessionId"/.test(sql)) {
+      assert.match(sql, /to_char\(se\."date", 'YYYY-MM-DD'\) = \$3/);
+      assert.doesNotMatch(sql, /AT TIME ZONE/);
+      assert.match(sql, /a\.status IN \('PRESENT', 'LATE'\)/);
+      return db.attendance.filter((a) => a.studentId === v[0] && a.classId === v[1] && a.date === v[2] && ["PRESENT", "LATE"].includes(a.status)).map(() => ({ found: 1 }));
     }
     if (/INSERT INTO "MakeupCredit"/.test(sql)) {
       const found = db.credits.find((c) => c.studentId === v[0] && c.sourceKey === v[1]);
@@ -425,6 +433,31 @@ test("cron 자동 전환: 7일 지나 사진 없는 것만 — 마지막 날·�
   const again = await cron.autoConvertOverdueIllnessReviews(db, issuable);
   assert.equal(again.converted.length, 0);
   assert.equal(db.credits.length, 2);
+});
+
+test("그날 출석·지각으로 기록된 결석은 보강권을 주지 않는다 — 자동 전환은 검토를 닫고, 원장에게는 이유를 알린다", async () => {
+  const seed = (status) => fakeDb({
+    today: "2026-11-22", absences: [{ ...ABSENCE }], reviews: [pending({ requestedYmd: "2026-11-09" })],
+    attendance: [{ studentId: "s1", classId: "c1", date: "2026-11-09", status }],
+  });
+  for (const status of ["PRESENT", "LATE"]) {
+    const auto = seed(status);
+    const result = await cron.autoConvertOverdueIllnessReviews(auto, issuable);
+    assert.equal(result.converted.length, 0, status);
+    assert.equal(auto.credits.length, 0, "수업을 들었으니 보강권 없음");
+    assert.equal(auto.reviews[0].status, "CLOSED", "다음 날 다시 후보로 잡히지 않게 닫는다");
+
+    const admin = seed(status);
+    const out = await admin.$transaction((tx) => carryTx.convertIllnessToMakeupInTx(tx, { absenceId: "a1", by: "ADMIN", actorUserId: "admin1", issuable }));
+    assert.deepEqual(out, { converted: false, reason: "ATTENDED" });
+    assert.equal(admin.credits.length, 0);
+    assert.equal(admin.reviews[0].status, "PENDING", "원장이 누른 경우는 그대로 두고 이유를 알린다");
+  }
+  // 결석으로 기록된 날은 그대로 전환한다
+  const absent = seed("ABSENT");
+  assert.equal((await cron.autoConvertOverdueIllnessReviews(absent, issuable)).converted.length, 1);
+  assert.equal(absent.credits.length, 1);
+  assert.match(read("src/app/actions/illness-carry-admin.ts"), /ATTENDED: "그날 출석\(지각\)으로 기록돼 있어 보강권을 줄 수 없습니다\./);
 });
 
 test("cron 자동 전환: 후보를 읽은 뒤 학부모가 사진을 올렸으면 전환하지 않는다(잠근 뒤 다시 확인)", async () => {
