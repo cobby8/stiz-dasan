@@ -24,6 +24,13 @@ export const dynamic = "force-dynamic";
 export default async function RegularDispatchPage({ searchParams }: { searchParams: Promise<{ month?: string; studentId?: string; stopId?: string }> }) {
   // 레이아웃 검사만 믿지 않고 화면마다 관리자 확인(d3 — 레이아웃이 바뀌거나 우회돼도 데이터가 새지 않게)
   await requireAdmin();
+  const today = todayKst();
+  // 셔틀 당일 변경 목록은 명단과 상관없어 지금 함께 시작한다(2026-11-14 속도 개선 — 예전엔 맨 끝에 따로 기다렸다).
+  // 조회에 실패해도 운행표는 떠야 한다(빈 목록으로 두고 입력 버튼은 그대로 보인다)
+  const dayExceptionsPromise = getShuttleExceptionBoardForAdmin().catch((e) => {
+    console.error("[admin/shuttle/regular-dispatch] 셔틀 당일 변경 조회 실패", e);
+    return { today, maxDate: today, rows: [] };
+  });
   // 이번 달·다음 달 명단이 없으면 직전 달을 복사해 만든다. 실패해도 화면은 뜬다.
   try { await ensureRegularRosterMonths(); } catch (e) { console.error("[admin/shuttle/regular-dispatch] 명단 월 자동 생성 실패", e); }
   const months = await getRegularShuttleMonths();
@@ -51,7 +58,6 @@ export default async function RegularDispatchPage({ searchParams }: { searchPara
   const initialWeekday = target?.weekday ?? firstDay ?? 1;
   const totalStopCount = new Set(stops.map((s) => s.stopName).filter(Boolean)).size;
   // 뱃지 기준일: 이번 달이면 오늘, 앞으로의 달이면 그 달 1일, 지난 달이면 오늘(지금 상태). 실패해도 화면은 뜬다.
-  const today = todayKst();
   const refYmd = serviceMonth > today.slice(0, 7) ? `${serviceMonth}-01` : today;
   const marks = await getRegularRosterMonthMarks(
     stops.filter((s) => s.studentName && (s.direction === "BOARD" || s.direction === "ALIGHT")),
@@ -62,11 +68,8 @@ export default async function RegularDispatchPage({ searchParams }: { searchPara
     return { labelByRowId: {}, holidays: [] };
   });
 
-  // 셔틀 당일 변경 목록 — 조회에 실패해도 운행표는 떠야 한다(빈 목록으로 두고 입력 버튼은 그대로 보인다)
-  const dayExceptions = await getShuttleExceptionBoardForAdmin().catch((e) => {
-    console.error("[admin/shuttle/regular-dispatch] 셔틀 당일 변경 조회 실패", e);
-    return { today, maxDate: today, rows: [] };
-  });
+  // 셔틀 당일 변경 목록(위에서 미리 시작한 조회)
+  const dayExceptions = await dayExceptionsPromise;
 
   return (
     <>

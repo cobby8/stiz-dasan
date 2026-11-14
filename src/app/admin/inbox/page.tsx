@@ -59,11 +59,18 @@ export default async function AdminInboxPage({ searchParams }: { searchParams?: 
     const { kind, sub } = scope(tab);
     [counts, data] = await Promise.all([getInboxCounts(), loadTabData(tab, sub, kind, { from, to, showDone, role: admin.appUserRole })]);
   } else {
-    // 탭을 안 골랐으면 처리할 게 있는 첫 탭부터(없으면 체험) — 개수를 먼저 봐야 한다
-    counts = await getInboxCounts();
+    // 탭을 안 골랐으면 처리할 게 있는 첫 탭부터(없으면 체험) — 개수를 먼저 봐야 한다.
+    // 대부분 첫 탭(체험)으로 정해지므로, 개수를 세는 동안 체험 탭 자료를 미리 함께 읽어 둔다(2026-11-14 속도 개선).
+    // 다른 탭으로 정해지면 미리 읽은 값은 버리고 예전처럼 그 탭을 읽는다. 미리 읽기 실패는 무시한다(결과에 영향 없음).
+    const trialScope = scope("TRIAL");
+    const [countsRead, trialData] = await Promise.all([
+      getInboxCounts(),
+      loadTabData("TRIAL", trialScope.sub, trialScope.kind, { from, to, showDone, role: admin.appUserRole }).catch(() => null),
+    ]);
+    counts = countsRead;
     tab = INBOX_TABS.find((entry) => (counts?.byTab[entry.tab] ?? 0) > 0)?.tab ?? "TRIAL";
     const { kind, sub } = scope(tab);
-    data = await loadTabData(tab, sub, kind, { from, to, showDone, role: admin.appUserRole });
+    data = tab === "TRIAL" && trialData ? trialData : await loadTabData(tab, sub, kind, { from, to, showDone, role: admin.appUserRole });
   }
   const { kind, sub } = scope(tab);
 

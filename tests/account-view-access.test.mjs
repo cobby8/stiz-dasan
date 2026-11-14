@@ -22,6 +22,8 @@ function fixture({ role = 'ADMIN', account = null, signedOut = false, dbFailure 
   const queries = [];
   const access = load(accessSource, {
     '@/lib/account/child-access': loadChildAccess(),
+    // 요청 단위 기억(cache)은 서버 렌더 밖에선 매번 실행과 같다 — 테스트는 그 동작을 그대로 흉내 낸다(2026-11-14)
+    react: { cache: (fn) => fn },
     '@/lib/auth-guard': { requireAuth: async () => { if (signedOut) throw new Error('Signed out'); return { id: 'auth-owner' }; } },
     '@/lib/account-views': views,
     // 로그인 직후 목적지용 열린 화면 묶음을 계산한다(다중 역할, 2026-10-25). DB 없는 순수 모듈이라 원본 그대로.

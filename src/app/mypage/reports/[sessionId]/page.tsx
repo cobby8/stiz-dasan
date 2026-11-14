@@ -1,4 +1,3 @@
-import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { requireVerifiedParent } from "@/lib/auth-guard";
 import { notFound } from "next/navigation";
@@ -39,9 +38,9 @@ export default async function ParentReportDetailPage({
     const { sessionId } = await params;
 
     // ── 1. 로그인 확인 ──
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
+    // 로그인·학부모 확인은 레이아웃이 이미 한 확인을 그대로 쓴다(요청 단위 기억, 2026-11-14 속도 개선)
+    const parentAuth = await requireVerifiedParent().catch(() => null);
+    if (!parentAuth) {
         return (
             <div className="flex flex-col items-center justify-center py-20 text-center">
                 <h2 className="academy-heading mb-2">로그인이 필요합니다</h2>
@@ -56,7 +55,6 @@ export default async function ParentReportDetailPage({
     }
 
     // ── 2. 학부모 ID (인증 게이트가 검증한 appUserId) ──
-    const parentAuth = await requireVerifiedParent();
     const parentId = parentAuth.appUserId;
     if (!parentId) notFound();
 

@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { parseAppRole, type AppRole } from "@/lib/auth-routes";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
@@ -9,7 +10,10 @@ import { createClient } from "@/lib/supabase/server";
  * 사용하지 않는다. 인증 또는 DB 조회가 실패하면 로그인 버튼으로 안전하게
  * 축소되도록 null을 반환한다.
  */
-export async function getPublicAccountRole(): Promise<AppRole | null> {
+// 한 요청 안에서는 한 번만 조회한다(관리자·학부모 레이아웃의 메뉴 권한이 매 화면 부른다, 2026-11-14).
+export const getPublicAccountRole: () => Promise<AppRole | null> = cache(readPublicAccountRole);
+
+async function readPublicAccountRole(): Promise<AppRole | null> {
   try {
     const supabase = await createClient();
     const claimsResult = await supabase.auth.getClaims();
