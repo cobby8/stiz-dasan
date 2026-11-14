@@ -99,7 +99,8 @@ if (!process.execArgv.includes("--conditions=react-server")) {
             "@/lib/ui/statusTones": compile("src/lib/ui/statusTones.ts"),
             "@/lib/supabase/server": { createClient: async () => ({ auth: { getUser: async () => ({ data: { user: user ? { id: "auth-fixture" } : null } }) } }) },
             "@/lib/prisma": { prisma: fake.prisma },
-            "@/lib/auth-guard": { requireVerifiedParent: async () => ({ appUserId: parentId }) },
+            // 실제 가드처럼 로그인이 없으면 오류를 던진다(2026-11-14: 화면이 getUser 대신 이 가드 결과로 로그인 여부를 판단)
+            "@/lib/auth-guard": { requireVerifiedParent: async () => { if (!user) throw new Error("인증이 필요합니다."); return { appUserId: parentId }; } },
             "next/navigation": { notFound() { throw missing; } },
             "next/link": { default: ({ children, ...props }) => React.createElement("a", props, children), __esModule: true },
             "@/components/parent/FeedPhotoGallery": { default: Gallery, __esModule: true },

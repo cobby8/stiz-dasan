@@ -1176,33 +1176,41 @@ export async function getMyPageData(parentUserId: string) {
     try {
         await ensurePaymentInfrastructure();
         // 학부모 User 조회 (게이트가 검증한 부모 User.id로 직접 조회 — 이메일 매칭 제거)
-        const users = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT id, name, email, phone FROM "User" WHERE id = $1 LIMIT 1`,
-            parentUserId
-        );
-        if (!users[0]) return null;
-        const parent = users[0];
-
-        // 자녀 목록
-        const students = await prisma.$queryRawUnsafe<any[]>(
+        // 학부모와 자녀 목록은 서로 기다릴 이유가 없어 동시에 읽는다(2026-11-14 속도 개선).
+        // 자녀 조회는 부모 User.id(= parentUserId, 위 조회의 WHERE id 와 같은 값)를 그대로 쓴다.
+        const [payerSql, childSql] = await Promise.all([payerAccessSql("s", "$1"), childAccessSql("s", "$1")]);
+        const [users, students] = await Promise.all([
+            prisma.$queryRawUnsafe<any[]>(
+                `SELECT id, name, email, phone FROM "User" WHERE id = $1 LIMIT 1`,
+                parentUserId
+            ),
+            prisma.$queryRawUnsafe<any[]>(
             `SELECT id, name, "birthDate", gender, "parentId",
                     -- 프로필 사진을 바꾼 시각(사진이 있을 때만) — 화면이 사진 주소의 캐시 버전으로 쓴다(2026-11-15)
                     ${profilePhotoUpdatedAtSql("s")} AS "photoUpdatedAt",
                     -- 결제 권한(대표 보호자 + 승인된 가족, payerAccess 한 곳 — 2026-11-13 f8)
-                    (${await payerAccessSql("s", "$1")}) AS "canPay"
+                    (${payerSql}) AS "canPay"
                FROM "Student" s
-             WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")}
+             WHERE ${childSql} AND ${notMergedStudent("s")}
              ORDER BY s."createdAt" ASC`,
-            parent.id
-        );
+                parentUserId
+            ),
+        ]);
+        if (!users[0]) return null;
+        const parent = users[0];
 
         // 각 자녀별 수강/출결/수납 정보
         const children = await Promise.all(
             students.map(async (s: any) => {
                 const studentId = s.id;
 
+                // 이번 달 출결 — «이번 달»은 KST 달력 기준(서버는 UTC 라 getFullYear/getMonth 를 쓰면 매달 1일 00~09시에 지난달이 된다)
+                const monthStart = `${todayKst().slice(0, 7)}-01`;
+                // 아이 한 명의 네 가지 조회(수강 반·복귀 예정 반·이번 달 출결·최근 수납)는 서로 기다릴 이유가 없어
+                // 동시에 읽는다(2026-11-14 속도 개선 — 예전엔 줄 세워 4번 왕복). 쿼리·결과는 그대로다.
+                const [enrollments, resumingRows, attendances, payments] = await Promise.all([
                 // 수강 중인 반
-                const enrollments = await prisma.$queryRawUnsafe<any[]>(
+                prisma.$queryRawUnsafe<any[]>(
                     `SELECT e.id, e."classId", e.status, e."startsOn", c.name AS class_name, c."dayOfWeek", c."startTime", c."endTime",
                             p.name AS program_name
                      FROM "Enrollment" e
@@ -1210,13 +1218,13 @@ export async function getMyPageData(parentUserId: string) {
                      LEFT JOIN "Program" p ON c."programId" = p.id
                      WHERE e."studentId" = $1 AND e.status = 'ACTIVE'`,
                     studentId
-                );
+                ),
 
                 // 복귀 예정 반(2026-11-14 홈·달력) — 휴원 중이지만 복귀가 승인돼 아직 반영 전인 반.
                 // ★ 위 enrollments(수강 중 = ACTIVE 만)에는 섞지 않는다 — 결제·수강 변경·특강이 그 뜻에 기댄다. 홈·달력만 이 칸을 읽는다.
                 // 판정은 공용 조각(resumeWindow) 그대로: 승인·미반영·크론 미처리·복귀일이 오늘(KST) 이후.
                 // 소유 조건은 위와 같다(studentId 는 childAccessSql·병합 제외를 통과한 자녀 목록에서 온 값). 실패해도 홈은 열리게 빈 목록.
-                const resumingRows = await prisma.$queryRawUnsafe<any[]>(
+                prisma.$queryRawUnsafe<any[]>(
                     `SELECT e.id, e."classId", e."startsOn", c.name AS class_name, c."dayOfWeek", c."startTime", c."endTime",
                             p.name AS program_name, ${resumeFromSql("e")} AS "resumeFrom"
                      FROM "Enrollment" e
@@ -1224,7 +1232,34 @@ export async function getMyPageData(parentUserId: string) {
                      LEFT JOIN "Program" p ON c."programId" = p.id
                      WHERE e."studentId" = $1 AND e.status = 'PAUSED' AND ${parentUsableEnrollmentSql("e")}`,
                     studentId
-                ).catch(() => [] as any[]);
+                ).catch(() => [] as any[]),
+
+                // 이번 달 출결
+                prisma.$queryRawUnsafe<any[]>(
+                    `SELECT a.status, se.date
+                     FROM "Attendance" a
+                     JOIN "Session" se ON a."sessionId" = se.id
+                     WHERE a."studentId" = $1 AND se.date >= $2::timestamp
+                     ORDER BY se.date DESC`,
+                    studentId, monthStart
+                ),
+
+                // 최근 수납
+                prisma.$queryRawUnsafe<any[]>(
+                    `SELECT p.id, p.amount, p.status, p."dueDate", p."paidDate",
+                            p.type, p.description, p.method, p."receiptUrl",
+                            i.id AS invoice_id, i."invoiceNo", i.status AS invoice_status,
+                            i."checkoutUrl" AS invoice_checkout_url,
+                            va.status AS va_status, va.issue AS va_issue
+                     FROM "Payment" p
+                     LEFT JOIN "PaymentInvoice" i ON i."paymentId" = p.id
+                     ${PARENT_VIRTUAL_ACCOUNT_LATERAL}
+                     WHERE p."studentId" = $1
+                     ORDER BY p."dueDate" DESC LIMIT 5`,
+                    studentId
+                ),
+                ]);
+
                 const resumingEnrollments = resumingRows
                     .map((e: any) => {
                         const resumeFrom = String(e.resumeFrom ?? e.resumefrom ?? "");
@@ -1243,32 +1278,6 @@ export async function getMyPageData(parentUserId: string) {
                     })
                     // 복귀일이 날짜 형식이 아니면 버린다(shortMd 가 빈 글자를 준다 — 추측해서 그럴듯한 날짜를 만들지 않는다)
                     .filter((e) => e.resumeFromLabel !== "");
-
-                // 이번 달 출결 — «이번 달»은 KST 달력 기준(서버는 UTC 라 getFullYear/getMonth 를 쓰면 매달 1일 00~09시에 지난달이 된다)
-                const monthStart = `${todayKst().slice(0, 7)}-01`;
-                const attendances = await prisma.$queryRawUnsafe<any[]>(
-                    `SELECT a.status, se.date
-                     FROM "Attendance" a
-                     JOIN "Session" se ON a."sessionId" = se.id
-                     WHERE a."studentId" = $1 AND se.date >= $2::timestamp
-                     ORDER BY se.date DESC`,
-                    studentId, monthStart
-                );
-
-                // 최근 수납
-                const payments = await prisma.$queryRawUnsafe<any[]>(
-                    `SELECT p.id, p.amount, p.status, p."dueDate", p."paidDate",
-                            p.type, p.description, p.method, p."receiptUrl",
-                            i.id AS invoice_id, i."invoiceNo", i.status AS invoice_status,
-                            i."checkoutUrl" AS invoice_checkout_url,
-                            va.status AS va_status, va.issue AS va_issue
-                     FROM "Payment" p
-                     LEFT JOIN "PaymentInvoice" i ON i."paymentId" = p.id
-                     ${PARENT_VIRTUAL_ACCOUNT_LATERAL}
-                     WHERE p."studentId" = $1
-                     ORDER BY p."dueDate" DESC LIMIT 5`,
-                    studentId
-                );
 
                 return {
                     id: studentId,
@@ -2159,11 +2168,14 @@ export async function getStudentActivity(studentId: string) {
         ]);
 
         const stats = attStats[0] || {};
-        // POS 요청 묶임(수납 목록과 같은 함수) — 실패하면 빈 정보라 화면은 그대로, 수정은 서버가 다시 막는다
-        const posInfo = await getPaymentPosInfo(payments.map((p: any) => String(p.id)));
-        // 학부모 결제 진행 중(30분 안 결제창·기한 남은 입금 계좌) — 수정 서버와 같은 함수. 실패하면 빈 값(서버가 다시 막는다)
-        const checkoutActiveIds = await findParentCheckoutActivePaymentIds(prisma, payments.map((p: any) => String(p.id)), Date.now())
-            .catch((e) => { console.warn("[getStudentActivity] 결제 진행 조회 실패(화면은 그대로):", (e as Error).message); return new Set<string>(); });
+        // 아래 두 조회는 서로 기다릴 이유가 없어 동시에 읽는다(2026-11-14 속도 개선, 함수·결과는 그대로).
+        const [posInfo, checkoutActiveIds] = await Promise.all([
+            // POS 요청 묶임(수납 목록과 같은 함수) — 실패하면 빈 정보라 화면은 그대로, 수정은 서버가 다시 막는다
+            getPaymentPosInfo(payments.map((p: any) => String(p.id))),
+            // 학부모 결제 진행 중(30분 안 결제창·기한 남은 입금 계좌) — 수정 서버와 같은 함수. 실패하면 빈 값(서버가 다시 막는다)
+            findParentCheckoutActivePaymentIds(prisma, payments.map((p: any) => String(p.id)), Date.now())
+                .catch((e) => { console.warn("[getStudentActivity] 결제 진행 조회 실패(화면은 그대로):", (e as Error).message); return new Set<string>(); }),
+        ]);
         return {
             student: {
                 id: r.id,
