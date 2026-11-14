@@ -159,7 +159,7 @@ export async function findLinkedAppUserId(authUserId: string): Promise<string | 
  * - 미인증이면 에러를 던진다
  * - 로그인된 사용자의 Supabase user 객체를 반환
  */
-export async function requireAuth() {
+async function requireAuthUncached() {
   const supabase = await createClient();
 
   const claimsResult = await supabase.auth.getClaims();
@@ -206,6 +206,22 @@ export async function requireAuth() {
   return userFromSupabaseUser(user);
 }
 
+/**
+ * 한 요청 안에서는 로그인 확인(토큰 확인 + 탈퇴 여부 조회)을 한 번만 한다(2026-11-14 속도 개선).
+ * 관리자·학부모 화면은 레이아웃·메뉴 권한·화면·읽기 함수가 각각 requireAuth 를 불러,
+ * 감싸지 않으면 한 화면에 같은 확인과 DB 조회가 3~4번 나갔다. React cache() 는 «요청 단위» 기억이라
+ * 다른 사람·다음 요청에는 섞이지 않는다. 서버 컴포넌트 렌더 밖(라우트 핸들러·서버 액션)에서는
+ * 기억하지 않고 매번 확인한다.
+ * 받는 쪽(requireAdmin 등)이 결과에 Object.assign 으로 칸을 덧붙이므로, 기억한 원본이 바뀌지 않게
+ * 부를 때마다 얕은 복사본을 돌려준다.
+ */
+const requireAuthCached = cache(requireAuthUncached);
+
+export async function requireAuth(): Promise<AuthUser> {
+  const user = await requireAuthCached();
+  return { ...user };
+}
+
 export type VerifiedParentAuthUser = Awaited<ReturnType<typeof requireAuth>> & {
   appUserId: string;
   appUserName: string;
@@ -239,7 +255,15 @@ export type VerifiedParentState =
  * requireVerifiedParent 와 같은 판정을 하되, 거절 사유를 오류 대신 상태로 돌려준다.
  * 카카오 연결 화면처럼 "왜 안 되는지"를 쉬운 말로 안내해야 하는 곳에서 쓴다.
  */
+/** 학부모 확인도 요청당 한 번(레이아웃·화면이 각각 부른다). 원본이 바뀌지 않게 복사본을 돌려준다. */
+const getVerifiedParentStateCached = cache(getVerifiedParentStateUncached);
+
 export async function getVerifiedParentState(): Promise<VerifiedParentState> {
+  const state = await getVerifiedParentStateCached();
+  return state.status === "OK" ? { status: "OK", parent: { ...state.parent } } : state;
+}
+
+async function getVerifiedParentStateUncached(): Promise<VerifiedParentState> {
   let user: Awaited<ReturnType<typeof requireAuth>>;
   try {
     user = await requireAuth();
