@@ -46,6 +46,8 @@ export type ChildEditInfo = {
   healthAvailable: boolean;
   healthNote: string | null;
   phone: string | null;
+  /** 학생 전화를 바꿀 수 있는가 — 대표 보호자만(연결 가족은 읽기 전용) */
+  canEditPhone: boolean;
   address: string | null;
   /** 변경 신청 표가 있는 환경인가(없으면 «변경 신청» 버튼을 숨긴다) */
   requestsAvailable: boolean;
@@ -78,8 +80,8 @@ const REQUEST_COLUMNS = `r.id, r.field, r."oldValue", r."newValue", r.status, r.
 export async function loadChildEditInfo(db: Pick<Db, "$queryRawUnsafe">, userId: string, studentId: string): Promise<ChildEditInfo | null> {
   if (!userId || !studentId) return null;
   const access = await childAccessSql("s", "$1");
-  const base = await db.$queryRawUnsafe<Array<{ phone: string | null; address: string | null }>>(
-    `SELECT s.phone, s.address FROM "Student" s WHERE s.id = $2 AND ${access} AND ${notMergedStudent("s")} LIMIT 1`,
+  const base = await db.$queryRawUnsafe<Array<{ phone: string | null; address: string | null; isRep: boolean }>>(
+    `SELECT s.phone, s.address, (s."parentId" = $1) AS "isRep" FROM "Student" s WHERE s.id = $2 AND ${access} AND ${notMergedStudent("s")} LIMIT 1`,
     userId,
     studentId,
   );
@@ -116,32 +118,52 @@ export async function loadChildEditInfo(db: Pick<Db, "$queryRawUnsafe">, userId:
   } catch {
     requestsAvailable = false;
   }
-  return { healthAvailable, healthNote, phone: base[0].phone ?? null, address: base[0].address ?? null, requestsAvailable, requests };
+  return { healthAvailable, healthNote, phone: base[0].phone ?? null, canEditPhone: base[0].isRep === true, address: base[0].address ?? null, requestsAvailable, requests };
 }
 
 export type SaveDirectResult =
-  | { ok: true; healthSaved: boolean }
+  /** healthSaved: true 저장됨 · false 저장 실패(칸 없음) · null 보내지 않아 건드리지 않음 */
+  | { ok: true; healthSaved: boolean | null }
   | { ok: false; error: string };
 
 /**
  * «바로 반영» — 학교·학생 전화·주소(+건강 특이사항). 권한 조건이 UPDATE 문 안에 있다.
- * 건강 특이사항은 칸이 없는 환경에서 나머지 저장까지 막지 않게 따로 저장한다(healthSaved=false).
+ * 건강 특이사항은 칸이 없는 환경에서 나머지 저장까지 막지 않게 따로 저장한다(healthSaved=false). 화면이 그 칸을 보내지 않았으면 묻지도 않는다.
+ * 학생 전화는 대표 보호자만 바꾼다 — 값이 그대로면 건드리지 않고, 바꿀 때는 UPDATE 문에 «대표 보호자» 조건을 한 번 더 건다.
  */
 export async function saveChildDirect(db: Db, userId: string, studentId: string, input: unknown): Promise<SaveDirectResult> {
   if (!userId || !studentId) return { ok: false, error: "아이 정보를 찾지 못했어요." };
-  const clean = cleanChildDirect(input);
-  if (!clean.ok) return clean;
   const access = await childAccessSql("s", "$1");
   const where = `s.id = $2 AND ${access} AND ${notMergedStudent("s")}`;
-  const updated = await db.$executeRawUnsafe(
-    `UPDATE "Student" AS s SET school = $3, phone = $4, address = $5, "updatedAt" = NOW() WHERE ${where}`,
+  // 지금 학생 전화와 «대표 보호자인가» — 권한 조건을 같이 건다(남의 아이면 0행)
+  const current = await db.$queryRawUnsafe<Array<{ phone: string | null; isRep: boolean }>>(
+    `SELECT s.phone, (s."parentId" = $1) AS "isRep" FROM "Student" s WHERE ${where} LIMIT 1`,
     userId,
     studentId,
-    clean.value.school,
-    clean.value.phone,
-    clean.value.address,
   );
+  if (!current[0]) return { ok: false, error: "아이 정보를 찾지 못했어요." };
+  const clean = cleanChildDirect(input, { currentPhone: current[0].phone, canEditPhone: current[0].isRep === true });
+  if (!clean.ok) return clean;
+  const updated = clean.value.phone === undefined
+    ? await db.$executeRawUnsafe(
+        `UPDATE "Student" AS s SET school = $3, address = $4, "updatedAt" = NOW() WHERE ${where}`,
+        userId,
+        studentId,
+        clean.value.school,
+        clean.value.address,
+      )
+    : await db.$executeRawUnsafe(
+        // 학생 전화까지 바꾸는 문 — 대표 보호자 조건을 SQL 안에서 다시 확인한다
+        `UPDATE "Student" AS s SET school = $3, address = $4, phone = $5, "updatedAt" = NOW() WHERE ${where} AND s."parentId" = $1`,
+        userId,
+        studentId,
+        clean.value.school,
+        clean.value.address,
+        clean.value.phone,
+      );
   if (updated !== 1) return { ok: false, error: "아이 정보를 찾지 못했어요." };
+  // 건강 칸을 보내지 않았으면(칸이 없는 환경의 화면) 둘째 UPDATE 를 하지 않는다
+  if (clean.value.healthNote === undefined) return { ok: true, healthSaved: null };
   let healthSaved = true;
   try {
     const count = await db.$executeRawUnsafe(

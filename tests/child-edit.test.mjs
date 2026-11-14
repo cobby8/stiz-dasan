@@ -53,7 +53,15 @@ const grade = load("src/lib/makeup/student-grade.ts");
 test("① 바로 반영 네 칸: 정리·전화 형식·300자", () => {
   const ok = rules.cleanChildDirect({ school: "  다산\n초등학교 ", phone: "010-1234-5678", address: " 다산로 1 ", healthNote: " 천식\r\n\r\n\r\n견과류 알레르기 " });
   assert.deepEqual(ok, { ok: true, value: { school: "다산 초등학교", phone: "01012345678", address: "다산로 1", healthNote: "천식\n견과류 알레르기" } });
-  assert.deepEqual(rules.cleanChildDirect({}).value, { school: null, phone: null, address: null, healthNote: null }, "비우면 null");
+  assert.deepEqual(rules.cleanChildDirect({ healthNote: "" }).value, { school: null, phone: undefined, address: null, healthNote: null }, "비우면 null · 전화는 그대로(변경 없음)");
+  // 건강 칸을 보내지 않으면 건드리지 않는다(칸이 없는 환경의 화면)
+  assert.equal(rules.cleanChildDirect({ school: "A" }).value.healthNote, undefined);
+  // 값이 그대로인 학생 전화는 형식 검증을 건너뛴다 — 관리자가 넣은 유선 번호가 있어도 다른 칸을 저장할 수 있다
+  assert.deepEqual(rules.cleanChildDirect({ school: "A", phone: "031-123-4567" }, { currentPhone: "0311234567" }).value, { school: "A", phone: undefined, address: null, healthNote: undefined });
+  assert.equal(rules.cleanChildDirect({ phone: "" }, { currentPhone: "010-1234-5678" }).value.phone, null, "지우는 것은 변경");
+  // 학생 전화를 바꾸는 것은 대표 보호자만
+  assert.deepEqual(rules.cleanChildDirect({ phone: "010-9999-8888" }, { currentPhone: null, canEditPhone: false }), { ok: false, error: rules.PHONE_REPRESENTATIVE_ONLY });
+  assert.equal(rules.cleanChildDirect({ phone: "010-1234-5678" }, { currentPhone: "01012345678", canEditPhone: false }).ok, true, "그대로면 연결 가족도 저장 가능");
   assert.equal(rules.cleanChildDirect({ phone: "031-123-4567" }).ok, false, "학생 전화는 휴대폰만");
   assert.equal(rules.cleanChildDirect({ phone: "0101234" }).ok, false);
   assert.equal(rules.cleanChildDirect({ healthNote: "가".repeat(300) }).ok, true, "300자까지");
@@ -122,6 +130,7 @@ function world() {
     students: { kid: { name: "홍길동", birthYmd: "2015-05-01", school: "다산초", phone: null, address: null, healthNote: null } },
     // 이 아이에 접근할 수 있는 보호자: 엄마(대표)·아빠(연결 가족)
     access: { kid: ["mom", "dad"] },
+    representative: { kid: "mom" },
     requests: [],
     healthColumn: true,
     requestTable: true,
@@ -137,7 +146,8 @@ function world() {
     async $queryRawUnsafe(sql, ...v) {
       calls.push({ kind: "query", sql, v });
       guard(sql);
-      if (/^SELECT s\.phone, s\.address FROM "Student" s/.test(sql)) return can(v[0], v[1]) ? [{ phone: state.students[v[1]].phone, address: state.students[v[1]].address }] : [];
+      if (/^SELECT s\.phone, s\.address, \(s\."parentId" = \$1\) AS "isRep" FROM "Student" s/.test(sql)) return can(v[0], v[1]) ? [{ phone: state.students[v[1]].phone, address: state.students[v[1]].address, isRep: state.representative[v[1]] === v[0] }] : [];
+      if (/^SELECT s\.phone, \(s\."parentId" = \$1\) AS "isRep" FROM "Student" s/.test(sql)) return can(v[0], v[1]) ? [{ phone: state.students[v[1]].phone, isRep: state.representative[v[1]] === v[0] }] : [];
       if (/^SELECT s\."healthNote" FROM "Student" s/.test(sql)) return can(v[0], v[1]) ? [{ healthNote: state.students[v[1]].healthNote }] : [];
       if (/^SELECT s\.name, to_char/.test(sql)) return can(v[0], v[1]) ? [{ name: state.students[v[1]].name, birthYmd: state.students[v[1]].birthYmd }] : [];
       if (/^INSERT INTO "StudentProfileChangeRequest"/.test(sql)) {
@@ -163,9 +173,15 @@ function world() {
     async $executeRawUnsafe(sql, ...v) {
       calls.push({ kind: "write", sql, v });
       guard(sql);
-      if (/^UPDATE "Student" AS s SET school = \$3, phone = \$4, address = \$5/.test(sql)) {
+      if (/^UPDATE "Student" AS s SET school = \$3, address = \$4, "updatedAt"/.test(sql)) {
         if (!can(v[0], v[1])) return 0;
-        Object.assign(state.students[v[1]], { school: v[2], phone: v[3], address: v[4] });
+        Object.assign(state.students[v[1]], { school: v[2], address: v[3] });
+        return 1;
+      }
+      if (/^UPDATE "Student" AS s SET school = \$3, address = \$4, phone = \$5/.test(sql)) {
+        // 학생 전화까지 바꾸는 문은 대표 보호자만 통과한다
+        if (!can(v[0], v[1]) || state.representative[v[1]] !== v[0] || !/AND s\."parentId" = \$1$/.test(sql)) return 0;
+        Object.assign(state.students[v[1]], { school: v[2], address: v[3], phone: v[4] });
         return 1;
       }
       if (/^UPDATE "Student" AS s SET "healthNote" = \$3/.test(sql)) {
@@ -201,9 +217,19 @@ test("③ 바로 반영: 대표·연결 가족은 저장, 남의 가정은 0건 
   const input = { school: "새초등학교", phone: "010-2222-3333", address: "다산로 2", healthNote: "천식" };
   assert.deepEqual(await edit.saveChildDirect(w.db, "mom", "kid", input), { ok: true, healthSaved: true });
   assert.deepEqual(w.state.students.kid, { name: "홍길동", birthYmd: "2015-05-01", school: "새초등학교", phone: "01022223333", address: "다산로 2", healthNote: "천식" });
-  // 연결 가족(아빠)도 가능
+  // 연결 가족(아빠)도 가능 — 학생 전화가 그대로면 전화 칸은 SQL 에 없다
+  const mark = w.calls.length;
   assert.equal((await edit.saveChildDirect(w.db, "dad", "kid", { ...input, school: "아빠가 고침" })).ok, true);
   assert.equal(w.state.students.kid.school, "아빠가 고침");
+  assert.ok(!w.calls.slice(mark).some((c) => c.kind === "write" && /phone = /.test(c.sql)), "변경 없는 전화는 건드리지 않는다");
+  // 연결 가족은 학생 전화를 못 바꾼다(성인 본인 연결의 확인 번호) — 다른 칸도 저장되지 않는다
+  const snapshot = JSON.stringify(w.state.students.kid);
+  assert.deepEqual(await edit.saveChildDirect(w.db, "dad", "kid", { ...input, phone: "010-9999-8888", school: "몰래" }), { ok: false, error: rules.PHONE_REPRESENTATIVE_ONLY });
+  assert.equal(JSON.stringify(w.state.students.kid), snapshot);
+  assert.equal((await edit.loadChildEditInfo(w.db, "dad", "kid")).canEditPhone, false);
+  assert.equal((await edit.loadChildEditInfo(w.db, "mom", "kid")).canEditPhone, true);
+  // 대표 보호자가 전화를 바꾸는 UPDATE 는 대표 조건을 SQL 안에서 다시 건다
+  assert.match(read("src/lib/parent/childEdit.ts"), /phone = \$5, "updatedAt" = NOW\(\) WHERE \$\{where\} AND s\."parentId" = \$1/);
   // 남의 가정
   const before = JSON.stringify(w.state.students.kid);
   assert.deepEqual(await edit.saveChildDirect(w.db, "stranger", "kid", { ...input, school: "해킹" }), { ok: false, error: "아이 정보를 찾지 못했어요." });
@@ -215,10 +241,10 @@ test("③ 바로 반영: 대표·연결 가족은 저장, 남의 가정은 0건 
     const set = call.sql.slice(call.sql.indexOf("SET"), call.sql.indexOf("WHERE"));
     assert.doesNotMatch(set, /\bname\b|birthDate|\bmemo\b|\bgrade\b|parentId|enrollDate|gender/, set);
   }
-  // 잘못된 입력은 DB 에 가지 않는다
-  const count = w.calls.length;
+  // 잘못된 입력은 쓰지 않는다(지금 값 조회 한 번만 하고 끝)
+  const count = w.writes().length;
   assert.equal((await edit.saveChildDirect(w.db, "mom", "kid", { healthNote: "가".repeat(301) })).ok, false);
-  assert.equal(w.calls.length, count);
+  assert.equal(w.writes().length, count);
 });
 
 test("③ 변경 신청: Student 는 그대로, 신청만 남는다 · 항목당 확인 중 하나 · 남의 아이 불가 · 취소", async () => {
@@ -256,7 +282,13 @@ test("③ 새 칸·새 표가 없는 환경에서도 죽지 않는다", async ()
   w.state.healthColumn = false;
   w.state.requestTable = false;
   const info = await edit.loadChildEditInfo(w.db, "mom", "kid");
-  assert.deepEqual(info, { healthAvailable: false, healthNote: null, phone: null, address: null, requestsAvailable: false, requests: [] });
+  assert.deepEqual(info, { healthAvailable: false, healthNote: null, phone: null, canEditPhone: true, address: null, requestsAvailable: false, requests: [] });
+  // 화면은 건강 칸을 보내지 않는다 → 둘째 UPDATE 도, «아직 저장할 수 없어요» 안내도 없다
+  const before = w.calls.length;
+  assert.deepEqual(await edit.saveChildDirect(w.db, "mom", "kid", { school: "첫학교" }), { ok: true, healthSaved: null });
+  assert.ok(!w.calls.slice(before).some((c) => c.sql.includes('"healthNote"')), "건강 칸을 묻지 않는다");
+  assert.match(read("src/app/actions/child-edit.ts"), /saved\.healthSaved !== false \? \{ ok: true \}/);
+  assert.match(read("src/app/mypage/record/ChildInfoEditSheet.tsx"), /edit\.healthAvailable \? form : \{ school: form\.school, phone: form\.phone, address: form\.address \}/);
   // 건강 칸이 없어도 학교·전화·주소는 저장된다
   assert.deepEqual(await edit.saveChildDirect(w.db, "mom", "kid", { school: "새학교", healthNote: "천식" }), { ok: true, healthSaved: false });
   assert.equal(w.state.students.kid.school, "새학교");
@@ -322,6 +354,8 @@ test("⑤ 연결된 가족: 대표 보호자만 끊는다 · 전화번호는 고
       calls.push({ sql, v });
       // 학생의 parentId 가 로그인 사용자일 때만 한 줄
       if (/s\."parentId" = \$2/.test(sql)) return v[1] === representative ? [{ id: v[0] }] : [];
+      // 끊을 연결 행 — 대표 자신의 행(acc-self)은 "userId" <> 대표 조건에 걸려 0행
+      if (/FROM "ParentStudentAccess" a\s+WHERE a\.id = \$1 AND a\."studentId" = \$2 AND a\.status = 'ACTIVE' AND a\."userId" <> \$3/.test(sql)) return v[0] === "acc-self" ? [] : [{ id: v[0] }];
       throw new Error(`예상하지 못한 조회: ${sql}`);
     },
   });
@@ -331,6 +365,9 @@ test("⑤ 연결된 가족: 대표 보호자만 끊는다 · 전화번호는 고
   assert.equal(await family.revokeFamilyAsRepresentative(tx("mom"), "mom", "kid", "acc1"), true);
   assert.deepEqual(revoked, [["kid", "acc1"]], "해제는 관리자 화면과 같은 함수로");
   assert.equal(await family.revokeFamilyAsRepresentative(tx("mom"), "mom", "kid", ""), false);
+  // 대표 보호자 자기 자신의 연결 행은 끊지 않는다
+  assert.equal(await family.revokeFamilyAsRepresentative(tx("mom"), "mom", "kid", "acc-self"), false);
+  assert.deepEqual(revoked, [["kid", "acc1"]]);
   assert.match(calls[0].sql, /FOR UPDATE/);
 
   // 목록 — 대표에게만 accessId, 전화 칸은 SELECT 에 없다
@@ -376,6 +413,16 @@ test("⑥ 연락처 판정: 이름 다름·중복 번호 거절, 같은 번호�
   assert.equal(phoneChangeOutcome({ ...base, verifiedPhone: "0311234567" }).ok, false);
   assert.equal(phoneChangeOutcome({ ...base, verifiedName: "" }).ok, false);
   assert.equal(PHONE_CHANGE_ID_PREFIX, "stizphone_");
+  // 인증 전에 미리 알리는 판정 — 실명 모양이 아니면 false
+  const { looksLikeLegalName, PHONE_NAME_MISMATCH_MESSAGE } = load("src/lib/account/phone-change-rules.ts");
+  for (const name of ["김엄마수", "홍길동", "남궁민수", "Kim Minsu"]) assert.equal(looksLikeLegalName(name), true, name);
+  for (const name of ["민준맘", "홍길동 어머니", "민준엄마", "김", "", null, "민준이네 집 1"]) assert.equal(looksLikeLegalName(name), false, String(name));
+  assert.equal(mismatch.error, PHONE_NAME_MISMATCH_MESSAGE);
+  const button = read("src/components/account/PhoneChangeButton.tsx");
+  assert.ok(button.includes('error === PHONE_NAME_MISMATCH_MESSAGE && !onSettingsPage'));
+  assert.equal((button.match(/href="\/mypage\/settings"[^>]*>이름 고치러 가기<\/Link>/g) ?? []).length, 2, "미리 안내·오류 옆 두 곳");
+  assert.match(button, /\{!nameLooksOk && !error && !notice && \(/);
+  assert.match(button, /계정 이름이 본인인증 이름과 같아야 해요\./);
 });
 
 /** confirmPhoneChange 를 가짜 포트원·가짜 DB 로 실행한다 */
@@ -389,6 +436,7 @@ function phoneWorld({ available = true, challenge = true, portone = {}, me = { n
       if (/^UPDATE "ChildIdentityChallenge" SET "verifyAttempts"/.test(sql)) return challenge ? [{ id: v[0], createdAt }] : [];
       if (/^SELECT name, phone FROM "User"/.test(sql)) return [me];
       if (/^SELECT id FROM "User"/.test(sql)) return taken ? [{ id: "other" }] : [];
+      if (/^SELECT s\.id FROM "Student" s WHERE s\."parentId"=\$1/.test(sql)) return [{ id: "kid" }];
       throw new Error(`예상하지 못한 조회: ${sql}`);
     },
     async $executeRawUnsafe(sql, ...v) {
@@ -453,7 +501,7 @@ test("⑥ 이름 다름·중복 번호는 거절, 통과하면 인증된 번호�
   assert.equal(taken.userUpdates().length, 0);
 
   const ok = phoneWorld();
-  assert.deepEqual(await ok.mod.confirmPhoneChange(actor, "sess", ok.id), { ok: true, changed: true });
+  assert.deepEqual(await ok.mod.confirmPhoneChange(actor, "sess", ok.id), { ok: true, changed: true, notify: { accountName: "김 엄마", newLast4: "4444", studentId: "kid" } });
   const update = ok.userUpdates();
   assert.equal(update.length, 1);
   assert.deepEqual(update[0].v, ["01033334444", "mom"], "화면 값이 아니라 포트원이 확인한 번호 · 로그인한 본인만");
@@ -467,13 +515,32 @@ test("⑥ 이름 다름·중복 번호는 거절, 통과하면 인증된 번호�
   assert.deepEqual(consume.v.slice(0, 3), [ok.id, "mom", "sess"]);
   // 보호자 연락처(Guardian) 는 «옛 내 번호» 줄 + «내 아이» 범위에서만
   const guardian = ok.calls.find((c) => /^UPDATE "Guardian"/.test(c.sql));
-  assert.deepEqual(guardian.v, ["01033334444", "01011112222", "mom"]);
+  assert.deepEqual(guardian.v, ["01033334444", "01011112222", "mom", "김엄마"]);
+  // «이름+번호» 기준(자녀 자동 연결과 같은 식) — 같은 옛 번호를 적어 둔 배우자 줄은 이름이 달라 덮지 않는다
+  const NAME_SQL = "regexp_replace(lower(normalize(g.name,NFC)), '\\s','','g')";
+  assert.ok(guardian.sql.includes(NAME_SQL + "=$4"), "이름 조건 — 공백 정규화(역슬래시 s)가 그대로 DB 에 간다");
+  // 자동 연결 규칙(child-links)을 실제로 올려 같은 식을 쓰는지 본다
+  assert.ok(read("src/lib/account/child-links.ts").includes("regexp_replace(lower(normalize(g.name,NFC)), '\\\\s','','g')=$1"), "자동 연결 규칙과 같은 식");
+  // 이력: 감사 기록에 끝 4자리만(번호 원문 없음) · 계정 id
+  const audit = ok.calls.find((c) => /^INSERT INTO "OperationsAuditLog"/.test(c.sql));
+  assert.match(audit.sql, /'PARENT_PHONE_CHANGED', 'PARENT', \$1, \$2::jsonb/);
+  assert.equal(audit.v[0], "mom");
+  assert.deepEqual(JSON.parse(audit.v[1]), { oldLast4: "2222", newLast4: "4444", via: "IDENTITY_VERIFICATION" });
+  assert.doesNotMatch(audit.v[1], /01033334444|01011112222/);
+  assert.ok(ok.calls.indexOf(audit) > ok.calls.indexOf(update[0]), "변경과 같은 트랜잭션에서 남긴다");
   assert.match(guardian.sql, /s\."parentId"=\$3 OR EXISTS\(\s*SELECT 1 FROM "ParentStudentAccess" a WHERE a\."studentId"=s\.id AND a\."userId"=\$3 AND a\.status='ACTIVE'\)/);
 
   // 같은 번호면 변경 없음(보호자 연락처도 건드리지 않는다)
   const same = phoneWorld({ me: { name: "김엄마", phone: "01033334444" } });
-  assert.deepEqual(await same.mod.confirmPhoneChange(actor, "sess", same.id), { ok: true, changed: false });
-  assert.ok(!same.calls.some((c) => /^UPDATE "Guardian"/.test(c.sql)));
+  assert.deepEqual(await same.mod.confirmPhoneChange(actor, "sess", same.id), { ok: true, changed: false, notify: null });
+  assert.ok(!same.calls.some((c) => /^UPDATE "Guardian"|OperationsAuditLog/.test(c.sql)), "같은 번호면 이력·알림·보호자 줄 변경 없음");
+  // 관리자 앱 안 알림 1건 — 번호는 끝 4자리만, 문자 없음, 화면 응답에는 알림 자료를 싣지 않는다
+  const route = read("src/app/api/account/phone-change/route.ts");
+  assert.ok(route.includes('"보호자 연락처 변경",'));
+  assert.match(route, /result\.notify\.accountName\} 보호자 연락처 변경 · 끝 \$\{result\.notify\.newLast4\}/);
+  assert.match(route, /\{ notifyCoaches: false \},\s*\)\.catch/);
+  assert.match(route, /response\(\{ ok: true, changed: result\.changed \}\)/);
+  assert.doesNotMatch(route, /adminTrigger|sendTrackedSms|sendParentSms/);
 });
 
 test("⑥ 번호를 화면에서 받는 길이 없다 · 꺼진 환경은 기존 안내 유지", () => {
@@ -583,7 +650,70 @@ test("⑦ 읽기: 권한 확인된 학생 id 로만 · 실패하면 빈 값 · �
   const attach = run.slice(run.indexOf("async function attachRiderHealthNotes"), run.indexOf("/** 그날 운행 전체"));
   assert.equal((attach.match(/WHERE r\.id = ANY\(\$1::text\[\]\)/g) ?? []).length, 2, "정규·특강 모두 승객 줄 id 로만");
   assert.match(attach, /catch \{/);
-  assert.match(run, /await attachRiderHealthNotes\(rows\);/);
+  assert.match(run, /await attachRiderHealthNotes\(rows, options\.withHealthText === true && healthTextDateAllowed\(viewDate, todayKst\(\)\)\);/);
+});
+
+test("⑦ 기사님 토큰 링크에는 건강 글 전문이 실리지 않는다 — 로그인 경로 + 오늘 ±1일만", async () => {
+  const kst = load("src/lib/datetime/kst.ts");
+  const today = kst.todayKst();
+  const SECRET = "견과류 알레르기(절대 새면 안 되는 글)";
+  function runWorld() {
+    const sqls = [];
+    const prisma = {
+      async $queryRawUnsafe(sql) {
+        sqls.push(sql);
+        if (/FROM "SpecialProgramSeason"/.test(sql)) return [];
+        // 진짜 DB 처럼: SELECT 에 건강 칸이 있을 때만 글이 나온다
+        if (/FROM "RegularShuttleStop" r JOIN "Student" s/.test(sql)) return [{ key: "row1", text: /SELECT r\.id AS key, s\."healthNote" AS text/.test(sql) ? SECRET : "" }];
+        return [];
+      },
+    };
+    const rider = (checkId) => ({ key: "R:" + checkId, checkId, kind: "REGULAR", direction: "PICKUP", name: "홍길동", grade: null, parentPhone: null, studentPhone: null, absent: false });
+    const mod = load("src/lib/shuttle/unifiedDriverRun.ts", {
+      "@/lib/prisma": { prisma },
+      "@/lib/seasonal/shuttle-optimize": { getDispatchForView: async () => ({ vehicles: [] }) },
+      "./regularDriverRoute": { getRegularDriverDay: async () => ({ classes: [], holiday: null }) },
+      "./driverStatusRead": { readDriverBoarding: async () => ({ boarding: {} }) },
+      "./unifiedDriverRunLogic": { buildUnifiedRun: () => [{ key: "stop", riders: [rider("row1"), rider("row2")] }] },
+    });
+    return { mod, sqls };
+  }
+  // ① 토큰 링크(기본값) — 표시만. 응답 전체를 글자로 펴도 건강 글이 없고, SQL 도 건강 칸을 SELECT 하지 않는다
+  const token = runWorld();
+  const viaToken = await token.mod.loadUnifiedDriverRun(today);
+  assert.deepEqual(viaToken.rows[0].riders.map((r) => [r.hasHealthNote === true, r.healthNote]), [[true, undefined], [false, undefined]]);
+  assert.doesNotMatch(JSON.stringify(viaToken), /견과류|알레르기/, "props 로 내려갈 자료에 글 전문이 없다");
+  assert.ok(token.sqls.some((sql) => /SELECT r\.id AS key, ''::text AS text/.test(sql)));
+  for (const sql of token.sqls) assert.doesNotMatch(sql, /s\."healthNote" AS text/, "토큰 경로는 건강 글을 고르지 않는다");
+  // ② 로그인 경로 + 오늘·어제·내일 — 글 전문
+  for (const day of [today, kst.addDaysKst(today, -1), kst.addDaysKst(today, 1)]) {
+    const account = runWorld();
+    const viaAccount = await account.mod.loadUnifiedDriverRun(day, { withHealthText: true });
+    assert.equal(viaAccount.rows[0].riders[0].healthNote, SECRET, day);
+  }
+  // ③ 로그인 경로라도 그 밖 날짜는 표시만
+  for (const day of [kst.addDaysKst(today, -2), kst.addDaysKst(today, 2), kst.addDaysKst(today, 30)]) {
+    const far = runWorld();
+    const result = await far.mod.loadUnifiedDriverRun(day, { withHealthText: true });
+    assert.deepEqual([result.rows[0].riders[0].hasHealthNote, result.rows[0].riders[0].healthNote], [true, undefined], day);
+    assert.doesNotMatch(JSON.stringify(result), /견과류/);
+  }
+  assert.equal(token.mod.healthTextDateAllowed("2026-03-01", "2026-02-28"), true, "월말 경계");
+  assert.equal(token.mod.healthTextDateAllowed("2027-01-01", "2026-12-31"), true, "연말 경계");
+  assert.equal(token.mod.healthTextDateAllowed("2026-03-02", "2026-02-28"), false);
+  // ④ 화면: 로그인 경로(viaAccount)일 때만 글을 청한다 — 토큰 주소 셋은 viaAccount 를 주지 않는다
+  const page = read("src/components/shuttle/UnifiedDriverRunPage.tsx");
+  assert.match(page, /loadUnifiedDriverRun\(viewDate, \{ withHealthText: viaAccount \}\)/);
+  assert.equal((page.match(/loadUnifiedDriverRun\(/g) ?? []).length, 1);
+  for (const path of ["src/app/driver/[token]/page.tsx", "src/app/shuttle/run/[token]/page.tsx", "src/app/shuttle/regular/[token]/page.tsx"]) {
+    assert.doesNotMatch(read(path), /viaAccount|withHealthText/, path);
+  }
+  const staffRun = read("src/app/staff/run/page.tsx");
+  assert.ok(staffRun.indexOf("await requireStaff()") > 0 && staffRun.indexOf("await requireStaff()") < staffRun.lastIndexOf("viaAccount"), "로그인 확인 뒤에만 viaAccount");
+  // 마이그레이션 주석도 실제 범위대로
+  const migration = read("prisma/migrations/20261114140000_child_profile_edit/migration.sql");
+  assert.doesNotMatch(migration, /기사님\(자기 노선\)/);
+  assert.match(migration, /토큰 링크[^\n]*글이 내려가지 않고 «특이» 표시만/);
 });
 
 // ── ⑧ 화면 렌더 ─────────────────────────────────────────────────────────────
@@ -603,7 +733,7 @@ const profile = (extra = {}) => ({
   guardians: { representativeName: "엄마", meIsRepresentative: true, me: { name: "엄마", phone: "010-1234-5678" }, familyNames: [] },
   classes: [], makeup: { available: 0, reserved: 0, nearestExpiryYmd: null }, ...extra,
 });
-const editInfo = (extra = {}) => ({ healthAvailable: true, healthNote: "천식", phone: "01022223333", address: "다산로 2", requestsAvailable: true, requests: [], ...extra });
+const editInfo = (extra = {}) => ({ healthAvailable: true, healthNote: "천식", phone: "01022223333", canEditPhone: true, address: "다산로 2", requestsAvailable: true, requests: [], ...extra });
 const infoHtml = (p) => renderToStaticMarkup(React.createElement(sections.ChildInfoSection, { profile: p, today: TODAY, studentId: "kid" }));
 
 test("⑧ 아이 정보 칸: 수정 버튼·새 줄·확인 중·반려 사유 · 수정용 값을 못 읽으면 버튼 없음", () => {
@@ -663,6 +793,16 @@ test("⑧ 수정 시트: 바로 반영 칸·예시 글·변경 신청·확인 �
   const bare = render(editInfo({ healthAvailable: false, requestsAvailable: false }));
   assert.doesNotMatch(bare, /건강·알레르기·특이사항|변경 신청/);
   assert.match(bare, />저장<\/button>/);
+  // 연결 가족: 학생 전화는 읽기 전용 + 한 줄 안내
+  assert.doesNotMatch(html, /대표 보호자만 바꿀 수 있어요|readOnly/);
+  const family = render(editInfo({ canEditPhone: false }));
+  assert.match(family, /<input[^>]*readOnly=""[^>]*value="010-2222-3333"|<input[^>]*value="010-2222-3333"[^>]*readOnly=""/);
+  assert.match(family, /대표 보호자만 바꿀 수 있어요/);
+  // 바깥을 눌러서는 닫히지 않고, 고친 채 닫으려 하면 한 번 묻는다
+  const sheetSource = read("src/app/mypage/record/ChildInfoEditSheet.tsx");
+  assert.match(sheetSource, /<ListDetailPanel onClose=\{requestClose\} titleId="child-info-edit-title" closeOnBackdrop=\{false\}>/);
+  assert.match(sheetSource, /if \(dirty && !confirmClose\) \{ setConfirmClose\(true\); return; \}/);
+  assert.match(sheetSource, /저장 안 하고 닫기/);
 });
 
 test("⑧ 막다른 곳 3곳: 셔틀 «학원 확인 중» · 방학특강 연락처 버튼+문의 · 자녀 없음 화면 학원 번호는 설정값", () => {
@@ -711,9 +851,10 @@ test("⑧ 선생님 상세 시트·기사님 줄·관리자 칸에 건강 특이
   assert.doesNotMatch(renderToStaticMarkup(React.createElement(Sheet, { ...props, person: { ...person, healthNote: null } })), /메모·특이사항/);
   // 기사님: 이름 옆 글자 «특이»(44px) → 누르면 줄 아래 글
   const driver = read("src/components/shuttle/UnifiedDriverClient.tsx");
-  assert.match(driver, /\{rider\.healthNote && \(\s*<button type="button" aria-expanded=\{healthKey === rowKey\}/);
-  assert.match(driver, /min-h-11 min-w-11[^"]*">\s*<span[^>]*>특이<\/span>/);
-  assert.match(driver, /\{rider\.healthNote && healthKey === rowKey && \(/);
+  assert.match(driver, /\{\(rider\.hasHealthNote \|\| rider\.healthNote\) && \(\s*<button type="button" aria-expanded=\{healthKey === rowKey\}/);
+  assert.match(driver, /min-h-11 min-w-11[^"]*">\s*<span className="[^"]*font-medium[^"]*">특이<\/span>/, "배지 굵기 500");
+  // 글 전문이 없으면(토큰 링크·다른 날짜) 안내 한 줄
+  assert.match(driver, /rider\.healthNote\s*\? <p[^>]*>\{rider\.healthNote\}<\/p>\s*: <p[^>]*>\{healthHint\}<\/p>/);
   // 관리자 학생 상세: 변경 요청 칸(승인·반려) + 건강 칸
   const detail = read("src/app/admin/students/[id]/StudentDetailClient.tsx");
   assert.match(detail, /profileExtras\?\.requestsAvailable && \(\s*<ProfileChangeRequestsPanel/);

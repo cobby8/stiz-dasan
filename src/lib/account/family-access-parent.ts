@@ -101,5 +101,14 @@ export async function revokeFamilyAsRepresentative(
     userId,
   );
   if (!owned[0]) return false;
+  // 대표 보호자 «자기 자신»의 연결 행은 끊지 않는다(대표 권한은 parentId 라 끊어도 의미가 없고, 기록만 어긋난다)
+  const target = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+    `SELECT a.id FROM "ParentStudentAccess" a
+      WHERE a.id = $1 AND a."studentId" = $2 AND a.status = 'ACTIVE' AND a."userId" <> $3 LIMIT 1 FOR UPDATE`,
+    accessId,
+    studentId,
+    userId,
+  );
+  if (!target[0]) return false;
   return revokeFamilyAccess(tx, studentId, accessId);
 }

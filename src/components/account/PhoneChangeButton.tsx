@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { getStizIdentityBypass } from "@/lib/identity/brand";
+import Link from "next/link";
 import { customerMessage } from "@/components/parent/customerMessage";
+import { PHONE_NAME_MISMATCH_MESSAGE } from "@/lib/account/phone-change-rules";
 
 // 보호자 «연락처 바꾸기» 버튼 (2026-11-14 원장 결정 b6·c1) — 설정·아이 정보·방학특강 화면이 같이 쓴다.
 // 누르면 본인 명의 휴대폰 인증(포트원 — 자녀·가족 연결과 같은 인증 창)이 열리고, 통과하면 계정 번호가 인증된 번호로 바뀐다.
@@ -55,6 +57,8 @@ export default function PhoneChangeButton({
   className = "academy-button-secondary",
   fallback = null,
   messageClassName = "mt-1 text-xs",
+  nameOk,
+  onSettingsPage = false,
 }: {
   /** 서버가 이미 아는 경우(설정 화면). 안 주면 화면이 한 번 물어본다 */
   enabled?: boolean;
@@ -63,9 +67,14 @@ export default function PhoneChangeButton({
   /** 본인인증이 꺼진 환경에서 버튼 대신 보일 것(기존 안내·링크) */
   fallback?: ReactNode;
   messageClassName?: string;
+  /** 계정 이름이 본인인증 이름 모양인가(서버가 아는 경우). false 면 인증 전에 미리 알린다 */
+  nameOk?: boolean;
+  /** 설정 화면 안인가 — 이름 칸이 바로 위에 있으므로 «이름 고치러 가기» 링크 대신 글만 */
+  onSettingsPage?: boolean;
 }) {
   const router = useRouter();
   const [available, setAvailable] = useState<boolean | null>(enabled ?? null);
+  const [nameLooksOk, setNameLooksOk] = useState<boolean>(nameOk ?? true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -75,7 +84,7 @@ export default function PhoneChangeButton({
   useEffect(() => {
     if (enabled !== undefined) { setAvailable(enabled); return; }
     let alive = true;
-    phoneChangeRequest().then((data) => { if (alive) setAvailable(data.enabled === true); }).catch(() => { if (alive) setAvailable(false); });
+    phoneChangeRequest().then((data) => { if (alive) { setAvailable(data.enabled === true); setNameLooksOk(data.nameOk !== false); } }).catch(() => { if (alive) setAvailable(false); });
     return () => { alive = false; };
   }, [enabled]);
 
@@ -141,7 +150,20 @@ export default function PhoneChangeButton({
       <button type="button" onClick={() => void start()} disabled={busy} className={className}>
         {busy ? "확인 중…" : label}
       </button>
-      {error && <p role="alert" className={`${messageClassName} basis-full text-[var(--color-academy-danger)]`}>{error}</p>}
+      {/* 인증 전에 미리 — 계정 이름이 실명 모양이 아니면 인증해도 거절된다 */}
+      {!nameLooksOk && !error && !notice && (
+        <p className={`${messageClassName} basis-full text-[var(--color-academy-muted)]`}>
+          계정 이름이 본인인증 이름과 같아야 해요.{" "}
+          {onSettingsPage ? "위 «이름»을 먼저 바꿔 주세요." : <Link href="/mypage/settings" className="inline-flex min-h-11 items-center underline">이름 고치러 가기</Link>}
+        </p>
+      )}
+      {error && (
+        <p role="alert" className={`${messageClassName} basis-full text-[var(--color-academy-danger)]`}>
+          {error}
+          {/* 이름 불일치 — 고칠 곳으로 바로 */}
+          {error === PHONE_NAME_MISMATCH_MESSAGE && !onSettingsPage && <>{" "}<Link href="/mypage/settings" className="inline-flex min-h-11 items-center underline">이름 고치러 가기</Link></>}
+        </p>
+      )}
       {notice && <p role="status" className={`${messageClassName} basis-full text-[var(--color-academy-success)]`}>{notice}</p>}
     </>
   );

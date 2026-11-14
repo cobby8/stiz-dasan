@@ -45,21 +45,44 @@ export function cleanHealthNote(raw: unknown): { ok: true; value: string | null 
   return { ok: true, value: text };
 }
 
-export type ChildDirectValue = { school: string | null; phone: string | null; address: string | null; healthNote: string | null };
+/** phone·healthNote 의 undefined = «건드리지 않는다»(값이 그대로이거나, 그 칸을 보내지 않았다) */
+export type ChildDirectValue = { school: string | null; phone: string | null | undefined; address: string | null; healthNote: string | null | undefined };
 
-/** «바로 반영» 네 칸 검증. 전화는 숫자만 저장한다(비우면 null) */
-export function cleanChildDirect(input: unknown): { ok: true; value: ChildDirectValue } | { ok: false; error: string } {
+export const PHONE_REPRESENTATIVE_ONLY = "학생 전화는 대표 보호자만 바꿀 수 있어요.";
+
+/**
+ * «바로 반영» 네 칸 검증. 전화는 숫자만 저장한다(비우면 null).
+ *  - 학생 전화가 지금 값과 같으면(숫자만 비교) 형식 검증 없이 그대로 둔다 — 관리자가 넣어 둔 유선 번호 때문에 다른 칸 저장이 막히지 않게.
+ *  - 학생 전화를 바꾸는 것은 대표 보호자만(canEditPhone). 학생 전화는 성인 수강생 «본인 연결»의 확인 번호라 연결 가족은 읽기만 한다.
+ *  - healthNote 를 보내지 않았으면(칸이 없는 환경의 화면) 건드리지 않는다.
+ */
+export function cleanChildDirect(
+  input: unknown,
+  options: { currentPhone?: string | null; canEditPhone?: boolean } = {},
+): { ok: true; value: ChildDirectValue } | { ok: false; error: string } {
   const src = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
   const school = oneLine(src.school);
   if ([...school].length > SCHOOL_MAX) return { ok: false, error: `학교는 ${SCHOOL_MAX}자까지 쓸 수 있어요.` };
   const address = oneLine(src.address);
   if ([...address].length > ADDRESS_MAX) return { ok: false, error: `주소는 ${ADDRESS_MAX}자까지 쓸 수 있어요.` };
   const phoneDigits = String(src.phone ?? "").replace(/[^0-9]/g, "");
-  // 학생 전화는 휴대폰 번호만(010…·011… 10~11자리). 비우면 «없음»
-  if (phoneDigits && !/^01\d{8,9}$/.test(phoneDigits)) return { ok: false, error: "학생 전화는 휴대폰 번호로 입력해 주세요." };
-  const health = cleanHealthNote(src.healthNote);
-  if (!health.ok) return health;
-  return { ok: true, value: { school: school || null, phone: phoneDigits || null, address: address || null, healthNote: health.value } };
+  const currentDigits = String(options.currentPhone ?? "").replace(/[^0-9]/g, "");
+  let phone: string | null | undefined;
+  if (phoneDigits === currentDigits) {
+    phone = undefined; // 그대로 — 검증·저장 모두 건너뛴다
+  } else {
+    if (options.canEditPhone === false) return { ok: false, error: PHONE_REPRESENTATIVE_ONLY };
+    // 새로 넣는 학생 전화는 휴대폰 번호만(010…·011… 10~11자리). 비우면 «없음»
+    if (phoneDigits && !/^01\d{8,9}$/.test(phoneDigits)) return { ok: false, error: "학생 전화는 휴대폰 번호로 입력해 주세요." };
+    phone = phoneDigits || null;
+  }
+  let healthNote: string | null | undefined;
+  if (src.healthNote !== undefined) {
+    const health = cleanHealthNote(src.healthNote);
+    if (!health.ok) return health;
+    healthNote = health.value;
+  }
+  return { ok: true, value: { school: school || null, phone, address: address || null, healthNote } };
 }
 
 /** 이름 검증 — 1~30자 */

@@ -48,7 +48,8 @@ export async function saveChildInfo(studentIdRaw: string, input: { school?: stri
     if (!saved.ok) return saved;
     revalidatePath("/mypage/record");
     revalidatePath(`/admin/students/${studentId}`);
-    return saved.healthSaved ? { ok: true } : { ok: true, notice: "건강 특이사항은 아직 저장할 수 없어요. 나머지는 저장했어요." };
+    // 건강 칸을 보냈는데 저장하지 못한 경우에만 알린다(보내지 않았으면 null — 안내 없음)
+    return saved.healthSaved !== false ? { ok: true } : { ok: true, notice: "건강 특이사항은 아직 저장할 수 없어요. 나머지는 저장했어요." };
   } catch {
     // 입력 내용(건강 정보 포함)은 로그에 남기지 않는다
     console.error("[saveChildInfo] failed");

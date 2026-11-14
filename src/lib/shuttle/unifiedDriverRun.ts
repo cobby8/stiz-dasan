@@ -11,32 +11,37 @@ import {
 } from "./unifiedDriverRunLogic";
 import type { DriverClass } from "./regularDriverRouteLogic";
 import { notMergedStudent } from "@/lib/studentVisibility";
+import { addDaysKst, todayKst } from "@/lib/datetime/kst";
 
 /**
- * 운행표에 «이미 올라온» 학생의 건강·알레르기·특이사항을 줄에 붙인다(2026-11-14 원장 결정 b5).
- * 범위는 그날 이 운행표의 승객뿐 — 승객 줄의 저장 키(정규=명단 정차행 id, 특강=셔틀 신청 id)로만 학생을 되짚는다.
- * 칸이 아직 없거나 조회가 실패하면 아무것도 붙이지 않는다(운행표는 그대로). 내용은 로그에 남기지 않는다.
+ * 운행표에 «이미 올라온» 학생의 건강·알레르기·특이사항 표시를 줄에 붙인다(2026-11-14 원장 결정 b5 · 보안 검수 반영).
+ *  - 범위는 그날 이 운행표의 승객뿐 — 승객 줄의 저장 키(정규=명단 정차행 id, 특강=셔틀 신청 id)로만 학생을 되짚는다.
+ *  - withText=false(토큰 링크·오늘 ±1일 밖): «있다»는 표시(hasHealthNote)만. 글은 DB 에서 고르지도 않는다(SELECT 에 칸이 없다).
+ *  - withText=true(로그인한 기사·관리자 + 오늘 ±1일): 글 전문도 붙인다.
+ *  - 칸이 아직 없거나 조회가 실패하면 아무것도 붙이지 않는다(운행표는 그대로). 내용은 로그에 남기지 않는다.
  */
-async function attachRiderHealthNotes(rows: UnifiedRow[]): Promise<void> {
+async function attachRiderHealthNotes(rows: UnifiedRow[], withText: boolean): Promise<void> {
   const regularIds = new Set<string>();
   const seasonalIds = new Set<string>();
   for (const row of rows) for (const rider of row.riders) (rider.kind === "REGULAR" ? regularIds : seasonalIds).add(rider.checkId);
   if (regularIds.size + seasonalIds.size === 0) return;
-  const notes = new Map<string, string>(); // "R:<정차행 id>" | "S:<신청 id>" → 글
+  // 글 전문은 허용된 경로에서만 SELECT 한다 — 그 밖에는 빈 글자를 골라 «있다/없다»만 안다
+  const textColumn = withText ? `s."healthNote"` : `''::text`;
+  const notes = new Map<string, string>(); // "R:<정차행 id>" | "S:<신청 id>" → 글(표시만이면 빈 글자)
   const read = async (prefix: "R" | "S", sql: string, ids: Set<string>) => {
     if (ids.size === 0) return;
     try {
-      const found = await prisma.$queryRawUnsafe<Array<{ key: string; healthNote: string | null }>>(sql, [...ids]);
-      for (const item of found) if (item.healthNote) notes.set(`${prefix}:${item.key}`, String(item.healthNote));
+      const found = await prisma.$queryRawUnsafe<Array<{ key: string; text: string | null }>>(sql, [...ids]);
+      for (const item of found) notes.set(`${prefix}:${item.key}`, String(item.text ?? ""));
     } catch {
       // 칸 없음(마이그레이션 전)·조회 실패 — 표시 없이 지나간다
     }
   };
   await Promise.all([
-    read("R", `SELECT r.id AS key, s."healthNote" FROM "RegularShuttleStop" r JOIN "Student" s ON s.id = r."studentId" AND ${notMergedStudent("s")}
+    read("R", `SELECT r.id AS key, ${textColumn} AS text FROM "RegularShuttleStop" r JOIN "Student" s ON s.id = r."studentId" AND ${notMergedStudent("s")}
                 WHERE r.id = ANY($1::text[]) AND NULLIF(btrim(s."healthNote"), '') IS NOT NULL`, regularIds),
     // 특강 승객 = 셔틀 신청 → 신청 항목 → 수강(Enrollment) → 학생. 학생으로 전환되지 않은 신청자는 건강 칸이 없다
-    read("S", `SELECT r.id AS key, s."healthNote" FROM "SpecialProgramShuttleRequest" r
+    read("S", `SELECT r.id AS key, ${textColumn} AS text FROM "SpecialProgramShuttleRequest" r
                  JOIN "SpecialProgramApplicationItem" i ON i.id = r."applicationItemId"
                  JOIN "Enrollment" e ON e.id = i."enrollmentId"
                  JOIN "Student" s ON s.id = e."studentId" AND ${notMergedStudent("s")}
@@ -45,8 +50,15 @@ async function attachRiderHealthNotes(rows: UnifiedRow[]): Promise<void> {
   if (notes.size === 0) return;
   for (const row of rows) for (const rider of row.riders) {
     const note = notes.get(`${rider.kind === "REGULAR" ? "R" : "S"}:${rider.checkId}`);
-    if (note) rider.healthNote = note;
+    if (note === undefined) continue;
+    rider.hasHealthNote = true;
+    if (withText && note) rider.healthNote = note;
   }
+}
+
+/** 건강 글 전문을 붙여도 되는 날짜인가 — 오늘(KST) ±1일. 지난·먼 날짜 운행표를 넘기며 훑어보지 못하게 한다 */
+export function healthTextDateAllowed(viewDate: string, today: string): boolean {
+  return viewDate === today || viewDate === addDaysKst(today, -1) || viewDate === addDaysKst(today, 1);
 }
 
 /**
@@ -170,8 +182,11 @@ export type UnifiedDriverRun = {
   holiday: RunHoliday | null;
 };
 
-/** 그날 운행 전체(특강+정규)를 시각순 한 줄 목록으로. */
-export async function loadUnifiedDriverRun(viewDate: string): Promise<UnifiedDriverRun> {
+/**
+ * 그날 운행 전체(특강+정규)를 시각순 한 줄 목록으로.
+ * withHealthText = 로그인한 기사·관리자 경로(/staff/run)만 true. 토큰 링크는 기본값(false) — 건강 글 전문이 내려가지 않는다.
+ */
+export async function loadUnifiedDriverRun(viewDate: string, options: { withHealthText?: boolean } = {}): Promise<UnifiedDriverRun> {
   // 정규는 셔틀 명단(DB)을 따로 읽는다. 정규 쪽이 실패해도 **매일 쓰이는 방학특강 화면이 같이 죽으면 안 되므로** 따로 감싼다.
   const regularSafe = async (): Promise<{ classes: DriverClass[]; holiday: RunHoliday | null }> => {
     try {
@@ -199,7 +214,8 @@ export async function loadUnifiedDriverRun(viewDate: string): Promise<UnifiedDri
     ?? (regular.classes.length > 0 ? "정규 셔틀 기사님" : "방학특강 기사님");
 
   const rows = buildUnifiedRun({ seasonal: sections, regular: regular.classes });
-  await attachRiderHealthNotes(rows);
+  // 건강 글 전문 = 로그인 경로(withHealthText) + 오늘 ±1일. 그 밖에는 «특이» 표시만
+  await attachRiderHealthNotes(rows, options.withHealthText === true && healthTextDateAllowed(viewDate, todayKst()));
 
   return {
     rows,

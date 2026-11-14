@@ -16,6 +16,7 @@ import { NameRow, PasswordRow, NotificationRows, FontScaleRow, FeedbackRow, Paym
 import { profilePhotoUpdatedAtSql, profilePhotoVersion } from "@/lib/profilePhoto/rules";
 import PhoneChangeButton from "@/components/account/PhoneChangeButton";
 import { phoneChangeAvailable } from "@/lib/account/phone-change";
+import { looksLikeLegalName } from "@/lib/account/phone-change-rules";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "설정 | 스티즈 농구교실" };
@@ -109,7 +110,7 @@ export default async function ParentSettingsPage() {
                         <span className="block tabular-nums text-[var(--color-academy-muted)]">{me?.phone ? formatPhoneInput(me.phone) : "없음"}</span>
                         <span className="block text-xs text-[var(--color-academy-faint)]">{canChangePhone ? "본인 명의 휴대폰 인증 후 바뀌어요" : "변경은 학원 문의"}</span>
                     </span>
-                    <PhoneChangeButton enabled={canChangePhone} label="바꾸기" className="academy-button-secondary shrink-0" />
+                    <PhoneChangeButton enabled={canChangePhone} nameOk={looksLikeLegalName(me?.name ?? parent.appUserName)} onSettingsPage label="바꾸기" className="academy-button-secondary shrink-0" />
                 </li>
                 {me?.username && (
                     <li className={ROW}>

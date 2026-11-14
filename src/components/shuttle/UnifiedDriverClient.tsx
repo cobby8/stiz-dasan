@@ -37,7 +37,7 @@ type SortKey = { minutes: number | null; seq: number };
 function digits(p: string | null): string | null { if (!p) return null; const d = p.replace(/[^0-9]/g, ""); return d.length >= 9 ? d : null; }
 
 export default function UnifiedDriverClient({
-  token = "", date, rows, initialBoarding, initialBoardingReliable = true, prevDate, nextDate, today, driverLabel, focusDirection = null, academy = null, holiday = null,
+  token = "", date, rows, initialBoarding, initialBoardingReliable = true, prevDate, nextDate, today, driverLabel, focusDirection = null, academy = null, holiday = null, healthHint = "앱에 로그인하면 내용이 보여요",
 }: {
   token?: string;
   date: string;
@@ -54,6 +54,8 @@ export default function UnifiedDriverClient({
   academy?: { lat: number; lng: number } | null;
   /** 그날 정규 수업 휴무(연간일정) — 맨 위 «오늘은 휴무(사유)». 정규 줄은 서버가 이미 «휴무»로 잠가 보낸다. */
   holiday?: RunHoliday | null;
+  /** «특이»를 눌렀는데 글 전문이 없을 때 보일 한 줄(토큰 링크 = 로그인 안내, 로그인 경로의 다른 날짜 = 날짜 안내) */
+  healthHint?: string;
 }) {
   const router = useRouter();
   const accountRun = !token;
@@ -369,12 +371,13 @@ export default function UnifiedDriverClient({
                 </span>
               )}
               {rider.grade && <span className="text-sm text-[var(--color-academy-muted)]">{rider.grade}</span>}
-              {/* 건강·알레르기·특이사항(학부모 입력) — 글자 «특이», 누르면 줄 아래에 내용. 누르는 영역 44px */}
-              {rider.healthNote && (
+              {/* 건강·알레르기·특이사항(학부모 입력) — 글자 «특이», 누르면 줄 아래에 내용. 누르는 영역 44px.
+                  토큰 링크에는 «있다»는 표시만 온다(글 전문은 로그인한 기사·관리자의 오늘 ±1일 운행표에만) */}
+              {(rider.hasHealthNote || rider.healthNote) && (
                 <button type="button" aria-expanded={healthKey === rowKey} aria-label={`${rider.name} 건강·특이사항 ${healthKey === rowKey ? "접기" : "보기"}`}
                   onClick={() => setHealthKey(healthKey === rowKey ? null : rowKey)}
                   className="inline-flex min-h-11 min-w-11 items-center justify-center">
-                  <span className="rounded-md border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] px-2 py-0.5 text-sm font-semibold text-[var(--color-academy-warning)]">특이</span>
+                  <span className="rounded-md border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] px-2 py-0.5 text-sm font-medium text-[var(--color-academy-warning)]">특이</span>
                 </button>
               )}
             </div>
@@ -395,8 +398,10 @@ export default function UnifiedDriverClient({
             </StatusChoiceButton>
           </div>
         </div>
-        {rider.healthNote && healthKey === rowKey && (
-          <p className="mt-2 whitespace-pre-wrap rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-base text-[var(--color-academy-ink)]">{rider.healthNote}</p>
+        {(rider.hasHealthNote || rider.healthNote) && healthKey === rowKey && (
+          rider.healthNote
+            ? <p className="mt-2 whitespace-pre-wrap rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-base text-[var(--color-academy-ink)]">{rider.healthNote}</p>
+            : <p className="mt-2 rounded-lg bg-[var(--color-academy-soft)] px-3 py-2 text-sm text-[var(--color-academy-muted)]">{healthHint}</p>
         )}
         {(rider.shuttleNote || (rider.absent && !view.absentReported && status !== "BOARDED" && status !== "SELF") || (!view.absentReported && status === "NOSHOW") || status === "SELF") && <div className={styles.riderNotes}>
               {/* 특강 «결석예정»은 종전대로(체크 대상 · 정규 결석 뱃지와 구분) */}

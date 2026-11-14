@@ -49,6 +49,15 @@ export default function ChildInfoEditSheet({
   const [nextBirth, setNextBirth] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  // 처음 값(저장하면 그때 값으로) — 고친 뒤 저장하지 않고 닫으려 하면 한 번 묻는다
+  const [saved, setSaved] = useState(form);
+  const [confirmClose, setConfirmClose] = useState(false);
+  const dirty = JSON.stringify(form) !== JSON.stringify(saved) || nextName.trim() !== "" || nextBirth !== "";
+  // 닫기 버튼·Esc 공통 — 바깥을 눌러서는 닫히지 않는다(긴 글을 쓰다 실수로 사라지지 않게)
+  function requestClose() {
+    if (dirty && !confirmClose) { setConfirmClose(true); return; }
+    onClose();
+  }
 
   const pendingOf = (field: RequestField) => edit.requests.find((r) => r.field === field && r.status === "PENDING") ?? null;
 
@@ -67,11 +76,18 @@ export default function ChildInfoEditSheet({
   const healthLength = [...form.healthNote].length;
 
   return (
-    <ListDetailPanel onClose={onClose} titleId="child-info-edit-title">
+    <ListDetailPanel onClose={requestClose} titleId="child-info-edit-title" closeOnBackdrop={false}>
       <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-4 py-2">
         <h2 id="child-info-edit-title" className="min-w-0 flex-1 text-base font-bold text-[var(--color-academy-ink)]">{name} 정보 수정</h2>
-        <button type="button" onClick={onClose} className="academy-button-text shrink-0">닫기</button>
+        <button type="button" onClick={requestClose} className="academy-button-text shrink-0">닫기</button>
       </div>
+      {confirmClose && (
+        <div role="alertdialog" aria-label="저장하지 않고 닫기" className="flex flex-wrap items-center gap-2 border-b border-[var(--color-academy-line)] bg-[var(--color-academy-warning-soft)] px-4 py-2 text-sm">
+          <span className="min-w-0 flex-1 break-keep text-[var(--color-academy-ink)]">저장하지 않은 내용이 있어요.</span>
+          <button type="button" onClick={() => setConfirmClose(false)} className="academy-button-secondary">계속 쓰기</button>
+          <button type="button" onClick={onClose} className="academy-button-danger">저장 안 하고 닫기</button>
+        </div>
+      )}
 
       <div className="grid gap-4 px-4 py-3">
         {error && <p role="alert" className="rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm text-[var(--color-academy-danger)]">{error}</p>}
@@ -82,7 +98,9 @@ export default function ChildInfoEditSheet({
           className="grid gap-3"
           onSubmit={(event) => {
             event.preventDefault();
-            run(() => saveChildInfo(studentId, form), "저장했어요.");
+            // 건강 칸이 없는 환경이면 그 칸은 보내지 않는다(서버가 묻지도 않는다)
+            const sent = edit.healthAvailable ? form : { school: form.school, phone: form.phone, address: form.address };
+            run(() => saveChildInfo(studentId, sent), "저장했어요.", () => { setSaved(form); setConfirmClose(false); });
           }}
         >
           <label className={LABEL}>
@@ -91,7 +109,9 @@ export default function ChildInfoEditSheet({
           </label>
           <label className={LABEL}>
             학생 전화
-            <input value={form.phone} type="tel" inputMode="tel" maxLength={13} autoComplete="off" placeholder="없으면 비워 두세요" onChange={(e) => setForm({ ...form, phone: formatPhoneInput(e.target.value) })} className="academy-input" />
+            <input value={form.phone} type="tel" inputMode="tel" maxLength={13} autoComplete="off" readOnly={!edit.canEditPhone} aria-describedby={edit.canEditPhone ? undefined : "child-phone-note"} placeholder={edit.canEditPhone ? "없으면 비워 두세요" : undefined} onChange={(e) => setForm({ ...form, phone: formatPhoneInput(e.target.value) })} className="academy-input read-only:bg-[var(--color-academy-soft)] read-only:text-[var(--color-academy-muted)]" />
+            {/* 학생 전화는 대표 보호자만 — 연결 가족에게는 읽기 전용 */}
+            {!edit.canEditPhone && <span id="child-phone-note" className="text-xs font-normal text-[var(--color-academy-muted)]">대표 보호자만 바꿀 수 있어요</span>}
           </label>
           <label className={LABEL}>
             주소
