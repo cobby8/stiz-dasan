@@ -231,6 +231,8 @@ function makeWorld(options = {}) {
     "@/lib/feed/rules": feedRules,
     "@/lib/staff/sessionEditWindow": rules,
     "@/lib/staff-session-rules": sessionRules,
+    // 출석 알림 규칙(순수 모듈)은 진짜를 쓴다 — 관리자 출결 화면과 같은 함수
+    "@/lib/attendance/attendanceNoticeRules": load("src/lib/attendance/attendanceNoticeRules.ts", { "@/lib/staff-session-rules": sessionRules, "@/lib/datetime/kst": kst }),
     "@/lib/staff-session-queries": { trialOnClassDateSql: () => "true" },
     "@/lib/staff-notifications": {
       deliverParentNotification: async (input) => { world.calls.push(["notify", input.eventType, input.dedupeKey]); return {}; },

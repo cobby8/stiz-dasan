@@ -33,6 +33,8 @@ import { getStaffSessionDetail, getStaffSessionStudents, trialOnClassDateSql } f
 import type { StaffSessionDetail, StaffSessionStudent } from "@/lib/staff-session-queries";
 import { profilePhotoVersion } from "@/lib/profilePhoto/rules";
 import { deliverParentNotification, getClassParentRecipients, getStudentParentRecipients } from "@/lib/staff-notifications";
+// 출석 알림 규칙(바뀐 아이만·출석/지각만·오늘 수업만·한 번만) — 관리자 출결 화면과 같은 함수를 쓴다
+import { attendanceNoticeNeeded, attendanceNoticePayload } from "@/lib/attendance/attendanceNoticeRules";
 import type { ParentRecipient } from "@/lib/staff-notifications";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import { adoptRegularSessionKey, regularSessionKey } from "@/lib/regular/regularSession";
@@ -339,22 +341,16 @@ async function saveSeasonalSeatAttendance(input: {
     // 출석 알림은 응답 뒤에 보낸다(2026-11-13 b5) — 선생님이 다음 아이를 바로 찍을 수 있게.
     // 지난 날짜 수업을 뒤늦게 정리하는 경우엔 «방금 출석» 알림을 보내지 않는다(b6).
     const sessionYmd = input.session.date ? String(input.session.date).slice(0, 10) : todayKst();
-    if (input.notifyParents !== false && changed && (input.status === "PRESENT" || input.status === "LATE") && shouldNotifyParentsForSession(sessionYmd)) {
+    if (input.notifyParents !== false && attendanceNoticeNeeded({ changed, status: input.status, sessionYmd })) {
       const status = input.status;
       const notifyAttendanceId = attendanceId;
       runAfterResponse("saveSeasonalSeatAttendance", async () => {
         const [recipient] = await getSessionParentRecipients(input.session, [studentId]);
         if (!recipient) return;
-        await deliverParentNotification({
-          eventType: status === "LATE" ? "ATTENDANCE_LATE" : "ATTENDANCE_PRESENT",
-          dedupeKey: `attendance:${notifyAttendanceId}:status:${status}:user:${recipient.userId}`,
-          recipient,
-          title: `${input.session.className} 출석 안내`,
-          message: `${recipient.studentName} 학생이 ${status === "LATE" ? "지각 출석" : "출석"}했습니다.`,
-          linkUrl: "/parent/attendance",
-          sessionId: input.session.id,
-          attendanceId: notifyAttendanceId,
-        });
+        // 문구·키는 관리자 출결 화면과 같은 한 곳(attendanceNoticeRules)에서 만든다
+        await deliverParentNotification(attendanceNoticePayload({
+          recipient, status, className: input.session.className, sessionId: input.session.id, attendanceId: notifyAttendanceId,
+        }));
       });
     }
   } catch (error) {
@@ -917,7 +913,7 @@ export async function saveStaffAttendance(input: {
   // 출석 알림은 응답 뒤에 보낸다(2026-11-13 b5) — 알림이 느려도 선생님이 다음 아이를 바로 찍을 수 있게.
   // 알림 장부에 먼저 기록되고 실패분은 push-outbox 크론이 다시 보낸다. 지난 날짜 수업이면 보내지 않는다(b6).
   // 완료한 수업의 정정(review)은 보내지 않는다 — 수업이 진행 중일 때만 «출석했어요»가 나간다.
-  if (!review && changed && (input.status === "PRESENT" || input.status === "LATE") && shouldNotifyParentsForSession(sessionYmd)) {
+  if (!review && attendanceNoticeNeeded({ changed, status: input.status, sessionYmd })) {
     const status = input.status;
     const attendanceId = saved[0].id;
     runAfterResponse("saveStaffAttendance", async () => {
@@ -926,16 +922,10 @@ export async function saveStaffAttendance(input: {
         ? await getStudentParentRecipients([studentId])
         : await getSessionParentRecipients(session, [studentId]);
       if (!recipient) return;
-      await deliverParentNotification({
-        eventType: status === "LATE" ? "ATTENDANCE_LATE" : "ATTENDANCE_PRESENT",
-        dedupeKey: `attendance:${attendanceId}:status:${status}:user:${recipient.userId}`,
-        recipient,
-        title: `${session.className} 출석 안내`,
-        message: `${recipient.studentName} 학생이 ${status === "LATE" ? "지각 출석" : "출석"}했습니다.`,
-        linkUrl: "/parent/attendance",
-        sessionId: input.sessionId,
-        attendanceId,
-      });
+      // 문구·키는 관리자 출결 화면과 같은 한 곳(attendanceNoticeRules)에서 만든다
+      await deliverParentNotification(attendanceNoticePayload({
+        recipient, status, className: session.className, sessionId: input.sessionId, attendanceId,
+      }));
     });
   }
   return { ok: true as const, attendanceId: saved[0].id, changed, ...extra };

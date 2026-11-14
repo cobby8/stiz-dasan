@@ -57,6 +57,12 @@
 - **내용**: 표 `ClassSubstitute`(date TEXT "YYYY-MM-DD"·classId·substituteUserId, 유니크(date,classId), RLS). 판정은 `requireStaffClassAccess(classId, ctx, { substituteDate })` 한 곳 — **substituteDate 를 넘긴 경로만** 대타를 본다(수업 시작=date·계획=input.date·requireStaffSessionAccess=기록 날짜·출석부 상세/명단·학생 정보 시트·사진 보기). 공지·연락처·청구는 넘기지 않아 대타에게 안 열린다(테스트로 고정). 홈 목록은 `getSubstituteClassIds(access, dateKey)` 를 합치고 `substitute: true` 행은 «대타» 배지·수업 공지 숨김. 날짜 규칙=`src/lib/staff/classSubstitute.ts`(순수). 관리자 UI=스태프 관리 아래 `ClassSubstitutePanel`(액션 `class-substitute-admin.ts`, requireAdmin+선생님 역할 SQL 재확인). 새 출석부 경로를 만들면 substituteDate 를 같이 넘길 것 — 빠뜨리면 «화면은 보이는데 저장 막힘». 보안 검수 반영: 대타는 **판정 날짜 == 대타 날짜 == 오늘(KST)** 일 때만(`substituteAllowedNow`, 자정에 닫힘·지난 기록 ID 재사용 차단), 판정 시점에 `SUBSTITUTE_TEACHER_SQL` 로 선생님 역할 재확인, 담당(코치) 확인 뒤에만 대타 조회·조회 오류=거부, 그날 특강 회차가 연결된 반은 지정 거부(명단이 특강 기준으로 바뀌어서).
 - **참조횟수**: 0
 
+### [2026-11-14] 셔틀 «탔어요·내렸어요» 알림(매분 훑기) · 출석 알림 규칙 한 곳(선생님=관리자)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: ① 셔틀 탑승 알림은 저장 때 보내지 않고 push-outbox 크론이 `sweepShuttleBoardingNotices`(src/lib/shuttle/boardingNoticeSweep.ts)로 «오늘·BOARDED·찍은 지 1~30분»인 ShuttleBoarding 만 골라 `deliverParentNotification`(대표 보호자·문자 없음). 규칙·문구·키는 순수 `boardingNoticeRules.ts` — 정규는 명단 줄 방향(BOARD=등원 SHUTTLE_BOARDED / ALIGHT=하원 SHUTTLE_ALIGHTED), 방학특강은 확정 명단 게이트웨이로 신청 id→학생. 키 = `shuttle-boarding:{날짜}:{방향}:student:…:user:…`(줄 id 무관). ⚠️ `ShuttleBoarding.checkedAt` 은 schema(timestamp)와 마이그레이션(timestamptz)이 달라 **`EXTRACT(EPOCH …)` 초로만** 다룬다(AT TIME ZONE 금지). 학부모 홈 «오늘 셔틀» 실제 시각도 같은 규칙 파일(`boardingTimeLabels` → `ParentShuttleOverviewItem.actualTimeLabel` → `summary.todayShuttleLineTexts`). ② 출석 알림 판정·문구·키는 `src/lib/attendance/attendanceNoticeRules.ts` 한 곳(`attendanceNoticeNeeded`·`pickAttendanceNoticeTargets`·`attendanceNoticePayload`) — 선생님 `saveStaffAttendance`·좌석 저장과 관리자 `saveAttendance`(저장 전 상태를 먼저 읽고 `notifyAttendanceChanges`, todayOnly)가 같이 쓴다. staff-sessions.ts 를 실행하는 테스트 하네스 2개에 이 모듈 대역이 필요하다. ③ `CLASS_COMPLETED` 는 pushCategoryOf 에서 «출결». 강제 `tests/shuttle-boarding-notice.test.mjs`.
+- **참조횟수**: 0
+
 ### [2026-11-13] 선생님 출석부 — 체험 아이(trial: 키)·결석 학부모 알림(매분 훑기)·수강료는 원장만
 - **분류**: architecture
 - **발견자**: developer

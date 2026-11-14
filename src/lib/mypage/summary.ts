@@ -129,7 +129,28 @@ export type ShuttleLite = {
     pickupEtaLabel?: string | null;
     dropoffEtaLabel?: string | null;
     plannedAt?: string | null;
+    /** 오늘 기사님이 «탑승»을 찍은 실제 시각 "HH:MM"(KST). 등원 줄이면 탄 시각, 하원 줄이면 내린 시각. 없으면 아직 안 찍힘 */
+    actualTimeLabel?: string | null;
 };
+
+/**
+ * 홈 «오늘 셔틀» 줄 글자(2026-11-14 원장 결정표) — 방향마다 한 줄.
+ *   기사님이 찍었으면 실제 시각: «탑승 08:52» · «하차 18:40»
+ *   아직이면 예정 시각(종전 그대로): «등원 08:40 승차» · «하원 17:30 하차»
+ * 둘 다 없으면 빈 배열(화면은 «운행 N건»을 보인다).
+ */
+export function todayShuttleLineTexts(items: readonly ShuttleLite[]): string[] {
+    const actual = (direction: "PICKUP" | "DROPOFF") =>
+        items.find((i) => i.direction === direction && i.actualTimeLabel)?.actualTimeLabel ?? null;
+    const pickupEta = items.map((i) => i.pickupEtaLabel).find(Boolean) ?? null;
+    const dropoffEta = items.map((i) => i.dropoffEtaLabel).find(Boolean) ?? null;
+    const boardedAt = actual("PICKUP");
+    const alightedAt = actual("DROPOFF");
+    return [
+        boardedAt ? `탑승 ${boardedAt}` : pickupEta ? `등원 ${pickupEta}` : null,
+        alightedAt ? `하차 ${alightedAt}` : dropoffEta ? `하원 ${dropoffEta}` : null,
+    ].filter((v): v is string => Boolean(v));
+}
 
 // 오늘(KST) 운행에 해당하는 셔틀 항목만 추린다. serviceDate 앞 10자리(YYYY-MM-DD)로 매칭.
 export function filterTodayShuttle<T extends ShuttleLite>(items: T[], todayStr: string): T[] {
