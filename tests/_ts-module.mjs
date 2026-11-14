@@ -36,8 +36,9 @@ async function readFirst(base) {
  * TS 파일을 data URL 모듈로 올리고 그 URL 을 돌려준다.
  * `@/…` 와 상대경로 import 를 재귀적으로 따라간다.
  */
-async function toDataUrl(file, stack = []) {
+async function toDataUrl(file, stack = [], scope = { cache, overrides: null }) {
   const key = file.replace(/\\/g, "/");
+  const cache = scope.cache;
   if (cache.has(key)) return cache.get(key);
   if (stack.includes(key)) throw new Error(`순환 import: ${[...stack, key].join(" → ")}`);
 
@@ -49,8 +50,10 @@ async function toDataUrl(file, stack = []) {
   // import/export ... from "<spec>" 의 spec 만 골라 바꾼다.
   const specs = [...out.matchAll(/\bfrom\s+["']([^"']+)["']/g)].map((m) => m[1]);
   for (const spec of new Set(specs)) {
-    if (!spec.startsWith("@/") && !spec.startsWith(".")) continue; // node: 등 외부는 그대로
-    const url = await toDataUrl(resolveSpec(spec, resolved), [...stack, key]);
+    // 바꿔 끼울 모듈(overrides)이 있으면 그 주소를 그대로 쓴다 — DB·외부 의존이 있는 모듈을 이미 조립해 둔 것으로 대신할 때
+    const override = scope.overrides && Object.hasOwn(scope.overrides, spec) ? scope.overrides[spec] : null;
+    if (!override && !spec.startsWith("@/") && !spec.startsWith(".")) continue; // node: 등 외부는 그대로
+    const url = override ?? await toDataUrl(resolveSpec(spec, resolved), [...stack, key], scope);
     out = out.split(`"${spec}"`).join(`"${url}"`).split(`'${spec}'`).join(`'${url}'`);
   }
 
@@ -59,7 +62,14 @@ async function toDataUrl(file, stack = []) {
   return url;
 }
 
-/** 예: `await loadTsModule("src/lib/datetime/kst.ts")` */
-export async function loadTsModule(file) {
+/**
+ * 예: `await loadTsModule("src/lib/datetime/kst.ts")`
+ *
+ * options.overrides = { "@/lib/어떤/모듈": "data:…주소" } 를 주면 그 import 만 준 주소로 바꿔 끼운다
+ * (prisma·외부 일정처럼 그대로 올릴 수 없는 모듈을 테스트가 이미 조립해 둔 것으로 대신할 때).
+ * 바꿔 끼운 조립은 공용 캐시와 섞이지 않게 그 호출만의 캐시를 쓴다.
+ */
+export async function loadTsModule(file, options = {}) {
+  if (options.overrides) return import(await toDataUrl(file, [], { cache: new Map(), overrides: options.overrides }));
   return import(await toDataUrl(file));
 }
