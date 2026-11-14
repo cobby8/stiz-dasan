@@ -168,6 +168,17 @@ async function routeSegmentsWithTmapRetry(
   throw lastErr;
 }
 
+// 차량 경로 계산을 동시에 몇 대까지 돌릴지. T맵 제공량(429)을 아끼려고 작게 둔다.
+const PLAN_RUN_CONCURRENCY = 2;
+// items 를 최대 limit 개씩 동시에 처리한다(순서대로 시작, 하나가 끝나면 다음 것을 시작). 오류는 그대로 올린다.
+async function forEachLimit<T>(items: T[], limit: number, work: (item: T) => Promise<void>): Promise<void> {
+  let next = 0;
+  const lanes = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) { const item = items[next++]; await work(item); }
+  });
+  await Promise.all(lanes);
+}
+
 // 한 차량(run)의 경로·시각 계산. 등원: 차고지→정차→학원 / 하원: 학원→정차→차고지.
 // keepOrder=true면 NN 재정렬을 하지 않고 run.stops 순서를 그대로 쓴다(증분 재배차 = 저장 순서 보존).
 async function planRun(run: Run, direction: DispatchDirection, academy: Geo, depot: Geo | null, csMin: number | null, ceMin: number | null, localOnly = false, keepOrder = false) {
@@ -403,7 +414,9 @@ export async function buildDispatchFromRiders(input: {
   if (run.stops.length) runs.push(run);
 
   const csMin = hhmmToMin(classStart), ceMin = hhmmToMin(classEnd);
-  for (const v of runs) { await planRun(v, direction, academy, depot, csMin, ceMin, localOnly); v.over = v.passengers > v.capacity; }
+  // 차량끼리는 서로의 값을 건드리지 않아(planRun 은 자기 run 만 고친다) 동시에 계산한다(2026-11-14 속도 개선).
+  // T맵 «요청 과다(429)»를 피하려고 동시에 2대까지만 — 차량 안의 구간 호출은 예전처럼 차례대로다.
+  await forEachLimit(runs, PLAN_RUN_CONCURRENCY, async (v) => { await planRun(v, direction, academy, depot, csMin, ceMin, localOnly); v.over = v.passengers > v.capacity; });
 
   return {
     direction, date, dow, classStart, classEnd, academy, depot, hub,
@@ -504,12 +517,11 @@ export async function incrementalDispatch(opts: { direction: DispatchDirection; 
   const classStart = saved.classStart ?? base.classStart;
   const classEnd = saved.classEnd ?? base.classEnd;
   const csMin = hhmmToMin(classStart), ceMin = hhmmToMin(classEnd);
-  for (const vi of result.reroute) {
-    const v = vehicles[vi];
-    if (!v) continue;
+  // 다시 계산할 차량도 동시에 2대까지(위 전체 배차와 같은 규칙, 2026-11-14 속도 개선)
+  await forEachLimit(result.reroute.map((vi) => vehicles[vi]).filter((v): v is Run => Boolean(v)), PLAN_RUN_CONCURRENCY, async (v) => {
     await planRun(v, direction, academy, depot, csMin, ceMin, false, /* keepOrder */ true);
     v.over = v.passengers > v.capacity;
-  }
+  });
 
   const totalStudents = vehicles.reduce((acc, v) => acc + (v.passengers ?? 0), 0);
   return {

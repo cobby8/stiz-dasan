@@ -56,6 +56,8 @@ function fakeDb(init = {}) {
 
   db.$queryRawUnsafe = async (sql, ...v) => {
     db.calls.push(sql);
+    // 2026-11-14: 청구 준비 읽기용 표 확인은 한 번에 묶어 묻는다(name 목록 → 표마다 found)
+    if (/unnest\(\$1::text\[\]\) AS name/.test(sql)) return v[0].map((name) => ({ name, found: true }));
     if (/to_regclass/.test(sql)) {
       if (/RegularAbsenceCarryReview/.test(sql)) return [db.ready ? { review: "present", evidence: "present", found: "present" } : { review: null, evidence: null, found: null }];
       return [{ found: "present" }];
