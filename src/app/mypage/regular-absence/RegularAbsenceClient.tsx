@@ -598,7 +598,7 @@ export default function RegularAbsenceClient({
       )}
 
       {mode === "period" ? (
-        <PeriodAbsencePanel kids={periodKids} presetStudentId={presetStudentId} uploadEvidence={uploadEvidence} onChanged={onPeriodChanged} />
+        <PeriodAbsencePanel kids={periodKids} presetStudentId={presetStudentId} uploadEvidence={uploadEvidence} onChanged={onPeriodChanged} contact={contact} />
       ) : !hasAnyClass ? (
         <div className="rounded-2xl border border-dashed border-[var(--color-academy-line-input)] bg-white px-6 py-16 text-center text-sm text-[var(--color-academy-muted)]">
           다가오는 정규수업이 없습니다.

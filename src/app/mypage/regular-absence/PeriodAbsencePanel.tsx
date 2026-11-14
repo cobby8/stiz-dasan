@@ -37,7 +37,7 @@ async function postPeriod(body: Record<string, unknown>) {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
   const json = await res.json().catch(() => null);
-  if (!res.ok) throw Object.assign(new Error(json?.error || "처리에 실패했습니다."), { tooLong: json?.tooLong === true });
+  if (!res.ok) throw Object.assign(new Error(json?.error || "처리에 실패했습니다."), { tooLong: json?.tooLong === true, needContact: json?.needContact === true });
   return json;
 }
 
@@ -141,8 +141,10 @@ export function ActivePeriodList({ periods, onChanged }: { periods: ParentAbsenc
 
 /** «여러 날» 알리기 칸 — 아이·시작일·끝일(또는 아직 몰라요)·사유 → 미리보기 → 알리기 */
 export default function PeriodAbsencePanel({
-  kids, presetStudentId = null, uploadEvidence, onChanged,
+  kids, presetStudentId = null, uploadEvidence, onChanged, contact = { phone: null, kakaoChannelUrl: null },
 }: {
+  /** 학원 연락처(설정값) — 여기서 해결할 수 없을 때 바로 전화·문의로 잇는다 */
+  contact?: { phone: string | null; kakaoChannelUrl: string | null };
   kids: Kid[];
   presetStudentId?: string | null;
   /** 증빙 사진 한 장 올리기(하루 알리기와 같은 함수) */
@@ -158,11 +160,12 @@ export default function PeriodAbsencePanel({
   const [reasonText, setReasonText] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [preview, setPreview] = useState<ParentPeriodPreview | null>(null);
-  const [problem, setProblem] = useState<{ text: string; tooLong: boolean } | null>(null);
+  const [problem, setProblem] = useState<{ text: string; tooLong: boolean; needContact?: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // 시작일·끝일 모두 «오늘부터 4주 안»(하루 알리기와 같은 범위 — 서버도 같은 규칙으로 다시 본다)
   const maxStart = useMemo(() => addDaysKst(today, PARENT_PERIOD_MAX_DAYS - 1), [today]);
-  const maxEnd = useMemo(() => (startDate ? addDaysKst(startDate, PARENT_PERIOD_MAX_DAYS - 1) : ""), [startDate]);
+  const maxEnd = maxStart;
   const ready = Boolean(studentId && startDate && (unknownEnd || endDate));
   const illness = reason === ILLNESS_REASON;
 
@@ -212,7 +215,8 @@ export default function PeriodAbsencePanel({
       setEndDate(""); setUnknownEnd(false); setReason(""); setReasonText(""); setFiles([]); setPreview(null);
       await onChanged(`${head} ${tail}`, uploadError ? `${uploadError} 위 «질병·부상 결석»에서 다시 올려 주세요.` : undefined);
     } catch (e) {
-      setProblem({ text: customerMessage(e, "결석을 알리지 못했습니다. 잠시 후 다시 시도해 주세요."), tooLong: (e as { tooLong?: boolean })?.tooLong === true });
+      const flags = e as { tooLong?: boolean; needContact?: boolean };
+      setProblem({ text: customerMessage(e, "결석을 알리지 못했습니다. 잠시 후 다시 시도해 주세요."), tooLong: flags?.tooLong === true, needContact: flags?.needContact === true });
     } finally {
       setBusy(false);
     }
@@ -253,7 +257,7 @@ export default function PeriodAbsencePanel({
       {/* 끝일을 모르면 4주까지만 잡는다 — 끝나기 전에 앱 알림이 간다 */}
       <label className="flex min-h-11 items-center gap-2 text-sm text-[var(--color-academy-ink)]">
         <input type="checkbox" className="h-5 w-5" checked={unknownEnd} onChange={(e) => setUnknownEnd(e.target.checked)} />
-        끝일은 아직 몰라요 <span className="text-xs text-[var(--color-academy-muted)]">({WEEKS}주까지만 알려요)</span>
+        끝일은 아직 몰라요 <span className="text-xs text-[var(--color-academy-muted)]">(오늘부터 {WEEKS}주까지만 알려요)</span>
       </label>
 
       <label className="block text-sm font-medium text-[var(--color-academy-ink)]">
@@ -305,6 +309,13 @@ export default function PeriodAbsencePanel({
           <p className="min-w-0 flex-1 break-keep text-sm text-[var(--color-academy-danger)]">{problem.text}</p>
           {/* 4주가 넘으면 글만 두지 않고 휴원 신청으로 바로 잇는다 */}
           {problem.tooLong && <Link href="/mypage/enrollment-change" className="academy-button-secondary shrink-0">휴원 신청</Link>}
+          {/* 오늘 알릴 수 있는 횟수를 넘었다 — 그 자리에서 전화·문의로 잇는다(학원 연락처가 설정돼 있을 때) */}
+          {problem.needContact && contact.phone && (
+            <a href={`tel:${contact.phone.replace(/[^0-9+]/g, "")}`} className="academy-button-secondary shrink-0 whitespace-nowrap">전화</a>
+          )}
+          {problem.needContact && contact.kakaoChannelUrl && (
+            <a href={contact.kakaoChannelUrl} data-outside-link target="_blank" rel="noopener noreferrer" className="academy-button-secondary shrink-0 whitespace-nowrap">카카오 문의</a>
+          )}
         </div>
       )}
 

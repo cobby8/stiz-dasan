@@ -23,6 +23,7 @@ import {
   ILLNESS_INBOX_HREF, getParentIllnessReviews, getUpcomingRegularClassDates, listParentUsableClasses, saveReportedAbsenceInTx,
 } from "@/lib/regular/parent-regular-absence";
 import {
+  PARENT_PERIOD_DAILY_LIMIT,
   PARENT_PERIOD_REMIND_DAYS_BEFORE,
   parentPeriodNote,
   periodDatesLabel,
@@ -194,6 +195,16 @@ export async function createParentAbsencePeriod(
       studentId,
     );
     if (others.some((other) => periodsOverlap(mine, other))) throw new Error("PERIOD_OVERLAP");
+
+    // 만들기·취소 반복 제한(보안 검수 2026-11-15): 아이당 하루(KST)에 학부모 기간 5개까지 — 취소한 것도 센다.
+    // createdAt 은 timestamptz 라 변환은 한 번, 오늘도 DB 시계의 KST 날짜.
+    const today = await tx.$queryRawUnsafe<Array<{ n: number }>>(
+      `SELECT COUNT(*)::int AS n FROM "RegularAbsencePeriod"
+        WHERE "studentId" = $1 AND "reportedByUserId" IS NOT NULL
+          AND ("createdAt" AT TIME ZONE 'Asia/Seoul')::date = (now() AT TIME ZONE 'Asia/Seoul')::date`,
+      studentId,
+    );
+    if (Number(today[0]?.n ?? 0) >= PARENT_PERIOD_DAILY_LIMIT) throw new Error("PERIOD_DAILY_LIMIT");
 
     const created = await tx.$queryRawUnsafe<Array<{ id: string; version: string }>>(
       `INSERT INTO "RegularAbsencePeriod"

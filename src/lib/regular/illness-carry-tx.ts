@@ -117,6 +117,21 @@ export async function closeIllnessReviewInTx(
            WHERE me.id = $1 AND me."periodId" IS NOT NULL)`,
     absenceId,
   );
+  // 여러 날 결석(기간): 방금 닫은 것이 그 기간의 «마지막» 살아 있는 검토였으면, 기간의 다른 날에 붙은 사진까지 전부 뺀다(보안 검수 2026-11-15).
+  // 위 문장은 «이 결석에 붙은 사진»만 보므로, 사진이 붙은 날을 먼저 닫고 나머지를 나중에 닫으면 진단서 사진이 살아남았다.
+  // 살아 있는 검토 = 취소 안 된 결석의 검토 중·이월 승인·보강권 전환. 하루 결석(기간 없음)은 0행이라 그대로다.
+  await tx.$executeRawUnsafe(
+    `UPDATE "RegularAbsenceEvidence" e SET "removedAt" = now()
+       FROM "RegularAbsence" me
+       JOIN "RegularAbsence" member ON member."periodId" = me."periodId"
+      WHERE me.id = $1 AND me."periodId" IS NOT NULL
+        AND e."absenceId" = member.id AND e."removedAt" IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM "RegularAbsence" live
+            JOIN "RegularAbsenceCarryReview" lr ON lr."absenceId" = live.id AND lr.status IN ('PENDING', 'APPROVED', 'MAKEUP')
+           WHERE live."periodId" = me."periodId" AND live.status <> 'CANCELLED')`,
+    absenceId,
+  );
   return { closed: true };
 }
 

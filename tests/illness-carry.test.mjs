@@ -124,6 +124,8 @@ function fakeDb(init = {}) {
       }).filter(({ e, row }) => (e.removed && (e.removedMinutes ?? 60) > 10) || row.orphan || row.decidedYmd != null).map(({ row }) => row);
     }
     // 사진 올리기 줄 세우기 잠금(따로 한 문장)
+    // 여러 날 결석이면 기간 행을 먼저 잠근다(하루 결석은 0행)
+    if (sql === access.EVIDENCE_PERIOD_LOCK_SQL) { db.order.push("period-lock"); return db.absences.find((a) => a.id === v[0])?.periodId ? [{ locked: 1 }] : []; }
     if (sql === access.EVIDENCE_LOCK_SQL) { db.order.push("lock"); db.onLock?.(); return [{ locked: 1 }]; }
     // 사진 권한: 학부모가 올릴 결석
     if (/FROM "RegularAbsence" ra\s+JOIN "Student" s ON s\.id = ra\."studentId"\s+JOIN "RegularAbsenceCarryReview" r ON r\."absenceId" = ra\.id/.test(sql)) {
@@ -222,6 +224,18 @@ function fakeDb(init = {}) {
       if (!found) return 0;
       Object.assign(found, { status: "CLOSED", decidedYmd: db.today });
       return 1;
+    }
+    // 기간의 마지막 살아 있는 검토가 닫히면 그 기간 결석들에 붙은 사진을 전부 뺀다(하루 결석은 0행)
+    if (/UPDATE "RegularAbsenceEvidence" e SET "removedAt" = now\(\)\s+FROM "RegularAbsence" me\s+JOIN "RegularAbsence" member ON member\."periodId" = me\."periodId"/.test(sql)) {
+      assert.match(sql, /lr\.status IN \('PENDING', 'APPROVED', 'MAKEUP'\)\s+WHERE live\."periodId" = me\."periodId" AND live\.status <> 'CANCELLED'/);
+      const me = db.absences.find((a) => a.id === v[0]);
+      if (!me?.periodId) return 0;
+      const members = db.absences.filter((a) => a.periodId === me.periodId);
+      const alive = members.some((a) => a.status !== "CANCELLED" && ["PENDING", "APPROVED", "MAKEUP"].includes(db.reviews.find((r) => r.absenceId === a.id)?.status));
+      if (alive) return 0;
+      let n = 0;
+      for (const e of db.evidence) if (members.some((m) => m.id === e.absenceId) && !e.removed) { e.removed = true; n += 1; }
+      return n;
     }
     if (/UPDATE "RegularAbsenceEvidence" SET "removedAt" = now\(\) WHERE "absenceId" = \$1 AND "removedAt" IS NULL/.test(sql)) {
       assert.match(sql, /sibling\."periodId" = me\."periodId" AND sibling\.id <> me\.id AND sibling\.status <> 'CANCELLED'/);
@@ -471,11 +485,22 @@ test("여러 날 결석: 한 날의 검토를 닫아도 기간의 다른 날이 
   assert.equal(db.evidence[0].removed, false, "d2·d3 가 아직 검토 중 — 사진을 남긴다");
   db.absences[0].status = "CANCELLED";
   assert.equal((await access.findEvidenceTargetForParent(db, ACCESS, "p1", "d2")).photoCount, 1, "취소된 날에 붙은 사진도 기간의 증빙으로 센다");
+  db.absences[1].status = "CANCELLED";
   await carryTx.closeIllnessReviewInTx(db, "d2", { canceled: true });
-  assert.equal(db.evidence[0].removed, false);
-  // 남은 사진이 붙은 날(d1)은 이미 닫혔으므로, 마지막 날을 닫을 때는 그 날에 붙은 사진만 본다 — 기간이 모두 닫히면 cron 이 닫힌 검토의 사진을 90일 뒤 지운다
+  assert.equal(db.evidence[0].removed, false, "d3 가 아직 검토 중");
+  // 기간의 마지막 검토가 닫히는 순간, 다른 날(d1)에 붙어 있던 사진까지 전부 빠진다(보안 검수 — 진단서 사진이 살아남지 않게)
+  db.absences[2].status = "CANCELLED";
   await carryTx.closeIllnessReviewInTx(db, "d3", { canceled: true });
   assert.deepEqual(db.reviews.map((r) => r.status), ["CLOSED", "CLOSED", "CLOSED"]);
+  assert.equal(db.evidence[0].removed, true, "전부 취소 뒤 살아 있는 사진 0장");
+  assert.equal((await access.findEvidenceForAdmin(db, "e1")), null, "관리자도 더는 열 수 없다(파일은 cron 이 지운다)");
+  // 결정이 난 날(이월 승인·보강권 전환)이 남아 있으면 그 증빙이므로 남긴다
+  for (const kept of ["APPROVED", "MAKEUP"]) {
+    const part = fakeDb({ absences: PERIOD.map((a) => ({ ...a })), reviews: [...periodReviews().slice(0, 2), pending({ absenceId: "d3", status: kept })], evidence: [photo("e1", { absenceId: "d1" })] });
+    await carryTx.closeIllnessReviewInTx(part, "d1", { canceled: true });
+    await carryTx.closeIllnessReviewInTx(part, "d2", { canceled: true });
+    assert.equal(part.evidence[0].removed, false, kept);
+  }
   // 하루 결석(기간 없음)은 예전 그대로 — 닫으면 바로 뺀다
   const single = fakeDb({ absences: [{ ...ABSENCE }], reviews: [pending()], evidence: [photo("e1")] });
   await carryTx.closeIllnessReviewInTx(single, "a1");
@@ -798,7 +823,9 @@ test("동시 업로드: 잠금을 «먼저 따로» 잡고 그 뒤에 장수를 
   // 잠금을 기다리는 사이 다른 요청이 세 번째 사진을 확정한 상황
   db.onLock = () => db.evidence.push(photo("e3"));
   const locked = await access.findEvidenceTargetForParent(db, ACCESS, "p1", "a1", true);
-  assert.deepEqual(db.order, ["lock", "count"], "잠금 → 세기 순서");
+  assert.deepEqual(db.order, ["period-lock", "lock", "count"], "기간 잠금 → 검토 잠금 → 세기 순서");
+  // 기간 잠금 = 그 결석이 속한 기간 행(같은 기간의 다른 날짜로 동시에 올려도 한 줄로 선다)
+  assert.match(access.EVIDENCE_PERIOD_LOCK_SQL, /FROM "RegularAbsencePeriod" p\s+JOIN "RegularAbsence" ra ON ra\."periodId" = p\.id WHERE ra\.id = \$1 FOR UPDATE OF p/);
   assert.equal(locked.photoCount, 3);
   assert.match(access.evidenceAddRefusal(locked), /3장까지/);
   // 잠금 없이 부르면 잠금 문장을 보내지 않는다(거래 밖 미리보기)

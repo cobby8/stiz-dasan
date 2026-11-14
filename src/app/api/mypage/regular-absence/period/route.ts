@@ -29,8 +29,9 @@ const MESSAGES: Record<string, string> = {
   PERIOD_INVALID_DATE: "날짜를 다시 골라 주세요.",
   PERIOD_START_PAST: "시작일은 오늘부터 고를 수 있습니다.",
   PERIOD_START_TOO_FAR: `시작일은 앞으로 ${WEEKS}주 안에서 고를 수 있습니다.`,
+  PERIOD_DAILY_LIMIT: "오늘은 더 알릴 수 없어요. 학원에 문의해 주세요.",
   PERIOD_END_BEFORE_START: "끝일은 시작일과 같거나 그 뒤여야 합니다.",
-  PERIOD_TOO_LONG: `${WEEKS}주가 넘으면 휴원 신청을 이용해 주세요.`,
+  PERIOD_TOO_LONG: `오늘부터 ${WEEKS}주가 넘으면 휴원 신청을 이용해 주세요.`,
   PERIOD_NO_DATES: "이 기간에 알릴 수업이 없습니다. 날짜를 다시 확인해 주세요.",
   PERIOD_OVERLAP: "이미 알린 기간과 날짜가 겹칩니다. 그 기간을 먼저 «복귀했어요» 또는 «알림 취소»로 정리해 주세요.",
   PERIOD_NOT_FOUND: "알린 기간을 찾을 수 없습니다.",
@@ -48,7 +49,9 @@ function failure(error: unknown, where: string) {
   // 건강 정보(사유 글)가 섞이지 않게 오류 이름만 남긴다
   if (!known) console.error(`[api/mypage/regular-absence/period] ${where} failed:`, error instanceof Error ? error.name : "");
   return NextResponse.json(
-    { error: known || "처리에 실패했습니다. 잠시 후 다시 시도해 주세요.", code: known ? code : undefined, tooLong: code === "PERIOD_TOO_LONG" || undefined },
+    { error: known || "처리에 실패했습니다. 잠시 후 다시 시도해 주세요.", code: known ? code : undefined, tooLong: code === "PERIOD_TOO_LONG" || undefined,
+      // 화면이 글만 두지 않고 전화·문의 버튼을 함께 보인다
+      needContact: code === "PERIOD_DAILY_LIMIT" || undefined },
     { status: known ? 409 : 500, headers: noStore },
   );
 }

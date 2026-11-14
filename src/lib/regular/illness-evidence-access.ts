@@ -18,6 +18,10 @@ export type EvidenceDb = {
 /** 결석 한 건의 사진 올리기를 줄 세우는 잠금(검토 줄 한 행). 반드시 거래 안에서, 장수를 세기 «전»에 따로 실행한다 */
 export const EVIDENCE_LOCK_SQL = `SELECT 1 AS locked FROM "RegularAbsenceCarryReview" WHERE "absenceId" = $1 FOR UPDATE`;
 
+/** 여러 날 결석(기간)의 사진 올리기를 줄 세우는 잠금 — 그 결석이 속한 기간 행. 하루 결석이면 잠글 행이 없다(0행) */
+export const EVIDENCE_PERIOD_LOCK_SQL = `SELECT 1 AS locked FROM "RegularAbsencePeriod" p
+  JOIN "RegularAbsence" ra ON ra."periodId" = p.id WHERE ra.id = $1 FOR UPDATE OF p`;
+
 export type EvidenceTarget = { absenceId: string; status: string; requestedYmd: string; absenceYmd: string; todayYmd: string; photoCount: number };
 
 /** 학부모가 사진을 올리려는 결석 — 내 아이의 살아 있는 질병·부상 결석이고 검토 줄이 있을 때만 */
@@ -27,7 +31,11 @@ export async function findEvidenceTargetForParent(
   // 잠금은 «따로 한 문장»으로 먼저 잡는다(보안 검수 2026-11-14).
   // 잠금(FOR UPDATE)과 장수 세기(COUNT)가 한 문장이면, READ COMMITTED 에서 기다리던 쪽이 «기다리기 전»에 센 장수를
   // 그대로 써서 동시에 올린 사진이 3장 제한을 넘는다. 잠금을 얻은 «뒤»의 새 문장은 앞 거래가 확정한 사진까지 센다.
-  if (lock) await db.$queryRawUnsafe(EVIDENCE_LOCK_SQL, absenceId);
+  if (lock) {
+    // 여러 날 결석은 3장을 «기간 전체»로 센다 — 같은 기간의 다른 날짜로 동시에 올려도 줄을 서게 기간 행을 먼저 잠근다(하루 결석은 0행)
+    await db.$queryRawUnsafe(EVIDENCE_PERIOD_LOCK_SQL, absenceId);
+    await db.$queryRawUnsafe(EVIDENCE_LOCK_SQL, absenceId);
+  }
   const rows = await db.$queryRawUnsafe<EvidenceTarget[]>(
     `SELECT ra.id AS "absenceId", r.status,
             to_char(r."requestedAt" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "requestedYmd",

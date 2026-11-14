@@ -1,7 +1,7 @@
 // 학부모 «여러 날 결석»(기간 결석) 규칙 — 순수 모듈(DB·React 없음. node 테스트가 바로 실행한다).
 //
 // 원장 결정(2026-11-15): 학부모도 «결석 알리기»에서 여러 날을 한 번에 알린다.
-//   · 한도 = 시작일부터 4주(28일). 넘으면 휴원 신청으로 안내한다. 끝일 «아직 몰라요»는 4주까지만 잡는다.
+//   · 한도 = 오늘부터 4주(28일) 안 — 시작일·끝일 모두. 넘으면 휴원 신청으로 안내한다. 끝일 «아직 몰라요»는 그 끝까지만 잡는다.
 //   · 사유 5종 모두 허용. 날짜마다 «하루 알리기»와 같은 결과(질병·부상 = 이월 검토, 그 밖 = 보강권 1장).
 //   · 연간일정 휴무일·이미 알린 날·마감(수업 1시간 전) 지난 오늘 수업은 자동으로 뺀다.
 //
@@ -11,7 +11,7 @@ import { addDaysKst, diffDaysKst, isKstYmd, kstDow } from "@/lib/datetime/kst";
 import { planAbsencePeriodDates, shortDateLabel, type ClassDatesForMonth } from "@/lib/regular/absence-period-plan";
 import { isAbsenceChangeOpen } from "@/lib/regular/regularAbsenceRules";
 
-/** 학부모가 한 번에 알릴 수 있는 기간(시작일 포함 28일) */
+/** 학부모가 알릴 수 있는 범위(오늘 포함 28일 — 시작일·끝일 모두 이 안) */
 export const PARENT_PERIOD_MAX_DAYS = 28;
 /** 끝일 «아직 몰라요» 기간이 끝나기 며칠 전에 «연장/복귀» 안내를 보낼지 */
 export const PARENT_PERIOD_REMIND_DAYS_BEFORE = 3;
@@ -34,6 +34,9 @@ export type ParentPeriodError =
   | "PERIOD_END_BEFORE_START"
   | "PERIOD_TOO_LONG"; // 4주 초과 → 휴원 신청 안내
 
+/** 아이 한 명당 하루(KST)에 만들 수 있는 기간 수 — 만들기·취소를 되풀이해 알림·보강권을 흔드는 것을 막는다 */
+export const PARENT_PERIOD_DAILY_LIMIT = 5;
+
 export type ParentPeriodRange = { startYmd: string; endYmd: string; openEnded: boolean };
 
 /**
@@ -48,7 +51,9 @@ export function resolveParentPeriodRange(input: {
   if (!isKstYmd(start) || (endRaw && !isKstYmd(endRaw))) return { ok: false, code: "PERIOD_INVALID_DATE" };
   if (start < input.todayYmd) return { ok: false, code: "PERIOD_START_PAST" };
   if (start > addDaysKst(input.todayYmd, PARENT_PERIOD_MAX_DAYS - 1)) return { ok: false, code: "PERIOD_START_TOO_FAR" };
-  const maxEnd = addDaysKst(start, PARENT_PERIOD_MAX_DAYS - 1);
+  // 끝일도 «오늘부터 4주 안»까지(보안 검수 2026-11-15) — 하루 알리기와 같은 범위다. 시작일 기준으로 4주를 주면
+  // 4주 뒤에 시작해 8주 앞까지 한 번에 알릴 수 있었다. 끝일 «아직 몰라요»도 오늘 +27일까지만 잡는다.
+  const maxEnd = addDaysKst(input.todayYmd, PARENT_PERIOD_MAX_DAYS - 1);
   if (!endRaw) return { ok: true, range: { startYmd: start, endYmd: maxEnd, openEnded: true } };
   if (endRaw < start) return { ok: false, code: "PERIOD_END_BEFORE_START" };
   if (endRaw > maxEnd) return { ok: false, code: "PERIOD_TOO_LONG" };

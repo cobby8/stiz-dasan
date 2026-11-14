@@ -456,6 +456,18 @@ function makeDb(overrides = {}) {
       found.status = "CLOSED";
       return 1;
     }
+    // 기간의 마지막 살아 있는 검토가 닫히면 그 기간 결석들에 붙은 사진을 전부 뺀다(하루 결석은 0행)
+    if (/UPDATE "RegularAbsenceEvidence" e SET "removedAt" = now\(\)\s+FROM "RegularAbsence" me\s+JOIN "RegularAbsence" member ON member\."periodId" = me\."periodId"/.test(sql)) {
+      assert.match(sql, /lr\.status IN \('PENDING', 'APPROVED', 'MAKEUP'\)\s+WHERE live\."periodId" = me\."periodId" AND live\.status <> 'CANCELLED'/);
+      const me = db.absences.find((a) => a.id === args[0]);
+      if (!me?.periodId) return 0;
+      const members = db.absences.filter((a) => a.periodId === me.periodId);
+      const alive = members.some((a) => a.status !== "CANCELLED" && ["PENDING", "APPROVED", "MAKEUP"].includes(db.reviews.find((r) => r.absenceId === a.id)?.status));
+      if (alive) return 0;
+      let n = 0;
+      for (const e of db.evidence) if (members.some((m) => m.id === e.absenceId) && !e.removed) { e.removed = true; n += 1; }
+      return n;
+    }
     if (/UPDATE "RegularAbsenceEvidence" SET "removedAt" = now\(\) WHERE "absenceId" = \$1/.test(sql)) {
       let n = 0;
       for (const e of db.evidence) if (e.absenceId === args[0] && !e.removed) { e.removed = true; n += 1; }

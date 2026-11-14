@@ -49,11 +49,24 @@ test("기간: 시작일 포함 28일까지 — 28일째 통과·29일째 «휴�
   assert.deepEqual(range("2026-12-20", null).range, { startYmd: "2026-12-20", endYmd: "2027-01-16", openEnded: true });
 });
 
+test("기간: 끝일도 «오늘부터 4주 안» — 뒤늦게 시작해 8주 앞까지 알릴 수 없다(하루 알리기와 같은 범위)", () => {
+  const range = (startYmd, endYmd) => rules.resolveParentPeriodRange({ startYmd, endYmd, todayYmd: "2026-11-15" });
+  // 오늘 11/15 → 알릴 수 있는 마지막 날 12/12
+  assert.equal(range("2026-12-01", "2026-12-12").ok, true);
+  assert.deepEqual(range("2026-12-01", "2026-12-13"), { ok: false, code: "PERIOD_TOO_LONG" }, "시작일 기준 4주(12/28)가 아니라 오늘 기준");
+  assert.deepEqual(range("2026-12-01", "").range, { startYmd: "2026-12-01", endYmd: "2026-12-12", openEnded: true }, "끝일 미정도 오늘 +27일까지만");
+  assert.deepEqual(range("2026-12-12", null).range, { startYmd: "2026-12-12", endYmd: "2026-12-12", openEnded: true });
+  // 화면의 날짜 선택 범위도 같은 끝(오늘 +27일)
+  const panel = read("src/app/mypage/regular-absence/PeriodAbsencePanel.tsx");
+  assert.match(panel, /const maxStart = useMemo\(\(\) => addDaysKst\(today, PARENT_PERIOD_MAX_DAYS - 1\), \[today\]\);\s+const maxEnd = maxStart;/);
+});
+
 test("기간: 시작일은 오늘부터 4주 안, 끝일은 시작일 이후, 날짜 형식", () => {
   const range = (startYmd, endYmd) => rules.resolveParentPeriodRange({ startYmd, endYmd, todayYmd: "2026-11-15" });
   assert.equal(range("2026-11-14", "2026-11-20").code, "PERIOD_START_PAST");
   assert.equal(range("2026-11-15", "2026-11-20").ok, true, "오늘부터");
-  assert.equal(range("2026-12-12", "2026-12-20").ok, true, "오늘 +27일");
+  assert.equal(range("2026-12-12", "2026-12-12").ok, true, "오늘 +27일(시작·끝 모두 이 날까지)");
+  assert.equal(range("2026-12-12", "2026-12-13").code, "PERIOD_TOO_LONG");
   assert.equal(range("2026-12-13", "2026-12-20").code, "PERIOD_START_TOO_FAR");
   assert.equal(range("2026-11-20", "2026-11-19").code, "PERIOD_END_BEFORE_START");
   for (const bad of ["", "2026-13-01", "11/20", null, 20261120]) assert.equal(range(bad, "2026-11-20").code, "PERIOD_INVALID_DATE", String(bad));
@@ -204,7 +217,14 @@ test("API: 로그인한 학부모만, 오류는 한국어 문구 — 4주 초과
   const route = read("src/app/api/mypage/regular-absence/period/route.ts");
   assert.equal(route.split("await parentOrNull()").length - 1, 2, "GET·POST 모두");
   assert.match(route, /requireVerifiedParent\(\)/);
-  assert.match(route, /PERIOD_TOO_LONG: `\$\{WEEKS\}주가 넘으면 휴원 신청을 이용해 주세요\.`/);
+  assert.match(route, /PERIOD_TOO_LONG: `오늘부터 \$\{WEEKS\}주가 넘으면 휴원 신청을 이용해 주세요\.`/);
+  // 하루 만들기 횟수 제한: 글 + 그 자리 전화·문의 버튼
+  assert.match(route, /PERIOD_DAILY_LIMIT: "오늘은 더 알릴 수 없어요\. 학원에 문의해 주세요\."/);
+  assert.match(route, /needContact: code === "PERIOD_DAILY_LIMIT" \|\| undefined/);
+  const panel = read("src/app/mypage/regular-absence/PeriodAbsencePanel.tsx");
+  assert.match(panel, /\{problem\.needContact && contact\.phone && \(\s*<a href=\{`tel:\$\{contact\.phone\.replace\(\/\[\^0-9\+\]\/g, ""\)\}`\}/);
+  assert.match(read("src/app/mypage/regular-absence/RegularAbsenceClient.tsx"), /onChanged=\{onPeriodChanged\} contact=\{contact\} \/>/);
+  assert.equal(rules.PARENT_PERIOD_DAILY_LIMIT, 5);
   assert.match(route, /tooLong: code === "PERIOD_TOO_LONG" \|\| undefined/);
   assert.match(route, /closeParentAbsencePeriod\(parent\.appUserId, \{ periodId: body\.periodId, returnDate: todayKst\(\) \}\)/, "알림 취소 = 오늘부터(오늘은 KST 공용 모듈)");
   assert.doesNotMatch(route, /toISOString\(\)|new Date\(\)\.get/);
