@@ -10,8 +10,8 @@ import { usePathname } from "next/navigation";
 // also = 이 탭에 속하는 하위 화면. 그 화면에 있을 때도 탭이 켜져 «지금 어디 있는지» 알 수 있다.
 export const PARENT_TABS = [
     // 아이 기록(/mypage/record)은 홈 소속 — 홈 히어로 아래 한 줄에서 들어간다(2026-11-14 원장 결정 w1, 탭은 4개 그대로)
-    // 보낸 문의(/mypage/requests)도 홈 소속 — 홈 «보낸 문의» 줄·설정에서 들어간다(2026-11-14 c3)
-    { href: "/mypage", label: "홈", also: ["/mypage/record", "/mypage/requests"] as string[] },
+    // 보낸 문의(/mypage/requests)·신청 메뉴(/mypage/apply)·체육관 대관(/mypage/rental)도 홈 소속 — 홈의 한 줄 행에서 들어간다(2026-11-14 c3·c9)
+    { href: "/mypage", label: "홈", also: ["/mypage/record", "/mypage/requests", "/mypage/apply", "/mypage/rental"] as string[] },
     {
         href: "/mypage/classes",
         label: "수업",

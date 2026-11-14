@@ -546,7 +546,7 @@ export default function MyPageClient({ data, notices = [], inquiryCounts = { ans
                 </button>
             </nav>
 
-            {/* 늘 보이는 한 줄 행 — 보낸 문의(끝난 문의도 다시 보고 이어 쓴다, 2026-11-14 c3). 오른쪽 글자는 건수가 있을 때만 */}
+            {/* 늘 보이는 한 줄 행 — 보낸 문의(끝난 문의도 다시 보고 이어 쓴다, c3) · 신청(유니폼·대관·방학특강으로 가는 길, c9). 2026-11-14 */}
             <ul aria-label="더 보기" className="academy-panel divide-y divide-[var(--color-academy-line)] overflow-hidden">
                 <li>
                     <Link href="/mypage/requests" className={TODO_ROW}>
@@ -556,6 +556,14 @@ export default function MyPageClient({ data, notices = [], inquiryCounts = { ans
                                 {inquiryCounts.answered > 0 ? <>답변 옴 <span className="tabular-nums">{inquiryCounts.answered}</span>건</> : <>답변 대기 <span className="tabular-nums">{inquiryCounts.waiting}</span>건</>}
                             </span>
                         )}
+                        <span aria-hidden="true" className="shrink-0 text-[var(--color-academy-faint)]">›</span>
+                    </Link>
+                </li>
+                <li>
+                    {/* 신청 메뉴 화면(/mypage/apply) — 세 가지 신청을 앱 안에서 연다(공개 홈페이지로 나가지 않는다) */}
+                    <Link href="/mypage/apply" className={TODO_ROW}>
+                        <span className="min-w-0 flex-1 font-medium text-[var(--color-academy-ink)]">신청</span>
+                        <span className="shrink-0 text-[var(--color-academy-muted)]">유니폼 · 대관 · 방학특강</span>
                         <span aria-hidden="true" className="shrink-0 text-[var(--color-academy-faint)]">›</span>
                     </Link>
                 </li>

@@ -6,7 +6,8 @@ import { useEffect, useState } from "react";
 import { SEAT_LEVEL_LABEL, SEAT_LEVEL_TEXT_CLASS } from "@/lib/seats/seatLevel";
 import { extractPrograms, formatSeasonalPeriod, formatWon, programClasses, seasonalDisplayState, type SeasonalListResponse, type SeasonalProgram } from "./types";
 
-export default function SeasonalListClient() {
+// basePath = 상세 화면 주소 머리. 공개 화면은 "/seasonal"(기본), 학부모 앱 안은 "/mypage/seasonal/apply"(앱 범위 밖으로 나가지 않게 — 2026-11-14 c9)
+export default function SeasonalListClient({ basePath = "/seasonal" }: { basePath?: string } = {}) {
   const [programs, setPrograms] = useState<SeasonalProgram[]>([]);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
 
@@ -58,7 +59,7 @@ export default function SeasonalListClient() {
                 {display.showSeats && offerings.length > 0 && <div className="text-right"><p className="text-xs text-[var(--color-public-muted)]">모집 현황</p><p className={`font-medium ${hasOpenCapacity || hasUnknownSeats ? SEAT_LEVEL_TEXT_CLASS.AVAILABLE : SEAT_LEVEL_TEXT_CLASS[bestLevel]}`}>{hasOpenCapacity || hasUnknownSeats ? "학원 문의" : bestLevel !== "FULL" ? SEAT_LEVEL_LABEL[bestLevel] : offerings.some((item) => item.waitlistEnabled) ? "대기 가능" : "마감"}</p></div>}
               </div>
               {!display.canApply && <p className="text-sm text-[var(--color-public-muted)]">{display.message}</p>}
-              <Link href={`/seasonal/${program.slug}`} className="public-btn-primary w-full">{display.actionLabel}</Link>
+              <Link href={`${basePath}/${program.slug}`} className="public-btn-primary w-full">{display.actionLabel}</Link>
             </div>
           </article>
         );

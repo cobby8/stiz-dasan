@@ -59,7 +59,8 @@ function monthTitle(ym: string) {
 
 const INPUT_CLASS = "mt-1 block min-h-11 w-full rounded-[var(--color-public-radius)] border border-[var(--color-public-line)] bg-[var(--color-public-paper)] px-3 font-normal text-[var(--color-public-ink)]";
 
-export default function RentalClient() {
+// homeHref = 접수 뒤 «홈으로» 주소. 공개 화면은 "/"(기본), 학부모 앱 안은 "/mypage"(앱 범위 밖으로 나가지 않게 — 2026-11-14 c9)
+export default function RentalClient({ homeHref = "/" }: { homeHref?: string } = {}) {
   // 「오늘」은 손님 기기에서 연 순간에 정한다 — 페이지는 미리 만들어 두는(정적) 화면이라
   // 서버가 만든 시점의 날짜를 쓰면 다음 날 화면이 어제부터 시작한다.
   const today = useSyncExternalStore(noopSubscribe, () => todayKst(), () => "");
@@ -346,7 +347,7 @@ export default function RentalClient() {
           <li>· 실내운동화를 꼭 챙겨 오세요.</li>
           <li>· 건물 주차가 어려워요. 인근 주민센터 주차장을 이용해 주세요.</li>
         </ul>
-        <Link href="/" className="public-btn-text mt-2">홈으로</Link>
+        <Link href={homeHref} className="public-btn-text mt-2">홈으로</Link>
       </div>
     );
   }
