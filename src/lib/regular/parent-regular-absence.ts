@@ -27,7 +27,7 @@ import {
 import { periodCarryColumnsReady } from "@/lib/regular/absence-period-service";
 import {
   PERIOD_APPROVED_PARENT_LABEL, PERIOD_DAY_EXCLUDED_LABEL, PERIOD_REFUND_DONE_PARENT_LABEL, PERIOD_REFUND_REVIEW_PARENT_LABEL,
-  makeupInUseSql, parentPeriodDayStatus, periodRefundDoneParentText, periodRefundReviewParentText,
+  makeupInUseSql, parentPeriodDayStatus, periodRefundReviewParentLabel,
 } from "@/lib/regular/illnessPeriodRules";
 import {
   REASON_LABEL,
@@ -145,7 +145,7 @@ export type ParentIllnessReview = {
   settledTotal?: number;
   /**
    * 퇴원 정산(4단계) — 그 기간이 환불 검토 중이거나 환불 처리됐다. 화면이 «이월» 안내 대신 이 글자를 그대로 보인다
-   * («부상 결석 기간 수강료 ○원을 환불 검토 중이에요» · «… 환불 처리를 마쳤어요»). 금액은 확정된 정산표 합계(기간 전체).
+   * («환불 검토 중 · 예정 ○원» · «환불 처리 완료»). 예정 금액은 정산표 합계(기간 전체)이고, 처리 완료 뒤에는 금액을 보이지 않는다.
    */
   refundText?: string;
 };
@@ -253,7 +253,8 @@ export async function getParentIllnessReviews(parentUserId: string): Promise<Par
         ...(settledTotal !== null ? { settledTotal } : {}),
         ...(refundState ? {
           statusLabel: refundState === "REFUND_DONE" ? PERIOD_REFUND_DONE_PARENT_LABEL : PERIOD_REFUND_REVIEW_PARENT_LABEL,
-          refundText: refundState === "REFUND_DONE" ? periodRefundDoneParentText(refundTotal) : periodRefundReviewParentText(refundTotal),
+          // 검토 중일 때만 «예정 ○원», 처리 완료 뒤에는 금액 없이
+          refundText: refundState === "REFUND_DONE" ? PERIOD_REFUND_DONE_PARENT_LABEL : periodRefundReviewParentLabel(refundTotal),
         } : {}),
       };
     });

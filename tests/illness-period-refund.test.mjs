@@ -47,10 +47,8 @@ test("퇴원 판정 조각: 승인·금액 미확정 + 대상 반에 끝나지 �
   const sql = rules.illnessWithdrawnSql("p");
   assert.ok(sql.includes(rules.illnessHoldPeriodSql("p")), "승인됐고 금액 미확정인 기간만");
   assert.match(sql, /NOT EXISTS \(\s+SELECT 1 FROM "Enrollment" live_enrollment\s+WHERE live_enrollment\."studentId" = p\."studentId" AND live_enrollment\.status <> 'WITHDRAWN'\s+AND \(cardinality\(p\."classIds"\) = 0 OR live_enrollment\."classId" = ANY\(p\."classIds"\)\)\)/);
-  // 수강 종료 정리가 지우지 않을 결석: 승인된 기간에 묶인 지난 날(오늘 포함) — 오늘은 DB 시계의 KST 날짜
-  const keep = rules.illnessPendingSettleAbsenceSql("ra");
-  assert.match(keep, /ra\.reason = 'ILLNESS_INJURY' AND ra\.date <= \(now\(\) AT TIME ZONE 'Asia\/Seoul'\)::date/);
-  assert.ok(keep.includes(rules.illnessHoldPeriodSql("pending_period")));
+  // 수강 종료 정리가 결석을 따로 보호하는 조각은 없다(코드 리뷰 반영) — 효력일 이후 결석은 «퇴원 뒤 남은 수업»이라 예전대로 취소된다
+  assert.equal(rules.illnessPendingSettleAbsenceSql, undefined);
 });
 
 test("세는 끝(refundCountUntil): 퇴원한 아이는 오늘까지만 센다 — 저장된 복귀일이 더 이르면 그날, 달·해·윤년 경계", () => {
@@ -64,11 +62,34 @@ test("세는 끝(refundCountUntil): 퇴원한 아이는 오늘까지만 센다 �
   assert.equal(rules.refundCountUntil("2027-02-28", "잘못된값"), "2027-03-01", "모양이 다른 복귀일은 무시");
 });
 
-test("문구: 학부모 알림·화면 — 금액은 확정된 정산표 합계, 0원이면 금액 없이 / 환불 처리 기록 읽기", () => {
-  assert.equal(rules.periodRefundReviewParentText(84000), "부상 결석 기간 수강료 84,000원을 환불 검토 중이에요");
-  assert.equal(rules.periodRefundDoneParentText(84000), "부상 결석 기간 수강료 84,000원 환불 처리를 마쳤어요");
-  assert.equal(rules.periodRefundReviewParentText(0), "부상 결석 정산을 확인하고 있어요 · 환불할 수강료는 없어요");
-  assert.equal(rules.periodRefundDoneParentText(0), "부상 결석 정산을 마쳤어요 · 환불할 수강료는 없어요");
+test("반마다 자르는 날(refundClassCutoffs): 그 반 수강 종료 효력일부터는 세지 않는다 — 퇴원 뒤 남은 수업과 겹치지 않게", () => {
+  const cutoffs = rules.refundClassCutoffs([
+    { classId: "fri", endsOn: "2026-11-13" }, { classId: "mon", endsOn: "2026-12-01" },
+    { classId: "fri", endsOn: "2026-11-20" },          // 같은 반 기록이 여럿이면 이른 날
+    { classId: "bad", endsOn: "2026-13-40" }, { classId: "none", endsOn: null }, { classId: "", endsOn: "2026-11-13" },
+  ]);
+  assert.deepEqual([...cutoffs], [["fri", "2026-11-13"], ["mon", "2026-12-01"]]);
+  assert.deepEqual([...rules.refundClassCutoffs([])], []);
+  // 예: 금요반 11월 4회(11/6·13·20·27), 효력일 11/13 으로 종료 → 효력일 전날까지인 11/6 한 번만 남는다
+  const friday = ["2026-11-06", "2026-11-13", "2026-11-20", "2026-11-27"];
+  assert.deepEqual(friday.filter((date) => date < cutoffs.get("fri")), ["2026-11-06"]);
+  // 읽는 SQL: 적용된 수강 종료·반 변경만, 지금 다시 다니는 반은 빼고, 반마다 가장 최근 것
+  const sql = rules.REFUND_CLASS_END_SQL;
+  assert.match(sql, /r\.kind IN \('WITHDRAW', 'CLASS_CHANGE'\) AND r\."appliedAt" IS NOT NULL AND r\.status IN \('APPLIED', 'APPROVED'\)/);
+  assert.match(sql, /NOT EXISTS \(SELECT 1 FROM "Enrollment" back_enrollment[\s\S]{0,200}back_enrollment\.status <> 'WITHDRAWN'\)/);
+  assert.match(sql, /SELECT DISTINCT ON \(r\."fromClassId"\)[\s\S]+ORDER BY r\."fromClassId", r\."appliedAt" DESC, r\.id/);
+  // 미리보기와 넘기기가 같은 자르는 날을 읽기 함수에 넘긴다 · 읽기 함수는 그날부터의 결석을 표에 올리지 않는다
+  assert.equal((refundLib.match(/await readRefundClassCutoffs\(tx, period\.studentId\)\);/g) ?? []).length, 2);
+  assert.match(read("src/lib/regular/illness-period-settlement.ts"), /const cutoff = classCutoffs\?\.get\(absence\.classId\);\s+return !cutoff \|\| absence\.date < cutoff;/);
+});
+
+test("문구: 학부모 앱 알림에는 금액이 없다 · 화면은 검토 중일 때만 «예정 ○원», 완료 뒤에는 금액 없이 / 환불 처리 기록 읽기", () => {
+  assert.equal(rules.PERIOD_REFUND_REVIEW_NOTICE, "부상 결석 기간 수강료를 환불 검토 중이에요");
+  assert.equal(rules.PERIOD_REFUND_DONE_NOTICE, "부상 결석 기간 수강료 환불 처리를 마쳤어요");
+  for (const text of [rules.PERIOD_REFUND_REVIEW_NOTICE, rules.PERIOD_REFUND_DONE_NOTICE]) assert.doesNotMatch(text, /\d|원/);
+  assert.equal(rules.periodRefundReviewParentLabel(84000), "환불 검토 중 · 예정 84,000원");
+  assert.equal(rules.periodRefundReviewParentLabel(0), "환불 검토 중");
+  assert.deepEqual([rules.periodRefundReviewParentText, rules.periodRefundDoneParentText], [undefined, undefined], "금액이 든 옛 문구 함수는 없다");
   assert.deepEqual([rules.PERIOD_REFUND_REVIEW_PARENT_LABEL, rules.PERIOD_REFUND_DONE_PARENT_LABEL], ["환불 검토 중", "환불 처리 완료"]);
   assert.equal(rules.REFUND_RESOLUTION_REASON, "퇴원 정산 — 환불 검토");
   assert.deepEqual(rules.parseRefundRecord({ refund: { memo: "11/20 카드 취소", doneAt: "2026-11-20T01:00:00Z", doneByUserId: "owner" } }), { memo: "11/20 카드 취소", doneAt: "2026-11-20T01:00:00Z", doneByUserId: "owner" });
@@ -86,14 +107,16 @@ test("학부모 날짜별 글자: 환불 검토·환불 처리된 기간에서 �
   // 학부모 목록: 정산표에 든 날은 «이월» 글자 대신 환불 상태와 합계 — 본인 아이만(childAccessSql)
   const list = read("src/lib/regular/parent-regular-absence.ts");
   assert.match(list, /const refundState = r\.settled === true && \(r\.periodCarryState === "REFUND_REVIEW" \|\| r\.periodCarryState === "REFUND_DONE"\)/);
-  assert.match(list, /refundText: refundState === "REFUND_DONE" \? periodRefundDoneParentText\(refundTotal\) : periodRefundReviewParentText\(refundTotal\),/);
+  assert.match(list, /refundText: refundState === "REFUND_DONE" \? PERIOD_REFUND_DONE_PARENT_LABEL : periodRefundReviewParentLabel\(refundTotal\),/);
   assert.match(list, /WHERE \$\{await childAccessSql\("s", "\$1"\)\} AND \$\{notMergedStudent\("s"\)\}/);
   const client = read("src/app/mypage/regular-absence/RegularAbsenceClient.tsx");
   assert.match(client, /\{review\.refundText \? review\.refundText : typeof review\.settledTotal === "number"/);
   // 기간 줄: 환불 검토 중 → 환불 처리 완료, 그 기간에서는 «복귀했어요»·«알림 취소»를 누르지 않는다
   const periods = read("src/lib/regular/parent-absence-period.ts");
   assert.match(periods, /const active = row\.active === true && row\.carryState !== "REFUND_REVIEW" && row\.carryState !== "REFUND_DONE";/);
-  assert.match(periods, /carry === "REFUND_REVIEW" \? `\$\{PERIOD_REFUND_REVIEW_PARENT_LABEL\} · \$\{periodRefundReviewParentText\(/);
+  assert.match(periods, /carry === "REFUND_REVIEW" \? periodRefundReviewParentLabel\(Number\.isSafeInteger\(row\.settledTotal\) \? Number\(row\.settledTotal\) : 0\)\s+: carry === "REFUND_DONE" \? PERIOD_REFUND_DONE_PARENT_LABEL/);
+  // 학부모 미리보기 API: 환불 처리 완료 뒤에는 금액을 내려보내지 않는다
+  assert.match(read("src/lib/regular/illness-period-settlement.ts"), /settledTotal: period\.carryState === "REFUND_REVIEW" \? summary\?\.carryTotal \?\? null : null \};/);
   assert.match(periods, /OR p\."carryState" = 'REFUND_REVIEW' OR \(p\."carryState" = 'REFUND_DONE' AND p\."carrySettledAt" > now\(\) - interval '60 days'\)/);
   assert.match(periods, /WHERE \$\{await childAccessSql\("s", "\$1"\)\} AND \$\{notMergedStudent\("s"\)\}/);
 });
@@ -145,67 +168,67 @@ const absenceRow = (over = {}) => ({
   attendanceRecorded: false, creditId: null, creditStatus: null, creditBooked: false, ...over,
 });
 
-test("수강 종료 정리(규칙): 승인된 기간의 지난 결석은 지우지 않는다 — 정산·이월에 묶인 날이 먼저, 효력일 전은 예전처럼 건드리지 않는다", () => {
-  const from = "2026-11-10";
-  assert.equal(cleanup.decideAbsenceOnClassEnd(absenceRow({ illnessSettlePending: true }), from), "KEEP_ILLNESS");
-  assert.equal(cleanup.decideAbsenceOnClassEnd(absenceRow(), from), "CANCEL", "표시가 없으면 예전처럼 취소");
-  assert.equal(cleanup.decideAbsenceOnClassEnd(absenceRow({ illnessSettlePending: true, billingResolved: true }), from), "KEEP_BILLING");
-  // 보강권이 예약·사용돼 있어도 정산 대기가 먼저다(정산이 «보강 완료/예약 중»으로 따로 뺀다) — 어느 쪽이든 결석은 남는다
-  assert.equal(cleanup.decideAbsenceOnClassEnd(absenceRow({ illnessSettlePending: true, creditStatus: "RESERVED" }), from), "KEEP_ILLNESS");
-  assert.equal(cleanup.decideAbsenceOnClassEnd(absenceRow({ illnessSettlePending: true, date: "2026-11-09" }), from), "SKIP");
-  const plan = cleanup.planClassEndAbsences([
-    absenceRow({ id: "past", illnessSettlePending: true, creditId: "c1", creditStatus: "AVAILABLE" }),
-    absenceRow({ id: "future", date: "2026-11-23", creditId: "c2", creditStatus: "AVAILABLE" }),
-  ], from);
-  assert.deepEqual([plan.cancel.map((row) => row.id), plan.revokeCreditIds, plan.illnessKept, plan.kept], [["future"], ["c2"], 1, { billing: 0, makeup: 0, attendance: 0 }]);
+test("수강 종료 정리(규칙): 부상 결석을 따로 보호하지 않는다 — 효력일 이후는 예전대로 취소, 효력일 전은 원래 남아 정산 대상", () => {
+  const from = "2026-11-13";
+  // 표시를 넘겨도(옛 호출) 판정에 쓰이지 않는다
+  assert.equal(cleanup.decideAbsenceOnClassEnd(absenceRow({ date: "2026-11-13", illnessSettlePending: true }), from), "CANCEL", "효력일 당일부터 취소");
+  assert.equal(cleanup.decideAbsenceOnClassEnd(absenceRow({ date: "2026-11-20" }), from), "CANCEL");
+  assert.equal(cleanup.decideAbsenceOnClassEnd(absenceRow({ date: "2026-11-06" }), from), "SKIP", "효력일 전 결석은 건드리지 않는다 = 정산 대상으로 남는다");
+  const plan = cleanup.planClassEndAbsences(["2026-11-06", "2026-11-13", "2026-11-20", "2026-11-27"].map((date) => absenceRow({ id: date, date })), from);
+  assert.deepEqual([plan.cancel.map((row) => row.id), plan.kept, "illnessKept" in plan], [["2026-11-13", "2026-11-20", "2026-11-27"], { billing: 0, makeup: 0, attendance: 0 }, false]);
+  assert.doesNotMatch(read("src/lib/enrollment/enrollment-end-cleanup.ts"), /KEEP_ILLNESS|illnessSettlePending|illnessPendingSettleAbsenceSql/);
 });
 
-test("수강 종료 정리(가짜 DB 실행): 정산 대상 결석은 남고 미래 결석만 취소 — 결과에 «부상 결석 정산이 남아 있어요» 한 줄", async () => {
-  const updates = [];
-  const log = [];
-  const absences = [
-    { id: "past", date: "2026-11-09", status: "CONFIRMED", note: "기간 결석 · 질병", periodRow: true, billingResolved: false, carryCredit: false, makeupBooked: false, attendanceRecorded: false, illnessSettlePending: true },
-    { id: "future", date: "2026-11-23", status: "CONFIRMED", note: "기간 결석 · 질병", periodRow: true, billingResolved: false, carryCredit: false, makeupBooked: false, attendanceRecorded: false, illnessSettlePending: false },
-  ];
-  const db = {
-    async $queryRawUnsafe(sql, ...values) {
-      log.push({ sql, values });
-      if (/to_regclass/.test(sql)) return [{ found: "x" }];
-      if (/information_schema\.columns/.test(sql) && /'carryState'/.test(sql)) return [{ n: 1 }];
-      if (/FROM "RegularAbsence" ra/.test(sql)) return absences;
-      if (/COUNT\(\*\)::int AS n FROM "RegularAbsencePeriod" p/.test(sql)) return [{ n: 1 }];
-      return [];
-    },
-    async $executeRawUnsafe(sql, ...values) {
-      log.push({ sql, values });
-      if (/UPDATE "RegularAbsence" SET status = 'CANCELLED'/.test(sql)) { updates.push(values[0]); return 1; }
-      return 0;
-    },
+test("수강 종료 정리(가짜 DB 실행): 효력일 이후 결석은 모두 취소 — 결과에 «부상 결석 정산이 남아 있어요» 한 줄(반 이동이면 이월 길을 먼저 말한다)", async () => {
+  const run = async (stillEnrolled) => {
+    const updates = [];
+    const log = [];
+    const absences = ["2026-11-13", "2026-11-20"].map((date) => ({ id: date, date, status: "CONFIRMED", note: "기간 결석 · 질병", periodRow: true, billingResolved: false, carryCredit: false, makeupBooked: false, attendanceRecorded: false }));
+    const db = {
+      async $queryRawUnsafe(sql, ...values) {
+        log.push({ sql, values });
+        if (/to_regclass/.test(sql)) return [{ found: "x" }];
+        if (/information_schema\.columns/.test(sql) && /'carryState'/.test(sql)) return [{ n: 1 }];
+        if (/FROM "RegularAbsence" ra/.test(sql)) return absences;
+        if (/COUNT\(\*\)::int AS n,/.test(sql) && /FROM "RegularAbsencePeriod" p/.test(sql)) return [{ n: 1, stillEnrolled }];
+        return [];
+      },
+      async $executeRawUnsafe(sql, ...values) {
+        log.push({ sql, values });
+        if (/UPDATE "RegularAbsence" SET status = 'CANCELLED'/.test(sql)) { updates.push(values[0]); return 1; }
+        return 0;
+      },
+    };
+    const out = await cleanup.cleanupEndedClassInTx(db, { studentId: "s1", classId: "fri4", className: "금4", fromYmd: "2026-11-13", actorUserId: "admin" });
+    return { out, updates, log };
   };
-  const out = await cleanup.cleanupEndedClassInTx(db, { studentId: "s1", classId: "mon4", className: "월4", fromYmd: "2026-11-05", actorUserId: "admin" });
-  assert.deepEqual(updates, ["future"], "지난 결석(정산 대상)은 취소하지 않는다");
-  assert.deepEqual([out.cancelledAbsences, out.keptAbsences, out.illnessSettle], [1, { billing: 0, makeup: 0, attendance: 0 }, { periods: 1, keptAbsences: 1 }]);
-  // 결석 조회가 판정 조각을 그대로 쓴다 · 남은 정산을 세는 조회는 «이 반은 끝난 것으로» 센다
-  const absenceSql = log.find((query) => /FROM "RegularAbsence" ra/.test(query.sql)).sql;
-  assert.ok(absenceSql.includes(`${rules.illnessPendingSettleAbsenceSql("ra")} AS "illnessSettlePending"`));
-  const periodQuery = log.find((query) => /COUNT\(\*\)::int AS n FROM "RegularAbsencePeriod" p/.test(query.sql));
+  const gone = await run(false);
+  assert.deepEqual(gone.updates, ["2026-11-13", "2026-11-20"], "효력일 이후 결석은 승인된 기간이어도 취소한다");
+  assert.deepEqual([gone.out.cancelledAbsences, gone.out.keptAbsences, gone.out.illnessSettle], [2, { billing: 0, makeup: 0, attendance: 0 }, { periods: 1, stillEnrolled: false }]);
+  // 결석 조회는 효력일 이후만 읽는다(효력일 전 결석은 보지도 않는다) · 남은 정산을 세는 조회는 «이 반은 끝난 것으로» 센다
+  const absenceQuery = gone.log.find((query) => /FROM "RegularAbsence" ra/.test(query.sql));
+  assert.match(absenceQuery.sql, /ra\.date >= \$3::date AND ra\.status IN \('REPORTED','CONFIRMED'\)/);
+  assert.doesNotMatch(absenceQuery.sql, /illnessSettlePending|pending_period/);
+  const periodQuery = gone.log.find((query) => /FROM "RegularAbsencePeriod" p/.test(query.sql));
   assert.ok(periodQuery.sql.includes(rules.illnessHoldPeriodSql("p")));
   assert.match(periodQuery.sql, /other\."classId" <> \$2 AND other\.status <> 'WITHDRAWN'/);
-  assert.deepEqual(periodQuery.values, ["s1", "mon4"]);
-  const audit = JSON.parse(log.find((query) => /ENROLLMENT_END_CLEANUP/.test(query.sql)).values[1]);
-  assert.deepEqual([audit.illnessKeptAbsences, audit.illnessSettlePeriods], [1, 1]);
-  // 결과 문구
-  const summary = { ...cleanup.emptyCleanupSummary(), ...out };
-  assert.equal(cleanup.cleanupResultMessage(summary), `결석 1건 취소 · ${rules.ENROLLMENT_END_ILLNESS_NOTE}`);
+  assert.match(periodQuery.sql, /still\."studentId" = \$1 AND still\."classId" <> \$2 AND still\.status <> 'WITHDRAWN'\) AS "stillEnrolled"/);
+  assert.deepEqual(periodQuery.values, ["s1", "fri4"]);
+  assert.equal(JSON.parse(gone.log.find((query) => /ENROLLMENT_END_CLEANUP/.test(query.sql)).values[1]).illnessSettlePeriods, 1);
+  // 결과 문구 — 완전히 퇴원: 환불 검토 / 반 이동(다른 반 수강 중): 이월로 정산하거나 환불 검토
+  assert.equal(cleanup.cleanupResultMessage({ ...cleanup.emptyCleanupSummary(), ...gone.out }), `결석 2건 취소 · ${rules.ENROLLMENT_END_ILLNESS_NOTE}`);
+  const moved = await run(true);
+  assert.deepEqual(moved.out.illnessSettle, { periods: 1, stillEnrolled: true });
+  assert.equal(cleanup.cleanupResultMessage({ ...cleanup.emptyCleanupSummary(), ...moved.out }), `결석 2건 취소 · ${rules.ENROLLMENT_END_ILLNESS_MOVED_NOTE}`);
+  assert.equal(rules.ENROLLMENT_END_ILLNESS_MOVED_NOTE, "부상 결석 정산이 남아 있어요 · 신청함에서 이월로 정산하거나 환불 검토로 넘겨 주세요");
   assert.match(rules.ENROLLMENT_END_ILLNESS_NOTE, /^부상 결석 정산이 남아 있어요/);
   assert.equal(cleanup.cleanupResultMessage(cleanup.emptyCleanupSummary()), "", "남은 정산이 없으면 예전 그대로");
-  // 기간 정산 칸이 없는 DB: 없는 칸을 읽지 않는다(판정 조각 대신 false)
+  // 기간 정산 칸이 없는 DB: 없는 칸을 읽지 않는다
   const oldLog = [];
   const oldDb = { async $queryRawUnsafe(sql) { oldLog.push(sql); return /to_regclass/.test(sql) ? [{ found: null }] : []; }, async $executeRawUnsafe() { return 0; } };
-  const old = await cleanup.cleanupEndedClassInTx(oldDb, { studentId: "s1", classId: "mon4", className: "월4", fromYmd: "2026-11-05", actorUserId: "admin" });
+  const old = await cleanup.cleanupEndedClassInTx(oldDb, { studentId: "s1", classId: "fri4", className: "금4", fromYmd: "2026-11-13", actorUserId: "admin" });
   assert.equal(old.illnessSettle, undefined);
   assert.ok(oldLog.every((sql) => !/"carryState"/.test(sql)), "carryState 를 읽지 않는다");
-  assert.match(oldLog.find((sql) => /FROM "RegularAbsence" ra/.test(sql)), /false AS "illnessSettlePending"/);
 });
 
 // ── 연결부·권한(코드에서 빠지지 않게) ───────────────────────────────────────────────────────────
@@ -218,10 +241,10 @@ test("환불 검토: 이 기능은 돈을 움직이지 않는다 — 이월을 �
   }
   // 복귀 정산과 «같은 읽기 함수»로 표를 만든다(식이 둘로 갈리지 않는다) — 미리보기는 잠금 없이, 넘기기는 잠근 뒤 다시
   const preview = slice(refundLib, "export async function previewIllnessPeriodRefund(", "export type RefundReviewResult");
-  assert.match(preview, /const read = await readSettlementPlan\(tx, period, countUntil, omit, ctx, false\);/);
+  assert.match(preview, /const read = await readSettlementPlan\(tx, period, countUntil, omit, ctx, false, await readRefundClassCutoffs\(tx, period\.studentId\)\);/);
   assert.doesNotMatch(preview, /lockCompensation|\$executeRawUnsafe|FOR UPDATE/);
   const send = slice(refundLib, "export async function sendIllnessPeriodToRefundReview(", "export type RefundDoneResult");
-  assert.match(send, /const read = await readSettlementPlan\(tx, period, countUntil, omit, ctx, true\);/);
+  assert.match(send, /const read = await readSettlementPlan\(tx, period, countUntil, omit, ctx, true, await readRefundClassCutoffs\(tx, period\.studentId\)\);/);
   assert.equal((refundLib.match(/refundCountUntil\(ctx\.todayYmd, period\.returnDate\)/g) ?? []).length, 2, "미리보기와 넘기기가 같은 «세는 끝»");
 });
 
@@ -229,7 +252,7 @@ test("환불 검토로 넘기기: 스위치 → 전역 잠금 → 기간 행 →
   const send = slice(refundLib, "export async function sendIllnessPeriodToRefundReview(", "export type RefundDoneResult");
   assert.ok(send.indexOf("if (!enabled) throw") < send.indexOf("db.$transaction("));
   const order = ["await lockCompensation(tx);", "WHERE p.id = $1 FOR UPDATE OF p", `FROM "Student" s WHERE s.id = $1 AND \${notMergedStudent("s")} FOR UPDATE`,
-    "readIllnessPeriodWithdrawal(tx, periodId)", "await endAbsencePeriodInTx(tx,", "await readSettlementPlan(tx, period, countUntil, omit, ctx, true)",
+    "readIllnessPeriodWithdrawal(tx, periodId)", "await endAbsencePeriodInTx(tx,", "await readSettlementPlan(tx, period, countUntil, omit, ctx, true,",
     "if (read.plan.problems.length > 0) throw", "if (read.fingerprint !== expected) throw", `INSERT INTO "BillingAbsenceResolution"`];
   order.reduce((from, piece) => { const at = send.indexOf(piece, from); assert.ok(at >= from, `순서가 어긋남: ${piece}`); return at; }, 0);
   assert.match(send, /VALUES \(\$1,\$2,'CARRY',\$3,true,\$4,\$5\)`,\s+absenceId, period\.studentId, REFUND_RESOLUTION_REASON, ILLNESS_REASON, actorId,/);
@@ -276,8 +299,10 @@ test("권한: 미리보기는 원장·부원장(금액은 원장만) — 넘기�
   assert.equal((send.match(/notifyParentOnce\(/g) ?? []).length, 1);
   assert.equal((done.match(/notifyParentOnce\(/g) ?? []).length, 1);
   assert.doesNotMatch(cancel, /notifyParent/);
-  assert.match(send, /"부상 결석 환불 검토", `\$\{await childPrefix\(done\.studentId\)\}\$\{periodRefundReviewParentText\(done\.refundTotal\)\}`/);
-  assert.match(done, /"부상 결석 환불 처리", `\$\{await childPrefix\(done\.studentId\)\}\$\{periodRefundDoneParentText\(done\.refundTotal\)\}`/);
+  assert.match(send, /"부상 결석 환불 검토", `\$\{await childPrefix\(done\.studentId\)\}\$\{PERIOD_REFUND_REVIEW_NOTICE\}`/);
+  assert.match(done, /"부상 결석 환불 처리", `\$\{await childPrefix\(done\.studentId\)\}\$\{PERIOD_REFUND_DONE_NOTICE\}`/);
+  // 알림 본문에 금액이 들어갈 길이 없다(알림을 보내는 줄에 금액 값이 없다)
+  for (const body of [send, done]) assert.doesNotMatch(body.split("\n").filter((line) => line.includes("notifyParentOnce(")).join("\n"), /refundTotal|toLocaleString/);
   assert.match(refundActions, /const already = await parentNoticeSentRecently\(prisma, \{ studentId, title, message \}\)\.catch\(\(\) => false\);\s+if \(already\) return;/);
   assert.match(send, /await settlementContext\(owner\.appUserId, true\)/, "넘기기 직전에는 공식 일정을 새로 읽는다");
 });
@@ -303,7 +328,11 @@ test("화면: 정산 칸은 퇴원이면 «환불 검토로 넘기기», 넘긴 
   assert.doesNotMatch(refundBox, /Math\.round|reduce\(/, "화면에서 금액을 계산하지 않는다");
   // 상세: 승인된 기간은 퇴원이면 정산 칸이 환불 길로, 환불 상태는 환불 칸으로
   const detail = read("src/app/admin/inbox/IllnessPeriodInboxDetail.tsx");
-  assert.match(detail, /const refundPath = approved && withdrawal\?\.withdrawn === true && !useCarry;/);
+  // 완전히 퇴원했으면 환불 검토만 · 반만 옮긴 아이(다른 반 수강 중)는 이월이 기본이고 환불 검토는 원장이 고를 때만
+  assert.match(detail, /const refundPath = approved && withdrawal\?\.withdrawn === true && \(!withdrawal\.stillEnrolled \|\| useRefund\);/);
+  assert.match(detail, /\{refundPath \? "이월로 정산하기" : "환불 검토로 넘기기"\}/);
+  assert.match(detail, /\{withdrawal\?\.withdrawn && detail\.periodStatus === "ENDED" && \(\s+<p[^>]*>\{REFUND_PERIOD_CLOSED_NOTE\}<\/p>/);
+  assert.equal(rules.REFUND_PERIOD_CLOSED_NOTE, "이 기간은 닫혀 있어요. 재등록하면 결석 기간을 새로 등록해 주세요.");
   assert.match(detail, /carryState="APPROVED" refund=\{refundPath\}/);
   assert.match(detail, /detail\.carryState === "REFUND_REVIEW" \|\| detail\.carryState === "REFUND_DONE" \? \(\s+\/\/[^\n]*\n\s+<IllnessPeriodRefundBox /);
   // 학생 상세 기간 줄 상태 글자
@@ -344,4 +373,40 @@ test("보안 검수: 금액이 정해진 기간은 학부모 «복귀했어요·
   // API 가 그 코드를 학부모 문구로 바꾼다(«학원에 문의» 대신 상태를 그대로)
   const route = read("src/app/api/mypage/regular-absence/period/route.ts");
   assert.ok(route.includes(`${rules.PARENT_PERIOD_SETTLED_CODE}: "${rules.PARENT_PERIOD_SETTLED_MESSAGE}",`));
+});
+
+// ── 코드 리뷰 반영(2026-11-15) ──────────────────────────────────────────────────────────────
+test("코드 리뷰: 완전히 퇴원한 아이는 «이월 확정»을 서버에서 거절한다 — 반만 옮긴 아이(다른 반 수강 중)는 이월로 정산할 수 있다", () => {
+  const service = read("src/lib/regular/illness-period-settlement.ts");
+  const settle = slice(service, "export async function settleIllnessPeriod(", "export type CancelSettlementResult");
+  assert.match(settle, /SELECT \(\$\{illnessWithdrawnSql\("p"\)\} AND NOT EXISTS \(\s+SELECT 1 FROM "Enrollment" any_enrollment\s+WHERE any_enrollment\."studentId" = p\."studentId" AND any_enrollment\.status <> 'WITHDRAWN'\)\) AS gone/);
+  assert.match(settle, /if \(gone\[0\]\?\.gone === true\) throw new IllnessPeriodError\(SETTLE_WITHDRAWN_BLOCKED\);/);
+  assert.ok(settle.indexOf("SETTLE_WITHDRAWN_BLOCKED") < settle.indexOf("await endAbsencePeriodInTx(tx,"), "복귀 처리·적립보다 먼저");
+  assert.ok(settle.indexOf("FOR UPDATE OF p") < settle.indexOf("SETTLE_WITHDRAWN_BLOCKED"), "기간 행을 잠근 뒤");
+  assert.equal(rules.SETTLE_WITHDRAWN_BLOCKED, "퇴원한 아이는 환불 검토로 넘겨 주세요.");
+});
+
+test("코드 리뷰: 확정·환불 검토로 넘길 때 새로 만든 검토 줄을 기록하고, 취소 때 «승인이 만든 검토 줄»에 합친다(승인 취소 때 함께 지워진다)", () => {
+  const service = read("src/lib/regular/illness-period-settlement.ts");
+  for (const [name, source] of [["확정", slice(service, "export async function settleIllnessPeriod(", "export type CancelSettlementResult")], ["넘기기", slice(refundLib, "export async function sendIllnessPeriodToRefundReview(", "export type RefundDoneResult")]]) {
+    assert.ok(source.indexOf("createdReviewAbsenceIds = await newReviewAbsenceIds(tx, handled);") < source.indexOf(`INSERT INTO "RegularAbsenceCarryReview"`), `${name}: 검토 줄을 넣기 전에 «없던 것»을 센다`);
+    assert.match(source, /confirmedAbsenceIds, createdReviewAbsenceIds,/, `${name}: 표 사본에 기록`);
+  }
+  for (const [name, source] of [["확정 취소", slice(service, "export async function cancelIllnessPeriodSettlement(", "/** 확정된 기간의 표 사본(화면용)")], ["환불 검토 취소", slice(refundLib, "export async function cancelIllnessPeriodRefundReview(", "export type RefundIllnessPeriod")]]) {
+    assert.match(source, /createdReviewAbsenceIds: \[\.\.\.new Set\(\[\.\.\.approval\.createdReviewAbsenceIds, \.\.\.cleanIds\(record\.createdReviewAbsenceIds\)\]\)\],/, name);
+  }
+  assert.match(service, /WHERE NOT EXISTS \(SELECT 1 FROM "RegularAbsenceCarryReview" r WHERE r\."absenceId" = target\.id\) ORDER BY target\.id/);
+});
+
+test("코드 리뷰: 실제 납부액보다 표 금액이 큰 달의 경고는 원장에게만 내려간다(금액이 들어 있다)", () => {
+  const note = "11월 월요반: 이 달은 실제 납부액 60,000원보다 표 금액이 커요 · 수납 관리 환불은 납부액까지만 돼요";
+  assert.deepEqual(viewOf({ ownerNotes: [note] }).refund.ownerNotes, [note]);
+  const vice = viewOf({ money: false, ownerNotes: [note] });
+  assert.deepEqual(vice.refund.ownerNotes, []);
+  assert.ok(!JSON.stringify(vice).includes("60,000"));
+  assert.deepEqual(viewOf({}).refund.ownerNotes, [], "경고가 없으면 빈 목록");
+  // 근거 금액(표)과 그 청구의 실제 납부액을 견준다 · 지문에는 넣지 않는다(안내일 뿐)
+  assert.match(refundLib, /if \(Number\.isSafeInteger\(paidAmount\) && row\.tuition > paidAmount\) \{/);
+  assert.match(refundLib, /SELECT p\.amount FROM "Payment" p WHERE p\.id = \$1/);
+  for (const file of ["src/app/admin/inbox/IllnessPeriodRefundBox.tsx", "src/app/admin/inbox/IllnessPeriodSettlementBox.tsx"]) assert.match(read(file), /ownerNotes/);
 });

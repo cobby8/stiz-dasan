@@ -374,6 +374,12 @@ export const PERIOD_REFUND_DONE_INBOX_STATUS = "REFUND_DONE";
 export const REFUND_RESOLUTION_REASON = "퇴원 정산 — 환불 검토";
 /** 수강 종료 정리 결과 문구에 붙는 한 줄 */
 export const ENROLLMENT_END_ILLNESS_NOTE = "부상 결석 정산이 남아 있어요 — 신청함 «부상 결석(기간)»에서 환불 검토로 넘겨 주세요";
+/** 반만 옮긴 아이(다른 반 수강 중)의 수강 종료 정리 결과 문구 — 이월로 정산하는 길이 먼저다 */
+export const ENROLLMENT_END_ILLNESS_MOVED_NOTE = "부상 결석 정산이 남아 있어요 · 신청함에서 이월로 정산하거나 환불 검토로 넘겨 주세요";
+/** 완전히 퇴원한 아이의 기간을 «이월 확정»하려 할 때 거절하는 글(차감할 다음 청구가 없다) */
+export const SETTLE_WITHDRAWN_BLOCKED = "퇴원한 아이는 환불 검토로 넘겨 주세요.";
+/** 환불 검토로 넘기며 닫힌 기간의 안내 한 줄(환불 검토 취소 뒤에도 기간은 닫힌 채다) */
+export const REFUND_PERIOD_CLOSED_NOTE = "이 기간은 닫혀 있어요. 재등록하면 결석 기간을 새로 등록해 주세요.";
 /** 환불 처리 메모 길이 한도 */
 export const REFUND_MEMO_MAX = 500;
 
@@ -390,36 +396,55 @@ export function illnessWithdrawnSql(period: string): string {
 }
 
 /**
- * 수강 종료 정리가 «지우지 않을» 결석(abs)인가 — 승인된(금액 미확정) 질병·부상 기간에 묶였고 이미 지난 날(오늘 포함).
- * 이 날들이 지워지면 퇴원 정산의 대상이 사라진다(환불할 수업이 0회가 된다). 오늘은 DB 시계의 KST 날짜(date 칼럼과 그대로 견준다).
- */
-export function illnessPendingSettleAbsenceSql(abs: string): string {
-  return `(${abs}.reason = 'ILLNESS_INJURY' AND ${abs}.date <= (now() AT TIME ZONE 'Asia/Seoul')::date AND EXISTS (
-            SELECT 1 FROM "RegularAbsencePeriod" pending_period
-             WHERE pending_period.id = ${abs}."periodId" AND ${illnessHoldPeriodSql("pending_period")}))`;
-}
-
-/**
  * 퇴원 정산의 «세는 끝» — 복귀일 자리에 넣는 날(그날부터는 세지 않는다).
  * 퇴원한 아이는 복귀일이 없다: 오늘까지 빠진 수업만 센다(= 내일). 복귀일이 이미 저장돼 있고 더 이르면 그날.
  * 글자 비교만 한다(시간대 계산 없음 — 오늘은 호출부가 KST 날짜로 넘긴다).
+ * 반마다의 수강 종료 효력일은 여기 말고 refundClassCutoffs 가 따로 자른다(반마다 날짜가 다르다).
  */
 export function refundCountUntil(todayYmd: string, storedReturnYmd: string | null | undefined): string {
   const tomorrow = addDaysKst(todayYmd, 1);
   return storedReturnYmd && isKstYmd(storedReturnYmd) && storedReturnYmd < tomorrow ? storedReturnYmd : tomorrow;
 }
 
-/** 학부모 화면·앱 알림: 환불 검토로 넘겼을 때 «부상 결석 기간 수강료 84,000원을 환불 검토 중이에요» (0원이면 금액 없이) */
-export function periodRefundReviewParentText(total: number): string {
-  return total > 0
-    ? `부상 결석 기간 수강료 ${total.toLocaleString("ko-KR")}원을 환불 검토 중이에요`
-    : "부상 결석 정산을 확인하고 있어요 · 환불할 수강료는 없어요";
+/**
+ * 반마다 «그 반 수강이 끝난 효력일»로 자르는 날(그날부터는 세지 않는다) — 키 = 반 id.
+ * 수강 종료 효력일 «전날»까지만 빠진 수업이다. 효력일 이후는 «퇴원 뒤 남은 수업»이라 부상 결석 환불 검토에 넣지 않는다
+ * (그 몫은 원장이 퇴원 환불로 따로 판단한다 — 섞이면 같은 수업이 두 번 환불된다). 수강 종료 정리가 그 날의 결석을 이미 취소하지만,
+ * 남아 있더라도(보강 예약에 묶인 날 등) 계산에서 한 번 더 막는다. 모양이 다른 날짜는 버린다(그 반은 자르지 않는다).
+ */
+export function refundClassCutoffs(rows: ReadonlyArray<{ classId: string; endsOn: string | null }>): Map<string, string> {
+  const cutoffs = new Map<string, string>();
+  for (const row of rows) {
+    if (!row?.classId || !row.endsOn || !isKstYmd(row.endsOn)) continue;
+    // 같은 반 기록이 여럿이면 가장 이른 날(더 조심스러운 쪽)
+    const known = cutoffs.get(row.classId);
+    if (!known || row.endsOn < known) cutoffs.set(row.classId, row.endsOn);
+  }
+  return cutoffs;
 }
-/** 학부모 화면·앱 알림: 환불 처리함 뒤 «부상 결석 기간 수강료 84,000원 환불 처리를 마쳤어요» */
-export function periodRefundDoneParentText(total: number): string {
-  return total > 0
-    ? `부상 결석 기간 수강료 ${total.toLocaleString("ko-KR")}원 환불 처리를 마쳤어요`
-    : "부상 결석 정산을 마쳤어요 · 환불할 수강료는 없어요";
+
+/**
+ * 그 학생($1)의 «지금 끝나 있는 반»마다 가장 최근에 적용된 수강 종료·반 변경의 효력일을 읽는 SQL.
+ * 관리자 직접 변경은 status='APPLIED', 학부모 신청이 적용일에 반영된 것은 status='APPROVED' + appliedAt 이다.
+ * 다시 다니는 반(끝나지 않은 수강이 있는 반)은 뺀다 — 예전 종료 기록으로 지금 수업을 자르지 않는다. effectiveFrom 은 date 칼럼(달력 값).
+ */
+export const REFUND_CLASS_END_SQL = `SELECT DISTINCT ON (r."fromClassId") r."fromClassId" AS "classId", to_char(r."effectiveFrom", 'YYYY-MM-DD') AS "endsOn"
+       FROM "EnrollmentChangeRequest" r
+      WHERE r."studentId" = $1 AND r.kind IN ('WITHDRAW', 'CLASS_CHANGE') AND r."appliedAt" IS NOT NULL AND r.status IN ('APPLIED', 'APPROVED')
+        AND r."effectiveFrom" IS NOT NULL AND r."fromClassId" IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM "Enrollment" back_enrollment
+                         WHERE back_enrollment."studentId" = r."studentId" AND back_enrollment."classId" = r."fromClassId" AND back_enrollment.status <> 'WITHDRAWN')
+      ORDER BY r."fromClassId", r."appliedAt" DESC, r.id`;
+
+/**
+ * 학부모 앱 알림 본문 — 금액을 넣지 않는다(PM 결정 2026-11-15: 실제 환불액이 정산표 합계와 다를 수 있다).
+ * 앞에 «아이 이름 · »이 붙는다.
+ */
+export const PERIOD_REFUND_REVIEW_NOTICE = "부상 결석 기간 수강료를 환불 검토 중이에요";
+export const PERIOD_REFUND_DONE_NOTICE = "부상 결석 기간 수강료 환불 처리를 마쳤어요";
+/** 학부모 화면 기간 줄: 검토 중일 때만 «환불 검토 중 · 예정 84,000원»(0원이면 금액 없이). 완료 뒤에는 금액 없이 PERIOD_REFUND_DONE_PARENT_LABEL */
+export function periodRefundReviewParentLabel(total: number): string {
+  return total > 0 ? `${PERIOD_REFUND_REVIEW_PARENT_LABEL} · 예정 ${total.toLocaleString("ko-KR")}원` : PERIOD_REFUND_REVIEW_PARENT_LABEL;
 }
 /**
  * 금액이 정해진 기간인가(이월 확정 · 환불 검토 중 · 환불 처리함) — 학부모 «복귀했어요»·«알림 취소»를 서버에서 거절하는 조건.

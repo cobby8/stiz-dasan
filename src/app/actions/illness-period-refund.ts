@@ -6,7 +6,7 @@ import { canSeeAllMoney } from "@/lib/auth/moneyAccess";
 import { prisma } from "@/lib/prisma";
 import { notifyParentsOfStudents } from "@/lib/notification";
 import { parentNoticeSentRecently, readStudentName } from "@/lib/regular/illness-period-admin";
-import { IllnessPeriodError, periodRefundDoneParentText, periodRefundReviewParentText } from "@/lib/regular/illnessPeriodRules";
+import { IllnessPeriodError, PERIOD_REFUND_DONE_NOTICE, PERIOD_REFUND_REVIEW_NOTICE } from "@/lib/regular/illnessPeriodRules";
 import {
   cancelIllnessPeriodRefundReview, markIllnessPeriodRefundDone, previewIllnessPeriodRefund, readIllnessPeriodWithdrawal, readRefundIllnessPeriod,
   sendIllnessPeriodToRefundReview,
@@ -83,7 +83,7 @@ export async function loadIllnessPeriodRefund(input: {
       return { ok: true, settlement: buildRefundView({
         stage: stored.carryState === "REFUND_DONE" ? "DONE" : "REVIEW", money, writesEnabled: settlementWritesEnabled(), studentId: stored.studentId,
         rows: stored.rows, total: stored.refundTotal, unpaidGuides: stored.unpaidGuides,
-        fingerprint: null, countUntil: null, storedReturnDate: null, blockers: [], needsHold: false, memo: stored.memo,
+        fingerprint: null, countUntil: null, storedReturnDate: null, blockers: [], needsHold: false, memo: stored.memo, ownerNotes: stored.ownerNotes,
       }) };
     }
     const preview = await previewIllnessPeriodRefund(
@@ -95,7 +95,7 @@ export async function loadIllnessPeriodRefund(input: {
       stage: "PREVIEW", money, writesEnabled: settlementWritesEnabled(), studentId: preview.studentId,
       rows: preview.plan.rows, total: preview.plan.carryTotal, unpaidGuides: preview.plan.unpaidGuides,
       fingerprint: preview.fingerprint, countUntil: preview.returnDate, storedReturnDate: preview.storedReturnDate,
-      blockers: preview.blockers, needsHold: preview.plan.problems.some((problem) => problem.code === "OPEN_BILL"), memo: null,
+      blockers: preview.blockers, needsHold: preview.plan.problems.some((problem) => problem.code === "OPEN_BILL"), memo: null, ownerNotes: preview.ownerNotes,
     }) };
   } catch (error) {
     return failure(error, "정산 내용을 불러오지 못했습니다. 잠시 뒤 다시 열어 주세요.");
@@ -105,7 +105,7 @@ export async function loadIllnessPeriodRefund(input: {
 /**
  * [환불 검토로 넘기기] — 원장만. 화면에서 본 표의 지문을 함께 받아, 잠근 뒤 다시 계산한 표와 다르면 실행하지 않는다.
  * 금액은 서버가 다시 계산한다(화면이 보낸 금액을 받지 않는다). 환불은 실행되지 않는다.
- * 학부모에게는 앱 안 알림 1회(24시간 중복 방지).
+ * 학부모에게는 앱 안 알림 1회(24시간 중복 방지). 알림에는 금액을 넣지 않는다(실제 환불액이 정산표 합계와 다를 수 있다).
  */
 export async function sendIllnessPeriodRefundReviewAction(input: {
   periodId: string; omitAbsenceIds?: string[]; expectedFingerprint: string;
@@ -125,7 +125,7 @@ export async function sendIllnessPeriodRefundReviewAction(input: {
       // 넘기기 직전에는 공식 일정을 새로 읽는다(복귀 정산 확정과 같다)
       await settlementContext(owner.appUserId, true),
     );
-    await notifyParentOnce(done.studentId, "부상 결석 환불 검토", `${await childPrefix(done.studentId)}${periodRefundReviewParentText(done.refundTotal)}`);
+    await notifyParentOnce(done.studentId, "부상 결석 환불 검토", `${await childPrefix(done.studentId)}${PERIOD_REFUND_REVIEW_NOTICE}`);
     revalidateRefundViews();
     return {
       ok: true,
@@ -147,7 +147,7 @@ export async function markIllnessPeriodRefundDoneAction(input: { periodId: strin
     const done = await markIllnessPeriodRefundDone(
       prisma, { periodId: String(input?.periodId ?? "").trim(), memo: String(input?.memo ?? "") }, owner.appUserId,
     );
-    await notifyParentOnce(done.studentId, "부상 결석 환불 처리", `${await childPrefix(done.studentId)}${periodRefundDoneParentText(done.refundTotal)}`);
+    await notifyParentOnce(done.studentId, "부상 결석 환불 처리", `${await childPrefix(done.studentId)}${PERIOD_REFUND_DONE_NOTICE}`);
     revalidateRefundViews();
     return { ok: true, message: "환불 처리함으로 닫았습니다." };
   } catch (error) {

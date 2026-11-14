@@ -44,7 +44,8 @@ const EVIDENCE_LABEL: Record<string, string> = {
 };
 
 export default function IllnessPeriodSettlementBox({ periodId, studentName, carryState, onChanged, onGoHold, refund = false }: Props) {
-  const [view, setView] = useState<IllnessPeriodSettlementView | null>(null);
+  // 퇴원 정산 길에서는 같은 모양에 refund 칸이 더 붙어 온다(원장에게만 보이는 경고)
+  const [view, setView] = useState<(IllnessPeriodSettlementView & { refund?: { ownerNotes: string[] } }) | null>(null);
   const [error, setError] = useState("");
   // 원장이 뺀 날(결석 id) — 서버가 이 목록으로 다시 계산한다
   const [omit, setOmit] = useState<string[]>([]);
@@ -264,6 +265,10 @@ export default function IllnessPeriodSettlementBox({ periodId, studentName, carr
           )}
           {!refund && <>{!view.canSeeMoney && <p className="text-xs text-[var(--color-academy-muted)]">금액과 이월 확정은 원장만 볼 수 있습니다.</p>}</>}
           {refund && !view.canSeeMoney && <p className="text-xs text-[var(--color-academy-muted)]">금액과 환불 검토로 넘기기는 원장만 볼 수 있습니다.</p>}
+          {/* 원장에게만 내려오는 경고 — 실제 납부액보다 표 금액이 큰 달 */}
+          {refund && (view.refund?.ownerNotes ?? []).map((note) => (
+            <p key={note} className="break-keep rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-xs text-[var(--color-academy-warning)]">{note}</p>
+          ))}
 
           {/* 낸 돈이 없는 달 — 이월이 아니라 다닌 만큼만 청구 */}
           {view.unpaid.length > 0 && (

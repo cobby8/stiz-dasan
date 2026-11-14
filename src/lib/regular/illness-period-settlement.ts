@@ -27,7 +27,7 @@ import { endAbsencePeriodInTx, periodCarryColumnsReady, type PeriodContext } fro
 import { illnessReviewReady, type IllnessTx } from "@/lib/regular/illness-carry-tx";
 import { ILLNESS_REASON } from "@/lib/regular/illnessCarryRules";
 import { readIllnessPeriodBillingHold } from "@/lib/regular/illness-period-admin";
-import { IllnessPeriodError, illnessPeriodAbsenceSql, parsePeriodApprovalRecord, parseSettlementSummary, parseUnpaidGuides } from "@/lib/regular/illnessPeriodRules";
+import { IllnessPeriodError, SETTLE_WITHDRAWN_BLOCKED, illnessPeriodAbsenceSql, illnessWithdrawnSql, parsePeriodApprovalRecord, parseSettlementSummary, parseUnpaidGuides } from "@/lib/regular/illnessPeriodRules";
 import { parentReturnDateMax } from "@/lib/regular/parentAbsencePeriodRules";
 import {
   parentSettlementView, planIllnessPeriodSettlement, settlementFingerprint,
@@ -75,6 +75,19 @@ export function cleanIds(value: unknown): string[] {
 export async function tableExists(tx: IllnessTx, name: string): Promise<boolean> {
   const rows = await tx.$queryRawUnsafe<Array<{ found: string | null }>>(`SELECT to_regclass($1)::text AS found`, `public."${name}"`);
   return Boolean(rows[0]?.found);
+}
+/**
+ * 그 결석들 중 «아직 검토 줄이 없는» 것 — 이번에 검토 줄을 새로 만들게 될 결석 id(확정·환불 검토로 넘기기 공용).
+ * 검토 줄을 넣기 «전에» 부른다. 결석 행은 이미 잠겨 있다(같은 전역 잠금 안).
+ */
+export async function newReviewAbsenceIds(tx: IllnessTx, absenceIds: readonly string[]): Promise<string[]> {
+  if (absenceIds.length === 0) return [];
+  const rows = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+    `SELECT target.id FROM unnest($1::text[]) AS target(id)
+      WHERE NOT EXISTS (SELECT 1 FROM "RegularAbsenceCarryReview" r WHERE r."absenceId" = target.id) ORDER BY target.id`,
+    [...absenceIds],
+  );
+  return rows.map((row) => row.id);
 }
 const isWorkbenchError = (error: unknown): error is Error => error instanceof Error && error.name === "WorkbenchError";
 
@@ -187,8 +200,13 @@ type PlanRead = {
  */
 export async function readSettlementPlan(
   tx: IllnessTx, period: PeriodRow, returnDate: string | null, omitAbsenceIds: readonly string[], ctx: SettlementContext, lock: boolean,
+  /** 퇴원 정산만 넘긴다: 반 id → 그 반 수강 종료 효력일. 그날부터의 결석은 표에 올리지 않는다(퇴원 뒤 남은 수업은 부상 결석 정산 대상이 아니다) */
+  classCutoffs?: ReadonlyMap<string, string>,
 ): Promise<PlanRead> {
-  const absences = await readPeriodAbsences(tx, period, lock, ctx);
+  const absences = (await readPeriodAbsences(tx, period, lock, ctx)).filter((absence) => {
+    const cutoff = classCutoffs?.get(absence.classId);
+    return !cutoff || absence.date < cutoff;
+  });
   // 복귀일 이후 결석은 표에 오르지 않으므로 근거도 읽지 않는다
   const counted = absences.filter((absence) => !returnDate || absence.date < returnDate);
   // 근거는 반·«수강월»마다 한 번 읽는다
@@ -383,6 +401,16 @@ export async function settleIllnessPeriod(
     if (period.carryState === "SETTLED") throw new IllnessPeriodError("이미 이월을 확정한 기간입니다.");
     if (period.carryState !== "APPROVED") throw new IllnessPeriodError("부상 결석으로 승인된 기간만 정산할 수 있습니다.");
     if (period.status === "CANCELLED") throw new IllnessPeriodError("등록 취소된 기간 결석입니다.");
+    // 완전히 퇴원한 아이(대상 반이 모두 끝났고 다른 반도 다니지 않는다)는 이월을 차감할 다음 청구가 없다 — 환불 검토로 넘겨야 한다.
+    // 반만 옮긴 아이(다른 반 수강 중)는 이월로 정산할 수 있다. 화면에서 길을 숨기는 것과 별개로 서버가 막는다
+    const gone = await tx.$queryRawUnsafe<Array<{ gone: boolean }>>(
+      `SELECT (${illnessWithdrawnSql("p")} AND NOT EXISTS (
+                SELECT 1 FROM "Enrollment" any_enrollment
+                 WHERE any_enrollment."studentId" = p."studentId" AND any_enrollment.status <> 'WITHDRAWN')) AS gone
+         FROM "RegularAbsencePeriod" p WHERE p.id = $1`,
+      periodId,
+    );
+    if (gone[0]?.gone === true) throw new IllnessPeriodError(SETTLE_WITHDRAWN_BLOCKED);
 
     // ② 학생 행(병합된 학생이면 멈춘다 — 이월은 학생 단위 지갑이다)
     const students = await tx.$queryRawUnsafe<Array<{ id: string }>>(
@@ -453,7 +481,10 @@ export async function settleIllnessPeriod(
     if (handled.length === 0) throw new IllnessPeriodError(SETTLE_NOTHING_MESSAGE);
 
     // 검토를 «승인»으로(없던 줄은 만든다), 미사용 보강권은 회수 — 하루짜리 이월 승인과 같은 처리
+    // 이때 «새로 만든» 검토 줄은 따로 적어 둔다 — 확정 취소 → 승인 취소까지 가면 그 줄을 지워야 «승인»으로 남지 않는다
+    let createdReviewAbsenceIds: string[] = [];
     if (reviewReady) {
+      createdReviewAbsenceIds = await newReviewAbsenceIds(tx, handled);
       await tx.$executeRawUnsafe(
         `INSERT INTO "RegularAbsenceCarryReview" ("absenceId", status, source, "decidedAt", "decidedBy", "decidedByUserId")
          SELECT target.id, 'APPROVED', 'STAFF', now(), 'ADMIN', $2::text FROM unnest($1::text[]) AS target(id)
@@ -477,7 +508,7 @@ export async function settleIllnessPeriod(
     // ⑤ 기간 상태 — «지금 APPROVED 일 때만». 표 사본은 «병합» 저장(승인 때 남긴 approval·보류로 돌린 held 를 지우지 않는다)
     const settlement = {
       fingerprint: read.fingerprint, returnDate, availableMonth, carryTotal: read.plan.carryTotal,
-      rows: read.plan.rows, omitAbsenceIds: omit, creditIds, carryAbsenceIds, unpaidAbsenceIds, confirmedAbsenceIds,
+      rows: read.plan.rows, omitAbsenceIds: omit, creditIds, carryAbsenceIds, unpaidAbsenceIds, confirmedAbsenceIds, createdReviewAbsenceIds,
       revokedCreditIds: revoked.map((row) => row.id), todayYmd: ctx.todayYmd, calendarFingerprint: ctx.calendar?.fingerprint ?? null,
     };
     const unpaidGuides = read.plan.unpaidGuides;
@@ -524,7 +555,7 @@ export async function cancelIllnessPeriodSettlement(
     if (period.carryState !== "SETTLED") throw new IllnessPeriodError("이월을 확정한 기간만 확정 취소할 수 있습니다.");
 
     const stored = (typeof period.carrySettlement === "string" ? JSON.parse(period.carrySettlement) : period.carrySettlement) as
-      { settlement?: { carryAbsenceIds?: unknown; unpaidAbsenceIds?: unknown; confirmedAbsenceIds?: unknown; revokedCreditIds?: unknown } } | null;
+      { settlement?: { carryAbsenceIds?: unknown; unpaidAbsenceIds?: unknown; confirmedAbsenceIds?: unknown; revokedCreditIds?: unknown; createdReviewAbsenceIds?: unknown } } | null;
     const record = stored?.settlement ?? {};
     const settledAbsenceIds = [...cleanIds(record.carryAbsenceIds), ...cleanIds(record.unpaidAbsenceIds)];
 
@@ -607,7 +638,8 @@ export async function cancelIllnessPeriodSettlement(
     const approval = parsePeriodApprovalRecord(period.carrySettlement);
     const mergedApproval = {
       revokedCreditIds: [...new Set([...approval.revokedCreditIds, ...cleanIds(record.revokedCreditIds)])],
-      createdReviewAbsenceIds: approval.createdReviewAbsenceIds,
+      // 확정 때 새로 만든 검토 줄도 «승인이 만든 검토 줄»에 합친다 — 승인 취소 때 함께 지워진다
+      createdReviewAbsenceIds: [...new Set([...approval.createdReviewAbsenceIds, ...cleanIds(record.createdReviewAbsenceIds)])],
     };
     const changed = Number(await tx.$executeRawUnsafe(
       `UPDATE "RegularAbsencePeriod"
@@ -659,7 +691,7 @@ export type ParentSettlementPreview = {
   periodId: string; studentId: string; studentName: string;
   /**
    * NOT_APPROVED = 아직 부상 결석으로 인정 전(금액 안내 없음) · ESTIMATE = 예정 금액 · SETTLED = 학원이 확정함
-   * REFUND_REVIEW = 퇴원 정산 · 환불 검토 중 · REFUND_DONE = 환불 처리 완료(둘 다 settledTotal = 확정된 정산표 합계)
+   * REFUND_REVIEW = 퇴원 정산 · 환불 검토 중(settledTotal = 정산표 합계 — «예정» 금액) · REFUND_DONE = 환불 처리 완료(금액 없음)
    */
   state: "NOT_APPROVED" | "ESTIMATE" | "SETTLED" | "REFUND_REVIEW" | "REFUND_DONE";
   returnDate: string | null;
@@ -696,7 +728,8 @@ export async function previewParentIllnessSettlement(
     // 퇴원 정산(4단계): 환불 검토로 넘긴 뒤에는 다시 계산하지 않고 그때의 합계만 보인다(본인 아이만 — 위 accessSql)
     if (period.carryState === "REFUND_REVIEW" || period.carryState === "REFUND_DONE") {
       const summary = parseSettlementSummary(period.carrySettlement);
-      return { ...base, state: period.carryState, returnDate: period.returnDate, view: null, settledTotal: summary?.carryTotal ?? null };
+      // 검토 중일 때만 «예정» 금액을 보인다. 처리 완료 뒤에는 금액을 내려보내지 않는다(실제 환불액이 정산표 합계와 다를 수 있다)
+      return { ...base, state: period.carryState, returnDate: period.returnDate, view: null, settledTotal: period.carryState === "REFUND_REVIEW" ? summary?.carryTotal ?? null : null };
     }
     if (period.carryState !== "APPROVED") return { ...base, state: "NOT_APPROVED" as const, returnDate: period.returnDate, view: null, settledTotal: null };
     // 복귀일: 학부모가 고른 날(오늘 이후는 호출부가 확인) 또는 기간에 저장된 날. 시작일 다음 날 이후 · 저장된 복귀일보다 늦을 수 없다

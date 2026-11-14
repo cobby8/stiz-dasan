@@ -24,11 +24,11 @@ import { endAbsencePeriodInTx, periodCarryColumnsReady } from "@/lib/regular/abs
 import { illnessReviewReady, type IllnessTx } from "@/lib/regular/illness-carry-tx";
 import { ILLNESS_REASON } from "@/lib/regular/illnessCarryRules";
 import {
-  IllnessPeriodError, REFUND_MEMO_MAX, REFUND_RESOLUTION_REASON, illnessWithdrawnSql, parsePeriodApprovalRecord, parseRefundRecord,
-  parseSettlementSummary, refundCountUntil,
+  IllnessPeriodError, REFUND_CLASS_END_SQL, REFUND_MEMO_MAX, REFUND_RESOLUTION_REASON, illnessWithdrawnSql, parsePeriodApprovalRecord, parseRefundRecord,
+  parseSettlementSummary, refundClassCutoffs, refundCountUntil,
 } from "@/lib/regular/illnessPeriodRules";
 import {
-  PERIOD_SELECT, READ_TX_OPTIONS, SETTLE_TX_OPTIONS, cleanId, cleanIds, readSettlementPlan, tableExists,
+  PERIOD_SELECT, READ_TX_OPTIONS, SETTLE_TX_OPTIONS, cleanId, cleanIds, newReviewAbsenceIds, readSettlementPlan, tableExists,
   type PeriodRow, type SettlementContext, type SettlementDb, type SettlementPreview,
 } from "@/lib/regular/illness-period-settlement";
 import type { SettlementPlan } from "@/lib/regular/illnessPeriodSettlementPlan";
@@ -67,7 +67,39 @@ export async function readIllnessPeriodWithdrawal(tx: IllnessTx, periodId: strin
   return { withdrawn: rows[0]?.withdrawn === true, stillEnrolled: rows[0]?.stillEnrolled === true };
 }
 
-export type RefundPreview = SettlementPreview & IllnessPeriodWithdrawal;
+/**
+ * 반마다 «그 반 수강이 끝난 효력일» — 그날부터의 결석은 환불 검토 표에 올리지 않는다(퇴원 뒤 남은 수업과 겹치지 않게).
+ * 수강 변경 이력 표가 없는 DB 는 자르지 않는다(빈 지도). 읽기만 한다.
+ */
+export async function readRefundClassCutoffs(tx: IllnessTx, studentId: string): Promise<Map<string, string>> {
+  if (!(await tableExists(tx, "EnrollmentChangeRequest"))) return new Map();
+  return refundClassCutoffs(await tx.$queryRawUnsafe<Array<{ classId: string; endsOn: string | null }>>(REFUND_CLASS_END_SQL, studentId));
+}
+
+/**
+ * 원장에게만 보이는 경고: 그 달 표의 근거 금액이 «그 청구의 실제 납부액»보다 크다(이월 차감 등으로 현금을 덜 낸 달).
+ * 수납 관리의 환불은 납부액까지만 되므로, 표 금액대로 환불할 수 없을 수 있다. 금액이 들어 있어 부원장에게는 내려보내지 않는다.
+ * 지문에는 넣지 않는다(안내일 뿐 계산이 아니다).
+ */
+async function readPaidShortfallNotes(tx: IllnessTx, read: Awaited<ReturnType<typeof readSettlementPlan>>): Promise<string[]> {
+  const notes: string[] = [];
+  for (const row of read.plan.rows) {
+    if (row.absenceIds.length === 0) continue;
+    const paymentId = read.resolved.get(`${row.classId}|${row.month}`)?.sourcePaymentId ?? null;
+    if (!paymentId) continue;
+    const payments = await tx.$queryRawUnsafe<Array<{ amount: number }>>(`SELECT p.amount FROM "Payment" p WHERE p.id = $1`, paymentId);
+    const paidAmount = Number(payments[0]?.amount);
+    if (Number.isSafeInteger(paidAmount) && row.tuition > paidAmount) {
+      notes.push(`${Number(row.month.slice(5, 7))}월 ${row.className}: 이 달은 실제 납부액 ${paidAmount.toLocaleString("ko-KR")}원보다 표 금액이 커요 · 수납 관리 환불은 납부액까지만 돼요`);
+    }
+  }
+  return notes;
+}
+
+export type RefundPreview = SettlementPreview & IllnessPeriodWithdrawal & {
+  /** 원장에게만 보일 경고(실제 납부액보다 표 금액이 큰 달) */
+  ownerNotes: string[];
+};
 
 /**
  * 퇴원 정산 미리보기 — 읽기만 한다(잠금 없음). 복귀 정산 미리보기와 같은 읽기 함수(readSettlementPlan)·같은 계산·같은 지문이다.
@@ -86,7 +118,8 @@ export async function previewIllnessPeriodRefund(
     if (!period || period.reason !== ILLNESS_REASON) throw new IllnessPeriodError("기간 결석을 찾을 수 없습니다.", 404);
     const withdrawal = await readIllnessPeriodWithdrawal(tx, periodId);
     const countUntil = refundCountUntil(ctx.todayYmd, period.returnDate);
-    const read = await readSettlementPlan(tx, period, countUntil, omit, ctx, false);
+    // 반마다 수강 종료 효력일 전날까지만 센다(오늘과 견줘 이른 날 — 위 countUntil 과 함께 걸린다)
+    const read = await readSettlementPlan(tx, period, countUntil, omit, ctx, false, await readRefundClassCutoffs(tx, period.studentId));
     const state = stateBlocker(period);
     const blockers = [
       ...(state ? [state] : []),
@@ -102,7 +135,7 @@ export async function previewIllnessPeriodRefund(
       canSetReturnDate: false,
       plan: read.plan, fingerprint: read.fingerprint,
       // 이월이 아니라 환불 검토라 «쓸 수 있는 달»이 없다
-      availableMonth: null, blockers, ...withdrawal,
+      availableMonth: null, blockers, ...withdrawal, ownerNotes: await readPaidShortfallNotes(tx, read),
     };
   }, READ_TX_OPTIONS);
 }
@@ -166,7 +199,7 @@ export async function sendIllnessPeriodToRefundReview(
     }
 
     // ⑤ 결석 행을 잠그고 다시 계산 — 원장이 본 표와 같을 때만
-    const read = await readSettlementPlan(tx, period, countUntil, omit, ctx, true);
+    const read = await readSettlementPlan(tx, period, countUntil, omit, ctx, true, await readRefundClassCutoffs(tx, period.studentId));
     if (read.plan.problems.length > 0) throw new IllnessPeriodError(read.plan.problems[0].text);
     if (read.fingerprint !== expected) throw new IllnessPeriodError("정산 내용이 바뀌었습니다. 표를 다시 확인한 뒤 넘겨 주세요.");
 
@@ -195,7 +228,10 @@ export async function sendIllnessPeriodToRefundReview(
     if (handled.length === 0) throw new IllnessPeriodError(REFUND_NOTHING_MESSAGE);
 
     // 검토를 «승인»으로(없던 줄은 만든다), 미사용 보강권은 회수 — 복귀 정산 확정과 같은 처리(퇴원 뒤 그 결석으로 보강권이 나가지 않게)
+    // «새로 만든» 검토 줄은 따로 적어 둔다 — 환불 검토 취소 → 승인 취소까지 가면 그 줄을 지워야 «승인»으로 남지 않는다
+    let createdReviewAbsenceIds: string[] = [];
     if (await illnessReviewReady(tx)) {
+      createdReviewAbsenceIds = await newReviewAbsenceIds(tx, handled);
       await tx.$executeRawUnsafe(
         `INSERT INTO "RegularAbsenceCarryReview" ("absenceId", status, source, "decidedAt", "decidedBy", "decidedByUserId")
          SELECT target.id, 'APPROVED', 'STAFF', now(), 'ADMIN', $2::text FROM unnest($1::text[]) AS target(id)
@@ -221,7 +257,8 @@ export async function sendIllnessPeriodToRefundReview(
     const settlement = {
       mode: "REFUND", fingerprint: read.fingerprint, returnDate: countUntil, availableMonth: null, carryTotal: read.plan.carryTotal,
       rows: read.plan.rows, unpaidGuides: read.plan.unpaidGuides, omitAbsenceIds: omit,
-      refundAbsenceIds, unpaidAbsenceIds, confirmedAbsenceIds, revokedCreditIds: revoked.map((row) => row.id),
+      refundAbsenceIds, unpaidAbsenceIds, confirmedAbsenceIds, createdReviewAbsenceIds, revokedCreditIds: revoked.map((row) => row.id),
+      ownerNotes: await readPaidShortfallNotes(tx, read),
       todayYmd: ctx.todayYmd, calendarFingerprint: ctx.calendar?.fingerprint ?? null,
     };
     const changed = Number(await tx.$executeRawUnsafe(
@@ -311,7 +348,7 @@ export async function cancelIllnessPeriodRefundReview(
     if (period.carryState !== "REFUND_REVIEW") throw new IllnessPeriodError("환불 검토 중인 기간만 취소할 수 있습니다.");
 
     const stored = (typeof period.carrySettlement === "string" ? JSON.parse(period.carrySettlement) : period.carrySettlement) as
-      { settlement?: { refundAbsenceIds?: unknown; unpaidAbsenceIds?: unknown; confirmedAbsenceIds?: unknown; revokedCreditIds?: unknown } } | null;
+      { settlement?: { refundAbsenceIds?: unknown; unpaidAbsenceIds?: unknown; confirmedAbsenceIds?: unknown; revokedCreditIds?: unknown; createdReviewAbsenceIds?: unknown } } | null;
     const record = stored?.settlement ?? {};
     const settledAbsenceIds = [...cleanIds(record.refundAbsenceIds), ...cleanIds(record.unpaidAbsenceIds)];
 
@@ -353,7 +390,8 @@ export async function cancelIllnessPeriodRefundReview(
     const approval = parsePeriodApprovalRecord(period.carrySettlement);
     const mergedApproval = {
       revokedCreditIds: [...new Set([...approval.revokedCreditIds, ...cleanIds(record.revokedCreditIds)])],
-      createdReviewAbsenceIds: approval.createdReviewAbsenceIds,
+      // 넘길 때 새로 만든 검토 줄도 «승인이 만든 검토 줄»에 합친다 — 승인 취소 때 함께 지워진다
+      createdReviewAbsenceIds: [...new Set([...approval.createdReviewAbsenceIds, ...cleanIds(record.createdReviewAbsenceIds)])],
     };
     const changed = Number(await tx.$executeRawUnsafe(
       `UPDATE "RegularAbsencePeriod"
@@ -376,6 +414,8 @@ export type RefundIllnessPeriod = {
   rows: SettlementPlan["rows"]; unpaidGuides: SettlementPlan["unpaidGuides"];
   /** 환불 처리함 메모·처리 시각(REFUND_DONE 일 때만) */
   memo: string | null; doneAt: string | null;
+  /** 원장에게만 보일 경고(넘길 때의 사본 — 실제 납부액보다 표 금액이 큰 달) */
+  ownerNotes: string[];
 };
 
 /** 환불 검토로 넘긴 기간의 표 사본(화면용) — 넘긴 뒤에는 다시 계산하지 않고 그때의 표를 그대로 보인다 */
@@ -390,12 +430,13 @@ export async function readRefundIllnessPeriod(tx: IllnessTx, periodIdInput: stri
   const summary = parseSettlementSummary(period.carrySettlement);
   if (!summary) return null;
   const stored = (typeof period.carrySettlement === "string" ? JSON.parse(period.carrySettlement) : period.carrySettlement) as
-    { settlement?: { rows?: unknown; unpaidGuides?: unknown } };
+    { settlement?: { rows?: unknown; unpaidGuides?: unknown; ownerNotes?: unknown } };
   const refund = period.carryState === "REFUND_DONE" ? parseRefundRecord(period.carrySettlement) : null;
   return {
     periodId, studentId: period.studentId, carryState: period.carryState, refundTotal: summary.carryTotal,
     rows: Array.isArray(stored?.settlement?.rows) ? stored.settlement.rows as SettlementPlan["rows"] : [],
     unpaidGuides: Array.isArray(stored?.settlement?.unpaidGuides) ? stored.settlement.unpaidGuides as SettlementPlan["unpaidGuides"] : [],
     memo: refund?.memo ?? null, doneAt: refund?.doneAt ?? null,
+    ownerNotes: Array.isArray(stored?.settlement?.ownerNotes) ? stored.settlement.ownerNotes.filter((note): note is string => typeof note === "string") : [],
   };
 }

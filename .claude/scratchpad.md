@@ -68,6 +68,12 @@
 - 숙제 2(확정 시각 못 읽음): «덮기 + 확정 시각 자체가 없으면 차단» 둘 다 넣었다. 숙제 1의 «합산»은 다닌 횟수를 개시일 이후로만 세어 한 금액에 합쳐지게 했다(옛 초안의 수동 조정액이 단가와 다르면 저장값을 알림에 보인다).
 - IllnessPeriodSettlementBox.tsx:70 의 react-hooks/set-state-in-effect 린트 오류는 3단계부터 있던 것(건드리지 않음).
 
+#### 수정 이력 (4단계 퇴원 정산, claude/illness-period-refund)
+| 회차 | 날짜 | 수정 내용 | 수정 파일 | 사유 |
+|------|------|----------|----------|------|
+| 1차 | 11-15 | 환불 처리 메모는 원장만 · 정산이 끝난 기간의 학부모 «복귀했어요·알림 취소» 서버 거절(PERIOD_SETTLED) | illnessPeriodRefundView.ts · parent-absence-period.ts · parent-period-settlement.ts · route.ts | 보안 검수 MEDIUM 1·LOW 1 |
+| 2차 | 11-15 | 수강 종료 정리의 «지난 결석 보호»(KEEP_ILLNESS) 제거 — 효력일 이후 결석은 예전대로 취소 · 환불 검토는 반마다 수강 종료 효력일 전 결석만(refundClassCutoffs) · 학부모 알림에서 금액 제거(화면은 검토 중일 때만 «예정 ○원») · 완전 퇴원이면 이월 확정 서버 거절 · 반 이동은 이월이 기본 · 닫힌 기간 안내 · 납부액보다 큰 표 금액 경고(원장만) · 새로 만든 검토 줄 기록 | enrollment-end-cleanup.ts · illnessPeriodRules.ts · illness-period-refund.ts · illness-period-settlement.ts · 화면 3종 · 테스트 | 코드 리뷰 필수 1·권장 5·PM 결정 1 |
+
 ### 구현 기록 (developer · 11-15 부상·질병 기간 결석 3단계 복귀 정산, claude/illness-period-settle)
 📝 구현한 기능: 복귀 정산 미리보기·이월 확정·확정 취소(원장) + 학부모 «복귀했어요» 예정 금액 + 청구 준비 «다닌 만큼만» 제안. DB 스키마 변경 없음.
 

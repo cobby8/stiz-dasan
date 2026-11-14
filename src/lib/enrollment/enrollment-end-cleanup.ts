@@ -21,7 +21,7 @@ import { isKstYmd } from "@/lib/datetime/kst";
 import { regularAbsenceSourceKey } from "@/lib/makeup/absence-report-credit";
 import { PERIOD_ABSENCE_NOTE_PREFIX } from "@/lib/regular/absence-period-plan";
 import { closeIllnessReviewInTx, illnessReviewReady } from "@/lib/regular/illness-carry-tx";
-import { ENROLLMENT_END_ILLNESS_NOTE, illnessHoldPeriodSql, illnessPendingSettleAbsenceSql } from "@/lib/regular/illnessPeriodRules";
+import { ENROLLMENT_END_ILLNESS_MOVED_NOTE, ENROLLMENT_END_ILLNESS_NOTE, illnessHoldPeriodSql } from "@/lib/regular/illnessPeriodRules";
 import { CHANGE_STATUS_LABEL, REQUEST_KIND_LABEL } from "@/lib/enrollment/changeRequestRules";
 
 export type CleanupDb = {
@@ -258,14 +258,9 @@ export type ClassEndAbsenceRow = {
   creditStatus: string | null;
   /** 보강권이 예약에 묶인 흔적(makeupSessionId) */
   creditBooked: boolean;
-  /**
-   * 승인된(금액 미확정) 부상·질병 기간에 묶인, 이미 지난 날의 결석(2026-11-15 퇴원 정산) —
-   * 지우면 퇴원 정산(환불 검토)의 대상이 사라지므로 그대로 둔다. 판정은 SQL(illnessPendingSettleAbsenceSql) 한 곳.
-   */
-  illnessSettlePending?: boolean;
 };
 
-export type ClassEndAbsenceDecision = "SKIP" | "CANCEL" | "KEEP_BILLING" | "KEEP_MAKEUP" | "KEEP_ATTENDANCE" | "KEEP_ILLNESS";
+export type ClassEndAbsenceDecision = "SKIP" | "CANCEL" | "KEEP_BILLING" | "KEEP_MAKEUP" | "KEEP_ATTENDANCE";
 
 /**
  * 끝난 반의 결석 한 건을 어떻게 할지.
@@ -276,8 +271,6 @@ export function decideAbsenceOnClassEnd(row: ClassEndAbsenceRow, fromYmd: string
   if (!isKstYmd(row.date) || row.date < fromYmd) return "SKIP";
   if (row.status !== "REPORTED" && row.status !== "CONFIRMED") return "SKIP";
   if (row.billingResolved || row.carryCredit) return "KEEP_BILLING";
-  // 부상 결석 정산을 기다리는 지난 날 — 퇴원 정산이 이 날을 세어 환불 검토 금액을 만든다(보강권도 건드리지 않는다)
-  if (row.illnessSettlePending) return "KEEP_ILLNESS";
   if (row.makeupBooked || row.creditBooked || ["RESERVED", "USED", "NO_SHOW"].includes(String(row.creditStatus))) return "KEEP_MAKEUP";
   if (row.attendanceRecorded) return "KEEP_ATTENDANCE";
   return "CANCEL";
@@ -292,12 +285,10 @@ export type ClassEndAbsencePlan = {
   cancel: ClassEndAbsenceRow[];
   revokeCreditIds: string[];
   kept: { billing: number; makeup: number; attendance: number };
-  /** 부상 결석 정산을 기다려 남겨 둔 결석 수(«정리 못 한 결석»이 아니다 — 정산 대상이다) */
-  illnessKept: number;
 };
 
 export function planClassEndAbsences(rows: ClassEndAbsenceRow[], fromYmd: string): ClassEndAbsencePlan {
-  const plan: ClassEndAbsencePlan = { cancel: [], revokeCreditIds: [], kept: { billing: 0, makeup: 0, attendance: 0 }, illnessKept: 0 };
+  const plan: ClassEndAbsencePlan = { cancel: [], revokeCreditIds: [], kept: { billing: 0, makeup: 0, attendance: 0 } };
   for (const row of rows) {
     const decision = decideAbsenceOnClassEnd(row, fromYmd);
     if (decision === "CANCEL") {
@@ -306,7 +297,6 @@ export function planClassEndAbsences(rows: ClassEndAbsenceRow[], fromYmd: string
     } else if (decision === "KEEP_BILLING") plan.kept.billing++;
     else if (decision === "KEEP_MAKEUP") plan.kept.makeup++;
     else if (decision === "KEEP_ATTENDANCE") plan.kept.attendance++;
-    else if (decision === "KEEP_ILLNESS") plan.illnessKept++;
   }
   return plan;
 }
@@ -375,10 +365,11 @@ export type EnrollmentEndCleanupSummary = {
   /** 끝난 반에 남은 효력일 이후 미납 청구(자동으로 지우지 않음) */
   unpaidPayments: Array<UnpaidPaymentView & { className: string }>;
   /**
-   * 이 반을 대상으로 승인된(금액 미확정) 부상 결석 기간이 있다 — 퇴원 정산(환불 검토)이 남았다(2026-11-15).
-   * 있을 때만 붙는다. keptAbsences = 그 정산을 위해 지우지 않고 남겨 둔 지난 결석 수.
+   * 이 반을 대상으로 승인된(금액 미확정) 부상 결석 기간이 있다 — 정산이 남았다(2026-11-15). 있을 때만 붙는다.
+   * 결석은 따로 보호하지 않는다: 효력일 이후 결석은 예전대로 취소되고(그 날은 «퇴원 뒤 남은 수업»이다), 효력일 전 결석은 원래 남아 정산 대상이 된다.
+   * stillEnrolled = 그 아이가 다른 반은 아직 다닌다(반 이동) — 이월로 정산할 수도 있다.
    */
-  illnessSettle?: { periods: number; keptAbsences: number };
+  illnessSettle?: { periods: number; stillEnrolled: boolean };
 };
 
 export function emptyCleanupSummary(): EnrollmentEndCleanupSummary {
@@ -399,7 +390,7 @@ export function cleanupResultMessage(s: EnrollmentEndCleanupSummary): string {
     s.revokedCredits ? `보강권 ${s.revokedCredits}장 회수` : "",
     kept ? `정리 못 한 결석 ${kept}건(${keptWhy}) — 결석 관리에서 확인` : "",
     // 부상 결석 중에 퇴원(그 반 종료) — 정산표를 만들어 환불 검토로 넘길 일이 남았다
-    s.illnessSettle ? ENROLLMENT_END_ILLNESS_NOTE : "",
+    s.illnessSettle ? (s.illnessSettle.stillEnrolled ? ENROLLMENT_END_ILLNESS_MOVED_NOTE : ENROLLMENT_END_ILLNESS_NOTE) : "",
   ].filter(Boolean).join(" · ");
 }
 
@@ -433,20 +424,18 @@ export async function cleanupEndedClassInTx(db: CleanupDb, input: {
          AND m.status <> 'CANCELLED')`
     : `false`;
 
-  // 기간 정산 칸(carryState)이 있는 DB 에서만 «부상 결석 정산 대기» 판정을 읽는다(없는 칸을 읽으면 조회 전체가 실패한다)
+  // 기간 정산 칸(carryState)이 있는 DB 에서만 «남은 부상 결석 정산»을 센다(없는 칸을 읽으면 조회가 실패한다)
   const carryColumn = await db.$queryRawUnsafe<Array<{ n: number }>>(
     `SELECT COUNT(*)::int AS n FROM information_schema.columns
       WHERE table_schema = 'public' AND table_name = 'RegularAbsencePeriod' AND column_name = 'carryState'`,
   );
   const illnessReady = Number(carryColumn[0]?.n ?? 0) === 1;
-  const illnessPendingSql = illnessReady ? illnessPendingSettleAbsenceSql("ra") : `false`;
 
   // 효력일 이후의 살아 있는 결석(잠금). Session.date 는 무tz 칸에 KST 자정을 담아 글자 그대로 비교한다(보강권 모듈과 같은 규칙).
   const rows = await db.$queryRawUnsafe<Array<Omit<ClassEndAbsenceRow, "creditId" | "creditStatus" | "creditBooked">>>(
     `SELECT ra.id, to_char(ra.date,'YYYY-MM-DD') AS date, ra.status, ra.note,
             (ra."periodId" IS NOT NULL AND ra."reportedByUserId" IS NULL AND COALESCE(ra.note,'') LIKE $4) AS "periodRow",
             ${resolvedSql} AS "billingResolved", ${carrySql} AS "carryCredit", ${makeupSql} AS "makeupBooked",
-            ${illnessPendingSql} AS "illnessSettlePending",
             EXISTS (SELECT 1 FROM "Attendance" t JOIN "Session" se ON se.id = t."sessionId"
                      WHERE t."studentId" = ra."studentId" AND se."classId" = ra."classId"
                        AND to_char(se.date,'YYYY-MM-DD') = to_char(ra.date,'YYYY-MM-DD')) AS "attendanceRecorded"
@@ -477,7 +466,6 @@ export async function cleanupEndedClassInTx(db: CleanupDb, input: {
       carryCredit: Boolean(r.carryCredit),
       makeupBooked: Boolean(r.makeupBooked),
       attendanceRecorded: Boolean(r.attendanceRecorded),
-      illnessSettlePending: Boolean(r.illnessSettlePending),
       creditId: credit?.id ?? null,
       creditStatus: credit?.status ?? null,
       creditBooked: Boolean(credit?.booked),
@@ -522,8 +510,10 @@ export async function cleanupEndedClassInTx(db: CleanupDb, input: {
   // 부상 결석 퇴원 정산이 남았는가 — 이 반을 대상으로 승인된(금액 미확정) 기간이 있고, 그 기간의 다른 대상 반이 모두 끝났다
   // (이 반은 지금 끝나는 중이라 수강 행 상태와 상관없이 끝난 것으로 센다). 읽기만 한다.
   const illnessPeriods = illnessReady
-    ? await db.$queryRawUnsafe<Array<{ n: number }>>(
-        `SELECT COUNT(*)::int AS n FROM "RegularAbsencePeriod" p
+    ? await db.$queryRawUnsafe<Array<{ n: number; stillEnrolled: boolean }>>(
+        `SELECT COUNT(*)::int AS n,
+                EXISTS (SELECT 1 FROM "Enrollment" still WHERE still."studentId" = $1 AND still."classId" <> $2 AND still.status <> 'WITHDRAWN') AS "stillEnrolled"
+           FROM "RegularAbsencePeriod" p
           WHERE p."studentId" = $1 AND ${illnessHoldPeriodSql("p")}
             AND (cardinality(p."classIds") = 0 OR $2 = ANY(p."classIds"))
             AND NOT EXISTS (SELECT 1 FROM "Enrollment" other
@@ -533,10 +523,10 @@ export async function cleanupEndedClassInTx(db: CleanupDb, input: {
       )
     : [];
   const illnessPeriodCount = Number(illnessPeriods[0]?.n ?? 0);
-  const illnessSettle = illnessPeriodCount > 0 ? { periods: illnessPeriodCount, keptAbsences: plan.illnessKept } : null;
+  const illnessSettle = illnessPeriodCount > 0 ? { periods: illnessPeriodCount, stillEnrolled: illnessPeriods[0]?.stillEnrolled === true } : null;
 
   // 감사 기록 — 무엇을 지웠고 무엇을 남겼는지(되살릴 때 근거)
-  if (cancelledAbsences || revokedCredits || plan.kept.billing || plan.kept.makeup || plan.kept.attendance || unpaidPayments.length || plan.illnessKept || illnessSettle) {
+  if (cancelledAbsences || revokedCredits || plan.kept.billing || plan.kept.makeup || plan.kept.attendance || unpaidPayments.length || illnessSettle) {
     await db.$executeRawUnsafe(
       `INSERT INTO "OperationsAuditLog" (id, action, "actorType", "actorUserId", "detailsJson")
        VALUES (gen_random_uuid()::text, 'ENROLLMENT_END_CLEANUP', 'ADMIN', $1, $2::jsonb)`,
@@ -545,7 +535,7 @@ export async function cleanupEndedClassInTx(db: CleanupDb, input: {
         studentId: input.studentId, classId: input.classId, className: input.className, fromYmd: input.fromYmd,
         cancelledAbsenceIds: cancelledIds, revokedCreditIds: plan.revokeCreditIds, kept: plan.kept,
         unpaidPaymentIds: unpaidPayments.map((p) => p.id),
-        ...(plan.illnessKept || illnessSettle ? { illnessKeptAbsences: plan.illnessKept, illnessSettlePeriods: illnessPeriodCount } : {}),
+        ...(illnessSettle ? { illnessSettlePeriods: illnessPeriodCount } : {}),
       }),
     );
   }

@@ -112,6 +112,10 @@ export default function IllnessPeriodRefundBox({ periodId, studentName, onChange
       {done && view.refund.memo && (
         <p className="whitespace-pre-wrap break-words rounded-lg bg-[var(--color-academy-success-soft)] px-3 py-2 text-sm text-[var(--color-academy-success)]">처리 메모 · {view.refund.memo}</p>
       )}
+      {/* 원장에게만 내려오는 경고 — 실제 납부액보다 표 금액이 큰 달(수납 관리 환불은 납부액까지만 된다) */}
+      {view.refund.ownerNotes.map((note) => (
+        <p key={note} className="break-keep rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-xs text-[var(--color-academy-warning)]">{note}</p>
+      ))}
       {!view.canSeeMoney && <p className="text-xs text-[var(--color-academy-muted)]">{done ? "환불 처리 완료 · 메모는 원장만 볼 수 있어요" : "금액과 환불 처리는 원장만 볼 수 있습니다."}</p>}
 
       {message && (

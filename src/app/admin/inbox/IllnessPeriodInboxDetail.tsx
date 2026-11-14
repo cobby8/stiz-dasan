@@ -24,7 +24,7 @@ import {
 } from "@/app/actions/illness-period-admin";
 import { loadIllnessPeriodWithdrawal } from "@/app/actions/illness-period-refund";
 import type { IllnessPeriodDetail } from "@/lib/regular/illness-period-admin";
-import { BILLING_HOLD_LABEL, PERIOD_APPROVED_ADMIN_NOTE } from "@/lib/regular/illnessPeriodRules";
+import { BILLING_HOLD_LABEL, PERIOD_APPROVED_ADMIN_NOTE, REFUND_PERIOD_CLOSED_NOTE } from "@/lib/regular/illnessPeriodRules";
 import IllnessPeriodRefundBox from "./IllnessPeriodRefundBox";
 import IllnessPeriodSettlementBox from "./IllnessPeriodSettlementBox";
 
@@ -45,8 +45,8 @@ export default function IllnessPeriodInboxDetail({ periodId, studentName, onChan
   const [hold, setHold] = useState<IllnessPeriodHoldView | null>(null);
   // 퇴원 정산 길인가(승인 뒤에만 읽는다) — 대상 반이 모두 수강 종료됐는가 · 다른 반은 아직 다니는가. 못 읽으면 복귀 정산 길 그대로
   const [withdrawal, setWithdrawal] = useState<{ withdrawn: boolean; stillEnrolled: boolean } | null>(null);
-  // 반만 옮긴 아이(다른 반 수강 중)는 원장이 이월로 정산할 수도 있다 — 그때 고르는 값
-  const [useCarry, setUseCarry] = useState(false);
+  // 반만 옮긴 아이(대상 반 종료 · 다른 반 수강 중)는 «이월로 정산»이 기본이다(다음 청구에서 뺄 수 있다) — 환불 검토는 원장이 고를 때만
+  const [useRefund, setUseRefund] = useState(false);
 
   // 칸을 열 때 한 번 읽는다(처리 뒤에는 아래 reload 가 다시 읽는다).
   // 보류 칸은 승인된 기간일 때만, 상세를 읽은 «뒤에» 읽는다(DB 연결을 동시에 늘리지 않는다)
@@ -84,8 +84,8 @@ export default function IllnessPeriodInboxDetail({ periodId, studentName, onChan
   const hasPhotos = detail.photoIds.length > 0;
   const classes = detail.classes.map((item) => `${item.className} ${item.count}회`).join(" · ");
   const approved = detail.carryState === "APPROVED";
-  // 퇴원 정산 길 — 대상 반이 모두 수강 종료됐고, 원장이 «이월로 정산»을 고르지 않았다
-  const refundPath = approved && withdrawal?.withdrawn === true && !useCarry;
+  // 퇴원 정산 길 — 대상 반이 모두 수강 종료됐다. 완전히 퇴원했으면 환불 검토만, 다른 반을 다니면 원장이 환불 검토를 골랐을 때만
+  const refundPath = approved && withdrawal?.withdrawn === true && (!withdrawal.stillEnrolled || useRefund);
 
   function approve() {
     if (!detail || !evidenceChecked) return;
@@ -303,14 +303,18 @@ export default function IllnessPeriodInboxDetail({ periodId, studentName, onChan
           {withdrawal?.withdrawn && (
             <div className="flex flex-wrap items-center gap-x-2 rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-1 text-sm text-[var(--color-academy-warning)]">
               <p className="min-w-0 flex-1 break-keep font-medium">
-                정산 필요 · 퇴원 — 이 기간의 반 수강이 끝났습니다. {refundPath ? "정산표를 확인하고 환불 검토로 넘겨 주세요." : "이월로 정산합니다(다른 반 수강료에서 차감)."}
+                정산 필요 · 퇴원 — 이 기간의 반 수강이 끝났습니다. {refundPath ? "정산표를 확인하고 환불 검토로 넘겨 주세요." : "다른 반을 다니고 있어 이월로 정산합니다(다음 수강료에서 차감)."}
               </p>
               {withdrawal.stillEnrolled && (
-                <button type="button" disabled={pending} onClick={() => setUseCarry((value) => !value)} className="academy-button-text">
-                  {refundPath ? "이월로 정산하기" : "환불 검토로 정산하기"}
+                <button type="button" disabled={pending} onClick={() => setUseRefund((value) => !value)} className="academy-button-text">
+                  {refundPath ? "이월로 정산하기" : "환불 검토로 넘기기"}
                 </button>
               )}
             </div>
+          )}
+          {/* 환불 검토로 넘기며 닫힌 기간 — 환불 검토를 취소해도 기간은 닫힌 채다. 재등록하면 새 기간으로 등록해야 한다 */}
+          {withdrawal?.withdrawn && detail.periodStatus === "ENDED" && (
+            <p className="text-xs text-[var(--color-academy-muted)]">{REFUND_PERIOD_CLOSED_NOTE}</p>
           )}
           {/* 복귀 정산 — 금액은 여기서 한 번 확정한다(3단계). 확정하면 이 기간이 «완료(이월 확정)»로 바뀐다 */}
           {/* key: 보류로 돌린 건수가 바뀌면 정산 칸을 새로 읽는다(미납 청구가 남아 막혔던 확정이 풀린다) */}

@@ -18,8 +18,8 @@ import { periodsOverlap } from "@/lib/regular/absence-period-plan";
 import { absencePeriodContext, ABSENCE_PERIOD_TX_OPTIONS } from "@/lib/regular/absence-period-runner";
 import { parentPeriodColumnsReady, periodCarryColumnsReady } from "@/lib/regular/absence-period-service";
 import {
-  ILLNESS_PERIOD_INBOX_HREF, PARENT_PERIOD_SETTLED_CODE, PERIOD_APPROVED_PARENT_LABEL, PERIOD_REFUND_DONE_PARENT_LABEL, PERIOD_REFUND_REVIEW_PARENT_LABEL, PERIOD_RETURNED_PARENT_LABEL,
-  parentPeriodChangeLocked, periodRefundDoneParentText, periodRefundReviewParentText, periodSettledParentText,
+  ILLNESS_PERIOD_INBOX_HREF, PARENT_PERIOD_SETTLED_CODE, PERIOD_APPROVED_PARENT_LABEL, PERIOD_REFUND_DONE_PARENT_LABEL, PERIOD_RETURNED_PARENT_LABEL,
+  parentPeriodChangeLocked, periodRefundReviewParentLabel, periodSettledParentText,
 } from "@/lib/regular/illnessPeriodRules";
 import { closeIllnessReviewInTx, illnessReviewReady } from "@/lib/regular/illness-carry-tx";
 import { ILLNESS_REASON, collapseReviewsByPeriod, isValidReasonText, normalizeReasonText } from "@/lib/regular/illnessCarryRules";
@@ -522,9 +522,9 @@ export async function listParentAbsencePeriods(parentUserId: string): Promise<Pa
         returnMax: parentReturnDateMax({ todayYmd: todayKst(), storedReturnYmd: row.returnDate, coveredUntilYmd: row.coveredUntil }),
         canCancel: active && row.parentReported === true,
         carry,
-        // 환불 검토 금액 = 확정된 정산표 합계(본인 아이만 — 위 childAccessSql)
-        carryLabel: carry === "REFUND_REVIEW" ? `${PERIOD_REFUND_REVIEW_PARENT_LABEL} · ${periodRefundReviewParentText(Number.isSafeInteger(row.settledTotal) ? Number(row.settledTotal) : 0)}`
-          : carry === "REFUND_DONE" ? `${PERIOD_REFUND_DONE_PARENT_LABEL} · ${periodRefundDoneParentText(Number.isSafeInteger(row.settledTotal) ? Number(row.settledTotal) : 0)}`
+        // 검토 중일 때만 «예정 ○원»(정산표 합계 — 본인 아이만, 위 childAccessSql). 처리 완료 뒤에는 금액 없이(실제 환불액이 다를 수 있다)
+        carryLabel: carry === "REFUND_REVIEW" ? periodRefundReviewParentLabel(Number.isSafeInteger(row.settledTotal) ? Number(row.settledTotal) : 0)
+          : carry === "REFUND_DONE" ? PERIOD_REFUND_DONE_PARENT_LABEL
           : carry === "SETTLED" ? periodSettledParentText(Number.isSafeInteger(row.settledTotal) ? Number(row.settledTotal) : 0)
           : carry === "RETURNED" ? PERIOD_RETURNED_PARENT_LABEL : carry === "APPROVED" ? PERIOD_APPROVED_PARENT_LABEL : null,
       };
