@@ -271,8 +271,22 @@ export default function SessionReportEditor({
     // 모양 — 넓은 화면(편집 페이지)은 카드 세 장, 패널은 여백을 줄인 같은 순서
     const cardClass = compact
         ? "mb-3 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-3"
-        : "bg-white rounded-xl border border-[var(--color-academy-line)] shadow-sm p-6 mb-6";
+        : "bg-[var(--color-academy-surface)] rounded-xl border border-[var(--color-academy-line)] shadow-sm p-6 mb-6";
     const thumbClass = compact ? "w-20 h-20" : "w-24 h-24";
+
+    // 수업 내용 칸 — 학부모 피드의 «수업 한 줄». 모양에 따라 자리만 다르다
+    const contentField = (
+        <div>
+            <label htmlFor={`report-content-${report.id}`} className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">수업 내용</label>
+            <textarea
+                id={`report-content-${report.id}`}
+                value={content}
+                onChange={(e) => { setContent(e.target.value); markEdited(); }}
+                rows={4}
+                className="academy-input resize-y"
+            />
+        </div>
+    );
 
     return (
         <div className="min-w-0">
@@ -281,17 +295,8 @@ export default function SessionReportEditor({
                 <h2 className={compact ? "mb-2 text-sm font-semibold text-[var(--color-academy-ink)]" : "academy-section-title mb-4"}>수업 정보</h2>
 
                 <div className={compact ? "space-y-3" : "space-y-4"}>
-                    {/* 수업 내용 — 학부모 피드의 «수업 한 줄» */}
-                    <div>
-                        <label htmlFor={`report-content-${report.id}`} className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">수업 내용</label>
-                        <textarea
-                            id={`report-content-${report.id}`}
-                            value={content}
-                            onChange={(e) => { setContent(e.target.value); markEdited(); }}
-                            rows={4}
-                            className="academy-input resize-y"
-                        />
-                    </div>
+                    {/* 피드 패널(compact)은 «수업 한 줄»을 먼저 — 옛 편집 화면은 원래 순서(주제 → 코치 → 내용) */}
+                    {compact && contentField}
 
                     {/* 수업 주제 */}
                     <div>
@@ -321,6 +326,8 @@ export default function SessionReportEditor({
                             ))}
                         </select>
                     </div>
+
+                    {!compact && contentField}
 
                     {/* 수업 사진 */}
                     <div>
@@ -356,26 +363,15 @@ export default function SessionReportEditor({
                                                 비공개
                                             </span>
                                         )}
-                                        {compact ? (
-                                            // 패널·휴대폰은 마우스 올림이 없으니 삭제 글자 버튼을 사진 아래에 늘 보인다(터치 44px)
-                                            <button
-                                                type="button"
-                                                onClick={() => removePhoto(photo.index)}
-                                                aria-label={`수업 사진 ${i + 1} 삭제`}
-                                                className="academy-button-text academy-button-sm mt-0.5 min-h-11 w-full justify-center text-[var(--color-academy-danger)]"
-                                            >
-                                                삭제
-                                            </button>
-                                        ) : (
-                                            <button
-                                                type="button"
-                                                onClick={() => removePhoto(photo.index)}
-                                                aria-label={`수업 사진 ${i + 1} 삭제`}
-                                                className="absolute -top-2 -right-2 w-5 h-5 bg-[var(--color-academy-danger)] text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition"
-                                            >
-                                                X
-                                            </button>
-                                        )}
+                                        {/* 사진 삭제 — 마우스 올림이 없는 휴대폰에서도 보이게 사진 아래 «삭제» 글자 버튼(터치 44px) */}
+                                        <button
+                                            type="button"
+                                            onClick={() => removePhoto(photo.index)}
+                                            aria-label={`수업 사진 ${i + 1} 삭제`}
+                                            className="academy-button-text academy-button-sm mt-0.5 min-h-11 w-full justify-center text-[var(--color-academy-danger)]"
+                                        >
+                                            삭제
+                                        </button>
                                     </div>
                                 ))}
                             </div>
@@ -405,7 +401,7 @@ export default function SessionReportEditor({
             </div>
 
             {/* 출석 현황 + 학생별 노트 카드 */}
-            <div className={compact ? "mb-3 overflow-hidden rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]" : "bg-white rounded-xl border border-[var(--color-academy-line)] shadow-sm overflow-hidden mb-6"}>
+            <div className={compact ? "mb-3 overflow-hidden rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]" : "bg-[var(--color-academy-surface)] rounded-xl border border-[var(--color-academy-line)] shadow-sm overflow-hidden mb-6"}>
                 <div className={compact ? "border-b border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] px-3 py-2" : "p-5 border-b border-[var(--color-academy-line)] bg-[var(--color-academy-soft)]"}>
                     <h2 className={compact ? "text-sm font-semibold text-[var(--color-academy-ink)]" : "academy-section-title"}>출석 현황 및 학생별 코멘트</h2>
                     <p className="text-[var(--color-academy-muted)] text-xs mt-1">
@@ -447,7 +443,7 @@ export default function SessionReportEditor({
                                                         a.studentId,
                                                         noteData.rating === star ? null : star
                                                     )}
-                                                    className="focus:outline-none"
+                                                    className={compact ? "grid min-h-11 min-w-11 place-items-center focus:outline-none" : "focus:outline-none"}
                                                 >
                                                     <span aria-hidden="true" className={`text-lg leading-none ${
                                                             noteData.rating && noteData.rating >= star
@@ -475,7 +471,7 @@ export default function SessionReportEditor({
             </div>
 
             {/* 하단 버튼 바 */}
-            <div className={compact ? "rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-3" : "bg-white rounded-xl border border-[var(--color-academy-line)] shadow-sm p-5"}>
+            <div className={compact ? "rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-3" : "bg-[var(--color-academy-surface)] rounded-xl border border-[var(--color-academy-line)] shadow-sm p-5"}>
                 {confirmingPublish ? (
                     // 발행/발행 취소 확인 — 버튼 자리에서 한 번 더 묻는다
                     <div role="group" aria-label="발행 확인" className="space-y-2">

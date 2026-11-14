@@ -139,7 +139,8 @@ export default function AdminFeedClient({
     initialNextCursor: string | null;
     initialFacets: AdminFeedFacets;
 }) {
-    const isDesktop = useIsDesktop();
+    // 실제 화면 폭(PC 인가)
+    const screenDesktop = useIsDesktop();
 
     // ── 피드 목록 ──
     const [items, setItems] = useState<AdminFeedItem[]>(initialItems);
@@ -164,6 +165,21 @@ export default function AdminFeedClient({
     // 수정이 남은 채 다른 게시물로 옮기거나 닫으려 할 때 — 어디로 가려 했는지(null = 닫기)
     const [pendingMove, setPendingMove] = useState<{ to: string | null } | null>(null);
     const selectedItem = selectedId ? items.find((item) => item.sessionId === selectedId) ?? null : null;
+
+    // 편집기를 어디에 둘지(PC 패널 / 휴대폰 시트). 폭이 바뀌어도 저장 안 한 수정이 있으면 자리를 옮기지 않는다 —
+    // 자리를 옮기면 편집 부품이 새로 그려져 쓰던 내용이 사라지기 때문(저장하면 그때 실제 폭을 따른다)
+    const [isDesktop, setIsDesktop] = useState(false);
+    useEffect(() => {
+        if (!dirty) setIsDesktop(screenDesktop);
+    }, [screenDesktop, dirty]);
+    // PC 패널에서 수정 중인데 화면이 좁아졌다 — 패널을 피드 위로 올려 보이게 둔다
+    const narrowWhileEditing = isDesktop && !screenDesktop;
+
+    // 저장 안 한 수정 확인 문구가 뜨면 화면 안으로 끌어온다(휴대폰 시트 아래쪽에 있어도 보이게)
+    const pendingRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        if (pendingMove) pendingRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }, [pendingMove]);
 
     const fetchPage = useCallback(async (target: AdminFeedFilter, cursor: string | null): Promise<FeedPageResponse> => {
         const params = adminFeedFilterToParams(target);
@@ -288,7 +304,7 @@ export default function AdminFeedClient({
                 </div>
                 {pendingMove && (
                     // 저장 안 한 수정이 남은 채 옮기려 할 때 — 그 자리에서 한 번 묻는다
-                    <div role="alert" className="mb-3 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-warning-soft)] p-3">
+                    <div ref={pendingRef} role="alert" className="mb-3 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-warning-soft)] p-3">
                         <p className="text-sm text-[var(--color-academy-ink)]">저장하지 않은 수정이 있습니다. 버리고 {pendingMove.to ? "다른 수업으로 옮길까요" : "닫을까요"}?</p>
                         <div className="mt-2 flex flex-wrap justify-end gap-2">
                             <button type="button" onClick={() => setPendingMove(null)} className="academy-button-secondary academy-button-sm">계속 편집</button>
@@ -366,9 +382,9 @@ export default function AdminFeedClient({
     }
 
     return (
-        <div className="mx-auto flex max-w-[1080px] items-start gap-4">
+        <div className="mx-auto flex max-w-[1080px] flex-col items-start gap-4 lg:flex-row">
             {/* 왼쪽: 피드 — 읽기 좋은 폭(최대 600px) */}
-            <div className="min-w-0 flex-1 lg:max-w-[600px]">
+            <div className="w-full min-w-0 flex-1 lg:max-w-[600px]">
                 <AdminPageHeader
                     className="mb-2"
                     title="수업 피드"
@@ -425,7 +441,10 @@ export default function AdminFeedClient({
             </div>
 
             {/* 오른쪽: 편집 패널(PC) — 스크롤해도 따라오는 고정 패널 */}
-            <aside aria-label="수업 편집" className="hidden w-[360px] shrink-0 lg:block xl:w-[420px]">
+            <aside
+                aria-label="수업 편집"
+                className={`shrink-0 lg:block lg:w-[360px] xl:w-[420px] ${narrowWhileEditing ? "order-first block w-full" : "hidden"}`}
+            >
                 <div className="sticky top-4 max-h-[calc(100vh-2rem)] overflow-y-auto rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] p-3">
                     {isDesktop && selectedId ? (
                         renderEditor(selectedId)
