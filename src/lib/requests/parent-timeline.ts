@@ -134,7 +134,10 @@ export async function getParentRequestTimeline(parentUserId: string): Promise<Pa
   const rows: ParentTimelineRow[] = [];
   for (const r of changes) {
     const name = parentKindName(r.kind);
-    const classes = r.toClassName ? `${r.fromClassName ?? "기존 반"} → ${r.toClassName}` : (r.fromClassName ?? "");
+    // 반 추가(CLASS_ADD)는 떠나는 반이 없다 — 추가할 반 이름만 적는다.
+    const classes = r.kind === "CLASS_ADD"
+      ? (r.toClassName ?? "")
+      : r.toClassName ? `${r.fromClassName ?? "기존 반"} → ${r.toClassName}` : (r.fromClassName ?? "");
     rows.push({
       key: `ENROLLMENT_CHANGE:${r.id}`, kind: "ENROLLMENT_CHANGE", id: r.id, studentId: r.studentId, studentName: r.studentName,
       title: [name, classes].filter(Boolean).join(" · "),

@@ -80,3 +80,56 @@ test("⑤ 마이그레이션 전에도 화면은 열린다", () => {
   // 예전 «지난 결과»(수강 변경 화면)는 새 칸을 읽지 않는다
   assert.match(parentLib, /const history = await getEnrollmentChangeHistory\(parentUserId\);/);
 });
+
+// ── 2026-11-14 결정표 c2: 수강 변경 화면에서도 «취소 요청»을 한 번에 — 판정·문구는 수업 탭과 한 곳 ──────────
+test("c2 규칙 한 곳: 버튼 판정·상태 문구를 수업 탭 타임라인 규칙이 그대로 가져다 쓴다", async () => {
+  const today = "2026-11-14";
+  const change = { kind: "PAUSE", effectiveFrom: "2026-12-01", applied: false };
+  assert.equal(status.canRequestScheduledCancel(change, null, today), true);
+  assert.equal(status.canRequestScheduledCancel({ ...change, kind: "WITHDRAW" }, null, today), true);
+  assert.equal(status.canRequestScheduledCancel({ ...change, kind: "CLASS_CHANGE" }, null, today), false, "휴원·퇴원만");
+  assert.equal(status.canRequestScheduledCancel({ ...change, kind: "RESUME" }, null, today), false);
+  assert.equal(status.canRequestScheduledCancel({ ...change, effectiveFrom: today }, null, today), false, "적용일 당일은 늦었다");
+  assert.equal(status.canRequestScheduledCancel({ ...change, applied: true }, null, today), false);
+  for (const s of ["PENDING", "REJECTED", "APPROVED"]) {
+    assert.equal(status.canRequestScheduledCancel(change, { status: s, requestedOn: null, decisionNote: null }, today), false, `${s} — 다시 못 낸다`);
+  }
+  assert.equal(status.scheduledCancelLine(null), null);
+  assert.equal(status.scheduledCancelLine({ status: "PENDING", requestedOn: "2026-11-14", decisionNote: null }), "취소 요청을 보냈어요 (11/14) · 원장님 확인 중");
+  assert.equal(status.scheduledCancelLine({ status: "REJECTED", requestedOn: null, decisionNote: "자리 배정 끝" }), "취소 요청이 받아들여지지 않았어요: 자리 배정 끝");
+
+  // 수업 탭(타임라인) 규칙이 같은 답을 낸다 — 두 화면이 어긋날 수 없다
+  const timeline = await loadTsModule("src/lib/requests/parent-timeline-rules.ts");
+  const row = (over = {}) => ({ kind: "ENROLLMENT_CHANGE", rawStatus: "APPROVED", change, cancelRequest: null, ...over });
+  assert.equal(timeline.canRequestCancel(row(), today), true);
+  assert.equal(timeline.canRequestCancel(row({ rawStatus: "PENDING" }), today), false);
+  assert.equal(timeline.canRequestCancel(row({ cancelRequest: { status: "REJECTED", requestedOn: null, decisionNote: null } }), today), false);
+  const info = { status: "PENDING", requestedOn: "2026-11-13", decisionNote: null };
+  assert.equal(timeline.cancelRequestLine(info), status.scheduledCancelLine(info));
+  const rulesSrc = read("src/lib/requests/parent-timeline-rules.ts");
+  assert.match(rulesSrc, /return canRequestScheduledCancel\(row\.change, row\.cancelRequest, today\)/);
+  assert.match(rulesSrc, /return scheduledCancelLine\(info\)/);
+});
+
+test("c2 조회: «예정»에 신청 번호와 취소 요청 상태 — 칸이 없는 DB 에서도 죽지 않게 to_jsonb 로 읽는다", () => {
+  const fn = parentLib.slice(parentLib.indexOf("export async function getEnrollmentChangeOptions"), parentLib.indexOf("export async function getEnrollmentChangeHistory"));
+  assert.match(fn, /SELECT x\.id, x\.kind, x\."effectiveFrom", x\."resumeOn"/);
+  assert.match(fn, /to_jsonb\(x\)->>'cancelRequestStatus' AS "cancelRequestStatus"/);
+  assert.match(fn, /\(to_jsonb\(x\)->>'cancelRequestedAt'\)::timestamptz AT TIME ZONE 'Asia\/Seoul'/, "timestamptz 는 AT TIME ZONE 한 번");
+  assert.doesNotMatch(fn, /x\."cancelRequestStatus"/, "칸을 직접 읽으면 마이그레이션 전 DB 에서 화면 전체가 죽는다");
+  assert.match(fn, /sc\.id AS "scheduledId"/);
+  assert.match(fn, /canRequestScheduledCancel\(/);
+  assert.match(fn, /cancelLine: scheduledCancelLine\(cancelRequest\)/);
+  assert.match(fn, /Boolean\(id\) && canRequestScheduledCancel/, "번호를 모르면 버튼을 만들지 않는다");
+  // 요청 직후 응답에 같은 문구를 실어 화면이 새로고침을 기다리지 않는다
+  assert.match(parentLib, /cancelLine: scheduledCancelLine\(\{ status: "PENDING", requestedOn: todayKst\(\), decisionNote: null \}\)/);
+});
+
+test("c2 화면: 신청 내역으로 보내던 버튼이 없고, 같은 API·같은 action 으로 그 자리에서 보낸다", () => {
+  const client = read("src/app/mypage/enrollment-change/EnrollmentChangeClient.tsx");
+  assert.doesNotMatch(client, /신청 내역에서 취소 요청|request-timeline-heading/);
+  assert.match(client, /send\(\{ action: "cancel-request", id \}\)/);
+  assert.match(read("src/app/mypage/classes/RequestTimeline.tsx"), /action: "cancel-request", id: r\.id/, "수업 탭과 같은 action");
+  assert.match(client, /label="취소 요청"[\s\S]{0,260}confirmLabel="요청 보내기"/, "확인 1회");
+  assert.match(client, /날짜 변경은 학원에 문의/);
+});

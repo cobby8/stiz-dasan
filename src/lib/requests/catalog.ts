@@ -54,6 +54,7 @@ export type RequestKind =
   | "MEDIA_REVOCATION" // 사진 공개 회수 MediaRevocationJob
   | "STAFF_PAYMENT" // 현장 수납 승인 StaffPaymentConfirmationRequest(직원이 현금·계좌로 받은 것 — POS 근거가 없어 원장 승인 필요)
   | "CHILD_LINK" // 학부모 연결 요청 ChildLinkRequest(기존 보호자가 승인 — 원장은 지켜본다)
+  | "SHUTTLE_REGULAR" // 셔틀 계속 바꾸기 ShuttleRegularChangeRequest(승인·반려는 셔틀 명단 화면에서)
   | "CONSULT"; // 상담 신청(신설) — 목록·개수는 consult-inbox.ts 가 따로 읽는다(아래 어댑터 UNION 에 없다)
 
 export type StatusEntry = {
@@ -225,6 +226,18 @@ export const REQUEST_KINDS: readonly KindEntry[] = [
       EXPIRED: off("기한 만료"),
     },
   },
+  {
+    // 셔틀 타는 곳·내리는 곳 «계속 바꾸기»(2026-11-14 c5) — 승인·반려는 셔틀 명단 화면 맨 위 목록에서 한다(여기는 알림 줄).
+    // 승인 = 예약: 적용 시작일에 명단 반영(위치 바꾸기) 또는 원장이 명단을 고칠 때까지(이용 시작·중단) «진행 중».
+    kind: "SHUTTLE_REGULAR", label: "셔틀 계속 바꾸기", icon: "airport_shuttle", adminHref: "/admin/shuttle/regular", parentFacing: false,
+    statuses: {
+      PENDING: act("승인 대기"),
+      APPROVED: going("승인 · 명단 반영 전"),
+      APPLIED: ok("반영 완료"),
+      REJECTED: no("반려"),
+      CANCELED: off("취소"),
+    },
+  },
 ];
 
 const BY_KIND = new Map<string, KindEntry>(REQUEST_KINDS.map((entry) => [entry.kind, entry]));
@@ -368,6 +381,8 @@ export const KIND_TAB: Record<RequestKind, InboxTab> = {
   ROLE_GRANT: "OTHER",
   MEDIA_REVOCATION: "OTHER",
   CHILD_LINK: "OTHER",
+  // 셔틀 계속 바꾸기 — 변경 탭 «셔틀» 묶음
+  SHUTTLE_REGULAR: "CHANGE",
   // 상담
   CONSULT: "CONSULT",
   // 현장 수납 승인 — 직원이 현금·계좌로 받았다고 올린 것. POS 근거가 없어 승인이 남는다(2026-11-10 정정: 신청함에서 빼지 않는다)
@@ -385,7 +400,7 @@ export const TAB_SUBS: Partial<Record<InboxTab, readonly InboxSubTab[]>> = {
   ],
   CHANGE: [
     { key: "ABSENCE", label: "결석·보강", kinds: ["REGULAR_ABSENCE", "ILLNESS_CARRY", "MAKEUP", "SEASONAL_ABSENCE", "SEASONAL_MAKEUP"] },
-    { key: "SHUTTLE", label: "셔틀", kinds: ["SHUTTLE_DAY"] },
+    { key: "SHUTTLE", label: "셔틀", kinds: ["SHUTTLE_DAY", "SHUTTLE_REGULAR"] },
     { key: "ENROLLMENT", label: "수강", kinds: ["ENROLLMENT_CHANGE"] },
   ],
 };

@@ -173,6 +173,49 @@ export const STUDENT_REF_TABLES: StudentRefTable[] = [
     mayBeMissing: true,
   },
 
+  // --- 2026-11-15 가드 정리: 목록에 없던 학생 id 필드 7곳 ---
+  // 셔틀 «계속 바꾸기» 신청(c5). ShuttleRegularChangeRequest_pending_unique 는 ("studentId") WHERE status='PENDING' —
+  // 나머지 키가 없어 status 를 키로 적는다(양쪽이 모두 «확인 중»일 때만 충돌 → 흡수 쪽 신청은 남긴다).
+  {
+    table: "ShuttleRegularChangeRequest",
+    column: "studentId",
+    conflictKeys: ["status"],
+    conflictWhere: (a) => `${a}.status = 'PENDING'`,
+    mayBeMissing: true,
+  },
+  // 아이 정보 변경 신청. StudentProfileChangeRequest_pending_unique: ("studentId", field) WHERE status='PENDING'
+  {
+    table: "StudentProfileChangeRequest",
+    column: "studentId",
+    conflictKeys: ["field"],
+    conflictWhere: (a) => `${a}.status = 'PENDING'`,
+    mayBeMissing: true,
+  },
+  // 수강 신청 셔틀 검토(기사님 배정 제안) — 유일 제약 없음, 그대로 옮긴다.
+  { table: "EnrollmentShuttleReview", column: "studentId", mayBeMissing: true },
+  // 3년 재원 유니폼 무료 링크 — 유일 제약은 token 뿐, 그대로 옮긴다(대표 학생이 링크를 이어 쓴다).
+  { table: "UniformFreeGrant", column: "studentId", mayBeMissing: true },
+  // 체육관 대관의 «확인된 재원생» — 유일 제약 없음, 그대로 옮긴다(재원생 무료 판정이 대표 학생을 본다).
+  { table: "GymRentalRequest", column: "memberStudentId", mayBeMissing: true },
+  // 휴원 수강료 처리(이월·환불) 기록. 금액·청구 id 스냅샷이 줄(EnrollmentChangeSettlementLine)에 묶여 있고
+  // 부모(EnrollmentChangeRequest)가 다시 부모를 따라가 «부모 따라가기»로 걸 수 없다 → 동결월 청구처럼 흡수 쪽에 남긴다.
+  {
+    table: "EnrollmentChangeSettlement",
+    column: "studentId",
+    billingScoped: true,
+    keepOnLoser: "휴원 수강료 처리 기록은 청구 금액 스냅샷과 묶여 있어 흡수 쪽에 남김",
+    mayBeMissing: true,
+  },
+  // 청구서·미납 안내 발송 기록. 청구 id 배열(invoiceIds·paymentIds)과 학생 이름 스냅샷을 든 «보낸 기록»이라
+  // 학생만 바꾸면 청구와 학생이 어긋난다 → 흡수 쪽에 남긴다.
+  {
+    table: "BillingNoticeDelivery",
+    column: "studentId",
+    billingScoped: true,
+    keepOnLoser: "청구 안내 발송 기록은 청구 id 스냅샷과 묶여 있어 흡수 쪽에 남김",
+    mayBeMissing: true,
+  },
+
   // --- 스키마에는 있으나 2026-10-02 운영 DB에는 아직 없는 테이블 ---
   { table: "RegularShuttleLocationLink", column: "studentId", mayBeMissing: true },
   { table: "RegularShuttleNoticeBatch", column: "studentId", mayBeMissing: true },

@@ -11,7 +11,7 @@
     "payments:preflight": "dotenv -e .env.local -e .env -- node scripts/payment-preflight.mjs",
     "seasonal:import:dry-run": "node scripts/seasonal-import.mjs",
     "test": "npm run test:guards && node --test \"tests/*.test.mjs\"",
-    "test:guards": "node --experimental-strip-types --test src/lib/studentVisibility.test.ts",
+    "test:guards": "node --experimental-strip-types --test \"src/lib/**/*.test.ts\"",
     "test:seasonal-import":"node --test scripts/seasonal-import.test.mjs",
     "db:push": "prisma db push",
     "start": "next start",

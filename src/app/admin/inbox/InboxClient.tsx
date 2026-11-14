@@ -738,6 +738,10 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
           {open.kind === "CHILD_LINK" && open.rawStatus === "PENDING" && (
             <p className="mt-3 text-sm text-[var(--color-academy-muted)]">먼저 연결된 보호자가 학부모 화면에서 승인합니다.</p>
           )}
+          {/* 셔틀 계속 바꾸기 — 승인·반려·명단 확인은 셔틀 명단 화면에서(신청함은 알림 줄) */}
+          {open.kind === "SHUTTLE_REGULAR" && (open.rawStatus === "PENDING" || open.rawStatus === "APPROVED") && (
+            <Link href="/admin/shuttle/regular" className="academy-button-secondary mt-3">셔틀 명단에서 처리</Link>
+          )}
           {open.kind === "SHUTTLE_DAY" && open.rawStatus === "ACTIVE" && (
             <p className="mt-3 text-sm text-[var(--color-academy-muted)]">당일 운행 명단에 자동으로 반영됩니다.</p>
           )}

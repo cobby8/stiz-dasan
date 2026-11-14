@@ -15,9 +15,14 @@ import { STATUS_TONES, TONE_BADGE_CLASS } from '../src/lib/ui/statusTones.ts';
 // 2026-11-14: 질병·부상 결석 «이월 검토»(ILLNESS_CARRY) 추가로 17종류
 test('원장 결정 d1 의 14종류 + k1 학부모 연결·상담 + 질병·부상 이월 검토 = 17종류가 모두 있고 이름이 겹치지 않는다', () => {
   const kinds = REQUEST_KINDS.map((k) => k.kind);
-  assert.equal(kinds.length, 17);
-  assert.equal(new Set(kinds).size, 17);
-  assert.equal(new Set(REQUEST_KINDS.map((k) => k.label)).size, 17);
+  // 2026-11-15: 셔틀 «계속 바꾸기»(SHUTTLE_REGULAR) 추가로 18종류 — 맨 끝에 붙였다
+  assert.equal(kinds.length, 18);
+  assert.equal(new Set(kinds).size, 18);
+  assert.equal(new Set(REQUEST_KINDS.map((k) => k.label)).size, 18);
+  assert.equal(kinds.at(-1), 'SHUTTLE_REGULAR');
+  assert.equal(bucketFor('SHUTTLE_REGULAR', 'PENDING'), 'ACTION');
+  assert.equal(bucketFor('SHUTTLE_REGULAR', 'APPROVED'), 'ONGOING');
+  assert.equal(bucketFor('SHUTTLE_REGULAR', 'APPLIED'), 'DONE');
   assert.ok(isRequestKind('ILLNESS_CARRY'));
   for (const k of ['ENROLLMENT_CHANGE', 'REGULAR_ABSENCE', 'MAKEUP', 'SHUTTLE_DAY', 'SEASONAL_ABSENCE', 'SEASONAL_MAKEUP',
     'PARENT_REQUEST', 'PAYMENT_REQUEST', 'KAKAO', 'RENTAL', 'WITHDRAWAL', 'ROLE_GRANT', 'MEDIA_REVOCATION', 'STAFF_PAYMENT', 'CHILD_LINK', 'CONSULT']) {
@@ -183,7 +188,7 @@ test('탭 안 작은 분류 — 변경(결석·보강/셔틀/수강)은 변경 �
   const all = subs.flatMap((s) => s.kinds);
   assert.equal(new Set(all).size, all.length);
   assert.deepEqual([...all].sort(), kindsOfTab('CHANGE').sort());
-  assert.deepEqual(kindsOfTab('CHANGE', 'SHUTTLE'), ['SHUTTLE_DAY']);
+  assert.deepEqual(kindsOfTab('CHANGE', 'SHUTTLE'), ['SHUTTLE_DAY', 'SHUTTLE_REGULAR']);
   assert.deepEqual(kindsOfTab('CHANGE', 'ENROLLMENT'), ['ENROLLMENT_CHANGE']);
   // 모르는 분류 값은 무시하고 전체
   assert.equal(subOf('CHANGE', 'NOPE'), null);

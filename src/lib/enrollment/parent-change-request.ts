@@ -19,7 +19,13 @@ import {
   validateChangeRequest,
   type ChangeKind,
 } from "@/lib/enrollment/changeRequestRules";
-import { buildClassStatusLine, type ClassStatusTone } from "@/lib/enrollment/parentChangeStatus";
+import {
+  buildClassStatusLine,
+  canRequestScheduledCancel,
+  scheduledCancelLine,
+  type ClassStatusTone,
+  type ScheduledCancelInfo,
+} from "@/lib/enrollment/parentChangeStatus";
 
 // ── 학부모 수강 변경 신청(반 변경·휴원·퇴원) ────────────────────────────────
 //
@@ -67,6 +73,12 @@ export type ChildChangeOption = {
     kind: string;
     effectiveFrom: string;
     resumeOn: string | null;
+    /** 그 승인 건의 신청 번호 — 이 화면에서 바로 «취소 요청»을 보낼 때 쓴다(2026-11-14 결정표 c2). 옛 자료·테스트에는 없을 수 있다. */
+    id?: string;
+    /** [취소 요청] 버튼을 보일까 — 수업 탭 «신청 내역»과 같은 판정(canRequestScheduledCancel) */
+    canRequestCancel?: boolean;
+    /** 이미 낸 취소 요청의 상태 한 줄(확인 중·받아들여지지 않음) — 수업 탭과 같은 문구. 없으면 null */
+    cancelLine?: string | null;
   } | null;
   pending: {
     id: string;
@@ -146,7 +158,9 @@ export async function getEnrollmentChangeOptions(parentUserId: string): Promise<
             ${PAUSE_GROUP_AVAILABLE_SQL} AS "canGroupPause",
             sc.kind AS "scheduledKind",
             to_char(sc."effectiveFrom",'YYYY-MM-DD') AS "scheduledEffectiveFrom",
-            to_char(sc."resumeOn",'YYYY-MM-DD') AS "scheduledResumeOn"
+            to_char(sc."resumeOn",'YYYY-MM-DD') AS "scheduledResumeOn",
+            sc.id AS "scheduledId", sc."cancelRequestStatus" AS "scheduledCancelStatus",
+            sc."cancelRequestedOn" AS "scheduledCancelRequestedOn", sc."cancelDecisionNote" AS "scheduledCancelNote"
        FROM "Student" s
        -- 휴원 중(PAUSED)인 반도 보여 준다. 그래야 그 반에 «복귀 신청»을 낼 수 있다.
        JOIN "Enrollment" e ON e."studentId" = s.id AND e.status IN ('ACTIVE','PAUSED') AND ${notMergedStudent("s")}
@@ -157,7 +171,12 @@ export async function getEnrollmentChangeOptions(parentUserId: string): Promise<
        LEFT JOIN "Class" tc ON tc.id = r."toClassId"
        -- 승인됐지만 적용일이 아직 안 온 신청 1건(휴원 예정 등). 행이 늘지 않게 LATERAL … LIMIT 1.
        LEFT JOIN LATERAL (
-         SELECT x.kind, x."effectiveFrom", x."resumeOn"
+         -- 취소 요청 칸은 to_jsonb 로 읽는다 — 칸이 아직 없는 DB 에서도 조회가 죽지 않고 «요청 없음»으로 읽힌다.
+         SELECT x.id, x.kind, x."effectiveFrom", x."resumeOn",
+                to_jsonb(x)->>'cancelRequestStatus' AS "cancelRequestStatus",
+                to_jsonb(x)->>'cancelDecisionNote' AS "cancelDecisionNote",
+                -- cancelRequestedAt 은 timestamptz 라 AT TIME ZONE 한 번이면 KST 날짜다.
+                to_char((to_jsonb(x)->>'cancelRequestedAt')::timestamptz AT TIME ZONE 'Asia/Seoul','YYYY-MM-DD') AS "cancelRequestedOn"
            FROM "EnrollmentChangeRequest" x
           WHERE x."enrollmentId" = e.id AND x.status = 'APPROVED' AND x."appliedAt" IS NULL
             AND x."effectiveFrom" > (now() AT TIME ZONE 'Asia/Seoul')::date
@@ -202,13 +221,7 @@ export async function getEnrollmentChangeOptions(parentUserId: string): Promise<
       currentProgramName: row.currentProgramName,
       enrollmentStatus: row.enrollmentStatus === "PAUSED" ? ("PAUSED" as const) : ("ACTIVE" as const),
       minPauseFrom: earliestPauseStart({ today, nowHm, classDayOfWeek: row.classDayOfWeek, classStartTime: row.classStartTime }),
-      scheduled: row.scheduledKind
-        ? {
-            kind: row.scheduledKind,
-            effectiveFrom: row.scheduledEffectiveFrom,
-            resumeOn: row.scheduledResumeOn ?? null,
-          }
-        : null,
+      scheduled: row.scheduledKind ? scheduledOf(row, today) : null,
       pending: row.pendingId
         ? {
             id: row.pendingId,
@@ -230,6 +243,28 @@ export async function getEnrollmentChangeOptions(parentUserId: string): Promise<
       seatLevel: seatLevelFromCounts(Number(row.capacity ?? 0), Number(row.enrolled ?? 0)),
       full: Number(row.enrolled ?? 0) >= Number(row.capacity ?? 0),
     })),
+  };
+}
+
+/**
+ * «예정»(승인됐지만 적용 전) 한 건 — 신청 번호와 취소 요청 상태를 함께 싣는다(2026-11-14 결정표 c2).
+ * 버튼을 보일지·상태 문구는 수업 탭 «신청 내역»과 같은 규칙 함수가 정한다(parentChangeStatus).
+ */
+function scheduledOf(row: any, today: string): NonNullable<ChildChangeOption["scheduled"]> {
+  const cancelRequest: ScheduledCancelInfo | null = ["PENDING", "APPROVED", "REJECTED"].includes(row.scheduledCancelStatus)
+    ? { status: row.scheduledCancelStatus, requestedOn: row.scheduledCancelRequestedOn ?? null, decisionNote: row.scheduledCancelNote ?? null }
+    : null;
+  const id = typeof row.scheduledId === "string" && row.scheduledId ? row.scheduledId : undefined;
+  return {
+    kind: row.scheduledKind,
+    effectiveFrom: row.scheduledEffectiveFrom,
+    resumeOn: row.scheduledResumeOn ?? null,
+    id,
+    // 신청 번호를 모르면(옛 자료) 버튼을 보이지 않는다 — 누를 수 없는 버튼을 만들지 않는다.
+    canRequestCancel: Boolean(id) && canRequestScheduledCancel(
+      { kind: row.scheduledKind, effectiveFrom: row.scheduledEffectiveFrom, applied: false }, cancelRequest, today,
+    ),
+    cancelLine: scheduledCancelLine(cancelRequest),
   };
 }
 
@@ -699,7 +734,8 @@ export async function requestScheduledChangeCancel(parentUserId: string, request
   } catch (error) {
     console.error("[parent-change-request] 취소 요청 원장 알림 실패:", error instanceof Error ? error.name : "");
   }
-  return { ok: true as const };
+  // 방금 보낸 요청의 상태 한 줄 — 화면이 새로고침을 기다리지 않고 같은 문구를 바로 보여 준다.
+  return { ok: true as const, cancelLine: scheduledCancelLine({ status: "PENDING", requestedOn: todayKst(), decisionNote: null }) };
 }
 
 /**

@@ -215,7 +215,8 @@ test("학부모 화면 조회는 휴원 중 반과 «승인됐지만 시작 전�
   // 적용일이 지난 승인 건(사람 확인 보류)은 화면을 막지 않게 «시작 전»만
   assert.match(seen[0], /x\."effectiveFrom" > \(now\(\) AT TIME ZONE 'Asia\/Seoul'\)::date/);
   assert.equal(data.children[0].enrollmentStatus, "PAUSED");
-  assert.deepEqual(data.children[0].scheduled, { kind: "RESUME", effectiveFrom: "2026-11-20", resumeOn: null });
+  // 2026-11-14 결정표 c2: «예정»에 신청 번호·취소 요청 판정이 함께 온다(복귀 예정은 취소 요청 길이 없음 · 번호 없는 옛 자료)
+  assert.deepEqual(data.children[0].scheduled, { kind: "RESUME", effectiveFrom: "2026-11-20", resumeOn: null, id: undefined, canRequestCancel: false, cancelLine: null });
   assert.equal(data.minResumeFrom, "2026-11-09");
   assert.equal(data.maxResumeFrom, "2027-02-09");
   assert.equal(data.minEffectiveFrom, "2026-11-10");
