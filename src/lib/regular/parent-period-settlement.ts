@@ -10,7 +10,7 @@ import { notMergedStudent } from "@/lib/studentVisibility";
 import { absencePeriodContext, ABSENCE_PERIOD_TX_OPTIONS } from "@/lib/regular/absence-period-runner";
 import { endAbsencePeriodInTx, periodCarryColumnsReady } from "@/lib/regular/absence-period-service";
 import { ILLNESS_REASON } from "@/lib/regular/illnessCarryRules";
-import { ILLNESS_PERIOD_INBOX_HREF, IllnessPeriodError } from "@/lib/regular/illnessPeriodRules";
+import { ILLNESS_PERIOD_INBOX_HREF, IllnessPeriodError, PARENT_PERIOD_SETTLED_CODE, parentPeriodChangeLocked } from "@/lib/regular/illnessPeriodRules";
 import { previewParentIllnessSettlement, type ParentSettlementPreview } from "@/lib/regular/illness-period-settlement";
 import { settlementContext } from "@/lib/regular/illness-period-settlement-runner";
 import { parentAbsencePeriodAvailable } from "@/lib/regular/parent-absence-period";
@@ -75,6 +75,8 @@ export async function returnAcademyIllnessPeriod(parentUserId: string, input: { 
     );
     const period = periods[0];
     if (!period) throw new Error("PERIOD_NOT_FOUND");
+    // 금액이 정해진 기간(이월 확정·환불 검토 중·환불 처리함)은 서버에서 거절한다 — 학부모가 알린 기간(closeParentAbsencePeriod)과 같은 조건
+    if (parentPeriodChangeLocked(period.carryState)) throw new Error(PARENT_PERIOD_SETTLED_CODE);
     if (period.status !== "ACTIVE") throw new Error("PERIOD_ALREADY_CLOSED");
     if (!isKstYmd(returnDate)) throw new Error("PERIOD_INVALID_DATE");
     if (returnDate < todayYmd) throw new Error("PERIOD_RETURN_PAST");

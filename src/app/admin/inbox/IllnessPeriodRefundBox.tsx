@@ -112,7 +112,7 @@ export default function IllnessPeriodRefundBox({ periodId, studentName, onChange
       {done && view.refund.memo && (
         <p className="whitespace-pre-wrap break-words rounded-lg bg-[var(--color-academy-success-soft)] px-3 py-2 text-sm text-[var(--color-academy-success)]">처리 메모 · {view.refund.memo}</p>
       )}
-      {!view.canSeeMoney && <p className="text-xs text-[var(--color-academy-muted)]">금액과 환불 처리는 원장만 볼 수 있습니다.</p>}
+      {!view.canSeeMoney && <p className="text-xs text-[var(--color-academy-muted)]">{done ? "환불 처리 완료 · 메모는 원장만 볼 수 있어요" : "금액과 환불 처리는 원장만 볼 수 있습니다."}</p>}
 
       {message && (
         <p role={message.tone === "error" ? "alert" : "status"} className={`rounded px-3 py-2 text-sm font-medium ${message.tone === "ok"

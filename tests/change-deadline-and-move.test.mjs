@@ -275,6 +275,9 @@ function makeDb(overrides = {}) {
         return { studentId: e.studentId, studentName: student(e.studentId).name, classId: c.id, className: c.name, dayOfWeek: c.dayOfWeek, startTime: c.startTime, enrollmentStatus: e.status, resumeFrom: null };
       });
     }
+    // 기간 정산 칸(carryState 등 6개)이 있는 DB 인가 — db.carryReady 로 켠다(기본은 칸 없음 = 예전 그대로)
+    if (/information_schema\.columns/.test(sql) && /'carrySettlement'/.test(sql)) return [{ n: db.carryReady ? 6 : 0 }];
+    if (/SELECT p\."carryState" AS "carryState" FROM "RegularAbsencePeriod" p WHERE p\.id = \$1/.test(sql)) return db.periods.filter((p) => p.id === args[0]).map((p) => ({ carryState: p.carryState ?? "NONE" }));
     if (/information_schema\.columns/.test(sql)) return [{ n: db.periodReady ? 3 : 0 }];
     if (/to_regclass/.test(sql) && /RegularAbsencePeriod/.test(sql)) return [{ found: db.periodReady ? "present" : null }];
     if (/FROM "RegularAbsence" ra\s+WHERE ra\."studentId" = \$1 AND ra\.date BETWEEN \$2::date AND \$3::date AND ra\.status <> 'CANCELLED'/.test(sql)) {
@@ -1617,4 +1620,34 @@ test("경로: 결석·셔틀 API 에 move 분기, 보강은 서버 액션 — �
   for (const file of ["src/lib/kakao-absence-flow.ts", "src/lib/kakao-shuttle-flow.ts", "src/lib/kakao-makeup-flow.ts"]) {
     assert.doesNotMatch(read(file), /moveRegularAbsence|moveShuttleException|rescheduleMakeup/, file);
   }
+});
+
+// ── 보안 검수(2026-11-15): 금액이 정해진 기간은 학부모 «복귀했어요·알림 취소»를 서버에서 거절한다 ─────────────
+test("복귀했어요·알림 취소: 이월 확정·환불 검토 중·환불 처리함인 기간은 서버가 거절한다 — 아무것도 바뀌지 않는다", async () => {
+  const db = makeDb({ periodReady: true, illnessReady: true });
+  db.carryReady = true;
+  freeze(SUN, "10:00");
+  await period.createParentAbsencePeriod("p1", PERIOD_IN);
+  // 가짜 DB 는 거래가 실패하면 상태를 되돌리며 행 객체를 새로 만든다 — 매번 다시 꺼낸다
+  const periodId = db.periods[0].id;
+  const target = () => db.periods.find((p) => p.id === periodId);
+  const before = JSON.stringify(db.absences);
+  db.notices.length = 0;
+  for (const carryState of ["SETTLED", "REFUND_REVIEW", "REFUND_DONE"]) {
+    target().carryState = carryState;
+    // 복귀했어요(복귀일 지정)와 알림 취소(오늘부터) 모두
+    for (const returnDate of [NEXT_MON, SUN]) {
+      await assert.rejects(() => period.closeParentAbsencePeriod("p1", { periodId, returnDate }), /^Error: PERIOD_SETTLED$/, `${carryState} ${returnDate}`);
+    }
+  }
+  assert.equal(target().status, "ACTIVE", "기간은 그대로");
+  assert.equal(JSON.stringify(db.absences), before, "결석도 그대로");
+  assert.equal(db.notices.length, 0, "알림도 가지 않는다");
+  // 남의 아이 기간은 정산 상태와 상관없이 «없음»(상태를 알려 주지 않는다)
+  await assert.rejects(() => period.closeParentAbsencePeriod("p9", { periodId, returnDate: NEXT_MON }), /^Error: PERIOD_NOT_FOUND$/);
+  // 금액이 아직 정해지지 않은 기간(승인 전 · 인정만 된 기간)은 예전처럼 닫힌다
+  target().carryState = "APPROVED";
+  const result = await period.closeParentAbsencePeriod("p1", { periodId, returnDate: NEXT_MON });
+  assert.equal(result.ok, true);
+  assert.equal(target().status, "ENDED");
 });

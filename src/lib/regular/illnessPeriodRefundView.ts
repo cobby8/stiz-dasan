@@ -15,7 +15,7 @@ export type IllnessPeriodRefundView = IllnessPeriodSettlementView & {
     stage: IllnessPeriodRefundStage;
     /** 수납 관리에서 그 학생의 납부 청구를 여는 주소(기존 화면) */
     financeHref: string;
-    /** 환불 처리함 메모(DONE 일 때만) */
+    /** 환불 처리함 메모(DONE 이고 금액을 볼 수 있는 역할일 때만 — 메모에 환불 금액이 적히므로 부원장에게는 내려보내지 않는다) */
     memo: string | null;
   };
 };
@@ -60,6 +60,7 @@ export function buildRefundView(input: {
     // 낸 돈이 없는 달 — 금액 없는 안내 문구(환불 대상이 아니라는 것만)
     unpaid: input.unpaidGuides.map((guide) => unpaidGuideRefundText(guide)),
     blockers: [...input.blockers], needsHold: input.needsHold, used: false,
-    refund: { stage: input.stage, financeHref: refundFinanceHref(input.studentId), memo: input.stage === "DONE" ? input.memo : null },
+    refund: { stage: input.stage, financeHref: refundFinanceHref(input.studentId), // 메모에는 «11/20 카드 취소 84,000원»처럼 금액이 적힌다 — 금액을 못 보는 역할에는 내려보내지 않는다
+      memo: money && input.stage === "DONE" ? input.memo : null },
   };
 }

@@ -421,6 +421,17 @@ export function periodRefundDoneParentText(total: number): string {
     ? `부상 결석 기간 수강료 ${total.toLocaleString("ko-KR")}원 환불 처리를 마쳤어요`
     : "부상 결석 정산을 마쳤어요 · 환불할 수강료는 없어요";
 }
+/**
+ * 금액이 정해진 기간인가(이월 확정 · 환불 검토 중 · 환불 처리함) — 학부모 «복귀했어요»·«알림 취소»를 서버에서 거절하는 조건.
+ * 정산표가 그 기간의 결석·복귀일로 만들어졌으므로, 그 뒤에 학부모가 결석을 취소하거나 복귀일을 바꾸면 표와 실제가 어긋난다.
+ * 화면에서 버튼을 숨기는 것과 별개로 서버가 막는다(직접 요청을 보내도 바뀌지 않게).
+ */
+export function parentPeriodChangeLocked(carryState: string | null | undefined): boolean {
+  return carryState === "SETTLED" || carryState === "REFUND_REVIEW" || carryState === "REFUND_DONE";
+}
+/** 위 조건으로 거절할 때의 오류 코드와 학부모 문구 */
+export const PARENT_PERIOD_SETTLED_CODE = "PERIOD_SETTLED";
+export const PARENT_PERIOD_SETTLED_MESSAGE = "정산이 끝난 기간이라 바꿀 수 없어요.";
 /** 학부모 기간 줄의 짧은 상태 글자 */
 export const PERIOD_REFUND_REVIEW_PARENT_LABEL = "환불 검토 중";
 export const PERIOD_REFUND_DONE_PARENT_LABEL = "환불 처리 완료";

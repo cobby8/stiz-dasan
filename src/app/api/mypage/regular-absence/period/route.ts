@@ -41,6 +41,8 @@ const MESSAGES: Record<string, string> = {
   PERIOD_OVERLAP_ADMIN: "학원에 등록된 결석 기간과 겹쳐요. 학원에 문의해 주세요.",
   PERIOD_NOT_FOUND: "알린 기간을 찾을 수 없어요.",
   PERIOD_ALREADY_CLOSED: "이미 끝났거나 취소된 기간이에요.",
+  // 금액이 정해진 기간(이월 확정·환불 검토 중·환불 처리함) — 문구는 illnessPeriodRules.PARENT_PERIOD_SETTLED_MESSAGE 와 같다(테스트가 비교)
+  PERIOD_SETTLED: "정산이 끝난 기간이라 바꿀 수 없어요.",
   PERIOD_RETURN_PAST: "복귀일은 오늘부터 고를 수 있어요.",
   PERIOD_RETURN_AFTER_END: "복귀일이 알린 기간보다 뒤예요. 날짜를 다시 골라 주세요.",
   PERIOD_RETURN_BEFORE_START: "복귀일은 결석 시작일 다음 날부터 고를 수 있어요.",

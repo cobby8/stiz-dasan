@@ -311,3 +311,37 @@ test("화면: 정산 칸은 퇴원이면 «환불 검토로 넘기기», 넘긴 
   assert.match(panel, /\? <span>\{PERIOD_REFUND_STUDENT_LABELS\.WITHDRAWN\}<\/span>/);
   assert.match(panel, /<span>\{PERIOD_REFUND_STUDENT_LABELS\[p\.carryState\]\}<\/span>/);
 });
+
+// ── 보안 검수 반영(2026-11-15) ──────────────────────────────────────────────────────────────
+test("보안 검수: 환불 처리 메모는 원장에게만 내려간다 — 메모에 환불 금액이 적히므로 부원장 응답에서는 null", () => {
+  const memo = "11/20 카드 취소 84,000원";
+  assert.equal(viewOf({ stage: "DONE", memo }).refund.memo, memo, "원장");
+  const vice = viewOf({ stage: "DONE", money: false, memo });
+  assert.equal(vice.refund.memo, null, "부원장");
+  assert.deepEqual([vice.refund.stage, vice.state, vice.carryTotal], ["DONE", "SETTLED", null], "상태는 그대로 내려간다");
+  const wire = JSON.stringify(vice);
+  for (const secret of [memo, "84,000", "카드 취소"]) assert.ok(!wire.includes(secret), `부원장 응답에 ${secret}`);
+  // 넘기기 전·환불 검토 중에는 누구에게도 메모가 없다
+  for (const stage of ["PREVIEW", "REVIEW"]) assert.equal(viewOf({ stage, memo }).refund.memo, null, stage);
+  // 화면: 부원장에게는 메모 대신 상태를 그대로 말한다
+  assert.match(read("src/app/admin/inbox/IllnessPeriodRefundBox.tsx"), /\{done \? "환불 처리 완료 · 메모는 원장만 볼 수 있어요" : "금액과 환불 처리는 원장만 볼 수 있습니다\."\}/);
+});
+
+test("보안 검수: 금액이 정해진 기간은 학부모 «복귀했어요·알림 취소»를 서버에서 거절 — 학부모가 알린 기간·학원 등록 기간 같은 조건", () => {
+  for (const state of ["SETTLED", "REFUND_REVIEW", "REFUND_DONE"]) assert.equal(rules.parentPeriodChangeLocked(state), true, state);
+  for (const state of ["NONE", "APPROVED", null, undefined, ""]) assert.equal(rules.parentPeriodChangeLocked(state), false, String(state));
+  assert.deepEqual([rules.PARENT_PERIOD_SETTLED_CODE, rules.PARENT_PERIOD_SETTLED_MESSAGE], ["PERIOD_SETTLED", "정산이 끝난 기간이라 바꿀 수 없어요."]);
+  // 학부모가 알린 기간: 기간 행을 잠근 «뒤에» 정산 상태를 읽어 거절한다(실행 테스트는 tests/change-deadline-and-move.test.mjs)
+  const parentPeriods = read("src/lib/regular/parent-absence-period.ts");
+  const close = slice(parentPeriods, "export async function closeParentAbsencePeriod(", "const now = kstNow();");
+  const order = ["FOR UPDATE OF p`", `if (!period) throw new Error("PERIOD_NOT_FOUND");`, "if (await periodCarryColumnsReady(tx)) {", "if (parentPeriodChangeLocked(carry[0]?.carryState)) throw new Error(PARENT_PERIOD_SETTLED_CODE);", `if (period.status !== "ACTIVE") throw new Error("PERIOD_ALREADY_CLOSED");`];
+  order.reduce((from, piece) => { const at = close.indexOf(piece, from); assert.ok(at >= from, `순서가 어긋남: ${piece}`); return at; }, 0);
+  // 학원이 등록한 기간: 같은 규칙 함수 · 복귀 처리(endAbsencePeriodInTx)보다 먼저
+  const academy = slice(read("src/lib/regular/parent-period-settlement.ts"), "export async function returnAcademyIllnessPeriod(");
+  assert.match(academy, /if \(parentPeriodChangeLocked\(period\.carryState\)\) throw new Error\(PARENT_PERIOD_SETTLED_CODE\);/);
+  assert.ok(academy.indexOf("parentPeriodChangeLocked(period.carryState)") < academy.indexOf("await endAbsencePeriodInTx(tx,"));
+  assert.ok(academy.indexOf("FOR UPDATE OF p") < academy.indexOf("parentPeriodChangeLocked(period.carryState)"), "잠근 뒤에 본다");
+  // API 가 그 코드를 학부모 문구로 바꾼다(«학원에 문의» 대신 상태를 그대로)
+  const route = read("src/app/api/mypage/regular-absence/period/route.ts");
+  assert.ok(route.includes(`${rules.PARENT_PERIOD_SETTLED_CODE}: "${rules.PARENT_PERIOD_SETTLED_MESSAGE}",`));
+});

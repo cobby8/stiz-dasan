@@ -18,8 +18,8 @@ import { periodsOverlap } from "@/lib/regular/absence-period-plan";
 import { absencePeriodContext, ABSENCE_PERIOD_TX_OPTIONS } from "@/lib/regular/absence-period-runner";
 import { parentPeriodColumnsReady, periodCarryColumnsReady } from "@/lib/regular/absence-period-service";
 import {
-  ILLNESS_PERIOD_INBOX_HREF, PERIOD_APPROVED_PARENT_LABEL, PERIOD_REFUND_DONE_PARENT_LABEL, PERIOD_REFUND_REVIEW_PARENT_LABEL, PERIOD_RETURNED_PARENT_LABEL,
-  periodRefundDoneParentText, periodRefundReviewParentText, periodSettledParentText,
+  ILLNESS_PERIOD_INBOX_HREF, PARENT_PERIOD_SETTLED_CODE, PERIOD_APPROVED_PARENT_LABEL, PERIOD_REFUND_DONE_PARENT_LABEL, PERIOD_REFUND_REVIEW_PARENT_LABEL, PERIOD_RETURNED_PARENT_LABEL,
+  parentPeriodChangeLocked, periodRefundDoneParentText, periodRefundReviewParentText, periodSettledParentText,
 } from "@/lib/regular/illnessPeriodRules";
 import { closeIllnessReviewInTx, illnessReviewReady } from "@/lib/regular/illness-carry-tx";
 import { ILLNESS_REASON, collapseReviewsByPeriod, isValidReasonText, normalizeReasonText } from "@/lib/regular/illnessCarryRules";
@@ -304,6 +304,14 @@ export async function closeParentAbsencePeriod(parentUserId: string, input: { pe
     );
     const period = periods[0];
     if (!period) throw new Error("PERIOD_NOT_FOUND");
+    // 금액이 정해진 기간(이월 확정·환불 검토 중·환불 처리함)은 서버에서 거절한다 — 화면에서 버튼을 숨기는 것만으로는 직접 요청을 못 막는다.
+    // 기간 행은 위에서 잠갔으므로 이 값은 이 거래가 끝날 때까지 바뀌지 않는다. 기간 정산 칸이 없는 DB 는 읽지 않는다
+    if (await periodCarryColumnsReady(tx)) {
+      const carry = await tx.$queryRawUnsafe<Array<{ carryState: string | null }>>(
+        `SELECT p."carryState" AS "carryState" FROM "RegularAbsencePeriod" p WHERE p.id = $1`, periodId,
+      );
+      if (parentPeriodChangeLocked(carry[0]?.carryState)) throw new Error(PARENT_PERIOD_SETTLED_CODE);
+    }
     if (period.status !== "ACTIVE") throw new Error("PERIOD_ALREADY_CLOSED");
 
     const now = kstNow();
