@@ -73,6 +73,14 @@ export async function runIllnessSettlementPostgresTests({ pool, database, root, 
   await pool.query(`INSERT INTO "Session" VALUES('settle-session','f7','2027-03-19');INSERT INTO "Attendance" VALUES('settle-att','s7','settle-session','PRESENT',NOW());
     INSERT INTO "MakeupCredit"(id,"studentId","sourceKey",status,"updatedAt","expiresAt") VALUES('settle-mc','s7','REGULAR:m7:2027-03-15','AVAILABLE',NOW(),NOW()+interval '30 days')`);
 
+  // 낸 돈이 없는 달(4월)의 미납 청구가 그대로 살아 있는 동안에는 확정할 수 없다 — 그대로 확정하면 그 청구가 전액으로 남는다
+  const openBill = await settlement.previewIllnessPeriodSettlement(database, { periodId: 'settle-period', returnDate: '2027-04-12' }, ctx(TODAY));
+  assert.deepEqual(openBill.plan.problems.map((problem) => [problem.code, problem.text]), [['OPEN_BILL', '4월 합성 월요반 미납 청구가 그대로 있습니다. 먼저 ‹발행 보류로 돌리기›를 해 주세요.']]);
+  assert.ok(openBill.blockers.includes('4월 합성 월요반 미납 청구가 그대로 있습니다. 먼저 ‹발행 보류로 돌리기›를 해 주세요.'));
+  await assert.rejects(settlement.settleIllnessPeriod(database, { periodId: 'settle-period', expectedFingerprint: openBill.fingerprint, returnDate: '2027-04-12' }, 'admin', true, ctx(TODAY)), /미납 청구가 그대로 있습니다\. 먼저 ‹발행 보류로 돌리기›를 해 주세요/);
+  assert.deepEqual(await one(`SELECT status,"carryState" FROM "RegularAbsencePeriod" WHERE id='settle-period'`), { status: 'ACTIVE', carryState: 'APPROVED' });
+  assert.equal((await one(`SELECT status FROM "Payment" WHERE id=$1`, [aprilMon])).status, 'PENDING');
+  checks.push('낸 돈이 없는 달에 미납 청구가 살아 있으면 확정 차단(문제 목록·지문에 반영, 아무것도 바뀌지 않음)');
   // 4월 미납 청구를 보류로 돌린다(2단계) — 현장 결제 요청 재확인 SQL 도 이때 실제로 돈다
   const held = await periodAdmin.holdIssuedBillsForPeriod(database, { periodId: 'settle-period', expectedPaymentIds: [aprilMon] }, 'admin');
   assert.deepEqual(held.held.map((bill) => [bill.paymentId, bill.amount]), [[aprilMon, 105000]]);
@@ -89,6 +97,7 @@ export async function runIllnessSettlementPostgresTests({ pool, database, root, 
   assert.equal(estimate.plan.carryTotal, 97500, '지금까지 예상 = 3월 월 2회 52,500 + 금 2회 45,000');
   const preview = await settlement.previewIllnessPeriodSettlement(database, { periodId: 'settle-period', returnDate: '2027-04-12' }, ctx(TODAY));
   assert.deepEqual(preview.blockers, []);
+  assert.notEqual(preview.fingerprint, openBill.fingerprint, '보류로 돌리면 문제가 사라져 지문이 달라진다');
   assert.deepEqual(preview.plan.rows.map((row) => [row.month, row.className, row.evidence, row.tuition, row.sessions, row.dates, row.unitDisplay, row.subtotal]), [
     // 금요반 3월: 납부 청구 90,000 ÷ 4회 = 22,500 × 2회(3/12·3/26) = 45,000 — 3/19 는 출석 기록이 있어 제외
     ['2027-03', '합성 금요반', 'PAID_PAYMENT', 90000, 4, ['2027-03-12', '2027-03-26'], 22500, 45000],
@@ -190,15 +199,19 @@ export async function runIllnessSettlementPostgresTests({ pool, database, root, 
   // 금요반(초안 없음): 4회 중 앞 2회 빠짐 → 수강 4/16~4/23 · 기간 조정 45,000 · 이월 45,000 자동 제안 → 0원
   assert.deepEqual([fri.baseAmount, fri.prorationAmount, fri.carryAmount, fri.periodStart, fri.periodEnd, fri.scheduledDates], [90000, 45000, 45000, '2027-04-16', '2027-04-23', ['2027-04-16', '2027-04-23']]);
   assert.ok(fri.basis.includes('부상 결석 2회 제외 → 기간 조정 45,000원 제안(다닌 2회 · 수강 2027-04-16~2027-04-23)'));
-  // 월요반(보류로 돌렸던 초안이 남아 있다 = 정산 전 금액): 저장값이 우선하되, 제안과 다른 칸을 알린다
-  assert.deepEqual([mon.draftStatus, mon.prorationAmount, mon.carryAmount, mon.totalAmount], ['DRAFT', 0, 0, 105000]);
-  assert.ok(mon.reviewReasons.some((reason) => /^기간 조정: 부상 결석 제외 제안 52,500원과 다릅니다\(저장값 0원\)/.test(reason)));
-  assert.ok(mon.reviewReasons.some((reason) => /^이월: 부상 결석 이월 52,500원을 쓸 수 있습니다\(저장값 0원\)/.test(reason)));
-  checks.push('청구 준비 4월: 보류 해제 · 초안 없는 행은 다닌 만큼만 제안(기간·기간 조정 45,000·이월 45,000) · 보류했던 초안은 저장값 유지 + 제안과 다른 칸 알림');
-  // 저장: 금요반은 이월을 20,000원만 쓰고(남기려고), 월요반은 제안대로(기간 조정 52,500 · 이월 52,500 → 0원)
+  // 월요반(보류로 돌렸던 초안이 남아 있다 = 정산 전 금액 105,000): 수강료·할인은 저장값, 기간·기간 조정·이월은 제안값이 기본으로 나온다
+  //   기간 조정 = 105,000 × 빠진 2회 ÷ 4회 = 52,500 · 수강 4/12~4/19 · 이월 52,500(금요반 제안 45,000을 뺀 나머지) → 0원
+  assert.deepEqual([mon.draftStatus, mon.baseAmount, mon.prorationAmount, mon.carryAmount, mon.totalAmount, mon.periodStart, mon.periodEnd, mon.scheduledDates],
+    ['DRAFT', 105000, 52500, 52500, 0, '2027-04-12', '2027-04-19', ['2027-04-12', '2027-04-19']]);
+  assert.ok(mon.reviewReasons.includes('부상 결석 정산 뒤라 저장해 둔 금액 대신 제안값으로 바꿨습니다 — 기간 조정 52,500원(저장값 0원)·이월 52,500원(저장값 0원). 확인하고 다시 저장해 주세요.'));
+  checks.push('청구 준비 4월: 보류 해제 · 초안 없는 행은 다닌 만큼만 제안(기간·기간 조정 45,000·이월 45,000) · 보류했던 초안도 기간·기간 조정·이월은 제안값이 기본(전액 105,000 이 아니라 0원)');
+  // 저장: 금요반은 이월을 20,000원만 쓰고(다음 달로 남기려고 일부러 고침), 월요반은 «화면에 보이는 값 그대로» 저장한다(사람이 금액을 넣지 않는다)
   april = (await mutateWorkbench(database, cmd('SAVE', april, ['s7:f7'], { carryAmount: 20000, periodStart: fri.periodStart, periodEnd: fri.periodEnd }), 'admin', true)).view;
-  april = (await mutateWorkbench(database, cmd('SAVE', april, ['s7:m7'], { prorationAmount: 52500, carryAmount: 52500, periodStart: '2027-04-12', periodEnd: '2027-04-19' }), 'admin', true)).view;
-  assert.ok(!april.rows.find((r) => r.id === 's7:m7').reviewReasons.some((reason) => /부상 결석/.test(reason)), '사람이 다시 저장하면 알림이 걷힌다');
+  const monAsShown = april.rows.find((r) => r.id === 's7:m7');
+  assert.deepEqual([monAsShown.prorationAmount, monAsShown.carryAmount], [52500, 52500]);
+  april = (await mutateWorkbench(database, cmd('SAVE', april, ['s7:m7'], { periodStart: monAsShown.periodStart, periodEnd: monAsShown.periodEnd }), 'admin', true)).view;
+  assert.ok(!april.rows.find((r) => r.id === 's7:m7').reviewReasons.some((reason) => /부상 결석/.test(reason)), '다시 저장하면 알림이 걷힌다');
+  assert.deepEqual([april.rows.find((r) => r.id === 's7:m7').prorationAmount, april.rows.find((r) => r.id === 's7:m7').totalAmount], [52500, 0]);
   april = (await mutateWorkbench(database, cmd('CONFIRM', april, ['s7:f7', 's7:m7']), 'admin', true)).view;
   const aprilIssue = cmd('ISSUE', april, ['s7:f7', 's7:m7']), aprilIssued = await mutateWorkbench(database, aprilIssue, 'admin', true);
   await mutateWorkbench(database, aprilIssue, 'admin', true); // 응답 유실 재시도 — 한 번만 차감돼야 한다
@@ -287,4 +300,35 @@ export async function runIllnessSettlementPostgresTests({ pool, database, root, 
   const blockedParent = await settlement.previewParentIllnessSettlement(database, { parentUserId: 'parent10', periodId: 'blocked-period' }, ctx(TODAY, 'parent10'), ownChild);
   assert.deepEqual(blockedParent.view, { pendingCheck: true, total: null, months: [], unpaid: [] });
   checks.push('근거를 정할 수 없는 달(납부 청구 2건): 확정 차단 · 학부모에게는 금액 대신 «학원에서 확인한 뒤 알려 드려요»');
+  // ── 반이 지정되지 않은 납부 청구가 있는 달: «낸 돈이 없는 달»로 단정하지 않고 확정 차단 ──
+  await pool.query(`INSERT INTO "Student"(id,name,"parentId","mergedIntoStudentId") VALUES('s11','합성 반없는청구 원생','parent11',NULL),('s12','합성 미납달 원생','parent12',NULL);
+    INSERT INTO "Enrollment"(id,"studentId","classId",status,"createdAt","updatedAt") VALUES('e11','s11','m7','ACTIVE','2026-01-01','2026-01-01'),('e12','s12','m7','ACTIVE','2026-01-01','2026-01-01');
+    INSERT INTO "Payment"(id,"studentId","classId",amount,status,type,year,month,"invoiceNo","updatedAt") VALUES('s11-noclass','s11',NULL,105000,'PAID','MONTHLY',2027,3,'S11-NOCLASS',NOW());
+    INSERT INTO "RegularAbsencePeriod"(id,"studentId",reason,"startDate","returnDate",status,"classIds","carryState","coveredUntil","createdByUserId") VALUES
+      ('classless-period','s11','ILLNESS_INJURY','2027-03-15','2027-03-22','ENDED',ARRAY[]::text[],'APPROVED','2027-03-21','admin'),
+      ('guide-period','s12','ILLNESS_INJURY','2027-03-29','2027-04-12','ENDED',ARRAY[]::text[],'APPROVED','2027-04-11','admin');
+    INSERT INTO "RegularAbsence"(id,"studentId","classId",date,reason,status,"periodId") VALUES('s11-0315','s11','m7','2027-03-15','ILLNESS_INJURY','CONFIRMED','classless-period'),
+      ('s12-0329','s12','m7','2027-03-29','ILLNESS_INJURY','CONFIRMED','guide-period'),('s12-0405','s12','m7','2027-04-05','ILLNESS_INJURY','CONFIRMED','guide-period')`);
+  const classless = await settlement.previewIllnessPeriodSettlement(database, { periodId: 'classless-period' }, ctx(TODAY));
+  assert.equal(classless.plan.rows[0].evidence, 'BLOCKED');
+  assert.match(classless.blockers[0], /^3월 합성 월요반: 반이 지정되지 않은 납부 청구가 있어요\. 어느 반의 수강료인지 직접 확인해 주세요\./);
+  assert.deepEqual(classless.plan.unpaidGuides, [], '낸 돈이 없는 달 안내를 만들지 않는다');
+  checks.push('반이 지정되지 않은 납부 청구가 있는 달: 낸 돈이 없는 달이 아니라 확정 차단(직접 확인)');
+
+  // ── 낸 돈이 없는 달만 있는 기간: 이월 0원 확정 → 그 달을 다닌 만큼만 발행 → 그 뒤 확정 취소는 거절 ──
+  const guideOnly = await settlement.previewIllnessPeriodSettlement(database, { periodId: 'guide-period' }, ctx(TODAY));
+  assert.deepEqual([guideOnly.plan.carryTotal, guideOnly.blockers, guideOnly.plan.unpaidGuides.map((g) => [g.month, g.shape, g.attended])], [0, [], [['2027-04', 'PREFIX', 2]]]);
+  const guideSettled = await settlement.settleIllnessPeriod(database, { periodId: 'guide-period', expectedFingerprint: guideOnly.fingerprint }, 'admin', true, ctx(TODAY));
+  assert.deepEqual([guideSettled.carryTotal, guideSettled.credited, guideSettled.unpaidResolved, guideSettled.unpaidMonths], [0, 0, 2, 1]);
+  let guideApril = await view('2027-04');
+  const guideRow = guideApril.rows.find((r) => r.id === 's12:m7');
+  assert.deepEqual([guideRow.prorationAmount, guideRow.carryAmount, guideRow.totalAmount, guideRow.periodStart], [52500, 0, 52500, '2027-04-12']);
+  guideApril = (await mutateWorkbench(database, cmd('SAVE', guideApril, ['s12:m7'], { periodStart: guideRow.periodStart, periodEnd: guideRow.periodEnd }), 'admin', true)).view;
+  guideApril = (await mutateWorkbench(database, cmd('CONFIRM', guideApril, ['s12:m7']), 'admin', true)).view;
+  const guideIssued = await mutateWorkbench(database, cmd('ISSUE', guideApril, ['s12:m7']), 'admin', true);
+  assert.equal((await one(`SELECT amount FROM "Payment" WHERE id=$1`, [guideIssued.operationResult.paymentIds[0]])).amount, 52500, '전액 105,000 이 아니라 다닌 2회분');
+  await assert.rejects(settlement.cancelIllnessPeriodSettlement(database, { periodId: 'guide-period' }, 'admin', true), /4월 청구를 이미 발행했어요\. 확정 취소 대신 수납 관리에서 직접 조정해 주세요/);
+  assert.equal((await one(`SELECT "carryState" FROM "RegularAbsencePeriod" WHERE id='guide-period'`)).carryState, 'SETTLED');
+  assert.equal(Number((await one(`SELECT count(*) FROM "BillingAbsenceResolution" WHERE "studentId"='s12'`)).count), 2);
+  checks.push('낸 돈이 없는 달만 있는 기간: 이월 0원 확정 → 그 달 청구가 다닌 만큼(52,500)으로 발행 → 그 뒤 확정 취소는 거절(이미 발행)');
 }

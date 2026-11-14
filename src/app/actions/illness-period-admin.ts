@@ -249,6 +249,8 @@ export type IllnessPeriodSettlementView = {
   unpaid: string[];
   /** 지금 [이월 확정]을 누를 수 없는 이유 */
   blockers: string[];
+  /** 낸 돈이 없는 달에 미납 청구가 그대로 있다 — 먼저 위 보류 칸의 «발행 보류로 돌리기»를 해야 한다 */
+  needsHold: boolean;
   /** 확정된 기간: 이월이 이미 청구에서 차감됐는가(차감됐으면 확정 취소 불가) */
   used: boolean;
 };
@@ -284,7 +286,7 @@ export async function loadIllnessPeriodSettlement(input: {
         state: "SETTLED", canSeeMoney: money, canSettle: money, writesEnabled: settlementWritesEnabled(),
         returnDate: settled.returnDate, storedReturnDate: settled.returnDate, canSetReturnDate: false, availableMonth: settled.availableMonth,
         fingerprint: null, rows: settlementRows(settled.rows, money), carryTotal: money ? settled.carryTotal : null,
-        unpaid: settled.unpaidGuides.map((guide: UnpaidGuide) => unpaidGuideAdminText(guide)), blockers: [], used: settled.used,
+        unpaid: settled.unpaidGuides.map((guide: UnpaidGuide) => unpaidGuideAdminText(guide)), blockers: [], needsHold: false, used: settled.used,
       } };
     }
     const preview = await previewIllnessPeriodSettlement(
@@ -302,7 +304,8 @@ export async function loadIllnessPeriodSettlement(input: {
       // 지문은 금액을 넣어 만든 해시다 — 금액을 못 보는 역할에는 내려보내지 않는다(대입으로 금액을 맞힐 수 있다). 확정은 원장만 하므로 부원장에게는 쓸 곳도 없다
       availableMonth: preview.availableMonth, fingerprint: money ? preview.fingerprint : null,
       rows: settlementRows(preview.plan.rows, money), carryTotal: money ? preview.plan.carryTotal : null,
-      unpaid: preview.plan.unpaidGuides.map((guide) => unpaidGuideAdminText(guide)), blockers: preview.blockers, used: false,
+      unpaid: preview.plan.unpaidGuides.map((guide) => unpaidGuideAdminText(guide)), blockers: preview.blockers,
+      needsHold: preview.plan.problems.some((problem) => problem.code === "OPEN_BILL"), used: false,
     } };
   } catch (error) {
     return failure(error, "정산 내용을 불러오지 못했습니다. 잠시 뒤 다시 열어 주세요.");

@@ -102,6 +102,8 @@ async function readCarryEvidenceInTx(tx: WorkbenchTx, input: CarryEvidenceInput,
   if(!evidence.dates.includes(absence.date)) throw new WorkbenchError(CARRY_OUT_OF_PERIOD_MESSAGE,409);
   return evidence;
 }
+// 그 학생·그 달에 «반이 지정되지 않은» 납부 수강료 청구가 있다 — 어느 반 몫인지 알 수 없어 «낸 돈이 없는 달»로도, 근거로도 보지 않는다
+export const CARRY_CLASSLESS_PAID_MESSAGE = "반이 지정되지 않은 납부 청구가 있어요. 어느 반의 수강료인지 직접 확인해 주세요.";
 export const CARRY_OUT_OF_PERIOD_MESSAGE = "원결석이 확정 수강 기간·예정 수업일에 포함되는지 확인해 주세요.";
 /**
  * 그 학생·그 반·그 달의 «원기간 근거»(한 번 값의 분자·분모) — 결석 날짜와 무관한 부분(2026-11-15 분리).
@@ -136,7 +138,12 @@ export async function readClassMonthEvidenceInTx(tx: WorkbenchTx, input: { stude
   if(!issuedRow && !registeredRow) {
     const [originYear,originMonthNumber]=originMonth.split("-").map(Number);
     const paidRows=await tx.$queryRawUnsafe<Array<{id:string;amount:number}>>(`SELECT p.id,p.amount FROM "Payment" p WHERE p."studentId"=$1 AND p."classId"=$2 AND p.year=$3 AND p.month=$4 AND p.type='MONTHLY' AND p.status='PAID' ORDER BY p.id${share(" OF p")}`,absence.studentId,absence.classId,originYear,originMonthNumber);
-    if(!paidRows.length) throw new WorkbenchError(CARRY_NO_EVIDENCE_MESSAGE,409);
+    if(!paidRows.length) {
+      // 그 반의 납부 청구는 없는데 «반이 없는» 납부 청구가 그 달에 있으면, 이 반 몫이 그 안에 들어 있을 수 있다 — 낸 돈이 없는 달로 단정하지 않는다
+      const classless=await tx.$queryRawUnsafe<Array<{id:string}>>(`SELECT p.id FROM "Payment" p WHERE p."studentId"=$1 AND p.year=$2 AND p.month=$3 AND p.type='MONTHLY' AND p.status='PAID' AND p."classId" IS NULL LIMIT 1`,absence.studentId,originYear,originMonthNumber);
+      if(classless.length) throw new WorkbenchError(CARRY_CLASSLESS_PAID_MESSAGE,409);
+      throw new WorkbenchError(CARRY_NO_EVIDENCE_MESSAGE,409);
+    }
     // 이 청구에서 이미 줄인 금액(휴원 미납 감액·휴원 이월 차감) — 사이트가 청구 금액을 실제로 줄인 줄만 센다.
     const reduced=lineTable[0]?.found ? await tx.$queryRawUnsafe<Array<{paymentId:string;total:number}>>(`SELECT l."paymentId",SUM(l.amount)::int AS total FROM "EnrollmentChangeSettlementLine" l WHERE l."paymentId"=ANY($1::text[]) AND (l.kind='CARRY_APPLY' OR (l.kind='UNPAID_REDUCE' AND l.channel='SITE')) GROUP BY l."paymentId"`,paidRows.map(p=>p.id)) : [];
     paidPayments=paidRows.map(p=>({id:p.id,amount:Number(p.amount),priorReduction:Number(reduced.find(r=>r.paymentId===p.id)?.total??0)}));

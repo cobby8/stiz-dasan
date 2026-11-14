@@ -26,7 +26,7 @@ import { notMergedStudent } from "@/lib/studentVisibility";
 import { endAbsencePeriodInTx, periodCarryColumnsReady, type PeriodContext } from "@/lib/regular/absence-period-service";
 import { illnessReviewReady, type IllnessTx } from "@/lib/regular/illness-carry-tx";
 import { ILLNESS_REASON } from "@/lib/regular/illnessCarryRules";
-import { IllnessPeriodError, illnessPeriodAbsenceSql, parsePeriodApprovalRecord, parseSettlementSummary } from "@/lib/regular/illnessPeriodRules";
+import { IllnessPeriodError, illnessPeriodAbsenceSql, parsePeriodApprovalRecord, parseSettlementSummary, parseUnpaidGuides } from "@/lib/regular/illnessPeriodRules";
 import { parentReturnDateMax } from "@/lib/regular/parentAbsencePeriodRules";
 import {
   parentSettlementView, planIllnessPeriodSettlement, settlementFingerprint,
@@ -111,6 +111,19 @@ async function readPeriodAbsences(tx: IllnessTx, period: PeriodRow, lock: boolea
   const sessionsReady = await tableExists(tx, "MakeupSession");
   const resolutionReady = await tableExists(tx, "BillingAbsenceResolution");
   const pauseReady = await tableExists(tx, "EnrollmentChangeSettlementLine");
+  if (lock) {
+    // 확정: 결석 행 → 그 결석들의 보강권 행 순서로 먼저 잠근다. 아래 조회가 읽는 보강권 상태(예약·사용)가 판정 뒤에 바뀌지 않게
+    // (READ COMMITTED 라 잠근 뒤의 조회는 최신 상태를 본다). 보강 예약·사용 쪽도 같은 전역 잠금 뒤에서 이 행들을 건드린다.
+    await tx.$queryRawUnsafe(
+      `SELECT ra.id FROM "RegularAbsencePeriod" p JOIN "RegularAbsence" ra ON ${illnessPeriodAbsenceSql("p", "ra")}
+        WHERE p.id = $1 ORDER BY ra.date, ra.id FOR UPDATE OF ra`, period.id);
+    await tx.$queryRawUnsafe(
+      `SELECT mc.id FROM "RegularAbsencePeriod" p
+         JOIN "RegularAbsence" ra ON ${illnessPeriodAbsenceSql("p", "ra")}
+         JOIN "MakeupCredit" mc ON mc."studentId" = ra."studentId"
+          AND mc."sourceKey" = 'REGULAR:' || ra."classId" || ':' || to_char(ra.date, 'YYYY-MM-DD')
+        WHERE p.id = $1 ORDER BY mc.id FOR UPDATE OF mc`, period.id);
+  }
   const rows = await tx.$queryRawUnsafe<Array<{
     id: string; classId: string; className: string | null; dayOfWeek: string | null; date: string; status: string;
     attendance: string | null; credits: string | null; bookings: string | null; resolved: string | null;
@@ -190,12 +203,25 @@ async function readSettlementPlan(
     const [classId, month] = key.split("|");
     try {
       const found = await readClassMonthEvidenceInTx(tx, { studentId: period.studentId, classId, originMonth: month, calendar: ctx.calendar }, lock, pauseReady);
+      if (found.source === "MONTHLY_REGISTER") {
+        // 확정 월 장부만으로는 «낸 돈»인지 알 수 없다 — 그 반·그 달의 납부완료 수강료 청구가 확인될 때만 이월 근거로 삼는다(납부된 것만 규칙)
+        const [registerYear, registerMonth] = month.split("-").map(Number);
+        const paidForRegister = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+          `SELECT p.id FROM "Payment" p WHERE p."studentId" = $1 AND p."classId" = $2 AND p.year = $3 AND p.month = $4
+              AND p.type = 'MONTHLY' AND p.status = 'PAID' LIMIT 1`,
+          period.studentId, classId, registerYear, registerMonth,
+        );
+        if (paidForRegister.length === 0) {
+          evidence.set(key, { kind: "BLOCKED", reason: "확정 월 장부만 있고 그 달 납부된 수강료 청구를 확인할 수 없어요. 직접 확인해 주세요." });
+          continue;
+        }
+      }
       resolved.set(key, found);
       evidence.set(key, {
         kind: found.source === "PAID_PAYMENT" ? "PAID_PAYMENT" : "WORKBENCH_ISSUED",
         tuition: found.numerator, scheduledDates: found.dates, paymentId: found.sourcePaymentId,
         periodStart: found.periodStart, periodEnd: found.periodEnd,
-        warnings: [...found.warnings, ...(found.source === "MONTHLY_REGISTER" ? ["확정 월 장부가 근거예요. 납부 여부를 직접 확인해 주세요."] : [])],
+        warnings: [...found.warnings, ...(found.source === "MONTHLY_REGISTER" ? ["확정 월 장부 금액이 근거예요(그 달 납부 청구 확인됨)."] : [])],
       });
     } catch (error) {
       if (!isWorkbenchError(error)) throw error;
@@ -221,7 +247,8 @@ async function readSettlementPlan(
   const plan = planIllnessPeriodSettlement({
     period: { id: period.id, startDate: period.startDate, returnDate }, absences, evidence, todayYmd: ctx.todayYmd, omitAbsenceIds,
   });
-  // 낸 돈이 없는 달에 «미납 청구가 그대로 살아 있으면» 다닌 만큼 다시 발행할 수 없다 — 원장이 먼저 보류로 돌리거나 금액을 고쳐야 한다(경고만)
+  // 낸 돈이 없는 달에 «미납 청구가 그대로 살아 있으면» 확정을 막는다(코드 리뷰 필수) — 그대로 확정하면 그 청구가 전액으로 남아
+  // 학부모에게 전액이 청구된다. 먼저 «발행 보류로 돌리기»로 그 청구를 거둬야 다닌 만큼만 다시 발행할 수 있다. 문제 목록에 넣어 지문에도 반영된다.
   for (const guide of plan.unpaidGuides) {
     const [year, monthNumber] = guide.month.split("-").map(Number);
     const open = await tx.$queryRawUnsafe<Array<{ found: number }>>(
@@ -231,8 +258,7 @@ async function readSettlementPlan(
       period.studentId, guide.classId, year, monthNumber,
     );
     if (open.length > 0) {
-      const row = plan.rows.find((item) => item.classId === guide.classId && item.month === guide.month);
-      row?.warnings.push("이 달 미납 청구가 그대로 있어요. «발행 보류로 돌리기»를 하거나 수납 관리에서 금액을 직접 고쳐 주세요.");
+      plan.problems.push({ code: "OPEN_BILL", text: `${Number(guide.month.slice(5, 7))}월 ${guide.className} 미납 청구가 그대로 있습니다. 먼저 ‹발행 보류로 돌리기›를 해 주세요.` });
     }
   }
   return { plan, fingerprint: settlementFingerprint({ id: period.id, returnDate }, plan), absences, resolved };
@@ -252,6 +278,9 @@ function resolveReturnDate(period: PeriodRow, requested: string | null): { retur
   if (period.status !== "ACTIVE") throw new IllnessPeriodError("이미 복귀 처리된 기간입니다. 저장된 복귀일로 정산합니다.");
   return { returnDate: requested, endNow: true };
 }
+
+/** 넣을 결석이 하나도 없는 기간 — 확정할 것이 없다. 발행 보류를 푸는 길(승인 취소)을 그대로 알려 준다 */
+export const SETTLE_NOTHING_MESSAGE = "정산에 넣을 결석이 없어요. ‹승인 취소›로 발행 보류를 풀어 주세요.";
 
 export type SettlementPreview = {
   periodId: string; studentId: string;
@@ -296,6 +325,8 @@ export async function previewIllnessPeriodSettlement(
       ...(period.status === "CANCELLED" ? ["등록 취소된 기간 결석입니다."] : []),
       ...(returnDate ? [] : ["복귀일을 먼저 정해 주세요."]),
       ...read.plan.problems.map((problem) => problem.text),
+      // 복귀일까지 정해졌는데 넣을 결석이 하나도 없다(전부 제외·취소) — 확정 버튼 대신 할 일을 알려 준다
+      ...(returnDate && read.plan.problems.length === 0 && read.plan.rows.every((row) => row.absenceIds.length === 0) ? [SETTLE_NOTHING_MESSAGE] : []),
     ];
     return {
       periodId, studentId: period.studentId, periodStatus: period.status, carryState: period.carryState, parentReported: period.parentReported === true,
@@ -416,7 +447,7 @@ export async function settleIllnessPeriod(
       }
     }
     const handled = [...carryAbsenceIds, ...unpaidAbsenceIds];
-    if (handled.length === 0) throw new IllnessPeriodError("정산에 넣을 결석이 없습니다. 날짜를 다시 확인해 주세요.");
+    if (handled.length === 0) throw new IllnessPeriodError(SETTLE_NOTHING_MESSAGE);
 
     // 검토를 «승인»으로(없던 줄은 만든다), 미사용 보강권은 회수 — 하루짜리 이월 승인과 같은 처리
     if (reviewReady) {
@@ -510,6 +541,24 @@ export async function cancelIllnessPeriodSettlement(
         period.studentId, creditIds,
       );
       if (used.length > 0) throw new IllnessPeriodError("이미 청구에서 차감된 이월이 있어 확정 취소할 수 없습니다. 수납 관리에서 직접 조정해 주세요.");
+    }
+
+    // 이 정산의 «낸 돈이 없는 달» 안내로 그 달 청구를 이미 발행했으면(다닌 만큼만 줄인 청구) 취소하지 않는다 —
+    // 안내를 지우면 그 청구가 왜 줄었는지 근거가 사라지고, 결석은 다시 «보상 전»이 돼 이중으로 보상될 수 있다
+    const guides = parseUnpaidGuides(period.carrySettlement);
+    for (const guide of guides) {
+      const [guideYear, guideMonth] = guide.month.split("-").map(Number);
+      const issued = await tx.$queryRawUnsafe<Array<{ found: number }>>(
+        `SELECT 1 AS found FROM "BillingWorkbenchDraft" d
+          WHERE d."studentId" = $1 AND d."classId" = $2 AND d.month = $3 AND d.status IN ('ISSUED', 'ZERO')
+         UNION ALL
+         SELECT 1 FROM "Payment" pay
+          WHERE pay."studentId" = $1 AND pay."classId" = $2 AND pay.year = $4 AND pay.month = $5
+            AND COALESCE(pay.type, 'MONTHLY') = 'MONTHLY' AND pay.status NOT IN ('CANCELED', 'CANCELLED')
+          LIMIT 1`,
+        period.studentId, guide.classId, guide.month, guideYear, guideMonth,
+      );
+      if (issued.length > 0) throw new IllnessPeriodError(`${guideMonth}월 청구를 이미 발행했어요. 확정 취소 대신 수납 관리에서 직접 조정해 주세요.`);
     }
 
     const resolutions = settledAbsenceIds.length > 0

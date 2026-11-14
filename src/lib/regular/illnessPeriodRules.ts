@@ -258,12 +258,12 @@ export const PERIOD_RETURNED_PARENT_LABEL = "복귀 · 이월 금액 확정 대�
 export const PERIOD_DAY_EXCLUDED_LABEL = "정산 제외";
 
 /**
- * 그 기간(period)이 «정산 필요»인가 — 승인됐고 금액 미확정인데 이미 복귀했다(복귀 처리됨 또는 복귀일이 오늘 이전).
+ * 그 기간(period)이 «정산 필요»인가 — 승인됐고 금액 미확정인데 복귀일(다시 나오는 날)이 오늘이거나 지났다.
+ * 복귀 처리(ENDED)는 됐어도 복귀일이 아직 미래면 정산할 수 없다(그 전 결석이 아직 안 지났다) — «인정 · 발행 보류 중»으로 남는다.
  * returnDate 는 date 칼럼(달력 값)이라 now() 쪽만 KST 로 한 번 바꾼다.
  */
 export function illnessSettleNeededSql(period: string): string {
-  return `(${illnessHoldPeriodSql(period)} AND (${period}.status = 'ENDED'
-            OR (${period}."returnDate" IS NOT NULL AND ${period}."returnDate" <= (now() AT TIME ZONE 'Asia/Seoul')::date)))`;
+  return `(${illnessHoldPeriodSql(period)} AND ${period}."returnDate" IS NOT NULL AND ${period}."returnDate" <= (now() AT TIME ZONE 'Asia/Seoul')::date)`;
 }
 
 /**

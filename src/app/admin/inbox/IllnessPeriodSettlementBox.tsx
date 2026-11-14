@@ -26,6 +26,8 @@ type Props = {
   /** APPROVED | SETTLED */
   carryState: string;
   onChanged: () => void | Promise<void>;
+  /** 위 «발행 보류» 칸으로 옮겨 가기(미납 청구가 남아 확정이 막혔을 때) — 상세 화면이 그 칸을 다시 읽고 보여 준다 */
+  onGoHold?: () => void | Promise<void>;
 };
 
 const won = (value: number) => `${value.toLocaleString("ko-KR")}원`;
@@ -36,7 +38,7 @@ const EVIDENCE_LABEL: Record<string, string> = {
   WORKBENCH_ISSUED: "발행·납부", PAID_PAYMENT: "납부 청구", UNPAID: "낸 돈 없음", BLOCKED: "확인 필요",
 };
 
-export default function IllnessPeriodSettlementBox({ periodId, studentName, carryState, onChanged }: Props) {
+export default function IllnessPeriodSettlementBox({ periodId, studentName, carryState, onChanged, onGoHold }: Props) {
   const [view, setView] = useState<IllnessPeriodSettlementView | null>(null);
   const [error, setError] = useState("");
   // 원장이 뺀 날(결석 id) — 서버가 이 목록으로 다시 계산한다
@@ -238,6 +240,12 @@ export default function IllnessPeriodSettlementBox({ periodId, studentName, carr
           {!settled && view.blockers.map((line) => (
             <p key={line} className="rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-xs text-[var(--color-academy-warning)]">{line}</p>
           ))}
+          {/* 낸 돈이 없는 달의 미납 청구가 남아 있으면 확정할 수 없다 — 글만 두지 않고 보류 칸으로 바로 간다(돌린 뒤 이 표를 다시 읽는다) */}
+          {!settled && view.needsHold && onGoHold && (
+            <div className="flex justify-end">
+              <button type="button" disabled={pending} onClick={() => void onGoHold()} className="academy-button-secondary">발행 보류로 돌리기로 이동</button>
+            </div>
+          )}
           {!settled && view.canSettle && !view.writesEnabled && (
             <p className="rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-xs text-[var(--color-academy-warning)]">청구 준비 저장이 꺼져 있어 지금은 확정할 수 없습니다.</p>
           )}

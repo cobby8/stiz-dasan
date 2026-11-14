@@ -52,6 +52,10 @@ function database({credit=0,secondClass=false}={}){
   if(sql.includes("information_schema.columns"))return [{n:state.periodCarry?1:0}];
   // 2단계 발행 보류: 승인됐고 금액 미확정인 질병·부상 기간(state.holdPeriods) — 판정 조건 문구가 SQL 에 있을 때만, 그 달까지 시작한 기간만 답한다
   if(sql.includes('FROM "RegularAbsencePeriod" hp')){assert.match(sql,/hp\.reason = 'ILLNESS_INJURY' AND hp\."carryState" = 'APPROVED' AND hp\.status IN \('ACTIVE', 'ENDED'\)/);assert.match(sql,/to_char\(hp\."startDate",'YYYY-MM'\) <= \$1/);return (state.holdPeriods??[]).filter(p=>p.reason==="ILLNESS_INJURY"&&p.carryState==="APPROVED"&&["ACTIVE","ENDED"].includes(p.status)&&p.startDate.slice(0,7)<=v[0]).sort((a,b)=>a.studentId.localeCompare(b.studentId)||a.startDate.localeCompare(b.startDate)||a.id.localeCompare(b.id)).map(p=>({studentId:p.studentId,periodId:p.id,startMonth:p.startDate.slice(0,7),...(sql.includes('hp."classIds" AS "classIds"')?{classIds:p.classIds??[]}:{})}));}
+  // 승인·정산된 질병 기간에 묶인 결석(state.periodAbsences: [{id,periodId}]) — 결석 정산 목록의 «기간 정산에서 처리» 표시용
+  if(sql.includes('FROM "RegularAbsence" pa JOIN "RegularAbsencePeriod" pp')){assert.match(sql,/pa\.reason = 'ILLNESS_INJURY' AND pa\.status <> 'CANCELLED' AND pp\."carryState" <> 'NONE'/);return structuredClone(state.periodAbsences??[]);}
+  // 그 학생·그 달에 반이 지정되지 않은 납부 수강료 청구가 있는가(있으면 «낸 돈이 없는 달»로 단정하지 않는다)
+  if(sql.includes(`p.status='PAID' AND p."classId" IS NULL LIMIT 1`))return state.payments.filter(p=>p.studentId===v[0]&&p.year===v[1]&&p.month===v[2]&&p.type==="MONTHLY"&&p.status==="PAID"&&(p.classId===null||p.classId===undefined)).slice(0,1).map(p=>({id:p.id}));
   // 부상 결석 복귀 정산(3단계)이 남긴 «낸 돈이 없는 달» 안내 — 확정된(SETTLED) 기간의 이 달 것만
   if(sql.includes('FROM "RegularAbsencePeriod" sp')){assert.match(sql,/sp\.reason = 'ILLNESS_INJURY' AND sp\."carryState" = 'SETTLED'/);assert.match(sql,/sp\."carrySettlement"->'unpaidGuides' @> jsonb_build_array\(jsonb_build_object\('month', \$1::text\)\)/);return (state.settledGuides??[]).filter(g=>g.guides.some(x=>x.month===v[0])).map(g=>({studentId:g.studentId,periodId:g.periodId,guides:g.guides}));}
   if(sql.includes('FROM "RegularAbsencePeriod" p JOIN "RegularAbsence" a ON a."periodId"=p.id')){assert.match(sql,/p\."carryState"<>'NONE'/);return (state.periodDecided??[]).includes(v[0])?[{found:1}]:[];}
@@ -680,12 +684,19 @@ test("납부 근거: 같은 반·같은 달 납부완료가 2건 이상이면 �
 });
 test("납부 근거: 취소·환불·미납 청구, 다른 반·다른 달·다른 종류 청구는 근거가 아니다 — 기존 문구로 차단",async()=>{
  const notEvidence=[[paidOct({status:"CANCELED"})],[paidOct({status:"REFUNDED"})],[paidOct({status:"CANCELED"}),paidOct({id:"r2",status:"REFUNDED"})],[paidOct({status:"PENDING"})],[paidOct({status:"OVERDUE"})],
-  [paidOct({classId:"class-b"})],[paidOct({classId:null})],[paidOct({month:9})],[paidOct({year:2025})],[paidOct({type:"SHUTTLE"})],[paidOct({studentId:"student-b"})]];
+  [paidOct({classId:"class-b"})],[paidOct({month:9})],[paidOct({year:2025})],[paidOct({type:"SHUTTLE"})],[paidOct({studentId:"student-b"})]];
  for(const payments of notEvidence){
   const db=paidEvidenceDatabase(payments);const view=await readWorkbench(db.tx,"2026-11",true);
   await assert.rejects(()=>resolveWorkbenchAbsence(db,resolveCommand(view),"admin",true),/원결석 기간의 확정 수강료·실제 수업일 근거가 필요합니다/,JSON.stringify(payments));
   assert.equal(db.state.carryCredits.length,0);
  }
+ // 반이 지정되지 않은 납부 청구가 그 달에 있으면 «근거 없음(= 낸 돈이 없는 달)»으로 단정하지 않고 직접 확인하게 한다(이 반 몫이 그 안에 있을 수 있다)
+ {const db=paidEvidenceDatabase([paidOct({classId:null})]);const view=await readWorkbench(db.tx,"2026-11",true);
+  await assert.rejects(()=>resolveWorkbenchAbsence(db,resolveCommand(view),"admin",true),/반이 지정되지 않은 납부 청구가 있어요\. 어느 반의 수강료인지 직접 확인해 주세요\./);
+  assert.equal(db.state.carryCredits.length,0);}
+ // 그 반의 납부 청구가 있으면 반 없는 청구가 함께 있어도 그 반 청구가 근거(예전 그대로)
+ {const db=paidEvidenceDatabase([paidOct(),paidOct({id:"no-class",classId:null})]);const view=await readWorkbench(db.tx,"2026-11",true);
+  await resolveWorkbenchAbsence(db,resolveCommand(view),"admin",true);assert.equal(db.state.carryCredits[0].basis.sourcePaymentId,"rz-oct");}
  // 취소 1건 + 납부완료 1건이면 납부완료 1건이 근거
  const db=paidEvidenceDatabase([paidOct({id:"old",status:"CANCELED",amount:999}),paidOct()]);const view=await readWorkbench(db.tx,"2026-11",true);
  await resolveWorkbenchAbsence(db,resolveCommand(view),"admin",true);assert.equal(db.state.carryCredits[0].basis.sourcePaymentId,"rz-oct");
@@ -1055,26 +1066,91 @@ test("정산 안내: 3회 달은 3회 달 차감 뒤 금액을 횟수로 나눈�
  const legacy=guideDatabase(["2026-11-07"]);legacy.state.periodCarry=false;
  assert.equal((await readWorkbench(legacy.tx,"2026-11",true)).rows[0].prorationAmount,0);
 });
-test("정산 안내: 저장해 둔 초안(보류로 돌렸던 청구의 금액 메모)은 저장값이 우선하되, 제안과 다른 기간 조정·쓸 수 있는 부상 결석 이월을 알린다",async()=>{
+test("정산 안내: 정산 전에 저장해 둔 초안(보류로 돌렸던 청구의 금액 메모)은 기간 조정·수강 기간·이월만 제안값으로 — 그대로 저장해도 줄인 금액으로 발행된다",async()=>{
+ const held=()=>({id:"student-a:class-a",month:"2026-11",studentId:"student-a",classId:"class-a",version:4,status:"DRAFT",payload:{...draft(),discountAmount:10000},reason:"발행",sourceVersion:"stale",paymentId:null,periodStart:"2026-11-07",periodEnd:"2026-11-28",scheduledDates:["2026-11-07","2026-11-14","2026-11-21","2026-11-28"]});
  const db=guideDatabase(["2026-11-07","2026-11-14"]);
- // 보류로 돌려 둔 초안 = 정산 전 금액(기간 조정 0·이월 0·전체 기간), 원본은 그 뒤 바뀌었다
- db.state.drafts.push({id:"student-a:class-a",month:"2026-11",studentId:"student-a",classId:"class-a",version:4,status:"DRAFT",payload:draft(),reason:"발행",sourceVersion:"stale",paymentId:null,periodStart:"2026-11-07",periodEnd:"2026-11-28",scheduledDates:["2026-11-07","2026-11-14","2026-11-21","2026-11-28"]});
+ // 보류로 돌려 둔 초안 = 정산 전 금액(수강료 100,000·할인 10,000·기간 조정 0·이월 0·전체 기간), 원본은 그 뒤 바뀌었다
+ db.state.drafts.push(held());
  // 이 기간 정산이 적립한 이월 30,000원(basis.periodId)
  db.state.carryCredits.push({id:"period-credit",studentId:"student-a",numerator:"30000",denominator:"1",availableMonth:"2026-11",basis:{periodId:"period-s"}});
- const row=(await readWorkbench(db.tx,"2026-11",true)).rows[0];
- // 저장값 그대로(조용히 바꾸지 않는다)
- assert.deepEqual([row.prorationAmount,row.carryAmount,row.totalAmount,row.periodStart,row.draftStatus],[0,0,100000,"2026-11-07","DRAFT"]);
- assert.ok(row.reviewReasons.includes("기간 조정: 부상 결석 제외 제안 50,000원과 다릅니다(저장값 0원). 수강 기간과 금액을 다시 확인해 주세요."));
- assert.ok(row.reviewReasons.includes("이월: 부상 결석 이월 30,000원을 쓸 수 있습니다(저장값 0원). 이월 칸을 확인해 주세요."));
+ let view=await readWorkbench(db.tx,"2026-11",true);let row=view.rows[0];
+ // 수강료·할인은 저장값 그대로, 기간 조정 = (100,000 − 10,000) × 빠진 2회 ÷ 4회 = 45,000, 수강 기간 11/21~11/28, 이월 30,000 → 15,000원
+ assert.deepEqual([row.baseAmount,row.discountAmount,row.prorationAmount,row.carryAmount,row.totalAmount,row.periodStart,row.periodEnd,row.scheduledDates,row.draftStatus],
+  [100000,10000,45000,30000,15000,"2026-11-21","2026-11-28",["2026-11-21","2026-11-28"],"DRAFT"]);
+ assert.ok(row.reviewReasons.includes("부상 결석 정산 뒤라 저장해 둔 금액 대신 제안값으로 바꿨습니다 — 기간 조정 45,000원(저장값 0원)·이월 30,000원(저장값 0원). 확인하고 다시 저장해 주세요."));
  assert.equal(row.status,"REVIEW");
+ // 화면이 하는 일 그대로: 보이는 값(row)을 그대로 다시 저장 → 확정 → 발행 → 줄인 금액으로 청구
+ const asIs=(action)=>({action,month:view.month,sourceVersion:view.sourceVersion,requestId:`request-${action}-${Math.random().toString(36).slice(2)}`,rows:[{id:row.id,expectedVersion:row.version,
+  ...(action==="SAVE"?{baseAmount:row.baseAmount,discountAmount:row.discountAmount,prorationAmount:row.prorationAmount,carryAmount:row.carryAmount,shuttleAmount:row.shuttleAmount,periodStart:row.periodStart,periodEnd:row.periodEnd,reason:"정산 뒤 확인"}:{})}]});
+ ({view}=await mutateWorkbench(db,asIs("SAVE"),"admin",true));row=view.rows[0];
+ // 다시 저장한 뒤에는 사람이 확인한 값 — 알림이 걷히고 값은 그대로
+ assert.deepEqual([row.prorationAmount,row.carryAmount,row.periodStart,row.totalAmount],[45000,30000,"2026-11-21",15000]);
+ assert.ok(!row.reviewReasons.some(reason=>reason.startsWith("부상 결석 정산 뒤라")));
+ ({view}=await mutateWorkbench(db,asIs("CONFIRM"),"admin",true));row=view.rows[0];
+ await mutateWorkbench(db,asIs("ISSUE"),"admin",true);
+ assert.deepEqual(db.state.payments.map(p=>p.amount),[15000],"전액(90,000)이 아니라 다닌 2회 − 이월");
+ assert.deepEqual(db.state.drafts[0].scheduledDates,["2026-11-21","2026-11-28"],"발행 근거의 수업일도 다닌 날만");
+ // 원장이 다시 저장해 일부러 다른 값을 넣은 뒤에는(원본이 같다) 그 값이 우선한다 — 다시 덮지 않는다
+ const human=guideDatabase(["2026-11-07","2026-11-14"]);human.state.drafts.push(held());
+ let humanView=await readWorkbench(human.tx,"2026-11",true);
+ ({view:humanView}=await mutateWorkbench(human,{action:"SAVE",month:humanView.month,sourceVersion:humanView.sourceVersion,requestId:"request-human-12345",rows:[{id:"student-a:class-a",expectedVersion:4,...draft(),prorationAmount:10000,periodStart:"2026-11-07",periodEnd:"2026-11-28",reason:"직접 조정"}]},"admin",true));
+ assert.deepEqual([humanView.rows[0].prorationAmount,humanView.rows[0].periodStart,humanView.rows[0].totalAmount],[10000,"2026-11-07",90000]);
+ // 전부 빠진 달: 기간은 그대로·기간 조정 전액·저장돼 있던 셔틀비도 뺀다(그 달 셔틀을 타지 않았다) → 0원
+ const whole=guideDatabase(["2026-11-07","2026-11-14","2026-11-21","2026-11-28"]);whole.state.drafts.push({...held(),payload:{...draft(),shuttleAmount:20000}});
+ const wholeRow=(await readWorkbench(whole.tx,"2026-11",true)).rows[0];
+ assert.deepEqual([wholeRow.prorationAmount,wholeRow.shuttleAmount,wholeRow.totalAmount,wholeRow.periodStart,wholeRow.periodEnd],[100000,0,0,"2026-11-07","2026-11-28"]);
+ assert.ok(wholeRow.reviewReasons.some(reason=>reason.includes("·셔틀비 0원(저장값 20,000원)")));
+ // 가운데만 빠진 달: 자동으로 바꾸지 않는다(저장값 그대로 + 참고 금액 알림)
+ const middle=guideDatabase(["2026-11-14"]);middle.state.drafts.push(held());
+ const middleRow=(await readWorkbench(middle.tx,"2026-11",true)).rows[0];
+ assert.deepEqual([middleRow.prorationAmount,middleRow.periodStart,middleRow.totalAmount],[0,"2026-11-07",90000]);
+ assert.ok(middleRow.reviewReasons.some(reason=>reason.includes("달 가운데라 자동 제안하지 않았습니다")));
+ // 정산 안내가 없는 행의 옛 초안은 저장값 그대로 — 부상 결석 이월을 쓸 수 있으면 알림만(예전 동작)
+ const noGuide=database();noGuide.state.periodCarry=true;noGuide.state.drafts.push(held());
+ noGuide.state.carryCredits.push({id:"period-credit",studentId:"student-a",numerator:"30000",denominator:"1",availableMonth:"2026-11",basis:{periodId:"period-s"}});
+ const noGuideRow=(await readWorkbench(noGuide.tx,"2026-11",true)).rows[0];
+ assert.deepEqual([noGuideRow.prorationAmount,noGuideRow.carryAmount,noGuideRow.periodStart],[0,0,"2026-11-07"]);
+ assert.ok(noGuideRow.reviewReasons.includes("이월: 부상 결석 이월 30,000원을 쓸 수 있습니다(저장값 0원). 이월 칸을 확인해 주세요."));
  // 기간 정산과 무관한 이월(하루짜리)만 있으면 이월 알림은 붙이지 않는다(기존 동작 그대로)
- const plainCredit=guideDatabase(["2026-11-07","2026-11-14"]);
- plainCredit.state.drafts.push({...db.state.drafts[0]});plainCredit.state.carryCredits.push({id:"day-credit",studentId:"student-a",numerator:"30000",denominator:"1",availableMonth:"2026-11",basis:{}});
- assert.ok(!(await readWorkbench(plainCredit.tx,"2026-11",true)).rows[0].reviewReasons.some(reason=>reason.startsWith("이월: 부상 결석 이월")));
- // 제안과 같은 값을 저장해 둔 초안에는 기간 조정 알림이 없다
- const same=guideDatabase(["2026-11-07","2026-11-14"]);
- same.state.drafts.push({...db.state.drafts[0],payload:{...draft(),prorationAmount:50000},periodStart:"2026-11-21",scheduledDates:["2026-11-21","2026-11-28"]});
- assert.ok(!(await readWorkbench(same.tx,"2026-11",true)).rows[0].reviewReasons.some(reason=>reason.startsWith("기간 조정: 부상 결석")));
+ const dayCredit=database();dayCredit.state.periodCarry=true;dayCredit.state.drafts.push(held());
+ dayCredit.state.carryCredits.push({id:"day-credit",studentId:"student-a",numerator:"30000",denominator:"1",availableMonth:"2026-11",basis:{}});
+ assert.ok(!(await readWorkbench(dayCredit.tx,"2026-11",true)).rows[0].reviewReasons.some(reason=>reason.startsWith("이월: 부상 결석 이월")));
+});
+test("정산 안내: 같은 반·같은 달 안내가 둘이면 빠진 날을 합친다 / 전부 빠진 달은 셔틀비를 제안하지 않고 다닌 다른 반 행이 받는다 / 일부만 빠진 달의 셔틀비는 그대로",async()=>{
+ // 기간이 두 번(앞 1회 · 그다음 1회) → 합쳐서 앞 2회 빠짐
+ const twice=database();twice.state.periodCarry=true;
+ twice.state.settledGuides=[{studentId:"student-a",periodId:"period-1",guides:[{month:"2026-11",classId:"class-a",missedDates:["2026-11-07"]}]},{studentId:"student-a",periodId:"period-2",guides:[{month:"2026-11",classId:"class-a",missedDates:["2026-11-14"]}]}];
+ const merged=(await readWorkbench(twice.tx,"2026-11",true)).rows[0];
+ assert.deepEqual([merged.periodStart,merged.prorationAmount,merged.totalAmount],["2026-11-21",50000,50000]);
+ assert.ok(merged.basis.includes("부상 결석 2회 제외 → 기간 조정 50,000원 제안(다닌 2회 · 수강 2026-11-21~2026-11-28)"));
+ // 셔틀 명단에 있는 아이(두 반). class-a 는 전부 빠짐, class-b 는 다님 → 셔틀비는 class-b 행에
+ const all=["2026-11-07","2026-11-14","2026-11-21","2026-11-28"];
+ const shuttle=(missed)=>{const db=guideDatabase(missed,{secondClass:true});db.state.enrollments.forEach((e,index)=>{e.runsShuttle=true;e.shuttleFeeOverride=20000;e.dayOfWeek=index?"Wed":"Mon";/* 셔틀은 평일 반만 — 가짜 달력은 요일과 무관하게 같은 수업일을 준다 */});db.state.shuttleStops=[{serviceMonth:"2026-11",studentId:"student-a",studentName:"합성 원생",direction:"BOARD",stopName:"합성 정류장"}];return db;};
+ const plainRows=(await readWorkbench((()=>{const db=shuttle([]);db.state.settledGuides=[];return db;})().tx,"2026-11",true)).rows;
+ const fee=plainRows[0].shuttleAmount;assert.ok(fee>0,"안내가 없으면 첫 반 행에 셔틀비 제안");assert.equal(plainRows[1].shuttleAmount,0);
+ const wholeRows=(await readWorkbench(shuttle(all).tx,"2026-11",true)).rows;
+ assert.deepEqual(wholeRows.map(r=>[r.classId,r.shuttleAmount,r.totalAmount===0]),[["class-a",0,true],["class-b",fee,false]]);
+ assert.ok(wholeRows[0].basis.includes("부상 결석으로 다닌 수업이 없어 이 행에는 셔틀비를 제안하지 않았어요"));
+ // 일부만 빠진 달: 셔틀비는 그대로 제안하고 근거에 한 줄
+ const partRows=(await readWorkbench(shuttle(["2026-11-07"]).tx,"2026-11",true)).rows;
+ assert.equal(partRows[0].shuttleAmount,fee);assert.ok(partRows[0].basis.includes("셔틀비는 그대로예요 · 필요하면 조정"));
+ assert.ok(!plainRows[0].basis.includes("셔틀비는 그대로예요 · 필요하면 조정"));
+});
+test("결석 정산 목록: 승인·정산된 부상 결석 기간의 날은 «기간 정산에서 처리»로 — 기간 id 를 싣되 지문은 그대로",async()=>{
+ const db=absenceDatabase();db.state.periodCarry=true;
+ const before=await readWorkbench(db.tx,"2026-11",true);
+ assert.ok(before.absences.every(a=>!("carryPeriodId" in a)),"기간에 묶이지 않은 결석에는 칸이 없다");
+ db.state.periodAbsences=[{id:"absence-a",periodId:"period-x"}];
+ const after=await readWorkbench(db.tx,"2026-11",true);
+ assert.equal(after.absences.find(a=>a.id==="absence-a").carryPeriodId,"period-x");
+ // 표시용 칸이라 원본 지문에 넣지 않는다 — 저장해 둔 초안이 낡은 것으로 바뀌지 않는다
+ assert.equal(after.sourceVersion,before.sourceVersion);
+ // 기간 정산 칸이 없는 DB 는 읽지 않는다
+ db.state.periodCarry=false;assert.ok((await readWorkbench(db.tx,"2026-11",true)).absences.every(a=>!("carryPeriodId" in a)));
+ // 화면: 그런 날은 버튼 대신 신청함 기간 상세로(완료 칸까지 읽게 done=1)
+ const screen=await readFile("src/app/admin/finance/prepare/BillingWorkbench.tsx","utf8");
+ assert.match(screen,/item\.carryPeriodId \? "기간 정산에서 처리" : suggestedResolution\(item\) === "CARRY"/);
+ assert.match(screen,/\{item\.carryPeriodId\s+\/\/[^\n]*\n\s+\? <Link href=\{`\$\{ILLNESS_PERIOD_INBOX_HREF\}&done=1&open=\$\{encodeURIComponent\(item\.carryPeriodId\)\}`\} className="inline-flex min-h-11 items-center font-medium underline">신청함에서 기간 보기<\/Link>\s+: <button type="button"/);
 });
 test("반 이동 경고: 보류 중인 기간의 대상 반을 지금 하나도 다니지 않으면 그 아이의 다른 반 행에 확인 한 줄(차단 아님)",async()=>{
  const rules=await import(periodRulesUrl);

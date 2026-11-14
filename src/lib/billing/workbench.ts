@@ -22,6 +22,8 @@ export type WorkbenchAbsence = {
   id: string; studentId: string; studentName: string; classId: string; date: string;
   reason: string; status: string; makeupStatus: string | null; resolution: string | null;
   reviewReasons: string[];
+  /** 승인·정산된 질병 기간에 묶인 결석이면 그 기간 id — 하루씩 처리하지 않고 «기간 정산에서 처리»로 보인다(이 칸은 그런 결석에만 있다) */
+  carryPeriodId?: string;
 };
 export type WorkbenchView = {
   month: string; sourceVersion: string; writesEnabled: boolean; storageReady: boolean;

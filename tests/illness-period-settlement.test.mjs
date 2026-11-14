@@ -244,7 +244,7 @@ test("관리자 화면: 달별 표(날짜 칩으로 빼기·넣기) · 합계 ·
   assert.match(box, /var\(--color-academy-secondary\)/);
   // 상세 칸·학생 상세가 이 칸으로 이어진다
   const detail = read("src/app/admin/inbox/IllnessPeriodInboxDetail.tsx");
-  assert.equal((detail.match(/<IllnessPeriodSettlementBox /g) ?? []).length, 2, "승인된 기간·확정된 기간");
+  assert.equal((detail.match(/<IllnessPeriodSettlementBox\s/g) ?? []).length, 2, "승인된 기간·확정된 기간");
   const panel = read("src/app/admin/students/[id]/AbsencePeriodPanel.tsx");
   assert.match(panel, /\{p\.settleNeeded \? PERIOD_CARRY_STUDENT_LABELS\.SETTLE_NEEDED : PERIOD_CARRY_STUDENT_LABELS\.APPROVED\}/);
   assert.match(panel, /\{p\.settleNeeded \? "정산하기" : "신청함에서 보기"\}/);
@@ -288,8 +288,9 @@ test("크론·기타: «인정 안 함» 기간의 새 날은 매일 보강권�
   assert.match(fn, /if \(period\.carryState !== "NONE" \|\| !declined\) return 0;/, "잠근 뒤 다시 확인");
   assert.match(fn, /await convertIllnessToMakeupInTx\(tx, \{ absenceId: absence\.id, by: "ADMIN", actorUserId: declined\.byUserId, issuable \}\)/, "하루짜리 [보강권으로]와 같은 함수");
   assert.equal(rules.illnessPeriodDeclinedSql("p"), `(p."carryState" = 'NONE' AND jsonb_typeof(p."carrySettlement"->'declined') = 'object')`);
+  // 정산 필요 = 승인됨 AND 복귀일 ≤ 오늘(KST). 복귀 처리(ENDED)만 됐고 복귀일이 미래면 아직 아니다
   assert.equal(rules.illnessSettleNeededSql("p"),
-    `((p.reason = 'ILLNESS_INJURY' AND p."carryState" = 'APPROVED' AND p.status IN ('ACTIVE', 'ENDED')) AND (p.status = 'ENDED'\n            OR (p."returnDate" IS NOT NULL AND p."returnDate" <= (now() AT TIME ZONE 'Asia/Seoul')::date)))`);
+    `((p.reason = 'ILLNESS_INJURY' AND p."carryState" = 'APPROVED' AND p.status IN ('ACTIVE', 'ENDED')) AND p."returnDate" IS NOT NULL AND p."returnDate" <= (now() AT TIME ZONE 'Asia/Seoul')::date)`);
   // 기간 행 표시 읽기
   assert.deepEqual(rules.parseUnpaidGuides({ unpaidGuides: [{ month: "2026-12", classId: "m", missedDates: ["2026-12-07", 3] }, { month: "2026-11", classId: "m", missedDates: [] }, { bad: true }] }, "2026-12"),
     [{ month: "2026-12", classId: "m", missedDates: ["2026-12-07"] }]);
@@ -415,4 +416,57 @@ test("부원장 응답: 금액으로 만든 지문도 내려보내지 않는다 
   assert.equal(take("u1", 59_999), false);
   assert.equal(take("u1", 61_001), true);
   limiter.resetPublicRateLimitsForTests();
+});
+
+// ── 코드 리뷰 반영(2026-11-15): 미납 청구가 살아 있으면 확정 차단 · 날짜 상한 재료 · 권장 항목 ─────────────────
+test("코드 리뷰: 낸 돈이 없는 달에 미납 청구가 살아 있으면 경고가 아니라 확정 차단 — 지문에 들어가고, 정산 칸에서 보류 칸으로 바로 간다", () => {
+  const plan = slice(service, "async function readSettlementPlan(", "/** 지금 이 기간에 쓸 복귀일");
+  assert.match(plan, /plan\.problems\.push\(\{ code: "OPEN_BILL", text: `\$\{Number\(guide\.month\.slice\(5, 7\)\)\}월 \$\{guide\.className\} 미납 청구가 그대로 있습니다\. 먼저 ‹발행 보류로 돌리기›를 해 주세요\.` \}\);/);
+  assert.doesNotMatch(plan, /warnings\.push\("이 달 미납 청구가/, "경고로만 두지 않는다");
+  // 문제를 넣은 «뒤에» 지문을 만든다(지문에 문제 코드가 들어 있다)
+  assert.ok(plan.indexOf('code: "OPEN_BILL"') < plan.indexOf("fingerprint: settlementFingerprint({ id: period.id, returnDate }, plan)"));
+  assert.match(read("src/lib/regular/illnessPeriodSettlementPlan.ts"), /problems: plan\.problems\.map\(\(problem\) => problem\.code\),/);
+  // 화면: 그 문제가 있으면 «발행 보류로 돌리기로 이동» — 상세가 보류 칸을 다시 읽고 그 자리로 옮긴다. 돌린 뒤에는 정산 칸을 새로 읽는다
+  assert.match(actions, /needsHold: preview\.plan\.problems\.some\(\(problem\) => problem\.code === "OPEN_BILL"\), used: false,/);
+  const box = read("src/app/admin/inbox/IllnessPeriodSettlementBox.tsx");
+  assert.match(box, /\{!settled && view\.needsHold && onGoHold && \(\s+<div className="flex justify-end">\s+<button type="button" disabled=\{pending\} onClick=\{\(\) => void onGoHold\(\)\} className="academy-button-secondary">발행 보류로 돌리기로 이동<\/button>/);
+  const detail = read("src/app/admin/inbox/IllnessPeriodInboxDetail.tsx");
+  assert.match(detail, /<div id="illness-period-hold-box" /);
+  assert.match(detail, /onGoHold=\{async \(\) => \{ await reload\(\); document\.getElementById\("illness-period-hold-box"\)\?\.scrollIntoView\(/);
+  assert.match(detail, /key=\{`settle-\$\{hold\?\.heldCount \?\? 0\}`\}/);
+});
+
+test("코드 리뷰: 학부모 날짜 상한의 재료(coveredUntil)는 «목록» 조회가 읽는다 — 겹침 검사 조회가 아니다", () => {
+  const source = read("src/lib/regular/parent-absence-period.ts");
+  const list = slice(source, "export async function listParentAbsencePeriods(");
+  const listSql = slice(list, "`SELECT p.id, p.\"studentId\" AS \"studentId\", s.name AS \"studentName\", p.reason,", "parentUserId,");
+  assert.match(listSql, /to_char\(p\."coveredUntil",'YYYY-MM-DD'\) AS "coveredUntil",/);
+  assert.match(list, /returnMax: parentReturnDateMax\(\{ todayYmd: todayKst\(\), storedReturnYmd: row\.returnDate, coveredUntilYmd: row\.coveredUntil \}\),/);
+  // 알리기의 겹침 검사 조회에는 그 칸이 없다(쓰지 않는 칸을 읽지 않는다)
+  const create = slice(source, "export async function createParentAbsencePeriod(", "// ── 3) 복귀했어요 / 알림 취소 ──");
+  assert.doesNotMatch(create, /AS "coveredUntil"/);
+  assert.equal((source.match(/AS "coveredUntil"/g) ?? []).length, 1);
+});
+
+test("코드 리뷰(권장): 장부 근거는 납부 청구가 확인될 때만 · 보강권도 잠근 뒤 판정 · 넣을 날이 없으면 할 일 안내 · 발행된 달이 있으면 확정 취소 거절", () => {
+  // 확정 월 장부 근거(기간 정산): 그 반·그 달 PAID 청구가 없으면 근거를 정할 수 없음
+  const plan = slice(service, "async function readSettlementPlan(", "/** 지금 이 기간에 쓸 복귀일");
+  assert.match(plan, /if \(found\.source === "MONTHLY_REGISTER"\) \{[\s\S]{0,700}AND p\.type = 'MONTHLY' AND p\.status = 'PAID' LIMIT 1`[\s\S]{0,200}if \(paidForRegister\.length === 0\) \{\s+evidence\.set\(key, \{ kind: "BLOCKED", reason: "확정 월 장부만 있고 그 달 납부된 수강료 청구를 확인할 수 없어요\. 직접 확인해 주세요\." \}\);\s+continue;/);
+  // 확정: 결석 행 → 보강권 행을 잠근 뒤에 상태를 읽는다(읽기만 하는 미리보기는 잠그지 않는다)
+  const absences = slice(service, "async function readPeriodAbsences(", "type PlanRead");
+  const lockAt = absences.indexOf("ORDER BY mc.id FOR UPDATE OF mc");
+  assert.ok(lockAt > 0 && absences.indexOf("ORDER BY ra.date, ra.id FOR UPDATE OF ra`, period.id") < lockAt, "결석 → 보강권 순서");
+  assert.ok(lockAt < absences.indexOf("string_agg(DISTINCT mc.status, ',')"), "잠근 뒤에 보강권 상태를 읽는다");
+  assert.match(absences, /if \(lock\) \{/);
+  // 넣을 결석이 없는 기간: 확정 대신 할 일을 알려 준다(미리보기 차단 사유에도)
+  assert.match(service, /export const SETTLE_NOTHING_MESSAGE = "정산에 넣을 결석이 없어요\. ‹승인 취소›로 발행 보류를 풀어 주세요\.";/);
+  assert.match(settleLib, /if \(handled\.length === 0\) throw new IllnessPeriodError\(SETTLE_NOTHING_MESSAGE\);/);
+  assert.match(previewLib, /read\.plan\.rows\.every\(\(row\) => row\.absenceIds\.length === 0\) \? \[SETTLE_NOTHING_MESSAGE\] : \[\]/);
+  // 확정 취소: 이 정산의 안내로 그 달 청구를 이미 발행했으면 거절 — 삭제보다 앞
+  assert.match(cancelLib, /d\.status IN \('ISSUED', 'ZERO'\)\s+UNION ALL\s+SELECT 1 FROM "Payment" pay[\s\S]{0,260}pay\.status NOT IN \('CANCELED', 'CANCELLED'\)/);
+  assert.ok(cancelLib.indexOf("청구를 이미 발행했어요. 확정 취소 대신 수납 관리에서 직접 조정해 주세요.") < cancelLib.indexOf('DELETE FROM "BillingCarryCredit"'));
+  // 반이 지정되지 않은 납부 청구: 근거 없음(= 낸 돈이 없는 달)으로 단정하지 않는다 — 문구가 «낸 돈이 없는 달»로 가는 두 문구와 다르다
+  const absence = read("src/lib/billing/workbench-absence.ts");
+  assert.match(absence, /AND p\.type='MONTHLY' AND p\.status='PAID' AND p\."classId" IS NULL LIMIT 1`,absence\.studentId,originYear,originMonthNumber\);\s+if\(classless\.length\) throw new WorkbenchError\(CARRY_CLASSLESS_PAID_MESSAGE,409\);/);
+  assert.match(absence, /export const CARRY_CLASSLESS_PAID_MESSAGE = "반이 지정되지 않은 납부 청구가 있어요\. 어느 반의 수강료인지 직접 확인해 주세요\.";/);
 });

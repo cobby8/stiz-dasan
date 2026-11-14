@@ -201,7 +201,7 @@ export async function createParentAbsencePeriod(
     // 살아 있는 결석이 하나도 없는 학부모 기간(전부 취소됨)은 겹침으로 보지 않는다. 겹친 상대가 학원이 등록한 기간이면 문구가 다르다
     const others = (await tx.$queryRawUnsafe<Array<{ startDate: string; returnDate: string | null; parentReported: boolean; live: number }>>(
       `SELECT to_char(p."startDate",'YYYY-MM-DD') AS "startDate", to_char(p."returnDate",'YYYY-MM-DD') AS "returnDate",
-              (p."reportedByUserId" IS NOT NULL) AS "parentReported", to_char(p."coveredUntil",'YYYY-MM-DD') AS "coveredUntil",
+              (p."reportedByUserId" IS NOT NULL) AS "parentReported",
               (SELECT COUNT(*)::int FROM "RegularAbsence" ra WHERE ra."periodId" = p.id AND ra.status <> 'CANCELLED') AS live
          FROM "RegularAbsencePeriod" p WHERE p."studentId" = $1 AND p.status IN ('ACTIVE','ENDED')`,
       studentId,
@@ -462,6 +462,8 @@ export async function listParentAbsencePeriods(parentUserId: string): Promise<Pa
               p."openEnded" AS "openEnded",
               (SELECT COUNT(*)::int FROM "RegularAbsence" ra WHERE ra."periodId" = p.id AND ra.status <> 'CANCELLED') AS count,
               (p."reportedByUserId" IS NOT NULL) AS "parentReported",
+              -- 결석을 만들어 둔 끝 — «복귀했어요» 날짜 상한(returnMax)을 서버 규칙과 같게 만드는 재료
+              to_char(p."coveredUntil",'YYYY-MM-DD') AS "coveredUntil",
               -- 아직 끝나지 않은 기간(진행 중이고 복귀일이 없거나 오늘보다 뒤). 오늘은 DB 시계의 KST 날짜
               (p.status = 'ACTIVE' AND (p."returnDate" IS NULL OR p."returnDate" > (now() AT TIME ZONE 'Asia/Seoul')::date)) AS active,
               ${carryReady ? `p."carryState"` : `NULL::text`} AS "carryState",

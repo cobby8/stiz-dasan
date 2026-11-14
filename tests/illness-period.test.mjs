@@ -763,8 +763,8 @@ function loadInbox(state) {
               const hold = period.carryState === "APPROVED" && ["ACTIVE", "ENDED"].includes(period.status);
               const holdSql = `\\(x\\.reason = 'ILLNESS_INJURY' AND x\\."carryState" = 'APPROVED' AND x\\.status IN \\('ACTIVE', 'ENDED'\\)\\)`;
               if (/CASE WHEN x\."carryState" = 'SETTLED' THEN 'SETTLED'/.test(sql) && period.carryState === "SETTLED") return "SETTLED";
-              if (new RegExp(`WHEN \\(${holdSql} AND \\(x\\.status = 'ENDED'\\s+OR \\(x\\."returnDate" IS NOT NULL AND x\\."returnDate" <= \\(now\\(\\) AT TIME ZONE 'Asia/Seoul'\\)::date\\)\\)\\) THEN 'SETTLE_NEEDED'`).test(sql)
-                && hold && (period.status === "ENDED" || (period.returnDate && period.returnDate <= state.today))) return "SETTLE_NEEDED";
+              if (new RegExp(`WHEN \\(${holdSql} AND x\\."returnDate" IS NOT NULL AND x\\."returnDate" <= \\(now\\(\\) AT TIME ZONE 'Asia/Seoul'\\)::date\\) THEN 'SETTLE_NEEDED'`).test(sql)
+                && hold && period.returnDate && period.returnDate <= state.today) return "SETTLE_NEEDED";
               if (new RegExp(`WHEN ${holdSql} THEN 'APPROVED_HOLD'`).test(sql) && hold) return "APPROVED_HOLD";
               // 아직 지도에 없는 정산 상태(4단계)도 APPROVED 로 읽어 목록에서 사라지지 않는다
               if (period.carryState !== "NONE") { assert.match(sql, /WHEN x\."carryState" <> 'NONE' THEN 'APPROVED'/); return "APPROVED"; }
@@ -869,17 +869,20 @@ test("신청함: 기간 결석 16건이 «기간 한 줄»로 — 하루짜리 �
   const cancelledApproved = (await inbox.getInboxRows({ bucket: "ONGOING", kinds: ["ILLNESS_PERIOD"] })).rows;
   assert.equal(cancelledApproved[0].statusLabel, "인정 · 금액은 복귀 뒤");
   state.periods[0].status = "ACTIVE";
-  // 3단계: 복귀하면(복귀 처리됨 또는 복귀일이 오늘 이전) «정산 필요» — 메뉴 «처리 필요» 숫자에 들어간다
-  for (const returned of [{ status: "ENDED", returnDate: "2026-12-14" }, { status: "ACTIVE", returnDate: state.today }]) {
+  // 3단계: 복귀일(다시 나오는 날)이 오늘이거나 지났으면 «정산 필요» — 메뉴 «처리 필요» 숫자에 들어간다
+  for (const returned of [{ status: "ENDED", returnDate: "2026-11-10" }, { status: "ACTIVE", returnDate: state.today }]) {
     Object.assign(state.periods[0], returned);
     const needed = (await inbox.getInboxRows({ bucket: "ACTION", kinds: ["ILLNESS_PERIOD"] })).rows;
     assert.equal(needed.length, 1, JSON.stringify(returned));
     assert.deepEqual([needed[0].rawStatus, needed[0].statusLabel], [rules.PERIOD_SETTLE_NEEDED_INBOX_STATUS, "정산 필요"]);
     assert.equal((await inbox.getInboxRows({ bucket: "ONGOING", kinds: ["ILLNESS_PERIOD"] })).rows.length, 0);
   }
-  // 복귀일이 아직 오지 않은 진행 중 기간은 «발행 보류 중» 그대로
-  Object.assign(state.periods[0], { status: "ACTIVE", returnDate: "2099-01-01" });
-  assert.equal((await inbox.getInboxRows({ bucket: "ONGOING", kinds: ["ILLNESS_PERIOD"] })).rows[0].rawStatus, rules.PERIOD_HOLD_INBOX_STATUS);
+  // 복귀일이 아직 오지 않았으면 «발행 보류 중» 그대로 — 복귀 처리(ENDED)만 됐고 복귀일이 미래인 기간도 같다(메뉴 숫자에 안 올라온다)
+  for (const waiting of [{ status: "ACTIVE", returnDate: "2099-01-01" }, { status: "ENDED", returnDate: "2026-12-14" }]) {
+    Object.assign(state.periods[0], waiting);
+    assert.equal((await inbox.getInboxRows({ bucket: "ONGOING", kinds: ["ILLNESS_PERIOD"] })).rows[0].rawStatus, rules.PERIOD_HOLD_INBOX_STATUS, JSON.stringify(waiting));
+    assert.equal((await inbox.getInboxRows({ bucket: "ACTION", kinds: ["ILLNESS_PERIOD"] })).rows.length, 0);
+  }
   // 이월을 확정하면 «완료(이월 확정)»
   Object.assign(state.periods[0], { status: "ENDED", returnDate: "2026-12-14", carryState: "SETTLED" });
   const settledRows = (await inbox.getInboxRows({ bucket: "DONE", kinds: ["ILLNESS_PERIOD"] })).rows;
@@ -1027,7 +1030,7 @@ test("상세 화면: 증빙 확인 체크 → 주 버튼 «부상 결석 승인�
   assert.match(detail, /PERIOD_APPROVED_ADMIN_NOTE/);
   // 3단계: 정산하기·예상 이월 금액은 «복귀 정산» 칸(IllnessPeriodSettlementBox)에 있다 — 승인된 기간과 확정된 기간에서만 연다.
   // 2단계의 «발행 보류로 돌리기»는 tests/illness-billing-hold.test.mjs, 정산 칸은 tests/illness-period-settlement.test.mjs 가 본다
-  assert.match(detail, /<IllnessPeriodSettlementBox periodId=\{periodId\} studentName=\{studentName\} carryState="APPROVED"/);
+  assert.match(detail, /<IllnessPeriodSettlementBox\s+key=\{`settle-\$\{hold\?\.heldCount \?\? 0\}`\}\s+periodId=\{periodId\} studentName=\{studentName\} carryState="APPROVED"/);
   assert.match(detail, /detail\.carryState === "SETTLED" \? \(\s+\/\/[^\n]*\n\s+<IllnessPeriodSettlementBox periodId=\{periodId\} studentName=\{studentName\} carryState="SETTLED"/);
   assert.match(detail, /\/api\/admin\/absence-evidence\//);
   // 아이콘 없이 글자 · 굵기 4단계 · 색은 토큰만

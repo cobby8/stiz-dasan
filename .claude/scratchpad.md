@@ -57,6 +57,12 @@
 💡 tester 참고: 신청함 › 부상 결석(기간) 승인된 줄 → «지금까지 예상 이월 ○원»(원장만) → [정산하기] → 복귀일 → 달별 표(날짜 칩 눌러 빼기/넣기) → [이월 확정] → «완료(이월 확정)»·[청구 준비로 이동]. 청구 준비: 복귀 달 행에 이월 차감 제안, 낸 돈 없는 달은 «부상 결석 n회 제외 → 기간 조정 ○원 제안». 보류로 돌렸던 초안은 저장값이 남아 «제안과 다릅니다» 알림 → 다시 저장해야 한다. 학부모: 결석 알리기 › 여러 날 결석 줄 [복귀했어요] → 복귀일 → «이월 예정 ○원». 주의 입력: 11/30 처럼 다음 달 수강월에 속한 날·출석 기록 있는 날·보강 예약한 날·복귀일을 미래로·부원장 계정(금액 안 보임)·저장 스위치 꺼짐.
 ⚠️ reviewer 참고: ① 확정·확정 취소는 READ COMMITTED(Serializable 금지 — 테스트 고정) ② 하루짜리 이월도 «미납 발행 초안»은 이제 거절(이미 적립된 이월의 유효성 판정은 그대로) ③ 낸 돈 없는 달의 결석에도 정산 기록(CARRY)을 남긴다(이월 행 없음 — 이중 보상 방지) ④ 실제 Postgres 미실행 SQL: 학부모 목록(listParentAbsencePeriods)·학부모 검토 조회·학생 상세 목록·신청함 상태식 전체·returnAcademyIllnessPeriod·convertDeclinedPeriodNewDays 의 전환 반복 ⑤ 윤수영 실제 금액은 운영 연간 일정의 11월 월요일 수업 횟수에 달렸다(테스트에 일정 두 모양 모두 기재: 168,750 / 174,000).
 
+#### 수정 이력
+| 회차 | 날짜 | 수정 내용 | 수정 파일 | 사유 |
+|------|------|----------|----------|------|
+| 1차 | 11-15 | 학부모 복귀일 상한(오늘+4주·저장된 복귀일·coveredUntil+1 — parentReturnDateMax) · 부원장 응답 지문 null · 학부모 예정 금액 미리보기 분당 10회 | parentAbsencePeriodRules.ts · parent-period-settlement.ts · illness-period-settlement.ts · actions/illness-period-admin.ts · api/mypage/regular-absence/period/route.ts · PeriodAbsencePanel.tsx · tests | 보안 검수 MEDIUM 1 + LOW 2 |
+| 2차 | 11-15 | [필수] 정산 전에 저장된 초안은 기간·기간 조정·이월을 제안값으로(그대로 저장해도 줄인 금액) · 낸 돈 없는 달에 미납 청구가 살아 있으면 확정 차단(OPEN_BILL) + 보류 칸으로 이동 버튼 · coveredUntil 을 목록 조회로(1차 실수) / [권장] 반 없는 납부 청구 차단 · 안내 합치기 · 전부 빠진 달 셔틀비 0 · 발행된 달이 있으면 확정 취소 거절 · 장부 근거는 납부 확인 시만(기간 정산) · 보강권 잠금 · 정산 필요 = 복귀일 ≤ 오늘 · 넣을 날 없음 안내 · 청구 준비 «기간 정산에서 처리». tsc 0 · tests 5552-0 · guards 337-0 · 로컬 Postgres 48개 | workbench-service.ts · workbench.ts · workbench-absence.ts · illness-period-settlement.ts · illnessPeriodRules.ts · illnessPeriodSettlementPlan.ts · parent-absence-period.ts · BillingWorkbench.tsx · IllnessPeriodSettlementBox.tsx · IllnessPeriodInboxDetail.tsx · tests | reviewer 필수 2 + 권장 9 |
+
 ### 구현 기록 (developer · 11-15 부상·질병 기간 결석 1b 승인 분리, claude/illness-period-approve)
 📝 구현한 기능: 신청함 «부상 결석(기간)» 한 줄(기간 1건 = 1줄) + 금액 없는 [부상 결석 승인]·[승인 취소] + 하루씩 이월 승인 가드 + 학부모 상태 글자
 

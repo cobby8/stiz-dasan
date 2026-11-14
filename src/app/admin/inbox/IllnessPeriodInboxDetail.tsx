@@ -247,7 +247,7 @@ export default function IllnessPeriodInboxDetail({ periodId, studentName, onChan
           </p>
           {/* 청구 발행 보류 — 상태 한 줄 + 이미 발행된 미납 청구(한 줄 행) + 원장만 누르는 «발행 보류로 돌리기» */}
           {hold?.holdActive && (
-            <div className="space-y-2 rounded-lg border border-[var(--color-academy-line)] px-3 py-2 text-sm">
+            <div id="illness-period-hold-box" className="space-y-2 rounded-lg border border-[var(--color-academy-line)] px-3 py-2 text-sm">
               <p className="font-semibold text-[var(--color-academy-ink)]">{BILLING_HOLD_LABEL}</p>
               <p className="text-xs text-[var(--color-academy-muted)]">금액이 정해질 때까지 결석 중인 반의 새 수강료 청구는 발행되지 않습니다.</p>
               {/* 미납 셔틀비 청구가 있을 때만 — 보류는 수강료 청구만 멈춘다 */}
@@ -285,7 +285,13 @@ export default function IllnessPeriodInboxDetail({ periodId, studentName, onChan
             </div>
           )}
           {/* 복귀 정산 — 금액은 여기서 한 번 확정한다(3단계). 확정하면 이 기간이 «완료(이월 확정)»로 바뀐다 */}
-          <IllnessPeriodSettlementBox periodId={periodId} studentName={studentName} carryState="APPROVED" onChanged={async () => { await reload(); onChanged(); }} />
+          {/* key: 보류로 돌린 건수가 바뀌면 정산 칸을 새로 읽는다(미납 청구가 남아 막혔던 확정이 풀린다) */}
+          <IllnessPeriodSettlementBox
+            key={`settle-${hold?.heldCount ?? 0}`}
+            periodId={periodId} studentName={studentName} carryState="APPROVED"
+            onChanged={async () => { await reload(); onChanged(); }}
+            onGoHold={async () => { await reload(); document.getElementById("illness-period-hold-box")?.scrollIntoView({ behavior: "smooth", block: "center" }); }}
+          />
           {/* 위험 작업(되돌리기)은 위험 등급 버튼 + 확인 창 */}
           <div className="flex justify-end">
             <button type="button" disabled={pending} onClick={() => void cancelApproval()} className="academy-button-danger">승인 취소</button>

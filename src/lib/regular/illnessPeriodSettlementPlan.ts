@@ -91,7 +91,8 @@ export type UnpaidGuide = {
 };
 
 /** 확정을 막는 문제 — EVIDENCE·NO_SESSIONS 는 금액을 정할 수 없다는 뜻(학부모에게는 «학원에서 확인한 뒤 알려 드려요») */
-export type SettlementProblem = { code: "EVIDENCE" | "NO_SESSIONS" | "FUTURE" | "RANGE"; text: string };
+// OPEN_BILL = 낸 돈이 없는 달에 미납 청구가 그대로 살아 있다(먼저 보류로 돌려야 다닌 만큼만 다시 발행할 수 있다) — 연결부가 넣는다
+export type SettlementProblem = { code: "EVIDENCE" | "NO_SESSIONS" | "FUTURE" | "RANGE" | "OPEN_BILL"; text: string };
 
 export type SettlementPlan = {
   rows: SettlementRow[];
