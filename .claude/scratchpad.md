@@ -277,6 +277,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-15 | developer(휴원 정산 단가 부풀림 수정, claude/pause-unit-price): loadPausePayments 가 랠리즈 청구의 «감액 할 일» 줄(UNPAID_REDUCE·channel≠SITE, 사이트 금액은 안 줄임)까지 원래 금액에 더하던 것을 «사이트가 실제로 줄인 줄»만 세도록 수정(workbench-absence 와 같은 기준). 재현 테스트 추가. tsc 0 · 관련 tests 179-0 | 검수 대기 |
 | 11-15 | developer(부상·질병 기간 결석 3단계 복귀 정산, claude/illness-period-settle): 순수 계산 모듈·미리보기/이월 확정/확정 취소·학부모 예정 금액·청구 준비 «다닌 만큼만» 제안·신청함 «정산 필요»·1·2단계 숙제(납부된 것만·인정 안 함 표시·현장 결제 재확인·반 이동 경고). tsc 0 · tests 5543-0 · guards 337-0 · 로컬 Postgres 45개 통과. 스키마 변경 없음 | 검수 대기 |
 | 11-15 | developer(부상·질병 기간 결석 2단계 청구 발행 보류, claude/illness-billing-hold): 청구 준비 보류(차단 사유·hold·지문)·이미 발행된 미납 청구 «발행 보류로 돌리기»(원장만, 결제 진행 중 등은 건너뜀)·학생 상세/학부모 결제 화면 한 줄·신청함 «인정 · 발행 보류 중»·1단계 숙제 3건. tsc 0 · tests 5484-0 · guards 337-0 · 로컬 Postgres 31개 통과. 스키마 변경 없음 | 검수 대기 |
 | 11-15 | developer(부상·질병 기간 결석 1b, claude/illness-period-approve): 신청함 기간 한 줄(ILLNESS_PERIOD)·금액 없는 승인/승인 취소·하루씩 이월 가드·7일 자동 전환 제외·학부모 글자. tsc 0 · tests 5422-0 · guards 337-0. 새 SQL 실제 Postgres 미실행 | 검수 대기 |

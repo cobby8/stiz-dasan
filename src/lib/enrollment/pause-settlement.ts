@@ -171,8 +171,8 @@ async function loadPausePayments(db: SettlementSql, req: PauseRequestRow, tables
   const reduced = new Map<string, number>();
   const carried = new Map<string, number>();
   if (tablesReady && ids.length > 0) {
-    const prior = await db.$queryRawUnsafe<Array<{ paymentId: string; kind: string; amount: number; missedDates: unknown; requestCanceled: boolean }>>(
-      `SELECT l."paymentId", l.kind, l.amount, l."missedDates", (r.status = 'CANCELED') AS "requestCanceled"
+    const prior = await db.$queryRawUnsafe<Array<{ paymentId: string; kind: string; channel: string | null; amount: number; missedDates: unknown; requestCanceled: boolean }>>(
+      `SELECT l."paymentId", l.kind, l.channel, l.amount, l."missedDates", (r.status = 'CANCELED') AS "requestCanceled"
          FROM "EnrollmentChangeSettlementLine" l
          JOIN "EnrollmentChangeSettlement" s ON s.id = l."settlementId"
          JOIN "EnrollmentChangeRequest" r ON r.id = s."requestId"
@@ -186,7 +186,11 @@ async function loadPausePayments(db: SettlementSql, req: PauseRequestRow, tables
         settled.set(line.paymentId, [...(settled.get(line.paymentId) ?? []), ...dates]);
       }
       // 청구에서 이미 줄인 금액(휴원 감액·이월 차감)은 신청이 취소됐어도 실제로 줄었다 → 원래 금액 계산에 그대로 더한다
-      if (line.kind === "UNPAID_REDUCE" || line.kind === "CARRY_APPLY") reduced.set(line.paymentId, (reduced.get(line.paymentId) ?? 0) + Number(line.amount));
+      // ★ «사이트가 청구 금액을 실제로 줄인 줄»만 센다. 미납 감액 줄은 채널이 SITE 일 때만 금액을 줄인다(아래 실행부) —
+      //   랠리즈 청구의 감액 줄은 «랠리즈에서 감액» 할 일만 남기고 사이트 금액은 그대로라, 더하면 원래 금액이 부풀어 1회 값이 커진다.
+      //   (결석 이월 workbench-absence.ts 와 같은 기준)
+      const siteReduced = line.kind === "CARRY_APPLY" || (line.kind === "UNPAID_REDUCE" && line.channel === "SITE");
+      if (siteReduced) reduced.set(line.paymentId, (reduced.get(line.paymentId) ?? 0) + Number(line.amount));
       if (line.kind === "CARRY_APPLY") carried.set(line.paymentId, (carried.get(line.paymentId) ?? 0) + Number(line.amount));
     }
   }
