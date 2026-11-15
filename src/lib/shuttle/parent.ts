@@ -10,7 +10,7 @@ import { getConfirmedRegularRosterEtas } from "@/lib/shuttle/regularRosterEta";
 import { regularEtaKey } from "@/lib/shuttle/regularRosterEtaLogic";
 // 정규 셔틀 «운행 일정»은 셔틀 명단(기사님·관리자 운행표의 정본)에서 만든다(2026-11-14 — 노선 승객 표는 운영 0행이었다).
 import { getRosterStudentIds, loadChildRegularShuttle } from "@/lib/shuttle/childShuttleQuery";
-import { rosterOverviewItems, todaySelfRideDirections } from "@/lib/shuttle/childShuttleRules";
+import { rosterOverviewItems, selfRideActualTimes, todaySelfRideDirections } from "@/lib/shuttle/childShuttleRules";
 import { loadChildClasses } from "@/lib/parent/childClassesQuery";
 import { getMonthlyClassDates, loadAnnualPlanEvents } from "@/lib/enrollment/monthlyClassDates";
 import { todayKst } from "@/lib/datetime/kst";
@@ -396,7 +396,9 @@ export async function getParentShuttleOverview(
   const today = todayKst();
   const allItems = [...regularItems, ...rosterOnly, ...specialItems, ...regularRequestItems];
   const hasToday = allItems.some((item) => item.direction && item.serviceDate?.slice(0, 10) === today);
-  const boardingTimes = hasToday
+  // 자차로 알린 방향은 항목이 없지만, 기사님이 «그래도 탑승»을 찍었을 수 있다(2026-11-15) — 그날도 탑승 시각을 읽는다.
+  const hasSelfRideToday = Object.keys(todaySelfRide).length > 0;
+  const boardingTimes = hasToday || hasSelfRideToday
     ? await loadTodayBoardingTimes(today, studentIds, new Map(seasonalEntries.map((entry) => [entry.shuttleRequestId, entry.studentId])))
     : new Map<string, string>();
   const withActual = boardingTimes.size === 0 ? allItems : allItems.map((item) => (
@@ -409,7 +411,19 @@ export async function getParentShuttleOverview(
     return (right.serviceDate ?? "").localeCompare(left.serviceDate ?? "") || left.label.localeCompare(right.label, "ko");
   });
   SELF_RIDE_BY_RESULT.set(sorted, todaySelfRide);
+  // 자차로 알린 방향인데 실제 탑승 기록이 있으면 그 시각을 표시 전용 값으로 같이 내보낸다(항목은 늘리지 않는다 — «운행 N건» 셈 그대로).
+  SELF_RIDE_ACTUAL_BY_RESULT.set(sorted, selfRideActualTimes(todaySelfRide, (studentId, direction) => boardingTimes.get(boardingTimeKey(studentId, direction)) ?? null));
   return sorted;
+}
+
+/** 아이 id → 자차로 알린 방향 중 «실제로 탄» 방향의 시각 "HH:MM"(기사님 «그래도 탑승») */
+export type TodaySelfRideActual = Record<string, Partial<Record<"PICKUP" | "DROPOFF", string>>>;
+
+const SELF_RIDE_ACTUAL_BY_RESULT = new WeakMap<object, TodaySelfRideActual>();
+
+/** getParentShuttleOverview 가 «방금 돌려준 그 배열»의 자차 방향 실제 탑승 시각(홈 «오늘 셔틀» 줄 전용). 다른 배열이면 빈 값. */
+export function todaySelfRideActualOf(overview: readonly ParentShuttleOverviewItem[]): TodaySelfRideActual {
+  return SELF_RIDE_ACTUAL_BY_RESULT.get(overview) ?? {};
 }
 
 /** 아이 id → 오늘 «자차»로 신청해 타지 않는 방향 */

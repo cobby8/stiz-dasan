@@ -288,6 +288,42 @@ export function riderLockLabel(rider: Pick<UnifiedRider, "kind" | "absent" | "bl
   return rider.blockedLabel || (!rider.absent && rider.skipLabel) || null;
 }
 
+/**
+ * «그래도 탑승» 판정(2026-11-15) — 자차·조퇴·지각으로 그 방향을 안 탄다고 알린 아이(skipLabel 잠금)만 대상이다.
+ * 휴원·퇴원·첫 수업 전·휴무(blockedLabel)와 결석 신고 아이는 대상이 아니다(서버도 blockedLabel 줄의 체크는 거부한다).
+ *   - canBoardAnyway: 잠긴 줄에 «그래도 탑승» 버튼을 보일지(아직 탑승 기록이 없을 때만)
+ *   - boardedAnyway: «그래도 탑승»으로 탑승 기록이 생겨 잠금이 풀린 상태인지
+ *   - label: 학부모가 알린 글자(«자차»·«조퇴»·«지각») — 확인 문구에 쓴다(결석 사유 같은 민감한 글은 아니다)
+ */
+export function riderBoardAnyway(
+  rider: Pick<UnifiedRider, "kind" | "absent" | "blockedLabel" | "skipLabel">,
+  stored: BoardingStatus | null | undefined,
+): { canBoardAnyway: boolean; boardedAnyway: boolean; lockNoShow: boolean; label: string | null } {
+  const skipLocked = rider.kind === "REGULAR" && !rider.blockedLabel && !rider.absent && Boolean(rider.skipLabel);
+  if (!skipLocked) return { canBoardAnyway: false, boardedAnyway: false, lockNoShow: false, label: null };
+  const boardedAnyway = stored === "BOARDED";
+  // lockNoShow: «그래도 탑승»으로 탄 줄은 «미탑승»(결석·자차)으로 바꾸지 못한다 — 바꾸면 줄이 다시 잠겨 어색하다.
+  //   잘못 눌렀을 땐 «대기로 되돌리기»만(되돌리면 원래의 잠긴 줄로 돌아간다).
+  return { canBoardAnyway: !boardedAnyway, boardedAnyway, lockNoShow: boardedAnyway, label: rider.skipLabel ?? null };
+}
+
+/** «그래도 탑승» 확인 문구 — «○○ 학생은 자차로 알렸어요. 그래도 탑승으로 기록할까요?»(하원 줄은 «하차»). */
+export function boardAnywayConfirmText(name: string, reason: string, direction: UnifiedDirection): string {
+  return `${name} 학생은 ${withRo(reason)} 알렸어요. 그래도 ${direction === "PICKUP" ? "탑승으로" : "하차로"} 기록할까요?`;
+}
+
+/** «그래도 탑승»으로 탄 줄의 안내 한 줄 — «미탑승» 버튼이 왜 잠겼는지 알려 준다. */
+export function boardedAnywayNote(reason: string, direction: UnifiedDirection): string {
+  return `${withRo(reason)} 알렸지만 ${direction === "PICKUP" ? "탑승으로" : "하차로"} 기록했어요`;
+}
+
+/** 받침이 있으면 «으로»(지각으로), 없거나 ㄹ 받침이면 «로»(자차로·조퇴로) */
+function withRo(word: string): string {
+  const last = word.charCodeAt(word.length - 1);
+  const jong = last >= 0xac00 && last <= 0xd7a3 ? (last - 0xac00) % 28 : 0;
+  return `${word}${jong !== 0 && jong !== 8 ? "으로" : "로"}`;
+}
+
 export function riderBoardingView(
   rider: Pick<UnifiedRider, "kind" | "absent" | "blockedLabel" | "skipLabel">,
   stored: BoardingStatus | null | undefined,
@@ -296,7 +332,9 @@ export function riderBoardingView(
   // 원장 메모(2026-11-14 묶음 B): 그 방향 셔틀을 «안 탄다고 기록된» 아이(자차·조퇴·지각)도 같은 방식으로 잠근다.
   //   · 결석 신고 아이는 종전 «결석» 표시가 우선이다(버튼 그대로 — 실제로 탔으면 체크).
   //   · 지각 «예정»만 알리고 셔틀은 그대로 타는 아이는 skipLabel 이 없어 잠기지 않는다.
-  const blocked = Boolean(riderLockLabel(rider));
+  // 원장 지시(2026-11-15): «안 탄다고 기록된» 아이가 실제로는 정류장에 나와 있으면 기사님이 «그래도 탑승»으로 태운다.
+  //   그 탑승 기록(BOARDED)이 있는 동안은 잠금이 풀려 보통 탑승한 아이와 같다. 되돌리면(기록 없음) 다시 잠긴다.
+  const blocked = Boolean(riderLockLabel(rider)) && !riderBoardAnyway(rider, stored).boardedAnyway;
   const absentReported = !blocked && rider.kind === "REGULAR" && Boolean(rider.absent);
   const saved = stored ?? null;
   const status: BoardingStatus | null = saved ?? (absentReported ? "NOSHOW" : null);

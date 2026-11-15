@@ -426,7 +426,8 @@ test("⑤ 기사님 화면: 잠긴 줄은 탑승·미탑승 버튼이 비활성�
   const source = read("src/components/shuttle/UnifiedDriverClient.tsx");
   assert.match(source, /const locked = view\.blocked;/);
   assert.match(source, /disabled=\{isBusy \|\| locked\}[^>]*active=\{status === "BOARDED"\}/);
-  assert.match(source, /disabled=\{isBusy \|\| locked\}[^>]*active=\{status === "NOSHOW" \|\| status === "SELF"\}/);
+  // 2026-11-15: «그래도 탑승»으로 탄 줄은 미탑승 버튼만 더 잠근다(anyway.lockNoShow)
+  assert.match(source, /disabled=\{isBusy \|\| locked \|\| anyway\.lockNoShow\}[^>]*active=\{status === "NOSHOW" \|\| status === "SELF"\}/);
   assert.match(source, /\{lockLabel\}/);
   assert.match(source, /const lockLabel = riderLockLabel\(rider\);/);
   // 체크 저장 서버 동작은 그대로 — 서버 거부는 휴원·휴무 글자(blockedLabel)만 본다
@@ -620,7 +621,8 @@ test("⑧ 학부모 홈 «오늘 셔틀»·아이 기록: 자차로 신청한 �
   assert.match(read("src/app/mypage/page.tsx"), /todaySelfRide=\{todaySelfRideOf\(shuttleOverview\)\}/);
   const home = read("src/app/mypage/MyPageClient.tsx");
   assert.match(home, /const showTodayShuttle = todayShuttles\.length > 0 \|\| childSelfRide\.length > 0;/);
-  assert.match(home, /todayShuttleLineTexts\(todayShuttles, childSelfRide\)/);
+  // 2026-11-15: 셋째 인자 = 자차 방향의 실제 탑승 시각(기사님 «그래도 탑승»)
+  assert.match(home, /todayShuttleLineTexts\(todayShuttles, childSelfRide, todaySelfRideActual\[child\.id\] \?\? \{\}\)/);
 });
 
 test("⑧ 카카오 대화의 «안 타요» 글자 — 보이는 글자만 자차로, 받는 말은 그대로", () => {

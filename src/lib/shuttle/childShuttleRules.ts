@@ -283,6 +283,25 @@ export function todaySelfRideDirections(days: readonly ShuttleDayRow[], today: s
 }
 
 /**
+ * 자차로 알린 방향 중 «실제로 탄» 방향의 시각만 남긴다(2026-11-15 — 기사님 «그래도 탑승»).
+ * 탑승 알림은 가는데 홈은 계속 «등원 자차»로 보이던 어긋남을 없앤다. 시각 읽는 길은 인자로 받는다(순수 함수).
+ * 아이 id → { PICKUP?: "08:52", DROPOFF?: "18:40" } · 탄 방향이 없는 아이는 넣지 않는다.
+ */
+export function selfRideActualTimes(
+  selfRide: Readonly<Record<string, readonly ("PICKUP" | "DROPOFF")[]>>,
+  timeOf: (studentId: string, direction: "PICKUP" | "DROPOFF") => string | null | undefined,
+): Record<string, Partial<Record<"PICKUP" | "DROPOFF", string>>> {
+  const out: Record<string, Partial<Record<"PICKUP" | "DROPOFF", string>>> = {};
+  for (const [studentId, directions] of Object.entries(selfRide)) {
+    for (const direction of directions) {
+      const time = timeOf(studentId, direction);
+      if (time) out[studentId] = { ...out[studentId], [direction]: time };
+    }
+  }
+  return out;
+}
+
+/**
  * 운행 일정 → 홈·수업 탭 셔틀 항목. 실제로 타는 칸만(운행 날 + 안 탐 신청이 아닌 방향).
  * 시각 라벨은 저장 노선 시절과 같은 «HH:MM 승차»·«HH:MM 하차»(buildRosterEtas 와 같은 글자).
  */
