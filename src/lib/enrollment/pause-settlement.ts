@@ -185,7 +185,7 @@ async function loadPausePayments(db: SettlementSql, req: PauseRequestRow, tables
         const dates = Array.isArray(line.missedDates) ? line.missedDates.map(String) : [];
         settled.set(line.paymentId, [...(settled.get(line.paymentId) ?? []), ...dates]);
       }
-      // 청구에서 이미 줄인 금액(휴원 감액·이월 차감)은 신청이 취소됐어도 실제로 줄었다 → 원래 금액 계산에 그대로 더한다
+      // 사이트가 청구에서 실제로 줄인 금액(사이트 채널 휴원 감액·이월 차감)은 신청이 취소됐어도 줄어든 채다 → 원래 금액 계산에 그대로 더한다
       // ★ «사이트가 청구 금액을 실제로 줄인 줄»만 센다. 미납 감액 줄은 채널이 SITE 일 때만 금액을 줄인다(아래 실행부) —
       //   랠리즈 청구의 감액 줄은 «랠리즈에서 감액» 할 일만 남기고 사이트 금액은 그대로라, 더하면 원래 금액이 부풀어 1회 값이 커진다.
       //   (결석 이월 workbench-absence.ts 와 같은 기준)
