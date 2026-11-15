@@ -703,7 +703,7 @@ test("[권장3] 줄인 뒤 납부한 청구도 원래 금액 기준 단가 · [�
 
 test("[권장8] 취소된 휴원 처리의 «뺀 날»은 제외, 실제로 줄인 금액은 원래 금액 계산에 포함", async () => {
   const rows = [{ id: "dec", year: 2026, month: 12, amount: 105000, status: "PENDING", paidProvider: null, method: null, rallyzMirror: false, tossTxId: null, tossTxMethod: null, busy: false }];
-  const prior = [{ paymentId: "dec", kind: "UNPAID_REDUCE", amount: 35000, missedDates: ["2026-12-01"], requestCanceled: true }];
+  const prior = [{ paymentId: "dec", kind: "UNPAID_REDUCE", channel: "SITE", amount: 35000, missedDates: ["2026-12-01"], requestCanceled: true }];
   const preview = await service.previewPauseSettlement(fakeDb({ payments: rows, request: { ...REQ, pauseFrom: "2026-12-01" }, priorLines: prior }), "req-1", classDatesFor);
   // 12/1 도 다시 빠지는 날로 센다(취소된 처리) · 단가 = (105,000 + 35,000) ÷ 4 → 4회 = 140,000 이지만 남은 105,000 까지만
   assert.deepEqual(preview.plan.lines[0].missedDates, DEC4);
@@ -711,6 +711,27 @@ test("[권장8] 취소된 휴원 처리의 «뺀 날»은 제외, 실제로 줄�
   assert.equal(preview.plan.unpaidTotal, 105000);
   const live = await service.previewPauseSettlement(fakeDb({ payments: rows, request: { ...REQ, pauseFrom: "2026-12-01" }, priorLines: [{ ...prior[0], requestCanceled: false }] }), "req-1", classDatesFor);
   assert.deepEqual(live.plan.lines[0].missedDates, DEC4.slice(1));
+});
+
+test("단가: 사이트가 실제로 줄이지 않은 감액 줄(랠리즈 청구 — 사람 할 일)은 원래 금액에 더하지 않는다", async () => {
+  // 랠리즈 사본 미납 12월 청구 140,000원(4회 · 1회 35,000원). 앞선 휴원이 12/1 한 번을 «랠리즈에서 35,000원 감액» 할 일로만 남겼다
+  // → 사이트 청구 금액은 140,000 그대로다. 여기에 35,000 을 더하면 원래 금액이 175,000 으로 부풀어 1회가 43,750원이 된다.
+  const rows = [{ id: "dec", year: 2026, month: 12, amount: 140000, status: "PENDING", paidProvider: null, method: "RALLYZ", rallyzMirror: true, tossTxId: null, tossTxMethod: null, busy: false }];
+  const todo = { paymentId: "dec", kind: "UNPAID_REDUCE", channel: "RALLYZ", amount: 35000, missedDates: ["2026-12-01"], requestCanceled: false };
+  const request = { ...REQ, pauseFrom: "2026-12-15" };
+  const rallyz = await service.previewPauseSettlement(fakeDb({ payments: rows, request, priorLines: [todo] }), "req-1", classDatesFor);
+  assert.equal(rallyz.plan.lines[0].billAmount, 140000, "사이트 금액이 줄지 않았으니 원래 금액 = 지금 금액");
+  assert.deepEqual(rallyz.plan.lines[0].missedDates, ["2026-12-15", "2026-12-22"]);
+  assert.equal(rallyz.plan.unpaidTotal, 70000, "2회 = 70,000원(87,500원이 아니다)");
+  // 사이트가 실제로 줄인 줄(미납 감액 SITE · 이월 차감)은 그대로 되더한다: 105,000 + 35,000 = 140,000
+  const site = [{ ...rows[0], amount: 105000, method: null, rallyzMirror: false }];
+  for (const line of [{ ...todo, channel: "SITE" }, { ...todo, kind: "CARRY_APPLY", channel: "SITE", missedDates: null }]) {
+    const reduced = await service.previewPauseSettlement(fakeDb({ payments: site, request, priorLines: [line] }), "req-1", classDatesFor);
+    assert.equal(reduced.plan.lines[0].billAmount, 140000, `${line.kind} 는 되더한다`);
+    assert.equal(reduced.plan.unpaidTotal, 70000);
+  }
+  // 읽는 쿼리가 채널을 가져온다(빠지면 위 판정이 전부 «안 줄였다»가 된다)
+  assert.match(readFileSync("src/lib/enrollment/pause-settlement.ts", "utf8"), /SELECT l\."paymentId", l\.kind, l\.channel, l\.amount/);
 });
 
 test("[권장10] 기능 시작 전 승인된 휴원은 서버에서도 처리하지 않는다", async () => {
