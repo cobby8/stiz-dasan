@@ -152,10 +152,10 @@ test("하루 할당량(KST) — 5건, 날짜 바뀌면 0부터, 초과 응답 �
   assert.match(conn, /"quotaUsed" < \$2/);
 });
 
-test("저장소 사본 삭제 시점 — 일부공개 성공 7일 뒤만", () => {
+test("저장소 사본 삭제 시점 — 일부공개 성공 3일 뒤만", () => {
   const up = kst("2026-11-01T12:00:00");
-  assert.equal(r.storageCopyExpired({ youtubeStatus: "UPLOADED", youtubeUploadedAtMs: up, nowMs: up + 6 * 86_400_000 }), false);
-  assert.equal(r.storageCopyExpired({ youtubeStatus: "UPLOADED", youtubeUploadedAtMs: up, nowMs: up + 7 * 86_400_000 }), true);
+  assert.equal(r.storageCopyExpired({ youtubeStatus: "UPLOADED", youtubeUploadedAtMs: up, nowMs: up + 2 * 86_400_000 }), false);
+  assert.equal(r.storageCopyExpired({ youtubeStatus: "UPLOADED", youtubeUploadedAtMs: up, nowMs: up + 3 * 86_400_000 }), true);
   assert.equal(r.storageCopyExpired({ youtubeStatus: "PRIVATE_LOCKED", youtubeUploadedAtMs: up, nowMs: up + 30 * 86_400_000 }), false);
 });
 

@@ -32,7 +32,7 @@ export const YOUTUBE_MAX_DELETE_ATTEMPTS = 5;
 /** 유튜브 사본 삭제 실패 뒤 다시 시도하기까지(시간) */
 export const YOUTUBE_DELETE_RETRY_HOURS = 1;
 /** 유튜브 일부공개 성공 뒤 저장소 사본을 지우기까지의 날수 */
-export const STORAGE_COPY_RETENTION_DAYS = 7;
+export const STORAGE_COPY_RETENTION_DAYS = 3;
 /** 학부모에게 주는 저장소 재생 주소의 수명(초) — 짧게 */
 export const PLAYBACK_URL_TTL_SECONDS = 10 * 60;
 /** 유튜브 카테고리 «스포츠» */
