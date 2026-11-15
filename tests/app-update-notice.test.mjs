@@ -523,6 +523,8 @@ test("배너 부품: 서버 그림에는 없다 · 사용자가 누르는 링크
   assert.match(source, /const notice = useAppUpdateNotice\(requiredMin\);/, "판정·요청은 훅 한 곳(설정 화면과 같다)");
   assert.doesNotMatch(source, /fetch\(|latestVersion"/, "배너가 직접 요청하지 않고, 서버 전용 조회 모듈도 가져오지 않는다");
   assert.match(source, /<a\s+href=\{notice\.storeUrl\}/, "사용자가 직접 누르는 링크");
+  assert.match(source, /bg-\[var\(--color-academy-primary\)\][^"]*text-\[var\(--color-academy-on-primary\)\]/, "«업데이트»는 색을 채운 주 버튼(2026-11-15 원장 지시)");
+  assert.match(source, /before:-inset-y-1/, "보이는 높이 36px + 누르는 영역 44px");
   assert.doesNotMatch(source, /location\.(href|assign|replace)|window\.open|router\.(push|replace)/, "자동 이동은 하지 않는다(앱이 막는다)");
   assert.doesNotMatch(source, /target="_blank"/, "기존 업데이트 버튼과 같게 target 을 붙이지 않는다");
   assert.match(source, /notice\.level !== "legacyApp" && notice\.storeUrl \?/, "옛 앱에는 눌러도 안 열리는 버튼을 두지 않는다");
@@ -534,7 +536,7 @@ test("배너 부품: 서버 그림에는 없다 · 사용자가 누르는 링크
   assert.doesNotMatch(source, /UiIcon|material-symbols|lucide|<svg/);
   assert.doesNotMatch(source, /font-(bold|extrabold|black)\b/);
   assert.doesNotMatch(source, /#[0-9a-fA-F]{3,8}\b|\b(bg|text|border)-(white|black|gray|slate|blue|red)-?/, "색은 토큰만");
-  assert.equal((source.match(/min-h-11/g) || []).length, 3, "줄·업데이트·나중에 모두 44px");
+  assert.equal((source.match(/min-h-11/g) || []).length, 2, "줄·나중에 44px(업데이트는 before 로 44px — 위 검사)");
   assert.doesNotMatch(source, /\b(fixed|sticky)\b/, "흐름 안 한 줄 — 머리줄과 겹치지 않는다");
   assert.match(source, /className="academy-app"/, "공개 화면 위에서도 학원 앱 토큰으로 읽힌다");
   // 선생님 «수업 중» 신호 파일은 읽기만 — 표시 이름이 바뀌면 여기서 알아챈다

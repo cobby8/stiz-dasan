@@ -83,7 +83,9 @@ export default function AppUpdateBanner({ requiredMin = null }: { requiredMin?: 
           {notice.level !== "legacyApp" && notice.storeUrl ? (
             <a
               href={notice.storeUrl}
-              className="inline-flex min-h-11 shrink-0 items-center whitespace-nowrap px-3 font-semibold text-[var(--color-academy-primary)] underline-offset-4 hover:underline"
+              // 주 버튼(색 채움) — 눌러서 스토어로 가도록 유도한다(2026-11-15 원장 지시).
+              // 보이는 높이는 36px, 누르는 영역은 위아래로 4px씩 넓혀 44px(before)
+              className="relative mx-1 inline-flex h-9 shrink-0 items-center whitespace-nowrap rounded-lg bg-[var(--color-academy-primary)] px-4 font-medium text-[var(--color-academy-on-primary)] before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] active:bg-[var(--color-academy-primary-hover)]"
             >
               업데이트
             </a>
