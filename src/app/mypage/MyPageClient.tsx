@@ -150,7 +150,7 @@ export function formatShortDate(value: Date | string): string {
 // «처리할 일» 한 줄 — 왼쪽 제목, 오른쪽 숫자/설명, 끝에 «›». 터치 44px.
 const TODO_ROW = "flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-[var(--color-academy-soft)]";
 
-export default function MyPageClient({ data, notices = [], inquiryCounts = { answered: 0, waiting: 0 }, parentShuttleOverview = [], todaySelfRide = {}, shuttleDriverContact = null, pendingSeasonalChildren = [], makeupAvailable = 0, seasonalUpcoming = 0, pendingPayments = null, classStatusLines = [], initialChildId, recordLines, feedCandidates = [] }: {
+export default function MyPageClient({ data, notices = [], inquiryCounts = { answered: 0, waiting: 0 }, parentShuttleOverview = [], todaySelfRide = {}, todaySelfRideActual = {}, shuttleDriverContact = null, pendingSeasonalChildren = [], makeupAvailable = 0, seasonalUpcoming = 0, pendingPayments = null, classStatusLines = [], initialChildId, recordLines, feedCandidates = [] }: {
     data: MyPageData;
     notices?: NoticeItem[];
     /** 보낸 문의 중 «답변 옴»·«답변 대기» 건수(보낸 문의 화면과 같은 판정) */
@@ -158,6 +158,8 @@ export default function MyPageClient({ data, notices = [], inquiryCounts = { ans
     parentShuttleOverview?: ParentShuttleOverviewItem[];
     /** 아이 id → 오늘 «자차»로 신청해 타지 않는 방향(표시 전용 — 항목이 아니라 «운행 N건» 셈에 들어가지 않는다) */
     todaySelfRide?: Record<string, ("PICKUP" | "DROPOFF")[]>;
+    /** 아이 id → 자차로 알린 방향 중 기사님이 실제 탑승을 찍은 시각 "HH:MM"(«그래도 탑승») — 있으면 «자차» 대신 그 시각을 보인다 */
+    todaySelfRideActual?: Record<string, Partial<Record<"PICKUP" | "DROPOFF", string>>>;
     shuttleDriverContact?: { name: string; phone: string } | null;
     // 방학특강만 신청하고 아직 정식 학생으로 전환되지 않은 자녀(별도 칸에 표시)
     pendingSeasonalChildren?: PendingSeasonalChild[];
@@ -239,7 +241,8 @@ export default function MyPageClient({ data, notices = [], inquiryCounts = { ans
             ? `복귀 예정인 반 ${resumingEnrollments.length}개 · ${[...resumingEnrollments].sort((a, b) => a.resumeFrom.localeCompare(b.resumeFrom))[0].resumeFromLabel}부터`
             : "수강 중인 반이 없습니다";
     // 오늘 셔틀 줄 — 기사님이 찍었으면 실제 시각(«탑승 08:52»·«하차 18:40»), 아직이면 예정 시각(«등원 08:40 승차»·«하원 17:30 하차»)
-    const todayShuttleLines = todayShuttleLineTexts(todayShuttles, childSelfRide);
+    // 자차로 알린 방향도 기사님이 실제로 태웠으면 그 시각을 보인다(탑승 알림과 같은 말이 되게)
+    const todayShuttleLines = todayShuttleLineTexts(todayShuttles, childSelfRide, todaySelfRideActual[child.id] ?? {});
     // 다음 수업·오늘 셔틀을 누르면 «일정» 탭의 그 칸으로(홈 아래 접힌 칸으로 뛰지 않는다)
     const scheduleHref = `/mypage/history?child=${encodeURIComponent(child.id)}`;
 

@@ -298,20 +298,30 @@ export function riderLockLabel(rider: Pick<UnifiedRider, "kind" | "absent" | "bl
 export function riderBoardAnyway(
   rider: Pick<UnifiedRider, "kind" | "absent" | "blockedLabel" | "skipLabel">,
   stored: BoardingStatus | null | undefined,
-): { canBoardAnyway: boolean; boardedAnyway: boolean; label: string | null } {
+): { canBoardAnyway: boolean; boardedAnyway: boolean; lockNoShow: boolean; label: string | null } {
   const skipLocked = rider.kind === "REGULAR" && !rider.blockedLabel && !rider.absent && Boolean(rider.skipLabel);
-  if (!skipLocked) return { canBoardAnyway: false, boardedAnyway: false, label: null };
+  if (!skipLocked) return { canBoardAnyway: false, boardedAnyway: false, lockNoShow: false, label: null };
   const boardedAnyway = stored === "BOARDED";
-  return { canBoardAnyway: !boardedAnyway, boardedAnyway, label: rider.skipLabel ?? null };
+  // lockNoShow: «그래도 탑승»으로 탄 줄은 «미탑승»(결석·자차)으로 바꾸지 못한다 — 바꾸면 줄이 다시 잠겨 어색하다.
+  //   잘못 눌렀을 땐 «대기로 되돌리기»만(되돌리면 원래의 잠긴 줄로 돌아간다).
+  return { canBoardAnyway: !boardedAnyway, boardedAnyway, lockNoShow: boardedAnyway, label: rider.skipLabel ?? null };
 }
 
 /** «그래도 탑승» 확인 문구 — «○○ 학생은 자차로 알렸어요. 그래도 탑승으로 기록할까요?»(하원 줄은 «하차»). */
 export function boardAnywayConfirmText(name: string, reason: string, direction: UnifiedDirection): string {
-  // 받침이 있으면 «으로»(지각으로), 없거나 ㄹ 받침이면 «로»(자차로·조퇴로)
-  const last = reason.charCodeAt(reason.length - 1);
+  return `${name} 학생은 ${withRo(reason)} 알렸어요. 그래도 ${direction === "PICKUP" ? "탑승으로" : "하차로"} 기록할까요?`;
+}
+
+/** «그래도 탑승»으로 탄 줄의 안내 한 줄 — «미탑승» 버튼이 왜 잠겼는지 알려 준다. */
+export function boardedAnywayNote(reason: string, direction: UnifiedDirection): string {
+  return `${withRo(reason)} 알렸지만 ${direction === "PICKUP" ? "탑승으로" : "하차로"} 기록했어요`;
+}
+
+/** 받침이 있으면 «으로»(지각으로), 없거나 ㄹ 받침이면 «로»(자차로·조퇴로) */
+function withRo(word: string): string {
+  const last = word.charCodeAt(word.length - 1);
   const jong = last >= 0xac00 && last <= 0xd7a3 ? (last - 0xac00) % 28 : 0;
-  const particle = jong !== 0 && jong !== 8 ? "으로" : "로";
-  return `${name} 학생은 ${reason}${particle} 알렸어요. 그래도 ${direction === "PICKUP" ? "탑승으로" : "하차로"} 기록할까요?`;
+  return `${word}${jong !== 0 && jong !== 8 ? "으로" : "로"}`;
 }
 
 export function riderBoardingView(

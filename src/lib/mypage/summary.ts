@@ -145,6 +145,8 @@ export function todayShuttleLineTexts(
     items: readonly ShuttleLite[],
     // 오늘 «자차»로 신청해 정규 셔틀을 타지 않는 방향(2026-11-14 묶음 B) — 표시 전용 값(항목이 아니다)
     selfRide: readonly ("PICKUP" | "DROPOFF")[] = [],
+    // 자차로 알린 방향인데 기사님이 «그래도 탑승»으로 실제 탑승을 찍은 시각 "HH:MM"(2026-11-15) — 있으면 «자차» 대신 실제 시각을 보인다
+    selfRideActual: Partial<Record<"PICKUP" | "DROPOFF", string | null>> = {},
 ): string[] {
     // 자차는 정규 셔틀에만 적용한다 — 그 방향은 정규 항목을 빼고 본다(같은 날 방학특강 셔틀 시각은 가리지 않는다)
     const poolOf = (direction: "PICKUP" | "DROPOFF") =>
@@ -153,8 +155,10 @@ export function todayShuttleLineTexts(
         poolOf(direction).find((i) => i.direction === direction && i.actualTimeLabel)?.actualTimeLabel ?? null;
     const pickupEta = poolOf("PICKUP").map((i) => i.pickupEtaLabel).find(Boolean) ?? null;
     const dropoffEta = poolOf("DROPOFF").map((i) => i.dropoffEtaLabel).find(Boolean) ?? null;
-    const boardedAt = actual("PICKUP");
-    const alightedAt = actual("DROPOFF");
+    // 자차 방향의 실제 시각은 그 방향을 자차로 알린 날에만 쓴다(탑승 알림과 홈이 어긋나지 않게). «등원·하원 자차» 합치기는 시각이 없는 방향에만 남는다.
+    const selfActual = (direction: "PICKUP" | "DROPOFF") => (selfRide.includes(direction) ? selfRideActual[direction] || null : null);
+    const boardedAt = actual("PICKUP") ?? selfActual("PICKUP");
+    const alightedAt = actual("DROPOFF") ?? selfActual("DROPOFF");
     const pickupLine = boardedAt ? `탑승 ${boardedAt}` : pickupEta ? `등원 ${pickupEta}` : null;
     const dropoffLine = alightedAt ? `하차 ${alightedAt}` : dropoffEta ? `하원 ${dropoffEta}` : null;
     const pickupSelf = !pickupLine && selfRide.includes("PICKUP");

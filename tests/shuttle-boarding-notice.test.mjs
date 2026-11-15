@@ -284,7 +284,8 @@ test("홈 «오늘 셔틀»: 찍힌 시각이 있으면 «탑승 08:52»·«하�
   assert.deepEqual(summary.todayShuttleLineTexts([{ ...pickup, pickupEtaLabel: null }]), [], "둘 다 없으면 화면이 «운행 N건»");
   const client = read("src/app/mypage/MyPageClient.tsx");
   // (2026-11-14 묶음 B: 둘째 인자 = 오늘 자차로 신청한 방향 — 없으면 종전과 같은 줄)
-  assert.match(client, /const todayShuttleLines = todayShuttleLineTexts\(todayShuttles, childSelfRide\);/);
+  // (2026-11-15: 셋째 인자 = 자차로 알린 방향의 실제 탑승 시각 — 기사님 «그래도 탑승»)
+  assert.match(client, /const todayShuttleLines = todayShuttleLineTexts\(todayShuttles, childSelfRide, todaySelfRideActual\[child\.id\] \?\? \{\}\);/);
 });
 
 test("실제 시각은 KST «HH:MM» — 자정 경계, 등원은 먼저 탄 시각·하원은 마지막에 내린 시각, 미탑승은 표시 없음", () => {

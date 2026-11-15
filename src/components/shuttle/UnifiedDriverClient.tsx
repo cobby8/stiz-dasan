@@ -16,7 +16,7 @@ import styles from "./DriverWorkspace.module.css";
 import { StatusChoiceButton, StatusUndoButton } from "@/components/staff/StatusChoiceButton";
 import { LiveStatusPill } from "@/components/staff/LiveStatusPill";
 import { readBoardingResult, saveAndVerifyBoarding } from "@/lib/shuttle/driverStatusClient";
-import { boardAnywayConfirmText, riderBoardAnyway, riderBoardingView, riderDefaultStatus, riderLockLabel, stopAbsenceSummary, type UnifiedRider, type UnifiedRow } from "@/lib/shuttle/unifiedDriverRunLogic";
+import { boardAnywayConfirmText, boardedAnywayNote, riderBoardAnyway, riderBoardingView, riderDefaultStatus, riderLockLabel, stopAbsenceSummary, type UnifiedRider, type UnifiedRow } from "@/lib/shuttle/unifiedDriverRunLogic";
 import { userErrorMessage } from "@/components/staff/userErrorMessage";
 import { todayKst } from "@/lib/datetime/kst";
 import type { RunHoliday } from "@/lib/shuttle/regularRunDayRules";
@@ -268,6 +268,8 @@ export default function UnifiedDriverClient({
     // 예외 하나: «안 탄다고 알린» 줄(skipLabel)의 «그래도 탑승» — 판정은 순수 로직(riderBoardAnyway)이 한다.
     const anywayAllowed = boardAnyway && next === "BOARDED" && riderBoardAnyway(rider, cur).canBoardAnyway;
     if (!verifyOnly && next !== null && riderBoardingView(rider, cur).blocked && !anywayAllowed) return;
+    // «그래도 탑승»으로 탄 줄은 미탑승(결석·자차)으로 바꾸지 않는다 — «대기로 되돌리기»(null)만 받는다.
+    if (!verifyOnly && (next === "NOSHOW" || next === "SELF") && riderBoardAnyway(rider, cur).lockNoShow) return;
     locks.current.add(key);
     const target: Status | null = next;
     setBusy((x) => ({ ...x, [key]: true }));
@@ -407,7 +409,7 @@ export default function UnifiedDriverClient({
               className="text-[15px]">
               {isPickup ? "탑승" : "하차"}
             </StatusChoiceButton>
-            <StatusChoiceButton tone="danger" disabled={isBusy || locked} active={status === "NOSHOW" || status === "SELF"} ariaExpanded={menuKey === rowKey}
+            <StatusChoiceButton tone="danger" disabled={isBusy || locked || anyway.lockNoShow} active={status === "NOSHOW" || status === "SELF"} ariaExpanded={menuKey === rowKey}
               onClick={() => setMenuKey(menuKey === rowKey ? null : rowKey)} className="text-[15px]">
               미{isPickup ? "탑승" : "하차"}
             </StatusChoiceButton>
@@ -433,6 +435,7 @@ export default function UnifiedDriverClient({
         {(saveState || stored || view.absentDefault || locked) && <div className={styles.riderStatusLine}>
           {saveState ? <p role="status" className={`text-xs font-semibold ${saveState.state === "failed" || saveState.state === "unknown" ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-muted)]"}`}>{saveState.message}{saveState.state === "unknown" && <button type="button" disabled={busy[rider.key]} onClick={() => void setStatus(rider, "BOARDED", true)} className="ml-2 inline-flex min-h-11 min-w-11 items-center underline">저장 상태 확인</button>}</p>
             : locked ? <p className="text-sm font-semibold text-[var(--color-academy-muted)]">{skipLocked ? `${lockLabel} · 이 셔틀은 타지 않아 체크하지 않아요` : rider.blockedLabel === "휴무" ? "오늘은 수업이 없어 체크하지 않아요" : `${rider.blockedLabel}이라 체크하지 않아요`}</p>
+            : anyway.lockNoShow && anyway.label ? <p className="text-sm font-medium text-[var(--color-academy-muted)]">{boardedAnywayNote(anyway.label, row.direction)}</p>
             : view.absentDefault ? <p className="text-sm font-semibold text-[var(--color-academy-muted)]">이 아이는 안 태워도 돼요 (탔으면 «{isPickup ? "탑승" : "하차"}»)</p> : <span />}
           {/* 잘못 눌렀을 때만 쓰는 되돌리기 — 상태 버튼과 떨어진 작은 글자 버튼(결석 학생은 기본 «결석»으로 돌아간다) */}
           {stored && <StatusUndoButton disabled={isBusy} ariaLabel={`${rider.name} ${view.absentReported ? "결석으로" : "대기로"} 되돌리기`} onClick={() => { setMenuKey(null); void setStatus(rider, null); }} />}
@@ -449,7 +452,7 @@ export default function UnifiedDriverClient({
             </div>
           </div>
         )}
-        {menuKey === rowKey && !locked && (
+        {menuKey === rowKey && !locked && !anyway.lockNoShow && (
           <div className="mt-2 flex gap-3">
             <StatusChoiceButton tone="danger" disabled={isBusy} active={status === "NOSHOW"} onClick={() => { void setStatus(rider, "NOSHOW"); setMenuKey(null); }}
               className="min-h-12 flex-1 text-base">결석(안 옴)</StatusChoiceButton>

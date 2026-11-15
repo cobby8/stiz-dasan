@@ -48,9 +48,9 @@ const regular = (extra = {}) => ({ kind: "REGULAR", absent: false, ...extra });
 
 test("① 버튼 대상 — 자차·조퇴·지각으로 잠긴 줄만", () => {
   for (const reason of ["자차", "조퇴", "지각"]) {
-    assert.deepEqual(unified.riderBoardAnyway(regular({ skipLabel: reason }), null), { canBoardAnyway: true, boardedAnyway: false, label: reason });
+    assert.deepEqual(unified.riderBoardAnyway(regular({ skipLabel: reason }), null), { canBoardAnyway: true, boardedAnyway: false, lockNoShow: false, label: reason });
   }
-  const none = { canBoardAnyway: false, boardedAnyway: false, label: null };
+  const none = { canBoardAnyway: false, boardedAnyway: false, lockNoShow: false, label: null };
   // 휴원·퇴원·첫 수업 전·휴무 — 사유 글자가 같이 있어도 대상이 아니다
   for (const label of ["휴원", "퇴원", "첫 수업 전", "휴무"]) {
     assert.deepEqual(unified.riderBoardAnyway(regular({ blockedLabel: label }), null), none, label);
@@ -70,7 +70,7 @@ test("② 탑승 기록 뒤 = 보통 탑승한 아이 모양, 되돌리면 다�
   // 탑승 기록이 생기면 잠금이 풀리고, 보통 아이의 탑승과 같은 판정이 나온다
   assert.deepEqual(unified.riderBoardingView(self, "BOARDED"), unified.riderBoardingView(normal, "BOARDED"));
   assert.deepEqual(unified.riderBoardingView(self, "BOARDED"), { absentReported: false, status: "BOARDED", absentDefault: false, dimmed: false, blocked: false });
-  assert.deepEqual(unified.riderBoardAnyway(self, "BOARDED"), { canBoardAnyway: false, boardedAnyway: true, label: "자차" });
+  assert.deepEqual(unified.riderBoardAnyway(self, "BOARDED"), { canBoardAnyway: false, boardedAnyway: true, lockNoShow: true, label: "자차" });
   // 되돌리면(기록 없음) 다시 잠긴 줄 + 버튼
   for (const stored of [null, undefined]) {
     assert.equal(unified.riderBoardingView(self, stored).blocked, true);
@@ -92,6 +92,66 @@ test("② 탑승 기록 뒤 = 보통 탑승한 아이 모양, 되돌리면 다�
   // 정차 요약: 탑승한 아이가 있으면 «정차 안 해도 됨»이 아니다
   assert.equal(unified.stopAbsenceSummary([rows[0].riders[0]], {}).allSkippable, true);
   assert.equal(unified.stopAbsenceSummary([rows[0].riders[0]], { "R:1": "BOARDED" }).allSkippable, false);
+});
+
+test("② «그래도 탑승»으로 탄 줄은 미탑승 버튼만 잠근다 — 되돌리기로만 고친다", () => {
+  const self = regular({ skipLabel: "자차" });
+  // 탑승 기록이 있는 동안만 잠근다(되돌리면 풀린다 — 그땐 줄 전체가 다시 잠긴 줄)
+  assert.equal(unified.riderBoardAnyway(self, "BOARDED").lockNoShow, true);
+  for (const stored of [null, undefined, "NOSHOW", "SELF"]) assert.equal(unified.riderBoardAnyway(self, stored).lockNoShow, false, String(stored));
+  // 보통 아이·결석 신고 아이·휴원 줄·방학특강 줄의 탑승은 해당 없음(미탑승으로 고칠 수 있다)
+  assert.equal(unified.riderBoardAnyway(regular(), "BOARDED").lockNoShow, false);
+  assert.equal(unified.riderBoardAnyway(regular({ absent: true, skipLabel: "자차" }), "BOARDED").lockNoShow, false);
+  assert.equal(unified.riderBoardAnyway(regular({ blockedLabel: "휴원", skipLabel: "자차" }), "BOARDED").lockNoShow, false);
+  assert.equal(unified.riderBoardAnyway({ kind: "SEASONAL", absent: false, skipLabel: "자차" }, "BOARDED").lockNoShow, false);
+  // 안내 한 줄(조사·방향)
+  assert.equal(unified.boardedAnywayNote("자차", "PICKUP"), "자차로 알렸지만 탑승으로 기록했어요");
+  assert.equal(unified.boardedAnywayNote("지각", "DROPOFF"), "지각으로 알렸지만 하차로 기록했어요");
+  // 화면: 버튼·펼침 메뉴·저장 함수 세 곳이 같은 판정을 쓴다
+  const source = read("src/components/shuttle/UnifiedDriverClient.tsx");
+  assert.match(source, /disabled=\{isBusy \|\| locked \|\| anyway\.lockNoShow\}/);
+  assert.match(source, /menuKey === rowKey && !locked && !anyway\.lockNoShow/);
+  assert.match(source, /\(next === "NOSHOW" \|\| next === "SELF"\) && riderBoardAnyway\(rider, cur\)\.lockNoShow\) return;/);
+});
+
+test("⑥ 학부모 홈 «오늘 셔틀»: 자차로 알린 방향도 실제 탑승 시각이 있으면 그 시각을 보인다", () => {
+  const summary = load("src/lib/mypage/summary.ts");
+  const childRules = load("src/lib/shuttle/childShuttleRules.ts");
+  const DAY = "2026-11-19";
+  const item = (extra) => ({ id: "x", serviceDate: DAY, direction: "PICKUP", status: "CONFIRMED", sourceType: "REGULAR_CLASS", pickupEtaLabel: "16:40 승차", dropoffEtaLabel: null, ...extra });
+  // 등원·하원 모두 자차로 알렸고 둘 다 탔다
+  assert.deepEqual(summary.todayShuttleLineTexts([], ["PICKUP", "DROPOFF"], { PICKUP: "08:52", DROPOFF: "18:40" }), ["탑승 08:52", "하차 18:40"]);
+  // 한쪽만 탄 경우 — 안 탄 방향은 «자차» 그대로(합쳐 쓰지 않는다)
+  assert.deepEqual(summary.todayShuttleLineTexts([], ["PICKUP", "DROPOFF"], { PICKUP: "08:52" }), ["탑승 08:52", "하원 자차"]);
+  assert.deepEqual(summary.todayShuttleLineTexts([], ["PICKUP", "DROPOFF"], { DROPOFF: "18:40" }), ["등원 자차", "하차 18:40"]);
+  // 하원만 자차로 알렸는데 탔다 — 등원 줄은 예정 시각 그대로
+  assert.deepEqual(summary.todayShuttleLineTexts([item({})], ["DROPOFF"], { DROPOFF: "18:40" }), ["등원 16:40 승차", "하차 18:40"]);
+  // 시각이 없으면 예전 그대로
+  assert.deepEqual(summary.todayShuttleLineTexts([], ["PICKUP", "DROPOFF"], {}), ["등원·하원 자차"]);
+  assert.deepEqual(summary.todayShuttleLineTexts([], ["PICKUP", "DROPOFF"]), ["등원·하원 자차"]);
+  assert.deepEqual(summary.todayShuttleLineTexts([item({})], ["DROPOFF"], { DROPOFF: null }), ["등원 16:40 승차", "하원 자차"]);
+  // 자차로 알리지 않은 방향의 값은 쓰지 않는다(표시 전용 값이 다른 줄을 덮지 않는다)
+  assert.deepEqual(summary.todayShuttleLineTexts([item({})], [], { PICKUP: "08:52" }), ["등원 16:40 승차"]);
+
+  // 자차 방향 × 탑승 시각 → 실제로 탄 방향만
+  const times = new Map([["s1:PICKUP", "08:52"], ["s2:DROPOFF", "18:40"], ["s3:PICKUP", "09:00"]]);
+  const timeOf = (studentId, direction) => times.get(`${studentId}:${direction}`) ?? null;
+  assert.deepEqual(
+    childRules.selfRideActualTimes({ s1: ["PICKUP", "DROPOFF"], s2: ["DROPOFF"], s4: ["PICKUP"] }, timeOf),
+    { s1: { PICKUP: "08:52" }, s2: { DROPOFF: "18:40" } },
+    "자차로 알리지 않은 아이(s3)·탄 기록이 없는 아이(s4)는 넣지 않는다",
+  );
+  assert.deepEqual(childRules.selfRideActualTimes({}, timeOf), {});
+
+  // 홈까지 가는 길: 항목이 없어도(전부 자차) 탑승 시각을 읽고, 표시 전용 값으로 따로 내보낸다
+  const parent = read("src/lib/shuttle/parent.ts");
+  assert.match(parent, /const boardingTimes = hasToday \|\| hasSelfRideToday/);
+  assert.match(parent, /SELF_RIDE_ACTUAL_BY_RESULT\.set\(sorted, selfRideActualTimes\(todaySelfRide,/);
+  assert.match(read("src/app/mypage/page.tsx"), /todaySelfRideActual=\{todaySelfRideActualOf\(shuttleOverview\)\}/);
+  // 자차 방향은 여전히 항목을 만들지 않는다(«운행 N건» 셈 그대로)
+  const leg = (state, time) => ({ stopName: "푸르지오", time, state, note: null, changedTo: null });
+  const days = [{ ymd: DAY, weekday: 4, dayLabel: "목", classId: "c1", className: "목 5시", classTime: "17:00", status: "RUN", statusText: "운행", board: leg("SKIP", "16:40"), alight: leg("SKIP", "18:40") }];
+  assert.equal(childRules.rosterOverviewItems("s1", "합성", days).length, 0);
 });
 
 test("③ 확인 문구 — 조사와 방향 글자", () => {
@@ -161,7 +221,10 @@ test("④ 렌더: 탑승으로 기록된 뒤에는 보통 탑승한 아이와 �
   const self = riderHtml(html, "자차생");
   assert.doesNotMatch(self, /data-blocked/);
   assert.doesNotMatch(self, /그래도/);
-  assert.equal((self.match(/<button[^>]*disabled=""/g) ?? []).length, 0, "탑승·미탑승 버튼이 풀린다");
+  // 탑승 버튼은 풀리고, 미탑승 버튼만 잠근다(잘못 눌렀으면 되돌리기)
+  assert.equal((self.match(/<button[^>]*disabled=""/g) ?? []).length, 1, "미탑승만 잠금");
+  assert.match(self, /<button[^>]*disabled=""[^>]*>미탑승</);
+  assert.match(self, /자차로 알렸지만 탑승으로 기록했어요/);
   assert.match(self, /aria-pressed="true"[^>]*>탑승</);
   assert.match(self, /aria-label="자차생 대기로 되돌리기"/);
   // 학부모가 안 탄다고 알린 사실은 메모로 남아 보인다
