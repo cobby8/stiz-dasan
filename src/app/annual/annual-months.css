@@ -181,7 +181,7 @@
     background: var(--color-public-dark);
     color: var(--color-public-white) !important;
 }
-.stiz-public-sport .annual-calendar-dots { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding-left: 2px; }
+.stiz-public-sport .annual-calendar-dots { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding-left: 2px; max-width: 100%; overflow: hidden; }
 /* 휴대폰 칸의 짧은 이름 — 색 점 + 두 글자(최소 12px) */
 .stiz-public-sport .annual-calendar-short {
     display: inline-flex;

@@ -61,6 +61,9 @@ const CATEGORY_SHORT: Record<string, string> = { 대회: "대회", 방학: "방�
 
 /** 일정 제목을 달력 칸용 짧은 이름으로 줄인다. 규칙에 없으면 구분(대회·방학·행사) 이름, 그것도 없으면 «일정». */
 export function shortEventLabel(title: string, category?: string): string {
+    // «11월 3주차 시작»은 «개강»이 아니라 «3주차»(2026-11-16 원장 지시) — «시작» 규칙보다 먼저 본다
+    const week = /(\d{1,2})\s*주차/.exec(title);
+    if (week) return `${Number(week[1])}주차`;
     for (const [re, label] of SHORT_LABEL_RULES) if (re.test(title)) return label;
     return (category && CATEGORY_SHORT[category]) || "일정";
 }

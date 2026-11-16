@@ -9,8 +9,9 @@ import { DRIVER_ENTRY_PATH, shouldShowIosDriverNotice } from "@/lib/staff-sessio
 const teachingItems = [
   { href: "/staff", label: "수업", exact: true },
   { href: "/staff/students", label: "학생", exact: false },
-  { href: "/staff/billing", label: "청구", exact: false },
 ] as const;
+// 일정(학원 연간일정) — 선생님·기사님 공통. 2026-11-16 원장 지시로 «청구» 탭 자리에 넣었다(청구는 이름 버튼 메뉴로 옮김).
+const annualItem = { href: "/staff/annual", label: "일정", exact: false } as const;
 
 const SHUTTLE_HREF = "/staff/shuttle";
 // 셔틀 탭은 셔틀 화면·운행 화면(/staff/run)·기사님 첫 화면(/staff/driver) 어디서든 켜져 보인다.
@@ -19,7 +20,7 @@ const seasonalItem = { href: "/staff/seasonal", label: "특강", exact: false } 
 
 // 역할 하나가 아니라 «수업 메뉴·셔틀 메뉴를 각각 쓸 수 있는가»로 받는다.
 // 역할 하나로 가르면 「선생님 + 기사님」이 셔틀 탭을 못 보거나 수업 탭을 못 본다(다중 역할, 2026-10-25).
-//   기사님만 → 셔틀 / 선생님만 → 수업·학생·청구·특강 / 관리자·선생님+기사님 → 둘 다
+//   기사님만 → 일정·셔틀 / 선생님만 → 수업·학생·일정·특강 / 관리자·선생님+기사님 → 수업·학생·일정·특강·셔틀
 export default function StaffBottomNav({ canTeach, canShuttle }: { canTeach: boolean; canShuttle: boolean }) {
   const pathname = usePathname();
   // 아이폰 스토어 앱은 지금 셔틀 화면으로 가는 길을 앱이 막는다(앱 다음 업데이트에서 열림, 2026-11-13 b7).
@@ -58,10 +59,12 @@ export default function StaffBottomNav({ canTeach, canShuttle }: { canTeach: boo
 
   const shuttleItem = { href: shuttleHref, label: "셔틀", exact: false } as const;
   const items = [
-    ...(canTeach ? [...teachingItems, seasonalItem] : []),
+    ...(canTeach ? teachingItems : []),
+    annualItem,
+    ...(canTeach ? [seasonalItem] : []),
     ...(canShuttle ? [shuttleItem] : []),
   ];
-  const gridClass = items.length >= 5 ? "grid-cols-5" : items.length === 4 ? "grid-cols-4" : items.length === 1 ? "grid-cols-1" : "grid-cols-3";
+  const gridClass = items.length >= 5 ? "grid-cols-5" : items.length === 4 ? "grid-cols-4" : items.length === 2 ? "grid-cols-2" : items.length === 1 ? "grid-cols-1" : "grid-cols-3";
   const isActive = (item: (typeof items)[number]) => {
     if (item === shuttleItem) return SHUTTLE_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
     return item.exact ? pathname === item.href : pathname.startsWith(item.href);

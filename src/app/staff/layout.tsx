@@ -46,7 +46,7 @@ export default async function StaffLayout({ children }: { children: ReactNode })
           <div className="flex min-w-0 items-center gap-1">
             {/* 휴대폰 알림 켜기·켜짐(선생님·기사님 공통) — 예전엔 켜는 버튼이 학부모 화면에만 있어 직원 구독이 0건이었다 */}
             <StaffPushToggle />
-            <StaffProfileMenu staffName={staff.appUserName} staffRole={staff.appUserRole} accountViews={views} />
+            <StaffProfileMenu staffName={staff.appUserName} staffRole={staff.appUserRole} canTeach={staff.roles.teacher} accountViews={views} />
           </div>
         </div>
       </header>

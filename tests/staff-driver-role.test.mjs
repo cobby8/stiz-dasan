@@ -32,7 +32,10 @@ test("staff mobile navigation is role-aware", () => {
   // 하단 메뉴는 «수업 메뉴·셔틀 메뉴를 각각 쓸 수 있는가» 두 가지로 받는다.
   assert.match(staffLayoutSource, /StaffBottomNav canTeach=\{staff\.roles\.teacher\} canShuttle=\{canShuttle\}/);
   assert.match(staffLayoutSource, /StaffProfileMenu staffName=\{staff\.appUserName\} staffRole=\{staff\.appUserRole\}/);
-  assert.match(staffNavSource, /\.\.\.\(canTeach \? \[\.\.\.teachingItems, seasonalItem\] : \[\]\)/);
+  // 2026-11-16: «청구» 탭 자리에 «일정»(선생님·기사님 공통). 청구는 이름 버튼 메뉴로 옮겼다
+  assert.match(staffNavSource, /\.\.\.\(canTeach \? teachingItems : \[\]\),\s*annualItem,\s*\.\.\.\(canTeach \? \[seasonalItem\] : \[\]\),/);
+  assert.match(staffNavSource, /const annualItem = \{ href: "\/staff\/annual", label: "일정", exact: false \} as const;/);
+  assert.doesNotMatch(staffNavSource, /label: "청구"/);
   assert.match(staffNavSource, /\.\.\.\(canShuttle \? \[shuttleItem\] : \[\]\)/);
   // 2026-11-13 UI 통일: 아래 메뉴는 아이콘 없이 글자만 — 셔틀 탭은 «셔틀» 글자로 확인한다
   assert.match(staffNavSource, /label: "셔틀"/);

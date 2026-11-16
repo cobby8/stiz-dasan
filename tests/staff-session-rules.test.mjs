@@ -236,14 +236,22 @@ test("휴무 표시는 기사님 운행표와 같은 판정 함수를 쓰고, �
   assert.match(home, /\{holidays\[dateKey\] && \(\s*<p role="note"/);
 });
 
-test("학원 일정: 선생님·기사님 공통 메뉴에서 앱 안 화면(/staff/annual)으로 — 학부모 연간 일정과 같은 원본·같은 함수", () => {
-  const menu = readFileSync("src/app/staff/StaffProfileMenu.tsx", "utf8");
-  assert.match(menu, /<Link href="\/staff\/annual" onClick=\{\(event\) => requestPublicNavigation\(event, "\/staff\/annual"\)\}[^>]*>\s*학원 일정\s*<\/Link>/);
+test("일정: 아래 탭 «일정»에서 앱 안 화면(/staff/annual)으로 — 사이트 연간일정과 같은 자료·같은 부품", () => {
   const annual = readFileSync("src/app/staff/annual/page.tsx", "utf8");
-  assert.match(annual, /loadAnnualPlanEvents\(\)\.catch\(\(\) => \[\]\)/);
-  assert.match(annual, /buildParentYear\(events, year\)/);
-  // 앱 범위(/staff) 밖 주소로 나가는 링크가 없다
-  for (const href of annual.match(/href=\{?[`"][^`"]+/g) ?? []) assert.match(href, /\/staff\/annual|#month-/, href);
+  // 사이트(/annual)와 같은 자료 함수·같은 부품
+  assert.match(annual, /await loadAnnualPageData\(\)/);
+  assert.match(annual, /<PublicSiteTheme publicScope>\s*<AnnualEventsClient allEvents=\{allEvents\} classDays=\{classDays\} yearlySchedules=\{yearlySchedules\} \/>/);
+  const site = readFileSync("src/app/annual/page.tsx", "utf8");
+  assert.match(site, /const \{ phone, allEvents, classDays, yearlySchedules \} = await loadAnnualPageData\(\);/);
+  // 선생님 앱은 밝은 화면 — 사이트의 어두운 모드 표시를 이 화면에서만 떼고, 떠나면 되돌린다
+  assert.match(annual, /<ForceLightScope \/>/);
+  const light = readFileSync("src/components/staff/ForceLightScope.tsx", "utf8");
+  assert.match(light, /root\.classList\.remove\("dark"\)/);
+  // 떠날 때 되돌리지 않는다(선생님 앱은 원래 밝은 화면 고정 — 되돌리면 다른 화면이 어두워진다)
+  assert.doesNotMatch(light, /classList\.add\("dark"\)/);
   // 선생님 전용 판정(기사님 튕기기)을 넣지 않는다 — 기사님도 본다
   assert.doesNotMatch(annual, /DRIVER_ENTRY_PATH|roles\.teacher/);
+  // 청구는 없애지 않고 이름 버튼 메뉴로 옮겼다(기사님에게는 없다)
+  const menu = readFileSync("src/app/staff/StaffProfileMenu.tsx", "utf8");
+  assert.match(menu, /\{canTeach && <Link href="\/staff\/billing" onClick=\{\(event\) => requestPublicNavigation\(event, "\/staff\/billing"\)\}[^>]*>\s*청구\s*<\/Link>\}/);
 });

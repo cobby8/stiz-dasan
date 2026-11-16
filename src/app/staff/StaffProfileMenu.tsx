@@ -15,7 +15,7 @@ import { useStoreAppLacks } from "@/components/storeApp/useStoreAppLacks";
 
 const focusableSelector = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-export default function StaffProfileMenu({ staffName, staffRole, accountViews = [] }: { staffName: string; staffRole: "ADMIN" | "VICE_ADMIN" | "INSTRUCTOR" | "DRIVER"; accountViews?: AccountViewOption[] }) {
+export default function StaffProfileMenu({ staffName, staffRole, canTeach = staffRole !== "DRIVER", accountViews = [] }: { staffName: string; staffRole: "ADMIN" | "VICE_ADMIN" | "INSTRUCTOR" | "DRIVER"; /** 수업 메뉴를 쓰는 사람인가 — 아래 탭과 같은 기준(청구 링크를 보일지) */ canTeach?: boolean; accountViews?: AccountViewOption[] }) {
   const pathname = usePathname();
   const isSessionInProgress = pathname.startsWith("/staff/sessions/");
   const [isOpen, setIsOpen] = useState(false);
@@ -141,10 +141,10 @@ export default function StaffProfileMenu({ staffName, staffRole, accountViews = 
               <AccountViewSwitcher views={accountViews} variant="list" onNavigate={(event, view) => requestPublicNavigation(event, view.href)} />
             </div>}
 
-            {/* 학원 일정(연간 일정·휴무) — 선생님·기사님 공통(2026-11-16 원장 지시). 앱 안 화면(/staff/annual)이라 앱을 벗어나지 않는다 */}
-            <Link href="/staff/annual" onClick={(event) => requestPublicNavigation(event, "/staff/annual")} className="academy-button-secondary mb-2 w-full">
-              학원 일정
-            </Link>
+            {/* 청구(현장 수납 확인 요청) — 아래 탭 자리를 «일정»에 내주고 여기로 옮겼다(2026-11-16 원장 지시). 기사님에게는 없다 */}
+            {canTeach && <Link href="/staff/billing" onClick={(event) => requestPublicNavigation(event, "/staff/billing")} className="academy-button-secondary mb-2 w-full">
+              청구
+            </Link>}
             <Link href="/account" onClick={event=>requestPublicNavigation(event,"/account")} className="academy-button-secondary mb-3 w-full">
               내 계정
             </Link>

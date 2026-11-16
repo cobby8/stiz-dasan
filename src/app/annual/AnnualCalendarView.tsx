@@ -86,7 +86,8 @@ export default function AnnualCalendarView({ year, month, events, todayYmd, onSe
                                                         <>
                                                             {labels.slice(0, 2).map((l) => (
                                                                 <span key={l.short} className={`annual-calendar-short${l.short === "휴무" ? " is-closed" : ""}`}>
-                                                                    <span className={`annual-calendar-dot ${l.dot}`} />
+                                                                    {/* «3주차»는 세 글자라 색 점을 빼야 좁은 칸(360px 폰)에 들어간다 */}
+                                                                    {!l.short.endsWith("주차") && <span className={`annual-calendar-dot ${l.dot}`} />}
                                                                     {l.short}
                                                                 </span>
                                                             ))}
