@@ -9,7 +9,7 @@ import { getConfirmedDispatchEtas } from "@/lib/seasonal/dispatchRoute";
 import { getConfirmedRegularRosterEtas } from "@/lib/shuttle/regularRosterEta";
 import { regularEtaKey } from "@/lib/shuttle/regularRosterEtaLogic";
 // 정규 셔틀 «운행 일정»은 셔틀 명단(기사님·관리자 운행표의 정본)에서 만든다(2026-11-14 — 노선 승객 표는 운영 0행이었다).
-import { getRosterStudentIds, loadChildRegularShuttle } from "@/lib/shuttle/childShuttleQuery";
+import { getRosterStudentIds, loadChildRegularShuttle, type MonthlyClassDates } from "@/lib/shuttle/childShuttleQuery";
 import { rosterOverviewItems, selfRideActualTimes, todaySelfRideDirections } from "@/lib/shuttle/childShuttleRules";
 import { loadChildClasses } from "@/lib/parent/childClassesQuery";
 import { getMonthlyClassDates, loadAnnualPlanEvents } from "@/lib/enrollment/monthlyClassDates";
@@ -447,12 +447,15 @@ export function todaySelfRideOf(overview: readonly ParentShuttleOverviewItem[]):
  */
 async function rosterOverviewForStudents(students: { id: string; name: string }[]): Promise<{ items: ParentShuttleOverviewItem[]; todaySelfRide: TodaySelfRide }> {
   const today = todayKst();
-  const planEvents = await loadAnnualPlanEvents().catch(() => null);
-  const monthlyDates = planEvents ? (ym: string, dow: string) => getMonthlyClassDates(planEvents, ym, dow) : null;
+  // 연간일정·반 목록·명단은 서로의 결과를 조회에 쓰지 않는다 → 차례로 기다리지 않고 함께 보낸다(2026-11-17 속도 개선).
+  // 예전에는 연간일정(DB → 구글) → 반 목록 → 명단 순으로 줄을 서서 홈의 셔틀 안내만 0.6~0.7초가 걸렸다.
+  const monthlyDatesP: Promise<MonthlyClassDates | null> = loadAnnualPlanEvents()
+    .then((planEvents) => (planEvents ? (ym: string, dow: string) => getMonthlyClassDates(planEvents, ym, dow) : null))
+    .catch(() => null);
   const perStudent = await Promise.all(
     students.map(async (student) => {
-      const classes = await loadChildClasses(prisma, student.id, today);
-      const shuttle = await loadChildRegularShuttle(prisma, { studentId: student.id, today, classes, monthlyDates });
+      const classes = loadChildClasses(prisma, student.id, today);
+      const shuttle = await loadChildRegularShuttle(prisma, { studentId: student.id, today, classes, monthlyDates: monthlyDatesP });
       return { studentId: student.id, items: rosterOverviewItems(student.id, student.name, shuttle.days), selfRide: todaySelfRideDirections(shuttle.days, today) };
     }),
   );

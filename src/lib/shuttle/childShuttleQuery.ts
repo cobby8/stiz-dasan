@@ -36,13 +36,20 @@ export const SHUTTLE_WINDOW_DAYS = 7;
 
 export async function loadChildRegularShuttle(
   db: Reader,
-  input: { studentId: string; today: string; classes: readonly ShuttleClassRef[]; monthlyDates: MonthlyClassDates | null },
+  input: {
+    studentId: string;
+    today: string;
+    // 반 목록·수업일 계산기는 «값»이나 «아직 오는 중인 약속» 어느 쪽으로도 받는다(2026-11-17 속도 개선).
+    // 둘 다 아래 SQL 에는 쓰이지 않고 그 뒤 계산에만 쓰이므로, 호출부가 미리 기다릴 필요가 없다 — 명단 조회와 함께 기다린다.
+    classes: readonly ShuttleClassRef[] | Promise<readonly ShuttleClassRef[]>;
+    monthlyDates: MonthlyClassDates | null | Promise<MonthlyClassDates | null>;
+  },
 ): Promise<ChildRegularShuttle> {
   const { studentId, today } = input;
   const end = addDaysKst(today, SHUTTLE_WINDOW_DAYS - 1);
   const months = [...new Set([today.slice(0, 7), end.slice(0, 7)])];
 
-  const [rosterByMonth, absences, exceptions] = await Promise.all([
+  const [rosterByMonth, absences, exceptions, classes, monthly] = await Promise.all([
     // 달마다: 그 달 «이하»의 최신 명단 달(기사님 화면 pickServiceMonthFor · regularRosterEta 와 같은 기준)
     Promise.all(
       months.map(async (month) => {
@@ -73,6 +80,8 @@ export async function loadChildRegularShuttle(
           AND x."serviceDate" >= $2::date AND x."serviceDate" <= $3::date`,
       studentId, today, end,
     ),
+    input.classes,
+    input.monthlyDates,
   ]);
 
   const toRow = (r: any): RosterStopRow => ({
@@ -88,19 +97,18 @@ export async function loadChildRegularShuttle(
   const usedMonth = rosterByMonth.find(([m]) => m === today.slice(0, 7))?.[1][0]?.serviceMonth ?? null;
 
   // 수업일 판정 — 수업 탭 «다음 수업»과 같은 계산(연간일정). 그 달 수업일을 못 구하면 null(모름 → 명단대로 운행)
-  const monthly = input.monthlyDates;
   const isClassDay = (c: ShuttleClassRef, ymd: string): boolean | null => {
     if (!monthly) return null;
     const dates = classDatesForCalendarMonth(ymd.slice(0, 7), c.dayOfWeek, null, monthly);
     return dates.length === 0 ? null : dates.includes(ymd);
   };
 
-  const weekly = weeklyShuttlePlan(rowsByMonth.get(today.slice(0, 7)) ?? [], input.classes);
+  const weekly = weeklyShuttlePlan(rowsByMonth.get(today.slice(0, 7)) ?? [], classes);
   const days = buildShuttleDays({
     today,
     days: SHUTTLE_WINDOW_DAYS,
     rowsForDate: (ymd) => rowsByMonth.get(ymd.slice(0, 7)) ?? [],
-    classes: input.classes,
+    classes,
     isClassDay,
     absences: absences.map((a): ShuttleAbsence => ({ ymd: String(a.ymd), classId: a.classId ?? null })),
     exceptions: exceptions.map((x): ShuttleException => ({ ymd: String(x.ymd), direction: String(x.direction), kind: String(x.kind), location: x.location ?? null })),
