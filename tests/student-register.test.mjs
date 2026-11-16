@@ -366,6 +366,68 @@ test("[규칙] 유니폼 허용값은 학생 상세 저장(updateStudentUniform)
   assert.match(fnBlock(admin, "updateStudentUniform"), /new Set<string>\(UNIFORM_STATUS_VALUES\)/);
 });
 
+// 2026-11-16 원장 지시: 학생마다 유니폼 번호(등번호)를 보고 고친다 — 숫자만·최대 3자, 비우면 null
+const uniformNumber = await loadTsModule("src/lib/students/uniform-number.ts");
+
+test("[유니폼 번호] 숫자만·최대 3자, 비우면 null, 앞자리 0 은 그대로", () => {
+  assert.deepEqual(uniformNumber.normalizeUniformNumber("23"), { ok: true, value: "23" });
+  assert.deepEqual(uniformNumber.normalizeUniformNumber(" 7 "), { ok: true, value: "7" });
+  assert.deepEqual(uniformNumber.normalizeUniformNumber("0"), { ok: true, value: "0" });
+  assert.deepEqual(uniformNumber.normalizeUniformNumber("00"), { ok: true, value: "00" });
+  assert.deepEqual(uniformNumber.normalizeUniformNumber("100"), { ok: true, value: "100" });
+  assert.deepEqual(uniformNumber.normalizeUniformNumber(5), { ok: true, value: "5" });
+  for (const empty of ["", "   ", null, undefined]) {
+    assert.deepEqual(uniformNumber.normalizeUniformNumber(empty), { ok: true, value: null });
+  }
+  for (const bad of ["1000", "2a", "-1", "1.5", "이십삼", "２３", {}, true]) {
+    assert.equal(uniformNumber.normalizeUniformNumber(bad).ok, false, String(bad));
+  }
+  assert.equal(uniformNumber.uniformNumberLabel("23"), "23번");
+  assert.equal(uniformNumber.uniformNumberLabel("0"), "0번");
+  assert.equal(uniformNumber.uniformNumberLabel(null), "번호 없음");
+  assert.equal(uniformNumber.uniformNumberLabel(" "), "번호 없음");
+  // 칸 이름을 넘기면 사유 문구가 그 칸을 가리킨다(취미반·대표팀 두 칸)
+  assert.equal(uniformNumber.normalizeUniformNumber("2a", "대표팀 번호").error, "대표팀 번호는 숫자만 넣을 수 있습니다.");
+  assert.equal(uniformNumber.normalizeUniformNumber("1000", "취미반 번호").error, "취미반 번호는 3자까지 넣을 수 있습니다.");
+});
+
+test("[유니폼 번호] 목록용 짧은 표기 — 값이 있는 것만, 0 도 번호", () => {
+  assert.equal(uniformNumber.uniformNumbersInline("23", "0"), "취미 23 · 대표 0");
+  assert.equal(uniformNumber.uniformNumbersInline("23", null), "취미 23");
+  assert.equal(uniformNumber.uniformNumbersInline("", "0"), "대표 0");
+  assert.equal(uniformNumber.uniformNumbersInline("0", undefined), "취미 0");
+  assert.equal(uniformNumber.uniformNumbersInline(null, " "), "");
+});
+
+test("[유니폼 번호] 저장은 권한 확인 뒤 규칙 함수로 검증하고, 조회·화면·스키마가 같은 칸을 쓴다", async () => {
+  const save = fnBlock(admin, "updateStudentUniform");
+  assert.ok(save.indexOf("await requireAdmin()") < save.indexOf("normalizeUniformNumber(data.number,"));
+  assert.match(save, /if \(!uniformNumber\.ok\) throw new Error\(uniformNumber\.error\)/);
+  assert.match(save, /normalizeUniformNumber\(data\.teamNumber, "대표팀 번호"\)/);
+  assert.match(save, /if \(!teamUniformNumber\.ok\) throw new Error\(teamUniformNumber\.error\)/);
+  assert.match(save, /"uniformNumber" = \$7, "teamUniformNumber" = \$8, "updatedAt" = NOW\(\)\s+WHERE id = \$9/);
+  // "0" 이 빈 값으로 바뀌지 않게 — 번호 값에는 «|| null» 을 걸지 않는다
+  assert.match(save, /data\.note \|\| null, uniformNumber\.value, teamUniformNumber\.value, id,/);
+  const queries = await readFile("src/lib/queries.ts", "utf8");
+  assert.match(queries, /s\."uniformNote", s\."uniformNumber", s\."teamUniformNumber",/);
+  assert.match(queries, /teamUniformNumber: r\.teamUniformNumber \?\? r\.teamuniformnumber \?\? null/);
+  assert.match(queries, /uniformNumber: r\.uniformNumber \?\? r\.uniformnumber \?\? null/);
+  const detail = await readFile("src/app/admin/students/[id]/StudentDetailClient.tsx", "utf8");
+  assert.match(detail, /취미반 번호<\/dt><dd>\{uniformNumberLabel\(uniformSaved\.number\)\}/);
+  assert.match(detail, /대표팀 번호<\/dt><dd>\{uniformNumberLabel\(uniformSaved\.teamNumber\)\}/);
+  // 저장된 "0" 을 빈칸으로 바꾸지 않는다(|| 가 아니라 ??)
+  assert.match(detail, /number: student\?\.uniformNumber \?\? "",/);
+  assert.match(detail, /teamNumber: student\?\.teamUniformNumber \?\? "",/);
+  assert.doesNotMatch(detail, /[uU]niformNumber \|\| /);
+  assert.match(detail, /maxLength=\{UNIFORM_NUMBER_MAX_LENGTH\}/);
+  const schema = await readFile("prisma/schema.prisma", "utf8");
+  assert.match(schema, /\n  uniformNumber\s+String\?/);
+  assert.match(schema, /\n  teamUniformNumber\s+String\?/);
+  const migration = await readFile("prisma/migrations/20261116200000_student_uniform_number/migration.sql", "utf8");
+  assert.match(migration, /ALTER TABLE "Student" ADD COLUMN IF NOT EXISTS "uniformNumber" TEXT;/);
+  assert.match(migration, /ALTER TABLE "Student" ADD COLUMN IF NOT EXISTS "teamUniformNumber" TEXT;/);
+});
+
 // 2026-11-14 원장 결정: 이 사이트는 다산2호점만 관리한다 — 평내호평점 판정·선택지를 없앴다
 test("[규칙] 지점은 다산2호점 하나 — 반 장소로 알아내고 모르면 null(서버가 다산2호점으로 채움), 1호점·평내호평은 선택지에 없다", () => {
   assert.equal(rules.branchFromClassLocation("평내호평 체육관"), null);

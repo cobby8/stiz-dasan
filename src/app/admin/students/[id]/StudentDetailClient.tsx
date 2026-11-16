@@ -4,6 +4,7 @@ import { adminErrorText, paymentMethodLabel } from "@/components/admin/adminDisp
 
 import { useCallback, useEffect, useState, useTransition, type FormEvent } from "react";
 import Link from "next/link";
+import { normalizeUniformNumber, uniformNumberLabel, UNIFORM_NUMBER_MAX_LENGTH } from "@/lib/students/uniform-number";
 import { updateEnrollmentStatus, updateStudentMemo, updateStudent, updateStudentUniform, updatePaymentStatus, enrollStudent } from "@/app/actions/admin";
 import { todayKst, toKstYmd } from "@/lib/datetime/kst";
 // 청구/수납 탭 — 청구서 발행·수정·삭제 창과, 서버와 같은 «수정 가능» 판정(2026-11-09)
@@ -183,6 +184,7 @@ type StudentActivityData = {
         uniformStatus: string | null; uniformAppliedAt: Date | string | null;
         uniformOrderedAt: Date | string | null; uniformReceivedAt: Date | string | null;
         uniformSource: string | null; uniformNote: string | null;
+        uniformNumber?: string | null; teamUniformNumber?: string | null;
         parent: { name: string | null; phone: string | null; email: string | null };
     };
     enrollments: {
@@ -455,6 +457,9 @@ function uniformFromStudent(student: StudentActivityData["student"] | undefined)
         receivedAt: toInputDate(student?.uniformReceivedAt),
         source: student?.uniformSource || "",
         note: student?.uniformNote || "",
+        // 유니폼 번호(등번호) — 취미반·대표팀 두 칸. 숫자 글자, 없으면 빈칸("0" 은 번호라 ?? 로 받는다)
+        number: student?.uniformNumber ?? "",
+        teamNumber: student?.teamUniformNumber ?? "",
     };
 }
 
@@ -1191,16 +1196,27 @@ export default function StudentDetailClient({
 
     // 유니폼 저장(기존 서버 액션 그대로). 성공하면 창을 닫고 카드 한 줄에 «저장했어요», 실패하면 창 안에 사유
     function saveUniform() {
-        setUniformSaving(true);
         setUniformFeedback(null);
-        const next = uniformForm;
+        // 번호는 서버로 보내기 전에 같은 규칙으로 먼저 본다(숫자만·최대 3자) — 틀리면 창 안에 사유만 보이고 저장하지 않는다
+        const checkedNumber = normalizeUniformNumber(uniformForm.number, "취미반 번호");
+        if (!checkedNumber.ok) {
+            setUniformFeedback({ ok: false, text: checkedNumber.error });
+            return;
+        }
+        const checkedTeamNumber = normalizeUniformNumber(uniformForm.teamNumber, "대표팀 번호");
+        if (!checkedTeamNumber.ok) {
+            setUniformFeedback({ ok: false, text: checkedTeamNumber.error });
+            return;
+        }
+        setUniformSaving(true);
+        const next = { ...uniformForm, number: checkedNumber.value ?? "", teamNumber: checkedTeamNumber.value ?? "" };
         void updateStudentUniform(student.id, next)
             .then(() => { setUniformSaved(next); setUniformFeedback({ ok: true, text: "저장되었습니다." }); setDetailModal(null); })
             .catch((e) => setUniformFeedback({ ok: false, text: adminErrorText(e, "유니폼 정보를 저장하지 못했습니다.") }))
             .finally(() => setUniformSaving(false));
     }
 
-    // 유니폼 한 줄 요약 — 가장 최근 단계 날짜(수령 > 주문 > 신청) + 출처
+    // 유니폼 한 줄 요약 — 가장 최근 단계 날짜(수령 > 주문 > 신청) + 출처 (번호 두 줄은 카드에서 따로 그린다)
     const uniformSummary = [
         uniformSaved.receivedAt ? `수령 ${uniformSaved.receivedAt}` : uniformSaved.orderedAt ? `주문 ${uniformSaved.orderedAt}` : uniformSaved.appliedAt ? `신청 ${uniformSaved.appliedAt}` : null,
         uniformSaved.source || null,
@@ -1621,6 +1637,11 @@ export default function StudentDetailClient({
                             <div id="student-uniform" className="academy-panel flex min-h-11 scroll-mt-20 flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3">
                                 <h3 className="academy-section-title">유니폼</h3>
                                 <span className={`rounded px-2 py-0.5 text-xs font-medium ${statusToneClass("neutral")}`}>{uniformSaved.status || "미확인"}</span>
+                                {/* 유니폼 번호 두 줄 — 취미반·대표팀. 잘리지 않게 요약 글자와 따로 둔다(없으면 «번호 없음») */}
+                                <dl className="shrink-0 text-xs leading-5 text-[var(--color-academy-ink)]">
+                                    <div className="flex gap-2"><dt className="text-[var(--color-academy-muted)]">취미반 번호</dt><dd>{uniformNumberLabel(uniformSaved.number)}</dd></div>
+                                    <div className="flex gap-2"><dt className="text-[var(--color-academy-muted)]">대표팀 번호</dt><dd>{uniformNumberLabel(uniformSaved.teamNumber)}</dd></div>
+                                </dl>
                                 <span className="min-w-0 flex-1 truncate text-xs text-[var(--color-academy-muted)]">{uniformSummary}</span>
                                 {uniformFeedback?.ok && detailModal !== "uniform" && <span role="status" className="text-xs font-medium text-[var(--color-academy-success)]">{uniformFeedback.text}</span>}
                                 <button type="button" onClick={openUniformModal} className="academy-button-secondary academy-button-sm">
@@ -2205,6 +2226,9 @@ export default function StudentDetailClient({
                                 <option value="">미확인</option><option value="보유">보유</option><option value="미보유">미보유</option><option value="신청">신청</option><option value="주문">주문</option><option value="수령완료">수령완료</option><option value="미수령">미수령</option><option value="확인보류">확인보류</option><option value="미신청">미신청</option><option value="해당없음">해당없음</option>
                             </select>
                         </label>
+                        {/* 유니폼 번호(등번호) 두 칸 — 취미반·대표팀. 숫자만 받는다(휴대폰은 숫자 자판). 비우면 «번호 없음», 0 은 번호로 저장 */}
+                        <label className="text-xs font-medium text-[var(--color-academy-muted)]">취미반 번호<input value={uniformForm.number} onChange={(e) => setUniformForm((v) => ({ ...v, number: e.target.value.replace(/[^0-9]/g, "").slice(0, UNIFORM_NUMBER_MAX_LENGTH) }))} inputMode="numeric" maxLength={UNIFORM_NUMBER_MAX_LENGTH} placeholder="예: 23 (없으면 비워 두기)" className={`${EDIT_INPUT_CLASS} mt-1 min-h-11`} /></label>
+                        <label className="text-xs font-medium text-[var(--color-academy-muted)]">대표팀 번호<input value={uniformForm.teamNumber} onChange={(e) => setUniformForm((v) => ({ ...v, teamNumber: e.target.value.replace(/[^0-9]/g, "").slice(0, UNIFORM_NUMBER_MAX_LENGTH) }))} inputMode="numeric" maxLength={UNIFORM_NUMBER_MAX_LENGTH} placeholder="예: 0 (없으면 비워 두기)" className={`${EDIT_INPUT_CLASS} mt-1 min-h-11`} /></label>
                         <label className="text-xs font-medium text-[var(--color-academy-muted)]">출처<input value={uniformForm.source} onChange={(e) => setUniformForm((v) => ({ ...v, source: e.target.value }))} placeholder="가입신청서 · 유니폼 신청서 · 사이트 주문" className={`${EDIT_INPUT_CLASS} mt-1 min-h-11`} /></label>
                         <label className="text-xs font-medium text-[var(--color-academy-muted)]">신청일<input type="date" value={uniformForm.appliedAt} onChange={(e) => setUniformForm((v) => ({ ...v, appliedAt: e.target.value }))} className={`${EDIT_INPUT_CLASS} mt-1 min-h-11`} /></label>
                         <label className="text-xs font-medium text-[var(--color-academy-muted)]">주문일<input type="date" value={uniformForm.orderedAt} onChange={(e) => setUniformForm((v) => ({ ...v, orderedAt: e.target.value }))} className={`${EDIT_INPUT_CLASS} mt-1 min-h-11`} /></label>

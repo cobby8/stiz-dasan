@@ -26,6 +26,7 @@ const kstModule = load("src/lib/datetime/kst.ts", {});
 const statusTones = load("src/lib/ui/statusTones.ts", {}); // 상태색 공용 지도(2026-11-09 색상 정리)
 const commencement = load("src/lib/enrollment/commencement.ts", { "@/lib/datetime/kst": kstModule });
 const studentDetailFormat = load("src/lib/studentDetailFormat.ts", {}); // 학생 상세 요약 달·셔틀 시각 표기(2026-11-09 정리)
+const uniformNumber = load("src/lib/students/uniform-number.ts", {}); // 유니폼 번호(등번호) 규칙 — 진짜 함수로 그린다(2026-11-16)
 const enrollment = { id: "enrollment-a", classId: "class-a", status: "ACTIVE", displayStatus: "ACTIVE", startsLater: true, startsOn: "2099-12-01", className: "월요일 5교시", dayOfWeek: "Mon", startTime: "17:00", endTime: "17:55", programName: "합성반", createdAt: "2026-11-03" };
 
 test("첫 다음 수업은 개시일 이전 주차를 건너뛴다", () => {
@@ -45,6 +46,7 @@ test("관리자 원생 상세는 개시일이 미래인 ACTIVE 반을 «수강 �
     "@/lib/datetime/kst": { todayKst: () => "2026-11-03" },
     "@/lib/enrollment/commencement": commencement,
     "@/lib/studentDetailFormat": studentDetailFormat,
+    "@/lib/students/uniform-number": uniformNumber,
     // 반 줄 ⋯ 메뉴(반 이동·삭제) — 메뉴 항목 글자만 그려 확인한다
     "@/components/admin/AdminQuickActionMenu": { __esModule: true, default: ({ actions }) => React.createElement("div", {}, actions.map((a) => a.label).join("|")) },
     "@/components/admin/AdminConfirmDialog": { useAdminConfirm: () => ({ confirm: async () => false, confirmDialog: null }) },
