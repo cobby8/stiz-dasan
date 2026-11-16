@@ -98,6 +98,8 @@ function renderHome(props) {
     "@/components/parent/LatestFeedCard": latestFeedCard, "@/lib/feed/rules": feedRules,
     // 프로필 사진 동그라미(2026-11-15) — 이 검사와 무관해 비워 둔다(부품 자체는 profile-photo.test.mjs 가 그려 본다)
     "@/components/common/ProfileAvatar": nullComponent, "@/lib/profilePhoto/rules": { profilePhotoUrl: () => null },
+    // 홈 히어로 «사진 올리기» 버튼(2026-11-16) — 이 검사와 무관해 비워 둔다(부품은 profile-photo.test.mjs 가 그려 본다)
+    "@/components/parent/ProfilePhotoEditor": nullComponent,
   }).default;
   return renderToStaticMarkup(React.createElement(Client, props));
 }

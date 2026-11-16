@@ -60,6 +60,8 @@ test("관리자 원생 상세는 개시일이 미래인 ACTIVE 반을 «수강 �
     "@/components/admin/AdminPageHeader": nullComponent,
     // 프로필 사진(2026-11-14 연결) — 화면 검사와 무관해 빈 부품·주소 없음으로 둔다
     "@/components/common/ProfileAvatar": nullComponent, "@/lib/profilePhoto/rules": { profilePhotoUrl: () => null },
+    // 홈 히어로 «사진 올리기» 버튼(2026-11-16) — 이 검사와 무관해 비워 둔다(부품은 profile-photo.test.mjs 가 그려 본다)
+    "@/components/parent/ProfilePhotoEditor": nullComponent,
     "@/components/admin/StatusBadge": { statusToneClass: () => "" },
     "./ParentRequestLinkPanel": nullComponent, "./GuardianPanel": nullComponent, "./AbsencePeriodPanel": nullComponent,
     // 2026-11-14: 학부모 «정보 변경 요청»·건강 특이사항 칸이 늘었다(화면이 열린 뒤 따로 읽는 칸이라 이 테스트에서는 빈 부품)
@@ -102,6 +104,8 @@ test("관리자 원생 목록 «활성» 필터·반별 인원은 개시일 미�
     "@/components/admin/AdminPageHeader": nullComponent,
     // 프로필 사진(2026-11-14 연결) — 화면 검사와 무관해 빈 부품·주소 없음으로 둔다
     "@/components/common/ProfileAvatar": nullComponent, "@/lib/profilePhoto/rules": { profilePhotoUrl: () => null },
+    // 홈 히어로 «사진 올리기» 버튼(2026-11-16) — 이 검사와 무관해 비워 둔다(부품은 profile-photo.test.mjs 가 그려 본다)
+    "@/components/parent/ProfilePhotoEditor": nullComponent,
     "@/components/admin/AdminQuickActionMenu": nullComponent,
     "@/components/admin/AbsencePeriodQuickCreate": nullComponent, // 2026-11-15 ⚡ «기간 결석 등록»
     "@/components/admin/AdminConfirmDialog": { useAdminConfirm: () => ({ confirm: async () => false, confirmDialog: null }) },
@@ -141,6 +145,8 @@ test("학부모 홈은 개시일 미래인 ACTIVE 반을 수강 중으로 세고
     "@/components/parent/LatestFeedCard": nullComponent, "@/lib/feed/rules": { pickFeedCard: () => null },
     // 프로필 사진 동그라미(2026-11-15) — 이 검사와 무관해 비워 둔다(부품 자체는 profile-photo.test.mjs 가 그려 본다)
     "@/components/common/ProfileAvatar": nullComponent, "@/lib/profilePhoto/rules": { profilePhotoUrl: () => null },
+    // 홈 히어로 «사진 올리기» 버튼(2026-11-16) — 이 검사와 무관해 비워 둔다(부품은 profile-photo.test.mjs 가 그려 본다)
+    "@/components/parent/ProfilePhotoEditor": nullComponent,
   }).default;
   const html = renderToStaticMarkup(React.createElement(Client, { data: {
     parent: { id: "parent-a", name: "합성 부모" },
