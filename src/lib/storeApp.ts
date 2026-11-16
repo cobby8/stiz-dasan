@@ -35,6 +35,17 @@ export function looksLikeStoreApp(input: { userAgent?: string | null; referrer?:
     || String(input.referrer ?? "").startsWith("android-app://");
 }
 
+/**
+ * 서비스 워커(sw.js)를 써도 되나 — 스토어 앱 안(사용자 에이전트에 « STIZApp/»)이면 쓰지 않는다(2026-11-17).
+ * 왜: 안드로이드 앱(웹뷰)에서는 서비스 워커가 대신 보낸 요청에 앱이 붙인 이름표(« STIZApp/1.0.5 (android)»)가 빠진다.
+ *     그래서 서버가 앱인 줄 몰라 선생님 마이페이지 버전이 «웹으로 보는 중»으로 나왔다(원장 신고).
+ *     앱은 알림을 앱 자체 방식(FCM)으로 받아 웹푸시용 서비스 워커가 필요 없다.
+ * 순수 함수 — 사용자 에이전트 글자만 본다(테스트로 못박는다).
+ */
+export function serviceWorkerAllowed(userAgent: string | null | undefined): boolean {
+  return !String(userAgent ?? "").includes(STORE_APP_USER_AGENT_MARK);
+}
+
 function hasStoreAppUserAgentMark(): boolean {
   try {
     return window.navigator.userAgent.includes(STORE_APP_USER_AGENT_MARK);

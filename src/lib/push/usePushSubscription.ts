@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { showNotice } from "@/components/ui/feedback";
+import { serviceWorkerAllowed } from "@/lib/storeApp";
 
 // 휴대폰 알림(웹푸시) 켜기·끄기 — 학부모 설정 화면과 직원(선생님·기사님) 머리줄이 함께 쓴다(2026-11-10).
 // 동작은 예전 홈 알림 칸의 togglePush 그대로: 켜기 = 브라우저 구독 → /api/push POST, 끄기 = 구독 해제 → /api/push DELETE.
@@ -19,7 +20,9 @@ export function usePushSubscription() {
 
     // 브라우저 푸시 지원 여부 및 현재 구독 상태 확인
     useEffect(() => {
-        if ("serviceWorker" in navigator && "PushManager" in window) {
+        // 스토어 앱 안에서는 웹푸시를 쓰지 않는다(앱 알림 = FCM, 화면은 useNativePush). 서비스 워커도 등록하지 않는다 —
+        // 안드로이드 앱에서 서비스 워커가 끼면 요청의 앱 이름표가 빠진다(serviceWorkerAllowed 설명).
+        if ("serviceWorker" in navigator && "PushManager" in window && serviceWorkerAllowed(navigator.userAgent)) {
             setPushSupported(true);
             navigator.serviceWorker.ready.then(reg => {
                 reg.pushManager.getSubscription().then(sub => {

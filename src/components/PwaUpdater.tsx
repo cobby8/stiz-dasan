@@ -1,12 +1,23 @@
 "use client";
 
 import { useEffect } from "react";
+import { serviceWorkerAllowed } from "@/lib/storeApp";
 
 const SERVICE_WORKER_URL = "/sw.js";
 
 export default function PwaUpdater() {
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
+
+    // 스토어 앱 안: 서비스 워커를 쓰지 않는다 — 이미 등록된 것은 지운다(이유는 serviceWorkerAllowed 설명).
+    // 지운 뒤 다음 화면 이동부터 요청이 앱 이름표를 달고 서버로 바로 간다.
+    if (!serviceWorkerAllowed(navigator.userAgent)) {
+      navigator.serviceWorker
+        .getRegistrations()
+        .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
+        .catch(() => {});
+      return;
+    }
 
     const hadController = Boolean(navigator.serviceWorker.controller);
     let didReload = false;
