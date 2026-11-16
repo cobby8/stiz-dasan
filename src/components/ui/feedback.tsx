@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
+import { usePathname } from "next/navigation";
 import AdminModal from "@/components/admin/AdminModal";
 
 /**
@@ -26,7 +27,8 @@ type FeedbackState = { dialogs: DialogItem[]; notices: NoticeItem[] };
 // 알림 카드는 최대 3장까지만 쌓는다(오래된 것부터 닫힘) — 화면을 덮지 않게
 const MAX_NOTICES = 3;
 // 위험한 일을 묻는 문구면 확정 버튼을 빨강으로 — 나머지는 주 색(네이비)
-const DANGER_WORDS = /(삭제|지울|지우고|지우시|환불|해제|버리|초기화|취소)/;
+// 2026-11-16 검수: 명단에서 빼기·거절·반려·정리·«되돌리기 어렵» 문구도 위험으로 본다
+const DANGER_WORDS = /(삭제|지울|지우고|지우시|환불|해제|버리|초기화|취소|뺄|빼고|빼기|거절|반려|정리|되돌리기 어렵|되돌릴 수 없)/;
 
 let state: FeedbackState = { dialogs: [], notices: [] };
 let seq = 0;
@@ -163,9 +165,34 @@ function CopyDialog({ item }: { item: CopyItem }) {
     );
 }
 
+/**
+ * 화면(주소)이 바뀌면 떠 있던 창·알림을 모두 닫는다(2026-11-16 검수 권장).
+ * 휴대폰 뒤로가기로 화면을 떠났는데 «삭제할까요?» 창이 남아 «확인»을 누르면 떠난 화면의 일이 실행될 수 있었다.
+ * 브라우저 기본 확인창이 뒤로가기에 «취소»로 닫히던 것과 같게 — 확인창은 false, 나머지는 그냥 끝낸다.
+ */
+function dismissAll() {
+    if (!state.dialogs.length && !state.notices.length) return;
+    const { dialogs, notices } = state;
+    setState({ dialogs: [], notices: [] });
+    for (const dialog of dialogs) {
+        if (dialog.kind === "confirm") dialog.resolve(false);
+        else dialog.resolve();
+    }
+    for (const notice of notices) notice.resolve();
+}
+
 /** 창을 그리는 곳 — 최상위 레이아웃에 한 번만 건다. 학원 앱 색(academy-app)을 입혀 어느 화면에서도 같은 모양 */
 export default function FeedbackHost() {
     const current = useSyncExternalStore(subscribe, () => state, () => EMPTY);
+    const pathname = usePathname();
+    const lastPath = useRef(pathname);
+
+    // 주소가 바뀐 «뒤»에만 닫는다(처음 그릴 때는 닫지 않는다)
+    useEffect(() => {
+        if (lastPath.current === pathname) return;
+        lastPath.current = pathname;
+        dismissAll();
+    }, [pathname]);
 
     useEffect(() => {
         hostCount += 1;

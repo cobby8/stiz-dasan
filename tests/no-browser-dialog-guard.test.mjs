@@ -82,3 +82,14 @@ test("화면 안 알림 부품이 최상위 레이아웃에 걸려 있다(안 �
   assert.match(layout, /import FeedbackHost from "@\/components\/ui\/feedback"/);
   assert.match(layout, /<FeedbackHost \/>/);
 });
+
+test("화면(주소)이 바뀌면 떠 있는 확인창은 «그만»으로 닫히고, 빼기·거절·반려도 위험 버튼(2026-11-16 검수)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync("src/components/ui/feedback.tsx", "utf8");
+  assert.match(src, /const pathname = usePathname\(\);/);
+  assert.match(src, /if \(lastPath\.current === pathname\) return;[\s\S]*?dismissAll\(\);/);
+  assert.match(src, /if \(dialog\.kind === "confirm"\) dialog\.resolve\(false\);/);
+  const danger = new RegExp(src.match(/const DANGER_WORDS = \/(.+)\/;/)[1]);
+  for (const text of ["확정 명단에서 뺄까요?", "거절 처리하시겠습니까?", "이 초안을 반려할까요?", "중단된 가입 계정과 초대를 정리하시겠습니까?", "납부 완료로 처리할까요? 되돌리기 어렵습니다"]) assert.ok(danger.test(text), text);
+  assert.ok(!danger.test("저장할까요?"));
+});
