@@ -29,7 +29,7 @@ export const PARENT_CHANGE_CUTOFF_TEXT =
   PARENT_CHANGE_CUTOFF_MINUTES % 60 === 0 ? `${PARENT_CHANGE_CUTOFF_MINUTES / 60}시간` : `${PARENT_CHANGE_CUTOFF_MINUTES}분`;
 
 /** 마감 뒤 학부모에게 보이는 글(세 화면·서버 오류 문구 공용) */
-export const CHANGE_CLOSED_MESSAGE = "마감 시간이 지나 여기서 바꿀 수 없습니다. 학원으로 연락해 주세요.";
+export const CHANGE_CLOSED_MESSAGE = "마감이 지나 여기서는 바꿀 수 없어요. 학원으로 연락해 주세요.";
 /** 이미 지난 보강 */
 export const MAKEUP_PAST_MESSAGE = "이미 지난 보강은 취소할 수 없습니다. 학원으로 문의해 주세요.";
 
@@ -149,4 +149,18 @@ export function isMakeupChangeOpen(
 export function makeupClosedMessage(makeupYmd: string | null | undefined, nowYmd: string): string {
   const days = dayDiff(makeupYmd, nowYmd);
   return days != null && days < 0 ? MAKEUP_PAST_MESSAGE : CHANGE_CLOSED_MESSAGE;
+}
+
+/** 이 글이 «마감이 지났다»는 안내인가(공통 마감 글 · 지난 보강 글) */
+export function isChangeClosedMessage(text: unknown): boolean {
+  return text === CHANGE_CLOSED_MESSAGE || text === MAKEUP_PAST_MESSAGE;
+}
+
+/**
+ * 맨 위 오류 아래의 «전화·문의» 버튼 묶음을 생략할지(2026-11-17 검수 반영 — 같은 버튼이 두 번 보이지 않게).
+ * 생략 = 오류가 마감 안내이고, 그 오류를 낸 행이 지금 «마감»으로 그려져(changeOpen === false) 그 행 안에 같은 묶음이 보일 때.
+ * 그 행을 모르거나(새 신청 칸에서 난 오류) 아직 열린 모습이면 위쪽 묶음을 남긴다 — 버튼 없는 막다른 곳을 만들지 않는다.
+ */
+export function rowShowsClosedContact(error: unknown, rowChangeOpen: boolean | null | undefined): boolean {
+  return isChangeClosedMessage(error) && rowChangeOpen === false;
 }

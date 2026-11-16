@@ -3,6 +3,7 @@ import { requireVerifiedParent } from "@/lib/auth-guard";
 import { loadParentAbsenceScreen } from "@/lib/regular/parent-absence-period";
 import { getAcademySettings } from "@/lib/queries";
 import { getUsableAcademyPhone } from "@/lib/academyPhone";
+import { normalizeExternalUrl } from "@/lib/externalUrl";
 import { getRegularMakeupsForParent } from "@/lib/regular/parent-regular-makeup";
 import { parseRequestPreset } from "@/lib/mypage/requestPreset";
 import RegularAbsenceClient from "./RegularAbsenceClient";
@@ -32,7 +33,8 @@ export default async function RegularAbsencePage({
   ]);
   const contact = {
     phone,
-    kakaoChannelUrl: typeof settings?.kakaoChannelUrl === "string" && settings.kakaoChannelUrl.trim() ? settings.kakaoChannelUrl.trim() : null,
+    // https:// 없이 저장된 주소도 누를 수 있게 공용 규칙으로 다듬는다(2026-11-17, 바닥글·문의 버튼과 같은 함수)
+    kakaoChannelUrl: normalizeExternalUrl(typeof settings?.kakaoChannelUrl === "string" ? settings.kakaoChannelUrl : null) || null,
   };
   // Date/BigInt 등 직렬화 안전화(서버 컴포넌트 → 클라이언트 전달)
   const initial = JSON.parse(JSON.stringify(screen.children));

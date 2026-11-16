@@ -241,7 +241,7 @@ test("결석 신청: 날짜 → 사유 → 확정 → reportRegularAbsence 한 �
   assert.equal(db.calls.filter((c) => c[0] === "report").length, 0, "확정 전에는 저장하지 않는다");
 
   const done = await absenceSay("결석 신청 확정");
-  assert.match(textOf(done), /결석 신청 완료/);
+  assert.match(textOf(done), /결석 알림 완료/);
   const reports = db.calls.filter((c) => c[0] === "report");
   assert.equal(reports.length, 1);
   assert.deepEqual(reports[0], ["report", "p1", { studentId: "s1", classId: "cA", date: day(8), reason: "FAMILY_TRIP", source: "KAKAO" }]);

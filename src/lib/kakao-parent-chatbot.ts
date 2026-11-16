@@ -27,7 +27,7 @@ const CANCEL_WORDS = /^(취소|아니요|다시|접수 취소)$/;
 
 const DIRECT_REQUEST_LINKS: Record<string, { label: string; path: string; description: string }> = {
   "정규수업 결석": { label: "결석 날짜 선택하기", path: "/mypage/regular-absence", description: "다가오는 실제 수업일과 반을 선택하면 결석과 해당일 셔틀 제외가 함께 접수돼요." },
-  "방학특강 결석": { label: "특강 결석 접수하기", path: "/mypage/seasonal", description: "신청한 특강 회차를 선택해 결석을 알려주세요." },
+  "방학특강 결석": { label: "특강 결석 알리기", path: "/mypage/seasonal", description: "신청한 특강 회차를 선택해 결석을 알려주세요." },
   "보강 예약": { label: "보강 예약하기", path: "/mypage/makeup", description: "사용 가능한 보강권과 정원이 맞는 수업을 확인해 예약할 수 있어요." },
   "오늘 셔틀 안 타요": { label: "오늘 셔틀 변경하기", path: "/mypage/shuttle", description: "수업은 참석하고 셔틀만 이용하지 않는 경우에 선택해주세요. 기사님 운행 화면에 바로 표시돼요." },
   "오늘 다른 곳에서 타요": { label: "탑승 장소 변경하기", path: "/mypage/shuttle", description: "날짜·등하원 방향·오늘 탈 장소를 확인해 기사님 운행 화면에 바로 전달해요." },
@@ -435,7 +435,7 @@ export async function handleLinkedMessage(
   }
 
   const submenu: Record<string, string[]> = {
-    "결석·보강": ["정규수업 결석", "결석 취소", "방학특강 결석", "보강 신청", "보강 취소", "조퇴 상담"],
+    "결석·보강": ["정규수업 결석", "결석 취소", "방학특강 결석", "보강 예약", "보강 취소", "조퇴 상담"],
     "셔틀": ["오늘 셔틀 안 타요", "오늘 다른 곳에서 타요", "셔틀 변경 취소", "정규 셔틀 신청·중단", "탑승 장소·시간 변경", "셔틀비 문의"],
     "청구·영수증": ["입금했어요", "청구 금액 확인", "영수증 요청", "환불·결제 취소 상담"],
     "수강 변경": ["반·요일·시간 변경", "수업 추가", "휴원", "복귀", "퇴원"],

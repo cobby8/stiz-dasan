@@ -5,6 +5,8 @@ import { resolve } from "node:path";
 import test from "node:test";
 import ts from "typescript";
 import * as seatLevelModule from "../src/lib/seats/seatLevel.ts";
+// 학원 연락 버튼 묶음(2026-11-17 g3) — 이 테스트는 화면의 다른 흐름을 보므로 빈 부품으로 끼운다(부품 자체는 parent-contact-buttons.test.mjs 가 본다)
+const academyContactStub = { __esModule: true, default: function AcademyContactButtons() { return null; }, asksAcademy: (text) => /학원(으로|에) (문의|연락)/.test(String(text ?? "")) };
 
 const nodeRequire = createRequire(import.meta.url);
 const load = (path, mocks = {}) => {
@@ -102,7 +104,7 @@ test("재조회한 휴원 날짜·미정은 실제 학부모 신청 내역에 �
     "@/lib/enrollment/changeRequestRules": rules,
     "@/lib/enrollment/parentChangeStatus": changeStatus,
     "@/lib/seats/seatLevel": seatLevelModule,
-    "@/components/parent/InlineConfirm": { __esModule: true, default: () => null },
+    "@/components/parent/AcademyContactButtons": academyContactStub, "@/components/parent/InlineConfirm": { __esModule: true, default: () => null },
     "@/lib/mypage/requestPreset": { presetIndex: () => 0, presetFirst: (list) => [...list] }, "@/components/parent/customerMessage": { customerMessage: (_, fallback) => fallback },
   }).default;
   for (const resumeOn of ["2027-01-03", null]) {

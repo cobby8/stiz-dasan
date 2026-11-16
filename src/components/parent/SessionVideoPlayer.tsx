@@ -62,6 +62,8 @@ export function SessionVideoPlayer({ video, onPlaybackError }: { video: SessionV
         playsInline
         preload="metadata"
         controlsList="nodownload"
+        // 오른쪽 누르기·길게 누르기 메뉴(«동영상 저장»)를 띄우지 않는다 — 사진과 같은 취지(2026-11-17 g2). 화면 녹화는 못 막는다
+        onContextMenu={(event) => event.preventDefault()}
         className="aspect-video w-full rounded-xl bg-[var(--color-academy-ink)]"
         // <source> 를 쓰지 않고 src 에 바로 둔다 — <source> 오류는 video 의 onError 로 올라오지 않는다.
         // 아이폰 MOV(H.264)도 형식 표시 없이 주면 대부분의 브라우저가 재생한다.

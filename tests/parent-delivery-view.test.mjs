@@ -131,7 +131,7 @@ test("가족 연결 화면: 문의는 «학원에 전화하기»(설정값 번�
   assert.equal((client.match(/\{callAcademy\}/g) || []).length, 2, "목록에 없는 아이 · 가족에게 요청 두 곳");
   // 번호가 없어도(전화 버튼 없음) 다음 할 일이 문장에 남는다 — 두 곳 모두 «학원에 문의해 주세요» + 조건부 버튼
   assert.equal((client.match(/학원에 문의해 주세요\. \{callAcademy\}/g) || []).length, 2);
-  assert.match(client, /먼저 연결된 보호자가 없는 미성년 자녀는 이 요청으로 연결되지 않아요 — 학원에 문의해 주세요\. \{callAcademy\}/);
+  assert.match(client, /연결된 보호자가 없으면 학원에 문의해 주세요\. \{callAcademy\}/);
   // 말투는 이 화면 안에서 «~요» 체로 통일
   assert.doesNotMatch(client.replace(/\/\/[^\n]*/g, "").replace(/\{\/\*[\s\S]*?\*\/\}/g, ""), /습니다/);
   // 성인 수강생 안내는 /account/children 맥락에서만

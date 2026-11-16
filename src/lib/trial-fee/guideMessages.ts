@@ -83,7 +83,7 @@ export function buildEnrollGuideMessage(input: EnrollGuideInput): string {
         "유니폼이 필요한 학생은 아래 STIZ 본사 주문 페이지에서 신청해 주세요.",
         uniformOrderUrl,
         "",
-        "출결 확인, 수강료 결제, 반 변경·보강 신청은 STIZ 학부모 화면에서 이용하실 수 있습니다.",
+        "출결 확인, 수강료 결제, 반 변경·보강 예약은 STIZ 학부모 화면에서 이용하실 수 있습니다.",
         `${site}/mypage`,
         "",
         "수업은 연간일정표에 따라 운영됩니다.",

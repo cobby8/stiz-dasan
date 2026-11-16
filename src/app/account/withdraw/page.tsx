@@ -14,7 +14,8 @@ export default async function AccountWithdrawalPage() {
   const account = await requireOwnAccount().catch(() =>
     redirect("/login?redirect=/account/withdraw"),
   );
-  const [initial, { views }] = await Promise.all([
+  // hasOwnChildren — 같은 조회에서 이미 구한 값(새 DB 조회 없음). 자녀가 없으면 홈 문의 폼이 없어 «자녀 연결하기»로 보낸다
+  const [initial, { views, hasOwnChildren }] = await Promise.all([
     getAccountWithdrawalStatus(),
     getAccountViewAccess(),
   ]);
@@ -24,6 +25,8 @@ export default async function AccountWithdrawalPage() {
         initial={initial}
         parentName={account.appUserName}
         backHref="/account"
+        noChildren={hasOwnChildren === false}
+        childConnectHref="/account/children"
       />
     </OwnAccountFrame>
   );

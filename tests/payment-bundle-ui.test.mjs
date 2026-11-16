@@ -9,6 +9,8 @@ import Module, { createRequire } from "node:module";
 import { resolve } from "node:path";
 import test from "node:test";
 import ts from "typescript";
+// 학원 연락 버튼 묶음(2026-11-17 g3) — 이 테스트는 화면의 다른 흐름을 보므로 빈 부품으로 끼운다(부품 자체는 parent-contact-buttons.test.mjs 가 본다)
+const academyContactStub = { __esModule: true, default: function AcademyContactButtons() { return null; }, asksAcademy: (text) => /학원(으로|에) (문의|연락)/.test(String(text ?? "")) };
 
 const require = createRequire(import.meta.url);
 const React = require("react");
@@ -52,7 +54,7 @@ const billingMocks = {
 const Checkout = load("src/app/mypage/payments/checkout/BundleCheckoutClient.tsx", {
   "next/link": link,
   "next/navigation": { useRouter: () => ({ refresh() {} }) },
-  "@/components/parent/VirtualAccountNotice": vaNotice,
+  "@/components/parent/AcademyContactButtons": academyContactStub, "@/components/parent/VirtualAccountNotice": vaNotice,
   "@/lib/datetime/kst": kst,
   "@/lib/payments/virtualAccount": virtualAccount,
   "@/components/parent/PaymentMethodPicker": picker,
@@ -133,7 +135,7 @@ test("② 토스 결제창: 단건과 같은 SDK·서버가 준 금액·면세 �
 
 test("③ 완료 화면 상태: 장부가 정본(DONE=성공), 입금 대기 계좌, 확인 중, 실패", () => {
   const { decideDoneState } = load("src/app/mypage/payments/done/BundleDoneClient.tsx", {
-    "next/link": link, "@/components/parent/VirtualAccountNotice": vaNotice,
+    "next/link": link, "@/components/parent/AcademyContactButtons": academyContactStub, "@/components/parent/VirtualAccountNotice": vaNotice,
     "@/lib/payments/checkoutBundle": load("src/lib/payments/checkoutBundle.ts", { "./taxFree": taxFree, "@/lib/pos/charge-request.mjs": require(resolve("src/lib/pos/charge-request.mjs")) }),
   });
   const order = (status, extra = {}) => ({ orderId: "o", status, amount: 1, receiptUrl: null, virtualAccount: null, items: [{ paymentStatus: "PENDING" }], ...extra });
@@ -155,7 +157,7 @@ test("④ 청구 탭: 대표 보호자 미납이 있으면 «한 번에 결제»
     "@/lib/ui/statusTones": statusTones,
     "next/link": link, "next/navigation": { useRouter: () => ({ refresh() {} }) },
     "@/lib/payments/parentRequestRules": load("src/lib/payments/parentRequestRules.ts"),
-    "@/components/parent/VirtualAccountNotice": vaNotice,
+    "@/components/parent/AcademyContactButtons": academyContactStub, "@/components/parent/VirtualAccountNotice": vaNotice,
     // 2026-11-14 w3: 월 묶음(공용 함수)·올해(KST) — 진짜 파일로
     "@/components/admin/list/monthDateGroups": load("src/components/admin/list/monthDateGroups.ts", { "@/lib/datetime/kst": kst }),
     "@/lib/datetime/kst": kst,

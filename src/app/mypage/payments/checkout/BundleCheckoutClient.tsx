@@ -9,6 +9,7 @@ import { requestTossWithFallback, serverMethodFor, type PreferredPaymentMethod }
 import { todayKst } from "@/lib/datetime/kst";
 import { VIRTUAL_ACCOUNT_VALID_HOURS, type PublicVirtualAccountView } from "@/lib/payments/virtualAccount";
 import type { BundleCheckoutCandidate } from "@/lib/payment-ledger";
+import AcademyContactButtons, { asksAcademy, type AcademyContact } from "@/components/parent/AcademyContactButtons";
 
 // 학부모 «한 번에 결제» 화면.
 // 흐름: 미납 청구 체크(결제 가능한 건 기본 전부 체크) → 결제 방식 고르기 → 토스 결제창 1번 → /mypage/payments/done.
@@ -87,6 +88,7 @@ export default function BundleCheckoutClient({
     failed = false,
     failMessage = "",
     preferredMethod = null,
+    contact = null,
 }: {
     items: BundleCheckoutCandidate[];
     loadFailed?: boolean;
@@ -101,6 +103,8 @@ export default function BundleCheckoutClient({
     failMessage?: string;
     /** 지난번(또는 설정에서 고른) 결제 방법 — 서버가 본인 계정에서 읽어 넘긴다 */
     preferredMethod?: PreferredPaymentMethod | null;
+    /** 학원 전화·카카오 채널(설정값) — 학원에 물어야 하는 결제 오류 옆 버튼용. 없으면 문의 폼 링크만 */
+    contact?: AcademyContact | null;
 }) {
     const router = useRouter();
     // D3: 결제 가능한 청구는 기본 전부 체크
@@ -282,6 +286,8 @@ export default function BundleCheckoutClient({
             )}
             {claimDone && <p role="status" className="rounded-xl bg-[var(--color-academy-success-soft)] p-3 text-sm font-medium text-[var(--color-academy-success)]">{claimDone}</p>}
             {error && <p role="alert" className="rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm font-medium text-[var(--color-academy-danger)]">{error}</p>}
+            {/* «학원으로 문의해 주세요»라고 말하는 오류(결제 정보 부족·금액 확인 실패 등)면 글만 두지 않고 바로 전화·문의 버튼(2026-11-17 g3) */}
+            {asksAcademy(error) && <AcademyContactButtons contact={contact} />}
 
             {loadFailed ? (
                 <p className="academy-panel p-4 text-sm text-[var(--color-academy-muted)]">청구 목록을 불러오지 못했어요. 잠시 후 다시 열어 주세요.</p>

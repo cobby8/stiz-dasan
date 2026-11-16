@@ -5,6 +5,7 @@ import Link from "next/link";
 import VirtualAccountNotice from "@/components/parent/VirtualAccountNotice";
 import type { PublicVirtualAccountView } from "@/lib/payments/virtualAccount";
 import { BUNDLE_BLOCK_MESSAGE, type BundleBlockCode } from "@/lib/payments/checkoutBundle";
+import AcademyContactButtons, { type AcademyContact } from "@/components/parent/AcademyContactButtons";
 
 // 묶음 결제 결과 — 성공 / 입금 대기(무통장 계좌 발급) / 확인 중 / 실패 네 가지만 보여 준다.
 // 토스에서 돌아오면(paymentKey 있음) 승인을 요청하고, 새로고침·다시 열기(orderId 만)면 주문 상태만 읽는다.
@@ -37,7 +38,8 @@ export function decideDoneState(input: { ok: boolean; retryable: boolean; order:
     return order ? (order.status === "READY" || order.status === "IN_PROGRESS" ? "pending" : "error") : "success";
 }
 
-export default function BundleDoneClient({ paymentKey, orderId, amount }: { paymentKey: string; orderId: string; amount: number }) {
+// contact = 학원 전화·카카오 채널(설정값) — 결제가 완료되지 않았을 때 바로 전화할 수 있게. 없으면 문의 폼 링크만
+export default function BundleDoneClient({ paymentKey, orderId, amount, contact = null }: { paymentKey: string; orderId: string; amount: number; contact?: AcademyContact | null }) {
     const [state, setState] = useState<DoneState>("loading");
     const [message, setMessage] = useState("");
     const [order, setOrder] = useState<Order | null>(null);
@@ -114,6 +116,8 @@ export default function BundleDoneClient({ paymentKey, orderId, amount }: { paym
                                     : (message || "돈이 빠져나갔다면 학원에 문의해 주세요.")}
                             </p>
                         )}
+                        {/* 결제가 완료되지 않았다 = 돈이 빠져나갔을 수도 있는 급한 상황 — 글만 두지 않고 바로 전화·문의(2026-11-17 g3) */}
+                        {state === "error" && <AcademyContactButtons contact={contact} className="mt-2 flex flex-wrap items-center gap-2" />}
                     </div>
                 </div>
                 {state === "deposit" && order?.virtualAccount && (

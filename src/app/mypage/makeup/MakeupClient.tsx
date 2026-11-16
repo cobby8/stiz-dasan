@@ -8,13 +8,14 @@ import type { ParentMakeupOverview, ParentCredit, MakeupOption } from "@/lib/mak
 // 남은 자리는 숫자 대신 3단계(여유/임박/마감)로(재원생 수 비공개 · 2026-11-13 f9)
 import { SEAT_LEVEL_LABEL, SEAT_LEVEL_TEXT_CLASS } from "@/lib/seats/seatLevel";
 import { fetchMakeupOptions, bookMakeupAction, cancelMakeupAction, rescheduleMakeupAction } from "@/app/actions/parent-makeup";
-import { CHANGE_CLOSED_MESSAGE, PARENT_CHANGE_CUTOFF_TEXT } from "@/lib/parent/changeDeadline";
+import { CHANGE_CLOSED_MESSAGE, PARENT_CHANGE_CUTOFF_TEXT, isChangeClosedMessage, rowShowsClosedContact } from "@/lib/parent/changeDeadline";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
 import { todayKst } from "@/lib/datetime/kst";
 import InlineConfirm from "@/components/parent/InlineConfirm";
 import { customerMessage } from "@/components/parent/customerMessage";
 import { REQUEST_TONE, TONE_BADGE_CLASS } from "@/lib/ui/statusTones";
 import { presetFirst } from "@/lib/mypage/requestPreset";
+import AcademyContactButtons, { asksAcademy, type AcademyContact } from "@/components/parent/AcademyContactButtons";
 
 const DOW_KO: Record<string, string> = {
   Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금", Sat: "토", Sun: "일",
@@ -74,7 +75,8 @@ const CREDIT_GROUPS: { value: CreditGroup; label: string }[] = [
 ];
 
 // presetStudentId = 수업 탭 반 카드에서 온 아이 — 그 아이 보강권을 맨 위에(나머지 순서는 그대로)
-export default function MakeupClient({ initial, presetStudentId = null }: { initial: ParentMakeupOverview; presetStudentId?: string | null }) {
+// contact = 학원 전화·카카오 채널(설정값) — 마감 뒤 «전화·문의» 버튼용. 없으면 문의 폼 링크만 보인다
+export default function MakeupClient({ initial, presetStudentId = null, contact = null }: { initial: ParentMakeupOverview; presetStudentId?: string | null; contact?: AcademyContact | null }) {
   const router = useRouter();
   const [openId, setOpenId] = useState("");            // 반 선택이 열린 보강권
   // 반 선택을 연 까닭: 새 예약("book") / 예약한 보강의 날짜 바꾸기("move" · 2026-11-15)
@@ -84,6 +86,8 @@ export default function MakeupClient({ initial, presetStudentId = null }: { init
   const [pick, setPick] = useState<{ classId: string; ymd: string } | null>(null);
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
+  // 그 오류를 낸 보강권(날짜 바꾸기·예약 취소에서만) — 그 행이 이미 마감 버튼 묶음을 보이면 위쪽 묶음을 생략한다
+  const [errRow, setErrRow] = useState("");
   const [msg, setMsg] = useState("");
   // 상태 칩으로 고른 묶음("ALL" = 전체)
   const [groupFilter, setGroupFilter] = useState("ALL");
@@ -94,7 +98,7 @@ export default function MakeupClient({ initial, presetStudentId = null }: { init
   // 그 보강권으로 갈 수 있는 반을 불러온다 — 처음 펼칠 때와 «다시 확인»이 같은 길을 쓴다.
   // mode "move" = 예약 중인 보강의 날짜 바꾸기(2026-11-15) — 서버가 지금 예약한 반·날짜를 뺀 후보를 준다.
   const load = useCallback(async (creditId: string, mode: "book" | "move" = "book") => {
-    setErr(""); setMsg(""); setPick(null); setOptions([]); setEmptyReason("");
+    setErr(""); setErrRow(""); setMsg(""); setPick(null); setOptions([]); setEmptyReason("");
     setOpenMode(mode);
     setOpenId(creditId);
     setBusy(creditId);
@@ -111,6 +115,14 @@ export default function MakeupClient({ initial, presetStudentId = null }: { init
     }
   }, []);
 
+  // 그 보강권 행에서 난 실패 — 오류 글과 행을 함께 기억한다.
+  // 마감 글이면 화면을 새로 받아 그 행이 «마감»으로 다시 그려지게 한다(그 행 안에 전화·문의 묶음이 생기고, 위쪽 묶음은 생략된다)
+  const failOnRow = useCallback((creditId: string, message: string) => {
+    setErr(message);
+    setErrRow(creditId);
+    if (isChangeClosedMessage(message)) router.refresh();
+  }, [router]);
+
   // 보강권을 펼치면서 그 학생이 갈 수 있는 반을 불러온다(열려 있으면 닫는다).
   const open = useCallback(async (credit: ParentCredit, mode: "book" | "move" = "book") => {
     if (openId === credit.id) { setOpenId(""); return; }
@@ -118,8 +130,8 @@ export default function MakeupClient({ initial, presetStudentId = null }: { init
   }, [openId, load]);
 
   const book = useCallback(async (creditId: string) => {
-    if (!pick) { setErr("보강받을 수업과 날짜를 골라 주세요."); return; }
-    setErr(""); setMsg(""); setBusy(creditId);
+    if (!pick) { setErr("보강받을 수업과 날짜를 골라 주세요."); setErrRow(""); return; }
+    setErr(""); setErrRow(""); setMsg(""); setBusy(creditId);
     try {
       const r = await bookMakeupAction({ creditId, classId: pick.classId, dateYmd: pick.ymd });
       if (!r.ok) { setErr(customerMessage(r.message, "처리하지 못했습니다. 잠시 후 다시 시도해 주세요.")); return; }
@@ -133,30 +145,30 @@ export default function MakeupClient({ initial, presetStudentId = null }: { init
 
   // 날짜 바꾸기 — 서버가 «옛 예약 취소 + 새 예약»을 한 번에 한다(보강권은 예약 상태 그대로. 실패하면 옛 예약이 남는다).
   const reschedule = useCallback(async (creditId: string) => {
-    if (!pick) { setErr("바꿀 수업과 날짜를 골라 주세요."); return; }
-    setErr(""); setMsg(""); setBusy(creditId);
+    if (!pick) { setErr("바꿀 수업과 날짜를 골라 주세요."); setErrRow(""); return; }
+    setErr(""); setErrRow(""); setMsg(""); setBusy(creditId);
     try {
       const r = await rescheduleMakeupAction({ creditId, classId: pick.classId, dateYmd: pick.ymd });
-      if (!r.ok) { setErr(customerMessage(r.message, "처리하지 못했습니다. 잠시 후 다시 시도해 주세요.")); return; }
+      if (!r.ok) { failOnRow(creditId, customerMessage(r.message, "처리하지 못했습니다. 잠시 후 다시 시도해 주세요.")); return; }
       setMsg(r.message);
       setOpenId(""); setPick(null);
       router.refresh();
     } finally {
       setBusy("");
     }
-  }, [pick, router]);
+  }, [pick, router, failOnRow]);
 
   const cancel = useCallback(async (creditId: string) => {
-    setErr(""); setMsg(""); setBusy(creditId);
+    setErr(""); setErrRow(""); setMsg(""); setBusy(creditId);
     try {
       const r = await cancelMakeupAction(creditId);
-      if (!r.ok) { setErr(customerMessage(r.message, "처리하지 못했습니다. 잠시 후 다시 시도해 주세요.")); return; }
+      if (!r.ok) { failOnRow(creditId, customerMessage(r.message, "처리하지 못했습니다. 잠시 후 다시 시도해 주세요.")); return; }
       setMsg(r.message);
       router.refresh();
     } finally {
       setBusy("");
     }
-  }, [router]);
+  }, [router, failOnRow]);
 
   // 후보 목록(반 · 날짜 칩) — 새 예약과 날짜 바꾸기가 같은 모양을 쓴다(최종 버튼은 부르는 쪽이 붙인다)
   const optionList = (c: ParentCredit) => (
@@ -268,6 +280,9 @@ export default function MakeupClient({ initial, presetStudentId = null }: { init
           {err}
         </div>
       )}
+      {/* 오류 글이 «학원으로 문의/연락해 주세요»라고 말하면(마감 지남·지난 보강) 바로 아래에 전화·문의 버튼(2026-11-17 g3) */}
+      {/* 단, 그 오류를 낸 행이 이미 «마감»으로 그려져 그 행 안에 같은 묶음이 보이면 여기서는 생략(같은 버튼 두 번 방지) */}
+      {asksAcademy(err) && !rowShowsClosedContact(err, visibleCredits.find((c) => c.id === errRow && c.status === "RESERVED")?.booking?.changeOpen) && <AcademyContactButtons contact={contact} className="mb-3 flex flex-wrap items-center gap-2" />}
 
       {credits.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-[var(--color-academy-line-input)] bg-white px-6 py-16 text-center text-sm text-[var(--color-academy-muted)]">
@@ -308,6 +323,10 @@ export default function MakeupClient({ initial, presetStudentId = null }: { init
                       {c.booking.changeOpen === false ? (
                         // 마감 뒤(보강 수업 시작 1시간 전이 지남·지난 보강) — 버튼 대신 안내 글(서버도 같은 규칙으로 막는다 · 2026-11-15)
                         <span className="basis-full py-1 pr-2 text-xs text-[var(--color-academy-muted)]">{CHANGE_CLOSED_MESSAGE}</span>
+                      ) : null}
+                      {c.booking.changeOpen === false ? (
+                        // 글만 두지 않고 그 자리에서 바로 전화·문의(2026-11-17 g3). 번호가 없으면 문의 폼 링크
+                        <AcademyContactButtons contact={contact} className="flex basis-full flex-wrap items-center justify-end gap-2 pb-1 pr-1" />
                       ) : (
                         // 동작 버튼 한 묶음(날짜 바꾸기 · 예약 취소) — 좁은 화면(360px)에서는 다음 줄로 내려간다
                         <span className="ml-auto flex flex-wrap items-center justify-end gap-1">

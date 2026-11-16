@@ -49,6 +49,13 @@ const PARENT_FILES = [
   ...walk("src/app/api/mypage/regular-absence"),
   ...walk("src/app/api/mypage/seasonal-absence"),
   ...walk("src/app/api/mypage/shuttle-exception"),
+  // 2026-11-17 g6: 가드 밖에 남아 있던 곳 — 카카오 채널 대화(정규 보강·메뉴)·학부모 앱 설치 안내·등록 안내 문자·마감 안내 글
+  // (카카오 결석 대화 kakao-absence-flow 는 분기 열쇠가 «결석 신청 …»이라 아직 목록 밖이다 — 금지어를 늘리지 않는다)
+  "src/lib/kakao-makeup-flow.ts",
+  "src/lib/kakao-parent-chatbot.ts",
+  "src/app/parent-app/page.tsx",
+  "src/lib/trial-fee/guideMessages.ts",
+  "src/lib/parent/changeDeadline.ts",
 ];
 
 // 옛 이름 → 지금 이름
@@ -99,10 +106,22 @@ test("정규 보강은 «보강 예약» — 방학특강만 «보강 신청»(�
     ...walk("src/app/mypage/record"),
     "src/app/mypage/MyPageClient.tsx",
     "src/lib/parent/classCards.ts",
+    // 2026-11-17 g6: 카카오 메뉴·학부모 앱 설치 안내·등록 안내 문자도 «보강 예약»
+    "src/lib/kakao-parent-chatbot.ts",
+    "src/app/parent-app/page.tsx",
+    "src/lib/trial-fee/guideMessages.ts",
   ];
   for (const file of regularScreens) {
     assert.ok(!withoutComments(fs.readFileSync(path.join(ROOT, file), "utf8")).includes("보강 신청"), `${file}: «보강 신청» → «보강 예약»`);
   }
+  // 카카오 정규 보강 대화(2026-11-17 g6): 보이는 글·새로 보내는 버튼은 «보강 예약».
+  // «보강 신청»은 이름 통일 전에 보낸 말풍선의 확정 버튼을 받아 주는 옛 열쇠 한 곳에만 남는다(지우면 그 버튼이 끊긴다)
+  const makeupFlow = withoutComments(fs.readFileSync(path.join(ROOT, "src/lib/kakao-makeup-flow.ts"), "utf8"));
+  assert.deepEqual(makeupFlow.split("\n").filter((line) => line.includes("보강 신청")).map((line) => line.trim()), ['const LEGACY_CONFIRM_BOOK = "보강 신청 확정";']);
+  assert.match(makeupFlow, /const CONFIRM_BOOK = "보강 예약 확정";/);
+  assert.match(makeupFlow, /text === CONFIRM_BOOK \|\| text === LEGACY_CONFIRM_BOOK/);
+  // 카카오 결석·보강 메뉴의 버튼 이름
+  assert.match(fs.readFileSync(path.join(ROOT, "src/lib/kakao-parent-chatbot.ts"), "utf8"), /"방학특강 결석", "보강 예약", "보강 취소"/);
   // 홈 빠른 실행 이름 = 결석 알리기 · 보강 예약 · 셔틀 변경 · 문의
   const home = fs.readFileSync(path.join(ROOT, "src/app/mypage/MyPageClient.tsx"), "utf8");
   for (const label of ['label: "결석 알리기"', 'label: "보강 예약"', 'label: "셔틀 변경"', ">문의</span>"]) assert.ok(home.includes(label), label);

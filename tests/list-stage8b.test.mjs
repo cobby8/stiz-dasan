@@ -11,6 +11,8 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createRequire } from "node:module";
 import * as seatLevelModule from "../src/lib/seats/seatLevel.ts";
+// 학원 연락 버튼 묶음(2026-11-17 g3) — 이 테스트는 화면의 다른 흐름을 보므로 빈 부품으로 끼운다(부품 자체는 parent-contact-buttons.test.mjs 가 본다)
+const academyContactStub = { __esModule: true, default: function AcademyContactButtons() { return null; }, asksAcademy: (text) => /학원(으로|에) (문의|연락)/.test(String(text ?? "")) };
 
 const require = createRequire(import.meta.url);
 const read = (path) => readFileSync(path, "utf8");
@@ -145,7 +147,7 @@ test("보강 예약은 4칸 집계판 대신 상태 칩(서버 집계와 같은 
     "@/app/actions/parent-makeup": { fetchMakeupOptions: async () => ({ ok: true, options: [] }), bookMakeupAction: async () => ({ ok: true }), cancelMakeupAction: async () => ({ ok: true }) },
     "@/components/admin/list/StatusCountChips": chips,
     "@/lib/datetime/kst": kst,
-    "@/components/parent/InlineConfirm": inlineConfirm,
+    "@/components/parent/AcademyContactButtons": academyContactStub, "@/components/parent/InlineConfirm": inlineConfirm,
   }).default;
   const credit = (id, status, expiresYmd, booking = null) => ({ id, studentId: "s1", studentName: "합성", studentGrade: null, sourceLabel: "정규", absenceLabel: "10/1(목)", expiresLabel: "12/1(화)", expiresYmd, status, booking });
   const html = renderToStaticMarkup(React.createElement(Makeup, { initial: {
@@ -186,7 +188,7 @@ test("정규 결석 신고는 반 카드 속 작은 카드 대신 날짜 묶음(
     "@/components/admin/list/upcomingDateGroups": groups,
     "@/lib/datetime/kst": kst,
     "@/lib/parent/changeDeadline": changeDeadline, // 2026-11-15 마감 통일·날짜 바꾸기: 마감 글(진짜 모듈)
-    "@/components/parent/InlineConfirm": inlineConfirm,
+    "@/components/parent/AcademyContactButtons": academyContactStub, "@/components/parent/InlineConfirm": inlineConfirm,
     "@/lib/enrollment/resumeWindow": compileModule("src/lib/enrollment/resumeWindow.ts"), // 2026-11-14 복귀 예정 안내 문구(진짜 규칙)
     // 2026-11-14 질병·부상 이월 검토: 상태 글자는 진짜 규칙, 사진 압축은 브라우저 전용이라 그대로 통과
     "@/lib/regular/illnessCarryRules": compileModule("src/lib/regular/illnessCarryRules.ts", { "@/lib/datetime/kst": kst }),
@@ -381,7 +383,7 @@ test("셔틀 예정 변경은 날짜 묶음의 한 줄 행이고 행 탭=하단 
     "@/components/admin/list/upcomingDateGroups": groups,
     "@/lib/datetime/kst": kst,
     "@/lib/parent/changeDeadline": changeDeadline, // 2026-11-15 마감 통일·날짜 바꾸기: 마감 글(진짜 모듈)
-    "@/components/parent/InlineConfirm": inlineConfirm,
+    "@/components/parent/AcademyContactButtons": academyContactStub, "@/components/parent/InlineConfirm": inlineConfirm,
     "@/lib/enrollment/resumeWindow": compileModule("src/lib/enrollment/resumeWindow.ts"), // 2026-11-14 복귀 예정 안내 문구(진짜 규칙)
   }).default;
   const today = "2026-10-29"; // 목요일
@@ -421,7 +423,7 @@ test("셔틀 예정 변경은 날짜 묶음의 한 줄 행이고 행 탭=하단 
 });
 
 test("방학특강 결석·보강은 세 목록이 한 목록의 행이고 배지·사유·날짜를 요소로 나누며 신청·신고 흐름은 그대로다", () => {
-  const Seasonal = compileModule("src/app/mypage/seasonal/SeasonalMakeupClient.tsx", { "@/lib/ui/statusTones": statusTones, "@/lib/seats/seatLevel": seatLevelModule, "@/lib/mypage/requestPreset": { presetIndex: () => 0, presetFirst: (list) => [...list] }, "@/components/parent/customerMessage": customerMessageModule, "@/components/parent/InlineConfirm": inlineConfirm,
+  const Seasonal = compileModule("src/app/mypage/seasonal/SeasonalMakeupClient.tsx", { "@/lib/ui/statusTones": statusTones, "@/lib/seats/seatLevel": seatLevelModule, "@/lib/mypage/requestPreset": { presetIndex: () => 0, presetFirst: (list) => [...list] }, "@/components/parent/customerMessage": customerMessageModule, "@/components/parent/AcademyContactButtons": academyContactStub, "@/components/parent/InlineConfirm": inlineConfirm,
     // 2026-11-14: 연락처가 없을 때의 막다른 안내를 «연락처 바꾸기» 버튼+«학원에 문의» 링크로 바꿔 부품 둘이 늘었다(이 테스트는 연락처가 있는 화면만 본다)
     "@/components/account/PhoneChangeButton": { __esModule: true, default: () => null }, "next/link": { __esModule: true, default: Link } }).default;
   const html = renderToStaticMarkup(React.createElement(Seasonal, { initial: {
