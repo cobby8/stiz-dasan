@@ -68,7 +68,7 @@ export default function ParentSignupGuideSender() {
   return (
     <div className="space-y-2">
       <p className="text-xs text-[var(--color-academy-muted)]">
-        재원·휴원생 학부모와 성인 수강생 본인 중 아직 홈페이지 계정이 없는 분께 가입 링크를 보냅니다. 같은 번호는 한 번만 보내고, 이미 이 안내를 받은 분은 빠져요.
+        재원·휴원생 학부모와 성인 수강생 본인 모두에게 보냅니다. 아직 계정이 없는 분께는 가입 링크를, 이미 가입한 분께는 로그인 안내를 보내요. 같은 번호는 한 번만 보내고, 이미 이 안내를 받은 분은 빠져요.
       </p>
 
       {/* 다시 보내기 — 터치 44px 줄 전체가 눌린다 */}
@@ -118,15 +118,13 @@ export default function ParentSignupGuideSender() {
           <p className="text-xs text-[var(--color-academy-muted)]">
             {preview.messageType === "LMS" ? "장문 문자(LMS)" : "단문 문자(SMS)"} · {formatKstDate(preview.expiresAt, { hour: "2-digit", minute: "2-digit", hour12: false }, "-")}까지 보낼 수 있어요
           </p>
-          {preview.adultMessage && <p className="text-xs font-semibold text-[var(--color-academy-ink)]">학부모에게 가는 문구</p>}
-          <pre className="whitespace-pre-wrap break-words rounded-lg bg-[var(--color-academy-surface)] p-3 font-sans text-sm text-[var(--color-academy-ink)]">{preview.message}</pre>
-          {/* 성인 수강생 본인에게는 «학부모·자녀» 대신 회원용 문구가 간다 */}
-          {preview.adultMessage && (
-            <>
-              <p className="text-xs font-semibold text-[var(--color-academy-ink)]">성인 수강생 본인에게 가는 문구</p>
-              <pre className="whitespace-pre-wrap break-words rounded-lg bg-[var(--color-academy-surface)] p-3 font-sans text-sm text-[var(--color-academy-ink)]">{preview.adultMessage}</pre>
-            </>
-          )}
+          {/* 받는 사람에 따라 문구가 다르다 — 미가입 학부모(승인본) · 미가입 성인 · 가입함 학부모 · 가입함 성인 */}
+          {messageBlocks(preview).map((block) => (
+            <div key={block.label} className="space-y-1">
+              <p className="text-xs font-semibold text-[var(--color-academy-ink)]">{block.label}</p>
+              <pre className="whitespace-pre-wrap break-words rounded-lg bg-[var(--color-academy-surface)] p-3 font-sans text-sm text-[var(--color-academy-ink)]">{block.body}</pre>
+            </div>
+          ))}
           <div className="flex items-center gap-3">
             <button type="button" disabled={pending} onClick={() => setPreview(null)} className="academy-button-text min-h-11">닫기</button>
             <button type="button" disabled={pending} onClick={() => void send()} className="academy-button-primary ml-auto min-h-11 disabled:opacity-40">
@@ -151,12 +149,31 @@ export default function ParentSignupGuideSender() {
   );
 }
 
-/** 구성 한 줄: «재원 92명 · 휴원 40명 · 성인 수강생 10명» (0명인 구분은 뺀다) */
+/**
+ * 구성 한 줄: «미가입 — 재원 92명 · 휴원 40명 · 성인 수강생 10명 / 가입함 17명» (0명인 구분은 뺀다)
+ * 재원·휴원·성인은 미가입만 센다 — 가입함과 겹치지 않는다.
+ */
 function breakdownText(preview: ParentSignupGuidePreview) {
-  const parts = [
+  const unsigned = [
     preview.breakdown.active > 0 ? `재원 ${preview.breakdown.active}명` : "",
     preview.breakdown.paused > 0 ? `휴원 ${preview.breakdown.paused}명` : "",
     preview.breakdown.adult > 0 ? `성인 수강생 ${preview.breakdown.adult}명` : "",
   ].filter(Boolean);
-  return parts.join(" · ");
+  const parts = [
+    unsigned.length > 0 ? `미가입 — ${unsigned.join(" · ")}` : "",
+    preview.breakdown.signedIn > 0 ? `가입함 ${preview.breakdown.signedIn}명` : "",
+  ].filter(Boolean);
+  return parts.join(" / ");
+}
+
+/** 미리보기에 보일 문구 묶음 — 해당하는 사람이 있는 문구만 */
+function messageBlocks(preview: ParentSignupGuidePreview) {
+  const unsignedParents = preview.breakdown.active + preview.breakdown.paused;
+  const blocks = [
+    unsignedParents > 0 ? { label: "미가입 학부모에게 가는 문구(가입 안내)", body: preview.message } : null,
+    preview.adultMessage ? { label: "미가입 성인 수강생 본인에게 가는 문구", body: preview.adultMessage } : null,
+    preview.signedInMessage ? { label: "이미 가입한 학부모에게 가는 문구(로그인 안내)", body: preview.signedInMessage } : null,
+    preview.signedInAdultMessage ? { label: "이미 가입한 성인 수강생 본인에게 가는 문구", body: preview.signedInAdultMessage } : null,
+  ];
+  return blocks.filter((block): block is { label: string; body: string } => block !== null);
 }
