@@ -1,6 +1,6 @@
 import { headers } from "next/headers";
 import AppleLogo from "@/components/auth/AppleLogo";
-import { customerMessage } from "@/components/parent/customerMessage";
+import { staffLinkErrorMessage } from "@/lib/account/login-methods-rules";
 import { requireStaff } from "@/lib/auth-guard";
 import { getEnabledParentOAuthProviders } from "@/lib/auth-providers";
 import {
@@ -36,7 +36,7 @@ function identityProvider(value: string): ParentOAuthProvider | null {
 export default async function StaffLoginMethodsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ linked?: string; error?: string }>;
+  searchParams: Promise<{ linked?: string; e?: string }>;
 }) {
   // 문지기 = 직원 로그인(마이페이지와 같은 방식). 직원이 아니면 여기서 예외가 나 화면이 열리지 않는다.
   await requireStaff();
@@ -56,10 +56,9 @@ export default async function StaffLoginMethodsPage({
   const justLinked = parseParentOAuthProvider(params.linked ?? "");
   // 스토어 앱인지 서버에서 먼저 본다(사용자 에이전트 표식). 표식 없는 옛 앱은 화면 부품이 브라우저 저장소로 알아본다.
   const serverStoreApp = looksLikeStoreApp({ userAgent: requestHeaders.get("user-agent") });
-  // 주소로 넘어온 안내문은 쉬운 한국어 문장일 때만 그대로 보인다(영어 원문·개발 용어면 정해 둔 문장으로 바꿈)
-  const error = typeof params.error === "string" && params.error
-    ? customerMessage(params.error.slice(0, 200), "간편로그인 연결을 마치지 못했습니다. 다시 시도해 주세요.")
-    : "";
+  // 실패 안내는 주소의 «코드»(e)로만 받는다 — 주소에 실린 문장은 읽지 않는다(가짜 안내문 방지).
+  // 표에 없는 코드·빈 값이면 아무것도 보이지 않는다.
+  const error = staffLinkErrorMessage(params.e);
 
   return (
     <main className="mx-auto max-w-lg space-y-3 px-4 pb-8 pt-5">
@@ -83,8 +82,9 @@ export default async function StaffLoginMethodsPage({
       )}
 
       {rows.length === 0 ? (
-        <p className="academy-panel px-4 py-3 text-sm text-[var(--color-academy-muted)]">
-          지금 연결할 수 있는 간편로그인이 없습니다.
+        // 흐린 글자색은 안쪽 span 에 준다 — academy-panel 과 같은 요소에 두면 테마 CSS 의 글자색이 이겨 무시된다
+        <p className="academy-panel px-4 py-3 text-sm">
+          <span className="text-[var(--color-academy-muted)]">지금 연결할 수 있는 간편로그인이 없습니다.</span>
         </p>
       ) : (
         <ul className="academy-panel divide-y divide-[var(--color-academy-line)] overflow-hidden">
@@ -99,7 +99,7 @@ export default async function StaffLoginMethodsPage({
                   연결됨
                 </span>
               ) : enabled.includes(provider) ? (
-                // 일반 링크(<a>)는 부품 안에 있다 — 스토어 앱이면 그리지 않는다
+                // 폼 POST 버튼은 부품 안에 있다 — 스토어 앱이면 그리지 않는다
                 <StaffLinkProviderButton provider={provider} serverStoreApp={serverStoreApp} />
               ) : null}
             </li>

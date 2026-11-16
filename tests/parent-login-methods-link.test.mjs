@@ -14,7 +14,7 @@ const accountLayout = fs.readFileSync("src/app/mypage/layout.tsx", "utf8");
 // 들어가는 길 = 머리줄 «설정» → 설정 화면 «계정» 묶음(2026-11-14 d3: 맨 아래 링크 줄을 설정 화면으로 모았다)
 const mypage = fs.readFileSync("src/app/mypage/settings/page.tsx", "utf8");
 
-test("연결은 휴대폰 인증까지 마친 학부모 본인만 시작할 수 있다", () => {
+test("연결은 본인 확인(학부모 휴대폰 인증 → 아니면 직원)을 통과한 사람만 시작할 수 있다", () => {
   const getAt = start.indexOf("export async function GET(");
   const linkAt = start.indexOf('if (intent === "link") {', getAt);
   assert.ok(linkAt > 0, "연결 모드가 없다");

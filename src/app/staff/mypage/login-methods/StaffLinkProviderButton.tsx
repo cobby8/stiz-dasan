@@ -17,14 +17,15 @@ export default function StaffLinkProviderButton({ provider, serverStoreApp }: { 
   const clientStoreApp = useStoreApp();
   if (!staffLinkButtonVisible({ serverStoreApp, clientStoreApp })) return null;
   return (
-    // <Link> 금지 — 미리 불러오기가 시작 주소를 열면 로그인 열쇠(PKCE)가 덮어써진다(2026-10-26 사고).
-    <a
-      href={`/auth/oauth/${provider}?intent=link`}
-      // 줄마다 반복되는 작업 → 옅은 바탕(tonal). 누르는 영역 44px 는 버튼 부품이 맡는다
-      className="academy-button-tonal shrink-0"
-    >
-      연결하기
-    </a>
+    // 폼 POST 로 시작한다(2026-11-17 보안 검수 반영) — 주소(GET)만으로는 직원 연결이 시작되지 않고,
+    // 서버가 «우리 화면에서 누른 것»인지 출처를 확인한다. 폼은 미리 불러오기 대상도 아니다
+    // (Next 링크 부품 금지 이유와 같다 — 시작 주소가 미리 열리면 로그인 열쇠(PKCE)가 덮어써진다, 2026-10-26 사고).
+    <form method="post" action={`/auth/oauth/${provider}?intent=link`} className="shrink-0">
+      {/* 줄마다 반복되는 작업 → 옅은 바탕(tonal). 누르는 영역 44px 는 버튼 부품이 맡는다 */}
+      <button type="submit" className="academy-button-tonal shrink-0">
+        연결하기
+      </button>
+    </form>
   );
 }
 

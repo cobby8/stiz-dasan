@@ -275,7 +275,7 @@ test("콜백: via=app «그리고» 표시 쿠키가 있을 때만 앱 마무리
   assert.match(finish, /const viaAppParam = request\.nextUrl\.searchParams\.get\("via"\) === LINK_HANDOFF_VIA;/);
   // 실패 경로는 via=app + 표시 쿠키(남이 링크로 로그아웃시키기 방지)
   assert.match(finish, /const viaApp = viaAppParam && request\.cookies\.get\(LINK_HANDOFF_GATE_COOKIE\)\?\.value === "1";/);
-  assert.match(finish, /viaApp \? appLinkDoneRedirect\(request, \{ code: doneCode \}\) : loginMethodsPageRedirect\(request, \{ error: message \}\)/);
+  assert.match(finish, /viaApp \? appLinkDoneRedirect\(request, \{ code: doneCode \}\) : loginMethodsPageRedirect\(request, \{ error: message, code: doneCode \}\)/);
   // 코드 교환 성공 경로는 via=app 만으로 앱 마무리(표시 쿠키 만료 뒤에도 바깥 브라우저 로그인이 남지 않게)
   assert.match(finish, /return viaAppParam\s*\? appLinkDoneRedirect\(request, \{ linked: provider, authUserId: data\.user\?\.id \}\)/);
   for (const code of ["already", "cancelled", "expired", "failed"]) assert.ok(finish.includes(`fail("${code}"`), code);
@@ -283,7 +283,7 @@ test("콜백: via=app «그리고» 표시 쿠키가 있을 때만 앱 마무리
   assert.match(finish, /notifyAccountSecurityEvent\(\{ authUserId: data\.user\?\.id, eventType: "SOCIAL_LOGIN_LINKED"/);
   // 기존 웹 흐름의 복귀 화면 — 2026-11-17 부터 서버가 로그인한 계정으로 정한다(직원이면 직원 화면).
   // 학부모·로그인 없음은 예전과 같은 /mypage/login-methods 다(규칙을 실제로 실행해서 확인).
-  assert.match(callback, /const url = new URL\(loginMethodsPath\(await resolveLinkActor\(\)\), request\.url\);/);
+  assert.match(callback, /const actor = await resolveLinkActor\(\);\s*const url = new URL\(loginMethodsPath\(actor\), request\.url\);/);
   const linkRules = await loadTsModule("src/lib/account/login-methods-rules.ts");
   assert.equal(linkRules.loginMethodsPath("parent"), "/mypage/login-methods");
   assert.equal(linkRules.loginMethodsPath(null), "/mypage/login-methods");

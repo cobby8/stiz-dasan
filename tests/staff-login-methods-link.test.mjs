@@ -6,6 +6,10 @@
 //  (c) 돌아갈 화면은 주소 파라미터가 아니라 서버가 로그인한 계정으로 정한다
 //  (d) 브라우저 간편로그인 콜백이 직원 계정을 /auth/continue 로 보낸다(예전엔 학부모 가입 화면)
 //  (e) 1회용 표 대상 판정(isLinkHandoffEligible)은 여전히 직원을 거절한다
+// 보안 검수 반영(같은 날):
+//  (f) 직원은 주소(GET)만으로 연결을 시작하지 못한다 — 학부모 GET 은 예전 그대로
+//  (g) 연결 시작 POST 는 출처 검사를 통과해야 한다
+//  (h) 직원 화면의 오류는 주소의 «코드»를 표로 바꾼 것만 보인다(주소의 문장은 읽지 않는다)
 // 순수 판정은 실제로 실행해서 확인한다. 날짜·시계에 기대는 단정은 없다.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -66,6 +70,9 @@ test("(b) 시작 라우트: 판정 → 거절 → 연결 호출 순서, 연결 �
   const rejectAt = block.indexOf("if (!actor) return loginError(");
   const linkCallAt = block.indexOf("supabase.auth.linkIdentity(");
   assert.ok(guardAt > 0 && rejectAt > guardAt && linkCallAt > rejectAt, "판정 → 거절 → 연결 순서");
+  // 직원은 GET 으로 시작하지 않는다 — 직원 거절이 연결 호출보다 먼저다(실행 확인은 아래 «(f)» 테스트)
+  const staffRejectAt = block.indexOf('if (actor === "staff") return loginError(request, "", actor, "start");');
+  assert.ok(staffRejectAt > rejectAt && linkCallAt > staffRejectAt, "직원 GET 거절 → 연결 순서");
   assert.doesNotMatch(block, /signInWithOAuth/);
   // 판정은 공용 함수 하나로만 — 라우트가 문지기를 따로 부르지 않는다(두 군데가 어긋나지 않게)
   assert.match(start, /import \{ resolveLinkActor \} from "@\/lib\/account\/link-actor";/);
@@ -91,28 +98,34 @@ test("(c) 시작·마무리 라우트: 복귀 화면을 주소 파라미터로 �
   const errorFn = start.slice(start.indexOf("async function loginError("), start.indexOf("export async function GET("));
   const linkBranch = errorFn.slice(errorFn.indexOf('if (intent === "link") {'), errorFn.indexOf('const url = new URL(intent === "login"'));
   assert.match(linkBranch, /const actor = knownActor !== undefined \? knownActor : await resolveLinkActor\(\);/);
-  assert.match(linkBranch, /const url = new URL\(loginMethodsPath\(actor\), request\.url\);/);
+  assert.match(linkBranch, /return linkErrorRedirect\(request, actor, message, staffCode\);/);
   assert.doesNotMatch(linkBranch, /searchParams\.get\(/, "연결 복귀 주소에 요청 파라미터를 쓰지 않는다");
+  // 복귀 주소를 만드는 곳은 한 함수 — 판정된 actor 로만 화면을 고르고, 요청 파라미터를 읽지 않는다
+  const redirectHelper = start.slice(start.indexOf("function linkErrorRedirect("), start.indexOf("async function loginError("));
+  assert.match(redirectHelper, /const url = new URL\(loginMethodsPath\(actor\), request\.url\);/);
+  assert.doesNotMatch(redirectHelper, /searchParams\.get\(/);
   // knownActor 는 라우트 안에서 판정한 값만 넘긴다(요청에서 읽은 값이 아니다)
-  const calls = [...start.matchAll(/loginError\(request, [^\n]*?, (\w+)\);/g)].map((match) => match[1]);
-  assert.deepEqual(calls.sort(), ["actor", "null"]);
+  const calls = [...start.matchAll(/loginError\(request, [^\n]*?, (actor|null|undefined)(?:, "\w+")?\);/g)].map((match) => match[1]);
+  assert.deepEqual(calls.sort(), ["actor", "actor", "null", "undefined"]);
+  const helperActors = [...start.matchAll(/linkErrorRedirect\(\s*request,\s*([^,]+),/g)].map((match) => match[1].trim()).sort();
+  assert.deepEqual(helperActors, ["actor", "await resolveLinkActor()", "await resolveLinkActor()", "await resolveLinkActor()", "linkActor", "null"]);
 
   // 콜백의 연결 마무리
   const redirectFn = callback.slice(callback.indexOf("async function loginMethodsPageRedirect("), callback.indexOf("async function appLinkDoneRedirect("));
-  assert.match(redirectFn, /const url = new URL\(loginMethodsPath\(await resolveLinkActor\(\)\), request\.url\);/);
+  assert.match(redirectFn, /const actor = await resolveLinkActor\(\);\s*const url = new URL\(loginMethodsPath\(actor\), request\.url\);/);
   assert.doesNotMatch(redirectFn, /searchParams\.get\(/);
   const finish = callback.slice(callback.indexOf("async function finishLink("), callback.indexOf("export async function GET("));
   // 연결 마무리는 next·redirect·return 같은 «돌아갈 곳» 파라미터를 읽지 않는다
   const readParams = [...finish.matchAll(/searchParams\.get\("([^"]+)"\)/g)].map((match) => match[1]).sort();
   assert.deepEqual(readParams, ["error_code", "via"]);
   // 성공·실패 모두 같은 복귀 함수를 지난다(앱 handoff 분기는 그대로)
-  assert.match(finish, /: loginMethodsPageRedirect\(request, \{ error: message \}\)/);
+  assert.match(finish, /: loginMethodsPageRedirect\(request, \{ error: message, code: doneCode \}\)/);
   assert.match(finish, /: loginMethodsPageRedirect\(request, \{ linked: provider \}\);/);
   // 두 주소는 규칙 파일에만 적혀 있다(라우트에 직접 적지 않는다)
   for (const source of [start, callback]) assert.doesNotMatch(source, /"\/(staff\/)?mypage\/login-methods"/);
 });
 
-test("(a) 직원 연결 화면: 직원 문지기 · 1회용 표를 만들지 않는다 · 연결 버튼은 일반 링크", () => {
+test("(a) 직원 연결 화면: 직원 문지기 · 1회용 표를 만들지 않는다 · 연결 버튼은 폼 POST", () => {
   assert.match(staffPage, /export const dynamic = "force-dynamic";/);
   // 문지기가 조회(연결된 간편로그인 읽기)보다 먼저다
   const guardAt = staffPage.indexOf("await requireStaff();");
@@ -123,16 +136,23 @@ test("(a) 직원 연결 화면: 직원 문지기 · 1회용 표를 만들지 않
   for (const source of [staffPage, staffButton]) {
     assert.doesNotMatch(source, /account-link-handoff|issueLinkHandoffs|linkHandoffUrl|handoffHref|link-handoff/);
   }
-  // 내용 구성은 학부모 화면과 같다: 켜진 제공자 + 연결된 것, 성공·실패 안내(주소 문장은 걸러서)
+  // 내용 구성은 학부모 화면과 같다: 켜진 제공자 + 연결된 것, 성공·실패 안내
   assert.match(staffPage, /getEnabledParentOAuthProviders\(\)/);
   assert.match(staffPage, /PARENT_OAUTH_PROVIDERS\.filter\(\(provider\) => enabled\.includes\(provider\) \|\| linked\.has\(provider\)\)/);
-  assert.match(staffPage, /customerMessage\(params\.error\.slice\(0, 200\)/);
+  // (c') 실패 안내는 주소의 코드(e)를 표로 바꾼 것만 — 주소의 문장(error)은 읽지 않는다
+  assert.match(staffPage, /const error = staffLinkErrorMessage\(params\.e\);/);
+  assert.doesNotMatch(staffPage, /params\.error|customerMessage|error\?: string/, "직원 화면은 주소의 문장을 읽지 않는다");
+  // 주소에서 읽는 값은 linked(정해진 제공자 이름일 때만)와 e 둘뿐
+  assert.deepEqual([...new Set([...staffPage.matchAll(/params\.(\w+)/g)].map((match) => match[1]))].sort(), ["e", "linked"]);
   assert.match(staffPage, /parseParentOAuthProvider\(params\.linked \?\? ""\)/);
   // 앱 판정: 서버(사용자 에이전트) + 화면(useStoreApp) — 학부모 화면과 같은 판정 재사용
   assert.match(staffPage, /looksLikeStoreApp\(\{ userAgent: requestHeaders\.get\("user-agent"\) \}\)/);
   assert.match(staffButton, /const clientStoreApp = useStoreApp\(\);/);
-  // 연결 버튼 = 일반 <a>(미리 불러오기 금지), 자바스크립트 이동 없음
-  assert.match(staffButton, /<a\s+href=\{`\/auth\/oauth\/\$\{provider\}\?intent=link`\}/);
+  // (d') 연결 버튼 = 폼 POST 의 제출 버튼. 주소(GET)로 여는 링크가 아니다 → 미리 불러오기도, 남이 보낸 링크로 시작하기도 안 된다
+  assert.match(staffButton, /<form method="post" action=\{`\/auth\/oauth\/\$\{provider\}\?intent=link`\} className="shrink-0">/);
+  assert.match(staffButton, /<button type="submit" className="academy-button-tonal shrink-0">\s*연결하기\s*<\/button>/);
+  assert.doesNotMatch(staffButton, /<a\b|href=|<Link\b/, "시작 주소를 링크로 두지 않는다");
+  assert.doesNotMatch(staffButton, /onSubmit|onClick|fetch\(/, "자바스크립트 없이 폼 그대로 보낸다");
   assert.doesNotMatch(staffButton + staffPage, /from "next\/link"/);
   assert.doesNotMatch(staffButton, /location\.(href|assign|replace)|window\.open|router\.push/);
   // 돌아갈 곳을 주소에 싣지 않는다
@@ -209,6 +229,181 @@ test("(d) 브라우저 간편로그인 콜백: 직원 계정은 /auth/continue �
   assert.doesNotMatch(callback, /user_metadata|app_metadata/);
   // 앱 계정이 없는 간편로그인(처음 쓰는 사람)은 지금처럼 학부모 가입으로 간다(appUser 가 없으면 직원 분기를 타지 않는다)
   assert.match(login.slice(signupAt), /url\.searchParams\.set\("social", "1"\);/);
+});
+
+// ── 2026-11-17 보안 검수 반영: 직원 연결 시작 = 폼 POST + 출처 확인, 직원 화면 오류 = 코드 ──
+
+test("(g) 출처 판정: 우리 화면에서 보낸 폼만 통과한다(실행)", () => {
+  const allowed = handoffRules.isAllowedLinkHandoffOrigin;
+  const self = "https://www.stiz-dasan.kr";
+  // 운영 출처 · 요청을 받은 서버 자신의 출처(개발 서버·미리보기 배포)
+  assert.equal(allowed(self, self, "same-origin"), true);
+  assert.equal(allowed("http://localhost:4000", "http://localhost:4000", null), true);
+  // 다른 사이트 출처는 거절 — 비슷하게 생긴 주소·apex·http 도 마찬가지
+  for (const origin of ["https://evil.example", "https://www.stiz-dasan.kr.evil.example", "https://stiz-dasan.kr", "http://www.stiz-dasan.kr"]) {
+    assert.equal(allowed(origin, "http://localhost:4000", "cross-site"), false, origin);
+  }
+  // 출처가 없으면 거절(빈 문자열 포함)
+  for (const origin of [null, undefined, ""]) assert.equal(allowed(origin, self, "same-origin"), false, String(origin));
+  // 출처가 «null» 이면 브라우저가 붙이는 Sec-Fetch-Site 가 same-origin 일 때만
+  assert.equal(allowed("null", self, "same-origin"), true);
+  for (const site of ["cross-site", "same-site", "none", null, undefined]) assert.equal(allowed("null", self, site), false, String(site));
+  // 시작 라우트의 POST 가 바로 이 함수로, 요청 머리말(Origin·Sec-Fetch-Site)과 서버 자신의 출처를 넣어 판정한다
+  assert.match(start, /import \{ isAllowedLinkHandoffOrigin \} from "@\/lib\/account-link-handoff\/rules";/);
+  const post = start.slice(start.indexOf("export async function POST("));
+  assert.match(post, /if \(!isAllowedLinkHandoffOrigin\(request\.headers\.get\("origin"\), request\.nextUrl\.origin, request\.headers\.get\("sec-fetch-site"\)\)\) \{/);
+});
+
+// 시작 라우트를 «실제로 실행»한다 — 바깥 의존(Next 응답·제공자 설정·본인 확인·Supabase)만 흉내 모듈로 바꾼다.
+// 규칙 파일(login-methods-rules·account-link-handoff/rules·parent-oauth)은 진짜를 쓴다.
+const stub = (code) => `data:text/javascript;base64,${Buffer.from(code).toString("base64")}`;
+const startRoute = await loadTsModule("src/app/auth/oauth/[provider]/route.ts", {
+  overrides: {
+    "next/server": stub(`
+      export class NextRequest {}
+      export class NextResponse {
+        constructor(body, init) { this.status = init?.status ?? 200; this.location = null; }
+        static redirect(url, status) { const r = new NextResponse(null, { status: status ?? 307 }); r.location = String(url); return r; }
+      }
+    `),
+    "@/lib/auth-providers": stub(`export async function getEnabledParentOAuthProviders() { return globalThis.__linkRoute.enabled; }`),
+    "@/lib/account/link-actor": stub(`export async function resolveLinkActor() { return globalThis.__linkRoute.actor; }`),
+    "@/lib/supabase/server": stub(`
+      export async function createClient() {
+        return { auth: {
+          async linkIdentity(input) {
+            globalThis.__linkRoute.linkCalls.push(input);
+            return globalThis.__linkRoute.linkFails
+              ? { data: { url: null }, error: new Error("x") }
+              : { data: { url: "https://provider.example/authorize" }, error: null };
+          },
+          async signInWithOAuth() { globalThis.__linkRoute.signInCalls += 1; return { data: { url: "https://provider.example/login" }, error: null }; },
+        } };
+      }
+    `),
+  },
+});
+
+const SITE = "http://localhost:4000";
+function linkRequest(method, { provider = "apple", query = "?intent=link", headers = {}, form = null } = {}) {
+  const nextUrl = new URL(`/auth/oauth/${provider}${query}`, SITE);
+  const lower = Object.fromEntries(Object.entries(headers).map(([key, value]) => [key.toLowerCase(), value]));
+  return {
+    method,
+    url: nextUrl.toString(),
+    nextUrl,
+    headers: { get: (name) => lower[name.toLowerCase()] ?? null },
+    formData: async () => { if (!form) throw new Error("no body"); return new Map(Object.entries(form)); },
+  };
+}
+async function runLink(method, state, requestOptions = {}) {
+  globalThis.__linkRoute = { enabled: ["apple", "google"], actor: null, linkFails: false, ...state, linkCalls: [], signInCalls: 0 };
+  const provider = requestOptions.provider ?? "apple";
+  const response = await startRoute[method](linkRequest(method, requestOptions), { params: Promise.resolve({ provider }) });
+  const location = response.location ? new URL(response.location) : null;
+  return {
+    status: response.status,
+    path: location ? location.origin === SITE ? location.pathname : location.origin + location.pathname : null,
+    query: location ? Object.fromEntries(location.searchParams) : null,
+    linkCalls: globalThis.__linkRoute.linkCalls.length,
+    signInCalls: globalThis.__linkRoute.signInCalls,
+  };
+}
+const SAME_ORIGIN = { Origin: SITE, "Sec-Fetch-Site": "same-origin" };
+
+test("(f) 직원의 GET intent=link 는 연결을 시작하지 않는다 — 학부모 GET 은 예전 그대로(실행)", async () => {
+  // 직원: linkIdentity 를 부르지 않고 직원 연결 화면으로, 코드만 싣는다
+  assert.deepEqual(await runLink("GET", { actor: "staff" }), {
+    status: 307, path: "/staff/mypage/login-methods", query: { e: "start" }, linkCalls: 0, signInCalls: 0,
+  });
+  // 학부모: 지금처럼 GET 으로 제공자 화면까지 간다
+  assert.deepEqual(await runLink("GET", { actor: "parent" }), {
+    status: 307, path: "https://provider.example/authorize", query: {}, linkCalls: 1, signInCalls: 0,
+  });
+  // 로그인 없음: 예전처럼 학부모 화면 + 문장
+  assert.deepEqual(await runLink("GET", { actor: null }), {
+    status: 307, path: "/mypage/login-methods", query: { error: "로그인한 뒤 연결해 주세요." }, linkCalls: 0, signInCalls: 0,
+  });
+  // 학부모의 실패 안내도 예전 그대로 문장(error)이다 — 코드(e)를 싣지 않는다
+  const parentFail = await runLink("GET", { actor: "parent", linkFails: true });
+  assert.equal(parentFail.path, "/mypage/login-methods");
+  assert.deepEqual(Object.keys(parentFail.query), ["error"]);
+  assert.match(parentFail.query.error, /^Apple .*연결을 시작하지 못했습니다/);
+  const parentClosed = await runLink("GET", { actor: "parent", enabled: [] });
+  assert.deepEqual(Object.keys(parentClosed.query), ["error"]);
+  // 직원: 꺼진 제공자도 코드로
+  assert.deepEqual((await runLink("GET", { actor: "staff", enabled: [] })).query, { e: "closed" });
+});
+
+test("(g) POST 연결 시작: 출처 검사를 통과해야 linkIdentity 까지 간다(실행)", async () => {
+  // 우리 화면에서 보낸 폼 + 직원 → 제공자 화면으로 303
+  assert.deepEqual(await runLink("POST", { actor: "staff" }, { headers: SAME_ORIGIN }), {
+    status: 303, path: "https://provider.example/authorize", query: {}, linkCalls: 1, signInCalls: 0,
+  });
+  // 학부모도 받는다(더 안전한 길이라 막지 않는다)
+  assert.equal((await runLink("POST", { actor: "parent" }, { headers: SAME_ORIGIN })).linkCalls, 1);
+  // 다른 사이트가 보낸 폼 · 출처 없음 · 출처 «null»+cross-site → 연결을 시작하지 않고 직원 화면에 코드 origin
+  for (const headers of [
+    { Origin: "https://evil.example", "Sec-Fetch-Site": "cross-site" },
+    {},
+    { Origin: "null", "Sec-Fetch-Site": "cross-site" },
+    { "Sec-Fetch-Site": "same-origin" },
+  ]) {
+    assert.deepEqual(await runLink("POST", { actor: "staff" }, { headers }), {
+      status: 303, path: "/staff/mypage/login-methods", query: { e: "origin" }, linkCalls: 0, signInCalls: 0,
+    }, JSON.stringify(headers));
+  }
+  // 출처가 틀리면 학부모도 시작하지 못한다(학부모 화면에는 문장으로)
+  const parentCross = await runLink("POST", { actor: "parent" }, { headers: { Origin: "https://evil.example" } });
+  assert.equal(parentCross.linkCalls, 0);
+  assert.equal(parentCross.path, "/mypage/login-methods");
+  assert.deepEqual(Object.keys(parentCross.query), ["error"]);
+  // 로그인 없음 · 꺼진 제공자 · 모르는 제공자 · 제공자 쪽 실패 → 시작하지 않고 303 으로 돌려보낸다
+  assert.deepEqual(await runLink("POST", { actor: null }, { headers: SAME_ORIGIN }), {
+    status: 303, path: "/mypage/login-methods", query: { error: "로그인한 뒤 연결해 주세요." }, linkCalls: 0, signInCalls: 0,
+  });
+  assert.deepEqual((await runLink("POST", { actor: "staff", enabled: [] }, { headers: SAME_ORIGIN })).query, { e: "closed" });
+  assert.deepEqual((await runLink("POST", { actor: "staff" }, { headers: SAME_ORIGIN, provider: "nope" })).query, { e: "failed" });
+  const failed = await runLink("POST", { actor: "staff", linkFails: true }, { headers: SAME_ORIGIN });
+  assert.deepEqual({ status: failed.status, query: failed.query, linkCalls: failed.linkCalls }, { status: 303, query: { e: "start" }, linkCalls: 1 });
+  // POST 는 연결 전용 — intent 가 link 가 아니면(로그인·가입·없음) 아무것도 하지 않는다. 폼 본문의 intent=link 는 받는다
+  for (const query of ["?intent=login", "?intent=parent-signup", ""]) {
+    assert.deepEqual(await runLink("POST", { actor: "staff" }, { headers: SAME_ORIGIN, query }), {
+      status: 405, path: null, query: null, linkCalls: 0, signInCalls: 0,
+    }, query);
+  }
+  assert.equal((await runLink("POST", { actor: "staff" }, { headers: SAME_ORIGIN, query: "", form: { intent: "link" } })).linkCalls, 1);
+  assert.equal((await runLink("POST", { actor: "staff" }, { headers: SAME_ORIGIN, query: "", form: { intent: "login" } })).status, 405);
+});
+
+test("(h) 직원 화면의 오류: 코드 → 정해 둔 문구만, 임의 문장은 나오지 않는다(실행)", () => {
+  const message = rules.staffLinkErrorMessage;
+  const table = rules.STAFF_LINK_ERROR_MESSAGES;
+  assert.deepEqual(Object.keys(table).sort(), ["already", "cancelled", "closed", "expired", "failed", "origin", "start"]);
+  for (const [code, text] of Object.entries(table)) {
+    assert.equal(message(code), text, code);
+    assert.match(text, /[가-힣]/);
+  }
+  // 임의 문장·모르는 코드·빈 값·물려받은 이름·문자열이 아닌 값 → 아무것도 보이지 않는다
+  const odd = [
+    "비밀번호가 만료되었습니다. 010-0000-0000 으로 전화해 주세요.", "<b>학원 공지</b>", "START", " start", "start ",
+    "unknown", "", null, undefined, "constructor", "toString", "__proto__", "hasOwnProperty", ["start"], { code: "start" }, 0,
+  ];
+  for (const value of odd) assert.equal(message(value), null, String(value));
+  // 콜백이 넘기는 마무리 코드(앱 완료 화면과 같은 이름)는 전부 직원 표에 있다 — 빠지면 안내가 사라진다
+  for (const code of Object.keys(handoffRules.LINK_DONE_ERROR_MESSAGES)) assert.ok(message(code), code);
+  // 콜백의 실패 → 코드 대응(빠짐없이)
+  const finish = callback.slice(callback.indexOf("async function finishLink("), callback.indexOf("export async function GET("));
+  assert.deepEqual([...finish.matchAll(/fail\("(\w+)"/g)].map((match) => match[1]), ["failed", "already", "cancelled", "expired"]);
+  assert.match(finish, /if \(!provider\) return fail\("failed",/);
+  assert.match(finish, /if \(errorCode === "identity_already_exists"\) \{\s*return fail\("already",/);
+  assert.match(finish, /return fail\("cancelled",/);
+  assert.match(finish, /if \(error\) return fail\("expired",/);
+  // 직원이면 코드만(e), 그 밖은 예전처럼 문장(error) — 한 요청에 둘을 같이 싣지 않는다
+  const redirectFn = callback.slice(callback.indexOf("async function loginMethodsPageRedirect("), callback.indexOf("async function appLinkDoneRedirect("));
+  assert.match(redirectFn, /if \(actor === "staff"\) url\.searchParams\.set\("e", result\.code \?\? "failed"\);\s*else url\.searchParams\.set\("error", result\.error\);/);
+  const helper = start.slice(start.indexOf("function linkErrorRedirect("), start.indexOf("async function loginError("));
+  assert.match(helper, /if \(actor === "staff"\) url\.searchParams\.set\("e", staffCode\);\s*else url\.searchParams\.set\("error", message\);/);
 });
 
 test("(e) 1회용 표 대상 판정은 여전히 직원을 거절한다(실행)", () => {

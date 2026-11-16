@@ -34,6 +34,38 @@ export function loginMethodsPath(actor: LinkActor | null): string {
   return actor === "staff" ? STAFF_LOGIN_METHODS_PATH : PARENT_LOGIN_METHODS_PATH;
 }
 
+/**
+ * 직원 연결 화면의 «오류 코드» → 문구(2026-11-17 보안 검수 반영).
+ * 주소에 문장을 그대로 싣지 않는다 — 문장을 실으면 누가 주소를 만들어 진짜 학원 화면의 빨간 안내 칸에
+ * 가짜 안내문을 띄울 수 있다. 직원 화면은 주소의 e=<코드>만 읽고, 문구는 이 표에서만 나온다.
+ * (학부모 화면은 기존 방식 그대로다 — 여기서 다루지 않는다.)
+ */
+export const STAFF_LINK_ERROR_MESSAGES = {
+  // 시작 단계
+  start: "간편로그인 연결을 시작하지 못했습니다. 아래 «연결하기»를 다시 눌러 주세요.",
+  origin: "이 화면에서 바로 시작할 수 없습니다. 아래 «연결하기»를 다시 눌러 주세요.",
+  closed: "지금은 이 간편로그인을 쓸 수 없습니다. 잠시 후 다시 시도해 주세요.",
+  // 마무리(콜백) 단계
+  already: "이 간편로그인 계정은 이미 다른 계정에 연결되어 있습니다.",
+  cancelled: "연결이 취소되었거나 끝나지 않았습니다.",
+  expired: "연결 시간이 지났습니다. «연결하기»를 다시 눌러 주세요.",
+  failed: "간편로그인 연결을 마치지 못했습니다. 다시 시도해 주세요.",
+} as const;
+
+export type StaffLinkErrorCode = keyof typeof STAFF_LINK_ERROR_MESSAGES;
+
+/**
+ * 주소의 e 값 → 화면에 보일 문구. 표에 있는 코드일 때만 문구를 돌려주고,
+ * 빈 값·모르는 코드·문장·문자열이 아닌 값은 null(= 아무것도 보이지 않는다).
+ */
+export function staffLinkErrorMessage(code: unknown): string | null {
+  if (typeof code !== "string" || !code) return null;
+  // hasOwnProperty — «constructor»·«toString» 같은 물려받은 이름이 표에 있는 것처럼 통과하지 않게
+  return Object.prototype.hasOwnProperty.call(STAFF_LINK_ERROR_MESSAGES, code)
+    ? STAFF_LINK_ERROR_MESSAGES[code as StaffLinkErrorCode]
+    : null;
+}
+
 /** 직원이 스토어 앱 안에서 연결 화면을 열었을 때의 안내(앱에서는 «연결하기»를 보이지 않는다) */
 export const STAFF_STORE_APP_LINK_NOTICE =
   "앱에서는 연결할 수 없어요. 휴대폰 브라우저(사파리·크롬)에서 www.stiz-dasan.kr 에 로그인한 뒤 연결해 주세요.";
