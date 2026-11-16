@@ -27,9 +27,21 @@ function parseFingerprints(raw: string | undefined): string[] {
     .filter((value) => /^([0-9A-F]{2}:){31}[0-9A-F]{2}$/.test(value));
 }
 
+// 2026-11-16: Play 콘솔 «딥 링크 → 도메인 검사 실패»의 원인이 «환경변수가 비어 이 파일이 404» 였다.
+// 지문은 비밀이 아니라 공개 값(누구나 스토어 앱에서 꺼낼 수 있다)이므로, Play 콘솔이 알려 준 값을 기본으로 둔다 —
+// 환경변수를 깜빡해도 파일이 사라지지 않는다. 환경변수에 값이 있으면 «추가»로 합친다(서명 키를 올렸을 때 등).
+//   출처: Play Console → 딥 링크 → www.stiz-dasan.kr → «디지털 애셋 링크 JSON 파일» 해결 방법(앱 서명 키·이전 서명 키·업로드 키).
+const DEFAULT_PACKAGE_NAME = "kr.co.upturnlabs.stizdasan";
+const DEFAULT_FINGERPRINTS = [
+  "F0:E0:9E:CB:5C:AC:12:36:44:E2:97:65:F8:22:1D:2B:63:DC:7C:E8:A8:73:7B:AA:94:F9:AE:71:5E:00:2E:D3",
+  "3A:4E:23:1B:C2:87:88:4C:46:9B:CA:F6:78:54:94:0B:3E:73:13:37:5A:D4:34:E3:AF:87:5D:E2:FD:FC:D6:11",
+  "B1:0B:25:58:63:EF:3D:9F:D9:63:22:DC:9A:DF:51:B6:FE:F6:00:B0:7D:E8:92:5A:A3:13:48:71:DE:DD:B1:AD",
+].join(",");
+
 export async function GET() {
-  const packageName = process.env.ANDROID_APP_PACKAGE_NAME?.trim() || "";
-  const fingerprints = parseFingerprints(process.env.ANDROID_APP_SHA256_FINGERPRINTS);
+  const packageName = process.env.ANDROID_APP_PACKAGE_NAME?.trim() || DEFAULT_PACKAGE_NAME;
+  // 기본 지문 + 환경변수 지문(겹치면 한 번만). 형식이 틀린 값은 걸러진다
+  const fingerprints = [...new Set(parseFingerprints(`${DEFAULT_FINGERPRINTS},${process.env.ANDROID_APP_SHA256_FINGERPRINTS ?? ""}`))];
 
   // 아직 안드로이드 앱을 만들지 않았거나 지문이 비었으면 이 파일은 존재하지 않는 것이 맞다.
   if (!packageName || fingerprints.length === 0) {

@@ -62,3 +62,14 @@ test("지문 형식 검사가 실제로 쓰레기 값을 걸러낸다", () => {
     assert.ok(!re.test(bad), `잘못된 지문을 통과시켰다: ${JSON.stringify(bad)}`);
   }
 });
+
+test("기본 지문이 들어 있어 환경변수가 비어도 파일이 나간다(2026-11-16 Play 콘솔 «도메인 검사 실패» 원인)", () => {
+  assert.match(route, /const DEFAULT_PACKAGE_NAME = "kr\.co\.upturnlabs\.stizdasan";/);
+  const defaults = route.slice(route.indexOf("const DEFAULT_FINGERPRINTS"), route.indexOf("export async function GET"));
+  const found = defaults.match(/([0-9A-F]{2}:){31}[0-9A-F]{2}/g) ?? [];
+  assert.equal(found.length, 3, "앱 서명 키·이전 서명 키·업로드 키 세 개");
+  assert.equal(new Set(found).size, 3);
+  assert.match(route, /process\.env\.ANDROID_APP_PACKAGE_NAME\?\.trim\(\) \|\| DEFAULT_PACKAGE_NAME/);
+  // 환경변수 지문은 기본값에 «추가»로 합친다
+  assert.match(route, /parseFingerprints\(`\$\{DEFAULT_FINGERPRINTS\},\$\{process\.env\.ANDROID_APP_SHA256_FINGERPRINTS \?\? ""\}`\)/);
+});
