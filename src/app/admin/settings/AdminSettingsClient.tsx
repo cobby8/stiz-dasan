@@ -9,6 +9,8 @@ import LazyRichTextEditor from "./LazyRichTextEditor";
 import { updateAcademySettings } from "@/app/actions/admin";
 import { BODY_FONT_OPTIONS, HEADING_FONT_OPTIONS, type FontOption } from "@/lib/fonts";
 import type { MapLocationData } from "@/components/maps/LocationPickerModal";
+import AdminPhotoThumb from "@/components/admin/AdminPhotoThumb";
+import { uploadImagesWithProgress } from "@/lib/clientImageUpload";
 
 // 지도 모달은 카카오 지도 SDK를 끌고 오는 무거운 컴포넌트라 실제로 열 때만 불러온다.
 const LocationPickerModal = dynamic(() => import("@/components/maps/LocationPickerModal"), { ssr: false });
@@ -129,6 +131,10 @@ export default function AdminSettingsClient({
         } catch {}
         return [];
     });
+    // 시설 사진 올리기 — 올리는 중 표시·오류 글자·숨긴 파일 선택창
+    const [facilityUploading, setFacilityUploading] = useState(false);
+    const [facilityUploadError, setFacilityUploadError] = useState<string | null>(null);
+    const facilityFileRef = useRef<HTMLInputElement>(null);
     // 셔틀 노선의 출발지·도착지로 쓰는 학원 위치. 지도에서 찍거나 직접 고칠 수 있다.
     const [academyPin, setAcademyPin] = useState({
         name: settings?.academyPlaceName || "",
@@ -193,8 +199,42 @@ export default function AdminSettingsClient({
         return <AdminSettingsLoadingFallback />;
     }
 
+    // 시설 사진을 올려 주소를 facilityImages 에 붙인다. 갤러리 새 게시물과 같은 공용 함수(압축 → /api/upload)를 쓴다.
+    // 여기서는 화면 상태에만 넣고, DB 반영은 지금처럼 아래 «저장하기»를 눌러야 된다.
+    async function uploadFacilityPhotos(files: FileList | null) {
+        if (!files || files.length === 0) return;
+        setFacilityUploading(true);
+        setFacilityUploadError(null);
+        try {
+            const { items, failedNames } = await uploadImagesWithProgress(files, { folder: "coaches" });
+            if (items.length > 0) {
+                // 올리는 사이 다른 사진을 지웠을 수 있으니 최신 목록 뒤에 붙인다
+                setFacilityImages((prev) => [...prev, ...items.map((item) => item.url)]);
+                setSaveSuccess(false);
+            }
+            if (failedNames.length > 0) {
+                setFacilityUploadError(
+                    items.length === 0
+                        ? "사진을 올리지 못했습니다. 다시 시도해 주세요. (JPG·PNG·WebP·GIF, 25MB 이하)"
+                        : `${items.length}장을 올렸고, ${failedNames.length}장은 올리지 못했습니다. 올리지 못한 사진을 다시 골라 주세요.`,
+                );
+            }
+        } catch (error) {
+            setFacilityUploadError(adminErrorText(error, "사진을 올리지 못했습니다."));
+        } finally {
+            setFacilityUploading(false);
+            // 같은 파일을 다시 골라도 onChange 가 불리도록 선택값을 비운다
+            if (facilityFileRef.current) facilityFileRef.current.value = "";
+        }
+    }
+
     async function saveBasicSettings(formData: FormData) {
         if (savingRef.current || fetchErrorState || loading) return;
+        // 사진이 올라가는 중에 저장하면 그 사진이 빠진 채 저장된다 — 끝난 뒤 저장하게 한다
+        if (facilityUploading) {
+            setActionError("시설 사진을 올리는 중입니다. 다 올라간 뒤 저장해 주세요.");
+            return;
+        }
         savingRef.current = true;
         setSaving(true);
         setActionError(null);
@@ -347,39 +387,54 @@ export default function AdminSettingsClient({
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">시설 사진 URL</label>
-                                <p className="text-xs text-[var(--color-academy-faint)] mb-2">
-                                    이미지 URL을 한 줄에 하나씩 입력합니다.
+                                <p className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">
+                                    시설 사진{facilityImages.length > 0 && <> <span className="tabular-nums">{facilityImages.length}</span>장</>}
                                 </p>
-                                {facilityImages.map((url, i) => (
-                                    <div key={i} className="flex gap-2 mb-2">
-                                        <input
-                                            type="url"
-                                            value={url}
-                                            onChange={(e) => {
-                                                const next = [...facilityImages];
-                                                next[i] = e.target.value;
-                                                setFacilityImages(next);
-                                            }}
-                                            placeholder="https://..."
-                                            className="academy-input min-w-0 flex-1 font-mono"
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={() => setFacilityImages(facilityImages.filter((_, j) => j !== i))}
-                                            className="academy-button-danger academy-button-sm shrink-0"
-                                        >
-                                            삭제
-                                        </button>
+                                <p className="text-xs text-[var(--color-academy-faint)] mb-2">
+                                    사진을 올린 뒤 아래 «저장하기»를 눌러야 홈페이지에 반영됩니다. 여러 장을 한 번에 고를 수 있습니다.
+                                </p>
+                                {/* 이미 들어 있는 사진 — 작은 미리보기 + «삭제» 글자 버튼(옛 주소도 그대로 보인다) */}
+                                {facilityImages.length > 0 && (
+                                    <div className="mb-3 flex flex-wrap gap-3">
+                                        {facilityImages.map((url, i) => (
+                                            <div key={`${url}-${i}`} className="flex w-28 flex-col gap-1">
+                                                <AdminPhotoThumb src={url} alt={`시설 사진 ${i + 1}`} className="h-20 w-28 rounded-lg" />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setFacilityImages((prev) => prev.filter((_, j) => j !== i));
+                                                        setSaveSuccess(false);
+                                                    }}
+                                                    aria-label={`시설 사진 ${i + 1} 삭제`}
+                                                    className="academy-button-danger academy-button-sm"
+                                                >
+                                                    삭제
+                                                </button>
+                                            </div>
+                                        ))}
                                     </div>
-                                ))}
+                                )}
                                 <button
                                     type="button"
-                                    onClick={() => setFacilityImages([...facilityImages, ""])}
+                                    onClick={() => facilityFileRef.current?.click()}
+                                    disabled={facilityUploading}
                                     className="academy-button-secondary academy-button-sm"
                                 >
-                                    + 사진 URL 추가
+                                    {facilityUploading ? "올리는 중…" : "사진 올리기"}
                                 </button>
+                                {/* 숨긴 파일 선택창 — 위 버튼으로 연다. name 이 없어 설정 저장 값에는 섞이지 않는다 */}
+                                <input
+                                    ref={facilityFileRef}
+                                    type="file"
+                                    accept="image/jpeg,image/png,image/webp,image/gif"
+                                    multiple
+                                    aria-label="시설 사진 파일 고르기"
+                                    onChange={(event) => void uploadFacilityPhotos(event.target.files)}
+                                    className="hidden"
+                                />
+                                {facilityUploadError && (
+                                    <p role="alert" className="mt-2 text-xs font-medium text-[var(--color-academy-danger)]">{facilityUploadError}</p>
+                                )}
                             </div>
                         </div>
                     </section>

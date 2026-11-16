@@ -1,8 +1,10 @@
 "use client";
 import { adminErrorText } from "@/components/admin/adminDisplayText";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { createProgram, updateProgram } from "@/app/actions/admin";
+import AdminPhotoThumb from "@/components/admin/AdminPhotoThumb";
+import { uploadImagesWithProgress } from "@/lib/clientImageUpload";
 import { isWeekendOnlyDays, REGULAR_FREQ_TIERS } from "@/lib/billing/regular-tuition-preview";
 import { showNotice } from "@/components/ui/feedback";
 
@@ -189,6 +191,35 @@ function ProgramFormFields({
     // 셔틀 운행 여부: 주말 전용은 강제 미운행, 그 외에는 토글로 결정
     const shuttleOn = form.runsShuttle && !weekend;
     const hasAnyPrice = form.priceWeek1 || form.priceWeek2 || form.priceWeek3 || form.priceDaily;
+
+    // 프로그램 이미지 올리기 — 올리는 중 표시·오류 글자·숨긴 파일 선택창
+    const [imageUploading, setImageUploading] = useState(false);
+    const [imageError, setImageError] = useState<string | null>(null);
+    const imageFileRef = useRef<HTMLInputElement>(null);
+    // 사진이 올라가는 동안 다른 칸을 고칠 수 있다 — 끝났을 때 «그때의 최신 입력값»에 주소만 얹기 위해 기억해 둔다
+    const latestForm = useRef(form);
+    useEffect(() => {
+        latestForm.current = form;
+    }, [form]);
+
+    // 사진 한 장을 올려 imageUrl 에 주소를 넣는다. 갤러리 새 게시물과 같은 공용 함수(압축 → /api/upload)를 쓴다.
+    // 여기서는 폼 값만 바꾸고, DB 반영은 지금처럼 «저장» 버튼을 눌러야 된다.
+    async function uploadProgramImage(files: FileList | null) {
+        if (!files || files.length === 0) return;
+        setImageUploading(true);
+        setImageError(null);
+        try {
+            const { items } = await uploadImagesWithProgress(files, { folder: "coaches", limit: 1 });
+            if (items.length > 0) onChange({ ...latestForm.current, imageUrl: items[0].url });
+            else setImageError("사진을 올리지 못했습니다. 다시 시도해 주세요. (JPG·PNG·WebP·GIF, 25MB 이하)");
+        } catch (error) {
+            setImageError(adminErrorText(error, "사진을 올리지 못했습니다."));
+        } finally {
+            setImageUploading(false);
+            // 같은 파일을 다시 골라도 onChange 가 불리도록 선택값을 비운다
+            if (imageFileRef.current) imageFileRef.current.value = "";
+        }
+    }
 
     return (
         <div className="space-y-5">
@@ -384,14 +415,44 @@ function ProgramFormFields({
             </div>
 
             <div>
-                <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">프로그램 이미지 URL</label>
+                <p className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">프로그램 이미지</p>
+                {/* 이미 저장된 주소(옛 외부 주소 포함)는 그대로 미리보기로 보인다 */}
+                {form.imageUrl && (
+                    <AdminPhotoThumb src={form.imageUrl} alt="프로그램 이미지 미리보기" className="mb-2 h-20 w-60 max-w-full rounded-lg" />
+                )}
+                <div className="flex flex-wrap gap-2">
+                    <button
+                        type="button"
+                        onClick={() => imageFileRef.current?.click()}
+                        disabled={imageUploading || pending}
+                        className="academy-button-secondary academy-button-sm"
+                    >
+                        {imageUploading ? "올리는 중…" : form.imageUrl ? "사진 바꾸기" : "사진 올리기"}
+                    </button>
+                    {form.imageUrl && (
+                        <button
+                            type="button"
+                            onClick={() => { setImageError(null); p({ imageUrl: "" }); }}
+                            disabled={imageUploading || pending}
+                            aria-label="프로그램 이미지 삭제"
+                            className="academy-button-danger academy-button-sm"
+                        >
+                            삭제
+                        </button>
+                    )}
+                </div>
+                {/* 숨긴 파일 선택창 — 위 버튼으로 연다 */}
                 <input
-                    type="url"
-                    value={form.imageUrl}
-                    onChange={(e) => p({ imageUrl: e.target.value })}
-                    placeholder="https://..."
-                    className={INPUT + " font-mono text-xs"}
+                    ref={imageFileRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    aria-label="프로그램 이미지 파일 고르기"
+                    onChange={(event) => void uploadProgramImage(event.target.files)}
+                    className="hidden"
                 />
+                {imageError && (
+                    <p role="alert" className="mt-2 text-xs font-medium text-[var(--color-academy-danger)]">{imageError}</p>
+                )}
             </div>
 
             <div className="flex justify-end gap-2 pt-2">
@@ -404,7 +465,7 @@ function ProgramFormFields({
                 <button
                     type="button"
                     onClick={onSubmit}
-                    disabled={pending || !form.name.trim() || !hasAnyPrice}
+                    disabled={pending || imageUploading || !form.name.trim() || !hasAnyPrice}
                     className="academy-button-primary"
                 >
                     {pending ? "저장 중..." : submitLabel}

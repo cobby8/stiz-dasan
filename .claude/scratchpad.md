@@ -10,7 +10,7 @@
 |------|------|
 | 목록 화면 개편 8단계 | 전부 배포(10-30, `98fe9fe9`). 뺀 것: 방학특강 반 카드·출석부·결석·셔틀, 수업 진행·사진 게시, 학부모 결제·수납 탭 |
 | UI 통일(네이비+하늘색·아이콘 없이 글자·굵기 4단계) | 배포(11-13) · 12px 미만 글자·800/900 굵기·브라우저 경고창 정리 배포(11-16, `3d73fac4`) |
-| 안 쓰는 기능 정리 | 결정표 9칸 전부 «안 쓴다»(11-16). 가 묶음 5건 삭제 완료·push. 나(주소→파일 올리기 2건)·다(수업 기록 창) 남음 — 결정표 https://claude.ai/artifact/QbAMyZW2XvbTA3aCsZraNe |
+| 안 쓰는 기능 정리 | 결정표 9칸 전부 «안 쓴다»(11-16). 가 5건 삭제·나 2건(주소→사진 올리기) 완료·push. 다(수업 기록 창)만 남음 — 원장 선택 대기. 결정표 https://claude.ai/artifact/QbAMyZW2XvbTA3aCsZraNe |
 | 이월 리뷰 수정 | R-1·R-3 은 이미 고쳐짐. 남은 것 R-2·R-7②·R-8②·M-1(관리자 세션) · P-1·P-2(청구 세션) |
 | KST 가드 빚 | R1(오늘을 UTC 로) 19파일 · R3 0 · R4 1(`SessionLogModal.tsx`) |
 
@@ -51,6 +51,7 @@
 ## 작업 로그 (최근 10건)
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-16 | 관리자 정리 나 묶음(claude/admin-cleanup-204a7d): 설정 «시설 사진»·프로그램 «이미지»의 주소 입력 → «사진 올리기»(미리보기+삭제, 시설은 여러 장). 기존 길 그대로 = uploadImagesWithProgress → /api/upload, 폴더 coaches(허용 목록 그대로). 저장 payload 불변, 새 부품 components/admin/AdminPhotoThumb(일반 img·실패 글자). 운영 프로그램 이미지 7개는 모두 자체 저장소 주소. 안 쓰게 된 사진 파일은 저장소에 남음(코치·갤러리와 같음). tsc 0 · tests 5819-0 · guards 337-0 · reviewer 통과 | 브랜치 push(main 미반영) |
 | 11-16 | 관리자 정리(claude/admin-cleanup-204a7d): 원장 결정표 9칸 전부 «안 쓴다» → 가 묶음 5건 삭제(방학특강 «상태 직접 변경» select · 공지 «페이스북 광고 소재» · 갤러리 «인스타 가져오기» 버튼+액션 · 설정 AppliesTo 9곳 · «외부 신청 링크» 2칸+siteOpsBot 신청서 점검). trialFormUrl·enrollFormUrl 은 저장 요청에서 빼 DB 값 유지. 남은 것: 나(주소 입력→파일 올리기 2건) · 다(수업 기록 창, 원장 선택 대기). 다음 정리 후보: 발행 때마다 쌓이는 FACEBOOK_AD_DRAFT 기록(social-campaigns.ts). architecture 51→28 병합. tsc 0 · tests 5819-0 · guards 337-0 · reviewer 통과 | 브랜치 push(main 미반영) |
 | 11-16 | developer(학생별 고정 수강료 + 평일 대회준비반 주N회, claude/fixed-tuition): 표 StudentFixedTuition(마이그레이션 20261116500000, **운영 적용 전**) · planWeeklyTuition 2번째 인자 = 첫 반 고정액·나머지 0원·할인/3회 차감 없음·셔틀 유지 · 청구 준비 «고정 15만» 표시 · 학생 상세 «청구/수납» FixedTuitionPanel(원장 requireOwner) · 평일 대회준비반 15만 고정 삭제 → 주N회 합계÷N(할인·3회 차감 없음, 주1회 priceWeek1 우선) · 검수 반영: 확정 장부 일부면 미적용·발행 가능한 첫 행에 고정액·패널 «원본 변경» 안내 · tsc 0·test fail 0 | 완료 |
 | 11-16 | developer(가입 안내 가입함 포함, claude/signup-guide-signed-in): 가입한 보호자·성인 본인도 대상 «가입함»(로그인 안내 문구 원장 전문, 성인은 회원·혜택 2줄 변경) · 가입 막힘·학원 문의 판정은 미가입에만 · 구성 = 미가입 재원/휴원/성인 + 가입함(겹침 없음) · 미리보기 문구 4종 블록 · 지문에 가입 여부·네 문구 포함 · /login 실재 확인. tsc 0 · tests 5739-0 · guards 337-0 | 구현 완료(검수 전) |
@@ -60,4 +61,3 @@
 | 11-16 | developer(아이 위주 프로필, claude/parent-child-photo): 홈 히어로 아이 사진 옆 «사진 올리기/바꾸기» 글자 버튼 늘 표시(ProfilePhotoEditor variant="button", 그 자리 업로드) · 설정 맨 위 «우리 아이»(아이마다 사진·이름→아이 정보, 사진 버튼) · 보호자 «내 사진» 칸(MyPhotoRow) 제거, 사진 파일·DB·API 는 그대로 · 테스트 갱신. tsc 0 · tests 5681-0 · guards 337-0 | 구현 완료(검수 전) |
 | 11-16 | developer(핵심 데이터 seed 자동 저장, claude/seed-auto): 매일 백업 cron·«전체 백업 지금 저장»이 같은 실행에서 스냅샷(Program·ClassSlotOverride·이용약관, 정해진 칸만)을 backups/seed/seed-latest.json + seed-<날짜>.json(30일)로 저장 · POST /api/admin/seed 는 Storage 최신본 먼저 → 없음·읽기 실패·모양 이상·프로그램 0줄이면 prisma/seed-data.ts · 공용 lib/backup/seedSnapshot.ts(순수) · 대시보드 «핵심 데이터 자동 저장» 한 줄 · 버킷 목록 3곳 seed 폴더 칸 제외 · CLAUDE.md 는 developer 수정 불가라 문안만 PM 에 전달. tsc 0 · tests 5646-0 · guards 337-0 | 구현 완료(검수 전) |
 | 11-16 | PM(통합 claude/deploy-1116): 재원생 무료 대관 화면(memberMode)·글자 12px↑·굵기 4단계·ORM 4건·브라우저 경고창 178곳 → feedback.tsx, 가드 예외 폴더 제거, 크론 퇴원 정리(141768e4) 배포 |
-| 11-16 | 남은 정리(claude/cleanup-type-weight): 12px 미만 글자 20곳→12px · 800/900 굵기 35곳→제목 font-[700]·그 외 600(OG·지도·도넛 700) · 입학 완료 확인 화면 ORM 4건→$queryRawUnsafe · 가드 tests/type-weight-guard.test.mjs. tsc 0 · tests 5619-0 · guards 337-0 | 구현 완료(검수 전) |
