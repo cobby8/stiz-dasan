@@ -565,7 +565,7 @@ test("공개 화면: 페이지는 정적(ISR) 그대로, 로그인 여부는 서
   // 로그인 유도는 날짜(첫 입력)보다 위
   assert.ok(client.indexOf("재원생 가족이면 로그인하고") < client.indexOf("{/* 1. 날짜"));
   // 연결 재원생이 있을 때만 체크칸, 학생 이름 입력칸은 없다
-  assert.match(client, /\{memberStudents\.length > 0 && \(/);
+  assert.match(client, /\{memberStudents\.length > 0 && !memberMode && \(/);
   assert.doesNotMatch(client, /studentName|학원에 등록된 학생 이름/);
   assert.match(client, /memberStudentId: memberFree \? memberStudentId : ""/);
 });
@@ -586,4 +586,19 @@ test("신청 완료: 맨 위로 튀지 않고 접수증으로 스크롤, 계좌�
   // 복사값은 그대로 — 계좌는 서버가 만든 bankCopyText, 금액은 숫자만
   assert.match(client, /copyText\("account", receipt\.bankCopyText\)/);
   assert.match(client, /copyText\("amount", String\(receipt\.totalAmount\)\)/);
+});
+
+// ── 학부모 앱 «재원생 무료 대관» 화면(2026-11-16 원장 지시) ──
+test("학부모 앱 대관: 재원생이면 재원생 안내(2시간 무료·보증금 없음)와 체크 없는 무료 적용, 없으면 일반 대관 안내", () => {
+  const page = read("src/app/mypage/rental/page.tsx");
+  assert.match(page, /const isMember = member\.signedIn && member\.students\.length > 0;/);
+  assert.match(page, /isMember \? <MemberRentalGuide studentNames=\{member\.students\.map\(\(s\) => s\.name\)\} \/> : <RentalGuide \/>/);
+  assert.match(page, /지금 수강 중인 아이가 없어 일반 대관 요금으로 신청돼요\./);
+  const guide = read("src/app/mypage/rental/MemberRentalGuide.tsx");
+  for (const text of ["처음 2시간", "무료", "보증금", "없음", "RENTAL_FEE.extraHour", "RENTAL_FEE.airconPerHour"]) assert.ok(guide.includes(text), text);
+  assert.doesNotMatch(guide, /RENTAL_FEE\.firstHour|RENTAL_FEE\.deposit|보증금 환불/, "외부 손님 요금·보증금 환불 안내는 넣지 않는다");
+  const client = read("src/app/rental/RentalClient.tsx");
+  assert.match(client, /const memberFree = \(memberMode \|\| memberChecked\) && memberStudents\.length > 0;/, "재원생 화면은 체크 없이 무료");
+  assert.match(client, /memberStudents\.length > 0 && !memberMode && \(/, "체크칸은 공개 화면에만");
+  assert.match(client, /memberFree: memberFree,|memberFree,\n/, "무료 여부는 서버로 보내 서버가 다시 확인");
 });

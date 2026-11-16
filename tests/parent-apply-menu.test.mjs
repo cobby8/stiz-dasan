@@ -120,7 +120,7 @@ test("③ 앱 안 화면은 공개 신청 부품을 그대로 그린다(신청 �
   const rental = read("src/app/mypage/rental/page.tsx");
   assert.match(rental, /import RentalClient from "@\/app\/rental\/RentalClient";/);
   assert.match(rental, /import RentalGuide from "@\/app\/rental\/RentalGuide";/);
-  assert.match(rental, /<RentalClient homeHref="\/mypage" \/>/);
+  assert.match(rental, /<RentalClient homeHref="\/mypage" memberMode=\{isMember\} initialMember=\{member\} \/>/);
   assert.doesNotMatch(rental, /submitRentalRequest|calculateRentalFee|prisma/, "저장·요금 계산을 여기서 하지 않는다");
 
   const list = read("src/app/mypage/seasonal/apply/page.tsx");
@@ -157,7 +157,7 @@ test("③ 신청 부품 안의 이동 주소는 넘겨받은 값만 쓴다(앱 �
   assert.match(form, /<DoneView slug=\{slug\} basePath=\{basePath\} homeHref=\{homeHref\} /);
   // 접수 API 는 공개 화면과 같은 주소(신청 로직 한 벌)
   assert.match(form, /fetch\(`\/api\/seasonal\/\$\{encodeURIComponent\(slug\)\}\/applications`/);
-  assert.match(rental, /RentalClient\(\{ homeHref = "\/" \}/);
+  assert.match(rental, /RentalClient\(\{ homeHref = "\/", memberMode = false, initialMember = null \}/);
   assert.match(rental, /<Link href=\{homeHref\} className="public-btn-text mt-2">홈으로<\/Link>/);
   assert.doesNotMatch(rental, /href="\/"/);
 });
