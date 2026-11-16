@@ -44,9 +44,25 @@
 - ⚠️ (11-08 POS 결제 취소 리뷰) 마이그레이션은 build 에 migrate deploy 가 없어 **배포 전 apply_migration 필수**(안 하면 현장 결제 전체 정지).
 
 
+## 리뷰 결과 (reviewer) — 수업 미처리 장치 1단계 (11-17)
+종합 판정: 통과(필수 1건은 테스트 한 줄, 동작 결함 없음)
+
+잘된 점: 사실(캐시)과 판정(매번 새 시각) 분리 · 규칙이 시계를 안 읽음 · 종료 조건 SQL 조각 재사용+글자 비교 테스트 · 표 없음 방어가 읽기·쓰기 모두 트랜잭션 밖 catch · 휴강 표를 읽는 곳이 class-nudge 뿐임을 테스트로 고정
+
+수정 요청
+| 번호 | 파일:줄 | 심각도 | 내용 |
+|------|---------|--------|------|
+| N-1 | tests/class-nudge-dashboard.test.mjs:247-248 | 필수 | `folders.at(-1) === "20261117120000_add_class_day_cancel"` — 다른 세션이 더 늦은 마이그레이션을 추가해 합치는 순간 실패한다. «폴더가 있다 + 14자리 형식»만 단정하도록 |
+| N-2 | src/lib/class-nudge/boardQuery.ts:131-136 | 권장 | hasSeasonalToday 는 보관 시즌을 안 거르고 특강 조회는 거른다 → 보관 시즌 회차가 연결된 정규 반은 양쪽에서 다 빠진다. 같은 조건(season.status <> 'ARCHIVED')으로 |
+| N-3 | src/components/admin/ClassDayBoardCard.tsx:183-194 | 권장 | 옛 카드의 프로그램 이름·정원 참 표시(빨강)가 빠졌고, 인원 셈이 «개시일 전 수강 제외 + 보강 포함»으로 달라짐 — 원장 안내 필요 |
+| N-4 | src/lib/class-nudge/boardServer.ts:19-24 | 권장 | 휴무 판정이 캐시 밖이라 60초 새로 읽기마다 설정·일정 조회가 동시에(Promise.all) 나갈 수 있음 — 운영에서 조회 수 확인 |
+| N-5 | src/lib/class-nudge/rules.ts:128-132 | 권장 | 휴강 표시 뒤 관리자가 출결을 넣어도 «휴강»으로 남는다(시작 전·PLANNED 일 때). 의도면 주석만 |
+
 ## 작업 로그 (최근 10건)
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-17 | reviewer(수업 미처리 장치 1단계): 통과 · 필수 1(마이그레이션 «가장 최근 폴더» 단정) · 권장 4 · tsc 0 · tests 5966 fail 0 · guards(src/lib/*.test.ts) 82 fail 0 · eslint 변경 파일 0 | 리뷰 완료 |
+| 11-17 | developer(수업 미처리 장치 1단계, claude/staff-app-08fde4): 순수 규칙 lib/class-nudge/rules.ts(상태 10종·임계 10·10·30 한 곳·시계 안 읽음) · 집합 조회 boardQuery.ts(정규·특강·휴강·담당 4번 차례로) · 조립 board.ts · 휴강 저장 cancelStore.ts · 연결부 boardServer.ts(DB 사실 30초 캐시, 휴무는 캐시 밖) · 대시보드 «오늘의 수업» → «오늘 수업 처리 현황»(components/admin/ClassDayBoardCard, /api/admin/class-day-board, 60초 새로 읽기) · 휴강 표시·취소 액션(actions/class-day-cancel.ts, 원장·부원장, 감사 기록) · 새 표 ClassDayCancel(마이그레이션 20261117120000_add_class_day_cancel, **운영 적용 전** — 표 없으면 읽기 «휴강 없음»·쓰기 «준비 중»). 설계와 다른 점: 특강 미확인은 진행 중만 좌석 칸 기준·그 밖은 «좌석도 출결 기록도 없음»(관리자 특강 저장이 좌석 칸을 안 채움) · 휴무 판정은 캐시 밖. 조회 SQL 은 실제 DB 에서 못 돌려 봄·로그인 화면 실행 확인 못 함. 새 테스트 tests/class-nudge-*.test.mjs 94건. tsc 0 · tests 5966 fail 0 · guards 337 fail 0 | 구현 완료(검수 전) |
 | 11-17 | developer(선생님 음성으로 기록 수리, claude/staff-app-08fde4): 다른 화면에서 넘어온 선생님 화면은 한 번 새로 불러오기(순수 규칙 lib/staff/documentPolicy.ts + 부품 staff/StaffDocumentReload.tsx, 운행 화면 /staff/run 제외·되풀이 방지 표식) · 음성 변환 라우트 모델 = GEMINI_CHAT_MODEL, 실패 기록에 오류 번호 추가, 로그인 풀림 401 · 버튼 안내 원인별 5문구 + «새로 불러오기»(lib/staff/voiceStartError.ts) · 새 테스트 tests/staff-voice-input.test.mjs 16건. 실기기 확인 못 함. tsc 0 · tests 5849 fail 0 · guards 337 fail 0 | 구현 완료(검수 전) |
 | 11-17 | developer(직원 간편로그인 연결 보안 보강, claude/staff-app-08fde4): 직원 연결 시작 = 폼 POST + 출처 확인(isAllowedLinkHandoffOrigin 재사용), 직원 GET intent=link 는 시작 안 함(e=start) · 직원 화면 오류 = 주소 코드 e → 표(STAFF_LINK_ERROR_MESSAGES), error 문장은 읽지 않음 · 학부모 흐름 그대로 · 시작 라우트 실행 테스트 추가 · tsc 0 · 전체 5833 fail 0 · guards 337 fail 0 | 완료(검수 전) |
 | 11-17 | developer(직원 간편로그인 연결, claude/staff-app-08fde4): 직원 화면 /staff/mypage/login-methods(requireStaff·앱에서는 버튼 숨김+안내·1회용 표 발급 없음) · 마이페이지에 진입 줄 · 공용 판정 lib/account/link-actor.ts(학부모→직원)+순수 규칙 login-methods-rules.ts · 시작 라우트·콜백의 복귀 화면을 서버 판정으로(주소 파라미터 안 받음) · 브라우저 간편로그인 콜백이 직원 계정을 /auth/continue 로(requireNativeAccount 재사용) · 새 테스트 tests/staff-login-methods-link.test.mjs, 기존 단정 2곳 조정. tester 참고: 로그인 화면 실행 확인 못 함 — 브라우저에서 직원 로그인 → 연결 → «연결됨», 앱에서 버튼 숨김·안내, 연결 뒤 /login 간편로그인으로 직원 화면 진입을 실기기로 볼 것. reviewer 참고: 자녀 있는 직원은 학부모 화면으로 복귀·보안 문자의 recipientRole 이 PARENT 로 기록됨. tsc 0 · tests 5829 fail 0 · guards 337 fail 0 | 구현 완료(검수 전) |
@@ -59,4 +75,3 @@
 | 11-16 | developer(가입 안내 가입함 포함, claude/signup-guide-signed-in): 가입한 보호자·성인 본인도 대상 «가입함»(로그인 안내 문구 원장 전문, 성인은 회원·혜택 2줄 변경) · 가입 막힘·학원 문의 판정은 미가입에만 · 구성 = 미가입 재원/휴원/성인 + 가입함(겹침 없음) · 미리보기 문구 4종 블록 · 지문에 가입 여부·네 문구 포함 · /login 실재 확인. tsc 0 · tests 5739-0 · guards 337-0 | 구현 완료(검수 전) |
 | 11-16 | developer(가입 안내 전체, claude/signup-guide-all): 대상 = 수강 ACTIVE+PAUSED 학생 대표 보호자(퇴원만 제외)·성인(만19+ KST)은 대표 보호자=본인 빈 계정이라 같은 길 · 번호별 구분 재원/휴원/성인(성인만 있는 번호=성인용 문구, 학부모 승인본에서 3줄만 바꿈) · 가입 막힘(«빈 보호자 계정» 아닌 계정이 같은 번호) 제외·빈 계정 여럿은 경고 · 미리보기 구성·성인 문구 표시 · 큐 items 로 사람별 문구, 지문에 구분 포함. tsc 0 · tests 5716-0 · guards 337-0 | 구현 완료(검수 전) |
 | 11-16 | developer(청구서 안내 묶어보내기, claude/invoice-notice-bundle): 같은 번호의 같은 달 청구서 2장↑ = 묶음 LMS 1통(열쇠 invoice-bundle:정렬id, 2,000바이트 넘으면 나눔), 1장은 예전 그대로(알림톡 심사본) · 예약 잠금 안 청구서 단위 겹침 검사(invoiceIds &&, 재발송 종류끼리) · 대상 조회 loadInvoiceNoticeCandidates 를 발송·확인창(previewInvoiceNoticeCounts, 읽기만) 공용 · 앱 알림 학부모당 1건 · 확인창·진행 줄 «청구서 N장 → 문자 M통(묶음 K통)». 12월 예상 179장→120통(묶음 48·최장 941바이트). tsc 0 · tests 5717-0 · guards 337-0 | 구현 완료(검수 전) |
-| 11-16 | developer(쇼핑몰 유니폼 주문 → 학부모 화면, claude/uniform-shop-orders): 표 UniformShopOrder·UniformShopOrderItem(마이그레이션 20261116300000, 운영 적용 전) · lib/uniform/shopOrderSync.ts(서명 GET·응답 엄격 검증·한 SQL 문 upsert, 지우기 없음) · cron /api/cron/uniform-shop-sync 매시 17분(?days·?from&to) · loadChildUniformOrders 사이트+쇼핑몰 합쳐 최신순(본인 번호=구매자/수령인 + 이름 열쇠, 이름 빈 품목 제외, 표 없으면 빈 목록) · 줄에 «쇼핑몰»/«사이트» 글자. tsc 0 · tests 5703-0 · guards 337-0 | 구현 완료(검수 전) |

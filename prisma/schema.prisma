@@ -413,6 +413,7 @@ model Class {
   sessions           Session[]
   regularAbsences    RegularAbsence[] // 정규 수업 사전 결석 신고(back-relation)
   substitutes        ClassSubstitute[] // 날짜별 대타 선생님 지정(f4)
+  dayCancels         ClassDayCancel[] // «오늘 이 반 휴강» 표시(미처리 독촉만 멈춤)
   changeRequestsFrom EnrollmentChangeRequest[] @relation("EnrollmentChangeFromClass")
   changeRequestsTo   EnrollmentChangeRequest[] @relation("EnrollmentChangeToClass")
 
@@ -3920,4 +3921,21 @@ model StudentFixedTuition {
   updatedAt   DateTime @default(now()) @db.Timestamptz(6)
 
   @@index([studentId], map: "StudentFixedTuition_studentId_idx")
+}
+
+/// «오늘 이 반 휴강» 표시(2026-11-17) — 그날 그 수업의 미처리 독촉만 멈춘다. 학부모·청구·보강권·셔틀·출결과 무관.
+/// 서버 raw SQL(src/lib/class-nudge)만 사용한다. RLS 켜짐·anon/authenticated 권한 회수.
+/// CHECK(date 형식·kind 값·startTime 모양·reason 200자)는 migration 20261117120000_add_class_day_cancel 에 있다.
+model ClassDayCancel {
+  id        String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  date      String // KST 달력 날짜 "YYYY-MM-DD"
+  classId   String
+  kind      String   @default("REGULAR") // REGULAR | SEASONAL
+  startTime String   @default("") // 정규는 "", 특강은 회차 시작 "HH:MM"(KST)
+  reason    String?
+  createdBy String // 누른 원장·부원장 User.id(기록용, FK 없음)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  class     Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@unique([date, classId, kind, startTime], map: "ClassDayCancel_date_classId_kind_startTime_key")
 }
