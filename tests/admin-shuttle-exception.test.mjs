@@ -371,12 +371,14 @@ test("취소: 지난 날짜의 변경은 손대지 않는다(이미 운행이 �
 });
 
 // ═════════════════════════════════════════════════════════════════════════
-// 화면 — 정규 배차(그날 운행표) 위에 목록 + «당일 변경 입력» 버튼 하나 + 모달
+// 화면 — 정규 배차(그날 운행표) 머리줄의 «당일 변경» 버튼 하나 → 창 안에 목록 + «당일 변경 입력» 버튼 + 모달
+// (2026-11-17 원장 지시 「칸을 너무 많이 차지한다 — 기사 요청 옆에 버튼 하나로」. 그 전에는 운행표 위에 칸이 따로 있었다)
 // ═════════════════════════════════════════════════════════════════════════
 test("화면: 정규 배차 화면에 패널이 걸려 있고, 입력은 버튼 하나 + 모달, 목록은 한 줄 행 + «취소» 글자 버튼", () => {
   const page = read("src/app/admin/shuttle/regular-dispatch/page.tsx");
   assert.match(page, /await requireAdmin\(\);/, "화면도 관리자 확인");
-  assert.match(page, /<ShuttleSectionTabs \/>\s*<ShuttleDayExceptionAdminPanel initial=\{/);
+  // 패널은 여전히 이 화면에 걸려 있다 — 운행표 부품의 머리줄 자리(headerExtra)로 넘긴다
+  assert.match(page, /headerExtra=\{<ShuttleDayExceptionAdminPanel initial=\{/);
   assert.match(page, /getShuttleExceptionBoardForAdmin\(\)\.catch\(/, "조회가 실패해도 운행표는 뜬다");
   const ui = read("src/app/admin/shuttle/regular-dispatch/ShuttleDayExceptionAdminPanel.tsx");
   assert.match(ui, /<button type="button" onClick=\{openForm\} className="academy-button-secondary shrink-0">\s*당일 변경 입력\s*<\/button>/);
@@ -397,4 +399,66 @@ test("화면: 정규 배차 화면에 패널이 걸려 있고, 입력은 버튼 
   const parentLib = read("src/lib/shuttle/parent-shuttle-exception.ts");
   assert.match(parentLib, /WHERE x\."serviceDate" = \$1::date AND x\."canceledAt" IS NULL AND \$\{notMergedStudent\("s"\)\}/);
   assert.equal(kst.kstLabel(MON), "11/16(월)");
+});
+
+// 2026-11-17 원장 지시 — 운행표 위의 칸을 없애고 «기사 요청» 옆 버튼 하나 + 창으로
+test("화면: 운행표 위에 칸을 따로 그리지 않고, «당일 변경» 버튼이 «기사 요청» 바로 뒤에 온다", () => {
+  const page = read("src/app/admin/shuttle/regular-dispatch/page.tsx");
+  // 패널 태그는 한 번만, 그것도 RegularRunEditor 의 prop 안에서만 — 탭과 운행표 사이에 따로 놓이지 않는다
+  assert.equal(page.match(/<ShuttleDayExceptionAdminPanel\b/g).length, 1);
+  assert.match(page, /<ShuttleSectionTabs \/>\s*<RegularRunEditor\b/, "탭 바로 아래가 운행표");
+  const editor = read("src/app/admin/shuttle/regular-dispatch/RegularRunEditor.tsx");
+  // «기사 요청» 버튼이 닫히고 바로 다음이 headerExtra, 그리는 곳은 한 군데
+  assert.match(editor, /기사 요청\s*\{pendingRequests > 0 && <span [^\n]*<\/span>\}\s*<\/button>\s*\{headerExtra\}/);
+  assert.equal(editor.match(/\{headerExtra\}/g).length, 1);
+  assert.match(editor, /headerExtra\?: ReactNode;/);
+});
+
+test("화면: «당일 변경» 버튼 — 기사 요청과 같은 모양, 건수 배지는 위험색이 아닌 안내색, 건수는 글자로도 읽힌다", () => {
+  const ui = read("src/app/admin/shuttle/regular-dispatch/ShuttleDayExceptionAdminPanel.tsx");
+  const button = ui.match(/<button type="button" onClick=\{openList\}[\s\S]*?<\/button>/);
+  assert.ok(button, "«당일 변경» 버튼이 있다");
+  assert.match(button[0], /className="academy-button-secondary relative"/);
+  assert.match(button[0], /aria-label=\{`당일 변경 \$\{count\}건`\}/, "색만으로 뜻을 전하지 않는다");
+  assert.match(button[0], /\{count > 0 && <span /, "0건이면 배지 없음");
+  assert.match(button[0], /bg-\[var\(--color-academy-info\)\]/);
+  assert.doesNotMatch(button[0], /academy-danger/, "처리할 일이 아니라 들어온 알림 — 빨강을 쓰지 않는다");
+  // 배지와 창 안 건수가 같은 값(board.rows.length) — 저장·취소 뒤 서버에서 다시 읽으면 함께 바뀐다
+  assert.match(ui, /const count = board\.rows\.length;/);
+  assert.match(ui, /async function reload\(\) \{\s*const result = await loadShuttleExceptionBoardAction\(\);\s*if \(result\.ok\) setBoard\(result\.board\);/);
+  assert.equal(ui.match(/await reload\(\);/g).length, 3, "저장 뒤 1번 · 취소 성공·실패 뒤 각 1번");
+});
+
+test("화면: 목록은 창 안에 — 줄 수 제한·«더 보기» 없이 전부, 목록만 세로 스크롤, 창은 한 번에 하나만", () => {
+  const ui = read("src/app/admin/shuttle/regular-dispatch/ShuttleDayExceptionAdminPanel.tsx");
+  const start = ui.indexOf('{showList && (');
+  const end = ui.indexOf('{formOpen && (');
+  assert.ok(start > 0 && end > start, "목록 창이 입력 창보다 먼저, 따로 그려진다");
+  const listModal = ui.slice(start, end);
+  assert.match(listModal, /<AdminModal titleId="shuttle-day-exception-title" onClose=\{closeList\}/);
+  assert.match(listModal, /<h2 id="shuttle-day-exception-title" className="academy-section-title">셔틀 당일 변경<\/h2>/);
+  assert.match(listModal, /\{count\}건/);
+  assert.match(listModal, /PARENT_CHANGE_CUTOFF_TEXT/, "안내 한 줄");
+  assert.match(listModal, /당일 변경 입력/);
+  assert.match(listModal, /role="status"/, "저장·취소 결과 안내도 창 안");
+  assert.match(listModal, /오늘부터 들어온 당일 변경이 없습니다\./);
+  assert.match(listModal, /<ul className="min-h-0 flex-1 [^"]*overflow-y-auto/, "목록만 창 안에서 세로 스크롤");
+  assert.match(listModal, /\{board\.rows\.map\(\(row\) => \(/, "자르지 않고 전부");
+  assert.match(listModal, /<li key=\{row\.id\}/);
+  assert.match(listModal, />\s*닫기\s*<\/button>/, "닫기는 글자 버튼");
+  assert.doesNotMatch(ui, /ROWS_SHOWN|showAll|더 보기/);
+  // 입력 창·취소 확인 창은 목록 창 «밖»에 따로 그린다(목록 창 안에 넣으면 포커스 가두기가 꼬인다)
+  assert.doesNotMatch(listModal, /AdminConfirmDialog|shuttle-day-exception-form-title/);
+  // 창은 한 번에 하나만 — 위 창(입력·취소 확인)이 떠 있으면 목록 창을 그리지 않는다.
+  // (겹치면 Esc 한 번에 둘 다 닫히고, «브라우저 뒤로» 때 스크롤 잠금이 남을 수 있다)
+  assert.match(ui, /const showList = listOpen && !formOpen && !cancelTarget;/);
+  assert.doesNotMatch(ui, /\{listOpen && \(/, "목록 창은 showList 로만 그린다");
+  // 위 창을 열고 닫을 때 listOpen 은 건드리지 않는다 — 닫히면 목록 창이 (결과 안내와 함께) 다시 뜬다
+  assert.equal(ui.match(/setListOpen\(/g).length, 2, "여는 곳 1 · 닫는 곳 1");
+  assert.match(ui, /function openList\(\) \{[^}]*setListOpen\(true\);\s*\}/);
+  assert.match(ui, /function closeList\(\) \{\s*setListOpen\(false\);\s*\}/);
+  // 결과 안내(message)는 창이 아니라 부품이 들고 있어, 목록 창이 다시 뜰 때 그대로 보인다
+  assert.match(ui, /const \[message, setMessage\] = useState\(""\);/);
+  // 창 밖(머리줄)에 남는 것은 버튼뿐 — 운행표를 미는 칸(section·바깥 여백 상자)이 없다
+  assert.doesNotMatch(ui, /<section\b|mx-auto max-w-6xl/);
 });
