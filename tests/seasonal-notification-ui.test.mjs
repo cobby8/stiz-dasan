@@ -100,7 +100,9 @@ test("관리자 신청 항목은 상태 변경 중 중복 요청을 막는다", 
   assert.match(client, /finally \{[\s\S]*updatingItemIdsRef\.current\.delete\(itemId\)/);
   assert.match(client, /aria-busy=\{updating\}/);
   assert.match(client, /disabled=\{updating \|\| item\.status === status\}/);
-  assert.match(client, /<select value=\{item\.status\} disabled=\{updating\} aria-busy=\{updating\}/);
+  // 2026-11-16 «상태 직접 변경» 선택 칸은 뺐다(원장 결정) — 상태는 위 버튼 4개로만 바꾼다
+  assert.doesNotMatch(client, /상태 직접 변경/);
+  assert.doesNotMatch(client, /<select value=\{item\.status\}/);
 });
 
 test("관리자 상태 변경 실패는 열린 신청 항목 안에서 알린다", () => {

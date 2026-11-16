@@ -13,19 +13,6 @@ import type { MapLocationData } from "@/components/maps/LocationPickerModal";
 // 지도 모달은 카카오 지도 SDK를 끌고 오는 무거운 컴포넌트라 실제로 열 때만 불러온다.
 const LocationPickerModal = dynamic(() => import("@/components/maps/LocationPickerModal"), { ssr: false });
 
-// ─── 적용 범위 뱃지 ────────────────────────────────────────────────────────────
-function AppliesTo({ pages }: { pages: string[] }) {
-    return (
-        <div className="flex flex-wrap gap-1.5 mt-1 mb-3">
-            {pages.map((p) => (
-                <span key={p} className="text-xs bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] border border-[var(--color-academy-line)] px-2 py-0.5 rounded-full">
-                    {p}
-                </span>
-            ))}
-        </div>
-    );
-}
-
 // ─── 폰트 선택 카드 ────────────────────────────────────────────────────────────
 function FontCard({ option, selected, name, onSelect }: {
     option: FontOption;
@@ -266,7 +253,6 @@ export default function AdminSettingsClient({
                     {/* ── 폰트 설정 ───────────────────────────────────────── */}
                     <section>
                         <SectionHeader title="글꼴(폰트) 설정" />
-                        <AppliesTo pages={["홈페이지 전체 (모든 페이지)"]} />
 
                         {/* 폰트 미리보기 */}
                         <div className="bg-[var(--color-academy-primary-hover)] rounded-xl p-5 mb-6 text-white space-y-1">
@@ -310,7 +296,6 @@ export default function AdminSettingsClient({
                                 <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">
                                     메인 타이틀
                                 </label>
-                                <AppliesTo pages={["홈페이지 메인 히어로 제목"]} />
                                 <input
                                     name="introductionTitle"
                                     type="text"
@@ -325,7 +310,6 @@ export default function AdminSettingsClient({
                                 <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">
                                     원장 인사말 / 학원 소개
                                 </label>
-                                <AppliesTo pages={["홈페이지 메인 히어로 소개 문구", "학원소개 페이지 원장 인사말"]} />
                                 <LazyRichTextEditor
                                     value={introText}
                                     onChange={(value) => { setIntroText(value); setSaveSuccess(false); }}
@@ -338,7 +322,6 @@ export default function AdminSettingsClient({
                     {/* ── 교육 이념 ──────────────────────────────────────── */}
                     <section className="pt-6 border-t border-[var(--color-academy-line)]">
                         <SectionHeader title="교육 이념" />
-                        <AppliesTo pages={["학원소개 페이지 (원장 인사말 아래)"]} />
                         <p className="text-xs text-[var(--color-academy-faint)] mb-2">
                             비워두면 섹션이 숨겨집니다.
                         </p>
@@ -352,8 +335,6 @@ export default function AdminSettingsClient({
                     {/* ── 시설 소개 ──────────────────────────────────────── */}
                     <section className="pt-6 border-t border-[var(--color-academy-line)]">
                         <SectionHeader title="시설 소개" />
-                        <AppliesTo pages={["학원소개 페이지 (코치진 아래)"]} />
-
                         <div className="space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">시설 설명</label>
@@ -406,7 +387,6 @@ export default function AdminSettingsClient({
                     {/* ── 포토갤러리 관리 안내 ─────────────────────────────── */}
                     <section className="pt-6 border-t border-[var(--color-academy-line)]">
                         <SectionHeader title="포토 갤러리" />
-                        <AppliesTo pages={["홈페이지 메인 활동 사진", "포토갤러리 페이지"]} />
                         <div className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)]/70 p-4">
                             <Link
                                 href="/admin/gallery"
@@ -421,8 +401,6 @@ export default function AdminSettingsClient({
                     {/* ── 연락처 ───────────────────────────────────────────── */}
                     <section className="pt-6 border-t border-[var(--color-academy-line)]">
                         <SectionHeader title="연락처 및 위치" />
-                        <AppliesTo pages={["모든 페이지 헤더 전화버튼", "학원소개 페이지 CTA", "홈 푸터"]} />
-
                         <div className="space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">대표 전화번호</label>
@@ -529,7 +507,6 @@ export default function AdminSettingsClient({
                     {/* ── 유튜브 영상 ───────────────────────────────────────── */}
                     <section className="pt-6 border-t border-[var(--color-academy-line)]">
                         <SectionHeader title="메인페이지 유튜브 영상" />
-                        <AppliesTo pages={["메인 페이지 (홍보 영상)"]} />
                         <input
                             name="youtubeUrl"
                             type="text"
@@ -543,8 +520,6 @@ export default function AdminSettingsClient({
                     {/* ── 푸터 및 소셜 링크 ─────────────────────────────────── */}
                     <section className="pt-6 border-t border-[var(--color-academy-line)]">
                         <SectionHeader title="푸터 및 소셜 링크" />
-                        <AppliesTo pages={["모든 공개 페이지 푸터"]} />
-
                         <div className="space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">푸터 소개 문구</label>

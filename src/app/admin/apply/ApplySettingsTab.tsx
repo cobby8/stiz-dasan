@@ -36,10 +36,8 @@ export default function ApplySettingsTab({ initialSettings }: ApplySettingsTabPr
     const settings = initialSettings ?? DEFAULT_SETTINGS;
     const [trialTitle, setTrialTitle] = useState(settings.trialTitle);
     const [trialContent, setTrialContent] = useState(settings.trialContent || "");
-    const [trialFormUrl, setTrialFormUrl] = useState(settings.trialFormUrl || "");
     const [enrollTitle, setEnrollTitle] = useState(settings.enrollTitle);
     const [enrollContent, setEnrollContent] = useState(settings.enrollContent || "");
-    const [enrollFormUrl, setEnrollFormUrl] = useState(settings.enrollFormUrl || "");
     const [uniformFormUrl, setUniformFormUrl] = useState(settings.uniformFormUrl || "");
     const [loading, setLoading] = useState(!initialSettings);
     const [loadError, setLoadError] = useState<string | null>(null);
@@ -50,10 +48,8 @@ export default function ApplySettingsTab({ initialSettings }: ApplySettingsTabPr
     const applySettings = useCallback((nextSettings: ApplySettings) => {
         setTrialTitle(nextSettings.trialTitle);
         setTrialContent(nextSettings.trialContent || "");
-        setTrialFormUrl(nextSettings.trialFormUrl || "");
         setEnrollTitle(nextSettings.enrollTitle);
         setEnrollContent(nextSettings.enrollContent || "");
-        setEnrollFormUrl(nextSettings.enrollFormUrl || "");
         setUniformFormUrl(nextSettings.uniformFormUrl || "");
     }, []);
 
@@ -85,13 +81,13 @@ export default function ApplySettingsTab({ initialSettings }: ApplySettingsTabPr
         setSaved(false);
         setError(null);
         try {
+            // 2026-11-16 «외부 신청 링크» 칸을 뺐다(원장 결정). trialFormUrl·enrollFormUrl 은 여기서 보내지 않는다 —
+            // 서버(rawUpsertAcademySettings)는 보내지 않은 칸을 UPDATE 에서 빼므로 DB 의 기존 값이 그대로 남는다(상담 챗봇 조회가 trialFormUrl 을 함께 읽어 온다).
             await updateAcademySettings({
                 trialTitle: trialTitle.trim() || "체험수업 안내",
                 trialContent: trialContent.trim() || undefined,
-                trialFormUrl: trialFormUrl.trim() || undefined,
                 enrollTitle: enrollTitle.trim() || "수강신청 안내",
                 enrollContent: enrollContent.trim() || undefined,
-                enrollFormUrl: enrollFormUrl.trim() || undefined,
                 uniformFormUrl: uniformFormUrl.trim() || undefined,
             });
             setSaved(true);
@@ -157,18 +153,6 @@ export default function ApplySettingsTab({ initialSettings }: ApplySettingsTabPr
                         placeholder={"예:\n- 체험수업 1회 1만원(신청 후 바로 결제)\n- 준비물: 실내용 운동화, 운동복장, 물\n- 위치: 남양주시 다산중앙로20번길 10-32, 1층\n- 체험비가 확인되면 체험수업이 확정됩니다"}
                     />
                 </div>
-                <div>
-                    <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">
-                        외부 신청 링크
-                    </label>
-                    <input
-                        type="url"
-                        value={trialFormUrl}
-                        onChange={(event) => setTrialFormUrl(event.target.value)}
-                        className={INPUT}
-                        placeholder="https://..."
-                    />
-                </div>
             </SettingsCard>
 
             {/* 체험비 온라인 결제 설정 + 체험·등록 안내 미리보기(2026-11-10). 자동 발송은 원장 문구 승인 전이라 «꺼짐» 표시만 */}
@@ -195,18 +179,6 @@ export default function ApplySettingsTab({ initialSettings }: ApplySettingsTabPr
                         rows={6}
                         className={TEXTAREA}
                         placeholder={"예:\n- 신청서 작성 후 원장님 확인\n- 수강료는 매월 1일 납부"}
-                    />
-                </div>
-                <div>
-                    <label className="block text-xs font-medium text-[var(--color-academy-muted)] mb-1">
-                        외부 신청 링크
-                    </label>
-                    <input
-                        type="url"
-                        value={enrollFormUrl}
-                        onChange={(event) => setEnrollFormUrl(event.target.value)}
-                        className={INPUT}
-                        placeholder="https://..."
                     />
                 </div>
             </SettingsCard>

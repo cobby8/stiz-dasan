@@ -79,7 +79,6 @@ import {
     deleteCalendarEvent,
 } from "@/lib/googleCalendarWrite";
 import { publishGalleryPostToInstagram } from "@/lib/instagram";
-import { syncInstagramGalleryPostsToDb } from "@/lib/instagramGallerySync";
 import { ACADEMY_SETTINGS_CACHE_TAG, getAcademySettings, getMakeupSlotAvailability } from "@/lib/queries";
 import {
     activeMakeupSql,
@@ -2656,21 +2655,6 @@ export async function createGalleryPost(data: {
     revalidatePath("/gallery");
     revalidatePath("/mypage");
     revalidatePath("/");
-}
-
-export async function syncInstagramGalleryPosts() {
-    await requireAdmin();
-    const settings = await getAcademySettings() as any;
-    const result = await syncInstagramGalleryPostsToDb({
-        businessAccountId: settings.instagramBusinessAccountId,
-        limit: 25,
-    });
-
-    revalidatePath("/admin/gallery");
-    revalidateGalleryAdminCaches();
-    revalidatePath("/gallery");
-    revalidatePath("/");
-    return result;
 }
 
 export async function updateGalleryPost(id: string, data: {
