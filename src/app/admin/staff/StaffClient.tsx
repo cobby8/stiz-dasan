@@ -46,6 +46,7 @@ import {
 } from "@/lib/staff/staffRoster";
 import { STAFF_LOGIN_EMAIL_SUFFIX, isConvertibleStaffRole, isLoginLinkRole } from "@/lib/staff/staffAccountLink";
 import type { RoleChangeValue } from "@/lib/staff/roleChange";
+import { askConfirm as askScreenConfirm, showCopyText } from "@/components/ui/feedback";
 
 // «직접 추가» 메뉴는 2026-11-12 원장 결정으로 없앴다(로그인 계정이 없어 앱을 못 쓰는 기록만 생겼다) — 초대로만 추가한다.
 const InviteStaffModal = dynamic(() => import("./InviteStaffModal"), {
@@ -329,8 +330,8 @@ export default function StaffClient({
     }
 
     // ── 초대 취소 핸들러 ─────────────────────────────────────────────
-    function handleCancelInvitation(invId: string, name: string) {
-        if (!confirm(`${name}님의 초대를 취소하시겠습니까?`)) return;
+    async function handleCancelInvitation(invId: string, name: string) {
+        if (!(await askScreenConfirm(`${name}님의 초대를 취소하시겠습니까?`))) return;
         startTransition(async () => {
             try {
                 await cancelInvitation(invId);
@@ -343,8 +344,8 @@ export default function StaffClient({
     }
 
     // ── 초대 재발송 핸들러 ─────────────────────────────────────────────
-    function handleResendInvitation(invId: string, name: string) {
-        if (!confirm(`${name}님에게 초대 링크를 재발송하시겠습니까?`)) return;
+    async function handleResendInvitation(invId: string, name: string) {
+        if (!(await askScreenConfirm(`${name}님에게 초대 링크를 재발송하시겠습니까?`))) return;
         startTransition(async () => {
             try {
                 const result = await resendInvitation(invId);
@@ -537,7 +538,7 @@ export default function StaffClient({
             await navigator.clipboard.writeText(installUrl);
             setMessage({ text: "스태프 앱 설치 링크를 복사했습니다.", ok: true });
         } catch {
-            window.prompt("아래 스태프 앱 설치 링크를 길게 눌러 복사해주세요.", installUrl);
+            void showCopyText("아래 스태프 앱 설치 링크를 길게 눌러 복사해주세요.", installUrl);
             setMessage({
                 text: "자동 복사가 제한되어 전체 설치 링크를 복사창에 표시했습니다.",
                 ok: false,
@@ -552,7 +553,7 @@ export default function StaffClient({
             await navigator.clipboard.writeText(inviteUrl);
             setMessage({ text: `${name}님의 개인 가입 링크를 복사했습니다.`, ok: true });
         } catch {
-            window.prompt("아래 개인 가입 링크를 길게 눌러 복사해 주세요.", inviteUrl);
+            void showCopyText("아래 개인 가입 링크를 길게 눌러 복사해 주세요.", inviteUrl);
             setMessage({ text: "자동 복사가 제한되어 복사창에 개인 가입 링크를 표시했습니다.", ok: false });
         }
     }

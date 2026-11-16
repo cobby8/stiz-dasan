@@ -25,6 +25,7 @@ import { SETTLEMENT_MODES, SETTLEMENT_MODE_LABEL, SETTLEMENT_PROBLEM_APPROVE_NOT
 import { RESUME_ADAPTER_HOLD_REASON, sheetHoldDisplayReason } from "@/lib/enrollment/sheetManualCheckRules";
 import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
+import { askConfirm } from "@/components/ui/feedback";
 
 const ENROLLMENT_STATUS_LABEL: Record<string, string> = {
   ACTIVE: "수강 중",
@@ -97,9 +98,9 @@ export default function EnrollmentChangesClient({
     router.refresh();
   }
 
-  function issueInvoice(requestId: string) {
+  async function issueInvoice(requestId: string) {
     const row = rows.find(item => item.id === requestId);
-    if (!row?.proration || !window.confirm(`${row.studentName} · ${row.effectiveFrom}\n${row.fromClassName} → ${row.toClassName}\n차액 ${row.proration.diff.toLocaleString()}원 사이트 청구서 1건을 생성할까요?\n${externalNote ? `문자·알림 발송과 ${externalNote} 반영은 포함되지 않습니다.` : "문자·알림 발송은 포함되지 않습니다."}`)) return;
+    if (!row?.proration || !(await askConfirm(`${row.studentName} · ${row.effectiveFrom}\n${row.fromClassName} → ${row.toClassName}\n차액 ${row.proration.diff.toLocaleString()}원 사이트 청구서 1건을 생성할까요?\n${externalNote ? `문자·알림 발송과 ${externalNote} 반영은 포함되지 않습니다.` : "문자·알림 발송은 포함되지 않습니다."}`))) return;
     setError("");
     startTransition(async () => {
       try {
@@ -116,40 +117,40 @@ export default function EnrollmentChangesClient({
   }
 
   // 구글 시트에 휴원·퇴원을 반영한다. 시트를 실제로 고치므로 확인창을 한 번 띄운다.
-  function applySheet(row: AdminChangeRequestRow) {
+  async function applySheet(row: AdminChangeRequestRow) {
     if (!row.syncCommandId) return;
-    if (!window.confirm(`${row.studentName} · ${row.fromClassName ?? "-"} · ${row.kindLabel}\n구글 시트에 ${row.effectiveFrom.slice(0, 7)} ${row.kindLabel}을(를) 반영할까요?`)) return;
+    if (!(await askConfirm(`${row.studentName} · ${row.fromClassName ?? "-"} · ${row.kindLabel}\n구글 시트에 ${row.effectiveFrom.slice(0, 7)} ${row.kindLabel}을(를) 반영할까요?`))) return;
     runSyncAction(() => applyEnrollmentChangeSheet(row.syncCommandId!));
   }
 
   // 시트 행 없음·학생 식별 불가·공통 상태 충돌처럼 자동 반영이 끝내 안 되는 건의 탈출구.
   // 원장이 구글 시트를 직접 고친 뒤 누르면 시트 확인 완료로 기록되고(감사기록 남음) 랠리즈 확인으로 넘어간다.
-  function confirmSheetManually(row: AdminChangeRequestRow) {
+  async function confirmSheetManually(row: AdminChangeRequestRow) {
     if (!row.syncCommandId) return;
-    if (!window.confirm(`${row.studentName} · ${row.fromClassName ?? "-"} · ${row.kindLabel}
+    if (!(await askConfirm(`${row.studentName} · ${row.fromClassName ?? "-"} · ${row.kindLabel}
 구글 시트를 직접 고쳤습니까?
-확인을 누르면 시트 반영 완료(수동 확인)로 기록됩니다.`)) return;
+확인을 누르면 시트 반영 완료(수동 확인)로 기록됩니다.`))) return;
     runSyncAction(() => confirmEnrollmentChangeSheetManually(row.syncCommandId!));
   }
 
   // 시트 은퇴 상태에서 복귀(RESUME) 보류를 푼다. 풀린 뒤 '랠리즈 반영 확인'을 눌러야 완료된다.
-  function releaseRetiredResumeHold(row: AdminChangeRequestRow) {
+  async function releaseRetiredResumeHold(row: AdminChangeRequestRow) {
     if (!row.syncCommandId) return;
     // 랠리즈 은퇴 뒤에는 이어지는 랠리즈 확인 단계가 없다 — 보류만 푼다.
-    if (!window.confirm(rallyzRetired
+    if (!(await askConfirm(rallyzRetired
       ? `${row.studentName} · ${row.fromClassName ?? "-"} · ${row.kindLabel}
 구글 시트 운영이 끝나 시트 확인 없이 보류를 풉니다.
 보류를 풀까요?`
       : `${row.studentName} · ${row.fromClassName ?? "-"} · ${row.kindLabel}
 구글 시트 운영이 끝나 시트 확인 없이 보류를 풉니다.
-보류를 풀고 랠리즈 반영 확인으로 넘어갈까요?`)) return;
+보류를 풀고 랠리즈 반영 확인으로 넘어갈까요?`))) return;
     runSyncAction(() => releaseEnrollmentChangeHoldSheetRetired(row.syncCommandId!));
   }
 
   // 랠리즈는 자동으로 바꾸지 않는다. 원장이 랠리즈에서 직접 처리한 뒤 "처리했다"를 기록한다.
-  function confirmRallyz(row: AdminChangeRequestRow) {
+  async function confirmRallyz(row: AdminChangeRequestRow) {
     if (!row.syncCommandId) return;
-    if (!window.confirm(`${row.studentName} · ${row.fromClassName ?? "-"} · ${row.kindLabel}\n랠리즈에서 ${row.kindLabel} 처리를 직접 마쳤나요?\n확인을 누르면 랠리즈 반영 완료로 기록됩니다.`)) return;
+    if (!(await askConfirm(`${row.studentName} · ${row.fromClassName ?? "-"} · ${row.kindLabel}\n랠리즈에서 ${row.kindLabel} 처리를 직접 마쳤나요?\n확인을 누르면 랠리즈 반영 완료로 기록됩니다.`))) return;
     runSyncAction(() => confirmEnrollmentChangeRallyz(row.syncCommandId!));
   }
 
@@ -170,11 +171,11 @@ export default function EnrollmentChangesClient({
   }
 
   // 학부모 취소 요청(d8) 승인·거절. 승인 = 그 휴원·퇴원 신청을 취소(적용 전에만 — 서버가 다시 확인)
-  function decideCancel(row: AdminCancelRequestRow, approve: boolean) {
+  async function decideCancel(row: AdminCancelRequestRow, approve: boolean) {
     const question = approve
       ? `${row.studentName} · ${row.fromClassName ?? "-"} · ${row.kindLabel}(${row.effectiveFrom}부터)\n승인된 ${row.kindLabel}을 취소할까요? 학부모에게 앱 알림이 갑니다.`
       : `${row.studentName} · ${row.kindLabel} 취소 요청을 거절할까요? 원래 승인(${row.effectiveFrom}부터)은 그대로 진행됩니다.`;
-    if (!window.confirm(question)) return;
+    if (!(await askConfirm(question))) return;
     setError("");
     startTransition(async () => {
       const result = await decideEnrollmentChangeCancelRequest({ requestId: row.id, approve, note: notes[`cancel:${row.id}`] });
@@ -211,7 +212,7 @@ export default function EnrollmentChangesClient({
     return lines.join("\n");
   }
 
-  function decide(requestId: string, approve: boolean) {
+  async function decide(requestId: string, approve: boolean) {
     const row = rows.find((item) => item.id === requestId);
     if (approve && row?.settlementReadFailed) return;
     const mode = modes[requestId];
@@ -222,10 +223,10 @@ export default function EnrollmentChangesClient({
         setError("휴원 수강료 처리(이월·환불·없음)를 먼저 골라 주세요.");
         return;
       }
-      if (!window.confirm(`${settlementConfirmText(row, mode)}\n\n승인할까요?`)) return;
+      if (!(await askConfirm(`${settlementConfirmText(row, mode)}\n\n승인할까요?`))) return;
     }
     if (inline && approve && row && !needsSettlementChoice(row)
-        && !window.confirm(`${row.fromClassName ?? row.toClassName ?? "선택한 반"}의 ${row.kindLabel} 신청을 승인할까요?`)) return;
+        && !(await askConfirm(`${row.fromClassName ?? row.toClassName ?? "선택한 반"}의 ${row.kindLabel} 신청을 승인할까요?`))) return;
     setError("");
     startTransition(async () => {
       const settlement = approve && row && needsSettlementChoice(row) && mode
@@ -249,13 +250,13 @@ export default function EnrollmentChangesClient({
   }
 
   /** 이미 승인된 휴원의 수강료 처리 실행 */
-  function settleLater(row: AdminChangeRequestRow) {
+  async function settleLater(row: AdminChangeRequestRow) {
     const mode = modes[row.id];
     if (!mode || !row.settlementPreview) {
       setError("수강료 처리(이월·환불·없음)를 골라 주세요.");
       return;
     }
-    if (!window.confirm(`${settlementConfirmText(row, mode)}\n\n실행할까요?`)) return;
+    if (!(await askConfirm(`${settlementConfirmText(row, mode)}\n\n실행할까요?`))) return;
     setError("");
     startTransition(async () => {
       const result = await settlePauseTuition({ requestId: row.id, settlement: { mode, expectedPreviewKey: row.settlementPreview!.previewKey } });
@@ -267,8 +268,8 @@ export default function EnrollmentChangesClient({
     });
   }
 
-  function retryRefund(settlementId: string) {
-    if (!window.confirm("토스 부분 취소를 다시 확인·시도할까요?\n이미 취소된 건은 다시 취소되지 않고 확인만 합니다.")) return;
+  async function retryRefund(settlementId: string) {
+    if (!(await askConfirm("토스 부분 취소를 다시 확인·시도할까요?\n이미 취소된 건은 다시 취소되지 않고 확인만 합니다."))) return;
     setError("");
     startTransition(async () => {
       const result = await retryPauseTuitionRefund(settlementId);
@@ -277,8 +278,8 @@ export default function EnrollmentChangesClient({
     });
   }
 
-  function markLineDone(lineId: string, todo: string) {
-    if (!window.confirm(`${todo}\n\n직접 처리를 마쳤나요? 확인을 누르면 «직접 처리함»으로 기록됩니다.`)) return;
+  async function markLineDone(lineId: string, todo: string) {
+    if (!(await askConfirm(`${todo}\n\n직접 처리를 마쳤나요? 확인을 누르면 «직접 처리함»으로 기록됩니다.`))) return;
     setError("");
     startTransition(async () => {
       const result = await markPauseTuitionLineDone({ lineId });
@@ -287,8 +288,8 @@ export default function EnrollmentChangesClient({
     });
   }
 
-  function markCarryDone(settlementId: string, amount: number) {
-    if (!window.confirm(`남은 이월 ${amount.toLocaleString()}원을 다음 청구에서 직접 차감했나요?\n확인을 누르면 이월이 끝난 것으로 기록됩니다.`)) return;
+  async function markCarryDone(settlementId: string, amount: number) {
+    if (!(await askConfirm(`남은 이월 ${amount.toLocaleString()}원을 다음 청구에서 직접 차감했나요?\n확인을 누르면 이월이 끝난 것으로 기록됩니다.`))) return;
     setError("");
     startTransition(async () => {
       const result = await markPauseCarryHandled({ settlementId });

@@ -22,6 +22,7 @@ import { hasRosterArrivalTime, recommendExistingStopTime } from "@/lib/shuttle/r
 import { formatRosterMonths, rosterStudentKeyResolver, WEEKDAY_LABELS, type RosterScope } from "@/lib/shuttle/regularRosterEditLogic";
 import type { UnifiedRider, UnifiedRow } from "@/lib/shuttle/unifiedDriverRunLogic";
 import { monthNote, RemoveRiderDialog, rosterCall, StopEditDialog, StudentShuttleDialog, type ReassignLink } from "./RunEditDialogs";
+import { askConfirm } from "@/components/ui/feedback";
 
 // 관리자 «정규 셔틀 운행표» — 2026-11-09 원장 결정:
 //   · 관리자 배차 화면 = 기사님 화면과 똑같이 보이고, 같은 화면에서 직접 수정한다.
@@ -174,9 +175,9 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
 
   // 묶음 머리 연필 → 그 묶음만 편집. 다른 묶음을 편집하다 저장 안 한 변경이 있으면 버릴지 먼저 묻는다.
   // 편집하는 묶음을 PC 지도에도 띄운다(고친 순서가 지도 번호로 바로 보이게).
-  function startEditing(groupKey: string) {
+  async function startEditing(groupKey: string) {
     if (savingOrder || groupKey === editingGroup) return;
-    if (orderDirty && !window.confirm("저장하지 않은 순서·시각 수정이 있습니다. 버리고 이 묶음을 수정할까요?")) return;
+    if (orderDirty && !(await askConfirm("저장하지 않은 순서·시각 수정이 있습니다. 버리고 이 묶음을 수정할까요?"))) return;
     setSourceRows(rows); setSortOverride({}); setTimeOverride({}); setOrderScope(defaultScope); setMessage(null); setError(null); clearRetimeNote();
     setEditingGroup(groupKey);
     setPickedGroup(groupKey);
@@ -282,7 +283,7 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
   // 순서·시각을 바꾼 채 다른 창을 열면, 창 저장 뒤 새 명단과 손댄 순서가 엉킨다 → 먼저 저장할지 묻는다.
   async function guardThen(open: () => void) {
     if (!orderDirty) { open(); return; }
-    if (!window.confirm("바꾼 순서·시각을 먼저 저장할까요?")) return;
+    if (!(await askConfirm("바꾼 순서·시각을 먼저 저장할까요?"))) return;
     if (await saveOrder(true)) open();
   }
   function openDialog(next: Dialog) { void guardThen(() => setDialog(next)); }
@@ -321,7 +322,8 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
     return [...by.values()].filter((v) => v.board && v.alight && v.board !== v.alight);
   }, [stops, weekday]);
 
-  function confirmLeave() { return !orderDirty || window.confirm("저장하지 않은 순서·시각 수정이 있습니다. 이동하면 사라집니다. 계속할까요?"); }
+  // 화면 안 확인창이라 답을 기다린다 — 부르는 쪽은 await 한다
+  async function confirmLeave() { return !orderDirty || (await askConfirm("저장하지 않은 순서·시각 수정이 있습니다. 이동하면 사라집니다. 계속할까요?")); }
 
   const stopRows = ordered.filter((r) => !r.isTerminal);
   // 적용 범위 고르기 글자(예: «11월부터 계속» / «11월만»).
@@ -449,7 +451,7 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
   function renderEditActions() {
     return (
       <>
-        <button type="button" onClick={() => { if (confirmLeave()) cancelEditing(); }} disabled={savingOrder} className="academy-button-secondary academy-button-sm">취소</button>
+        <button type="button" onClick={async () => { if (await confirmLeave()) cancelEditing(); }} disabled={savingOrder} className="academy-button-secondary academy-button-sm">취소</button>
         <button type="button" onClick={() => void saveOrder()} disabled={savingOrder} className="academy-button-primary academy-button-sm">{savingOrder ? "저장 중…" : "저장"}</button>
       </>
     );
@@ -486,12 +488,12 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
       {/* 한 줄 머리: 제목 · 월 · 기사님 위치·요청(컴팩트 — 히어로 없음) */}
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="academy-section-title mr-auto">정규 셔틀 운행표</h3>
-        <select value={serviceMonth} aria-label="운행 월" onChange={(e) => { if (!confirmLeave()) return; cancelEditing(); router.push(`/admin/shuttle/regular-dispatch?month=${encodeURIComponent(e.target.value)}`); }}
+        <select value={serviceMonth} aria-label="운행 월" onChange={async (e) => { const nextMonth = e.target.value; if (!(await confirmLeave())) return; cancelEditing(); router.push(`/admin/shuttle/regular-dispatch?month=${encodeURIComponent(nextMonth)}`); }}
           className="min-h-11 rounded-lg border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 text-sm">
           {months.map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
-        <button type="button" onClick={() => {
-          if (confirmLeave()) router.push(`/admin/shuttle/regular?${new URLSearchParams({ month: serviceMonth, weekday: String(weekday), add: "1" })}`);
+        <button type="button" onClick={async () => {
+          if (await confirmLeave()) router.push(`/admin/shuttle/regular?${new URLSearchParams({ month: serviceMonth, weekday: String(weekday), add: "1" })}`);
         }} className="academy-button-primary">
           학생 추가
         </button>
@@ -512,7 +514,7 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
         {dayCounts.map((d) => (
           <button key={d.weekday} type="button" role="tab" aria-selected={weekday === d.weekday}
             // 요일을 바꾸면 묶음 편집을 끝낸다(요일마다 묶음이 다르다) — 손댄 순서·시각이 있으면 먼저 확인.
-            onClick={() => { if (d.weekday !== weekday && confirmLeave()) { cancelEditing(); setWeekday(d.weekday); } }}
+            onClick={async () => { if (d.weekday !== weekday && (await confirmLeave())) { cancelEditing(); setWeekday(d.weekday); } }}
             // 요일 탭 = «지금 보는 것» — 보조 색, ✓ 없음(테마 academy-choice is-tab)
             className={`academy-choice is-tab${weekday === d.weekday ? " is-selected" : ""}`}>
             {WEEKDAY_LABELS[d.weekday]} <span className="text-xs font-normal tabular-nums">{d.count}</span>
@@ -536,8 +538,8 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
           <ul className="mt-2 flex flex-wrap gap-2">
             {missingTimes.map((stop) => (
               <li key={stop.id}>
-                <button type="button" className="inline-flex min-h-10 max-w-full flex-wrap items-center gap-x-2 rounded-full border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-1 text-left text-xs text-[var(--color-academy-ink)] hover:border-[var(--color-academy-warning)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-academy-warning)]" onClick={() => {
-                  if (!confirmLeave()) return;
+                <button type="button" className="inline-flex min-h-10 max-w-full flex-wrap items-center gap-x-2 rounded-full border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-1 text-left text-xs text-[var(--color-academy-ink)] hover:border-[var(--color-academy-warning)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-academy-warning)]" onClick={async () => {
+                  if (!(await confirmLeave())) return;
                   router.push(`/admin/shuttle/regular-dispatch?${new URLSearchParams({ month: serviceMonth, studentId: stop.studentId ?? "", stopId: stop.id! })}`);
                 }}>
                   <span className="font-semibold">{stop.studentName}</span>

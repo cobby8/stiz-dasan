@@ -8,6 +8,7 @@ import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/
 import AdminPanelActions from "@/components/admin/AdminPanelActions";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import { toKstYmd } from "@/lib/datetime/kst";
+import { askConfirm, showNotice } from "@/components/ui/feedback";
 
 // 카테고리 정의: 피드백을 4가지 유형으로 분류(색은 화면 토큰)
 const CATEGORIES: Record<string, { label: string; color: string }> = {
@@ -233,7 +234,7 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
         if (!form.studentId || !form.coachId || !form.title || !form.content) {
-            alert("학생, 코치, 제목, 내용은 필수 항목입니다.");
+            showNotice("학생, 코치, 제목, 내용은 필수 항목입니다.");
             return;
         }
 
@@ -265,7 +266,7 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
                 setShowForm(false);
                 await loadFeedbacks();
             } catch (err: any) {
-                alert(adminErrorText(err, "저장 실패"));
+                showNotice(adminErrorText(err, "저장 실패"));
             }
         });
     }
@@ -291,14 +292,14 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
     }
 
     // 삭제 처리
-    function handleDelete(id: string) {
-        if (!confirm("이 피드백을 삭제하시겠습니까?")) return;
+    async function handleDelete(id: string) {
+        if (!(await askConfirm("이 피드백을 삭제하시겠습니까?"))) return;
         startTransition(async () => {
             try {
                 await deleteFeedback(id);
                 await loadFeedbacks();
             } catch (err: any) {
-                alert(adminErrorText(err, "삭제 실패"));
+                showNotice(adminErrorText(err, "삭제 실패"));
             }
         });
     }

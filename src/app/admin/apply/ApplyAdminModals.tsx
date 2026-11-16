@@ -18,6 +18,7 @@ import {
 import AdminModal from "@/components/admin/AdminModal";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import { REQUEST_TONE, statusBadgeClass } from "@/lib/ui/statusTones";
+import { askConfirm } from "@/components/ui/feedback";
 
 interface EnrollApplication {
     id: string;
@@ -303,9 +304,9 @@ export default function ApplyAdminModals({
                 const lines = (result.classes ?? [])
                     .map((c) => `· ${c.name} (${c.current}/${c.capacity})`)
                     .join("\n");
-                const proceed = window.confirm(
+                const proceed = (await askConfirm(
                     `다음 반은 이미 정원을 채웠습니다.\n${lines}\n\n그래도 계속 배정할까요?`,
-                );
+                ));
                 setBusy(false);
                 if (proceed) {
                     // 관리자가 확인했으므로 force:true로 재호출.

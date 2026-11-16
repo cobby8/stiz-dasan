@@ -5,6 +5,7 @@ import { useCallback, useState } from "react";
 import RouteSection from "@/components/seasonal/RouteSection";
 import { firstDateOfSameWeekday, weekdayOptions } from "@/lib/seasonal/weekday";
 import type { DispatchSuggestion } from "@/lib/seasonal/shuttle-optimize";
+import { askConfirm } from "@/components/ui/feedback";
 
 // 방학특강 셔틀 배차 — 요일별로 관리한다. 요일 탭을 고르면 그 요일의 등원 → 하원 노선을 함께 보여준다.
 // 같은 요일은 같은 학생이 오므로, 노선은 요일당 한 번만 짜서 저장하면 모든 같은 요일에 적용된다.
@@ -55,7 +56,7 @@ export default function DispatchClient({ initialPickup, initialDropoff }: { init
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
           {weekdays.length === 0 && <span className="px-2 py-1 text-sm text-[var(--color-academy-faint)]">운행 요일이 없습니다.</span>}
           {weekdays.map((w) => (
-            <button key={w.weekday} type="button" aria-current={date === w.canonicalDate ? "true" : undefined} onClick={() => { if (date === w.canonicalDate || (!(pickupDirty || dropoffDirty) || window.confirm("저장하지 않은 변경이 있습니다. 이동할까요?"))) setDate(w.canonicalDate); }}
+            <button key={w.weekday} type="button" aria-current={date === w.canonicalDate ? "true" : undefined} onClick={async () => { if (date === w.canonicalDate || (!(pickupDirty || dropoffDirty) || (await askConfirm("저장하지 않은 변경이 있습니다. 이동할까요?")))) setDate(w.canonicalDate); }}
               // 지금 보는 요일 = 탭 칩(보조 색, 체크 표시 없음)
               className={`academy-choice is-tab ${date === w.canonicalDate ? "is-selected" : ""}`}>
               {w.label}

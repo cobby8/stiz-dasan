@@ -37,7 +37,7 @@ test("클라이언트는 래퍼만 부르고 실패 이유를 그대로 보여�
 
 test("「시트 직접 수정 완료」 버튼은 확인창을 거치고, 보류 사유는 계속 보인다", () => {
   const fn = client.slice(client.indexOf("function confirmSheetManually"), client.indexOf("function confirmRallyz"));
-  assert.match(fn, /window\.confirm\(`[^`]*구글 시트를 직접 고쳤습니까\?/);
+  assert.match(fn, /askConfirm\(`[^`]*구글 시트를 직접 고쳤습니까\?/);
   assert.match(client, />\s*시트 직접 수정 완료\s*</);
   assert.match(client, /시트 자동 반영 보류: \{sheetHoldDisplayReason\(row\.kind, row\.syncHoldReason\)\}/);
   // 보류(HELD)여도 버튼 블록 자체는 그려진다(예전엔 보류면 버튼이 사라져 영구 정체)

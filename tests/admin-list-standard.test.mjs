@@ -162,7 +162,7 @@ test("출결 관리: 반 드롭다운 대신 그날 수업 한 줄 행 목록, �
   assert.match(attendanceClient, /function handleRowKeyDown[\s\S]*?if \(event\.target !== event\.currentTarget\) return;/);
   assert.match(attendanceClient, /<ListDetailPanel[\s\S]*?titleId="attendance-lesson-panel-title"[\s\S]*?closeOnBackdrop=\{!dirty\}/);
   // 저장 안 한 출결이 있으면 닫기 전에 묻는다
-  assert.match(attendanceClient, /dirty && !window\.confirm\(/);
+  assert.match(attendanceClient, /dirty && !\(await askConfirm\(/);
   // 기존 흐름 보존: 전체 출석·저장·출석/결석/지각 집계
   assert.match(attendanceClient, /markAll\("PRESENT"\)/);
   assert.match(attendanceClient, /saveAttendance\(selectedLesson\.id, date, records/);
@@ -231,7 +231,7 @@ test("셔틀 명단: 수업시간 묶음 아래 학생 한 줄 행(등원·하�
   assert.match(rosterClient, /admin-cell-num[^"]*">\{entry\.alight \? entry\.alight\.arriveTime/);
   // 보기 전환 «학생 목록 | 기사님 화면(운행 순서)» 를 브라우저에 기억, 저장 안 한 순서 변경은 전환 전에 묻는다
   assert.match(rosterClient, /useRememberedListView<RosterView>\(ROSTER_VIEW_STORAGE_KEY, ROSTER_VIEW_VALUES, "students"\)/);
-  assert.match(rosterClient, /<ListViewToggle[\s\S]*?v === "students" && !confirmLeaveOrder\(\)/);
+  assert.match(rosterClient, /<ListViewToggle[\s\S]*?v === "students" && !\(await confirmLeaveOrder\(\)\)/);
   // 행 클릭 패널, 행 키보드는 안쪽 ⚡ 를 가로채지 않는다, ⚡ 칸은 전파 차단
   assert.match(rosterClient, /<ListDetailPanel onClose=\{\(\) => setDetail\(null\)\} titleId="roster-detail-panel-title"/);
   assert.match(rosterClient, /function handleRowKeyDown[\s\S]*?if \(event\.target !== event\.currentTarget\) return;/);
@@ -342,7 +342,7 @@ test("보강 관리: 보강일 날짜별 묶음(KST)·상태 칩(statusFilter �
   assert.match(actions, /handleStatusChange\(id, "NO_SHOW"\)/);
   assert.match(actions, /handleStatusChange\(id, "CANCELLED"\)/);
   assert.match(actions, /handleCancel\(id\)/);
-  assert.match(makeupClient, /confirm\("이 보강 예약을 취소하시겠습니까\?"\)/);
+  assert.match(makeupClient, /askConfirm\("이 보강 예약을 취소하시겠습니까\?"\)/);
   assert.match(makeupClient, /const detailActions = buildMakeupActions\(d\)/);
   assert.match(makeupClient, /<AdminQuickActionMenu label=\{`\$\{item\.studentName\} 보강 빠른 작업`\} actions=\{actions\}/);
   // 보강 예약 모달은 그대로
@@ -413,7 +413,7 @@ test("학부모 요청: 펼침 카드 → 한 줄 행(접수일·시각 오른�
   assert.match(requestsClient, /getParentRequestStatusForAdmin\(req\.id\)/);
   assert.match(requestsClient, /disabled=\{isPending \|\| !!uncertain\[req\.id\]\}/);
   assert.match(requestsClient, /자동 재발송하지 않습니다/);
-  assert.match(requestsClient, /confirm\("이 요청을 삭제하시겠습니까\?"\)[\s\S]*?deleteParentRequest\(req\.id\)/);
+  assert.match(requestsClient, /askConfirm\("이 요청을 삭제하시겠습니까\?"\)[\s\S]*?deleteParentRequest\(req\.id\)/);
   // 안내 글은 패널이 열려 있으면 패널 안에만(같은 글 두 번 금지)
   assert.match(requestsClient, /\{feedback && !detail && <p role="status"/);
   assert.doesNotMatch(requestsClient, /\btruncate\b|text-ellipsis|line-clamp|bg-yellow-100|bg-red-100|brand-neon-lime/);
@@ -433,7 +433,7 @@ test("카카오 접수함: 큰 카드 → 한 줄 행(접수일·시각 오른�
   assert.match(kakaoClient, /router\.push\(`\/admin\/kakao-requests\?status=\$\{value\}`\)/);
   // 재확인 안내는 «준비»만 패널에서(패널을 닫고 기존 미리보기), SMS 발송은 미리보기의 확인창 뒤에만
   assert.match(kakaoClient, /onClick=\{\(\) => \{ if \(!inlineId\) setOpenId\(""\); prepareNotice\(rowId\); \}\}/);
-  assert.match(kakaoClient, /window\.confirm\(`SMS 문자 1건/);
+  assert.match(kakaoClient, /askConfirm\(`SMS 문자 1건/);
   assert.equal((kakaoClient.match(/sendKakaoReconfirmationNotice\(/g) ?? []).length, 1);
   // 오류 안내는 패널이 열려 있으면 패널 안에만
   assert.match(kakaoClient, /\{error && !openRow && <p role="alert"/);

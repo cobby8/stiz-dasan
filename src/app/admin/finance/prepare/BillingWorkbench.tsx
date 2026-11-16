@@ -11,6 +11,7 @@ import styles from "./workbench.module.css";
 import { type WorkbenchRow, type WorkbenchView, type WorkbenchAbsence, WORKBENCH_MAX_AMOUNT, STANDARD_MONTHLY_SESSIONS, shortMonthProration } from "@/lib/billing/workbench";
 // 부상·질병 기간 결석 «발행 보류»(2026-11-15 원장 결정) — 글자와 신청함 주소는 규칙 모듈 한 곳에서
 import { BILLING_HOLD_LABEL, ILLNESS_PERIOD_INBOX_HREF } from "@/lib/regular/illnessPeriodRules";
+import { askConfirm } from "@/components/ui/feedback";
 
 type Row = WorkbenchRow;
 type View = WorkbenchView;
@@ -85,9 +86,20 @@ export default function BillingWorkbench() {
     useEffect(() => {
         if (!dirty) return;
         const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+        // 화면 안 확인창은 기다려야 답이 나오므로 클릭을 일단 막고, «확인»이면 같은 링크를 다시 눌러 이동한다
+        let approved = false;
         const guardLink = (event: MouseEvent) => {
             const anchor = (event.target as Element)?.closest?.("a[href]");
-            if (anchor && !window.confirm("저장하지 않은 수정이 있습니다. 이 화면을 나갈까요?")) event.preventDefault();
+            if (!(anchor instanceof HTMLElement) || approved) return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            void askConfirm("저장하지 않은 수정이 있습니다. 이 화면을 나갈까요?").then((ok) => {
+                if (!ok) return;
+                // 다시 누른 이 클릭 한 번만 통과시킨다
+                approved = true;
+                anchor.click();
+                setTimeout(() => { approved = false; }, 0);
+            });
         };
         window.addEventListener("beforeunload", warn); document.addEventListener("click", guardLink, true);
         return () => { window.removeEventListener("beforeunload", warn); document.removeEventListener("click", guardLink, true); };
@@ -198,10 +210,10 @@ export default function BillingWorkbench() {
     const selectedTotal = selectedRows.reduce((sum, row) => sum + total(row, edits[row.id]), 0);
 
     return <div className={styles.workbench}>
-        <header className={styles.header}><div><Link href="/admin/finance" className={styles.muted}>청구·수납으로</Link><AdminPageHeader title="이번 달 청구 준비" /></div><label className="flex min-w-0 items-center gap-2 whitespace-nowrap text-sm font-medium"><span className="shrink-0">청구 기간</span><input aria-label="청구 기간" type="month" className={styles.input} value={month} disabled={busy} onChange={(event) => { if (!event.target.value || (dirty && !confirm("저장하지 않은 수정을 버리고 기간을 바꿀까요?"))) return; setMonth(event.target.value); setBatchReason(""); setNotice(""); setError(""); setConflict(false); setSelected(new Set()); setEdits({}); setView(null); setClassId(""); setPreviewAction(null); setPreviewStudent(null); setAbsence(null); }} /></label></header>
+        <header className={styles.header}><div><Link href="/admin/finance" className={styles.muted}>청구·수납으로</Link><AdminPageHeader title="이번 달 청구 준비" /></div><label className="flex min-w-0 items-center gap-2 whitespace-nowrap text-sm font-medium"><span className="shrink-0">청구 기간</span><input aria-label="청구 기간" type="month" className={styles.input} value={month} disabled={busy} onChange={async (event) => { const nextMonth = event.target.value; /* 확인창을 기다리는 동안 칸 값이 되돌아가므로 먼저 받아 둔다 */ if (!nextMonth || (dirty && !(await askConfirm("저장하지 않은 수정을 버리고 기간을 바꿀까요?")))) return; setMonth(nextMonth); setBatchReason(""); setNotice(""); setError(""); setConflict(false); setSelected(new Set()); setEdits({}); setView(null); setClassId(""); setPreviewAction(null); setPreviewStudent(null); setAbsence(null); }} /></label></header>
         {!loading && view && (!view.writesEnabled || !view.storageReady) && <p className={styles.notice}>지금은 계산 제안만 확인할 수 있습니다. 저장·확정·발행은 준비 후 사용할 수 있습니다.</p>}
         {!loading && (view?.notices ?? []).map((message, index) => <p key={index} className={styles.notice}>{message}</p>)}
-        {error && <div role="alert" className={styles.error}>{error} {conflict && "자료가 변경되어 확정·발행을 멈췄습니다. 수정 내용을 확인한 뒤 새 자료를 조회해주세요."}<button type="button" className={`${styles.button} ml-2`} disabled={busy} onClick={() => { if (!dirty || confirm("입력한 수정을 버리고 최신 자료를 조회할까요?")) void load(month); }}>새로 조회</button></div>}
+        {error && <div role="alert" className={styles.error}>{error} {conflict && "자료가 변경되어 확정·발행을 멈췄습니다. 수정 내용을 확인한 뒤 새 자료를 조회해주세요."}<button type="button" className={`${styles.button} ml-2`} disabled={busy} onClick={async () => { if (!dirty || (await askConfirm("입력한 수정을 버리고 최신 자료를 조회할까요?"))) void load(month); }}>새로 조회</button></div>}
         {notice && <p role="status" className={styles.notice}>{notice}</p>}
         <div className={styles.toolbar}><label className={styles.search}><span className="sr-only">학생·반 검색</span><input className={styles.input} placeholder="학생·반 검색" value={search} onChange={(event) => setSearch(event.target.value)} /></label><details className={styles.filter}><summary className={styles.button}>필터{filter !== "ALL" || classId ? " · 적용 중" : ""}</summary><div className={styles.filterPanel}><label>검토 상태<select className={styles.select} value={filter} onChange={(event) => setFilter(event.target.value)}><option value="UNISSUED">이번 발행 대상</option><option value="ALL">전체 이력</option><option value="REVIEW">확인 필요</option><option value="READY">검토 가능</option><option value="CONFIRMED">확정</option><option value="HOLD">발행 보류(부상 결석)</option><option value="EXCLUDED">제외</option><option value="ISSUED">사이트 발행</option></select></label><label>반<select className={styles.select} value={classId} onChange={(event) => setClassId(event.target.value)}><option value="">전체 반</option>{classes.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label><button className={styles.button} type="button" onClick={() => { setFilter("UNISSUED"); setClassId(""); }}>기본 조건으로</button></div></details></div>
         <div className={styles.summary}><span>전체 {rows.length}건</span><span>확인 필요 <strong>{rows.filter((row) => row.status === "REVIEW" && !row.hold).length}</strong></span>{holdCount > 0 && <span>발행 보류 <strong>{holdCount}</strong></span>}<span>선택 {selectedRows.length}건 · <strong>{won(selectedTotal)}</strong></span>{dirty && <span>저장 전 수정 있음</span>}</div>

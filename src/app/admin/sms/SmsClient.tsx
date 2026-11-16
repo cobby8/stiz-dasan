@@ -12,6 +12,7 @@ import ParentSignupGuideSender from "@/components/admin/ParentSignupGuideSender"
 // 학부모 공지(카톡 틀 3종·자유 공지) — 같은 미리보기·승인 절차, 받는 사람은 서버가 재원생 학부모로 계산
 import ParentNoticeSender from "@/components/admin/ParentNoticeSender";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
+import { askConfirm } from "@/components/ui/feedback";
 
 interface CoachPhone {
     id: string;
@@ -513,13 +514,13 @@ function ManualSendPanel({ initialCoaches }: { initialCoaches?: CoachPhone[] }) 
         setError(null);
     }, []);
 
-    function send() {
+    async function send() {
         const targetRecipients = recipients;
         if (!targetRecipients.length || !message.trim()) {
             setError("수신자와 메시지를 모두 입력해주세요.");
             return;
         }
-        if (!confirm(`${targetRecipients.length}명을 대량 발송 대기열에 접수할까요?`)) return;
+        if (!(await askConfirm(`${targetRecipients.length}명을 대량 발송 대기열에 접수할까요?`))) return;
         void enqueue();
     }
 

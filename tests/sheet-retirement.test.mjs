@@ -295,7 +295,7 @@ test('화면: 은퇴+복귀 어댑터 보류에만 「보류 해제 후 랠리�
   assert.match(client, /const retiredResumeHold = sheetSkipped && row\.syncCommandStatus === "HELD"\s*&& row\.kind === "RESUME" && row\.syncHoldReason\?\.trim\(\) === RESUME_ADAPTER_HOLD_REASON;/);
   assert.match(client, /\{retiredResumeHold && \(\s*<button[\s\S]*?onClick=\{\(\) => releaseRetiredResumeHold\(row\)\}[\s\S]*?보류 해제 후 랠리즈 확인 진행/);
   const fn = client.slice(client.indexOf('function releaseRetiredResumeHold'), client.indexOf('function confirmRallyz'));
-  assert.match(fn, /window\.confirm\(/);
+  assert.match(fn, /askConfirm\(/);
   assert.match(fn, /releaseEnrollmentChangeHoldSheetRetired\(row\.syncCommandId!\)/);
   // SKIPPED+HELD 문구도 sheetHoldDisplayReason 경유(영문 원문 노출 금지)
   assert.match(client, /자동 반영 보류: \{sheetHoldDisplayReason\(row\.kind, row\.syncHoldReason\)\}/);

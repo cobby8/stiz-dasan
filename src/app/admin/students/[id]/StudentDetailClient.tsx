@@ -41,6 +41,7 @@ import { getStudentProfileExtras, type StudentProfileExtras } from "@/app/action
 // 학부모에게 카카오채널 링크 안내 문자 — 미리보기 후 원장이 «보내기»를 눌러야만 발송
 import CustomerNoticeSender from "@/components/admin/CustomerNoticeSender";
 import type { StudentTenure } from "@/lib/student-tenure";
+import { askConfirm } from "@/components/ui/feedback";
 
 type MediaItem = { url: string; type: "image" | "video" };
 
@@ -1019,7 +1020,7 @@ export default function StudentDetailClient({
         setPayLinkNotice({ id: paymentId, message: result.count > 0 ? `결제 링크 ${result.count}개 닫음` : "닫을 결제 링크가 없어요" });
     }
 
-    // 결제 상태 변경 — 취소(CANCELED)만 되돌리기 어려우므로 window.confirm 한 번, 나머지는 바로 실행
+    // 결제 상태 변경 — 취소(CANCELED)만 되돌리기 어려우므로 화면 안 확인창(askConfirm) 한 번, 나머지는 바로 실행
     // 서버 updatePaymentStatus 는 requireFinanceOwner() 권한이라 재무 권한 없으면 throw → 에러 문구로 표면화(조용한 실패 금지)
     async function changePaymentStatus(paymentId: string, currentStatus: string, nextStatus: string) {
         if (currentStatus === nextStatus || payUpdatingId) return;
@@ -1028,7 +1029,7 @@ export default function StudentDetailClient({
 
         const nextInfo = PAY_STATUS[nextStatus] || PAY_STATUS.PENDING;
         // 되돌리기 힘든 변경(취소)만 확인창
-        if (nextStatus === "CANCELED" && !window.confirm(`이 결제 건을 '${nextInfo.label}' 상태로 변경할까요?`)) return;
+        if (nextStatus === "CANCELED" && !(await askConfirm(`이 결제 건을 '${nextInfo.label}' 상태로 변경할까요?`))) return;
 
         setPayUpdatingId(paymentId);
         setPayError(null);

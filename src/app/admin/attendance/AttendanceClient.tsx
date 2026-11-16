@@ -13,6 +13,7 @@ import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
 import ListViewToggle, { useRememberedListView } from "@/components/admin/list/ListViewToggle";
 import WeekBoard, { type LessonRef } from "./WeekBoard";
+import { askConfirm, showNotice } from "@/components/ui/feedback";
 
 // 주간 보드(WeekBoard)도 같은 모양을 쓴다
 export type ClassItem = {
@@ -268,7 +269,7 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
                 ...(s.status === "ABSENT" && !selectedLesson.sessionDateId ? { absenceReason: illnessOf(s) ? "ILLNESS_INJURY" as const : null } : {}),
             }));
         if (records.length === 0) {
-            alert("출결 상태를 선택해주세요.");
+            showNotice("출결 상태를 선택해주세요.");
             return;
         }
         setSaving(true);
@@ -278,9 +279,9 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
             setSaved(true);
             // 주간 보드의 해당 카드 갱신
             setBoardRefresh((prev) => ({ date, classId: selectedLesson.id, sessionDateId: selectedLesson.sessionDateId ?? null, n: (prev?.n ?? 0) + 1 }));
-            if (result?.absenceMessages?.length) alert(result.absenceMessages.join(" / "));
+            if (result?.absenceMessages?.length) showNotice(result.absenceMessages.join(" / "));
         } catch (err: any) {
-            alert(adminErrorText(err, "저장 실패"));
+            showNotice(adminErrorText(err, "저장 실패"));
         } finally {
             setSaving(false);
         }
@@ -298,10 +299,10 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
     // 주간 보드 카드 → 그 날짜·수업으로 같은 출결 입력 패널을 연다.
     // 패널은 «그날 수업 목록(classes)»에서 수업을 찾으므로, 보드가 이미 가진 그날 목록을 먼저 넣어 둔다
     // (날짜가 바뀌어 목록을 새로 받는 동안 선택이 풀리지 않게)
-    function openFromBoard(lessonDate: string, lesson: ClassItem, dayLessons: ClassItem[]) {
+    async function openFromBoard(lessonDate: string, lesson: ClassItem, dayLessons: ClassItem[]) {
         const key = lessonKeyOf(lesson);
         if (lessonDate === date && key === selectedClass) return;
-        if (dirty && !window.confirm("저장하지 않은 출결이 있습니다. 다른 수업을 열까요?")) return;
+        if (dirty && !(await askConfirm("저장하지 않은 출결이 있습니다. 다른 수업을 열까요?"))) return;
         setClasses(dayLessons);
         setDate(lessonDate);
         setStudents([]);
@@ -320,8 +321,8 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
     }
 
     // 패널 닫기: 저장 안 한 변경이 있으면 한 번 묻는다(바깥 클릭은 아예 막아 둠)
-    function closeLesson() {
-        if (dirty && !window.confirm("저장하지 않은 출결이 있습니다. 닫을까요?")) return;
+    async function closeLesson() {
+        if (dirty && !(await askConfirm("저장하지 않은 출결이 있습니다. 닫을까요?"))) return;
         attendanceRequestRef.current += 1; // 닫은 뒤 도착하는 응답은 버린다
         setSelectedClass("");
         setStudents([]);

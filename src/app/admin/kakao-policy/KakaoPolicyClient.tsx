@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { saveKakaoPolicyDocument, setKakaoPolicyQaEnabled } from "@/app/actions/kakao-policy-qa-admin";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
+import { askConfirm } from "@/components/ui/feedback";
 
 export type PolicyVersionView = { id: string; content: string; editorName: string | null; createdAt: string };
 export type PolicyLogView = {
@@ -66,9 +67,9 @@ export default function KakaoPolicyClient(props: {
     setMessage(result.ok ? "저장했어요. 다음 질문부터 새 문서로 답합니다." : adminMessageText(result.error, "저장하지 못했습니다. 잠시 후 다시 시도해 주세요."));
     router.refresh();
   });
-  const toggle = () => {
+  const toggle = async () => {
     // 켜기 전에 한 번 더 묻는다(학부모에게 바로 답이 나가기 시작한다)
-    if (!props.enabled && !window.confirm("정책 답변을 켜면 카카오 채널 질문에 챗봇이 바로 답합니다. 켤까요?")) return;
+    if (!props.enabled && !(await askConfirm("정책 답변을 켜면 카카오 채널 질문에 챗봇이 바로 답합니다. 켤까요?"))) return;
     startTransition(async () => {
       setMessage(null);
       await setKakaoPolicyQaEnabled(!props.enabled);

@@ -31,6 +31,7 @@ import {
     formatGuardianPhone,
     MAX_GUARDIANS_PER_STUDENT,
 } from "@/lib/guardians/guardianLogic";
+import { askConfirm } from "@/components/ui/feedback";
 
 const CARD_CLASS = "rounded-2xl border border-[var(--color-academy-line)] bg-white p-5 shadow-sm";
 // 입력칸·행 안 작은 버튼은 테마 공용 모양(academy-input · tonal + sm: PC 36px / 터치 44px)
@@ -143,17 +144,17 @@ export default function GuardianPanel({
         }
     }
 
-    function remove(g: StudentGuardian) {
+    async function remove(g: StudentGuardian) {
         // 마지막 1명이면 확인창에 경고 문구가 붙는다
-        if (!window.confirm(deleteConfirmMessage(g, guardians.length))) return;
+        if (!(await askConfirm(deleteConfirmMessage(g, guardians.length)))) return;
         run(() => deleteStudentGuardian(studentId, g.id), "보호자를 삭제했습니다.", () => {
             if (editingId === g.id) closeForm();
         });
     }
 
-    function revokeAccess(row: FamilyAccessRow) {
-        if (!window.confirm(`${row.name}님의 앱 가족 연결을 해제할까요?
-해제하면 이 학생의 출결·결제·사진을 앱에서 볼 수 없습니다. 다시 연결하려면 본인인증부터 다시 해야 합니다.`)) return;
+    async function revokeAccess(row: FamilyAccessRow) {
+        if (!(await askConfirm(`${row.name}님의 앱 가족 연결을 해제할까요?
+해제하면 이 학생의 출결·결제·사진을 앱에서 볼 수 없습니다. 다시 연결하려면 본인인증부터 다시 해야 합니다.`))) return;
         setError(null);
         setMessage(null);
         startTransition(async () => {

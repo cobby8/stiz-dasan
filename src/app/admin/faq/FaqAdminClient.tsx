@@ -7,6 +7,7 @@ import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { toKstYmd } from "@/lib/datetime/kst";
+import { askConfirm, showNotice } from "@/components/ui/feedback";
 
 // FAQ 데이터 타입
 type FaqData = {
@@ -158,8 +159,8 @@ export default function FaqAdminClient({ faqs: initialFaqs }: { faqs?: FaqData[]
 
     // 저장 (생성 또는 수정)
     function handleSubmit() {
-        if (!question.trim()) { alert("질문을 입력해주세요."); return; }
-        if (!answer.trim()) { alert("답변을 입력해주세요."); return; }
+        if (!question.trim()) { showNotice("질문을 입력해주세요."); return; }
+        if (!answer.trim()) { showNotice("답변을 입력해주세요."); return; }
         const payload = { question, answer, order, isPublic };
         startTransition(async () => {
             if (editId) {
@@ -173,8 +174,8 @@ export default function FaqAdminClient({ faqs: initialFaqs }: { faqs?: FaqData[]
     }
 
     // 삭제 확인 후 실행
-    function handleDelete(id: string) {
-        if (!confirm("이 FAQ를 삭제하시겠습니까?")) return;
+    async function handleDelete(id: string) {
+        if (!(await askConfirm("이 FAQ를 삭제하시겠습니까?"))) return;
         startTransition(async () => {
             await deleteFaq(id);
             await loadFaqs();

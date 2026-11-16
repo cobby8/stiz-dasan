@@ -98,8 +98,8 @@ test("대기자 관리: 반별 묶음 한 줄 표 + ⚡·패널, 상태 칩은 �
     assert.ok(new RegExp(`label: "${label}"[^\\n]*onSelect: \\(\\) => ${fn}\\(id\\)`).test(source), `${label} → ${fn}`);
   }
   // 각 처리 함수의 확인창은 그대로
-  assert.match(source, /confirm\("이 대기자에게 자리를 제안하시겠습니까\?"\)/);
-  assert.match(source, /confirm\("수락 처리하시겠습니까\? 수강 등록이 생성됩니다\."\)/);
+  assert.match(source, /askConfirm\("이 대기자에게 자리를 제안하시겠습니까\?"\)/);
+  assert.match(source, /askConfirm\("수락 처리하시겠습니까\? 수강 등록이 생성됩니다\."\)/);
   // 응답 기한은 KST 모듈로(브라우저 시간대 toLocaleDateString 금지)
   assert.doesNotMatch(source, /toLocaleDateString/);
   assert.match(source, /kstLabel\(w\.respondBy\)/);
@@ -167,7 +167,7 @@ test("학습 피드백: 펼침 카드 → 한 줄 표, 내용 전문·수정/삭
   assert.doesNotMatch(source, /expandedId/);
   assert.match(source, /label: "수정"[^\n]*onSelect: \(\) => handleEdit\(fb\)/);
   assert.match(source, /label: "삭제"[^\n]*onSelect: \(\) => handleDelete\(fb\.id\)/);
-  assert.match(source, /confirm\("이 피드백을 삭제하시겠습니까\?"\)/);
+  assert.match(source, /askConfirm\("이 피드백을 삭제하시겠습니까\?"\)/);
   // 수업일 없으면 작성일 — 브라우저 시간대(toLocaleDateString) 대신 KST
   assert.doesNotMatch(source, /toLocaleDateString/);
   assert.match(source, /return toKstYmd\(fb\.sessionDate \|\| fb\.createdAt\);/);

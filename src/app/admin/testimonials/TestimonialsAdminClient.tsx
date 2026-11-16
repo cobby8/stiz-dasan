@@ -21,6 +21,7 @@ import {
     deleteTestimonial,
     updateNaverPlaceUrl,
 } from "@/app/actions/admin";
+import { askConfirm, showNotice } from "@/components/ui/feedback";
 
 // 후기 데이터 타입
 type TestimonialData = {
@@ -208,8 +209,8 @@ export default function TestimonialsAdminClient({
 
     // 저장 (생성 또는 수정)
     function handleSubmit() {
-        if (!name.trim()) { alert("작성자명을 입력해주세요."); return; }
-        if (!text.trim()) { alert("후기 내용을 입력해주세요."); return; }
+        if (!name.trim()) { showNotice("작성자명을 입력해주세요."); return; }
+        if (!text.trim()) { showNotice("후기 내용을 입력해주세요."); return; }
         const payload = { name, info, text, rating, order, isPublic };
         startTransition(async () => {
             if (editId) {
@@ -223,8 +224,8 @@ export default function TestimonialsAdminClient({
     }
 
     // 삭제
-    function handleDelete(id: string) {
-        if (!confirm("이 후기를 삭제하시겠습니까?")) return;
+    async function handleDelete(id: string) {
+        if (!(await askConfirm("이 후기를 삭제하시겠습니까?"))) return;
         startTransition(async () => {
             await deleteTestimonial(id);
             await loadTestimonials();
