@@ -7,7 +7,7 @@ import { childAccessWhere } from "@/lib/account/child-access";
 import { createHash } from "crypto";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { assertRegularMakeupAllowed, assertMakeupSessionAllowed, CompensationConflict, lockCompensation } from "@/lib/billing/absence-compensation-guard";
+import { assertRegularMakeupAllowed, assertMakeupSessionAllowed, CompensationConflict, lockCompensation, type CompensationTransaction } from "@/lib/billing/absence-compensation-guard";
 import { isKstYmd, kstAt, todayKst } from "@/lib/datetime/kst";
 // 관리자 출결 저장의 학부모 알림 = 선생님 화면과 같은 규칙·같은 발송 함수
 import { attendanceNoticePayload, pickAttendanceNoticeTargets } from "@/lib/attendance/attendanceNoticeRules";
@@ -5505,9 +5505,18 @@ export async function loadMakeupSlotAvailability(input: {
  * 저장 직전 정원 재검증 — 화면에서 본 잔여석과 실제 저장 시점 사이에
  * 다른 예약이 들어올 수 있으므로 서버에서 한 번 더 확인한다.
  * 수강 인원 판정은 출결 화면과 동일(ACTIVE Enrollment + 통합 학생 제외).
+ *
+ * db 인자(2026-11-17): 기본은 전역 prisma(트랜잭션 밖 «미리 확인»). bookMakeupSession 은 잠금 뒤에
+ * 트랜잭션 클라이언트(tx)를 넘겨 한 번 더 부른다 — 그때는 두 쿼리 모두 넘겨받은 연결(tx)로만 센다.
+ * 전역 prisma 로 세면 트랜잭션이 연결 하나를 쥔 채 풀에서 두 번째 연결을 또 기다리게 되어,
+ * 서버당 연결 한도(10)에서 서로 막힐 수 있다.
  */
-async function assertMakeupSeatAvailable(makeupClassId: string, makeupDate: string) {
-    const rows = await prisma.$queryRawUnsafe<any[]>(
+async function assertMakeupSeatAvailable(
+    makeupClassId: string,
+    makeupDate: string,
+    db: CompensationTransaction = prisma,
+) {
+    const rows = await db.$queryRawUnsafe<any[]>(
         `SELECT c.capacity,
                 (SELECT COUNT(*)::int
                    FROM "Enrollment" e
@@ -5524,7 +5533,7 @@ async function assertMakeupSeatAvailable(makeupClassId: string, makeupDate: stri
     // MakeupSession 테이블이 아직 없을 수 있다 → 없으면 활성 보강 0건으로 본다.
     let bookedMakeups = 0;
     try {
-        const booked = await prisma.$queryRawUnsafe<any[]>(
+        const booked = await db.$queryRawUnsafe<any[]>(
             `SELECT COUNT(*)::int AS booked
                FROM "MakeupSession" ms
               WHERE ms."makeupClassId" = $1
@@ -5536,6 +5545,10 @@ async function assertMakeupSeatAvailable(makeupClassId: string, makeupDate: stri
         );
         bookedMakeups = Number(booked[0]?.booked ?? 0);
     } catch (e) {
+        // 트랜잭션 안에서는 삼키지 않는다 — 실패한 쿼리가 트랜잭션 전체를 중단시켜(«current transaction is aborted»)
+        // 0건으로 보고 넘어가도 뒤의 INSERT 가 어차피 실패한다. 그대로 던져 예약을 되돌린다.
+        // (bookMakeupSession 은 맨 앞에서 ensureMakeupSessionTable 을 부르므로 표가 없을 일은 없다)
+        if (db !== prisma) throw e;
         console.warn("[assertMakeupSeatAvailable] makeup count skipped:", (e as Error).message);
     }
 
@@ -5567,6 +5580,10 @@ export async function bookMakeupSession(data: {
     try {
         await prisma.$transaction(async tx => {
             await lockCompensation(tx);
+            // 잠금 뒤 정원 재확인(2026-11-17) — 위의 «미리 확인»은 잠금 밖이라, 마지막 한 자리에 두 예약이
+            // 동시에 오면 둘 다 통과해 정원을 1명 넘길 수 있었다. 여기는 lockCompensation(작업대 잠금) 뒤라
+            // 예약이 한 줄로 서므로, 같은 연결(tx)로 다시 세면 초과 예약이 생기지 않는다(학부모 예약 길과 같은 생각).
+            await assertMakeupSeatAvailable(data.makeupClassId, data.makeupDate, tx);
             await assertRegularMakeupAllowed(tx, { studentId: data.studentId, classId: data.originalClassId, dateYmd: data.originalDate.slice(0, 10) });
             await tx.$executeRawUnsafe(
             `INSERT INTO "MakeupSession"
@@ -5582,6 +5599,8 @@ export async function bookMakeupSession(data: {
         });
     } catch (e) {
         if (e instanceof CompensationConflict) throw e;
+        // 잠금 뒤 재확인에서 자리가 없으면 «미리 확인»과 똑같은 문구가 원장에게 보여야 한다
+        if (e instanceof Error && e.message === MAKEUP_CAPACITY_FULL_MESSAGE) throw e;
         console.error("Failed to book makeup session:", e);
         throw new Error("보강 예약 실패");
     }
