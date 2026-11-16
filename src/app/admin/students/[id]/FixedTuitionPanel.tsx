@@ -73,6 +73,10 @@ export default function FixedTuitionPanel({ studentId }: { studentId: string }) 
             <p className="text-xs text-[var(--color-academy-muted)]">
                 켜 두면 청구 준비가 이 학생의 정규반 수강료를 반별 합산 대신 이 금액 1건으로 계산합니다. 형제할인·3회 달 차감은 붙지 않고, 셔틀비는 따로 계산됩니다.
             </p>
+            {/* 검수 반영(2026-11-16): 추가·삭제하면 그 달 청구 준비에 저장해 둔 초안이 «원본 변경»으로 바뀐다 — 미리 알린다 */}
+            <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
+                추가하거나 지우면 그 달 청구 준비에 저장해 둔 초안은 «원본 변경»으로 바뀌어 다시 저장·확정해야 합니다.
+            </p>
 
             {!loaded ? (
                 <p className="py-3 text-xs text-[var(--color-academy-faint)]">불러오는 중…</p>
@@ -116,8 +120,8 @@ export default function FixedTuitionPanel({ studentId }: { studentId: string }) 
                         <input type="month" value={endMonth} onChange={(e) => setEndMonth(e.target.value)} className="academy-input" />
                     </label>
                     <div className="flex justify-end gap-2 sm:col-span-2">
-                        <button type="button" onClick={() => setOpen(false)} disabled={isPending} className="academy-button-secondary">닫기</button>
-                        <button type="submit" disabled={isPending} className="academy-button-primary">{isPending ? "저장 중…" : "저장"}</button>
+                        <button type="button" onClick={() => setOpen(false)} disabled={isPending} className="academy-button-secondary min-h-11">닫기</button>
+                        <button type="submit" disabled={isPending} className="academy-button-primary min-h-11">{isPending ? "저장 중…" : "저장"}</button>
                     </div>
                 </form>
             )}

@@ -35,6 +35,10 @@ const hash = (v: unknown) => createHash("sha256").update(JSON.stringify(v)).dige
 export const GUIDE_TIME_UNKNOWN_REASON = "부상 결석 정산 시각을 읽지 못해 저장해 둔 금액을 그대로 발행할 수 없습니다. 신청함 «부상 결석(기간)»에서 정산 상태를 확인해 주세요.";
 const limit = 5001;
 const take = <T>(rows: T[]) => { if (rows.length >= limit) throw new WorkbenchError("자료가 많아 전체 계산을 완료하지 못했습니다. 기간을 나눠 확인해 주세요.", 409); return rows; };
+/** 고정 수강료를 자동 적용하지 않거나 일부만 적용했을 때의 검토 사유(검수 반영 2026-11-16) — 테스트가 같은 글자를 쓴다 */
+export const FIXED_TUITION_REGISTER_NOTE = "고정 수강료 — 확정 장부가 있어 자동 적용 안 함, 확인 필요";
+export const FIXED_TUITION_NO_ROW_NOTE = "고정 수강료 — 발행할 수 있는 반이 없어 자동 적용 안 함, 확인 필요";
+export const FIXED_TUITION_PARTIAL_NOTE = "고정 수강료 — 다른 반에 이미 청구·발행 보류가 있어 발행할 수 있는 첫 반에 넣었습니다. 두 번 청구되지 않는지 확인 필요";
 const amountFields = (r: WorkbenchAmounts): WorkbenchAmounts => ({ baseAmount: r.baseAmount, discountAmount: r.discountAmount, prorationAmount: r.prorationAmount, carryAmount: r.carryAmount, shuttleAmount: r.shuttleAmount });
 export async function readWorkbenchSchedule(tx:WorkbenchTx,month:string,classId:string,start:string|null,end:string|null,calendar?:WorkbenchCalendarSnapshot) {
   const cls=await tx.$queryRawUnsafe<Array<{dayOfWeek:string}>>(`SELECT "dayOfWeek" FROM "Class" WHERE id=$1 FOR SHARE`,classId);
@@ -247,12 +251,35 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
   };
   const scopes = new Map<string, ReturnType<typeof scopeOf>>(enrollments.map(e => [`${e.studentId}:${e.classId}`, scopeOf(e)]));
   const billable = enrollments.filter(e => !scopes.get(`${e.studentId}:${e.classId}`)!.excluded);
+  // (0) 학생별 고정 수강료를 «이번 달 자동 적용해도 안전한가»로 거른다(검수 반영 2026-11-16 — 두 번 청구 방지).
+  //   - 그 학생의 청구 대상 반 중 하나라도 확정 월 장부(classReg)가 있으면 적용하지 않는다 — 장부 반 금액 + 고정 금액이 겹칠 수 있다.
+  //   - 고정 금액은 «발행 가능한 첫 행»(이미 발행·0원 정산·기존 청구·발행 보류가 아닌 행)에 붙인다. 그런 행이 없으면 적용하지 않는다.
+  //   - 적용하지 않거나, 다른 반에 이미 청구가 있으면 그 학생 행에 검토 사유를 붙인다(원장이 직접 확인).
+  const rowIssuable = (e: Enrollment) => {
+    const saved = drafts.find(d => d.id === `${e.studentId}:${e.classId}`);
+    if (saved && ["ISSUED", "ZERO"].includes(saved.status)) return false;
+    if (payments.some(p => p.studentId === e.studentId && p.status !== "CANCELED" && p.status !== "CANCELLED" && (p.classId === e.classId || p.classId === null) && p.type !== "UNIFORM")) return false;
+    return !holdPeriodFor(e.studentId, e.classId);
+  };
+  const fixedApplied = new Map<string, FixedTuition>();
+  const fixedNotes = new Map<string, string>();
+  for (const [studentId, fixed] of fixedTuitionByStudent) {
+    const mine = billable.filter(e => e.studentId === studentId);
+    if (!mine.length) continue;
+    if (mine.some(e => scopes.get(`${e.studentId}:${e.classId}`)!.classReg)) { fixedNotes.set(studentId, FIXED_TUITION_REGISTER_NOTE); continue; }
+    if (!mine.some(rowIssuable)) { fixedNotes.set(studentId, FIXED_TUITION_NO_ROW_NOTE); continue; }
+    fixedApplied.set(studentId, fixed);
+    if (mine.some(e => !rowIssuable(e))) fixedNotes.set(studentId, FIXED_TUITION_PARTIAL_NOTE);
+  }
+  // 고정 금액은 계산 함수가 «학생의 첫 행»에 넣는다 — 고정 적용 학생은 발행 가능한 행이 앞에 오게 순서만 바꾼다(다른 학생 순서는 그대로).
+  const plannable = billable.filter(e => !scopes.get(`${e.studentId}:${e.classId}`)!.classReg);
+  const tuitionInput = [...plannable.filter(e => !fixedApplied.has(e.studentId) || rowIssuable(e)), ...plannable.filter(e => fixedApplied.has(e.studentId) && !rowIssuable(e))];
   // (1) 수강료: 확정 장부가 없는 청구 대상 반만 학생 단위로 계산한다(전체 주 횟수 N 기준 주N회 요금·대회준비반 30만원 묶음).
-  const tuitionPlans = planWeeklyTuition(billable.filter(e => !scopes.get(`${e.studentId}:${e.classId}`)!.classReg).map(e => ({
+  const tuitionPlans = planWeeklyTuition(tuitionInput.map(e => ({
     key: `${e.studentId}:${e.classId}`, studentId: e.studentId, programId: e.programId ?? null, programName: e.programName ?? null, dayOfWeek: e.dayOfWeek,
     price: e.price, priceWeek1: e.priceWeek1 ?? null, priceWeek2: e.priceWeek2 ?? null, priceWeek3: e.priceWeek3 ?? null, priceDaily: e.priceDaily ?? null })),
-    // 학생별 고정 월 수강료가 있으면 반별 합산 대신 그 금액(형제할인·3회 달 차감 없음 — fixedFee)
-    fixedTuitionByStudent);
+    // 학생별 고정 월 수강료가 있으면 반별 합산 대신 그 금액(형제할인·3회 달 차감 없음 — fixedFee). 위에서 안전하다고 거른 학생만.
+    fixedApplied);
   // (2) 셔틀비: 그 달 명단에 있는 학생만, 청구 대상 반의 주 횟수로 제안한다.
   const shuttlePlans = new Map<string, ShuttlePlan>();
   for (const studentId of new Set(billable.map(e => e.studentId))) shuttlePlans.set(studentId, planShuttleFee(shuttleRiders.has(studentId),
@@ -332,6 +359,9 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
         if (preStartSessions > 0) basis.push(`수강 개시일 전 ${preStartSessions}회도 다닌 횟수에서 빼 기간 조정에 넣었어요`);
       }
     }
+    // 고정 수강료를 자동 적용하지 않았거나 일부만 적용한 학생 — 원장이 직접 확인하도록 검토 사유(근거에도 남긴다)
+    const fixedNote = excluded ? undefined : fixedNotes.get(e.studentId);
+    if (fixedNote) { reviewReasons.push(fixedNote); basis.push(`확인: ${fixedNote}`); }
     if (startsOn) basis.push(`수강 개시일 ${startsOn}`);
     if (startsOn && !excluded && scheduledDates.length < allScheduledDates.length) reviewReasons.push("개시일 이후 실제 수업 횟수에 맞는 기간 조정 금액을 확인해 주세요.");
     if (startsOn && !guideOverridesSaved && saved?.scheduledDates?.some(day => day < startsOn)) blockingReasons.push("저장된 청구 기간에 수강 개시일 전 수업이 포함되어 있습니다. 기간과 금액을 다시 검토해 주세요.");
@@ -427,7 +457,7 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
       const expected = fixed ? 0 : shortMonthProration(amounts.baseAmount, monthSessions, amounts.discountAmount);
       if (amounts.prorationAmount !== expected) {
         const note = fixed
-          ? `${fixedTuitionByStudent.has(e.studentId) ? "고정 수강료" : "대회준비반 고정 요금"}는 3회 달 차감이 없습니다(현재 기간 조정 ${amounts.prorationAmount.toLocaleString("ko-KR")}원).`
+          ? `${fixedApplied.has(e.studentId) ? "고정 수강료" : "대회준비반 요금"}는 3회 달 차감이 없습니다(현재 기간 조정 ${amounts.prorationAmount.toLocaleString("ko-KR")}원).`
           : `연간 일정 ${monthSessions}회인 달은 기간 조정이 할인 후 금액 기준 ${expected.toLocaleString("ko-KR")}원이어야 합니다(현재 ${amounts.prorationAmount.toLocaleString("ko-KR")}원).`;
         reviewReasons.push(note);
         basis.push(`확인: ${note}`); // 관리자 저장 뒤 검토 사유가 걸러져도 근거에는 남긴다
@@ -438,7 +468,7 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
     // 차단 사유 맨 앞에 넣어, 확정·발행을 요청하면 이 글자로 거절된다(mutateWorkbench 가 첫 차단 사유를 돌려준다).
     const holdPeriodId = participates ? holdPeriodFor(e.studentId, e.classId) : undefined;
     // 고정 수강료가 이 행의 제안값을 정했는가(확정 장부가 없고 청구 대상인 행만)
-    const fixedOfStudent = fixedTuitionByStudent.get(e.studentId);
+    const fixedOfStudent = fixedApplied.get(e.studentId);
     const fixedLabel = fixedOfStudent && !classReg && !excluded ? fixedTuitionShortLabel(fixedOfStudent.amount) : null;
     if (holdPeriodId) blockingReasons.unshift(BILLING_HOLD_LABEL);
     // 부상 결석 안내는 있는데 그 기간의 확정 시각을 읽지 못했다 — 저장해 둔 금액이 정산 전 것인지 뒤 것인지 가릴 수 없어 발행을 막는다

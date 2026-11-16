@@ -53,6 +53,8 @@ export type TuitionPlan = {
 
 /** 고정 요금 행의 근거 문구 — 화면·테스트가 같은 문장을 쓴다. */
 export const FIXED_FEE_NOTE = "고정 요금 — 형제할인·3회 달 차감 없음";
+/** 평일 대회준비반 행(주N회 요금이지만 할인·차감 없음)의 근거 문구 — 원장 결정 2026-11-16 A */
+export const COMPETITION_NO_DISCOUNT_NOTE = "대회준비반 — 형제할인·3회 달 차감 없음";
 
 const won = (n: number) => `${n.toLocaleString("ko-KR")}원`;
 const validAmount = (v: number | null | undefined): v is number => typeof v === "number" && Number.isSafeInteger(v) && v > 0;
@@ -93,7 +95,8 @@ const WEEKEND_DAYS = new Set(["Sat", "Sun"]);
  *   주말 훈련 없이 평일 대회준비반(수7)을 다니는 학생 = 다른 프로그램과 같은 일반 규칙(학생 전체 주 횟수 N 기준 주N회 합계 ÷ N).
  *   원장 결정(2026-11-16): 대회준비반 요금 주1회 150,000 · 주2회 260,000 · 주3회 330,000(Program priceWeek1/2/3 = «주N회 한 달 합계»)
  *   → 수7 한 반 값이 주1회 15만 · 주2회 13만 · 주3회 11만. 예) 수7+금5 주2회 = 수7 130,000 + 금5(주2회 합계 ÷ 2).
- *   (2026-11-09 의 «평일만 150,000원 고정»은 이 결정으로 대체 — 주1회면 같은 150,000 이 나온다. 형제할인·3회 달 차감도 일반 반과 같게 붙는다.)
+ *   (2026-11-09 의 «평일만 150,000원 고정»은 이 결정으로 대체 — 주1회면 같은 150,000 이 나온다(priceWeek1 우선, 없으면 price).
+ *    형제할인·3회 달 차감은 예전처럼 붙이지 않는다(fixedFee, 원장 결정 2026-11-16 A).)
  *   학생별 고정 월 수강료(StudentFixedTuition)가 있으면 그것이 우선한다(예: 서우빈 15만 고정).
  * 30만 원 묶음은 형제할인·3회 달 차감을 붙이지 않는다(원장 확정 «월 30만 원 고정»).
  */
@@ -134,7 +137,9 @@ function planGeneralRows(rows: readonly TuitionEnrollment[], result: Map<string,
   const summary = groups.size > 1 ? `여러 프로그램 합산 주${n}회(${[...groups.values()].map(g => `${label(g[0])} 주${g.length}회`).join(" + ")})` : null;
   let remainder = 0;
   for (const group of groups.values()) {
-    const tier = weeklyTierPrice(group[0], n);
+    // 대회준비반 주1회는 priceWeek1 을 먼저 본다(원장 결정 2026-11-16 — price 가 옛 30만으로 남아 있어도 15만이 나오게).
+    const compWeek1 = n === 1 && isCompetitionProgram(group[0].programName) && validAmount(group[0].priceWeek1) ? group[0].priceWeek1 : null;
+    const tier = compWeek1 ?? weeklyTierPrice(group[0], n);
     if (tier === null) {
       // 주N회 요금 빈 칸 → 기존 방식(반마다 주1회 요금). 과다 청구 가능성이 있어 반드시 경고.
       for (const e of group) result.set(e.key, {
@@ -236,6 +241,11 @@ export function planWeeklyTuition(enrollments: readonly TuitionEnrollment[], fix
     }
     // 평일 대회준비반(수7)도 일반 규칙 — 대회준비반 주N회 칸(15만/26만/33만) ÷ N(원장 결정 2026-11-16)
     planGeneralRows(rows, result, null);
+    // 단, 대회준비반 행은 예전처럼 형제할인·3회 달 차감을 붙이지 않는다(원장 결정 2026-11-16 A) — 금액만 주N회, 처리는 고정 요금과 같게.
+    for (const e of comp) {
+      const plan = result.get(e.key);
+      if (plan) result.set(e.key, { ...plan, basis: plan.basis ? `${plan.basis} · ${COMPETITION_NO_DISCOUNT_NOTE}` : COMPETITION_NO_DISCOUNT_NOTE, fixedFee: true });
+    }
   }
   return result;
 }

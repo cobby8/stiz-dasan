@@ -133,10 +133,11 @@ const wed7 = (s) => enroll(s, "wed7", "comp", comp1116, "대회준비반", "Wed"
 const weekdayGame = { price: 100000, priceWeek1: 100000, priceWeek2: 160000, priceWeek3: 210000, priceDaily: null };
 const sat7 = { price: 120000, priceWeek1: 120000, priceWeek2: 220000, priceWeek3: 300000, priceDaily: null };
 
-test("평일 대회준비반만(이지민 수7 주1회) = 150,000원, 고정 요금 아님(일반 규칙)", () => {
+test("평일 대회준비반만(이지민 수7 주1회) = 150,000원, 할인·3회 차감 없음(fixedFee — 원장 결정 A)", () => {
   const plan = planWeeklyTuition([wed7("ljm")]);
   assert.equal(plan.get("ljm:wed7").baseAmount, 150000);
-  assert.ok(!plan.get("ljm:wed7").fixedFee);
+  assert.equal(plan.get("ljm:wed7").fixedFee, true);
+  assert.match(plan.get("ljm:wed7").basis, /대회준비반 — 형제할인·3회 달 차감 없음/);
   assert.equal(plan.get("ljm:wed7").warning, null);
 });
 
@@ -144,8 +145,19 @@ test("수7+금5 주2회(전서호) = 수7 130,000 + 금5 80,000 — 주2회 합�
   const plan = planWeeklyTuition([wed7("jsh"), enroll("jsh", "fri5", "wg", weekdayGame, "주중경기반", "Fri")]);
   assert.equal(plan.get("jsh:wed7").baseAmount, 130000);
   assert.equal(plan.get("jsh:fri5").baseAmount, 80000);
-  assert.ok(!plan.get("jsh:wed7").fixedFee);
+  // 대회준비반 행만 할인·차감 없음, 같은 학생의 일반 반은 일반 반 그대로
+  assert.equal(plan.get("jsh:wed7").fixedFee, true);
+  assert.ok(!plan.get("jsh:fri5").fixedFee);
   assert.match(plan.get("jsh:wed7").basis, /대회준비반 주2회 요금 260,000원 ÷ 2/);
+});
+
+test("대회준비반 주1회는 priceWeek1 우선 — price 가 옛 30만으로 남아 있어도 150,000 (원장 결정 B 방어)", () => {
+  const old = { ...comp1116, price: 300000 };
+  assert.equal(planWeeklyTuition([enroll("x", "wed7", "comp", old, "대회준비반", "Wed")]).get("x:wed7").baseAmount, 150000);
+  // priceWeek1 이 비면 price
+  assert.equal(planWeeklyTuition([enroll("y", "wed7", "comp", { ...old, priceWeek1: null }, "대회준비반", "Wed")]).get("y:wed7").baseAmount, 300000);
+  // 일반 프로그램 주1회는 예전처럼 price(바뀌지 않음)
+  assert.equal(planWeeklyTuition([enroll("z", "mon", "hobby", { ...hobby, priceWeek1: 1 }, "주중취미반", "Mon")]).get("z:mon").baseAmount, 100000);
 });
 
 test("월4·수7·토7 주3회(신이준) = 수7 110,000 — 주3회 합계 ÷ 3", () => {
