@@ -5,6 +5,8 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import { gunzipSync } from 'node:zlib';
 import * as archiveCore from '../src/lib/backup/archiveCore.ts';
+import * as seedSnapshot from '../src/lib/backup/seedSnapshot.ts';
+import * as kst from '../src/lib/datetime/kst.ts';
 import { NextResponse } from 'next/server.js';
 
 const source = readFileSync(new URL('../src/app/api/admin/backup-now/route.ts', import.meta.url), 'utf8');
@@ -32,7 +34,8 @@ const archiveModule = (calls, options) => ({
 
 // 실제 라우트만 실행하고 운영 인증·DB·Storage 모듈은 가져오지 않는다.
 function fixture(options = {}) {
-  const calls = { archiveUpload: [], order: [], client: 0, query: 0, bucket: 0, create: 0, upload: [], list: 0, remove: [], logs: [] };
+  const calls = { archiveUpload: [], order: [], client: 0, query: 0, bucket: 0, create: 0, upload: [], list: 0, remove: [], logs: [],
+    seedUpload: [], seedList: 0 };
   const result = (key, data) => options.fail === key ? { data: null, error: { message: sensitive } } : { data, error: null };
   const storage = {
     async listBuckets() { calls.order.push('bucket'); calls.bucket++; return result('bucket', options.missingBucket ? [] : [{ name: 'backups' }]); },
@@ -41,6 +44,11 @@ function fixture(options = {}) {
       assert.equal(name, 'backups');
       return {
         async upload(filename, body, config) {
+          // 핵심 데이터(seed) 스냅샷은 seed/ 폴더로 간다 — 본 백업 호출 기록(order·upload)과 섞지 않는다.
+          if (filename.startsWith('seed/')) {
+            calls.seedUpload.push({ filename, snapshot: JSON.parse(body), config });
+            return result('seed-upload', {});
+          }
           if (filename.endsWith('.gz')) {
             calls.order.push('archive-upload'); calls.archiveUpload.push({ filename, archive: JSON.parse(gunzipSync(body).toString('utf8')), config });
             if (options.fail === 'archive-upload-lost') throw new Error(sensitive);
@@ -50,7 +58,10 @@ function fixture(options = {}) {
           if (options.fail === 'upload-response-lost') throw new Error(sensitive);
           return result('upload', {});
         },
-        async list() { calls.order.push('list'); calls.list++; return result('list', options.files ?? []); },
+        async list(path) {
+          if (path === 'seed') { calls.seedList++; return result('seed-list', []); }
+          calls.order.push('list'); calls.list++; return result('list', options.files ?? []);
+        },
         async remove(names) { calls.order.push('remove'); calls.remove.push(names); return result('remove', options.removed ?? names.map(name => ({ name }))); },
       };
     },
@@ -63,6 +74,8 @@ function fixture(options = {}) {
       return options.rows?.[sql.match(/FROM "([^"]+)"/)[1]] ?? [];
     } } },
     '@/lib/backup/archive': archiveModule(calls, options),
+    '@/lib/backup/seedSnapshot': seedSnapshot, // 순수 모듈이라 실제 것을 쓴다
+    '@/lib/datetime/kst': kst,
     '@/lib/supabase/admin': { createAdminClient: () => { calls.client++; return { storage }; } },
     '@/lib/auth-guard': { async requireOwner() { if (options.unauthorized) throw new Error(sensitive); } },
   };

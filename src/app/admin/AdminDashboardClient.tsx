@@ -80,6 +80,8 @@ type SystemStatusData = {
         // 최신 백업 파일 크기·담긴 업무 자료(표·행 수) — 예전 응답·예전 파일이면 없다
         lastBackupBytes?: number | null;
         archive?: { tables: number; rows: number; complete: boolean } | null;
+        // 핵심 데이터(seed) 스냅샷이 마지막으로 자동 저장된 시각 — 아직 한 번도 저장 전이면 없다
+        seedSnapshotAt?: string | null;
     };
 };
 
@@ -496,6 +498,14 @@ function SystemStatusCard({
         return `${backupAgeDays}일 전`;
     }
 
+    // 핵심 데이터(seed) 스냅샷 — 매일 자동 저장된다. «마지막 백업»과 같은 방식(몇 시간/며칠 전)으로 보인다.
+    const seedAt = backup?.seedSnapshotAt ? new Date(backup.seedSnapshotAt) : null;
+    const seedAgeMs = seedAt ? now.getTime() - seedAt.getTime() : Infinity;
+    const seedAgeHours = Math.floor(seedAgeMs / (1000 * 60 * 60));
+    const seedWarn = seedAgeMs > 2 * 24 * 60 * 60 * 1000;
+    // 저장 기록이 없으면 줄을 숨기지 않고 «아직 저장 전»으로 보인다(안 도는 것을 알 수 있게).
+    const seedLabel = !seedAt ? "아직 저장 전" : seedAgeHours < 1 ? "방금 전" : seedAgeHours < 24 ? `${seedAgeHours}시간 전` : `${Math.floor(seedAgeHours / 24)}일 전`;
+
     return (
         <div className="academy-panel p-4">
             <div className="mb-3 flex items-center justify-between gap-2">
@@ -537,6 +547,14 @@ function SystemStatusCard({
                             표 {backup.archive.tables}개 · {backup.archive.rows.toLocaleString("ko-KR")}줄
                             {typeof backup.lastBackupBytes === "number" ? ` · ${(backup.lastBackupBytes / 1024 / 1024).toFixed(1)}MB` : ""}
                             {backup.archive.complete ? "" : " · 일부 누락"}
+                        </span>
+                    </div>
+                )}
+                {systemStatus && (
+                    <div className="flex items-center justify-between">
+                        <span className="text-sm text-[var(--color-academy-muted)]">핵심 데이터 자동 저장</span>
+                        <span className={`text-xs ${seedWarn ? "font-semibold text-[var(--color-academy-warning)]" : "text-[var(--color-academy-muted)]"}`}>
+                            {seedLabel}{seedAt && seedWarn ? " · 이틀 넘게 멈춤" : ""}
                         </span>
                     </div>
                 )}
