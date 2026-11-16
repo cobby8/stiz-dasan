@@ -178,7 +178,7 @@ import { recordApplicationContactAtomically } from "@/lib/application-contact-tr
 import { sessionDateForKorea } from "@/lib/seasonal/session-bridge";
 import { absencePlanMessage, applyAttendanceAbsenceReasonInTx } from "@/lib/regular/attendance-absence-reason";
 import { syncCreditForRegularSession, syncCreditForSeasonalSeat } from "@/lib/makeup/credit-service";
-import { findOrCreateRegularSession, resolveSessionLogTarget } from "@/lib/regular/regularSession";
+import { findOrCreateRegularSession } from "@/lib/regular/regularSession";
 import { buildEnrollmentOperationsEvent } from "@/lib/operations-events/admin-hooks";
 import { enqueueWebsiteOperationsEventInTransaction } from "@/lib/operations-events";
 
@@ -3554,90 +3554,9 @@ async function insertGuardians(
     }
 }
 
-// ── 수업 기록 저장 (세션 + 출석 일괄) ─────────────────────────────────────────
-
-/**
- * saveSessionLog: 수업 기록(Session)과 출석(Attendance)을 한번에 저장하는 통합 Server Action
- *
- * - 기존 saveAttendance는 출석만 저장하지만, 이 함수는 수업 주제/내용/사진/코치 + 출석을 함께 저장
- * - Session이 이미 있으면 UPDATE, 없으면 INSERT (classId + date 기준)
- * - attendances가 전달되면 각 학생에 대해 Attendance UPSERT
- * - PgBouncer 호환을 위해 $queryRawUnsafe / $executeRawUnsafe만 사용
- */
-export async function saveSessionLog(data: {
-    classId: string;
-    date: string;           // ISO 날짜 문자열
-    topic?: string;         // 수업 주제
-    content?: string;       // 수업 상세 내용
-    photosJSON?: string;    // 사진 URL 배열 JSON 문자열 (클라이언트에서 JSON.stringify 완료)
-    coachId?: string;       // 담당 코치 ID
-    sessionId?: string;     // 수정 모드: 고칠 기록 id(방학특강 회차 기록일 수도 있다). 없으면 새로 작성
-    attendances?: Array<{   // 출석 데이터 (선택)
-        studentId: string;
-        status: string;     // PRESENT, ABSENT, LATE
-    }>;
-}) {
-    await requireAdmin();
-    try {
-        if (data.attendances?.length) {
-            const eligible = await prisma.$queryRawUnsafe<Array<{ studentId: string }>>(
-                `SELECT e."studentId" FROM "Enrollment" e WHERE e."classId"=$1 AND e.status='ACTIVE'
-             AND (e."startsOn" IS NULL OR e."startsOn" <= $2::date OR EXISTS (
-               SELECT 1 FROM "Attendance" historical JOIN "Session" prior ON prior.id=historical."sessionId"
-               WHERE historical."studentId"=e."studentId" AND prior."classId"=$1 AND prior.date::date=$2::date
-             ))`, data.classId, data.date,
-            );
-            const ids = new Set(eligible.map(row => row.studentId));
-            if (data.attendances.some(row => !ids.has(row.studentId))) throw new Error("수강 개시일 전이거나 이 수업 명단에 없는 학생입니다.");
-        }
-        // ── 1~3. 고칠 기록을 정하고 내용을 덮어쓴다 ──
-        // 수정: 화면이 고른 기록(이 반 것인지 확인) 그대로 — 방학특강 회차 기록을 고칠 때 정규 기록이 새로 생기지 않게.
-        // 새로 작성: 같은 반·같은 날 기록을 찾거나 만든다(코치 앱·출결 화면과 같은 판정 함수 findOrCreateRegularSession).
-        const { sessionId, isSeasonal } = await prisma.$transaction(async tx => {
-            const id = await resolveSessionLogTarget(tx, { classId: data.classId, dateYmd: data.date, sessionId: data.sessionId });
-            // 방학특강 회차 기록인지 — 맞으면 아래 4단계(정규반 출석 저장)를 건너뛴다.
-            const kind = await tx.$queryRawUnsafe<Array<{ seasonal: boolean }>>(
-                `SELECT ("specialProgramSessionDateId" IS NOT NULL) AS seasonal FROM "Session" WHERE id = $1`,
-                id,
-            );
-            await tx.$executeRawUnsafe(
-                `UPDATE "Session" SET
-                    topic = $1, content = $2, "photosJSON" = $3, "coachId" = $4, "updatedAt" = NOW()
-                 WHERE id = $5`,
-                data.topic || null,
-                data.content || null,
-                data.photosJSON || null,
-                data.coachId || null,
-                id,
-            );
-            return { sessionId: id, isSeasonal: kind[0]?.seasonal === true };
-        });
-
-        // ── 4. 출석 데이터가 있으면 각 학생별 Attendance UPSERT ──
-        // 기존 saveAttendance와 동일한 ON CONFLICT 패턴 사용
-        // ⚠️ 방학특강 회차 기록에는 정규반 명단 출석을 넣지 않는다.
-        //    넣으면 특강을 신청하지 않은 정규반 아이들이 «출석»으로 남고,
-        //    출석이 생긴 회차는 특강 날짜를 지우거나 옮길 수 없게 막힌다(session-bridge).
-        if (!isSeasonal && data.attendances && data.attendances.length > 0) {
-            for (const rec of data.attendances) {
-                await prisma.$executeRawUnsafe(
-                    `INSERT INTO "Attendance" (id, "sessionId", "studentId", status, "createdAt", "updatedAt")
-                     VALUES (gen_random_uuid()::text, $1, $2, $3, NOW(), NOW())
-                     ON CONFLICT ("sessionId", "studentId") DO UPDATE SET status = $3, "updatedAt" = NOW()`,
-                    sessionId, rec.studentId, rec.status
-                );
-            }
-        }
-
-        // ── 5. 캐시 무효화 ──
-        revalidatePath("/admin/classes");
-
-        return { success: true, sessionId };
-    } catch (e) {
-        console.error("Failed to save session log:", e);
-        throw new Error("수업 기록 저장 실패");
-    }
-}
+// ── (삭제됨 2026-11-17) 수업 기록 저장(saveSessionLog) ─────────────────────────
+// 반 상세의 «수업 기록» 창을 없애면서 함께 지웠다(원장 결정 — 같은 기록을 고치는 길을 하나로).
+// 새 기록 = 출결 저장(saveAttendance)이 만든다 / 주제·내용·사진·코치 = saveSessionReport(리포트 편집).
 
 // ── (삭제됨 2026-10-06) 시간표 슬롯 → Class 동기화 ─────────────────────────────
 // syncScheduleToClasses / getClassSyncPreview 는 화면·API 어디서도 부르지 않아 지웠다(Phase 2 시트 종료).
@@ -4693,7 +4612,7 @@ export async function ensureReportColumns() {
 
 /**
  * 세션 리포트 저장 (수업 주제/내용/사진 + published 상태)
- * - 기존 saveSessionLog와 유사하지만, published/publishedAt 필드도 저장
+ * - 기록 id 로만 고친다 — 방학특강 회차 기록도 그 기록만 고쳐지고 출석(Attendance)은 건드리지 않는다
  * - 기존 Session이 있으면 UPDATE, 없으면 INSERT하지 않음 (출결이 먼저 기록되어야 함)
  */
 export async function saveSessionReport(data: {

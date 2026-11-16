@@ -6,7 +6,8 @@ import { loadTsModule } from "./_ts-module.mjs";
 // 같은 반·같은 날 정규 수업 기록(Session)은 하나 — 2026-11-08.
 // 사고 유형: 관리자가 먼저 출결을 저장하면 «키 없는» 기록이 생기고, 뒤에 코치가 수업을 시작하면
 //            키로만 찾아 기록을 하나 더 만들었다 → 같은 날 출결이 두 기록으로 갈라진다(운영 0건, 잠재 위험).
-// 이제 관리자 출결·수업일지·랠리즈·코치 시작·예정 내용이 모두 regularSession.ts 의 같은 함수를 쓴다.
+// 이제 관리자 출결·랠리즈·코치 시작·예정 내용이 모두 regularSession.ts 의 같은 함수를 쓴다.
+// (관리자 수업일지 창은 2026-11-17 없앴다 — 새 기록은 출결 저장이, 수정은 리포트 편집이 한다.)
 
 const mod = await loadTsModule("src/lib/regular/regularSession.ts");
 
@@ -34,12 +35,6 @@ function fakeDb(initial = []) {
       throw new Error(`예상 밖 SQL: ${sql}`);
     },
     async $queryRawUnsafe(sql, ...values) {
-      if (sql.includes(`SELECT id FROM "Session" WHERE id = $1 AND "classId" = $2`)) {
-        calls.push("pick");
-        assert.match(sql, /FOR UPDATE/, "수정 대상 기록은 잠그고 읽는다");
-        const [id, classId] = values;
-        return rows.filter((r) => r.id === id && r.classId === classId).map(({ id }) => ({ id }));
-      }
       if (sql.includes(`INSERT INTO "Session"`)) {
         calls.push("upsert");
         const [classId, ymd, key] = values;
@@ -148,9 +143,8 @@ function body(source, name) {
   return source.slice(start, next === -1 ? undefined : next);
 }
 
-test("관리자 출결 저장(정규)·수업일지·랠리즈는 findOrCreateRegularSession 으로 기록을 찾는다", () => {
+test("관리자 출결 저장(정규)·랠리즈는 findOrCreateRegularSession 으로 기록을 찾는다", () => {
   assert.match(body(admin, "saveAttendance"), /findOrCreateRegularSession\(tx, \{ classId, dateYmd: date \}\)/);
-  assert.match(body(admin, "saveSessionLog"), /resolveSessionLogTarget\(tx, \{ classId: data\.classId, dateYmd: data\.date, sessionId: data\.sessionId \}\)/);
   assert.match(body(rallyz, "applyRallyzAttendanceSync"), /findOrCreateRegularSession\(tx,/);
 });
 
@@ -169,30 +163,23 @@ test("코치 수업 시작·예정 내용 저장은 같은 키 함수 + 키 없�
   }
 });
 
-// ── 수업일지 수정: 반 상세 목록의 방학특강 회차 기록을 고쳐도 정규 기록이 새로 생기지 않는다(검수 필수1) ──
-test("특강 회차 기록을 수정하면 그 기록만 고치고 새 정규 기록을 만들지 않는다", async () => {
-  const db = fakeDb([{ id: "seasonal-1", classId: "c1", date: "2026-11-08", seasonal: "spd-1" }]);
-  const id = await mod.resolveSessionLogTarget(db, { classId: "c1", dateYmd: "2026-11-08", sessionId: "seasonal-1" });
-  assert.equal(id, "seasonal-1");
-  assert.equal(db.rows.length, 1, "정규 기록이 새로 생기지 않는다");
-  assert.deepEqual(db.calls, ["pick"]);
+// ── 기존 기록 수정: 반 상세 목록의 방학특강 회차 기록을 고쳐도 정규 기록이 새로 생기지 않는다(검수 필수1) ──
+// 2026-11-17: 반 상세의 «수업 기록» 창(saveSessionLog·resolveSessionLogTarget)을 없앴다. 기존 기록을 고치는 길은
+// 리포트 편집(saveSessionReport) 하나이고, 그 액션은 화면이 고른 기록 id 로 UPDATE 만 한다 — 날짜로 다시 찾거나 새로 만들지 않는다.
+test("기존 기록 수정(리포트 편집)은 기록 id 로 UPDATE 만 한다 — 새 수업 기록을 만들지 않는다", () => {
+  const b = body(admin, "saveSessionReport");
+  assert.match(b, /UPDATE "Session" SET[\s\S]*WHERE id = \$5/);
+  assert.match(b, /data\.sessionId,\s*\);/, "고칠 대상은 화면이 넘긴 기록 id");
+  assert.doesNotMatch(b, /INSERT INTO "Session"/);
+  assert.doesNotMatch(b, /findOrCreateRegularSession/);
 });
 
-test("다른 반 기록 id 로는 수정하지 못한다(새 기록도 만들지 않는다)", async () => {
-  const db = fakeDb([{ id: "other", classId: "c2", date: "2026-11-08" }]);
-  await assert.rejects(() => mod.resolveSessionLogTarget(db, { classId: "c1", dateYmd: "2026-11-08", sessionId: "other" }), /이 반에서 찾지 못했습니다/);
-  assert.equal(db.rows.length, 1);
-});
-
-test("새로 작성(기록 id 없음)은 같은 반·같은 날 정규 기록 하나 규칙을 탄다", async () => {
-  const db = fakeDb([{ id: "legacy", classId: "c1", date: "2026-11-08" }]);
-  assert.equal(await mod.resolveSessionLogTarget(db, { classId: "c1", dateYmd: "2026-11-08" }), "legacy");
-  assert.deepEqual(db.calls, ["lock", "adopt", "upsert"]);
-});
-
-test("수업일지 화면은 수정 모드에서 날짜를 그대로 두면 기록 id 를 함께 보낸다", () => {
-  const modal = readFileSync("src/app/admin/classes/[id]/SessionLogModal.tsx", "utf8");
-  assert.match(modal, /sessionId: initialData && initialData\.date === date \? initialData\.id : undefined/);
+test("날짜로 기록을 찾아 내용을 덮어쓰던 옛 길(수업 기록 창)이 남아 있지 않다", () => {
+  assert.doesNotMatch(admin, /export async function saveSessionLog\(/);
+  assert.equal(mod.resolveSessionLogTarget, undefined);
+  const detail = readFileSync("src/app/admin/classes/[id]/ClassDetailClient.tsx", "utf8");
+  assert.match(detail, /const reportEditHref = \(sessionId: string\) => `\/admin\/attendance\/report\/\$\{encodeURIComponent\(sessionId\)\}`/);
+  assert.match(detail, /href=\{reportEditHref\(s\.id\)\}/, "기록 수정은 그 기록 id 의 리포트 편집으로 간다");
 });
 
 test("관리자 출결 화면은 같은 날 기록이 둘이면 키 있는 기록을 먼저 고른다", () => {
