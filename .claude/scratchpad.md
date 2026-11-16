@@ -294,6 +294,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-16 | developer(학생 유니폼 번호 두 칸 — 취미반 uniformNumber·대표팀 teamUniformNumber, claude/uniform-number): 학생 상세 유니폼 카드에 두 줄 표시 + 수정 창 입력칸 2개 · updateStudentUniform 서버 검증(숫자만·3자·비우면 null·"0" 은 번호) · 규칙 lib/students/uniform-number.ts · 마이그레이션 파일만(IF NOT EXISTS, 운영 적용됨) · 원생 목록엔 유니폼 표시가 없어 덧붙이기 생략. tsc 0 · tests 5612-0 · guards 337-0 | 구현 완료(검수 전) |
 | 11-16 | developer(질병 결석 미납인 달 = 미납 청구에서 1회분 빼기, claude/illness-unpaid-reduce): 승인이 서버에서 이월/감액 갈래 결정 · 기록은 PaymentAuditLog(ILLNESS_ABSENCE_UNPAID_REDUCED)+정산 기록 고정 사유 · 근거·휴원 정산·청구 준비·발행 보류가 감액을 «이미 줄인 금액»으로 인정 · 신청함·학부모 글자 구분. tsc 0 · tests 5607-0 · guards 337-0. 마이그레이션 없음 | 구현 완료(검수 전) |
 | 11-15 | developer(휴원 정산 단가 부풀림 수정, claude/pause-unit-price): loadPausePayments 가 랠리즈 청구의 «감액 할 일» 줄(UNPAID_REDUCE·channel≠SITE, 사이트 금액은 안 줄임)까지 원래 금액에 더하던 것을 «사이트가 실제로 줄인 줄»만 세도록 수정(workbench-absence 와 같은 기준). 재현 테스트 추가. tsc 0 · 관련 tests 179-0 | 검수 대기 |
 | 11-15 | developer(기사 «그래도 탑승», claude/driver-board-anyway): 자차·조퇴·지각으로 잠긴 줄(skipLabel)에만 보조 버튼 «그래도 탑승/하차» → 화면 안 확인 → 탑승 기록. 탑승 기록이 있는 동안 잠금 해제(riderBoardAnyway·riderBoardingView), 되돌리면 다시 잠김. 휴원·휴무·결석 줄은 대상 아님. 서버 2곳은 원래 skipLabel 을 거절하지 않아 그대로, 탑승 알림도 탑승 표만 봐서 그대로. 파일: unifiedDriverRunLogic.ts · UnifiedDriverClient.tsx · tests/driver-board-anyway.test.mjs(8건). tsc 0 · tests 5585-0 · guards 337-0. 실기기 미확인 | 검수 대기 |

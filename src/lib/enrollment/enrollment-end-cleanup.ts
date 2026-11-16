@@ -394,6 +394,23 @@ export function cleanupResultMessage(s: EnrollmentEndCleanupSummary): string {
   ].filter(Boolean).join(" · ");
 }
 
+/**
+ * 적용일 크론이 학부모 퇴원 신청을 자동 반영했을 때 원장에게 남길 «확인할 일» 한 줄(2026-11-16).
+ * 크론은 화면이 없어 관리자 직접 변경처럼 결과 상자를 보여 줄 수 없다 — 사람이 볼 일이 남았을 때만 알림을 보낸다.
+ * 남은 일 = 끝난 반의 미납 청구(자동 삭제 안 함) · 정리 못 한 결석(보호 대상) · 부상 결석 정산. 없으면 null(알림 안 보냄).
+ */
+export function autoWithdrawFollowUp(s: Omit<EnrollmentEndCleanupSummary, "supersededRequests">): string | null {
+  const kept = s.keptAbsences.billing + s.keptAbsences.makeup + s.keptAbsences.attendance;
+  const parts = [
+    s.unpaidPayments.length
+      ? `미납 청구 ${s.unpaidPayments.length}건(${s.unpaidPayments.map((p) => p.monthLabel + (p.partial ? " 일부 다닌 달" : "")).join(", ")}) — 취소·감액 확인`
+      : "",
+    kept ? `정리 못 한 결석 ${kept}건 — 결석 관리에서 확인` : "",
+    s.illnessSettle ? (s.illnessSettle.stillEnrolled ? ENROLLMENT_END_ILLNESS_MOVED_NOTE : ENROLLMENT_END_ILLNESS_NOTE) : "",
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : null;
+}
+
 // ══ DB 연결부 ══════════════════════════════════════════════════════════════
 
 async function tableExists(db: CleanupDb, name: string): Promise<boolean> {

@@ -26,6 +26,8 @@ import {
 } from "@/lib/enrollment/pause-settlement";
 import { SETTLEMENT_CHOICE_REQUIRED_MESSAGE, settlementChoiceRequired, type SettlementMode } from "@/lib/enrollment/pause-settlement-plan";
 import { todayKst } from "@/lib/datetime/kst";
+import { lockCompensation } from "@/lib/billing/absence-compensation-guard";
+import { autoWithdrawFollowUp, cleanupEndedClassInTx, cleanupResultMessage, emptyCleanupSummary, type EnrollmentEndCleanupSummary } from "@/lib/enrollment/enrollment-end-cleanup";
 
 // ── 원장의 수강 변경 승인/거절 + 적용일이 된 건 반영 ────────────────────────
 //
@@ -554,6 +556,9 @@ export async function applyDueEnrollmentChangesWithSummary(): Promise<DueEnrollm
   for (const candidate of due) {
     try {
     const outcome = await prisma.$transaction(async (tx) => {
+      // 잠금 순서: 청구 정산 전역 잠금 → 신청 → 수강 — 관리자 직접 변경(updateEnrollmentStatus)·휴원 정산과 같은 순서(교착 방지).
+      // 퇴원 정리(cleanupEndedClassInTx)가 안에서 다시 잡아도 같은 트랜잭션의 advisory 잠금이라 괜찮다.
+      await lockCompensation(tx);
       // 신청 행을 잠그고 조건을 다시 본다. 다른 실행이 먼저 적용했으면 status 가 APPLIED 라 여기서 빠진다.
       const rows = await tx.$queryRawUnsafe<any[]>(
         `SELECT *, to_char("effectiveFrom", 'YYYY-MM-DD') AS "effectiveDate"
@@ -603,10 +608,22 @@ export async function applyDueEnrollmentChangesWithSummary(): Promise<DueEnrollm
           `UPDATE "EnrollmentChangeRequest" SET status = 'APPLIED', "appliedAt" = now(), "updatedAt" = now()
             WHERE id = $1 AND status = 'APPROVED' AND "appliedAt" IS NULL`, row.id);
         if (marked !== 1) throw new Error("CHANGE_REQUEST_CONFLICT");
+        // 퇴원이면 관리자 직접 수강 종료와 같은 정리(2026-11-16 — 김루빈 재발 방지 후속):
+        // 그 반의 적용일 이후 결석 → 취소, 그 결석의 미사용 보강권 → 회수, 미납 청구는 «목록만»(자동 삭제 안 함).
+        // 같은 트랜잭션이라 정리가 실패하면 적용도 통째로 되돌아가고 다음 크론에서 다시 시도된다.
+        const cleanup = plan.nextStatus === "WITHDRAWN"
+          ? await cleanupEndedClassInTx(tx, {
+              studentId: enrollment.studentId, classId: enrollment.classId, className: enrollment.className,
+              fromYmd: row.effectiveDate, actorUserId: actor,
+            })
+          : null;
         await insertAutoAppliedLedger(tx, {
-          key, row, actor, studentName: student?.name ?? null, enrollment, nextStatus: plan.nextStatus,
+          key, row, actor, studentName: student?.name ?? null, enrollment, nextStatus: plan.nextStatus, cleanup,
         });
-        return "APPLIED" as const;
+        const followUp = cleanup ? autoWithdrawFollowUp(cleanup) : null;
+        return { kind: "APPLIED" as const, followUp: followUp
+          ? { studentId: row.studentId, studentName: student?.name ?? "학생", className: enrollment.className, effectiveDate: row.effectiveDate as string, text: followUp }
+          : null };
       }
 
       // 반 변경·예상 밖 상태는 사이트를 건드리지 않고 HELD 원장만 남긴다(기존 동작 그대로).
@@ -629,12 +646,17 @@ export async function applyDueEnrollmentChangesWithSummary(): Promise<DueEnrollm
           detailsJson: { enrollmentChangeRequestId: row.id, reason } } },
       }});
       return "HELD" as const;
-    });
-    if (outcome === "APPLIED") {
+    }, { timeout: 30_000 }); // 전역 잠금 대기 + 퇴원 정리까지 한 트랜잭션이라 기본 5초보다 넉넉히
+    if (typeof outcome === "object" && outcome.kind === "APPLIED") {
       summary.applied += 1;
       summary.appliedIds.push(candidate.id);
       // 적용일에 실제로 바뀐 순간 학부모에게 «휴원이 시작됐어요» 앱 알림. 실패는 안에서 삼킨다(적용은 이미 끝났다).
       await notifyParentOfEnrollmentChange(candidate.id, "APPLIED");
+      // 퇴원 정리 뒤 사람이 볼 일(미납 청구·보호된 결석·부상 정산)이 남았으면 원장에게 벨 알림. 실패해도 적용은 그대로.
+      if (outcome.followUp) {
+        await notifyOwnerOfAutoWithdrawFollowUp(outcome.followUp)
+          .catch((error) => console.error("[applyDueEnrollmentChanges] 퇴원 정리 알림 실패", error instanceof Error ? error.name : ""));
+      }
     } else if (outcome === "HELD") summary.held += 1;
     } catch {
       // 한 건이 실패해도 나머지는 계속한다. 실패한 건은 그대로 APPROVED 라 다음 크론에서 다시 시도된다.
@@ -643,6 +665,26 @@ export async function applyDueEnrollmentChangesWithSummary(): Promise<DueEnrollm
     }
   }
   return summary;
+}
+
+/**
+ * 학부모 퇴원 신청이 적용일에 자동 반영된 뒤 원장(ADMIN)에게 남은 확인 일을 벨 알림으로(2026-11-16).
+ * 문자는 보내지 않는다. 같은 신청은 한 번만 적용되므로(신청 행 잠금·원장 키) 알림도 한 번이다.
+ */
+async function notifyOwnerOfAutoWithdrawFollowUp(input: {
+  studentId: string; studentName: string; className: string; effectiveDate: string; text: string;
+}) {
+  const owners = await prisma.$queryRawUnsafe<Array<{ id: string }>>(`SELECT id FROM "User" WHERE role = 'ADMIN'`);
+  const { createNotificationRecord } = await import("@/lib/notification");
+  for (const owner of owners) {
+    await createNotificationRecord({
+      userId: owner.id,
+      type: "ENROLLMENT_CHANGE",
+      title: `${input.studentName} 퇴원 반영 — 확인할 일 남음`,
+      message: `${input.studentName} 학생 ${input.className} 퇴원(${input.effectiveDate})이 자동 반영됐습니다. ${input.text}`,
+      linkUrl: `/admin/students/${input.studentId}`,
+    });
+  }
 }
 
 /** 실제로 사이트에 적용한 건수를 돌려준다(보류 원장 작성은 세지 않는다). */
@@ -672,6 +714,8 @@ async function insertAutoAppliedLedger(tx: RawTx, input: {
   studentName: string | null;
   enrollment: { id: string; classId: string; status: string; className: string };
   nextStatus: "PAUSED" | "WITHDRAWN" | "ACTIVE"; // ACTIVE = 학부모 복귀 신청 승인분
+  /** 퇴원 정리 결과(퇴원일 때만) — 감사 기록에 남긴다 */
+  cleanup?: Omit<EnrollmentEndCleanupSummary, "supersededRequests"> | null;
 }) {
   const { key, row, actor, enrollment } = input;
   const requestId = crypto.randomUUID();
@@ -721,7 +765,14 @@ async function insertAutoAppliedLedger(tx: RawTx, input: {
      VALUES ($1,$2,'ENROLLMENT_CHANGE_AUTO_APPLIED','SYSTEM',$3,$4::jsonb)`,
     crypto.randomUUID(), requestId, actor,
     JSON.stringify({ enrollmentChangeRequestId: row.id, commandId, enrollmentId: enrollment.id,
-      from: enrollment.status, to: input.nextStatus, sheet: sheetInitial.status, rallyz: rallyzInitial.status, notificationsSent: false }),
+      from: enrollment.status, to: input.nextStatus, sheet: sheetInitial.status, rallyz: rallyzInitial.status, notificationsSent: false,
+      // 퇴원 정리 — 개수와 청구 id 만(이름·금액 같은 개인 정보는 남기지 않는다)
+      ...(input.cleanup ? { cleanup: {
+        summary: cleanupResultMessage({ ...emptyCleanupSummary(), ...input.cleanup }),
+        cancelledAbsences: input.cleanup.cancelledAbsences, revokedCredits: input.cleanup.revokedCredits,
+        keptAbsences: input.cleanup.keptAbsences, unpaidPaymentIds: input.cleanup.unpaidPayments.map((p) => p.id),
+        illnessSettle: input.cleanup.illnessSettle ?? null,
+      } } : {}) }),
   );
 }
 
