@@ -45,7 +45,7 @@ export type TuitionPlan = {
   /** 관리자가 꼭 봐야 할 경고(주N회 요금 빈 칸, 여러 프로그램 수강 등) */
   warning: string | null;
   /**
-   * 고정 요금 행(대회준비반 30만 원 묶음·평일만 15만 원) — 형제할인·3회 달 차감을 붙이지 않는다.
+   * 고정 요금 행(대회준비반 30만 원 묶음·학생별 고정 수강료) — 형제할인·3회 달 차감을 붙이지 않는다.
    * 원장 결정(2026-11-09 «월 30만 원 고정»). 서비스는 이 값이 true 면 할인·기간 조정 제안을 0 으로 둔다.
    */
   fixedFee?: boolean;
@@ -53,6 +53,8 @@ export type TuitionPlan = {
 
 /** 고정 요금 행의 근거 문구 — 화면·테스트가 같은 문장을 쓴다. */
 export const FIXED_FEE_NOTE = "고정 요금 — 형제할인·3회 달 차감 없음";
+/** 평일 대회준비반 행(주N회 요금이지만 할인·차감 없음)의 근거 문구 — 원장 결정 2026-11-16 A */
+export const COMPETITION_NO_DISCOUNT_NOTE = "대회준비반 — 형제할인·3회 달 차감 없음";
 
 const won = (n: number) => `${n.toLocaleString("ko-KR")}원`;
 const validAmount = (v: number | null | undefined): v is number => typeof v === "number" && Number.isSafeInteger(v) && v > 0;
@@ -90,18 +92,19 @@ const WEEKEND_DAYS = new Set(["Sat", "Sun"]);
  * 원장 결정(2026-11-09 원문): «대회준비반은 현재 휴강 중, 월 30만원 고정, 주말 대회준비반 훈련 필수 +
  * 수요일 7교시 대회준비반 훈련 필수 + 추가로 다른 일반 반 중 1회 선택».
  * → 주말 대회준비반 반이 있는 학생 = 30만원 묶음(대회준비반 반 전부 + 일반 반 1개).
- *   주말 훈련 없이 평일 대회준비반만 다니는 학생 = 월 150,000원 고정(COMPETITION_WEEKDAY_ONLY_FEE).
- *   근거: 10~11월 «수요일 7교시만» 수강생(임지호·이지민·박하준)을 원장이 건별로 15만 원 처리 → 2026-11-09 원장 확정.
- *   평일 대회준비반 + 일반 반이 함께 있으면 대회준비반 행만 150,000원 고정, 일반 반은 일반 규칙(N 에 대회준비반 행 제외) + 확인 경고.
- * 두 고정 요금 모두 형제할인·3회 달 차감을 붙이지 않는다(원장 확정 «월 30만 원 고정»).
+ *   주말 훈련 없이 평일 대회준비반(수7)을 다니는 학생 = 다른 프로그램과 같은 일반 규칙(학생 전체 주 횟수 N 기준 주N회 합계 ÷ N).
+ *   원장 결정(2026-11-16): 대회준비반 요금 주1회 150,000 · 주2회 260,000 · 주3회 330,000(Program priceWeek1/2/3 = «주N회 한 달 합계»)
+ *   → 수7 한 반 값이 주1회 15만 · 주2회 13만 · 주3회 11만. 예) 수7+금5 주2회 = 수7 130,000 + 금5(주2회 합계 ÷ 2).
+ *   (2026-11-09 의 «평일만 150,000원 고정»은 이 결정으로 대체 — 주1회면 같은 150,000 이 나온다(priceWeek1 우선, 없으면 price).
+ *    형제할인·3회 달 차감은 예전처럼 붙이지 않는다(fixedFee, 원장 결정 2026-11-16 A).)
+ *   학생별 고정 월 수강료(StudentFixedTuition)가 있으면 그것이 우선한다(예: 서우빈 15만 고정).
+ * 30만 원 묶음은 형제할인·3회 달 차감을 붙이지 않는다(원장 확정 «월 30만 원 고정»).
  */
 export const COMPETITION_PROGRAM_NAMES: ReadonlySet<string> = new Set(["대회준비반"]);
 /** 대회준비반 묶음 월 요금(원장 결정 «월 30만원 고정»). */
 export const COMPETITION_PACKAGE_FEE = 300_000;
 /** 묶음에 포함되는 일반 반 개수(원장 결정 «다른 일반 반 중 1회 선택»). */
 export const COMPETITION_INCLUDED_GENERAL_CLASSES = 1;
-/** 주말 훈련 없이 평일(수요일) 대회준비반만 다니는 학생의 월 요금(원장 확정 2026-11-09). */
-export const COMPETITION_WEEKDAY_ONLY_FEE = 150_000;
 
 export function isCompetitionProgram(programName: string | null | undefined): boolean {
   return COMPETITION_PROGRAM_NAMES.has((programName ?? "").trim());
@@ -134,7 +137,9 @@ function planGeneralRows(rows: readonly TuitionEnrollment[], result: Map<string,
   const summary = groups.size > 1 ? `여러 프로그램 합산 주${n}회(${[...groups.values()].map(g => `${label(g[0])} 주${g.length}회`).join(" + ")})` : null;
   let remainder = 0;
   for (const group of groups.values()) {
-    const tier = weeklyTierPrice(group[0], n);
+    // 대회준비반 주1회는 priceWeek1 을 먼저 본다(원장 결정 2026-11-16 — price 가 옛 30만으로 남아 있어도 15만이 나오게).
+    const compWeek1 = n === 1 && isCompetitionProgram(group[0].programName) && validAmount(group[0].priceWeek1) ? group[0].priceWeek1 : null;
+    const tier = compWeek1 ?? weeklyTierPrice(group[0], n);
     if (tier === null) {
       // 주N회 요금 빈 칸 → 기존 방식(반마다 주1회 요금). 과다 청구 가능성이 있어 반드시 경고.
       for (const e of group) result.set(e.key, {
@@ -159,19 +164,57 @@ function planGeneralRows(rows: readonly TuitionEnrollment[], result: Map<string,
   }
 }
 
+// ── 학생별 고정 월 수강료 ───────────────────────────────────
+/**
+ * 학생별 고정 월 수강료(StudentFixedTuition) 한 건 — 원장이 학생 상세 «청구/수납»에서 켠다(2026-11-16 원장 결정).
+ * 예) 서우빈(수7+토7) «매달 15만 원 고정».
+ * 있으면 그 학생의 그 달 정규반 수강료를 «반별 합산» 대신 이 금액 1건으로 본다.
+ * 대회준비반 고정 요금과 같은 규칙: 형제할인·3회 달 차감 없음(fixedFee). 셔틀비는 따로 계산된다(이 함수와 무관).
+ */
+export type FixedTuition = { amount: number; memo: string | null };
+
+/** 고정 수강료 근거 문구 — 화면·테스트가 같은 문장을 쓴다(예: «고정 수강료 월 150,000원(형제 합의) · 고정 요금 — …»). */
+export function fixedTuitionBasis(fixed: FixedTuition): string {
+  const memo = fixed.memo?.trim();
+  return `고정 수강료 월 ${won(fixed.amount)}${memo ? `(${memo})` : ""} · ${FIXED_FEE_NOTE}`;
+}
+
+/** 청구 준비 표에 붙이는 짧은 표시(예: «고정 15만», «고정 132,000원») — 만 원 단위로 떨어지면 줄여 쓴다. */
+export function fixedTuitionShortLabel(amount: number): string {
+  return amount > 0 && amount % 10_000 === 0 ? `고정 ${(amount / 10_000).toLocaleString("ko-KR")}만` : `고정 ${won(amount)}`;
+}
+
+/** «YYYY-MM» 달이 고정 수강료 기간(시작 월~끝 월, 끝 월 없으면 계속) 안인가. 문자열 비교로 충분하다(같은 형식). */
+export function fixedTuitionCovers(range: { startMonth: string; endMonth: string | null }, month: string): boolean {
+  return range.startMonth <= month && (range.endMonth === null || month <= range.endMonth);
+}
+
 /**
  * 학생별로 수강료 제안값을 정한다.
  * 넘기는 등록은 «이번 달 청구 대상(제외되지 않은)» 것만이어야 한다 — 휴원 반까지 세면 주N회가 잘못 오른다.
+ * 0) 학생별 고정 월 수강료가 있으면 그 금액(첫 행에 몰고 나머지 0원). 아래 규칙보다 먼저 — 원장이 그 학생에게 정한 값이라서.
  * 1) 주말 대회준비반 반이 있으면 대회준비반 묶음(30만원 고정, 첫 대회준비반 행에 몰고 나머지 0원).
- * 2) 평일 대회준비반만 있으면 대회준비반 행 15만원 고정 + 일반 반은 일반 규칙(대회준비반 제외 N).
- * 3) 그 밖에는 일반 규칙(학생 전체 주 횟수 N 기준 주N회 요금 ÷ N).
+ * 2) 그 밖에는(평일 대회준비반 포함) 일반 규칙(학생 전체 주 횟수 N 기준 주N회 요금 ÷ N).
+ * @param fixedByStudent 그 달에 적용되는 학생별 고정 수강료(studentId → 금액). 없으면 예전과 똑같이 계산한다.
  */
-export function planWeeklyTuition(enrollments: readonly TuitionEnrollment[]): Map<string, TuitionPlan> {
+export function planWeeklyTuition(enrollments: readonly TuitionEnrollment[], fixedByStudent: ReadonlyMap<string, FixedTuition> = new Map()): Map<string, TuitionPlan> {
   const result = new Map<string, TuitionPlan>();
   // 학생 → 등록 목록 (입력 순서 유지)
   const byStudent = new Map<string, TuitionEnrollment[]>();
   for (const e of enrollments) byStudent.set(e.studentId, [...(byStudent.get(e.studentId) ?? []), e]);
-  for (const rows of byStudent.values()) {
+  for (const [studentId, rows] of byStudent) {
+    const fixed = fixedByStudent.get(studentId);
+    if (fixed && Number.isSafeInteger(fixed.amount) && fixed.amount >= 0) {
+      // 고정 수강료: 첫 행에 전액, 나머지 반은 0원(반별 합산·주N회·대회준비반 규칙을 모두 건너뛴다).
+      const fixedBasis = fixedTuitionBasis(fixed);
+      rows.forEach((e, i) => result.set(e.key, {
+        baseAmount: i === 0 ? fixed.amount : 0,
+        basis: i === 0 ? fixedBasis : `${fixedBasis} — 금액은 첫 반 행에 포함(0원)`,
+        warning: null,
+        fixedFee: true, // 형제할인·3회 달 차감 없음(대회준비반 고정 요금과 같은 처리)
+      }));
+      continue;
+    }
     const comp = rows.filter(e => isCompetitionProgram(e.programName));
     const general = rows.filter(e => !isCompetitionProgram(e.programName));
     const isWeekend = (e: TuitionEnrollment) => WEEKEND_DAYS.has(e.dayOfWeek ?? "");
@@ -196,23 +239,13 @@ export function planWeeklyTuition(enrollments: readonly TuitionEnrollment[]): Ma
       }
       continue;
     }
-    if (comp.length) {
-      // 주말 훈련 없이 평일 대회준비반만: 대회준비반 행 합계 150,000원 고정(첫 행에 몰고 나머지 0원).
-      const weekdayBasis = `대회준비반 평일(수요일)만 월 ${won(COMPETITION_WEEKDAY_ONLY_FEE)} 고정 · ${FIXED_FEE_NOTE}`;
-      comp.forEach((e, i) => result.set(e.key, {
-        baseAmount: i === 0 ? COMPETITION_WEEKDAY_ONLY_FEE : 0,
-        basis: i === 0 ? weekdayBasis : `${weekdayBasis} — 금액은 첫 대회준비반 행에 포함`,
-        warning: null,
-        fixedFee: true,
-      }));
-      // 일반 반이 함께 있으면 일반 규칙으로 따로 계산한다(주 횟수 N 에 대회준비반 행은 넣지 않는다) + 확인 경고.
-      if (general.length) {
-        planGeneralRows(general, result,
-          `평일 대회준비반(${won(COMPETITION_WEEKDAY_ONLY_FEE)} 고정)과 일반 반 ${general.length}개를 함께 수강합니다. 일반 반은 일반 요금으로 따로 계산했습니다. 확인해 주세요.`);
-      }
-      continue;
-    }
+    // 평일 대회준비반(수7)도 일반 규칙 — 대회준비반 주N회 칸(15만/26만/33만) ÷ N(원장 결정 2026-11-16)
     planGeneralRows(rows, result, null);
+    // 단, 대회준비반 행은 예전처럼 형제할인·3회 달 차감을 붙이지 않는다(원장 결정 2026-11-16 A) — 금액만 주N회, 처리는 고정 요금과 같게.
+    for (const e of comp) {
+      const plan = result.get(e.key);
+      if (plan) result.set(e.key, { ...plan, basis: plan.basis ? `${plan.basis} · ${COMPETITION_NO_DISCOUNT_NOTE}` : COMPETITION_NO_DISCOUNT_NOTE, fixedFee: true });
+    }
   }
   return result;
 }

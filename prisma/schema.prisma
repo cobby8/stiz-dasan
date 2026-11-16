@@ -3905,3 +3905,19 @@ model CalendarFeedToken {
 
   @@index([userId], map: "CalendarFeedToken_userId_idx")
 }
+
+/// 학생별 고정 월 수강료(2026-11-16 원장 결정) — 있으면 청구 준비가 그 달 정규반 수강료를 반별 합산 대신 이 금액 1건으로 제안한다.
+/// 형제할인·3회 달 차감 없음, 셔틀비는 따로. 서버만 읽고 쓴다(RLS + 권한 회수). 마이그레이션: 20261116500000_student_fixed_tuition
+model StudentFixedTuition {
+  id          String   @id
+  studentId   String // 학생(Student.id) — 기록용이라 FK 없이 둔다
+  amount      Int // 월 수강료(원, 0 이상)
+  startMonth  String // 'YYYY-MM'
+  endMonth    String? // 'YYYY-MM'(포함), null = 끝 없음
+  memo        String?
+  actorUserId String
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([studentId], map: "StudentFixedTuition_studentId_idx")
+}
