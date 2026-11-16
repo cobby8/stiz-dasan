@@ -264,7 +264,7 @@ test("시작(POST) 순서: 출처 → 스위치 → 1회 사용 → 계정·제�
   assert.equal(rules.LINK_HANDOFF_GATE_COOKIE_PATH, "/auth");
 });
 
-test("콜백: via=app «그리고» 표시 쿠키가 있을 때만 앱 마무리(로그아웃+완료 화면·쿠키 삭제), 아니면 기존 그대로", () => {
+test("콜백: via=app «그리고» 표시 쿠키가 있을 때만 앱 마무리(로그아웃+완료 화면·쿠키 삭제), 아니면 기존 그대로", async () => {
   const callback = read("src/app/auth/callback/route.ts");
   const done = callback.slice(callback.indexOf("async function appLinkDoneRedirect"), callback.indexOf("async function finishLink"));
   assert.match(done, /signOut\(\{ scope: "local" \}\)/);
@@ -281,7 +281,12 @@ test("콜백: via=app «그리고» 표시 쿠키가 있을 때만 앱 마무리
   for (const code of ["already", "cancelled", "expired", "failed"]) assert.ok(finish.includes(`fail("${code}"`), code);
   // 연결 알림 문자는 그대로
   assert.match(finish, /notifyAccountSecurityEvent\(\{ authUserId: data\.user\?\.id, eventType: "SOCIAL_LOGIN_LINKED"/);
-  assert.match(callback, /const url = new URL\("\/mypage\/login-methods", request\.url\);/);
+  // 기존 웹 흐름의 복귀 화면 — 2026-11-17 부터 서버가 로그인한 계정으로 정한다(직원이면 직원 화면).
+  // 학부모·로그인 없음은 예전과 같은 /mypage/login-methods 다(규칙을 실제로 실행해서 확인).
+  assert.match(callback, /const url = new URL\(loginMethodsPath\(await resolveLinkActor\(\)\), request\.url\);/);
+  const linkRules = await loadTsModule("src/lib/account/login-methods-rules.ts");
+  assert.equal(linkRules.loginMethodsPath("parent"), "/mypage/login-methods");
+  assert.equal(linkRules.loginMethodsPath(null), "/mypage/login-methods");
 });
 
 test("완료 화면: 코드 → 정해 둔 문구, 가린 아이디는 모양 검사 뒤에만, 아이콘·하드코딩 색 없음", () => {

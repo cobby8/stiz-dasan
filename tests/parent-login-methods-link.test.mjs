@@ -19,10 +19,19 @@ test("연결은 휴대폰 인증까지 마친 학부모 본인만 시작할 수 
   const linkAt = start.indexOf('if (intent === "link") {', getAt);
   assert.ok(linkAt > 0, "연결 모드가 없다");
   const block = start.slice(linkAt, start.indexOf("return NextResponse.redirect(data.url);", linkAt));
-  const guardAt = block.indexOf("requireVerifiedParent()");
+  // 2026-11-17: 직원 계정도 연결할 수 있게 되면서 문지기가 한 함수(resolveLinkActor)로 모였다.
+  // 약속은 그대로다 — 확인이 연결 호출보다 먼저이고, 통과 못 하면 거절하며, 학부모 확인이 맨 먼저다.
+  const guardAt = block.indexOf("await resolveLinkActor()");
   const linkCallAt = block.indexOf("supabase.auth.linkIdentity(");
-  assert.ok(guardAt > 0 && linkCallAt > guardAt, "학부모 확인보다 연결 호출이 먼저 온다");
-  assert.match(block, /if \(!parent\) return loginError\(/);
+  assert.ok(guardAt > 0 && linkCallAt > guardAt, "본인 확인보다 연결 호출이 먼저 온다");
+  assert.match(block, /if \(!actor\) return loginError\(/);
+  assert.ok(block.indexOf("if (!actor) return loginError(") < linkCallAt, "거절이 연결 호출보다 먼저다");
+  const actor = fs.readFileSync("src/lib/account/link-actor.ts", "utf8");
+  const parentAt = actor.indexOf("await requireVerifiedParent()");
+  const staffAt = actor.indexOf("await requireStaff()");
+  assert.ok(parentAt > 0 && staffAt > parentAt, "휴대폰 인증까지 마친 학부모 확인이 먼저다");
+  // 문지기를 건너뛰는 다른 길(로그인만 확인 등)을 쓰지 않는다
+  assert.doesNotMatch(start, /requireAuth\(|getUser\(\)/);
   // 연결 모드에서 새 로그인(signInWithOAuth)을 하면 다른 계정으로 바뀌어 버린다.
   assert.doesNotMatch(block, /signInWithOAuth/);
   // 켜지지 않은 제공자 거절은 연결보다 먼저(Supabase 오류 화면 대신 우리 안내).

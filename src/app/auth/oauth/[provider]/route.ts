@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getEnabledParentOAuthProviders } from "@/lib/auth-providers";
-import { requireVerifiedParent } from "@/lib/auth-guard";
+import { resolveLinkActor } from "@/lib/account/link-actor";
+import { loginMethodsPath, type LinkActor } from "@/lib/account/login-methods-rules";
 import {
   PARENT_OAUTH_LABELS,
   parentOAuthNotReadyMessage,
@@ -12,20 +13,25 @@ import {
 import { createClient } from "@/lib/supabase/server";
 
 type RouteContext = { params: Promise<{ provider: string }> };
-// link = 이미 로그인한 학부모 계정에 간편로그인을 붙인다(마이페이지 「간편로그인 연결」, 2026-10-26).
+// link = 이미 로그인한 계정에 간편로그인을 붙인다(마이페이지 「간편로그인 연결」, 2026-10-26).
+// 2026-11-17: 학부모뿐 아니라 직원(원장·부원장·선생님·기사님) 계정도 연결할 수 있다(원장 지시).
 type OAuthIntent = "login" | "parent-signup" | "link";
-
-const LOGIN_METHODS_PATH = "/mypage/login-methods";
 
 function parseIntent(value: string | null): OAuthIntent {
   if (value === "login" || value === "link") return value;
   return "parent-signup";
 }
 
-function loginError(request: NextRequest, message: string) {
+/**
+ * 안내와 함께 돌려보낸다. 연결(link)일 때 돌아갈 화면은 주소 파라미터가 아니라 «지금 로그인한 계정»으로
+ * 서버가 정한다 — 직원이면 직원 연결 화면, 그 밖은 학부모 연결 화면(열린 리다이렉트·역할 혼동 방지).
+ * knownActor: 이미 판정을 마친 곳에서는 넘겨서 같은 조회를 다시 하지 않는다.
+ */
+async function loginError(request: NextRequest, message: string, knownActor?: LinkActor | null) {
   const intent = parseIntent(request.nextUrl.searchParams.get("intent"));
   if (intent === "link") {
-    const url = new URL(LOGIN_METHODS_PATH, request.url);
+    const actor = knownActor !== undefined ? knownActor : await resolveLinkActor();
+    const url = new URL(loginMethodsPath(actor), request.url);
     url.searchParams.set("error", message);
     return NextResponse.redirect(url);
   }
@@ -59,10 +65,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
   const supabase = await createClient();
 
   if (intent === "link") {
-    // 연결은 「비밀번호 등으로 이미 로그인한 학부모 본인」만. 휴대폰 문자만으로 기존 계정(자녀 정보)에
+    // 연결은 「비밀번호 등으로 이미 로그인한 본인」만. 휴대폰 문자만으로 기존 계정(자녀 정보)에
     // 붙이는 길은 만들지 않는다(원장 결정 2026-10-26) — 지금은 문자만으로 계정에 들어가는 길이 없다.
-    const parent = await requireVerifiedParent().catch(() => null);
-    if (!parent) return loginError(request, "학부모 계정으로 로그인한 뒤 연결해 주세요.");
+    // 학부모 확인이 먼저, 아니면 직원 확인(2026-11-17). 둘 다 아니면 시작하지 않는다.
+    const actor = await resolveLinkActor();
+    if (!actor) return loginError(request, "로그인한 뒤 연결해 주세요.", null);
     const callbackUrl = new URL("/auth/callback", publicSiteOrigin(request.nextUrl.origin));
     callbackUrl.searchParams.set("provider", provider);
     callbackUrl.searchParams.set("intent", "link");
@@ -71,7 +78,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       options: { redirectTo: callbackUrl.toString(), skipBrowserRedirect: true },
     });
     if (error || !data.url) {
-      return loginError(request, `${PARENT_OAUTH_LABELS[provider]} 연결을 시작하지 못했습니다. 잠시 후 다시 시도해 주세요.`);
+      return loginError(request, `${PARENT_OAUTH_LABELS[provider]} 연결을 시작하지 못했습니다. 잠시 후 다시 시도해 주세요.`, actor);
     }
     return NextResponse.redirect(data.url);
   }

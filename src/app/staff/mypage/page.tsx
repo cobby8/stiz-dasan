@@ -85,6 +85,11 @@ export default async function StaffMyPage() {
           <span className="flex-1 font-medium text-[var(--color-academy-primary)]">계정 관리</span>
           <span aria-hidden="true" className="shrink-0 text-[var(--color-academy-faint)]">›</span>
         </Link>
+        {/* 간편로그인(Apple·카카오 등)을 이 계정에 붙이는 화면(2026-11-17 원장 지시) — 직원 전용 연결 화면으로 간다 */}
+        <Link href="/staff/mypage/login-methods" className={LINK_ROW}>
+          <span className="flex-1 font-medium text-[var(--color-academy-primary)]">간편로그인 연결</span>
+          <span aria-hidden="true" className="shrink-0 text-[var(--color-academy-faint)]">›</span>
+        </Link>
       </section>
 
       {/* 2. 내 담당 반 — 선생님만. 읽기 전용(누르는 줄이 아니다) */}
