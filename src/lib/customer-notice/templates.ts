@@ -196,31 +196,74 @@ export function buildParentSignupGuideMessage() {
   ].join("\n");
 }
 
+/**
+ * ④-2 성인 수강생 본인용 가입 안내 (2026-11-16 원장 결정표 «성인도 포함해»)
+ *
+ * 왜 따로 두나: 만 19세 이상 수강생은 본인이 계정 주인이라(학원 기록의 대표 보호자 = 본인 이름·본인 번호)
+ * «학부모님·자녀» 문구가 어색하다. 학부모용 승인 문구(혜택 3줄 포함)는 그대로 두고,
+ * 성인용은 «학부모 → 회원», «자녀 → 수강 정보», «재원생 가족 혜택 → 재원생 혜택» 세 군데만 바꿨다.
+ * 링크·순서·혜택 내용은 학부모용과 같다(테스트가 두 문구의 차이를 이 세 줄로 못박는다).
+ */
+export function buildAdultSignupGuideMessage() {
+  return buildParentSignupGuideMessage()
+    .replace("[스티즈농구교실] 학부모 가입 안내", "[스티즈농구교실] 회원 가입 안내")
+    .replace("가입하시면 자녀가 자동으로 연결돼요.", "가입하시면 수강 정보가 자동으로 연결돼요.")
+    .replace("재원생 가족 혜택", "재원생 혜택");
+}
+
 /** 미리보기에 보여 줄 받는 사람 수(처음 몇 명만) */
 export const PARENT_SIGNUP_PREVIEW_SAMPLE = 5;
 
-/** DB 에서 읽은 «재원생 1명 – 대표 학부모» 한 줄 */
+/** 받는 번호 한 개의 구분 — 재원(수강 중) · 휴원(휴원만 남음) · 성인(그 번호의 학생이 모두 만 19세 이상) */
+export type SignupGuideGroup = "ACTIVE" | "PAUSED" | "ADULT";
+
+/** DB 에서 읽은 «수강생 1명 – 대표 보호자» 한 줄 */
 export type SignupGuideCandidate = {
   parentUserId: string;
   studentName: string;
   phone: string | null;
   /** 로그인 계정이 있으면(User.authUserId 가 있으면) true — 안내 대상이 아니다 */
   hasAccount: boolean;
+  /** 이 학생의 수강 상태 — 수강 중인 반이 하나라도 있으면 ACTIVE, 휴원만 남았으면 PAUSED (없으면 ACTIVE 로 본다) */
+  enrollmentStatus?: "ACTIVE" | "PAUSED";
+  /** 학생이 만 19세 이상(성인 수강생 — 본인이 계정 주인) */
+  isAdult?: boolean;
+  /**
+   * 이 번호로 가입하면 «이미 가입된 휴대폰 번호» 로 막히는가 (가입 판정 classifyPhoneOwnership 와 같은 기준:
+   * 같은 번호를 쓰는 계정 중 «빈 보호자 계정»이 아닌 것 — 로그인 수단이 있거나 직원 계정 — 이 하나라도 있으면 true)
+   */
+  phoneRegistered?: boolean;
+  /** 같은 번호의 빈 보호자 계정이 여러 개 — 가입하면 «학원에 문의» 로 멈춘다(자동으로 고르지 않음) */
+  phoneMultipleClaimable?: boolean;
 };
 
 export type SignupGuideRecipient = {
   phone: string;
   parentUserId: string;
   studentNames: string[];
+  /** 문구·미리보기 구분. 성인이면 성인용 문구가 간다 */
+  group: SignupGuideGroup;
+  /** 가입하면 «학원에 문의» 로 멈추는 번호(보내기는 하되 미리보기에 따로 센다) */
+  needsAcademyHelp: boolean;
 };
+
+/** 번호 하나에 묶인 학생들 → 구분. 성인만 있으면 성인, 아니면 수강 중이 하나라도 있으면 재원, 그 밖은 휴원 */
+function groupOf(rows: SignupGuideCandidate[]): SignupGuideGroup {
+  if (rows.every((row) => row.isAdult === true)) return "ADULT";
+  return rows.some((row) => (row.enrollmentStatus ?? "ACTIVE") === "ACTIVE") ? "ACTIVE" : "PAUSED";
+}
 
 /**
  * 받는 사람 고르기(순수 함수 — 서버와 테스트가 같은 규칙을 쓴다).
  *
+ * 대상(서버 SQL): 수강이 ACTIVE 또는 PAUSED 인 학생(병합 제외·퇴원만 남은 학생 제외)의 대표 보호자.
+ *   성인 수강생도 대표 보호자 칸이 «본인 이름·본인 번호의 빈 계정»이라 같은 길로 잡힌다.
+ *
  * 규칙
  *   1) 휴대폰 번호가 아니면 뺀다(번호 없음·집 전화).
- *   2) 로그인 계정이 있는 학부모는 뺀다. 같은 번호를 계정 있는 다른 학부모가 쓰고 있어도 뺀다
+ *   2) 로그인 계정이 있는 보호자는 뺀다. 같은 번호를 계정 있는 다른 보호자가 쓰고 있어도 뺀다
  *      (그 번호로는 이미 가입돼 있다는 뜻이라 «가입하세요» 문자가 맞지 않다).
+ *   2-1) 가입 판정에서 «이미 가입된 번호»로 막히는 번호(직원 계정 등이 같은 번호를 씀)도 뺀다 — 개수만 센다.
  *   3) 같은 번호는 한 번만(형제가 둘이면 문자는 1통, 자녀 이름은 모아 둔다).
  *   4) 이미 이 안내를 받은 번호는 뺀다 — 원장이 «다시 보내기»를 고른 때만 넣는다.
  * 순서는 번호 오름차순으로 고정한다(미리보기·보내기 직전 대조가 같은 결과를 내게).
@@ -229,34 +272,57 @@ export function selectParentSignupGuideRecipients(
   candidates: SignupGuideCandidate[],
   options: { alreadySentPhones: ReadonlySet<string>; resend: boolean },
 ) {
-  // 계정 있는 학부모의 번호부터 모은다(규칙 2)
+  // 계정 있는 보호자의 번호부터 모은다(규칙 2)
   const accountPhones = new Set<string>();
   for (const row of candidates) {
     const phone = normalizeMobilePhone(row.phone);
     if (phone && row.hasAccount) accountPhones.add(phone);
   }
 
-  const byPhone = new Map<string, SignupGuideRecipient>();
+  const rowsByPhone = new Map<string, SignupGuideCandidate[]>();
+  const registeredPhones = new Set<string>();
   let invalidPhoneCount = 0;
   for (const row of candidates) {
     if (row.hasAccount) continue;
     const phone = normalizeMobilePhone(row.phone);
     if (!phone) { invalidPhoneCount += 1; continue; }
     if (accountPhones.has(phone)) continue;
-    const found = byPhone.get(phone);
-    if (found) {
-      // 같은 번호 = 문자 1통. 자녀 이름만 덧붙인다(규칙 3)
-      if (!found.studentNames.includes(row.studentName)) found.studentNames.push(row.studentName);
-    } else {
-      byPhone.set(phone, { phone, parentUserId: row.parentUserId, studentNames: [row.studentName] });
-    }
+    // 규칙 2-1 — 가입하면 «이미 가입된 번호»로 막힌다. 보내지 않고 번호 수만 센다
+    if (row.phoneRegistered) { registeredPhones.add(phone); continue; }
+    const list = rowsByPhone.get(phone);
+    if (list) list.push(row); else rowsByPhone.set(phone, [row]);
   }
 
-  const all = [...byPhone.values()].sort((a, b) => (a.phone < b.phone ? -1 : a.phone > b.phone ? 1 : 0));
+  const all: SignupGuideRecipient[] = [];
+  for (const [phone, rows] of rowsByPhone) {
+    // 같은 번호 = 문자 1통. 자녀 이름만 모은다(규칙 3)
+    const studentNames: string[] = [];
+    for (const row of rows) if (!studentNames.includes(row.studentName)) studentNames.push(row.studentName);
+    all.push({
+      phone,
+      parentUserId: rows[0].parentUserId,
+      studentNames,
+      group: groupOf(rows),
+      needsAcademyHelp: rows.some((row) => row.phoneMultipleClaimable === true),
+    });
+  }
+  all.sort((a, b) => (a.phone < b.phone ? -1 : a.phone > b.phone ? 1 : 0));
   const alreadySentCount = all.filter((item) => options.alreadySentPhones.has(item.phone)).length;
   // 규칙 4 — «다시 보내기»를 고르지 않았으면 이미 받은 번호는 뺀다
   const recipients = options.resend ? all : all.filter((item) => !options.alreadySentPhones.has(item.phone));
-  return { recipients, alreadySentCount, invalidPhoneCount };
+  // 미리보기에 보일 구성(받는 번호 기준)
+  const breakdown = {
+    active: recipients.filter((item) => item.group === "ACTIVE").length,
+    paused: recipients.filter((item) => item.group === "PAUSED").length,
+    adult: recipients.filter((item) => item.group === "ADULT").length,
+  };
+  const needsAcademyHelpCount = recipients.filter((item) => item.needsAcademyHelp).length;
+  return { recipients, alreadySentCount, invalidPhoneCount, registeredPhoneCount: registeredPhones.size, breakdown, needsAcademyHelpCount };
+}
+
+/** 받는 사람 1명에게 갈 문구 — 성인 수강생 본인이면 성인용, 그 밖은 학부모용(원장 승인본) */
+export function signupGuideMessageFor(item: Pick<SignupGuideRecipient, "group">) {
+  return item.group === "ADULT" ? buildAdultSignupGuideMessage() : buildParentSignupGuideMessage();
 }
 
 /** 이름 가리기: 김민수 → 김*수, 이준 → 이*, 남궁민수 → 남**수 */
@@ -267,7 +333,9 @@ export function maskPersonName(name: string) {
   return `${chars[0]}${"*".repeat(chars.length - 2)}${chars[chars.length - 1]}`;
 }
 
-/** 미리보기 한 줄: «김*수 학생 학부모 · ***-****-1234» */
-export function describeSignupGuideRecipient(item: SignupGuideRecipient) {
-  return `${item.studentNames.map(maskPersonName).join("·")} 학생 학부모 · ${maskPhone(item.phone)}`;
+/** 미리보기 한 줄: «김*수 학생 학부모 · ***-****-1234» (성인 «김*수 성인 수강생 본인 · …», 휴원 «… 학부모(휴원) · …») */
+export function describeSignupGuideRecipient(item: Pick<SignupGuideRecipient, "phone" | "studentNames"> & { group?: SignupGuideGroup }) {
+  const names = item.studentNames.map(maskPersonName).join("·");
+  const who = item.group === "ADULT" ? "성인 수강생 본인" : item.group === "PAUSED" ? "학생 학부모(휴원)" : "학생 학부모";
+  return `${names} ${who} · ${maskPhone(item.phone)}`;
 }
