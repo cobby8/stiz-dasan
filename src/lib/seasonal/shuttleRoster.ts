@@ -762,6 +762,26 @@ export async function removeConfirmedShuttleRosterRow(rosterId: string, reason?:
 }
 
 /**
+ * 신청관리(또는 기사님 요청 승인)에서 취소해 빠진 행에 남기는 이유.
+ * 이 길은 원본 신청서 status 도 CANCELLED 로 바꾼다 — 되돌리기가 이 값을 보고 원본을 함께 돌려놓는다.
+ * (코드가 정한 고정 문구라 SQL 에 그대로 넣어도 외부 입력이 섞이지 않는다.)
+ */
+export const REMOVED_BY_REQUEST_CANCEL = "신청관리에서 취소";
+
+/**
+ * «이 확정본 행의 수강 항목이 취소·거절 상태인가» 판정식(SQL 조각).
+ * 확정본은 `sr`, 수강 항목은 `ai` 로 LEFT JOIN 돼 있어야 한다.
+ *
+ * 명단 조회(confirmedSeasonRoster)가 이런 학생을 숨기는 조건 `(ai.id IS NULL OR ai.status NOT IN (...))` 의
+ * 정확한 반대다. «뺀 학생» 목록의 표시와 되돌리기 거부가 이 상수 하나를 같이 쓴다 —
+ * 두 곳이 갈라지면 화면엔 버튼이 있는데 서버가 막거나, 그 반대가 된다.
+ */
+export const ROSTER_ENROLLMENT_CANCELLED_SQL = `(ai.id IS NOT NULL AND NOT (${ridingShuttleStatusSql("ai")}))`;
+
+/** 수강이 취소된 학생을 되돌리려 할 때의 안내. API 가 원장에게 그대로 보여 준다. */
+export const RESTORE_BLOCKED_ENROLLMENT_CANCELLED = "수강이 취소된 학생입니다. 수강을 되살린 뒤 다시 넣어 주세요.";
+
+/**
  * 확정본을 shuttleRequestId(원본 신청서 id)로 빼거나 되돌린다.
  *
  * 왜 필요한가: 신청관리 드로어는 확정본 rosterId를 모른 채 원본 신청서(shuttleRequest)만 들고 있다.
@@ -782,7 +802,7 @@ export async function setConfirmedShuttleRideByRequestId(shuttleRequestId: strin
       )
     : await prisma.$executeRawUnsafe(
         `UPDATE "SeasonalShuttleRoster"
-            SET "removedAt" = now(), "removedReason" = '신청관리에서 취소', "updatedAt" = now()
+            SET "removedAt" = now(), "removedReason" = '${REMOVED_BY_REQUEST_CANCEL}', "updatedAt" = now()
           WHERE "shuttleRequestId" = $1 AND "removedAt" IS NULL`,
         shuttleRequestId,
       );
@@ -873,17 +893,107 @@ export async function placeStudentAtFreeHub(target: { rosterId?: string | null; 
   return { ok: true };
 }
 
-/** 되돌리기(제외 취소). 원장이 실수로 뺐을 때 복구용. */
+/**
+ * 되돌리기(제외 취소). 원장이 실수로 뺐을 때 복구용.
+ *
+ * 원본 신청서 status 를 맞추는 규칙(뺀 길과 대칭):
+ *   · 이 화면의 «명단에서 빼기»로 뺀 행 → 뺄 때 원본을 건드리지 않았으므로 되돌릴 때도 건드리지 않는다.
+ *   · 신청관리(또는 기사님 요청 승인)에서 취소한 행 → 뺄 때 원본 status 를 CANCELLED 로 바꿨으므로,
+ *     되돌릴 때 REQUESTED 로 돌려놓는다. 안 그러면 명단엔 다시 타는데 신청관리 화면엔 «취소»로 남는다.
+ * 기사님 명단·배차가 읽는 값(확정본 removedAt)은 이 규칙과 무관하게 그대로다.
+ */
 export async function restoreConfirmedShuttleRosterRow(rosterId: string) {
   await requireRosterOwner();
   if (!rosterId) throw new Error("rosterId required");
+  // 이유는 되돌리는 순간 지워지므로, 지우기 전에 먼저 읽어 둔다.
+  // 수강 취소 여부도 같이 읽는다 — «뺀 학생» 목록과 같은 판정식(ROSTER_ENROLLMENT_CANCELLED_SQL).
+  const before = await prisma.$queryRawUnsafe<RawRow[]>(
+    `SELECT sr."shuttleRequestId" AS "shuttleRequestId", sr."removedReason" AS "removedReason",
+            ${ROSTER_ENROLLMENT_CANCELLED_SQL} AS "enrollmentCancelled"
+       FROM "SeasonalShuttleRoster" sr
+       LEFT JOIN "SpecialProgramApplicationItem" ai ON ai.id = sr."applicationItemId"
+      WHERE sr.id = $1`,
+    rosterId,
+  );
+  // 수강이 취소·거절된 학생은 되살리지 않는다. 되살려도 명단 조회가 숨겨서
+  // «명단»에도 «뺀 학생»에도 안 보이는 학생이 된다 → 아무것도 바꾸지 않고 이유를 알린다.
+  if (before[0]?.enrollmentCancelled === true) {
+    throw new Error(RESTORE_BLOCKED_ENROLLMENT_CANCELLED);
+  }
   const changed = await prisma.$executeRawUnsafe(
     `UPDATE "SeasonalShuttleRoster"
         SET "removedAt" = NULL, "removedReason" = NULL, "updatedAt" = now()
       WHERE id = $1`,
     rosterId,
   );
+  const requestId = str(before[0]?.shuttleRequestId);
+  if (requestId && str(before[0]?.removedReason) === REMOVED_BY_REQUEST_CANCEL) {
+    // CANCELLED 일 때만 돌려놓는다(그 사이 다른 상태로 바뀐 신청서를 덮지 않는다).
+    // 그리고 확정본 행이 «지금도 살아 있을 때만» — 위 UPDATE 와 이 UPDATE 사이에 누가 다시 뺐으면
+    // 원본만 REQUESTED 로 남아 신청관리 화면과 명단이 어긋난다.
+    await prisma.$executeRawUnsafe(
+      `UPDATE "SpecialProgramShuttleRequest" SET "status" = 'REQUESTED', "updatedAt" = now()
+        WHERE id = $1 AND "status" = 'CANCELLED'
+          AND EXISTS (SELECT 1 FROM "SeasonalShuttleRoster" sr WHERE sr.id = $2 AND sr."removedAt" IS NULL)`,
+      requestId,
+      rosterId,
+    );
+  }
   return { ok: true, changed };
+}
+
+/** 확정 명단에서 빠진 학생 한 줄(«뺀 학생» 목록용). */
+export type RemovedShuttleRosterRow = {
+  rosterId: string;
+  studentName: string;
+  offeringTitle: string | null;
+  removedAt: Date | null;
+  /** 빠진 이유. 이 화면의 «명단에서 빼기»는 이유를 남기지 않아 null 이다. */
+  removedReason: string | null;
+  /** 수강 항목이 취소·거절 상태인가. 이런 학생은 되돌려도 수강을 되살리기 전에는 명단에 나타나지 않는다. */
+  enrollmentCancelled: boolean;
+};
+
+/**
+ * 확정 명단에서 뺀 학생 목록(removedAt 이 찍힌 행). 관리자 «뺀 학생 N명» 묶음이 읽는다.
+ *
+ * ⚠️ 이름을 get* 으로 짓지 않았다 — 이 파일의 get* 는 «셔틀 대상자를 읽는 출구»이고(회귀 테스트가 개수를 지킨다),
+ *    이 함수는 반대로 «대상자가 아닌 사람»을 관리 화면에만 보여 준다. 기사님 화면·배차는 이 함수를 쓰지 않는다.
+ * 시즌 범위는 명단 조회와 같은 규칙(seasonScope — 보관 시즌 제외)이다.
+ * 확정 모드가 꺼져 있거나 표가 없는 환경에서는 빈 목록(화면이 죽는 것보다 안전하다).
+ * 권한: 명단 화면을 볼 수 있는 관리자면 읽을 수 있다(되돌리기 자체는 원장만 — restore 함수가 막는다).
+ */
+export async function removedShuttleRosterRows(seasonId?: string | null): Promise<RemovedShuttleRosterRow[]> {
+  await requireAdmin();
+  if (!(await confirmedModeEnabled())) return [];
+  const scope = seasonScope({ roster: "sr", season: "s" }, seasonId);
+  try {
+    const rows = await prisma.$queryRawUnsafe<RawRow[]>(
+      `SELECT sr.id                      AS "rosterId",
+              sr."studentNameSnapshot"   AS "studentName",
+              sr."offeringTitleSnapshot" AS "offeringTitle",
+              sr."removedAt"             AS "removedAt",
+              sr."removedReason"         AS "removedReason",
+              ${ROSTER_ENROLLMENT_CANCELLED_SQL} AS "enrollmentCancelled"
+         FROM "SeasonalShuttleRoster" sr
+         JOIN "SpecialProgramSeason" s ON s.id = sr."seasonId"
+         LEFT JOIN "SpecialProgramApplicationItem" ai ON ai.id = sr."applicationItemId"
+        WHERE sr."removedAt" IS NOT NULL
+          AND ${scope.where}
+        ORDER BY sr."removedAt" DESC, sr."studentNameSnapshot" ASC`,
+      ...scope.params,
+    );
+    return rows.map((r) => ({
+      rosterId: String(r.rosterId),
+      studentName: String(r.studentName ?? ""),
+      offeringTitle: str(r.offeringTitle),
+      removedAt: dt(r.removedAt),
+      removedReason: str(r.removedReason),
+      enrollmentCancelled: r.enrollmentCancelled === true,
+    }));
+  } catch {
+    return [];
+  }
 }
 
 /**

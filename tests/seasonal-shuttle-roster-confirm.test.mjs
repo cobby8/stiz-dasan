@@ -231,6 +231,106 @@ test("행 제외·되돌리기는 확정본 전용 함수로만 간다", () => {
     assert.doesNotMatch(del, /DELETE FROM/);
 });
 
+// R-8②(2026-11-17): 되돌리기가 «방금 뺀 한 명»에게만 떠서, 새로고침하거나 두 명을 연달아 빼면
+// 먼저 뺀 학생을 이 화면에서 되돌릴 길이 없었다. → 표 아래 «뺀 학생 N명» 묶음.
+// (조회·되돌리기의 실제 동작은 seasonal-shuttle-roster-per-season.test.mjs 가 돌려 본다.)
+test("★R-8② 뺀 학생 목록: 첫 화면·새로고침 모두에서 받고, 0명이면 그리지 않는다", () => {
+    // 첫 화면(서버 렌더)부터 실려 와야 새로고침 뒤에도 되돌릴 수 있다.
+    assert.match(page, /removedShuttleRosterRows\(\)/);
+    assert.match(page, /initialRemoved=\{initialRemoved\}/);
+    assert.match(client, /useState<RemovedRosterRow\[\]>\(initialRemoved\)/);
+    // 목록 새로고침(refresh)이 새 키까지 받는다.
+    const refreshFn = block(client, "async function refresh()", "async function confirmRoster");
+    assert.match(refreshFn, /setRemoved\(Array\.isArray\(data\.removed\)/);
+    // GET 은 기존 키를 그대로 둔 채 새 키만 덧붙인다.
+    assert.match(route, /\{ \.\.\.base, removed \}/);
+    assert.match(route, /const removed = await removedShuttleRosterRows\(\)/);
+    // 0명이면 묶음 자체가 없다. 기본은 접힘.
+    assert.match(client, /\{removed\.length > 0 && \(/);
+    assert.match(client, /뺀 학생 \{removed\.length\}명/);
+    assert.match(client, /const \[removedOpen, setRemovedOpen\] = useState\(false\)/);
+    assert.match(client, /aria-expanded=\{removedOpen\}/);
+});
+
+test("★R-8② 뺀 학생 한 줄: 이유·KST 날짜·되돌리기(확인 거침)", () => {
+    const section = block(client, "{removed.length > 0 && (", "{pinEdit && pinRow && (");
+    assert.match(section, /removedReasonLabel\(item\)/);
+    // 날짜는 공용 KST 모듈로만 만든다.
+    assert.match(client, /import \{ toKstYmd \} from "@\/lib\/datetime\/kst"/);
+    assert.match(section, /toKstYmd\(item\.removedAt\)/);
+    assert.doesNotMatch(section, /toISOString|toLocaleDateString|toLocaleString/);
+    assert.match(section, /onClick=\{\(\) => restoreRemoved\(item\)\}/);
+    assert.match(section, /academy-button-secondary academy-button-sm/);
+    // 좁은 화면에서 줄이 깨지지 않게 줄바꿈, 긴 값은 자르지 않는다.
+    assert.match(section, /flex-wrap/);
+    assert.doesNotMatch(section, /truncate|line-clamp|text-ellipsis/);
+
+    const fn = block(client, "async function restoreRemoved", "async function savePin");
+    // 브라우저 confirm 이 아니라 공용 확인창 + 문구 규칙(수강 취소면 그 사실을 넣는다)은 순수 모듈.
+    assert.match(fn, /askConfirm\(restoreConfirmMessage\(item\)\)/);
+    assert.match(fn, /action: "restore"/);
+    assert.match(fn, /refresh\(\)/);
+    // 띠(방금 뺀 학생)와 어긋나지 않게: 목록에서 되돌린 학생이 띠에 남아 있으면 띠도 닫는다.
+    assert.match(fn, /setLastRemoved\(\(cur\) => \(cur\?\.rosterId === item\.rosterId \? null : cur\)\)/);
+});
+
+test("★R-8② 수강이 취소된 학생 줄은 되돌리기 버튼 대신 안내 글자를 그린다(서버도 같은 이유로 거부)", () => {
+    const section = block(client, "{removed.length > 0 && (", "{pinEdit && pinRow && (");
+    // 버튼과 안내 글자는 enrollmentCancelled 하나로 갈린다 — 안내가 먼저, 버튼은 그 반대쪽.
+    const hintAt = section.indexOf("{RESTORE_BLOCKED_HINT}");
+    const forkAt = section.indexOf("{item.enrollmentCancelled ? (");
+    const buttonAt = section.indexOf("onClick={() => restoreRemoved(item)}");
+    assert.ok(forkAt !== -1 && forkAt < hintAt && hintAt < buttonAt, "수강 취소 줄에 버튼이 그대로 그려진다");
+    assert.equal(section.split("restoreRemoved(item)").length - 1, 1, "되돌리기 버튼은 한 곳에만 있어야 한다");
+    assert.match(edit, /export const RESTORE_BLOCKED_HINT = "수강을 되살린 뒤 다시 넣을 수 있습니다";/);
+    // 화면 상태가 낡았어도(다른 탭에서 수강 취소) 요청을 보내지 않고, 보내도 서버가 막는다.
+    const fn = block(client, "async function restoreRemoved", "async function savePin");
+    assert.match(fn, /if \(item\.enrollmentCancelled\) return;/);
+    const restore = block(gateway, "export async function restoreConfirmedShuttleRosterRow", "\n/**");
+    assert.ok(restore.indexOf("throw new Error(RESTORE_BLOCKED_ENROLLMENT_CANCELLED)") < restore.indexOf(`UPDATE "SeasonalShuttleRoster"`), "거부가 UPDATE 보다 먼저여야 한다");
+    assert.match(restore, /\$\{ROSTER_ENROLLMENT_CANCELLED_SQL\} AS "enrollmentCancelled"/);
+    // 좁은 경합: 원본 신청서 복구는 확정본 행이 지금도 살아 있을 때만.
+    assert.match(restore, /AND EXISTS \(SELECT 1 FROM "SeasonalShuttleRoster" sr WHERE sr\.id = \$2 AND sr\."removedAt" IS NULL\)/);
+    // API 가 이 거부를 500 으로 뭉개지 않고 한글 이유 + 4xx 로 내린다.
+    assert.match(route, /if \(\/수강이 취소된\/\.test\(msg\)\) return \{ status: 409, message: msg \};/);
+    assert.match(gateway, /RESTORE_BLOCKED_ENROLLMENT_CANCELLED = "수강이 취소된 학생입니다\. 수강을 되살린 뒤 다시 넣어 주세요\."/);
+});
+
+test("★R-8② 뺀 학생 묶음 안에서 난 되돌리기 오류는 그 묶음 안에도 보인다", () => {
+    const section = block(client, "{removed.length > 0 && (", "{pinEdit && pinRow && (");
+    assert.match(section, /\{removedError && \(\s+<p role="alert"[^>]*text-\[var\(--color-academy-danger\)\][^>]*>\{removedError\}<\/p>/);
+    const fn = block(client, "async function restoreRemoved", "async function savePin");
+    assert.match(fn, /setRemovedError\(null\)/);      // 다시 시도하면 옛 오류를 지운다
+    assert.match(fn, /setRemovedError\(message\)/);   // 실패하면 묶음 안에 띄운다
+    assert.match(fn, /setError\(message\)/);          // 위쪽 표시는 그대로 둔다
+    // 띠(방금 뺀 학생)에서 난 오류는 묶음에 띄우지 않는다 — 목록에서 난 오류만 따로 든다.
+    const band = block(client, "async function restoreRow", "async function restoreRemoved");
+    assert.doesNotMatch(band, /setRemovedError/);
+});
+
+test("★R-8② 빼면 뺀 학생 목록에 바로 나타나고, 확인 문구가 그 자리를 알려준다", () => {
+    const fn = block(client, "async function removeRow", "async function restoreRow");
+    assert.match(fn, /아래 «뺀 학생»에서 언제든 다시 넣을 수 있습니다\./);
+    assert.doesNotMatch(client, /되돌리기로 다시 넣을 수 있습니다/);
+    assert.match(fn, /setRemoved\(\(cur\) => \[/);
+    assert.match(fn, /setLastRemoved\(\{ rosterId, name: row\.childName \}\)/);
+    // 띠에서 되돌리면 목록도 서버 값으로 다시 맞춘다.
+    const band = block(client, "async function restoreRow", "async function restoreRemoved");
+    assert.match(band, /refresh\(\)/);
+});
+
+test("★R-8② 뺀 학생 조회는 명단 출구(get*)가 아니고, 기사님 화면·배차가 쓰지 않는다", () => {
+    const fn = block(gateway, "export async function removedShuttleRosterRows", "\n/**");
+    assert.match(fn, /requireAdmin\(\)/);
+    assert.match(fn, /confirmedModeEnabled\(\)/);
+    assert.match(fn, /seasonScope\(\{ roster: "sr", season: "s" \}, seasonId\)/);
+    assert.match(fn, /sr\."removedAt" IS NOT NULL/);
+    assert.match(fn, /catch \{\s+return \[\];/);
+    // 뺀 사람을 읽는 함수가 배차·기사님 쪽으로 새면 일부러 뺀 학생이 다시 태워진다.
+    assert.doesNotMatch(shuttleService, /removedShuttleRosterRows/);
+    assert.doesNotMatch(roster, /removedShuttleRosterRows/);
+});
+
 test("제외 버튼은 확정 후에만 보인다", () => {
     assert.match(client, /onClick=\{\(\) => removeRow\(r\)\}/);
     const cell = block(client, "onClick={() => removeRow(r)}");

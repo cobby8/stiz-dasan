@@ -412,7 +412,7 @@ function SiteOpsBotCard({
 
             {!result && !error && (
                 <p className="rounded-lg bg-[var(--color-academy-soft)] px-3 py-2 text-xs text-[var(--color-academy-muted)]">
-                    사이트 운영 상태, 백업, 신청 링크, 인스타 게시 대기열을 확인합니다.
+                    사이트 운영 상태, 백업, 인스타 게시 대기열을 확인합니다.
                 </p>
             )}
 

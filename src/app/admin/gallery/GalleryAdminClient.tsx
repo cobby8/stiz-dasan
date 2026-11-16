@@ -1,10 +1,10 @@
 "use client";
-import { adminErrorText, adminMessageText } from "@/components/admin/adminDisplayText";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useCallback, useEffect, useState, useTransition } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { deleteGalleryPost, syncInstagramGalleryPosts } from "@/app/actions/admin";
+import { deleteGalleryPost } from "@/app/actions/admin";
 import {
   publishSocialPostDraft,
   rejectSocialPostDraft,
@@ -159,7 +159,7 @@ export default function GalleryAdminClient({
   socialDrafts?: SocialPostDraft[];
   pagination?: GalleryPagination;
 }) {
-  const [isPending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
   const hasInitialData = initialPosts !== undefined && initialClasses !== undefined;
   const [posts, setPosts] = useState<GalleryPost[]>(initialPosts ?? []);
   const [classes, setClasses] = useState<ClassInfo[]>(initialClasses ?? []);
@@ -171,7 +171,6 @@ export default function GalleryAdminClient({
   const [loadingMore, setLoadingMore] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editingPost, setEditingPost] = useState<GalleryPost | null>(null);
-  const [syncResult, setSyncResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [draftMessage, setDraftMessage] = useState<string | null>(null);
   const [draftBusy, setDraftBusy] = useState<{ id: string; action: "save" | "publish" | "reject" } | null>(null);
   const [pageMessage, setPageMessage] = useState<{ ok: boolean; message: string } | null>(null);
@@ -250,20 +249,6 @@ export default function GalleryAdminClient({
         setPageMessage({ ok: true, message: "갤러리 게시물이 삭제됐습니다." });
       } catch (error) {
         showNotice(adminErrorText(error, "갤러리 게시물 삭제 중 오류가 발생했습니다."));
-      }
-    });
-  }
-
-  function handleInstagramSync() {
-    setSyncResult(null);
-    startTransition(async () => {
-      try {
-        const result = await syncInstagramGalleryPosts();
-        setSyncResult({ ok: result.ok, message: result.message });
-        await loadGallery();
-      } catch (error) {
-        console.error("Instagram sync failed:", error);
-        setSyncResult({ ok: false, message: "인스타그램 가져오기 중 오류가 발생했습니다." });
       }
     });
   }
@@ -421,11 +406,6 @@ export default function GalleryAdminClient({
                 )}
               </div>
               <p className="mt-1 text-xs text-[var(--color-academy-muted)]">{instagramBadge.hint}</p>
-              {syncResult && (
-                <p className={`mt-1 text-xs ${syncResult.ok ? "text-[var(--color-academy-success)]" : "text-[var(--color-academy-danger)]"}`}>
-                  {syncResult.ok ? syncResult.message : adminMessageText(syncResult.message, "인스타그램 게시물을 가져오지 못했습니다. 연결 설정을 확인해 주세요.")}
-                </p>
-              )}
             </div>
             <div className="flex flex-wrap gap-2">
               {instagramProfileUrl && (
@@ -438,13 +418,6 @@ export default function GalleryAdminClient({
                   프로필 열기
                 </a>
               )}
-              <button
-                onClick={handleInstagramSync}
-                disabled={!instagramReady || isPending}
-                className="academy-button-secondary academy-button-sm"
-              >
-                {isPending ? "가져오는 중..." : "인스타 가져오기"}
-              </button>
             </div>
           </div>
         </section>

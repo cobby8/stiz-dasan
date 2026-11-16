@@ -2424,12 +2424,6 @@ function ApplicationItemCard({
       {quickStatuses.map((status) => <button key={status} type="button" disabled={updating || item.status === status} onClick={() => void onUpdateItem(item.id, status)} aria-pressed={item.status === status} className={`min-h-11 rounded-md border px-3 text-sm font-medium disabled:cursor-wait ${item.status === status ? "border-[var(--color-academy-secondary-strong)] bg-[var(--color-academy-secondary-soft)] text-[var(--color-academy-secondary-ink)]" : "border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)] hover:border-[var(--color-academy-primary)] disabled:opacity-60"}`}>{updating ? "처리 중…" : STATUS_LABEL[status]}</button>)}
     </div>
     {updateError && <p role="alert" aria-live="assertive" className="mt-3 rounded-xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-3 text-sm text-[var(--color-academy-danger)]">{updateError}</p>}
-    <label className="mt-4 block text-xs font-medium text-[var(--color-academy-muted)]">
-      상태 직접 변경
-      <select value={item.status} disabled={updating} aria-busy={updating} onChange={(event) => void onUpdateItem(item.id, event.target.value as ItemStatus)} className="h-11 mt-1 min-h-11 w-full rounded-md border border-[var(--color-academy-line-input)] bg-white px-3 text-sm text-[var(--color-academy-ink)] disabled:cursor-wait disabled:opacity-60">
-        {["PENDING","APPROVED","WAITLISTED","REJECTED","CANCELLED"].map((value) => <option key={value} value={value}>{STATUS_LABEL[value]}</option>)}
-      </select>
-    </label>
     {statusNotification && <NotificationActionRow label={statusNotification.label} summary={currentNotificationSummary} sending={sendingNotificationKey === `item:${item.id}:${statusNotification.trigger}`} onSend={() => void onRetryNotification("item", item.id, statusNotification.trigger)} />}
     <ConversionReadinessBox item={item} onConvertItem={onConvertItem} converting={converting} />
     {item.invoice && <InvoiceActionBox item={item} onCopyInvoiceLink={onCopyInvoiceLink} onRetryNotification={onRetryNotification} sendingNotificationKey={sendingNotificationKey} onRefresh={onShuttleChanged} />}

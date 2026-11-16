@@ -70,20 +70,23 @@ test('모바일 목록도 개시일·셔틀 상태를 같은 행에서 읽고 �
  const html=render(React.createElement(Modals,{...modalProps,detailApp:null,editApp:{...app,status:'APPROVED'}}));
  assert.match(html,/type="date" disabled=""/);
 });
-test('관리자 수업일지는 신규 개시 전 출석을 막고 같은 회차의 실제 과거 출결은 보존한다',async()=>{
- const history={id:'past',date:'2026-11-01',attendances:[{studentId:'future',status:'PRESENT'}]};
- for (const [date,initialData,expected] of [['2026-11-08',undefined,['legacy']],['2026-11-09',undefined,['legacy','future']],['2026-11-01',history,['legacy','future']],['2026-11-02',history,['legacy']]]) {
-  let stateIndex=0, saved;
-  const students=[{id:'legacy',name:'기존',startsOn:null},{id:'future',name:'예정',startsOn:'2026-11-09'}];
-  const hooks={...React,useState(initial){const index=stateIndex++;return [index===0?date:index===6?students.map(s=>({studentId:s.id,studentName:s.name,status:'PRESENT'})):initial,()=>{}];},useEffect(){},useMemo:fn=>fn(),useCallback:fn=>fn,useRef:()=>({current:null})};
-  const Client=load('src/app/admin/classes/[id]/SessionLogModal.tsx',{'react':hooks,'@/app/actions/admin':{saveSessionLog:async data=>{saved=data;}},'@/lib/clientImageCompression':{}}).default;
-  const tree=Client({isOpen:true,classId:'class',students,coaches:[],initialData,onClose(){},onSaved(){}});
-  const nodes=[]; const walk=node=>{if(Array.isArray(node))return node.forEach(walk);if(node&&typeof node==='object'&&node.props){nodes.push(node);walk(node.props.children);}};walk(tree);
-  const save=nodes.find(n=>n.type==='button'&&['저장','수정 완료'].includes(n.props.children));assert.ok(save);
-  await save.props.onClick();
-  assert.equal(saved.date,date);
-  assert.deepEqual(saved.attendances.map(a=>a.studentId),expected);
- }
+// 2026-11-17: 반 상세의 «수업 기록» 창(SessionLogModal)을 없앴다 — 관리자가 정규반 출석을 넣는 길은 출결 화면 하나.
+// 예전엔 그 창을 직접 실행해 «개시 전 학생 제외·그날 실제 출결이 있던 학생은 유지»를 확인했다.
+// 같은 규칙은 출결 화면의 명단 조회(getAttendanceByDateAndClass)와 저장(saveAttendance) SQL 에 있으므로 그 두 곳을 못박는다.
+test('관리자 출결은 신규 개시 전 출석을 막고 같은 회차의 실제 과거 출결은 보존한다(명단 조회·저장 양쪽)',()=>{
+ const slice=(source,marker)=>{const start=source.indexOf(marker);assert.notEqual(start,-1,`${marker} 가 없습니다`);const next=source.indexOf('\nexport ',start+1);return source.slice(start,next===-1?undefined:next);};
+ // 개시일이 없거나 · 그날까지 개시했거나 · (개시 전이라도) 그 반 그 날짜에 실제 출결이 남아 있는 학생만
+ const rule=/e\."startsOn" IS NULL OR e\."startsOn" <= \$2::date OR EXISTS \(\s*SELECT 1 FROM "Attendance" historical JOIN "Session" prior ON prior\.id=historical\."sessionId"\s*WHERE historical\."studentId"=e\."studentId" AND prior\."classId"=\$1 AND prior\.date::date=\$2::date/;
+ const roster=slice(readFileSync('src/lib/queries.ts','utf8'),'export const getAttendanceByDateAndClass');
+ assert.match(roster,rule,'출결 화면 명단 조회가 개시 전 학생을 빼야 한다');
+ const save=slice(readFileSync('src/app/actions/admin.ts','utf8'),'export async function saveAttendance(');
+ assert.match(save,rule,'출결 저장이 같은 규칙으로 대상을 다시 확인해야 한다');
+ const reject=save.indexOf('if (records.some(row => !eligibleIds.has(row.studentId))) throw new Error("수강 개시일 전이거나');
+ assert.notEqual(reject,-1,'명단 밖 학생이 섞이면 저장을 거부해야 한다');
+ assert.ok(reject<save.indexOf('findOrCreateRegularSession(tx'),'거부는 수업 기록을 만들기 전에 한다');
+ // 규칙을 거치지 않던 옛 길이 되살아나지 않게
+ assert.equal(existsSync('src/app/admin/classes/[id]/SessionLogModal.tsx'),false);
+ assert.doesNotMatch(readFileSync('src/app/actions/admin.ts','utf8'),/export async function saveSessionLog\(/);
 });
 test('실제 신청 목록도 모바일 개시일·셔틀 상태와 PC 날짜를 같은 자료에서 표시한다',()=>{
  const Client=load('src/app/admin/apply/ApplyAdminClient.tsx',{

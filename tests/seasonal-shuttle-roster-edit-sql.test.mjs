@@ -4,6 +4,10 @@ import {
     buildConfirmedRosterUpdate,
     pinSetClauses,
     rosterPatchTarget,
+    removedReasonLabel,
+    restoreConfirmMessage,
+    isEnrollmentCancelRemoval,
+    RESTORE_BLOCKED_HINT,
 } from "../src/lib/seasonal/shuttleRosterEdit.ts";
 
 // 확정본 수정 SQL을 **실제로 만들어 보고** 검사하는 테스트.
@@ -191,4 +195,35 @@ test("확정본 행이면 rosterId로, 아니면 requestId로 보낸다", () => 
     assert.deepEqual(rosterPatchTarget({ rosterId: null, requestId: "req-1" }), { requestId: "req-1" });
     // 빈 문자열도 "없음"으로 본다(확정본 id는 절대 빈 문자열이 아니다).
     assert.deepEqual(rosterPatchTarget({ rosterId: "", requestId: "req-1" }), { requestId: "req-1" });
+});
+
+// ── «뺀 학생» 목록의 문구 (R-8②) ────────────────────────────────────
+
+test("빠진 이유 표시: 이유가 없으면 «명단에서 뺌», 수강 취소면 그 사실을 덧붙인다", () => {
+    // 이 화면의 «명단에서 빼기»는 이유를 남기지 않는다(null) — 빈칸으로 두면 왜 빠졌는지 알 수 없다.
+    assert.equal(removedReasonLabel({ studentName: "가", removedReason: null }), "명단에서 뺌");
+    assert.equal(removedReasonLabel({ studentName: "가", removedReason: "  " }), "명단에서 뺌");
+    assert.equal(removedReasonLabel({ studentName: "가", removedReason: "신청관리에서 취소" }), "신청관리에서 취소");
+    assert.equal(
+        removedReasonLabel({ studentName: "가", removedReason: "신청관리에서 취소", enrollmentCancelled: true }),
+        "신청관리에서 취소 · 수강 취소",
+    );
+    // 이유에 이미 적혀 있으면 두 번 쓰지 않는다.
+    assert.equal(removedReasonLabel({ studentName: "가", removedReason: "수강 취소", enrollmentCancelled: true }), "수강 취소");
+});
+
+test("되돌리기 확인 문구: 수강 취소 계열이면 그 사실을 넣고, 아니면 평범하게 묻는다", () => {
+    assert.equal(restoreConfirmMessage({ studentName: "김가", removedReason: null }), "김가 학생을 확정 명단에 다시 넣을까요?");
+    assert.equal(
+        restoreConfirmMessage({ studentName: "김가", removedReason: "신청관리에서 취소" }),
+        "김가 학생을 확정 명단에 다시 넣을까요?",
+    );
+    // 이유 글이 수강 취소 계열
+    const byReason = restoreConfirmMessage({ studentName: "김가", removedReason: "수강 취소" });
+    assert.match(byReason, /수강 취소로 빠진 학생입니다\. 그래도 셔틀 명단에 다시 넣을까요\?/);
+    // 수강이 실제로 취소된 학생(enrollmentCancelled)은 화면이 버튼 대신 안내 글자를 보이고 서버도 거부한다.
+    // → «그래도 넣을까요?»를 묻는 옛 갈래는 없앴다(되돌려도 명단에 안 나타나 «되돌렸는데 없다»가 됐다).
+    assert.equal(RESTORE_BLOCKED_HINT, "수강을 되살린 뒤 다시 넣을 수 있습니다");
+    assert.equal(isEnrollmentCancelRemoval({ studentName: "김가", removedReason: "명단에서 뺌" }), false);
+    assert.equal(isEnrollmentCancelRemoval({ studentName: "김가", removedReason: "수강취소 처리" }), true);
 });

@@ -1,36 +1,31 @@
 # 작업 스크래치패드
 
 ## 현재 작업
-- **상태(2026-11-10)**: 검수 완료 7브랜치 통합 + 신청함 연결 A(상담 버튼)·B(휴원 승인 전 수강료 처리) — 통합 브랜치 worktree-agent-ad19b9c3dfc159299, 미푸시. 연결 A·B 는 검수 대기.
-- ⚠️ **배포 전 필수**: 운영 apply_migration 4개(20261110150000 체험비 · 160000 상담 · 170000 학부모 알림 설정 · 180000 휴원 수강료). 130000 은 적용됨.
-- 테스트 기준선(11-10 통합 후): tests 4006-0 · studentVisibility 5-0 · tsc 0 · prisma validate 통과
+- **상태(2026-11-16)**: 12월 실사용 출시 진행 중. 개발 환경을 SAM 데스크탑으로 옮겼고, 총괄 세션 아래 업무별 세션 5개로 나눠 일한다 — 출시·배포 / 청구·수납 / 학부모 화면 / 선생님·기사님 앱 / 관리자 화면·코드 정리. 세션마다 자기 worktree(브랜치)에서 일하고, main 반영·운영 배포는 «출시·배포» 세션이 모아서 한다.
+- 운영 = `main`(`eac74476`, 앱 1.0.4 준비·고정 수강료 포함). 운영 DB 마이그레이션은 `20261116500000_student_fixed_tuition` 까지 모두 적용됨(11-16 list_migrations 로 확인 — 11-10 의 4개 포함).
+- 검수 전 브랜치가 여럿 있다(아래 작업 로그의 «구현 완료(검수 전)» 줄). 통합 여부는 «출시·배포» 세션이 판단한다.
 
 ## 진행 현황
 | 항목 | 상태 |
 |------|------|
-| 11-10 7브랜치 통합 + 신청함 연결 A·B | 통합 완료·연결 A·B 검수 대기·마이그레이션 4개 운영 미적용 |
-| 색상 통합(1~7단계·마무리) | 완료(11-09) |
-| UI 기능/UI 제거 46건 | 대기(원장 확인 필요 항목 다수) |
+| 목록 화면 개편 8단계 | 전부 배포(10-30, `98fe9fe9`). 뺀 것: 방학특강 반 카드·출석부·결석·셔틀, 수업 진행·사진 게시, 학부모 결제·수납 탭 |
+| UI 통일(네이비+하늘색·아이콘 없이 글자·굵기 4단계) | 배포(11-13) · 12px 미만 글자·800/900 굵기·브라우저 경고창 정리 배포(11-16, `3d73fac4`) |
+| 안 쓰는 기능 정리 | 결정표 9칸 전부 «안 쓴다» → 가 5건·나 2건·다(수업 기록 창) 모두 완료·push(11-17). 결정표 https://claude.ai/artifact/QbAMyZW2XvbTA3aCsZraNe |
+| 이월 리뷰 수정 | R-1·R-3 이미 고쳐짐 · M-1·R-8② 완료(11-17). 남은 것 R-2·R-7②(관리자 세션) · P-1·P-2(청구 세션) |
+| KST 가드 빚 | R1(오늘을 UTC 로) 17파일 · R3 0 · R4 0(원본만) |
 
-## UI 전수 점검 — 남은 일 (다음 세션 이어서)
-조사 보고서 6종은 세션 임시 폴더에 있어 **사라질 수 있음**. 핵심만 여기 옮겨 둔다.
-
-- **기능/UI 제거 — 주요 항목은 처리 완료**(2026-08-06). 남은 것:
-  · `상태 직접 변경` 셀렉트(4버튼과 중복이나 **PENDING 되돌리기는 셀렉트에만 있음** — 제거 시 기능 손실. 되돌리기를 쓰는지 확인 필요)
-  · 이관 화면의 CSV 붙여넣기 경로(구글시트 직접 가져오기가 상위호환인 레거시 이중 경로)
-  · 공지 → 소셜 발행의 "페이스북 광고 소재" 섹션(광고를 실제로 집행하는지)
-  · 갤러리 "인스타 가져오기"(등록 경로가 3중)
-  · 설정 화면 `AppliesTo` 파란 뱃지 9곳(실무에 쓰이는지 시각 소음인지)
-  · 시설 사진·프로그램 이미지의 URL 수기 입력(다른 이미지는 전부 파일 업로드인데 여기만 URL)
-- ✅ (해소 2026-10-02) 정규 셔틀 시트 방식 → 「셔틀 명단」 탭에서 앱이 RegularShuttleStop 을 직접 편집. 기사 화면·결석 매칭은 같은 테이블을 그대로 읽는다. 시트 가져오기 API 는 410 으로 종료.
-- 리포트 편집 화면 vs `SessionLogModal` — 같은 Session 레코드를 편집하는 화면이 둘(확인 필요)
-- **남은 판단거리 (작은 것)**
-  · 설정 화면 "외부 신청 링크"(구글폼 주소) 칸이 이제 공개 사이트에 무영향 — 칸 제거 or 점검 항목 정리
-  · `lib/siteOpsBot.ts` 의 체험/수강 신청 점검이 항상 ok 가 됨 — 단순화 or 삭제
-  · 스킬 "평가자" 자유 입력 → 로그인 사용자 자동 기입(서버 `skills/page.tsx` 2줄 + prop 1개 필요)
-- **테스트가 문구·코드 존재를 단정해 못 건드린 것** (지우려면 테스트 동반 수정 필요):
-  · ~~`ShuttleRouteAdminClient.tsx`~~ — 2026-10-02 3단계 정리에서 삭제, 그 화면을 읽던 tests 7개는 서버·API 단정만 남김
-  · 신청관리 문구 2건, 방학특강 문구 2건
+## 안 쓰는 기능 — 원장 결정 대기 (2026-11-16 코드 대조)
+결정표 9칸과 코드 위치. «안 쓴다» 답이 온 것만 정리한다.
+- `seasonal-status-select` — `admin/seasonal/SeasonalAdminClient.tsx` «상태 직접 변경» 셀렉트. 버튼 4개(승인·대기·반려·취소)와 중복이나 **PENDING 되돌리기는 셀렉트에만** 있다
+- `facebook-ad` — `admin/notices/NoticeSocialModal.tsx` «페이스북 광고 소재»
+- `insta-import` — `admin/gallery/GalleryAdminClient.tsx` «인스타 가져오기»(`syncInstagramGalleryPosts`)
+- `applies-to-badge` — `admin/settings/AdminSettingsClient.tsx` `AppliesTo` 9곳
+- `facility-photo-url` · `program-image-url` — 설정 «시설 사진 URL», `admin/programs/ProgramFormPanel.tsx` «프로그램 이미지 URL»(다른 이미지는 전부 파일 업로드)
+- `external-form-links` — `admin/apply/ApplySettingsTab.tsx` 체험·수강 «외부 신청 링크» 2칸(유니폼 링크는 유지)
+- `site-ops-form-check` — `lib/siteOpsBot.ts` trial-form·enroll-form 점검(자체 신청서라 늘 ok)
+- `session-log-vs-report` — `admin/classes/[id]/SessionLogModal.tsx` 와 `admin/attendance/report/[sessionId]/ReportEditClient.tsx` 가 같은 Session 을 편집
+- 이미 없어져 목록에서 뺀 것: 이관 화면 CSV 붙여넣기, 스킬 «평가자» 자유 입력(11-16 코드에 없음)
+- **테스트가 문구·코드 존재를 단정하는 곳**(지우려면 테스트 동반 수정): 신청관리 문구 2건, 방학특강 문구 2건
 - ⚠️ **다중 에이전트 동시 작업 중 `git stash` 금지.** 이번에 한 에이전트가 baseline 측정용으로 실행해 다른 4개의 미저장 변경 46파일을 함께 치웠고 pop이 충돌했다. baseline이 필요하면 `git show HEAD:<파일>`로 개별 조회할 것.
 
 ## ⚠️ 배포 메커니즘(중요)
@@ -42,12 +37,8 @@
 ## 미해결 리뷰 수정 사항 (이월)
 | 번호 | 파일 | 심각도 | 내용 |
 |------|------|--------|------|
-| R-1 | api/admin/trial-count/route.ts | 필수 | 인증 가드 추가 |
-| R-2 | actions/public.ts | 권장 | source/referralSource 서버 화이트리스트 검증 |
-| R-3 | actions/public.ts:353 | 권장 | shuttleNeeded: `\|\|` → `??` 변경 |
-| R-7② | lib/seasonal/shuttleRoster.ts:166~176 | 권장 | 다음 시즌 신청자가 목록·확정 버튼에서 사라짐(시즌 스코프 전체 합산) |
-| R-8② | admin/seasonal/shuttle/ShuttleRosterClient.tsx | 권장 | 제외 되돌리기가 세션 한정(새로고침 시 복구 UI 소멸) |
-| M-1 | actions/admin.ts `bookMakeupSession` | 참고 | 정원 검증이 "조회 후 INSERT"라 극단적 동시 요청에선 이론상 1건 초과 가능(DB 제약 아님) |
+| R-2 | actions/public.ts:283·833 | 권장 | source/referralSource 가 «비어 있지 않은지»만 본다 — 서버 화이트리스트 검증 |
+| R-7② | lib/seasonal/shuttleRoster.ts `seasonScope` | 권장 | 다음 시즌 신청자가 목록·확정 버튼에서 사라짐(시즌 스코프 전체 합산) — 11-16 코드는 그대로, 증상 재현은 아직 안 함 |
 | P-1 | lib/pos/chargeRequestService.ts writeLedgerPaid·settleCancelForRow | 권장 | 납부 기록(markPaymentPaid 무조건 UPDATE) 직전에 POS 취소 웹훅이 끼면 요청 DONE·청구 PENDING→뒤이어 PAID 로 덮임(사이트 납부완료·실제는 취소). 기록 뒤 cancelState 재확인 → DONE 이면 refundPaidPaymentInTx, 또는 settle 에서 refunded=false·청구 미납이면 retryLater |
 | P-2 | admin/finance/FinanceClient.tsx:955 «환불» | 권장 | TOSS_POS 건에도 그대로 → POS 는 안 취소되고 사이트만 REFUNDED. TOSS_POS 면 숨기거나 확인창에 «POS 결제는 취소되지 않음, 결제 취소를 쓰세요» 경고 |
 
@@ -61,10 +52,13 @@
 | 11-17 | developer(선생님 음성으로 기록 수리, claude/staff-app-08fde4): 다른 화면에서 넘어온 선생님 화면은 한 번 새로 불러오기(순수 규칙 lib/staff/documentPolicy.ts + 부품 staff/StaffDocumentReload.tsx, 운행 화면 /staff/run 제외·되풀이 방지 표식) · 음성 변환 라우트 모델 = GEMINI_CHAT_MODEL, 실패 기록에 오류 번호 추가, 로그인 풀림 401 · 버튼 안내 원인별 5문구 + «새로 불러오기»(lib/staff/voiceStartError.ts) · 새 테스트 tests/staff-voice-input.test.mjs 16건. 실기기 확인 못 함. tsc 0 · tests 5849 fail 0 · guards 337 fail 0 | 구현 완료(검수 전) |
 | 11-17 | developer(직원 간편로그인 연결 보안 보강, claude/staff-app-08fde4): 직원 연결 시작 = 폼 POST + 출처 확인(isAllowedLinkHandoffOrigin 재사용), 직원 GET intent=link 는 시작 안 함(e=start) · 직원 화면 오류 = 주소 코드 e → 표(STAFF_LINK_ERROR_MESSAGES), error 문장은 읽지 않음 · 학부모 흐름 그대로 · 시작 라우트 실행 테스트 추가 · tsc 0 · 전체 5833 fail 0 · guards 337 fail 0 | 완료(검수 전) |
 | 11-17 | developer(직원 간편로그인 연결, claude/staff-app-08fde4): 직원 화면 /staff/mypage/login-methods(requireStaff·앱에서는 버튼 숨김+안내·1회용 표 발급 없음) · 마이페이지에 진입 줄 · 공용 판정 lib/account/link-actor.ts(학부모→직원)+순수 규칙 login-methods-rules.ts · 시작 라우트·콜백의 복귀 화면을 서버 판정으로(주소 파라미터 안 받음) · 브라우저 간편로그인 콜백이 직원 계정을 /auth/continue 로(requireNativeAccount 재사용) · 새 테스트 tests/staff-login-methods-link.test.mjs, 기존 단정 2곳 조정. tester 참고: 로그인 화면 실행 확인 못 함 — 브라우저에서 직원 로그인 → 연결 → «연결됨», 앱에서 버튼 숨김·안내, 연결 뒤 /login 간편로그인으로 직원 화면 진입을 실기기로 볼 것. reviewer 참고: 자녀 있는 직원은 학부모 화면으로 복귀·보안 문자의 recipientRole 이 PARENT 로 기록됨. tsc 0 · tests 5829 fail 0 · guards 337 fail 0 | 구현 완료(검수 전) |
+| 11-17 | 이월 리뷰 R-8②(claude/admin-cleanup-204a7d): 방학 셔틀 확정 명단 아래 «뺀 학생 N명» 접힌 목록 + 줄마다 «되돌리기»(removedShuttleRosterRows, GET 새 키 removed, 첫 화면 initialRemoved). 수강이 취소된 학생은 화면·서버 모두 되돌리기 거부(ROSTER_ENROLLMENT_CANCELLED_SQL 한 상수, 409 한글 문구). «신청관리에서 취소»로 빠진 학생을 되돌리면 원본 신청서 status 도 CANCELLED→REQUESTED(확정본이 살아 있을 때만). 기사님·배차 조회는 불변. 남은 것(범위 밖): 신청관리의 «이용» 복구가 확정본을 되살리지 못하는 것으로 읽힘(route.ts isShuttleRequestConfirmed 가 removedAt IS NULL 만 확정으로 봄 — 실행 확인 전) · 부원장에게도 버튼이 보이고 누르면 403. tsc 0 · tests fail 1(staff-session-review 날짜 고정, 무관) · guards 337-0 · reviewer 통과 | 브랜치 push(main 미반영) |
+| 11-17 | 이월 리뷰 M-1(claude/admin-cleanup-204a7d): 관리자 보강 예약 bookMakeupSession 이 잠금(lockCompensation) 뒤·INSERT 전에 정원을 tx 로 한 번 더 확인(assertMakeupSeatAvailable 에 db 인자, tx 안에서는 집계 실패를 삼키지 않음). 정원 문구는 catch 에서 그대로 다시 던짐. tests/makeup-capacity 에 소스 순서 3건 + 실행 2건(동시 예약 2건 → 저장 1건, 재확인 뺀 사본은 2건 = 초과 재현). 남은 것(범위 밖): 운영 빌드는 서버 액션 오류 문구를 가려 결석 화면(RegularAbsenceAdminClient)에 영어 문구가 뜰 수 있음 · 학부모 길 정원 기준(+2)과 다름 · updateMakeupStatus 의 CANCELLED→BOOKED 는 정원 확인 없음. tsc 0 · tests fail 1(staff-session-review 날짜 고정, 무관) · guards 337-0 · reviewer 통과 | 브랜치 push(main 미반영) |
+| 11-17 | 관리자 정리 다 묶음(claude/admin-cleanup-204a7d): 반 상세 «수업 기록» 창(SessionLogModal)·saveSessionLog·resolveSessionLogTarget·/api/admin/session-detail 삭제 → «추가»는 /admin/attendance, 기록 칸은 리포트 편집 링크. 출결은 saveAttendance 한 길(과거 날짜 고치면 보강권도 맞춰짐, 알림은 오늘 수업만). 사라진 것: 수업 요일 밖 날짜의 새 기록·그런 기존 기록의 출석 수정(운영 1건, 2026-05-08) · 출석 없이 기록만 만들기 · 수강생 0명 반 기록. KST 가드 R1 19→17·R4 2→1. tsc 0 · tests 5818 중 fail 1 = tests/staff-session-review.test.mjs:293 (수업 날짜 2026-11-16 고정이라 날짜가 넘어가면 깨짐 — 이번 변경 무관, 선생님 앱 세션 확인 필요) · guards 337-0 · reviewer 결함 없음 | 브랜치 push(main 미반영) |
+| 11-16 | 관리자 정리 나 묶음(claude/admin-cleanup-204a7d): 설정 «시설 사진»·프로그램 «이미지»의 주소 입력 → «사진 올리기»(미리보기+삭제, 시설은 여러 장). 기존 길 그대로 = uploadImagesWithProgress → /api/upload, 폴더 coaches(허용 목록 그대로). 저장 payload 불변, 새 부품 components/admin/AdminPhotoThumb(일반 img·실패 글자). 운영 프로그램 이미지 7개는 모두 자체 저장소 주소. 안 쓰게 된 사진 파일은 저장소에 남음(코치·갤러리와 같음). tsc 0 · tests 5819-0 · guards 337-0 · reviewer 통과 | 브랜치 push(main 미반영) |
+| 11-16 | 관리자 정리(claude/admin-cleanup-204a7d): 원장 결정표 9칸 전부 «안 쓴다» → 가 묶음 5건 삭제(방학특강 «상태 직접 변경» select · 공지 «페이스북 광고 소재» · 갤러리 «인스타 가져오기» 버튼+액션 · 설정 AppliesTo 9곳 · «외부 신청 링크» 2칸+siteOpsBot 신청서 점검). trialFormUrl·enrollFormUrl 은 저장 요청에서 빼 DB 값 유지. 남은 것: 나(주소 입력→파일 올리기 2건) · 다(수업 기록 창, 원장 선택 대기). 다음 정리 후보: 발행 때마다 쌓이는 FACEBOOK_AD_DRAFT 기록(social-campaigns.ts). architecture 51→28 병합. tsc 0 · tests 5819-0 · guards 337-0 · reviewer 통과 | 브랜치 push(main 미반영) |
 | 11-16 | developer(학생별 고정 수강료 + 평일 대회준비반 주N회, claude/fixed-tuition): 표 StudentFixedTuition(마이그레이션 20261116500000, **운영 적용 전**) · planWeeklyTuition 2번째 인자 = 첫 반 고정액·나머지 0원·할인/3회 차감 없음·셔틀 유지 · 청구 준비 «고정 15만» 표시 · 학생 상세 «청구/수납» FixedTuitionPanel(원장 requireOwner) · 평일 대회준비반 15만 고정 삭제 → 주N회 합계÷N(할인·3회 차감 없음, 주1회 priceWeek1 우선) · 검수 반영: 확정 장부 일부면 미적용·발행 가능한 첫 행에 고정액·패널 «원본 변경» 안내 · tsc 0·test fail 0 | 완료 |
 | 11-16 | developer(가입 안내 가입함 포함, claude/signup-guide-signed-in): 가입한 보호자·성인 본인도 대상 «가입함»(로그인 안내 문구 원장 전문, 성인은 회원·혜택 2줄 변경) · 가입 막힘·학원 문의 판정은 미가입에만 · 구성 = 미가입 재원/휴원/성인 + 가입함(겹침 없음) · 미리보기 문구 4종 블록 · 지문에 가입 여부·네 문구 포함 · /login 실재 확인. tsc 0 · tests 5739-0 · guards 337-0 | 구현 완료(검수 전) |
 | 11-16 | developer(가입 안내 전체, claude/signup-guide-all): 대상 = 수강 ACTIVE+PAUSED 학생 대표 보호자(퇴원만 제외)·성인(만19+ KST)은 대표 보호자=본인 빈 계정이라 같은 길 · 번호별 구분 재원/휴원/성인(성인만 있는 번호=성인용 문구, 학부모 승인본에서 3줄만 바꿈) · 가입 막힘(«빈 보호자 계정» 아닌 계정이 같은 번호) 제외·빈 계정 여럿은 경고 · 미리보기 구성·성인 문구 표시 · 큐 items 로 사람별 문구, 지문에 구분 포함. tsc 0 · tests 5716-0 · guards 337-0 | 구현 완료(검수 전) |
 | 11-16 | developer(청구서 안내 묶어보내기, claude/invoice-notice-bundle): 같은 번호의 같은 달 청구서 2장↑ = 묶음 LMS 1통(열쇠 invoice-bundle:정렬id, 2,000바이트 넘으면 나눔), 1장은 예전 그대로(알림톡 심사본) · 예약 잠금 안 청구서 단위 겹침 검사(invoiceIds &&, 재발송 종류끼리) · 대상 조회 loadInvoiceNoticeCandidates 를 발송·확인창(previewInvoiceNoticeCounts, 읽기만) 공용 · 앱 알림 학부모당 1건 · 확인창·진행 줄 «청구서 N장 → 문자 M통(묶음 K통)». 12월 예상 179장→120통(묶음 48·최장 941바이트). tsc 0 · tests 5717-0 · guards 337-0 | 구현 완료(검수 전) |
 | 11-16 | developer(쇼핑몰 유니폼 주문 → 학부모 화면, claude/uniform-shop-orders): 표 UniformShopOrder·UniformShopOrderItem(마이그레이션 20261116300000, 운영 적용 전) · lib/uniform/shopOrderSync.ts(서명 GET·응답 엄격 검증·한 SQL 문 upsert, 지우기 없음) · cron /api/cron/uniform-shop-sync 매시 17분(?days·?from&to) · loadChildUniformOrders 사이트+쇼핑몰 합쳐 최신순(본인 번호=구매자/수령인 + 이름 열쇠, 이름 빈 품목 제외, 표 없으면 빈 목록) · 줄에 «쇼핑몰»/«사이트» 글자. tsc 0 · tests 5703-0 · guards 337-0 | 구현 완료(검수 전) |
-| 11-16 | developer(아이 위주 프로필, claude/parent-child-photo): 홈 히어로 아이 사진 옆 «사진 올리기/바꾸기» 글자 버튼 늘 표시(ProfilePhotoEditor variant="button", 그 자리 업로드) · 설정 맨 위 «우리 아이»(아이마다 사진·이름→아이 정보, 사진 버튼) · 보호자 «내 사진» 칸(MyPhotoRow) 제거, 사진 파일·DB·API 는 그대로 · 테스트 갱신. tsc 0 · tests 5681-0 · guards 337-0 | 구현 완료(검수 전) |
-| 11-16 | developer(핵심 데이터 seed 자동 저장, claude/seed-auto): 매일 백업 cron·«전체 백업 지금 저장»이 같은 실행에서 스냅샷(Program·ClassSlotOverride·이용약관, 정해진 칸만)을 backups/seed/seed-latest.json + seed-<날짜>.json(30일)로 저장 · POST /api/admin/seed 는 Storage 최신본 먼저 → 없음·읽기 실패·모양 이상·프로그램 0줄이면 prisma/seed-data.ts · 공용 lib/backup/seedSnapshot.ts(순수) · 대시보드 «핵심 데이터 자동 저장» 한 줄 · 버킷 목록 3곳 seed 폴더 칸 제외 · CLAUDE.md 는 developer 수정 불가라 문안만 PM 에 전달. tsc 0 · tests 5646-0 · guards 337-0 | 구현 완료(검수 전) |
