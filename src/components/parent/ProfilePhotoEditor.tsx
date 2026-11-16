@@ -26,6 +26,7 @@ export default function ProfilePhotoEditor({
   name,
   initialVersion,
   variant = "full",
+  tone = "secondary",
 }: {
   /**
    * full = 사진 + 올리기·바꾸기·지우기 + 안내(아이 기록 «아이 정보» 칸).
@@ -33,6 +34,8 @@ export default function ProfilePhotoEditor({
    *          사진은 옆에 이미 그려진 자리(홈 히어로·설정 «우리 아이» 줄)가 맡고, 지우기는 아이 정보 칸에서 한다.
    */
   variant?: "full" | "button";
+  /** 버튼 모양의 등급 — secondary 테두리(홈 히어로) · tonal 옅은 면(목록 줄 안의 작은 작업). 기본 secondary */
+  tone?: "secondary" | "tonal";
   /** student = 아이 사진, me = 내 사진 */
   target: "student" | "me";
   /** 아이 사진일 때 학생 id */
@@ -137,7 +140,7 @@ export default function ProfilePhotoEditor({
     return (
       <div className="flex shrink-0 flex-col items-end">
         {fileInput}
-        <button type="button" onClick={() => inputRef.current?.click()} disabled={busy} className="academy-button-secondary min-h-11! whitespace-nowrap">
+        <button type="button" onClick={() => inputRef.current?.click()} disabled={busy} className={`${tone === "tonal" ? "academy-button-tonal" : "academy-button-secondary"} min-h-11! whitespace-nowrap`}>
           {busy ? "올리는 중" : hasPhoto ? "사진 바꾸기" : "사진 올리기"}
         </button>
         {status && (

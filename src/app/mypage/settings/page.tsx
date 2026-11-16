@@ -126,7 +126,7 @@ export default async function ParentSettingsPage() {
                                             <span className="block text-xs text-[var(--color-academy-muted)]">아이 정보 보기·수정 ›</span>
                                         </span>
                                     </Link>
-                                    <ProfilePhotoEditor variant="button" target="student" studentId={c.id} ownerId={c.id} name={c.name} initialVersion={version} />
+                                    <ProfilePhotoEditor variant="button" tone="tonal" target="student" studentId={c.id} ownerId={c.id} name={c.name} initialVersion={version} />
                                 </li>
                             );
                         })}

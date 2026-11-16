@@ -331,11 +331,12 @@ export default function MyPageClient({ data, notices = [], inquiryCounts = { ans
 
             {/* ② 전경과 배경(M-06): 이름 + 다음 수업 + 오늘 셔틀을 히어로 한 덩어리로. */}
             <section aria-labelledby="parent-child-heading" className="academy-hero p-4 sm:p-5">
-                <div className="flex items-center gap-3">
+                {/* 좁은 화면(360px)에서 이름 칸이 너무 좁아지면 버튼이 아래 줄로 내려간다 — 이름이 글자 중간에서 끊기지 않게 */}
+                <div className="flex flex-wrap items-center gap-3">
                     {/* 아이 사진(64px) — 이름 + 아래 한 줄 높이 안에 들어가 히어로가 커지지 않는다. 사진이 없으면 이름 첫 글자 */}
                     <ProfileAvatar decorative name={child.name} size={64} src={profilePhotoUrl({ kind: "student", id: child.id }, child.photoVersion, true)} />
-                    <div className="min-w-0 flex-1">
-                        <h1 id="parent-child-heading" className="academy-heading">{child.name} 학생</h1>
+                    <div className="min-w-[8.5rem] flex-1">
+                        <h1 id="parent-child-heading" className="academy-heading break-keep">{child.name} 학생</h1>
                         {/* 2026-11-14 문구 정리: 바로 아래 «다음 수업» 줄이 있으면 «수강 중인 반 N개»는 같은 말이라 뺀다.
                             복귀 예정·개시일처럼 아래 줄에 없는 내용만 남기고, 남길 말이 없으면 줄째 그리지 않는다. */}
                         {(heroEnrollLine || startsLaterEnrollment) && (

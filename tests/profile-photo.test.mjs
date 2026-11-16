@@ -724,7 +724,7 @@ test("⑥ 화면 연결: 홈 히어로 64 + 늘 보이는 «사진 올리기» �
   const kids = page.indexOf('id="settings-children-title"');
   const guardian = page.indexOf('<Section title="보호자(내 정보)">');
   assert.ok(kids > 0 && guardian > kids, "우리 아이가 보호자 정보보다 위");
-  assert.match(page, /<ProfilePhotoEditor variant="button" target="student" studentId=\{c\.id\}/);
+  assert.match(page, /<ProfilePhotoEditor variant="button" tone="tonal" target="student" studentId=\{c\.id\}/);
   assert.match(page, /href=\{`\/mypage\/record\?child=\$\{encodeURIComponent\(c\.id\)\}#record-info`\}/);
   assert.match(page, /profilePhotoUpdatedAtSql\("s"\)/);
   // 조회: 사진이 있을 때만 버전을 만든다(자녀 목록·아이 기록)
