@@ -26,6 +26,8 @@ test("일반 브라우저·홈 화면 바로가기·빈 값이면 지금처럼 �
 test("서비스 워커를 등록하는 두 곳 모두 앱이면 등록하지 않는다", () => {
   const updater = read("src/components/PwaUpdater.tsx");
   assert.match(updater, /if \(!serviceWorkerAllowed\(navigator\.userAgent\)\) \{[\s\S]*?getRegistrations\(\)[\s\S]*?unregister\(\)[\s\S]*?return;\s*\}/);
+  // 워커 아래 있던 화면은 지운 뒤 «한 번만» 다시 불러온다(sessionStorage 표시로 반복 방지)
+  assert.match(updater, /stiz-app-sw-removed[\s\S]*?wasControlled[\s\S]*?getItem\(RELOAD_KEY\) === "1"\) return;[\s\S]*?setItem\(RELOAD_KEY, "1"\)[\s\S]*?location\.reload\(\)/);
   // 앱 판정이 등록(register)보다 앞에 있어야 한다
   assert.ok(updater.indexOf("serviceWorkerAllowed(navigator.userAgent)") < updater.indexOf("navigator.serviceWorker.register("));
 
@@ -38,7 +40,8 @@ test("서비스 워커를 등록하는 두 곳 모두 앱이면 등록하지 않
 test("서비스 워커를 등록하는 곳은 이 두 곳뿐이다(새로 생기면 같은 판정을 넣을 것)", async () => {
   const { readdirSync, statSync } = await import("node:fs");
   const { join } = await import("node:path");
-  const root = new URL("../src/", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
+  const { fileURLToPath } = await import("node:url");
+  const root = fileURLToPath(new URL("../src/", import.meta.url));
   const found = [];
   const walk = (dir) => {
     for (const name of readdirSync(dir)) {
