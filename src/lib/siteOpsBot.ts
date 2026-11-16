@@ -224,10 +224,12 @@ async function checkBackup(checks: SiteOpsCheck[]) {
       });
     }
 
-    const { data: files } = await supabase.storage.from("backups").list("", {
+    const { data: listed } = await supabase.storage.from("backups").list("", {
       limit: 50,
       sortBy: { column: "created_at", order: "desc" },
     });
+    // "seed" 는 핵심 데이터 스냅샷 폴더(파일 아님 · lib/backup/seedSnapshot.ts 의 SEED_DIR) — 날짜가 없어 «백업 없음»으로 오판하지 않게 뺀다.
+    const files = listed?.filter((f) => f.name !== "seed");
     const lastBackupAt = files?.[0]?.created_at ? new Date(files[0].created_at) : null;
     const backupStale = isOlderThan(lastBackupAt, 7);
 

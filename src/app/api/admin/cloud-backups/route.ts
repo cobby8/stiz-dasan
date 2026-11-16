@@ -59,7 +59,9 @@ export async function GET(req: NextRequest) {
             throw error;
         }
 
-        const result = (files ?? []).map((f) => ({
+        // "seed" 는 핵심 데이터 스냅샷 폴더(파일 아님 · lib/backup/seedSnapshot.ts 의 SEED_DIR) — 백업 목록에서 뺀다.
+        // 빼지 않으면 «최신 자동백업 복원»이 files[0] 으로 이 폴더 칸을 집어 복원이 깨질 수 있다.
+        const result = (files ?? []).filter((f) => f.name !== "seed").map((f) => ({
             filename: f.name,
             size: f.metadata?.size ?? 0,
             createdAt: f.created_at,

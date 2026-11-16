@@ -5,6 +5,8 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import { gunzipSync } from 'node:zlib';
 import * as archiveCore from '../src/lib/backup/archiveCore.ts';
+import * as seedSnapshot from '../src/lib/backup/seedSnapshot.ts';
+import * as kst from '../src/lib/datetime/kst.ts';
 import { NextRequest, NextResponse } from 'next/server.js';
 
 const source = readFileSync(new URL('../src/app/api/cron/backup/route.ts', import.meta.url), 'utf8');
@@ -32,7 +34,8 @@ const archiveModule = (calls, options) => ({
 
 // 실제 라우트만 실행하고 운영 인증·DB·Storage 모듈은 가져오지 않는다.
 function fixture(options = {}) {
-  const calls = { archiveUpload: [], query: 0, bucket: 0, create: 0, upload: [], list: 0, remove: [], logs: [] };
+  const calls = { archiveUpload: [], query: 0, bucket: 0, create: 0, upload: [], list: 0, remove: [], logs: [],
+    seedUpload: [], seedList: 0, seedRemove: [] };
   const result = (key, data) => options.fail === key ? { data: null, error: { message: sensitive } } : { data, error: null };
   const storage = {
     async listBuckets() { calls.bucket++; return result('bucket', options.missingBucket ? [] : [{ name: 'backups' }]); },
@@ -41,6 +44,12 @@ function fixture(options = {}) {
       assert.equal(name, 'backups');
       return {
         async upload(filename, body, config) {
+          // 핵심 데이터(seed) 스냅샷은 seed/ 폴더로 간다 — 본 백업 호출 기록과 섞지 않는다.
+          if (filename.startsWith('seed/')) {
+            calls.seedUpload.push({ filename, snapshot: JSON.parse(body), config });
+            if (options.fail === 'seed-upload-lost') throw new Error(sensitive);
+            return result('seed-upload', {});
+          }
           if (filename.endsWith('.gz')) {
             calls.archiveUpload.push({ filename, archive: JSON.parse(gunzipSync(body).toString('utf8')), config });
             if (options.fail === 'archive-upload-lost') throw new Error(sensitive);
@@ -50,8 +59,14 @@ function fixture(options = {}) {
           if (options.fail === 'upload-response-lost') throw new Error(sensitive);
           return result('upload', {});
         },
-        async list() { calls.list++; return result('list', options.files ?? []); },
-        async remove(names) { calls.remove.push(names); return result('remove', options.removed ?? names.map(name => ({ name }))); },
+        async list(path) {
+          if (path === 'seed') { calls.seedList++; return result('seed-list', options.seedFiles ?? []); }
+          calls.list++; return result('list', options.files ?? []);
+        },
+        async remove(names) {
+          if (names.every(name => name.startsWith('seed/'))) { calls.seedRemove.push(names); return result('seed-remove', names.map(name => ({ name }))); }
+          calls.remove.push(names); return result('remove', options.removed ?? names.map(name => ({ name })));
+        },
       };
     },
   };
@@ -64,6 +79,8 @@ function fixture(options = {}) {
     } } },
     '@/lib/cron/withCronAlert': { withCronAlert: (_name, handler) => handler }, // 실패 알림 래퍼(d4)는 cron-alert.test 에서 따로 검사
     '@/lib/backup/archive': archiveModule(calls, options),
+    '@/lib/backup/seedSnapshot': seedSnapshot, // 순수 모듈이라 실제 것을 쓴다
+    '@/lib/datetime/kst': kst,
     '@/lib/supabase/admin': { createAdminClient: () => ({ storage }) },
   };
   const exports = {};
@@ -238,3 +255,86 @@ for (const fail of ['archive-upload', 'archive-upload-lost']) {
     assert.equal(f.calls.upload.length, 1);
   });
 }
+
+// 2026-11-16 — 핵심 데이터(seed) 스냅샷을 같은 실행에서 자동 저장한다(원장이 «seed 내보내기»를 누르지 않아도 되게).
+const seedRows = {
+  Program: [{ id: 'p1', name: '취미반', targetAge: '초등', priceWeek1: 100000, order: 1, secretNote: sensitive, createdAt: '2026-01-01' }],
+  ClassSlotOverride: [{ id: 'c1', slotKey: 'Mon-1', capacity: 10, isHidden: false, coachId: 'k1' }],
+  AcademySettings: [{ id: 'singleton', termsOfService: '약관', smsApiKey: sensitive }],
+};
+
+test('백업과 같은 실행에서 핵심 데이터 스냅샷을 날짜별 사본 + 최신본으로 저장한다(정해진 칸만)', async () => {
+  const f = fixture({ rows: seedRows });
+  const { status, body } = await f.run();
+  assert.equal(status, 200);
+  assert.equal(f.calls.query, 7); // DB 를 다시 읽지 않는다
+  const [dated, latest] = f.calls.seedUpload;
+  assert.equal(dated.filename, `seed/seed-${kst.todayKst()}.json`);
+  assert.equal(latest.filename, 'seed/seed-latest.json');
+  assert.equal(latest.config.upsert, true);
+  assert.deepEqual(latest.snapshot, dated.snapshot);
+  assert.equal(latest.snapshot._meta.kind, 'SEED_SNAPSHOT');
+  assert.equal(latest.snapshot._meta.source, 'cron');
+  assert.deepEqual(Object.keys(latest.snapshot).sort(), ['_meta', 'classSlotOverrides', 'programs', 'termsOfService']);
+  assert.equal(latest.snapshot.programs[0].name, '취미반');
+  assert.equal(latest.snapshot.termsOfService, '약관');
+  // 스냅샷에는 고른 칸만 — 다른 설정 값·비밀값이 따라 들어가지 않는다
+  assert.ok(!JSON.stringify(f.calls.seedUpload).includes(sensitive));
+  assert.equal(seedSnapshot.validateSeedSnapshot(latest.snapshot).ok, true);
+  assert.equal(body.seed.saved, true);
+  assert.equal(body.seed.programs, 1);
+  assert.equal(f.calls.upload.length, 1); // 본 백업 파일은 그대로 1개
+});
+
+test('프로그램이 0줄이면 스냅샷을 저장하지 않는다(마지막 정상본을 덮어쓰지 않음) — 본 백업은 성공', async () => {
+  const f = fixture();
+  const { status, body } = await f.run();
+  assert.equal(status, 200);
+  assert.equal(body.success, true);
+  assert.equal(f.calls.seedUpload.length, 0);
+  assert.equal(body.seed.saved, false);
+  assert.equal(body.seed.reason, 'SKIPPED_NO_PROGRAMS');
+});
+
+for (const fail of ['seed-upload', 'seed-upload-lost']) {
+  test(`스냅샷 저장 실패(${fail})는 본 백업을 실패시키지 않는다`, async () => {
+    const f = fixture({ rows: seedRows, fail, files: [old] });
+    const { status, body } = await f.run();
+    assert.equal(status, 200);
+    assert.equal(body.success, true);
+    assert.equal(body.seed.saved, false);
+    assert.equal(f.calls.upload.length, 1);
+    assert.equal(f.calls.archiveUpload.length, 1);
+    assert.deepEqual(body.deleted, [old.name]); // 본 백업 정리도 그대로 진행
+  });
+}
+
+for (const fail of ['bucket', 'upload', 'upload-response-lost']) {
+  test(`본 백업 실패(${fail})여도 스냅샷은 저장을 시도한다`, async () => {
+    const f = fixture({ rows: seedRows, fail });
+    const { status, body } = await f.run();
+    assert.equal(status, 500);
+    assert.equal(body.success, false);
+    assert.equal(f.calls.seedUpload.at(-1).filename, 'seed/seed-latest.json');
+    assert.equal(body.seed.saved, true);
+  });
+}
+
+test('조회 실패면 스냅샷도 저장하지 않는다', async () => {
+  const f = fixture({ rows: seedRows, failQuery: 'Coach' });
+  const { status, body } = await f.run();
+  assert.equal(status, 500);
+  assert.equal(f.calls.seedUpload.length, 0);
+  assert.equal(body.seed, null);
+});
+
+test('30일 지난 날짜별 스냅샷만 지우고 최신본·다른 파일은 건드리지 않는다', async () => {
+  const today = kst.todayKst();
+  const keep = `seed-${kst.addDaysKst(today, -30)}.json`;
+  const expired = `seed-${kst.addDaysKst(today, -31)}.json`;
+  const f = fixture({ rows: seedRows, seedFiles: [{ name: 'seed-latest.json' }, { name: keep }, { name: expired }, { name: 'other.json' }] });
+  const { body } = await f.run();
+  assert.deepEqual(f.calls.seedRemove, [[`seed/${expired}`]]);
+  assert.deepEqual(body.seed.deleted, [expired]);
+  assert.deepEqual(f.calls.remove, []); // 본 백업 정리와 섞이지 않는다
+});

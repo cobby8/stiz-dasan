@@ -4,6 +4,7 @@ import { requireAdmin } from "@/lib/auth-guard";
 import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ARCHIVE_BACKUP_NAME } from "@/lib/backup/archiveCore";
+import { SEED_DIR, SEED_LATEST_NAME } from "@/lib/backup/seedSnapshot";
 
 const SYSTEM_STATUS_CACHE_SECONDS = 300;
 const SYSTEM_STATUS_CACHE_HEADERS = {
@@ -22,10 +23,22 @@ async function getDbStatus() {
 async function getBackupStatus() {
     try {
         const supabase = createAdminClient();
-        const { data: allFiles } = await supabase.storage.from("backups").list("", {
+        const { data: listed } = await supabase.storage.from("backups").list("", {
             limit: 50,
             sortBy: { column: "created_at", order: "desc" },
         });
+        // "seed" 는 핵심 데이터 스냅샷 폴더(파일 아님) — 날짜가 없어 «백업 없음»으로 오판하지 않게 뺀다.
+        const allFiles = listed?.filter((f) => f.name !== SEED_DIR);
+        // 핵심 데이터 스냅샷(seed/seed-latest.json)이 마지막으로 저장된 시각 — 매일 덮어쓰므로 «고친 시각»을 본다.
+        // 파일을 내려받지 않는다. 없거나 조회 실패면 null 로 두고 카드에서 줄을 숨긴다.
+        let seedSnapshotAt: string | null = null;
+        try {
+            const { data: seedFiles } = await supabase.storage.from("backups").list(SEED_DIR, { limit: 10, search: "seed-latest" });
+            const latestSeed = seedFiles?.find((f) => f.name === SEED_LATEST_NAME);
+            seedSnapshotAt = latestSeed?.updated_at ?? latestSeed?.created_at ?? null;
+        } catch {
+            seedSnapshotAt = null;
+        }
         const latest = allFiles?.[0];
         const lastBackupAt = latest?.created_at ? new Date(latest.created_at) : null;
         // 설정 파일 개수(업무 자료 짝 파일은 따로 센다)
@@ -50,9 +63,10 @@ async function getBackupStatus() {
             backupCount,
             lastBackupBytes: typeof latestArchive?.metadata?.size === "number" ? latestArchive.metadata.size : null,
             archive,
+            seedSnapshotAt,
         };
     } catch {
-        return { lastBackupAt: null, backupCount: 0, lastBackupBytes: null, archive: null };
+        return { lastBackupAt: null, backupCount: 0, lastBackupBytes: null, archive: null, seedSnapshotAt: null };
     }
 }
 
@@ -61,7 +75,7 @@ const getCachedSystemStatus = unstable_cache(
         const [dbOk, backup] = await Promise.all([getDbStatus(), getBackupStatus()]);
         return { dbOk, backup };
     },
-    ["admin-dashboard-system-status-v2"],
+    ["admin-dashboard-system-status-v3"],
     {
         revalidate: SYSTEM_STATUS_CACHE_SECONDS,
         tags: ["admin-dashboard-system"],

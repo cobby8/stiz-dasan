@@ -38,6 +38,23 @@
 - 운영 배포 = `git push origin HEAD:main` fast-forward.
 - 테스트는 `node --test tests/*.test.mjs` **+ 가드 `node --experimental-strip-types --test src/lib/*.test.ts`**(=`npm test`). ⚠️ 2026-10-25 실측: `tests/` 만 돌려 **학생 병합 필터 가드(src/lib/studentVisibility.test.ts)를 놓쳤다** — 회원 탈퇴 배포 후 release:preflight 가 실패하던 상태였다. **`npx vitest`는 이 프로젝트에 없음**(설정도 없어 worktree까지 긁어 전부 오탐).
 
+### 구현 기록 (developer · 11-16 핵심 데이터 seed 자동 저장, claude/seed-auto)
+
+📝 구현한 기능: 원장이 «seed 내보내기»를 누르지 않아도 핵심 데이터 스냅샷이 매일 자동 저장되고, seed 복구가 그 최신본을 먼저 쓴다. 새 표·마이그레이션·새 DB 조회 없음(백업이 이미 읽은 줄 재사용).
+
+| 파일 경로 | 변경 내용 | 신규/수정 |
+|----------|----------|----------|
+| src/lib/backup/seedSnapshot.ts | 스냅샷 만들기·모양 검사·저장·읽기·30일 정리·seed-data.ts 코드 만들기(가져오는 모듈 없음) | 신규 |
+| src/app/api/cron/backup/route.ts · admin/backup-now/route.ts | 같은 실행에서 스냅샷 저장(본 백업과 서로 막지 않음), 응답에 seed 결과 | 수정 |
+| src/app/api/admin/seed/route.ts | Storage 최신본 먼저 → seed-data.ts, 응답에 source·snapshotDate·fallbackReason | 수정 |
+| src/app/api/admin/export-seed/route.ts | 공용 함수 사용(출력 모양 같음) | 수정 |
+| src/app/api/admin/dashboard/system/route.ts · AdminDashboardClient.tsx · AdminBackupButtons.tsx | 시스템 상태 «핵심 데이터 자동 저장» 한 줄 · 사이드바 안내 글 | 수정 |
+| src/app/api/admin/cloud-backups/route.ts · src/lib/siteOpsBot.ts | 버킷 맨 위 목록에서 seed 폴더 칸 제외 | 수정 |
+| tests/seed-snapshot.test.mjs · cron-backup.test.mjs · admin-manual-backup.test.mjs | 신규 22개 + cron 9개 | 신규/수정 |
+
+💡 tester 참고: 운영 Storage 에 쓰지 않았다. 배포 뒤 첫 자정 cron(또는 «전체 백업 지금 저장») 응답의 `seed.saved` 와 대시보드 «핵심 데이터 자동 저장» 줄 확인. 프로그램 0줄이면 `SKIPPED_NO_PROGRAMS` 로 저장하지 않는 것이 정상.
+⚠️ reviewer 참고: ① Storage 목록이 폴더 칸을 어떻게 돌려주는지(날짜 null·정렬 위치)는 실물로 못 봤다 — 그래서 이름으로 뺐다 ② 스냅샷 저장 실패는 200(슬랙 알림 없음) — 대시보드 줄이 «이틀 넘게 멈춤»으로만 알린다 ③ 프로그램이 «일부만» 사라진 날도 최신본은 덮어쓴다(날짜별 사본 30일로만 되돌릴 수 있고, 복구 API 는 최신본만 읽는다).
+
 ### 구현 기록 (developer · 11-16 질병 결석 미납인 달 = 미납 청구에서 1회분 빼기, claude/illness-unpaid-reduce)
 
 📝 구현한 기능: 신청함 하루짜리 «질병·부상 결석» — 그 달 수강료가 미납이면 «납부한 뒤에 승인»으로 막지 않고, 승인하면 이월 대신 그 미납 청구에서 1회 값을 뺀다(납부된 달은 기존 이월 그대로). 새 표·새 칸·마이그레이션 없음.
@@ -294,6 +311,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-16 | developer(핵심 데이터 seed 자동 저장, claude/seed-auto): 매일 백업 cron·«전체 백업 지금 저장»이 같은 실행에서 스냅샷(Program·ClassSlotOverride·이용약관, 정해진 칸만)을 backups/seed/seed-latest.json + seed-<날짜>.json(30일)로 저장 · POST /api/admin/seed 는 Storage 최신본 먼저 → 없음·읽기 실패·모양 이상·프로그램 0줄이면 prisma/seed-data.ts · 공용 lib/backup/seedSnapshot.ts(순수) · 대시보드 «핵심 데이터 자동 저장» 한 줄 · 버킷 목록 3곳 seed 폴더 칸 제외 · CLAUDE.md 는 developer 수정 불가라 문안만 PM 에 전달. tsc 0 · tests 5646-0 · guards 337-0 | 구현 완료(검수 전) |
 | 11-16 | developer(학생 유니폼 번호 두 칸 — 취미반 uniformNumber·대표팀 teamUniformNumber, claude/uniform-number): 학생 상세 유니폼 카드에 두 줄 표시 + 수정 창 입력칸 2개 · updateStudentUniform 서버 검증(숫자만·3자·비우면 null·"0" 은 번호) · 규칙 lib/students/uniform-number.ts · 마이그레이션 파일만(IF NOT EXISTS, 운영 적용됨) · 원생 목록엔 유니폼 표시가 없어 덧붙이기 생략. tsc 0 · tests 5612-0 · guards 337-0 | 구현 완료(검수 전) |
 | 11-16 | developer(질병 결석 미납인 달 = 미납 청구에서 1회분 빼기, claude/illness-unpaid-reduce): 승인이 서버에서 이월/감액 갈래 결정 · 기록은 PaymentAuditLog(ILLNESS_ABSENCE_UNPAID_REDUCED)+정산 기록 고정 사유 · 근거·휴원 정산·청구 준비·발행 보류가 감액을 «이미 줄인 금액»으로 인정 · 신청함·학부모 글자 구분. tsc 0 · tests 5607-0 · guards 337-0. 마이그레이션 없음 | 구현 완료(검수 전) |
 | 11-15 | developer(휴원 정산 단가 부풀림 수정, claude/pause-unit-price): loadPausePayments 가 랠리즈 청구의 «감액 할 일» 줄(UNPAID_REDUCE·channel≠SITE, 사이트 금액은 안 줄임)까지 원래 금액에 더하던 것을 «사이트가 실제로 줄인 줄»만 세도록 수정(workbench-absence 와 같은 기준). 재현 테스트 추가. tsc 0 · 관련 tests 179-0 | 검수 대기 |
