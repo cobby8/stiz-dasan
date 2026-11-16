@@ -51,6 +51,7 @@ const ClassBillingSheet = dynamic(
 export default function StaffHomeClient({
   dateKey,
   todayKey,
+  holidays = {},
   classes: initialClasses,
   coachLinkMissing = false,
   showFees,
@@ -59,6 +60,8 @@ export default function StaffHomeClient({
   dateKey: string;
   /** 서버가 이 화면을 그릴 때의 오늘(KST) */
   todayKey: string;
+  /** 날짜 칸 중 휴무인 날 → 사유(연간일정 기준 — 기사님 운행표·학부모 셔틀과 같은 판정). 모르는 날은 없다 */
+  holidays?: Record<string, string>;
   classes: StaffTodayClass[];
   /** 선생님 계정에 코치가 연결되지 않아 수업이 안 보이는 상태(b4). 원장·부원장은 항상 false. */
   coachLinkMissing?: boolean;
@@ -412,6 +415,7 @@ export default function StaffHomeClient({
               startLocked: Boolean(runningClass),
               startPrimary,
               onStart: () => openPrimaryAction(lesson),
+              rosterDate: preview ? dateKey : undefined,
               previewNotice: preview ? `${kstLabel(dateKey)} 수업입니다. 수업 내용을 미리 써 두면 당일 수업 화면에 그대로 나옵니다.` : undefined,
               savePlanned: (text) => savePlanned(lesson, text),
               onOpenNotice: openNotice,
@@ -465,7 +469,15 @@ export default function StaffHomeClient({
         {!preview && <p className="text-sm tabular-nums text-[var(--color-academy-muted)]">{dateKey}</p>}
       </header>
 
-      <DateStrip dateKey={dateKey} todayKey={todayKey} moving={dateMoving} onMove={(target) => void moveDate(target)} />
+      <DateStrip dateKey={dateKey} todayKey={todayKey} holidays={holidays} moving={dateMoving} onMove={(target) => void moveDate(target)} />
+
+      {/* 휴무일 안내 한 줄 — 수업 줄은 그대로 둔다(보강·특강처럼 실제로 수업을 하는 날일 수 있어 막지 않는다) */}
+      {holidays[dateKey] && (
+        <p role="note" className="rounded-xl border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] px-4 py-3 text-sm text-[var(--color-academy-ink)]">
+          <span className="font-semibold">{preview ? "휴무일입니다" : "오늘은 휴무일입니다"}</span>
+          <span className="text-[var(--color-academy-muted)]"> · {holidays[dateKey]}</span>
+        </p>
+      )}
 
       {!preview && classes.length > 0 && (
         <section aria-label="오늘 수업 요약" className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-xl bg-[var(--color-academy-surface)] px-4 py-3 text-sm">
@@ -666,7 +678,7 @@ export default function StaffHomeClient({
  * 날짜 칸 한 줄(2026-11-16 원장 지시) — 오늘부터 14일 뒤까지. 누르면 그 날짜의 내 수업을 본다.
  * 고른 날짜는 보조 색(하늘색 = «지금 있는 곳»)으로 채운다. 지난 날짜는 «지난 수업» 화면에서 본다.
  */
-function DateStrip({ dateKey, todayKey, moving, onMove }: { dateKey: string; todayKey: string; moving: boolean; onMove: (target: string) => void }) {
+function DateStrip({ dateKey, todayKey, holidays, moving, onMove }: { dateKey: string; todayKey: string; holidays: Record<string, string>; moving: boolean; onMove: (target: string) => void }) {
   const stripRef = useRef<HTMLElement>(null);
   const selectedRef = useRef<HTMLButtonElement>(null);
   // 고른 날짜가 줄 밖에 있으면 줄 가운데로 옮긴다(먼 날짜를 고른 뒤 새로 그려질 때). 페이지는 움직이지 않게 줄만 옆으로 민다.
@@ -685,13 +697,14 @@ function DateStrip({ dateKey, todayKey, moving, onMove }: { dateKey: string; tod
         {staffPreviewDates(todayKey).map((ymd) => {
           const selected = ymd === dateKey;
           const dow = kstDow(ymd);
+          const holiday = holidays[ymd];
           return (
-            <li key={ymd} className="shrink-0">
+            <li key={ymd} className="flex shrink-0">
               <button
                 ref={selected ? selectedRef : undefined}
                 type="button"
                 aria-current={selected ? "date" : undefined}
-                aria-label={`${kstLabel(ymd)}${ymd === todayKey ? " 오늘" : ""} 수업 보기`}
+                aria-label={`${kstLabel(ymd)}${ymd === todayKey ? " 오늘" : ""}${holiday ? ` 휴무(${holiday})` : ""} 수업 보기`}
                 disabled={moving && !selected}
                 onClick={() => onMove(ymd)}
                 className={`flex min-h-12 min-w-12 flex-col items-center justify-center rounded-xl border px-2 text-xs ${selected
@@ -700,6 +713,8 @@ function DateStrip({ dateKey, todayKey, moving, onMove }: { dateKey: string; tod
               >
                 <span>{ymd === todayKey ? "오늘" : DOW[dow]}</span>
                 <span className="text-sm tabular-nums text-[var(--color-academy-ink)]">{Number(ymd.slice(8))}</span>
+                {/* 휴무인 날만 한 줄 더(글자로 말한다 — 색만으로 전하지 않는다) */}
+                {holiday && <span className={`text-xs font-medium ${selected ? "text-[var(--color-academy-ink)]" : "text-[var(--color-academy-warning)]"}`}>휴무</span>}
               </button>
             </li>
           );

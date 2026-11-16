@@ -2,6 +2,7 @@ import { unstable_noStore as noStore } from "next/cache";
 
 import { prisma } from "@/lib/prisma";
 import { todayKst } from "@/lib/datetime/kst";
+import { canPlanOnDate } from "@/lib/staff-session-rules";
 import {
   requireStaffClassAccess,
   requireStaffSeasonalSessionAccess,
@@ -103,16 +104,22 @@ export async function getStaffClassPeople(
   classId: string,
   sessionId?: string | null,
   sessionDateId?: string | null,
+  /**
+   * 다가올 날짜의 수업을 미리 볼 때 그 날짜("YYYY-MM-DD", 2026-11-16 날짜 이동).
+   * 수업 기록이 아직 없을 때만 쓴다(기록이 있으면 기록의 날짜가 정본). 오늘~14일 뒤가 아니면 버리고 오늘 기준.
+   */
+  viewDate?: string | null,
 ): Promise<StaffClassPerson[]> {
   noStore();
   const effectiveSessionDateId = sessionDateId ?? await resolveSessionDateId(sessionId);
+  const planDate = !sessionId && viewDate && canPlanOnDate(viewDate) ? viewDate : null;
 
   if (effectiveSessionDateId) {
     await requireStaffSeasonalSessionAccess(effectiveSessionDateId);
   } else {
     // f4 대타: 그 수업 기록의 날짜(기록 전이면 오늘 KST)에 대타 지정이 있으면 명단을 연다.
     //   기록 날짜는 classId 까지 함께 맞춰 찾는다 — 다른 반 기록 ID 를 섞어 날짜를 바꿔 끼우지 못하게.
-    await requireStaffClassAccess(classId, undefined, { substituteDate: await regularSessionDateOrToday(classId, sessionId) });
+    await requireStaffClassAccess(classId, undefined, { substituteDate: planDate ?? await regularSessionDateOrToday(classId, sessionId) });
   }
 
   const rows = effectiveSessionDateId
@@ -244,10 +251,10 @@ export async function getStaffClassPeople(
          JOIN "Student" s ON s.id = e."studentId" AND ${notMergedStudent("s")}
         WHERE e."classId" = $1
           AND e.status = 'ACTIVE'
-          AND (e."startsOn" IS NULL OR e."startsOn" <= COALESCE((SELECT se.date::date FROM "Session" se WHERE se.id=$2), (NOW() AT TIME ZONE 'Asia/Seoul')::date) OR EXISTS (
+          AND (e."startsOn" IS NULL OR e."startsOn" <= COALESCE((SELECT se.date::date FROM "Session" se WHERE se.id=$2), $3::date, (NOW() AT TIME ZONE 'Asia/Seoul')::date) OR EXISTS (
             SELECT 1 FROM "Attendance" historical JOIN "Session" prior ON prior.id=historical."sessionId"
             WHERE historical."studentId"=e."studentId" AND prior."classId"=$1
-              AND (($2::text IS NOT NULL AND prior.id=$2) OR ($2::text IS NULL AND prior.date::date=(NOW() AT TIME ZONE 'Asia/Seoul')::date))
+              AND (($2::text IS NOT NULL AND prior.id=$2) OR ($2::text IS NULL AND prior.date::date=COALESCE($3::date, (NOW() AT TIME ZONE 'Asia/Seoul')::date)))
           ))
      ), recent_attendance AS (
        SELECT ranked."studentId",
@@ -330,13 +337,15 @@ export async function getStaffClassPeople(
            JOIN "Session" se ON se.id = a."sessionId"
           WHERE a."studentId" = s.id
             AND se."classId" = $1
-            AND (($2::text IS NOT NULL AND se.id = $2) OR ($2::text IS NULL AND se.date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul')::date))
+            AND (($2::text IS NOT NULL AND se.id = $2) OR ($2::text IS NULL AND se.date = COALESCE($3::date, (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul')::date)))
           ORDER BY se."startedAt" DESC NULLS LAST, se."createdAt" DESC
           LIMIT 1
        ) today_attendance ON true
       ORDER BY s.name`,
     classId,
     sessionId ?? null,
+    // $3: 미리 보는 날짜(없으면 NULL → 오늘) — 그 날짜까지 시작하는 신규 학생도 명단에 넣는다
+    planDate,
   );
 
   // 건강 특이사항 — 위에서 권한을 확인하고 읽은 «이 반 명단» 학생 id 로만 따로 읽는다(칸이 없거나 실패하면 빈 값)

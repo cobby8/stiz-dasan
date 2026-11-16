@@ -141,6 +141,10 @@ export default function StaffProfileMenu({ staffName, staffRole, accountViews = 
               <AccountViewSwitcher views={accountViews} variant="list" onNavigate={(event, view) => requestPublicNavigation(event, view.href)} />
             </div>}
 
+            {/* 학원 일정(연간 일정·휴무) — 선생님·기사님 공통(2026-11-16 원장 지시). 앱 안 화면(/staff/annual)이라 앱을 벗어나지 않는다 */}
+            <Link href="/staff/annual" onClick={(event) => requestPublicNavigation(event, "/staff/annual")} className="academy-button-secondary mb-2 w-full">
+              학원 일정
+            </Link>
             <Link href="/account" onClick={event=>requestPublicNavigation(event,"/account")} className="academy-button-secondary mb-3 w-full">
               내 계정
             </Link>

@@ -47,6 +47,8 @@ export type PlannedLessonProps = {
    * 수업 시작은 당일에만 한다(서버도 오늘이 아닌 날짜의 시작을 막는다).
    */
   previewNotice?: string;
+  /** 다가올 날짜의 수업이면 그 날짜 — 명단을 그 날짜 기준으로 읽는다(그날부터 다니는 신규 학생 포함) */
+  rosterDate?: string;
   /** 미리 쓴 내용 저장(수업 전 전용 서버 기능은 홈이 부른다 — 날짜·특강 회차를 홈이 안다) */
   savePlanned: (text: string) => Promise<LessonTextSaveResult>;
   /** 수업 공지 — 대타로만 보이는 반은 넘기지 않는다(f4) */
@@ -106,7 +108,7 @@ export function WorkspaceLinks({ onOpenNotice, onOpenBilling }: { onOpenNotice?:
 /**
  * 수업 전 본문 — [수업 시작] → 수업 내용(미리 쓰기) → 출석부(명단·학생 정보만, 출결 버튼 없음) → 수업 공지·청구 확인.
  */
-export function PlannedLessonPanel({ lesson, startLocked, startPrimary, onStart, previewNotice, savePlanned, onOpenNotice, onOpenBilling }: PlannedLessonProps) {
+export function PlannedLessonPanel({ lesson, startLocked, startPrimary, onStart, previewNotice, rosterDate, savePlanned, onOpenNotice, onOpenBilling }: PlannedLessonProps) {
   const initial = resolveLessonText({ status: "PLANNED", content: lesson.content, plannedContent: lesson.plannedContent });
   const [text, setText] = useState(initial.value);
   const [starting, setStarting] = useState(false);
@@ -114,7 +116,7 @@ export function PlannedLessonPanel({ lesson, startLocked, startPrimary, onStart,
   const [open, setOpen] = useState({ lesson: true, roster: false });
   const [rosterWanted, setRosterWanted] = useState(false);
   const [infoRow, setInfoRow] = useState<string | null>(null);
-  const people = useClassPeople({ classId: lesson.classId, sessionId: lesson.sessionId, sessionDateId: lesson.sessionDateId, enabled: rosterWanted });
+  const people = useClassPeople({ classId: lesson.classId, sessionId: lesson.sessionId, sessionDateId: lesson.sessionDateId, date: rosterDate, enabled: rosterWanted });
 
   // 마지막으로 저장한 글 — 쓰다 만 글이 «수업 시작»·줄 접기로 사라지지 않게 그때 한 번 더 저장한다
   const savedRef = useRef(initial.value);

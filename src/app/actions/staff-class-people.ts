@@ -16,17 +16,20 @@ export async function loadStaffClassPeople(input: {
   classId: string;
   sessionId?: string | null;
   sessionDateId?: string | null;
+  /** 다가올 날짜의 수업을 미리 볼 때 그 날짜("YYYY-MM-DD") — 범위 확인은 getStaffClassPeople 이 한다 */
+  date?: string | null;
 }): Promise<LoadStaffClassPeopleResult> {
   const classId = input.classId?.trim();
   const sessionId = input.sessionId?.trim() || null;
   const sessionDateId = input.sessionDateId?.trim() || null;
+  const date = typeof input.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(input.date) ? input.date : null;
 
   if (!classId || classId.length > 100 || (sessionId && sessionId.length > 100) || (sessionDateId && sessionDateId.length > 100)) {
     return { ok: false, message: "수업 정보를 다시 확인해 주세요." };
   }
 
   const [people, access] = await Promise.all([
-    getStaffClassPeople(classId, sessionId, sessionDateId),
+    getStaffClassPeople(classId, sessionId, sessionDateId, date),
     getStaffClassAccessContext(),
   ]);
   // 선생님(원장·부원장 외)에게는 미납 건수·금액을 내려보내지 않는다(f3 보완, 2026-11-13 원장 지시).

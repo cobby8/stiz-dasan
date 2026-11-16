@@ -3,7 +3,10 @@ import { redirect } from "next/navigation";
 import { requireStaff } from "@/lib/auth-guard";
 import { getKoreaDateKey, getTodayStaffClasses } from "@/lib/staff-session-queries";
 import { getStaffClassAccessContext } from "@/lib/staff-class-access";
-import { DRIVER_ENTRY_PATH, canSeeStaffFees, needsCoachLink, resolveStaffViewDate } from "@/lib/staff-session-rules";
+import { DRIVER_ENTRY_PATH, canSeeStaffFees, needsCoachLink, resolveStaffViewDate, staffPreviewDates } from "@/lib/staff-session-rules";
+// 휴무 판정은 기사님 운행표·학부모 셔틀과 같은 함수(연간일정 수업일 기준) — 화면마다 휴무가 어긋나지 않게
+import { loadRegularRunPlan } from "@/lib/shuttle/regularRunDay";
+import { regularRunHoliday } from "@/lib/shuttle/regularRunDayRules";
 
 export const dynamic = "force-dynamic";
 
@@ -17,8 +20,24 @@ export default async function StaffHomePage({ searchParams }: { searchParams: Pr
   const todayKey = getKoreaDateKey();
   const dateKey = resolveStaffViewDate((await searchParams).date, todayKey);
 
-  const [classes, access] = await Promise.all([getTodayStaffClasses(dateKey), getStaffClassAccessContext()]);
+  const [classes, access, plan] = await Promise.all([
+    getTodayStaffClasses(dateKey),
+    getStaffClassAccessContext(),
+    // 연간일정을 못 읽거나 3초 안에 안 오면 null — 휴무 표시 없이 그대로 보인다(부가 정보가 첫 화면을 죽이거나 붙잡으면 안 된다)
+    Promise.race([
+      loadRegularRunPlan().catch(() => null),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
+    ]),
+  ]);
+  // 날짜 칸(오늘~14일 뒤) 중 휴무인 날 → 사유. 모르는 날(일정 확정 전)은 표시하지 않는다.
+  const holidays: Record<string, string> = {};
+  if (plan) {
+    for (const ymd of staffPreviewDates(todayKey)) {
+      const holiday = regularRunHoliday(ymd, plan.monthlyDates, plan.events);
+      if (holiday) holidays[ymd] = holiday.title;
+    }
+  }
   // key=오늘:보는 날짜 — 자정을 넘겨 «내일» 화면이 «오늘» 화면이 될 때도 새로 만든다. 날짜가 바뀌어 새로 불러오면(b2·날짜 이동) 화면 상태(수업 목록)도 새 날짜 것으로 처음부터 다시 만든다.
   // showFees: 청구 확인·미납 표시는 원장·부원장만(f3 보완 — 서버도 선생님에게는 금액을 주지 않는다).
-  return <StaffHomeClient key={`${todayKey}:${dateKey}`} dateKey={dateKey} todayKey={todayKey} classes={classes} coachLinkMissing={needsCoachLink(access)} showFees={canSeeStaffFees(access.staff.appUserRole)} />;
+  return <StaffHomeClient key={`${todayKey}:${dateKey}`} dateKey={dateKey} todayKey={todayKey} holidays={holidays} classes={classes} coachLinkMissing={needsCoachLink(access)} showFees={canSeeStaffFees(access.staff.appUserRole)} />;
 }

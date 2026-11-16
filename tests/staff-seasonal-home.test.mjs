@@ -23,5 +23,5 @@ test("방학특강 학생 정보 패널은 회차 식별자를 함께 보낸다"
   const panels = readFileSync("src/components/staff/LessonWorkspacePanels.tsx", "utf8");
   assert.match(panels, /useClassPeople\(\{ classId: lesson\.classId, sessionId: lesson\.sessionId, sessionDateId: lesson\.sessionDateId,/);
   const info = readFileSync("src/components/staff/RosterPersonInfo.tsx", "utf8");
-  assert.match(info, /loadStaffClassPeople\(\{ classId, sessionId, sessionDateId \}\)/);
+  assert.match(info, /loadStaffClassPeople\(\{ classId, sessionId, sessionDateId(?:, date)? \}\)/);
 });

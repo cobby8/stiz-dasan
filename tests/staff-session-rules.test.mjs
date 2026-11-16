@@ -203,3 +203,47 @@ test("날짜 이동: 화면·서버가 같은 규칙을 쓴다 — 다른 날짜
   const start = actions.slice(actions.indexOf("export async function startClassSession"));
   assert.match(start, /code: "STALE_DATE", message: STALE_DATE_MESSAGE/);
 });
+
+// ── 날짜 이동 후속(2026-11-16 원장 지시) — 명단 날짜 기준 · 휴무 표시 · 학원 일정 메뉴 ──
+
+test("다가올 날짜의 명단은 그 날짜 기준으로 읽는다 — 기록이 있으면 기록 날짜가 정본, 범위 밖 날짜는 버린다", () => {
+  const people = readFileSync("src/lib/staff-class-people.ts", "utf8");
+  assert.match(people, /const planDate = !sessionId && viewDate && canPlanOnDate\(viewDate\) \? viewDate : null;/);
+  assert.match(people, /substituteDate: planDate \?\? await regularSessionDateOrToday\(classId, sessionId\)/);
+  // 세 곳 모두 «기록 날짜 → 보는 날짜 → 오늘» 순서
+  assert.match(people, /WHERE se\.id=\$2\), \$3::date, \(NOW\(\) AT TIME ZONE 'Asia\/Seoul'\)::date\)/);
+  assert.match(people, /prior\.date::date=COALESCE\(\$3::date, \(NOW\(\) AT TIME ZONE 'Asia\/Seoul'\)::date\)/);
+  assert.match(people, /se\.date = COALESCE\(\$3::date, \(CURRENT_TIMESTAMP AT TIME ZONE 'Asia\/Seoul'\)::date\)/);
+  assert.match(people, /sessionId \?\? null,\s*\/\/[^\n]*\n\s*planDate,\s*\);/);
+
+  const action = readFileSync("src/app/actions/staff-class-people.ts", "utf8");
+  assert.match(action, /getStaffClassPeople\(classId, sessionId, sessionDateId, date\)/);
+  const hook = readFileSync("src/components/staff/RosterPersonInfo.tsx", "utf8");
+  assert.match(hook, /loadStaffClassPeople\(\{ classId, sessionId, sessionDateId, date \}\)/);
+  const panel = readFileSync("src/components/staff/LessonWorkspacePanels.tsx", "utf8");
+  assert.match(panel, /sessionDateId: lesson\.sessionDateId, date: rosterDate, enabled: rosterWanted/);
+  assert.match(readFileSync("src/app/staff/StaffHomeClient.tsx", "utf8"), /rosterDate: preview \? dateKey : undefined,/);
+});
+
+test("휴무 표시는 기사님 운행표와 같은 판정 함수를 쓰고, 연간일정을 못 읽어도 화면은 열린다", () => {
+  const page = readFileSync("src/app/staff/page.tsx", "utf8");
+  assert.match(page, /Promise\.race\(\[\s*loadRegularRunPlan\(\)\.catch\(\(\) => null\),\s*new Promise<null>\(\(resolve\) => setTimeout\(\(\) => resolve\(null\), 3000\)\),/);
+  assert.match(page, /regularRunHoliday\(ymd, plan\.monthlyDates, plan\.events\)/);
+  assert.match(page, /holidays=\{holidays\}/);
+  const home = readFileSync("src/app/staff/StaffHomeClient.tsx", "utf8");
+  // 색만이 아니라 글자로 — 날짜 칸의 «휴무», 화면의 안내 한 줄. 수업 줄은 막지 않는다
+  assert.match(home, /\{holiday && <span[^>]*>휴무<\/span>\}/);
+  assert.match(home, /\{holidays\[dateKey\] && \(\s*<p role="note"/);
+});
+
+test("학원 일정: 선생님·기사님 공통 메뉴에서 앱 안 화면(/staff/annual)으로 — 학부모 연간 일정과 같은 원본·같은 함수", () => {
+  const menu = readFileSync("src/app/staff/StaffProfileMenu.tsx", "utf8");
+  assert.match(menu, /<Link href="\/staff\/annual" onClick=\{\(event\) => requestPublicNavigation\(event, "\/staff\/annual"\)\}[^>]*>\s*학원 일정\s*<\/Link>/);
+  const annual = readFileSync("src/app/staff/annual/page.tsx", "utf8");
+  assert.match(annual, /loadAnnualPlanEvents\(\)\.catch\(\(\) => \[\]\)/);
+  assert.match(annual, /buildParentYear\(events, year\)/);
+  // 앱 범위(/staff) 밖 주소로 나가는 링크가 없다
+  for (const href of annual.match(/href=\{?[`"][^`"]+/g) ?? []) assert.match(href, /\/staff\/annual|#month-/, href);
+  // 선생님 전용 판정(기사님 튕기기)을 넣지 않는다 — 기사님도 본다
+  assert.doesNotMatch(annual, /DRIVER_ENTRY_PATH|roles\.teacher/);
+});

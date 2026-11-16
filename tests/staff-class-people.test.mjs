@@ -41,7 +41,7 @@ test("UI용 Server Action은 입력을 제한하고 조회 결과만 직렬화�
   assert.match(action, /^"use server";/);
   assert.match(action, /export async function loadStaffClassPeople/);
   // 방학특강 회차(sessionDateId)를 함께 넘기도록 인자가 늘었다.
-  assert.match(action, /getStaffClassPeople\(classId, sessionId, sessionDateId\)/);
+  assert.match(action, /getStaffClassPeople\(classId, sessionId, sessionDateId, date\)/);
   assert.match(action, /Promise<LoadStaffClassPeopleResult>/);
   assert.doesNotMatch(action, /prisma/);
 });

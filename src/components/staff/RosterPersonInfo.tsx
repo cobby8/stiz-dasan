@@ -30,11 +30,13 @@ export function useClassPeople(input: {
   classId: string;
   sessionId?: string | null;
   sessionDateId?: string | null;
+  /** 다가올 날짜의 수업을 미리 볼 때 그 날짜 — 그 날짜 기준 명단을 읽는다(없으면 오늘) */
+  date?: string | null;
   enabled: boolean;
   /** 참이면 조회를 «시작»하지 않고 미룬다(출결 저장 중) — 서버 기능은 순서대로 처리돼 먼저 부르면 출결 저장이 그 뒤에 줄을 선다. 이미 시작한 조회는 끊지 않는다 */
   hold?: boolean;
 }): ClassPeopleState {
-  const { classId, sessionId, sessionDateId, enabled, hold = false } = input;
+  const { classId, sessionId, sessionDateId, date = null, enabled, hold = false } = input;
   const [people, setPeople] = useState<StaffClassPerson[]>([]);
   const [photoVersions, setPhotoVersions] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
@@ -56,7 +58,7 @@ export function useClassPeople(input: {
     startedRef.current = turn;
     const stale = () => !mountedRef.current || startedRef.current !== turn;
     queueMicrotask(() => { if (!stale()) { setLoading(true); setError(""); } });
-    void loadStaffClassPeople({ classId, sessionId, sessionDateId })
+    void loadStaffClassPeople({ classId, sessionId, sessionDateId, date })
       .then((result) => {
         if (!result.ok) throw new Error(result.message);
         if (!stale()) { setPeople(result.people); setLoaded(true); }
@@ -67,7 +69,7 @@ export function useClassPeople(input: {
     void loadStaffRosterPhotoVersions({ classId, sessionId, sessionDateId })
       .then((result) => { if (!stale() && result.ok) setPhotoVersions(result.versions); })
       .catch(() => undefined);
-  }, [attempt, classId, enabled, hold, sessionDateId, sessionId]);
+  }, [attempt, classId, date, enabled, hold, sessionDateId, sessionId]);
 
   return { people, photoVersions, loading, error, loaded, reload: () => setAttempt((value) => value + 1) };
 }

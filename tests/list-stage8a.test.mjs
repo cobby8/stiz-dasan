@@ -80,7 +80,7 @@ test("선생님 홈: 남은·완료 수업은 한 줄 행 + 그 자리 펼침, �
   assert.match(homeClient, /function ClassRow[\s\S]*?if \(event\.target !== event\.currentTarget\) return;/);
   assert.match(homeClient, /onClick=\{\(event\) => \{ event\.stopPropagation\(\); onStart\(lesson\); \}\}/);
   // 본문의 동작은 기존 함수로: 시작 = openPrimaryAction, 수업 내용 = savePlanned, 청구 = setBillingTarget(원장·부원장만), 공지 = setNoticeTarget(대타 반 제외)
-  assert.match(homeClient, /onStart: \(\) => openPrimaryAction\(lesson\),\s*previewNotice: preview \? [^\n]+\n\s*savePlanned: \(text\) => savePlanned\(lesson, text\),\s*onOpenNotice: openNotice,\s*onOpenBilling: openBilling,/);
+  assert.match(homeClient, /onStart: \(\) => openPrimaryAction\(lesson\),\s*rosterDate: preview \? dateKey : undefined,\s*previewNotice: preview \? [^\n]+\n\s*savePlanned: \(text\) => savePlanned\(lesson, text\),\s*onOpenNotice: openNotice,\s*onOpenBilling: openBilling,/);
   assert.match(homeClient, /const openNotice = lesson\.substitute \? undefined : \(\) => \{ setError\(null\); setNoticeTarget\(lesson\); \};/);
   assert.match(homeClient, /const openBilling = showFees \? /);
   // 본문의 시작 버튼도 진행 중 수업이 있으면 잠근다(행의 시작 버튼 잠금은 위 startLocked 그대로)
