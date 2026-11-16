@@ -6,6 +6,7 @@ import CTABanner from "@/components/landing/CTABanner";
 import HomeHeroSlider from "@/components/landing/HomeHeroSlider";
 import HomeStatsBand, { type HomeStats } from "@/components/landing/HomeStatsBand";
 import HomeProgramTiles, { type HomeProgramTile } from "@/components/landing/HomeProgramTiles";
+import HomeVideo from "@/components/landing/HomeVideo";
 import SectionLayout from "@/components/ui/SectionLayout";
 import { isDurableGalleryMediaUrl, parseGalleryMediaJSON } from "@/lib/galleryMedia";
 import { formatKstDate, toKstYmd } from "@/lib/datetime/kst";
@@ -86,7 +87,8 @@ export default function LandingPageClient({ initialSettings, testimonials, galle
         const videoId = url.match(/(?:v=|youtu\.be\/|embed\/)([A-Za-z0-9_-]{11})/)?.[1];
         if (!videoId) return null;
         return <SectionLayout compactHeading title="스티즈 농구교실 영상" bgColor="white" className="public-content-section"><div className="public-home-video">
-          <iframe src={`https://www.youtube.com/embed/${videoId}?rel=0`} title="STIZ 농구교실 소개" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen loading="lazy" />
+          {/* 처음엔 미리보기 사진만 — 누르면 그 자리에서 재생(유튜브 재생기를 미리 내려받지 않는다) */}
+          <HomeVideo videoId={videoId} />
         </div></SectionLayout>;
       })()}
       {displayImages.length > 0 && <SectionLayout compactHeading title="학원 활동 사진" bgColor="section" className="public-content-section">
