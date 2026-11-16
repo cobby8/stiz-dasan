@@ -62,10 +62,6 @@ export default function NoticeSocialModal({
                 const result = await publishNoticeSocialCampaign(socialPreview.noticeId, {
                     feedCaption: socialPreview.feedCaption,
                     storyText: socialPreview.storyText,
-                    adPrimaryText: socialPreview.adPrimaryText,
-                    adHeadline: socialPreview.adHeadline,
-                    adDescription: socialPreview.adDescription,
-                    landingUrl: socialPreview.landingUrl,
                     publishInstagramFeed: socialPreview.mediaItems.length > 0 && publishFeed,
                     publishInstagramStory: socialPreview.mediaItems.length > 0 && publishStory,
                 });
