@@ -9,6 +9,7 @@
  * - PgBouncer 호환: $queryRawUnsafe 사용
  */
 
+import { isPublicPriceHidden, PUBLIC_PRICE_HIDDEN_TEXT } from "@/lib/programs/publicPrice";
 import { NextRequest, NextResponse } from "next/server";
 import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/prisma";
@@ -658,14 +659,17 @@ function buildSystemPrompt(
 
       // 수강료 정보를 주 횟수별로 정리
       const priceLines: string[] = [];
-      if (p.priceWeek1 != null) priceLines.push(`  - 주1회: ${p.priceWeek1.toLocaleString()}원`);
-      if (p.priceWeek2 != null) priceLines.push(`  - 주2회: ${p.priceWeek2.toLocaleString()}원`);
-      if (p.priceWeek3 != null) priceLines.push(`  - 주3회: ${p.priceWeek3.toLocaleString()}원`);
+      // 대회준비반 등은 금액을 알려 주지 않고 상담으로 안내(원장 2026-11-16 «수강료 숨기기»)
+      const priceHidden = isPublicPriceHidden(p.name);
+      if (priceHidden) priceLines.push(`  - 수강료: ${PUBLIC_PRICE_HIDDEN_TEXT}(금액을 말하지 말 것)`);
+      else if (p.priceWeek1 != null) priceLines.push(`  - 주1회: ${p.priceWeek1.toLocaleString()}원`);
+      if (!priceHidden && p.priceWeek2 != null) priceLines.push(`  - 주2회: ${p.priceWeek2.toLocaleString()}원`);
+      if (!priceHidden && p.priceWeek3 != null) priceLines.push(`  - 주3회: ${p.priceWeek3.toLocaleString()}원`);
       // 주 횟수별 가격이 없으면 기본 price 사용
-      if (priceLines.length === 0 && p.price > 0) {
+      if (!priceHidden && priceLines.length === 0 && p.price > 0) {
         priceLines.push(`  - 월 수강료: ${p.price.toLocaleString()}원`);
       }
-      if (p.priceDaily != null) priceLines.push(`  - 1일 체험: ${p.priceDaily.toLocaleString()}원`);
+      if (!priceHidden && p.priceDaily != null) priceLines.push(`  - 1일 체험: ${p.priceDaily.toLocaleString()}원`);
 
       // 셔틀비: programs 페이지와 동일한 로직 적용
       // - shuttleFeeOverride가 0이면 셔틀 없음

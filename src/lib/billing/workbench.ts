@@ -19,6 +19,8 @@ export type WorkbenchRow = WorkbenchAmounts & {
   holdPeriodId?: string;
   /** 부상 결석 안내에서 «달 가운데만 빠진 날» — 이 날들은 수업일 목록(scheduledDates)에서 빠져 있다(다닌 날만). 저장할 때 근거에 함께 적는다 */
   guideMissedDates?: string[];
+  /** 학생별 고정 월 수강료가 적용된 행의 짧은 근거(예: «고정 15만») — 그런 행에만 있다(2026-11-16) */
+  fixedTuitionLabel?: string;
 };
 export type WorkbenchAbsence = {
   id: string; studentId: string; studentName: string; classId: string; date: string;

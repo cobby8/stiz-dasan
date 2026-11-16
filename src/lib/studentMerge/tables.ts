@@ -223,6 +223,8 @@ export const STUDENT_REF_TABLES: StudentRefTable[] = [
   { table: "RegularShuttleNoticeBatch", column: "studentId", mayBeMissing: true },
   // 관리자 «기간 결석»(2026-11-09). 충돌 키 없음 — 기간 행을 대표 학생으로 그대로 옮긴다(날짜별 결석 행은 RegularAbsence 가 옮긴다).
   { table: "RegularAbsencePeriod", column: "studentId", mayBeMissing: true },
+  // 학생별 고정 월 수강료(2026-11-16). 충돌 키 없음 — 대표 학생으로 그대로 옮긴다(겹치면 청구 준비가 가장 나중에 만든 것을 쓴다).
+  { table: "StudentFixedTuition", column: "studentId", mayBeMissing: true },
   // 월별 수강 대장(+이력). 반별 금액 근거 스냅샷이고, CHECK 제약이
   // payload->>'studentId' = "studentId" 를 강제해 컬럼만 바꾸면 병합 전체가 실패한다.
   // 금액 스냅샷 JSON을 고쳐 쓰지 않고, 동결월 Payment처럼 흡수 쪽에 그대로 남긴다.

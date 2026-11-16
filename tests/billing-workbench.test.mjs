@@ -88,6 +88,8 @@ function database({credit=0,secondClass=false}={}){
   if(sql.includes('FROM "Student"'))return state.studentHidden?[]:Array.isArray(v[0])?v[0].map(id=>({id})):[{id:"student-a"}];
   // 셔틀 명단(그 달 승차·하차 이용자). 기본은 비어 있음 → 셔틀비 제안 없음.
   if(sql.includes('FROM "RegularShuttleStop"'))return structuredClone((state.shuttleStops??[]).filter(r=>r.serviceMonth===v[0]));
+  // 학생별 고정 월 수강료(2026-11-16) — SQL 이 그 달 기간 조건을 거는지 확인하고, 서비스 쪽 거름도 시험하려고 전부 돌려준다
+  if(sql.includes('FROM "StudentFixedTuition"')){assert.match(sql,/"startMonth" <= \$1 AND \("endMonth" IS NULL OR "endMonth" >= \$1\)/);return structuredClone(state.fixedTuitions??[]);}
   throw new Error(`unexpected read ${sql}`);
  },async $executeRawUnsafe(sql,...v){
   if(sql.includes("pg_advisory"))return 1;
@@ -433,6 +435,66 @@ test("주2회 학생은 주2회 요금을 반 수로 나누고, 형제는 수강
  assert.ok(row("kid-1:mon").basis.some(b=>/주2회 요금 160,000원/.test(b)));
  assert.ok(view.notices.some(n=>/연결되지 않은 1명/.test(n)));
 });
+// ── 학생별 고정 월 수강료(2026-11-16 원장 결정 — 예: 서우빈 «매달 15만 원 고정») ──
+const fixedRow=(studentId,amount,startMonth,endMonth=null,memo=null)=>({id:`fx-${studentId}-${startMonth}`,studentId,amount,startMonth,endMonth,memo,updatedAt:"2026-11-16T00:00:00Z"});
+test("고정 수강료: 반별 합산 대신 첫 반에 고정 금액·다음 반 0원, 형제할인 없음, 셔틀비는 그대로, 근거 «고정 15만»",async()=>{
+ const db=pricingDatabase();db.state.fixedTuitions=[fixedRow("kid-1",150000,"2026-11",null,"원장 합의")];
+ const view=await readWorkbench(db.tx,"2026-11",true),row=id=>view.rows.find(r=>r.id===id);
+ assert.equal(row("kid-1:mon").baseAmount,150000);assert.equal(row("kid-1:wed").baseAmount,0);
+ // 형제할인(10%)은 고정 금액에 붙지 않는다 — 동생(고정 없음)은 그대로 할인
+ assert.equal(row("kid-1:mon").discountAmount,0);assert.equal(row("kid-1:wed").discountAmount,0);assert.equal(row("kid-2:tue").discountAmount,10000);
+ // 셔틀비는 따로 그대로(주2회 15,000) — 첫 반 한 행에만
+ assert.equal(row("kid-1:mon").shuttleAmount,15000);assert.equal(row("kid-1:wed").shuttleAmount,0);
+ assert.equal(row("kid-1:mon").totalAmount+row("kid-1:wed").totalAmount,165000);
+ assert.equal(row("kid-1:mon").fixedTuitionLabel,"고정 15만");assert.equal(row("kid-1:wed").fixedTuitionLabel,"고정 15만");
+ assert.equal(row("kid-2:tue").fixedTuitionLabel,undefined);
+ assert.ok(row("kid-1:mon").basis.includes("고정 수강료 월 150,000원(원장 합의) · 고정 요금 — 형제할인·3회 달 차감 없음"));
+});
+test("고정 수강료: 기간 밖 달(시작 전·끝 뒤)은 반별 요금 그대로, 지문도 예전과 같다",async()=>{
+ const plain=await readWorkbench(pricingDatabase().tx,"2026-11",true);
+ for(const range of [["2026-12",null],["2026-01","2026-10"]]){
+  const db=pricingDatabase();db.state.fixedTuitions=[fixedRow("kid-1",150000,...range)];
+  const view=await readWorkbench(db.tx,"2026-11",true),row=view.rows.find(r=>r.id==="kid-1:mon");
+  assert.equal(row.baseAmount,80000);assert.equal(row.discountAmount,8000);assert.equal(row.fixedTuitionLabel,undefined);
+ }
+ // 고정 수강료 표가 비어 있으면 원본 지문이 예전과 같다(저장해 둔 초안이 낡은 것으로 바뀌지 않게)
+ const empty=pricingDatabase();empty.state.fixedTuitions=[];
+ assert.equal((await readWorkbench(empty.tx,"2026-11",true)).sourceVersion,plain.sourceVersion);
+ const withFixed=pricingDatabase();withFixed.state.fixedTuitions=[fixedRow("kid-1",150000,"2026-11")];
+ assert.notEqual((await readWorkbench(withFixed.tx,"2026-11",true)).sourceVersion,plain.sourceVersion);
+});
+test("고정 수강료: 3회 달에도 차감 없음, 확정 장부 행·휴원 행에는 쓰지 않음",async()=>{
+ const db=pricingDatabase();db.state.events=[{title:"SHORT_MONTH",date:"2026-11-01",endDate:null}];db.state.fixedTuitions=[fixedRow("kid-1",150000,"2026-11")];
+ const view=await readWorkbench(db.tx,"2026-11",true),row=view.rows.find(r=>r.id==="kid-1:mon");
+ if(row.monthDates.length<4){assert.equal(row.prorationAmount,0);assert.ok(!row.reviewReasons.some(r=>r.includes("할인 후 금액 기준")));}
+ const paused=pricingDatabase();paused.state.enrollments.forEach(e=>{if(e.studentId==="kid-1")e.status="PAUSED";});paused.state.fixedTuitions=[fixedRow("kid-1",150000,"2026-11")];
+ const pv=await readWorkbench(paused.tx,"2026-11",true);
+ assert.ok(pv.rows.filter(r=>r.studentId==="kid-1").every(r=>r.baseAmount===0&&r.fixedTuitionLabel===undefined));
+});
+test("고정 수강료 + 일부 반에 확정 장부: 자동 적용 안 함 + 검토 사유(두 번 청구 방지)",async()=>{
+ const db=pricingDatabase();db.state.fixedTuitions=[fixedRow("kid-1",150000,"2026-11")];
+ db.state.registers.push({studentId:"kid-1",month:"2026-11",status:"CONFIRMED",version:1,payload:{studentId:"kid-1",month:"2026-11",classes:[{classId:"mon",status:"ACTIVE",periodStart:"2026-11-01",periodEnd:"2026-11-30",baseAmount:100000,discountAmount:0,carryAmount:0,prorationAmount:0,basis:"확정"}],shuttleAmount:0,shuttleBasis:"확인",reason:"확인"}});
+ const view=await readWorkbench(db.tx,"2026-11",true),row=id=>view.rows.find(r=>r.id===id);
+ assert.equal(row("kid-1:mon").baseAmount,100000); // 장부 금액 그대로
+ assert.notEqual(row("kid-1:wed").baseAmount,150000); // 고정 금액을 장부 없는 반에 얹지 않는다
+ assert.equal(row("kid-1:wed").fixedTuitionLabel,undefined);
+ for(const id of ["kid-1:mon","kid-1:wed"])assert.ok(row(id).reviewReasons.includes("고정 수강료 — 확정 장부가 있어 자동 적용 안 함, 확인 필요"),id);
+});
+test("고정 수강료: 첫 반에 이미 청구가 있으면 발행 가능한 다음 반에 고정 금액 + 확인 사유",async()=>{
+ const db=pricingDatabase();db.state.fixedTuitions=[fixedRow("kid-1",150000,"2026-11")];
+ db.state.payments.push({id:"pay-mon",studentId:"kid-1",classId:"mon",status:"PENDING",amount:80000,type:"MONTHLY",year:2026,month:11,updatedAt:"2026-11-01"});
+ const view=await readWorkbench(db.tx,"2026-11",true),row=id=>view.rows.find(r=>r.id===id);
+ assert.equal(row("kid-1:wed").baseAmount,150000);assert.equal(row("kid-1:mon").baseAmount,0);
+ assert.equal(row("kid-1:wed").status,"REVIEW");
+ assert.ok(row("kid-1:wed").reviewReasons.some(r=>r.startsWith("고정 수강료 — 다른 반에 이미 청구")));
+});
+test("고정 수강료: 발행 가능한 반이 하나도 없으면(모두 발행됨) 자동 적용 안 함 + 검토 사유",async()=>{
+ const db=pricingDatabase();db.state.fixedTuitions=[fixedRow("kid-1",150000,"2026-11")];
+ for(const c of ["mon","wed"])db.state.drafts.push({id:`kid-1:${c}`,month:"2026-11",studentId:"kid-1",classId:c,version:1,status:"ISSUED",payload:{baseAmount:80000,discountAmount:0,prorationAmount:0,carryAmount:0,shuttleAmount:0},reason:"발행",sourceVersion:"old",paymentId:`p-${c}`});
+ const view=await readWorkbench(db.tx,"2026-11",true),row=id=>view.rows.find(r=>r.id===id);
+ assert.equal(row("kid-1:mon").fixedTuitionLabel,undefined);
+ assert.ok(row("kid-1:mon").reviewReasons.includes("고정 수강료 — 발행할 수 있는 반이 없어 자동 적용 안 함, 확인 필요"));
+});
 test("휴원 형제는 세지 않고, 휴원 반은 주N회 횟수에서 뺀다",async()=>{
  const db=pricingDatabase();db.state.enrollments[1].status="PAUSED";db.state.enrollments[2].status="PAUSED";
  const view=await readWorkbench(db.tx,"2026-11",true),row=view.rows.find(r=>r.id==="kid-1:mon");
@@ -537,20 +599,30 @@ test("3회 달+대회준비반 묶음: 300,000원에서 차감하지 않고, 같
  assert.ok(!row("ace:a-sun8").reviewReasons.some(r=>/기간 조정/.test(r)),row("ace:a-sun8").reviewReasons.join(" / "));
  assert.ok(row("kid-2:tue").prorationAmount>0); // 일반 반은 3회 달 차감 그대로
 });
-test("대회준비반 수요일만: 150,000원 고정, 형제·3회 달이어도 할인·차감 없음",async()=>{
- const db=compSiblingDatabase([{...compProgram,classId:"b-wed7",dayOfWeek:"Wed",slotKey:"Wed-7"}]);
+// 원장 결정(2026-11-16): 평일 대회준비반(수7)은 다른 프로그램처럼 주N회 «한 달 합계» ÷ N — 주1회 150,000 · 주2회 260,000 · 주3회 330,000.
+// (2026-11-09 «평일만 150,000원 고정»을 대체. 고정 요금이 아니므로 형제할인·3회 달 차감도 일반 반과 같게 붙는다.)
+const comp1116={...compProgram,price:150000,priceWeek1:150000,priceWeek2:260000,priceWeek3:330000};
+test("대회준비반 수요일만(주1회): 150,000원 — 형제여도·3회 달이어도 할인·차감 없음(원장 결정 A)",async()=>{
+ const db=compSiblingDatabase([{...comp1116,classId:"b-wed7",dayOfWeek:"Wed",slotKey:"Wed-7"}]);
  db.state.events.push({title:"SHORT_MONTH",date:"2026-11-01",endDate:null});
- const view=await readWorkbench(db.tx,"2026-11",true),r=view.rows.find(x=>x.id==="ace:b-wed7");
+ const r=(await readWorkbench(db.tx,"2026-11",true)).rows.find(x=>x.id==="ace:b-wed7");
  assert.deepEqual([r.baseAmount,r.discountAmount,r.prorationAmount,r.totalAmount],[150000,0,0,150000]);
- assert.ok(r.basis.some(b=>/평일\(수요일\)만 월 150,000원 고정/.test(b)));
+ assert.ok(r.basis.some(b=>/대회준비반 — 형제할인·3회 달 차감 없음/.test(b)),r.basis.join(" / "));
+ assert.ok(!r.reviewReasons.some(x=>/기간 조정/.test(x)),r.reviewReasons.join(" / "));
 });
-test("대회준비반 수요일+일반 반: 대회준비반 150,000 고정(할인 없음), 일반 반은 일반 요금+형제할인+확인 경고",async()=>{
- const db=compSiblingDatabase([{...compProgram,classId:"b-wed7",dayOfWeek:"Wed",slotKey:"Wed-7"},{...hobbyProgram,classId:"c-mon",dayOfWeek:"Mon"}]);
+test("대회준비반 수요일+일반 반 주2회: 수7 130,000(할인 없음) + 일반 반 80,000(형제할인), 경고 없음",async()=>{
+ const db=compSiblingDatabase([{...comp1116,classId:"b-wed7",dayOfWeek:"Wed",slotKey:"Wed-7"},{...hobbyProgram,classId:"c-mon",dayOfWeek:"Mon"}]);
  const view=await readWorkbench(db.tx,"2026-11",true),row=id=>view.rows.find(r=>r.id===id);
- assert.deepEqual([row("ace:b-wed7").baseAmount,row("ace:b-wed7").discountAmount],[150000,0]);
- // 일반 반은 대회준비반을 빼고 주1회 → 100,000, 형제할인 10%
- assert.deepEqual([row("ace:c-mon").baseAmount,row("ace:c-mon").discountAmount],[100000,10000]);
- assert.ok(row("ace:c-mon").reviewReasons.some(x=>/평일 대회준비반\(150,000원 고정\)과 일반 반 1개/.test(x)));
+ assert.equal(row("ace:b-wed7").baseAmount,130000);assert.equal(row("ace:c-mon").baseAmount,80000);
+ assert.equal(row("ace:b-wed7").discountAmount,0);assert.equal(row("ace:c-mon").discountAmount,8000);
+ assert.ok(!row("ace:c-mon").reviewReasons.some(x=>/평일 대회준비반/.test(x)));
+});
+test("고정 수강료가 있으면 평일 대회준비반 주N회 계산보다 우선(서우빈 수7+토7 → 15만)",async()=>{
+ const db=compSiblingDatabase([{...comp1116,classId:"b-wed7",dayOfWeek:"Wed",slotKey:"Wed-7"},{...hobbyProgram,classId:"e-sat7",dayOfWeek:"Sat"}]);
+ db.state.fixedTuitions=[fixedRow("ace",150000,"2026-11")];
+ const view=await readWorkbench(db.tx,"2026-11",true),row=id=>view.rows.find(r=>r.id===id);
+ assert.deepEqual([row("ace:b-wed7").baseAmount,row("ace:e-sat7").baseAmount],[150000,0]);
+ assert.deepEqual([row("ace:b-wed7").discountAmount,row("ace:e-sat7").discountAmount],[0,0]);
 });
 
 // ── 신청함 [이월 승인](2026-11-14 원장 결정 a3) — 기존 CARRY 규칙을 «그대로» 부르는 연결부를 실제로 돌려 본다 ──
@@ -1091,7 +1163,7 @@ test("정산 안내: 3회 달은 3회 달 차감 뒤 금액을 횟수로 나눈�
  const plainVersion=(await readWorkbench(base.tx,"2026-11",true)).sourceVersion;
  assert.equal(plainVersion,(await readWorkbench(database().tx,"2026-11",true)).sourceVersion,"안내 0건이면 지문에 키가 없다");
  assert.notEqual((await readWorkbench(guideDatabase(["2026-11-07"]).tx,"2026-11",true)).sourceVersion,plainVersion);
- assert.match(serviceSource,/\.\.\.\(illnessGuides\.length \? \{ illnessGuides \} : \{\}\) \}\);/);
+ assert.match(serviceSource,/\.\.\.\(illnessGuides\.length \? \{ illnessGuides \} : \{\}\),/);
  // 기간 정산 칸이 없는 DB 는 안내를 읽지 않는다(없는 칸을 읽으면 조회 전체가 실패한다)
  const legacy=guideDatabase(["2026-11-07"]);legacy.state.periodCarry=false;
  assert.equal((await readWorkbench(legacy.tx,"2026-11",true)).rows[0].prorationAmount,0);
