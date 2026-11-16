@@ -4,14 +4,14 @@
 // 그래서 화면 안 부품 src/components/ui/feedback.tsx 의 showNotice / askConfirm / showCopyText 로 모두 바꿨다.
 // 새 코드가 다시 window.alert(...)·confirm(...)·prompt(...) 를 부르면 이 테스트가 깨진다.
 //
-// 예외 폴더: 대관(rental) 화면 두 곳은 다른 작업이 따로 고친다 — 그 작업이 끝나면 이 목록에서 지운다(늘리지 말 것).
+// 예외 폴더: 없음(2026-11-16 대관 화면까지 정리 끝 — 늘리지 말 것).
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
 const ROOT = "src";
-const EXCLUDED_DIRS = ["src/app/rental", "src/app/mypage/rental"];
+const EXCLUDED_DIRS = [];
 
 function walk(dir, out = []) {
   for (const name of readdirSync(dir)) {

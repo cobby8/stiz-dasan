@@ -9,7 +9,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 // 다른 작업이 고치는 중이라 이번 정리에서 뺀 폴더(지금은 위반 0건이지만 검사 범위에서 제외 — 그 작업이 끝나면 지운다)
-const EXCLUDED = ["src/app/rental/", "src/app/mypage/rental/"];
+const EXCLUDED = []; // 2026-11-16 대관 화면 정리 끝 — 예외 없음(늘리지 말 것)
 
 function walk(dir, out = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -69,5 +69,5 @@ test("가드가 실제로 잡는다(거짓 통과 방지)", () => {
 });
 
 test("제외 폴더는 대관 두 곳뿐이다(늘리지 않는다)", () => {
-  assert.deepEqual(EXCLUDED, ["src/app/rental/", "src/app/mypage/rental/"]);
+  assert.deepEqual(EXCLUDED, []);
 });
