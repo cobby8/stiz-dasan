@@ -730,6 +730,45 @@ model UniformOrderItem {
   @@index([studentName])
 }
 
+// 본사 쇼핑몰(stiz.kr·카페24) 유니폼 주문 사본(2026-11-16) — cron uniform-shop-sync 가 upsert 만 한다(지우지 않음).
+// 이름·주소·금액은 저장하지 않는다. id = 카페24 주문번호. 학부모 화면은 전화번호 + 품목 학생 이름으로 고른다.
+model UniformShopOrder {
+  id                  String                 @id
+  orderDate           DateTime               @db.Date
+  paid                Boolean                @default(false)
+  canceled            Boolean                @default(false)
+  buyerPhoneDigits    String?
+  receiverPhoneDigits String?
+  syncedAt            DateTime               @default(now()) @db.Timestamptz(6)
+  createdAt           DateTime               @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime               @default(now()) @updatedAt @db.Timestamptz(6)
+  items               UniformShopOrderItem[]
+
+  @@index([buyerPhoneDigits])
+  @@index([receiverPhoneDigits])
+  @@index([orderDate])
+}
+
+// 쇼핑몰 주문 품목 — id = `${카페24 주문번호}:${품목 코드}`. status: UNPAID|PAID|PREPARING|SHIPPING|DELIVERED|CANCELED|RETURNED|UNKNOWN
+model UniformShopOrderItem {
+  id          String           @id
+  shopOrderId String
+  productNo   Int
+  design      String?
+  studentName String?
+  printName   String?
+  backNumber  String?
+  topSize     String?
+  bottomSize  String?
+  quantity    Int              @default(1)
+  status      String           @default("UNKNOWN")
+  trackingNo  String?
+  updatedAt   DateTime         @default(now()) @updatedAt @db.Timestamptz(6)
+  order       UniformShopOrder @relation(fields: [shopOrderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([shopOrderId])
+}
+
 // 3년 이상 재원생 유니폼 무료 증정 링크 — 학생별 전용 토큰 1개 = 무료 유니폼 1벌
 // 상태: ISSUED(발급) → USED(신청 완료) | REVOKED(취소). 만료는 expiresAt 으로 판정.
 // 참고: DB 에는 «학생·사유별로 취소되지 않은 링크는 1개» 부분 유니크 인덱스
