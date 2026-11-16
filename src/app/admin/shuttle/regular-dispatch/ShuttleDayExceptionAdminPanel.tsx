@@ -21,18 +21,24 @@ import {
   submitShuttleExceptionByAdminAction,
 } from "@/app/actions/shuttle-exception-admin";
 
-// 관리자 «셔틀 당일 변경» — 들어온 변경 목록(학부모 입력분 + 학원 입력분) + «당일 변경 입력»(2026-11-15 원장 요청).
+// 관리자 «셔틀 당일 변경» — «당일 변경» 버튼 + 창(들어온 변경 목록: 학부모 입력분 + 학원 입력분, «당일 변경 입력»)(2026-11-15 원장 요청).
 // 학부모는 수업 시작 1시간 전이 지나면 사이트에서 못 바꾼다. 그 뒤 전화로 온 요청을 원장·부원장이 여기서 대신 넣는다.
 // 저장·취소는 서버 액션이 requireAdmin 으로 다시 확인한다 — 이 화면은 입력만 받는다.
 // 화면 규칙: 글자만(아이콘 없음) · 한 줄 행 · 입력은 버튼 하나 + 모달 · 터치 44px · 색은 학원 테마 변수.
-
-/** 처음에 펼쳐 보이는 줄 수 — 나머지는 «더 보기»로(운행표를 아래로 밀지 않게) */
-const ROWS_SHOWN = 5;
+//
+// 2026-11-17 원장 지시 「칸을 너무 많이 차지한다 — 기사 요청 옆에 버튼 하나로」:
+//   이 부품은 이제 «당일 변경» 버튼 하나 + 누르면 뜨는 목록 창을 스스로 그린다.
+//   운행표 머리줄(RegularRunEditor 의 headerExtra 자리 — «기사 요청» 버튼 바로 뒤)에 놓인다.
+//   창은 한 번에 하나만 띄운다: 입력 창·취소 확인 창이 떠 있는 동안에는 목록 창을 그리지 않고(listOpen 은 그대로),
+//   그 창이 닫히면 목록 창이 다시 뜬다. AdminModal 은 창마다 Esc·스크롤 잠금·포커스를 따로 관리해서, 겹쳐 띄우면
+//   Esc 한 번에 둘 다 닫히거나 «브라우저 뒤로» 때 스크롤 잠금이 남을 수 있다 — 겹치지 않으면 그런 일이 없다.
+//   목록 창이 다시 뜰 때 AdminModal 이 첫 버튼에 포커스를 잡아 주므로, 줄이 사라져도 포커스가 창 밖으로 빠지지 않는다.
 
 export default function ShuttleDayExceptionAdminPanel({ initial }: { initial: AdminShuttleExceptionBoard }) {
   const [board, setBoard] = useState(initial);
   const [pending, startTransition] = useTransition();
-  const [showAll, setShowAll] = useState(false);
+  // 목록 창(버튼을 누르면 열린다)
+  const [listOpen, setListOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   // 입력 창
@@ -50,14 +56,25 @@ export default function ShuttleDayExceptionAdminPanel({ initial }: { initial: Ad
   const [cancelTarget, setCancelTarget] = useState<AdminShuttleExceptionRow | null>(null);
   const [cancelError, setCancelError] = useState("");
 
-  const rows = showAll ? board.rows : board.rows.slice(0, ROWS_SHOWN);
-  const hidden = board.rows.length - rows.length;
+  // 버튼 배지와 창 안 건수가 같은 값을 본다 — 저장·취소 뒤 reload 하면 둘이 함께 바뀐다
+  const count = board.rows.length;
 
   // 저장·취소 뒤 목록을 서버에서 다시 읽는다(다른 관리자·학부모가 그 사이 넣은 것도 함께)
   async function reload() {
     const result = await loadShuttleExceptionBoardAction();
     if (result.ok) setBoard(result.board);
   }
+
+  function openList() {
+    setMessage(""); setError("");
+    setListOpen(true);
+  }
+
+  function closeList() {
+    setListOpen(false);
+  }
+  // 창은 한 번에 하나만 — 입력 창·취소 확인 창이 떠 있는 동안 목록 창은 잠시 그리지 않는다(닫히면 다시 뜬다)
+  const showList = listOpen && !formOpen && !cancelTarget;
 
   function openForm() {
     setQuery(""); setFound(null); setStudent(null);
@@ -113,30 +130,41 @@ export default function ShuttleDayExceptionAdminPanel({ initial }: { initial: Ad
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-4 pt-4">
-      <section aria-labelledby="shuttle-day-exception-title" className="overflow-hidden rounded-2xl border border-[var(--color-academy-line)] bg-white">
-        {/* 머리줄: 제목 · 건수 · «당일 변경 입력» 버튼 하나 */}
-        <div className="flex flex-wrap items-center gap-2 px-3 py-2">
-          <h2 id="shuttle-day-exception-title" className="academy-section-title">셔틀 당일 변경</h2>
-          <span className="text-sm tabular-nums text-[var(--color-academy-muted)]">{board.rows.length}건</span>
-          <span className="min-w-0 flex-1 break-keep text-xs text-[var(--color-academy-muted)]">
+    <>
+      {/* 머리줄 버튼 — «기사 요청»과 같은 모양. 배지는 위험색(빨강)이 아니라 안내색: «처리할 일»이 아니라 «들어온 알림»이다.
+          색만으로 뜻을 전하지 않게 aria-label 에 건수를 글자로 넣는다. 0건이면 배지 없음. */}
+      <button type="button" onClick={openList} aria-label={`당일 변경 ${count}건`} className="academy-button-secondary relative">
+        당일 변경
+        {count > 0 && <span className="absolute -right-1.5 -top-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-[var(--color-academy-info)] px-1 text-xs font-semibold tabular-nums text-[var(--color-academy-on-primary)]">{count}</span>}
+      </button>
+
+      {/* 목록 창 — 예전에 운행표 위에 있던 칸의 내용 전부. 줄 수 제한 없이 전부 보이고 목록만 세로로 스크롤된다 */}
+      {showList && (
+        <AdminModal titleId="shuttle-day-exception-title" onClose={closeList} panelClassName="max-w-2xl">
+          {/* 창 머리: 제목 · 건수 · «당일 변경 입력» · «닫기» + 안내 한 줄 */}
+          <div className="flex flex-wrap items-center gap-2 px-4 pt-4">
+            <h2 id="shuttle-day-exception-title" className="academy-section-title">셔틀 당일 변경</h2>
+            <span className="mr-auto text-sm tabular-nums text-[var(--color-academy-muted)]">{count}건</span>
+            <button type="button" onClick={openForm} className="academy-button-secondary shrink-0">
+              당일 변경 입력
+            </button>
+            <button type="button" onClick={closeList} className="academy-button-text shrink-0">닫기</button>
+          </div>
+          <p className="break-keep px-4 pb-3 pt-1 text-xs text-[var(--color-academy-muted)]">
             학부모는 수업 시작 {PARENT_CHANGE_CUTOFF_TEXT} 전까지 직접 바꿉니다. 그 뒤 전화로 온 요청은 여기서 넣어 주세요.
-          </span>
-          <button type="button" onClick={openForm} className="academy-button-secondary shrink-0">
-            당일 변경 입력
-          </button>
-        </div>
+          </p>
 
-        {message && <p role="status" className="border-t border-[var(--color-academy-line)] bg-[var(--color-academy-success-soft)] px-3 py-2 text-sm text-[var(--color-academy-success)]">{message}</p>}
-        {error && <p role="alert" className="border-t border-[var(--color-academy-line)] bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm text-[var(--color-academy-danger)]">{error}</p>}
+          {message && <p role="status" className="border-t border-[var(--color-academy-line)] bg-[var(--color-academy-success-soft)] px-4 py-2 text-sm text-[var(--color-academy-success)]">{message}</p>}
+          {error && <p role="alert" className="border-t border-[var(--color-academy-line)] bg-[var(--color-academy-danger-soft)] px-4 py-2 text-sm text-[var(--color-academy-danger)]">{error}</p>}
 
-        {board.rows.length === 0 ? (
-          <p className="border-t border-[var(--color-academy-line)] px-3 py-3 text-sm text-[var(--color-academy-muted)]">오늘부터 들어온 당일 변경이 없습니다.</p>
-        ) : (
-          <ul className="divide-y divide-[var(--color-academy-line)] border-t border-[var(--color-academy-line)]">
-            {rows.map((row) => (
+          {count === 0 ? (
+            <p className="border-t border-[var(--color-academy-line)] px-4 py-4 text-sm text-[var(--color-academy-muted)]">오늘부터 들어온 당일 변경이 없습니다.</p>
+          ) : (
+            // min-h-0 + flex-1 + overflow-y-auto: 창 머리는 그대로 두고 목록만 창 안에서 세로 스크롤
+            <ul className="min-h-0 flex-1 divide-y divide-[var(--color-academy-line)] overflow-y-auto overscroll-contain border-t border-[var(--color-academy-line)] pb-2">
+            {board.rows.map((row) => (
               // 한 줄 행: 날짜 · 학생 · 방향 · 변경(장소) · 누가 넣었나 · 취소
-              <li key={row.id} className="flex min-h-11 flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1.5">
+              <li key={row.id} className="flex min-h-11 flex-wrap items-center gap-x-2 gap-y-1 px-4 py-1.5">
                 <span className="w-20 shrink-0 text-sm tabular-nums text-[var(--color-academy-ink)]">{kstLabel(row.serviceDate)}</span>
                 <span className="shrink-0 text-sm font-semibold text-[var(--color-academy-ink)]">{row.studentName}</span>
                 <span className="rounded-full bg-[var(--color-academy-neutral-soft)] px-2 py-0.5 text-xs text-[var(--color-academy-neutral)]">
@@ -160,18 +188,12 @@ export default function ShuttleDayExceptionAdminPanel({ initial }: { initial: Ad
                 </button>
               </li>
             ))}
-          </ul>
-        )}
-        {(hidden > 0 || (showAll && board.rows.length > ROWS_SHOWN)) && (
-          <div className="border-t border-[var(--color-academy-line)] px-3 py-1">
-            <button type="button" onClick={() => setShowAll((value) => !value)} className="academy-button-text">
-              {showAll ? "접기" : `더 보기 ${hidden}건`}
-            </button>
-          </div>
-        )}
-      </section>
+            </ul>
+          )}
+        </AdminModal>
+      )}
 
-      {/* 입력 창 — 학생 → 날짜 → 방향 → 변경 → 메모 → 저장 */}
+      {/* 입력 창 — 학생 → 날짜 → 방향 → 변경 → 메모 → 저장. 떠 있는 동안 목록 창은 그리지 않는다(닫히면 목록 창이 결과 안내와 함께 다시 뜬다) */}
       {formOpen && (
         <AdminModal titleId="shuttle-day-exception-form-title" onClose={() => { if (!pending) setFormOpen(false); }} panelClassName="max-w-lg p-5" closeOnBackdrop={false}>
           <h3 id="shuttle-day-exception-form-title" className="academy-section-title">셔틀 당일 변경 입력</h3>
@@ -319,6 +341,6 @@ export default function ShuttleDayExceptionAdminPanel({ initial }: { initial: Ad
           error={cancelError}
         />
       )}
-    </div>
+    </>
   );
 }

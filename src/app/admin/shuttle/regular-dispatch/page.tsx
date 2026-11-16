@@ -12,6 +12,7 @@ import { isKoreanCoordinate } from "@/lib/shuttle/academyLocation";
 import { getRegularRosterMonthMarks } from "@/lib/shuttle/regularRunDay";
 import { todayKst } from "@/lib/datetime/kst";
 // 셔틀 당일 변경(학부모 입력분 + 학원 입력분) 목록과 «당일 변경 입력»(2026-11-15 원장 요청)
+// — 2026-11-17 부터 운행표 머리줄의 «당일 변경» 버튼 + 창(RegularRunEditor 의 headerExtra 로 넘긴다)
 import ShuttleDayExceptionAdminPanel from "./ShuttleDayExceptionAdminPanel";
 import { getShuttleExceptionBoardForAdmin } from "@/lib/shuttle/admin-shuttle-exception";
 
@@ -26,7 +27,7 @@ export default async function RegularDispatchPage({ searchParams }: { searchPara
   await requireAdmin();
   const today = todayKst();
   // 셔틀 당일 변경 목록은 명단과 상관없어 지금 함께 시작한다(2026-11-14 속도 개선 — 예전엔 맨 끝에 따로 기다렸다).
-  // 조회에 실패해도 운행표는 떠야 한다(빈 목록으로 두고 입력 버튼은 그대로 보인다)
+  // 조회에 실패해도 운행표는 떠야 한다(빈 목록으로 두고 «당일 변경» 버튼과 창 안의 입력 버튼은 그대로 보인다)
   const dayExceptionsPromise = getShuttleExceptionBoardForAdmin().catch((e) => {
     console.error("[admin/shuttle/regular-dispatch] 셔틀 당일 변경 조회 실패", e);
     return { today, maxDate: today, rows: [] };
@@ -75,7 +76,6 @@ export default async function RegularDispatchPage({ searchParams }: { searchPara
     <>
       <SeasonalHeader eyebrow="SHUTTLE" title="셔틀 관리" />
       <ShuttleSectionTabs />
-      <ShuttleDayExceptionAdminPanel initial={JSON.parse(JSON.stringify(dayExceptions))} />
       <RegularRunEditor
         key={`${serviceMonth}:${exactStop?.id ?? initialStudentId ?? ""}`}
         stops={JSON.parse(JSON.stringify(stops))}
@@ -88,6 +88,8 @@ export default async function RegularDispatchPage({ searchParams }: { searchPara
         academy={academy}
         riderBlocks={marks.labelByRowId}
         monthHolidays={marks.holidays}
+        // 운행표 위에 칸을 따로 두지 않는다(2026-11-17 원장 지시) — 머리줄 «기사 요청» 뒤의 «당일 변경» 버튼 하나 + 창
+        headerExtra={<ShuttleDayExceptionAdminPanel initial={JSON.parse(JSON.stringify(dayExceptions))} />}
       />
       <RegularStopGeocodePanel
         stopNames={missingStops}
