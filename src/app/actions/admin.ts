@@ -4255,7 +4255,7 @@ export async function sendInvoiceLinksForMonth(year: number, month: number, forc
               AND ${rallyzMirrorExclusionSql("p")}
               AND (
                 (p.year = $1 AND p.month = $2)
-                OR (p."dueDate" >= $3::timestamp AND p."dueDate" < $4::timestamp)
+                OR ((p.year IS NULL OR p.month IS NULL) AND p."dueDate" >= $3::timestamp AND p."dueDate" < $4::timestamp) -- 청구 월 우선(billing-month-sql.ts)
               )
               ${sentFilter}
             ORDER BY i."dueDate" ASC
