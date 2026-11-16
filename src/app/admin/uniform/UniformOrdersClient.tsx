@@ -11,6 +11,7 @@ import StatusCountChips from "@/components/admin/list/StatusCountChips";
 import { formatKstDate } from "@/lib/datetime/kst";
 import { isFreeUniformOrderMemo } from "@/lib/uniform-free-grant-rules";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
+import { askConfirm } from "@/components/ui/feedback";
 
 type SyncTone = {
   label: string;
@@ -106,8 +107,8 @@ export default function UniformOrdersClient({
     waiting: initialOrders.filter((order) => order.stizSyncStatus === "PENDING" || order.stizSyncStatus === "RETRY_WAIT").length,
   }), [initialOrders]);
 
-  function handleRetry(order: UniformOrderAdminView) {
-    if (!confirm(`${order.parentName} 보호자의 유니폼 신청을 STIZ 본사로 다시 전송할까요?\n본사 접수에 성공하면 학부모 문자 안내가 발송될 수 있습니다.`)) {
+  async function handleRetry(order: UniformOrderAdminView) {
+    if (!(await askConfirm(`${order.parentName} 보호자의 유니폼 신청을 STIZ 본사로 다시 전송할까요?\n본사 접수에 성공하면 학부모 문자 안내가 발송될 수 있습니다.`))) {
       return;
     }
     setBusyId(order.id);

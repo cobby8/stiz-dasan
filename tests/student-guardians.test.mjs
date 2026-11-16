@@ -134,5 +134,5 @@ test("학생 상세에 보호자 카드가 붙어 있고, 계정 전화는 읽�
   // 전화번호는 보호자 카드 한 곳에서만 — 학생 상세 «연락처 · 프로필»에 학부모 전화 줄을 다시 두지 않는다
   assert.doesNotMatch(detail, /<a href=\{`tel:\$\{student\.parent\.phone\}`\}/);
   assert.match(panel, /href=\{`tel:/);
-  assert.match(panel, /window\.confirm\(deleteConfirmMessage\(/);
+  assert.match(panel, /askConfirm\(deleteConfirmMessage\(/);
 });

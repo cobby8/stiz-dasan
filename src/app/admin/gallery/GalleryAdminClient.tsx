@@ -16,6 +16,7 @@ import { toKstYmd } from "@/lib/datetime/kst";
 import type { SocialPostDraft } from "@/lib/socialDrafts";
 import { isInstagramApprovalPending } from "@/lib/socialPublishQueueRules";
 import { instagramConnectionBadge, instagramErrorGuide } from "@/lib/socialPostMessages";
+import { askConfirm, showNotice } from "@/components/ui/feedback";
 
 const GalleryPostFormModal = dynamic(() => import("./GalleryPostFormModal"), {
   loading: () => null,
@@ -240,15 +241,15 @@ export default function GalleryAdminClient({
     setShowForm(true);
   }
 
-  function handleDelete(id: string) {
-    if (!confirm("이 갤러리 게시물을 삭제할까요?")) return;
+  async function handleDelete(id: string) {
+    if (!(await askConfirm("이 갤러리 게시물을 삭제할까요?"))) return;
     startTransition(async () => {
       try {
         await deleteGalleryPost(id);
         await loadGallery();
         setPageMessage({ ok: true, message: "갤러리 게시물이 삭제됐습니다." });
       } catch (error) {
-        alert(adminErrorText(error, "갤러리 게시물 삭제 중 오류가 발생했습니다."));
+        showNotice(adminErrorText(error, "갤러리 게시물 삭제 중 오류가 발생했습니다."));
       }
     });
   }
@@ -302,8 +303,8 @@ export default function GalleryAdminClient({
     });
   }
 
-  function handleDraftPublish(draft: SocialPostDraft) {
-    if (!confirm("이 초안을 홈페이지 갤러리와 인스타그램에 바로 게시할까요?")) return;
+  async function handleDraftPublish(draft: SocialPostDraft) {
+    if (!(await askConfirm("이 초안을 홈페이지 갤러리와 인스타그램에 바로 게시할까요?"))) return;
     setDraftMessage(null);
     runDraftAction(draft.id, "publish", async () => {
       try {
@@ -331,8 +332,8 @@ export default function GalleryAdminClient({
     });
   }
 
-  function handleDraftReject(draft: SocialPostDraft) {
-    if (!confirm("이 초안을 반려할까요?")) return;
+  async function handleDraftReject(draft: SocialPostDraft) {
+    if (!(await askConfirm("이 초안을 반려할까요?"))) return;
     setDraftMessage(null);
     runDraftAction(draft.id, "reject", async () => {
       try {

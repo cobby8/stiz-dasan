@@ -26,6 +26,7 @@ import {
     confirmTrialFeePayment,
     sendManualSms,
 } from "@/app/actions/admin";
+import { askConfirm } from "@/components/ui/feedback";
 
 const TrialCrmModals = dynamic(() => import("./TrialCrmModals"), {
     loading: () => null,
@@ -818,7 +819,7 @@ export default function TrialCrmClient({
     // 상태 변경 핸들러
     async function handleStatusChange(lead: TrialLead, newStatus: string) {
         if (busy) return;
-        if (newStatus === "ATTENDED" && !confirm(`"${lead.childName}" 학생의 체험수업을 완료 처리할까요? 완료 안내 문자가 발송될 수 있습니다.`)) return;
+        if (newStatus === "ATTENDED" && !(await askConfirm(`"${lead.childName}" 학생의 체험수업을 완료 처리할까요? 완료 안내 문자가 발송될 수 있습니다.`))) return;
         if (newStatus === "CONVERTED" && lead.status !== "CONVERTED") {
             setEnrollGuideConfirm({ lead, convertAfterConfirm: true });
             return;
@@ -846,7 +847,7 @@ export default function TrialCrmClient({
 
     async function handleConfirmTrialFee(lead: TrialLead) {
         if (trialFeeBusyId || lead.trialFeeConfirmed) return;
-        if (!confirm(`"${lead.childName}" 체험수업 비용 입금을 확인 처리할까요?`)) return;
+        if (!(await askConfirm(`"${lead.childName}" 체험수업 비용 입금을 확인 처리할까요?`))) return;
 
         showFeedback("info", `${lead.childName} 체험비 입금 확인을 처리 중입니다...`);
         setTrialFeeBusyId(lead.id);
@@ -878,8 +879,8 @@ export default function TrialCrmClient({
     // 체험비 환불(토스 전액 취소) — 원장만 서버에서 통과. 체험 신청 상태는 그대로 두고 체험비만 돌려준다.
     async function handleRefundTrialFee(lead: TrialLead) {
         if (trialFeeBusyId) return;
-        if (!confirm(`"${lead.childName}" 체험수업비를 카드·계좌로 전액 환불할까요?
-되돌릴 수 없어요. 체험 신청 상태는 그대로예요(취소하려면 상태도 바꿔 주세요).`)) return;
+        if (!(await askConfirm(`"${lead.childName}" 체험수업비를 카드·계좌로 전액 환불할까요?
+되돌릴 수 없어요. 체험 신청 상태는 그대로예요(취소하려면 상태도 바꿔 주세요).`))) return;
         setTrialFeeBusyId(lead.id);
         showFeedback("info", `${lead.childName} 체험비 환불을 요청하는 중입니다...`);
         try {
@@ -1025,7 +1026,7 @@ export default function TrialCrmClient({
 
     async function handleSendCoachNotice(lead: TrialLead) {
         if (busy) return;
-        if (!confirm(`"${lead.childName}" 체험수업 정보를 담당 선생님에게 문자로 공유할까요?`)) return;
+        if (!(await askConfirm(`"${lead.childName}" 체험수업 정보를 담당 선생님에게 문자로 공유할까요?`))) return;
 
         setBusy(true);
         try {
@@ -1041,7 +1042,7 @@ export default function TrialCrmClient({
 
     async function handleResendApplicationSms(lead: TrialLead) {
         if (busy) return;
-        if (!confirm(`"${lead.childName}" 체험 신청 문자 중 실패한 문자만 다시 보낼까요?`)) return;
+        if (!(await askConfirm(`"${lead.childName}" 체험 신청 문자 중 실패한 문자만 다시 보낼까요?`))) return;
 
         setBusy(true);
         try {

@@ -9,6 +9,7 @@ import SeasonalHeader from "./SeasonalHeader";
 import { createCsv, createSafeCsvFilename, maskPhoneNumber } from "@/lib/seasonal/roster-export";
 import { seoulDateTimeToIso } from "./seasonalDateTime";
 import { kstLabel } from "@/lib/datetime/kst";
+import { askConfirm, showNotice } from "@/components/ui/feedback";
 
 type SeasonStatus = "DRAFT" | "PUBLISHED" | "CLOSED" | "ARCHIVED";
 type ItemStatus = "PENDING" | "APPROVED" | "WAITLISTED" | "REJECTED" | "CANCELLED";
@@ -1205,7 +1206,7 @@ export default function SeasonalAdminClient({ initialData }: SeasonalAdminClient
   async function handleBulkItemStatus(status: ItemStatus) {
     if (selectedItemIds.length === 0) return;
     const targetLabel = STATUS_LABEL[status] ?? status;
-    const confirmed = window.confirm(`${selectedApplicationCount}명, 신청 반 ${selectedItemIds.length}개를 '${targetLabel}' 처리할까요?`);
+    const confirmed = (await askConfirm(`${selectedApplicationCount}명, 신청 반 ${selectedItemIds.length}개를 '${targetLabel}' 처리할까요?`));
     if (!confirmed) return;
 
     setBulkProcessingStatus(status);
@@ -1240,7 +1241,7 @@ export default function SeasonalAdminClient({ initialData }: SeasonalAdminClient
 
   async function handleBulkConversion() {
     if (selectedItemIds.length === 0) return;
-    const confirmed = window.confirm(`${selectedApplicationCount}명, 신청 반 ${selectedItemIds.length}개의 수강 등록과 청구서를 생성할까요? 승인되지 않은 항목은 실패 사유로 남습니다.`);
+    const confirmed = (await askConfirm(`${selectedApplicationCount}명, 신청 반 ${selectedItemIds.length}개의 수강 등록과 청구서를 생성할까요? 승인되지 않은 항목은 실패 사유로 남습니다.`));
     if (!confirmed) return;
 
     setBulkConverting(true);
@@ -2027,7 +2028,7 @@ function RosterView({ seasons, applications, roster, filters, loading, error, on
 
   return <Panel title="일자별 출석부" action={<div className="print:hidden flex flex-wrap gap-2">
     <button type="button" onClick={() => window.print()} className="academy-button-secondary academy-button-sm">인쇄</button>
-    <button type="button" onClick={() => void downloadCsv().catch((caught) => window.alert(adminErrorText(caught, "CSV 다운로드에 실패했습니다.")))} className="academy-button-secondary academy-button-sm">CSV 내려받기</button>
+    <button type="button" onClick={() => void downloadCsv().catch((caught) => showNotice(adminErrorText(caught, "CSV 다운로드에 실패했습니다.")))} className="academy-button-secondary academy-button-sm">CSV 내려받기</button>
   </div>}>
     <style>{`@media print { @page { size: A4 landscape; margin: 12mm; } body * { visibility: hidden !important; } .seasonal-roster-print, .seasonal-roster-print * { visibility: visible !important; } .seasonal-roster-print { position: absolute; inset: 0; width: 100%; color: black !important; } .roster-desktop { display: block !important; } .roster-mobile, .print\\:hidden { display: none !important; } .seasonal-roster-print table { width: 100%; border-collapse: collapse; font-size: 10pt; } .seasonal-roster-print th, .seasonal-roster-print td { border: 1px solid var(--color-academy-line-input); padding: 6px; } .seasonal-roster-print thead { display: table-header-group; } }`}</style>
     <div className="print:hidden mb-2 flex min-w-0 items-center gap-2 text-sm font-medium"><span>시즌</span><select aria-label="명단 시즌" value={filters.seasonId} onChange={(event) => changeFilter("seasonId", event.target.value)} className="h-11 min-h-11 flex-1 min-w-0 rounded-md border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 text-base"><option value="">전체 시즌</option>{seasons.map((season) => <option key={season.id} value={season.id}>{season.name}</option>)}</select></div>
@@ -2510,7 +2511,7 @@ function InvoiceActionBox({ item, onCopyInvoiceLink, onRetryNotification, sendin
   async function handleMarkPaid(method: "CASH" | "BANK_TRANSFER") {
     if (!item.id) return;
     const label = method === "CASH" ? "현금" : "계좌이체";
-    if (!window.confirm(`${label} 납부 완료로 처리할까요? 이 작업은 되돌리기 어렵습니다.`)) return;
+    if (!(await askConfirm(`${label} 납부 완료로 처리할까요? 이 작업은 되돌리기 어렵습니다.`))) return;
     setPaying(method); setPayErr(null);
     try {
       const r = await fetch(`/api/admin/seasonal/${item.id}`, {
@@ -2706,7 +2707,7 @@ function ShuttleRequestBox({ request, onChanged }: { request: ShuttleRequest; on
   const cancelled = request.status === "CANCELLED";
   async function toggleRide(ride: boolean) {
     if (busy || !request.id) return;
-    if (!ride && typeof window !== "undefined" && !window.confirm("이 학생의 셔틀 신청을 취소(미이용)할까요? 배차 명단에서 빠집니다.")) return;
+    if (!ride && typeof window !== "undefined" && !(await askConfirm("이 학생의 셔틀 신청을 취소(미이용)할까요? 배차 명단에서 빠집니다."))) return;
     setBusy(true); setErr(null);
     try {
       const r = await fetch("/api/admin/seasonal/shuttle-roster", {

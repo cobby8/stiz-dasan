@@ -6,6 +6,7 @@ import { UPLOAD_STALLED_MESSAGE, createStallWatch, fetchWithTimeout } from "@/co
 import { SessionVideoPlayer } from "@/components/parent/SessionVideoPlayer";
 import { isStoreApp, needsAppUpdateForVideoCapture } from "@/lib/storeApp";
 import { checkSessionVideoFile, SESSION_VIDEO_DEFAULT_MAX_BYTES, uploadHintMessage, type SessionVideoPlayback } from "@/lib/sessionVideo/rules";
+import { askConfirm } from "@/components/ui/feedback";
 
 type VideoListResponse = {
   videos?: SessionVideoPlayback[];
@@ -209,7 +210,7 @@ export function SessionVideoUploader({ sessionId, hideButtons = false, onStateCh
   }
 
   async function remove(video: SessionVideoPlayback) {
-    if (busy || !window.confirm("이 영상을 지울까요? 학부모 화면에서도 바로 사라집니다.")) return;
+    if (busy || !(await askConfirm("이 영상을 지울까요? 학부모 화면에서도 바로 사라집니다."))) return;
     setBusy(true);
     try {
       const response = await fetch(`${base}/${encodeURIComponent(video.id)}`, { method: "DELETE" });

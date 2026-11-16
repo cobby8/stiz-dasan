@@ -7,6 +7,7 @@ import { adminErrorText } from "@/components/admin/adminDisplayText";
 import { completeKakaoShuttleRosterTask } from "@/app/actions/kakao-shuttle-roster-task";
 import { kstLabel } from "@/lib/datetime/kst";
 import type { KakaoShuttleRosterTaskItem } from "@/lib/kakao-shuttle-roster-task-query";
+import { askConfirm } from "@/components/ui/feedback";
 
 // 원장 할 일 «셔틀 명단에 넣어 주세요» — 카카오로 들어온 정규 셔틀 신청을 셔틀 명단 화면 맨 위에 한 줄로 보여 준다.
 // 한 건 = 한 줄: 학생 · 신청 요약 · [명단에 넣기](기존 «신청 학생 선택해 명단 추가» 흐름) · [완료].
@@ -17,11 +18,11 @@ export default function KakaoShuttleRosterTasks({ tasks }: { tasks: KakaoShuttle
   const [error, setError] = useState("");
   if (tasks.length === 0) return null;
 
-  function complete(task: KakaoShuttleRosterTaskItem) {
+  async function complete(task: KakaoShuttleRosterTaskItem) {
     const ask = task.inRoster
       ? `${task.studentName} 학생 셔틀 신청을 «처리 완료»로 표시할까요?\n학부모에게 문자는 보내지 않습니다.`
       : `${task.studentName} 학생이 그 달 셔틀 명단에 아직 없습니다.\n그래도 «처리 완료»로 표시할까요? (명단은 바뀌지 않습니다 · 학부모에게 문자는 보내지 않습니다)`;
-    if (!window.confirm(ask)) return;
+    if (!(await askConfirm(ask))) return;
     setError("");
     startTransition(async () => {
       try {

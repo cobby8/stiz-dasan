@@ -24,6 +24,7 @@ import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
 import ListViewToggle, { useRememberedListView } from "@/components/admin/list/ListViewToggle";
 import { isCurrentEnrollment } from "@/lib/enrollment/commencement";
+import { showNotice } from "@/components/ui/feedback";
 
 const ExcelUploadModal = dynamic(() => import("./ExcelUploadModal"), {
     ssr: false,
@@ -611,7 +612,7 @@ export default function StudentManagementClient({
             await deleteStudent(id);
             await loadData();
         } catch (err: unknown) {
-            alert(adminErrorText(err, "삭제 실패"));
+            showNotice(adminErrorText(err, "삭제 실패"));
         } finally {
             setBusy(false);
         }
@@ -624,7 +625,7 @@ export default function StudentManagementClient({
             setEnrollModal(null);
             await loadData();
         } catch (err: unknown) {
-            alert(adminErrorText(err, "수강 등록 실패"));
+            showNotice(adminErrorText(err, "수강 등록 실패"));
         } finally {
             setBusy(false);
         }

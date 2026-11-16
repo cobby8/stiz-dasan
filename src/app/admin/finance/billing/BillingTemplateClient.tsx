@@ -10,6 +10,7 @@ import {
 import AdminQuickActionMenu from "@/components/admin/AdminQuickActionMenu";
 import { useAdminConfirm } from "@/components/admin/AdminConfirmDialog";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
+import { showNotice } from "@/components/ui/feedback";
 
 // 청구 유형 라벨 매핑
 const TYPE_LABELS: Record<string, string> = {
@@ -207,7 +208,7 @@ export default function BillingTemplateClient({
             resetForm();
             await loadBillingTemplates();
         } catch (err: unknown) {
-            alert(getErrorMessage(err, "저장 실패"));
+            showNotice(getErrorMessage(err, "저장 실패"));
         } finally {
             setBusy(false);
         }
@@ -220,7 +221,7 @@ export default function BillingTemplateClient({
             await updateBillingTemplate(tpl.id, { isActive: !tpl.isActive });
             await loadBillingTemplates();
         } catch (err: unknown) {
-            alert(getErrorMessage(err, "상태 변경 실패"));
+            showNotice(getErrorMessage(err, "상태 변경 실패"));
         } finally {
             setBusy(false);
         }
@@ -233,7 +234,7 @@ export default function BillingTemplateClient({
             await deleteBillingTemplate(id);
             await loadBillingTemplates();
         } catch (err: unknown) {
-            alert(getErrorMessage(err, "삭제 실패"));
+            showNotice(getErrorMessage(err, "삭제 실패"));
         } finally {
             setBusy(false);
         }

@@ -5,6 +5,7 @@ import { useEffect, useState, useTransition } from "react";
 import { prepareNoticeSocialCampaign, publishNoticeSocialCampaign } from "@/app/actions/social-campaigns";
 import type { NoticeData } from "./NoticesAdminClient";
 import AdminModal from "@/components/admin/AdminModal";
+import { showNotice } from "@/components/ui/feedback";
 
 type SocialPreview = Awaited<ReturnType<typeof prepareNoticeSocialCampaign>>;
 type SocialPublishResult = Awaited<ReturnType<typeof publishNoticeSocialCampaign>>;
@@ -36,7 +37,7 @@ export default function NoticeSocialModal({
                 const preview = await prepareNoticeSocialCampaign(notice.id);
                 if (active) setSocialPreview(preview);
             } catch (error) {
-                alert(adminErrorText(error, "소셜 발행 준비에 실패했습니다."));
+                showNotice(adminErrorText(error, "소셜 발행 준비에 실패했습니다."));
                 if (active) onClose();
             } finally {
                 if (active) setSocialLoading(false);
@@ -62,7 +63,7 @@ export default function NoticeSocialModal({
             `랜딩 링크: ${socialPreview.landingUrl}`,
         ].join("\n\n");
         navigator.clipboard?.writeText(text).catch(() => {});
-        alert("페이스북 광고 문구를 복사했습니다.");
+        showNotice("페이스북 광고 문구를 복사했습니다.");
     }
 
     function handleSocialPublish() {
@@ -83,7 +84,7 @@ export default function NoticeSocialModal({
                 });
                 setSocialResult(result);
             } catch (error) {
-                alert(adminErrorText(error, "소셜 발행에 실패했습니다."));
+                showNotice(adminErrorText(error, "소셜 발행에 실패했습니다."));
             } finally {
                 setSocialLoading(false);
             }

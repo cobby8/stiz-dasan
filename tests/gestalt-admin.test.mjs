@@ -78,7 +78,7 @@ test("A-07 삭제 확인은 공용 확인 창으로, 확인 뒤에만 같은 han
     const source = read(path);
     assert.match(source, /const \{ confirm: askConfirm, confirmDialog \} = useAdminConfirm\(\);/, path);
     assert.match(source, /\{confirmDialog\}/, path);
-    assert.doesNotMatch(source, /window\.confirm\(`"\$\{[a-z.A-Z]+\}" [^`]*삭제할까요\?`\)/, path);
+    assert.doesNotMatch(source, /askConfirm\(`"\$\{[a-z.A-Z]+\}" [^`]*삭제할까요\?`\)/, path);
     const callAt = source.indexOf("askConfirm({ title: `\"${" + nameExpr + "}\"");
     assert.ok(callAt > 0, `${path}: 대상 이름이 들어간 확인 창`);
     const deleteAt = source.indexOf(`void handleDelete(${idExpr});`, callAt);
@@ -222,5 +222,5 @@ test("A-15 12px 미만 글자 제거(우선 화면) + 특강 셔틀 취소 44px�
   }
   const seasonal = read("../src/app/admin/seasonal/SeasonalAdminClient.tsx");
   assert.match(seasonal, /onClick=\{\(\) => toggleRide\(false\)\} className="academy-button-danger">/);
-  assert.match(seasonal, /window\.confirm\("이 학생의 셔틀 신청을 취소\(미이용\)할까요\?/);
+  assert.match(seasonal, /askConfirm\("이 학생의 셔틀 신청을 취소\(미이용\)할까요\?/);
 });

@@ -41,6 +41,7 @@ test("첫 다음 수업은 개시일 이전 주차를 건너뛴다", () => {
 
 test("관리자 원생 상세는 개시일이 미래인 ACTIVE 반을 «수강 중»으로 세고 개시일을 안내한다", () => {
   const Client = load("src/app/admin/students/[id]/StudentDetailClient.tsx", {
+    "@/components/ui/feedback": { askConfirm: async () => false, showNotice: async () => {}, showCopyText: async () => {} }, // 2026-11-16 화면 안 알림·확인창
     "@/lib/ui/statusTones": statusTones,
     "@/components/admin/adminDisplayText": {}, "next/link": link, "@/app/actions/admin": {},
     "@/lib/datetime/kst": { todayKst: () => "2026-11-03" },
@@ -92,6 +93,7 @@ test("관리자 원생 상세는 개시일이 미래인 ACTIVE 반을 «수강 �
 
 test("관리자 원생 목록 «활성» 필터·반별 인원은 개시일 미래인 ACTIVE 학생을 수강 중으로 센다", () => {
   const Client = load("src/app/admin/students/StudentManagementClient.tsx", {
+    "@/components/ui/feedback": { askConfirm: async () => false, showNotice: async () => {}, showCopyText: async () => {} }, // 2026-11-16 화면 안 알림·확인창
     "@/lib/enrollment/commencement": commencement,
     "@/components/admin/adminDisplayText": {}, "next/link": link,
     "next/dynamic": { __esModule: true, default: () => () => null },

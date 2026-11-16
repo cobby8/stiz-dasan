@@ -5,6 +5,7 @@ import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { useState, useTransition } from "react";
 import { recoverStaffInvitation } from "@/app/actions/staff-invite-recovery";
 import { kstHm, kstLabel } from "@/lib/datetime/kst";
+import { askConfirm } from "@/components/ui/feedback";
 
 // 영문 상태값 대신 한국어(2026-11-12 점검 — 화면에 «RECOVERY_REQUIRED»가 그대로 보였다)
 const STATUS_LABEL: Record<string, string> = {
@@ -29,8 +30,8 @@ export default function StaffInviteRecoveryClient({ initialInvitations }: { init
   const [message, setMessage] = useState("");
   const [pending, startTransition] = useTransition();
 
-  function recover(item: RecoveryItem) {
-    if (!window.confirm(`${item.name}님의 중단된 가입 계정과 초대를 정리하시겠습니까?`)) return;
+  async function recover(item: RecoveryItem) {
+    if (!(await askConfirm(`${item.name}님의 중단된 가입 계정과 초대를 정리하시겠습니까?`))) return;
     setMessage("");
     startTransition(async () => {
       const result = await recoverStaffInvitation({ invitationId: item.id });

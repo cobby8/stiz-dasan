@@ -20,6 +20,7 @@ import {
     resetSmsTemplate,
 } from "@/app/actions/admin";
 import { isParentAlimtalkTrigger, parentAlimtalkSmsTemplateBody } from "@/lib/messaging/parent-alimtalk-templates";
+import { askConfirm, showNotice } from "@/components/ui/feedback";
 
 // ── 타입 정의 ────────────────────────────────────────────────────────────────
 interface SmsTemplate {
@@ -275,7 +276,7 @@ function TemplateCard({ template, onReload }: { template: SmsTemplate; onReload:
             setSaved(true);
             setTimeout(() => setSaved(false), 2000);
         } catch (e) {
-            alert("저장 실패: " + (e as Error).message);
+            showNotice("저장 실패: " + (e as Error).message);
         }
         setSaving(false);
     };
@@ -313,12 +314,12 @@ function TemplateCard({ template, onReload }: { template: SmsTemplate; onReload:
 
     // 초기화
     const handleReset = async () => {
-        if (!confirm("기본 템플릿으로 초기화하시겠습니까?\n현재 수정한 내용이 사라집니다.")) return;
+        if (!(await askConfirm("기본 템플릿으로 초기화하시겠습니까?\n현재 수정한 내용이 사라집니다."))) return;
         try {
             await resetSmsTemplate(template.id);
             await onReload();
         } catch (e) {
-            alert("초기화 실패: " + (e as Error).message);
+            showNotice("초기화 실패: " + (e as Error).message);
         }
     };
 

@@ -38,7 +38,7 @@ test("목록: 대표 보호자 제외·탈퇴 제외·전화는 끝 4자리만, 
   assert.match(fn, /u\.id IS DISTINCT FROM s\."parentId"/);
   const panel = await readFile("src/app/admin/students/[id]/GuardianPanel.tsx", "utf8");
   assert.match(panel, /familyAccess\.length > 0 && \(/, "연결이 없으면 화면에 아무것도 안 그린다");
-  assert.match(panel, /window\.confirm\(/);
+  assert.match(panel, /askConfirm\(/);
 });
 
 test("학생 병합: 가족 연결과 대기 요청을 대표 학생으로 옮긴다", async () => {

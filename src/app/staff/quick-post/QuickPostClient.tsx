@@ -17,6 +17,7 @@ import type { SocialPostDraft } from "@/lib/socialDrafts";
 import { userErrorMessage } from "@/components/staff/userErrorMessage";
 import { isInstagramApprovalPending } from "@/lib/socialPublishQueueRules";
 import { QUICK_UPLOAD_CONSENT_NOTICE } from "@/lib/socialPostMessages";
+import { askConfirm } from "@/components/ui/feedback";
 
 const LESSON_TYPES = ["정규 수업", "기초반", "심화반", "게임 수업", "특강", "대회 준비"];
 // DB enum(INSTRUCTOR/ADMIN 등)이 화면에 영문 그대로 노출되지 않도록 한글 라벨로 바꿔 준다.
@@ -232,14 +233,14 @@ export default function QuickPostClient({
   }
 
   // 게슈탈트 T-05: 되돌리기 어려운 «바로 게시»(외부 공개)와 «새로 작성»(작성 내용 버림)은 한 번 더 묻는다.
-  // 선생님 앱의 다른 확인(학부모 공지 발송 등)과 같은 window.confirm — iOS·안드로이드 앱 웹뷰에서 확인 창이 뜬다.
-  function confirmPublish() {
+  // 선생님 앱의 다른 확인(학부모 공지 발송 등)과 같은 화면 안 확인창(askConfirm) — 앱 웹뷰에서도 막히지 않고 뜬다.
+  async function confirmPublish() {
     const question = needsInstagramRetry
       ? instagramApprovalPending ? "인스타그램에 게시할까요?" : "인스타그램에 다시 게시할까요?"
       : canPublishInstagram
         ? "홈페이지 갤러리와 인스타그램에 바로 게시할까요? 게시하면 바로 공개됩니다."
         : "홈페이지 갤러리에 게시할까요? 게시하면 바로 공개됩니다.";
-    if (!window.confirm(question)) {
+    if (!(await askConfirm(question))) {
       // 앱 웹뷰는 다른 창이 떠 있으면 확인 창이 조용히 «취소»로 끝난다 — 반응 없음으로 보이지 않게 알린다
       setMessage("게시를 취소했습니다. 게시하려면 게시 버튼을 다시 눌러 주세요.");
       return;
@@ -247,9 +248,9 @@ export default function QuickPostClient({
     handlePublish();
   }
 
-  function confirmReset() {
+  async function confirmReset() {
     // 이미 게시가 끝났으면 버릴 내용이 없으니 묻지 않는다.
-    if (!isPublished && !window.confirm("작성 중인 내용을 지우고 새로 작성할까요?")) return;
+    if (!isPublished && !(await askConfirm("작성 중인 내용을 지우고 새로 작성할까요?"))) return;
     resetFlow();
   }
 

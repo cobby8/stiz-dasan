@@ -4,6 +4,7 @@ import { adminErrorText } from "@/components/admin/adminDisplayText";
 import { useState, useTransition, type FormEvent } from "react";
 import { inviteStaff, sendStaffPasswordReset } from "@/app/actions/admin";
 import AdminModal from "@/components/admin/AdminModal";
+import { showCopyText } from "@/components/ui/feedback";
 
 function formatPhone(raw: string): string {
     const digits = raw.replace(/\D/g, "").slice(0, 11);
@@ -96,7 +97,7 @@ export default function InviteStaffModal({
             await navigator.clipboard.writeText(absoluteInviteUrl(result.inviteUrl));
             setCopyMessage("개인 가입 링크를 복사했습니다.");
         } catch {
-            window.prompt("아래 개인 가입 링크를 길게 눌러 복사해 주세요.", absoluteInviteUrl(result.inviteUrl));
+            void showCopyText("아래 개인 가입 링크를 길게 눌러 복사해 주세요.", absoluteInviteUrl(result.inviteUrl));
             setCopyMessage("복사창에 개인 가입 링크를 표시했습니다.");
         }
     }

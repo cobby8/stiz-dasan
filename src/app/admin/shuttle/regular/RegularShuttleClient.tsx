@@ -38,6 +38,7 @@ import { defaultStopFromRiding, enrolledClassSlots, resolveCellPlacement, resolv
 import DriverOrderView from "./DriverOrderView";
 import AddRiderRoutePanel, { type PanelDirection } from "./AddRiderRoutePanel";
 import RegularShuttleNoticePanel from "./RegularShuttleNoticePanel";
+import { askConfirm } from "@/components/ui/feedback";
 
 // 셔틀 명단 — 사이트가 정규 셔틀 명단의 원장이다. 월 → 요일 → 수업시간별 학생(등원·하원 정류장).
 // 학생 추가·빼기·반이동·정류장 수정은 /api/admin/shuttle/regular-roster 로 바로 저장한다.
@@ -180,7 +181,8 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
   const [detail, setDetail] = useState<{ classTime: string; key: string } | null>(null);
   const [orderDirty, setOrderDirty] = useState(false);
   const onOrderDirty = useCallback((d: boolean) => setOrderDirty(d), []);
-  const confirmLeaveOrder = () => !orderDirty || window.confirm("기사님 화면 보기에서 저장하지 않은 순서·시각 변경이 있습니다. 이동하면 사라집니다. 계속할까요?");
+  // 화면 안 확인창이라 답을 기다린다 — 부르는 쪽은 await 한다
+  const confirmLeaveOrder = async () => !orderDirty || (await askConfirm("기사님 화면 보기에서 저장하지 않은 순서·시각 변경이 있습니다. 이동하면 사라집니다. 계속할까요?"));
   // 그 요일 기사님 화면이 정규 배차 저장 노선을 쓰는지(방향별). null = 아직 모름/조회 실패.
   const [routeStatus, setRouteStatus] = useState<{ PICKUP: boolean; DROPOFF: boolean } | null>(null);
 
@@ -327,7 +329,7 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
     if (busy) return;
     // 휴원·퇴원·반 변경 뒤 남은 학생이 그대로 넘어가므로, 복사 전에 목록을 보여 주고 확인받는다(자동으로 빼지 않는다).
     const warning = await copyWarningFor(sourceMonth);
-    if (!window.confirm(`${sourceMonth} 명단을 ${targetMonth} 명단으로 복사할까요?\n복사한 뒤 ${targetMonth}에서 바뀐 학생만 고치면 됩니다.${warning ? `\n\n${warning}` : ""}`)) return;
+    if (!(await askConfirm(`${sourceMonth} 명단을 ${targetMonth} 명단으로 복사할까요?\n복사한 뒤 ${targetMonth}에서 바뀐 학생만 고치면 됩니다.${warning ? `\n\n${warning}` : ""}`))) return;
     setBusy(true); setErr(null); setMsg(null);
     try {
       const j = await rosterCall("POST", { action: "copyMonth", sourceMonth, targetMonth });
@@ -524,7 +526,7 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
 
   async function createParentLocationLink(studentId: string, studentName: string, reissue = false) {
     if (locationLinkBusy) return;
-    if (reissue && !window.confirm(`${studentName} 학생의 기존 링크를 취소하고 새 링크를 발급할까요? 기존 링크는 즉시 사용할 수 없게 됩니다.`)) return;
+    if (reissue && !(await askConfirm(`${studentName} 학생의 기존 링크를 취소하고 새 링크를 발급할까요? 기존 링크는 즉시 사용할 수 없게 됩니다.`))) return;
     setLocationLinkBusy(studentId); setErr(null); setMsg(null);
     try {
       const response = await fetch("/api/admin/shuttle/regular-location-links", {
@@ -546,7 +548,7 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
   }
 
   async function revokeParentLocationLink(link: RegularLocationLinkState) {
-    if (locationLinkBusy || !window.confirm(`${link.studentName} 학생의 위치 입력 링크를 취소할까요?`)) return;
+    if (locationLinkBusy || !(await askConfirm(`${link.studentName} 학생의 위치 입력 링크를 취소할까요?`))) return;
     setLocationLinkBusy(link.studentId); setErr(null); setMsg(null);
     try {
       const response = await fetch("/api/admin/shuttle/regular-location-links", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ linkId: link.id }) });
@@ -961,7 +963,7 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
             <p className="mt-0.5 text-xs text-[var(--color-academy-faint)]">이번 달·다음 달 명단은 직전 달을 복사해 자동으로 만들어집니다. 다음 달 변경은 월을 바꿔 미리 고쳐 두세요.</p>
           </div>
           <label className="flex flex-col gap-1 text-xs font-medium text-[var(--color-academy-muted)]">월
-            <select value={serviceMonth} disabled={busy} onChange={(e) => { if (confirmLeaveOrder()) void loadMonth(e.target.value); }} className="academy-input">
+            <select value={serviceMonth} disabled={busy} onChange={async (e) => { const nextMonth = e.target.value; if (await confirmLeaveOrder()) void loadMonth(nextMonth); }} className="academy-input">
               {monthOptions.map((month) => <option key={month} value={month}>{month}{month === currentMonth ? " (이번 달)" : ""}</option>)}
             </select>
           </label>
@@ -1015,7 +1017,7 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
             {/* 요일 탭 */}
             <div className="mt-3 flex flex-wrap items-center gap-1">
               {weekdays.map((w) => (
-                <button key={w.weekday} type="button" onClick={() => { if (w.weekday !== active && confirmLeaveOrder()) { setActive(w.weekday); setDetail(null); } }}
+                <button key={w.weekday} type="button" onClick={async () => { if (w.weekday !== active && (await confirmLeaveOrder())) { setActive(w.weekday); setDetail(null); } }}
                   aria-pressed={active === w.weekday}
                   // 요일 탭 = «지금 보는 것» — 보조 색, ✓ 없음(테마 academy-choice is-tab)
                   className={`academy-choice is-tab${active === w.weekday ? " is-selected" : ""}`}>
@@ -1030,8 +1032,8 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
                 value={view}
                 options={ROSTER_VIEW_OPTIONS}
                 ariaLabel="명단 보기"
-                onChange={(v) => {
-                  if (v === view || (v === "students" && !confirmLeaveOrder())) return;
+                onChange={async (v) => {
+                  if (v === view || (v === "students" && !(await confirmLeaveOrder()))) return;
                   setView(v);
                   setDetail(null); // 돌아왔을 때 닫았던 상세 패널이 다시 뜨지 않게
                   // 기사님 화면 보기가 닫히면(언마운트) 고친 내용도 사라지므로 「저장 안 됨」 표시를 내린다.

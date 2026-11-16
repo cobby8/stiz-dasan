@@ -18,6 +18,7 @@ import type { StaffSessionDetail, StaffSessionStudent } from "@/lib/staff-sessio
 import { kstLabel } from "@/lib/datetime/kst";
 import { staffReloginHref } from "@/lib/staff-session-rules";
 import { STAFF_EDIT_EXPIRED_MESSAGE, STAFF_SESSION_EDIT_DAYS, staffSessionEditWindow } from "@/lib/staff/sessionEditWindow";
+import { askConfirm } from "@/components/ui/feedback";
 
 type BillingOpener = (student?: { id: string; name: string }) => void;
 
@@ -255,7 +256,7 @@ export function CompletedSessionPanel({ session, students: initialStudents, onLi
   // «아직 안 보낸» 수업을 학부모에게 보낸다 — 한 번 확인. 처음 보낼 때만 앱 알림이 가고, 뒤에 고쳐도 다시 알리지 않는다.
   async function publishToParents() {
     if (publishing || published || !editable) return;
-    if (!window.confirm("이 수업을 학부모에게 보낼까요? 수업 내용·사진·영상이 보이고 앱 알림이 한 번 갑니다.")) return;
+    if (!(await askConfirm("이 수업을 학부모에게 보낼까요? 수업 내용·사진·영상이 보이고 앱 알림이 한 번 갑니다."))) return;
     setPublishing(true);
     setNotice(null);
     try {

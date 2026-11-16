@@ -113,7 +113,7 @@ test("b4 코치 미연결은 «오늘 수업 없음»과 다른 안내", () => {
 });
 
 test("b6 진행 중 수업으로 이동하기 전에 안내를 보인다", () => {
-  assert.match(home, /window\.confirm\(`\$\{result\.message\}\\n\\n그 수업 화면으로 이동할까요\?`\)/);
+  assert.match(home, /askConfirm\(`\$\{result\.message\}\\n\\n그 수업 화면으로 이동할까요\?`\)/);
 });
 
 test("G11 특강 미리 작성은 회차를 보내고, 사진 권한은 수업 시작·출석과 같은 함수", () => {

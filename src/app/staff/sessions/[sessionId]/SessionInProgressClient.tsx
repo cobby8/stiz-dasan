@@ -40,6 +40,7 @@ import type {
 } from "@/lib/staff-session-queries";
 import { userErrorMessage } from "@/components/staff/userErrorMessage";
 import { bulkReportedNotice, splitBulkPresent, staffReloginHref } from "@/lib/staff-session-rules";
+import { askConfirm, showNotice } from "@/components/ui/feedback";
 
 /** 서버 기능이 «로그인이 풀렸다»고 돌려줬는가(b5) — 던지지 않고 { ok:false, needsLogin:true } 로 온다. */
 function isLoginFailure(result: object): boolean {
@@ -250,10 +251,10 @@ function LiveSessionWorkspace({
   }
 
   // 수업 계획을 «수업 내용» 칸에 채운다 — 저장은 «수업 내용 저장» 또는 수업 종료 때 한다.
-  function loadPlanIntoLine() {
+  async function loadPlanIntoLine() {
     const planText = (session.plannedContent || "").trim();
     if (!planText) return;
-    if (report.trim() && !window.confirm("지금 쓴 글을 지우고 수업 계획으로 바꿀까요?")) return;
+    if (report.trim() && !(await askConfirm("지금 쓴 글을 지우고 수업 계획으로 바꿀까요?"))) return;
     const filled = Array.from(planText).slice(0, FEED_LINE_MAX).join("");
     setReport(Array.from(planText).slice(0, FEED_LINE_MAX).join(""));
     // 불러온 글도 «채운 그대로»다 — 고치거나 저장하기 전에 종료하려 하면 종료 창에서 알린다
@@ -399,21 +400,26 @@ function LiveSessionWorkspace({
     let preparingToLeave = false;
     let allowNavigation = false;
 
-    const handlePopState = () => {
+    const handlePopState = async () => {
       if (allowNavigation) return;
 
       // 먼저 동일 주소의 보호 이력을 복원해 iOS 스와이프 중에도 수업 화면을 유지합니다.
       history.pushState(sentinelState, "", window.location.href);
       if (preparingToLeave) return;
 
-      const confirmed = window.confirm("수업이 진행 중입니다. 수업 기록을 저장하고 이전 화면으로 이동할까요?");
-      if (!confirmed) return;
-
+      // 화면 안 확인창이 떠 있는 동안 뒤로가기를 또 눌러도 다시 묻지 않게 미리 표시해 둔다
       preparingToLeave = true;
+      const confirmed = (await askConfirm("수업이 진행 중입니다. 수업 기록을 저장하고 이전 화면으로 이동할까요?"));
+      // 그만을 눌렀거나, 기다리는 사이 화면이 이미 닫혔으면(정리됨) 아무것도 하지 않는다
+      if (!confirmed || allowNavigation) {
+        preparingToLeave = false;
+        return;
+      }
+
       void (async () => {
         if (voiceBusyRef.current) {
           setMessage("음성 메모 처리가 끝난 뒤 이동해 주세요.");
-          window.alert("음성 메모 처리가 끝난 뒤 다시 시도해 주세요.");
+          showNotice("음성 메모 처리가 끝난 뒤 다시 시도해 주세요.");
           preparingToLeave = false;
           return;
         }
@@ -421,7 +427,7 @@ function LiveSessionWorkspace({
         const saved = await persistMemo(memoRef.current);
         if (!saved) {
           setMessage("특이사항을 저장하지 못했습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.");
-          window.alert("수업 기록을 저장하지 못해 현재 화면을 유지합니다.");
+          showNotice("수업 기록을 저장하지 못해 현재 화면을 유지합니다.");
           preparingToLeave = false;
           return;
         }
@@ -532,7 +538,7 @@ function LiveSessionWorkspace({
         const question = preview.creditRevoke
           ? `${target.name} 결석을 취소할까요? 이 결석으로 나간 보강권이 회수됩니다.`
           : `${target.name} 결석을 취소할까요?`;
-        if (!window.confirm(question)) return;
+        if (!(await askConfirm(question))) return;
       }
       const result = await clearStaffAttendance({ sessionId: session.id, attendanceKey: target.attendanceKey });
       if (!result.ok) {
@@ -701,10 +707,10 @@ function LiveSessionWorkspace({
 
   // 실수/테스트로 시작한 수업을 '시작 전' 상태로 되돌린다.
   // 세션 상태만 되돌리고 출결 기록은 그대로 유지된다(서버에서 보장).
-  function cancelStart() {
+  async function cancelStart() {
     if (pending || voiceBusy || memoStatus === "saving") return;
     // 되돌리기는 위험/비가역 성격이므로 반드시 한 번 확인받는다.
-    if (!window.confirm("수업 시작을 취소하고 '시작 전' 상태로 되돌릴까요? (기록한 출결은 그대로 유지됩니다)")) return;
+    if (!(await askConfirm("수업 시작을 취소하고 '시작 전' 상태로 되돌릴까요? (기록한 출결은 그대로 유지됩니다)"))) return;
     setMessage("");
     startTransition(async () => {
       try {

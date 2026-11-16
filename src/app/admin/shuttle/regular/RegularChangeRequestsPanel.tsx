@@ -7,6 +7,7 @@ import { adminErrorText } from "@/components/admin/adminDisplayText";
 import { decideShuttleRegularChange } from "@/app/actions/shuttle-regular-change";
 import type { AdminRegularChangeRow } from "@/lib/shuttle/regularChangeRequest";
 import { koreanMonthDay } from "@/lib/shuttle/regularChangeRules";
+import { askConfirm } from "@/components/ui/feedback";
 
 // 학부모 «셔틀 계속 바꾸기» 신청(2026-11-14 결정표 c5) — 셔틀 명단 화면 맨 위 승인 목록.
 // 한 건 = 한 줄: 학생 · 무엇을 · 언제부터 · [승인] [반려]. 승인 전에는 명단이 바뀌지 않는다.
@@ -22,7 +23,7 @@ export default function RegularChangeRequestsPanel({ rows }: { rows: AdminRegula
   if (open.length === 0) return null;
   const waiting = open.filter((row) => row.status === "PENDING").length;
 
-  function decide(row: AdminRegularChangeRow, approve: boolean, note?: string) {
+  async function decide(row: AdminRegularChangeRow, approve: boolean, note?: string) {
     if (approve) {
       const how = row.kind === "CHANGE"
         ? `${koreanMonthDay(row.effectiveFrom)}에 셔틀 명단의 정류장이 새 위치로 바뀝니다(순서·시각은 그대로).`
@@ -31,7 +32,7 @@ export default function RegularChangeRequestsPanel({ rows }: { rows: AdminRegula
       const partial = row.kind === "CHANGE" && row.weekdays
         ? "\n요일을 고른 변경은 학생 기준 위치는 그대로예요. 나중에 학생 위치를 저장하면 그 요일도 덮여요."
         : "";
-      if (!window.confirm(`${row.studentName} · ${row.summary}\n승인할까요? 학부모에게 앱 알림이 갑니다.\n${how}${partial}`)) return;
+      if (!(await askConfirm(`${row.studentName} · ${row.summary}\n승인할까요? 학부모에게 앱 알림이 갑니다.\n${how}${partial}`))) return;
     }
     setError("");
     startTransition(async () => {

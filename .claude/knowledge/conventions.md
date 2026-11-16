@@ -14,16 +14,10 @@
 - **내용**: `beforeinstallprompt`(PWA 설치)처럼 **페이지 로드 직후 한 번만 발생하고 재발화하지 않는** 이벤트는, React 하이드레이션 → `useEffect` 순서가 그보다 늦어 **조용히 유실**된다(설치 버튼이 영영 안 뜸). 해결 패턴: `src/app/layout.tsx` `<head>`에 인라인 스크립트를 넣어 React보다 먼저 리스너를 달고 `window.__stizInstallPrompt` 에 보관 + `stiz:installprompt` / `stiz:installed` 커스텀 이벤트로 알린다. 화면 컴포넌트는 마운트 시 **① 전역 보관값 먼저 확인 → ② 커스텀 이벤트 구독 → ③ 원본 이벤트 직접 구독(늦게 오는 경우 대비)** 3중으로 받는다. 스크립트는 `__stizInstallPromptReady` 가드로 중복 등록을 막고 전체를 try/catch로 감싼다(레이아웃은 사이트 전체에 영향). 이 프로젝트엔 CSP 가 없어 인라인 스크립트가 허용된다. 회귀 방지: 전역 변수명·이벤트명이 어긋나면 조용히 다시 버튼이 사라지므로, `tests/pwa-install-prompt-capture.test.mjs` 에서 layout.tsx 의 스크립트 원문을 정규식으로 추출해 **가짜 window(EventTarget)에 실제 실행**시켜 동작을 단언한다(문자열 매칭만으로는 동작을 못 잡는다).
 - **참조횟수**: 0
 
-### [2026-08-05] 컴포넌트 파일 삭제 전에는 src/ 가 아니라 tests/ 를 grep 해야 한다
+### [2026-08-05] 파일 삭제 함정 두 가지 — tests/ 도 grep, 라우트 삭제는 build → tsc 순서
 - **분류**: convention
 - **발견자**: developer
-- **내용**: 이 프로젝트의 회귀 테스트(`tests/*.test.mjs`, node --test)는 소스 파일을 `readFile("src/app/...")` 로 읽어 정규식 검사한다. 그래서 컴포넌트가 **import 참조 0건이어도** 테스트가 파일 경로를 문자열로 붙들고 있어, 삭제하는 순간 ENOENT 로 테스트 파일 전체가 죽는다. 실측: `ShuttleRouteAdminClient.tsx` 는 src/ 참조 0건이었지만 tests/ 7개 파일이 읽고 있었고, `EditApplicationModal` 도 `assert.match(applyModals, /function EditApplicationModal/)` 로 존재를 강제받고 있었다(신규 실패 9건 발생 → 원복). **죽은 코드 삭제 시 검색 범위는 `grep -rn "<심볼>" src/ tests/ scripts/` 로 잡는다.** 또 `npx vitest` 는 이 프로젝트 의존성이 아니라 실행하면 324개 전부 "no test suite" 로 오탐하니, 테스트는 `node --test tests/*.test.mjs` 로 돌린다.
-- **참조횟수**: 0
-
-### [2026-08-05] 라우트 파일을 지우면 .next/types/validator.ts 가 낡아 tsc 가 깨진다
-- **분류**: convention
-- **발견자**: developer
-- **내용**: `src/app/**/page.tsx` 를 삭제하면 `npx tsc --noEmit` 이 `.next/types/validator.ts(...): Cannot find module '../../src/app/.../page.js'` 로 실패한다. 소스 문제가 아니라 **이전 빌드가 남긴 생성 타입이 낡은 것**이다. `npx next build` 로 재생성하면 사라진다. 즉 라우트 삭제 작업의 검증 순서는 tsc → build 가 아니라 **build → tsc** 다.
+- **내용**: 이 프로젝트의 회귀 테스트(`tests/*.test.mjs`, node --test)는 소스 파일을 `readFile("src/app/...")` 로 읽어 정규식 검사한다. 그래서 컴포넌트가 **import 참조 0건이어도** 테스트가 파일 경로를 문자열로 붙들고 있어, 삭제하는 순간 ENOENT 로 테스트 파일 전체가 죽는다. 실측: `ShuttleRouteAdminClient.tsx` 는 src/ 참조 0건이었지만 tests/ 7개 파일이 읽고 있었고, `EditApplicationModal` 도 `assert.match(applyModals, /function EditApplicationModal/)` 로 존재를 강제받고 있었다(신규 실패 9건 발생 → 원복). **죽은 코드 삭제 시 검색 범위는 `grep -rn "<심볼>" src/ tests/ scripts/` 로 잡는다.** 또 `npx vitest` 는 이 프로젝트 의존성이 아니라 실행하면 324개 전부 "no test suite" 로 오탐하니, 테스트는 `node --test tests/*.test.mjs` 로 돌린다. (2) 라우트 파일 삭제: `src/app/**/page.tsx` 를 삭제하면 `npx tsc --noEmit` 이 `.next/types/validator.ts(...): Cannot find module '../../src/app/.../page.js'` 로 실패한다. 소스 문제가 아니라 **이전 빌드가 남긴 생성 타입이 낡은 것**이다. `npx next build` 로 재생성하면 사라진다. 즉 라우트 삭제 작업의 검증 순서는 tsc → build 가 아니라 **build → tsc** 다.
 - **참조횟수**: 0
 
 ### [2026-03-22] 공개 페이지 서버 컴포넌트 데이터 조회 패턴
@@ -202,4 +196,10 @@
 - **분류**: convention
 - **발견자**: developer
 - **내용**: 학부모 신청 화면(EnrollmentChangeClient·RegularAbsenceClient·MakeupClient 등)은 테스트가 `module.require` 손 mock 맵으로 그린다(enrollment-change-submit-feedback·list-stage8b·pause-return-date). ① 새 `@/` import 를 넣으면 맵에 없어 «Cannot find module» 로 10여 건이 한꺼번에 깨진다 → 같은 커밋에서 세 테스트의 맵에 대역을 넣는다. ② enrollment-change-submit-feedback 의 가짜 `useState` 는 **지연 초기화 함수(`useState(() => …)`)를 실행하지 않고 함수 그대로 state 로 돌려준다** → 초기값은 미리 계산해 값으로 넘긴다. 다른 화면에서 미리 고르기는 `?studentId=&enrollmentId=&kind=` + `lib/mypage/requestPreset.ts`(목록 안에서만 고르는 힌트 — 남의 id 는 무시)로 통일했다.
+- **참조횟수**: 0
+
+### [2026-11-16] 브라우저 기본 alert/confirm/prompt 금지 — 화면 안 부품(@/components/ui/feedback) 함수로
+- **분류**: convention
+- **발견자**: developer
+- **내용**: 앱 웹뷰에서 기본 경고창이 막히거나 조용히 «취소»가 돼서 전부 바꿨다. `showNotice(문구)`(alert 자리, 닫기 전까지 남는 아래 카드) · `if (!(await askConfirm(문구))) return;`(confirm 자리, 핸들러를 async 로) · `showCopyText(문구, 링크)`(prompt 자리). 훅이 아니라 보통 함수라 어디서나 부르고, 창은 `src/app/layout.tsx` 의 `<FeedbackHost />` 가 그린다. 관리자에서 제목·설명·체크칸이 필요한 위험 작업은 기존 `useAdminConfirm`. 함정: ① 동기 값을 돌려주던 확인 함수(`confirmLeave()` 등)는 `Promise<boolean>` 이 되니 부르는 쪽을 모두 `await` ② 링크 이동·폼 제출 가드는 클릭을 먼저 막고 «확인»이면 `anchor.click()`/`form.requestSubmit(button)` 으로 다시 진행 ③ 확인 전에 `event.target.value` 를 먼저 받아 둔다(기다리는 사이 제어 칸 값이 되돌아감) ④ «진행 중» 검사는 확인 뒤에 한 번 더(중복 클릭) ⑤ 소스를 손 mock 맵으로 렌더하는 테스트는 맵에 `"@/components/ui/feedback"` 대역을 넣는다. 가드: `tests/no-browser-dialog-guard.test.mjs`(대관 두 폴더만 임시 예외 — 늘리지 말 것).
 - **참조횟수**: 0

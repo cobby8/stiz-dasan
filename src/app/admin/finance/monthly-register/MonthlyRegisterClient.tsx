@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { calculateMonthlyRegister, validateMonthlyRegisterDraft, type MonthlyRegisterDraft, type MonthlyRegisterTotals, type MonthlyRegisterView } from "@/lib/billing/monthly-register";
+import { askConfirm } from "@/components/ui/feedback";
 
 type Row = MonthlyRegisterDraft["classes"][number];
 type EditorRow = Omit<Row, "baseAmount" | "discountAmount" | "carryAmount" | "prorationAmount" | "status"> & {
@@ -90,6 +91,8 @@ export default function MonthlyRegisterClient({ initialStudentId, initialMonth }
       const destination = new URL(anchor.href, window.location.href);
       if (!["http:", "https:"].includes(destination.protocol)) return;
       if (destination.origin === window.location.origin && destination.pathname === window.location.pathname && destination.search === window.location.search && destination.hash) return;
+      // 확인창에서 «확인»을 누른 뒤 다시 누른 클릭은 그대로 통과시킨다
+      if (linkApproved) return;
       const block = () => { event.preventDefault(); event.stopImmediatePropagation(); };
       if (posting.current || saving || (needsRefresh && loading)) {
         block(); setError("저장 결과를 확인 중입니다. 확인이 끝난 뒤 이동해 주세요."); return;
@@ -97,10 +100,15 @@ export default function MonthlyRegisterClient({ initialStudentId, initialMonth }
       const message = needsRefresh
         ? "저장 결과가 아직 확인되지 않았습니다. 재조회하지 않고 이동할까요?"
         : "저장하지 않은 편집이나 작업 사유가 있습니다. 내용을 버리고 이동할까요?";
-      if (!window.confirm(message)) { block(); return; }
-      // 같은 클릭의 전체 페이지 이동에서는 이미 받은 확인을 두 번 묻지 않는다.
-      linkApproved = true;
-      approvalTimer = setTimeout(() => { linkApproved = false; }, 0);
+      // 화면 안 확인창은 기다려야 답이 나오므로 이 클릭은 일단 막고, «확인»이면 같은 링크를 다시 눌러 이동한다.
+      block();
+      void askConfirm(message).then((ok) => {
+        if (!ok) return;
+        // 다시 누른 클릭과 그 클릭의 전체 페이지 이동에서는 이미 받은 확인을 두 번 묻지 않는다.
+        linkApproved = true;
+        anchor.click();
+        approvalTimer = setTimeout(() => { linkApproved = false; }, 0);
+      });
     };
     window.addEventListener("beforeunload", warnBeforeUnload);
     // 이 화면의 돌아가기뿐 아니라 관리자 메뉴의 같은 창 링크도 먼저 확인한다.
@@ -137,10 +145,10 @@ export default function MonthlyRegisterClient({ initialStudentId, initialMonth }
     return () => controller.abort();
   }, [target, reload]);
 
-  function chooseTarget() {
+  async function chooseTarget() {
     if (posting.current) return;
     if (!studentId.trim() || !/^\d{4}-\d{2}$/.test(month)) { setError("원생 번호와 적용 월을 입력해 주세요."); return; }
-    if (dirty && !window.confirm("저장하지 않은 편집을 버리고 다시 조회할까요?")) return;
+    if (dirty && !(await askConfirm("저장하지 않은 편집을 버리고 다시 조회할까요?"))) return;
     // 새 학생·월을 선택한 즉시 이전 응답과 저장 대상을 무효화한다.
     requestId.current += 1;
     setView(null); setPreview(null); setLoading(true);

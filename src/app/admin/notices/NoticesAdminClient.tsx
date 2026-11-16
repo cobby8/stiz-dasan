@@ -10,6 +10,7 @@ import AdminModal from "@/components/admin/AdminModal";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { toKstYmd } from "@/lib/datetime/kst";
+import { askConfirm, showNotice } from "@/components/ui/feedback";
 
 const RichTextEditor = dynamic(() => import("@/components/RichTextEditor"), {
     ssr: false,
@@ -254,7 +255,7 @@ export default function NoticesAdminClient({
         }
         setUploading(false);
         if (failedNames.length > 0) {
-            alert(`업로드하지 못한 첨부 이미지가 있습니다: ${failedNames.join(", ")}`);
+            showNotice(`업로드하지 못한 첨부 이미지가 있습니다: ${failedNames.join(", ")}`);
         }
     }
 
@@ -263,12 +264,12 @@ export default function NoticesAdminClient({
     }
 
     function handleSubmit() {
-        if (!formTitle.trim()) { alert("제목을 입력해주세요."); return; }
+        if (!formTitle.trim()) { showNotice("제목을 입력해주세요."); return; }
         // 리치 에디터는 빈 상태에서도 "<p></p>"를 내보내므로 태그를 걷어내 실제 내용 유무로 검사한다.
-        if (isEmptyContent(content)) { alert("내용을 입력해주세요."); return; }
+        if (isEmptyContent(content)) { showNotice("내용을 입력해주세요."); return; }
         // 본문 이미지가 아직 업로드 중이면 미완 이미지가 저장될 수 있어 잠시 대기시킨다.
-        if (editorUploading) { alert("본문 이미지 업로드가 끝날 때까지 잠시 기다려주세요."); return; }
-        if (targetType === "CLASS" && selectedClassIds.length === 0) { alert("대상 반을 선택해주세요."); return; }
+        if (editorUploading) { showNotice("본문 이미지 업로드가 끝날 때까지 잠시 기다려주세요."); return; }
+        if (targetType === "CLASS" && selectedClassIds.length === 0) { showNotice("대상 반을 선택해주세요."); return; }
         const payload = {
             title: formTitle,
             content,
@@ -288,13 +289,13 @@ export default function NoticesAdminClient({
                 await loadNotices();
             } catch (e) {
                 console.error("공지 저장 실패:", e);
-                alert("공지 저장 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.\n(문제가 계속되면 관리자에게 문의하세요.)");
+                showNotice("공지 저장 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.\n(문제가 계속되면 관리자에게 문의하세요.)");
             }
         });
     }
 
-    function handleDelete(id: string) {
-        if (!confirm("이 공지사항을 삭제하시겠습니까?")) return;
+    async function handleDelete(id: string) {
+        if (!(await askConfirm("이 공지사항을 삭제하시겠습니까?"))) return;
         startTransition(async () => {
             await deleteNotice(id);
             await loadNotices();

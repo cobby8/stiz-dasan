@@ -20,6 +20,7 @@ import ManualSmsModal from "./ManualSmsModal";
 import CompactListFilters from "@/components/academy/CompactListFilters";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
 import ListViewToggle, { useRememberedListView } from "@/components/admin/list/ListViewToggle";
+import { askConfirm } from "@/components/ui/feedback";
 
 const ApplyAdminModals = dynamic(() => import("./ApplyAdminModals"), {
     loading: () => null,
@@ -595,9 +596,9 @@ export default function ApplyAdminClient({
     // [연결] — 관리자가 확인한 체험 기록을 신청서에 붙인다(문자 발송 없음).
     async function handleLinkTrial(app: EnrollApplication, suggestion: TrialLinkSuggestion) {
         if (trialLinkBusyId) return;
-        const ok = window.confirm(`${app.childName} 신청서를 체험 기록 「${suggestion.childName}」과 연결할까요?
+        const ok = (await askConfirm(`${app.childName} 신청서를 체험 기록 「${suggestion.childName}」과 연결할까요?
 (${suggestion.reason})
-문자는 발송되지 않습니다.`);
+문자는 발송되지 않습니다.`));
         if (!ok) return;
         setTrialLinkBusyId(app.id);
         try {

@@ -38,6 +38,11 @@ function fixture(options = {}) {
     },
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
     '@/components/admin/adminDisplayText': displayText,
+    // 2026-11-16 브라우저 confirm 대신 화면 안 확인창(askConfirm) — 같은 가짜 응답을 돌려준다
+    '@/components/ui/feedback': {
+      askConfirm: async () => { calls.confirm++; return options.confirm ?? true; },
+      showNotice: async () => {},
+    },
   };
   const exports = {};
   vm.compileFunction(code, ['require', 'exports', 'fetch', 'confirm'])(id => {
