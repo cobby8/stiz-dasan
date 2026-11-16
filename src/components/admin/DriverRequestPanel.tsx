@@ -105,7 +105,7 @@ export default function DriverRequestPanel({ onClose }: { onClose: () => void })
                 {req.targetName && (
                   <span className="text-[14px] font-bold text-[var(--color-academy-ink)]">{req.targetName}</span>
                 )}
-                <span className="ml-auto shrink-0 text-[11px] text-[var(--color-academy-faint)]">{fmtDate(req.createdAt)}</span>
+                <span className="ml-auto shrink-0 text-xs text-[var(--color-academy-faint)]">{fmtDate(req.createdAt)}</span>
               </div>
               <p className="text-[12px] text-[var(--color-academy-muted)] mb-1">운행일: {req.serviceDate}</p>
               {req.note && (
@@ -141,13 +141,13 @@ export default function DriverRequestPanel({ onClose }: { onClose: () => void })
                 {done.map((req) => (
                   <div key={req.id} className="rounded-xl border border-[var(--color-academy-line)] p-3 opacity-70">
                     <div className="flex items-center gap-2">
-                      <span className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${TYPE_COLOR[req.type] ?? "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"}`}>
+                      <span className={`rounded-md px-2 py-0.5 text-xs font-bold ${TYPE_COLOR[req.type] ?? "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"}`}>
                         {TYPE_LABEL[req.type] ?? req.type}
                       </span>
                       <span className="text-[13px] font-semibold text-[var(--color-academy-muted)]">
                         {req.targetName ?? "-"}
                       </span>
-                      <span className={`ml-auto rounded px-2 py-0.5 text-[11px] font-bold ${STATUS_COLOR[req.status] ?? ""}`}>
+                      <span className={`ml-auto rounded px-2 py-0.5 text-xs font-bold ${STATUS_COLOR[req.status] ?? ""}`}>
                         {STATUS_LABEL[req.status] ?? req.status}
                       </span>
                     </div>

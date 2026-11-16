@@ -308,7 +308,7 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
     if (completed) {
         return (
             <div className="rounded-2xl bg-white p-8 text-center shadow-lg dark:bg-[var(--color-public-tint)]">
-                <h2 className="mb-3 text-2xl font-black text-[var(--color-public-ink)] dark:text-white">
+                <h2 className="mb-3 text-2xl font-[700] text-[var(--color-public-ink)] dark:text-white">
                     {completionMode === "updated" ? "체험수업 신청서 수정 완료!" : "체험수업 신청 완료!"}
                 </h2>
                 <p className="mb-2 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">담당자가 빠른 시간 안에 연락드리겠습니다.</p>
@@ -330,7 +330,7 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
                 <>
                 <div className="mb-3 text-left"><TrialVisitGuide feeLabel={feeLabel} onlinePayment={false} /></div>
                 <div className="mb-6 rounded-2xl border border-[var(--color-public-line)] bg-orange-50 p-5 text-left dark:border-brand-neon-lime/30 dark:bg-brand-neon-lime/10">
-                    <h3 className="text-xl font-black text-[var(--color-public-ink)] dark:text-white">체험수업비 입금 안내</h3>
+                    <h3 className="text-xl font-[700] text-[var(--color-public-ink)] dark:text-white">체험수업비 입금 안내</h3>
                     <p className="mt-1 text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">입금 확인 후 체험수업 일정 안내가 진행됩니다.</p>
                     <div className="mt-4 grid gap-3 rounded-xl bg-white p-4 text-sm dark:bg-[var(--color-public-paper)]">
                         <InfoRow label="금액" value={feeLabel} />
@@ -444,13 +444,13 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
                         {onlinePayment ? (
                             // 온라인 결제: 계좌 대신 «신청 후 바로 결제» 안내만(금액은 설정값)
                             <div className="space-y-3 rounded-2xl border border-[var(--color-public-line)] bg-[var(--color-public-paper)] p-4">
-                                <h3 className="text-lg font-black text-[var(--color-public-ink)]">체험수업비 {feeLabel}</h3>
+                                <h3 className="text-lg font-[700] text-[var(--color-public-ink)]">체험수업비 {feeLabel}</h3>
                                 <p className="text-sm text-[var(--color-public-muted)]">신청을 마치면 바로 카드·계좌이체·무통장입금으로 결제할 수 있어요. 결제가 확인되면 체험수업이 확정돼요.</p>
                                 <TrialVisitGuide feeLabel={feeLabel} onlinePayment />
                             </div>
                         ) : (
                         <div className="rounded-2xl border border-[var(--color-public-line)] bg-orange-50 p-5 dark:border-brand-neon-lime/30 dark:bg-brand-neon-lime/10">
-                            <h3 className="text-xl font-black text-[var(--color-public-ink)] dark:text-white">체험수업비 입금 안내</h3>
+                            <h3 className="text-xl font-[700] text-[var(--color-public-ink)] dark:text-white">체험수업비 입금 안내</h3>
                             <p className="mt-1 text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">입금 확인 후 체험수업 일정 안내가 진행됩니다.</p>
                             <div className="mt-4 grid gap-3 rounded-xl bg-white p-4 text-sm dark:bg-[var(--color-public-paper)]">
                                 <InfoRow label="금액" value={feeLabel} />

@@ -30,9 +30,22 @@ function fixture(unauthorized = false) {
     enrollmentApplication: [{ id: 'app-1', childName: '가상학생', convertedStudentId: 'student-1', assignedClassId: 'class-1', shuttleNeeded: false }],
     enrollment: [{ studentId: 'student-1', classId: 'class-1' }], operationsCommand: commands, paymentInvoice: [],
   };
-  const prisma = Object.fromEntries(Object.entries(rows).map(([key, value]) => [key, {
-    async findMany(options) { calls.push({ key, options }); return value; },
-  }]));
+  // 2026-11-16 ORM 금지 규칙 정리: 페이지가 $queryRawUnsafe 로 읽으므로, SQL 의 FROM 테이블 이름으로 가짜 행을 고른다.
+  // 재조회 기록은 별도 테이블(OperationsSyncAttempt)에서 명령 번호(commandId)와 함께 온다.
+  const attempts = commands.flatMap(command => command.syncAttempts.map(attempt => ({ commandId: command.id, ...attempt })));
+  const tables = { EnrollmentApplication: 'enrollmentApplication', Enrollment: 'enrollment', OperationsCommand: 'operationsCommand',
+    PaymentInvoice: 'paymentInvoice', OperationsSyncAttempt: 'operationsSyncAttempt' };
+  const prisma = {
+    async $queryRawUnsafe(sql, ...args) {
+      const key = tables[sql.match(/FROM "(\w+)"/)?.[1]];
+      assert.ok(key, `모르는 조회: ${sql}`);
+      calls.push({ key, sql, args });
+      if (key === 'operationsSyncAttempt') return attempts;
+      // 페이지가 받는 행에는 관계 묶음(syncAttempts)이 없다 — 페이지가 직접 붙여야 한다.
+      if (key === 'operationsCommand') return commands.map(({ syncAttempts, ...row }) => row);
+      return rows[key];
+    },
+  };
   const model = load('src/lib/enrollment/registration-readiness.ts', {});
   const page = load('src/app/admin/registration-readiness/page.tsx', {
     'react/jsx-runtime': jsx,
@@ -80,10 +93,14 @@ test('실제 페이지가 조회한 원장 출처를 표시하고 실패 타깃�
   assert.ok(!html.includes('DO_NOT_RENDER_RAW_PAYLOAD'));
   assert.ok(!html.includes('SUCCEEDED') && !html.includes('FAILED'));
   const query = f.calls.find(call => call.key === 'operationsCommand');
-  assert.equal(query.options.select.afterJson, true);
-  assert.equal(query.options.select.createdAt, true);
-  assert.deepEqual(query.options.where.studentId.in, ['student-1']);
-  assert.equal(f.calls.length, 4);
+  assert.match(query.sql, /"afterJson"/);
+  assert.match(query.sql, /"createdAt"/);
+  assert.deepEqual(query.args[0], ['student-1']);
+  // 신청·수강·명령·청구서 4번 + 재조회 기록 1번
+  assert.equal(f.calls.length, 5);
+  assert.deepEqual(f.calls.find(call => call.key === 'operationsSyncAttempt').args[0], ['cmd-1']);
+  // ORM 기본 메서드(findMany 등)를 다시 쓰지 않는다 — PgBouncer 트랜잭션 모드 규칙
+  assert.doesNotMatch(readFileSync('src/app/admin/registration-readiness/page.tsx', 'utf8'), /prisma\.\w+\.(findMany|findFirst|findUnique|count|create|update|upsert|delete)\(/);
 });
 
 test('관리자 권한 실패는 페이지 자료 조회 전에 차단한다', async () => {

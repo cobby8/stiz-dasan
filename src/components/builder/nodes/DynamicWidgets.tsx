@@ -67,7 +67,7 @@ export const ProgramsWidget = () => {
                             <div className="w-full sm:w-1/3 h-32 sm:h-auto bg-gray-100 dark:bg-gray-800 relative flex items-center justify-center p-4">
                                 <div className={`absolute inset-0 opacity-10 mix-blend-multiply ${idx % 2 === 0 ? 'bg-brand-navy-900' : 'bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900'}`}></div>
                                 {program.targetAge && (
-                                    <div className={`absolute top-2 left-2 md:top-4 md:left-4 text-[10px] md:text-xs font-bold px-2 py-1 rounded shadow-sm ${idx % 2 === 0 ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white' : 'bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white'}`}>
+                                    <div className={`absolute top-2 left-2 md:top-4 md:left-4 text-xs font-bold px-2 py-1 rounded shadow-sm ${idx % 2 === 0 ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white' : 'bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white'}`}>
                                         {program.targetAge}
                                     </div>
                                 )}
@@ -79,8 +79,8 @@ export const ProgramsWidget = () => {
                                     {program.description || '상세 설명이 등록되지 않았습니다.'}
                                 </p>
                                 <div className="flex flex-col sm:flex-row flex-wrap gap-1.5 md:gap-2">
-                                    {program.frequency && <span className="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 px-1.5 md:px-2 py-1 rounded text-[10px] md:text-xs w-fit">빈도: {program.frequency}</span>}
-                                    <span className="bg-orange-50 text-brand-orange-600 dark:text-brand-neon-lime font-bold px-1.5 md:px-2 py-1 rounded text-[10px] md:text-xs border border-orange-100 w-fit">수강료: {program.price.toLocaleString()}원</span>
+                                    {program.frequency && <span className="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 px-1.5 md:px-2 py-1 rounded text-xs w-fit">빈도: {program.frequency}</span>}
+                                    <span className="bg-orange-50 text-brand-orange-600 dark:text-brand-neon-lime font-bold px-1.5 md:px-2 py-1 rounded text-xs border border-orange-100 w-fit">수강료: {program.price.toLocaleString()}원</span>
                                 </div>
                             </div>
                         </div>

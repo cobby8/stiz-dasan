@@ -123,7 +123,7 @@ export default function ApplyPageClient({
                                 옛 네이비 머리는 다크 모드 배경과 거의 같은 색이라 묻혔다. */}
                             <div className="border-b border-[var(--color-public-line)] bg-[var(--color-public-tint)] px-6 py-4">
                                 <p className="mb-1 text-xs font-medium text-[var(--color-public-muted)]">체험수업</p>
-                                <h3 className="text-xl font-black text-[var(--color-public-ink)]">{trialTitle}</h3>
+                                <h3 className="text-xl font-[700] text-[var(--color-public-ink)]">{trialTitle}</h3>
                             </div>
                             {/* 카드 본문 */}
                             <div className="px-6 py-6">
@@ -171,7 +171,7 @@ export default function ApplyPageClient({
                             {/* 카드 헤더 — 체험 카드와 같은 중립색(게슈탈트 P-05) */}
                             <div className="border-b border-[var(--color-public-line)] bg-[var(--color-public-tint)] px-6 py-4">
                                 <p className="mb-1 text-xs font-medium text-[var(--color-public-muted)]">정규 수강</p>
-                                <h3 className="text-xl font-black text-[var(--color-public-ink)]">{enrollTitle}</h3>
+                                <h3 className="text-xl font-[700] text-[var(--color-public-ink)]">{enrollTitle}</h3>
                             </div>
                             {/* 카드 본문 */}
                             <div className="px-6 py-6">

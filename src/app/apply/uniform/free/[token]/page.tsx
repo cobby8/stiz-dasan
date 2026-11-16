@@ -47,7 +47,7 @@ export default async function FreeUniformApplyPage({ params }: { params: Promise
           ) : (
             // 쓸 수 없는 링크: 이유 한 줄 + 학원 연락처
             <div className="public-card rounded-2xl bg-white p-6 text-center shadow-lg dark:bg-[var(--color-public-tint)]">
-              <h1 className="break-keep text-lg font-black text-[var(--color-public-ink)] dark:text-white">{view.message}</h1>
+              <h1 className="break-keep text-lg font-[700] text-[var(--color-public-ink)] dark:text-white">{view.message}</h1>
               <p className="mt-2 break-keep text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
                 궁금한 점은 학원으로 연락해 주세요.
               </p>

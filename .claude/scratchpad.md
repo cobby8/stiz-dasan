@@ -294,6 +294,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-16 | 남은 정리(claude/cleanup-type-weight): 12px 미만 글자 20곳→12px · 800/900 굵기 35곳→제목 font-[700]·그 외 600(OG·지도·도넛 700) · 입학 완료 확인 화면 ORM 4건→$queryRawUnsafe · 가드 tests/type-weight-guard.test.mjs. tsc 0 · tests 5619-0 · guards 337-0 | 구현 완료(검수 전) |
 | 11-16 | developer(학생 유니폼 번호 두 칸 — 취미반 uniformNumber·대표팀 teamUniformNumber, claude/uniform-number): 학생 상세 유니폼 카드에 두 줄 표시 + 수정 창 입력칸 2개 · updateStudentUniform 서버 검증(숫자만·3자·비우면 null·"0" 은 번호) · 규칙 lib/students/uniform-number.ts · 마이그레이션 파일만(IF NOT EXISTS, 운영 적용됨) · 원생 목록엔 유니폼 표시가 없어 덧붙이기 생략. tsc 0 · tests 5612-0 · guards 337-0 | 구현 완료(검수 전) |
 | 11-16 | developer(질병 결석 미납인 달 = 미납 청구에서 1회분 빼기, claude/illness-unpaid-reduce): 승인이 서버에서 이월/감액 갈래 결정 · 기록은 PaymentAuditLog(ILLNESS_ABSENCE_UNPAID_REDUCED)+정산 기록 고정 사유 · 근거·휴원 정산·청구 준비·발행 보류가 감액을 «이미 줄인 금액»으로 인정 · 신청함·학부모 글자 구분. tsc 0 · tests 5607-0 · guards 337-0. 마이그레이션 없음 | 구현 완료(검수 전) |
 | 11-15 | developer(휴원 정산 단가 부풀림 수정, claude/pause-unit-price): loadPausePayments 가 랠리즈 청구의 «감액 할 일» 줄(UNPAID_REDUCE·channel≠SITE, 사이트 금액은 안 줄임)까지 원래 금액에 더하던 것을 «사이트가 실제로 줄인 줄»만 세도록 수정(workbench-absence 와 같은 기준). 재현 테스트 추가. tsc 0 · 관련 tests 179-0 | 검수 대기 |

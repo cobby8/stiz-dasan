@@ -59,7 +59,7 @@ export default function SectionLayout({
       <div className="max-w-6xl mx-auto px-4 py-16 md:py-24">
         {/* 홈 컴팩트 제목: 왼쪽 정렬 22px 하나. 다른 페이지(/programs 등)는 아래 기존 모양 그대로 */}
         {compactHeading && title && (
-          <h2 className="mb-4 text-left text-[22px] font-extrabold leading-snug text-gray-900 dark:text-white">{title}</h2>
+          <h2 className="mb-4 text-left text-[22px] font-[700] leading-snug text-gray-900 dark:text-white">{title}</h2>
         )}
 
         {/* 제목 영역: 라벨 + 제목 + 설명이 있을 때만 렌더링 */}
@@ -74,7 +74,7 @@ export default function SectionLayout({
 
             {/* 제목: 크고 굵은 메인 타이틀 */}
             {title && (
-              <h2 className="text-3xl md:text-4xl font-extrabold text-gray-900 dark:text-white mb-4">
+              <h2 className="text-3xl md:text-4xl font-[700] text-gray-900 dark:text-white mb-4">
                 {title}
               </h2>
             )}

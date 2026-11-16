@@ -36,7 +36,7 @@ export default async function EnrollApplyPage({
             <section className="public-page-hero public-page-hero--compact relative overflow-hidden bg-gradient-to-br from-[var(--color-public-dark)] via-[var(--color-public-dark)] to-[var(--color-public-dark)] py-12 text-white md:py-16">
                 <div className="relative mx-auto max-w-3xl px-6">
                     <AnimateOnScroll>
-                        <h1 className="mb-3 break-keep text-3xl font-black md:text-4xl">수강 신청</h1>
+                        <h1 className="mb-3 break-keep text-3xl font-[700] md:text-4xl">수강 신청</h1>
                         <p className="max-w-xl text-base text-blue-200">
                             {trialData
                                 ? "체험수업 정보가 자동으로 채워졌습니다. 확인 후 추가 정보를 입력해주세요."

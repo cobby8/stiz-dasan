@@ -306,7 +306,7 @@ export default function AnnualEventsClient({ allEvents, yearlySchedules, default
                                         {/* 수업일자 패널 — 스타일 약간 개선 (둥근 모서리 + 그림자) */}
                                         {isScheduleOpen && schedule && (
                                             <div className="mb-5 bg-[var(--color-public-dark)] text-white rounded-2xl px-6 py-5 shadow-lg">
-                                                <p className="text-[11px] font-bold text-blue-300 mb-3 uppercase tracking-wide">
+                                                <p className="text-xs font-bold text-blue-300 mb-3 uppercase tracking-wide">
                                                     {mon + 1}월 수업일자
                                                 </p>
                                                 <div className="space-y-1.5">
@@ -315,7 +315,7 @@ export default function AnnualEventsClient({ allEvents, yearlySchedules, default
                                                         if (dates.length === 0) return null;
                                                         return (
                                                             <div key={day} className="flex items-baseline gap-3">
-                                                                <span className="text-sm font-black w-5 shrink-0 text-white">
+                                                                <span className="text-sm font-semibold w-5 shrink-0 text-white">
                                                                     {DAY_NAMES[day]}
                                                                 </span>
                                                                 <span className="text-sm text-blue-100 tracking-wide">
@@ -363,7 +363,7 @@ export default function AnnualEventsClient({ allEvents, yearlySchedules, default
                                                     >
                                                         {/* 날짜 헤더 — 더 깔끔한 디자인 */}
                                                         <div className="px-5 py-2.5 bg-[var(--color-public-tint)]/80 dark:bg-[var(--color-public-line)]/80 border-b border-[var(--color-public-line)] dark:border-[var(--color-public-line)] flex items-center gap-2 transition-colors">
-                                                            <span className="text-sm font-black text-[var(--color-public-ink)] dark:text-[var(--color-public-ink)]">
+                                                            <span className="text-sm font-semibold text-[var(--color-public-ink)] dark:text-[var(--color-public-ink)]">
                                                                 {mo}월 {day}일
                                                             </span>
                                                             <span className="text-xs font-bold text-[var(--color-public-muted)] bg-[var(--color-public-line)]/70 dark:bg-gray-600/70 px-2 py-0.5 rounded-full leading-none transition-colors">
