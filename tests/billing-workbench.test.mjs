@@ -56,6 +56,8 @@ function database({credit=0,secondClass=false}={}){
   if(sql.includes('FROM "RegularAbsence" pa JOIN "RegularAbsencePeriod" pp')){assert.match(sql,/pa\.reason = 'ILLNESS_INJURY' AND pa\.status <> 'CANCELLED' AND pp\."carryState" <> 'NONE'/);return structuredClone(state.periodAbsences??[]);}
   // 그 학생·그 달에 반이 지정되지 않은 납부 수강료 청구가 있는가(있으면 «낸 돈이 없는 달»로 단정하지 않는다)
   if(sql.includes(`p.status='PAID' AND p."classId" IS NULL LIMIT 1`))return state.payments.filter(p=>p.studentId===v[0]&&p.year===v[1]&&p.month===v[2]&&p.type==="MONTHLY"&&p.status==="PAID"&&(p.classId===null||p.classId===undefined)).slice(0,1).map(p=>({id:p.id}));
+  // 2026-11-16: 그 학생·그 반(또는 반 없음)·그 달에 미납 수강료 청구가 있는가 — 승인이 «이월 / 미납 청구에서 빼기»를 가를 때 묻는다
+  if(sql.includes(`status IN ('PENDING','OVERDUE') LIMIT 1`)){assert.match(sql,/type = 'MONTHLY'/);return state.payments.filter(p=>p.studentId===v[0]&&(p.classId===v[1]||p.classId===null||p.classId===undefined)&&p.year===v[2]&&p.month===v[3]&&p.type==="MONTHLY"&&["PENDING","OVERDUE"].includes(p.status)).slice(0,1).map(()=>({found:1}));}
   // 부상 결석 복귀 정산(3단계)이 남긴 «낸 돈이 없는 달» 안내 — 확정된(SETTLED) 기간의 이 달 것만
   if(sql.includes('FROM "RegularAbsencePeriod" sp')){assert.match(sql,/sp\.reason = 'ILLNESS_INJURY' AND sp\."carryState" = 'SETTLED'/);assert.match(sql,/sp\."carrySettlement"->'unpaidGuides' @> jsonb_build_array\(jsonb_build_object\('month', \$1::text\)\)/);return (state.settledGuides??[]).filter(g=>g.guides.some(x=>x.month===v[0])).map(g=>({studentId:g.studentId,periodId:g.periodId,guides:g.guides,settledAt:g.settledAt??null}));}
   if(sql.includes('FROM "RegularAbsencePeriod" p JOIN "RegularAbsence" a ON a."periodId"=p.id')){assert.match(sql,/p\."carryState"<>'NONE'/);return (state.periodDecided??[]).includes(v[0])?[{found:1}]:[];}
@@ -558,7 +560,12 @@ const creditRulesUrl=url(await readFile("src/lib/makeup/credit-rules.ts","utf8")
 const reportCreditUrl=url((await readFile("src/lib/makeup/absence-report-credit.ts","utf8")).replace('from "./credit-rules"',`from "${creditRulesUrl}"`).replace('from "@/lib/billing/absence-compensation-guard"',`from "${guardUrl}"`).replace('from "@/lib/datetime/kst"',`from "${kstUrl}"`).replace('from "@/lib/parent/changeDeadline"',`from "${url(await readFile("src/lib/parent/changeDeadline.ts","utf8"))}"`));
 const illnessRulesUrl=url((await readFile("src/lib/regular/illnessCarryRules.ts","utf8")).replace('from "@/lib/datetime/kst"',`from "${kstUrl}"`));
 const illnessTxUrl=url((await readFile("src/lib/regular/illness-carry-tx.ts","utf8")).replace('from "@/lib/billing/absence-compensation-guard"',`from "${guardUrl}"`).replace('from "@/lib/makeup/absence-report-credit"',`from "${reportCreditUrl}"`).replace('from "@/lib/regular/illnessCarryRules"',`from "${illnessRulesUrl}"`));
-const illnessAdminUrl=url((await readFile("src/lib/regular/illness-carry-admin.ts","utf8")).replace('from "@/lib/datetime/kst"',`from "${kstUrl}"`).replace('from "@/lib/billing/workbench"',`from "${modelUrl}"`).replace('from "@/lib/billing/workbench-service"',`from "${serviceUrl}"`).replace('from "@/lib/billing/workbench-absence"',`from "${absenceUrl}"`).replace('from "@/lib/makeup/absence-report-credit"',`from "${reportCreditUrl}"`).replace('from "@/lib/regular/illness-carry-tx"',`from "${illnessTxUrl}"`).replace('from "@/lib/regular/illnessCarryRules"',`from "${illnessRulesUrl}"`));
+// 2026-11-16 «미납 청구에서 1회분 빼기»: 순수 규칙은 실제 모듈을 쓰고, DB 연결부는 대역으로 바꿔 «연결»만 본다
+// (실제 실행은 tests/illness-unpaid-reduce.test.mjs). 대역은 globalThis.__unpaidReduceStub 가 정한 대로 답한다.
+const unpaidRulesUrl=url(await readFile("src/lib/regular/illnessUnpaidReduceRules.ts","utf8"));
+globalThis.__unpaidReduceStub={preview:async()=>({ok:false,reason:"합성: 미납 청구에서 뺄 수 없음"}),reduce:async()=>{throw new Error("이 파일에서는 미납 감액을 실행하지 않는다");}};
+const unpaidReduceStubUrl=url(`export const previewUnpaidReduce=(tx,input)=>globalThis.__unpaidReduceStub.preview(tx,input);export const reduceUnpaidForIllnessAbsenceInTx=(tx,input)=>globalThis.__unpaidReduceStub.reduce(tx,input);`);
+const illnessAdminUrl=url((await readFile("src/lib/regular/illness-carry-admin.ts","utf8")).replace('from "@/lib/datetime/kst"',`from "${kstUrl}"`).replace('from "@/lib/billing/workbench"',`from "${modelUrl}"`).replace('from "@/lib/billing/workbench-service"',`from "${serviceUrl}"`).replace('from "@/lib/billing/workbench-absence"',`from "${absenceUrl}"`).replace('from "@/lib/makeup/absence-report-credit"',`from "${reportCreditUrl}"`).replace('from "@/lib/regular/illness-carry-tx"',`from "${illnessTxUrl}"`).replace('from "@/lib/regular/illnessCarryRules"',`from "${illnessRulesUrl}"`).replace('from "@/lib/regular/illnessUnpaidReduceRules"',`from "${unpaidRulesUrl}"`).replace('from "@/lib/regular/illness-unpaid-reduce"',`from "${unpaidReduceStubUrl}"`));
 const {approveIllnessCarry}=await import(illnessAdminUrl);
 const approve=(db,input={})=>approveIllnessCarry(db,{absenceId:"absence-a",evidenceConfirmed:true,...input},"admin",true);
 // 학부모가 알린(아직 «신고» 상태인) 질병·부상 결석 — 원래 달(10월) 확정 장부 있음, 보강권 상태는 인자로
@@ -566,7 +573,7 @@ const reportedAbsence=(status="AVAILABLE")=>{const db=absenceDatabase(status);db
 test("신청함 이월 승인: 신고 상태 결석을 확정하고 기존 규칙으로 적립(할인 후 수강료÷그 달 수업 횟수) + 보강권 회수 + 검토 «이월 승인»",async()=>{
  const db=reportedAbsence();
  const done=await approve(db);
- assert.deepEqual(done,{studentId:"student-a",classId:"class-a",absenceYmd:"2026-10-10"});
+ assert.deepEqual(done,{studentId:"student-a",classId:"class-a",absenceYmd:"2026-10-10",mode:"CARRY"},"납부된 달은 기존 이월 그대로");
  assert.equal(db.state.absences[0].status,"CONFIRMED","원장이 증빙을 보고 승인 = 결석 확정");
  assert.equal(db.state.carryCredits.length,1);
  assert.deepEqual([db.state.carryCredits[0].numerator,db.state.carryCredits[0].denominator,db.state.carryCredits[0].availableMonth],["90000","4","2026-11"],"(100,000−할인 10,000)÷10월 4회 → 다음 달(11월)부터 차감");
@@ -770,7 +777,7 @@ const detailOf=(db,calendar,failOn)=>readIllnessCarryDetail({async $queryRawUnsa
  assert.doesNotMatch(sql,/FOR SHARE|FOR UPDATE/,"미리보기는 행을 잠그지 않는다");
  if(failOn&&sql.includes(failOn))throw new TypeError("합성 조회 실패");
  if(sql.includes('"draftTable"'))return [{draftTable:"present",registerTable:null}];
- if(sql.includes(`status IN ('PENDING','OVERDUE') LIMIT 1`)){assert.match(sql,/type = 'MONTHLY'/);return db.state.payments.filter(p=>p.studentId===v[0]&&p.classId===v[1]&&p.year===v[2]&&p.month===v[3]&&p.type==="MONTHLY"&&["PENDING","OVERDUE"].includes(p.status)).slice(0,1).map(()=>({found:1}));}
+ if(sql.includes(`status IN ('PENDING','OVERDUE') LIMIT 1`)){assert.match(sql,/type = 'MONTHLY'/);assert.match(sql,/\("classId" = \$2 OR "classId" IS NULL\)/);return db.state.payments.filter(p=>p.studentId===v[0]&&(p.classId===v[1]||p.classId===null)&&p.year===v[2]&&p.month===v[3]&&p.type==="MONTHLY"&&["PENDING","OVERDUE"].includes(p.status)).slice(0,1).map(()=>({found:1}));}
  return db.tx.$queryRawUnsafe(sql,...v);
 }},"absence-a",true,calendar);
 test("신청함 상세: 공식 일정을 못 읽었으면(null) 근거 미리보기·거절 사유를 내지 않고 안내 한 줄만 — 승인 버튼은 막지 않는다",async()=>{
@@ -819,8 +826,26 @@ test("신청함 상세: 승인 전 근거 미리보기 — 납부 청구 금액 
  const narrowed=(await detailOf(third)).evidence;
  assert.deepEqual([narrowed.tuition,narrowed.sessions,narrowed.unit],[100000,3,33333]);assert.match(narrowed.warnings[0],/월중 등록\(개시일 2026-10-10\).*3회/,"개시일로 분모를 좁힌 것을 승인 전에 본다");
 });
-test("신청함 상세: 근거가 없는 실제 이유를 가른다 — 미납이면 «납부한 뒤», 청구가 없으면 «발행한 뒤», 그 밖은 서버 사유 그대로",async()=>{
- for(const status of ["PENDING","OVERDUE"]){const d=await detailOf(paidEvidenceDatabase([paidOct({status})]));assert.match(d.blocker,/수강료를 납부한 뒤에 승인/,status);assert.equal(d.evidence,null);}
+test("신청함 상세: 근거가 없는 실제 이유를 가른다 — 미납이면 «미납 청구에서 빼기» 미리보기, 청구가 없으면 «발행한 뒤», 그 밖은 서버 사유 그대로",async()=>{
+ // 2026-11-16 원장 결정: 미납인 달은 «납부한 뒤에»로 막지 않는다 — 미납 감액 미리보기(대역)가 정한 대로 보인다
+ const stub=globalThis.__unpaidReduceStub,keep={...stub};
+ try{
+  for(const status of ["PENDING","OVERDUE"]){
+   // 뺄 수 있으면: 근거(reduce)가 내려오고 버튼을 막지 않는다. 이월 근거(evidence)는 없다
+   const asked=[];stub.preview=async(_tx,input)=>{asked.push(input);return {ok:true,plan:{paymentId:"rz-oct",month:"2026-10",source:"PAID_PAYMENT",tuition:105000,sessions:4,unit:26250,before:105000,reduceBy:26250,after:78750,cancels:false,warnings:[]}};};
+   const ok=await detailOf(paidEvidenceDatabase([paidOct({status})]));
+   assert.deepEqual([ok.blocker,ok.evidence],[null,null],status);
+   assert.deepEqual(ok.reduce,{month:"2026-10",tuition:105000,sessions:4,unit:26250,before:105000,reduceBy:26250,after:78750,warnings:[]},status);
+   assert.deepEqual(asked.map(i=>[i.absence.id,i.originMonth]),[["absence-a","2026-10"]],"그 결석·그 수강월로 한 번 묻는다");
+   // 뺄 수 없으면: 그 사유가 버튼 위에 그대로 보이고(«납부한 뒤에»가 아니다) 버튼이 꺼진다
+   stub.preview=async()=>({ok:false,reason:"합성: 미납 청구에서 뺄 수 없음"});
+   const no=await detailOf(paidEvidenceDatabase([paidOct({status})]));
+   assert.deepEqual([no.blocker,no.evidence,no.reduce],["합성: 미납 청구에서 뺄 수 없음",null,null],status);
+  }
+  // 반이 지정되지 않은 미납 청구만 있어도 «청구 없음»으로 단정하지 않고 미납 쪽으로 묻는다(사유는 미납 감액 규칙이 낸다)
+  stub.preview=async()=>({ok:false,reason:"합성: 반 없는 미납 청구"});
+  assert.equal((await detailOf(paidEvidenceDatabase([paidOct({status:"PENDING",classId:null})]))).blocker,"합성: 반 없는 미납 청구");
+ }finally{Object.assign(stub,keep);}
  for(const payments of [[],[paidOct({status:"CANCELED"})],[paidOct({status:"REFUNDED"})],[paidOct({classId:"class-b"})],[paidOct({month:11})],[paidOct({status:"PENDING",type:"SHUTTLE"})]])
   assert.match((await detailOf(paidEvidenceDatabase(payments))).blocker,/청구를 발행한 뒤/,JSON.stringify(payments));
  const two=await detailOf(paidEvidenceDatabase([paidOct(),paidOct({id:"rz-oct-2"})]));assert.match(two.blocker,/여러 건/);assert.equal(two.evidence,null);

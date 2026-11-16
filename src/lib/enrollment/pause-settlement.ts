@@ -125,6 +125,15 @@ const POS_BUSY_P = `(EXISTS (SELECT 1 FROM "PosChargeRequestItem" pi WHERE pi."p
              OR EXISTS (SELECT 1 FROM "PosChargeRequest" pr WHERE pr."paymentId" = p.id AND pr.status IN ('PENDING','SENT')))`;
 
 /**
+ * 질병·부상 결석 «미납 청구에서 1회분 빼기»(2026-11-16)가 이 청구에서 줄인 금액 합계와 그 결석일들 — 별칭 p.
+ * 청구 변경 기록(PaymentAuditLog)의 action 'ILLNESS_ABSENCE_UNPAID_REDUCED' 에서 읽는다
+ * (글자는 billing/workbench.ts 의 ILLNESS_UNPAID_REDUCE_ACTION · illnessReducedSumSql 과 같다 — 테스트가 비교. 이 파일은 그 모듈을 import 하지 않는다).
+ * 금액은 «원래 금액» 계산(priorReduction)에, 결석일은 «이미 처리한 날»(settledDates)에 더한다 — 같은 날을 휴원 정산이 다시 빼지 않게.
+ */
+const ILLNESS_REDUCED_P = `(SELECT COALESCE(SUM((illness_cut.metadata->>'reduceBy')::int),0)::int FROM "PaymentAuditLog" illness_cut WHERE illness_cut."paymentId" = p.id AND illness_cut.action = 'ILLNESS_ABSENCE_UNPAID_REDUCED')`;
+const ILLNESS_REDUCED_DATES_P = `(SELECT COALESCE(jsonb_agg(illness_cut.metadata->>'absenceDate'), '[]'::jsonb) FROM "PaymentAuditLog" illness_cut WHERE illness_cut."paymentId" = p.id AND illness_cut.action = 'ILLNESS_ABSENCE_UNPAID_REDUCED')`;
+
+/**
  * 휴원한 반의 수강료 청구 + 결제 경로·진행 중 여부 + 이미 처리된 날.
  * lock=true(실행)면 잠금 순서를 관리자 «청구서 수정»(updateUnpaidPayment)과 같게 한다 — 교착 금지:
  *   (부르는 쪽이 이미 전역 잠금) → ① 대상 청구 id 를 잠금 없이 읽고 → ② 결제 잠금(lockPaymentsForCheckout, id 정렬순)
@@ -145,7 +154,8 @@ async function loadPausePayments(db: SettlementSql, req: PauseRequestRow, tables
     `SELECT p.id, p.year, p.month, p.amount, p.status, p."paidProvider", p.method,
             NOT (${rallyzMirrorExclusionSql("p")}) AS "rallyzMirror",
             tx.id AS "tossTxId", tx.method AS "tossTxMethod",
-            ${POS_BUSY_P} AS "posBusy"
+            ${POS_BUSY_P} AS "posBusy",
+            ${ILLNESS_REDUCED_P} AS "illnessReduced", ${ILLNESS_REDUCED_DATES_P} AS "illnessDates"
        FROM "Payment" p
        LEFT JOIN LATERAL (
          SELECT t.id, t.method FROM "PaymentTransaction" t
@@ -208,8 +218,9 @@ async function loadPausePayments(db: SettlementSql, req: PauseRequestRow, tables
       tossTx: row.tossTxId ? { transactionId: String(row.tossTxId), method: row.tossTxMethod ?? null } : null,
       busy: Boolean(row.posBusy) || checkoutActive.has(String(row.id)),
       classDates: req.dayOfWeek ? classDatesFor(ym, req.dayOfWeek) : [],
-      settledDates: settled.get(String(row.id)) ?? [],
-      priorReduction: reduced.get(String(row.id)) ?? 0,
+      // + 질병·부상 결석으로 이미 뺀 날·금액(2026-11-16) — 그날을 다시 빼지 않고, 1회 값은 «원래 금액» 기준으로
+      settledDates: [...(settled.get(String(row.id)) ?? []), ...(Array.isArray(row.illnessDates) ? row.illnessDates.filter((d: unknown) => typeof d === "string").map(String) : [])],
+      priorReduction: (reduced.get(String(row.id)) ?? 0) + Number(row.illnessReduced ?? 0),
       carryApplied: carried.get(String(row.id)) ?? 0,
     };
   });
@@ -359,7 +370,8 @@ export async function executePauseSettlementInTx(tx: SettlementSql, input: {
  * 미납 청구 금액을 줄인다(조건부 UPDATE — 지금 금액·미납 상태가 계산 때와 같을 때만, 아니면 throw 로 전부 되돌림).
  * 0원이 되면 청구·청구서를 «취소»로 둔다(0원 미납이 학부모 화면에 남지 않게). 납부완료(PAID)는 절대 건드리지 않는다.
  */
-async function reduceUnpaidPayment(tx: SettlementSql, input: {
+// export: 질병·부상 결석 «미납 청구에서 1회분 빼기»(regular/illness-unpaid-reduce.ts)도 같은 함수로 줄인다 — 조건부 UPDATE·0원 취소·기록이 한 곳.
+export async function reduceUnpaidPayment(tx: SettlementSql, input: {
   paymentId: string; expectedAmount: number; reduceBy: number; adminUserId: string | null;
   action: string; message: string; metadata: Record<string, unknown>;
 }) {

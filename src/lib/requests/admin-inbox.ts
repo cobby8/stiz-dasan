@@ -36,7 +36,7 @@ import type { StatusTone } from "@/lib/ui/statusTones";
 // 상담 탭(신설) — 이 파일의 두 함수만 부른다. 상담 작업이 그 파일만 채운다(원장 결정 k1)
 import { countConsultAction } from "@/lib/requests/consult-inbox";
 import { illnessReviewReady } from "@/lib/regular/illness-carry-tx";
-import { evidenceScopeSql } from "@/lib/regular/illnessCarryRules";
+import { evidenceScopeSql, illnessUnpaidReducedSql } from "@/lib/regular/illnessCarryRules";
 import { periodCarryColumnsReady } from "@/lib/regular/absence-period-service";
 import {
   PERIOD_DECLINED_INBOX_STATUS, PERIOD_HOLD_INBOX_STATUS, PERIOD_SETTLED_INBOX_STATUS, PERIOD_SETTLE_NEEDED_INBOX_STATUS,
@@ -281,7 +281,9 @@ const ADAPTERS: Adapter[] = [
     from: `"RegularAbsence" x ${studentJoin("s", `x."studentId"`)} LEFT JOIN "Class" c ON c.id = x."classId"
            LEFT JOIN "RegularAbsenceCarryReview" r ON r."absenceId" = x.id`,
     // 결정이 났으면 그 결정, 아니면 결석일이 지났는지(KST — date 칼럼은 이미 달력 값이라 now() 쪽만 한 번 변환)
-    rawExpr: `CASE WHEN r.status = 'APPROVED' THEN 'APPROVED' WHEN r.status = 'MAKEUP' THEN 'MAKEUP'
+    // 승인 중 «미납 청구에서 1회분을 뺀» 결석(2026-11-16)은 «이월 승인»과 글자를 가른다 — 정산 기록의 고정 사유로 판정
+    rawExpr: `CASE WHEN r.status = 'APPROVED' AND ${illnessUnpaidReducedSql("x")} THEN 'REDUCED'
+                   WHEN r.status = 'APPROVED' THEN 'APPROVED' WHEN r.status = 'MAKEUP' THEN 'MAKEUP'
                    WHEN x.date > (now() AT TIME ZONE 'Asia/Seoul')::date THEN 'WAITING' ELSE 'PENDING' END`,
     // 부상·질병 «기간 결석»에 묶인 결석은 뺀다(2026-11-15) — 기간 1건이 아래 ILLNESS_PERIOD 한 줄로 뜬다. 여기는 하루짜리만 남는다
     where: `${ILLNESS_CARRY_WHERE} AND NOT ${boundToIllnessPeriodSql("x")}`,

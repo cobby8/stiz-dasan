@@ -3,7 +3,7 @@ import { getMonthlyClassDates } from "@/lib/enrollment/monthlyClassDates";
 import { monthlyBillingDueDate } from "@/lib/billing-due-date";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import { validateMonthlyRegisterDraft } from "./monthly-register";
-import { WorkbenchError, carryPool, allocateCarry, filterWorkbenchDates, illnessMissedDatesOf, validateWorkbenchCommand, validateWorkbenchMonth, workbenchTotal, shortMonthProration, attendedOnlyProration, STANDARD_MONTHLY_SESSIONS,
+import { WorkbenchError, carryPool, allocateCarry, filterWorkbenchDates, illnessMissedDatesOf, validateWorkbenchCommand, validateWorkbenchMonth, workbenchTotal, illnessReducedSumSql, shortMonthProration, attendedOnlyProration, STANDARD_MONTHLY_SESSIONS,
   type WorkbenchAmounts, type WorkbenchView, type WorkbenchRow, type WorkbenchOperation, type WorkbenchCalendarSnapshot } from "./workbench";
 // 주N회 요금·셔틀비·형제할인 «제안값» 규칙은 순수 모듈 한 곳에서만 정한다.
 import { planWeeklyTuition, planShuttleFee, siblingDiscountStudents, siblingDiscountAmount, REGULAR_SIBLING_DISCOUNT_PERCENT, type ShuttlePlan } from "./workbench-pricing";
@@ -48,7 +48,7 @@ export async function readWorkbenchSchedule(tx:WorkbenchTx,month:string,classId:
 /** 동일 거래의 원본만 읽는다. 외부 캘린더/서비스와 연결하거나 초기 테이블을 생성하지 않는다. */
 // 읽기에 필요한 표가 있는지 한 번에 확인한다(2026-11-14 속도 개선 — 예전엔 표마다 따로 12번 왕복).
 // 판정 기준은 예전 표별 확인과 같은 to_regclass 다.
-const READ_TABLES = ["MonthlyEnrollmentRegister","AnnualEvent","BillingWorkbenchDraft","BillingWorkbenchOperation","BillingCarryCredit","BillingCarryUsage","BillingAbsenceResolution","BillingWorkbenchRevision","RegularAbsence","MakeupCredit","MakeupSession","Attendance","SpecialProgramCredit","RegularShuttleStop","RegularAbsencePeriod"] as const;
+const READ_TABLES = ["MonthlyEnrollmentRegister","AnnualEvent","BillingWorkbenchDraft","BillingWorkbenchOperation","BillingCarryCredit","BillingCarryUsage","BillingAbsenceResolution","BillingWorkbenchRevision","RegularAbsence","MakeupCredit","MakeupSession","Attendance","SpecialProgramCredit","RegularShuttleStop","RegularAbsencePeriod","PaymentAuditLog"] as const;
 async function existingTables(tx: WorkbenchTx): Promise<Set<string>> {
   const rows = await tx.$queryRawUnsafe<Array<{ name: string; found: boolean }>>(
     `SELECT name, to_regclass('public."' || name || '"') IS NOT NULL AS found FROM unnest($1::text[]) AS name`, [...READ_TABLES]);
@@ -82,7 +82,10 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
   // 결석 이월 검증에 필요한 «원래 청구»만 읽는다(2026-11-14 — 예전엔 결제·청구서 표 전체를 읽어 5,001건 한도에 닿을 수 있었다).
   // 아래 검증은 credit.basis.sourcePaymentId 로만 찾으므로, 그 결제와 그 결제의 청구서만 있으면 판정이 같다.
   const sourcePaymentIds = [...new Set(credits.map(c => c.basis?.sourcePaymentId).filter((id): id is string => typeof id === "string" && id.length > 0))];
-  const originPayments = sourcePaymentIds.length ? take(await tx.$queryRawUnsafe<Array<{id:string;studentId:string;classId:string|null;amount:number;status:string;year:number|null;month:number|null;updatedAt:Date|string}>>(`SELECT id,"studentId","classId",amount,status,year,month,"updatedAt" FROM "Payment" WHERE id = ANY($1::text[]) ORDER BY id LIMIT ${limit}`, sourcePaymentIds)) : [];
+  // illnessReduced = 질병·부상 결석으로 그 청구에서 이미 줄인 금액(2026-11-16 «미납 청구에서 1회분 빼기»). 아래 발행 금액 대조가 이 값을 더해 견준다.
+  // 줄인 적이 없는 청구(0)는 칸을 떼어 낸다 — 원본 지문(sourceVersion)에 새 칸이 끼어 저장해 둔 초안이 전부 «원본 변경»으로 바뀌지 않게.
+  const originPayments = sourcePaymentIds.length ? take(await tx.$queryRawUnsafe<Array<{id:string;studentId:string;classId:string|null;amount:number;status:string;year:number|null;month:number|null;updatedAt:Date|string;illnessReduced?:number|null}>>(`SELECT id,"studentId","classId",amount,status,year,month,"updatedAt",${has("PaymentAuditLog") ? illnessReducedSumSql('"Payment".id') : "0"} AS "illnessReduced" FROM "Payment" WHERE id = ANY($1::text[]) ORDER BY id LIMIT ${limit}`, sourcePaymentIds))
+    .map(({ illnessReduced, ...row }): typeof row & { illnessReduced?: number } => Number(illnessReduced ?? 0) > 0 ? { ...row, illnessReduced: Number(illnessReduced) } : row) : [];
   const originInvoices = sourcePaymentIds.length ? take(await tx.$queryRawUnsafe<Array<{id:string;paymentId:string;status:string;amount:number;updatedAt:Date|string}>>(`SELECT id,"paymentId",status,amount,"updatedAt" FROM "PaymentInvoice" WHERE "paymentId" = ANY($1::text[]) ORDER BY id LIMIT ${limit}`, sourcePaymentIds)) : [];
   // 미래 기간에서 사용한 잔액도 중복 차감하지 않는다.
   const usages = storageReady ? take(await tx.$queryRawUnsafe<Usage[]>(`SELECT u."studentId",u.amount,u.month,u."paymentId",u.basis,u."sourceCreditIds",p.status AS "paymentStatus",i.status AS "invoiceStatus" FROM "BillingCarryUsage" u LEFT JOIN "Payment" p ON p.id=u."paymentId" LEFT JOIN "PaymentInvoice" i ON i."paymentId"=p.id ORDER BY u.id LIMIT ${limit}`)) : [];
@@ -186,7 +189,8 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
     if(!latest || latest.baseAmount-latest.discountAmount-latest.prorationAmount!==b.discountedTuition || (monthlyRow&&["baseAmount","discountAmount","prorationAmount"].some(k=>issued&&issued.payload[k as keyof WorkbenchAmounts]!==monthlyRow[k as "baseAmount"|"discountAmount"|"prorationAmount"])))credit.valid=false;
     if(b.sourcePaymentId){
       const p=originPayments.find(p=>p.id===b.sourcePaymentId),invoice=originInvoices.find(i=>i.paymentId===b.sourcePaymentId);
-      if(!p||!issued||p.amount!==workbenchTotal(issued.payload)||!invoice||invoice.amount!==p.amount||["CANCELED","CANCELLED","REFUNDED"].includes(p.status)||["CANCELED","CANCELLED","REFUNDED"].includes(invoice.status))credit.valid=false;
+      // 질병·부상 결석으로 줄인 금액은 «이미 줄인 금액»으로 인정한다(지금 금액 + 줄인 금액 = 발행 금액이면 정본이 맞다) — 근거 읽기(workbench-absence)와 같은 비교
+      if(!p||!issued||p.amount+(p.illnessReduced??0)!==workbenchTotal(issued.payload)||!invoice||invoice.amount!==p.amount||["CANCELED","CANCELLED","REFUNDED"].includes(p.status)||["CANCELED","CANCELLED","REFUNDED"].includes(invoice.status))credit.valid=false;
     }
     }
     // 납부 Payment 근거의 수강 기간은 적립 때 사본(월중 등록이면 개시일~그 달 마지막 수업일)만 본다.

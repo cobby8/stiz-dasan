@@ -38,6 +38,23 @@
 - 운영 배포 = `git push origin HEAD:main` fast-forward.
 - 테스트는 `node --test tests/*.test.mjs` **+ 가드 `node --experimental-strip-types --test src/lib/*.test.ts`**(=`npm test`). ⚠️ 2026-10-25 실측: `tests/` 만 돌려 **학생 병합 필터 가드(src/lib/studentVisibility.test.ts)를 놓쳤다** — 회원 탈퇴 배포 후 release:preflight 가 실패하던 상태였다. **`npx vitest`는 이 프로젝트에 없음**(설정도 없어 worktree까지 긁어 전부 오탐).
 
+### 구현 기록 (developer · 11-16 질병 결석 미납인 달 = 미납 청구에서 1회분 빼기, claude/illness-unpaid-reduce)
+
+📝 구현한 기능: 신청함 하루짜리 «질병·부상 결석» — 그 달 수강료가 미납이면 «납부한 뒤에 승인»으로 막지 않고, 승인하면 이월 대신 그 미납 청구에서 1회 값을 뺀다(납부된 달은 기존 이월 그대로). 새 표·새 칸·마이그레이션 없음.
+
+| 파일 경로 | 변경 내용 | 신규/수정 |
+|----------|----------|----------|
+| src/lib/regular/illnessUnpaidReduceRules.ts | 순수 계산(1회 값·남는 금액·0원·막는 사유·화면이 본 것 대조·근거 한 줄·금액 숨김) | 신규 |
+| src/lib/regular/illness-unpaid-reduce.ts | DB 연결부(미리보기·실행, 잠금 순서, reduceUnpaidPayment 재사용, 기록 2종) | 신규 |
+| src/lib/billing/workbench.ts · workbench-absence.ts · workbench-service.ts | action 상수·감액 합계 SQL 조각 / 근거 읽기에 basis UNPAID 갈래·감액 인정(발행 금액 대조·priorReduction) / 이월 유효성 같은 비교 | 수정 |
+| src/lib/regular/illness-carry-admin.ts · actions/illness-carry-admin.ts | 승인이 서버에서 갈래 결정(CARRY/REDUCE)·expected 대조·상세 reduce/reduced·금액 숨김·알림 글·같은 기간 함께 승인 | 수정 |
+| src/lib/enrollment/pause-settlement.ts · regular/illness-period-admin.ts · illnessPeriodRules.ts | 휴원 정산 priorReduction·settledDates 에 이번 감액 반영, reduceUnpaidPayment export / 발행 보류 건너뛰기 ILLNESS_REDUCED | 수정 |
+| src/lib/regular/illnessCarryRules.ts · parent-regular-absence.ts · requests/admin-inbox.ts · catalog.ts · 화면 2종 | 고정 사유·글자·«뺀 결석» SQL 조각 / 학부모 글자 / 신청함 목록 REDUCED / 버튼·근거 한 줄 | 수정 |
+| tests/illness-unpaid-reduce.test.mjs(19) + 기존 5개 테스트 | 새 실행 테스트 · 의도한 변경에 맞춘 기존 검사 | 신규/수정 |
+
+💡 tester 참고: `node --test tests/illness-unpaid-reduce.test.mjs`(가짜 db 로 승인 실행). 정상 = 미납 100,000÷4회 → 청구·청구서 75,000, PaymentAuditLog 1줄(ILLNESS_ABSENCE_UNPAID_REDUCED), BillingAbsenceResolution CARRY+고정 사유, 이월 행 없음. 주의 입력: 발행 초안 청구(셔틀비 포함 — 수강료로 나눔)·미납 2건·결제 진행 중·1회뿐인 달(0원 취소)·이월과 묶인 청구의 0원.
+⚠️ reviewer 참고: ① 실제 Postgres 미실행(스칼라 서브쿼리 + FOR SHARE/UPDATE OF p 조합 5곳) ② 발행 초안 청구의 분자는 «청구 금액»이 아니라 초안 수강료(기본−할인−기간조정) — 지시문의 식과 다른 유일한 곳 ③ 승인 취소 기능은 원래 없어 만들지 않음 ④ 금액이 바뀐 청구의 이미 보낸/예약된 미납 안내 문자는 건드리지 않음.
+
 ### 구현 기록 (developer · 11-15 부상·질병 기간 결석 4단계 퇴원 정산 + 3단계 검수 숙제, claude/illness-period-refund)
 
 📝 구현한 기능: 부상 결석 중 퇴원 → 복귀 정산과 같은 계산으로 «환불 검토 ○원»(이월 0건·정산 기록만) → 원장이 수납 관리에서 직접 환불 → «환불 처리함»(메모). 돈을 움직이는 코드는 부르지 않는다. + 3단계 검수 숙제 4건.
@@ -277,6 +294,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-16 | developer(질병 결석 미납인 달 = 미납 청구에서 1회분 빼기, claude/illness-unpaid-reduce): 승인이 서버에서 이월/감액 갈래 결정 · 기록은 PaymentAuditLog(ILLNESS_ABSENCE_UNPAID_REDUCED)+정산 기록 고정 사유 · 근거·휴원 정산·청구 준비·발행 보류가 감액을 «이미 줄인 금액»으로 인정 · 신청함·학부모 글자 구분. tsc 0 · tests 5607-0 · guards 337-0. 마이그레이션 없음 | 구현 완료(검수 전) |
 | 11-15 | developer(휴원 정산 단가 부풀림 수정, claude/pause-unit-price): loadPausePayments 가 랠리즈 청구의 «감액 할 일» 줄(UNPAID_REDUCE·channel≠SITE, 사이트 금액은 안 줄임)까지 원래 금액에 더하던 것을 «사이트가 실제로 줄인 줄»만 세도록 수정(workbench-absence 와 같은 기준). 재현 테스트 추가. tsc 0 · 관련 tests 179-0 | 검수 대기 |
 | 11-15 | developer(기사 «그래도 탑승», claude/driver-board-anyway): 자차·조퇴·지각으로 잠긴 줄(skipLabel)에만 보조 버튼 «그래도 탑승/하차» → 화면 안 확인 → 탑승 기록. 탑승 기록이 있는 동안 잠금 해제(riderBoardAnyway·riderBoardingView), 되돌리면 다시 잠김. 휴원·휴무·결석 줄은 대상 아님. 서버 2곳은 원래 skipLabel 을 거절하지 않아 그대로, 탑승 알림도 탑승 표만 봐서 그대로. 파일: unifiedDriverRunLogic.ts · UnifiedDriverClient.tsx · tests/driver-board-anyway.test.mjs(8건). tsc 0 · tests 5585-0 · guards 337-0. 실기기 미확인 | 검수 대기 |
 | 11-15 | developer(부상·질병 기간 결석 3단계 복귀 정산, claude/illness-period-settle): 순수 계산 모듈·미리보기/이월 확정/확정 취소·학부모 예정 금액·청구 준비 «다닌 만큼만» 제안·신청함 «정산 필요»·1·2단계 숙제(납부된 것만·인정 안 함 표시·현장 결제 재확인·반 이동 경고). tsc 0 · tests 5543-0 · guards 337-0 · 로컬 Postgres 45개 통과. 스키마 변경 없음 | 검수 대기 |

@@ -228,6 +228,8 @@ export const HOLD_SKIP_REASONS = {
   CARRY_USED: "이월을 쓴 청구라 직접 확인이 필요합니다.",
   CARRY_SOURCE: "이 청구를 근거로 적립한 이월이 있어 직접 확인이 필요합니다.",
   PAUSE_SETTLED: "휴원 정산이 반영된 청구라 직접 확인이 필요합니다.",
+  // 질병·부상 결석으로 1회분을 뺀 청구(2026-11-16) — 취소하고 다시 발행하면 뺀 금액이 사라진다
+  ILLNESS_REDUCED: "질병·부상 결석으로 1회분을 뺀 청구라 직접 확인이 필요합니다.",
   INVOICE: "청구서 상태를 확인할 수 없어 건너뜁니다.",
 } as const;
 export type HoldSkipCode = keyof typeof HOLD_SKIP_REASONS;

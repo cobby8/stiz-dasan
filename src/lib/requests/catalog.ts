@@ -117,6 +117,8 @@ export const REQUEST_KINDS: readonly KindEntry[] = [
       PENDING: act("이월 검토"),
       WAITING: going("결석일 대기"),
       APPROVED: ok("이월 승인"),
+      // 그 달 수강료가 미납이라 이월 대신 그 미납 청구에서 1회분을 뺀 결석(2026-11-16 원장 결정) — 글자는 illnessCarryRules.UNPAID_REDUCE_ADMIN_DONE_LABEL 과 같다(테스트가 비교)
+      REDUCED: ok("결석 인정 · 청구에서 뺌"),
       MAKEUP: off("보강권으로 전환"),
     },
   },

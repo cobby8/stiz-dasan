@@ -17,6 +17,7 @@
 //
 // DB 는 인자(db)로만 받는다 — 테스트가 가짜 db 로 실제 실행한다. 이 파일은 prisma 를 import 하지 않는다.
 import { lockCompensation } from "@/lib/billing/absence-compensation-guard";
+import { illnessReducedSumSql } from "@/lib/billing/workbench";
 import { rallyzMirrorExclusionSql } from "@/lib/billing/parentSendGuard";
 import { APPROVED_PENDING_SQL, findParentCheckoutActivePaymentIds, lockPaymentsForCheckout } from "@/lib/payments/bundleLedger";
 import { notMergedStudent } from "@/lib/studentVisibility";
@@ -454,7 +455,7 @@ const HOLD_TARGET_SCOPE = `p."studentId" = $1 AND COALESCE(p.type, 'MONTHLY') = 
 type HoldTargetRow = {
   id: string; year: number; month: number; amount: number; status: string; classId: string | null; className: string | null;
   invoiceId: string | null; invoiceStatus: string | null;
-  posBusy: boolean; paidTx: boolean; carryUsed: boolean; carrySource: boolean; pauseSettled: boolean;
+  posBusy: boolean; paidTx: boolean; carryUsed: boolean; carrySource: boolean; pauseSettled: boolean; illnessReduced?: boolean;
 };
 
 /** 화면에 보이는 대상 청구 한 줄 — skip 이 있으면 이번에 돌리지 않는 청구(이유 글자와 함께) */
@@ -503,7 +504,9 @@ async function readHoldTargets(tx: IllnessTx, period: PeriodRow, nowMs: number, 
               : "false"} AS "carrySource",
             ${pauseReady
               ? `EXISTS (SELECT 1 FROM "EnrollmentChangeSettlementLine" l WHERE l."paymentId" = p.id AND l.kind IN ('UNPAID_REDUCE','CARRY_APPLY'))`
-              : "false"} AS "pauseSettled"
+              : "false"} AS "pauseSettled",
+            -- 질병·부상 결석으로 1회분을 뺀 청구(2026-11-16) — 취소 후 다시 발행하면 뺀 금액이 사라지므로 휴원 정산 반영 청구처럼 건너뛴다
+            ${illnessReducedSumSql("p.id")} > 0 AS "illnessReduced"
        FROM "Payment" p
        LEFT JOIN "Class" c ON c.id = p."classId"
       WHERE ${HOLD_TARGET_SCOPE}${lockedIds ? ` AND p.id = ANY($4::text[])` : ""}
@@ -519,6 +522,7 @@ async function readHoldTargets(tx: IllnessTx, period: PeriodRow, nowMs: number, 
       : row.carryUsed ? "CARRY_USED"
       : row.carrySource ? "CARRY_SOURCE"
       : row.pauseSettled ? "PAUSE_SETTLED"
+      : row.illnessReduced ? "ILLNESS_REDUCED"
       : !row.invoiceId || !["ISSUED", "SENT", "OVERDUE"].includes(String(row.invoiceStatus)) ? "INVOICE"
       : null;
     return {
