@@ -7,7 +7,7 @@ import dynamic from "next/dynamic";
 import { TONE_BADGE_CLASS, type StatusTone } from "@/lib/ui/statusTones";
 import type { ChildProfile, ChildShuttle, UniformRecord } from "@/lib/parent/childRecordQuery";
 // 유니폼 번호·신청 내역 글자(2026-11-16) — 계산은 순수 규칙에서
-import { uniformOrderLine, uniformProfileLine } from "@/lib/parent/childUniformRules";
+import { uniformOrderLine, uniformOrderSourceLabel, uniformProfileLine } from "@/lib/parent/childUniformRules";
 import { ACADEMY_GUIDE_FACTS } from "@/lib/trial-fee/guideMessages";
 import { birthLine, classTimeText, dotYmd, genderText, gradeLine, guardianRows, makeupLine } from "@/lib/parent/childProfileRules";
 import { changeLine } from "@/lib/parent/childEditRules";
@@ -206,7 +206,7 @@ function shortYmdDot(ymd: string | null): string {
 }
 
 /**
- * 사이트 유니폼 신청 내역 — 한 품목 한 줄(신청일 · 디자인·등번호·사이즈·수량 · 상태).
+ * 유니폼 신청 내역(사이트 + 본사 쇼핑몰, 2026-11-16) — 한 품목 한 줄(신청일 · 출처 글자 · 디자인·등번호·사이즈·수량 · 상태).
  * 서버가 «로그인한 본인 번호로 낸 이 아이 이름의 품목»만 보낸다(childUniformQuery). 옛 모양 데이터(칸 없음)면 그리지 않는다.
  */
 export function ChildUniformOrdersSection({ uniform }: { uniform: UniformRecord | null | undefined }) {
@@ -226,13 +226,18 @@ export function ChildUniformOrdersSection({ uniform }: { uniform: UniformRecord 
         </div>
       ) : (
         <ul className="divide-y divide-[var(--color-academy-line)]">
-          {orders.map((o) => (
-            <li key={o.id} className="flex min-h-11 items-center gap-2 px-3 py-1.5">
-              <span className="w-16 shrink-0 text-xs tabular-nums text-[var(--color-academy-muted)]">{shortYmdDot(o.appliedYmd)}</span>
-              <span className="min-w-0 flex-1 break-keep text-sm tabular-nums text-[var(--color-academy-ink)]">{uniformOrderLine(o)}</span>
-              <Badge tone={o.statusTone}>{o.statusLabel}</Badge>
-            </li>
-          ))}
+          {orders.map((o) => {
+            // 어디서 낸 주문인지 — 색이 아니라 작은 글자로(옛 데이터면 없음)
+            const sourceLabel = uniformOrderSourceLabel(o.source);
+            return (
+              <li key={o.id} className="flex min-h-11 items-center gap-2 px-3 py-1.5">
+                <span className="w-16 shrink-0 text-xs tabular-nums text-[var(--color-academy-muted)]">{shortYmdDot(o.appliedYmd)}</span>
+                {sourceLabel && <span className="shrink-0 text-xs text-[var(--color-academy-muted)]">{sourceLabel}</span>}
+                <span className="min-w-0 flex-1 break-keep text-sm tabular-nums text-[var(--color-academy-ink)]">{uniformOrderLine(o)}</span>
+                <Badge tone={o.statusTone}>{o.statusLabel}</Badge>
+              </li>
+            );
+          })}
         </ul>
       )}
     </CollapsibleSection>

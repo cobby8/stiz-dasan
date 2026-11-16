@@ -58,6 +58,7 @@
 ## 작업 로그 (최근 10건)
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-16 | developer(쇼핑몰 유니폼 주문 → 학부모 화면, claude/uniform-shop-orders): 표 UniformShopOrder·UniformShopOrderItem(마이그레이션 20261116300000, 운영 적용 전) · lib/uniform/shopOrderSync.ts(서명 GET·응답 엄격 검증·한 SQL 문 upsert, 지우기 없음) · cron /api/cron/uniform-shop-sync 매시 17분(?days·?from&to) · loadChildUniformOrders 사이트+쇼핑몰 합쳐 최신순(본인 번호=구매자/수령인 + 이름 열쇠, 이름 빈 품목 제외, 표 없으면 빈 목록) · 줄에 «쇼핑몰»/«사이트» 글자. tsc 0 · tests 5703-0 · guards 337-0 | 구현 완료(검수 전) |
 | 11-16 | developer(아이 위주 프로필, claude/parent-child-photo): 홈 히어로 아이 사진 옆 «사진 올리기/바꾸기» 글자 버튼 늘 표시(ProfilePhotoEditor variant="button", 그 자리 업로드) · 설정 맨 위 «우리 아이»(아이마다 사진·이름→아이 정보, 사진 버튼) · 보호자 «내 사진» 칸(MyPhotoRow) 제거, 사진 파일·DB·API 는 그대로 · 테스트 갱신. tsc 0 · tests 5681-0 · guards 337-0 | 구현 완료(검수 전) |
 | 11-16 | developer(핵심 데이터 seed 자동 저장, claude/seed-auto): 매일 백업 cron·«전체 백업 지금 저장»이 같은 실행에서 스냅샷(Program·ClassSlotOverride·이용약관, 정해진 칸만)을 backups/seed/seed-latest.json + seed-<날짜>.json(30일)로 저장 · POST /api/admin/seed 는 Storage 최신본 먼저 → 없음·읽기 실패·모양 이상·프로그램 0줄이면 prisma/seed-data.ts · 공용 lib/backup/seedSnapshot.ts(순수) · 대시보드 «핵심 데이터 자동 저장» 한 줄 · 버킷 목록 3곳 seed 폴더 칸 제외 · CLAUDE.md 는 developer 수정 불가라 문안만 PM 에 전달. tsc 0 · tests 5646-0 · guards 337-0 | 구현 완료(검수 전) |
 | 11-16 | PM(통합 claude/deploy-1116): 재원생 무료 대관 화면(memberMode)·글자 12px↑·굵기 4단계·ORM 4건·브라우저 경고창 178곳 → feedback.tsx, 가드 예외 폴더 제거, 크론 퇴원 정리(141768e4) 배포 |

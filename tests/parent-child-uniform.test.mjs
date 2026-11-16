@@ -134,6 +134,8 @@ function fakeDb({ students, users, orders }) {
       const [phone, nameKey] = values;
       return orders.filter((o) => o.parentPhoneDigits === phone && o.studentName.replace(/\s/g, "") === nameKey);
     }
+    // 쇼핑몰 표(2026-11-16) — 이 파일에서는 «아직 없는 DB»로 둔다(쇼핑몰 매칭은 uniform-shop-orders.test.mjs)
+    if (sql.includes("to_regclass")) return [{ ready: false }];
     throw new Error("unexpected sql");
   };
 }
@@ -162,7 +164,8 @@ test("③ A/B 접미사 아이 → 내 번호로 낸 «김루빈» 주문만, �
   const { run, calls } = loadQuery(fakeDb(world));
   const out = await run("mom", "kidA");
   assert.deepEqual(out.map((o) => o.id), ["mine"]);
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3, "권한·사이트 주문·쇼핑몰 표 확인");
+  assert.match(calls[2].sql, /to_regclass/);
   assert.deepEqual(calls[0].values, ["kidA", "mom"]);
   assert.match(calls[0].sql, /s\.id = \$1 AND s\."parentId" = \$2/, "권한 확인을 같은 SQL 에서");
   assert.match(calls[0].sql, /"mergedIntoStudentId" IS NULL/, "병합 학생 제외");
@@ -179,7 +182,7 @@ test("③ 남의 아이 · 병합된 학생 · 전화번호 없음 · 자리채�
   for (const [parent, kid] of [["mom", "otherKid"], ["mom", "mergedKid"], ["noPhone", "kidNoPhone"], ["filler", "kidFiller"], ["", "kidA"], ["mom", ""]]) {
     const { run, calls } = loadQuery(fakeDb(world));
     assert.deepEqual(await run(parent, kid), [], `${parent}/${kid}`);
-    assert.ok(calls.every((c) => !c.sql.includes(`FROM "UniformOrder"`)), `${parent}/${kid}: 주문 표 미조회`);
+    assert.ok(calls.every((c) => !c.sql.includes(`FROM "UniformOrder"`) && !c.sql.includes("UniformShop")), `${parent}/${kid}: 주문 표 미조회`);
   }
 });
 
