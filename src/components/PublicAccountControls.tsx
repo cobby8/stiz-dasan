@@ -35,6 +35,51 @@ type AccountControlsProps = {
   initialRole?: AppRole | null;
 };
 
+type AccountRoleAnswer = { role: AppRole | null; views: AccountViewOption[] };
+
+// 머리줄에는 PC용·모바일용 계정 버튼이 함께 놓이고, 둘 다 «화면이 뜰 때»와 «로그인 알림이 올 때» 같은 질문을 한다.
+// 그대로 두면 화면 하나에 같은 요청이 3~4번 나간다(2026-11-17 측정) → 한 번만 묻고 답을 같이 쓴다.
+// - 묻는 중이면 그 요청을 같이 기다린다.
+// - 방금(2초 안) 받은 «로그인됨» 답은 다시 쓴다. «로그인 안 됨» 답은 다시 쓰지 않는다 — 방금 로그인한 사람에게 옛 답을 주지 않게.
+const ACCOUNT_ROLE_REUSE_MS = 2000;
+let sharedAccountRole: { at: number; settled: boolean; role: AppRole | null; promise: Promise<AccountRoleAnswer> } | null = null;
+
+function forgetSharedAccountRole() {
+  sharedAccountRole = null;
+}
+
+function loadAccountRoleOnce(): Promise<AccountRoleAnswer> {
+  const now = Date.now();
+  const current = sharedAccountRole;
+  if (current && (!current.settled || (current.role !== null && now - current.at < ACCOUNT_ROLE_REUSE_MS))) {
+    return current.promise;
+  }
+
+  const entry: NonNullable<typeof sharedAccountRole> = {
+    at: now,
+    settled: false,
+    role: null,
+    promise: (async () => {
+      const signedOut: AccountRoleAnswer = { role: null, views: [] };
+      try {
+        const response = await fetch("/api/auth/account-role", { cache: "no-store" });
+        if (!response.ok) return signedOut;
+        const data = (await response.json().catch(() => ({}))) as { role?: AppRole | null; views?: AccountViewOption[] };
+        return { role: data.role ?? null, views: data.views ?? [] };
+      } catch {
+        return signedOut;
+      }
+    })(),
+  };
+  sharedAccountRole = entry;
+  void entry.promise.then((answer) => {
+    entry.settled = true;
+    entry.role = answer.role;
+    entry.at = Date.now();
+  });
+  return entry.promise;
+}
+
 function useAccountState(initialRole: AppRole | null = null) {
   const [appRole, setAppRole] = useState<AppRole | null>(initialRole);
   const [accountViews, setAccountViews] = useState<AccountViewOption[]>([]);
@@ -44,21 +89,10 @@ function useAccountState(initialRole: AppRole | null = null) {
   }, [initialRole]);
 
   const refreshAccountRole = useCallback(async () => {
-    try {
-      const response = await fetch("/api/auth/account-role", { cache: "no-store" });
-      if (!response.ok) {
-        setAppRole(null);
-        setAccountViews([]);
-        return;
-      }
-
-      const data = (await response.json().catch(() => ({}))) as { role?: AppRole | null; views?: AccountViewOption[] };
-      setAppRole(data.role ?? null);
-      setAccountViews(data.views ?? []);
-    } catch {
-      setAppRole(null);
-      setAccountViews([]);
-    }
+    // 실패·로그인 안 됨은 loadAccountRoleOnce 가 { role: null, views: [] } 로 돌려준다(던지지 않는다).
+    const answer = await loadAccountRoleOnce();
+    setAppRole(answer.role);
+    setAccountViews(answer.views);
   }, []);
 
   useEffect(() => {
@@ -72,6 +106,7 @@ function useAccountState(initialRole: AppRole | null = null) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event) => {
       if (event === "SIGNED_OUT") {
+        forgetSharedAccountRole(); // 로그아웃 뒤에는 방금 받은 «로그인됨» 답을 다시 쓰지 않는다
         setAppRole(null);
         setAccountViews([]);
         return;
@@ -133,7 +168,7 @@ export function DesktopAccountControls({ initialRole = null }: AccountControlsPr
 
       {isLoggedIn && (
         <form action={logout} className="hidden md:block">
-          <button type="submit" className={DESKTOP_LOGOUT_CLASS}>
+          <button type="submit" onClick={forgetSharedAccountRole} className={DESKTOP_LOGOUT_CLASS}>
             로그아웃
           </button>
         </form>
@@ -201,7 +236,7 @@ export function MobileAccountControls({
       {/* 로그아웃 — 부모(모바일 메뉴 하단, flex 세로)에서 order-last 로 맨 아래에 놓이고, 위와 16px 이상 띄운다 */}
       {isLoggedIn && (
         <form action={logout} className="order-last mt-4 border-t border-[var(--color-public-line)] pt-2 text-center dark:border-[var(--color-public-line)]" data-account-logout="mobile">
-          <button type="submit" className="inline-flex min-h-11 items-center px-3 text-sm text-[var(--color-public-muted)] underline-offset-2 transition-colors hover:text-[var(--color-public-ink)] hover:underline dark:text-[var(--color-public-muted)] dark:hover:text-[var(--color-public-ink)]">
+          <button type="submit" onClick={forgetSharedAccountRole} className="inline-flex min-h-11 items-center px-3 text-sm text-[var(--color-public-muted)] underline-offset-2 transition-colors hover:text-[var(--color-public-ink)] hover:underline dark:text-[var(--color-public-muted)] dark:hover:text-[var(--color-public-ink)]">
             로그아웃
           </button>
         </form>

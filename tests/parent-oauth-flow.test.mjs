@@ -5,7 +5,7 @@ import test from "node:test";
 const startRoute = readFileSync("src/app/auth/oauth/[provider]/route.ts", "utf8");
 const callbackRoute = readFileSync("src/app/auth/callback/route.ts", "utf8");
 const helper = readFileSync("src/lib/parent-oauth.ts", "utf8");
-const continuePage = readFileSync("src/app/auth/continue/page.tsx", "utf8");
+const continuePage = readFileSync("src/app/auth/continue/page.tsx", "utf8") + "\n" + readFileSync("src/lib/auth/continue-destination.ts", "utf8");
 const loginPage = readFileSync("src/app/login/page.tsx", "utf8");
 
 test("parent OAuth only permits the configured providers and internal redirects", () => {
