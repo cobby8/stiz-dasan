@@ -25,7 +25,14 @@ export default function ProfilePhotoEditor({
   ownerId,
   name,
   initialVersion,
+  variant = "full",
 }: {
+  /**
+   * full = 사진 + 올리기·바꾸기·지우기 + 안내(아이 기록 «아이 정보» 칸).
+   * button = «사진 올리기/바꾸기» 글자 버튼 하나 + 진행 글자만(2026-11-16 원장 «아이 사진 올리기가 잘 안 보여») —
+   *          사진은 옆에 이미 그려진 자리(홈 히어로·설정 «우리 아이» 줄)가 맡고, 지우기는 아이 정보 칸에서 한다.
+   */
+  variant?: "full" | "button";
   /** student = 아이 사진, me = 내 사진 */
   target: "student" | "me";
   /** 아이 사진일 때 학생 id */
@@ -109,25 +116,46 @@ export default function ProfilePhotoEditor({
     }
   }
 
+  // 파일 고르기 — 화면에는 글자 버튼만 보이고, 실제 입력칸은 숨긴다(두 모양이 같이 쓴다)
+  const fileInput = (
+    <input
+      ref={inputRef}
+      type="file"
+      accept="image/jpeg,image/png,image/webp"
+      className="sr-only"
+      tabIndex={-1}
+      aria-hidden="true"
+      onChange={(event) => {
+        const file = event.target.files?.[0];
+        if (file) void upload(file);
+      }}
+    />
+  );
+
+  if (variant === "button") {
+    // 버튼 하나 모양 — 누르면 바로 파일 고르기(사진을 눌러야 열리는 숨은 동작이 아니다)
+    return (
+      <div className="flex shrink-0 flex-col items-end">
+        {fileInput}
+        <button type="button" onClick={() => inputRef.current?.click()} disabled={busy} className="academy-button-secondary min-h-11! whitespace-nowrap">
+          {busy ? "올리는 중" : hasPhoto ? "사진 바꾸기" : "사진 올리기"}
+        </button>
+        {status && (
+          <p role={status.tone === "error" ? "alert" : "status"} className={`mt-1 max-w-[11rem] break-keep text-right text-xs font-medium ${TONE_CLASS[status.tone]}`}>
+            {status.text}
+          </p>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="px-3 py-2">
       <div className="flex items-center gap-3">
         {/* 64px 는 128px 사진으로 충분하다(2배 화면 기준) */}
         <ProfileAvatar name={name} src={profilePhotoUrl(owner, version, true)} size={64} />
         <div className="min-w-0 flex-1">
-          {/* 파일 고르기 — 화면에는 글자 버튼만 보이고, 실제 입력칸은 숨긴다 */}
-          <input
-            ref={inputRef}
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            className="sr-only"
-            tabIndex={-1}
-            aria-hidden="true"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) void upload(file);
-            }}
-          />
+          {fileInput}
           {confirming ? (
             // 지우기 확인 — 그 자리에서 한 번 더 묻는다
             <div role="group" aria-label="사진 지우기 확인" className="flex flex-wrap items-center gap-2">
