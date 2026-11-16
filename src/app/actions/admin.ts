@@ -1199,10 +1199,15 @@ export async function updateStudentUniform(id: string, data: {
                     "uniformAppliedAt" = $2::timestamptz,
                     "uniformOrderedAt" = $3::timestamptz,
                     "uniformReceivedAt" = $4::timestamptz,
-                    "uniformSource" = $5, "uniformNote" = $6, "uniformNumber" = $7, "teamUniformNumber" = $8, "updatedAt" = NOW()
+                    "uniformSource" = $5, "uniformNote" = $6,
+                    -- 번호를 보내지 않은 저장(배포 전에 열어 둔 예전 화면)은 기존 번호를 지우지 않는다
+                    "uniformNumber" = CASE WHEN $10::boolean THEN $7 ELSE "uniformNumber" END,
+                    "teamUniformNumber" = CASE WHEN $11::boolean THEN $8 ELSE "teamUniformNumber" END,
+                    "updatedAt" = NOW()
              WHERE id = $9`,
             data.status || null, data.appliedAt || null, data.orderedAt || null,
             data.receivedAt || null, data.source || null, data.note || null, uniformNumber.value, teamUniformNumber.value, id,
+            data.number !== undefined, data.teamNumber !== undefined,
         );
     } catch (e) {
         console.error("Failed to update student uniform:", e);

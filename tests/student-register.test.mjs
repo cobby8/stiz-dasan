@@ -405,7 +405,10 @@ test("[유니폼 번호] 저장은 권한 확인 뒤 규칙 함수로 검증하�
   assert.match(save, /if \(!uniformNumber\.ok\) throw new Error\(uniformNumber\.error\)/);
   assert.match(save, /normalizeUniformNumber\(data\.teamNumber, "대표팀 번호"\)/);
   assert.match(save, /if \(!teamUniformNumber\.ok\) throw new Error\(teamUniformNumber\.error\)/);
-  assert.match(save, /"uniformNumber" = \$7, "teamUniformNumber" = \$8, "updatedAt" = NOW\(\)\s+WHERE id = \$9/);
+  // 번호를 보내지 않은 저장(예전 화면)은 기존 번호를 지우지 않는다 — 보냈을 때만 바꾼다
+  assert.match(save, /"uniformNumber" = CASE WHEN \$10::boolean THEN \$7 ELSE "uniformNumber" END/);
+  assert.match(save, /"teamUniformNumber" = CASE WHEN \$11::boolean THEN \$8 ELSE "teamUniformNumber" END/);
+  assert.match(save, /data\.number !== undefined, data\.teamNumber !== undefined/);
   // "0" 이 빈 값으로 바뀌지 않게 — 번호 값에는 «|| null» 을 걸지 않는다
   assert.match(save, /data\.note \|\| null, uniformNumber\.value, teamUniformNumber\.value, id,/);
   const queries = await readFile("src/lib/queries.ts", "utf8");
