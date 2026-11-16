@@ -5,7 +5,8 @@
   - 추적 없음: 광고·분석 SDK 가 없다(앱 코드는 UIKit/WKWebView 뿐).
   - 필수 사유 API 없음: Swift 코드에 UserDefaults·파일 시각·부팅 시간·디스크 용량·키보드 목록 호출이 없다.
   - 수집 항목은 웹 화면(www.stiz-dasan.kr)이 앱 안에서 받는 것만: 계정·학생·가족 연결·셔틀 주소·수업 사진·납부 이력·결석 사유/게시글.
-  - 위치·음성은 iOS 에 권한 키(NSLocation*/NSMicrophone*)가 없어 이 앱에서는 받지 않는다(기사 운행 위치는 Android 전용).
+  - 위치는 iOS 에 권한 키(NSLocation*)가 없어 이 앱에서는 받지 않는다(기사 운행 위치는 Android 전용).
+  - 음성(1.0.4): 선생님이 «음성으로 기록»을 누르면 녹음(최대 60초)을 서버로 보내 글로 바꾼다 → 오디오 데이터 항목 추가.
   기능이 늘면(위치·마이크·푸시) 이 파일과 App Store Connect 개인정보 답안을 함께 고친다.
 -->
 <plist version="1.0">
@@ -81,6 +82,18 @@
 		<dict>
 			<key>NSPrivacyCollectedDataType</key>
 			<string>NSPrivacyCollectedDataTypePhotosorVideos</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeAudioData</string>
 			<key>NSPrivacyCollectedDataTypeLinked</key>
 			<true/>
 			<key>NSPrivacyCollectedDataTypeTracking</key>

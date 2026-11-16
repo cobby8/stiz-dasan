@@ -20,6 +20,7 @@ public final class MainActivity extends Activity {
     private WebFileChooser fileChooser;
     private NativeAuthController nativeAuth;
     private NativePush nativePush; // 앱 알림(FCM) 창구 — 로직은 NativePush.java(e2)
+    private WebVoicePermission voice; // 음성 입력(마이크) 요청 창구 — 로직은 WebVoicePermission.java(1.0.4). 꺼진 빌드에서는 null
     private boolean visible;
     private final PendingRunStart pendingStart = new PendingRunStart();
     private boolean consentDialogOpen;
@@ -134,6 +135,7 @@ public final class MainActivity extends Activity {
         fileChooser = new WebFileChooser(this, web);
         nativeAuth = new NativeAuthController(this, web);
         nativePush = NativePush.install(this, web);
+        if (WebVoicePermission.enabled()) voice = new WebVoicePermission(this, web);
         web.getSettings().setJavaScriptEnabled(true); web.getSettings().setDomStorageEnabled(true);
         web.getSettings().setAllowFileAccess(false); web.getSettings().setAllowContentAccess(false);
         web.getSettings().setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
@@ -141,7 +143,9 @@ public final class MainActivity extends Activity {
         web.getSettings().setSupportMultipleWindows(false);
         // 앱 버전 표시: 기존 브라우저 식별 문자열 끝에 « STIZApp/버전 (android)» 를 덧붙인다(기존 문자열은 그대로 둔다).
         // « STIZNativeLogin/1»: 앱 간편로그인 기능이 든 빌드 표시 — 웹이 이 표시가 있을 때만 앱 화면에 간편로그인 버튼을 보인다(a1).
-        web.getSettings().setUserAgentString(web.getSettings().getUserAgentString() + " STIZApp/" + BuildConfig.VERSION_NAME + " (android)" + (NativeAuthController.enabled() ? " STIZNativeLogin/1" : ""));
+        // « STIZVoice/1»: 앱 안에서 음성 입력(마이크)이 되는 빌드 표시(1.0.4) — 웹이 이 표시를 보고 «음성으로 기록» 버튼을 보인다.
+        web.getSettings().setUserAgentString(web.getSettings().getUserAgentString() + " STIZApp/" + BuildConfig.VERSION_NAME + " (android)" + (NativeAuthController.enabled() ? " STIZNativeLogin/1" : "")
+            + (WebVoicePermission.enabled() ? VoiceCapturePolicy.USER_AGENT_MARK : ""));
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, false);
         WebViewCompat.addWebMessageListener(web, "StizDriverGpsTransport", Collections.singleton(BuildConfig.STIZ_ORIGIN),
             (view, message, origin, mainFrame, reply) -> {
@@ -182,7 +186,11 @@ public final class MainActivity extends Activity {
                 if (paymentAllowed() && AppNavigationPolicy.isExternalFlowStart(url)) { paymentActive = true; return false; }
                 if (paymentActive && paymentAllowed() && AppNavigationPolicy.paymentPageAllowed(url)) return false;
                 // 그 밖의 바깥 이동은 사용자가 직접 누른 것만 앱 밖으로 넘긴다(자동 이동은 막는다).
-                if (!BuildConfig.STIZ_SANDBOX && AppNavigationPolicy.externalActionAllowed(url, request.hasGesture())) {
+                if (!BuildConfig.STIZ_SANDBOX && view.getUrl() != null && trustedAppPage(Uri.parse(view.getUrl())) && AppNavigationPolicy.calendarLinkAllowed(BuildConfig.STIZ_ORIGIN, url, request.hasGesture())) {
+                    // 지금 보이는 화면이 우리 사이트일 때만(결제·본인인증 화면 위에서는 열지 않는다 — 보안 검수 2026-11-16)
+                    // 캘린더 구독 주소(webcal, 우리 사이트의 /api/calendar/ 아래만) — 사용자가 누른 것만 바깥 캘린더 앱으로 넘긴다(1.0.4).
+                    openCalendarLink(uri);
+                } else if (!BuildConfig.STIZ_SANDBOX && AppNavigationPolicy.externalActionAllowed(url, request.hasGesture())) {
                     // 전화·문자·지도 앱. 지도 앱 호출은 크롬처럼 BROWSABLE 로 표시해, 웹 링크로 열려도 되는 화면만 열리게 한다.
                     Intent action = new Intent(Intent.ACTION_VIEW, uri);
                     if (!"tel".equals(uri.getScheme()) && !"sms".equals(uri.getScheme())) action.addCategory(Intent.CATEGORY_BROWSABLE);
@@ -220,6 +228,7 @@ public final class MainActivity extends Activity {
             }
             @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
                 fileChooser.documentStarted();
+                if (voice != null) voice.documentStarted();
                 nativeAuth.documentStarted(url);
                 if (!trusted(Uri.parse(url)) || !pageToken().equals(pendingStart.token())) pendingStart.cancel();
             }
@@ -250,7 +259,10 @@ public final class MainActivity extends Activity {
             @Override public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, Message resultMsg) {
                 showBrowserAuthPending(); return false;
             }
-            @Override public void onPermissionRequest(PermissionRequest request) { request.deny(); }
+            // 웹 화면의 기기 자원 요청: 마이크 «하나만», 우리 사이트가 요청했을 때만 WebVoicePermission 이 처리한다(1.0.4).
+            // 영상(카메라)·그 밖의 자원·다른 출처·음성을 끈 빌드는 지금처럼 전부 거부한다.
+            @Override public void onPermissionRequest(PermissionRequest request) { if (voice != null) voice.request(request); else request.deny(); }
+            @Override public void onPermissionRequestCanceled(PermissionRequest request) { if (voice != null) voice.canceled(request); }
         });
         setContentView(webRoot);
         if (Build.VERSION.SDK_INT >= 33) {
@@ -352,6 +364,7 @@ public final class MainActivity extends Activity {
     private void checkObservedNavigation(String url) {
         if (fileChooser != null) fileChooser.navigation(url);
         if (nativeAuth != null) nativeAuth.navigation(url);
+        if (voice != null) voice.navigation(url);
         // 실제로 보이는 주소가 우리 사이트면(토스 이동 실패·취소 포함) 결제 중 상태를 끝낸다.
         if (url != null && trustedAppPage(Uri.parse(url))) paymentActive = false;
         if (web == null || isFinishing() || isDestroyed() || !trustedAppPage(Uri.parse(url))) return;
@@ -478,6 +491,11 @@ public final class MainActivity extends Activity {
         if (trustedAppPage(target)) navigateSafely(target);
         else loadPageUnchecked(Uri.parse(BuildConfig.STIZ_ORIGIN + AppNavigationPolicy.ENTRY_PATH));
     }
+    // 캘린더 구독 주소를 바깥 캘린더 앱으로 넘긴다. 받을 앱이 없으면 조용히 넘어가지 않고 알려 준다(웹 화면의 «주소 복사»로 이어지게).
+    private void openCalendarLink(Uri uri) {
+        try { startActivity(new Intent(Intent.ACTION_VIEW, uri).addCategory(Intent.CATEGORY_BROWSABLE)); }
+        catch (RuntimeException failure) { Toast.makeText(this, "캘린더 앱에서 열 수 없습니다. 주소 복사를 이용해 주세요.", Toast.LENGTH_LONG).show(); }
+    }
     // 바깥 사이트를 휴대폰 기본 브라우저로 연다.
     private void openInBrowser(Uri uri) {
         try { startActivity(new Intent(Intent.ACTION_VIEW, uri).addCategory(Intent.CATEGORY_BROWSABLE)); }
@@ -591,6 +609,7 @@ public final class MainActivity extends Activity {
     @Override public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(request, permissions, results);
         if (nativePush != null && nativePush.onPermissionResult(request)) return;
+        if (voice != null && voice.onPermissionResult(request)) return;
         if (request == 10) {
             boolean granted = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
             pendingStart.permissionResult(granted);
@@ -652,5 +671,5 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onNewIntent(Intent intent) { super.onNewIntent(intent); if (fileChooser != null) fileChooser.cancel(); if (nativeAuth != null && nativeAuth.callback(intent.getData())) return; setIntent(intent); pendingStart.cancel(); clearError(); if (web != null && trustedAppPage(intent.getData())) navigateSafely(intent.getData());
         else if (web != null && unfinishedRun && !activeRunToken.isEmpty()) loadPageUnchecked(Uri.parse(BuildConfig.STIZ_ORIGIN + "/driver/" + activeRunToken)); }
-    @Override protected void onDestroy() { pendingStart.cancel(); if (fileChooser != null) fileChooser.destroy(); if (nativeAuth != null) nativeAuth.destroy(); if (Build.VERSION.SDK_INT >= 33 && backRegistered) getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback((android.window.OnBackInvokedCallback) backCallback); if (web != null) { unregisterReceiver(receiver); web.destroy(); web = null; } worker.shutdownNow(); super.onDestroy(); }
+    @Override protected void onDestroy() { pendingStart.cancel(); if (fileChooser != null) fileChooser.destroy(); if (nativeAuth != null) nativeAuth.destroy(); if (voice != null) voice.destroy(); if (Build.VERSION.SDK_INT >= 33 && backRegistered) getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback((android.window.OnBackInvokedCallback) backCallback); if (web != null) { unregisterReceiver(receiver); web.destroy(); web = null; } worker.shutdownNow(); super.onDestroy(); }
 }

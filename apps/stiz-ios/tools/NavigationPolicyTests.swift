@@ -51,6 +51,23 @@ struct NavigationPolicyTests {
             ("nmap://route/car?dlat=37.6&dlng=127.1", true, .external),
             ("kakaomap://route?ep=37.6,127.1", true, .external),
             ("intent://example#Intent;scheme=https;end", true, .blocked),
+            // 캘린더 구독(1.0.4): 우리 사이트가 만든 주소를 사용자가 눌렀을 때만 캘린더 구독 창으로 넘긴다.
+            ("webcal://www.stiz-dasan.kr/api/calendar/academy.ics", true, .external),
+            ("webcal://www.stiz-dasan.kr/api/calendar/feed/example-token.ics?v=1", true, .external),
+            ("WEBCAL://WWW.STIZ-DASAN.KR/api/calendar/academy.ics", true, .external),
+            ("webcal://www.stiz-dasan.kr/api/calendar/academy.ics", false, .blocked),
+            ("webcal://www.stiz-dasan.kr/api/calendar/", true, .blocked),
+            ("webcal://www.stiz-dasan.kr/api/calendar", true, .blocked),
+            ("webcal://www.stiz-dasan.kr/api/calendarx/academy.ics", true, .blocked),
+            ("webcal://www.stiz-dasan.kr/api/other/academy.ics", true, .blocked),
+            ("webcal://www.stiz-dasan.kr/api/calendar/../auth/x", true, .blocked),
+            ("webcal://www.stiz-dasan.kr/one/%2e%2e/api/calendar/x.ics", true, .blocked),
+            ("webcal://stiz-dasan.kr/api/calendar/academy.ics", true, .blocked),
+            ("webcal://www.stiz-dasan.kr.fake.example/api/calendar/academy.ics", true, .blocked),
+            ("webcal://fake.example/api/calendar/academy.ics", true, .blocked),
+            ("webcal://www.stiz-dasan.kr:8080/api/calendar/academy.ics", true, .blocked),
+            ("webcal://user:pass@www.stiz-dasan.kr/api/calendar/academy.ics", true, .blocked),
+            ("webcals://www.stiz-dasan.kr/api/calendar/academy.ics", true, .blocked),
             ("https://example.supabase.co/storage/v1/object/public/notices/a.pdf", true, .external),
             ("https://example.supabase.co/storage/v1/object/public/notices/a.pdf", false, .blocked),
             ("https://example.supabase.co/storage/v1/object/sign/private/a.pdf", true, .blockedAuthentication),
@@ -119,6 +136,30 @@ struct NavigationPolicyTests {
         for (address, expected) in paying {
             precondition(NavigationPolicy.decide(URL(string: address)!, userInitiated: false, paymentActive: true) == expected, "Paying case failed: \(address)")
         }
+        // 시험 앱은 캘린더 구독 주소도 바깥으로 넘기지 않는다.
+        precondition(NavigationPolicy.decide(URL(string: "webcal://www.stiz-dasan.kr/api/calendar/academy.ics")!, userInitiated: true,
+                                             configuration: SandboxConfiguration.resolve("https://192.168.0.2:8453", debugBuild: true)) == .blocked)
+        // 마이크(1.0.4 음성 입력): 우리 사이트(https) 맨 위 화면의 «마이크만» 요청만 허용한다.
+        precondition(NavigationPolicy.allowsMicrophoneCapture(scheme: "https", host: "www.stiz-dasan.kr", port: 0, mainFrame: true, microphoneOnly: true))
+        precondition(NavigationPolicy.allowsMicrophoneCapture(scheme: "HTTPS", host: "WWW.stiz-dasan.kr", port: 443, mainFrame: true, microphoneOnly: true))
+        let deniedMicrophone: [(String, String, Int, Bool, Bool)] = [
+            ("https", "www.stiz-dasan.kr", 0, true, false),   // 카메라·카메라+마이크
+            ("https", "www.stiz-dasan.kr", 0, false, true),   // iframe
+            ("http", "www.stiz-dasan.kr", 0, true, true),
+            ("https", "www.stiz-dasan.kr", 444, true, true),
+            ("https", "stiz-dasan.kr", 0, true, true),
+            ("https", "www.stiz-dasan.kr.fake.example", 0, true, true),
+            ("https", "api.tosspayments.com", 0, true, true),
+            ("", "", 0, true, true)
+        ]
+        for item in deniedMicrophone {
+            precondition(!NavigationPolicy.allowsMicrophoneCapture(scheme: item.0, host: item.1, port: item.2, mainFrame: item.3, microphoneOnly: item.4), "microphone case \(item)")
+        }
+        precondition(!NavigationPolicy.allowsMicrophoneCapture(scheme: "https", host: "www.stiz-dasan.kr", port: 0, mainFrame: true, microphoneOnly: true,
+                                                               configuration: SandboxConfiguration.resolve("https://192.168.0.2:8453", debugBuild: true)), "시험 앱은 마이크를 허용하지 않는다")
+        precondition(!NavigationPolicy.allowsMicrophoneCapture(scheme: "https", host: "192.168.0.2", port: 8453, mainFrame: true, microphoneOnly: true,
+                                                               configuration: SandboxConfiguration.resolve("https://192.168.0.2:8453", debugBuild: true)))
+        print("STIZ iOS microphone policy: \(deniedMicrophone.count + 4) assertions passed")
         // 시험 앱은 결제 중이라도 결제창을 열지 않는다.
         let paymentSandbox = SandboxConfiguration.resolve("https://192.168.0.2:8453", debugBuild: true)
         for address in ["https://api.tosspayments.com/", "ispmobile://TID=example"] {

@@ -117,6 +117,39 @@ public final class AppNavigationPolicyTest {
         check(AppNavigationPolicy.encodedFileName("attachment; filename=\"a.pdf\"") == null);
         check(AppNavigationPolicy.encodedFileName("attachment; filename*=UTF-8''..") == null);
         check(AppNavigationPolicy.encodedFileName(null) == null);
+        // 2026-11-16(1.0.4): 캘린더 구독 주소(webcal) — 우리 사이트의 /api/calendar/ 아래만, 사용자가 누른 것만 캘린더 앱으로 넘긴다
+        for (String url : new String[]{"webcal://www.stiz-dasan.kr/api/calendar/academy", "webcal://www.stiz-dasan.kr/api/calendar/feed/AbC_123-xyz",
+            "webcal://www.stiz-dasan.kr/api/calendar/feed/AbC_123-xyz?kind=class"}) {
+            check(AppNavigationPolicy.calendarLinkAllowed(origin, url, true));
+            check(!AppNavigationPolicy.calendarLinkAllowed(origin, url, false));           // 자동 이동은 막는다
+            check(!AppNavigationPolicy.externalActionAllowed(url, true));                  // 전화·문자·지도 규칙과 섞이지 않는다
+            check(!AppNavigationPolicy.openInBrowserAllowed(origin, url, true));
+            check(!AppNavigationPolicy.isAppPage(origin, url, true));                      // 웹뷰 안에서 열 주소가 아니다
+        }
+        for (String url : new String[]{
+            "webcal://evil.invalid/api/calendar/feed/x",                    // 남의 주소
+            "webcal://www.stiz-dasan.kr.evil.invalid/api/calendar/feed/x",  // 뒤에 붙인 가짜 주소
+            "webcal://evil.invalid@www.stiz-dasan.kr/api/calendar/feed/x",  // 사용자 정보로 속인 주소
+            "webcal://www.stiz-dasan.kr@evil.invalid/api/calendar/feed/x",
+            "webcal://www.stiz-dasan.kr:8443/api/calendar/feed/x",          // 포트 지정
+            "webcal://WWW.STIZ-DASAN.KR/api/calendar/feed/x",               // 주소 표기가 다르면 받지 않는다(다른 규칙과 같은 엄격함)
+            "webcal://www.stiz-dasan.kr/api/calendar",                      // /api/calendar/ 아래가 아님
+            "webcal://www.stiz-dasan.kr/api/calendarx/feed",
+            "webcal://www.stiz-dasan.kr/api/admin/export.csv",
+            "webcal://www.stiz-dasan.kr/mypage",
+            "webcal://www.stiz-dasan.kr/api/calendar/../admin/backup",      // 경로 빠져나가기
+            "webcal://www.stiz-dasan.kr/api/calendar/%2e%2e/admin/backup",
+            "webcal://www.stiz-dasan.kr/api/calendar/..%2fadmin",
+            "webcal://www.stiz-dasan.kr//api/calendar/feed/x",
+            "webcal://www.stiz-dasan.kr/api/calendar/feed/x#frag",
+            "webcal:/api/calendar/feed/x", "webcal:www.stiz-dasan.kr/api/calendar/feed/x", "webcal:///api/calendar/feed/x",
+            "WEBCAL://www.stiz-dasan.kr/api/calendar/feed/x", "webcals://www.stiz-dasan.kr/api/calendar/feed/x",
+            "https://www.stiz-dasan.kr/api/calendar/feed/x", "http://www.stiz-dasan.kr/api/calendar/feed/x",
+            "intent://www.stiz-dasan.kr/api/calendar/feed/x#Intent;scheme=webcal;end", "javascript:alert(1)", "", null}) {
+            check(!AppNavigationPolicy.calendarLinkAllowed(origin, url, true));
+        }
+        check(!AppNavigationPolicy.calendarLinkAllowed(origin, "webcal://www.stiz-dasan.kr/api/calendar/feed/" + "a".repeat(2100), true)); // 지나치게 긴 주소
+        check(!AppNavigationPolicy.calendarLinkAllowed("not a url", "webcal://www.stiz-dasan.kr/api/calendar/feed/x", true));
         System.out.println("PASS " + checks + " unified navigation/run-state policy checks; no network/location calls");
     }
 }

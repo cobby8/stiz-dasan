@@ -108,12 +108,13 @@ enum NavigationPolicy {
         if let origin = sandbox.origin { return origin.appendingPathComponent("store-app") }
         if sandbox.isRequested { return URL(string: "about:blank")! }
         // caps = 이 앱이 직접 처리하는 기능(바깥 링크·문자). 웹은 이걸 보고 «링크 복사»·«번호 복사» 같은 우회 안내를 끈다.
-        // 푸시·위치·음성·설치는 이 앱이 아직 못 하므로 넣지 않는다.
+        // 푸시·위치·설치는 넣지 않는다. 음성 입력(1.0.4+)은 여기 대신 사용자 에이전트의 « STIZVoice/1» 표식으로 알린다
+        // (시작 주소를 거치지 않고 열린 화면에서도 웹이 알아볼 수 있게 — WebViewController).
         return URL(string: "https://www.stiz-dasan.kr/store-app?caps=links,sms")!
     }
     // paymentStart: 토스 결제창·포트원 본인인증 시작(이때부터 «결제·인증 중») · paymentPage: 그 중의 카드사·통신사 인증 화면
     // paymentApp: 결제·인증 중 카드사·간편결제·인증 앱 호출 · blockedDriver: 기사님 운행 위치 화면(Android 전용)
-    // external: 사용자가 누른 바깥 링크·전화·문자·지도 — 앱 안이 아니라 Safari·시스템 앱으로 연다
+    // external: 사용자가 누른 바깥 링크·전화·문자·지도·우리 사이트 캘린더 구독 주소 — 앱 안이 아니라 Safari·시스템 앱으로 연다
     enum Decision: Equatable { case website, external, paymentStart, paymentPage, paymentApp, blockedAuthentication, blockedDriver, blocked }
 
     // 토스 결제창 주소. 「tosspayments.com.evil.example」처럼 뒤에 붙인 가짜 주소는 끝부분 비교로 걸러진다.
@@ -139,6 +140,23 @@ enum NavigationPolicy {
               url.port == nil || url.port == 443, let host = url.host?.lowercased(), host.hasSuffix(".supabase.co"),
               let path = canonicalPath(url) else { return false }
         return path.hasPrefix("/storage/v1/object/public/")
+    }
+
+    // «아이폰·맥 캘린더에 추가» 주소(webcal://www.stiz-dasan.kr/api/calendar/...) — 우리 사이트가 만든 캘린더 구독 주소만 인정한다.
+    // 다른 사이트의 webcal 주소나 우리 사이트의 다른 경로는 캘린더 앱으로 넘기지 않는다(엉뚱한 일정 구독 방지).
+    static func isCalendarSubscription(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "webcal", url.user == nil, url.password == nil, url.port == nil,
+              url.host?.lowercased() == "www.stiz-dasan.kr", let path = canonicalPath(url) else { return false }
+        return path.hasPrefix("/api/calendar/") && path.count > "/api/calendar/".count
+    }
+
+    // 웹 화면의 마이크 요청(선생님 «음성으로 기록», 1.0.4) — 우리 사이트(https)의 맨 위 화면이 «마이크만» 요청할 때만 허용한다.
+    // 카메라·카메라+마이크·다른 사이트·iframe 은 허용하지 않는다(영상 촬영은 파일 선택의 시스템 카메라가 한다). 시험 앱도 허용하지 않는다.
+    // port: WKSecurityOrigin 은 기본 포트를 0 으로 알려 준다.
+    static func allowsMicrophoneCapture(scheme: String, host: String, port: Int, mainFrame: Bool, microphoneOnly: Bool,
+                                        configuration: SandboxConfiguration = sandbox) -> Bool {
+        guard mainFrame, microphoneOnly, !configuration.isRequested else { return false }
+        return scheme.lowercased() == "https" && host.lowercased() == "www.stiz-dasan.kr" && (port == 0 || port == 443)
     }
 
     // 결제 중 바깥 앱으로 넘길 수 있는 주소. 웹 실행·파일 주소는 앱 이름처럼 보여도 넘기지 않는다.
@@ -192,6 +210,8 @@ enum NavigationPolicy {
         guard userInitiated else { return .blocked }
         // 전화·메일·문자·지도 앱. nmap(네이버지도)·kakaomap(카카오맵)·tmap(티맵)은 길찾기 버튼이 쓴다.
         if ["tel", "mailto", "sms", "maps", "nmap", "kakaomap", "tmap"].contains(scheme) { return .external }
+        // 캘린더 구독 주소는 우리 사이트가 만든 것만 캘린더 구독 창으로 넘긴다. 그 밖의 webcal 은 지금처럼 막는다.
+        if scheme == "webcal" { return isCalendarSubscription(url) ? .external : .blocked }
         if scheme == "https", let host = url.host?.lowercased(), url.port == nil || url.port == 443 {
             // 로그인 화면은 Safari 로 넘겨도 앱 로그인이 되지 않으므로 기존처럼 안내한다.
             if host == "accounts.google.com" || host == "appleid.apple.com" { return .blockedAuthentication }

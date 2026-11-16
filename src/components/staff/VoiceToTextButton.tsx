@@ -18,7 +18,8 @@ export function VoiceToTextButton({
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [message, setMessage] = useState("");
-  // 스토어 앱(현재 버전)은 마이크 녹음을 못 한다 → 버튼 대신 안내 한 줄을 보인다(글로 적으면 된다). 판정은 @/lib/storeApp 한 곳(d2)
+  // 옛 스토어 앱(1.0.3 이하)은 마이크 녹음을 못 한다 → 버튼 대신 안내 한 줄을 보인다(글로 적으면 된다). 판정은 @/lib/storeApp 한 곳(d2)
+  // 앱 1.0.4+ 는 사용자 에이전트의 « STIZVoice/1» 표식으로 «된다»를 알려 와, 브라우저처럼 버튼이 나온다.
   const appLacksVoice = useStoreAppLacks("voice");
 
   useEffect(() => {

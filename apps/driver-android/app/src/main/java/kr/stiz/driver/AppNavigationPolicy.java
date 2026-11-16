@@ -125,6 +125,18 @@ final class AppNavigationPolicy {
                 && ("apis.openapi.sk.com".equals(uri.getHost()) || "map.naver.com".equals(uri.getHost()) || "map.kakao.com".equals(uri.getHost()));
         } catch (Exception failure) { return false; }
     }
+    // 캘린더 구독 주소(2026-11-16, 1.0.4): 웹의 «아이폰·맥 캘린더에 추가» 링크는 webcal://www.stiz-dasan.kr/api/calendar/... 이다.
+    // 사용자가 직접 누른 것만, «우리 사이트의 /api/calendar/ 아래»만 바깥 캘린더 앱으로 넘긴다 — 임의의 webcal 주소는 열어 주지 않는다.
+    // 주소 표기는 다른 규칙처럼 엄격하게: 소문자 webcal, 호스트 글자 그대로 일치, 포트·사용자 정보·# 없음, 경로 빠져나가기(.. 등) 없음.
+    static boolean calendarLinkAllowed(String origin, String url, boolean userGesture) {
+        if (!userGesture || url == null || url.length() > 2048) return false;
+        try {
+            URI uri = new URI(url), own = new URI(origin);
+            return "webcal".equals(uri.getScheme()) && own.getHost() != null && own.getHost().equals(uri.getHost())
+                && uri.getRawUserInfo() == null && uri.getPort() == -1 && uri.getRawFragment() == null
+                && canonicalPath(uri) && uri.getPath().startsWith("/api/calendar/");
+        } catch (Exception failure) { return false; }
+    }
     // 포트원(옛 아임포트)·KG이니시스 본인인증 화면. 자녀 연결·기존 계정 연결의 본인인증이 이 주소로 넘어간다.
     // 결제처럼 «진행 중» 상태를 시작해 통신사·인증 앱 화면을 잠시 허용하고, 우리 사이트로 돌아오면 다시 잠근다.
     // ⚠️ 실제 경유 도메인은 실기기로 확인해야 한다(포트원 SDK 가 채널마다 다른 화면으로 보낸다).
@@ -164,7 +176,7 @@ final class AppNavigationPolicy {
         } catch (Exception failure) { return false; }
     }
     // 통합 앱 시작 주소. caps = 이 앱이 직접 처리하는 기능(바깥 링크·문자) — 웹은 이걸 보고 «링크 복사»·«번호 복사» 우회 안내를 끈다.
-    // 푸시·위치·음성·설치는 아직 못 하므로 넣지 않는다.
+    // 푸시·위치·설치는 넣지 않는다. 음성 입력(1.0.4)은 여기가 아니라 사용자 에이전트 표식(« STIZVoice/1», VoiceCapturePolicy)으로 알린다.
     static final String ENTRY_PATH = "/store-app?caps=links,sms";
     /**
      * 뒤로가기 목적지: 방문 기록에서 지금 위치보다 앞쪽의 «가장 가까운 우리 사이트 화면»까지 몇 칸 돌아갈지(음수).

@@ -1,5 +1,14 @@
 # 안드로이드 검증 기록 — 2026-10-19
 
+## 2026-11-16 1.0.4 준비 — R8·음성 입력·캘린더 링크 (빌드·정책 검사만, 실기기 미검증)
+
+- 순수 자바 정책: 탐색 222(캘린더 주소 검사 추가)·음성 61(신규)·파일 80·표본 13·간편로그인 85·알림 35·시작 33·격리 103 = **632 조건 통과**.
+- `bundleRelease`·`assembleRelease`(R8 켬, 업로드 키 서명)·`assembleDebug`·`assembleDebugAndroidTest`·`lintDebug` 성공. R8 경고 0, Lint 오류 0·경고 11(이번 변경으로 늘어난 것 없음).
+- 크기(같은 조건 비교, 버전 1.0.3 표기 그대로): AAB 2,538,081 → 767,049 바이트 · APK 2,647,654 → 542,583 · classes.dex 6,650,172 → 497,488(약 93% 감소). 클래스 650개 중 원래 이름으로 남은 앱 클래스는 매니페스트 컴포넌트 4개.
+- dex 확인: `MainActivity`·`NativeAuthReturnActivity`·`DriverLocationService`·`StizMessagingService` 이름 유지, 웹뷰 클라이언트 재정의 메서드(onPermissionRequest·onShowFileChooser·shouldOverrideUrlLoading 등)·웹 창구 이름 3개·` STIZVoice/1`·`webcal` 존재, `android.permission.CAMERA`·`VIDEO_CAPTURE` 없음. `mapping.txt` 생성 + AAB 의 `BUNDLE-METADATA/.../proguard.map` 포함.
+- 병합 매니페스트의 새 권한: `RECORD_AUDIO`·`MODIFY_AUDIO_SETTINGS` 둘뿐(+ `uses-feature android.hardware.microphone required=false`).
+- ⚠️ 이 빌드는 시험용 가짜 Firebase 값(비교용)과 값 없는 상태 두 가지로만 돌렸다. **실제 `google-services.json` 으로 만든 release 를 실기기에 설치해 확인한 것은 없다.** R8 뒤 동작(로그인·결제·첨부·알림·위치·파일 받기·음성·캘린더)은 실기기 확인 전까지 미검증이다.
+
 ## 2026-10-28 격리 시험 환경 연결
 
 - `SANDBOX.md` 정본. 별도 `.sandbox` debug, 정확한 private HTTPS8453·새 공개CA만 신뢰, 외부 요청·실제 인증·GPS 수집/전송 차단을 추가했다. release 기본값은 보존했다.

@@ -6,6 +6,14 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 음성 입력(2026-11-16, 1.0.4): 선생님 화면의 «음성으로 기록» 버튼이 웹뷰 안에서 마이크를 쓴다.
+         RECORD_AUDIO = 휴대폰 권한 창이 뜨는 권한. 앱을 켤 때 묻지 않고 음성 버튼을 처음 누를 때만 묻는다(WebVoicePermission).
+         MODIFY_AUDIO_SETTINGS = 창이 뜨지 않는 일반 권한. 웹뷰(크롬 엔진)가 녹음할 때 소리 경로를 맞추는 데 쓴다.
+         카메라 권한은 넣지 않는다 — 사진·영상 촬영은 휴대폰 카메라 앱이 한다(WebFileChooser). -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- 마이크가 없는 기기(일부 태블릿)도 스토어에서 계속 설치할 수 있게 «필수 아님»으로 적는다(안 적으면 권한 때문에 필수로 간주된다). -->
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <application android:label="@string/app_name" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:allowBackup="false" android:fullBackupContent="false" android:dataExtractionRules="@xml/data_extraction_rules" android:usesCleartextTraffic="false">
         <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.attachments" android:exported="false" android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/attachment_paths" />

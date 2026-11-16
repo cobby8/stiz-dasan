@@ -39,7 +39,10 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         let baseName = configuration.applicationNameForUserAgent.flatMap { $0.isEmpty ? nil : $0 } ?? "Mobile/15E148"
         // « STIZNativeLogin/1»: 앱 간편로그인 기능이 켜진 빌드 표시 — 웹이 이 표시가 있을 때만 앱 화면에 간편로그인 버튼을 보인다(a1).
         let nativeLogin = NativeAuthCoordinator.enabled ? " STIZNativeLogin/1" : ""
-        configuration.applicationNameForUserAgent = "\(baseName) STIZApp/\(appVersion) (ios)\(nativeLogin)"
+        // « STIZVoice/1»: 웹 화면의 마이크 요청(선생님 «음성으로 기록»)을 받아 주는 빌드 표시(1.0.4) — 웹이 이 표시가 있을 때만
+        // 앱 화면에 음성 버튼을 보인다. 시험 앱은 마이크를 허용하지 않으므로 붙이지 않는다(아래 requestMediaCapturePermissionFor).
+        let voiceInput = NavigationPolicy.sandbox.isRequested ? "" : " STIZVoice/1"
+        configuration.applicationNameForUserAgent = "\(baseName) STIZApp/\(appVersion) (ios)\(nativeLogin)\(voiceInput)"
         // 앱 알림(FCM) 창구 — 웹이 알림 권한·토큰을 묻는다(e2, 시험 앱에는 열지 않음)
         NativePush.shared.attach(to: configuration.userContentController)
         webView = WKWebView(frame: .zero, configuration: configuration)
@@ -379,6 +382,18 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         guard paymentActive, frame.isMainFrame, !trustedFrame(frame) else { return nil }
         let host = frame.securityOrigin.host
         return host.isEmpty ? nil : host
+    }
+
+    // 웹 화면의 마이크·카메라 요청(iOS 15+). 선생님 «음성으로 기록»이 쓰는 «마이크만» 요청을 우리 사이트 본문에서만 허용한다.
+    // 허용해도 처음 한 번은 iOS 가 앱의 마이크 권한을 직접 묻는다(Info.plist 의 NSMicrophoneUsageDescription 문구).
+    // 카메라·카메라+마이크·다른 사이트·iframe 은 거절한다 — 사진·영상 촬영은 파일 선택의 시스템 카메라가 하므로 영향이 없다.
+    func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+                 initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType,
+                 decisionHandler: @escaping (WKPermissionDecision) -> Void) {
+        let allowed = trustedFrame(frame) && NavigationPolicy.allowsMicrophoneCapture(
+            scheme: origin.protocol, host: origin.host, port: origin.port,
+            mainFrame: frame.isMainFrame, microphoneOnly: type == .microphone)
+        decisionHandler(allowed ? .grant : .deny)
     }
 
     func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,

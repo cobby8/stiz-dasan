@@ -34,8 +34,18 @@ assert project.count('STIZ_SANDBOX_ORIGIN = "";') == 2, "Debug/Release 기본 �
 assert info["NSCameraUsageDescription"] and info["NSPhotoLibraryUsageDescription"]
 # 수업 영상(2026-11-14): 웹의 accept="video/*" capture 로 영상을 찍으면 마이크도 쓴다 — 설명이 없으면 iOS 가 앱을 종료한다.
 assert info["NSMicrophoneUsageDescription"] and "영상" in info["NSCameraUsageDescription"], "영상 촬영용 카메라·마이크 설명"
+# 음성 입력(1.0.4): 마이크 설명에 «말로 입력» 목적까지 적는다. 받아쓰기는 서버가 하므로 iOS 음성 인식 권한 키는 두지 않는다.
+assert "말로 입력" in info["NSMicrophoneUsageDescription"], "마이크 설명에 음성 입력 목적 포함"
+assert "NSSpeechRecognitionUsageDescription" not in info, "iOS 음성 인식(Speech)은 쓰지 않는다"
 web_view = (root / "STIZ/WebViewController.swift").read_text(encoding="utf-8")
 assert "configuration.allowsInlineMediaPlayback = true" in web_view, "수업 영상은 화면 안에서 재생(playsinline)"
+# 마이크 요청은 주소 정책(allowsMicrophoneCapture)으로만 허용하고, 웹에는 « STIZVoice/1» 표식으로 알린다.
+assert web_view.count("requestMediaCapturePermissionFor origin: WKSecurityOrigin") == 1, "웹 화면의 마이크 요청 처리"
+assert "NavigationPolicy.allowsMicrophoneCapture(" in web_view and "decisionHandler(allowed ? .grant : .deny)" in web_view, "마이크는 정책 판정으로만 허용"
+assert 'NavigationPolicy.sandbox.isRequested ? "" : " STIZVoice/1"' in web_view, "음성 입력 표식(시험 앱 제외)"
+assert "decisionHandler(.grant)" not in web_view and "decisionHandler(.prompt)" not in web_view, "조건 없는 허용 금지"
+navigation_policy = (root / "STIZ/NavigationPolicy.swift").read_text(encoding="utf-8")
+assert 'if scheme == "webcal" { return isCalendarSubscription(url) ? .external : .blocked }' in navigation_policy, "캘린더 구독 주소는 우리 사이트 것만"
 assert debug_info["CFBundleURLTypes"][0]["CFBundleURLSchemes"] == ["stiz-academy-dev"]
 assert "UIInterfaceOrientationLandscapeLeft" in info["UISupportedInterfaceOrientations"]
 scheme = ET.parse(root / "STIZ.xcodeproj/xcshareddata/xcschemes/STIZ.xcscheme")
@@ -43,7 +53,7 @@ assert all(ref.attrib["BlueprintIdentifier"] in references for ref in scheme.ite
 assert "kr.stiz.academy.dev" in project and "DEVELOPMENT_TEAM" not in project
 # 스토어용 Release 는 정식 ID·1.x 버전, 개발 Debug 는 기존 개발 ID·0.1.0(격리 시험 도구 계약)을 유지한다.
 release_settings = re.search(r"A0000000000000000000000F = \{[^\n]*\}; name = Release;\};", project).group(0)
-assert "PRODUCT_BUNDLE_IDENTIFIER = kr.co.upturnlabs.stizdasan;" in release_settings and "MARKETING_VERSION = 1.0.3;" in release_settings
+assert "PRODUCT_BUNDLE_IDENTIFIER = kr.co.upturnlabs.stizdasan;" in release_settings and "MARKETING_VERSION = 1.0.4;" in release_settings
 assert "INFOPLIST_FILE = STIZ/Info.plist;" in release_settings and 'INFOPLIST_FILE = "STIZ/Info-Debug.plist";' in project
 # 1.0.2(2026-11-13): 애플 포털에서 Associated Domains·Push Notifications 를 켜고 배포 프로파일을 다시 받았으므로
 # 권한 파일을 «Release 에만» 연결한다. Debug(격리 시험 앱)는 그 권한이 없는 프로파일이라 연결하면 서명이 깨진다.
@@ -75,6 +85,7 @@ with (root / "STIZ/PrivacyInfo.xcprivacy").open("rb") as handle:
     privacy = plistlib.load(handle)
 assert privacy["NSPrivacyTracking"] is False and privacy["NSPrivacyTrackingDomains"] == []
 assert all(not item["NSPrivacyCollectedDataTypeTracking"] for item in privacy["NSPrivacyCollectedDataTypes"])
+assert "NSPrivacyCollectedDataTypeAudioData" in [item["NSPrivacyCollectedDataType"] for item in privacy["NSPrivacyCollectedDataTypes"]], "음성 입력(1.0.4) — 오디오 데이터 신고"
 assert info["ITSAppUsesNonExemptEncryption"] is False, "HTTPS 표준 암호화만 사용(수출 규정 면제)"
 workflow = (root.parents[1] / "codemagic.yaml").read_text(encoding="utf-8")
 validate_workflows(workflow)

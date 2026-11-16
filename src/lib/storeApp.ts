@@ -65,7 +65,7 @@ export function isStoreApp(): boolean {
  *   push        앱 알림(웹푸시)
  *   links       바깥 주소(카카오채널·인스타·블로그·쇼핑몰·첨부파일 등) 열기
  *   geolocation 현재 위치 읽기
- *   voice       음성 입력(받아쓰기)
+ *   voice       음성 입력(받아쓰기) — 앱 1.0.4+ 는 사용자 에이전트의 « STIZVoice/1» 표식으로 «된다»를 알린다
  *   install     «앱 설치» 안내(이미 앱이라 필요 없다)
  *   sms         문자 앱 열기(sms: 주소)
  *
@@ -97,6 +97,33 @@ export function parseStoreAppCapabilities(raw: string | null | undefined): Store
 }
 
 /**
+ * 앱 음성 입력(2026-11-16, 앱 1.0.4) — 앱이 웹 화면의 마이크 요청을 받아 주는지.
+ * 그 처리가 들어간 앱 빌드만 사용자 에이전트 끝에 이 표식을 붙인다(아이폰 WebViewController·안드로이드 앱).
+ * 표식이 없는 옛 앱(1.0.3 이하)은 마이크 요청이 막혀 있어, 음성 버튼 대신 «앱 다음 버전부터» 안내를 보인다.
+ */
+export const VOICE_INPUT_USER_AGENT_MARK = " STIZVoice/1";
+
+/**
+ * 사용자 에이전트로 본 «이 앱은 음성 입력이 되나»(순수 — 테스트로 못박는다).
+ * 표식 뒤에 글자가 더 붙은 것(« STIZVoice/10»)은 다른 표식이라 인정하지 않는다.
+ */
+export function appSupportsVoiceInput(userAgent: string | null | undefined): boolean {
+  const text = String(userAgent ?? "");
+  const at = text.indexOf(VOICE_INPUT_USER_AGENT_MARK);
+  if (at < 0) return false;
+  const next = text.charAt(at + VOICE_INPUT_USER_AGENT_MARK.length);
+  return next === "" || next === " ";
+}
+
+function hasVoiceInputUserAgentMark(): boolean {
+  try {
+    return appSupportsVoiceInput(window.navigator.userAgent);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * 판정 함수(유일): 지금 스토어 앱 안이고, 그 앱이 cap 을 못 한다고 봐야 하나.
  * - 브라우저·기존 설치 앱이면 항상 false(아무것도 숨기지 않는다)
  * - 스토어 앱인데 앱이 cap 을 할 수 있다고 알려 왔으면 false
@@ -106,6 +133,8 @@ export function storeAppLacks(cap: StoreAppCapability): boolean {
   if (!isStoreApp()) return false;
   // 앱 1.0.1+ (사용자 에이전트 표식) 은 바깥 링크·문자를 직접 연다 — 시작 주소를 안 거친 화면(문자 링크로 바로 열림)에서도
   if ((cap === "links" || cap === "sms") && hasStoreAppUserAgentMark()) return false;
+  // 앱 1.0.4+ (« STIZVoice/1» 표식) 은 마이크 요청을 받아 준다 — 브라우저처럼 음성 버튼을 보인다
+  if (cap === "voice" && hasVoiceInputUserAgentMark()) return false;
   try {
     const caps = parseStoreAppCapabilities(window.sessionStorage.getItem(STORE_APP_CAPS_KEY));
     return !caps.includes(cap);

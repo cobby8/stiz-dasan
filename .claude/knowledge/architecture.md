@@ -389,3 +389,9 @@
 - **발견자**: developer
 - **내용**: approveIllnessCarry 가 서버에서 갈래를 정한다(이월 근거 있음 → 기존 CARRY / 미납 → illness-unpaid-reduce.ts). 근거(수강료·수업 횟수)는 이월과 같은 함수에 basis "UNPAID" 만 넘긴다(workbench-absence.readUnpaidEvidenceInTx). 기록 = PaymentAuditLog action `ILLNESS_ABSENCE_UNPAID_REDUCED`(metadata.reduceBy·absenceDate) + BillingAbsenceResolution(resolution 'CARRY' · 고정 사유 illnessCarryRules.ILLNESS_UNPAID_REDUCE_REASON). 검토 상태는 APPROVED 그대로(제약 값 집합 불변), «뺀 결석» 구분은 illnessUnpaidReducedSql. 그 감액 합계(workbench.illnessReducedSumSql)를 읽는 곳 5군데가 같이 움직인다: 근거 읽기의 발행 금액 대조·priorReduction / readWorkbench 이월 유효성 / 휴원 정산 loadPausePayments(priorReduction·settledDates — import 없이 같은 글자, 테스트가 비교) / 발행 보류 readHoldTargets(ILLNESS_REDUCED 건너뛰기). 함정 ① 3단계까지의 파일은 소스 글자 고정 테스트·CJS 대역 로더가 많다 — 새 import 는 이미 대역이 있는 모듈(illnessCarryRules·./workbench)에 싣고, 기존 식은 그대로 두고 앞·뒤에 갈래를 붙인다 ② readWorkbench 의 원본 지문(sourceVersion)에 새 칸을 넣으면 저장해 둔 초안이 전부 «원본 변경»이 된다 — 값이 있을 때만 칸을 붙인다 ③ 잠금은 결제 잠금(lockPaymentsForCheckout) → 청구 행 → 학생·보강권 순(결제 흐름과 같은 머리).
 - **참조횟수**: 0
+
+### [2026-11-16] 안드로이드 앱 1.0.4 준비: release 만 R8·음성(마이크)·캘린더(webcal) — 판정은 순수 클래스, 연결부는 따로
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: `apps/driver-android` release 는 `minifyEnabled+shrinkResources`(규칙 `app/proguard-rules.pro` — 매니페스트 컴포넌트 4개만 keep, 앱에 `@JavascriptInterface`·리플렉션 없음. 웹 대화는 전부 `addWebMessageListener`). 음성 = `VoiceCapturePolicy`(출처·자원 판정)+`WebVoicePermission`(권한 창·대기 요청 1개·화면 바뀌면 거부), 웹에는 UA 표식 ` STIZVoice/1`. 캘린더 = `AppNavigationPolicy.calendarLinkAllowed`(우리 호스트의 `/api/calendar/` webcal 만). ⚠️ R8 확인 빌드는 `app/google-services.json` 이 있어야 알림 코드가 실제처럼 남는다(없으면 `FCM_APP_ID` 빈 값 → 알림 코드가 통째로 지워진 결과를 보게 된다). 절차·크기: `apps/driver-android/VALIDATION.md` 맨 위.
+- **참조횟수**: 0

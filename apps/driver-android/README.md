@@ -82,3 +82,13 @@ Play Console 조직 계정, 패키지 이름 확정, release 서명, 개인정�
 - 웹 창구 `StizPushTransport`(우리 사이트 맨 위 화면만) → `NativePush`(권한·토큰) · 받기 `StizMessagingService`(데이터 메시지 → 알림 «학원 알림», 누르면 `NativePushPolicy.target` 으로 거른 주소를 MainActivity 의 기존 링크 열기 길로).
 - 정책 검사: `javac --release 17 -d <출력> app/src/main/java/kr/stiz/driver/NativePushPolicy.java app/src/main/java/kr/stiz/driver/AppNavigationPolicy.java tests/NativePushPolicyTest.java` 후 `java -ea -cp <출력> kr.stiz.driver.NativePushPolicyTest`.
 - 전체 구조·원장 외부 작업: `docs/native-push.md`.
+
+## 코드 줄이기(R8)·음성 입력·캘린더 링크 (2026-11-16, 1.0.4 준비)
+
+- **R8**: release 만 `minifyEnabled true`·`shrinkResources true`. 규칙과 이유는 `app/proguard-rules.pro`. debug·기기 시험·계측 검사는 줄이지 않는다.
+  - 바뀐 이름 표: `app/build/outputs/mapping/release/mapping.txt`(AAB 에도 들어간다). **스토어에 올린 버전의 mapping.txt 는 따로 보관**한다 — 없으면 그 버전의 오류 기록을 못 읽는다.
+  - R8 은 «실기기에서만» 드러나는 문제를 만들 수 있다(빌드·정책 검사는 전부 통과). 올리기 전 VALIDATION.md 의 실기기 목록을 release 빌드로 확인한다.
+  - 확인 빌드는 `app/google-services.json` 을 둔 상태로 한다. 없으면 알림 값이 비어 R8 이 알림 코드를 통째로 지운 결과를 보게 된다.
+- **음성 입력**: 웹의 «음성으로 기록»(getUserMedia + MediaRecorder → `/api/staff/transcribe`)이 웹뷰 안에서 돈다. 판정 `VoiceCapturePolicy`(우리 사이트가 마이크 하나만 요청했을 때만), 연결 `WebVoicePermission`(휴대폰 권한 창은 버튼을 누른 그때만, 기다리는 요청 1개, 화면이 바뀌면 거부). 웹에는 사용자 에이전트 표식 ` STIZVoice/1` 로 알린다. 새 권한 `RECORD_AUDIO`·`MODIFY_AUDIO_SETTINGS`(카메라 권한 없음). 통합 앱에서만 켜진다(sandbox·기사님 전용 앱 제외).
+- **캘린더 링크**: 사용자가 누른 `webcal://www.stiz-dasan.kr/api/calendar/...` 만 바깥 캘린더 앱으로 넘긴다(`AppNavigationPolicy.calendarLinkAllowed`). 받을 앱이 없으면 «캘린더 앱에서 열 수 없습니다. 주소 복사를 이용해 주세요.»
+- 정책 검사: `javac --release 17 -encoding UTF-8 -d <출력> app/src/main/java/kr/stiz/driver/{AppNavigationPolicy,VoiceCapturePolicy}.java tests/{AppNavigationPolicyTest,VoiceCapturePolicyTest}.java` 후 `java -ea -cp <출력> kr.stiz.driver.VoiceCapturePolicyTest`(61) · `AppNavigationPolicyTest`(222).

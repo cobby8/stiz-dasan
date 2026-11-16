@@ -39,6 +39,98 @@ test("앱 새 버전이 caps 를 보내면 그 기능의 우회만 자동으로 
   });
 });
 
+// ── 음성 입력 표식(앱 1.0.4, 2026-11-16) ─────────────────────────────────────────
+// 앱이 웹 화면의 마이크 요청을 받아 주면 사용자 에이전트 끝에 « STIZVoice/1» 을 붙인다 → 그 앱에서만 음성 버튼이 나온다.
+const IOS_103 = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 STIZApp/1.0.3 (ios) STIZNativeLogin/1";
+const IOS_104 = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 STIZApp/1.0.4 (ios) STIZNativeLogin/1 STIZVoice/1";
+const ANDROID_104 = "Mozilla/5.0 (Linux; Android 14) Chrome/130 Mobile Safari/537.36 STIZApp/1.0.4 (android) STIZNativeLogin/1 STIZVoice/1";
+const SAFARI = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1";
+
+// 사용자 에이전트까지 있는 가짜 브라우저(위 withSession 은 navigator 가 없다 = 표식을 못 읽는 환경)
+function withApp(userAgent, entries, fn) {
+  const store = new Map(Object.entries(entries));
+  globalThis.window = {
+    navigator: { userAgent },
+    sessionStorage: { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, String(v)) },
+  };
+  // isStoreApp 이 document.referrer 도 읽는다(없으면 앱 판정이 통째로 건너뛰어진다)
+  globalThis.document = { referrer: "" };
+  try { return fn(store); } finally { delete globalThis.window; delete globalThis.document; }
+}
+
+test("음성 입력 표식 판정(순수): « STIZVoice/1» 이 정확히 있을 때만 된다", () => {
+  assert.equal(storeApp.VOICE_INPUT_USER_AGENT_MARK, " STIZVoice/1");
+  assert.equal(storeApp.appSupportsVoiceInput(IOS_104), true);
+  assert.equal(storeApp.appSupportsVoiceInput(ANDROID_104), true);
+  // 표식 뒤에 다른 표식이 더 붙어도 된다
+  assert.equal(storeApp.appSupportsVoiceInput(`${IOS_104} STIZOther/2`), true);
+  // 옛 앱·브라우저·빈 값
+  for (const ua of [IOS_103, SAFARI, "", null, undefined]) assert.equal(storeApp.appSupportsVoiceInput(ua), false, String(ua));
+  // 비슷하지만 다른 글자는 인정하지 않는다
+  for (const ua of [`${IOS_103} STIZVoice/10`, `${IOS_103} STIZVoice/2`, `${IOS_103} STIZVoice/1.5`, `${IOS_103} stizvoice/1`, `${IOS_103}STIZVoice/`, "XSTIZVoice/1"]) {
+    assert.equal(storeApp.appSupportsVoiceInput(ua), false, ua);
+  }
+});
+
+test("음성 버튼: 표식 있는 앱(1.0.4+)은 브라우저처럼 보이고, 표식 없는 옛 앱은 안내 한 줄 그대로", () => {
+  // 옛 앱(1.0.3): 사용자 에이전트로 앱임은 알지만 음성 표식이 없다 → 못 한다(안내 한 줄)
+  withApp(IOS_103, {}, () => {
+    assert.equal(storeApp.storeAppLacks("voice"), true);
+    // 다른 판정은 그대로(1.0.1+ 는 바깥 링크·문자를 직접 연다)
+    assert.equal(storeApp.storeAppLacks("links"), false);
+    assert.equal(storeApp.storeAppLacks("sms"), false);
+  });
+  // 새 앱(1.0.4): 시작 주소를 거쳤든(표식·caps=links,sms 기억) 아니든 음성 버튼이 나온다
+  for (const ua of [IOS_104, ANDROID_104]) {
+    withApp(ua, {}, () => assert.equal(storeApp.storeAppLacks("voice"), false, ua));
+    withApp(ua, { "stiz-store-app": "1", "stiz-store-app-caps": "links,sms" }, () => {
+      assert.equal(storeApp.storeAppLacks("voice"), false, ua);
+      // 음성 표식이 다른 기능까지 풀지는 않는다
+      assert.equal(storeApp.storeAppLacks("geolocation"), true);
+      assert.equal(storeApp.storeAppLacks("push"), true);
+      assert.equal(storeApp.storeAppLacks("install"), true);
+    });
+  }
+  // 일반 브라우저: 지금처럼 아무것도 숨기지 않는다(표식이 없어도 버튼)
+  withApp(SAFARI, {}, () => assert.equal(storeApp.storeAppLacks("voice"), false));
+  // 표식 없는 옛 앱(1.0)이 시작 주소만 거친 경우 → 못 한다
+  withApp(SAFARI, { "stiz-store-app": "1" }, () => assert.equal(storeApp.storeAppLacks("voice"), true));
+});
+
+test("음성 입력 표식은 앱 소스와 글자가 같고, 화면은 서버 첫 그림과 어긋나지 않는 훅으로만 읽는다", () => {
+  // 아이폰 앱: 시험 앱이 아닐 때 사용자 에이전트 끝에 붙인다(웹 상수와 같은 글자)
+  const iosView = read("apps/stiz-ios/STIZ/WebViewController.swift");
+  assert.ok(iosView.includes(`NavigationPolicy.sandbox.isRequested ? "" : "${storeApp.VOICE_INPUT_USER_AGENT_MARK}"`));
+  assert.match(iosView, /STIZApp\/\\\(appVersion\) \(ios\)\\\(nativeLogin\)\\\(voiceInput\)"/);
+  // 아이폰 앱: 마이크 요청은 우리 사이트 본문의 «마이크만» 요청일 때만 허용한다
+  assert.match(iosView, /let allowed = trustedFrame\(frame\) && NavigationPolicy\.allowsMicrophoneCapture\(\s*scheme: origin\.protocol, host: origin\.host, port: origin\.port,\s*mainFrame: frame\.isMainFrame, microphoneOnly: type == \.microphone\)\s*decisionHandler\(allowed \? \.grant : \.deny\)/);
+  const iosPolicy = read("apps/stiz-ios/STIZ/NavigationPolicy.swift");
+  assert.match(iosPolicy, /guard mainFrame, microphoneOnly, !configuration\.isRequested else \{ return false \}\s*return scheme\.lowercased\(\) == "https" && host\.lowercased\(\) == "www\.stiz-dasan\.kr" && \(port == 0 \|\| port == 443\)/);
+  // 화면 부품은 표식을 직접 읽지 않는다 — 판정은 storeAppLacks 한 곳, 첫 그림은 훅이 «브라우저»로 그린다
+  const voice = read("src/components/staff/VoiceToTextButton.tsx");
+  assert.doesNotMatch(voice, /navigator\.userAgent|STIZVoice\/1"|appSupportsVoiceInput/);
+  const hook = read("src/components/storeApp/useStoreAppLacks.ts");
+  assert.match(hook, /const \[lacks, setLacks\] = useState\(false\);\s*useEffect\(\(\) => \{\s*setLacks\(storeAppLacks\(cap\)\);/);
+  assert.match(read("src/lib/storeApp.ts"), /if \(cap === "voice" && hasVoiceInputUserAgentMark\(\)\) return false;/);
+});
+
+test("캘린더 연동: 아이폰 앱은 우리 사이트가 만든 구독 주소만 캘린더로 넘기고, 화면의 «안 열리면» 안내는 남아 있다", () => {
+  const iosPolicy = read("apps/stiz-ios/STIZ/NavigationPolicy.swift");
+  assert.match(iosPolicy, /if scheme == "webcal" \{ return isCalendarSubscription\(url\) \? \.external : \.blocked \}/);
+  assert.match(iosPolicy, /url\.scheme\?\.lowercased\(\) == "webcal", url\.user == nil, url\.password == nil, url\.port == nil,\s*url\.host\?\.lowercased\(\) == "www\.stiz-dasan\.kr", let path = canonicalPath\(url\)/);
+  assert.match(iosPolicy, /return path\.hasPrefix\("\/api\/calendar\/"\)/);
+  // 웹이 만드는 주소가 앱이 인정하는 모양(webcal://www.stiz-dasan.kr/api/calendar/...)과 같다
+  assert.match(read("src/lib/publicMetadata.ts"), /export const PUBLIC_SITE_URL = "https:\/\/www\.stiz-dasan\.kr";/);
+  const action = read("src/app/actions/calendar-sync.ts");
+  assert.match(action, /httpsUrl\.replace\(\/\^https:\\\/\\\/\/, "webcal:\/\/"\)/);
+  assert.match(action, /linksFor\(`\$\{PUBLIC_SITE_URL\}\/api\/calendar\/academy`, false\)/);
+  assert.match(action, /linksFor\(`\$\{PUBLIC_SITE_URL\}\/api\/calendar\/feed\/\$\{token\}`, true\)/);
+  // 화면: 사용자가 직접 누르는 평범한 링크(새 창 아님) + 옛 앱·실패 대비 안내와 주소 복사는 그대로
+  const button = read("src/components/calendar/CalendarSyncButton.tsx");
+  assert.match(button, /<a href=\{link\.webcalUrl\} className=\{t\.secondary\}>\s*아이폰·맥 캘린더에 추가\s*<\/a>/);
+  assert.match(button, /안 열리면 «주소 복사» 뒤 캘린더 앱의 «주소로 추가»에 붙여 넣어 주세요\./);
+});
+
 test("바깥 주소 판정: 다른 사이트만 바깥, 우리 사이트는 앱 안(쇼핑몰로 넘기는 /apply/uniform 만 예외)", () => {
   const origin = "https://stiz-academy.example";
   assert.equal(isOutsideHref("https://pf.kakao.com/_abc", origin), true);
