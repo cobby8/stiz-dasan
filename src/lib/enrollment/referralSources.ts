@@ -8,6 +8,7 @@
  *
  * 목록을 고칠 때:
  *   화면에 선택지를 추가하면 여기에도 같이 넣는다. 빠뜨리면 정상 신청의 값이 «기타»로 바뀐다.
+ *   한글 이름(REFERRAL_SOURCE_LABELS)도 이 파일에 있다 — 값을 넣으면 이름도 같이 넣는다(타입 검사가 강제).
  *   tests/referral-source-allowlist.test.mjs 가 화면·관리자 선택지와 이 목록을 비교해 빠지면 깨진다.
  *
  * ⚠️ 이 파일은 다른 모듈을 import 하지 않는다(테스트가 그대로 불러 실행한다).
@@ -67,4 +68,50 @@ export function normalizeReferralSource(value: unknown): ReferralSourceValue | "
     const trimmed = value.trim();
     if (!trimmed) return "";
     return isKnownReferralSource(trimmed) ? trimmed : REFERRAL_SOURCE_FALLBACK;
+}
+
+/**
+ * 코드값 → 한글 이름 표 «한 곳»(2026-11-17).
+ *
+ * 왜 여기 두나: 이름 표가 통계·수강 신청·체험 관리에 세 벌 있었고 서로 달랐다.
+ *   NAVER_AD·YOUTUBE·DANGGEUN·SMS_PROMOTION 은 통계·수강 신청 표에 이름이 없어 코드 글자 그대로 보였다.
+ *   → 관리자·통계 화면은 이 표만 쓴다(src/lib/stats/sourceLabels.ts 도 이 표에서 만든다).
+ *
+ * 이름의 기준: 학부모가 공개 신청서에서 실제로 고르는 글자(체험 신청서 → 수강 신청서 순).
+ *   공개 신청서에 없는 값(WEBSITE·NAVER·FLYER·EXISTING_STUDENT)은 관리자 화면에서 쓰던 이름.
+ *   공개 신청서의 SOURCE_OPTIONS 글자를 고치면 여기도 같이 고친다 — 테스트가 두 쪽을 비교한다.
+ *
+ * Record<ReferralSourceValue, string> 이라 허용 목록에 값을 넣고 이름을 빠뜨리면(또는 그 반대) 타입 검사가 막는다.
+ * 관리자 선택 상자의 순서는 이 표가 아니라 REFERRAL_SOURCE_VALUES 순서를 쓴다.
+ */
+export const REFERRAL_SOURCE_LABELS: Record<ReferralSourceValue, string> = {
+    NAVER_AD: "네이버 검색광고",
+    NAVER_SEARCH: "네이버 키워드 검색",
+    PORTAL_OTHER: "네이버 외 포털검색",
+    NAVER_BLOG: "스티즈 네이버블로그",
+    INSTAGRAM: "인스타그램",
+    YOUTUBE: "유튜브",
+    PASSBY: "지나가다 발견",
+    REFERRAL: "지인소개",
+    SOOMGO: "숨고",
+    DANGGEUN: "당근마켓",
+    OTHER: "기타",
+    SMS_PROMOTION: "문자 홍보",
+    WEBSITE: "홈페이지",
+    NAVER: "네이버",
+    FLYER: "전단지",
+    EXISTING_STUDENT: "기존 수강생",
+};
+
+/**
+ * 코드값 → 화면에 보일 이름(순수 함수).
+ *
+ * - 표에 있는 값 → 한글 이름.
+ * - 표에 없는 값(예전 자료·처음 보는 코드) → 받은 글자 그대로(지어내지 않는다 — 예전 화면들의 `표[x] || x` 와 같다).
+ * - 없음(null·undefined)·빈 문자열 → "". «미입력» 같은 빈 값 문구는 부르는 화면이 정한다.
+ */
+export function referralSourceLabel(value: string | null | undefined): string {
+    if (value === null || value === undefined) return "";
+    // Set 으로 확인한 뒤에만 표를 읽는다 — "constructor" 같은 글자가 이름으로 나오지 않게
+    return isKnownReferralSource(value) ? REFERRAL_SOURCE_LABELS[value] : String(value);
 }

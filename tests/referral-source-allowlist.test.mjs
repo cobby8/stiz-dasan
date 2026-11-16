@@ -3,6 +3,8 @@
 // ② 화면 선택지(공개 신청서 2곳·관리자 화면)가 모두 허용 목록 안에 있는지 소스에서 값을 뽑아 비교한다
 //    — 누가 화면에 선택지를 추가하고 목록을 안 고치면 여기서 깨진다(안 고치면 그 값이 «기타»로 저장된다).
 // ③ public.ts 의 저장 함수 두 개를 가짜 DB 로 «실제로 돌려» INSERT·UPDATE 두 갈래에 들어가는 값을 본다.
+// ④ 한글 이름 표가 한 곳(REFERRAL_SOURCE_LABELS)인지 — 키 = 허용 목록, 공개 신청서 글자와 같음,
+//    통계 표 = 16개 + UNKNOWN, 관리자·통계 화면에 손으로 적은 이름·선택지가 없음(2026-11-17).
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import Module, { createRequire } from "node:module";
@@ -105,7 +107,6 @@ function block(source, startMarker, endMarker) {
   return source.slice(start, end);
 }
 const optionValues = (source) => [...block(source, "const SOURCE_OPTIONS = [", "\n];").matchAll(/value:\s*"([^"]*)"/g)].map((m) => m[1]);
-const labelKeys = (source) => [...block(source, "const SOURCE_LABELS: Record<string, string> = {", "\n};").matchAll(/^\s*([A-Za-z_]+):\s*"/gm)].map((m) => m[1]);
 function assertAllAllowed(values, where) {
   assert.ok(values.length > 0, `${where}: 값을 하나도 뽑지 못했다(소스 모양이 바뀌었나)`);
   const missing = values.filter((value) => !ALLOWED.has(value));
@@ -135,34 +136,128 @@ test("공개 수강 신청서의 선택지 값은 모두 허용 목록 안 — �
   assertAllAllowed(optionValues(trialForm), "수강 신청서가 이어받는 체험 선택지");
 });
 
-test("관리자 화면의 선택지·라벨 값도 모두 허용 목록 안", () => {
-  // 체험 관리 목록·상세의 라벨 표
-  assertAllAllowed(labelKeys(read("src/app/admin/trial/TrialCrmClient.tsx")), "TrialCrmClient SOURCE_LABELS");
-  // 수강 신청 수정 창 — 이 라벨 표의 키가 그대로 선택지가 된다(Object.entries(SOURCE_LABELS))
-  const applyModals = read("src/app/admin/apply/ApplyAdminModals.tsx");
-  assert.match(applyModals, /Object\.entries\(SOURCE_LABELS\)\.map\(\(\[value, label\]\) => \(\s*<option key=\{value\} value=\{value\}>/);
-  assertAllAllowed(labelKeys(applyModals), "ApplyAdminModals SOURCE_LABELS");
-  // 체험 수정 창·새 체험 등록 창의 <select> 두 개
-  const trialModals = read("src/app/admin/trial/TrialCrmModals.tsx");
+// 관리자 선택 상자가 «허용 목록에서 만들어지는» 모양 — 선택지 값이 곧 허용 목록이라 목록 밖 값이 나올 수 없다
+const GENERATED_OPTIONS = /\{REFERRAL_SOURCE_VALUES\.map\(\(value\) => \(\s*<option key=\{value\} value=\{value\}>\{REFERRAL_SOURCE_LABELS\[value\]\}<\/option>\s*\)\)\}/;
+const applyModals = read("src/app/admin/apply/ApplyAdminModals.tsx");
+const trialModals = read("src/app/admin/trial/TrialCrmModals.tsx");
+const trialClient = read("src/app/admin/trial/TrialCrmClient.tsx");
+/** 손으로 적은 선택지 값(<option value="…">) — 허용 목록에서 만들어진 것은 여기 잡히지 않는다 */
+const handWrittenOptionValues = (select) => [...select.matchAll(/<option value="([^"]*)"/g)].map((m) => m[1]);
+
+test("관리자 화면의 유입 경로 선택 상자는 허용 목록에서 만들어진다 — 16개 전부·목록 순서", () => {
+  // 수강 신청 수정 창 — «선택 안 함»(빈 값) 하나만 손으로 적고 나머지는 허용 목록에서
+  const applySelects = [...applyModals.matchAll(/<select value=\{form\.referralSource\}[\s\S]*?<\/select>/g)].map((m) => m[0]);
+  assert.equal(applySelects.length, 1, "수강 신청 수정 창의 유입 경로 select 는 한 곳");
+  assert.match(applySelects[0], GENERATED_OPTIONS);
+  assert.deepEqual(handWrittenOptionValues(applySelects[0]), [""], "손으로 적은 선택지는 «선택 안 함» 하나뿐");
+  // 체험 수정 창·새 체험 등록 창의 <select> 두 개 — 손으로 적은 선택지가 없다
   const selects = [...trialModals.matchAll(/<select\s+value=\{form\.source\}[\s\S]*?<\/select>/g)].map((m) => m[0]);
   assert.equal(selects.length, 2, "유입 경로 select 는 수정 창·등록 창 두 곳");
   for (const [index, select] of selects.entries()) {
-    assertAllAllowed([...select.matchAll(/<option value="([^"]*)"/g)].map((m) => m[1]), `TrialCrmModals 유입 경로 select #${index + 1}`);
+    assert.match(select, GENERATED_OPTIONS, `TrialCrmModals 유입 경로 select #${index + 1}`);
+    assert.deepEqual(handWrittenOptionValues(select), [], `TrialCrmModals 유입 경로 select #${index + 1} 에 손으로 적은 선택지가 있다`);
+  }
+  // 세 창 모두 같은 모듈의 값을 쓴다(다른 곳에서 같은 이름을 들여오면 위 단정이 뜻을 잃는다)
+  for (const [where, source] of [["ApplyAdminModals", applyModals], ["TrialCrmModals", trialModals]]) {
+    assert.match(source, /import \{[^}]*\bREFERRAL_SOURCE_LABELS\b[^}]*\bREFERRAL_SOURCE_VALUES\b[^}]*\} from "@\/lib\/enrollment\/referralSources";/, where);
   }
   // 관리자 쪽 기본값(값이 없을 때 넣는 글자)
   const defaults = [...trialModals.matchAll(/source: (?:lead\.source \?\? |form\.source \|\| )?"([A-Z_]+)"/g)].map((m) => m[1]);
   assertAllAllowed(defaults, "TrialCrmModals 기본값");
 });
 
-test("통계·신청 화면이 같이 쓰는 라벨 표(sourceLabels)의 코드값도 허용 목록 안 — UNKNOWN 만 예외", () => {
-  const labels = load("src/lib/stats/sourceLabels.ts").SOURCE_LABELS;
+// ── ④ 한글 이름은 한 곳(REFERRAL_SOURCE_LABELS) ────────────────────────
+
+const LABELS = rules.REFERRAL_SOURCE_LABELS;
+const optionPairs = (source) => [...block(source, "const SOURCE_OPTIONS = [", "\n];").matchAll(/value:\s*"([^"]*)",\s*label:\s*"([^"]*)"/g)].map((m) => [m[1], m[2]]);
+const statsLabels = load("src/lib/stats/sourceLabels.ts", { "@/lib/enrollment/referralSources": rules });
+
+test("이름 표의 키 = 허용 목록(빠짐·남음 없음) — 이름은 비어 있지 않고 서로 겹치지 않는다", () => {
+  assert.deepEqual(Object.keys(LABELS).sort(), [...rules.REFERRAL_SOURCE_VALUES].sort());
+  const names = Object.values(LABELS);
+  for (const [value, name] of Object.entries(LABELS)) {
+    assert.equal(typeof name, "string", value);
+    assert.ok(name.trim().length > 0, `${value} 의 이름이 비었다`);
+    assert.equal(name, name.trim(), `${value} 의 이름 앞뒤에 공백이 있다`);
+  }
+  // 두 값이 같은 이름이면 통계·선택 상자에서 구분할 수 없다
+  assert.equal(new Set(names).size, names.length, "같은 이름이 두 번 있다");
+});
+
+test("이름 함수 — 아는 값은 이름, 모르는 값은 받은 글자 그대로, 빈 값은 빈 글자", () => {
+  const label = rules.referralSourceLabel;
+  for (const value of rules.REFERRAL_SOURCE_VALUES) assert.equal(label(value), LABELS[value]);
+  // 운영에서 코드 글자로 보이던 값들(이번 수정의 이유)
+  assert.equal(label("NAVER_AD"), "네이버 검색광고");
+  assert.equal(label("YOUTUBE"), "유튜브");
+  assert.equal(label("DANGGEUN"), "당근마켓");
+  assert.equal(label("SMS_PROMOTION"), "문자 홍보");
+  // 모르는 값은 지어내지 않는다(예전 화면들의 `표[x] || x` 와 같다)
+  for (const value of ["NEW_CODE", "naver_ad", "지인소개", " NAVER_AD "]) assert.equal(label(value), value);
+  // 객체에 원래 있는 이름이 함수·객체로 새어 나오면 화면이 깨진다
+  for (const value of ["constructor", "__proto__", "toString"]) assert.equal(label(value), value);
+  for (const value of [null, undefined, ""]) assert.equal(label(value), "");
+});
+
+test("공개 신청서 선택지의 글자 = 이름 표의 글자 — 한쪽만 고치면 깨진다", () => {
+  // 학부모가 고른 글자와 관리자·통계 화면에 보이는 글자가 같아야 한다(이름 표의 기준이 공개 신청서다)
+  for (const [where, source, count] of [["체험 신청서", trialForm, 11], ["수강 신청서", enrollForm, 10]]) {
+    const pairs = optionPairs(source);
+    assert.equal(pairs.length, count, `${where}: 선택지의 값·글자 쌍을 다 뽑지 못했다(소스 모양이 바뀌었나)`);
+    // 두 신청서끼리 글자가 다른 값은 지금 없다 — 생기면 여기 예외로 적고(기준은 체험 신청서) 원장에게 알린다
+    for (const [value, text] of pairs) assert.equal(text, LABELS[value], `${where} ${value}`);
+  }
+});
+
+test("통계·신청 화면이 같이 쓰는 라벨 표(sourceLabels) = 이름 표 16개 + UNKNOWN — UNKNOWN 은 허용 목록 밖", () => {
+  const labels = statsLabels.SOURCE_LABELS;
   const keys = Object.keys(labels);
   // UNKNOWN 은 저장하는 값이 아니다 — 통계 조회가 «빈 값»을 묶을 때만 만드는 이름(«미입력»)이다.
   // 허용 목록에 넣으면 누가 UNKNOWN 을 보내 «미입력» 칸을 부풀릴 수 있다.
   assert.ok(keys.includes("UNKNOWN"));
+  assert.equal(labels.UNKNOWN, "미입력");
   assert.equal(ALLOWED.has("UNKNOWN"), false);
   assert.equal(normalize("UNKNOWN"), "OTHER");
+  assert.equal("UNKNOWN" in LABELS, false);
   assertAllAllowed(keys.filter((key) => key !== "UNKNOWN"), "sourceLabels SOURCE_LABELS");
+  // 16개 전부가 같은 글자로 들어 있다(빠지면 통계에 코드 글자가 그대로 보인다)
+  assert.deepEqual(keys.filter((key) => key !== "UNKNOWN").sort(), [...rules.REFERRAL_SOURCE_VALUES].sort());
+  for (const value of rules.REFERRAL_SOURCE_VALUES) {
+    assert.equal(labels[value], LABELS[value], value);
+    assert.equal(statsLabels.sourceLabel(value), LABELS[value], value);
+  }
+  // 통계 쪽의 빈 값·모르는 값 처리는 그대로
+  assert.equal(statsLabels.sourceLabel(""), "미입력");
+  assert.equal(statsLabels.sourceLabel(null), "미입력");
+  assert.equal(statsLabels.sourceLabel("UNKNOWN"), "미입력");
+  assert.equal(statsLabels.sourceLabel("NEW_CODE"), "NEW_CODE");
+});
+
+test("관리자·통계 화면에 유입 경로의 한글 이름이 손으로 따로 적혀 있지 않다(이름 표에서 온다)", () => {
+  const codes = rules.REFERRAL_SOURCE_VALUES.join("|");
+  const files = {
+    "ApplyAdminModals.tsx": applyModals,
+    "TrialCrmClient.tsx": trialClient,
+    "TrialCrmModals.tsx": trialModals,
+    "ApplyAdminClient.tsx": read("src/app/admin/apply/ApplyAdminClient.tsx"),
+    "StatsClient.tsx": read("src/app/admin/stats/StatsClient.tsx"),
+    "sourceLabels.ts": read("src/lib/stats/sourceLabels.ts"),
+  };
+  for (const [where, source] of Object.entries(files)) {
+    // 코드값을 키로 한 이름 줄(`NAVER_AD: "…"`)과 손으로 적은 선택지(`<option value="NAVER_AD">…`)가 없어야 한다
+    assert.doesNotMatch(source, new RegExp(`^\\s*(?:${codes}):\\s*["'\`]`, "m"), `${where} 에 이름 표 사본이 있다`);
+    assert.doesNotMatch(source, new RegExp(`<option value="(?:${codes})"`), `${where} 에 손으로 적은 선택지가 있다`);
+    // 통계 표(sourceLabels.ts)만 SOURCE_LABELS 를 만든다 — 아래에서 «이름 표를 펼친 것»인지 따로 본다
+    if (where !== "sourceLabels.ts") assert.doesNotMatch(source, /const SOURCE_LABELS\b/, `${where} 에 따로 만든 SOURCE_LABELS 가 있다`);
+  }
+  // 통계 표는 이름 표를 펼쳐서 만든다 — 손으로 적는 것은 UNKNOWN 하나
+  assert.match(files["sourceLabels.ts"], /export const SOURCE_LABELS: Record<string, string> = \{\s*\.\.\.REFERRAL_SOURCE_LABELS,[\s\S]*?UNKNOWN: "미입력",\s*\};/);
+  // 표시하는 곳은 이름 함수를 거친다(체험 관리 검색·상세, 수강 신청 상세)
+  assert.equal(trialClient.split("referralSourceLabel(lead.source)").length - 1, 2, "체험 관리의 유입 경로 표시는 검색·상세 두 곳");
+  assert.match(applyModals, /<InfoRow label="유입경로" value=\{app\.referralSource \? referralSourceLabel\(app\.referralSource\) : null\} \/>/);
+  // 수강 신청 목록·유입 통계와 통계 화면은 통계 표(= 이름 표 + UNKNOWN)를 쓴다
+  assert.match(files["ApplyAdminClient.tsx"], /import \{ SOURCE_LABELS \} from "@\/lib\/stats\/sourceLabels";/);
+  assert.match(files["StatsClient.tsx"], /import \{ sourceLabel \} from "@\/lib\/stats\/sourceLabels";/);
 });
 
 // ── ③ 저장 함수를 실제로 돌린다 ───────────────────────────────────────
