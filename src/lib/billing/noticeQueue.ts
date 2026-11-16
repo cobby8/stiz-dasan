@@ -23,8 +23,11 @@ import {
     BILLING_LINK_BASE,
     billingPathForInvoices,
     buildBillingAlimtalkMessage,
+    DEFAULT_ACADEMY_PHONE,
     formatBillingDueDate,
+    PARENT_MESSAGE_PREFIX,
 } from "@/lib/messaging/parent-alimtalk-templates";
+import { getSolapiSmsByteLength } from "@/lib/sms-byte-length";
 
 // ─────────────────────────────── 타입 ───────────────────────────────
 
@@ -142,20 +145,125 @@ export type InvoiceNoticeRow = {
      * 비어 있으면 예전처럼 로그인 결제 화면(payments/<청구서>)으로 보낸다.
      */
     payPath?: string | null;
+    /** 반 이름(예: «화요일 5교시») — 묶음 안내의 «이름 · 반 · 금액» 줄에 쓴다. 없으면 줄에서 뺀다 */
+    className?: string | null;
 };
 
+// ─────────────── 청구서 묶음 안내(같은 받는 번호의 같은 달 청구서 = 한 통 · 2026-11-16) ───────────────
+
+/** 문자(LMS) 한 통 최대 바이트 — 한글 2·영문 1 바이트 기준(통신사 LMS 한도). 넘으면 둘 이상으로 나눈다 */
+export const INVOICE_BUNDLE_LMS_MAX_BYTES = 2000;
+/** 가입 학부모 묶음 링크 — 학부모 «한 번에 결제» 화면(미납 전부 기본 선택 · 로그인 필요) */
+export const INVOICE_BUNDLE_CHECKOUT_PATH = "mypage/payments/checkout";
+
+/** 열쇠 끝의 강제 재발송 표시(«:resend:YYYY-MM-DD») — 없으면 빈 값. 청구서 단위 중복 검사에서 «같은 종류»끼리만 비교한다 */
+export function noticeKeyResendSuffix(noticeKey: string): string {
+    return /:resend:\d{4}-\d{2}-\d{2}$/.exec(noticeKey)?.[0] ?? "";
+}
+
 /**
- * 청구서 안내 계획 — 청구서 한 장 = 안내 한 통.
+ * 묶음 안내 열쇠 — 정렬된 청구서 id 들. 같은 묶음을 두 번 눌러도 같은 열쇠라 한 번만 나간다.
+ * (청구서 단위 중복은 reserveBillingNotices 가 invoiceIds 겹침으로 따로 막는다 — 묶음 구성이 바뀌어도 두 번 안 나가게)
+ */
+export function invoiceBundleNoticeKey(invoiceIds: string[], resendYmd?: string | null): string {
+    const base = `invoice-bundle:${[...invoiceIds].sort().join(",")}`;
+    return resendYmd ? `${base}:resend:${resendYmd}` : base;
+}
+
+export type InvoiceBundleItem = {
+    invoiceId: string;
+    studentName: string;
+    className?: string | null;
+    amount: number;
+    dueYmd: string | null;
+    /** 비회원 결제 링크 경로(pay/<토큰>) — 있으면 줄마다 링크를 붙인다 */
+    payPath?: string | null;
+};
+
+/** 묶음 본문 한 벌(나눌 때는 part/parts 로 «(1/2)» 를 붙인다) */
+function renderInvoiceBundleBody(
+    items: InvoiceBundleItem[],
+    opts: { month: number; academyPhone: string; part?: number; parts?: number },
+): string {
+    const won = (n: number) => `${n.toLocaleString("ko-KR")}원`;
+    // 링크 방식: 비회원 링크가 하나라도 있으면(미가입 학부모) 청구서마다 그 링크, 아니면 «한 번에 결제» 링크 하나
+    const perLine = items.some((item) => Boolean(item.payPath));
+    // 납부 기한이 모두 같으면 한 줄로, 다르면 줄마다
+    const dues = [...new Set(items.map((item) => formatBillingDueDate(item.dueYmd)))];
+    const sameDue = dues.length === 1;
+    const split = (opts.parts ?? 1) > 1;
+    const lines: string[] = [
+        `${PARENT_MESSAGE_PREFIX} ${opts.month}월 수강료 안내${split ? ` (${opts.part}/${opts.parts})` : ""}`,
+        "",
+        "안녕하세요, 스티즈농구교실입니다.",
+        `${opts.month}월 수강료 청구서 ${items.length}장이 발행되었습니다.`,
+        "",
+    ];
+    for (const item of items) {
+        const parts = [item.studentName, String(item.className ?? "").trim(), won(item.amount)].filter(Boolean);
+        const due = sameDue ? "" : ` (기한 ${formatBillingDueDate(item.dueYmd)})`;
+        lines.push(`■ ${parts.join(" · ")}${due}`);
+        // 비회원 링크는 청구서 한 장 전용 — 발급에 실패한 청구서는 로그인 결제 화면(payments/<id>)
+        if (perLine) lines.push(`  ${BILLING_LINK_BASE}${item.payPath || `payments/${item.invoiceId}`}`);
+    }
+    lines.push(`■ ${split ? "이 문자 합계" : "합계"}: ${won(items.reduce((sum, item) => sum + item.amount, 0))}`);
+    if (sameDue) lines.push(`■ 납부 기한: ${dues[0]}`);
+    lines.push("");
+    if (perLine) {
+        lines.push("아이·반별 링크에서 청구 내용 확인과 결제(카드·계좌이체)를 하실 수 있어요.");
+    } else {
+        lines.push("아래 링크에서 한 번에 확인하고 결제(카드·계좌이체)하실 수 있어요.");
+        lines.push(`${BILLING_BUTTON_NAME}: ${BILLING_LINK_BASE}${INVOICE_BUNDLE_CHECKOUT_PATH}`);
+    }
+    lines.push(`문의: ${opts.academyPhone || DEFAULT_ACADEMY_PHONE}`);
+    return lines.join("\n");
+}
+
+/**
+ * 묶음 본문 만들기 — LMS 한도(maxBytes)를 넘으면 청구서 줄을 앞에서부터 나눠 여러 통으로.
+ * 돌려주는 각 칸 = 문자 한 통(그 통에 들어간 청구서 목록 + 본문).
+ */
+export function buildInvoiceBundleBodies(
+    items: InvoiceBundleItem[],
+    opts: { month: number; academyPhone: string; maxBytes?: number },
+): Array<{ items: InvoiceBundleItem[]; body: string }> {
+    const maxBytes = opts.maxBytes ?? INVOICE_BUNDLE_LMS_MAX_BYTES;
+    const whole = renderInvoiceBundleBody(items, opts);
+    if (items.length <= 1 || getSolapiSmsByteLength(whole) <= maxBytes) return [{ items, body: whole }];
+    // 나눌 때: «(9/9)» 자리를 넣고 재어 앞에서부터 담는다(한 장만으로도 넘으면 그 한 장은 혼자 한 통)
+    const chunks: InvoiceBundleItem[][] = [];
+    let current: InvoiceBundleItem[] = [];
+    for (const item of items) {
+        const trial = [...current, item];
+        if (current.length > 0 && getSolapiSmsByteLength(renderInvoiceBundleBody(trial, { ...opts, part: 9, parts: 9 })) > maxBytes) {
+            chunks.push(current);
+            current = [item];
+        } else {
+            current = trial;
+        }
+    }
+    if (current.length > 0) chunks.push(current);
+    return chunks.map((chunk, index) => ({
+        items: chunk,
+        body: renderInvoiceBundleBody(chunk, { ...opts, part: index + 1, parts: chunks.length }),
+    }));
+}
+
+/**
+ * 청구서 안내 계획 — 받는 번호가 같은 청구서는 한 통으로 묶는다(2026-11-16 원장 지시 «묶어보내기»).
  *  - 학부모 미연결 → unlinked(조용히 빠지지 않고 화면에 이름이 나온다)
- *  - 알림톡 id 있음 → 알림톡(거절되면 cron 이 같은 본문+링크를 문자로)
- *  - 알림톡 id 없음 → 같은 본문+링크를 문자(LMS)로
- *  - 번호 없음·틀 값 비어 있음 → 앱 알림만
+ *  - 번호 없음·틀 값 비어 있음 → 청구서마다 앱 알림만(예전과 같다)
+ *  - 한 번호에 한 장 → 예전과 똑같이: 알림톡 id 있으면 알림톡(심사본 글자 그대로), 없으면 같은 본문+링크 문자
+ *  - 한 번호에 두 장 이상 → 묶음 본문 1통을 문자(LMS)로(알림톡 틀과 글자가 달라 알림톡으로는 못 보낸다).
+ *    열쇠 = 정렬된 청구서 id 묶음. 2,000바이트를 넘으면 둘 이상으로 나눈다.
  */
 export function planInvoiceNotices(
     rows: InvoiceNoticeRow[],
     opts: { month: number; academyPhone: string; templateId: string; resendYmd?: string | null },
 ): { notices: PlannedNotice[]; unlinked: UnlinkedNotice[] } {
-    const notices: PlannedNotice[] = [];
+    // 순서 유지 — 묶음은 그 번호의 첫 청구서 자리에 들어간다(예전 결과 순서와 최대한 같게)
+    const slots: Array<PlannedNotice | { group: string }> = [];
+    const groups = new Map<string, Array<{ row: InvoiceNoticeRow; single: PlannedNotice }>>();
     const unlinked: UnlinkedNotice[] = [];
     for (const row of rows) {
         const studentName = String(row.studentName ?? "").trim();
@@ -184,25 +292,88 @@ export function planInvoiceNotices(
             }, row.payPath || `payments/${row.invoiceId}`);
         } catch {
             // 학생명·납부기한이 비어 빈칸 문장이 될 때 — 문자는 보내지 않고 앱 알림만
-            notices.push({ ...base, parentId, channel: "APP_ONLY", reason: "TEMPLATE_VALUES_MISSING" });
+            slots.push({ ...base, parentId, channel: "APP_ONLY", reason: "TEMPLATE_VALUES_MISSING" });
             continue;
         }
         const recipient = normalizeNoticePhone(row.phone);
         if (!recipient) {
-            notices.push({ ...base, parentId, channel: "APP_ONLY", reason: "NO_PHONE" });
+            slots.push({ ...base, parentId, channel: "APP_ONLY", reason: "NO_PHONE" });
             continue;
         }
-        if (opts.templateId) {
-            notices.push({
+        // 한 장일 때 보낼 안내(예전과 같은 모양) — 같은 번호가 한 장뿐이면 이것을 그대로 쓴다
+        const single: PlannedNotice = opts.templateId
+            ? {
                 ...base, parentId, channel: "ALIMTALK", recipient, body: message.body,
                 kakao: { kind: "ALIMTALK", templateId: opts.templateId, variables: message.variables, buttons: [message.button], smsBody: message.smsBody },
-            });
-        } else {
+            }
             // 알림톡 틀 id 가 아직 없을 때 — 같은 본문 + «청구서 확인하기: 링크» 를 문자(LMS)로
-            notices.push({ ...base, parentId, channel: "SMS", recipient, body: message.smsBody });
+            : { ...base, parentId, channel: "SMS", recipient, body: message.smsBody };
+        let group = groups.get(recipient);
+        if (!group) {
+            group = [];
+            groups.set(recipient, group);
+            slots.push({ group: recipient });
+        }
+        group.push({ row, single });
+    }
+
+    const notices: PlannedNotice[] = [];
+    for (const slot of slots) {
+        if (!("group" in slot)) {
+            notices.push(slot);
+            continue;
+        }
+        const members = groups.get(slot.group) ?? [];
+        if (members.length === 1) {
+            notices.push(members[0].single);
+            continue;
+        }
+        // 두 장 이상 = 묶음 문자(LMS). 나뉘면 나뉜 통마다 따로 안내 한 건(열쇠도 그 통의 청구서들로)
+        const chunks = buildInvoiceBundleBodies(
+            members.map(({ row, single }) => ({
+                invoiceId: row.invoiceId,
+                studentName: single.studentName,
+                className: row.className ?? null,
+                amount: single.amount,
+                dueYmd: row.dueYmd,
+                payPath: row.payPath ?? null,
+            })),
+            { month: opts.month, academyPhone: opts.academyPhone },
+        );
+        for (const chunk of chunks) {
+            const ids = new Set(chunk.items.map((item) => item.invoiceId));
+            const inChunk = members.filter(({ row }) => ids.has(row.invoiceId));
+            const names = [...new Set(inChunk.map(({ single }) => single.studentName))];
+            notices.push({
+                noticeKey: invoiceBundleNoticeKey([...ids], opts.resendYmd),
+                studentId: inChunk[0].row.studentId,
+                // 진행 줄·실패 이름에 아이들 이름이 함께 보이게
+                studentName: names.join("·"),
+                parentId: inChunk[0].single.parentId,
+                invoiceIds: inChunk.map(({ row }) => row.invoiceId),
+                paymentIds: inChunk.map(({ row }) => row.paymentId),
+                channel: "SMS",
+                recipient: slot.group,
+                body: chunk.body,
+                amount: inChunk.reduce((sum, { single }) => sum + single.amount, 0),
+                hadPriorNotice: inChunk.some(({ single }) => single.hadPriorNotice),
+            });
         }
     }
     return { notices, unlinked };
+}
+
+/** 계획을 화면용 숫자로 — «청구서 N장 → 문자 M통(묶음 K통)» (알림톡·문자를 합쳐 «문자»로 센다) */
+export function summarizeInvoicePlan(plan: { notices: PlannedNotice[]; unlinked: UnlinkedNotice[] }) {
+    const messages = plan.notices.filter((n) => n.channel !== "APP_ONLY");
+    return {
+        invoices: plan.notices.reduce((sum, n) => sum + n.invoiceIds.length, 0) + plan.unlinked.reduce((sum, u) => sum + u.invoiceIds.length, 0),
+        messages: messages.length,
+        bundles: messages.filter((n) => n.invoiceIds.length > 1 || n.noticeKey.startsWith("invoice-bundle:")).length,
+        appOnly: plan.notices.filter((n) => n.channel === "APP_ONLY").length,
+        unlinked: plan.unlinked.length,
+        maxBodyBytes: messages.reduce((max, n) => Math.max(max, getSolapiSmsByteLength(n.body ?? "")), 0),
+    };
 }
 
 export type UnpaidNoticeRow = {
@@ -508,6 +679,20 @@ export async function reserveBillingNotices(input: {
                 );
                 if (overlap.length > 0) continue;
             }
+            // 청구서: 같은 청구서가 든 «살아 있는» 안내가 있으면 건너뛴다(2026-11-16 묶음 안내).
+            // 묶음 열쇠(invoice-bundle:…)와 한 장 열쇠(invoice:…)가 달라도 같은 청구서가 두 번 나가지 않게 —
+            // 묶음 구성이 바뀐 재클릭·재시도도 여기서 막힌다. 강제 재발송은 «같은 날 재발송»끼리만 비교한다.
+            if (input.kind === "INVOICE" && notice.invoiceIds.length > 0) {
+                const overlap = await db.$queryRawUnsafe<Array<{ id: string }>>(
+                    `SELECT n.id FROM "BillingNoticeDelivery" n
+                      WHERE n.kind = 'INVOICE' AND n."invoiceIds" && $1::text[]
+                        AND n.status IN (${ACTIVE_STATUS_SQL})
+                        AND COALESCE(substring(n."noticeKey" from ':resend:[0-9]{4}-[0-9]{2}-[0-9]{2}$'), '') = $2
+                      LIMIT 1`,
+                    notice.invoiceIds, noticeKeyResendSuffix(notice.noticeKey),
+                );
+                if (overlap.length > 0) continue;
+            }
             const rowId = newId();
             const deliveryId = notice.channel === "APP_ONLY" ? null : newId();
             const rows = await db.$queryRawUnsafe<Array<{ id: string }>>(
@@ -690,15 +875,21 @@ export async function loadBillingNoticeProgress(
     /** true 면 이 기간 밖의 «결과 확인 필요»(UNCERTAIN)도 함께 센다(미납 — 기간 없이 다시 보내기를 막으므로) */
     opts: { includeAllUncertain?: boolean } = {},
 ) {
-    const rows = await db.$queryRawUnsafe<Array<NoticeProgressRow & { studentName: string | null; errorCode: string | null }>>(
-        `SELECT DISTINCT ON ("noticeKey") channel, status, "studentName", "errorCode"
+    const rows = await db.$queryRawUnsafe<Array<NoticeProgressRow & { studentName: string | null; errorCode: string | null; invoiceCount: number | null }>>(
+        `SELECT DISTINCT ON ("noticeKey") channel, status, "studentName", "errorCode",
+                cardinality("invoiceIds")::int AS "invoiceCount"
            FROM "BillingNoticeDelivery"
           WHERE kind = $1 AND ("periodKey" = $2 OR ($3::boolean AND status = 'UNCERTAIN'))
           ORDER BY "noticeKey", "createdAt" DESC`,
         kind, periodKey, opts.includeAllUncertain === true,
     );
+    const messageRows = rows.filter((r) => r.channel !== "APP_ONLY");
     return {
         ...summarizeNoticeProgress(rows),
+        // 화면 «청구서 N장 → 문자 M통(묶음 K통)» — 앱 알림만 행은 문자 통수에서 뺀다
+        invoiceCount: rows.reduce((sum, r) => sum + (Number(r.invoiceCount) || 0), 0),
+        messageCount: messageRows.length,
+        bundleCount: messageRows.filter((r) => (Number(r.invoiceCount) || 0) > 1).length,
         // 이미 납부돼 안 보낸 건은 «실패» 이름에서 뺀다(다시 보낼 필요 없음)
         failedNames: rows.filter((r) => (r.status === "FAILED" && r.errorCode !== BILLING_ALREADY_SETTLED_CODE) || r.status === "UNCERTAIN").map((r) => r.studentName || "(이름 없음)").slice(0, 20),
     };

@@ -4,7 +4,7 @@
  * «학부모 가입 안내» 미리보기 → 원장 승인 → 대량 접수 부품 (문자 화면 «수동 발송» 탭).
  *
  * CustomerNoticeSender(1건 발송)와 순서·모양을 똑같이 맞췄다:
- *   ① «미리보기» → 서버가 받는 사람(재원생 미가입 학부모)을 직접 계산해 «N명»과 처음 몇 명(이름 가림)을 보여 줌. 아직 안 보냄.
+ *   ① «미리보기» → 서버가 받는 사람(재원·휴원생 미가입 보호자 + 성인 수강생 본인)을 직접 계산해 «N명»과 처음 몇 명(이름 가림)을 보여 줌. 아직 안 보냄.
  *   ② «N명에게 보내기» → 확인 창 → 서버가 받는 사람을 다시 계산해 미리보기와 같을 때만 대량 발송 큐에 접수.
  * 화면은 번호 목록을 서버로 보내지 않는다(받는 사람은 언제나 서버가 정한다).
  */
@@ -43,8 +43,9 @@ export default function ParentSignupGuideSender() {
   async function send() {
     if (!preview) return;
     const ok = await confirm({
-      title: `학부모 ${preview.recipientCount}명에게 가입 안내 보내기`,
-      description: `미리보기 문구 그대로 ${preview.recipientCount}명에게 문자를 보냅니다.${preview.resend ? "\n이미 받은 분께도 다시 보냅니다." : ""}\n보낸 뒤에는 취소할 수 없어요.`,
+      title: `${preview.recipientCount}명에게 가입 안내 보내기`,
+      description: `미리보기 문구 그대로 ${preview.recipientCount}명에게 문자를 보냅니다.
+(${breakdownText(preview)})${preview.resend ? "\n이미 받은 분께도 다시 보냅니다." : ""}\n보낸 뒤에는 취소할 수 없어요.`,
       confirmLabel: `${preview.recipientCount}명에게 보내기`,
       tone: "primary",
     });
@@ -67,7 +68,7 @@ export default function ParentSignupGuideSender() {
   return (
     <div className="space-y-2">
       <p className="text-xs text-[var(--color-academy-muted)]">
-        재원생 학부모 중 아직 홈페이지 계정이 없는 분께 가입 링크를 보냅니다. 같은 번호는 한 번만 보내고, 이미 이 안내를 받은 분은 빠져요.
+        재원·휴원생 학부모와 성인 수강생 본인 중 아직 홈페이지 계정이 없는 분께 가입 링크를 보냅니다. 같은 번호는 한 번만 보내고, 이미 이 안내를 받은 분은 빠져요.
       </p>
 
       {/* 다시 보내기 — 터치 44px 줄 전체가 눌린다 */}
@@ -98,6 +99,18 @@ export default function ParentSignupGuideSender() {
               (번호 중복 제거{preview.resend ? " · 이미 받은 분 포함" : preview.alreadySentCount > 0 ? ` · 이미 받은 ${preview.alreadySentCount}명 제외` : ""}{preview.invalidPhoneCount > 0 ? ` · 휴대폰 번호 없는 ${preview.invalidPhoneCount}명 제외` : ""})
             </span>
           </p>
+          {/* 구성 — 재원·휴원·성인 각각 몇 명(번호 기준) */}
+          <p className="text-xs text-[var(--color-academy-ink)]">{breakdownText(preview)}</p>
+          {preview.registeredPhoneCount > 0 && (
+            <p className="text-xs text-[var(--color-academy-muted)]">
+              다른 계정(직원 등)이 이미 쓰는 번호 {preview.registeredPhoneCount}개는 가입이 막혀 뺐어요.
+            </p>
+          )}
+          {preview.needsAcademyHelpCount > 0 && (
+            <p className="text-xs text-[var(--color-academy-muted)]">
+              {preview.needsAcademyHelpCount}명은 같은 번호로 등록된 보호자가 여럿이라 가입할 때 «학원에 문의»가 떠요. 학생 상세에서 번호를 정리하면 좋아요.
+            </p>
+          )}
           <ul className="space-y-0.5 text-xs text-[var(--color-academy-muted)]">
             {preview.sample.map((line) => <li key={line}>{line}</li>)}
             {preview.recipientCount > preview.sample.length && <li>… 외 {preview.recipientCount - preview.sample.length}명</li>}
@@ -105,7 +118,15 @@ export default function ParentSignupGuideSender() {
           <p className="text-xs text-[var(--color-academy-muted)]">
             {preview.messageType === "LMS" ? "장문 문자(LMS)" : "단문 문자(SMS)"} · {formatKstDate(preview.expiresAt, { hour: "2-digit", minute: "2-digit", hour12: false }, "-")}까지 보낼 수 있어요
           </p>
+          {preview.adultMessage && <p className="text-xs font-semibold text-[var(--color-academy-ink)]">학부모에게 가는 문구</p>}
           <pre className="whitespace-pre-wrap break-words rounded-lg bg-[var(--color-academy-surface)] p-3 font-sans text-sm text-[var(--color-academy-ink)]">{preview.message}</pre>
+          {/* 성인 수강생 본인에게는 «학부모·자녀» 대신 회원용 문구가 간다 */}
+          {preview.adultMessage && (
+            <>
+              <p className="text-xs font-semibold text-[var(--color-academy-ink)]">성인 수강생 본인에게 가는 문구</p>
+              <pre className="whitespace-pre-wrap break-words rounded-lg bg-[var(--color-academy-surface)] p-3 font-sans text-sm text-[var(--color-academy-ink)]">{preview.adultMessage}</pre>
+            </>
+          )}
           <div className="flex items-center gap-3">
             <button type="button" disabled={pending} onClick={() => setPreview(null)} className="academy-button-text min-h-11">닫기</button>
             <button type="button" disabled={pending} onClick={() => void send()} className="academy-button-primary ml-auto min-h-11 disabled:opacity-40">
@@ -128,4 +149,14 @@ export default function ParentSignupGuideSender() {
       {confirmDialog}
     </div>
   );
+}
+
+/** 구성 한 줄: «재원 92명 · 휴원 40명 · 성인 수강생 10명» (0명인 구분은 뺀다) */
+function breakdownText(preview: ParentSignupGuidePreview) {
+  const parts = [
+    preview.breakdown.active > 0 ? `재원 ${preview.breakdown.active}명` : "",
+    preview.breakdown.paused > 0 ? `휴원 ${preview.breakdown.paused}명` : "",
+    preview.breakdown.adult > 0 ? `성인 수강생 ${preview.breakdown.adult}명` : "",
+  ].filter(Boolean);
+  return parts.join(" · ");
 }
