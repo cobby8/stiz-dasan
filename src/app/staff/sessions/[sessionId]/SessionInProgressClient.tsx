@@ -1108,6 +1108,8 @@ function LiveSessionWorkspace({
         videoRef={videoUploaderRef}
         photoState={photoState}
         videoState={videoState}
+        // 홈(오늘 수업)에 끼운 칸은 아래 탭이 보이므로 그 위에 띄운다. 수업 주소에서는 탭이 숨어 화면 바닥에 붙는다
+        aboveBottomNav={embedded}
         onPicked={() => setOpenSections((current) => ({ ...current, media: true }))}
       />
 

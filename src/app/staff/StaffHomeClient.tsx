@@ -235,8 +235,8 @@ export default function StaffHomeClient({
   useEffect(() => {
     if (expandedSessionId && !expandedLoaded) loadSession(expandedSessionId);
   }, [expandedLoaded, expandedSessionId, loadSession]);
-  // 2026-11-15 원장 점검: 진행 중 수업 칸이 펼쳐져 있는 동안 아래 탭을 숨긴다(아래 고정 막대가 화면 바닥에 붙는다).
-  // 줄을 접거나·수업이 끝나거나·시작을 취소하면 풀리고, 다른 화면으로 가면(이 화면이 사라질 때) 반드시 푼다.
+  // 진행 중 수업 칸이 펼쳐져 있다는 표시 — 앱 업데이트 안내 줄이 이 표시를 보고 수업 중에는 숨는다.
+  // (2026-11-16: 아래 탭은 더 이상 이 표시로 숨지 않는다.) 줄을 접거나·수업이 끝나거나·다른 화면으로 가면 반드시 푼다.
   const liveLessonOpen = expandedLesson?.sessionStatus === "IN_PROGRESS";
   useEffect(() => {
     if (!liveLessonOpen) return;
@@ -635,14 +635,9 @@ export default function StaffHomeClient({
         <span className="text-xs font-normal text-[var(--color-academy-muted)]">최근 14일 ›</span>
       </Link>
 
-      {/* 진행 중 수업 칸이 펼쳐져 있으면 아래 고정 막대(사진·동영상·갤러리)가 떠 있다 — 막대 높이만큼 페이지 끝을 더 띄워
-          마지막 줄(«완료한 수업» 등)이 막대에 가리지 않게 한다. 아래 탭·안전 영역 몫은 레이아웃의 아래 여백이 이미 잡고 있다. */}
-      {/* 아래 탭이 숨은 동안 막대는 화면 바닥에 붙는다 — 레이아웃의 아래 여백(탭 몫)에 조금만 더하면 마지막 줄(수업 시작 취소 등)이 가리지 않는다 */}
-      {liveLessonOpen && <div aria-hidden="true" className="h-12" />}
-      {/* 2026-11-15 원장 점검: 새로고침 직후 아래 탭이 잠깐 보였다 사라지지 않게 — 진행 중 수업 칸이 펼쳐진 채로 열리는 경우
-          (서버가 그릴 때부터 liveLessonOpen 이 참) 이 화면의 첫 그림에 «탭 숨김» 규칙을 같이 실어 보낸다.
-          화면이 뜬 뒤에는 위의 신호(setStaffLiveLessonOpen)가 이어받고, 줄을 접거나 다른 화면으로 가면 이 규칙도 함께 사라진다. */}
-      {liveLessonOpen && <style>{".academy-app .academy-staff-nav{display:none!important}"}</style>}
+      {/* 진행 중 수업 칸이 펼쳐져 있으면 아래 고정 막대(사진·동영상·갤러리)가 아래 탭 «위»에 떠 있다(2026-11-16: 아래 탭을 숨기지 않는다).
+          레이아웃의 아래 여백은 아래 탭 몫뿐이라, 막대 높이만큼 페이지 끝을 더 띄워 마지막 줄(수업 시작 취소 등)이 막대에 가리지 않게 한다. */}
+      {liveLessonOpen && <div aria-hidden="true" className="h-28" />}
 
       {showFees && billingTarget && <ClassBillingSheet key={`${billingTarget.lesson.id}:${billingTarget.student?.id || "all"}`} open classId={billingTarget.lesson.id} className={billingTarget.lesson.name} student={billingTarget.student} onClose={() => setBillingTarget(null)} />}
 

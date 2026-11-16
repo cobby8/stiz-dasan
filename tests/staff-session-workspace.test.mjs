@@ -56,8 +56,9 @@ test("아래 고정 막대: [사진]=바로 촬영 · [동영상]=바로 촬영 
   // 수업 화면: 올리기 부품은 버튼만 숨기고(목록·지우기는 그대로) 막대에 손잡이를 넘긴다
   assert.match(workspace, /<SessionPhotoUploader ref=\{photoUploaderRef\} sessionId=\{session\.id\} hideButtons onStateChange=\{setPhotoState\} \/>/);
   assert.match(workspace, /<SessionVideoUploader ref=\{videoUploaderRef\} sessionId=\{session\.id\} hideButtons onStateChange=\{setVideoState\} \/>/);
-  // 2026-11-15 원장 점검: 수업 중 아래 탭 숨김·시작 취소 위험 버튼 — 홈에서도 아래 탭이 숨으므로 막대는 늘 화면 바닥(안전 영역만 비움)에 붙는다
-  assert.doesNotMatch(workspace, /aboveBottomNav/);
+  // 2026-11-16 원장 지시: 오늘 수업 홈에서는 아래 탭이 보인다 → 홈에 끼운 칸의 막대는 탭 위, 수업 주소에서는 화면 바닥
+  assert.match(workspace, /aboveBottomNav=\{embedded\}/);
+  assert.match(mediaBar, /bottom: aboveBottomNav \? "calc\(3\.75rem \+ max\(0\.625rem, env\(safe-area-inset-bottom\)\)\)"/);
   assert.match(mediaBar, /: "max\(0\.5rem, env\(safe-area-inset-bottom\)\)"/);
 });
 
@@ -413,8 +414,8 @@ test("권장 3·4: 펼쳐진 줄 머리의 «시작»은 숨기고, 접힌 줄 �
 
 test("권장 5·6·9: 수업 중에도 미리 쓴 내용을 읽을 수 있고, 홈은 막대만큼 끝 여백을 두며, 글칸은 음성·저장을 따로 센다", () => {
   assert.match(workspace, /\{plan && \([\s\S]{0,300}aria-expanded=\{showPlan\} aria-controls="session-plan"[\s\S]{0,500}\{showPlan && \(\s*<div id="session-plan"[^>]*>\s*<p[^>]*>\{plan\}<\/p>/);
-  // 2026-11-15 원장 점검: 수업 중 아래 탭 숨김·시작 취소 위험 버튼 — 탭이 숨은 만큼 끝 여백은 줄었다(막대가 마지막 줄을 가리지 않을 만큼)
-  assert.match(home, /\{liveLessonOpen && <div aria-hidden="true" className="h-12" \/>\}/);
+  // 2026-11-16: 아래 탭이 보이므로 막대가 탭 위에 뜬다 → 끝 여백은 막대 높이만큼
+  assert.match(home, /\{liveLessonOpen && <div aria-hidden="true" className="h-28" \/>\}/);
   assert.match(editor, /busyRef\.current\[kind\] = busy;\s*onBusyChange\?\.\(busyRef\.current\.voice \|\| busyRef\.current\.saving\);/);
   assert.match(editor, /onBusyChange=\{\(busy\) => reportBusy\("voice", busy\)\}/);
   assert.doesNotMatch(editor, /onBusyChange\?\.\((true|false)\)/);
@@ -434,7 +435,7 @@ test("권장 7: 갤러리에서 고른 것 중 막힌 쪽은 보내지 않고 �
 
 // ── 2026-11-15 원장 점검: 수업 중 아래 탭 숨김·시작 취소 위험 버튼 ──
 
-test("원장 점검 1: 홈에서 진행 중 수업 칸이 펼쳐져 있는 동안 아래 탭을 숨기고, 접거나 떠나면 푼다", async () => {
+test("원장 점검 1(11-16 개정): 홈에서는 진행 중 수업 칸이 펼쳐져 있어도 아래 탭이 보인다 — «수업 중» 표시 신호는 그대로", async () => {
   const navigation = read("src/app/staff/staffNavigation.ts");
   const nav = read("src/app/staff/StaffBottomNav.tsx");
   // 신호를 실제로 돌려 본다(브라우저 전역 대역)
@@ -462,9 +463,8 @@ test("원장 점검 1: 홈에서 진행 중 수업 칸이 펼쳐져 있는 동�
   }
   // 홈: 펼친 줄이 진행 중 수업일 때만 켜고, 줄을 접거나(값이 바뀜)·화면이 사라질 때 끈다. 수업 전·완료 줄은 켜지 않는다
   assert.match(home, /const liveLessonOpen = expandedLesson\?\.sessionStatus === "IN_PROGRESS";\s*useEffect\(\(\) => \{\s*if \(!liveLessonOpen\) return;\s*setStaffLiveLessonOpen\(true\);\s*return \(\) => setStaffLiveLessonOpen\(false\);\s*\}, \[liveLessonOpen\]\);/);
-  // 아래 탭: 신호를 듣고(처음 뜰 때도 한 번 읽는다) 홈에서만 숨는다. 수업 주소에서 숨는 것은 그대로
-  assert.match(nav, /const liveLessonOpen = useSyncExternalStore\(subscribeStaffLiveLesson, isStaffLiveLessonOpen, \(\) => false\);/);
-  assert.match(nav, /if \(liveLessonOpen && pathname === "\/staff"\) return null;/);
+  // 아래 탭: 2026-11-16 원장 지시로 홈에서는 숨지 않는다(신호를 듣지 않는다). 수업 주소에서 숨는 것은 그대로
+  assert.doesNotMatch(nav, /liveLessonOpen|isStaffLiveLessonOpen/);
   assert.match(nav, /if \(pathname\.startsWith\("\/staff\/sessions\/"\)\) return null;/);
   // 탭 이동 전 메모 저장은 그대로
   assert.match(nav, /const result = await prepareStaffNavigation\(\);/);
@@ -488,21 +488,18 @@ test("원장 점검 2: «수업 시작 취소»는 빨간 위험 버튼 하나(�
 
 // ── 2026-11-15 원장 점검: 새로고침 직후 아래 탭 깜빡임 ──
 
-test("원장 점검 3: 진행 중 수업이 있으면 서버가 그린 첫 화면부터 아래 탭이 숨어 있다(보였다 사라지지 않는다)", () => {
+test("원장 점검 3(11-16 개정): 진행 중 수업이 있어도 아래 탭을 가리는 규칙을 싣지 않는다(탭이 깜빡이지 않는다)", () => {
   // 첫 그림의 값은 서버가 넘긴 오늘 수업 목록에서 바로 나온다 — 진행 중 수업이 있으면 그 줄이 펼쳐진 채로 열리고(초기값), 그때만 참이다
   assert.match(home, /useState<string \| null>\(\(\) => initialClasses\.find\(\(lesson\) => lesson\.sessionStatus === "IN_PROGRESS"\)\?\.scheduleKey \?\? null\)/);
   assert.match(home, /const expandedLesson = classes\.find\(\(lesson\) => lesson\.scheduleKey === expandedKey\) \?\? null;/);
   assert.match(home, /const liveLessonOpen = expandedLesson\?\.sessionStatus === "IN_PROGRESS";/);
-  // 효과(화면이 뜬 뒤)가 아니라 «그림 자체»에 탭 숨김 규칙이 들어 있다 → 서버 그림에도 실린다
-  assert.match(home, /\{liveLessonOpen && <style>\{"\.academy-app \.academy-staff-nav\{display:none!important\}"\}<\/style>\}/);
-  // 규칙이 가리키는 것이 실제 아래 탭과 테마 루트다
+  // 탭을 가리는 규칙이 화면 어디에도 없다
+  assert.doesNotMatch(home, /academy-staff-nav\{display:none/);
   const nav = read("src/app/staff/StaffBottomNav.tsx");
   assert.match(nav, /<nav aria-label="교사용 주요 메뉴" className="academy-staff-nav /);
   assert.match(read("src/components/academy/AcademyTheme.tsx"), /className=\{`academy-app \$\{className\}`\}/);
-  // 탭은 서버에서 «보임»으로 그려지고(진행 중 수업이 없는 평소 홈은 처음부터 보인다) 위 규칙이 있을 때만 가려진다 — 반대 방향 깜빡임 없음
-  assert.match(nav, /useSyncExternalStore\(subscribeStaffLiveLesson, isStaffLiveLessonOpen, \(\) => false\)/);
-  // 끝 여백도 같은 값으로 첫 그림부터 맞는다
-  assert.match(home, /\{liveLessonOpen && <div aria-hidden="true" className="h-12" \/>\}/);
+  // 끝 여백은 첫 그림부터 막대 높이만큼
+  assert.match(home, /\{liveLessonOpen && <div aria-hidden="true" className="h-28" \/>\}/);
   // 새 조회를 더하지 않았다 — 홈 페이지의 오늘 수업 조회 한 번 그대로
   const page = read("src/app/staff/page.tsx");
   assert.equal((page.match(/getTodayStaffClasses\(/g) ?? []).length, 1);
