@@ -20,10 +20,14 @@ import {
 import {
   BULK_ALREADY_RECORDED_MESSAGE,
   BULK_SKIPPED_MESSAGE,
+  PLAN_NO_CLASS_MESSAGE,
+  PLAN_TOO_FAR_MESSAGE,
   SEAT_RECORD_WARNING_MESSAGE,
   STALE_DATE_MESSAGE,
   TRIAL_BULK_SKIPPED_MESSAGE,
   activeSessionNotice,
+  canPlanOnDate,
+  classDayKeyOf,
   parseTrialRosterKey,
   shouldNotifyParentsForSession,
   staffAccessFailure,
@@ -435,9 +439,20 @@ export async function savePlannedClassContent(input: {
       sessionDateId, input.date,
     );
     if (!validDate[0]) return { ok: false as const, message: STALE_DATE_MESSAGE };
-  } else if (input.date !== todayKst()) {
-    // 정규 수업 홈 화면은 «오늘» 수업만 보여 준다. 밤새 열어 둔 화면에서 어제 날짜로 저장되지 않게 막는다(b2).
-    return { ok: false as const, message: STALE_DATE_MESSAGE };
+  } else {
+    const today = todayKst();
+    // 지난 날짜로는 저장하지 않는다 — 밤새 열어 둔 화면에서 어제 날짜로 저장되지 않게 막는다(b2).
+    if (input.date < today) return { ok: false as const, message: STALE_DATE_MESSAGE };
+    if (input.date !== today) {
+      // 2026-11-16 날짜 이동: 다가올 수업(오늘+14일까지)의 수업 내용을 미리 쓴다.
+      if (!canPlanOnDate(input.date, today)) return { ok: false as const, message: PLAN_TOO_FAR_MESSAGE };
+      // 그 날짜가 이 반의 수업 요일이어야 한다 — 수업이 없는 날에 수업 기록이 생기지 않게.
+      const onDay = await prisma.$queryRawUnsafe<{ id: string }[]>(
+        `SELECT id FROM "Class" WHERE id = $1 AND "dayOfWeek" = $2 LIMIT 1`,
+        input.classId, classDayKeyOf(input.date),
+      );
+      if (!onDay[0]) return { ok: false as const, message: PLAN_NO_CLASS_MESSAGE };
+    }
   }
 
   // 정규 수업 키는 관리자 출결·랠리즈와 같은 함수(regularSessionKey)로 만든다.

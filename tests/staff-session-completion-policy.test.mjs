@@ -97,11 +97,15 @@ test("H1 모델: 원장 미리 작성 뒤에도 담당 강사 접근·목록이 
   assert.equal(canSee("coach-lee", offering, { coachId: fill(null) }), false);
 });
 
-test("정규 수업 시작·미리 작성은 오늘(KST)이 아니면 거절하고, 권한 실패는 결과로 돌려준다", () => {
+test("정규 수업 시작은 오늘(KST)만, 미리 작성은 오늘~14일 뒤만 받고(지난 날짜 거절), 권한 실패는 결과로 돌려준다", () => {
   const start = source.slice(source.indexOf("export async function startClassSession"));
   assert.match(start, /if \(!input\.sessionDateId\?\.trim\(\) && date !== todayKst\(\)\) \{\s*return \{ ok: false, code: "STALE_DATE", message: STALE_DATE_MESSAGE \};/);
   const plan = source.slice(source.indexOf("export async function savePlannedClassContent"));
-  assert.match(plan.slice(0, plan.indexOf("\n}\n")), /input\.date !== todayKst\(\)[\s\S]*?STALE_DATE_MESSAGE/);
+  // 2026-11-16 날짜 이동: 다가올 수업(오늘+14일까지)은 미리 쓸 수 있다. 지난 날짜·먼 날짜·수업 없는 요일은 거절.
+  const planBody = plan.slice(0, plan.indexOf("\n}\n"));
+  assert.match(planBody, /const today = todayKst\(\);[\s\S]*?if \(input\.date < today\) return \{ ok: false as const, message: STALE_DATE_MESSAGE \};/);
+  assert.match(planBody, /if \(!canPlanOnDate\(input\.date, today\)\) return \{ ok: false as const, message: PLAN_TOO_FAR_MESSAGE \};/);
+  assert.match(planBody, /if \(!onDay\[0\]\) return \{ ok: false as const, message: PLAN_NO_CLASS_MESSAGE \};/);
   // 진행 중 수업 안내에 반 이름·날짜(b6)
   assert.match(start, /message: activeSessionNotice\(active\[0\]\.className, active\[0\]\.date\)/);
   // 출석·메모·종료·시작 취소는 권한 실패를 던지지 않는다(b5)

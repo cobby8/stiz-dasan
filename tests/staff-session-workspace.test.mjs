@@ -397,7 +397,7 @@ test("필수 2: 끝난 수업을 접으면 본문을 버려 다시 펼칠 때 �
 });
 
 test("권장 3·4: 펼쳐진 줄 머리의 «시작»은 숨기고, 접힌 줄 머리에 메모·수업 내용 저장 실패도 보인다(저장 중은 중립색)", () => {
-  assert.match(home, /\{completed \? <StatusBadge status=\{lesson\.sessionStatus\} \/> : expanded \? null : \(\s*<button/);
+  assert.match(home, /\{completed \? <StatusBadge status=\{lesson\.sessionStatus\} \/> : preview \? \([\s\S]*?\) : expanded \? null : \(\s*<button/);
   assert.deepEqual(rules.workspaceSaveStatus({ attendance: { saving: false, failed: 0 }, memoStatus: "saved", lessonSaveFailed: false }), { saving: "", failed: "" });
   assert.deepEqual(rules.workspaceSaveStatus({ attendance: { saving: true, failed: 0 }, memoStatus: "saved", lessonSaveFailed: false }), { saving: "저장 중", failed: "" });
   assert.deepEqual(rules.workspaceSaveStatus({ attendance: { saving: false, failed: 0 }, memoStatus: "saving", lessonSaveFailed: false }), { saving: "저장 중", failed: "" });

@@ -21,7 +21,8 @@ import type { LessonTextSaveResult } from "@/components/staff/LessonTextEditor";
 import { retainSessionData } from "@/components/staff/sessionWorkspaceRules";
 import { prepareStaffNavigation, setStaffLiveLessonOpen } from "./staffNavigation";
 import type { StaffSessionDetail, StaffSessionStudent, StaffTodayClass } from "@/lib/staff-session-queries";
-import { isStaleDateKey, STALE_DATE_MESSAGE, staffReloginHref } from "@/lib/staff-session-rules";
+import { isStaleDateKey, STALE_DATE_MESSAGE, staffPreviewDates, staffReloginHref } from "@/lib/staff-session-rules";
+import { kstDow, kstLabel } from "@/lib/datetime/kst";
 
 function isSeasonalLesson(lesson: StaffTodayClass) {
   return lesson.kind === "SEASONAL";
@@ -48,11 +49,15 @@ const ClassBillingSheet = dynamic(
 
 export default function StaffHomeClient({
   dateKey,
+  todayKey,
   classes: initialClasses,
   coachLinkMissing = false,
   showFees,
 }: {
+  /** 화면이 보여 주는 날짜 — 오늘 또는 다가올 날짜(2026-11-16 날짜 이동) */
   dateKey: string;
+  /** 서버가 이 화면을 그릴 때의 오늘(KST) */
+  todayKey: string;
   classes: StaffTodayClass[];
   /** 선생님 계정에 코치가 연결되지 않아 수업이 안 보이는 상태(b4). 원장·부원장은 항상 false. */
   coachLinkMissing?: boolean;
@@ -71,7 +76,8 @@ export default function StaffHomeClient({
   // 화면으로 돌아올 때(앱 전환·화면 켜기) 오늘(KST)과 화면 날짜가 다르면 새로 불러온다.
   useEffect(() => {
     const refreshIfStale = () => {
-      if (document.visibilityState === "visible" && isStaleDateKey(dateKey)) router.refresh();
+      // 기준은 «오늘»(todayKey) — 다가올 날짜를 보고 있어도 날이 바뀌면 새로 불러와 날짜 칸을 다시 맞춘다
+      if (document.visibilityState === "visible" && isStaleDateKey(todayKey)) router.refresh();
     };
     document.addEventListener("visibilitychange", refreshIfStale);
     window.addEventListener("focus", refreshIfStale);
@@ -79,7 +85,10 @@ export default function StaffHomeClient({
       document.removeEventListener("visibilitychange", refreshIfStale);
       window.removeEventListener("focus", refreshIfStale);
     };
-  }, [dateKey, router]);
+  }, [todayKey, router]);
+  // 다가올 날짜를 보는 중인가 — 수업 내용 미리 쓰기·명단 보기만 되고 «수업 시작»은 없다(시작은 당일에만)
+  const preview = dateKey !== todayKey;
+  const [dateMoving, startDateMove] = useTransition();
   const [classes, setClasses] = useState(initialClasses);
   const [startTarget, setStartTarget] = useState<StaffTodayClass | null>(null);
   const [noticeTarget, setNoticeTarget] = useState<StaffTodayClass | null>(null);
@@ -344,7 +353,22 @@ export default function StaffHomeClient({
     });
   }
 
+  // 날짜 칸을 누르면 그 날짜의 수업으로 — 쓰던 메모·수업 내용을 먼저 저장하고 옮긴다(아래 탭과 같은 약속)
+  async function moveDate(target: string) {
+    if (target === dateKey || dateMoving) return;
+    setError(null);
+    setFlash("");
+    const ready = await prepareStaffNavigation();
+    if (!ready.ok) {
+      setError(ready.message || "수업 기록을 저장하지 못했습니다. 잠시 후 다시 눌러 주세요.");
+      return;
+    }
+    startDateMove(() => router.push(target === todayKey ? "/staff" : `/staff?date=${target}`));
+  }
+
   function openPrimaryAction(lesson: StaffTodayClass) {
+    // 다가올 날짜의 수업은 시작하지 않는다(화면에도 시작 버튼이 없다 — 서버도 막는다)
+    if (preview) return;
     if (lesson.sessionStatus === "IN_PROGRESS" && lesson.sessionId) {
       // 진행 중 수업은 이동하지 않고 그 줄을 펼친다
       setExpandedKey(lesson.scheduleKey);
@@ -387,6 +411,7 @@ export default function StaffHomeClient({
               startLocked: Boolean(runningClass),
               startPrimary,
               onStart: () => openPrimaryAction(lesson),
+              previewNotice: preview ? `${kstLabel(dateKey)} 수업입니다. 수업 내용을 미리 써 두면 당일 수업 화면에 그대로 나옵니다.` : undefined,
               savePlanned: (text) => savePlanned(lesson, text),
               onOpenNotice: openNotice,
               onOpenBilling: openBilling,
@@ -434,11 +459,14 @@ export default function StaffHomeClient({
   return (
     <main className="mx-auto max-w-lg space-y-4 px-4 pb-8 pt-5">
       <header className="flex items-end justify-between gap-3">
-        <h1 className="academy-heading">오늘 수업</h1>
-        <p className="text-sm tabular-nums text-[var(--color-academy-muted)]">{dateKey}</p>
+        <h1 className="academy-heading">{preview ? `${kstLabel(dateKey)} 수업` : "오늘 수업"}</h1>
+        {/* 다른 날짜를 볼 때는 제목이 이미 날짜다 — 같은 날짜를 두 번 쓰지 않는다 */}
+        {!preview && <p className="text-sm tabular-nums text-[var(--color-academy-muted)]">{dateKey}</p>}
       </header>
 
-      {classes.length > 0 && (
+      <DateStrip dateKey={dateKey} todayKey={todayKey} moving={dateMoving} onMove={(target) => void moveDate(target)} />
+
+      {!preview && classes.length > 0 && (
         <section aria-label="오늘 수업 요약" className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-xl bg-[var(--color-academy-surface)] px-4 py-3 text-sm">
           <SummaryItem label="전체" value={classes.length} />
           <SummaryItem label="진행 중" value={runningClass ? 1 : 0} accent={Boolean(runningClass)} />
@@ -466,9 +494,24 @@ export default function StaffHomeClient({
           </div>
         ) : (
           <div className="rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-6 text-center">
-            <p className="text-[var(--color-academy-muted)]">오늘 배정된 수업이 없습니다.</p>
+            <p className="text-[var(--color-academy-muted)]">{preview ? "이 날짜에 배정된 수업이 없습니다." : "오늘 배정된 수업이 없습니다."}</p>
           </div>
         )
+      ) : preview ? (
+        // 다가올 날짜: 모든 수업을 한 줄 행으로 — 줄을 누르면 수업 내용 미리 쓰기·명단이 펼쳐진다(시작 버튼 없음)
+        <section>
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="academy-section-title">예정 수업</h2>
+            <span className="text-sm tabular-nums text-[var(--color-academy-muted)]">{classes.length}개</span>
+          </div>
+          <ul aria-label="예정 수업 목록" className="overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
+            {classes.map((lesson) => (
+              <ClassRow key={lesson.scheduleKey} lesson={lesson} preview expanded={expandedKey === lesson.scheduleKey} startLocked={false} onOpen={(target) => void toggleLesson(target)} onStart={openPrimaryAction}>
+                {renderLessonBody(lesson, false, "border-t border-[var(--color-academy-line)] px-3 py-3")}
+              </ClassRow>
+            ))}
+          </ul>
+        </section>
       ) : focusClass ? (
         <>
           <section>
@@ -554,7 +597,7 @@ export default function StaffHomeClient({
         <p role="status" className="rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-neutral-soft)] px-4 py-5 font-medium text-[var(--color-academy-ink)]">오늘 수업을 모두 마쳤습니다.</p>
       )}
 
-      {completedClasses.length > 0 && (
+      {!preview && completedClasses.length > 0 && (
         <section className="overflow-hidden rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
           {/* 2026-11-15: 펼침 표시는 화살표 아이콘(칸 제목이 버튼 이름) */}
           <button type="button" aria-expanded={showCompleted} aria-controls="completed-lessons" onClick={() => setShowCompleted((current) => !current)} className="flex min-h-11 w-full items-center justify-between gap-2 px-4 py-3 text-left text-sm font-medium text-[var(--color-academy-muted)]">
@@ -618,6 +661,53 @@ export default function StaffHomeClient({
   );
 }
 
+/**
+ * 날짜 칸 한 줄(2026-11-16 원장 지시) — 오늘부터 14일 뒤까지. 누르면 그 날짜의 내 수업을 본다.
+ * 고른 날짜는 보조 색(하늘색 = «지금 있는 곳»)으로 채운다. 지난 날짜는 «지난 수업» 화면에서 본다.
+ */
+function DateStrip({ dateKey, todayKey, moving, onMove }: { dateKey: string; todayKey: string; moving: boolean; onMove: (target: string) => void }) {
+  const stripRef = useRef<HTMLElement>(null);
+  const selectedRef = useRef<HTMLButtonElement>(null);
+  // 고른 날짜가 줄 밖에 있으면 줄 가운데로 옮긴다(먼 날짜를 고른 뒤 새로 그려질 때). 페이지는 움직이지 않게 줄만 옆으로 민다.
+  useEffect(() => {
+    const strip = stripRef.current;
+    const chip = selectedRef.current;
+    if (!strip || !chip) return;
+    const stripBox = strip.getBoundingClientRect();
+    const chipBox = chip.getBoundingClientRect();
+    strip.scrollLeft += chipBox.left - stripBox.left - (stripBox.width - chipBox.width) / 2;
+  }, [dateKey]);
+  const DOW = ["일", "월", "화", "수", "목", "금", "토"];
+  return (
+    <nav ref={stripRef} aria-label="날짜 이동" aria-busy={moving} className="-mx-4 overflow-x-auto px-4 [scrollbar-width:none]">
+      <ul className="flex gap-1.5">
+        {staffPreviewDates(todayKey).map((ymd) => {
+          const selected = ymd === dateKey;
+          const dow = kstDow(ymd);
+          return (
+            <li key={ymd} className="shrink-0">
+              <button
+                ref={selected ? selectedRef : undefined}
+                type="button"
+                aria-current={selected ? "date" : undefined}
+                aria-label={`${kstLabel(ymd)}${ymd === todayKey ? " 오늘" : ""} 수업 보기`}
+                disabled={moving && !selected}
+                onClick={() => onMove(ymd)}
+                className={`flex min-h-12 min-w-12 flex-col items-center justify-center rounded-xl border px-2 text-xs ${selected
+                  ? "border-[var(--color-academy-secondary-strong)] bg-[var(--color-academy-secondary-soft)] font-semibold text-[var(--color-academy-ink)]"
+                  : "border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-[var(--color-academy-muted)]"}`}
+              >
+                <span>{ymd === todayKey ? "오늘" : DOW[dow]}</span>
+                <span className="text-sm tabular-nums text-[var(--color-academy-ink)]">{Number(ymd.slice(8))}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
+  );
+}
+
 function SummaryItem({ label, value, accent = false }: { label: string; value: number; accent?: boolean }) {
   return <p className={accent ? "font-semibold text-[var(--color-academy-ink)]" : "text-[var(--color-academy-muted)]"}>{label} <strong className="ml-1 font-semibold tabular-nums">{value}</strong></p>;
 }
@@ -639,7 +729,8 @@ function SubstituteBadge() {
 }
 
 // 남은·완료 수업 한 줄 행. 행 탭 = 그 아래에 수업 칸 펼치기(children), 시작 버튼은 행 열기와 섞이지 않게 전파 차단
-function ClassRow({ lesson, startLocked, expanded, onOpen, onStart, children }: { lesson: StaffTodayClass; startLocked: boolean; expanded: boolean; onOpen: (lesson: StaffTodayClass) => void; onStart: (lesson: StaffTodayClass) => void; children?: React.ReactNode }) {
+// preview(다가올 날짜): 시작 버튼 대신 수업 내용을 미리 썼는지만 작게 보인다
+function ClassRow({ lesson, startLocked, expanded, preview = false, onOpen, onStart, children }: { lesson: StaffTodayClass; startLocked: boolean; expanded: boolean; preview?: boolean; onOpen: (lesson: StaffTodayClass) => void; onStart: (lesson: StaffTodayClass) => void; children?: React.ReactNode }) {
   const completed = lesson.sessionStatus === "COMPLETED";
   const startLabel = lesson.sessionStatus === "IN_PROGRESS" ? "수업 이어하기" : startLocked ? "현재 수업 종료 후 시작" : "수업 시작";
   return <li className="border-b border-[var(--color-academy-line)] last:border-b-0">
@@ -662,7 +753,9 @@ function ClassRow({ lesson, startLocked, expanded, onOpen, onStart, children }: 
       <span className="flex min-w-0 flex-1 flex-wrap items-center gap-1"><span className="break-keep font-semibold text-[var(--color-academy-ink)]">{lesson.name}</span>{isSeasonalLesson(lesson) && <SeasonalBadge />}{lesson.substitute && <SubstituteBadge />}</span>
       <span className="shrink-0 text-right text-xs tabular-nums text-[var(--color-academy-muted)]">{lesson.studentCount}명</span>
       {/* 펼쳐진 줄에서는 머리의 «시작»을 숨긴다 — 본문의 [수업 시작]이 쓰던 수업 내용을 먼저 저장하고 시작하기 때문(머리 버튼으로 시작하면 쓰던 글이 사라졌다) */}
-      {completed ? <StatusBadge status={lesson.sessionStatus} /> : expanded ? null : (
+      {completed ? <StatusBadge status={lesson.sessionStatus} /> : preview ? (
+        expanded ? null : <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs ${lesson.plannedContent ? "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]" : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"}`}>{lesson.plannedContent ? "내용 씀" : "내용 없음"}</span>
+      ) : expanded ? null : (
         <button
           type="button"
           disabled={startLocked}

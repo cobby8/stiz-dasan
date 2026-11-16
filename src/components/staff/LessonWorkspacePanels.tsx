@@ -41,6 +41,11 @@ export type PlannedLessonProps = {
   /** 이 화면의 주 버튼인가(오늘의 «다음 수업» 카드만 true — 남은 수업 줄은 보조 버튼) */
   startPrimary: boolean;
   onStart: () => void;
+  /**
+   * 다가올 날짜의 수업(2026-11-16 날짜 이동) — 넘기면 «수업 시작» 버튼 대신 이 안내 한 줄을 보인다.
+   * 수업 시작은 당일에만 한다(서버도 오늘이 아닌 날짜의 시작을 막는다).
+   */
+  previewNotice?: string;
   /** 미리 쓴 내용 저장(수업 전 전용 서버 기능은 홈이 부른다 — 날짜·특강 회차를 홈이 안다) */
   savePlanned: (text: string) => Promise<LessonTextSaveResult>;
   /** 수업 공지 — 대타로만 보이는 반은 넘기지 않는다(f4) */
@@ -100,7 +105,7 @@ export function WorkspaceLinks({ onOpenNotice, onOpenBilling }: { onOpenNotice?:
 /**
  * 수업 전 본문 — [수업 시작] → 수업 내용(미리 쓰기) → 출석부(명단·학생 정보만, 출결 버튼 없음) → 수업 공지·청구 확인.
  */
-export function PlannedLessonPanel({ lesson, startLocked, startPrimary, onStart, savePlanned, onOpenNotice, onOpenBilling }: PlannedLessonProps) {
+export function PlannedLessonPanel({ lesson, startLocked, startPrimary, onStart, previewNotice, savePlanned, onOpenNotice, onOpenBilling }: PlannedLessonProps) {
   const initial = resolveLessonText({ status: "PLANNED", content: lesson.content, plannedContent: lesson.plannedContent });
   const [text, setText] = useState(initial.value);
   const [starting, setStarting] = useState(false);
@@ -127,6 +132,25 @@ export function PlannedLessonPanel({ lesson, startLocked, startPrimary, onStart,
     if (textRef.current !== savedRef.current) void saveRef.current(textRef.current);
   }, []);
 
+  // 다른 날짜·다른 탭·다른 줄로 옮기기 직전 — 쓰던 수업 내용을 먼저 저장하고, 실패하면 옮기지 않게 알린다
+  // (2026-11-16 날짜 이동: «쓰고 옆 날짜로 넘기기»에서 저장 실패로 글이 조용히 사라지지 않게)
+  useEffect(() => {
+    const prepareToLeave = (event: Event) => {
+      const detail = (event as CustomEvent<{ handled: boolean; complete: (result: { ok: boolean; message?: string }) => void }>).detail;
+      if (!detail || detail.handled || textRef.current === savedRef.current) return;
+      detail.handled = true;
+      const value = textRef.current;
+      void saveRef.current(value)
+        .catch(() => ({ ok: false as const, message: "" }))
+        .then((result) => {
+          if (result.ok) { savedRef.current = value; detail.complete({ ok: true }); return; }
+          detail.complete({ ok: false, message: result.message || "수업 내용을 저장하지 못했습니다. 네트워크를 확인한 뒤 다시 눌러 주세요." });
+        });
+    };
+    window.addEventListener("staff:prepare-navigation", prepareToLeave);
+    return () => window.removeEventListener("staff:prepare-navigation", prepareToLeave);
+  }, []);
+
   async function start() {
     if (starting || startLocked) return;
     setStartError("");
@@ -147,6 +171,9 @@ export function PlannedLessonPanel({ lesson, startLocked, startPrimary, onStart,
 
   return (
     <div className="space-y-3">
+      {previewNotice ? (
+        <p role="note" className="rounded-xl bg-[var(--color-academy-soft)] px-3 py-2 text-sm text-[var(--color-academy-muted)]">{previewNotice}</p>
+      ) : (
       <div>
         <button
           type="button"
@@ -160,12 +187,13 @@ export function PlannedLessonPanel({ lesson, startLocked, startPrimary, onStart,
         {startLocked && <p role="status" className="mt-1 text-xs text-[var(--color-academy-muted)]">현재 수업을 종료한 뒤 다음 수업을 시작할 수 있습니다.</p>}
         {startError && <p role="alert" className="mt-1 text-xs text-[var(--color-academy-danger)]">{startError}</p>}
       </div>
+      )}
 
       <WorkspaceSection id={`lesson-text-${lesson.classId}`} title="수업 내용" summary={text.trim() ? text.trim().split("\n")[0] : "아직 쓰지 않았어요"} open={open.lesson} onToggle={() => setOpen((current) => ({ ...current, lesson: !current.lesson }))}>
         <LessonTextEditor inputId={`lesson-text-input-${lesson.classId}`} phase="PLANNED" value={text} onChange={setText} save={save} />
       </WorkspaceSection>
 
-      <WorkspaceSection id={`lesson-roster-${lesson.classId}`} title="출석부" summary={`학생 ${lesson.studentCount}명 · 출결은 수업을 시작한 뒤에 찍어요`} open={open.roster} onToggle={toggleRoster}>
+      <WorkspaceSection id={`lesson-roster-${lesson.classId}`} title="출석부" summary={previewNotice ? `학생 ${lesson.studentCount}명` : `학생 ${lesson.studentCount}명 · 출결은 수업을 시작한 뒤에 찍어요`} open={open.roster} onToggle={toggleRoster}>
         <PeopleNotice loading={people.loading} error={people.error} onRetry={people.reload} />
         {people.loaded && people.people.length === 0 && <p className="py-2 text-xs text-[var(--color-academy-muted)]">표시할 학생이 없습니다.</p>}
         <ul aria-label="학생 명단">

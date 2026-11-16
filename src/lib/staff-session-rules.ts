@@ -6,7 +6,7 @@
 //   한쪽만 고치면 «화면은 막는데 서버는 받는» 갈림이 생긴다 → 여기 한 곳에서 정하고 tests/staff-session-rules.test.mjs 로 실행 검증한다.
 //
 // ⚠️ prisma·next import 금지(테스트가 이 파일을 그대로 실행한다). 날짜는 @/lib/datetime/kst 만 쓴다.
-import { todayKst } from "@/lib/datetime/kst";
+import { addDaysKst, isKstYmd, kstDow, todayKst } from "@/lib/datetime/kst";
 import { canSeePaymentAmount } from "@/lib/auth/moneyAccess";
 
 // ── b1. 전체 출석 ─────────────────────────────────────────────
@@ -60,6 +60,36 @@ export function isStaleDateKey(dateKey: string, nowMs: number = Date.now()): boo
 }
 
 export const STALE_DATE_MESSAGE = "날짜가 바뀌었어요. 화면을 새로고침해 주세요.";
+
+// ── 날짜 이동(2026-11-16 원장 지시) — 선생님이 다가올 수업을 미리 보고 수업 내용을 미리 쓴다 ──
+
+/** 오늘 포함 며칠 뒤까지 미리 볼 수 있는가(지난 날짜는 «지난 수업» 화면이 맡는다). */
+export const STAFF_PREVIEW_DAYS = 14;
+
+/** 미리 쓸 수 있는 날짜인가 — 오늘 ~ 오늘+14일. "YYYY-MM-DD" 는 글자 순서가 곧 날짜 순서다. */
+export function canPlanOnDate(ymd: string, today: string = todayKst()): boolean {
+  return isKstYmd(ymd) && ymd >= today && ymd <= addDaysKst(today, STAFF_PREVIEW_DAYS);
+}
+
+/** 주소의 ?date= 값으로 화면 날짜를 정한다 — 형식이 틀리거나 범위 밖(지난 날·너무 먼 날)이면 오늘. */
+export function resolveStaffViewDate(raw: unknown, today: string = todayKst()): string {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return typeof value === "string" && canPlanOnDate(value, today) ? value : today;
+}
+
+/** 날짜 칸에 늘어놓을 날짜들 — 오늘부터 14일 뒤까지(15칸). */
+export function staffPreviewDates(today: string = todayKst()): string[] {
+  return Array.from({ length: STAFF_PREVIEW_DAYS + 1 }, (_, index) => addDaysKst(today, index));
+}
+
+/** 반 요일(Class.dayOfWeek = "Mon" 등)이 그 날짜의 요일과 같은가 — 수업이 없는 날짜에 수업 기록이 생기지 않게 서버가 확인한다. */
+const CLASS_DAY_KEYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+export function classDayKeyOf(ymd: string): string {
+  return CLASS_DAY_KEYS[kstDow(ymd)];
+}
+
+export const PLAN_TOO_FAR_MESSAGE = `수업 내용은 ${STAFF_PREVIEW_DAYS}일 뒤 수업까지만 미리 쓸 수 있습니다.`;
+export const PLAN_NO_CLASS_MESSAGE = "이 날짜에는 이 반 수업이 없습니다. 날짜를 다시 확인해 주세요.";
 
 // ── b6. 지난 날짜에 진행 중으로 남은 수업 ────────────────────
 

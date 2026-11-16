@@ -99,9 +99,9 @@ const nav = readFileSync("src/app/staff/StaffBottomNav.tsx", "utf8");
 
 test("b2 홈·기사님 화면은 화면 복귀 때 날짜가 바뀌었으면 새로 불러온다", () => {
   assert.match(home, /addEventListener\("visibilitychange", refreshIfStale\)/);
-  assert.match(home, /isStaleDateKey\(dateKey\)\) router\.refresh\(\)/);
+  assert.match(home, /isStaleDateKey\((?:dateKey|todayKey)\)\) router\.refresh\(\)/);
   // 새로 불러오면 수업 목록 상태도 새 날짜로 다시 만든다
-  assert.match(homePage, /<StaffHomeClient key=\{dateKey\}/);
+  assert.match(homePage, /<StaffHomeClient key=\{`\$\{todayKey\}:\$\{dateKey\}`\}/);
   assert.match(driverClient, /if \(todayKst\(\) !== today\) router\.refresh\(\)/);
   // 운행 중(위치 전송)·순서 편집 중에는 새로 불러오지 않는다
   assert.match(driverClient, /runState === "running" \|\| editing\) return;/);
@@ -141,4 +141,63 @@ test("b5 오류 화면은 로그인·권한·연결을 구분한다", () => {
   assert.match(errorPage, /kind === "login" \?[\s\S]*?다시 로그인/);
   assert.match(errorPage, /로그인이 풀렸습니다/);
   assert.match(errorPage, /인터넷 연결이 끊겼습니다/);
+});
+
+// ── 날짜 이동(2026-11-16 원장 지시) — 다가올 수업을 미리 보고 수업 내용을 미리 쓴다 ──
+
+test("날짜 이동: 오늘~14일 뒤만 미리 볼 수 있고, 그 밖의 주소 값은 오늘로 돌아간다(월말·연말 경계)", () => {
+  const today = "2026-12-25";
+  assert.equal(rules.canPlanOnDate("2026-12-25", today), true);
+  assert.equal(rules.canPlanOnDate("2027-01-08", today), true); // 딱 14일 뒤(해를 넘김)
+  assert.equal(rules.canPlanOnDate("2027-01-09", today), false);
+  assert.equal(rules.canPlanOnDate("2026-12-24", today), false); // 지난 날짜는 «지난 수업»에서
+  assert.equal(rules.canPlanOnDate("2026-13-01", today), false);
+
+  assert.equal(rules.resolveStaffViewDate("2026-12-31", today), "2026-12-31");
+  assert.equal(rules.resolveStaffViewDate(["2026-12-31", "2027-01-01"], today), "2026-12-31");
+  for (const bad of [undefined, "", "내일", "2026-12-24", "2027-02-01", "2026-12-31T00:00", 20261231]) {
+    assert.equal(rules.resolveStaffViewDate(bad, today), today);
+  }
+
+  const dates = rules.staffPreviewDates(today);
+  assert.equal(dates.length, 15);
+  assert.equal(dates[0], today);
+  assert.equal(dates[7], "2027-01-01");
+  assert.equal(dates[14], "2027-01-08");
+});
+
+test("날짜 이동: 반 요일 키는 그 날짜의 KST 요일이다(서버 시간대와 무관)", () => {
+  assert.equal(rules.classDayKeyOf("2026-11-16"), "Mon");
+  assert.equal(rules.classDayKeyOf("2026-11-21"), "Sat");
+  assert.equal(rules.classDayKeyOf("2026-11-22"), "Sun");
+  assert.equal(rules.classDayKeyOf("2028-02-29"), "Tue"); // 윤년
+});
+
+test("날짜 이동: 화면·서버가 같은 규칙을 쓴다 — 다른 날짜는 시작 버튼이 없고, 서버는 지난 날·먼 날·수업 없는 요일을 막는다", () => {
+  const page = readFileSync("src/app/staff/page.tsx", "utf8");
+  assert.match(page, /resolveStaffViewDate\(\(await searchParams\)\.date, todayKey\)/);
+  assert.match(page, /getTodayStaffClasses\(dateKey\)/);
+
+  const home = readFileSync("src/app/staff/StaffHomeClient.tsx", "utf8");
+  assert.match(home, /const preview = dateKey !== todayKey;/);
+  assert.match(home, /isStaleDateKey\(todayKey\)/);
+  // 날짜를 옮기기 전에 쓰던 기록을 먼저 저장한다
+  assert.match(home, /async function moveDate[\s\S]*?await prepareStaffNavigation\(\)[\s\S]*?router\.push\(target === todayKey \? "\/staff" : `\/staff\?date=\$\{target\}`\)/);
+  assert.match(home, /if \(preview\) return;/);
+  assert.match(home, /previewNotice: preview \?/);
+
+  const panel = readFileSync("src/components/staff/LessonWorkspacePanels.tsx", "utf8");
+  assert.match(panel, /\{previewNotice \? \(\s*<p role="note"/);
+  // 쓰던 수업 내용은 옮기기 전에 저장하고, 실패하면 이동을 막는다
+  assert.match(panel, /addEventListener\("staff:prepare-navigation", prepareToLeave\)/);
+  assert.match(panel, /detail\.complete\(\{ ok: false, message: result\.message \|\|/);
+
+  const actions = readFileSync("src/app/actions/staff-sessions.ts", "utf8");
+  const save = actions.slice(actions.indexOf("export async function savePlannedClassContent"), actions.indexOf("export async function saveSessionMemo"));
+  assert.match(save, /if \(input\.date < today\) return \{ ok: false as const, message: STALE_DATE_MESSAGE \};/);
+  assert.match(save, /if \(!canPlanOnDate\(input\.date, today\)\) return \{ ok: false as const, message: PLAN_TOO_FAR_MESSAGE \};/);
+  assert.match(save, /"dayOfWeek" = \$2 LIMIT 1`,\s*input\.classId, classDayKeyOf\(input\.date\)/);
+  // 수업 시작은 여전히 오늘만
+  const start = actions.slice(actions.indexOf("export async function startClassSession"));
+  assert.match(start, /code: "STALE_DATE", message: STALE_DATE_MESSAGE/);
 });
