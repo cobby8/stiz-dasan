@@ -52,9 +52,10 @@ export default async function StaffShuttlePage({ searchParams }: {
 
   return (
     <>
-      {/* 이 운행표(계정용)에는 위치 전송이 없다. 학부모에게 위치를 보내려면 운행 화면(/staff/run)에서 «운행 시작»을 누른다(2026-11-13 b7). */}
+      {/* 이 운행표(계정용)에는 위치 전송이 없다. 위치를 보내려면 운행 화면에서 «운행 시작»을 누른다(2026-11-13 b7).
+          기사님 첫 화면(/staff/driver)을 거쳐 간다 — 안드로이드 앱은 위치 공유가 켜지는 운행 링크 화면으로, 브라우저는 /staff/run 으로(2026-11-16). */}
       <div className="mx-auto max-w-lg px-4 pt-3">
-        <Link href="/staff/run" className="academy-button-primary min-h-12! w-full text-base!">
+        <Link href="/staff/driver" className="academy-button-primary min-h-12! w-full text-base!">
           운행 시작 (위치 전송)
         </Link>
       </div>

@@ -6,7 +6,7 @@ import { buildPublicMetadata } from "@/lib/publicMetadata";
 // 기사님 사용 설명(2026-11-16 원장 요청 «기사님용 설명도»). 기사님 휴대폰 = 안드로이드(원장 답).
 // 문자·카톡 링크로 바로 열리게 로그인 없이 볼 수 있는 공개 페이지 — 개인정보·운행 링크 주소는 넣지 않는다. 검색엔진에는 노출하지 않는다.
 // 화면 글자는 실제 글자를 옮겼다: src/components/shuttle/**(운행 화면), apps/driver-android MainActivity(«기존 운행 링크 입력»·위치 공유 동의 창).
-// ⚠️ 지금(앱 1.0.3) 위치 공유는 «운행 링크»로 연 화면에서만 된다 — 로그인으로 연 운행표에서 되게 바뀌면 3번 카드를 고친다.
+// 2026-11-16: 로그인만으로 운행 시작 — 안드로이드 앱은 로그인 후 /staff/driver → /staff/run/open → 운행 링크 화면(위치 공유)으로 간다.
 export const revalidate = 3600;
 export const metadata = {
   ...buildPublicMetadata({
@@ -105,7 +105,7 @@ export default function DriverGuidePage() {
       <section className="public-page-hero public-page-hero--compact bg-[var(--color-public-dark)] py-8 text-white md:py-10">
         <div className="mx-auto max-w-3xl px-6 md:px-4">
           <h1 className="mb-1 break-keep text-2xl font-bold md:text-3xl">기사님 앱 사용 설명</h1>
-          <p className="text-sm text-white/80">설치 → 운행 링크 열기 → 운행 하나 끝내기까지 (안드로이드 휴대폰)</p>
+          <p className="text-sm text-white/80">설치 → 로그인 → 운행 하나 끝내기까지 (안드로이드 휴대폰)</p>
         </div>
       </section>
 
@@ -123,21 +123,14 @@ export default function DriverGuidePage() {
 
           <Card title="2. 로그인">
             {lineList([
-              "아이디 칸에 휴대폰 번호(숫자만), 비밀번호를 넣어요. 로그인하면 셔틀 화면이 열려요.",
+              "아이디 칸에 휴대폰 번호(숫자만), 비밀번호를 넣어요. 로그인하면 오늘 운행 화면이 바로 열려요.",
+              "따로 운행 링크를 받을 필요 없어요. 다음부터는 앱만 열면 돼요.",
+              "셔틀 화면에 있을 때는 맨 위 «운행 시작 (위치 전송)»을 누르면 운행 화면으로 가요.",
               "비밀번호를 모르면 원장님께 «비밀번호 재설정 링크»를 요청하세요. 문자로 온 링크에서 새 비밀번호(10자 이상)를 정해요.",
             ])}
           </Card>
 
-          <Card title="3. 운행 링크 열기 (처음 한 번)">
-            {lineList([
-              "위치 공유는 원장님이 문자로 보내 드린 «운행 링크»로 연 화면에서 돼요.",
-              "문자의 운행 링크를 길게 눌러 «복사»해요.",
-              "앱 셔틀 화면에서 뜨는 창의 «기존 운행 링크 입력»을 누르고, 칸에 붙여 넣은 뒤 «운행 화면 열기»를 눌러요.",
-              "창이 안 보이면 앱을 다시 열어 주세요. 운행 링크가 바뀌면 원장님이 새 링크를 보내 드려요.",
-            ])}
-          </Card>
-
-          <Card title="4. 운행 하나 끝내기">
+          <Card title="3. 운행 하나 끝내기">
             <ol className="space-y-3">
               {RUN_FLOW.map((step, index) => (
                 <li key={step.title} className="flex gap-3">
@@ -154,7 +147,7 @@ export default function DriverGuidePage() {
           </Card>
 
           {SECTIONS.map((section, index) => (
-            <Card key={section.title} title={`${index + 5}. ${section.title}`}>{lineList(section.lines)}</Card>
+            <Card key={section.title} title={`${index + 4}. ${section.title}`}>{lineList(section.lines)}</Card>
           ))}
 
           <p className="px-1 text-xs text-[var(--color-public-muted)]">궁금한 점은 원장님께 물어봐 주세요.</p>
