@@ -4,6 +4,7 @@ import { requireStaff } from "@/lib/auth-guard";
 import StaffBottomNav from "./StaffBottomNav";
 import StaffProfileMenu from "./StaffProfileMenu";
 import StaffHomeLink from "./StaffHomeLink";
+import StaffDocumentReload from "./StaffDocumentReload";
 import AppBackButton from "@/components/AppBackButton";
 import AcademyTheme from "@/components/academy/AcademyTheme";
 import { getAccountViewAccess } from "@/lib/account-view-access";
@@ -56,6 +57,8 @@ export default async function StaffLayout({ children }: { children: ReactNode })
       </header>
       {/* 기사님: 알림이 꺼져 있으면 상단 한 줄(켜면 사라짐) — 명단 변경을 놓치지 않게 */}
       {staff.roles.driver && <StaffPushBanner />}
+      {/* 다른 화면에서 넘어왔으면 한 번 새로 불러온다(마이크 허용 머리글은 처음 불러온 문서에만 붙는다). 그리는 것 없음 */}
+      <StaffDocumentReload />
       {children}
       <StaffBottomNav canTeach={staff.roles.teacher} canShuttle={canShuttle} shuttleViewOnly={shuttleAccess.teacherOnly} />
     </AcademyTheme>

@@ -20,6 +20,9 @@ import {
   type LinkDoneErrorCode,
 } from "@/lib/account-link-handoff/rules";
 import { linkHandoffAccountLabel } from "@/lib/account-link-handoff/store";
+import { resolveLinkActor } from "@/lib/account/link-actor";
+import { loginMethodsPath, type StaffLinkErrorCode } from "@/lib/account/login-methods-rules";
+import { requireNativeAccount } from "@/lib/native-auth/store";
 
 type OAuthIntent = "login" | "parent-signup";
 
@@ -50,11 +53,24 @@ function authFailureRedirect(request: NextRequest, error: string) {
   return NextResponse.redirect(url);
 }
 
-/** 마이페이지 「간편로그인 연결」로 돌아간다. 성공이면 linked, 실패면 error 를 붙인다. */
-function loginMethodsPageRedirect(request: NextRequest, result: { linked?: string; error?: string }) {
-  const url = new URL("/mypage/login-methods", request.url);
+/**
+ * 「간편로그인 연결」 화면으로 돌아간다. 성공이면 linked, 실패면 error 를 붙인다.
+ * 어느 화면인지는 주소 파라미터가 아니라 «이 브라우저에 로그인한 앱 계정»으로 서버가 정한다(2026-11-17):
+ * 학부모 확인을 통과하면 학부모 화면(기존), 아니고 직원이면 직원 화면. 로그인이 없으면 기존처럼 학부모 화면.
+ * 실패 안내: 직원 화면에는 문장 대신 «코드»(e)만 싣는다(주소로 가짜 안내문을 띄우지 못하게 — 보안 검수 반영).
+ * 학부모 화면에는 기존 그대로 error=<문장>.
+ */
+async function loginMethodsPageRedirect(
+  request: NextRequest,
+  result: { linked?: string; error?: string; code?: StaffLinkErrorCode },
+) {
+  const actor = await resolveLinkActor();
+  const url = new URL(loginMethodsPath(actor), request.url);
   if (result.linked) url.searchParams.set("linked", result.linked);
-  if (result.error) url.searchParams.set("error", result.error);
+  if (result.error) {
+    if (actor === "staff") url.searchParams.set("e", result.code ?? "failed");
+    else url.searchParams.set("error", result.error);
+  }
   return NextResponse.redirect(url);
 }
 
@@ -90,8 +106,9 @@ async function finishLink(request: NextRequest, code: string | null, provider: P
   // 실패 경로(세션이 생기지 않음)는 표시 쿠키까지 있어야 앱 마무리 — 남이 via=app 링크로 로그아웃시키는 것을 막는다.
   const viaApp = viaAppParam && request.cookies.get(LINK_HANDOFF_GATE_COOKIE)?.value === "1";
   // 결과 화면 고르기 — 앱에서 왔으면 완료 화면(+이 브라우저 로그아웃), 아니면 기존처럼 마이페이지 연결 화면
+  // doneCode 한 벌로 두 화면을 맞춘다 — 직원 연결 화면도 같은 코드 이름(already·cancelled·expired·failed)을 쓴다
   const fail = (doneCode: LinkDoneErrorCode, message: string) =>
-    viaApp ? appLinkDoneRedirect(request, { code: doneCode }) : loginMethodsPageRedirect(request, { error: message });
+    viaApp ? appLinkDoneRedirect(request, { code: doneCode }) : loginMethodsPageRedirect(request, { error: message, code: doneCode });
   if (!provider) return fail("failed", "연결 정보가 올바르지 않습니다. 다시 시도해 주세요.");
   const label = PARENT_OAUTH_LABELS[provider];
   // Supabase 는 연결을 거절하면 code 대신 오류를 붙여 돌려보낸다.
@@ -170,6 +187,16 @@ export async function GET(request: NextRequest) {
     }
     const url = new URL("/auth/continue", request.url);
     url.searchParams.set("redirect", enrollmentHandoff ? "/mypage" : next);
+    return NextResponse.redirect(url);
+  }
+
+  // 직원 계정(원장·부원장·선생님·기사님)에 연결된 간편로그인으로 브라우저에서 들어온 경우(2026-11-17).
+  // 예전에는 학부모가 아니면 전부 아래 학부모 가입 화면으로 떨어졌다. 판정은 앱 로그인과 «같은 함수»
+  // (requireNativeAccount: 계정 정확히 하나 · 직원 역할 · 탈퇴(요청) 아님)를 써서 두 길이 어긋나지 않게 한다.
+  // 학부모 역할은 위 분기가 맡으므로 여기서는 학부모가 아닌 계정만 묻는다. 수강신청 연결은 학부모 몫이라 하지 않는다.
+  if (appUser && appUser.role !== "PARENT" && await requireNativeAccount(user.id)) {
+    const url = new URL("/auth/continue", request.url);
+    url.searchParams.set("redirect", next);
     return NextResponse.redirect(url);
   }
 
