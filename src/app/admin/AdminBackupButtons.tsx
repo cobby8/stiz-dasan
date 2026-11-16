@@ -220,14 +220,7 @@ export default function AdminBackupButtons({ sheetRetired = false }: { sheetReti
             >
                 <span>전체 백업 지금 저장</span>
             </button>
-            <a
-                href="/api/admin/export-seed"
-                download="seed-data.ts"
-                className={`flex w-full min-h-11 items-center gap-3 rounded-lg px-4 py-2 text-sm transition-colors ${ROW_IDLE}`}
-            >
-                <span>seed 내보내기</span>
-            </a>
-            <p className="px-4 text-xs text-[var(--color-academy-faint)]">seed(프로그램·수업 칸 설정·이용약관)는 매일 자동 저장됩니다 — 누르지 않아도 됩니다. 버튼은 파일로 받아 두고 싶을 때만 쓰세요.</p>
+            <p className="px-4 text-xs text-[var(--color-academy-faint)]">프로그램·수업 칸 설정·이용약관(seed)은 매일 자동 저장됩니다 — 따로 내보낼 필요가 없습니다.</p>
             <p className="px-4 text-xs text-[var(--color-academy-faint)]">설정 + 학생·출결·청구·결제 등 업무 자료(별도 압축 파일) 백업 · 복원은 설정만(업무 자료는 보관용)</p>
             {msg && <p role="status" className={`break-all px-4 py-1 text-xs ${ok ? "text-[var(--color-academy-success)]" : "text-[var(--color-academy-warning)]"}`}>{msg}</p>}
         </div>

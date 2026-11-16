@@ -57,7 +57,7 @@ npx prisma generate                    # Prisma 클라이언트 재생성
 2. `npx prisma migrate dev --name <변경내용>` 실행 (로컬)
 3. 마이그레이션 파일 커밋
 4. Vercel 자동 배포 시 `npx prisma migrate deploy` 실행됨
-5. (할 일 없음) 핵심 데이터 스냅샷은 매일 자동 백업이 Storage 에 저장한다 — "seed 내보내기"·`seed-data.ts` 커밋은 필요 없다
+5. (할 일 없음) 핵심 데이터 스냅샷은 매일 자동 백업이 Storage 에 저장한다 — 내보내기·`seed-data.ts` 커밋은 필요 없다
 
 ---
 
@@ -94,7 +94,7 @@ curl -X POST https://<your-domain>/api/admin/seed
 - 매일 KST 자정 백업 cron 과 "지금 클라우드에 저장"이 같은 실행에서 저장한다: `seed/seed-latest.json` 덮어쓰기 + `seed/seed-<날짜>.json` 30일 보관. **사람이 할 일 없음.**
 - 직전 최신본보다 프로그램 수가 절반 미만으로 줄면 최신본을 덮어쓰지 않는다(날짜별 사본만 저장·로그). 실제로 그렇게 줄인 경우엔 `seed-latest.json` 을 손으로 바꾼다.
 - 마지막 저장 시각은 `/admin` 대시보드 "시스템 상태" → "핵심 데이터 자동 저장"에서 본다(이틀 넘게 없으면 경고).
-- "seed 내보내기" 버튼은 파일로 받아 두고 싶을 때만 쓴다.
+- 사이드바의 "seed 내보내기" 버튼은 없앴다(2026-11-16 원장 지시). `prisma/seed-data.ts` 는 2026-11-16 스냅샷으로 채워 둔 대비용이다.
 
 ---
 
@@ -132,7 +132,7 @@ src/
 │   │   ├── backup/             ← GET(다운로드) / POST(복원)
 │   │   ├── backup-now/         ← POST(즉시 클라우드 저장)
 │   │   ├── cloud-backups/      ← GET(목록) / POST(복원) / DELETE
-│   │   ├── export-seed/        ← GET(seed 스냅샷을 파일로 내려받기 — 선택)
+│   │   ├── export-seed/        ← GET(seed 스냅샷을 파일로 내려받기 — 화면 버튼 없음, 주소로만)
 │   │   └── seed/               ← POST(Storage 최신 seed 스냅샷으로 복구, 없으면 seed-data.ts)
 │   └── api/cron/backup/        ← GET(자동 백업, Vercel Cron)
 ├── lib/

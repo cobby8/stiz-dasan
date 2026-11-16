@@ -470,8 +470,9 @@ test('호출부는 날짜별 사본 저장 실패·30일 정리 실패·급감 �
 
 test('화면 — 사이드바는 «누르지 않아도 됩니다»를 알리고, 시스템 상태 카드는 자동 저장 시각을 보인다', () => {
   const buttons = read('../src/app/admin/AdminBackupButtons.tsx');
-  assert.match(buttons, /seed 내보내기/); // 수동 내려받기는 남긴다
-  assert.match(buttons, /매일 자동 저장됩니다 — 누르지 않아도 됩니다/);
+  // 2026-11-16 원장 «아예 내보내기가 없어도 되도록» — 사이드바에서 내보내기 버튼을 뺐다
+  assert.doesNotMatch(buttons, /seed 내보내기|export-seed/);
+  assert.match(buttons, /매일 자동 저장됩니다 — 따로 내보낼 필요가 없습니다/);
   assert.match(read('../src/app/api/admin/dashboard/system/route.ts'), /seedSnapshotAt/);
   const dashboard = read('../src/app/admin/AdminDashboardClient.tsx');
   assert.match(dashboard, /핵심 데이터 자동 저장/);
