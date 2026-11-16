@@ -273,7 +273,9 @@ export async function getChildRecord(parentUserId: string, studentId: string, db
     return { regular, others, driver };
   });
 
-  const [payments, attendance, timeline, seasonal, grant, reports, tenure] = await Promise.all([
+  // 유니폼 번호·신청 내역도 같은 묶음에서 함께 읽는다(2026-11-17 — 예전엔 이 묶음이 끝난 뒤 따로 다녀왔다).
+  // 섹션마다 따로 감싸져 있어, 번호 칸이 없는 환경이어도 다른 칸은 그대로 보인다
+  const [payments, attendance, timeline, seasonal, grant, reports, tenure, uniformNumbers, uniformOrders] = await Promise.all([
     section("payments", async () => {
       const rows = await db.$queryRawUnsafe<any[]>(
         `SELECT p.id, p.type, p.status, p.amount, p.year, p.month,
@@ -385,10 +387,6 @@ export async function getChildRecord(parentUserId: string, studentId: string, db
     }),
     // 다닌 기간 — 권한 확인을 통과한 학생에게만 부른다(getStudentTenure 는 권한을 보지 않는다)
     section("tenure", () => getStudentTenure(sid)),
-  ]);
-
-  // 유니폼 번호·신청 내역 — 따로 읽는다(번호 칸이 없는 환경이어도 다른 칸은 그대로 보이게)
-  const [uniformNumbers, uniformOrders] = await Promise.all([
     section("uniformNumbers", async () => {
       const rows = await db.$queryRawUnsafe<{ uniformNumber: string | null; teamUniformNumber: string | null }[]>(
         `SELECT s."uniformNumber", s."teamUniformNumber" FROM "Student" s WHERE s.id = $1 AND ${notMergedStudent("s")} LIMIT 1`,

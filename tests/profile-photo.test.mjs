@@ -462,6 +462,15 @@ test("④ 올리기: 비로그인은 401, 대상이 이상하면 400", async () 
   assert.equal((await route.DELETE(new Request("http://localhost/api/mypage/profile-photo?target=me", { method: "DELETE" }))).status, 401);
   assert.equal(state.sql.length, 0, "로그인 전에는 DB 를 읽지 않는다");
 
+  // 2026-11-17: 로그인 확인이 본문 읽기보다 먼저 — 비로그인 요청은 본문(파일)을 읽지 않고 401
+  let bodyRead = 0;
+  const lazy = { formData: async () => { bodyRead++; return new FormData(); } };
+  assert.equal((await route.POST(lazy)).status, 401);
+  assert.equal(bodyRead, 0, "비로그인이면 본문을 읽지 않는다");
+  const source = read("src/app/api/mypage/profile-photo/route.ts");
+  const post = source.slice(source.indexOf("export async function POST"), source.indexOf("export async function DELETE"));
+  assert.ok(post.indexOf("await signedInParent()") > 0 && post.indexOf("await signedInParent()") < post.indexOf("request.formData()"), "POST: 로그인 확인 → 본문 읽기 순서");
+
   state.actor = ACTORS.parentMe;
   assert.equal((await route.POST(await uploadRequest({ target: "admin" }, await pngFile()))).status, 400);
   assert.equal((await route.POST(await uploadRequest({ target: "me" }))).status, 400, "파일 없음");
@@ -697,6 +706,27 @@ test("⑥ 버튼 모양(홈 히어로·설정 «우리 아이»): 글자 버튼 
   assert.match(filled, />사진 바꾸기</);
   assert.doesNotMatch(filled, /<img|사진 지우기/);
   for (const html of [empty, filled]) assert.doesNotMatch(html, /material-symbols|<svg/);
+});
+
+test("⑥ 버튼 이름: 아이 이름을 넘기면 «{이름} 사진 올리기/바꾸기»로 읽힌다 — 안 넘기면 예전 그대로(2026-11-17)", () => {
+  const base = { target: "student", studentId: "kid-1", ownerId: "kid-1", name: "김하늘" };
+  for (const variant of ["button", "full"]) {
+    const empty = renderEditor({ ...base, variant, initialVersion: null, labelName: "김하늘" });
+    assert.match(empty, /<button[^>]*aria-label="김하늘 사진 올리기"[^>]*>사진 올리기</, variant);
+    const filled = renderEditor({ ...base, variant, initialVersion: "abc123", labelName: "김하늘" });
+    assert.match(filled, /<button[^>]*aria-label="김하늘 사진 바꾸기"[^>]*>사진 바꾸기</, variant);
+    // 이름을 넘기지 않은 기존 사용처 — aria-label 이 붙지 않는다(보이는 글자가 곧 이름)
+    const plain = renderEditor({ ...base, variant, initialVersion: null });
+    assert.doesNotMatch(plain, /aria-label="[^"]*사진 올리기"/, variant);
+    assert.doesNotMatch(renderEditor({ ...base, variant, initialVersion: null, labelName: "  " }), /aria-label="[^"]*사진 올리기"/, `${variant}: 빈 이름`);
+  }
+  // 형제 두 명 — 버튼 이름이 서로 다르다
+  const a = renderEditor({ ...base, variant: "button", initialVersion: null, labelName: "김하늘" });
+  const b = renderEditor({ ...base, variant: "button", initialVersion: null, labelName: "김바다", name: "김바다" });
+  assert.notEqual(a.match(/aria-label="([^"]*사진 올리기)"/)[1], b.match(/aria-label="([^"]*사진 올리기)"/)[1]);
+  // 설정 «우리 아이»·홈이 아이 이름을 넘긴다
+  assert.match(read("src/app/mypage/settings/page.tsx"), /<ProfilePhotoEditor variant="button" tone="tonal"[^>]*labelName=\{c\.name\}/);
+  assert.match(read("src/app/mypage/MyPageClient.tsx"), /<ProfilePhotoEditor key=\{child\.id\} variant="button"[^>]*labelName=\{child\.name\}/);
 });
 
 test("⑥ 화면 연결: 홈 히어로 64 + 늘 보이는 «사진 올리기» 버튼·자녀 칩 28, 아이 기록 제목 64·형제 칩 28·아이 정보 칸, 설정 맨 위 «우리 아이»·보호자 사진 칸 없음", () => {

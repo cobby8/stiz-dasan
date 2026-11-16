@@ -126,7 +126,7 @@ export default async function ParentSettingsPage() {
                                             <span className="block text-xs text-[var(--color-academy-muted)]">아이 정보 보기·수정 ›</span>
                                         </span>
                                     </Link>
-                                    <ProfilePhotoEditor variant="button" tone="tonal" target="student" studentId={c.id} ownerId={c.id} name={c.name} initialVersion={version} />
+                                    <ProfilePhotoEditor variant="button" tone="tonal" target="student" studentId={c.id} ownerId={c.id} name={c.name} initialVersion={version} labelName={c.name} />
                                 </li>
                             );
                         })}
@@ -145,7 +145,9 @@ export default async function ParentSettingsPage() {
                     {/* 번호 아래 한 줄 안내 — 큰 글자·좁은 화면에서도 번호가 잘리지 않게 */}
                     <span className="min-w-0 flex-1">
                         <span className="block tabular-nums text-[var(--color-academy-muted)]">{me?.phone ? formatPhoneInput(me.phone) : "없음"}</span>
-                        {/* 본인인증을 쓸 수 없는 환경 — «학원 문의» 글자만 두지 않고 문의 폼으로 바로 보낸다(자녀가 없어 폼이 없으면 학원 전화, 번호도 없으면 글자만) */}
+                        {/* 본인인증을 쓸 수 없는 환경 — «학원 문의» 글자만 두지 않고 문의 폼으로 바로 보낸다(자녀가 없어 폼이 없으면 학원 전화).
+                            학원 번호도 없으면 자녀 연결 화면으로 보낸다(2026-11-17) — 홈 문의 폼은 자녀가 연결된 계정에만 있어서,
+                            이 계정에 /mypage#parent-request-form 을 걸면 폼 없는 화면에 닿는다. 아래 «도움» 칸과 같은 길이다 */}
                         {canChangePhone ? (
                             <span className="block text-xs text-[var(--color-academy-faint)]">본인 명의 휴대폰 인증 후 바뀌어요</span>
                         ) : childRows.length > 0 ? (
@@ -153,7 +155,7 @@ export default async function ParentSettingsPage() {
                         ) : academyPhone ? (
                             <a href={`tel:${academyTel(academyPhone)}`} className="inline-flex min-h-11 items-center text-xs tabular-nums text-[var(--color-academy-muted)] underline">변경은 학원 전화 {academyPhone}</a>
                         ) : (
-                            <span className="block text-xs text-[var(--color-academy-faint)]">변경은 학원 문의</span>
+                            <Link href="/mypage/children" className="inline-flex min-h-11 items-center text-xs text-[var(--color-academy-muted)] underline">자녀를 연결하면 변경을 요청할 수 있어요</Link>
                         )}
                     </span>
                     <PhoneChangeButton enabled={canChangePhone} nameOk={looksLikeLegalName(me?.name ?? parent.appUserName)} onSettingsPage label="바꾸기" className="academy-button-secondary shrink-0" />

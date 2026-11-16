@@ -27,6 +27,7 @@ export default function ProfilePhotoEditor({
   initialVersion,
   variant = "full",
   tone = "secondary",
+  labelName,
 }: {
   /**
    * full = 사진 + 올리기·바꾸기·지우기 + 안내(아이 기록 «아이 정보» 칸).
@@ -45,6 +46,12 @@ export default function ProfilePhotoEditor({
   name: string;
   /** 지금 사진의 캐시 버전(없으면 null = 사진 없음) */
   initialVersion: string | null;
+  /**
+   * 버튼의 읽어 주는 이름에 붙일 아이 이름(선택, 2026-11-17) — «김하늘 사진 올리기».
+   * 아이가 둘 이상인 화면(설정 «우리 아이»·홈)에서 같은 «사진 올리기» 버튼이 누구 것인지 구분되게 한다.
+   * 넘기지 않으면 예전처럼 보이는 글자가 그대로 이름이다(기존 사용처 불변).
+   */
+  labelName?: string;
 }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -57,6 +64,9 @@ export default function ProfilePhotoEditor({
   const version = changed ? changed.version : initialVersion;
   const owner: ProfilePhotoOwner = { kind: target === "student" ? "student" : "user", id: ownerId };
   const hasPhoto = Boolean(version);
+  // 올리기 버튼의 보이는 글자 — 읽어 주는 이름(aria-label)도 이 글자를 그대로 품는다(«{이름} 사진 올리기»)
+  const uploadText = busy ? "올리는 중" : hasPhoto ? "사진 바꾸기" : "사진 올리기";
+  const uploadLabel = labelName?.trim() ? `${labelName.trim()} ${busy ? "사진 올리는 중" : uploadText}` : undefined;
 
   async function upload(file: File) {
     setBusy(true);
@@ -140,8 +150,8 @@ export default function ProfilePhotoEditor({
     return (
       <div className="flex shrink-0 flex-col items-end">
         {fileInput}
-        <button type="button" onClick={() => inputRef.current?.click()} disabled={busy} className={`${tone === "tonal" ? "academy-button-tonal" : "academy-button-secondary"} min-h-11! whitespace-nowrap`}>
-          {busy ? "올리는 중" : hasPhoto ? "사진 바꾸기" : "사진 올리기"}
+        <button type="button" onClick={() => inputRef.current?.click()} disabled={busy} className={`${tone === "tonal" ? "academy-button-tonal" : "academy-button-secondary"} min-h-11! whitespace-nowrap`} aria-label={uploadLabel}>
+          {uploadText}
         </button>
         {status && (
           <p role={status.tone === "error" ? "alert" : "status"} className={`mt-1 max-w-[11rem] break-keep text-right text-xs font-medium ${TONE_CLASS[status.tone]}`}>
@@ -172,8 +182,8 @@ export default function ProfilePhotoEditor({
             </div>
           ) : (
             <div className="flex flex-wrap items-center gap-2">
-              <button type="button" onClick={() => inputRef.current?.click()} disabled={busy} className="academy-button-secondary min-h-11!">
-                {busy ? "올리는 중" : hasPhoto ? "사진 바꾸기" : "사진 올리기"}
+              <button type="button" onClick={() => inputRef.current?.click()} disabled={busy} className="academy-button-secondary min-h-11!" aria-label={uploadLabel}>
+                {uploadText}
               </button>
               {hasPhoto && (
                 <button type="button" onClick={() => { setConfirming(true); setStatus(null); }} disabled={busy} className="academy-button-text min-h-11!">
