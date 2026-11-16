@@ -665,13 +665,18 @@ function BookMakeupModal({
         }
         setBusy(true);
         try {
-            await bookMakeupSession({
+            const result = await bookMakeupSession({
                 studentId,
                 originalClassId,
                 originalDate,
                 makeupClassId,
                 makeupDate,
             });
+            // 정원 초과·이월로 정산한 결석 — 저장되지 않았다. 서버가 돌려준 한글 사유를 보이고 창은 그대로 둔다
+            if (!result.ok) {
+                showNotice(result.message);
+                return;
+            }
             await onSuccess();
         } catch (e: any) {
             showNotice(adminErrorText(e, "보강 예약 실패"));
