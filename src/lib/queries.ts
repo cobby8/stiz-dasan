@@ -2054,7 +2054,7 @@ export async function getStudentActivity(studentId: string) {
             `SELECT s.id, s.name, s."birthDate", s.gender, s.memo, s."parentId",
                     s.phone, s.school, s.grade, s.address, s."enrollDate",
                     s."uniformStatus", s."uniformAppliedAt", s."uniformOrderedAt",
-                    s."uniformReceivedAt", s."uniformSource", s."uniformNote",
+                    s."uniformReceivedAt", s."uniformSource", s."uniformNote", s."uniformNumber", s."teamUniformNumber",
                     s."createdAt", s."updatedAt",
                     -- 프로필 사진 바꾼 시각(사진 있을 때만) — 학생 상세 머리 사진의 캐시 버전(2026-11-14)
                     ${profilePhotoUpdatedAtSql("s")} AS "photoUpdatedAt",
@@ -2207,6 +2207,9 @@ export async function getStudentActivity(studentId: string) {
                 uniformReceivedAt: r.uniformReceivedAt ?? r.uniformreceivedat ?? null,
                 uniformSource: r.uniformSource ?? r.uniformsource ?? null,
                 uniformNote: r.uniformNote ?? r.uniformnote ?? null,
+                // 유니폼 번호(등번호) — 취미반·대표팀 두 칸. 숫자 글자("0" 도 번호), 없으면 null
+                uniformNumber: r.uniformNumber ?? r.uniformnumber ?? null,
+                teamUniformNumber: r.teamUniformNumber ?? r.teamuniformnumber ?? null,
                 createdAt: r.createdAt ?? r.createdat,
                 // 프로필 사진 캐시 버전(사진 없으면 null → 화면은 이름 첫 글자)
                 photoVersion: profilePhotoVersion(r.photoUpdatedAt ?? r.photoupdatedat ?? null),

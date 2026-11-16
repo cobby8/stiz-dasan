@@ -33,6 +33,7 @@ import {
 import { findOverCapacityClasses } from "@/lib/enrollment/class-capacity";
 import { upsertStudentShuttleLocation } from "@/lib/students/student-shuttle-location-upsert";
 import { UNIFORM_STATUS_VALUES } from "@/lib/students/student-register-rules";
+import { normalizeUniformNumber } from "@/lib/students/uniform-number";
 import { approvalAuthFetch, isActiveApprovalAuthUser, listApprovalParentCandidates, ParentSelectionRequired, reopenEnrollmentForReview, resolveApprovalParent } from "@/lib/enrollment/approval-parent";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isUsablePhoneKey, parentPhoneDigits } from "@/lib/enrollment/parentIdentity";
@@ -1179,21 +1180,29 @@ export async function updateStudentUniform(id: string, data: {
     receivedAt?: string | null;
     source?: string | null;
     note?: string | null;
+    number?: string | null;
+    teamNumber?: string | null;
 }) {
     await requireAdmin();
     // 허용값은 새 «원생 등록» 창과 같은 목록 한 곳(student-register-rules)
     const allowed = new Set<string>(UNIFORM_STATUS_VALUES);
     if (data.status && !allowed.has(data.status)) throw new Error("유니폼 상태값이 올바르지 않습니다.");
+    // 유니폼 번호(등번호) — 취미반·대표팀 두 칸. 숫자만·최대 3자, 비우면 null("0" 은 번호라 그대로 저장).
+    // 화면 입력칸과 같은 규칙 함수로 서버에서 다시 본다
+    const uniformNumber = normalizeUniformNumber(data.number, "취미반 번호");
+    if (!uniformNumber.ok) throw new Error(uniformNumber.error);
+    const teamUniformNumber = normalizeUniformNumber(data.teamNumber, "대표팀 번호");
+    if (!teamUniformNumber.ok) throw new Error(teamUniformNumber.error);
     try {
         await prisma.$executeRawUnsafe(
             `UPDATE "Student" SET "uniformStatus" = $1,
                     "uniformAppliedAt" = $2::timestamptz,
                     "uniformOrderedAt" = $3::timestamptz,
                     "uniformReceivedAt" = $4::timestamptz,
-                    "uniformSource" = $5, "uniformNote" = $6, "updatedAt" = NOW()
-             WHERE id = $7`,
+                    "uniformSource" = $5, "uniformNote" = $6, "uniformNumber" = $7, "teamUniformNumber" = $8, "updatedAt" = NOW()
+             WHERE id = $9`,
             data.status || null, data.appliedAt || null, data.orderedAt || null,
-            data.receivedAt || null, data.source || null, data.note || null, id,
+            data.receivedAt || null, data.source || null, data.note || null, uniformNumber.value, teamUniformNumber.value, id,
         );
     } catch (e) {
         console.error("Failed to update student uniform:", e);

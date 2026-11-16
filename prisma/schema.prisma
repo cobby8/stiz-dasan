@@ -206,6 +206,8 @@ model Student {
   uniformReceivedAt        DateTime? // 학원 수령일
   uniformSource            String? // 정보 출처(신청서/가입신청서/사이트주문)
   uniformNote              String? // 대조 메모
+  uniformNumber            String? // 취미반 유니폼 번호(등번호) — 숫자 글자 그대로("0"·"23"), 없으면 null
+  teamUniformNumber        String? // 대표팀 유니폼 번호(등번호) — 숫자 글자 그대로, "0" 도 번호다. 없으면 null
   basketballExp            String? // 농구 경험
   hopeNote                 String? // 바라는 점
   agreementsJSON           String                        @default("{}") // 개인정보/이용약관/주의사항 동의 원본
