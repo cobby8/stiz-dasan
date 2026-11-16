@@ -1,17 +1,17 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import dynamic from "next/dynamic";
 import Link from "next/link";
-import type { SessionInitialData } from "./SessionLogModal";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import ProfileAvatar from "@/components/common/ProfileAvatar";
 import { profilePhotoUrl } from "@/lib/profilePhoto/rules";
-import { showNotice } from "@/components/ui/feedback";
 
-const SessionLogModal = dynamic(() => import("./SessionLogModal"), {
-    loading: () => null,
-});
+// 수업 기록을 고치는 길은 하나다(2026-11-17 원장 결정 — 이 화면에 있던 «수업 기록» 창을 없앴다).
+//   새 기록 = 출결 화면에서 출석을 저장하면 그 반·그 날짜 기록이 만들어진다.
+//   고치기 = 리포트 편집 화면(주제·내용·사진·코치·학생별 코멘트·학부모 발행).
+// 출결 화면은 반·날짜를 주소로 받지 않아 첫 화면으로 보낸다.
+const ATTENDANCE_HREF = "/admin/attendance";
+const reportEditHref = (sessionId: string) => `/admin/attendance/report/${encodeURIComponent(sessionId)}`;
 
 // 요일 한글 변환 맵
 const DAY_LABELS: Record<string, string> = {
@@ -163,12 +163,6 @@ export default function ClassDetailClient({
     );
     // 현재 활성 탭 상태 관리
     const [activeTab, setActiveTab] = useState<TabKey>("students");
-    // SessionLogModal 표시 여부
-    const [showSessionLog, setShowSessionLog] = useState(false);
-    // 수정 모드일 때 기존 세션 데이터 (null이면 신규 모드)
-    const [editingSession, setEditingSession] = useState<SessionInitialData | null>(null);
-    // 세션 상세 로딩 상태
-    const [loadingSession, setLoadingSession] = useState(false);
 
     const loadDetail = useCallback(async () => {
         if (!classId) {
@@ -197,33 +191,6 @@ export default function ClassDetailClient({
         void loadDetail();
     }, [classId, detail, loadDetail]);
 
-    // 수업 기록 추가 (신규 모드)
-    const handleAddSession = useCallback(() => {
-        setEditingSession(null);
-        setShowSessionLog(true);
-    }, []);
-
-    // 수업 기록 수정 (수정 모드 — API로 상세 데이터 가져오기)
-    const handleEditSession = useCallback(async (sessionId: string) => {
-        setLoadingSession(true);
-        try {
-            const res = await fetch(`/api/admin/session-detail?sessionId=${sessionId}`);
-            if (!res.ok) throw new Error("세션 데이터를 불러올 수 없습니다");
-            const data = await res.json();
-            setEditingSession(data as SessionInitialData);
-            setShowSessionLog(true);
-        } catch (err) {
-            showNotice("세션 데이터를 불러오는 데 실패했습니다.");
-        } finally {
-            setLoadingSession(false);
-        }
-    }, []);
-
-    // 저장 후 콜백 — 전체 페이지 대신 상세 데이터만 새로고침
-    const handleSaved = useCallback(() => {
-        void loadDetail();
-    }, [loadDetail]);
-
     if (!detail && detailLoading) {
         return <ClassDetailLoadingSkeleton />;
     }
@@ -237,7 +204,7 @@ export default function ClassDetailClient({
         );
     }
 
-    const { classData, sessions, coaches } = detail;
+    const { classData, sessions } = detail;
 
     // 탭 정의 — 라벨 + 카운트(아이콘 없이 글자로 말한다)
     const tabs: { key: TabKey; label: string; count?: number }[] = [
@@ -339,37 +306,9 @@ export default function ClassDetailClient({
             {/* ── 탭 콘텐츠 ── */}
             <div>
                 {activeTab === "students" && <StudentsTab students={classData.students} />}
-                {activeTab === "sessions" && (
-                    <SessionsTab
-                        sessions={sessions}
-                        onAddSession={handleAddSession}
-                        onEditSession={handleEditSession}
-                        loadingSession={loadingSession}
-                    />
-                )}
+                {activeTab === "sessions" && <SessionsTab sessions={sessions} />}
                 {activeTab === "attendance" && <AttendanceTab sessions={sessions} />}
             </div>
-
-            {/* 수업 기록 모달 (신규/수정 모드) */}
-            {showSessionLog && (
-                <SessionLogModal
-                    isOpen={showSessionLog}
-                    onClose={() => {
-                        setShowSessionLog(false);
-                        setEditingSession(null);
-                    }}
-                    classId={classData.id}
-                    initialData={editingSession ?? undefined}
-                    coaches={coaches.map((c) => ({ id: c.id, name: c.name }))}
-                    students={classData.students.map((s) => ({
-                        id: s.studentId,
-                        name: s.studentName,
-                        gender: s.gender,
-                        startsOn: s.startsOn,
-                    }))}
-                    onSaved={handleSaved}
-                />
-            )}
         </div>
     );
 }
@@ -432,23 +371,21 @@ function StudentsTab({ students }: { students: ClassData["students"] }) {
 // ────────────────────────────────────────────────────────────────────────────
 // 수업 기록 탭
 // ────────────────────────────────────────────────────────────────────────────
-function SessionsTab({ sessions, onAddSession, onEditSession, loadingSession }: {
-    sessions: SessionRow[];
-    onAddSession: () => void;
-    onEditSession: (sessionId: string) => void;
-    loadingSession: boolean;
-}) {
+function SessionsTab({ sessions }: { sessions: SessionRow[] }) {
     return (
         <div className="space-y-4">
-            {/* 상단: 수업 기록 추가 버튼 */}
-            <div className="flex justify-end">
-                <button
-                    type="button"
-                    onClick={onAddSession}
-                    className="academy-button-primary"
+            {/* 상단: 새 기록은 출결 화면에서 만든다 — 어디로 가는지 버튼 글자와 안내 한 줄로 알린다 */}
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                <p className="min-w-0 break-keep text-sm text-[var(--color-academy-muted)]">
+                    수업 기록은 출결 화면에서 출석을 저장하면 만들어집니다. 주제·내용·사진은 아래 기록을 눌러 리포트 편집에서 고칩니다.
+                </p>
+                <Link
+                    href={ATTENDANCE_HREF}
+                    prefetch={false}
+                    className="academy-button-primary academy-button-sm shrink-0"
                 >
-                    수업 기록 추가
-                </button>
+                    출결 화면에서 기록하기
+                </Link>
             </div>
 
             {sessions.length === 0 ? (
@@ -478,12 +415,12 @@ function SessionsTab({ sessions, onAddSession, onEditSession, loadingSession }: 
                         }
 
                         return (
-                            <div
+                            // 기록 한 칸 전체가 리포트 편집 화면으로 가는 링크(예전처럼 칸 어디를 눌러도 된다)
+                            <Link
                                 key={s.id}
-                                onClick={() => onEditSession(s.id)}
-                                className={`bg-white rounded-2xl shadow-sm border border-[var(--color-academy-line)] p-4 flex gap-4 hover:shadow-md transition cursor-pointer ${
-                                    loadingSession ? "opacity-50 pointer-events-none" : ""
-                                }`}
+                                href={reportEditHref(s.id)}
+                                prefetch={false}
+                                className="bg-white rounded-2xl shadow-sm border border-[var(--color-academy-line)] p-4 flex gap-4 hover:shadow-md transition"
                             >
                                 {/* 사진 썸네일 — 사진이 있을 때만 표시 */}
                                 {firstPhotoUrl && (
@@ -529,7 +466,11 @@ function SessionsTab({ sessions, onAddSession, onEditSession, loadingSession }: 
                                         </span>
                                     </div>
                                 </div>
-                            </div>
+                                {/* 가는 곳을 글자로 — 칸 전체가 링크라 여기는 모양만 버튼 */}
+                                <span className="academy-button-secondary academy-button-sm shrink-0 self-center">
+                                    리포트 편집
+                                </span>
+                            </Link>
                         );
                     })}
                 </div>

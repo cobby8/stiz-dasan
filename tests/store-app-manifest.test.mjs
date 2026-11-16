@@ -56,7 +56,7 @@ test("통합 앱 manifest 가 스토어 도구가 요구하는 값을 갖춘다"
 test("시작 주소는 표식을 찍고 역할 판별 화면으로 넘긴다", () => {
   assert.ok(fs.existsSync("src/app/store-app/page.tsx"));
   const markAt = startPage.indexOf("markStoreApp()");
-  const goAt = startPage.indexOf('window.location.replace("/auth/continue")');
+  const goAt = startPage.indexOf("window.location.replace(destination)");
   assert.ok(markAt > 0 && goAt > markAt, "표식을 먼저 찍고 넘어가야 한다");
 });
 

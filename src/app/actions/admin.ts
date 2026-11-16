@@ -3,11 +3,13 @@
 import { commencementYmd, requireCommencement } from "@/lib/enrollment/commencement";
 import { sendEnrollGuideIfEnabled } from "@/lib/trial-fee/guideSender";
 import { childAccessWhere } from "@/lib/account/child-access";
+// 랠리즈 피드 이관 수업은 발행해도 학부모 알림 없음(선생님 발행 경로와 같은 판정)
+import { isImportedSessionForNotice } from "@/lib/feed/importedSession";
 
 import { createHash } from "crypto";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { assertRegularMakeupAllowed, assertMakeupSessionAllowed, CompensationConflict, lockCompensation } from "@/lib/billing/absence-compensation-guard";
+import { assertRegularMakeupAllowed, assertMakeupSessionAllowed, CompensationConflict, lockCompensation, type CompensationTransaction } from "@/lib/billing/absence-compensation-guard";
 import { isKstYmd, kstAt, todayKst } from "@/lib/datetime/kst";
 // 관리자 출결 저장의 학부모 알림 = 선생님 화면과 같은 규칙·같은 발송 함수
 import { attendanceNoticePayload, pickAttendanceNoticeTargets } from "@/lib/attendance/attendanceNoticeRules";
@@ -79,7 +81,6 @@ import {
     deleteCalendarEvent,
 } from "@/lib/googleCalendarWrite";
 import { publishGalleryPostToInstagram } from "@/lib/instagram";
-import { syncInstagramGalleryPostsToDb } from "@/lib/instagramGallerySync";
 import { ACADEMY_SETTINGS_CACHE_TAG, getAcademySettings, getMakeupSlotAvailability } from "@/lib/queries";
 import {
     activeMakeupSql,
@@ -179,7 +180,7 @@ import { recordApplicationContactAtomically } from "@/lib/application-contact-tr
 import { sessionDateForKorea } from "@/lib/seasonal/session-bridge";
 import { absencePlanMessage, applyAttendanceAbsenceReasonInTx } from "@/lib/regular/attendance-absence-reason";
 import { syncCreditForRegularSession, syncCreditForSeasonalSeat } from "@/lib/makeup/credit-service";
-import { findOrCreateRegularSession, resolveSessionLogTarget } from "@/lib/regular/regularSession";
+import { findOrCreateRegularSession } from "@/lib/regular/regularSession";
 import { buildEnrollmentOperationsEvent } from "@/lib/operations-events/admin-hooks";
 import { enqueueWebsiteOperationsEventInTransaction } from "@/lib/operations-events";
 
@@ -2658,21 +2659,6 @@ export async function createGalleryPost(data: {
     revalidatePath("/");
 }
 
-export async function syncInstagramGalleryPosts() {
-    await requireAdmin();
-    const settings = await getAcademySettings() as any;
-    const result = await syncInstagramGalleryPostsToDb({
-        businessAccountId: settings.instagramBusinessAccountId,
-        limit: 25,
-    });
-
-    revalidatePath("/admin/gallery");
-    revalidateGalleryAdminCaches();
-    revalidatePath("/gallery");
-    revalidatePath("/");
-    return result;
-}
-
 export async function updateGalleryPost(id: string, data: {
     classId?: string | null;
     title?: string | null;
@@ -3570,90 +3556,9 @@ async function insertGuardians(
     }
 }
 
-// ── 수업 기록 저장 (세션 + 출석 일괄) ─────────────────────────────────────────
-
-/**
- * saveSessionLog: 수업 기록(Session)과 출석(Attendance)을 한번에 저장하는 통합 Server Action
- *
- * - 기존 saveAttendance는 출석만 저장하지만, 이 함수는 수업 주제/내용/사진/코치 + 출석을 함께 저장
- * - Session이 이미 있으면 UPDATE, 없으면 INSERT (classId + date 기준)
- * - attendances가 전달되면 각 학생에 대해 Attendance UPSERT
- * - PgBouncer 호환을 위해 $queryRawUnsafe / $executeRawUnsafe만 사용
- */
-export async function saveSessionLog(data: {
-    classId: string;
-    date: string;           // ISO 날짜 문자열
-    topic?: string;         // 수업 주제
-    content?: string;       // 수업 상세 내용
-    photosJSON?: string;    // 사진 URL 배열 JSON 문자열 (클라이언트에서 JSON.stringify 완료)
-    coachId?: string;       // 담당 코치 ID
-    sessionId?: string;     // 수정 모드: 고칠 기록 id(방학특강 회차 기록일 수도 있다). 없으면 새로 작성
-    attendances?: Array<{   // 출석 데이터 (선택)
-        studentId: string;
-        status: string;     // PRESENT, ABSENT, LATE
-    }>;
-}) {
-    await requireAdmin();
-    try {
-        if (data.attendances?.length) {
-            const eligible = await prisma.$queryRawUnsafe<Array<{ studentId: string }>>(
-                `SELECT e."studentId" FROM "Enrollment" e WHERE e."classId"=$1 AND e.status='ACTIVE'
-             AND (e."startsOn" IS NULL OR e."startsOn" <= $2::date OR EXISTS (
-               SELECT 1 FROM "Attendance" historical JOIN "Session" prior ON prior.id=historical."sessionId"
-               WHERE historical."studentId"=e."studentId" AND prior."classId"=$1 AND prior.date::date=$2::date
-             ))`, data.classId, data.date,
-            );
-            const ids = new Set(eligible.map(row => row.studentId));
-            if (data.attendances.some(row => !ids.has(row.studentId))) throw new Error("수강 개시일 전이거나 이 수업 명단에 없는 학생입니다.");
-        }
-        // ── 1~3. 고칠 기록을 정하고 내용을 덮어쓴다 ──
-        // 수정: 화면이 고른 기록(이 반 것인지 확인) 그대로 — 방학특강 회차 기록을 고칠 때 정규 기록이 새로 생기지 않게.
-        // 새로 작성: 같은 반·같은 날 기록을 찾거나 만든다(코치 앱·출결 화면과 같은 판정 함수 findOrCreateRegularSession).
-        const { sessionId, isSeasonal } = await prisma.$transaction(async tx => {
-            const id = await resolveSessionLogTarget(tx, { classId: data.classId, dateYmd: data.date, sessionId: data.sessionId });
-            // 방학특강 회차 기록인지 — 맞으면 아래 4단계(정규반 출석 저장)를 건너뛴다.
-            const kind = await tx.$queryRawUnsafe<Array<{ seasonal: boolean }>>(
-                `SELECT ("specialProgramSessionDateId" IS NOT NULL) AS seasonal FROM "Session" WHERE id = $1`,
-                id,
-            );
-            await tx.$executeRawUnsafe(
-                `UPDATE "Session" SET
-                    topic = $1, content = $2, "photosJSON" = $3, "coachId" = $4, "updatedAt" = NOW()
-                 WHERE id = $5`,
-                data.topic || null,
-                data.content || null,
-                data.photosJSON || null,
-                data.coachId || null,
-                id,
-            );
-            return { sessionId: id, isSeasonal: kind[0]?.seasonal === true };
-        });
-
-        // ── 4. 출석 데이터가 있으면 각 학생별 Attendance UPSERT ──
-        // 기존 saveAttendance와 동일한 ON CONFLICT 패턴 사용
-        // ⚠️ 방학특강 회차 기록에는 정규반 명단 출석을 넣지 않는다.
-        //    넣으면 특강을 신청하지 않은 정규반 아이들이 «출석»으로 남고,
-        //    출석이 생긴 회차는 특강 날짜를 지우거나 옮길 수 없게 막힌다(session-bridge).
-        if (!isSeasonal && data.attendances && data.attendances.length > 0) {
-            for (const rec of data.attendances) {
-                await prisma.$executeRawUnsafe(
-                    `INSERT INTO "Attendance" (id, "sessionId", "studentId", status, "createdAt", "updatedAt")
-                     VALUES (gen_random_uuid()::text, $1, $2, $3, NOW(), NOW())
-                     ON CONFLICT ("sessionId", "studentId") DO UPDATE SET status = $3, "updatedAt" = NOW()`,
-                    sessionId, rec.studentId, rec.status
-                );
-            }
-        }
-
-        // ── 5. 캐시 무효화 ──
-        revalidatePath("/admin/classes");
-
-        return { success: true, sessionId };
-    } catch (e) {
-        console.error("Failed to save session log:", e);
-        throw new Error("수업 기록 저장 실패");
-    }
-}
+// ── (삭제됨 2026-11-17) 수업 기록 저장(saveSessionLog) ─────────────────────────
+// 반 상세의 «수업 기록» 창을 없애면서 함께 지웠다(원장 결정 — 같은 기록을 고치는 길을 하나로).
+// 새 기록 = 출결 저장(saveAttendance)이 만든다 / 주제·내용·사진·코치 = saveSessionReport(리포트 편집).
 
 // ── (삭제됨 2026-10-06) 시간표 슬롯 → Class 동기화 ─────────────────────────────
 // syncScheduleToClasses / getClassSyncPreview 는 화면·API 어디서도 부르지 않아 지웠다(Phase 2 시트 종료).
@@ -4709,7 +4614,7 @@ export async function ensureReportColumns() {
 
 /**
  * 세션 리포트 저장 (수업 주제/내용/사진 + published 상태)
- * - 기존 saveSessionLog와 유사하지만, published/publishedAt 필드도 저장
+ * - 기록 id 로만 고친다 — 방학특강 회차 기록도 그 기록만 고쳐지고 출석(Attendance)은 건드리지 않는다
  * - 기존 Session이 있으면 UPDATE, 없으면 INSERT하지 않음 (출결이 먼저 기록되어야 함)
  */
 export async function saveSessionReport(data: {
@@ -4762,7 +4667,8 @@ export async function publishSessionReport(sessionId: string, publish: boolean) 
             );
 
             // 해당 세션에 출석한 학생 ID 목록 조회 → 학부모 알림
-            const students = await prisma.$queryRawUnsafe<any[]>(
+            // 랠리즈 피드 이관 수업(몇 달 전 수업)은 알림 없이 발행만 한다(2026-11-16 원장 «학부모 알림 금지»)
+            const students = await isImportedSessionForNotice(sessionId) ? [] : await prisma.$queryRawUnsafe<any[]>(
                 `SELECT DISTINCT "studentId" FROM "Attendance" WHERE "sessionId" = $1`,
                 sessionId,
             );
@@ -5602,9 +5508,18 @@ export async function loadMakeupSlotAvailability(input: {
  * 저장 직전 정원 재검증 — 화면에서 본 잔여석과 실제 저장 시점 사이에
  * 다른 예약이 들어올 수 있으므로 서버에서 한 번 더 확인한다.
  * 수강 인원 판정은 출결 화면과 동일(ACTIVE Enrollment + 통합 학생 제외).
+ *
+ * db 인자(2026-11-17): 기본은 전역 prisma(트랜잭션 밖 «미리 확인»). bookMakeupSession 은 잠금 뒤에
+ * 트랜잭션 클라이언트(tx)를 넘겨 한 번 더 부른다 — 그때는 두 쿼리 모두 넘겨받은 연결(tx)로만 센다.
+ * 전역 prisma 로 세면 트랜잭션이 연결 하나를 쥔 채 풀에서 두 번째 연결을 또 기다리게 되어,
+ * 서버당 연결 한도(10)에서 서로 막힐 수 있다.
  */
-async function assertMakeupSeatAvailable(makeupClassId: string, makeupDate: string) {
-    const rows = await prisma.$queryRawUnsafe<any[]>(
+async function assertMakeupSeatAvailable(
+    makeupClassId: string,
+    makeupDate: string,
+    db: CompensationTransaction = prisma,
+) {
+    const rows = await db.$queryRawUnsafe<any[]>(
         `SELECT c.capacity,
                 (SELECT COUNT(*)::int
                    FROM "Enrollment" e
@@ -5621,7 +5536,7 @@ async function assertMakeupSeatAvailable(makeupClassId: string, makeupDate: stri
     // MakeupSession 테이블이 아직 없을 수 있다 → 없으면 활성 보강 0건으로 본다.
     let bookedMakeups = 0;
     try {
-        const booked = await prisma.$queryRawUnsafe<any[]>(
+        const booked = await db.$queryRawUnsafe<any[]>(
             `SELECT COUNT(*)::int AS booked
                FROM "MakeupSession" ms
               WHERE ms."makeupClassId" = $1
@@ -5633,6 +5548,10 @@ async function assertMakeupSeatAvailable(makeupClassId: string, makeupDate: stri
         );
         bookedMakeups = Number(booked[0]?.booked ?? 0);
     } catch (e) {
+        // 트랜잭션 안에서는 삼키지 않는다 — 실패한 쿼리가 트랜잭션 전체를 중단시켜(«current transaction is aborted»)
+        // 0건으로 보고 넘어가도 뒤의 INSERT 가 어차피 실패한다. 그대로 던져 예약을 되돌린다.
+        // (bookMakeupSession 은 맨 앞에서 ensureMakeupSessionTable 을 부르므로 표가 없을 일은 없다)
+        if (db !== prisma) throw e;
         console.warn("[assertMakeupSeatAvailable] makeup count skipped:", (e as Error).message);
     }
 
@@ -5664,6 +5583,10 @@ export async function bookMakeupSession(data: {
     try {
         await prisma.$transaction(async tx => {
             await lockCompensation(tx);
+            // 잠금 뒤 정원 재확인(2026-11-17) — 위의 «미리 확인»은 잠금 밖이라, 마지막 한 자리에 두 예약이
+            // 동시에 오면 둘 다 통과해 정원을 1명 넘길 수 있었다. 여기는 lockCompensation(작업대 잠금) 뒤라
+            // 예약이 한 줄로 서므로, 같은 연결(tx)로 다시 세면 초과 예약이 생기지 않는다(학부모 예약 길과 같은 생각).
+            await assertMakeupSeatAvailable(data.makeupClassId, data.makeupDate, tx);
             await assertRegularMakeupAllowed(tx, { studentId: data.studentId, classId: data.originalClassId, dateYmd: data.originalDate.slice(0, 10) });
             await tx.$executeRawUnsafe(
             `INSERT INTO "MakeupSession"
@@ -5679,6 +5602,8 @@ export async function bookMakeupSession(data: {
         });
     } catch (e) {
         if (e instanceof CompensationConflict) throw e;
+        // 잠금 뒤 재확인에서 자리가 없으면 «미리 확인»과 똑같은 문구가 원장에게 보여야 한다
+        if (e instanceof Error && e.message === MAKEUP_CAPACITY_FULL_MESSAGE) throw e;
         console.error("Failed to book makeup session:", e);
         throw new Error("보강 예약 실패");
     }

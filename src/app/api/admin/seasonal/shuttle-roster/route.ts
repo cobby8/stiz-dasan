@@ -5,6 +5,7 @@ import {
   updateConfirmedShuttleRosterRow,
   removeConfirmedShuttleRosterRow,
   restoreConfirmedShuttleRosterRow,
+  removedShuttleRosterRows,
   shuttleRosterConfirmationInfo,
   isShuttleRequestConfirmed,
   setConfirmedShuttleRideByRequestId,
@@ -28,6 +29,8 @@ function knownFailure(e: unknown): { status: number; message: string } | null {
   const msg = String((e as { message?: string })?.message ?? "");
   if (/원장|권한|로그인|인증|Unauthorized|Forbidden/i.test(msg)) return { status: 403, message: msg };
   if (/좌표/.test(msg)) return { status: 400, message: msg };
+  // 수강이 취소된 학생은 되돌릴 수 없다(게이트웨이가 거부) — 지금 상태와 맞지 않는 요청이라 409.
+  if (/수강이 취소된/.test(msg)) return { status: 409, message: msg };
   return null;
 }
 
@@ -39,9 +42,13 @@ export async function GET() {
     // 행에서만 읽으면 전원 제외 상태에서 목록이 비어 "확정 전"으로 되돌아가 보인다.
     // 둘 중 하나라도 확정이라고 하면 확정으로 본다(어긋날 때 안전한 쪽).
     const confirmed = info.confirmed || roster.some((r) => r.origin === "CONFIRMED");
+    // roster 키는 기존 형태 그대로 유지한다(화면이 이미 쓰고 있다).
+    const base = { roster, confirmed, confirmedCount: info.count, confirmedAt: info.confirmedAt };
+    // 확정 명단에서 뺀 학생 목록 — 새 키로만 덧붙인다(기존 키의 모양·값은 그대로).
+    // 확정 모드가 꺼져 있거나 표가 없으면 빈 배열이다.
+    const removed = await removedShuttleRosterRows();
     return NextResponse.json(
-      // roster 키는 기존 형태 그대로 유지한다(화면이 이미 쓰고 있다).
-      { roster, confirmed, confirmedCount: info.count, confirmedAt: info.confirmedAt },
+      { ...base, removed },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (e) {

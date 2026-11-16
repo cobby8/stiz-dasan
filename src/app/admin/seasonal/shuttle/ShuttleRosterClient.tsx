@@ -5,8 +5,19 @@ import { useMemo, useState } from "react";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
 import StudentDetailModal from "@/components/seasonal/StudentDetailModal";
 import type { ShuttleRosterRow } from "@/lib/seasonal/shuttle-roster";
-import { rosterPatchTarget } from "@/lib/seasonal/shuttleRosterEdit";
+import { rosterPatchTarget, removedReasonLabel, restoreConfirmMessage, RESTORE_BLOCKED_HINT } from "@/lib/seasonal/shuttleRosterEdit";
 import { askConfirm } from "@/components/ui/feedback";
+import { toKstYmd } from "@/lib/datetime/kst";
+
+// 확정 명단에서 뺀 학생 한 줄(서버 removedShuttleRosterRows 의 응답 모양 — 날짜는 글자로 온다).
+export type RemovedRosterRow = {
+  rosterId: string;
+  studentName: string;
+  offeringTitle: string | null;
+  removedAt: string | null;
+  removedReason: string | null;
+  enrollmentCancelled: boolean;
+};
 
 // 방학특강 셔틀 통합 명단 — 학생 단위 편집 표.
 // 컬럼: 학생(클릭 시 상세) · 수업(반·요일) · 승차 위치(핀) · 하차 위치(핀) · 연락(전화/문자 선택).
@@ -160,12 +171,13 @@ function ContactCell({ row }: { row: ShuttleRosterRow }) {
 }
 
 export default function ShuttleRosterClient({
-  initialRoster, initialConfirmedAt = null, initialConfirmedCount = 0, initialConfirmed = false,
+  initialRoster, initialConfirmedAt = null, initialConfirmedCount = 0, initialConfirmed = false, initialRemoved = [],
 }: {
   initialRoster: ShuttleRosterRow[];
   initialConfirmedAt?: string | null;
   initialConfirmedCount?: number;
   initialConfirmed?: boolean;
+  initialRemoved?: RemovedRosterRow[];
 }) {
   const [rows, setRows] = useState<ShuttleRosterRow[]>(initialRoster);
   const [q, setQ] = useState("");
@@ -181,8 +193,14 @@ export default function ShuttleRosterClient({
   const [confirmedAt, setConfirmedAt] = useState<string | null>(initialConfirmedAt);
   const [confirmedCount, setConfirmedCount] = useState<number>(initialConfirmedCount);
   const [confirming, setConfirming] = useState(false);
-  // 방금 뺀 행. 제외된 행은 목록에서 사라지므로, 이 자리에서만 되돌릴 수 있다.
+  // 방금 뺀 행 — 바로 되돌리기용 띠. 그 전에 뺀 학생은 표 아래 «뺀 학생» 묶음에서 되돌린다.
   const [lastRemoved, setLastRemoved] = useState<{ rosterId: string; name: string } | null>(null);
+  // 확정 명단에서 뺀 학생 전체(새로고침해도 서버에서 다시 온다). 기본은 접어 둔다.
+  const [removed, setRemoved] = useState<RemovedRosterRow[]>(initialRemoved);
+  const [removedOpen, setRemovedOpen] = useState(false);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
+  // «뺀 학생» 묶음에서 난 되돌리기 오류. 위쪽 오류 표시는 스크롤 밖일 수 있어 묶음 안에도 따로 보인다.
+  const [removedError, setRemovedError] = useState<string | null>(null);
   // 서버가 알려 준 확정 여부. 전원을 명단에서 빼면 목록이 비어 행으로는 판정할 수 없다.
   const [confirmedFlag, setConfirmedFlag] = useState<boolean>(initialConfirmed);
   // 주소 → 건물명 일괄 변환 상태
@@ -243,6 +261,8 @@ export default function ShuttleRosterClient({
     setConfirmedAt((data.confirmedAt as string | null) ?? null);
     setConfirmedCount(Number(data.confirmedCount ?? 0));
     setConfirmedFlag(data.confirmed === true);
+    // 뺀 학생 목록도 같은 응답에서 함께 받는다(키가 없는 옛 응답이면 빈 목록).
+    setRemoved(Array.isArray(data.removed) ? (data.removed as RemovedRosterRow[]) : []);
   }
 
   // 확정하기 — 원장이 눈으로 확인한 명단을 값으로 복제해 고정한다.
@@ -268,17 +288,23 @@ export default function ShuttleRosterClient({
   // 확정본에서 빼기. 지우는 게 아니라 제외 표시(soft remove)라 되돌릴 수 있다.
   async function removeRow(row: ShuttleRosterRow) {
     if (!row.rosterId) return;
-    if (!(await askConfirm(`${row.childName} 학생을 확정 명단에서 뺄까요?\n(되돌리기로 다시 넣을 수 있습니다.)`))) return;
+    if (!(await askConfirm(`${row.childName} 학생을 확정 명단에서 뺄까요?\n(아래 «뺀 학생»에서 언제든 다시 넣을 수 있습니다.)`))) return;
     const rosterId = row.rosterId;
     try {
       await callApi("PATCH", { rosterId, action: "remove" });
       setRows((cur) => cur.filter((r) => r.rosterId !== rosterId));
       setConfirmedCount((c) => Math.max(0, c - 1));
       setLastRemoved({ rosterId, name: row.childName });
+      // «뺀 학생» 묶음에도 바로 올린다(띠와 목록이 어긋나지 않게). 다음 새로고침부터는 서버 값이 온다.
+      setRemoved((cur) => [
+        { rosterId, studentName: row.childName, offeringTitle: row.offeringTitle, removedAt: new Date().toISOString(), removedReason: null, enrollmentCancelled: false },
+        ...cur.filter((item) => item.rosterId !== rosterId),
+      ]);
       setSavedAt(Date.now()); setError(null);
     } catch (e: any) { setError(e?.message || "제외하지 못했습니다."); }
   }
 
+  // 띠의 «되돌리기» — 방금 뺀 한 명. refresh() 가 명단과 «뺀 학생» 목록을 함께 다시 읽는다.
   async function restoreRow() {
     if (!lastRemoved) return;
     try {
@@ -286,6 +312,31 @@ export default function ShuttleRosterClient({
       await refresh();
       setLastRemoved(null); setSavedAt(Date.now()); setError(null);
     } catch (e: any) { setError(e?.message || "되돌리지 못했습니다."); }
+  }
+
+  // «뺀 학생» 묶음의 «되돌리기» — 예전에 뺀 학생도 여기서 다시 넣는다. 확인을 한 번 거친다.
+  async function restoreRemoved(item: RemovedRosterRow) {
+    if (restoringId) return;
+    // 수강이 취소된 학생은 되돌리지 않는다(버튼도 그리지 않는다 — 서버도 같은 식으로 거부한다).
+    if (item.enrollmentCancelled) return;
+    // 이유 글이 수강 취소 계열이면 그 사실을 문구에 넣는다(문구 규칙은 shuttleRosterEdit — 실행 테스트 대상).
+    if (!(await askConfirm(restoreConfirmMessage(item)))) return;
+    setRestoringId(item.rosterId);
+    setRemovedError(null);
+    try {
+      await callApi("PATCH", { rosterId: item.rosterId, action: "restore" });
+      // 되돌리기는 이미 저장됐다. 목록에서 먼저 빼고(다시 읽기가 실패해도 화면이 거짓말하지 않게) 서버 값으로 맞춘다.
+      setRemoved((cur) => cur.filter((r) => r.rosterId !== item.rosterId));
+      setLastRemoved((cur) => (cur?.rosterId === item.rosterId ? null : cur));
+      await refresh();
+      setSavedAt(Date.now()); setError(null);
+    } catch (e: any) {
+      const message = e?.message || "되돌리지 못했습니다.";
+      setError(message);
+      // 누른 자리(묶음 안)에서도 바로 보이게 따로 들고 있는다.
+      setRemovedError(message);
+    }
+    finally { setRestoringId(null); }
   }
 
   async function savePin(requestId: string, kind: "pickup" | "dropoff", loc: MapLocationData) {
@@ -480,7 +531,7 @@ export default function ShuttleRosterClient({
           </div>
         )}
 
-        {/* 방금 뺀 행 되돌리기 — 제외된 행은 목록에서 사라지므로 여기서만 되돌릴 수 있다. */}
+        {/* 방금 뺀 행 되돌리기 — 바로 누를 수 있는 띠. 닫거나 새로고침한 뒤에는 표 아래 «뺀 학생» 묶음에서 되돌린다. */}
         {lastRemoved && (
           <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] px-3 py-2">
             <span className="text-xs text-[var(--color-academy-muted)]">{lastRemoved.name} 학생을 확정 명단에서 뺐습니다.</span>
@@ -551,6 +602,49 @@ export default function ShuttleRosterClient({
         <p className="mt-2 text-xs text-[var(--color-academy-faint)]">● 초록=정밀 핀 · ● 노랑=자동추정(재확인 권장)</p>
         {confirmed && (
           <p className="mt-1 text-xs text-[var(--color-academy-faint)]">확정 후 이 표에서 고친 값(위치 이름·지도 핀·하차 설정)은 확정 명단에만 저장되고, 학부모가 낸 원본 신청서는 그대로 유지됩니다.</p>
+        )}
+
+        {/* 뺀 학생 — 확정 명단에서 뺀 학생을 언제든 다시 넣는 곳. 0명이면 아예 그리지 않고, 기본은 접어 둔다. */}
+        {removed.length > 0 && (
+          <div className="mt-3 rounded-xl border border-[var(--color-academy-line)]">
+            <button type="button" onClick={() => setRemovedOpen((v) => !v)} aria-expanded={removedOpen}
+              className="flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left">
+              <span className="inline-flex shrink-0 text-[var(--color-academy-muted)]"><UiIcon name={removedOpen ? "expand_less" : "expand_more"} /></span>
+              <span className="text-sm font-semibold text-[var(--color-academy-ink)]">뺀 학생 {removed.length}명</span>
+            </button>
+            {/* 이 묶음에서 난 되돌리기 오류 — 위쪽 검색창 옆 표시가 스크롤 밖일 수 있어 여기에도 보인다. */}
+            {removedError && (
+              <p role="alert" className="break-words border-t border-[var(--color-academy-line)] px-3 py-2 text-xs text-[var(--color-academy-danger)]">{removedError}</p>
+            )}
+            {removedOpen && (
+              <ul>
+                {removed.map((item) => {
+                  // 빠진 날짜는 학원 시간(KST) 달력 날짜로 보여 준다.
+                  const removedYmd = item.removedAt ? toKstYmd(item.removedAt) : "";
+                  return (
+                    // 한 줄 행. 좁은 화면에서는 줄을 바꾸고(flex-wrap), 긴 이름·반 이름은 자르지 않는다.
+                    <li key={item.rosterId} className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1 border-t border-[var(--color-academy-line)] px-3 py-1.5">
+                      <span className="break-words text-sm font-medium text-[var(--color-academy-ink)]">{item.studentName}</span>
+                      {item.offeringTitle && <span className="break-words text-xs text-[var(--color-academy-muted)]">{item.offeringTitle}</span>}
+                      <span className="break-words text-xs text-[var(--color-academy-muted)]">{removedReasonLabel(item)}</span>
+                      {removedYmd && <span className="whitespace-nowrap text-xs tabular-nums text-[var(--color-academy-faint)]">{removedYmd} 뺌</span>}
+                      {item.enrollmentCancelled ? (
+                        // 수강이 취소된 학생 — 되돌려도 명단에 나타나지 않으므로 버튼 대신 할 일을 알려 준다.
+                        <span className="ml-auto break-words text-xs text-[var(--color-academy-muted)]">{RESTORE_BLOCKED_HINT}</span>
+                      ) : (
+                        <span className="ml-auto">
+                          <button type="button" disabled={restoringId !== null} onClick={() => restoreRemoved(item)}
+                            className="academy-button-secondary academy-button-sm whitespace-nowrap">
+                            {restoringId === item.rosterId ? "되돌리는 중…" : "되돌리기"}
+                          </button>
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
         )}
       </div>
 

@@ -127,6 +127,8 @@ function makeWorld(options = {}) {
     },
     "@/lib/datetime/kst": kst,
     "@/lib/feed/rules": { canEditFeedLine: () => ({ ok: true }), feedLineWindowMessage: () => "", normalizeFeedLine: (v) => v, sessionKstDateSql: () => "date", staffSessionEditWindowSql: () => "true", TODAY_KST_SQL: "today" },
+    // 랠리즈 피드 이관 수업 판정(발행 알림 건너뛰기) — 이 테스트는 발행을 다루지 않는다
+    "@/lib/feed/importedSession": { isImportedSessionForNotice: async () => false },
     // 완료한 수업 다시 보기 규칙(순수 모듈)은 진짜를 쓴다
     "@/lib/staff/sessionEditWindow": editWindowRules,
     "@/lib/staff-session-rules": sessionRules,

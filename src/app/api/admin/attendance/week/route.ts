@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 // 수업별 명단·하루치 목록을 동시에 몇 개까지 부를지. 서버 한 대의 DB 연결이 5개(connection_limit=5)라
 // 3 으로 둔다 — 6 이면 연결 대기(P2024 «Timed out fetching a new connection», 운영 11-14 에 실제 발생)가 다른 화면까지 번진다.
-// (속도: 수업 1회 = 쿼리 3~4개. 운영에서 느리면 이 숫자보다 «한 번에 묶는 조회»를 검토할 것)
+// (속도: 정규 수업 1회 = 조회 1개(2026-11-17 에 넷을 하나로 묶음), 방학특강 1회 = 3~4개)
 const DETAIL_CONCURRENCY = 3;
 
 /**

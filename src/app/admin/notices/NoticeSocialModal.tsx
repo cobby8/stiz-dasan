@@ -53,19 +53,6 @@ export default function NoticeSocialModal({
         setSocialPreview((prev) => (prev ? { ...prev, ...patch } : prev));
     }
 
-    function copyAdDraft() {
-        if (!socialPreview) return;
-        const text = [
-            "[페이스북 광고 소재]",
-            `주요 문구: ${socialPreview.adPrimaryText}`,
-            `제목: ${socialPreview.adHeadline}`,
-            `설명: ${socialPreview.adDescription}`,
-            `랜딩 링크: ${socialPreview.landingUrl}`,
-        ].join("\n\n");
-        navigator.clipboard?.writeText(text).catch(() => {});
-        showNotice("페이스북 광고 문구를 복사했습니다.");
-    }
-
     function handleSocialPublish() {
         if (!socialPreview) return;
         setSocialLoading(true);
@@ -150,57 +137,12 @@ export default function NoticeSocialModal({
                             />
                         </div>
 
-                        <div className="rounded-2xl border border-[var(--color-academy-line)] p-4 space-y-3">
-                            <h3 className="academy-section-title">페이스북 광고 소재</h3>
-                            <textarea
-                                value={socialPreview.adPrimaryText}
-                                onChange={(e) => updateSocialPreview({ adPrimaryText: e.target.value })}
-                                rows={5}
-                                className="academy-input resize-none leading-6"
-                            />
-                            <input
-                                value={socialPreview.adHeadline}
-                                onChange={(e) => updateSocialPreview({ adHeadline: e.target.value })}
-                                className="academy-input"
-                                placeholder="광고 제목"
-                            />
-                            <input
-                                value={socialPreview.adDescription}
-                                onChange={(e) => updateSocialPreview({ adDescription: e.target.value })}
-                                className="academy-input"
-                                placeholder="광고 설명"
-                            />
-                            <input
-                                value={socialPreview.landingUrl}
-                                onChange={(e) => updateSocialPreview({ landingUrl: e.target.value })}
-                                className="academy-input"
-                                placeholder="랜딩 링크"
-                            />
-                            <div className="grid gap-2 sm:grid-cols-2">
-                                <button
-                                    type="button"
-                                    onClick={copyAdDraft}
-                                    className="academy-button-secondary"
-                                >
-                                    광고 문구 복사
-                                </button>
-                                <a
-                                    href="https://adsmanager.facebook.com/adsmanager/manage/campaigns"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="academy-button-secondary"
-                                >
-                                    광고관리자 열기
-                                </a>
-                            </div>
-                        </div>
-
                         {socialResult && (
                             <div className="rounded-xl border border-[var(--color-academy-line)] p-4 text-sm">
                                 <p className="font-semibold text-[var(--color-academy-ink)] mb-2">발행 결과</p>
                                 <div className="space-y-1">
                                     {socialResult.results.length === 0 ? (
-                                        <p className="text-[var(--color-academy-muted)]">인스타 발행 없이 광고 소재만 준비했습니다.</p>
+                                        <p className="text-[var(--color-academy-muted)]">발행할 항목을 고르지 않아 인스타에 올리지 않았습니다.</p>
                                     ) : socialResult.results.map((result) => (
                                         <p key={result.channel} className={result.ok ? "text-[var(--color-academy-success)]" : "text-[var(--color-academy-danger)]"}>
                                             {result.channel}: {result.ok ? result.message : adminMessageText(result.message, "게시하지 못했습니다. 인스타그램 연결 설정을 확인해 주세요.")}

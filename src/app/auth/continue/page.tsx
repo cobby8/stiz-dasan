@@ -1,10 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { logout } from "@/app/actions/auth";
-import { parseAppRole, resolveRedirectForRole } from "@/lib/auth-routes";
-import { prisma } from "@/lib/prisma";
-import { createClient } from "@/lib/supabase/server";
-import { getParentViewAccessForAuthUser } from "@/lib/account-view-access";
+import { resolveContinueDestination } from "@/lib/auth/continue-destination";
 
 type ContinuePageProps = {
   searchParams: Promise<{
@@ -15,28 +12,8 @@ type ContinuePageProps = {
 };
 
 export default async function AuthContinuePage({ searchParams }: ContinuePageProps) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) redirect("/login");
-
+  let destination: string | null = null;
   try {
-    const rows = await prisma.$queryRawUnsafe<
-      Array<{ role: string; username: string | null; phoneVerifiedAt: Date | null }>
-    >(
-      // 대표 역할과 자녀 화면 자격은 구분합니다. 자녀는 아래의 직접 인증 연결로 확인합니다.
-      `SELECT role, username, "phoneVerifiedAt"
-       FROM "User"
-       WHERE "authUserId" = $1 OR id = $1 OR LOWER(email) = LOWER($2)
-       ORDER BY CASE WHEN "authUserId" = $1 THEN 0 WHEN id = $1 THEN 1 ELSE 2 END
-       LIMIT 1`,
-      user.id,
-      user.email || "",
-    );
-    const role = parseAppRole(rows[0]?.role);
-    const parentView = await getParentViewAccessForAuthUser(user);
     const params = await searchParams;
     const context = Array.isArray(params.context) ? params.context[0] : params.context;
     const requestedPathParam = Array.isArray(params.redirect) ? params.redirect[0] : params.redirect;
@@ -45,32 +22,18 @@ export default async function AuthContinuePage({ searchParams }: ContinuePagePro
     // 목적지를 버리고 역할 기본 화면으로 보내면 한 번 튕기고 끝난다.
     const bounced = (Array.isArray(params.bounced) ? params.bounced[0] : params.bounced) === "1";
     const requestedPath = bounced ? undefined : requestedPathParam;
-
-    // An OAuth identity is not an application membership. New social users and
-    // unverified parents must finish the mandatory phone onboarding first.
-    if (!role || (role === "PARENT" && rows[0]?.username !== null && !rows[0]?.phoneVerifiedAt)) {
-      const onboarding = new URLSearchParams({ social: "1" });
-      if (requestedPath) onboarding.set("next", requestedPath);
-      redirect(`/signup/parent?${onboarding.toString()}`);
-    }
-
-    redirect(
-      resolveRedirectForRole(role, requestedPath, {
-        // 브라우저에서 관리자 로그인으로 들어오면 역할 기본 화면(원장이면 /admin).
-        preferRoleHome: context === "staff" && requestedPath === "/staff",
-        // 설치된 선생님 앱에서 들어오면 앱 영역(/staff) 안에 머문다.
-        stayInStaffApp: context === "staff-app",
-        // 자녀가 등록된 직원 계정은 학부모 화면(/mypage)도 열 수 있다.
-        hasOwnChildren: parentView.hasOwnChildren,
-        // 승인된 추가 역할(선생님·기사님)까지 보고 목적지를 정한다(다중 역할, 2026-10-25).
-        roles: parentView.roles,
-      }),
-    );
+    // 어디로 보낼지는 공용 함수 한 곳에서 정한다(스토어 앱 시작 주소 /store-app 도 같은 함수를 쓴다).
+    destination = await resolveContinueDestination({ context, requestedPath });
   } catch (error) {
     // Next.js redirects are implemented as thrown control-flow errors.
     if (error && typeof error === "object" && "digest" in error) throw error;
+    destination = null;
+  }
 
-    return (
+  // redirect 는 «던지는» 방식이라 try 밖에서 부른다.
+  if (destination) redirect(destination);
+
+  return (
       <main className="grid min-h-screen place-items-center bg-surface-warm px-4 dark:bg-gray-950">
         <section className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 text-center shadow-sm dark:border-gray-700 dark:bg-gray-900">
           <h1 className="text-xl font-bold text-brand-navy-900 dark:text-white">
@@ -97,6 +60,5 @@ export default async function AuthContinuePage({ searchParams }: ContinuePagePro
           </div>
         </section>
       </main>
-    );
-  }
+  );
 }

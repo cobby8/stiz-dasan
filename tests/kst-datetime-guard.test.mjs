@@ -70,14 +70,12 @@ const R1_ALLOW = [
   "src/app/admin/annual/AnnualAdminClient.tsx",
   "src/app/admin/apply/ApplyAdminModals.tsx",
   "src/app/admin/classes/[id]/ClassDetailClient.tsx",
-  "src/app/admin/classes/[id]/SessionLogModal.tsx",
   "src/app/admin/seasonal/SeasonalAdminClient.tsx",
   "src/app/admin/seasonal/shuttle/ShuttleRosterClient.tsx",
   "src/app/admin/students/ExcelUploadModal.tsx",
   "src/app/admin/students/StudentManagementClient.tsx",
   "src/app/admin/students/[id]/StudentDetailClient.tsx",
   "src/app/api/admin/backup/route.ts",
-  "src/app/api/admin/session-detail/route.ts",
   "src/lib/billing-due-date.ts",
   "src/lib/googleCalendarWrite.ts",
   "src/lib/payment-ledger.ts",
@@ -121,7 +119,6 @@ test("규칙 3 — 서버 코드가 서버 시간대에 기대지 않는다", ()
 const R4 = /function\s+(?:kstYmd|seoulYmd|todayStr|kstDow|seoulDow|toKstDate)\s*\(/;
 const R4_ALLOW = [
   "src/lib/datetime/kst.ts", // 여기가 원본이다
-  "src/app/admin/classes/[id]/SessionLogModal.tsx",
 ];
 // 2026-11-14 정리: src/lib/makeup/credit-service.ts · parent-makeup.ts 의 kstYmd·dayLabel → toKstYmd·kstLabel·kstAt 로 교체.
 
@@ -143,9 +140,11 @@ test("빚 목록은 줄어들기만 한다", () => {
   // 2026-10-30: StaffShuttleDashboardClient(셔틀 운행일 키) 정리로 25 → 22 로 내림.
   // 2026-11-08: FinanceClient(납부일 하루 전 표시) 정리로 22 → 21 로 내림.
   // 2026-11-09: 학부모 MyPageClient·HistoryClient(청구 기한·출결 날짜 toISOString) 정리로 21 → 19 로 내림.
-  assert.ok(R1_ALLOW.length <= 19, `R1 미정리 ${R1_ALLOW.length}개 — 새로 추가하지 말 것`);
+  // 2026-11-17: 반 상세 «수업 기록» 창(SessionLogModal)과 그 전용 조회(api/admin/session-detail) 삭제로 19 → 17 로 내림.
+  assert.ok(R1_ALLOW.length <= 17, `R1 미정리 ${R1_ALLOW.length}개 — 새로 추가하지 말 것`);
   // 2026-10-06: queries.ts 정리로 2 → 1 로 내림.
   assert.ok(R3_ALLOW.length <= 1, `R3 미정리 ${R3_ALLOW.length}개 — 새로 추가하지 말 것`);
   // 2026-11-14: 보강 credit-service·parent-makeup 정리로 5 → 2 로 내림.
-  assert.ok(R4_ALLOW.length <= 2, `R4 미정리 ${R4_ALLOW.length}개 — 새로 추가하지 말 것`);
+  // 2026-11-17: SessionLogModal(자체 todayStr) 삭제로 2 → 1 로 내림.
+  assert.ok(R4_ALLOW.length <= 1, `R4 미정리 ${R4_ALLOW.length}개 — 새로 추가하지 말 것`);
 });

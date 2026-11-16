@@ -173,35 +173,6 @@ async function checkSchedule(checks: SiteOpsCheck[], settings: any) {
   });
 }
 
-async function checkApplicationForms(checks: SiteOpsCheck[], settings: any) {
-  const useBuiltInTrial = toBool(settings?.useBuiltInTrialForm ?? settings?.usebuiltintrialform);
-  const useBuiltInEnroll = toBool(settings?.useBuiltInEnrollForm ?? settings?.usebuiltinenrollform);
-  const trialFormUrl = settings?.trialFormUrl ?? settings?.trialformurl ?? null;
-  const enrollFormUrl = settings?.enrollFormUrl ?? settings?.enrollformurl ?? null;
-
-  checks.push({
-    id: "trial-form",
-    label: "체험 신청",
-    status: useBuiltInTrial || trialFormUrl ? "ok" : "warning",
-    message: useBuiltInTrial || trialFormUrl
-      ? "체험 신청 진입점이 준비되어 있습니다."
-      : "자체 체험 신청을 쓰지 않으면서 외부 신청 링크도 비어 있습니다.",
-    actionHref: "/admin/apply",
-    actionLabel: "신청 설정",
-  });
-
-  checks.push({
-    id: "enroll-form",
-    label: "수강 신청",
-    status: useBuiltInEnroll || enrollFormUrl ? "ok" : "warning",
-    message: useBuiltInEnroll || enrollFormUrl
-      ? "수강 신청 진입점이 준비되어 있습니다."
-      : "자체 수강 신청을 쓰지 않으면서 외부 신청 링크도 비어 있습니다.",
-    actionHref: "/admin/apply",
-    actionLabel: "신청 설정",
-  });
-}
-
 async function checkBackup(checks: SiteOpsCheck[]) {
   try {
     const supabase = createAdminClient();
@@ -444,7 +415,6 @@ export async function runSiteOpsBot(_requestedBy?: AdminAuthUser | "cron"): Prom
   await Promise.all([
     checkPublicContent(checks),
     checkSchedule(checks, settings),
-    checkApplicationForms(checks, settings),
     checkBackup(checks),
     checkInstagram(checks, settings),
   ]);

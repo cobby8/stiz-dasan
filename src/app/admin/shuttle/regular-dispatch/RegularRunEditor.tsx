@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import AcademyTheme from "@/components/academy/AcademyTheme";
 import DriverLocationPanel from "@/components/admin/DriverLocationPanel";
@@ -48,7 +48,7 @@ const DOW_ORDER = [1, 2, 3, 4, 5, 6, 0];
 const NO_BLOCKS: Record<string, string> = {};
 const NO_HOLIDAYS: { ymd: string; weekday: number; title: string }[] = [];
 
-export default function RegularRunEditor({ stops, serviceMonth, months, currentMonth, initialWeekday, initialStudentId, initialStopId, academy = null, riderBlocks = NO_BLOCKS, monthHolidays = NO_HOLIDAYS }: {
+export default function RegularRunEditor({ stops, serviceMonth, months, currentMonth, initialWeekday, initialStudentId, initialStopId, academy = null, riderBlocks = NO_BLOCKS, monthHolidays = NO_HOLIDAYS, headerExtra }: {
   /** 그 달 셔틀 명단 전체(서버가 읽어 준다 — 저장 뒤 router.refresh 로 다시 받는다). */
   stops: RegularShuttleStop[];
   serviceMonth: string;
@@ -65,6 +65,8 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
   riderBlocks?: Record<string, string>;
   /** 그 달 휴무일(연간일정) — 요일 탭 아래 «이 달 휴무» 한 줄. */
   monthHolidays?: { ymd: string; weekday: number; title: string }[];
+  /** 머리줄 «기사 요청» 버튼 바로 뒤에 그릴 것 — 지금은 «당일 변경» 버튼+창(ShuttleDayExceptionAdminPanel). */
+  headerExtra?: ReactNode;
 }) {
   const router = useRouter();
   const laterMonths = useMemo(() => months.filter((m) => m > serviceMonth).sort(), [months, serviceMonth]);
@@ -504,6 +506,7 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
           기사 요청
           {pendingRequests > 0 && <span className="absolute -right-1.5 -top-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-[var(--color-academy-danger)] px-1 text-xs font-semibold tabular-nums text-[var(--color-academy-on-primary)]">{pendingRequests}</span>}
         </button>
+        {headerExtra}
         {/* 편집은 묶음 머리마다 작은 연필로 들어간다(2026-11-10) — 화면 위 [수정] 버튼은 없앴다. */}
       </div>
       {showLocations && <DriverLocationPanel onClose={() => setShowLocations(false)} />}

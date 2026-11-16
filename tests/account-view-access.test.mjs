@@ -95,7 +95,7 @@ test('로그인과 계속 화면은 같은 직접 자녀 연결 결과로 목적
     assert.notEqual(routes.resolveRedirectForRole(role, '/mypage', { hasOwnChildren: false }), '/mypage');
   }
   const action = await readFile('src/app/actions/auth.ts', 'utf8');
-  const continuation = await readFile('src/app/auth/continue/page.tsx', 'utf8');
+  const continuation = await readFile('src/app/auth/continue/page.tsx', 'utf8') + '\n' + await readFile('src/lib/auth/continue-destination.ts', 'utf8');
   assert.match(action, /getParentViewAccessForAuthUser\(data\.user\)/);
   assert.match(continuation, /getParentViewAccessForAuthUser\(user\)/);
   for (const source of [action, continuation]) assert.match(source, /hasOwnChildren: parentView\.hasOwnChildren/);
@@ -107,6 +107,8 @@ const loginSource = await readFile('src/app/actions/auth.ts', 'utf8');
 // 직원 휴대폰 번호 → 로그인 메일 변환(순수 모듈, 2026-11-13) — 원본 그대로 싣는다
 const staffLoginId = load(await readFile('src/lib/staff-login-id.ts', 'utf8'), {});
 const continueSource = await readFile('src/app/auth/continue/page.tsx', 'utf8');
+// 목적지 판정은 공용 함수로 옮겼다(2026-11-17) — 화면이 부르는 그 함수를 원본 그대로 싣는다
+const continueDestinationSource = await readFile('src/lib/auth/continue-destination.ts', 'utf8');
 function authFlowFixture(role, hasOwnChildren) {
   let childChecks = 0;
   const redirect = href => { throw Object.assign(new Error('Redirect'), { digest: 'NEXT_REDIRECT', href }); };
@@ -133,7 +135,8 @@ function authFlowFixture(role, hasOwnChildren) {
     // 로그아웃 때 이 기기의 앱 푸시 토큰 정리(e2) — 로그인 흐름과 무관
     '@/lib/push/nativePushDevice': { forgetNativePushOnThisDevice: async () => undefined },
   };
-  return { login: load(loginSource, dependencies).login, continuation: load(continueSource, dependencies).default, childChecks: () => childChecks };
+  const continueDependencies = { ...dependencies, '@/lib/auth/continue-destination': load(continueDestinationSource, dependencies) };
+  return { login: load(loginSource, dependencies).login, continuation: load(continueSource, continueDependencies).default, childChecks: () => childChecks };
 }
 for (const [role, children, expected] of [
   ['ADMIN', true, '/mypage'], ['ADMIN', false, '/admin'],

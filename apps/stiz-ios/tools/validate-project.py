@@ -53,7 +53,7 @@ assert all(ref.attrib["BlueprintIdentifier"] in references for ref in scheme.ite
 assert "kr.stiz.academy.dev" in project and "DEVELOPMENT_TEAM" not in project
 # 스토어용 Release 는 정식 ID·1.x 버전, 개발 Debug 는 기존 개발 ID·0.1.0(격리 시험 도구 계약)을 유지한다.
 release_settings = re.search(r"A0000000000000000000000F = \{[^\n]*\}; name = Release;\};", project).group(0)
-assert "PRODUCT_BUNDLE_IDENTIFIER = kr.co.upturnlabs.stizdasan;" in release_settings and "MARKETING_VERSION = 1.0.4;" in release_settings
+assert "PRODUCT_BUNDLE_IDENTIFIER = kr.co.upturnlabs.stizdasan;" in release_settings and "MARKETING_VERSION = 1.0.5;" in release_settings
 assert "INFOPLIST_FILE = STIZ/Info.plist;" in release_settings and 'INFOPLIST_FILE = "STIZ/Info-Debug.plist";' in project
 # 1.0.2(2026-11-13): 애플 포털에서 Associated Domains·Push Notifications 를 켜고 배포 프로파일을 다시 받았으므로
 # 권한 파일을 «Release 에만» 연결한다. Debug(격리 시험 앱)는 그 권한이 없는 프로파일이라 연결하면 서명이 깨진다.
@@ -72,7 +72,7 @@ native_push = (root / "STIZ/NativePush.swift").read_text(encoding="utf-8")
 assert 'inDirectory: "Firebase"' in native_push and "guard !NavigationPolicy.sandbox.isRequested" in native_push, "시험 앱·설정 없는 빌드는 Firebase 를 켜지 않는다"
 assert "message.frameInfo.isMainFrame" in native_push and 'origin.host.lowercased() == "www.stiz-dasan.kr"' in native_push, "알림 창구는 우리 사이트 맨 위 화면에만"
 assert "NavigationPolicy.pushTarget(" in native_push, "알림을 눌러 여는 주소는 주소 정책으로 거른다"
-assert info["CFBundleDisplayName"] == "STIZ 농구교실"
+assert info["CFBundleDisplayName"] == "스티즈농구교실"
 # 스토어 아이콘: 1024 한 장(투명 없음)과 빌드 설정. 개인정보 명세: 앱 리소스로 포함·추적 없음.
 assert project.count("ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;") == 2, "Debug/Release 모두 AppIcon 사용"
 icon = json.loads((root / "STIZ/Assets.xcassets/AppIcon.appiconset/Contents.json").read_text(encoding="utf-8"))

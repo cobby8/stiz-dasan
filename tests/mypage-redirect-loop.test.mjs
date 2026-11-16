@@ -8,7 +8,7 @@ import test from "node:test";
 //                     (2) 학부모 앱은 제 영역(/mypage) 밖으로 나가지 않는다
 
 const layout = await readFile("src/app/mypage/layout.tsx", "utf8");
-const continuePage = await readFile("src/app/auth/continue/page.tsx", "utf8");
+const continuePage = await readFile("src/app/auth/continue/page.tsx", "utf8") + "\n" + await readFile("src/lib/auth/continue-destination.ts", "utf8");
 const nextConfig = await readFile("next.config.ts", "utf8");
 const middleware = await readFile("src/lib/supabase/middleware.ts", "utf8");
 

@@ -152,6 +152,8 @@ function makeWorld(options = {}) {
     content: options.content ?? null,
     published: options.published ?? false,
     previousPublishedAt: options.previousPublishedAt ?? null,
+    // 랠리즈 피드 이관 수업인가(Session.importSource) — 이관 수업은 발행해도 알림 없음(2026-11-16)
+    imported: options.imported ?? false,
     calls: [],
     audits: [],
     afterJobs: [],
@@ -203,6 +205,21 @@ function makeWorld(options = {}) {
     $transaction: async (fn) => fn(prisma),
   };
   const recipient = { studentId: "st1", studentName: "김하늘", userId: "p1" };
+  // «지금 오늘»(인자 없는 todayKst())은 진짜 시계가 아니라 이 가짜 환경의 오늘(world.today)을 돌려준다.
+  // 진짜 시계를 쓰면 수업 날짜를 적어 둔 테스트가 날짜가 바뀌는 순간 깨진다(2026-11-17 실제로 깨짐).
+  // 시각(ms)을 넘긴 호출과 나머지 달력 함수는 진짜 모듈 그대로다.
+  const worldKst = { ...kst, todayKst: (ms) => (ms === undefined ? world.today : kst.todayKst(ms)) };
+  // 수업 규칙 모듈도 같다 — «지금»을 안 넘기면 Date.now() 를 읽는 함수들에 가짜 오늘의 낮 12시(KST)를 넣어 준다.
+  const worldNow = () => kstMs(`${world.today}T12:00:00`);
+  const worldSessionRules = {
+    ...sessionRules,
+    isStaleDateKey: (dateKey, nowMs = worldNow()) => sessionRules.isStaleDateKey(dateKey, nowMs),
+    isPastSessionDate: (ymd, nowMs = worldNow()) => sessionRules.isPastSessionDate(ymd, nowMs),
+    shouldNotifyParentsForSession: (ymd, nowMs = worldNow()) => sessionRules.shouldNotifyParentsForSession(ymd, nowMs),
+    canPlanOnDate: (ymd, today = world.today) => sessionRules.canPlanOnDate(ymd, today),
+    resolveStaffViewDate: (raw, today = world.today) => sessionRules.resolveStaffViewDate(raw, today),
+    staffPreviewDates: (today = world.today) => sessionRules.staffPreviewDates(today),
+  };
   const actions = load("src/app/actions/staff-sessions.ts", {
     "next/cache": { revalidatePath() {} },
     // 응답 뒤에 도는 일(학부모 알림)을 모아 두고, 테스트가 직접 돌린다
@@ -227,12 +244,13 @@ function makeWorld(options = {}) {
       requireStaffClassAccess: async () => world.access,
       requireStaffSeasonalSessionAccess: async () => ({ access: world.access, seasonal: {} }),
     },
-    "@/lib/datetime/kst": kst,
+    "@/lib/datetime/kst": worldKst,
     "@/lib/feed/rules": feedRules,
+    "@/lib/feed/importedSession": { isImportedSessionForNotice: async () => world.imported },
     "@/lib/staff/sessionEditWindow": rules,
-    "@/lib/staff-session-rules": sessionRules,
+    "@/lib/staff-session-rules": worldSessionRules,
     // 출석 알림 규칙(순수 모듈)은 진짜를 쓴다 — 관리자 출결 화면과 같은 함수
-    "@/lib/attendance/attendanceNoticeRules": load("src/lib/attendance/attendanceNoticeRules.ts", { "@/lib/staff-session-rules": sessionRules, "@/lib/datetime/kst": kst }),
+    "@/lib/attendance/attendanceNoticeRules": load("src/lib/attendance/attendanceNoticeRules.ts", { "@/lib/staff-session-rules": worldSessionRules, "@/lib/datetime/kst": worldKst }),
     "@/lib/staff-session-queries": { trialOnClassDateSql: () => "true" },
     "@/lib/staff-notifications": {
       deliverParentNotification: async (input) => { world.calls.push(["notify", input.eventType, input.dedupeKey]); return {}; },
@@ -514,6 +532,12 @@ test("학부모에게 보내기: 처음 발행만 앱 알림(중복 방지 키),
   assert.equal((await again.actions.publishStaffSessionReport({ sessionId: "se1" })).notified, false);
   await again.runAfter();
   assert.ok(!names(again.world).includes("notify"));
+  // 랠리즈 피드 이관 수업은 처음 발행이어도 알림이 없다(2026-11-16 원장 «학부모 알림 금지») — 검토 기록의 firstPublish 는 그대로
+  const imported = makeWorld({ published: false, previousPublishedAt: null, imported: true });
+  assert.deepEqual(await imported.actions.publishStaffSessionReport({ sessionId: "se1" }), { ok: true, published: true, alreadyPublished: false, notified: false });
+  await imported.runAfter();
+  assert.ok(!names(imported.world).includes("notify"));
+  assert.equal(imported.world.audits[0].details.firstPublish, true);
   // 진행 중 수업은 보낼 수 없다
   const live = makeWorld({ session: { status: "IN_PROGRESS" } });
   assert.equal((await live.actions.publishStaffSessionReport({ sessionId: "se1" })).ok, false);

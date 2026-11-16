@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { userErrorMessage } from "@/components/staff/userErrorMessage";
 import { useStoreAppLacks } from "@/components/storeApp/useStoreAppLacks";
+import { readMicFeatureAllowed } from "@/lib/staff/documentPolicy";
+import { voiceErrorName, voiceStartFailure } from "@/lib/staff/voiceStartError";
 
 export function VoiceToTextButton({
   onText,
@@ -18,6 +20,8 @@ export function VoiceToTextButton({
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [message, setMessage] = useState("");
+  // 이 문서가 마이크 금지 상태라 녹음을 못 시작했을 때만 «새로 불러오기» 버튼을 보인다
+  const [offerReload, setOfferReload] = useState(false);
   // 옛 스토어 앱(1.0.3 이하)은 마이크 녹음을 못 한다 → 버튼 대신 안내 한 줄을 보인다(글로 적으면 된다). 판정은 @/lib/storeApp 한 곳(d2)
   // 앱 1.0.4+ 는 사용자 에이전트의 « STIZVoice/1» 표식으로 «된다»를 알려 와, 브라우저처럼 버튼이 나온다.
   const appLacksVoice = useStoreAppLacks("voice");
@@ -33,6 +37,7 @@ export function VoiceToTextButton({
   }, []);
 
   async function start() {
+    setOfferReload(false);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const preferred = ["audio/webm;codecs=opus", "audio/mp4", "audio/webm"].find((type) => MediaRecorder.isTypeSupported(type));
@@ -48,9 +53,12 @@ export function VoiceToTextButton({
       onBusyChange?.(true);
       setMessage("녹음 중… 최대 60초");
       timer.current = setTimeout(stop, 60_000);
-    } catch {
+    } catch (error) {
       onBusyChange?.(false);
-      setMessage("마이크 권한을 허용해 주세요.");
+      // 원인별로 안내를 나눈다(문구 판정은 @/lib/staff/voiceStartError 한 곳). 오류 이름만 읽고 원문은 화면에 내지 않는다.
+      const failure = voiceStartFailure(voiceErrorName(error), readMicFeatureAllowed(document));
+      setMessage(failure.message);
+      setOfferReload(failure.offerReload);
     }
   }
 
@@ -103,5 +111,7 @@ export function VoiceToTextButton({
       {recording ? "녹음 종료" : transcribing ? "메모 변환 중" : "음성으로 기록"}
     </button>
     {message && <span aria-live="polite" className="max-w-48 text-right text-xs text-[var(--color-academy-muted)]">{message}</span>}
+    {/* 다른 화면에서 넘어와 이 문서가 마이크 금지일 때: 새로 불러오면 풀린다. 녹음 중이 아니라 잃을 녹음은 없다(보조 등급·기본 높이 44px) */}
+    {offerReload && <button type="button" onClick={() => window.location.reload()} className="academy-button-secondary">새로 불러오기</button>}
   </div>;
 }

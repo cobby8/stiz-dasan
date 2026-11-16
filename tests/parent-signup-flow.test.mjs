@@ -12,7 +12,7 @@ const authActions = readFileSync("src/app/actions/auth.ts", "utf8");
 const consentLib = readFileSync("src/lib/parent-consent.ts", "utf8");
 const consentUi = readFileSync("src/components/auth/ParentConsentChecks.tsx", "utf8");
 const oauthCallback = readFileSync("src/app/auth/callback/route.ts", "utf8");
-const authContinue = readFileSync("src/app/auth/continue/page.tsx", "utf8");
+const authContinue = readFileSync("src/app/auth/continue/page.tsx", "utf8") + "\n" + readFileSync("src/lib/auth/continue-destination.ts", "utf8");
 const authGuard = readFileSync("src/lib/auth-guard.ts", "utf8");
 const mypageLayout = readFileSync("src/app/mypage/layout.tsx", "utf8");
 const paymentPage = readFileSync("src/app/payments/[invoiceId]/page.tsx", "utf8");
@@ -124,7 +124,9 @@ test("an OAuth session cannot bypass phone-verified application membership", () 
   assert.doesNotMatch(oauthCallback, /user_metadata/);
 
   assert.match(authContinue, /!role \|\| \(role === "PARENT" && rows\[0\]\?\.username !== null && !rows\[0\]\?\.phoneVerifiedAt\)/);
-  assert.match(authContinue, /redirect\(`\/signup\/parent/);
+  // 목적지 판정이 공용 함수로 옮겨져(2026-11-17) «주소를 돌려주고» 화면이 그 주소로 보낸다
+  assert.match(authContinue, /return `\/signup\/parent/);
+  assert.match(authContinue, /if \(destination\) redirect\(destination\)/);
 });
 
 test("OAuth completion binds the same provider and rejects an existing account collision", () => {
