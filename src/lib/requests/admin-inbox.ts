@@ -879,8 +879,13 @@ async function readInboxCounts(): Promise<InboxCounts | null> {
   type CountRow = { kind: RequestKind; raw: string; n: number };
   const readCatalog = async (): Promise<CountRow[] | null> => {
     try {
+      // «표 있음» 확인 4개는 서로 기다릴 이유가 없어 동시에 묻는다(2026-11-16 속도 개선 — 왕복 4번 → 1번 분량).
+      // 넷 다 실패하면 false 로 바뀌므로 Promise.all 이 던지지 않는다. 넘기는 순서·뜻은 예전 그대로.
+      const [settlementReady, illnessReady, shuttleRegularReady, periodCarryReady] = await Promise.all([
+        inboxSettlementTableReady(), inboxIllnessTableReady(), inboxShuttleRegularReady(), inboxPeriodCarryReady(),
+      ]);
       return await prisma.$queryRawUnsafe<CountRow[]>(buildInboxCountsSql(
-        false, await inboxSettlementTableReady(), await inboxIllnessTableReady(), await inboxShuttleRegularReady(), await inboxPeriodCarryReady(),
+        false, settlementReady, illnessReady, shuttleRegularReady, periodCarryReady,
       ));
     } catch (error) {
       // 취소 요청 칸(마이그레이션 20261110130000) 적용 전이면 예전 식으로 다시 센다

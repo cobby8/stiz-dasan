@@ -235,7 +235,8 @@ test('체험·수강 탭 처리 후 배지·메뉴 숫자 갱신 — onChanged(�
 test('개수는 요청당 한 번(react.cache), 탭이 주소에 있으면 개수·탭 데이터 동시 조회', () => {
   assert.match(inbox, /import \{ cache \} from "react";/);
   assert.match(inbox, /export const getInboxCounts = cache\(readInboxCounts\);/);
-  assert.match(page, /\[counts, data\] = await Promise\.all\(\[getInboxCounts\(\), loadTabData\(/);
+  // 2026-11-16: 두 조회에 소요 시간 시계(timed)를 씌웠다 — 한 Promise.all 안에서 같이 출발하는 뜻은 그대로
+  assert.match(page, /\[counts, data\] = await Promise\.all\(\[\s*timed\("counts", getInboxCounts\(\), timing\),\s*timed\(`tab:\$\{tab\}`, loadTabData\(/);
 });
 
 test('대관 사용 완료 + 보증금 0원 = 완료 — 신청함 SQL 이 catalog 와 같은 이름(상수)을 쓴다', () => {

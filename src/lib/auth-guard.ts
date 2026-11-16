@@ -356,6 +356,9 @@ export type StaffAuthUser = Awaited<ReturnType<typeof requireAuth>> & {
 /**
  * 승인된(ACTIVE) 추가 역할.
  * 역할 캐시(5분)와 달리 **캐시하지 않는다** — 원장이 회수하면 바로 막혀야 한다.
+ * 여기서 «캐시하지 않는다»는 **요청 사이**(서버에 남는 Map·변수·TTL)에 담지 않는다는 뜻이다.
+ * 아래 requireStaff 의 «한 요청(화면 한 번 그리기) 안에서만 기억»은 이 규칙과 부딪히지 않는다 —
+ * 그 기억은 요청이 끝나면 사라지고, 다음 요청은 이 조회를 다시 한다.
  * 조회가 실패하면 「추가 역할 없음」으로 본다: 주 역할 권한은 그대로 두고, 실패가 권한을
  * 넓히는 쪽으로는 절대 흐르지 않게 한다.
  */
@@ -376,7 +379,7 @@ async function getActiveRoleGrants(userId: string): Promise<RoleGrantRow[]> {
  * 주 역할이 학부모여도 원장이 승인한 선생님·기사님 역할이 있으면 통과한다(다중 역할, 2026-10-25).
  * 승인 대기(PENDING)는 통과하지 못한다 — 고르기만 해서 학생 개인정보가 열리면 안 된다.
  */
-export async function requireStaff(): Promise<StaffAuthUser> {
+async function requireStaffUncached(): Promise<StaffAuthUser> {
   const user = await requireAuth();
   const email = normalizeEmail(user.email);
 
@@ -402,6 +405,32 @@ export async function requireStaff(): Promise<StaffAuthUser> {
     appUserRole: staffRole,
     roles,
   });
+}
+
+/**
+ * 한 요청 안에서는 직원 확인(역할 조회 + 추가 역할 조회)을 한 번만 한다(2026-11-16 속도 개선).
+ * 선생님 홈 한 번에 레이아웃·화면·읽기 함수(getStaffClassAccessContext 2번)가 각각 requireStaff 를 불러
+ * 같은 역할 조회와 추가 역할 조회가 4번씩 나갔다. 판정은 그대로이고 «같은 요청에서 같은 질문을 DB 에 다시 묻지 않는다»만 바뀐다.
+ *
+ * - React cache() 는 «요청 단위» 기억이다. 서버 컴포넌트를 그리는 동안에만 기억하고 요청이 끝나면 버린다.
+ *   다른 사람·다음 요청에 섞이지 않는다. **모듈 변수·Map 으로 요청 사이에 남기는 캐시를 여기에 만들지 말 것**
+ *   (원장이 추가 역할을 회수하면 다음 요청부터 바로 막혀야 한다 — 위 getActiveRoleGrants 설명).
+ * - 서버 컴포넌트 렌더 밖(라우트 핸들러·서버 액션)에서는 기억하지 않고 부를 때마다 다시 확인한다.
+ *   그래서 «역할을 바꾸는 쓰기» 뒤의 확인은 언제나 새로 읽는다(쓰기는 액션·API 에서만 일어난다).
+ * - 실패(로그인 없음·권한 없음)는 예전과 같은 예외·같은 문구로 나간다. 같은 요청 안에서는 같은 실패가 맞다.
+ * - 받는 쪽이 결과를 고쳐도 다른 호출자에게 번지지 않게 부를 때마다 복사본을 돌려준다(roles·metadata 포함).
+ */
+const requireStaffCached = cache(requireStaffUncached);
+
+export async function requireStaff(): Promise<StaffAuthUser> {
+  const staff = await requireStaffCached();
+  return {
+    ...staff,
+    roles: { ...staff.roles },
+    // 칸이 없던 경우 새로 만들지 않는다(있을 때만 복사)
+    ...(staff.app_metadata ? { app_metadata: { ...staff.app_metadata } } : {}),
+    ...(staff.user_metadata ? { user_metadata: { ...staff.user_metadata } } : {}),
+  };
 }
 
 /**

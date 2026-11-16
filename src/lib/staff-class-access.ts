@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { requireStaff, type StaffAuthUser } from "@/lib/auth-guard";
 import { prisma } from "@/lib/prisma";
 import { SUBSTITUTE_TEACHER_SQL, substituteAllowedNow } from "@/lib/staff/classSubstitute";
@@ -33,7 +34,7 @@ export type StaffClassAccessContext = {
  * 로그인한 직원이 어떤 수업에 접근할 수 있는지 판단할 때 사용하는 공통 정보입니다.
  * 관리자와 부관리자는 모든 수업에 접근하고, 선생님은 연결된 Coach 기준으로 제한됩니다.
  */
-export async function getStaffClassAccessContext(): Promise<StaffClassAccessContext> {
+async function getStaffClassAccessContextUncached(): Promise<StaffClassAccessContext> {
   const staff = await requireStaff();
   const canAccessAllClasses =
     staff.appUserRole === "ADMIN" || staff.appUserRole === "VICE_ADMIN";
@@ -55,6 +56,20 @@ export async function getStaffClassAccessContext(): Promise<StaffClassAccessCont
     coachId: rows[0]?.coachId ?? null,
     canAccessAllClasses: false,
   };
+}
+
+/**
+ * 한 요청 안에서는 접근 정보(직원 확인 + 코치 연결 조회)를 한 번만 만든다(2026-11-16 속도 개선).
+ * 선생님 홈은 화면과 «오늘 수업» 읽기 함수가 각각 이 함수를 불러 코치 연결 조회가 2번 나갔다.
+ * React cache() 는 요청 단위 기억이라 요청이 끝나면 사라진다 — 요청 사이에 남는 캐시(모듈 변수·Map)는 만들지 않는다.
+ * 서버 액션·API(렌더 밖)에서는 기억하지 않고 매번 다시 확인한다. 실패(예외)는 예전과 같은 문구 그대로다.
+ * 받는 쪽이 결과를 고쳐도 다른 호출자에게 번지지 않게 부를 때마다 복사본을 돌려준다(staff·roles 포함).
+ */
+const getStaffClassAccessContextCached = cache(getStaffClassAccessContextUncached);
+
+export async function getStaffClassAccessContext(): Promise<StaffClassAccessContext> {
+  const access = await getStaffClassAccessContextCached();
+  return { ...access, staff: { ...access.staff, roles: { ...access.staff.roles } } };
 }
 
 /**

@@ -26,8 +26,10 @@ export const metadata: Metadata = {
 };
 
 export default async function StaffLayout({ children }: { children: ReactNode }) {
-  const staff = await requireStaff();
-  const { views } = await getAccountViewAccess();
+  // 직원 확인과 «화면 전환 메뉴» 계산은 서로 기다릴 필요가 없어 함께 보낸다(2026-11-16 속도 개선 — 관리자·학부모 레이아웃과 같은 방식).
+  // getAccountViewAccess 는 로그인이 없거나 조회가 실패해도 던지지 않고 빈 메뉴를 돌려주므로,
+  // 여기서 나는 예외는 예전과 같이 requireStaff 의 것뿐이다(로그인 없음·권한 없음 → 같은 예외).
+  const [staff, { views }] = await Promise.all([requireStaff(), getAccountViewAccess()]);
   // 기사님 전용 색·홈 링크는 «기사님만»인 사람에게. 「선생님 + 기사님」은 선생님 화면이 기본이다.
   const isDriverOnly = staff.roles.driver && !staff.roles.teacher;
   // 2026-11-16 원장 지시: 일반 선생님에게도 «셔틀» 탭을 연다(보기 + 선생님 운행). 판정은 teacherShuttleView 한 곳

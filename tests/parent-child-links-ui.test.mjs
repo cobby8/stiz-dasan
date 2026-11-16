@@ -105,6 +105,8 @@ test("서버 홈은 빈 자녀 판정 전에 특강 내역을 조회하고 해�
     "@/lib/requests/inquiry-thread": {},
     "@/lib/requests/inquiryThreadRules": {},
     "@/lib/seasonal/parent-pending": { getPendingSeasonalChildren: async (id, students) => { calls.push([id, students]); return []; } },
+    // 홈 조회 묶음의 소요 시간 기록(2026-11-16) — 자녀가 없으면 부르지 않는다
+    "@/lib/perf/timed": {},
     "@/components/account/EmptyParentState": { default: Empty },
     "./MyPageClient": { default: () => null },
     "next/link": { default: Link },

@@ -7,6 +7,8 @@ import { isSheetSyncRetired } from "@/lib/operations-sync/sheetRetirement";
 import { todayKst } from "@/lib/datetime/kst";
 import { canSeeAllMoney } from "@/lib/auth/moneyAccess";
 import { maskFinancePayloadForRole } from "@/lib/payments/financeRoleMask";
+// 주요 조회의 소요 시간 기록(느릴 때만 서버 로그 한 줄 — 2026-11-16 속도 개선). 조회 순서·화면은 그대로
+import { reportTiming, startTiming, timed } from "@/lib/perf/timed";
 
 // 30초 캐시: 아무도 수정 안 할 때 캐시 유지, Server Action 호출 시 즉시 무효화
 export const revalidate = 30;
@@ -14,10 +16,14 @@ export const revalidate = 30;
 export default async function AdminFinancePage() {
     // 이번 달 = KST 기준. 서버(UTC)의 getMonth() 는 매월 1일 KST 00~09시에 지난달을 연다.
     const [initialYear, initialMonth] = todayKst().split("-").map(Number);
+    // 어느 쪽이 느린지 보려는 시계 — 이름과 ms 숫자만 남긴다
+    const timing = startTiming();
     const [adminUser, payload] = await Promise.all([
-        requireAdmin(),
-        getCachedAdminFinancePayload(initialYear, initialMonth),
+        timed("auth", requireAdmin(), timing),
+        timed("payload", getCachedAdminFinancePayload(initialYear, initialMonth), timing),
     ]);
+    // 전체가 500ms 를 넘을 때만 한 줄
+    reportTiming("[admin finance timing]", timing, 500);
     // 캐시(역할 무관 공유)에서 꺼낸 «뒤» 역할로 가린다 — 부원장은 미납 금액만, 요약은 null(2026-11-14 원장 결정)
     const { payments, summary, paymentProvider } = maskFinancePayloadForRole(payload, adminUser.appUserRole);
     const isOwner = canSeeAllMoney(adminUser.appUserRole);

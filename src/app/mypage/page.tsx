@@ -17,6 +17,8 @@ import { getParentClassStatusLines } from "@/lib/enrollment/parent-change-reques
 import { getChildRecordHomeLines } from "@/lib/parent/childRecordQuery";
 // «최신 수업 피드» 카드 후보(아이마다 최신 공개 수업 1건) — 수업 피드 공용 판정(2026-11-14)
 import { getLatestFeedCandidates } from "@/lib/feed/server";
+// 조회 묶음의 함수별 소요 시간 기록(느릴 때만 서버 로그 한 줄 — 2026-11-16 속도 개선)
+import { reportTiming, startTiming, timed } from "@/lib/perf/timed";
 
 export const dynamic = "force-dynamic";
 
@@ -52,8 +54,12 @@ export default async function MyPageDashboard({
 
     // 정식 자녀가 없어도 특강 신청 내역과 연결 요청 경로는 확인할 수 있어야 한다.
     const studentIds = data?.children.map(c => c.id) ?? [];
-    const pendingSeasonalChildren = await getPendingSeasonalChildren(parentAuth.appUserId, studentIds);
+    // 특강 내역 조회는 여기서 «출발»만 시킨다(2026-11-16 속도 개선). 예전엔 이 한 건을 혼자 기다린 뒤에야
+    // 아래 홈 조회 묶음이 출발했다 — 자녀가 있으면 그 묶음과 같이 기다려 왕복 한 번을 줄인다.
+    // 자녀가 없으면 바로 아래에서 예전처럼 이것만 기다리고 먼저 반환한다(추가 조회 없음 — 지킬 규칙).
+    const pendingSeasonalPromise = getPendingSeasonalChildren(parentAuth.appUserId, studentIds);
     if (!data || data.children.length === 0) {
+        const pendingSeasonalChildren = await pendingSeasonalPromise;
         // 학원 번호는 설정값에서(코드에 박지 않는다). 걸 수 없는 값(자리채움 번호·이상한 길이)은 쓰지 않는다 — 판정은 공용 한 곳
         const usablePhone = await getUsableAcademyPhone();
         return <EmptyParentState pendingSeasonalChildren={pendingSeasonalChildren} academyPhone={usablePhone} />;
@@ -72,19 +78,25 @@ export default async function MyPageDashboard({
     // 알림 목록·안 읽은 수는 머리줄 🔔(layout)이 읽는다(2026-11-10) — 홈에서는 읽지 않는다
     // 아이 기록 한 줄(다닌 기간·올해 출석률) — 실패하면 빈 값(줄은 «전체 기록»으로 남는다)
     // 최신 수업 피드 후보 — 실패하면 빈 목록(카드만 숨는다)
-    const [notices, myInquiries, shuttleOverview, driverContact, makeup, seasonal, paymentRows, classStatusLines, recordLines, feedCandidates] = await Promise.all([
+    // 함수별 소요 시간 — 어느 조회가 느린지 보려고 잰다(이름과 ms 숫자만 남긴다. 조회 내용·순서는 그대로)
+    const timing = startTiming();
+    const [pendingSeasonalChildren, notices, myInquiries, shuttleOverview, driverContact, makeup, seasonal, paymentRows, classStatusLines, recordLines, feedCandidates] = await Promise.all([
+        // 특강 내역 — 위에서 이미 출발했다. 실패하면 예전처럼 홈 전체가 오류 화면이 된다(빈 값으로 바꾸지 않는다)
+        timed("pendingSeasonal", pendingSeasonalPromise, timing),
         // 공지·보낸 메시지·셔틀·기사 연락처도 아래 4개처럼 실패하면 빈 값 — 한 칸 조회가 실패해도 홈 전체가 오류로 바뀌지 않게(d5)
-        getNoticesByClassIds(classIds, 10).catch(() => []),
-        listMyInquiries(prisma, parentAuth.appUserId).catch(() => []),
-        getParentShuttleOverview(parentAuth.appUserId).catch(() => []),
-        getShuttleDriverContact().catch(() => null),
-        getMakeupOverviewForParent(parentAuth.appUserId).catch(() => null),
-        getUpcomingSeasonalSeats(parentAuth.appUserId).catch(() => null),
-        getParentPaymentRequests(parentAuth.appUserId).catch(() => null),
-        getParentClassStatusLines(parentAuth.appUserId).catch(() => []),
-        getChildRecordHomeLines(parentAuth.appUserId).catch(() => ({} as Record<string, string>)),
-        getLatestFeedCandidates(parentAuth.appUserId).catch(() => []),
+        timed("notices", getNoticesByClassIds(classIds, 10).catch(() => []), timing),
+        timed("inquiries", listMyInquiries(prisma, parentAuth.appUserId).catch(() => []), timing),
+        timed("shuttle", getParentShuttleOverview(parentAuth.appUserId).catch(() => []), timing),
+        timed("driverContact", getShuttleDriverContact().catch(() => null), timing),
+        timed("makeup", getMakeupOverviewForParent(parentAuth.appUserId).catch(() => null), timing),
+        timed("seasonalSeats", getUpcomingSeasonalSeats(parentAuth.appUserId).catch(() => null), timing),
+        timed("payments", getParentPaymentRequests(parentAuth.appUserId).catch(() => null), timing),
+        timed("classStatus", getParentClassStatusLines(parentAuth.appUserId).catch(() => []), timing),
+        timed("record", getChildRecordHomeLines(parentAuth.appUserId).catch(() => ({} as Record<string, string>)), timing),
+        timed("feed", getLatestFeedCandidates(parentAuth.appUserId).catch(() => []), timing),
     ]);
+    // 묶음 전체가 300ms 를 넘을 때만 한 줄
+    reportTiming("[mypage timing]", timing, 300);
     // 미납만 홈으로 넘긴다(필요한 칸만 — 요청 내역·영수증은 청구 탭이 본다)
     const pendingPayments = paymentRows
         ? paymentRows
