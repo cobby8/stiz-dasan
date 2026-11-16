@@ -28,7 +28,8 @@ export default async function ParentRentalPage() {
 
     return (
         <ParentEmbeddedPublic backHref={PARENT_APPLY_HOME} backLabel="신청 메뉴로" title={isMember ? "재원생 무료 대관" : "체육관 대관"}>
-            {!isMember && (
+            {/* 로그인 학부모 화면이라 signedIn=false 는 «조회 실패»다 — 그때는 «아이가 없다»고 잘못 말하지 않는다 */}
+            {!isMember && member.signedIn && (
                 <p className="mx-3 mt-3 rounded-[var(--color-public-radius)] bg-[var(--color-public-tint)] px-3 py-2 text-sm break-keep text-[var(--color-public-ink)]">
                     지금 수강 중인 아이가 없어 일반 대관 요금으로 신청돼요.
                 </p>
