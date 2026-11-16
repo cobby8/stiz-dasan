@@ -125,7 +125,14 @@ test("서버: 두 동작 모두 관리자 확인이 먼저다", () => {
 
 test("서버: 받는 사람은 서버가 재원생·대표 학부모·탈퇴 제외로 계산한다(화면이 번호를 보내지 않음)", () => {
   const resolve = action.slice(action.indexOf("async function resolveSignupGuide"), action.indexOf("export async function prepareParentSignupGuide"));
-  assert.match(resolve, /e\.status = 'ACTIVE'/);
+  // 2026-11-16: 재원(ACTIVE)·휴원(PAUSED) 모두, 퇴원만 남은 학생은 빠짐
+  assert.match(resolve, /e\.status IN \('ACTIVE', 'PAUSED'\)/);
+  assert.doesNotMatch(resolve, /WITHDRAWN/);
+  // 성인 판정 = KST 오늘 기준 만 19세(timestamptz now() 에 한 번만 건다)
+  assert.match(resolve, /now\(\) AT TIME ZONE 'Asia\/Seoul'\)::date - INTERVAL '19 years'/);
+  // 가입 막힘 판정 = 가입 코드와 같은 합성 이메일 규칙 한 곳
+  assert.match(action, /import \{ SYNTHETIC_PARENT_EMAIL \} from "@\/lib\/parent-synthetic-email"/);
+  assert.match(resolve, /SYNTHETIC_PARENT_EMAIL\.source/);
   assert.match(resolve, /s\."mergedIntoStudentId" IS NULL/);
   assert.match(resolve, /u\.id = s\."parentId" AND u\."withdrawnAt" IS NULL/);
   assert.match(resolve, /u\."authUserId" IS NOT NULL\) AS "hasAccount"/);
@@ -166,4 +173,100 @@ test("화면: 확인 창 뒤에만 보내고, 문자 화면 «수동 발송» �
   assert.doesNotMatch(sender, /window\.confirm|useEffect/); // 자동 발송·자동 열기 없음
   assert.match(sms, /activeTab === "manual"[\s\S]{0,200}<ParentSignupGuidePanel \/>/);
   assert.match(sms, /<ParentSignupGuideSender \/>/);
+});
+
+// ───────────── 2026-11-16 원장 결정표 «전체 다 보내. 성인도 포함해» ─────────────
+const full = (parentUserId, studentName, phone, extra = {}) => ({ parentUserId, studentName, phone, hasAccount: false, ...extra });
+
+test("구성: 재원·휴원·성인으로 나눠 센다(번호 기준)", () => {
+  const result = T.selectParentSignupGuideRecipients([
+    full("p1", "김재원", "010-1000-0001", { enrollmentStatus: "ACTIVE" }),
+    full("p2", "이휴원", "010-1000-0002", { enrollmentStatus: "PAUSED" }),
+    full("p3", "박성인", "010-1000-0003", { enrollmentStatus: "ACTIVE", isAdult: true }),
+    full("p4", "최성인", "010-1000-0004", { enrollmentStatus: "PAUSED", isAdult: true }), // 휴원 중인 성인도 «성인»
+  ], { alreadySentPhones: none, resend: false });
+  assert.deepEqual(result.breakdown, { active: 1, paused: 1, adult: 2 });
+  assert.deepEqual(result.recipients.map((r) => r.group), ["ACTIVE", "PAUSED", "ADULT", "ADULT"]);
+});
+
+test("구성: 형제 중 한 명이라도 수강 중이면 재원, 모두 휴원이면 휴원", () => {
+  const mixed = T.selectParentSignupGuideRecipients([
+    full("p1", "A", "010-2000-0001", { enrollmentStatus: "PAUSED" }),
+    full("p1", "B", "010-2000-0001", { enrollmentStatus: "ACTIVE" }),
+  ], { alreadySentPhones: none, resend: false });
+  assert.equal(mixed.recipients.length, 1);
+  assert.equal(mixed.recipients[0].group, "ACTIVE");
+  const paused = T.selectParentSignupGuideRecipients([
+    full("p1", "A", "010-2000-0001", { enrollmentStatus: "PAUSED" }),
+    full("p1", "B", "010-2000-0001", { enrollmentStatus: "PAUSED" }),
+  ], { alreadySentPhones: none, resend: false });
+  assert.equal(paused.recipients[0].group, "PAUSED");
+});
+
+test("구성: 같은 번호에 성인과 미성년 자녀가 섞이면 학부모용(성인용은 성인만 있을 때)", () => {
+  const result = T.selectParentSignupGuideRecipients([
+    full("p1", "엄마", "010-3000-0001", { isAdult: true }),
+    full("p1", "아이", "010-3000-0001", { isAdult: false }),
+  ], { alreadySentPhones: none, resend: false });
+  assert.equal(result.recipients[0].group, "ACTIVE");
+  assert.equal(T.signupGuideMessageFor(result.recipients[0]), T.buildParentSignupGuideMessage());
+});
+
+test("가입 막힘: 다른 계정이 쓰는 번호는 빼고 수만 세며, 빈 계정 여럿인 번호는 보내되 따로 센다", () => {
+  const result = T.selectParentSignupGuideRecipients([
+    full("p1", "A", "010-4000-0001", { phoneRegistered: true }),
+    full("p1", "A2", "010-4000-0001", { phoneRegistered: true }), // 같은 번호 → 1개로 센다
+    full("p2", "B", "010-4000-0002", { phoneMultipleClaimable: true }),
+    full("p3", "C", "010-4000-0003"),
+  ], { alreadySentPhones: none, resend: false });
+  assert.deepEqual(result.recipients.map((r) => r.phone), ["01040000002", "01040000003"]);
+  assert.equal(result.registeredPhoneCount, 1);
+  assert.equal(result.needsAcademyHelpCount, 1);
+  assert.equal(result.recipients[0].needsAcademyHelp, true);
+});
+
+test("구성: 이미 받은 번호를 빼면 구성도 남은 사람만 센다", () => {
+  const result = T.selectParentSignupGuideRecipients([
+    full("p1", "A", "010-5000-0001", { isAdult: true }),
+    full("p2", "B", "010-5000-0002", { enrollmentStatus: "PAUSED" }),
+  ], { alreadySentPhones: new Set(["01050000001"]), resend: false });
+  assert.deepEqual(result.breakdown, { active: 0, paused: 1, adult: 0 });
+});
+
+test("성인 문구: 학부모용과 딱 세 줄만 다르고(학부모·자녀·가족), 문자로 깨지는 글자가 없다", () => {
+  const parent = T.buildParentSignupGuideMessage().split("\n");
+  const adult = T.buildAdultSignupGuideMessage().split("\n");
+  assert.equal(adult.length, parent.length);
+  const diff = parent.map((line, i) => [line, adult[i]]).filter(([a, b]) => a !== b);
+  assert.deepEqual(diff, [
+    ["[스티즈농구교실] 학부모 가입 안내", "[스티즈농구교실] 회원 가입 안내"],
+    ["학원에 등록하신 휴대폰 번호로 가입하시면 자녀가 자동으로 연결돼요.", "학원에 등록하신 휴대폰 번호로 가입하시면 수강 정보가 자동으로 연결돼요."],
+    ["재원생 가족 혜택", "재원생 혜택"],
+  ]);
+  assert.doesNotMatch(adult.join("\n"), /학부모|자녀|가족/);
+  const decoder = new TextDecoder("euc-kr");
+  const allowed = new Set();
+  for (let a = 0xa1; a <= 0xfe; a += 1) for (let b = 0xa1; b <= 0xfe; b += 1) allowed.add(decoder.decode(new Uint8Array([a, b])));
+  const broken = [...adult.join("\n")].filter((ch) => ch.charCodeAt(0) > 0x7f && !allowed.has(ch));
+  assert.deepEqual(broken, []);
+  assert.equal(T.signupGuideMessageFor({ group: "ADULT" }), T.buildAdultSignupGuideMessage());
+  assert.equal(T.signupGuideMessageFor({ group: "PAUSED" }), T.buildParentSignupGuideMessage());
+});
+
+test("미리보기 한 줄: 성인은 «성인 수강생 본인», 휴원은 «(휴원)»", () => {
+  assert.equal(T.describeSignupGuideRecipient({ phone: "01012345678", studentNames: ["김민수"], group: "ADULT" }), "김*수 성인 수강생 본인 · ***-****-5678");
+  assert.equal(T.describeSignupGuideRecipient({ phone: "01012345678", studentNames: ["김민수"], group: "PAUSED" }), "김*수 학생 학부모(휴원) · ***-****-5678");
+});
+
+test("서버: 사람마다 맞는 문구로 같은 큐 한 묶음에 넣고, 문구·구분이 바뀌면 미리보기 대조가 멈춘다", () => {
+  const resolve = action.slice(action.indexOf("async function resolveSignupGuide"), action.indexOf("export async function prepareParentSignupGuide"));
+  assert.match(resolve, /hashMessageRecipientPhone\(item\.phone\)\}:\$\{item\.group\}/);
+  assert.match(resolve, /bodyHash: hashMessageBody\(`\$\{body\}\\n---\\n\$\{adultBody\}`\)/);
+  const send = action.slice(action.indexOf("export async function sendParentSignupGuide"));
+  assert.match(send, /items: guide\.recipients\.map\(\(item\) => \(\{ recipient: item\.phone, body: signupGuideMessageFor\(item\) \}\)\)/);
+  // 미리보기는 구성·성인 문구를 보여 주되 번호 원문은 내보내지 않는다
+  const preview = action.slice(action.indexOf("export async function prepareParentSignupGuide"), action.indexOf("export async function sendParentSignupGuide"));
+  assert.match(preview, /breakdown: guide\.breakdown/);
+  assert.match(sender, /breakdownText\(preview\)/);
+  assert.match(sender, /성인 수강생 본인에게 가는 문구/);
 });

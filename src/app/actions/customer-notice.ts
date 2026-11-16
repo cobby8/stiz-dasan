@@ -38,6 +38,7 @@ import {
   PARENT_SIGNUP_PREVIEW_SAMPLE,
   buildIntakeResultMessage,
   buildKakaoChannelInviteMessage,
+  buildAdultSignupGuideMessage,
   buildParentSignupGuideMessage,
   buildRentalGuideMessage,
   describeSignupGuideRecipient,
@@ -45,9 +46,12 @@ import {
   maskPhone,
   normalizeMobilePhone,
   selectParentSignupGuideRecipients,
+  signupGuideMessageFor,
   type CustomerNoticeKind,
   type SignupGuideCandidate,
 } from "@/lib/customer-notice/templates";
+// 가입 판정(classifyPhoneOwnership)이 쓰는 «빈 보호자 계정» 합성 이메일 규칙 — 같은 한 곳을 SQL 에 넘긴다
+import { SYNTHETIC_PARENT_EMAIL } from "@/lib/parent-synthetic-email";
 
 /** 무엇을 누구에게 보낼지 — 화면이 넘기는 값은 «대상 id» 뿐이다(번호는 대관 직접 입력만) */
 export type CustomerNoticeRequest =
@@ -373,8 +377,16 @@ export type ParentSignupGuidePreview = {
   recipientCount: number;
   /** 이미 이 안내를 받은 번호 수(기본은 빠짐) */
   alreadySentCount: number;
-  /** 휴대폰 번호가 없어 빠진 재원생 학부모 수 */
+  /** 휴대폰 번호가 없어 빠진 수강생 수 */
   invalidPhoneCount: number;
+  /** 받는 사람 구성(번호 기준) — 재원 · 휴원 · 성인 수강생 본인 */
+  breakdown: { active: number; paused: number; adult: number };
+  /** 가입하면 «이미 가입된 번호»로 막혀 뺀 번호 수(직원 계정 등이 같은 번호를 씀) */
+  registeredPhoneCount: number;
+  /** 보내지만 가입 때 «학원에 문의»로 멈출 번호 수(같은 번호의 빈 보호자 계정이 여러 개) */
+  needsAcademyHelpCount: number;
+  /** 성인 수강생 본인에게 가는 문구(성인이 없으면 null) */
+  adultMessage: string | null;
   /** 처음 몇 명 — 이름 가리고 번호 끝 4자리만 */
   sample: string[];
   message: string;
@@ -390,17 +402,46 @@ export type ParentSignupGuideSendResult = {
   batchId?: string;
 };
 
-/** 재원생의 대표 학부모 → 받는 사람 목록을 서버에서 직접 계산한다(화면은 번호 목록을 보내지 않는다) */
+/** 재원·휴원생의 대표 보호자(성인은 본인) → 받는 사람 목록을 서버에서 직접 계산한다(화면은 번호 목록을 보내지 않는다) */
 async function resolveSignupGuide(resend: boolean) {
-  // 재원생(수강 ACTIVE·병합되지 않은 학생)의 대표 학부모. 탈퇴한 계정은 뺀다.
-  const rows = await prisma.$queryRawUnsafe<Array<{ parentUserId: string; studentName: string; phone: string | null; hasAccount: boolean }>>(
-    `SELECT DISTINCT u.id AS "parentUserId", s.name AS "studentName", u.phone, (u."authUserId" IS NOT NULL) AS "hasAccount"
+  // 2026-11-16 원장 결정표 «전체 다 보내. 성인도 포함해»:
+  //   수강이 ACTIVE 또는 PAUSED 인 학생(병합 제외 · 퇴원만 남은 학생은 빠짐)의 대표 보호자. 탈퇴한 계정은 뺀다.
+  //   학생 1명당 1줄 — 수강 중인 반이 하나라도 있으면 ACTIVE, 휴원만 남았으면 PAUSED.
+  //   성인(만 19세 이상, KST 오늘 기준)은 대표 보호자 칸이 «본인 이름·본인 번호의 빈 계정»이라 같은 길로 잡힌다.
+  //   own.* = 가입 판정(classifyPhoneOwnership)과 같은 기준으로 «이 번호로 가입하면 어떻게 되나»를 미리 본다.
+  const rows = await prisma.$queryRawUnsafe<Array<{
+    parentUserId: string; studentName: string; phone: string | null; hasAccount: boolean;
+    enrollmentStatus: "ACTIVE" | "PAUSED"; isAdult: boolean; otherUsers: number; claimableUsers: number;
+  }>>(
+    `SELECT u.id AS "parentUserId", s.name AS "studentName", u.phone, (u."authUserId" IS NOT NULL) AS "hasAccount",
+            CASE WHEN bool_or(e.status = 'ACTIVE') THEN 'ACTIVE' ELSE 'PAUSED' END AS "enrollmentStatus",
+            (s."birthDate"::date <= ((now() AT TIME ZONE 'Asia/Seoul')::date - INTERVAL '19 years')) AS "isAdult",
+            MAX(own."otherUsers")::int AS "otherUsers", MAX(own."claimableUsers")::int AS "claimableUsers"
        FROM "Enrollment" e
        JOIN "Student" s ON s.id = e."studentId" AND s."mergedIntoStudentId" IS NULL
        JOIN "User" u ON u.id = s."parentId" AND u."withdrawnAt" IS NULL
-      WHERE e.status = 'ACTIVE'`,
+       LEFT JOIN LATERAL (
+         SELECT COUNT(*) FILTER (WHERE NOT (o.role = 'PARENT' AND o."authUserId" IS NULL AND COALESCE(o.email, '') ~* $1)) AS "otherUsers",
+                COUNT(*) FILTER (WHERE o.role = 'PARENT' AND o."authUserId" IS NULL AND COALESCE(o.email, '') ~* $1) AS "claimableUsers"
+           FROM "User" o
+          WHERE regexp_replace(COALESCE(o.phone, ''), '[^0-9]', '', 'g') = regexp_replace(COALESCE(u.phone, ''), '[^0-9]', '', 'g')
+       ) own ON true
+      WHERE e.status IN ('ACTIVE', 'PAUSED')
+      GROUP BY u.id, u.phone, u."authUserId", s.id, s.name, s."birthDate"`,
+    SYNTHETIC_PARENT_EMAIL.source,
   );
-  const candidates: SignupGuideCandidate[] = rows.map((row) => ({ ...row, hasAccount: row.hasAccount === true }));
+  const candidates: SignupGuideCandidate[] = rows.map((row) => ({
+    parentUserId: row.parentUserId,
+    studentName: row.studentName,
+    phone: row.phone,
+    hasAccount: row.hasAccount === true,
+    enrollmentStatus: row.enrollmentStatus === "PAUSED" ? "PAUSED" : "ACTIVE",
+    isAdult: row.isAdult === true,
+    // 같은 번호를 «빈 보호자 계정»이 아닌 계정(로그인 수단 있음·직원 등)이 쓰면 가입이 «이미 가입된 번호»로 막힌다
+    phoneRegistered: Number(row.otherUsers) > 0,
+    // 같은 번호의 빈 보호자 계정이 여러 개면 가입 때 «학원에 문의»로 멈춘다
+    phoneMultipleClaimable: Number(row.claimableUsers) > 1,
+  }));
 
   // 이미 이 안내를 받은 번호 — 장부의 번호 지문(HMAC)으로 찾는다. 실패한(FAILED) 건은 «안 받음»으로 본다.
   const phoneByHash = new Map<string, string>();
@@ -425,18 +466,20 @@ async function resolveSignupGuide(resend: boolean) {
   }
 
   const selected = selectParentSignupGuideRecipients(candidates, { alreadySentPhones, resend });
+  // 학부모용(원장 승인본) + 성인 수강생 본인용 — 사람마다 구분에 맞는 문구가 간다
   const body = buildParentSignupGuideMessage();
+  const adultBody = buildAdultSignupGuideMessage();
   const binding = {
     kind: "PARENT_SIGNUP_GUIDE" as const,
-    targetRef: "active-enrolled-parents-without-account",
+    targetRef: "active-or-paused-guardians-and-adults-without-account",
     resend,
     recipientCount: selected.recipients.length,
-    // 받는 번호 묶음의 지문 — 미리보기 뒤에 한 명이라도 바뀌면 보내기를 멈춘다
-    recipientSetHash: hashMessageBody(selected.recipients.map((item) => hashMessageRecipientPhone(item.phone)).join(",")),
-    bodyHash: hashMessageBody(body),
+    // 받는 번호 묶음의 지문(번호+구분) — 미리보기 뒤에 한 명이라도, 또는 누구의 문구가 바뀌면 보내기를 멈춘다
+    recipientSetHash: hashMessageBody(selected.recipients.map((item) => `${hashMessageRecipientPhone(item.phone)}:${item.group}`).join(",")),
+    bodyHash: hashMessageBody(`${body}\n---\n${adultBody}`),
     channel: "SMS",
   };
-  return { ...selected, body, binding };
+  return { ...selected, body, adultBody, binding };
 }
 
 /** 1) 미리보기만 만든다. 이 단계에서는 절대 보내지 않는다. */
@@ -448,7 +491,7 @@ export async function prepareParentSignupGuide(input: { resend?: boolean }): Pro
     if (guide.recipients.length === 0) {
       throw new NoticeProblem(guide.alreadySentCount > 0
         ? `보낼 학부모가 없습니다. 이미 안내를 받은 ${guide.alreadySentCount}명은 «다시 보내기»를 골라야 포함됩니다.`
-        : "보낼 학부모가 없습니다. (재원생 학부모가 모두 가입했거나 휴대폰 번호가 없어요)");
+        : "보낼 사람이 없습니다. (재원·휴원생 보호자와 성인 수강생이 모두 가입했거나 휴대폰 번호가 없어요)");
     }
     if (guide.recipients.length > BULK_MANUAL_MESSAGE_RECIPIENT_LIMIT) {
       throw new NoticeProblem(`한 번에 ${BULK_MANUAL_MESSAGE_RECIPIENT_LIMIT}명까지만 보낼 수 있습니다.`);
@@ -466,6 +509,10 @@ export async function prepareParentSignupGuide(input: { resend?: boolean }): Pro
       recipientCount: guide.recipients.length,
       alreadySentCount: guide.alreadySentCount,
       invalidPhoneCount: guide.invalidPhoneCount,
+      breakdown: guide.breakdown,
+      registeredPhoneCount: guide.registeredPhoneCount,
+      needsAcademyHelpCount: guide.needsAcademyHelpCount,
+      adultMessage: guide.breakdown.adult > 0 ? guide.adultBody : null,
       // 전체 번호는 화면에 내보내지 않는다 — 처음 몇 명, 이름 가림 + 끝 4자리만
       sample: guide.recipients.slice(0, PARENT_SIGNUP_PREVIEW_SAMPLE).map(describeSignupGuideRecipient),
       message: guide.body,
@@ -548,15 +595,17 @@ export async function sendParentSignupGuide(input: {
       actorUserId: admin.appUserId,
       actorName: admin.appUserName,
       purpose: CUSTOMER_NOTICE_LABEL.PARENT_SIGNUP_GUIDE,
-      reason: "원장 미리보기 승인 후 재원생 미가입 학부모에게 대량 접수",
+      reason: "원장 미리보기 승인 후 재원·휴원생 미가입 보호자와 성인 수강생에게 대량 접수",
       audienceScope: "EXTERNAL",
       body: guide.body,
       recipients: guide.recipients.map((item) => item.phone),
+      // 사람마다 문구가 다르다(성인 수강생 본인 = 성인용). 같은 묶음·같은 크론 경로로 나간다
+      items: guide.recipients.map((item) => ({ recipient: item.phone, body: signupGuideMessageFor(item) })),
     });
     await prisma.$executeRawUnsafe(
       `INSERT INTO "OperationsAuditLog" (id, action, "actorType", "actorUserId", "detailsJson")
        VALUES (gen_random_uuid()::text, 'CUSTOMER_NOTICE_RESULT', 'ADMIN', $1, $2::jsonb)`,
-      admin.appUserId, JSON.stringify({ approvalId, kind: "PARENT_SIGNUP_GUIDE", batchId: queued.batchId, queued: guide.recipients.length }),
+      admin.appUserId, JSON.stringify({ approvalId, kind: "PARENT_SIGNUP_GUIDE", batchId: queued.batchId, queued: guide.recipients.length, breakdown: guide.breakdown }),
     ).catch(() => undefined);
     return {
       ok: true,
