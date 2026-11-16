@@ -101,7 +101,7 @@ android {
     buildFeatures { buildConfig true }
     defaultConfig {
         buildConfigField 'boolean', 'STIZ_UNIFIED_APP', unifiedApp.toString()
-        resValue 'string', 'app_name', unifiedApp ? 'STIZ 농구교실' : 'STIZ 기사님'
+        resValue 'string', 'app_name', unifiedApp ? '스티즈농구교실' : 'STIZ 기사님'
         // 앱 알림(FCM) 프로젝트 값 — 설정 파일이 없으면 빈 값
         buildConfigField 'String', 'FCM_PROJECT_ID', '"' + (firebaseProjectId ==~ /[a-z0-9-]*/ ? firebaseProjectId : '') + '"'
         buildConfigField 'String', 'FCM_SENDER_ID', '"' + (firebaseSenderId ==~ /[0-9]*/ ? firebaseSenderId : '') + '"'

@@ -72,7 +72,7 @@ native_push = (root / "STIZ/NativePush.swift").read_text(encoding="utf-8")
 assert 'inDirectory: "Firebase"' in native_push and "guard !NavigationPolicy.sandbox.isRequested" in native_push, "시험 앱·설정 없는 빌드는 Firebase 를 켜지 않는다"
 assert "message.frameInfo.isMainFrame" in native_push and 'origin.host.lowercased() == "www.stiz-dasan.kr"' in native_push, "알림 창구는 우리 사이트 맨 위 화면에만"
 assert "NavigationPolicy.pushTarget(" in native_push, "알림을 눌러 여는 주소는 주소 정책으로 거른다"
-assert info["CFBundleDisplayName"] == "STIZ 농구교실"
+assert info["CFBundleDisplayName"] == "스티즈농구교실"
 # 스토어 아이콘: 1024 한 장(투명 없음)과 빌드 설정. 개인정보 명세: 앱 리소스로 포함·추적 없음.
 assert project.count("ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;") == 2, "Debug/Release 모두 AppIcon 사용"
 icon = json.loads((root / "STIZ/Assets.xcassets/AppIcon.appiconset/Contents.json").read_text(encoding="utf-8"))
