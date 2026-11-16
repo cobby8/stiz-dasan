@@ -595,3 +595,37 @@ test("발행 보류 건너뛰기 사유·신청함 상태 지도에 새 값이 �
   assert.equal(catalog.statusLabel("ILLNESS_CARRY", "APPROVED"), "이월 승인", "납부된 달의 글자는 그대로");
   assert.equal(catalog.bucketFor("ILLNESS_CARRY", "REDUCED"), catalog.bucketFor("ILLNESS_CARRY", "APPROVED"), "완료 쪽에 함께 놓인다");
 });
+
+test("3회 달을 세 번 다 빼면 반올림 찌꺼기 없이 0원으로 끝난다", () => {
+  // 100,000 ÷ 3 = 33,333원 → 100,000 → 66,667 → 33,334 → 0 (1원이 남지 않는다)
+  let amount = 100000;
+  const steps = [];
+  for (let i = 0; i < 3; i += 1) {
+    const plan = rules.planUnpaidReduce({ tuition: 100000, sessions: 3, paymentAmount: amount });
+    assert.equal(plan.ok, true);
+    steps.push(plan.after);
+    amount = plan.after;
+  }
+  assert.deepEqual(steps, [66667, 33334, 0]);
+  // 남는 금액이 수업 횟수(원) 이상이면 건드리지 않는다 — 셔틀비가 섞인 청구의 남은 금액을 지우지 않는다
+  assert.equal(rules.planUnpaidReduce({ tuition: 90000, sessions: 4, paymentAmount: 42500 }).after, 20000);
+  assert.equal(rules.planUnpaidReduce({ tuition: 100000, sessions: 3, paymentAmount: 33340 }).after, 7);
+});
+
+test("결석 쪽 검사 문구는 기존 이월 승인(resolveWorkbenchAbsence)과 같은 글자다 — 두 경로가 따로 놀지 않게", () => {
+  const carry = read("src/lib/billing/workbench-absence.ts");
+  const reduce = read("src/lib/regular/illness-unpaid-reduce.ts");
+  for (const message of [
+    "이미 보강에 사용된 결석입니다. 자동 이월하지 않고 별도 확인이 필요합니다.",
+    "보강 예약 취소와 좌석 해제를 확인해 주세요.",
+    "출결이 결석과 일치하지 않습니다. 출석·지각 정정 내역을 먼저 확인해 주세요.",
+    "통합되거나 변경된 학생입니다. 현재 학생으로 다시 조회해 주세요.",
+    "확인된 미처리 결석만 처리할 수 있습니다.",
+  ]) {
+    assert.ok(carry.includes(message), `이월 쪽에 없음: ${message}`);
+    assert.ok(reduce.includes(message), `감액 쪽에 없음: ${message}`);
+  }
+  // 보강 사용·예약·출결을 가르는 상태 값도 같은 집합
+  for (const fragment of [`["USED","NO_SHOW"]`, `["ATTENDED","NO_SHOW"]`]) assert.ok(carry.includes(fragment));
+  for (const fragment of [`["USED", "NO_SHOW"]`, `["ATTENDED", "NO_SHOW"]`]) assert.ok(reduce.includes(fragment));
+});

@@ -69,8 +69,11 @@ export function planUnpaidReduce(input: {
   if (!Number.isSafeInteger(tuition) || tuition < 0 || !Number.isSafeInteger(sessions) || sessions < 1
     || !Number.isSafeInteger(paymentAmount) || paymentAmount < 0) return { ok: false, code: "BAD_AMOUNT" };
   const unit = Math.round(tuition / sessions);
-  const reduceBy = Math.min(unit, paymentAmount);
+  let reduceBy = Math.min(unit, paymentAmount);
   if (reduceBy <= 0) return { ok: false, code: "NOTHING" };
+  // 반올림 찌꺼기 정리: 남는 금액이 «수업 횟수(원)»보다 작으면 나눗셈 반올림으로 생긴 몇 원이다 — 함께 뺀다.
+  // (예: 100,000원 ÷ 3회 = 33,333원을 세 번 빼면 1원이 남는다. 1원짜리 미납 청구가 학부모 화면에 남지 않게)
+  if (paymentAmount - reduceBy > 0 && paymentAmount - reduceBy < sessions) reduceBy = paymentAmount;
   const after = paymentAmount - reduceBy;
   if (after === 0 && input.carryLinked) return { ok: false, code: "CARRY_LINKED_ZERO" };
   return { ok: true, unit, reduceBy, before: paymentAmount, after, cancels: after === 0 };
