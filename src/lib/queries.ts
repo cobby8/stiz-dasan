@@ -841,20 +841,20 @@ export const getAttendanceByDateAndClass = cache(async (date: string, classId: s
             };
         }
 
-        const sessions = await prisma.$queryRawUnsafe<any[]>(
-            // 같은 날 정규 기록이 (예전 데이터로) 둘이면 키 있는 기록(코치 앱·수업일지와 같은 정본)을 먼저 고른다.
-            `SELECT id, "classId", date, notes FROM "Session"
-             WHERE "classId" = $1 AND date::date = $2::date AND "specialProgramSessionDateId" IS NULL
-             ORDER BY ("sessionKey" IS NULL), "createdAt" LIMIT 1`,
-            classId, date
-        );
-        const session = sessions[0] ?? null;
-
-        // 해당 반 수강생 목록
-        const enrolled = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT e."studentId", s.name AS student_name,
-                    -- 프로필 사진 바꾼 시각(사진 있을 때만) — 출석부 사진의 캐시 버전(2026-11-14)
-                    ${profilePhotoUpdatedAtSql("s")} AS "photoUpdatedAt"
+        // 정규 수업: 수업 기록·명단·출결·결석 신고를 «한 번의 조회»로 읽는다(2026-11-17 속도 개선).
+        // 예전엔 네 번을 차례로 보냈다 — 주간 보드는 수업 수만큼 반복해 0.9초가 걸렸다.
+        // 조건(WHERE·JOIN·정렬)은 예전 네 조회와 같다. 명단·출결·신고는 json 묶음으로 받아 아래에서 예전과 같은 모양으로 푼다.
+        const combined = await prisma.$queryRawUnsafe<any[]>(
+            `SELECT sess.id, sess."classId", sess.date, sess.notes,
+                    (SELECT COALESCE(json_agg(json_build_object(
+                                'studentId', r."studentId",
+                                'student_name', r.student_name,
+                                'photoUpdatedAtMs', r."photoUpdatedAtMs"
+                            ) ORDER BY r.student_name ASC), '[]'::json)
+                       FROM (
+             SELECT e."studentId", s.name AS student_name,
+                    -- 프로필 사진 바꾼 시각(사진 있을 때만) — 출석부 사진의 캐시 버전(2026-11-14). json 에 실으려고 1/1000초 숫자로 바꾼다.
+                    floor(EXTRACT(EPOCH FROM (${profilePhotoUpdatedAtSql("s")})) * 1000) AS "photoUpdatedAtMs"
              FROM "Enrollment" e
              JOIN "Student" s ON e."studentId" = s.id AND ${notMergedStudent("s")}
              WHERE e."classId" = $1 AND e.status = 'ACTIVE'
@@ -862,27 +862,32 @@ export const getAttendanceByDateAndClass = cache(async (date: string, classId: s
                    SELECT 1 FROM "Attendance" historical JOIN "Session" prior ON prior.id=historical."sessionId"
                    WHERE historical."studentId"=e."studentId" AND prior."classId"=$1 AND prior.date::date=$2::date
                ))
-             ORDER BY s.name ASC`,
+                       ) r) AS enrolled,
+                    -- 세션이 있으면 출석 기록(없으면 sess.id 가 NULL 이라 빈 묶음)
+                    (SELECT COALESCE(json_agg(json_build_object('id', a.id, 'studentId', a."studentId", 'status', a.status)), '[]'::json)
+                       FROM "Attendance" a WHERE a."sessionId" = sess.id) AS attendances,
+                    -- 그날 결석 신고(학부모 신고·출석부 «질병·부상» 표시) — 관리자 화면의 질병·부상 체크 초기값.
+                    (SELECT COALESCE(json_agg(json_build_object(
+                                'studentId', ra."studentId", 'reason', ra.reason, 'status', ra.status,
+                                'note', ra.note, 'reportedByUserId', ra."reportedByUserId")), '[]'::json)
+                       FROM "RegularAbsence" ra
+                      WHERE ra."classId" = $1 AND ra.date = $2::date AND ra.status IN ('REPORTED','CONFIRMED')) AS absences
+               FROM (SELECT 1) one
+               LEFT JOIN LATERAL (
+            -- 같은 날 정규 기록이 (예전 데이터로) 둘이면 키 있는 기록(코치 앱·수업일지와 같은 정본)을 먼저 고른다.
+            SELECT id, "classId", date, notes FROM "Session"
+             WHERE "classId" = $1 AND date::date = $2::date AND "specialProgramSessionDateId" IS NULL
+             ORDER BY ("sessionKey" IS NULL), "createdAt" LIMIT 1
+               ) sess ON true`,
             classId, date
         );
-
-        // 세션이 있으면 출석 기록 조회
-        let attendances: any[] = [];
-        if (session) {
-            attendances = await prisma.$queryRawUnsafe<any[]>(
-                `SELECT id, "studentId", status FROM "Attendance" WHERE "sessionId" = $1`,
-                session.id
-            );
-        }
-
-        // 그날 결석 신고(학부모 신고·출석부 «질병·부상» 표시) — 관리자 화면의 질병·부상 체크 초기값.
+        const row = combined[0] ?? {};
+        const session = row.id ? { id: row.id, classId: row.classId ?? row.classid, date: row.date, notes: row.notes } : null;
+        // json 묶음은 배열로도, 글자로도 올 수 있어 같은 파일의 parseJsonList 로 받는다(글자로 오면 «학생 0명»으로 보이는 사고 방지)
+        const enrolled = parseJsonList<any>(row.enrolled);
+        const attendances = parseJsonList<any>(row.attendances);
         // 코치 출석부(staff-session-queries)와 같은 absenceReportOf 로 출처(SHEET/PARENT)를 가른다.
-        const absenceRows = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT "studentId", reason, status, note, "reportedByUserId"
-               FROM "RegularAbsence"
-              WHERE "classId" = $1 AND date = $2::date AND status IN ('REPORTED','CONFIRMED')`,
-            classId, date
-        );
+        const absenceRows = parseJsonList<any>(row.absences);
         const absenceByStudent = new Map<string, AbsenceReportState>(
             absenceRows.map((r: any) => [r.studentId, absenceReportOf(r)]),
         );
@@ -893,7 +898,7 @@ export const getAttendanceByDateAndClass = cache(async (date: string, classId: s
                 absenceReport: absenceByStudent.get(e.studentId ?? e.studentid) ?? null,
                 studentId: e.studentId ?? e.studentid,
                 studentName: e.student_name,
-                photoVersion: profilePhotoVersion(e.photoUpdatedAt ?? e.photoupdatedat ?? null),
+                photoVersion: profilePhotoVersion(e.photoUpdatedAtMs ?? null),
                 status: attendances.find(
                     (a: any) => (a.studentId ?? a.studentid) === (e.studentId ?? e.studentid)
                 )?.status ?? null,
