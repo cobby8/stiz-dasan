@@ -49,6 +49,27 @@ export async function syncRentalCalendar(id: string): Promise<void> {
   }
 }
 
+/**
+ * 캘린더에 남아 있으면 안 되는 일정 다시 지우기(2026-11-16 원장 «사이트에서 취소되면 캘린더에서도 삭제»).
+ * 취소 순간에 구글 쪽 삭제가 실패하면 일정 ID 가 남는다 — 그런 대관을 찾아 다시 맞춘다. 매일 정리 cron 이 부른다.
+ * 실패해도 던지지 않는다(다음 날 다시 시도).
+ */
+export async function sweepRentalCalendar(limit = 20): Promise<{ checked: number }> {
+  try {
+    const rows = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
+      `SELECT id FROM "GymRentalRequest"
+        WHERE "calendarEventId" IS NOT NULL AND status NOT IN ('PAID','COMPLETED','REFUNDED')
+        ORDER BY "updatedAt" DESC LIMIT $1`,
+      Math.max(1, Math.min(50, Math.trunc(limit))),
+    );
+    for (const row of rows) await syncRentalCalendar(row.id);
+    return { checked: rows.length };
+  } catch (error) {
+    console.error("[rental] calendar sweep failed:", (error as Error)?.name);
+    return { checked: 0 };
+  }
+}
+
 async function saveEventId(id: string, eventId: string | null) {
   await prisma.$executeRawUnsafe(`UPDATE "GymRentalRequest" SET "calendarEventId" = $2 WHERE id = $1`, id, eventId);
 }
