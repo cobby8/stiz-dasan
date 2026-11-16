@@ -133,6 +133,53 @@ export function buildConfirmedRosterUpdate(
   return { sets: [...byColumn.values()], args };
 }
 
+// ────────────────────────────────────────────────────────────────
+// «뺀 학생» 목록의 문구 규칙 — 화면(ShuttleRosterClient)이 그대로 쓴다.
+// 문구가 갈리는 조건(수강 취소 여부)을 실제로 돌려 확인하려고 화면에서 떼어 여기에 둔다.
+// ────────────────────────────────────────────────────────────────
+
+/** 뺀 학생 한 줄에서 문구를 고르는 데 필요한 값만. */
+export type RemovedRosterView = {
+  studentName: string;
+  removedReason?: string | null;
+  /** 수강 항목이 취소·거절 상태인가(서버가 판정해서 내려준다). */
+  enrollmentCancelled?: boolean;
+};
+
+const ENROLLMENT_CANCEL_REASON = /수강\s*취소/;
+
+/** 수강 취소 계열로 빠진 학생인가 — 지금 수강이 취소 상태이거나, 이유 글에 «수강 취소»가 적혀 있을 때. */
+export function isEnrollmentCancelRemoval(row: RemovedRosterView): boolean {
+  return row.enrollmentCancelled === true || ENROLLMENT_CANCEL_REASON.test(row.removedReason ?? "");
+}
+
+/**
+ * 빠진 이유 표시 글. 이 화면의 «명단에서 빼기»는 이유를 남기지 않으므로(null) 그때는 «명단에서 뺌»으로 보인다.
+ * 수강이 취소된 학생이면 이유 뒤에 «수강 취소»를 덧붙인다(되돌리기 전에 눈에 띄어야 한다).
+ */
+export function removedReasonLabel(row: RemovedRosterView): string {
+  const reason = (row.removedReason ?? "").trim() || "명단에서 뺌";
+  if (row.enrollmentCancelled === true && !ENROLLMENT_CANCEL_REASON.test(reason)) return `${reason} · 수강 취소`;
+  return reason;
+}
+
+/**
+ * 수강이 취소된 학생 줄에 «되돌리기» 버튼 대신 보이는 안내.
+ * 이런 학생은 되돌려도 명단 조회가 숨기므로, 화면은 버튼을 그리지 않고 서버도 되돌리기를 거부한다.
+ */
+export const RESTORE_BLOCKED_HINT = "수강을 되살린 뒤 다시 넣을 수 있습니다";
+
+/**
+ * 되돌리기 확인 문구. 수강이 실제로 취소된 학생(enrollmentCancelled)은 버튼이 없어 여기로 오지 않는다.
+ * 이유 글에만 «수강 취소»가 있고 수강 항목은 살아 있는 학생(신청서 단위 취소 등)이면 그 사실을 먼저 알린다.
+ */
+export function restoreConfirmMessage(row: RemovedRosterView): string {
+  if (isEnrollmentCancelRemoval(row)) {
+    return `${row.studentName} 학생은 수강 취소로 빠진 학생입니다. 그래도 셔틀 명단에 다시 넣을까요?`;
+  }
+  return `${row.studentName} 학생을 확정 명단에 다시 넣을까요?`;
+}
+
 /**
  * 명단 한 줄을 어디로 저장할지 고른다.
  *   확정본 행(rosterId)이 있으면 확정본으로, 없으면 기존처럼 원본 신청서로.
