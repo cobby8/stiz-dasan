@@ -2,6 +2,8 @@
 // 이 사이트는 «아이콘 없이 글자»가 원칙이다. 예외는 넷뿐이다:
 //   ① 펼침·접힘 = 화살표(expand_more / expand_less)  ② 알림 = 종(notifications / notifications_off)
 //   ③ 설정 = 톱니(settings)  ④ 관리자 «빠른작업» ⚡(AdminQuickActionMenu — 이 부품 밖의 유일한 아이콘)
+//   ⑤ 기사님 운행표의 전화 = 전화기(call) — 2026-11-16 원장 지시 «전화 버튼도 아이콘이 빠져서 줄이 바뀌는데 아이콘으로 복귀».
+//      좁은 한 줄에 «학부모 전화·학생 전화» 글자가 들어가지 않아 줄이 바뀌었다. 기사님 운행표 밖에서는 쓰지 않는다.
 // 닫기·뒤로·삭제·로그아웃·메뉴 등은 지금처럼 글자다. 이름을 늘리려면 원장 결정이 먼저다
 // (tests/ui-unify-guard.test.mjs 가 이름 5종과 «이 파일 밖에서 아이콘 글꼴을 직접 쓰지 않는다»를 막는다).
 //
@@ -13,8 +15,8 @@
 //   · 글꼴을 못 받으면(주소 막힘·4초 초과) 아이콘 대신 «대체 글자»가 보인다 — 아이콘만 있는 버튼이 빈칸이 되지 않게.
 //     전환은 CSS 가 한다(html 의 material-symbols-fallback 클래스, globals.css). 여기서는 둘 다 그려 두기만 한다.
 
-/** 허용된 아이콘 이름 — 펼침 화살표 2 · 알림 종 2 · 설정 톱니 1 */
-export type UiIconName = "expand_more" | "expand_less" | "notifications" | "notifications_off" | "settings";
+/** 허용된 아이콘 이름 — 펼침 화살표 2 · 알림 종 2 · 설정 톱니 1 · 전화 1(기사님 운행표) */
+export type UiIconName = "expand_more" | "expand_less" | "notifications" | "notifications_off" | "settings" | "call";
 
 /** 글꼴을 못 받았을 때 보일 글자. 44px 버튼 안에 들어가게 짧게(12px 기준 세 글자 안팎) */
 export const UI_ICON_FALLBACK_TEXT: Record<UiIconName, string> = {
@@ -23,6 +25,7 @@ export const UI_ICON_FALLBACK_TEXT: Record<UiIconName, string> = {
     notifications: "알림",
     notifications_off: "알림 끔",
     settings: "설정",
+    call: "전화",
 };
 
 export default function UiIcon({ name, size = 20, className = "" }: {

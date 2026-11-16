@@ -10,11 +10,12 @@ import { readDriverBoarding } from "@/lib/shuttle/driverStatusRead";
 import { buildUnifiedRun } from "@/lib/shuttle/unifiedDriverRunLogic";
 import UnifiedDriverClient from "@/components/shuttle/UnifiedDriverClient";
 import StaffShuttleDashboardClient from "./StaffShuttleDashboardClient";
+import StaffVehicleLocation from "./StaffVehicleLocation";
 
 export const dynamic = "force-dynamic";
 
 export default async function StaffShuttlePage({ searchParams }: {
-  searchParams: Promise<{ date?: string; focus?: string; view?: string }>;
+  searchParams: Promise<{ date?: string; focus?: string; view?: string; mode?: string }>;
 }) {
   const staff = await requireStaff();
   if (shuttleScope(staff.roles) === "NONE") redirect("/staff");
@@ -50,22 +51,50 @@ export default async function StaffShuttlePage({ searchParams }: {
   ]);
   const initialBoarding = Object.fromEntries(Object.entries(boarding?.boarding ?? {}).map(([id, status]) => ["R:" + id, status]));
 
+  // 2026-11-16 원장 지시: 기사님이 아닌 사람(선생님 화면으로 보는 원장·부원장)은 탑승 여부·현재 위치만 «본다».
+  // 직접 운행하는 날에는 «선생님 운행»을 눌러 운행 모드(?mode=drive)로 들어가야 탑승 체크를 할 수 있다.
+  // 기사님(기사 역할이 있는 사람)은 지금처럼 바로 운행표다.
+  const isDriver = staff.roles.driver;
+  const driveMode = isDriver || params.mode === "drive";
+  const dateQuery = date === today ? "" : `date=${date}`;
+
   return (
     <>
-      {/* 이 운행표(계정용)에는 위치 전송이 없다. 위치를 보내려면 운행 화면에서 «운행 시작»을 누른다(2026-11-13 b7).
-          기사님 첫 화면(/staff/driver)을 거쳐 간다 — 안드로이드 앱은 위치 공유가 켜지는 운행 링크 화면으로, 브라우저는 /staff/run 으로(2026-11-16). */}
-      <div className="mx-auto max-w-lg px-4 pt-3">
-        <Link href="/staff/driver" className="academy-button-primary min-h-12! w-full text-base!">
-          운행 시작 (위치 전송)
-        </Link>
-      </div>
-      <div className="mx-auto flex max-w-lg flex-wrap gap-x-4 gap-y-1 px-4 py-2">
-        <Link href="/staff/shuttle/intake" className="academy-button-text">신규 셔틀 검토</Link>
-        <Link href="/staff/shuttle/assign" className="academy-button-text">새 학생 배정</Link>
-        <Link href="?view=routes" className="academy-button-text">별도 확정 노선</Link>
-      </div>
+      {driveMode ? (
+        <div className="mx-auto max-w-lg space-y-2 px-4 pt-3">
+          {/* 이 운행표(계정용)에는 위치 전송이 없다. 위치를 보내려면 운행 화면에서 «운행 시작»을 누른다(2026-11-13 b7).
+              기사님 첫 화면(/staff/driver)을 거쳐 간다 — 안드로이드 앱은 위치 공유가 켜지는 운행 링크 화면으로, 브라우저는 /staff/run 으로(2026-11-16). */}
+          <Link href="/staff/driver" className="academy-button-primary min-h-12! w-full text-base!">
+            운행 시작 (위치 전송)
+          </Link>
+          {/* 신규 셔틀 검토·새 학생 배정·별도 확정 노선은 기사님에게만 — 선생님 화면에서는 뺀다(2026-11-16 원장 지시. 원장·부원장은 관리자 화면에서 한다) */}
+          {isDriver && (
+            <div className="flex flex-wrap gap-x-4 gap-y-1 py-1">
+              <Link href="/staff/shuttle/intake" className="academy-button-text">신규 셔틀 검토</Link>
+              <Link href="/staff/shuttle/assign" className="academy-button-text">새 학생 배정</Link>
+              <Link href="?view=routes" className="academy-button-text">별도 확정 노선</Link>
+            </div>
+          )}
+          {!isDriver && (
+            <div className="flex items-center justify-between gap-2 rounded-xl bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm text-[var(--color-academy-ink)]">
+              <span>선생님 운행 중 — 탑승을 직접 체크합니다.</span>
+              <Link href={`/staff/shuttle${dateQuery ? `?${dateQuery}` : ""}`} className="academy-button-text academy-button-sm shrink-0">보기로 돌아가기</Link>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="mx-auto max-w-lg space-y-2 px-4 pt-3">
+          {/* 보기 전용: «운행 시작» 자리에 «선생님 운행» — 선생님이 직접 운행하는 날에만 누른다 */}
+          <Link href={`/staff/shuttle?mode=drive${dateQuery ? `&${dateQuery}` : ""}`} className="academy-button-primary min-h-12! w-full text-base!">
+            선생님 운행
+          </Link>
+          <StaffVehicleLocation />
+          <p className="text-xs text-[var(--color-academy-muted)]">탑승 여부는 기사님이 체크한 대로 보입니다(30초마다 새로 읽어요). 직접 운행할 때만 «선생님 운행»을 눌러 주세요.</p>
+        </div>
+      )}
       <UnifiedDriverClient
-        key={date}
+        // 보기 ↔ 운행 모드를 오가면 화면 상태(체크 값)를 새로 읽은 값으로 다시 만든다
+        key={`${date}:${driveMode ? "drive" : "view"}`}
         date={date}
         rows={buildUnifiedRun({ regular: classes })}
         initialBoarding={initialBoarding}
@@ -76,6 +105,7 @@ export default async function StaffShuttlePage({ searchParams }: {
         driverLabel="정규 셔틀 기사님"
         focusDirection={focusDirection}
         holiday={holiday}
+        readOnly={!driveMode}
       />
     </>
   );

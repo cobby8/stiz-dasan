@@ -47,15 +47,15 @@ test("굵은 글자(font-black·font-extrabold)가 늘지 않는다", () => {
 });
 
 // ── 아이콘: «허용된 것만 쓴다» (2026-11-15 원장 지정 예외) ─────────────────────────────
-// 이 사이트는 «아이콘 없이 글자»가 원칙이고, 예외는 넷뿐이다: 펼침 화살표 · 알림 종 · 설정 톱니 · «빠른작업» ⚡.
-// 앞의 셋은 공용 부품 UiIcon 하나로만 그린다(이름 5종). 선생님 화면(src/app/staff)도 같은 부품을 쓴다.
-const ICON_RULE = "2026-11-15 원장 지정 예외: 펼침 화살표·알림 종·설정 톱니·⚡. 그 밖에는 아이콘을 넣지 않는다(닫기·뒤로·삭제·로그아웃·메뉴는 글자).";
+// 이 사이트는 «아이콘 없이 글자»가 원칙이고, 예외는 다섯뿐이다: 펼침 화살표 · 알림 종 · 설정 톱니 · «빠른작업» ⚡ · 기사님 운행표 전화(2026-11-16 원장 지시).
+// ⚡ 를 뺀 넷은 공용 부품 UiIcon 하나로만 그린다(이름 6종). 선생님 화면(src/app/staff)도 같은 부품을 쓴다.
+const ICON_RULE = "원장 지정 예외: 펼침 화살표·알림 종·설정 톱니·⚡·기사님 운행표 전화. 그 밖에는 아이콘을 넣지 않는다(닫기·뒤로·삭제·로그아웃·메뉴는 글자).";
 const UI_ICON_FILE = "src/components/common/UiIcon.tsx";
-const ALLOWED_ICON_NAMES = ["expand_less", "expand_more", "notifications", "notifications_off", "settings"];
+const ALLOWED_ICON_NAMES = ["call", "expand_less", "expand_more", "notifications", "notifications_off", "settings"];
 // 아이콘 글꼴을 직접 써도 되는 파일 — 화면에 보이는 것은 공용 부품과 ⚡ 버튼 둘뿐이다.
 // 나머지는 «아이콘을 그리는 화면»이 아니라서 사유와 함께 적어 둔다. 🚫 화면 파일을 여기에 넣어 통과시키지 마라.
 const RAW_ICON_FILES = new Map([
-  [UI_ICON_FILE, "허용 아이콘 5종을 그리는 공용 부품"],
+  [UI_ICON_FILE, "허용 아이콘 6종을 그리는 공용 부품"],
   ["src/components/admin/AdminQuickActionMenu.tsx", "관리자 «빠른작업» ⚡ — 원장 지정 예외"],
   ["src/components/DeferredFontStyles.tsx", "아이콘을 그리지 않는다 — 화면에 아이콘이 있는지 찾아 글꼴을 불러오는 코드(선택자 문자열)"],
   ["src/components/builder/nodes/DynamicWidgets.tsx", "홈페이지 편집기 부품 — 지금 쓰지 않는 코드(되살릴 때 글자로 바꾼다)"],
@@ -94,11 +94,11 @@ test("아이콘 글꼴은 공용 부품(UiIcon)과 ⚡ 버튼에서만 직접 �
   assert.equal((quick.match(/material-symbols-outlined/g) || []).length, 1, `«빠른작업» 아이콘은 ⚡ 하나다. ${ICON_RULE}`);
 });
 
-test("UiIcon 의 이름은 허용 5종뿐이다 — 타입과 모든 사용처(선생님 화면 포함)", () => {
+test("UiIcon 의 이름은 허용 6종뿐이다 — 타입과 모든 사용처(선생님 화면 포함)", () => {
   const source = readFileSync(UI_ICON_FILE, "utf8");
   const union = source.match(/export type UiIconName =([^;]+);/)?.[1] ?? "";
   const typed = [...union.matchAll(/"([^"]+)"/g)].map((m) => m[1]).sort();
-  assert.deepEqual(typed, ALLOWED_ICON_NAMES, `UiIconName 이 허용 5종과 다르다. ${ICON_RULE}`);
+  assert.deepEqual(typed, ALLOWED_ICON_NAMES, `UiIconName 이 허용 6종과 다르다. ${ICON_RULE}`);
   assert.match(source, /aria-hidden="true"/, "아이콘은 보여 주기만 한다 — 이름은 글자나 aria-label 이 준다");
   assert.match(source, /name: UiIconName;/, "이름은 타입으로 제한한다(아무 글자나 받지 않는다)");
   // 사용처: src 전체(공개 화면·학부모·관리자·기사·선생님)
@@ -207,4 +207,13 @@ test("페이지 머리말 부품이 제목 모양 한 곳(.academy-page-title)�
   assert.match(css, /\.academy-app \.academy-page-title \{[^}]*font-weight: 700;/);
   assert.match(css, /\.academy-app \.academy-button-sm \{[^}]*min-height: 2\.25rem;/);
   assert.match(css, /@media \(any-pointer: coarse\) \{\s*\.academy-app \.academy-button-sm \{ min-height: 2\.75rem; \}/, "터치 화면에서는 작은 버튼도 44px");
+});
+
+test("전화 아이콘은 기사님 운행표의 전화 링크에만 쓴다(2026-11-16 원장 지시) — 이름은 aria-label 이 읽는다", () => {
+  const driver = readFileSync("src/components/shuttle/UnifiedDriverClient.tsx", "utf8");
+  assert.match(driver, /<a href=\{`tel:\$\{parent\}`\} aria-label=\{`\$\{rider\.name\} 학부모 전화`\}><UiIcon name="call" \/>학부모<\/a>/);
+  assert.match(driver, /<a href=\{`tel:\$\{child\}`\} aria-label=\{`\$\{rider\.name\} 학생 전화`\}><UiIcon name="call" \/>학생<\/a>/);
+  // 다른 화면으로 번지지 않는다
+  const others = walk("src").filter((file) => /\.tsx$/.test(file) && !file.endsWith("UnifiedDriverClient.tsx") && !file.endsWith("UiIcon.tsx") && /<UiIcon name="call"/.test(readFileSync(file, "utf8")));
+  assert.deepEqual(others, [], "전화 아이콘은 기사님 운행표 전용이다");
 });

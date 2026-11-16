@@ -94,7 +94,7 @@ test("화면 가드 — 결석 학생도 탑승 버튼·연락처가 보이고, 
   assert.doesNotMatch(src, /lockedAbsent/, "결석 학생을 잠그는(버튼 숨김) 옛 분기가 남아 있으면 안 된다");
   assert.doesNotMatch(src, /line-through/, "이름에 취소선을 긋지 않는다(흐리게만)");
   assert.doesNotMatch(src, /사전 결석 · 체크 대상 없음/);
-  assert.match(src, /const status = boarding\[rider\.key\] \?\? riderDefaultStatus\(rider\);/);
+  assert.match(src, /const status = stored \?\? riderDefaultStatus\(rider\);/);
   assert.match(src, /riderBoardingView\(rider, stored\)/);
   assert.match(src, /stopAbsenceSummary\(row\.riders, boarding\)/);
   assert.match(src, /정차 안 해도 됨/);

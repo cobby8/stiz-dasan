@@ -239,7 +239,7 @@ test("④ 화면 소스: 확인을 거쳐 탑승으로만 기록하고, 잠금 �
   const source = read("src/components/shuttle/UnifiedDriverClient.tsx");
   assert.match(source, /const anywayAllowed = boardAnyway && next === "BOARDED" && riderBoardAnyway\(rider, cur\)\.canBoardAnyway;/);
   assert.match(source, /riderBoardingView\(rider, cur\)\.blocked && !anywayAllowed\) return;/);
-  assert.match(source, /const showAnyway = locked && anyway\.canBoardAnyway;/);
+  assert.match(source, /const showAnyway = !readOnly && locked && anyway\.canBoardAnyway;/);
   // 버튼은 확인 상자만 열고, 저장은 확인 상자의 버튼만 한다
   assert.equal((source.match(/setStatus\(rider, "BOARDED", false, true\)/g) ?? []).length, 1);
   assert.match(source, /role="alertdialog" aria-label=\{`\$\{rider\.name\} 그래도 \$\{boardWord\} 확인`\}/);

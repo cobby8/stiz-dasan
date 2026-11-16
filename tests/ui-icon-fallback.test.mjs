@@ -65,8 +65,8 @@ test("① 상태 → 루트 클래스: ready 와 fallback 은 함께 붙지 않�
 });
 
 test("② UiIcon: 아이콘 글자와 대체 글자를 함께 그리고, 전부 aria-hidden 안에 둔다", () => {
-  const expected = { expand_more: "▾", expand_less: "▴", notifications: "알림", notifications_off: "알림 끔", settings: "설정" };
-  assert.deepEqual(icon.UI_ICON_FALLBACK_TEXT, expected, "대체 글자는 허용 5종 전부에 있다");
+  const expected = { expand_more: "▾", expand_less: "▴", notifications: "알림", notifications_off: "알림 끔", settings: "설정", call: "전화" };
+  assert.deepEqual(icon.UI_ICON_FALLBACK_TEXT, expected, "대체 글자는 허용 6종 전부에 있다");
   for (const [name, text] of Object.entries(expected)) {
     const html = renderToStaticMarkup(React.createElement(icon.default, { name }));
     assert.equal(html, `<span aria-hidden="true" class="ui-icon inline-flex shrink-0 items-center justify-center leading-none"><span class="material-symbols-outlined text-xl">${name}</span><span class="ui-icon-fallback">${text}</span></span>`);

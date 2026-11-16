@@ -1,5 +1,6 @@
 "use client";
 
+import UiIcon from "@/components/common/UiIcon";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -37,7 +38,7 @@ type SortKey = { minutes: number | null; seq: number };
 function digits(p: string | null): string | null { if (!p) return null; const d = p.replace(/[^0-9]/g, ""); return d.length >= 9 ? d : null; }
 
 export default function UnifiedDriverClient({
-  token = "", date, rows, initialBoarding, initialBoardingReliable = true, prevDate, nextDate, today, driverLabel, focusDirection = null, academy = null, holiday = null, healthHint = "앱에 로그인하면 내용이 보여요",
+  token = "", date, rows, initialBoarding, initialBoardingReliable = true, prevDate, nextDate, today, driverLabel, focusDirection = null, academy = null, holiday = null, healthHint = "앱에 로그인하면 내용이 보여요", readOnly = false,
 }: {
   token?: string;
   date: string;
@@ -56,10 +57,23 @@ export default function UnifiedDriverClient({
   holiday?: RunHoliday | null;
   /** «특이»를 눌렀는데 글 전문이 없을 때 보일 한 줄(토큰 링크 = 로그인 안내, 로그인 경로의 다른 날짜 = 날짜 안내) */
   healthHint?: string;
+  /**
+   * 보기 전용(2026-11-16 원장 지시) — 선생님 화면 «셔틀» 탭: 탑승 여부만 보이고 탑승·미탑승 버튼·되돌리기·«그래도 탑승»이 없다.
+   * 기사님이 찍은 결과가 보이도록 30초마다 새로 읽는다. 체크는 «선생님 운행»을 눌러 운행 모드로 들어가야 한다.
+   */
+  readOnly?: boolean;
 }) {
   const router = useRouter();
+  useEffect(() => {
+    if (!readOnly) return;
+    const timer = window.setInterval(() => { if (document.visibilityState === "visible") router.refresh(); }, 30_000);
+    return () => window.clearInterval(timer);
+  }, [readOnly, router]);
   const accountRun = !token;
-  const [boarding, setBoarding] = useState<Record<string, Status>>(initialBoarding);
+  const [boardingState, setBoarding] = useState<Record<string, Status>>(initialBoarding);
+  // 화면이 읽는 값 — 보기 전용은 서버가 새로 읽어 준 값(30초마다 갱신)을 그대로 쓴다.
+  // 학생 줄과 «체크 N/M»·«결석 N명» 요약이 같은 값을 보게 한 곳에서 정한다(검수 2026-11-16).
+  const boarding = readOnly ? initialBoarding : boardingState;
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [saveStates, setSaveStates] = useState<Record<string, { state: "saving" | "saved" | "failed" | "unknown"; message: string }>>({});
   const locks = useRef(new Set<string>());
@@ -346,7 +360,7 @@ export default function UnifiedDriverClient({
     const isPickup = row.direction === "PICKUP";
     // 저장된 상태(없으면 null). 화면에 보이는 상태(status)는 결석 학생이면 기본 «결석»(NOSHOW)이 된다.
     const stored = boarding[rider.key] ?? null;
-    const status = boarding[rider.key] ?? riderDefaultStatus(rider);
+    const status = stored ?? riderDefaultStatus(rider);
     const parent = digits(rider.parentPhone), child = digits(rider.studentPhone);
     const saveState = saveStates[rider.key];
     const isBusy = busy[rider.key] || !initialBoardingReliable || saveState?.state === "unknown";
@@ -365,7 +379,7 @@ export default function UnifiedDriverClient({
     const lockLabel = riderLockLabel(rider);
     // 원장 지시(2026-11-15): 자차·조퇴·지각으로 잠긴 줄만 «그래도 탑승»을 보인다(휴원·휴무·결석 줄에는 없다).
     const anyway = riderBoardAnyway(rider, stored);
-    const showAnyway = locked && anyway.canBoardAnyway;
+    const showAnyway = !readOnly && locked && anyway.canBoardAnyway;
     const boardWord = isPickup ? "탑승" : "하차";
     const rowTone = locked ? "bg-[var(--color-academy-neutral-soft)]" : view.dimmed ? "bg-[var(--color-academy-danger-soft)]" : "bg-[var(--color-academy-soft)]";
     return (
@@ -399,10 +413,23 @@ export default function UnifiedDriverClient({
               )}
             </div>
             {(parent || child) && <div className={styles.contacts}>
-              {parent && <a href={`tel:${parent}`} aria-label={`${rider.name} 학부모 전화`}>학부모 전화</a>}
-              {child && <a href={`tel:${child}`} aria-label={`${rider.name} 학생 전화`}>학생 전화</a>}
+              {/* 2026-11-16 원장 지시: 전화는 전화기 아이콘 + 짧은 글자(«학부모 전화» 글자만으로는 줄이 바뀌었다). 이름은 aria-label 이 읽는다 */}
+              {parent && <a href={`tel:${parent}`} aria-label={`${rider.name} 학부모 전화`}><UiIcon name="call" />학부모</a>}
+              {child && <a href={`tel:${child}`} aria-label={`${rider.name} 학생 전화`}><UiIcon name="call" />학생</a>}
             </div>}
           </div>
+          {readOnly ? (
+            // 보기 전용: 버튼 대신 지금 상태를 글자로(색만으로 전하지 않는다)
+            <span
+              role="status"
+              className={`inline-flex min-h-9 shrink-0 items-center rounded-lg px-3 text-sm font-semibold ${
+                status === "BOARDED" ? "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]"
+                : status === "NOSHOW" ? "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]"
+                : "bg-[var(--color-academy-surface)] text-[var(--color-academy-muted)]"}`}
+            >
+              {status === "BOARDED" ? (isPickup ? "탑승" : "하차") : status === "NOSHOW" ? `미${isPickup ? "탑승" : "하차"}` : status === "SELF" ? selfLabel : locked ? "해당 없음" : "확인 전"}
+            </span>
+          ) : (
           <div className={styles.boardingActions}>
             {/* 게슈탈트 T-04: 선생님 탑승 체크와 같은 상태 버튼(탑승=success, 미탑승=danger), 간격 12px */}
             <StatusChoiceButton tone="success" disabled={isBusy || locked} active={status === "BOARDED"} onClick={() => { setMenuKey(null); void setStatus(rider, "BOARDED"); }}
@@ -414,6 +441,7 @@ export default function UnifiedDriverClient({
               미{isPickup ? "탑승" : "하차"}
             </StatusChoiceButton>
           </div>
+          )}
         </div>
         {(rider.hasHealthNote || rider.healthNote) && healthKey === rowKey && (
           rider.healthNote
@@ -432,7 +460,7 @@ export default function UnifiedDriverClient({
                   기사님이 태우지 않거나 다른 곳으로 가야 한다는 뜻이다. */}
               {!skipLocked && rider.shuttleNote && <span className="rounded-md bg-[var(--color-driver-note)] px-2 py-0.5 text-sm font-semibold text-[var(--color-academy-on-primary)]">{rider.shuttleNote}</span>}
         </div>}
-        {(saveState || stored || view.absentDefault || locked) && <div className={styles.riderStatusLine}>
+        {!readOnly && (saveState || stored || view.absentDefault || locked) && <div className={styles.riderStatusLine}>
           {/* 그래도 탑승 직후에는 «저장 완료»보다 «왜 미탑승이 잠겼는지»가 먼저다 — 저장이 실패·불확실일 때만 저장 글을 보인다 */}
           {saveState && !(anyway.lockNoShow && anyway.label && saveState.state !== "failed" && saveState.state !== "unknown") ? <p role="status" className={`text-xs font-semibold ${saveState.state === "failed" || saveState.state === "unknown" ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-muted)]"}`}>{saveState.message}{saveState.state === "unknown" && <button type="button" disabled={busy[rider.key]} onClick={() => void setStatus(rider, "BOARDED", true)} className="ml-2 inline-flex min-h-11 min-w-11 items-center underline">저장 상태 확인</button>}</p>
             : locked ? <p className="text-sm font-semibold text-[var(--color-academy-muted)]">{skipLocked ? `${lockLabel} · 이 셔틀은 타지 않아 체크하지 않아요` : rider.blockedLabel === "휴무" ? "오늘은 수업이 없어 체크하지 않아요" : `${rider.blockedLabel}이라 체크하지 않아요`}</p>
@@ -563,7 +591,8 @@ export default function UnifiedDriverClient({
         focusKey={focusKey}
       />
 
-      <details className="mt-3 text-sm text-[var(--color-academy-muted)]"><summary className="min-h-11 cursor-pointer py-3 font-medium">탑승 체크 사용 안내</summary><p className="pb-2">체크 후 저장 완료를 확인하세요. 잘못 눌렀으면 이름 아래 «대기로 되돌리기»를 누르세요(같은 버튼을 다시 눌러도 바뀌지 않습니다). 미탑승에서는 결석·자차를 구분할 수 있습니다. 결석 신고된 아이는 빨간 «결석» 표시와 함께 기본이 결석이라 들르지 않아도 되고, 실제로 탔으면 «탑승»을 누르세요.</p></details>
+      {/* 보기 전용에는 누를 버튼이 없어 사용 안내도 보이지 않는다 */}
+      {!readOnly && <details className="mt-3 text-sm text-[var(--color-academy-muted)]"><summary className="min-h-11 cursor-pointer py-3 font-medium">탑승 체크 사용 안내</summary><p className="pb-2">체크 후 저장 완료를 확인하세요. 잘못 눌렀으면 이름 아래 «대기로 되돌리기»를 누르세요(같은 버튼을 다시 눌러도 바뀌지 않습니다). 미탑승에서는 결석·자차를 구분할 수 있습니다. 결석 신고된 아이는 빨간 «결석» 표시와 함께 기본이 결석이라 들르지 않아도 되고, 실제로 탔으면 «탑승»을 누르세요.</p></details>}
     </AcademyTheme>
   );
 }

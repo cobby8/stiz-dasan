@@ -68,3 +68,27 @@ test("셔틀 API는 로그인·직원 확인 실패를 401로 돌려준다(서�
   }
   assert.match(shuttleApiSource, /function unauthorized\(\) \{\s*return NextResponse\.json\([^)]*\{ status: 401 \}\)/);
 });
+
+// ── 2026-11-16 원장 지시: 선생님 화면 «셔틀» 탭은 보기 전용, 직접 운행할 때만 «선생님 운행» ──
+test("선생님 화면 셔틀 탭: 기사님이 아니면 보기 전용(탑승 버튼 없음)·«선생님 운행»으로만 체크 모드, 배정·검토 링크는 기사님에게만", async () => {
+  const page = staffShuttleSource;
+  assert.match(page, /const isDriver = staff\.roles\.driver;\s*const driveMode = isDriver \|\| params\.mode === "drive";/);
+  assert.match(page, /readOnly=\{!driveMode\}/);
+  assert.match(page, /href=\{`\/staff\/shuttle\?mode=drive\$\{dateQuery \? `&\$\{dateQuery\}` : ""\}`\}[^>]*>\s*선생님 운행\s*<\/Link>/);
+  assert.match(page, /<StaffVehicleLocation \/>/);
+  // 배정·검토·확정 노선 링크는 기사 역할이 있는 사람에게만(선생님 화면에서는 뺀다)
+  assert.match(page, /\{isDriver && \(\s*<div[^>]*>\s*<Link href="\/staff\/shuttle\/intake"[^>]*>신규 셔틀 검토<\/Link>\s*<Link href="\/staff\/shuttle\/assign"[^>]*>새 학생 배정<\/Link>\s*<Link href="\?view=routes"[^>]*>별도 확정 노선<\/Link>/);
+  assert.equal((page.match(/신규 셔틀 검토<\/Link>/g) ?? []).length, 1);
+  // 보기 ↔ 운행을 오가면 화면 상태를 새로 만든다
+  assert.match(page, /key=\{`\$\{date\}:\$\{driveMode \? "drive" : "view"\}`\}/);
+
+  const client = await readFile("src/components/shuttle/UnifiedDriverClient.tsx", "utf8");
+  // 보기 전용: 버튼 대신 상태 글자, 되돌리기·그래도 탑승 없음, 서버 값 그대로 + 30초마다 새로 읽기
+  assert.match(client, /\{readOnly \? \(\s*\/\/[^\n]*\n\s*<span\s+role="status"/);
+  assert.match(client, /const showAnyway = !readOnly && locked && anyway\.canBoardAnyway;/);
+  assert.match(client, /\{!readOnly && \(saveState \|\| stored \|\| view\.absentDefault \|\| locked\) &&/);
+  // 학생 줄과 «체크 N/M» 요약이 같은 값을 본다 — 보기 전용은 서버 값 그대로
+  assert.match(client, /const boarding = readOnly \? initialBoarding : boardingState;/);
+  assert.match(client, /\{!readOnly && <details/);
+  assert.match(client, /if \(!readOnly\) return;\s*const timer = window\.setInterval\(\(\) => \{ if \(document\.visibilityState === "visible"\) router\.refresh\(\); \}, 30_000\);/);
+});
