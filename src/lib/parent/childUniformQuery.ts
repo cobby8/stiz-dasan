@@ -66,7 +66,11 @@ export async function loadChildUniformOrders(db: Reader, parentUserId: string, s
   const site = toChildUniformOrders(rows, { phoneKey, childNameKey });
 
   // ③ 본사 쇼핑몰 주문(2026-11-16) — 같은 열쇠로, 구매자 번호 또는 수령인 번호가 본인 번호인 주문의 이 아이 이름 품목만
-  const shopRows = await loadShopRows(db, phoneKey, childNameKey);
+  // 쇼핑몰 쪽 조회가 실패해도 사이트 주문은 그대로 보인다(쇼핑몰 줄만 빠진다) — 값은 로그에 남기지 않는다
+  const shopRows = await loadShopRows(db, phoneKey, childNameKey).catch((error: unknown) => {
+    console.error("[child-uniform] 쇼핑몰 주문 조회 실패:", error instanceof Error ? error.name : "");
+    return [] as ChildShopUniformOrderRow[];
+  });
   const shop = toChildShopUniformOrders(shopRows, { phoneKey, childNameKey });
   return mergeChildUniformOrders(site, shop);
 }

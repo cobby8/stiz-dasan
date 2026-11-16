@@ -333,6 +333,8 @@ export async function fetchClubOrders(range: SyncRange, deps: SyncDeps = {}): Pr
   if (!secret) throw new ShopOrderSyncError("STIZ_PARTNER_SECRET 설정이 없습니다");
   if (!/^[a-fA-F0-9]{64}$/.test(secret)) throw new ShopOrderSyncError("STIZ_PARTNER_SECRET 형식이 올바르지 않습니다");
   const base = env.STIZ_CLUB_ORDERS_API_URL?.trim() || CLUB_ORDERS_DEFAULT_URL;
+  // 전화번호가 오가는 통로라 암호화된 주소만 쓴다(환경값을 잘못 넣어 http 로 나가는 실수 방지)
+  if (!base.startsWith("https://")) throw new ShopOrderSyncError("본사 창구 주소는 https 여야 합니다");
   const fetchImpl = deps.fetchImpl ?? (fetch as unknown as FetchLike);
   const now = deps.nowMs ?? Date.now;
   const club = STIZ_PARTNER_ID;
