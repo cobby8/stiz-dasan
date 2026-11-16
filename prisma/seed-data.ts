@@ -20,6 +20,12 @@ export interface SeedProgram {
     priceDaily: number | null;    // 매일반 수강료
     shuttleFeeOverride: number | null;
     order: number;
+    // 아래 다섯 칸은 없어도 된다 — «새로 넣는 줄»에만 쓰고, 없으면 기본값(숨김 아님·셔틀 운행)
+    frequency?: string | null;
+    weeklyFrequency?: string | null;
+    imageUrl?: string | null;
+    runsShuttle?: boolean;
+    deletedAt?: string | null;    // 숨긴 시각(ISO 글자)
 }
 
 /**

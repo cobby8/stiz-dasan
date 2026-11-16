@@ -58,7 +58,11 @@ async function handleGet(req: NextRequest) {
             const todayYmd = todayKst();
             seed.result = await saveSeedSnapshot(() => createAdminClient().storage.from(BUCKET), seed.snapshot,
                 { todayYmd, cutoffYmd: addDaysKst(todayYmd, -SEED_KEEP_DAYS) });
-            if (!seed.result.saved) console.error("[cron/backup] seed snapshot not saved:", seed.result.reason);
+            // 최신본을 못 썼거나(급감으로 덮어쓰지 않은 SKIPPED_SHRUNK 포함) 일부만 된 경우를 로그에 남긴다.
+            if (!seed.result.saved) console.error("[cron/backup] seed snapshot not saved:", seed.result.reason,
+                seed.result.previousPrograms, seed.result.programs);
+            if (seed.result.datedPath && !seed.result.datedSaved) console.error("[cron/backup] seed dated copy not saved");
+            if (seed.result.cleanupFailed) console.error("[cron/backup] seed cleanup failed");
         } catch {
             console.error("[cron/backup] seed snapshot failed");
         }

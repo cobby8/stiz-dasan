@@ -4,7 +4,8 @@ import { requireAdmin } from "@/lib/auth-guard";
 import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ARCHIVE_BACKUP_NAME } from "@/lib/backup/archiveCore";
-import { SEED_DIR, SEED_LATEST_NAME } from "@/lib/backup/seedSnapshot";
+import { SEED_DIR, latestSeedDated } from "@/lib/backup/seedSnapshot";
+import { kstAt } from "@/lib/datetime/kst";
 
 const SYSTEM_STATUS_CACHE_SECONDS = 300;
 const SYSTEM_STATUS_CACHE_HEADERS = {
@@ -29,13 +30,15 @@ async function getBackupStatus() {
         });
         // "seed" 는 핵심 데이터 스냅샷 폴더(파일 아님) — 날짜가 없어 «백업 없음»으로 오판하지 않게 뺀다.
         const allFiles = listed?.filter((f) => f.name !== SEED_DIR);
-        // 핵심 데이터 스냅샷(seed/seed-latest.json)이 마지막으로 저장된 시각 — 매일 덮어쓰므로 «고친 시각»을 본다.
-        // 파일을 내려받지 않는다. 없거나 조회 실패면 null 로 두고 카드에서 줄을 숨긴다.
+        // 핵심 데이터 스냅샷이 마지막으로 저장된 때 — «날짜별 사본 중 가장 최근 것»으로 판정한다.
+        // 최신본(seed-latest.json)의 «고친 시각»은 덮어쓰기 때 안 바뀔 수 있어 거짓 경고가 뜬다.
+        // 만든 시각이 없으면 파일 이름의 날짜(KST 0시)를 쓴다. 파일을 내려받지 않는다.
+        // 없거나 조회 실패면 null — 카드는 «아직 저장 전»으로 보인다.
         let seedSnapshotAt: string | null = null;
         try {
-            const { data: seedFiles } = await supabase.storage.from("backups").list(SEED_DIR, { limit: 10, search: "seed-latest" });
-            const latestSeed = seedFiles?.find((f) => f.name === SEED_LATEST_NAME);
-            seedSnapshotAt = latestSeed?.updated_at ?? latestSeed?.created_at ?? null;
+            const { data: seedFiles } = await supabase.storage.from("backups").list(SEED_DIR, { limit: 200 });
+            const latestSeed = latestSeedDated(seedFiles ?? []);
+            if (latestSeed) seedSnapshotAt = latestSeed.createdAt ?? new Date(kstAt(latestSeed.ymd)).toISOString();
         } catch {
             seedSnapshotAt = null;
         }
@@ -75,7 +78,7 @@ const getCachedSystemStatus = unstable_cache(
         const [dbOk, backup] = await Promise.all([getDbStatus(), getBackupStatus()]);
         return { dbOk, backup };
     },
-    ["admin-dashboard-system-status-v3"],
+    ["admin-dashboard-system-status-v4"],
     {
         revalidate: SYSTEM_STATUS_CACHE_SECONDS,
         tags: ["admin-dashboard-system"],

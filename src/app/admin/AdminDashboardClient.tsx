@@ -503,7 +503,8 @@ function SystemStatusCard({
     const seedAgeMs = seedAt ? now.getTime() - seedAt.getTime() : Infinity;
     const seedAgeHours = Math.floor(seedAgeMs / (1000 * 60 * 60));
     const seedWarn = seedAgeMs > 2 * 24 * 60 * 60 * 1000;
-    const seedLabel = seedAgeHours < 1 ? "방금 전" : seedAgeHours < 24 ? `${seedAgeHours}시간 전` : `${Math.floor(seedAgeHours / 24)}일 전`;
+    // 저장 기록이 없으면 줄을 숨기지 않고 «아직 저장 전»으로 보인다(안 도는 것을 알 수 있게).
+    const seedLabel = !seedAt ? "아직 저장 전" : seedAgeHours < 1 ? "방금 전" : seedAgeHours < 24 ? `${seedAgeHours}시간 전` : `${Math.floor(seedAgeHours / 24)}일 전`;
 
     return (
         <div className="academy-panel p-4">
@@ -549,11 +550,11 @@ function SystemStatusCard({
                         </span>
                     </div>
                 )}
-                {seedAt && (
+                {systemStatus && (
                     <div className="flex items-center justify-between">
                         <span className="text-sm text-[var(--color-academy-muted)]">핵심 데이터 자동 저장</span>
                         <span className={`text-xs ${seedWarn ? "font-semibold text-[var(--color-academy-warning)]" : "text-[var(--color-academy-muted)]"}`}>
-                            {seedLabel}{seedWarn ? " · 이틀 넘게 멈춤" : ""}
+                            {seedLabel}{seedAt && seedWarn ? " · 이틀 넘게 멈춤" : ""}
                         </span>
                     </div>
                 )}

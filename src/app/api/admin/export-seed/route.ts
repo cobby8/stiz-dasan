@@ -29,7 +29,8 @@ export async function GET() {
             prisma.$queryRawUnsafe<any[]>(
                 `SELECT id, name, "targetAge", description, days,
                         "priceWeek1", "priceWeek2", "priceWeek3", "priceDaily",
-                        "shuttleFeeOverride", "order"
+                        "shuttleFeeOverride", "order",
+                        frequency, "weeklyFrequency", "imageUrl", "runsShuttle", "deletedAt"
                  FROM "Program" ORDER BY "order" ASC, "createdAt" ASC`
             ).catch(() => [] as any[]),
             prisma.$queryRawUnsafe<any[]>(

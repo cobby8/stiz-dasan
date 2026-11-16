@@ -55,6 +55,11 @@
 💡 tester 참고: 운영 Storage 에 쓰지 않았다. 배포 뒤 첫 자정 cron(또는 «전체 백업 지금 저장») 응답의 `seed.saved` 와 대시보드 «핵심 데이터 자동 저장» 줄 확인. 프로그램 0줄이면 `SKIPPED_NO_PROGRAMS` 로 저장하지 않는 것이 정상.
 ⚠️ reviewer 참고: ① Storage 목록이 폴더 칸을 어떻게 돌려주는지(날짜 null·정렬 위치)는 실물로 못 봤다 — 그래서 이름으로 뺐다 ② 스냅샷 저장 실패는 200(슬랙 알림 없음) — 대시보드 줄이 «이틀 넘게 멈춤»으로만 알린다 ③ 프로그램이 «일부만» 사라진 날도 최신본은 덮어쓴다(날짜별 사본 30일로만 되돌릴 수 있고, 복구 API 는 최신본만 읽는다).
 
+#### 수정 이력
+| 회차 | 날짜 | 수정 내용 | 수정 파일 | 사유 |
+|------|------|----------|----------|------|
+| 1차 | 11-16 | Program 5칸(deletedAt·runsShuttle·imageUrl·weeklyFrequency·frequency)을 스냅샷과 INSERT 에 추가(ON CONFLICT 는 그대로) · 프로그램 0개 복원이면 success:false(500) · cloud-backups 복원·삭제 이름 검사 · 대시보드 «아직 저장 전» + 점검 봇 seed-snapshot 줄 · 호출부 로그 3종 · 마지막 저장 = 날짜별 사본 기준 · SEED_DIR 상수 · 가격 칸 없는 줄 거부 · deleted = 실제 삭제 목록 · 프로그램 절반 미만이면 최신본 안 덮어씀(SKIPPED_SHRUNK) | seedSnapshot.ts · seed/route.ts · export-seed/route.ts · cloud-backups/route.ts · dashboard/system/route.ts · siteOpsBot.ts · cron·backup-now route · AdminDashboardClient.tsx · prisma/seed-data.ts(interface 선택 칸) · tests 4개 | 검수 권장 7건 + 후속 1건 |
+
 ### 구현 기록 (developer · 11-16 질병 결석 미납인 달 = 미납 청구에서 1회분 빼기, claude/illness-unpaid-reduce)
 
 📝 구현한 기능: 신청함 하루짜리 «질병·부상 결석» — 그 달 수강료가 미납이면 «납부한 뒤에 승인»으로 막지 않고, 승인하면 이월 대신 그 미납 청구에서 1회 값을 뺀다(납부된 달은 기존 이월 그대로). 새 표·새 칸·마이그레이션 없음.

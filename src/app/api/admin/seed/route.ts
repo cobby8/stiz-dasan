@@ -46,17 +46,22 @@ export async function POST() {
     const results: Record<string, string> = {};
 
     // Restore Programs
+    let programsRestored = 0;
     if (PROGRAMS.length > 0) {
         let restored = 0;
         for (const p of PROGRAMS) {
             try {
+                // frequency·weeklyFrequency·imageUrl·runsShuttle·deletedAt 은 «새로 넣는 줄»에만 쓴다.
+                // ON CONFLICT 쪽에는 일부러 넣지 않는다 — 이미 있는 줄의 숨김·셔틀 운행 값은 건드리지 않는다.
+                // 이 칸들이 없으면 지워진 표를 복구할 때 숨긴 프로그램이 되살아나고 셔틀 운행이 기본 true 로 돌아간다.
                 await prisma.$executeRawUnsafe(
                     `INSERT INTO "Program" (
                         id, name, "targetAge", description, days,
                         "priceWeek1", "priceWeek2", "priceWeek3", "priceDaily",
                         "shuttleFeeOverride", "order", price,
+                        frequency, "weeklyFrequency", "imageUrl", "runsShuttle", "deletedAt",
                         "createdAt", "updatedAt"
-                    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW(),NOW())
+                    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::timestamp,NOW(),NOW())
                     ON CONFLICT (id) DO UPDATE SET
                         name = EXCLUDED.name,
                         "targetAge" = EXCLUDED."targetAge",
@@ -81,12 +86,18 @@ export async function POST() {
                     p.shuttleFeeOverride,
                     p.order,
                     p.priceWeek1 ?? p.priceWeek2 ?? p.priceWeek3 ?? 0, // price fallback
+                    p.frequency ?? null,
+                    p.weeklyFrequency ?? null,
+                    p.imageUrl ?? null,
+                    p.runsShuttle ?? true, // 없으면 DB 기본값과 같은 true
+                    p.deletedAt ?? null,
                 );
                 restored++;
             } catch (e) {
                 console.error(`[seed] Program "${p.name}" failed:`, e);
             }
         }
+        programsRestored = restored;
         results.programs = `${restored}/${PROGRAMS.length}개 복원됨`;
     } else {
         results.programs = `${sourceLabel}에 프로그램 데이터가 없습니다.`;
@@ -148,8 +159,17 @@ export async function POST() {
         results.termsOfService = `${sourceLabel}에 이용약관 데이터가 없습니다.`;
     }
 
+    // 프로그램을 하나도 복원하지 못했으면 성공으로 답하지 않는다
+    // (자동 스냅샷도 없고 seed-data.ts 도 비었거나, 넣기가 전부 실패한 경우).
+    const restoredAny = programsRestored > 0;
     return NextResponse.json({
-        success: true,
+        success: restoredAny,
+        ...(restoredAny ? {} : {
+            error: PROGRAMS.length === 0
+                ? "복원할 프로그램 자료가 없습니다. 자동 스냅샷과 seed-data.ts 가 모두 비어 있습니다."
+                : "프로그램을 하나도 복원하지 못했습니다.",
+            reason: PROGRAMS.length === 0 ? "NO_SEED_DATA" : "PROGRAM_RESTORE_FAILED",
+        }),
         results,
         // 어느 자료로 복구했는지 — storage-snapshot(자동 스냅샷) 또는 seed-data.ts(저장소 파일)
         source: loaded.ok ? "storage-snapshot" : "seed-data.ts",
@@ -159,5 +179,5 @@ export async function POST() {
         snapshotDate: loaded.ok ? toKstYmd(loaded.snapshot._meta.exportedAt) : null,
         // 스냅샷을 못 쓴 이유(코드). 썼으면 null.
         fallbackReason: loaded.ok ? null : loaded.reason,
-    });
+    }, { status: restoredAny ? 200 : 500 });
 }

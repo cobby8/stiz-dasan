@@ -36,6 +36,14 @@ export interface SeedProgram {
     priceDaily: number | null;
     shuttleFeeOverride: number | null;
     order: number;
+    // 아래 다섯 칸(2026-11-16 검수 반영)은 «새로 넣는 줄»에만 쓴다 — 이미 있는 줄은 복구가 건드리지 않는다.
+    // 없으면 숨긴 프로그램이 되살아나거나(deletedAt) 셔틀 운행 값이 기본 true 로 돌아간다(runsShuttle).
+    frequency: string | null;
+    weeklyFrequency: string | null;
+    imageUrl: string | null;
+    runsShuttle: boolean;
+    /** 숨긴 시각(ISO 글자). 숨기지 않았으면 null. */
+    deletedAt: string | null;
 }
 
 export interface SeedSlotOverride {
@@ -81,6 +89,13 @@ function num(v: unknown): number | null {
     return Number.isNaN(n) ? null : n;
 }
 
+// DB 에서는 Date 로, 파일에서는 글자로 온다. 읽을 수 없는 값은 null(숨김 아님)로 둔다.
+function isoOrNull(v: unknown): string | null {
+    if (v == null) return null;
+    const ms = v instanceof Date ? v.getTime() : Date.parse(String(v));
+    return Number.isNaN(ms) ? null : new Date(ms).toISOString();
+}
+
 function toProgram(row: Row): SeedProgram {
     return {
         id: String(col(row, "id") ?? ""),
@@ -94,6 +109,12 @@ function toProgram(row: Row): SeedProgram {
         priceDaily: num(col(row, "priceDaily")),
         shuttleFeeOverride: num(col(row, "shuttleFeeOverride")),
         order: num(col(row, "order")) ?? 0,
+        // 옛 모양 스냅샷(이 칸이 없는 파일)은 기본값 — 숨김 아님·셔틀 운행(DB 기본값과 같다)
+        frequency: text(col(row, "frequency")),
+        weeklyFrequency: text(col(row, "weeklyFrequency")),
+        imageUrl: text(col(row, "imageUrl")),
+        runsShuttle: col(row, "runsShuttle") !== false,
+        deletedAt: isoOrNull(col(row, "deletedAt")),
     };
 }
 
@@ -160,9 +181,16 @@ export function validateSeedSnapshot(value: unknown): SeedValidation {
 
     for (const p of value.programs) {
         if (!isObject(p) || !nonEmptyString(p.id) || !nonEmptyString(p.name)) return { ok: false, reason: "BAD_PROGRAM_ROW" };
+        // 가격 칸은 «있어야» 한다(값은 숫자 또는 null) — 칸이 아예 없는 줄은 스냅샷이 아닌 다른 파일이다.
         for (const key of ["priceWeek1", "priceWeek2", "priceWeek3", "priceDaily", "shuttleFeeOverride"]) {
-            if (!numberOrNull(p[key] ?? null)) return { ok: false, reason: "BAD_PROGRAM_ROW" };
+            if (!(key in p) || !numberOrNull(p[key])) return { ok: false, reason: "BAD_PROGRAM_ROW" };
         }
+        // 나중에 생긴 칸은 없어도 된다(옛 모양 스냅샷). 있으면 모양만 본다.
+        for (const key of ["frequency", "weeklyFrequency", "imageUrl", "deletedAt"]) {
+            if (p[key] != null && typeof p[key] !== "string") return { ok: false, reason: "BAD_PROGRAM_ROW" };
+        }
+        if (p.runsShuttle != null && typeof p.runsShuttle !== "boolean") return { ok: false, reason: "BAD_PROGRAM_ROW" };
+        if (typeof p.deletedAt === "string" && Number.isNaN(Date.parse(p.deletedAt))) return { ok: false, reason: "BAD_PROGRAM_ROW" };
     }
     for (const s of value.classSlotOverrides) {
         if (!isObject(s) || !nonEmptyString(s.id) || !nonEmptyString(s.slotKey)) return { ok: false, reason: "BAD_SLOT_ROW" };
@@ -193,12 +221,32 @@ export function expiredSeedNames(names: string[], cutoffYmd: string): string[] {
     });
 }
 
+/**
+ * 가장 최근 날짜별 사본 — «마지막으로 저장된 때»를 판정하는 기준(대시보드·점검 봇).
+ * 최신본(seed-latest.json)의 «고친 시각»은 덮어쓰기 때 안 바뀔 수 있어 믿지 않는다.
+ * 날짜는 파일 이름에서 읽는다. createdAt 은 있으면 같이 돌려준다(없으면 null).
+ */
+export function latestSeedDated(
+    files: { name: string; created_at?: string | null }[],
+): { name: string; ymd: string; createdAt: string | null } | null {
+    let best: { name: string; ymd: string; createdAt: string | null } | null = null;
+    for (const f of files) {
+        const match = SEED_DATED_NAME.exec(f.name);
+        if (!match) continue;
+        if (!best || match[1] > best.ymd) {
+            const createdAt = typeof f.created_at === "string" && !Number.isNaN(Date.parse(f.created_at)) ? f.created_at : null;
+            best = { name: f.name, ymd: match[1], createdAt };
+        }
+    }
+    return best;
+}
+
 /** 이 모듈이 쓰는 Storage 기능만 적은 모양 — `supabase.storage.from("backups")` 가 그대로 들어맞는다. */
 export interface SeedBucket {
     upload(path: string, body: string, options: { contentType: string; upsert: boolean }): Promise<{ error: unknown }>;
     download(path: string): Promise<{ data: { text(): Promise<string> } | null; error: unknown }>;
     list(path: string, options?: { limit?: number }): Promise<{ data: { name: string }[] | null; error: unknown }>;
-    remove(paths: string[]): Promise<{ data: unknown; error: unknown }>;
+    remove(paths: string[]): Promise<{ data: { name: string }[] | null; error: unknown }>;
 }
 
 export interface SeedSaveResult {
@@ -211,11 +259,24 @@ export interface SeedSaveResult {
     datedSaved: boolean;
     programs: number;
     classSlotOverrides: number;
+    /** 직전 최신본의 프로그램 수(읽지 못했으면 null) — 급감 판정에 쓴 값 */
+    previousPrograms: number | null;
+    /** 30일 정리에서 Storage 가 «실제로 지웠다»고 답한 파일 이름 */
     deleted: string[];
+    /** 30일 정리를 끝내지 못했는가(목록·삭제 실패, 일부만 삭제) — 저장 결과와는 무관 */
+    cleanupFailed: boolean;
 }
 
 /**
- * 스냅샷을 Storage 에 저장한다 — 날짜별 사본 → 최신본(덮어쓰기) → 30일 지난 사본 정리.
+ * 프로그램 수가 직전 최신본의 «절반 미만»으로 줄었는가.
+ * 그렇다면 자료가 일부 사라진 것일 수 있어 최신본을 덮어쓰지 않는다(날짜별 사본만 남긴다).
+ */
+export function isSeedShrunk(previousPrograms: number, currentPrograms: number): boolean {
+    return currentPrograms * 2 < previousPrograms;
+}
+
+/**
+ * 스냅샷을 Storage 에 저장한다 — 날짜별 사본 → 30일 지난 사본 정리 → 급감 확인 → 최신본(덮어쓰기).
  *
  * 절대 예외를 던지지 않는다. 본 백업과 서로 영향을 주지 않게 하려는 것(실패는 결과 값으로만 알린다).
  * getBucket 을 함수로 받는 이유: Storage 클라이언트를 만드는 것 자체가 실패해도 여기서 잡으려고.
@@ -227,7 +288,8 @@ export async function saveSeedSnapshot(
 ): Promise<SeedSaveResult> {
     const result: SeedSaveResult = {
         saved: false, reason: null, latestPath: SEED_LATEST_PATH, datedPath: null, datedSaved: false,
-        programs: snapshot.programs.length, classSlotOverrides: snapshot.classSlotOverrides.length, deleted: [],
+        programs: snapshot.programs.length, classSlotOverrides: snapshot.classSlotOverrides.length,
+        previousPrograms: null, deleted: [], cleanupFailed: false,
     };
     // 빈(또는 모양이 이상한) 스냅샷은 저장하지 않는다 — 마지막 정상본을 덮어쓰지 않게.
     const checked = validateSeedSnapshot(snapshot);
@@ -248,24 +310,37 @@ export async function saveSeedSnapshot(
             result.datedSaved = false;
         }
 
-        // 2) 최신본 — 복구가 읽는 파일.
-        const { error: latestError } = await bucket.upload(SEED_LATEST_PATH, body, options);
-        if (latestError) return { ...result, reason: "LATEST_UPLOAD_FAILED" };
-        result.saved = true;
-
-        // 3) 30일 지난 날짜별 사본 정리 — 실패해도 저장 결과는 바뀌지 않는다(다음 날 다시 시도된다).
+        // 2) 30일 지난 날짜별 사본 정리 — 실패해도 저장 결과는 바뀌지 않는다(다음 날 다시 시도된다).
+        //    deleted 에는 Storage 가 «지웠다»고 답한 것만 적는다(경로째로 오든 이름만 오든 맞춘다).
         try {
             const { data: files, error: listError } = await bucket.list(SEED_DIR, { limit: 200 });
-            if (!listError && files) {
+            if (listError || !files) {
+                result.cleanupFailed = true;
+            } else {
                 const expired = expiredSeedNames(files.map((f) => f.name), dates.cutoffYmd);
                 if (expired.length > 0) {
-                    const { error: removeError } = await bucket.remove(expired.map((name) => `${SEED_DIR}/${name}`));
-                    if (!removeError) result.deleted = expired;
+                    const { data: removed, error: removeError } = await bucket.remove(expired.map((name) => `${SEED_DIR}/${name}`));
+                    const removedNames = removeError || !Array.isArray(removed) ? [] : removed.map((f) => f?.name);
+                    result.deleted = expired.filter((name) => removedNames.includes(`${SEED_DIR}/${name}`) || removedNames.includes(name));
+                    result.cleanupFailed = result.deleted.length !== expired.length;
                 }
             }
         } catch {
-            // 정리 실패는 조용히 넘긴다.
+            result.cleanupFailed = true;
         }
+
+        // 3) 급감 확인 — 직전 최신본보다 프로그램이 절반 미만이면 최신본을 덮어쓰지 않는다(위의 날짜별 사본은 남는다).
+        //    직전 것을 못 읽으면(처음·읽기 실패·모양 이상) 비교하지 않고 저장한다.
+        const previous = await loadLatestSeedSnapshot(() => bucket);
+        if (previous.ok) {
+            result.previousPrograms = previous.snapshot.programs.length;
+            if (isSeedShrunk(result.previousPrograms, result.programs)) return { ...result, reason: "SKIPPED_SHRUNK" };
+        }
+
+        // 4) 최신본 — 복구가 읽는 파일.
+        const { error: latestError } = await bucket.upload(SEED_LATEST_PATH, body, options);
+        if (latestError) return { ...result, reason: "LATEST_UPLOAD_FAILED" };
+        result.saved = true;
         return result;
     } catch {
         return { ...result, reason: result.saved ? null : "STORAGE_FAILED" };
@@ -329,6 +404,11 @@ export function renderSeedDataTs(snapshot: SeedSnapshot, exportedLabel: string):
         `    priceDaily: number | null;`,
         `    shuttleFeeOverride: number | null;`,
         `    order: number;`,
+        `    frequency?: string | null;`,
+        `    weeklyFrequency?: string | null;`,
+        `    imageUrl?: string | null;`,
+        `    runsShuttle?: boolean;`,
+        `    deletedAt?: string | null;`,
         `}`,
         ``,
         `export const PROGRAMS: SeedProgram[] = [`,
@@ -346,6 +426,11 @@ export function renderSeedDataTs(snapshot: SeedSnapshot, exportedLabel: string):
         lines.push(`        priceDaily: ${p.priceDaily},`);
         lines.push(`        shuttleFeeOverride: ${p.shuttleFeeOverride},`);
         lines.push(`        order: ${p.order},`);
+        lines.push(`        frequency: ${quote(p.frequency)},`);
+        lines.push(`        weeklyFrequency: ${quote(p.weeklyFrequency)},`);
+        lines.push(`        imageUrl: ${quote(p.imageUrl)},`);
+        lines.push(`        runsShuttle: ${p.runsShuttle},`);
+        lines.push(`        deletedAt: ${quote(p.deletedAt)},`);
         lines.push(`    },`);
     }
     lines.push(`];`);

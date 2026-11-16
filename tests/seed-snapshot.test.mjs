@@ -24,7 +24,8 @@ test('스냅샷은 정해진 칸만 담는다 — SELECT * 줄을 넘겨도 다�
     termsOfService: '약관',
   }, meta);
   assert.deepEqual(Object.keys(snap.programs[0]), ['id', 'name', 'targetAge', 'description', 'days',
-    'priceWeek1', 'priceWeek2', 'priceWeek3', 'priceDaily', 'shuttleFeeOverride', 'order']);
+    'priceWeek1', 'priceWeek2', 'priceWeek3', 'priceDaily', 'shuttleFeeOverride', 'order',
+    'frequency', 'weeklyFrequency', 'imageUrl', 'runsShuttle', 'deletedAt']);
   assert.deepEqual(Object.keys(snap.classSlotOverrides[0]), ['id', 'slotKey', 'label', 'note', 'isHidden', 'capacity',
     'startTimeOverride', 'endTimeOverride', 'coachId', 'programId']);
   assert.equal(snap.programs[0].priceWeek2, 180000); // 숫자 글자는 숫자로
@@ -32,6 +33,37 @@ test('스냅샷은 정해진 칸만 담는다 — SELECT * 줄을 넘겨도 다�
   assert.equal(snap.classSlotOverrides[0].isHidden, true);
   assert.deepEqual(snap._meta, { kind: 'SEED_SNAPSHOT', version: 1, ...meta, tables: seed.SEED_TABLES });
   assert.ok(!JSON.stringify(snap).includes('비밀'));
+});
+
+test('숨김·셔틀 운행·사진·주 횟수 칸을 담는다 — DB 의 Date 는 ISO 글자로, 없으면 기본값(숨김 아님·셔틀 운행)', () => {
+  const hidden = new Date('2026-10-01T03:00:00.000Z');
+  const snap = seed.buildSeedSnapshot({
+    programRows: [
+      { ...programRow, frequency: '주2회', weeklyFrequency: '2', imageUrl: 'https://img/x.png', runsShuttle: false, deletedAt: hidden },
+      { ...programRow, id: 'p2' },
+      { ...programRow, id: 'p3', deletedAt: '읽을 수 없음', runsShuttle: null },
+    ],
+    slotRows: [], termsOfService: null,
+  }, meta);
+  const [a, b, c] = snap.programs;
+  assert.deepEqual([a.frequency, a.weeklyFrequency, a.imageUrl, a.runsShuttle, a.deletedAt],
+    ['주2회', '2', 'https://img/x.png', false, '2026-10-01T03:00:00.000Z']);
+  assert.deepEqual([b.frequency, b.weeklyFrequency, b.imageUrl, b.runsShuttle, b.deletedAt], [null, null, null, true, null]);
+  assert.deepEqual([c.runsShuttle, c.deletedAt], [true, null]);
+  // JSON 으로 오갔다 와도 그대로
+  const checked = seed.validateSeedSnapshot(JSON.parse(JSON.stringify(snap)));
+  assert.equal(checked.ok, true);
+  assert.deepEqual(checked.snapshot.programs, snap.programs);
+});
+
+test('옛 모양 스냅샷(새 칸 다섯이 없는 파일)도 읽히고 기본값이 채워진다', () => {
+  const g = good();
+  const oldShape = { ...g, programs: g.programs.map(({ frequency, weeklyFrequency, imageUrl, runsShuttle, deletedAt, ...rest }) => rest) };
+  const checked = seed.validateSeedSnapshot(JSON.parse(JSON.stringify(oldShape)));
+  assert.equal(checked.ok, true);
+  assert.equal(checked.snapshot.programs[0].runsShuttle, true);
+  assert.equal(checked.snapshot.programs[0].deletedAt, null);
+  assert.equal(checked.snapshot.programs[0].frequency, null);
 });
 
 test('칸 이름이 소문자로 와도 읽고, 빈 값은 기본값으로 채운다', () => {
@@ -77,11 +109,41 @@ test('모양 검사 — 빈 스냅샷·이상한 모양은 쓰지 않는다(이�
     [{ ...g, programs: [{ ...g.programs[0], name: null }] }, 'BAD_PROGRAM_ROW'],
     [{ ...g, programs: [{ ...g.programs[0], priceWeek1: '십만' }] }, 'BAD_PROGRAM_ROW'],
     [{ ...g, programs: ['p1'] }, 'BAD_PROGRAM_ROW'],
+    // 가격 칸이 아예 없는 줄은 스냅샷이 아니다
+    [{ ...g, programs: [{ id: 'p1', name: 'A' }] }, 'BAD_PROGRAM_ROW'],
+    [{ ...g, programs: [(({ priceDaily, ...rest }) => rest)(g.programs[0])] }, 'BAD_PROGRAM_ROW'],
+    // 새 칸은 없어도 되지만, 있으면 모양이 맞아야 한다
+    [{ ...g, programs: [{ ...g.programs[0], runsShuttle: 'no' }] }, 'BAD_PROGRAM_ROW'],
+    [{ ...g, programs: [{ ...g.programs[0], deletedAt: '어제' }] }, 'BAD_PROGRAM_ROW'],
+    [{ ...g, programs: [{ ...g.programs[0], imageUrl: 5 }] }, 'BAD_PROGRAM_ROW'],
     [{ ...g, classSlotOverrides: [{ id: 'c1' }] }, 'BAD_SLOT_ROW'],
     // 설정 백업 파일(stiz-backup-*.json)을 잘못 가리켜도 스냅샷으로 쓰지 않는다
     [{ _meta: { version: 1, scope: 'SETTINGS_ONLY', exportedAt: meta.exportedAt }, programs: [programRow], classSlotOverrides: [] }, 'BAD_META'],
   ];
   for (const [value, reason] of cases) assert.deepEqual(seed.validateSeedSnapshot(value), { ok: false, reason }, reason);
+});
+
+test('마지막 저장 판정 — 날짜별 사본 중 이름의 날짜가 가장 늦은 것(최신본·다른 이름은 보지 않는다)', () => {
+  assert.equal(seed.latestSeedDated([]), null);
+  assert.equal(seed.latestSeedDated([{ name: 'seed-latest.json', created_at: '2026-11-16T15:00:00Z' }, { name: 'other.json' }]), null);
+  assert.deepEqual(seed.latestSeedDated([
+    { name: 'seed-2026-11-14.json', created_at: '2026-11-13T15:00:03Z' },
+    { name: 'seed-latest.json', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' }, // 고친 시각이 안 바뀌어도 상관없다
+    { name: 'seed-2026-11-16.json', created_at: '2026-11-15T15:00:04Z' },
+    { name: 'seed-2026-11-15.json' },
+  ]), { name: 'seed-2026-11-16.json', ymd: '2026-11-16', createdAt: '2026-11-15T15:00:04Z' });
+  // 만든 시각이 없거나 읽을 수 없으면 null — 호출부가 이름의 날짜를 쓴다
+  assert.deepEqual(seed.latestSeedDated([{ name: 'seed-2026-11-16.json', created_at: 'invalid' }]),
+    { name: 'seed-2026-11-16.json', ymd: '2026-11-16', createdAt: null });
+});
+
+test('급감 판정 — 직전의 절반 «미만»일 때만', () => {
+  assert.equal(seed.isSeedShrunk(10, 4), true);
+  assert.equal(seed.isSeedShrunk(10, 5), false); // 딱 절반은 저장한다
+  assert.equal(seed.isSeedShrunk(3, 1), true);
+  assert.equal(seed.isSeedShrunk(2, 1), false);
+  assert.equal(seed.isSeedShrunk(1, 1), false);
+  assert.equal(seed.isSeedShrunk(5, 9), false);
 });
 
 test('지울 날짜별 사본 — 이름의 날짜가 기준일보다 앞인 것만, 최신본·다른 이름은 절대 고르지 않는다', () => {
@@ -115,17 +177,68 @@ function fakeBucket(options = {}) {
       if (options.listFails) return { data: null, error: { message: 'x' } };
       return { data: [...files.keys()].filter(k => k.startsWith(`${path}/`)).map(k => ({ name: k.slice(path.length + 1) })), error: null };
     },
-    async remove(paths) { calls.remove.push(paths); for (const p of paths) files.delete(p); return { data: paths, error: null }; },
+    async remove(paths) {
+      calls.remove.push(paths);
+      if (options.removeFails) return { data: null, error: { message: 'SECRET_CONNECTION' } };
+      // removeOnly: Storage 가 일부만 지웠다고 답하는 경우. removeBasename: 경로 없이 이름만 돌려주는 경우.
+      const done = paths.filter(p => !options.removeOnly || options.removeOnly.includes(p));
+      for (const p of done) files.delete(p);
+      return { data: done.map(p => ({ name: options.removeBasename ? p.split('/').pop() : p })), error: null };
+    },
   };
   return { bucket, files, calls };
 }
 const dates = { todayYmd: '2026-11-16', cutoffYmd: '2026-10-17' };
 
-test('저장 — 날짜별 사본 → 최신본(덮어쓰기) → 30일 지난 사본 정리, 저장한 것을 다시 읽으면 같다', async () => {
+// 프로그램 n 줄짜리 스냅샷
+const withPrograms = (n) => seed.buildSeedSnapshot({
+  programRows: Array.from({ length: n }, (_, i) => ({ ...programRow, id: `p${i + 1}` })), slotRows: [slotRow], termsOfService: '약관',
+}, meta);
+
+test('저장 — 직전 최신본보다 프로그램이 절반 미만이면 최신본을 덮어쓰지 않고 날짜별 사본만 남긴다', async () => {
+  const previous = JSON.stringify(withPrograms(10));
+  const f = fakeBucket({ files: { 'seed/seed-latest.json': previous } });
+  const result = await seed.saveSeedSnapshot(() => f.bucket, withPrograms(4), dates);
+  assert.equal(result.saved, false);
+  assert.equal(result.reason, 'SKIPPED_SHRUNK');
+  assert.equal(result.datedSaved, true);
+  assert.deepEqual([result.previousPrograms, result.programs], [10, 4]);
+  assert.equal(f.files.get('seed/seed-latest.json'), previous); // 마지막 정상본 그대로
+  assert.equal(JSON.parse(f.files.get('seed/seed-2026-11-16.json')).programs.length, 4); // 그날 모습은 사본으로 남는다
+  assert.deepEqual(f.calls.upload.map(u => u.path), ['seed/seed-2026-11-16.json']);
+
+  // 딱 절반·늘어난 경우·직전 것을 못 읽는 경우는 저장한다
+  for (const [files, count] of [[{ 'seed/seed-latest.json': previous }, 5], [{ 'seed/seed-latest.json': previous }, 12],
+    [{ 'seed/seed-latest.json': '{잘림' }, 1], [{}, 1]]) {
+    const g = fakeBucket({ files });
+    const saved = await seed.saveSeedSnapshot(() => g.bucket, withPrograms(count), dates);
+    assert.equal(saved.saved, true, `${count}`);
+    assert.equal(JSON.parse(g.files.get('seed/seed-latest.json')).programs.length, count);
+  }
+});
+
+test('저장 — 30일 정리의 deleted 는 Storage 가 실제로 지웠다고 답한 것만', async () => {
+  const old = { 'seed/seed-2026-10-15.json': '{}', 'seed/seed-2026-10-16.json': '{}' };
+  const all = await seed.saveSeedSnapshot(() => fakeBucket({ files: { ...old } }).bucket, good(), dates);
+  assert.deepEqual([all.deleted, all.cleanupFailed], [['seed-2026-10-15.json', 'seed-2026-10-16.json'], false]);
+  // 이름만 돌려줘도 맞춘다
+  const basename = await seed.saveSeedSnapshot(() => fakeBucket({ files: { ...old }, removeBasename: true }).bucket, good(), dates);
+  assert.deepEqual([basename.deleted, basename.cleanupFailed], [['seed-2026-10-15.json', 'seed-2026-10-16.json'], false]);
+  // 일부만 지워졌으면 그것만, 그리고 정리 실패로 표시
+  const partial = await seed.saveSeedSnapshot(() => fakeBucket({ files: { ...old }, removeOnly: ['seed/seed-2026-10-16.json'] }).bucket, good(), dates);
+  assert.deepEqual([partial.deleted, partial.cleanupFailed, partial.saved], [['seed-2026-10-16.json'], true, true]);
+  for (const options of [{ removeFails: true }, { listFails: true }]) {
+    const failed = await seed.saveSeedSnapshot(() => fakeBucket({ files: { ...old }, ...options }).bucket, good(), dates);
+    assert.deepEqual([failed.deleted, failed.cleanupFailed, failed.saved], [[], true, true]);
+    assert.ok(!JSON.stringify(failed).includes('SECRET_CONNECTION'));
+  }
+});
+
+test('저장 — 날짜별 사본 → 30일 지난 사본 정리 → 최신본(덮어쓰기), 저장한 것을 다시 읽으면 같다', async () => {
   const f = fakeBucket({ files: { 'seed/seed-latest.json': '옛 것', 'seed/seed-2026-10-16.json': '{}', 'seed/seed-2026-10-17.json': '{}' } });
   const result = await seed.saveSeedSnapshot(() => f.bucket, good(), dates);
   assert.deepEqual(result, { saved: true, reason: null, latestPath: 'seed/seed-latest.json', datedPath: 'seed/seed-2026-11-16.json',
-    datedSaved: true, programs: 1, classSlotOverrides: 1, deleted: ['seed-2026-10-16.json'] });
+    datedSaved: true, programs: 1, classSlotOverrides: 1, previousPrograms: null, deleted: ['seed-2026-10-16.json'], cleanupFailed: false });
   assert.deepEqual(f.calls.upload.map(u => u.path), ['seed/seed-2026-11-16.json', 'seed/seed-latest.json']);
   assert.ok(f.calls.upload.every(u => u.config.upsert === true && u.config.contentType === 'application/json'));
   assert.deepEqual([...f.files.keys()].sort(), ['seed/seed-2026-10-17.json', 'seed/seed-2026-11-16.json', 'seed/seed-latest.json']);
@@ -189,14 +302,19 @@ test('수동 내려받기 코드 — 백틱·${·역슬래시가 들어 있어�
 const seedRouteCompiled = ts.transpileModule(read('../src/app/api/admin/seed/route.ts'), { compilerOptions: {
   target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS,
 } }).outputText;
-const filePrograms = [{ ...good().programs[0], id: 'file-p', name: '파일 프로그램' }];
+// seed-data.ts 는 새 칸 다섯이 없는 옛 모양일 수 있다
+const filePrograms = [(({ frequency, weeklyFrequency, imageUrl, runsShuttle, deletedAt, ...rest }) => rest)({ ...good().programs[0], id: 'file-p', name: '파일 프로그램' })];
 
 function seedRoute(options = {}) {
   const calls = { sql: [], logs: [], client: 0 };
   const storage = fakeBucket({ files: options.latest === undefined ? {} : { 'seed/seed-latest.json': options.latest }, downloadThrows: options.downloadThrows });
   const dependencies = {
     'next/server': { NextResponse },
-    '@/lib/prisma': { prisma: { async $executeRawUnsafe(sql, ...params) { calls.sql.push({ table: sql.match(/INSERT INTO "([^"]+)"/)[1], sql, params }); return 1; } } },
+    '@/lib/prisma': { prisma: { async $executeRawUnsafe(sql, ...params) {
+      const table = sql.match(/INSERT INTO "([^"]+)"/)[1];
+      if (options.failTable === table) throw new Error('SECRET_CONNECTION');
+      calls.sql.push({ table, sql, params }); return 1;
+    } } },
     '@/lib/auth-guard': { async requireOwner() { if (options.unauthorized) throw new Error('no'); } },
     '@/lib/supabase/admin': { createAdminClient: () => {
       calls.client++;
@@ -235,7 +353,7 @@ test('복구 — Storage 최신 스냅샷이 있으면 그것을 쓰고 날짜�
   assert.equal(r.calls.sql[2].params[0], '약관 `본문` ${x}');
   assert.equal(body.results.programs, '1/1개 복원됨');
   // 복구는 덮어쓰기(upsert)만 — 지우는 SQL 이 없다
-  assert.ok(r.calls.sql.every(c => /ON CONFLICT/.test(c.sql) && !/DELETE|TRUNCATE/i.test(c.sql)));
+  assert.ok(r.calls.sql.every(c => /ON CONFLICT/.test(c.sql) && !/\b(DELETE|TRUNCATE)\b/i.test(c.sql)));
 });
 
 for (const [name, options, reason] of [
@@ -258,11 +376,48 @@ for (const [name, options, reason] of [
   });
 }
 
-test('복구 — 스냅샷도 없고 seed-data.ts 도 비어 있으면 아무것도 쓰지 않는다', async () => {
+test('복구 — 스냅샷도 없고 seed-data.ts 도 비어 있으면 아무것도 쓰지 않고 성공으로 답하지 않는다', async () => {
   const r = seedRoute({ filePrograms: [] });
-  const { body } = await r.run();
+  const { status, body } = await r.run();
+  assert.equal(status, 500);
+  assert.equal(body.success, false);
+  assert.equal(body.reason, 'NO_SEED_DATA');
+  assert.match(body.error, /복원할 프로그램 자료가 없습니다/);
   assert.equal(r.calls.sql.length, 0);
   assert.equal(body.results.programs, 'seed-data.ts에 프로그램 데이터가 없습니다.');
+  assert.equal(body.source, 'seed-data.ts');
+});
+
+test('복구 — 프로그램 넣기가 전부 실패해도 성공으로 답하지 않는다', async () => {
+  const r = seedRoute({ latest: JSON.stringify(good()), failTable: 'Program' });
+  const { status, body } = await r.run();
+  assert.equal(status, 500);
+  assert.equal(body.success, false);
+  assert.equal(body.reason, 'PROGRAM_RESTORE_FAILED');
+  assert.equal(body.results.programs, '0/1개 복원됨');
+});
+
+test('복구 — 숨김·셔틀 운행·사진·주 횟수는 새로 넣는 줄에만 쓰고, 이미 있는 줄은 건드리지 않는다', async () => {
+  const snap = seed.buildSeedSnapshot({
+    programRows: [{ ...programRow, frequency: '주2회', weeklyFrequency: '2', imageUrl: 'https://img/x.png', runsShuttle: false, deletedAt: '2026-10-01T03:00:00.000Z' }],
+    slotRows: [], termsOfService: null,
+  }, meta);
+  const r = seedRoute({ latest: JSON.stringify(snap) });
+  assert.equal((await r.run()).body.success, true);
+  const { sql, params } = r.calls.sql[0];
+  const [insertPart, conflictPart] = sql.split('ON CONFLICT');
+  for (const column of ['frequency', '"weeklyFrequency"', '"imageUrl"', '"runsShuttle"', '"deletedAt"']) {
+    assert.ok(insertPart.includes(column), `INSERT 에 ${column}`);
+    assert.ok(!conflictPart.includes(column), `ON CONFLICT 에는 ${column} 없음`);
+  }
+  assert.match(insertPart, /\$17::timestamp/); // 글자로 넘긴 숨긴 시각을 시각 칸에 넣는다
+  assert.deepEqual(params.slice(12), ['주2회', '2', 'https://img/x.png', false, '2026-10-01T03:00:00.000Z']);
+  assert.equal(params.length, 17);
+
+  // 옛 모양 스냅샷·seed-data.ts(칸 없음)는 기본값 — 숨김 아님·셔틀 운행
+  const old = seedRoute({});
+  await old.run();
+  assert.deepEqual(old.calls.sql[0].params.slice(12), [null, null, null, true, null]);
 });
 
 test('복구 — 원장이 아니면 Storage·DB 를 건드리기 전에 거부한다', async () => {
@@ -287,9 +442,30 @@ test('자동 백업·즉시 백업 둘 다 스냅샷을 저장하고, 내보내�
 
 test('버킷 맨 위 목록을 읽는 곳은 seed 폴더 칸을 백업 파일로 세지 않는다', () => {
   assert.equal(seed.SEED_DIR, 'seed');
-  assert.match(read('../src/app/api/admin/cloud-backups/route.ts'), /f\.name !== "seed"/);
-  assert.match(read('../src/lib/siteOpsBot.ts'), /f\.name !== "seed"/);
-  assert.match(read('../src/app/api/admin/dashboard/system/route.ts'), /f\.name !== SEED_DIR/);
+  for (const path of ['../src/app/api/admin/cloud-backups/route.ts', '../src/lib/siteOpsBot.ts', '../src/app/api/admin/dashboard/system/route.ts']) {
+    assert.match(read(path), /f\.name !== SEED_DIR/, path);
+    assert.doesNotMatch(read(path), /!== "seed"/, path); // 글자를 직접 쓰지 않는다
+  }
+});
+
+test('마지막 저장 시각은 날짜별 사본으로 판정하고, 점검 봇도 이틀 넘게 없으면 알린다', () => {
+  const system = read('../src/app/api/admin/dashboard/system/route.ts');
+  assert.match(system, /latestSeedDated\(/);
+  assert.doesNotMatch(system, /updated_at/); // 최신본의 «고친 시각»을 믿지 않는다
+  const bot = read('../src/lib/siteOpsBot.ts');
+  assert.match(bot, /id: "seed-snapshot"/);
+  assert.match(bot, /latestSeedDated\(/);
+  assert.match(bot, /diffDaysKst\(latestSeed\.ymd, todayKst\(\)\) > 2/);
+  assert.match(bot, /핵심 데이터 저장이 이틀 넘게 없습니다/);
+});
+
+test('호출부는 날짜별 사본 저장 실패·30일 정리 실패·급감 건너뜀을 로그에 남긴다', () => {
+  for (const path of ['../src/app/api/cron/backup/route.ts', '../src/app/api/admin/backup-now/route.ts']) {
+    const source = read(path);
+    assert.match(source, /!seed\.result\.datedSaved\) console\.error/, path);
+    assert.match(source, /seed\.result\.cleanupFailed\) console\.error/, path);
+    assert.match(source, /!seed\.result\.saved\) console\.error/, path);
+  }
 });
 
 test('화면 — 사이드바는 «누르지 않아도 됩니다»를 알리고, 시스템 상태 카드는 자동 저장 시각을 보인다', () => {
@@ -299,5 +475,7 @@ test('화면 — 사이드바는 «누르지 않아도 됩니다»를 알리고,
   assert.match(read('../src/app/api/admin/dashboard/system/route.ts'), /seedSnapshotAt/);
   const dashboard = read('../src/app/admin/AdminDashboardClient.tsx');
   assert.match(dashboard, /핵심 데이터 자동 저장/);
+  assert.match(dashboard, /아직 저장 전/); // 기록이 없어도 줄을 숨기지 않는다
+  assert.doesNotMatch(dashboard, /\{seedAt && \(/);
   assert.match(dashboard, /backup\?\.seedSnapshotAt/);
 });

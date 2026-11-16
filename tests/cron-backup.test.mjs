@@ -59,6 +59,11 @@ function fixture(options = {}) {
           if (options.fail === 'upload-response-lost') throw new Error(sensitive);
           return result('upload', {});
         },
+        // 직전 최신 스냅샷 읽기(급감 확인용) — 기본은 «없음»
+        async download(path) {
+          assert.equal(path, 'seed/seed-latest.json');
+          return options.seedLatest ? { data: { text: async () => options.seedLatest }, error: null } : { data: null, error: { message: 'not found' } };
+        },
         async list(path) {
           if (path === 'seed') { calls.seedList++; return result('seed-list', options.seedFiles ?? []); }
           calls.list++; return result('list', options.files ?? []);
@@ -319,6 +324,30 @@ for (const fail of ['bucket', 'upload', 'upload-response-lost']) {
     assert.equal(body.seed.saved, true);
   });
 }
+
+test('프로그램이 직전 최신본의 절반 미만이면 최신본을 덮어쓰지 않고 로그를 남긴다 — 본 백업은 성공', async () => {
+  const previous = seedSnapshot.buildSeedSnapshot({
+    programRows: ['a', 'b', 'c'].map(id => ({ ...seedRows.Program[0], id })), slotRows: [], termsOfService: null,
+  }, { exportedAt: '2026-11-14T15:00:00.000Z', source: 'cron' });
+  const f = fixture({ rows: seedRows, seedLatest: JSON.stringify(previous) });
+  const { status, body } = await f.run();
+  assert.equal(status, 200);
+  assert.equal(body.success, true);
+  assert.deepEqual(f.calls.seedUpload.map(u => u.filename), [`seed/seed-${kst.todayKst()}.json`]); // 날짜별 사본만
+  assert.equal(body.seed.saved, false);
+  assert.equal(body.seed.reason, 'SKIPPED_SHRUNK');
+  assert.deepEqual([body.seed.previousPrograms, body.seed.programs], [3, 1]);
+  assert.ok(f.calls.logs.some(args => args.includes('SKIPPED_SHRUNK')));
+});
+
+test('날짜별 사본 저장 실패·정리 실패는 호출부가 로그로 남긴다', async () => {
+  const f = fixture({ rows: seedRows, fail: 'seed-list' });
+  const { status, body } = await f.run();
+  assert.equal(status, 200);
+  assert.equal(body.seed.saved, true);
+  assert.equal(body.seed.cleanupFailed, true);
+  assert.ok(f.calls.logs.some(args => String(args[0]).includes('seed cleanup failed')));
+});
 
 test('조회 실패면 스냅샷도 저장하지 않는다', async () => {
   const f = fixture({ rows: seedRows, failQuery: 'Coach' });
