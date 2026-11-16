@@ -1,3 +1,4 @@
+import { isPublicPriceHidden, PUBLIC_PRICE_HIDDEN_TEXT } from "@/lib/programs/publicPrice";
 import { getPrograms, getAcademySettings } from "@/lib/queries";
 import Image from "next/image";
 import PublicPageLayout from "@/components/PublicPageLayout";
@@ -188,7 +189,10 @@ export default async function ProgramsPage() {
 
                                         {/* 수강료 — 다단 가격표 또는 단일 가격 */}
                                         <div className="px-5 pb-5">
-                                            {tiers.length > 0 ? (
+                                            {isPublicPriceHidden(program.name) ? (
+                                                // 대회준비반 등 — 공개 화면에 금액을 보이지 않는다(원장 2026-11-16)
+                                                <p className="text-base font-medium text-[var(--color-public-ink)]">{PUBLIC_PRICE_HIDDEN_TEXT}</p>
+                                            ) : tiers.length > 0 ? (
                                                 <div className="overflow-hidden rounded-xl border border-[var(--color-public-line)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)]">
                                                     <table className="public-table public-fee-table w-full table-fixed text-sm">
                                                         <thead className="bg-[var(--color-public-dark)] text-white">
