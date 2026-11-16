@@ -15,8 +15,11 @@ import { appVersionLabels } from "@/lib/storeApp";
 // 버전 줄 — 스토어 최신 버전과 견줘 «최신 버전입니다» / «새 버전 + 업데이트»를 보인다(맨 위 배너와 같은 판정, 2026-11-15)
 import AppVersionRow from "@/components/storeApp/AppVersionRow";
 import { readPreferredPaymentMethod } from "@/lib/payments/preferredMethodStore";
-import { NameRow, PasswordRow, NotificationRows, FontScaleRow, PaymentMethodRow, MyPhotoRow } from "./SettingsClient";
-import { profilePhotoUpdatedAtSql, profilePhotoVersion } from "@/lib/profilePhoto/rules";
+import { NameRow, PasswordRow, NotificationRows, FontScaleRow, PaymentMethodRow } from "./SettingsClient";
+import { PROFILE_PHOTO_NOTICE, profilePhotoUpdatedAtSql, profilePhotoUrl, profilePhotoVersion } from "@/lib/profilePhoto/rules";
+// «우리 아이» 줄 — 아이 사진(없으면 이름 첫 글자) + 사진 올리기 버튼(아이 기록 «아이 정보»와 같은 올리기 부품)
+import ProfileAvatar from "@/components/common/ProfileAvatar";
+import ProfilePhotoEditor from "@/components/parent/ProfilePhotoEditor";
 import PhoneChangeButton from "@/components/account/PhoneChangeButton";
 import { phoneChangeAvailable } from "@/lib/account/phone-change";
 import { looksLikeLegalName } from "@/lib/account/phone-change-rules";
@@ -65,16 +68,17 @@ export default async function ParentSettingsPage() {
     const supabase = await createClient();
     // 모든 조회의 대상 = 서버가 확인한 로그인 사용자(parent.appUserId) — 화면 값으로 남의 정보를 열 수 없다
     const [userRows, authResult, childRows, pushPrefs, cookieStore, preferredMethod, headerStore, canChangePhone] = await Promise.all([
-        prisma.$queryRawUnsafe<{ name: string; phone: string | null; username: string | null; role: string; photoUpdatedAt: Date | string | null }[]>(
-            // photoUpdatedAt = 내 프로필 사진을 바꾼 시각(사진이 있을 때만) — 사진 주소의 캐시 버전으로 쓴다(2026-11-15)
-            `SELECT name, phone, username, role::text AS role, ${profilePhotoUpdatedAtSql("u")} AS "photoUpdatedAt" FROM "User" u WHERE id = $1 LIMIT 1`,
+        prisma.$queryRawUnsafe<{ name: string; phone: string | null; username: string | null; role: string }[]>(
+            // 보호자 본인 사진은 학부모 화면에서 더 쓰지 않는다(2026-11-16 원장 «학부모 사진은 필요 없어») — 저장된 값은 그대로 둔다
+            `SELECT name, phone, username, role::text AS role FROM "User" u WHERE id = $1 LIMIT 1`,
             parent.appUserId,
         ),
         supabase.auth.getUser(),
-        prisma.$queryRawUnsafe<{ id: string; name: string }[]>(
-            `SELECT s.id, s.name FROM "Student" s WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")} ORDER BY s.name`,
+        // photoUpdatedAt = 아이 사진을 바꾼 시각(사진이 있을 때만) — 사진 주소의 캐시 버전(맨 위 «우리 아이» 줄, 2026-11-16)
+        prisma.$queryRawUnsafe<{ id: string; name: string; photoUpdatedAt: Date | string | null }[]>(
+            `SELECT s.id, s.name, ${profilePhotoUpdatedAtSql("s")} AS "photoUpdatedAt" FROM "Student" s WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")} ORDER BY s.name`,
             parent.appUserId,
-        ).catch(() => [] as { id: string; name: string }[]),
+        ).catch(() => [] as { id: string; name: string; photoUpdatedAt: Date | string | null }[]),
         readPushPrefs(parent.appUserId),
         cookies(),
         // 자주 쓰는 결제 방법(칸이 없거나 못 읽으면 null — 설정 화면은 그대로 열린다)
@@ -104,10 +108,37 @@ export default async function ParentSettingsPage() {
                 <h1 className="academy-heading">설정</h1>
             </div>
 
-            {/* 내 정보 — 이름은 바로 고치고, 연락처는 본인 명의 휴대폰 인증을 통과한 번호로만 바꾼다(가입·자녀 연결의 본인 확인 번호) */}
-            <Section title="내 정보">
-                {/* 내 사진 — 올리기·바꾸기·지우기(주인은 서버가 확인한 로그인 사용자) */}
-                <MyPhotoRow userId={parent.appUserId} name={me?.name ?? parent.appUserName} version={profilePhotoVersion(me?.photoUpdatedAt)} />
+            {/* 우리 아이 — 아이 위주 프로필(2026-11-16 원장 «아이 위주로 프로필을 설정할 수 있도록»).
+                아이마다 한 줄: 사진(없으면 이름 첫 글자)·이름 → 누르면 아이 기록 «아이 정보»(학년·학교·유니폼·정보 수정 신청),
+                오른쪽 «사진 올리기/바꾸기»는 그 자리에서 파일을 고른다. 사진 지우기는 아이 정보 칸에서. */}
+            {childRows.length > 0 && (
+                <section aria-labelledby="settings-children-title">
+                    <h2 id="settings-children-title" className="px-1 pb-1 text-xs font-medium text-[var(--color-academy-muted)]">우리 아이</h2>
+                    <ul className="academy-panel divide-y divide-[var(--color-academy-line)] overflow-hidden">
+                        {childRows.map((c) => {
+                            const version = profilePhotoVersion(c.photoUpdatedAt);
+                            return (
+                                <li key={c.id} className="flex items-center gap-2 px-3 py-1.5 text-sm">
+                                    <Link href={`/mypage/record?child=${encodeURIComponent(c.id)}#record-info`} className="flex min-h-11 min-w-0 flex-1 items-center gap-3 rounded-lg hover:bg-[var(--color-academy-soft)]">
+                                        <ProfileAvatar decorative name={c.name} size={40} src={profilePhotoUrl({ kind: "student", id: c.id }, version, true)} />
+                                        <span className="min-w-0 flex-1">
+                                            <span className="block break-keep font-medium text-[var(--color-academy-ink)]">{c.name}</span>
+                                            <span className="block text-xs text-[var(--color-academy-muted)]">아이 정보 보기·수정 ›</span>
+                                        </span>
+                                    </Link>
+                                    <ProfilePhotoEditor variant="button" tone="tonal" target="student" studentId={c.id} ownerId={c.id} name={c.name} initialVersion={version} />
+                                </li>
+                            );
+                        })}
+                    </ul>
+                    {/* 누가 볼 수 있는지 한 줄(아이 정보 칸과 같은 문장) */}
+                    <p className="px-1 pt-1 break-keep text-xs text-[var(--color-academy-muted)]">{PROFILE_PHOTO_NOTICE}</p>
+                </section>
+            )}
+
+            {/* 보호자(내 정보) — 이름은 바로 고치고, 연락처는 본인 명의 휴대폰 인증을 통과한 번호로만 바꾼다(가입·자녀 연결의 본인 확인 번호).
+                보호자 본인 사진 칸은 뺐다(2026-11-16 원장 «학부모가 자기 사진 올리는 건 필요가 없어») */}
+            <Section title="보호자(내 정보)">
                 <NameRow name={me?.name ?? parent.appUserName} />
                 <li id="my-phone" className={`${ROW} scroll-mt-20 flex-wrap`}>
                     <span className="w-16 shrink-0 font-medium text-[var(--color-academy-ink)]">연락처</span>

@@ -3,12 +3,10 @@
 import UiIcon from "@/components/common/UiIcon";
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { updateMyName, changeMyPassword, saveMyPushPrefs, saveMyPreferredPaymentMethod } from "@/app/actions/parent-settings";
 import { PAYMENT_METHOD_OPTIONS, type PreferredPaymentMethod } from "@/lib/payments/preferredMethod";
 import { usePushSubscription } from "@/lib/push/usePushSubscription";
 import { useStoreAppLacks } from "@/components/storeApp/useStoreAppLacks";
-import ProfilePhotoEditor from "@/components/parent/ProfilePhotoEditor";
 // 스토어 앱 알림(FCM) 상태 — 앱 안에서는 브라우저 웹푸시 대신 이것으로 그린다(d2, 2026-11-14)
 import { useNativePush } from "@/lib/push/useNativePush";
 import { NATIVE_PUSH_NOTES, NATIVE_PUSH_UPDATE_NOTE, nativePushNotice } from "@/lib/push/nativePushBridge";
@@ -44,25 +42,8 @@ function Message({ text, tone }: { text: string; tone: "ok" | "error" }) {
     );
 }
 
-// ── 내 정보: 내 사진(올리기·바꾸기·지우기, 2026-11-15) ─────────────────────
-// 아이 기록의 아이 사진 칸과 같은 부품. 주인(userId)은 서버가 확인한 로그인 사용자다 — 사진 주소를 만드는 데만 쓴다.
-export function MyPhotoRow({ userId, name, version }: { userId: string; name: string; version: string | null }) {
-    return (
-        <li>
-            <p className="px-4 pt-2 text-sm font-medium text-[var(--color-academy-ink)]">내 사진(보호자)</p>
-            <div className="px-1">
-                <ProfilePhotoEditor target="me" ownerId={userId} name={name} initialVersion={version} />
-            </div>
-            {/* 아이 사진은 여기가 아니다 — 실제로 아이 사진을 이 칸에 올린 일이 있었다(2026-11-14) */}
-            <div className="flex flex-wrap items-center gap-x-2 px-4 pb-2">
-                <span className="break-keep text-xs text-[var(--color-academy-muted)]">아이 사진은 «우리 아이 기록 → 아이 정보»에서 올려요.</span>
-                <Link href="/mypage/record#record-info" className="academy-button-text min-h-11! inline-flex items-center">
-                    아이 사진 올리러 가기
-                </Link>
-            </div>
-        </li>
-    );
-}
+// 보호자 «내 사진» 칸(MyPhotoRow, 2026-11-15)은 뺐다 — 2026-11-16 원장 «학부모가 자기 사진 올리는 건 필요가 없어».
+// 아이 사진은 설정 맨 위 «우리 아이» 줄·홈 히어로·아이 기록 «아이 정보»에서 올린다. 저장된 사진·서버 API 는 그대로 둔다.
 
 // ── 내 정보: 이름(고치기) ──────────────────────────────────────────────────
 export function NameRow({ name }: { name: string }) {

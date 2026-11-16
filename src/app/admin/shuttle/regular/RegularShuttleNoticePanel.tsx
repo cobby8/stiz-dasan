@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { adminErrorText } from "@/components/admin/adminDisplayText";
+import { askConfirm } from "@/components/ui/feedback";
 
 type Preview = { status: string; payloadHash: string; studentName: string; recipientLast4: string; messageBody: string };
 // 2026-11-13 UI 통일: 테마 버튼. 준비·닫기는 보조, 승인·발송(한 번에 하나만 보인다)은 이 칸의 주 버튼.
@@ -12,7 +13,7 @@ export default function RegularShuttleNoticePanel({ studentId, serviceMonth, com
   const [error,setError] = useState("");
   async function act(action: "PREPARE" | "APPROVE" | "SEND") {
     if (busy) return;
-    if (action === "SEND" && (!preview || !window.confirm(`${preview.studentName} 학생 보호자(끝자리 ${preview.recipientLast4})에게 아래 문구를 발송할까요?\n\n${preview.messageBody}`))) return;
+    if (action === "SEND" && (!preview || !(await askConfirm(`${preview.studentName} 학생 보호자(끝자리 ${preview.recipientLast4})에게 아래 문구를 발송할까요?\n\n${preview.messageBody}`)))) return;
     setBusy(true);setError("");
     try {
       const response = await fetch("/api/admin/shuttle/regular-notice", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, serviceMonth, compareMonth, change: { key: `student:${studentId}` }, payloadHash: preview?.payloadHash }) });

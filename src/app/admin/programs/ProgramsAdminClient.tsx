@@ -8,6 +8,7 @@ import AdminModal from "@/components/admin/AdminModal";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import { isWeekendOnlyDays, REGULAR_FREQ_TIERS, shuttleFeeAmount } from "@/lib/billing/regular-tuition-preview";
+import { showNotice } from "@/components/ui/feedback";
 
 const ProgramFormPanel = dynamic(() => import("./ProgramFormPanel"), {
     loading: () => null,
@@ -234,7 +235,7 @@ export default function ProgramsAdminClient({
                 setDeletingId(null);
                 await loadPrograms();
             } catch (e: any) {
-                alert(adminErrorText(e, "삭제 실패"));
+                showNotice(adminErrorText(e, "삭제 실패"));
             }
         });
     }

@@ -35,7 +35,7 @@ test("공지: 행 클릭 = 상세 패널, 행 키보드 가드, 관리 칸 전�
   assert.match(notices, /onClick=\{\(\) => handleDelete\(n\.id\)\}/);
   assert.match(notices, /onClick=\{\(\) => setSocialNotice\(n\)\}/);
   // 삭제 확인창 문구·서버 액션 그대로
-  assert.match(notices, /confirm\("이 공지사항을 삭제하시겠습니까\?"\)/);
+  assert.match(notices, /askConfirm\("이 공지사항을 삭제하시겠습니까\?"\)/);
   assert.match(notices, /await deleteNotice\(id\)/);
   // 패널에서도 수정·삭제·소셜 발행 가능
   assert.match(notices, /setDetailNoticeId\(null\); startEdit\(d\);/);
@@ -65,7 +65,7 @@ test("FAQ: 공개 칩은 같은 필터 값을 쓰고 바꾸면 패널을 닫는�
   assert.match(faq, /admin-cell-center px-2 py-1\.5" onClick=\{\(event\) => event\.stopPropagation\(\)\}/);
   assert.match(faq, /onClick=\{\(\) => startEdit\(faq\)\}/);
   assert.match(faq, /onClick=\{\(\) => handleDelete\(faq\.id\)\}/);
-  assert.match(faq, /confirm\("이 FAQ를 삭제하시겠습니까\?"\)/);
+  assert.match(faq, /askConfirm\("이 FAQ를 삭제하시겠습니까\?"\)/);
   assert.match(faq, /await deleteFaq\(id\)/);
   assert.match(faq, /const payload = \{ question, answer, order, isPublic \};/);
 });
@@ -97,7 +97,7 @@ test("후기: 행 클릭 패널·키보드 가드·관리 칸 전파 차단, 수
   assert.match(testimonials, /admin-cell-center px-2 py-1\.5" onClick=\{\(event\) => event\.stopPropagation\(\)\}/);
   assert.match(testimonials, /onClick=\{\(\) => startEdit\(t\)\}/);
   assert.match(testimonials, /onClick=\{\(\) => handleDelete\(t\.id\)\}/);
-  assert.match(testimonials, /confirm\("이 후기를 삭제하시겠습니까\?"\)/);
+  assert.match(testimonials, /askConfirm\("이 후기를 삭제하시겠습니까\?"\)/);
   assert.match(testimonials, /await updateNaverPlaceUrl\(naverUrl\)/);
 });
 

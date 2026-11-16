@@ -41,6 +41,7 @@ import InlineConfirm from "@/components/parent/InlineConfirm";
 import { paymentDeleteBlockReason } from "@/lib/payments/paidStatusGuard";
 // 청구·미납 안내 야간 발송 금지(KST 21:00~08:00) 판정·안내 문구
 import { BILLING_QUIET_HINT, isBillingQuietHour } from "@/lib/billing/quietHours";
+import { askConfirm as askScreenConfirm, showNotice } from "@/components/ui/feedback";
 
 type Payment = {
     id: string;
@@ -606,11 +607,11 @@ export default function FinanceClient({
         }
         if (!studentId || !amount || !dueDate) return;
         if (classRequired && !classId) {
-            alert("수강료와 셔틀 청구에는 수업을 선택해 주세요.");
+            showNotice("수강료와 셔틀 청구에는 수업을 선택해 주세요.");
             return;
         }
         if (notifyParent && (status !== "PENDING" || !selectedStudent?.hasParent)) {
-            alert("학부모 알림은 보호자가 연결된 미납 청구에만 보낼 수 있습니다.");
+            showNotice("학부모 알림은 보호자가 연결된 미납 청구에만 보낼 수 있습니다.");
             return;
         }
         setCreatePreviewOpen(true);
@@ -646,7 +647,7 @@ export default function FinanceClient({
             setNotifyParent(false);
             await loadMonth(year, month);
         } catch (err: unknown) {
-            alert(getErrorMessage(err, "생성 실패"));
+            showNotice(getErrorMessage(err, "생성 실패"));
         } finally {
             setBusy(false);
         }
@@ -654,7 +655,7 @@ export default function FinanceClient({
 
     function handleCancelUnpaid(payment: Payment) {
         if (!canManageCriticalFinance) {
-            alert("수퍼관리자만 미납 청구를 취소할 수 있습니다.");
+            showNotice("수퍼관리자만 미납 청구를 취소할 수 있습니다.");
             return;
         }
         setCancelTarget(payment);
@@ -692,7 +693,7 @@ export default function FinanceClient({
     // 개별 상태 변경
     async function handleStatusChange(id: string, newStatus: string) {
         if (!canManageCriticalFinance) {
-            alert("수퍼관리자만 수납 상태를 변경할 수 있습니다.");
+            showNotice("수퍼관리자만 수납 상태를 변경할 수 있습니다.");
             return;
         }
 
@@ -701,7 +702,7 @@ export default function FinanceClient({
             await updatePaymentStatus(id, newStatus);
             await loadMonth(year, month);
         } catch (err: unknown) {
-            alert(getErrorMessage(err, "상태 변경 실패"));
+            showNotice(getErrorMessage(err, "상태 변경 실패"));
         } finally {
             setBusy(false);
         }
@@ -710,7 +711,7 @@ export default function FinanceClient({
     // 개별 삭제
     async function handleDelete(id: string) {
         if (!canManageCriticalFinance) {
-            alert("수퍼관리자만 수납 기록을 삭제할 수 있습니다.");
+            showNotice("수퍼관리자만 수납 기록을 삭제할 수 있습니다.");
             return;
         }
 
@@ -719,7 +720,7 @@ export default function FinanceClient({
             await deletePayment(id);
             await loadMonth(year, month);
         } catch (err: unknown) {
-            alert(getErrorMessage(err, "삭제 실패"));
+            showNotice(getErrorMessage(err, "삭제 실패"));
         } finally {
             setBusy(false);
         }
@@ -727,7 +728,7 @@ export default function FinanceClient({
 
     // 미납 알림 일괄 발송
     async function handleSendReminders() {
-        if (!confirm("미납 건에 대해 학부모 알림을 발송하시겠습니까?")) return;
+        if (!(await askScreenConfirm("미납 건에 대해 학부모 알림을 발송하시겠습니까?"))) return;
         setBusy(true);
         try {
             const result = await sendUnpaidReminders();
@@ -736,7 +737,7 @@ export default function FinanceClient({
             // 발송은 서버가 매분 묶음으로 — 진행 상황 줄을 바로 갱신(나가는 중이면 20초마다 다시 읽는다)
             await loadNoticeProgress(year, month);
         } catch (err: unknown) {
-            alert(getErrorMessage(err, "알림 발송 실패"));
+            showNotice(getErrorMessage(err, "알림 발송 실패"));
         } finally {
             setBusy(false);
         }
@@ -749,14 +750,14 @@ export default function FinanceClient({
             await loadMonth(year, month);
             setFinanceNotice(result.message);
         } catch (err: unknown) {
-            alert(getErrorMessage(err, "청구서 정리 실패"));
+            showNotice(getErrorMessage(err, "청구서 정리 실패"));
         } finally {
             setBusy(false);
         }
     }
 
     async function handleSendInvoiceLinks() {
-        if (!confirm(`${year}년 ${month}월 미납 청구서 링크를 학부모 알림으로 발송할까요?`)) return;
+        if (!(await askScreenConfirm(`${year}년 ${month}월 미납 청구서 링크를 학부모 알림으로 발송할까요?`))) return;
         setBusy(true);
         try {
             const result = await sendInvoiceLinksForMonth(year, month);
@@ -764,7 +765,7 @@ export default function FinanceClient({
             setFinanceNotice(result.message);
             await loadNoticeProgress(year, month);
         } catch (err: unknown) {
-            alert(getErrorMessage(err, "청구서 링크 발송 실패"));
+            showNotice(getErrorMessage(err, "청구서 링크 발송 실패"));
         } finally {
             setBusy(false);
         }
@@ -821,7 +822,7 @@ export default function FinanceClient({
             `생성 ${createCount}건, 수정 ${updateCount}건이 적용됩니다.\n` +
             `확인 필요 ${reviewCount}건은 자동 변경하지 않습니다.`;
 
-        if (!confirm(confirmMessage)) return;
+        if (!(await askScreenConfirm(confirmMessage))) return;
 
         setSheetApplying(true);
         setSheetError(null);
@@ -849,14 +850,14 @@ export default function FinanceClient({
     // 일괄 수납 처리
     function handleBulkPaid() {
         if (!canManageCriticalFinance) {
-            alert("수퍼관리자만 일괄 수납 처리를 할 수 있습니다.");
+            showNotice("수퍼관리자만 일괄 수납 처리를 할 수 있습니다.");
             return;
         }
-        if (selectedIds.size === 0) { alert("선택된 항목이 없습니다."); return; }
+        if (selectedIds.size === 0) { showNotice("선택된 항목이 없습니다."); return; }
         // 바로 PAID 로 바꾸지 않고 «납부 처리» 창(여러 건 모드)을 연다.
         // 고른 것 전부를 넘긴다 — 이미 납부된 건은 창 안에서 «이미 납부 N건 — 나머지만 처리할까요?»로 보여 준다.
         const targets = payments.filter((p) => selectedIds.has(p.id));
-        if (targets.length === 0) { alert("선택된 항목이 없습니다."); return; }
+        if (targets.length === 0) { showNotice("선택된 항목이 없습니다."); return; }
         setRecordPreferPos(false);
         setRecordTargets(targets);
     }

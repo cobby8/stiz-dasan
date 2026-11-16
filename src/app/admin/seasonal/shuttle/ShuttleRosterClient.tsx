@@ -6,6 +6,7 @@ import LocationPickerModal, { type MapLocationData } from "@/components/maps/Loc
 import StudentDetailModal from "@/components/seasonal/StudentDetailModal";
 import type { ShuttleRosterRow } from "@/lib/seasonal/shuttle-roster";
 import { rosterPatchTarget } from "@/lib/seasonal/shuttleRosterEdit";
+import { askConfirm } from "@/components/ui/feedback";
 
 // 방학특강 셔틀 통합 명단 — 학생 단위 편집 표.
 // 컬럼: 학생(클릭 시 상세) · 수업(반·요일) · 승차 위치(핀) · 하차 위치(핀) · 연락(전화/문자 선택).
@@ -249,11 +250,11 @@ export default function ShuttleRosterClient({
     if (confirming) return;
     // 이미 확정한 시즌이 있으면 확정 전 시즌만 저장된다(서버가 확정한 시즌은 다시 채우지 않는다).
     const target = confirmed ? pendingRideCount : rideCount;
-    const ok = window.confirm(
+    const ok = (await askConfirm(
       `${confirmed ? "새 시즌 " : "지금 "}탑승 ${target}명을 확정 명단으로 저장합니다.\n\n` +
       `확정하면\n· 새 신청이 들어와도 이 명단에 자동으로 추가되지 않습니다.\n` +
       `· 여기서 고친 값이 그대로 기사님 명단이 됩니다.\n\n진행할까요?`,
-    );
+    ));
     if (!ok) return;
     setConfirming(true);
     try {
@@ -267,7 +268,7 @@ export default function ShuttleRosterClient({
   // 확정본에서 빼기. 지우는 게 아니라 제외 표시(soft remove)라 되돌릴 수 있다.
   async function removeRow(row: ShuttleRosterRow) {
     if (!row.rosterId) return;
-    if (!window.confirm(`${row.childName} 학생을 확정 명단에서 뺄까요?\n(되돌리기로 다시 넣을 수 있습니다.)`)) return;
+    if (!(await askConfirm(`${row.childName} 학생을 확정 명단에서 뺄까요?\n(되돌리기로 다시 넣을 수 있습니다.)`))) return;
     const rosterId = row.rosterId;
     try {
       await callApi("PATCH", { rosterId, action: "remove" });

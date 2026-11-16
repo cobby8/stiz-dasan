@@ -598,7 +598,7 @@ test("관리자 화면: 방식 고르기 → 확인창(금액·토스 즉시 취
   const ui = readFileSync("src/app/admin/enrollment-changes/EnrollmentChangesClient.tsx", "utf8");
   assert.match(ui, /role="radiogroup" aria-label="휴원 수강료 처리 방식"/);
   assert.match(ui, /토스 온라인 결제분은 확인을 누르면 바로 부분 취소됩니다/);
-  assert.match(ui, /window\.confirm\(`\$\{settlementConfirmText\(row, mode\)\}\\n\\n승인할까요\?`\)/);
+  assert.match(ui, /askConfirm\(`\$\{settlementConfirmText\(row, mode\)\}\\n\\n승인할까요\?`\)/);
   assert.match(ui, /\{ mode, expectedPreviewKey: row\.settlementPreview!\.previewKey \}/);
   assert.match(ui, /needsSettlementChoice\(row\) && \(!modes\[row\.id\] \|\| !row\.settlementPreview\?\.ready\)/, "방식을 안 고르면 승인 버튼이 잠긴다");
   const actions = readFileSync("src/app/actions/enrollment-changes.ts", "utf8");

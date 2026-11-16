@@ -69,7 +69,7 @@ export default function Image() {
               <img src={MARK_SRC} width={52} height={52} alt="STIZ" style={{ display: "block" }} />
             </div>
             <div style={{ display: "flex", flexDirection: "column" }}>
-              <div style={{ fontSize: "34px", fontWeight: 900, letterSpacing: "0" }}>STIZ</div>
+              <div style={{ fontSize: "34px", fontWeight: 700, letterSpacing: "0" }}>STIZ</div>
               <div style={{ fontSize: "20px", fontWeight: 700, color: OG_COLORS.orange }}>BASKETBALL CLUB DASAN</div>
             </div>
           </div>
@@ -80,14 +80,14 @@ export default function Image() {
               color: OG_COLORS.onOrange,
               padding: "14px 24px",
               fontSize: "22px",
-              fontWeight: 900,
+              fontWeight: 700,
             }}
           >
             Trial Class Open
           </div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: "24px", maxWidth: "840px", zIndex: 1 }}>
-          <div style={{ fontSize: "72px", lineHeight: 1.05, fontWeight: 900, letterSpacing: "0" }}>
+          <div style={{ fontSize: "72px", lineHeight: 1.05, fontWeight: 700, letterSpacing: "0" }}>
             Dasan No.1 Youth Basketball Academy
           </div>
           <div style={{ fontSize: "30px", lineHeight: 1.35, color: OG_COLORS.subText, fontWeight: 700 }}>
@@ -105,14 +105,14 @@ export default function Image() {
                   border: "1px solid rgba(255,255,255,0.2)",
                   padding: "12px 18px",
                   fontSize: "20px",
-                  fontWeight: 800,
+                  fontWeight: 700,
                 }}
               >
                 {label}
               </div>
             ))}
           </div>
-          <div style={{ fontSize: "24px", fontWeight: 900, color: OG_COLORS.orange }}>{PUBLIC_SITE_NAME}</div>
+          <div style={{ fontSize: "24px", fontWeight: 700, color: OG_COLORS.orange }}>{PUBLIC_SITE_NAME}</div>
         </div>
       </div>
     ),

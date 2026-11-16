@@ -302,7 +302,8 @@ test("관리자 입구: 결석 관리 위쪽 버튼·학생 목록 ⚡ 에서 �
   const bulk = action.slice(action.indexOf("export async function approveIllnessCarryPeriodAction"), action.indexOf("/** [보강권으로]"));
   assert.match(bulk, /const admin = await requireAdmin\(\);/);
   assert.match(bulk, /const targets = \[\.\.\.\(detail\.status === "PENDING" && !detail\.blocker \? \[absenceId\] : \[\]\), \.\.\.detail\.periodPeerIds\];/);
-  assert.match(bulk, /await approveIllnessCarry\(prisma, \{ absenceId: id, evidenceConfirmed: true \}, admin\.appUserId, writesEnabled\(\), calendar\)/);
+  // 2026-11-16: 건마다 서버가 방금 읽은 상세(이월인가 · 미납 청구에서 빼는가)를 «본 것»으로 함께 넘긴다
+  assert.match(bulk, /await approveIllnessCarry\(prisma, \{ absenceId: id, evidenceConfirmed: true, expected: expectationOf\(current\) \}, admin\.appUserId, writesEnabled\(\), calendar\)/);
   assert.equal(bulk.split("await notifyParentSafely(").length - 1, 1, "학부모 알림은 묶어서 1회");
   assert.match(read("src/lib/regular/illness-carry-admin.ts"), /pa\.reason = \$2 AND pa\.status <> 'CANCELLED' AND pa\.date <= \$3::date\s+AND COALESCE\(pr\.status, 'PENDING'\) = 'PENDING'/);
   // 문구 통일: 학부모 «여러 날»·관리자 기간 결석 모두 «같은 기간 결석 n건 함께 승인»

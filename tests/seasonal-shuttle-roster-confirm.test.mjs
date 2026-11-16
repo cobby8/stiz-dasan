@@ -173,7 +173,7 @@ test("확정 후 배너는 건수와 확정일시를 보여준다", () => {
 
 test("확정 버튼은 확인창을 거치고 성공 후 목록을 다시 읽는다", () => {
     const fn = block(client, "async function confirmRoster", "async function removeRow");
-    assert.match(fn, /window\.confirm\(/);
+    assert.match(fn, /askConfirm\(/);
     assert.match(fn, /callApi\("POST"\)/);
     assert.match(fn, /refresh\(\)/);
 });

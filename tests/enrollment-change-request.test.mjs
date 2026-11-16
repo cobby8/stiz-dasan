@@ -149,7 +149,7 @@ test("신청은 담당자에게 전달하고 결정·적용은 신청 학부모�
   assert.ok(txEnd > 0, "결정 트랜잭션 끝을 찾지 못했습니다");
   assert.ok(decide.indexOf('notifyParentOfEnrollmentChange(input.requestId') > txEnd, "알림은 결정 트랜잭션 뒤에서 보낸다");
   // 적용일에 실제로 반영된 건만 «시작됐어요» 알림
-  assert.match(adminLib, /outcome === "APPLIED"[\s\S]{0,300}notifyParentOfEnrollmentChange\(candidate\.id, "APPLIED"\)/);
+  assert.match(adminLib, /outcome.kind === "APPLIED"[\s\S]{0,300}notifyParentOfEnrollmentChange\(candidate\.id, "APPLIED"\)/);
 });
 
 // ── 학부모가 반 변경 시작일을 고를 수 있게 한 뒤 추가된 계약 ──────────────

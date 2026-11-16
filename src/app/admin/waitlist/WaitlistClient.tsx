@@ -14,6 +14,7 @@ import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { kstLabel } from "@/lib/datetime/kst";
+import { askConfirm, showNotice } from "@/components/ui/feedback";
 
 // ── 타입 정의 ──────────────────────────────────────────────────────────────
 type WaitlistItem = {
@@ -246,52 +247,52 @@ export default function WaitlistClient({
 
     // ── 액션 핸들러 ──────────────────────────────────────────────────────────
     async function handleOffer(id: string) {
-        if (!confirm("이 대기자에게 자리를 제안하시겠습니까?")) return;
+        if (!(await askConfirm("이 대기자에게 자리를 제안하시겠습니까?"))) return;
         setBusy(true);
         try {
             await offerWaitlistSpot(id);
             await loadWaitlistData();
         } catch (e: any) {
-            alert(adminErrorText(e, "자리 제안 실패"));
+            showNotice(adminErrorText(e, "자리 제안 실패"));
         } finally {
             setBusy(false);
         }
     }
 
     async function handleAccept(id: string) {
-        if (!confirm("수락 처리하시겠습니까? 수강 등록이 생성됩니다.")) return;
+        if (!(await askConfirm("수락 처리하시겠습니까? 수강 등록이 생성됩니다."))) return;
         setBusy(true);
         try {
             await processWaitlistResponse(id, true);
             await loadWaitlistData();
         } catch (e: any) {
-            alert(adminErrorText(e, "수락 처리 실패"));
+            showNotice(adminErrorText(e, "수락 처리 실패"));
         } finally {
             setBusy(false);
         }
     }
 
     async function handleReject(id: string) {
-        if (!confirm("거절 처리하시겠습니까?")) return;
+        if (!(await askConfirm("거절 처리하시겠습니까?"))) return;
         setBusy(true);
         try {
             await processWaitlistResponse(id, false);
             await loadWaitlistData();
         } catch (e: any) {
-            alert(adminErrorText(e, "거절 처리 실패"));
+            showNotice(adminErrorText(e, "거절 처리 실패"));
         } finally {
             setBusy(false);
         }
     }
 
     async function handleCancel(id: string) {
-        if (!confirm("대기를 취소하시겠습니까?")) return;
+        if (!(await askConfirm("대기를 취소하시겠습니까?"))) return;
         setBusy(true);
         try {
             await removeFromWaitlist(id);
             await loadWaitlistData();
         } catch (e: any) {
-            alert(adminErrorText(e, "대기 취소 실패"));
+            showNotice(adminErrorText(e, "대기 취소 실패"));
         } finally {
             setBusy(false);
         }
@@ -618,7 +619,7 @@ function AddWaitlistModal({
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
         if (!studentId || !classId) {
-            alert("학생과 반을 선택해주세요.");
+            showNotice("학생과 반을 선택해주세요.");
             return;
         }
         setBusy(true);
@@ -626,7 +627,7 @@ function AddWaitlistModal({
             await addToWaitlist(studentId, classId, memo || undefined);
             await onDone();
         } catch (err: any) {
-            alert(adminErrorText(err, "대기 등록 실패"));
+            showNotice(adminErrorText(err, "대기 등록 실패"));
         } finally {
             setBusy(false);
         }

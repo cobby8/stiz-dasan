@@ -10,6 +10,7 @@ import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/
 import AdminPanelActions from "@/components/admin/AdminPanelActions";
 import { useAdminConfirm } from "@/components/admin/AdminConfirmDialog";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
+import { showNotice } from "@/components/ui/feedback";
 
 interface Coach {
     id: string;
@@ -318,7 +319,7 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
                 setCoaches((prev) => prev.filter((c) => c.id !== id));
                 await loadCoaches();
             } catch (e: unknown) {
-                alert(getErrorMessage(e, "삭제 실패"));
+                showNotice(getErrorMessage(e, "삭제 실패"));
             }
         });
     }
@@ -355,7 +356,7 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
                 await reorderCoaches(next.map((c) => c.id));
                 await loadCoaches();
             } catch (e: unknown) {
-                alert(getErrorMessage(e, "순서 변경 실패"));
+                showNotice(getErrorMessage(e, "순서 변경 실패"));
                 setCoaches(previous);
             }
         });

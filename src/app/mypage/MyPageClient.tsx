@@ -23,6 +23,8 @@ import LatestFeedCard from "@/components/parent/LatestFeedCard";
 import { pickFeedCard, type FeedCandidate } from "@/lib/feed/rules";
 // 프로필 사진(2026-11-15) — 히어로 이름 왼쪽 64px · 자녀 칩 28px
 import ProfileAvatar from "@/components/common/ProfileAvatar";
+// 홈 히어로의 «사진 올리기» 버튼 — 아이 기록 «아이 정보» 칸과 같은 올리기 부품(검증·압축·권한 확인 그대로)
+import ProfilePhotoEditor from "@/components/parent/ProfilePhotoEditor";
 import { profilePhotoUrl } from "@/lib/profilePhoto/rules";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -329,21 +331,12 @@ export default function MyPageClient({ data, notices = [], inquiryCounts = { ans
 
             {/* ② 전경과 배경(M-06): 이름 + 다음 수업 + 오늘 셔틀을 히어로 한 덩어리로. */}
             <section aria-labelledby="parent-child-heading" className="academy-hero p-4 sm:p-5">
-                <div className="flex items-center gap-3">
+                {/* 좁은 화면(360px)에서 이름 칸이 너무 좁아지면 버튼이 아래 줄로 내려간다 — 이름이 글자 중간에서 끊기지 않게 */}
+                <div className="flex flex-wrap items-center gap-3">
                     {/* 아이 사진(64px) — 이름 + 아래 한 줄 높이 안에 들어가 히어로가 커지지 않는다. 사진이 없으면 이름 첫 글자 */}
                     <ProfileAvatar decorative name={child.name} size={64} src={profilePhotoUrl({ kind: "student", id: child.id }, child.photoVersion, true)} />
-                    <div className="min-w-0 flex-1">
-                        <h1 id="parent-child-heading" className="academy-heading">{child.name} 학생</h1>
-                        {/* 아이 사진이 아직 없으면 사진 칸(아이 기록 → 아이 정보)으로 바로 가는 글자 버튼(2026-11-14).
-                            설정의 «내 사진»에 아이 사진을 올리는 헷갈림이 실제로 있었다 */}
-                        {!child.photoVersion && (
-                            <Link
-                                href={`/mypage/record?child=${encodeURIComponent(child.id)}#record-info`}
-                                className="academy-button-text min-h-11! -my-2 inline-flex items-center"
-                            >
-                                아이 사진 올리기
-                            </Link>
-                        )}
+                    <div className="min-w-[8.5rem] flex-1">
+                        <h1 id="parent-child-heading" className="academy-heading break-keep">{child.name} 학생</h1>
                         {/* 2026-11-14 문구 정리: 바로 아래 «다음 수업» 줄이 있으면 «수강 중인 반 N개»는 같은 말이라 뺀다.
                             복귀 예정·개시일처럼 아래 줄에 없는 내용만 남기고, 남길 말이 없으면 줄째 그리지 않는다. */}
                         {(heroEnrollLine || startsLaterEnrollment) && (
@@ -354,6 +347,10 @@ export default function MyPageClient({ data, notices = [], inquiryCounts = { ans
                             </p>
                         )}
                     </div>
+                    {/* 아이 사진 올리기·바꾸기 — 사진 바로 옆에 늘 보이는 글자 버튼(2026-11-16 원장 «잘 안 보여»).
+                        예전엔 사진이 없을 때만 작은 글자 링크로 아이 기록 화면까지 가야 했다. 누르면 그 자리에서 파일을 고른다.
+                        key = 아이 id — 아이를 바꾸면 올리던 상태(진행 글자·바뀐 버전)를 새로 시작한다 */}
+                    <ProfilePhotoEditor key={child.id} variant="button" target="student" studentId={child.id} ownerId={child.id} name={child.name} initialVersion={child.photoVersion ?? null} />
                 </div>
                 {data.children.length > 1 && (
                     <div role="group" aria-label="자녀 선택" className="mt-3 flex flex-wrap gap-2">

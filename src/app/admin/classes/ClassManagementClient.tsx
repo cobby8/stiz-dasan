@@ -11,6 +11,7 @@ import { useAdminConfirm } from "@/components/admin/AdminConfirmDialog";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import ListViewToggle, { useRememberedListView } from "@/components/admin/list/ListViewToggle";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
+import { showNotice } from "@/components/ui/feedback";
 
 const ClassFormPanel = dynamic(() => import("./ClassFormPanel"), {
     loading: () => null,
@@ -157,7 +158,7 @@ export default function ClassManagementClient({
             await deleteClass(id);
             await loadClasses();
         } catch (err: unknown) {
-            alert(getErrorMessage(err, "삭제 실패"));
+            showNotice(getErrorMessage(err, "삭제 실패"));
         } finally {
             setBusy(false);
         }

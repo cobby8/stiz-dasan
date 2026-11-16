@@ -13,7 +13,7 @@ import BillDetailSheet from "@/components/parent/billing/BillDetailSheet";
 import { groupBillsByMonth } from "@/lib/payments/monthBills";
 import type { ChildRecord } from "@/lib/parent/childRecordQuery";
 // 아이 정보·수강 반·셔틀 칸(2026-11-14 «아이 정보 + 기록» 한 장)
-import { ChildClassesSection, ChildInfoSection, ChildShuttleSection } from "./ChildProfileSections";
+import { ChildClassesSection, ChildInfoSection, ChildShuttleSection, ChildUniformOrdersSection } from "./ChildProfileSections";
 // 프로필 사진(2026-11-15) — 제목 왼쪽 64px · 형제 칩 28px
 import ProfileAvatar from "@/components/common/ProfileAvatar";
 import { profilePhotoUrl } from "@/lib/profilePhoto/rules";
@@ -162,7 +162,7 @@ export default function ChildRecordClient({
 
       {/* 아이 정보 — 관리자 원생 상세 중 학부모에게 보여도 되는 것만(맨 위) */}
       {/* key = 아이 id — 형제로 바꾸면 사진 올리기 칸의 진행·확인 상태를 새로 시작한다 */}
-      <ChildInfoSection key={childId} profile={record.profile} today={today} studentId={childId} photo={{ name: record.student.name, version: record.student.photoVersion ?? null }} />
+      <ChildInfoSection key={childId} profile={record.profile} today={today} studentId={childId} photo={{ name: record.student.name, version: record.student.photoVersion ?? null }} uniform={record.uniform} />
 
       {/* 요약 4칸(2×2) — 다닌 기간 · 출석률 · 납부 · 미납 */}
       <section aria-label="요약" className="grid grid-cols-2 gap-2">
@@ -189,6 +189,8 @@ export default function ChildRecordClient({
       {/* 수강 반 · 셔틀(명단 기준 — 기사님·관리자 운행표와 같은 정본) */}
       <ChildClassesSection profile={record.profile} studentId={childId} />
       <ChildShuttleSection shuttle={record.shuttle} studentId={childId} />
+      {/* 유니폼 신청 내역(2026-11-16) — 이 아이 이름 + 로그인한 본인 번호로 낸 사이트 주문만 */}
+      <ChildUniformOrdersSection uniform={record.uniform} />
 
       {/* 청구 이력 */}
       <section aria-labelledby="record-pay-heading" className="academy-panel overflow-hidden">

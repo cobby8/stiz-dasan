@@ -197,3 +197,17 @@ export function validateWorkbenchCommand(input: unknown): WorkbenchCommand {
   if (Object.keys(b).some(k => !["action", "month", "sourceVersion", "requestId", "rows"].includes(k))) throw new WorkbenchError("허용되지 않은 요청입니다.");
   return { action: b.action as WorkbenchCommand["action"], month, sourceVersion: b.sourceVersion, requestId: b.requestId, rows };
 }
+
+// ── 질병·부상 결석 «미납 청구에서 1회분 빼기»(2026-11-16 원장 결정) ─────────────────────────
+// 미납인 달의 하루짜리 질병·부상 결석은 이월(다음 달 차감) 대신 «그 미납 청구 금액»을 1회 값만큼 줄인다.
+// 줄인 사실은 새 표 없이 청구 변경 기록(PaymentAuditLog)에 남긴다 — 아래 action 한 가지, metadata.reduceBy 가 줄인 금액.
+// 이 값을 읽는 곳(이월 근거·청구 준비·휴원 정산·발행 보류)이 모두 같은 글자를 써야 한다(테스트가 비교).
+export const ILLNESS_UNPAID_REDUCE_ACTION = "ILLNESS_ABSENCE_UNPAID_REDUCED";
+/**
+ * 그 청구에서 질병·부상 결석으로 «이미 줄인 금액 합계»를 내는 SQL 조각(숫자 한 칸).
+ * 원래 금액 = 지금 청구 금액 + 이 값. 발행 초안 금액과 견줄 때·한 번 값을 다시 계산할 때 쓴다.
+ * @param paymentIdSql 청구 id 를 가리키는 SQL 식(예: `p.id`, `"Payment".id`) — 코드에 적힌 고정 글자만 넘긴다(사용자 입력 금지)
+ */
+export function illnessReducedSumSql(paymentIdSql: string): string {
+  return `(SELECT COALESCE(SUM((illness_cut.metadata->>'reduceBy')::int),0)::int FROM "PaymentAuditLog" illness_cut WHERE illness_cut."paymentId" = ${paymentIdSql} AND illness_cut.action = '${ILLNESS_UNPAID_REDUCE_ACTION}')`;
+}

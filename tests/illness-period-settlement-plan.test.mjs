@@ -245,7 +245,8 @@ test("근거 규칙: 발행 초안도 «납부된 것만» — 미납 초안·�
   assert.ok(absenceSource.indexOf('if(p.status!=="PAID")') < absenceSource.indexOf("if(!issuedRow && !registeredRow) {"));
   // 청구 준비의 «이미 적립된 이월» 유효성 판정은 납부 여부를 보지 않는다(취소·환불만 무효) — 예전에 미납 초안으로 적립한 이월이 깨지지 않게
   const service = read("src/lib/billing/workbench-service.ts");
-  assert.match(service, /if\(!p\|\|!issued\|\|p\.amount!==workbenchTotal\(issued\.payload\)\|\|!invoice\|\|invoice\.amount!==p\.amount\|\|\["CANCELED","CANCELLED","REFUNDED"\]\.includes\(p\.status\)/);
+  // 2026-11-16: 질병·부상 결석으로 그 청구에서 줄인 금액(illnessReduced)은 «이미 줄인 금액»으로 인정해 견준다
+  assert.match(service, /if\(!p\|\|!issued\|\|p\.amount\+\(p\.illnessReduced\?\?0\)!==workbenchTotal\(issued\.payload\)\|\|!invoice\|\|invoice\.amount!==p\.amount\|\|\["CANCELED","CANCELLED","REFUNDED"\]\.includes\(p\.status\)/);
   // 신청함 하루짜리 상세: 미납이면 «납부한 뒤에 승인» 안내로(서버 문구를 그대로 띄우지 않는다)
   assert.match(read("src/lib/regular/illness-carry-admin.ts"), /\} else if \(preview\.reason === CARRY_UNPAID_MESSAGE\) \{[\s\S]{0,160}bill = "UNPAID";/);
 });

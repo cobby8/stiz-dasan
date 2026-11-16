@@ -24,6 +24,9 @@ import { loadChildRegularShuttle, type ChildRegularShuttle } from "@/lib/shuttle
 import { getParentShuttleOverview, getShuttleDriverContact, type ParentShuttleOverviewItem } from "@/lib/shuttle/parent";
 import { getMonthlyClassDates, loadAnnualPlanEvents } from "@/lib/enrollment/monthlyClassDates";
 import { isExpired, summarize, type MakeupCreditStatus } from "@/lib/makeup/credit-rules";
+// 유니폼 신청 내역(2026-11-16) — 권한·본인 전화번호·아이 이름을 함수 안에서 다시 확인한다
+import { loadChildUniformOrders } from "@/lib/parent/childUniformQuery";
+import type { ChildUniformOrderView } from "@/lib/parent/childUniformRules";
 import {
   homeRecordLine,
   yearAttendance,
@@ -44,6 +47,15 @@ export type UniformRecord = {
   receivedYmd: string | null;
   /** 3년 무료 유니폼 링크(취소 안 된 최신 1개) — 상태만 */
   freeGrant: { status: string; expired: boolean } | null;
+  /**
+   * 유니폼 번호(2026-11-16) — 취미반 Student."uniformNumber" · 대표팀 Student."teamUniformNumber". 숫자 글자 그대로("0" 도 번호).
+   * numbersLoaded=false 면 번호를 못 읽은 것(«번호 없음»과 다르다). 화면 렌더 테스트의 옛 모양은 칸이 없을 수 있다.
+   */
+  number?: string | null;
+  teamNumber?: string | null;
+  numbersLoaded?: boolean;
+  /** 사이트 유니폼 신청 내역(최신순, 로그인한 본인 번호로 낸 이 아이 이름의 품목만). 못 읽으면 null */
+  orders?: ChildUniformOrderView[] | null;
 };
 export type ReportRecord = { reports: number; feedbacks: number };
 
@@ -375,6 +387,18 @@ export async function getChildRecord(parentUserId: string, studentId: string, db
     section("tenure", () => getStudentTenure(sid)),
   ]);
 
+  // 유니폼 번호·신청 내역 — 따로 읽는다(번호 칸이 없는 환경이어도 다른 칸은 그대로 보이게)
+  const [uniformNumbers, uniformOrders] = await Promise.all([
+    section("uniformNumbers", async () => {
+      const rows = await db.$queryRawUnsafe<{ uniformNumber: string | null; teamUniformNumber: string | null }[]>(
+        `SELECT s."uniformNumber", s."teamUniformNumber" FROM "Student" s WHERE s.id = $1 AND ${notMergedStudent("s")} LIMIT 1`,
+        sid,
+      );
+      return { number: rows[0]?.uniformNumber ?? null, teamNumber: rows[0]?.teamUniformNumber ?? null };
+    }),
+    section("uniformOrders", () => loadChildUniformOrders(db, parentUserId, sid)),
+  ]);
+
   const [classes, [guardians, makeup, edit], shuttle] = await Promise.all([classesP, profileExtrasP, shuttleP]);
 
   const g = grant?.[0];
@@ -401,6 +425,10 @@ export async function getChildRecord(parentUserId: string, studentId: string, db
       status: row.uniformStatus ?? null,
       receivedYmd: row.uniformReceivedYmd ?? null,
       freeGrant: g ? { status: String(g.status), expired: g.expired === true } : null,
+      number: uniformNumbers?.number ?? null,
+      teamNumber: uniformNumbers?.teamNumber ?? null,
+      numbersLoaded: uniformNumbers !== null,
+      orders: uniformOrders,
     },
     reports,
     tenure: tenure ? { label: tenure.label, firstMonth: tenure.firstMonth } : null,

@@ -4,6 +4,7 @@ import { adminErrorText } from "@/components/admin/adminDisplayText";
 import { useState, type FormEvent } from "react";
 import { createClass, updateClass } from "@/app/actions/admin";
 import type { ClassItem, Program } from "./ClassManagementClient";
+import { showNotice } from "@/components/ui/feedback";
 
 const DAYS = [
     { value: "Mon", label: "월요일" },
@@ -53,7 +54,7 @@ export default function ClassFormPanel({
             else await createClass(payload);
             onSaved();
         } catch (error) {
-            alert(adminErrorText(error, "저장 실패"));
+            showNotice(adminErrorText(error, "저장 실패"));
         } finally {
             setBusy(false);
         }

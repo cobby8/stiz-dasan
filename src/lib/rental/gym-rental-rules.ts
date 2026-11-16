@@ -533,6 +533,29 @@ function usageLine(input: RentalMessageInput): string {
   return `${dateText(input.rentalDate)} ${rentalTimeText(input)} · ${input.headcount}명${input.useAircon ? " · 냉난방" : ""}`;
 }
 
+/**
+ * 로그인해서 신청한 학부모에게 보내는 앱 알림(종·푸시) 문구 — 2026-11-16 원장 지시.
+ * 문자와 따로 보낸다(앱 계정이 있는 신청자만). 계좌번호는 넣지 않는다 — 입금 안내는 문자·접수 화면에서.
+ * kind 는 관리자 작업, status 는 처리 뒤 상태 — 무료(0원) 승인은 바로 확정(PAID)이라 «확정» 문구로 보낸다.
+ */
+export function buildRentalAppNotice(
+  kind: "approved" | "rejected" | "confirmed",
+  input: RentalMessageInput & { status?: string | null },
+): { title: string; message: string } {
+  const when = `${dateText(input.rentalDate)} ${rentalTimeText(input)}`;
+  if (kind === "rejected") {
+    const reason = (input.rejectReason ?? "").trim();
+    return { title: "체육관 대관 신청이 거절됐어요", message: `${when} 대관 신청이 거절됐어요.${reason ? ` 사유: ${reason.slice(0, 80)}` : ""}` };
+  }
+  if (kind === "confirmed" || input.status === "PAID") {
+    return { title: "체육관 대관이 확정됐어요", message: `${when} 대관이 확정됐어요. 실내운동화를 꼭 챙겨 주세요.` };
+  }
+  return {
+    title: "체육관 대관이 승인됐어요",
+    message: `${when} 대관이 승인됐어요. ${formatWon(input.totalAmount)}을 입금하면 확정돼요(계좌는 문자로 안내).`,
+  };
+}
+
 /** 원장님께 가는 «새 신청» 알림 (문자·슬랙 공용) */
 export function buildRentalAdminAlert(input: RentalMessageInput, pendingCount = 1): string {
   return [

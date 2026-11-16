@@ -16,27 +16,56 @@ import { readWorkbench, type WorkbenchDb, type WorkbenchTx } from "@/lib/billing
 import { CARRY_UNPAID_MESSAGE, previewCarryEvidence, readAbsenceBillingMonthInTx, resolveWorkbenchAbsence } from "@/lib/billing/workbench-absence";
 import { regularAbsenceSourceKey } from "@/lib/makeup/absence-report-credit";
 import { convertIllnessToMakeupInTx, illnessReviewReady, type ConvertOutcome } from "@/lib/regular/illness-carry-tx";
-import { ILLNESS_REASON, carryApprovalBlocker, evidenceAnchorYmdSql, evidenceDeadlineYmd, evidenceScopeSql, type CarryBillState } from "@/lib/regular/illnessCarryRules";
+import { ILLNESS_REASON, carryApprovalBlocker, evidenceAnchorYmdSql, evidenceDeadlineYmd, evidenceScopeSql, illnessUnpaidReducedSql, type CarryBillState } from "@/lib/regular/illnessCarryRules";
+import { previewUnpaidReduce, reduceUnpaidForIllnessAbsenceInTx } from "@/lib/regular/illness-unpaid-reduce";
+import { APPROVAL_CHANGED_MESSAGE, approvalExpectationMismatch, type ApprovalExpectation, type UnpaidReduceView } from "@/lib/regular/illnessUnpaidReduceRules";
 
 type AbsenceRow = { id: string; studentId: string; classId: string; date: string; reason: string; status: string };
 
 const ABSENCE_SELECT = `SELECT a.id, a."studentId", a."classId", to_char(a.date, 'YYYY-MM-DD') AS date, a.reason, a.status
        FROM "RegularAbsence" a WHERE a.id = $1`;
 
+/** 그 학생·그 반(또는 반이 없는)·그 수강월에 미납(PENDING·OVERDUE) 수강료 청구가 있는가 — 초안 없는 달에서 «안 냈나 / 청구 자체가 없나»를 가른다 */
+async function hasUnpaidTuitionBill(tx: WorkbenchTx, absence: AbsenceRow, month: string): Promise<boolean> {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const unpaid = await tx.$queryRawUnsafe<Array<{ found: number }>>(
+    `SELECT 1 AS found FROM "Payment"
+      WHERE "studentId" = $1 AND ("classId" = $2 OR "classId" IS NULL) AND year = $3 AND month = $4 AND type = 'MONTHLY' AND status IN ('PENDING','OVERDUE') LIMIT 1`,
+    absence.studentId, absence.classId, year, monthNumber,
+  );
+  return unpaid.length > 0;
+}
+
+/**
+ * 이 결석을 «이월»로 승인할까 «미납 청구에서 빼기»로 승인할까(2026-11-16 원장 결정) — 서버가 스스로 가른다.
+ *   납부된 달(이월 근거 있음) → CARRY(기존 그대로) · 미납인 달 → REDUCE.
+ * 그 밖의 사유(청구 자체가 없음·납부 청구 여러 건·휴원 정산이 처리한 날 등)는 CARRY 로 두어 기존 규칙의 사유가 그대로 나가게 한다
+ * (carryReady = false — 이월 근거가 없으니 아래 기존 규칙이 자기 사유로 거절한다).
+ */
+async function readApprovalMode(tx: WorkbenchTx, absence: AbsenceRow, month: string, calendar?: WorkbenchCalendarSnapshot): Promise<{ mode: "CARRY" | "REDUCE"; carryReady: boolean }> {
+  const carry = await previewCarryEvidence(tx, { absence, originMonth: month, calendar });
+  if (carry.ok) return { mode: "CARRY", carryReady: true };
+  if (carry.reason === CARRY_UNPAID_MESSAGE) return { mode: "REDUCE", carryReady: false };
+  return { mode: carry.noEvidence && (await hasUnpaidTuitionBill(tx, absence, month)) ? "REDUCE" : "CARRY", carryReady: false };
+}
+
 /**
  * [이월 승인] — 결석을 확정하고(아직 «신고» 상태면) 기존 이월 규칙으로 적립한다. 전부 한 트랜잭션.
  * 조건이 안 맞으면 기존 규칙이 던지는 한국어 사유(WorkbenchError)가 그대로 화면에 나간다 — 아무것도 저장되지 않는다.
+ * 그 달 수강료가 «미납»이면 이월 대신 그 미납 청구에서 1회 값을 뺀다(2026-11-16 원장 결정 — illness-unpaid-reduce.ts).
  *
  * @param input.evidenceConfirmed 원장이 증빙을 확인했다(사진을 봤거나 «직접 확인» 체크)
  * @param input.cancelReservation 그 결석의 보강 예약이 있으면 함께 취소해도 된다고 확인했다
+ * @param input.expected 화면이 본 방식(이월/청구에서 빼기)과 금액 — 서버가 다시 읽은 것과 다르면 승인하지 않는다
+ * @returns mode CARRY = 이월 적립 · REDUCE = 미납 청구에서 뺌
  */
 export async function approveIllnessCarry(
   db: WorkbenchDb,
-  input: { absenceId: string; evidenceConfirmed: boolean; cancelReservation?: boolean },
+  input: { absenceId: string; evidenceConfirmed: boolean; cancelReservation?: boolean; expected?: ApprovalExpectation | null },
   actorId: string,
   enabled: boolean,
   calendar?: WorkbenchCalendarSnapshot,
-): Promise<{ studentId: string; classId: string; absenceYmd: string }> {
+): Promise<{ studentId: string; classId: string; absenceYmd: string; mode: "CARRY" | "REDUCE" }> {
   if (!enabled) throw new WorkbenchError("청구 준비 저장이 꺼져 있어 이월을 적립할 수 없습니다.", 503);
   if (!actorId) throw new WorkbenchError("관리자 확인이 필요합니다.", 403);
   const absenceId = typeof input?.absenceId === "string" ? input.absenceId.trim() : "";
@@ -65,6 +94,17 @@ export async function approveIllnessCarry(
     // 기존 이월 규칙이 요구하는 «최신 자료 버전»을 같은 트랜잭션에서 읽어 넘긴다(다른 작업이 끼면 직렬화 오류로 통째로 되돌아간다)
     // 원기간 = 그 결석일이 속한 «수강월»(연간 일정 기준 — 기간 정산과 같은 묶기). 11/30 처럼 다음 달 수강월의 첫 수업인 날은 그 다음 달이다
     const month = await readAbsenceBillingMonthInTx(tx, absence, calendar);
+    // 납부된 달 → 아래 기존 이월 / 미납인 달 → 그 미납 청구에서 1회분 빼기(같은 트랜잭션 — 실패하면 결석 확정까지 되돌아간다)
+    const { mode, carryReady } = await readApprovalMode(tx, absence, month, calendar);
+    if (mode === "REDUCE") {
+      await reduceUnpaidForIllnessAbsenceInTx(tx, {
+        absence, originMonth: month, calendar, actorId, cancelReservation: input.cancelReservation === true, expected: input.expected,
+      });
+      return { studentId: absence.studentId, classId: absence.classId, absenceYmd: absence.date, mode: "REDUCE" as const };
+    }
+    // 화면은 «청구에서 빼기»를 봤는데 그 사이 납부됐다 — 원장이 본 것과 다른 일(이월 적립)을 하지 않는다.
+    // 이월 근거가 없는 경우(carryReady = false)는 여기서 막지 않는다 — 아래 기존 규칙이 실제 사유(휴원 정산이 처리한 날 등)를 알려 준다.
+    if (carryReady && approvalExpectationMismatch(input.expected, { mode: "CARRY" })) throw new WorkbenchError(APPROVAL_CHANGED_MESSAGE, 409, true);
     // 자료를 읽는 달은 그 결석이 목록에 들어오는 달이어야 한다(청구 준비는 «그 달 말까지»의 결석을 읽는다) — 수강월과 달력 월 중 늦은 달
     const calendarMonth = absence.date.slice(0, 7);
     const viewMonth = month > calendarMonth ? month : calendarMonth;
@@ -79,7 +119,7 @@ export async function approveIllnessCarry(
       },
       actorId, enabled, calendar,
     );
-    return { studentId: absence.studentId, classId: absence.classId, absenceYmd: absence.date };
+    return { studentId: absence.studentId, classId: absence.classId, absenceYmd: absence.date, mode: "CARRY" as const };
   }, { isolationLevel: "Serializable", timeout: 45_000 });
 }
 
@@ -117,6 +157,14 @@ export type IllnessCarryDetail = {
    * 금액(tuition·unit)은 금액을 볼 수 없는 역할이면 액션이 null 로 지운다.
    */
   evidence: { kind: "WORKBENCH_ISSUED" | "MONTHLY_REGISTER" | "PAID_PAYMENT"; month: string; tuition: number | null; sessions: number; unit: number | null; warnings: string[] } | null;
+  /**
+   * 미납인 달(2026-11-16 원장 결정) — 승인하면 이월 대신 «그 미납 청구에서 1회 값을 뺀다». 검토 중이고 뺄 수 있을 때만(아니면 null).
+   * 화면이 근거 한 줄과 버튼 «결석 인정 · 청구에서 빼기»를 보인다. 금액 칸은 금액을 볼 수 없는 역할이면 액션이 null 로 지운다.
+   * evidence(이월 근거)와 동시에 있지 않다.
+   */
+  reduce: UnpaidReduceView | null;
+  /** 승인이 끝난 결석이 «이월»이 아니라 «청구에서 뺀» 결석인가 — 상태 글자를 가른다 */
+  reduced: boolean;
   /** 근거 미리보기를 내지 못한 이유 한 줄(공식 일정을 못 읽음) — 없으면 null. 승인 버튼은 막지 않는다 */
   evidenceNote: string | null;
   /**
@@ -164,6 +212,7 @@ export async function readIllnessCarryDetail(tx: WorkbenchTx, absenceId: string,
   let evidence: IllnessCarryDetail["evidence"] = null;
   let evidenceProblem: string | null = null;
   let evidenceNote: string | null = null;
+  let reduce: UnpaidReduceView | null = null;
   // 공식 일정을 못 읽었으면 DB 일정으로 대신 세지 않는다 — 수업 횟수가 승인 때와 달라 틀린 금액·틀린 거절 사유를 보일 수 있다.
   if (calendar === null) evidenceNote = "공식 일정을 확인하지 못했어요. 승인할 때 다시 확인합니다.";
   // 미리보기의 예상 못 한 오류(조회 실패 등)는 상세 칸 전체를 막지 않는다 — 근거만 «모름»으로 두고 사유 글·사진·[보강권으로]는 그대로.
@@ -181,17 +230,28 @@ export async function readIllnessCarryDetail(tx: WorkbenchTx, absenceId: string,
       // 발행은 됐지만 아직 안 낸 달(2026-11-15 «납부된 것만» 규칙) — 청구가 없는 달과 같은 안내(납부 뒤 승인)로 보인다
       bill = "UNPAID";
     } else if (preview.noEvidence) {
-      // 근거가 없는 실제 이유를 가른다: 청구는 있는데 아직 안 냈나(납부 뒤 승인) · 청구 자체가 없나(발행 뒤 승인)
-      const [year, monthNumber] = month.split("-").map(Number);
-      const unpaid = await tx.$queryRawUnsafe<Array<{ found: number }>>(
-        `SELECT 1 AS found FROM "Payment"
-          WHERE "studentId" = $1 AND "classId" = $2 AND year = $3 AND month = $4 AND type = 'MONTHLY' AND status IN ('PENDING','OVERDUE') LIMIT 1`,
-        absence.studentId, absence.classId, year, monthNumber,
-      );
-      bill = unpaid.length > 0 ? "UNPAID" : "NONE";
+      // 근거가 없는 실제 이유를 가른다: 청구는 있는데 아직 안 냈나(미납 청구에서 빼기) · 청구 자체가 없나(발행 뒤 승인)
+      bill = (await hasUnpaidTuitionBill(tx, absence, month)) ? "UNPAID" : "NONE";
     } else {
       // 그 밖의 사유(납부 청구 여러 건·휴원 정산에서 처리한 날·일정 불일치 등)는 서버 문구 그대로 보인다
       evidenceProblem = preview.reason;
+    }
+    // 미납인 달(2026-11-16 원장 결정): «납부한 뒤에»로 막지 않는다 — 승인하면 그 미납 청구에서 1회 값을 뺀다.
+    // 실행과 같은 규칙으로 읽기만 해서 «얼마를 빼고 얼마가 남는지»를 미리 보인다. 뺄 수 없으면 그 사유를 버튼 위에 보인다.
+    if (bill === "UNPAID" && calendar !== null) {
+      const unpaidPreview = await previewUnpaidReduce(tx, { absence, originMonth: month, calendar }).catch((error: unknown) => {
+        console.error("[illness-carry-admin] 미납 감액 미리보기 실패:", error instanceof Error ? error.name : "");
+        return null;
+      });
+      if (unpaidPreview?.ok) {
+        const plan = unpaidPreview.plan;
+        reduce = { month, tuition: plan.tuition, sessions: plan.sessions, unit: plan.unit, before: plan.before, reduceBy: plan.reduceBy, after: plan.after, warnings: plan.warnings };
+        bill = "READY";
+      } else {
+        // 뺄 수 없는 사유(미납 청구 여러 건·랠리즈 사본·결제 진행 중 등)는 그대로 보인다. 읽다 실패했으면 «모름» — 승인 때 서버가 판정한다
+        bill = null;
+        evidenceProblem = unpaidPreview ? unpaidPreview.reason : null;
+      }
     }
   }
 
@@ -214,6 +274,10 @@ export async function readIllnessCarryDetail(tx: WorkbenchTx, absenceId: string,
   const review = reviews[0] ?? null;
   const status = review?.status === "APPROVED" || review?.status === "MAKEUP" ? review.status : "PENDING";
   const creditStatus = credits[0]?.status ?? null;
+  // 승인이 끝난 결석: 이월로 적립됐나, 미납 청구에서 뺐나 — 정산 기록의 고정 사유로 가른다(정산 표가 있을 때만 읽는다)
+  const reducedRows = status === "APPROVED" && tables[0]?.draftTable
+    ? await tx.$queryRawUnsafe<Array<{ reduced: boolean | null }>>(`SELECT ${illnessUnpaidReducedSql("ra")} AS reduced FROM "RegularAbsence" ra WHERE ra.id = $1`, absenceId)
+    : [];
   return {
     absenceId,
     absenceYmd: absence.date,
@@ -226,6 +290,8 @@ export async function readIllnessCarryDetail(tx: WorkbenchTx, absenceId: string,
       ? carryApprovalBlocker({ absenceYmd: absence.date, todayYmd: todayKst(), creditStatus, bill, writesEnabled: enabled }) ?? evidenceProblem
       : null,
     evidence: status === "PENDING" ? evidence : null,
+    reduce: status === "PENDING" ? reduce : null,
+    reduced: reducedRows[0]?.reduced === true,
     evidenceNote: status === "PENDING" ? evidenceNote : null,
     periodPeerIds: status === "PENDING" ? peers.map((peer) => peer.id) : [],
     // 화면이 «○월 ○일까지»로 보여 준다 — 학부모 화면·자동 전환과 같은 함수(여러 날 결석은 기간의 마지막 결석일 기준)

@@ -151,8 +151,8 @@ test("확인 버튼은 기존 서버 액션을 쓰고, 누르기 전 확인창�
   // 두 버튼 함수 모두 confirm 을 먼저 통과해야 한다
   const sheetFn = client.slice(client.indexOf("function applySheet"), client.indexOf("function confirmRallyz"));
   const rallyzFn = client.slice(client.indexOf("function confirmRallyz"), client.indexOf("function runSyncAction"));
-  assert.match(sheetFn, /window\.confirm\(/);
-  assert.match(rallyzFn, /window\.confirm\(/);
+  assert.match(sheetFn, /askConfirm\(/);
+  assert.match(rallyzFn, /askConfirm\(/);
 });
 
 test("안내문이 실제 동작(사이트 자동 · 랠리즈·시트 수동 확인)과 같다", () => {

@@ -12,6 +12,7 @@ import ts from 'typescript';
 import { gunzipSync } from 'node:zlib';
 import { NextRequest, NextResponse } from 'next/server.js';
 import * as archiveCore from '../src/lib/backup/archiveCore.ts';
+import * as seedSnapshot from '../src/lib/backup/seedSnapshot.ts';
 
 const {
   ARCHIVE_EXCLUDED_TABLES, RESTORABLE_TABLES, MASKED_VALUE, classifyBackupTable, collectArchive,
@@ -290,15 +291,17 @@ test('파일 복원은 설정 표만 쓰고 업무 자료는 쓰지 않는다', 
 
 // 클라우드 백업 라우트 — 가짜 Storage
 function cloudRoute(options = {}) {
-  const calls = { sqls: [], signed: [], downloads: [] };
+  const calls = { sqls: [], signed: [], downloads: [], removed: [] };
   const route = loadRoute('../src/app/api/admin/cloud-backups/route.ts', {
     'next/server': { NextResponse },
     '@/lib/auth-guard': { async requireOwner() { if (options.unauthorized) throw new Error('no'); } },
     '@/lib/backup/archiveCore': archiveCore,
+    '@/lib/backup/seedSnapshot': seedSnapshot,
     '@/lib/prisma': { prisma: { async $executeRawUnsafe(sql) { calls.sqls.push(sql); return 1; } } },
     '@/lib/supabase/admin': { createAdminClient: () => ({ storage: { from: () => ({
       async download(name) { calls.downloads.push(name); return { data: { text: async () => JSON.stringify(backupFile) }, error: null }; },
       async list() { return { data: options.files ?? [], error: null }; },
+      async remove(names) { calls.removed.push(names); return { data: names.map(name => ({ name })), error: null }; },
       async createSignedUrl(name, seconds, opts) { calls.signed.push({ name, seconds, opts }); return { data: { signedUrl: `https://signed/${name}` }, error: null }; },
     }) } }) },
   });
@@ -307,12 +310,30 @@ function cloudRoute(options = {}) {
 
 test('클라우드 복원도 설정 표만 쓰고 업무 자료는 쓰지 않으며, 업무 자료 파일 복원은 거부한다', async () => {
   const { route, calls } = cloudRoute();
-  const res = await route.POST(new NextRequest('http://localhost/api/admin/cloud-backups', { method: 'POST', body: JSON.stringify({ filename: 'stiz-backup-x.json' }) }));
+  const settingsName = 'stiz-backup-2026-11-13T00-00-01.json';
+  const res = await route.POST(new NextRequest('http://localhost/api/admin/cloud-backups', { method: 'POST', body: JSON.stringify({ filename: settingsName }) }));
   assert.equal(res.status, 200);
   assert.deepEqual(writtenTables(calls.sqls), ['AcademySettings', 'Coach', 'Program']);
   const rejected = await route.POST(new NextRequest('http://localhost/api/admin/cloud-backups', { method: 'POST', body: JSON.stringify({ filename: 'stiz-archive-2026-11-13T00-00-01.json.gz' }) }));
   assert.equal(rejected.status, 400);
-  assert.deepEqual(calls.downloads, ['stiz-backup-x.json']);
+  assert.deepEqual(calls.downloads, [settingsName]);
+});
+
+// 2026-11-16 — 복원·삭제는 백업 파일 이름 규칙에 맞는 것만. seed/… 같은 경로는 Storage 를 건드리기 전에 거절한다.
+test('클라우드 복원·삭제는 이름 규칙에 안 맞는 파일(seed 폴더·상위 경로 등)을 거절한다', async () => {
+  const { route, calls } = cloudRoute();
+  const call = (method, filename) => route[method](new NextRequest('http://localhost/api/admin/cloud-backups', { method, body: JSON.stringify({ filename }) }));
+  for (const bad of ['seed/seed-latest.json', 'seed/seed-2026-11-16.json', 'seed', '../stiz-backup-2026-11-13T00-00-01.json', 'stiz-backup-x.json', 'other.json', 123]) {
+    assert.equal((await call('POST', bad)).status, 400, `POST ${bad}`);
+    assert.equal((await call('DELETE', bad)).status, 400, `DELETE ${bad}`);
+  }
+  assert.deepEqual(calls.downloads, []);
+  assert.deepEqual(calls.removed, []);
+  // 설정·업무 자료 백업 파일은 지금처럼 지울 수 있다
+  for (const ok of ['stiz-backup-2026-11-13T00-00-01.json', 'stiz-archive-2026-11-13T00-00-01.json.gz']) {
+    assert.equal((await call('DELETE', ok)).status, 200, ok);
+  }
+  assert.equal(calls.removed.length, 2);
 });
 
 test('클라우드 목록은 복원용(files)과 업무 자료(archives)를 나눠 «최신 자동백업 복원»이 압축 파일을 고르지 않게 한다', async () => {

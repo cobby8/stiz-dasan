@@ -162,7 +162,7 @@ function ScheduleFilter({ programs, allSlots, phone }: {
                     <div className="absolute inset-0 bg-black/50" onClick={() => setFilterOpen(false)} aria-hidden="true" />
                     <div className="relative flex max-h-[85vh] w-full flex-col rounded-t-2xl bg-white shadow-2xl dark:bg-[var(--color-public-tint)] sm:mx-4 sm:max-w-md sm:rounded-2xl">
                         <div className="flex items-center justify-between border-b border-[var(--color-public-line)] px-5 py-1 dark:border-[var(--color-public-line)]">
-                            <h2 className="text-base font-black text-[var(--color-public-ink)] dark:text-white">프로그램 필터</h2>
+                            <h2 className="text-base font-[700] text-[var(--color-public-ink)] dark:text-white">프로그램 필터</h2>
                             <button type="button" onClick={() => setFilterOpen(false)} aria-label="닫기" className="flex h-11 shrink-0 items-center justify-center rounded-full px-3 text-sm font-medium text-[var(--color-public-muted)] hover:bg-[var(--color-public-tint)] dark:text-[var(--color-public-muted)] dark:hover:bg-[var(--color-public-line)]">닫기</button>
                         </div>
                         <div className="overflow-y-auto px-5 py-2">

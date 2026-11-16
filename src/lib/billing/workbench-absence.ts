@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import { validateMonthlyRegisterDraft } from "./monthly-register";
-import { WorkbenchError, workbenchTotal, filterWorkbenchDates, billingMonthOfDate, illnessMissedDatesOf, type WorkbenchAmounts, type WorkbenchView, type WorkbenchCalendarSnapshot } from "./workbench";
+import { WorkbenchError, workbenchTotal, filterWorkbenchDates, billingMonthOfDate, illnessMissedDatesOf, illnessReducedSumSql, type WorkbenchAmounts, type WorkbenchView, type WorkbenchCalendarSnapshot } from "./workbench";
 import { readWorkbench, type WorkbenchDb, type WorkbenchTx } from "./workbench-service";
 import { resolveMonthEvidence, type PaidPaymentEvidence } from "./carryEvidence";
 
@@ -92,7 +92,7 @@ export const CARRY_PAUSE_PERIOD_MESSAGE = "휴원 기간 중인 날입니다. �
  * 근거 순서: 발행 초안(ISSUED/ZERO)·확정 장부 → 없으면 그 반·그 달의 납부완료(PAID) 수강료 청구 1건(carryEvidence 규칙).
  * 조건이 안 맞으면 한국어 사유(WorkbenchError)를 던진다. 아무것도 쓰지 않는다.
  */
-async function readCarryEvidenceInTx(tx: WorkbenchTx, input: CarryEvidenceInput, lock: boolean): Promise<ResolvedCarryEvidence> {
+async function readCarryEvidenceInTx(tx: WorkbenchTx, input: CarryEvidenceInput, lock: boolean, basis: EvidenceBasis = "PAID"): Promise<ResolvedCarryEvidence> {
   const { absence, originMonth, calendar } = input;
   // 휴원 정산이 이미 처리한 날(환불·이월·미납 감액으로 보상이 끝난 날)은 이월로 다시 보상하지 않는다 — 초안·장부·납부 근거 공통.
   // 취소된 휴원 신청의 정산은 실제로 빠지지 않은 날이라 제외한다. 정산 표가 아직 없으면(마이그레이션 전) 통과.
@@ -102,7 +102,7 @@ async function readCarryEvidenceInTx(tx: WorkbenchTx, input: CarryEvidenceInput,
     if(settled.some(l=>l.kind!=="NONE")) throw new WorkbenchError(CARRY_PAUSE_SETTLED_MESSAGE,409);
     if(settled.length) throw new WorkbenchError(CARRY_PAUSE_PERIOD_MESSAGE,409);
   }
-  const evidence=await readClassMonthEvidenceInTx(tx,{studentId:absence.studentId,classId:absence.classId,originMonth,calendar},lock,Boolean(lineTable[0]?.found));
+  const evidence=await readClassMonthEvidenceInTx(tx,{studentId:absence.studentId,classId:absence.classId,originMonth,calendar},lock,Boolean(lineTable[0]?.found),basis);
   // 그 결석일이 근거의 수업일(확정 수강 기간·연간 일정)에 들어 있어야 한다
   if(!evidence.dates.includes(absence.date)) throw new WorkbenchError(CARRY_OUT_OF_PERIOD_MESSAGE,409);
   return evidence;
@@ -111,17 +111,31 @@ async function readCarryEvidenceInTx(tx: WorkbenchTx, input: CarryEvidenceInput,
 export const CARRY_CLASSLESS_PAID_MESSAGE = "반이 지정되지 않은 납부 청구가 있어요. 어느 반의 수강료인지 직접 확인해 주세요.";
 export const CARRY_OUT_OF_PERIOD_MESSAGE = "원결석이 확정 수강 기간·예정 수업일에 포함되는지 확인해 주세요.";
 /**
+ * 근거를 «어떤 청구»에서 찾는가(2026-11-16 원장 결정).
+ *   PAID   = 납부된 달 — 이월(다음 달 차감)의 근거. 기존 규칙 그대로.
+ *   UNPAID = 미납인 달 — 질병·부상 결석을 «그 미납 청구에서 1회분 빼기»로 승인할 때의 근거.
+ * 수업 횟수·수업일·분자(그 달 수강료)를 세는 방법은 두 경우가 같다 — 그래서 함수를 나누지 않고 여기 한 곳에서 가른다.
+ */
+export type EvidenceBasis = "PAID" | "UNPAID";
+export const UNPAID_REDUCE_MULTIPLE_MESSAGE = "같은 반·같은 달에 미납 수강료 청구가 여러 건이에요. 어느 청구에서 뺄지 직접 확인해 주세요.";
+export const UNPAID_REDUCE_CLASSLESS_MESSAGE = "반이 지정되지 않은 미납 청구가 있어요. 어느 반의 수강료인지 직접 확인해 주세요.";
+export const UNPAID_REDUCE_NOT_UNPAID_MESSAGE = "그 달 청구가 더 이상 미납이 아니에요. 새로고침한 뒤 다시 확인해 주세요.";
+/**
  * 그 학생·그 반·그 달의 «원기간 근거»(한 번 값의 분자·분모) — 결석 날짜와 무관한 부분(2026-11-15 분리).
  * 하루짜리 이월은 결석 한 건마다, 기간 정산은 반·달마다 한 번 이 함수를 부른다(규칙은 여기 한 곳).
  * 날짜별 검사(휴원 정산이 처리한 날·수업일 포함 여부)는 부르는 쪽이 한다.
  * @param lineTableReady 휴원 정산 표가 있는가(부르는 쪽이 이미 확인했으면 넘긴다 — 없으면 여기서 확인)
  */
-export async function readClassMonthEvidenceInTx(tx: WorkbenchTx, input: { studentId: string; classId: string; originMonth: string; calendar?: WorkbenchCalendarSnapshot }, lock: boolean, lineTableReady?: boolean): Promise<ResolvedCarryEvidence> {
+export async function readClassMonthEvidenceInTx(tx: WorkbenchTx, input: { studentId: string; classId: string; originMonth: string; calendar?: WorkbenchCalendarSnapshot }, lock: boolean, lineTableReady?: boolean, basis: EvidenceBasis = "PAID"): Promise<ResolvedCarryEvidence> {
   const { originMonth, calendar } = input;
   const absence = { studentId: input.studentId, classId: input.classId };
   // 미리보기(lock=false)는 행을 잠그지 않는다 — 읽기만 하는 화면이 결제·발행 거래를 기다리게 하지 않는다.
   const share=(of="")=>lock?` FOR SHARE${of}`:"";
   const lineTable=[{found:lineTableReady??Boolean((await tx.$queryRawUnsafe<Array<{found:string|null}>>(`SELECT to_regclass($1)::text AS found`,'public."EnrollmentChangeSettlementLine"'))[0]?.found)}];
+  // 질병·부상 결석으로 이 청구에서 이미 줄인 금액(2026-11-16) — 청구 변경 기록에서 읽는다. 기록 표가 없는 DB 는 0.
+  // 줄인 뒤에도 «원래 금액» 기준으로 견주고 나눠야 한다: 발행 초안 금액과의 대조 · 같은 달 다른 결석의 한 번 값.
+  const auditTable=await tx.$queryRawUnsafe<Array<{found:string|null}>>(`SELECT to_regclass($1)::text AS found`,'public."PaymentAuditLog"');
+  const illnessReducedSql=auditTable[0]?.found?illnessReducedSumSql("p.id"):"0";
   const registerExists=await tx.$queryRawUnsafe<Array<{found:string|null}>>(`SELECT to_regclass($1)::text AS found`,'public."MonthlyEnrollmentRegister"');
   const source = registerExists[0]?.found ? await tx.$queryRawUnsafe<Array<{ payload: unknown; status: string }>>(`SELECT payload,status FROM "MonthlyEnrollmentRegister" WHERE "studentId"=$1 AND month=$2${share()}`,absence.studentId,originMonth) : [];
   const register = source[0]?.status==="CONFIRMED" ? validateMonthlyRegisterDraft(source[0].payload) : null;
@@ -130,20 +144,34 @@ export async function readClassMonthEvidenceInTx(tx: WorkbenchTx, input: { stude
   const issuedRow=issued[0];
   if(issuedRow && registeredRow && ["baseAmount","discountAmount","prorationAmount"].some(k=>issuedRow.payload[k as keyof WorkbenchAmounts]!==registeredRow[k as "baseAmount"|"discountAmount"|"prorationAmount"])) throw new WorkbenchError("원기간 발행 금액과 기존 확정 장부가 다릅니다. 정본 금액을 대조한 뒤 이월해 주세요.",409);
   if(issuedRow?.status==="ISSUED") {
-    const money=await tx.$queryRawUnsafe<Array<{amount:number;status:string;invoiceAmount:number|null;invoiceStatus:string|null}>>(`SELECT p.amount,p.status,i.amount AS "invoiceAmount",i.status AS "invoiceStatus" FROM "Payment" p LEFT JOIN "PaymentInvoice" i ON i."paymentId"=p.id WHERE p.id=$1 AND p."studentId"=$2 AND p."classId"=$3${share(" OF p")}`,issuedRow.paymentId,absence.studentId,absence.classId);
+    const money=await tx.$queryRawUnsafe<Array<{amount:number;status:string;invoiceAmount:number|null;invoiceStatus:string|null;illnessReduced?:number|null}>>(`SELECT p.amount,p.status,i.amount AS "invoiceAmount",i.status AS "invoiceStatus",${illnessReducedSql} AS "illnessReduced" FROM "Payment" p LEFT JOIN "PaymentInvoice" i ON i."paymentId"=p.id WHERE p.id=$1 AND p."studentId"=$2 AND p."classId"=$3${share(" OF p")}`,issuedRow.paymentId,absence.studentId,absence.classId);
     const p=money[0];
-    if(!p || p.amount!==workbenchTotal(issuedRow.payload) || p.invoiceAmount!==p.amount || ["CANCELED","CANCELLED","REFUNDED"].includes(p.status) || ["CANCELED","CANCELLED"].includes(p.invoiceStatus??"")) throw new WorkbenchError("원기간 청구·납부 정본이 일치하지 않습니다. 이월 적립을 보류합니다.",409);
+    // 질병·부상 결석으로 줄인 금액은 «이미 줄인 금액»으로 인정한다 — 지금 금액 + 줄인 금액이 발행 금액과 같으면 정본이 맞는 것이다.
+    if(!p || p.amount+Number(p.illnessReduced??0)!==workbenchTotal(issuedRow.payload) || p.invoiceAmount!==p.amount || ["CANCELED","CANCELLED","REFUNDED"].includes(p.status) || ["CANCELED","CANCELLED"].includes(p.invoiceStatus??"")) throw new WorkbenchError("원기간 청구·납부 정본이 일치하지 않습니다. 이월 적립을 보류합니다.",409);
     // «납부된 것만» 이월 근거(2026-11-15 원장 결정 — 하루짜리와 기간 정산 규칙을 하나로): 발행됐지만 아직 안 낸 달은 이월하지 않는다.
     // 이미 적립된 이월의 유효성(readWorkbench)은 바꾸지 않는다 — 예전에 미납 초안을 근거로 적립한 이월이 무효가 되지 않게.
-    if(p.status!=="PAID") throw new WorkbenchError(CARRY_UNPAID_MESSAGE,409);
+    // 미납 근거(UNPAID)를 찾는 중이면 반대로 «미납이어야» 한다 — 그 사이 납부됐으면 이월 쪽으로 다시 봐야 한다.
+    if(basis==="UNPAID"){ if(!["PENDING","OVERDUE"].includes(p.status)) throw new WorkbenchError(UNPAID_REDUCE_NOT_UNPAID_MESSAGE,409,true); }
+    else if(p.status!=="PAID") throw new WorkbenchError(CARRY_UNPAID_MESSAGE,409);
   }
   // 납부 Payment 근거(2026-11-15): 초안·장부가 둘 다 없을 때만 본다 — 랠리즈에서 넘어온 달은 청구 준비 초안이 없다.
   // 그 학생·그 반·그 수강월의 납부완료(PAID) 수강료 청구만 근거다. 취소·환불·미납은 근거가 아니다(기존 문구로 차단).
   let paidPayments:PaidPaymentEvidence[]|null=null,enrollmentStartsOn:string|null=null,shuttleMayBeIncluded=false;
   if(!issuedRow && !registeredRow) {
     const [originYear,originMonthNumber]=originMonth.split("-").map(Number);
-    const paidRows=await tx.$queryRawUnsafe<Array<{id:string;amount:number}>>(`SELECT p.id,p.amount FROM "Payment" p WHERE p."studentId"=$1 AND p."classId"=$2 AND p.year=$3 AND p.month=$4 AND p.type='MONTHLY' AND p.status='PAID' ORDER BY p.id${share(" OF p")}`,absence.studentId,absence.classId,originYear,originMonthNumber);
-    if(!paidRows.length) {
+    // 미납 근거(UNPAID)면 같은 조건에서 상태만 «미납(PENDING·OVERDUE)»으로 바꿔 읽는다 — 아래 계산(원래 금액·월중 등록·수업일)은 그대로 쓴다.
+    const paidRows=basis==="UNPAID"
+      ? await tx.$queryRawUnsafe<Array<{id:string;amount:number;illnessReduced?:number|null}>>(`SELECT p.id,p.amount,${illnessReducedSql} AS "illnessReduced" FROM "Payment" p WHERE p."studentId"=$1 AND p."classId"=$2 AND p.year=$3 AND p.month=$4 AND p.type='MONTHLY' AND p.status IN ('PENDING','OVERDUE') ORDER BY p.id${share(" OF p")}`,absence.studentId,absence.classId,originYear,originMonthNumber)
+      : await tx.$queryRawUnsafe<Array<{id:string;amount:number;illnessReduced?:number|null}>>(`SELECT p.id,p.amount,${illnessReducedSql} AS "illnessReduced" FROM "Payment" p WHERE p."studentId"=$1 AND p."classId"=$2 AND p.year=$3 AND p.month=$4 AND p.type='MONTHLY' AND p.status='PAID' ORDER BY p.id${share(" OF p")}`,absence.studentId,absence.classId,originYear,originMonthNumber);
+    if(basis==="UNPAID") {
+      // 미납 청구가 2건 이상이면 어느 청구에서 뺄지 정할 수 없다. 반이 없는 미납 청구만 있으면 어느 반 몫인지 알 수 없다.
+      if(paidRows.length>1) throw new WorkbenchError(UNPAID_REDUCE_MULTIPLE_MESSAGE,409);
+      if(!paidRows.length) {
+        const classlessUnpaid=await tx.$queryRawUnsafe<Array<{id:string}>>(`SELECT p.id FROM "Payment" p WHERE p."studentId"=$1 AND p.year=$2 AND p.month=$3 AND p.type='MONTHLY' AND p.status IN ('PENDING','OVERDUE') AND p."classId" IS NULL LIMIT 1`,absence.studentId,originYear,originMonthNumber);
+        if(classlessUnpaid.length) throw new WorkbenchError(UNPAID_REDUCE_CLASSLESS_MESSAGE,409);
+        throw new WorkbenchError(CARRY_NO_EVIDENCE_MESSAGE,409);
+      }
+    } else if(!paidRows.length) {
       // 그 반의 납부 청구는 없는데 «반이 없는» 납부 청구가 그 달에 있으면, 이 반 몫이 그 안에 들어 있을 수 있다 — 낸 돈이 없는 달로 단정하지 않는다
       const classless=await tx.$queryRawUnsafe<Array<{id:string}>>(`SELECT p.id FROM "Payment" p WHERE p."studentId"=$1 AND p.year=$2 AND p.month=$3 AND p.type='MONTHLY' AND p.status='PAID' AND p."classId" IS NULL LIMIT 1`,absence.studentId,originYear,originMonthNumber);
       if(classless.length) throw new WorkbenchError(CARRY_CLASSLESS_PAID_MESSAGE,409);
@@ -151,7 +179,8 @@ export async function readClassMonthEvidenceInTx(tx: WorkbenchTx, input: { stude
     }
     // 이 청구에서 이미 줄인 금액(휴원 미납 감액·휴원 이월 차감) — 사이트가 청구 금액을 실제로 줄인 줄만 센다.
     const reduced=lineTable[0]?.found ? await tx.$queryRawUnsafe<Array<{paymentId:string;total:number}>>(`SELECT l."paymentId",SUM(l.amount)::int AS total FROM "EnrollmentChangeSettlementLine" l WHERE l."paymentId"=ANY($1::text[]) AND (l.kind='CARRY_APPLY' OR (l.kind='UNPAID_REDUCE' AND l.channel='SITE')) GROUP BY l."paymentId"`,paidRows.map(p=>p.id)) : [];
-    paidPayments=paidRows.map(p=>({id:p.id,amount:Number(p.amount),priorReduction:Number(reduced.find(r=>r.paymentId===p.id)?.total??0)}));
+    // + 질병·부상 결석으로 줄인 금액(2026-11-16) — 그 뒤 납부되어 같은 달 다른 결석을 이월할 때도 한 번 값이 «원래 금액 ÷ 횟수»가 되게.
+    paidPayments=paidRows.map(p=>({id:p.id,amount:Number(p.amount),priorReduction:Number(reduced.find(r=>r.paymentId===p.id)?.total??0)+Number(p.illnessReduced??0)}));
     const enrollment=await tx.$queryRawUnsafe<Array<{startsOn:string|null}>>(`SELECT e."startsOn"::text AS "startsOn" FROM "Enrollment" e WHERE e."studentId"=$1 AND e."classId"=$2`,absence.studentId,absence.classId);
     enrollmentStartsOn=enrollment[0]?.startsOn??null;
     // 셔틀비 섞임 경고(금액은 그대로): 그 달 셔틀 명단에 있는데 별도 셔틀비 청구가 없으면 납부 금액에 셔틀비가 들어 있을 수 있다.
@@ -225,6 +254,14 @@ export async function insertCarryCreditInTx(tx: WorkbenchTx, input: CarryEvidenc
   const id = randomUUID();
   await tx.$executeRawUnsafe(`INSERT INTO "BillingCarryCredit" (id,"studentId","absenceId",numerator,denominator,"availableMonth",basis,"actorUserId") VALUES ($1,$2,$3,$4::numeric,$5::numeric,$6,$7::jsonb,$8)`,id,absence.studentId,absence.id,String(numerator),String(dates.length),availableMonth,JSON.stringify({originMonth:originMonth,classId:absence.classId,absenceDate:absence.date,periodStart,periodEnd,scheduledDates:dates,discountedTuition:numerator,evidenceConfirmed:true,eligibility:eligibility,originalReason:absence.reason,source:evidenceSource,calendarSource:calendar?.kind??"DB",calendarFingerprint:calendar?.fingerprint??null,sourcePaymentId,...(paidCopy??{}),...(input.periodId?{periodId:input.periodId}:{})}),actorId);
   return { id, source: evidenceSource, numerator, denominator: dates.length, availableMonth };
+}
+/**
+ * 미납인 달의 근거(2026-11-16) — 질병·부상 결석을 «그 미납 청구에서 1회분 빼기»로 승인할 때 쓴다.
+ * 이월 근거와 «같은 함수»로 센다(휴원 정산이 처리한 날 차단·수업일 포함 여부·월중 등록·발행 때 수업일 사본).
+ * 돌려주는 sourcePaymentId 가 줄일 청구다. 조건이 안 맞으면 한국어 사유(WorkbenchError)를 던진다. 아무것도 쓰지 않는다.
+ */
+export async function readUnpaidEvidenceInTx(tx: WorkbenchTx, input: CarryEvidenceInput, lock: boolean): Promise<ResolvedCarryEvidence> {
+  return readCarryEvidenceInTx(tx, input, lock, "UNPAID");
 }
 export type CarryEvidencePreview =
   | { ok: true; source: CarryEvidenceSource; tuition: number; sessions: number; unit: number; warnings: string[] }

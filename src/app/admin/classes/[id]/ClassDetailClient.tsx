@@ -7,6 +7,7 @@ import type { SessionInitialData } from "./SessionLogModal";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import ProfileAvatar from "@/components/common/ProfileAvatar";
 import { profilePhotoUrl } from "@/lib/profilePhoto/rules";
+import { showNotice } from "@/components/ui/feedback";
 
 const SessionLogModal = dynamic(() => import("./SessionLogModal"), {
     loading: () => null,
@@ -212,7 +213,7 @@ export default function ClassDetailClient({
             setEditingSession(data as SessionInitialData);
             setShowSessionLog(true);
         } catch (err) {
-            alert("세션 데이터를 불러오는 데 실패했습니다.");
+            showNotice("세션 데이터를 불러오는 데 실패했습니다.");
         } finally {
             setLoadingSession(false);
         }

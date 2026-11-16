@@ -5,7 +5,10 @@ import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { TONE_BADGE_CLASS, type StatusTone } from "@/lib/ui/statusTones";
-import type { ChildProfile, ChildShuttle } from "@/lib/parent/childRecordQuery";
+import type { ChildProfile, ChildShuttle, UniformRecord } from "@/lib/parent/childRecordQuery";
+// 유니폼 번호·신청 내역 글자(2026-11-16) — 계산은 순수 규칙에서
+import { uniformOrderLine, uniformOrderSourceLabel, uniformProfileLine } from "@/lib/parent/childUniformRules";
+import { ACADEMY_GUIDE_FACTS } from "@/lib/trial-fee/guideMessages";
 import { birthLine, classTimeText, dotYmd, genderText, gradeLine, guardianRows, makeupLine } from "@/lib/parent/childProfileRules";
 import { changeLine } from "@/lib/parent/childEditRules";
 import { realBirthYmd } from "@/lib/makeup/student-grade";
@@ -78,12 +81,14 @@ function LinkBar({ links, before }: { links: { href: string; label: string }[]; 
 
 // ── 아이 정보 ───────────────────────────────────────────────────────────────
 
-export function ChildInfoSection({ profile, today, studentId, photo }: {
+export function ChildInfoSection({ profile, today, studentId, photo, uniform }: {
   profile: ChildProfile | null | undefined;
   today: string;
   studentId: string;
   /** 프로필 사진 올리기 칸(이름·지금 사진의 캐시 버전) — 없으면 칸을 그리지 않는다 */
   photo?: { name: string; version: string | null };
+  /** 유니폼 상태·번호(2026-11-16) — 읽기 전용. 없으면(옛 모양) 행을 그리지 않는다 */
+  uniform?: UniformRecord | null;
 }) {
   // 수정 시트(2026-11-14 b4·b5) — 수정용 값을 읽은 경우에만 «수정» 버튼이 보인다
   const [editing, setEditing] = useState(false);
@@ -120,6 +125,14 @@ export function ChildInfoSection({ profile, today, studentId, photo }: {
             )}
             <Row label="성별">{genderText(profile.gender) ?? "-"}</Row>
             <Row label="등록일">{dotYmd(profile.enrollYmd) || "-"}</Row>
+            {/* 유니폼 — 보유 상태 + 유니폼 번호·대표팀 번호(값이 있는 것만). 학부모는 고치지 못한다(학원이 정한다) */}
+            {uniform && uniform.numbersLoaded !== undefined && (
+              <Row label="유니폼">
+                {uniform.numbersLoaded
+                  ? uniformProfileLine({ status: uniform.status, number: uniform.number, teamNumber: uniform.teamNumber })
+                  : "불러오지 못했어요"}
+              </Row>
+            )}
             {profile.guardians ? (
               guardianRows(profile.guardians).map((r) => <Row key={r.label} label={r.label}>{r.value}</Row>)
             ) : (
@@ -180,6 +193,52 @@ export function ChildInfoSection({ profile, today, studentId, photo }: {
             />
           )}
         </>
+      )}
+    </CollapsibleSection>
+  );
+}
+
+// ── 유니폼 신청 내역(2026-11-16) ────────────────────────────────────────────
+
+/** "2026-11-03" → "26.11.03" */
+function shortYmdDot(ymd: string | null): string {
+  return ymd && /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? `${ymd.slice(2, 4)}.${ymd.slice(5, 7)}.${ymd.slice(8, 10)}` : "-";
+}
+
+/**
+ * 유니폼 신청 내역(사이트 + 본사 쇼핑몰, 2026-11-16) — 한 품목 한 줄(신청일 · 출처 글자 · 디자인·등번호·사이즈·수량 · 상태).
+ * 서버가 «로그인한 본인 번호로 낸 이 아이 이름의 품목»만 보낸다(childUniformQuery). 옛 모양 데이터(칸 없음)면 그리지 않는다.
+ */
+export function ChildUniformOrdersSection({ uniform }: { uniform: UniformRecord | null | undefined }) {
+  if (!uniform || uniform.orders === undefined) return null;
+  const orders = uniform.orders;
+  return (
+    <CollapsibleSection id="record-uniform" title="유니폼 신청 내역" note={orders && orders.length > 0 ? `${orders.length}건` : null}>
+      {orders === null ? (
+        <p role="alert" className="px-3 py-3 text-sm text-[var(--color-academy-muted)]">유니폼 신청 내역을 불러오지 못했어요.</p>
+      ) : orders.length === 0 ? (
+        <div className="flex min-h-11 flex-wrap items-center gap-2 px-3 py-1.5">
+          <p className="min-w-0 flex-1 text-sm text-[var(--color-academy-muted)]">신청 내역이 없어요.</p>
+          {/* 유니폼 신청은 본사 쇼핑몰(바깥 주소) — 신청 메뉴와 같은 바깥 링크 규칙 */}
+          <a href={ACADEMY_GUIDE_FACTS.uniformOrderUrl} target="_blank" rel="noopener noreferrer" data-outside-link className="academy-button-text whitespace-nowrap">
+            유니폼 신청 ▸
+          </a>
+        </div>
+      ) : (
+        <ul className="divide-y divide-[var(--color-academy-line)]">
+          {orders.map((o) => {
+            // 어디서 낸 주문인지 — 색이 아니라 작은 글자로(옛 데이터면 없음)
+            const sourceLabel = uniformOrderSourceLabel(o.source);
+            return (
+              <li key={o.id} className="flex min-h-11 items-center gap-2 px-3 py-1.5">
+                <span className="w-16 shrink-0 text-xs tabular-nums text-[var(--color-academy-muted)]">{shortYmdDot(o.appliedYmd)}</span>
+                {sourceLabel && <span className="shrink-0 text-xs text-[var(--color-academy-muted)]">{sourceLabel}</span>}
+                <span className="min-w-0 flex-1 break-keep text-sm tabular-nums text-[var(--color-academy-ink)]">{uniformOrderLine(o)}</span>
+                <Badge tone={o.statusTone}>{o.statusLabel}</Badge>
+              </li>
+            );
+          })}
+        </ul>
       )}
     </CollapsibleSection>
   );

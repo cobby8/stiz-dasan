@@ -4,6 +4,7 @@ import { adminErrorText } from "@/components/admin/adminDisplayText";
 import { useEffect, useState, useTransition } from "react";
 import { createProgram, updateProgram } from "@/app/actions/admin";
 import { isWeekendOnlyDays, REGULAR_FREQ_TIERS } from "@/lib/billing/regular-tuition-preview";
+import { showNotice } from "@/components/ui/feedback";
 
 const DAY_OPTIONS = [
     { key: "Mon", label: "월" },
@@ -451,7 +452,7 @@ export default function ProgramFormPanel({
                 }
                 onSaved();
             } catch (error) {
-                alert(adminErrorText(error, mode === "edit" ? "수정 실패" : "저장 실패"));
+                showNotice(adminErrorText(error, mode === "edit" ? "수정 실패" : "저장 실패"));
             }
         });
     }

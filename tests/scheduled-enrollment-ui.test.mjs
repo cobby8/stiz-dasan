@@ -26,6 +26,7 @@ const kstModule = load("src/lib/datetime/kst.ts", {});
 const statusTones = load("src/lib/ui/statusTones.ts", {}); // 상태색 공용 지도(2026-11-09 색상 정리)
 const commencement = load("src/lib/enrollment/commencement.ts", { "@/lib/datetime/kst": kstModule });
 const studentDetailFormat = load("src/lib/studentDetailFormat.ts", {}); // 학생 상세 요약 달·셔틀 시각 표기(2026-11-09 정리)
+const uniformNumber = load("src/lib/students/uniform-number.ts", {}); // 유니폼 번호(등번호) 규칙 — 진짜 함수로 그린다(2026-11-16)
 const enrollment = { id: "enrollment-a", classId: "class-a", status: "ACTIVE", displayStatus: "ACTIVE", startsLater: true, startsOn: "2099-12-01", className: "월요일 5교시", dayOfWeek: "Mon", startTime: "17:00", endTime: "17:55", programName: "합성반", createdAt: "2026-11-03" };
 
 test("첫 다음 수업은 개시일 이전 주차를 건너뛴다", () => {
@@ -40,11 +41,13 @@ test("첫 다음 수업은 개시일 이전 주차를 건너뛴다", () => {
 
 test("관리자 원생 상세는 개시일이 미래인 ACTIVE 반을 «수강 중»으로 세고 개시일을 안내한다", () => {
   const Client = load("src/app/admin/students/[id]/StudentDetailClient.tsx", {
+    "@/components/ui/feedback": { askConfirm: async () => false, showNotice: async () => {}, showCopyText: async () => {} }, // 2026-11-16 화면 안 알림·확인창
     "@/lib/ui/statusTones": statusTones,
     "@/components/admin/adminDisplayText": {}, "next/link": link, "@/app/actions/admin": {},
     "@/lib/datetime/kst": { todayKst: () => "2026-11-03" },
     "@/lib/enrollment/commencement": commencement,
     "@/lib/studentDetailFormat": studentDetailFormat,
+    "@/lib/students/uniform-number": uniformNumber,
     // 반 줄 ⋯ 메뉴(반 이동·삭제) — 메뉴 항목 글자만 그려 확인한다
     "@/components/admin/AdminQuickActionMenu": { __esModule: true, default: ({ actions }) => React.createElement("div", {}, actions.map((a) => a.label).join("|")) },
     "@/components/admin/AdminConfirmDialog": { useAdminConfirm: () => ({ confirm: async () => false, confirmDialog: null }) },
@@ -57,6 +60,8 @@ test("관리자 원생 상세는 개시일이 미래인 ACTIVE 반을 «수강 �
     "@/components/admin/AdminPageHeader": nullComponent,
     // 프로필 사진(2026-11-14 연결) — 화면 검사와 무관해 빈 부품·주소 없음으로 둔다
     "@/components/common/ProfileAvatar": nullComponent, "@/lib/profilePhoto/rules": { profilePhotoUrl: () => null },
+    // 홈 히어로 «사진 올리기» 버튼(2026-11-16) — 이 검사와 무관해 비워 둔다(부품은 profile-photo.test.mjs 가 그려 본다)
+    "@/components/parent/ProfilePhotoEditor": nullComponent,
     "@/components/admin/StatusBadge": { statusToneClass: () => "" },
     "./ParentRequestLinkPanel": nullComponent, "./GuardianPanel": nullComponent, "./AbsencePeriodPanel": nullComponent,
     // 2026-11-14: 학부모 «정보 변경 요청»·건강 특이사항 칸이 늘었다(화면이 열린 뒤 따로 읽는 칸이라 이 테스트에서는 빈 부품)
@@ -90,6 +95,7 @@ test("관리자 원생 상세는 개시일이 미래인 ACTIVE 반을 «수강 �
 
 test("관리자 원생 목록 «활성» 필터·반별 인원은 개시일 미래인 ACTIVE 학생을 수강 중으로 센다", () => {
   const Client = load("src/app/admin/students/StudentManagementClient.tsx", {
+    "@/components/ui/feedback": { askConfirm: async () => false, showNotice: async () => {}, showCopyText: async () => {} }, // 2026-11-16 화면 안 알림·확인창
     "@/lib/enrollment/commencement": commencement,
     "@/components/admin/adminDisplayText": {}, "next/link": link,
     "next/dynamic": { __esModule: true, default: () => () => null },
@@ -98,6 +104,8 @@ test("관리자 원생 목록 «활성» 필터·반별 인원은 개시일 미�
     "@/components/admin/AdminPageHeader": nullComponent,
     // 프로필 사진(2026-11-14 연결) — 화면 검사와 무관해 빈 부품·주소 없음으로 둔다
     "@/components/common/ProfileAvatar": nullComponent, "@/lib/profilePhoto/rules": { profilePhotoUrl: () => null },
+    // 홈 히어로 «사진 올리기» 버튼(2026-11-16) — 이 검사와 무관해 비워 둔다(부품은 profile-photo.test.mjs 가 그려 본다)
+    "@/components/parent/ProfilePhotoEditor": nullComponent,
     "@/components/admin/AdminQuickActionMenu": nullComponent,
     "@/components/admin/AbsencePeriodQuickCreate": nullComponent, // 2026-11-15 ⚡ «기간 결석 등록»
     "@/components/admin/AdminConfirmDialog": { useAdminConfirm: () => ({ confirm: async () => false, confirmDialog: null }) },
@@ -137,6 +145,8 @@ test("학부모 홈은 개시일 미래인 ACTIVE 반을 수강 중으로 세고
     "@/components/parent/LatestFeedCard": nullComponent, "@/lib/feed/rules": { pickFeedCard: () => null },
     // 프로필 사진 동그라미(2026-11-15) — 이 검사와 무관해 비워 둔다(부품 자체는 profile-photo.test.mjs 가 그려 본다)
     "@/components/common/ProfileAvatar": nullComponent, "@/lib/profilePhoto/rules": { profilePhotoUrl: () => null },
+    // 홈 히어로 «사진 올리기» 버튼(2026-11-16) — 이 검사와 무관해 비워 둔다(부품은 profile-photo.test.mjs 가 그려 본다)
+    "@/components/parent/ProfilePhotoEditor": nullComponent,
   }).default;
   const html = renderToStaticMarkup(React.createElement(Client, { data: {
     parent: { id: "parent-a", name: "합성 부모" },

@@ -189,7 +189,7 @@ test("종료 잠금·확인 창·이동 전 저장은 그대로, 홈에서는 �
   assert.match(workspace, /if \(embedded\) return;\s*const guardKey = `staff-session-\$\{session\.id\}`;/);
   assert.match(workspace, /window\.addEventListener\("staff:prepare-navigation", prepareToLeave\)/);
   // 시작 취소: 확인 창 유지 + 쓰던 메모 먼저 저장
-  assert.match(workspace, /window\.confirm\("수업 시작을 취소하고 '시작 전' 상태로 되돌릴까요\? \(기록한 출결은 그대로 유지됩니다\)"\)/);
+  assert.match(workspace, /askConfirm\("수업 시작을 취소하고 '시작 전' 상태로 되돌릴까요\? \(기록한 출결은 그대로 유지됩니다\)"\)/);
   assert.match(workspace, /const memoSaved = await persistMemo\(memoRef\.current\);[\s\S]{0,300}await cancelClassSession\(\{ sessionId: session\.id \}\)/);
   // 홈: 줄을 접으면(active → false)·칸이 사라질 때·메모 칸을 접을 때 저장
   assert.match(workspace, /if \(wasActiveRef\.current && !active\) void persistMemo\(memoRef\.current\);/);
@@ -266,7 +266,7 @@ test("홈은 수업 줄을 누르거나 수업을 시작해도 수업 주소로 
   assert.deepEqual(pushes, ["router.push(`/staff/sessions/${result.activeSessionId}`)"], "남는 이동은 «어제 못 끝낸 수업» 하나뿐이다");
   assert.doesNotMatch(home, /view=attendance/);
   // 그 이동도 확인 창을 거친다
-  assert.match(home, /window\.confirm\(`\$\{result\.message\}\\n\\n그 수업 화면으로 이동할까요\?`\)\) \{\s*router\.push\(`\/staff\/sessions\/\$\{result\.activeSessionId\}`\);/);
+  assert.match(home, /askConfirm\(`\$\{result\.message\}\\n\\n그 수업 화면으로 이동할까요\?`\)\)\) \{\s*router\.push\(`\/staff\/sessions\/\$\{result\.activeSessionId\}`\);/);
   // 수업 시작 → 그 줄이 «수업 중»으로 바뀌고 출석부 칸이 펼쳐진다
   assert.match(home, /patchLesson\(started\.scheduleKey, \{ sessionId: result\.sessionId, sessionStatus: "IN_PROGRESS", startedAt: result\.startedAt \}\);\s*setJustStartedId\(result\.sessionId\);\s*setExpandedKey\(started\.scheduleKey\);/);
   assert.match(home, /initialView=\{justStartedId === sessionId \? "attendance" : "main"\}/);
@@ -482,7 +482,7 @@ test("원장 점검 2: «수업 시작 취소»는 빨간 위험 버튼 하나(�
   assert.ok(block.indexOf("시작을 취소해도 기록한 출결은 유지됩니다.") < block.indexOf("<button"));
   // 꽉 찬 빨강은 여전히 «종료 확인» 창의 최종 버튼 하나
   assert.equal((workspace.match(/academy-button-danger-solid/g) ?? []).length, 1);
-  assert.match(workspace, /window\.confirm\("수업 시작을 취소하고 '시작 전' 상태로 되돌릴까요\? \(기록한 출결은 그대로 유지됩니다\)"\)/);
+  assert.match(workspace, /askConfirm\("수업 시작을 취소하고 '시작 전' 상태로 되돌릴까요\? \(기록한 출결은 그대로 유지됩니다\)"\)/);
   assert.match(workspace, /const memoSaved = await persistMemo\(memoRef\.current\);[\s\S]{0,300}await cancelClassSession\(\{ sessionId: session\.id \}\)/);
 });
 

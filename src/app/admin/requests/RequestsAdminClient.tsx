@@ -11,6 +11,7 @@ import StatusCountChips from "@/components/admin/list/StatusCountChips";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 // 날짜·시각 표시는 KST 모듈로만(기기 시간대를 따라가지 않게)
 import { formatKstDate, kstLabel } from "@/lib/datetime/kst";
+import { askConfirm } from "@/components/ui/feedback";
 
 // 종류·상태 색은 CSS 변수 토큰(다크 모드도 토큰이 바뀐다)
 const TYPE_LABELS: Record<string, { label: string; color: string }> = {
@@ -529,8 +530,8 @@ export default function RequestsAdminClient({
                                 })}
                                 <button
                                     disabled={isPending || !!uncertain[req.id]}
-                                    onClick={() => {
-                                        if (confirm("이 요청을 삭제하시겠습니까?")) {
+                                    onClick={async () => {
+                                        if ((await askConfirm("이 요청을 삭제하시겠습니까?"))) {
                                             startTransition(async () => {
                                                 await deleteParentRequest(req.id);
                                                 setExpandedId(null);

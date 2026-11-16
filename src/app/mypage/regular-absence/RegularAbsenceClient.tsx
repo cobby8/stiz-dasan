@@ -17,7 +17,7 @@ import PeriodAbsencePanel, { ActivePeriodList } from "./PeriodAbsencePanel";
 import ArrivalNoticeArea, { arrivalAddableKinds } from "./ArrivalNoticeArea";
 import type { ParentArrivalScreen } from "@/lib/regular/parent-arrival-notice";
 import { ARRIVAL_KIND_LABEL, type ArrivalKind } from "@/lib/regular/arrivalNoticeRules";
-import { EVIDENCE_MAX_PHOTOS, ILLNESS_REASON, REASON_TEXT_MAX, illnessReviewLabel } from "@/lib/regular/illnessCarryRules";
+import { EVIDENCE_MAX_PHOTOS, ILLNESS_REASON, REASON_TEXT_MAX, UNPAID_REDUCE_PARENT_LABEL, UNPAID_REDUCE_PARENT_NOTE, illnessReviewLabel } from "@/lib/regular/illnessCarryRules";
 import { PERIOD_APPROVED_DAY_LABEL, PERIOD_APPROVED_PARENT_NOTE, periodSettledParentText } from "@/lib/regular/illnessPeriodRules";
 
 // 날짜 묶음 이름 — 가까운 수업일이 먼저 보이게(오늘 → 이번 주 → 다음 주 → 이후)
@@ -547,7 +547,11 @@ export default function RegularAbsenceClient({
                   </div>
 
                   {/* 결과 한 줄 — 승인이면 언제 빠지는지, 보강권 전환이면 바로 예약으로 */}
-                  {review.status === "APPROVED" && (
+                  {/* 미납인 달이라 이월 대신 그 달 청구에서 뺀 결석(2026-11-16) — «다음 달»이 아니라 «그 달 수강료에서». 금액은 보이지 않는다 */}
+                  {review.status === "APPROVED" && review.reduced && (
+                    <p className="mt-1 text-xs text-[var(--color-academy-muted)]">{UNPAID_REDUCE_PARENT_NOTE}</p>
+                  )}
+                  {review.status === "APPROVED" && !review.reduced && (
                     <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
                       {/* 기간 결석을 «인정»만 한 상태면 금액은 복귀 뒤에 정한다(2026-11-15) */}
                       {/* 학원이 이월을 확정했으면 확정된 합계(3단계) */}
@@ -644,7 +648,8 @@ export default function RegularAbsenceClient({
                         const key = dateKey(d);
                         const busy = busyKey === key;
                         // 기간 결석을 «인정»만 한 날은 «이월 승인» 대신 «부상 결석 인정»(금액은 복귀 뒤)
-                        const reviewLabel = d.carryAmountPending ? PERIOD_APPROVED_DAY_LABEL : illnessReviewLabel(d.carryReview);
+                        // 미납 청구에서 1회분을 뺀 날은 «결석 인정 · 수강료에서 뺐어요»(2026-11-16)
+                        const reviewLabel = d.carryReduced ? UNPAID_REDUCE_PARENT_LABEL : d.carryAmountPending ? PERIOD_APPROVED_DAY_LABEL : illnessReviewLabel(d.carryReview);
                         const illnessChosen = reason[key] === ILLNESS_REASON;
                         // 이미 질병·부상으로 알린 줄에서 «사유 변경»을 연 채 같은 사유면 보낼 것이 없다 —
                         // 사유 글·사진 칸(눌러도 저장되지 않는 막다른 길)을 숨기고 사진 올리는 곳만 알려 준다

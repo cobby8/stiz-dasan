@@ -185,6 +185,13 @@ export function shouldShowIosDriverNotice(storeApp: boolean, userAgent: string |
 export const DRIVER_ENTRY_PATH = "/staff/driver";
 /** 위치 전송(운행 시작)이 되는 기사님 운행 화면. */
 export const DRIVER_RUN_PATH = "/staff/run";
+/** 안드로이드 스토어 앱 전용 — 로그인 확인 뒤 운행 링크 화면(/driver/열쇠)으로 보내는 길(앱은 /staff/run 을 막는다, 2026-11-16). */
+export const DRIVER_APP_RUN_PATH = "/staff/run/open";
+
+/** 기사님 운행 화면으로 갈 주소 — 안드로이드 스토어 앱이면 앱 위치 공유가 켜지는 길, 그 밖(브라우저)은 기존 운행표. */
+export function driverRunPathFor(storeApp: boolean, userAgent: string | null | undefined): string {
+  return storeApp && /android/i.test(String(userAgent ?? "")) ? DRIVER_APP_RUN_PATH : DRIVER_RUN_PATH;
+}
 
 // ── f1. 체험수업 아이(출시 전 수정 2026-11-13 원장 지시) ─────────────────
 

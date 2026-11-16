@@ -11,6 +11,7 @@ import { findRosterPerson } from "@/components/staff/sessionWorkspaceRules";
 import type { StaffSessionDetail, StaffSessionStudent } from "@/lib/staff-session-queries";
 import { canCorrectAfterCompletion, correctionConfirmMessage, type ReviewRosterKind } from "@/lib/staff/sessionEditWindow";
 import { ATTENDANCE_TONE, TONE_BADGE_CLASS } from "@/lib/ui/statusTones";
+import { askConfirm } from "@/components/ui/feedback";
 
 const STATUS_LABEL = { PRESENT: "출석", LATE: "지각", ABSENT: "결석" } as const;
 type AttendanceStatus = keyof typeof STATUS_LABEL;
@@ -82,7 +83,7 @@ export function CompletedAttendanceRoster({ session, students, onStudentsChange,
         return;
       }
       const question = correctionConfirmMessage({ name: target.name, previousStatus: preview.previousStatus, nextStatus: status, effect: preview.effect });
-      if (!window.confirm(question)) return;
+      if (!(await askConfirm(question))) return;
       const result = await saveStaffAttendance({ sessionId: session.id, attendanceKey: target.attendanceKey, status });
       if (!result.ok) {
         setRowNotice(rowId, result.message);

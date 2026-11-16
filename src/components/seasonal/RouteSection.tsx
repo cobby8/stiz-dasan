@@ -12,6 +12,7 @@ import { findSamePlaceIndex } from "@/lib/seasonal/stopMerge";
 import { moveStopToVehicle, moveStudentToVehicle, removeStudentFromRoute, overCapacityVehicles, runTimeChange, type EditResult } from "@/lib/regular/regularRouteEdit";
 // 정규 배차 화면: 등원·하원 회차 카드를 하루 시간순(그 차의 실제 출발 시각 순)으로 섞어 보일 때의 순서 값.
 import { runTimelineOrder } from "@/lib/regular/regularDispatchOrder";
+import { askConfirm } from "@/components/ui/feedback";
 
 // 한 방향(등원 또는 하원)의 노선 섹션 — 목록 + 지도 + 순서변경/재계산/무료탑승 드래그/출발조정/저장을 자립적으로 담는다.
 // 날짜·기준위치가 바뀌면(refreshKey) 그 방향을 다시 계산한다.
@@ -295,9 +296,9 @@ export default function RouteSection({ initial, date, refreshKey, apiBase = "/ap
     // 정규 모드: 정원 초과 차량이 있으면 저장 전에 한 번 확인한다(손으로 옮기다 넘친 경우).
     if (regularEditing) {
       const over = overCapacityVehicles(sug.vehicles);
-      if (over.length > 0 && !window.confirm(`정원을 넘은 차량이 있습니다.\n${over.map((o) => `· ${o.name}: ${o.passengers}/${o.capacity}명`).join("\n")}\n\n그래도 저장할까요?`)) return;
+      if (over.length > 0 && !(await askConfirm(`정원을 넘은 차량이 있습니다.\n${over.map((o) => `· ${o.name}: ${o.passengers}/${o.capacity}명`).join("\n")}\n\n그래도 저장할까요?`))) return;
       // 이 요일·방향에 저장본이 아직 없으면, 첫 저장 순간 기사님 화면이 「셔틀 명단」 순서 → 이 노선으로 바뀐다. 한 번 확인한다.
-      if (!loadedFromSaved && !savedAt && !window.confirm("지금 기사님 화면은 「셔틀 명단」 순서로 운행 중입니다.\n여기서 저장하면 이 요일·방향의 기사님 화면이 이 노선으로 바뀝니다.\n\n저장할까요?")) return;
+      if (!loadedFromSaved && !savedAt && !(await askConfirm("지금 기사님 화면은 「셔틀 명단」 순서로 운행 중입니다.\n여기서 저장하면 이 요일·방향의 기사님 화면이 이 노선으로 바뀝니다.\n\n저장할까요?"))) return;
     }
     const scopeAtStart = scopeRef.current;
     const snapshot = sug;
@@ -338,7 +339,7 @@ export default function RouteSection({ initial, date, refreshKey, apiBase = "/ap
     const msg = regularEditing
       ? "저장된 노선을 지우고 자동 제안으로 초기화할까요?\n손으로 고친 순서·시각·배정이 사라집니다."
       : "이 요일의 저장된 노선을 삭제할까요? 삭제하면 자동 제안이 다시 기준이 됩니다.";
-    if (typeof window !== "undefined" && !window.confirm(msg)) return;
+    if (typeof window !== "undefined" && !(await askConfirm(msg))) return;
     const scopeAtStart = scopeRef.current;
     setSaving(true); setSaveMsg(null); setErr(null);
     try {
@@ -358,7 +359,7 @@ export default function RouteSection({ initial, date, refreshKey, apiBase = "/ap
 
   async function recalcPaths() {
     if (rerouting || loading || recalcing) return;
-    if (dirty && !window.confirm("저장하지 않은 변경을 버리고 저장 노선을 다시 불러올까요?")) return;
+    if (dirty && !(await askConfirm("저장하지 않은 변경을 버리고 저장 노선을 다시 불러올까요?"))) return;
     const scope = scopeRef.current;
     setRecalcing(true); setErr(null);
     try {
@@ -416,23 +417,24 @@ export default function RouteSection({ initial, date, refreshKey, apiBase = "/ap
     touched.forEach((vi) => scheduleReroute(vi));
   }
   // 다른 수업시간 회차로 옮기면 학생이 다른 시각에 타게 된다 → 한 번 확인한다.
-  function confirmRunTimeChange(vIdx: number, toV: number): boolean {
+  // 화면 안 확인창이라 답을 기다린다 — 부르는 쪽은 await 한다
+  async function confirmRunTimeChange(vIdx: number, toV: number): Promise<boolean> {
     const ch = runTimeChange(sug.vehicles[vIdx], sug.vehicles[toV], isPickup);
-    return !ch || window.confirm(`수업시간이 다른 회차입니다(${ch.from} → ${ch.to}). 옮길까요?`);
+    return !ch || (await askConfirm(`수업시간이 다른 회차입니다(${ch.from} → ${ch.to}). 옮길까요?`));
   }
-  function moveStop(vIdx: number, sIdx: number, toV: number) {
-    if (!confirmRunTimeChange(vIdx, toV)) return;
+  async function moveStop(vIdx: number, sIdx: number, toV: number) {
+    if (!(await confirmRunTimeChange(vIdx, toV))) return;
     applyRouteEdit([vIdx, toV], (cur) => moveStopToVehicle(cur.vehicles, { v: vIdx, s: sIdx }, toV, routeEnds(cur)));
   }
-  function moveStudent(vIdx: number, sIdx: number, i: number, toV: number) {
-    if (!confirmRunTimeChange(vIdx, toV)) return;
+  async function moveStudent(vIdx: number, sIdx: number, i: number, toV: number) {
+    if (!(await confirmRunTimeChange(vIdx, toV))) return;
     applyRouteEdit([vIdx, toV], (cur) => moveStudentToVehicle(cur.vehicles, { v: vIdx, s: sIdx, i }, toV, routeEnds(cur)));
   }
-  function removeStudent(vIdx: number, sIdx: number, i: number) {
+  async function removeStudent(vIdx: number, sIdx: number, i: number) {
     const st = sug.vehicles[vIdx]?.stops[sIdx]?.students[i];
     if (!st) return;
     // 퇴원·셔틀 중단은 「셔틀 명단」에서 빼는 것이 원칙 — 여기서 빼면 이 저장본에서만 빠진다.
-    if (!window.confirm(`${st.name} 학생을 이 노선에서 뺄까요?\n\n퇴원·셔틀 중단이라면 「셔틀 명단」에서 빼야 다음 자동 제안에서도 빠집니다.\n명단에 남아 있으면 기사님 화면 '확정 전' 칸에 계속 보입니다.\n(뺀 뒤 «저장»을 눌러야 반영됩니다)`)) return;
+    if (!(await askConfirm(`${st.name} 학생을 이 노선에서 뺄까요?\n\n퇴원·셔틀 중단이라면 「셔틀 명단」에서 빼야 다음 자동 제안에서도 빠집니다.\n명단에 남아 있으면 기사님 화면 '확정 전' 칸에 계속 보입니다.\n(뺀 뒤 «저장»을 눌러야 반영됩니다)`))) return;
     applyRouteEdit([vIdx], (cur) => removeStudentFromRoute(cur.vehicles, { v: vIdx, s: sIdx, i }), -1);
   }
   // 차량 선택 메뉴에 쓰는 이름(회차·인원 포함) — 옮길 차량의 여유를 바로 보게 한다.
@@ -688,9 +690,9 @@ export default function RouteSection({ initial, date, refreshKey, apiBase = "/ap
         {/* 버튼이 글자로 넓어져 좁은 화면에서는 다음 줄로 넘어가게 한다(flex-wrap + min-w-0) */}
         <div className="flex min-w-0 flex-wrap items-center gap-1.5 print:hidden">
           {regularEditing && dirty && <span className="rounded bg-[var(--color-academy-warning-soft)] px-2 py-1 text-xs text-[var(--color-academy-warning)]">저장 안 됨</span>}
-          <button type="button" onClick={() => {
+          <button type="button" onClick={async () => {
             // 정규 모드: 저장본을 보고 있거나 손편집이 있으면 덮어쓰기 전에 확인한다.
-            if (regularEditing && (loadedFromSaved || dirty) && !window.confirm("손으로 고친 순서·시각·배정이 사라집니다. 계속할까요?")) return;
+            if (regularEditing && (loadedFromSaved || dirty) && !(await askConfirm("손으로 고친 순서·시각·배정이 사라집니다. 계속할까요?"))) return;
             setLoadedFromSaved(false); setSaveMsg(null); void generate(date);
           }} disabled={loading || saving || rerouting || recalcing || pendingReroute} className="academy-button-secondary academy-button-sm">{loading ? "계산 중…" : "자동 제안"}</button>
           {/* 시간순 모드: 등원·하원 카드가 한 목록에 섞이므로 저장 버튼에 방향을 적어 «무엇을 저장하는지» 분명히 한다 */}

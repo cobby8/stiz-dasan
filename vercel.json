@@ -120,6 +120,10 @@
     {
       "path": "/api/cron/youtube-upload",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/uniform-shop-sync",
+      "schedule": "17 * * * *"
     }
   ]
 }

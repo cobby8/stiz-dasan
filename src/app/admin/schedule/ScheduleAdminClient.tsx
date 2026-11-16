@@ -15,6 +15,7 @@ import type { SchedulePayloadSource } from "@/lib/scheduleSlotPayload";
 import type { MergedSlot } from "@/app/schedule/ScheduleClient";
 import { toPublicScheduleSlots } from "@/lib/mergeSlots";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
+import { showNotice } from "@/components/ui/feedback";
 
 const ScheduleTableView = dynamic(() => import("@/components/ScheduleTableView"), {
     loading: () => (
@@ -430,7 +431,7 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
                 setIsAddingCustom(false);
                 await loadScheduleData();
             } catch (e: any) {
-                alert(adminErrorText(e, "생성 실패"));
+                showNotice(adminErrorText(e, "생성 실패"));
             }
         });
     }
@@ -460,7 +461,7 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
                 setEditingCustomId(null);
                 await loadScheduleData();
             } catch (e: any) {
-                alert(adminErrorText(e, "수정 실패"));
+                showNotice(adminErrorText(e, "수정 실패"));
             }
         });
     }
@@ -472,7 +473,7 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
                 setDeletingCustomId(null);
                 await loadScheduleData();
             } catch (e: any) {
-                alert(adminErrorText(e, "삭제 실패"));
+                showNotice(adminErrorText(e, "삭제 실패"));
             }
         });
     }

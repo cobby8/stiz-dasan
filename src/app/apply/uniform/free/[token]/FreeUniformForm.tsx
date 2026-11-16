@@ -79,7 +79,7 @@ export default function FreeUniformForm({ token, studentName, initialParentName,
   if (done) {
     return (
       <div className="public-card rounded-2xl bg-white p-6 text-center shadow-lg dark:bg-[var(--color-public-tint)]">
-        <h1 className="break-keep text-lg font-black text-[var(--color-public-ink)] dark:text-white">{done.title}</h1>
+        <h1 className="break-keep text-lg font-[700] text-[var(--color-public-ink)] dark:text-white">{done.title}</h1>
         <p className="mt-2 break-keep text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">{done.body}</p>
         {contactPhone && <p className="mt-3 text-sm font-bold text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">학원 {contactPhone}</p>}
       </div>
@@ -90,7 +90,7 @@ export default function FreeUniformForm({ token, studentName, initialParentName,
     <div className="public-form-card public-card overflow-hidden rounded-2xl bg-white shadow-lg dark:bg-[var(--color-public-tint)]">
       {/* 머리: 아이 이름 + 감사 한 줄(컴팩트) */}
       <div className="border-b border-[var(--color-public-line)] bg-[var(--color-public-tint)] px-4 py-3 dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)]">
-        <h1 className="flex items-center gap-2 text-lg font-black text-[var(--color-public-ink)] dark:text-white">
+        <h1 className="flex items-center gap-2 text-lg font-[700] text-[var(--color-public-ink)] dark:text-white">
           {studentName} 유니폼 무료 신청
         </h1>
         <p className="mt-1 break-keep text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">

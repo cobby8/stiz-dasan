@@ -688,9 +688,23 @@ test("⑥ 올리기 칸 소스: 먼저 줄이고, 지우기는 그 자리에서 
   assert.doesNotMatch(source, /form\.set\("path"|storagePath|photoPath/);
 });
 
-test("⑥ 화면 연결: 홈 히어로 64·자녀 칩 28, 아이 기록 제목 64·형제 칩 28·아이 정보 칸, 설정 «내 사진»", () => {
+test("⑥ 버튼 모양(홈 히어로·설정 «우리 아이»): 글자 버튼 하나만 — 사진·지우기·안내 없음, 아이콘 없음", () => {
+  const empty = renderEditor({ variant: "button", target: "student", studentId: "kid-1", ownerId: "kid-1", name: "김하늘", initialVersion: null });
+  assert.match(empty, /class="academy-button-secondary min-h-11! whitespace-nowrap"[^>]*>사진 올리기</);
+  assert.match(empty, /accept="image\/jpeg,image\/png,image\/webp"/);
+  assert.doesNotMatch(empty, /<img|사진 지우기|사진은 학부모님과/);
+  const filled = renderEditor({ variant: "button", target: "student", studentId: "kid-1", ownerId: "kid-1", name: "김하늘", initialVersion: "abc123" });
+  assert.match(filled, />사진 바꾸기</);
+  assert.doesNotMatch(filled, /<img|사진 지우기/);
+  for (const html of [empty, filled]) assert.doesNotMatch(html, /material-symbols|<svg/);
+});
+
+test("⑥ 화면 연결: 홈 히어로 64 + 늘 보이는 «사진 올리기» 버튼·자녀 칩 28, 아이 기록 제목 64·형제 칩 28·아이 정보 칸, 설정 맨 위 «우리 아이»·보호자 사진 칸 없음", () => {
   const home = read("src/app/mypage/MyPageClient.tsx");
   assert.match(home, /<ProfileAvatar decorative name=\{child\.name\} size=\{64\}/);
+  // 2026-11-16: 사진이 없을 때만 보이던 작은 링크 대신, 사진 옆에 늘 보이는 버튼(그 자리에서 올리기)
+  assert.match(home, /<ProfilePhotoEditor key=\{child\.id\} variant="button" target="student" studentId=\{child\.id\}/);
+  assert.doesNotMatch(home, /\{!child\.photoVersion && \(/);
   assert.match(home, /<ProfileAvatar decorative name=\{c\.name\} size=\{28\}/);
   const record = read("src/app/mypage/record/ChildRecordClient.tsx");
   assert.match(record, /<ProfileAvatar decorative name=\{record\.student\.name\} size=\{64\}/);
@@ -698,11 +712,21 @@ test("⑥ 화면 연결: 홈 히어로 64·자녀 칩 28, 아이 기록 제목 6
   assert.match(record, /photo=\{\{ name: record\.student\.name, version: record\.student\.photoVersion \?\? null \}\}/);
   const sections = read("src/app/mypage/record/ChildProfileSections.tsx");
   assert.match(sections, /<ProfilePhotoEditor target="student" studentId=\{studentId\}/);
+  // 2026-11-16 원장 «학부모가 자기 사진 올리는 건 필요가 없어» — 학부모 화면 어디에서도 보호자 사진을 올리지 않는다
   const settings = read("src/app/mypage/settings/SettingsClient.tsx");
-  assert.match(settings, /내 사진/);
-  assert.match(settings, /<ProfilePhotoEditor target="me"/);
+  assert.doesNotMatch(settings, /export function MyPhotoRow|<ProfilePhotoEditor/);
   const page = read("src/app/mypage/settings/page.tsx");
-  assert.match(page, /<MyPhotoRow userId=\{parent\.appUserId\}/);
+  assert.doesNotMatch(page, /MyPhotoRow|target="me"|kind: "user"/);
+  for (const file of ["src/app/mypage/MyPageClient.tsx", "src/app/mypage/record/ChildProfileSections.tsx", "src/app/mypage/record/ChildRecordClient.tsx"]) {
+    assert.doesNotMatch(read(file), /target="me"|kind: "user"/, file);
+  }
+  // 설정 맨 위 = «우리 아이»(아이마다 사진·이름 → 아이 정보, 사진 올리기 버튼), 그 아래 «보호자(내 정보)»
+  const kids = page.indexOf('id="settings-children-title"');
+  const guardian = page.indexOf('<Section title="보호자(내 정보)">');
+  assert.ok(kids > 0 && guardian > kids, "우리 아이가 보호자 정보보다 위");
+  assert.match(page, /<ProfilePhotoEditor variant="button" tone="tonal" target="student" studentId=\{c\.id\}/);
+  assert.match(page, /href=\{`\/mypage\/record\?child=\$\{encodeURIComponent\(c\.id\)\}#record-info`\}/);
+  assert.match(page, /profilePhotoUpdatedAtSql\("s"\)/);
   // 조회: 사진이 있을 때만 버전을 만든다(자녀 목록·아이 기록)
   const queries = read("src/lib/queries.ts");
   assert.match(queries, /photoVersion: profilePhotoVersion\(/);

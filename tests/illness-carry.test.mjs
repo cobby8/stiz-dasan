@@ -1087,7 +1087,9 @@ test("신청함: «질병·부상 결석» 종류 — 결석일 전은 진행 �
   assert.match(client, /open\.kind === "ILLNESS_CARRY" && \(\s*<IllnessCarryInboxDetail/);
   const detail = read("src/app/admin/inbox/IllnessCarryInboxDetail.tsx");
   assert.match(detail, />보강권으로<\/button>/);
-  assert.match(detail, /disabled=\{pending \|\| Boolean\(detail\.blocker\)\}[\s\S]{0,80}className="academy-button-primary">이월 승인<\/button>/, "조건이 안 맞으면 승인 버튼을 꺼 둔다");
+  // 2026-11-16: 버튼 글자는 «이월 승인» 또는(미납인 달) «결석 인정 · 청구에서 빼기» — 서버가 정한 방식(detail.reduce)을 그대로 따른다
+  assert.match(detail, /disabled=\{pending \|\| Boolean\(detail\.blocker\)\}[\s\S]{0,80}className="academy-button-primary">\{approveLabel\}<\/button>/, "조건이 안 맞으면 승인 버튼을 꺼 둔다");
+  assert.match(detail, /const approveLabel = reduce \? UNPAID_REDUCE_ADMIN_BUTTON : "이월 승인";/);
   assert.match(detail, /acknowledgeLabel: hasPhotos \? "증빙 사진을 확인했습니다" : "증빙\(진단서·처방전 등\)을 직접 확인했습니다"/);
   assert.match(detail, /useAdminConfirm\(\)/);
   // 사진 기한은 «결석일부터 7일» 같은 설명이 아니라 실제 날짜로(학부모 화면·자동 전환과 같은 함수)

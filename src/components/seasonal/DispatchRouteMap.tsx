@@ -57,8 +57,8 @@ export function RouteMapCanvas({
       const el = document.createElement("div");
       el.style.cssText = "transform:translateY(-50%);display:flex;align-items:center;gap:4px;";
       el.innerHTML =
-        `<span style="display:grid;place-items:center;min-width:22px;height:22px;padding:0 5px;border-radius:11px;background:${color};color:var(--color-academy-on-primary);font-size:11px;font-weight:800;border:2px solid var(--color-academy-surface);box-shadow:0 1px 3px rgba(0,0,0,.3)">${escapeHtml(n.badge)}</span>` +
-        `<span style="max-width:140px;background:var(--color-academy-surface);border:1px solid var(--color-academy-line);border-radius:6px;padding:1px 5px;font-size:11px;font-weight:700;color:var(--color-academy-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 1px 2px rgba(0,0,0,.15)">${escapeHtml(n.label)}</span>`;
+        `<span style="display:grid;place-items:center;min-width:22px;height:22px;padding:0 5px;border-radius:11px;background:${color};color:var(--color-academy-on-primary);font-size:12px;font-weight:700;border:2px solid var(--color-academy-surface);box-shadow:0 1px 3px rgba(0,0,0,.3)">${escapeHtml(n.badge)}</span>` +
+        `<span style="max-width:140px;background:var(--color-academy-surface);border:1px solid var(--color-academy-line);border-radius:6px;padding:1px 5px;font-size:12px;font-weight:700;color:var(--color-academy-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 1px 2px rgba(0,0,0,.15)">${escapeHtml(n.label)}</span>`;
       const overlay = new maps.CustomOverlay({ position: pos, content: el, yAnchor: 0.5, xAnchor: 0, zIndex: 5 });
       overlay.setMap(map);
       overlaysRef.current.push(overlay);

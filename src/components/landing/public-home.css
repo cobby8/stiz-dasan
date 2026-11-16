@@ -40,13 +40,13 @@
 }
 .stiz-public-sport .public-home-notices{display:grid;grid-template-columns:7rem 1fr;gap:1rem;padding-block:1.1rem;border-bottom:1px solid var(--color-public-line)}
 .stiz-public-sport .public-home-notices__heading h2{font-size:.9rem;font-weight:700;margin:0}
-.stiz-public-sport .public-home-notices__heading>a{font-size:.7rem;min-height:2.75rem;display:inline-flex;align-items:center;gap:.5rem;color:var(--color-public-accent)}
+.stiz-public-sport .public-home-notices__heading>a{font-size:.75rem;min-height:2.75rem;display:inline-flex;align-items:center;gap:.5rem;color:var(--color-public-accent)}
 .stiz-public-sport .public-home-notices ul{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.3rem 1.4rem;list-style:none;padding:0;margin:0}
 .stiz-public-sport .public-home-notices li{min-width:0}
 .stiz-public-sport .public-home-notices li a{display:flex;gap:.55rem;align-items:center;min-height:2.75rem;font-size:.8rem;text-decoration:none}
 .stiz-public-sport .public-home-notices__title{flex:1;min-width:0;overflow-wrap:anywhere}
-.stiz-public-sport .public-home-notices time{font-size:.68rem;color:var(--color-public-muted);white-space:nowrap}
-.stiz-public-sport .public-home-notices__pin{color:var(--color-public-accent);font-size:.65rem;font-weight:600;flex-shrink:0}
+.stiz-public-sport .public-home-notices time{font-size:.75rem;color:var(--color-public-muted);white-space:nowrap}
+.stiz-public-sport .public-home-notices__pin{color:var(--color-public-accent);font-size:.75rem;font-weight:600;flex-shrink:0}
 /* 검정 숫자 띠(4단계 2026-11-07): 큰 숫자는 이 띠의 주인공. PC 4칸 · 휴대폰 2칸 */
 .stiz-public-sport .public-home-stats{background:var(--color-public-dark);color:var(--color-public-hero-ink)}
 .stiz-public-sport .public-home-stats__inner{width:min(100% - 3rem,72rem);margin-inline:auto;padding-block:1.8rem 1.4rem}
@@ -65,7 +65,7 @@
 .stiz-public-sport .public-home-facts li:first-child{padding-inline-start:0}
 .stiz-public-sport .public-home-facts li:last-child{border:0}
 .stiz-public-sport .public-home-facts strong{font-size:.92rem;font-weight:600}
-.stiz-public-sport .public-home-facts span{font-size:.7rem;line-height:1.7;color:var(--color-public-muted);word-break:keep-all}
+.stiz-public-sport .public-home-facts span{font-size:.75rem;line-height:1.7;color:var(--color-public-muted);word-break:keep-all}
 .stiz-public-sport .public-process{width:min(100% - 3rem,72rem);margin-inline:auto;padding-block:2rem}
 .stiz-public-sport .public-process h2{font-size:1.375rem;font-weight:700;letter-spacing:-.035em;margin-bottom:1rem}
 .stiz-public-sport .public-process ol{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1.3rem;margin:0;padding:0;list-style:none}

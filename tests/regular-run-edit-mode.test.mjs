@@ -132,7 +132,7 @@ test("관리자 화면 배선: 묶음 연필 → 그 묶음만 편집 모드, �
   assert.doesNotMatch(editor, /↕ 순서·시간 수정|기사님 화면과 같음/);
   assert.match(editor, /editingGroupKey=\{editingGroup\}\s*onEditBlock=\{startEditing\}\s*renderEditActions=\{renderEditActions\}\s*renderEditBar=\{renderEditBar\}/);
   // 다른 묶음으로 옮길 때 저장 안 한 변경이 있으면 확인
-  assert.match(editor, /if \(orderDirty && !window\.confirm\("저장하지 않은 순서·시각 수정이 있습니다\. 버리고 이 묶음을 수정할까요\?"\)\) return;/);
+  assert.match(editor, /if \(orderDirty && !\(await askConfirm\("저장하지 않은 순서·시각 수정이 있습니다\. 버리고 이 묶음을 수정할까요\?"\)\)\) return;/);
   assert.doesNotMatch(editor, /sticky top-0/);
   // 적용 범위 옆에 어느 달 명단에 반영되는지 짧게
   assert.match(editor, /formatRosterMonths\(\[serviceMonth, \.\.\.laterMonths\]\)\} 명단에 반영/);
@@ -148,7 +148,7 @@ test("관리자 화면 배선: 묶음 연필 → 그 묶음만 편집 모드, �
   assert.match(chip, /openDialog\(\{ kind: "student", rowId: rider\.checkId \}\)[\s\S]*openDialog\(\{ kind: "remove", rowId: rider\.checkId \}\)/);
   assert.doesNotMatch(viewRider, /kind: "remove"|kind: "student"/);
   // 바꾼 순서·시각이 있으면 창을 열기 전에 먼저 저장(편집 모드 유지)
-  assert.match(editor, /if \(!window\.confirm\("바꾼 순서·시각을 먼저 저장할까요\?"\)\) return;\s*if \(await saveOrder\(true\)\) open\(\);/);
+  assert.match(editor, /if \(!\(await askConfirm\("바꾼 순서·시각을 먼저 저장할까요\?"\)\)\) return;\s*if \(await saveOrder\(true\)\) open\(\);/);
   // 저장 안 한 변경이 없으면 이동 확인을 띄우지 않는다
   assert.match(editor, /function confirmLeave\(\) \{ return !orderDirty \|\|/);
 });

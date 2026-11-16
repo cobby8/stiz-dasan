@@ -41,6 +41,31 @@ export function illnessReviewLabel(status: string | null | undefined): string | 
   return status && status in ILLNESS_REVIEW_LABEL ? ILLNESS_REVIEW_LABEL[status as IllnessReviewStatus] : null;
 }
 
+// ── 미납인 달 = «그 미납 청구에서 1회분 빼기»(2026-11-16 원장 결정) ─────────────────────────
+// 그 달 수강료가 미납이면 낸 돈이 없어 이월할 것이 없다 → 막지 않고 그 미납 청구 금액을 1회 값만큼 줄인다.
+// 검토 상태는 그대로 «승인»(APPROVED — DB 제약의 값 집합을 늘리지 않는다)이고, «이월»과의 구분은 정산 기록의 고정 사유로 한다.
+// 계산·판정은 illnessUnpaidReduceRules.ts, DB 연결부는 illness-unpaid-reduce.ts.
+
+/** 정산 기록(BillingAbsenceResolution.reason)에 남기는 고정 사유 — 이 글자로 «이월»이 아닌 «청구에서 뺀» 결석을 가려낸다 */
+export const ILLNESS_UNPAID_REDUCE_REASON = "질병·부상 결석 인정 — 미납 청구에서 1회분 감액";
+
+/**
+ * 그 결석이 «청구에서 뺀» 결석인가를 가려내는 SQL 조각(abs = RegularAbsence 별칭) — 신청함·학부모 화면의 상태 글자에 쓴다.
+ * 인자는 코드에 적힌 별칭만 받는다(사용자 입력 아님). 사유 글자에는 작은따옴표가 없다(테스트가 확인).
+ */
+export function illnessUnpaidReducedSql(abs: string): string {
+  return `EXISTS (SELECT 1 FROM "BillingAbsenceResolution" reduced_resolution WHERE reduced_resolution."absenceId" = ${abs}.id AND reduced_resolution.reason = '${ILLNESS_UNPAID_REDUCE_REASON}')`;
+}
+
+/** 신청함 버튼 글자(납부된 달은 기존 «이월 승인») */
+export const UNPAID_REDUCE_ADMIN_BUTTON = "결석 인정 · 청구에서 빼기";
+/** 신청함 승인 뒤 상태 글자 — catalog.ts 의 ILLNESS_CARRY «REDUCED» 글자와 같다(테스트가 비교) */
+export const UNPAID_REDUCE_ADMIN_DONE_LABEL = "결석 인정 · 청구에서 뺌";
+/** 학부모 화면 상태 글자(«이월 승인» 대신) */
+export const UNPAID_REDUCE_PARENT_LABEL = "결석 인정 · 수강료에서 뺐어요";
+/** 학부모 화면 결과 한 줄 — 금액은 넣지 않는다 */
+export const UNPAID_REDUCE_PARENT_NOTE = "그 달 수강료에서 1회분을 뺐어요.";
+
 /** 사유 글 다듬기 — 앞뒤 공백 제거, 줄바꿈은 한 칸으로. 비면 null */
 export function normalizeReasonText(value: unknown): string | null {
   if (typeof value !== "string") return null;
@@ -152,13 +177,14 @@ export function evidenceAnchorYmdSql(abs: string): string {
  * 대표는 그 묶음의 가장 이른 결석(사진을 올릴 때 이 결석에 붙인다 — 어느 날에 붙여도 기간 전체에 쓰인다).
  * 날짜 글자는 «11/17(월)~11/28(금) 3회». 입력 순서(최신순)를 유지한다.
  */
-export function collapseReviewsByPeriod<T extends { absenceId: string; periodId: string | null; status: string; date: string; dateLabel: string; className: string }>(
+export function collapseReviewsByPeriod<T extends { absenceId: string; periodId: string | null; status: string; date: string; dateLabel: string; className: string; reduced?: boolean }>(
   rows: T[],
 ): Array<T & { count: number }> {
   const groups = new Map<string, T[]>();
   const order: string[] = [];
   for (const row of rows) {
-    const key = row.periodId ? `period:${row.periodId}:${row.status}` : `single:${row.absenceId}`;
+    // 같은 «승인»이라도 이월로 적립한 날과 미납 청구에서 뺀 날(reduced)은 글자가 달라 따로 묶는다
+    const key = row.periodId ? `period:${row.periodId}:${row.status}${row.reduced ? ":reduced" : ""}` : `single:${row.absenceId}`;
     if (!groups.has(key)) { groups.set(key, []); order.push(key); }
     groups.get(key)!.push(row);
   }

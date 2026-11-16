@@ -376,7 +376,7 @@ test("화면: 선택된 버튼을 다시 누르면 취소, 다른 버튼은 기�
   const fn = client.slice(client.indexOf("async function clearAttendance"), client.indexOf("async function updateAttendance"));
   // 결석을 되돌릴 때만 한 번 묻고, 보강권이 실제로 있을 때만 회수 문장
   assert.match(fn, /if \(target\.status === "ABSENT"\) \{\s*const preview = await clearStaffAttendance\(\{ sessionId: session\.id, attendanceKey: target\.attendanceKey, dryRun: true \}\);/);
-  assert.equal((fn.match(/window\.confirm\(/g) ?? []).length, 1);
+  assert.equal((fn.match(/askConfirm\(/g) ?? []).length, 1);
   assert.match(fn, /preview\.creditRevoke\s*\? `\$\{target\.name\} 결석을 취소할까요\? 이 결석으로 나간 보강권이 회수됩니다\.`\s*: `\$\{target\.name\} 결석을 취소할까요\?`/);
   // 취소되면 그 줄만 미확인으로 — 현황 숫자(counts)는 students 에서 계산되므로 바로 따라온다
   assert.match(fn, /\{ \.\.\.student, status: null, arrivedAt: null, \.\.\.absenceReportPatch\(result\) \}/);

@@ -58,7 +58,7 @@ export default function TrialFeeDoneClient() {
             {view.kind === "loading" && <p className="text-sm font-bold">결제를 확인하고 있어요...</p>}
             {view.kind === "paid" && (
                 <>
-                    <h1 className="text-xl font-black">체험수업이 확정됐어요</h1>
+                    <h1 className="text-xl font-[700]">체험수업이 확정됐어요</h1>
                     <p className="text-sm text-[var(--color-public-muted)]">체험수업비 {view.amountLabel} 결제가 확인됐어요. 수업 시간과 반은 담당자가 한 번 더 안내드려요.</p>
                     <p className="text-sm">준비물: {ACADEMY_GUIDE_FACTS.trialSupplies}</p>
                     <p className="text-sm">위치: {ACADEMY_GUIDE_FACTS.address}</p>
@@ -66,7 +66,7 @@ export default function TrialFeeDoneClient() {
             )}
             {view.kind === "waiting" && (
                 <>
-                    <h1 className="text-xl font-black">입금 계좌를 받았어요</h1>
+                    <h1 className="text-xl font-[700]">입금 계좌를 받았어요</h1>
                     <TrialVirtualAccountBox account={view.account} />
                 </>
             )}

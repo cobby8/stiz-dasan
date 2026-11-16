@@ -37,6 +37,7 @@ import {
   notifyAdminsOfRentalRequest,
   rentalBankAccount,
   sendRentalApplicantSms,
+  sendRentalApplicantAppNotice,
   type RentalApplicantSmsKind,
   type RentalSmsOutcome,
 } from "@/lib/rental/gym-rental-notify";
@@ -273,6 +274,8 @@ export async function updateRentalStatus(id: string, action: string, options: Re
     let sms: RentalSmsOutcome | null = null;
     if (kind) {
       sms = await sendRentalApplicantSms(kind, r);
+      // 앱에서 신청한 학부모에게는 문자와 따로 앱 종 알림·푸시도(2026-11-16). 실패해도 처리는 그대로.
+      if (kind !== "received") await sendRentalApplicantAppNotice(kind, r);
       try {
         await saveRentalSmsStatus(prisma, r.id, `${sms}:${kind}`);
       } catch (error) {
@@ -311,6 +314,7 @@ export async function editRentalRequest(id: string, input: RentalEditInput, opti
     if (options.notify === true && kind) {
       // 같은 건·같은 종류 문자는 중복 방지로 막히므로 수정마다 새 실행 번호를 붙인다
       sms = await sendRentalApplicantSms(kind, result.request, `edit-${Date.now()}`);
+      await sendRentalApplicantAppNotice(kind, result.request); // 바뀐 시간·금액을 앱에도
       // 문자 꺼짐(OFF)이면 처음 안내 문자 결과 기록을 덮어쓰지 않는다
       if (sms !== "OFF") {
         try {

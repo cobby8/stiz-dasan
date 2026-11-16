@@ -307,7 +307,7 @@ export default function EnrollApplicationForm({ availableSlots, contactPhone, tr
     if (completed) {
         return (
             <div className="rounded-2xl bg-white p-8 text-center shadow-lg dark:bg-[var(--color-public-tint)]">
-                <h2 className="mb-3 text-2xl font-black text-[var(--color-public-ink)] dark:text-white">
+                <h2 className="mb-3 text-2xl font-[700] text-[var(--color-public-ink)] dark:text-white">
                     {completionMode === "updated" ? "수강신청서 수정 완료!" : completionMode === "existing" ? "이미 접수된 수강신청서가 있습니다" : "수강신청 완료!"}
                 </h2>
                 <p className="mb-2 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">담당자가 빠른 시간 안에 연락드리겠습니다.</p>
@@ -318,7 +318,7 @@ export default function EnrollApplicationForm({ availableSlots, contactPhone, tr
                 </p>
                 {accountHandoff && !accountHandoff.alreadyLinked && (
                     <div className="mb-6 rounded-2xl border border-[var(--color-public-line)] bg-orange-50 p-5 text-left dark:border-brand-neon-lime/30 dark:bg-brand-neon-lime/10">
-                        <h3 className="font-black text-[var(--color-public-ink)] dark:text-white">이어서 학부모 계정을 연결해주세요</h3>
+                        <h3 className="font-[700] text-[var(--color-public-ink)] dark:text-white">이어서 학부모 계정을 연결해주세요</h3>
                         <p className="mt-1 text-sm leading-6 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">계정을 연결하면 방금 제출한 신청서를 바로 확인할 수 있습니다. 가입하지 않아도 수강신청은 이미 정상 접수되었습니다.</p>
                         <div className="mt-4 grid gap-2 sm:grid-cols-2">
                             <Link href={signupHref} className="flex min-h-12 items-center justify-center rounded-xl bg-[var(--color-public-accent)] px-4 text-center font-bold text-white hover:bg-[var(--color-public-strong)] dark:bg-brand-neon-lime dark:text-brand-navy-900">처음이에요 · 회원가입</Link>

@@ -5,7 +5,7 @@ import RememberDriverToken from "./RememberDriverToken";
 import { loadUnifiedDriverRun } from "@/lib/shuttle/unifiedDriverRun";
 import UnifiedDriverClient from "./UnifiedDriverClient";
 import AcademyTheme from "@/components/academy/AcademyTheme";
-import { DRIVER_LINK_DISABLED_MESSAGE, isDriverRunLinkEnabled } from "@/lib/shuttle/driverLinkAccess";
+import { DRIVER_LINK_DISABLED_MESSAGE, driverLinkBlocked } from "@/lib/shuttle/driverLinkAccess";
 
 /**
  * 기사님 통합 운행 화면(서버) — /shuttle/run/[token], /shuttle/regular/[token], /driver/[token] 셋이 공유한다.
@@ -70,7 +70,9 @@ function DriverLinkDisabledNotice() {
  */
 export default async function UnifiedDriverRunPage({ token, searchDate, rememberToken = false, focusDirection = null, viaAccount = false }: { token: string; searchDate?: string | null; rememberToken?: boolean; focusDirection?: "PICKUP" | "DROPOFF" | null; viaAccount?: boolean }) {
   // 운행 링크 스위치(서버 판정) — 꺼졌으면 토큰이 맞아도 명단을 읽지 않는다.
-  if (!viaAccount && !(await isDriverRunLinkEnabled())) {
+  // 단, 셔틀 권한이 있는 로그인 사용자는 통과(API 문지기 driverLinkBlocked 와 같은 기준) — 안드로이드 앱의
+  // «로그인만으로 운행 시작»(/staff/run/open → /driver/열쇠)이 스위치를 꺼도 끊기지 않게(2026-11-16 보안 검수 반영).
+  if (!viaAccount && (await driverLinkBlocked())) {
     return <DriverLinkDisabledNotice />;
   }
   // 토큰 검증은 기존 함수 그대로(방학특강 resolveRunToken · 정규 isRegularRunToken).

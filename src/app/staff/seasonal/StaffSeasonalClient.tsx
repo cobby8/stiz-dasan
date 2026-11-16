@@ -6,6 +6,7 @@ import { startClassSession } from "@/app/actions/staff-sessions";
 import { addDaysKst } from "@/lib/datetime/kst";
 import type { StaffTodayClass } from "@/lib/staff-session-queries";
 import { userErrorMessage } from "@/components/staff/userErrorMessage";
+import { askConfirm } from "@/components/ui/feedback";
 
 // 특강 카드 1장 = 홈과 동일한 반 단위 항목(StaffTodayClass).
 // 버그#2 수정: offering별로 쪼개지 않고 반+시간으로 묶인 목록을 그대로 사용한다.
@@ -64,7 +65,7 @@ export default function StaffSeasonalClient({ initial }: { initial: { ymd: strin
       if (!result.ok) {
         if (result.code === "ACTIVE_SESSION" && result.activeSessionId) {
           // 어제 끝내지 못한 수업일 수 있다(2026-11-13 b6) — «○○반(○월 ○일) 수업이 아직 진행 중» 을 먼저 보이고 이동.
-          if (window.confirm(`${result.message}\n\n그 수업 화면으로 이동할까요?`)) {
+          if ((await askConfirm(`${result.message}\n\n그 수업 화면으로 이동할까요?`))) {
             router.push(`/staff/sessions/${result.activeSessionId}`);
           } else {
             setErr(result.message);

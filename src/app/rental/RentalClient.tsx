@@ -60,7 +60,11 @@ function monthTitle(ym: string) {
 const INPUT_CLASS = "mt-1 block min-h-11 w-full rounded-[var(--color-public-radius)] border border-[var(--color-public-line)] bg-[var(--color-public-paper)] px-3 font-normal text-[var(--color-public-ink)]";
 
 // homeHref = 접수 뒤 «홈으로» 주소. 공개 화면은 "/"(기본), 학부모 앱 안은 "/mypage"(앱 범위 밖으로 나가지 않게 — 2026-11-14 c9)
-export default function RentalClient({ homeHref = "/" }: { homeHref?: string } = {}) {
+// memberMode = 학부모 앱 안 «재원생 무료 대관»(2026-11-16 원장 지시) — 무료를 체크칸 없이 바로 적용하고, 외부 손님용 문구(보증금·입금)를 줄인다.
+// initialMember = 서버가 미리 읽은 계정·재원생(앱 화면은 처음부터 재원생 화면으로 그린다). 없으면 예전처럼 화면이 묻는다.
+export default function RentalClient({ homeHref = "/", memberMode = false, initialMember = null }: {
+  homeHref?: string; memberMode?: boolean; initialMember?: RentalMemberContext | null;
+} = {}) {
   // 「오늘」은 손님 기기에서 연 순간에 정한다 — 페이지는 미리 만들어 두는(정적) 화면이라
   // 서버가 만든 시점의 날짜를 쓰면 다음 날 화면이 어제부터 시작한다.
   const today = useSyncExternalStore(noopSubscribe, () => todayKst(), () => "");
@@ -85,15 +89,16 @@ export default function RentalClient({ homeHref = "/" }: { homeHref?: string } =
   const timeButtonRef = useRef<HTMLButtonElement>(null);
   const [headcount, setHeadcount] = useState(6);
   const [useAircon, setUseAircon] = useState(false);
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
+  const [name, setName] = useState(initialMember?.name ?? "");
+  const [phone, setPhone] = useState(initialMember?.phone ? formatRentalPhone(initialMember.phone.replace(/\D/g, "")) : "");
   const [purpose, setPurpose] = useState("");
   // 재원생 무료 — 로그인한 학부모 계정에 연결된 재원생이 있을 때만 체크칸이 보인다. 서버가 계정 연결·재원을 다시 확인한다.
-  const [memberCtx, setMemberCtx] = useState<RentalMemberContext | null>(null);
+  const [memberCtx, setMemberCtx] = useState<RentalMemberContext | null>(initialMember);
   const [memberChecked, setMemberChecked] = useState(false);
   const [pickedStudentId, setPickedStudentId] = useState("");
   const memberStudents = memberCtx?.students ?? [];
-  const memberFree = memberChecked && memberStudents.length > 0;
+  // 재원생 화면(memberMode)은 체크 없이 무료 적용 — 서버가 신청 때 다시 확인한다
+  const memberFree = (memberMode || memberChecked) && memberStudents.length > 0;
   // 학생이 한 명이면 따로 고르지 않는다
   const memberStudentId = memberStudents.length === 1 ? memberStudents[0].id : pickedStudentId;
   // 보증금 환불 계좌(보증금이 있는 신청만)
@@ -126,6 +131,7 @@ export default function RentalClient({ homeHref = "/" }: { homeHref?: string } =
 
   // 로그인 계정·연결 재원생을 한 번 묻는다. 신청자 칸이 비어 있으면 계정 이름·번호로 미리 채운다(수정 가능).
   useEffect(() => {
+    if (initialMember) return; // 서버가 이미 읽어 줬다
     let alive = true;
     getRentalMemberContext()
       .then((ctx) => {
@@ -140,7 +146,7 @@ export default function RentalClient({ homeHref = "/" }: { homeHref?: string } =
     return () => {
       alive = false;
     };
-  }, []);
+  }, [initialMember]);
 
   // 날짜가 바뀌면 그날 가능 시간을 새로 받는다. 늦게 온 옛 응답이 새 날짜를 덮지 않게 막는다.
   useEffect(() => {
@@ -512,7 +518,34 @@ export default function RentalClient({ homeHref = "/" }: { homeHref?: string } =
       </fieldset>
 
       {/* 4. 재원생 무료 — 로그인한 학부모 계정에 연결된 재원생이 있을 때만(없으면 아예 보이지 않는다) */}
-      {memberStudents.length > 0 && (
+      {memberStudents.length > 0 && memberMode && (
+        <fieldset className="min-w-0">
+          <legend className="text-base font-bold text-[var(--color-public-ink)]">재원생</legend>
+          {memberStudents.length === 1 ? (
+            <p className="mt-1 text-sm text-[var(--color-public-ink)]">{memberStudents[0].name} 가족 · 2시간 무료 적용</p>
+          ) : (
+            <>
+              <p className="mt-1 text-sm text-[var(--color-public-muted)]">누구 가족으로 신청할지 골라 주세요. 2시간 무료가 적용돼요.</p>
+              <div className="mt-1 flex flex-wrap gap-1.5" role="group" aria-label="재원생 고르기">
+                {memberStudents.map((student) => (
+                  <button
+                    key={student.id}
+                    type="button"
+                    aria-pressed={pickedStudentId === student.id}
+                    onClick={() => setPickedStudentId(student.id)}
+                    className={`min-h-11 rounded-[var(--color-public-radius)] border px-3 text-sm font-medium ${pickedStudentId === student.id
+                      ? "border-[var(--color-public-secondary-strong)] bg-[var(--color-public-secondary-soft)] text-[var(--color-public-secondary-ink)]"
+                      : "border-[var(--color-public-line)] text-[var(--color-public-ink)]"}`}
+                  >
+                    {student.name}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </fieldset>
+      )}
+      {memberStudents.length > 0 && !memberMode && (
         <fieldset className="min-w-0">
           <label className="flex min-h-11 cursor-pointer items-start gap-2 text-sm break-keep text-[var(--color-public-ink)]">
             <input type="checkbox" checked={memberChecked} onChange={(e) => setMemberChecked(e.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 accent-[var(--color-public-accent)]" />
@@ -555,10 +588,10 @@ export default function RentalClient({ homeHref = "/" }: { homeHref?: string } =
           </dl>
           <div className="mt-2 flex items-baseline justify-between gap-3 border-t border-[var(--color-public-line)] pt-2">
             <span className="font-semibold text-[var(--color-public-ink)]">입금할 금액</span>
-            <span className="text-xl font-bold tabular-nums text-[var(--color-public-ink)]">{formatWon(fee.total)}</span>
+            <span className="text-xl font-bold tabular-nums text-[var(--color-public-ink)]">{memberFree && fee.total === 0 ? "없음(무료)" : formatWon(fee.total)}</span>
           </div>
           {!timeChosen && <p className="mt-1 text-xs text-[var(--color-public-muted)]">시간을 고르면 그 시간 기준으로 확정됩니다.</p>}
-          {memberFree && <p className="mt-1 text-xs text-[var(--color-public-muted)]">재원생 무료는 서버 확인 후 확정돼요.</p>}
+          {memberFree && !memberMode && <p className="mt-1 text-xs text-[var(--color-public-muted)]">재원생 무료는 서버 확인 후 확정돼요.</p>}
         </div>
       )}
 
@@ -573,7 +606,7 @@ export default function RentalClient({ homeHref = "/" }: { homeHref?: string } =
               onChange={(e) => setName(e.target.value)}
               maxLength={40}
               autoComplete="name"
-              placeholder="입금자명과 같게"
+              placeholder={memberMode ? "보호자 이름" : "입금자명과 같게"}
               className={INPUT_CLASS}
             />
           </label>
@@ -669,9 +702,13 @@ export default function RentalClient({ homeHref = "/" }: { homeHref?: string } =
 
       {/* 화면의 주인공 버튼은 이것 하나 */}
       <button type="submit" disabled={pending} className="public-btn-primary w-full text-base">
-        {pending ? "신청하는 중…" : fee && timeChosen ? `대관 신청하기 · ${formatWon(fee.total)}` : "대관 신청하기"}
+        {pending ? "신청하는 중…" : fee && timeChosen ? `대관 신청하기 · ${memberFree && fee.total === 0 ? "무료" : formatWon(fee.total)}` : "대관 신청하기"}
       </button>
-      <p className="-mt-3 text-center text-xs text-[var(--color-public-muted)]">지금은 신청만 접수돼요. 결제는 원장님 승인 후 계좌이체로 합니다.</p>
+      <p className="-mt-3 text-center text-xs text-[var(--color-public-muted)]">
+        {memberFree && (fee?.total ?? 0) === 0
+          ? "원장님이 승인하면 바로 확정돼요. 확정 문자를 보내 드려요."
+          : "지금은 신청만 접수돼요. 결제는 원장님 승인 후 계좌이체로 합니다."}
+      </p>
     </form>
   );
 }

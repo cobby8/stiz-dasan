@@ -118,6 +118,7 @@ function renderAdminChange(props) {
   const React = nodeRequire("react");
   const { renderToStaticMarkup } = nodeRequire("react-dom/server");
   const Client = load("src/app/admin/enrollment-changes/EnrollmentChangesClient.tsx", {
+    "@/components/ui/feedback": { askConfirm: async () => false, showNotice: async () => {}, showCopyText: async () => {} }, // 2026-11-16 화면 안 알림·확인창
     "next/navigation": { useRouter: () => ({ refresh() {} }) },
     "@/app/actions/enrollment-changes": {},
     "@/lib/enrollment/changeRequestRules": rules,

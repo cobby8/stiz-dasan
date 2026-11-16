@@ -14,6 +14,7 @@ import {
     type TrialFeeAdminState,
 } from "@/app/actions/trial-fee";
 import { adminErrorText } from "@/components/admin/adminDisplayText";
+import { askConfirm } from "@/components/ui/feedback";
 
 // 입력칸 = 테마 공용 입력칸(academy-input) — 2026-11-13 UI 통일
 const INPUT = "academy-input";
@@ -73,7 +74,7 @@ export default function TrialFeeGuideSettings() {
     async function saveAutomation() {
         if (savingAutomation) return;
         const summary = `체험비 결제 확인 ${automation.trial ? "켜기" : "끄기"}\n등록 완료 안내 ${automation.enroll ? "켜기" : "끄기"}`;
-        if (!window.confirm(`자동 발송 설정을 저장할까요?\n\n${summary}\n\n저장 후 발생하는 결제와 신규 등록부터 적용됩니다.`)) return;
+        if (!(await askConfirm(`자동 발송 설정을 저장할까요?\n\n${summary}\n\n저장 후 발생하는 결제와 신규 등록부터 적용됩니다.`))) return;
         setSavingAutomation(true);
         setAutomationMessage(null);
         try {

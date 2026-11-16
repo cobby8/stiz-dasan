@@ -21,6 +21,7 @@ import { groupByUpcomingDate, type UpcomingDateGroupKey } from "@/components/adm
 import { kstLabel, toKstYmd, todayKst } from "@/lib/datetime/kst";
 // 잔여석 표시/판정은 서버(queries.ts)와 같은 계산식을 쓴다 — 화면만 낙관 표시하는 사고 방지
 import { formatSeatLabel, isMakeupSlotFull } from "@/lib/makeup/capacity";
+import { askConfirm, showNotice } from "@/components/ui/feedback";
 
 // ── 타입 정의 ──────────────────────────────────────────────────────────────
 type MakeupItem = {
@@ -288,7 +289,7 @@ export default function MakeupClient({
             await updateMakeupStatus(id, newStatus);
             await loadMakeupData();
         } catch (e: any) {
-            alert(adminErrorText(e, "상태 변경 실패"));
+            showNotice(adminErrorText(e, "상태 변경 실패"));
         } finally {
             setBusy(false);
         }
@@ -297,13 +298,13 @@ export default function MakeupClient({
     // 보강 취소 핸들러
     async function handleCancel(id: string) {
         if (busy) return;
-        if (!confirm("이 보강 예약을 취소하시겠습니까?")) return;
+        if (!(await askConfirm("이 보강 예약을 취소하시겠습니까?"))) return;
         setBusy(true);
         try {
             await cancelMakeupSession(id);
             await loadMakeupData();
         } catch (e: any) {
-            alert(adminErrorText(e, "취소 실패"));
+            showNotice(adminErrorText(e, "취소 실패"));
         } finally {
             setBusy(false);
         }
@@ -644,7 +645,7 @@ function BookMakeupModal({
     // 다음 단계로 이동
     function goToStep2() {
         if (!studentId || !originalClassId || !originalDate) {
-            alert("원생, 원래 반, 결석일을 모두 선택해주세요");
+            showNotice("원생, 원래 반, 결석일을 모두 선택해주세요");
             return;
         }
         setStep(2); // 슬롯/잔여석은 위 useEffect가 채운다
@@ -653,13 +654,13 @@ function BookMakeupModal({
     // 예약 실행
     async function handleBook() {
         if (!makeupClassId || !makeupDate) {
-            alert("보강 반과 보강일을 선택해주세요");
+            showNotice("보강 반과 보강일을 선택해주세요");
             return;
         }
         // 마감된 반은 화면에서도 막는다(최종 판단은 서버가 다시 한다).
         const picked = availableSlots.find((s) => s.id === makeupClassId);
         if (seatsLoaded && picked && isMakeupSlotFull(picked)) {
-            alert("이미 정원이 찼습니다. 다른 날짜나 반을 선택해 주세요.");
+            showNotice("이미 정원이 찼습니다. 다른 날짜나 반을 선택해 주세요.");
             return;
         }
         setBusy(true);
@@ -673,7 +674,7 @@ function BookMakeupModal({
             });
             await onSuccess();
         } catch (e: any) {
-            alert(adminErrorText(e, "보강 예약 실패"));
+            showNotice(adminErrorText(e, "보강 예약 실패"));
         } finally {
             setBusy(false);
         }

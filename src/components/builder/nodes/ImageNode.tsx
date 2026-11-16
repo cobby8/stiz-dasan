@@ -6,6 +6,7 @@ import { Resizable } from "re-resizable";
 import ReactCrop, { Crop } from "react-image-crop";
 import "react-image-crop/dist/ReactCrop.css";
 import { compressImageForUpload } from "@/lib/clientImageCompression";
+import { showNotice } from "@/components/ui/feedback";
 
 function SymbolIcon({
     name,
@@ -139,7 +140,7 @@ export const ImageNode = ({
             }
         } catch (error) {
             console.error("Upload failed", error);
-            alert(error instanceof Error ? error.message : "이미지 업로드에 실패했습니다.");
+            showNotice(error instanceof Error ? error.message : "이미지 업로드에 실패했습니다.");
         }
     };
 
@@ -186,7 +187,7 @@ export const ImageNode = ({
                 }
             } catch (error) {
                 console.error("Upload failed", error);
-                alert(error instanceof Error ? error.message : "이미지 업로드에 실패했습니다.");
+                showNotice(error instanceof Error ? error.message : "이미지 업로드에 실패했습니다.");
             }
             setCustom((custom: any) => custom.isCropModalOpen = false);
         }, "image/jpeg", 0.82);

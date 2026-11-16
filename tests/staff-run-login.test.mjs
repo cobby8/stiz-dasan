@@ -13,6 +13,9 @@ import { loadTsModule } from "./_ts-module.mjs";
 
 const finderSource = fs.readFileSync("src/lib/shuttle/regularRun.ts", "utf8");
 const runPage = fs.readFileSync("src/app/staff/run/page.tsx", "utf8");
+// 안드로이드 앱 «로그인만으로 운행 시작» 길(2026-11-16) — 같은 권한 확인 뒤 운행 링크 화면으로 보낸다
+const runOpenPage = fs.readFileSync("src/app/staff/run/open/page.tsx", "utf8");
+const sessionRules = await loadTsModule("src/lib/staff-session-rules.ts");
 const shuttlePage = fs.readFileSync("src/app/staff/shuttle/page.tsx", "utf8");
 const driverHome = fs.readFileSync("src/app/driver/DriverHomeClient.tsx", "utf8");
 const routes = await loadTsModule("src/lib/auth-routes.ts");
@@ -27,11 +30,11 @@ function walk(dir, out = []) {
   return out;
 }
 
-test("열쇠를 돌려주는 함수는 권한을 확인한 운행표 화면 한 곳에서만 불린다", () => {
+test("열쇠를 돌려주는 함수는 권한을 확인한 운행표 화면 두 곳에서만 불린다", () => {
   const callers = walk("src")
     .filter((file) => !file.endsWith("src/lib/shuttle/regularRun.ts"))
     .filter((file) => /findRollingDriverRunToken/.test(fs.readFileSync(file, "utf8")));
-  assert.deepEqual(callers, ["src/app/staff/run/page.tsx"], `열쇠 함수를 부르는 곳이 늘었다: ${callers.join(", ")}`);
+  assert.deepEqual(callers.sort(), ["src/app/staff/run/open/page.tsx", "src/app/staff/run/page.tsx"], `열쇠 함수를 부르는 곳이 늘었다: ${callers.join(", ")}`);
 });
 
 test("운행표 화면은 셔틀 권한을 먼저 확인한 뒤에야 열쇠를 찾는다", () => {
@@ -44,6 +47,28 @@ test("운행표 화면은 셔틀 권한을 먼저 확인한 뒤에야 열쇠를 
   assert.match(runPage, /export const dynamic = "force-dynamic"/);
   // 날짜 입력은 서버에서 검증한 뒤에만(기존 /driver/[token] 과 같게).
   assert.match(runPage, /isValidRunDate\(sp\.date\)/);
+});
+
+test("앱 길(/staff/run/open)도 인증 → 셔틀 권한 → 열쇠 순서이고, 운행 링크 화면으로만 보낸다", () => {
+  const guardAt = runOpenPage.indexOf("const staff = await requireStaff();");
+  const scopeAt = runOpenPage.indexOf('if (shuttleScope(staff.roles) === "NONE") redirect("/staff");');
+  const tokenAt = runOpenPage.indexOf("await findRollingDriverRunToken()");
+  assert.ok(guardAt > 0 && scopeAt > guardAt && tokenAt > scopeAt, "인증 → 셔틀 권한 → 열쇠 순서여야 한다");
+  assert.match(runOpenPage, /export const dynamic = "force-dynamic"/);
+  assert.match(runOpenPage, /redirect\(`\/driver\/\$\{token\}`\)/);
+  // 열쇠를 화면에 그리지 않는다(서버 이동만)
+  assert.doesNotMatch(runOpenPage, /return \(/);
+});
+
+test("기사님 운행 화면 주소: 안드로이드 스토어 앱만 앱 길, 브라우저·아이폰은 기존 운행표", () => {
+  const android = "Mozilla/5.0 (Linux; Android 15) STIZApp/1.0.3 (android)";
+  assert.equal(sessionRules.driverRunPathFor(true, android), "/staff/run/open");
+  assert.equal(sessionRules.driverRunPathFor(false, android), "/staff/run");
+  assert.equal(sessionRules.driverRunPathFor(true, "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)"), "/staff/run");
+  assert.equal(sessionRules.driverRunPathFor(false, null), "/staff/run");
+  // 앱 길은 막힌 주소(/staff/run 정확히)와 달라야 한다 — 앱 AppNavigationPolicy.needsAccountRunHandoff
+  assert.notEqual(sessionRules.DRIVER_APP_RUN_PATH, "/staff/run");
+  assert.notEqual(sessionRules.DRIVER_APP_RUN_PATH, "/staff/run/");
 });
 
 test("열쇠 함수는 찾기만 하고 만들지 않으며, 형식이 맞는 열쇠만 돌려준다", () => {
@@ -81,7 +106,8 @@ test("운행표로 가는 길이 두 곳에 있다", () => {
   assert.match(shuttlePage, /<UnifiedDriverClient/);
   assert.doesNotMatch(shuttlePage, /findRollingDriverRunToken/);
   // 2026-11-13 b7: 이 운행표(계정용)엔 위치 전송이 없다 → 맨 위에 «운행 시작(위치 전송)» 진입 버튼으로 /staff/run 을 연다.
-  assert.match(shuttlePage, /href="\/staff\/run"[\s\S]*?운행 시작 \(위치 전송\)/);
+  // 2026-11-16: 기사님 첫 화면을 거쳐 간다(안드로이드 앱은 위치 공유 되는 운행 링크 화면, 브라우저는 /staff/run).
+  assert.match(shuttlePage, /href="\/staff\/driver"[\s\S]*?운행 시작 \(위치 전송\)/);
   // 기사님 앱 첫 화면(링크를 기억 못 한 경우) — 로그인 후 운행표로 돌아오게.
   assert.match(driverHome, /redirect: "\/staff\/shuttle"/);
 });

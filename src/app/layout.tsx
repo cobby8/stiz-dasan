@@ -14,6 +14,7 @@ import StandaloneBackButton from "@/components/StandaloneBackButton";
 import OutsideLinkListener from "@/components/storeApp/OutsideLinkListener";
 import NativePushRegistrar from "@/components/push/NativePushRegistrar";
 import AppUpdateBanner from "@/components/storeApp/AppUpdateBanner";
+import FeedbackHost from "@/components/ui/feedback";
 
 export const metadata: Metadata = {
     ...buildPublicMetadata({
@@ -101,6 +102,8 @@ export default async function RootLayout({
                     {/* 스토어 앱 업데이트 안내: 앱 안에서만 최신 버전을 물어보고 맨 위 한 줄을 띄운다(서버 조회 없음 — 브라우저에는 아무것도 안 한다) */}
                     <AppUpdateBanner />
                     {children}
+                    {/* 화면 안 알림·확인창(브라우저 기본 alert/confirm 대신) — 다른 내용 뒤에 둬 그 위에 뜨게 */}
+                    <FeedbackHost />
                 </ThemeProvider>
             </body>
         </html>

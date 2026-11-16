@@ -30,7 +30,7 @@ export default async function TrialFeePayPage({
         <PublicPageLayout>
             <section className="public-content-section bg-[var(--color-public-tint)] py-6 md:py-10">
                 <div className="mx-auto max-w-md space-y-3 px-4">
-                    <h1 className="text-2xl font-black text-[var(--color-public-ink)]">체험수업비 결제</h1>
+                    <h1 className="text-2xl font-[700] text-[var(--color-public-ink)]">체험수업비 결제</h1>
                     {data.state === "NOT_FOUND" ? (
                         <div className="rounded-2xl border border-[var(--color-public-line)] bg-[var(--color-public-paper)] p-5 text-sm text-[var(--color-public-ink)]">
                             <p className="font-bold">결제 링크를 찾을 수 없어요.</p>

@@ -2,6 +2,7 @@
 import { adminMessageText } from "@/components/admin/adminDisplayText";
 
 import { useRef, useState } from "react";
+import { askConfirm } from "@/components/ui/feedback";
 
 // 행 모양(2026-11-13 UI 통일): 이모지 없이 글자만, 옆 메뉴와 같은 44px 행.
 const ROW_IDLE = "text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)]";
@@ -24,7 +25,7 @@ export default function AdminBackupButtons({ sheetRetired = false }: { sheetReti
         const file = e.target.files?.[0];
         if (!file) return;
 
-        if (!confirm(`"${file.name}" 파일로 복원하시겠습니까?`)) {
+        if (!(await askConfirm(`"${file.name}" 파일로 복원하시겠습니까?`))) {
             e.target.value = "";
             return;
         }
@@ -52,7 +53,7 @@ export default function AdminBackupButtons({ sheetRetired = false }: { sheetReti
     }
 
     async function handleCloudRestore() {
-        if (!confirm("가장 최근 자동 백업으로 복원하시겠습니까?")) return;
+        if (!(await askConfirm("가장 최근 자동 백업으로 복원하시겠습니까?"))) return;
 
         setBusy(true);
         setMsg(null);
@@ -83,7 +84,9 @@ export default function AdminBackupButtons({ sheetRetired = false }: { sheetReti
     }
 
     async function handleBackupNow() {
-        if (backupInFlight.current || !confirm("학원 설정과 학생·수강·출결·청구·결제 등 업무 자료 전체를 클라우드에 백업하시겠습니까? 복원은 설정만 되고, 업무 자료는 보관용입니다.")) return;
+        if (backupInFlight.current || !(await askConfirm("학원 설정과 학생·수강·출결·청구·결제 등 업무 자료 전체를 클라우드에 백업하시겠습니까? 복원은 설정만 되고, 업무 자료는 보관용입니다."))) return;
+        // 확인창을 기다리는 사이 다른 클릭이 먼저 백업을 시작했으면 두 번 보내지 않는다
+        if (backupInFlight.current) return;
 
         backupInFlight.current = true;
         setBusy(true);
@@ -217,13 +220,7 @@ export default function AdminBackupButtons({ sheetRetired = false }: { sheetReti
             >
                 <span>전체 백업 지금 저장</span>
             </button>
-            <a
-                href="/api/admin/export-seed"
-                download="seed-data.ts"
-                className={`flex w-full min-h-11 items-center gap-3 rounded-lg px-4 py-2 text-sm transition-colors ${ROW_IDLE}`}
-            >
-                <span>seed 내보내기</span>
-            </a>
+            <p className="px-4 text-xs text-[var(--color-academy-faint)]">프로그램·수업 칸 설정·이용약관(seed)은 매일 자동 저장됩니다 — 따로 내보낼 필요가 없습니다.</p>
             <p className="px-4 text-xs text-[var(--color-academy-faint)]">설정 + 학생·출결·청구·결제 등 업무 자료(별도 압축 파일) 백업 · 복원은 설정만(업무 자료는 보관용)</p>
             {msg && <p role="status" className={`break-all px-4 py-1 text-xs ${ok ? "text-[var(--color-academy-success)]" : "text-[var(--color-academy-warning)]"}`}>{msg}</p>}
         </div>

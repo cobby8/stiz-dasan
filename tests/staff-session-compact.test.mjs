@@ -121,7 +121,7 @@ test("«오늘 수업 내용»·«수업 피드» 두 칸이 «오늘 수업» �
 
 test("수업 계획 불러오기: 한 줄 칸에 채우기만 한다(저장 흐름은 그대로)", () => {
   const fn = client.slice(client.indexOf("function loadPlanIntoLine"), client.indexOf("function loadPlanIntoLine") + 500);
-  assert.match(fn, /if \(report\.trim\(\) && !window\.confirm\(/, "쓴 글이 있으면 덮어쓰기 전에 묻는다");
+  assert.match(fn, /if \(report\.trim\(\) && !\(await askConfirm\(/, "쓴 글이 있으면 덮어쓰기 전에 묻는다");
   assert.match(fn, /setReport\(Array\.from\(planText\)\.slice\(0, FEED_LINE_MAX\)\.join\(""\)\)/);
   assert.doesNotMatch(fn, /saveSessionFeedLine|completeClassSession/);
   // 2026-11-15 접이식 구조와 병합: 불러온 글은 «채운 그대로»로 표시해 두어, 고치지 않고 종료하려 하면 종료 창에서 알린다

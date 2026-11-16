@@ -156,7 +156,7 @@ export const ContainerNode = ({
                     className={`relative overflow-hidden ${selected ? 'bg-orange-50/10' : ''}`}
                 >
                     {selected && (
-                        <div className="absolute top-0 right-0 bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white text-[10px] px-1 py-0.5 z-10 font-bold">Container</div>
+                        <div className="absolute top-0 right-0 bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white text-xs px-1 py-0.5 z-10 font-bold">Container</div>
                     )}
                     {children}
                 </div>

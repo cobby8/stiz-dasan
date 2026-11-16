@@ -577,7 +577,7 @@ export async function ensureInvoicesForMonth(
         JOIN "Student" s ON s.id = p."studentId"
         WHERE (
             (p.year = $1 AND p.month = $2)
-            OR (p."dueDate" >= $3::timestamp AND p."dueDate" < $4::timestamp)
+            OR ((p.year IS NULL OR p.month IS NULL) AND p."dueDate" >= $3::timestamp AND p."dueDate" < $4::timestamp) -- 청구 월 우선(billing-month-sql.ts)
         )
         AND ($5::text[] IS NULL OR p.id = ANY($5::text[]))
         ON CONFLICT ("paymentId") DO UPDATE SET
@@ -614,7 +614,7 @@ export async function ensureInvoicesForMonth(
         WHERE i."paymentId" = p.id
           AND (
             (p.year = $1 AND p.month = $2)
-            OR (p."dueDate" >= $3::timestamp AND p."dueDate" < $4::timestamp)
+            OR ((p.year IS NULL OR p.month IS NULL) AND p."dueDate" >= $3::timestamp AND p."dueDate" < $4::timestamp) -- 청구 월 우선(billing-month-sql.ts)
           )
           AND ($5::text[] IS NULL OR p.id = ANY($5::text[]))
         `,
@@ -632,7 +632,7 @@ export async function ensureInvoicesForMonth(
         JOIN "Payment" p ON p.id = i."paymentId"
         WHERE (
             (p.year = $1 AND p.month = $2)
-            OR (p."dueDate" >= $3::timestamp AND p."dueDate" < $4::timestamp)
+            OR ((p.year IS NULL OR p.month IS NULL) AND p."dueDate" >= $3::timestamp AND p."dueDate" < $4::timestamp) -- 청구 월 우선(billing-month-sql.ts)
         )
         AND ($5::text[] IS NULL OR p.id = ANY($5::text[]))
         `,

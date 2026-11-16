@@ -14,19 +14,45 @@ const KIND_LABELS: Record<string, string> = { CLASS_ADD: "반 추가", CLASS_CHA
 
 export default async function RegistrationReadinessPage() {
   await requireAdmin();
-  const applications = await prisma.enrollmentApplication.findMany({
-    where: { status: "APPROVED" }, orderBy: { processedAt: "desc" }, take: 100,
-    select: { id: true, status: true, childName: true, convertedStudentId: true, assignedClassId: true, shuttleNeeded: true, requestedStartOn: true },
-  });
+  // PgBouncer 트랜잭션 모드라 ORM 기본 메서드(findMany 등) 대신 $queryRawUnsafe 로 읽는다(프로젝트 규칙).
+  // 결과 모양(필드명·타입)은 예전 findMany 의 select 와 똑같이 맞춘다 — 날짜 칸은 Date, afterJson 은 객체로 온다.
+  const applications = await prisma.$queryRawUnsafe<Array<{ id: string; status: string; childName: string; convertedStudentId: string | null; assignedClassId: string | null; shuttleNeeded: boolean; requestedStartOn: Date | null }>>(
+    `SELECT id, status, "childName", "convertedStudentId", "assignedClassId", "shuttleNeeded", "requestedStartOn"
+       FROM "EnrollmentApplication"
+      WHERE status = 'APPROVED'
+      ORDER BY "processedAt" DESC
+      LIMIT 100`,
+  );
   const shuttleProgress = await getEnrollmentShuttleProgress(applications);
   const studentIds = [...new Set(applications.flatMap((app) => app.convertedStudentId ? [app.convertedStudentId] : []))];
-  const [enrollments, commands, invoices] = await Promise.all([
-    prisma.enrollment.findMany({ where: { studentId: { in: studentIds }, status: "ACTIVE" }, select: { studentId: true, classId: true, startsOn: true } }),
-    prisma.operationsCommand.findMany({ where: { studentId: { in: studentIds }, kind: { in: ["CLASS_ADD", "RESUME"] } },
-      select: { id: true, studentId: true, kind: true, status: true, effectiveMonth: true, createdAt: true, afterJson: true,
-        syncAttempts: { select: { target: true, status: true, verifiedAt: true } } } }),
-    prisma.paymentInvoice.findMany({ where: { studentId: { in: studentIds }, canceledAt: null, status: { in: ["ISSUED", "SENT", "OVERDUE", "PAID"] }, amount: { gt: 0 } }, select: { studentId: true } }),
+  const [enrollments, commandRows, invoices] = await Promise.all([
+    prisma.$queryRawUnsafe<Array<{ studentId: string; classId: string; startsOn: Date | null }>>(
+      `SELECT "studentId", "classId", "startsOn" FROM "Enrollment" WHERE "studentId" = ANY($1::text[]) AND status = 'ACTIVE'`,
+      studentIds,
+    ),
+    prisma.$queryRawUnsafe<Array<{ id: string; studentId: string | null; kind: string; status: string; effectiveMonth: string; createdAt: Date; afterJson: unknown }>>(
+      `SELECT id, "studentId", kind, status, "effectiveMonth", "createdAt", "afterJson"
+         FROM "OperationsCommand"
+        WHERE "studentId" = ANY($1::text[]) AND kind IN ('CLASS_ADD', 'RESUME')`,
+      studentIds,
+    ),
+    prisma.$queryRawUnsafe<Array<{ studentId: string }>>(
+      `SELECT "studentId" FROM "PaymentInvoice"
+        WHERE "studentId" = ANY($1::text[]) AND "canceledAt" IS NULL
+          AND status IN ('ISSUED', 'SENT', 'OVERDUE', 'PAID') AND amount > 0`,
+      studentIds,
+    ),
   ]);
+  // 예전 select 의 syncAttempts(관계 묶음)를 대신한다 — 명령 번호로 재조회 기록을 한 번에 읽어 각 명령에 붙인다.
+  const attemptRows = commandRows.length === 0 ? [] : await prisma.$queryRawUnsafe<Array<{ commandId: string; target: string; status: string; verifiedAt: Date | null }>>(
+    `SELECT "commandId", target, status, "verifiedAt" FROM "OperationsSyncAttempt" WHERE "commandId" = ANY($1::text[])`,
+    commandRows.map((row) => row.id),
+  );
+  const commands = commandRows.map((row) => ({
+    ...row,
+    syncAttempts: attemptRows.filter((attempt) => attempt.commandId === row.id)
+      .map(({ target, status, verifiedAt }) => ({ target, status, verifiedAt })),
+  }));
   // 랠리즈 은퇴(2026-11-14 원장 결정) — 기본 은퇴. 은퇴 뒤에는 랠리즈 등록·재조회·보호자 초대 항목을 그리지 않는다.
   // (STIZ_RALLYZ_SYNC_RETIRED 가 "0" 일 때만 옛 화면. 출처가 «랠리즈»인 과거 기록 표시는 그대로 둔다.)
   const rallyzRetired = isRallyzSyncRetired(process.env);

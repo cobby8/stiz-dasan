@@ -6,6 +6,7 @@ import { SESSION_IMAGE_ALLOWED_TYPES } from "@/lib/clientImageCompression";
 import { uploadImagesWithProgress } from "@/lib/clientImageUpload";
 import { userErrorMessage } from "@/components/staff/userErrorMessage";
 import { fetchWithTimeout } from "@/components/staff/fetchWithTimeout";
+import { askConfirm } from "@/components/ui/feedback";
 
 type ManagedPhoto = {
   id: string;
@@ -144,7 +145,7 @@ export function SessionPhotoUploader({
   }
 
   async function deletePhoto(photo: ManagedPhoto, confirmed = false) {
-    if (busy || (!confirmed && !window.confirm("이 사진을 지울까요? 학부모 소식에서도 사라집니다."))) return;
+    if (busy || (!confirmed && !(await askConfirm("이 사진을 지울까요? 학부모 소식에서도 사라집니다.")))) return;
     setBusy(true);
     setRetryDelete(null);
     try {

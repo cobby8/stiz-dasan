@@ -15,6 +15,7 @@ import { createNotificationRecord, sendTrackedSms } from "@/lib/notification";
 import { postMessage } from "@/lib/slack/client";
 import {
   buildRentalAdminAlert,
+  buildRentalAppNotice,
   buildRentalApplicantMessage,
   buildRentalReceivedApplicantSms,
   rentalAdminSmsWindowKey,
@@ -187,6 +188,27 @@ export async function loadRentalApplicantSmsSwitches(): Promise<Record<"approved
     };
   } catch {
     return off;
+  }
+}
+
+/**
+ * 로그인해서 신청한 학부모(applicantUserId)에게 앱 종 알림 + 푸시(2026-11-16 원장 지시).
+ * 문자 스위치와 상관없이 보낸다 — 앱 안에서 신청한 사람이 앱에서 결과를 알게. 외부 손님(계정 없음)은 건너뛴다.
+ * 실패해도 상태 변경·문자는 그대로(안에서 삼킨다).
+ */
+export async function sendRentalApplicantAppNotice(
+  kind: "approved" | "rejected" | "confirmed",
+  request: RentalRow & { status?: string | null; applicantUserId?: string | null },
+): Promise<boolean> {
+  if (!request.applicantUserId) return false;
+  try {
+    const { title, message } = buildRentalAppNotice(kind, request);
+    const { createNotificationRecord } = await import("@/lib/notification");
+    await createNotificationRecord({ userId: request.applicantUserId, type: "GYM_RENTAL", title, message, linkUrl: "/mypage/rental" });
+    return true;
+  } catch (error) {
+    console.error("[gym-rental] applicant app notice failed:", (error as Error).message);
+    return false;
   }
 }
 

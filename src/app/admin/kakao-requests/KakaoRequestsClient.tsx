@@ -17,6 +17,7 @@ import { formatKstDate, kstLabel } from "@/lib/datetime/kst";
 // 정규 셔틀 신청 → 원장 할 일 «셔틀 명단에 넣어 주세요»(셔틀 명단 화면과 같은 판정·같은 완료 함수)
 import { isShuttleRosterTask, shuttleRosterTaskDoneAt, shuttleRosterTaskHref, shuttleRosterTaskSummary } from "@/lib/kakaoShuttleRosterTask";
 import { completeKakaoShuttleRosterTask } from "@/app/actions/kakao-shuttle-roster-task";
+import { askConfirm } from "@/components/ui/feedback";
 
 export type KakaoRequestAdminRow = {
   revision: string;
@@ -108,15 +109,15 @@ export default function KakaoRequestsClient({ rows, classes, status, schemaReady
   function captureRevision(row: KakaoRequestAdminRow) {
     setEditRevisions(current => ({ ...current, [row.id]: current[row.id] ?? row.revision }));
   }
-  function reloadRows() {
-    if (Object.keys(editRevisions).length && !window.confirm("입력 중인 검토 내용을 버리고 최신 목록을 불러올까요?")) return;
+  async function reloadRows() {
+    if (Object.keys(editRevisions).length && !(await askConfirm("입력 중인 검토 내용을 버리고 최신 목록을 불러올까요?"))) return;
     setNotes({}); setReviewDetails({}); setEditRevisions({}); setError(""); refresh();
   }
   const [error, setError] = useState("");
   const [notice, setNotice] = useState<Awaited<ReturnType<typeof prepareKakaoReconfirmationNotice>> | null>(null);
   const [noticeResult, setNoticeResult] = useState("");
-  function sendNotice() {
-    if (!notice || !window.confirm(`SMS 문자 1건\n${notice.studentName} 보호자 ${notice.maskedRecipient}\n표시된 문구 그대로 발송할까요?`)) return;
+  async function sendNotice() {
+    if (!notice || !(await askConfirm(`SMS 문자 1건\n${notice.studentName} 보호자 ${notice.maskedRecipient}\n표시된 문구 그대로 발송할까요?`))) return;
     startTransition(async () => {
       try {
         const result = await sendKakaoReconfirmationNotice({ approvalId: notice.approvalId, intakeId: notice.intakeId, url: notice.url, channel: "SMS", approved: true });
@@ -153,8 +154,8 @@ export default function KakaoRequestsClient({ rows, classes, status, schemaReady
     });
   }
   // «셔틀 명단에 넣어 주세요» 할 일 완료 표시 — 명단은 바꾸지 않고, 학부모에게 보내지도 않는다.
-  function completeRosterTask(id: string, studentName: string | null) {
-    if (!window.confirm(`${studentName ?? "학생"} 정규 셔틀 신청을 «셔틀 명단 반영 완료»로 표시할까요?\n셔틀 명단 화면에서 학생을 넣은 뒤 눌러 주세요. 학부모에게 문자는 보내지 않습니다.`)) return;
+  async function completeRosterTask(id: string, studentName: string | null) {
+    if (!(await askConfirm(`${studentName ?? "학생"} 정규 셔틀 신청을 «셔틀 명단 반영 완료»로 표시할까요?\n셔틀 명단 화면에서 학생을 넣은 뒤 눌러 주세요. 학부모에게 문자는 보내지 않습니다.`))) return;
     setError("");
     startTransition(async () => {
       try {

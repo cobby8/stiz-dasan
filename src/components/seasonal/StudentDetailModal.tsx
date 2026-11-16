@@ -4,6 +4,7 @@ import { publicErrorText } from "@/components/ui/public-error-text";
 import { useCallback, useEffect, useState } from "react";
 import type { StudentDetail } from "@/lib/seasonal/student-detail";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
+import { askConfirm } from "@/components/ui/feedback";
 
 // 방학특강 수강생 상세 — 여러 화면에서 공통으로 쓰는 모달.
 // applicationId만 주면 서버에서 학생·보호자·수강 수업·셔틀 정보를 불러와 정리해 보여준다.
@@ -82,7 +83,7 @@ export default function StudentDetailModal({ applicationId, onClose, save, onCha
   // 셔틀 이용/미이용 토글(배정 취소·복원). ride=false면 그 학생은 배차에서 빠진다.
   async function saveRide(ride: boolean) {
     if (!save || savingPin) return;
-    if (!ride && typeof window !== "undefined" && !window.confirm("이 학생을 셔틀 미이용으로 바꿀까요? 배차 명단에서 빠집니다.")) return;
+    if (!ride && typeof window !== "undefined" && !(await askConfirm("이 학생을 셔틀 미이용으로 바꿀까요? 배차 명단에서 빠집니다."))) return;
     setSavingPin(true); setErr(null);
     try {
       const target = save.rosterId ? { rosterId: save.rosterId } : { requestId: save.requestId };
@@ -99,7 +100,7 @@ export default function StudentDetailModal({ applicationId, onClose, save, onCha
   // 무료 거점으로 직접 배치(관리자). 서버가 거점 좌표·라벨·셔틀비(청구 전 0원)를 한 번에 처리한다.
   async function placeAtHub() {
     if (!save || savingPin) return;
-    if (typeof window !== "undefined" && !window.confirm("이 학생을 무료 탑승 거점(1호점)으로 배치할까요?\n탑승·하차가 거점으로 바뀌고, 청구 전이면 셔틀비가 0원이 됩니다.")) return;
+    if (typeof window !== "undefined" && !(await askConfirm("이 학생을 무료 탑승 거점(1호점)으로 배치할까요?\n탑승·하차가 거점으로 바뀌고, 청구 전이면 셔틀비가 0원이 됩니다."))) return;
     setSavingPin(true); setErr(null);
     try {
       const target = save.rosterId ? { rosterId: save.rosterId } : { requestId: save.requestId };

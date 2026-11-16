@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createAnnualEvent, updateAnnualEvent, deleteAnnualEvent, updateAcademySettings } from "@/app/actions/admin";
 import AdminQuickActionMenu from "@/components/admin/AdminQuickActionMenu";
 import { useAdminConfirm } from "@/components/admin/AdminConfirmDialog";
+import { showNotice } from "@/components/ui/feedback";
 
 type AnnualEvent = {
     id: string;
@@ -196,7 +197,7 @@ export default function AnnualAdminClient({
             resetForm();
             await loadAnnual();
         } catch (err: unknown) {
-            alert(getErrorMessage(err, "저장 실패"));
+            showNotice(getErrorMessage(err, "저장 실패"));
         } finally {
             setBusy(false);
         }
@@ -208,7 +209,7 @@ export default function AnnualAdminClient({
             await deleteAnnualEvent(id);
             await loadAnnual();
         } catch (err: unknown) {
-            alert(getErrorMessage(err, "삭제 실패"));
+            showNotice(getErrorMessage(err, "삭제 실패"));
         } finally {
             setBusy(false);
         }
