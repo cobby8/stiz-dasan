@@ -61,7 +61,7 @@ test("수업 중 교사용 로고도 메모 저장 확인 뒤 홈으로 이동�
 test("시스템 뒤로가기도 수업 기록 저장 성공 뒤에만 허용한다", () => {
   assert.match(sessionSource, /history\.pushState\(/);
   assert.match(sessionSource, /addEventListener\("popstate"/);
-  assert.match(sessionSource, /window\.confirm\("수업이 진행 중입니다/);
+  assert.match(sessionSource, /askConfirm\("수업이 진행 중입니다/);
   assert.match(sessionSource, /voiceBusyRef\.current/);
   assert.match(sessionSource, /await persistMemo\(memoRef\.current\)/);
   assert.match(sessionSource, /history\.go\(-2\)/);

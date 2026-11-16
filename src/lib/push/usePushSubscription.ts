@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { showNotice } from "@/components/ui/feedback";
 
 // 휴대폰 알림(웹푸시) 켜기·끄기 — 학부모 설정 화면과 직원(선생님·기사님) 머리줄이 함께 쓴다(2026-11-10).
 // 동작은 예전 홈 알림 칸의 togglePush 그대로: 켜기 = 브라우저 구독 → /api/push POST, 끄기 = 구독 해제 → /api/push DELETE.
@@ -69,7 +70,7 @@ export function usePushSubscription() {
             }
         } catch (e) {
             console.error("Push toggle error:", e);
-            alert("알림 설정에 실패했습니다. 브라우저 알림 권한을 확인해주세요.");
+            showNotice("알림 설정에 실패했습니다. 브라우저 알림 권한을 확인해주세요.");
         }
         setPushLoading(false);
     }

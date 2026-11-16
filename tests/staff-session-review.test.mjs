@@ -554,9 +554,9 @@ test("완료한 수업 본문(다시 보기): 타이머·수업 종료·시작 �
   assert.match(roster, /const correctable = editable && !illnessAbsence && canCorrectAfterCompletion\(rosterKindOf\(student, Boolean\(session\.sessionDateId\)\)\);/);
   assert.match(roster, /if \(!editable \|\| savingRows\[rowId\] \|\| target\.status === status\) return;/);
   const fn = roster.slice(roster.indexOf("async function correctAttendance"), roster.indexOf("return (\n    <ul"));
-  assert.ok(fn.indexOf("previewStaffAttendanceCorrection(") < fn.indexOf("window.confirm(question)"));
-  assert.ok(fn.indexOf("window.confirm(question)") < fn.indexOf("saveStaffAttendance("));
-  assert.equal((fn.match(/window\.confirm\(/g) ?? []).length, 1);
+  assert.ok(fn.indexOf("previewStaffAttendanceCorrection(") < fn.indexOf("askConfirm(question)"));
+  assert.ok(fn.indexOf("askConfirm(question)") < fn.indexOf("saveStaffAttendance("));
+  assert.equal((fn.match(/askConfirm\(/g) ?? []).length, 1);
   assert.match(roster, /\{editable && <span[^>]*>원장님께 요청<\/span>\}/);
   // 화면 규칙: 이모지 없음, 굵기는 400~700 만
   for (const source of [done, roster, read("src/app/staff/sessions/page.tsx")]) {

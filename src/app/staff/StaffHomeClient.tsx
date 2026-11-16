@@ -22,6 +22,7 @@ import { retainSessionData } from "@/components/staff/sessionWorkspaceRules";
 import { prepareStaffNavigation, setStaffLiveLessonOpen } from "./staffNavigation";
 import type { StaffSessionDetail, StaffSessionStudent, StaffTodayClass } from "@/lib/staff-session-queries";
 import { isStaleDateKey, STALE_DATE_MESSAGE, staffReloginHref } from "@/lib/staff-session-rules";
+import { askConfirm } from "@/components/ui/feedback";
 
 function isSeasonalLesson(lesson: StaffTodayClass) {
   return lesson.kind === "SEASONAL";
@@ -291,7 +292,7 @@ export default function StaffHomeClient({
             setError(result.message);
             return;
           }
-          if (window.confirm(`${result.message}\n\n그 수업 화면으로 이동할까요?`)) {
+          if ((await askConfirm(`${result.message}\n\n그 수업 화면으로 이동할까요?`))) {
             router.push(`/staff/sessions/${result.activeSessionId}`);
           } else {
             setError(result.message);
@@ -317,10 +318,10 @@ export default function StaffHomeClient({
     });
   }
 
-  function sendNotice(resumeDelivery = false) {
+  async function sendNotice(resumeDelivery = false) {
     if (!noticeTarget) return;
     if (noticeSaved && !resumeDelivery) return;
-    if (!window.confirm("이 수업의 학부모에게 공지와 푸시 알림을 보내시겠습니까?")) return;
+    if (!(await askConfirm("이 수업의 학부모에게 공지와 푸시 알림을 보내시겠습니까?"))) return;
     const operation = noticeOperation.current?.classId === noticeTarget.id ? noticeOperation.current : { classId: noticeTarget.id, id: crypto.randomUUID() };
     noticeOperation.current = operation;
     try { sessionStorage.setItem(`staff-notice-operation:${noticeTarget.id}`, operation.id); } catch { /* 현재 열린 화면의 ref로 중복을 막는다. */ }

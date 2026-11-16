@@ -13,6 +13,7 @@ import { TableKit } from '@tiptap/extension-table'
 import { Youtube } from '@tiptap/extension-youtube'
 import { useEffect, useRef, useState } from 'react'
 import { CLIENT_IMAGE_ALLOWED_TYPES, compressImageForUpload } from '@/lib/clientImageCompression'
+import { showNotice } from "@/components/ui/feedback";
 
 // 업로드 사전 검증 기준 — 서버(/api/upload)와 동일하게 맞춰 잘못된 파일을 미리 거른다.
 const ALLOWED_IMAGE_TYPES = CLIENT_IMAGE_ALLOWED_TYPES;
@@ -140,7 +141,7 @@ export default function RichTextEditor({
     async function uploadImageFile(file: File): Promise<string | null> {
         // 1) 타입 사전 검증 — 서버까지 안 가고 즉시 안내
         if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-            alert('이미지 파일만 넣을 수 있어요 (JPG, PNG, WebP, GIF)');
+            showNotice('이미지 파일만 넣을 수 있어요 (JPG, PNG, WebP, GIF)');
             return null;
         }
         setUploading(true); // 로딩 표시 시작
@@ -153,12 +154,12 @@ export default function RichTextEditor({
             const res = await fetch('/api/upload', { method: 'POST', body: fd });
             const data = await res.json();
             if (!res.ok || !data.url) {
-                alert(data.error || '이미지 업로드에 실패했어요');
+                showNotice(data.error || '이미지 업로드에 실패했어요');
                 return null;
             }
             return data.url as string;
         } catch (error) {
-            alert(error instanceof Error ? error.message : '이미지 업로드 중 오류가 발생했어요');
+            showNotice(error instanceof Error ? error.message : '이미지 업로드 중 오류가 발생했어요');
             return null;
         } finally {
             setUploading(false); // 성공/실패 상관없이 로딩 종료
@@ -299,7 +300,7 @@ export default function RichTextEditor({
         // 허용 스킴 검증 — 그 외(javascript: 등)는 차단
         const safe = /^mailto:/i.test(url) || /^https?:\/\//i.test(url);
         if (!safe) {
-            alert('http, https, mailto 주소만 넣을 수 있어요');
+            showNotice('http, https, mailto 주소만 넣을 수 있어요');
             return;
         }
         editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
@@ -335,7 +336,7 @@ export default function RichTextEditor({
         const url = ytUrl.trim();
         if (!url || url === 'https://') { setYtPopupOpen(false); return; }
         if (!isYoutubeUrl(url)) {
-            alert('유튜브 주소만 넣을 수 있어요 (youtube.com 또는 youtu.be)');
+            showNotice('유튜브 주소만 넣을 수 있어요 (youtube.com 또는 youtu.be)');
             return;
         }
         // setYoutubeVideo 는 확장 내부에서도 유효성 검사를 한 번 더 한다(이중 방어).

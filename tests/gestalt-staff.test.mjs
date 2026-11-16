@@ -122,8 +122,8 @@ test("T-08 홈: 경고 상자 대신 카드 안 한 줄 안내, 진행 중 카�
 test("T-05 빠른 게시: 꽉 찬 버튼은 바로 게시 하나, 게시·새로 작성 확인, 새로 작성은 text", () => {
   assert.match(quickPost, /onClick=\{handleSave\}[\s\S]{0,80}className="academy-button-secondary/);
   assert.match(quickPost, /onClick=\{confirmPublish\}[\s\S]{0,120}className="academy-button-primary/);
-  assert.match(quickPost, /function confirmPublish\(\) \{[\s\S]*?window\.confirm\(question\)[\s\S]*?handlePublish\(\);/);
-  assert.match(quickPost, /function confirmReset\(\) \{[\s\S]*?window\.confirm\("작성 중인 내용을 지우고 새로 작성할까요\?"\)[\s\S]*?resetFlow\(\);/);
+  assert.match(quickPost, /async function confirmPublish\(\) \{[\s\S]*?askConfirm\(question\)[\s\S]*?handlePublish\(\);/);
+  assert.match(quickPost, /function confirmReset\(\) \{[\s\S]*?askConfirm\("작성 중인 내용을 지우고 새로 작성할까요\?"\)[\s\S]*?resetFlow\(\);/);
   assert.match(quickPost, /onClick=\{confirmReset\}[\s\S]{0,80}className="academy-button-text/);
   assert.doesNotMatch(quickPost, /bg-brand-navy-900/);
 });
@@ -142,7 +142,7 @@ test("T-10 사진: 삭제는 오른쪽 휴지통 아이콘(확인 창 유지), �
   // 2026-11-14 수업 피드: «학생 수정» 버튼이 없어져(나온 학생 선택 제거) 사진 아래 «지우기» 위험 버튼 하나만 남았다. 확인 창은 그대로.
   assert.match(photo, /aria-label=\{`사진 \$\{index \+ 1\} 지우기`\} onClick=\{\(\) => void deletePhoto\(photo\)\} className="academy-button-danger academy-button-sm[^"]*">\s*지우기\s*</);
   assert.doesNotMatch(photo, /material-symbols-outlined/);
-  assert.match(photo, /window\.confirm\("이 사진을 지울까요\? 학부모 소식에서도 사라집니다\."\)/);
+  assert.match(photo, /askConfirm\("이 사진을 지울까요\? 학부모 소식에서도 사라집니다\."\)/);
   assert.doesNotMatch(photo, /min-h-(8|9|10)\b/);
 });
 
