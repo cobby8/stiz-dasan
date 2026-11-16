@@ -8,6 +8,8 @@ import type { DashboardSummary } from "@/lib/stats/statsTypes";
 // 2026-11-13 대시보드 개편: 맨 위 카드 6개(재원생·수납률·출석률·신규/퇴원·체험→등록·유니폼).
 // 예전에 접혀 있던 상세 칸(운영 규모·매출·출석 추이·프로그램별 원생·최근 7일 신규)은 통계 탭(/admin/stats)으로 옮겼다.
 import DashboardSummaryCards from "@/components/admin/DashboardSummaryCards";
+// 2026-11-17 «오늘의 수업»(시간표 게시판) → «오늘 수업 처리 현황»(미처리 점검판). 카드가 스스로 읽고 60초마다 새로 읽는다.
+import ClassDayBoardCard from "@/components/admin/ClassDayBoardCard";
 
 type DashboardStats = {
     studentCount: number;
@@ -272,13 +274,11 @@ function DashboardContent({
     onRetrySystem: () => void;
     onRunSiteOpsBot: () => void;
 }) {
-    const { pendingRequests, enrollStats, todayClasses } = data;
+    const { pendingRequests, enrollStats } = data;
     // «처리할 신청» 숫자 = 신청함 «처리 필요»와 같은 숫자(메뉴 배지와 일치). 못 읽었으면 옛 숫자(문의 대기)
     const pendingCount = inboxCounts ? inboxCounts.action : data.pendingCount;
     // 칩 = 신청함 6탭 배지 그대로(칩 합 = «처리할 신청» 숫자). 누르면 그 탭이 열린다
     const inboxTabs = inboxCounts ? INBOX_TABS.filter((entry) => inboxCounts.byTab[entry.tab] > 0) : [];
-    // 요일 글은 서버가 KST 로 만들어 준다(브라우저 시계로 다시 계산하지 않는다)
-    const todayLabel = data.todayLabel ?? "";
 
     return (
         <>
@@ -312,7 +312,7 @@ function DashboardContent({
                 ) : pendingCount > 0 && inboxTabs.length === 0 ? <p className="px-4 py-3 text-sm text-[var(--color-academy-muted)]">요청 목록에서 처리할 내용을 확인하세요.</p> : null}
                 {enrollStats.PENDING > 0 && <Link href="/admin/inbox?tab=ENROLL" prefetch={false} className="flex items-center justify-between gap-3 border-t border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] px-5 py-3 text-sm font-medium text-[var(--color-academy-primary)]"><span>수강 신청 대기 {enrollStats.PENDING}건</span><span>확인하기 →</span></Link>}
             </section>
-                <TodayClassesCard todayClasses={todayClasses} todayLabel={todayLabel} />
+                <ClassDayBoardCard />
             </div>
 
             {/* 펼치기는 표시만 바꾼다. 조회와 조치는 각 도구의 명시적 버튼에서만 실행한다. */}
@@ -324,30 +324,6 @@ function DashboardContent({
                 </div>
             </details>
         </>
-    );
-}
-
-function TodayClassesCard({ todayClasses, todayLabel }: { todayClasses: TodayClass[]; todayLabel: string }) {
-    return (
-        <section className="academy-panel overflow-hidden">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--color-academy-line)] px-5 py-4">
-                <h2 className="academy-section-title">오늘의 수업</h2>
-                <span className="text-xs text-[var(--color-academy-muted)]">{todayLabel}</span>
-            </div>
-            {todayClasses.length === 0 ? <p className="px-5 py-6 text-sm text-[var(--color-academy-muted)]">오늘은 수업이 없습니다.</p> : (
-                <div className="divide-y divide-[var(--color-academy-line)]">
-                    {todayClasses.map((item) => (
-                        <div key={item.id} className="flex items-center justify-between gap-3 px-5 py-4">
-                            <div className="min-w-0">
-                                <p className="break-words text-sm font-semibold text-[var(--color-academy-ink)]">{item.name}</p>
-                                <p className="mt-0.5 text-sm text-[var(--color-academy-muted)]">{item.startTime ?? "시간 미정"}{item.endTime ? `–${item.endTime}` : ""}{item.programName ? ` · ${item.programName}` : ""}</p>
-                            </div>
-                            <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs tabular-nums ${item.enrolled >= item.capacity ? "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]" : "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]"}`}>{item.enrolled}/{item.capacity}명</span>
-                        </div>
-                    ))}
-                </div>
-            )}
-        </section>
     );
 }
 
