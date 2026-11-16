@@ -282,8 +282,9 @@ export async function updateRentalStatus(id: string, action: string, options: Re
         console.error("[rental] sms status save failed:", (error as Error).message);
       }
     }
-    // 확정되면 «스티즈 다산점» 캘린더에 넣고, 확정 뒤 취소면 지운다(실패해도 처리는 그대로)
-    if (r.status === "PAID" || result.previousStatus === "PAID") await syncRentalCalendar(r.id);
+    // 확정되면 «스티즈 다산점» 캘린더에 넣고, 취소·거절이면 지운다(실패해도 처리는 그대로).
+    // 2026-11-16: 어느 상태에서 바뀌었든 «매번» 맞춘다 — 지금 상태에 맞게 만들거나 지우는 함수라 여러 번 불러도 안전하다
+    await syncRentalCalendar(r.id);
     revalidatePath("/admin/rental");
     return { ok: true, sms };
   } catch (error) {
@@ -325,7 +326,7 @@ export async function editRentalRequest(id: string, input: RentalEditInput, opti
       }
     }
     // 무료 확정 건을 고치면 캘린더 일정도 새 시간으로 옮긴다
-    if (result.request.status === "PAID") await syncRentalCalendar(result.request.id);
+    await syncRentalCalendar(result.request.id);
     revalidatePath("/admin/rental");
     revalidatePath("/admin/inbox");
     revalidatePath("/rental");
