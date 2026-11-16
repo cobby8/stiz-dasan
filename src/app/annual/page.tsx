@@ -177,7 +177,7 @@ export default async function AnnualPage() {
             <section className="public-page-hero public-page-hero--compact relative overflow-hidden bg-gradient-to-br from-[var(--color-public-dark)] via-[var(--color-public-dark)] to-[var(--color-public-dark)] dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
                 <div className="max-w-6xl mx-auto px-6 md:px-4 relative">
                     <AnimateOnScroll>
-                        <h1 className="text-4xl md:text-5xl font-black mb-4 break-keep">연간일정표</h1>
+                        <h1 className="text-4xl md:text-5xl font-[700] mb-4 break-keep">연간일정표</h1>
                         <p className="text-blue-200 text-lg max-w-xl">대회, 방학, 특별 행사 일정을 확인하세요.</p>
                     </AnimateOnScroll>
                 </div>

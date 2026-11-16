@@ -87,7 +87,7 @@ export default function EventDetailPanel({ event, onClose }: Props) {
                             <span className={`w-2 h-2 rounded-full ${catStyle.dot}`} />
                             {event.category || "일반"}
                         </span>
-                        <h2 className="text-xl font-black text-[var(--color-public-ink)] dark:text-white leading-tight break-words">
+                        <h2 className="text-xl font-[700] text-[var(--color-public-ink)] dark:text-white leading-tight break-words">
                             {event.title}
                         </h2>
                     </div>

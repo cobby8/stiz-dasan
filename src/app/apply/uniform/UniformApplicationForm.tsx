@@ -161,7 +161,7 @@ export default function UniformApplicationForm() {
     const acceptedByStiz = result.syncStatus === "SENT" || result.syncStatus === "DUPLICATE";
     return (
       <div className="rounded-2xl bg-white p-8 text-center shadow-lg dark:bg-[var(--color-public-tint)]">
-        <h2 className="mb-3 text-2xl font-black text-[var(--color-public-ink)] dark:text-white">
+        <h2 className="mb-3 text-2xl font-[700] text-[var(--color-public-ink)] dark:text-white">
           {result.mode === "existing" ? "이미 접수된 유니폼 신청이 있습니다" : "유니폼 신청 완료!"}
         </h2>
         <p className="mx-auto max-w-xl text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
@@ -190,7 +190,7 @@ export default function UniformApplicationForm() {
   return (
     <div className="public-form-card public-card min-w-0 overflow-hidden rounded-2xl bg-white shadow-lg dark:bg-[var(--color-public-tint)]">
       <div className="public-stepper border-b border-[var(--color-public-line)] bg-[var(--color-public-tint)] px-4 sm:px-6 py-4 dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)]">
-        <h2 className="flex items-center gap-2 text-xl font-black text-[var(--color-public-ink)] dark:text-white">
+        <h2 className="flex items-center gap-2 text-xl font-[700] text-[var(--color-public-ink)] dark:text-white">
           유니폼 추가주문 정보
         </h2>
         <p className="mt-1 text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
@@ -231,7 +231,7 @@ export default function UniformApplicationForm() {
         <section className="space-y-3">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h3 className="text-base font-black text-[var(--color-public-ink)] dark:text-white">학생 목록</h3>
+              <h3 className="text-base font-[700] text-[var(--color-public-ink)] dark:text-white">학생 목록</h3>
               <p className="text-xs text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">형제·자매는 한 신청서에 함께 입력해주세요.</p>
             </div>
             <button

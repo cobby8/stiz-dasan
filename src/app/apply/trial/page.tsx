@@ -36,7 +36,7 @@ export default async function TrialApplyPage({ searchParams }: { searchParams: P
             <section className="public-page-hero public-page-hero--compact relative overflow-hidden bg-gradient-to-br from-[var(--color-public-dark)] via-[var(--color-public-dark)] to-[var(--color-public-dark)] py-12 text-white md:py-16">
                 <div className="relative mx-auto max-w-3xl px-6">
                     <AnimateOnScroll>
-                        <h1 className="mb-3 break-keep text-3xl font-black md:text-4xl">체험수업 신청</h1>
+                        <h1 className="mb-3 break-keep text-3xl font-[700] md:text-4xl">체험수업 신청</h1>
                         <p className="max-w-xl text-base text-blue-200">간단한 정보를 입력하고 원하는 수업 시간을 선택하세요.</p>
                     </AnimateOnScroll>
                 </div>

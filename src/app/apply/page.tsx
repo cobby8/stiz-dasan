@@ -42,7 +42,7 @@ export default async function ApplyPage() {
             <section className="public-page-hero public-page-hero--compact relative overflow-hidden bg-gradient-to-br from-[var(--color-public-dark)] via-[var(--color-public-dark)] to-[var(--color-public-dark)] text-white py-16 md:py-20">
                 <div className="max-w-6xl mx-auto px-6 md:px-4 relative">
                     <AnimateOnScroll>
-                        <h1 className="text-4xl md:text-5xl font-black mb-4 break-keep">체험 / 수강신청</h1>
+                        <h1 className="text-4xl md:text-5xl font-[700] mb-4 break-keep">체험 / 수강신청</h1>
                         {/* 진입 장벽 낮추는 핵심 메시지 */}
                         <p className="text-blue-200 text-lg max-w-xl">1분이면 충분해요! 간단한 신청으로 우리 아이의 농구 여정을 시작하세요.</p>
                     </AnimateOnScroll>

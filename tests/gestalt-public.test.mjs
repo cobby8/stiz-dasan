@@ -229,7 +229,7 @@ test("토스 심사 중 /programs·결제·푸터는 이번 작업에서 바뀌�
   assert.match(homeCss, /\.stiz-public-sport \.public-cta h2\{font-size:1\.4rem;/);
   assert.doesNotMatch(homeCss, /\.stiz-public-sport \.public-cta__actions>\*\{[^}]*border:/); // 기본 버튼 높이도 그대로(테두리 없음)
   // SectionLayout 기본(라벨·가운데 큰 제목)도 유지 — /programs 가 쓴다.
-  assert.match(read("src/components/ui/SectionLayout.tsx"), /text-3xl md:text-4xl font-extrabold/);
+  assert.match(read("src/components/ui/SectionLayout.tsx"), /text-3xl md:text-4xl font-\[700\]/); // 2026-11-16 굵기 정리: font-extrabold → font-[700](같은 700)
   // 금지 구역 git 비교 단언은 카드사 심사 승인(2026-11-07, 국내 9개사)으로 지웠다.
   // 이후 결제 요청 면세값(taxFreeAmount) 정리 커밋(379760d0)이 /payments 를 고쳤다.
 });

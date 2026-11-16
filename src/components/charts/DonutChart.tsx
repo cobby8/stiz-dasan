@@ -69,7 +69,7 @@ export default function DonutChart({
                     dominantBaseline="middle"
                     fill={CHART_COLORS.value}
                     fontSize={size * 0.2}
-                    fontWeight="800"
+                    fontWeight="700"
                 >
                     {rate}%
                 </text>

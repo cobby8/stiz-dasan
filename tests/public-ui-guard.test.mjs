@@ -38,11 +38,11 @@ const EMOJI = /[\u{1F300}-\u{1FAFF}\u{23E9}-\u{23FA}]/gu;
 
 // 우선 세 곳 + 공용 부품. 갚아야 할 빚(2026-11-13 시점) — 줄어들기만 해야 한다.
 const AREAS = {
-  // heavy 20 = 페이지·카드 제목(h1~h3)의 font-black. 테마가 700 으로 그린다. 버튼·값·배지에는 쓰지 않는다.
+  // heavy 0 (2026-11-16 정리) — 제목(h1~h3)은 font-[700] 으로 직접 700 을 준다(테마의 font-bold 는 600). 버튼·값·배지는 600 이하.
   // icons 2 = 자주 묻는 질문 펼침 화살표 · 약관 펼침 화살표
-  apply: { paths: ["src/app/apply"], heavy: 20, icons: 2 },
-  // heavy 2 = 페이지 제목 · 필터 창 제목
-  schedule: { paths: ["src/app/schedule", "src/components/ScheduleTableView.tsx"], heavy: 2, icons: 0 },
+  apply: { paths: ["src/app/apply"], heavy: 0, icons: 2 },
+  // heavy 0 (2026-11-16 정리) — 페이지 제목·필터 창 제목은 font-[700]
+  schedule: { paths: ["src/app/schedule", "src/components/ScheduleTableView.tsx"], heavy: 0, icons: 0 },
   // icons 4 = 비밀번호 보기/숨기기 눈 2 · Apple 로고(애플 가이드) · 약관 창 닫기
   auth: { paths: ["src/app/login", "src/components/auth"], heavy: 0, icons: 4 },
   // icons 10 = 헤더(사진 올리기·메뉴 펼침·닫기) 3 · 계정 버튼(사진 올리기) 3 · 푸터(주소·전화) 2 · 후기 넘김 화살표 2

@@ -522,11 +522,11 @@ export default function RichTextEditor({
                 {editor.isActive('table') && (
                     <>
                         <div className="w-px h-5 bg-gray-300 mx-0.5" />
-                        <button type="button" onClick={() => editor.chain().focus().addRowAfter().run()} className="px-1.5 h-6 text-[11px] rounded hover:bg-gray-200" title="아래에 행 추가">행+</button>
-                        <button type="button" onClick={() => editor.chain().focus().deleteRow().run()} className="px-1.5 h-6 text-[11px] rounded hover:bg-gray-200" title="현재 행 삭제">행−</button>
-                        <button type="button" onClick={() => editor.chain().focus().addColumnAfter().run()} className="px-1.5 h-6 text-[11px] rounded hover:bg-gray-200" title="오른쪽에 열 추가">열+</button>
-                        <button type="button" onClick={() => editor.chain().focus().deleteColumn().run()} className="px-1.5 h-6 text-[11px] rounded hover:bg-gray-200" title="현재 열 삭제">열−</button>
-                        <button type="button" onClick={() => editor.chain().focus().deleteTable().run()} className="px-1.5 h-6 text-[11px] rounded hover:bg-gray-200" title="표 전체 삭제">표삭제</button>
+                        <button type="button" onClick={() => editor.chain().focus().addRowAfter().run()} className="px-1.5 h-6 text-xs rounded hover:bg-gray-200" title="아래에 행 추가">행+</button>
+                        <button type="button" onClick={() => editor.chain().focus().deleteRow().run()} className="px-1.5 h-6 text-xs rounded hover:bg-gray-200" title="현재 행 삭제">행−</button>
+                        <button type="button" onClick={() => editor.chain().focus().addColumnAfter().run()} className="px-1.5 h-6 text-xs rounded hover:bg-gray-200" title="오른쪽에 열 추가">열+</button>
+                        <button type="button" onClick={() => editor.chain().focus().deleteColumn().run()} className="px-1.5 h-6 text-xs rounded hover:bg-gray-200" title="현재 열 삭제">열−</button>
+                        <button type="button" onClick={() => editor.chain().focus().deleteTable().run()} className="px-1.5 h-6 text-xs rounded hover:bg-gray-200" title="표 전체 삭제">표삭제</button>
                     </>
                 )}
 
@@ -555,7 +555,7 @@ export default function RichTextEditor({
                 <button
                     type="button"
                     onClick={() => editor.chain().focus().unsetColor().run()}
-                    className="px-1.5 h-5 text-[10px] rounded border border-gray-300 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:bg-gray-800"
+                    className="px-1.5 h-5 text-xs rounded border border-gray-300 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:bg-gray-800"
                     title="색상 제거"
                 >
                     색제거
