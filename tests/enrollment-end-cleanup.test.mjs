@@ -302,3 +302,36 @@ test("취소 요청 칸이 없는 DB(마이그레이션 전)에서는 그 칸을
   assert.doesNotMatch(update.sql, /cancelRequestStatus/);
   assert.equal(update.v.length, 3);
 });
+
+// ── 적용일 크론(학부모 퇴원 신청 자동 반영)도 같은 정리를 한다 — 2026-11-16 후속 ──
+test("크론 퇴원 정리: 남은 일이 없으면 알림 없음(null)", () => {
+  const { supersededRequests, ...rest } = { ...m.emptyCleanupSummary(), cancelledAbsences: 2, revokedCredits: 1 };
+  assert.equal(m.autoWithdrawFollowUp(rest), null, "취소·회수만 끝났으면 사람이 볼 일 없음");
+});
+
+test("크론 퇴원 정리: 미납 청구·보호된 결석·부상 정산이 남으면 한 줄로 알린다", () => {
+  const base = m.emptyCleanupSummary();
+  const text = m.autoWithdrawFollowUp({
+    ...base,
+    unpaidPayments: [
+      { id: "p1", monthLabel: "2026년 11월", amount: 75000, description: null, partial: true, className: "금5" },
+      { id: "p2", monthLabel: "2026년 12월", amount: 150000, description: null, partial: false, className: "금5" },
+    ],
+    keptAbsences: { billing: 1, makeup: 0, attendance: 1 },
+  });
+  assert.equal(text, "미납 청구 2건(2026년 11월 일부 다닌 달, 2026년 12월) — 취소·감액 확인 · 정리 못 한 결석 2건 — 결석 관리에서 확인");
+  assert.ok(m.autoWithdrawFollowUp({ ...base, illnessSettle: { periods: 1, stillEnrolled: false } }));
+});
+
+test("크론 소스: 퇴원(WITHDRAWN) 자동 반영일 때만 같은 트랜잭션에서 cleanupEndedClassInTx 를 부르고 감사 기록·원장 알림에 남긴다", () => {
+  const src = read("src/lib/enrollment/admin-change-request.ts");
+  const apply = src.slice(src.indexOf("export async function applyDueEnrollmentChangesWithSummary"), src.indexOf("export async function applyDueEnrollmentChanges(): Promise<number>"));
+  assert.match(apply, /plan\.nextStatus === "WITHDRAWN"\s*\?\s*await cleanupEndedClassInTx\(tx/);
+  assert.match(apply, /fromYmd: row\.effectiveDate/);
+  // 정리는 «적용 표시(APPLIED)» 뒤, 원장 기록 전 — 같은 트랜잭션 안
+  assert.ok(apply.indexOf("CHANGE_REQUEST_CONFLICT") < apply.indexOf("await cleanupEndedClassInTx") && apply.indexOf("await cleanupEndedClassInTx") < apply.indexOf("insertAutoAppliedLedger(tx"));
+  assert.match(apply, /notifyOwnerOfAutoWithdrawFollowUp\(outcome\.followUp\)[\s\S]*?\.catch\(/, "알림 실패가 적용을 되돌리지 않음");
+  // 전역 잠금이 신청 행 잠금보다 먼저(관리자 직접 변경과 같은 순서 — 교착 방지)
+  assert.ok(apply.indexOf("await lockCompensation(tx)") > 0 && apply.indexOf("await lockCompensation(tx)") < apply.indexOf("FOR UPDATE"));
+  assert.match(src, /unpaidPaymentIds: input\.cleanup\.unpaidPayments\.map\(\(p\) => p\.id\)/);
+});
