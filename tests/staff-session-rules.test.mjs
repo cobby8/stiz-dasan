@@ -129,7 +129,9 @@ test("G11 특강 미리 작성은 회차를 보내고, 사진 권한은 수업 �
 test("b7 기사님 첫 화면 — 아이폰 스토어 앱이면 안내, 아니면 위치 전송 운행 화면으로", () => {
   assert.match(driverEntryPage, /if \(shuttleScope\(staff\.roles\) === "NONE"\) redirect\("\/staff"\)/);
   assert.match(driverEntry, /shouldShowIosDriverNotice\(isStoreApp\(\), navigator\.userAgent\)/);
-  assert.match(driverEntry, /router\.replace\(DRIVER_RUN_PATH\)/);
+  // 2026-11-16: 안드로이드 스토어 앱은 위치 공유가 켜지는 앱 길(페이지 통째 이동), 그 밖은 기존 운행표
+  assert.match(driverEntry, /driverRunPathFor\(isStoreApp\(\), navigator\.userAgent\)/);
+  assert.match(driverEntry, /if \(target === DRIVER_APP_RUN_PATH\) window\.location\.replace\(target\);\s*else router\.replace\(target\);/);
   assert.match(driverEntry, /아이폰 앱의 운행 기능은 다음 업데이트에 열립니다/);
   assert.match(driverEntry, /문자로 받은 운행 링크를 이용해 주세요/);
   // 하단 셔틀 탭도 아이폰 스토어 앱이면 안내 화면으로

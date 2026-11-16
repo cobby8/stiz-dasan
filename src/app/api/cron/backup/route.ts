@@ -6,6 +6,8 @@
  * stiz-archive-<시각>.json.gz 로 Supabase Storage "backups/" 버킷에 저장합니다.
  * 복원은 설정 파일만 — 업무 자료 파일은 자동 복원하지 않습니다.
  * 30일이 지난 백업은 자동 삭제됩니다.
+ * 같은 실행에서 핵심 데이터(seed) 스냅샷도 seed/seed-latest.json(덮어쓰기) + seed/seed-<날짜>.json(30일)로 저장합니다
+ * — /api/admin/seed 복구가 이 최신본을 먼저 씁니다(lib/backup/seedSnapshot.ts).
  *
  * vercel.json:
  *   "crons": [{ "path": "/api/cron/backup", "schedule": "0 15 * * *" }]
@@ -17,6 +19,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
     ARCHIVE_BACKUP_NAME, SETTINGS_BACKUP_NAME, archiveFilenameFor, backupReplacer, collectBackupArchive, packArchive,
 } from "@/lib/backup/archive";
+import { SEED_KEEP_DAYS, buildSeedSnapshot, saveSeedSnapshot, type SeedSaveResult, type SeedSnapshot } from "@/lib/backup/seedSnapshot";
+import { addDaysKst, todayKst } from "@/lib/datetime/kst";
 import { withCronAlert } from "@/lib/cron/withCronAlert";
 
 export const dynamic = "force-dynamic";
@@ -44,6 +48,25 @@ async function handleGet(req: NextRequest) {
     let savedFilename: string | null = null;
     let intendedFilename: string | null = null;
     let deleted: string[] = [];
+    // 핵심 데이터(seed) 스냅샷 — 프로그램·수업 칸 설정·이용약관. 원장이 «seed 내보내기»를 누르지 않아도
+    // 매일 이 실행에서 Storage(seed/seed-latest.json + 날짜별 사본)에 저장한다(2026-11-16).
+    // 본 백업과 서로 막지 않는다: 스냅샷 실패는 결과 값으로만 남고, 본 백업이 실패해도 스냅샷은 저장을 시도한다.
+    const seed: { snapshot: SeedSnapshot | null; result: SeedSaveResult | null } = { snapshot: null, result: null };
+    const saveSeed = async () => {
+        if (!seed.snapshot || seed.result) return; // 자료를 못 읽었거나 이미 시도했으면 건너뛴다
+        try {
+            const todayYmd = todayKst();
+            seed.result = await saveSeedSnapshot(() => createAdminClient().storage.from(BUCKET), seed.snapshot,
+                { todayYmd, cutoffYmd: addDaysKst(todayYmd, -SEED_KEEP_DAYS) });
+            // 최신본을 못 썼거나(급감으로 덮어쓰지 않은 SKIPPED_SHRUNK 포함) 일부만 된 경우를 로그에 남긴다.
+            if (!seed.result.saved) console.error("[cron/backup] seed snapshot not saved:", seed.result.reason,
+                seed.result.previousPrograms, seed.result.programs);
+            if (seed.result.datedPath && !seed.result.datedSaved) console.error("[cron/backup] seed dated copy not saved");
+            if (seed.result.cleanupFailed) console.error("[cron/backup] seed cleanup failed");
+        } catch {
+            console.error("[cron/backup] seed snapshot failed");
+        }
+    };
     try {
         // 모든 필수 조회가 성공하기 전에는 Storage에 쓰지 않는다.
         const [academyRows, programs, coaches, classSlotOverrides, customClassSlots, routes, stops] =
@@ -73,6 +96,12 @@ async function handleGet(req: NextRequest) {
         const filename = `stiz-backup-${kstNow.toISOString().slice(0, 19).replace(/:/g, "-")}.json`;
         const archiveFilename = archiveFilenameFor(filename);
         const exportedAt = now.toISOString();
+
+        // 핵심 데이터 스냅샷 — 위에서 이미 읽은 줄에서 정해진 칸만 고른다(DB 를 다시 읽지 않는다).
+        seed.snapshot = buildSeedSnapshot(
+            { programRows: programs, slotRows: classSlotOverrides, termsOfService: academyRows[0]?.termsOfService ?? null },
+            { exportedAt, source: "cron" },
+        );
 
         // 업무 자료 파일(gzip) — 상한을 넘으면 큰 표부터 빼고 나머지를 담는다(빠진 표 = SIZE_LIMIT)
         const { body: archiveBody, summary } = packArchive(archive, { exportedAt, source: "cron", settingsFile: filename });
@@ -129,6 +158,9 @@ async function handleGet(req: NextRequest) {
             archiveSaved = null; // 응답 유실 — 저장됐을 수도 있다
         }
 
+        // 3-3. 핵심 데이터 스냅샷 저장 — 예외를 던지지 않는다(실패해도 아래 정리는 그대로 진행).
+        await saveSeed();
+
         // 4. 30일 이상 된 파일 삭제 (설정 파일·업무 자료 파일 둘 다)
         stage = "CLEANUP_LIST";
         const { data: files, error: listError } = await supabase.storage.from(BUCKET).list("", { limit: 200 });
@@ -154,7 +186,7 @@ async function handleGet(req: NextRequest) {
             // 설정은 저장됐지만 업무 자료 일부(또는 파일)를 못 담았다 — 500 으로 알려 원장 슬랙 알림이 가게 한다.
             console.error("[cron/backup] archive incomplete:", summary.failedTables.length, archiveSaved);
             return NextResponse.json({ success: false, scope: "SETTINGS_ONLY", stage: "ARCHIVE_INCOMPLETE",
-                backupSaved: true, filename, deleted, archive: archiveResult,
+                backupSaved: true, filename, deleted, archive: archiveResult, seed: seed.result,
                 error: "설정은 저장했지만 업무 자료 일부를 백업하지 못했습니다." }, { status: 500 });
         }
 
@@ -163,6 +195,8 @@ async function handleGet(req: NextRequest) {
             scope: "SETTINGS_ONLY",
             filename,
             archive: archiveResult,
+            // 핵심 데이터 스냅샷 저장 결과(saved:false 여도 본 백업은 성공이다 — 대시보드 «시스템 상태»에서 시각 확인)
+            seed: seed.result,
             rows: {
                 programs: programs.length,
                 coaches: coaches.length,
@@ -174,7 +208,9 @@ async function handleGet(req: NextRequest) {
     } catch {
         // DB/Storage 예외에는 연결정보나 자료가 포함될 수 있어 원문을 남기지 않는다.
         console.error("[cron/backup] failed:", stage);
-        return NextResponse.json({ success: false, scope: "SETTINGS_ONLY", stage,
+        // 본 백업이 실패해도, 자료를 이미 읽었고 아직 시도 전이면 핵심 데이터 스냅샷은 저장을 시도한다.
+        await saveSeed();
+        return NextResponse.json({ success: false, scope: "SETTINGS_ONLY", stage, seed: seed.result,
             // 응답 유실은 미저장으로 확정하지 않는다. 후보 파일을 재조회해야 한다.
             backupSaved: savedFilename !== null ? true : intendedFilename !== null ? null : false,
             filename: savedFilename ?? intendedFilename, deleted,

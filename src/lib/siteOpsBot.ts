@@ -2,6 +2,8 @@ import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createNotificationRecord } from "@/lib/notification";
 import type { AdminAuthUser } from "@/lib/auth-guard";
+import { SEED_DIR, latestSeedDated } from "@/lib/backup/seedSnapshot";
+import { diffDaysKst, todayKst } from "@/lib/datetime/kst";
 
 export type SiteOpsCheckStatus = "ok" | "fixed" | "warning" | "critical";
 
@@ -224,10 +226,12 @@ async function checkBackup(checks: SiteOpsCheck[]) {
       });
     }
 
-    const { data: files } = await supabase.storage.from("backups").list("", {
+    const { data: listed } = await supabase.storage.from("backups").list("", {
       limit: 50,
       sortBy: { column: "created_at", order: "desc" },
     });
+    // SEED_DIR("seed")는 핵심 데이터 스냅샷 폴더(파일 아님) — 날짜가 없어 «백업 없음»으로 오판하지 않게 뺀다.
+    const files = listed?.filter((f) => f.name !== SEED_DIR);
     const lastBackupAt = files?.[0]?.created_at ? new Date(files[0].created_at) : null;
     const backupStale = isOlderThan(lastBackupAt, 7);
 
@@ -241,6 +245,36 @@ async function checkBackup(checks: SiteOpsCheck[]) {
       actionHref: "/admin",
       actionLabel: "백업하기",
     });
+
+    // 핵심 데이터(seed) 스냅샷 — 매일 백업과 같이 저장된다. 가장 최근 날짜별 사본의 날짜(파일 이름)로 판정한다.
+    // 이 조회가 실패해도 위의 백업 점검 결과는 그대로 둔다.
+    try {
+      const { data: seedFiles, error: seedError } = await supabase.storage.from("backups").list(SEED_DIR, { limit: 200 });
+      if (seedError) throw seedError;
+      const latestSeed = latestSeedDated(seedFiles ?? []);
+      const seedStale = !latestSeed || diffDaysKst(latestSeed.ymd, todayKst()) > 2;
+      checks.push({
+        id: "seed-snapshot",
+        label: "핵심 데이터 저장",
+        status: seedStale ? "warning" : "ok",
+        message: !latestSeed
+          ? "핵심 데이터 저장 기록이 아직 없습니다. «전체 백업 지금 저장»을 한 번 눌러 주세요."
+          : seedStale
+            ? "핵심 데이터 저장이 이틀 넘게 없습니다. 관리자 확인이 필요합니다."
+            : `최근 핵심 데이터 저장: ${latestSeed.ymd}`,
+        actionHref: "/admin",
+        actionLabel: "백업하기",
+      });
+    } catch {
+      checks.push({
+        id: "seed-snapshot",
+        label: "핵심 데이터 저장",
+        status: "warning",
+        message: "핵심 데이터 저장 상태를 확인하지 못했습니다.",
+        actionHref: "/admin",
+        actionLabel: "시스템 도구 확인",
+      });
+    }
   } catch {
     checks.push({
       id: "backup-status",

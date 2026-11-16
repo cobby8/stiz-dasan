@@ -57,7 +57,7 @@ npx prisma generate                    # Prisma 클라이언트 재생성
 2. `npx prisma migrate dev --name <변경내용>` 실행 (로컬)
 3. 마이그레이션 파일 커밋
 4. Vercel 자동 배포 시 `npx prisma migrate deploy` 실행됨
-5. 배포 후 `/admin` → "seed 내보내기" → `prisma/seed-data.ts` 업데이트 → 커밋
+5. (할 일 없음) 핵심 데이터 스냅샷은 매일 자동 백업이 Storage 에 저장한다 — "seed 내보내기"·`seed-data.ts` 커밋은 필요 없다
 
 ---
 
@@ -81,18 +81,20 @@ npx prisma generate                    # Prisma 클라이언트 재생성
 → 사이드바 → "파일로 복원"
 ```
 
-**방법 3**: seed-data.ts로 핵심 데이터 복구
+**방법 3**: 핵심 데이터(seed) 스냅샷으로 복구
 ```bash
-# DB 완전 초기화 후 핵심 데이터만 복구
+# 프로그램·수업 칸 설정·이용약관만 되살린다(지우지 않고 덮어쓰기만)
 curl -X POST https://<your-domain>/api/admin/seed
 ```
-> ⚠️ `prisma/seed-data.ts`가 최신 상태여야 함. 변경사항 있으면 먼저 커밋할 것.
+> 복구는 Storage `backups/seed/seed-latest.json`(매일 자동 저장)을 먼저 쓰고, 없거나 읽기 실패·모양 이상·프로그램 0줄일 때만 `prisma/seed-data.ts` 로 넘어간다.
+> 응답의 `source`·`snapshotDate` 로 어느 자료를 썼는지 확인한다. 프로그램을 하나도 못 되살리면 `success: false`.
+> 코치는 스냅샷에 없다 — DB 가 통째로 비었으면 «최신 자동백업 복원 → 방법 3» 순서로 한다.
 
-### seed-data.ts 업데이트 시점
-프로그램/코치 데이터 대규모 변경 시 반드시 갱신:
-```
-관리자 사이드바 → "seed 내보내기" → 다운로드된 파일을 prisma/seed-data.ts에 덮어쓰기 → git commit
-```
+### 핵심 데이터(seed) 자동 저장 (2026-11-16)
+- 매일 KST 자정 백업 cron 과 "지금 클라우드에 저장"이 같은 실행에서 저장한다: `seed/seed-latest.json` 덮어쓰기 + `seed/seed-<날짜>.json` 30일 보관. **사람이 할 일 없음.**
+- 직전 최신본보다 프로그램 수가 절반 미만으로 줄면 최신본을 덮어쓰지 않는다(날짜별 사본만 저장·로그). 실제로 그렇게 줄인 경우엔 `seed-latest.json` 을 손으로 바꾼다.
+- 마지막 저장 시각은 `/admin` 대시보드 "시스템 상태" → "핵심 데이터 자동 저장"에서 본다(이틀 넘게 없으면 경고).
+- "seed 내보내기" 버튼은 파일로 받아 두고 싶을 때만 쓴다.
 
 ---
 
@@ -130,8 +132,8 @@ src/
 │   │   ├── backup/             ← GET(다운로드) / POST(복원)
 │   │   ├── backup-now/         ← POST(즉시 클라우드 저장)
 │   │   ├── cloud-backups/      ← GET(목록) / POST(복원) / DELETE
-│   │   ├── export-seed/        ← GET(seed-data.ts 코드 생성)
-│   │   └── seed/               ← POST(seed-data.ts로 DB 복구)
+│   │   ├── export-seed/        ← GET(seed 스냅샷을 파일로 내려받기 — 선택)
+│   │   └── seed/               ← POST(Storage 최신 seed 스냅샷으로 복구, 없으면 seed-data.ts)
 │   └── api/cron/backup/        ← GET(자동 백업, Vercel Cron)
 ├── lib/
 │   ├── queries.ts              ← react.cache() 감싼 DB 조회 함수
@@ -139,7 +141,7 @@ src/
 │   └── supabase/middleware.ts  ← 인증 미들웨어 (주의: src/middleware.ts 없음)
 prisma/
 ├── schema.prisma               ← 데이터 모델 (@@index 포함)
-└── seed-data.ts                ← 핵심 데이터 코드 스냅샷
+└── seed-data.ts                ← 핵심 데이터 대비용 파일(평소엔 Storage 자동 스냅샷을 쓴다)
 ```
 
 > **미들웨어 주의**: `src/middleware.ts`가 없다. `src/lib/supabase/middleware.ts`만 있다. 미들웨어를 활성화하려면 `src/middleware.ts`를 만들고 `updateSession`을 export해야 한다. (현재 `/admin` 인증 보호가 어떻게 동작하는지 먼저 확인 필요)

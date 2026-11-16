@@ -12,7 +12,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireOwner } from "@/lib/auth-guard";
-import { ARCHIVE_BACKUP_NAME } from "@/lib/backup/archiveCore";
+import { ARCHIVE_BACKUP_NAME, SETTINGS_BACKUP_NAME } from "@/lib/backup/archiveCore";
+import { SEED_DIR } from "@/lib/backup/seedSnapshot";
 
 export const dynamic = "force-dynamic";
 
@@ -59,7 +60,9 @@ export async function GET(req: NextRequest) {
             throw error;
         }
 
-        const result = (files ?? []).map((f) => ({
+        // SEED_DIR("seed")는 핵심 데이터 스냅샷 폴더(파일 아님) — 백업 목록에서 뺀다.
+        // 빼지 않으면 «최신 자동백업 복원»이 files[0] 으로 이 폴더 칸을 집어 복원이 깨질 수 있다.
+        const result = (files ?? []).filter((f) => f.name !== SEED_DIR).map((f) => ({
             filename: f.name,
             size: f.metadata?.size ?? 0,
             createdAt: f.created_at,
@@ -96,8 +99,12 @@ export async function POST(req: NextRequest) {
     }
 
     // 업무 자료 파일은 보관용 — 자동 복원하지 않는다.
-    if (filename.startsWith("stiz-archive-")) {
+    if (typeof filename === "string" && filename.startsWith("stiz-archive-")) {
         return NextResponse.json({ error: "업무 자료 파일은 자동 복원하지 않습니다." }, { status: 400 });
+    }
+    // 설정 백업 이름 규칙에 맞는 파일만 복원한다 — "seed/…" 같은 다른 경로·다른 모양의 파일을 읽지 않게.
+    if (typeof filename !== "string" || !SETTINGS_BACKUP_NAME.test(filename)) {
+        return NextResponse.json({ error: "잘못된 파일 이름입니다." }, { status: 400 });
     }
 
     try {
@@ -283,6 +290,11 @@ export async function DELETE(req: NextRequest) {
     } catch (e) {
         console.error("[cloud-backups DELETE] parse error:", e);
         return NextResponse.json({ error: "잘못된 요청입니다." }, { status: 400 });
+    }
+
+    // 백업 파일(설정·업무 자료) 이름 규칙에 맞는 것만 지운다 — "seed/…" 같은 경로로 핵심 데이터 스냅샷을 지우지 못하게.
+    if (typeof filename !== "string" || !(SETTINGS_BACKUP_NAME.test(filename) || ARCHIVE_BACKUP_NAME.test(filename))) {
+        return NextResponse.json({ error: "잘못된 파일 이름입니다." }, { status: 400 });
     }
 
     try {

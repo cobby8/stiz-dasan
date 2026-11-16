@@ -58,6 +58,7 @@
 ## 작업 로그 (최근 10건)
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-16 | developer(핵심 데이터 seed 자동 저장, claude/seed-auto): 매일 백업 cron·«전체 백업 지금 저장»이 같은 실행에서 스냅샷(Program·ClassSlotOverride·이용약관, 정해진 칸만)을 backups/seed/seed-latest.json + seed-<날짜>.json(30일)로 저장 · POST /api/admin/seed 는 Storage 최신본 먼저 → 없음·읽기 실패·모양 이상·프로그램 0줄이면 prisma/seed-data.ts · 공용 lib/backup/seedSnapshot.ts(순수) · 대시보드 «핵심 데이터 자동 저장» 한 줄 · 버킷 목록 3곳 seed 폴더 칸 제외 · CLAUDE.md 는 developer 수정 불가라 문안만 PM 에 전달. tsc 0 · tests 5646-0 · guards 337-0 | 구현 완료(검수 전) |
 | 11-16 | PM(통합 claude/deploy-1116): 재원생 무료 대관 화면(memberMode)·글자 12px↑·굵기 4단계·ORM 4건·브라우저 경고창 178곳 → feedback.tsx, 가드 예외 폴더 제거, 크론 퇴원 정리(141768e4) 배포 |
 | 11-16 | 남은 정리(claude/cleanup-type-weight): 12px 미만 글자 20곳→12px · 800/900 굵기 35곳→제목 font-[700]·그 외 600(OG·지도·도넛 700) · 입학 완료 확인 화면 ORM 4건→$queryRawUnsafe · 가드 tests/type-weight-guard.test.mjs. tsc 0 · tests 5619-0 · guards 337-0 | 구현 완료(검수 전) |
 | 11-16 | developer(브라우저 기본 경고창 제거, claude/no-browser-alert): 공용 부품 `src/components/ui/feedback.tsx`(showNotice·askConfirm·showCopyText, 레이아웃에 FeedbackHost) · alert 76·confirm 99·prompt 3곳 교체(대관 두 폴더 제외) · 링크 가드는 막고→확인→다시 클릭, 확인 함수는 Promise<boolean> · 가드 tests/no-browser-dialog-guard · tsc 0·test fail 0 | 브랜치 push(main 미반영) |
@@ -67,4 +68,3 @@
 | 11-15 | developer(기사 «그래도 탑승», claude/driver-board-anyway): 자차·조퇴·지각으로 잠긴 줄(skipLabel)에만 보조 버튼 «그래도 탑승/하차» → 화면 안 확인 → 탑승 기록. 탑승 기록이 있는 동안 잠금 해제(riderBoardAnyway·riderBoardingView), 되돌리면 다시 잠김. 휴원·휴무·결석 줄은 대상 아님. 서버 2곳은 원래 skipLabel 을 거절하지 않아 그대로, 탑승 알림도 탑승 표만 봐서 그대로. 파일: unifiedDriverRunLogic.ts · UnifiedDriverClient.tsx · tests/driver-board-anyway.test.mjs(8건). tsc 0 · tests 5585-0 · guards 337-0. 실기기 미확인 | 검수 대기 |
 | 11-15 | developer(부상·질병 기간 결석 3단계 복귀 정산, claude/illness-period-settle): 순수 계산 모듈·미리보기/이월 확정/확정 취소·학부모 예정 금액·청구 준비 «다닌 만큼만» 제안·신청함 «정산 필요»·1·2단계 숙제(납부된 것만·인정 안 함 표시·현장 결제 재확인·반 이동 경고). tsc 0 · tests 5543-0 · guards 337-0 · 로컬 Postgres 45개 통과. 스키마 변경 없음 | 검수 대기 |
 | 11-15 | developer(부상·질병 기간 결석 2단계 청구 발행 보류, claude/illness-billing-hold): 청구 준비 보류(차단 사유·hold·지문)·이미 발행된 미납 청구 «발행 보류로 돌리기»(원장만, 결제 진행 중 등은 건너뜀)·학생 상세/학부모 결제 화면 한 줄·신청함 «인정 · 발행 보류 중»·1단계 숙제 3건. tsc 0 · tests 5484-0 · guards 337-0 · 로컬 Postgres 31개 통과. 스키마 변경 없음 | 검수 대기 |
-| 11-15 | developer(부상·질병 기간 결석 1b, claude/illness-period-approve): 신청함 기간 한 줄(ILLNESS_PERIOD)·금액 없는 승인/승인 취소·하루씩 이월 가드·7일 자동 전환 제외·학부모 글자. tsc 0 · tests 5422-0 · guards 337-0. 새 SQL 실제 Postgres 미실행 | 검수 대기 |
