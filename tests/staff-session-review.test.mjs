@@ -203,6 +203,21 @@ function makeWorld(options = {}) {
     $transaction: async (fn) => fn(prisma),
   };
   const recipient = { studentId: "st1", studentName: "김하늘", userId: "p1" };
+  // «지금 오늘»(인자 없는 todayKst())은 진짜 시계가 아니라 이 가짜 환경의 오늘(world.today)을 돌려준다.
+  // 진짜 시계를 쓰면 수업 날짜를 적어 둔 테스트가 날짜가 바뀌는 순간 깨진다(2026-11-17 실제로 깨짐).
+  // 시각(ms)을 넘긴 호출과 나머지 달력 함수는 진짜 모듈 그대로다.
+  const worldKst = { ...kst, todayKst: (ms) => (ms === undefined ? world.today : kst.todayKst(ms)) };
+  // 수업 규칙 모듈도 같다 — «지금»을 안 넘기면 Date.now() 를 읽는 함수들에 가짜 오늘의 낮 12시(KST)를 넣어 준다.
+  const worldNow = () => kstMs(`${world.today}T12:00:00`);
+  const worldSessionRules = {
+    ...sessionRules,
+    isStaleDateKey: (dateKey, nowMs = worldNow()) => sessionRules.isStaleDateKey(dateKey, nowMs),
+    isPastSessionDate: (ymd, nowMs = worldNow()) => sessionRules.isPastSessionDate(ymd, nowMs),
+    shouldNotifyParentsForSession: (ymd, nowMs = worldNow()) => sessionRules.shouldNotifyParentsForSession(ymd, nowMs),
+    canPlanOnDate: (ymd, today = world.today) => sessionRules.canPlanOnDate(ymd, today),
+    resolveStaffViewDate: (raw, today = world.today) => sessionRules.resolveStaffViewDate(raw, today),
+    staffPreviewDates: (today = world.today) => sessionRules.staffPreviewDates(today),
+  };
   const actions = load("src/app/actions/staff-sessions.ts", {
     "next/cache": { revalidatePath() {} },
     // 응답 뒤에 도는 일(학부모 알림)을 모아 두고, 테스트가 직접 돌린다
@@ -227,12 +242,12 @@ function makeWorld(options = {}) {
       requireStaffClassAccess: async () => world.access,
       requireStaffSeasonalSessionAccess: async () => ({ access: world.access, seasonal: {} }),
     },
-    "@/lib/datetime/kst": kst,
+    "@/lib/datetime/kst": worldKst,
     "@/lib/feed/rules": feedRules,
     "@/lib/staff/sessionEditWindow": rules,
-    "@/lib/staff-session-rules": sessionRules,
+    "@/lib/staff-session-rules": worldSessionRules,
     // 출석 알림 규칙(순수 모듈)은 진짜를 쓴다 — 관리자 출결 화면과 같은 함수
-    "@/lib/attendance/attendanceNoticeRules": load("src/lib/attendance/attendanceNoticeRules.ts", { "@/lib/staff-session-rules": sessionRules, "@/lib/datetime/kst": kst }),
+    "@/lib/attendance/attendanceNoticeRules": load("src/lib/attendance/attendanceNoticeRules.ts", { "@/lib/staff-session-rules": worldSessionRules, "@/lib/datetime/kst": worldKst }),
     "@/lib/staff-session-queries": { trialOnClassDateSql: () => "true" },
     "@/lib/staff-notifications": {
       deliverParentNotification: async (input) => { world.calls.push(["notify", input.eventType, input.dedupeKey]); return {}; },
