@@ -22,6 +22,8 @@ import { SHUTTLE_LOCATION_CONSENT_VERSION } from "@/lib/seasonal/contracts";
 import { shuttlePlaceNameError } from "@/lib/enrollment/shuttle-place-name";
 // 공개 화면 잔여 인원 3단계(여유/임박/마감) — 숫자는 공개 응답에 싣지 않는다
 import { seatLevelFromCounts, type SeatLevel } from "@/lib/seats/seatLevel";
+// 유입 경로 허용 값 한 곳 — 목록 밖 값은 거절하지 않고 «기타»로 저장한다(통계 오염 방지)
+import { normalizeReferralSource } from "@/lib/enrollment/referralSources";
 
 async function issueEnrollmentAccountHandoffSafely(enrollmentApplicationId: string) {
     try {
@@ -281,6 +283,9 @@ export async function submitTrialApplication(data: TrialApplicationInput) {
     if (!data.childGrade) throw new Error("학년을 선택해주세요.");
     if (!parentPhone) throw new Error("학부모 연락처를 입력해주세요.");
     if (!data.source) throw new Error("신청경로를 선택해주세요.");
+    // 저장할 유입 경로 — 허용 목록 밖 값은 "OTHER" 로 바꾼다(신청은 거절하지 않는다).
+    // 아래 UPDATE(기존 신청 덮어쓰기)·INSERT 두 갈래가 같은 값을 쓴다.
+    const trialSource = normalizeReferralSource(data.source) || "WEBSITE";
     // 학부모 동의 체크 — 입금 확인과는 별개다. 저장은 trialFeeNoticeAgreedAt(시각)으로만 한다.
     const feeNoticeAgreed = Boolean(data.trialFeeNoticeAgreed ?? data.trialFeeConfirmed);
     if (!feeNoticeAgreed) throw new Error("체험수업 비용 확인을 체크해주세요.");
@@ -365,7 +370,7 @@ export async function submitTrialApplication(data: TrialApplicationInput) {
                 data.trialPeriod || null,
                 data.trialDate || null,
                 data.hopeNote?.trim() || null,
-                data.source || "WEBSITE",
+                trialSource,
                 data.agreedTerms ?? false,
                 data.agreedPrivacy ?? false,
                 existingId,
@@ -423,7 +428,7 @@ export async function submitTrialApplication(data: TrialApplicationInput) {
             data.trialPeriod || null,                             // preferredPeriod
             data.trialDate || null,                               // trialDate
             data.hopeNote?.trim() || null,                        // hopeNote
-            data.source || "WEBSITE",                             // source
+            trialSource,                                          // source
             // trialFeeConfirmed 는 SQL 에서 false 고정(관리자가 입금 확인해야 true),
             // trialFeeNoticeAgreedAt 은 NOW() — 학부모가 안내에 동의한 시각
             data.agreedTerms ?? false,                            // agreedTerms
@@ -831,6 +836,9 @@ export async function submitEnrollApplication(data: EnrollApplicationInput) {
     if (!data.childSchool?.trim()) throw new Error("학교명을 입력해주세요.");
     const requestedStartOn = requireCommencement(data.requestedStartOn);
     if (!data.referralSource) throw new Error("가입경로를 선택해주세요.");
+    // 저장할 가입 경로 — 허용 목록 밖 값은 "OTHER" 로 바꾼다(신청은 거절하지 않는다).
+    // 아래 UPDATE(기존 신청 덮어쓰기)·INSERT 두 갈래가 같은 값을 쓴다.
+    const referralSource = normalizeReferralSource(data.referralSource) || null;
     if (data.shuttleNeeded && (!data.shuttlePickup?.trim() || !data.shuttleTime || !data.shuttleDropoff?.trim())) {
         throw new Error("셔틀 탑승을 선택한 경우 탑승 장소, 희망 시간, 하차 장소를 모두 입력해주세요.");
     }
@@ -1060,7 +1068,7 @@ export async function submitEnrollApplication(data: EnrollApplicationInput) {
                 data.shuttleTime || null,
                 data.shuttleDropoff?.trim() || shuttleDropoffLocation?.placeName || null,
                 data.paymentMethod || null,
-                data.referralSource || null,
+                referralSource,
                 data.memo?.trim() || null,
                 data.agreedTerms,
                 data.agreedPrivacy,
@@ -1179,7 +1187,7 @@ export async function submitEnrollApplication(data: EnrollApplicationInput) {
             data.shuttleTime || null,           // $18
             data.shuttleDropoff?.trim() || shuttleDropoffLocation?.placeName || null, // $19 라벨: 학부모가 적은 내리는 곳 이름 우선(폴백=지도 장소명)
             data.paymentMethod || null,         // $20
-            data.referralSource || null,        // $21
+            referralSource,                     // $21
             data.memo?.trim() || null,          // $22
             data.agreedTerms,                   // $23
             data.agreedPrivacy,                 // $24
