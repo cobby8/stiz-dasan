@@ -8,7 +8,7 @@ import ts from "typescript";
 const source = await readFile("src/lib/billing/workbench-pricing.ts", "utf8");
 const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
 const {
-  weeklyTierPrice, splitTierPrice, planWeeklyTuition, planShuttleFee, classRunsShuttle, COMPETITION_PACKAGE_FEE, COMPETITION_WEEKDAY_ONLY_FEE, FREE_SHUTTLE_HUB_STOPS,
+  weeklyTierPrice, splitTierPrice, planWeeklyTuition, planShuttleFee, classRunsShuttle, COMPETITION_PACKAGE_FEE, FREE_SHUTTLE_HUB_STOPS, fixedTuitionShortLabel, fixedTuitionCovers,
   siblingDiscountStudents, siblingDiscountAmount, REGULAR_SIBLING_DISCOUNT_TARGET,
 } = await import(`data:text/javascript;base64,${Buffer.from(js).toString("base64")}`);
 
@@ -120,27 +120,70 @@ test("대회준비반: 일반 반이 2개 이상이면 1개만 포함, 나머지
   assert.match(plan.get("s:tue").warning, /일반 반을 2개 수강/);
 });
 
-test("대회준비반: 수요일 훈련이 없으면 묶음은 적용하되 경고, 주말 훈련 없이 수요일만이면 150,000원 고정", () => {
+test("대회준비반: 수요일 훈련이 없으면 묶음은 적용하되 경고", () => {
   const sunOnly = planWeeklyTuition([compRow("s", "sun8", "Sun")]);
   assert.equal(sunOnly.get("s:sun8").baseAmount, 300000);
   assert.match(sunOnly.get("s:sun8").warning, /수요일 7교시 훈련\(필수\) 등록이 없습니다/);
-  const wedOnly = planWeeklyTuition([compRow("w", "wed7", "Wed")]);
-  // 원장 확정(2026-11-09): 평일(수요일)만 = 150,000원 고정, 고정 요금 표시
-  assert.equal(COMPETITION_WEEKDAY_ONLY_FEE, 150000);
-  assert.equal(wedOnly.get("w:wed7").baseAmount, 150000);
-  assert.equal(wedOnly.get("w:wed7").fixedFee, true);
-  assert.equal(wedOnly.get("w:wed7").warning, null);
-  assert.match(wedOnly.get("w:wed7").basis, /고정 요금 — 형제할인·3회 달 차감 없음/);
 });
 
-test("대회준비반 수요일 + 일반 반: 대회준비반 행 150,000 고정, 일반 반은 대회준비반을 뺀 N 으로 일반 규칙 + 경고", () => {
-  const plan = planWeeklyTuition([compRow("w", "wed7", "Wed"), enroll("w", "mon", "hobby", hobby, "주중취미반", "Mon"), enroll("w", "fri", "hobby", hobby, "주중취미반", "Fri")]);
-  assert.equal(plan.get("w:wed7").baseAmount, 150000);
-  assert.equal(plan.get("w:wed7").fixedFee, true);
-  // 일반 반 2개 = 주2회(대회준비반 행 제외) → 160,000 ÷ 2
-  assert.deepEqual(["w:mon", "w:fri"].map(k => plan.get(k).baseAmount), [80000, 80000]);
-  assert.ok(!plan.get("w:mon").fixedFee);
-  assert.match(plan.get("w:mon").warning, /평일 대회준비반\(150,000원 고정\)과 일반 반 2개/);
+// 원장 결정(2026-11-16): 대회준비반 주N회 «한 달 합계» = 주1회 150,000 · 주2회 260,000 · 주3회 330,000.
+// 평일 대회준비반(수7)은 다른 프로그램과 같은 일반 규칙(학생 전체 주 횟수 N, 주N회 합계 ÷ N)으로 계산한다.
+const comp1116 = { price: 150000, priceWeek1: 150000, priceWeek2: 260000, priceWeek3: 330000, priceDaily: null };
+const wed7 = (s) => enroll(s, "wed7", "comp", comp1116, "대회준비반", "Wed");
+const weekdayGame = { price: 100000, priceWeek1: 100000, priceWeek2: 160000, priceWeek3: 210000, priceDaily: null };
+const sat7 = { price: 120000, priceWeek1: 120000, priceWeek2: 220000, priceWeek3: 300000, priceDaily: null };
+
+test("평일 대회준비반만(이지민 수7 주1회) = 150,000원, 고정 요금 아님(일반 규칙)", () => {
+  const plan = planWeeklyTuition([wed7("ljm")]);
+  assert.equal(plan.get("ljm:wed7").baseAmount, 150000);
+  assert.ok(!plan.get("ljm:wed7").fixedFee);
+  assert.equal(plan.get("ljm:wed7").warning, null);
+});
+
+test("수7+금5 주2회(전서호) = 수7 130,000 + 금5 80,000 — 주2회 합계 ÷ 2", () => {
+  const plan = planWeeklyTuition([wed7("jsh"), enroll("jsh", "fri5", "wg", weekdayGame, "주중경기반", "Fri")]);
+  assert.equal(plan.get("jsh:wed7").baseAmount, 130000);
+  assert.equal(plan.get("jsh:fri5").baseAmount, 80000);
+  assert.ok(!plan.get("jsh:wed7").fixedFee);
+  assert.match(plan.get("jsh:wed7").basis, /대회준비반 주2회 요금 260,000원 ÷ 2/);
+});
+
+test("월4·수7·토7 주3회(신이준) = 수7 110,000 — 주3회 합계 ÷ 3", () => {
+  const plan = planWeeklyTuition([enroll("sij", "mon4", "wg", weekdayGame, "주중경기반", "Mon"), wed7("sij"), enroll("sij", "sat7", "s7", sat7, "토요일 7교시", "Sat")]);
+  assert.equal(plan.get("sij:wed7").baseAmount, 110000);
+  assert.equal(plan.get("sij:mon4").baseAmount, 70000);
+  assert.equal(plan.get("sij:sat7").baseAmount, 100000);
+});
+
+// 학생별 고정 월 수강료(2026-11-16 원장 결정) — 반별 합산 대신 그 금액 1건(첫 행), 나머지 0원, 고정 요금(할인·3회 차감 없음)
+test("고정 수강료(서우빈 수7+토7 15만): 첫 반 150,000 · 다음 반 0원 · fixedFee", () => {
+  const rows = [wed7("swb"), enroll("swb", "sat7", "s7", sat7, "토요일 7교시", "Sat")];
+  // 고정 없으면 반별 합산(주2회): 130,000 + 110,000
+  const before = planWeeklyTuition(rows);
+  assert.equal(before.get("swb:wed7").baseAmount + before.get("swb:sat7").baseAmount, 240000);
+  const plan = planWeeklyTuition(rows, new Map([["swb", { amount: 150000, memo: "원장 합의" }]]));
+  assert.deepEqual(["swb:wed7", "swb:sat7"].map(k => plan.get(k).baseAmount), [150000, 0]);
+  assert.deepEqual(["swb:wed7", "swb:sat7"].map(k => plan.get(k).fixedFee), [true, true]);
+  assert.match(plan.get("swb:wed7").basis, /^고정 수강료 월 150,000원\(원장 합의\) · 고정 요금 — 형제할인·3회 달 차감 없음$/);
+  assert.match(plan.get("swb:sat7").basis, /첫 반 행에 포함\(0원\)/);
+});
+
+test("고정 수강료는 대회준비반 30만 묶음보다 우선하고, 다른 학생에는 영향 없음", () => {
+  const plan = planWeeklyTuition([compRow("a", "sun8", "Sun"), compRow("a", "wed7", "Wed"), enroll("b", "mon", "hobby", hobby, "주중취미반", "Mon")],
+    new Map([["a", { amount: 200000, memo: null }]]));
+  assert.deepEqual(["a:sun8", "a:wed7"].map(k => plan.get(k).baseAmount), [200000, 0]);
+  assert.equal(plan.get("b:mon").baseAmount, 100000);
+  assert.ok(!plan.get("b:mon").fixedFee);
+});
+
+test("고정 수강료 기간·짧은 표시", () => {
+  assert.equal(fixedTuitionCovers({ startMonth: "2027-01", endMonth: null }, "2027-01"), true);
+  assert.equal(fixedTuitionCovers({ startMonth: "2027-01", endMonth: null }, "2026-12"), false);
+  assert.equal(fixedTuitionCovers({ startMonth: "2027-01", endMonth: "2027-02" }, "2027-03"), false);
+  assert.equal(fixedTuitionCovers({ startMonth: "2027-01", endMonth: "2027-02" }, "2027-02"), true);
+  assert.equal(fixedTuitionShortLabel(150000), "고정 15만");
+  assert.equal(fixedTuitionShortLabel(132500), "고정 132,500원");
+  assert.equal(fixedTuitionShortLabel(0), "고정 0원");
 });
 
 test("대회준비반 주말 묶음 행은 고정 요금 표시(fixedFee), 묶음 밖 일반 반은 아님", () => {

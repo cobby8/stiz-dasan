@@ -6,7 +6,7 @@ import { validateMonthlyRegisterDraft } from "./monthly-register";
 import { WorkbenchError, carryPool, allocateCarry, filterWorkbenchDates, illnessMissedDatesOf, validateWorkbenchCommand, validateWorkbenchMonth, workbenchTotal, illnessReducedSumSql, shortMonthProration, attendedOnlyProration, STANDARD_MONTHLY_SESSIONS,
   type WorkbenchAmounts, type WorkbenchView, type WorkbenchRow, type WorkbenchOperation, type WorkbenchCalendarSnapshot } from "./workbench";
 // 주N회 요금·셔틀비·형제할인 «제안값» 규칙은 순수 모듈 한 곳에서만 정한다.
-import { planWeeklyTuition, planShuttleFee, siblingDiscountStudents, siblingDiscountAmount, REGULAR_SIBLING_DISCOUNT_PERCENT, type ShuttlePlan } from "./workbench-pricing";
+import { planWeeklyTuition, planShuttleFee, siblingDiscountStudents, siblingDiscountAmount, REGULAR_SIBLING_DISCOUNT_PERCENT, fixedTuitionCovers, fixedTuitionShortLabel, type ShuttlePlan, type FixedTuition } from "./workbench-pricing";
 // 부상·질병 기간 결석의 «청구 발행 보류» 판정 조각·글자(순수 모듈 한 곳)
 import { BILLING_HOLD_LABEL, BILLING_HOLD_MOVED_NOTE, illnessHoldPeriodSql, parseUnpaidGuides, unpaidGuideShape } from "@/lib/regular/illnessPeriodRules";
 
@@ -48,7 +48,7 @@ export async function readWorkbenchSchedule(tx:WorkbenchTx,month:string,classId:
 /** 동일 거래의 원본만 읽는다. 외부 캘린더/서비스와 연결하거나 초기 테이블을 생성하지 않는다. */
 // 읽기에 필요한 표가 있는지 한 번에 확인한다(2026-11-14 속도 개선 — 예전엔 표마다 따로 12번 왕복).
 // 판정 기준은 예전 표별 확인과 같은 to_regclass 다.
-const READ_TABLES = ["MonthlyEnrollmentRegister","AnnualEvent","BillingWorkbenchDraft","BillingWorkbenchOperation","BillingCarryCredit","BillingCarryUsage","BillingAbsenceResolution","BillingWorkbenchRevision","RegularAbsence","MakeupCredit","MakeupSession","Attendance","SpecialProgramCredit","RegularShuttleStop","RegularAbsencePeriod","PaymentAuditLog"] as const;
+const READ_TABLES = ["MonthlyEnrollmentRegister","AnnualEvent","BillingWorkbenchDraft","BillingWorkbenchOperation","BillingCarryCredit","BillingCarryUsage","BillingAbsenceResolution","BillingWorkbenchRevision","RegularAbsence","MakeupCredit","MakeupSession","Attendance","SpecialProgramCredit","RegularShuttleStop","RegularAbsencePeriod","PaymentAuditLog","StudentFixedTuition"] as const;
 async function existingTables(tx: WorkbenchTx): Promise<Set<string>> {
   const rows = await tx.$queryRawUnsafe<Array<{ name: string; found: boolean }>>(
     `SELECT name, to_regclass('public."' || name || '"') IS NOT NULL AS found FROM unnest($1::text[]) AS name`, [...READ_TABLES]);
@@ -159,6 +159,13 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
       WHERE pa.reason = 'ILLNESS_INJURY' AND pa.status <> 'CANCELLED' AND pp."carryState" <> 'NONE'
         AND pa.date < ($1||'-01')::date + interval '1 month' ORDER BY pa.id LIMIT ${limit}`, month)) : [];
   const carryPeriodOf = new Map(periodAbsenceRows.map(row => [row.id, row.periodId]));
+  // 학생별 고정 월 수강료(2026-11-16 원장 결정 — 예: 서우빈 «매달 15만 원 고정»). 그 달이 기간 안인 것만 읽는다.
+  // 표가 아직 없는 DB(운영 적용 전)면 읽지 않는다 → 예전과 똑같이 계산된다.
+  // 같은 학생에 겹치는 기간이 있으면(저장 화면이 막지만) 가장 나중에 만든 것을 쓴다.
+  const fixedTuitionRows = has("StudentFixedTuition") ? take(await tx.$queryRawUnsafe<Array<{ id: string; studentId: string; amount: number; startMonth: string; endMonth: string | null; memo: string | null; updatedAt: Date | string }>>(
+    `SELECT id,"studentId",amount,"startMonth","endMonth",memo,"updatedAt" FROM "StudentFixedTuition" WHERE "startMonth" <= $1 AND ("endMonth" IS NULL OR "endMonth" >= $1) ORDER BY "studentId","createdAt" DESC,id LIMIT ${limit}`, month)) : [];
+  const fixedTuitionByStudent = new Map<string, FixedTuition>();
+  for (const row of fixedTuitionRows) if (fixedTuitionCovers(row, month) && !fixedTuitionByStudent.has(row.studentId)) fixedTuitionByStudent.set(row.studentId, { amount: Number(row.amount), memo: row.memo ?? null });
   const shuttleRiders = new Set(shuttleStops.map(r=>r.studentId).filter((v):v is string=>Boolean(v)));
   const unlinkedShuttleNames = [...new Set(shuttleStops.filter(r=>!r.studentId).map(r=>r.studentName))];
   const calendar = await calendarInput;
@@ -219,7 +226,9 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
   // 보류가 한 건도 없으면 키를 넣지 않는다: 보류가 없는 달의 지문이 예전과 같아야 이미 저장·확정해 둔 초안이 그대로 유효하다.
   const sourceVersion = hash({ month, enrollments, payments, invoices, registers, events, officialCalendarFingerprint, calendarSource, credits, usages, absences, bookings, originDrafts, completedCurrentDrafts, originPayments, originInvoices, makeupSource, attendance, seasonalCredits, shuttleStops, ...(illnessHolds.length ? { illnessHolds } : {}),
     // 정산 안내도 원본이다 — 화면을 연 뒤 확정·확정 취소가 끼면 지문이 달라진다. 안내가 없는 달의 지문은 예전 그대로
-    ...(illnessGuides.length ? { illnessGuides } : {}) });
+    ...(illnessGuides.length ? { illnessGuides } : {}),
+    // 고정 수강료도 원본이다 — 화면을 연 뒤 원장이 바꾸면 지문이 달라진다. 없는 달의 지문은 예전 그대로(저장해 둔 초안이 낡은 것으로 바뀌지 않게)
+    ...(fixedTuitionRows.length ? { fixedTuitionRows } : {}) });
   const pool = (studentId:string)=>carryPool(credits.filter(c=>c.studentId===studentId),usages.filter(u=>u.studentId===studentId),month);
   const available = (studentId: string) => pool(studentId).available;
   const assignedShuttle = new Set<string>(), assignedCarry = new Map<string, number>();
@@ -241,7 +250,9 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
   // (1) 수강료: 확정 장부가 없는 청구 대상 반만 학생 단위로 계산한다(전체 주 횟수 N 기준 주N회 요금·대회준비반 30만원 묶음).
   const tuitionPlans = planWeeklyTuition(billable.filter(e => !scopes.get(`${e.studentId}:${e.classId}`)!.classReg).map(e => ({
     key: `${e.studentId}:${e.classId}`, studentId: e.studentId, programId: e.programId ?? null, programName: e.programName ?? null, dayOfWeek: e.dayOfWeek,
-    price: e.price, priceWeek1: e.priceWeek1 ?? null, priceWeek2: e.priceWeek2 ?? null, priceWeek3: e.priceWeek3 ?? null, priceDaily: e.priceDaily ?? null })));
+    price: e.price, priceWeek1: e.priceWeek1 ?? null, priceWeek2: e.priceWeek2 ?? null, priceWeek3: e.priceWeek3 ?? null, priceDaily: e.priceDaily ?? null })),
+    // 학생별 고정 월 수강료가 있으면 반별 합산 대신 그 금액(형제할인·3회 달 차감 없음 — fixedFee)
+    fixedTuitionByStudent);
   // (2) 셔틀비: 그 달 명단에 있는 학생만, 청구 대상 반의 주 횟수로 제안한다.
   const shuttlePlans = new Map<string, ShuttlePlan>();
   for (const studentId of new Set(billable.map(e => e.studentId))) shuttlePlans.set(studentId, planShuttleFee(shuttleRiders.has(studentId),
@@ -291,7 +302,7 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
         // 경고는 관리자 저장 뒤 검토 사유가 걸러져도 남도록 근거에도 적는다.
         if (tuition.warning) { reviewReasons.push(tuition.warning); basis.push(`확인: ${tuition.warning}`); }
       }
-      // 대회준비반 고정 요금 행(30만 원 묶음·평일만 15만 원)은 형제할인·3회 달 차감을 붙이지 않는다(원장 확정 2026-11-09).
+      // 고정 요금 행(대회준비반 30만 원 묶음·학생별 고정 수강료)은 형제할인·3회 달 차감을 붙이지 않는다(원장 확정 2026-11-09·11-16).
       // 같은 학생의 다른 일반 반 행은 fixedFee 가 아니므로 형제할인을 그대로 받는다.
       // (근거 문구 FIXED_FEE_NOTE 는 tuition.basis 에 이미 들어 있다.)
       // 형제할인 제안: 수강료(기본 금액)에만 10%, 셔틀비 제외. 기간 조정보다 먼저 정해야 3회 달 차감이 할인 후 금액 기준이 된다.
@@ -411,12 +422,12 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
     // 기간을 좁힌 경우(일부 수강)는 관리자가 직접 계산한 값이라 비교하지 않는다.
     // (부상 결석 제외로 «청구 0원»을 제안한 행은 기간 조정이 전액이라 3회 달 기준과 다른 것이 정상 — 비교하지 않는다)
     if (isShortMonth && participates && scheduledDates.length === monthSessions && guidedProration === null) {
-      // 대회준비반 고정 요금 행은 3회 달 차감이 없으므로 기대값 0(장부 확정 행은 제안이 없어 일반 기준).
+      // 고정 요금 행(대회준비반·학생별 고정 수강료)은 3회 달 차감이 없으므로 기대값 0(장부 확정 행은 제안이 없어 일반 기준).
       const fixed = !classReg && !excluded && Boolean(tuitionPlans.get(id)?.fixedFee);
       const expected = fixed ? 0 : shortMonthProration(amounts.baseAmount, monthSessions, amounts.discountAmount);
       if (amounts.prorationAmount !== expected) {
         const note = fixed
-          ? `대회준비반 고정 요금은 3회 달 차감이 없습니다(현재 기간 조정 ${amounts.prorationAmount.toLocaleString("ko-KR")}원).`
+          ? `${fixedTuitionByStudent.has(e.studentId) ? "고정 수강료" : "대회준비반 고정 요금"}는 3회 달 차감이 없습니다(현재 기간 조정 ${amounts.prorationAmount.toLocaleString("ko-KR")}원).`
           : `연간 일정 ${monthSessions}회인 달은 기간 조정이 할인 후 금액 기준 ${expected.toLocaleString("ko-KR")}원이어야 합니다(현재 ${amounts.prorationAmount.toLocaleString("ko-KR")}원).`;
         reviewReasons.push(note);
         basis.push(`확인: ${note}`); // 관리자 저장 뒤 검토 사유가 걸러져도 근거에는 남긴다
@@ -426,6 +437,9 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
     // 발행 보류: 이번에 새로 발행될 수 있는 행(제외·이미 발행·기존 청구 있음이 아닌 행)만 막는다.
     // 차단 사유 맨 앞에 넣어, 확정·발행을 요청하면 이 글자로 거절된다(mutateWorkbench 가 첫 차단 사유를 돌려준다).
     const holdPeriodId = participates ? holdPeriodFor(e.studentId, e.classId) : undefined;
+    // 고정 수강료가 이 행의 제안값을 정했는가(확정 장부가 없고 청구 대상인 행만)
+    const fixedOfStudent = fixedTuitionByStudent.get(e.studentId);
+    const fixedLabel = fixedOfStudent && !classReg && !excluded ? fixedTuitionShortLabel(fixedOfStudent.amount) : null;
     if (holdPeriodId) blockingReasons.unshift(BILLING_HOLD_LABEL);
     // 부상 결석 안내는 있는데 그 기간의 확정 시각을 읽지 못했다 — 저장해 둔 금액이 정산 전 것인지 뒤 것인지 가릴 수 없어 발행을 막는다
     if (guideTimeUnknown && participates) blockingReasons.push(GUIDE_TIME_UNKNOWN_REASON);
@@ -455,7 +469,9 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
       // 보류 행에만 붙인다 — 보류가 아닌 행의 모양은 예전과 완전히 같다
       ...(holdPeriodId ? { hold: true as const, holdPeriodId } : {}),
       // 달 가운데가 빠진 행에만 붙인다 — 저장할 때 수업일 사본에서 이 날들을 빼고, 근거에 따로 적어 둔다
-      ...(guideMissedDates.length ? { guideMissedDates } : {}) };
+      ...(guideMissedDates.length ? { guideMissedDates } : {}),
+      // 학생별 고정 수강료가 적용된 행에만 붙인다 — 화면이 «고정 15만»처럼 근거를 보인다(확정 장부·제외 행은 고정 금액을 쓰지 않으므로 없음)
+      ...(fixedLabel ? { fixedTuitionLabel: fixedLabel } : {}) };
   });
   return { month, sourceVersion, storageReady, writesEnabled: writesEnabled && storageReady, rows,carrySettlementReady:true,calendarSource,
     notices:[...seasonalCredits.length?[`기존 특강 이월 ${seasonalCredits.length}건은 별도 대조·이관이 필요합니다. 자동 중복 적립하지 않습니다.`]:[],

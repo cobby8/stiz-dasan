@@ -35,6 +35,8 @@ import { PAYMENT_TONE, TONE_SELECTED_CLASS } from "@/lib/ui/statusTones";
 import ParentRequestLinkPanel from "./ParentRequestLinkPanel";
 import GuardianPanel from "./GuardianPanel";
 import AbsencePeriodPanel from "./AbsencePeriodPanel";
+// 학생별 고정 월 수강료(2026-11-16 원장 결정) — «청구/수납» 탭(원장만)에 둔다
+import FixedTuitionPanel from "./FixedTuitionPanel";
 // 학부모 «정보 변경 요청» 승인·반려 + 건강·알레르기·특이사항(2026-11-14 b4·b5)
 import { ProfileChangeRequestsPanel, StudentHealthNotePanel } from "./StudentProfilePanels";
 import { getStudentProfileExtras, type StudentProfileExtras } from "@/app/actions/student-profile-admin";
@@ -1916,6 +1918,9 @@ export default function StudentDetailClient({
                                     </span>
                                 </button>
                             )}
+
+                            {/* 고정 수강료 — 켜 두면 청구 준비가 반별 합산 대신 이 금액으로 계산(원장 전용 탭 안, 청구 목록 아래) */}
+                            <FixedTuitionPanel studentId={studentId ?? student.id} />
                         </div>
                     )}
 
