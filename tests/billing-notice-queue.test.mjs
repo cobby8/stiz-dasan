@@ -148,6 +148,12 @@ function fakeStore() {
         return notices.filter((n) => n.kind === "UNPAID" && n.paymentIds.some((p) => v[0].includes(p))
           && ["QUEUED", "UNCERTAIN", "SENT", "APP_ONLY"].includes(n.status)).map((n) => ({ id: n.id }));
       }
+      if (sql.includes(`"invoiceIds" && $1::text[]`)) {
+        // 청구서 겹침 검사(잠금 안 · 2026-11-16 묶음 안내) — 같은 청구서가 든 살아 있는 청구서 안내(같은 재발송 종류끼리)
+        const suffix = (key) => /:resend:\d{4}-\d{2}-\d{2}$/.exec(key)?.[0] ?? "";
+        return notices.filter((n) => n.kind === "INVOICE" && n.invoiceIds.some((i) => v[0].includes(i))
+          && active.has(n.status) && suffix(n.noticeKey) === v[1]).map((n) => ({ id: n.id }));
+      }
       if (sql.includes(`INSERT INTO "BillingNoticeDelivery"`)) {
         assert.match(sql, /ON CONFLICT \("noticeKey"\) WHERE status IN \('QUEUED', 'SENT', 'UNCERTAIN', 'APP_ONLY'\) DO NOTHING/);
         const [id, kind, noticeKey, periodKey, studentId, studentName, invoiceIds, paymentIds, channel, status, deliveryId] = v;
@@ -195,7 +201,8 @@ test("예약: 성공한 건만 «발송됨» — 끊긴 뒤 다시 누르면 못
   const s = fakeStore();
   const queueCalls = [];
   const reserveQueue = async (input) => { queueCalls.push(input); return { batchId: `batch-${queueCalls.length}` }; };
-  const rows = ["1", "2", "3"].map((k) => invoiceRow({ invoiceId: `inv-${k}`, paymentId: `pay-${k}`, studentId: `stu-${k}` }));
+  // 학부모 셋(번호 셋) — 같은 번호면 묶음 한 통이 된다(2026-11-16 · 묶음 테스트는 아래 7번)
+  const rows = ["1", "2", "3"].map((k) => invoiceRow({ invoiceId: `inv-${k}`, paymentId: `pay-${k}`, studentId: `stu-${k}`, parentId: `par-${k}`, phone: `010-1234-000${k}` }));
   const plan = q.planInvoiceNotices(rows, { month: 12, academyPhone: "", templateId: "" });
 
   const first = await q.reserveBillingNotices({ db: s.db, tx: s.tx, kind: "INVOICE", periodKey: "2026-12", notices: plan.notices, actorUserId: "admin", reserveQueue, label: "12월 청구서 안내", newId: s.newId });

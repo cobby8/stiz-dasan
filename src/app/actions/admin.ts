@@ -109,6 +109,7 @@ import {
     loadBillingNoticeProgress,
     planInvoiceNotices,
     planUnpaidNotices,
+    summarizeInvoicePlan,
     reserveBillingNotices,
     unpaidBlockingNoticeSql,
     type InvoiceNoticeRow,
@@ -4204,75 +4205,19 @@ export async function sendInvoiceLinksForMonth(year: number, month: number, forc
     await ensureInvoicesForMonth(year, month);
     await settleBillingNoticeResults();
 
-    const dueStart = `${year}-${String(month).padStart(2, "0")}-01`;
-    const nextMonth = month === 12 ? 1 : month + 1;
-    const nextYear = month === 12 ? year + 1 : year;
-    const dueEnd = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
-    // 다시 누르면 «아직 못 받은 청구서»만(실패한 건은 sentAt 이 비어 있어 다시 대상이 된다)
-    const sentFilter = forceResend ? "" : `AND i."sentAt" IS NULL`;
     const periodKey = `${year}-${String(month).padStart(2, "0")}`;
+    const resendYmd = forceResend ? todayKst() : null;
 
     try {
-        const invoiceCandidates = await prisma.$queryRawUnsafe<Array<Omit<InvoiceNoticeRow, "amount"> & {
-            id: string;
-            amount: number;
-            notificationHeld: boolean;
-            parentHasAccount: boolean | null;
-        }>>(
-            `
-            SELECT
-              i.id,
-              i.id AS "invoiceId",
-              i."paymentId",
-              i."studentId",
-              s.name AS "studentName",
-              i."parentId",
-              u.phone,
-              -- 가입(로그인 계정 연결) 여부 — 가입 안내 발송과 같은 기준. 없으면 비회원 결제 링크로 보낸다
-              (u."authUserId" IS NOT NULL) AS "parentHasAccount",
-              p.amount::int AS amount,
-              -- dueDate(청구서)는 timestamptz 라 AT TIME ZONE 을 «한 번»만 건다(한국 달력 날짜)
-              TO_CHAR(i."dueDate" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "dueYmd",
-              EXISTS (
-                SELECT 1 FROM "BillingNoticeDelivery" n WHERE n."noticeKey" = 'invoice:' || i.id
-              ) AS "hadPriorNotice",
-              EXISTS (
-                SELECT 1
-                FROM "OperationsCommand" command
-                WHERE command."studentId" = p."studentId"
-                  AND command."effectiveMonth" = CONCAT($1::text, '-', LPAD($2::text, 2, '0'))
-                  AND command.status = 'HELD'
-                  AND command."notificationStatus" = 'HELD'
-              ) AS "notificationHeld"
-            FROM "PaymentInvoice" i
-            JOIN "Payment" p ON p.id = i."paymentId"
-            LEFT JOIN "Student" s ON s.id = i."studentId"
-            LEFT JOIN "User" u ON u.id = i."parentId"
-            WHERE i.status NOT IN ('PAID', 'CANCELED')
-              AND p.amount > 0
-              -- 학부모 미연결(i."parentId" IS NULL) 청구서도 읽는다 — 조용히 빼지 않고 «대상 아님» 이름으로 보여 준다
-              -- 랠리즈 청구서의 장부용 사본은 학부모에게 다시 보내지 않는다
-              AND ${rallyzMirrorExclusionSql("p")}
-              AND (
-                (p.year = $1 AND p.month = $2)
-                OR ((p.year IS NULL OR p.month IS NULL) AND p."dueDate" >= $3::timestamp AND p."dueDate" < $4::timestamp) -- 청구 월 우선(billing-month-sql.ts)
-              )
-              ${sentFilter}
-            ORDER BY i."dueDate" ASC
-            `,
-            year,
-            month,
-            dueStart,
-            dueEnd,
-        );
-        // 실제 운영 요청 원장의 HELD 상태와 금액을 함께 확인해 발송 대상을 확정한다.
-        const invoices = invoiceCandidates.filter(isMonthlyInvoiceNotificationEligible);
+        // 대상 조회는 확인창 미리보기(previewInvoiceNoticeCounts)와 «같은 함수» — 화면 숫자와 실제 발송이 어긋나지 않게
+        const { invoices, activeSkipped } = await loadInvoiceNoticeCandidates(year, month, resendYmd);
 
-        if (invoices.length === 0) {
+        if (invoices.length === 0 && activeSkipped === 0) {
             return { sent: 0, message: "발송할 청구서 링크가 없습니다." };
         }
 
-        // 알림톡 틀 id 가 있으면 알림톡(거절되면 cron 이 같은 본문+링크를 문자로), 없으면 같은 본문+링크를 문자(LMS)로
+        // 알림톡 틀 id 가 있으면 알림톡(거절되면 cron 이 같은 본문+링크를 문자로), 없으면 같은 본문+링크를 문자(LMS)로.
+        // 같은 번호에 두 장 이상이면 묶음 문자 1통(LMS) — planInvoiceNotices 가 정한다(2026-11-16)
         const templateId = alimtalkTemplateIdForEnv(BILLING_ALIMTALK_TEMPLATES.BILLING_INVOICE_PARENT.envKey);
         // 가입하지 않은 학부모 → 청구서 한 장 전용 비회원 링크(pay/<토큰>). 발급 실패한 건은 예전 로그인 링크로 나간다
         const guestPaths = await issueGuestPayPathsForNotices(invoices, { source: "INVOICE_NOTICE", createdByUserId: admin.appUserId });
@@ -4281,7 +4226,7 @@ export async function sendInvoiceLinksForMonth(year: number, month: number, forc
             month,
             academyPhone: await billingAcademyPhone(),
             templateId,
-            resendYmd: forceResend ? todayKst() : null,
+            resendYmd,
         });
 
         const reserved = await reserveBillingNotices({
@@ -4295,12 +4240,12 @@ export async function sendInvoiceLinksForMonth(year: number, month: number, forc
             label: `${month}월 ${INVOICE_NOTICE_LABEL}`,
         });
 
-        // 앱 알림 — 이번에 새로 예약된 청구서만(실패 뒤 다시 보내는 건은 앱 알림을 또 만들지 않는다)
+        // 앱 알림 — 이번에 새로 예약된 청구서만(실패 뒤 다시 보내는 건은 앱 알림을 또 만들지 않는다).
+        // 학부모당 1건(2026-11-16): 한 장이면 예전 문구 그대로, 여러 장이면 «청구서 N장 · 합계» 한 건(한 번에 결제 화면으로)
         const appIds = reserved.queued
             .filter((notice) => forceResend || !notice.hadPriorNotice)
             .flatMap((notice) => notice.invoiceIds);
         if (appIds.length > 0) {
-            const placeholders = appIds.map((_, index) => `$${index + 1}`).join(",");
             await prisma.$executeRawUnsafe(
                 `
                 INSERT INTO "Notification" (
@@ -4310,24 +4255,32 @@ export async function sendInvoiceLinksForMonth(year: number, month: number, forc
                     gen_random_uuid()::text,
                     i."parentId",
                     'PAYMENT',
-                    CONCAT($${appIds.length + 1}::text, '월 수강료 청구서 안내'),
-                    CONCAT(
-                        s.name,
+                    CONCAT($2::text, '월 수강료 청구서 안내'),
+                    CASE WHEN COUNT(*) = 1 THEN CONCAT(
+                        MIN(s.name),
                         ' 학생 청구서가 발행되었습니다. 금액 ',
-                        TO_CHAR(i.amount, 'FM999,999,999'),
+                        TO_CHAR(SUM(i.amount), 'FM999,999,999'),
                         '원, 납부기한 ',
-                        TO_CHAR(i."dueDate" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD'),
+                        TO_CHAR(MIN(i."dueDate") AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD'),
                         '까지 확인해 주세요.'
-                    ),
-                    CONCAT('/payments/', i.id),
+                    ) ELSE CONCAT(
+                        STRING_AGG(DISTINCT s.name, ', '),
+                        ' 학생 청구서 ', COUNT(*), '장이 발행되었습니다. 합계 ',
+                        TO_CHAR(SUM(i.amount), 'FM999,999,999'),
+                        '원, 납부기한 ',
+                        TO_CHAR(MIN(i."dueDate") AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD'),
+                        '까지 확인해 주세요.'
+                    ) END,
+                    CASE WHEN COUNT(*) = 1 THEN CONCAT('/payments/', MIN(i.id)) ELSE '/mypage/payments/checkout' END,
                     false,
                     NOW()
                 FROM "PaymentInvoice" i
                 JOIN "Student" s ON s.id = i."studentId"
-                WHERE i.id IN (${placeholders})
+                WHERE i.id = ANY($1::text[])
                   AND i."parentId" IS NOT NULL
+                GROUP BY i."parentId"
                 `,
-                ...appIds,
+                appIds,
                 String(month),
             ).catch((error) => console.error("[billing-notice] 청구서 앱 알림 생성 실패:", error));
         }
@@ -4340,6 +4293,8 @@ export async function sendInvoiceLinksForMonth(year: number, month: number, forc
             metadata: {
                 year, month, batchId: reserved.batchId, queueFailed: reserved.queueFailed,
                 invoiceIds: reserved.queued.flatMap((notice) => notice.invoiceIds),
+                // 묶음 문자로 나간 청구서 묶음(한 통 = 한 배열)
+                bundledInvoiceIds: reserved.queued.filter((notice) => notice.invoiceIds.length > 1).map((notice) => notice.invoiceIds),
                 unlinkedInvoiceIds: plan.unlinked.flatMap((item) => item.invoiceIds),
                 // 비회원 결제 링크로 보낸 청구서(토큰 원문은 남기지 않는다)
                 guestLinkInvoiceIds: [...guestPaths.keys()],
@@ -4349,10 +4304,15 @@ export async function sendInvoiceLinksForMonth(year: number, month: number, forc
         revalidateFinanceCaches();
         revalidatePath("/mypage");
 
-        const message = describeReservation({
+        // «청구서 N장 → 문자 M통(묶음 K통)» — 이번에 실제로 예약된 것 기준
+        const queuedSummary = summarizeInvoicePlan({ notices: reserved.queued, unlinked: [] });
+        const head = queuedSummary.invoices > 0
+            ? `청구서 ${queuedSummary.invoices}장 → 문자 ${queuedSummary.messages}통(묶음 ${queuedSummary.bundles}통). `
+            : "";
+        const message = head + describeReservation({
             label: `${month}월 청구서 안내`,
             queued: reserved.queued,
-            skippedActive: reserved.skippedActive,
+            skippedActive: reserved.skippedActive + activeSkipped,
             unlinked: plan.unlinked,
         }) + (reserved.queueFailed ? " 문자 대기열 예약에 실패해 문자는 보내지 않았습니다. 잠시 후 다시 눌러 주세요." : "");
         return {
@@ -4366,6 +4326,118 @@ export async function sendInvoiceLinksForMonth(year: number, month: number, forc
     } catch (e) {
         console.error("Failed to send invoice links:", e);
         throw new Error("청구서 링크 발송 실패");
+    }
+}
+
+type InvoiceNoticeCandidate = Omit<InvoiceNoticeRow, "amount"> & {
+    id: string;
+    amount: number;
+    notificationHeld: boolean;
+    parentHasAccount: boolean | null;
+    activeNotice: boolean;
+};
+
+/**
+ * 청구서 안내 대상 — 발송(sendInvoiceLinksForMonth)과 확인창 미리보기(previewInvoiceNoticeCounts)가 같이 쓴다.
+ * 이미 «살아 있는» 안내(예약 중·결과 확인 필요 등)에 든 청구서는 묶음에서 미리 빼고 개수만 돌려준다
+ * (안 빼면 한 장 때문에 같은 번호의 묶음 전체가 겹침 검사에 막힌다).
+ * @param resendYmd 강제 재발송이면 오늘(KST) — «같은 날 재발송»끼리만 겹침으로 본다
+ */
+async function loadInvoiceNoticeCandidates(year: number, month: number, resendYmd: string | null) {
+    const dueStart = `${year}-${String(month).padStart(2, "0")}-01`;
+    const nextMonth = month === 12 ? 1 : month + 1;
+    const nextYear = month === 12 ? year + 1 : year;
+    const dueEnd = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
+    // 다시 누르면 «아직 못 받은 청구서»만(실패한 건은 sentAt 이 비어 있어 다시 대상이 된다)
+    const sentFilter = resendYmd ? "" : `AND i."sentAt" IS NULL`;
+    const resendSuffix = resendYmd ? `:resend:${resendYmd}` : "";
+    const invoiceCandidates = await prisma.$queryRawUnsafe<InvoiceNoticeCandidate[]>(
+        `
+        SELECT
+          i.id,
+          i.id AS "invoiceId",
+          i."paymentId",
+          i."studentId",
+          s.name AS "studentName",
+          i."parentId",
+          u.phone,
+          -- 가입(로그인 계정 연결) 여부 — 가입 안내 발송과 같은 기준. 없으면 비회원 결제 링크로 보낸다
+          (u."authUserId" IS NOT NULL) AS "parentHasAccount",
+          p.amount::int AS amount,
+          -- 묶음 안내의 «이름 · 반 · 금액» 줄(반이 없으면 줄에서 빠진다)
+          c.name AS "className",
+          -- dueDate(청구서)는 timestamptz 라 AT TIME ZONE 을 «한 번»만 건다(한국 달력 날짜)
+          TO_CHAR(i."dueDate" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "dueYmd",
+          -- 예전에 이 청구서로 안내를 예약한 적이 있나(한 장·묶음 모두) — 있으면 앱 알림을 다시 만들지 않는다
+          EXISTS (
+            SELECT 1 FROM "BillingNoticeDelivery" n WHERE n.kind = 'INVOICE' AND i.id = ANY(n."invoiceIds")
+          ) AS "hadPriorNotice",
+          -- 지금 «살아 있는» 안내에 든 청구서(같은 종류 = 일반/같은 날 재발송끼리) — 묶음에서 미리 뺀다
+          EXISTS (
+            SELECT 1 FROM "BillingNoticeDelivery" n
+             WHERE n.kind = 'INVOICE' AND i.id = ANY(n."invoiceIds")
+               AND n.status IN ('QUEUED', 'SENT', 'UNCERTAIN', 'APP_ONLY')
+               AND COALESCE(substring(n."noticeKey" from ':resend:[0-9]{4}-[0-9]{2}-[0-9]{2}$'), '') = $5
+          ) AS "activeNotice",
+          EXISTS (
+            SELECT 1
+            FROM "OperationsCommand" command
+            WHERE command."studentId" = p."studentId"
+              AND command."effectiveMonth" = CONCAT($1::text, '-', LPAD($2::text, 2, '0'))
+              AND command.status = 'HELD'
+              AND command."notificationStatus" = 'HELD'
+          ) AS "notificationHeld"
+        FROM "PaymentInvoice" i
+        JOIN "Payment" p ON p.id = i."paymentId"
+        LEFT JOIN "Student" s ON s.id = i."studentId"
+        LEFT JOIN "User" u ON u.id = i."parentId"
+        LEFT JOIN "Class" c ON c.id = COALESCE(i."classId", p."classId")
+        WHERE i.status NOT IN ('PAID', 'CANCELED')
+          AND p.amount > 0
+          -- 학부모 미연결(i."parentId" IS NULL) 청구서도 읽는다 — 조용히 빼지 않고 «대상 아님» 이름으로 보여 준다
+          -- 랠리즈 청구서의 장부용 사본은 학부모에게 다시 보내지 않는다
+          AND ${rallyzMirrorExclusionSql("p")}
+          AND (
+            (p.year = $1 AND p.month = $2)
+            OR ((p.year IS NULL OR p.month IS NULL) AND p."dueDate" >= $3::timestamp AND p."dueDate" < $4::timestamp) -- 청구 월 우선(billing-month-sql.ts)
+          )
+          ${sentFilter}
+        -- 묶음 안내 줄 순서가 늘 같게: 기한 → 학부모 → 아이 이름 → 반 이름
+        ORDER BY i."dueDate" ASC, i."parentId", s.name, c.name, i.id
+        `,
+        year,
+        month,
+        dueStart,
+        dueEnd,
+        resendSuffix,
+    );
+    // 실제 운영 요청 원장의 HELD 상태와 금액을 함께 확인해 발송 대상을 확정한다.
+    const eligible = invoiceCandidates.filter(isMonthlyInvoiceNotificationEligible);
+    return {
+        invoices: eligible.filter((row) => !row.activeNotice),
+        activeSkipped: eligible.filter((row) => row.activeNotice).length,
+    };
+}
+
+/**
+ * 확인창 숫자 — «청구서 N장 → 문자 M통(묶음 K통)». 읽기만 한다(링크 발급·기록·발송 없음).
+ * 잠금이면 locked 로 돌려준다(확인창은 숫자 없이 뜬다 — 실제 발송 함수가 잠금 문구를 보인다).
+ */
+export async function previewInvoiceNoticeCounts(year: number, month: number) {
+    // 부원장 차단 — 발송 버튼과 같은 권한(학원 전체 청구 규모가 보인다)
+    await requireFinanceOwner();
+    if (!isBillingParentSendEnabled()) return { ok: false as const, locked: true };
+    try {
+        const { invoices, activeSkipped } = await loadInvoiceNoticeCandidates(year, month, null);
+        const plan = planInvoiceNotices(invoices, {
+            month,
+            academyPhone: await billingAcademyPhone(),
+            templateId: alimtalkTemplateIdForEnv(BILLING_ALIMTALK_TEMPLATES.BILLING_INVOICE_PARENT.envKey),
+        });
+        return { ok: true as const, ...summarizeInvoicePlan(plan), activeSkipped };
+    } catch (error) {
+        console.error("[billing-notice] 청구서 안내 미리보기 실패:", error);
+        return { ok: false as const, locked: false };
     }
 }
 
