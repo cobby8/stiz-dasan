@@ -3,6 +3,7 @@ import { getAccessibleClassIds, getStaffClassAccessContext, getSubstituteClassId
 import { todayKst } from "@/lib/datetime/kst";
 import { sessionKstDateSql, TODAY_KST_SQL } from "@/lib/feed/rules";
 import { STAFF_PAST_SESSION_LIST_DAYS, type PastSessionRow } from "@/lib/staff/sessionEditWindow";
+import { kstMonthRangeAt, type KstMonthRange, type StaffMonthSessionStats } from "@/lib/staff/mypageRules";
 
 /**
  * «지난 수업 목록에 보일 날짜»(SQL) — 오늘 포함 최근 14일(순수판 inPastSessionListRange 와 같은 뜻).
@@ -11,6 +12,43 @@ import { STAFF_PAST_SESSION_LIST_DAYS, type PastSessionRow } from "@/lib/staff/s
 export function pastSessionListRangeSql(se: string): string {
   const day = sessionKstDateSql(se);
   return `(${day} <= ${TODAY_KST_SQL} AND ${day} > ${TODAY_KST_SQL} - ${STAFF_PAST_SESSION_LIST_DAYS})`;
+}
+
+/**
+ * «수업 피드가 있는가»(SQL 식, Session 별칭 s) — 수업 내용·사진·등록된 영상 중 하나라도 있으면 참.
+ * 지난 수업 목록의 «피드 없음» 표시와 마이페이지 «수업 내용 없음» 숫자가 **이 식 하나**를 쓴다.
+ */
+const SESSION_HAS_FEED_SQL = `(COALESCE(btrim(s.content), '') <> ''
+              OR COALESCE(btrim(s."photosJSON"), '') NOT IN ('', '[]')
+              OR EXISTS (SELECT 1 FROM "SessionVideo" v
+                          WHERE v."sessionId" = s.id AND v."registeredAt" IS NOT NULL AND v."deletedAt" IS NULL))`;
+
+/** «학부모에게 보냈는가»(SQL 식, Session 별칭 s) — 목록의 «안 보냄» 표시와 마이페이지 숫자가 같이 쓴다 */
+const SESSION_PUBLISHED_SQL = `COALESCE(s.published, false)`;
+
+/**
+ * «내가 열 수 있는 수업»(SQL 식, Session 별칭 s) — 지난 수업 목록과 마이페이지 «이번 달 수업»이 같이 쓴다.
+ * 바인딩 자리: $1 원장·부원장 여부 · $2 담당 반 · $3 오늘 대타 반 · $4 내 코치 id(resolvePastSessionScope 가 구한 값 순서 그대로).
+ */
+function pastSessionScopeSql(): string {
+  const day = sessionKstDateSql("s");
+  return `(
+          $1::boolean = true
+          OR (s."specialProgramSessionDateId" IS NULL AND s."classId" = ANY($2::text[]))
+          OR (s."specialProgramSessionDateId" IS NULL AND s."classId" = ANY($3::text[]) AND ${day} = ${TODAY_KST_SQL})
+          OR (s."specialProgramSessionDateId" IS NOT NULL AND $4::text IS NOT NULL AND s."coachId" = $4::text)
+        )`;
+}
+
+/** 범위 식에 넣을 값 — 원장·부원장은 전체라 반 목록을 구하지 않는다 */
+async function resolvePastSessionScope() {
+  const access = await getStaffClassAccessContext();
+  const [classIds, substituteIds] = access.canAccessAllClasses
+    ? [[] as string[], [] as string[]]
+    : await Promise.all([getAccessibleClassIds(access), getSubstituteClassIds(access, todayKst())]);
+  // 담당 반도 코치 연결도 없으면 볼 수업이 없다
+  const nothingToShow = !access.canAccessAllClasses && classIds.length === 0 && substituteIds.length === 0 && !access.coachId;
+  return { access, classIds, substituteIds, nothingToShow };
 }
 
 /**
@@ -52,12 +90,8 @@ function seasonalSeatCountSql(statuses: readonly string[]): string {
  * 날짜는 무tz 칼럼 Session.date 를 «두 번» 변환(sessionKstDateSql), 오늘은 DB 시계(TODAY_KST_SQL).
  */
 export async function getStaffPastSessions(): Promise<PastSessionRow[]> {
-  const access = await getStaffClassAccessContext();
-  const [classIds, substituteIds] = access.canAccessAllClasses
-    ? [[] as string[], [] as string[]]
-    : await Promise.all([getAccessibleClassIds(access), getSubstituteClassIds(access, todayKst())]);
-  // 담당 반도 코치 연결도 없으면 볼 수업이 없다
-  if (!access.canAccessAllClasses && classIds.length === 0 && substituteIds.length === 0 && !access.coachId) return [];
+  const { access, classIds, substituteIds, nothingToShow } = await resolvePastSessionScope();
+  if (nothingToShow) return [];
 
   const day = sessionKstDateSql("s");
   const rows = await prisma.$queryRawUnsafe<PastSessionRow[]>(
@@ -71,11 +105,8 @@ export async function getStaffPastSessions(): Promise<PastSessionRow[]> {
                   ELSE (SELECT COUNT(*) FROM "Attendance" a WHERE a."sessionId" = s.id AND a.status IN ('PRESENT', 'LATE')) END)::int AS "presentCount",
             (CASE WHEN s."specialProgramSessionDateId" IS NOT NULL THEN ${seasonalSeatCountSql(["ABSENT"])}
                   ELSE (SELECT COUNT(*) FROM "Attendance" a WHERE a."sessionId" = s.id AND a.status = 'ABSENT') END)::int AS "absentCount",
-            (COALESCE(btrim(s.content), '') <> ''
-              OR COALESCE(btrim(s."photosJSON"), '') NOT IN ('', '[]')
-              OR EXISTS (SELECT 1 FROM "SessionVideo" v
-                          WHERE v."sessionId" = s.id AND v."registeredAt" IS NOT NULL AND v."deletedAt" IS NULL)) AS "hasFeed",
-            COALESCE(s.published, false) AS published
+            ${SESSION_HAS_FEED_SQL} AS "hasFeed",
+            ${SESSION_PUBLISHED_SQL} AS published
        FROM "Session" s
        JOIN "Class" c ON c.id = s."classId"
        LEFT JOIN "SpecialProgramSessionDate" sd ON sd.id = s."specialProgramSessionDateId"
@@ -83,12 +114,7 @@ export async function getStaffPastSessions(): Promise<PastSessionRow[]> {
         -- 색인(status, date)을 탈 수 있게 넉넉한 하한을 먼저 건다(KST 날짜 판정은 아래 줄이 그대로 한다)
         AND s.date >= NOW() - interval '${STAFF_PAST_SESSION_LIST_DAYS + 2} days'
         AND ${pastSessionListRangeSql("s")}
-        AND (
-          $1::boolean = true
-          OR (s."specialProgramSessionDateId" IS NULL AND s."classId" = ANY($2::text[]))
-          OR (s."specialProgramSessionDateId" IS NULL AND s."classId" = ANY($3::text[]) AND ${day} = ${TODAY_KST_SQL})
-          OR (s."specialProgramSessionDateId" IS NOT NULL AND $4::text IS NOT NULL AND s."coachId" = $4::text)
-        )
+        AND ${pastSessionScopeSql()}
       ORDER BY ${day} DESC, "startTime", c.name
       LIMIT 300`,
     access.canAccessAllClasses,
@@ -104,4 +130,45 @@ export async function getStaffPastSessions(): Promise<PastSessionRow[]> {
     hasFeed: row.hasFeed === true,
     published: row.published === true,
   }));
+}
+
+/**
+ * 마이페이지 «이번 달 수업» 숫자 3개(2026-11-16) — 완료한 수업 · 수업 내용 없는 수업 · 학부모에게 안 보낸 수업.
+ *
+ * 판정은 지난 수업 목록과 **같은 조각**을 쓴다(범위 pastSessionScopeSql · 피드 SESSION_HAS_FEED_SQL · 보냄 SESSION_PUBLISHED_SQL)
+ * — 목록은 최근 14일만, 여기는 이번 달 1일부터 오늘까지라 기간만 다르다.
+ * «이번 달» = KST 달(순수 규칙 kstMonthRangeAt). 수업일은 무tz 칼럼 Session.date 를 «두 번» 변환한 KST 날짜로 견준다.
+ */
+export async function getStaffMonthSessionStats(
+  range: KstMonthRange | null = kstMonthRangeAt(),
+): Promise<StaffMonthSessionStats> {
+  const empty: StaffMonthSessionStats = { completed: 0, noFeed: 0, unpublished: 0 };
+  if (!range) return empty;
+  const { access, classIds, substituteIds, nothingToShow } = await resolvePastSessionScope();
+  if (nothingToShow) return empty;
+
+  const day = sessionKstDateSql("s");
+  const rows = await prisma.$queryRawUnsafe<StaffMonthSessionStats[]>(
+    `SELECT COUNT(*)::int AS completed,
+            COUNT(*) FILTER (WHERE NOT ${SESSION_HAS_FEED_SQL})::int AS "noFeed",
+            COUNT(*) FILTER (WHERE NOT ${SESSION_PUBLISHED_SQL})::int AS unpublished
+       FROM "Session" s
+      WHERE s.status = 'COMPLETED'
+        -- 색인(status, date)을 탈 수 있게 넉넉한 범위를 먼저 건다(KST 날짜 판정은 아래 줄이 그대로 한다)
+        AND s.date >= $5::date - 2 AND s.date < $6::date + 2
+        AND ${day} >= $5::date AND ${day} < $6::date AND ${day} <= ${TODAY_KST_SQL}
+        AND ${pastSessionScopeSql()}`,
+    access.canAccessAllClasses,
+    classIds,
+    substituteIds,
+    access.coachId,
+    range.startYmd,
+    range.nextStartYmd,
+  );
+  const row = rows[0];
+  return {
+    completed: Number(row?.completed) || 0,
+    noFeed: Number(row?.noFeed) || 0,
+    unpublished: Number(row?.unpublished) || 0,
+  };
 }

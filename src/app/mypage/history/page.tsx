@@ -2,6 +2,7 @@ import { getMyPageHistory, getMyPageData } from "@/lib/queries";
 import { requireVerifiedParent } from "@/lib/auth-guard";
 import Link from "next/link";
 import ScheduleHub from "./ScheduleHub";
+import CalendarSyncButton from "@/components/calendar/CalendarSyncButton";
 import { RememberChildSync } from "../useRememberedChild";
 import { getParentShuttleOverview, getShuttleDriverContact } from "@/lib/shuttle/parent";
 import { getMonthlyClassDates, loadAnnualPlanEvents } from "@/lib/enrollment/monthlyClassDates";
@@ -83,6 +84,8 @@ export default async function MyPageHistoryPage({
             view={view}
             shuttleItems={shuttleItems}
             driverContact={driverContact}
+            // 내 캘린더에 연동 — 학원 일정·우리 아이 수업을 휴대폰 캘린더에 넣는다(2026-11-16)
+            calendarAction={<CalendarSyncButton theme="academy" className="w-full" />}
         />
         </>
     );

@@ -163,6 +163,8 @@ async function renderAnnual(events, yearParam, today = "2026-11-14") {
     "@/lib/auth-guard": { requireVerifiedParent: async () => ({ appUserId: "parent-a" }) },
     "@/lib/datetime/kst": { ...load("src/lib/datetime/kst.ts"), todayKst: () => today },
     "@/lib/enrollment/monthlyClassDates": { loadAnnualPlanEvents: async () => { if (events === null) throw new Error("캘린더 실패"); return events; } },
+    // 2026-11-16 «내 캘린더에 연동» 버튼: 서버 기능을 부르는 부품이라 버튼 글자만 그리는 대역으로 바꿔 끼운다
+    "@/components/calendar/CalendarSyncButton": { __esModule: true, default: () => React.createElement("button", { type: "button" }, "내 캘린더에 연동") },
   }).default;
   return renderToStaticMarkup(await Page({ searchParams: Promise.resolve(yearParam ? { year: yearParam } : {}) }));
 }

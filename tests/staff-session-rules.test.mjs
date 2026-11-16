@@ -251,7 +251,10 @@ test("일정: 아래 탭 «일정»에서 앱 안 화면(/staff/annual)으로 �
   assert.doesNotMatch(light, /classList\.add\("dark"\)/);
   // 선생님 전용 판정(기사님 튕기기)을 넣지 않는다 — 기사님도 본다
   assert.doesNotMatch(annual, /DRIVER_ENTRY_PATH|roles\.teacher/);
-  // 청구는 없애지 않고 이름 버튼 메뉴로 옮겼다(기사님에게는 없다)
+  // 2026-11-16 원장 「청구는 필요 없어」: 이름 버튼 메뉴에서도 청구 링크를 뺐다. 그 자리는 «마이페이지».
   const menu = readFileSync("src/app/staff/StaffProfileMenu.tsx", "utf8");
-  assert.match(menu, /\{canTeach && <Link href="\/staff\/billing" onClick=\{\(event\) => requestPublicNavigation\(event, "\/staff\/billing"\)\}[^>]*>\s*청구\s*<\/Link>\}/);
+  assert.doesNotMatch(menu, /href="\/staff\/billing"|canTeach/);
+  assert.match(menu, /<Link href="\/staff\/mypage" onClick=\{\(event\) => requestPublicNavigation\(event, "\/staff\/mypage"\)\}[^>]*>\s*마이페이지\s*<\/Link>/);
+  // 화면·서버 기능은 지우지 않았다 — 주소로는 계속 열린다
+  assert.match(readFileSync("src/app/staff/billing/page.tsx", "utf8"), /export default/);
 });

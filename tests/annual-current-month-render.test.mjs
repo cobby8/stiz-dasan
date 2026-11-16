@@ -33,6 +33,8 @@ function load(file, now) {
         // 2026-11-15 아이콘 예외(화살표·종·톱니): 공용 아이콘 부품은 실제 코드를 그대로 쓴다
         if (id === "@/components/common/UiIcon") return load("src/components/common/UiIcon.tsx", now);
         if (id === "./AnnualEventsClient") return {};
+        // 2026-11-16 «내 캘린더에 연동» 버튼: 서버 기능을 부르는 부품이라 버튼 글자만 그리는 대역으로 바꿔 끼운다
+        if (id === "@/components/calendar/CalendarSyncButton") return { default: () => React.createElement("button", { type: "button" }, "내 캘린더에 연동") };
         return require(id);
     }, exports);
     return exports;

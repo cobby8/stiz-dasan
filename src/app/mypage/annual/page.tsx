@@ -6,6 +6,7 @@ import { todayKst } from "@/lib/datetime/kst";
 // 연간일정 원본 — 공개 /annual·청구·«일정» 탭 달력과 같은 함수(구글 캘린더 + 관리자 등록 일정)
 import { loadAnnualPlanEvents } from "@/lib/enrollment/monthlyClassDates";
 import { buildParentYear, parseYearParam, shortDay } from "@/lib/mypage/parentSchedule";
+import CalendarSyncButton from "@/components/calendar/CalendarSyncButton";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "연간 일정 | 스티즈 농구교실" };
@@ -43,6 +44,9 @@ export default async function ParentAnnualPage({ searchParams }: { searchParams:
                     </Link>
                 </nav>
             </div>
+
+            {/* 내 캘린더에 연동 — 학원 일정·우리 아이 수업을 휴대폰 캘린더에 넣는다(2026-11-16) */}
+            <CalendarSyncButton theme="academy" className="w-full" />
 
             {months.length === 0 ? (
                 <p className="rounded-xl border border-[var(--color-academy-line)] bg-white px-3 py-3 text-sm text-[var(--color-academy-muted)]">

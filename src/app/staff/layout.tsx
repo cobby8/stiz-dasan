@@ -12,7 +12,7 @@ import { StaffPushBanner, StaffPushToggle } from "@/components/push/StaffPushCon
 
 export const metadata: Metadata = {
   title: "스티즈 선생님",
-  description: "수업, 출결, 학생 연락과 청구를 관리하는 스티즈 선생님 앱",
+  description: "수업, 출결, 학생 연락과 일정을 관리하는 스티즈 선생님 앱",
   manifest: "/manifest-staff.json",
   appleWebApp: {
     capable: true,
@@ -46,7 +46,7 @@ export default async function StaffLayout({ children }: { children: ReactNode })
           <div className="flex min-w-0 items-center gap-1">
             {/* 휴대폰 알림 켜기·켜짐(선생님·기사님 공통) — 예전엔 켜는 버튼이 학부모 화면에만 있어 직원 구독이 0건이었다 */}
             <StaffPushToggle />
-            <StaffProfileMenu staffName={staff.appUserName} staffRole={staff.appUserRole} canTeach={staff.roles.teacher} accountViews={views} />
+            <StaffProfileMenu staffName={staff.appUserName} staffRole={staff.appUserRole} accountViews={views} />
           </div>
         </div>
       </header>

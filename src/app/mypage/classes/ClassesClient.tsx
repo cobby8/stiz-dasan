@@ -10,6 +10,7 @@ import { TONE_BADGE_CLASS } from "@/lib/ui/statusTones";
 import type { ParentTimelineView } from "@/lib/requests/parent-timeline-rules";
 import RequestTimeline from "./RequestTimeline";
 import { MonthCalendar } from "../history/ScheduleHub";
+import CalendarSyncButton from "@/components/calendar/CalendarSyncButton";
 import { shiftMonth } from "@/lib/mypage/parentSchedule";
 import type { ChildMonthView } from "@/lib/mypage/parentMonthViews";
 import { useRememberedChild } from "../useRememberedChild";
@@ -225,10 +226,14 @@ export default function ClassesClient({
 
       {/* 한 달 달력 — 일정 탭과 같은 부품. 달 이동은 주소(?child=&month=)로 서버가 다시 그린다 */}
       {calendarView && calendar && (
-        <MonthCalendar
-          view={calendarView.view}
-          monthNav={{ prevHref: monthHref(shiftMonth(calendar.month, -1)), nextHref: monthHref(shiftMonth(calendar.month, 1)) }}
-        />
+        <>
+          <MonthCalendar
+            view={calendarView.view}
+            monthNav={{ prevHref: monthHref(shiftMonth(calendar.month, -1)), nextHref: monthHref(shiftMonth(calendar.month, 1)) }}
+          />
+          {/* 내 캘린더에 연동 — 학원 일정·우리 아이 수업을 휴대폰 캘린더에 넣는다(2026-11-16) */}
+          <CalendarSyncButton theme="academy" className="w-full" />
+        </>
       )}
 
       {/* 신청 내역 타임라인 — 고른 아이 것만(최근 3개월, 한 줄 행 → 하단 시트) */}

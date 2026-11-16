@@ -151,6 +151,8 @@ function renderClasses(props, timelineMock) {
     "../useRememberedChild": { useRememberedChild: (_ids, init) => [init, () => {}] },
     // 2026-11-15 아이콘 예외(화살표·종·톱니): 공용 아이콘 부품은 실제 코드를 그대로 쓴다
     "@/components/common/UiIcon": load("src/components/common/UiIcon.tsx"),
+    // 2026-11-16 «내 캘린더에 연동» 버튼: 서버 기능을 부르는 부품이라 버튼 글자만 그리는 대역으로 바꿔 끼운다
+    "@/components/calendar/CalendarSyncButton": { __esModule: true, default: () => React.createElement("button", { type: "button" }, "내 캘린더에 연동") },
   }).default;
   return renderToStaticMarkup(React.createElement(Client, props));
 }

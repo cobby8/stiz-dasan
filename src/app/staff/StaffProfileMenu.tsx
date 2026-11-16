@@ -15,7 +15,7 @@ import { useStoreAppLacks } from "@/components/storeApp/useStoreAppLacks";
 
 const focusableSelector = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-export default function StaffProfileMenu({ staffName, staffRole, canTeach = staffRole !== "DRIVER", accountViews = [] }: { staffName: string; staffRole: "ADMIN" | "VICE_ADMIN" | "INSTRUCTOR" | "DRIVER"; /** 수업 메뉴를 쓰는 사람인가 — 아래 탭과 같은 기준(청구 링크를 보일지) */ canTeach?: boolean; accountViews?: AccountViewOption[] }) {
+export default function StaffProfileMenu({ staffName, staffRole, accountViews = [] }: { staffName: string; staffRole: "ADMIN" | "VICE_ADMIN" | "INSTRUCTOR" | "DRIVER"; accountViews?: AccountViewOption[] }) {
   const pathname = usePathname();
   const isSessionInProgress = pathname.startsWith("/staff/sessions/");
   const [isOpen, setIsOpen] = useState(false);
@@ -141,12 +141,10 @@ export default function StaffProfileMenu({ staffName, staffRole, canTeach = staf
               <AccountViewSwitcher views={accountViews} variant="list" onNavigate={(event, view) => requestPublicNavigation(event, view.href)} />
             </div>}
 
-            {/* 청구(현장 수납 확인 요청) — 아래 탭 자리를 «일정»에 내주고 여기로 옮겼다(2026-11-16 원장 지시). 기사님에게는 없다 */}
-            {canTeach && <Link href="/staff/billing" onClick={(event) => requestPublicNavigation(event, "/staff/billing")} className="academy-button-secondary mb-2 w-full">
-              청구
-            </Link>}
-            <Link href="/account" onClick={event=>requestPublicNavigation(event,"/account")} className="academy-button-secondary mb-3 w-full">
-              내 계정
+            {/* 마이페이지(내 정보·담당 반·이번 달 수업·알림·앱 정보) — 예전 «내 계정» 자리(2026-11-16 원장 지시). 계정 화면은 마이페이지 «계정 관리»로 간다.
+                청구 링크는 메뉴에서 뺐다(원장 「청구는 필요 없어」) — 화면은 주소로 계속 열린다 */}
+            <Link href="/staff/mypage" onClick={(event) => requestPublicNavigation(event, "/staff/mypage")} className="academy-button-secondary mb-3 w-full">
+              마이페이지
             </Link>
             <div className={`grid gap-2 ${hideInstallGuide ? "grid-cols-1" : "grid-cols-2"}`}>
               {!hideInstallGuide && <Link href="/staff/install" onClick={(event) => requestPublicNavigation(event, "/staff/install")} className="academy-button-secondary w-full">

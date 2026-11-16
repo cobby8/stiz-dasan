@@ -193,6 +193,7 @@ export default function ScheduleHub({
     view,
     shuttleItems,
     driverContact = null,
+    calendarAction = null,
 }: {
     childList: ScheduleChild[];
     /** 지금 보고 있는 자녀(달력·출결·수강 반 기준) */
@@ -201,6 +202,8 @@ export default function ScheduleHub({
     view: ParentMonthView;
     shuttleItems: ParentShuttleOverviewItem[];
     driverContact?: { name: string; phone: string } | null;
+    /** 달력 아래에 둘 버튼 자리(«내 캘린더에 연동») */
+    calendarAction?: ReactNode;
 }) {
     const child = childList.find((c) => c.id === selectedChildId) ?? childList[0];
     const childNames = Object.fromEntries(childList.map((c) => [c.id, c.name]));
@@ -245,6 +248,9 @@ export default function ScheduleHub({
                 <span className="font-medium text-[var(--color-academy-ink)]">연간 일정</span>
                 <span aria-hidden="true" className="text-[var(--color-academy-faint)]">›</span>
             </Link>
+
+            {/* 내 캘린더에 연동(2026-11-16) — 버튼은 화면(page.tsx)이 넣어 준다. 이 파일은 표시 전용이라 부품을 직접 부르지 않는다 */}
+            {calendarAction}
 
             {/* 이 달 행사·휴무 — 한 줄 행(날짜 · 제목). 행사·휴무가 없는 달은 칸째 그리지 않는다(2026-11-14 원장 결정 d7) */}
             {view.events.length > 0 && (

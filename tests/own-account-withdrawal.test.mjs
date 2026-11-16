@@ -55,7 +55,9 @@ test('Auth 오류나 Auth 성공 후 DB 실패는 완료라고 응답하지 않�
 test('공통 계정과 탈퇴는 학부모 자녀 가드를 완화하지 않고 별도 직접 인증을 쓴다',()=>{
  for(const path of ['src/app/account/page.tsx','src/app/account/withdraw/page.tsx'])assert.match(fs.readFileSync(path,'utf8'),/requireOwnAccount\(\)/);
  assert.match(fs.readFileSync('src/app/mypage/layout.tsx','utf8'),/requireVerifiedParent/);
- assert.match(fs.readFileSync('src/app/staff/StaffProfileMenu.tsx','utf8'),/href="\/account"/);
+ // 2026-11-16: 선생님 메뉴의 «내 계정»은 «마이페이지»가 됐고, 계정 화면(탈퇴 포함)은 마이페이지의 «계정 관리» 줄로 간다 — 길이 끊기지 않게 둘 다 확인
+ assert.match(fs.readFileSync('src/app/staff/StaffProfileMenu.tsx','utf8'),/href="\/staff\/mypage"/);
+ assert.match(fs.readFileSync('src/app/staff/mypage/page.tsx','utf8'),/<Link href="\/account"/);
 });
 
 test('다른 서버에서 탈퇴한 직원은 남아 있는 역할 캐시와 옛 JWT로 업무 화면을 다시 열지 못한다',async()=>{

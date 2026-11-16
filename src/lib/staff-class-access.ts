@@ -313,3 +313,57 @@ export async function requireStaffStudentAccess(
 
   return access;
 }
+
+export type CoachLinkedClassRow = {
+  id: string;
+  name: string;
+  dayOfWeek: string;
+  startTime: string;
+  endTime: string;
+  location: string | null;
+};
+
+/**
+ * 로그인 없이(userId 만으로) «이 사람이 코치로 연결된 반»을 구한다 — 캘린더 연동(개인 일정 주소)이 쓴다.
+ * 캘린더 앱은 로그인을 못 하므로 세션 대신 주소 속 확인 값으로 찾은 userId 를 받는다.
+ *
+ * 규칙은 위 getAccessibleClassIds 의 «선생님» 갈래와 **같다**: 시간표 반은 코치 배정(ScheduleSlot·ClassSlotOverride·
+ * CustomClassSlot), 시간표에 없는 옛 수동 반만 instructorId. 한쪽을 고치면 다른 쪽도 같이 고친다(테스트가 비교한다).
+ * 다른 점 하나: 원장·부원장도 «전체 반»이 아니라 **본인이 코치로 연결된 반만** 나온다(내 캘린더에 남의 수업이 들어가지 않게).
+ * 코치 연결이 없으면 빈 목록. 선생님 역할이 지금도 있는지는 부르는 쪽(캘린더 주소 확인)이 따로 본다.
+ */
+export async function getCoachLinkedClassesForUser(userId: string): Promise<CoachLinkedClassRow[]> {
+  if (!userId) return [];
+  const coachRows = await prisma.$queryRawUnsafe<CoachLinkRow[]>(
+    `SELECT id AS "coachId"
+     FROM "Coach"
+     WHERE "userId" = $1
+     LIMIT 1`,
+    userId,
+  );
+  const coachId = coachRows[0]?.coachId ?? null;
+  if (!coachId) return [];
+
+  return prisma.$queryRawUnsafe<CoachLinkedClassRow[]>(
+    `SELECT DISTINCT c.id, c.name, c."dayOfWeek", c."startTime", c."endTime", c.location
+     FROM "Class" c
+     LEFT JOIN "ScheduleSlot" ss ON ss."slotKey" = c."slotKey"
+     LEFT JOIN "ClassSlotOverride" cso ON cso."slotKey" = c."slotKey"
+     LEFT JOIN "CustomClassSlot" ccs ON ccs.id = c."slotKey"
+     WHERE (
+       c."slotKey" IS NOT NULL
+       AND (
+         ss."coachId" = $1
+         OR cso."coachId" = $1
+         OR ccs."coachId" = $1
+       )
+     )
+     OR (
+       c."slotKey" IS NULL
+       AND c."instructorId" = $2
+     )
+     ORDER BY c.id`,
+    coachId,
+    userId,
+  );
+}

@@ -3892,3 +3892,16 @@ model YouTubeConnection {
   quotaBlockedUntil     DateTime? @db.Timestamptz(6)
   updatedAt             DateTime  @default(now()) @db.Timestamptz(6)
 }
+
+/// «내 캘린더에 연동» 개인 일정 주소의 확인 값(2026-11-16). 원문은 저장하지 않고 sha256 해시만 둔다.
+/// 서버 raw SQL(src/lib/calendar/feedServer.ts)만 사용한다. RLS 켜짐·anon/authenticated 권한 회수.
+model CalendarFeedToken {
+  id         String    @id
+  userId     String // 앱 계정(User.id) — 기록용이라 FK 없이 둔다(받아 갈 때마다 계정·역할을 다시 확인한다)
+  tokenHash  String    @unique
+  kinds      String // 쉼표 목록: academy,teaching,children
+  createdAt  DateTime  @default(now()) @db.Timestamptz(6)
+  lastUsedAt DateTime? @db.Timestamptz(6)
+
+  @@index([userId], map: "CalendarFeedToken_userId_idx")
+}

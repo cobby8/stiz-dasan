@@ -10,7 +10,7 @@ const teachingItems = [
   { href: "/staff", label: "수업", exact: true },
   { href: "/staff/students", label: "학생", exact: false },
 ] as const;
-// 일정(학원 연간일정) — 선생님·기사님 공통. 2026-11-16 원장 지시로 «청구» 탭 자리에 넣었다(청구는 이름 버튼 메뉴로 옮김).
+// 일정(학원 연간일정) — 선생님·기사님 공통. 2026-11-16 원장 지시로 «청구» 탭 자리에 넣었다(청구는 선생님 화면 메뉴에서 뺐다 — /staff/billing 화면은 주소로만 열린다).
 const annualItem = { href: "/staff/annual", label: "일정", exact: false } as const;
 
 const SHUTTLE_HREF = "/staff/shuttle";

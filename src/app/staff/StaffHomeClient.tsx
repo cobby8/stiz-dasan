@@ -68,7 +68,7 @@ export default function StaffHomeClient({
   /**
    * «청구 확인» 시트·학생 정보의 미납 표시를 보일지 — 원장·부원장만 true(f3 보완).
    * 서버(loadStaffClassBilling·loadStaffClassPeople)도 선생님에게는 금액을 주지 않아, 화면도 진입점을 숨긴다.
-   * 선생님의 현장 수납 확인 요청은 하단 «청구» 탭(/staff/billing)에서 그대로 한다.
+   * (2026-11-16 원장 지시로 «청구» 탭·메뉴는 뺐다 — /staff/billing 화면은 주소로만 열린다.)
    */
   showFees: boolean;
 }) {

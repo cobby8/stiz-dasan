@@ -5,6 +5,7 @@ import { useState, useMemo, useEffect, useRef, type KeyboardEvent } from "react"
 import { useRouter } from "next/navigation";
 import EventDetailPanel from "./EventDetailPanel";
 import AnnualCalendarView from "./AnnualCalendarView";
+import CalendarSyncButton from "@/components/calendar/CalendarSyncButton";
 import { DAY_NAMES } from "@/lib/classSchedule";
 import { todayKst } from "@/lib/datetime/kst";
 import { getKoreanAnnualPeriod, isSameAnnualPeriod, type AnnualPeriod } from "./annualPeriod";
@@ -276,6 +277,8 @@ export default function AnnualEventsClient({ allEvents, yearlySchedules, default
                                                     목록
                                                 </button>
                                             </div>
+                                            {/* 내 캘린더에 연동 — 휴대폰 캘린더(구글·아이폰)에 일정을 구독으로 넣는다(2026-11-16) */}
+                                            <CalendarSyncButton theme="public" />
                                         </div>
                                         {view === "list" && sortedKeys.length === 0 && (
                                             <div className="public-card annual-empty-month">
