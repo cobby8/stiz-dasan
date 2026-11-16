@@ -152,6 +152,8 @@ function makeWorld(options = {}) {
     content: options.content ?? null,
     published: options.published ?? false,
     previousPublishedAt: options.previousPublishedAt ?? null,
+    // 랠리즈 피드 이관 수업인가(Session.importSource) — 이관 수업은 발행해도 알림 없음(2026-11-16)
+    imported: options.imported ?? false,
     calls: [],
     audits: [],
     afterJobs: [],
@@ -244,6 +246,7 @@ function makeWorld(options = {}) {
     },
     "@/lib/datetime/kst": worldKst,
     "@/lib/feed/rules": feedRules,
+    "@/lib/feed/importedSession": { isImportedSessionForNotice: async () => world.imported },
     "@/lib/staff/sessionEditWindow": rules,
     "@/lib/staff-session-rules": worldSessionRules,
     // 출석 알림 규칙(순수 모듈)은 진짜를 쓴다 — 관리자 출결 화면과 같은 함수
@@ -529,6 +532,12 @@ test("학부모에게 보내기: 처음 발행만 앱 알림(중복 방지 키),
   assert.equal((await again.actions.publishStaffSessionReport({ sessionId: "se1" })).notified, false);
   await again.runAfter();
   assert.ok(!names(again.world).includes("notify"));
+  // 랠리즈 피드 이관 수업은 처음 발행이어도 알림이 없다(2026-11-16 원장 «학부모 알림 금지») — 검토 기록의 firstPublish 는 그대로
+  const imported = makeWorld({ published: false, previousPublishedAt: null, imported: true });
+  assert.deepEqual(await imported.actions.publishStaffSessionReport({ sessionId: "se1" }), { ok: true, published: true, alreadyPublished: false, notified: false });
+  await imported.runAfter();
+  assert.ok(!names(imported.world).includes("notify"));
+  assert.equal(imported.world.audits[0].details.firstPublish, true);
   // 진행 중 수업은 보낼 수 없다
   const live = makeWorld({ session: { status: "IN_PROGRESS" } });
   assert.equal((await live.actions.publishStaffSessionReport({ sessionId: "se1" })).ok, false);

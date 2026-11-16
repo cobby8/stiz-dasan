@@ -592,12 +592,14 @@ model Session {
   endedByUserId               String? // 수업 종료를 확인한 User ID
   published                   Boolean                    @default(false) // 학부모 공개 여부 (true일 때만 학부모가 열람 가능)
   publishedAt                 DateTime? // 발행 시각 (published=true로 변경된 시점)
+  importSource                String? // 이관 표시 — 'RALLYZ_FEED' 면 랠리즈 피드 이관 내용이 들어간 수업(발행해도 학부모 알림 없음, DB CHECK)
   createdAt                   DateTime                   @default(now())
   updatedAt                   DateTime                   @updatedAt
   attendances                 Attendance[]
   shuttleRoutePassengers      ShuttleRoutePassenger[]
   studentNotes                StudentSessionNote[]
   videos                      SessionVideo[]
+  rallyzFeedImports           RallyzFeedImport[]
   class                       Class                      @relation(fields: [classId], references: [id])
   specialProgramSessionDate   SpecialProgramSessionDate? @relation(fields: [specialProgramSessionDateId], references: [id], onDelete: Restrict)
 
@@ -3873,6 +3875,31 @@ model SessionVideo {
   @@unique([storageBucket, storagePath], map: "SessionVideo_storagePath_key")
   @@index([sessionId, createdAt], map: "SessionVideo_sessionId_createdAt_idx")
   @@index([youtubeStatus, registeredAt], map: "SessionVideo_youtube_queue_idx")
+}
+
+/// 랠리즈 수업 피드 이관 장부(2026-11-16) — 한 행 = 랠리즈 글 1개(POST) 또는 수업별 묶음 영상 1개(VIDEO).
+/// 이관 스크립트(scripts/rallyz-feed-import)만 쓴다. 같은 글 두 번 방지(UNIQUE kind+sourceKey)·되돌림 근거. RLS 켜짐(FORCE).
+model RallyzFeedImport {
+  id                String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  kind              String // POST · VIDEO (DB CHECK)
+  sourceKey         String // POST = 랠리즈 글 id · VIDEO = "<classId>:<YYYY-MM-DD>"
+  sessionId         String
+  createdSession    Boolean  @default(false)
+  previousStatus    String?
+  previousPublished Boolean?
+  appendedContent   String?
+  photoEntriesJSON  String   @default("[]")
+  sessionVideoId    String?
+  youtubeVideoId    String?
+  rallyzCreatedAt   String?
+  rallyzClassName   String?
+  batch             String
+  importedAt        DateTime @default(now()) @db.Timestamptz(6)
+  session           Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([kind, sourceKey], map: "RallyzFeedImport_kind_sourceKey_key")
+  @@index([sessionId], map: "RallyzFeedImport_sessionId_idx")
+  @@index([batch], map: "RallyzFeedImport_batch_idx")
 }
 
 /// 유튜브 연결(한 행, id = 'default') — 원장 채널의 refresh token 은 AES-256-GCM 암호문으로만 둔다.

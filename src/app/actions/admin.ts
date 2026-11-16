@@ -3,6 +3,8 @@
 import { commencementYmd, requireCommencement } from "@/lib/enrollment/commencement";
 import { sendEnrollGuideIfEnabled } from "@/lib/trial-fee/guideSender";
 import { childAccessWhere } from "@/lib/account/child-access";
+// 랠리즈 피드 이관 수업은 발행해도 학부모 알림 없음(선생님 발행 경로와 같은 판정)
+import { isImportedSessionForNotice } from "@/lib/feed/importedSession";
 
 import { createHash } from "crypto";
 import { revalidatePath, revalidateTag } from "next/cache";
@@ -4665,7 +4667,8 @@ export async function publishSessionReport(sessionId: string, publish: boolean) 
             );
 
             // 해당 세션에 출석한 학생 ID 목록 조회 → 학부모 알림
-            const students = await prisma.$queryRawUnsafe<any[]>(
+            // 랠리즈 피드 이관 수업(몇 달 전 수업)은 알림 없이 발행만 한다(2026-11-16 원장 «학부모 알림 금지»)
+            const students = await isImportedSessionForNotice(sessionId) ? [] : await prisma.$queryRawUnsafe<any[]>(
                 `SELECT DISTINCT "studentId" FROM "Attendance" WHERE "sessionId" = $1`,
                 sessionId,
             );
