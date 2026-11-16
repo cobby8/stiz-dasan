@@ -105,7 +105,7 @@ test("메뉴: «마이페이지»가 있고 «청구»·«내 계정» 링크는
   assert.doesNotMatch(menu, /canTeach/);
   const layout = read("src/app/staff/layout.tsx");
   assert.match(layout, /<StaffProfileMenu staffName=\{staff\.appUserName\} staffRole=\{staff\.appUserRole\} accountViews=\{views\} \/>/);
-  assert.match(layout, /<StaffBottomNav canTeach=\{staff\.roles\.teacher\} canShuttle=\{canShuttle\} \/>/);
+  assert.match(layout, /<StaffBottomNav canTeach=\{staff\.roles\.teacher\} canShuttle=\{canShuttle\} shuttleViewOnly=\{shuttleAccess\.teacherOnly\} \/>/);
   // 설치 안내·로그아웃·화면 바꾸기는 메뉴에 그대로 있다
   assert.match(menu, /!hideInstallGuide && <Link href="\/staff\/install"/);
   assert.match(menu, /<form action=\{logoutStaff\}>/);

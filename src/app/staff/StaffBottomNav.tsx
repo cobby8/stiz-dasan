@@ -21,14 +21,15 @@ const seasonalItem = { href: "/staff/seasonal", label: "특강", exact: false } 
 // 역할 하나가 아니라 «수업 메뉴·셔틀 메뉴를 각각 쓸 수 있는가»로 받는다.
 // 역할 하나로 가르면 「선생님 + 기사님」이 셔틀 탭을 못 보거나 수업 탭을 못 본다(다중 역할, 2026-10-25).
 //   기사님만 → 일정·셔틀 / 선생님만 → 수업·학생·일정·특강 / 관리자·선생님+기사님 → 수업·학생·일정·특강·셔틀
-export default function StaffBottomNav({ canTeach, canShuttle }: { canTeach: boolean; canShuttle: boolean }) {
+export default function StaffBottomNav({ canTeach, canShuttle, shuttleViewOnly = false }: { canTeach: boolean; canShuttle: boolean; /** 일반 선생님(관리자·기사 역할 없음) — 셔틀 탭은 늘 보기 화면(/staff/shuttle)으로 간다 */ shuttleViewOnly?: boolean }) {
   const pathname = usePathname();
   // 아이폰 스토어 앱은 지금 셔틀 화면으로 가는 길을 앱이 막는다(앱 다음 업데이트에서 열림, 2026-11-13 b7).
   // 그 경우 셔틀 탭은 «다음 업데이트에 열립니다» 안내 화면으로 보낸다(탭을 눌러도 아무 일 없는 것처럼 보이지 않게).
   const [shuttleHref, setShuttleHref] = useState(SHUTTLE_HREF);
   useEffect(() => {
-    if (shouldShowIosDriverNotice(isStoreApp(), navigator.userAgent)) setShuttleHref(DRIVER_ENTRY_PATH);
-  }, []);
+    // 일반 선생님은 기사님 첫 화면(위치 전송 안내)이 아니라 보기 화면으로 — 기사님 첫 화면은 선생님을 홈으로 돌려보낸다
+    if (!shuttleViewOnly && shouldShowIosDriverNotice(isStoreApp(), navigator.userAgent)) setShuttleHref(DRIVER_ENTRY_PATH);
+  }, [shuttleViewOnly]);
 
   // 2026-11-15 수업 한 화면: 오늘 수업 홈에 진행 중 수업 칸이 펼쳐져 있을 수 있다 →
   // 다른 탭으로 옮기기 전에 쓰던 메모를 저장한다(수업 주소의 «이동 전 저장»과 같은 신호). 저장하지 못하면 머문다.

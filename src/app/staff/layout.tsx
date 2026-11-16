@@ -7,7 +7,7 @@ import StaffHomeLink from "./StaffHomeLink";
 import AppBackButton from "@/components/AppBackButton";
 import AcademyTheme from "@/components/academy/AcademyTheme";
 import { getAccountViewAccess } from "@/lib/account-view-access";
-import { shuttleScope } from "@/lib/account/roles";
+import { staffShuttleAccess } from "@/lib/shuttle/teacherShuttleView";
 import { StaffPushBanner, StaffPushToggle } from "@/components/push/StaffPushControls";
 
 export const metadata: Metadata = {
@@ -30,7 +30,9 @@ export default async function StaffLayout({ children }: { children: ReactNode })
   const { views } = await getAccountViewAccess();
   // 기사님 전용 색·홈 링크는 «기사님만»인 사람에게. 「선생님 + 기사님」은 선생님 화면이 기본이다.
   const isDriverOnly = staff.roles.driver && !staff.roles.teacher;
-  const canShuttle = shuttleScope(staff.roles) !== "NONE";
+  // 2026-11-16 원장 지시: 일반 선생님에게도 «셔틀» 탭을 연다(보기 + 선생님 운행). 판정은 teacherShuttleView 한 곳
+  const shuttleAccess = staffShuttleAccess(staff.roles);
+  const canShuttle = shuttleAccess.canOpen;
 
   return (
     // 역할별 데이터는 그대로 두고 공통 라이트 표면과 브랜드 강조색을 적용합니다.
@@ -53,7 +55,7 @@ export default async function StaffLayout({ children }: { children: ReactNode })
       {/* 기사님: 알림이 꺼져 있으면 상단 한 줄(켜면 사라짐) — 명단 변경을 놓치지 않게 */}
       {staff.roles.driver && <StaffPushBanner />}
       {children}
-      <StaffBottomNav canTeach={staff.roles.teacher} canShuttle={canShuttle} />
+      <StaffBottomNav canTeach={staff.roles.teacher} canShuttle={canShuttle} shuttleViewOnly={shuttleAccess.teacherOnly} />
     </AcademyTheme>
   );
 }

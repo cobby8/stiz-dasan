@@ -18,7 +18,7 @@ const origin = "https://stiz.example";
 const path = origin + "/api/staff/shuttle/regular-boarding";
 const date = "2026-11-11";
 
-function fixture({ loggedIn = true, access = true, readFails = false } = {}) {
+function fixture({ loggedIn = true, access = true, readFails = false, teacherOnly = false, today = date } = {}) {
   class DriverAssignError extends Error {
     status = 403;
   }
@@ -29,10 +29,10 @@ function fixture({ loggedIn = true, access = true, readFails = false } = {}) {
     "@/lib/auth-guard": {
       async requireStaff() {
         if (!loggedIn) throw new Error("로그인 필요");
-        return { appUserId: "staff" };
+        return { appUserId: "staff", roles: { teacherOnly } };
       },
     },
-    "@/lib/datetime/kst": { isKstYmd },
+    "@/lib/datetime/kst": { isKstYmd, todayKst: () => today },
     "@/lib/shuttle/driverAssign": {
       DriverAssignError,
       async authorizeAssign() {
@@ -55,6 +55,8 @@ function fixture({ loggedIn = true, access = true, readFails = false } = {}) {
       },
     },
     "@/lib/shuttle/regularRunDayRules": dayRules,
+    // 2026-11-16: 일반 선생님(관리자·기사 역할 없음)은 «선생님 운행»으로 체크한다 — 판정 함수 대역
+    "@/lib/shuttle/teacherShuttleView": { staffShuttleAccess: (roles) => ({ canOpen: true, teacherOnly: Boolean(roles?.teacherOnly) }) },
     "@/lib/shuttle/regularRun": {
       async setRegularBoarding(input) {
         writes.push(input);
@@ -84,6 +86,22 @@ function post(body = {}, headers = {}) {
     body: JSON.stringify({ date, rowId: "dropoff-row", status: "BOARDED", ...body }),
   });
 }
+
+test("일반 선생님은 기사 권한이 없어도 읽고 체크할 수 있다(선생님 운행, 2026-11-16 원장 지시)", async () => {
+  const api = fixture({ access: false, teacherOnly: true });
+  assert.equal((await api.GET(get())).status, 200);
+  assert.equal((await api.POST(post())).status, 200);
+  assert.equal(api.writes.length, 1);
+  // 기록에 «선생님»으로 남는다
+  assert.equal(api.writes[0].via, "teacher");
+  // 오늘이 아닌 날짜는 선생님이 체크하지 못한다(기사님·관리자는 예전과 같다)
+  const other = fixture({ access: false, teacherOnly: true, today: "2099-01-01" });
+  assert.equal((await other.POST(post())).status, 409);
+  assert.deepEqual(other.writes, []);
+  const driver = fixture({ today: "2099-01-01" });
+  assert.equal((await driver.POST(post())).status, 200);
+  assert.equal(driver.writes[0].via, "driver");
+});
 
 test("로그아웃과 기사 권한 없는 계정의 읽기 및 쓰기를 막는다", async () => {
   for (const [state, code] of [[{ loggedIn: false }, 401], [{ access: false }, 403]]) {
@@ -127,8 +145,8 @@ test("정규 명단의 실제 이름으로 승하차를 기록하고 대기로 �
   assert.deepEqual(await (await api.POST(post({ studentName: "임의 이름" }))).json(), { ok: true });
   assert.deepEqual(await (await api.POST(post({ rowId: "pickup-row", status: null }))).json(), { ok: true });
   assert.deepEqual(api.writes.map((write) => ({ ...write })), [
-    { date, rowId: "dropoff-row", status: "BOARDED", studentName: "명단 이름" },
-    { date, rowId: "pickup-row", status: null, studentName: "명단 이름" },
+    { date, rowId: "dropoff-row", status: "BOARDED", studentName: "명단 이름", via: "driver" },
+    { date, rowId: "pickup-row", status: null, studentName: "명단 이름", via: "driver" },
   ]);
 });
 
@@ -141,5 +159,5 @@ test("휴원·휴무로 잠긴 줄은 체크를 409 로 거부하고, 대기로 
   }
   assert.deepEqual(api.writes, []);
   assert.deepEqual(await (await api.POST(post({ rowId: "paused-row", status: null }))).json(), { ok: true });
-  assert.deepEqual(api.writes.map((write) => ({ ...write })), [{ date, rowId: "paused-row", status: null, studentName: "휴원 학생" }]);
+  assert.deepEqual(api.writes.map((write) => ({ ...write })), [{ date, rowId: "paused-row", status: null, studentName: "휴원 학생", via: "driver" }]);
 });

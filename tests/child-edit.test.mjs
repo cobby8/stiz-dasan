@@ -591,6 +591,8 @@ test("⑦ 건강 특이사항은 정해진 파일에서만 다루고, 알림·�
     "src/components/shuttle/UnifiedDriverClient.tsx",        // 기사님(그날 운행표 승객)
     "src/lib/parent/childEdit.ts",
     "src/lib/parent/childEditRules.ts",
+    // 일반 선생님의 셔틀 «보기»에서 건강 글을 지우는 규칙(2026-11-16) — 내보내는 곳이 아니라 빼는 곳
+    "src/lib/shuttle/teacherShuttleView.ts",
     "src/lib/shuttle/unifiedDriverRun.ts",
     "src/lib/shuttle/unifiedDriverRunLogic.ts",
     "src/lib/staff-class-people.ts",

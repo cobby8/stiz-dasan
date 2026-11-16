@@ -113,9 +113,11 @@ export async function getRegularAbsentPeople(date: string): Promise<{ name: stri
   } catch { return []; }
 }
 
-/** 정규 셔틀 탑승 상태 저장. status가 없으면(대기) 행을 지운다. 인증 없음 — 호출부가 유효 토큰을 먼저 확인한다. */
+/** 정규 셔틀 탑승 상태 저장. status가 없으면(대기) 행을 지운다. 인증 없음 — 호출부가 먼저 확인한다(기사님 링크의 유효 토큰, 또는 직원 로그인: 관리자·기사님·«선생님 운행»의 선생님). */
 export async function setRegularBoarding(input: {
   date: string; rowId: string; status: BoardingStatus | null; studentName?: string | null;
+  /** 누가 찍었나 — 기본 "driver"(기사님·관리자). 일반 선생님의 «선생님 운행»은 "teacher"(2026-11-16, 기록에서 구분되게) */
+  via?: "driver" | "teacher";
 }): Promise<{ ok: boolean }> {
   const d = normDate(input.date);
   const rowId = typeof input.rowId === "string" ? input.rowId.trim() : "";
@@ -135,7 +137,7 @@ export async function setRegularBoarding(input: {
      ON CONFLICT ("serviceDate","direction","shuttleRequestId") DO UPDATE SET
        "status" = EXCLUDED."status", "studentName" = COALESCE(EXCLUDED."studentName", "ShuttleBoarding"."studentName"),
        "checkedVia" = EXCLUDED."checkedVia", "checkedAt" = now()`,
-    d, REGULAR_DIR, rowId, input.studentName ?? null, status, "driver",
+    d, REGULAR_DIR, rowId, input.studentName ?? null, status, input.via === "teacher" ? "teacher" : "driver",
   );
   return { ok: true };
 }

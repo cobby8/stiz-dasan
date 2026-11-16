@@ -46,8 +46,9 @@ test("staff mobile navigation is role-aware", () => {
 });
 
 test("driver shuttle page does not open instructor-only staff screens", () => {
-  // 관리자 또는 기사님(승인된 추가 역할 포함)만. 선생님만인 사람은 /staff 로 돌려보낸다.
-  assert.match(staffShuttleSource, /if \(shuttleScope\(staff\.roles\) === "NONE"\) redirect/);
+  // 2026-11-16 원장 지시: 셔틀 탭은 일반 선생님에게도 연다(보기 + 선생님 운행). 직원이 아니면 /staff 로 돌려보낸다.
+  // 기사님·관리자 전용 화면(운행·배정·검토)이 여전히 막혀 있는지는 아래 «일반 선생님 셔틀 탭» 테스트가 확인한다.
+  assert.match(staffShuttleSource, /if \(!canOpen\) redirect/);
   assert.match(staffShuttleSource, /redirect\("\/staff"\)/);
   assert.match(staffShuttleSource, /canManageShuttle=\{staff\.roles\.admin\}/);
   assert.match(staffShuttleSource, /await authorizeAssign\(staff\)/);
@@ -72,7 +73,8 @@ test("셔틀 API는 로그인·직원 확인 실패를 401로 돌려준다(서�
 // ── 2026-11-16 원장 지시: 선생님 화면 «셔틀» 탭은 보기 전용, 직접 운행할 때만 «선생님 운행» ──
 test("선생님 화면 셔틀 탭: 기사님이 아니면 보기 전용(탑승 버튼 없음)·«선생님 운행»으로만 체크 모드, 배정·검토 링크는 기사님에게만", async () => {
   const page = staffShuttleSource;
-  assert.match(page, /const isDriver = staff\.roles\.driver;\s*const driveMode = isDriver \|\| params\.mode === "drive";/);
+  assert.match(page, /const isDriver = staff\.roles\.driver;\s*\/\/[^\n]*\n\s*const driveMode = isDriver \|\| \(params\.mode === "drive" && \(!teacherOnly \|\| date === today\)\);/);
+  assert.match(page, /«선생님 운행»은 오늘 날짜에서만 할 수 있어요\./);
   assert.match(page, /readOnly=\{!driveMode\}/);
   assert.match(page, /href=\{`\/staff\/shuttle\?mode=drive\$\{dateQuery \? `&\$\{dateQuery\}` : ""\}`\}[^>]*>\s*선생님 운행\s*<\/Link>/);
   assert.match(page, /<StaffVehicleLocation \/>/);
@@ -91,4 +93,43 @@ test("선생님 화면 셔틀 탭: 기사님이 아니면 보기 전용(탑승 �
   assert.match(client, /const boarding = readOnly \? initialBoarding : boardingState;/);
   assert.match(client, /\{!readOnly && <details/);
   assert.match(client, /if \(!readOnly\) return;\s*const timer = window\.setInterval\(\(\) => \{ if \(document\.visibilityState === "visible"\) router\.refresh\(\); \}, 30_000\);/);
+});
+
+// ── 2026-11-16 원장 지시: 일반 선생님에게 셔틀 탭을 연다(보기 + 선생님 운행) ──
+test("일반 선생님 셔틀 탭: 보기에는 연락처·건강 정보가 내려가지 않고, 기사님·관리자 전용 화면은 그대로 막힌다", async () => {
+  const { loadTsModule } = await import("./_ts-module.mjs");
+  const rules = await loadTsModule("src/lib/shuttle/teacherShuttleView.ts");
+  const R = (over) => ({ admin: false, teacher: false, driver: false, parent: false, ...over });
+  assert.deepEqual(rules.staffShuttleAccess(R({ teacher: true })), { canOpen: true, teacherOnly: true });
+  assert.deepEqual(rules.staffShuttleAccess(R({ driver: true })), { canOpen: true, teacherOnly: false });
+  assert.deepEqual(rules.staffShuttleAccess(R({ teacher: true, driver: true })), { canOpen: true, teacherOnly: false });
+  assert.deepEqual(rules.staffShuttleAccess(R({ admin: true, teacher: true })), { canOpen: true, teacherOnly: false });
+  assert.deepEqual(rules.staffShuttleAccess(R({ parent: true })), { canOpen: false, teacherOnly: false });
+  // 보기용 자료에서 연락처·건강 특이사항을 지운다(원본은 건드리지 않는다)
+  const rows = [{ key: "a", riders: [{ name: "가", parentPhone: "01011112222", studentPhone: "01033334444", healthNote: "천식", hasHealthNote: true }] }];
+  const stripped = rules.stripRiderPrivate(rows);
+  assert.deepEqual(stripped[0].riders[0], { name: "가", parentPhone: null, studentPhone: null, healthNote: null, hasHealthNote: false, shuttleNote: null });
+  assert.equal(rows[0].riders[0].parentPhone, "01011112222");
+
+  const page = staffShuttleSource;
+  assert.match(page, /const \{ canOpen, teacherOnly \} = staffShuttleAccess\(staff\.roles\);\s*if \(!canOpen\) redirect\("\/staff"\);/);
+  assert.match(page, /rows=\{teacherOnly && !driveMode \? stripRiderPrivate\(buildUnifiedRun\(\{ regular: classes \}\)\) : buildUnifiedRun\(\{ regular: classes \}\)\}/);
+  assert.match(page, /if \(params\.view === "routes" && !teacherOnly\)/);
+  assert.match(page, /\{!teacherOnly && \(\s*<Link href="\/staff\/driver"/);
+  // 기사님 첫 화면·운행·배정·검토 화면은 여전히 관리자·기사님만
+  for (const file of ["src/app/staff/driver/page.tsx", "src/app/staff/run/page.tsx", "src/app/staff/shuttle/intake/page.tsx", "src/app/staff/shuttle/assign/page.tsx"]) {
+    assert.match(await readFile(file, "utf8"), /if \(shuttleScope\(staff\.roles\) === "NONE"\) redirect\("\/staff"\)/, file);
+  }
+  // 차량 위치: 직원용 주소는 운행 링크 값을 내려보내지 않는다
+  const loc = await readFile("src/app/api/staff/driver-locations/route.ts", "utf8");
+  assert.match(loc, /md5\(token\) AS token/);
+  assert.doesNotMatch(loc, /SELECT\s+token,/);
+  assert.match(loc, /if \(!staffShuttleAccess\(staff\.roles\)\.canOpen\)/);
+  // 탑승 기록: 일반 선생님은 «선생님 운행»으로 체크한다(관리자·기사님은 기존 확인 그대로)
+  const api = await readFile("src/app/api/staff/shuttle/regular-boarding/route.ts", "utf8");
+  assert.match(api, /if \(staffShuttleAccess\(staff\.roles\)\.teacherOnly\) return \{ error: null, teacherOnly: true \};\s*try \{\s*\/\/[^\n]*\n\s*await authorizeAssign\(staff\);/);
+  // 선생님은 오늘 날짜만 체크하고, 기록에 «선생님»으로 남는다. 요청 사이에 섞이는 모듈 변수는 쓰지 않는다
+  assert.match(api, /if \(gate\.teacherOnly && date !== todayKst\(\)\) \{\s*return json\(\{ error: "선생님 운행은 오늘 날짜만 체크할 수 있습니다\." \}, 409\);/);
+  assert.match(api, /via: gate\.teacherOnly \? "teacher" : "driver"/);
+  assert.doesNotMatch(api, /^let /m);
 });

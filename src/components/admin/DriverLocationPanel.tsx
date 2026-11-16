@@ -23,7 +23,7 @@ function StatusDot({ sharing, secondsAgo }: { sharing: boolean; secondsAgo: numb
   return <span className="h-3 w-3 rounded-full bg-[var(--color-academy-danger)] shrink-0" title="끊김" />;
 }
 
-export default function DriverLocationPanel({ onClose }: { onClose: () => void }) {
+export default function DriverLocationPanel({ onClose, endpoint = "/api/admin/driver-locations" }: { onClose: () => void; /** 위치를 읽는 주소 — 선생님 화면은 직원용(/api/staff/driver-locations) */ endpoint?: string }) {
   const [locations, setLocations] = useState<DriverLocationRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
@@ -33,7 +33,7 @@ export default function DriverLocationPanel({ onClose }: { onClose: () => void }
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/admin/driver-locations", { cache: "no-store" });
+      const res = await fetch(endpoint, { cache: "no-store" });
       if (!res.ok) throw new Error("조회 실패");
       const data = await res.json() as { locations: DriverLocationRow[] };
       if (!Array.isArray(data.locations)) throw new Error("응답 오류");
@@ -46,7 +46,7 @@ export default function DriverLocationPanel({ onClose }: { onClose: () => void }
     } finally {
       setLoading(false);
     }
-  }, []);
+  },[endpoint]);
 
   useEffect(() => {
     void load();
