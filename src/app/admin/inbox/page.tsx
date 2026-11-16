@@ -35,7 +35,12 @@ function subOfKind(tab: InboxTab, kind: RequestKind): string | null {
 }
 
 export default async function AdminInboxPage({ searchParams }: { searchParams?: Promise<SearchParams> }) {
+  // 어느 단계가 느린지 보려는 시계 — 이름과 ms 숫자만 남긴다(개인정보·id 없음).
+  // 로그인 확인부터 잰다(2026-11-17): 운영에서 1초 넘는 순간에도 아래 조회 묶음은 0.5초 안이라 기록이 한 줄도 없었다 —
+  // 느린 구간이 «조회 앞»(로그인 확인)인지 가리려는 것이다.
+  const timing = startTiming();
   const admin = await requireAdmin();
+  timing.parts.auth = Math.round(performance.now() - timing.startedAt);
   const params = (await searchParams) ?? {};
   // 주소 값은 그대로 믿지 않는다 — 알려진 탭·분류·종류·날짜 모양만 통과
   const kindParam = isRequestKind(params.kind) ? params.kind : null;
@@ -52,8 +57,6 @@ export default async function AdminInboxPage({ searchParams }: { searchParams?: 
     return { kind, sub };
   };
 
-  // 어느 조회가 느린지 보려는 시계 — 이름과 ms 숫자만 남긴다(개인정보·id 없음)
-  const timing = startTiming();
   let counts: Awaited<ReturnType<typeof getInboxCounts>>;
   let tab: InboxTab;
   let data: InboxTabData;
