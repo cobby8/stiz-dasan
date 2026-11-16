@@ -42,6 +42,8 @@ import { attendanceNoticeNeeded, attendanceNoticePayload } from "@/lib/attendanc
 import type { ParentRecipient } from "@/lib/staff-notifications";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import { adoptRegularSessionKey, regularSessionKey } from "@/lib/regular/regularSession";
+// 랠리즈 피드 이관 수업은 발행해도 학부모 알림 없음(관리자 발행 경로와 같은 판정)
+import { isImportedSessionForNotice } from "@/lib/feed/importedSession";
 import {
   SHEET_ABSENCE_NOTE,
   absencePlanMessage,
@@ -1033,6 +1035,8 @@ export async function publishStaffSessionReport(input: { sessionId: string }) {
   if (!published[0]) return { ok: true as const, published: true as const, alreadyPublished: true as const, notified: false };
 
   const firstPublish = published[0].previousPublishedAt === null;
+  // 처음 발행이어도 랠리즈 피드 이관 수업(몇 달 전 수업)이면 알리지 않는다(2026-11-16 원장 «학부모 알림 금지»)
+  const notifyParents = firstPublish && !(await isImportedSessionForNotice(input.sessionId));
   await recordReviewEdit(access.staff.appUserId, {
     sessionId: input.sessionId, item: "PUBLISH", before: "안 보냄", after: "보냄", firstPublish,
   });
@@ -1041,7 +1045,7 @@ export async function publishStaffSessionReport(input: { sessionId: string }) {
   revalidatePath(`/staff/sessions/${input.sessionId}`);
   revalidatePath("/mypage/reports");
 
-  if (firstPublish) {
+  if (notifyParents) {
     const ymd = /^\d{4}-(\d{2})-(\d{2})$/.exec(String(session.date).slice(0, 10));
     const dateLabel = ymd ? `${Number(ymd[1])}월 ${Number(ymd[2])}일` : "오늘";
     runAfterResponse("publishStaffSessionReport", async () => {
@@ -1061,7 +1065,7 @@ export async function publishStaffSessionReport(input: { sessionId: string }) {
       })));
     });
   }
-  return { ok: true as const, published: true as const, alreadyPublished: false as const, notified: firstPublish };
+  return { ok: true as const, published: true as const, alreadyPublished: false as const, notified: notifyParents };
 }
 
 // ── 출결 취소(미확인으로 되돌리기) — 2026-11-14 원장 지시 «체크한 버튼을 다시 누르면 취소» ──────────
