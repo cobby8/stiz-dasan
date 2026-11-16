@@ -66,7 +66,7 @@ export const PARENT_ALIMTALK_TEMPLATES = {
     name: "체험수업 일정 확정",
     envKey: "ALIMTALK_TPL_TRIAL_SCHEDULED_REVISED",
     body: [
-      `${P} #{학생명} 학생의 체험수업 일정이 확정되었습니다.`,
+      `${P} 신청하신 #{학생명} 학생의 체험수업 일정이 확정되었습니다.`,
       "",
       "· 일시 #{일시}",
       "· 수업 반 #{반}",
@@ -83,7 +83,7 @@ export const PARENT_ALIMTALK_TEMPLATES = {
     name: "수강신청서 안내",
     envKey: "ALIMTALK_TPL_TRIAL_ENROLL_GUIDE_REVISED",
     body: [
-      `${P} #{학생명} 학생의 정규 수업 등록을 원하시면 아래 링크에서 수강신청서를 작성해 주세요.`,
+      `${P} 체험수업을 신청하신 #{학생명} 학생의 정규 수업 등록 안내입니다. 등록을 원하시면 아래 링크에서 수강신청서를 작성해 주세요.`,
       "",
       "#{신청서링크}",
       "",
