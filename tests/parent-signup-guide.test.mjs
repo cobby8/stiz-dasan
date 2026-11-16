@@ -5,7 +5,7 @@
 // ⚠️ 이 테스트는 문자를 절대 보내지 않는다(공급자 호출 없음).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import ts from "typescript";
 
 const templateSource = readFileSync("src/lib/customer-notice/templates.ts", "utf8");
@@ -18,33 +18,38 @@ const sms = readFileSync("src/app/admin/sms/SmsClient.tsx", "utf8");
 const none = new Set();
 const row = (parentUserId, studentName, phone, hasAccount = false) => ({ parentUserId, studentName, phone, hasAccount });
 
-test("받는 사람: 계정 없는 학부모만, 번호는 한 번만(형제는 1통)", () => {
+test("받는 사람: 가입한 학부모도 «가입함»으로 넣고, 번호는 한 번만(형제는 1통)", () => {
+  // 2026-11-16 원장 지시: 이미 가입한 보호자도 안내(로그인 안내)
   const result = T.selectParentSignupGuideRecipients([
     row("p1", "김민수", "010-1111-2222"),
     row("p1", "김민지", "01011112222"), // 형제 — 같은 번호
-    row("p2", "이서준", "010-3333-4444", true), // 계정 있음 → 제외
+    row("p2", "이서준", "010-3333-4444", true), // 계정 있음 → 가입함
     row("p3", "박하늘", "010 5555 6666"),
   ], { alreadySentPhones: none, resend: false });
-  assert.deepEqual(result.recipients.map((r) => r.phone), ["01011112222", "01055556666"]);
+  assert.deepEqual(result.recipients.map((r) => r.phone), ["01011112222", "01033334444", "01055556666"]);
+  assert.deepEqual(result.recipients.map((r) => r.signedIn), [false, true, false]);
   assert.deepEqual(result.recipients[0].studentNames, ["김민수", "김민지"]);
   assert.equal(result.alreadySentCount, 0);
 });
 
-test("받는 사람: 같은 번호를 계정 있는 다른 학부모가 쓰면 뺀다", () => {
+test("받는 사람: 같은 번호를 계정 있는 다른 학부모가 쓰면 그 번호는 «가입함» 1통", () => {
   const result = T.selectParentSignupGuideRecipients([
     row("p1", "김민수", "010-1111-2222"),
     row("p9", "김민호", "010-1111-2222", true),
   ], { alreadySentPhones: none, resend: false });
-  assert.equal(result.recipients.length, 0);
+  assert.equal(result.recipients.length, 1);
+  assert.equal(result.recipients[0].signedIn, true);
+  assert.equal(result.recipients[0].parentUserId, "p9"); // 대표 = 가입한 계정
+  assert.deepEqual(result.recipients[0].studentNames, ["김민수", "김민호"]);
 });
 
-test("받는 사람: 휴대폰 번호가 아니면 빼고 개수만 센다", () => {
+test("받는 사람: 휴대폰 번호가 아니면 빼고 개수만 센다(가입 여부와 상관없이)", () => {
   const result = T.selectParentSignupGuideRecipients([
     row("p1", "A", null), row("p2", "B", "02-123-4567"), row("p3", "C", "010-0000-1111"),
-    row("p4", "D", null, true), // 계정 있는 사람은 «번호 없음»으로 세지 않는다
+    row("p4", "D", null, true), // 가입한 사람도 번호가 없으면 못 보낸다
   ], { alreadySentPhones: none, resend: false });
   assert.equal(result.recipients.length, 1);
-  assert.equal(result.invalidPhoneCount, 2);
+  assert.equal(result.invalidPhoneCount, 3);
 });
 
 test("받는 사람: 이미 받은 번호는 기본 제외, «다시 보내기»일 때만 포함", () => {
@@ -185,7 +190,7 @@ test("구성: 재원·휴원·성인으로 나눠 센다(번호 기준)", () => 
     full("p3", "박성인", "010-1000-0003", { enrollmentStatus: "ACTIVE", isAdult: true }),
     full("p4", "최성인", "010-1000-0004", { enrollmentStatus: "PAUSED", isAdult: true }), // 휴원 중인 성인도 «성인»
   ], { alreadySentPhones: none, resend: false });
-  assert.deepEqual(result.breakdown, { active: 1, paused: 1, adult: 2 });
+  assert.deepEqual(result.breakdown, { active: 1, paused: 1, adult: 2, signedIn: 0 });
   assert.deepEqual(result.recipients.map((r) => r.group), ["ACTIVE", "PAUSED", "ADULT", "ADULT"]);
 });
 
@@ -230,7 +235,7 @@ test("구성: 이미 받은 번호를 빼면 구성도 남은 사람만 센다",
     full("p1", "A", "010-5000-0001", { isAdult: true }),
     full("p2", "B", "010-5000-0002", { enrollmentStatus: "PAUSED" }),
   ], { alreadySentPhones: new Set(["01050000001"]), resend: false });
-  assert.deepEqual(result.breakdown, { active: 0, paused: 1, adult: 0 });
+  assert.deepEqual(result.breakdown, { active: 0, paused: 1, adult: 0, signedIn: 0 });
 });
 
 test("성인 문구: 학부모용과 딱 세 줄만 다르고(학부모·자녀·가족), 문자로 깨지는 글자가 없다", () => {
@@ -260,8 +265,11 @@ test("미리보기 한 줄: 성인은 «성인 수강생 본인», 휴원은 «(
 
 test("서버: 사람마다 맞는 문구로 같은 큐 한 묶음에 넣고, 문구·구분이 바뀌면 미리보기 대조가 멈춘다", () => {
   const resolve = action.slice(action.indexOf("async function resolveSignupGuide"), action.indexOf("export async function prepareParentSignupGuide"));
-  assert.match(resolve, /hashMessageRecipientPhone\(item\.phone\)\}:\$\{item\.group\}/);
-  assert.match(resolve, /bodyHash: hashMessageBody\(`\$\{body\}\\n---\\n\$\{adultBody\}`\)/);
+  // 지문 = 번호 + 구분 + 가입 여부, 문구 지문 = 네 문구 전부
+  assert.match(resolve, /hashMessageRecipientPhone\(item\.phone\)\}:\$\{item\.group\}:\$\{item\.signedIn \? "IN" : "NEW"\}/);
+  assert.match(resolve, /bodyHash: hashMessageBody\(`\$\{body\}\\n---\\n\$\{adultBody\}\\n---\\n\$\{signedInBody\}\\n---\\n\$\{signedInAdultBody\}`\)/);
+  // 이미 받은 번호 찾기도 가입한 사람 번호까지 본다
+  assert.match(resolve, /if \(phone\) phoneByHash\.set\(/);
   const send = action.slice(action.indexOf("export async function sendParentSignupGuide"));
   assert.match(send, /items: guide\.recipients\.map\(\(item\) => \(\{ recipient: item\.phone, body: signupGuideMessageFor\(item\) \}\)\)/);
   // 미리보기는 구성·성인 문구를 보여 주되 번호 원문은 내보내지 않는다
@@ -269,4 +277,106 @@ test("서버: 사람마다 맞는 문구로 같은 큐 한 묶음에 넣고, 문
   assert.match(preview, /breakdown: guide\.breakdown/);
   assert.match(sender, /breakdownText\(preview\)/);
   assert.match(sender, /성인 수강생 본인에게 가는 문구/);
+});
+
+// ───────────── 2026-11-16 원장 지시 «이미 가입한 보호자도 넣어 — 아무도 제대로 쓰고 있지 않아서» ─────────────
+
+test("가입함: 가입 막힘 판정은 미가입 번호에만 — 가입한 사람은 막힘 표시가 있어도 보낸다", () => {
+  const result = T.selectParentSignupGuideRecipients([
+    full("p1", "A", "010-6000-0001", { hasAccount: true, phoneRegistered: true }), // 가입함 → 그대로 보냄
+    full("p2", "B", "010-6000-0002", { phoneRegistered: true }), // 미가입·막힘 → 뺌
+    full("p3", "C", "010-6000-0003", { hasAccount: true, phoneMultipleClaimable: true }), // 가입함엔 «학원 문의» 경고 없음
+  ], { alreadySentPhones: none, resend: false });
+  assert.deepEqual(result.recipients.map((r) => r.phone), ["01060000001", "01060000003"]);
+  assert.equal(result.registeredPhoneCount, 1);
+  assert.equal(result.needsAcademyHelpCount, 0);
+  assert.ok(result.recipients.every((r) => r.signedIn));
+});
+
+test("가입함: 구성은 미가입 재원·휴원·성인 / 가입함으로 겹치지 않게 센다", () => {
+  const result = T.selectParentSignupGuideRecipients([
+    full("p1", "A", "010-7000-0001"),
+    full("p2", "B", "010-7000-0002", { enrollmentStatus: "PAUSED" }),
+    full("p3", "C", "010-7000-0003", { isAdult: true }),
+    full("p4", "D", "010-7000-0004", { hasAccount: true }),
+    full("p5", "E", "010-7000-0005", { hasAccount: true, isAdult: true }), // 가입한 성인 본인 → 가입함에만
+    full("p6", "F", "010-7000-0006", { hasAccount: true, enrollmentStatus: "PAUSED" }),
+  ], { alreadySentPhones: none, resend: false });
+  assert.deepEqual(result.breakdown, { active: 1, paused: 1, adult: 1, signedIn: 3 });
+  const b = result.breakdown;
+  assert.equal(b.active + b.paused + b.adult + b.signedIn, result.recipients.length);
+});
+
+test("가입함: 이미 받은 번호 제외·다시 보내기 규칙은 그대로", () => {
+  const candidates = [full("p1", "A", "010-8000-0001", { hasAccount: true }), full("p2", "B", "010-8000-0002", { hasAccount: true })];
+  const sent = new Set(["01080000001"]);
+  const normal = T.selectParentSignupGuideRecipients(candidates, { alreadySentPhones: sent, resend: false });
+  assert.deepEqual(normal.recipients.map((r) => r.phone), ["01080000002"]);
+  assert.equal(normal.alreadySentCount, 1);
+  const again = T.selectParentSignupGuideRecipients(candidates, { alreadySentPhones: sent, resend: true });
+  assert.equal(again.recipients.length, 2);
+});
+
+test("가입함 문구 — 원장 지시 전문(가입하기 대신 로그인)", () => {
+  assert.equal(T.PARENT_LOGIN_URL, "https://www.stiz-dasan.kr/login");
+  assert.equal(T.buildSignedInGuideMessage(), [
+    "[스티즈농구교실] 학부모 앱 이용 안내",
+    "",
+    "안녕하세요, 스티즈농구교실입니다.",
+    "12월부터 출결·수업 소식·수강료 청구와 결제를 홈페이지에서 확인하실 수 있어요.",
+    "",
+    "이미 가입하신 계정으로 로그인하시면 바로 이용하실 수 있어요.",
+    "▶ 로그인: https://www.stiz-dasan.kr/login",
+    "▶ 앱 설치: https://www.stiz-dasan.kr/install",
+    "앱에서도 같은 아이디로 로그인하시면 돼요.",
+    "",
+    "▶ 결석은 ‘결석 알리기’로 알려 주세요.",
+    "",
+    "재원생 가족 혜택",
+    "로그인 후 체육관 대관을 신청하시면 2시간 무료예요.",
+    "https://www.stiz-dasan.kr/rental",
+    "",
+    "문의: 카카오톡 채널 ‘스티즈농구교실’",
+  ].join("\n"));
+});
+
+test("가입함 문구 — 로그인 주소가 실제 로그인 화면이다", () => {
+  assert.ok(existsSync("src/app/login/page.tsx"));
+});
+
+test("가입함 성인 문구 — 두 줄만 다르고(학부모·가족), 네 문구 모두 문자로 깨지는 글자가 없다", () => {
+  const base = T.buildSignedInGuideMessage().split("\n");
+  const adult = T.buildAdultSignedInGuideMessage().split("\n");
+  const diff = base.map((line, i) => [line, adult[i]]).filter(([a, b]) => a !== b);
+  assert.deepEqual(diff, [
+    ["[스티즈농구교실] 학부모 앱 이용 안내", "[스티즈농구교실] 회원 앱 이용 안내"],
+    ["재원생 가족 혜택", "재원생 혜택"],
+  ]);
+  assert.doesNotMatch(adult.join("\n"), /학부모|자녀|가족/);
+  const decoder = new TextDecoder("euc-kr");
+  const allowed = new Set();
+  for (let a = 0xa1; a <= 0xfe; a += 1) for (let b = 0xa1; b <= 0xfe; b += 1) allowed.add(decoder.decode(new Uint8Array([a, b])));
+  for (const body of [T.buildSignedInGuideMessage(), T.buildAdultSignedInGuideMessage()]) {
+    const broken = [...body].filter((ch) => ch.charCodeAt(0) > 0x7f && !allowed.has(ch));
+    assert.deepEqual(broken, []);
+    const bytes = [...body].reduce((sum, ch) => sum + (ch.charCodeAt(0) > 0x7f ? 2 : 1), 0);
+    assert.ok(bytes > 90 && bytes <= 2000, `${bytes}바이트`);
+  }
+});
+
+test("가입함: 사람마다 문구 고르기 4가지", () => {
+  assert.equal(T.signupGuideMessageFor({ group: "ACTIVE", signedIn: true }), T.buildSignedInGuideMessage());
+  assert.equal(T.signupGuideMessageFor({ group: "PAUSED", signedIn: true }), T.buildSignedInGuideMessage());
+  assert.equal(T.signupGuideMessageFor({ group: "ADULT", signedIn: true }), T.buildAdultSignedInGuideMessage());
+  assert.equal(T.signupGuideMessageFor({ group: "ACTIVE", signedIn: false }), T.buildParentSignupGuideMessage());
+  assert.equal(T.signupGuideMessageFor({ group: "ADULT" }), T.buildAdultSignupGuideMessage());
+});
+
+test("가입함: 미리보기 한 줄·화면 구성 줄·문구 블록", () => {
+  assert.equal(T.describeSignupGuideRecipient({ phone: "01012345678", studentNames: ["김민수"], group: "ACTIVE", signedIn: true }), "김*수 학생 학부모 · 가입함 · ***-****-5678");
+  assert.match(sender, /가입함 \$\{preview\.breakdown\.signedIn\}명/);
+  assert.match(sender, /이미 가입한 학부모에게 가는 문구\(로그인 안내\)/);
+  assert.match(sender, /preview\.signedInAdultMessage/);
+  const preview = action.slice(action.indexOf("export async function prepareParentSignupGuide"), action.indexOf("export async function sendParentSignupGuide"));
+  assert.match(preview, /signedInMessage: guide\.recipients\.some/);
 });

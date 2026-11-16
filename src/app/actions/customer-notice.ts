@@ -38,9 +38,11 @@ import {
   PARENT_SIGNUP_PREVIEW_SAMPLE,
   buildIntakeResultMessage,
   buildKakaoChannelInviteMessage,
+  buildAdultSignedInGuideMessage,
   buildAdultSignupGuideMessage,
   buildParentSignupGuideMessage,
   buildRentalGuideMessage,
+  buildSignedInGuideMessage,
   describeSignupGuideRecipient,
   isIntakeResultStatus,
   maskPhone,
@@ -379,14 +381,18 @@ export type ParentSignupGuidePreview = {
   alreadySentCount: number;
   /** 휴대폰 번호가 없어 빠진 수강생 수 */
   invalidPhoneCount: number;
-  /** 받는 사람 구성(번호 기준) — 재원 · 휴원 · 성인 수강생 본인 */
-  breakdown: { active: number; paused: number; adult: number };
+  /** 받는 사람 구성(번호 기준, 겹치지 않음) — 미가입 재원 · 미가입 휴원 · 미가입 성인 본인 · 가입함 */
+  breakdown: { active: number; paused: number; adult: number; signedIn: number };
   /** 가입하면 «이미 가입된 번호»로 막혀 뺀 번호 수(직원 계정 등이 같은 번호를 씀) */
   registeredPhoneCount: number;
   /** 보내지만 가입 때 «학원에 문의»로 멈출 번호 수(같은 번호의 빈 보호자 계정이 여러 개) */
   needsAcademyHelpCount: number;
   /** 성인 수강생 본인에게 가는 문구(성인이 없으면 null) */
   adultMessage: string | null;
+  /** 이미 가입한 보호자에게 가는 로그인 안내(해당자가 없으면 null) */
+  signedInMessage: string | null;
+  /** 이미 가입한 성인 수강생 본인에게 가는 로그인 안내(해당자가 없으면 null) */
+  signedInAdultMessage: string | null;
   /** 처음 몇 명 — 이름 가리고 번호 끝 4자리만 */
   sample: string[];
   message: string;
@@ -447,7 +453,8 @@ async function resolveSignupGuide(resend: boolean) {
   const phoneByHash = new Map<string, string>();
   for (const row of candidates) {
     const phone = normalizeMobilePhone(row.phone);
-    if (phone && !row.hasAccount) phoneByHash.set(hashMessageRecipientPhone(phone), phone);
+    // 2026-11-16: 가입한 보호자도 대상이라 모든 번호를 본다
+    if (phone) phoneByHash.set(hashMessageRecipientPhone(phone), phone);
   }
   const alreadySentPhones = new Set<string>();
   if (phoneByHash.size > 0) {
@@ -469,17 +476,20 @@ async function resolveSignupGuide(resend: boolean) {
   // 학부모용(원장 승인본) + 성인 수강생 본인용 — 사람마다 구분에 맞는 문구가 간다
   const body = buildParentSignupGuideMessage();
   const adultBody = buildAdultSignupGuideMessage();
+  // 이미 가입한 보호자·성인 본인용 로그인 안내(2026-11-16 원장 지시)
+  const signedInBody = buildSignedInGuideMessage();
+  const signedInAdultBody = buildAdultSignedInGuideMessage();
   const binding = {
     kind: "PARENT_SIGNUP_GUIDE" as const,
-    targetRef: "active-or-paused-guardians-and-adults-without-account",
+    targetRef: "active-or-paused-guardians-and-adults-signed-in-or-not",
     resend,
     recipientCount: selected.recipients.length,
     // 받는 번호 묶음의 지문(번호+구분) — 미리보기 뒤에 한 명이라도, 또는 누구의 문구가 바뀌면 보내기를 멈춘다
-    recipientSetHash: hashMessageBody(selected.recipients.map((item) => `${hashMessageRecipientPhone(item.phone)}:${item.group}`).join(",")),
-    bodyHash: hashMessageBody(`${body}\n---\n${adultBody}`),
+    recipientSetHash: hashMessageBody(selected.recipients.map((item) => `${hashMessageRecipientPhone(item.phone)}:${item.group}:${item.signedIn ? "IN" : "NEW"}`).join(",")),
+    bodyHash: hashMessageBody(`${body}\n---\n${adultBody}\n---\n${signedInBody}\n---\n${signedInAdultBody}`),
     channel: "SMS",
   };
-  return { ...selected, body, adultBody, binding };
+  return { ...selected, body, adultBody, signedInBody, signedInAdultBody, binding };
 }
 
 /** 1) 미리보기만 만든다. 이 단계에서는 절대 보내지 않는다. */
@@ -491,7 +501,7 @@ export async function prepareParentSignupGuide(input: { resend?: boolean }): Pro
     if (guide.recipients.length === 0) {
       throw new NoticeProblem(guide.alreadySentCount > 0
         ? `보낼 학부모가 없습니다. 이미 안내를 받은 ${guide.alreadySentCount}명은 «다시 보내기»를 골라야 포함됩니다.`
-        : "보낼 사람이 없습니다. (재원·휴원생 보호자와 성인 수강생이 모두 가입했거나 휴대폰 번호가 없어요)");
+        : "보낼 사람이 없습니다. (재원·휴원생 보호자와 성인 수강생의 휴대폰 번호가 없어요)");
     }
     if (guide.recipients.length > BULK_MANUAL_MESSAGE_RECIPIENT_LIMIT) {
       throw new NoticeProblem(`한 번에 ${BULK_MANUAL_MESSAGE_RECIPIENT_LIMIT}명까지만 보낼 수 있습니다.`);
@@ -513,6 +523,8 @@ export async function prepareParentSignupGuide(input: { resend?: boolean }): Pro
       registeredPhoneCount: guide.registeredPhoneCount,
       needsAcademyHelpCount: guide.needsAcademyHelpCount,
       adultMessage: guide.breakdown.adult > 0 ? guide.adultBody : null,
+      signedInMessage: guide.recipients.some((item) => item.signedIn && item.group !== "ADULT") ? guide.signedInBody : null,
+      signedInAdultMessage: guide.recipients.some((item) => item.signedIn && item.group === "ADULT") ? guide.signedInAdultBody : null,
       // 전체 번호는 화면에 내보내지 않는다 — 처음 몇 명, 이름 가림 + 끝 4자리만
       sample: guide.recipients.slice(0, PARENT_SIGNUP_PREVIEW_SAMPLE).map(describeSignupGuideRecipient),
       message: guide.body,
@@ -595,7 +607,7 @@ export async function sendParentSignupGuide(input: {
       actorUserId: admin.appUserId,
       actorName: admin.appUserName,
       purpose: CUSTOMER_NOTICE_LABEL.PARENT_SIGNUP_GUIDE,
-      reason: "원장 미리보기 승인 후 재원·휴원생 미가입 보호자와 성인 수강생에게 대량 접수",
+      reason: "원장 미리보기 승인 후 재원·휴원생 보호자와 성인 수강생(미가입=가입 안내, 가입함=로그인 안내)에게 대량 접수",
       audienceScope: "EXTERNAL",
       body: guide.body,
       recipients: guide.recipients.map((item) => item.phone),
