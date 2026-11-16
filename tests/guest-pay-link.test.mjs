@@ -266,7 +266,8 @@ test("청구서 안내: 미가입자(payPath 있음)는 pay 링크 — 알림톡
   const path = `pay/${SAMPLE_TOKEN}`;
   const { notices } = q.planInvoiceNotices([
     invoiceRow({ payPath: path }),
-    invoiceRow({ invoiceId: "inv-2", paymentId: "pay-2", payPath: null }),
+    // 다른 학부모(다른 번호) — 같은 번호면 묶음 문자로 합쳐진다(2026-11-16)
+    invoiceRow({ invoiceId: "inv-2", paymentId: "pay-2", parentId: "par-2", phone: "010-2222-3333", payPath: null }),
   ], { month: 12, academyPhone: "031-000-0000", templateId: "KA01TP_X" });
   assert.equal(notices[0].kakao.buttons[0].linkMo, `${BASE}${path}`);
   assert.equal(notices[0].kakao.variables["#{청구서경로}"], path, "승인 틀 그대로 — 경로 변수만 바뀐다");

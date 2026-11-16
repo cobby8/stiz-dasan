@@ -22,6 +22,7 @@ import {
     deletePayment,
     refreshPaymentLedger,
     sendInvoiceLinksForMonth,
+    previewInvoiceNoticeCounts,
     sendUnpaidReminders,
     getBillingNoticeProgress,
 } from "@/app/actions/admin";
@@ -141,6 +142,10 @@ type NoticeProgressView = {
     alimtalk: number;
     sms: number;
     failedNames: string[];
+    /** 청구서 장수·문자 통수·묶음 통수(청구서 안내 — 같은 번호의 여러 장은 한 통으로 묶여 나간다) */
+    invoiceCount?: number;
+    messageCount?: number;
+    bundleCount?: number;
 };
 
 // 진행 상황 한 줄 — «예약 N · 발송 N · 실패 N(이름) · 앱 알림만 N». 기록이 없으면 null
@@ -151,7 +156,11 @@ function noticeProgressLine(label: string, p: NoticeProgressView): string | null
     if (p.appOnly > 0) parts.push(`앱 알림만 ${p.appOnly}`);
     if (p.settled > 0) parts.push(`납부돼 생략 ${p.settled}`);
     const names = p.failedNames.length > 0 ? ` (${p.failedNames.slice(0, 5).join(", ")}${p.failedNames.length > 5 ? " 외" : ""})` : "";
-    return `${label}: ${parts.join(" · ")}${names}`;
+    // 묶음이 하나라도 있으면 «청구서 N장 → 문자 M통(묶음 K통)» 을 앞에 붙인다(2026-11-16 묶음 안내)
+    const bundleHead = (p.bundleCount ?? 0) > 0
+        ? `청구서 ${p.invoiceCount ?? 0}장 → 문자 ${p.messageCount ?? 0}통(묶음 ${p.bundleCount}통) · `
+        : "";
+    return `${label}: ${bundleHead}${parts.join(" · ")}${names}`;
 }
 
 type FinancePayload = {
@@ -757,7 +766,16 @@ export default function FinanceClient({
     }
 
     async function handleSendInvoiceLinks() {
-        if (!(await askScreenConfirm(`${year}년 ${month}월 미납 청구서 링크를 학부모 알림으로 발송할까요?`))) return;
+        // 확인창에 «청구서 N장 → 문자 M통(묶음 K통)» — 같은 번호의 여러 장은 한 통으로 묶여 나간다(2026-11-16).
+        // 숫자를 못 읽으면(잠금·조회 실패) 예전 문구만 보인다
+        const counts = await previewInvoiceNoticeCounts(year, month).catch(() => null);
+        const countLine = counts?.ok
+            ? `
+청구서 ${counts.invoices}장 → 문자 ${counts.messages}통(묶음 ${counts.bundles}통)`
+                + (counts.appOnly > 0 ? ` · 앱 알림만 ${counts.appOnly}건` : "")
+                + (counts.unlinked > 0 ? ` · 학부모 미연결 ${counts.unlinked}건` : "")
+            : "";
+        if (!(await askScreenConfirm(`${year}년 ${month}월 미납 청구서 링크를 학부모 알림으로 발송할까요?${countLine}`))) return;
         setBusy(true);
         try {
             const result = await sendInvoiceLinksForMonth(year, month);
