@@ -16,7 +16,7 @@ const client = fs.readFileSync("src/app/mypage/roles/RolesClient.tsx", "utf8");
 const signup = fs.readFileSync("src/components/auth/ParentSignupClient.tsx", "utf8");
 const accountLayout = fs.readFileSync("src/app/mypage/layout.tsx", "utf8");
 const settingsPage = fs.readFileSync("src/app/mypage/settings/page.tsx", "utf8");
-const continuePage = fs.readFileSync("src/app/auth/continue/page.tsx", "utf8");
+const continuePage = fs.readFileSync("src/app/auth/continue/page.tsx", "utf8") + "\n" + fs.readFileSync("src/lib/auth/continue-destination.ts", "utf8");
 const loginAction = fs.readFileSync("src/app/actions/auth.ts", "utf8");
 const viewAccess = fs.readFileSync("src/lib/account-view-access.ts", "utf8");
 

@@ -58,7 +58,7 @@ test("앱 로그인과 브라우저 로그인을 다른 값으로 구분해 넘�
   // 둘을 같은 값으로 묶으면 원장이 앱을 열 때마다 관리자 화면으로 튕긴다.
   assert.match(middleware, /isStaffLogin \? "staff-app" : "staff"/);
 
-  const continuePage = await readFile("src/app/auth/continue/page.tsx", "utf8");
+  const continuePage = await readFile("src/app/auth/continue/page.tsx", "utf8") + "\n" + await readFile("src/lib/auth/continue-destination.ts", "utf8");
   assert.match(continuePage, /stayInStaffApp: context === "staff-app"/);
   assert.match(continuePage, /preferRoleHome: context === "staff"/);
 });
