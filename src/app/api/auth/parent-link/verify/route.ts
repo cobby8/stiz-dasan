@@ -6,7 +6,8 @@ import {
   isFreshVerification,
   isLinkVerificationIdFor,
   selectLinkTarget,
-  type LinkCandidate,
+  selectStaffRecordToClaim,
+  type StaffClaimCandidate,
 } from "@/lib/account/social-link";
 import { isUsablePhoneKey, parentPhoneDigits } from "@/lib/enrollment/parentIdentity";
 import { fetchPortoneIdentityVerification, getPortoneConfig } from "@/lib/identity/portone";
@@ -58,8 +59,9 @@ export async function POST(request: Request) {
   }
 
   // 숫자만 비교한다 — 하이픈 유무로 다른 가족 계정을 놓치거나 잘못 잡는 사고가 있었다(4가족 사고).
-  const rows = await prisma.$queryRawUnsafe<LinkCandidate[]>(
+  const rows = await prisma.$queryRawUnsafe<StaffClaimCandidate[]>(
     `SELECT u.id, u.role::text AS role, u.name, u."authUserId", u."phoneVerifiedAt",
+            (u."withdrawnAt" IS NOT NULL OR u."withdrawRequestedAt" IS NOT NULL) AS withdrawn,
             EXISTS(SELECT 1 FROM "UserRoleGrant" g WHERE g."userId" = u.id AND g.status = 'ACTIVE') AS "hasActiveStaffGrant"
        FROM "User" u
       WHERE regexp_replace(COALESCE(u.phone, ''), '[^0-9]', '', 'g') = $1
@@ -67,6 +69,31 @@ export async function POST(request: Request) {
     phone,
   );
   const verifiedName = (verification.verifiedCustomer?.name ?? "").trim();
+
+  // 2026-11-17 원장 지시 «알아서 다 처리할 수 있게»: 원장이 적어 둔 직원 기록(이름·번호·역할)에 아직 로그인이 없으면,
+  // 본인이 간편로그인 + 본인인증으로 직접 붙인다 — 원장이 «로그인 연결 초대»를 따로 보내지 않아도 된다.
+  // 판정(이 번호의 계정이 그 기록 하나뿐·직원 역할·로그인 없음·이름 일치)은 selectStaffRecordToClaim 한 곳.
+  const staffRecord = selectStaffRecordToClaim(rows, verifiedName);
+  if (staffRecord) {
+    const email = (current.user.email || "").trim().toLowerCase();
+    // 조건을 UPDATE 에 다시 적는다 — 조회와 갱신 사이에 다른 요청이 먼저 붙였으면 0줄이 되어 멈춘다.
+    const claimed = await prisma.$executeRawUnsafe(
+      `UPDATE "User"
+          SET "authUserId" = $1,
+              email = CASE WHEN $2 <> '' AND NOT EXISTS (SELECT 1 FROM "User" o WHERE LOWER(o.email) = $2 AND o.id <> $3) THEN $2 ELSE email END,
+              "phoneVerifiedAt" = NOW(), "updatedAt" = NOW()
+        WHERE id = $3 AND "authUserId" IS NULL AND role::text <> 'PARENT'
+          AND "withdrawnAt" IS NULL AND "withdrawRequestedAt" IS NULL
+          AND NOT EXISTS (SELECT 1 FROM "User" o WHERE o."authUserId" = $1 OR o.id = $1)`,
+      current.user.id, email, staffRecord.userId,
+    );
+    if (claimed !== 1) return NextResponse.json({ error: "계정 정보가 바뀌었어요. 처음부터 다시 시도해 주세요." }, { status: 409 });
+    // 누가·언제 붙였는지 남긴다(개인정보 없이 기록 id 만). 본인에게는 알림 문자 — 본인이 아니면 바로 알 수 있게.
+    console.info("[parent-link verify] staff record claimed", staffRecord.userId);
+    await notifyAccountSecurityEvent({ authUserId: current.user.id, eventType: "IDENTITY_LOGIN", body: identityLoginNoticeBody() });
+    return NextResponse.json({ ok: true, signup: true, existingParent: "LINKED", redirectPath: "/auth/continue" });
+  }
+
   const target = selectLinkTarget(rows, verifiedName);
 
   // 2026-11-17 원장 지시 «본인인증 하나로 통일»: 로그인 수단이 있는 계정이 없는 번호(처음 오신 분·학원이 등록해 둔

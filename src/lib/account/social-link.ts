@@ -19,6 +19,27 @@ export type LinkCandidate = {
   hasActiveStaffGrant?: boolean;
 };
 
+/**
+ * 로그인 계정이 아직 없는 «직원 기록»에 본인이 직접 로그인을 붙여도 되는가(2026-11-17 원장 지시
+ * «알아서 다 처리할 수 있게 — 관리자가 일일이 개입하면 왜 만드나»).
+ *
+ * 원장이 직원 화면에 이름·휴대폰 번호·역할을 적어 둔 기록은 «이 번호·이 이름에 이 역할을 미리 붙여 둔 것»이다.
+ * 예전에는 원장이 «로그인 연결 초대»를 따로 보내야 했고, 그 전에는 로그인도 비밀번호 찾기도 되지 않았다.
+ * 이제 본인이 간편로그인 + 본인인증(통신사 명의 확인)을 하면 그 기록에 로그인이 붙는다. 조건은 좁게:
+ *  - 이 번호를 쓰는 계정이 «그 기록 하나뿐»(같은 번호에 다른 계정이 있으면 자동으로 고르지 않는다)
+ *  - 직원 역할(학부모가 아님) · 로그인 계정 없음 · 탈퇴(요청) 아님
+ *  - 본인인증 명의자 이름이 기록의 이름과 같음
+ */
+export type StaffClaimCandidate = LinkCandidate & { withdrawn?: boolean };
+export function selectStaffRecordToClaim(rows: StaffClaimCandidate[], verifiedName: string): { userId: string } | null {
+  if (rows.length !== 1) return null;
+  const [row] = rows;
+  if (row.role === "PARENT" || row.authUserId || row.withdrawn) return null;
+  const name = normalizePersonName(verifiedName);
+  if (!name || name !== normalizePersonName(row.name)) return null;
+  return { userId: row.id };
+}
+
 export type LinkTargetResult =
   | { kind: "OK"; userId: string; authUserId: string }
   | { kind: "NONE" } // 이 번호의 계정이 없다 → 일반 간편가입으로
@@ -42,7 +63,11 @@ export function selectLinkTarget(rows: LinkCandidate[], verifiedName: string): L
     // 이 번호의 계정 중 «명의자 이름이 같고 · 로그인 수단이 있고 · 휴대폰 인증을 마친» 계정이 정확히 하나일 때만.
     // 하나로 정해지지 않으면(같은 번호를 쓰는 계정이 둘 다 해당·이름 다름·인증 전) 지금처럼 막는다 — 자동으로 고르지 않는다.
     const verified = normalizePersonName(verifiedName);
-    const eligible = rows.filter((row) => verified && normalizePersonName(row.name) === verified && row.authUserId && row.phoneVerifiedAt);
+    // 직원 계정은 초대 가입 때 문자 인증을 거쳤지만 phoneVerifiedAt 을 적지 않았다(가드도 직원은 면제한다). 그래서 «휴대폰 인증을
+    // 마친» 조건을 직원에게 그대로 걸면 초대로 가입한 직원은 전부 막힌다(2026-11-17) — 이름 일치 + 로그인 수단이 있으면 후보로 보고,
+    // 후보가 여럿일 때만 휴대폰 인증을 마친 쪽으로 좁힌다. 그래도 하나로 정해지지 않으면 막는다.
+    const named = rows.filter((row) => verified && normalizePersonName(row.name) === verified && row.authUserId);
+    const eligible = named.length > 1 ? named.filter((row) => row.phoneVerifiedAt) : named;
     const only = eligible.length === 1 ? eligible[0] : null;
     if (!only?.authUserId) return { kind: "STAFF" };
     return { kind: "OK", userId: only.id, authUserId: only.authUserId };

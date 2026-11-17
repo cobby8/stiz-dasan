@@ -68,7 +68,7 @@ test("로그인: 휴대폰 번호·이메일로 틀리면 «아이디·비밀번
   for (const value of ["coach01", "mom2026", "12345678", "0212345678"]) assert.ok(!phoneShape.test(value), value);
   assert.match(
     src,
-    /: looksLikeStaffLogin\n\s*\? "아이디 또는 비밀번호가 맞지 않습니다\. 선생님·기사님·관리자는 원장님께 비밀번호 재설정을 요청해 주세요\."\n\s*: "아이디 또는 비밀번호가 올바르지 않습니다\. 기억나지 않으면/,
+    /: looksLikeStaffLogin\n\s*\? "아이디 또는 비밀번호가 맞지 않습니다\. 처음이시거나 비밀번호가 기억나지 않으면 아래 카카오·구글·Apple 로그인을 눌러 주세요\. 본인인증 한 번으로 바로 들어올 수 있어요\."\n\s*: "아이디 또는 비밀번호가 올바르지 않습니다\. 기억나지 않으면/,
   );
   // 로그인 칸 라벨도 누가 무엇을 넣는지 말한다
   assert.match(await readFile("src/app/login/page.tsx", "utf8"), /"로그인 아이디 \(선생님·기사님은 휴대폰 번호, 관리자는 이메일\)"/);
