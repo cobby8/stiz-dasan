@@ -49,6 +49,8 @@ export const ADMIN_SECTIONS = {
       { href: "/admin/payment-confirmations", label: "현장 수납 승인", icon: "account_balance_wallet" },
       // POS 대사 = 하루 결제 합계를 맞추는 화면이라 원장 전용(부원장 탭 줄에서 숨김)
       { href: "/admin/pos-reconcile", label: "POS 결제 대사", icon: "calculate", ownerOnly: true },
+      // 기타 매출(2026-11-17) = 학생 청구가 아닌 수입을 원장이 적는 화면 — 금액이라 원장 전용
+      { href: "/admin/other-revenue", label: "기타 매출", icon: "savings", ownerOnly: true },
     ],
   },
   // 사이드바 «홈페이지 관리» — 학원 소개(/admin/settings)가 첫 탭. 사진 공개 회수는 갤러리 바로 뒤에 둔다

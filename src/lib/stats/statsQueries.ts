@@ -21,6 +21,7 @@ import { notMergedStudent } from "@/lib/studentVisibility";
 import { currentEnrollmentSql } from "@/lib/enrollment/commencement";
 import { branchFromClassLocation, branchFromClassLocations, branchLabel } from "@/lib/students/student-register-rules";
 import { getClassCapacityInfo, getCoachWorkload } from "@/lib/queries";
+import { loadOtherRevenueMonthly } from "@/lib/billing/other-revenue";
 import { normalizeReferral } from "./sourceLabels";
 import {
     GRADE_BANDS,
@@ -701,10 +702,12 @@ async function loadBillingTab(branch: StatsBranchKey, period: string): Promise<S
     const currentYm = todayKst().slice(0, 7);
     const months = lastMonths(currentYm, periodMonths(period));
     const ids = branch === "all" ? null : branchIds(await loadStudentStatRows(), branch);
-    const [bill, revenueMap, unpaid] = await Promise.all([
+    const [bill, revenueMap, unpaid, otherMap] = await Promise.all([
         loadBillingMonthly(currentYm, ids),
         loadRevenueMonthly(months[0], ids),
         loadUnpaidOverview(currentYm, ids),
+        // 기타 매출(2026-11-17) — 학생에 붙은 돈이 아니라 지점 필터 없이 전체. 표가 없으면 빈 Map(0원)
+        loadOtherRevenueMonthly(prisma, months[0]),
     ]);
     const revenue = revenueMap.get(currentYm)?.amount ?? 0;
     const prevRevenue = revenueMap.get(addMonthsYm(currentYm, -1))?.amount ?? 0;
@@ -718,6 +721,10 @@ async function loadBillingTab(branch: StatsBranchKey, period: string): Promise<S
         prevRevenue,
         revenueDiffPct: prevRevenue > 0 ? Math.round(((revenue - prevRevenue) / prevRevenue) * 100) : null,
         revenueSeries: months.map((ym) => ({ ym, label: monthShortLabel(ym), amount: revenueMap.get(ym)?.amount ?? 0, count: revenueMap.get(ym)?.count ?? 0 })),
+        // 기타 매출은 revenue(수강료 매출)와 따로 싣는다 — 화면에서 매출 아래 한 줄로 보인다
+        otherRevenue: otherMap.get(currentYm)?.amount ?? 0,
+        otherRevenueCount: otherMap.get(currentYm)?.count ?? 0,
+        otherRevenueSeries: months.map((ym) => ({ ym, label: monthShortLabel(ym), amount: otherMap.get(ym)?.amount ?? 0, count: otherMap.get(ym)?.count ?? 0 })),
         ...unpaid,
     };
 }

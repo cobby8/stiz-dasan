@@ -47,6 +47,8 @@
 ## 작업 로그 (최근 10건)
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-17 | reviewer(기타 매출, claude/billing-92f9f8 미커밋): 통과 · 필수 0 · 권장 3(삭제 확인창이 고치던 값을 보임·목록 LIMIT 500 인데 합계를 목록으로 계산·otherRevenueSeries 안 씀) · 권한 원장만(액션 4개 requireOwner·화면 canSeeAllMoney)·SQL 전부 $n 바인딩·RLS FORCE+REVOKE·되돌림 주석·KST 금지 패턴 0·revenue/revenueSeries 불변·UI 토큰만 · tsc 0 · 규칙 8-0 · 메뉴+KST 가드 14-0 | 리뷰 완료 |
+| 11-17 | developer(기타 매출, claude/billing-92f9f8 미커밋): 표 OtherRevenue(마이그레이션 20261117200000, **운영 적용 전** — 없으면 읽기 0원·쓰기 «준비 중») · 규칙 lib/billing/other-revenue-rules.ts(+테스트, CHECK 값 목록 대조) · DB lib/billing/other-revenue.ts · 액션 actions/other-revenue.ts(requireOwner·감사 OTHER_REVENUE_*·admin-stats 무효화) · 화면 /admin/other-revenue(원장만, ?ym 달 이동·한 줄 행·모달) · 청구·수납 탭 «기타 매출»(ownerOnly) · 통계 수납 탭 «기타 매출 n원» 한 줄(revenue 불변). 로그인 화면 실행 확인 못 함. tsc 0 · tests 6074 fail 0 · guards 345 fail 0 | 구현 완료(검수 전) |
 | 11-17 | reviewer(셔틀 당일 변경 칸 → 버튼): 통과 · 필수 0 · 권장 3(겹친 창 뒤로가기 스크롤 잠금·취소 뒤 포커스·달 경계 재마운트) · tsc 0 · tests 5988 fail 0 | 리뷰 완료 |
 | 11-17 | developer(셔틀 당일 변경 칸 → 버튼, claude/staff-app-08fde4): 운행표 위 «셔틀 당일 변경» 칸을 없애고 머리줄 «기사 요청» 뒤 «당일 변경» 버튼 하나(건수 배지 = 안내색) + 창(목록 전부·목록만 스크롤). ShuttleDayExceptionAdminPanel 이 버튼+창을 그리고 page.tsx 가 RegularRunEditor 의 headerExtra 로 넘김. 겹친 창은 맨 위만 Esc 로 닫힘(closeList, AdminModal 안 고침). 로그인 화면 실행 확인 못 함. tsc 0 · tests 5988 fail 0 · guards 337 fail 0 | 구현 완료(검수 전) |
 | 11-17 | reviewer(수업 미처리 장치 1단계): 통과 · 필수 1(마이그레이션 «가장 최근 폴더» 단정) · 권장 4 · tsc 0 · tests 5966 fail 0 · guards(src/lib/*.test.ts) 82 fail 0 · eslint 변경 파일 0 | 리뷰 완료 |

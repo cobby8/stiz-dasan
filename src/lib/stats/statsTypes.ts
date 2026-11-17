@@ -101,6 +101,11 @@ export type StatsBillingTab = {
     prevRevenue: number;
     revenueDiffPct: number | null;
     revenueSeries: MonthAmount[];
+    /** 기타 매출(OtherRevenue — 학생 청구가 아닌 수입) 이번 달 합계·건수. 위 revenue(수강료 매출)에는 섞지 않는다 */
+    otherRevenue: number;
+    otherRevenueCount: number;
+    /** 기타 매출 월별 합계(revenueSeries 와 같은 달 목록) */
+    otherRevenueSeries: MonthAmount[];
     overdue: { count: number; amount: number };
     topUnpaid: { studentId: string; name: string; count: number; amount: number }[];
 };
