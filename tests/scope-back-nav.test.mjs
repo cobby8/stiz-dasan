@@ -557,14 +557,14 @@ test("관리자·선생님 화면의 고정 «← 목록» 링크 9곳은 ScopeB
     assert.ok(src.includes(`<ScopeBackLink fallbackHref="${fallback}"`) || new RegExp(`<ScopeBackLink\\s+fallbackHref="${fallback}"`).test(src), `${file}: ScopeBackLink(${fallback})`);
     assert.match(src, /import ScopeBackLink from "@\/components\/navigation\/ScopeBackLink";/, file);
   }
-  // 원생 상세는 오류 화면의 «원생 목록으로 돌아가기»까지 두 곳
+  // 원생 상세는 오류 화면의 «이전 화면으로 돌아가기»까지 두 곳
   const student = await read("src/app/admin/students/[id]/StudentDetailClient.tsx");
   assert.equal((student.match(/<ScopeBackLink fallbackHref="\/admin\/students"/g) || []).length, 2);
   assert.doesNotMatch(student, /<Link href="\/admin\/students" /, "고정 주소 «← 목록» Link 가 남아 있다");
-  // 겉 글자는 그대로다
-  assert.match(student, /← 목록\s*<\/ScopeBackLink>/);
+  // 글자는 실제 동작(방금 있던 화면)에 맞춘다 — «← 목록»이라 적고 통계로 돌아가면 글자와 도착지가 어긋난다
+  assert.match(student, /← 뒤로\s*<\/ScopeBackLink>/);
   assert.match(await read("src/app/admin/not-found.tsx"), /← 이전 화면\s*<\/ScopeBackLink>/);
-  assert.match(await read("src/components/staff/LessonWorkspacePanels.tsx"), /← 지난 수업<\/ScopeBackLink>/);
+  assert.match(await read("src/components/staff/LessonWorkspacePanels.tsx"), /← 뒤로<\/ScopeBackLink>/);
 });
 
 test("내 계정(/account) 화면에 «←» 가 있다 — 바로 앞 같은 사이트 화면으로, 없으면 역할 홈(/auth/continue)", async () => {

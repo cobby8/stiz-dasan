@@ -41,6 +41,7 @@ import type {
 import { userErrorMessage } from "@/components/staff/userErrorMessage";
 import { bulkReportedNotice, splitBulkPresent, staffReloginHref } from "@/lib/staff-session-rules";
 import { askConfirm, showNotice } from "@/components/ui/feedback";
+import { markNextScopeNavigationAsReplace } from "@/lib/navigation/inAppHistory";
 
 /** 서버 기능이 «로그인이 풀렸다»고 돌려줬는가(b5) — 던지지 않고 { ok:false, needsLogin:true } 로 온다. */
 function isLoginFailure(result: object): boolean {
@@ -730,6 +731,8 @@ function LiveSessionWorkspace({
         if (embedded) { onCancelled?.(); return; }
         // 세션이 더 이상 IN_PROGRESS가 아니므로 진행 화면을 벗어난다.
         // 진행 페이지도 status가 바뀌면 /staff로 리다이렉트하므로 그 흐름과 일관되게 이동한다.
+        // 우리 이동 기록에도 «지금 칸을 바꿔 끼운 이동»이라고 알린다 — 안 그러면 수업 주소를 바로 열어 끝냈을 때 홈에 «←» 가 생겨 끝난 수업으로 돌아간다
+        markNextScopeNavigationAsReplace("/staff");
         router.replace(session.sessionDateId ? "/staff/seasonal" : "/staff");
         router.refresh();
       } catch {
@@ -764,6 +767,8 @@ function LiveSessionWorkspace({
         // 이미 종료된 수업도 성공으로 보고 교사용 홈으로 안전하게 복귀합니다.
         // 학부모 알림은 서버가 응답 뒤에 끝까지 보낸다(after) — 화면은 기다리지 않는다.
         // 도착지는 «시작 취소»와 같게 — 특강에서 시작한 수업은 특강 화면으로 돌아간다(2026-11-17 뒤로 가기 조사)
+        // 우리 이동 기록에도 «지금 칸을 바꿔 끼운 이동»이라고 알린다 — 안 그러면 수업 주소를 바로 열어 끝냈을 때 홈에 «←» 가 생겨 끝난 수업으로 돌아간다
+        markNextScopeNavigationAsReplace("/staff");
         router.replace(session.sessionDateId ? "/staff/seasonal" : "/staff");
         router.refresh();
       } catch {

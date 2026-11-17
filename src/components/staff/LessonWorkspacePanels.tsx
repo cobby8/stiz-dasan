@@ -335,7 +335,7 @@ export function CompletedSessionPanel({ session, students: initialStudents, onLi
       {/* 수업 주소(지난 수업에서 연 화면): 머리에 «완료한 수업 · 날짜 시간»과 반 이름. 홈에서는 수업 줄 머리에 이미 있어 되풀이하지 않는다 */}
       {/* 수업 주소에서만: 지난 수업 목록으로 돌아가는 글자 링크(터치 44px) */}
       {!embedded && (
-        <ScopeBackLink fallbackHref="/staff/sessions" className="inline-flex min-h-11 items-center text-sm font-medium text-[var(--color-academy-muted)]">← 지난 수업</ScopeBackLink>
+        <ScopeBackLink fallbackHref="/staff/sessions" className="inline-flex min-h-11 items-center text-sm font-medium text-[var(--color-academy-muted)]">← 뒤로</ScopeBackLink>
       )}
       {!embedded && (
         <section aria-label="완료한 수업" className="rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] p-4 text-[var(--color-academy-ink)]">
