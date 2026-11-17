@@ -398,6 +398,8 @@ const APP_UPDATE_HIDDEN_PREFIXES = [
   "/pay", "/payments", "/mypage/payments/checkout", "/mypage/payments/done", "/apply/trial/pay",
   // 로그인·본인인증·가입·앱 시작 주소(떠 있는 «뒤로» 버튼이 있는 화면들과 겹치지 않게 그 목록도 포함)
   "/login", "/auth", "/signup", "/account/activate", "/setup", "/invite", "/teacher-app", "/store-app",
+  // 설치 안내(2026-11-17 떠 있는 «뒤로» 버튼이 생겼다 — 겹치지 않게. 스토어 앱 안에서는 볼 일이 없는 화면이기도 하다)
+  "/install",
   // 기사님 운행 화면
   "/staff/run", "/shuttle/run",
   // 선생님 수업 화면

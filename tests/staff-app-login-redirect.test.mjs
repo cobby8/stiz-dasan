@@ -72,5 +72,6 @@ test("선생님 앱의 관리자 바로가기는 원장·부원장에게만 보�
   for (const role of ["INSTRUCTOR", "PARENT", "DRIVER"]) assert.equal(resolveAccountViews(role, true).some(view => view.href === "/admin"), false);
   assert.match(menu, /AccountViewSwitcher views=\{accountViews\}/);
   // 수업 진행 중 이동은 다른 링크와 같은 저장 확인을 거쳐야 한다.
-  assert.match(menu, /onNavigate=\{\(event, view\) => requestPublicNavigation\(event, view\.href\)\}/);
+  // 2026-11-17: 화면 키도 같이 넘긴다 — 확인 창을 거친 전환도 «마지막 화면»으로 기억하게.
+  assert.match(menu, /onNavigate=\{\(event, view\) => requestPublicNavigation\(event, view\.href, view\.key\)\}/);
 });

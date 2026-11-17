@@ -48,6 +48,48 @@ test("수업 중 다른 화면으로 이동할 때 자동 저장 확인을 거�
   assert.match(menuSource, /수업 종료 후 로그아웃/);
 });
 
+test("선생님 홈에서 수업 진행 중일 때도 메뉴 이동은 저장 확인을 거친다 — 수업이 없으면 바로 이동", async () => {
+  // 순수 판단을 실제로 돌려 본다
+  const { loadTsModule } = await import("./_ts-module.mjs");
+  const { shouldConfirmStaffLeave } = await loadTsModule("src/app/staff/staffNavigation.ts");
+  // 수업 주소는 표시와 무관하게 늘 확인(예전과 같다)
+  assert.equal(shouldConfirmStaffLeave("/staff/sessions/abc", false), true);
+  assert.equal(shouldConfirmStaffLeave("/staff/sessions/abc", true), true);
+  // 홈: 진행 중 수업 칸이 펼쳐져 있을 때만
+  assert.equal(shouldConfirmStaffLeave("/staff", true), true);
+  assert.equal(shouldConfirmStaffLeave("/staff", false), false, "진행 중 수업이 없으면 확인 창이 뜨지 않는다");
+  // 그 밖의 화면은 표시가 남아 있어도 확인하지 않는다
+  for (const path of ["/staff/students", "/staff/mypage", "/staff/annual", "/staff/sessions", "/staffx", "/admin", "", null, undefined]) {
+    assert.equal(shouldConfirmStaffLeave(path, true), false, String(path));
+    assert.equal(shouldConfirmStaffLeave(path, false), false, String(path));
+  }
+  // 메뉴: 홈의 «수업 중» 표시를 듣고(서버에서는 false), 그 판단으로 이동을 보류한다
+  assert.match(menuSource, /useSyncExternalStore\(subscribeStaffLiveLesson, isStaffLiveLessonOpen, \(\) => false\)/);
+  assert.match(menuSource, /const needsLeaveConfirm = shouldConfirmStaffLeave\(pathname, liveLessonOpen\);/);
+  assert.match(menuSource, /if \(!needsLeaveConfirm\) \{\s*setIsOpen\(false\);\s*return;\s*\}\s*event\.preventDefault\(\);/);
+});
+
+test("확인 창을 거친 화면 전환도 «마지막 화면»으로 기억한다 — 저장이 끝나 이동이 확정될 때만", async () => {
+  const { loadTsModule } = await import("./_ts-module.mjs");
+  const { parseLastViewKey } = await loadTsModule("src/lib/auth/last-view.ts");
+  // 화면 전환 항목의 키만 남고, 가족 연결·내 계정·없는 값은 기억하지 않는다
+  for (const key of ["admin", "teacher", "driver", "parent"]) assert.equal(parseLastViewKey(key), key);
+  for (const key of ["family", "account", "", undefined, null]) assert.equal(parseLastViewKey(key), null, String(key));
+  // 보류할 때 화면 키를 같이 들고, 화면 전환 목록만 키를 넘긴다(마이페이지·설치 안내는 넘기지 않는다)
+  assert.match(menuSource, /setPendingHref\(href\);\s*setPendingViewKey\(parseLastViewKey\(viewKey\)\);/);
+  assert.match(menuSource, /requestPublicNavigation\(event, view\.href, view\.key\)/);
+  assert.match(menuSource, /requestPublicNavigation\(event, "\/staff\/mypage"\)\}/);
+  assert.match(menuSource, /requestPublicNavigation\(event, "\/install"\)\}/);
+  // 기억은 저장 성공 뒤·이동 직전에만: 저장 실패(return)보다 뒤, assign 바로 앞
+  const leave = /const leaveSession = async \(\) => \{([\s\S]*?)\n  \};/.exec(menuSource)[1];
+  assert.match(leave, /if \(pendingViewKey\) rememberLastView\(pendingViewKey\);\s*window\.location\.assign\(pendingHref\);/);
+  // 화면이 떠나지 않았을 때(스토어 앱으로 넘어감 등) 확인 창이 굳지 않게 잠금을 푼다
+  assert.match(leave, /window\.setTimeout\(\(\) => setLeaving\(false\), 4000\);\s*$/);
+  assert.ok(leave.indexOf("if (!result.ok)") < leave.indexOf("rememberLastView"), "저장 실패면 기억하지 않는다");
+  // 취소(닫기·Esc)하면 키를 버린다
+  assert.equal((menuSource.match(/setPendingViewKey\(null\)/g) || []).length, 2);
+});
+
 test("교사용 PWA 범위는 staff 내부로 유지한다", () => {
   assert.equal(manifest.scope, "/staff");
 });
