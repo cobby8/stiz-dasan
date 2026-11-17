@@ -11,7 +11,8 @@
 //   · [이월 승인]은 기존 이월 규칙(resolveWorkbenchAbsence)이 처리하고, 그 함수가 검토를 «APPROVED»로 맞춘다.
 import { lockCompensation, type CompensationTransaction } from "@/lib/billing/absence-compensation-guard";
 import { issueCreditForReportedAbsence, regularAbsenceSourceKey } from "@/lib/makeup/absence-report-credit";
-import { ILLNESS_REASON, evidenceScopeSql, type IllnessReviewSource } from "@/lib/regular/illnessCarryRules";
+import { evidenceScopeSql, type IllnessReviewSource } from "@/lib/regular/illnessCarryRules";
+import { CARRY_REVIEW_REASONS, isCarryReviewReason } from "@/lib/regular/carryReasonRules";
 
 export type IllnessTx = CompensationTransaction;
 
@@ -149,10 +150,11 @@ export async function isIllnessCreditHeld(
        FROM "RegularAbsence" ra
        LEFT JOIN "RegularAbsenceCarryReview" r ON r."absenceId" = ra.id
       WHERE ra."studentId" = $1 AND ra."classId" = $2 AND ra.date = $3::date
-        AND ra.status <> 'CANCELLED' AND ra.reason = $4
+        AND ra.status <> 'CANCELLED' AND ra.reason = ANY($4::text[])
         AND COALESCE(r.status, '') NOT IN ('MAKEUP', 'CLOSED')
       LIMIT 1`,
-    input.studentId, input.classId, input.absenceYmd, ILLNESS_REASON,
+    // 이월 검토 대상 사유 전부(질병·부상·직계 가족 경조사) — 검토 중인 결석은 출결을 결석으로 찍어도 보강권을 미룬다
+    input.studentId, input.classId, input.absenceYmd, [...CARRY_REVIEW_REASONS],
   );
   return rows.length > 0;
 }
@@ -259,7 +261,8 @@ export async function convertIllnessToMakeupInTx(
   );
   const absence = absences[0];
   if (!absence || absence.status === "CANCELLED") return { converted: false, reason: "NOT_FOUND" };
-  if (absence.reason !== ILLNESS_REASON) return { converted: false, reason: "NOT_ILLNESS" };
+  // 이월 검토 대상 사유(질병·부상·직계 가족 경조사 — 2026-11-17)만 전환한다
+  if (!isCarryReviewReason(absence.reason)) return { converted: false, reason: "NOT_ILLNESS" };
 
   const reviews = await tx.$queryRawUnsafe<Array<{ status: string }>>(
     `SELECT status FROM "RegularAbsenceCarryReview" WHERE "absenceId" = $1 FOR UPDATE`, input.absenceId,

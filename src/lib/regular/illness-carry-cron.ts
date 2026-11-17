@@ -28,6 +28,7 @@ export async function autoConvertOverdueIllnessReviews(
   // 승인 뒤 학부모가 기간을 늘려 새로 생긴 «검토 중» 결석이 보강권으로 바뀌면 기간 정산과 이중 보상이 된다.
   // 기간 정산 칸이 아직 없으면(마이그레이션 전) 예전 그대로.
   const notPeriodDecided = (await periodCarryColumnsReady(db)) ? `AND NOT ${periodCarryDecidedSql("ra")}` : "";
+  // «증빙 7일 없으면 보강권»은 질병·부상만(2026-11-17) — 직계 가족 경조사 검토는 원장이 신청함에서 직접 고른다(ra.reason 조건)
   // 후보: 검토 중 + 학부모가 알린 것. 사진 수·알린 날(KST)·오늘(KST)을 함께 읽어 규칙 함수(순수)가 판정한다
   const rows = await db.$queryRawUnsafe<OverdueRow[]>(
     `SELECT r."absenceId" AS "absenceId", r.status, r.source,
@@ -39,7 +40,7 @@ export async function autoConvertOverdueIllnessReviews(
             to_char(now() AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "todayYmd"
        FROM "RegularAbsenceCarryReview" r
        JOIN "RegularAbsence" ra ON ra.id = r."absenceId"
-      WHERE r.status = 'PENDING' AND r.source IN ('PARENT', 'KAKAO') ${notPeriodDecided}
+      WHERE r.status = 'PENDING' AND r.source IN ('PARENT', 'KAKAO') AND ra.reason = 'ILLNESS_INJURY' ${notPeriodDecided}
       ORDER BY r."requestedAt" ASC
       LIMIT 500`,
   );

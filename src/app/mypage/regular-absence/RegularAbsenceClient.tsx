@@ -24,9 +24,10 @@ import AcademyContactButtons, { asksAcademy } from "@/components/parent/AcademyC
 // 날짜 묶음 이름 — 가까운 수업일이 먼저 보이게(오늘 → 이번 주 → 다음 주 → 이후)
 const DATE_GROUP_LABELS = { today: "오늘", thisWeek: "이번 주", nextWeek: "다음 주", later: "이후", past: "지난 수업" };
 
-// 결석 사유 선택지(정규 5종). 방학특강과 동일 집합.
+// 결석 사유 선택지(정규 6종 — 2026-11-17 경조사 추가). 이월 대상(질병/부상·경조사)을 위에 둔다.
 const REASONS: { value: string; label: string }[] = [
   { value: "ILLNESS_INJURY", label: "질병/부상" },
+  { value: "FAMILY_EVENT", label: "경조사(직계 가족)" },
   { value: "PERSONAL", label: "개인 사정" },
   { value: "FAMILY_TRIP", label: "가족 여행" },
   { value: "SCHOOL_EVENT", label: "학교 행사" },
@@ -220,7 +221,10 @@ export default function RegularAbsenceClient({
         const head = d.reported ? "결석 사유를 바꿨어요." : "결석을 알렸어요.";
         setMsg(
           pending
-            ? uploaded > 0
+            ? !illness
+              // 경조사(2026-11-17) — 사진 기한 없이 원이 확인한 뒤 정한다
+              ? `${head} 원에서 확인한 뒤 다음 달 수강료에서 빼 드려요. 확인 자료(부고·청첩장 등)는 원으로 보내 주세요.`
+              : uploaded > 0
               ? `${head} 사진을 확인한 뒤 다음 달 수강료에서 빼 드려요.`
               : `${head} 결석일부터 7일 안에 증빙 사진을 올려 주시면 확인한 뒤 다음 달 수강료에서 빼 드려요.`
             : d.reported

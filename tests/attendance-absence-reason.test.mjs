@@ -173,7 +173,10 @@ test("청구 작업대는 같은 테이블·같은 사유 값을 읽는다(저�
   const svc = readFileSync("src/lib/billing/workbench-service.ts", "utf8");
   assert.match(svc, /FROM "RegularAbsence" a JOIN "Student" s/);
   const absence = readFileSync("src/lib/billing/workbench-absence.ts", "utf8");
-  assert.match(absence, new RegExp(`absence\\.reason !== "${mod.SHEET_ABSENCE_REASON}"`));
+  // 2026-11-17: 사유-분류 짝 검사는 공용 규칙(carryReasonRules)으로 옮겼다 — 그 표의 질병·부상 값이 출석부가 저장하는 값과 같아야 한다
+  assert.match(absence, /carryPairProblem\(b\.eligibility, absence\.reason\)/);
+  const pair = readFileSync("src/lib/regular/carryReasonRules.ts", "utf8");
+  assert.match(pair, new RegExp(`${mod.SHEET_ABSENCE_REASON}: "ILLNESS_INJURY"`));
 });
 
 // ── 연결부(코치·관리자 저장, 종료, 알림) ──

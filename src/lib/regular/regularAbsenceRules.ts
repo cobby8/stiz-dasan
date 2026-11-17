@@ -9,19 +9,26 @@ import {
   isChangeOpen,
 } from "@/lib/parent/changeDeadline";
 
-// ── 결석 사유 5종(방학특강과 동일 집합) ────────────────────────────────────
+// ── 결석 사유 6종 ─────────────────────────────────────────────────────────
+// 2026-11-17 «경조사(직계 가족)» 추가 — 약관(«출석 및 결석에 따른 수업 이월 및 환불»)상 이월 대상은
+// «수강생 본인 질병·부상»과 «직계 가족 경조사» 둘뿐이라, 경조사를 따로 고를 수 있어야 한다.
+// (방학특강 사유 집합 parentAbsenceRules 는 따로 관리한다 — 이번에 바꾸지 않았다)
+// ⚠️ 기간 결석 표의 DB CHECK 제약(RegularAbsencePeriod_reason_check)과 같은 집합이어야 한다(테스트가 비교).
+// 순서 주의: 카카오 대화가 «번호»(1번=질병/부상 … 5번=기타)로도 사유를 받으므로 새 사유는 맨 뒤에 붙인다.
 export const VALID_REASONS = [
   "ILLNESS_INJURY",
   "PERSONAL",
   "FAMILY_TRIP",
   "SCHOOL_EVENT",
   "ETC",
+  "FAMILY_EVENT",
 ] as const;
 
 export type AbsenceReason = (typeof VALID_REASONS)[number];
 
 export const REASON_LABEL: Record<string, string> = {
   ILLNESS_INJURY: "질병/부상",
+  FAMILY_EVENT: "경조사(직계 가족)",
   PERSONAL: "개인 사정",
   FAMILY_TRIP: "가족 여행",
   SCHOOL_EVENT: "학교 행사",
@@ -31,6 +38,8 @@ export const REASON_LABEL: Record<string, string> = {
 export function isValidReason(v: unknown): v is AbsenceReason {
   return typeof v === "string" && (VALID_REASONS as readonly string[]).includes(v);
 }
+
+// 이월 대상 사유 ↔ 청구 준비 «인정 분류» 짝 규칙은 import 없는 별도 파일 @/lib/regular/carryReasonRules 에 있다(2026-11-17).
 
 // ── 요일 문자열("Mon" 등) ↔ 인덱스(0=일 ~ 6=토) ─────────────────────────────
 // Class.dayOfWeek 는 "Mon","Tue"... 형식이다(enrollments.dayOfWeek 와 동일, summary.ts 참고).

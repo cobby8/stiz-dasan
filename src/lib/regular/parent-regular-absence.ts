@@ -27,6 +27,8 @@ import {
   type IllnessReviewSource,
 } from "@/lib/regular/illnessCarryRules";
 import { periodCarryColumnsReady } from "@/lib/regular/absence-period-service";
+// 이월 검토 대상 사유(질병·부상·직계 가족 경조사 — 2026-11-17)
+import { isCarryReviewReason } from "@/lib/regular/carryReasonRules";
 import {
   PERIOD_APPROVED_PARENT_LABEL, PERIOD_DAY_EXCLUDED_LABEL, PERIOD_REFUND_DONE_PARENT_LABEL, PERIOD_REFUND_REVIEW_PARENT_LABEL,
   makeupInUseSql, parentPeriodDayStatus, periodRefundReviewParentLabel,
@@ -223,6 +225,8 @@ export async function getParentIllnessReviews(parentUserId: string): Promise<Par
         WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")}
           AND (r.status IN ('PENDING', 'APPROVED', 'MAKEUP') ${approvedPeriodDaySql})
           AND ra.status <> 'CANCELLED'
+          -- 이 목록은 «질병·부상 결석» 증빙 사진 칸이다 — 경조사 이월 검토(2026-11-17)는 결석 줄의 상태 글자로만 보인다
+          AND ra.reason <> 'FAMILY_EVENT'
           AND ra.date >= ((now() AT TIME ZONE 'Asia/Seoul')::date - 90)
         ORDER BY ra.date DESC, s.name ASC
         LIMIT 200`,
@@ -418,8 +422,8 @@ export async function getUpcomingRegularClassDates(
         locked: status === "CONFIRMED",
         changeOpen: isAbsenceChangeOpen(ymd, r.startTime, now.ymd, now.hm),
         makeupCredit: status ? creditByKey.get(`${r.studentId}|${regularAbsenceSourceKey(r.classId, ymd)}`) ?? null : null,
-        // 사유가 질병·부상일 때만(다른 사유로 바뀐 뒤 남은 옛 검토 상태를 보이지 않게)
-        carryReview: status && reason === ILLNESS_REASON ? reviewByKey.get(`${r.studentId}|${r.classId}|${ymd}`) ?? null : null,
+        // 사유가 이월 검토 대상(질병·부상·직계 가족 경조사)일 때만(다른 사유로 바뀐 뒤 남은 옛 검토 상태를 보이지 않게)
+        carryReview: status && isCarryReviewReason(reason) ? reviewByKey.get(`${r.studentId}|${r.classId}|${ymd}`) ?? null : null,
         ...(status && reason === ILLNESS_REASON && amountPendingKeys.has(`${r.studentId}|${r.classId}|${ymd}`) ? { carryAmountPending: true } : {}),
         ...(status && reason === ILLNESS_REASON && reducedKeys.has(`${r.studentId}|${r.classId}|${ymd}`) ? { carryReduced: true } : {}),
       } as UpcomingClassDate;
@@ -508,7 +512,8 @@ export async function notifyAdminsOfAbsenceChange(input: {
       type: "ABSENCE",
       title,
       message,
-      linkUrl: input.kind === "REPORTED" && input.reason === ILLNESS_REASON ? ILLNESS_INBOX_HREF : "/admin/absence",
+      // 이월 검토 대상(질병·부상·직계 가족 경조사)은 신청함 «이월 검토»로 바로 연다
+      linkUrl: input.kind === "REPORTED" && isCarryReviewReason(input.reason) ? ILLNESS_INBOX_HREF : "/admin/absence",
       staffLinkUrl: "/staff",
       classId: input.classId,
       includeCoach: true,
@@ -572,8 +577,10 @@ export async function saveReportedAbsenceInTx(
   //   새 신고·사유 변경(→질병·부상) 모두 여기를 지난다. 이미 나간 미사용 보강권은 거둬 두고,
   //   보강을 이미 예약·사용한 결석이면 오류(ILLNESS_MAKEUP_IN_USE)로 저장까지 되돌린다.
   //   검토 표가 아직 없으면(마이그레이션 전) 예전처럼 즉시 보강권 — 신고가 죽지 않게.
+  // 2026-11-17: 직계 가족 경조사(FAMILY_EVENT)도 약관상 이월 대상이라 같은 «이월 검토»로 간다.
+  //   (사유 글 필수·증빙 사진 7일·자동 보강권 전환은 질병·부상만 — 경조사는 원장이 신청함에서 직접 고른다)
   const reviewReady = await illnessReviewReady(tx);
-  if (reason === ILLNESS_REASON && reviewReady) {
+  if (isCarryReviewReason(reason) && reviewReady) {
     // 같은 신고를 다시 보낸 경우(noOp)는 검토를 새로 열지 않는다 — 이 기능 이전에 보강권이 나간 결석은 원장이 신청함에서 고른다(a7)
     const absenceId = saved[0]?.id ?? null;
     if (!absenceId) return { saved: null, noOp, makeupCreditIssued: false, carryReview: null as string | null, absenceId: null as string | null };
@@ -903,12 +910,13 @@ export async function moveRegularAbsence(
     //   · 검토 줄이 없던 질병·부상 결석(이 기능 이전 신고): 새 날짜에서 검토를 새로 연다 — 하루 신고와 같은 결과로 통일.
     //   · 다른 사유: 아래 ⑦ 예전 그대로.
     const reviewReady = await illnessReviewReady(tx);
-    const oldReview = reviewReady && reason === ILLNESS_REASON
+    // (2026-11-17) 직계 가족 경조사도 이월 검토 대상이라 같은 길로 옮긴다
+    const oldReview = reviewReady && isCarryReviewReason(reason)
       ? (await tx.$queryRawUnsafe<{ status: string; source: string; reasonText: string | null }[]>(
           `SELECT status, source, "reasonText" FROM "RegularAbsenceCarryReview" WHERE "absenceId" = $1 FOR UPDATE`, canceled[0].id,
         ))[0] ?? null
       : null;
-    if (reviewReady && reason === ILLNESS_REASON && oldReview?.status !== "MAKEUP") {
+    if (reviewReady && isCarryReviewReason(reason) && oldReview?.status !== "MAKEUP") {
       if (oldReview?.status === "PENDING") {
         await tx.$executeRawUnsafe(
           `UPDATE "RegularAbsenceEvidence" SET "absenceId" = $2 WHERE "absenceId" = $1 AND "removedAt" IS NULL`,

@@ -165,7 +165,9 @@ function makeWorld(options = {}) {
     if (/^SELECT status FROM "Attendance"/.test(sql)) return world.attendance ? [{ status: world.attendance }] : [];
     if (/^SELECT status FROM "MakeupCredit"/.test(sql)) { world.calls.push(["creditLookup", args[1]]); return world.credits; }
     if (/^INSERT INTO "Attendance"/.test(sql)) { world.calls.push(["saveAttendance", args[2]]); world.attendance = args[2]; world.attendanceInsert = { sql, args }; return [{ id: "a1" }]; }
-    if (/FROM "RegularAbsence" ra\s+WHERE ra\."studentId" = \$1 AND ra\."classId" = \$2 AND ra\.date = \$3::date\s+AND ra\.status <> 'CANCELLED' AND ra\.reason = 'ILLNESS_INJURY'/.test(sql)) {
+    if (/FROM "RegularAbsence" ra\s+WHERE ra\."studentId" = \$1 AND ra\."classId" = \$2 AND ra\.date = \$3::date\s+AND ra\.status <> 'CANCELLED' AND ra\.reason = ANY\(\$4::text\[\]\)/.test(sql)) {
+      // 이월 검토 사유(질병·부상 · 직계 경조사) 둘 다 막는다
+      assert.deepEqual([...args[3]].sort(), ["FAMILY_EVENT", "ILLNESS_INJURY"]);
       world.calls.push(["illnessLookup"]);
       return world.illness ? [{ id: "ra1" }] : [];
     }
@@ -225,6 +227,7 @@ function makeWorld(options = {}) {
     // 응답 뒤에 도는 일(학부모 알림)을 모아 두고, 테스트가 직접 돌린다
     "next/server": { after: (job) => { world.afterJobs.push(job); } },
     "@/lib/prisma": { prisma },
+    "@/lib/regular/carryReasonRules": load("src/lib/regular/carryReasonRules.ts"),
     "@/lib/makeup/credit-service": {
       syncCreditForRegularSession: async (input) => { world.calls.push(["syncRegularCredit", input.status, input.studentId]); return { action: "revoked" }; },
       revokeMakeupCreditInTx: async () => ({ revoked: 1 }),

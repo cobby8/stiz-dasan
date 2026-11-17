@@ -145,7 +145,7 @@ const hm = (minutes: unknown) => {
 };
 
 const ABSENCE_REASON: Record<string, string> = {
-  ILLNESS_INJURY: "아픔·부상", PERSONAL: "개인 사정", FAMILY_TRIP: "가족 여행", SCHOOL_EVENT: "학교 행사", ETC: "기타",
+  ILLNESS_INJURY: "아픔·부상", FAMILY_EVENT: "경조사(직계 가족)", PERSONAL: "개인 사정", FAMILY_TRIP: "가족 여행", SCHOOL_EVENT: "학교 행사", ETC: "기타",
 };
 const CHANGE_KIND: Record<string, string> = { CLASS_CHANGE: "반 변경", PAUSE: "휴원", WITHDRAW: "퇴원", RESUME: "복귀", CLASS_ADD: "반 추가" };
 const SHUTTLE_REGULAR_KIND: Record<string, string> = { CHANGE: "위치 바꾸기", START: "이용 시작", STOP: "이용 중단" };
@@ -178,7 +178,8 @@ const enrollmentChangeExtra = `
 // 질병·부상 결석(하루짜리) 목록의 기본 조건 — 기간 결석 제외 조건을 붙이기 전의 식(기간 정산 칸이 없는 DB 는 이 식 그대로 읽는다)
 // 2026-10-05 = 보강권 발급·청구 작업대 결석 정산이 시작된 날(그 전 결석은 대상이 아니다)
 // 닫힌 검토(CLOSED — 그날 출석으로 기록돼 자동으로 닫힌 건 등)는 고를 것이 없어 뺀다(결석 신고 자체는 «결석» 줄에 그대로 있다)
-const ILLNESS_CARRY_WHERE = `x.reason = 'ILLNESS_INJURY' AND x.status <> 'CANCELLED' AND x.date >= '2026-10-05'::date
+// 2026-11-17: 직계 가족 경조사(FAMILY_EVENT)도 약관상 이월 대상이라 같은 목록에 올린다
+const ILLNESS_CARRY_WHERE = `x.reason IN ('ILLNESS_INJURY', 'FAMILY_EVENT') AND x.status <> 'CANCELLED' AND x.date >= '2026-10-05'::date
             AND COALESCE(r.status, '') <> 'CLOSED'
             AND NOT (r."absenceId" IS NULL AND EXISTS (
               SELECT 1 FROM "MakeupCredit" used WHERE used."studentId" = x."studentId"
@@ -291,7 +292,7 @@ const ADAPTERS: Adapter[] = [
     studentNameExpr: "s.name",
     createdAtExpr: `COALESCE(r."requestedAt", x."createdAt")`,
     targetDateExpr: `x.date::text`,
-    extra: `'className', c.name, 'source', COALESCE(r.source, 'STAFF'), 'period', (x."periodId" IS NOT NULL AND x."reportedByUserId" IS NULL),
+    extra: `'className', c.name, 'reason', x.reason, 'source', COALESCE(r.source, 'STAFF'), 'period', (x."periodId" IS NOT NULL AND x."reportedByUserId" IS NULL),
             'parentPeriod', (x."periodId" IS NOT NULL AND x."reportedByUserId" IS NOT NULL),
             'photoCount', (SELECT COUNT(*)::int FROM "RegularAbsenceEvidence" e WHERE ${evidenceScopeSql("x", "e")} AND e."removedAt" IS NULL),
             'creditStatus', (SELECT mc.status FROM "MakeupCredit" mc WHERE mc."studentId" = x."studentId"
@@ -307,9 +308,11 @@ const ADAPTERS: Adapter[] = [
     format: (row, e) => {
       const photos = Number(e.photoCount ?? 0);
       const source = e.period ? "학원 등록(기간 결석)" : e.parentPeriod ? `${ILLNESS_SOURCE[text(e.source)] ?? "학부모 앱"}(여러 날)` : ILLNESS_SOURCE[text(e.source)] ?? "학원 등록";
-      const evidence = photos > 0 ? `사진 ${photos}장` : e.source === "STAFF" ? "학부모 증빙 없음" : "사진 아직 없음";
+      // 경조사(2026-11-17)는 사진 기한이 없고 원장이 확인 자료를 직접 본다 — 제목·증빙 글자를 나눈다
+      const familyEvent = text(e.reason) === "FAMILY_EVENT";
+      const evidence = photos > 0 ? `사진 ${photos}장` : familyEvent ? "확인 자료 직접 확인" : e.source === "STAFF" ? "학부모 증빙 없음" : "사진 아직 없음";
       return {
-        title: "질병·부상 결석",
+        title: familyEvent ? "경조사 결석" : "질병·부상 결석",
         summary: join(row.targetDate, e.className, evidence),
         facts: [...fact("결석일", row.targetDate), ...fact("반", e.className), ["접수", source], ["증빙", evidence],
           ...fact("보강권", CREDIT_LABEL[text(e.creditStatus)]),

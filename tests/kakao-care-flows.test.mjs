@@ -195,6 +195,12 @@ test("결석 사유 읽기: 버튼·번호·흔한 표현, 모르는 말은 null
   assert.equal(absenceFlow.parseAbsenceReason("학교 행사가 있어요"), "SCHOOL_EVENT");
   assert.equal(absenceFlow.parseAbsenceReason("2번"), "PERSONAL");
   assert.equal(absenceFlow.parseAbsenceReason("기타"), "ETC");
+  // 직계 가족 경조사(2026-11-17) — 버튼 라벨·6번·흔한 표현. 개인 사정으로 삼키지 않는다
+  assert.equal(absenceFlow.parseAbsenceReason("결석 사유 경조사(직계 가족)"), "FAMILY_EVENT");
+  assert.equal(absenceFlow.parseAbsenceReason("6번"), "FAMILY_EVENT");
+  assert.equal(absenceFlow.parseAbsenceReason("할아버지 장례식이 있어요"), "FAMILY_EVENT");
+  assert.equal(absenceFlow.parseAbsenceReason("집안 경조사"), "FAMILY_EVENT");
+  assert.equal(absenceFlow.parseAbsenceReason("개인 사정"), "PERSONAL");
   assert.equal(absenceFlow.parseAbsenceReason("입금했어요"), null);
 });
 
