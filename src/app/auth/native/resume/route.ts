@@ -32,10 +32,12 @@ export async function GET(request:NextRequest) {
     if(!session||!user||verified?.error||user.id!==session.user.id)throw new NativeAuthError(401);
     if(!await requireNativeAccount(user.id))throw new NativeAuthError(403);
     const callback=await service.finishBrowser(row,binding!,{access_token:session.access_token,refresh_token:session.refresh_token,authUserId:user.id});
-    // 바로 앱 주소로 넘기지 않고 화면을 한 번 보여 준다(검수 반영): 본인인증에서 돌아온 직후처럼 «누름 없이» 이어진 이동은
-    // 크롬이 앱 열기를 막을 수 있다. 화면이 자동으로 한 번 시도하고, 막히면 사용자가 버튼을 눌러 앱으로 돌아간다.
-    // 1회용 code 는 60초 동안만 유효하다 — 화면에 그렇게 적는다.
-    const response=page(`<h1>거의 다 됐어요</h1><p>아래 버튼을 누르면 앱으로 돌아가 로그인됩니다.</p><a class="go" id="go" href="${escapeHtml(callback)}">앱으로 돌아가기</a><p class="sub">1분 안에 눌러 주세요. 지나면 이 창을 닫고 앱에서 다시 로그인하시면 됩니다.</p><script>setTimeout(function(){location.href=document.getElementById("go").href},300)</script>`);
+    // 평소 앱 로그인(callback)과 똑같이 «바로» 앱 복귀 주소로 넘긴다 — 그래야 앱이 이 브라우저 창을 닫고 앞으로 온다.
+    // 2026-11-17 원장 신고: 화면을 한 번 보여 주고 스크립트로 넘겼더니 앱은 로그인됐는데 이 창이 그대로 남아
+    // «성공인데 이상한 화면에 남아 있다». 누름 없는 이동이 막히는 경우는 가입 화면이 «앱으로 돌아가기» 버튼(사용자가 누름)으로
+    // 여기에 오게 해서 피한다(ParentSignupClient). 연결 뒤에는 공급자에서 이어진 서버 이동이라 평소 로그인과 같은 조건이다.
+    const response=NextResponse.redirect(callback);
+    for(const [key,value]of Object.entries(noStoreHeaders))response.headers.set(key,value);
     clearNativeBrowserCookies(request,response,flow);
     clearNativeResumeCookie(response);
     return clearWebSessionCookies(request,response);
@@ -46,7 +48,6 @@ export async function GET(request:NextRequest) {
     return clearWebSessionCookies(request,response);
   }
 }
-function escapeHtml(value:string) { return value.replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[char]!)); }
 /**
  * 읽을 수 있는 한 화면. 내용은 서버가 정한 고정 문구와 앱 복귀 주소뿐이다.
  * 이 화면은 앱의 화면 틀 밖(스타일 토큰이 없는 단독 문서)이라 색 코드를 쓰지 않고 브라우저 기본 색(color-scheme + Canvas·CanvasText)만 쓴다

@@ -235,12 +235,10 @@ test("resume 라우트: 가입·연결을 마친 브라우저를 1회용 code �
     assert.equal(f.h.store.rows.get(started.flowId).status, "BROWSER");
     // 가입·연결을 마친 같은 브라우저 → 앱 복귀 주소로 code 만(공급자에서 이어진 이동이라 cross-site 로 표시돼도 통과)
     const done = await go(f, mine, { "sec-fetch-site": "cross-site" });
-    // 바로 앱 주소로 넘기지 않고 «앱으로 돌아가기» 버튼이 있는 화면(누름 없는 앱 열기는 크롬이 막을 수 있다)
-    assert.equal(done.status, 200);
+    // 평소 앱 로그인과 똑같이 바로 앱 복귀 주소로(그래야 앱이 이 창을 닫고 앞으로 온다 — 화면을 거치면 창이 남았다)
+    assert.equal(done.status, 307);
     assert.equal(done.headers.get("cache-control"), "no-store, private");
-    const html = await done.text();
-    assert.match(html, /앱으로 돌아가기/);
-    const back = new URL(html.match(/id="go" href="([^"]+)"/)[1].replaceAll("&amp;", "&"));
+    const back = new URL(done.headers.get("location"));
     assert.equal(back.protocol, "kr.co.upturnlabs.stizdasan:");
     assert.equal(back.searchParams.get("error"), null);
     assert.doesNotMatch(back.toString(), /synthetic/, "토큰은 주소에 싣지 않는다");

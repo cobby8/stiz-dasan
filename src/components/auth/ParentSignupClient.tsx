@@ -136,10 +136,8 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
    * (/auth/native/resume 이 살려 둔 앱 로그인 요청을 마무리한다. 시간이 지났으면 그 화면이 «앱에서 다시 로그인» 안내를 띄운다).
    */
   function finishSignup() {
-    if (fromApp && socialSignup) {
-      window.location.assign("/auth/native/resume");
-      return;
-    }
+    // 앱에서 넘어온 간편가입은 완료 화면의 «앱으로 돌아가기» 버튼이 /auth/native/resume 으로 보낸다(아래 done 단계).
+    // 스크립트로 자동 이동하지 않는다 — 누름 없이 앱을 여는 이동은 브라우저가 막을 수 있고, 막히면 창이 그대로 남는다.
     setStep("done");
   }
 
@@ -440,7 +438,13 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
           </p>
           {/* 앱에서 넘어온 가입: 앱으로 여는 버튼은 두지 않는다 — 진행 중인 앱 로그인 요청 없이 앱 주소를 열면
               앱이 «요청을 확인하지 못했습니다»로 막는다. 창을 닫으면 앱이 알아서 정리한다(앱 1.0.6). */}
-          {fromApp ? (
+          {fromApp && socialSignup ? (
+            <div className="mt-6">
+              {/* <Link> 금지 — 미리 불러오기가 1회용 복귀 요청을 써 버린다. 사용자가 직접 누르는 평범한 링크여야 앱이 열린다. */}
+              <a href="/auth/native/resume" className="flex min-h-12 items-center justify-center rounded-xl bg-[var(--color-public-accent)] font-bold text-white hover:bg-[var(--color-public-strong)]">앱으로 돌아가기</a>
+              <p className="mt-3 text-xs leading-5 text-[var(--color-public-muted)]">누르면 앱이 열리며 로그인됩니다. 열리지 않으면 이 창을 닫고 앱에서 다시 로그인해 주세요.</p>
+            </div>
+          ) : fromApp ? (
             <div role="status" className="mt-6 rounded-xl border border-[var(--color-public-accent)] px-4 py-4 text-left text-sm leading-relaxed">
               <p className="font-semibold">이제 앱으로 돌아가 주세요</p>
               <ol className="mt-2 list-decimal space-y-1 pl-5">
