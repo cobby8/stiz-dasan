@@ -38,3 +38,7 @@ input { flex: 1; min-height: 44px; padding: 0 10px; font-size: 15px; border: 1px
 .list li .amt { font-weight: 600; white-space: nowrap; }
 .list li .code { font-size: 13px; color: var(--c-muted); white-space: nowrap; }
 .list .empty { color: var(--c-muted); font-size: 13px; min-height: 36px; }
+/* 미납 검색 — 학생별 묶음 머리줄(합계 + 전체 결제, 2026-11-17) */
+.list li.group { background: var(--c-soft); padding: 0 8px; border-radius: 8px 8px 0 0; margin-top: 6px; }
+.list li.group .what { color: var(--c-text); }
+.list li.sub { padding-left: 16px; }

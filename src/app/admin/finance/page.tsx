@@ -25,7 +25,7 @@ export default async function AdminFinancePage() {
     // 전체가 500ms 를 넘을 때만 한 줄
     reportTiming("[admin finance timing]", timing, 500);
     // 캐시(역할 무관 공유)에서 꺼낸 «뒤» 역할로 가린다 — 부원장은 미납 금액만, 요약은 null(2026-11-14 원장 결정)
-    const { payments, summary, paymentProvider } = maskFinancePayloadForRole(payload, adminUser.appUserRole);
+    const { payments, summary, paymentProvider, outstanding } = maskFinancePayloadForRole(payload, adminUser.appUserRole);
     const isOwner = canSeeAllMoney(adminUser.appUserRole);
 
     return (
@@ -35,6 +35,7 @@ export default async function AdminFinancePage() {
                 initialYear={initialYear}
                 initialMonth={initialMonth}
                 initialSummary={summary}
+                initialOutstanding={outstanding}
                 initialPaymentProvider={paymentProvider}
                 currentAdminRole={adminUser.appUserRole}
                 // 학부모 청구 안내 사이트 발송 잠금 여부(서버 환경변수로만 판정)

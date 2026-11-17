@@ -30,6 +30,7 @@ import {
     getGalleryPosts,
     getMakeupSessions,
     getPayments,
+    getStudentOutstanding,
     getPaymentSummary,
     getNotices,
     getPrograms,
@@ -838,12 +839,14 @@ async function getAdminNoticeCount() {
 export function getCachedAdminFinancePayload(year: number, month: number) {
     return adminOnly(unstable_cache(
         async () => {
-            const [payments, summary] = await Promise.all([
+            const [payments, summary, outstanding] = await Promise.all([
                 getPayments(year, month),
                 getPaymentSummary(year, month),
+                // 학생별 «모든 달» 미납 건수·합계(미납 금액이라 부원장도 본다) — «밀린 미납» 표시·전체 현장 결제 메뉴
+                getStudentOutstanding(),
             ]);
 
-            return { payments, summary, paymentProvider: getPaymentProviderPublicStatus() };
+            return { payments, summary, outstanding, paymentProvider: getPaymentProviderPublicStatus() };
         },
         ["admin-finance", String(year), String(month)],
         { revalidate: 30, tags: ["admin-finance", "admin-stats"] },

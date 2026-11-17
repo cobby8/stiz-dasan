@@ -108,8 +108,10 @@ zip 구조(문서 기준):
 | `POST /api/pos-plugin/charge-requests/{id}/report` 본문 `{event:'paid'|'cancel'|'start_failed', reason?}` | `{ ok, status, paid, duplicate }` (paid 면 POS 에 «사이트 납부완료») | — |
 | `POST /api/pos-plugin/charge-requests/{id}/cancel/claim` (본문 없음) | `{ ok, cancel: { id, shortCode, amount, studentName, itemName, tossOrderId, tossPaymentIds: [...] } }` — 취소할 주문·결제 ID 는 서버 DB 값(분할 결제면 전부) | 409 `NOT_CLAIMABLE` |
 | `POST /api/pos-plugin/charge-requests/{id}/cancel/report` 본문 `{result:'done'|'failed', message?}` | `{ ok, cancelState, refunded }` — **기록만**(환불은 토스 웹훅으로), 가져간 연결 코드만 보고 가능 | 409 `NOT_CLAIMABLE` |
-| `GET /api/pos-plugin/unpaid?q=이름` | `{ ok, items: [{paymentId, studentLabel, className, title, amount, …}] }` | — |
+| `GET /api/pos-plugin/unpaid?q=이름` | `{ ok, items: [{paymentId, studentLabel, className, title, amount, studentKey, hasOpenRequest, …}] }` — 최대 60건, 학생별로 붙여서(학생 안은 오래된 달부터). 탭이 `studentKey` 로 묶어 «전체 결제»를 보인다 | — |
 | `POST /api/pos-plugin/unpaid/{paymentId}/charge` | `{ ok, request }` (생성+선점) | 409 `NOT_CLAIMABLE`/`NOT_ELIGIBLE`/`CHANGED` |
+| `POST /api/pos-plugin/unpaid/bundle` 본문 `{paymentIds:[…]}` | `{ ok, request }` (같은 학생 여러 건 묶음 생성+선점, 최대 10건·500만원 — 2026-11-17) | 409 `NOT_ELIGIBLE`/`ALREADY_OPEN` |
+| `POST /api/pos-plugin/charge-requests/{id}/not-ready` 본문 `{reason:'busy'|'draft_not_empty'}` | `{ ok, recorded }` — 새 요청을 바로 못 열었다는 참고 보고(상태 안 바뀜). 워커는 POS 가 비면 최대 2분간 2.5초마다 다시 연다(2026-11-17) | 400 |
 
 요청 = `{ id, shortCode:"S-482193"(4~6자리 허용), studentLabel:"홍*동"(가린 이름), itemName:"2026년 11월 수강료(홍*동)", amount, taxFreeAmount, memo, expiresAt, status, items:[…] }`
 

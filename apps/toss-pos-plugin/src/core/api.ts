@@ -172,6 +172,12 @@ export function createServerApi(deps: ApiDeps) {
       call("GET", API_PATHS.unpaid(q), null, parseUnpaidList),
     chargeUnpaid: (paymentId: string): Promise<ApiResult<ChargeRequest>> =>
       call("POST", API_PATHS.chargeUnpaid(paymentId), {}, parseClaimResponse),
+    /** 같은 학생 미납 여러 건을 결제 한 번으로(서버가 묶음 규칙을 다시 확인) */
+    chargeUnpaidBundle: (paymentIds: string[]): Promise<ApiResult<ChargeRequest>> =>
+      call("POST", API_PATHS.chargeUnpaidBundle, { paymentIds }, parseClaimResponse),
+    /** 새 요청을 바로 못 열었다는 참고 보고 — 실패해도 흐름에 영향 없음 */
+    notReady: (id: string, reason: "busy" | "draft_not_empty"): Promise<ApiResult<boolean>> =>
+      call("POST", API_PATHS.notReady(id), { reason }, () => true),
     /** «결제 취소할 일» 가져가기 — 취소할 주문·결제 ID 는 서버 값만 쓴다 */
     cancelClaim: (id: string): Promise<ApiResult<CancelClaim>> => call("POST", API_PATHS.cancelClaim(id), {}, parseCancelClaim),
     /** 취소 결과 참고 보고(환불 확정은 서버가 토스 웹훅으로) */

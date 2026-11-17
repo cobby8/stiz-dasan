@@ -574,7 +574,10 @@ export function buildChargeItemName({ year, month, type, maskedName }) {
 
 /**
  * 묶음 요약(관리자 화면·슬랙). 항목 순서대로 받는다(sortChargeItems).
- *   1건 → «2026년 11월 수강료»  /  여러 건 → «수강료 11월 외 1건»
+ *   1건 → «2026년 11월 수강료»
+ *   여러 건 → 달 범위 + 종류 + 건수(2026-11-17 원장: «수강료 10월 외 5건»은 몇 달치인지 안 보였다)
+ *     «10~12월 수강료 6건» · «11월 수강료·셔틀비 2건» · «2026년 12월~2027년 1월 수강료 2건»
+ *   달 정보가 없는 청구만 있으면 «기타 외 1건» 꼴(예전 모양).
  * @param items [{ year, month, type }]
  */
 export function chargeItemsSummary(items) {
@@ -582,8 +585,18 @@ export function chargeItemsSummary(items) {
   if (list.length === 0) return "";
   const [first] = list;
   if (list.length === 1) return buildChargeItemName({ year: first.year, month: first.month, type: first.type, maskedName: "" }).trim();
-  const when = first.month ? ` ${first.month}월` : "";
-  return `${paymentTypeLabel(first.type)}${when} 외 ${list.length - 1}건`;
+  const types = [...new Set(list.map((it) => paymentTypeLabel(it?.type)))].join("·");
+  const months = list
+    .filter((it) => Number.isInteger(Number(it?.year)) && Number(it?.year) > 0 && Number(it?.month) >= 1 && Number(it?.month) <= 12)
+    .map((it) => Number(it.year) * 12 + (Number(it.month) - 1));
+  if (months.length === 0) return `${paymentTypeLabel(first.type)} 외 ${list.length - 1}건`;
+  const lo = Math.min(...months);
+  const hi = Math.max(...months);
+  const ym = (v) => ({ y: Math.floor(v / 12), m: (v % 12) + 1 });
+  const a = ym(lo);
+  const b = ym(hi);
+  const range = lo === hi ? `${a.m}월` : a.y === b.y ? `${a.m}~${b.m}월` : `${a.y}년 ${a.m}월~${b.y}년 ${b.m}월`;
+  return `${range} ${types} ${list.length}건`;
 }
 
 /**

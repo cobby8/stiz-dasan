@@ -41,7 +41,11 @@ test("선점 응답: {request} 또는 요청 그 자체", () => {
 
 test("미납 목록·보고 상태 해석", () => {
   const u = parseUnpaidList({ items: [{ payment_id: "p1", student_name: "이○○", class_name: "토요 초등", title: "수강료(11월)", amount: 120000 }, { amount: 1 }] });
-  assert.deepEqual(u, [{ paymentId: "p1", studentName: "이○○", className: "토요 초등", title: "수강료(11월)", amount: 120000 }]);
+  // studentKey·hasOpenRequest 가 없는 옛 서버 응답이면 빈 열쇠·false(묶지 않고 한 줄씩)
+  assert.deepEqual(u, [{ paymentId: "p1", studentName: "이○○", className: "토요 초등", title: "수강료(11월)", amount: 120000, studentKey: "", hasOpenRequest: false }]);
+  const [k] = parseUnpaidList({ items: [{ paymentId: "p2", studentLabel: "이*수", title: "2026년 10월 수강료", amount: 1, studentKey: "s1", hasOpenRequest: true }] });
+  assert.equal(k.studentKey, "s1");
+  assert.equal(k.hasOpenRequest, true);
   assert.equal(parseReportStatus({ request: { status: "PAID" } }), "PAID");
   assert.equal(parseReportStatus({ data: { status: "SENT" } }), "SENT");
   assert.equal(parseReportStatus(null), "");

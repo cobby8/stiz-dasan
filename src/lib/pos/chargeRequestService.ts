@@ -971,6 +971,48 @@ export async function reportChargeRequestFromPlugin(input: {
     return { status: current[0].status, paid: current[0].status === "PAID", duplicate: true };
 }
 
+/** POS 가 새 요청을 바로 못 연 이유(플러그인 → 서버). 관리자 «현장 결제» 창 안내에만 쓴다 */
+export const POS_NOT_READY_REASONS = ["busy", "draft_not_empty"] as const;
+export type PosNotReadyReason = (typeof POS_NOT_READY_REASONS)[number];
+/** pluginReportMessage 에 남기는 앞글자 — 보고 종류(pluginReportedEvent) 목록은 DB CHECK 라 늘리지 않고 메시지 칸만 쓴다 */
+export const POS_NOT_READY_PREFIX = "NOT_READY:";
+
+export function normalizePosNotReadyReason(value: unknown): PosNotReadyReason | null {
+    const raw = String(value ?? "").trim().toLowerCase();
+    return (POS_NOT_READY_REASONS as readonly string[]).includes(raw) ? (raw as PosNotReadyReason) : null;
+}
+
+/**
+ * 플러그인 «아직 못 열었어요» 보고(2026-11-17: 직전 결제 직후 요청이 POS 에 안 열려 직원이 취소·재요청).
+ * 대기(PENDING) 중이고 아직 다른 보고가 없는 요청에만 메시지 칸을 «NOT_READY:사유»로 남긴다 — 상태·돈은 그대로.
+ * 플러그인은 POS 가 비면 스스로 다시 연다. 관리자 창은 이 값을 보고 «POS 화면에 다른 주문이 있어요»를 띄운다.
+ */
+export async function reportChargeNotReadyFromPlugin(input: { requestId: string; reason: PosNotReadyReason }): Promise<{ recorded: boolean }> {
+    const id = String(input.requestId ?? "").trim();
+    if (!/^[0-9a-f-]{10,64}$/i.test(id)) throw new ChargeRequestError("NOT_FOUND", "요청을 찾지 못했습니다.");
+    const rows = await prisma.$queryRawUnsafe<{ id: string }[]>(
+        `UPDATE "PosChargeRequest"
+            SET "pluginReportMessage" = $2, "pluginReportedAt" = now(), "updatedAt" = now()
+          WHERE id = $1 AND status = 'PENDING' AND "pluginReportedEvent" IS NULL
+          RETURNING id`,
+        id,
+        `${POS_NOT_READY_PREFIX}${input.reason}`,
+    );
+    return { recorded: rows.length > 0 };
+}
+
+/**
+ * POS 탭 «전체 결제» — 같은 학생의 미납 여러 건을 한 요청으로 만들고 바로 선점(2026-11-17).
+ * 묶음 규칙(같은 학생·최대 10건·500만원·미납만)은 createRow 가 관리자 묶음과 똑같이 확인한다.
+ */
+export async function createAndClaimBundleForPlugin(paymentIds: string[], tokenId: string): Promise<PluginChargeRequestView> {
+    const ids = Array.isArray(paymentIds) ? paymentIds.map((v) => String(v ?? "").trim()).filter(Boolean) : [];
+    if (ids.length === 0) throw new ChargeRequestError("NOT_ELIGIBLE", "결제할 청구를 골라 주세요.");
+    const { row, existing } = await createRow({ paymentIds: ids, via: "PLUGIN", actorUserId: null, actorName: null, claimTokenId: tokenId });
+    if (!existing) return toPluginView(row, await itemsOf(row));
+    return claimChargeRequestForPlugin(row.id, tokenId);
+}
+
 export type PluginUnpaidItem = {
     paymentId: string;
     studentLabel: string;
@@ -981,20 +1023,29 @@ export type PluginUnpaidItem = {
     amount: number;
     status: string;
     hasOpenRequest: boolean;
+    /**
+     * 같은 학생 묶기용 열쇠(학생 내부 id) — POS 탭이 학생별로 묶어 «전체 결제»를 보인다(2026-11-17).
+     * 이름·연락처가 아닌 내부 id 라 개인정보가 아니다.
+     */
+    studentKey: string;
 };
+
+/** POS 탭 미납 목록 최대 건수(학생별로 묶어 보이므로 30 → 60, 2026-11-17) */
+export const PLUGIN_UNPAID_LIMIT = 60;
 
 /**
  * POS 탭 미납 목록 — 이름은 가리고, 반·청구월·금액만. 전화번호·주소·보호자는 절대 싣지 않는다.
- * 검색어는 서버에서 실명과 비교하되 응답에는 가린 이름만 나간다. 최대 30건.
+ * 검색어는 서버에서 실명과 비교하되 응답에는 가린 이름만 나간다. 최대 60건.
+ * 순서: 학생별로 붙여서(이름 → 학생) 학생 안에서는 오래된 달부터 — 탭이 학생마다 «전체 결제»로 묶는다.
  */
 export async function listUnpaidForPlugin(query: string): Promise<PluginUnpaidItem[]> {
     // LIKE 특수문자(% _ \)는 지워 «아무거나 맞음» 검색을 막는다.
     const q = String(query ?? "").replace(/[%_\\]/g, "").trim().slice(0, 20);
     const rows = await prisma.$queryRawUnsafe<{
-        paymentId: string; studentName: string; className: string | null; type: string;
+        paymentId: string; studentId: string; studentName: string; className: string | null; type: string;
         year: number | null; month: number | null; amount: number; status: string; hasOpenRequest: boolean;
     }[]>(
-        `SELECT p.id AS "paymentId", s.name AS "studentName", c.name AS "className", p.type, p.year, p.month,
+        `SELECT p.id AS "paymentId", s.id AS "studentId", s.name AS "studentName", c.name AS "className", p.type, p.year, p.month,
                 p.amount, p.status,
                 EXISTS (SELECT 1 FROM "PosChargeRequest" r
                          WHERE r.status IN ('PENDING', 'SENT') AND r."expiresAt" > now()
@@ -1005,8 +1056,8 @@ export async function listUnpaidForPlugin(query: string): Promise<PluginUnpaidIt
            LEFT JOIN "Class" c ON c.id = p."classId"
           WHERE p.status IN ('PENDING', 'OVERDUE') AND p.type IN ('MONTHLY', 'SHUTTLE', 'OTHER') AND p.amount > 0
             AND ($1::text = '' OR s.name ILIKE '%' || $1::text || '%')
-          ORDER BY p.year DESC NULLS LAST, p.month DESC NULLS LAST, s.name ASC
-          LIMIT 30`,
+          ORDER BY s.name ASC, s.id ASC, p.year ASC NULLS LAST, p.month ASC NULLS LAST, p.type ASC
+          LIMIT ${PLUGIN_UNPAID_LIMIT}`,
         q,
     );
     return rows.map((r) => {
@@ -1020,6 +1071,7 @@ export async function listUnpaidForPlugin(query: string): Promise<PluginUnpaidIt
             amount: Number(r.amount),
             status: r.status,
             hasOpenRequest: Boolean(r.hasOpenRequest),
+            studentKey: String(r.studentId),
         };
     });
 }

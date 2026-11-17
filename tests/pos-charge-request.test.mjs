@@ -824,11 +824,13 @@ test("플러그인 API: 모든 경로가 토큰 인증을 거치며 납부 처�
     "src/app/api/pos-plugin/charge-requests/[id]/cancel/report/route.ts",
     "src/app/api/pos-plugin/charge-requests/[id]/claim/route.ts",
     "src/app/api/pos-plugin/charge-requests/[id]/dismiss/report/route.ts",
+    "src/app/api/pos-plugin/charge-requests/[id]/not-ready/route.ts",
     "src/app/api/pos-plugin/charge-requests/[id]/payment-state/route.ts",
     "src/app/api/pos-plugin/charge-requests/[id]/report/route.ts",
     "src/app/api/pos-plugin/charge-requests/[id]/start-check/route.ts",
     "src/app/api/pos-plugin/charge-requests/route.ts",
     "src/app/api/pos-plugin/unpaid/[paymentId]/charge/route.ts",
+    "src/app/api/pos-plugin/unpaid/bundle/route.ts",
     "src/app/api/pos-plugin/unpaid/route.ts",
   ]);
   for (const f of files.concat([HTTP])) {
@@ -844,6 +846,13 @@ test("플러그인 API: 모든 경로가 토큰 인증을 거치며 납부 처�
     assert.doesNotMatch(await readFile(f, "utf8"), /readJsonBody|req\.json/, `${f} 는 본문(금액)을 받지 않는다`);
   }
   assert.match(await readFile("src/app/api/pos-plugin/unpaid/[paymentId]/charge/route.ts", "utf8"), /createAndClaimForPlugin\(paymentId, auth\.tokenId\)/);
+  // «전체 결제»(2026-11-17): 본문에서 청구 id 목록만 읽고 금액·면세는 받지 않는다(서버 DB 값으로 묶음 규칙 재확인)
+  const bundleRoute = await readFile("src/app/api/pos-plugin/unpaid/bundle/route.ts", "utf8");
+  assert.match(bundleRoute, /createAndClaimBundleForPlugin\(ids, auth\.tokenId\)/);
+  assert.doesNotMatch(bundleRoute, /amount|taxFree/i);
+  // «아직 못 열었어요» 보고: 대기 요청의 메시지 칸만 남긴다(상태·돈 그대로)
+  const notReadyRoute = await readFile("src/app/api/pos-plugin/charge-requests/[id]/not-ready/route.ts", "utf8");
+  assert.match(notReadyRoute, /reportChargeNotReadyFromPlugin\(\{ requestId: id, reason \}\)/);
   // 납부 상태 조회는 읽기 전용 + 이 POS 가 가져간 요청만
   const stateRoute = await readFile("src/app/api/pos-plugin/charge-requests/[id]/payment-state/route.ts", "utf8");
   assert.match(stateRoute, /getChargeRequestPaymentStateForPlugin\(id, auth\.tokenId\)/);
@@ -1465,14 +1474,21 @@ test("묶음 규칙: 같은 학생·수강료/셔틀비·미납만, 중복·다�
   assert.equal(R.MAX_CHARGE_TOTAL, 5_000_000, "플러그인 MAX_AMOUNT 와 같은 값");
 });
 
-test("묶음 규칙: 항목 순서(연·월 → 수강료·셔틀비) · 요약 «수강료 10월 외 1건» · POS 대표 상품명", () => {
+test("묶음 규칙: 항목 순서(연·월 → 수강료·셔틀비) · 요약 «10~11월 수강료 2건» · POS 대표 상품명", () => {
   const sorted = R.sortChargeItems([
     { id: "b", year: 2026, month: 11, type: "SHUTTLE" },
     { id: "c", year: 2026, month: 11, type: "MONTHLY" },
     { id: "a", year: 2026, month: 10, type: "MONTHLY" },
   ]);
   assert.deepEqual(sorted.map((p) => p.id), ["a", "c", "b"]);
-  assert.equal(R.chargeItemsSummary([{ year: 2026, month: 10, type: "MONTHLY" }, { year: 2026, month: 11, type: "MONTHLY" }]), "수강료 10월 외 1건");
+  // 2026-11-17: 몇 달치인지 보이게 «달 범위 + 종류 + 건수»
+  assert.equal(R.chargeItemsSummary([{ year: 2026, month: 10, type: "MONTHLY" }, { year: 2026, month: 11, type: "MONTHLY" }]), "10~11월 수강료 2건");
+  assert.equal(R.chargeItemsSummary([
+    { year: 2026, month: 10, type: "MONTHLY" }, { year: 2026, month: 10, type: "SHUTTLE" },
+    { year: 2026, month: 11, type: "MONTHLY" }, { year: 2026, month: 11, type: "SHUTTLE" },
+    { year: 2026, month: 12, type: "MONTHLY" }, { year: 2026, month: 12, type: "SHUTTLE" },
+  ]), "10~12월 수강료·셔틀비 6건");
+  assert.equal(R.chargeItemsSummary([{ year: 2026, month: 12, type: "MONTHLY" }, { year: 2027, month: 1, type: "MONTHLY" }]), "2026년 12월~2027년 1월 수강료 2건");
   assert.equal(R.chargeItemsSummary([{ year: 2026, month: 11, type: "SHUTTLE" }]), "2026년 11월 셔틀비");
   assert.equal(R.buildChargeBundleName({ items: [{ year: 2026, month: 10, type: "MONTHLY" }, { year: 2026, month: 11, type: "SHUTTLE" }], maskedName: "홍*동" }), "2026년 10월 수강료 외 1건(홍*동)");
   assert.equal(R.buildChargeBundleName({ items: [{ year: 2026, month: 11, type: "MONTHLY" }], maskedName: "홍*동" }), "2026년 11월 수강료(홍*동)", "1건이면 단건 상품명 그대로");
@@ -1575,7 +1591,7 @@ test("묶음 만들기: 같은 학생 2건 → 요청 1건(합계·면세 합계
   }, ["p-nov", "p-oct"]);
   assert.equal(r.existing, false);
   assert.equal(r.request.itemCount, 2);
-  assert.equal(r.request.itemLabel, "수강료 10월 외 1건");
+  assert.equal(r.request.itemLabel, "10~11월 수강료 2건");
   assert.equal(r.request.amount, 280000);
   const ins = globalThis.__cs.calls.find((c) => /INSERT INTO "PosChargeRequest" \(/.test(c.sql));
   assert.equal(ins.args[1], 280000, "면세 합계 = 청구마다 taxFreeAmountFor 의 합");
@@ -1671,7 +1687,7 @@ test("묶음 매칭: 결제 합계 = 묶음 합계 → 묶인 청구 전부를 �
   assert.equal(claim.args[4], 280000);
   const audits = globalThis.__cs.audits.filter((a) => a.action === "POS_CHARGE_PAYMENTS");
   assert.deepEqual(audits.map((a) => a.paymentId), ["p-oct", "p-nov"]);
-  assert.ok(globalThis.__cs.slack.some((t) => /수강료 10월 외 1건 · 합계 280,000원/.test(t) && /청구 2건을 모두 납부완료/.test(t)));
+  assert.ok(globalThis.__cs.slack.some((t) => /10~11월 수강료 2건 · 합계 280,000원/.test(t) && /청구 2건을 모두 납부완료/.test(t)));
 });
 
 test("묶음 매칭: 분할 결제(카드+현금) 합계 = 묶음 합계 → 전부 납부, 방식 «CARD+CASH»", async () => {
@@ -1701,7 +1717,7 @@ test("묶음 매칭: 묶인 청구 하나가 이미 납부·금액 변경 → �
     assert.equal(globalThis.__cs.paid.length, 0);
     const held = globalThis.__cs.calls.find((c) => /SET status = 'HELD'/.test(c.sql));
     assert.match(held.args[2], reason);
-    assert.ok(globalThis.__cs.slack.some((t) => /보류/.test(t) && /외 1건/.test(t)));
+    assert.ok(globalThis.__cs.slack.some((t) => /보류/.test(t) && /10~11월 수강료 2건/.test(t)));
   }
 });
 
@@ -1791,14 +1807,14 @@ test("묶음 취소: 이미 DONE 재전송 — 그 사이 관리자가 다시 �
   assert.deepEqual(checks.map((c) => c.args[0]), ["p-oct", "p-nov"], "묶인 청구마다 확인");
 });
 
-test("묶음 취소 창: 어느 청구에서 열어도 묶음 전체(«수강료 10월 외 1건» · 합계) · 전부 토스 POS 납부일 때만 보낼 수 있다 · 감사 기록은 청구마다", async () => {
+test("묶음 취소 창: 어느 청구에서 열어도 묶음 전체(«10~11월 수강료 2건» · 합계) · 전부 토스 POS 납부일 때만 보낼 수 있다 · 감사 기록은 청구마다", async () => {
   const svc = await loadService();
   const paid = BUNDLE_ITEMS.map((it) => ({ ...it, paymentStatus: "PAID", paidProvider: "TOSS_POS" }));
   const view = cancelView({ paymentId: "p-oct", month: 10, amount: 280000, taxFreeAmount: 280000 });
   globalThis.__cs = { calls: [], paid: [], audits: [], slack: [], viewRows: [view], items: paid };
   let v = await svc.getChargeCancelForPayment("p-nov");
   assert.equal(v.itemCount, 2);
-  assert.equal(v.itemLabel, "수강료 10월 외 1건");
+  assert.equal(v.itemLabel, "10~11월 수강료 2건");
   assert.equal(v.amount, 280000);
   assert.equal(v.canRequest, true);
   globalThis.__cs = { calls: [], paid: [], audits: [], slack: [], viewRows: [view], items: [paid[0], { ...paid[1], paidProvider: "MANUAL" }] };
@@ -1977,4 +1993,41 @@ test("공용 확인 창: acknowledgeLabel 이 있으면 체크해야 확정 · �
   assert.match(code, /disabled=\{pending \|\| blocked\}/);
   assert.match(code, /min-h-\[44px\]/, "체크 칸 터치 44px");
   assert.match(code, /key=\{openSeq\}/, "새 질문마다 새로 만들어 체크가 풀린다");
+});
+
+// ───────────────────────── 2026-11-17: 밀린 달 한 번에 · POS 못 연 사유 ─────────────────────────
+
+test("POS «아직 못 열었어요» 보고: 대기·보고 없음인 요청의 메시지 칸만 «NOT_READY:사유»로(상태·돈 그대로)", async () => {
+  const svc = await loadService();
+  assert.equal(svc.normalizePosNotReadyReason("draft_not_empty"), "draft_not_empty");
+  assert.equal(svc.normalizePosNotReadyReason("BUSY"), "busy");
+  assert.equal(svc.normalizePosNotReadyReason("paid"), null);
+  globalThis.__cs = { calls: [], paid: [], audits: [], slack: [] };
+  const r = await svc.reportChargeNotReadyFromPlugin({ requestId: "0b8f0f5e-1111-4222-8333-944445555666", reason: "draft_not_empty" });
+  assert.equal(r.recorded, false); // 가짜 DB 는 0행
+  const upd = globalThis.__cs.calls.find((c) => /UPDATE "PosChargeRequest"/.test(c.sql));
+  assert.match(upd.sql, /WHERE id = \$1 AND status = 'PENDING' AND "pluginReportedEvent" IS NULL/);
+  assert.doesNotMatch(upd.sql, /SET[^W]*\bstatus\s*=/, "상태는 바꾸지 않는다");
+  assert.deepEqual(upd.args, ["0b8f0f5e-1111-4222-8333-944445555666", "NOT_READY:draft_not_empty"]);
+  assert.equal(globalThis.__cs.paid.length, 0);
+  await assert.rejects(svc.reportChargeNotReadyFromPlugin({ requestId: "x", reason: "busy" }), /요청을 찾지 못했습니다/);
+});
+
+test("POS 탭 미납 목록: 학생별로 붙여(학생 안은 오래된 달부터) 최대 60건, 묶기 열쇠 studentKey", async () => {
+  const svc = await loadService();
+  globalThis.__cs = { calls: [], paid: [], audits: [], slack: [] };
+  await svc.listUnpaidForPlugin("최윤");
+  const sel = globalThis.__cs.calls.find((c) => /FROM "Payment" p/.test(c.sql) && /hasOpenRequest/.test(c.sql));
+  assert.match(sel.sql, /s\.id AS "studentId"/);
+  assert.match(sel.sql, /ORDER BY s\.name ASC, s\.id ASC, p\.year ASC NULLS LAST, p\.month ASC NULLS LAST/);
+  assert.match(sel.sql, /LIMIT 60/);
+  assert.equal(svc.PLUGIN_UNPAID_LIMIT, 60);
+});
+
+test("POS 탭 «전체 결제»: 빈 목록은 막고, 묶음 규칙은 관리자 묶음과 같은 createRow 로", async () => {
+  const svc = await loadService();
+  await assert.rejects(svc.createAndClaimBundleForPlugin([], "t1"), /결제할 청구를 골라 주세요/);
+  const src = await readFile("src/lib/pos/chargeRequestService.ts", "utf8");
+  const fn = src.slice(src.indexOf("export async function createAndClaimBundleForPlugin"), src.indexOf("export type PluginUnpaidItem"));
+  assert.match(fn, /createRow\(\{ paymentIds: ids, via: "PLUGIN"/);
 });

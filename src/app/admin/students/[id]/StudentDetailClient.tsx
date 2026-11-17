@@ -1154,6 +1154,9 @@ export default function StudentDetailClient({
     const representativeStatusInfo = getEnrollmentStatusInfo(representativeStatus);
     const totalPaid = payments.filter(p => p.status === "PAID").reduce((s, p) => s + p.amount, 0);
     const unpaid = payments.filter(p => p.status === "PENDING" || p.status === "OVERDUE");
+    // 현장 결제(POS)로 받을 수 있는 미납 — 수강료·셔틀비·기타, 금액 > 0(서버 chargeEligibility 와 같은 종류)
+    const posUnpaid = unpaid.filter((p) => ["MONTHLY", "SHUTTLE", "OTHER"].includes(p.type ?? "MONTHLY") && p.amount > 0);
+    const posUnpaidTotal = posUnpaid.reduce((sum, p) => sum + p.amount, 0);
     // 요약 칸에 보여줄 달 — 이번 달(KST) 장부가 있으면 그 달, 없으면 최근 달(isThisMonth=false → 라벨을 «최근 장부»로)
     // 예전엔 기기 시계로 이번 달을 찾고, 없으면 최근 달을 «이번 달»이라고 보여줘서 11월에 9월이 떴다.
     const monthSummary = pickMonthSummary(monthlyHistory, todayKst());
@@ -1726,10 +1729,22 @@ export default function StudentDetailClient({
                                 <SectionTitle
                                     title="청구·납부"
                                     right={
-                                        // 상세에서 바로 청구서 발행(2026-11-09) — 수납 관리로 가서 학생을 찾지 않아도 되게
-                                        <button type="button" onClick={() => setIssueOpen(true)} className="academy-button-secondary academy-button-sm">
-                                            청구서 발행
-                                        </button>
+                                        <div className="flex flex-wrap justify-end gap-2">
+                                            {/* 밀린 달까지 한 번에(2026-11-17 원장) — 수납 관리에서 이 학생의 «모든 달» 미납 현장 결제 확인 화면이 바로 열린다 */}
+                                            {posUnpaid.length > 0 && (
+                                                <Link
+                                                    href={`/admin/finance?studentId=${encodeURIComponent(student.id)}&pay=all`}
+                                                    prefetch={false}
+                                                    className="academy-button-primary academy-button-sm tabular-nums"
+                                                >
+                                                    미납 전체 현장 결제 ({posUnpaid.length}건 · {posUnpaidTotal.toLocaleString("ko-KR")}원)
+                                                </Link>
+                                            )}
+                                            {/* 상세에서 바로 청구서 발행(2026-11-09) — 수납 관리로 가서 학생을 찾지 않아도 되게 */}
+                                            <button type="button" onClick={() => setIssueOpen(true)} className="academy-button-secondary academy-button-sm">
+                                                청구서 발행
+                                            </button>
+                                        </div>
                                     }
                                 />
                                 {payments.length === 0 ? (

@@ -6,6 +6,8 @@
 //      새 요청은 생기는 즉시 답이 와서 보통 1~2초 안에 결제창이 열린다(옛 서버면 14초 간격 폴링으로 돌아간다)
 //   2) 새 요청 → 바로 결제 흐름(charge.ts)으로 결제창을 연다(2026-11-08 원장 요청: 누르는 단계 없이, 한 번에 1건)
 //   3) 바로 못 열면(다른 주문이 담겨 있음·준비 중·오류) 토스트 «… 현장 결제 요청 [결제하기]» 로 남긴다
+//      다른 주문·준비 중 때문이면 요청이 대기 중인 동안(최대 2분) POS 가 비는 순간 다시 연다(retry.ts, 2026-11-17)
+//      — 못 연 사유는 서버에 참고로 알려 사이트 «현장 결제» 창에 «POS 화면에 다른 주문이 있어요»가 뜬다
 //   요청 한도: 정상 30분 90번 + 결제 1건당 SDK 호출 약 13번(backoff.ts 머리말 검산)
 //   4) 결제/취소 신호 → 서버에 참고 보고
 //   5) 롱폴링 응답의 «결제 취소할 일»(사이트에서 [결제 취소]) → 토스 POS 결제 취소(cancel.ts, 2026-11-08)
@@ -18,6 +20,8 @@ import type { CancelJob, ChargeRequest, DismissJob } from "../core/contract.ts";
 import { isFirstNotice, needsManualFallback, pickNotifications } from "../core/notify.ts";
 import type { NotifyLog } from "../core/notify.ts";
 import { notificationMessage } from "../core/order.ts";
+import { AUTO_RETRY_GAP_MS, createAutoRetryQueue, isNotReady } from "../core/retry.ts";
+import type { NotReadyReason } from "../core/retry.ts";
 import type { PosSdkLike } from "../core/pos-types.ts";
 import { SETTING_TOKEN_ID, createTokenStore, normalizeToken } from "../core/token.ts";
 
@@ -30,6 +34,10 @@ const flow = createChargeFlow({ sdk, api });
 const cancelFlow = createCancelFlow({ sdk, api });
 
 const notified: NotifyLog = new Map();
+/** 바빠서 못 연 새 요청 — POS 가 비면 다시 연다 */
+const retryQueue = createAutoRetryQueue();
+/** 재시도 한 건이 진행 중인지(겹쳐 시도하지 않게) */
+let retrying = false;
 let failures = 0;
 let authWarned = false;
 let timer: ReturnType<typeof setTimeout> | undefined;
@@ -131,24 +139,68 @@ function buttonToast(req: ChargeRequest): void {
   });
 }
 
+/** 못 연 사유를 서버에 참고로 한 번 알린다(실패해도 무시 — 상태·돈은 안 바뀐다) */
+function reportNotReady(req: ChargeRequest, reason: NotReadyReason): void {
+  if (!retryQueue.shouldReport(req.id, reason)) return;
+  void api.notReady(req.id, reason).catch(() => undefined);
+}
+
+/** 바빠서 못 연 요청을 재시도 대기열에 넣고, 사유를 알리고, [결제하기] 토스트도 남긴다 */
+function deferForRetry(req: ChargeRequest, reason: NotReadyReason): void {
+  retryQueue.add(req);
+  reportNotReady(req, reason);
+  buttonToast(req);
+}
+
 /**
  * 새로 알릴 요청 처리. 처음 받은 요청 1건만 버튼 없이 바로 결제창을 연다(2026-11-08 원장 요청).
- * 나머지는 곧바로 [결제하기] 토스트. 자동 시작은 화면을 막는 alert 없이(silent) — 못 열면 토스트로 남긴다.
+ * 자동 시작은 화면을 막는 alert 없이(silent). POS 가 바빠 못 열었거나(직전 결제 마무리·다른 주문) 이번 회차에
+ * 자동 시작을 못 쓴 «처음 받은» 요청은 재시도 대기열에 넣어 POS 가 비면 다시 연다(2026-11-17).
  */
 function handleFresh(fresh: ChargeRequest[], allowAutomatic: boolean): void {
   let autoUsed = false;
   for (const req of fresh) {
-    if (allowAutomatic && !autoUsed && isFirstNotice(notified, req.id) && !flow.isBusy()) {
+    const first = isFirstNotice(notified, req.id);
+    if (allowAutomatic && !autoUsed && first && !flow.isBusy() && !retrying) {
       autoUsed = true;
       void flow
         .startCharge(req, { silent: true })
         .then((result) => {
-          if (needsManualFallback(result)) buttonToast(req);
+          if (isNotReady(result)) deferForRetry(req, result);
+          else if (needsManualFallback(result)) buttonToast(req);
         })
         .catch(() => buttonToast(req));
       continue;
     }
+    // 처음 받았는데 지금은 못 여는 경우(다른 결제 준비 중·취소 처리 중·같은 회차 두 번째 요청) → 비면 다시
+    if (first) {
+      deferForRetry(req, "busy");
+      continue;
+    }
     buttonToast(req);
+  }
+}
+
+/**
+ * 재시도 한 번 — 2.5초마다. POS 가 다른 결제를 준비 중이면 건너뛰고, 비어 있으면 대기열 맨 앞 요청을 연다.
+ * 결제 화면에 다른 주문이 남아 있으면(draft_not_empty) 그대로 두고 다음 회차에 다시 본다.
+ */
+async function retryTick(): Promise<void> {
+  if (retrying || flow.isBusy()) return;
+  const req = retryQueue.next();
+  if (!req) return;
+  retrying = true;
+  try {
+    const result = await flow.startCharge(req, { silent: true });
+    if (isNotReady(result)) {
+      reportNotReady(req, result);
+      return;
+    }
+    retryQueue.remove(req.id);
+  } catch {
+    retryQueue.remove(req.id);
+  } finally {
+    retrying = false;
   }
 }
 
@@ -163,6 +215,8 @@ async function pollOnce(): Promise<PollOutcome> {
     const { requests, longPoll, cancels, dismissals } = res.data;
     // 이번에 본 대기 요청·취소할 일 = 다음 대기에서 서버가 «이것 때문에» 바로 답하지 않게 알려 줄 목록(합쳐 최대 20개)
     seenPending = [...dismissals.map((job) => job.id), ...cancels.map((job) => job.id), ...requests.filter((r) => r.status === "PENDING").map((r) => r.id)].slice(0, 20);
+    // 결제·취소·만료·다른 POS 가 가져간 요청은 재시도 대기열에서 뺀다(대기 PENDING 만 남김)
+    retryQueue.sync(requests.filter((r) => r.status === "PENDING").map((r) => r.id));
     const next = nextAfterLongPoll({ longPoll, elapsedMs: Date.now() - startedAt, earlyStreak });
     earlyStreak = next.earlyStreak;
     return { delayMs: next.delayMs, fresh: pickNotifications(requests, notified, Date.now()), cancels, dismissals };
@@ -206,6 +260,10 @@ async function main(): Promise<void> {
     void flow.handlePaymentEvent("cancel", paymentId, orderId).catch((e) => console.error("[stiz] cancel 처리 실패", e));
   });
   schedule(3_000); // POS 부팅 직후 몰리지 않게 3초 뒤 첫 확인
+  // 바빠서 못 연 요청 재시도(대기열이 비어 있으면 SDK·서버 호출 없음)
+  setInterval(() => {
+    void retryTick().catch((e) => console.error("[stiz] 재시도 실패", e));
+  }, AUTO_RETRY_GAP_MS);
 }
 
 void main();

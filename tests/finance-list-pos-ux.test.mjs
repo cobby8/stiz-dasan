@@ -53,11 +53,20 @@ test("묶음 표시: 서버가 결제된 묶음(항목 2개 이상)만 번호·�
   assert.match(finance, /외 \{bundleOtherCount\}건\(다른 달\)/);
 });
 
-test("이 학생 미납 모두 현장 결제: 2건 이상일 때만, preferPos 로 확인 화면을 연다", () => {
-  assert.match(finance, /studentUnpaid\.length >= 2/);
-  assert.match(finance, /이 학생 미납 모두 현장 결제 \(\$\{studentUnpaid\.length\}건\)/);
-  assert.match(finance, /setRecordPreferPos\(true\); setRecordTargets\(studentUnpaid\)/);
-  assert.match(finance, /preferPos=\{recordPreferPos\}/);
+test("이 학생 미납 전체 현장 결제(2026-11-17): «모든 달» 미납 2건 이상일 때, 서버에서 모든 달·형제 미납을 읽어 preferPos 로 연다", () => {
+  assert.ok(finance.includes("studentOutstanding.count >= 2"));
+  assert.ok(finance.includes("이 학생 미납 전체 현장 결제 (${studentOutstanding.count}건 · ${formatAmount(studentOutstanding.amount)})"));
+  assert.ok(finance.includes("onSelect: () => void openAllUnpaid(p.studentId)"));
+  // 이 달 목록이 아니라 서버(모든 달)에서 읽는다
+  assert.ok(finance.includes("/api/admin/finance/student-unpaid?studentId="));
+  assert.match(finance, /setRecordPreferPos\(true\);\s*setRecordTargets\(all\)/);
+  assert.ok(finance.includes("preferPos={recordPreferPos}"));
+  // 형제·나머지는 POS 창을 닫으면 이어서(«납부 처리» 창 다시)
+  assert.ok(finance.includes("setPendingFamily(rest.length > 0 ? rest : null)"));
+  // 학생 상세 «미납 전체 현장 결제» → ?studentId=…&pay=all 로 바로 연다
+  assert.ok(finance.includes(`searchParams.get("pay") === "all"`));
+  const detail = readFileSync(new URL("../src/app/admin/students/[id]/StudentDetailClient.tsx", import.meta.url), "utf8");
+  assert.ok(detail.includes("/admin/finance?studentId=${encodeURIComponent(student.id)}&pay=all"));
 });
 
 test("선택 막대: 고른 것 전부를 넘기고, 화면 밖 선택을 알린다 · label 을 넘긴다", () => {
@@ -66,4 +75,17 @@ test("선택 막대: 고른 것 전부를 넘기고, 화면 밖 선택을 알린
   assert.match(bulk, /payments\.filter\(\(p\) => selectedIds\.has\(p\.id\)\)/);
   assert.match(finance, /화면 밖 \$\{hiddenSelectedCount\}건 포함/);
   assert.match(finance, /label: paymentLabel\(t\)/);
+});
+
+test("학생 전체 미납 API(2026-11-17): 관리자만, 미납·연체만, 형제는 같은 보호자·합쳐진 학생 제외, 역할 가림 통과", () => {
+  const route = readFileSync(new URL("../src/app/api/admin/finance/student-unpaid/route.ts", import.meta.url), "utf8");
+  assert.ok(route.includes("await requireTimedAdmin(timing)"));
+  assert.ok(route.includes("maskFinancePayloadForRole({ payments: rows, summary: {} }, role)"));
+  assert.ok(route.includes(`"Cache-Control": "private, no-store"`));
+  assert.ok(queries.includes(`WHERE p."studentId" = ANY($1::text[]) AND p.status IN ('PENDING', 'OVERDUE')`));
+  assert.ok(queries.includes(`JOIN "Student" s ON s."parentId" = me."parentId" AND \${notMergedStudent("s")}`));
+  // 월 목록 응답에 학생별 «모든 달» 미납 집계가 붙는다(«밀린 미납» 표시)
+  const payloads = readFileSync(new URL("../src/lib/adminReadPayloads.ts", import.meta.url), "utf8");
+  assert.ok(payloads.includes("return { payments, summary, outstanding, paymentProvider: getPaymentProviderPublicStatus() };"));
+  assert.ok(finance.includes("밀린 미납 {all}건"));
 });

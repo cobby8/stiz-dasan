@@ -35,6 +35,10 @@ export const API_PATHS = {
    * (보고서 «계약 변경 제안» 참고).
    */
   chargeUnpaid: (paymentId: string) => `/api/pos-plugin/unpaid/${encodeURIComponent(paymentId)}/charge`,
+  /** 같은 학생 미납 여러 건 «전체 결제» — 본문 { paymentIds }. 응답은 chargeUnpaid 와 같다(2026-11-17) */
+  chargeUnpaidBundle: "/api/pos-plugin/unpaid/bundle",
+  /** 새 요청을 바로 못 열었다는 참고 보고 { reason: busy|draft_not_empty } — 상태는 안 바뀐다(2026-11-17) */
+  notReady: (id: string) => `/api/pos-plugin/charge-requests/${encodeURIComponent(id)}/not-ready`,
   /** «결제 취소할 일» 가져가기(REQUESTED → SENT). 응답으로 취소할 토스 주문·결제 ID(서버 DB 값)를 받는다 */
   cancelClaim: (id: string) => `/api/pos-plugin/charge-requests/${encodeURIComponent(id)}/cancel/claim`,
   /** 결제 취소 결과 참고 보고 { result: done|failed, message }. 환불은 서버가 토스 웹훅+재조회로만 한다 */
@@ -100,6 +104,10 @@ export type UnpaidItem = {
   className: string;
   title: string;
   amount: number;
+  /** 같은 학생 묶기용 열쇠(서버 학생 id). 옛 서버면 빈 글자 → 묶지 않고 한 줄씩 */
+  studentKey: string;
+  /** 이 청구가 이미 열린 결제 요청에 들어 있나(대기 목록에서 결제) */
+  hasOpenRequest: boolean;
 };
 
 /** 결과 보고 본문 */
@@ -282,6 +290,8 @@ export function parseUnpaidList(body: unknown): UnpaidItem[] {
       className: str(pick(raw, "className", "programName")),
       title: str(pick(raw, "itemTitle", "title", "label")),
       amount,
+      studentKey: str(pick(raw, "studentKey", "student_key")),
+      hasOpenRequest: pick(raw, "hasOpenRequest", "has_open_request") === true,
     });
   }
   return out;

@@ -273,6 +273,11 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
     return start(() => api.chargeUnpaid(paymentId));
   }
 
+  /** 미납 목록 «전체 결제» — 같은 학생 여러 건을 서버가 묶음 요청으로 만들고 선점(2026-11-17) */
+  function startChargeForUnpaidBundle(paymentIds: string[]): Promise<StartResult> {
+    return start(() => api.chargeUnpaidBundle(paymentIds));
+  }
+
   function noteDismissal(job: DismissJob): void {
     dismissRequested.add(job.id);
   }
@@ -354,7 +359,7 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
     return "reported";
   }
 
-  return { startCharge, startChargeForUnpaid, handlePaymentEvent, noteDismissal, dismissUnpaid, isBusy: () => busy || dismissBusy };
+  return { startCharge, startChargeForUnpaid, startChargeForUnpaidBundle, handlePaymentEvent, noteDismissal, dismissUnpaid, isBusy: () => busy || dismissBusy };
 }
 
 function errText(e: unknown): string {

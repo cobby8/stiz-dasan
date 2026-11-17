@@ -208,7 +208,7 @@ test("수납 관리 화면: 부원장에게 현장 결제(1건·묶음)는 보�
     const src = read("src/app/admin/finance/FinanceClient.tsx");
     assert.match(src, /const canUsePosCharge = currentAdminRole === "ADMIN" \|\| currentAdminRole === "VICE_ADMIN";/);
     assert.match(src, /canUsePosCharge && \["MONTHLY", "SHUTTLE", "OTHER"\]\.includes\(p\.type\)[\s\S]{0,200}key: "pos-charge"/);
-    assert.match(src, /canUsePosCharge && \["PENDING", "OVERDUE"\]\.includes\(p\.status\) && studentUnpaid\.length >= 2/);
+    assert.match(src, /canUsePosCharge && \["PENDING", "OVERDUE"\]\.includes\(p\.status\) && studentOutstanding\.count >= 2/);
     assert.match(src, /posOnly=\{!canManageCriticalFinance\}/, "부원장 납부 처리 창 = 현장 결제만");
     assert.match(src, /\{canManageCriticalFinance && \(\s*<section className="mb-4 flex flex-wrap items-center gap-2[^"]*">\s*<span[^>]*>\s*총 청구/, "월 요약은 원장만");
     assert.match(src, /\{canManageCriticalFinance && \(\s*<Link href=\{`\/admin\/finance\/prepare/, "청구 준비 버튼은 원장만");

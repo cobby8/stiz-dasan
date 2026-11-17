@@ -281,6 +281,14 @@ export default function PosChargeRequestModal({
                                 POS가 응답이 없어요. POS가 켜져 있고 STIZ 탭이 연결돼 있는지 확인해 주세요.
                             </p>
                         )}
+                        {/* POS 가 받긴 했는데 화면이 비어 있지 않아 아직 못 엶(2026-11-17) — 비면 플러그인이 알아서 다시 연다 */}
+                        {request.status === "PENDING" && !request.pluginReportedEvent && request.pluginReportMessage?.startsWith("NOT_READY:") && (
+                            <p role="status" className="mt-3 text-sm font-semibold text-[var(--color-academy-warning)]">
+                                {request.pluginReportMessage === "NOT_READY:draft_not_empty"
+                                    ? "POS 결제 화면에 다른 주문이 담겨 있어요. 그 주문을 끝내거나 비우면 자동으로 열려요."
+                                    : "POS가 직전 결제를 마무리하는 중이에요. 끝나면 자동으로 열려요."}
+                            </p>
+                        )}
                         {request.pluginReportedEvent === "START_FAILED" && (
                             <p role="alert" className="mt-3 text-sm font-semibold text-[var(--color-academy-danger)]">
                                 POS가 결제창을 열지 못했다고 보고했습니다. POS 주문과 카드 승인 상태를 확인해 주세요.

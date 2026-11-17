@@ -6,6 +6,7 @@ import { createServerApi } from "../core/api.ts";
 import { createChargeFlow } from "../core/charge.ts";
 import type { StartResult } from "../core/charge.ts";
 import type { ChargeRequest, UnpaidItem } from "../core/contract.ts";
+import { groupUnpaidByStudent } from "../core/unpaid-groups.ts";
 import { formatWon, titleWithoutName } from "../core/order.ts";
 import type { PosSdkLike } from "../core/pos-types.ts";
 import { createTokenStore, maskToken } from "../core/token.ts";
@@ -38,10 +39,11 @@ function setConn(state: "ok" | "bad" | "", text: string): void {
 
 /** 한 줄 행 만들기 — 글자는 전부 textContent 로 넣어 HTML 로 해석되지 않게 한다 */
 function rowEl(
-  parts: { who: string; what: string; amt: number; code?: string; payLabel?: string },
+  parts: { who: string; what: string; amt: number; code?: string; payLabel?: string; cls?: string; disabled?: boolean },
   onPay: (btn: HTMLButtonElement) => void,
 ): HTMLLIElement {
   const li = document.createElement("li");
+  if (parts.cls) li.className = parts.cls;
   const cells: [string, string][] = [
     ["who", parts.who],
     ["what", parts.what],
@@ -57,6 +59,7 @@ function rowEl(
   const btn = document.createElement("button");
   btn.className = "btn primary";
   btn.textContent = parts.payLabel ?? "결제하기";
+  btn.disabled = parts.disabled === true;
   btn.addEventListener("click", () => onPay(btn));
   li.appendChild(btn);
   return li;
@@ -80,7 +83,10 @@ const START_MSG: Record<StartResult, string> = {
   error: "결제 화면을 여는 중 문제가 생겼어요.",
 };
 
-/** [결제하기] 공통 처리: 버튼 잠금(중복 클릭 방지) → 흐름 실행 → 목록 새로고침 */
+/** 마지막 미납 검색어 — 결제 뒤 검색 결과를 다시 읽는 데 쓴다(2026-11-17: 결제한 줄이 그대로 남아 있었다) */
+let lastQuery = "";
+
+/** [결제하기] 공통 처리: 버튼 잠금(중복 클릭 방지) → 흐름 실행 → 대기 목록·미납 검색 새로고침 */
 async function pay(btn: HTMLButtonElement, run: () => Promise<StartResult>): Promise<void> {
   if (btn.disabled) return;
   btn.disabled = true;
@@ -90,6 +96,7 @@ async function pay(btn: HTMLButtonElement, run: () => Promise<StartResult>): Pro
   } finally {
     btn.disabled = false;
     void loadRequests();
+    if (lastQuery) void search(lastQuery);
   }
 }
 
@@ -125,26 +132,58 @@ async function loadRequests(): Promise<void> {
   );
 }
 
+/** 미납 한 줄 */
+function unpaidRow(u: UnpaidItem, sub: boolean): HTMLLIElement {
+  return rowEl(
+    {
+      who: sub ? "" : u.studentName,
+      what: [u.className, titleWithoutName(u)].filter(Boolean).join(" · "),
+      amt: u.amount,
+      cls: sub ? "sub" : undefined,
+      // 이미 열린 요청에 들어 있으면 위 «대기 요청»에서 결제한다(서버도 막는다)
+      payLabel: u.hasOpenRequest ? "요청 대기 중" : "결제하기",
+      disabled: u.hasOpenRequest,
+    },
+    (b) => void pay(b, () => flow.startChargeForUnpaid(u.paymentId)),
+  );
+}
+
+/**
+ * 미납 검색 — 학생별로 묶어 보여 준다(2026-11-17 원장: 밀린 달을 한 건씩 세 번 결제했다).
+ * 같은 학생 미납이 2건 이상이면 머리줄에 «N건 합계 [전체 결제]» — POS 결제 한 번으로 받는다(최대 10건·500만원, 서버가 다시 확인).
+ */
 async function search(q: string): Promise<void> {
   const list = $("unpaid-list");
-  if (!q.trim()) {
+  lastQuery = q.trim();
+  if (!lastQuery) {
     list.replaceChildren(emptyEl("이름을 한 글자 이상 넣어 주세요."));
     return;
   }
-  const res = await api.searchUnpaid(q.trim());
+  const res = await api.searchUnpaid(lastQuery);
   if (!res.ok) {
     list.replaceChildren(emptyEl(res.message));
     return;
   }
-  list.replaceChildren(
-    ...(res.data.length
-      ? res.data.map((u: UnpaidItem) =>
-          rowEl({ who: u.studentName, what: [u.className, titleWithoutName(u)].filter(Boolean).join(" · "), amt: u.amount }, (b) =>
-            void pay(b, () => flow.startChargeForUnpaid(u.paymentId)),
-          ),
-        )
-      : [emptyEl("미납 청구서가 없어요.")]),
-  );
+  if (res.data.length === 0) {
+    list.replaceChildren(emptyEl("미납 청구서가 없어요."));
+    return;
+  }
+  const rows: HTMLLIElement[] = [];
+  for (const g of groupUnpaidByStudent(res.data)) {
+    if (g.items.length === 1) {
+      rows.push(unpaidRow(g.items[0], false));
+      continue;
+    }
+    const label = g.payable.length === 0 ? "요청 대기 중" : g.capped ? `앞 ${g.payable.length}건 결제` : "전체 결제";
+    rows.push(
+      rowEl(
+        { who: g.studentName, what: `미납 ${g.items.length}건 · ${g.rangeText}`, amt: g.payableTotal, payLabel: label, cls: "group", disabled: g.payable.length === 0 },
+        (b) => void pay(b, () => flow.startChargeForUnpaidBundle(g.payable.map((u) => u.paymentId))),
+      ),
+    );
+    for (const u of g.items) rows.push(unpaidRow(u, true));
+  }
+  list.replaceChildren(...rows);
 }
 
 async function showTokenState(): Promise<void> {

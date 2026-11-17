@@ -163,11 +163,27 @@ function noticeProgressLine(label: string, p: NoticeProgressView): string | null
     return `${label}: ${bundleHead}${parts.join(" · ")}${names}`;
 }
 
+/** 학생별 «모든 달» 미납·연체 건수·합계(서버 getStudentOutstanding) */
+type Outstanding = Record<string, { count: number; amount: number }>;
+
 type FinancePayload = {
     payments: Payment[];
     summary: Summary;
     paymentProvider: PaymentProviderStatus;
+    outstanding?: Outstanding;
 };
+
+/** GET /api/admin/finance/student-unpaid 응답 */
+type StudentUnpaidPayload = {
+    student: { id: string; name: string } | null;
+    payments: Payment[];
+    siblings: Array<{ id: string; name: string; payments: Payment[] }>;
+};
+
+/** 현장 결제(POS)로 받을 수 있는 청구 — 수강료·셔틀비·기타 미납(서버 chargeEligibility 와 같은 종류) */
+function isPosChargeable(p: Pick<Payment, "type" | "status" | "amount">): boolean {
+    return ["MONTHLY", "SHUTTLE", "OTHER"].includes(p.type) && ["PENDING", "OVERDUE"].includes(p.status) && (p.amount ?? 0) > 0;
+}
 
 type AdminFinanceRole = "ADMIN" | "VICE_ADMIN";
 
@@ -401,6 +417,7 @@ export default function FinanceClient({
     initialMonth,
     initialSummary,
     initialPaymentProvider,
+    initialOutstanding,
     currentAdminRole,
     billingParentSendEnabled = false,
     sheetRetired = false,
@@ -410,6 +427,8 @@ export default function FinanceClient({
     initialMonth?: number;
     initialSummary?: Summary;
     initialPaymentProvider?: PaymentProviderStatus;
+    /** 학생별 «모든 달» 미납 건수·합계 — «밀린 미납» 표시·«미납 전체 현장 결제» 메뉴 */
+    initialOutstanding?: Outstanding;
     currentAdminRole: AdminFinanceRole;
     // 학부모 청구 안내 사이트 발송 허용 여부(기본 잠금 — 발송 스위치 BILLING_PARENT_SEND_ENABLED 를 켜야 열린다)
     billingParentSendEnabled?: boolean;
@@ -460,6 +479,11 @@ export default function FinanceClient({
     const [showForm, setShowForm] = useState(false);
     const [busy, setBusy] = useState(false);
     const [summary, setSummary] = useState(initialSummary ?? EMPTY_SUMMARY);
+    const [outstanding, setOutstanding] = useState<Outstanding>(initialOutstanding ?? {});
+    // «미납 전체 현장 결제»로 연 형제 청구 중 아직 POS 로 안 보낸 것 — POS 창을 닫으면 이것으로 «납부 처리» 창을 다시 연다(다음 형제)
+    const [pendingFamily, setPendingFamily] = useState<Payment[] | null>(null);
+    // «미납 전체» 불러오는 중인 학생 id(같은 메뉴를 두 번 눌러도 한 번만)
+    const [loadingUnpaidFor, setLoadingUnpaidFor] = useState<string | null>(null);
     const [students, setStudents] = useState<Student[]>([]);
     const [studentsLoaded, setStudentsLoaded] = useState(false);
     const [studentsLoading, setStudentsLoading] = useState(false);
@@ -555,6 +579,7 @@ export default function FinanceClient({
             }
             const data = (await res.json()) as FinancePayload;
             setPayments(data.payments);
+            setOutstanding(data.outstanding ?? {});
             setSummary(data.summary);
             setPaymentProvider(data.paymentProvider);
         } catch (err) {
@@ -570,6 +595,44 @@ export default function FinanceClient({
         if (hasInitialData) return;
         void loadMonth(initialYear ?? fallbackYear, initialMonth ?? fallbackMonth);
     }, [fallbackMonth, fallbackYear, hasInitialData, initialMonth, initialYear, loadMonth]);
+
+    /**
+     * 이 학생(과 같은 보호자 형제)의 «모든 달» 미납을 불러와 «납부 처리» 창을 «현장 결제» 화면으로 연다(2026-11-17 원장:
+     * 월별로만 보여 밀린 달을 세 번 나눠 결제한 불편). 한 학생이면 버튼 하나로 전부(최대 10건 — 넘으면 창이 나눠 보인다),
+     * 형제가 있으면 학생마다 버튼(POS 결제 한 번 = 학생 한 명).
+     */
+    const openAllUnpaid = useCallback(async (targetStudentId: string) => {
+        if (!targetStudentId) return;
+        setLoadingUnpaidFor(targetStudentId);
+        setFinanceNotice(null);
+        try {
+            const res = await fetch(`/api/admin/finance/student-unpaid?studentId=${encodeURIComponent(targetStudentId)}`, { cache: "no-store" });
+            if (!res.ok) throw new Error("failed");
+            const data = (await res.json()) as StudentUnpaidPayload;
+            // 본인 먼저, 그다음 형제(학생마다 오래된 달부터)
+            const all = [...data.payments, ...data.siblings.flatMap((s) => s.payments)].filter(isPosChargeable);
+            if (all.length === 0) {
+                setFinanceNotice(`${data.student?.name ?? "이 학생"} 미납 중 현장 결제할 청구가 없습니다.`);
+                return;
+            }
+            setPendingFamily(null);
+            setRecordPreferPos(true);
+            setRecordTargets(all);
+        } catch {
+            setFinanceNotice("미납 청구를 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
+        } finally {
+            setLoadingUnpaidFor(null);
+        }
+    }, []);
+
+    // 학생 상세 «미납 전체 현장 결제»에서 넘어온 경우(?studentId=…&pay=all) — 처음 한 번만 연다
+    const autoPayStudentRef = useRef(searchParams.get("pay") === "all" ? searchParams.get("studentId") ?? "" : "");
+    useEffect(() => {
+        const target = autoPayStudentRef.current;
+        if (!target || !canUsePosCharge) return;
+        autoPayStudentRef.current = "";
+        void openAllUnpaid(target);
+    }, [canUsePosCharge, openAllUnpaid]);
 
     // 청구서 안내·미납 안내 진행 상황(예약 N·발송 N·실패 N) — 발송은 매분 서버가 묶음으로 처리한다(2026-11-13).
     // 발송 잠금이면 부르지 않는다. 아직 나가는 중(예약 > 0)이면 20초마다 다시 읽고, 다 끝나면 멈춘다.
@@ -993,8 +1056,12 @@ export default function FinanceClient({
     // ⚡ 빠른 작업 목록(기존 행 작업 그대로) — 행 메뉴와 상세 패널이 같은 목록을 쓴다
     function buildRowActions(p: Payment): AdminQuickAction[] {
         const invoiceHref = getInvoiceHref(p);
-        // 지금 목록(이 달)에서 같은 학생의 미납·연체 전부 — «이 학생 미납 모두 현장 결제» 메뉴용
-        const studentUnpaid = payments.filter((x) => x.studentId === p.studentId && ["PENDING", "OVERDUE"].includes(x.status));
+        // 이 학생의 «모든 달» 미납·연체(서버 집계). 집계가 없으면(옛 응답) 지금 목록(이 달) 기준으로 센다
+        const monthUnpaid = payments.filter((x) => x.studentId === p.studentId && ["PENDING", "OVERDUE"].includes(x.status));
+        const studentOutstanding = outstanding[p.studentId] ?? {
+            count: monthUnpaid.length,
+            amount: monthUnpaid.reduce((sum, x) => sum + (x.amount ?? 0), 0),
+        };
         // 영구 삭제를 막을 이유 — 실제 결제 납부완료·완료 거래(목록은 최근 거래 상태만 알아 안내용, 최종 판단은 서버)
         const deleteBlock = paymentDeleteBlockReason({
             status: p.status,
@@ -1046,16 +1113,17 @@ export default function FinanceClient({
                     onSelect: () => { setRecordPreferPos(false); setRecordTargets([p]); },
                 },
             ] : []),
-            // 이 학생 미납 모두 현장 결제(원장 의견 2026-11-08): 지금 목록의 같은 학생 미납·연체가 2건 이상일 때만.
-            // 바로 결제하지 않고 «납부 처리» 창을 «현장 결제» 확인 화면으로 열어 청구 목록·금액·합계를 보고 누르게 한다.
+            // 이 학생 미납 전체 현장 결제(2026-11-17 원장: 이 달만 묶여 밀린 달을 세 번 나눠 결제했다).
+            // «모든 달» 미납이 2건 이상이면 보인다 — 누르면 서버에서 모든 달 미납(+ 같은 보호자 형제 미납)을 읽어
+            // «납부 처리» 창을 «현장 결제» 확인 화면으로 연다(청구 목록·금액·합계를 보고 누른다).
             // 부원장도 쓴다 — 창은 «현장 결제만» 모드(계좌이체 기록 길 없음)로 열린다
-            ...(canUsePosCharge && ["PENDING", "OVERDUE"].includes(p.status) && studentUnpaid.length >= 2 ? [
+            ...(canUsePosCharge && ["PENDING", "OVERDUE"].includes(p.status) && studentOutstanding.count >= 2 ? [
                 {
                     key: "pos-charge-student",
-                    label: `이 학생 미납 모두 현장 결제 (${studentUnpaid.length}건)`,
+                    label: `이 학생 미납 전체 현장 결제 (${studentOutstanding.count}건 · ${formatAmount(studentOutstanding.amount)})`,
                     icon: "point_of_sale",
-                    disabled: busy,
-                    onSelect: () => { setRecordPreferPos(true); setRecordTargets(studentUnpaid); },
+                    disabled: busy || loadingUnpaidFor === p.studentId,
+                    onSelect: () => void openAllUnpaid(p.studentId),
                 },
             ] : []),
             ...(canManageCriticalFinance && p.status === "PENDING" ? [
@@ -1176,6 +1244,16 @@ export default function FinanceClient({
                 )}
                 <td className="px-2 py-1.5">
                     <span className="font-medium text-[var(--color-academy-ink)]">{p.studentName}</span>
+                    {/* 다른 달에도 미납이 있으면 «밀린 미납 N건» — 이 달 목록만 보고 일부만 결제하지 않게(2026-11-17) */}
+                    {(() => {
+                        const all = outstanding[p.studentId]?.count ?? 0;
+                        const here = payments.filter((x) => x.studentId === p.studentId && ["PENDING", "OVERDUE"].includes(x.status) && (x.amount ?? 0) > 0).length;
+                        return all > here ? (
+                            <span className="ml-1 whitespace-nowrap rounded bg-[var(--color-academy-warning-soft)] px-1.5 py-0.5 text-xs text-[var(--color-academy-warning)]" title="다른 달 미납 포함">
+                                밀린 미납 {all}건
+                            </span>
+                        ) : null;
+                    })()}
                 </td>
                 {/* 반: 원생 이름 아래 두 줄로 쌓던 것을 칸으로 분리(모바일은 패널에서) */}
                 <td className="hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{p.className || "-"}</td>
@@ -1311,7 +1389,15 @@ export default function FinanceClient({
                                 title: chargeItemsSummary(sorted.map((p) => ({ year: p.year ?? year, month: p.month ?? month, type: p.type }))),
                             };
                         })()}
-                    onClose={() => setPosChargeTargets(null)}
+                    onClose={() => {
+                        setPosChargeTargets(null);
+                        // 형제·나머지 청구가 남았으면 이어서 결제할 수 있게 «현장 결제» 확인 화면을 다시 연다
+                        if (pendingFamily && pendingFamily.length > 0) {
+                            setRecordPreferPos(true);
+                            setRecordTargets(pendingFamily);
+                            setPendingFamily(null);
+                        }
+                    }}
                     onPaid={() => void loadMonth(year, month)}
                 />
             )}
@@ -1341,6 +1427,9 @@ export default function FinanceClient({
                         // 이 창을 닫고 기존 현장 결제(토스 POS) 창을 연다 — 여러 건이면 같은 학생 묶음(POS 결제 한 번)
                         const ids = new Set(chosen.map((t) => t.id));
                         const payments = recordTargets.filter((r) => ids.has(r.id));
+                        // 남은 청구(형제·10건 넘어 나뉜 나머지) — POS 창을 닫으면 «납부 처리» 창을 다시 열어 이어서 결제(2026-11-17)
+                        const rest = recordPreferPos ? recordTargets.filter((r) => !ids.has(r.id) && isPosChargeable(r)) : [];
+                        setPendingFamily(rest.length > 0 ? rest : null);
                         setRecordTargets(null);
                         setPosChargeTargets(payments.length > 0 ? payments : null);
                     }}
@@ -1359,6 +1448,28 @@ export default function FinanceClient({
                 title="수납/결제 관리"
                 description={<span className="tabular-nums">{year}년 {month}월 수납 현황</span>}
             />
+
+            {/* 이 달 목록 학생 중 다른 달에도 미납이 있는 학생 — 월별로만 보다 일부만 결제하는 일을 막는다(2026-11-17) */}
+            {(() => {
+                const here = new Map<string, number>();
+                for (const x of payments) {
+                    if (["PENDING", "OVERDUE"].includes(x.status) && (x.amount ?? 0) > 0) here.set(x.studentId, (here.get(x.studentId) ?? 0) + 1);
+                }
+                const studentsInList = new Set(payments.map((x) => x.studentId));
+                let studentCount = 0;
+                let otherMonthCount = 0;
+                for (const id of studentsInList) {
+                    const extra = (outstanding[id]?.count ?? 0) - (here.get(id) ?? 0);
+                    if (extra > 0) { studentCount += 1; otherMonthCount += extra; }
+                }
+                if (studentCount === 0) return null;
+                return (
+                    <p role="status" className="mb-4 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-warning-soft)] px-4 py-3 text-sm text-[var(--color-academy-warning)]">
+                        <span className="font-semibold">다른 달 미납 {otherMonthCount}건</span> · 이 달 목록 학생 {studentCount}명.
+                        {canUsePosCharge ? " 학생 ⚡ 메뉴의 «이 학생 미납 전체 현장 결제»로 밀린 달까지 한 번에 받을 수 있어요." : " 이름 옆 «밀린 미납» 표시를 확인해 주세요."}
+                    </p>
+                );
+            })()}
 
             {financeNotice && (
                 <p role="status" className="mb-4 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-success-soft)] px-4 py-3 text-sm font-medium text-[var(--color-academy-success)]">
