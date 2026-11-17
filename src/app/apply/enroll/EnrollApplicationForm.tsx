@@ -1,7 +1,7 @@
 "use client";
 
 import { publicErrorText } from "@/components/ui/public-error-text";
-import { useState, useTransition } from "react";
+import { useState, useTransition, useRef } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import {
@@ -213,14 +213,27 @@ export default function EnrollApplicationForm({ availableSlots, contactPhone, tr
         }
     };
 
+    // «다음»을 빠르게 두 번 누르면 2단계의 기존 신청서 조회(서버 왕복)를 기다리는 동안 한 번 더 통과해
+    // 3단계(수강 개시일·가입경로·셔틀)를 통째로 건너뛰었다(2026-11-17 — 한 분이 7번 제출 실패). 이동 중에는 다시 받지 않는다.
+    const movingRef = useRef(false);
+    const [moving, setMoving] = useState(false);
     const goNext = async () => {
+        if (movingRef.current) return;
         if (step === 1 && !validateStep1()) return;
         if (step === 2 && !validateStep2()) return;
         if (step === 3 && !validateStep3()) return;
-        if (step === 2) await loadExistingApplication();
-        setError("");
-        setStep((current) => Math.min(current + 1, TOTAL_STEPS));
-        window.scrollTo({ top: 0, behavior: "smooth" });
+        movingRef.current = true;
+        setMoving(true);
+        try {
+            if (step === 2) await loadExistingApplication();
+            setError("");
+            // 지금 단계의 다음 단계로만 간다(누적해서 더하지 않는다)
+            setStep(Math.min(step + 1, TOTAL_STEPS));
+            window.scrollTo({ top: 0, behavior: "smooth" });
+        } finally {
+            movingRef.current = false;
+            setMoving(false);
+        }
     };
 
     const goBack = () => {
@@ -241,6 +254,14 @@ export default function EnrollApplicationForm({ availableSlots, contactPhone, tr
         }
         if (!form.applicationNoticeConfirmed) {
             setError("수강신청 확정 안내를 확인해주세요.");
+            return;
+        }
+        // 제출 직전에 앞 단계를 한 번 더 본다 — 빠진 칸이 있으면 그 단계로 돌려보내 무엇이 빠졌는지 보여 준다
+        // (서버 오류는 운영에서 원문이 가려져 «잠시 후 다시»만 보이므로, 여기서 잡아야 사용자가 고칠 수 있다).
+        const failedStep = !validateStep1() ? 1 : !validateStep2() ? 2 : !validateStep3() ? 3 : 0;
+        if (failedStep) {
+            setStep(failedStep);
+            window.scrollTo({ top: 0, behavior: "smooth" });
             return;
         }
         startTransition(async () => {
@@ -414,7 +435,7 @@ export default function EnrollApplicationForm({ availableSlots, contactPhone, tr
                     ) : <div />}
 
                     {step < TOTAL_STEPS ? (
-                        <button type="button" onClick={goNext} className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-public-accent)] px-6 py-3 font-bold text-white transition-colors hover:bg-[var(--color-public-strong)] dark:bg-brand-neon-lime dark:text-brand-navy-900">
+                        <button type="button" onClick={goNext} disabled={moving} className="disabled:opacity-60 inline-flex items-center gap-2 rounded-xl bg-[var(--color-public-accent)] px-6 py-3 font-bold text-white transition-colors hover:bg-[var(--color-public-strong)] dark:bg-brand-neon-lime dark:text-brand-navy-900">
                             다음
                         </button>
                     ) : (
