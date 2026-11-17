@@ -74,6 +74,22 @@ export function nativeBrowserClient(request:NextRequest,flowId:string) {
   });
   return {client,apply(response:NextResponse){for(const item of pending)response.cookies.set(item.name,item.value,{...item.options,httpOnly:true,secure:true,sameSite:"lax",path:"/auth/native",maxAge:Math.min(Number(item.options.maxAge??300),300)});return response;}};
 }
+/**
+ * 가입 전 학부모용(2026-11-17 긴급·원장 지시 «연결된 계정이 없으면 바로 가입으로»).
+ * 앱 간편로그인으로 방금 확인한 간편로그인 세션을 «이 브라우저의 웹 로그인»으로 옮겨 적어,
+ * 가입 화면(/signup/parent?social=1)이 카카오·구글 로그인을 다시 시키지 않고 휴대폰 인증부터 이어 가게 한다.
+ * 웹 간편가입(/auth/callback)이 끝난 직후와 같은 상태다 — 학원 계정과 연결되기 전이라 이 세션만으로는 아무 화면도 열리지 않는다.
+ * 이 브라우저에 이미 웹 로그인이 있으면 덮어쓰지 않는다(null) — 다른 계정으로 로그인해 둔 것을 바꿔치기하지 않게.
+ */
+export function webSignupSessionClient(request:NextRequest) {
+  if(request.cookies.getAll().some(cookie=>/^sb-.+-auth-token(\.\d+)?$/.test(cookie.name)))return null;
+  const pending:{name:string;value:string;options:Record<string,unknown>}[]=[];
+  const client=createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!,process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,{
+    // 기본 쿠키 이름·경로(웹 로그인과 같은 자리). 요청 쿠키는 읽지 않는다 — 새 세션만 적는다.
+    cookies:{getAll:()=>[],setAll:items=>{for(const item of items)pending.push(item);}},
+  });
+  return {client,apply(response:NextResponse){for(const item of pending)response.cookies.set(item.name,item.value,{...item.options,secure:true,sameSite:"lax",path:"/"});return response;}};
+}
 export function clearNativeBrowserCookies(request:NextRequest,response:NextResponse,flowId:string) {
   const prefix=`stiz-native-oauth-${flowId}`;
   const keys=[prefix,`${prefix}-code-verifier`];

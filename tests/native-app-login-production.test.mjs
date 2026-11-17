@@ -150,6 +150,8 @@ function callbackHarness({ allowed = true } = {}) {
     async signInWithOAuth() { options.cookies.setAll([{ name: `${options.cookieOptions.name}-code-verifier`, value: "synthetic-pkce", options: {} }]); return { data: { url: "https://synthetic.supabase.co/auth/v1/authorize?provider=kakao" }, error: null }; },
     async exchangeCodeForSession() { return { data: { session: { ...session, user: { id: session.authUserId } } }, error: null }; },
     async getUser() { return { data: { user: { id: session.authUserId } }, error: null }; },
+    // 가입 화면으로 넘길 때 웹 로그인 쿠키를 적는다(실제 SDK 는 sb-<ref>-auth-token 이름으로 적는다)
+    async setSession(tokens) { options.cookies.setAll([{ name: "sb-synthetic-auth-token", value: `web:${tokens.access_token}`, options: { path: "/", maxAge: 3600 } }]); return { data: {}, error: null }; },
   } }) };
   const http = load("src/lib/native-auth/http.ts", { "server-only": {}, "@supabase/ssr": server, "next/server": next, "./policy": { ...policy, nativeConfig: () => h.config }, "./service": { createNativeAuthService: () => h.svc }, "./store": { postgresNativeFlowStore: {} } });
   const deps = { "next/server": next, "@/lib/native-auth/policy": policy, "@/lib/native-auth/http": http };
@@ -157,30 +159,39 @@ function callbackHarness({ allowed = true } = {}) {
   const callback = load("src/app/auth/native/callback/route.ts", { ...deps, "@/lib/native-auth/store": { requireNativeAccount: async () => allowed } });
   return { h, browser, callback };
 }
-async function throughBrowser(f, extra = {}) {
+async function throughBrowser(f, extra = {}, extraCookie = "") {
   const started = await f.h.svc.start({ platform: "android", provider: "kakao", codeChallenge: policy.digest(verifier), state });
   const opened = await f.browser.GET(new next.NextRequest(started.browserUrl));
   assert.equal(opened.status, 307);
   const cookies = opened.cookies.getAll().map((c) => `${c.name}=${c.value}`).join("; ");
   const url = new URL(`https://www.stiz-dasan.kr/auth/native/callback?flow=${started.flowId}&provider=kakao`);
   for (const [key, value] of Object.entries({ code: "synthetic-oauth-code", ...extra })) if (value === null) url.searchParams.delete(key); else url.searchParams.set(key, value);
-  const finished = await f.callback.GET(new next.NextRequest(url, { headers: { cookie: cookies, "sec-fetch-site": "cross-site" } }));
+  const finished = await f.callback.GET(new next.NextRequest(url, { headers: { cookie: [cookies, extraCookie].filter(Boolean).join("; "), "sec-fetch-site": "cross-site" } }));
   return { started, finished };
 }
 
-test("callback 라우트: 학원 계정이 없으면 요청을 취소하고 그 브라우저를 가입 화면으로 보낸다(2026-11-17 긴급 — 앱으로 튕기지 않음)", async () => {
+test("callback 라우트: 학원 계정이 없으면 요청을 취소하고 그 브라우저를 간편가입 화면으로 이어 준다(2026-11-17 긴급 — 앱으로 튕기지 않고 로그인도 다시 시키지 않음)", async () => {
   const saved = process.env.NEXT_PUBLIC_SUPABASE_URL; process.env.NEXT_PUBLIC_SUPABASE_URL = "https://synthetic.supabase.co";
   try {
     const f = callbackHarness({ allowed: false });
     const { started, finished } = await throughBrowser(f);
     assert.equal(finished.status, 307);
     const back = new URL(finished.headers.get("location"));
-    // 가입 전 학부모는 앱으로 돌려보내지 않고 같은 사이트의 가입 화면으로 — 주소에는 고정 값만(flow·state·code·토큰 없음)
-    assert.equal(back.toString(), "https://www.stiz-dasan.kr/signup/parent?fromApp=1");
+    // 가입 전 학부모는 앱으로 돌려보내지 않고 같은 사이트의 간편가입 화면으로 — 주소에는 고정 값·제공자 이름만(flow·state·code·토큰 없음)
+    assert.equal(back.toString(), "https://www.stiz-dasan.kr/signup/parent?fromApp=1&social=1&provider=kakao&next=%2Fmypage");
     assert.doesNotMatch(back.toString(), /synthetic/);
     assert.equal(f.h.store.rows.get(started.flowId).status, "CANCELLED", "요청은 취소돼 다시 쓸 수 없다");
-    // 교환 중 생긴 브라우저 쿠키는 지운다 — 가입 화면이 로그인된 상태로 열리지 않는다
-    assert.ok(finished.cookies.getAll().every((c) => c.value === ""), "남기는 쿠키 없음");
+    // 앱 로그인용 쿠키(/auth/native)는 지우고, 웹 간편가입용 로그인 쿠키만 새로 적는다(카카오 로그인을 다시 시키지 않게)
+    const set = finished.cookies.getAll();
+    assert.ok(set.filter((c) => c.name.startsWith("stiz-native")).every((c) => c.value === ""), "앱 로그인용 쿠키는 남기지 않는다");
+    const web = set.filter((c) => c.name.startsWith("sb-"));
+    assert.equal(web.length, 1);
+    assert.equal(web[0].path, "/"); assert.equal(web[0].secure, true); assert.equal(web[0].sameSite, "lax");
+    // 이 브라우저에 이미 웹 로그인이 있으면 덮어쓰지 않는다 — 로그인 안 된 가입 화면으로만 보낸다
+    const g = callbackHarness({ allowed: false });
+    const kept = await throughBrowser(g, {}, "sb-existing-auth-token=someone-else");
+    assert.equal(kept.finished.headers.get("location"), "https://www.stiz-dasan.kr/signup/parent?fromApp=1");
+    assert.ok(kept.finished.cookies.getAll().every((c) => !c.name.startsWith("sb-")), "기존 웹 로그인은 건드리지 않는다");
     assert.equal(finished.headers.get("cache-control"), "no-store, private");
   } finally { if (saved === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL; else process.env.NEXT_PUBLIC_SUPABASE_URL = saved; }
 });
