@@ -56,3 +56,23 @@
   .summary { gap: 6px 12px; }
   .bottom .actions > button { flex: 1 1 auto; }
 }
+/* «승인 대기» 묶음(2026-11-17) — 한 줄 행(44px 이상)·주 버튼만 브랜드 색·상태는 상태색 토큰 */
+.approve { margin-bottom: 12px; padding: 12px; border: 1px solid var(--color-academy-line); border-radius: 12px; background: var(--color-academy-surface); }
+.approveHead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.approveTitle { font-size: 16px; font-weight: 700; }
+.approveSub { display: flex; align-items: center; gap: 6px; margin: 12px 0 6px; font-size: 14px; font-weight: 600; }
+.approveList { display: grid; max-height: 320px; overflow-y: auto; border-top: 1px solid var(--color-academy-line); }
+.approveRow, .reviewItem { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 6px 4px; border-bottom: 1px solid var(--color-academy-line); font-size: 14px; }
+.approveName { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.approveMeta { color: var(--color-academy-muted); font-size: 13px; white-space: nowrap; }
+.approveAmount { margin-left: auto; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.reviewItem { width: 100%; text-align: left; background: none; border-width: 0 0 1px; border-style: solid; border-color: var(--color-academy-line); color: inherit; cursor: pointer; }
+.reviewItem:hover { background: var(--color-academy-soft); }
+.reviewItem:focus-visible { outline: 2px solid var(--color-academy-primary); outline-offset: -2px; }
+.reviewReason { flex: 0 1 55%; color: var(--color-academy-muted); font-size: 13px; overflow-wrap: anywhere; }
+.approve .actions { margin-top: 8px; }
+@media (max-width: 767px) {
+  .approveRow, .reviewItem { flex-wrap: wrap; }
+  .approveMeta { white-space: normal; }
+  .reviewReason { flex-basis: 100%; }
+}

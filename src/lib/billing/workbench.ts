@@ -21,6 +21,8 @@ export type WorkbenchRow = WorkbenchAmounts & {
   guideMissedDates?: string[];
   /** 학생별 고정 월 수강료가 적용된 행의 짧은 근거(예: «고정 15만») — 그런 행에만 있다(2026-11-16) */
   fixedTuitionLabel?: string;
+  /** 청구일 cron 이 만든 초안이고 아직 사람이 다시 저장하지 않은 행(초안 상태일 때만 있다, 2026-11-17) */
+  autoDraft?: true;
 };
 export type WorkbenchAbsence = {
   id: string; studentId: string; studentName: string; classId: string; date: string;
@@ -36,6 +38,8 @@ export type WorkbenchView = {
   carrySettlementReady: boolean;
   notices: string[];
   calendarSource: "DB" | "DB_AND_ICS";
+  /** 그 달 셔틀 명단이 하나도 없다(셔틀비 제안 0원) — 자동 초안·한꺼번에 발행을 막는다. 명단이 있으면 칸이 없다 */
+  shuttleRosterMissing?: true;
 };
 export type WorkbenchEdit = Partial<WorkbenchAmounts> & { id: string; expectedVersion: number; reason?: string; periodStart?:string; periodEnd?:string };
 export type WorkbenchCommand = {
@@ -47,6 +51,78 @@ export class WorkbenchError extends Error {
   constructor(message: string, readonly status = 400, readonly refreshRequired = false) { super(message); this.name = "WorkbenchError"; }
 }
 export const WORKBENCH_MAX_AMOUNT = 100_000_000;
+
+// ── 청구일 자동 초안 · 승인 대기(2026-11-17 원장 목표 «눈으로 보고 승인 버튼만») ─────────────────────
+/** 확정 장부가 없는 청구 행에 늘 붙는 일반 검토 문구 — 이 문구 «하나뿐»인 행은 자동 초안 대상이다 */
+export const WORKBENCH_GENERIC_REVIEW_REASON = "할인·셔틀 및 수강 기간을 검토해 주세요.";
+/** 저장 뒤 원본(수강·결석·청구 등)이 바뀐 초안에 붙는 문구 */
+export const WORKBENCH_SOURCE_CHANGED_REASON = "검토 후 원본이 변경되었습니다. 다시 저장·확정해 주세요.";
+/** 자동 초안을 저장한 주체 — 감사 기록 actorUserId 칸(사람 계정 id 와 겹치지 않는 고정 글자) */
+export const AUTO_DRAFT_ACTOR = "SYSTEM_CRON_BILLING_DRAFT";
+/** 화면에서 자동 초안을 사람 저장과 구분하는 이름 */
+export const AUTO_DRAFT_LABEL = "자동 초안(원장 확인 전)";
+
+/**
+ * 그 달 셔틀 명단이 없을 때(readWorkbench 가 shuttleRosterMissing 을 붙인다) 쓰는 글자.
+ * 명단이 없으면 셔틀비가 0원으로 제안되므로, 자동 초안·한꺼번에 발행을 막는다(검수 B-1, 2026-11-17).
+ */
+export function shuttleRosterMissingMessage(month: string, use: "AUTO_DRAFT" | "APPROVE"): string {
+  const m = Number(String(month).slice(5, 7)) || 0;
+  return use === "AUTO_DRAFT"
+    ? `${m}월 셔틀 명단이 아직 없어 자동 초안을 만들지 않았습니다. 셔틀 명단을 확인한 뒤 청구 준비 화면에서 직접 저장해 주세요.`
+    : `${m}월 셔틀 명단이 아직 없어 한꺼번에 발행할 수 없습니다. 셔틀 명단을 먼저 확인해 주세요.`;
+}
+
+type AutoDraftAmountRow = Pick<WorkbenchRow, "carryAmount" | "prorationAmount" | "guideMissedDates">;
+type AutoDraftCheckRow = Pick<WorkbenchRow, "status" | "draftStatus" | "hold" | "blockingReasons" | "reviewReasons" | "autoDraft" | "remainingCarry" | "periodStart" | "periodEnd" | "scheduledDates"> & Partial<AutoDraftAmountRow>;
+
+/**
+ * 사유 문구는 없어도 사람이 금액을 봐야 하는 행(검수 B-2·운영 실측 2026-11-17).
+ * 이월 차감 · 기간 조정(3회 달 차감·월 중간 등록·부상 결석 정산 등 0원이 아닌 모든 조정) · 부상 결석 «달 가운데 빠짐» 행.
+ * 돌려주는 글자는 «확인 필요» 목록의 한 줄 사유로 쓴다. 해당 없으면 null.
+ */
+export function amountCheckReason(row: Partial<AutoDraftAmountRow>): string | null {
+  const won = (n: number) => `${n.toLocaleString("ko-KR")}원`;
+  if ((row.carryAmount ?? 0) > 0) return `이월 차감 ${won(row.carryAmount!)} — 확인해 주세요`;
+  if (row.guideMissedDates?.length) return `부상 결석 정산 — 다닌 날만 청구했는지 확인해 주세요`;
+  if ((row.prorationAmount ?? 0) !== 0) return `기간 조정 ${won(row.prorationAmount!)} — 확인해 주세요`;
+  return null;
+}
+
+/**
+ * 청구일 cron 이 «제안값 그대로» 초안을 저장해도 되는 행인가.
+ * = 아직 초안이 없고 · 발행 보류·차단 사유가 없고 · 검토 사유가 하나도 없거나 «일반 문구» 하나뿐이고
+ *   · 이월 차감·기간 조정(3회 달 차감·부상 결석 정산 포함)이 없는 행.
+ * 셔틀 중복·고정 수강료·월 중간 등록 같은 구체 사유나 위 금액 조정이 하나라도 있으면 사람이 본다(대상 아님).
+ */
+export function isAutoDraftCandidate(row: Pick<WorkbenchRow, "status" | "draftStatus" | "hold" | "blockingReasons" | "reviewReasons"> & Partial<AutoDraftAmountRow>): boolean {
+  if (row.status === "EXCLUDED" || row.status === "ISSUED" || row.draftStatus !== null || row.hold || row.blockingReasons.length) return false;
+  if (amountCheckReason(row)) return false;
+  if (row.status === "READY") return true;
+  return row.reviewReasons.length > 0 && row.reviewReasons.every((reason) => reason === WORKBENCH_GENERIC_REVIEW_REASON);
+}
+
+/**
+ * «승인 대기» 묶음에 넣고 한꺼번에 발행해도 되는 자동 초안인가(화면·서버 같은 판정).
+ * 초안 저장 뒤 원본이 바뀌어 «원본 변경» 문구가 붙었어도, 그 밖의 구체 사유가 없으면 그대로 승인할 수 있다
+ * — 승인할 때 원장이 화면에서 본 금액으로 다시 저장한 뒤 확정·발행하기 때문이다.
+ * 단 원본이 바뀐 초안인데 쓸 수 있는 이월 잔액이 남아 있으면(새 이월이 생겼을 수 있다) 사람이 본다.
+ * 이월 차감·기간 조정이 들어간 행도 사람이 본다(amountCheckReason).
+ */
+export function isApprovableAutoDraft(row: AutoDraftCheckRow): boolean {
+  if (!row.autoDraft || row.draftStatus !== "DRAFT" || row.hold || row.blockingReasons.length) return false;
+  if (row.status === "EXCLUDED" || row.status === "ISSUED") return false;
+  if (!row.periodStart || !row.periodEnd || !row.scheduledDates.length) return false;
+  if (amountCheckReason(row)) return false;
+  if (!row.reviewReasons.every((reason) => reason === WORKBENCH_GENERIC_REVIEW_REASON || reason === WORKBENCH_SOURCE_CHANGED_REASON)) return false;
+  return !row.reviewReasons.includes(WORKBENCH_SOURCE_CHANGED_REASON) || row.remainingCarry === 0;
+}
+
+/** «확인 필요» 목록에 보일 한 줄 사유 — 구체 사유를 먼저, 다음은 금액 조정(이월·기간 조정), 없으면 일반 문구 */
+export function reviewHeadline(row: Pick<WorkbenchRow, "reviewReasons" | "blockingReasons"> & Partial<AutoDraftAmountRow>): string {
+  const concrete = [...row.blockingReasons, ...row.reviewReasons].find((reason) => reason !== WORKBENCH_GENERIC_REVIEW_REASON && reason !== WORKBENCH_SOURCE_CHANGED_REASON);
+  return concrete ?? amountCheckReason(row) ?? row.reviewReasons[0] ?? "확인할 내용이 있습니다.";
+}
 export function filterWorkbenchDates(dates:readonly string[],start:string,end:string) {
   for(const value of [start,end]) if(!isKstYmd(value))throw new WorkbenchError("수강 시작·종료 날짜를 확인해 주세요.");
   if(start>end || Date.parse(end)-Date.parse(start)>61*86400000)throw new WorkbenchError("수강 기간은 날짜 순서에 맞게 62일 이내로 입력해 주세요.");

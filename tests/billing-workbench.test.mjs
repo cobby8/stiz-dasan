@@ -46,6 +46,7 @@ test("빈 선택·중복·추가 필드·확정 시 금액 주입 차단",()=>{
 function database({credit=0,secondClass=false}={}){
  const state={drafts:[],payments:[],invoices:[],operations:[],usages:[],revisions:[],absences:[],makeupCredits:[],bookings:[],registers:[],carryCredits:[],resolutions:[],attendance:[],seasonalCredits:[],events:[],enrollments:[{studentId:"student-a",studentName:"합성 원생",classId:"class-a",className:"합성 반",status:"ACTIVE",price:100000,dayOfWeek:"Sat",createdAt:"2026-01-01",updatedAt:"2026-01-01"}]};
  if(secondClass)state.enrollments.push({...state.enrollments[0],classId:"class-b"});
+ const savepoints=new Map();
  const tx={async $queryRawUnsafe(sql,...v){
   // 2026-11-14: 읽기용 표 확인은 한 번에 묶어 묻는다(name 목록 → 표마다 found)
   if(sql.includes("unnest($1::text[]) AS name"))return v[0].map(name=>({name,found:true}));
@@ -87,7 +88,7 @@ function database({credit=0,secondClass=false}={}){
   if(sql.includes('FROM "Class"'))return [{dayOfWeek:"Sat"}];
   if(sql.includes('FROM "BillingWorkbenchOperation"'))return structuredClone(state.operations.filter(o=>o.requestId===v[0]));
   // 발행 전 학생 행 잠금 — 요청한 학생 id 목록을 그대로 돌려준다(예전엔 student-a 한 명만 있어 고정값이었다)
-  if(sql.includes('FROM "Student"'))return state.studentHidden?[]:Array.isArray(v[0])?v[0].map(id=>({id})):[{id:"student-a"}];
+  if(sql.includes('FROM "Student"'))return state.studentHidden?[]:Array.isArray(v[0])?v[0].filter(id=>!(state.hiddenStudents??[]).includes(id)).map(id=>({id})):[{id:"student-a"}];
   // 셔틀 명단(그 달 승차·하차 이용자). 기본은 비어 있음 → 셔틀비 제안 없음.
   if(sql.includes('FROM "RegularShuttleStop"'))return structuredClone((state.shuttleStops??[]).filter(r=>r.serviceMonth===v[0]));
   // 학생별 고정 월 수강료(2026-11-16) — SQL 이 그 달 기간 조건을 거는지 확인하고, 서비스 쪽 거름도 시험하려고 전부 돌려준다
@@ -95,7 +96,11 @@ function database({credit=0,secondClass=false}={}){
   throw new Error(`unexpected read ${sql}`);
  },async $executeRawUnsafe(sql,...v){
   if(sql.includes("pg_advisory"))return 1;
-  if(sql.startsWith('INSERT INTO "BillingWorkbenchDraft"')){const d={id:v[0],month:v[1],studentId:v[2],classId:v[3],version:v[4],status:v[5],payload:JSON.parse(v[6]),reason:v[7],sourceVersion:v[8],paymentId:v[9],periodStart:v[11],periodEnd:v[12],scheduledDates:JSON.parse(v[13]),calculationBasis:JSON.parse(v[14]),updatedAt:new Date().toISOString()};const i=state.drafts.findIndex(x=>x.id===d.id&&x.month===d.month);if(i<0)state.drafts.push(d);else state.drafts[i]=d;return 1;}
+  // 2026-11-17 «승인 대기» 한꺼번에 발행: 묶음마다 SAVEPOINT — 되돌리면 그 시점 상태로
+  if(sql.startsWith("SAVEPOINT ")){savepoints.set(sql.slice(10),structuredClone(state));return 0;}
+  if(sql.startsWith("RELEASE SAVEPOINT ")){savepoints.delete(sql.slice(18));return 0;}
+  if(sql.startsWith("ROLLBACK TO SAVEPOINT ")){const snap=structuredClone(savepoints.get(sql.slice(22)));for(const key of Object.keys(state))delete state[key];Object.assign(state,snap);return 0;}
+  if(sql.startsWith('INSERT INTO "BillingWorkbenchDraft"')){const d={id:v[0],month:v[1],studentId:v[2],classId:v[3],version:v[4],status:v[5],payload:JSON.parse(v[6]),reason:v[7],sourceVersion:v[8],paymentId:v[9],actorUserId:v[10],periodStart:v[11],periodEnd:v[12],scheduledDates:JSON.parse(v[13]),calculationBasis:JSON.parse(v[14]),updatedAt:new Date().toISOString()};const i=state.drafts.findIndex(x=>x.id===d.id&&x.month===d.month);if(i<0)state.drafts.push(d);else state.drafts[i]=d;return 1;}
   if(sql.startsWith('INSERT INTO "BillingWorkbenchOperation"')){state.operations.push({requestId:v[0],fingerprint:v[1],result:JSON.parse(v[2])});return 1;}
   if(sql.startsWith('INSERT INTO "BillingWorkbenchRevision"')){state.revisions.push(v);return 1;}
   if(sql.startsWith('INSERT INTO "BillingCarryUsage"')){state.usages.push({studentId:v[1],month:v[2],amount:v[4],paymentId:v[5],sourceCreditIds:v[7],basis:JSON.parse(v[8])});return 1;}
@@ -108,7 +113,7 @@ function database({credit=0,secondClass=false}={}){
   if(sql.startsWith('UPDATE "RegularAbsence" SET status = \'CONFIRMED\'')){const a=state.absences.find(x=>x.id===v[0]&&x.status==="REPORTED");if(a)a.status="CONFIRMED";return a?1:0;}
   if(sql.startsWith('UPDATE "MakeupSession"')){for(const b of state.bookings)if(b.status==="BOOKED")b.status="CANCELLED";return 1;}
   if(sql.startsWith('UPDATE "MakeupCredit"')){for(const c of state.makeupCredits)if(["AVAILABLE","RESERVED","EXPIRED"].includes(c.status)){c.status="REVOKED";c.makeupSessionId=null;}return 1;}
-  if(sql.startsWith('INSERT INTO "Payment"')){state.payments.push({id:v[0],studentId:v[1],classId:v[2],amount:v[3],status:"PENDING",type:"MONTHLY",updatedAt:"now"});return 1;}
+  if(sql.startsWith('INSERT INTO "Payment"')){if(state.dbFailure)throw new Error("could not serialize access due to read/write dependencies");state.payments.push({id:v[0],studentId:v[1],classId:v[2],amount:v[3],status:"PENDING",type:"MONTHLY",updatedAt:"now"});return 1;}
   if(sql.startsWith('INSERT INTO "PaymentInvoice"')){state.invoices.push({id:v[0],paymentId:v[1],amount:v[4],status:"ISSUED",updatedAt:"now"});return 1;}
   throw new Error(`unexpected write ${sql}`);
  }};
@@ -1436,4 +1441,150 @@ test("숙제: 달 가운데가 빠진 달의 발행 근거 수업일 사본에�
  assert.match(admin,/const month = await readAbsenceBillingMonthInTx\(tx, absence, calendar\);/);
  assert.match(admin,/const month = calendar === null \? absence\.date\.slice\(0, 7\) : await readAbsenceBillingMonthInTx\(tx, absence, calendar\);/);
  assert.match(absenceSource,/return billingMonthOfDate\(input\.date, month => getMonthlyClassDates\(eventValues,month,classData\[0\]\?\.dayOfWeek \?\? ""\)\);/);
+});
+
+// ── 청구일 자동 초안 · «승인 대기» 한꺼번에 발행(2026-11-17 PM 결정) ─────────────────────
+const approveSource=await readFile("src/lib/billing/workbench-approve.ts","utf8");
+const {approveAutoDrafts,APPROVE_AUTO_DRAFTS_ACTION}=await import(url(approveSource.replace('from "./workbench-service"',`from "${serviceUrl}"`).replace('from "./workbench"',`from "${modelUrl}"`)));
+const model=await import(modelUrl);
+/** 그 달 셔틀 명단이 있는 DB(다른 학생 한 명만 탄다) — 명단이 없으면 자동 초안·한꺼번에 발행이 막힌다(검수 B-1) */
+function rosterDatabase(){
+ const db=database();
+ db.state.shuttleStops=[{serviceMonth:"2026-11",studentId:"student-z",studentName:"합성 탑승생",direction:"BOARD",stopName:"합성 정류장"}];
+ return db;
+}
+/** 두 학생(student-a·student-b) 청구 대상 DB */
+function twoStudentDatabase(){
+ const db=rosterDatabase();
+ db.state.enrollments.push({...db.state.enrollments[0],studentId:"student-b",studentName:"합성 원생2"});
+ return db;
+}
+/** 청구일 cron 과 같은 규칙으로 자동 초안 저장(저장자 = AUTO_DRAFT_ACTOR) */
+async function autoDraft(db){
+ const view=await readWorkbench(db.tx,"2026-11",true);
+ const rows=view.rows.filter(model.isAutoDraftCandidate).map(r=>({id:r.id,expectedVersion:r.version,baseAmount:r.baseAmount,discountAmount:r.discountAmount,prorationAmount:r.prorationAmount,carryAmount:r.carryAmount,shuttleAmount:r.shuttleAmount,reason:"청구일 자동 초안(2026-10-15) — 제안값 그대로 저장, 원장 확인 전",...(r.periodStart&&r.periodEnd?{periodStart:r.periodStart,periodEnd:r.periodEnd}:{})}));
+ await mutateWorkbench(db,{action:"SAVE",month:"2026-11",sourceVersion:view.sourceVersion,requestId:`auto-draft-2026-11-${view.sourceVersion.slice(0,40)}`,rows},model.AUTO_DRAFT_ACTOR,true);
+ return readWorkbench(db.tx,"2026-11",true);
+}
+const approveCommand=(view,rows)=>({action:APPROVE_AUTO_DRAFTS_ACTION,month:view.month,sourceVersion:view.sourceVersion,requestId:`approve-${Math.random().toString(36).slice(2)}`,rows:rows.map(r=>({id:r.id,expectedVersion:r.version}))});
+
+test("자동 초안 대상: 일반 문구 하나뿐인 행은 포함, 구체 사유가 섞이면 제외",()=>{
+ const base={status:"REVIEW",draftStatus:null,hold:undefined,blockingReasons:[],reviewReasons:[model.WORKBENCH_GENERIC_REVIEW_REASON]};
+ assert.equal(model.isAutoDraftCandidate(base),true);
+ assert.equal(model.isAutoDraftCandidate({...base,status:"READY",reviewReasons:[]}),true);
+ assert.equal(model.isAutoDraftCandidate({...base,reviewReasons:[model.WORKBENCH_GENERIC_REVIEW_REASON,"셔틀 명단 있음 · 다른 청구에 셔틀비가 있을 수 있어 제안하지 않음. 셔틀비가 빠지거나 두 번 들어가지 않았는지 확인해 주세요."]}),false);
+ assert.equal(model.isAutoDraftCandidate({...base,reviewReasons:[model.WORKBENCH_GENERIC_REVIEW_REASON,"개시일 이후 실제 수업 횟수에 맞는 기간 조정 금액을 확인해 주세요."]}),false);
+ assert.equal(model.isAutoDraftCandidate({...base,blockingReasons:["차단"]}),false);
+ assert.equal(model.isAutoDraftCandidate({...base,hold:true}),false);
+ assert.equal(model.isAutoDraftCandidate({...base,draftStatus:"DRAFT"}),false,"이미 초안이 있으면 건너뛴다(두 번 돌아도 같다)");
+ assert.equal(model.isAutoDraftCandidate({...base,status:"EXCLUDED"}),false);
+});
+test("자동 초안 → 화면 «자동 초안(원장 확인 전)» 표시·승인 대기 판정, 사람이 다시 저장하면 자동 초안 표시가 사라진다",async()=>{
+ const db=rosterDatabase();
+ const before=await readWorkbench(db.tx,"2026-11",true);
+ assert.deepEqual(before.rows[0].reviewReasons,[model.WORKBENCH_GENERIC_REVIEW_REASON],"기본 행은 일반 문구 하나뿐");
+ const view=await autoDraft(db);
+ assert.equal(view.rows[0].autoDraft,true);assert.equal(view.rows[0].draftStatus,"DRAFT");assert.equal(view.rows[0].status,"READY");
+ assert.equal(model.isApprovableAutoDraft(view.rows[0]),true);
+ assert.equal(db.state.drafts[0].actorUserId,model.AUTO_DRAFT_ACTOR);
+ // 원장이 직접 다시 저장하면 사람 저장이다
+ const {view:after}=await mutateWorkbench(db,command("SAVE",view),"admin",true);
+ assert.equal(after.rows[0].autoDraft,undefined);assert.equal(model.isApprovableAutoDraft(after.rows[0]),false);
+});
+test("한꺼번에 발행: 원장 이름으로 저장 → 확정 → 사이트 발행, 학부모 발송 없음",async()=>{
+ const db=twoStudentDatabase();
+ const view=await autoDraft(db);
+ const approvable=view.rows.filter(model.isApprovableAutoDraft);assert.equal(approvable.length,2);
+ const result=await approveAutoDrafts(db,approveCommand(view,approvable),"owner",true);
+ assert.deepEqual(result.failures,[]);
+ assert.equal(result.operationResult.paymentIds.length,2);assert.equal(db.state.payments.length,2);assert.equal(db.state.invoices.length,2);
+ assert.ok(result.view.rows.every(r=>r.draftStatus==="ISSUED"));
+ // 감사 기록: 저장·확정·발행 모두 원장 이름(자동 초안 저장 1회 + 행마다 3회)
+ const actions=db.state.revisions.map(v=>[v[4],v[7]]);
+ assert.equal(actions.filter(([,actor])=>actor==="owner").length,6);
+ assert.deepEqual([...new Set(actions.filter(([,actor])=>actor==="owner").map(([a])=>a))].sort(),["CONFIRM","ISSUE","SAVE"]);
+});
+test("한꺼번에 발행: 한 명이 실패해도 나머지는 발행하고 실패 목록을 돌려준다(실패한 행은 저장·확정도 되돌린다)",async()=>{
+ const db=twoStudentDatabase();
+ const view=await autoDraft(db);
+ db.state.hiddenStudents=["student-b"];// 발행 직전 학생 잠금에서 student-b 만 실패
+ const result=await approveAutoDrafts(db,approveCommand(view,view.rows.filter(model.isApprovableAutoDraft)),"owner",true);
+ assert.equal(result.operationResult.paymentIds.length,1);
+ assert.equal(db.state.payments.length,1);assert.equal(db.state.payments[0].studentId,"student-a");
+ assert.equal(result.failures.length,1);assert.equal(result.failures[0].studentName,"합성 원생2");assert.match(result.failures[0].reason,/통합되거나 변경된 학생/);
+ const b=db.state.drafts.find(d=>d.studentId==="student-b");
+ assert.equal(b.status,"DRAFT");assert.equal(b.actorUserId,model.AUTO_DRAFT_ACTOR,"실패한 행은 자동 초안 그대로");
+});
+test("한꺼번에 발행: 본 화면과 원본이 다르면 아무것도 안 함 · 쓰기 스위치 꺼짐·사람 저장 행·버전 불일치는 거절",async()=>{
+ const db=twoStudentDatabase();
+ const view=await autoDraft(db);
+ const rows=view.rows.filter(model.isApprovableAutoDraft);
+ await assert.rejects(()=>approveAutoDrafts(db,approveCommand(view,rows),"owner",false),/잠겨/);
+ await assert.rejects(()=>approveAutoDrafts(db,{...approveCommand(view,rows),sourceVersion:"b".repeat(64)},"owner",true),/다시 조회/);
+ await assert.rejects(()=>approveAutoDrafts(db,{...approveCommand(view,rows),action:"ISSUE"},"owner",true),/요청 내용/);
+ assert.equal(db.state.payments.length,0);
+ const stale=await approveAutoDrafts(db,{...approveCommand(view,rows),rows:[{id:rows[0].id,expectedVersion:rows[0].version+5}]},"owner",true);
+ assert.equal(stale.failures.length,1);assert.equal(db.state.payments.length,0);
+});
+test("한꺼번에 발행 경로: 원장만·기존 저장→확정→발행만 쓰고 학부모 발송 코드가 없다",async()=>{
+ assert.match(approveSource,/action: "SAVE"/);assert.match(approveSource,/action: "CONFIRM"/);assert.match(approveSource,/action: "ISSUE"/);
+ assert.doesNotMatch(approveSource,/INSERT INTO "Payment"|sendInvoiceLinksForMonth|notifyParents|sendParentSms|sendTrackedSms|notifyAdmins|alimtalk/i);
+ const route=await readFile("src/app/api/admin/billing-workbench/route.ts","utf8");
+ assert.match(route,/export async function POST[\s\S]*?admin=await requireOwner\(\)[\s\S]*?if\(!enabled\(\)\)throw[\s\S]*?APPROVE_AUTO_DRAFTS_ACTION\?await approveAutoDrafts\(prisma,body,admin\.appUserId,enabled\(\),calendar\)/);
+ const screen=await readFile("src/app/admin/finance/prepare/BillingWorkbench.tsx","utf8");
+ assert.match(screen,/row\.autoDraft \? AUTO_DRAFT_LABEL :/);
+ assert.match(screen,/학부모에게 자동 발송은 되지 않습니다/);
+ assert.match(screen,/건 한꺼번에 발행/);
+ assert.doesNotMatch(screen,/\}명 한꺼번에|\}명 발행|\}명 · 합계/,"«명»이 아니라 «건»(검수 B-5)");
+ assert.match(screen,/body\.operationResult\.paymentIds\.length/,"발행 수는 실제 청구만, 0원 정산은 따로");
+ assert.match(screen,/disabled=\{!editable \|\| dirty \|\| Boolean\(view\.shuttleRosterMissing\)\}/);
+ assert.doesNotMatch(screen,/getFullYear\(\)|getMonth\(\)/,"기본 달은 서버가 한국 날짜로 정한다");
+});
+
+test("셔틀 명단이 없는 달: 보기에 표시되고 한꺼번에 발행을 거절한다(검수 B-1)",async()=>{
+ const none=database();
+ assert.equal((await readWorkbench(none.tx,"2026-11",true)).shuttleRosterMissing,true);
+ const db=twoStudentDatabase();
+ assert.equal((await readWorkbench(db.tx,"2026-11",true)).shuttleRosterMissing,undefined,"명단이 있으면 칸이 없다");
+ const view=await autoDraft(db);
+ db.state.shuttleStops=[];// 자동 초안 뒤 명단이 사라진 경우
+ const fresh=await readWorkbench(db.tx,"2026-11",true);
+ await assert.rejects(()=>approveAutoDrafts(db,approveCommand(fresh,fresh.rows.filter(model.isApprovableAutoDraft)),"owner",true),/11월 셔틀 명단이 아직 없어 한꺼번에 발행할 수 없습니다/);
+ assert.equal(db.state.payments.length,0);
+ assert.ok(view.rows.length);
+});
+test("이월 차감·기간 조정·부상 결석 정산 행은 자동 초안·승인 대상이 아니고 «확인 필요»에 구체 사유로 뜬다(검수 B-2)",()=>{
+ const base={status:"REVIEW",draftStatus:null,hold:undefined,blockingReasons:[],reviewReasons:[model.WORKBENCH_GENERIC_REVIEW_REASON],carryAmount:0,prorationAmount:0};
+ assert.equal(model.isAutoDraftCandidate(base),true);
+ assert.equal(model.isAutoDraftCandidate({...base,carryAmount:25000}),false);
+ assert.equal(model.isAutoDraftCandidate({...base,prorationAmount:25000}),false,"3회 달 차감");
+ assert.equal(model.isAutoDraftCandidate({...base,guideMissedDates:["2026-11-14"]}),false,"부상 결석 정산(달 가운데 빠짐)");
+ assert.equal(model.reviewHeadline({...base,carryAmount:25000}),"이월 차감 25,000원 — 확인해 주세요");
+ assert.equal(model.reviewHeadline({...base,prorationAmount:22500}),"기간 조정 22,500원 — 확인해 주세요");
+ assert.equal(model.reviewHeadline(base),model.WORKBENCH_GENERIC_REVIEW_REASON);
+ const auto={...base,status:"READY",draftStatus:"DRAFT",autoDraft:true,reviewReasons:[],remainingCarry:0,periodStart:"2026-11-07",periodEnd:"2026-11-28",scheduledDates:["2026-11-07"]};
+ assert.equal(model.isApprovableAutoDraft(auto),true);
+ assert.equal(model.isApprovableAutoDraft({...auto,prorationAmount:25000}),false);
+ assert.equal(model.isApprovableAutoDraft({...auto,carryAmount:1}),false);
+});
+test("한꺼번에 발행: DB 오류(직렬화 충돌 등)는 쪼개 재시도하지 않고 전체를 되돌린다(검수 B-3)",async()=>{
+ const db=twoStudentDatabase();
+ const view=await autoDraft(db);
+ db.state.dbFailure=true;
+ let inserts=0;const original=db.tx.$executeRawUnsafe;
+ db.tx.$executeRawUnsafe=async(sql,...v)=>{if(sql.startsWith('INSERT INTO "Payment"'))inserts++;return original.call(db.tx,sql,...v);};
+ await assert.rejects(()=>approveAutoDrafts(db,approveCommand(view,view.rows.filter(model.isApprovableAutoDraft)),"owner",true),/일시적인 문제가 생겨 아무것도 발행하지 않았습니다/);
+ assert.equal(inserts,1,"첫 시도에서 바로 멈춘다(반씩 다시 하지 않음)");
+ assert.equal(db.state.payments.length,0);
+ assert.ok(db.state.drafts.every(d=>d.status==="DRAFT"&&d.actorUserId===model.AUTO_DRAFT_ACTOR),"자동 초안 그대로");
+});
+test("cron: 셔틀 명단 없으면 저장 안 함·알림, 따라잡기(+1~+3일)는 자동 초안이 없을 때만, 청구일 못 정하면 알림(검수 B-1·B-4)",async()=>{
+ const route=await readFile("src/app/api/cron/billing-draft/route.ts","utf8");
+ assert.match(route,/if \(view\.shuttleRosterMissing\) \{[\s\S]*?return \{ \.\.\.base, shuttleRosterMissing: true \};/);
+ assert.ok(route.indexOf("view.shuttleRosterMissing")<route.indexOf("mutateWorkbench(prisma"),"명단 확인이 저장보다 먼저");
+ assert.match(route,/if \(catchUp && await autoDraftDone\(month\)\) return/);
+ assert.match(route,/billingMonthsToTry\(calendar\.events, today\)/);
+ assert.match(route,/undeterminedBillingMonth\(calendar\.events, today\)/);
+ assert.match(route,/청구일을 정하지 못했습니다/);
+ assert.match(route,/셔틀 명단이 없어 자동 초안을 만들지 않았습니다/);
 });
