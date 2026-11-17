@@ -1,3 +1,4 @@
+import { optimizedImageProps } from "@/lib/ui/optimizedImage";
 import Link from "next/link";
 
 // 홈 3단계 · 프로그램 사진 타일(2026-11-07) — 사진이 있는 공개 프로그램만 큰 사진 칸으로 보여 준다.
@@ -21,7 +22,8 @@ export default function HomeProgramTiles({ programs }: { programs: HomeProgramTi
                 {programs.map((program) => (
                     <li key={program.id}>
                         <Link href="/programs" aria-label={`${program.name} 안내 보기`}>
-                            <img src={program.imageUrl} alt="" loading="lazy" decoding="async" />
+                            {/* 타일은 휴대폰 2칸·PC 5칸 — 그 폭에 맞는 크기만 받는다(원본 100~150KB → 6~26KB) */}
+                            <img {...optimizedImageProps(program.imageUrl, "(max-width: 767px) 50vw, 20vw", 828)} alt="" loading="lazy" decoding="async" />
                             <span className="public-home-programs__text">
                                 <strong>{program.name}</strong>
                                 {program.targetAge && <span>{program.targetAge}</span>}

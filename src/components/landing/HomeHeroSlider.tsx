@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { optimizedImageProps } from "@/lib/ui/optimizedImage";
 
 // 홈 첫 화면 사진 슬라이드 — 사진이 주인공(2026-11-06 원장 요청 «첫 화면도 지금보다 크게»).
 // 첫 사진은 서버 화면에 바로 박혀 첫 화면이 늦게 뜨지 않고, 나머지는 브라우저에서 천천히 넘어간다.
@@ -50,7 +51,8 @@ export default function HomeHeroSlider({ slides, children }: { slides: HeroSlide
             {slides.map((slide, i) => (
                 <img
                     key={slide.url}
-                    src={slide.url}
+                    // 화면 폭에 맞는 크기로 줄여 받는다(원본 200~300KB → 휴대폰 40~55KB). 화면 가로를 꽉 채우는 사진이라 100vw
+                    {...optimizedImageProps(slide.url, "100vw")}
                     alt={i === index ? slide.alt : ""}
                     aria-hidden={i === index ? undefined : true}
                     fetchPriority={i === 0 ? "high" : "low"}
