@@ -175,7 +175,8 @@ test("a7 아이디 가입은 서버에서 바로 로그인하고, 실패하면 �
   assert.match(route, /sessionEstablished = !signedIn\.error && Boolean\(signedIn\.data\.session\)/);
   assert.ok(route.indexOf('if ("error" in result)') < route.indexOf("signInWithPassword"), "가입이 끝난 뒤에만 로그인");
   const ui = await read("src/components/auth/ParentSignupClient.tsx");
-  assert.match(ui, /if \(data\.sessionEstablished\) \{\s*window\.location\.assign\(safeInternalRedirect\(next\)\);/);
+  // 2026-11-17: 앱에서 넘어온 가입(fromApp=1)은 완료 화면에서 «앱으로 돌아가기»를 안내한다(native-login-app-106 테스트)
+  assert.match(ui, /if \(data\.sessionEstablished && !fromApp\) \{\s*window\.location\.assign\(safeInternalRedirect\(next\)\);/);
   assert.match(ui, /setStep\("done"\)/, "폴백: 완료 화면의 «로그인하기»");
 });
 
