@@ -16,10 +16,10 @@ import UiIcon from "@/components/common/UiIcon";
 import { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import Image from "next/image";
 import { ThemeToggle } from "./ThemeToggle";
-import type { AppRole } from "@/lib/auth-routes";
+import { loginHrefFrom, type AppRole } from "@/lib/auth-routes";
 import AppBackButton from "@/components/AppBackButton";
 import { useHeaderMenuFit } from "./useHeaderMenuFit";
 import { usePublicOverlayOpen } from "./public-floating";
@@ -88,9 +88,11 @@ const NAV_STANDALONE = [
 const DEFAULT_OPERATING_HOURS = "평일 13:00~21:00 / 토 09:00~18:00 (일요일·공휴일 휴무)";
 
 function DesktopAccountFallback() {
+  // 보던 화면 주소를 넘겨 로그인 뒤 그 화면으로 돌아오게(2026-11-17)
+  const loginHref = loginHrefFrom(usePathname());
   return (
     <Link
-      href="/login"
+      href={loginHref}
       className={[
         "hidden md:inline-flex items-center rounded-xl border border-[var(--color-public-line)] px-3 py-2 text-sm font-bold",
         "text-[var(--color-public-muted)] transition-colors hover:border-[var(--color-public-muted)] hover:bg-[var(--color-public-tint)] hover:text-[var(--color-public-strong)]",
@@ -103,10 +105,11 @@ function DesktopAccountFallback() {
 }
 
 function MobileAccountFallback() {
+  const loginHref = loginHrefFrom(usePathname());
   return (
     <div className="grid grid-cols-2 gap-2 mb-3">
       <Link
-        href="/login"
+        href={loginHref}
         className="flex min-h-11 items-center justify-center rounded-xl border border-[var(--color-public-line)] bg-white text-sm font-bold text-[var(--color-public-strong)] transition-colors hover:bg-[var(--color-public-tint)] dark:border-brand-neon-lime/30 dark:bg-[var(--color-public-paper)] dark:text-brand-neon-lime"
       >
         로그인

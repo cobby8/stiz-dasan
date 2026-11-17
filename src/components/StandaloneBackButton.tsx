@@ -15,7 +15,8 @@ const STANDALONE_PREFIXES = [
 ];
 
 function fallbackFor(pathname: string) {
-  if (pathname.startsWith("/payments")) return "/mypage";
+  // 청구서·결제 결과 화면의 한 단계 위 = 학부모 청구 목록(2026-11-17 — 예전엔 학부모 홈이라 목록에서 와도 홈으로 갔다)
+  if (pathname.startsWith("/payments")) return "/mypage/payments";
   if (pathname.startsWith("/teacher-app")) return "/staff";
   return "/";
 }

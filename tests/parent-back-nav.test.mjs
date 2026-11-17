@@ -186,7 +186,9 @@ test("학부모 하위 화면 14곳의 «←» 는 고정 Link 가 아니라 Par
 
 test("ParentBackLink — 기록 있으면 한 칸 뒤로, 새 탭 클릭은 기본 동작, 겉은 Link·글자 «←»", async () => {
   const src = await read("src/components/parent/ParentBackLink.tsx");
-  assert.match(src, /parentHistoryDecision\(window\.location\.pathname\) === true/);
+  assert.match(src, /const decision = parentHistoryDecision\(window\.location\.pathname\);/);
+  // 학부모 화면 밖(내 계정·청구서·공개 화면)은 브라우저의 «바로 앞 같은 사이트 화면»으로 판단(2026-11-17)
+  assert.match(src, /decision === true \|\| \(decision === null && browserPreviousPath\(\) !== null && window\.history\.length > 1\)/);
   assert.match(src, /event\.preventDefault\(\);\s*window\.history\.back\(\)/);
   // 훅을 쓰지 않는다 — 서버 화면 안에 그대로 넣고, 렌더 검사에서도 그려진다
   assert.doesNotMatch(src, /useRouter|usePathname/);
@@ -206,7 +208,7 @@ test("학부모 layout 에 기록 부품이 마운트되고, 공통 뒤로 버�
   assert.doesNotMatch(button, /parentDecision === false && isInstalledApp/);
   assert.match(button, /useSyncExternalStore\(subscribeInAppHistory/);
   // 공개 사이트 기록 판단은 그대로 남아 있다
-  assert.match(button, /hasSameOriginPreviousEntry/);
+  assert.match(button, /previousEntryState\(/); // 공개·청구서 화면은 브라우저의 바로 앞 칸(2026-11-17 previousEntryState)
 });
 
 // ── B-1. 바깥 요청: 시간 제한 + 재시도 1회 ────────────────────────────────────
@@ -631,4 +633,62 @@ test("학부모 화면 밖을 다녀오면 남아 있던 «바꿔 끼우기» �
   assert.deepEqual(hist.recordInAppNavigation("/mypage", store, env("", 4)), ["/mypage"]);
   assert.deepEqual(hist.recordInAppNavigation("/mypage/settings", store, env("", 4)), ["/mypage", "/mypage/settings"], "다음 이동은 정상적으로 쌓인다");
   hist.resetPageLoadStateForTest();
+});
+
+
+// ── 2026-11-17 2묶음: 학부모 기록 밖 화면(공개·청구서·내 계정) ─────────────────
+test("바로 앞 같은 사이트 화면 — 로그인·인증 화면은 «돌아갈 화면»이 아니다", async () => {
+  const { previousSameOriginPath } = await loadTsModule("src/lib/navigation/publicHistory.ts");
+  const nav = (...urls) => ({ currentEntry: { key: String(urls.length - 1) }, entries: () => urls.map((url, i) => ({ key: String(i), url })) });
+  const O = "https://stiz.test";
+  assert.equal(previousSameOriginPath(nav(`${O}/mypage/payments`, `${O}/payments/i1`), O), "/mypage/payments");
+  assert.equal(previousSameOriginPath(nav(`${O}/login?redirect=%2Fpayments%2Fi1`, `${O}/payments/i1`), O), null);
+  assert.equal(previousSameOriginPath(nav(`${O}/auth/continue`, `${O}/mypage`), O), null);
+  assert.equal(previousSameOriginPath(nav("https://pay.toss.example/x", `${O}/payments/success`), O), null);
+  assert.equal(previousSameOriginPath(nav(`${O}/notices`), O), null, "첫 칸");
+  assert.equal(previousSameOriginPath(undefined, O), null, "Navigation API 없는 브라우저");
+  // 돌아가면 안 되는 앞 칸(로그인·결과 화면)은 «없음»과 구분한다 — referrer 로 넘어가 다시 «있음»이 되지 않게
+  const { previousEntryState, isResultPath } = await loadTsModule("src/lib/navigation/publicHistory.ts");
+  assert.deepEqual(previousEntryState(nav(`${O}/login`, `${O}/payments/i1`), O), { kind: "blocked" });
+  assert.deepEqual(previousEntryState(nav(`${O}/payments/success?paymentKey=x`, `${O}/payments/i1`), O), { kind: "blocked" }, "청구서 «←» 가 결제 완료로 돌아가 확인 요청을 다시 보내지 않게");
+  assert.deepEqual(previousEntryState(nav(`${O}/notices`), O), { kind: "none" });
+  assert.deepEqual(previousEntryState(nav(`${O}/mypage/payments`, `${O}/payments/i1`), O), { kind: "ok", path: "/mypage/payments" });
+  for (const p of ["/payments/success", "/payments/fail", "/payments/cafe24/success", "/apply/trial/pay/done", "/pay/tok/success", "/mypage/payments/done"]) assert.equal(isResultPath(p), true, p);
+  for (const p of ["/login", "/payments/i1", "/pay/tok"]) assert.equal(isResultPath(p), false, p);
+});
+
+test("공개 머리줄 «로그인»은 보던 화면 주소를 넘긴다(안전한 내부 경로만)", async () => {
+  const { loginHrefFrom } = await loadTsModule("src/lib/auth-routes.ts");
+  assert.equal(loginHrefFrom("/seasonal/w26"), "/login?redirect=%2Fseasonal%2Fw26");
+  assert.equal(loginHrefFrom("/rental"), "/login?redirect=%2Frental");
+  assert.equal(loginHrefFrom("/apply/enroll"), "/login?redirect=%2Fapply%2Fenroll");
+  // 소개·안내 화면은 붙이지 않는다 — «마지막에 쓰던 화면» 기능이 꺼지지 않게(검수)
+  for (const info of ["/", "/about", "/programs", "/teacher-guide", "/notices/1", "/seasonal", "/apply", "/rentals"]) assert.equal(loginHrefFrom(info), "/login", info);
+  assert.equal(loginHrefFrom("//evil.example"), "/login");
+  assert.equal(loginHrefFrom("/login"), "/login");
+  assert.equal(loginHrefFrom(null), "/login");
+  assert.match(await read("src/components/PublicAccountControls.tsx"), /appRole \? defaultPathForRole\(appRole\) : loginHrefFrom\(pathname\)/);
+  const header = await read("src/components/PublicHeader.tsx");
+  assert.equal((header.match(/const loginHref = loginHrefFrom\(usePathname\(\)\);/g) || []).length, 2);
+  assert.doesNotMatch(header, /href="\/login"/);
+});
+
+test("청구서·고정 «돌아가기» 링크·계정 활성화", async () => {
+  assert.match(await read("src/components/StandaloneBackButton.tsx"), /if \(pathname\.startsWith\("\/payments"\)\) return "\/mypage\/payments";/);
+  const invoice = await read("src/app/payments/[invoiceId]/page.tsx");
+  assert.match(invoice, /<ParentBackLink fallbackHref="\/mypage\/payments"/);
+  assert.doesNotMatch(invoice, />\s*← 마이페이지\s*</, "고정 «← 마이페이지» 링크 없음");
+  const ret = await read("src/components/common/ReturnLink.tsx");
+  assert.match(ret, /if \(previous !== null && previous === target && window\.history\.length > 1\) \{\s*event\.preventDefault\(\);\s*window\.history\.back\(\);/);
+  const notice = await read("src/app/notices/[id]/page.tsx");
+  assert.equal((notice.match(/<ReturnLink\s+href="\/notices"/g) || []).length, 2);
+  // 클럽샵 상품은 iframe 화면이라 «한 칸 뒤로»를 쓰지 않는다(iframe 만 되돌아감 — 검수)
+  assert.doesNotMatch(await read("src/app/shop/product/[productNo]/ShopProductFrame.tsx"), /<ReturnLink|import ReturnLink/);
+  assert.match(await read("src/components/seasonal/SeasonalDetailClient.tsx"), /<ReturnLink href=\{basePath\} className="public-btn-secondary">목록<\/ReturnLink>/);
+  const apply = await read("src/components/seasonal/SeasonalApplyClient.tsx");
+  assert.equal((apply.match(/<ReturnLink href=\{`\$\{basePath\}\/\$\{slug\}`\}/g) || []).length, 2, "«특강 상세로 돌아가기»·«취소»");
+  assert.match(await read("src/app/account/activate/ParentAccountActivateClient.tsx"), /window\.location\.replace\(result\.sessionEstablished \? destination : loginDestination\)/);
+  const button = await read("src/components/AppBackButton.tsx");
+  assert.match(button, /if \(!pathname\.startsWith\("\/staff"\) && !pathname\.startsWith\("\/admin"\)\) \{\s*\/\/[^\n]*\n\s*if \(isResultPath\(pathname\)\) return false;/);
+  assert.match(button, /if \(previous\.kind === "ok"\) return true;[\s\S]{0,200}if \(previous\.kind === "blocked"\) return false;/);
 });

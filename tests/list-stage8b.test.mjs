@@ -27,7 +27,7 @@ function compileModule(path, imports = {}) {
 const Link = ({ children, ...props }) => React.createElement("a", props, children);
 const kst = compileModule("src/lib/datetime/kst.ts");
 // 학부모 화면 «←» = 기록 우선 뒤로 링크(2026-11-14) — 진짜 부품(기록 없을 때 주소 = 예전 고정 주소)
-const parentBackLink = compileModule("src/components/parent/ParentBackLink.tsx", { "next/link": { default: Link }, "@/lib/navigation/inAppHistory": compileModule("src/lib/navigation/inAppHistory.ts") });
+const parentBackLink = compileModule("src/components/parent/ParentBackLink.tsx", { "next/link": { default: Link }, "@/lib/navigation/inAppHistory": compileModule("src/lib/navigation/inAppHistory.ts"), "@/lib/navigation/publicHistory": compileModule("src/lib/navigation/publicHistory.ts") });
 const chips = compileModule("src/components/admin/list/StatusCountChips.tsx");
 // 상태색 공용 지도(2026-11-09 색상 정리) — 학부모 보강·방학특강 배지가 쓴다
 const statusTones = compileModule("src/lib/ui/statusTones.ts");

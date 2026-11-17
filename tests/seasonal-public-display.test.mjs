@@ -37,6 +37,7 @@ function renderPublicPage(name, program) {
     };
     if (id === "next/link") return { default: ({ children, ...props }) => React.createElement("a", props, children) };
     // 완료 화면 «홈으로·상세 보기»는 바꿔 끼우기 링크(2026-11-17) — 렌더는 <a> 그대로
+    if (id === "@/components/common/ReturnLink") return { default: ({ children, ...props }) => React.createElement("a", props, children) };
     if (id === "@/components/common/ReplaceLink") return { default: ({ children, ...props }) => React.createElement("a", props, children) };
     if (id === "./types") return { ...seasonalTypes, seasonalDisplayState: (value) => seasonalDisplayState(value, openTime) };
     if (id === "@/components/maps/LocationPickerModal") return { default: () => null };

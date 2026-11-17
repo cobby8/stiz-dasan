@@ -157,7 +157,8 @@ export default function ParentAccountActivateClient({
         result.loginRedirect,
         `/login?redirect=${encodeURIComponent(destination)}`,
       );
-      window.location.assign(result.sessionEstablished ? destination : loginDestination);
+      // replace — 활성화 화면(주소의 token 은 이미 지움)을 기록에 남기지 않는다. 남기면 뒤로 가기가 «링크를 확인해 주세요» 오류 화면으로 갔다(2026-11-17)
+      window.location.replace(result.sessionEstablished ? destination : loginDestination);
     }, "계정을 만들지 못했습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.");
   }
 

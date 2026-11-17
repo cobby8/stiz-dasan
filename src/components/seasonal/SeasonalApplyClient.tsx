@@ -2,6 +2,7 @@
 
 import { publicErrorText } from "@/components/ui/public-error-text";
 import Link from "next/link";
+import ReturnLink from "@/components/common/ReturnLink";
 import ReplaceLink from "@/components/common/ReplaceLink";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
@@ -423,7 +424,7 @@ export default function SeasonalApplyClient({ slug, basePath = "/seasonal", home
     <form onSubmit={handleSubmit} className="public-seasonal-form bg-[var(--color-public-tint)] px-4 py-8 pb-28 dark:bg-[var(--color-public-paper)]">
       <div className="mx-auto max-w-5xl space-y-6">
         <header>
-          <Link href={`${basePath}/${slug}`} className="text-sm font-medium text-[var(--color-public-accent)] dark:text-brand-neon-lime">특강 상세로 돌아가기</Link>
+          <ReturnLink href={`${basePath}/${slug}`} className="text-sm font-medium text-[var(--color-public-accent)] dark:text-brand-neon-lime">특강 상세로 돌아가기</ReturnLink>
           <p className="mt-5 text-sm font-medium text-[var(--color-public-accent)] dark:text-brand-neon-lime">방학특강 신청</p>
           <h1 className="mt-2 text-3xl font-bold text-[var(--color-public-ink)] dark:text-white">{program.title}</h1>
           {program.summary && <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">{program.summary}</p>}
@@ -675,7 +676,8 @@ export default function SeasonalApplyClient({ slug, basePath = "/seasonal", home
             <p className="truncate text-sm font-medium text-[var(--color-public-ink)] dark:text-white">{selectedOfferings.length}개 수업 선택 · {formatWon(totalPrice)}</p>
             <p className="text-xs text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">제출 후 학원에서 확인 연락을 드립니다.</p>
           </div>
-          <Link href={`${basePath}/${slug}`} className="public-btn-secondary">취소</Link>
+          {/* 취소·돌아가기 = 상세에서 왔으면 한 칸 뒤로(ReturnLink) — 쌓으면 상세의 «←» 가 이 신청서로 되돌아왔다(2026-11-17) */}
+          <ReturnLink href={`${basePath}/${slug}`} className="public-btn-secondary">취소</ReturnLink>
           {incompleteItems.length > 0 && submitState !== "submitting" && <p id="seasonal-apply-incomplete" role="status" className="order-first w-full text-xs text-[var(--color-academy-warning)] sm:order-none sm:min-w-0 sm:flex-1">미완료: {incompleteItems.join(" · ")}</p>}
           <button
             type="submit"

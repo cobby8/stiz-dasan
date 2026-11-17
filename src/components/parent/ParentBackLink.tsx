@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import type { MouseEvent, ReactNode } from "react";
+import { browserPreviousPath } from "@/lib/navigation/publicHistory";
 import { isParentScopePath, markNextNavigationAsReplace, parentHistoryDecision } from "@/lib/navigation/inAppHistory";
 
 type ParentBackLinkProps = {
@@ -32,7 +33,9 @@ export default function ParentBackLink({
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     // 지금 경로는 누르는 순간 주소창에서 읽는다(훅 없이 — 서버 화면 안에 그대로 넣을 수 있게).
     // router.back() 도 결국 브라우저 기록 한 칸 뒤로(history.back)라 같은 동작이다.
-    if (parentHistoryDecision(window.location.pathname) === true) {
+    // 학부모 화면은 우리 기록, 그 밖(내 계정·청구서·공개 화면)은 브라우저가 알려 주는 «바로 앞 같은 사이트 화면»(2026-11-17)
+    const decision = parentHistoryDecision(window.location.pathname);
+    if (decision === true || (decision === null && browserPreviousPath() !== null && window.history.length > 1)) {
       event.preventDefault();
       window.history.back();
       return;

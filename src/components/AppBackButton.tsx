@@ -7,7 +7,7 @@ import { resolveBackAction } from "@/lib/navigation/backAction";
 import { useInstalledApp } from "@/components/pwa/useInstalledApp";
 import { isPublicSitePath } from "@/lib/public-site-path";
 import { parentUpPath } from "@/lib/navigation/parentUpPath";
-import { hasSameOriginPreviousEntry, publicParentPath, type PublicNavigation } from "@/lib/navigation/publicHistory";
+import { isResultPath, previousEntryState, publicParentPath, type PublicNavigation } from "@/lib/navigation/publicHistory";
 // 학부모 화면(/mypage) 안 이동 기록 — Next.js 는 history.state.idx 를 안 넣고 referrer 도 화면 안 이동에선 안 바뀌어서 따로 남긴다
 import { inAppHistoryVersion, isParentScopePath, markNextNavigationAsReplace, parentHistoryDecision, subscribeInAppHistory } from "@/lib/navigation/inAppHistory";
 
@@ -36,10 +36,17 @@ function canGoBackWithinApp(pathname: string) {
   const parentDecision = parentHistoryDecision(pathname);
   if (parentDecision !== null) return parentDecision;
 
-  if (isPublicSitePath(pathname) && hasSameOriginPreviousEntry(
-    (window as Window & { navigation?: PublicNavigation }).navigation,
-    window.location.origin,
-  )) return true;
+  // 브라우저가 «바로 앞 같은 사이트 화면»을 알려 주면 그걸 믿는다 — 공개 화면 + 결제·계정·가입처럼 학부모 기록 밖 화면(2026-11-17).
+  // 예전엔 공개 화면만 봐서 청구서(/payments)·내 계정에서 «←» 가 방금 화면이 아니라 고정 주소로 갔다.
+  // 선생님·관리자 화면은 그쪽 세션의 기록 규칙을 따른다(여기선 건드리지 않음)
+  if (!pathname.startsWith("/staff") && !pathname.startsWith("/admin")) {
+    // 결제·신청 결과 화면은 바로 앞 칸(결제 직전 청구서·결제창)으로 돌아가지 않고 한 단계 위로(2026-11-17 검수)
+    if (isResultPath(pathname)) return false;
+    const previous = previousEntryState((window as Window & { navigation?: PublicNavigation }).navigation, window.location.origin);
+    if (previous.kind === "ok") return true;
+    // 앞 칸이 로그인·결과 화면 — 돌아가면 안 된다. referrer 로 넘어가 다시 «있음»이 되지 않게 여기서 끝낸다
+    if (previous.kind === "blocked") return false;
+  }
 
   const historyIndex = Number(window.history.state?.idx ?? 0);
   if (historyIndex > 0) return true;
