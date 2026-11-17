@@ -6,9 +6,18 @@ const middlewareSource = await readFile("src/lib/supabase/middleware.ts", "utf8"
 const configSource = await readFile("next.config.ts", "utf8");
 const loginSource = await readFile("src/app/login/page.tsx", "utf8");
 
-test("교사용 로그인은 설치 앱의 /staff 범위 안에서 공용 로그인 화면을 재사용한다", () => {
+test("교사용 로그인은 설치 앱의 /staff 범위 안에서 공용 로그인 화면을 재사용한다", async () => {
   assert.match(configSource, /source:\s*["']\/staff\/login["']/);
-  assert.match(configSource, /destination:\s*["']\/login\?mode=staff["']/);
+  // 2026-11-17: 직원 전용 화면을 없앴다 — 같은 로그인 화면을 /staff 범위 주소로 보여 줄 뿐(mode=staff 없음)
+  assert.match(configSource, /source:\s*["']\/staff\/login["'],\s*(?:\/\/[^\n]*\n\s*)*destination:\s*["']\/login["']/);
+  assert.doesNotMatch(configSource, /mode=staff/);
+  // 로그인 화면은 직원 전용 갈래를 그리지 않는다 · 로그아웃·관리자 미로그인도 같은 화면으로
+  assert.match(loginSource, /const isStaffMode = false as boolean;/);
+  assert.doesNotMatch(loginSource, /searchParams\.get\("mode"\) === "staff"/);
+  assert.doesNotMatch(await readFile("src/app/actions/auth.ts", "utf8"), /redirect\("\/staff\/login"\)/);
+  assert.doesNotMatch(await readFile("src/app/admin/layout.tsx", "utf8"), /mode=staff/);
+  assert.doesNotMatch(await readFile("src/app/invite/[token]/InviteAcceptForm.tsx", "utf8"), /mode=staff/);
+  assert.doesNotMatch(middlewareSource, /searchParams\.set\("mode", "staff"\)/);
   assert.match(middlewareSource, /pathname === ["']\/staff\/login["']/);
   assert.match(middlewareSource, /isStaffPath && !isStaffLogin/);
   assert.match(loginSource, /pathname === ["']\/staff\/login["']/);
@@ -25,7 +34,7 @@ test("미인증 staff 요청은 /staff/login으로 보내고 로그인 후 원�
   );
   assert.match(middlewareSource, /url\.search = ["']["']/);
   assert.match(middlewareSource, /url\.searchParams\.set\(["']redirect["'], requestedPath\)/);
-  assert.match(loginSource, /\(isStaffMode \? ["']\/staff["'] : null\)/);
+  assert.match(loginSource, /\(isStaffMode \|\| staffEntry \? ["']\/staff["'] : null\)/);
 });
 
 test("미인증 admin 요청은 관리자/선생님 로그인 모드로 보내고 이메일 로그인을 안내한다", () => {

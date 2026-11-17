@@ -70,7 +70,8 @@ const nextConfig: NextConfig = {
       {
         // 설치 앱 주소는 /staff 범위에 유지하면서 공용 로그인 화면을 재사용한다.
         source: "/staff/login",
-        destination: "/login?mode=staff",
+        // (2026-11-17) 직원 전용 화면은 없앴다 — 같은 로그인 화면을 /staff 범위 주소로 보여 줄 뿐이다.
+        destination: "/login",
       },
       {
         // 학부모 앱도 역할 판별 화면을 제 영역(/mypage) 안에 둔다.

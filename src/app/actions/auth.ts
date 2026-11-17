@@ -149,7 +149,8 @@ export async function logoutStaff() {
   const supabase = await createClient();
   await supabase.auth.signOut();
   revalidatePath("/", "layout");
-  redirect("/staff/login");
+  // 2026-11-17 원장 지시: 직원 전용 로그인 화면을 없앴다 — 로그아웃하면 누구나 같은 로그인 화면으로 간다.
+  redirect("/login");
 }
 
 export async function getUser() {

@@ -369,7 +369,7 @@ export default function InviteAcceptForm({
                     </div>
 
                     <a
-                        href={showInstall ? "/staff/install" : isStaffRole ? "/login?mode=staff" : "/login"}
+                        href={showInstall ? "/staff/install" : "/login"}
                         className="academy-button-primary w-full"
                     >
                         {showInstall ? "스태프 앱 설치하기" : "로그인하러 가기"}
