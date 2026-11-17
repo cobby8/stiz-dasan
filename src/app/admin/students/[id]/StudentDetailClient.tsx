@@ -4,6 +4,7 @@ import { adminErrorText, paymentMethodLabel } from "@/components/admin/adminDisp
 
 import { useCallback, useEffect, useState, useTransition, type FormEvent } from "react";
 import Link from "next/link";
+import ScopeBackLink from "@/components/navigation/ScopeBackLink";
 import { normalizeUniformNumber, uniformNumberLabel, UNIFORM_NUMBER_MAX_LENGTH } from "@/lib/students/uniform-number";
 import { updateEnrollmentStatus, updateStudentMemo, updateStudent, updateStudentUniform, updatePaymentStatus, enrollStudent } from "@/app/actions/admin";
 import { todayKst, toKstYmd } from "@/lib/datetime/kst";
@@ -786,9 +787,10 @@ export default function StudentDetailClient({
                     다시 불러오기
                 </button>
                 <div className="mt-4">
-                    <Link href="/admin/students" prefetch={false} className="text-sm font-medium text-[var(--color-academy-muted)] hover:text-[var(--color-academy-ink)]">
+                    {/* 방금 있던 화면으로(통계·반 상세 등에서 왔으면 그리로). 기록이 없으면 원생 목록 */}
+                    <ScopeBackLink fallbackHref="/admin/students" prefetch={false} className="text-sm font-medium text-[var(--color-academy-muted)] hover:text-[var(--color-academy-ink)]">
                         원생 목록으로 돌아가기
-                    </Link>
+                    </ScopeBackLink>
                 </div>
             </div>
         );
@@ -1240,9 +1242,10 @@ export default function StudentDetailClient({
             {/* 2차 정리(2026-11-09 원장): 머리 = 이름·상태 + 한 줄 사실 + [전화][기본 정보][사진 사용 동의].
                 «N개 반» 칩은 아래 «수강 반» 카드 제목과 겹쳐 뺐고, 생년월일·등록일·재원 상세는 «기본 정보» 창으로 옮겼다. */}
             <div className="academy-hero flex flex-wrap items-center gap-3 p-4 md:p-5">
-                <Link href="/admin/students" prefetch={false} aria-label="원생 목록으로" className="academy-button-secondary academy-button-sm shrink-0 whitespace-nowrap">
+                {/* 들어오는 길이 7곳(통계 명단·반 상세·월 장부·신청 승인 창·셔틀·알림·원생 목록) — 방금 있던 화면으로 돌아가고, 기록이 없을 때만 원생 목록(2026-11-17) */}
+                <ScopeBackLink fallbackHref="/admin/students" prefetch={false} ariaLabel="원생 목록으로" className="academy-button-secondary academy-button-sm shrink-0 whitespace-nowrap">
                     ← 목록
-                </Link>
+                </ScopeBackLink>
                 {/* 아이 사진 64px(학부모가 올린 프로필 사진, 없으면 이름 첫 글자) — 옆 제목에 이름이 있어 장식용(2026-11-14) */}
                 <ProfileAvatar decorative name={student.name} size={64} src={profilePhotoUrl({ kind: "student", id: student.id }, student.photoVersion ?? null, true)} />
                 <div className="min-w-0 basis-52 flex-1">

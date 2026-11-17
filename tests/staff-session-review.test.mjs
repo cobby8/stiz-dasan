@@ -565,8 +565,8 @@ test("완료한 수업 본문(다시 보기): 타이머·수업 종료·시작 �
   assert.match(done, /\{!embedded && \(\s*<section aria-label="완료한 수업"/);
   assert.match(done, /완료한 수업 · \{kstLabel\(session\.sessionYmd\)\} \{session\.startTime\}~\{session\.endTime\}/);
   assert.match(done, /\{published \? "학부모에게 보냄" : "아직 안 보냄"\}/);
-  // 수업 주소에서는 지난 수업 목록으로 돌아가는 링크
-  assert.match(done, /\{!embedded && \(\s*<Link href="\/staff\/sessions" className="inline-flex min-h-11[^"]*">← 지난 수업<\/Link>/);
+  // 수업 주소에서는 돌아가는 링크 — 방금 있던 화면으로(특강 «기록 보기»에서 왔으면 특강), 기록이 없으면 지난 수업 목록(2026-11-17 ScopeBackLink)
+  assert.match(done, /\{!embedded && \(\s*<ScopeBackLink fallbackHref="\/staff\/sessions" className="inline-flex min-h-11[^"]*">← 지난 수업<\/ScopeBackLink>/);
   // 기간이 지나면 읽기 전용 + 한 줄, 안 보낸 수업만 «학부모에게 보내기»
   assert.match(done, /\{!editable && <p role="status"[^>]*>\{STAFF_EDIT_EXPIRED_MESSAGE\}<\/p>\}/);
   assert.match(done, /\{editable && !published && \(\s*<button[^>]*onClick=\{\(\) => void publishToParents\(\)\}[^>]*>/);
