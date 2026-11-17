@@ -168,18 +168,19 @@ async function throughBrowser(f, extra = {}) {
   return { started, finished };
 }
 
-test("callback 라우트: 학원 계정이 없으면 앱으로 «no_account» 만 돌려보낸다(브라우저에 JSON 을 남기지 않음)", async () => {
+test("callback 라우트: 학원 계정이 없으면 요청을 취소하고 그 브라우저를 가입 화면으로 보낸다(2026-11-17 긴급 — 앱으로 튕기지 않음)", async () => {
   const saved = process.env.NEXT_PUBLIC_SUPABASE_URL; process.env.NEXT_PUBLIC_SUPABASE_URL = "https://synthetic.supabase.co";
   try {
     const f = callbackHarness({ allowed: false });
     const { started, finished } = await throughBrowser(f);
     assert.equal(finished.status, 307);
     const back = new URL(finished.headers.get("location"));
-    assert.equal(back.protocol, "kr.co.upturnlabs.stizdasan:");
-    assert.equal(back.searchParams.get("error"), "no_account");
-    assert.equal(back.searchParams.get("code"), null, "code 가 없으니 로그인 불가");
+    // 가입 전 학부모는 앱으로 돌려보내지 않고 같은 사이트의 가입 화면으로 — 주소에는 고정 값만(flow·state·code·토큰 없음)
+    assert.equal(back.toString(), "https://www.stiz-dasan.kr/signup/parent?fromApp=1");
     assert.doesNotMatch(back.toString(), /synthetic/);
-    assert.equal(f.h.store.rows.get(started.flowId).status, "CANCELLED");
+    assert.equal(f.h.store.rows.get(started.flowId).status, "CANCELLED", "요청은 취소돼 다시 쓸 수 없다");
+    // 교환 중 생긴 브라우저 쿠키는 지운다 — 가입 화면이 로그인된 상태로 열리지 않는다
+    assert.ok(finished.cookies.getAll().every((c) => c.value === ""), "남기는 쿠키 없음");
     assert.equal(finished.headers.get("cache-control"), "no-store, private");
   } finally { if (saved === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL; else process.env.NEXT_PUBLIC_SUPABASE_URL = saved; }
 });

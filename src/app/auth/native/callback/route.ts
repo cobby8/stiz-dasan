@@ -41,7 +41,12 @@ export async function GET(request:NextRequest) {
     if(bound&&row&&context&&validFlow(flow)){
       const back=await context.service.failBrowser(row,reason).catch(()=>null);
       if(back){
-        const response=NextResponse.redirect(back);
+        // 2026-11-17 긴급(원장 지시): 가입 전 학부모가 앱에서 간편로그인부터 누르면 앱이 짧은 안내만 띄우고 끝나
+        // «로그인 오류»로 신고가 들어왔다. 이 브라우저 창을 닫지 않고 가입 화면으로 이어 준다.
+        // 요청은 위 failBrowser 가 이미 취소했고, 주소에는 고정 값(fromApp=1)만 싣는다(토큰·개인정보 없음).
+        // 교환 중 생긴 쿠키는 아래에서 지우므로 가입 화면은 로그인 안 된 상태로 열린다.
+        const target=reason==="no_account"?new URL("/signup/parent?fromApp=1",context.config.origin).toString():back;
+        const response=NextResponse.redirect(target);
         for(const [key,value]of Object.entries(noStoreHeaders))response.headers.set(key,value);
         return clearNativeBrowserCookies(request,response,flow);
       }

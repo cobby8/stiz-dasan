@@ -101,7 +101,12 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
   // 간편로그인 + 이미 가입된 번호 → 본인인증으로 기존 계정에 연결(2026-10-26). 모바일은 인증창에서 돌아올 때 주소에 결과가 붙는다.
   const [phoneRegistered, setPhoneRegistered] = useState(socialSignup && searchParams.has("identityVerificationId"));
   const [activationUrl, setActivationUrl] = useState("");
-  const [notice, setNotice] = useState<string | null>(null);
+  // fromApp=1: 앱에서 가입 전에 간편로그인을 눌러 이 화면으로 넘어온 경우(2026-11-17 긴급). 왜 여기로 왔는지 먼저 알려 준다.
+  const [notice, setNotice] = useState<string | null>(() => (
+    searchParams.get("fromApp") === "1"
+      ? "아직 가입 전이라 로그인이 되지 않았어요. 여기서 회원가입을 먼저 해 주세요. 가입을 마친 뒤 이 창을 닫고 앱에서 다시 로그인하시면 됩니다."
+      : null
+  ));
   // 가입할 때 고르는 역할(원장 결정 2026-10-25). 학부모는 바로 열리고, 선생님·기사님은
   // 가입을 마친 뒤 «역할 추가 신청» 화면에서 신청 → 원장 확인 후 열린다.
   // 고르기만 해서 직원 화면이 열리면 아무나 학생 개인정보를 보게 되므로 여기서는 신청 화면으로 안내만 한다.
