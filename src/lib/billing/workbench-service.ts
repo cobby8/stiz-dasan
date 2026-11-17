@@ -72,15 +72,27 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
   // 복귀 예약(휴원 중 + 승인된 앞날 복귀 신청)은 청구에서 «복귀일부터 다니는 반»으로 본다(2026-11-17).
   //   수강은 복귀일까지 PAUSED 라 그대로 두면 다음 달 초안에서 빠진다. 상태는 ACTIVE 로, 개시일은 복귀일로 늦춘다
   //   → 복귀일이 이번 달 뒤면 기존 «미래 기간» 규칙으로 제외, 달 가운데면 기존 «개시일 이후» 기간 조정·검토 사유가 그대로 붙는다.
-  const resumeFrom = resumeFromSql("e");
+  const resumeBooked = resumeFromSql("e");
+  // 이미 적용된 달 가운데 복귀(2026-11-17 원장 «2번 먼저»): 복귀 크론은 Enrollment.startsOn 을 바꾸지 않는다(피드·기록 등 40여 곳이 쓰는 값).
+  //   그래서 청구 조회에서만 «이 달 안 복귀일»로 개시일을 늦춘다. 단 아래일 때만 —
+  //   ① 복귀일이 이 달 1일 «뒤»(1일 복귀는 한 달 전액이 맞다) ② 지금 다니는 중(ACTIVE)
+  //   ③ 같은 달 2일 이후에 휴원이 시작되지 않았다(그러면 달 앞쪽은 다녔다 — 휴원 몫은 휴원 정산이 맡는다. 1일 휴원은 앞쪽을 안 다녔으니 늦춘다)
+  //   ④ 그 달 수강료 청구가 아직 없다(이미 낸·발행된 청구는 손대지 않고, 휴원 정산이 이미 줄인 청구와 두 번 깎이지 않게).
+  //   이 달 밖의 복귀는 보지 않는다 — 지난 복귀 기록 때문에 저장해 둔 초안 지문이 바뀌지 않게.
+  const monthStart = `'${month}-01'::date`;
+  const resumeApplied = `(SELECT to_char(MAX(ra."effectiveFrom"), 'YYYY-MM-DD') FROM "EnrollmentChangeRequest" ra WHERE e.status = 'ACTIVE' AND ra."enrollmentId" = e.id AND ra.kind = 'RESUME' AND ra.status = 'APPLIED'`
+    + ` AND ra."effectiveFrom" > ${monthStart} AND ra."effectiveFrom" < (${monthStart} + interval '1 month')`
+    + ` AND NOT EXISTS (SELECT 1 FROM "EnrollmentChangeRequest" pz WHERE pz."enrollmentId" = e.id AND pz.kind = 'PAUSE' AND pz.status = 'APPLIED' AND pz."effectiveFrom" > ${monthStart} AND pz."effectiveFrom" < ra."effectiveFrom")`
+    + ` AND NOT EXISTS (SELECT 1 FROM "Payment" py WHERE py."studentId" = e."studentId" AND (py."classId" = e."classId" OR py."classId" IS NULL) AND py.year = ${year} AND py.month = ${monthNumber} AND py.status NOT IN ('CANCELED','CANCELLED') AND py.type <> 'UNIFORM'))`;
+  const resumeFrom = `COALESCE(${resumeBooked}, ${resumeApplied})`;
   const enrollments = take(await tx.$queryRawUnsafe<Enrollment[]>(`SELECT e."studentId", s.name AS "studentName", e."classId", c.name AS "className",
-    CASE WHEN ${resumeFrom} IS NOT NULL THEN 'ACTIVE' ELSE e.status END AS status,
+    CASE WHEN ${resumeBooked} IS NOT NULL THEN 'ACTIVE' ELSE e.status END AS status,
     GREATEST(e."startsOn", (${resumeFrom})::date)::text AS "startsOn", ${resumeFrom} AS "resumeFrom",
     p.price, p.id AS "programId", p.name AS "programName", p."priceWeek1", p."priceWeek2", p."priceWeek3", p."priceDaily", p."runsShuttle", p."shuttleFeeOverride", c."slotKey",
     to_char(s."birthDate",'YYYY-MM-DD') AS "birthDate", c."dayOfWeek", s."parentId", c."updatedAt" AS "classUpdatedAt", p."updatedAt" AS "programUpdatedAt", e."createdAt", e."updatedAt" FROM "Enrollment" e JOIN "Student" s ON s.id=e."studentId"
     JOIN "Class" c ON c.id=e."classId" JOIN "Program" p ON p.id=c."programId"
     WHERE ${notMergedStudent("s")} ORDER BY e."studentId",e."classId" LIMIT ${limit}`));
-  // 복귀 예약이 없는 행은 칸을 지운다 — 원본 지문(sourceVersion)이 예전과 같아야 이미 저장한 초안이 낡은 것으로 바뀌지 않는다.
+  // 복귀(예약·적용)가 없는 행은 칸을 지운다 — 원본 지문(sourceVersion)이 예전과 같아야 이미 저장한 초안이 낡은 것으로 바뀌지 않는다.
   for (const e of enrollments) if (e.resumeFrom == null) delete e.resumeFrom;
   const payments = take(await tx.$queryRawUnsafe<Array<{ id: string; studentId: string; classId: string | null; status: string; amount: number; type: string; updatedAt: Date | string }>>(`SELECT id,"studentId","classId",status,amount,type,"updatedAt" FROM "Payment" WHERE year=$1 AND month=$2 ORDER BY id LIMIT ${limit}`, year, monthNumber));
   const invoices = take(await tx.$queryRawUnsafe<Array<{ id: string; paymentId: string; status: string; amount: number; updatedAt: Date | string }>>(`SELECT i.id,i."paymentId",i.status,i.amount,i."updatedAt" FROM "PaymentInvoice" i JOIN "Payment" p ON p.id=i."paymentId" WHERE p.year=$1 AND p.month=$2 ORDER BY i.id LIMIT ${limit}`, year, monthNumber));
@@ -382,7 +394,7 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
     const shuttleUnlinked = !excluded && unlinkedShuttleKeys.has(shuttleNameKey(e.studentName));
     if (shuttleUnlinked) { reviewReasons.push(SHUTTLE_UNLINKED_REASON); basis.push(`확인: ${SHUTTLE_UNLINKED_REASON}`); }
     // 복귀 예약 반의 첫 청구는 원장이 한 번 본다 — 휴원 중 복사된 셔틀 명단에 빠져 셔틀비가 0원일 수 있다(일괄 발행 대상에서 뺀다)
-    if (e.resumeFrom) { basis.push(`휴원 복귀 예약 ${e.resumeFrom}`); if (!excluded) reviewReasons.push(`휴원 복귀 예약(${e.resumeFrom}) — 복귀 첫 청구예요. 셔틀 탑승 여부와 금액을 확인해 주세요.`); }
+    if (e.resumeFrom) { basis.push(`휴원 복귀 ${e.resumeFrom}`); if (!excluded) reviewReasons.push(`휴원 복귀(${e.resumeFrom}) — 복귀 첫 청구예요. 셔틀 탑승 여부와 금액을 확인해 주세요.`); }
     if (startsOn) basis.push(`수강 개시일 ${startsOn}`);
     if (startsOn && !excluded && scheduledDates.length < allScheduledDates.length) reviewReasons.push("개시일 이후 실제 수업 횟수에 맞는 기간 조정 금액을 확인해 주세요.");
     if (startsOn && !guideOverridesSaved && saved?.scheduledDates?.some(day => day < startsOn)) blockingReasons.push("저장된 청구 기간에 수강 개시일 전 수업이 포함되어 있습니다. 기간과 금액을 다시 검토해 주세요.");
