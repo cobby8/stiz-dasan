@@ -22,8 +22,8 @@ export default function HomeProgramTiles({ programs }: { programs: HomeProgramTi
                 {programs.map((program) => (
                     <li key={program.id}>
                         <Link href="/programs" aria-label={`${program.name} 안내 보기`}>
-                            {/* 타일은 휴대폰 2칸·PC 5칸 — 그 폭에 맞는 크기만 받는다(원본 100~150KB → 6~26KB) */}
-                            <img {...optimizedImageProps(program.imageUrl, "(max-width: 767px) 50vw, 20vw", 828)} alt="" loading="lazy" decoding="async" />
+                            {/* 타일은 휴대폰 2칸·PC 5칸. PC 타일은 세로로 긴 칸이라 가로 사진이 약 1.6배로 확대돼 그려진다 — 20vw 가 아니라 33vw 로 받는다 */}
+                            <img {...optimizedImageProps(program.imageUrl, "(max-width: 767px) 50vw, 33vw", 828)} alt="" loading="lazy" decoding="async" />
                             <span className="public-home-programs__text">
                                 <strong>{program.name}</strong>
                                 {program.targetAge && <span>{program.targetAge}</span>}

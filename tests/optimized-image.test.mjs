@@ -28,6 +28,10 @@ test("우리 저장소 사진은 /_next/image 를 거치는 srcSet 으로 바꾼
   assert.match(props.src, /^\/_next\/image\?url=/);
 });
 
+test("폭·품질은 Next 기본 허용값에 기대므로 next.config 가 이 셋을 따로 지정하지 않는다(지정하면 이 목록도 맞춰야 한다)", () => {
+  assert.doesNotMatch(read("next.config.ts"), /(deviceSizes|imageSizes|qualities)\s*:/);
+});
+
 test("작게 보이는 사진은 큰 후보를 만들지 않는다", () => {
   const props = optimizedImageProps(PHOTO, "(max-width: 767px) 50vw, 20vw", 828);
   assert.deepEqual(props.srcSet.split(", ").map((c) => c.split(" ")[1]), ["256w", "384w", "640w", "828w"]);
@@ -40,7 +44,7 @@ test("다른 곳의 주소·잘못된 주소·빈 값은 손대지 않는다", (
 });
 
 test("홈의 사진 세 곳(큰 사진·프로그램 타일·소식 사진)이 이 함수를 쓴다", () => {
-  assert.match(read("src/components/landing/HomeHeroSlider.tsx"), /\{\.\.\.optimizedImageProps\(slide\.url, "100vw"\)\}/);
-  assert.match(read("src/components/landing/HomeProgramTiles.tsx"), /<img \{\.\.\.optimizedImageProps\(program\.imageUrl, "\(max-width: 767px\) 50vw, 20vw", 828\)\}/);
+  assert.match(read("src/components/landing/HomeHeroSlider.tsx"), /\{\.\.\.optimizedImageProps\(slide\.url, "\(max-width: 767px\) 220vw, 100vw"\)\}/);
+  assert.match(read("src/components/landing/HomeProgramTiles.tsx"), /<img \{\.\.\.optimizedImageProps\(program\.imageUrl, "\(max-width: 767px\) 50vw, 33vw", 828\)\}/);
   assert.match(read("src/app/LandingPageClient.tsx"), /<img \{\.\.\.optimizedImageProps\(url, "\(max-width: 767px\) 50vw, 25vw", 828\)\}/);
 });

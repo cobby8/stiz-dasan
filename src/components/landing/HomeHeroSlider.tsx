@@ -51,8 +51,9 @@ export default function HomeHeroSlider({ slides, children }: { slides: HeroSlide
             {slides.map((slide, i) => (
                 <img
                     key={slide.url}
-                    // 화면 폭에 맞는 크기로 줄여 받는다(원본 200~300KB → 휴대폰 40~55KB). 화면 가로를 꽉 채우는 사진이라 100vw
-                    {...optimizedImageProps(slide.url, "100vw")}
+                    // 화면에 맞는 크기로 줄여 받는다. 휴대폰은 칸이 세로로 길어 가로 사진이 높이에 맞춰 약 2.2배로 확대돼 그려진다 —
+                    // 그래서 휴대폰은 화면 폭의 2.2배 크기를 받는다(100vw 로 받으면 흐려진다). PC 는 가로를 꽉 채우는 100vw
+                    {...optimizedImageProps(slide.url, "(max-width: 767px) 220vw, 100vw")}
                     alt={i === index ? slide.alt : ""}
                     aria-hidden={i === index ? undefined : true}
                     fetchPriority={i === 0 ? "high" : "low"}

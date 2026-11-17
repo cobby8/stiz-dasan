@@ -45,6 +45,6 @@ test("사진이 1장이면 넘김 버튼을 두지 않고, 0장이어도 제목�
 
 test("우리 저장소 사진은 화면 폭에 맞는 크기로 줄여 받는다(다른 주소는 그대로)", () => {
     const html = render([{ url: "https://abc.supabase.co/storage/v1/object/public/uploads/a.jpg", alt: "첫 사진" }]);
-    assert.match(html, /<img src="\/_next\/image\?url=https%3A%2F%2Fabc\.supabase\.co%2F[^"]*&amp;w=\d+&amp;q=75" srcSet="[^"]+ 1920w" sizes="100vw" alt="첫 사진"/);
+    assert.match(html, /<img src="\/_next\/image\?url=https%3A%2F%2Fabc\.supabase\.co%2F[^"]*&amp;w=\d+&amp;q=75" srcSet="[^"]+ 1920w" sizes="\(max-width: 767px\) 220vw, 100vw" alt="첫 사진"/);
     assert.match(html, /fetchPriority="high"[^>]*loading="eager"/);
 });
