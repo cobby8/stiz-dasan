@@ -9,8 +9,14 @@ export function nativeContext(request: NextRequest, browserCallback = false) {
   const config = nativeConfig();
   // 임의 Host를 복귀 주소나 쿠키 경계로 사용하지 않는다.
   if (request.nextUrl.origin !== config.origin) throw new NativeAuthError(403);
-  const callbackNavigation = browserCallback && request.method === "GET" && request.nextUrl.pathname === "/auth/native/callback";
+  const path = request.nextUrl.pathname;
+  const callbackNavigation = browserCallback && request.method === "GET" && (path === "/auth/native/callback" || path === "/auth/native/browser");
   // 공급자→callback의 최상위 GET은 정상적인 교차 사이트 이동이다. 그 경로만 PKCE·바인딩 쿠키로 검증한다.
+  // /auth/native/browser 도 같다(2026-11-17 운영 사고): 앱이 연 크롬 맞춤 탭은 이 주소를 «Sec-Fetch-Site: cross-site»로
+  // 열 수 있어, 1.0.5 앱의 구글·카카오 로그인이 첫 단계에서 403 맨글자(다크 모드에선 검은) 화면으로 막혔다.
+  // 안전 근거: 이 단계는 «새로 만든(CREATED) 요청 하나»에 이 브라우저를 한 번만 묶고 공급자로 보낼 뿐이다.
+  // 결과 1회용 code 는 그 기기의 앱 복귀 주소로만 가고, 교환(consume)에는 요청을 만든 앱 메모리의 PKCE 비밀값과
+  // state 가 필요하다(consume·start·cancel 은 지금처럼 출처를 검사한다). 문자 속 링크로 열면 원래 «none»이라 이 검사가 막던 것도 없었다.
   if (!callbackNavigation && !trustedRequestSource(request, config.origin)) throw new NativeAuthError(403);
   return { config, service: createNativeAuthService(postgresNativeFlowStore,config) };
 }

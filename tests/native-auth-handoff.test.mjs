@@ -93,10 +93,12 @@ function httpHarness() {
   const consume=load('src/app/auth/native/consume/route.ts',{'@supabase/ssr':server,'next/server':next,'@/lib/native-auth/policy':policy,'@/lib/native-auth/http':http,'@/lib/native-auth/store':{requireNativeAccount:async()=>allowed},'@/lib/native-session-cookies':load('src/lib/native-session-cookies.ts')});
   return {h,http,consume,cookies,setExisting(id,error=null){existingUser=id;existingError=error},setAllowed(value){allowed=value},setAccess(value){accessUser=value}};
 }
-test('정확한 OAuth GET callback만 교차 사이트 복귀를 허용하고 POST 우회는 거부한다',()=>{
+test('정확한 OAuth GET callback·앱 browser 단계 GET만 교차 사이트 이동을 허용하고 POST 우회는 거부한다',()=>{
   const {http}=httpHarness();const request=(path,method='GET')=>new next.NextRequest('https://www.stiz-dasan.kr'+path,{method,headers:{'sec-fetch-site':'cross-site',origin:'https://synthetic.supabase.co'}});
   assert.doesNotThrow(()=>http.nativeContext(request('/auth/native/callback'),true));
-  for(const [path,method,flag]of [['/auth/native/consume','POST',true],['/auth/native/start','POST',false],['/auth/native/browser','GET',true],['/auth/native/callback','POST',true]])assert.throws(()=>http.nativeContext(request(path,method),flag));
+  // 2026-11-17: 앱 맞춤 탭이 여는 browser 단계 GET 도 교차 사이트 이동을 허용한다(경로 플래그를 줄 때만)
+  assert.doesNotThrow(()=>http.nativeContext(request('/auth/native/browser'),true));
+  for(const [path,method,flag]of [['/auth/native/consume','POST',true],['/auth/native/start','POST',false],['/auth/native/browser','GET',false],['/auth/native/browser','POST',true],['/auth/native/cancel','POST',true],['/auth/native/callback','POST',true]])assert.throws(()=>http.nativeContext(request(path,method),flag));
   assert.throws(()=>http.nativeContext(new next.NextRequest('https://attacker.invalid/auth/native/callback'),true));
 });
 test('Origin "null"은 앱이 직접 연 consume POST(Sec-Fetch-Site: none)만 허용한다',()=>{
