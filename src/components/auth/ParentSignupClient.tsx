@@ -78,6 +78,8 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
   const enabledProviders = useEnabledOAuthProviders();
   const visibleSignupOptions = SIGNUP_SOCIAL_OPTIONS.filter((option) => enabledProviders?.includes(option.provider));
   const socialSignup = searchParams.get("social") === "1";
+  // 앱의 간편로그인에서 넘어온 가입(브라우저 창 안) — 가입을 마치면 웹 화면으로 이어 가지 않고 «앱으로 돌아가기»를 안내한다(2026-11-17)
+  const fromApp = searchParams.get("fromApp") === "1";
   // 카카오 연결 화면 등에서 "기존 학부모 계정 활성화"로 들어온 경우. 가입 방법 고르기를 건너뛰고 휴대폰 인증부터 한다.
   const existingMode = !socialSignup && searchParams.get("existing") === "1";
   const enrollmentHandoff = searchParams.get("enrollmentHandoff") || "";
@@ -209,7 +211,8 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
       });
       // 서버가 바로 로그인까지 해 두었으면 «로그인하기» 없이 가려던 화면(마이페이지 등)으로 간다.
       // 로그인을 못 했으면 지금처럼 완료 화면에서 로그인 안내(폴백).
-      if (data.sessionEstablished) {
+      // 단, 앱에서 넘어온 경우는 이 브라우저 창에서 웹을 이어 쓰지 않게 완료 화면에서 «앱으로 돌아가기»를 안내한다.
+      if (data.sessionEstablished && !fromApp) {
         window.location.assign(safeInternalRedirect(next));
         return;
       }
@@ -373,8 +376,17 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
               ? (enrollmentHandoff ? "수강신청서가 계정에 연결되었습니다." : "간편로그인으로 바로 이용할 수 있어요.")
               : (enrollmentHandoff ? "수강신청서가 계정에 연결되었습니다. 로그인해서 확인해주세요." : "이제 만든 아이디로 로그인해 주세요.")}
           </p>
-          {/* 간편가입은 이미 로그인된 상태이고 비밀번호가 없다 — 아이디 로그인 화면으로 보내지 않고 바로 이어 간다 */}
-          {socialSignup ? (
+          {/* 앱에서 넘어온 가입: 앱으로 여는 버튼은 두지 않는다 — 진행 중인 앱 로그인 요청 없이 앱 주소를 열면
+              앱이 «요청을 확인하지 못했습니다»로 막는다. 창을 닫으면 앱이 알아서 정리한다(앱 1.0.6). */}
+          {fromApp ? (
+            <div role="status" className="mt-6 rounded-xl border border-[var(--color-public-accent)] px-4 py-4 text-left text-sm leading-relaxed">
+              <p className="font-semibold">이제 앱으로 돌아가 주세요</p>
+              <ol className="mt-2 list-decimal space-y-1 pl-5">
+                <li>이 창 왼쪽 위의 <b className="font-semibold">×</b>(아이폰은 «취소»)를 눌러 창을 닫습니다.</li>
+                <li>앱 로그인 화면에서 {socialSignup ? "방금 쓰신 간편로그인 버튼으로" : "만드신 아이디로"} 다시 로그인합니다.</li>
+              </ol>
+            </div>
+          ) : socialSignup ? (
             <a href={safeInternalRedirect(next)} className="mt-6 flex min-h-12 items-center justify-center rounded-xl bg-[var(--color-public-accent)] font-bold text-white hover:bg-[var(--color-public-strong)]">시작하기</a>
           ) : (
             <Link href={`/login?${new URLSearchParams({ redirect: next }).toString()}`} className="mt-6 flex min-h-12 items-center justify-center rounded-xl bg-brand-orange-500 font-bold text-white">로그인하기</Link>
