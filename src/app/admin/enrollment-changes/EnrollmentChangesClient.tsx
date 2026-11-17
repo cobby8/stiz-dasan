@@ -388,10 +388,11 @@ export default function EnrollmentChangesClient({
       </div>
 
       {/* 다른 탭을 보고 있어도 확인이 남은 건을 놓치지 않게 맨 위에 띄운다. */}
+      {/* 상태 바꾸기(아래 두 버튼·상태 필터)는 같은 화면의 보기 설정이라 기록에 쌓지 않는다(replace) — 뒤로 한 번에 이 화면을 나가게 */}
       {needsCheckCount > 0 && status !== "NEEDS_CHECK" && (
         <button
           type="button"
-          onClick={() => { setDetailId(null); router.push("/admin/enrollment-changes?status=NEEDS_CHECK"); }}
+          onClick={() => { setDetailId(null); router.replace("/admin/enrollment-changes?status=NEEDS_CHECK"); }}
           className="block min-h-11 w-full rounded-xl bg-[var(--color-academy-warning-soft)] p-3 text-left text-sm font-medium text-[var(--color-academy-warning)]"
         >
           {rallyzRetired
@@ -404,7 +405,7 @@ export default function EnrollmentChangesClient({
       {openSettlementCount > 0 && status !== "ALL" && (
         <button
           type="button"
-          onClick={() => { setDetailId(null); router.push("/admin/enrollment-changes?status=ALL"); }}
+          onClick={() => { setDetailId(null); router.replace("/admin/enrollment-changes?status=ALL"); }}
           className="block min-h-11 w-full rounded-xl bg-[var(--color-academy-warning-soft)] p-3 text-left text-sm font-medium text-[var(--color-academy-warning)]"
         >
           휴원 수강료 처리에 남은 일이 {openSettlementCount}건 있습니다(환불·감액·이월). 눌러서 확인하세요.
@@ -430,7 +431,7 @@ export default function EnrollmentChangesClient({
             key={item.value}
             type="button"
             aria-pressed={status === item.value}
-            onClick={() => { setDetailId(null); router.push(`/admin/enrollment-changes?status=${item.value}`); }}
+            onClick={() => { setDetailId(null); router.replace(`/admin/enrollment-changes?status=${item.value}`); }}
             className={`academy-choice is-tab${status === item.value ? " is-selected" : ""}`}
           >
             {item.label}

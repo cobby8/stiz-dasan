@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import UiIcon from "@/components/common/UiIcon";
+// 알림 이동 주소 검사 — 학부모 종과 같은 함수(내부 경로만 통과, 바깥 주소·이상한 꼴은 null)
+import { safeInternalHref } from "@/lib/mypage/parentNav";
 
 const NOTIFICATION_CACHE_MS = 60_000;
 
@@ -84,8 +86,10 @@ export default function AdminNotificationBell() {
             setUnreadCount((prev) => Math.max(0, prev - 1));
         }
 
-        if (item.linkUrl) {
-            router.push(item.linkUrl);
+        // 알림에 적힌 주소를 그대로 믿지 않는다 — 사이트 안 주소일 때만 이동(바깥 주소면 읽음 처리만 하고 머문다)
+        const href = safeInternalHref(item.linkUrl);
+        if (href) {
+            router.push(href);
         }
 
         setOpen(false);

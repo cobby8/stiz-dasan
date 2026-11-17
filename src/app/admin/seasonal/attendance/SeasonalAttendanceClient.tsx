@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 // 현황판을 주간 달력으로 배치하는 계산은 순수 모듈로 분리해 테스트로 잠가 뒀다.
@@ -57,10 +57,9 @@ async function postJSON(body: any) {
 export default function SeasonalAttendanceClient({ initial }: { initial: { seasons: Season[]; offerings: Offering[] } }) {
   // router.refresh()는 서버 컴포넌트(상단 탭의 보강 대기 뱃지)를 다시 그리게 한다. 화면 상태는 유지된다.
   const router = useRouter();
-  const [tab, setTab] = useState<"attendance" | "makeup">("attendance");
-  useEffect(() => {
-    if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("view") === "makeup") setTab("makeup");
-  }, []);
+  // 출석/보강은 주소의 ?view 를 그대로 따른다(상태로 한 번만 읽지 않는다).
+  // 왜: «출석 관리»와 «보강 관리» 탭은 같은 화면의 쿼리만 달라, 처음 한 번만 읽으면 탭·뒤로/앞으로로 오갈 때 탭 줄만 바뀌고 내용은 그대로였다.
+  const tab: "attendance" | "makeup" = useSearchParams().get("view") === "makeup" ? "makeup" : "attendance";
   const [seasonId, setSeasonId] = useState<string>(initial.seasons[0]?.id ?? "");
   const offeringsInSeason = useMemo(
     () => initial.offerings.filter((o) => !seasonId || o.seasonId === seasonId),

@@ -1,7 +1,10 @@
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { requireStaff } from "@/lib/auth-guard";
 import { shuttleScope } from "@/lib/account/roles";
 import { findRollingDriverRunToken } from "@/lib/shuttle/regularRun";
+import { driverRunMissingKeyPath } from "@/lib/staff-session-rules";
+import { looksLikeStoreApp } from "@/lib/storeApp";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +23,11 @@ export default async function StaffRunOpenPage() {
   if (shuttleScope(staff.roles) === "NONE") redirect("/staff");
 
   const token = await findRollingDriverRunToken();
-  // 열쇠가 아직 없으면 «아직 운행 링크가 없습니다» 안내가 있는 운행표로
-  if (!token) redirect("/staff/run");
+  if (!token) {
+    // 열쇠가 아직 없으면: 브라우저는 «아직 운행 링크가 없습니다» 안내가 있는 운행표(/staff/run)로.
+    // 스토어 앱은 /staff/run 을 막아 «여는 중…»에서 멈추므로, 앱이 여는 셔틀 화면으로 보낸다(2026-11-17).
+    const storeApp = looksLikeStoreApp({ userAgent: (await headers()).get("user-agent") });
+    redirect(driverRunMissingKeyPath(storeApp));
+  }
   redirect(`/driver/${token}`);
 }

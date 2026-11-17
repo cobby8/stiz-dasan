@@ -15,7 +15,7 @@ import UiIcon from "@/components/common/UiIcon";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import AdminModal from "@/components/admin/AdminModal";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
@@ -84,6 +84,8 @@ type Props = {
   counts: InboxCounts | null;
   data: InboxTabData;
   canDecideStaffRoles?: boolean;
+  /** 주소에 탭(또는 탭을 정하는 종류)이 있었는지 — false 면 서버가 «건수 있는 첫 탭»을 고른 것이라 그 탭을 주소에 박아 둔다 */
+  tabInUrl?: boolean;
   /**
    * 랠리즈 은퇴(2026-11-14 원장 결정) 여부 — 서버(page.tsx)가 환경변수로 판정해 넘긴다.
    * 기본값 true(은퇴): «랠리즈 반영 확인» 일괄 버튼·고르기 칸을 그리지 않는다. false 는 스위치 "0"(옛 방식)일 때만.
@@ -295,7 +297,7 @@ function GroupHead({ label, count }: { label: string; count: number }) {
   );
 }
 
-export default function InboxClient({ tab, sub, kind, showDone, from, to, counts, data, canDecideStaffRoles = false, initialOpenId = null, rallyzRetired = true }: Props) {
+export default function InboxClient({ tab, sub, kind, showDone, from, to, counts, data, canDecideStaffRoles = false, initialOpenId = null, tabInUrl = true, rallyzRetired = true }: Props) {
   const router = useRouter();
   const pathname = usePathname() || "/admin/inbox";
   const [query, setQuery] = useState("");
@@ -317,8 +319,27 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
   const openRows = useMemo(() => rowsData?.open ?? [], [rowsData]);
   const doneRows = useMemo(() => rowsData?.done ?? [], [rowsData]);
 
-  // 주소(탭·분류·완료 보기·날짜) 바꾸기 — 서버가 새로 읽는다
-  const go = (next: Partial<{ tab: InboxTab; sub: string | null; kind: string | null; done: boolean; from: string | null; to: string | null }>) => {
+  // 주소에 탭이 없어 서버가 «건수 있는 첫 탭»을 골랐으면 그 탭을 주소에 박아 둔다(기록은 안 쌓는다 — replace).
+  // 왜: 안 박으면 그 탭의 마지막 건을 처리하고 새로 그릴 때 서버가 다시 골라 다른 탭으로 저절로 넘어간다.
+  // 다른 쿼리(open 등)는 그대로 두고 탭만 더한다. 스크롤은 건드리지 않는다.
+  useEffect(() => {
+    if (tabInUrl) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("tab") === tab) return;
+    params.set("tab", tab);
+    // 주소만 고친다(history.replaceState) — router.replace 는 서버가 신청함을 한 번 더 읽게 해 들어올 때마다 조회가 2배였다.
+    // 이후 router.refresh() 는 바뀐 주소(탭 포함)로 읽으므로 목적은 그대로다.
+    try {
+      window.history.replaceState(window.history.state, "", `${pathname}?${params}`);
+    } catch {
+      // 주소를 못 고쳐도 화면은 그대로다(탭이 저절로 넘어가는 옛 동작으로 돌아갈 뿐)
+    }
+  }, [tabInUrl, tab, pathname]);
+
+  // 주소(탭·분류·완료 보기·날짜) 바꾸기 — 서버가 새로 읽는다.
+  // mode: 큰 탭·작은 분류는 "push"(뒤로 = 앞 탭), 필터·완료 보기·한 종류 풀기는 "replace"
+  // (같은 화면의 보기 설정이라 기록에 쌓지 않는다 — 안 그러면 바꾼 횟수만큼 뒤로를 눌러야 화면을 나간다).
+  const go = (next: Partial<{ tab: InboxTab; sub: string | null; kind: string | null; done: boolean; from: string | null; to: string | null }>, mode: "push" | "replace" = "push") => {
     const params = new URLSearchParams();
     const t = next.tab ?? tab;
     // 한 종류 보기는 탭·분류를 바꾸면 풀린다(완료 보기·날짜는 유지)
@@ -337,7 +358,8 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
     setSelected(new Set());
     setOpenSelection(null);
     setMessage(null);
-    router.push(`${pathname}?${params}`);
+    if (mode === "replace") router.replace(`${pathname}?${params}`);
+    else router.push(`${pathname}?${params}`);
   };
 
   // 검색은 이미 받은 줄 안에서(원생 이름·제목·요약)
@@ -597,7 +619,7 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
 
       {/* 한 종류만 보는 중(옛 «?kind=» 주소) — 누르면 탭 전체 */}
       {isRowsTab && kind && (
-        <button type="button" onClick={() => go({ kind: null, sub: null })} className="inline-flex min-h-11 items-center gap-1 rounded-full border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 text-sm font-medium text-[var(--color-academy-ink)]">
+        <button type="button" onClick={() => go({ kind: null, sub: null }, "replace")} className="inline-flex min-h-11 items-center gap-1 rounded-full border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 text-sm font-medium text-[var(--color-academy-ink)]">
           {kindLabel(kind)}만 보기
           <span aria-hidden="true">×</span>
           <span className="sr-only">— 눌러서 {tabLabel(tab)} 전체 보기</span>
@@ -608,7 +630,7 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
       {isRowsTab && filterCount > 0 && (
         <p className="text-sm text-[var(--color-academy-muted)]">
           신청일 {from ?? "…"} ~ {to ?? "…"}
-          <button type="button" onClick={() => go({ from: null, to: null })} className="academy-button-text ml-2">필터 풀기</button>
+          <button type="button" onClick={() => go({ from: null, to: null }, "replace")} className="academy-button-text ml-2">필터 풀기</button>
         </p>
       )}
 
@@ -709,7 +731,7 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
               </ul>
             </section>
           ) : null}
-          <button type="button" onClick={() => go({ done: !showDone })} aria-expanded={showDone} className="academy-button-text">
+          <button type="button" onClick={() => go({ done: !showDone }, "replace")} aria-expanded={showDone} className="academy-button-text">
             {showDone ? "완료 접기" : "완료 보기"}
             <UiIcon name={showDone ? "expand_less" : "expand_more"} />
           </button>
@@ -806,7 +828,7 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
           from={from}
           to={to}
           onClose={() => setFilterOpen(false)}
-          onApply={(next) => { setFilterOpen(false); go(next); }}
+          onApply={(next) => { setFilterOpen(false); go(next, "replace"); }}
         />
       )}
       {confirmDialog}

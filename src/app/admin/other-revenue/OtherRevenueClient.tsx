@@ -119,14 +119,14 @@ export default function OtherRevenueClient({
                 <p className="academy-page-description mt-1">수강료 청구가 아닌 수입을 적는 곳입니다. 대관은 대관 화면에 따로 있습니다.</p>
             </div>
 
-            {/* 달 고르기 + 그 달 합계 한 줄 */}
+            {/* 달 고르기 + 그 달 합계 한 줄 — 달 이동은 같은 화면의 보기 설정이라 기록에 쌓지 않는다(replace) */}
             <section className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2">
                 <div className="flex items-center gap-1">
-                    <Link href={`/admin/other-revenue?ym=${prevYm}`} prefetch={false} className="academy-button-text academy-button-sm">‹ 이전</Link>
+                    <Link href={`/admin/other-revenue?ym=${prevYm}`} replace prefetch={false} className="academy-button-text academy-button-sm">‹ 이전</Link>
                     <h2 className="academy-section-title px-1 tabular-nums">{monthTitle(ym)}</h2>
-                    <Link href={`/admin/other-revenue?ym=${nextYm}`} prefetch={false} className="academy-button-text academy-button-sm">다음 ›</Link>
+                    <Link href={`/admin/other-revenue?ym=${nextYm}`} replace prefetch={false} className="academy-button-text academy-button-sm">다음 ›</Link>
                     {ym !== thisMonth && (
-                        <Link href="/admin/other-revenue" prefetch={false} className="academy-button-text academy-button-sm">이번 달</Link>
+                        <Link href="/admin/other-revenue" replace prefetch={false} className="academy-button-text academy-button-sm">이번 달</Link>
                     )}
                 </div>
                 <p className="text-sm text-[var(--color-academy-muted)]">

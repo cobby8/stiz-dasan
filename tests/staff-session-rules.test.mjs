@@ -183,8 +183,8 @@ test("날짜 이동: 화면·서버가 같은 규칙을 쓴다 — 다른 날짜
   const home = readFileSync("src/app/staff/StaffHomeClient.tsx", "utf8");
   assert.match(home, /const preview = dateKey !== todayKey;/);
   assert.match(home, /isStaleDateKey\(todayKey\)/);
-  // 날짜를 옮기기 전에 쓰던 기록을 먼저 저장한다
-  assert.match(home, /async function moveDate[\s\S]*?await prepareStaffNavigation\(\)[\s\S]*?router\.push\(target === todayKey \? "\/staff" : `\/staff\?date=\$\{target\}`\)/);
+  // 날짜를 옮기기 전에 쓰던 기록을 먼저 저장한다. 날짜는 보기 설정이라 기록에 쌓지 않는다(replace, 2026-11-17 뒤로 가기 조사)
+  assert.match(home, /async function moveDate[\s\S]*?await prepareStaffNavigation\(\)[\s\S]*?router\.replace\(target === todayKey \? "\/staff" : `\/staff\?date=\$\{target\}`\)/);
   assert.match(home, /if \(preview\) return;/);
   assert.match(home, /previewNotice: preview \?/);
 

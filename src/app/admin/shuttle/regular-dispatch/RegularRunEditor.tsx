@@ -490,7 +490,8 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
       {/* 한 줄 머리: 제목 · 월 · 기사님 위치·요청(컴팩트 — 히어로 없음) */}
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="academy-section-title mr-auto">정규 셔틀 운행표</h3>
-        <select value={serviceMonth} aria-label="운행 월" onChange={async (e) => { const nextMonth = e.target.value; if (!(await confirmLeave())) return; cancelEditing(); router.push(`/admin/shuttle/regular-dispatch?month=${encodeURIComponent(nextMonth)}`); }}
+        {/* 월 바꾸기는 같은 화면의 보기 설정이라 기록에 쌓지 않는다(replace) — 뒤로 한 번에 앞 화면으로 */}
+        <select value={serviceMonth} aria-label="운행 월" onChange={async (e) => { const nextMonth = e.target.value; if (!(await confirmLeave())) return; cancelEditing(); router.replace(`/admin/shuttle/regular-dispatch?month=${encodeURIComponent(nextMonth)}`); }}
           className="min-h-11 rounded-lg border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 text-sm">
           {months.map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
@@ -543,7 +544,8 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
               <li key={stop.id}>
                 <button type="button" className="inline-flex min-h-10 max-w-full flex-wrap items-center gap-x-2 rounded-full border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-1 text-left text-xs text-[var(--color-academy-ink)] hover:border-[var(--color-academy-warning)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-academy-warning)]" onClick={async () => {
                   if (!(await confirmLeave())) return;
-                  router.push(`/admin/shuttle/regular-dispatch?${new URLSearchParams({ month: serviceMonth, studentId: stop.studentId ?? "", stopId: stop.id! })}`);
+                  // 같은 화면에서 그 정류장으로 초점만 옮기는 것이라 기록에 쌓지 않는다(replace)
+                  router.replace(`/admin/shuttle/regular-dispatch?${new URLSearchParams({ month: serviceMonth, studentId: stop.studentId ?? "", stopId: stop.id! })}`);
                 }}>
                   <span className="font-semibold">{stop.studentName}</span>
                   <span>{WEEKDAY_LABELS[stop.weekday]}요일 {stop.direction === "BOARD" ? "등원" : "하원"}</span>

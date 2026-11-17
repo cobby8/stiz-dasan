@@ -367,7 +367,8 @@ export default function StaffHomeClient({
       setError(ready.message || "수업 기록을 저장하지 못했습니다. 잠시 후 다시 눌러 주세요.");
       return;
     }
-    startDateMove(() => router.push(target === todayKey ? "/staff" : `/staff?date=${target}`));
+    // replace: 날짜는 같은 화면의 보기 설정이라 기록에 쌓지 않는다 — 날짜를 옮긴 수만큼 뒤로를 눌러야 하던 문제(2026-11-17)
+    startDateMove(() => router.replace(target === todayKey ? "/staff" : `/staff?date=${target}`));
   }
 
   function openPrimaryAction(lesson: StaffTodayClass) {

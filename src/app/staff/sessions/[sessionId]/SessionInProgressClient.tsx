@@ -763,7 +763,8 @@ function LiveSessionWorkspace({
         if (embedded) { setShowEndConfirm(false); onFinished?.(reportForFinish(report) || null); return; }
         // 이미 종료된 수업도 성공으로 보고 교사용 홈으로 안전하게 복귀합니다.
         // 학부모 알림은 서버가 응답 뒤에 끝까지 보낸다(after) — 화면은 기다리지 않는다.
-        router.replace("/staff");
+        // 도착지는 «시작 취소»와 같게 — 특강에서 시작한 수업은 특강 화면으로 돌아간다(2026-11-17 뒤로 가기 조사)
+        router.replace(session.sessionDateId ? "/staff/seasonal" : "/staff");
         router.refresh();
       } catch {
         setFinishError("수업 종료 처리 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.");

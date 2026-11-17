@@ -39,10 +39,14 @@ export function parseNativePushRegistration(body: unknown): { platform: NativePu
 
 /**
  * 알림을 눌렀을 때 앱이 열 주소 — 우리 사이트 «경로»만 보낸다(예: "/mypage/attendance").
- * 바깥 주소·"//evil"·역슬래시·제어문자는 버리고 기본 화면("/")으로 바꾼다.
+ * 바깥 주소·"//evil"·역슬래시·제어문자는 버리고 기본 화면으로 바꾼다.
+ * 기본 화면 = 앱 시작 주소(/store-app) — 받는 사람 역할의 홈으로 넘겨 준다. 예전 기본값 "/" 는 공개 홈이라
+ * 주소 없는 알림을 누르면 역할 화면 밖으로 나갔다(2026-11-17 뒤로 가기 조사). 이 함수는 앱(FCM) 발송에만 쓴다 —
+ * /store-app 은 «스토어 앱» 표식을 찍으므로 브라우저(웹푸시) 주소의 기본값으로는 쓰지 않는다.
  * 앱도 받은 주소를 자기 주소 정책(AppNavigationPolicy / NavigationPolicy)으로 한 번 더 거른다(이중 방어).
  */
-export function safeNativePushPath(url: string | null | undefined, fallback = "/"): string {
+export const NATIVE_PUSH_FALLBACK_PATH = "/store-app";
+export function safeNativePushPath(url: string | null | undefined, fallback = NATIVE_PUSH_FALLBACK_PATH): string {
   const raw = String(url ?? "").trim();
   if (!raw) return fallback;
   // 우리 사이트 전체 주소로 온 경우는 경로만 남긴다

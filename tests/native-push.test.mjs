@@ -56,8 +56,12 @@ test("알림 주소 허용 정책: 우리 사이트 경로만, 나머지는 기�
   assert.equal(policy.safeNativePushPath("https://www.stiz-dasan.kr"), "/");
   for (const bad of [undefined, null, "", "mypage", "https://evil.invalid/x", "//evil.invalid/x", "https://www.stiz-dasan.kr.evil.invalid/x",
     "javascript:alert(1)", "/a\\b", "/a b", "/a\nb", `/${"a".repeat(1100)}`]) {
-    assert.equal(policy.safeNativePushPath(bad), "/", String(bad));
+    // 기본 화면 = 앱 시작 주소(역할 홈으로 넘겨 준다) — 공개 홈("/")으로 나가지 않는다(2026-11-17)
+    assert.equal(policy.safeNativePushPath(bad), "/store-app", String(bad));
   }
+  assert.equal(policy.NATIVE_PUSH_FALLBACK_PATH, "/store-app");
+  // 앱 시작 주소 화면이 실제로 있고, 역할 홈을 정하는 함수로 목적지를 고른다
+  assert.match(read("src/app/store-app/page.tsx"), /resolveContinueDestination\(\{\}\)/);
   assert.equal(policy.safeNativePushPath(null, "/admin"), "/admin", "기본값을 바꿀 수 있다");
 });
 
@@ -95,7 +99,8 @@ test("서비스 계정: JSON 원문·base64·한 줄(\\n 글자) 모두 읽고, 
 test("FCM 메시지: 안드로이드는 데이터만(앱이 그림), 아이폰은 APNs 알림, 주소는 경로로 정리", () => {
   const fcm = load("src/lib/push/fcm.ts", { "@/lib/push/nativePushPolicy": policy });
   const android = fcm.buildFcmMessage("android", TOKEN_A, { title: "출결", body: "도착했어요", url: "https://evil.invalid/x", tag: "ATTENDANCE" });
-  assert.deepEqual(android.message.data, { title: "출결", body: "도착했어요", url: "/", tag: "ATTENDANCE" });
+  // 버린 주소는 앱 시작 주소(역할 홈으로 넘겨 줌)로 — 공개 홈("/")이 아니다(2026-11-17)
+  assert.deepEqual(android.message.data, { title: "출결", body: "도착했어요", url: "/store-app", tag: "ATTENDANCE" });
   assert.equal(android.message.notification, undefined, "안드로이드는 notification 없이 data 만");
   assert.equal(android.message.android.priority, "HIGH");
   const ios = fcm.buildFcmMessage("ios", TOKEN_B, { title: "공지", body: "내일 휴강", url: "/notices/3" });

@@ -65,10 +65,11 @@ export default function StatsClient({
     const periodName = STATS_PERIODS[tab].find((p) => p.key === period)?.label ?? "";
 
     // 탭·필터를 바꿀 때 «불러오는 중»을 보이려고 router.push 를 transition 안에서 부른다(가운데 클릭은 그대로 새 탭)
-    function go(href: string, event?: MouseEvent) {
+    // 큰 탭은 push(뒤로 = 앞 탭), 기간 칩은 replace — 같은 화면의 보기 설정이라 기록에 쌓지 않는다(뒤로 한 번에 앞 화면으로)
+    function go(href: string, event?: MouseEvent, mode: "push" | "replace" = "push") {
         if (event && (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0)) return;
         event?.preventDefault();
-        startTransition(() => router.push(href));
+        startTransition(() => (mode === "replace" ? router.replace(href) : router.push(href)));
     }
 
     return (
@@ -112,7 +113,7 @@ export default function StatsClient({
                         const on = p.key === (period || defaultPeriod);
                         const href = statsHref(tab, branch, p.key === defaultPeriod ? "" : p.key);
                         return (
-                            <a key={p.key} href={href} aria-current={on ? "true" : undefined} onClick={(e) => go(href, e)} className={`academy-choice is-tab${on ? " is-selected" : ""}`}>
+                            <a key={p.key} href={href} aria-current={on ? "true" : undefined} onClick={(e) => go(href, e, "replace")} className={`academy-choice is-tab${on ? " is-selected" : ""}`}>
                                 {p.label}
                             </a>
                         );

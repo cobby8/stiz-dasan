@@ -3,6 +3,7 @@ import UiIcon from "@/components/common/UiIcon";
 import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { FormEvent, type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import AdminModal from "@/components/admin/AdminModal";
 import CompactListFilters from "@/components/academy/CompactListFilters";
 import SeasonalHeader from "./SeasonalHeader";
@@ -1397,9 +1398,10 @@ export default function SeasonalAdminClient({ initialData }: SeasonalAdminClient
       <nav className="relative flex min-w-0 items-center justify-between gap-2" aria-label="방학특강 관리 메뉴">
         <select aria-label="방학특강 업무" value={tab} onChange={(event) => setTab(event.target.value as Tab)} className="h-11 min-h-11 max-w-full shrink-0 rounded-md border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 text-base font-medium text-[var(--color-academy-ink)]">{TABS.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select>
         <details className="group/related relative shrink-0"><summary className="academy-button-secondary cursor-pointer list-none">관련 업무 <UiIcon name="expand_more" className="transition-transform group-open/related:rotate-180" /></summary><div className="absolute right-0 top-full z-20 mt-1 w-44 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-1 shadow-lg">
-        <a href="/admin/seasonal/attendance" className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]">출석 관리</a>
-        <a href="/admin/seasonal/attendance?view=makeup" className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]">보강 관리</a>
-        <a href="/admin/shuttle" className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]">셔틀 관리</a>
+        {/* Link = 화면 안 이동. <a> 는 전체를 새로 불러와 느리고 앞 화면 상태·뒤로 판정이 흐트러졌다 */}
+        <Link href="/admin/seasonal/attendance" prefetch={false} className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]">출석 관리</Link>
+        <Link href="/admin/seasonal/attendance?view=makeup" prefetch={false} className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]">보강 관리</Link>
+        <Link href="/admin/shuttle" prefetch={false} className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]">셔틀 관리</Link>
         </div></details>
       </nav>
 

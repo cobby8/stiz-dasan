@@ -1,10 +1,12 @@
 "use client";
 
 // 기사님 운행 화면 상단의 날짜 이동 네비. ‹ 이전 · [날짜(요일)] · 다음 ›
-// 이동은 링크로만 처리(?date=대상날짜) → 서버가 그 날 데이터를 다시 조회한다. 클라 상태 없음.
+// 이동은 링크로만 처리(?date=대상날짜, 기록에 쌓지 않는 replace) → 서버가 그 날 데이터를 다시 조회한다. 클라 상태 없음.
 // ★ 기사님 연세 고려 — 라이트 모드 고정, 큰 글자·큰 터치 영역.
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { driverDateHref } from "@/lib/shuttle/driverDateHref";
 
 // YYYY-MM-DD → "7/27 (월)" 형태로. 정오(+09:00) 기준으로 요일 계산해 날짜 밀림 방지.
 function fmtDate(iso: string): string {
@@ -24,11 +26,15 @@ export default function DriverDateNav({
 }) {
   // 비활성 버튼과 활성 링크의 공통 크기 — 손가락으로 누르기 쉬운 큰 영역.
   const btn = "grid h-12 min-w-[84px] place-items-center rounded-xl text-base font-semibold";
+  // 날짜는 «같은 화면의 보기 설정»이다(2026-11-17 뒤로 가기 조사) — 주소의 다른 값(선생님 운행 mode=drive 등)은 그대로 두고 date 만 바꾼다.
+  // 링크는 replace: 날짜를 넘긴 수만큼 뒤로를 눌러야 하던 것을, 뒤로 한 번에 앞 화면으로 가게 한다.
+  const search = useSearchParams()?.toString() ?? "";
+  const hrefFor = (target: string) => driverDateHref(search, target);
   return (
     <div className="mx-auto -mt-1 mb-3 flex max-w-lg items-center justify-between gap-2 px-3">
       {/* 이전: prevDate 있을 때만 이동 가능 */}
       {prevDate ? (
-        <Link href={`?date=${prevDate}`} className={`${btn} bg-[var(--color-academy-soft)] text-[var(--color-academy-ink)] active:bg-[var(--color-academy-line)]`}>‹ 이전</Link>
+        <Link href={hrefFor(prevDate)} replace className={`${btn} bg-[var(--color-academy-soft)] text-[var(--color-academy-ink)] active:bg-[var(--color-academy-line)]`}>‹ 이전</Link>
       ) : (
         <span className={`${btn} bg-transparent text-[var(--color-academy-faint)]`}>‹ 이전</span>
       )}
@@ -37,13 +43,13 @@ export default function DriverDateNav({
       <div className="flex flex-col items-center leading-tight">
         <span className="text-[17px] font-semibold text-[var(--color-academy-ink)]">{fmtDate(date)}</span>
         {date !== today && (
-          <Link href={`?date=${today}`} className="mt-0.5 inline-flex min-h-11 items-center justify-center px-2 text-sm font-medium text-[var(--color-academy-ink)] underline underline-offset-2">오늘로</Link>
+          <Link href={hrefFor(today)} replace className="mt-0.5 inline-flex min-h-11 items-center justify-center px-2 text-sm font-medium text-[var(--color-academy-ink)] underline underline-offset-2">오늘로</Link>
         )}
       </div>
 
       {/* 다음: nextDate 있을 때만 이동 가능 */}
       {nextDate ? (
-        <Link href={`?date=${nextDate}`} className={`${btn} bg-[var(--color-academy-soft)] text-[var(--color-academy-ink)] active:bg-[var(--color-academy-line)]`}>다음 ›</Link>
+        <Link href={hrefFor(nextDate)} replace className={`${btn} bg-[var(--color-academy-soft)] text-[var(--color-academy-ink)] active:bg-[var(--color-academy-line)]`}>다음 ›</Link>
       ) : (
         <span className={`${btn} bg-transparent text-[var(--color-academy-faint)]`}>다음 ›</span>
       )}
