@@ -8,6 +8,7 @@ import {
   removedShuttleRosterRows,
   shuttleRosterConfirmationInfo,
   isShuttleRequestConfirmed,
+  hasRevivableRemovedShuttleRosterRow,
   setConfirmedShuttleRideByRequestId,
   placeStudentAtFreeHub,
   type ConfirmedRosterPatch,
@@ -143,6 +144,15 @@ export async function PATCH(request: Request) {
         { error: "명단이 확정되었습니다. 새로고침 후 다시 시도해주세요.", confirmed: true },
         { status: 409 },
       );
+    }
+    // ★ «이용»으로 되살리는 요청(R-8③): 위 확인은 살아 있는 확정본 행만 본다.
+    //   신청관리에서 취소한 학생은 확정본 행이 «뺀 상태»로 남아 있어 여기까지 내려오는데,
+    //   그대로 원본만 고치면 신청관리엔 «요청»인데 기사님 명단(확정본)에는 없는 학생이 된다.
+    //   → 뺀 행이 있으면 취소와 같은 길(확정본 + 원본 함께)로 되살린다.
+    //   확정본 행이 없거나 수강이 취소된 학생은 false 라 아래 예전 길 그대로다(확정본을 새로 만들지 않는다).
+    if (body.patch.ride === true && (await hasRevivableRemovedShuttleRosterRow(body.requestId))) {
+      await setConfirmedShuttleRideByRequestId(body.requestId, true);
+      return NextResponse.json({ ok: true });
     }
     await updateShuttleRosterRow(body.requestId, body.patch);
     return NextResponse.json({ ok: true });

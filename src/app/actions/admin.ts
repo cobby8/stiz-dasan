@@ -5564,7 +5564,20 @@ async function assertMakeupSeatAvailable(
 }
 
 /**
+ * 원장이 예상할 수 있는 보강 거절 사유(정원 초과·이월로 정산한 결석)면 그 한글 문구를, 아니면 null.
+ * 왜: 운영 빌드는 서버 액션이 «던진» 오류의 문구를 가린다(화면에는 영어 일반 문구만 간다).
+ * 그래서 이 두 사유는 던지지 않고 결과 값으로 돌려준다(2026-11-17).
+ */
+function expectedMakeupRefusal(e: unknown): string | null {
+    if (e instanceof CompensationConflict) return e.message;
+    if (e instanceof Error && e.message === MAKEUP_CAPACITY_FULL_MESSAGE) return e.message;
+    return null;
+}
+
+/**
  * 보강 예약 — 결석한 학생에게 다른 반에서 보충 수업을 예약
+ * 돌려주는 값: 저장했으면 { ok: true }, 정원 초과·이월 정산 결석이면 { ok: false, message }(저장 안 함).
+ * 그 밖의 오류(DB 오류 등)는 예전처럼 던진다.
  */
 export async function bookMakeupSession(data: {
     studentId: string;
@@ -5573,13 +5586,18 @@ export async function bookMakeupSession(data: {
     makeupClassId: string;
     makeupDate: string;   // ISO 날짜 문자열
     requestId?: string;
-}) {
+}): Promise<{ ok: true } | { ok: false; message: string }> {
     await requireAdmin();
     await ensureMakeupSessionTable();
     // 정원 초과 차단 — 모달 예약과 결석→보강 지정(scheduleMakeupForAbsence) 두 경로 모두
     // 이 액션을 거치므로, 여기서 막으면 양쪽이 동일하게 보호된다.
-    // (try 바깥에 두어 "이미 정원이 찼습니다..." 문구가 그대로 원장에게 전달되게 한다)
-    await assertMakeupSeatAvailable(data.makeupClassId, data.makeupDate);
+    try {
+        await assertMakeupSeatAvailable(data.makeupClassId, data.makeupDate);
+    } catch (e) {
+        const refusal = expectedMakeupRefusal(e);
+        if (refusal) return { ok: false, message: refusal };
+        throw e;
+    }
     try {
         await prisma.$transaction(async tx => {
             await lockCompensation(tx);
@@ -5601,14 +5619,16 @@ export async function bookMakeupSession(data: {
             );
         });
     } catch (e) {
-        if (e instanceof CompensationConflict) throw e;
-        // 잠금 뒤 재확인에서 자리가 없으면 «미리 확인»과 똑같은 문구가 원장에게 보여야 한다
-        if (e instanceof Error && e.message === MAKEUP_CAPACITY_FULL_MESSAGE) throw e;
+        // 잠금 뒤 재확인에서 자리가 없거나 이월로 정산한 결석이면 — 트랜잭션은 이미 되돌려졌고(저장 없음),
+        // «미리 확인»과 똑같은 문구를 결과로 돌려준다
+        const refusal = expectedMakeupRefusal(e);
+        if (refusal) return { ok: false, message: refusal };
         console.error("Failed to book makeup session:", e);
         throw new Error("보강 예약 실패");
     }
     revalidatePath("/admin/makeup");
     revalidateMakeupAdminCaches();
+    return { ok: true };
 }
 
 /**
