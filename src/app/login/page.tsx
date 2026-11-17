@@ -28,6 +28,8 @@ function LoginContent() {
   const handoff = searchParams.get("handoff") || searchParams.get("enrollmentHandoff");
   socialLoginParams.set("intent", "login");
   if (redirect) socialLoginParams.set("next", redirect);
+  // /staff/login 으로 들어왔으면 아이디 로그인과 같은 곳(/staff)으로 — 로그인 방법에 따라 도착 화면이 달라지지 않게
+  else if (staffEntry) socialLoginParams.set("next", "/staff");
   if (handoff) socialLoginParams.set("enrollmentHandoff", handoff);
   const socialLoginQuery = socialLoginParams.toString();
   const parentSocialLoginOptions = [
@@ -395,7 +397,7 @@ function LoginContent() {
                 ))}
               </div>
               <p className="text-center text-xs leading-5 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
-                로그인 창에서 인증을 마치면 앱으로 돌아옵니다. 처음 이용하는 학부모님은 회원가입을 먼저 해 주세요.
+                로그인 창에서 인증을 마치면 앱으로 돌아옵니다. 처음이시면 본인인증 한 번으로 가입까지 이어져요.
               </p>
             </div>
           )}

@@ -137,7 +137,8 @@ export default function StaffProfileMenu({ staffName, staffRole, accountViews = 
               </p>
             )}
 
-            {staffRole !== "DRIVER" && accountViews.length > 0 && <div className="mb-3">
+            {/* 기사님+학부모 계정도 돌아갈 화면이 있다(2026-11-17 전수 점검 — 예전에는 기사님이면 전환 목록을 숨겨 돌아오는 버튼이 없었다) */}
+            {accountViews.length > 0 && <div className="mb-3">
               <AccountViewSwitcher views={accountViews} variant="list" onNavigate={(event, view) => requestPublicNavigation(event, view.href)} />
             </div>}
 

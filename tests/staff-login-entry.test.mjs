@@ -37,8 +37,8 @@ test("미인증 staff 요청은 /staff/login으로 보내고 로그인 후 원�
   assert.match(loginSource, /\(isStaffMode \|\| staffEntry \? ["']\/staff["'] : null\)/);
 });
 
-test("미인증 admin 요청은 관리자/선생님 로그인 모드로 보내고 이메일 로그인을 안내한다", () => {
-  assert.match(middlewareSource, /if \(isAdminPath\) \{\s*url\.searchParams\.set\(["']mode["'], ["']staff["']\)/s);
+test("미인증 admin 요청도 같은 로그인 화면으로 보낸다(2026-11-17 — 직원 전용 화면을 없앴다)", () => {
+  assert.doesNotMatch(middlewareSource, /url\.searchParams\.set\(["']mode["'], ["']staff["']\)/);
   assert.match(middlewareSource, /isStaffModeLogin/);
   assert.match(loginSource, /STIZ 관리자\/선생님 로그인/);
   // 직원 아이디 = 휴대폰 번호(초대 가입 로그인 메일이 «번호@staff.stiz.kr»), 이메일도 그대로 된다(2026-11-13 b3)
