@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { logout } from "@/app/actions/auth";
-import { defaultPathForRole, type AppRole } from "@/lib/auth-routes";
+import { usePathname } from "next/navigation";
+import { defaultPathForRole, loginHrefFrom, type AppRole } from "@/lib/auth-routes";
 import { createClient } from "@/lib/supabase/client";
 import AccountViewSwitcher from "./AccountViewSwitcher";
 import type { AccountViewOption } from "@/lib/account-views";
@@ -122,7 +123,9 @@ function useAccountState(initialRole: AppRole | null = null) {
     return () => subscription.unsubscribe();
   }, [refreshAccountRole]);
 
-  const accountHref = appRole ? defaultPathForRole(appRole) : "/login";
+  // 로그인 전이면 보던 화면 주소를 넘긴다 — 로그인 뒤 그 화면으로 돌아온다(2026-11-17)
+  const pathname = usePathname();
+  const accountHref = appRole ? defaultPathForRole(appRole) : loginHrefFrom(pathname);
   const accountLabel =
     appRole === "ADMIN" || appRole === "VICE_ADMIN"
       ? "관리자"

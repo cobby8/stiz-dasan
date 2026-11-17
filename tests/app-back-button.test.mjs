@@ -12,7 +12,9 @@ const mypageLayoutSource = await readFile("src/app/mypage/layout.tsx", "utf8");
 
 test("공통 뒤로가기 버튼은 앱 내부 이력 우선, 없으면 fallback으로 이동한다", () => {
   assert.match(backButtonSource, /router\.back\(\)/);
-  assert.match(backButtonSource, /router\.push\(action\.href\)/);
+  // 기록 없이 한 단계 위로 갈 땐 바꿔 끼우기(replace) — 쌓으면 위 화면의 «←» 가 방금 화면으로 되돌아간다(2026-11-17 운영 재현)
+  assert.match(backButtonSource, /router\.replace\(action\.href\)/);
+  assert.doesNotMatch(backButtonSource, /router\.push\(action\.href\)/);
   assert.match(backButtonSource, /document\.referrer/);
   assert.match(backButtonSource, /window\.history\.state\?\.idx/);
   // 어디로 갈지 정하는 규칙은 순수 모듈로 옮겼다. 조합별 동작은 실제로 실행해서

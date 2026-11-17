@@ -34,6 +34,13 @@ const nextConfig: NextConfig = {
       { source: "/mypage/install", destination: "/install", permanent: false },
       { source: "/teacher-app", destination: "/install", permanent: false },
       { source: "/parent-app", destination: "/install", permanent: false },
+      {
+        // 2026-11-17: 출석·지각·결석 알림이 없는 주소(/parent/attendance)를 가리켰다 → 404 화면에서 공개 홈으로만 나갈 수 있었다.
+        // 알림 주소는 /mypage/history(일정 탭 출결 기록)로 고쳤고, 이미 보낸 알림(DB 에 남은 주소)은 여기서 넘긴다.
+        source: "/parent/attendance",
+        destination: "/mypage/history",
+        permanent: false,
+      },
     ];
   },
 

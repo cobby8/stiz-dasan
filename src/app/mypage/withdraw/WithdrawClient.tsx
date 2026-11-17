@@ -47,7 +47,7 @@ const RETAINED = ["자녀의 출결·수업 기록", "수강료 납부·청구 �
 export default function WithdrawClient({
   initial,
   parentName,
-  backHref = "/mypage",
+  backHref = "/mypage/settings", // 탈퇴는 설정 아래 화면 — 기록 없이 들어오면 설정으로(2026-11-17)
   contact = null,
   noChildren = false,
   childConnectHref = CHILD_CONNECT_ASK.askHref,
@@ -260,9 +260,10 @@ export default function WithdrawClient({
 
           {/* 근접성(M-05): 안전한 «돌아가기»를 먼저, 되돌릴 수 없는 삭제는 24px 떨어진 아래 전체 폭 위험색 */}
           <div className="flex flex-col">
-            <Link href={backHref} className="academy-button-secondary self-start">
+            {/* 돌아가기 = 방금 있던 화면(기록 없으면 backHref) — 고정 Link 는 앞으로 쌓여 그 화면의 «←» 가 여기로 되돌아왔다 */}
+            <ParentBackLink fallbackHref={backHref} className="academy-button-secondary self-start">
               돌아가기
-            </Link>
+            </ParentBackLink>
             <button
               type="button"
               onClick={submit}

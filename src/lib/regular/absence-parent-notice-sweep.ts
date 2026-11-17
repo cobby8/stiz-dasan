@@ -10,6 +10,7 @@ import {
   absenceNoticeKeyPrefixSql,
   absenceNoticeMessage,
   absenceNoticeTitle,
+  PARENT_ATTENDANCE_HREF,
 } from "@/lib/regular/absence-parent-notice";
 
 type Candidate = {
@@ -83,7 +84,7 @@ export async function sweepAbsenceParentNotices(limit = 50, nowMs: number = Date
         recipient: { studentId: row.studentId, studentName: row.studentName, userId: row.userId },
         title: absenceNoticeTitle(row.className),
         message: absenceNoticeMessage(row.className, row.studentName),
-        linkUrl: "/parent/attendance",
+        linkUrl: PARENT_ATTENDANCE_HREF,
         sessionId: row.sessionId,
         attendanceId: row.attendanceId,
       });

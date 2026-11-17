@@ -11,6 +11,7 @@
 
 import { shouldNotifyParentsForSession } from "@/lib/staff-session-rules";
 import { todayKst } from "@/lib/datetime/kst";
+import { PARENT_ATTENDANCE_HREF } from "@/lib/regular/absence-parent-notice";
 
 export type AttendanceNoticeStatus = "PRESENT" | "LATE";
 
@@ -81,7 +82,7 @@ export function attendanceNoticePayload(input: {
     recipient: input.recipient,
     title: `${input.className} 출석 안내`,
     message: `${input.recipient.studentName} 학생이 ${late ? "지각 출석" : "출석"}했습니다.`,
-    linkUrl: "/parent/attendance",
+    linkUrl: PARENT_ATTENDANCE_HREF,
     sessionId: input.sessionId,
     attendanceId: input.attendanceId,
   };

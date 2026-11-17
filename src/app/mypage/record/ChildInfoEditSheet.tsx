@@ -76,7 +76,7 @@ export default function ChildInfoEditSheet({
   const healthLength = [...form.healthNote].length;
 
   return (
-    <ListDetailPanel onClose={requestClose} titleId="child-info-edit-title" closeOnBackdrop={false}>
+    <ListDetailPanel backToClose onClose={requestClose} titleId="child-info-edit-title" closeOnBackdrop={false}>
       <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-4 py-2">
         <h2 id="child-info-edit-title" className="min-w-0 flex-1 text-base font-bold text-[var(--color-academy-ink)]">{name} 정보 수정</h2>
         <button type="button" onClick={requestClose} className="academy-button-text shrink-0">닫기</button>

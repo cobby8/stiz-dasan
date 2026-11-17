@@ -148,7 +148,8 @@ test("① 항목 이름·결제수단: 관리자 장부 글은 숨기고 종류�
 // ── ② 렌더 ─────────────────────────────────────────────────────────────────
 
 const Card = load("src/components/parent/billing/MonthBillCard.tsx").default;
-const Sheet = load("src/components/parent/billing/BillDetailSheet.tsx").default;
+// 패널(ListDetailPanel)이 «창 안 링크 잡기»에 라우터를 쓴다(2026-11-17) — 정적 렌더엔 라우터가 없어 대역을 넣는다
+const Sheet = load("src/components/parent/billing/BillDetailSheet.tsx", { "next/navigation": { ...require("next/navigation"), useRouter: () => ({ push() {}, refresh() {} }) } }).default;
 const cardHtml = (bill) => renderToStaticMarkup(React.createElement("ul", null, React.createElement(Card, { bill, onOpen() {} })));
 
 test("② 월 카드: 청구월·합계·상태 한 단어만, 미납 섞인 달은 주의 바탕, 전부 납부는 보통 바탕, 금액 없음은 금액 생략", () => {

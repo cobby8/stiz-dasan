@@ -1,7 +1,7 @@
 "use client";
 
+import ParentBackLink from "@/components/parent/ParentBackLink";
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import VirtualAccountNotice from "@/components/parent/VirtualAccountNotice";
 import PaymentMethodPicker from "@/components/parent/PaymentMethodPicker";
@@ -274,9 +274,11 @@ export default function BundleCheckoutClient({
 
     return (
         <main className="mx-auto max-w-lg space-y-3 px-4 py-4">
-            <div className="flex items-center justify-between gap-2">
+            {/* «←» = 방금 있던 화면(청구 목록·완료 화면), 기록이 없으면(결제 실패로 돌아옴 등) 청구 목록 — 2026-11-17.
+                예전 «청구 목록» 고정 링크는 앞으로 쌓여 목록의 «←» 가 이 화면으로 되돌아왔다 */}
+            <div className="flex items-center gap-2">
+                <ParentBackLink fallbackHref="/mypage/payments" ariaLabel="청구 목록으로" />
                 <h1 className="academy-heading">한 번에 결제</h1>
-                <Link href="/mypage/payments" className="academy-button-text shrink-0">청구 목록</Link>
             </div>
 
             {failed && (

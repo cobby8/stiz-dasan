@@ -232,6 +232,8 @@ test("④ 🔔 배지: 안 읽은 수(10 이상 9+), 없으면 배지 없음", (
     "@/lib/mypage/parentSettings": settings,
     // 2026-11-15 아이콘 예외(화살표·종·톱니): 공용 아이콘 부품은 실제 코드를 그대로 쓴다
     "@/components/common/UiIcon": load("src/components/common/UiIcon.tsx"),
+    // 휴대폰 «뒤로» = 창 닫기 훅(2026-11-17) — 이 테스트는 배지만 본다
+    "@/components/common/useBackToClose": { useBackToClose: () => ({ leaveTo: (href, go) => go(href), captureLinks: () => () => {} }) },
   }).default;
   const many = renderToStaticMarkup(React.createElement(Bell, { notifications: [], unreadCount: 12 }));
   assert.match(many, />9\+<\/span>/);

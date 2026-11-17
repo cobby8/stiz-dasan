@@ -16,6 +16,12 @@
 //
 // ⚠️ prisma·next import 금지(테스트가 이 파일을 그대로 실행한다).
 
+/**
+ * 출석·지각·결석 알림을 누르면 열 학부모 화면 — 일정 탭의 출결 기록(2026-11-17).
+ * 예전 주소 /parent/attendance 는 없는 화면이라 404 로 공개 홈에만 나갈 수 있었다(이미 보낸 알림은 next.config redirect 로 넘김).
+ */
+export const PARENT_ATTENDANCE_HREF = "/mypage/history";
+
 /** 결석으로 찍힌 뒤 이만큼 지나도 여전히 결석이면 보낸다(분). */
 export const ABSENCE_NOTICE_DELAY_MINUTES = 3;
 

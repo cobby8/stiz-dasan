@@ -34,7 +34,7 @@ const rules = load("src/lib/shuttle/boardingNoticeRules.ts", { "@/lib/datetime/k
 const settings = load("src/lib/mypage/parentSettings.ts");
 const summary = load("src/lib/mypage/summary.ts");
 const sessionRules = load("src/lib/staff-session-rules.ts", { "@/lib/datetime/kst": kst, "@/lib/auth/moneyAccess": load("src/lib/auth/moneyAccess.ts") });
-const attendanceRules = load("src/lib/attendance/attendanceNoticeRules.ts", { "@/lib/staff-session-rules": sessionRules, "@/lib/datetime/kst": kst });
+const attendanceRules = load("src/lib/attendance/attendanceNoticeRules.ts", { "@/lib/staff-session-rules": sessionRules, "@/lib/datetime/kst": kst, "@/lib/regular/absence-parent-notice": load("src/lib/regular/absence-parent-notice.ts", {}) });
 
 const kstMs = (iso) => new Date(`${iso}+09:00`).getTime();
 const epoch = (iso) => kstMs(iso) / 1000;
@@ -396,7 +396,7 @@ test("출석 알림 한 통의 문구·키는 한 곳 — 같은 출결·같은 
   const payload = attendanceRules.attendanceNoticePayload({ recipient, status: "LATE", className: "초등 A반", sessionId: "s1", attendanceId: "a1" });
   assert.deepEqual(payload, {
     eventType: "ATTENDANCE_LATE", dedupeKey: "attendance:a1:status:LATE:user:p1", recipient,
-    title: "초등 A반 출석 안내", message: "김하늘 학생이 지각 출석했습니다.", linkUrl: "/parent/attendance", sessionId: "s1", attendanceId: "a1",
+    title: "초등 A반 출석 안내", message: "김하늘 학생이 지각 출석했습니다.", linkUrl: "/mypage/history", sessionId: "s1", attendanceId: "a1",
   });
   const present = attendanceRules.attendanceNoticePayload({ recipient, status: "PRESENT", className: "초등 A반", sessionId: "s1", attendanceId: "a1" });
   assert.equal(present.eventType, "ATTENDANCE_PRESENT");

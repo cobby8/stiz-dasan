@@ -19,7 +19,8 @@ const STANDALONE_PREFIXES = [
 ];
 
 function fallbackFor(pathname: string) {
-  if (pathname.startsWith("/payments")) return "/mypage";
+  // 청구서·결제 결과 화면의 한 단계 위 = 학부모 청구 목록(2026-11-17 — 예전엔 학부모 홈이라 목록에서 와도 홈으로 갔다)
+  if (pathname.startsWith("/payments")) return "/mypage/payments";
   // /install 은 로그인 없이 보는 공개 화면이라 돌아갈 기록이 없으면 공개 홈(/)이 맞다(예전 /teacher-app → /staff 는 없앴다).
   return "/";
 }

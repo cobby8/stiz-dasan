@@ -1,5 +1,6 @@
 "use client";
 
+import { useBackToClose } from "@/components/common/useBackToClose";
 import { useEffect, useId, useRef, useState } from "react";
 import { useStoreAppLacks } from "@/components/storeApp/useStoreAppLacks";
 import { hasShuttlePlaceName, SHUTTLE_PLACE_NAME_MAX, SHUTTLE_PLACE_NAME_REQUIRED_MESSAGE } from "@/lib/shuttle/placeNameRule";
@@ -98,6 +99,8 @@ export default function LocationPickerModal({
   onConfirm: (location: MapLocationData) => void;
   onClose: () => void;
 }) {
+  // 휴대폰 «뒤로» = 지도 창 닫기(2026-11-17) — 이 창은 열린 동안에만 그려진다. 예전엔 화면째 나가 입력하던 신청서가 사라졌다
+  useBackToClose(true, onClose);
   const titleId = useId();
   const panelRef = useRef<HTMLElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);

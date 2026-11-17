@@ -44,7 +44,11 @@ export function resolveBackAction({
   // 브라우저로 들어온 사람은 홈페이지에서 왔을 수 있어 막으면 오히려 불편하다.
   if (scopeHref && isInstalledApp) {
     // 앱의 첫 화면이면 돌아갈 곳이 없다. 아무 데도 보내지 않는다.
-    return pathname === scopeHref ? { type: "none" } : { type: "push", href: scopeHref };
+    if (pathname === scopeHref) return { type: "none" };
+    // 범위 안의 «한 단계 위»(예: 탈퇴 → 설정)가 있으면 그리로, 없으면 앱의 첫 화면으로(2026-11-17)
+    const up = fallbackHref.split(/[?#]/)[0];
+    if (up !== pathname && isWithinScope(up, scopeHref)) return { type: "push", href: fallbackHref };
+    return { type: "push", href: scopeHref };
   }
 
   // 되돌아갈 곳이 지금 화면과 같으면 제자리걸음이라 홈으로 보낸다(기존 동작).

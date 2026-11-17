@@ -33,13 +33,26 @@ export function entryOf(pathname: string, search = ""): string {
 }
 
 /** 새 주소가 들어왔을 때 다음 기록(원본은 바꾸지 않는다) */
-export function nextInAppHistory(stack: readonly string[], entry: string, max = IN_APP_HISTORY_MAX): string[] {
+export function nextInAppHistory(
+  stack: readonly string[],
+  entry: string,
+  max = IN_APP_HISTORY_MAX,
+  /**
+   * 이번 이동이 브라우저 «뒤로·앞으로»(popstate)였나. 모르면 undefined(예전 규칙: 바로 앞 화면과 같으면 돌아온 것).
+   * 2026-11-17: 링크로 «앞으로» 같은 화면에 다시 들어간 것(아이 기록 → 수업 → «전체 기록»)까지 돌아온 것으로 읽어
+   * 기록이 줄고 «←» 가 방금 있던 수업이 아니라 홈으로 갔다 → 기록 부품이 popstate 를 보고 알려 준다.
+   */
+  viaPop?: boolean,
+): string[] {
   if (stack.length === 0) return [entry];
   const last = stack[stack.length - 1];
   if (last === entry) return [...stack]; // 1) 같은 주소
   const prev = stack.length >= 2 ? stack[stack.length - 2] : undefined;
-  // 2) 바로 앞 화면으로 돌아옴 → pop (쿼리가 달라도 같은 화면이면 그 칸을 새 주소로)
-  if (prev !== undefined && pathOf(prev) === pathOf(entry)) return [...stack.slice(0, -2), entry];
+  // 0) 링크·아래 탭·로고로 학부모 홈(앱의 첫 화면)에 왔다 → 새로 시작(2026-11-17 검수).
+  //    홈은 맨 위 화면이라 «←» 가 없어야 한다(설치 앱 결정). 쌓으면 홈에 «←»(→ 방금 화면)가 새로 생긴다
+  if (viaPop === false && pathOf(entry) === PARENT_HISTORY_SCOPE) return [entry];
+  // 2) 바로 앞 화면으로 돌아옴 → pop (쿼리가 달라도 같은 화면이면 그 칸을 새 주소로). 링크로 들어간 것(viaPop=false)은 제외
+  if (viaPop !== false && prev !== undefined && pathOf(prev) === pathOf(entry)) return [...stack.slice(0, -2), entry];
   // 3) 같은 화면에서 쿼리만 바뀜 → replace
   if (pathOf(last) === pathOf(entry)) return [...stack.slice(0, -1), entry];
   // 4) 새 화면 → push(최대 개수 유지)
@@ -144,6 +157,29 @@ export function markNextNavigationAsReplace(storage: StorageLike | null = sessio
   }
 }
 
+/**
+ * 브라우저 «뒤로·앞으로»(popstate)가 일어났다는 표시 — 기록 부품(ParentHistoryTracker)이 듣고 다음 기록이 읽는다.
+ * 듣기 시작한 뒤로는 표시가 없으면 «링크로 들어간 것»(viaPop=false)으로 본다.
+ */
+let popListening = false;
+let popPending = false;
+let popAt = 0;
+/** popstate 뒤 이 시간 안에 화면이 바뀌어야 «뒤로 간 것» — 시트·사진 닫기용 popstate 가 다음 링크 이동까지 남지 않게 */
+export const POP_FLAG_TTL_MS = 3000;
+export function notePopNavigation(now = Date.now()) {
+  popPending = true;
+  popAt = now;
+}
+export function startPopListening() {
+  popListening = true;
+}
+function takePopFlag(now = Date.now()): boolean | undefined {
+  if (!popListening) return undefined; // 듣지 않는 곳(테스트 등)은 예전 규칙
+  const was = popPending && now - popAt <= POP_FLAG_TTL_MS;
+  popPending = false;
+  return was;
+}
+
 /** 이 페이지(문서)에서 아직 첫 기록 전인가 — 전체 새로 불러오기마다 모듈이 새로 올라와 true 로 돌아온다 */
 let firstRecordOfPage = true;
 let replacePending = false;
@@ -174,6 +210,9 @@ export function resetPageLoadStateForTest() {
   firstRecordOfPage = true;
   replacePending = false;
   leftScopePending = false;
+  popListening = false;
+  popPending = false;
+  popAt = 0;
   memoryStack = [];
 }
 
@@ -220,6 +259,8 @@ export function recordInAppNavigation(
   const prev = readInAppHistory(storage);
   let next: string[];
   const leftScope = takeLeftFlag(storage);
+  // «뒤로» 표시는 어느 갈래로 가든 이번 기록에서 한 번 꺼낸다 — 다른 갈래에서 남으면 다음 링크 이동을 «뒤로»로 읽는다(2026-11-17 검수)
+  const viaPop = takePopFlag();
   if (firstRecordOfPage) {
     firstRecordOfPage = false;
     const replaced = takeReplaceFlag(storage);
@@ -231,9 +272,15 @@ export function recordInAppNavigation(
       next = nextInAppHistory(prev, entry);
     }
   } else if (leftScope) {
+    takeReplaceFlag(storage); // 남은 «바꿔 끼우기» 표시는 버린다 — 다음 이동까지 남으면 엉뚱한 칸을 바꿔 끼운다(2026-11-17 검수)
     next = [entry]; // 화면 안 이동으로 학부모 화면 밖(로그인·공개 홈)을 다녀왔다
+  } else if (takeReplaceFlag(storage) && prev.length > 0) {
+    // 화면 안 이동인데 router.replace 였다(«←» 가 기록 없이 한 단계 위로 갈 때, 2026-11-17).
+    // 브라우저 기록은 칸이 바뀌기만 했으니 우리 기록도 쌓지 않고 바꿔 끼운다 — 쌓으면 위 화면의 «←» 가 방금 화면으로 되돌아간다
+    // 홈으로 바꿔 끼우면(완료 화면 «홈으로») 홈은 첫 화면 — 새로 시작
+    next = pathOf(entry) === PARENT_HISTORY_SCOPE ? [entry] : [...prev.slice(0, -1), entry];
   } else {
-    next = nextInAppHistory(prev, entry);
+    next = nextInAppHistory(prev, entry, IN_APP_HISTORY_MAX, viaPop);
   }
   memoryStack = next;
   try {

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import ReturnLink from "@/components/common/ReturnLink";
 import { useEffect, useState } from "react";
 import { PublicBottomBar } from "@/components/public-floating";
 // 남은 자리 3단계(여유/임박/마감) — 숫자 없이(재원생 수 비공개 · 2026-11-13 f9)
@@ -57,7 +58,7 @@ export default function SeasonalDetailClient({ slug, basePath = "/seasonal" }: {
       </section>
       {/* 하단 고정 바 — 높이를 --public-bottom-bar 로 알려 플로팅 버튼이 바 위로 올라간다(게슈탈트 C-P3) */}
       <PublicBottomBar className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--color-public-line)] bg-white/95 p-3 backdrop-blur dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)]/95">
-        <div className="mx-auto flex max-w-4xl gap-2"><Link href={basePath} className="public-btn-secondary">목록</Link>{display.canApply ? <Link href={`${basePath}/${slug}/apply`} className="public-btn-primary flex-1">신청하기</Link> : <span role="status" className="flex min-h-11 flex-1 items-center justify-center rounded bg-[var(--color-public-line)] px-5 text-[var(--color-public-muted)]">{display.label}</span>}</div>
+        <div className="mx-auto flex max-w-4xl gap-2"><ReturnLink href={basePath} className="public-btn-secondary">목록</ReturnLink>{display.canApply ? <Link href={`${basePath}/${slug}/apply`} className="public-btn-primary flex-1">신청하기</Link> : <span role="status" className="flex min-h-11 flex-1 items-center justify-center rounded bg-[var(--color-public-line)] px-5 text-[var(--color-public-muted)]">{display.label}</span>}</div>
       </PublicBottomBar>
     </>
   );
