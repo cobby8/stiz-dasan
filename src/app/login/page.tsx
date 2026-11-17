@@ -163,7 +163,8 @@ function LoginContent() {
             <button
               type="button"
               onClick={() => {
-                window.location.href = parentAuthEntryHref("signup", searchParams);
+                // 누르는 순간의 주소를 다시 읽는다 — 화면이 뜬 직후(쿼리를 아직 못 읽은 때) 눌러도 돌아갈 화면·인계 열쇠가 빠지지 않게
+                window.location.href = parentAuthEntryHref("signup", new URLSearchParams(window.location.search));
               }}
               className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${
                 mode === "signup"
