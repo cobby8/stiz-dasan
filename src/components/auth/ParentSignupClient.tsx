@@ -158,6 +158,8 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
       });
       // 학원에 이미 등록된 보호자: 간편로그인 계정이 바로 연결됐으면 원래 가려던 화면으로 간다.
       if (data.existingParent === "LINKED") {
+        // 앱에서 넘어온 경우는 이 브라우저 창에서 웹을 이어 쓰지 않게 완료 화면의 «앱으로 돌아가기» 안내로(2026-11-17 검수 반영)
+        if (fromApp) { setStep("done"); return; }
         // 서버가 검증한 경로만 쓴다(주소창의 next 를 그대로 믿지 않는다)
         window.location.assign(data.redirectPath || "/mypage");
         return;
