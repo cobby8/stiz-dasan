@@ -35,11 +35,11 @@ export default async function ParentAnnualPage({ searchParams }: { searchParams:
                 <ParentBackLink fallbackHref="/mypage/history" ariaLabel="일정으로" className="academy-back-link" />
                 <h1 className="academy-heading min-w-0 flex-1">연간 일정</h1>
                 <nav aria-label="해 이동" className="flex shrink-0 items-center">
-                    <Link href={`/mypage/annual?year=${year - 1}`} aria-label="이전 해" className={YEAR_LINK}>
+                    <Link href={`/mypage/annual?year=${year - 1}`} replace aria-label="이전 해" className={YEAR_LINK}>
                         <span aria-hidden="true" className="text-2xl leading-none">‹</span>
                     </Link>
                     <span className="whitespace-nowrap px-1 text-base font-semibold tabular-nums text-[var(--color-academy-ink)]">{year}년</span>
-                    <Link href={`/mypage/annual?year=${year + 1}`} aria-label="다음 해" className={YEAR_LINK}>
+                    <Link href={`/mypage/annual?year=${year + 1}`} replace aria-label="다음 해" className={YEAR_LINK}>
                         <span aria-hidden="true" className="text-2xl leading-none">›</span>
                     </Link>
                 </nav>

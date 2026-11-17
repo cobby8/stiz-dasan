@@ -34,6 +34,27 @@ export function isSafeInternalPath(path?: string | null) {
 }
 
 /**
+ * 로그인 뒤 «보던 화면»으로 돌아와야 하는 공개 화면 — 로그인해야 쓸 수 있는 기능이 있는 곳(특강 상세·신청, 대관, 클럽샵, 신청서).
+ * 소개·안내 화면(/about·/programs·/teacher-guide 등)은 넣지 않는다: 거기서 로그인하면 역할 첫 화면·«마지막에 쓰던 화면»으로 가는 게 맞다
+ * (redirect 가 붙으면 «마지막에 쓰던 화면» 기능이 꺼진다 — last-view-server, 2026-11-17 검수).
+ */
+function needsLoginReturn(path: string) {
+  return path === "/rental" || path === "/shop" || ["/rental/", "/shop/", "/seasonal/", "/apply/"].some((prefix) => path.startsWith(prefix));
+}
+
+/**
+ * 공개 화면의 «로그인» 링크 — 위 화면에서만 보던 주소를 redirect= 로 넘긴다(2026-11-17 뒤로 가기 전수 조치).
+ * 예전엔 그냥 /login 이라, 특강 상세를 보다 로그인하면 보던 화면이 아니라 역할 첫 화면(마이페이지 등)으로 갔다.
+ * 넘기는 값은 isSafeInternalPath 를 통과한 내부 경로만.
+ */
+export function loginHrefFrom(currentPath?: string | null) {
+  const path = currentPath ?? "";
+  if (!isSafeInternalPath(path)) return "/login";
+  if (!needsLoginReturn(path.split(/[?#]/)[0])) return "/login";
+  return `/login?redirect=${encodeURIComponent(path)}`;
+}
+
+/**
  * 열린 화면 묶음(다중 역할, 2026-10-25) — 주 역할 + 승인된 추가 역할로 계산한 값.
  * 이 파일은 import 없이 단독으로 읽히는 곳이 있어(테스트·mypage-access) 타입을 여기 직접 둔다.
  * 반드시 서버가 effectiveRoles 로 계산한 값만 넘긴다 — 화면에서 받은 값을 넣으면 안 된다.

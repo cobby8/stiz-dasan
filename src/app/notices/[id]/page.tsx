@@ -4,6 +4,7 @@ import AnimateOnScroll from "@/components/ui/AnimateOnScroll";
 import Badge from "@/components/ui/Badge";
 import CTABanner from "@/components/landing/CTABanner";
 import Link from "next/link";
+import ReturnLink from "@/components/common/ReturnLink";
 import { notFound } from "next/navigation";
 import { toNoticeHtml, isImageAttachment, isHtmlContent } from "@/lib/noticeContent";
 import { sanitizeHtml } from "@/lib/sanitize";
@@ -53,13 +54,13 @@ export default async function NoticeDetailPage({ params }: { params: Promise<{ i
             <section className="public-page-hero public-page-hero--compact relative overflow-hidden bg-gradient-to-br from-[var(--color-public-dark)] via-[var(--color-public-dark)] to-[var(--color-public-dark)] text-white py-16 md:py-20">
                 <div className="max-w-4xl mx-auto px-6 md:px-4 relative">
                     <AnimateOnScroll>
-                        {/* 목록으로 돌아가기 링크 */}
-                        <Link
+                        {/* 목록으로 돌아가기 링크 — 목록에서 왔으면 한 칸 뒤로(스크롤 그대로), 아니면 목록으로(ReturnLink, 2026-11-17) */}
+                        <ReturnLink
                             href="/notices"
                             className="inline-flex items-center gap-1.5 text-[var(--color-public-dark-muted)] hover:text-white text-sm mb-2 min-h-11 transition-colors"
                         >
                             <span aria-hidden="true">←</span> 목록으로 돌아가기
-                        </Link>
+                        </ReturnLink>
 
                         {/* 고정 공지 뱃지 */}
                         {notice.isPinned && (
@@ -164,12 +165,12 @@ export default async function NoticeDetailPage({ params }: { params: Promise<{ i
 
                     {/* 목록으로 돌아가기 버튼 — 본문 하단 */}
                     <div className="mt-8 text-center">
-                        <Link
+                        <ReturnLink
                             href="/notices"
                             className="public-btn-secondary text-sm"
                         >
                             목록으로 돌아가기
-                        </Link>
+                        </ReturnLink>
                     </div>
                 </div>
             </div>

@@ -27,7 +27,7 @@ function compileModule(path, imports = {}) {
 const Link = ({ children, ...props }) => React.createElement("a", props, children);
 const kst = compileModule("src/lib/datetime/kst.ts");
 // 학부모 화면 «←» = 기록 우선 뒤로 링크(2026-11-14) — 진짜 부품(기록 없을 때 주소 = 예전 고정 주소)
-const parentBackLink = compileModule("src/components/parent/ParentBackLink.tsx", { "next/link": { default: Link }, "@/lib/navigation/inAppHistory": compileModule("src/lib/navigation/inAppHistory.ts") });
+const parentBackLink = compileModule("src/components/parent/ParentBackLink.tsx", { "next/link": { default: Link }, "@/lib/navigation/inAppHistory": compileModule("src/lib/navigation/inAppHistory.ts"), "@/lib/navigation/publicHistory": compileModule("src/lib/navigation/publicHistory.ts") });
 const chips = compileModule("src/components/admin/list/StatusCountChips.tsx");
 // 상태색 공용 지도(2026-11-09 색상 정리) — 학부모 보강·방학특강 배지가 쓴다
 const statusTones = compileModule("src/lib/ui/statusTones.ts");
@@ -333,6 +333,7 @@ test("수업 리포트 목록은 KST 달별 묶음·한 줄 행(주제·날짜 �
     "@/components/pwa/HideInInstalledApp": { default: ({ children }) => children },
     // 2026-11-14 c4: 사진 타일은 앱 안 크게 보기 부품으로(이 테스트는 리포트 목록만 본다)
     "@/components/parent/FeedPhotoGallery": { default: () => null },
+    "@/components/parent/HashJumpLink": { default: ({ targetId, className, children }) => React.createElement("a", { href: `#${targetId}`, className }, children) },
     // 오늘을 고정 — 3개월 지난 공지 숨김이 실행 날짜에 따라 달라지지 않게
     "@/lib/datetime/kst": { ...kst, todayKst: () => "2026-11-09" },
     "@/lib/mypage/parentSchedule": parentSchedule,
@@ -415,7 +416,7 @@ test("셔틀 예정 변경은 날짜 묶음의 한 줄 행이고 행 탭=하단 
   assert.match(source, /function handleRowKeyDown\(event: KeyboardEvent<HTMLElement>, id: string\) \{\s*if \(event\.target !== event\.currentTarget\) return;/);
   // 행 안 «취소» = 그 자리 확인 후 같은 cancel(item.id), 행 탭으로 번지지 않게 stopPropagation (게슈탈트 M-02)
   assert.match(source, /<InlineConfirm[\s\S]*?onConfirm=\{\(\) => cancel\(item\.id\)\}[\s\S]*?stopPropagation[\s\S]*?\/>/);
-  assert.match(source, /<ListDetailPanel onClose=\{\(\) => setDetailId\(null\)\}[\s\S]*?parentDeliveryText\(item\.notificationStatus\)/);
+  assert.match(source, /<ListDetailPanel backToClose onClose=\{\(\) => setDetailId\(null\)\}[\s\S]*?parentDeliveryText\(item\.notificationStatus\)/);
   // 저장·취소 흐름 보존(결과 확인 필요 시 재조회, 중복 제출 막기)
   assert.match(source, /if \(response\.status >= 500\) return reconcile\(body\);/);
   assert.match(source, /if \(!\(await send\(\{ action: "cancel", id \}\)\)\) return;/);

@@ -9,7 +9,7 @@
  * 검증의 정본은 서버(consult-rules.validateConsultInput) — 여기서는 같은 규칙으로 먼저 알려 줄 뿐이다.
  */
 import { useEffect, useRef, useState, useTransition } from "react";
-import Link from "next/link";
+import ReplaceLink from "@/components/common/ReplaceLink";
 import { submitConsultRequest, submitParentConsultRequest } from "@/app/actions/consult";
 import {
   CONSULT_DAY_OPTIONS,
@@ -128,9 +128,9 @@ export default function ConsultForm({ mode, source = "PUBLIC_WEB", initialGuardi
           학원에서 내용을 확인한 뒤 <b className={s.ink}>남겨 주신 번호로 전화드릴게요.</b>
           {contactPhone ? <> 급하시면 <a href={`tel:${contactPhone.replace(/-/g, "")}`} className={`font-medium underline underline-offset-2 ${s.ink}`}>{contactPhone}</a>로 연락해 주세요.</> : null}
         </p>
-        <Link href={homeHref ?? "/"} className={`${s.secondary} mt-4 text-sm`}>
+        <ReplaceLink href={homeHref ?? "/"} className={`${s.secondary} mt-4 text-sm`}>{/* 접수 뒤 이동은 replace — «←» 가 빈 신청서로 돌아오지 않게(2026-11-17) */}
           {mode === "parent" ? "홈으로" : "처음으로"}
-        </Link>
+        </ReplaceLink>
       </div>
     );
   }

@@ -95,6 +95,8 @@ export default function ShopProductFrame({ productNo }: { productNo: string }) {
   return (
     <main className="public-product-frame flex h-dvh min-h-0 flex-col overflow-hidden bg-white text-gray-950 dark:bg-gray-950 dark:text-white">
       <header className="public-product-header flex min-h-16 shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-3 shadow-sm dark:border-gray-800 dark:bg-gray-950 sm:px-5">
+        {/* 이 화면은 쇼핑몰 상품 페이지를 iframe 으로 띄운다 — iframe 안 이동도 같은 뒤로 기록에 쌓여
+            history.back() 이 바깥 화면이 아니라 iframe 만 되돌린다. 그래서 «한 칸 뒤로»(ReturnLink)를 쓰지 않는다(2026-11-17 검수) */}
         <Link
           href="/shop"
           title="클럽샵으로 돌아가기"

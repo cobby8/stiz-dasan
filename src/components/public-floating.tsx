@@ -14,6 +14,7 @@
  *    모달이 여러 개 겹쳐도 개수로 세어 마지막 것이 닫힐 때만 지운다.
  */
 import { useEffect, useRef, type CSSProperties, type ReactNode, type RefObject } from "react";
+import { useBackToClose } from "@/components/common/useBackToClose";
 
 /**
  * «둘러보기» 알약의 아래 여백 — «상담» 알약(아래 24px + 높이 44px) 바로 위 8px.
@@ -22,8 +23,13 @@ import { useEffect, useRef, type CSSProperties, type ReactNode, type RefObject }
  */
 export const GUIDE_FLOATING_STYLE = { "--public-floating-offset": "76px" } as CSSProperties;
 
-/** 모달·하단 시트가 열려 있는 동안 플로팅 버튼을 숨긴다. */
-export function usePublicOverlayOpen(open: boolean) {
+/**
+ * 모달·하단 시트가 열려 있는 동안 플로팅 버튼을 숨긴다.
+ * onBack 을 넘기면 휴대폰 «뒤로» = 이 창 닫기(2026-11-17 — 예전엔 창이 열린 채 뒤로를 누르면 화면째 나갔다).
+ * 창 안에 같은 사이트 링크가 있으면 돌려준 captureLinks 를 창 감싼 요소의 onClickCapture 에 단다(useBackToClose 참고).
+ */
+export function usePublicOverlayOpen(open: boolean, onBack?: () => void) {
+  const { captureLinks } = useBackToClose(open && Boolean(onBack), () => onBack?.());
   useEffect(() => {
     if (!open) return;
     const body = document.body;
@@ -34,6 +40,7 @@ export function usePublicOverlayOpen(open: boolean) {
       else delete body.dataset.publicOverlay;
     };
   }, [open]);
+  return { captureLinks };
 }
 
 /** 하단 고정 바의 실제 높이를 --public-bottom-bar 변수로 알린다(줄바꿈으로 높이가 변해도 따라간다). */

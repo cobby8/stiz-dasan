@@ -9,6 +9,7 @@ import { safeInternalHref } from "@/lib/mypage/parentNav";
 import { formatKstDate } from "@/lib/datetime/kst";
 import { unreadBadgeText } from "@/lib/mypage/parentSettings";
 import UiIcon from "@/components/common/UiIcon";
+import { useBackToClose } from "@/components/common/useBackToClose";
 
 // 학부모 머리줄 🔔 알림 (2026-11-10 원장 결정 k7).
 // 예전엔 홈 «처리할 일» 맨 끝 줄에서 펼쳐 봤다 → 어느 화면에서든 머리줄 종을 눌러 바로 본다.
@@ -36,6 +37,8 @@ export default function ParentNotificationBell({ notifications, unreadCount }: {
     const router = useRouter();
     const pathname = usePathname();
     const badge = unreadBadgeText(unreadCount);
+    // 휴대폰 «뒤로» = 알림 창 닫기(2026-11-17) — 예전엔 창이 열린 채 뒤로를 누르면 화면째 앞 화면으로 나갔다
+    const { leaveTo } = useBackToClose(open, () => setOpen(false));
 
     // 다른 화면으로 옮겨 가면 닫는다(머리줄은 그대로 남아 저절로 안 닫힌다)
     useEffect(() => { setOpen(false); }, [pathname]);
@@ -76,8 +79,9 @@ export default function ParentNotificationBell({ notifications, unreadCount }: {
                 }
             }
             if (href) {
+                // 창이 넣은 기록 칸을 먼저 되돌리고 이동(되돌리기 전에 이동하면 뒤로가 새 화면을 되돌린다)
+                leaveTo(href, (to) => router.push(to));
                 setOpen(false);
-                router.push(href);
             }
         });
     }
@@ -192,7 +196,13 @@ export default function ParentNotificationBell({ notifications, unreadCount }: {
                         {/* 아래: 알림 설정으로(휴대폰 알림 켜기·종류별 받기) — 목록과 구분선으로 뗀다 */}
                         <Link
                             href={SETTINGS_NOTIFICATION_HREF}
-                            onClick={() => setOpen(false)}
+                            onClick={(e) => {
+                                // 창이 넣은 기록 칸을 먼저 되돌리고 이동 — 같이 하면 되돌리기가 설정 화면 이동을 취소한다(2026-11-17 검수)
+                                if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                                e.preventDefault();
+                                leaveTo(SETTINGS_NOTIFICATION_HREF, (to) => router.push(to));
+                                setOpen(false);
+                            }}
                             className="flex min-h-11 items-center gap-2 border-t border-[var(--color-academy-line)] px-4 text-sm font-medium text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
                         >
                             <span className="flex-1">알림 설정</span>

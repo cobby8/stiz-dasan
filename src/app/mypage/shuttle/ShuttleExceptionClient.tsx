@@ -498,7 +498,7 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
         const item = detailId ? initial.upcoming.find((row) => row.id === detailId) : null;
         if (!item) return null;
         return (
-          <ListDetailPanel onClose={() => setDetailId(null)} titleId="shuttle-change-detail-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+          <ListDetailPanel backToClose onClose={() => setDetailId(null)} titleId="shuttle-change-detail-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
             <div className="mb-3 flex items-center gap-2">
               <h3 id="shuttle-change-detail-title" className="academy-section-title min-w-0 break-keep">
                 {item.studentName}
