@@ -80,26 +80,27 @@ test("미리보기 한 줄: 이름은 가리고 번호는 끝 4자리만", () =>
 });
 
 test("가입 안내 문구 — 원장 승인본 전문(이모지·꺾쇠 따옴표만 문자용으로 바꿈)", () => {
+  // 2026-11-17 원장 지시 문구 — 랠리즈 종료·앱에서 전부, 앱 설치가 먼저, 문의는 원장 전화(카카오톡 채널 미오픈)
   assert.equal(T.buildParentSignupGuideMessage(), [
-    "[스티즈농구교실] 학부모 가입 안내",
+    "[스티즈농구교실] 학부모 앱 안내",
     "",
     "안녕하세요, 스티즈농구교실입니다.",
-    "12월부터 출결·수업 소식·수강료 청구와 결제를 홈페이지에서 확인하실 수 있어요.",
+    "랠리즈 사용을 종료하고, 12월부터 스티즈농구교실 앱을 사용합니다.",
+    "수업 소식·출결·수강료 청구와 결제를 모두 앱에서 하실 수 있어요.",
     "",
+    // 앱 설치 짧은 주소 — 기기별로 Play 스토어/App Store 로 나눠 보낸다
+    "▶ 앱 설치: https://www.stiz-dasan.kr/install",
     "▶ 가입하기: https://www.stiz-dasan.kr/signup/parent",
     "학원에 등록하신 휴대폰 번호로 가입하시면 자녀가 자동으로 연결돼요.",
+    "앱에서는 가입하신 아이디로 로그인하시면 돼요.",
     "",
-    // 2026-11-13 f10(원장 점검표): 앱 설치 짧은 주소 — 기기별로 Play 스토어/App Store 로 나눠 보낸다
-    "▶ 앱 설치: https://www.stiz-dasan.kr/install",
-    "앱에서도 같은 아이디로 로그인하시면 돼요.",
-    "",
-    "▶ 결석은 가입 후 ‘결석 알리기’로 알려 주세요.",
+    "▶ 결석은 가입 후 앱의 ‘결석 알리기’로 알려 주세요.",
     "",
     "재원생 가족 혜택",
     "로그인 후 체육관 대관을 신청하시면 2시간 무료예요.",
     "https://www.stiz-dasan.kr/rental",
     "",
-    "문의: 카카오톡 채널 ‘스티즈농구교실’",
+    "문의: 김수빈 원장 010-9167-8117",
   ].join("\n"));
 });
 
@@ -244,7 +245,7 @@ test("성인 문구: 학부모용과 딱 세 줄만 다르고(학부모·자녀�
   assert.equal(adult.length, parent.length);
   const diff = parent.map((line, i) => [line, adult[i]]).filter(([a, b]) => a !== b);
   assert.deepEqual(diff, [
-    ["[스티즈농구교실] 학부모 가입 안내", "[스티즈농구교실] 회원 가입 안내"],
+    ["[스티즈농구교실] 학부모 앱 안내", "[스티즈농구교실] 회원 앱 안내"],
     ["학원에 등록하신 휴대폰 번호로 가입하시면 자녀가 자동으로 연결돼요.", "학원에 등록하신 휴대폰 번호로 가입하시면 수강 정보가 자동으로 연결돼요."],
     ["재원생 가족 혜택", "재원생 혜택"],
   ]);
@@ -317,27 +318,38 @@ test("가입함: 이미 받은 번호 제외·다시 보내기 규칙은 그대�
   assert.equal(again.recipients.length, 2);
 });
 
-test("가입함 문구 — 원장 지시 전문(가입하기 대신 로그인)", () => {
+test("가입함 문구 — 원장 지시 전문(2026-11-17: 웹 로그인 링크 빼고 앱 설치만)", () => {
   assert.equal(T.PARENT_LOGIN_URL, "https://www.stiz-dasan.kr/login");
   assert.equal(T.buildSignedInGuideMessage(), [
-    "[스티즈농구교실] 학부모 앱 이용 안내",
+    "[스티즈농구교실] 학부모 앱 설치 안내",
     "",
     "안녕하세요, 스티즈농구교실입니다.",
-    "12월부터 출결·수업 소식·수강료 청구와 결제를 홈페이지에서 확인하실 수 있어요.",
+    "랠리즈 사용을 종료하고, 12월부터 스티즈농구교실 앱을 사용합니다.",
+    "수업 소식·출결·수강료 청구와 결제를 모두 앱에서 하실 수 있어요.",
     "",
-    "이미 가입하신 계정으로 로그인하시면 바로 이용하실 수 있어요.",
-    "▶ 로그인: https://www.stiz-dasan.kr/login",
     "▶ 앱 설치: https://www.stiz-dasan.kr/install",
-    "앱에서도 같은 아이디로 로그인하시면 돼요.",
+    "이미 가입하신 아이디로 로그인하시면 바로 이용하실 수 있어요.",
     "",
-    "▶ 결석은 ‘결석 알리기’로 알려 주세요.",
+    "▶ 결석은 앱의 ‘결석 알리기’로 알려 주세요.",
     "",
     "재원생 가족 혜택",
     "로그인 후 체육관 대관을 신청하시면 2시간 무료예요.",
     "https://www.stiz-dasan.kr/rental",
     "",
-    "문의: 카카오톡 채널 ‘스티즈농구교실’",
+    "문의: 김수빈 원장 010-9167-8117",
   ].join("\n"));
+  assert.doesNotMatch(T.buildSignedInGuideMessage(), /stiz-dasan\.kr\/login/);
+});
+
+test("가입 안내 네 문구 모두 카카오톡 채널 안내가 없다(2026-11-17 원장: 채널은 아직 열지 않음)", () => {
+  for (const body of [
+    T.buildParentSignupGuideMessage(), T.buildAdultSignupGuideMessage(),
+    T.buildSignedInGuideMessage(), T.buildAdultSignedInGuideMessage(),
+  ]) {
+    assert.doesNotMatch(body, /카카오|kakao/i);
+    assert.match(body, /랠리즈 사용을 종료하고/);
+    assert.ok(body.endsWith("문의: 김수빈 원장 010-9167-8117"));
+  }
 });
 
 test("가입함 문구 — 로그인 주소가 실제 로그인 화면이다", () => {
@@ -349,7 +361,7 @@ test("가입함 성인 문구 — 두 줄만 다르고(학부모·가족), 네 �
   const adult = T.buildAdultSignedInGuideMessage().split("\n");
   const diff = base.map((line, i) => [line, adult[i]]).filter(([a, b]) => a !== b);
   assert.deepEqual(diff, [
-    ["[스티즈농구교실] 학부모 앱 이용 안내", "[스티즈농구교실] 회원 앱 이용 안내"],
+    ["[스티즈농구교실] 학부모 앱 설치 안내", "[스티즈농구교실] 회원 앱 설치 안내"],
     ["재원생 가족 혜택", "재원생 혜택"],
   ]);
   assert.doesNotMatch(adult.join("\n"), /학부모|자녀|가족/);
