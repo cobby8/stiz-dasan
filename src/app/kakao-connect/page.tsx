@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { logout } from "@/app/actions/auth";
+import { logoutAndReturn } from "@/app/actions/auth";
 import { getVerifiedParentState } from "@/lib/auth-guard";
 import { bindIdentity, isKakaoConnectTokenUsable } from "@/lib/kakao-parent-chatbot";
 import { detectInstallEnvironment } from "@/lib/pwa/installEnvironment";
@@ -102,7 +102,10 @@ export default async function KakaoConnectPage({
         <p className="text-sm font-medium text-[var(--color-academy-warning)]">계정 확인</p>
         <h1 className="mt-2 text-2xl font-bold text-[var(--color-academy-ink)]">학부모 계정으로 열어 주세요</h1>
         <p className="mt-4 text-sm leading-6 text-[var(--color-academy-muted)]">지금은 관리자·선생님 계정으로 로그인돼 있어요. 카카오 학부모 인증은 학부모 계정에만 연결할 수 있어요. 로그아웃한 뒤 학부모 계정으로 다시 로그인해 주세요.</p>
-        <form action={logout} className="mt-6">
+        {/* 로그아웃한 뒤 학부모로 다시 로그인하면 이 화면(토큰 포함)으로 돌아와 연결을 이어 간다(2026-11-17).
+            예전에는 그냥 로그인 화면으로만 가서, 로그인하면 마이페이지로 가 버리고 카카오 연결이 끊겼다. */}
+        <form action={logoutAndReturn} className="mt-6">
+          <input type="hidden" name="returnTo" value={selfPath} />
           <button className="academy-button-secondary w-full">로그아웃</button>
         </form>
       </Shell>

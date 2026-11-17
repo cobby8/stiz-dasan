@@ -13,7 +13,9 @@ const nextConfigSource = await readFile("next.config.ts", "utf8");
 
 test("교사용 상단 프로필은 앱 설치 안내와 로그아웃만 제공한다", () => {
   assert.match(layoutSource, /<StaffProfileMenu staffName=\{staff\.appUserName\}/);
-  assert.ok(menuSource.includes('href="/staff/install"'), "설치 안내 바로가기가 있어야 합니다.");
+  // 2026-11-17: 옛 선생님 앱 설치 안내(/staff/install) 대신 스토어 앱 설치 안내(/install) 하나로 간다.
+  assert.ok(menuSource.includes('href="/install"'), "앱 설치 안내 바로가기가 있어야 합니다.");
+  assert.ok(!menuSource.includes('href="/staff/install"'), "옛 설치 안내 주소로 보내지 않습니다.");
   assert.match(menuSource, /action=\{logoutStaff\}/);
   // 선생님 앱의 manifest scope 는 /staff 다. 공개 홈페이지로 나가면 설치된 앱을
   // 벗어나 브라우저로 튕기므로 프로필 메뉴에 공개 홈페이지 링크를 두지 않는다.

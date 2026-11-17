@@ -98,13 +98,11 @@ for (const { label, path, home } of INSTALL_SCREENS) {
   });
 }
 
-test("설치 안내 화면은 각 앱의 scope 안에 있고 로그인 없이 열린다", () => {
-  // scope 밖에서는 브라우저가 설치를 제안하지 않는다.
-  assert.match(nextConfig, /source: "\/staff\/install"/);
-  assert.match(nextConfig, /source: "\/mypage\/install"/);
-  // 짧은 주소 /app 은 rewrite 가 아니라 redirect 여야 한다.
-  // 주소가 실제로 /mypage/install 로 바뀌어야 scope 안에 들어간다.
-  assert.match(nextConfig, /source: "\/app"[\s\S]{0,200}destination: "\/mypage\/install"/);
+test("옛 설치 안내 주소는 스토어 앱 설치 안내로 넘어가고 로그인 없이 열린다", () => {
+  // 2026-11-17 원장 승인: 홈 화면 바로가기식 옛 설치 안내 대신 스토어 앱 안내(/install) 하나로 모았다.
+  assert.match(nextConfig, /source: "\/staff\/install", destination: "\/install", permanent: false/);
+  assert.match(nextConfig, /source: "\/mypage\/install", destination: "\/install", permanent: false/);
+  assert.match(nextConfig, /source: "\/app", destination: "\/install", permanent: false/);
   // 설치 안내는 로그인 전에 봐야 하므로 보호 경로에서 제외한다.
   assert.match(middleware, /isStaffInstall/);
   assert.match(middleware, /isMyPageInstall/);

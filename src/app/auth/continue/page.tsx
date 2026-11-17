@@ -23,7 +23,8 @@ export default async function AuthContinuePage({ searchParams }: ContinuePagePro
     const bounced = (Array.isArray(params.bounced) ? params.bounced[0] : params.bounced) === "1";
     const requestedPath = bounced ? undefined : requestedPathParam;
     // 어디로 보낼지는 공용 함수 한 곳에서 정한다(스토어 앱 시작 주소 /store-app 도 같은 함수를 쓴다).
-    destination = await resolveContinueDestination({ context, requestedPath });
+    // bounced 도 넘긴다 — 쿠키가 가리킨 화면이 방금 거절한 경우 그 쿠키를 다시 따르지 않게.
+    destination = await resolveContinueDestination({ context, requestedPath, bounced });
   } catch (error) {
     // Next.js redirects are implemented as thrown control-flow errors.
     if (error && typeof error === "object" && "digest" in error) throw error;

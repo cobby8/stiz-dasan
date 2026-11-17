@@ -89,10 +89,13 @@ test("설치 화면: 기기 판별 공용 모듈 → 스토어로 바로 이동,
   assert.doesNotMatch(proxy, /"\/install/, "로그인 보호 대상이 아니어야 한다");
 });
 
-test("기존 /app 짧은 주소(홈 화면 바로가기)는 그대로 — 새 설치 주소가 덮지 않는다", async () => {
+test("기존 /app 짧은 주소도 스토어 앱 설치 안내(/install)로 넘어간다 — 설치 안내는 하나(2026-11-17)", async () => {
+  // 예전에는 /app → /mypage/install(홈 화면 바로가기 안내)이었다. 원장 승인으로 스토어 앱 안내 하나로 모았다.
   const config = await readFile("next.config.ts", "utf8");
-  assert.match(config, /source: "\/app",\s*destination: "\/mypage\/install"/);
+  assert.match(config, /source: "\/app", destination: "\/install", permanent: false/);
   assert.equal(existsSync("src/app/app"), false);
+  // 설치 안내 화면이 자기에게 되돌아오는 옛 주소로 링크하지 않는다
+  assert.doesNotMatch(await readFile("src/app/install/page.tsx", "utf8"), /href="\/(parent-app|teacher-app|app|mypage\/install|staff\/install)"/);
 });
 
 test("App Store·Play 스토어 주소는 상수 한 곳에서만 만든다", async () => {
