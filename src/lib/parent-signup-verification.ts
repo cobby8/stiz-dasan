@@ -318,6 +318,45 @@ export async function sendParentSignupOtp(token: string, requestKey = "unknown")
   }
 }
 
+/**
+ * 본인인증(통신사 명의 확인)을 통과한 번호로 «문자 인증을 마친 것과 같은» 가입 요청을 만든다(2026-11-17 원장 지시
+ * «본인인증 하나로 통일»). 문자는 보내지 않는다 — 본인인증이 «이 번호의 명의자»까지 확인했으므로 문자 인증보다 강하다.
+ * 부르는 쪽(parent-link/verify)이 포트원 재조회(VERIFIED·10분 안·이 간편로그인 사용자의 건 번호)를 끝낸 뒤에만 부른다.
+ * 로그인 수단이 있는 번호(REGISTERED)는 여기로 오지 않는다 — 그쪽은 기존 계정 연결(selectLinkTarget)이 맡는다.
+ */
+export async function issueIdentityVerifiedSignup(input: {
+  phone: string; signupMethod: Exclude<ParentSignupMethod, "PASSWORD">;
+  email?: string | null; pendingAuthUserId: string;
+}): Promise<{ ok: true; token: string; proof: string } | { error: string }> {
+  const phone = normalizeParentPhone(input.phone);
+  if (!/^01[016789]\d{7,8}$/.test(phone)) return { error: "본인인증 휴대폰 번호를 확인하지 못했어요. 학원에 문의해 주세요." };
+  if (!input.pendingAuthUserId) return { error: "간편가입 계정을 먼저 확인해 주세요." };
+  const token = randomBytes(32).toString("base64url");
+  const proof = randomBytes(32).toString("base64url");
+  const phoneHash = keyed(`phone:${phone}`);
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))::text`, `signup:${phoneHash}`);
+      const ownership = await classifyPhoneOwnership(tx, phone);
+      if (ownership.kind === "REGISTERED") throw new Error(REGISTERED_PHONE_MESSAGE);
+      // 같은 번호로 진행 중이던 가입 요청은 닫는다(문자 인증 시작과 같은 규칙)
+      await tx.$executeRawUnsafe(
+        `UPDATE "ParentSignupVerification" SET status = 'CANCELLED', "updatedAt" = NOW()
+         WHERE "phoneHash" = $1 AND status IN ('PENDING', 'VERIFIED')`, phoneHash,
+      );
+      await tx.$executeRawUnsafe(
+        `INSERT INTO "ParentSignupVerification"
+         (id, "tokenHash", username, name, phone, "phoneHash", "signupMethod", email, "pendingAuthUserId", status,
+          "verifiedAt", "proofHash", "proofExpiresAt", "expiresAt", "createdAt", "updatedAt")
+         VALUES ($1,$2,NULL,NULL,$3,$4,$5,$6,$7,'VERIFIED',NOW(),$8,NOW()+INTERVAL '10 minutes',NOW()+INTERVAL '30 minutes',NOW(),NOW())`,
+        randomUUID(), hash(token), phone, phoneHash, input.signupMethod,
+        input.email?.trim().toLowerCase() || null, input.pendingAuthUserId, keyed(`proof:${hash(token)}:${proof}`),
+      );
+    });
+    return { ok: true, token, proof };
+  } catch (error) { return { error: userFacingError(error, "가입 인증을 시작하지 못했습니다.") }; }
+}
+
 export async function verifyParentSignupOtp(token: string, code: string) {
   if (!/^\d{6}$/.test(code.trim())) return { error: "6자리 인증번호를 입력해 주세요." };
   return prisma.$transaction(async (tx) => {

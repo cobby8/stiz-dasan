@@ -156,8 +156,17 @@ function callbackHarness({ allowed = true } = {}) {
   const http = load("src/lib/native-auth/http.ts", { "server-only": {}, "@supabase/ssr": server, "next/server": next, "./policy": { ...policy, nativeConfig: () => h.config }, "./service": { createNativeAuthService: () => h.svc }, "./store": { postgresNativeFlowStore: {} } });
   const deps = { "next/server": next, "@/lib/native-auth/policy": policy, "@/lib/native-auth/http": http };
   const browser = load("src/app/auth/native/browser/route.ts", { ...deps, "@/lib/auth-providers": { getEnabledParentOAuthProviders: async () => ["kakao"] }, "@/lib/parent-oauth": { toSupabaseProvider: (p) => p } });
-  const callback = load("src/app/auth/native/callback/route.ts", { ...deps, "@/lib/native-auth/store": { requireNativeAccount: async () => allowed } });
-  return { h, browser, callback };
+  // account.linked: 가입·연결을 마친 뒤(=resume 시점)에는 학원 계정이 있다고 바꿀 수 있게 객체로 둔다
+  const account = { linked: allowed };
+  const callback = load("src/app/auth/native/callback/route.ts", { ...deps, "@/lib/native-auth/store": { requireNativeAccount: async () => account.linked } });
+  // 이 브라우저의 웹 로그인(가입·연결 뒤의 세션) — resume 이 읽는다
+  const web = { session: { ...session, user: { id: session.authUserId } } };
+  const resume = load("src/app/auth/native/resume/route.ts", { ...deps, "@/lib/native-auth/store": { requireNativeAccount: async () => account.linked },
+    "@/lib/supabase/server": { createClient: async () => ({ auth: {
+      async getSession() { return { data: { session: web.session }, error: null }; },
+      async getUser() { return web.session ? { data: { user: { id: web.session.user.id } }, error: null } : { data: { user: null }, error: { message: "none" } }; },
+    } }) } });
+  return { h, browser, callback, resume, account, web };
 }
 async function throughBrowser(f, extra = {}, extraCookie = "") {
   const started = await f.h.svc.start({ platform: "android", provider: "kakao", codeChallenge: policy.digest(verifier), state });
@@ -167,33 +176,124 @@ async function throughBrowser(f, extra = {}, extraCookie = "") {
   const url = new URL(`https://www.stiz-dasan.kr/auth/native/callback?flow=${started.flowId}&provider=kakao`);
   for (const [key, value] of Object.entries({ code: "synthetic-oauth-code", ...extra })) if (value === null) url.searchParams.delete(key); else url.searchParams.set(key, value);
   const finished = await f.callback.GET(new next.NextRequest(url, { headers: { cookie: [cookies, extraCookie].filter(Boolean).join("; "), "sec-fetch-site": "cross-site" } }));
-  return { started, finished };
+  return { started, finished, cookies };
 }
 
-test("callback 라우트: 학원 계정이 없으면 요청을 취소하고 그 브라우저를 간편가입 화면으로 이어 준다(2026-11-17 긴급 — 앱으로 튕기지 않고 로그인도 다시 시키지 않음)", async () => {
+test("callback 라우트: 학원 계정이 없으면 앱으로 튕기지 않고 간편가입으로 이어 주며, 앱 로그인 요청은 살려 둔다(2026-11-17)", async () => {
   const saved = process.env.NEXT_PUBLIC_SUPABASE_URL; process.env.NEXT_PUBLIC_SUPABASE_URL = "https://synthetic.supabase.co";
   try {
     const f = callbackHarness({ allowed: false });
     const { started, finished } = await throughBrowser(f);
     assert.equal(finished.status, 307);
     const back = new URL(finished.headers.get("location"));
-    // 가입 전 학부모는 앱으로 돌려보내지 않고 같은 사이트의 간편가입 화면으로 — 주소에는 고정 값·제공자 이름만(flow·state·code·토큰 없음)
+    // 같은 사이트의 간편가입 화면으로 — 주소에는 고정 값·제공자 이름만(flow·state·code·토큰 없음)
     assert.equal(back.toString(), "https://www.stiz-dasan.kr/signup/parent?fromApp=1&social=1&provider=kakao&next=%2Fmypage");
     assert.doesNotMatch(back.toString(), /synthetic/);
-    assert.equal(f.h.store.rows.get(started.flowId).status, "CANCELLED", "요청은 취소돼 다시 쓸 수 없다");
-    // 앱 로그인용 쿠키(/auth/native)는 지우고, 웹 간편가입용 로그인 쿠키만 새로 적는다(카카오 로그인을 다시 시키지 않게)
+    // 요청은 취소하지 않는다 — 가입·연결이 끝나면 /auth/native/resume 이 마무리한다
+    assert.equal(f.h.store.rows.get(started.flowId).status, "BROWSER");
     const set = finished.cookies.getAll();
-    assert.ok(set.filter((c) => c.name.startsWith("stiz-native")).every((c) => c.value === ""), "앱 로그인용 쿠키는 남기지 않는다");
+    // PKCE 교환 쿠키는 지우고, 바인딩 쿠키(같은 브라우저 증명)는 건드리지 않는다
+    assert.ok(set.filter((c) => c.name.startsWith("stiz-native-oauth-")).every((c) => c.value === ""));
+    assert.ok(!set.some((c) => c.name === `stiz-native-${started.flowId}`), "바인딩 쿠키는 지우지 않는다");
+    // 복귀 표식: 요청 번호만, httpOnly·5분
+    const mark = set.find((c) => c.name === "stiz-native-resume");
+    assert.equal(mark.value, started.flowId); assert.equal(mark.httpOnly, true); assert.equal(mark.maxAge, 300); assert.equal(mark.path, "/");
+    // 웹 간편가입용 로그인 쿠키(카카오 로그인을 다시 시키지 않게)
     const web = set.filter((c) => c.name.startsWith("sb-"));
     assert.equal(web.length, 1);
     assert.equal(web[0].path, "/"); assert.equal(web[0].secure, true); assert.equal(web[0].sameSite, "lax");
-    // 이 브라우저에 이미 웹 로그인이 있으면 덮어쓰지 않는다 — 로그인 안 된 가입 화면으로만 보낸다
+    assert.equal(finished.headers.get("cache-control"), "no-store, private");
+    // 이 브라우저에 이미 웹 로그인이 있으면 덮어쓰지 않는다 — 요청을 취소하고 로그인 안 된 가입 화면으로만(복귀 표식 없음)
     const g = callbackHarness({ allowed: false });
     const kept = await throughBrowser(g, {}, "sb-existing-auth-token=someone-else");
     assert.equal(kept.finished.headers.get("location"), "https://www.stiz-dasan.kr/signup/parent?fromApp=1");
-    assert.ok(kept.finished.cookies.getAll().every((c) => !c.name.startsWith("sb-")), "기존 웹 로그인은 건드리지 않는다");
-    assert.equal(finished.headers.get("cache-control"), "no-store, private");
+    assert.equal(g.h.store.rows.get(kept.started.flowId).status, "CANCELLED");
+    assert.ok(kept.finished.cookies.getAll().every((c) => !c.name.startsWith("sb-") && c.name !== "stiz-native-resume"), "기존 웹 로그인은 건드리지 않고 복귀 표식도 굽지 않는다");
   } finally { if (saved === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL; else process.env.NEXT_PUBLIC_SUPABASE_URL = saved; }
+});
+
+test("resume 라우트: 가입·연결을 마친 브라우저를 1회용 code 로 앱에 돌려보내고, 조건이 안 맞으면 안내만 한다(2026-11-17)", async () => {
+  const saved = process.env.NEXT_PUBLIC_SUPABASE_URL; process.env.NEXT_PUBLIC_SUPABASE_URL = "https://synthetic.supabase.co";
+  try {
+    const resumeUrl = "https://www.stiz-dasan.kr/auth/native/resume";
+    const go = (f, cookie, headers = {}) => f.resume.GET(new next.NextRequest(resumeUrl, { headers: { cookie, ...headers } }));
+    const f = callbackHarness({ allowed: false });
+    const { started, cookies } = await throughBrowser(f);
+    const mine = `${cookies}; stiz-native-resume=${started.flowId}; sb-synthetic-auth-token=web`;
+    // 아직 학원 계정이 없으면(가입을 안 마침) 앱으로 보내지 않는다 — 요청도 그대로 둔다
+    const early = await go(f, mine);
+    assert.equal(early.status, 200);
+    assert.match(await early.text(), /앱에서 다시 로그인/);
+    assert.equal(f.h.store.rows.get(started.flowId).status, "BROWSER");
+    // 바인딩 쿠키가 없는 브라우저(요청을 연 브라우저가 아님)는 통과하지 못한다
+    f.account.linked = true;
+    const stranger = await go(f, `stiz-native-resume=${started.flowId}; sb-synthetic-auth-token=web`);
+    assert.equal(stranger.status, 200);
+    assert.equal(f.h.store.rows.get(started.flowId).status, "BROWSER");
+    // 가입·연결을 마친 같은 브라우저 → 앱 복귀 주소로 code 만(공급자에서 이어진 이동이라 cross-site 로 표시돼도 통과)
+    const done = await go(f, mine, { "sec-fetch-site": "cross-site" });
+    assert.equal(done.status, 307);
+    const back = new URL(done.headers.get("location"));
+    assert.equal(back.protocol, "kr.co.upturnlabs.stizdasan:");
+    assert.equal(back.searchParams.get("error"), null);
+    assert.doesNotMatch(back.toString(), /synthetic/, "토큰은 주소에 싣지 않는다");
+    assert.deepEqual(await f.h.svc.consume({ flowId: started.flowId, codeVerifier: verifier, state, code: back.searchParams.get("code") }), session);
+    // 이 브라우저의 웹 로그인·복귀 표식·바인딩 쿠키를 지운다
+    const cleared = done.cookies.getAll();
+    for (const name of ["sb-synthetic-auth-token", "stiz-native-resume", `stiz-native-${started.flowId}`]) {
+      assert.equal(cleared.find((c) => c.name === name)?.value, "", name);
+    }
+    // 같은 요청은 다시 쓸 수 없다
+    const again = await go(f, mine);
+    assert.equal(again.status, 200);
+    // 로그인이 없는 브라우저
+    const h2 = callbackHarness({ allowed: false });
+    const second = await throughBrowser(h2);
+    h2.account.linked = true; h2.web.session = null;
+    assert.equal((await go(h2, `${second.cookies}; stiz-native-resume=${second.started.flowId}`)).status, 200);
+    assert.equal(h2.h.store.rows.get(second.started.flowId).status, "BROWSER");
+  } finally { if (saved === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL; else process.env.NEXT_PUBLIC_SUPABASE_URL = saved; }
+});
+
+test("연결 시작 표식: 계정·제공자·2분에 묶이고 위조·만료는 거부한다(2026-11-17)", () => {
+  const savedKey = process.env.SUPABASE_SERVICE_ROLE_KEY; process.env.SUPABASE_SERVICE_ROLE_KEY = "synthetic-service-key";
+  try {
+    const link = load("src/lib/account/link-start.ts", { "server-only": {} });
+    const now = 1_800_000_000_000;
+    const token = link.linkStartToken("auth-1", "google", now);
+    assert.equal(link.isLinkStartTokenFor(token, "auth-1", "google", now + 1000), true);
+    assert.equal(link.isLinkStartTokenFor(token, "auth-2", "google", now + 1000), false, "다른 계정");
+    assert.equal(link.isLinkStartTokenFor(token, "auth-1", "kakao", now + 1000), false, "다른 제공자");
+    assert.equal(link.isLinkStartTokenFor(token, "auth-1", "google", now + 121_000), false, "만료");
+    assert.equal(link.isLinkStartTokenFor(`${now + 9_999_999}.${token.split(".")[1]}`, "auth-1", "google", now), false, "만료 시각 바꿔치기");
+    for (const bad of ["", null, undefined, "x", `${now}.short`]) assert.equal(link.isLinkStartTokenFor(bad, "auth-1", "google", now), false);
+    assert.equal(link.LINK_START_COOKIE_MAX_AGE, 120);
+  } finally { if (savedKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY; else process.env.SUPABASE_SERVICE_ROLE_KEY = savedKey; }
+});
+
+test("본인인증 하나로 통일(2026-11-17): 간편가입 화면·본인인증 확인 경로의 약속", () => {
+  const client = fs.readFileSync("src/components/auth/ParentSignupClient.tsx", "utf8");
+  // 간편가입 첫 화면은 본인인증 버튼 하나 — 번호를 따로 묻는 문자 인증은 «샛길»을 눌렀을 때만
+  assert.match(client, /step === "phone" && !challengeToken && socialSignup && !smsFallback/);
+  assert.match(client, /label="본인인증하고 계속"/);
+  assert.match(client, /step === "phone" && !challengeToken && \(!socialSignup \|\| smsFallback\)/);
+  const verify = fs.readFileSync("src/app/api/auth/parent-link/verify/route.ts", "utf8");
+  // 포트원 재조회(VERIFIED·신선도)와 건 번호 확인이 가입 요청 발급보다 먼저다
+  const checkedAt = verify.indexOf('verification.status !== "VERIFIED" || !isFreshVerification(verifiedAt)');
+  const boundAt = verify.indexOf("isLinkVerificationIdFor(identityVerificationId, current.user.id)");
+  const issueAt = verify.indexOf("await issueIdentityVerifiedSignup(");
+  assert.ok(boundAt > 0 && checkedAt > boundAt && issueAt > checkedAt, "건 번호 확인 → 포트원 확인 → 가입 요청 발급 순서");
+  // 가입 요청은 «지금 그 간편로그인 사용자»에게만 묶인다
+  assert.match(verify, /pendingAuthUserId: current\.user\.id/);
+  // 같은 종류의 다른 간편로그인이 이미 붙은 계정은 «연결됨»처럼 넘어가지 않고 멈춘다(가린 이메일만 보여 준다)
+  assert.match(verify, /이미 다른 \$\{label\} 계정/);
+  assert.match(verify, /function maskEmail\(/);
+  const helper = fs.readFileSync("src/lib/parent-signup-verification.ts", "utf8");
+  const fn = helper.slice(helper.indexOf("export async function issueIdentityVerifiedSignup("), helper.indexOf("export async function verifyParentSignupOtp("));
+  // 로그인 수단이 있는 번호에는 가입 요청을 만들지 않는다 · 문자는 보내지 않는다
+  assert.match(fn, /if \(ownership\.kind === "REGISTERED"\) throw new Error\(REGISTERED_PHONE_MESSAGE\);/);
+  assert.doesNotMatch(fn, /sendAuthenticationSms/);
+  assert.match(fn, /'VERIFIED'/);
 });
 
 test("callback 라우트: 카카오 화면에서 취소하면 «cancelled», 정상이면 운영 주소로 code 를 준다", async () => {

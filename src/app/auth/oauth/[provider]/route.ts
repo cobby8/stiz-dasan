@@ -12,6 +12,9 @@ import {
   toSupabaseProvider,
 } from "@/lib/parent-oauth";
 import { createClient } from "@/lib/supabase/server";
+import { LINK_HINT_COOKIE, LINK_START_COOKIE } from "@/lib/account/link-start";
+import { isLinkStartForCurrentUser } from "@/lib/account/link-start-session";
+import { NATIVE_RESUME_COOKIE } from "@/lib/native-auth/resume-cookie";
 
 type RouteContext = { params: Promise<{ provider: string }> };
 // link = 이미 로그인한 계정에 간편로그인을 붙인다(마이페이지 「간편로그인 연결」, 2026-10-26).
@@ -36,6 +39,10 @@ function linkErrorRedirect(
   staffCode: StaffLinkErrorCode,
   status: 303 | 307 = 307,
 ) {
+  // 앱 간편로그인에서 넘어온 흐름이면 연결 화면에 머무르지 않고 앱으로 돌아가 로그인을 끝낸다(/auth/callback 과 같은 규칙)
+  if (actor && request.cookies.get(NATIVE_RESUME_COOKIE)?.value) {
+    return NextResponse.redirect(new URL("/auth/native/resume", request.url), status);
+  }
   const url = new URL(loginMethodsPath(actor), request.url);
   if (actor === "staff") url.searchParams.set("e", staffCode);
   else url.searchParams.set("error", message);
@@ -96,17 +103,26 @@ export async function GET(request: NextRequest, context: RouteContext) {
     if (!actor) return loginError(request, "로그인한 뒤 연결해 주세요.", null);
     // 직원은 주소(GET)만으로 연결을 시작하지 않는다(2026-11-17 보안 검수 반영) — 관리자로 로그인한 브라우저에서
     // 남이 보낸 링크를 눌러도 연결 절차가 시작되지 않게. 직원 화면의 «연결하기»는 아래 POST(출처 확인)로 온다.
-    if (actor === "staff") return loginError(request, "", actor, "start");
+    // 예외(2026-11-17): 방금 이 브라우저에서 본인인증으로 그 계정에 로그인된 직후면 통과시킨다 — 서버가 본인인증 확인
+    // 응답에만 구워 주는 1회용 표식(httpOnly·2분·계정+제공자에 묶임)이 지금 로그인한 계정과 맞을 때만.
+    const justVerified = actor === "staff" || provider === "google"
+      ? await isLinkStartForCurrentUser(request.cookies.get(LINK_START_COOKIE)?.value, provider)
+      : false;
+    if (actor === "staff" && !justVerified) return loginError(request, "", actor, "start");
     const callbackUrl = new URL("/auth/callback", publicSiteOrigin(request.nextUrl.origin));
     callbackUrl.searchParams.set("provider", provider);
     callbackUrl.searchParams.set("intent", "link");
+    // 구글: 방금 쓴 계정을 미리 알려 주면 계정 고르기 화면을 건너뛴다(본인인증 연결에서 두 번 고르지 않게).
+    const hint = justVerified && provider === "google" ? request.cookies.get(LINK_HINT_COOKIE)?.value : undefined;
+    const loginHint = hint && /^[^\s@]{1,64}@[^\s@]{1,255}$/.test(hint) ? hint : undefined;
     const { data, error } = await supabase.auth.linkIdentity({
       provider: toSupabaseProvider(provider),
-      options: { redirectTo: callbackUrl.toString(), skipBrowserRedirect: true },
+      options: { redirectTo: callbackUrl.toString(), skipBrowserRedirect: true, ...(loginHint ? { queryParams: { login_hint: loginHint } } : {}) },
     });
     if (error || !data.url) {
       return loginError(request, `${PARENT_OAUTH_LABELS[provider]} 연결을 시작하지 못했습니다. 잠시 후 다시 시도해 주세요.`, actor, "start");
     }
+    // 표식은 2분 뒤 스스로 만료된다(계정·제공자에 묶여 있어 그 안에 다시 써도 같은 사람의 같은 연결 시작일 뿐이다)
     return NextResponse.redirect(data.url);
   }
 

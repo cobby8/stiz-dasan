@@ -78,7 +78,9 @@ test("웹 가입: 앱에서 넘어온 가입은 완료 뒤 웹으로 이어 가�
   assert.match(client, /const fromApp = searchParams\.get\("fromApp"\) === "1";/);
   assert.match(client, /if \(data\.sessionEstablished && !fromApp\) \{/);
   // 학원에 이미 등록된 보호자가 간편로그인으로 바로 연결된 경우(LINKED)도 웹으로 넘어가지 않는다
-  assert.match(client, /if \(data\.existingParent === "LINKED"\) \{[\s\S]{0,200}if \(fromApp\) \{ setStep\("done"\); return; \}/);
+  assert.match(client, /if \(data\.existingParent === "LINKED"\) \{[\s\S]{0,200}if \(fromApp\) \{ finishSignup\(\); return; \}/);
+  // 2026-11-17: 앱에서 넘어온 간편가입은 끝나면 앱으로 돌아가 로그인까지(살려 둔 앱 로그인 요청을 서버가 마무리) — 그 밖은 완료 화면
+  assert.match(client, /function finishSignup\(\) \{\s*if \(fromApp && socialSignup\) \{\s*window\.location\.assign\("\/auth\/native\/resume"\);\s*return;\s*\}\s*setStep\("done"\);/);
   assert.match(client, /이제 앱으로 돌아가 주세요/);
   // 앱 주소(복귀 주소)를 여는 버튼은 두지 않는다 — 진행 중 요청 없이 열면 앱이 막는다
   assert.doesNotMatch(client, /kr\.co\.upturnlabs\.stizdasan:\/\//);

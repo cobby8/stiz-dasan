@@ -3,6 +3,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
 import { NATIVE_ORIGIN, NativeAuthError, nativeConfig, validFlow } from "./policy";
 import { createNativeAuthService } from "./service";
+import { NATIVE_RESUME_COOKIE } from "./resume-cookie";
 import { postgresNativeFlowStore } from "./store";
 
 export function nativeContext(request: NextRequest, browserCallback = false) {
@@ -10,13 +11,15 @@ export function nativeContext(request: NextRequest, browserCallback = false) {
   // 임의 Host를 복귀 주소나 쿠키 경계로 사용하지 않는다.
   if (request.nextUrl.origin !== config.origin) throw new NativeAuthError(403);
   const path = request.nextUrl.pathname;
-  const callbackNavigation = browserCallback && request.method === "GET" && (path === "/auth/native/callback" || path === "/auth/native/browser");
+  const callbackNavigation = browserCallback && request.method === "GET" && (path === "/auth/native/callback" || path === "/auth/native/browser" || path === "/auth/native/resume");
   // 공급자→callback의 최상위 GET은 정상적인 교차 사이트 이동이다. 그 경로만 PKCE·바인딩 쿠키로 검증한다.
   // /auth/native/browser 도 같다(2026-11-17 운영 사고): 앱이 연 크롬 맞춤 탭은 이 주소를 «Sec-Fetch-Site: cross-site»로
   // 열 수 있어, 1.0.5 앱의 구글·카카오 로그인이 첫 단계에서 403 맨글자(다크 모드에선 검은) 화면으로 막혔다.
   // 안전 근거: 이 단계는 «새로 만든(CREATED) 요청 하나»에 이 브라우저를 한 번만 묶고 공급자로 보낼 뿐이다.
   // 결과 1회용 code 는 그 기기의 앱 복귀 주소로만 가고, 교환(consume)에는 요청을 만든 앱 메모리의 PKCE 비밀값과
   // state 가 필요하다(consume·start·cancel 은 지금처럼 출처를 검사한다). 문자 속 링크로 열면 원래 «none»이라 이 검사가 막던 것도 없었다.
+  // /auth/native/resume 도 같다: 간편로그인 연결을 마치고 오면 «공급자 → /auth/callback → resume» 로 이어진 이동이라
+  // cross-site 로 표시된다. 이 단계는 바인딩 쿠키(요청을 연 브라우저) + 살려 둔 요청 번호 + 이 브라우저의 로그인으로 검증한다.
   if (!callbackNavigation && !trustedRequestSource(request, config.origin)) throw new NativeAuthError(403);
   return { config, service: createNativeAuthService(postgresNativeFlowStore,config) };
 }
@@ -101,5 +104,34 @@ export function clearNativeBrowserCookies(request:NextRequest,response:NextRespo
   const keys=[prefix,`${prefix}-code-verifier`];
   for(const cookie of request.cookies.getAll())if(keys.some(key=>cookie.name===key || cookie.name.startsWith(`${key}.`)))response.cookies.set(cookie.name,"",{maxAge:0,path:"/auth/native",secure:true,httpOnly:true,sameSite:"lax"});
   response.cookies.set(bindingCookie(flowId),"",{maxAge:0,path:"/auth/native",secure:true,httpOnly:true,sameSite:"lax"});
+  return response;
+}
+
+/**
+ * «가입·연결을 마치면 앱으로 돌아가 로그인까지» 표식(2026-11-17 원장 지시 — 연결이 끝나도 브라우저에 머물렀다).
+ * 학원 계정이 없어 가입 화면으로 보낼 때 앱 로그인 요청(flow)을 취소하지 않고 살려 두고, 그 번호를 이 쿠키에 적는다.
+ * 가입·연결이 끝나면 /auth/native/resume 이 이 쿠키 + 바인딩 쿠키(같은 브라우저 증명)로 요청을 마무리해 앱으로 돌려보낸다.
+ * 값은 flow 번호뿐이다 — 바인딩 쿠키 없이는 쓸 수 없고, 5분 뒤 요청과 함께 만료된다.
+ */
+export { NATIVE_RESUME_COOKIE } from "./resume-cookie";
+export function setNativeResumeCookie(response:NextResponse,flowId:string) {
+  if(!validFlow(flowId))throw new NativeAuthError();
+  response.cookies.set(NATIVE_RESUME_COOKIE,flowId,{maxAge:300,path:"/",secure:true,httpOnly:true,sameSite:"lax"});
+  return response;
+}
+export function clearNativeResumeCookie(response:NextResponse) {
+  response.cookies.set(NATIVE_RESUME_COOKIE,"",{maxAge:0,path:"/",secure:true,httpOnly:true,sameSite:"lax"});
+  return response;
+}
+/** 교환에 쓴 PKCE 쿠키만 지운다 — 바인딩 쿠키는 남겨 가입 뒤 복귀(/auth/native/resume)가 같은 브라우저임을 증명하게 한다. */
+export function clearNativeExchangeCookies(request:NextRequest,response:NextResponse,flowId:string) {
+  const prefix=`stiz-native-oauth-${flowId}`;
+  const keys=[prefix,`${prefix}-code-verifier`];
+  for(const cookie of request.cookies.getAll())if(keys.some(key=>cookie.name===key || cookie.name.startsWith(`${key}.`)))response.cookies.set(cookie.name,"",{maxAge:0,path:"/auth/native",secure:true,httpOnly:true,sameSite:"lax"});
+  return response;
+}
+/** 이 브라우저의 웹 로그인 쿠키를 지운다(로그아웃 요청은 보내지 않는다 — 같은 세션을 앱이 이어 쓰기 때문). */
+export function clearWebSessionCookies(request:NextRequest,response:NextResponse) {
+  for(const cookie of request.cookies.getAll())if(/^sb-.+-auth-token(\.\d+)?$/.test(cookie.name))response.cookies.set(cookie.name,"",{maxAge:0,path:"/",secure:true,sameSite:"lax"});
   return response;
 }

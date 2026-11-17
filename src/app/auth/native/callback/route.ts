@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { NativeAuthError, validFlow } from "@/lib/native-auth/policy";
-import { bindingCookie, clearNativeBrowserCookies, nativeBrowserClient, nativeBrowserError, nativeContext, noStoreHeaders, webSignupSessionClient } from "@/lib/native-auth/http";
+import { bindingCookie, clearNativeBrowserCookies, clearNativeExchangeCookies, nativeBrowserClient, nativeBrowserError, nativeContext, noStoreHeaders, setNativeResumeCookie, webSignupSessionClient } from "@/lib/native-auth/http";
 import { requireNativeAccount } from "@/lib/native-auth/store";
 import type { NativeBrowserFailure, NativeFlow } from "@/lib/native-auth/service";
 export const runtime = "nodejs";
@@ -41,25 +41,29 @@ export async function GET(request:NextRequest) {
   }catch(error){
     // 이 브라우저가 묶인 요청이면 앱으로 돌려보내(코드 없이 이유만) 브라우저 창이 닫히고 앱이 안내하게 한다.
     if(bound&&row&&context&&validFlow(flow)){
-      const back=await context.service.failBrowser(row,reason).catch(()=>null);
-      if(back){
-        // 2026-11-17 긴급(원장 지시): 가입 전 학부모가 앱에서 간편로그인부터 누르면 앱이 짧은 안내만 띄우고 끝나
-        // «로그인 오류»로 신고가 들어왔다. 이 브라우저 창을 닫지 않고 가입 화면으로 이어 준다.
-        // 요청은 위 failBrowser 가 이미 취소했고, 주소에는 고정 값과 제공자 이름만 싣는다(토큰·flow·state 없음).
-        if(reason==="no_account"){
+      // 2026-11-17(원장 지시): 학원 계정이 없으면 앱으로 튕기지 않고 그 브라우저에서 바로 가입·연결로 이어 준다.
+      // 방금 확인한 간편로그인을 웹 간편가입 세션으로 옮겨 적고(로그인을 다시 시키지 않는다) /signup/parent?social=1 로 보낸다.
+      // 앱 로그인 요청은 «취소하지 않고» 살려 둔다 — 가입·연결이 끝나면 /auth/native/resume 이 이 요청을 마무리해
+      // 앱으로 돌아가 로그인까지 되게 한다(같은 브라우저 증명 = 바인딩 쿠키, 5분 안).
+      if(reason==="no_account"&&signup){
+        const web=webSignupSessionClient(request);
+        const moved=web?!(await web.client.auth.setSession(signup).catch(()=>({error:true}))).error:false;
+        if(moved&&web){
           const target=new URL("/signup/parent",context.config.origin);
-          target.searchParams.set("fromApp","1");
-          // 방금 확인한 간편로그인을 웹 간편가입으로 이어 준다 — 카카오·구글 로그인을 다시 시키지 않는다.
-          // 옮겨 적지 못하면(이미 다른 웹 로그인이 있음·세션 설정 실패) 로그인 안 된 가입 화면으로 간다.
-          const web=signup?webSignupSessionClient(request):null;
-          const moved=web&&signup?!(await web.client.auth.setSession(signup).catch(()=>({error:true}))).error:false;
-          if(moved){target.searchParams.set("social","1");target.searchParams.set("provider",row.provider);target.searchParams.set("next","/mypage");}
+          target.searchParams.set("fromApp","1");target.searchParams.set("social","1");
+          target.searchParams.set("provider",row.provider);target.searchParams.set("next","/mypage");
           const response=NextResponse.redirect(target);
           for(const [key,value]of Object.entries(noStoreHeaders))response.headers.set(key,value);
-          clearNativeBrowserCookies(request,response,flow);
-          return moved&&web?web.apply(response):response;
+          clearNativeExchangeCookies(request,response,flow);
+          setNativeResumeCookie(response,flow);
+          return web.apply(response);
         }
-        const response=NextResponse.redirect(back);
+      }
+      const back=await context.service.failBrowser(row,reason).catch(()=>null);
+      if(back){
+        // 세션을 옮겨 적지 못한 경우(이 브라우저에 이미 다른 웹 로그인이 있음 등): 요청을 취소하고 로그인 안 된 가입 화면으로.
+        const target=reason==="no_account"?new URL("/signup/parent?fromApp=1",context.config.origin).toString():back;
+        const response=NextResponse.redirect(target);
         for(const [key,value]of Object.entries(noStoreHeaders))response.headers.set(key,value);
         return clearNativeBrowserCookies(request,response,flow);
       }

@@ -71,8 +71,11 @@ test("(b) 시작 라우트: 판정 → 거절 → 연결 호출 순서, 연결 �
   const linkCallAt = block.indexOf("supabase.auth.linkIdentity(");
   assert.ok(guardAt > 0 && rejectAt > guardAt && linkCallAt > rejectAt, "판정 → 거절 → 연결 순서");
   // 직원은 GET 으로 시작하지 않는다 — 직원 거절이 연결 호출보다 먼저다(실행 확인은 아래 «(f)» 테스트)
-  const staffRejectAt = block.indexOf('if (actor === "staff") return loginError(request, "", actor, "start");');
-  assert.ok(staffRejectAt > rejectAt && linkCallAt > staffRejectAt, "직원 GET 거절 → 연결 순서");
+  // 예외 하나(2026-11-17): 방금 이 브라우저에서 본인인증으로 그 계정에 로그인된 직후 — 서버가 구운 1회용 표식이
+  // «지금 로그인한 계정 + 이 제공자»와 맞을 때만 직원 GET 시작을 통과시킨다. 표식 확인도 연결 호출보다 먼저다.
+  const staffRejectAt = block.indexOf('if (actor === "staff" && !justVerified) return loginError(request, "", actor, "start");');
+  const verifiedAt = block.indexOf("await isLinkStartForCurrentUser(request.cookies.get(LINK_START_COOKIE)?.value, provider)");
+  assert.ok(verifiedAt > rejectAt && staffRejectAt > verifiedAt && linkCallAt > staffRejectAt, "직원 GET: 표식 확인 → 거절 → 연결 순서");
   assert.doesNotMatch(block, /signInWithOAuth/);
   // 판정은 공용 함수 하나로만 — 라우트가 문지기를 따로 부르지 않는다(두 군데가 어긋나지 않게)
   assert.match(start, /import \{ resolveLinkActor \} from "@\/lib\/account\/link-actor";/);
@@ -268,6 +271,8 @@ const startRoute = await loadTsModule("src/app/auth/oauth/[provider]/route.ts", 
     `),
     "@/lib/auth-providers": stub(`export async function getEnabledParentOAuthProviders() { return globalThis.__linkRoute.enabled; }`),
     "@/lib/account/link-actor": stub(`export async function resolveLinkActor() { return globalThis.__linkRoute.actor; }`),
+    // 본인인증 직후 표식 확인(2026-11-17) — 표식 자체의 위조·만료 검증은 native-app-login-production 테스트가 실행으로 못박는다
+    "@/lib/account/link-start-session": stub(`export async function isLinkStartForCurrentUser(token, provider) { globalThis.__linkRoute.startChecks.push([token, provider]); return globalThis.__linkRoute.justVerified === true; }`),
     "@/lib/supabase/server": stub(`
       export async function createClient() {
         return { auth: {
@@ -293,11 +298,12 @@ function linkRequest(method, { provider = "apple", query = "?intent=link", heade
     url: nextUrl.toString(),
     nextUrl,
     headers: { get: (name) => lower[name.toLowerCase()] ?? null },
+    cookies: { get: (name) => (globalThis.__linkRoute?.cookies?.[name] ? { name, value: globalThis.__linkRoute.cookies[name] } : undefined) },
     formData: async () => { if (!form) throw new Error("no body"); return new Map(Object.entries(form)); },
   };
 }
 async function runLink(method, state, requestOptions = {}) {
-  globalThis.__linkRoute = { enabled: ["apple", "google"], actor: null, linkFails: false, ...state, linkCalls: [], signInCalls: 0 };
+  globalThis.__linkRoute = { enabled: ["apple", "google"], actor: null, linkFails: false, justVerified: false, cookies: {}, ...state, linkCalls: [], signInCalls: 0, startChecks: [] };
   const provider = requestOptions.provider ?? "apple";
   const response = await startRoute[method](linkRequest(method, requestOptions), { params: Promise.resolve({ provider }) });
   const location = response.location ? new URL(response.location) : null;
@@ -333,6 +339,13 @@ test("(f) 직원의 GET intent=link 는 연결을 시작하지 않는다 — 학
   assert.deepEqual(Object.keys(parentClosed.query), ["error"]);
   // 직원: 꺼진 제공자도 코드로
   assert.deepEqual((await runLink("GET", { actor: "staff", enabled: [] })).query, { e: "closed" });
+  // 예외(2026-11-17): 방금 본인인증으로 그 계정에 로그인된 직후(서버가 구운 표식이 지금 계정·제공자와 맞음)면 직원도 GET 으로 시작한다
+  assert.deepEqual(await runLink("GET", { actor: "staff", justVerified: true, cookies: { "stiz-link-start": "token" } }), {
+    status: 307, path: "https://provider.example/authorize", query: {}, linkCalls: 1, signInCalls: 0,
+  });
+  assert.deepEqual(globalThis.__linkRoute.startChecks, [["token", "apple"]], "표식은 쿠키 값·제공자로 확인한다");
+  // 표식이 맞지 않으면(없음·만료·다른 계정) 지금처럼 막는다
+  assert.deepEqual((await runLink("GET", { actor: "staff", justVerified: false, cookies: { "stiz-link-start": "stale" } })).query, { e: "start" });
 });
 
 test("(g) POST 연결 시작: 출처 검사를 통과해야 linkIdentity 까지 간다(실행)", async () => {

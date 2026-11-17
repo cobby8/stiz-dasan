@@ -53,16 +53,36 @@ async function postJson(url: string, body?: unknown) {
   return data as Record<string, unknown>;
 }
 
-export default function IdentityLinkButton() {
+/** 본인인증 결과가 «기존 계정 연결»이 아니라 «가입 이어가기»일 때 화면에 넘기는 값(문자 인증 확인 응답과 같은 모양) */
+export type IdentitySignupHandoff = {
+  challengeToken?: string;
+  proof?: string;
+  verifiedName?: string;
+  existingParent?: "LINKED" | "ACTIVATE";
+  activationUrl?: string;
+  redirectPath?: string;
+};
+
+export default function IdentityLinkButton({ onSignup, next, label = "본인인증으로 기존 계정에 연결", hint = "휴대폰 명의자 본인인증(PASS·카카오·토스 등)을 하면, 같은 번호·같은 이름의 학부모 계정에 바로 연결됩니다." }: {
+  onSignup?: (data: IdentitySignupHandoff) => void;
+  next?: string;
+  label?: string;
+  hint?: string;
+} = {}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const handledRef = useRef(false);
 
   const confirm = useCallback(async (identityVerificationId: string) => {
-    const data = await postJson("/api/auth/parent-link/verify", { identityVerificationId });
+    const data = await postJson("/api/auth/parent-link/verify", { identityVerificationId, next });
+    // 로그인 수단이 있는 계정이 없는 번호(처음 오신 분·학원이 등록해 둔 보호자) → 가입 화면이 이어 간다(문자 인증 없이).
+    if (data.signup === true && onSignup) {
+      onSignup(data as IdentitySignupHandoff);
+      return;
+    }
     // 기존 계정으로 로그인됐다 — 같은 간편로그인을 그 계정에 붙이러 간다(확인창이 한 번 더 뜬다).
     window.location.href = typeof data.next === "string" ? data.next : "/mypage/login-methods";
-  }, []);
+  }, [next, onSignup]);
 
   // 모바일: 인증창에서 돌아오면 주소에 결과가 붙어 있다.
   useEffect(() => {
@@ -146,10 +166,10 @@ export default function IdentityLinkButton() {
         disabled={busy}
         className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[var(--color-public-accent)] px-4 text-sm font-semibold text-white hover:bg-[var(--color-public-strong)] disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900"
       >
-        {busy ? "확인 중..." : "본인인증으로 기존 계정에 연결"}
+        {busy ? "확인 중..." : label}
       </button>
       <p className="text-xs leading-5 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
-        휴대폰 명의자 본인인증(PASS·카카오·토스 등)을 하면, 같은 번호·같은 이름의 학부모 계정에 바로 연결됩니다.
+        {hint}
       </p>
       {error && <p role="alert" className="rounded-xl bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-academy-danger)] dark:bg-red-950/40 dark:text-red-200">{error}</p>}
     </div>
