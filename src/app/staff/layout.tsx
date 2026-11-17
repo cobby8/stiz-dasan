@@ -13,7 +13,7 @@ import { StaffPushBanner, StaffPushToggle } from "@/components/push/StaffPushCon
 
 export const metadata: Metadata = {
   title: "스티즈 선생님",
-  description: "수업, 출결, 학생 연락과 일정을 관리하는 스티즈 선생님 앱",
+  description: "수업, 출결, 학생 연락과 일정을 관리하는 스티즈 선생님 화면",
   manifest: "/manifest-staff.json",
   appleWebApp: {
     capable: true,

@@ -17,13 +17,19 @@ import { storeAppSocialLogin, storeAppSocialLoginHref } from "@/lib/storeApp";
 function LoginContent() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
-  const isStaffMode =
-    pathname === "/staff/login" || searchParams.get("mode") === "staff";
+  // 2026-11-17 원장 지시 «(직원 로그인) 화면 필요 없잖아»: 로그인 화면은 하나다. 예전에는 /staff/login·?mode=staff 로 들어오면
+  // «관리자/선생님 로그인» 화면(가입 탭·간편로그인 없음, 번호·이메일 칸)을 따로 그렸다. 이제 어느 주소로 와도 같은 화면이고,
+  // 아이디·휴대폰 번호·이메일 모두 같은 칸에서 받는다(서버 login 이 가른다). 아래 isStaffMode 갈래는 그려지지 않는다.
+  // /staff/login 주소 자체는 남긴다 — 예전에 설치한 선생님 웹앱이 /staff 범위 안에 머물러야 해서다.
+  const staffEntry = pathname === "/staff/login";
+  const isStaffMode = false as boolean;
   const socialLoginParams = new URLSearchParams();
   const redirect = searchParams.get("redirect");
   const handoff = searchParams.get("handoff") || searchParams.get("enrollmentHandoff");
   socialLoginParams.set("intent", "login");
   if (redirect) socialLoginParams.set("next", redirect);
+  // /staff/login 으로 들어왔으면 아이디 로그인과 같은 곳(/staff)으로 — 로그인 방법에 따라 도착 화면이 달라지지 않게
+  else if (staffEntry) socialLoginParams.set("next", "/staff");
   if (handoff) socialLoginParams.set("enrollmentHandoff", handoff);
   const socialLoginQuery = socialLoginParams.toString();
   const parentSocialLoginOptions = [
@@ -69,7 +75,7 @@ function LoginContent() {
 
     const requestedPath =
       new URLSearchParams(window.location.search).get("redirect") ||
-      (isStaffMode ? "/staff" : null);
+      (isStaffMode || staffEntry ? "/staff" : null);
     if (requestedPath?.startsWith("/") && !requestedPath.startsWith("//")) {
       formData.set("redirectTo", requestedPath);
     }
@@ -217,7 +223,7 @@ function LoginContent() {
                 className="block text-sm font-medium text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)] mb-1"
               >
                 {/* 화면 하나로 모두 로그인 — 선생님·기사님은 휴대폰 번호를 넣으면 된다(서버가 직원 계정으로 찾는다) */}
-                {isStaffMode ? "휴대폰 번호 또는 이메일" : "로그인 아이디 (선생님은 휴대폰 번호)"}
+                {isStaffMode ? "휴대폰 번호 또는 이메일" : "로그인 아이디 (선생님·기사님은 휴대폰 번호, 관리자는 이메일)"}
               </label>
               <input
                 id="email"
@@ -391,7 +397,7 @@ function LoginContent() {
                 ))}
               </div>
               <p className="text-center text-xs leading-5 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
-                로그인 창에서 인증을 마치면 앱으로 돌아옵니다. 처음 이용하는 학부모님은 회원가입을 먼저 해 주세요.
+                로그인 창에서 인증을 마치면 앱으로 돌아옵니다. 처음이시면 본인인증 한 번으로 가입까지 이어져요.
               </p>
             </div>
           )}

@@ -49,17 +49,20 @@ export default async function InvitePage({
             <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-4">
                 <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-8 max-w-md w-full text-center">
                     <h1 className="text-xl font-bold text-gray-900 dark:text-white">{invitation.purpose === "PASSWORD_RESET" ? "이미 사용한 재설정 링크" : "이미 수락된 초대"}</h1>
+                    {/* 2026-11-17: 예전에는 선생님·기사님을 «스태프 앱 설치하기»(옛 홈 화면 바로가기 안내)로 보냈다.
+                        지금은 스토어 앱 하나라 누구나 로그인이 먼저다 — 가입 완료 화면(InviteAcceptForm)과 같은 순서:
+                        주 버튼 «로그인하러 가기», 앱이 없는 분께만 설치 주소를 작게. */}
                     <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-                        {invitation.role === "INSTRUCTOR" || invitation.role === "DRIVER"
-                            ? "이 초대는 이미 수락되었습니다. 스태프 앱을 설치하거나 열어주세요."
-                            : "이 초대는 이미 수락되었습니다. 로그인 페이지에서 로그인해주세요."}
+                        이 초대는 이미 수락되었습니다. 로그인 화면에서 로그인해 주세요.
                     </p>
-                    <a
-                        href={invitation.role === "INSTRUCTOR" || invitation.role === "DRIVER" ? "/staff/install" : "/login"}
-                        className="academy-button-primary mt-4"
-                    >
-                        {invitation.role === "INSTRUCTOR" || invitation.role === "DRIVER" ? "스태프 앱 설치하기" : "로그인하기"}
+                    <a href="/login" className="academy-button-primary mt-4 w-full">
+                        로그인하러 가기
                     </a>
+                    {(invitation.role === "INSTRUCTOR" || invitation.role === "DRIVER") && invitation.purpose !== "PASSWORD_RESET" && (
+                        <a href="/install" className="academy-button-text mt-2 w-full">
+                            스티즈농구교실 앱 설치하기
+                        </a>
+                    )}
                 </div>
             </div>
         );

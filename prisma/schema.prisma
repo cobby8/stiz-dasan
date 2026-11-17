@@ -3966,3 +3966,21 @@ model ClassDayCancel {
 
   @@unique([date, classId, kind, startTime], map: "ClassDayCancel_date_classId_kind_startTime_key")
 }
+
+/// 기타 매출(2026-11-17) — 학생 청구(Payment)가 아닌 수입(학교 스포츠클럽 강사료·사이트 학생 아닌 특강생 등)을 원장이 직접 적는다.
+/// 서버 raw SQL(src/lib/billing/other-revenue.ts)만 사용한다. RLS 켜짐·anon/authenticated 권한 회수.
+/// CHECK(날짜 형식·분류·결제수단 값·금액 > 0·글자 수)는 migration 20261117200000_other_revenue 에 있다.
+model OtherRevenue {
+  id              String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  revenueDate     String // KST 달력 날짜 "YYYY-MM-DD"
+  category        String // SCHOOL_CLUB | SPECIAL_NON_STUDENT | RENTAL | OTHER
+  title           String
+  amount          Int // 원, 1 이상
+  method          String // BANK | CARD_POS | CASH | VOUCHER | OTHER
+  note            String?
+  createdByUserId String // 적은 원장 User.id(기록용, FK 없음)
+  createdAt       DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([revenueDate], map: "OtherRevenue_revenueDate_idx")
+}

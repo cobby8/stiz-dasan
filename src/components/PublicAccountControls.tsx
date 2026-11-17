@@ -127,7 +127,7 @@ function useAccountState(initialRole: AppRole | null = null) {
     appRole === "ADMIN" || appRole === "VICE_ADMIN"
       ? "관리자"
       : appRole === "INSTRUCTOR"
-        ? "선생님 앱"
+        ? "선생님 화면"
         : appRole === "PARENT"
           ? "마이페이지"
           : "로그인";
@@ -147,13 +147,13 @@ export function DesktopAccountControls({ initialRole = null }: AccountControlsPr
         <div className="academy-app hidden rounded-xl md:block"><AccountViewSwitcher views={accountViews} /></div>
       ) : <Link
         href={accountHref}
-        aria-label={isStaffPrimary ? "선생님 앱" : undefined}
-        title={isStaffPrimary ? "선생님 앱" : undefined}
+        aria-label={isStaffPrimary ? "선생님 화면" : undefined}
+        title={isStaffPrimary ? "선생님 화면" : undefined}
         className={DESKTOP_ACCOUNT_CLASS}
       >
         {isStaffPrimary ? (
           <>
-            <span>선생님 앱</span>
+            <span>선생님 화면</span>
           </>
         ) : (
           accountLabel
@@ -197,12 +197,12 @@ export function MobileAccountControls({
         href={accountHref}
         onClick={onNavigate}
         className={`flex min-h-11 items-center justify-center rounded-xl border border-[var(--color-public-line)] bg-white text-sm font-bold text-[var(--color-public-strong)] transition-colors hover:bg-[var(--color-public-tint)] dark:border-brand-neon-lime/30 dark:bg-[var(--color-public-paper)] dark:text-brand-neon-lime${accountSpan}`}
-        aria-label={isStaffPrimary ? "선생님 앱" : undefined}
-        title={isStaffPrimary ? "선생님 앱" : undefined}
+        aria-label={isStaffPrimary ? "선생님 화면" : undefined}
+        title={isStaffPrimary ? "선생님 화면" : undefined}
       >
         {isStaffPrimary ? (
           <>
-            <span>선생님 앱</span>
+            <span>선생님 화면</span>
           </>
         ) : (
           accountLabel

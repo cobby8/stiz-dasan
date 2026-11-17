@@ -10,24 +10,15 @@
  *   - 원생(Student.referralSource) = 옛 시트에서 넘어온 한글 문장(«지인소개», «네이버 키워드 검색(남양주…)») + 일부 코드값
  *   → 문의 표는 코드값 그대로 SOURCE_LABELS 로, 원생 표는 normalizeReferral 로 같은 이름에 모은다.
  *
- * ⚠️ 이 파일은 다른 모듈을 import 하지 않는다(테스트가 그대로 불러 실행한다).
+ * ⚠️ 이 파일이 import 하는 것은 순수 모듈 하나(유입 경로 허용 값·이름 표)뿐이다 — 테스트가 그대로 불러 실행한다.
  */
+import { REFERRAL_SOURCE_LABELS } from "@/lib/enrollment/referralSources";
 
-// 유입경로 라벨 (9개 + 레거시 호환) — ApplyAdminClient 에 있던 표를 그대로 옮겼다
+// 유입경로 라벨 — 코드값의 이름은 한 곳(referralSources.ts 의 REFERRAL_SOURCE_LABELS)에서 온다(2026-11-17).
+// 여기에 이름을 따로 적지 않는다: 예전엔 이 표에 없는 값(NAVER_AD·YOUTUBE 등)이 통계에 코드 글자로 보였다.
 export const SOURCE_LABELS: Record<string, string> = {
-    REFERRAL: "지인소개",
-    PASSBY: "지나가다 발견",
-    NAVER_SEARCH: "네이버 키워드 검색",
-    NAVER_BLOG: "네이버 블로그",
-    PORTAL_OTHER: "기타 포털검색",
-    INSTAGRAM: "인스타그램",
-    SOOMGO: "숨고",
-    EXISTING_STUDENT: "기존 수강생",
-    OTHER: "기타",
-    // 레거시 호환 (기존 데이터용)
-    WEBSITE: "홈페이지",
-    NAVER: "네이버",
-    FLYER: "전단지",
+    ...REFERRAL_SOURCE_LABELS,
+    // UNKNOWN 은 저장하는 값이 아니다 — 통계 조회가 «빈 값»을 묶을 때만 만드는 이름이라 허용 목록에는 넣지 않는다
     UNKNOWN: "미입력",
 };
 

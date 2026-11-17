@@ -136,6 +136,8 @@ test("학부모 권한이 없는 단일 직원 역할도 가족 연결 온보딩
   const Switcher = compile("src/components/AccountViewSwitcher.tsx", {
     "next/link": { default: Link }, "next/navigation": { usePathname: () => "/staff" },
     "@/components/pwa/useInstalledApp": { useInstalledApp: () => true },
+    // 마지막에 쓰던 화면 기억(2026-11-17) — 순수 모듈이라 원본 그대로
+    "@/lib/auth/last-view": compileModule("src/lib/auth/last-view.ts"),
     // 2026-11-15 아이콘 예외(화살표·종·톱니): 공용 아이콘 부품은 실제 코드를 그대로 쓴다
     "@/components/common/UiIcon": { default: compile("src/components/common/UiIcon.tsx") },
   });

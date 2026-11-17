@@ -27,6 +27,8 @@ import {
     sendManualSms,
 } from "@/app/actions/admin";
 import { askConfirm } from "@/components/ui/feedback";
+// 유입 경로의 한글 이름은 한 곳에서 온다(2026-11-17) — 이 파일에 이름 표를 따로 두지 않는다
+import { referralSourceLabel } from "@/lib/enrollment/referralSources";
 
 const TrialCrmModals = dynamic(() => import("./TrialCrmModals"), {
     loading: () => null,
@@ -173,24 +175,6 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
     CONVERTED: { label: "등록전환", color: statusBadgeClass("success") },
     LOST: { label: "이탈", color: statusBadgeClass("neutral") },
     CANCELLED: { label: "취소", color: statusBadgeClass("neutral") },
-};
-
-// 유입경로 라벨
-const SOURCE_LABELS: Record<string, string> = {
-    WEBSITE: "홈페이지",
-    NAVER: "네이버",
-    NAVER_SEARCH: "네이버 키워드 검색",
-    NAVER_AD: "네이버 검색광고",
-    PORTAL_OTHER: "네이버 외 포털검색",
-    NAVER_BLOG: "스티즈 네이버블로그",
-    INSTAGRAM: "인스타그램",
-    YOUTUBE: "유튜브",
-    REFERRAL: "지인소개",
-    FLYER: "전단지",
-    PASSBY: "지나가다 발견",
-    SOOMGO: "숨고",
-    DANGGEUN: "당근마켓",
-    OTHER: "기타",
 };
 
 // 상태 순서 (파이프라인 흐름)
@@ -583,7 +567,7 @@ function trialLeadMatchesSearch(lead: TrialLead, query: string) {
         lead.hopeNote,
         lead.memo,
         lead.lostReason,
-        SOURCE_LABELS[lead.source] || lead.source,
+        referralSourceLabel(lead.source),
     ].map(normalizeSearchValue).join(" ");
 
     return searchable.includes(normalizedQuery);
@@ -1535,7 +1519,7 @@ function TrialLeadDetailModal({
     const details = [
         ["학생", [lead.childName, lead.childGrade || lead.childAge, lead.childSchool].filter(Boolean).join(" · ")],
         ["보호자", [lead.parentName || "미입력", lead.parentPhone].filter(Boolean).join(" · ")],
-        ["유입경로", SOURCE_LABELS[lead.source] || lead.source],
+        ["유입경로", referralSourceLabel(lead.source)],
         ["농구 경험", lead.basketballExp || "미입력"],
         // 학부모 동의(trialFeeNoticeAgreedAt)만으로는 「입금 완료」가 되지 않는다
         ["체험비", trialFeeStatusLabel(lead)],

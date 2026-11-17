@@ -131,7 +131,7 @@ export async function scheduleMakeupForAbsence(input: {
   absenceId: string;
   makeupClassId: string;
   makeupDate: string; // YYYY-MM-DD
-}) {
+}): Promise<{ ok: true } | { ok: false; message: string }> {
   await requireAdmin();
   const absenceId = input?.absenceId?.trim();
   const makeupClassId = input?.makeupClassId?.trim();
@@ -172,13 +172,16 @@ export async function scheduleMakeupForAbsence(input: {
   // MakeupSession 생성(레거시 예약 액션 재사용 — ensureMakeupSessionTable 포함).
   // 정원 초과 검증도 bookMakeupSession 안에서 수행된다(assertMakeupSeatAvailable).
   //   → 보강 예약 모달 경로와 이 결석→보강 지정 경로가 동일한 기준으로 막힌다.
-  await bookMakeupSession({
+  const booked = await bookMakeupSession({
     studentId: ab.studentId,
     originalClassId: ab.classId,
     originalDate: ab.date,
     makeupClassId,
     makeupDate,
   });
+  // 정원 초과·이월로 정산한 결석 — 저장되지 않았다. 한글 사유를 화면에 그대로 돌려준다
+  // (던지면 운영 빌드가 문구를 가려 영어 일반 문구가 뜬다. 2026-11-17)
+  if (!booked.ok) return booked;
 
   revalidateViews();
   return { ok: true };

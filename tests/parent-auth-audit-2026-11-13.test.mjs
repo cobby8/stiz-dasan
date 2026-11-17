@@ -57,3 +57,31 @@ test("로그인: 학부모가 틀리면 아이디·비밀번호 찾기로 안내
   // 직원은 휴대폰 번호로도 로그인한다(2026-11-13 b3) — 틀렸을 때 안내도 번호를 함께 말한다
   assert.match(src, /loginContext === "staff"\n\s*\? "휴대폰 번호\(또는 이메일\) 또는 비밀번호가 올바르지 않습니다\."/);
 });
+
+test("로그인: 휴대폰 번호·이메일로 틀리면 «아이디·비밀번호 찾기» 대신 원장님께 재설정 요청 안내(2026-11-17)", async () => {
+  const src = await readFile("src/app/actions/auth.ts", "utf8");
+  // «아이디·비밀번호 찾기»는 학부모 전용 — 선생님·기사님·관리자에게 보이면 막힌다
+  const rule = src.match(/const looksLikeStaffLogin = (\/[^\n]+?\/)\.test\(identifier\) \|\| identifier\.includes\("@"\);/);
+  assert.ok(rule, "입력값 모양으로 직원 로그인을 가린다");
+  const phoneShape = new RegExp(rule[1].slice(1, -1));
+  for (const value of ["01012345678", "010-1234-5678"]) assert.ok(phoneShape.test(value), value);
+  for (const value of ["coach01", "mom2026", "12345678", "0212345678"]) assert.ok(!phoneShape.test(value), value);
+  assert.match(
+    src,
+    /: looksLikeStaffLogin\n\s*\? "아이디 또는 비밀번호가 맞지 않습니다\. 처음이시거나 비밀번호가 기억나지 않으면 아래 카카오·구글·Apple 로그인을 눌러 주세요\. 본인인증 한 번으로 바로 들어올 수 있어요\."\n\s*: "아이디 또는 비밀번호가 올바르지 않습니다\. 기억나지 않으면/,
+  );
+  // 로그인 칸 라벨도 누가 무엇을 넣는지 말한다
+  assert.match(await readFile("src/app/login/page.tsx", "utf8"), /"로그인 아이디 \(선생님·기사님은 휴대폰 번호, 관리자는 이메일\)"/);
+});
+
+test("카카오 연결: 직원 계정으로 들어오면 로그아웃 뒤 이 화면으로 돌아오는 로그인 주소로 간다(2026-11-17)", async () => {
+  const page = await readFile("src/app/kakao-connect/page.tsx", "utf8");
+  assert.match(page, /<form action=\{logoutAndReturn\} className="mt-6">\s*<input type="hidden" name="returnTo" value=\{selfPath\} \/>/);
+  const src = await readFile("src/app/actions/auth.ts", "utf8");
+  const body = src.slice(src.indexOf("export async function logoutAndReturn("), src.indexOf("export async function logoutStaff("));
+  // 화면에서 온 주소는 사이트 안 주소일 때만 쓴다(바깥 주소·로그인·역할 판별 중간 주소 금지)
+  assert.match(body, /isSafeInternalPath\(returnTo\) && !isContinue \? returnTo : null/);
+  assert.match(body, /redirect\(safeReturnTo \? `\/login\?redirect=\$\{encodeURIComponent\(safeReturnTo\)\}` : "\/login"\)/);
+  // 보통 로그아웃과 같은 뒷정리
+  assert.match(body, /await forgetNativePushOnThisDevice\(\);\s*const supabase = await createClient\(\);\s*await supabase\.auth\.signOut\(\);\s*revalidatePath\("\/", "layout"\);/);
+});

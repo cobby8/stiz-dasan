@@ -9,7 +9,7 @@ import { buildPublicMetadata } from "@/lib/publicMetadata";
 export const revalidate = 3600;
 export const metadata = {
   ...buildPublicMetadata({
-    title: "선생님 앱 사용 설명 | STIZ 농구교실",
+    title: "선생님 화면 사용 설명 | STIZ 농구교실",
     description: "스티즈농구교실 앱 설치·로그인·출석부 쓰는 방법",
     path: "/teacher-guide",
   }),
@@ -120,7 +120,7 @@ export default function TeacherGuidePage() {
     <PublicPageLayout>
       <section className="public-page-hero public-page-hero--compact bg-[var(--color-public-dark)] py-8 text-white md:py-10">
         <div className="mx-auto max-w-3xl px-6 md:px-4">
-          <h1 className="mb-1 break-keep text-2xl font-bold md:text-3xl">선생님 앱 사용 설명</h1>
+          <h1 className="mb-1 break-keep text-2xl font-bold md:text-3xl">선생님 화면 사용 설명</h1>
           <p className="text-sm text-white/80">설치 → 로그인 → 수업 하나 끝내기까지</p>
         </div>
       </section>

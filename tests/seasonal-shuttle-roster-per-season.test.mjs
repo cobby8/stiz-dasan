@@ -301,3 +301,136 @@ test("GET 응답: 기존 키(roster·confirmed·confirmedCount·confirmedAt)는 
   assert.equal(res.body.confirmedAt, confirmedAt);
   assert.equal(res.body.removed, removed);
 });
+
+// ────────────────────────────────────────────────────────────────
+// R-8③(2026-11-17): 신청관리에서 취소한 학생을 신청관리에서 다시 «이용»으로 돌리는 길.
+// 예전엔 route 가 «살아 있는 확정본 행이 있나»만 보고 갈래를 정해, 뺀 행뿐인 신청서는 «확정 전»으로 보고
+// 원본 신청서만 REQUESTED 로 고쳤다 → 신청관리엔 «요청»인데 기사님 명단(확정본)에는 없는 학생이 생겼다.
+// 여기서는 실제 route + 실제 게이트웨이 + 실제 원본 편집 모듈을 가짜 DB 위에서 돌려 나가는 SQL 을 본다.
+// ────────────────────────────────────────────────────────────────
+
+// roster: null = 확정본 행 없음 / { removed, enrollmentCancelled } = 확정본 행의 상태
+function rideRouteFixture({ mode = true, roster = null, role = "ADMIN" } = {}) {
+  const calls = [];
+  const prisma = {
+    async $queryRawUnsafe(sql, ...args) {
+      calls.push({ kind: "query", sql, args });
+      if (sql.includes(`"shuttleRosterConfirmedMode" AS mode`)) return [{ mode }];
+      // 원본 편집 모듈이 저장 뒤 «하원=등원 동일»을 읽는 조회
+      if (sql.includes(`FROM "SpecialProgramShuttleRequest" WHERE id = $1`)) return [{ same: false, lat: null }];
+      if (sql.includes(`FROM "SeasonalShuttleRoster"`) && sql.includes(`"shuttleRequestId" = $1`)) {
+        // 살아 있는 행 확인(isShuttleRequestConfirmed)
+        if (!sql.includes(`"removedAt" IS NOT NULL`)) return roster && !roster.removed ? [{ one: 1 }] : [];
+        // 뺀 행 확인 — 수강 취소 제외 조건이 SQL 에 있을 때만 그 조건을 흉내 낸다(없으면 취소 학생도 걸린다)
+        const excludesCancelled = sql.includes(`ai.id IS NOT NULL AND NOT`);
+        const hit = roster && roster.removed && !(excludesCancelled && roster.enrollmentCancelled);
+        return hit ? [{ one: 1 }] : [];
+      }
+      throw new Error(`unexpected sql ${sql.slice(0, 80)}`);
+    },
+    async $executeRawUnsafe(sql, ...args) {
+      calls.push({ kind: "exec", sql, args });
+      return 1;
+    },
+  };
+  const requireAdmin = async () => ({ appUserRole: role, appUserId: "u1" });
+  const load = makeLoader({ "@/lib/prisma": { prisma }, "@/lib/auth-guard": { requireAdmin } });
+  const gateway = load("src/lib/seasonal/shuttleRoster.ts");
+  const original = load("src/lib/seasonal/shuttle-roster.ts"); // 같은 loader 라 게이트웨이를 다시 읽지 않는다
+  const route = makeLoader({
+    "next/server": { NextResponse: { json: (body, init) => ({ body, init }) } },
+    "@/lib/seasonal/shuttle-roster": original,
+    "@/lib/seasonal/shuttleRoster": gateway,
+  })("src/app/api/admin/seasonal/shuttle-roster/route.ts");
+  const execs = () => calls.filter((c) => c.kind === "exec");
+  return {
+    calls, gateway,
+    rosterWrites: () => execs().filter((c) => c.sql.includes(`"SeasonalShuttleRoster"`)),
+    originalWrites: () => execs().filter((c) => c.sql.includes(`UPDATE "SpecialProgramShuttleRequest"`)),
+    execs,
+    // 신청관리 드로어(SeasonalAdminClient 의 ShuttleRequestBox)가 보내는 그대로
+    patchRide: (ride) => route.PATCH({ json: async () => ({ requestId: "req-9", patch: { ride } }) }),
+  };
+}
+
+test("신청관리 복구: 뺀 확정본(신청관리에서 취소) + 원본 CANCELLED → 확정본도 되살리고 원본도 REQUESTED", async () => {
+  const fx = rideRouteFixture({ roster: { removed: true, enrollmentCancelled: false } });
+  const res = await fx.patchRide(true);
+  assert.equal(res.body.ok, true);
+  const roster = fx.rosterWrites();
+  assert.equal(roster.length, 1, "확정본 행이 빠진 채면 신청관리엔 «요청»인데 기사님 명단에는 없는 학생이 된다");
+  assert.match(roster[0].sql, /UPDATE "SeasonalShuttleRoster"\s+SET "removedAt" = NULL, "removedReason" = NULL/);
+  assert.match(roster[0].sql, /WHERE "shuttleRequestId" = \$1 AND "removedAt" IS NOT NULL/);
+  assert.deepEqual(Array.from(roster[0].args), ["req-9"]);
+  assert.doesNotMatch(roster[0].sql, /INSERT/);
+  const original = fx.originalWrites();
+  assert.equal(original.length, 1);
+  assert.deepEqual(Array.from(original[0].args), ["req-9", "REQUESTED"]);
+
+  // 갈래 판단은 서버가 확정본을 직접 읽어서 한다 — 수강 취소 판정은 «뺀 학생» 목록·되돌리기와 같은 상수.
+  const check = fx.calls.find((c) => c.kind === "query" && c.sql.includes(`"removedAt" IS NOT NULL`));
+  assert.ok(check, "뺀 확정본 행이 있는지 서버가 읽어야 한다");
+  assert.ok(check.sql.includes(`AND NOT ${fx.gateway.ROSTER_ENROLLMENT_CANCELLED_SQL}`));
+  assert.ok(check.sql.includes(`LEFT JOIN "SpecialProgramApplicationItem" ai ON ai.id = sr."applicationItemId"`));
+  assert.deepEqual(Array.from(check.args), ["req-9"]);
+});
+
+test("신청관리 복구: 확정본이 없는 신청서는 예전 그대로 — 확정본 INSERT/UPDATE 가 한 건도 없다", async () => {
+  // 확정 전 시즌·확정 뒤 새로 들어온 신청. 확정은 원장이 «확정하기»를 눌렀을 때만 일어난다.
+  const fx = rideRouteFixture({ roster: null });
+  const res = await fx.patchRide(true);
+  assert.equal(res.body.ok, true);
+  assert.equal(fx.rosterWrites().length, 0, "복구가 새 확정본 행을 만들거나 고치면 안 된다");
+  assert.equal(fx.execs().length, 1);
+  assert.match(fx.execs()[0].sql, /UPDATE "SpecialProgramShuttleRequest" SET "status" = \$2, "updatedAt" = now\(\) WHERE id = \$1/);
+  assert.deepEqual(Array.from(fx.execs()[0].args), ["req-9", "REQUESTED"]);
+
+  // 확정 모드(킬 스위치)가 꺼져 있으면 원본이 정본이다 — 뺀 행이 있어도 확정본을 건드리지 않는다.
+  const off = rideRouteFixture({ mode: false, roster: { removed: true, enrollmentCancelled: false } });
+  await off.patchRide(true);
+  assert.equal(off.rosterWrites().length, 0);
+  assert.deepEqual(Array.from(off.originalWrites()[0].args), ["req-9", "REQUESTED"]);
+});
+
+test("신청관리 복구: 수강이 취소된 학생은 확정본을 되살리지 않는다(원본 신청서만 예전처럼 바뀐다)", async () => {
+  const fx = rideRouteFixture({ roster: { removed: true, enrollmentCancelled: true } });
+  const res = await fx.patchRide(true);
+  assert.equal(res.body.ok, true);
+  assert.equal(fx.rosterWrites().length, 0, "수강 취소 학생의 확정본 행을 되살리면 «명단»에도 «뺀 학생»에도 없는 학생이 된다");
+  assert.equal(fx.originalWrites().length, 1);
+  assert.deepEqual(Array.from(fx.originalWrites()[0].args), ["req-9", "REQUESTED"]);
+});
+
+test("신청관리 취소 방향은 예전과 같은 SQL — 확정된 학생은 확정본 soft remove + 원본 CANCELLED", async () => {
+  const fx = rideRouteFixture({ roster: { removed: false, enrollmentCancelled: false } });
+  await fx.patchRide(false);
+  assert.equal(fx.execs().length, 2);
+  assert.ok(fx.execs()[0].sql.includes(
+    `SET "removedAt" = now(), "removedReason" = '신청관리에서 취소', "updatedAt" = now()\n          WHERE "shuttleRequestId" = $1 AND "removedAt" IS NULL`,
+  ));
+  assert.deepEqual(Array.from(fx.execs()[0].args), ["req-9"]);
+  assert.deepEqual(Array.from(fx.execs()[1].args), ["req-9", "CANCELLED"]);
+  assert.equal(fx.calls.some((c) => c.sql.includes(`"removedAt" IS NOT NULL`)), false, "취소 방향은 뺀 행을 찾지 않는다");
+
+  // 확정본이 없는(또는 이미 빠진) 신청서의 취소도 예전 그대로 원본만 CANCELLED.
+  for (const roster of [null, { removed: true, enrollmentCancelled: false }]) {
+    const plain = rideRouteFixture({ roster });
+    await plain.patchRide(false);
+    assert.equal(plain.rosterWrites().length, 0);
+    assert.equal(plain.execs().length, 1);
+    assert.deepEqual(Array.from(plain.execs()[0].args), ["req-9", "CANCELLED"]);
+    assert.equal(plain.calls.some((c) => c.sql.includes(`"removedAt" IS NOT NULL`)), false);
+  }
+});
+
+test("신청관리 복구: 뺀 확정본을 되살리는 것은 원장만 — 부원장은 원본만 고쳐 어긋나게 만들지 못한다", async () => {
+  const fx = rideRouteFixture({ role: "VICE_ADMIN", roster: { removed: true, enrollmentCancelled: false } });
+  const quiet = console.error;
+  console.error = () => {};
+  try {
+    const res = await fx.patchRide(true);
+    assert.equal(res.init.status, 403);
+    assert.match(res.body.error, /원장/);
+    assert.equal(fx.execs().length, 0);
+  } finally { console.error = quiet; }
+});

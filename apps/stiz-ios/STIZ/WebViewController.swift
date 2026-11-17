@@ -58,7 +58,7 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         pageObservation = webView.observe(\.url, options: [.new]) { [weak self] _, _ in
             guard let self = self else { return }
             self.syncPaymentState()
-            self.nativeAuth.cancelIfPageChanged(self.webView.url)
+            self.nativeAuth.cancelIfLeftWebsite(self.webView.url)
         }
         webView.allowsBackForwardNavigationGestures = true
         refresher.addTarget(self, action: #selector(pullToRefresh), for: .valueChanged)
@@ -202,11 +202,11 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         case .website:
             // 우리 사이트로 돌아오면 결제 중 상태를 끝내고 다시 잠근다.
             paymentActive = false
-            nativeAuth.cancelIfPageChanged(nil)
+            // 1.0.6: 우리 사이트 안 이동으로는 진행 중인 간편로그인을 취소하지 않는다(NativeAuthCoordinator.cancelIfLeftWebsite)
             return true
         case .paymentStart:
             paymentActive = true
-            nativeAuth.cancelIfPageChanged(nil)
+            nativeAuth.cancelForExternalFlow()
             return true
         case .paymentPage:
             return true
@@ -429,7 +429,7 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-        nativeAuth.cancelIfPageChanged(webView.url)
+        nativeAuth.cancelIfLeftWebsite(webView.url)
         progress.startAnimating()
     }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {

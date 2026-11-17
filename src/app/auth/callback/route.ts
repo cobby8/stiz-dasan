@@ -23,6 +23,7 @@ import { linkHandoffAccountLabel } from "@/lib/account-link-handoff/store";
 import { resolveLinkActor } from "@/lib/account/link-actor";
 import { loginMethodsPath, type StaffLinkErrorCode } from "@/lib/account/login-methods-rules";
 import { requireNativeAccount } from "@/lib/native-auth/store";
+import { NATIVE_RESUME_COOKIE } from "@/lib/native-auth/resume-cookie";
 
 type OAuthIntent = "login" | "parent-signup";
 
@@ -64,6 +65,11 @@ async function loginMethodsPageRedirect(
   request: NextRequest,
   result: { linked?: string; error?: string; code?: StaffLinkErrorCode },
 ) {
+  // 앱 간편로그인에서 넘어와 본인인증으로 기존 계정에 들어온 흐름(2026-11-17): 연결이 됐든 안 됐든 이 브라우저는
+  // 이미 그 계정으로 로그인돼 있다 — 연결 화면에 머무르지 않고 앱으로 돌아가 로그인까지 끝낸다(/auth/native/resume 이 검증).
+  if (request.cookies.get(NATIVE_RESUME_COOKIE)?.value) {
+    return NextResponse.redirect(new URL("/auth/native/resume", request.url));
+  }
   const actor = await resolveLinkActor();
   const url = new URL(loginMethodsPath(actor), request.url);
   if (result.linked) url.searchParams.set("linked", result.linked);

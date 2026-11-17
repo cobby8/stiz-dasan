@@ -65,6 +65,20 @@ public final class NativeAuthPolicyTest {
         check(NativeAuthPolicy.token(code));
         check(!NativeAuthPolicy.token("C".repeat(42)));
         check(!NativeAuthPolicy.token("C".repeat(44)));
+        // 1.0.6: 같은 사이트 안의 화면 변화(다시 불러오기·주소 이동)로는 진행 중인 로그인을 취소하지 않는다
+        check(!NativeAuthPolicy.cancelsAttempt(origin, origin + "/login"));
+        check(!NativeAuthPolicy.cancelsAttempt(origin, origin + "/mypage?tab=1"));
+        check(!NativeAuthPolicy.cancelsAttempt(origin, origin + "/signup/parent?fromApp=1"));
+        // 사이트 밖·빈 화면·주소 없음은 취소한다
+        check(NativeAuthPolicy.cancelsAttempt(origin, null));
+        check(NativeAuthPolicy.cancelsAttempt(origin, "about:blank"));
+        check(NativeAuthPolicy.cancelsAttempt(origin, "https://pay.toss.im/checkout"));
+        check(NativeAuthPolicy.cancelsAttempt(origin, "https://stiz-dasan.kr/login"));
+        check(NativeAuthPolicy.cancelsAttempt(origin, "http://www.stiz-dasan.kr/login"));
+        check(NativeAuthPolicy.cancelsAttempt(origin, "https://www.stiz-dasan.kr.evil.invalid/login"));
+        // 취소 이유는 정해진 한 단어만(서버 NATIVE_CANCEL_REASONS 와 같게 — npm 테스트가 두 목록을 대조한다)
+        check(NativeAuthPolicy.CANCEL_REASONS.length == 8);
+        for (String reason : NativeAuthPolicy.CANCEL_REASONS) check(reason.matches("[a-z_]{4,20}"));
         System.out.println("Native auth policy: " + checks + " checks passed");
     }
 }

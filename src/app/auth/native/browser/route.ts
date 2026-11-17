@@ -6,7 +6,7 @@ import { bindingCookie, nativeBrowserClient, nativeBrowserError, nativeContext, 
 export const runtime = "nodejs";
 export async function GET(request:NextRequest) {
   try {
-    const {service,config}=nativeContext(request);
+    const {service,config}=nativeContext(request,true);
     const {row,binding}=await service.beginBrowser(request.nextUrl.searchParams.get("flow"));
     if(!(await getEnabledParentOAuthProviders()).includes(row.provider))throw new NativeAuthError(503);
     const callback=new URL("/auth/native/callback",config.origin);

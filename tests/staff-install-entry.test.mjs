@@ -7,9 +7,17 @@ const middlewareSource = await readFile("src/lib/supabase/middleware.ts", "utf8"
 const manifest = JSON.parse(await readFile("public/manifest-staff.json", "utf8"));
 const serviceWorkerSource = await readFile("public/sw.js", "utf8");
 
-test("공유용 /staff/install 주소는 공개 설치 페이지로 연결된다", () => {
-  assert.match(configSource, /source:\s*["']\/staff\/install["']/);
-  assert.match(configSource, /destination:\s*["']\/teacher-app["']/);
+test("공유용 /staff/install 주소는 스토어 앱 설치 안내(/install)로 넘어간다", () => {
+  // 2026-11-17 원장 승인: 설치 안내는 /install 하나. 옛 주소 다섯 개는 전부 임시 이동(permanent: false)으로 넘긴다.
+  for (const source of ["/app", "/staff/install", "/mypage/install", "/teacher-app", "/parent-app"]) {
+    assert.ok(
+      configSource.includes(`{ source: "${source}", destination: "/install", permanent: false },`),
+      `${source} → /install`,
+    );
+  }
+  // 옛 화면을 빌려 쓰던 주소 바꿔 주기(rewrite)는 없다
+  assert.doesNotMatch(configSource, /destination:\s*["']\/(teacher-app|parent-app|mypage\/install)["']/);
+  // 미들웨어의 «로그인 없이 보기» 예외는 그대로 둔다(이동이 먼저 적용되지만, 되돌릴 때 필요하다)
   assert.match(middlewareSource, /isStaffInstall\s*=\s*pathname === ["']\/staff\/install["']/);
   assert.match(
     middlewareSource,

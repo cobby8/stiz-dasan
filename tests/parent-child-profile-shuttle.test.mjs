@@ -227,6 +227,54 @@ test("③ 셔틀 조회: 모든 SQL 이 studentId($1)로 묶이고, 명단 달�
   assert.equal(holiday.days[0].status, "HOLIDAY");
 });
 
+test("③ 셔틀 조회: 반 목록·수업일 계산기가 «아직 오는 중»이어도 명단 조회는 먼저 나가고, 결과는 값으로 줄 때와 같다(2026-11-17 속도)", async () => {
+  const calls = [];
+  const db = {
+    async $queryRawUnsafe(sql, ...values) {
+      calls.push(sql);
+      if (sql.includes(`FROM "RegularShuttleStop" r`)) {
+        return [{ id: "n", weekday: 1, direction: "BOARD", stopName: "11월", arriveTime: "17:45", classTime: "18:00~19:20", sortOrder: 0, serviceMonth: "2026-11" }];
+      }
+      return [];
+    },
+  };
+  const monthlyDates = (ym, dow) => (dow === "Mon" && ym === "2026-11" ? ["2026-11-30"] : []);
+  const q = load("src/lib/shuttle/childShuttleQuery.ts");
+  const byValue = await q.loadChildRegularShuttle(db, { studentId: "kid", today: "2026-11-28", classes: [cls()], monthlyDates });
+
+  calls.length = 0;
+  let releaseClasses, releaseDates;
+  const classesP = new Promise((resolve) => { releaseClasses = resolve; });
+  const datesP = new Promise((resolve) => { releaseDates = resolve; });
+  const pending = q.loadChildRegularShuttle(db, { studentId: "kid", today: "2026-11-28", classes: classesP, monthlyDates: datesP });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls.length, 4, "반 목록을 기다리지 않고 조회 넷이 이미 나갔다");
+  releaseClasses([cls()]);
+  releaseDates(monthlyDates);
+  assert.deepEqual(await pending, byValue);
+
+  // 연간일정을 못 읽어 계산기가 null 로 오면 값 null 을 줄 때와 같다(휴무 판정 없이 명단대로)
+  assert.deepEqual(
+    await q.loadChildRegularShuttle(db, { studentId: "kid", today: "2026-11-28", classes: [cls()], monthlyDates: Promise.resolve(null) }),
+    await q.loadChildRegularShuttle(db, { studentId: "kid", today: "2026-11-28", classes: [cls()], monthlyDates: null }),
+  );
+
+  // 반 목록 조회가 실패하면 그대로 실패로 전한다(호출부가 빈 값으로 받는다)
+  await assert.rejects(
+    q.loadChildRegularShuttle(db, { studentId: "kid", today: "2026-11-28", classes: Promise.reject(new Error("classes")), monthlyDates: null }),
+    /classes/,
+  );
+
+  // 학부모 셔틀 개요: 연간일정·반 목록을 먼저 기다리지 않는다
+  const parent = readFileSync(new URL("../src/lib/shuttle/parent.ts", import.meta.url), "utf8");
+  const roster = parent.slice(parent.indexOf("async function rosterOverviewForStudents"));
+  assert.doesNotMatch(roster, /await loadAnnualPlanEvents\(\)/);
+  assert.doesNotMatch(roster, /await loadChildClasses\(/);
+  assert.match(roster, /const classes = loadChildClasses\(prisma, student\.id, today\);/);
+  assert.match(roster, /monthlyDates: monthlyDatesP/);
+  assert.match(roster, /\.catch\(\(\) => null\);/, "연간일정을 못 읽으면 휴무 판정 없이 명단대로");
+});
+
 function loadRecordQuery(fakeRows, spies) {
   const calls = [];
   const db = { async $queryRawUnsafe(sql, ...values) { calls.push({ sql, values }); return fakeRows(sql, values); } };

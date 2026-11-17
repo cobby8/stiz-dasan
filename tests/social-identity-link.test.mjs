@@ -9,6 +9,7 @@ import { loadTsModule } from "./_ts-module.mjs";
 process.env.SUPABASE_SERVICE_ROLE_KEY ||= "test-secret-for-link-ids";
 const {
   selectLinkTarget,
+  selectStaffRecordToClaim,
   normalizePersonName,
   isFreshVerification,
   createLinkVerificationId,
@@ -31,13 +32,27 @@ test("연결 대상은 «명의 번호의 학부모 계정 딱 하나 + 이름 �
   assert.equal(selectLinkTarget([parent], "").kind, "NAME_MISMATCH", "이름이 비면 통과시키지 않는다");
   assert.equal(selectLinkTarget([{ ...parent, name: null }], "김수빈").kind, "NAME_MISMATCH");
   assert.equal(selectLinkTarget([parent, { ...parent, id: "u2" }], "김수빈").kind, "MULTIPLE");
-  // 직원(관리자 포함)이 같은 번호를 쓰면 학부모 계정이 있어도 열지 않는다 — 학생 전체가 열리는 계정이 섞인 번호다.
+  // 직원(관리자 포함)이 쓰는 번호(2026-11-17 원장 지시로 열림): 이름 일치·로그인 수단·휴대폰 인증을 모두 갖춘 계정이
+  // «정확히 하나»일 때만 그 계정을 고른다. 하나로 정해지지 않으면 자동으로 고르지 않고 막는다.
   for (const role of ["ADMIN", "VICE_ADMIN", "INSTRUCTOR", "DRIVER"]) {
-    assert.equal(selectLinkTarget([parent, { ...parent, id: "s", role }], "김수빈").kind, "STAFF", role);
-    assert.equal(selectLinkTarget([{ ...parent, role }], "김수빈").kind, "STAFF", role);
+    const staff = { ...parent, id: "s", authUserId: "auth-s", role };
+    assert.deepEqual(selectLinkTarget([staff], "김수빈"), { kind: "OK", userId: "s", authUserId: "auth-s" }, role);
+    assert.equal(selectLinkTarget([parent, staff], "김수빈").kind, "STAFF", `${role}: 같은 번호에 조건을 갖춘 계정이 둘이면 막는다`);
+    assert.equal(selectLinkTarget([staff], "김수민").kind, "STAFF", `${role}: 이름이 다르면 막는다`);
+    assert.equal(selectLinkTarget([staff], "").kind, "STAFF", `${role}: 이름이 비면 막는다`);
+    // 초대로 가입한 직원은 phoneVerifiedAt 이 없다(초대 때 문자 인증은 거쳤다) — 이름 일치 + 로그인 수단이 있으면 연결한다
+    assert.deepEqual(selectLinkTarget([{ ...staff, phoneVerifiedAt: null }], "김수빈"), { kind: "OK", userId: "s", authUserId: "auth-s" }, `${role}: 초대 가입 직원`);
+    // 후보가 둘이고 둘 다 휴대폰 인증 전이면 하나로 정할 수 없어 막는다
+    assert.equal(selectLinkTarget([{ ...staff, phoneVerifiedAt: null }, { ...staff, id: "t", authUserId: "auth-t", phoneVerifiedAt: null }], "김수빈").kind, "STAFF", `${role}: 후보 둘`);
+    assert.equal(selectLinkTarget([{ ...staff, authUserId: null }], "김수빈").kind, "STAFF", `${role}: 로그인 수단이 없으면 막는다`);
+    // 원장 실제 모양: 같은 번호에 휴대폰 인증 전인 다른 직원 계정이 하나 더 있어도, 조건을 갖춘 계정이 하나면 그 계정
+    assert.deepEqual(
+      selectLinkTarget([staff, { ...staff, id: "v", authUserId: "auth-v", role: "VICE_ADMIN", phoneVerifiedAt: null }], "김수빈"),
+      { kind: "OK", userId: "s", authUserId: "auth-s" }, role);
   }
-  // 주 역할은 학부모라도 선생님·기사님 역할이 승인된 계정은 직원으로 본다.
-  assert.equal(selectLinkTarget([{ ...parent, hasActiveStaffGrant: true }], "김수빈").kind, "STAFF");
+  // 주 역할은 학부모라도 선생님·기사님 역할이 승인된 계정은 직원 규칙을 따른다(조건을 갖춘 하나면 연결).
+  assert.equal(selectLinkTarget([{ ...parent, hasActiveStaffGrant: true }], "김수빈").kind, "OK");
+  assert.equal(selectLinkTarget([{ ...parent, hasActiveStaffGrant: true }], "김수민").kind, "STAFF");
   // 로그인 수단이 없는 빈 계정은 이 길이 아니라 기존 문자 인증 활성화 흐름이 맡는다.
   assert.equal(selectLinkTarget([{ ...parent, authUserId: null }], "김수빈").kind, "NOT_READY");
   assert.equal(selectLinkTarget([{ ...parent, phoneVerifiedAt: null }], "김수빈").kind, "NOT_READY");
@@ -79,7 +94,8 @@ test("확인 순서: 건 번호 → 포트원 재조회 → 대상 선택 → �
     "signedIn.data.user?.id !== target.authUserId",
     'eventType: "IDENTITY_LOGIN"',
   ].map((needle) => {
-    const at = verify.indexOf(needle);
+    // 알림(IDENTITY_LOGIN)은 직원 기록 연결 갈래(2026-11-17)에도 있어 두 번 나온다 — 기존 계정 로그인 뒤의 것은 마지막 것이다.
+    const at = needle.startsWith("eventType:") ? verify.lastIndexOf(needle) : verify.indexOf(needle);
     assert.ok(at > 0, `없음: ${needle}`);
     return at;
   });
@@ -119,4 +135,46 @@ test("연결이 끝나면 계정 주인 번호로 보안 알림 문자를 보낸
   assert.match(notify, /source: "SECURITY"/);
   assert.match(notify, /audienceScope: "SECURITY"/);
   assert.match(callback, /body: socialLinkNoticeBody\(label\)/);
+});
+
+test("로그인 없는 직원 기록에는 본인이 본인인증으로 직접 로그인을 붙인다 — 조건은 좁게(2026-11-17)", () => {
+  const record = { id: "r1", role: "ADMIN", name: "권 혜미", authUserId: null, phoneVerifiedAt: null, withdrawn: false, noLogin: true };
+  // 초대로 가입한 직원은 authUserId 없이 로그인이 있다(조회가 noLogin=false 로 준다) — 덮어쓰면 잘 쓰던 계정이 잠긴다(보안 검수)
+  assert.equal(selectStaffRecordToClaim([{ ...record, noLogin: false }], "권혜미"), null);
+  assert.equal(selectStaffRecordToClaim([{ ...record, noLogin: undefined }], "권혜미"), null, "표식이 없으면 붙이지 않는다");
+  for (const role of ["ADMIN", "VICE_ADMIN", "INSTRUCTOR", "DRIVER"]) {
+    assert.deepEqual(selectStaffRecordToClaim([{ ...record, role }], "권혜미"), { userId: "r1" }, role);
+  }
+  // 이름이 다르거나 비면 붙이지 않는다
+  assert.equal(selectStaffRecordToClaim([record], "권혜민"), null);
+  assert.equal(selectStaffRecordToClaim([record], ""), null);
+  assert.equal(selectStaffRecordToClaim([{ ...record, name: null }], "권혜미"), null);
+  // 이미 로그인이 있는 기록·학부모 기록·탈퇴(요청) 기록은 이 길이 아니다
+  assert.equal(selectStaffRecordToClaim([{ ...record, authUserId: "auth-x" }], "권혜미"), null);
+  assert.equal(selectStaffRecordToClaim([{ ...record, role: "PARENT" }], "권혜미"), null);
+  assert.equal(selectStaffRecordToClaim([{ ...record, withdrawn: true }], "권혜미"), null);
+  // 같은 번호를 쓰는 계정이 하나라도 더 있으면 자동으로 고르지 않는다
+  assert.equal(selectStaffRecordToClaim([record, { ...record, id: "r2", role: "PARENT" }], "권혜미"), null);
+  assert.equal(selectStaffRecordToClaim([], "권혜미"), null);
+  // 라우트: 포트원 확인 뒤에만, 조건을 UPDATE 에 다시 적고(동시 요청·바뀐 기록 차단), 본인에게 알림 문자
+  const at = verify.indexOf("const staffRecord = selectStaffRecordToClaim(rows, verifiedName);");
+  assert.ok(at > verify.indexOf('verification.status !== "VERIFIED" || !isFreshVerification(verifiedAt)'), "본인인증 확인이 먼저");
+  const block = verify.slice(at, verify.indexOf("const target = selectLinkTarget(rows, verifiedName);"));
+  assert.match(block, /await claimStaffRecordByIdentity\(\{ userId: staffRecord\.userId, authUserId: current\.user\.id, email: current\.user\.email \}\)/);
+  assert.match(block, /if \(!claim\.ok\) \{/);
+  assert.match(block, /notifyAccountSecurityEvent\(/);
+  // 조회: 옛 초대 가입 직원은 id 를 로그인 id 로 보고, «로그인 없음»은 @staff.local 자리표시일 때만
+  assert.match(verify, /lower\(COALESCE\(u\.email, ''\)\) NOT LIKE '%@staff\.local' THEN u\.id/);
+  assert.match(verify, /LIKE '%@staff\.local'\) AS "noLogin"/);
+  // 붙이는 곳: 조건을 UPDATE 에 다시 적고, 같은 거래에서 감사 기록, 끝난 뒤 다른 원장 알림. 이메일이 없으면 붙이지 않는다.
+  const claimSource = fs.readFileSync("src/lib/staff/staffSelfClaim.ts", "utf8");
+  assert.match(claimSource, /if \(!email\) return \{ ok: false, reason: "NO_EMAIL" \};/);
+  assert.match(claimSource, /WHERE id = \$3 AND "authUserId" IS NULL AND role::text <> 'PARENT'\s+AND lower\(email\) LIKE \$4\s+AND "withdrawnAt" IS NULL AND "withdrawRequestedAt" IS NULL/);
+  assert.match(claimSource, /NOT EXISTS \(SELECT 1 FROM "User" o WHERE o\.id <> \$3 AND \(o\."authUserId" = \$1 OR o\.id = \$1 OR lower\(o\.email\) = \$2\)\)/);
+  assert.match(claimSource, /`%\$\{DIRECT_ADDED_EMAIL_SUFFIX\}`/);
+  const tx = claimSource.slice(claimSource.indexOf("prisma.$transaction("), claimSource.indexOf("if (!claimed) return"));
+  assert.match(tx, /INSERT INTO "OperationsAuditLog"[\s\S]*'STAFF_LOGIN_LINKED'/, "감사 기록은 붙이는 거래 안에서");
+  assert.match(tx, /via: "IDENTITY_SELF"/);
+  assert.match(claimSource, /await notifyAdminsOfSelfClaim\(claimed\);/);
+  assert.match(claimSource, /role IN \('ADMIN', 'VICE_ADMIN'\) AND "withdrawnAt" IS NULL AND id <> \$1/);
 });

@@ -430,6 +430,7 @@ test("관리자·선생님 저장 경로가 같은 규칙 함수를 쓰고, «�
 test("가입 안내문: «결석 신고» → «결석 알리기»", () => {
   const templates = load("src/lib/customer-notice/templates.ts", { "@/lib/datetime/kst": kst });
   const message = templates.buildParentSignupGuideMessage();
-  assert.match(message, /▶ 결석은 가입 후 ‘결석 알리기’로 알려 주세요\./);
+  // 2026-11-17 원장 문구: «가입 후 앱의 ‘결석 알리기’»
+  assert.match(message, /▶ 결석은 가입 후 앱의 ‘결석 알리기’로 알려 주세요\./);
   assert.doesNotMatch(message, /결석 신고/);
 });

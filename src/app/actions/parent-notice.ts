@@ -366,7 +366,7 @@ export async function sendParentNotice(input: { approvalId: string; approved: bo
 
     // 잠금을 걸고 «이 미리보기로 이미 보냈나 / 30분 안에 같은 공지를 접수했나»를 본다(두 번 눌러도, 두 사람이 눌러도 한 번만)
     const claimed = await prisma.$transaction(async (tx) => {
-      await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, "parent-notice");
+      await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))::text`, "parent-notice");
       const recent = await tx.$queryRawUnsafe<Array<{ reason: string }>>(
         `SELECT CASE WHEN "detailsJson"->>'approvalId' = $1 THEN 'SAME_APPROVAL' ELSE 'WINDOW' END AS reason
            FROM "OperationsAuditLog"
@@ -598,7 +598,7 @@ export async function sendParentNoticeSmsResend(input: { approvalId: string; app
     if (!same || resend.recipients.length === 0) throw new NoticeProblem("받는 사람이나 문구가 미리보기 때와 달라졌습니다. 미리보기를 다시 열어 주세요.");
     // 한 묶음당 한 번만 — 잠금을 걸고 같은 원래 묶음으로 이미 접수했는지 본다
     const claimed = await prisma.$transaction(async (tx) => {
-      await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, "parent-notice-resend");
+      await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))::text`, "parent-notice-resend");
       const recent = await tx.$queryRawUnsafe<Array<{ id: string }>>(
         `SELECT id FROM "OperationsAuditLog"
           WHERE action = 'PARENT_NOTICE_RESEND_CLAIMED'

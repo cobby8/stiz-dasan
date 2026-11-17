@@ -75,6 +75,10 @@
 .stiz-public-sport .public-process p{font-size:.78rem;line-height:1.75;color:var(--color-public-muted);word-break:keep-all}
 .stiz-public-sport .public-home-video{max-width:60rem;margin:0 auto;aspect-ratio:16/9;background:var(--color-public-dark);border-radius:var(--color-public-radius);overflow:hidden}
 .stiz-public-sport .public-home-video iframe{width:100%;height:100%;border:0}
+.stiz-public-sport .public-home-video__poster{position:relative;display:block;width:100%;height:100%;padding:0;border:0;background:none;cursor:pointer}
+.stiz-public-sport .public-home-video__poster img{width:100%;height:100%;object-fit:cover}
+.stiz-public-sport .public-home-video__play{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:inline-flex;align-items:center;justify-content:center;min-height:2.8rem;padding:.72rem 1.4rem;font-size:.9rem;font-weight:600;background:var(--color-public-orange);color:var(--color-public-dark);border-radius:var(--color-public-radius);white-space:nowrap}
+.stiz-public-sport .public-home-video__poster:focus-visible{outline:2px solid var(--color-public-focus);outline-offset:-4px}
 .stiz-public-sport .public-home-gallery{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.7rem}
 .stiz-public-sport .public-home-gallery a{aspect-ratio:4/3;overflow:hidden;display:block;border-radius:var(--color-public-radius);background:var(--color-public-tint)}
 .stiz-public-sport .public-home-gallery img{width:100%;height:100%;object-fit:cover}

@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import type { AccountViewOption } from "@/lib/account-views";
 import { useInstalledApp } from "@/components/pwa/useInstalledApp";
+import { rememberLastView } from "@/lib/auth/last-view";
 
 type FamilyNavigationOption = { key: "family"; label: string; href: "/account/children" } | {key:"account";label:string;href:"/account"};
 const familyOption: FamilyNavigationOption = { key: "family", label: "자녀·가족 연결", href: "/account/children" };
@@ -70,7 +71,13 @@ export default function AccountViewSwitcher({ views, variant = "menu", placement
           </span>
         ) : (
           <Link key={view.key} href={view.href} prefetch={false} className={`${className} hover:bg-[var(--color-academy-soft)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-academy-primary)]`}
-            onClick={event => { onNavigate?.(event, view); setOpen(false); }}>
+            onClick={event => {
+              onNavigate?.(event, view);
+              // 고른 화면을 기억한다(다음에 앱을 켜면 이 화면부터). 이동이 보류된 경우(수업 진행 중 확인 창)는
+              // 아직 고른 것이 아니라 적지 않는다 — 취소했는데 다음에 그 화면이 뜨면 안 된다.
+              if (!event.defaultPrevented) rememberLastView(view.key);
+              setOpen(false);
+            }}>
             <span className="min-w-0">
               <span className="block">{view.label}</span>
               {outsideApp && <span className="block text-xs font-normal text-[var(--color-academy-muted)]">앱 밖의 브라우저 화면으로 이동</span>}

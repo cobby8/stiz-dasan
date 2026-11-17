@@ -664,7 +664,7 @@ export async function reserveBillingNotices(input: {
     const trigger = BILLING_NOTICE_TRIGGER[input.kind];
     const inserted = await input.tx(async (db) => {
         // 같은 종류의 예약은 한 번에 하나씩(두 사람이 동시에 눌러도 열쇠 검사가 겹치지 않게)
-        await db.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, `billing-notice:${input.kind}`);
+        await db.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))::text`, `billing-notice:${input.kind}`);
         const queued: Array<PlannedNotice & { rowId: string; deliveryId: string | null }> = [];
         for (const notice of input.notices) {
             // 미납: 같은 결제가 들어 있는 «살아 있는» 안내가 있으면 건너뛴다(잠금 안에서 다시 확인 — 대상 조회와

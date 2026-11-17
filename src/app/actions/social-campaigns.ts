@@ -26,18 +26,11 @@ type NoticeSocialPreview = {
   mediaItems: CampaignMediaItem[];
   feedCaption: string;
   storyText: string;
-  adPrimaryText: string;
-  adHeadline: string;
-  adDescription: string;
 };
 
 type PublishNoticeSocialInput = {
   feedCaption: string;
   storyText?: string;
-  adPrimaryText?: string;
-  adHeadline?: string;
-  adDescription?: string;
-  landingUrl?: string;
   publishInstagramFeed?: boolean;
   publishInstagramStory?: boolean;
 };
@@ -148,8 +141,10 @@ async function ensureSocialCampaignPostTable() {
 
 async function recordCampaignPost(data: {
   sourceId: string;
-  channel: "INSTAGRAM_FEED" | "INSTAGRAM_STORY" | "FACEBOOK_AD_DRAFT";
-  status: "PUBLISHED" | "FAILED" | "READY";
+  // 2026-11-17: «페이스북 광고 소재» 기록(FACEBOOK_AD_DRAFT · READY)은 더 남기지 않는다(원장 결정 — 안 쓰는 기능).
+  // 예전에 쌓인 행은 표에 그대로 있다(지우지 않는다).
+  channel: "INSTAGRAM_FEED" | "INSTAGRAM_STORY";
+  status: "PUBLISHED" | "FAILED";
   title: string;
   caption: string;
   mediaJSON: string;
@@ -201,10 +196,6 @@ function buildPreview(notice: NoticeRow): NoticeSocialPreview {
       `${notice.title}\n\n${trimmedSummary}\n\n자세한 내용은 공지사항에서 확인해주세요.\n${landingUrl}\n\n${hashtags()}`,
     // 공지 제목·본문만으로 만든 중립 문구 — 어떤 공지에도 맞는다. 원장이 게시 전에 화면에서 고칠 수 있다.
     storyText: `${notice.title}\n자세한 내용은 프로필/공지사항에서 확인해주세요.`,
-    adPrimaryText:
-      `${notice.title}\n\n${trimmedSummary}\n\n자세한 내용은 공지사항에서 확인해주세요.`,
-    adHeadline: notice.title.slice(0, 80),
-    adDescription: "STIZ 농구교실 다산점 안내",
   };
 }
 
@@ -221,7 +212,8 @@ export async function publishNoticeSocialCampaign(noticeId: string, input: Publi
   const preview = buildPreview(notice);
   const settings = (await getAcademySettings()) as any;
   const mediaJSON = JSON.stringify(preview.mediaItems);
-  const landingUrl = input.landingUrl?.trim() || preview.landingUrl;
+  // 공지 주소는 서버가 만든 값만 쓴다(화면에는 이 값을 고치는 칸이 없어, 늘 같은 값을 되돌려 보냈다).
+  const landingUrl = preview.landingUrl;
   const results: Array<{ channel: string; ok: boolean; message: string; permalink?: string | null }> = [];
 
   if (input.publishInstagramFeed) {
@@ -284,25 +276,11 @@ export async function publishNoticeSocialCampaign(noticeId: string, input: Publi
     });
   }
 
-  await recordCampaignPost({
-    sourceId: notice.id,
-    channel: "FACEBOOK_AD_DRAFT",
-    status: "READY",
-    title: input.adHeadline || preview.adHeadline,
-    caption: input.adPrimaryText || preview.adPrimaryText,
-    mediaJSON,
-    landingUrl,
-  });
-
+  // 피드·스토리를 둘 다 고르지 않으면 아무것도 올리지 않고 기록도 남기지 않는다.
+  // results 가 빈 배열로 돌아가 화면이 «발행할 항목을 고르지 않아 인스타에 올리지 않았습니다.»를 보인다.
   revalidatePath("/admin/notices");
   return {
     ok: results.every((result) => result.ok),
     results,
-    adDraft: {
-      primaryText: input.adPrimaryText || preview.adPrimaryText,
-      headline: input.adHeadline || preview.adHeadline,
-      description: input.adDescription || preview.adDescription,
-      landingUrl,
-    },
   };
 }

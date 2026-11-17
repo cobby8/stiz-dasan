@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import IdentityLinkButton from "@/components/auth/IdentityLinkButton";
+import IdentityLinkButton, { type IdentitySignupHandoff } from "@/components/auth/IdentityLinkButton";
 import { FormEvent, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { parentAuthEntryHref } from "@/lib/auth-entry-navigation";
@@ -78,6 +78,8 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
   const enabledProviders = useEnabledOAuthProviders();
   const visibleSignupOptions = SIGNUP_SOCIAL_OPTIONS.filter((option) => enabledProviders?.includes(option.provider));
   const socialSignup = searchParams.get("social") === "1";
+  // 앱의 간편로그인에서 넘어온 가입(브라우저 창 안) — 가입을 마치면 웹 화면으로 이어 가지 않고 «앱으로 돌아가기»를 안내한다(2026-11-17)
+  const fromApp = searchParams.get("fromApp") === "1";
   // 카카오 연결 화면 등에서 "기존 학부모 계정 활성화"로 들어온 경우. 가입 방법 고르기를 건너뛰고 휴대폰 인증부터 한다.
   const existingMode = !socialSignup && searchParams.get("existing") === "1";
   const enrollmentHandoff = searchParams.get("enrollmentHandoff") || "";
@@ -101,7 +103,18 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
   // 간편로그인 + 이미 가입된 번호 → 본인인증으로 기존 계정에 연결(2026-10-26). 모바일은 인증창에서 돌아올 때 주소에 결과가 붙는다.
   const [phoneRegistered, setPhoneRegistered] = useState(socialSignup && searchParams.has("identityVerificationId"));
   const [activationUrl, setActivationUrl] = useState("");
-  const [notice, setNotice] = useState<string | null>(null);
+  // 간편가입은 본인인증 하나로 확인한다(2026-11-17 원장 지시). 본인 명의 휴대폰이 아닌 분만 문자 인증 샛길을 연다.
+  const [smsFallback, setSmsFallback] = useState(false);
+  // 본인인증으로 확인된 이름 — 계정 정보 단계의 이름 칸에 미리 넣는다(고칠 수 있다)
+  const [verifiedName, setVerifiedName] = useState("");
+  // fromApp=1: 앱에서 가입 전에 간편로그인을 눌러 이 화면으로 넘어온 경우(2026-11-17 긴급). 왜 여기로 왔는지 먼저 알려 준다.
+  const [notice, setNotice] = useState<string | null>(() => {
+    if (searchParams.get("fromApp") !== "1") return null;
+    // social=1 이 같이 오면 앱에서 한 카카오·구글 인증이 이어져 있다 — 휴대폰 인증만 남았다고 알려 준다.
+    return socialSignup
+      ? "간편로그인은 확인됐어요. 본인인증 한 번이면 끝납니다. 마치면 앱으로 자동으로 돌아가요."
+      : "아직 가입 전이라 로그인이 되지 않았어요. 여기서 회원가입을 먼저 해 주세요. 가입을 마친 뒤 이 창을 닫고 앱에서 다시 로그인하시면 됩니다.";
+  });
   // 가입할 때 고르는 역할(원장 결정 2026-10-25). 학부모는 바로 열리고, 선생님·기사님은
   // 가입을 마친 뒤 «역할 추가 신청» 화면에서 신청 → 원장 확인 후 열린다.
   // 고르기만 해서 직원 화면이 열리면 아무나 학생 개인정보를 보게 되므로 여기서는 신청 화면으로 안내만 한다.
@@ -116,6 +129,39 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
   const weakWarning = parentPasswordWarning(passwordDraft, { phone, minLength: PARENT_PASSWORD_MIN });
   function toggleStaffRole(role: "INSTRUCTOR" | "DRIVER") {
     setStaffRoles((current) => (current.includes(role) ? current.filter((value) => value !== role) : [...current, role]));
+  }
+
+  /**
+   * 가입이 끝났을 때. 앱에서 넘어온 간편가입이면 이 창에 머무르지 않고 앱으로 돌아가 로그인까지 끝낸다
+   * (/auth/native/resume 이 살려 둔 앱 로그인 요청을 마무리한다. 시간이 지났으면 그 화면이 «앱에서 다시 로그인» 안내를 띄운다).
+   */
+  function finishSignup() {
+    // 앱에서 넘어온 간편가입은 완료 화면의 «앱으로 돌아가기» 버튼이 /auth/native/resume 으로 보낸다(아래 done 단계).
+    // 스크립트로 자동 이동하지 않는다 — 누름 없이 앱을 여는 이동은 브라우저가 막을 수 있고, 막히면 창이 그대로 남는다.
+    setStep("done");
+  }
+
+  /** 본인인증 결과가 «가입 이어가기»일 때 — 문자 인증을 통과했을 때와 같은 다음 단계로 간다. */
+  function continueFromIdentity(data: IdentitySignupHandoff) {
+    setError(null);
+    if (data.existingParent === "LINKED") {
+      if (fromApp) { finishSignup(); return; }
+      window.location.assign(data.redirectPath || "/mypage");
+      return;
+    }
+    if (data.existingParent === "ACTIVATE" && data.activationUrl) {
+      setActivationUrl(data.activationUrl);
+      setStep("existing");
+      return;
+    }
+    if (!data.challengeToken || !data.proof) {
+      setError("본인인증 결과를 확인하지 못했어요. 다시 시도해 주세요.");
+      return;
+    }
+    setChallengeToken(data.challengeToken);
+    setProof(data.proof);
+    setVerifiedName(data.verifiedName || "");
+    setStep("account");
   }
 
   async function startPhoneVerification(event: FormEvent<HTMLFormElement>) {
@@ -149,6 +195,8 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
       });
       // 학원에 이미 등록된 보호자: 간편로그인 계정이 바로 연결됐으면 원래 가려던 화면으로 간다.
       if (data.existingParent === "LINKED") {
+        // 앱에서 넘어온 경우는 이 브라우저 창에서 웹을 이어 쓰지 않게 완료 화면의 «앱으로 돌아가기» 안내로(2026-11-17 검수 반영)
+        if (fromApp) { finishSignup(); return; }
         // 서버가 검증한 경로만 쓴다(주소창의 next 를 그대로 믿지 않는다)
         window.location.assign(data.redirectPath || "/mypage");
         return;
@@ -202,11 +250,12 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
       });
       // 서버가 바로 로그인까지 해 두었으면 «로그인하기» 없이 가려던 화면(마이페이지 등)으로 간다.
       // 로그인을 못 했으면 지금처럼 완료 화면에서 로그인 안내(폴백).
-      if (data.sessionEstablished) {
+      // 단, 앱에서 넘어온 경우는 이 브라우저 창에서 웹을 이어 쓰지 않게 완료 화면에서 «앱으로 돌아가기»를 안내한다.
+      if (data.sessionEstablished && !fromApp) {
         window.location.assign(safeInternalRedirect(next));
         return;
       }
-      setStep("done");
+      finishSignup();
     } catch (reason) {
       setError(friendlyError(reason));
     } finally {
@@ -237,7 +286,8 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
           아이디·휴대폰 인증으로 계속
         </a>
       )}
-      {socialSignup && phoneRegistered && <IdentityLinkButton />}
+      {/* 문자 인증 샛길에서 «이미 가입된 번호»로 막힌 경우에만 여기서 본인인증 버튼을 다시 보여 준다 */}
+      {socialSignup && smsFallback && phoneRegistered && <IdentityLinkButton onSignup={continueFromIdentity} next={next} />}
       {registeredPhone && (
         <Link href="/login/forgot" className="flex min-h-12 w-full items-center justify-center rounded-xl border border-[var(--color-public-accent)] px-4 text-sm font-medium text-[var(--color-public-accent)]">
           아이디·비밀번호 찾기
@@ -304,7 +354,27 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
         </>
       )}
 
-      {step === "phone" && !challengeToken && (
+      {/* 간편가입: 본인인증 하나로 확인한다(2026-11-17 원장 지시). 번호를 따로 묻지 않는다 — 본인인증이 번호·이름을 한 번에 확인한다.
+          기존 계정이 있으면 그 계정에 연결, 학원에 등록된 보호자면 자녀가 연결된 계정으로, 처음이면 새 계정으로 서버가 갈라 준다. */}
+      {step === "phone" && !challengeToken && socialSignup && !smsFallback && (
+        <div className="space-y-4">
+          <div>
+            <h2 className="text-xl font-bold">본인 확인</h2>
+            <p className="mt-1 text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">본인 명의 휴대폰으로 한 번만 인증하면 됩니다. 이미 학원에 다니는 학부모님은 기존 정보가 그대로 연결돼요.</p>
+          </div>
+          <IdentityLinkButton
+            onSignup={continueFromIdentity}
+            next={next}
+            label="본인인증하고 계속"
+            hint="PASS·카카오·토스 등으로 인증합니다. 휴대폰 번호는 인증 화면에서 한 번만 입력해요."
+          />
+          <button type="button" onClick={() => { setSmsFallback(true); setError(null); }} className="min-h-11 w-full text-sm text-[var(--color-public-muted)] underline">
+            본인 명의 휴대폰이 아니면 문자 인증으로 하기
+          </button>
+        </div>
+      )}
+
+      {step === "phone" && !challengeToken && (!socialSignup || smsFallback) && (
         <form onSubmit={startPhoneVerification} className="space-y-4">
           {existingMode ? (
             <div><h2 className="text-xl font-bold">기존 학부모 계정 활성화</h2><p className="mt-1 text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">학원에 알려 주신 보호자 휴대폰 번호를 입력해 주세요. 문자 인증이 끝나면 등록된 계정을 바로 쓸 수 있게 이어 드려요.</p></div>
@@ -335,7 +405,7 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
       {step === "account" && (
         <form onSubmit={completeSignup} className="space-y-4">
           <div><h2 className="text-xl font-bold">계정 정보</h2><p className="mt-1 text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">로그인에 사용할 정보만 입력하면 끝입니다.</p></div>
-          <label className="block text-sm font-semibold">이름<input name="name" defaultValue={initialName} className={`${inputClass} mt-2`} autoComplete="name" required /></label>
+          <label className="block text-sm font-semibold">이름<input name="name" defaultValue={verifiedName || initialName} className={`${inputClass} mt-2`} autoComplete="name" required /></label>
           <label className="block text-sm font-semibold">로그인 아이디<input name="username" className={`${inputClass} mt-2`} autoComplete="username" minLength={4} maxLength={20} pattern="[A-Za-z][A-Za-z0-9_]{3,19}" placeholder="영문으로 시작, 영문·숫자·밑줄" required /></label>
           {!socialSignup && <label className="block text-sm font-semibold">비밀번호<input name="password" type="password" value={passwordDraft} onChange={(event) => { setPasswordDraft(event.target.value); setPasswordChecked(false); }} onBlur={() => setPasswordChecked(true)} className={`${inputClass} mt-2`} autoComplete="new-password" minLength={8} placeholder="8자 이상, 숫자·영문 섞어서" required /></label>}
           {/* 옅은 바탕 + 진한 글자 — 다크 모드에서도 대비가 유지된다 */}
@@ -366,8 +436,23 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
               ? (enrollmentHandoff ? "수강신청서가 계정에 연결되었습니다." : "간편로그인으로 바로 이용할 수 있어요.")
               : (enrollmentHandoff ? "수강신청서가 계정에 연결되었습니다. 로그인해서 확인해주세요." : "이제 만든 아이디로 로그인해 주세요.")}
           </p>
-          {/* 간편가입은 이미 로그인된 상태이고 비밀번호가 없다 — 아이디 로그인 화면으로 보내지 않고 바로 이어 간다 */}
-          {socialSignup ? (
+          {/* 앱에서 넘어온 가입: 앱으로 여는 버튼은 두지 않는다 — 진행 중인 앱 로그인 요청 없이 앱 주소를 열면
+              앱이 «요청을 확인하지 못했습니다»로 막는다. 창을 닫으면 앱이 알아서 정리한다(앱 1.0.6). */}
+          {fromApp && socialSignup ? (
+            <div className="mt-6">
+              {/* <Link> 금지 — 미리 불러오기가 1회용 복귀 요청을 써 버린다. 사용자가 직접 누르는 평범한 링크여야 앱이 열린다. */}
+              <a href="/auth/native/resume" className="flex min-h-12 items-center justify-center rounded-xl bg-[var(--color-public-accent)] font-bold text-white hover:bg-[var(--color-public-strong)]">앱으로 돌아가기</a>
+              <p className="mt-3 text-xs leading-5 text-[var(--color-public-muted)]">누르면 앱이 열리며 로그인됩니다. 열리지 않으면 이 창을 닫고 앱에서 다시 로그인해 주세요.</p>
+            </div>
+          ) : fromApp ? (
+            <div role="status" className="mt-6 rounded-xl border border-[var(--color-public-accent)] px-4 py-4 text-left text-sm leading-relaxed">
+              <p className="font-semibold">이제 앱으로 돌아가 주세요</p>
+              <ol className="mt-2 list-decimal space-y-1 pl-5">
+                <li>이 창 왼쪽 위의 <b className="font-semibold">×</b>(아이폰은 «취소»)를 눌러 창을 닫습니다.</li>
+                <li>앱 로그인 화면에서 {socialSignup ? "방금 쓰신 간편로그인 버튼으로" : "만드신 아이디로"} 다시 로그인합니다.</li>
+              </ol>
+            </div>
+          ) : socialSignup ? (
             <a href={safeInternalRedirect(next)} className="mt-6 flex min-h-12 items-center justify-center rounded-xl bg-[var(--color-public-accent)] font-bold text-white hover:bg-[var(--color-public-strong)]">시작하기</a>
           ) : (
             <Link href={`/login?${new URLSearchParams({ redirect: next }).toString()}`} className="mt-6 flex min-h-12 items-center justify-center rounded-xl bg-brand-orange-500 font-bold text-white">로그인하기</Link>

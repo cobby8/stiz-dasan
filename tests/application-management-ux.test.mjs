@@ -152,7 +152,9 @@ test("체험 신청은 한 줄 목록에서 핵심 정보와 빠른 처리만 �
   assert.match(trialClient, /setShowScheduleModal\(lead\)/);
   assert.match(trialClient, /setContactModal\(\{ lead, defaultAction: "CONTACTED" \}\)/);
   assert.match(trialClient, /lead\.childGrade \|\| lead\.childAge/);
-  assert.match(trialClient, /NAVER_SEARCH: "네이버 키워드 검색"/);
+  // 2026-11-17: 유입 경로 이름 표는 한 곳(referralSources.ts)으로 옮겼다 — 체험 관리는 그 이름 함수로 보여 준다
+  assert.match(trialClient, /\["유입경로", referralSourceLabel\(lead\.source\)\]/);
+  assert.match(readFileSync(new URL("../src/lib/enrollment/referralSources.ts", import.meta.url), "utf8"), /NAVER_SEARCH: "네이버 키워드 검색"/);
   assert.match(trialClient, /lead\.status === "SCHEDULED" \? "일정 변경" : "일정 확정"/);
   assert.match(trialClient, /\[lead\.childName, lead\.childGrade \|\| lead\.childAge, lead\.childSchool\]/);
   assert.match(trialModals, /체험비 상태: \{trialFeeStatusLabel\(lead\)\}/);
