@@ -40,6 +40,11 @@ export type WorkbenchView = {
   calendarSource: "DB" | "DB_AND_ICS";
   /** 그 달 셔틀 명단이 하나도 없다(셔틀비 제안 0원) — 자동 초안·한꺼번에 발행을 막는다. 명단이 있으면 칸이 없다 */
   shuttleRosterMissing?: true;
+  /**
+   * 그 달 셔틀 명단에 학생 연결 없이 이름만 있고, 그 이름이 어떤 수강 행과도 맞지 않는 사람(누군지 모름) — 있을 때만 칸이 있다.
+   * 셔틀비를 받아야 할 학생이 0원으로 빠졌을 수 있어 자동 초안·한꺼번에 발행을 멈춘다(재검수 C-1, 2026-11-17).
+   */
+  shuttleUnlinkedNames?: string[];
 };
 export type WorkbenchEdit = Partial<WorkbenchAmounts> & { id: string; expectedVersion: number; reason?: string; periodStart?:string; periodEnd?:string };
 export type WorkbenchCommand = {
@@ -71,6 +76,24 @@ export function shuttleRosterMissingMessage(month: string, use: "AUTO_DRAFT" | "
   return use === "AUTO_DRAFT"
     ? `${m}월 셔틀 명단이 아직 없어 자동 초안을 만들지 않았습니다. 셔틀 명단을 확인한 뒤 청구 준비 화면에서 직접 저장해 주세요.`
     : `${m}월 셔틀 명단이 아직 없어 한꺼번에 발행할 수 없습니다. 셔틀 명단을 먼저 확인해 주세요.`;
+}
+
+/**
+ * 셔틀 명단에 학생 연결 없이 «이름만» 있는 기록과 이름이 같은 학생의 행에 붙는 구체 검토 사유(재검수 C-1).
+ * 그 학생이 실제로 셔틀을 타는데 셔틀비가 0원으로 제안됐을 수 있다 — 일반 문구가 아니라서 자동 초안·승인 대기에서 빠지고 «확인 필요»로 간다.
+ * 동명이인이면 그 이름의 행 모두에 붙는다.
+ */
+export const SHUTTLE_UNLINKED_REASON = "셔틀 명단에 학생 연결이 빠져 셔틀비를 못 넣었습니다 — 확인해 주세요";
+/** 셔틀 명단 비교용 이름(앞뒤·가운데 띄어쓰기 무시) */
+export const shuttleNameKey = (name: string) => String(name ?? "").replace(/\s+/g, "");
+/** 누군지 모르는 연결 빠진 이름이 있을 때의 글자 — cron 알림 제목·한꺼번에 발행 거절·화면 안내가 같은 함수를 쓴다 */
+export function shuttleUnlinkedMessage(month: string, names: readonly string[], use: "AUTO_DRAFT" | "APPROVE" | "TITLE"): string {
+  const m = Number(String(month).slice(5, 7)) || 0;
+  const list = names.slice(0, 5).join(", ") + (names.length > 5 ? ` 외 ${names.length - 5}명` : "");
+  if (use === "TITLE") return `${m}월 셔틀 명단에 학생과 연결 안 된 이름이 있습니다: ${list}`;
+  return use === "AUTO_DRAFT"
+    ? `${m}월 셔틀 명단에 학생과 연결 안 된 이름(${list})이 있어 자동 초안을 만들지 않았습니다. 셔틀 명단에서 학생을 연결한 뒤 청구 준비 화면에서 확인해 주세요.`
+    : `${m}월 셔틀 명단에 학생과 연결 안 된 이름(${list})이 있어 한꺼번에 발행할 수 없습니다. 셔틀 명단에서 학생을 먼저 연결해 주세요.`;
 }
 
 type AutoDraftAmountRow = Pick<WorkbenchRow, "carryAmount" | "prorationAmount" | "guideMissedDates">;

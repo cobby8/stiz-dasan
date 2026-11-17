@@ -71,6 +71,8 @@
 .reviewItem:focus-visible { outline: 2px solid var(--color-academy-primary); outline-offset: -2px; }
 .reviewReason { flex: 0 1 55%; color: var(--color-academy-muted); font-size: 13px; overflow-wrap: anywhere; }
 .approve .actions { margin-top: 8px; }
+/* «발행 뒤 바뀐 청구» 줄 끝 버튼(승인·무시) — 줄이 좁으면 다음 줄로 */
+.postIssueActions { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
 @media (max-width: 767px) {
   .approveRow, .reviewItem { flex-wrap: wrap; }
   .approveMeta { white-space: normal; }

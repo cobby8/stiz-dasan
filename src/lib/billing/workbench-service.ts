@@ -3,7 +3,7 @@ import { getMonthlyClassDates } from "@/lib/enrollment/monthlyClassDates";
 import { monthlyBillingDueDate } from "@/lib/billing-due-date";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import { validateMonthlyRegisterDraft } from "./monthly-register";
-import { WorkbenchError, carryPool, allocateCarry, filterWorkbenchDates, illnessMissedDatesOf, validateWorkbenchCommand, validateWorkbenchMonth, workbenchTotal, illnessReducedSumSql, shortMonthProration, attendedOnlyProration, STANDARD_MONTHLY_SESSIONS, WORKBENCH_GENERIC_REVIEW_REASON, WORKBENCH_SOURCE_CHANGED_REASON, AUTO_DRAFT_ACTOR,
+import { WorkbenchError, carryPool, allocateCarry, filterWorkbenchDates, illnessMissedDatesOf, validateWorkbenchCommand, validateWorkbenchMonth, workbenchTotal, illnessReducedSumSql, shortMonthProration, attendedOnlyProration, STANDARD_MONTHLY_SESSIONS, WORKBENCH_GENERIC_REVIEW_REASON, WORKBENCH_SOURCE_CHANGED_REASON, AUTO_DRAFT_ACTOR, SHUTTLE_UNLINKED_REASON, shuttleNameKey,
   type WorkbenchAmounts, type WorkbenchView, type WorkbenchRow, type WorkbenchOperation, type WorkbenchCalendarSnapshot } from "./workbench";
 // 주N회 요금·셔틀비·형제할인 «제안값» 규칙은 순수 모듈 한 곳에서만 정한다.
 import { planWeeklyTuition, planShuttleFee, siblingDiscountStudents, siblingDiscountAmount, REGULAR_SIBLING_DISCOUNT_PERCENT, fixedTuitionCovers, fixedTuitionShortLabel, type ShuttlePlan, type FixedTuition } from "./workbench-pricing";
@@ -174,6 +174,10 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
   for (const row of fixedTuitionRows) if (fixedTuitionCovers(row, month) && !fixedTuitionByStudent.has(row.studentId)) fixedTuitionByStudent.set(row.studentId, { amount: Number(row.amount), memo: row.memo ?? null });
   const shuttleRiders = new Set(shuttleStops.map(r=>r.studentId).filter((v):v is string=>Boolean(v)));
   const unlinkedShuttleNames = [...new Set(shuttleStops.filter(r=>!r.studentId).map(r=>r.studentName))];
+  // 재검수 C-1: 연결 빠진 이름과 같은 이름의 학생 행은 «확인 필요»(셔틀비 0원 자동 초안 방지), 어떤 행과도 안 맞는 이름은 보기에 표시해 자동 초안·일괄 발행을 멈춘다.
+  // 이름 비교는 띄어쓰기 무시. 동명이인이면 그 이름의 행 모두가 «확인 필요»가 된다.
+  const unlinkedShuttleKeys = new Set(unlinkedShuttleNames.map(shuttleNameKey));
+  const unknownShuttleNames = unlinkedShuttleNames.filter(name => !enrollments.some(e => shuttleNameKey(e.studentName) === shuttleNameKey(name)));
   const calendar = await calendarInput;
   const eventValues = calendar?.events??events.map(e => ({ title: e.title, date: new Date(e.date).toISOString(), ...(e.endDate ? { endDate: new Date(e.endDate).toISOString() } : {}) }));
   // 같은 달·같은 요일의 수업일은 한 번만 계산한다(2026-11-14 속도 개선 — 예전엔 반 500여 개마다 연간 일정 전체를 다시 훑었다).
@@ -364,6 +368,9 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
     // 고정 수강료를 자동 적용하지 않았거나 일부만 적용한 학생 — 원장이 직접 확인하도록 검토 사유(근거에도 남긴다)
     const fixedNote = excluded ? undefined : fixedNotes.get(e.studentId);
     if (fixedNote) { reviewReasons.push(fixedNote); basis.push(`확인: ${fixedNote}`); }
+    // 셔틀 명단에 이 학생 이름이 «학생 연결 없이» 있다 — 셔틀비가 0원으로 빠졌을 수 있다(재검수 C-1)
+    const shuttleUnlinked = !excluded && unlinkedShuttleKeys.has(shuttleNameKey(e.studentName));
+    if (shuttleUnlinked) { reviewReasons.push(SHUTTLE_UNLINKED_REASON); basis.push(`확인: ${SHUTTLE_UNLINKED_REASON}`); }
     if (startsOn) basis.push(`수강 개시일 ${startsOn}`);
     if (startsOn && !excluded && scheduledDates.length < allScheduledDates.length) reviewReasons.push("개시일 이후 실제 수업 횟수에 맞는 기간 조정 금액을 확인해 주세요.");
     if (startsOn && !guideOverridesSaved && saved?.scheduledDates?.some(day => day < startsOn)) blockingReasons.push("저장된 청구 기간에 수강 개시일 전 수업이 포함되어 있습니다. 기간과 금액을 다시 검토해 주세요.");
@@ -488,7 +495,8 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
     if (existing.length) reviewReasons.push("이미 청구·납부된 내역이 있어 새 발행에서 제외합니다.");
     if (saved && saved.sourceVersion !== sourceVersion && !["ISSUED", "ZERO"].includes(saved.status)) reviewReasons.push(WORKBENCH_SOURCE_CHANGED_REASON);
     if (saved && saved.sourceVersion === sourceVersion) {
-      const structural = reviewReasons.filter(r => r.startsWith("이미") || r.startsWith("확정 월"));
+      // 자동 초안(사람이 아직 안 본 초안)에는 셔틀 연결 빠짐 사유를 남긴다 — 걸러지면 승인 대기로 그냥 넘어간다(재검수 C-1)
+      const structural = reviewReasons.filter(r => r.startsWith("이미") || r.startsWith("확정 월") || (r === SHUTTLE_UNLINKED_REASON && saved.actorUserId === AUTO_DRAFT_ACTOR));
       reviewReasons.splice(0, reviewReasons.length, ...structural);
       basis.push(`관리자 검토: ${saved.reason}`);
     }
@@ -510,6 +518,8 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
   return { month, sourceVersion, storageReady, writesEnabled: writesEnabled && storageReady, rows,carrySettlementReady:true,calendarSource,
     // 그 달 셔틀 명단이 하나도 없으면(아래 안내와 같은 조건) 표시 — 자동 초안·한꺼번에 발행을 막는다(검수 B-1, 2026-11-17). 있으면 칸이 없다
     ...(!shuttleStops.length ? { shuttleRosterMissing: true as const } : {}),
+    // 누군지 모르는 연결 빠진 이름 — 자동 초안·한꺼번에 발행을 멈춘다(재검수 C-1). 없으면 칸이 없다
+    ...(unknownShuttleNames.length ? { shuttleUnlinkedNames: unknownShuttleNames } : {}),
     notices:[...seasonalCredits.length?[`기존 특강 이월 ${seasonalCredits.length}건은 별도 대조·이관이 필요합니다. 자동 중복 적립하지 않습니다.`]:[],
       // 셔틀비 제안의 근거가 되는 명단 상태를 알린다(명단이 없거나 학생 연결이 빠지면 셔틀비가 0원으로 시작한다).
       ...!shuttleStops.length?[`${month} 셔틀 명단이 없어 셔틀비를 자동 제안하지 않았습니다.`]:[],
