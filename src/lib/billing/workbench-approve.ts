@@ -18,7 +18,7 @@
  * ⚠️ 원장이 본 원본 지문(sourceVersion)이 지금과 다르면 아무것도 하지 않고 «새로 조회»를 요구한다.
  */
 import { mutateWorkbench, readWorkbench, type WorkbenchDb, type WorkbenchTx } from "./workbench-service";
-import { WorkbenchError, isApprovableAutoDraft, shuttleRosterMissingMessage, validateWorkbenchMonth, type WorkbenchCalendarSnapshot, type WorkbenchRow, type WorkbenchView } from "./workbench";
+import { WorkbenchError, isApprovableAutoDraft, shuttleRosterMissingMessage, shuttleUnlinkedMessage, validateWorkbenchMonth, type WorkbenchCalendarSnapshot, type WorkbenchRow, type WorkbenchView } from "./workbench";
 
 export const APPROVE_AUTO_DRAFTS_ACTION = "APPROVE_AUTO_DRAFTS";
 /** 원장 승인으로 다시 저장할 때 남기는 사유(감사 기록) */
@@ -77,6 +77,8 @@ export async function approveAutoDrafts(db: WorkbenchDb, input: unknown, actorId
     if (!original.storageReady) throw new WorkbenchError("청구 준비 저장 구조를 먼저 확인해 주세요.", 503);
     // 그 달 셔틀 명단이 없으면 셔틀비가 0원으로 계산돼 있다 — 한 건도 발행하지 않는다(검수 B-1)
     if (original.shuttleRosterMissing) throw new WorkbenchError(shuttleRosterMissingMessage(command.month, "APPROVE"), 409);
+    // 셔틀 명단에 누군지 모르는 «이름만» 기록이 있으면 그 아이 셔틀비가 0원으로 빠졌을 수 있다 — 한 건도 발행하지 않는다(재검수 C-1)
+    if (original.shuttleUnlinkedNames?.length) throw new WorkbenchError(shuttleUnlinkedMessage(command.month, original.shuttleUnlinkedNames, "APPROVE"), 409);
     // 원장이 본 화면과 지금 자료가 다르면 아무것도 하지 않는다(본 금액과 다른 금액이 나갈 수 있다)
     if (original.sourceVersion !== command.sourceVersion) throw new WorkbenchError("수강·출결·청구 자료가 변경됐습니다. 다시 조회해 주세요.", 409, true);
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { todayKst } from "@/lib/datetime/kst";
-import { WorkbenchError, shuttleRosterMissingMessage } from "@/lib/billing/workbench";
+import { WorkbenchError, shuttleRosterMissingMessage, shuttleUnlinkedMessage } from "@/lib/billing/workbench";
 import { mutateWorkbench, readWorkbench } from "@/lib/billing/workbench-service";
 import { loadWorkbenchCalendar } from "@/lib/billing/workbench-calendar";
 import { createNotificationRecord } from "@/lib/notification";
@@ -28,7 +28,10 @@ export const dynamic = "force-dynamic";
  * 구체 사유(셔틀 중복·고정 수강료 등)나 이월 차감·기간 조정(3회 달 차감·부상 결석 정산 포함)이 있는 행은 손대지 않는다
  * — 초안 저장이 곧 «관리자가 검토함» 표시라서, 자동 저장하면 사람이 안 본 경고·금액이 그냥 넘어간다(근거는 planAutoDraft 주석).
  * 그 달 셔틀 명단이 없으면 아무 행도 저장하지 않고 원장에게 알린다(셔틀비가 0원으로 제안되기 때문, 검수 B-1).
- * 청구일 당일에 못 만들었으면(실패·자료 변경) 청구일 +1~+3일에 «그 달 자동 초안이 아직 없을 때만» 다시 시도한다(검수 B-4).
+ * 셔틀 명단에 학생 연결 없이 이름만 있고 누군지 모르는 사람이 있어도 저장하지 않고 원장에게 알린다(재검수 C-1).
+ * 청구일 +1~+3일(따라잡기)에는 «아직 저장 안 된 자동 초안 후보가 남아 있을 때만» 다시 시도한다(검수 B-4 → 재검수 C-3:
+ * 예전엔 «그 달 자동 초안 기록이 하나라도 있으면 건너뜀»이라 500건 상한을 넘긴 나머지가 다시 시도되지 않았다).
+ * 이미 초안이 있는 행은 후보가 아니므로 남은 후보가 없으면 아무것도 하지 않는다(멱등).
  * 쓰기 스위치 STIZ_BILLING_WORKBENCH_WRITES_ENABLED 가 "true" 가 아니면 아무것도 쓰지 않고 로그만 남긴다(알림도 없음).
  * 여러 번 돌아도 결과가 같다: 이미 초안이 있는 행은 건너뛰고, 요청 번호도 같은 원본이면 같다. 알림은 같은 제목이면 한 번만.
  */
@@ -48,7 +51,11 @@ type MonthResult = {
     already: number;
     /** 그 달 셔틀 명단이 없어 멈췄다 */
     shuttleRosterMissing?: boolean;
-    /** 따라잡기 날인데 이미 자동 초안이 있어 건너뛰었다 */
+    /** 셔틀 명단에 누군지 모르는 연결 빠진 이름이 있어 멈췄다(재검수 C-1) */
+    shuttleUnlinkedNames?: string[];
+    /** 한 번에 저장하는 500건 상한을 넘어 이번에 저장하지 못한 후보 수(다음 따라잡기 날 다시 시도, 재검수 C-3) */
+    overflow?: number;
+    /** 따라잡기 날인데 저장할 자동 초안 후보가 남아 있지 않아 건너뛰었다 */
     skipped?: boolean;
     error?: string;
 };
@@ -65,22 +72,28 @@ async function autoDraftDone(month: string): Promise<boolean> {
 }
 
 /** 청구월 하나 처리 — 읽기 → 셔틀 명단 확인 → 저장할 행 고르기 → (스위치가 켜졌을 때만) 초안 저장 */
-async function runMonth(month: string, billingDate: string, catchUp: boolean, today: string, writesEnabled: boolean, calendar: Calendar): Promise<MonthResult> {
+async function runMonth(month: string, billingDate: string, catchUp: boolean, writesEnabled: boolean, calendar: Calendar): Promise<MonthResult> {
     const empty: MonthResult = { month, billingDate, catchUp, writesEnabled, saved: 0, review: 0, hold: 0, already: 0 };
-    // 따라잡기 날: 그 달 자동 초안이 이미 있으면 아무것도 하지 않는다(당일에 만들었거나 원장이 처리 중)
-    if (catchUp && await autoDraftDone(month)) return { ...empty, skipped: true };
     // 청구 준비 화면과 같은 읽기(읽기 전용 거래)
     const view = await prisma.$transaction(async (tx) => {
         await tx.$executeRawUnsafe("SET TRANSACTION READ ONLY");
         return readWorkbench(tx, month, writesEnabled, calendar);
     }, { isolationLevel: "RepeatableRead", timeout: 15_000 });
-    const plan = planAutoDraft(view.rows, today);
+    // 감사 문구의 청구일은 «그 달 청구일»(따라잡기 날에도 오늘이 아니라 원래 청구일, 재검수 C-2)
+    const plan = planAutoDraft(view.rows, billingDate);
     const base: MonthResult = { ...empty, review: plan.review, hold: plan.hold, already: plan.already };
+    // 따라잡기 날: 저장할 후보가 남아 있지 않으면 아무것도 하지 않는다(당일에 다 만들었거나 원장이 처리함, 재검수 C-3)
+    if (catchUp && !plan.saveRows.length) return { ...base, skipped: true };
 
     // 셔틀 명단이 없는 달은 셔틀비가 전부 0원으로 제안된다 — 한 행도 저장하지 않는다(검수 B-1)
     if (view.shuttleRosterMissing) {
         console.error(`[cron/billing-draft] ${month} 셔틀 명단 없음 — 자동 초안을 만들지 않음`);
         return { ...base, shuttleRosterMissing: true };
+    }
+    // 셔틀 명단에 누군지 모르는 «이름만» 기록 — 그 아이 셔틀비가 0원으로 빠졌을 수 있다. 한 행도 저장하지 않는다(재검수 C-1)
+    if (view.shuttleUnlinkedNames?.length) {
+        console.error(`[cron/billing-draft] ${month} 셔틀 명단에 학생 연결 안 된 이름 ${view.shuttleUnlinkedNames.length}명 — 자동 초안을 만들지 않음`);
+        return { ...base, shuttleUnlinkedNames: view.shuttleUnlinkedNames };
     }
     if (!writesEnabled) {
         console.log(`[cron/billing-draft] ${month} 청구일 — 쓰기 스위치 꺼짐, 저장 안 함(저장 후보 ${plan.saveRows.length}건 · 검토 필요 ${plan.review}건 · 보류 ${plan.hold}건 · 이미 있음 ${plan.already}건)`);
@@ -93,8 +106,10 @@ async function runMonth(month: string, billingDate: string, catchUp: boolean, to
     if (!plan.saveRows.length) return base;
 
     // 한 요청은 최대 500행(validateWorkbenchCommand 한도). 넘치면 앞 500행만 저장하고 나머지는 원장이 화면에서 저장한다.
+    // 넘친 나머지는 다음 따라잡기 날(청구일 +3일까지) 다시 저장하고, 원장 알림에도 적는다(재검수 C-3)
     const rows = plan.saveRows.slice(0, 500);
-    if (plan.saveRows.length > 500) console.error(`[cron/billing-draft] ${month} 저장 후보 ${plan.saveRows.length}건 중 500건만 저장`);
+    const overflow = Math.max(0, plan.saveRows.length - rows.length);
+    if (overflow) console.error(`[cron/billing-draft] ${month} 저장 후보 ${plan.saveRows.length}건 중 500건만 저장`);
     try {
         // 화면의 «선택 검토 저장»과 같은 경로(SAVE → DRAFT). 감사 기록의 저장한 사람 = 시스템 고정 글자
         const result = await mutateWorkbench(prisma, {
@@ -104,7 +119,7 @@ async function runMonth(month: string, billingDate: string, catchUp: boolean, to
             requestId: autoDraftRequestId(month, view.sourceVersion),
             rows,
         }, AUTO_DRAFT_ACTOR, true, calendar);
-        return { ...base, saved: result.operationResult.rowIds.length };
+        return { ...base, saved: result.operationResult.rowIds.length, ...(overflow ? { overflow } : {}) };
     } catch (error) {
         // 읽은 뒤 자료가 바뀌었거나(409) 금액 규칙에 걸리면 저장하지 않는다 — 다음 날 다시 시도하고, 원장도 화면에서 처리할 수 있다
         const message = error instanceof WorkbenchError ? error.message : "초안 저장에 실패했습니다.";
@@ -130,13 +145,16 @@ async function noticeFor(result: MonthResult): Promise<{ title: string; message:
     const [year, monthNumber] = result.month.split("-").map(Number);
     const head = `${year}년 ${monthNumber}월`;
     if (result.skipped) return null;
+    if (result.shuttleUnlinkedNames?.length) return { title: shuttleUnlinkedMessage(result.month, result.shuttleUnlinkedNames, "TITLE"), message: `${shuttleUnlinkedMessage(result.month, result.shuttleUnlinkedNames, "AUTO_DRAFT")} 학부모에게는 아무것도 나가지 않았습니다.` };
     if (result.shuttleRosterMissing) return { title: `${head} 셔틀 명단이 없어 자동 초안을 만들지 않았습니다`, message: `${shuttleRosterMissingMessage(result.month, "AUTO_DRAFT")} 학부모에게는 아무것도 나가지 않았습니다.` };
     if (result.error) {
         // 같은 시각에 두 번 돈 경우 등 — 이미 다른 실행이 자동 초안을 만들었으면 실패를 알리지 않는다(검수 B-4)
         if (await autoDraftDone(result.month)) return null;
         return { title: `${head} 청구 초안을 자동으로 만들지 못했습니다`, message: `${monthNumber}월 청구일(${result.billingDate})에 자동 초안을 저장하지 못했습니다(${result.error}). 청구일 뒤 사흘 동안 매일 새벽에 다시 시도합니다. 급하면 청구 준비 화면에서 직접 저장해 주세요. 학부모에게는 아무것도 나가지 않았습니다.` };
     }
-    return { title: `${head} 청구 초안이 준비됐습니다`, message: `자동 초안 ${result.saved}건 · 확인 필요 ${result.review}건${result.hold ? ` · 발행 보류 ${result.hold}건` : ""}. 청구 준비 화면 «승인 대기»에서 확인한 뒤 발행해 주세요. 학부모에게는 아직 아무것도 나가지 않았습니다.` };
+    // 500건 상한을 넘었으면 남은 수를 알린다 — 다음 새벽(청구일 +3일까지) 다시 저장한다
+    const overflowNote = result.overflow ? ` 한 번에 500건까지만 저장해 ${result.overflow}건이 남았습니다 — 다음 새벽에 이어서 저장합니다(청구일 뒤 사흘까지, 그 뒤엔 화면에서 직접 저장).` : "";
+    return { title: `${head} 청구 초안이 준비됐습니다`, message: `자동 초안 ${result.saved}건 · 확인 필요 ${result.review}건${result.hold ? ` · 발행 보류 ${result.hold}건` : ""}.${overflowNote} 청구 준비 화면 «승인 대기»에서 확인한 뒤 발행해 주세요. 학부모에게는 아직 아무것도 나가지 않았습니다.` };
 }
 
 async function handleGet(req: NextRequest) {
@@ -168,9 +186,9 @@ async function handleGet(req: NextRequest) {
 
         const results: MonthResult[] = [];
         for (const target of targets) {
-            const result = await runMonth(target.month, target.billingDate, target.catchUp, today, writesEnabled, calendar);
+            const result = await runMonth(target.month, target.billingDate, target.catchUp, writesEnabled, calendar);
             results.push(result);
-            console.log(`[cron/billing-draft] ${target.month} ${target.catchUp ? "따라잡기" : "청구일"} 처리: ${result.skipped ? "이미 자동 초안 있음 — 건너뜀" : `초안 ${result.saved}건 · 확인 필요 ${result.review}건 · 보류 ${result.hold}건 · 이미 있음 ${result.already}건${result.shuttleRosterMissing ? " · 셔틀 명단 없음" : ""}${result.error ? ` · 오류 ${result.error}` : ""}`}`);
+            console.log(`[cron/billing-draft] ${target.month} ${target.catchUp ? "따라잡기" : "청구일"} 처리: ${result.skipped ? "저장할 자동 초안 후보 없음 — 건너뜀" : `초안 ${result.saved}건 · 확인 필요 ${result.review}건 · 보류 ${result.hold}건 · 이미 있음 ${result.already}건${result.shuttleRosterMissing ? " · 셔틀 명단 없음" : ""}${result.shuttleUnlinkedNames?.length ? ` · 셔틀 명단 연결 빠진 이름 ${result.shuttleUnlinkedNames.length}명` : ""}${result.overflow ? ` · 남은 후보 ${result.overflow}건` : ""}${result.error ? ` · 오류 ${result.error}` : ""}`}`);
             // 스위치가 꺼져 있으면 알림도 보내지 않는다(초안이 없는데 «준비됐다»고 하지 않게)
             await notify(target.month, await noticeFor(result));
         }

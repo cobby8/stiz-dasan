@@ -8,8 +8,10 @@ import { useSearchParams } from "next/navigation";
 import AdminModal from "@/components/admin/AdminModal";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import styles from "./workbench.module.css";
-import { type WorkbenchRow, type WorkbenchView, type WorkbenchAbsence, WORKBENCH_MAX_AMOUNT, STANDARD_MONTHLY_SESSIONS, shortMonthProration, AUTO_DRAFT_LABEL, isApprovableAutoDraft, reviewHeadline, shuttleRosterMissingMessage } from "@/lib/billing/workbench";
+import { type WorkbenchRow, type WorkbenchView, type WorkbenchAbsence, WORKBENCH_MAX_AMOUNT, STANDARD_MONTHLY_SESSIONS, shortMonthProration, AUTO_DRAFT_LABEL, isApprovableAutoDraft, reviewHeadline, shuttleRosterMissingMessage, shuttleUnlinkedMessage } from "@/lib/billing/workbench";
 import AdminConfirmDialog from "@/components/admin/AdminConfirmDialog";
+// «승인 대기» 세 번째 묶음 — 발행 뒤 퇴원·반 이동과 어긋난 청구(2026-11-17)
+import PostIssueChanges from "./PostIssueChanges";
 import { todayKst } from "@/lib/datetime/kst";
 // 부상·질병 기간 결석 «발행 보류»(2026-11-15 원장 결정) — 글자와 신청함 주소는 규칙 모듈 한 곳에서
 import { BILLING_HOLD_LABEL, ILLNESS_PERIOD_INBOX_HREF } from "@/lib/regular/illnessPeriodRules";
@@ -163,7 +165,7 @@ export default function BillingWorkbench({ defaultMonth }: { defaultMonth?: stri
 
     // 자동 초안 한꺼번에 발행 — 서버가 행 묶음마다 저장(원장 승인)→확정→발행을 기존 경로로 처리한다. 학부모 발송 없음.
     async function approveAll() {
-        if (!view || !editable || dirty || !approvable.length || view.shuttleRosterMissing) return;
+        if (!view || !editable || dirty || !approvable.length || view.shuttleRosterMissing || view.shuttleUnlinkedNames?.length) return;
         setBusy(true); setApproveError(""); setError(""); setNotice("");
         try {
             const command = { action: "APPROVE_AUTO_DRAFTS", month, sourceVersion: view.sourceVersion, rows: approvable.map((row) => ({ id: row.id, expectedVersion: row.version })) };
@@ -274,8 +276,12 @@ export default function BillingWorkbench({ defaultMonth }: { defaultMonth?: stri
                 : <p className={styles.muted}>승인할 자동 초안이 없습니다. 자동 초안은 청구일(전달 개강 + 14일) 새벽에 만들어집니다.</p>}
             {/* 그 달 셔틀 명단이 없으면 셔틀비가 0원으로 계산돼 있다 — 한꺼번에 발행을 막는다(서버도 거절, 검수 B-1) */}
             {view.shuttleRosterMissing && <p role="alert" className={styles.error}>{shuttleRosterMissingMessage(month, "APPROVE")}</p>}
-            {approvable.length > 0 && <div className={styles.actions}><button type="button" className={styles.primary} disabled={!editable || dirty || Boolean(view.shuttleRosterMissing)} onClick={() => { setApproveError(""); setApproveOpen(true); }}>{approvable.length}건 한꺼번에 발행</button>{dirty && <span className={styles.muted}>저장하지 않은 수정이 있어 지금은 발행할 수 없습니다.</span>}</div>}
+            {/* 셔틀 명단에 누군지 모르는 «이름만» 기록이 있으면 셔틀비가 빠졌을 수 있다 — 한꺼번에 발행을 막는다(서버도 거절, 재검수 C-1) */}
+            {(view.shuttleUnlinkedNames?.length ?? 0) > 0 && <p role="alert" className={styles.error}>{shuttleUnlinkedMessage(month, view.shuttleUnlinkedNames ?? [], "APPROVE")}</p>}
+            {approvable.length > 0 && <div className={styles.actions}><button type="button" className={styles.primary} disabled={!editable || dirty || Boolean(view.shuttleRosterMissing) || Boolean(view.shuttleUnlinkedNames?.length)} onClick={() => { setApproveError(""); setApproveOpen(true); }}>{approvable.length}건 한꺼번에 발행</button>{dirty && <span className={styles.muted}>저장하지 않은 수정이 있어 지금은 발행할 수 없습니다.</span>}</div>}
             {needsReview.length > 0 && <><h3 className={styles.approveSub}><span className={`${styles.badge} ${styles.review}`}>확인 필요</span> {needsReview.length}건</h3><ul className={styles.approveList}>{needsReview.map((row) => <li key={row.id}><button type="button" className={styles.reviewItem} onClick={() => goToRow(row)}><span className={styles.approveName}><span className={styles.student}>{row.studentName}</span> <span className={styles.muted}>{row.className}</span></span><span className={styles.reviewReason}>{reviewHeadline(row)}</span></button></li>)}</ul></>}
+            {/* 세 번째 묶음: 이미 발행된 청구 중 퇴원·반 이동과 어긋난 줄(달과 상관없이 전체) — 따로 불러와 이 표의 저장 흐름과 섞이지 않는다 */}
+            <PostIssueChanges />
         </section>}
         <div className={styles.toolbar}><label className={styles.search}><span className="sr-only">학생·반 검색</span><input className={styles.input} placeholder="학생·반 검색" value={search} onChange={(event) => setSearch(event.target.value)} /></label><details className={styles.filter}><summary className={styles.button}>필터{filter !== "ALL" || classId ? " · 적용 중" : ""}</summary><div className={styles.filterPanel}><label>검토 상태<select className={styles.select} value={filter} onChange={(event) => setFilter(event.target.value)}><option value="UNISSUED">이번 발행 대상</option><option value="ALL">전체 이력</option><option value="REVIEW">확인 필요</option><option value="READY">검토 가능</option><option value="CONFIRMED">확정</option><option value="HOLD">발행 보류(부상 결석)</option><option value="EXCLUDED">제외</option><option value="ISSUED">사이트 발행</option></select></label><label>반<select className={styles.select} value={classId} onChange={(event) => setClassId(event.target.value)}><option value="">전체 반</option>{classes.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label><button className={styles.button} type="button" onClick={() => { setFilter("UNISSUED"); setClassId(""); }}>기본 조건으로</button></div></details></div>
         <div className={styles.summary}><span>전체 {rows.length}건</span><span>확인 필요 <strong>{rows.filter((row) => row.status === "REVIEW" && !row.hold).length}</strong></span>{holdCount > 0 && <span>발행 보류 <strong>{holdCount}</strong></span>}<span>선택 {selectedRows.length}건 · <strong>{won(selectedTotal)}</strong></span>{dirty && <span>저장 전 수정 있음</span>}</div>

@@ -9,11 +9,12 @@ const {roundCarryTotal,workbenchTotal,validateWorkbenchCommand,carryPool,allocat
 const registerUrl=url(await readFile("src/lib/billing/monthly-register.ts","utf8"));
 const dueUrl=url(await readFile("src/lib/billing-due-date.ts","utf8"));
 const visibilityUrl=url(await readFile("src/lib/studentVisibility.ts","utf8"));
+const resumeWindowUrl=url(await readFile("src/lib/enrollment/resumeWindow.ts","utf8"));
 const pricingUrl=url(await readFile("src/lib/billing/workbench-pricing.ts","utf8"));
 // 부상·질병 기간 결석 «발행 보류» 판정 조각(순수 규칙 모듈) — 청구 준비 서비스가 가져다 쓴다
 const periodRulesUrl=url((await readFile("src/lib/regular/illnessPeriodRules.ts","utf8")).replace('from "@/lib/datetime/kst"',`from "${kstUrl}"`));
 const serviceSource=await readFile("src/lib/billing/workbench-service.ts","utf8");
-const serviceUrl=url(serviceSource.replace('import { getMonthlyClassDates } from "@/lib/enrollment/monthlyClassDates";','const getMonthlyClassDates=(events,month)=>events.some(e=>e.title==="NO_SCHEDULE")?[]:events.some(e=>e.title==="SHORT_MONTH")&&month==="2026-11"?["2026-11-07","2026-11-14","2026-11-21"]:(month==="2026-10"?["2026-10-03","2026-10-10","2026-10-17","2026-10-24"]:["2026-11-07","2026-11-14","2026-11-21","2026-11-28"]).filter(d=>!(d==="2026-10-10"&&events.some(e=>e.title==="CLOSE_OCT_10")));').replace('from "@/lib/billing-due-date"',`from "${dueUrl}"`).replace('from "@/lib/studentVisibility"',`from "${visibilityUrl}"`).replace('from "./monthly-register"',`from "${registerUrl}"`).replace('from "./workbench"',`from "${modelUrl}"`).replace('from "./workbench-pricing"',`from "${pricingUrl}"`).replace('from "@/lib/regular/illnessPeriodRules"',`from "${periodRulesUrl}"`));
+const serviceUrl=url(serviceSource.replace('import { getMonthlyClassDates } from "@/lib/enrollment/monthlyClassDates";','const getMonthlyClassDates=(events,month)=>events.some(e=>e.title==="NO_SCHEDULE")?[]:events.some(e=>e.title==="SHORT_MONTH")&&month==="2026-11"?["2026-11-07","2026-11-14","2026-11-21"]:(month==="2026-10"?["2026-10-03","2026-10-10","2026-10-17","2026-10-24"]:["2026-11-07","2026-11-14","2026-11-21","2026-11-28"]).filter(d=>!(d==="2026-10-10"&&events.some(e=>e.title==="CLOSE_OCT_10")));').replace('from "@/lib/billing-due-date"',`from "${dueUrl}"`).replace('from "@/lib/studentVisibility"',`from "${visibilityUrl}"`).replace('from "@/lib/enrollment/resumeWindow"',`from "${resumeWindowUrl}"`).replace('from "./monthly-register"',`from "${registerUrl}"`).replace('from "./workbench"',`from "${modelUrl}"`).replace('from "./workbench-pricing"',`from "${pricingUrl}"`).replace('from "@/lib/regular/illnessPeriodRules"',`from "${periodRulesUrl}"`));
 const {readWorkbench,mutateWorkbench}=await import(serviceUrl);
 const absenceSource=await readFile("src/lib/billing/workbench-absence.ts","utf8");
 const evidenceUrl=url(await readFile("src/lib/billing/carryEvidence.ts","utf8"));
@@ -1537,7 +1538,7 @@ test("한꺼번에 발행 경로: 원장만·기존 저장→확정→발행만 
  assert.match(screen,/건 한꺼번에 발행/);
  assert.doesNotMatch(screen,/\}명 한꺼번에|\}명 발행|\}명 · 합계/,"«명»이 아니라 «건»(검수 B-5)");
  assert.match(screen,/body\.operationResult\.paymentIds\.length/,"발행 수는 실제 청구만, 0원 정산은 따로");
- assert.match(screen,/disabled=\{!editable \|\| dirty \|\| Boolean\(view\.shuttleRosterMissing\)\}/);
+ assert.match(screen,/disabled=\{!editable \|\| dirty \|\| Boolean\(view\.shuttleRosterMissing\) \|\| Boolean\(view\.shuttleUnlinkedNames\?\.length\)\}/);
  assert.doesNotMatch(screen,/getFullYear\(\)|getMonth\(\)/,"기본 달은 서버가 한국 날짜로 정한다");
 });
 
@@ -1582,9 +1583,67 @@ test("cron: 셔틀 명단 없으면 저장 안 함·알림, 따라잡기(+1~+3�
  const route=await readFile("src/app/api/cron/billing-draft/route.ts","utf8");
  assert.match(route,/if \(view\.shuttleRosterMissing\) \{[\s\S]*?return \{ \.\.\.base, shuttleRosterMissing: true \};/);
  assert.ok(route.indexOf("view.shuttleRosterMissing")<route.indexOf("mutateWorkbench(prisma"),"명단 확인이 저장보다 먼저");
- assert.match(route,/if \(catchUp && await autoDraftDone\(month\)\) return/);
+ // 따라잡기는 «남은 후보가 없을 때만» 건너뜀(재검수 C-3 — 예전 «자동 초안 기록 있으면 건너뜀»은 500건 넘친 나머지를 놓쳤다)
+ assert.match(route,/if \(catchUp && !plan\.saveRows\.length\) return \{ \.\.\.base, skipped: true \};/);
+ assert.doesNotMatch(route,/if \(catchUp && await autoDraftDone\(month\)\)/);
  assert.match(route,/billingMonthsToTry\(calendar\.events, today\)/);
  assert.match(route,/undeterminedBillingMonth\(calendar\.events, today\)/);
  assert.match(route,/청구일을 정하지 못했습니다/);
  assert.match(route,/셔틀 명단이 없어 자동 초안을 만들지 않았습니다/);
+});
+
+// ── 재검수 C-1·C-2·C-3(2026-11-17) ─────────────────────────────────
+test("셔틀 명단 연결 빠진 이름(C-1): 같은 이름 학생 행은 «확인 필요»·자동 초안 제외, 누군지 모르는 이름은 보기에 표시",async()=>{
+ const db=twoStudentDatabase();
+ // 학생 연결 없이 «합성 원생2»(띄어쓰기 달라도 같은 이름) 이름만 있는 승차 기록
+ db.state.shuttleStops.push({serviceMonth:"2026-11",studentId:null,studentName:"합성 원생 2",direction:"BOARD",stopName:"정류장"});
+ const view=await readWorkbench(db.tx,"2026-11",true);
+ const b=view.rows.find(r=>r.studentId==="student-b");
+ assert.ok(b.reviewReasons.includes(model.SHUTTLE_UNLINKED_REASON));
+ assert.equal(model.isAutoDraftCandidate(b),false);
+ assert.equal(model.reviewHeadline(b),model.SHUTTLE_UNLINKED_REASON);
+ assert.ok(!view.rows.find(r=>r.studentId==="student-a").reviewReasons.includes(model.SHUTTLE_UNLINKED_REASON));
+ assert.equal(view.shuttleUnlinkedNames,undefined,"이름이 학생 행과 맞으면 전체를 멈추지 않는다");
+ // 자동 초안을 만들어도 그 행은 빠지고, 다른 학생만 승인 대기
+ const after=await autoDraft(db);
+ assert.ok(after.rows.filter(model.isApprovableAutoDraft).every(r=>r.studentId!=="student-b"));
+ // 동명이인: 같은 이름의 행 모두 «확인 필요»
+ const twins=twoStudentDatabase();
+ twins.state.enrollments.push({...twins.state.enrollments[0],studentId:"student-c",studentName:"합성 원생2",classId:"class-c",className:"합성 반C"});
+ twins.state.shuttleStops.push({serviceMonth:"2026-11",studentId:null,studentName:"합성 원생2",direction:"BOARD",stopName:"정류장"});
+ const tv=await readWorkbench(twins.tx,"2026-11",true);
+ assert.deepEqual(tv.rows.filter(r=>r.reviewReasons.includes(model.SHUTTLE_UNLINKED_REASON)).map(r=>r.studentId).sort(),["student-b","student-c"]);
+});
+test("셔틀 명단 연결 빠진 이름(C-1): 누군지 모르면 보기 표시 → 한꺼번에 발행 409, 자동 초안 행의 사유는 걸러지지 않는다",async()=>{
+ const db=twoStudentDatabase();
+ const drafted=await autoDraft(db);
+ assert.ok(drafted.rows.filter(model.isApprovableAutoDraft).length);
+ db.state.shuttleStops.push({serviceMonth:"2026-11",studentId:null,studentName:"모르는 아이",direction:"BOARD",stopName:"정류장"});
+ const fresh=await readWorkbench(db.tx,"2026-11",true);
+ assert.deepEqual(fresh.shuttleUnlinkedNames,["모르는 아이"]);
+ await assert.rejects(()=>approveAutoDrafts(db,approveCommand(fresh,fresh.rows.filter(model.isApprovableAutoDraft)),"owner",true),/셔틀 명단에 학생과 연결 안 된 이름\(모르는 아이\)이 있어 한꺼번에 발행할 수 없습니다/);
+ assert.equal(db.state.payments.length,0);
+ assert.equal(model.shuttleUnlinkedMessage("2026-12",["가","나"],"TITLE"),"12월 셔틀 명단에 학생과 연결 안 된 이름이 있습니다: 가, 나");
+ // 자동 초안이 같은 원본으로 저장된 뒤에도(사람이 안 본 초안) 연결 빠짐 사유는 남는다
+ const same=twoStudentDatabase();
+ same.state.shuttleStops.push({serviceMonth:"2026-11",studentId:null,studentName:"합성 원생2",direction:"BOARD",stopName:"정류장"});
+ const v=await readWorkbench(same.tx,"2026-11",true);
+ const b=v.rows.find(r=>r.studentId==="student-b");
+ await mutateWorkbench(same,{action:"SAVE",month:"2026-11",sourceVersion:v.sourceVersion,requestId:"auto-draft-force-b",rows:[{id:b.id,expectedVersion:b.version,baseAmount:b.baseAmount,discountAmount:b.discountAmount,prorationAmount:b.prorationAmount,carryAmount:b.carryAmount,shuttleAmount:b.shuttleAmount,reason:"청구일 자동 초안(2026-10-15) — 제안값 그대로 저장, 원장 확인 전",periodStart:b.periodStart,periodEnd:b.periodEnd}]},model.AUTO_DRAFT_ACTOR,true);
+ const saved=(await readWorkbench(same.tx,"2026-11",true)).rows.find(r=>r.studentId==="student-b");
+ assert.equal(saved.autoDraft,true);
+ assert.ok(saved.reviewReasons.includes(model.SHUTTLE_UNLINKED_REASON));
+ assert.equal(model.isApprovableAutoDraft(saved),false);
+});
+test("cron(C-1·C-2·C-3): 연결 빠진 이름이면 저장 안 함·알림, 감사 청구일은 그 달 청구일, 500건 넘친 후보는 따라잡기 날 다시",async()=>{
+ const route=await readFile("src/app/api/cron/billing-draft/route.ts","utf8");
+ assert.match(route,/if \(view\.shuttleUnlinkedNames\?\.length\) \{[\s\S]*?return \{ \.\.\.base, shuttleUnlinkedNames: view\.shuttleUnlinkedNames \};/);
+ assert.ok(route.indexOf("view.shuttleUnlinkedNames")<route.indexOf("mutateWorkbench(prisma"),"연결 확인이 저장보다 먼저");
+ assert.match(route,/shuttleUnlinkedMessage\(result\.month, result\.shuttleUnlinkedNames, "TITLE"\)/);
+ assert.match(route,/planAutoDraft\(view\.rows, billingDate\)/);
+ assert.doesNotMatch(route,/planAutoDraft\(view\.rows, today\)/);
+ assert.match(route,/const overflow = Math\.max\(0, plan\.saveRows\.length - rows\.length\)/);
+ assert.match(route,/\$\{result\.overflow\}건이 남았습니다/);
+ const screen=await readFile("src/app/admin/finance/prepare/BillingWorkbench.tsx","utf8");
+ assert.match(screen,/shuttleUnlinkedMessage\(month, view\.shuttleUnlinkedNames \?\? \[\], "APPROVE"\)/);
 });
