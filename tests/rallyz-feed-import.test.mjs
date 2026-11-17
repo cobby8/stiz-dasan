@@ -31,7 +31,8 @@ test("반 이름 정규화: 꼬리 괄호·공백·대소문자", () => {
 });
 
 test("반 매칭: 정확히 하나 · 모호 · 없음 · 수동 매핑", () => {
-  assert.deepEqual(L.matchClass("월4(대표팀)", CLASSES), { classId: "c-mon4", reason: "exact" });
+  // 괄호 안의 말까지 같은 반이 없으면 괄호를 떼고 맞춘다 — «suffix» 로 따로 표시(계획 출력에서 사람이 확인)
+  assert.deepEqual(L.matchClass("월4(대표팀)", CLASSES), { classId: "c-mon4", reason: "suffix" });
   assert.deepEqual(L.matchClass("토7교시", CLASSES), { classId: "c-sat7", reason: "exact" });
   assert.equal(L.matchClass("금5", CLASSES).reason, "ambiguous");
   assert.equal(L.matchClass("화2", CLASSES).reason, "not-found");
@@ -39,6 +40,43 @@ test("반 매칭: 정확히 하나 · 모호 · 없음 · 수동 매핑", () => 
   assert.deepEqual(L.matchClass("금5", CLASSES, { 금5: "c-dup2" }), { classId: "c-dup2", reason: "manual" });
   assert.deepEqual(L.matchClass("엘리트", CLASSES, { 엘리트: "목3" }), { classId: "c-thu3", reason: "manual" });
   assert.equal(L.matchClass("엘리트", CLASSES, { 엘리트: "없는반" }).reason, "manual-not-found");
+});
+
+// 실제 사이트 반 이름 모양(2026-11-17 운영 DB) — 닫는 괄호 빠진 슈팅클래스·[종료] 지난 반 포함
+const REAL_CLASSES = [
+  { id: "c-mon4", name: "월요일 4교시", dayOfWeek: "Mon" },
+  { id: "c-tue8", name: "화요일 8교시", dayOfWeek: "Tue" },
+  { id: "c-wed7", name: "수요일 7교시", dayOfWeek: "Wed" },
+  { id: "c-thu8", name: "목요일 8교시", dayOfWeek: "Thu" },
+  { id: "c-thu8s", name: "목요일 8교시(슈팅클래스", dayOfWeek: "Thu" },
+  { id: "c-thu2old", name: "[종료] 목요일 2교시 슈팅 클래스", dayOfWeek: "Archived" },
+  { id: "c-sat3", name: "토요일 3교시", dayOfWeek: "Sat" },
+  { id: "c-summer", name: "2026 여름특강 중등부", dayOfWeek: "Seasonal" },
+];
+
+test("실제 반 이름: 앞 순번·[종료] 떼기, 괄호 안의 말이 먼저, 사이트 괄호는 떼지 않는다", () => {
+  assert.equal(L.normalizeClassName("1. 월요일 4교시"), "월요일4교시");
+  assert.equal(L.normalizeClassName("1-6. 토요일 3교시"), "토요일3교시");
+  assert.equal(L.normalizeClassName("목요일 8교시(슈팅클래스"), "목요일8교시"); // 닫는 괄호 없음
+  assert.equal(L.classNameKey("4. 목요일 8교시(슈팅클래스)"), "목요일8교시슈팅클래스");
+  assert.equal(L.classNameKey("[종료] 목요일 2교시 슈팅 클래스"), "목요일2교시슈팅클래스");
+  assert.equal(L.classNameKey("2026 여름특강 중등부"), "2026여름특강중등부"); // 연도는 순번이 아니다
+  const m = (n) => L.matchClass(n, REAL_CLASSES);
+  assert.deepEqual(m("1. 월요일 4교시"), { classId: "c-mon4", reason: "exact" });
+  assert.deepEqual(m("1-6. 토요일 3교시"), { classId: "c-sat3", reason: "exact" });
+  // 같은 교시에 반이 둘: 슈팅클래스는 슈팅클래스로, 성인반은 괄호를 떼고 기본 반으로
+  assert.deepEqual(m("4. 목요일 8교시(슈팅클래스)"), { classId: "c-thu8s", reason: "exact" });
+  assert.deepEqual(m("4. 목요일 8교시(성인반)"), { classId: "c-thu8", reason: "suffix" });
+  assert.deepEqual(m("2. 화요일 8교시(성인반)"), { classId: "c-tue8", reason: "suffix" });
+  assert.deepEqual(m("3. 수요일 7교시(대표팀)"), { classId: "c-wed7", reason: "suffix" });
+  // 지난 반([종료])도 이름이 같으면 붙는다
+  assert.deepEqual(m("4. 목요일 2교시(슈팅클래스)"), { classId: "c-thu2old", reason: "exact" });
+  assert.equal(m("5. 금요일 2교시").reason, "not-found");
+  // 매핑 파일은 랠리즈 원래 이름 그대로 쓴다
+  assert.deepEqual(L.matchClass("5. 금요일 2교시", REAL_CLASSES, { "5. 금요일 2교시": "월요일 4교시" }), { classId: "c-mon4", reason: "manual" });
+  // 지난 반은 요일 칸이 «Archived» → 이름의 «목요일»로 수업일 보정
+  assert.deepEqual([...L.dowsForClass(REAL_CLASSES[5])], [4]);
+  assert.equal(L.dowsForClass(REAL_CLASSES[7]).size, 0);
 });
 
 // ── 날짜 ────────────────────────────────────────────────────────────
@@ -128,6 +166,93 @@ test("피드 파일 읽기: 글 배열 찾기·중복 제거·본문 정리·사
   assert.deepEqual(p.videos, [{ vodId: "v9", m3u8: null }]);
   assert.deepEqual(posts[3].videos, [{ vodId: "v7", m3u8: "https://x.rallyz.co.kr/hls/TOKEN/board/feed_vod_bc/v7_AVC_HD.mp4/index.m3u8" }]);
   assert.equal(L.photoUrl1000("https://cdn.rallyz.co.kr/board/feed/p1.jpg"), "https://cdn.rallyz.co.kr/board/feed/p1.jpg?type=w&w=1000");
+});
+
+// 실제 크롬 내보내기 모양(2026-11-17, rallyz-feed-2026.json) — 값은 전부 가짜
+const REAL_EXPORT = {
+  source: "rallyz", exportedAt: "2026-11-17T01:00:00.000Z", count: 3,
+  items: [
+    {
+      id: "aaaaaaaa-1111-4111-8111-111111111111", regDt: "2026-11-16 21:05:10",
+      content: "19:30~20:50\n1. 드리블\n2. 슈팅",
+      classInfo: { classNm: "1. 월요일 4교시", instNm: "스티즈농구교실 다산2호점", classId: "rz-class-1" },
+      media: [
+        { kind: "photo", src: "https://img.example.test/board/202611/1001.jpg" },
+        { kind: "video", src: "https://old.example.test/board/feed_vod_bc/9001_AVC_HD.mp4/index.m3u8" },
+        { kind: "photo", src: "https://img.example.test/board/202611/1002.heic" },
+        { kind: "video", src: "https://old.example.test/board/feed_vod_bc/9002_AVC_HD.mp4/index.m3u8" },
+        { kind: "photo", src: "https://img.example.test/board/202611/1001.jpg" },
+      ],
+      writer: "가짜선생님",
+    },
+    {
+      id: "bbbbbbbb-2222-4222-8222-222222222222", regDt: "2026-11-17 09:00:00", content: "",
+      classInfo: { classNm: "1. 월요일 4교시", instNm: "스티즈농구교실 다산2호점", classId: "rz-class-1" },
+      media: [{ kind: "video", src: "https://old.example.test/board/feed_vod_bc/9003_AVC_HD.mp4/index.m3u8" }],
+      writer: "가짜선생님",
+    },
+    {
+      id: "cccccccc-3333-4333-8333-333333333333", regDt: "2026-11-12 20:00:00", content: "슈팅 클래스",
+      classInfo: { classNm: "4. 목요일 8교시(슈팅클래스)", instNm: "스티즈농구교실 다산2호점", classId: "rz-class-2" },
+      media: [],
+      writer: "가짜선생님",
+    },
+  ],
+};
+
+test("실제 내보내기 모양: id·regDt·content·classInfo.classNm·media[kind/src] 를 정확히 읽는다", () => {
+  const { posts, invalid, rawCount } = L.readFeedExport(REAL_EXPORT);
+  assert.equal(rawCount, 3);
+  assert.equal(invalid, 0);
+  const [a, b, c] = posts;
+  assert.equal(a.id, "aaaaaaaa-1111-4111-8111-111111111111");
+  assert.deepEqual(a.created, { ymd: "2026-11-16", hms: "21:05:10", sortKey: "2026-11-16 21:05:10" }); // KST 벽시계 그대로
+  assert.equal(a.text, "19:30~20:50\n1. 드리블\n2. 슈팅");
+  assert.equal(a.className, "1. 월요일 4교시");
+  assert.equal(a.instNm, "스티즈농구교실 다산2호점");
+  // 사진: 정렬 순서 유지·중복 제거·heic 도 받는다(축소본 주소는 jpeg 로 온다). 작성자 이름은 섞이지 않는다
+  assert.deepEqual(a.photos, ["https://img.example.test/board/202611/1001.jpg", "https://img.example.test/board/202611/1002.heic"]);
+  // 영상: id 는 feed_vod_bc/<id>_ 에서
+  assert.deepEqual(a.videos.map((v) => v.vodId), ["9001", "9002"]);
+  assert.equal(b.text, "");
+  assert.deepEqual(b.videos.map((v) => v.vodId), ["9003"]);
+  assert.deepEqual(c.photos, []);
+  assert.deepEqual(c.videos, []);
+  // 영상 주소: 피드의 src 는 404 → 템플릿(경로 토큰 있는 다른 호스트)이 있으면 템플릿 우선
+  const tpl = "https://hls.example.test/hls/TOKEN/board/feed_vod_bc/{id}_AVC_HD.mp4/index.m3u8";
+  assert.equal(L.hlsUrlFor(a.videos[0], tpl), "https://hls.example.test/hls/TOKEN/board/feed_vod_bc/9001_AVC_HD.mp4/index.m3u8");
+  assert.equal(L.hlsUrlFor(a.videos[0], ""), "https://old.example.test/board/feed_vod_bc/9001_AVC_HD.mp4/index.m3u8");
+  assert.equal(L.photoUrl1000(a.photos[1]), "https://img.example.test/board/202611/1002.heic?type=w&w=1000");
+  // 사진 응답 형식
+  assert.equal(L.checkPhotoContentType("image/jpeg").ok, true);
+  assert.equal(L.checkPhotoContentType("image/heic").ok, false);
+  assert.equal(L.checkPhotoContentType("text/html").ok, false);
+  assert.equal(L.RALLYZ_REFERER, "https://rallyz.co.kr/");
+});
+
+test("실제 모양 계획: 반 매칭·다음 날 글은 수업일로·영상은 수업마다 1개", () => {
+  const { posts } = L.readFeedExport(REAL_EXPORT);
+  const snap = { todayKst: "2026-11-17", classes: REAL_CLASSES, sessions: [], enrollStarts: [{ classId: "c-mon4", studentId: "st1", startYmd: "2026-03-02" }], imported: [] };
+  const plan = L.planPostImport({ posts, snapshot: snap, options: { from: "2026-11-01", to: "2026-11-30", createMissing: true } });
+  // 빈 글(b)은 사진도 없어 빠지고, 화요일 아침 글이라도 월요일 수업으로 당겨질 대상
+  assert.deepEqual(plan.groups.map((g) => `${g.ymd} ${g.className} ${g.posts.length} ${g.viewers}`), [
+    "2026-11-16 월요일 4교시 1 1",
+    "2026-11-12 목요일 8교시(슈팅클래스 1 0",
+  ]);
+  assert.equal(plan.counts.empty, 1);
+  assert.deepEqual(plan.groups.map((g) => g.offDay), [false, false]);
+  // 반 요일에서 4일 넘게 떨어진 글(금요일에 미리 올린 토요일반 글)은 그 날짜로 남고 offDay 경고
+  const early = L.readFeedExport([{ id: "early-1", regDt: "2026-08-14 20:00:00", content: "내일 수업", classInfo: { classNm: "1-6. 토요일 3교시", instNm: "다산2호점" }, media: [] }]);
+  const ep = L.planPostImport({ posts: early.posts, snapshot: snap, options: { createMissing: true } });
+  assert.deepEqual(ep.groups.map((g) => [g.ymd, g.className, g.offDay]), [["2026-08-14", "토요일 3교시", true]]);
+  const { batches } = L.planVideoBatches({ posts, snapshot: snap });
+  // 월요일 글(9001·9002) + 화요일 아침 글(9003)이 같은 월요일 수업 1개로
+  assert.deepEqual(batches.map((x) => `${x.ymd} ${x.className} ${x.parts.map((p) => p.vodId).join("+")}`), ["2026-11-16 월요일 4교시 9001+9002+9003"]);
+  const rows = L.summarizeClassMatches(posts, REAL_CLASSES);
+  assert.deepEqual(rows.map((r) => [r.rallyzName, r.siteName, r.reason, r.posts, r.photos, r.videos]), [
+    ["1. 월요일 4교시", "월요일 4교시", "exact", 2, 2, 3],
+    ["4. 목요일 8교시(슈팅클래스)", "목요일 8교시(슈팅클래스", "exact", 1, 0, 0],
+  ]);
 });
 
 test("지점 거르기(v5): 다산2호점만, 이름 없는 글은 버린다", () => {

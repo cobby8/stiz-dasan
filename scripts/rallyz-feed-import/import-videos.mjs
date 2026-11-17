@@ -22,7 +22,7 @@ import { Readable } from "node:stream";
 import { loadEnv, parseArgs, readJson, writeJson, workDir, newBatchId, connectDb, loadSnapshot, loadClassMap, ymdArg, monthRange } from "./common.mjs";
 import {
   readFeedExport, planVideoBatches, hlsUrlFor, ffmpegConcatList, youtubeTitle, canUploadMore, openSealedYoutubeToken,
-  classifyYoutubeError, nextKstMidnightIso, buildVideoRecordSql, msToKstYmd, IMPORT_SOURCE,
+  classifyYoutubeError, nextKstMidnightIso, buildVideoRecordSql, msToKstYmd, IMPORT_SOURCE, RALLYZ_REFERER,
 } from "./lib.mjs";
 
 loadEnv();
@@ -45,7 +45,13 @@ const DESCRIPTION = "STIZ 농구교실 수업 영상입니다. 학부모 화면�
 const feed = readFeedExport(readJson(args.feed));
 const snapshot = await loadSnapshot(args);
 const plan = planVideoBatches({ posts: feed.posts, snapshot, options: { inst: args.inst || undefined, from: range.from, to: range.to, classMap: loadClassMap(args) } });
-const template = typeof args["hls-template"] === "string" ? args["hls-template"] : process.env.RALLYZ_HLS_TEMPLATE || "";
+// 재생 주소 틀: --hls-template → RALLYZ_HLS_TEMPLATE → 작업 폴더의 hls-template.txt 첫 줄 순서.
+// 피드 안의 영상 주소는 404 라 이 틀이 없으면 받을 수 없다(경로 토큰이 바뀌면 403 → 크롬 rzHlsTemplate() 다시).
+const templateFile = path.join(dir, "hls-template.txt");
+const template = typeof args["hls-template"] === "string" ? args["hls-template"]
+  : process.env.RALLYZ_HLS_TEMPLATE
+  || (fs.existsSync(templateFile) ? (fs.readFileSync(templateFile, "utf8").split(/\r?\n/).find((l) => l.includes("{id}")) ?? "").trim() : "");
+console.log(`영상 주소 틀: ${template ? "있음" : "없음(--hls-template 또는 hls-template.txt 필요)"}`);
 const partTotal = plan.batches.reduce((n, b) => n + b.parts.length, 0);
 console.log(`영상 묶음: 수업 ${plan.batches.length}개 · 원본 영상 ${partTotal}개 · 반 매칭 실패 ${plan.skipped.length}`);
 const doneCount = Object.values(state.items).filter((i) => i.status === "recorded").length;
@@ -77,7 +83,8 @@ async function downloadBatch(b) {
     if (!url) throw new Error(`영상 주소를 만들 수 없습니다(--hls-template 필요): 글 ${b.parts[i].feedId}`);
     const out = path.join(videoDir, `${safe}_part${i}.mp4`);
     if (!fs.existsSync(out)) {
-      const ok = ffmpeg(["-headers", "Referer: https://rallyz.co.kr/\r\n", "-i", url, "-c", "copy", "-bsf:a", "aac_adtstoasc", out]);
+      // Referer 없으면 재생 목록·조각 모두 403 — ffmpeg 는 -headers 가 -i 앞에 있어야 조각 요청에도 붙인다
+      const ok = ffmpeg(["-headers", `Referer: ${RALLYZ_REFERER}\r\n`, "-i", url, "-c", "copy", "-bsf:a", "aac_adtstoasc", out]);
       if (!ok) throw new Error(`HLS 내려받기 실패: 글 ${b.parts[i].feedId}`);
     }
     parts.push(out);

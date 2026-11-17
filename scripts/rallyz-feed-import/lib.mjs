@@ -122,14 +122,26 @@ export function resolveSessionYmd(postYmd, dows) {
 // ── 반 이름 ──────────────────────────────────────────────────────────
 
 /**
- * 반 이름 비교용 정규화 — 꼬리 괄호(«(대표팀)»·«(성인반)»)·공백·대소문자 차이를 없앤다.
- * 예: "월4 (대표팀)" → "월4", " 토 7교시 " → "토7교시"
+ * 반 이름 앞의 꼬리표 떼기 — 실제 랠리즈 반 이름은 «1. 월요일 4교시»·«1-6. 토요일 3교시»처럼 요일 순번이 붙고,
+ * 사이트의 지난 반은 «[종료] 목요일 2교시 슈팅 클래스»처럼 앞에 꼬리표가 붙는다(2026-11-17 실제 데이터 확인).
+ */
+function stripClassPrefix(name) {
+  return String(name ?? "").normalize("NFC").trim()
+    .replace(/^\d+(?:-\d+)*\.\s*/, "") // «1. » · «1-6. » (연도 «2026 여름특강» 은 점이 없어 남는다)
+    .replace(/^[[［【][^\]］】]*[\]］】]\s*/, "") // «[종료] »
+    .trim();
+}
+
+/**
+ * 반 이름 비교용 정규화(괄호 «뗀» 이름) — 앞 꼬리표·꼬리 괄호(«(대표팀)»·«(성인반)»)·공백·대소문자 차이를 없앤다.
+ * 예: "월4 (대표팀)" → "월4", " 토 7교시 " → "토7교시", "1. 월요일 4교시" → "월요일4교시"
+ * 사이트에 닫는 괄호가 빠진 이름(«목요일 8교시(슈팅클래스»)도 괄호를 뗀다.
  */
 export function normalizeClassName(name) {
-  let s = String(name ?? "").normalize("NFC").trim();
+  let s = stripClassPrefix(name);
   // 꼬리 괄호를 여러 번 벗긴다: "월4(대표팀)(B)" → "월4"
   for (let i = 0; i < 3; i += 1) {
-    const next = s.replace(/\s*[([{（【][^()[\]{}（）【】]*[)\]}）】]\s*$/, "").trim();
+    const next = s.replace(/\s*[([{（【][^()[\]{}（）【】]*[)\]}）】]\s*$/, "").replace(/\s*[([{（【][^()[\]{}（）【】]*$/, "").trim();
     if (next === s) break;
     s = next;
   }
@@ -137,25 +149,79 @@ export function normalizeClassName(name) {
 }
 
 /**
- * 랠리즈 반 이름 → 사이트 반. 우선순위: ① 수동 매핑(classMap: 랠리즈 이름 → 사이트 반 id 또는 이름)
- * ② 정규화한 이름이 정확히 같은 반이 «하나». 둘 이상이면 모호(null + reason).
+ * 반 이름 비교용 정규화(괄호 «안 뗀» 이름) — 앞 꼬리표·공백·괄호 글자만 지우고 괄호 «안의 말»은 남긴다.
+ * 예: "4. 목요일 8교시(슈팅클래스)" → "목요일8교시슈팅클래스" = 사이트 "목요일 8교시(슈팅클래스"
+ *     "[종료] 목요일 2교시 슈팅 클래스" → "목요일2교시슈팅클래스"
+ */
+export function classNameKey(name) {
+  return stripClassPrefix(name).replace(/[()[\]{}（）【】［］]/g, "").replace(/\s+/g, "").toLowerCase();
+}
+
+/**
+ * 랠리즈 반 이름 → 사이트 반. 우선순위:
+ *  ① 수동 매핑(classMap: 랠리즈 이름 → 사이트 반 id 또는 이름)
+ *  ② «괄호 안의 말까지» 같은 반이 하나 → exact  (슈팅클래스·성인반처럼 같은 교시에 반이 둘인 경우를 먼저 가른다)
+ *  ③ 랠리즈 이름의 괄호를 뗀 것이 사이트 반 이름(괄호 포함)과 같은 반이 하나 → suffix
+ *     예: «2. 화요일 8교시(성인반)» → 사이트 «화요일 8교시». 계획 출력에 따로 보여 사람이 확인한다.
+ *     ⚠️ 사이트 쪽 괄호는 떼지 않는다 — «목요일 8교시(성인반)»이 «목요일 8교시(슈팅클래스»로 붙으면 안 된다.
+ *  둘 이상이면 모호(null + reason).
  * @returns {{ classId: string|null, reason: string }}
  */
 export function matchClass(rallyzName, classes, classMap = {}) {
-  const manual = classMap[rallyzName] ?? classMap[normalizeClassName(rallyzName)];
+  const manual = classMap[rallyzName] ?? classMap[String(rallyzName ?? "").trim()] ?? classMap[normalizeClassName(rallyzName)];
   if (manual) {
     const byId = classes.find((c) => c.id === manual);
     if (byId) return { classId: byId.id, reason: "manual" };
-    const byName = classes.filter((c) => normalizeClassName(c.name) === normalizeClassName(manual));
+    const byName = classes.filter((c) => classNameKey(c.name) === classNameKey(manual));
     if (byName.length === 1) return { classId: byName[0].id, reason: "manual" };
     return { classId: null, reason: "manual-not-found" };
   }
-  const key = normalizeClassName(rallyzName);
-  if (!key) return { classId: null, reason: "no-name" };
-  const hits = classes.filter((c) => normalizeClassName(c.name) === key);
-  if (hits.length === 1) return { classId: hits[0].id, reason: "exact" };
-  if (hits.length > 1) return { classId: null, reason: "ambiguous" };
+  const full = classNameKey(rallyzName);
+  if (!full) return { classId: null, reason: "no-name" };
+  const exact = classes.filter((c) => classNameKey(c.name) === full);
+  if (exact.length === 1) return { classId: exact[0].id, reason: "exact" };
+  if (exact.length > 1) return { classId: null, reason: "ambiguous" };
+  const base = normalizeClassName(rallyzName);
+  if (base && base !== full) {
+    const hits = classes.filter((c) => classNameKey(c.name) === base);
+    if (hits.length === 1) return { classId: hits[0].id, reason: "suffix" };
+    if (hits.length > 1) return { classId: null, reason: "ambiguous" };
+  }
   return { classId: null, reason: "not-found" };
+}
+
+/**
+ * 반 요일 — dayOfWeek 칸이 요일이 아니면(지난 반 «Archived») 반 이름의 «○요일»에서 읽는다.
+ * 둘 다 없으면 빈 집합(= 수업일 보정 안 함).
+ */
+export function dowsForClass(cls) {
+  const fromField = classDows(cls?.dayOfWeek);
+  if (fromField.size) return fromField;
+  const m = /([월화수목금토일])요일/.exec(stripClassPrefix(cls?.name));
+  return m ? classDows(m[1]) : new Set();
+}
+
+/**
+ * 반 매칭 요약 — 랠리즈 반 이름마다 «어느 사이트 반에 어떻게 붙었나 · 글·사진·영상 수».
+ * 계획 출력에서 «괄호 떼고 맞춤(suffix)»·«못 맞춤»을 사람이 확인하게 한다.
+ */
+export function summarizeClassMatches(posts, classes, classMap = {}, inst = DEFAULT_INST) {
+  const byName = new Map();
+  for (const post of posts) {
+    if (!isTargetInst(post.instNm, inst)) continue;
+    let row = byName.get(post.className);
+    if (!row) {
+      const m = matchClass(post.className, classes, classMap);
+      row = { rallyzName: post.className, classId: m.classId, siteName: classes.find((c) => c.id === m.classId)?.name ?? null, reason: m.reason, posts: 0, photos: 0, videos: 0, from: post.created.ymd, to: post.created.ymd };
+      byName.set(post.className, row);
+    }
+    row.posts += 1;
+    row.photos += post.photos.length;
+    row.videos += post.videos.length;
+    if (post.created.ymd < row.from) row.from = post.created.ymd;
+    if (post.created.ymd > row.to) row.to = post.created.ymd;
+  }
+  return [...byName.values()].sort((a, b) => (a.rallyzName < b.rallyzName ? -1 : 1));
 }
 
 // ── 피드 글 정규화 ────────────────────────────────────────────────────
@@ -217,11 +283,34 @@ export function normalizeFeedItem(raw) {
   if (id === undefined || !created) return null;
   const textRaw = pick(raw, TEXT_KEYS);
   const text = typeof textRaw === "string" ? cleanText(textRaw) : "";
-  const strings = collectStrings(raw);
   const photos = [];
   const videos = [];
   const seenPhoto = new Set();
   const seenVod = new Set();
+  const addPhoto = (s) => {
+    let base;
+    try { const u = new URL(s); u.search = ""; base = u.toString(); } catch { return; }
+    if (!seenPhoto.has(base)) { seenPhoto.add(base); photos.push(base); }
+  };
+  const addVideo = (s) => {
+    const vodId = VOD_ID_RE.exec(s)?.[1] ?? null;
+    const m3u8 = M3U8_RE.test(s) ? s : null;
+    if (!vodId && !m3u8) return;
+    const key = vodId ?? s;
+    if (!seenVod.has(key)) { seenVod.add(key); videos.push({ vodId, m3u8 }); }
+  };
+  // ① 실제 내보내기 모양(2026-11-17 확인): media: [{ kind: "photo"|"video", src }] — 종류가 적혀 있으니 그대로 믿는다(정렬 순서 유지)
+  const media = Array.isArray(raw.media) ? raw.media.filter((m) => m && typeof m === "object" && typeof m.src === "string" && m.kind) : [];
+  if (media.length) {
+    for (const m of media) {
+      const src = m.src.trim();
+      if (m.kind === "photo") addPhoto(src);
+      else if (m.kind === "video") addVideo(src);
+    }
+    return { id: String(id), text, created, className: String(pick(raw, CLASS_KEYS) ?? "").trim(), instNm: String(pick(raw, INST_KEYS) ?? "").trim(), photos, videos };
+  }
+  // ② 예전 추측 모양(칸 이름을 모를 때) — 글 안의 문자열을 훑어 사진·영상 주소를 찾는다
+  const strings = collectStrings(raw);
   for (const s of strings) {
     if (M3U8_RE.test(s)) {
       const vodId = VOD_ID_RE.exec(s)?.[1] ?? null;
@@ -337,16 +426,19 @@ export function planPostImport({ posts, snapshot, options = {} }) {
     if (!post.text && post.photos.length === 0) { counts.empty += 1; continue; }
     const match = matchClass(post.className, snapshot.classes, classMap);
     if (!match.classId) { counts.noClass += 1; skipped.push({ id: post.id, reason: `반 매칭 실패(${match.reason})`, className: post.className, ymd: post.created.ymd }); continue; }
+    // 반 하나만: id 또는 이름(괄호 안의 말까지 비교 — «목요일 8교시»가 슈팅클래스까지 잡지 않게)
     if (options.classFilter && match.classId !== options.classFilter
-      && normalizeClassName(classesById.get(match.classId)?.name) !== normalizeClassName(options.classFilter)) continue;
+      && classNameKey(classesById.get(match.classId)?.name) !== classNameKey(options.classFilter)) continue;
     const cls = classesById.get(match.classId);
-    const { ymd, shifted } = resolveSessionYmd(post.created.ymd, classDows(cls?.dayOfWeek));
+    const dows = dowsForClass(cls);
+    const { ymd, shifted } = resolveSessionYmd(post.created.ymd, dows);
     if ((options.from && ymd < options.from) || (options.to && ymd > options.to)) { counts.outOfRange += 1; continue; }
     const key = `${match.classId}:${ymd}`;
     let group = groupsByKey.get(key);
     if (!group) {
       const existing = sessionByKey.get(key) ?? null;
-      group = { key, classId: match.classId, className: cls?.name ?? "", ymd, existing, posts: [], shifted: [] };
+      // offDay = 3일 거슬러도 반 요일을 못 찾아 «반 요일이 아닌 날»로 남음(미리 올린 글·보강·반 요일 변경) → 계획 출력에서 경고
+      group = { key, classId: match.classId, className: cls?.name ?? "", ymd, existing, posts: [], shifted: [], offDay: dows.size > 0 && !dows.has(ymdDow(ymd)) };
       groupsByKey.set(key, group);
     }
     group.posts.push(post);
@@ -636,7 +728,7 @@ export function planVideoBatches({ posts, snapshot, options = {} }) {
     const match = matchClass(post.className, snapshot.classes, classMap);
     if (!match.classId) { skipped.push({ id: post.id, reason: `반 매칭 실패(${match.reason})`, className: post.className }); continue; }
     const cls = classesById.get(match.classId);
-    const { ymd } = resolveSessionYmd(post.created.ymd, classDows(cls?.dayOfWeek));
+    const { ymd } = resolveSessionYmd(post.created.ymd, dowsForClass(cls));
     if ((options.from && ymd < options.from) || (options.to && ymd > options.to)) continue;
     const key = `${match.classId}:${ymd}`;
     if (done.has(key)) continue;
@@ -648,11 +740,25 @@ export function planVideoBatches({ posts, snapshot, options = {} }) {
   return { batches, skipped };
 }
 
-/** HLS 주소 — 글에 m3u8 이 그대로 있으면 그것, 없으면 템플릿의 {id} 를 영상 id 로 */
+/**
+ * HLS 주소 — 영상 id 와 템플릿이 있으면 «템플릿 우선», 없으면 글에 적힌 m3u8.
+ * 실제 피드의 src(tbycidjt8851…/board/feed_vod_bc/…)는 404 다. 재생 주소는 다른 호스트 + 경로 토큰(hls-template.txt)이라
+ * 템플릿의 {id} 를 영상 id 로 바꿔야 받아진다(2026-11-17 curl 확인 — Referer 헤더 필요).
+ */
 export function hlsUrlFor(part, template) {
-  if (part.m3u8) return part.m3u8;
-  if (!part.vodId || !template || !template.includes("{id}")) return null;
-  return template.replace("{id}", encodeURIComponent(part.vodId));
+  if (part.vodId && template && template.includes("{id}")) return template.replace("{id}", encodeURIComponent(part.vodId));
+  return part.m3u8 || null;
+}
+
+/** 랠리즈 사진·영상은 Referer 가 rallyz.co.kr 이어야 열린다(없으면 403) */
+export const RALLYZ_REFERER = "https://rallyz.co.kr/";
+
+/** 내려받은 사진 응답 판정 — 그림이면 ok. heic/heif 는 sharp 가 못 읽어 멈춘다(1000px 축소본은 jpeg 로 온다) */
+export function checkPhotoContentType(contentType) {
+  const ct = String(contentType || "").toLowerCase();
+  if (!ct.startsWith("image/")) return { ok: false, reason: `그림이 아님(${ct || "content-type 없음"})` };
+  if (/hei[cf]/.test(ct)) return { ok: false, reason: `HEIC 원본(${ct}) — 축소본 주소(?type=w&w=1000)로 받아야 jpeg 로 온다` };
+  return { ok: true, reason: "" };
 }
 
 /** ffmpeg concat 목록 파일 내용(경로의 작은따옴표 이스케이프) */
