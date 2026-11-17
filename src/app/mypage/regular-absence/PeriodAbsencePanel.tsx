@@ -20,8 +20,10 @@ import { PARENT_PERIOD_MAX_DAYS } from "@/lib/regular/parentAbsencePeriodRules";
 import { PERIOD_SETTLE_PARENT_PENDING_CHECK } from "@/lib/regular/illnessPeriodRules";
 import type { ParentAbsencePeriodRow, ParentPeriodPreview } from "@/lib/regular/parent-absence-period";
 
+// 2026-11-17 경조사 추가 — ⚠️ 기간 결석 표 CHECK 제약 마이그레이션(20261117210000) 적용 뒤에 저장된다
 const REASONS: { value: string; label: string }[] = [
   { value: "ILLNESS_INJURY", label: "질병/부상" },
+  { value: "FAMILY_EVENT", label: "경조사(직계 가족)" },
   { value: "PERSONAL", label: "개인 사정" },
   { value: "FAMILY_TRIP", label: "가족 여행" },
   { value: "SCHOOL_EVENT", label: "학교 행사" },
@@ -314,7 +316,10 @@ export default function PeriodAbsencePanel({
       }
       const head = `결석 ${result.count}회를 알렸어요.`;
       const tail = result.carryPending
-        ? uploaded > 0
+        ? !illness
+          // 경조사(2026-11-17) — 사진 기한 없이 원이 확인한 뒤 정한다
+          ? "원에서 확인한 뒤 다음 달 수강료에서 빼 드려요. 확인 자료(부고·청첩장 등)는 원으로 보내 주세요."
+          : uploaded > 0
           ? "사진을 확인한 뒤 다음 달 수강료에서 빼 드려요."
           : "마지막 결석일부터 7일 안에 증빙 사진을 올려 주시면 확인한 뒤 다음 달 수강료에서 빼 드려요."
         : result.makeupCredits > 0 ? `보강권 ${result.makeupCredits}장이 생겼어요.` : "학원에서 확인해요.";

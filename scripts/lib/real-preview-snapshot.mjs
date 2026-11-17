@@ -94,7 +94,7 @@ export async function capturePreviewSnapshot(sourceClient, { now = new Date(), a
     const expressions = fields.map((field) => {
       if (/phone$/i.test(field)) return `CASE WHEN ${q(field)} IS NULL THEN NULL ELSE '${PRIVATE_PHONE}' END AS ${q(field)}`;
       if (/birthDate$/i.test(field)) return `CASE WHEN ${q(field)} IS NULL THEN NULL ELSE TIMESTAMP '2000-01-01 00:00:00' END AS ${q(field)}`;
-      if (name === 'RegularAbsence' && field === 'reason') return `CASE WHEN "reason" IN ('ILLNESS_INJURY', 'PERSONAL', 'FAMILY_TRIP', 'SCHOOL_EVENT', 'ETC') THEN "reason" ELSE 'ETC' END AS "reason"`;
+      if (name === 'RegularAbsence' && field === 'reason') return `CASE WHEN "reason" IN ('ILLNESS_INJURY', 'PERSONAL', 'FAMILY_TRIP', 'SCHOOL_EVENT', 'ETC', 'FAMILY_EVENT') THEN "reason" ELSE 'ETC' END AS "reason"`;
       // 실제 요청 본문처럼 보이지 않도록 명시적인 가림 문구만 넣는다.
       if (name === 'ParentRequest' && field === 'title') return `'학부모 요청' AS "title"`;
       if (name === 'ParentRequest' && field === 'content') return `'비공개' AS "content"`;

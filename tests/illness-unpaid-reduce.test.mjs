@@ -22,6 +22,8 @@ const serviceStubUrl = jsUrl(`export const readWorkbench = async () => { throw n
 // 근거 읽기(workbench-absence)는 실제 코드. 연간 일정 함수만 달별 수업일 표(globalThis.__unpaidDates)로 바꾼다
 const absenceUrl = tsUrl(read("src/lib/billing/workbench-absence.ts")
   .replace('from "./carryEvidence"', `from "${tsUrl(read("src/lib/billing/carryEvidence.ts"))}"`)
+  // 이월 대상 사유 ↔ 인정 분류 짝 규칙(2026-11-17, import 0 순수 파일)
+  .replace('from "@/lib/regular/carryReasonRules"', `from "${tsUrl(read("src/lib/regular/carryReasonRules.ts"))}"`)
   .replace('from "@/lib/studentVisibility"', `from "${tsUrl(read("src/lib/studentVisibility.ts"))}"`)
   .replace('from "./monthly-register"', `from "${tsUrl(read("src/lib/billing/monthly-register.ts"))}"`)
   .replace('from "./workbench"', `from "${modelUrl}"`)
@@ -76,6 +78,8 @@ function fakeDb(init = {}) {
       if (has(`"draftTable"`)) return [{ draftTable: "present", registerTable: "present" }];
       if (has("to_regclass")) return [{ found: "present" }];
       if (has("information_schema.columns")) return [{ n: 1 }];
+      // 미납 감액 첫머리의 사유 재확인(질병·부상만)
+      if (sql === `SELECT reason FROM "RegularAbsence" WHERE id=$1`) return state.absences.filter((a) => a.id === v[0]).map((a) => ({ reason: a.reason }));
       if (has(`FROM "RegularAbsencePeriod" p JOIN "RegularAbsence" a`)) return state.periodDecided.includes(v[0]) ? [{ found: 1 }] : [];
       if (has(`FROM "BillingAbsenceResolution" WHERE "absenceId"=$1`)) return state.resolutions.filter((r) => r.absenceId === v[0]).map((r) => ({ resolution: r.resolution }));
       // 상세: 승인이 끝난 결석이 «청구에서 뺀» 결석인가(정산 기록의 고정 사유)
