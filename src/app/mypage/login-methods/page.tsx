@@ -90,7 +90,7 @@ export default async function LoginMethodsPage({
     <div className="mx-auto max-w-2xl px-4 py-6">
       <div className="mb-2 flex items-center gap-2">
         {/* 뒤로가기 = 누르는 영역 44×44(academy-back-link) */}
-        <ParentBackLink fallbackHref="/mypage" ariaLabel="마이페이지로" className="academy-back-link" />
+        <ParentBackLink fallbackHref="/mypage/settings" ariaLabel="설정으로" className="academy-back-link" />
         <h1 className="academy-heading">
           간편로그인 연결
         </h1>

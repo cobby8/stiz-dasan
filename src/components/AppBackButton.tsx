@@ -6,9 +6,10 @@ import { usePathname, useRouter } from "next/navigation";
 import { resolveBackAction } from "@/lib/navigation/backAction";
 import { useInstalledApp } from "@/components/pwa/useInstalledApp";
 import { isPublicSitePath } from "@/lib/public-site-path";
+import { parentUpPath } from "@/lib/navigation/parentUpPath";
 import { hasSameOriginPreviousEntry, publicParentPath, type PublicNavigation } from "@/lib/navigation/publicHistory";
 // 학부모 화면(/mypage) 안 이동 기록 — Next.js 는 history.state.idx 를 안 넣고 referrer 도 화면 안 이동에선 안 바뀌어서 따로 남긴다
-import { inAppHistoryVersion, parentHistoryDecision, subscribeInAppHistory } from "@/lib/navigation/inAppHistory";
+import { inAppHistoryVersion, isParentScopePath, markNextNavigationAsReplace, parentHistoryDecision, subscribeInAppHistory } from "@/lib/navigation/inAppHistory";
 
 type AppBackButtonProps = {
   fallbackHref?: string;
@@ -63,7 +64,13 @@ export default function AppBackButton({
   const isInstalledApp = useInstalledApp();
   // 이동 기록이 바뀌면(화면 이동 직후) 다시 그려 «돌아갈 곳 없음» 판단을 새로 한다. 서버에선 0 고정
   useSyncExternalStore(subscribeInAppHistory, inAppHistoryVersion, () => 0);
-  const backFallback = isPublicSitePath(pathname) ? publicParentPath(pathname, fallbackHref) : fallbackHref;
+  // 기록이 없을 때 갈 «한 단계 위» — 공개 화면은 publicParentPath, 학부모 화면은 parentUpPath(2026-11-17).
+  // 학부모 머리줄 fallbackHref(/mypage)는 학부모 홈에서만 그대로 쓰인다(홈의 위는 기존 규칙대로)
+  const backFallback = isPublicSitePath(pathname)
+    ? publicParentPath(pathname, fallbackHref)
+    : isParentScopePath(pathname) && pathname !== "/mypage"
+      ? parentUpPath(pathname)
+      : fallbackHref;
 
   // 앱의 첫 화면이라 돌아갈 곳이 없다. 죽은 버튼을 두느니 자리만 남긴다
   // (헤더가 격자 배치라 그냥 지우면 로고·제목이 밀린다).
@@ -91,7 +98,14 @@ export default function AppBackButton({
       isInstalledApp,
     });
     if (action.type === "back") router.back();
-    else if (action.type === "push") router.push(action.href);
+    else if (action.type === "push") {
+      // 돌아갈 기록이 없어 한 단계 위로 갈 때는 «바꿔 끼우기»(replace) — 2026-11-17 운영 재현:
+      // 상세에 바로 들어옴 → «←» 로 목록(push 로 쌓임) → 목록에서 «←» 가 history.back 으로 방금 상세로 되돌아갔다.
+      // 바꿔 끼우면 상세 칸이 목록으로 바뀌어, 기기 뒤로 가기·다음 «←» 모두 그 위로 올라간다.
+      // 학부모 기록 표시는 도착지가 학부모 화면일 때만(공개·선생님 화면에 남으면 나중 학부모 기록을 잘못 바꿔 끼운다)
+      if (isParentScopePath(action.href)) markNextNavigationAsReplace();
+      router.replace(action.href);
+    }
   };
 
   if (nothingToGoBackTo) {

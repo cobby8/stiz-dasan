@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { entryOf, isParentScopePath, markLeftParentScope, recordInAppNavigation } from "@/lib/navigation/inAppHistory";
+import { entryOf, isParentScopePath, markLeftParentScope, notePopNavigation, readInAppHistory, recordInAppNavigation, startPopListening } from "@/lib/navigation/inAppHistory";
 
 /**
  * 학부모 화면 안 이동 기록을 남기는 보이지 않는 부품(mypage layout 에 한 번 마운트).
@@ -14,6 +14,24 @@ export default function ParentHistoryTracker() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const search = searchParams?.toString() ?? "";
+
+  // 브라우저 «뒤로·앞으로»(기기 뒤로 가기·«←» 의 history.back 포함)를 듣는다 — 링크로 같은 화면에 다시 들어간 것과 구분(2026-11-17).
+  // 화면 기록(아래 효과)보다 먼저 붙어야 해서 첫 효과로 둔다
+  useEffect(() => {
+    startPopListening();
+    const onPop = () => {
+      // 창(시트·크게 보기)을 «뒤로»로 닫은 popstate 는 주소가 그대로다 — 화면 이동이 아니니 표시하지 않는다
+      try {
+        const stack = readInAppHistory();
+        if (stack.length > 0 && stack[stack.length - 1] === entryOf(window.location.pathname, window.location.search)) return;
+      } catch {
+        // 읽기 실패 — 표시는 짧게만 유효해 큰일 없다
+      }
+      notePopNavigation();
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   useEffect(() => {
     if (!pathname) return;

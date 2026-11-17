@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { MouseEvent, ReactNode } from "react";
-import { parentHistoryDecision } from "@/lib/navigation/inAppHistory";
+import { isParentScopePath, markNextNavigationAsReplace, parentHistoryDecision } from "@/lib/navigation/inAppHistory";
 
 type ParentBackLinkProps = {
   /** 기록이 없을 때 갈 고정 주소(예전 Link 의 href 그대로) */
@@ -35,12 +35,16 @@ export default function ParentBackLink({
     if (parentHistoryDecision(window.location.pathname) === true) {
       event.preventDefault();
       window.history.back();
+      return;
     }
-    // 기록이 없으면 Link 가 fallbackHref 로 이동한다(예전 동작)
+    // 기록이 없으면 Link 가 fallbackHref 로 «바꿔 끼우며»(replace) 이동한다(2026-11-17).
+    // 쌓으면(push) 위 화면의 «←»·기기 뒤로 가기가 방금 화면으로 되돌아가는 고리가 생긴다
+    if (isParentScopePath(fallbackHref.split(/[?#]/)[0])) markNextNavigationAsReplace();
   };
 
   return (
-    <Link href={fallbackHref} aria-label={ariaLabel} className={className} onClick={handleClick}>
+    // replace 는 학부모 화면 안에서만 — /account 등 기록을 남기지 않는 화면에선 예전처럼 쌓는다(같은 주소 칸 두 개가 생겨 기기 뒤로가 제자리걸음, 2026-11-17 검수)
+    <Link href={fallbackHref} replace={isParentScopePath(fallbackHref.split(/[?#]/)[0])} aria-label={ariaLabel} className={className} onClick={handleClick}>
       {children ?? <span aria-hidden="true">←</span>}
     </Link>
   );

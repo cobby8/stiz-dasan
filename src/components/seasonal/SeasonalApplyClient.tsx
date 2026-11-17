@@ -2,6 +2,7 @@
 
 import { publicErrorText } from "@/components/ui/public-error-text";
 import Link from "next/link";
+import ReplaceLink from "@/components/common/ReplaceLink";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
 import { SHUTTLE_LOCATION_CONSENT_VERSION } from "@/lib/seasonal/contracts";
@@ -729,8 +730,9 @@ function DoneView({ slug, basePath, homeHref, result, offerings, message }: { sl
           </div>
         )}
         <div className="mt-6 flex flex-wrap justify-center gap-2">
-          <Link href={`${basePath}/${slug}`} className="public-btn-secondary">상세 보기</Link>
-          <Link href={homeHref} className="public-btn-primary">홈으로</Link>
+          {/* 신청 완료 뒤 이동은 replace(2026-11-17) — 쌓으면 그 화면의 «←» 가 빈 신청서로 되돌아왔다 */}
+          <ReplaceLink href={`${basePath}/${slug}`} className="public-btn-secondary">상세 보기</ReplaceLink>
+          <ReplaceLink href={homeHref} className="public-btn-primary">홈으로</ReplaceLink>
         </div>
       </section>
     </main>

@@ -148,6 +148,7 @@ export default function ChildRecordClient({
               <Link
                 key={c.id}
                 href={`/mypage/record?child=${encodeURIComponent(c.id)}`}
+                replace
                 aria-current={c.id === childId ? "page" : undefined}
                 className={`academy-choice ${c.id === childId ? "is-selected" : ""}`}
               >
@@ -337,7 +338,7 @@ export default function ChildRecordClient({
 
       {/* 필터 하단 시트(PC 는 오른쪽 칸) — 종류·상태. «적용»을 눌러야 바뀐다 */}
       {sheetOpen && (
-        <ListDetailPanel onClose={() => setSheetOpen(false)} titleId="record-filter-title" panelClassName="p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <ListDetailPanel backToClose onClose={() => setSheetOpen(false)} titleId="record-filter-title" panelClassName="p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
           <h3 id="record-filter-title" className="academy-section-title mb-2">청구 필터</h3>
           <p className="mb-1 text-xs font-medium text-[var(--color-academy-muted)]">종류</p>
           <div className="mb-3 flex flex-wrap gap-1.5">

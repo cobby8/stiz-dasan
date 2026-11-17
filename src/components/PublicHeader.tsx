@@ -16,6 +16,7 @@ import UiIcon from "@/components/common/UiIcon";
 import { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { ThemeToggle } from "./ThemeToggle";
 import type { AppRole } from "@/lib/auth-routes";
@@ -131,7 +132,9 @@ export default function PublicHeader({
   // 모바일 사이드바 열림/닫힘 상태
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   // 모바일 메뉴(서랍)가 열린 동안 챗봇·입학 가이드 플로팅 버튼을 숨긴다(게슈탈트 C-P3)
-  usePublicOverlayOpen(isMobileMenuOpen);
+  // 휴대폰 «뒤로» = 메뉴 닫기. 메뉴 안 링크는 기록 칸을 먼저 되돌린 뒤 이동(captureLinks)
+  const router = useRouter();
+  const { captureLinks } = usePublicOverlayOpen(isMobileMenuOpen, () => setIsMobileMenuOpen(false));
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const mobileMenuTriggerRef = useRef<HTMLButtonElement>(null);
   const mobileMenuCloseRef = useRef<HTMLButtonElement>(null);
@@ -398,6 +401,7 @@ export default function PublicHeader({
       {/* ===== 모바일 사이드바 — 카테고리 라벨 + 구분선으로 그룹핑 ===== */}
       <div
         ref={mobileMenuRef}
+        onClickCapture={captureLinks((to) => router.push(to))}
         role="dialog"
         aria-label="전체 메뉴"
         aria-modal={isMobileMenuOpen ? true : undefined}

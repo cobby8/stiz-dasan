@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
+import ReplaceLink from "@/components/common/ReplaceLink";
 import VirtualAccountNotice from "@/components/parent/VirtualAccountNotice";
 import type { PublicVirtualAccountView } from "@/lib/payments/virtualAccount";
 import { BUNDLE_BLOCK_MESSAGE, type BundleBlockCode } from "@/lib/payments/checkoutBundle";
@@ -158,13 +158,14 @@ export default function BundleDoneClient({ paymentKey, orderId, amount, contact 
                 ) : state === "pending" || state === "error" ? (
                     <button type="button" onClick={() => void run()} className="academy-button-secondary">다시 확인</button>
                 ) : (
-                    <Link href="/mypage" className="academy-button-secondary">홈으로</Link>
+                    <ReplaceLink href="/mypage" className="academy-button-secondary">홈으로</ReplaceLink>
                 )}
                 {state === "error" && !CHECK_HISTORY_BLOCKS.has(blocked) ? (
-                    <Link href="/mypage/payments/checkout" className="academy-button-primary">다시 결제하기</Link>
+                    <ReplaceLink href="/mypage/payments/checkout" className="academy-button-primary">다시 결제하기</ReplaceLink>
                 ) : (
-                    <Link href="/mypage/payments" className="academy-button-primary">청구 목록</Link>
+                    <ReplaceLink href="/mypage/payments" className="academy-button-primary">청구 목록</ReplaceLink>
                 )}
+                {/* 완료 화면 버튼은 모두 ReplaceLink(2026-11-17) — 쌓으면 목록·홈의 «←» 가 이 완료 화면으로 되돌아와 결제 확인을 다시 했다 */}
             </div>
         </main>
     );

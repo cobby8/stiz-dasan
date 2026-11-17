@@ -12,6 +12,7 @@ import { recentNotices } from "@/lib/mypage/parentSchedule";
 import HideInInstalledApp from "@/components/pwa/HideInInstalledApp";
 // 수업 사진 «크게 보기» — 소식 상세와 같은 부품(앱 안에서 연다. 저장 버튼은 없다)
 import FeedPhotoGallery from "@/components/parent/FeedPhotoGallery";
+import HashJumpLink from "@/components/parent/HashJumpLink";
 // 달별 묶음 — 서버(UTC)에서 toLocaleDateString 을 쓰면 한국 자정 수업이 전날로 찍혀서 KST 모듈 기반 공용 함수를 쓴다
 import { groupByKstMonth } from "@/components/admin/list/monthDateGroups";
 // 행마다 «사진 n · 영상 n» — 상세 화면이 실제로 보여 주는 것과 같은 개수(수업 피드 공용 조회)
@@ -139,10 +140,11 @@ export default async function ParentReportsPage() {
                 <h1 className="academy-heading">소식</h1>
                 <nav aria-label="소식 종류" className="mt-2 flex flex-wrap gap-1.5">
                     {sections.map((s) => (
-                        <a key={s.id} href={`#${s.id}`}
+                        // 칩은 기록을 쌓지 않고 그 칸으로 스크롤만(HashJumpLink) — 쌓이면 «←» 가 같은 화면에서 스크롤만 움직였다(2026-11-17)
+                        <HashJumpLink key={s.id} targetId={s.id}
                             className="inline-flex min-h-11 items-center gap-1 whitespace-nowrap rounded-full border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-2.5 text-sm font-medium text-[var(--color-academy-ink)] hover:border-[var(--color-academy-primary)]">
                             {s.label}<span className="tabular-nums font-normal text-[var(--color-academy-muted)]">{s.count}</span>
-                        </a>
+                        </HashJumpLink>
                     ))}
                 </nav>
             </div>

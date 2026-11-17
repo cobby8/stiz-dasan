@@ -9,6 +9,7 @@
 
 import { useState } from "react";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import { usePublicOverlayOpen } from "../public-floating";
 
 const ChatPanel = dynamic(() => import("./ChatPanel"), {
@@ -20,12 +21,18 @@ export default function ChatBotButton() {
   // 채팅 패널의 열림/닫힘 상태
   const [isOpen, setIsOpen] = useState(false);
   // 채팅 패널이 열린 동안 옆의 입학 가이드 버튼도 숨긴다(패널 위에 겹쳐 보이지 않게)
-  usePublicOverlayOpen(isOpen);
+  // 휴대폰 «뒤로» = 채팅 창 닫기(2026-11-17). 창 안 «신청» 버튼은 기록 칸을 먼저 되돌린 뒤 이동
+  const router = useRouter();
+  const { captureLinks } = usePublicOverlayOpen(isOpen, () => setIsOpen(false));
 
   return (
     <>
       {/* 채팅 패널이 열려 있으면 표시 */}
-      {isOpen && <ChatPanel onClose={() => setIsOpen(false)} />}
+      {isOpen && (
+        <div className="contents" onClickCapture={captureLinks((to) => router.push(to))}>
+          <ChatPanel onClose={() => setIsOpen(false)} />
+        </div>
+      )}
 
       {/* 플로팅 말풍선 버튼 — 패널이 닫혀 있을 때만 표시.
           위치(bottom)는 public-sport.css 의 public-floating-btn 이 정한다(하단 고정 바 높이만큼 위로).

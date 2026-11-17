@@ -64,9 +64,9 @@ export default async function ParentPastNoticesPage({ searchParams }: { searchPa
             {/* 쪽 이동 — 첫 쪽엔 «이전», 끝 쪽엔 «다음»을 그리지 않는다(눌러도 갈 곳 없는 버튼 금지) */}
             {totalPages > 1 && (
                 <nav aria-label="쪽 이동" className="flex items-center justify-between">
-                    {page > 1 ? <Link href={`/mypage/news?page=${page - 1}`} className={PAGER_LINK}>‹ 이전</Link> : <span className="min-w-16" />}
+                    {page > 1 ? <Link href={`/mypage/news?page=${page - 1}`} replace className={PAGER_LINK}>‹ 이전</Link> : <span className="min-w-16" />}
                     <span className="text-sm tabular-nums text-[var(--color-academy-muted)]">{page} / {totalPages}</span>
-                    {page < totalPages ? <Link href={`/mypage/news?page=${page + 1}`} className={PAGER_LINK}>다음 ›</Link> : <span className="min-w-16" />}
+                    {page < totalPages ? <Link href={`/mypage/news?page=${page + 1}`} replace className={PAGER_LINK}>다음 ›</Link> : <span className="min-w-16" />}
                 </nav>
             )}
         </div>

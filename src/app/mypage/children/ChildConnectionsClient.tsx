@@ -1,5 +1,6 @@
 "use client";
 
+import ParentBackLink from "@/components/parent/ParentBackLink";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
@@ -47,7 +48,7 @@ async function loadIdentitySdk() {
 }
 
 // academyPhone = 학원 대표 번호(설정값). 이 화면의 주 사용자는 아직 자녀가 연결되지 않은 계정이라 홈 문의 폼을 쓸 수 없다 → 전화로 안내한다.
-export default function ChildConnectionsClient({ backHref = "/mypage", academyPhone = null }: { backHref?: string; academyPhone?: string | null }) {
+export default function ChildConnectionsClient({ backHref = "/mypage/settings", academyPhone = null }: { backHref?: string; academyPhone?: string | null }) {
   const router = useRouter();
   // 번호가 있으면 «학원에 전화하기» 링크(터치 44px), 없으면 글자만
   // 걸 수 있는 번호인지는 규칙 한 곳(academyPhoneRules)이 정한다 — 이상한 길이·자리채움 번호면 링크를 만들지 않는다
@@ -184,7 +185,9 @@ export default function ChildConnectionsClient({ backHref = "/mypage", academyPh
   const pendingIncoming = state?.incoming.filter((row) => row.status === "PENDING") ?? [];
   return (
     <div className="mx-auto grid max-w-2xl gap-4 py-2">
-      <div><Link href={backHref} className="inline-flex min-h-11 items-center text-sm text-[var(--color-academy-muted)]">← {backHref === "/mypage" ? "학부모 홈" : "내 화면으로"}</Link><h1 className="academy-heading">자녀·가족 연결</h1></div>
+      {/* «←» = 방금 있던 화면(설정·아이 기록 등). 기록이 없으면 한 단계 위(학부모 = 설정, 내 계정 = /account) — 2026-11-17.
+          예전 «← 학부모 홈» 고정 링크는 설정에서 와도 홈으로 보냈고, 앞으로 쌓여 홈의 «←» 가 이 화면으로 되돌아왔다 */}
+      <div className="flex items-center gap-2"><ParentBackLink fallbackHref={backHref} ariaLabel="이전 화면으로" /><h1 className="academy-heading">자녀·가족 연결</h1></div>
       {error && <div role="alert" className="rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-danger-soft)] p-3 text-sm text-[var(--color-academy-danger)]">{error}<button type="button" disabled={busy} onClick={() => void run(async () => { await reload(); setLoading(false); })} className="ml-2 min-h-11 font-bold underline">다시 확인</button></div>}
       {notice && <p role="status" className="rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] p-3 text-sm">{notice} <Link href="/mypage" className="font-semibold underline">홈 보기</Link></p>}
       <FamilyMembersSection />

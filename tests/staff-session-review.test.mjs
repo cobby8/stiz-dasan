@@ -250,7 +250,7 @@ function makeWorld(options = {}) {
     "@/lib/staff/sessionEditWindow": rules,
     "@/lib/staff-session-rules": worldSessionRules,
     // 출석 알림 규칙(순수 모듈)은 진짜를 쓴다 — 관리자 출결 화면과 같은 함수
-    "@/lib/attendance/attendanceNoticeRules": load("src/lib/attendance/attendanceNoticeRules.ts", { "@/lib/staff-session-rules": worldSessionRules, "@/lib/datetime/kst": worldKst }),
+    "@/lib/attendance/attendanceNoticeRules": load("src/lib/attendance/attendanceNoticeRules.ts", { "@/lib/staff-session-rules": worldSessionRules, "@/lib/datetime/kst": worldKst , "@/lib/regular/absence-parent-notice": load("src/lib/regular/absence-parent-notice.ts", {}) }),
     "@/lib/staff-session-queries": { trialOnClassDateSql: () => "true" },
     "@/lib/staff-notifications": {
       deliverParentNotification: async (input) => { world.calls.push(["notify", input.eventType, input.dedupeKey]); return {}; },

@@ -41,7 +41,7 @@ export default function EventDetailPanel({ event, onClose }: Props) {
     }, [event, onClose]);
 
     // 패널(모바일 하단 시트)이 열린 동안 챗봇·입학 가이드 플로팅 버튼을 숨긴다(게슈탈트 C-P3)
-    usePublicOverlayOpen(Boolean(event));
+    usePublicOverlayOpen(Boolean(event), onClose); // 휴대폰 «뒤로» = 패널 닫기
 
     // 패널 열릴 때 body 스크롤 잠금
     useEffect(() => {

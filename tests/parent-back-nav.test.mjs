@@ -160,7 +160,7 @@ test("브라우저: 기록 있으면 back, 없으면 기존 fallback", () => {
 const BACK_LINK_FILES = {
   "src/app/mypage/annual/page.tsx": "/mypage/history",
   "src/app/mypage/apply/page.tsx": "/mypage",
-  "src/app/mypage/login-methods/page.tsx": "/mypage",
+  "src/app/mypage/login-methods/page.tsx": "/mypage/settings", // 2026-11-17 설정 아래 화면 → 한 단계 위 = 설정
   "src/app/mypage/makeup/MakeupClient.tsx": "/mypage",
   "src/app/mypage/news/page.tsx": "/mypage/reports#news-notices",
   "src/app/mypage/news/[id]/page.tsx": "/mypage/reports#news-notices",
@@ -469,4 +469,166 @@ test("기록 없이 연 학부모 하위 화면의 머리줄 «←» 는 학부�
     resolveBackAction({ hasHistory: false, pathname: "/mypage", fallbackHref: "/mypage", scopeHref: "/mypage", isInstalledApp: true }),
     { type: "none" },
   );
+});
+
+// ── 2026-11-17 «←» 고리 막기: 기록 없이 한 단계 위로 갈 땐 바꿔 끼우기 ────────────────
+// 운영 재현: 상세에 바로 들어옴 → «←» 로 목록(push 로 쌓임) → 목록에서 «←» 가 방금 상세로 되돌아갔다.
+test("화면 안 이동이 바꿔 끼우기(replace)면 우리 기록도 쌓지 않는다 — 위 화면의 «←» 가 방금 화면으로 돌아가지 않게", () => {
+  hist.resetPageLoadStateForTest();
+  const store = seeded([]);
+  // 알림으로 상세에 바로 들어옴(첫 기록 = 새로 시작)
+  assert.deepEqual(hist.recordInAppNavigation("/mypage/news/7", store, env("", 1)), ["/mypage/news/7"]);
+  // «←» → 기록 없음 → 목록으로 바꿔 끼우기
+  hist.markNextNavigationAsReplace(store);
+  assert.deepEqual(hist.recordInAppNavigation("/mypage/news", store, env("", 1)), ["/mypage/news"], "상세 칸이 목록으로 바뀜");
+  // 다음 이동은 다시 정상적으로 쌓인다(표시는 한 번만)
+  assert.deepEqual(hist.recordInAppNavigation("/mypage/news/8", store, env("", 1)), ["/mypage/news", "/mypage/news/8"]);
+});
+
+test("뒤로 버튼 두 곳 — 기록 없을 때만 바꿔 끼우기, 학부모 범위 밖으로 갈 땐 표시를 남기지 않는다", async () => {
+  const link = await read("src/components/parent/ParentBackLink.tsx");
+  assert.match(link, /<Link href=\{fallbackHref\} replace=\{isParentScopePath\(fallbackHref/);
+  assert.match(link, /window\.history\.back\(\);\s*return;/, "한 칸 뒤로 간 경우엔 바꿔 끼우기 표시를 하지 않는다");
+  assert.match(link, /if \(isParentScopePath\(fallbackHref[^\n]*\) markNextNavigationAsReplace\(\)/);
+  const button = await read("src/components/AppBackButton.tsx");
+  assert.match(button, /if \(isParentScopePath\(action\.href\)\) markNextNavigationAsReplace\(\);\s*router\.replace\(action\.href\)/);
+});
+
+test("링크로 같은 화면에 다시 들어간 것(앞으로)은 «돌아옴»이 아니다 — popstate 가 있을 때만 뺀다", () => {
+  // 아이 기록(바로 들어옴) → 수업 → 수업의 «전체 기록» 링크(같은 경로)
+  assert.deepEqual(hist.nextInAppHistory(["/mypage/record", "/mypage/classes"], "/mypage/record", 30, false), ["/mypage/record", "/mypage/classes", "/mypage/record"]);
+  // 기기 뒤로 가기(popstate)면 예전처럼 뺀다
+  assert.deepEqual(hist.nextInAppHistory(["/mypage/record", "/mypage/classes"], "/mypage/record", 30, true), ["/mypage/record"]);
+  // 모르면(undefined) 예전 규칙
+  assert.deepEqual(hist.nextInAppHistory(["/mypage/record", "/mypage/classes"], "/mypage/record"), ["/mypage/record"]);
+});
+
+test("popstate 표시는 짧게만 유효 — 시트·사진 닫기의 popstate 가 다음 링크 이동을 «뒤로»로 만들지 않는다", () => {
+  hist.resetPageLoadStateForTest();
+  const store = seeded([]);
+  hist.recordInAppNavigation("/mypage/record", store, env("", 3));
+  hist.startPopListening();
+  hist.recordInAppNavigation("/mypage/classes", store, env("", 3));
+  // 시트를 닫느라 popstate 가 났고, 한참 뒤 «전체 기록» 링크로 이동
+  hist.notePopNavigation(Date.now() - hist.POP_FLAG_TTL_MS - 1000);
+  assert.deepEqual(hist.recordInAppNavigation("/mypage/record", store, env("", 3)), ["/mypage/record", "/mypage/classes", "/mypage/record"]);
+  // 방금 뒤로 가기
+  hist.notePopNavigation();
+  assert.deepEqual(hist.recordInAppNavigation("/mypage/classes", store, env("", 3)), ["/mypage/record", "/mypage/classes"]);
+  hist.resetPageLoadStateForTest();
+});
+
+test("학부모 «한 단계 위» 표 — 기록 없이 들어왔을 때 머리줄 «←» 목적지", async () => {
+  const { parentUpPath } = await loadTsModule("src/lib/navigation/parentUpPath.ts");
+  const cases = {
+    "/mypage/login-methods": "/mypage/settings", "/mypage/withdraw": "/mypage/settings", "/mypage/consult": "/mypage/settings", "/mypage/children": "/mypage/settings",
+    "/mypage/shuttle/regular": "/mypage/shuttle", "/mypage/payments/checkout": "/mypage/payments", "/mypage/payments/done": "/mypage/payments",
+    "/mypage/news/7": "/mypage/news", "/mypage/news": "/mypage/reports", "/mypage/reports/feed": "/mypage/reports", "/mypage/reports/s1": "/mypage/reports",
+    "/mypage/requests/r1": "/mypage/requests", "/mypage/annual": "/mypage/history", "/mypage/rental": "/mypage/apply",
+    "/mypage/seasonal/apply": "/mypage/apply", "/mypage/seasonal/apply/w26": "/mypage/seasonal/apply", "/mypage/seasonal/apply/w26/apply": "/mypage/seasonal/apply/w26",
+    "/mypage/makeup": "/mypage", "/mypage/regular-absence": "/mypage", "/mypage/settings": "/mypage", "/mypage/classes": "/mypage",
+  };
+  for (const [from, to] of Object.entries(cases)) assert.equal(parentUpPath(from), to, from);
+  const button = await read("src/components/AppBackButton.tsx");
+  assert.match(button, /isParentScopePath\(pathname\) && pathname !== "\/mypage"\s*\?\s*parentUpPath\(pathname\)/);
+});
+
+test("설치 앱은 범위 안의 «한 단계 위»로, 범위 밖이면 앱 첫 화면으로", () => {
+  const base = { scopeHref: "/mypage", isInstalledApp: true, hasHistory: false };
+  assert.deepEqual(resolveBackAction({ ...base, pathname: "/mypage/withdraw", fallbackHref: "/mypage/settings" }), { type: "push", href: "/mypage/settings" });
+  assert.deepEqual(resolveBackAction({ ...base, pathname: "/mypage/withdraw", fallbackHref: "/" }), { type: "push", href: "/mypage" });
+  assert.deepEqual(resolveBackAction({ ...base, pathname: "/mypage/settings", fallbackHref: "/mypage/settings" }), { type: "push", href: "/mypage" }, "제자리면 첫 화면");
+});
+
+test("같은 화면 안 이동(달·해·쪽·자녀 칩·소식 칩)은 기록을 쌓지 않는다", async () => {
+  const hub = await read("src/app/mypage/history/ScheduleHub.tsx");
+  assert.equal((hub.match(/<Link href=\{monthNav\.(prev|next)Href\} replace /g) || []).length, 2, "수업 탭 달 이동");
+  assert.equal((hub.match(/<Link href=\{hrefFor\(shiftMonth\(view\.month, -?1\)\)\} replace /g) || []).length, 2, "일정 달 이동");
+  assert.match(hub, /<Link key=\{c\.id\} href=\{hrefFor\(view\.month, c\.id\)\} replace /);
+  const annual = await read("src/app/mypage/annual/page.tsx");
+  assert.equal((annual.match(/\/mypage\/annual\?year=\$\{year [-+] 1\}`\} replace /g) || []).length, 2);
+  const news = await read("src/app/mypage/news/page.tsx");
+  assert.equal((news.match(/\/mypage\/news\?page=\$\{page [-+] 1\}`\} replace /g) || []).length, 2);
+  const record = await read("src/app/mypage/record/ChildRecordClient.tsx");
+  assert.match(record, /href=\{`\/mypage\/record\?child=\$\{encodeURIComponent\(c\.id\)\}`\}\s*replace/);
+  const reports = await read("src/app/mypage/reports/page.tsx");
+  assert.match(reports, /<HashJumpLink key=\{s\.id\} targetId=\{s\.id\}/);
+  assert.doesNotMatch(reports, /<a key=\{s\.id\} href=\{`#\$\{s\.id\}`\}/);
+  const jump = await read("src/components/parent/HashJumpLink.tsx");
+  assert.match(jump, /window\.history\.replaceState\(window\.history\.state, "", `#\$\{targetId\}`\)/);
+});
+
+test("완료 화면에서 나가는 링크는 replace, 고정 «돌아가기»는 ParentBackLink", async () => {
+  const done = await read("src/app/mypage/payments/done/BundleDoneClient.tsx");
+  assert.equal((done.match(/<ReplaceLink href="[^"]+" /g) || []).length, 3);
+  const seasonal = await read("src/components/seasonal/SeasonalApplyClient.tsx");
+  assert.match(seasonal, /<ReplaceLink href=\{homeHref\} className="public-btn-primary">홈으로<\/ReplaceLink>/);
+  assert.match(await read("src/app/rental/RentalClient.tsx"), /<ReplaceLink href=\{homeHref\} /);
+  assert.match(await read("src/components/consult/ConsultForm.tsx"), /<ReplaceLink href=\{homeHref \?\? "\/"\} /);
+  const checkout = await read("src/app/mypage/payments/checkout/BundleCheckoutClient.tsx");
+  assert.match(checkout, /<ParentBackLink fallbackHref="\/mypage\/payments"/);
+  const children = await read("src/app/mypage/children/ChildConnectionsClient.tsx");
+  assert.match(children, /<ParentBackLink fallbackHref=\{backHref\}/);
+  assert.match(children, /backHref = "\/mypage\/settings"/);
+  assert.doesNotMatch(children, /학부모 홈" : "내 화면으로/);
+  assert.match(await read("src/app/account/children/page.tsx"), /<ChildConnectionsClient backHref="\/account" /);
+  const withdraw = await read("src/app/mypage/withdraw/WithdrawClient.tsx");
+  assert.match(withdraw, /backHref = "\/mypage\/settings"/);
+  assert.match(withdraw, /<ParentBackLink fallbackHref=\{backHref\} className="academy-button-secondary self-start">\s*돌아가기/);
+  assert.match(await read("src/app/mypage/login-methods/page.tsx"), /<ParentBackLink fallbackHref="\/mypage\/settings"/);
+});
+
+test("출석·지각·결석 알림은 있는 화면(일정 탭)으로 — 옛 주소는 넘긴다", async () => {
+  const notice = await loadTsModule("src/lib/regular/absence-parent-notice.ts");
+  assert.equal(notice.PARENT_ATTENDANCE_HREF, "/mypage/history");
+  for (const f of ["src/lib/attendance/attendanceNoticeRules.ts", "src/lib/regular/absence-parent-notice-sweep.ts"]) {
+    const src = await read(f);
+    assert.match(src, /linkUrl: PARENT_ATTENDANCE_HREF/, f);
+    assert.doesNotMatch(src, /\/parent\/attendance/, f);
+  }
+  const config = await read("next.config.ts");
+  assert.match(config, /source: "\/parent\/attendance",\s*destination: "\/mypage\/history"/);
+});
+
+// ── 2026-11-17 검수 반영: 실제 기록으로 확인 ─────────────────────────────────
+test("완료 화면에서 ReplaceLink 로 다른 학부모 화면에 가면 기록도 바꿔 끼운다(브라우저 기록과 같게)", async () => {
+  hist.resetPageLoadStateForTest();
+  const store = seeded([]);
+  // 토스 결제 뒤 완료 화면(바깥에서 들어옴 → 새로 시작)
+  assert.deepEqual(hist.recordInAppNavigation("/mypage/payments/done?orderId=o1", store, env("https://pay.toss.example/x", 4)), ["/mypage/payments/done?orderId=o1"]);
+  hist.startPopListening();
+  hist.markNextNavigationAsReplace(store); // ReplaceLink «청구 목록»
+  assert.deepEqual(hist.recordInAppNavigation("/mypage/payments", store, env("", 4)), ["/mypage/payments"], "목록의 «←» 는 결제 완료·토스로 돌아가지 않는다");
+  // 상담 접수 → «홈으로»(바꿔 끼우기) → 홈은 첫 화면
+  hist.recordInAppNavigation("/mypage", store, env("", 4));
+  hist.recordInAppNavigation("/mypage/consult", store, env("", 4));
+  hist.markNextNavigationAsReplace(store);
+  assert.deepEqual(hist.recordInAppNavigation("/mypage", store, env("", 4)), ["/mypage"]);
+  const link = await read("src/components/common/ReplaceLink.tsx");
+  assert.match(link, /isParentScopePath\(window\.location\.pathname\) && isParentScopePath\(href\.split\(\/\[\?#\]\/\)\[0\]\)\) markNextNavigationAsReplace\(\)/);
+  for (const f of ["src/app/mypage/payments/done/BundleDoneClient.tsx", "src/components/seasonal/SeasonalApplyClient.tsx", "src/app/rental/RentalClient.tsx", "src/components/consult/ConsultForm.tsx"]) {
+    const src = await read(f);
+    assert.match(src, /<ReplaceLink href=/, f);
+    assert.doesNotMatch(src, /<Link href=[^>]*\breplace\b/, `${f}: 표시 없는 Link replace 금지`);
+  }
+  hist.resetPageLoadStateForTest();
+});
+
+test("링크·아래 탭·로고로 학부모 홈에 오면 기록은 새로 시작 — 홈엔 «←» 가 생기지 않는다", () => {
+  assert.deepEqual(hist.nextInAppHistory(["/mypage", "/mypage/settings"], "/mypage", 30, false), ["/mypage"]);
+  assert.deepEqual(hist.nextInAppHistory(["/mypage/news/7", "/mypage/settings"], "/mypage?child=c1", 30, false), ["/mypage?child=c1"]);
+  // 뒤로 가기로 홈에 온 것은 그대로 뺀다
+  assert.deepEqual(hist.nextInAppHistory(["/mypage", "/mypage/settings"], "/mypage", 30, true), ["/mypage"]);
+});
+
+test("학부모 화면 밖을 다녀오면 남아 있던 «바꿔 끼우기» 표시도 버린다", () => {
+  hist.resetPageLoadStateForTest();
+  const store = seeded([]);
+  hist.recordInAppNavigation("/mypage/news/7", store, env("", 4));
+  hist.startPopListening();
+  hist.markNextNavigationAsReplace(store); // «←» 가 표시를 남김
+  hist.markLeftParentScope(store); // 그런데 세션 만료로 /login 을 다녀옴
+  assert.deepEqual(hist.recordInAppNavigation("/mypage", store, env("", 4)), ["/mypage"]);
+  assert.deepEqual(hist.recordInAppNavigation("/mypage/settings", store, env("", 4)), ["/mypage", "/mypage/settings"], "다음 이동은 정상적으로 쌓인다");
+  hist.resetPageLoadStateForTest();
 });
