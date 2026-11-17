@@ -16,7 +16,7 @@ export type RoleChangeOption = {
 export const ROLE_CHANGE_OPTIONS: readonly RoleChangeOption[] = [
     { value: "ADMIN", label: "원장", description: "모든 관리 기능 · 스태프 관리", icon: "shield_person" },
     { value: "VICE_ADMIN", label: "부원장", description: "관리 화면 사용 · 스태프 관리는 보기만", icon: "admin_panel_settings" },
-    { value: "INSTRUCTOR", label: "코치/강사", description: "선생님 앱 · 담당 반 출결·수업", icon: "sports_basketball" },
+    { value: "INSTRUCTOR", label: "코치/강사", description: "선생님 화면 · 담당 반 출결·수업", icon: "sports_basketball" },
     { value: "DRIVER", label: "셔틀 기사", description: "셔틀 운행 화면", icon: "directions_bus" },
     { value: "PARENT", label: "학부모 (직원 해제)", description: "스태프 목록에서 빠져요 · 퇴사는 [퇴사 처리]로", icon: "person_off" },
 ];

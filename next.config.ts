@@ -22,15 +22,18 @@ const nextConfig: NextConfig = {
   },
 
   async redirects() {
+    // 2026-11-17 원장 승인: 설치 안내는 스토어 앱 안내(/install) 하나로 모은다.
+    // 예전에는 학부모·선생님이 따로 «홈 화면 바로가기»를 만드는 안내 화면이 있었다(/parent-app·/teacher-app).
+    // 이미 문자·메신저로 나간 옛 주소가 있어 주소는 살려 두고 전부 /install 로 넘긴다.
+    // permanent 가 아닌 이유: 되돌릴 수 있게(영구 이동은 브라우저가 기억해 되돌려도 안 먹는다).
+    // 옛 화면 파일(src/app/parent-app·teacher-app)은 지우지 않았다 — 되돌리려면 이 묶음을 빼고 rewrites 를 되살린다.
+    // redirects 는 미들웨어보다 먼저 적용돼, 로그인하지 않은 사람도 /staff/install·/mypage/install 에서 바로 넘어간다.
     return [
-      {
-        // 학부모에게 공유하는 짧은 주소. rewrite 가 아니라 redirect 인 이유는,
-        // 브라우저 주소가 실제로 /mypage/install 로 바뀌어야 학부모 앱의
-        // manifest scope(/mypage) 안에 들어가 설치가 제안되기 때문이다.
-        source: "/app",
-        destination: "/mypage/install",
-        permanent: false,
-      },
+      { source: "/app", destination: "/install", permanent: false },
+      { source: "/staff/install", destination: "/install", permanent: false },
+      { source: "/mypage/install", destination: "/install", permanent: false },
+      { source: "/teacher-app", destination: "/install", permanent: false },
+      { source: "/parent-app", destination: "/install", permanent: false },
     ];
   },
 
@@ -49,18 +52,8 @@ const nextConfig: NextConfig = {
         source: "/.well-known/apple-app-site-association",
         destination: "/api/apple-app-site-association",
       },
-      {
-        // 선생님에게 공유하는 주소는 기억하기 쉬운 /staff/install로 유지한다.
-        source: "/staff/install",
-        destination: "/teacher-app",
-      },
-      {
-        // 학부모 설치 안내도 /mypage 범위 안에 둔다.
-        // 학부모 앱의 manifest scope 가 /mypage 라, 범위 밖에서는 브라우저가 설치를
-        // 제안하지 않는다. 화면 자체는 /parent-app 과 같은 것을 쓴다.
-        source: "/mypage/install",
-        destination: "/parent-app",
-      },
+      // (2026-11-17) /staff/install → /teacher-app, /mypage/install → /parent-app 로 화면을 빌려 쓰던 규칙은 없앴다.
+      // 그 주소들은 위 redirects 에서 스토어 앱 설치 안내(/install)로 넘긴다.
       {
         // 카카오채널 인증 링크 주소는 그대로 두고, 화면은 마이페이지 레이아웃 밖(/kakao-connect)에서 그린다.
         // 마이페이지 레이아웃은 로그인 안 된 사람을 먼저 튕겨 내서 상황별 안내를 보여줄 수 없기 때문이다.
@@ -124,7 +117,7 @@ const nextConfig: NextConfig = {
         ],
       },
       {
-        // rewrite의 내부 구현 주소로 직접 접근해도 같은 공개·최소권한 정책을 적용한다.
+        // 옛 선생님 설치 안내 주소. 지금은 /install 로 넘기지만(위 redirects) 넘기는 응답에도 같은 최소권한 정책을 둔다.
         source: "/teacher-app",
         headers: [
           {

@@ -223,7 +223,7 @@ function LoginContent() {
                 className="block text-sm font-medium text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)] mb-1"
               >
                 {/* 화면 하나로 모두 로그인 — 선생님·기사님은 휴대폰 번호를 넣으면 된다(서버가 직원 계정으로 찾는다) */}
-                {isStaffMode ? "휴대폰 번호 또는 이메일" : "로그인 아이디 (선생님은 휴대폰 번호)"}
+                {isStaffMode ? "휴대폰 번호 또는 이메일" : "로그인 아이디 (선생님·기사님은 휴대폰 번호, 관리자는 이메일)"}
               </label>
               <input
                 id="email"

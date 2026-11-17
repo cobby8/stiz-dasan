@@ -6,7 +6,8 @@ import {
   isFreshVerification,
   isLinkVerificationIdFor,
   selectLinkTarget,
-  type LinkCandidate,
+  selectStaffRecordToClaim,
+  type StaffClaimCandidate,
 } from "@/lib/account/social-link";
 import { isUsablePhoneKey, parentPhoneDigits } from "@/lib/enrollment/parentIdentity";
 import { fetchPortoneIdentityVerification, getPortoneConfig } from "@/lib/identity/portone";
@@ -16,6 +17,7 @@ import { issueIdentityVerifiedSignup, oauthProviderMethod, resolveVerifiedSignup
 import { LINK_START_COOKIE, LINK_START_COOKIE_MAX_AGE, LINK_HINT_COOKIE, linkStartToken } from "@/lib/account/link-start";
 import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { claimStaffRecordByIdentity } from "@/lib/staff/staffSelfClaim";
 import { currentSocialOnlyUser } from "../shared";
 
 /**
@@ -58,8 +60,16 @@ export async function POST(request: Request) {
   }
 
   // 숫자만 비교한다 — 하이픈 유무로 다른 가족 계정을 놓치거나 잘못 잡는 사고가 있었다(4가족 사고).
-  const rows = await prisma.$queryRawUnsafe<LinkCandidate[]>(
-    `SELECT u.id, u.role::text AS role, u.name, u."authUserId", u."phoneVerifiedAt",
+  const rows = await prisma.$queryRawUnsafe<StaffClaimCandidate[]>(
+    // authUserId: 초대로 가입한 직원은 authUserId 없이 User.id 가 로그인 id 다(옛 방식) — 그 경우 id 를 로그인 id 로 본다.
+    //   그래야 그런 직원도 본인인증으로 «기존 계정에 간편로그인 연결»(selectLinkTarget)이 되고, «로그인 없는 기록»으로 잘못 보지 않는다.
+    // noLogin: 로그인이 아예 없는 직원 기록(원장이 직접 추가 — 이메일이 @staff.local 자리표시).
+    `SELECT u.id, u.role::text AS role, u.name, u."phoneVerifiedAt",
+            CASE WHEN u."authUserId" IS NOT NULL THEN u."authUserId"
+                 WHEN u.role::text <> 'PARENT' AND lower(COALESCE(u.email, '')) NOT LIKE '%@staff.local' THEN u.id
+                 ELSE NULL END AS "authUserId",
+            (u."authUserId" IS NULL AND u.role::text <> 'PARENT' AND lower(COALESCE(u.email, '')) LIKE '%@staff.local') AS "noLogin",
+            (u."withdrawnAt" IS NOT NULL OR u."withdrawRequestedAt" IS NOT NULL) AS withdrawn,
             EXISTS(SELECT 1 FROM "UserRoleGrant" g WHERE g."userId" = u.id AND g.status = 'ACTIVE') AS "hasActiveStaffGrant"
        FROM "User" u
       WHERE regexp_replace(COALESCE(u.phone, ''), '[^0-9]', '', 'g') = $1
@@ -67,6 +77,27 @@ export async function POST(request: Request) {
     phone,
   );
   const verifiedName = (verification.verifiedCustomer?.name ?? "").trim();
+
+  // 2026-11-17 원장 지시 «알아서 다 처리할 수 있게»: 원장이 적어 둔 직원 기록(이름·번호·역할)에 아직 로그인이 없으면,
+  // 본인이 간편로그인 + 본인인증으로 직접 붙인다 — 원장이 «로그인 연결 초대»를 따로 보내지 않아도 된다.
+  // 판정(이 번호의 계정이 그 기록 하나뿐·직원 역할·로그인 없음·이름 일치)은 selectStaffRecordToClaim 한 곳.
+  const staffRecord = selectStaffRecordToClaim(rows, verifiedName);
+  if (staffRecord) {
+    // 붙이기·감사 기록·다른 원장 알림은 한 곳(claimStaffRecordByIdentity)에서 한다 — 조건을 UPDATE 에 다시 적어
+    // 그 사이 바뀐 기록·이미 로그인이 있는 기록(초대 가입)·겹치는 이메일은 0줄이 되어 멈춘다.
+    const claim = await claimStaffRecordByIdentity({ userId: staffRecord.userId, authUserId: current.user.id, email: current.user.email });
+    if (!claim.ok) {
+      return NextResponse.json({
+        error: claim.reason === "NO_EMAIL"
+          ? "이 간편로그인 계정에는 이메일 정보가 없어 연결할 수 없어요. 구글·Apple 로그인으로 다시 시도하거나, 카카오 계정에 이메일을 등록한 뒤 다시 시도해 주세요."
+          : "계정 정보가 바뀌었거나 이미 다른 로그인에 쓰이는 이메일이에요. 다른 간편로그인으로 다시 시도해 주세요.",
+      }, { status: 409 });
+    }
+    // 본인에게도 알림 문자 — 본인이 아니면 바로 알 수 있게.
+    await notifyAccountSecurityEvent({ authUserId: current.user.id, eventType: "IDENTITY_LOGIN", body: identityLoginNoticeBody() });
+    return NextResponse.json({ ok: true, signup: true, existingParent: "LINKED", redirectPath: "/auth/continue" });
+  }
+
   const target = selectLinkTarget(rows, verifiedName);
 
   // 2026-11-17 원장 지시 «본인인증 하나로 통일»: 로그인 수단이 있는 계정이 없는 번호(처음 오신 분·학원이 등록해 둔

@@ -107,7 +107,8 @@ test("메뉴: «마이페이지»가 있고 «청구»·«내 계정» 링크는
   assert.match(layout, /<StaffProfileMenu staffName=\{staff\.appUserName\} staffRole=\{staff\.appUserRole\} accountViews=\{views\} \/>/);
   assert.match(layout, /<StaffBottomNav canTeach=\{staff\.roles\.teacher\} canShuttle=\{canShuttle\} shuttleViewOnly=\{shuttleAccess\.teacherOnly\} \/>/);
   // 설치 안내·로그아웃·화면 바꾸기는 메뉴에 그대로 있다
-  assert.match(menu, /!hideInstallGuide && <Link href="\/staff\/install"/);
+  // 2026-11-17: 설치 안내는 스토어 앱 안내(/install) 하나로
+  assert.match(menu, /!hideInstallGuide && <a href="\/install"/);
   assert.match(menu, /<form action=\{logoutStaff\}>/);
   assert.match(menu, /<AccountViewSwitcher views=\{accountViews\}/);
   // 청구 화면 자체는 지우지 않았다
@@ -148,7 +149,8 @@ test("마이페이지: requireStaff 아래 · 선생님 전용 칸은 roles.teac
   // 설치 안내 줄 = 메뉴와 같은 조건
   const install = read("src/app/staff/mypage/StaffInstallGuideRow.tsx");
   assert.match(install, /const hideInstallGuide = useStoreAppLacks\("install"\);\s*if \(hideInstallGuide\) return null;/);
-  assert.match(install, /href="\/staff\/install"/);
+  assert.match(install, /<a href="\/install"/);
+  assert.doesNotMatch(install, /\/staff\/install/);
 });
 
 test("마이페이지 화면: 색은 토큰만 · 굵기 네 단계 · 아이콘 없음", () => {

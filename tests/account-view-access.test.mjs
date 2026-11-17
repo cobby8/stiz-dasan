@@ -109,6 +109,13 @@ const staffLoginId = load(await readFile('src/lib/staff-login-id.ts', 'utf8'), {
 const continueSource = await readFile('src/app/auth/continue/page.tsx', 'utf8');
 // 목적지 판정은 공용 함수로 옮겼다(2026-11-17) — 화면이 부르는 그 함수를 원본 그대로 싣는다
 const continueDestinationSource = await readFile('src/lib/auth/continue-destination.ts', 'utf8');
+// 마지막에 쓰던 화면(2026-11-17) — 계속 함수가 부르는 쿠키 판정도 원본 그대로 싣는다(이 묶음은 쿠키가 없는 경우)
+const lastViewServer = load(await readFile('src/lib/auth/last-view-server.ts', 'utf8'), {
+  'next/headers': { cookies: async () => ({ get: () => undefined }) },
+  '@/lib/auth-routes': routes,
+  '@/lib/account-views': views,
+  '@/lib/auth/last-view': load(await readFile('src/lib/auth/last-view.ts', 'utf8'), {}),
+});
 function authFlowFixture(role, hasOwnChildren) {
   let childChecks = 0;
   const redirect = href => { throw Object.assign(new Error('Redirect'), { digest: 'NEXT_REDIRECT', href }); };
@@ -119,6 +126,7 @@ function authFlowFixture(role, hasOwnChildren) {
     'next/link': { default: () => null },
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
     '@/lib/auth-routes': routes,
+    '@/lib/auth/last-view-server': lastViewServer,
     '@/lib/staff-login-id': staffLoginId,
     '@/lib/prisma': { prisma: { $queryRawUnsafe: async () => [{ role, username: null, phoneVerifiedAt: null }] } },
     '@/lib/supabase/server': { createClient: async () => ({ auth: {

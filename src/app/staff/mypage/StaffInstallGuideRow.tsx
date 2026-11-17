@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useStoreAppLacks } from "@/components/storeApp/useStoreAppLacks";
 
 /**
@@ -13,10 +12,11 @@ export default function StaffInstallGuideRow() {
   if (hideInstallGuide) return null;
   return (
     <li>
-      <Link href="/staff/install" className="flex min-h-12 w-full items-center gap-3 px-4 py-1.5 text-sm hover:bg-[var(--color-academy-soft)]">
-        <span className="flex-1 font-medium text-[var(--color-academy-ink)]">설치 안내</span>
+      {/* 2026-11-17: 스토어 앱 설치 안내(/install) 하나로 — 기기를 보고 스토어로 바로 넘기는 주소라 보통 링크(a)로 연다 */}
+      <a href="/install" className="flex min-h-12 w-full items-center gap-3 px-4 py-1.5 text-sm hover:bg-[var(--color-academy-soft)]">
+        <span className="flex-1 font-medium text-[var(--color-academy-ink)]">앱 설치 안내</span>
         <span aria-hidden="true" className="shrink-0 text-[var(--color-academy-faint)]">›</span>
-      </Link>
+      </a>
     </li>
   );
 }

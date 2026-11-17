@@ -465,7 +465,7 @@ export default function StaffClient({
             user.directAdded
                 ? null
                 : staffLogin
-                    ? "스태프 앱 로그인 차단 · 열린 화면도 바로 권한 없음"
+                    ? "스태프 화면 로그인 차단 · 열린 화면도 바로 권한 없음"
                     : "스태프 화면 바로 차단 (학부모 로그인은 그대로)",
             conversion ? "대기 중인 가입 링크 취소" : null,
         ].filter(Boolean);
@@ -532,13 +532,14 @@ export default function StaffClient({
     }
 
     async function handleCopyStaffInstallLink() {
-        const installUrl = new URL("/staff/install", window.location.origin).toString();
+        // 2026-11-17: 옛 선생님 앱 설치 안내(/staff/install) 대신 스토어 앱 설치 안내(/install) 주소를 복사한다
+        const installUrl = new URL("/install", window.location.origin).toString();
 
         try {
             await navigator.clipboard.writeText(installUrl);
-            setMessage({ text: "스태프 앱 설치 링크를 복사했습니다.", ok: true });
+            setMessage({ text: "앱 설치 링크를 복사했습니다.", ok: true });
         } catch {
-            void showCopyText("아래 스태프 앱 설치 링크를 길게 눌러 복사해주세요.", installUrl);
+            void showCopyText("아래 앱 설치 링크를 길게 눌러 복사해주세요.", installUrl);
             setMessage({
                 text: "자동 복사가 제한되어 전체 설치 링크를 복사창에 표시했습니다.",
                 ok: false,

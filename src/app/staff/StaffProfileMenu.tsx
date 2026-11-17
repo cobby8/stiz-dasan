@@ -148,9 +148,11 @@ export default function StaffProfileMenu({ staffName, staffRole, accountViews = 
               마이페이지
             </Link>
             <div className={`grid gap-2 ${hideInstallGuide ? "grid-cols-1" : "grid-cols-2"}`}>
-              {!hideInstallGuide && <Link href="/staff/install" onClick={(event) => requestPublicNavigation(event, "/staff/install")} className="academy-button-secondary w-full">
-                설치 안내
-              </Link>}
+              {/* 2026-11-17: 옛 선생님 앱 설치 안내(/staff/install) 대신 스토어 앱 설치 안내(/install) 하나로 간다.
+                  /install 은 기기를 보고 스토어(바깥 주소)로 바로 넘기므로 화면 안 이동(Link)이 아니라 보통 링크(a)로 연다 */}
+              {!hideInstallGuide && <a href="/install" onClick={(event) => requestPublicNavigation(event, "/install")} className="academy-button-secondary w-full">
+                앱 설치 안내
+              </a>}
               {isSessionInProgress ? (
                 <button type="button" disabled title="수업 종료 후 로그아웃할 수 있습니다" className="academy-button-secondary w-full">
                   수업 종료 후 로그아웃

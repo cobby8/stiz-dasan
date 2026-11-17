@@ -6,12 +6,14 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 import {
+  isSafeInternalPath,
   normalizeAppRole,
   resolveRedirectForRole,
   type AppRole,
 } from "@/lib/auth-routes";
 import { linkEnrollmentAccount } from "@/lib/enrollment-account-handoff";
 import { getParentViewAccessForAuthUser } from "@/lib/account-view-access";
+import { readLastViewDestination } from "@/lib/auth/last-view-server";
 import { staffLoginEmail } from "@/lib/staff-login-id";
 // 로그아웃 때 이 기기의 앱 푸시 토큰을 지운다(e2) — 다음 사람이 이 휴대폰에 로그인하기 전까지 옛 계정 알림이 오지 않게
 import { forgetNativePushOnThisDevice } from "@/lib/push/nativePushDevice";
@@ -67,10 +69,15 @@ export async function login(formData: FormData) {
   if (error) {
     if (error.message === "Invalid login credentials") {
       // 학부모는 아이디로 로그인한다 — 틀렸을 때 «아이디·비밀번호 찾기»로 안내한다.
+      // 2026-11-17: «아이디·비밀번호 찾기»는 학부모 전용이라 선생님·기사님·관리자에게 보여 주면 막힌다.
+      // 로그인 화면이 하나라 누구인지는 입력값 모양으로만 안다 — 휴대폰 번호(숫자·하이픈·띄어쓰기, 01 로 시작)나 이메일(@)이면 직원 안내를 보인다.
+      const looksLikeStaffLogin = /^01[\d\s-]+$/.test(identifier) || identifier.includes("@");
       return {
         error: loginContext === "staff"
           ? "휴대폰 번호(또는 이메일) 또는 비밀번호가 올바르지 않습니다."
-          : "아이디 또는 비밀번호가 올바르지 않습니다. 기억나지 않으면 아래 «아이디·비밀번호 찾기»를 이용해 주세요.",
+          : looksLikeStaffLogin
+            ? "아이디 또는 비밀번호가 맞지 않습니다. 처음이시거나 비밀번호가 기억나지 않으면 아래 카카오·구글·Apple 로그인을 눌러 주세요. 본인인증 한 번으로 바로 들어올 수 있어요."
+            : "아이디 또는 비밀번호가 올바르지 않습니다. 기억나지 않으면 아래 «아이디·비밀번호 찾기»를 이용해 주세요.",
       };
     }
     if (error.message === "Email not confirmed") {
@@ -90,6 +97,17 @@ export async function login(formData: FormData) {
     // 승인된 추가 역할(선생님·기사님)까지 보고 목적지를 정한다(다중 역할, 2026-10-25).
     roles: parentView.roles,
   });
+  // «마지막에 쓰던 화면»(2026-11-17 원장 승인): 원래 가려던 화면·로그인 맥락·수강신청 연결이 없을 때만, 이 계정이 실제로
+  // 쓸 수 있는 화면이면 그 화면에서 시작한다(판정은 계속 화면·앱 시작 주소와 같은 함수 — 권한은 서버가 다시 확인).
+  if (data.user && !enrollmentHandoff) {
+    const lastView = await readLastViewDestination({
+      role,
+      access: parentView,
+      requestedPath: redirectTo,
+      context: typeof loginContext === "string" ? loginContext : null,
+    });
+    if (lastView) destination = lastView;
+  }
 
   if (enrollmentHandoff) {
     const appUsers = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
@@ -142,6 +160,27 @@ export async function logout() {
   await supabase.auth.signOut();
   revalidatePath("/", "layout");
   redirect("/login");
+}
+
+/**
+ * 로그아웃한 뒤, 다시 로그인하면 보던 화면으로 돌아오게 한다(2026-11-17).
+ * 쓰는 곳: 카카오 학부모 인증 화면에서 직원 계정으로 들어온 경우 — 그냥 로그아웃하면 학부모로 다시 로그인해도
+ * 인증 화면으로 못 돌아왔다. 숨은 입력 returnTo 로 돌아올 주소를 받는다.
+ * 화면에서 온 값이라 그대로 믿지 않는다: 사이트 안 주소만 허용(isSafeInternalPath — «/» 시작, «//»·«\» 금지, /login 금지),
+ * 역할 판별 중간 주소(continue)도 막는다(돌아오는 길이 맴돈다). 어긋나면 보통 로그아웃처럼 /login 으로만 간다.
+ */
+export async function logoutAndReturn(formData: FormData) {
+  const returnTo = String(formData.get("returnTo") || "");
+  const bare = returnTo.split("?")[0].split("#")[0];
+  const isContinue = bare === "/auth/continue" || bare === "/staff/continue" || bare === "/mypage/continue";
+  const safeReturnTo = isSafeInternalPath(returnTo) && !isContinue ? returnTo : null;
+
+  // 아래 네 줄은 logout 과 같다(이 기기 앱 푸시 토큰 지우기 → 로그아웃 → 캐시 비우기)
+  await forgetNativePushOnThisDevice();
+  const supabase = await createClient();
+  await supabase.auth.signOut();
+  revalidatePath("/", "layout");
+  redirect(safeReturnTo ? `/login?redirect=${encodeURIComponent(safeReturnTo)}` : "/login");
 }
 
 export async function logoutStaff() {
