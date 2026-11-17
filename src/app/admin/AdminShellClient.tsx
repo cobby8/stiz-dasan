@@ -203,6 +203,15 @@ export default function AdminShellClient({
                             </button>
                         </form>
                     </div>
+                    {/* 2026-11-17 원장 지적: 관리자 화면에서 내 계정 정보·간편로그인 연결로 가는 길이 없었다 — 마이페이지로 가는 링크를 둔다
+                        (내 정보·간편로그인 연결·계정 관리가 그 화면에 모여 있다). */}
+                    <Link
+                        href="/staff/mypage"
+                        prefetch={false}
+                        className="mt-1 flex min-h-11 items-center gap-2 rounded-lg px-2 text-sm font-medium text-[var(--color-academy-primary)] hover:bg-[var(--color-academy-soft)] [@media(max-height:500px)]:mt-0 [@media(max-height:500px)]:shrink-0"
+                    >
+                        마이페이지 · 간편로그인 연결
+                    </Link>
                     {/* 2026-11-13 «홈페이지 보기»는 메뉴 묶음에서 빼고 맨 아래 작은 링크로(가끔 쓰는 바깥 이동) */}
                     <Link
                         href="/"

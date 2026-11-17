@@ -30,11 +30,16 @@ export type LinkCandidate = {
  *  - 직원 역할(학부모가 아님) · 로그인 계정 없음 · 탈퇴(요청) 아님
  *  - 본인인증 명의자 이름이 기록의 이름과 같음
  */
-export type StaffClaimCandidate = LinkCandidate & { withdrawn?: boolean };
+export type StaffClaimCandidate = LinkCandidate & {
+  withdrawn?: boolean;
+  /** 로그인 없는 직원 기록인가 — authUserId 없음 + 이메일이 직접 추가 자리표시(@staff.local). 조회가 계산해 준다. */
+  noLogin?: boolean;
+};
 export function selectStaffRecordToClaim(rows: StaffClaimCandidate[], verifiedName: string): { userId: string } | null {
   if (rows.length !== 1) return null;
   const [row] = rows;
-  if (row.role === "PARENT" || row.authUserId || row.withdrawn) return null;
+  // authUserId 만으로는 «로그인 없음»을 알 수 없다 — 초대로 가입한 직원은 authUserId 없이 로그인이 있다(noLogin 이 가른다).
+  if (row.role === "PARENT" || row.authUserId || row.noLogin !== true || row.withdrawn) return null;
   const name = normalizePersonName(verifiedName);
   if (!name || name !== normalizePersonName(row.name)) return null;
   return { userId: row.id };

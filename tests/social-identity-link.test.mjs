@@ -138,7 +138,10 @@ test("연결이 끝나면 계정 주인 번호로 보안 알림 문자를 보낸
 });
 
 test("로그인 없는 직원 기록에는 본인이 본인인증으로 직접 로그인을 붙인다 — 조건은 좁게(2026-11-17)", () => {
-  const record = { id: "r1", role: "ADMIN", name: "권 혜미", authUserId: null, phoneVerifiedAt: null, withdrawn: false };
+  const record = { id: "r1", role: "ADMIN", name: "권 혜미", authUserId: null, phoneVerifiedAt: null, withdrawn: false, noLogin: true };
+  // 초대로 가입한 직원은 authUserId 없이 로그인이 있다(조회가 noLogin=false 로 준다) — 덮어쓰면 잘 쓰던 계정이 잠긴다(보안 검수)
+  assert.equal(selectStaffRecordToClaim([{ ...record, noLogin: false }], "권혜미"), null);
+  assert.equal(selectStaffRecordToClaim([{ ...record, noLogin: undefined }], "권혜미"), null, "표식이 없으면 붙이지 않는다");
   for (const role of ["ADMIN", "VICE_ADMIN", "INSTRUCTOR", "DRIVER"]) {
     assert.deepEqual(selectStaffRecordToClaim([{ ...record, role }], "권혜미"), { userId: "r1" }, role);
   }
@@ -157,9 +160,21 @@ test("로그인 없는 직원 기록에는 본인이 본인인증으로 직접 �
   const at = verify.indexOf("const staffRecord = selectStaffRecordToClaim(rows, verifiedName);");
   assert.ok(at > verify.indexOf('verification.status !== "VERIFIED" || !isFreshVerification(verifiedAt)'), "본인인증 확인이 먼저");
   const block = verify.slice(at, verify.indexOf("const target = selectLinkTarget(rows, verifiedName);"));
-  assert.match(block, /WHERE id = \$3 AND "authUserId" IS NULL AND role::text <> 'PARENT'/);
-  assert.match(block, /"withdrawnAt" IS NULL AND "withdrawRequestedAt" IS NULL/);
-  assert.match(block, /NOT EXISTS \(SELECT 1 FROM "User" o WHERE o\."authUserId" = \$1 OR o\.id = \$1\)/);
-  assert.match(block, /if \(claimed !== 1\) return NextResponse\.json\(/);
+  assert.match(block, /await claimStaffRecordByIdentity\(\{ userId: staffRecord\.userId, authUserId: current\.user\.id, email: current\.user\.email \}\)/);
+  assert.match(block, /if \(!claim\.ok\) \{/);
   assert.match(block, /notifyAccountSecurityEvent\(/);
+  // 조회: 옛 초대 가입 직원은 id 를 로그인 id 로 보고, «로그인 없음»은 @staff.local 자리표시일 때만
+  assert.match(verify, /lower\(COALESCE\(u\.email, ''\)\) NOT LIKE '%@staff\.local' THEN u\.id/);
+  assert.match(verify, /LIKE '%@staff\.local'\) AS "noLogin"/);
+  // 붙이는 곳: 조건을 UPDATE 에 다시 적고, 같은 거래에서 감사 기록, 끝난 뒤 다른 원장 알림. 이메일이 없으면 붙이지 않는다.
+  const claimSource = fs.readFileSync("src/lib/staff/staffSelfClaim.ts", "utf8");
+  assert.match(claimSource, /if \(!email\) return \{ ok: false, reason: "NO_EMAIL" \};/);
+  assert.match(claimSource, /WHERE id = \$3 AND "authUserId" IS NULL AND role::text <> 'PARENT'\s+AND lower\(email\) LIKE \$4\s+AND "withdrawnAt" IS NULL AND "withdrawRequestedAt" IS NULL/);
+  assert.match(claimSource, /NOT EXISTS \(SELECT 1 FROM "User" o WHERE o\.id <> \$3 AND \(o\."authUserId" = \$1 OR o\.id = \$1 OR lower\(o\.email\) = \$2\)\)/);
+  assert.match(claimSource, /`%\$\{DIRECT_ADDED_EMAIL_SUFFIX\}`/);
+  const tx = claimSource.slice(claimSource.indexOf("prisma.$transaction("), claimSource.indexOf("if (!claimed) return"));
+  assert.match(tx, /INSERT INTO "OperationsAuditLog"[\s\S]*'STAFF_LOGIN_LINKED'/, "감사 기록은 붙이는 거래 안에서");
+  assert.match(tx, /via: "IDENTITY_SELF"/);
+  assert.match(claimSource, /await notifyAdminsOfSelfClaim\(claimed\);/);
+  assert.match(claimSource, /role IN \('ADMIN', 'VICE_ADMIN'\) AND "withdrawnAt" IS NULL AND id <> \$1/);
 });
