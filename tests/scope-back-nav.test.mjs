@@ -585,3 +585,53 @@ test("학부모 부품은 기존 이름 그대로 쓴다(이번 변경에서 손
     assert.equal(typeof hist[name], "function", name);
   }
 });
+
+test("하위 화면에 바로 들어온 뒤 로고·아래 탭으로 역할 홈에 오면 [홈] 으로 새로 시작한다 — 홈에 «←» 가 없다", () => {
+  for (const scope of ["/staff", "/admin"]) {
+    const storage = freshTab();
+    const deep = `${scope}/students`;
+    // 알림·즐겨찾기로 하위 화면을 바로 열었다(바깥에서 문서를 불러옴)
+    assert.deepEqual(hist.recordScopeNavigation(scope, deep, storage, env("", deep)), [deep]);
+    // 로고·메뉴로 홈에 옴(화면 안 이동) — 기록에 홈이 없었으므로 홈 한 칸
+    const atHome = hist.recordScopeNavigation(scope, scope, storage, env("", deep));
+    assert.deepEqual(atHome, [scope]);
+    assert.equal(headerBack(scope, atHome, scope).type, "none");
+    // 홈에서 다시 들어가면 평소대로 쌓이고, 홈으로 돌아오면 홈 한 칸(기록에 홈이 있을 때는 잘라내기 규칙)
+    assert.deepEqual(hist.recordScopeNavigation(scope, deep, storage, env("", deep)), [scope, deep]);
+    assert.deepEqual(hist.recordScopeNavigation(scope, scope, storage, env("", deep)), [scope]);
+  }
+});
+
+test("홈에서 새로 시작한 뒤 기기 뒤로로 «잊은 칸»에 돌아오면 [그 화면] 한 칸이다 — «←» 가 이 탭의 첫 화면보다 앞으로 나가지 않는다", () => {
+  const store = freshTab();
+  hist.startScopePopListening("/staff");
+  const doc = env("", "/staff/students");
+  // 하위 화면을 바로 엶 → 아래 탭으로 홈(새로 시작) → 기기 뒤로 → 하위 화면
+  hist.recordScopeNavigation("/staff", "/staff/students", store, doc);
+  assert.deepEqual(hist.recordScopeNavigation("/staff", "/staff", store, doc), ["/staff"]);
+  hist.noteScopePopNavigation("/staff");
+  const back = hist.recordScopeNavigation("/staff", "/staff/students", store, doc);
+  assert.deepEqual(back, ["/staff/students"]);
+  // 기록 없음 → back 이 아니라 역할 홈으로(범위 안)
+  assert.deepEqual(headerBack("/staff", back, "/staff/students"), { type: "push", href: "/staff" });
+
+  // 두 화면을 본 뒤 홈 → 뒤로 두 번: 둘 다 잊은 칸이라 매번 한 칸
+  const two = freshTab();
+  hist.startScopePopListening("/staff");
+  const doc2 = env("", "/staff/annual");
+  for (const e of ["/staff/annual", "/staff/students", "/staff"]) hist.recordScopeNavigation("/staff", e, two, doc2);
+  hist.noteScopePopNavigation("/staff");
+  assert.deepEqual(hist.recordScopeNavigation("/staff", "/staff/students", two, doc2), ["/staff/students"]);
+  hist.noteScopePopNavigation("/staff");
+  assert.deepEqual(hist.recordScopeNavigation("/staff", "/staff/annual", two, doc2), ["/staff/annual"]);
+
+  // 평소의 뒤로(기록에 있는 화면으로 돌아옴)는 그대로 잘라내기 — 홈 → 목록 → 상세 → 뒤로 = [홈, 목록]
+  const normal = freshTab();
+  hist.startScopePopListening("/admin");
+  const doc3 = env("", "/admin");
+  for (const e of ["/admin", "/admin/students", "/admin/students/7"]) hist.recordScopeNavigation("/admin", e, normal, doc3);
+  hist.noteScopePopNavigation("/admin");
+  assert.deepEqual(hist.recordScopeNavigation("/admin", "/admin/students", normal, doc3), ["/admin", "/admin/students"]);
+  // 링크로(뒤로 아님) 새 화면에 가면 평소대로 쌓인다
+  assert.deepEqual(hist.recordScopeNavigation("/admin", "/admin/classes", normal, doc3), ["/admin", "/admin/students", "/admin/classes"]);
+});
