@@ -789,7 +789,7 @@ export default function StudentDetailClient({
                 <div className="mt-4">
                     {/* 방금 있던 화면으로(통계·반 상세 등에서 왔으면 그리로). 기록이 없으면 원생 목록 */}
                     <ScopeBackLink fallbackHref="/admin/students" prefetch={false} className="text-sm font-medium text-[var(--color-academy-muted)] hover:text-[var(--color-academy-ink)]">
-                        원생 목록으로 돌아가기
+                        이전 화면으로 돌아가기
                     </ScopeBackLink>
                 </div>
             </div>
@@ -1243,8 +1243,8 @@ export default function StudentDetailClient({
                 «N개 반» 칩은 아래 «수강 반» 카드 제목과 겹쳐 뺐고, 생년월일·등록일·재원 상세는 «기본 정보» 창으로 옮겼다. */}
             <div className="academy-hero flex flex-wrap items-center gap-3 p-4 md:p-5">
                 {/* 들어오는 길이 7곳(통계 명단·반 상세·월 장부·신청 승인 창·셔틀·알림·원생 목록) — 방금 있던 화면으로 돌아가고, 기록이 없을 때만 원생 목록(2026-11-17) */}
-                <ScopeBackLink fallbackHref="/admin/students" prefetch={false} ariaLabel="원생 목록으로" className="academy-button-secondary academy-button-sm shrink-0 whitespace-nowrap">
-                    ← 목록
+                <ScopeBackLink fallbackHref="/admin/students" prefetch={false} ariaLabel="이전 화면으로" className="academy-button-secondary academy-button-sm shrink-0 whitespace-nowrap">
+                    ← 뒤로
                 </ScopeBackLink>
                 {/* 아이 사진 64px(학부모가 올린 프로필 사진, 없으면 이름 첫 글자) — 옆 제목에 이름이 있어 장식용(2026-11-14) */}
                 <ProfileAvatar decorative name={student.name} size={64} src={profilePhotoUrl({ kind: "student", id: student.id }, student.photoVersion ?? null, true)} />

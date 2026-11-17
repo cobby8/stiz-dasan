@@ -220,7 +220,7 @@ export default function ClassDetailClient({
             <div className="min-w-0">
                 {/* 뒤로가기는 글자 버튼, 제목은 공용 머리말 부품(모양 한 가지) */}
                 <ScopeBackLink fallbackHref="/admin/classes" prefetch={false} className="academy-button-text academy-button-sm -ml-2">
-                    ← 반 목록으로
+                    ← 뒤로
                 </ScopeBackLink>
                 <AdminPageHeader
                     className="mt-1"
