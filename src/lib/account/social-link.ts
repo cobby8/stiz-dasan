@@ -5,7 +5,8 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
  *
  * 왜 본인인증인가: 문자 인증은 「지금 그 휴대폰을 들고 있다」만 증명한다. 통합인증은 통신사 명의로
  * 「이 번호의 명의자가 이 사람이다」까지 증명한다. 그래서 명의 번호·이름이 계정과 같을 때만 연결한다.
- * 관리자·직원 계정은 이 길로 열지 않는다 — 학생 전체 정보가 열리는 계정이라서다.
+ * 관리자·직원 계정은 학생 전체 정보가 열리는 계정이라 처음엔 이 길로 열지 않았다. 2026-11-17 원장 지시로
+ * «이름 일치·로그인 수단·휴대폰 인증을 갖춘 계정이 정확히 하나»일 때만 연다(selectLinkTarget).
  */
 
 export type LinkCandidate = {
@@ -35,7 +36,17 @@ export function normalizePersonName(value: string | null | undefined): string {
 export function selectLinkTarget(rows: LinkCandidate[], verifiedName: string): LinkTargetResult {
   if (rows.length === 0) return { kind: "NONE" };
   // 주 역할뿐 아니라 승인된 추가 역할도 본다 — 「학부모 겸 기사님」도 학생 정보가 열리는 계정이다(보안 리뷰 2026-10-26).
-  if (rows.some((row) => row.role !== "PARENT" || row.hasActiveStaffGrant)) return { kind: "STAFF" };
+  if (rows.some((row) => row.role !== "PARENT" || row.hasActiveStaffGrant)) {
+    // 2026-11-17 원장 지시 «(직원 번호도) 연결되게 만들어» — 원장 본인이 본인인증까지 마치고도 막혔다.
+    // 예전에는 직원이 쓰는 번호면 무조건 막았다(2026-10-26 보안 리뷰). 이제 조건을 학부모보다 좁게 잡아 연다:
+    // 이 번호의 계정 중 «명의자 이름이 같고 · 로그인 수단이 있고 · 휴대폰 인증을 마친» 계정이 정확히 하나일 때만.
+    // 하나로 정해지지 않으면(같은 번호를 쓰는 계정이 둘 다 해당·이름 다름·인증 전) 지금처럼 막는다 — 자동으로 고르지 않는다.
+    const verified = normalizePersonName(verifiedName);
+    const eligible = rows.filter((row) => verified && normalizePersonName(row.name) === verified && row.authUserId && row.phoneVerifiedAt);
+    const only = eligible.length === 1 ? eligible[0] : null;
+    if (!only?.authUserId) return { kind: "STAFF" };
+    return { kind: "OK", userId: only.id, authUserId: only.authUserId };
+  }
   if (rows.length > 1) return { kind: "MULTIPLE" };
   const [row] = rows;
   const name = normalizePersonName(verifiedName);
@@ -46,7 +57,7 @@ export function selectLinkTarget(rows: LinkCandidate[], verifiedName: string): L
 
 export const LINK_RESULT_MESSAGES: Record<Exclude<LinkTargetResult["kind"], "OK">, string> = {
   NONE: "인증하신 휴대폰 번호로 가입된 계정이 없습니다. 이전 화면에서 새로 가입해 주세요.",
-  STAFF: "학원 직원이 쓰는 번호라 자동으로 연결하지 않았어요. 학원에 문의해 주세요.",
+  STAFF: "학원 직원이 쓰는 번호인데 연결할 계정을 하나로 정하지 못했어요. 아이디로 로그인한 뒤 마이페이지 ‘간편로그인 연결’에서 연결해 주세요.",
   MULTIPLE: "이 번호로 등록된 계정이 여러 개라 자동으로 연결하지 않았어요. 학원에 문의해 주세요.",
   NAME_MISMATCH: "본인인증 이름과 학원에 등록된 보호자 이름이 달라 연결하지 않았어요. 학원에 문의해 주세요.",
   NOT_READY: "아직 로그인 설정이 끝나지 않은 계정이에요. 휴대폰 문자 인증으로 계정을 먼저 활성화해 주세요.",

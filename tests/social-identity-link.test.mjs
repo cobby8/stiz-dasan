@@ -31,13 +31,24 @@ test("연결 대상은 «명의 번호의 학부모 계정 딱 하나 + 이름 �
   assert.equal(selectLinkTarget([parent], "").kind, "NAME_MISMATCH", "이름이 비면 통과시키지 않는다");
   assert.equal(selectLinkTarget([{ ...parent, name: null }], "김수빈").kind, "NAME_MISMATCH");
   assert.equal(selectLinkTarget([parent, { ...parent, id: "u2" }], "김수빈").kind, "MULTIPLE");
-  // 직원(관리자 포함)이 같은 번호를 쓰면 학부모 계정이 있어도 열지 않는다 — 학생 전체가 열리는 계정이 섞인 번호다.
+  // 직원(관리자 포함)이 쓰는 번호(2026-11-17 원장 지시로 열림): 이름 일치·로그인 수단·휴대폰 인증을 모두 갖춘 계정이
+  // «정확히 하나»일 때만 그 계정을 고른다. 하나로 정해지지 않으면 자동으로 고르지 않고 막는다.
   for (const role of ["ADMIN", "VICE_ADMIN", "INSTRUCTOR", "DRIVER"]) {
-    assert.equal(selectLinkTarget([parent, { ...parent, id: "s", role }], "김수빈").kind, "STAFF", role);
-    assert.equal(selectLinkTarget([{ ...parent, role }], "김수빈").kind, "STAFF", role);
+    const staff = { ...parent, id: "s", authUserId: "auth-s", role };
+    assert.deepEqual(selectLinkTarget([staff], "김수빈"), { kind: "OK", userId: "s", authUserId: "auth-s" }, role);
+    assert.equal(selectLinkTarget([parent, staff], "김수빈").kind, "STAFF", `${role}: 같은 번호에 조건을 갖춘 계정이 둘이면 막는다`);
+    assert.equal(selectLinkTarget([staff], "김수민").kind, "STAFF", `${role}: 이름이 다르면 막는다`);
+    assert.equal(selectLinkTarget([staff], "").kind, "STAFF", `${role}: 이름이 비면 막는다`);
+    assert.equal(selectLinkTarget([{ ...staff, phoneVerifiedAt: null }], "김수빈").kind, "STAFF", `${role}: 휴대폰 인증 전이면 막는다`);
+    assert.equal(selectLinkTarget([{ ...staff, authUserId: null }], "김수빈").kind, "STAFF", `${role}: 로그인 수단이 없으면 막는다`);
+    // 원장 실제 모양: 같은 번호에 휴대폰 인증 전인 다른 직원 계정이 하나 더 있어도, 조건을 갖춘 계정이 하나면 그 계정
+    assert.deepEqual(
+      selectLinkTarget([staff, { ...staff, id: "v", authUserId: "auth-v", role: "VICE_ADMIN", phoneVerifiedAt: null }], "김수빈"),
+      { kind: "OK", userId: "s", authUserId: "auth-s" }, role);
   }
-  // 주 역할은 학부모라도 선생님·기사님 역할이 승인된 계정은 직원으로 본다.
-  assert.equal(selectLinkTarget([{ ...parent, hasActiveStaffGrant: true }], "김수빈").kind, "STAFF");
+  // 주 역할은 학부모라도 선생님·기사님 역할이 승인된 계정은 직원 규칙을 따른다(조건을 갖춘 하나면 연결).
+  assert.equal(selectLinkTarget([{ ...parent, hasActiveStaffGrant: true }], "김수빈").kind, "OK");
+  assert.equal(selectLinkTarget([{ ...parent, hasActiveStaffGrant: true }], "김수민").kind, "STAFF");
   // 로그인 수단이 없는 빈 계정은 이 길이 아니라 기존 문자 인증 활성화 흐름이 맡는다.
   assert.equal(selectLinkTarget([{ ...parent, authUserId: null }], "김수빈").kind, "NOT_READY");
   assert.equal(selectLinkTarget([{ ...parent, phoneVerifiedAt: null }], "김수빈").kind, "NOT_READY");
