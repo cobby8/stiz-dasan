@@ -72,7 +72,11 @@ export async function POST(request: Request) {
   // 2026-11-17 원장 지시 «본인인증 하나로 통일»: 로그인 수단이 있는 계정이 없는 번호(처음 오신 분·학원이 등록해 둔
   // 빈 보호자 계정)는 문자 인증을 다시 시키지 않고, 본인인증 결과로 «문자 인증을 마친» 가입 요청을 만들어 이어 간다.
   // 응답 모양은 문자 인증 확인(/api/auth/parent-signup/verify-otp)과 같다 — 화면이 같은 다음 단계를 쓴다.
-  if (target.kind === "NONE" || target.kind === "NOT_READY") {
+  // 이 번호의 계정이 «로그인 수단이 없는 학부모 계정»뿐이면(학원이 등록해 둔 빈 보호자 계정) 이름이 달라도 가입 이어가기로 보낸다
+  // — 학원 기록의 보호자 이름이 통신사 명의와 다른 집이 많고(예: 어머니 이름으로 등록·아버지 명의 휴대폰), 예전 문자 인증도
+  // 이름을 보지 않았다(검수 반영). 넘겨받는 쪽(resolveVerifiedSignupPhone)이 하나·여럿·로그인 수단 유무를 다시 가른다.
+  const emptyParentsOnly = rows.length > 0 && rows.every((row) => row.role === "PARENT" && !row.authUserId && !row.hasActiveStaffGrant);
+  if (target.kind === "NONE" || target.kind === "NOT_READY" || emptyParentsOnly) {
     const method = oauthProviderMethod(current.provider);
     if (!method) return NextResponse.json({ error: "간편로그인으로 들어온 경우에만 쓸 수 있습니다." }, { status: 400 });
     const issued = await issueIdentityVerifiedSignup({ phone, signupMethod: method, email: current.user.email, pendingAuthUserId: current.user.id });

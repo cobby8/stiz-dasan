@@ -223,7 +223,10 @@ test("resume 라우트: 가입·연결을 마친 브라우저를 1회용 code �
     // 아직 학원 계정이 없으면(가입을 안 마침) 앱으로 보내지 않는다 — 요청도 그대로 둔다
     const early = await go(f, mine);
     assert.equal(early.status, 200);
+    assert.match(early.headers.get("content-type"), /text\/html/);
     assert.match(await early.text(), /앱에서 다시 로그인/);
+    // 실패해도 앱 밖 브라우저에 웹 로그인을 남기지 않는다
+    assert.equal(early.cookies.getAll().find((c) => c.name === "sb-synthetic-auth-token")?.value, "");
     assert.equal(f.h.store.rows.get(started.flowId).status, "BROWSER");
     // 바인딩 쿠키가 없는 브라우저(요청을 연 브라우저가 아님)는 통과하지 못한다
     f.account.linked = true;
@@ -232,8 +235,12 @@ test("resume 라우트: 가입·연결을 마친 브라우저를 1회용 code �
     assert.equal(f.h.store.rows.get(started.flowId).status, "BROWSER");
     // 가입·연결을 마친 같은 브라우저 → 앱 복귀 주소로 code 만(공급자에서 이어진 이동이라 cross-site 로 표시돼도 통과)
     const done = await go(f, mine, { "sec-fetch-site": "cross-site" });
-    assert.equal(done.status, 307);
-    const back = new URL(done.headers.get("location"));
+    // 바로 앱 주소로 넘기지 않고 «앱으로 돌아가기» 버튼이 있는 화면(누름 없는 앱 열기는 크롬이 막을 수 있다)
+    assert.equal(done.status, 200);
+    assert.equal(done.headers.get("cache-control"), "no-store, private");
+    const html = await done.text();
+    assert.match(html, /앱으로 돌아가기/);
+    const back = new URL(html.match(/id="go" href="([^"]+)"/)[1].replaceAll("&amp;", "&"));
     assert.equal(back.protocol, "kr.co.upturnlabs.stizdasan:");
     assert.equal(back.searchParams.get("error"), null);
     assert.doesNotMatch(back.toString(), /synthetic/, "토큰은 주소에 싣지 않는다");
@@ -292,6 +299,9 @@ test("본인인증 하나로 통일(2026-11-17): 간편가입 화면·본인인�
   assert.ok(boundAt > 0 && checkedAt > boundAt && issueAt > checkedAt, "건 번호 확인 → 포트원 확인 → 가입 요청 발급 순서");
   // 가입 요청은 «지금 그 간편로그인 사용자»에게만 묶인다
   assert.match(verify, /pendingAuthUserId: current\.user\.id/);
+  // 로그인 수단이 없는 학부모 계정뿐인 번호는 이름이 달라도 가입 이어가기로(문자 인증 때와 같게) — 직원·로그인 수단 있는 계정이 섞이면 아니다
+  assert.match(verify, /const emptyParentsOnly = rows\.length > 0 && rows\.every\(\(row\) => row\.role === "PARENT" && !row\.authUserId && !row\.hasActiveStaffGrant\);/);
+  assert.match(verify, /target\.kind === "NONE" \|\| target\.kind === "NOT_READY" \|\| emptyParentsOnly/);
   // 같은 종류의 다른 간편로그인이 이미 붙은 계정은 «연결됨»처럼 넘어가지 않고 멈춘다(가린 이메일만 보여 준다)
   assert.match(verify, /이미 다른 \$\{label\} 계정/);
   assert.match(verify, /function maskEmail\(/);
