@@ -1,7 +1,7 @@
 import "server-only";
 import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
-import { NativeAuthError, nativeConfig, validFlow } from "./policy";
+import { NATIVE_ORIGIN, NativeAuthError, nativeConfig, validFlow } from "./policy";
 import { createNativeAuthService } from "./service";
 import { postgresNativeFlowStore } from "./store";
 
@@ -43,8 +43,12 @@ export function nativeError(error: unknown) {
 export function nativeBrowserError(error: unknown) {
   const known = error instanceof NativeAuthError;
   const message = known ? error.message : "로그인을 완료하지 못했습니다. 앱에서 다시 시도해 주세요.";
+  // 2026-11-17 긴급: 가입 전 학부모가 이 화면에서 막혀 «로그인 오류»로 신고했다 — 처음이면 가입부터 하라고 알려 준다(고정 문구·고정 주소).
   return new NextResponse(`${message}
-이 창을 닫고 앱으로 돌아가 주세요.`, { status: known ? error.status : 503, headers: { ...noStoreHeaders, "Content-Type": "text/plain; charset=utf-8" } });
+이 창을 닫고 앱으로 돌아가 주세요.
+
+처음이시면 먼저 회원가입이 필요합니다.
+${NATIVE_ORIGIN}/signup/parent`, { status: known ? error.status : 503, headers: { ...noStoreHeaders, "Content-Type": "text/plain; charset=utf-8" } });
 }
 export async function nativeBody(request: NextRequest) {
   if (Number(request.headers.get("content-length") || 0)>4096) throw new NativeAuthError(413);
