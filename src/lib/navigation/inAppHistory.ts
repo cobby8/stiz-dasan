@@ -450,6 +450,7 @@ function nextStaffOrAdminRecord(
   storage: StorageLike | null,
   env: PageLoadEnv | null,
   leftScope: boolean,
+  viaPop: boolean | undefined,
 ): string[] {
   const first = state.firstRecordOfPage;
   state.firstRecordOfPage = false;
@@ -469,7 +470,14 @@ function nextStaffOrAdminRecord(
     if (shouldRestartOnPageLoad(reloaded ? prev : [], entry, env, scope)) return [entry]; // 범위 밖을 거쳐 왔다
   }
   // router.replace·location.replace — 지금 칸을 바꿔 끼운 이동(«←» 가 기록 없이 역할 홈으로 갈 때 등)
-  return nextScopeHistory(replaced ? prev.slice(0, -1) : prev, entry);
+  const base = replaced ? prev.slice(0, -1) : prev;
+  // 뒤로(기기 뒤로·브라우저 뒤로)로 왔는데 그 화면이 우리 기록에 없다 = 우리가 이미 잊은 칸으로 돌아온 것
+  // (아래 «홈에서 새로 시작»으로 버린 칸 등). 새 화면처럼 쌓으면 «←» 가 back 해서 이 탭의 첫 화면보다 앞(로그인·바깥)으로 나간다 → [지금 화면] 한 칸으로.
+  if (viaPop && !base.some((item) => pathOf(item) === pathOf(entry))) return [entry];
+  // 역할 홈에 왔는데 기록에 홈이 없다(하위 화면에 바로 들어온 뒤 로고·아래 탭으로 홈에 옴) → [홈] 으로 새로 시작.
+  // 안 그러면 홈에 «←» 가 보인다 — 홈은 그 역할의 맨 위라 돌아갈 곳이 없어야 한다(학부모 쪽과 같은 규칙)
+  if (pathOf(entry) === scope && !base.some((item) => pathOf(item) === scope)) return [entry];
+  return nextScopeHistory(base, entry);
 }
 
 /**
@@ -488,7 +496,7 @@ export function recordScopeNavigation(
   // «뒤로» 표시는 어느 갈래로 가든 이번 기록에서 한 번 꺼낸다 — 다른 갈래에서 남으면 다음 링크 이동을 «뒤로»로 읽는다(2026-11-17 검수)
   const viaPop = takePopFlag(state);
   const next = state.strict
-    ? nextStaffOrAdminRecord(scope, state, prev, entry, storage, env, leftScope)
+    ? nextStaffOrAdminRecord(scope, state, prev, entry, storage, env, leftScope, viaPop)
     : nextParentRecord(state, prev, entry, storage, env, leftScope, viaPop);
   state.memoryStack = next;
   try {
