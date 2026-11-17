@@ -11,6 +11,7 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { assertRegularMakeupAllowed, assertMakeupSessionAllowed, CompensationConflict, lockCompensation, type CompensationTransaction } from "@/lib/billing/absence-compensation-guard";
 import { isKstYmd, kstAt, todayKst } from "@/lib/datetime/kst";
+import { CHANGE_REQUEST_MESSAGE, resolveResumeDate } from "@/lib/enrollment/changeRequestRules";
 // 관리자 출결 저장의 학부모 알림 = 선생님 화면과 같은 규칙·같은 발송 함수
 import { attendanceNoticePayload, pickAttendanceNoticeTargets } from "@/lib/attendance/attendanceNoticeRules";
 import { deliverParentNotification, getStudentParentRecipients } from "@/lib/staff-notifications";
@@ -1425,7 +1426,7 @@ export async function enrollStudent(studentId: string, classId: string) {
  * - BLOCKED_REQUESTS: 청구서·정산·반영 처리가 걸린 신청이 있어 막았다 — «수강 변경 신청»에서 먼저 처리
  */
 export type EnrollmentStatusChangeResult =
-    | { ok: true; cleanup: EnrollmentEndCleanupSummary }
+    | { ok: true; cleanup: EnrollmentEndCleanupSummary; /** 복귀를 예약만 했을 때 그 날짜(상태는 아직 휴원) */ scheduledFrom?: string }
     | { ok: false; code: "OPEN_REQUESTS" | "BLOCKED_REQUESTS"; message: string; requests: OpenRequestView[] };
 
 export async function updateEnrollmentStatus(
@@ -1441,7 +1442,18 @@ export async function updateEnrollmentStatus(
     }
     const effectiveFrom = change?.effectiveFrom?.trim() || todayKst();
     if (!isKstYmd(effectiveFrom)) throw new Error("효력일 형식이 올바르지 않습니다.");
-    if (effectiveFrom > todayKst()) throw new Error("미래 효력일은 예약 변경으로 신청해 주세요.");
+    if (effectiveFrom > todayKst()) {
+        // 2026-11-17 원장 신고 «휴원 인원을 복귀로 돌렸는데 복귀 시작일을 지정할 수 없다»:
+        // 휴원 → 수강 중만 앞날을 받는다. 지금 상태는 바꾸지 않고 «승인된 복귀 예약»을 남기면 그날 적용일 처리가 수강 중으로 바꾼다.
+        if (status !== "ACTIVE") throw new Error("미래 효력일은 예약 변경으로 신청해 주세요.");
+        const scheduled = await scheduleEnrollmentResume(enrollmentId, effectiveFrom, change?.reason, admin.appUserId);
+        if (scheduled.ok) {
+            revalidatePath("/admin/students");
+            revalidatePath("/admin/enrollment-changes");
+            revalidateStudentAdminCaches();
+        }
+        return scheduled;
+    }
 
     let changedStudentId: string | null = null;
     let changedClassId: string | null = null;
@@ -1573,6 +1585,89 @@ export async function updateEnrollmentStatus(
     revalidateClassAdminCaches();
     revalidateFinanceCaches();
     return outcome;
+}
+
+/**
+ * 휴원 중인 반의 복귀를 앞날로 예약한다(관리자). 수강 상태는 그대로 두고 승인된 복귀 신청(RESUME·APPROVED)만 남긴다 —
+ * 학부모 복귀 신청을 원장이 승인했을 때와 같은 모양이라 적용일 처리(applyDueEnrollmentChangesWithSummary)가 그날 수강 중으로 바꾼다.
+ * 그 반에 처리 중인 신청이 하나라도 있으면 예약하지 않는다(무엇을 먼저 할지 사람이 정한다).
+ */
+async function scheduleEnrollmentResume(
+    enrollmentId: string, effectiveFrom: string, reason: string | undefined, adminUserId: string,
+): Promise<EnrollmentStatusChangeResult> {
+    const resolved = resolveResumeDate({ requested: effectiveFrom, today: todayKst() });
+    if (!resolved.ok) return { ok: false, code: "BLOCKED_REQUESTS", message: CHANGE_REQUEST_MESSAGE[resolved.error], requests: [] };
+    return prisma.$transaction(async (tx): Promise<EnrollmentStatusChangeResult> => {
+        // 잠금 순서는 즉시 변경과 같다: 청구 정산 전역 잠금 → 처리 중 신청 → 수강
+        await lockCompensation(tx);
+        const openRequests = await readOpenChangeRequestsForUpdate(tx, enrollmentId);
+        const [before] = await tx.$queryRawUnsafe<Array<{ studentId: string; classId: string; status: string }>>(
+            `SELECT e."studentId", e."classId", e.status FROM "Enrollment" e WHERE e.id = $1 FOR UPDATE OF e`, enrollmentId,
+        );
+        if (!before) throw new Error("수강 등록 정보를 찾을 수 없습니다.");
+        if (before.status !== "PAUSED") {
+            return { ok: false, code: "BLOCKED_REQUESTS", message: "휴원 중인 반만 복귀일을 앞날로 예약할 수 있습니다. 수강 종료된 반은 오늘 날짜로 다시 수강 중으로 바꿔 주세요.", requests: [] };
+        }
+        // 관리자가 앞서 예약해 둔 복귀뿐이면 날짜를 바꾸는 것이다 — 옛 예약을 닫고 새로 넣는다.
+        // 학부모가 낸 신청·다른 종류·청구나 반영이 걸린 건이 하나라도 섞여 있으면 사람이 먼저 정리한다.
+        const booked = await adminBookedResumes(tx, openRequests);
+        if (booked.length !== openRequests.length) {
+            return { ok: false, code: "BLOCKED_REQUESTS", message: "이 반에 처리 중인 신청이 있어 복귀를 예약하지 않았습니다. «수강 변경 신청»에서 먼저 처리해 주세요.", requests: openRequestViews(openRequests) };
+        }
+        await supersedeChangeRequests(tx, booked, {
+            enrollmentId, actorUserId: adminUserId, note: `관리자 복귀 예약 날짜 변경(${todayKst()})으로 정리`, confirmed: true,
+        });
+        await tx.$executeRawUnsafe(
+            `INSERT INTO "EnrollmentChangeRequest" (
+                id, "studentId", "enrollmentId", "fromClassId", kind, "effectiveFrom", reason,
+                status, "requestedByUserId", "decidedByUserId", "decidedAt", "createdAt", "updatedAt"
+            ) VALUES (gen_random_uuid()::text, $1, $2, $3, 'RESUME', $4::date, $5, 'APPROVED', $6, $6, NOW(), NOW(), NOW())`,
+            before.studentId, enrollmentId, before.classId, resolved.resumeFrom,
+            reason?.trim().slice(0, 500) || "관리자 복귀 예약", adminUserId,
+        );
+        return { ok: true, cleanup: emptyCleanupSummary(), scheduledFrom: resolved.resumeFrom };
+    }, { timeout: 30_000 });
+}
+
+/**
+ * 처리 중 신청 가운데 «관리자가 학생 상세에서 직접 예약한 복귀»만 고른다:
+ * 복귀(RESUME)·승인됨·청구/정산/반영 기록 없음 + 신청자 = 승인자(학부모가 낸 신청은 승인자가 다르다).
+ */
+async function adminBookedResumes(tx: CompensationTransaction, openRequests: Awaited<ReturnType<typeof readOpenChangeRequestsForUpdate>>) {
+    const candidates = openRequests.filter((r) => r.kind === "RESUME" && r.status === "APPROVED" && !r.invoiced && !r.settled && !r.linkedCommand);
+    if (!candidates.length) return [];
+    const own = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT id FROM "EnrollmentChangeRequest" WHERE id = ANY($1::text[]) AND "requestedByUserId" = "decidedByUserId"`,
+        candidates.map((r) => r.id),
+    );
+    const ownIds = new Set(own.map((r) => r.id));
+    return candidates.filter((r) => ownIds.has(r.id));
+}
+
+/** 예약해 둔 복귀를 취소한다(휴원은 그대로). 관리자가 직접 예약한 복귀만 닫는다 — 학부모 신청은 «수강 변경 신청»에서 처리한다. */
+export async function cancelScheduledResume(enrollmentId: string): Promise<{ ok: boolean; message: string }> {
+    const admin = await requireAdmin();
+    const result = await prisma.$transaction(async (tx) => {
+        await lockCompensation(tx);
+        const openRequests = await readOpenChangeRequestsForUpdate(tx, enrollmentId);
+        const [enrollment] = await tx.$queryRawUnsafe<Array<{ studentId: string }>>(
+            `SELECT e."studentId" FROM "Enrollment" e WHERE e.id = $1 FOR UPDATE OF e`, enrollmentId,
+        );
+        if (!enrollment) return { ok: false, message: "수강 등록 정보를 찾을 수 없습니다.", studentId: null };
+        const booked = await adminBookedResumes(tx, openRequests);
+        if (!booked.length) return { ok: false, message: "취소할 복귀 예약이 없습니다. 학부모가 낸 복귀 신청은 «수강 변경 신청»에서 처리해 주세요.", studentId: null };
+        await supersedeChangeRequests(tx, booked, {
+            enrollmentId, actorUserId: admin.appUserId, note: `관리자 복귀 예약 취소(${todayKst()})`, confirmed: true,
+        });
+        return { ok: true, message: "복귀 예약을 취소했습니다. 휴원 상태는 그대로입니다.", studentId: enrollment.studentId };
+    }, { timeout: 30_000 });
+    if (result.ok) {
+        revalidatePath("/admin/students");
+        if (result.studentId) revalidatePath(`/admin/students/${result.studentId}`);
+        revalidatePath("/admin/enrollment-changes");
+        revalidateStudentAdminCaches();
+    }
+    return { ok: result.ok, message: result.message };
 }
 
 export async function deleteEnrollment(enrollmentId: string) {
