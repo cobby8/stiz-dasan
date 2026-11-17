@@ -387,7 +387,7 @@ test("가입함: 사람마다 문구 고르기 4가지", () => {
 test("가입함: 미리보기 한 줄·화면 구성 줄·문구 블록", () => {
   assert.equal(T.describeSignupGuideRecipient({ phone: "01012345678", studentNames: ["김민수"], group: "ACTIVE", signedIn: true }), "김*수 학생 학부모 · 가입함 · ***-****-5678");
   assert.match(sender, /가입함 \$\{preview\.breakdown\.signedIn\}명/);
-  assert.match(sender, /이미 가입한 학부모에게 가는 문구\(로그인 안내\)/);
+  assert.match(sender, /이미 가입한 학부모에게 가는 문구\(앱 설치 안내\)/);
   assert.match(sender, /preview\.signedInAdultMessage/);
   const preview = action.slice(action.indexOf("export async function prepareParentSignupGuide"), action.indexOf("export async function sendParentSignupGuide"));
   assert.match(preview, /signedInMessage: guide\.recipients\.some/);
