@@ -5,11 +5,12 @@ import Image from "next/image";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { logout } from "@/app/actions/auth";
 import AcademyTheme from "@/components/academy/AcademyTheme";
 import AppBackButton from "@/components/AppBackButton";
 import AccountViewSwitcher from "@/components/AccountViewSwitcher";
+import ScopeHistoryTracker from "@/components/navigation/ScopeHistoryTracker";
 import SectionTabs from "@/components/admin/SectionTabs";
 import type { AccountViewOption } from "@/lib/account-views";
 import { findAdminSection, isInAdminSection, visibleSectionTabs, type AdminSectionKey } from "@/lib/admin-sections";
@@ -117,6 +118,11 @@ export default function AdminShellClient({
 
     return (
         <AcademyTheme role="admin" className="min-h-screen flex">
+            {/* 관리자 화면 안 이동 기록(탭마다) — 머리줄 «←» 가 방금 있던 관리자 화면으로 돌아가게. 보이지 않는 부품
+                (쿼리 읽기 부품이라 Suspense 로 감싼다 — 학부모·선생님 layout 과 같은 방식) */}
+            <Suspense fallback={null}>
+                <ScopeHistoryTracker scope="/admin" />
+            </Suspense>
             {mobileMenuOpen && (
                 <button
                     type="button"
@@ -236,7 +242,9 @@ export default function AdminShellClient({
                         >
                             메뉴
                         </button>
-                        <AppBackButton fallbackHref="/admin" />
+                        {/* «←» 는 관리자 화면 밖으로 나가지 않는다: 방금 있던 관리자 화면으로, 기록이 없으면 하위 화면은 대시보드로,
+                            대시보드에서는 버튼 자리만 남는다(예전엔 공개 홈 «/» 로 나갔다) */}
+                        <AppBackButton fallbackHref="/admin" scopeHref="/admin" />
                         <h2 className="truncate font-bold text-[var(--color-academy-muted)]">학원 관리</h2>
                     </div>
                     <div className="flex flex-shrink-0 items-center gap-2 md:gap-4">

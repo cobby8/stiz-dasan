@@ -1,4 +1,5 @@
 import Link from "next/link";
+import ScopeBackLink from "@/components/navigation/ScopeBackLink";
 import { requireAdmin } from "@/lib/auth-guard";
 import ApplyAdminClient from "@/app/admin/apply/ApplyAdminClient";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
@@ -14,9 +15,10 @@ export default async function InboxSettingsPage() {
     <div className="space-y-3">
       {/* 머리 한 줄: 신청함으로 돌아가기 + 제목 + 입학 점검 */}
       <div className="flex flex-wrap items-center gap-2">
-        <Link href="/admin/inbox" prefetch={false} aria-label="신청함으로 돌아가기" className="academy-button-text academy-button-sm shrink-0 whitespace-nowrap">
+        {/* 보던 신청함 탭으로 돌아간다(한 칸 뒤로). 고정 주소로 가면 탭이 «건수 있는 첫 탭»으로 바뀌었다(2026-11-17). 기록이 없을 때만 신청함 첫 화면 */}
+        <ScopeBackLink fallbackHref="/admin/inbox" prefetch={false} ariaLabel="신청함으로 돌아가기" className="academy-button-text academy-button-sm shrink-0 whitespace-nowrap">
           ← 신청함
-        </Link>
+        </ScopeBackLink>
         <AdminPageHeader
           className="min-w-0 flex-1"
           title="신청 설정"
