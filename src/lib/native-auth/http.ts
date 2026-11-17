@@ -3,7 +3,6 @@ import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
 import { NATIVE_ORIGIN, NativeAuthError, nativeConfig, validFlow } from "./policy";
 import { createNativeAuthService } from "./service";
-import { NATIVE_RESUME_COOKIE } from "./resume-cookie";
 import { postgresNativeFlowStore } from "./store";
 
 export function nativeContext(request: NextRequest, browserCallback = false) {
@@ -113,7 +112,8 @@ export function clearNativeBrowserCookies(request:NextRequest,response:NextRespo
  * 가입·연결이 끝나면 /auth/native/resume 이 이 쿠키 + 바인딩 쿠키(같은 브라우저 증명)로 요청을 마무리해 앱으로 돌려보낸다.
  * 값은 flow 번호뿐이다 — 바인딩 쿠키 없이는 쓸 수 없고, 5분 뒤 요청과 함께 만료된다.
  */
-export { NATIVE_RESUME_COOKIE } from "./resume-cookie";
+// 이름은 ./resume-cookie.ts 와 같아야 한다(웹 라우트는 그 순수 모듈에서 읽는다 — 테스트가 두 값을 대조한다).
+export const NATIVE_RESUME_COOKIE = "stiz-native-resume";
 export function setNativeResumeCookie(response:NextResponse,flowId:string) {
   if(!validFlow(flowId))throw new NativeAuthError();
   response.cookies.set(NATIVE_RESUME_COOKIE,flowId,{maxAge:300,path:"/",secure:true,httpOnly:true,sameSite:"lax"});

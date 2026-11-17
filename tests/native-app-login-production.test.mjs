@@ -255,6 +255,13 @@ test("resume 라우트: 가입·연결을 마친 브라우저를 1회용 code �
   } finally { if (saved === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL; else process.env.NEXT_PUBLIC_SUPABASE_URL = saved; }
 });
 
+test("복귀 표식 쿠키 이름은 서버 모듈과 웹 라우트용 순수 모듈이 같다", () => {
+  const pure = load("src/lib/native-auth/resume-cookie.ts");
+  const http = fs.readFileSync("src/lib/native-auth/http.ts", "utf8");
+  assert.equal(pure.NATIVE_RESUME_COOKIE, "stiz-native-resume");
+  assert.match(http, /export const NATIVE_RESUME_COOKIE = "stiz-native-resume";/);
+});
+
 test("연결 시작 표식: 계정·제공자·2분에 묶이고 위조·만료는 거부한다(2026-11-17)", () => {
   const savedKey = process.env.SUPABASE_SERVICE_ROLE_KEY; process.env.SUPABASE_SERVICE_ROLE_KEY = "synthetic-service-key";
   try {
