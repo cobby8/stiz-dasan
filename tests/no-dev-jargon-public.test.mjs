@@ -63,7 +63,8 @@ test("공개 신청·로그인·특강·챗봇은 오류 원문 대신 publicErr
     assert.doesNotMatch(source, /set(Error|Message|Err)\([^)]*\b\w+\??\.message\b/, file);
   }
   // 로그인 주소창 ?error= 값도 거른다
-  assert.match(read("src/app/login/page.tsx"), /publicErrorText\(searchParams\.get\("error"\)/);
+  // 2026-11-18: 쿼리는 화면이 뜬 뒤에 읽는다(서버가 보내는 화면에 로그인 폼이 들어가게) — 값은 여전히 publicErrorText 를 거친다
+  assert.match(read("src/app/login/page.tsx"), /const queryError = searchParams\.get\("error"\);\s*if \(queryError\) setError\(publicErrorText\(queryError, /);
   // 챗봇은 서버 data.error 를 그대로 말풍선에 넣지 않는다
   assert.doesNotMatch(read("src/components/chat/ChatPanel.tsx"), /data\.error \|\|/);
 });

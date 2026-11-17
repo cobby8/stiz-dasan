@@ -243,7 +243,7 @@ test("④ 🔔 배지: 안 읽은 수(10 이상 9+), 없으면 배지 없음", (
   assert.match(none, /aria-label="알림"/);
   // 2026-11-15 아이콘 예외(알림 = 종): 글자 대신 종을 그린다 — 이름은 위 aria-label, 누르는 영역 44×44
   for (const html of [many, none]) {
-    assert.match(html, /<button[^>]*aria-label="알림[^"]*"[^>]*class="inline-flex min-h-11 min-w-11[^"]*"[^>]*><span aria-hidden="true" class="ui-icon[^"]*"><span class="material-symbols-outlined text-2xl">notifications<\/span><span class="ui-icon-fallback">알림<\/span><\/span>/);
+    assert.match(html, /<button[^>]*aria-label="알림[^"]*"[^>]*class="inline-flex min-h-11 min-w-11[^"]*"[^>]*><span aria-hidden="true" class="ui-icon[^"]*"><svg data-icon="notifications"[^>]*><path d="[^"]+"><\/path><\/svg><\/span>/);
   }
 });
 

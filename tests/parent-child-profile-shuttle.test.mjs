@@ -370,9 +370,10 @@ test("④ 셔틀 없음: 아이 정보 칸(라벨:값)·셔틀 «이용하지 �
   assert.deepEqual([...order].sort((a, b) => a - b), order, "위에서 아래 순서");
   assert.ok(order.every((i) => i >= 0));
   // 2026-11-15 아이콘 예외(화살표·종·톱니): 글자 «접기» → 펼침 화살표. 버튼 이름은 칸 제목 글자가 준다
-  assert.match(html, /aria-expanded="true"[^>]*>[\s\S]*?<span aria-hidden="true" class="ui-icon[^"]*"><span class="material-symbols-outlined text-xl">expand_less<\/span><span class="ui-icon-fallback">▴<\/span><\/span>/, "머리줄을 눌러 접는다(펼친 칸 = 위 화살표)");
+  assert.match(html, /aria-expanded="true"[^>]*>[\s\S]*?<span aria-hidden="true" class="ui-icon[^"]*"><svg data-icon="expand_less"[^>]*><path d="[^"]+"><\/path><\/svg><\/span>/, "머리줄을 눌러 접는다(펼친 칸 = 위 화살표)");
   assert.match(html, /<button[^>]*aria-expanded="true"[^>]*><span class="academy-section-title[^"]*">아이 정보<\/span>/, "버튼 안에 제목 글자가 있다");
-  const icons = [...html.matchAll(/class="material-symbols-outlined[^"]*">([^<]*)</g)].map((m) => m[1]);
+  const icons = [...html.matchAll(/<svg data-icon="([^"]*)"/g)].map((m) => m[1]);
+  assert.doesNotMatch(html, /material-symbols-outlined/, "아이콘 글꼴 클래스가 화면에 없어야 글꼴을 받지 않는다");
   assert.ok(icons.length > 0 && icons.every((name) => name === "expand_less" || name === "expand_more"), `펼침 화살표 말고 다른 아이콘이 있다: ${icons.join(", ")}`);
 });
 

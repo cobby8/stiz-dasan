@@ -1,12 +1,13 @@
 "use client";
 
 import { publicErrorText } from "@/components/ui/public-error-text";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { login, signup } from "@/app/actions/auth";
 import Image from "next/image";
 import Link from "next/link";
 import PublicSiteTheme from "@/components/PublicSiteTheme";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
+import { useMountedSearchParams } from "@/hooks/useMountedSearchParams";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { parentAuthEntryHref } from "@/lib/auth-entry-navigation";
 import AppleLogo from "@/components/auth/AppleLogo";
@@ -15,7 +16,9 @@ import { useStoreApp, STORE_APP_PASSWORD_LOGIN_NOTICE } from "@/hooks/useStoreAp
 import { storeAppSocialLogin, storeAppSocialLoginHref } from "@/lib/storeApp";
 
 function LoginContent() {
-  const searchParams = useSearchParams();
+  // 주소 쿼리는 화면이 뜬 뒤에 읽는다 — 그래야 서버가 보내는 화면에 로그인 폼이 들어간다(빈 화면 약 4초 → 바로 보임).
+  // 쿼리로 달라지는 것은 간편로그인 링크의 next·인계 열쇠와 ?error 안내뿐이라 첫 그림은 같다.
+  const searchParams = useMountedSearchParams();
   const pathname = usePathname();
   // 2026-11-17 원장 지시 «(직원 로그인) 화면 필요 없잖아»: 로그인 화면은 하나다. 예전에는 /staff/login·?mode=staff 로 들어오면
   // «관리자/선생님 로그인» 화면(가입 탭·간편로그인 없음, 번호·이메일 칸)을 따로 그렸다. 이제 어느 주소로 와도 같은 화면이고,
@@ -61,7 +64,11 @@ function LoginContent() {
       : null;
   const [mode, setMode] = useState<"login" | "signup">("login");
   // 주소창 ?error= 값은 누구나 바꿀 수 있어 한국어 안내만 보여 준다(영어·개발 원문은 쉬운 안내로)
-  const [error, setError] = useState<string | null>(searchParams.get("error") ? publicErrorText(searchParams.get("error"), "로그인하지 못했습니다. 다시 시도해 주세요.") : null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const queryError = searchParams.get("error");
+    if (queryError) setError(publicErrorText(queryError, "로그인하지 못했습니다. 다시 시도해 주세요."));
+  }, [searchParams]);
   const [loading, setLoading] = useState(false);
   // 비밀번호 보기/숨기기 토글 상태
   const [showPassword, setShowPassword] = useState(false);
