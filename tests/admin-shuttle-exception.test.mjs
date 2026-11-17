@@ -71,7 +71,7 @@ test.afterEach(() => mock.timers.reset());
 
 const MON = "2026-11-16"; // s1 의 월요반(18:00) 수업일
 const NEXT_MON = "2026-11-23";
-const CLOSED = "마감 시간이 지나 여기서 바꿀 수 없습니다. 학원으로 연락해 주세요.";
+const CLOSED = "마감이 지나 여기서는 바꿀 수 없어요. 학원으로 연락해 주세요.";
 const DENIED = { ok: false, message: "관리자 권한이 필요합니다." };
 
 const ADMIN = { id: "u-admin", role: "ADMIN" };

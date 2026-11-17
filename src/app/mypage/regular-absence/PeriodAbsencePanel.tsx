@@ -83,7 +83,7 @@ function SettlementEstimateBox({ estimate }: { estimate: SettlementEstimate }) {
         </ul>
       )}
       {view.unpaid.map((row) => <p key={`${row.month}|${row.className}`} className="mt-1 break-keep text-xs text-[var(--color-academy-ink)]">{row.text}</p>)}
-      <p className="mt-1 break-keep text-xs text-[var(--color-academy-muted)]">예정 금액이에요. 학원이 확정하면 알려 드리고, 다음 수강료에서 빼 드려요.</p>
+      <p className="mt-1 break-keep text-xs text-[var(--color-academy-muted)]">학원이 확정하면 알려 드리고 다음 수강료에서 빼 드려요</p>
     </div>
   );
 }

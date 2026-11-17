@@ -17,8 +17,9 @@ import PeriodAbsencePanel, { ActivePeriodList } from "./PeriodAbsencePanel";
 import ArrivalNoticeArea, { arrivalAddableKinds } from "./ArrivalNoticeArea";
 import type { ParentArrivalScreen } from "@/lib/regular/parent-arrival-notice";
 import { ARRIVAL_KIND_LABEL, type ArrivalKind } from "@/lib/regular/arrivalNoticeRules";
-import { EVIDENCE_MAX_PHOTOS, ILLNESS_REASON, REASON_TEXT_MAX, UNPAID_REDUCE_PARENT_LABEL, UNPAID_REDUCE_PARENT_NOTE, illnessReviewLabel } from "@/lib/regular/illnessCarryRules";
+import { EVIDENCE_MAX_PHOTOS, EVIDENCE_WINDOW_DAYS, ILLNESS_REASON, REASON_TEXT_MAX, UNPAID_REDUCE_PARENT_LABEL, UNPAID_REDUCE_PARENT_NOTE, illnessReviewLabel } from "@/lib/regular/illnessCarryRules";
 import { PERIOD_APPROVED_DAY_LABEL, PERIOD_APPROVED_PARENT_NOTE, periodSettledParentText } from "@/lib/regular/illnessPeriodRules";
+import AcademyContactButtons, { asksAcademy } from "@/components/parent/AcademyContactButtons";
 
 // 날짜 묶음 이름 — 가까운 수업일이 먼저 보이게(오늘 → 이번 주 → 다음 주 → 이후)
 const DATE_GROUP_LABELS = { today: "오늘", thisWeek: "이번 주", nextWeek: "다음 주", later: "이후", past: "지난 수업" };
@@ -499,6 +500,8 @@ export default function RegularAbsenceClient({
           {err}
         </div>
       )}
+      {/* 오류 글이 «학원으로 문의/연락해 주세요»라고 말하면(보강을 이미 들음·마감 지남 등) 바로 아래에 전화·문의 버튼(2026-11-17 g3) */}
+      {asksAcademy(err) && <AcademyContactButtons contact={contact} className="mb-3 flex flex-wrap items-center gap-2" />}
 
       {/* 복귀 예정 안내 — 안내(파랑) 한 줄씩. 글자만(아이콘 없음) */}
       {resumeNotes.length > 0 && (
@@ -876,7 +879,8 @@ export default function RegularAbsenceClient({
                                       </span>
                                     </div>
                                     <p className="break-keep text-xs text-[var(--color-academy-muted)]">
-                                      사진은 지금 올리거나 결석일부터 7일 안에 추가할 수 있어요. 확인한 뒤 다음 달 수강료에서 1회분을 빼 드려요. 사진이 없으면 보강권 1장으로 바뀌어요.
+                                      {/* 기한 숫자는 규칙(EVIDENCE_WINDOW_DAYS) 한 곳에서 — 규칙이 바뀌면 글도 같이 바뀐다 */}
+                                      사진은 {EVIDENCE_WINDOW_DAYS}일 안에 올리면 돼요. 확인 뒤 다음 달 수강료에서 1회분을 빼 드리고, 없으면 보강권 1장으로 바뀌어요
                                     </p>
                                   </div>
                                 )}

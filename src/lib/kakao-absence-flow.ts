@@ -285,7 +285,7 @@ async function confirmReport(flow: FlowRow<AbsenceState>): Promise<Reply> {
   }
   await store.close(flow.id, "APPLIED", { ...state, step: "SAVING" });
   return flowReply(
-    `결석 신청 완료: ${state.studentName} 학생 ${chosen.label} (${REASON_LABEL[state.reason]})\n\n그날 셔틀은 자동으로 빠지고 원장님·코치님께 전달됐어요. ${carryPending ? ILLNESS_KAKAO_NOTICE : creditIssued ? "보강권 1장이 생겼어요 — 「보강 신청」으로 바로 예약할 수 있어요." : "보강은 결석 처리 후 「보강 신청」으로 하실 수 있어요."}`,
+    `결석 알림 완료: ${state.studentName} 학생 ${chosen.label} (${REASON_LABEL[state.reason]})\n\n그날 셔틀은 자동으로 빠지고 원장님·코치님께 전달됐어요. ${carryPending ? ILLNESS_KAKAO_NOTICE : creditIssued ? "보강권 1장이 생겼어요 — 「보강 예약」으로 바로 예약할 수 있어요." : "보강은 결석 처리 후 「보강 예약」으로 하실 수 있어요."}`,
     ["결석 취소", "메뉴"],
   );
 }

@@ -3,6 +3,7 @@ import { requireVerifiedParent } from "@/lib/auth-guard";
 import { getParentBillingHolds, getParentPaymentRequests } from "@/lib/payments/parent-payment-request";
 import { getPaymentProviderConfig } from "@/lib/payment-ledger";
 import { getAcademySettings } from "@/lib/queries";
+import { parentKakaoUrl } from "@/lib/academyPhone";
 import { academyBankAccount } from "@/lib/payments/academy-bank-account";
 import PaymentRequestClient, { type PaymentContact } from "./PaymentRequestClient";
 
@@ -31,7 +32,9 @@ export default async function ParentPaymentsPage() {
   const phone = typeof settings?.contactPhone === "string" ? settings.contactPhone.trim() : "";
   const contact: PaymentContact = {
     phone: phone && phone !== PLACEHOLDER_PHONE ? phone : null,
-    kakaoChannelUrl: typeof settings?.kakaoChannelUrl === "string" && settings.kakaoChannelUrl.trim() ? settings.kakaoChannelUrl.trim() : null,
+    // https:// 없이 저장된 주소도 누를 수 있게 공용 규칙으로 다듬는다(2026-11-17, 바닥글·문의 버튼과 같은 함수)
+    // 학부모 «카카오 문의»는 스위치 한 곳(PARENT_KAKAO_INQUIRY_OPEN)을 따른다 — 닫혀 있으면 null(2026-11-17 원장 지시)
+    kakaoChannelUrl: parentKakaoUrl(settings?.kakaoChannelUrl),
     // 입금 계좌 — 로그인한 학부모 화면에만 값으로 넘긴다(서버 전용 모듈, 원장 확인 2026-11-09)
     bankAccount: academyBankAccount(),
   };

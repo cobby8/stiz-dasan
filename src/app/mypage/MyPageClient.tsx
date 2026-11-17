@@ -350,7 +350,7 @@ export default function MyPageClient({ data, notices = [], inquiryCounts = { ans
                     {/* 아이 사진 올리기·바꾸기 — 사진 바로 옆에 늘 보이는 글자 버튼(2026-11-16 원장 «잘 안 보여»).
                         예전엔 사진이 없을 때만 작은 글자 링크로 아이 기록 화면까지 가야 했다. 누르면 그 자리에서 파일을 고른다.
                         key = 아이 id — 아이를 바꾸면 올리던 상태(진행 글자·바뀐 버전)를 새로 시작한다 */}
-                    <ProfilePhotoEditor key={child.id} variant="button" target="student" studentId={child.id} ownerId={child.id} name={child.name} initialVersion={child.photoVersion ?? null} />
+                    <ProfilePhotoEditor key={child.id} variant="button" target="student" studentId={child.id} ownerId={child.id} name={child.name} initialVersion={child.photoVersion ?? null} labelName={child.name} />
                 </div>
                 {data.children.length > 1 && (
                     <div role="group" aria-label="자녀 선택" className="mt-3 flex flex-wrap gap-2">

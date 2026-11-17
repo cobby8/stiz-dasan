@@ -13,6 +13,13 @@ import { profilePhotoUploadProblem, profilePhotoUrl, type ProfilePhotoOwner } fr
 export const dynamic = "force-dynamic";
 
 type Resolved = { owner: ProfilePhotoOwner } | { response: NextResponse };
+type Parent = { appUserId: string };
+
+/** 로그인 확인 — 요청 본문(파일)을 읽기 «전에» 부른다. 비로그인이 큰 파일을 보내도 본문을 읽지 않고 401 로 끝낸다(2026-11-17) */
+async function signedInParent(): Promise<Parent | null> {
+  return requireVerifiedParent().catch(() => null);
+}
+const UNAUTHORIZED = () => NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
 
 /** 아이 사진을 바꾸면 관리자 원생 목록 저장분(60초)을 비워 새 사진이 바로 보이게 한다(2026-11-14). 실패해도 사진 저장은 성공 */
 function refreshAdminStudentList(owner: ProfilePhotoOwner): void {
@@ -20,11 +27,8 @@ function refreshAdminStudentList(owner: ProfilePhotoOwner): void {
   try { revalidateTag("admin-students", { expire: 0 }); } catch { /* 다음 60초 갱신 때 반영된다 */ }
 }
 
-/** 로그인·소유 확인 뒤 «누구 사진인지»를 정한다. 통과하지 못하면 돌려줄 응답을 준다 */
-async function resolveOwner(target: unknown, studentId: unknown): Promise<Resolved> {
-  const parent = await requireVerifiedParent().catch(() => null);
-  if (!parent) return { response: NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 }) };
-
+/** 소유 확인 뒤 «누구 사진인지»를 정한다(parent = 이미 로그인 확인을 마친 보호자). 통과하지 못하면 돌려줄 응답을 준다 */
+async function resolveOwner(parent: Parent, target: unknown, studentId: unknown): Promise<Resolved> {
   // 내 사진 — 주인은 항상 서버가 확인한 로그인 사용자(화면이 남의 id 를 보내도 쓰지 않는다)
   if (target === "me") return { owner: { kind: "user", id: parent.appUserId } };
 
@@ -40,10 +44,14 @@ async function resolveOwner(target: unknown, studentId: unknown): Promise<Resolv
 
 export async function POST(request: Request) {
   try {
+    // 로그인 확인이 먼저 — 본문(최대 몇 MB)은 그 뒤에 읽는다
+    const parent = await signedInParent();
+    if (!parent) return UNAUTHORIZED();
+
     const form = await request.formData().catch(() => null);
     if (!form) return NextResponse.json({ error: "요청을 다시 확인해 주세요." }, { status: 400 });
 
-    const resolved = await resolveOwner(form.get("target"), form.get("studentId"));
+    const resolved = await resolveOwner(parent, form.get("target"), form.get("studentId"));
     if ("response" in resolved) return resolved.response;
 
     const file = form.get("file");
@@ -67,8 +75,11 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const parent = await signedInParent();
+    if (!parent) return UNAUTHORIZED();
+
     const params = new URL(request.url).searchParams;
-    const resolved = await resolveOwner(params.get("target"), params.get("studentId"));
+    const resolved = await resolveOwner(parent, params.get("target"), params.get("studentId"));
     if ("response" in resolved) return resolved.response;
 
     await deleteProfilePhoto(resolved.owner);

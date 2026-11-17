@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SessionVideoList } from "@/components/parent/SessionVideoPlayer";
+// 크게 보기·사진 저장 막기는 소식 상세(FeedPhotoGallery)와 같은 부품·같은 규칙을 쓴다(2026-11-17 g2)
+import { FeedPhotoLightbox, PROTECTED_PHOTO_CLASS, protectedPhotoProps } from "@/components/parent/FeedPhotoGallery";
 import {
   REPORT_FEED_PAGE_SIZE,
   appendReportFeedPage,
@@ -201,10 +203,17 @@ function ReportFeedPostCard({ post, onPhotos }: { post: ReportFeedPost; onPhotos
   );
 }
 
-/** 사진 여러 장 — 옆으로 밀어 넘기기(CSS scroll-snap) + «2/5» */
+/** 사진 여러 장 — 옆으로 밀어 넘기기(CSS scroll-snap) + «2/5». 사진을 누르면 크게 보기(2026-11-17 g2) */
 function PhotoCarousel({ photos }: { photos: Array<{ src: string }> }) {
   const [failedSrc, setFailedSrc] = useState<Record<string, true>>({});
   const [index, setIndex] = useState(0);
+  // 크게 보기로 열린 사진 번호(없으면 닫힘)
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
+  const visibleCount = photos.filter((photo) => !failedSrc[photo.src]).length;
+  const closeLarge = useCallback(() => setOpenIndex(null), []);
+  const moveLarge = useCallback((step: number) => {
+    setOpenIndex((current) => (current === null || visibleCount === 0 ? null : (current + step + visibleCount) % visibleCount));
+  }, [visibleCount]);
   // 다시 불러오기를 누를 때마다 바뀌는 값 — 같은 주소라도 <img> 를 새로 만들어 다시 받게 한다
   const [attempt, setAttempt] = useState(0);
   const visible = photos.filter((photo) => !failedSrc[photo.src]);
@@ -234,20 +243,29 @@ function PhotoCarousel({ photos }: { photos: Array<{ src: string }> }) {
       >
         {visible.map((photo, i) => (
           <li key={`${photo.src}#${attempt}`} className="w-full shrink-0 snap-center">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={photo.src}
-              alt={`수업 사진 ${i + 1}`}
-              loading="lazy"
-              className="aspect-square w-full object-cover"
-              // 못 불러온 사진은 칸을 감춘다(빈 네모가 남지 않게)
-              onError={() => setFailedSrc((prev) => ({ ...prev, [photo.src]: true }))}
-            />
+            {/* 사진 = 크게 보기 버튼. 옆으로 미는 동작은 브라우저의 가로 스크롤이 그대로 맡는다 —
+                밀어 넘길 때는 «누름»(click)이 생기지 않아 넘기기와 크게 보기가 부딪히지 않는다 */}
+            {/* 누를 때 이 버튼에 포커스를 옮겨 둔다 — 크게 보기를 닫으면 여기로 돌아온다(넘김 위치는 그대로 · preventScroll) */}
+            <button type="button" onClick={(event) => { event.currentTarget.focus({ preventScroll: true }); setOpenIndex(i); }} aria-label={`수업 사진 ${i + 1} 크게 보기`} className="block w-full">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={photo.src}
+                alt={`수업 사진 ${i + 1}`}
+                loading="lazy"
+                // 길게 누르기 메뉴·끌어가기 막기(다른 아이 얼굴이 함께 찍힌 사진이라서 — 화면 캡처는 못 막는다)
+                {...protectedPhotoProps}
+                className={`aspect-square w-full object-cover ${PROTECTED_PHOTO_CLASS}`}
+                // 못 불러온 사진은 칸을 감춘다(빈 네모가 남지 않게)
+                onError={() => setFailedSrc((prev) => ({ ...prev, [photo.src]: true }))}
+              />
+            </button>
           </li>
         ))}
       </ul>
+      {/* 크게 보기 — 소식 상세와 같은 부품(이전·다음·닫기 글자 버튼, Esc) */}
+      <FeedPhotoLightbox photos={visible} index={openIndex !== null && openIndex < visible.length ? openIndex : null} onClose={closeLarge} onMove={moveLarge} />
       {visible.length > 1 && (
-        <span className="absolute right-2 top-2 rounded-full bg-[var(--color-academy-ink)] px-2 py-0.5 text-xs tabular-nums text-[var(--color-academy-on-primary)]">
+        <span className="pointer-events-none absolute right-2 top-2 rounded-full bg-[var(--color-academy-ink)] px-2 py-0.5 text-xs tabular-nums text-[var(--color-academy-on-primary)]">
           {shown + 1}/{visible.length}
         </span>
       )}

@@ -9,6 +9,8 @@
 
 import Link from "next/link";
 import Image from "next/image";
+// 바깥 주소 다듬기 — 학부모 «카카오 문의» 버튼(getAcademyContact)과 같은 규칙 한 곳(2026-11-17 이 파일에서 옮김)
+import { normalizeExternalUrl } from "@/lib/externalUrl";
 
 // 부모에서 전달받을 props 타입
 interface PublicFooterProps {
@@ -47,17 +49,6 @@ const BUSINESS_INFO = {
   address: "경기도 남양주시 다산중앙로20번길 10-32, 1층 1호(다산동)",
   phone: "070-8824-5712",
 } as const;
-
-function normalizeExternalUrl(url?: string) {
-  const raw = url?.trim();
-  const iframeSrc = raw?.match(/src=["']([^"']+)["']/i)?.[1];
-  const firstUrl = raw?.match(/https?:\/\/[^\s"'>]+/i)?.[0];
-  const trimmed = iframeSrc || firstUrl || raw;
-  if (!trimmed) return "";
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  if (trimmed.startsWith("<")) return "";
-  return `https://${trimmed}`;
-}
 
 function normalizeInstagramUrl(url?: string) {
   const trimmed = url?.trim();

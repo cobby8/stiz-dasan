@@ -22,8 +22,9 @@ import InlineConfirm from "@/components/parent/InlineConfirm";
 import { customerMessage } from "@/components/parent/customerMessage";
 import { resumeNotice } from "@/lib/enrollment/resumeWindow";
 import { academyTel } from "@/lib/academyPhoneRules";
+import AcademyContactButtons, { CHILD_CONNECT_ASK, asksAcademy } from "@/components/parent/AcademyContactButtons";
 // 마감 안내 글자(«1시간»)는 마감 상수에서 나온다 — 상수를 바꾸면 안내도 같이 바뀐다
-import { CHANGE_CLOSED_MESSAGE, PARENT_CHANGE_CUTOFF_TEXT } from "@/lib/parent/changeDeadline";
+import { CHANGE_CLOSED_MESSAGE, PARENT_CHANGE_CUTOFF_TEXT, isChangeClosedMessage, rowShowsClosedContact } from "@/lib/parent/changeDeadline";
 
 // 예정된 변경의 날짜 묶음 이름(오늘 → 이번 주 → 다음 주 → 이후)
 const DATE_GROUP_LABELS = { today: "오늘", thisWeek: "이번 주", nextWeek: "다음 주", later: "이후", past: "지난 변경" };
@@ -54,8 +55,12 @@ function savedText(body: Record<string, unknown>): string {
 // presetStudentId = 수업 탭 반 카드에서 온 아이 — 그 아이를 미리 고른다(내 자녀 목록에 있을 때만)
 // academyPhone = 학원 대표 번호(설정값) — 알림이 기사님께 못 갔을 때의 «학원에 전화하기» 버튼용. 없으면 글자만 보인다
 // regularChangeHref = 타는 곳·내리는 곳을 «앞으로 계속» 바꾸는 신청 화면(2026-11-14 c5). 없으면(표 미적용) 입구를 보이지 않는다
-export default function ShuttleExceptionClient({ initial, presetStudentId = null, academyPhone = null, regularChangeHref = null }: { initial: ShuttleExceptionOptions; presetStudentId?: string | null; academyPhone?: string | null; regularChangeHref?: string | null }) {
+// kakaoChannelUrl = 카카오 채널 주소(설정값) — 마감 뒤·다니는 반이 없을 때의 «카카오 문의» 버튼용(2026-11-17 g3)
+// noChildren = 연결된 자녀가 0명인 계정 — 다니는 반 없음 안내의 문의 링크를 «자녀 연결하기»로(홈 문의 폼이 없어서)
+export default function ShuttleExceptionClient({ initial, presetStudentId = null, academyPhone = null, regularChangeHref = null, kakaoChannelUrl = null, noChildren = false }: { initial: ShuttleExceptionOptions; presetStudentId?: string | null; academyPhone?: string | null; regularChangeHref?: string | null; kakaoChannelUrl?: string | null; noChildren?: boolean }) {
   const router = useRouter();
+  // «전화·카카오 문의» 버튼 묶음에 넘기는 학원 연락처
+  const contact = { phone: academyPhone, kakaoChannelUrl };
   const [pending, startTransition] = useTransition();
   const [studentId, setStudentId] = useState(
     initial.children.find((c) => c.studentId === presetStudentId)?.studentId ?? initial.children[0]?.studentId ?? "",
@@ -75,6 +80,8 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
   const [location, setLocation] = useState("");
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
+  // 그 오류를 낸 예정 변경 id(취소·날짜 바꾸기에서만) — 그 행이 이미 마감 버튼 묶음을 보이면 위쪽 묶음을 생략한다
+  const [errorRow, setErrorRow] = useState("");
   const [done, setDone] = useState("");
   // 저장은 됐지만 학부모가 전화해야 할 수 있는 알림 결과(기사님 알림함에만 / 아무에게도 못 감) — 경고 줄 + «학원에 전화하기»
   const [notifyCall, setNotifyCall] = useState<ParentDeliveryView | null>(null);
@@ -123,6 +130,7 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
 
   async function send(body: Record<string, unknown>) {
     setError("");
+    setErrorRow("");
     setDone("");
     setNotifyCall(null);
     try {
@@ -134,7 +142,11 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
     const data = await response.json();
     if (!response.ok) {
       if (response.status >= 500) return reconcile(body);
-      setError(customerMessage(data?.error, "처리하지 못했어요. 잠시 후 다시 시도해 주세요."));
+      const message = customerMessage(data?.error, "처리하지 못했어요. 잠시 후 다시 시도해 주세요.");
+      setError(message);
+      // 취소·날짜 바꾸기는 그 행을 기억한다. 마감 글이면 화면을 새로 받아 그 행이 «마감»으로 다시 그려지게(그 행 안에 전화·문의 묶음)
+      setErrorRow(typeof body.id === "string" ? body.id : "");
+      if (isChangeClosedMessage(message)) router.refresh();
       return false;
     }
     if (!data.ok) return reconcile(body);
@@ -196,9 +208,12 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
     return (
       <main className="mx-auto max-w-lg px-4 py-6">
         <h1 className="academy-heading">셔틀 변경</h1>
-        <p className="mt-3 rounded-2xl bg-white p-5 text-sm text-[var(--color-academy-muted)] shadow-sm">
-          지금 다니고 있는 반이 없어요. 학원에 문의해 주세요.
-        </p>
+        {/* 글만 두지 않고 바로 전화·문의 버튼(2026-11-17 g3) — 번호가 없으면 문의 폼 링크 */}
+        <div className="mt-3 rounded-2xl bg-white p-5 text-sm text-[var(--color-academy-muted)] shadow-sm">
+          <p>지금 다니고 있는 반이 없어요.</p>
+          {/* 자녀가 아예 없으면 홈 문의 폼이 없다 → 문의 링크 대신 자녀 연결로 */}
+          <AcademyContactButtons contact={contact} className="mt-3 flex flex-wrap items-center gap-2" {...(noChildren ? CHILD_CONNECT_ASK : {})} />
+        </div>
       </main>
     );
   }
@@ -232,6 +247,9 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
         </div>
       )}
       {error && <p role="alert" className="rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm font-medium text-[var(--color-academy-danger)]">{error}</p>}
+      {/* 오류 글이 «학원으로 연락해 주세요»라고 말하면(마감 지남) 바로 아래에 전화·문의 버튼(2026-11-17 g3) */}
+      {/* 단, 그 오류를 낸 행이 이미 «마감»으로 그려져 그 행 안에 같은 묶음이 보이면 여기서는 생략(같은 버튼 두 번 방지) */}
+      {asksAcademy(error) && !rowShowsClosedContact(error, initial.upcoming.find((item) => item.id === errorRow)?.changeOpen) && <AcademyContactButtons contact={contact} />}
       {uncertain && <button type="button" disabled={pending} onClick={() => startTransition(async () => { await reconcile(uncertain); })} className="academy-button-secondary">다시 확인</button>}
 
       {initial.upcoming.length > 0 && (
@@ -276,6 +294,16 @@ export default function ShuttleExceptionClient({ initial, presetStudentId = null
                       {item.changeOpen === false ? (
                         // 마감 뒤 — 버튼 대신 안내 글(서버도 같은 규칙으로 막는다 · 2026-11-15)
                         <span className="basis-full text-xs text-[var(--color-academy-muted)]">{CHANGE_CLOSED_MESSAGE}</span>
+                      ) : null}
+                      {item.changeOpen === false ? (
+                        // 글만 두지 않고 그 자리에서 바로 전화·문의(2026-11-17 g3). 행 탭(시트 열기)으로 번지지 않게 막는다
+                        <span
+                          onClick={(event) => event.stopPropagation()}
+                          onKeyDown={(event) => event.stopPropagation()}
+                          className="flex basis-full cursor-default justify-end"
+                        >
+                          <AcademyContactButtons contact={contact} />
+                        </span>
                       ) : (
                         // 동작 버튼 한 묶음(날짜 바꾸기 · 취소) — 행의 flex-wrap 으로 좁은 화면(360px)에서는 다음 줄로 내려간다.
                         // 감싸는 칸을 두지 않는다: «취소» 확인 칸이 펼쳐질 때 행 한 줄을 다 써야 한다(basis-full)

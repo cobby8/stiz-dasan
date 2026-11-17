@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { requireVerifiedParent } from "@/lib/auth-guard";
+import { getAcademyContact } from "@/lib/academyPhone";
 import BundleDoneClient from "./BundleDoneClient";
 
 export const dynamic = "force-dynamic";
@@ -20,5 +21,7 @@ export default async function BundleDonePage({
         const value = params[key];
         return typeof value === "string" ? value : Array.isArray(value) ? value[0] ?? "" : "";
     };
-    return <BundleDoneClient paymentKey={pick("paymentKey")} orderId={pick("orderId")} amount={Number(pick("amount")) || 0} />;
+    // 학원 전화·카카오 채널(설정값) — 결제가 완료되지 않았을 때의 «전화·문의» 버튼용. 못 읽어도 화면은 뜬다
+    const contact = await getAcademyContact();
+    return <BundleDoneClient paymentKey={pick("paymentKey")} orderId={pick("orderId")} amount={Number(pick("amount")) || 0} contact={contact} />;
 }
