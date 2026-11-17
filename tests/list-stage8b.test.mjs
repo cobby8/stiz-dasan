@@ -173,9 +173,9 @@ test("보강 예약은 4칸 집계판 대신 상태 칩(서버 집계와 같은 
   const source = read("src/app/mypage/makeup/MakeupClient.tsx");
   assert.match(source, /const today = todayKst\(\);/);
   assert.doesNotMatch(source, /\.toISOString\(\)/);
-  // 예약 = 반 열기 → 날짜 고르기 → «이 날짜로 예약», 취소 = 그 자리 확인 후 같은 cancel(c.id) (게슈탈트 M-02)
+  // 예약 = 반 열기 → 날짜 고르기 → «(고른 날짜·반) 예약», 취소 = 그 자리 확인 후 같은 cancel(c.id) (게슈탈트 M-02)
   assert.match(source, /bookMakeupAction\(\{ creditId, classId: pick\.classId, dateYmd: pick\.ymd \}\)/);
-  assert.match(source, /onClick=\{\(\) => book\(c\.id\)\}[\s\S]*?이 날짜로 예약/);
+  assert.match(source, /onClick=\{\(\) => book\(c\.id\)\}[\s\S]*?\$\{pickedText\} 예약/);
   assert.match(source, /onConfirm=\{\(\) => cancel\(c\.id\)\}/);
 });
 

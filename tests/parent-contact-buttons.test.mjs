@@ -209,8 +209,9 @@ test("검수2 카카오 채널 주소: https:// 없이 저장돼도 바깥 주�
 
   const helper = read("src/lib/academyPhone.ts");
   assert.match(helper, /import \{ normalizeExternalUrl \} from "@\/lib\/externalUrl";/);
-  assert.match(helper, /const kakao = normalizeExternalUrl\(/);
-  assert.match(helper, /kakaoChannelUrl: kakao \|\| null,/);
+  // 주소 다듬기는 parentKakaoUrl 한 곳 — 학부모 «카카오 문의» 스위치(PARENT_KAKAO_INQUIRY_OPEN)를 먼저 본다
+  assert.match(helper, /return normalizeExternalUrl\(typeof raw === "string" \? raw : ""\) \|\| null;/);
+  assert.match(helper, /kakaoChannelUrl: parentKakaoUrl\(settings\?\.kakaoChannelUrl\),/);
   // 바닥글은 옮긴 함수를 쓴다(자기 복사본이 남지 않는다)
   const footer = read("src/components/PublicFooter.tsx");
   assert.match(footer, /import \{ normalizeExternalUrl \} from "@\/lib\/externalUrl";/);
@@ -376,4 +377,43 @@ test("재검수: 사진 크게 보기는 학부모 하단 메뉴·알림 시트�
   assert.ok(lightbox, "크게 보기 판의 겹침 값을 찾지 못함");
   assert.match(nav, /fixed bottom-0[^"]*z-50/);
   assert.ok(Number(lightbox[1]) > 70, `크게 보기 겹침 값 ${lightbox[1]} 이 알림 시트(70)보다 낮다`);
+});
+
+test("학부모 «카카오 문의»는 스위치 한 곳으로 닫혀 있다(2026-11-17 원장 지시 — 상담 준비 전 공개 금지)", async () => {
+  const helper = read("src/lib/academyPhone.ts");
+  // 지금은 닫힘 — 켤 때는 이 테스트도 함께 바꾼다(원장 승인 뒤)
+  assert.match(helper, /export const PARENT_KAKAO_INQUIRY_OPEN = false;/);
+  assert.match(helper, /if \(!PARENT_KAKAO_INQUIRY_OPEN\) return null;/);
+  for (const page of ["src/app/mypage/payments/page.tsx", "src/app/mypage/regular-absence/page.tsx"]) {
+    assert.match(read(page), /kakaoChannelUrl: parentKakaoUrl\(settings\?\.kakaoChannelUrl\),/, page);
+  }
+  // 학부모 화면·부품 어디서도 설정의 카카오 주소를 parentKakaoUrl( 밖에서 읽지 않는다
+  const files = ["src/app/mypage", "src/components/parent"].flatMap((dir) =>
+    fs.readdirSync(dir, { recursive: true }).map((f) => path.join(dir, String(f))).filter((f) => /\.(tsx?|mjs)$/.test(f)));
+  assert.ok(files.length > 20);
+  for (const f of files) {
+    const src = fs.readFileSync(f, "utf8");
+    const uses = src.match(/[^\n]*settings\??\.kakaoChannelUrl[^\n]*/g) ?? [];
+    for (const line of uses) assert.match(line, /parentKakaoUrl\(settings\??\.kakaoChannelUrl\)/, `${f}: ${line.trim()}`);
+  }
+});
+
+test("보강 예약 후보: 수업마다 2줄(반 정보·날짜 칩 한 줄 옆으로 넘김), 칩은 «11/20», 최종 버튼에 고른 날짜·반 (2026-11-17 원장 지시)", async () => {
+  const src = read("src/app/mypage/makeup/MakeupClient.tsx");
+  // 날짜 칩이 여러 줄로 쌓이지 않는다 — 한 줄 + 옆으로 넘김(포커스 테두리용 위아래 여백), 칩은 줄어들지 않는다
+  assert.match(src, /className="mt-1 flex gap-1\.5 overflow-x-auto px-3 py-1 /);
+  assert.match(src, /className="academy-choice shrink-0 !px-3 tabular-nums"/);
+  assert.match(src, /\{shortDate\(d\.ymd\)\}/);
+  // 고른 것을 최종 버튼 글자에 — 반 이름 뒤에 바로 조사를 붙이지 않는다
+  assert.match(src, /\$\{pickedText\} 예약`/);
+  assert.match(src, /\$\{pickedText\} 예약으로 바꾸기`/);
+  assert.doesNotMatch(src, /\$\{pickedText\}(로|으로|을|를)/);
+  // shortDate 는 문자열만 자른다(시간대 무관) — 원본 본문을 꺼내 그대로 실행한다
+  const body = src.match(/function shortDate\(ymd: string\): string \{([\s\S]*?)\n\}/)?.[1] ?? "";
+  assert.ok(body.includes("return"));
+  assert.doesNotMatch(body, /new Date/);
+  const shortDate = new Function("ymd", body);
+  assert.equal(shortDate("2026-11-20"), "11/20");
+  assert.equal(shortDate("2027-01-05"), "1/5");
+  assert.equal(shortDate("2026-12-31"), "12/31");
 });

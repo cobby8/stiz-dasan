@@ -6,7 +6,7 @@ import { academyTel } from "@/lib/academyPhoneRules";
  * 왜: «학원에 문의해 주세요» 글만 있으면 학부모가 번호를 따로 찾아야 한다 — 그 자리에서 바로 걸 수 있게 한다.
  * 본보기 = 결석 알리기 화면의 «전화·카카오 문의» 묶음(RegularAbsenceClient 의 ContactActions)과 같은 규칙:
  *  - 전화: 걸 수 있는 번호(설정값)일 때만. 판정은 academyPhoneRules 한 곳
- *  - 카카오 문의: 채널 주소(설정값)가 있을 때만
+ *  - 카카오 문의: 채널 주소(설정값)가 있을 때만 — 지금은 닫혀 있다(academyPhone 의 PARENT_KAKAO_INQUIRY_OPEN, 2026-11-17 원장 지시)
  *  - 전화 번호가 없으면 홈의 «학원에 메시지 보내기» 폼으로 가는 링크(막다른 곳을 만들지 않는다).
  *    자녀가 0명이면 그 폼이 없으니 자녀 연결 화면으로(CHILD_CONNECT_ASK)
  * 번호·주소는 코드에 박지 않는다 — 서버 page 가 설정에서 읽어 넘긴다(getAcademyContact).

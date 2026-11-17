@@ -181,7 +181,7 @@ test("고른 칩은 academy-choice(aria-pressed), 뒤로가기는 44×44, 로그
 test("결석·보강 행의 «여는» 버튼은 보조, 꽉 찬 색은 폼 안 최종 제출만, «닫기»는 글자 버튼 (M-08)", () => {
   const makeup = read("src/app/mypage/makeup/MakeupClient.tsx");
   assert.match(makeup, /className=\{`\$\{openId === c\.id \? "academy-button-text" : "academy-button-secondary"\} w-full`\}/);
-  assert.match(makeup, /onClick=\{\(\) => book\(c\.id\)\}[\s\S]{0,120}className="academy-button-primary w-full"[\s\S]{0,120}이 날짜로 예약/);
+  assert.match(makeup, /onClick=\{\(\) => book\(c\.id\)\}[\s\S]{0,120}className="academy-button-primary w-full"[\s\S]{0,120}\$\{pickedText\} 예약/);
   const regular = read("src/app/mypage/regular-absence/RegularAbsenceClient.tsx");
   assert.match(regular, /onClick=\{\(\) => \{ setArrivalForm\(null\); setOpenKey\(key\); \}\}[\s\S]{0,200}className="academy-button-tonal shrink-0"/);
   assert.match(regular, /onClick=\{\(\) => report\(d\)\}\s*className="academy-button-primary"/);

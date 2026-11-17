@@ -21,6 +21,11 @@ const DOW_KO: Record<string, string> = {
   Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금", Sat: "토", Sun: "일",
 };
 
+/** "2026-11-20" → "11/20" — 날짜 칩용 짧은 글자(문자열만 자른다 · Date 를 쓰지 않아 시간대와 무관) */
+function shortDate(ymd: string): string {
+  return `${Number(ymd.slice(5, 7))}/${Number(ymd.slice(8, 10))}`;
+}
+
 // 후보가 0건일 때 이유별 안내(2026-11-14) — 서버(parent-makeup)가 준 emptyReason 을 그대로 글로 바꾼다.
 // 이유를 모르는 옛 응답은 기본 글로.
 // 원장 지시(2026-11-14): «학원에 문의하지 않고 해결할 수 있는 기능은 바로 해당 화면에서 해결» —
@@ -202,45 +207,65 @@ export default function MakeupClient({ initial, presetStudentId = null, contact 
           </div>
         </div>
       )}
-      {options.map((o) => (
-        // 후보 한 줄 행: 반 이름 · 요일 시간 · 대상 학년 · 남은 자리(글자 — 학생 수 숫자는 싣지 않는다) / 아래에 날짜 칩
-        <div key={o.classId} className="rounded-xl border border-[var(--color-academy-line)] bg-white px-3 py-2">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-            <span className="break-keep text-sm font-semibold text-[var(--color-academy-ink)]">{o.className}</span>
-            <span className="text-xs tabular-nums text-[var(--color-academy-muted)]">
-              {DOW_KO[o.dayOfWeek] ?? o.dayOfWeek} {o.startTime}
-              {o.endTime ? `~${o.endTime}` : ""}
-            </span>
-            {(o.gradeLabel || o.grades.length > 0) && (
-              <span className="text-xs text-[var(--color-academy-muted)]">
-                대상 {o.gradeLabel || o.grades.join("·")}
-              </span>
-            )}
-            <span className={`ml-auto shrink-0 text-xs font-medium ${SEAT_LEVEL_TEXT_CLASS[o.seatLevel]}`}>
-              {SEAT_LEVEL_LABEL[o.seatLevel]}
-            </span>
-          </div>
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {o.dates.map((d) => {
-              const on = pick?.classId === o.classId && pick?.ymd === d.ymd;
-              return (
-                <button
-                  key={d.ymd}
-                  type="button"
-                  // 고른 날짜 칩 = academy-choice(체크·연한 바탕), 제출 버튼과 구분(C-M2)
-                  aria-pressed={on}
-                  onClick={() => setPick({ classId: o.classId, ymd: d.ymd })}
-                  className="academy-choice tabular-nums"
-                >
-                  {d.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ))}
+      {options.length > 0 && (
+        // 수업 후보 = 한 목록 안의 행(2026-11-17 원장 지시 «날짜가 다 펼쳐져서 보기 안 좋다 — 간결하게, 여러 수업을 한눈에»).
+        // 행마다 2줄: ① 반 이름·요일 시간·대상·자리 ② 날짜 칩 한 줄(옆으로 넘김).
+        // 같은 반은 요일이 늘 같으니 칩에는 «11/20»만 — 요일은 ①줄에 한 번만 쓴다. 칩이 줄로 쌓이지 않아 수업 여러 개가 한 화면에 들어온다.
+        <ul className="divide-y divide-[var(--color-academy-line)] overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-white">
+          {options.map((o) => (
+            <li key={o.classId} className="py-2">
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 px-3">
+                <span className="break-keep text-sm font-semibold text-[var(--color-academy-ink)]">{o.className}</span>
+                <span className="text-xs tabular-nums text-[var(--color-academy-muted)]">
+                  {DOW_KO[o.dayOfWeek] ?? o.dayOfWeek} {o.startTime}
+                  {o.endTime ? `~${o.endTime}` : ""}
+                </span>
+                {(o.gradeLabel || o.grades.length > 0) && (
+                  <span className="text-xs text-[var(--color-academy-muted)]">
+                    대상 {o.gradeLabel || o.grades.join("·")}
+                  </span>
+                )}
+                {/* 남은 자리 = 글자 3단계(학생 수 숫자는 싣지 않는다) */}
+                <span className={`ml-auto shrink-0 text-xs font-medium ${SEAT_LEVEL_TEXT_CLASS[o.seatLevel]}`}>
+                  {SEAT_LEVEL_LABEL[o.seatLevel]}
+                </span>
+              </div>
+              {/* 날짜 칩 한 줄 — 넘치면 옆으로 넘긴다(줄바꿈하지 않음). 칩 높이 44px 유지. 위아래 py-1 = 키보드 포커스 테두리가 스크롤 칸에 잘리지 않게 */}
+              <div className="mt-1 flex gap-1.5 overflow-x-auto px-3 py-1 [scrollbar-width:none]" role="group" aria-label={`${o.className} 날짜`}>
+                {o.dates.map((d) => {
+                  const on = pick?.classId === o.classId && pick?.ymd === d.ymd;
+                  return (
+                    <button
+                      key={d.ymd}
+                      type="button"
+                      // 고른 날짜 칩 = academy-choice(체크·연한 바탕), 제출 버튼과 구분(C-M2)
+                      aria-pressed={on}
+                      aria-label={`${d.label}${d.seatLevel === "LOW" ? " 자리 임박" : ""}`}
+                      onClick={() => setPick({ classId: o.classId, ymd: d.ymd })}
+                      className="academy-choice shrink-0 !px-3 tabular-nums"
+                    >
+                      {shortDate(d.ymd)}
+                      {/* 그날 자리가 얼마 안 남았으면 칩 안에 작은 글자로 */}
+                      {d.seatLevel === "LOW" && <span className="text-xs text-[var(--color-academy-warning)]">임박</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </>
   );
+
+  // 고른 수업·날짜를 최종 버튼 글자에 그대로 보인다 — «무엇을 예약하는지» 버튼만 보고도 안다.
+  // 반 이름 뒤에 바로 조사를 붙이지 않는다(«…반로» 같은 틀린 글이 나온다) — «예약», «예약으로 바꾸기»
+  const pickedText = (() => {
+    if (!pick) return "";
+    const o = options.find((x) => x.classId === pick.classId);
+    const d = o?.dates.find((x) => x.ymd === pick.ymd);
+    return o && d ? `${d.label} ${o.className}` : "";
+  })();
 
   const credits = presetFirst(initial.credits, presetStudentId, (c) => c.studentId);
   const creditChips = CREDIT_GROUPS.map((g) => ({
@@ -360,7 +385,7 @@ export default function MakeupClient({ initial, presetStudentId = null, contact 
                             disabled={busy === c.id || !pick}
                             className="academy-button-primary w-full"
                           >
-                            이 날짜로 바꾸기
+                            {pickedText ? `${pickedText} 예약으로 바꾸기` : "수업 날짜를 골라 주세요"}
                           </button>
                         )}
                       </div>
@@ -392,7 +417,7 @@ export default function MakeupClient({ initial, presetStudentId = null, contact 
                             disabled={busy === c.id || !pick}
                             className="academy-button-primary w-full"
                           >
-                            이 날짜로 예약
+                            {pickedText ? `${pickedText} 예약` : "수업 날짜를 골라 주세요"}
                           </button>
                         )}
                       </div>
