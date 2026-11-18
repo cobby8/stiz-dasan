@@ -133,3 +133,133 @@ test("map shuttle payload accepts coordinates with versioned consent", () => {
   assert.equal(parsed.items[0].shuttle?.locationConsent, true);
   assert.equal(parsed.items[0].shuttle?.locationConsentVersion, "2026-07-21");
 });
+
+// ── 기간 선택·날짜별 선택(2026-11-18) ──
+
+test("옛 입력(요일만)은 결과가 그대로이고 새 칸은 기본값(요일 모드·날짜 없음·기간 없음)이다", () => {
+  const parsed = parseApplicationInput(validApplication());
+  assert.deepEqual(parsed.selectedWeekdays, ["MON"]);
+  assert.equal(parsed.selectionMode, "WEEKDAY");
+  assert.deepEqual(parsed.selectedDates, []);
+  assert.equal(parsed.periodStartDate, undefined);
+  assert.equal(parsed.periodEndDate, undefined);
+  assert.equal(parsed.child.name, "홍길동");
+  assert.equal(parsed.parent.phone, "01012345678");
+  assert.deepEqual(parsed.items, [{ offeringId: "offering-1", shuttle: undefined }]);
+});
+
+test("날짜 모드는 요일 없이도 통과하고, 날짜는 중복 제거·오름차순으로 정리된다", () => {
+  const parsed = parseApplicationInput({
+    ...validApplication(),
+    selectedWeekdays: [],
+    selectionMode: "DATE",
+    weeklyFrequency: 2,
+    selectedDates: ["2027-01-06", "2027-01-04", " 2027-01-06 "],
+  });
+  assert.equal(parsed.selectionMode, "DATE");
+  assert.deepEqual(parsed.selectedDates, ["2027-01-04", "2027-01-06"]);
+});
+
+test("날짜 모드인데 날짜가 없으면 거절한다", () => {
+  assert.throws(
+    () => parseApplicationInput({ ...validApplication(), selectionMode: "DATE", selectedDates: [] }),
+    (error) => error instanceof SeasonalError && error.code === "DATE_REQUIRED",
+  );
+});
+
+test("요일 모드는 여전히 요일이 필수다", () => {
+  assert.throws(
+    () => parseApplicationInput({ ...validApplication(), selectedWeekdays: [] }),
+    (error) => error instanceof SeasonalError && error.code === "WEEKDAY_REQUIRED",
+  );
+});
+
+test("잘못된 날짜(형식·없는 날짜·문자열 아님)는 거절한다", () => {
+  for (const bad of [["2027-1-4"], ["2027-02-30"], [20270104], ["어제"], "2027-01-04"]) {
+    assert.throws(
+      () => parseApplicationInput({ ...validApplication(), selectionMode: "DATE", selectedDates: bad }),
+      (error) => error instanceof SeasonalError && error.code === "INVALID_SELECTED_DATES",
+      `거절해야 함: ${JSON.stringify(bad)}`,
+    );
+  }
+});
+
+test("날짜는 60개까지 — 61개(중복 제거 후)면 거절, 중복으로 60개 이하면 통과", () => {
+  const days = (count: number) => Array.from({ length: count }, (_, index) => {
+    // 2027-01-01 부터 하루씩(달력 숫자만 센다)
+    const date = new Date(Date.UTC(2027, 0, 1 + index));
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+  });
+  assert.throws(
+    () => parseApplicationInput({ ...validApplication(), selectionMode: "DATE", selectedDates: days(61) }),
+    (error) => error instanceof SeasonalError && error.code === "TOO_MANY_SELECTED_DATES",
+  );
+  const sixty = days(60);
+  const parsed = parseApplicationInput({ ...validApplication(), selectionMode: "DATE", weeklyFrequency: 5, selectedDates: [...sixty, ...sixty] });
+  assert.equal(parsed.selectedDates.length, 60);
+});
+
+test("알 수 없는 선택 방식은 거절한다", () => {
+  assert.throws(
+    () => parseApplicationInput({ ...validApplication(), selectionMode: "MONTH" }),
+    (error) => error instanceof SeasonalError && error.code === "INVALID_SELECTION_MODE",
+  );
+});
+
+test("수강 기간은 시작·종료가 둘 다 있거나 둘 다 없어야 하고, 종료 ≥ 시작", () => {
+  const ok = parseApplicationInput({ ...validApplication(), periodStartDate: "2027-01-04", periodEndDate: "2027-01-29" });
+  assert.equal(ok.periodStartDate, "2027-01-04");
+  assert.equal(ok.periodEndDate, "2027-01-29");
+  // 하루짜리 기간(시작 = 종료)도 된다
+  assert.equal(parseApplicationInput({ ...validApplication(), periodStartDate: "2027-01-04", periodEndDate: "2027-01-04" }).periodEndDate, "2027-01-04");
+  for (const range of [
+    { periodStartDate: "2027-01-04" },
+    { periodEndDate: "2027-01-29" },
+    { periodStartDate: "2027-01-29", periodEndDate: "2027-01-04" },
+    { periodStartDate: "2027-01-04", periodEndDate: "2027-02-30" },
+  ]) {
+    assert.throws(
+      () => parseApplicationInput({ ...validApplication(), ...range }),
+      (error) => error instanceof SeasonalError && error.code === "INVALID_PERIOD",
+      `거절해야 함: ${JSON.stringify(range)}`,
+    );
+  }
+});
+
+test("요일 모드에 날짜가 섞여 와도 버린다(출석 규칙이 뒤바뀌지 않게)", () => {
+  const weekday = parseApplicationInput({ ...validApplication(), selectedDates: ["2027-01-04"], weeklyFrequency: 3 });
+  assert.deepEqual(weekday.selectedDates, []);
+  // 요일 모드는 요일 수가 곧 N — 주N회 값은 싣지 않는다
+  assert.equal(weekday.weeklyFrequency, undefined);
+});
+
+test("날짜 모드도 기간을 받는다(2026-11-18 «기간 → 주N회 → 날짜»)", () => {
+  const date = parseApplicationInput({
+    ...validApplication(), selectionMode: "DATE", selectedDates: ["2027-01-04"], weeklyFrequency: 2,
+    periodStartDate: "2027-01-04", periodEndDate: "2027-01-29",
+  });
+  assert.equal(date.periodStartDate, "2027-01-04");
+  assert.equal(date.periodEndDate, "2027-01-29");
+  assert.equal(date.weeklyFrequency, 2);
+});
+
+test("날짜 모드는 주N회(1~7)가 필수", () => {
+  for (const weeklyFrequency of [undefined, 0, 8, 2.5, "x"]) {
+    assert.throws(
+      () => parseApplicationInput({ ...validApplication(), selectionMode: "DATE", selectedDates: ["2027-01-04"], weeklyFrequency }),
+      (error) => error instanceof SeasonalError && error.code === "FREQUENCY_REQUIRED",
+      `거절해야 함: ${String(weeklyFrequency)}`,
+    );
+  }
+  // 숫자 모양 문자열("3")은 받는다
+  assert.equal(parseApplicationInput({ ...validApplication(), selectionMode: "DATE", selectedDates: ["2027-01-04"], weeklyFrequency: "3" }).weeklyFrequency, 3);
+});
+
+test("SeasonalError 의 details 는 선택 — 기존 호출(3개 인자)은 그대로", () => {
+  const plain = new SeasonalError("안내", 409, "X");
+  assert.equal(plain.details, undefined);
+  assert.equal(plain.code, "X");
+  const withDetails = new SeasonalError("안내", 409, "DATES_FULL", { fullDates: ["2027-01-12"] });
+  assert.deepEqual(withDetails.details, { fullDates: ["2027-01-12"] });
+  assert.equal(withDetails.status, 409);
+});

@@ -2,6 +2,8 @@ import { prisma } from "@/lib/prisma";
 import { SEASONAL_WEEKDAYS, type SeasonalWeekday } from "@/lib/seasonal/contracts";
 import { weekdayInSeoul } from "@/lib/seasonal/planning";
 import { diffEnrollmentDates as diffSlots, type EnrollmentSlotSnapshot as SlotSnapshot } from "./enrollment-dates-diff";
+// 2026-11-18 기간 선택·날짜별 선택 — «이 신청서가 이 회차에 나오는가»는 공용 규칙 한 곳에서 판정한다.
+import { pickSessionDatesForApplication } from "@/lib/seasonal/attendance-rule";
 
 /**
  * 방학특강 정규 수강일(kind='REGULAR') 슬롯 생성 라이브러리.
@@ -79,12 +81,21 @@ export async function syncEnrollmentDatesForItem(applicationItemId: string): Pro
     offeringId: string;
     status: string;
     selectedWeekdays: string[] | null;
+    selectionMode: string | null;
+    selectedDates: string[] | null;
+    periodStartDate: string | null;
+    periodEndDate: string | null;
     studentId: string | null;
   }>>(
+    // 기간·날짜 칸도 함께 읽는다(기존 신청서는 빈 배열·NULL 이라 예전 «요일만» 결과와 같다).
     `SELECT it.id,
             it."offeringId",
             it.status,
             app."selectedWeekdays" AS "selectedWeekdays",
+            app."selectionMode" AS "selectionMode",
+            app."selectedDates" AS "selectedDates",
+            app."periodStartDate" AS "periodStartDate",
+            app."periodEndDate" AS "periodEndDate",
             en."studentId" AS "studentId"
        FROM "SpecialProgramApplicationItem" it
        JOIN "SpecialProgramApplication" app ON app.id = it."applicationId"
@@ -118,8 +129,8 @@ export async function syncEnrollmentDatesForItem(applicationItemId: string): Pro
     return { applied: false, matchedCount: 0, insertedCount: 0, reason: "NO_SESSION_DATES" };
   }
 
-  // 3) 학생이 신청한 요일과 겹치는 날짜만 고른다(서울시간 기준).
-  const matched = pickSessionDatesForWeekdays(sessionDates, item.selectedWeekdays);
+  // 3) 학생이 나오는 날짜만 고른다(서울시간 기준) — 고른 날짜 > 기간 > 요일 순서의 공용 규칙.
+  const matched = pickSessionDatesForApplication(sessionDates, item);
   if (matched.length === 0) {
     // 신청 요일과 겹치는 회차가 하나도 없는 경우(예: 화·목 신청인데 특강이 월·수만 열림).
     // 운영자가 요일 설정을 확인할 수 있도록 신청 요일 값까지 함께 남긴다.
@@ -129,6 +140,9 @@ export async function syncEnrollmentDatesForItem(applicationItemId: string): Pro
         applicationItemId,
         offeringId: item.offeringId,
         selectedWeekdays: item.selectedWeekdays,
+        selectedDates: item.selectedDates,
+        periodStartDate: item.periodStartDate,
+        periodEndDate: item.periodEndDate,
         sessionDateCount: sessionDates.length,
         reason: "NO_MATCHED_DATES",
       },
@@ -235,10 +249,17 @@ export async function resyncEnrollmentDatesForApplication(applicationId: string)
   // 1) 이 신청서의 승인 항목 + 신청서 선택 요일 + (전환된 경우) 학생 ID
   const items = await prisma.$queryRawUnsafe<Array<{
     id: string; offeringId: string; selectedWeekdays: string[] | null; studentId: string | null;
+    selectionMode: string | null; selectedDates: string[] | null;
+    periodStartDate: string | null; periodEndDate: string | null;
   }>>(
+    // 기간·날짜 칸도 함께 읽는다(기존 신청서는 빈 배열·NULL → 예전 결과 그대로).
     `SELECT it.id,
             it."offeringId",
             app."selectedWeekdays" AS "selectedWeekdays",
+            app."selectionMode" AS "selectionMode",
+            app."selectedDates" AS "selectedDates",
+            app."periodStartDate" AS "periodStartDate",
+            app."periodEndDate" AS "periodEndDate",
             en."studentId" AS "studentId"
        FROM "SpecialProgramApplicationItem" it
        JOIN "SpecialProgramApplication" app ON app.id = it."applicationId"
@@ -290,7 +311,8 @@ export async function resyncEnrollmentDatesForApplication(applicationId: string)
 
   for (const item of items) {
     const sessions = sessionsByOffering.get(item.offeringId) ?? [];
-    const matched = pickSessionDatesForWeekdays(sessions, item.selectedWeekdays);
+    // 공용 규칙(고른 날짜 > 기간 > 요일)으로 목표 회차를 구한다.
+    const matched = pickSessionDatesForApplication(sessions, item);
     if (matched.length === 0) {
       // 목표 날짜를 하나도 못 구한 경우(회차 미등록, 요일 설정 오류 등)에는 아무것도 거두지 않는다.
       // 여기서 diff 를 그대로 적용하면 기존 좌석이 통째로 취소돼 출석부가 비어버린다.

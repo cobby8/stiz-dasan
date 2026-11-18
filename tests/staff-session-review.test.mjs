@@ -261,6 +261,8 @@ function makeWorld(options = {}) {
       getStudentParentRecipients: async () => [recipient],
     },
     "@/lib/studentVisibility": { notMergedStudent: () => "true" },
+    // 2026-11-18 방학특강 회차 소속 판정 SQL 조각(기간·날짜 선택 공용 규칙) — 이 테스트와는 무관한 의존
+    "@/lib/seasonal/attendance-rule": { seasonalAttendsSql: () => "true" },
     "@/lib/profilePhoto/rules": { profilePhotoVersion: () => null },
     "@/lib/regular/regularSession": { adoptRegularSessionKey: async () => {}, regularSessionKey: () => "key" },
     "@/lib/regular/attendance-absence-reason": {

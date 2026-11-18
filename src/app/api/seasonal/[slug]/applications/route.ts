@@ -51,7 +51,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     const result = await submitSeasonalApplication(slug, input);
     return NextResponse.json(result, { status: result.duplicate ? 200 : 201 });
   } catch (error) {
-    if (error instanceof SeasonalError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+    // details = 화면이 쓸 추가 정보(예: DATES_FULL 의 { fullDates }) — 있을 때만 싣는다
+    if (error instanceof SeasonalError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code, ...(error.details !== undefined ? { details: error.details } : {}) },
+        { status: error.status },
+      );
+    }
     console.error("[seasonal application]", error);
     return NextResponse.json({ error: "신청을 저장하지 못했습니다." }, { status: 500 });
   }

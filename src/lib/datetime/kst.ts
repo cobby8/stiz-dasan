@@ -100,6 +100,18 @@ export function diffDaysKst(fromYmd: string, toYmd: string): number {
   return Math.round((kstAt(toYmd) - kstAt(fromYmd)) / DAY_MS);
 }
 
+/**
+ * KST 달력 날짜가 속한 주의 월요일("YYYY-MM-DD") — ISO 주(월요일 시작). 잘못된 입력은 "".
+ * 예) kstWeekMonday("2027-01-10")(일) → "2027-01-04"(월).
+ * 방학특강 날짜 선택의 «주N회 × 주 수» 계산이 주를 셀 때 쓴다(시간대 개입 없이 달력 숫자만).
+ */
+export function kstWeekMonday(ymd: string): string {
+  const dow = kstDow(ymd);
+  if (!Number.isInteger(dow)) return "";
+  // 일요일(0)은 6일 전, 월요일(1)은 그대로, 화(2)는 1일 전 …
+  return addDaysKst(ymd, -((dow + 6) % 7));
+}
+
 const DOW_KO = ["일", "월", "화", "수", "목", "금", "토"] as const;
 
 /** "8/14(금)" — 화면 표시용. */

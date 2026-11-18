@@ -14,6 +14,24 @@ import { getSeasonalAdminOverview } from "@/lib/seasonal/admin-overview";
 import { resyncEnrollmentDatesForApplicationSafe, syncEnrollmentDatesForItemSafe, cancelEnrollmentDatesForItemSafe } from "@/lib/seasonal/enrollment-dates";
 import { resolveOfferingPrice, resolveShuttleFee, type ApplicantType } from "@/lib/seasonal/planning";
 import { syncSeasonSiblingDiscounts } from "@/lib/seasonal/sibling-discount-sync";
+// 기간 선택·날짜별 선택(2026-11-18) — 출석 규칙·가격 계산은 공용 부품만 쓴다(여기서 다시 만들지 않는다)
+import { seasonalAttendsSql } from "@/lib/seasonal/attendance-rule";
+import { applicationUsesPeriodOrDate, proratedPrice, resolvePeriodPrice, usesPeriodOrDateFeatures } from "@/lib/seasonal/period-pricing";
+// 재원 판정 SQL 은 공개 신청과 같은 함수 하나(승인 화면 «재원 확인 필요» 경고 · 2026-11-18)
+import { hasMatchingExistingStudent, openScopeOfferingWhere } from "@/lib/seasonal/service";
+import {
+  assertDatesAreSessionDates,
+  hasSamePeriodRange,
+  isDateModeApplication,
+  parseAdminSelectedDates,
+  parseDateSelectSettings,
+  parseOfferingPeriodInput,
+  planPeriodCopy,
+  weekdaysFromDates,
+} from "@/lib/seasonal/admin-period-rules";
+import { inferWeeklyFrequency, requiredDateCount, ymdKoreanLabel } from "@/lib/seasonal/application-plan";
+import { findFullDates } from "@/lib/seasonal/date-capacity";
+import { toKstYmd } from "@/lib/datetime/kst";
 import {
   SEASONAL_SMS_TRIGGERS,
   dispatchSeasonalParentSms,
@@ -304,13 +322,8 @@ async function seasonalRoster(request: NextRequest) {
          )
        )
          AND (date_sd."startsAt" AT TIME ZONE 'Asia/Seoul')::date = $7::date
-         AND (
-           COALESCE(cardinality(app."selectedWeekdays"), 0) = 0
-           OR CASE EXTRACT(ISODOW FROM date_sd."startsAt" AT TIME ZONE 'Asia/Seoul')::int
-             WHEN 1 THEN 'MON' WHEN 2 THEN 'TUE' WHEN 3 THEN 'WED' WHEN 4 THEN 'THU'
-             WHEN 5 THEN 'FRI' WHEN 6 THEN 'SAT' ELSE 'SUN'
-           END = ANY(app."selectedWeekdays")
-         )
+         -- 그날 이 학생이 나오는가 = 공용 규칙(고른 날짜 → 기간 → 요일). 기존 신청서는 예전 «요일만» 결과와 같다.
+         AND ${seasonalAttendsSql("app", "date_sd")}
     ))
     AND ($4::text IS NULL OR ${paymentStatusSql} = $4)
     AND ($5::text IS NULL OR CASE
@@ -405,7 +418,7 @@ async function seasonalRoster(request: NextRequest) {
 async function ensureApplicationCapacity(tx: Prisma.TransactionClient, applicationId: string) {
   const items = await tx.specialProgramApplicationItem.findMany({
     where: { applicationId },
-    include: { application: { select: { selectedWeekdays: true } } },
+    include: { application: { select: { selectedWeekdays: true, selectionMode: true, selectedDates: true, periodStartDate: true, periodEndDate: true } } },
     orderBy: { offeringId: "asc" },
   });
   for (const item of items) {
@@ -413,7 +426,9 @@ async function ensureApplicationCapacity(tx: Prisma.TransactionClient, applicati
       await ensureSpecialProgramOperationalCapacity(tx, {
         offeringId: item.offeringId,
         selectedWeekdays: item.application.selectedWeekdays,
+        rule: item.application,
         excludeItemId: item.id,
+        excludeApplicationId: applicationId,
       });
     }
   }
@@ -457,7 +472,9 @@ async function updateSpecialProgramItemStatus(
     await ensureSpecialProgramOperationalCapacity(tx, {
       offeringId: before.offeringId,
       selectedWeekdays: before.application.selectedWeekdays,
+      rule: before.application,
       excludeItemId: params.itemId,
+      excludeApplicationId: before.applicationId,
     });
   }
 
@@ -549,33 +566,192 @@ async function offeringSessionWeekdays(tx: Prisma.TransactionClient, offeringId:
   return Array.from(new Set(days));
 }
 
+/** 배정 대상 기간(신청서에 남길 값). null = 기간 없음(시즌 전체). */
+type AssignmentPeriod = { id: string; label: string; startDate: string; endDate: string; shuttleFee: number | null };
+
 async function resolveSpecialProgramAssignment(
   tx: Prisma.TransactionClient,
-  params: { offeringId: string; selectedWeekdays: string[]; applicationSeasonId: string; applicantType?: string | null },
+  params: {
+    offeringId: string;
+    selectedWeekdays: string[];
+    applicationSeasonId: string;
+    applicantType?: string | null;
+    /** 날짜 모드면 고른 날짜(이미 검사된 값). 있으면 고른 반 그대로·고른 횟수를 남긴다. */
+    selectedDates?: string[] | null;
+    /** 고를 기간 범위(이름은 반의 기간 행에서 다시 읽는다). null/undefined = 기간 없음. */
+    periodRange?: { startDate: string; endDate: string } | null;
+    /**
+     * 날짜 모드 금액의 기준일 = 그 신청서의 접수일(KST 'YYYY-MM-DD'). 2026-11-18 원장 «중간 합류는 남은 회차만큼».
+     * «오늘»이 아니라 접수일로 세야 관리자가 나중에 고쳐도 금액이 날마다 줄지 않는다. 비우면 비율 계산 안 함.
+     */
+    appliedOnYmd?: string | null;
+  },
 ) {
   const target = await tx.specialProgramOffering.findUnique({ where: { id: params.offeringId } });
   if (!target || target.seasonId !== params.applicationSeasonId) {
     throw new SeasonalError("같은 시즌의 특강 반을 선택해 주세요.", 400, "OFFERING_NOT_FOUND");
   }
-  const selectedCount = params.selectedWeekdays.length;
-  const scopeWhere = target.linkedClassId
-    ? { seasonId: target.seasonId, linkedClassId: target.linkedClassId }
-    : { id: target.id };
-  const candidates = await tx.specialProgramOffering.findMany({
-    where: scopeWhere,
-    orderBy: [{ displayOrder: "asc" }, { createdAt: "asc" }],
-  });
-  const offering = candidates.find((candidate) => seasonalOfferingFrequency(candidate) === selectedCount) ?? target;
+  const applicantType = seasonalApplicantType(params.applicantType);
+  // 날짜 모드(2026-11-18 원장 결정): 관리자가 고른 주N회 반 그대로, 금액은 요일 모드와 같은 «기간 가격(없으면 반 가격)».
+  //   회당 단가 계산은 없앴다. 고른 횟수는 sessionCount 로 남긴다.
+  const dateCount = params.selectedDates && params.selectedDates.length > 0 ? params.selectedDates.length : null;
+
+  let offering = target;
+  if (dateCount === null) {
+    // 요일 모드 — 고른 요일 수로 같은 운영 묶음의 주N회 반을 찾는다(지금 동작 그대로)
+    const selectedCount = params.selectedWeekdays.length;
+    const scopeWhere = target.linkedClassId
+      ? { seasonId: target.seasonId, linkedClassId: target.linkedClassId }
+      : { id: target.id };
+    const candidates = await tx.specialProgramOffering.findMany({
+      where: scopeWhere,
+      orderBy: [{ displayOrder: "asc" }, { createdAt: "asc" }],
+    });
+    offering = candidates.find((candidate) => seasonalOfferingFrequency(candidate) === selectedCount) ?? target;
+  }
+
+  // 날짜 모드의 남은 회차 비율(공개 신청 service.ts 와 같은 함수 requiredDateCount·proratedPrice).
+  //   남은 필요 횟수는 «접수일» 기준, 분모는 시작 전 기준 전체 필요 횟수. 요일 모드·시작 전 접수는 비율 1 → 정상 금액.
+  //   주N회는 고른 반 이름의 «주N회»(공개 신청과 같은 반 고르기 규칙). 이름에 없으면 고른 날짜 수로 추정(inferWeeklyFrequency),
+  //   그래도 못 찾으면 비율을 쓰지 않는다(정상 금액).
+  async function dateModeProration(period: { startDate: string; endDate: string } | null) {
+    if (dateCount === null || !params.appliedOnYmd) return null;
+    // 회차 범위 = 공개 신청과 같은 조건(같은 묶음의 OPEN 반, 검수 L-1). 비면 공개 신청처럼 그 반 하나로 대체 —
+    //   이미 닫힌 반에 배정된 신청을 고쳐도 회차가 0이 되지 않는다.
+    const scopeOfferings = await tx.specialProgramOffering.findMany({
+      where: openScopeOfferingWhere(offering),
+      select: { sessionDates: { select: { startsAt: true } } },
+    });
+    const sessions = scopeOfferings.length
+      ? scopeOfferings.flatMap((item) => item.sessionDates)
+      : await tx.specialProgramSessionDate.findMany({ where: { offeringId: offering.id }, select: { startsAt: true } });
+    const frequency = seasonalOfferingFrequency(offering) ?? inferWeeklyFrequency(sessions, dateCount, period, params.appliedOnYmd);
+    if (frequency === null) return null;
+    const fullCount = requiredDateCount(sessions, frequency, period);
+    const remainingCount = requiredDateCount(sessions, frequency, period, params.appliedOnYmd);
+    return fullCount > 0 && remainingCount < fullCount ? { remainingCount, fullCount } : null;
+  }
+
+  // 기간 — 고른 «그 반»의 같은 범위 기간 행 값으로 받는다(공용 resolvePeriodPrice)
+  if (params.periodRange) {
+    const period = await tx.specialProgramOfferingPeriod.findFirst({
+      where: { offeringId: offering.id, startDate: params.periodRange.startDate, endDate: params.periodRange.endDate },
+    });
+    if (!period) {
+      throw new SeasonalError(`${offering.title} 반에 그 기간(${params.periodRange.startDate}~${params.periodRange.endDate}) 수강료가 없습니다. 반의 «기간별 수강료»를 먼저 넣어 주세요.`, 400, "PERIOD_NOT_FOUND");
+    }
+    const normalPrice = resolvePeriodPrice(period, applicantType);
+    const proration = await dateModeProration(period);
+    return {
+      offering,
+      priceSnapshot: proration ? proratedPrice(normalPrice, proration.remainingCount, proration.fullCount) : normalPrice,
+      proration,
+      period: { id: period.id, label: period.label, startDate: period.startDate, endDate: period.endDate, shuttleFee: period.shuttleFee } as AssignmentPeriod | null,
+      sessionCount: dateCount as number | null,
+      unitPrice: null as number | null,
+    };
+  }
+
+  // 기존 — 반 수강료 하나
+  // 할인 전 수강료(기존회원가 반영까지). 형제할인은 저장 뒤 syncSeasonSiblingDiscounts가 따로 얹는다.
+  const normalPrice = resolveOfferingPrice(offering, seasonalApplicantType(params.applicantType));
+  const proration = await dateModeProration(null);
   return {
     offering,
-    // 할인 전 수강료(기존회원가 반영까지). 형제할인은 저장 뒤 syncSeasonSiblingDiscounts가 따로 얹는다.
-    priceSnapshot: resolveOfferingPrice(offering, seasonalApplicantType(params.applicantType)),
+    priceSnapshot: proration ? proratedPrice(normalPrice, proration.remainingCount, proration.fullCount) : normalPrice,
+    proration,
+    period: null as AssignmentPeriod | null,
+    sessionCount: dateCount as number | null,
+    unitPrice: null as number | null,
   };
 }
 
+/** 반이 속한 운영 묶음(같은 시즌 + 같은 연결 반)의 실제 수업 날짜(KST 'YYYY-MM-DD') 목록. */
+async function scopeSessionYmds(tx: Prisma.TransactionClient, offeringId: string) {
+  const target = await tx.specialProgramOffering.findUnique({ where: { id: offeringId }, select: { id: true, seasonId: true, linkedClassId: true } });
+  if (!target) throw new SeasonalError("배정할 특강 반을 찾을 수 없습니다.", 404, "OFFERING_NOT_FOUND");
+  const dates = await tx.specialProgramSessionDate.findMany({
+    where: target.linkedClassId
+      ? { offering: { seasonId: target.seasonId, linkedClassId: target.linkedClassId } }
+      : { offeringId: target.id },
+    select: { startsAt: true },
+  });
+  return new Set(dates.map((row) => toKstYmd(row.startsAt)).filter(Boolean));
+}
+
+/**
+ * 관리자 배정 요청(반·요일·날짜·기간)을 신청서 상태와 맞춰 정리한다.
+ *   - 날짜 모드 신청서인데 요일만 보내면 400(날짜를 골라야 한다).
+ *   - 날짜를 보내면 실제 수업 날짜인지 검사하고, selectedWeekdays 는 그 날짜들의 요일로 채운다(안전장치).
+ *   - 요일 모드 신청서를 날짜로 바꾸는 것은 시즌의 날짜별 선택이 켜져 있을 때만.
+ *   - 기간: periodId 를 안 보내면 신청서의 지금 기간을 그대로, null/"" 이면 기간 없음, 값이면 그 기간 행의 범위.
+ */
+async function resolveAssignmentSelection(
+  tx: Prisma.TransactionClient,
+  params: {
+    application: { seasonId: string; selectionMode: string; selectedDates: string[]; periodStartDate: string | null; periodEndDate: string | null };
+    offeringId: string;
+    selectedWeekdays: string[];
+    selectedDates: string[] | undefined;
+    periodId: string | null | undefined;
+  },
+) {
+  const appIsDateMode = isDateModeApplication(params.application);
+  if (params.selectedDates === undefined) {
+    if (appIsDateMode) {
+      throw new SeasonalError("날짜로 신청한 학생은 요일이 아니라 날짜를 골라 주세요.", 400, "DATE_MODE_REQUIRES_DATES");
+    }
+    if (params.selectedWeekdays.length === 0) throw new SeasonalError("학생이 실제 참여할 요일을 선택해 주세요.", 400, "WEEKDAYS_REQUIRED");
+  } else {
+    if (!appIsDateMode) {
+      const season = await tx.specialProgramSeason.findUnique({ where: { id: params.application.seasonId }, select: { dateSelectEnabled: true } });
+      if (!season?.dateSelectEnabled) {
+        throw new SeasonalError("이 시즌은 날짜별 선택이 꺼져 있어 날짜로 배정할 수 없습니다.", 400, "DATE_SELECT_DISABLED");
+      }
+    }
+    assertDatesAreSessionDates(params.selectedDates, await scopeSessionYmds(tx, params.offeringId));
+  }
+  const selectedDates = params.selectedDates ?? null;
+  const selectedWeekdays = selectedDates ? weekdaysFromDates(selectedDates) : params.selectedWeekdays;
+
+  // 기간 범위 정하기 — 날짜 모드도 기간을 쓴다(2026-11-18 «기간 → 주N회 → 날짜», 가격 = 기간 가격)
+  let periodRange: { startDate: string; endDate: string } | null = null;
+  if (params.periodId === undefined) {
+    if (params.application.periodStartDate && params.application.periodEndDate) {
+      periodRange = { startDate: params.application.periodStartDate, endDate: params.application.periodEndDate };
+    }
+  } else if (params.periodId) {
+    const period = await tx.specialProgramOfferingPeriod.findUnique({
+      where: { id: params.periodId },
+      select: { startDate: true, endDate: true, offering: { select: { seasonId: true } } },
+    });
+    if (!period || period.offering.seasonId !== params.application.seasonId) {
+      throw new SeasonalError("고른 기간을 찾을 수 없습니다.", 400, "PERIOD_NOT_FOUND");
+    }
+    periodRange = { startDate: period.startDate, endDate: period.endDate };
+  }
+  return { selectedDates, selectedWeekdays, periodRange };
+}
+
+/** 정원 검사에 쓰는 신청서의 기간·날짜 값(공용 SeasonalAttendanceRule 의 나머지 칸). */
+type CapacityRuleInput = {
+  selectionMode?: string | null;
+  selectedDates?: string[] | null;
+  periodStartDate?: string | null;
+  periodEndDate?: string | null;
+};
+
 async function ensureSpecialProgramOperationalCapacity(
   tx: Prisma.TransactionClient,
-  params: { offeringId: string; selectedWeekdays?: string[] | null; excludeItemId?: string; statuses?: string[] },
+  params: {
+    offeringId: string;
+    selectedWeekdays?: string[] | null;
+    rule?: CapacityRuleInput | null;
+    excludeItemId?: string;
+    /** 날짜별 정원(findFullDates)에서 세지 않을 «그 신청서 자신» — 이미 승인된 자기 항목을 두 번 세지 않게 꼭 넣는다. */
+    excludeApplicationId?: string;
+    statuses?: string[];
+  },
 ) {
   const target = await tx.specialProgramOffering.findUnique({ where: { id: params.offeringId } });
   if (!target) throw new SeasonalError("배정할 특강 반을 찾을 수 없습니다.", 404, "OFFERING_NOT_FOUND");
@@ -590,6 +766,57 @@ async function ensureSpecialProgramOperationalCapacity(
   const scopedOfferingIds = scopedOfferings.map((offering) => offering.id);
   if (scopedOfferingIds.length > 0) {
     await tx.$queryRaw`SELECT id FROM "SpecialProgramOffering" WHERE id IN (${Prisma.join(scopedOfferingIds)}) ORDER BY id FOR UPDATE`;
+  }
+
+  // 기간·날짜 기능을 쓰는 시즌이면 «날짜별 정원»(담당 A 의 공용 findFullDates — 공개 신청과 같은 함수)으로 본다.
+  //   쓰는 시즌 판정은 공용 usesPeriodOrDateFeatures 하나로 한다(공개 신청·보강·출석부와 같은 기준 — 켜진 기간 행만 센다).
+  //   그 밖의 시즌은 아래 기존 «요일별 정원» 검사를 그대로 쓴다(지금 동작 보존).
+  if (target.capacity !== null && scopedOfferingIds.length > 0) {
+    const rule = params.rule ?? {};
+    // 날짜 모드(isDateModeApplication 과 같은 조건) 또는 기간을 적은 신청서
+    const ruleUsesDates = applicationUsesPeriodOrDate(rule);
+    const [season, activePeriodCount] = ruleUsesDates
+      ? [null, 0]
+      : await Promise.all([
+          tx.specialProgramSeason.findUnique({ where: { id: target.seasonId }, select: { dateSelectEnabled: true } }),
+          // 꺼진 기간 행(isActive=false)은 세지 않는다 — 공개 신청 화면에 안 보이는 기간이다
+          tx.specialProgramOfferingPeriod.count({ where: { offeringId: { in: scopedOfferingIds }, isActive: true } }),
+        ]);
+    if (usesPeriodOrDateFeatures({
+      dateSelectEnabled: season?.dateSelectEnabled,
+      activePeriodCount,
+      applicationsUsePeriodOrDate: ruleUsesDates,
+    })) {
+      const sessionDates = await tx.specialProgramSessionDate.findMany({
+        where: { offeringId: { in: scopedOfferingIds } },
+        select: { id: true, startsAt: true },
+      });
+      const fullDates = await findFullDates(tx, {
+        scopeOfferingIds: scopedOfferingIds,
+        capacity: target.capacity,
+        sessionDates,
+        rule: {
+          selectionMode: rule.selectionMode ?? null,
+          selectedWeekdays: normalizeSelectedWeekdays(params.selectedWeekdays ?? []),
+          selectedDates: rule.selectedDates ?? [],
+          periodStartDate: rule.periodStartDate ?? null,
+          periodEndDate: rule.periodEndDate ?? null,
+        },
+        excludeApplicationIds: params.excludeApplicationId ? [params.excludeApplicationId] : [],
+        // 관리자 승인은 기존 요일 검사와 같은 상태만 센다(기본 APPROVED) — 승인 대기 신청은 정원을 막지 않는다
+        statuses: params.statuses?.length ? params.statuses : APPROVED_SEAT_STATUSES,
+      });
+      if (fullDates.length > 0) {
+        const shown = fullDates.slice(0, 5).map(ymdKoreanLabel).join(", ");
+        throw new SeasonalError(
+          `${shown}${fullDates.length > 5 ? ` 외 ${fullDates.length - 5}일` : ""} 정원이 가득 차 승인할 수 없습니다.`,
+          409,
+          "CAPACITY_FULL",
+          { fullDates },
+        );
+      }
+      return target;
+    }
   }
 
   const selectedWeekdays = normalizeSelectedWeekdays(params.selectedWeekdays ?? []);
@@ -773,9 +1000,41 @@ async function updateOperationalSlotInstructor(
   return { updatedCount: touchedSessionIds.size };
 }
 
+/** 관리자 배정 요청 값 — selectedDates/periodId 는 «안 보냄(undefined) = 지금 값 유지» 규칙. */
+type AssignmentRequest = {
+  offeringId: string;
+  selectedWeekdays: string[];
+  selectedDates?: string[];
+  periodId?: string | null;
+  priceSnapshot: number;
+  actorId: string;
+};
+
+/** 배정 결과를 신청서·항목 칸으로 바꾼다(요일·날짜·기간을 한 번에 같은 값으로 저장). */
+function assignmentStorageFields(
+  selection: { selectedDates: string[] | null; selectedWeekdays: string[] },
+  assignment: Awaited<ReturnType<typeof resolveSpecialProgramAssignment>>,
+) {
+  return {
+    application: {
+      selectedWeekdays: selection.selectedWeekdays,
+      selectionMode: selection.selectedDates ? "DATE" : "WEEKDAY",
+      selectedDates: selection.selectedDates ?? [],
+      periodLabel: assignment.period?.label ?? null,
+      periodStartDate: assignment.period?.startDate ?? null,
+      periodEndDate: assignment.period?.endDate ?? null,
+    },
+    item: {
+      offeringPeriodId: assignment.period?.id ?? null,
+      sessionCountSnapshot: assignment.sessionCount,
+      unitPriceSnapshot: assignment.unitPrice,
+    },
+  };
+}
+
 async function saveSpecialProgramItemAssignment(
   tx: Prisma.TransactionClient,
-  params: { itemId: string; offeringId: string; selectedWeekdays: string[]; priceSnapshot: number; actorId: string },
+  params: AssignmentRequest & { itemId: string },
 ) {
   const before = await tx.specialProgramApplicationItem.findUnique({
     where: { id: params.itemId },
@@ -785,13 +1044,30 @@ async function saveSpecialProgramItemAssignment(
   if (before.enrollmentId || before.paymentId) {
     throw new SeasonalError("이미 수강 등록이나 청구서가 연결된 신청은 먼저 연결을 정리한 뒤 변경해 주세요.", 409, "ITEM_ALREADY_CONVERTED");
   }
-  const assignment = await resolveSpecialProgramAssignment(tx, {
+  // 요일·날짜·기간을 신청서 상태와 맞춰 정리(날짜 모드인데 요일만 보내면 여기서 400)
+  const selection = await resolveAssignmentSelection(tx, {
+    application: before.application,
     offeringId: params.offeringId,
     selectedWeekdays: params.selectedWeekdays,
+    selectedDates: params.selectedDates,
+    periodId: params.periodId,
+  });
+  const assignment = await resolveSpecialProgramAssignment(tx, {
+    offeringId: params.offeringId,
+    selectedWeekdays: selection.selectedWeekdays,
     applicationSeasonId: before.application.seasonId,
     applicantType: before.application.applicantType,
+    selectedDates: selection.selectedDates,
+    periodRange: selection.periodRange,
+    // 날짜 모드 금액은 «접수일» 기준 남은 회차 비율(오늘 기준이면 고칠 때마다 금액이 줄어든다)
+    appliedOnYmd: toKstYmd(before.application.createdAt),
   });
-  const offering = assignment.offering;
+  // 기간을 고른 신청은 «반 셔틀비» 자리에 기간 셔틀비(비어 있으면 반 셔틀비)를 넣는다 —
+  // 공용 resolvePeriodShuttleFee 와 같은 결과이고, 기간 없는 반은 반 그대로(지금 동작 보존)
+  const offering = assignment.period
+    ? { ...assignment.offering, shuttleFee: assignment.period.shuttleFee ?? assignment.offering.shuttleFee }
+    : assignment.offering;
+  const stored = assignmentStorageFields(selection, assignment);
   const duplicated = await tx.specialProgramApplicationItem.findFirst({
     where: { applicationId: before.applicationId, offeringId: offering.id, id: { not: before.id } },
     select: { id: true },
@@ -800,8 +1076,11 @@ async function saveSpecialProgramItemAssignment(
   if (before.status === "APPROVED") {
     await ensureSpecialProgramOperationalCapacity(tx, {
       offeringId: offering.id,
-      selectedWeekdays: params.selectedWeekdays,
+      selectedWeekdays: selection.selectedWeekdays,
+      // 정원은 «바꾼 뒤» 날짜·기간으로 본다
+      rule: stored.application,
       excludeItemId: before.id,
+      excludeApplicationId: before.applicationId,
     });
   }
   let waitlistOrder = before.waitlistOrder;
@@ -809,7 +1088,12 @@ async function saveSpecialProgramItemAssignment(
     const last = await tx.specialProgramApplicationItem.aggregate({ where: { offeringId: offering.id, status: "WAITLISTED" }, _max: { waitlistOrder: true } });
     waitlistOrder = (last._max.waitlistOrder || 0) + 1;
   }
-  const shuttleFeeSnapshot = resolveShuttleFee(offering, Boolean(before.shuttleRequest));
+  // 셔틀비는 공개 신청과 같은 resolveShuttleFee(기간을 고른 신청은 위 offering 에 기간 셔틀비가 들어 있다)
+  const normalShuttleFee = resolveShuttleFee(offering, Boolean(before.shuttleRequest));
+  // 날짜 모드 중간 합류면 셔틀비도 수강료와 같은 비율·100원 내림(공개 신청과 같다)
+  const shuttleFeeSnapshot = assignment.proration
+    ? proratedPrice(normalShuttleFee, assignment.proration.remainingCount, assignment.proration.fullCount)
+    : normalShuttleFee;
   await tx.specialProgramApplicationItem.update({
     where: { id: before.id },
     data: {
@@ -822,6 +1106,7 @@ async function saveSpecialProgramItemAssignment(
       siblingDiscountSnapshot: 0,
       discountReasonSnapshot: null,
       priceSnapshot: assignment.priceSnapshot + shuttleFeeSnapshot,
+      ...stored.item,
       waitlistOrder: before.status === "WAITLISTED" ? waitlistOrder : null,
       conversionStatus: "NOT_STARTED",
       conversionError: null,
@@ -835,7 +1120,7 @@ async function saveSpecialProgramItemAssignment(
   await tx.specialProgramApplication.update({
     where: { id: before.applicationId },
     data: {
-      selectedWeekdays: params.selectedWeekdays,
+      ...stored.application,
       requiresReview: reviewReasons.length > 0,
       reviewReasons,
     },
@@ -851,7 +1136,7 @@ async function saveSpecialProgramItemAssignment(
       actorId: params.actorId,
       action: "ITEM_ASSIGNMENT_UPDATED",
       beforeJSON: before,
-      afterJSON: { item, selectedWeekdays: params.selectedWeekdays, application },
+      afterJSON: { item, selectedWeekdays: selection.selectedWeekdays, selection: stored.application, application },
     },
   });
   return { item, application };
@@ -859,20 +1144,32 @@ async function saveSpecialProgramItemAssignment(
 
 async function createSpecialProgramApplicationItem(
   tx: Prisma.TransactionClient,
-  params: { applicationId: string; offeringId: string; selectedWeekdays: string[]; priceSnapshot: number; actorId: string },
+  params: AssignmentRequest & { applicationId: string },
 ) {
   const application = await tx.specialProgramApplication.findUnique({
     where: { id: params.applicationId },
     include: { items: { select: { offeringId: true } } },
   });
   if (!application) throw new SeasonalError("신청서를 찾을 수 없습니다.", 404, "APPLICATION_NOT_FOUND");
-  const assignment = await resolveSpecialProgramAssignment(tx, {
+  const selection = await resolveAssignmentSelection(tx, {
+    application,
     offeringId: params.offeringId,
     selectedWeekdays: params.selectedWeekdays,
+    selectedDates: params.selectedDates,
+    periodId: params.periodId,
+  });
+  const assignment = await resolveSpecialProgramAssignment(tx, {
+    offeringId: params.offeringId,
+    selectedWeekdays: selection.selectedWeekdays,
     applicationSeasonId: application.seasonId,
     applicantType: application.applicantType,
+    selectedDates: selection.selectedDates,
+    periodRange: selection.periodRange,
+    // 새 항목도 같은 규칙 — 날짜 모드는 접수일 기준 남은 회차 비율(셔틀비는 이 경로에서 0 그대로)
+    appliedOnYmd: toKstYmd(application.createdAt),
   });
   const offering = assignment.offering;
+  const stored = assignmentStorageFields(selection, assignment);
   if (application.items.some((item) => item.offeringId === offering.id)) {
     throw new SeasonalError("이미 같은 반으로 등록된 신청 항목이 있습니다.", 409, "OFFERING_ALREADY_ASSIGNED");
   }
@@ -886,6 +1183,7 @@ async function createSpecialProgramApplicationItem(
       siblingDiscountSnapshot: 0,
       discountReasonSnapshot: null,
       shuttleFeeSnapshot: 0,
+      ...stored.item,
       status: "PENDING",
     },
   });
@@ -896,7 +1194,7 @@ async function createSpecialProgramApplicationItem(
   await tx.specialProgramApplication.update({
     where: { id: application.id },
     data: {
-      selectedWeekdays: params.selectedWeekdays,
+      ...stored.application,
       requiresReview: reviewReasons.length > 0,
       reviewReasons,
     },
@@ -911,25 +1209,99 @@ async function createSpecialProgramApplicationItem(
       actorType: "ADMIN",
       actorId: params.actorId,
       action: "ITEM_ASSIGNMENT_CREATED",
-      afterJSON: { item, selectedWeekdays: params.selectedWeekdays, application: updatedApplication },
+      afterJSON: { item, selectedWeekdays: selection.selectedWeekdays, selection: stored.application, application: updatedApplication },
     },
   });
   return { item, application: updatedApplication };
 }
 
+/**
+ * 이 기간 행으로 신청한(진행 중인) 신청 항목 수.
+ * 항목에 기간 id 가 남은 것 + (같은 반이고 신청서의 기간 범위가 같은 것)을 함께 센다 — 가져오기 등으로 id 가 비었어도 놓치지 않게.
+ */
+async function countPeriodApplications(
+  tx: Prisma.TransactionClient | typeof prisma,
+  period: { id: string; offeringId: string; startDate: string; endDate: string },
+) {
+  return tx.specialProgramApplicationItem.count({
+    where: {
+      status: { in: ["PENDING", "WAITLISTED", "APPROVED"] },
+      OR: [
+        { offeringPeriodId: period.id },
+        { offeringId: period.offeringId, application: { periodStartDate: period.startDate, periodEndDate: period.endDate } },
+      ],
+    },
+  });
+}
+
 function respondError(error: unknown) {
-  if (error instanceof SeasonalError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+  // details(예: 정원이 찬 날짜 목록 fullDates)가 있으면 화면이 쓸 수 있게 같이 보낸다
+  if (error instanceof SeasonalError) return NextResponse.json({ error: error.message, code: error.code, ...(error.details !== undefined ? { details: error.details } : {}) }, { status: error.status });
   if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002" && JSON.stringify(error.meta?.target ?? "").toLowerCase().includes("code")) {
     return NextResponse.json({ error: "같은 시즌에 이미 사용 중인 반 코드입니다. 다른 코드를 입력해 주세요.", code: "OFFERING_CODE_DUPLICATED" }, { status: 409 });
   }
+  // 기간 행 동시 추가로 같은 범위가 겹쳐 들어온 경우(유일 색인) — 사람 말로 409
+  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002" && JSON.stringify(error.meta ?? "").includes("startDate")) {
+    return NextResponse.json({ error: "이 반에 같은 기간(시작~종료)이 이미 있습니다.", code: "PERIOD_DUPLICATED" }, { status: 409 });
+  }
   console.error("[admin seasonal]", error);
   return NextResponse.json({ error: "방학특강 관리 작업에 실패했습니다." }, { status: 500 });
+}
+
+/** 재원 재확인 대상 — 재원가(EXISTING)로 접수됐고, 아직 승인·수강·청구 연결 전(청구서 없는 진행 중 항목)이 있는 신청. */
+const EXISTING_RECHECK_ITEM_STATUSES = new Set(["PENDING", "WAITLISTED", "APPROVED"]);
+
+/**
+ * 재원가로 접수된 신청 중 «지금은 정규반 ACTIVE 가 아닌» 신청 id 모음(목록 한 쪽 = 최대 100건).
+ * 판정은 공개 신청의 hasMatchingExistingStudent(이름·생년월일·연락처 + 정규반 ACTIVE) 그대로.
+ * 조회가 실패하면 경고를 띄우지 않는다(보조 장치 — 목록 자체는 보여야 한다).
+ */
+async function findExistingNoLongerActive(applications: AdminApplicationRow[]): Promise<Set<string>> {
+  const targets = applications.filter((application) => application.applicantType === "EXISTING"
+    && application.items.some((item) => EXISTING_RECHECK_ITEM_STATUSES.has(String(item.status)) && !item.paymentId));
+  const result = new Set<string>();
+  // DB 연결 한도가 작아(5) 3건씩 나눠 묻는다
+  for (let index = 0; index < targets.length; index += 3) {
+    await Promise.all(targets.slice(index, index + 3).map(async (application) => {
+      const birth = application.childBirthDate instanceof Date ? application.childBirthDate : new Date(String(application.childBirthDate ?? ""));
+      if (Number.isNaN(birth.getTime())) return;
+      try {
+        const active = await hasMatchingExistingStudent({
+          child: { name: String(application.childName ?? ""), birthDate: birth.toISOString() },
+          parent: { phone: String(application.parentPhone ?? "").replace(/[^0-9]/g, "") },
+        });
+        if (!active) result.add(String(application.id));
+      } catch (error) {
+        console.error("[seasonal] 재원 재확인 실패", error);
+      }
+    }));
+  }
+  return result;
 }
 
 export async function GET(request: NextRequest) {
   try {
     await admin();
     if (request.nextUrl.searchParams.get("view") === "roster") return seasonalRoster(request);
+    // 날짜별 선택 신청 수(2026-11-18) — 반 편집에서 회차를 지우거나 옮길 때 «그 날짜를 고른 신청 N건» 경고용
+    if (request.nextUrl.searchParams.get("view") === "dateSelections") {
+      const offeringId = cleanText(request.nextUrl.searchParams.get("offeringId"), 100);
+      if (!offeringId) throw new SeasonalError("특강 반을 선택해 주세요.", 400, "OFFERING_REQUIRED");
+      const rows = await prisma.$queryRawUnsafe<Array<{ date: string; count: number }>>(
+        `SELECT picked.d AS date, COUNT(DISTINCT app.id)::int AS count
+           FROM "SpecialProgramOffering" target
+           JOIN "SpecialProgramOffering" offering
+             ON offering.id = target.id
+             OR (target."linkedClassId" IS NOT NULL AND offering."linkedClassId" = target."linkedClassId" AND offering."seasonId" = target."seasonId")
+           JOIN "SpecialProgramApplicationItem" item ON item."offeringId" = offering.id
+           JOIN "SpecialProgramApplication" app ON app.id = item."applicationId"
+           CROSS JOIN LATERAL unnest(app."selectedDates") AS picked(d)
+          WHERE target.id = $1 AND item.status IN ('PENDING','WAITLISTED','APPROVED')
+          GROUP BY picked.d`,
+        offeringId,
+      );
+      return NextResponse.json({ counts: Object.fromEntries(rows.map((row) => [row.date, Number(row.count)])) });
+    }
     const seasonId = request.nextUrl.searchParams.get("seasonId") || undefined;
     const includeApplications = request.nextUrl.searchParams.get("includeApplications") === "true";
     if (!includeApplications) return NextResponse.json(await getSeasonalAdminOverview(seasonId));
@@ -995,8 +1367,12 @@ export async function GET(request: NextRequest) {
       : [];
     const deliverySummaries = latestDeliverySummaries(deliveryRows);
     const statusTriggers = Object.values(ITEM_NOTIFICATION_TRIGGER).filter((trigger): trigger is SeasonalSmsTrigger => Boolean(trigger));
+    // 재원 재확인(2026-11-18 원장) — 재원가로 접수됐는데 «지금» 정규반 ACTIVE 가 아니면(휴원·퇴원) 승인 화면에 경고.
+    //   가격은 자동으로 바꾸지 않는다(관리자가 재배정으로 처리). 판정은 공개 신청과 같은 SQL 함수 하나.
+    const existingNotActiveIds = await findExistingNoLongerActive(applicationRows as AdminApplicationRow[]);
     const applications = (applicationRows as AdminApplicationRow[]).map((application) => ({
       ...application,
+      existingCheck: existingNotActiveIds.has(String(application.id)) ? "NOT_ACTIVE" as const : null,
       notificationSummary: newestNotification([
         deliverySummaries.get(deliveryEventId(String(application.id), null, SEASONAL_SMS_TRIGGERS.received)),
         ...statusTriggers.map((trigger) => deliverySummaries.get(deliveryEventId(String(application.id), null, trigger))),
@@ -1050,7 +1426,9 @@ export async function POST(request: NextRequest) {
       const endsAt = date(data.endsAt, "수업 종료일");
       if (applicationClosesAt <= applicationOpensAt || endsAt < startsAt) throw new SeasonalError("시작일과 종료일의 순서를 확인해 주세요.");
       const status = SEASON_STATUSES.has(data.status) ? data.status : "DRAFT";
-      const season = await prisma.specialProgramSeason.create({ data: { slug, title, description: cleanText(data.description, 5000), applicationOpensAt, applicationClosesAt, startsAt, endsAt, status, termsText: cleanText(data.termsText, 10000), cancellationPolicy: cleanText(data.cancellationPolicy, 10000) } });
+      // 날짜별 선택 4칸(2026-11-18) — 안 보내면 스키마 기본값(꺼짐·단가 없음·최소 1회)
+      const dateSelect = parseDateSelectSettings(data);
+      const season = await prisma.specialProgramSeason.create({ data: { slug, title, description: cleanText(data.description, 5000), applicationOpensAt, applicationClosesAt, startsAt, endsAt, status, termsText: cleanText(data.termsText, 10000), cancellationPolicy: cleanText(data.cancellationPolicy, 10000), ...dateSelect } });
       await prisma.specialProgramAuditLog.create({ data: { seasonId: season.id, actorType: "ADMIN", actorId: actor.appUserId, action: "SEASON_CREATED", afterJSON: season } });
       return NextResponse.json({ season }, { status: 201 });
     }
@@ -1075,6 +1453,55 @@ export async function POST(request: NextRequest) {
       });
       await prisma.specialProgramAuditLog.create({ data: { seasonId, offeringId: offering.id, actorType: "ADMIN", actorId: actor.appUserId, action: "OFFERING_CREATED", afterJSON: offering } });
       return NextResponse.json({ offering }, { status: 201 });
+    }
+    // 반별 «기간별 수강료» 한 줄 추가(2026-11-18)
+    if (body?.resource === "offeringPeriod") {
+      const offeringId = cleanText(data.offeringId, 100);
+      if (!offeringId) throw new SeasonalError("기간을 넣을 특강 반을 선택해 주세요.", 400, "OFFERING_REQUIRED");
+      const offering = await prisma.specialProgramOffering.findUnique({ where: { id: offeringId }, include: { periods: true } });
+      if (!offering) throw new SeasonalError("특강 반을 찾을 수 없습니다.", 404, "OFFERING_NOT_FOUND");
+      const values = parseOfferingPeriodInput(data);
+      if (hasSamePeriodRange(offering.periods, values)) {
+        throw new SeasonalError("이 반에 같은 기간(시작~종료)이 이미 있습니다.", 409, "PERIOD_DUPLICATED");
+      }
+      const period = await prisma.$transaction(async (tx) => {
+        const created = await tx.specialProgramOfferingPeriod.create({ data: { offeringId, ...values } });
+        await tx.specialProgramAuditLog.create({ data: { seasonId: offering.seasonId, offeringId, actorType: "ADMIN", actorId: actor.appUserId, action: "OFFERING_PERIOD_CREATED", afterJSON: created } });
+        return created;
+      });
+      return NextResponse.json({ period }, { status: 201 });
+    }
+    // «같은 수업의 다른 반에 기간 복사» — 이름·날짜만 복사, 값은 받는 반의 지금 반 수강료(planPeriodCopy 규칙)
+    if (body?.resource === "offeringPeriodCopy") {
+      const offeringId = cleanText(data.offeringId, 100);
+      if (!offeringId) throw new SeasonalError("복사할 원본 반을 선택해 주세요.", 400, "OFFERING_REQUIRED");
+      const source = await prisma.specialProgramOffering.findUnique({ where: { id: offeringId }, include: { periods: true } });
+      if (!source) throw new SeasonalError("특강 반을 찾을 수 없습니다.", 404, "OFFERING_NOT_FOUND");
+      if (!source.linkedClassId) {
+        throw new SeasonalError("연결 정규 반이 있어야 같은 수업의 다른 반을 찾을 수 있습니다.", 400, "LINKED_CLASS_REQUIRED");
+      }
+      if (source.periods.length === 0) throw new SeasonalError("복사할 기간이 없습니다. 먼저 이 반에 기간을 넣어 주세요.", 400, "PERIOD_REQUIRED");
+      const targets = await prisma.specialProgramOffering.findMany({
+        where: { seasonId: source.seasonId, linkedClassId: source.linkedClassId, id: { not: source.id } },
+        include: { periods: { select: { startDate: true, endDate: true } } },
+        orderBy: [{ displayOrder: "asc" }, { createdAt: "asc" }],
+      });
+      if (targets.length === 0) throw new SeasonalError("같은 수업의 다른 반이 없습니다.", 400, "NO_SIBLING_OFFERING");
+      const plan = planPeriodCopy(source.periods, targets);
+      await prisma.$transaction(async (tx) => {
+        for (const row of plan.creates) await tx.specialProgramOfferingPeriod.create({ data: row });
+        for (const target of targets) {
+          const created = plan.creates.filter((row) => row.offeringId === target.id);
+          if (created.length === 0) continue;
+          await tx.specialProgramAuditLog.create({
+            data: {
+              seasonId: target.seasonId, offeringId: target.id, actorType: "ADMIN", actorId: actor.appUserId,
+              action: "OFFERING_PERIOD_COPIED", afterJSON: { sourceOfferingId: source.id, periods: created },
+            },
+          });
+        }
+      });
+      return NextResponse.json({ created: plan.creates.length, skipped: plan.skipped, targetCount: targets.length }, { status: 201 });
     }
     throw new SeasonalError("지원하지 않는 생성 대상입니다.");
   } catch (error) { return respondError(error); }
@@ -1319,6 +1746,8 @@ export async function PATCH(request: NextRequest) {
       for (const key of ["applicationOpensAt", "applicationClosesAt", "startsAt", "endsAt"] as const) if (data[key] !== undefined) update[key] = date(data[key], key);
       if (data.termsText !== undefined) update.termsText = cleanText(data.termsText, 10000) || null;
       if (data.cancellationPolicy !== undefined) update.cancellationPolicy = cleanText(data.cancellationPolicy, 10000) || null;
+      // 날짜별 선택 4칸(2026-11-18) — 보낸 칸만 바꾼다. 켠 상태로 끝나는데 회당 신규 단가가 없으면 400.
+      Object.assign(update, parseDateSelectSettings(data, before));
       const season = await prisma.specialProgramSeason.update({ where: { id }, data: update });
       await prisma.specialProgramAuditLog.create({ data: { seasonId: id, actorType: "ADMIN", actorId: actor.appUserId, action: "SEASON_UPDATED", beforeJSON: before, afterJSON: season } });
       return NextResponse.json({ season });
@@ -1396,6 +1825,31 @@ export async function PATCH(request: NextRequest) {
       });
       await prisma.specialProgramAuditLog.create({ data: { seasonId: offering.seasonId, offeringId: id, actorType: "ADMIN", actorId: actor.appUserId, action: "OFFERING_UPDATED", beforeJSON: before, afterJSON: offering } });
       return NextResponse.json({ offering });
+    }
+
+    // 반별 «기간별 수강료» 한 줄 수정(2026-11-18)
+    if (body.resource === "offeringPeriod") {
+      const before = await prisma.specialProgramOfferingPeriod.findUnique({ where: { id }, include: { offering: { select: { seasonId: true, periods: { select: { id: true, startDate: true, endDate: true } } } } } });
+      if (!before) throw new SeasonalError("기간을 찾을 수 없습니다.", 404, "PERIOD_NOT_FOUND");
+      const values = parseOfferingPeriodInput(data, before);
+      const rangeChanged = values.startDate !== before.startDate || values.endDate !== before.endDate;
+      if (rangeChanged) {
+        if (hasSamePeriodRange(before.offering.periods, values, before.id)) {
+          throw new SeasonalError("이 반에 같은 기간(시작~종료)이 이미 있습니다.", 409, "PERIOD_DUPLICATED");
+        }
+        // 이미 이 기간으로 신청한 학생이 있으면 날짜를 못 바꾼다 — 신청서에 남은 기간과 어긋나 출석·청구가 갈라진다.
+        const inUse = await countPeriodApplications(prisma, before);
+        if (inUse > 0) {
+          throw new SeasonalError(`이 기간으로 신청한 학생이 ${inUse}명 있어 날짜를 바꿀 수 없습니다. 새 기간을 추가해 주세요.`, 409, "PERIOD_IN_USE");
+        }
+      }
+      const period = await prisma.$transaction(async (tx) => {
+        const updated = await tx.specialProgramOfferingPeriod.update({ where: { id }, data: values });
+        const { offering: _offering, ...beforeRow } = before;
+        await tx.specialProgramAuditLog.create({ data: { seasonId: before.offering.seasonId, offeringId: before.offeringId, actorType: "ADMIN", actorId: actor.appUserId, action: "OFFERING_PERIOD_UPDATED", beforeJSON: beforeRow, afterJSON: updated } });
+        return updated;
+      });
+      return NextResponse.json({ period });
     }
 
     if (body.resource === "notificationRetry") {
@@ -1487,13 +1941,19 @@ export async function PATCH(request: NextRequest) {
       const offeringId = cleanText(data.offeringId, 100);
       if (!offeringId) throw new SeasonalError("배정할 특강 반을 선택해 주세요.", 400, "OFFERING_REQUIRED");
       const selectedWeekdays = normalizeSelectedWeekdays(data.selectedWeekdays);
-      if (selectedWeekdays.length === 0) throw new SeasonalError("학생이 실제 참여할 요일을 선택해 주세요.", 400, "WEEKDAYS_REQUIRED");
+      // 날짜 모드 배정(2026-11-18): selectedDates 를 보내면 날짜로, 안 보내면 지금처럼 요일로 배정한다.
+      //   요일이 비었는지·날짜 모드 신청서에 요일만 보냈는지는 resolveAssignmentSelection 이 신청서를 보고 판정한다.
+      const selectedDates = data.selectedDates === undefined || data.selectedDates === null ? undefined : parseAdminSelectedDates(data.selectedDates);
+      if (selectedDates === undefined && selectedWeekdays.length === 0) throw new SeasonalError("학생이 실제 참여할 요일을 선택해 주세요.", 400, "WEEKDAYS_REQUIRED");
+      // 기간: 안 보냄 = 지금 기간 유지, null/"" = 기간 없음(시즌 전체), 값 = 그 기간 행
+      const periodId = data.periodId === undefined ? undefined : (cleanText(data.periodId, 100) || null);
       const priceSnapshot = nonNegativeInt(data.priceSnapshot, "금액");
       if (priceSnapshot <= 0) throw new SeasonalError("금액은 1원 이상이어야 합니다.", 400, "PRICE_REQUIRED");
+      const assignmentRequest = { offeringId, selectedWeekdays, selectedDates, periodId, priceSnapshot, actorId: actor.appUserId };
       const result = await prisma.$transaction(
         (tx) => body.resource === "itemAssignment"
-          ? saveSpecialProgramItemAssignment(tx, { itemId: id, offeringId, selectedWeekdays, priceSnapshot, actorId: actor.appUserId })
-          : createSpecialProgramApplicationItem(tx, { applicationId: id, offeringId, selectedWeekdays, priceSnapshot, actorId: actor.appUserId }),
+          ? saveSpecialProgramItemAssignment(tx, { ...assignmentRequest, itemId: id })
+          : createSpecialProgramApplicationItem(tx, { ...assignmentRequest, applicationId: id }),
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
       );
       // 반 이동·요일 변경 확정 후(트랜잭션 커밋 뒤) 출석 슬롯을 새 반·새 요일에 맞춰 다시 맞춘다.
@@ -1918,7 +2378,22 @@ export async function DELETE(request: NextRequest) {
     const actor = await admin();
     const resource = request.nextUrl.searchParams.get("resource");
     const id = request.nextUrl.searchParams.get("id");
-    if (!id || (resource !== "season" && resource !== "offering")) throw new SeasonalError("삭제 대상이 올바르지 않습니다.");
+    if (!id || (resource !== "season" && resource !== "offering" && resource !== "offeringPeriod")) throw new SeasonalError("삭제 대상이 올바르지 않습니다.");
+    // 반별 «기간별 수강료» 한 줄 삭제(2026-11-18) — 신청이 있으면 반 삭제와 같은 관례로 409(숨기기는 «사용 안 함»)
+    if (resource === "offeringPeriod") {
+      const period = await prisma.specialProgramOfferingPeriod.findUnique({ where: { id }, include: { offering: { select: { seasonId: true } } } });
+      if (!period) throw new SeasonalError("기간을 찾을 수 없습니다.", 404, "PERIOD_NOT_FOUND");
+      const inUse = await countPeriodApplications(prisma, period);
+      if (inUse > 0) {
+        throw new SeasonalError(`이 기간으로 신청한 학생이 ${inUse}명 있어 삭제할 수 없습니다. 더 받지 않으려면 «사용 안 함»으로 바꿔 주세요.`, 409, "PERIOD_IN_USE");
+      }
+      await prisma.$transaction(async (tx) => {
+        const { offering: _offering, ...beforeRow } = period;
+        await tx.specialProgramAuditLog.create({ data: { seasonId: period.offering.seasonId, offeringId: period.offeringId, actorType: "ADMIN", actorId: actor.appUserId, action: "OFFERING_PERIOD_DELETED", beforeJSON: beforeRow } });
+        await tx.specialProgramOfferingPeriod.delete({ where: { id } });
+      });
+      return NextResponse.json({ success: true });
+    }
     if (resource === "offering") {
       const offering = await prisma.specialProgramOffering.findUnique({ where: { id }, include: { _count: { select: { applicationItems: true } } } });
       if (!offering) throw new SeasonalError("특강을 찾을 수 없습니다.", 404);

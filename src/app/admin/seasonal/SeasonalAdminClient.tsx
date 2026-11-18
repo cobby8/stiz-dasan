@@ -11,13 +11,34 @@ import { createCsv, createSafeCsvFilename, maskPhoneNumber } from "@/lib/seasona
 import { seoulDateTimeToIso } from "./seasonalDateTime";
 import { kstLabel } from "@/lib/datetime/kst";
 import { askConfirm, showNotice } from "@/components/ui/feedback";
+// 기간 선택·날짜별 선택(2026-11-18) — 표시 문구·가격 계산은 공용 부품(서버와 같은 함수)
+import { describeApplicationSelection, isDateModeApplication, isLateJoinApplication, isTuitionReduced, kstDateTimeParts, parseKstDateTime, shortDateLabel, weekdaysFromDates } from "@/lib/seasonal/admin-period-rules";
+import { resolvePeriodPrice } from "@/lib/seasonal/period-pricing";
+import { toKstYmd } from "@/lib/datetime/kst";
 
 type SeasonStatus = "DRAFT" | "PUBLISHED" | "CLOSED" | "ARCHIVED";
 type ItemStatus = "PENDING" | "APPROVED" | "WAITLISTED" | "REJECTED" | "CANCELLED";
 type ApplicationCloseStatus = "REJECTED" | "CANCELLED";
 
+/** 반별 «기간별 수강료» 한 줄(SpecialProgramOfferingPeriod). */
+type OfferingPeriod = {
+  id: string;
+  label: string;
+  startDate: string;
+  endDate: string;
+  price: number;
+  newApplicantPrice?: number | null;
+  existingApplicantPrice?: number | null;
+  shuttleFee?: number | null;
+  displayOrder?: number;
+  isActive?: boolean;
+  /** 이 기간의 신청 마감 시각(ISO, 2026-11-18). 비어 있으면 시즌 마감을 따른다. */
+  applicationClosesAt?: string | null;
+};
+
 type SeasonalClass = {
   id: string;
+  seasonId?: string;
   name: string;
   branch?: string | null;
   targetGrade?: string | null;
@@ -48,8 +69,12 @@ type SeasonalClass = {
     note?: string | null;
     session?: { coachId?: string | null } | null;
   }>;
+  /** 기간별 수강료(없으면 지금처럼 반 수강료 하나) */
+  periods?: OfferingPeriod[];
   operationalStats?: {
     confirmedTotal?: number;
+    /** 날짜별 선택 신청 수(승인 대기·승인) */
+    dateSelectedTotal?: number;
     heldTotal?: number;
     waitlistedTotal?: number;
     weekdays?: Record<string, { confirmed?: number; held?: number; waitlisted?: number }>;
@@ -120,6 +145,11 @@ type Season = {
   startsAt?: string | null;
   endsAt?: string | null;
   branch?: string | null;
+  // 날짜별 선택(2026-11-18) — 켜면 학부모가 날짜를 하나씩 골라 «회수 × 회당 단가»로 신청
+  dateSelectEnabled?: boolean;
+  perSessionNewPrice?: number | null;
+  perSessionExistingPrice?: number | null;
+  minSessionCount?: number | null;
   classes: SeasonalClass[];
 };
 
@@ -136,6 +166,10 @@ type ApplicationItem = {
   siblingDiscountSnapshot?: number | null;
   discountReasonSnapshot?: string | null;
   shuttleFeeSnapshot?: number | null;
+  // 기간·날짜 선택 스냅샷(2026-11-18)
+  offeringPeriodId?: string | null;
+  sessionCountSnapshot?: number | null;
+  unitPriceSnapshot?: number | null;
   waitlistOrder?: number | null;
   linkedProgramId?: string | null;
   linkedClassId?: string | null;
@@ -169,9 +203,17 @@ type Application = {
   memo?: string | null;
   applicantType?: "NEW" | "EXISTING" | string | null;
   selectedWeekdays?: string[];
+  // 기간·날짜 선택(2026-11-18) — WEEKDAY(요일) | DATE(날짜), 날짜는 KST 'YYYY-MM-DD'
+  selectionMode?: string | null;
+  selectedDates?: string[];
+  periodLabel?: string | null;
+  periodStartDate?: string | null;
+  periodEndDate?: string | null;
   importSource?: string | null;
   imported?: boolean;
   reviewReasons?: string[];
+  /** 재원 재확인(2026-11-18) — "NOT_ACTIVE" = 재원가로 접수됐는데 지금 정규반 수강 중이 아님(서버가 판정) */
+  existingCheck?: "NOT_ACTIVE" | null;
   notificationSummary?: NotificationSummary | null;
   items: ApplicationItem[];
 };
@@ -294,6 +336,10 @@ type AssignmentInput = {
   itemId?: string;
   offeringId: string;
   selectedWeekdays: string[];
+  /** 날짜 모드 신청서면 고른 날짜(보내면 서버가 요일을 날짜에서 다시 채운다) */
+  selectedDates?: string[];
+  /** 기간 행 id. undefined = 지금 기간 유지, null = 기간 없음 */
+  periodId?: string | null;
   priceSnapshot: number;
 };
 
@@ -1151,6 +1197,9 @@ export default function SeasonalAdminClient({ initialData }: SeasonalAdminClient
           data: {
             offeringId: input.offeringId,
             selectedWeekdays: input.selectedWeekdays,
+            // 날짜·기간은 보낼 때만 싣는다(안 보내면 서버가 지금 값을 유지)
+            ...(input.selectedDates !== undefined ? { selectedDates: input.selectedDates } : {}),
+            ...(input.periodId !== undefined ? { periodId: input.periodId } : {}),
             priceSnapshot: input.priceSnapshot,
           },
         },
@@ -1413,7 +1462,7 @@ export default function SeasonalAdminClient({ initialData }: SeasonalAdminClient
 
       {selectedApplication && <ApplicationDrawer application={selectedApplication} seasons={data.seasons} onClose={() => { setSelectedApplication(null); setItemUpdateErrors({}); }} onUpdateItem={updateItem} updatingItemIds={updatingItemIds} itemUpdateErrors={itemUpdateErrors} onSaveAssignment={saveAssignment} assigningKey={assigningKey} onConvertItem={convertItem} onCopyInvoiceLink={copyInvoiceLink} onRetryNotification={retryNotification} sendingNotificationKey={sendingNotificationKey} onResolveReview={resolveApplicationReview} resolvingReview={resolvingReview} onUpdateApplicationStatus={updateApplicationStatus} updatingApplicationStatus={updatingApplicationStatus} convertingItemId={convertingItemId} onShuttleChanged={() => { void load({ includeApplications: true }); }} />}
       {modal === "season" && <SeasonForm initial={editingSeason} onClose={() => setModal(null)} onSubmit={async (payload) => { await mutate(editingSeason ? "PATCH" : "POST", editingSeason ? { resource: "season", id: editingSeason.id, data: payload } : { resource: "season", data: payload }, editingSeason ? "시즌 정보를 수정했습니다." : "새 시즌을 만들었습니다."); setModal(null); setTab("seasons"); }} />}
-      {modal === "class" && selectedSeason && <ClassForm seasonId={selectedSeason.id} initial={editingClass} coaches={coachOptions} onClose={() => setModal(null)} onSubmit={async (payload) => { await mutate(editingClass ? "PATCH" : "POST", editingClass ? { resource: "offering", id: editingClass.id, data: payload } : { resource: "offering", data: { ...payload, seasonId: selectedSeason.id } }, editingClass ? "특강 반을 수정했습니다." : "특강 반을 추가했습니다."); setModal(null); }} />}
+      {modal === "class" && selectedSeason && <ClassForm seasonId={selectedSeason.id} initial={editingClass} coaches={coachOptions} onPeriodsChanged={() => { void load(); }} onClose={() => setModal(null)} onSubmit={async (payload) => { await mutate(editingClass ? "PATCH" : "POST", editingClass ? { resource: "offering", id: editingClass.id, data: payload } : { resource: "offering", data: { ...payload, seasonId: selectedSeason.id } }, editingClass ? "특강 반을 수정했습니다." : "특강 반을 추가했습니다."); setModal(null); }} />}
     </main>
   );
 }
@@ -1556,6 +1605,8 @@ function SeasonsView({
                         <div className="rounded-lg bg-[var(--color-academy-soft)] px-3 py-2 text-right tabular-nums">
                           <p className="font-semibold">확정 {group.confirmedTotal}명</p>
                           <p className="text-xs text-[var(--color-academy-muted)]">요일 정원 {group.capacity || "미정"}명 · 대기 {group.waitlistedTotal}명</p>
+                          {/* 날짜별 선택 신청 수(2026-11-18) — 요일 집계엔 고른 날짜의 요일로 함께 잡힌다 */}
+                          {(group.baseClass.operationalStats?.dateSelectedTotal ?? 0) > 0 && <p className="text-xs text-[var(--color-academy-muted)]">날짜 선택 {group.baseClass.operationalStats?.dateSelectedTotal}명</p>}
                         </div>
                         <div className="flex flex-wrap gap-2 xl:justify-end">
                           <button type="button" onClick={() => onOpenRoster(group.baseClass)} className="academy-button-secondary academy-button-sm">전체 명단</button>
@@ -1617,6 +1668,13 @@ function SeasonsView({
                                 <span className="text-[var(--color-academy-muted)]">기존 {(rule.existingPrice ?? rule.price).toLocaleString()}원</span>
                                 <span className="text-[var(--color-academy-ink)]">신규 {(rule.newPrice ?? rule.price).toLocaleString()}원</span>
                               </div>
+                              {/* 기간별 수강료가 있으면 한 줄씩(사용 안 함은 뺀다) */}
+                              {(group.offerings.find((offering) => offering.id === rule.key)?.periods ?? []).filter((period) => period.isActive !== false).map((period) => (
+                                <div key={period.id} className="mt-1 flex items-center justify-between gap-3 text-xs text-[var(--color-academy-muted)]">
+                                  <span className="min-w-0 truncate">{period.label} · {period.startDate.slice(5).replace("-", "/")}~{period.endDate.slice(5).replace("-", "/")}</span>
+                                  <span className="shrink-0 text-[var(--color-academy-ink)]">{resolvePeriodPrice(period, "NEW").toLocaleString()}원</span>
+                                </div>
+                              ))}
                             </div>
                           ))}
                         </div>
@@ -1892,9 +1950,16 @@ function ApplicationsView({
                   </span>
                 </td>
                 <td className="px-2 py-1.5">
-                  <span className="inline-flex gap-1">
+                  {/* 기간·날짜를 고른 신청은 «요일 선택 · 4주 · 월·수» / «날짜 선택 5회»로, 예전 신청은 지금처럼 주N회 칩 */}
+                  {isDateModeApplication(application) || application.periodLabel
+                    ? <span className="inline-flex flex-wrap gap-1">
+                      <span className="inline-flex min-h-6 items-center whitespace-nowrap rounded bg-[var(--color-academy-neutral-soft)] px-2 text-xs text-[var(--color-academy-neutral)]">{describeApplicationSelection(application)}</span>
+                      {/* 기간 시작 뒤 날짜로 접수한 신청 = 중간 합류(수강료는 남은 회차만큼으로 접수됨) */}
+                      {isLateJoinApplication(application, seasons.find((season) => season.id === application.seasonId)?.startsAt) && <span className="inline-flex min-h-6 items-center whitespace-nowrap rounded bg-[var(--color-academy-info-soft)] px-2 text-xs text-[var(--color-academy-info)]">중간 합류</span>}
+                    </span>
+                    : <span className="inline-flex gap-1">
                     {classInfo.freqs.length ? classInfo.freqs.map((f) => <span key={f} className="inline-flex min-h-6 items-center rounded bg-[var(--color-academy-neutral-soft)] px-2 text-xs text-[var(--color-academy-neutral)]">{f}</span>) : <span className="text-[var(--color-academy-muted)]">-</span>}
-                  </span>
+                  </span>}
                 </td>
                 <td className="px-2 py-1.5 text-[var(--color-academy-ink)]">{application.parentName}</td>
                 {/* 전화 걸기 링크 — 행 클릭과 겹치지 않게 전파 차단 */}
@@ -2099,7 +2164,8 @@ function ApplicationDrawer({
   const totalAmount = application.totalAmount ?? application.items.reduce((sum, item) => sum + (item.amount ?? 0), 0);
   const parentPhoneHref = application.parentPhone ? `tel:${application.parentPhone}` : undefined;
   const parentSmsHref = application.parentPhone ? `sms:${application.parentPhone}` : undefined;
-  const offeringOptions = seasons.find((season) => season.id === application.seasonId)?.classes ?? seasons.flatMap((season) => season.classes);
+  const applicationSeason = seasons.find((season) => season.id === application.seasonId);
+  const offeringOptions = applicationSeason?.classes ?? seasons.flatMap((season) => season.classes);
   const hasNoItems = application.items.length === 0;
   const applicationClosed = application.status === "CANCELLED" || application.status === "REJECTED";
 
@@ -2118,7 +2184,7 @@ function ApplicationDrawer({
         <button type="button" onClick={onClose} aria-label="닫기" data-admin-modal-initial-focus className="academy-button-text academy-button-sm shrink-0">닫기</button>
       </header>
 
-      <ApplicationReviewSummary application={application} onResolveReview={onResolveReview} resolving={resolvingReview} />
+      <ApplicationReviewSummary application={application} seasonStartsAt={applicationSeason?.startsAt} tuitionReduced={applicationHasReducedTuition(application, offeringOptions)} onResolveReview={onResolveReview} resolving={resolvingReview} />
 
       <section className="mt-6 grid gap-3 rounded-lg bg-[var(--color-academy-soft)] p-4 text-sm tabular-nums sm:grid-cols-2">
         <Info label="학부모">{application.parentName}{application.parentRelation ? ` · ${application.parentRelation}` : ""}</Info>
@@ -2180,6 +2246,7 @@ function ApplicationDrawer({
           {hasNoItems && !applicationClosed && (
             <ApplicationAssignmentEditor
               application={application}
+              season={applicationSeason}
               offerings={offeringOptions}
               saving={assigningKey === application.id}
               error={itemUpdateErrors[application.id]}
@@ -2190,6 +2257,7 @@ function ApplicationDrawer({
             <ApplicationItemCard
               key={item.id}
               application={application}
+              season={applicationSeason}
               offerings={offeringOptions}
               item={item}
               onUpdateItem={onUpdateItem}
@@ -2214,7 +2282,7 @@ function ApplicationDrawer({
   </AdminModal>;
 }
 
-function ApplicationReviewSummary({ application, onResolveReview, resolving }: { application: Application; onResolveReview: (applicationId: string, reviewNote: string) => Promise<void>; resolving: boolean }) {
+function ApplicationReviewSummary({ application, seasonStartsAt, tuitionReduced, onResolveReview, resolving }: { application: Application; seasonStartsAt?: string | null; tuitionReduced: boolean; onResolveReview: (applicationId: string, reviewNote: string) => Promise<void>; resolving: boolean }) {
   const importedLabel = application.imported ? `가져온 신청${application.importSource ? ` · ${application.importSource}` : ""}` : "홈페이지 신청";
   const weekdays = application.selectedWeekdays?.length ? application.selectedWeekdays.map(weekdayLabel).join(" · ") : "요일 미확인";
   const needsReview = application.reviewReasons ?? [];
@@ -2224,10 +2292,49 @@ function ApplicationReviewSummary({ application, onResolveReview, resolving }: {
       <span className="inline-flex min-h-6 items-center rounded bg-[var(--color-academy-neutral-soft)] px-2 text-xs text-[var(--color-academy-neutral)]">{applicantTypeLabel(application.applicantType)} 회원</span>
       <span className="inline-flex min-h-6 items-center rounded bg-[var(--color-academy-soft)] px-2 text-xs text-[var(--color-academy-muted)]">{importedLabel}</span>
       <span className={badge(application.paymentStatus)}>{paymentReviewLabel(application.paymentStatus)}</span>
+      {/* 중간 합류(기간 시작 뒤 날짜로 접수). «남은 회차만큼 수강료»는 저장된 수강료가 정상보다 실제로 줄었을 때만 붙인다(검수 L-3) */}
+      {isLateJoinApplication(application, seasonStartsAt) && <span className="inline-flex min-h-6 items-center rounded bg-[var(--color-academy-info-soft)] px-2 text-xs text-[var(--color-academy-info)]">{tuitionReduced ? "중간 합류 · 남은 회차만큼 수강료" : "중간 합류"}</span>}
     </div>
-    <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><Info label="선택 요일">{weekdays}</Info><Info label="원본 가져오기">{application.imported ? "완료" : "해당 없음"}</Info></dl>
+    <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+      {/* 날짜 선택 신청은 고른 날짜 전체를, 기간을 고른 신청은 기간을 함께 보인다(2026-11-18) */}
+      {isDateModeApplication(application)
+        ? <div className="sm:col-span-2"><Info label={`고른 날짜 ${application.selectedDates?.length ?? 0}회`}>{(application.selectedDates ?? []).map(shortDateLabel).join(" · ") || "미확인"}</Info></div>
+        : <Info label="선택 요일">{weekdays}</Info>}
+      {application.periodLabel && <Info label="수강 기간">{application.periodLabel}{application.periodStartDate ? ` (${application.periodStartDate} ~ ${application.periodEndDate ?? ""})` : ""}</Info>}
+      <Info label="원본 가져오기">{application.imported ? "완료" : "해당 없음"}</Info>
+    </dl>
+    {/* 재원 재확인(2026-11-18 원장) — 재원가로 접수됐는데 지금 정규반 ACTIVE 가 아님. 가격은 자동으로 안 바꾼다(재배정으로 처리) */}
+    {application.existingCheck === "NOT_ACTIVE" && <div role="status" className="mt-4 rounded-xl border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] p-3 text-[var(--color-academy-warning)]"><p className="text-sm font-semibold">재원 확인 필요: 지금 정규반 수강 중이 아님</p><p className="mt-1 text-xs">재원생 수강료로 접수됐지만 지금은 정규반 수강(재원) 기록이 없습니다. 휴원하고 특강만 듣는 경우 신규 수강료가 맞습니다. 확인 뒤 필요하면 아래 수업 정보에서 다시 배정해 주세요.</p></div>}
     {needsReview.length > 0 && <div className="mt-4 rounded-xl border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] p-3 text-[var(--color-academy-warning)]"><p className="text-sm font-semibold">확인 필요</p><ul className="mt-2 list-disc space-y-1 pl-5 text-xs">{needsReview.map((reason) => <li key={reason}>{reason}</li>)}</ul><label className="mt-3 block text-xs font-medium">검토 메모 (필수)<textarea value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} rows={2} placeholder="확인한 내용과 처리 근거를 입력하세요" className="mt-1 w-full rounded-lg border border-[var(--color-academy-warning)] bg-white p-2 font-normal text-[var(--color-academy-ink)]" /></label><div className="mt-2 flex justify-end"><button type="button" disabled={resolving || !reviewNote.trim()} onClick={() => void onResolveReview(application.id, reviewNote.trim())} className="academy-button-secondary academy-button-sm">{resolving ? "처리 중…" : "검토 완료"}</button></div></div>}
   </section>;
+}
+
+/** 신청서의 회원 구분을 가격 계산 값으로(모르면 undefined = 기본가). */
+function pricingApplicantType(value?: string | null): "NEW" | "EXISTING" | undefined {
+  return value === "NEW" || value === "EXISTING" ? value : undefined;
+}
+
+/**
+ * 이 신청서의 반 중 하나라도 저장된 수강료가 정상 수강료(기간 가격, 없으면 반 가격)보다 줄었는가(검수 L-3).
+ * 정상 수강료는 재배정 화면의 자동 금액과 같은 규칙으로 구한다. 반·기간을 못 찾으면 줄지 않은 것으로 본다.
+ */
+function applicationHasReducedTuition(application: Application, offerings: SeasonalClass[]): boolean {
+  const applicantType = pricingApplicantType(application.applicantType);
+  const appRange = periodRangeKey(application.periodStartDate, application.periodEndDate);
+  return application.items.some((item) => {
+    const offering = offerings.find((candidate) => candidate.id === item.classId);
+    if (!offering) return false;
+    // 저장된 기간 행(id)을 먼저, 없으면 신청서의 기간 범위로 찾는다
+    const period = (offering.periods ?? []).find((row) => row.id === item.offeringPeriodId)
+      ?? (appRange ? (offering.periods ?? []).find((row) => periodRangeKey(row.startDate, row.endDate) === appRange) : undefined);
+    const normal = period ? resolvePeriodPrice(period, applicantType) : assignmentPriceFor(application, offering);
+    return isTuitionReduced(item.tuitionPriceSnapshot, normal);
+  });
+}
+
+/** 기간 범위 키 — 같은 범위면 반이 달라도 같은 기간으로 본다(서버도 범위로 맞춘다). */
+function periodRangeKey(startDate?: string | null, endDate?: string | null) {
+  return startDate && endDate ? `${startDate}|${endDate}` : "";
 }
 
 function ApplicationAssignmentEditor({
@@ -2239,6 +2346,8 @@ function ApplicationAssignmentEditor({
   onSaveAssignment,
 }: {
   application: Application;
+  /** 예전 회당 단가 계산용(2026-11-18 없앰) — 부르는 쪽 모양을 바꾸지 않으려고 남겨 둔다 */
+  season?: Season;
   item?: ApplicationItem;
   offerings: SeasonalClass[];
   saving: boolean;
@@ -2248,11 +2357,34 @@ function ApplicationAssignmentEditor({
   const initialOfferingId = item?.classId || offerings[0]?.id || "";
   const [offeringId, setOfferingId] = useState(initialOfferingId);
   const [selectedWeekdays, setSelectedWeekdays] = useState<string[]>(() => normalizeWeekdayKeys(application.selectedWeekdays));
+  // 날짜 모드 신청서(2026-11-18) — 요일 칸 대신 날짜 체크 목록을 쓴다
+  const dateMode = isDateModeApplication(application);
+  const [selectedDates, setSelectedDates] = useState<string[]>(() => [...(application.selectedDates ?? [])].sort());
+  // 고른 기간(시작|종료 범위 키). "" = 기간 없음(시즌 전체)
+  const [periodKey, setPeriodKey] = useState(() => periodRangeKey(application.periodStartDate, application.periodEndDate));
   const selectedOffering = useMemo(() => offerings.find((offering) => offering.id === offeringId), [offeringId, offerings]);
   const pricingOffering = useMemo(
-    () => matchingOfferingForWeekdays(offerings, selectedOffering, selectedWeekdays),
-    [offerings, selectedOffering, selectedWeekdays],
+    // 날짜 모드는 고른 주N회 반 그대로(서버도 같다). 금액은 그 반의 기간 가격(없으면 반 가격) — 회당 단가는 없앴다(2026-11-18)
+    () => dateMode ? selectedOffering : matchingOfferingForWeekdays(offerings, selectedOffering, selectedWeekdays),
+    [dateMode, offerings, selectedOffering, selectedWeekdays],
   );
+  // 같은 운영 묶음(같은 연결 반)의 반들 — 실제 수업 날짜와 기간 유무를 여기서 모은다
+  const groupOfferings = useMemo(() => {
+    if (!selectedOffering) return [];
+    const key = operationalClassKey(selectedOffering);
+    return offerings.filter((offering) => operationalClassKey(offering) === key);
+  }, [offerings, selectedOffering]);
+  // 실제 수업 날짜(KST 'YYYY-MM-DD') — 날짜는 kst.ts 로만 바꾼다
+  const sessionYmds = useMemo(() => Array.from(new Set(groupOfferings.flatMap((offering) => (offering.sessionDates ?? []).map((row) => toKstYmd(row.startsAt))).filter(Boolean))).sort(), [groupOfferings]);
+  const hasPeriods = groupOfferings.some((offering) => (offering.periods?.length ?? 0) > 0) || Boolean(application.periodStartDate);
+  const periodOptions = useMemo(
+    () => (pricingOffering?.periods ?? []).filter((period) => period.isActive !== false || periodRangeKey(period.startDate, period.endDate) === periodKey),
+    [pricingOffering, periodKey],
+  );
+  const chosenPeriod = periodKey ? (pricingOffering?.periods ?? []).find((period) => periodRangeKey(period.startDate, period.endDate) === periodKey) : undefined;
+  const applicantType = pricingApplicantType(application.applicantType);
+  // 자동 금액 — 기간이 있으면 기간 수강료, 없으면 지금처럼 반 수강료(날짜 모드도 같은 규칙 · 2026-11-18)
+  const autoPrice = chosenPeriod ? resolvePeriodPrice(chosenPeriod, applicantType) : assignmentPriceFor(application, pricingOffering);
   const [price, setPrice] = useState(() => String(item?.amount ?? assignmentPriceFor(application, selectedOffering)));
   const [localError, setLocalError] = useState("");
   const lastOfferingIdRef = useRef(initialOfferingId);
@@ -2266,12 +2398,14 @@ function ApplicationAssignmentEditor({
       if (cancelled) return;
       setOfferingId(nextOfferingId);
       setSelectedWeekdays(normalizeWeekdayKeys(application.selectedWeekdays));
+      setSelectedDates([...(application.selectedDates ?? [])].sort());
+      setPeriodKey(periodRangeKey(application.periodStartDate, application.periodEndDate));
       setPrice(String(item?.amount ?? assignmentPriceFor(application, nextOffering)));
       setLocalError("");
       lastOfferingIdRef.current = nextOfferingId;
     });
     return () => { cancelled = true; };
-  }, [application.id, application.selectedWeekdays, item?.id, item?.amount, item?.classId, offerings]);
+  }, [application.id, application.selectedWeekdays, application.selectedDates, application.periodStartDate, application.periodEndDate, item?.id, item?.amount, item?.classId, offerings]);
 
   useEffect(() => {
     if (locked || !pricingOffering) return;
@@ -2284,10 +2418,10 @@ function ApplicationAssignmentEditor({
       } else if (lastOfferingIdRef.current !== offeringId) {
         lastOfferingIdRef.current = offeringId;
       }
-      setPrice(String(assignmentPriceFor(application, pricingOffering)));
+      setPrice(String(autoPrice));
     });
     return () => { cancelled = true; };
-  }, [application, locked, offeringId, pricingOffering]);
+  }, [application, autoPrice, locked, offeringId, pricingOffering]);
 
   const toggleWeekday = (value: string, checked: boolean) => {
     setSelectedWeekdays((current) => {
@@ -2295,6 +2429,16 @@ function ApplicationAssignmentEditor({
       if (checked) next.add(value);
       else next.delete(value);
       return WEEKDAY_OPTIONS.map((option) => option.value).filter((weekday) => next.has(weekday));
+    });
+  };
+
+  // 날짜 체크 — 'YYYY-MM-DD' 는 글자 정렬이 곧 날짜 정렬이다
+  const toggleDate = (ymd: string, checked: boolean) => {
+    setSelectedDates((current) => {
+      const next = new Set(current);
+      if (checked) next.add(ymd);
+      else next.delete(ymd);
+      return Array.from(next).sort();
     });
   };
 
@@ -2306,22 +2450,41 @@ function ApplicationAssignmentEditor({
       setLocalError("특강 반을 선택해 주세요.");
       return;
     }
-    if (selectedWeekdays.length === 0) {
+    if (dateMode) {
+      if (selectedDates.length === 0) {
+        setLocalError("학생이 나올 날짜를 골라 주세요.");
+        return;
+      }
+    } else if (selectedWeekdays.length === 0) {
       setLocalError("학생이 참여할 요일을 선택해 주세요.");
+      return;
+    }
+    if (periodKey && !chosenPeriod) {
+      setLocalError("고른 반에 그 기간 수강료가 없습니다. 반의 «기간별 수강료»를 먼저 넣어 주세요.");
       return;
     }
     if (!Number.isFinite(priceSnapshot) || priceSnapshot <= 0) {
       setLocalError("금액을 확인해 주세요.");
       return;
     }
-    await onSaveAssignment({ applicationId: application.id, itemId: item?.id, offeringId, selectedWeekdays, priceSnapshot });
+    await onSaveAssignment({
+      applicationId: application.id,
+      itemId: item?.id,
+      offeringId,
+      // 날짜 모드는 요일을 날짜에서 채운다(서버도 같은 규칙으로 다시 채운다)
+      selectedWeekdays: dateMode ? weekdaysFromDates(selectedDates) : selectedWeekdays,
+      ...(dateMode ? { selectedDates } : {}),
+      // 기간이 있는 반일 때만 기간을 보낸다(없으면 서버가 지금 값 유지 = 예전과 같음). 날짜 모드도 기간을 쓴다.
+      ...(hasPeriods ? { periodId: chosenPeriod?.id ?? null } : {}),
+      priceSnapshot,
+    });
   };
 
   return <form onSubmit={submit} className="mt-4 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] p-3 text-sm">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div>
         <h4 className="font-semibold text-[var(--color-academy-ink)]">{item ? "수업 정보" : "반 지정 필요"}</h4>
-        <p className="mt-1 text-xs text-[var(--color-academy-muted)]">{locked ? "수강·청구 연결 후에는 이 화면에서 반 정보를 바꿀 수 없습니다." : "운영 반과 참여 요일을 고르면 금액은 자동으로 맞춰집니다."}</p>
+        <p className="mt-1 text-xs text-[var(--color-academy-muted)]">{locked ? "수강·청구 연결 후에는 이 화면에서 반 정보를 바꿀 수 없습니다." : dateMode ? "운영 반과 나올 날짜를 고르면 금액은 자동으로 맞춰집니다." : "운영 반과 참여 요일을 고르면 금액은 자동으로 맞춰집니다."}</p>
       </div>
       <button type="submit" disabled={saving || locked || offerings.length === 0} className="academy-button-tonal academy-button-sm shrink-0">{saving ? "저장 중…" : "저장"}</button>
     </div>
@@ -2338,7 +2501,44 @@ function ApplicationAssignmentEditor({
         <input value={price} readOnly disabled={saving || locked} inputMode="numeric" type="number" min={1} className="mt-1 min-h-11 w-full rounded-md border border-[var(--color-academy-line-input)] bg-white px-3 text-right text-sm tabular-nums text-[var(--color-academy-ink)] disabled:opacity-60" />
       </label>
     </div>
-    {!locked && <p className="mt-2 text-xs text-[var(--color-academy-muted)]">저장 시 {applicantTypeLabel(application.applicantType)} · 주 {selectedWeekdays.length || "-"}회 기준으로 청구 금액을 다시 계산합니다.</p>}
+    {/* 기간 선택 칸 — 기간별 수강료가 있는 반에서만 보인다 */}
+    {hasPeriods && (
+      <label className="mt-2 block text-xs font-medium text-[var(--color-academy-muted)]">
+        수강 기간
+        <select value={periodKey} disabled={saving || locked} onChange={(event) => setPeriodKey(event.target.value)} className="mt-1 min-h-11 w-full rounded-md border border-[var(--color-academy-line-input)] bg-white px-3 text-sm text-[var(--color-academy-ink)] disabled:opacity-60">
+          <option value="">기간 없음(시즌 전체 · 반 수강료)</option>
+          {periodOptions.map((period) => <option key={period.id} value={periodRangeKey(period.startDate, period.endDate)}>{period.label} ({period.startDate} ~ {period.endDate}){period.isActive === false ? " · 사용 안 함" : ""}</option>)}
+          {periodKey && !chosenPeriod && <option value={periodKey}>{application.periodLabel || "지금 기간"} — 이 반에 없음</option>}
+        </select>
+      </label>
+    )}
+    {!locked && (dateMode
+      ? <p className="mt-2 text-xs tabular-nums text-[var(--color-academy-muted)]">저장 시 {applicantTypeLabel(application.applicantType)} · {chosenPeriod ? `${chosenPeriod.label} 기간 수강료` : "고른 반 수강료"} 기준으로 청구 금액을 다시 계산합니다(날짜 {selectedDates.length}회).</p>
+      : chosenPeriod
+        ? <p className="mt-2 text-xs text-[var(--color-academy-muted)]">저장 시 {applicantTypeLabel(application.applicantType)} · {chosenPeriod.label} 기간 수강료 기준으로 청구 금액을 다시 계산합니다.</p>
+        : <p className="mt-2 text-xs text-[var(--color-academy-muted)]">저장 시 {applicantTypeLabel(application.applicantType)} · 주 {selectedWeekdays.length || "-"}회 기준으로 청구 금액을 다시 계산합니다.</p>)}
+    {dateMode ? (
+      <fieldset className="mt-3">
+        <legend className="text-xs font-medium text-[var(--color-academy-muted)]">나올 날짜 <span className="tabular-nums">{selectedDates.length}회</span></legend>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {sessionYmds.map((ymd) => (
+            // 고른 날짜 = 보조 색(하늘색) 칩 — 요일 칩과 같은 모양
+            <label key={ymd} className={`inline-flex min-h-11 cursor-pointer items-center justify-center rounded-md border px-2.5 text-sm font-medium tabular-nums ${selectedDates.includes(ymd) ? "border-[var(--color-academy-secondary-strong)] bg-[var(--color-academy-secondary-soft)] text-[var(--color-academy-secondary-ink)]" : "border-[var(--color-academy-line-input)] bg-white text-[var(--color-academy-ink)]"}`}>
+              <input type="checkbox" disabled={saving || locked} checked={selectedDates.includes(ymd)} onChange={(event) => toggleDate(ymd, event.target.checked)} className="sr-only" />
+              {shortDateLabel(ymd)}
+            </label>
+          ))}
+          {/* 반 일정에서 빠진 날짜를 이미 고른 경우 — 지우지 않고 보여 주어 관리자가 해제하게 한다 */}
+          {selectedDates.filter((ymd) => !sessionYmds.includes(ymd)).map((ymd) => (
+            <label key={ymd} className="inline-flex min-h-11 cursor-pointer items-center justify-center rounded-md border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] px-2.5 text-sm font-medium tabular-nums text-[var(--color-academy-warning)]">
+              <input type="checkbox" disabled={saving || locked} checked onChange={(event) => toggleDate(ymd, event.target.checked)} className="sr-only" />
+              {shortDateLabel(ymd)} 수업 없음
+            </label>
+          ))}
+          {sessionYmds.length === 0 && <span className="text-xs text-[var(--color-academy-muted)]">이 반에 등록된 수업 날짜가 없습니다.</span>}
+        </div>
+      </fieldset>
+    ) : (
     <fieldset className="mt-3">
       <legend className="text-xs font-medium text-[var(--color-academy-muted)]">참여 요일</legend>
       <div className="mt-2 flex flex-wrap gap-1.5">
@@ -2351,6 +2551,7 @@ function ApplicationAssignmentEditor({
         ))}
       </div>
     </fieldset>
+    )}
     {(localError || error) && <p role="alert" className="mt-3 rounded-lg border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-2 text-xs text-[var(--color-academy-danger)]">{localError || error}</p>}
   </form>;
 }
@@ -2372,6 +2573,7 @@ function ItemPriceBreakdown({ item }: { item: ApplicationItem }) {
 
 function ApplicationItemCard({
   application,
+  season,
   offerings,
   item,
   onUpdateItem,
@@ -2387,6 +2589,7 @@ function ApplicationItemCard({
   onShuttleChanged,
 }: {
   application: Application;
+  season?: Season;
   offerings: SeasonalClass[];
   item: ApplicationItem;
   onUpdateItem: (id: string, status: ItemStatus) => Promise<void>;
@@ -2416,6 +2619,7 @@ function ApplicationItemCard({
     </div>
     <ApplicationAssignmentEditor
       application={application}
+      season={season}
       item={item}
       offerings={offerings}
       saving={assignmentSaving}
@@ -2769,11 +2973,220 @@ function missingAttendancePreparation(linkedClassId?: string | null, instructorI
 }
 
 function SeasonForm({ initial, onClose, onSubmit }: { initial?: Season | null; onClose: () => void; onSubmit: (payload: Record<string, unknown>) => Promise<void> }) {
-  return <FormModal title="새 방학특강 시즌" onClose={onClose} onSubmit={onSubmit} fields={[{name:"title",label:"시즌명",placeholder:"예: 2026 여름방학 특강",required:true,defaultValue:initial?.name},{name:"slug",label:"홈페이지 주소",placeholder:"예: 2026-summer",required:true,defaultValue:initial?.slug},{name:"applicationOpensAt",label:"모집 시작일",type:"date",required:true,defaultValue:dateInputValue(initial?.enrollmentStartsAt)},{name:"applicationClosesAt",label:"모집 종료일",type:"date",required:true,defaultValue:dateInputValue(initial?.enrollmentEndsAt)},{name:"startsAt",label:"수업 시작일",type:"date",required:true,defaultValue:dateInputValue(initial?.startsAt)},{name:"endsAt",label:"수업 종료일",type:"date",required:true,defaultValue:dateInputValue(initial?.endsAt)}]} />;
+  // 모집 시작·마감 = «날짜 + 시각»(KST, 2026-11-18). 기본 시작 00:00 · 마감 18:00.
+  //   예전엔 날짜만 보내 서버가 UTC 자정(= KST 오전 9시)으로 저장해 «마감일 오전 9시에 닫히는» 함정이 있었다.
+  //   기존 시즌은 저장된 시각을 KST 로 그대로 보여 주고, 날짜·시각을 안 바꾸면 그 칸을 보내지 않아 값이 그대로다.
+  const opensInit = kstDateTimeParts(initial?.enrollmentStartsAt, "00:00");
+  const closesInit = kstDateTimeParts(initial?.enrollmentEndsAt, "18:00");
+  // 날짜별 선택(2026-11-18): 체크 칸은 꺼져 있으면 FormData 에 아예 안 실리므로 «꺼짐(false)»으로 바꿔 보낸다.
+  const submitSeason = (payload: Record<string, unknown>) => {
+    const { applicationOpensAtDate, applicationOpensAtTime, applicationClosesAtDate, applicationClosesAtTime, ...rest } = payload;
+    const out: Record<string, unknown> = { ...rest, dateSelectEnabled: payload.dateSelectEnabled === "on" };
+    // 바뀐 칸만(새 시즌은 둘 다) KST 로 해석한 절대 시각(ISO)으로 보낸다 — kst.ts kstAt 을 거친다
+    const opensChanged = !initial || applicationOpensAtDate !== opensInit.date || applicationOpensAtTime !== opensInit.time;
+    const closesChanged = !initial || applicationClosesAtDate !== closesInit.date || applicationClosesAtTime !== closesInit.time;
+    if (opensChanged) out.applicationOpensAt = parseKstDateTime(applicationOpensAtDate, applicationOpensAtTime, "00:00", "모집 시작")?.toISOString();
+    if (closesChanged) out.applicationClosesAt = parseKstDateTime(applicationClosesAtDate, applicationClosesAtTime, "18:00", "모집 마감")?.toISOString();
+    return onSubmit(out);
+  };
+  return <FormModal title="새 방학특강 시즌" onClose={onClose} onSubmit={submitSeason} extra={<SeasonDateSelectFields initial={initial} />} fields={[
+    {name:"title",label:"시즌명",placeholder:"예: 2026 여름방학 특강",required:true,defaultValue:initial?.name},
+    {name:"slug",label:"홈페이지 주소",placeholder:"예: 2026-summer",required:true,defaultValue:initial?.slug},
+    {name:"applicationOpensAtDate",label:"모집 시작일",type:"date",required:true,defaultValue:opensInit.date},
+    {name:"applicationOpensAtTime",label:"모집 시작 시각",type:"time",required:true,defaultValue:opensInit.time},
+    {name:"applicationClosesAtDate",label:"모집 마감일",type:"date",required:true,defaultValue:closesInit.date},
+    {name:"applicationClosesAtTime",label:"모집 마감 시각",type:"time",required:true,defaultValue:closesInit.time},
+    {name:"startsAt",label:"수업 시작일",type:"date",required:true,defaultValue:dateInputValue(initial?.startsAt)},
+    {name:"endsAt",label:"수업 종료일",type:"date",required:true,defaultValue:dateInputValue(initial?.endsAt)},
+  ]} />;
 }
 
-function ClassForm({ seasonId, initial, coaches, onClose, onSubmit }: { seasonId: string; initial?: SeasonalClass | null; coaches: CoachOption[]; onClose: () => void; onSubmit: (payload: Record<string, unknown>) => Promise<void> }) {
+/** 반 편집 «기간별 수강료» 한 줄 입력값(숫자 칸은 입력 그대로 글자로 들고 있다가 저장할 때 서버가 검사). */
+type PeriodDraft = {
+  key: string;
+  id?: string;
+  label: string;
+  startDate: string;
+  endDate: string;
+  price: string;
+  newApplicantPrice: string;
+  existingApplicantPrice: string;
+  shuttleFee: string;
+  isActive: boolean;
+  /** 신청 마감(KST) 날짜·시각 — 날짜를 비우면 시즌 마감을 따른다(2026-11-18) */
+  closesDate: string;
+  closesTime: string;
+  dirty: boolean;
+};
+
+let periodDraftSeq = 0;
+function periodDraftFrom(period: OfferingPeriod): PeriodDraft {
+  const text = (value?: number | null) => (value === null || value === undefined ? "" : String(value));
+  return {
+    key: period.id, id: period.id, label: period.label, startDate: period.startDate, endDate: period.endDate,
+    price: String(period.price), newApplicantPrice: text(period.newApplicantPrice), existingApplicantPrice: text(period.existingApplicantPrice),
+    shuttleFee: text(period.shuttleFee), isActive: period.isActive !== false,
+    // 저장된 마감 시각을 KST 날짜·시각 칸으로(없으면 빈 날짜 + 기본 18:00)
+    closesDate: kstDateTimeParts(period.applicationClosesAt, "18:00").date,
+    closesTime: kstDateTimeParts(period.applicationClosesAt, "18:00").time,
+    dirty: false,
+  };
+}
+
+/** 새로 넣었거나 바꾼 기간 줄만 저장한다(새 줄 = 추가, 기존 줄 = 수정). 표시 순서는 화면 순서. */
+async function savePeriodDrafts(offeringId: string, rows: PeriodDraft[]): Promise<PeriodDraft[]> {
+  const saved: PeriodDraft[] = [];
+  for (const [index, row] of rows.entries()) {
+    if (row.id && !row.dirty) { saved.push(row); continue; }
+    const data = {
+      label: row.label, startDate: row.startDate, endDate: row.endDate, price: row.price,
+      newApplicantPrice: row.newApplicantPrice, existingApplicantPrice: row.existingApplicantPrice,
+      shuttleFee: row.shuttleFee, isActive: row.isActive, displayOrder: index,
+      // «YYYY-MM-DDTHH:MM»(KST) — 서버가 kstAt 으로 절대 시각으로 바꾼다. 날짜를 비우면 "" = 시즌 마감
+      applicationClosesAt: row.closesDate ? `${row.closesDate}T${row.closesTime || "18:00"}` : "",
+    };
+    const response = await fetch("/api/admin/seasonal", {
+      method: row.id ? "PATCH" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(row.id ? { resource: "offeringPeriod", id: row.id, data } : { resource: "offeringPeriod", data: { ...data, offeringId } }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || !body.period) {
+      // 앞 줄은 이미 저장됐다 — 화면 줄에 id 를 남겨야 다시 저장할 때 같은 기간이 두 번 들어가지 않는다
+      throw Object.assign(new Error(`«${row.label || `${index + 1}번째`}» 기간: ${body.error || "저장하지 못했습니다."}`), { partial: [...saved, ...rows.slice(index)] });
+    }
+    saved.push({ ...periodDraftFrom(body.period as OfferingPeriod), key: row.key });
+  }
+  return saved;
+}
+
+/**
+ * 반 편집 아래 «기간별 수강료»(2026-11-18) — 한 줄 = 기간 이름 · 시작일 · 종료일 · 기본/신규/재원 수강료 · 셔틀비 · 사용 · 삭제.
+ * 입력값은 반 «저장»을 누를 때 함께 저장된다. 삭제·다른 반 복사는 누르는 즉시 처리(삭제는 위험 작업 확인).
+ * 입력칸에 name 을 달지 않는다 — 반 저장 FormData 에 섞이지 않게.
+ */
+function OfferingPeriodsSection({ offeringId, defaultPrice, rows, setRows, disabled, onChanged }: {
+  offeringId?: string;
+  defaultPrice?: number | null;
+  rows: PeriodDraft[];
+  setRows: Dispatch<SetStateAction<PeriodDraft[]>>;
+  disabled: boolean;
+  onChanged?: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ tone: "error" | "ok"; text: string } | null>(null);
+  const inputClass = "academy-input mt-1 min-w-0";
+  const update = (key: string, patch: Partial<PeriodDraft>) => setRows((current) => current.map((row) => row.key === key ? { ...row, ...patch, dirty: true } : row));
+
+  async function remove(row: PeriodDraft) {
+    setMessage(null);
+    if (!row.id) { setRows((current) => current.filter((item) => item.key !== row.key)); return; }
+    if (!(await askConfirm(`«${row.label}» 기간을 삭제할까요? 이 기간으로 신청한 학생이 있으면 삭제되지 않습니다.`, { tone: "danger" }))) return;
+    setBusy(true);
+    try {
+      const response = await fetch(`/api/admin/seasonal?resource=offeringPeriod&id=${encodeURIComponent(row.id)}`, { method: "DELETE" });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || "기간을 삭제하지 못했습니다.");
+      setRows((current) => current.filter((item) => item.key !== row.key));
+      setMessage({ tone: "ok", text: `«${row.label}» 기간을 삭제했습니다.` });
+      onChanged?.();
+    } catch (caught) {
+      setMessage({ tone: "error", text: adminErrorText(caught, "기간을 삭제하지 못했습니다.") });
+    } finally { setBusy(false); }
+  }
+
+  async function copyToSiblings() {
+    if (!offeringId) return;
+    setMessage(null);
+    if (rows.length === 0) { setMessage({ tone: "error", text: "복사할 기간이 없습니다. 먼저 기간을 추가해 주세요." }); return; }
+    if (!(await askConfirm("같은 수업의 다른 반에 이 반의 기간(이름·날짜)을 복사할까요? 값은 각 반의 지금 반 수강료로 들어가니, 복사 뒤 반마다 고쳐 주세요. 이미 같은 기간이 있는 반은 건너뜁니다.", { tone: "primary" }))) return;
+    setBusy(true);
+    try {
+      // 바꾼 줄이 있으면 먼저 저장해야 복사 원본이 화면과 같다
+      const saved = await savePeriodDrafts(offeringId, rows);
+      setRows(saved);
+      const response = await fetch("/api/admin/seasonal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resource: "offeringPeriodCopy", data: { offeringId } }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || "기간을 복사하지 못했습니다.");
+      const skipped = Array.isArray(body.skipped) ? body.skipped.length : 0;
+      setMessage({ tone: "ok", text: `다른 반 ${body.targetCount ?? 0}개에 기간 ${body.created ?? 0}줄을 복사했습니다${skipped ? ` · 이미 있던 ${skipped}줄은 건너뜀` : ""}. 반마다 수강료를 확인해 주세요.` });
+      onChanged?.();
+    } catch (caught) {
+      setMessage({ tone: "error", text: adminErrorText(caught, "기간을 복사하지 못했습니다.") });
+    } finally { setBusy(false); }
+  }
+
+  return <section className="mt-6 border-t border-[var(--color-academy-line)] pt-5">
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <div>
+        <h3 className="academy-section-title">기간별 수강료</h3>
+        <p className="text-xs text-[var(--color-academy-muted)]">기간을 하나도 넣지 않으면 지금처럼 반 수강료 하나로 신청받습니다. 기간마다 신청 마감 시각을 따로 둘 수 있습니다.</p>
+      </div>
+      {offeringId && <div className="flex flex-wrap gap-2">
+        <button type="button" disabled={disabled || busy} onClick={() => void copyToSiblings()} className="academy-button-secondary academy-button-sm">같은 수업의 다른 반에 기간 복사</button>
+        <button type="button" disabled={disabled || busy} onClick={() => { setMessage(null); setRows((current) => [...current, { key: `new-${++periodDraftSeq}`, label: "", startDate: "", endDate: "", price: defaultPrice === null || defaultPrice === undefined ? "" : String(defaultPrice), newApplicantPrice: "", existingApplicantPrice: "", shuttleFee: "", isActive: true, closesDate: "", closesTime: "18:00", dirty: true }]); }} className="academy-button-secondary academy-button-sm">기간 추가</button>
+      </div>}
+    </div>
+    {!offeringId
+      ? <p className="mt-3 text-xs text-[var(--color-academy-muted)]">반을 먼저 저장한 뒤 기간을 넣을 수 있습니다.</p>
+      : <div className="mt-3 space-y-2">
+        {rows.map((row) => (
+          // 한 줄 행 — 좁은 화면에서는 칸이 다음 줄로 넘어간다
+          <div key={row.key} className="grid items-end gap-2 rounded-lg bg-[var(--color-academy-soft)] p-2 sm:grid-cols-[minmax(0,1.2fr)_repeat(2,minmax(0,1.1fr))_repeat(4,minmax(0,0.9fr))_auto_auto]">
+            <label className="text-xs font-medium">기간 이름<input value={row.label} placeholder="예: 4주" onChange={(event) => update(row.key, { label: event.target.value })} className={inputClass} /></label>
+            <label className="text-xs font-medium">시작일<input type="date" value={row.startDate} onChange={(event) => update(row.key, { startDate: event.target.value })} className={inputClass} /></label>
+            <label className="text-xs font-medium">종료일<input type="date" value={row.endDate} onChange={(event) => update(row.key, { endDate: event.target.value })} className={inputClass} /></label>
+            <label className="text-xs font-medium">기본 수강료<input type="number" min={0} inputMode="numeric" value={row.price} onChange={(event) => update(row.key, { price: event.target.value })} className={`${inputClass} text-right tabular-nums`} /></label>
+            <label className="text-xs font-medium">신규 수강료<input type="number" min={0} inputMode="numeric" value={row.newApplicantPrice} placeholder="기본" onChange={(event) => update(row.key, { newApplicantPrice: event.target.value })} className={`${inputClass} text-right tabular-nums`} /></label>
+            <label className="text-xs font-medium">재원 수강료<input type="number" min={0} inputMode="numeric" value={row.existingApplicantPrice} placeholder="기본" onChange={(event) => update(row.key, { existingApplicantPrice: event.target.value })} className={`${inputClass} text-right tabular-nums`} /></label>
+            <label className="text-xs font-medium">셔틀비<input type="number" min={0} inputMode="numeric" value={row.shuttleFee} placeholder="반 셔틀비" onChange={(event) => update(row.key, { shuttleFee: event.target.value })} className={`${inputClass} text-right tabular-nums`} /></label>
+            <label className="flex min-h-11 items-center gap-2 text-xs font-medium"><input type="checkbox" checked={row.isActive} onChange={(event) => update(row.key, { isActive: event.target.checked })} className="size-5" />사용</label>
+            <button type="button" disabled={disabled || busy} onClick={() => void remove(row)} className="academy-button-danger academy-button-sm">삭제</button>
+            {/* 신청 마감(2026-11-18 원장 «시작 전주 금요일 6시») — 넓은 화면에서는 다음 줄로 넘어간다 */}
+            <div className="flex flex-wrap items-end gap-2 sm:col-span-4">
+              <label className="text-xs font-medium">신청 마감일<input type="date" value={row.closesDate} onChange={(event) => update(row.key, { closesDate: event.target.value })} className={inputClass} /></label>
+              <label className="text-xs font-medium">마감 시각<input type="time" value={row.closesTime} onChange={(event) => update(row.key, { closesTime: event.target.value })} className={inputClass} /></label>
+              <p className="pb-3 text-xs text-[var(--color-academy-muted)]">비우면 시즌 모집 마감을 따릅니다.</p>
+            </div>
+          </div>
+        ))}
+        {rows.length === 0 && <p className="text-xs text-[var(--color-academy-muted)]">넣은 기간이 없습니다.</p>}
+        {rows.some((row) => row.dirty) && <p className="text-xs text-[var(--color-academy-muted)]">바꾼 기간은 아래 «저장»을 누르면 반 정보와 함께 저장됩니다.</p>}
+      </div>}
+    {message && <p role={message.tone === "error" ? "alert" : "status"} className={`mt-2 rounded-lg p-2 text-xs ${message.tone === "error" ? "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]" : "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]"}`}>{message.text}</p>}
+  </section>;
+}
+
+/**
+ * 반 저장 전 — 지우거나 옮긴 회차 날짜를 고른 «날짜 선택» 신청이 있으면 경고(2026-11-18).
+ * 확인 창에서 «취소»면 false. 조회가 실패하면 저장을 막지 않는다(경고는 보조 장치).
+ */
+async function confirmRemovedSessionDates(offeringId: string, beforeYmds: string[], afterYmds: string[]) {
+  const after = new Set(afterYmds);
+  const removed = Array.from(new Set(beforeYmds.filter((ymd) => ymd && !after.has(ymd)))).sort();
+  if (removed.length === 0) return true;
+  try {
+    const response = await fetch(`/api/admin/seasonal?view=dateSelections&offeringId=${encodeURIComponent(offeringId)}`, { cache: "no-store" });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) return true;
+    const counts = (body.counts ?? {}) as Record<string, number>;
+    const affected = removed.filter((ymd) => (counts[ymd] ?? 0) > 0);
+    if (affected.length === 0) return true;
+    const detail = affected.map((ymd) => `${shortDateLabel(ymd)} ${counts[ymd]}건`).join(", ");
+    return askConfirm(`지우거나 옮긴 날짜를 고른 날짜 선택 신청이 있습니다(${detail}). 저장하면 그 학생들은 그날 출석부에서 빠집니다. 계속할까요?`, { tone: "danger" });
+  } catch {
+    return true;
+  }
+}
+
+function ClassForm({ seasonId, initial, coaches, onClose, onSubmit, onPeriodsChanged }: { seasonId: string; initial?: SeasonalClass | null; coaches: CoachOption[]; onClose: () => void; onSubmit: (payload: Record<string, unknown>) => Promise<void>; /** 기간 삭제·복사처럼 즉시 저장된 변경 뒤 목록 새로 고침 */ onPeriodsChanged?: () => void }) {
   const [pending, setPending] = useState(false);
+  // 기간별 수강료 줄(2026-11-18) — 반 «저장» 때 함께 저장한다
+  const [periodRows, setPeriodRows] = useState<PeriodDraft[]>(() => (initial?.periods ?? []).map(periodDraftFrom));
   const [error, setError] = useState("");
   const [selectedInstructorId, setSelectedInstructorId] = useState(initial?.instructorId ?? "");
   const [attendanceReadiness, setAttendanceReadiness] = useState({
@@ -2795,6 +3208,22 @@ function ClassForm({ seasonId, initial, coaches, onClose, onSubmit }: { seasonId
     const existingApplicantPrice = String(payload.existingApplicantPrice ?? "").trim();
     const shuttleFee = String(payload.shuttleFee ?? "").trim();
     try {
+      if (initial) {
+        // 지우거나 옮긴 회차 날짜를 고른 날짜 선택 신청이 있으면 먼저 경고(취소하면 저장하지 않는다)
+        const beforeYmds = (initial.sessionDates ?? []).map((row) => toKstYmd(row.startsAt));
+        const afterYmds = sessionDates.map((row) => toKstYmd(seoulDateTimeToIso(row.startsAt)));
+        if (!(await confirmRemovedSessionDates(initial.id, beforeYmds, afterYmds))) { setPending(false); return; }
+        // 기간별 수강료를 먼저 저장 — 실패하면 반 저장도 멈춰 화면과 저장 값이 어긋나지 않게
+        if (periodRows.some((row) => row.dirty || !row.id)) {
+          try {
+            setPeriodRows(await savePeriodDrafts(initial.id, periodRows));
+          } catch (caught) {
+            const partial = (caught as { partial?: PeriodDraft[] }).partial;
+            if (partial) setPeriodRows(partial);
+            throw caught;
+          }
+        }
+      }
       await onSubmit({
         ...payload,
         seasonId,
@@ -2855,6 +3284,7 @@ function ClassForm({ seasonId, initial, coaches, onClose, onSubmit }: { seasonId
     <section className="mt-6 border-t border-[var(--color-academy-line)] pt-5"><div className="flex items-center justify-between"><div><h3 className="academy-section-title">전체 수업 일정</h3><p className="text-xs text-[var(--color-academy-muted)]">학생에게 안내할 모든 회차를 입력하세요.</p></div><button type="button" onClick={() => setSessionDates((rows) => [...rows, { startsAt: "", endsAt: "", location: initial?.location ?? "", note: "" }])} className="academy-button-secondary academy-button-sm shrink-0">회차 추가</button></div>
       <div className="mt-3 space-y-3">{sessionDates.map((row, index) => <div key={index} className="grid gap-3 rounded-xl bg-[var(--color-academy-soft)] p-3 sm:grid-cols-2"><label className="text-xs font-medium">{index + 1}회 시작<input required type="datetime-local" value={row.startsAt} onChange={(event) => setSessionDates((rows) => rows.map((item, rowIndex) => rowIndex === index ? { ...item, startsAt: event.target.value } : item))} className={inputClass} /></label><label className="text-xs font-medium">{index + 1}회 종료<input required type="datetime-local" value={row.endsAt} onChange={(event) => setSessionDates((rows) => rows.map((item, rowIndex) => rowIndex === index ? { ...item, endsAt: event.target.value } : item))} className={inputClass} /></label><label className="text-xs font-medium">장소<input value={row.location} onChange={(event) => setSessionDates((rows) => rows.map((item, rowIndex) => rowIndex === index ? { ...item, location: event.target.value } : item))} className={inputClass} /></label><div className="flex items-end gap-2"><label className="min-w-0 flex-1 text-xs font-medium">메모<input value={row.note} onChange={(event) => setSessionDates((rows) => rows.map((item, rowIndex) => rowIndex === index ? { ...item, note: event.target.value } : item))} className={inputClass} /></label>{sessionDates.length > 1 && <button type="button" aria-label={`${index + 1}회 삭제`} onClick={() => setSessionDates((rows) => rows.filter((_, rowIndex) => rowIndex !== index))} className="academy-button-danger shrink-0">삭제</button>}</div></div>)}</div>
     </section>
+    <OfferingPeriodsSection offeringId={initial?.id} defaultPrice={initial?.price} rows={periodRows} setRows={setPeriodRows} disabled={pending} onChanged={onPeriodsChanged} />
     <footer className="mt-6 flex flex-wrap justify-end gap-2"><button type="button" onClick={onClose} disabled={pending} className="academy-button-secondary">취소</button><button disabled={pending} className="academy-button-primary">{pending ? "저장 중…" : "저장"}</button></footer>
   </form></AdminModal>;
 }
@@ -2864,11 +3294,22 @@ function ClassInput({ name, label, type = "text", placeholder, required, default
 }
 
 type Field = { name: string; label: string; type?: string; placeholder?: string; required?: boolean; defaultValue?: string | number | null; onChange?: (value: string) => void };
-function FormModal({ title, helper, fields, onClose, onSubmit }: { title: string; helper?: string; fields: Field[]; onClose: () => void; onSubmit: (payload: Record<string, unknown>) => Promise<void> }) {
+function FormModal({ title, helper, fields, extra, onClose, onSubmit }: { title: string; helper?: string; fields: Field[]; /** 칸 목록 아래에 붙일 추가 입력(이름 있는 입력은 FormData 로 함께 실린다) */ extra?: React.ReactNode; onClose: () => void; onSubmit: (payload: Record<string, unknown>) => Promise<void> }) {
   const [pending, setPending] = useState(false); const [error, setError] = useState("");
   async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setPending(true); setError(""); const form = new FormData(event.currentTarget); const payload = Object.fromEntries(form.entries()); try { await onSubmit(payload); } catch (caught) { setError(adminErrorText(caught, "저장하지 못했습니다.")); setPending(false); } }
   const titleId = "seasonal-form-modal-title";
-  return <AdminModal onClose={() => { if (!pending) onClose(); }} titleId={titleId}><form onSubmit={submit} className="w-full p-6"><header className="flex items-center justify-between"><h2 id={titleId} className="text-xl font-bold">{title}</h2><button type="button" onClick={onClose} disabled={pending} aria-label="닫기" className="academy-button-text academy-button-sm shrink-0">닫기</button></header>{helper && <p className="mt-3 rounded-xl bg-[var(--color-academy-warning-soft)] p-3 text-xs text-[var(--color-academy-warning)]">{helper}</p>}{error && <p role="alert" className="mt-4 rounded-lg bg-[var(--color-academy-danger-soft)] p-3 text-sm text-[var(--color-academy-danger)]">{error}</p>}<div className="mt-5 grid gap-4 sm:grid-cols-2">{fields.map((field, index) => <label key={field.name} className="text-sm font-medium text-[var(--color-academy-muted)]">{field.label}{field.required && <span className="text-[var(--color-academy-danger)]"> *</span>}<input name={field.name} type={field.type || "text"} required={field.required} placeholder={field.placeholder} defaultValue={field.defaultValue ?? ""} min={field.type === "number" ? 0 : undefined} data-admin-modal-initial-focus={index === 0 ? "true" : undefined} className="academy-input mt-1" /></label>)}</div><footer className="mt-6 flex flex-wrap justify-end gap-2"><button type="button" onClick={onClose} disabled={pending} className="academy-button-secondary">취소</button><button disabled={pending} className="academy-button-primary">{pending ? "저장 중…" : "저장"}</button></footer></form></AdminModal>;
+  return <AdminModal onClose={() => { if (!pending) onClose(); }} titleId={titleId}><form onSubmit={submit} className="w-full p-6"><header className="flex items-center justify-between"><h2 id={titleId} className="text-xl font-bold">{title}</h2><button type="button" onClick={onClose} disabled={pending} aria-label="닫기" className="academy-button-text academy-button-sm shrink-0">닫기</button></header>{helper && <p className="mt-3 rounded-xl bg-[var(--color-academy-warning-soft)] p-3 text-xs text-[var(--color-academy-warning)]">{helper}</p>}{error && <p role="alert" className="mt-4 rounded-lg bg-[var(--color-academy-danger-soft)] p-3 text-sm text-[var(--color-academy-danger)]">{error}</p>}<div className="mt-5 grid gap-4 sm:grid-cols-2">{fields.map((field, index) => <label key={field.name} className="text-sm font-medium text-[var(--color-academy-muted)]">{field.label}{field.required && <span className="text-[var(--color-academy-danger)]"> *</span>}<input name={field.name} type={field.type || "text"} required={field.required} placeholder={field.placeholder} defaultValue={field.defaultValue ?? ""} min={field.type === "number" ? 0 : undefined} data-admin-modal-initial-focus={index === 0 ? "true" : undefined} className="academy-input mt-1" /></label>)}</div>{extra}<footer className="mt-6 flex flex-wrap justify-end gap-2"><button type="button" onClick={onClose} disabled={pending} className="academy-button-secondary">취소</button><button disabled={pending} className="academy-button-primary">{pending ? "저장 중…" : "저장"}</button></footer></form></AdminModal>;
+}
+
+/**
+ * 시즌 편집 «날짜별 선택» — 켜기 체크 칸 하나(2026-11-18 원장 결정).
+ * 날짜로 골라도 «주N회 반의 기간 가격»을 받으므로 회당 단가·최소 횟수 칸은 숨겼다(DB 칸은 남아 있다).
+ */
+function SeasonDateSelectFields({ initial }: { initial?: Season | null }) {
+  return <section className="mt-5 border-t border-[var(--color-academy-line)] pt-4">
+    <label className="flex min-h-11 items-center gap-3 text-sm font-medium text-[var(--color-academy-ink)]"><input name="dateSelectEnabled" type="checkbox" defaultChecked={Boolean(initial?.dateSelectEnabled)} className="size-5" />날짜별 선택 받기</label>
+    <p className="text-xs text-[var(--color-academy-muted)]">켜면 학부모가 «수강 기간 → 주N회 → 날짜» 순서로 고릅니다. 주N회 총 횟수(예: 4주 주2회 = 8회)를 날짜로 모두 채워야 신청되고, 수강료는 요일로 고를 때와 같습니다.</p>
+  </section>;
 }
 
 // 카드 제목은 글자로만 말한다(장식 아이콘 제거 — 2026-11-13 UI 통일). 제목 모양은 테마 academy-section-title.
