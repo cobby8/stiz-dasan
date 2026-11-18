@@ -3,8 +3,9 @@ import SeasonalListClient from "@/components/seasonal/SeasonalListClient";
 import { buildPublicMetadata } from "@/lib/publicMetadata";
 
 export const metadata = buildPublicMetadata({
-  title: "방학특강 | STIZ 농구교실 다산2호점",
-  description: "스티즈 농구교실 다산2호점 방학특강 일정과 모집 현황을 확인하고 모바일로 신청하세요.",
+  // 검색 지역어(2026-11-18) — 상세 페이지 제목과 같은 «남양주 다산 농구 방학특강»
+  title: "남양주 다산 농구 방학특강 | STIZ 농구교실 다산2호점",
+  description: "남양주 다산 스티즈 농구교실 다산2호점 방학특강 일정과 모집 현황을 확인하고 모바일로 신청하세요.",
   path: "/seasonal",
 });
 

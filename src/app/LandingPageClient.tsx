@@ -11,6 +11,7 @@ import HomeVideo from "@/components/landing/HomeVideo";
 import SectionLayout from "@/components/ui/SectionLayout";
 import { isDurableGalleryMediaUrl, parseGalleryMediaJSON } from "@/lib/galleryMedia";
 import { formatKstDate, toKstYmd } from "@/lib/datetime/kst";
+import type { HomeSeasonBanner } from "@/lib/seasonal/public-seo";
 import "@/components/landing/public-home.css";
 
 type GalleryPost = { id: string; title: string | null; caption: string | null; mediaJSON: string; createdAt: Date | string; className?: string | null };
@@ -23,7 +24,7 @@ function getGalleryMediaItems(posts: GalleryPost[]): GalleryMediaItem[] {
   })));
 }
 
-export default function LandingPageClient({ initialSettings, testimonials, galleryPosts = [], notices = [], programTiles = [], homeStats = null, naverPlaceUrl }: {
+export default function LandingPageClient({ initialSettings, testimonials, galleryPosts = [], notices = [], programTiles = [], homeStats = null, naverPlaceUrl, seasonBanner = null }: {
   initialSettings: any;
   testimonials?: { name: string; info: string; text: string; rating: number }[];
   galleryPosts?: GalleryPost[];
@@ -31,6 +32,8 @@ export default function LandingPageClient({ initialSettings, testimonials, galle
   programTiles?: HomeProgramTile[];
   homeStats?: HomeStats | null;
   naverPlaceUrl?: string;
+  /** 모집 중(또는 중간 합류 가능) 방학특강 안내 띠 — 없으면 아무것도 그리지 않는다(2026-11-18) */
+  seasonBanner?: HomeSeasonBanner | null;
 }) {
   const settings = initialSettings || {};
   const phone = settings.contactPhone || "010-0000-0000";
@@ -47,6 +50,14 @@ export default function LandingPageClient({ initialSettings, testimonials, galle
 
   return (
     <>
+      {/* 방학특강 안내 띠(2026-11-18) — 첫 화면 맨 위 한 줄. 보조 색(하늘색) 바탕, 아이콘 없이 글자만, 띠 전체가 링크(높이 44px 이상) */}
+      {seasonBanner && <Link
+        href={seasonBanner.href}
+        className="flex min-h-11 items-center justify-center gap-2 border-b border-[var(--color-public-secondary-strong)] bg-[var(--color-public-secondary-soft)] px-4 py-2 text-center text-sm text-[var(--color-public-secondary-ink)] hover:underline"
+      >
+        <span className="font-medium break-keep">{seasonBanner.text}</span>
+        <span className="shrink-0 font-semibold">자세히 보기 →</span>
+      </Link>}
       <HomeHeroSlider slides={heroSlides}>
         {/* 화면을 거의 채우는 큰 사진 위에 제목·소개·버튼을 아래쪽에 둔다(원장 요청 2026-11-06).
             현재 문구와 신청·프로그램 이동 경로는 그대로 유지한다. */}

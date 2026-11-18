@@ -1,6 +1,9 @@
 // 날짜 형식 검사는 공용 KST 모듈 한 곳만 쓴다(.ts 확장자 = Node 타입 제거 테스트가 바로 읽기 위함).
 // @ts-expect-error -- Node 타입 제거 기반 단위 테스트는 런타임 확장자를 요구한다.
 import { isKstYmd } from "../datetime/kst.ts";
+// 유입 경로 허용 목록·정규화는 체험·수강 신청서와 같은 한 곳을 쓴다(2026-11-18 특강 신청서 «어떻게 알게 되셨나요»).
+// @ts-expect-error -- Node 타입 제거 기반 단위 테스트는 런타임 확장자를 요구한다.
+import { normalizeReferralSource } from "../enrollment/referralSources.ts";
 
 export const SHUTTLE_LOCATION_SOURCES =["MAP_PIN", "SEARCH", "CURRENT_LOCATION"] as const;
 export const SHUTTLE_LOCATION_CONSENT_VERSION = "2026-07-21";
@@ -49,6 +52,8 @@ export type SeasonalApplicationInput = {
   parent: { name: string; phone: string; relation?: string };
   address?: string;
   memo?: string;
+  /** 어떻게 알게 되셨나요(선택) — referralSources.ts 코드값. 고르지 않으면 없음, 목록 밖 값은 «OTHER» */
+  referralSource?: string;
   agreedTerms: boolean;
   agreedPrivacy: boolean;
   items: Array<{
@@ -308,6 +313,8 @@ export function parseApplicationInput(value: unknown): SeasonalApplicationInput 
     parent: { name: parentName, phone: parentPhone, relation: cleanText(body.parent?.relation, 30) },
     address: cleanText(body.address, 300),
     memo: cleanText(body.memo, 1000),
+    // 필수 아님 — 빈 값이면 칸을 싣지 않는다(저장 NULL). 화면을 거치지 않은 값은 «기타»로 모은다
+    ...(normalizeReferralSource(body?.referralSource) ? { referralSource: normalizeReferralSource(body?.referralSource) } : {}),
     agreedTerms: true,
     agreedPrivacy: true,
     items,

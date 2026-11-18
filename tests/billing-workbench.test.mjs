@@ -1647,3 +1647,31 @@ test("cron(C-1·C-2·C-3): 연결 빠진 이름이면 저장 안 함·알림, �
  const screen=await readFile("src/app/admin/finance/prepare/BillingWorkbench.tsx","utf8");
  assert.match(screen,/shuttleUnlinkedMessage\(month, view\.shuttleUnlinkedNames \?\? \[\], "APPROVE"\)/);
 });
+
+// ── 특강 전용 반 수강은 정규 월 청구에서 뺀다(2026-11-18 원장 승인) ──
+// 특강 전용 반 = Class.dayOfWeek 'Seasonal'. 특강만 듣는 동생이 청구 행·형제할인 판정에 섞이면 안 된다.
+const seasonalOnly=(db,studentId,name,parentId,birthDate)=>({...db.state.enrollments[0],...hobbyProgram,studentId,studentName:name,classId:"seasonal-winter",className:"겨울특강 반",dayOfWeek:"Seasonal",parentId,birthDate});
+test("특강만 듣는 동생 + 정규반 형 → 형 형제할인 없음, 동생 청구 행 없음",async()=>{
+ const db=pricingDatabase();
+ // 정규반 형(kid-1, 월·수)만 남기고, 동생은 특강 전용 반만 다닌다
+ db.state.enrollments=[db.state.enrollments[0],db.state.enrollments[1],seasonalOnly(db,"kid-2","동생","parent-a","2017-01-01")];
+ const view=await readWorkbench(db.tx,"2026-11",true),row=id=>view.rows.find(r=>r.id===id);
+ assert.equal(row("kid-1:mon").discountAmount,0);assert.equal(row("kid-1:wed").discountAmount,0);
+ assert.equal(row("kid-2:seasonal-winter"),undefined);
+ assert.ok(!view.rows.some(r=>r.classId==="seasonal-winter"));
+});
+test("정규반 두 형제는 그대로 형제할인 — 형이 특강을 같이 들어도 결과 동일",async()=>{
+ const before=await readWorkbench(pricingDatabase().tx,"2026-11",true);
+ const db=pricingDatabase();db.state.enrollments.push(seasonalOnly(db,"kid-1","형","parent-a","2015-01-01"));
+ const after=await readWorkbench(db.tx,"2026-11",true);
+ const pick=view=>view.rows.map(r=>({id:r.id,baseAmount:r.baseAmount,discountAmount:r.discountAmount,shuttleAmount:r.shuttleAmount,totalAmount:r.totalAmount}));
+ assert.deepEqual(pick(after),pick(before));
+ assert.equal(after.rows.find(r=>r.id==="kid-2:tue").discountAmount,10000);
+});
+test("특강 수강이 없는 달의 원본 지문은 예전 그대로(조회 결과 전체로 지문을 만든다)",async()=>{
+ const src=await readFile("src/lib/billing/workbench-service.ts","utf8");
+ assert.match(src,/const regularEnrollments = enrollments\.filter\(e => e\.dayOfWeek !== "Seasonal"\);/);
+ assert.match(src,/const sourceVersion = hash\(\{ month, enrollments,/);
+ assert.match(src,/const billable = regularEnrollments\.filter\(/);
+ assert.match(src,/const rows: WorkbenchRow\[\] = regularEnrollments\.map\(/);
+});

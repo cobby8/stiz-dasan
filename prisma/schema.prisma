@@ -2467,6 +2467,8 @@ model SpecialProgramApplication {
   parentRelation     String?
   address            String?
   memo               String?
+  // 유입 경로(2026-11-18) — 체험·수강 신청서와 같은 코드(referralSources.ts). NULL = 고르지 않음
+  referralSource     String?
   agreedTerms        Boolean                         @default(false)
   agreedPrivacy      Boolean                         @default(false)
   status             String                          @default("PENDING")

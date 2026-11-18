@@ -15,6 +15,7 @@ import { askConfirm, showNotice } from "@/components/ui/feedback";
 // 기간 선택·날짜별 선택(2026-11-18) — 표시 문구·가격 계산은 공용 부품(서버와 같은 함수)
 import { describeApplicationSelection, isDateModeApplication, isLateJoinApplication, isTuitionReduced, kstDateTimeParts, parseKstDateTime, shortDateLabel, weekdaysFromDates } from "@/lib/seasonal/admin-period-rules";
 import { resolvePeriodPrice } from "@/lib/seasonal/period-pricing";
+import { referralSourceLabel } from "@/lib/enrollment/referralSources";
 import { toKstYmd } from "@/lib/datetime/kst";
 
 type SeasonStatus = "DRAFT" | "PUBLISHED" | "CLOSED" | "ARCHIVED";
@@ -151,6 +152,10 @@ type Season = {
   perSessionNewPrice?: number | null;
   perSessionExistingPrice?: number | null;
   minSessionCount?: number | null;
+  // 공개 상세에 보이는 소개·약관·환불 규정(2026-11-18) — 관리자 조회가 시즌 행을 그대로 내려준다
+  description?: string | null;
+  termsText?: string | null;
+  cancellationPolicy?: string | null;
   classes: SeasonalClass[];
 };
 
@@ -202,6 +207,8 @@ type Application = {
   paymentStatus?: string | null;
   totalAmount?: number;
   memo?: string | null;
+  /** 어떻게 알게 되셨나요(2026-11-18) — referralSources.ts 코드값, 없으면 고르지 않음 */
+  referralSource?: string | null;
   applicantType?: "NEW" | "EXISTING" | string | null;
   selectedWeekdays?: string[];
   // 기간·날짜 선택(2026-11-18) — WEEKDAY(요일) | DATE(날짜), 날짜는 KST 'YYYY-MM-DD'
@@ -2196,7 +2203,9 @@ function ApplicationDrawer({
         <Info label="학교">{[application.childSchool, application.childGrade].filter(Boolean).join(" · ") || "미입력"}</Info>
         <Info label="접수일">{formatDateTime(application.createdAt)}</Info>
         <Info label="예상 금액">{totalAmount.toLocaleString()}원</Info>
-        {application.address && <div className="sm:col-span-2"><Info label="주소">{application.address}</Info></div>}
+        {/* 어떻게 알게 되셨나요 — 이름은 한 곳(referralSourceLabel)에서. 고르지 않은 신청은 «선택 안 함» */}
+        <Info label="알게 된 경로">{referralSourceLabel(application.referralSource) || "선택 안 함"}</Info>
+        {application.address &&<div className="sm:col-span-2"><Info label="주소">{application.address}</Info></div>}
       </section>
 
       {/* 연락처가 없으면 눌러도 아무 일이 없는 빈 링크가 되므로, 번호가 있을 때만 버튼을 보여준다 */}
@@ -2992,7 +3001,7 @@ function SeasonForm({ initial, onClose, onSubmit }: { initial?: Season | null; o
     if (closesChanged) out.applicationClosesAt = parseKstDateTime(applicationClosesAtDate, applicationClosesAtTime, "18:00", "모집 마감")?.toISOString();
     return onSubmit(out);
   };
-  return <FormModal title="새 방학특강 시즌" onClose={onClose} onSubmit={submitSeason} extra={<SeasonDateSelectFields initial={initial} />} fields={[
+  return <FormModal title="새 방학특강 시즌" onClose={onClose} onSubmit={submitSeason} extra={<><SeasonTextFields initial={initial} /><SeasonDateSelectFields initial={initial} /></>} fields={[
     {name:"title",label:"시즌명",placeholder:"예: 2026 여름방학 특강",required:true,defaultValue:initial?.name},
     {name:"slug",label:"홈페이지 주소",placeholder:"예: 2026-summer",required:true,defaultValue:initial?.slug},
     {name:"applicationOpensAtDate",label:"모집 시작일",type:"date",required:true,defaultValue:opensInit.date},
@@ -3302,6 +3311,24 @@ function FormModal({ title, helper, fields, extra, onClose, onSubmit }: { title:
   async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setPending(true); setError(""); const form = new FormData(event.currentTarget); const payload = Object.fromEntries(form.entries()); try { await onSubmit(payload); } catch (caught) { setError(adminErrorText(caught, "저장하지 못했습니다.")); setPending(false); } }
   const titleId = "seasonal-form-modal-title";
   return <AdminModal onClose={() => { if (!pending) onClose(); }} busy={pending} titleId={titleId}><form onSubmit={submit} className="w-full p-6"><header className="flex items-center justify-between"><h2 id={titleId} className="text-xl font-bold">{title}</h2><button type="button" onClick={onClose} disabled={pending} aria-label="닫기" className="academy-button-text academy-button-sm shrink-0">닫기</button></header>{helper && <p className="mt-3 rounded-xl bg-[var(--color-academy-warning-soft)] p-3 text-xs text-[var(--color-academy-warning)]">{helper}</p>}{error && <p role="alert" className="mt-4 rounded-lg bg-[var(--color-academy-danger-soft)] p-3 text-sm text-[var(--color-academy-danger)]">{error}</p>}<div className="mt-5 grid gap-4 sm:grid-cols-2">{fields.map((field, index) => <label key={field.name} className="text-sm font-medium text-[var(--color-academy-muted)]">{field.label}{field.required && <span className="text-[var(--color-academy-danger)]"> *</span>}<input name={field.name} type={field.type || "text"} required={field.required} placeholder={field.placeholder} defaultValue={field.defaultValue ?? ""} min={field.type === "number" ? 0 : undefined} data-admin-modal-initial-focus={index === 0 ? "true" : undefined} className="academy-input mt-1" /></label>)}</div>{extra}<footer className="mt-6 flex flex-wrap justify-end gap-2"><button type="button" onClick={onClose} disabled={pending} className="academy-button-secondary">취소</button><button disabled={pending} className="academy-button-primary">{pending ? "저장 중…" : "저장"}</button></footer></form></AdminModal>;
+}
+
+/**
+ * 시즌 편집 «소개·약관·환불 규정» 여러 줄 입력(2026-11-18 원장 승인).
+ * name 이 API 칸 이름과 같아 FormData 로 그대로 실린다 — 비우고 저장하면 서버가 빈 값(null)으로 지운다.
+ * 소개·환불 규정은 공개 시즌 상세(/seasonal/[slug])에 보이고, 약관은 신청 동의 안내에 쓰인다.
+ */
+const SEASON_TEXT_FIELDS = [
+  { name: "description", label: "시즌 소개", rows: 3, maxLength: 5000, placeholder: "예: 방학 동안 기본기와 경기 감각을 함께 기르는 특강입니다." },
+  { name: "termsText", label: "약관", rows: 4, maxLength: 10000, placeholder: "신청 전에 보호자가 확인할 약관을 적어 주세요." },
+  { name: "cancellationPolicy", label: "환불 규정", rows: 4, maxLength: 10000, placeholder: "예: 수업 시작 전 취소 시 전액 환불 …" },
+] as const;
+function SeasonTextFields({ initial }: { initial?: Season | null }) {
+  return <section className="mt-5 grid gap-4 border-t border-[var(--color-academy-line)] pt-4">
+    {SEASON_TEXT_FIELDS.map((field) => <label key={field.name} className="text-sm font-medium text-[var(--color-academy-muted)]">{field.label}
+      <textarea name={field.name} rows={field.rows} maxLength={field.maxLength} placeholder={field.placeholder} defaultValue={initial?.[field.name] ?? ""} className="academy-input mt-1 min-h-11 w-full font-normal leading-6" />
+    </label>)}
+  </section>;
 }
 
 /**
