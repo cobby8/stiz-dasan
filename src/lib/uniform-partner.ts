@@ -235,7 +235,7 @@ export async function postStizUniformOrder(payload: StizUniformPayload) {
     const body = await response.json().catch(() => ({})) as StizUniformResponse;
 
     if (!response.ok) {
-      const message = body.error || body.message || `STIZ 본사 접수 실패 (${response.status})`;
+      const message = body.error || body.message || `소명엔비씨 접수 실패 (${response.status})`;
       throw new StizUniformPartnerError(message, {
         statusCode: response.status,
         retryable: response.status >= 500 && response.status !== 503,

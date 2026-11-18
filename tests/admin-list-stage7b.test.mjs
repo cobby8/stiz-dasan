@@ -152,7 +152,7 @@ test("유니폼: 한 줄 표(«·» 묶음·두 줄 칸 없음), 접수일 오�
   assert.match(uniform, /admin-cell-center px-2 py-1\.5" onClick=\{\(event\) => event\.stopPropagation\(\)\}/);
   assert.match(uniform, /onClick=\{\(\) => handleRetry\(order\)\}\s*disabled=\{isPending \|\| busyId === order\.id\}/);
   assert.match(uniform, /await retryUniformOrderDispatch\(order\.id\)/);
-  assert.match(uniform, /STIZ 본사로 다시 전송할까요\?/);
+  assert.match(uniform, /소명엔비씨로 다시 전송할까요\?/);
 });
 
 // ── 갤러리(사진 카드 그리드는 유지 — 최소 변경) ──

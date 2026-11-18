@@ -177,7 +177,7 @@ export default function FreeUniformForm({ token, studentName, initialParentName,
             onChange={(e) => update("agreedPrivacy", e.target.checked)}
             className="mt-0.5 h-5 w-5 shrink-0 rounded border-gray-300 text-[var(--color-public-accent)] focus:ring-[var(--color-public-accent)]"
           />
-          <span className="break-keep">유니폼 제작을 위해 학부모 연락처와 아이의 주문 정보를 STIZ 본사에 전달하는 데 동의합니다.</span>
+          <span className="break-keep">유니폼 제작을 위해 학부모 연락처와 아이의 주문 정보를 소명엔비씨에 전달하는 데 동의합니다.</span>
         </label>
 
         <button

@@ -16,9 +16,9 @@ export default async function Cafe24PaymentSuccessPage({
     return (
         <main className="min-h-screen bg-[var(--color-academy-soft)] px-4 py-12 text-[var(--color-academy-ink)]">
             <div className="mx-auto max-w-lg rounded-2xl border border-[var(--color-academy-line)] bg-white p-8 text-center shadow-sm">
-                <h1 className="text-xl font-bold">본사 카페24 결제가 접수되었습니다.</h1>
+                <h1 className="text-xl font-bold">카페24 결제가 접수되었습니다.</h1>
                 <p className="mt-2 text-sm text-[var(--color-academy-muted)]">
-                    결제 완료 정보가 본사에서 도착하면 청구서가 자동으로 납부 완료 처리됩니다.
+                    결제 완료 정보가 카페24에서 도착하면 청구서가 자동으로 납부 완료 처리됩니다.
                     잠시 후 청구서를 다시 확인해 주세요.
                 </p>
                 <div className="mt-6 flex flex-wrap justify-center gap-2">

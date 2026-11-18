@@ -31,7 +31,7 @@ const {
   signStizPartnerPayload,
 } = moduleBox.exports;
 
-test("STIZ 본사 서명용 JSON은 객체 키를 재귀 정렬한다", () => {
+test("소명엔비씨 서명용 JSON은 객체 키를 재귀 정렬한다", () => {
   assert.equal(
     canonicalJson({ z: 1, a: { b: 2, a: 1 }, list: [{ y: 2, x: 1 }] }),
     '{"a":{"a":1,"b":2},"list":[{"x":1,"y":2}],"z":1}',

@@ -42,14 +42,14 @@ function shopMessage(state: ShopLoadState): { title: string; body: string } {
   if (state.statusCode === 503 || missingEnv) {
     return {
       title: "클럽샵 준비 중입니다",
-      body: "본사에서 다산2호점 진열대를 연결하면 상품이 자동으로 표시됩니다.",
+      body: "소명엔비씨에서 다산2호점 진열대를 연결하면 상품이 자동으로 표시됩니다.",
     };
   }
 
   if (state.statusCode === 400 || state.statusCode === 404 || error.includes("상품을 찾을 수 없습니다")) {
     return {
       title: "클럽샵 상품을 준비 중입니다",
-      body: "현재 다산2호점에 노출할 상품을 본사에서 확인하고 있습니다. 준비되면 이 화면에 바로 나타납니다.",
+      body: "현재 다산2호점에 노출할 상품을 소명엔비씨에서 확인하고 있습니다. 준비되면 이 화면에 바로 나타납니다.",
     };
   }
 

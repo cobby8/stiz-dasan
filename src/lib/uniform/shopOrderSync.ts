@@ -1,29 +1,29 @@
-// 본사 쇼핑몰(stiz.kr·카페24) 유니폼 주문 → 우리 DB 동기화(2026-11-16 원장 «쇼핑몰 주문도 학부모 화면에 보이게»).
+// 소명엔비씨 쇼핑몰(stiz.kr·카페24) 유니폼 주문 → 우리 DB 동기화(2026-11-16 원장 «쇼핑몰 주문도 학부모 화면에 보이게»).
 //
 // 흐름: cron(/api/cron/uniform-shop-sync) → fetchClubOrders(서명 GET) → parseClubOrdersResponse(모양 검증)
 //       → planShopOrderUpsert(저장할 행) → upsertShopOrders(한 SQL 문으로 upsert)
 //
 // ★ 지키는 것
 //   1) 필수 칸이 빠졌거나 형식이 다르면 «통째로» 거부한다 — 일부만 저장하지 않는다.
-//      본사가 새로 붙인 «모르는 추가 칸»은 거부하지 않고 무시한다(읽지도 저장하지도 않는다, 2026-11-17) —
-//      본사가 칸 하나를 더했다고 동기화 전체가 멈추지 않게.
-//   2) upsert 만 한다. 본사 응답에 없는 주문을 지우지 않는다(기간 밖일 뿐일 수 있다).
+//      소명엔비씨가 새로 붙인 «모르는 추가 칸»은 거부하지 않고 무시한다(읽지도 저장하지도 않는다, 2026-11-17) —
+//      소명엔비씨가 칸 하나를 더했다고 동기화 전체가 멈추지 않게.
+//   2) upsert 만 한다. 소명엔비씨 응답에 없는 주문을 지우지 않는다(기간 밖일 뿐일 수 있다).
 //      다만 «응답에 들어온 주문»에서 빠진 품목은 status 를 'CANCELED' 로 표시한다(삭제 아님, 2026-11-17) —
 //      주문에서 품목이 빠졌는데 옛 상태(배송 중 등)가 학부모 화면에 계속 남지 않게.
 //   3) 실패하면 아무것도 저장·삭제하지 않는다(저장은 검증이 끝난 뒤 한 SQL 문으로만).
 //   4) 비밀키·전화번호·이름은 로그·오류 글·응답에 넣지 않는다. 전화번호를 주소(쿼리)에 넣지 않는다.
-//   5) 이름·주소·금액은 저장하지 않는다(본사도 주지 않는다). 학생 이름은 «품목의 학생 이름» 하나뿐.
-// 날짜: 주문일은 본사가 KST 달력 날짜("YYYY-MM-DD")로 준다 → date 칸에 그대로. 오늘·N일 전은 kst.ts 로만.
+//   5) 이름·주소·금액은 저장하지 않는다(소명엔비씨도 주지 않는다). 학생 이름은 «품목의 학생 이름» 하나뿐.
+// 날짜: 주문일은 소명엔비씨가 KST 달력 날짜("YYYY-MM-DD")로 준다 → date 칸에 그대로. 오늘·N일 전은 kst.ts 로만.
 import { createHmac } from "node:crypto";
 import { canonicalJson, STIZ_PARTNER_ID } from "@/lib/uniform-partner";
 import { addDaysKst, diffDaysKst, isKstYmd, todayKst } from "@/lib/datetime/kst";
 
 export const CLUB_ORDERS_PATH = "/api/partner/club-orders";
 export const CLUB_ORDERS_DEFAULT_URL = `https://custom.stiz.kr${CLUB_ORDERS_PATH}`;
-/** 본사 창구 한 번에 받을 수 있는 최대 기간(오늘 포함 일수) */
+/** 소명엔비씨 창구 한 번에 받을 수 있는 최대 기간(오늘 포함 일수) */
 export const CLUB_ORDERS_MAX_DAYS = 80;
 /**
- * cron 기본 — 오늘 포함 최근 80일(본사 창구 최대치, 2026-11-17 원장 승인).
+ * cron 기본 — 오늘 포함 최근 80일(소명엔비씨 창구 최대치, 2026-11-17 원장 승인).
  * 왜 14일이 아닌가: 14일이면 주문 뒤 15일째부터 그 주문을 다시 받지 않아 상태가 «준비 중»·«배송 중»에서 멈춘다
  *   (맞춤 유니폼은 제작·배송이 2주를 넘기는 일이 흔하다).
  * 매시 17분마다 80일 창을 받아도 되는 이유:
@@ -31,7 +31,7 @@ export const CLUB_ORDERS_MAX_DAYS = 80;
  *   · 저장 — 한 SQL 문 upsert 라 같은 주문을 다시 받아도 행이 늘지 않는다(멱등).
  *   · 크기 — 한 지점(다산)의 유니폼 주문만 오고 주문당 칸이 적어, 80일치도 수백 건·수십~수백 KB 수준이다.
  *   · 시간 — 받기 20초 × 최대 2번 + 저장 1문장 < 함수 제한 60초(vercel.json 기본).
- * ⚠️ 본사 쪽 80일 응답이 20초를 넘기 시작하면 «본사 응답 시간 초과»로 실패한다(저장 없음·슬랙 알림) —
+ * ⚠️ 소명엔비씨 쪽 80일 응답이 20초를 넘기 시작하면 «소명엔비씨 응답 시간 초과»로 실패한다(저장 없음·슬랙 알림) —
  *    그때는 이 값을 줄이거나 시간 제한을 늘린다.
  */
 export const CLUB_ORDERS_DEFAULT_DAYS = CLUB_ORDERS_MAX_DAYS;
@@ -50,7 +50,7 @@ export class ShopOrderSyncError extends Error {
 
 // ── 서명 ────────────────────────────────────────────────────────────────────
 
-/** 서명할 글자 — `${ts}.dasan.${canonicalJson({ method, path, query })}` (본사와 같은 규칙) */
+/** 서명할 글자 — `${ts}.dasan.${canonicalJson({ method, path, query })}` (소명엔비씨와 같은 규칙) */
 export function clubOrdersSigningString(input: { timestamp: number; club: string; from: string; to: string }): string {
   return `${input.timestamp}.${STIZ_PARTNER_ID}.${canonicalJson({
     method: "GET",
@@ -152,7 +152,7 @@ const clean = (v: string | null): string | null => {
 export type ParseResult = { ok: true; orders: ShopOrderInput[] } | { ok: false, reason: string };
 
 /**
- * 본사 응답 → 검증된 주문 목록. 필수 칸이 빠졌거나 형식이 다르면 { ok:false } — 통째로 거부한다(모르는 추가 칸은 무시).
+ * 소명엔비씨 응답 → 검증된 주문 목록. 필수 칸이 빠졌거나 형식이 다르면 { ok:false } — 통째로 거부한다(모르는 추가 칸은 무시).
  * 실패 사유 글자에는 값(전화번호·이름)을 넣지 않는다 — 몇 번째 주문의 어느 칸인지만.
  */
 export function parseClubOrdersResponse(body: unknown, expected: { club: string; from: string; to: string }): ParseResult {
@@ -289,10 +289,10 @@ type Writer = { $queryRawUnsafe<T = unknown>(sql: string, ...values: unknown[]):
  *
  * gone(2026-11-17): 같은 주문을 다시 받았는데 «응답에 없는 그 주문의 품목»은 status 를 'CANCELED' 로 표시한다(행은 남긴다).
  *   · 대상은 «이번 응답에 품목이 하나라도 들어온 주문»뿐 — 기간 밖이라 응답에 없는 주문은 건드리지 않는다.
- *   · 품목이 0개로 온 주문은 건드리지 않는다(본사 쪽 일시 오류로 품목이 비어 온 경우 전부 «취소»로 보이는 일을 막는다.
+ *   · 품목이 0개로 온 주문은 건드리지 않는다(소명엔비씨 쪽 일시 오류로 품목이 비어 온 경우 전부 «취소»로 보이는 일을 막는다.
  *     주문 전체 취소는 주문의 canceled 칸이 따로 알려 준다).
  *   · up_i(응답에 있는 품목)와 gone(응답에 없는 품목)은 서로 다른 행이라 한 문장에서 같은 행을 두 번 고치지 않는다.
- *   · 품목이 다음 응답에 다시 들어오면 up_i 가 본사 상태로 되돌린다(되돌릴 수 있는 표시).
+ *   · 품목이 다음 응답에 다시 들어오면 up_i 가 소명엔비씨 상태로 되돌린다(되돌릴 수 있는 표시).
  */
 export const UPSERT_SHOP_ORDERS_SQL = `
 WITH src_o AS (
@@ -363,10 +363,10 @@ export type SyncDeps = {
 };
 
 /**
- * 본사 창구 GET(서명) — 네트워크 실패·시간 초과·5xx 면 1번만 다시 시도(매번 새 시각·새 서명).
- * 401·400 은 다시 해도 같으니 바로 실패. 오류 글자에는 상태 번호만(본사 오류 글·비밀값 없음).
+ * 소명엔비씨 창구 GET(서명) — 네트워크 실패·시간 초과·5xx 면 1번만 다시 시도(매번 새 시각·새 서명).
+ * 401·400 은 다시 해도 같으니 바로 실패. 오류 글자에는 상태 번호만(소명엔비씨 오류 글·비밀값 없음).
  * 다른 주소로 넘기는 응답(3xx)은 따라가지 않는다(redirect: "error") — 서명 헤더가 엉뚱한 주소로 넘어가지 않게.
- *   이때 fetch 가 던지는 오류는 «본사 연결 실패»로 기록된다.
+ *   이때 fetch 가 던지는 오류는 «소명엔비씨 연결 실패»로 기록된다.
  */
 export async function fetchClubOrders(range: SyncRange, deps: SyncDeps = {}): Promise<unknown> {
   const env = deps.env ?? process.env;
@@ -375,14 +375,14 @@ export async function fetchClubOrders(range: SyncRange, deps: SyncDeps = {}): Pr
   if (!/^[a-fA-F0-9]{64}$/.test(secret)) throw new ShopOrderSyncError("STIZ_PARTNER_SECRET 형식이 올바르지 않습니다");
   const base = env.STIZ_CLUB_ORDERS_API_URL?.trim() || CLUB_ORDERS_DEFAULT_URL;
   // 전화번호가 오가는 통로라 암호화된 주소만 쓴다(환경값을 잘못 넣어 http 로 나가는 실수 방지)
-  if (!base.startsWith("https://")) throw new ShopOrderSyncError("본사 창구 주소는 https 여야 합니다");
+  if (!base.startsWith("https://")) throw new ShopOrderSyncError("소명엔비씨 창구 주소는 https 여야 합니다");
   const fetchImpl = deps.fetchImpl ?? (fetch as unknown as FetchLike);
   const now = deps.nowMs ?? Date.now;
   const club = STIZ_PARTNER_ID;
   // 쿼리에는 club·기간만 — 전화번호·이름은 절대 넣지 않는다
   const url = `${base}?${new URLSearchParams({ club, from: range.from, to: range.to }).toString()}`;
 
-  let lastError = "본사 응답 없음";
+  let lastError = "소명엔비씨 응답 없음";
   for (let attempt = 0; attempt < 2; attempt++) {
     const timestamp = Math.floor(now() / 1000);
     const signature = signClubOrdersRequest({ secret, timestamp, club, from: range.from, to: range.to });
@@ -407,15 +407,15 @@ export async function fetchClubOrders(range: SyncRange, deps: SyncDeps = {}): Pr
         } catch {
           // 본문을 읽다가 시간 제한에 걸린 것이면 «JSON 아님»이 아니다 — 바깥 catch 가 «시간 초과»로 적고 한 번 더 시도한다
           if (controller.signal.aborted) throw new Error("body read timeout");
-          throw new ShopOrderSyncError("본사 응답이 JSON 이 아닙니다");
+          throw new ShopOrderSyncError("소명엔비씨 응답이 JSON 이 아닙니다");
         }
       }
-      lastError = `본사 응답 ${res.status}`;
+      lastError = `소명엔비씨 응답 ${res.status}`;
       // 서명·기간 오류는 다시 해도 같다
       if (res.status < 500) throw new ShopOrderSyncError(lastError);
     } catch (error) {
       if (error instanceof ShopOrderSyncError) throw error;
-      lastError = controller.signal.aborted ? "본사 응답 시간 초과" : "본사 연결 실패";
+      lastError = controller.signal.aborted ? "소명엔비씨 응답 시간 초과" : "소명엔비씨 연결 실패";
     } finally {
       clearTimeout(timer);
     }

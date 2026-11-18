@@ -9,14 +9,14 @@ export type UniformFreeGrantStatus = (typeof UNIFORM_FREE_GRANT_STATUSES)[number
 
 export const UNIFORM_FREE_GRANT_REASON = "TENURE_3Y";
 
-// 무료 주문 표시 — 주문 메모 맨 앞에 붙여, 관리자 목록 배지·본사 메모 양쪽에서 알아보게 한다
+// 무료 주문 표시 — 주문 메모 맨 앞에 붙여, 관리자 목록 배지·소명엔비씨 메모 양쪽에서 알아보게 한다
 export const FREE_UNIFORM_MEMO_PREFIX = "[3년 재원 무료 증정]";
 
-// 무료 주문은 본사로 자동 발송하지 않는다.
+// 무료 주문은 소명엔비씨로 자동 발송하지 않는다.
 // 크론(dispatchDueUniformOrders)은 PENDING·RETRY_WAIT 만 집어 가므로, 처음부터 NEEDS_REVIEW 로
-// 저장하면 원장이 관리자 화면에서 «재전송» 을 누르기 전까지 본사로 나가지 않는다.
+// 저장하면 원장이 관리자 화면에서 «재전송» 을 누르기 전까지 소명엔비씨로 나가지 않는다.
 export const FREE_UNIFORM_SYNC_STATUS = "NEEDS_REVIEW";
-export const FREE_UNIFORM_STIZ_MESSAGE = "무료 증정: 원장 확인 후 본사 발송";
+export const FREE_UNIFORM_STIZ_MESSAGE = "무료 증정: 원장 확인 후 소명엔비씨 발송";
 
 // 토큰 = crypto.randomBytes(24) 의 base64url → 항상 32글자(A-Z a-z 0-9 - _)
 export const UNIFORM_FREE_TOKEN_RE = /^[A-Za-z0-9_-]{32}$/;

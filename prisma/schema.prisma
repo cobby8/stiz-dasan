@@ -733,7 +733,7 @@ model UniformOrderItem {
   @@index([studentName])
 }
 
-// 본사 쇼핑몰(stiz.kr·카페24) 유니폼 주문 사본(2026-11-16) — cron uniform-shop-sync 가 upsert 만 한다(지우지 않음).
+// 소명엔비씨 쇼핑몰(stiz.kr·카페24) 유니폼 주문 사본(2026-11-16) — cron uniform-shop-sync 가 upsert 만 한다(지우지 않음).
 // 이름·주소·금액은 저장하지 않는다. id = 카페24 주문번호. 학부모 화면은 전화번호 + 품목 학생 이름으로 고른다.
 model UniformShopOrder {
   id                  String                 @id

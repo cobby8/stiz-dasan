@@ -122,13 +122,13 @@ function issuedGrant(overrides = {}) {
   return { id: "grant-1", token: TOKEN, status: "ISSUED", expiresAt: new Date(Date.now() + 86400_000), studentName: "김아이", ...overrides };
 }
 
-// 본사 발송은 fetch 로 나간다 — 호출 횟수를 센다. 키도 «정상» 으로 넣어 두어, 만약 dispatch 가 불리면 실제로 fetch 까지 간다
+// 소명엔비씨 발송은 fetch 로 나간다 — 호출 횟수를 센다. 키도 «정상» 으로 넣어 두어, 만약 dispatch 가 불리면 실제로 fetch 까지 간다
 function watchFetch(t) {
   const calls = [];
   const original = globalThis.fetch;
   const originalSecret = process.env.STIZ_PARTNER_SECRET;
   process.env.STIZ_PARTNER_SECRET = "a".repeat(64);
-  globalThis.fetch = async (...args) => { calls.push(args); throw new Error("본사 발송이 호출되면 안 된다"); };
+  globalThis.fetch = async (...args) => { calls.push(args); throw new Error("소명엔비씨 발송이 호출되면 안 된다"); };
   t.after(() => {
     globalThis.fetch = original;
     if (originalSecret === undefined) delete process.env.STIZ_PARTNER_SECRET;
@@ -137,7 +137,7 @@ function watchFetch(t) {
   return calls;
 }
 
-test("무료 신청: 주문은 NEEDS_REVIEW 로 저장되고 본사 발송(fetch)은 한 번도 일어나지 않는다", async (t) => {
+test("무료 신청: 주문은 NEEDS_REVIEW 로 저장되고 소명엔비씨 발송(fetch)은 한 번도 일어나지 않는다", async (t) => {
   const fetchCalls = watchFetch(t);
   const db = createFakeDb([issuedGrant()]);
   const result = await db.runTransaction((tx) => service.submitFreeUniformOrderInTx(tx, TOKEN, VALID_INPUT));
@@ -147,7 +147,7 @@ test("무료 신청: 주문은 NEEDS_REVIEW 로 저장되고 본사 발송(fetch
   assert.equal(db.state.orders.length, 1);
   const order = db.state.orders[0];
   assert.equal(order.stizSyncStatus, "NEEDS_REVIEW");
-  assert.equal(order.stizMessage, "무료 증정: 원장 확인 후 본사 발송");
+  assert.equal(order.stizMessage, "무료 증정: 원장 확인 후 소명엔비씨 발송");
   assert.equal(order.partnerRequestId, `dasan-uniform-${order.id}`);
   assert.ok(order.customerMemo.startsWith("[3년 재원 무료 증정]"));
   assert.equal(order.parentPhone, "010-1234-5678");
@@ -173,7 +173,7 @@ test("무료 주문 상태(NEEDS_REVIEW)는 크론 자동 발송 대상(PENDING�
   assert.equal(list.includes(rules.FREE_UNIFORM_SYNC_STATUS), false);
 });
 
-test("무료 신청 경로는 본사 발송 모듈을 import 하지 않는다", () => {
+test("무료 신청 경로는 소명엔비씨 발송 모듈을 import 하지 않는다", () => {
   for (const file of ["src/lib/uniform-free-grant.ts", "src/app/actions/uniform-free.ts"]) {
     const source = readFileSync(file, "utf8");
     assert.equal(/from\s+["']@\/lib\/uniform-order-service["']/.test(source), false, file);

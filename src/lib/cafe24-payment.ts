@@ -198,17 +198,17 @@ export async function postCafe24PaymentCheckout(payload: Cafe24PaymentBridgePayl
     const secret = readBridgeSecret();
 
     if (!config.apiUrlConfigured) {
-        throw new Cafe24PaymentBridgeError("본사 카페24 결제 브리지 URL 설정이 필요합니다.", {
+        throw new Cafe24PaymentBridgeError("카페24 결제 브리지 URL 설정이 필요합니다.", {
             retryable: false,
         });
     }
     if (!config.apiUrlValid) {
-        throw new Cafe24PaymentBridgeError("본사 카페24 결제 브리지 URL 형식이 올바르지 않습니다.", {
+        throw new Cafe24PaymentBridgeError("카페24 결제 브리지 URL 형식이 올바르지 않습니다.", {
             retryable: false,
         });
     }
     if (!config.secretConfigured || !config.secretFormatValid) {
-        throw new Cafe24PaymentBridgeError("본사 연동 서명 비밀키 설정이 필요합니다.", {
+        throw new Cafe24PaymentBridgeError("카페24 결제 연동 서명 비밀키 설정이 필요합니다.", {
             retryable: false,
         });
     }
@@ -235,13 +235,13 @@ export async function postCafe24PaymentCheckout(payload: Cafe24PaymentBridgePayl
         const checkoutUrl = getCafe24PaymentCheckoutUrl(body);
 
         if (!response.ok || body.success === false || body.ok === false) {
-            throw new Cafe24PaymentBridgeError(body.error || body.message || `본사 카페24 결제 요청 실패 (${response.status})`, {
+            throw new Cafe24PaymentBridgeError(body.error || body.message || `카페24 결제 요청 실패 (${response.status})`, {
                 statusCode: response.status,
                 retryable: response.status >= 500 || response.status === 429,
             });
         }
         if (!checkoutUrl || !isHttpUrl(checkoutUrl)) {
-            throw new Cafe24PaymentBridgeError("본사에서 유효한 카페24 결제 링크를 받지 못했습니다.", {
+            throw new Cafe24PaymentBridgeError("유효한 카페24 결제 링크를 받지 못했습니다.", {
                 statusCode: response.status,
                 retryable: false,
             });

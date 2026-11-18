@@ -1,11 +1,11 @@
 // 3년 이상 재원생 유니폼 무료 증정 — 발급·조회·신청 처리
 //
 // 왜 DB 를 인자(db)로 받나: 이 파일은 prisma 를 직접 import 하지 않는다. 그래서 테스트가
-// 가짜 DB 를 넣어 «한 번만 접수되는지», «본사 발송을 부르지 않는지» 를 실제로 돌려 확인할 수 있다.
+// 가짜 DB 를 넣어 «한 번만 접수되는지», «소명엔비씨 발송을 부르지 않는지» 를 실제로 돌려 확인할 수 있다.
 // 실제 연결은 서버 액션(app/actions/uniform-free.ts)·페이지가 prisma 를 넘겨서 한다.
 //
-// 🚫 이 파일은 uniform-order-service(본사 발송 dispatch)를 import 하지 않는다 — 무료 주문은
-//    원장 확인 전까지 본사로 나가면 안 된다(테스트가 import 여부와 fetch 호출을 같이 본다).
+// 🚫 이 파일은 uniform-order-service(소명엔비씨 발송 dispatch)를 import 하지 않는다 — 무료 주문은
+//    원장 확인 전까지 소명엔비씨로 나가면 안 된다(테스트가 import 여부와 fetch 호출을 같이 본다).
 import { randomBytes, randomUUID } from "node:crypto";
 import {
   FREE_UNIFORM_STIZ_MESSAGE,
@@ -161,7 +161,7 @@ type LockedGrantRow = {
  * 무료 유니폼 신청 — 반드시 트랜잭션 안의 tx 로 부른다.
  * 1) 링크 행을 FOR UPDATE 로 잠근다 → 동시에 두 번 눌러도 두 번째는 첫 번째가 끝날 때까지 기다렸다가
  *    USED 를 보고 거절된다(한 건만 접수).
- * 2) 주문 저장 시 본사 상태를 NEEDS_REVIEW 로 둬서 자동 발송(크론)·즉시 발송 모두 일어나지 않는다.
+ * 2) 주문 저장 시 소명엔비씨 상태를 NEEDS_REVIEW 로 둬서 자동 발송(크론)·즉시 발송 모두 일어나지 않는다.
  */
 export async function submitFreeUniformOrderInTx(
   tx: RawSqlClient,
@@ -263,7 +263,7 @@ export async function submitFreeUniformOrderInTx(
     item.backNumber,
     item.topSize,
     item.bottomSize,
-    item.quantity, // 일반 주문과 같은 규칙(상의 1 + 하의 1) — 본사가 세트를 같은 방식으로 받는다
+    item.quantity, // 일반 주문과 같은 규칙(상의 1 + 하의 1) — 소명엔비씨가 세트를 같은 방식으로 받는다
   );
 
   // ISSUED 일 때만 USED 로 — 잠금 덕에 항상 1건이지만, 0건이면 롤백해 주문이 남지 않게 한다

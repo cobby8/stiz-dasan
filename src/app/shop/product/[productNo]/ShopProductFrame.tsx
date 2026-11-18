@@ -134,7 +134,7 @@ export default function ShopProductFrame({ productNo }: { productNo: string }) {
         )}
       </header>
 
-      {/* 아래 구매 화면은 본사 쇼핑몰이다 — 판매자를 학원과 구분해 표시 */}
+      {/* 아래 구매 화면은 소명엔비씨 쇼핑몰이다 — 판매자를 학원과 구분해 표시 */}
       <HqSellerNotice compact />
 
       <section className="relative min-h-0 flex-1" aria-label="클럽샵 상품 상세">
@@ -155,13 +155,13 @@ export default function ShopProductFrame({ productNo }: { productNo: string }) {
           </div>
         )}
 
-        {/* 스토어 앱(현재 버전)은 본사 쇼핑몰 구매 화면(바깥 주소)을 열지 못한다 → 주소 복사 안내로 바꾼다(d2) */}
+        {/* 스토어 앱(현재 버전)은 소명엔비씨 쇼핑몰 구매 화면(바깥 주소)을 열지 못한다 → 주소 복사 안내로 바꾼다(d2) */}
         {state.status === "ready" && appCannotOpen && (
           <div className="flex h-full items-center justify-center p-6">
             <div className="max-w-sm text-center">
               <h2 className="text-lg font-bold text-[var(--color-public-ink)]">구매는 휴대폰 브라우저에서 해 주세요</h2>
               <p className="mt-2 break-keep text-sm leading-6 text-[var(--color-public-muted)]">
-                앱에서는 본사 쇼핑몰 구매 화면을 열 수 없어요. 주소를 복사해 휴대폰 브라우저에 붙여 넣어 주세요.
+                앱에서는 소명엔비씨 쇼핑몰 구매 화면을 열 수 없어요. 주소를 복사해 휴대폰 브라우저에 붙여 넣어 주세요.
               </p>
               <button
                 type="button"

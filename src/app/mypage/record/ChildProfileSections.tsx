@@ -206,7 +206,7 @@ function shortYmdDot(ymd: string | null): string {
 }
 
 /**
- * 유니폼 신청 내역(사이트 + 본사 쇼핑몰, 2026-11-16) — 한 품목 한 줄(신청일 · 출처 글자 · 디자인·등번호·인쇄 이름·사이즈·수량 · 상태).
+ * 유니폼 신청 내역(사이트 + 소명엔비씨 쇼핑몰, 2026-11-16) — 한 품목 한 줄(신청일 · 출처 글자 · 디자인·등번호·인쇄 이름·사이즈·수량 · 상태).
  * 인쇄 이름은 등번호 바로 뒤에 보인다(«23번 · LEE JUN», 2026-11-17 원장 결정 r3) — 값이 없으면 생략. 송장번호는 보이지 않는다.
  * 서버가 «로그인한 본인 번호로 낸 이 아이 이름의 품목»만 보낸다(childUniformQuery). 옛 모양 데이터(칸 없음)면 그리지 않는다.
  */
@@ -222,7 +222,7 @@ export function ChildUniformOrdersSection({ uniform }: { uniform: UniformRecord 
       ) : orders.length === 0 ? (
         <div className="flex min-h-11 flex-wrap items-center gap-2 px-3 py-1.5">
           <p className="min-w-0 flex-1 text-sm text-[var(--color-academy-muted)]">신청 내역이 없어요.</p>
-          {/* 유니폼 신청은 본사 쇼핑몰(바깥 주소) — 신청 메뉴와 같은 바깥 링크 규칙 */}
+          {/* 유니폼 신청은 소명엔비씨 쇼핑몰(바깥 주소) — 신청 메뉴와 같은 바깥 링크 규칙 */}
           <a href={ACADEMY_GUIDE_FACTS.uniformOrderUrl} target="_blank" rel="noopener noreferrer" data-outside-link className="academy-button-text whitespace-nowrap">
             유니폼 신청 ▸
           </a>

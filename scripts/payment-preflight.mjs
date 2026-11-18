@@ -43,20 +43,20 @@ if (provider === "TOSS" && !secretKey) {
   errors.push("토스 서버키가 필요합니다. TOSS_PAYMENTS_SECRET_KEY를 설정하세요.");
 }
 if (provider === "CAFE24_BRIDGE" && !cafe24BridgeUrl) {
-  errors.push("본사 카페24 결제 브리지 URL이 필요합니다. CAFE24_PAYMENT_BRIDGE_URL 또는 STIZ_CAFE24_PAYMENT_API_URL을 설정하세요.");
+  errors.push("카페24 결제 브리지 URL이 필요합니다. CAFE24_PAYMENT_BRIDGE_URL 또는 STIZ_CAFE24_PAYMENT_API_URL을 설정하세요.");
 }
 if (provider === "CAFE24_BRIDGE" && !cafe24BridgeSecret) {
-  errors.push("본사 카페24 결제 서명키가 필요합니다. CAFE24_PAYMENT_BRIDGE_SECRET 또는 STIZ_PARTNER_SECRET을 설정하세요.");
+  errors.push("카페24 결제 서명키가 필요합니다. CAFE24_PAYMENT_BRIDGE_SECRET 또는 STIZ_PARTNER_SECRET을 설정하세요.");
 }
 if (provider === "CAFE24_BRIDGE" && cafe24BridgeSecret && !/^[a-fA-F0-9]{64}$/.test(cafe24BridgeSecret)) {
-  errors.push("본사 카페24 결제 서명키는 64자 hex 형식이어야 합니다.");
+  errors.push("카페24 결제 서명키는 64자 hex 형식이어야 합니다.");
 }
 if (provider === "CAFE24_BRIDGE" && cafe24BridgeUrl) {
   try {
     const bridgeOrigin = new URL(cafe24BridgeUrl).origin;
-    if (!/^https?:\/\//i.test(bridgeOrigin)) errors.push("본사 카페24 결제 브리지 URL은 http 또는 https 주소여야 합니다.");
+    if (!/^https?:\/\//i.test(bridgeOrigin)) errors.push("카페24 결제 브리지 URL은 http 또는 https 주소여야 합니다.");
   } catch {
-    errors.push("본사 카페24 결제 브리지 URL 형식이 올바르지 않습니다.");
+    errors.push("카페24 결제 브리지 URL 형식이 올바르지 않습니다.");
   }
 }
 
@@ -98,14 +98,14 @@ try {
 
 console.log("[온라인 결제 점검]");
 console.log(`- 범위: ${scope}`);
-console.log(`- 결제 제공자: ${provider === "CAFE24_BRIDGE" ? "본사 카페24" : "토스페이먼츠"}`);
+console.log(`- 결제 제공자: ${provider === "CAFE24_BRIDGE" ? "카페24 결제" : "토스페이먼츠"}`);
 if (provider === "TOSS") {
   console.log(`- 결제 모드: ${keyPairReady ? modeLabel(clientMode) : "준비 필요"}`);
   console.log(`- 공개키: ${clientKey ? "있음" : "없음"}`);
   console.log(`- 서버키: ${secretKey ? "있음" : "없음"}`);
 } else {
-  console.log(`- 본사 브리지 URL: ${cafe24BridgeUrl ? "있음" : "없음"}`);
-  console.log(`- 본사 서명키: ${cafe24BridgeSecret ? "있음" : "없음"}`);
+  console.log(`- 카페24 결제 브리지 URL: ${cafe24BridgeUrl ? "있음" : "없음"}`);
+  console.log(`- 카페24 결제 서명키: ${cafe24BridgeSecret ? "있음" : "없음"}`);
 }
 
 if (origin) {

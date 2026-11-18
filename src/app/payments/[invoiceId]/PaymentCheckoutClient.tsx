@@ -198,7 +198,7 @@ export default function PaymentCheckoutClient({
 
             if (responseProvider === "CAFE24_BRIDGE") {
                 if (!data.checkoutUrl) {
-                    throw new Error("본사 카페24 결제 링크를 받지 못했어요. 학원에 문의해 주세요.");
+                    throw new Error("카페24 결제 링크를 받지 못했어요. 학원에 문의해 주세요.");
                 }
                 window.location.assign(data.checkoutUrl);
                 return;
@@ -329,7 +329,7 @@ export default function PaymentCheckoutClient({
             )}
 
             {providerReady && provider === "CAFE24_BRIDGE" && (
-                <p className="text-sm font-medium text-[var(--color-academy-ink)]">본사 카페24 결제창으로 이동합니다.</p>
+                <p className="text-sm font-medium text-[var(--color-academy-ink)]">카페24 결제창으로 이동합니다.</p>
             )}
 
             {error && (

@@ -11,7 +11,7 @@ const paymentPreflight = readFileSync(new URL("../scripts/payment-preflight.mjs"
 const releasePreflight = readFileSync(new URL("../scripts/release-preflight.mjs", import.meta.url), "utf8");
 const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
 
-test("본사 카페24 브리지 문서는 다산점 코드의 요청 계약과 같은 값을 설명한다", () => {
+test("카페24 결제 브리지 문서는 다산점 코드의 요청 계약과 같은 값을 설명한다", () => {
   for (const token of [
     "PAYMENT_PROVIDER=CAFE24_BRIDGE",
     "CAFE24_PAYMENT_BRIDGE_URL",
@@ -37,7 +37,7 @@ test("본사 카페24 브리지 문서는 다산점 코드의 요청 계약과 �
   assert.match(cafe24Lib, /canonicalCafe24PaymentJson/);
 });
 
-test("본사 카페24 웹훅은 서명, 주문번호, 금액을 모두 맞춰야 납부 완료 처리한다", () => {
+test("카페24 결제 웹훅은 서명, 주문번호, 금액을 모두 맞춰야 납부 완료 처리한다", () => {
   assert.match(contract, /https:\/\/www\.stiz-dasan\.kr\/api\/payments\/cafe24\/webhook/);
   assert.match(contract, /금액이 저장 금액과 같을 때만 납부 완료/);
   assert.match(contract, /CAFE24_AMOUNT_MISMATCH/);

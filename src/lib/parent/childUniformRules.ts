@@ -7,7 +7,7 @@
 //          · 아이 열쇠 — 아이 이름에서 띄어쓰기를 지우고 끝의 영문·숫자 구분 글자(A/B·숫자)를 뗀 것(«김루빈A» → «김루빈»)
 //          · 아이 전체 이름 — 띄어쓰기만 지운 것(«김루빈A») — 주문서에 구분 글자까지 적은 경우도 맞게
 //   SQL(childUniformQuery)이 같은 조건으로 고르고, 여기서 한 번 더 거른다(이중 확인).
-// ★ 화면으로 내보내는 값은 ChildUniformOrderView 칸뿐 — 전화번호·보호자 이름·메모·본사 연동 값·오류 글은 넣지 않는다.
+// ★ 화면으로 내보내는 값은 ChildUniformOrderView 칸뿐 — 전화번호·보호자 이름·메모·소명엔비씨 연동 값·오류 글은 넣지 않는다.
 //   인쇄 이름(유니폼에 찍는 영문 이름)은 등번호와 함께 보인다(2026-11-17 원장 결정 r3) — 학부모 본인이 주문서에 적은 값이다.
 import { isUsablePhoneKey, parentPhoneDigits } from "@/lib/enrollment/parentIdentity";
 import type { StatusTone } from "@/lib/ui/statusTones";
@@ -48,12 +48,12 @@ export function parentOrderPhoneKey(phone: unknown): string | null {
   return isUsablePhoneKey(digits) ? digits : null;
 }
 
-/** 업체(본사)에 주문이 실제로 들어간 연동 상태 — student-register-rules 의 판정과 같은 값 */
+/** 업체(소명엔비씨)에 주문이 실제로 들어간 연동 상태 — student-register-rules 의 판정과 같은 값 */
 const ORDERED_SYNC = new Set(["SENT", "DUPLICATE"]);
 
 /**
  * 진행 상태 한 단어(학부모용).
- *  취소(CANCELED) → «취소» · 본사 주문 들어감(주문번호 있음·전송 완료·업체 중복) → «주문 완료» · 그 밖(접수만) → «접수»
+ *  취소(CANCELED) → «취소» · 소명엔비씨 주문 들어감(주문번호 있음·전송 완료·업체 중복) → «주문 완료» · 그 밖(접수만) → «접수»
  */
 export function parentUniformOrderStatus(input: { orderStatus: unknown; stizSyncStatus: unknown; hasOrderNumber: unknown }): { label: string; tone: StatusTone } {
   if (String(input.orderStatus ?? "") === "CANCELED") return { label: "취소", tone: "neutral" };
@@ -133,7 +133,7 @@ export function toChildUniformOrders(rows: ChildUniformOrderRow[], keys: { phone
     });
 }
 
-// ── 본사 쇼핑몰(stiz.kr) 주문(2026-11-16 원장 «쇼핑몰 주문도 학부모 화면에 보이게») ──────────────
+// ── 소명엔비씨 쇼핑몰(stiz.kr) 주문(2026-11-16 원장 «쇼핑몰 주문도 학부모 화면에 보이게») ──────────────
 //
 // ★ 쇼핑몰 주문의 «이 아이의 주문» 조건(둘 다):
 //   1) 주문의 구매자 번호 또는 수령인 번호 = 로그인한 학부모 본인 계정 전화번호(열쇠로 쓸 수 있는 번호일 때만)

@@ -60,7 +60,7 @@ function requirePaymentEnvironment(missing) {
       missing.push("CAFE24_PAYMENT_BRIDGE_URL (http/https URL 형식)");
     }
     if (!hasValidCafe24BridgeSecret()) {
-      missing.push("CAFE24_PAYMENT_BRIDGE_SECRET 또는 STIZ_PARTNER_SECRET (64자 hex 형식의 본사 결제 서명키)");
+      missing.push("CAFE24_PAYMENT_BRIDGE_SECRET 또는 STIZ_PARTNER_SECRET (64자 hex 형식의 카페24 결제 서명키)");
     }
     return;
   }
@@ -128,7 +128,7 @@ function checkEnvironment() {
     missing.push("MESSAGE_PRIVACY_HMAC_SECRET (32바이트 이상의 무작위 서버 비밀값)");
   }
   if (isPresent("STIZ_PARTNER_SECRET") && !hasValidStizPartnerSecret()) {
-    missing.push("STIZ_PARTNER_SECRET (64자 hex 형식의 본사 연동 비밀키)");
+    missing.push("STIZ_PARTNER_SECRET (64자 hex 형식의 소명엔비씨 연동 비밀키)");
   }
 
   requireSmsEnvironment(missing);

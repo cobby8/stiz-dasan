@@ -80,16 +80,16 @@ test("학부모 결제 화면은 토스 SDK 결과를 검증하고 안내 화면
   assert.match(invoicePage, /PaymentCheckoutClient/);
 });
 
-test("학부모 결제 화면은 본사 카페24 결제 링크로 분기할 수 있다", () => {
+test("학부모 결제 화면은 카페24 결제 링크로 분기할 수 있다", () => {
   assert.match(checkoutClient, /CAFE24_BRIDGE/);
   assert.match(checkoutClient, /checkoutUrl/);
   assert.match(checkoutClient, /window\.location\.assign\(data\.checkoutUrl\)/);
-  assert.match(checkoutClient, /본사 카페24 결제창으로 이동합니다/);
+  assert.match(checkoutClient, /카페24 결제창으로 이동합니다/);
   assert.match(invoicePage, /provider=\{providerConfig\.provider\}/);
   assert.match(invoicePage, /providerLabel=\{providerConfig\.providerLabel\}/);
 });
 
-test("본사 카페24 결제 브리지는 서명된 요청과 서명된 웹훅만 허용한다", () => {
+test("카페24 결제 브리지는 서명된 요청과 서명된 웹훅만 허용한다", () => {
   assert.match(ledger, /postCafe24PaymentCheckout/);
   assert.match(ledger, /buildCafe24PaymentBridgePayload/);
   assert.match(ledger, /verifyCafe24PaymentWebhook/);
@@ -120,7 +120,7 @@ test("관리자는 온라인 결제 운영 준비 상태를 개발 메시지 없
   assert.match(financeClient, /keyPairReady/);
   assert.match(financeClient, /webhookUrl/);
   assert.match(financeClient, /CAFE24_BRIDGE/);
-  assert.match(financeClient, /본사 카페24/);
+  assert.match(financeClient, /카페24 결제/);
   assert.match(financeClient, /cafe24BridgeReady/);
 });
 

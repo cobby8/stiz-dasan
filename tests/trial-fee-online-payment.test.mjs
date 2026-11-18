@@ -407,7 +407,7 @@ test("[안내] 체험비 결제 확인은 결제 금액과 별도 일정 안내�
   ].join("\n"));
 });
 
-test("[안내] 등록 완료 안내: 본사 유니폼 주문 링크, 수업과 담당 코치, 셔틀 이용 정보", () => {
+test("[안내] 등록 완료 안내: 소명엔비씨 유니폼 주문 링크, 수업과 담당 코치, 셔틀 이용 정보", () => {
   const coaches = [{ name: "김영웅", title: "코치", phone: "01088242170" }];
   const drivers = [{ name: "김영중", title: "기사님", phone: "010-3207-2139" }];
   const withShuttle = guides.buildEnrollGuideMessage({ childName: "홍길동", classLabels: ["월 16:00~17:00 초등 A반"], coaches, drivers, usesShuttle: true });

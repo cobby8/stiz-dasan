@@ -28,7 +28,7 @@ const SYNC_STATUS: Record<string, SyncTone> = {
     className: "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] ring-[var(--color-academy-line)]",
   },
   SENT: {
-    label: "본사 접수",
+    label: "소명엔비씨 접수",
     className: "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)] ring-[var(--color-academy-success)]",
   },
   DUPLICATE: {
@@ -108,7 +108,7 @@ export default function UniformOrdersClient({
   }), [initialOrders]);
 
   async function handleRetry(order: UniformOrderAdminView) {
-    if (!(await askConfirm(`${order.parentName} 보호자의 유니폼 신청을 STIZ 본사로 다시 전송할까요?\n본사 접수에 성공하면 학부모 문자 안내가 발송될 수 있습니다.`))) {
+    if (!(await askConfirm(`${order.parentName} 보호자의 유니폼 신청을 소명엔비씨로 다시 전송할까요?\n소명엔비씨 접수에 성공하면 학부모 문자 안내가 발송될 수 있습니다.`))) {
       return;
     }
     setBusyId(order.id);
@@ -119,7 +119,7 @@ export default function UniformOrdersClient({
         const done = result.syncStatus === "SENT" || result.syncStatus === "DUPLICATE";
         setFeedback({
           type: done ? "success" : "error",
-          message: done ? "본사 접수가 완료되었습니다." : "전송 상태를 확인해 주세요. 설정 또는 응답 오류가 남아 있습니다.",
+          message: done ? "소명엔비씨 접수가 완료되었습니다." : "전송 상태를 확인해 주세요. 설정 또는 응답 오류가 남아 있습니다.",
         });
         router.refresh();
       } catch (error) {
@@ -137,7 +137,7 @@ export default function UniformOrdersClient({
   const chipItems = [
     { value: "ACTION", label: "처리 필요", count: counts.action },
     { value: "WAITING", label: "전송 대기", count: counts.waiting },
-    { value: "SENT", label: "본사 접수", count: counts.sent },
+    { value: "SENT", label: "소명엔비씨 접수", count: counts.sent },
   ];
   // id 로 찾아서, 새로고침 뒤에도 최신 값으로 보이고 사라지면 패널도 닫힌다
   const detailOrder = detailOrderId ? initialOrders.find((order) => order.id === detailOrderId) ?? null : null;
@@ -224,7 +224,7 @@ export default function UniformOrdersClient({
                 <th className="admin-cell-num hidden px-2 py-2 md:table-cell">연락처</th>
                 <th className="px-2 py-2">학생</th>
                 <th className="admin-cell-num hidden px-2 py-2 md:table-cell">수량</th>
-                <th className="hidden px-2 py-2 lg:table-cell">본사 접수번호</th>
+                <th className="hidden px-2 py-2 lg:table-cell">소명엔비씨 접수번호</th>
                 <th className="admin-cell-num hidden px-2 py-2 md:table-cell">시도</th>
                 <th className="admin-cell-center px-2 py-2">관리</th>
               </tr>
@@ -340,8 +340,8 @@ export default function UniformOrdersClient({
 
 // 전송 상태 배지(목록 행·상세 패널 공용) — 색은 기존 SYNC_STATUS 표 그대로
 function SyncBadge({ order, sync }: { order: UniformOrderAdminView; sync: SyncTone }) {
-  // 3년 재원 무료 증정 주문은 «무료 증정» 배지를 같이 단다 — 본사 자동 발송 없이 «확인 필요» 로 들어오므로
-  // 원장이 내용을 보고 «재전송» 을 눌러 본사로 보낸다(표시는 주문 메모 앞머리로 판정)
+  // 3년 재원 무료 증정 주문은 «무료 증정» 배지를 같이 단다 — 소명엔비씨 자동 발송 없이 «확인 필요» 로 들어오므로
+  // 원장이 내용을 보고 «재전송» 을 눌러 소명엔비씨로 보낸다(표시는 주문 메모 앞머리로 판정)
   const isFree = isFreeUniformOrderMemo(order.customerMemo);
   return (
     <span className="inline-flex shrink-0 items-center gap-1">

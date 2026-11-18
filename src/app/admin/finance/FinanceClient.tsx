@@ -215,7 +215,7 @@ const PROVIDER_LABELS: Record<string, string> = {
     TOSS_POS: "토스 POS(현장)",
     // 예전 «단말기» 메뉴로 기록된 결제(메뉴는 2026-11-08 제거, 과거 기록 표시는 유지)
     TOSS_TERMINAL: "현장 단말기",
-    CAFE24_BRIDGE: "본사 카페24",
+    CAFE24_BRIDGE: "카페24 결제",
     MANUAL: "직접 처리",
 };
 
@@ -275,7 +275,7 @@ function getErrorMessage(error: unknown, fallback: string) {
 }
 
 function getPaymentModeLabel(status: PaymentProviderStatus) {
-    if (status.provider === "CAFE24_BRIDGE") return status.cafe24BridgeReady ? "본사 결제 링크" : "본사 결제 연결 준비 필요";
+    if (status.provider === "CAFE24_BRIDGE") return status.cafe24BridgeReady ? "카페24 결제 링크" : "카페24 결제 연결 준비 필요";
     if (status.keyMode === "test") return "테스트 결제";
     if (status.keyMode === "live") return "실거래 결제";
     if (status.keyMode === "mixed") return "키 종류 불일치";
@@ -1135,16 +1135,16 @@ export default function FinanceClient({
     ).length;
     const paymentProviderMissing = [
         paymentProvider.provider === "CAFE24_BRIDGE" && !paymentProvider.cafe24BridgeUrlConfigured
-            ? "본사 카페24 결제 연결 주소"
+            ? "카페24 결제 연결 주소"
             : null,
         paymentProvider.provider === "CAFE24_BRIDGE" && paymentProvider.cafe24BridgeUrlConfigured && !paymentProvider.cafe24BridgeUrlValid
-            ? "본사 카페24 결제 연결 주소 형식"
+            ? "카페24 결제 연결 주소 형식"
             : null,
         paymentProvider.provider === "CAFE24_BRIDGE" && !paymentProvider.cafe24BridgeSecretConfigured
-            ? "본사 연동 서명키"
+            ? "카페24 연동 서명키"
             : null,
         paymentProvider.provider === "CAFE24_BRIDGE" && paymentProvider.cafe24BridgeSecretConfigured && !paymentProvider.cafe24BridgeSecretValid
-            ? "본사 연동 서명키 형식"
+            ? "카페24 연동 서명키 형식"
             : null,
         paymentProvider.provider === "TOSS" && paymentProvider.productionTestKeyBlocked ? "운영 서버에 테스트 키(실거래 키로 교체 필요)" : null,
         paymentProvider.provider === "TOSS" && !paymentProvider.clientKeyConfigured ? "결제 클라이언트 키 미설정" : null,

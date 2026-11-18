@@ -998,7 +998,7 @@ function getSelectedPaymentProvider(): OnlinePaymentProvider {
 }
 
 function getPaymentProviderLabel(provider: OnlinePaymentProvider) {
-    return provider === CAFE24_PAYMENT_PROVIDER ? "본사 카페24" : "토스페이먼츠";
+    return provider === CAFE24_PAYMENT_PROVIDER ? "카페24 결제" : "토스페이먼츠";
 }
 
 export function getPaymentProviderConfig() {
@@ -1463,12 +1463,12 @@ export async function createCheckoutSession(input: {
                  WHERE id = $1`,
                 transactionId,
                 bridgeError ? `CAFE24_BRIDGE_${bridgeError.statusCode ?? "CONFIG"}` : "CAFE24_BRIDGE_FAILED",
-                error instanceof Error ? error.message : "본사 카페24 결제 요청에 실패했습니다.",
+                error instanceof Error ? error.message : "카페24 결제 요청에 실패했습니다.",
                 Boolean(bridgeError?.retryable),
             );
             return {
                 ok: false as const,
-                error: error instanceof Error ? error.message : "본사 카페24 결제 요청에 실패했습니다.",
+                error: error instanceof Error ? error.message : "카페24 결제 요청에 실패했습니다.",
                 providerReady: config.providerReady,
                 providerError: true as const,
                 retryable: Boolean(bridgeError?.retryable),
@@ -3084,7 +3084,7 @@ export async function createBundleCheckoutSession(input: {
 
     const config = getPaymentProviderConfig();
     if (config.provider !== "TOSS") {
-        // 본사 카페24 결제 방식에는 «여러 건 한 주문»이 없다 — 단건 결제로 안내
+        // 카페24 결제 방식에는 «여러 건 한 주문»이 없다 — 단건 결제로 안내
         return { ok: false as const, error: "지금 결제 방식에서는 한 번에 결제할 수 없어요. 청구서마다 결제해 주세요.", providerReady: config.providerReady };
     }
     if (!config.providerReady) {
@@ -3791,7 +3791,7 @@ export async function recordCafe24PaymentWebhook(payload: unknown) {
             `UPDATE "PaymentTransaction"
              SET status = 'FAILED',
                  "failureCode" = COALESCE($2, 'CAFE24_PAYMENT_FAILED'),
-                 "failureMessage" = COALESCE($3, '본사 카페24 결제가 완료되지 않았습니다.'),
+                 "failureMessage" = COALESCE($3, '카페24 결제가 완료되지 않았습니다.'),
                  "rawResponse" = $4::jsonb,
                  "updatedAt" = NOW()
              WHERE id = $1 AND status IN ('READY', 'IN_PROGRESS')`,

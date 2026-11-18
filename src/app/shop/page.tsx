@@ -26,7 +26,7 @@ export default function ShopPage() {
 
       <section className="public-content-section bg-gray-50 py-6 dark:bg-gray-900 md:py-8">
         <div className="mx-auto max-w-5xl px-4">
-          {/* 실제 판매자(본사) 표시 — 학원 사업자와 구분 */}
+          {/* 실제 판매자(소명엔비씨) 표시 — 학원 사업자와 구분 */}
           <HqSellerNotice />
           <ClubShopClient />
         </div>

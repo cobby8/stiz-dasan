@@ -6,12 +6,12 @@ import { resolveSyncRange, runShopOrderSync, ShopOrderSyncError } from "@/lib/un
 export const dynamic = "force-dynamic";
 
 /**
- * 본사 쇼핑몰 유니폼 주문 동기화 (매시 17분 · vercel.json).
+ * 소명엔비씨 쇼핑몰 유니폼 주문 동기화 (매시 17분 · vercel.json).
  *
  * 왜 필요한가: 학부모가 stiz.kr(카페24)에서 직접 낸 유니폼 주문을 학부모 «아이 기록 → 유니폼 신청 내역»에
- * 사이트 주문과 함께 보여 주려고, 본사 창구에서 받아 UniformShopOrder·UniformShopOrderItem 에 upsert 한다.
+ * 사이트 주문과 함께 보여 주려고, 소명엔비씨 창구에서 받아 UniformShopOrder·UniformShopOrderItem 에 upsert 한다.
  *
- * 기간: 기본 «오늘 포함 최근 80일»(본사 창구 최대치 — 14일이면 그 뒤 주문 상태가 멈춘다. 이유는 CLUB_ORDERS_DEFAULT_DAYS 주석).
+ * 기간: 기본 «오늘 포함 최근 80일»(소명엔비씨 창구 최대치 — 14일이면 그 뒤 주문 상태가 멈춘다. 이유는 CLUB_ORDERS_DEFAULT_DAYS 주석).
  *       80일보다 오래된 주문 채우기는 ?from=YYYY-MM-DD&to=YYYY-MM-DD(최대 80일 길이)로 여러 번 부른다. ?days=N(1~80)도 된다.
  * 응답: 기간·받은 건수·저장 건수·«빠져서 취소로 표시한 품목 수»만(전화번호·이름 없음). 실패하면 500 + 사유 글자(비밀값·개인정보 없음) — 아무것도 저장·삭제하지 않는다.
  */

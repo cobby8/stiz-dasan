@@ -22,7 +22,7 @@ const completeRlsRows = Object.keys(REQUIRED_UNIFORM_ORDER_COLUMNS).map((table_n
   rls_enabled: true,
 }));
 
-test("유니폼 주문 화면과 본사 전송이 사용하는 필수 컬럼을 검사한다", () => {
+test("유니폼 주문 화면과 소명엔비씨 전송이 사용하는 필수 컬럼을 검사한다", () => {
   assert.deepEqual(findMissingUniformOrderColumns(completeRows), []);
   const withoutPartnerRequestId = completeRows.filter((row) =>
     !(row.table_name === "UniformOrder" && row.column_name === "partnerRequestId"),

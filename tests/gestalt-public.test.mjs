@@ -207,7 +207,7 @@ test("P-11 하위 페이지 배너: 영문 라벨·장식 원 없음, 제목 cla
     assert.doesNotMatch(hero, /rounded-full translate-x-1\/3/, file);
     assert.doesNotMatch(hero, /SEASONAL PROGRAM/, file);
   }
-  // /apply/uniform 은 2026-11-03 본사 직접 구매로 바뀌어 배너 없이 본사 상품 페이지로 넘긴다(1493876a).
+  // /apply/uniform 은 2026-11-03 소명엔비씨 직접 구매로 바뀌어 배너 없이 소명엔비씨 상품 페이지로 넘긴다(1493876a).
   assert.match(read("src/app/apply/uniform/page.tsx"), /permanentRedirect\("https:\/\/stiz\.kr\/product\/detail\.html/);
 });
 

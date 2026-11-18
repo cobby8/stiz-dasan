@@ -6,7 +6,7 @@
  * 단, 우리 주소지만 서버가 곧바로 바깥(쇼핑몰)으로 보내는 경로는 바깥 주소로 본다.
  */
 
-/** 우리 주소지만 바깥으로 넘기는 경로(정확히 일치). /apply/uniform → stiz.kr 본사 상품(permanentRedirect) */
+/** 우리 주소지만 바깥으로 넘기는 경로(정확히 일치). /apply/uniform → stiz.kr 소명엔비씨 상품(permanentRedirect) */
 export const SAME_SITE_OUTSIDE_REDIRECT_PATHS = ["/apply/uniform"];
 
 /** 이 주소를 스토어 앱에서 «열 수 없는 바깥 주소»로 다뤄야 하나 */

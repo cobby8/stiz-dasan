@@ -9,7 +9,7 @@ export const metadata = { title: "신청 | 스티즈 농구교실" };
 
 // «신청» 메뉴 (2026-11-14 원장 결정표 c9) — 유니폼 신청·체육관 대관·방학특강 신청으로 가는 길을 한 칸에 모았다.
 // 예전엔 이 세 가지가 공개 홈페이지에만 있어, 설치된 학부모 앱에서는 갈 길이 없었다.
-// 한 줄 행 3개. 앱 안 화면은 /mypage 아래 주소로, 본사 쇼핑몰(유니폼)만 바깥 링크로 연다.
+// 한 줄 행 3개. 앱 안 화면은 /mypage 아래 주소로, 소명엔비씨 쇼핑몰(유니폼)만 바깥 링크로 연다.
 
 const ROW = "flex min-h-12 w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-[var(--color-academy-soft)]";
 

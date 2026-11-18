@@ -1,6 +1,6 @@
-// 본사 쇼핑몰(stiz.kr) 유니폼 주문 → 학부모 «유니폼 신청 내역»(2026-11-16 원장 «쇼핑몰 주문도 학부모 화면에 보이게»)
-//  ① 서명: 고정 입력 → 고정 hex(본사와 같은 벡터로 맞춰 본다)
-//  ② 기간: 기본 80일(본사 최대치)·days·from/to·잘못된 값 거부(KST 자정 경계)
+// 소명엔비씨 쇼핑몰(stiz.kr) 유니폼 주문 → 학부모 «유니폼 신청 내역»(2026-11-16 원장 «쇼핑몰 주문도 학부모 화면에 보이게»)
+//  ① 서명: 고정 입력 → 고정 hex(소명엔비씨와 같은 벡터로 맞춰 본다)
+//  ② 기간: 기본 80일(소명엔비씨 최대치)·days·from/to·잘못된 값 거부(KST 자정 경계)
 //  ③ 응답 검증: 필수 칸이 빠지거나 형식이 다르면 통째로 거부 · 모르는 추가 칸은 무시 · 전화번호 "" 는 null
 //  ④ 동기화: 가짜 fetch·가짜 DB — 헤더·주소(전화번호 없음)·redirect 금지·재시도·실패 시 DB 미변경·upsert 만(DELETE 없음)
 //            · 응답에 들어온 주문에서 빠진 품목은 취소 표시(삭제 아님)
@@ -52,7 +52,7 @@ const RANGE = { from: "2026-11-03", to: "2026-11-16" };
 
 // ── ① 서명 ─────────────────────────────────────────────────────────────────
 
-test("① 서명 글자·서명 hex — 고정 벡터(본사 검증용)", () => {
+test("① 서명 글자·서명 hex — 고정 벡터(소명엔비씨 검증용)", () => {
   const input = { secret: SECRET, timestamp: TS, club: "dasan", ...RANGE };
   const signing = sync.clubOrdersSigningString(input);
   assert.equal(
@@ -71,7 +71,7 @@ test("① 서명 글자·서명 hex — 고정 벡터(본사 검증용)", () => 
 // 2026-11-15T15:30Z = KST 11-16 00:30 — UTC 로는 아직 15일(자정 경계)
 const NOW = Date.UTC(2026, 10, 15, 15, 30);
 
-test("② 기간: 기본 최근 80일(KST, 본사 최대치) · days · from/to · 잘못된 값은 거부", () => {
+test("② 기간: 기본 최근 80일(KST, 소명엔비씨 최대치) · days · from/to · 잘못된 값은 거부", () => {
   // 2026-11-17: 기본 14일 → 80일(14일 뒤부터 주문 상태가 멈추던 문제). 기본값은 상한과 같은 값이다
   assert.equal(sync.CLUB_ORDERS_DEFAULT_DAYS, 80);
   assert.equal(sync.CLUB_ORDERS_DEFAULT_DAYS, sync.CLUB_ORDERS_MAX_DAYS);
@@ -257,7 +257,7 @@ test("④ 응답에 들어온 주문에서 빠진 품목은 «취소»로 표시
 
   // 가짜 DB 로 같은 규칙을 실행해 본다 — 저장된 품목 4개 중 «응답에 들어온 주문 A 에서 빠진 것» 하나만 취소가 된다
   const stored = [
-    { id: "A:1", shopOrderId: "A", status: "PREPARING" }, // 응답에 있음 → 본사 상태로
+    { id: "A:1", shopOrderId: "A", status: "PREPARING" }, // 응답에 있음 → 소명엔비씨 상태로
     { id: "A:2", shopOrderId: "A", status: "PREPARING" }, // 주문 A 는 왔는데 이 품목은 빠짐 → 취소
     { id: "B:1", shopOrderId: "B", status: "SHIPPING" }, // 주문 B 는 응답에 없음(기간 밖) → 그대로
     { id: "C:1", shopOrderId: "C", status: "PAID" }, // 주문 C 는 품목 0개로 옴 → 그대로
@@ -319,7 +319,7 @@ test("④ 503 이면 1번만 다시(새 서명) — 두 번째 성공", async ()
 
 test("④ 실패하면 아무것도 저장하지 않는다 — 401·5xx 두 번·연결 실패·시간 초과·JSON 아님·모양 이상·비밀키 없음", async () => {
   const scenarios = {
-    "401(다시 안 함)": { fetchImpl: async () => jsonRes(401, { success: false, error: "서명" }), calls: 1, msg: /본사 응답 401/ },
+    "401(다시 안 함)": { fetchImpl: async () => jsonRes(401, { success: false, error: "서명" }), calls: 1, msg: /소명엔비씨 응답 401/ },
     "400": { fetchImpl: async () => jsonRes(400, { success: false }), calls: 1, msg: /400/ },
     "503 두 번": { fetchImpl: async () => jsonRes(503, { success: false }), calls: 2, msg: /503/ },
     "연결 실패": { fetchImpl: async () => { throw new TypeError("fetch failed 01012345678"); }, calls: 2, msg: /연결 실패/ },
@@ -335,7 +335,7 @@ test("④ 실패하면 아무것도 저장하지 않는다 — 401·5xx 두 번�
         ok: true, status: 200,
         json: () => new Promise((_, reject) => init.signal.addEventListener("abort", () => reject(new Error("aborted")))),
       }),
-      calls: 2, msg: /^본사 응답 시간 초과$/, timeoutMs: 5,
+      calls: 2, msg: /^소명엔비씨 응답 시간 초과$/, timeoutMs: 5,
     },
   };
   for (const [name, s] of Object.entries(scenarios)) {
@@ -405,7 +405,7 @@ test("⑤ cron 라우트: CRON_SECRET · 잘못된 기간 400 · 성공은 건�
   const okBody = await ok.json();
   assert.deepEqual(okBody, { ok: true, from: "2026-11-01", to: "2026-11-05", receivedOrders: 1, receivedItems: 1, savedOrders: 1, savedItems: 1, canceledMissingItems: 0 });
 
-  // 기간을 주지 않으면 «오늘 포함 80일» 창을 본사에 요청한다(매시 cron 이 부르는 모양)
+  // 기간을 주지 않으면 «오늘 포함 80일» 창을 소명엔비씨에 요청한다(매시 cron 이 부르는 모양)
   urls.length = 0;
   const plain = await route.GET(req(""));
   assert.equal(plain.status, 200);

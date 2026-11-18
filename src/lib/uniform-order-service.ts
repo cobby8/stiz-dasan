@@ -178,7 +178,7 @@ export async function dispatchUniformOrderById(orderId: string): Promise<Uniform
         stizSyncStatus: response.duplicate ? "DUPLICATE" : "SENT",
         stizOrderNumber: response.orderNumber || order.stizOrderNumber,
         stizDuplicate: Boolean(response.duplicate),
-        stizMessage: response.message || "본사 접수 완료",
+        stizMessage: response.message || "소명엔비씨 접수 완료",
         lastSentAt: new Date(),
         lastError: null,
         nextRetryAt: null,
@@ -193,7 +193,7 @@ export async function dispatchUniformOrderById(orderId: string): Promise<Uniform
       where: { id: order.id },
       data: {
         stizSyncStatus: status,
-        lastError: clip(error instanceof Error ? error.message : "본사 접수 중 문제가 발생했습니다."),
+        lastError: clip(error instanceof Error ? error.message : "소명엔비씨 접수 중 문제가 발생했습니다."),
         nextRetryAt: status === "RETRY_WAIT" ? nextRetryAt(attempts) : null,
         updatedAt: new Date(),
       },

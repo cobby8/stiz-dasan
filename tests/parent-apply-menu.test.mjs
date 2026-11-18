@@ -1,6 +1,6 @@
 // 학부모 앱 «신청» 메뉴 (2026-11-14 원장 결정표 c9) — 유니폼 신청·체육관 대관·방학특강 신청으로 가는 길.
 //  ① 메뉴: 한 줄 행 3개 · 앱 안 주소는 전부 /mypage 아래(설치 앱이 범위 밖으로 새지 않게) · 그 주소의 화면이 실제로 있다
-//  ② 유니폼: 본사 쇼핑몰 직접 구매(공개 /apply/uniform 과 같은 주소) · 바깥 링크 규칙으로 연다
+//  ② 유니폼: 소명엔비씨 쇼핑몰 직접 구매(공개 /apply/uniform 과 같은 주소) · 바깥 링크 규칙으로 연다
 //  ③ 대관·방학특강: 공개 화면의 신청 부품을 그대로 쓴다(중복 구현 없음) · 화면 사이 이동도 앱 안
 //  ④ 미리 채움: 로그인한 학부모 이름·연락처 · 아이는 한 명일 때만 · 임시 생일 제외
 //  ⑤ 공개 화면(/seasonal·/rental)의 동작은 그대로
@@ -75,7 +75,7 @@ test("① 메뉴 화면: 한 줄 행 3개 · 홈으로 돌아가는 길 · 아�
   assert.match(html, /<a href="\/mypage\/rental"[^>]*>.*?체육관 대관.*?재원생 2시간 무료/s);
   assert.match(html, /<a href="\/mypage\/seasonal\/apply"[^>]*>.*?방학특강 신청/s);
   // 유니폼 = 바깥 링크 규칙(새 창 + data-outside-link — 스토어 앱이 못 열면 주소 복사 안내)
-  assert.match(html, /<a href="https:\/\/stiz\.kr\/[^"]+" target="_blank" rel="noopener noreferrer" data-outside-link="true"[^>]*>.*?유니폼 신청.*?본사 쇼핑몰/s);
+  assert.match(html, /<a href="https:\/\/stiz\.kr\/[^"]+" target="_blank" rel="noopener noreferrer" data-outside-link="true"[^>]*>.*?유니폼 신청.*?소명엔비씨 쇼핑몰/s);
   const source = read("src/app/mypage/apply/page.tsx");
   assert.doesNotMatch(source, /#[0-9a-fA-F]{6}\b|font-(extrabold|black)|material-symbols|UiIcon/);
   assert.match(source, /min-h-12/, "터치 44px 이상");
@@ -105,10 +105,10 @@ test("① 홈에 «신청» 줄이 늘 있다 · 아래 탭은 홈이 켜진다"
 
 // ── ② 유니폼 ─────────────────────────────────────────────────────────────────
 
-test("② 유니폼 = 본사 직접 구매: 공개 /apply/uniform 이 보내는 주소와 같다", () => {
+test("② 유니폼 = 소명엔비씨 직접 구매: 공개 /apply/uniform 이 보내는 주소와 같다", () => {
   const uniform = menu.PARENT_APPLY_ITEMS.find((item) => item.key === "uniform");
   const publicRedirect = read("src/app/apply/uniform/page.tsx").match(/permanentRedirect\("([^"]+)"\)/)?.[1];
-  assert.ok(publicRedirect, "공개 유니폼 신청은 본사 쇼핑몰로 넘긴다");
+  assert.ok(publicRedirect, "공개 유니폼 신청은 소명엔비씨 쇼핑몰로 넘긴다");
   assert.equal(uniform.href, publicRedirect);
   // 앱 안에서 /apply/uniform 을 거치지 않는다(범위 밖 주소라 주소창이 뜬다)
   assert.doesNotMatch(read("src/lib/mypage/parentApplyMenu.ts").replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, ""), /"\/apply/);

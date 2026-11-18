@@ -95,7 +95,7 @@ test("현장 결제(POS): 수강료·셔틀비 미납 — 1건, 또는 같은 �
   assert.deepEqual(rules.posChargeAvailability([{ type: "SHUTTLE", status: "OVERDUE" }]), { enabled: true });
   const other = rules.posChargeAvailability([{ type: "UNIFORM", status: "PENDING" }]);
   assert.equal(other.enabled, false);
-  assert.equal(other.reason, "유니폼 청구는 현장 결제할 수 없어요(본사 직접 구매).");
+  assert.equal(other.reason, "유니폼 청구는 현장 결제할 수 없어요(소명엔비씨 직접 구매).");
   // 기타 청구도 면세로 현장 결제 가능(2026-11-08 원장 지시)
   assert.deepEqual(rules.posChargeAvailability([{ type: "OTHER", status: "PENDING" }]), { enabled: true });
   assert.deepEqual(rules.posChargeAvailability([{ type: "OTHER", status: "PENDING", studentId: "s1" }, { type: "OTHER", status: "PENDING", studentId: "s1" }]), { enabled: true });

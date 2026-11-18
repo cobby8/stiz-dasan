@@ -1,6 +1,6 @@
 // 3년 이상 재원생 유니폼 무료 신청 — 학생별 전용 링크 페이지
 //
-// 위쪽 /apply/uniform(page.tsx)은 본사 쇼핑몰로 영구 이동 중이지만, 그 리다이렉트는 그 주소 «하나»
+// 위쪽 /apply/uniform(page.tsx)은 소명엔비씨 쇼핑몰로 영구 이동 중이지만, 그 리다이렉트는 그 주소 «하나»
 // 에만 걸린다. 이 하위 경로(/apply/uniform/free/<토큰>)는 별도 페이지라 영향을 받지 않는다.
 import type { Metadata } from "next";
 import PublicPageLayout from "@/components/PublicPageLayout";
