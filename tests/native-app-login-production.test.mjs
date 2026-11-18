@@ -203,12 +203,20 @@ test("callback 라우트: 학원 계정이 없으면 앱으로 튕기지 않고 
     assert.equal(web.length, 1);
     assert.equal(web[0].path, "/"); assert.equal(web[0].secure, true); assert.equal(web[0].sameSite, "lax");
     assert.equal(finished.headers.get("cache-control"), "no-store, private");
-    // 이 브라우저에 이미 웹 로그인이 있으면 덮어쓰지 않는다 — 요청을 취소하고 로그인 안 된 가입 화면으로만(복귀 표식 없음)
+    // 2026-11-18(원장 지시): 이 브라우저에 이미 웹 로그인이 있어도 방금 확인한 간편로그인으로 바꿔 적고 같은 길로 간다.
+    // 예전에는 로그인 안 된 가입 화면(?fromApp=1)으로 보내 «카카오로 계속»을 한 번 더 눌러야 했고 앱 요청도 취소됐다.
     const g = callbackHarness({ allowed: false });
-    const kept = await throughBrowser(g, {}, "sb-existing-auth-token=someone-else");
-    assert.equal(kept.finished.headers.get("location"), "https://www.stiz-dasan.kr/signup/parent?fromApp=1");
-    assert.equal(g.h.store.rows.get(kept.started.flowId).status, "CANCELLED");
-    assert.ok(kept.finished.cookies.getAll().every((c) => !c.name.startsWith("sb-") && c.name !== "stiz-native-resume"), "기존 웹 로그인은 건드리지 않고 복귀 표식도 굽지 않는다");
+    const kept = await throughBrowser(g, {}, "sb-existing-auth-token=someone-else; sb-synthetic-auth-token.0=old-a; sb-synthetic-auth-token.1=old-b");
+    assert.equal(kept.finished.headers.get("location"), "https://www.stiz-dasan.kr/signup/parent?fromApp=1&social=1&provider=kakao&next=%2Fmypage");
+    assert.equal(g.h.store.rows.get(kept.started.flowId).status, "BROWSER", "앱 로그인 요청을 살려 둔다");
+    const keptSet = kept.finished.cookies.getAll();
+    assert.equal(keptSet.find((c) => c.name === "stiz-native-resume").value, kept.started.flowId);
+    // 새 로그인은 적고, 옛 로그인 쿠키 조각은 전부 지운다(남으면 옛 로그인이 다시 읽힌다)
+    assert.match(keptSet.find((c) => c.name === "sb-synthetic-auth-token").value, /^web:/);
+    for (const name of ["sb-existing-auth-token", "sb-synthetic-auth-token.0", "sb-synthetic-auth-token.1"]) {
+      const gone = keptSet.find((c) => c.name === name);
+      assert.equal(gone.value, "", `${name} 삭제`); assert.equal(gone.maxAge, 0); assert.equal(gone.path, "/");
+    }
   } finally { if (saved === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL; else process.env.NEXT_PUBLIC_SUPABASE_URL = saved; }
 });
 

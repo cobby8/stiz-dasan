@@ -61,7 +61,8 @@ export async function GET(request:NextRequest) {
       }
       const back=await context.service.failBrowser(row,reason).catch(()=>null);
       if(back){
-        // 세션을 옮겨 적지 못한 경우(이 브라우저에 이미 다른 웹 로그인이 있음 등): 요청을 취소하고 로그인 안 된 가입 화면으로.
+        // 세션을 옮겨 적지 못한 경우(setSession 실패): 요청을 취소하고 로그인 안 된 가입 화면으로.
+        // 이 브라우저에 다른 웹 로그인이 있는 것만으로는 여기 오지 않는다 — 그때는 위에서 바꿔 적는다(2026-11-18).
         const target=reason==="no_account"?new URL("/signup/parent?fromApp=1",context.config.origin).toString():back;
         const response=NextResponse.redirect(target);
         for(const [key,value]of Object.entries(noStoreHeaders))response.headers.set(key,value);
