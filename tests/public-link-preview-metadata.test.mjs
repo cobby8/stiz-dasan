@@ -46,15 +46,8 @@ test("generated share image is sized for messenger previews", () => {
 });
 
 test("application links prefer the public site domain instead of Vercel preview URLs", () => {
-  const linkBuilderMatch = adminActionSource.match(/function buildEnrollLink[\s\S]*?\n\}/);
-  assert.ok(linkBuilderMatch, "buildEnrollLink should exist");
-  const linkBuilderSource = linkBuilderMatch[0];
-
-  assert.match(linkBuilderSource, /NEXT_PUBLIC_SITE_URL/);
-  assert.match(linkBuilderSource, /NEXT_PUBLIC_BASE_URL/);
-  assert.match(linkBuilderSource, /PUBLIC_SITE_URL/);
-  assert.doesNotMatch(linkBuilderSource, /VERCEL_URL/);
-  assert.match(linkBuilderSource, /\/apply\/enroll\?trialId=/);
+  // 2026-11-18 옛 코드 정리 C: 수강 안내 링크 생성(generateEnrollLink·buildEnrollLink)은 부르는 곳이 없어 지웠다
+  assert.doesNotMatch(adminActionSource, /function (buildEnrollLink|generateEnrollLink)\b/);
 });
 
 test("public pages opt into shared link preview metadata", async () => {

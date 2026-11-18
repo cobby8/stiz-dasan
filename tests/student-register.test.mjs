@@ -477,9 +477,11 @@ test("[규칙] 생년 KST 날짜: 무tz 컬럼에 «두 번» 걸고, 자정 행
   assert.doesNotMatch(action, /to_char\(s\."birthDate", 'YYYY-MM-DD'\)/);
 });
 
-test("[규칙] 새로 저장하는 생년 형식은 기존 등록 경로(createStudent·엑셀)와 같은 «YYYY-MM-DD → ::timestamp» 자정", () => {
+test("[규칙] 새로 저장하는 생년 형식은 기존 등록 경로(엑셀)와 같은 «YYYY-MM-DD → ::timestamp» 자정", () => {
   assert.match(fnBlock(action, "registerStudent"), /VALUES \(gen_random_uuid\(\)::text, \$1, \$2::timestamp,/);
-  assert.match(admin.slice(admin.indexOf("async function insertAdminStudentWithGuardian(")), /VALUES \(gen_random_uuid\(\)::text, \$1, \$2::timestamp,/);
+  // 옛 단건 등록(createStudent·insertAdminStudentWithGuardian)은 2026-11-18 옛 코드 정리 C 로 지웠다 — 엑셀 일괄 등록과 비교
+  assert.match(admin.slice(admin.indexOf("export async function bulkCreateStudents(")), /VALUES \(gen_random_uuid\(\)::text, \$1, \$2::timestamp,/);
+  assert.doesNotMatch(admin, /async function insertAdminStudentWithGuardian\b/);
 });
 
 test("[규칙] 개인정보 동의 확인은 agreementsJSON 의 adminRegister 아래에 누가·언제·그날", () => {

@@ -35,10 +35,10 @@ test("성공·실패·재시도·상태 변경을 감사로그에 남긴다", ()
   ]) assert.match(action, new RegExp(event));
 });
 
-test("승인은 요청과 명령을 잠가 동시에 두 번 승인되지 않는다", () => {
-  const approveBody = action.slice(action.indexOf("function approveOperationsRequest"), action.indexOf("function applyOperationsWebsite"));
-  assert.match(approveBody, /SELECT id FROM "OperationsRequest" WHERE id=\$1 FOR UPDATE/);
-  assert.match(approveBody, /ORDER BY "createdAt" FOR UPDATE/);
+// 2026-11-18 옛 코드 정리 C: 부르는 곳이 없던 승인(approveOperationsRequest)·홈페이지 반영(applyOperationsWebsite)을 지웠다
+test("부르는 곳 없던 운영 요청 승인·홈페이지 반영 액션은 없어졌다", () => {
+  assert.doesNotMatch(action, /export async function (approveOperationsRequest|applyOperationsWebsite)\b/);
+  assert.doesNotMatch(action, /async function markWebsiteConflict\b/);
 });
 
 test("임대 컬럼은 런타임 보장과 마이그레이션 양쪽에 존재한다", () => {
@@ -84,18 +84,6 @@ test("성공 skip은 외부 재호출 없이 집계 상태를 자가 복구한�
   assert.match(action, /if \(isSheetTargetDone\(row\.attemptStatus\)\) \{\s*await refreshOperationsStatuses\(commandId\)/);
   assert.match(action, /if \(!changed\) \{\s*await refreshOperationsStatuses\(commandId\)/);
   assert.match(action, /claim\.skipped \|\| !claim\.token\) \{\s*await refreshOperationsStatuses\(commandId\)/);
-});
-
-test("Website 커밋 직후 중단된 재호출은 성공 attempt 집계만 복구한다", () => {
-  const websiteStart = action.indexOf("export async function applyOperationsWebsite");
-  const websiteEnd = action.indexOf("async function markWebsiteConflict");
-  const websiteBody = action.slice(websiteStart, websiteEnd);
-  assert.match(websiteBody, /a\.status='SUCCEEDED' AND c\.status <> 'HELD'/);
-  assert.match(websiteBody, /for \(const command of succeeded\) await refreshOperationsStatuses\(command\.id\)/);
-  assert.match(websiteBody, /return \{ ok: true as const, applied: 0, skipped: true as const \}/);
-  const recoveryStart = websiteBody.indexOf("const succeeded =");
-  const recoveryEnd = websiteBody.indexOf("throw new Error", recoveryStart);
-  assert.doesNotMatch(websiteBody.slice(recoveryStart, recoveryEnd), /UPDATE "Enrollment"/);
 });
 
 test("운영 원장의 모든 FK와 삭제 동작을 Prisma 관계에도 반영한다", () => {

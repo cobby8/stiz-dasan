@@ -97,14 +97,14 @@ test("보안 HIGH — 퇴원 후 재원 → 빠져 있던 기간 수업 거부(�
 
 test("보안 HIGH — ACTIVE 로 바꾸는 다른 경로 전수: 운영 동기화는 휴원·퇴원만, 수강 변경 복귀는 휴원→재원만", () => {
   const ops = read("src/app/actions/operations-sync.ts");
-  assert.match(ops, /if \(!\['PAUSE', 'WITHDRAW'\]\.includes\(command\.kind\)\)/);
-  assert.match(ops, /const nextStatus = command\.kind === "PAUSE" \? "PAUSED" : "WITHDRAWN";/);
+  // 2026-11-18 옛 코드 정리 C: 운영 동기화의 승인·홈페이지 반영(approveOperationsRequest·applyOperationsWebsite)은 부르는 곳이 없어 지웠다
+  assert.doesNotMatch(ops, /export async function (approveOperationsRequest|applyOperationsWebsite)\b/);
   assert.match(read("src/lib/enrollment/due-change-plan.ts"), /RESUME: \{ from: \["PAUSED"\], to: "ACTIVE"/);
   // Enrollment 를 status 만 바꾸는 UPDATE 는 이 목록뿐이다(새로 생기면 이 테스트가 알린다 — 재원이면 개시일도 적을 것)
   const files = ["src/app/actions/admin.ts", "src/app/actions/operations-sync.ts", "src/lib/enrollment/admin-change-request.ts", "src/app/actions/enrollment-admin-edit.ts", "src/lib/seasonal/auto-end.ts"];
   const counts = Object.fromEntries(files.map((f) => [f, (read(f).match(/UPDATE "Enrollment" SET status/g) ?? []).length]));
   assert.deepEqual(counts, {
-    "src/app/actions/admin.ts": 1, "src/app/actions/operations-sync.ts": 1, "src/lib/enrollment/admin-change-request.ts": 1,
+    "src/app/actions/admin.ts": 1, "src/app/actions/operations-sync.ts": 0, "src/lib/enrollment/admin-change-request.ts": 1,
     "src/app/actions/enrollment-admin-edit.ts": 1, "src/lib/seasonal/auto-end.ts": 1,
   });
 });

@@ -15,7 +15,6 @@ import {
 import {
   ABSENCE_PERIOD_TX_OPTIONS,
   absencePeriodContext,
-  extendOpenAbsencePeriods,
   revalidateAbsenceViews,
 } from "@/lib/regular/absence-period-runner";
 
@@ -84,10 +83,4 @@ export async function cancelAbsencePeriod(input: { periodId: string }): Promise<
   } catch (error) {
     return failure(error, "등록 취소를 하지 못했습니다.");
   }
-}
-
-// ── 연장(관리자가 바로 돌릴 때 — 크론이 하루 빠졌을 때 대비). 크론은 /api/cron/absence-periods ──
-export async function extendAbsencePeriodsNow() {
-  await requireAdmin();
-  return extendOpenAbsencePeriods();
 }

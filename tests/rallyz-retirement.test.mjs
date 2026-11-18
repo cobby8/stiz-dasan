@@ -131,13 +131,14 @@ test('«SKIPPED 인정» 판정이 곳마다 같다: 배지·완료 판정·확�
   assert.deepEqual(syncCheckBadge('SKIPPED', 'SKIPPED'), { label: '반영 완료', needsCheck: false });
 });
 
-test('공용 SQL 조각을 쓰는 곳 3곳 — 옛 «랠리즈는 SUCCEEDED 만» 조건이 남아 있지 않다', () => {
+test('공용 SQL 조각을 쓰는 곳 2곳 — 옛 «랠리즈는 SUCCEEDED 만» 조건이 남아 있지 않다', () => {
   const admin = read('src/lib/enrollment/admin-change-request.ts');
   const inbox = read('src/lib/requests/admin-inbox.ts');
   const ops = read('src/app/actions/operations-sync.ts');
   assert.match(admin, /AND \$\{externalSyncPendingSql\("a"\)\}\)`;/);
   assert.match(inbox, /'syncPending', EXISTS \([\s\S]*?AND \$\{externalSyncPendingSql\("a"\)\}/);
-  assert.match(ops, /AND \$\{externalSyncPendingSql\("pending"\)\}/);
+  // 2026-11-18 옛 코드 정리 C: 이 조각을 쓰던 홈페이지 반영 액션(applyOperationsWebsite)은 부르는 곳이 없어 지웠다
+  assert.doesNotMatch(ops, /export async function applyOperationsWebsite\b/);
   for (const [name, text] of [['admin-change-request', admin], ['admin-inbox', inbox], ['operations-sync', ops]]) {
     assert.doesNotMatch(text, /target\s*=\s*'RALLYZ' AND \w+\.status <> 'SUCCEEDED'/, name);
   }

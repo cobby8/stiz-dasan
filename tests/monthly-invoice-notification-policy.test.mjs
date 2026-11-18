@@ -14,13 +14,9 @@ new Function("module", "exports", ts.transpile(policySource, {
 }))(policyModule, policyModule.exports);
 const { isMonthlyInvoiceNotificationEligible } = policyModule.exports;
 
-test("월 청구 생성은 0원 템플릿을 원장에 만들지 않는다", () => {
-  const targetSql = adminAction.slice(
-    adminAction.indexOf("const MONTHLY_INVOICE_TARGETS_SQL"),
-    adminAction.indexOf("export async function previewMonthlyInvoices"),
-  );
-
-  assert.match(targetSql, /WHERE "isActive" = true\s+AND amount > 0/);
+// 2026-11-18 옛 코드 정리 C: 0원 템플릿을 거르던 구형 월 일괄 생성 SQL(MONTHLY_INVOICE_TARGETS_SQL)은 부르는 곳이 없어 지웠다
+test("구형 월 일괄 생성 SQL 은 없어졌다", () => {
+  assert.doesNotMatch(adminAction, /const MONTHLY_INVOICE_TARGETS_SQL\b/);
 });
 
 test("학부모 청구 알림은 0원과 명시적 HELD 건을 제외한다", () => {

@@ -16,7 +16,7 @@ test("앞날 효력일은 휴원 → 수강 중(복귀)만 받고, 상태는 바
   assert.match(branch, /if \(status !== "ACTIVE"\) throw new Error\("미래 효력일은 예약 변경으로 신청해 주세요\."\);/);
   assert.match(branch, /scheduleEnrollmentResume\(enrollmentId, effectiveFrom, change\?\.reason, admin\.appUserId\)/);
 
-  const fn = action.slice(action.indexOf("async function scheduleEnrollmentResume("), action.indexOf("export async function deleteEnrollment("));
+  const fn = action.slice(action.indexOf("async function scheduleEnrollmentResume("), action.indexOf("// ── 출결 관리"));
   // 날짜 규칙은 학부모 복귀 신청과 같은 함수(오늘~3개월)
   assert.match(fn, /resolveResumeDate\(\{ requested: effectiveFrom, today: todayKst\(\) \}\)/);
   // 잠금 순서: 전역 → 처리 중 신청 → 수강
@@ -56,7 +56,7 @@ test("예약한 복귀는 날짜를 바꾸거나 취소할 수 있다 — 관리
   const pick = action.slice(action.indexOf("async function adminBookedResumes("), action.indexOf("export async function cancelScheduledResume("));
   assert.match(pick, /r\.kind === "RESUME" && r\.status === "APPROVED" && !r\.invoiced && !r\.settled && !r\.linkedCommand/);
   assert.match(pick, /"requestedByUserId" = "decidedByUserId"/);
-  const cancel = action.slice(action.indexOf("export async function cancelScheduledResume("), action.indexOf("export async function deleteEnrollment("));
+  const cancel = action.slice(action.indexOf("export async function cancelScheduledResume("), action.indexOf("// ── 출결 관리"));
   assert.match(cancel, /const admin = await requireAdmin\(\);/);
   assert.ok(cancel.indexOf("lockCompensation(tx)") < cancel.indexOf("readOpenChangeRequestsForUpdate(tx, enrollmentId)"));
   assert.match(cancel, /if \(!booked\.length\) return \{ ok: false/);

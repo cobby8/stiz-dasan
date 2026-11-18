@@ -264,7 +264,8 @@ test("크론: vercel.json 하루 1회 + CRON_SECRET 확인", () => {
   // 크론용 연장은 화면에서 부를 수 있는 "use server" 액션으로 노출하지 않는다
   const action = readFileSync("src/app/actions/absence-period-admin.ts", "utf8");
   assert.doesNotMatch(action, /export async function extendOpenAbsencePeriods/);
-  assert.match(action, /export async function extendAbsencePeriodsNow\(\) \{\s*await requireAdmin\(\);/);
+  // 2026-11-18 옛 코드 정리 C: 화면에서 부르는 곳이 없던 수동 연장 액션(extendAbsencePeriodsNow)도 지웠다 — 연장은 크론만
+  assert.doesNotMatch(action, /export async function extendAbsencePeriodsNow\b/);
 });
 
 test("검수 반영: 반마다 기간 시작일부터 다시 보고, 이미 이 기간이 다룬 날은 건너뛴다(기간 도중 새 반 채움)", () => {

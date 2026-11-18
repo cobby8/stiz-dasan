@@ -3,13 +3,12 @@
 import { revalidatePath, revalidateTag } from "next/cache";
 import { requireOwner } from "@/lib/auth-guard";
 import { prisma } from "@/lib/prisma";
-import { addOtherRevenue, deleteOtherRevenue, listOtherRevenue, updateOtherRevenue, type OtherRevenueRow } from "@/lib/billing/other-revenue";
+import { addOtherRevenue, deleteOtherRevenue, updateOtherRevenue, type OtherRevenueRow } from "@/lib/billing/other-revenue";
 import { OtherRevenueError, type OtherRevenueInput } from "@/lib/billing/other-revenue-rules";
 
 // 기타 매출(2026-11-17) — /admin/other-revenue 화면에서 쓴다.
 // 모두 원장(ADMIN) 전용: 부원장은 금액을 못 본다(moneyAccess 규칙). 각 함수 첫 줄에서 requireOwner.
 
-type LoadResult = { ok: true; ready: boolean; rows: OtherRevenueRow[] } | { ok: false; message: string };
 type SaveResult = { ok: true; message: string } | { ok: false; message: string };
 
 /** 원장이 읽을 수 있는 오류 문장만 그대로 보이고, 그 밖의 오류는 일반 안내로 바꾼다 */
@@ -36,17 +35,6 @@ async function audit(action: "OTHER_REVENUE_CREATED" | "OTHER_REVENUE_UPDATED" |
             }));
     } catch (error) {
         console.error("[other-revenue] 감사 기록 실패:", error instanceof Error ? error.name : "");
-    }
-}
-
-export async function loadOtherRevenue(ym: string): Promise<LoadResult> {
-    await requireOwner();
-    try {
-        const { ready, rows } = await listOtherRevenue(prisma, String(ym ?? ""));
-        return { ok: true, ready, rows };
-    } catch (error) {
-        if (!(error instanceof OtherRevenueError)) console.error("[other-revenue] 읽기 실패:", error instanceof Error ? error.name : "");
-        return { ok: false, message: failText(error, "기타 매출을 불러오지 못했습니다. 잠시 후 다시 열어 주세요.") };
     }
 }
 

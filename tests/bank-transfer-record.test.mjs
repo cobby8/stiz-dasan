@@ -145,8 +145,10 @@ test("서버 액션: 재무 권한·서버 재검사·한 트랜잭션·미납�
   assert.match(body, /"paidAt" = \(\$2::date::timestamp AT TIME ZONE 'UTC'\)/);
 });
 
-test("PAID 직접 변경 차단: 상태 변경 함수 두 개는 PAID 를 거부한다", () => {
-  for (const name of ["updatePaymentStatus", "bulkUpdatePaymentStatus"]) {
+test("PAID 직접 변경 차단: 상태 변경 함수는 PAID 를 거부한다", () => {
+  // 일괄 상태 변경(bulkUpdatePaymentStatus)은 2026-11-18 옛 코드 정리 C 로 지웠다(부르는 곳 없음)
+  assert.doesNotMatch(actions, /export async function bulkUpdatePaymentStatus\b/);
+  for (const name of ["updatePaymentStatus"]) {
     const body = fnBody(actions, name);
     assert.match(body, /=== "PAID"\) throw new Error\(DIRECT_PAID_BLOCKED_MESSAGE\)/, `${name} 가 PAID 를 막아야 한다`);
     assert.doesNotMatch(body, /markPaymentPaid\(/, `${name} 는 납부완료를 만들지 않는다`);

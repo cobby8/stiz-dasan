@@ -64,9 +64,8 @@ test("링크 생성·취소·요청 승인은 관리자 인증을 요구한다",
     assert.notEqual(start, -1, `${name} 함수가 있어야 한다`);
     assert.match(action.slice(start, start + 500), /requireAdmin\(\)/, `${name}에 관리자 확인이 필요하다`);
   }
-  const approveStart = adminAction.indexOf("function approveOperationsRequest");
-  assert.notEqual(approveStart, -1);
-  assert.match(adminAction.slice(approveStart, approveStart + 500), /requireAdmin\(\)/);
+  // 2026-11-18 옛 코드 정리 C: 요청 승인 액션(approveOperationsRequest)은 부르는 곳이 없어 지웠다
+  assert.doesNotMatch(adminAction, /export async function approveOperationsRequest\b/);
 });
 
 test("같은 링크의 같은 요청은 고유 멱등 키로 중복 생성되지 않는다", () => {
@@ -135,17 +134,9 @@ test("독립 마이그레이션은 운영 동기화 원장을 의존 순서대�
   assert.match(migration, /"commandId" TEXT NOT NULL REFERENCES "OperationsCommand"\(id\)/);
 });
 
-test("홈페이지 반영은 승인 당시 상태와 영향 행 수가 모두 맞아야 성공한다", () => {
-  const applyStart = adminAction.indexOf("function applyOperationsWebsite");
-  const recordStart = adminAction.indexOf("function recordOperationsExternalCheck");
-  const applyBody = adminAction.slice(applyStart, recordStart);
-  assert.match(applyBody, /beforeJson/);
-  assert.match(applyBody, /WHERE id=\$1 AND status=\$3/);
-  assert.match(applyBody, /if \(affected !== 1\) throw new Error\(`ENROLLMENT_CONFLICT:/);
-  assert.match(applyBody, /target='WEBSITE' AND "processingToken"=\$2 AND status IN \('PENDING','FAILED'\)/);
-  assert.match(applyBody, /if \(attemptAffected !== 1\) throw new Error\("WEBSITE_ATTEMPT_CONFLICT"\)/);
-  assert.match(applyBody, /await prisma\.\$transaction/);
-  assert.match(applyBody, /markWebsiteConflict/);
+// 2026-11-18 옛 코드 정리 C: 부르는 곳이 없던 승인·홈페이지 반영 액션을 지웠다(재검토·반영 서버 기능 없음)
+test("부르는 곳 없던 운영 요청 승인·홈페이지 반영 액션은 없어졌다", () => {
+  assert.doesNotMatch(adminAction, /export async function (approveOperationsRequest|applyOperationsWebsite)\b/);
 });
 
 test("상태 집계는 사람이 재검토해야 하는 HELD를 보존한다", () => {
@@ -155,27 +146,6 @@ test("상태 집계는 사람이 재검토해야 하는 HELD를 보존한다", (
   assert.match(refreshBody, /status AS "commandStatus"/);
   assert.match(refreshBody, /command\.commandStatus === "HELD"\s*\? "HELD"/);
   assert.match(refreshBody, /allHeld \? "HELD" : hasHeld \|\| hasPartial \? "PARTIAL"/);
-});
-
-test("재검토는 현재 Enrollment로 snapshot을 다시 만들고 WEBSITE 실패만 재개한다", () => {
-  const approveStart = adminAction.indexOf("function approveOperationsRequest");
-  const applyStart = adminAction.indexOf("function applyOperationsWebsite");
-  const approveBody = adminAction.slice(approveStart, applyStart);
-  assert.match(approveBody, /SELECT e\.id, e\.status, c\.name AS "className"/);
-  assert.match(approveBody, /"beforeJson"=\$2::jsonb, "afterJson"=\$3::jsonb/);
-  assert.match(approveBody, /SET status='PENDING', error=NULL, "verifiedAt"=NULL/);
-  assert.match(approveBody, /target='WEBSITE' AND status='FAILED'/);
-  assert.doesNotMatch(approveBody, /target IN \('SHEET','RALLYZ'\).*status='PENDING'/s);
-});
-
-test("화면 폐기 후에도 HELD·PARTIAL 요청 재검토 서버 기능은 보존한다", () => {
-  const approveStart = adminAction.indexOf("function approveOperationsRequest");
-  assert.notEqual(approveStart, -1);
-  const approveBody = adminAction.slice(approveStart, adminAction.indexOf("function applyOperationsWebsite"));
-  assert.match(approveBody, /requireAdmin\(\)/);
-  assert.match(approveBody, /ready > 0 \? "APPROVED" : "HELD"/);
-  assert.match(approveBody, /REQUEST_APPROVED/);
-  assert.match(approveBody, /REQUEST_HELD/);
 });
 
 test("OperationsCommand 멱등 키는 migration 체인이 보장하고 배포 전에 구조·보안을 검사한다", () => {
