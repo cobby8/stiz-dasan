@@ -14,7 +14,8 @@ type Challenge = { id: string; userId: string; sessionHash: string; createdAt: D
   usedAt: Date | null; verifiedName: string | null; phoneHash?: string | null; phoneLast4: string | null;
   proofExpiresAt: Date | null; proofUsedAt: Date | null; verifyAttempts: number; requestAttempts: number };
 export class ChildConnectionError extends Error {
-  constructor(message: string, public status = 400) { super(message); }
+  // code: 화면이 문구 대신 갈래를 알아보는 표식(예: 연락처 바꾸기 이름 불일치, 2026-11-18). 없으면 응답에 싣지 않는다
+  constructor(message: string, public status = 400, public code?: string) { super(message); }
 }
 export function childIdentityHash(value: string) {
   const key = process.env.CHILD_CONNECTIONS_SECRET || process.env.PARENT_SIGNUP_SECRET;

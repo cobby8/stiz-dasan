@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { getStizIdentityBypass } from "@/lib/identity/brand";
 import Link from "next/link";
 import { customerMessage } from "@/components/parent/customerMessage";
-import { PHONE_NAME_MISMATCH_MESSAGE } from "@/lib/account/phone-change-rules";
+import { PHONE_NAME_MISMATCH_CODES } from "@/lib/account/phone-change-rules";
 
 // 보호자 «연락처 바꾸기» 버튼 (2026-11-14 원장 결정 b6·c1) — 설정·아이 정보·방학특강 화면이 같이 쓴다.
 // 누르면 본인 명의 휴대폰 인증(포트원 — 자녀·가족 연결과 같은 인증 창)이 열리고, 통과하면 계정 번호가 인증된 번호로 바뀐다.
@@ -29,9 +29,17 @@ async function phoneChangeRequest(body?: Record<string, unknown>) {
   });
   const data = await response.json().catch(() => null);
   if (!response.ok || !data || typeof data !== "object") {
-    throw new Error(typeof data?.error === "string" ? data.error : "연락처를 바꾸지 못했어요. 다시 시도해 주세요.");
+    const failure = new Error(typeof data?.error === "string" ? data.error : "연락처를 바꾸지 못했어요. 다시 시도해 주세요.") as Error & { code?: string };
+    // 화면은 문구가 아니라 코드로 갈래를 가른다(이름 불일치: 닉네임 고치기 vs 학원 문의, 2026-11-18)
+    if (typeof data?.code === "string") failure.code = data.code;
+    throw failure;
   }
   return data as Record<string, unknown>;
+}
+
+/** 서버가 실어 보낸 오류 코드(없으면 빈 값) */
+function errorCodeOf(reason: unknown): string {
+  return reason instanceof Error && typeof (reason as Error & { code?: unknown }).code === "string" ? String((reason as Error & { code?: string }).code) : "";
 }
 
 async function loadIdentitySdk() {
@@ -77,6 +85,8 @@ export default function PhoneChangeButton({
   const [nameLooksOk, setNameLooksOk] = useState<boolean>(nameOk ?? true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // 오류 코드 — «닉네임 고치러 가기» 링크는 실명 없는 옛 계정의 이름 불일치(NAME_MISMATCH_NICKNAME)에서만
+  const [errorCode, setErrorCode] = useState("");
   const [notice, setNotice] = useState("");
   const locked = useRef(false);
   const redirected = useRef(false);
@@ -113,14 +123,14 @@ export default function PhoneChangeButton({
     locked.current = true;
     setBusy(true);
     confirm(returnedId)
-      .catch((reason) => setError(customerMessage(reason, "연락처를 바꾸지 못했어요. 다시 시도해 주세요.")))
+      .catch((reason) => { setError(customerMessage(reason, "연락처를 바꾸지 못했어요. 다시 시도해 주세요.")); setErrorCode(errorCodeOf(reason)); })
       .finally(() => { locked.current = false; setBusy(false); });
   }, [confirm]);
 
   async function start() {
     if (locked.current) return;
     locked.current = true;
-    setBusy(true); setError(""); setNotice("");
+    setBusy(true); setError(""); setErrorCode(""); setNotice("");
     try {
       const storeId = process.env.NEXT_PUBLIC_PORTONE_STORE_ID;
       const channelKey = process.env.NEXT_PUBLIC_PORTONE_IDENTITY_CHANNEL_KEY;
@@ -137,6 +147,7 @@ export default function PhoneChangeButton({
       await confirm(id);
     } catch (reason) {
       setError(customerMessage(reason, "연락처를 바꾸지 못했어요. 다시 시도해 주세요."));
+      setErrorCode(errorCodeOf(reason));
     } finally {
       locked.current = false;
       setBusy(false);
@@ -161,7 +172,7 @@ export default function PhoneChangeButton({
         <p role="alert" className={`${messageClassName} basis-full text-[var(--color-academy-danger)]`}>
           {error}
           {/* 이름 불일치 — 고칠 곳으로 바로 */}
-          {error === PHONE_NAME_MISMATCH_MESSAGE && !onSettingsPage && <>{" "}<Link href="/mypage/settings" className="inline-flex min-h-11 items-center underline">이름 고치러 가기</Link></>}
+          {errorCode === PHONE_NAME_MISMATCH_CODES.nickname && !onSettingsPage && <>{" "}<Link href="/mypage/settings" className="inline-flex min-h-11 items-center underline">이름 고치러 가기</Link></>}
         </p>
       )}
       {notice && <p role="status" className={`${messageClassName} basis-full text-[var(--color-academy-success)]`}>{notice}</p>}

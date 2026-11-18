@@ -129,8 +129,10 @@ export async function confirmPhoneChange(actor: ChildActor, sessionHash: string,
         currentPhone: oldPhone,
         verifiedPhone: phone,
         takenByOther: taken.length > 0,
+        accountHasVerifiedName: Boolean(me[0].identityVerifiedName?.trim()),
       });
-      if (!outcome.ok) throw new ChildConnectionError(outcome.error, outcome.status);
+      // 화면이 문구가 아니라 코드로 안내를 가른다(2026-11-18 4단계 C)
+      if (!outcome.ok) throw new ChildConnectionError(outcome.error, outcome.status, outcome.code);
       await tx.$executeRawUnsafe(
         `UPDATE "User" SET phone=$1, "phoneVerifiedAt"=NOW(), "updatedAt"=NOW() WHERE id=$2 AND "withdrawnAt" IS NULL`,
         phone,

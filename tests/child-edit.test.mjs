@@ -414,12 +414,26 @@ test("⑥ 연락처 판정: 이름 다름·중복 번호 거절, 같은 번호�
   assert.equal(phoneChangeOutcome({ ...base, verifiedName: "" }).ok, false);
   assert.equal(PHONE_CHANGE_ID_PREFIX, "stizphone_");
   // 인증 전에 미리 알리는 판정 — 실명 모양이 아니면 false
-  const { looksLikeLegalName, PHONE_NAME_MISMATCH_MESSAGE } = load("src/lib/account/phone-change-rules.ts");
+  const { looksLikeLegalName, PHONE_NAME_MISMATCH_MESSAGE, PHONE_NAME_MISMATCH_VERIFIED_MESSAGE, PHONE_NAME_MISMATCH_CODES } = load("src/lib/account/phone-change-rules.ts");
   for (const name of ["김엄마수", "홍길동", "남궁민수", "Kim Minsu"]) assert.equal(looksLikeLegalName(name), true, name);
   for (const name of ["민준맘", "홍길동 어머니", "민준엄마", "김", "", null, "민준이네 집 1"]) assert.equal(looksLikeLegalName(name), false, String(name));
+  // 2026-11-18 4단계 C: 실명 없는 옛 계정 = 닉네임 안내 + 코드 NAME_MISMATCH_NICKNAME(«이름 고치러 가기» 링크)
   assert.equal(mismatch.error, PHONE_NAME_MISMATCH_MESSAGE);
+  assert.equal(mismatch.code, PHONE_NAME_MISMATCH_CODES.nickname);
+  assert.match(PHONE_NAME_MISMATCH_MESSAGE, /닉네임/);
+  assert.doesNotMatch(PHONE_NAME_MISMATCH_MESSAGE, /«이름»/, "이름 칸은 이제 «닉네임»이다");
+  // 실명이 적힌 계정 = 닉네임을 고쳐도 소용없다 → 학원 문의 안내 + 코드 NAME_MISMATCH_VERIFIED(링크 없음)
+  const verifiedMismatch = phoneChangeOutcome({ ...base, verifiedName: "김아빠", accountHasVerifiedName: true });
+  assert.deepEqual(verifiedMismatch, { ok: false, status: 409, error: PHONE_NAME_MISMATCH_VERIFIED_MESSAGE, code: PHONE_NAME_MISMATCH_CODES.verified });
+  assert.equal(PHONE_NAME_MISMATCH_VERIFIED_MESSAGE, "휴대폰 명의자 이름이 이 계정의 본인인증 이름과 달라요. 학원에 문의해 주세요.");
+  assert.deepEqual(phoneChangeOutcome({ ...base, accountHasVerifiedName: true }), { ok: true, changed: true }, "실명과 같으면 통과");
   const button = read("src/components/account/PhoneChangeButton.tsx");
-  assert.ok(button.includes('error === PHONE_NAME_MISMATCH_MESSAGE && !onSettingsPage'));
+  // 화면은 문구가 아니라 코드로 가른다
+  assert.ok(button.includes("errorCode === PHONE_NAME_MISMATCH_CODES.nickname && !onSettingsPage"));
+  assert.doesNotMatch(button, /error === PHONE_NAME_MISMATCH_MESSAGE/);
+  const route = read("src/app/api/account/phone-change/route.ts");
+  assert.match(route, /\.\.\.\(error\.code \? \{ code: error\.code \} : \{\}\)/, "API 가 코드를 실어 보낸다");
+  assert.match(read("src/lib/account/phone-change.ts"), /accountHasVerifiedName: Boolean\(me\[0\]\.identityVerifiedName\?\.trim\(\)\)/);
   assert.equal((button.match(/href="\/mypage\/settings"[^>]*>이름 고치러 가기<\/Link>/g) ?? []).length, 2, "미리 안내·오류 옆 두 곳");
   assert.match(button, /\{!nameLooksOk && !error && !notice && \(/);
   assert.match(button, /계정 이름이 본인인증 이름과 같아야 해요\./);
@@ -446,7 +460,7 @@ function phoneWorld({ available = true, challenge = true, portone = {}, me = { n
     },
     async $transaction(work) { return work(db); },
   };
-  class ChildConnectionError extends Error { constructor(message, status = 400) { super(message); this.status = status; } }
+  class ChildConnectionError extends Error { constructor(message, status = 400, code) { super(message); this.status = status; this.code = code; } }
   process.env.NEXT_PUBLIC_PORTONE_IDENTITY_CHANNEL_KEY = "channel-test";
   const id = "stizphone_abc";
   const mod = load("src/lib/account/phone-change.ts", {
@@ -495,14 +509,16 @@ test("⑥ 본인인증을 통과한 번호로만 바뀐다 — 인증 건 없음
 
 test("⑥ 이름 다름·중복 번호는 거절, 통과하면 인증된 번호로 — 내 아이 보호자 연락처만 함께", async () => {
   const mismatch = phoneWorld({ me: { name: "민준맘", phone: "010-1111-2222" } });
-  await assert.rejects(mismatch.mod.confirmPhoneChange(actor, "hash", mismatch.id), /이름/);
+  // 실명 없는 옛 계정 — 오류 코드 NAME_MISMATCH_NICKNAME(화면이 «이름 고치러 가기»를 붙인다, 2026-11-18 4단계 C)
+  await assert.rejects(mismatch.mod.confirmPhoneChange(actor, "hash", mismatch.id), (error) => /닉네임/.test(error.message) && error.code === "NAME_MISMATCH_NICKNAME" && error.status === 409);
   assert.equal(mismatch.userUpdates().length, 0);
   // 검수 N-1: 닉네임을 «민준맘»으로 바꿨어도 본인인증 실명이 같으면 통과한다 — 실명이 다른 명의자는 그대로 막힌다
   const nickname = phoneWorld({ me: { name: "민준맘", identityVerifiedName: "김엄마", phone: "010-1111-2222" } });
   assert.equal((await nickname.mod.confirmPhoneChange(actor, "hash", nickname.id)).ok, true);
   assert.equal(nickname.userUpdates().length, 1);
   const otherOwner = phoneWorld({ me: { name: "김엄마", identityVerifiedName: "김아빠", phone: "010-1111-2222" } });
-  await assert.rejects(otherOwner.mod.confirmPhoneChange(actor, "hash", otherOwner.id), /이름/, "실명이 있으면 닉네임이 같아도 실명으로 비교한다");
+  // 실명이 있는 계정 — 학원 문의 안내 + 코드 NAME_MISMATCH_VERIFIED(닉네임을 고쳐도 소용없으므로 링크 없음)
+  await assert.rejects(otherOwner.mod.confirmPhoneChange(actor, "hash", otherOwner.id), (error) => /학원에 문의/.test(error.message) && error.code === "NAME_MISMATCH_VERIFIED", "실명이 있으면 닉네임이 같아도 실명으로 비교한다");
   assert.equal(otherOwner.userUpdates().length, 0);
   const taken = phoneWorld({ taken: true });
   await assert.rejects(taken.mod.confirmPhoneChange(actor, "hash", taken.id), /다른 계정/);

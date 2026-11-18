@@ -27,7 +27,7 @@ async function actor(): Promise<ChildActor & { name: string }> {
 function deviceHash(user: ChildActor, token: string) { return childIdentityHash(`phone-device:${user.authUserId}:${token}`); }
 function response(value: unknown, status = 200) { return NextResponse.json(value, { status, headers: { "Cache-Control": "no-store" } }); }
 function failure(error: unknown) {
-  if (error instanceof ChildConnectionError) return response({ error: error.message }, error.status);
+  if (error instanceof ChildConnectionError) return response({ error: error.message, ...(error.code ? { code: error.code } : {}) }, error.status);
   // 내부 오류·명의 정보·번호는 화면이나 로그로 전달하지 않는다
   return response({ error: "처리하지 못했습니다. 잠시 후 다시 시도해 주세요." }, 503);
 }
