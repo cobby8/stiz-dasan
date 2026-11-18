@@ -1,6 +1,7 @@
 // 학부모 필수 동의(이용약관·개인정보 수집·이용·만 14세 이상) 버전 — 신규 가입과 기존 계정 활성화가 같은 값을 기록한다.
 // 약관 본문을 크게 바꾸면 여기 날짜를 올린다(기록된 버전으로 «어느 약관에 동의했는지»를 가린다).
-export const PARENT_TERMS_VERSION = "2026-07-23";
+// 2026-11-18: «수업 사진·동영상» 조항 추가(원장 결정 — 사진 동의를 따로 받지 않고 약관으로 대신, 광고 사용만 전화 사전 동의)
+export const PARENT_TERMS_VERSION = "2026-11-18";
 export const PARENT_PRIVACY_VERSION = "2026-07-23";
 
 export type ParentConsents = { terms: boolean; privacy: boolean; age: boolean };
