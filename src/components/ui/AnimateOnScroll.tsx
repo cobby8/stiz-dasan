@@ -1,80 +1,30 @@
-'use client';
-
 /**
  * AnimateOnScroll — 스크롤 진입 애니메이션 래퍼 (Phase 0 디자인 시스템)
  *
- * 화면에 요소가 보이면 아래에서 위로 20px 올라오며 나타나는 애니메이션.
- * Intersection Observer API를 직접 사용하여 외부 라이브러리 없이 구현.
+ * 화면에 요소가 들어오면 아래에서 위로 20px 올라오며 나타난다.
  *
- * 사용법:
+ * 2026-11-19 속도 개선(전 화면 속도 1회차): 예전에는 브라우저 스크립트(IntersectionObserver)가
+ * 실행될 때까지 내용을 투명(opacity 0)으로 숨겼다. 휴대폰에서는 스크립트가 끝나기까지 4~5초가 걸려,
+ * 글이 이미 도착했는데도 그동안 빈 화면이었다(Lighthouse 모바일 LCP 5.4~5.9초, 그 중 92%가 «그리기 지연»).
+ * 지금은 내용은 처음부터 보이고, 올라오는 효과는 CSS 스크롤 연동 애니메이션(globals.css .aos-reveal)이 맡는다.
+ * 그 기능이 없는 브라우저는 효과 없이 바로 보인다. 스크립트가 필요 없어 서버 부품이 됐다.
+ *
+ * 사용법(기존과 같다):
  *   <AnimateOnScroll>
  *     <Card>...</Card>
  *   </AnimateOnScroll>
  *
- *   <AnimateOnScroll delay={200}>
- *     <Card>...</Card>  // 200ms 뒤에 나타남 (연속 배치 시 순차 효과)
- *   </AnimateOnScroll>
- *
- * Client Component (useRef, useEffect 사용)
+ * delay 는 예전 화면 코드가 넘기는 값이라 받기만 한다 — 스크롤 연동 효과에서는 «몇 ms 뒤»가 뜻이 없다.
  */
 
-import { useRef, useEffect, useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 
 interface AnimateOnScrollProps {
   children: ReactNode;
   className?: string;
-  delay?: number; // 애니메이션 지연 시간 (ms, 선택)
+  delay?: number; // 예전 호환용(쓰지 않음)
 }
 
-export default function AnimateOnScroll({
-  children,
-  className = '',
-  delay = 0,
-}: AnimateOnScrollProps) {
-  // 요소가 화면에 보였는지 추적
-  const [isVisible, setIsVisible] = useState(false);
-  // 관찰 대상 DOM 요소 참조
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const element = ref.current;
-    if (!element) return;
-
-    // 긴 약관도 일부가 화면에 들어오면 보인다. 전체 높이의 일정 비율을 요구하지 않는다.
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setIsVisible(true);
-          // 한 번 나타나면 더 이상 관찰할 필요 없음 (성능 최적화)
-          observer.unobserve(element);
-        }
-      },
-      {
-        threshold: 0,
-        rootMargin: '0px', // 뷰포트 기준
-      }
-    );
-
-    observer.observe(element);
-
-    // 컴포넌트 언마운트 시 관찰 해제
-    return () => observer.disconnect();
-  }, []);
-
-  return (
-    <div
-      ref={ref}
-      className={className}
-      style={{
-        // 보이기 전: 투명 + 아래로 20px 밀려있음
-        // 보인 후: 불투명 + 원래 위치로 올라옴
-        opacity: isVisible ? 1 : 0,
-        transform: isVisible ? 'translateY(0)' : 'translateY(20px)',
-        // 부드러운 전환: 500ms, ease-out
-        transition: `opacity 500ms ease-out ${delay}ms, transform 500ms ease-out ${delay}ms`,
-      }}
-    >
-      {children}
-    </div>
-  );
+export default function AnimateOnScroll({ children, className = '' }: AnimateOnScrollProps) {
+  return <div className={className ? `aos-reveal ${className}` : 'aos-reveal'}>{children}</div>;
 }

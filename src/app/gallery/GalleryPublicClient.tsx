@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import GalleryLightboxController, { type GalleryLightboxItem } from "./GalleryLightboxController";
 import { isDurableGalleryMediaUrl, parseGalleryMediaJSON } from "@/lib/galleryMedia";
 import { formatKstDate, toKstYmd } from "@/lib/datetime/kst";
+import { optimizedImageProps } from "@/lib/ui/optimizedImage";
 
 type GalleryPost = {
     id: string;
@@ -48,7 +49,9 @@ export default function GalleryPublicClient({ posts }: { posts: GalleryPost[] })
                         {/* 미디어 — 이미지 또는 동영상 */}
                         {item.type === "image" ? (
                             <img
-                                src={item.url}
+                                // 칸 크기에 맞게 줄여 받는다(2026-11-19 속도 개선 — 원본 장당 200~300KB 를 받아 휴대폰 첫 화면 사진이 늦게 떴다).
+                                // 크게 보기(라이트박스)는 원본 주소(item.url)를 그대로 쓴다.
+                                {...optimizedImageProps(item.url, "(max-width: 767px) 50vw, (max-width: 1023px) 33vw, 25vw", 828)}
                                 alt={item.title || "갤러리 이미지"}
                                 loading={index < 4 ? "eager" : "lazy"}
                                 decoding="async"

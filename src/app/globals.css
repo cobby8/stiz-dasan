@@ -1142,3 +1142,22 @@ h1, h2, h3, h4, h5, h6 {
 html[data-app-update-banner] .academy-app > header.academy-staff-header {
   padding-top: 0.75rem;
 }
+
+/* 스크롤 진입 효과(AnimateOnScroll) — 2026-11-19 속도 개선.
+   내용은 처음부터 보인다(예전처럼 스크립트가 끝날 때까지 숨기지 않는다 → 휴대폰 첫 화면 글이 늦게 뜨던 문제).
+   스크롤 연동 애니메이션을 아는 브라우저만, 화면 아래에서 들어올 때 20px 올라오며 나타난다.
+   첫 화면에 이미 다 보이는 요소는 진입이 끝난 상태라 처음부터 완전히 보인다. */
+@keyframes aos-reveal-rise {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: none; }
+}
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .aos-reveal {
+      animation: aos-reveal-rise linear both;
+      animation-timeline: view();
+      /* 길이로 끝낸다 — 화면보다 긴 글(약관·공지 본문)도 120px 만 들어오면 완전히 보인다(비율로 두면 긴 글이 흐리게 머문다) */
+      animation-range: entry 0% entry 120px;
+    }
+  }
+}
