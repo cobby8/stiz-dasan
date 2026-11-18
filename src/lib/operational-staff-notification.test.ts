@@ -25,6 +25,10 @@ test("운영 알림은 원장·부원장과 실제 연결된 담당 코치 및 �
   assert.match(notificationSource, /'ADMIN','VICE_ADMIN'/);
   assert.match(notificationSource, /co\."userId"/);
   assert.match(notificationSource, /u\.role='INSTRUCTOR'/);
+  // 2026-11-18 5단계: 새 선생님(학부모 계정 + 승인된 선생님 추가 역할)도 담당 반 알림을 받는다 — 세 갈래 모두 같은 조건
+  assert.match(notificationSource, /"UserRoleGrant" g WHERE g\."userId"=u\.id AND g\.role='INSTRUCTOR' AND g\.status='ACTIVE'/);
+  assert.equal((notificationSource.match(/AND \$\{INSTRUCTOR_CONDITION\}/g) ?? []).length, 3);
+  assert.doesNotMatch(notificationSource, /JOIN "User" u ON [^\n]*AND u\.role='INSTRUCTOR'\n/);
   assert.match(notificationSource, /u\.role::text='DRIVER'/);
   assert.match(notificationSource, /"UserRoleGrant" g WHERE g\."userId"=u\.id AND g\.role='DRIVER' AND g\.status='ACTIVE'/);
   assert.match(notificationSource, /u\."withdrawnAt" IS NULL/);

@@ -19,6 +19,8 @@ import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { claimStaffRecordByIdentity } from "@/lib/staff/staffSelfClaim";
 import { identityVerifiedAtOf, recordIdentityVerification } from "@/lib/identity/verified-identity";
+import { applyRolePresetsForUser } from "@/lib/staff/rolePreset";
+import { notifyRolePresetOutcomes } from "@/lib/staff/rolePresetNotify";
 import { currentSocialOnlyUser } from "../shared";
 
 /**
@@ -185,8 +187,16 @@ export async function POST(request: Request) {
 
   // 본인인증 실명·시각을 그 기존 계정에 적는다(이름 일치는 selectLinkTarget 이 이미 확인). 실패해도 로그인은 이미 끝났으므로
   // 연결 흐름을 막지 않는다 — 다음 본인인증 때 다시 적힌다. 오류 기록에 실명은 넣지 않는다.
-  await recordIdentityVerification(prisma, { userId: target.userId, verifiedName, verifiedAt: identityVerifiedAt })
-    .catch((error) => console.error("[parent-link verify] identity record failed:", error instanceof Error ? error.message.slice(0, 200) : "UNKNOWN"));
+  // 2026-11-18 5단계: 원장이 이 번호에 미리 붙여 둔 선생님·기사님 역할(ROLE_PRESET)도 «같은 거래»에서 적용한다
+  // (본인인증 + 초대 이름 일치면 바로, 아니면 원장 신청함). 둘 중 하나가 실패하면 함께 되돌아간다.
+  const presetOutcomes = await prisma.$transaction(async (tx) => {
+    await recordIdentityVerification(tx, { userId: target.userId, verifiedName, verifiedAt: identityVerifiedAt });
+    return applyRolePresetsForUser(tx, { userId: target.userId, verifiedName });
+  }).catch((error) => {
+    console.error("[parent-link verify] identity record failed:", error instanceof Error ? error.message.slice(0, 200) : "UNKNOWN");
+    return [];
+  });
+  if (presetOutcomes.length > 0) await notifyRolePresetOutcomes(target.userId, presetOutcomes);
 
   // 본인인증으로 기존 계정에 들어온 사실 자체를 알린다(다음 연결 단계에서 취소해도).
   await notifyAccountSecurityEvent({ authUserId: target.authUserId, eventType: "IDENTITY_LOGIN", body: identityLoginNoticeBody() });

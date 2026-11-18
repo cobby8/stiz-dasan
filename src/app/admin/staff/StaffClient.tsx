@@ -7,7 +7,8 @@ import { adminErrorText } from "@/components/admin/adminDisplayText";
  * - [역할 변경] 버튼 → 역할 고르기 창(원장만, 2026-11-12) + 코치 연결(원장만), 대기 초대 «빠른작업»(가입 링크 복사·재발송·취소)
  * - 머리줄: 제목 + 주 버튼 «새 스태프 초대» + ⋯ 더보기(앱 설치 링크·중단된 초대 복구·로그인 차단 다시 시도)
  * - 상세 패널(원장): 초대로 전환(로그인 없는 코치·기사) · 로그인 연결(로그인 없는 원장·부원장) · 링크 복사·문자 보내기 · 퇴사 처리 · 담당 반(보기)
- * - 추가 역할 직원(학부모 계정)은 보기 전용 줄, 회수는 신청함
+ * - 추가 역할 직원(학부모 계정) 줄: 원장은 «빠른작업»으로 선생님↔기사님 바꾸기·퇴사 처리(2026-11-18), 신청함 링크는 그대로
+ * - 새 선생님·기사님 초대 = 번호에 역할 미리 붙이기(ROLE_PRESET, 30일) — 표에 «가입 대기 · 만료일»
  */
 
 import { useCallback, useEffect, useState, useTransition } from "react";
@@ -24,7 +25,9 @@ import {
     sendStaffPasswordReset,
     retireStaffMember,
     retryRetiredLoginBlocks,
+    changeStaffGrantRole,
 } from "@/app/actions/admin";
+import type { StaffInvitationPurpose } from "@/lib/staff/rolePreset";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { TONE_BADGE_CLASS } from "@/lib/ui/statusTones";
 import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
@@ -93,8 +96,8 @@ interface Invitation {
     acceptedUserId: string | null;
     createdBy: string;
     createdAt: string;
-    /** SIGNUP = 새 직원 가입 · PASSWORD_RESET = 가입된 직원 비밀번호 재설정 */
-    purpose?: "SIGNUP" | "PASSWORD_RESET";
+    /** SIGNUP = 새 직원 가입 · PASSWORD_RESET = 가입된 직원 비밀번호 재설정 · ROLE_PRESET = 번호에 역할 미리 붙이기(가입 화면에서 가입, 2026-11-18) */
+    purpose?: StaffInvitationPurpose;
     /** 이미 있는 직원 기록에 붙는 초대(직접 추가 전환·재설정·퇴사 후 재초대) */
     targetUserId?: string | null;
 }
@@ -500,6 +503,79 @@ export default function StaffClient({
         });
     }
 
+    // ── 추가 역할 직원(학부모 계정 + 승인된 선생님·기사님) — 퇴사 처리·역할 바꾸기(원장, 2026-11-18) ──────────
+    // 새 선생님·기사님은 이제 이 줄로 일한다(가입 화면에서 가입 + 미리 붙인 역할). 예전엔 보기 전용이라 신청함에서만 회수할 수 있었다.
+    // 퇴사는 주 역할 직원과 같은 서버 함수(retireStaffMember) — 학부모 계정은 주 역할을 바꾸지 않고 추가 역할만 회수한다.
+    async function handleRetireGrantUser(grantUser: RosterGrantUser) {
+        const coachName = grantCoachName(grantUser);
+        const lines = [
+            `추가 역할(${grantUser.roles.map((role) => ROLE_CONFIG[role]?.label || role).join("·")}) 회수 — 스태프 목록에서 빠져요`,
+            coachName ? `코치 프로필 «${coachName}» 연결 해제` : null,
+            "학부모 계정·로그인은 그대로",
+            "이 번호에 미리 붙여 둔 역할이 있으면 취소",
+        ].filter(Boolean);
+        const ok = await askConfirm({
+            title: `"${grantUser.name}" 퇴사 처리`,
+            description: lines.map((line) => `· ${line}`).join("\n"),
+            confirmLabel: "퇴사 처리",
+            tone: "danger",
+            acknowledgeLabel: "다시 일하면 새 스태프 초대로 다시 열어야 해요",
+        });
+        if (!ok) return;
+        startTransition(async () => {
+            try {
+                const result = await retireStaffMember(grantUser.id);
+                if (!result.ok) {
+                    setMessage({ text: result.error, ok: false });
+                    return;
+                }
+                setMessage({ text: result.alreadyDone ? `${result.name}님은 이미 퇴사 처리되어 있습니다.` : `${result.name}님 퇴사 처리했습니다.`, ok: true });
+                await loadStaffData();
+            } catch (error: unknown) {
+                setMessage({ text: errorMessage(error, "퇴사 처리에 실패했습니다."), ok: false });
+            }
+        });
+    }
+
+    async function handleChangeGrantRole(grantUser: RosterGrantUser, nextRole: "INSTRUCTOR" | "DRIVER") {
+        const nextLabel = ROLE_CONFIG[nextRole]?.label || nextRole;
+        const coachName = grantCoachName(grantUser);
+        const ok = await askConfirm({
+            title: `"${grantUser.name}" 역할을 ${nextLabel}(으)로`,
+            description: [
+                `· 지금 역할(${grantUser.roles.map((role) => ROLE_CONFIG[role]?.label || role).join("·")}) → ${nextLabel}`,
+                nextRole === "DRIVER" && coachName ? `· 코치 프로필 «${coachName}» 연결 해제` : null,
+            ].filter(Boolean).join("\n"),
+            confirmLabel: "변경하기",
+            tone: "primary",
+        });
+        if (!ok) return;
+        startTransition(async () => {
+            try {
+                const result = await changeStaffGrantRole(grantUser.id, nextRole);
+                if (!result.ok) {
+                    setMessage({ text: result.error, ok: false });
+                    return;
+                }
+                setMessage({ text: `${result.name}님 역할을 ${nextLabel}(으)로 바꿨습니다.`, ok: true });
+                await loadStaffData();
+            } catch (error: unknown) {
+                setMessage({ text: errorMessage(error, "역할 변경에 실패했습니다."), ok: false });
+            }
+        });
+    }
+
+    // 추가 역할 줄 «빠른작업» — 원장만(부원장은 보기 전용). 지금 그 역할 하나뿐이면 그 역할로 바꾸기는 숨긴다.
+    function buildGrantActions(grantUser: RosterGrantUser): AdminQuickAction[] {
+        if (!canManage || grantUser.id === currentUserId) return [];
+        const only = grantUser.roles.length === 1 ? grantUser.roles[0] : null;
+        const actions: AdminQuickAction[] = [];
+        if (only !== "INSTRUCTOR") actions.push({ key: "to-instructor", label: "코치/강사로 바꾸기", icon: "swap_horiz", disabled: isPending, onSelect: () => void handleChangeGrantRole(grantUser, "INSTRUCTOR") });
+        if (only !== "DRIVER") actions.push({ key: "to-driver", label: "셔틀 기사로 바꾸기", icon: "swap_horiz", disabled: isPending, onSelect: () => void handleChangeGrantRole(grantUser, "DRIVER") });
+        actions.push({ key: "retire", label: "퇴사 처리", icon: "person_remove", tone: "danger", disabled: isPending, onSelect: () => void handleRetireGrantUser(grantUser) });
+        return actions;
+    }
+
     // 퇴사 처리 때 실패한 로그인 차단 다시 시도(원장) — 감사 기록 loginBlocked:"failed" 대상
     function handleRetryLoginBlocks() {
         startTransition(async () => {
@@ -744,12 +820,17 @@ export default function StaffClient({
     }
 
     function inviteStatusChip(row: Extract<Row, { kind: "invite" }>) {
+        // 미리 붙인 역할(2026-11-18) — 본인이 가입 화면에서 가입하면 붙는다. 30일이라 남은 일수 대신 만료일(KST)을 보인다
+        if (row.invite.purpose === "ROLE_PRESET") {
+            return <span className={CHIP_WAIT}>가입 대기 · {kstLabel(row.invite.expiresAt)}까지</span>;
+        }
         const label = row.invite.purpose === "PASSWORD_RESET" ? "재설정 대기" : "초대 대기";
         return <span className={CHIP_WAIT}>{label} · {row.daysLeft}일 남음</span>;
     }
 
     // 비밀번호 재설정 초대 표시(main 455fb2c2 기능 보존)
     function resetChip(inv: Invitation) {
+        if (inv.purpose === "ROLE_PRESET") return <span className={CHIP_MUTED}>역할 미리 붙임</span>;
         return inv.purpose === "PASSWORD_RESET"
             ? <span className={CHIP_WAIT}>비밀번호 재설정</span>
             : null;
@@ -912,9 +993,10 @@ export default function StaffClient({
                                         );
                                     }
                                     if (row.kind === "grant") {
-                                        // 학부모 계정 + 승인된 추가 역할 — 보기 전용(회수는 신청함)
+                                        // 학부모 계정 + 승인된 추가 역할 — 원장은 «빠른작업»(역할 바꾸기·퇴사 처리), 신청함 링크는 그대로
                                         const grantUser = row.grantUser;
                                         const coachName = grantCoachName(grantUser);
+                                        const grantActions = buildGrantActions(grantUser);
                                         return (
                                             <tr key={row.key}>
                                                 <td className="px-3 py-1.5 font-semibold text-[var(--color-academy-ink)]">{grantUser.name}</td>
@@ -924,6 +1006,7 @@ export default function StaffClient({
                                                     <span className="flex items-center gap-2">
                                                         {coachName && <span className="text-xs text-[var(--color-academy-muted)]">코치 프로필 {coachName}</span>}
                                                         {grantRevokeLink(grantUser)}
+                                                        {grantActions.length > 0 && <AdminQuickActionMenu label={`${grantUser.name} 추가 역할 빠른 작업`} actions={grantActions} />}
                                                     </span>
                                                 </td>
                                             </tr>
@@ -976,6 +1059,9 @@ export default function StaffClient({
                                         </span>
                                     )}
                                     {row.kind === "grant" && grantRevokeLink(row.grantUser)}
+                                    {row.kind === "grant" && buildGrantActions(row.grantUser).length > 0 && (
+                                        <AdminQuickActionMenu label={`${row.grantUser.name} 추가 역할 빠른 작업`} actions={buildGrantActions(row.grantUser)} />
+                                    )}
                                 </li>
                             );
                         })}
@@ -999,6 +1085,7 @@ export default function StaffClient({
                                     <span className="font-semibold text-[var(--color-academy-ink)]">{inv.name}</span>
                                     <span className={`rounded-full px-2 py-0.5 text-xs ${rc.color}`}>{rc.label}</span>
                                     {inv.purpose === "PASSWORD_RESET" && <span className="text-xs text-[var(--color-academy-warning)]">비밀번호 재설정</span>}
+                                    {inv.purpose === "ROLE_PRESET" && <span className="text-xs text-[var(--color-academy-muted)]">역할 미리 붙임</span>}
                                     <span className="tabular-nums text-[var(--color-academy-muted)]">{formatPhone(inv.phone)}</span>
                                     <span className="ml-auto flex items-center gap-2">
                                         <span className={`rounded-full px-2 py-0.5 text-xs ${sc.color}`}>
@@ -1132,6 +1219,16 @@ export default function StaffClient({
                         <dd className="tabular-nums text-[var(--color-academy-ink)]">{kstLabel(detailInvite.createdAt) || "-"}</dd>
                         <dt className="font-medium text-[var(--color-academy-muted)]">만료일</dt>
                         <dd className="tabular-nums text-[var(--color-academy-ink)]">{kstLabel(detailInvite.expiresAt) || "-"}</dd>
+                        {/* 미리 붙인 역할(2026-11-18) — 본인이 무엇을 하면 열리는지 */}
+                        {detailInvite.purpose === "ROLE_PRESET" && (
+                            <>
+                                <dt className="self-start font-medium text-[var(--color-academy-muted)]">가입 방법</dt>
+                                <dd className="text-xs leading-5 text-[var(--color-academy-ink)]">
+                                    본인이 학부모와 같은 가입 화면에서 아이디 또는 간편로그인 + 본인인증으로 가입하면 이 번호에 역할이 붙어요.
+                                    본인인증 이름이 «{detailInvite.name}»과 같으면 바로 열리고, 다르거나 문자 인증으로 가입하면 신청함에서 확인 후 열려요.
+                                </dd>
+                            </>
+                        )}
                         {/* 마지막 초대 문자 — 발송 시각·성공/실패(기존 발송 기록) */}
                         <dt className="font-medium text-[var(--color-academy-muted)]">문자</dt>
                         <dd>{lastSendLine(detailInvite.id)}</dd>

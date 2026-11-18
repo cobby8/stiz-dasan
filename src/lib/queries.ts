@@ -29,6 +29,7 @@ import type { SheetClassSlot } from "@/lib/googleSheetsSchedule";
 import { absenceReportOf, type AbsenceReportState } from "@/lib/regular/attendance-absence-reason";
 // 방학특강 «이 신청서가 이 회차에 나오는가» SQL 조각(2026-11-18 기간·날짜 선택 공용 규칙)
 import { seasonalAttendsSql } from "@/lib/seasonal/attendance-rule";
+import { normalizeStaffInvitationPurpose } from "@/lib/staff/rolePreset";
 
 // 값을 불리언으로 안전 변환 (TEXT 컬럼에서 'false' 문자열이 올 수 있음)
 const toBool = (v: any, fallback: boolean): boolean => {
@@ -4276,7 +4277,8 @@ export const getStaffInvitations = cache(async () => {
             acceptedUserId: r.acceptedUserId ?? r.accepteduserid ?? null,
             createdBy: r.createdBy ?? r.createdby,
             createdAt: r.createdAt ?? r.createdat,
-            purpose: (r.purpose === "PASSWORD_RESET" ? "PASSWORD_RESET" : "SIGNUP") as "SIGNUP" | "PASSWORD_RESET",
+            // ROLE_PRESET(2026-11-18) 까지 — 모르는 값은 예전 기본값 SIGNUP(normalizeStaffInvitationPurpose 한 곳)
+            purpose: normalizeStaffInvitationPurpose(r.purpose),
             // SIGNUP + targetUserId = «직접 추가» 직원의 앱 계정 전환 초대(가입하면 그 직원 기록에 로그인이 붙는다)
             targetUserId: (r.targetUserId ?? r.targetuserid ?? null) as string | null,
         }));
@@ -4308,7 +4310,7 @@ export const getInvitationByToken = cache(async (token: string) => {
             status: r.status,
             expiresAt: r.expiresAt ?? r.expiresat,
             createdAt: r.createdAt ?? r.createdat,
-            purpose: (r.purpose === "PASSWORD_RESET" ? "PASSWORD_RESET" : "SIGNUP") as "SIGNUP" | "PASSWORD_RESET",
+            purpose: normalizeStaffInvitationPurpose(r.purpose),
         };
     } catch (e) {
         console.error("[getInvitationByToken] failed:", e);

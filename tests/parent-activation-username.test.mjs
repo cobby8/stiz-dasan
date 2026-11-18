@@ -87,6 +87,9 @@ async function load(state) {
     "@/lib/parent-password-rules": passwordRules,
     "@/lib/parent-username": toDataUrl(await transpile("src/lib/parent-username.ts")),
     "@/lib/identity/verified-identity": toDataUrl(await transpile("src/lib/identity/verified-identity.ts")),
+    // 미리 붙인 역할 적용(2026-11-18 5단계)은 tests/staff-role-preset.test.mjs 가 따로 실행 검증한다 — 여기서는 «붙일 것 없음»
+    "@/lib/staff/rolePreset": toDataUrl(`export async function applyRolePresetsForUser() { return []; }`),
+    "@/lib/staff/rolePresetNotify": toDataUrl(`export async function notifyRolePresetOutcomes() {}`),
   };
   let code = await transpile("src/lib/parent-account-claim.ts");
   for (const [from, to] of Object.entries(map)) code = code.split(`"${from}"`).join(`"${to}"`);
@@ -178,8 +181,12 @@ test("f7 공용 규칙 한 곳: 가입·활성화가 같은 아이디 모듈을 
   assert.match(action, /signInWithPassword\(\{\s*email: result\.loginEmail,/);
   assert.doesNotMatch(action, /email\.trim\(\)\.toLowerCase\(\)/);
   // 하위호환: 로그인 화면은 «@» 든 값(예전 이메일 활성화 계정)을 그대로 로그인 메일로 쓴다
+  // (2026-11-18 5단계: 판정이 resolveLoginAuthEmail 한 곳으로 옮겨졌다)
   const login = await readFile("src/app/actions/auth.ts", "utf8");
-  assert.match(login, /else if \(!identifier\.includes\("@"\)\)/);
+  assert.match(login, /if \(!identifier\.includes\("@"\)\)/);
+  assert.match(login, /resolveLoginAuthEmail\(/);
+  const loginId = await readFile("src/lib/staff-login-id.ts", "utf8");
+  assert.match(loginId, /if \(identifier\.includes\("@"\)\) return identifier;/);
 });
 
 test("f7 공용 아이디 모듈 자체 — 정규화·매핑·규칙", async () => {

@@ -71,7 +71,12 @@ async function load(db) {
   const username = toDataUrl(await transpile("src/lib/parent-username.ts"));
   // 본인인증 실명·시각 규칙(순수 모듈, 2026-11-18) — 원본 그대로 엮는다
   const verifiedIdentity = toDataUrl(await transpile("src/lib/identity/verified-identity.ts"));
+  // 미리 붙인 역할 적용(2026-11-18 5단계)은 tests/staff-role-preset.test.mjs 가 따로 실행 검증한다 — 여기서는 «붙일 것 없음»
+  const rolePreset = toDataUrl(`export async function applyRolePresetsForUser() { return []; }`);
+  const rolePresetNotify = toDataUrl(`export async function notifyRolePresetOutcomes() {}`);
   const swap = (code) => code
+    .split('"@/lib/staff/rolePreset"').join(`"${rolePreset}"`)
+    .split('"@/lib/staff/rolePresetNotify"').join(`"${rolePresetNotify}"`)
     .split('"@/lib/identity/verified-identity"').join(`"${verifiedIdentity}"`)
     .split('"@/lib/parent-username"').join(`"${username}"`)
     .split('"@/lib/user-facing-error"').join(`"${publicErrors}"`)

@@ -112,8 +112,11 @@ test("application parent membership is created only after verified proof", () =>
 
 test("username login is added without removing staff email login", () => {
   assert.match(authActions, /formData\.get\("email"\)\s*\|\|\s*formData\.get\("username"\)/);
-  // 직원은 번호만 넣어도 «번호@staff.stiz.kr» 로 바뀌고(2026-11-13 b3), 학부모 아이디 조회는 직원 아닐 때만
-  assert.match(authActions, /if \(loginContext === "staff"\) \{\s*[^}]*authEmail = staffLoginEmail\(identifier\);\s*\} else if \(!identifier\.includes\("@"\)\)/);
+  // 직원은 번호만 넣어도 «번호@staff.stiz.kr» 로 바뀌고(2026-11-13 b3), 2026-11-18 5단계부터 학부모식 아이디 조회는
+  // 직원 칸에서도 먼저 한다(새 선생님·기사님은 학부모와 같은 아이디 계정) — 판정은 resolveLoginAuthEmail 한 곳
+  assert.match(authActions, /if \(!identifier\.includes\("@"\)\) \{[\s\S]*?usernameEmail = rows\[0\]\?\.email \|\| null;\s*\}/);
+  assert.match(authActions, /const authEmail = resolveLoginAuthEmail\(\{ identifier, loginContext, usernameEmail \}\);/);
+  assert.doesNotMatch(authActions, /if \(loginContext === "staff"\) \{\s*[^}]*authEmail = staffLoginEmail/, "직원 칸이 아이디 조회를 건너뛰지 않는다");
   assert.match(authActions, /LOWER\(username\).*role = 'PARENT'/s);
   assert.match(authActions, /signInWithPassword\(\{\s*email:\s*authEmail/s);
 });

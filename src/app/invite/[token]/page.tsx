@@ -97,6 +97,37 @@ export default async function InvitePage({
         );
     }
 
+    // 2026-11-18 원장 결정 «가입·본인인증 통일» 5단계: 새 선생님·기사님 초대는 «번호에 역할 미리 붙이기»(ROLE_PRESET)다.
+    // 이 링크에서 직원 전용 계정(휴대폰 번호 로그인)을 만들지 않고, 학부모와 같은 가입 화면으로 안내한다.
+    // 가입(아이디 또는 간편로그인 + 본인인증)이 끝나는 순간 이 번호에 붙여 둔 역할이 적용된다(src/lib/staff/rolePreset.ts).
+    if (invitation.purpose === "ROLE_PRESET") {
+        const roleLabel = invitation.role === "DRIVER" ? "기사님" : "선생님";
+        const signupHref = `/signup/parent?staffRole=${invitation.role === "DRIVER" ? "DRIVER" : "INSTRUCTOR"}`;
+        return (
+            <div className="min-h-screen bg-[var(--color-academy-soft)] flex items-center justify-center p-4">
+                <div className="w-full max-w-md rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-6 shadow-sm">
+                    <h1 className="text-xl font-bold text-[var(--color-academy-ink)]">{invitation.name}님, {roleLabel} 역할이 준비돼 있어요</h1>
+                    <ol className="mt-4 list-decimal space-y-1.5 pl-5 text-sm leading-6 text-[var(--color-academy-ink)]">
+                        <li>아래 «가입하러 가기»를 눌러 학부모와 같은 가입 화면으로 가요.</li>
+                        <li>아이디 또는 카카오·구글·Apple 간편로그인으로 가입하고, 본인인증을 해 주세요.</li>
+                        <li>본인인증 이름이 «{invitation.name}»과 같으면 가입을 마치는 즉시 {roleLabel} 화면이 열려요.
+                            문자 인증으로 가입하거나 이름이 다르면 원장님 확인 후 열려요.</li>
+                    </ol>
+                    <p className="mt-3 text-xs leading-5 text-[var(--color-academy-muted)]">
+                        로그인은 휴대폰 번호가 아니라 가입할 때 정한 아이디나 간편로그인으로 해요. 비밀번호를 잊으면 로그인 화면의 «아이디·비밀번호 찾기»를 쓰면 돼요.
+                        {" "}이 안내는 {new Date(invitation.expiresAt).toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" })}까지 유효해요.
+                    </p>
+                    <a href={signupHref} className="academy-button-primary mt-5 w-full">
+                        가입하러 가기
+                    </a>
+                    <a href="/login" className="academy-button-text mt-2 w-full">
+                        이미 가입했어요 · 로그인
+                    </a>
+                </div>
+            </div>
+        );
+    }
+
     // 전화번호 마스킹 (010-****-5678)
     const phone = invitation.phone || "";
     const maskedPhone = phone.length >= 7

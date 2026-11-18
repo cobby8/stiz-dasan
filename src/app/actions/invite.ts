@@ -167,6 +167,8 @@ function hashesMatch(expected: string, actual: string) {
 
 function invitationStateError(invitation?: InvitationRow) {
   if (!invitation) return "존재하지 않는 초대입니다.";
+  // 2026-11-18: 역할 미리 붙이기(ROLE_PRESET)는 이 화면에서 가입하지 않는다 — 학부모와 같은 가입 화면으로(초대 화면이 안내한다)
+  if (invitation.purpose === "ROLE_PRESET") return "이 초대는 학부모와 같은 가입 화면에서 가입하면 적용돼요. 초대 링크를 다시 열어 «가입하러 가기»를 눌러 주세요.";
   // 2026-11-12: 원장·부원장은 «그 사람 기록을 향한 로그인 연결 초대»만 받는다(가입 시작·실패 설명과 같은 판정)
   if (!invitationRoleAccepted(invitation)) return "스태프 전용 초대가 아닙니다.";
   if (invitation.status === "ACCEPTED") return "이미 수락된 초대입니다.";
@@ -415,6 +417,8 @@ export async function acceptInvitation(token: string, password: string) {
        SET status = 'PROCESSING', "processingAttemptId" = $2, "processingStartedAt" = NOW(),
            "otpConsumedAt" = NOW(), "recoveryAuthUserId" = NULL, "recoveryError" = NULL, "updatedAt" = NOW()
        WHERE token = $1 AND status = 'PENDING' AND "expiresAt" > NOW()
+         -- 역할 미리 붙이기(ROLE_PRESET)는 가입 화면에서 적용 — 여기서 직원 전용 계정을 만들지 않는다(2026-11-18)
+         AND COALESCE(purpose, 'SIGNUP') <> 'ROLE_PRESET'
          -- 받는 역할: 코치/강사·셔틀 기사, 또는 «그 사람 기록을 향한 가입 초대»의 원장·부원장(invitationRoleAccepted 와 같은 기준)
          AND (role IN ('INSTRUCTOR'::"Role", 'DRIVER'::"Role")
               OR (role IN ('ADMIN'::"Role", 'VICE_ADMIN'::"Role") AND "targetUserId" IS NOT NULL

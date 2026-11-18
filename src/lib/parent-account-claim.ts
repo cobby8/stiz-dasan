@@ -10,6 +10,9 @@ import { isSyntheticParentEmail } from "@/lib/parent-synthetic-email";
 import { PARENT_CONSENT_REQUIRED_MESSAGE, PARENT_PRIVACY_VERSION, PARENT_TERMS_VERSION, hasAllParentConsents, type ParentConsents } from "@/lib/parent-consent";
 import { PARENT_PASSWORD_MIN, PARENT_WEAK_PASSWORD_MESSAGE, isWeakPasswordRejection } from "@/lib/parent-password-rules";
 import { cleanVerifiedName, recordIdentityVerification } from "@/lib/identity/verified-identity";
+// 원장이 번호에 미리 붙여 둔 선생님·기사님 역할 — 활성화가 끝나는 거래에서 적용(2026-11-18 5단계)
+import { applyRolePresetsForUser, type RolePresetOutcome } from "@/lib/staff/rolePreset";
+import { notifyRolePresetOutcomes } from "@/lib/staff/rolePresetNotify";
 // 아이디 규칙·로그인 메일 매핑 — 신규 가입과 같은 모듈(2026-11-13 f7 가입 방식 통일)
 import {
   PARENT_USERNAME_PATTERN,
@@ -553,6 +556,7 @@ export async function consumeParentAccountClaim(
       authUserId, claim.id, processingAttemptId,
     );
 
+    let presetOutcomes: RolePresetOutcome[] = [];
     await prisma.$transaction(async (tx) => {
       const updated = await tx.$executeRawUnsafe(
         // 문자 인증을 통과해 활성화했으므로 번호 인증 시각도 남긴다(이미 있으면 그대로 — 처음 인증 시각 보존, a4)
@@ -570,6 +574,12 @@ export async function consumeParentAccountClaim(
       if (claim!.verifiedName && claim!.identityVerifiedAt) {
         await recordIdentityVerification(tx, { userId: claim!.parentId, verifiedName: claim!.verifiedName, verifiedAt: new Date(claim!.identityVerifiedAt) });
       }
+      // 원장이 이 번호에 미리 붙여 둔 선생님·기사님 역할 — 활성화가 끝나는 이 거래에서 적용(2026-11-18 5단계).
+      // 본인인증 증표면 실명으로 이름 비교, 문자 인증 증표면 실명이 없어 원장 확인(PENDING)으로 간다.
+      presetOutcomes = await applyRolePresetsForUser(tx, {
+        userId: claim!.parentId,
+        verifiedName: claim!.verifiedName && claim!.identityVerifiedAt ? claim!.verifiedName : null,
+      });
       // 증표의 실명은 User 로 옮겼으니 비운다
       const consumed = await tx.$executeRawUnsafe(
         `UPDATE "ParentAccountClaim" SET status = 'CONSUMED', "consumedAt" = NOW(), "authUserId" = $1,
@@ -581,6 +591,8 @@ export async function consumeParentAccountClaim(
       );
       if (consumed !== 1) throw new Error("계정 활성화 상태가 변경되었습니다.");
     });
+    // 알림은 거래가 끝난 뒤(실패해도 활성화는 그대로)
+    if (presetOutcomes.length > 0) await notifyRolePresetOutcomes(claim!.parentId, presetOutcomes);
     // username·loginEmail: 서버 액션이 바로 로그인 세션을 만들 때 쓴다(아이디 → 로그인 메일 매핑을 다시 계산하지 않게)
     return { ok: true, redirectPath: safeRedirect(claim.redirectPath), username, loginEmail: email };
   } catch (error) {

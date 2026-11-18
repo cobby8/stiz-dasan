@@ -14,7 +14,7 @@ import {
 import { linkEnrollmentAccount } from "@/lib/enrollment-account-handoff";
 import { getParentViewAccessForAuthUser } from "@/lib/account-view-access";
 import { readLastViewDestination } from "@/lib/auth/last-view-server";
-import { staffLoginEmail } from "@/lib/staff-login-id";
+import { resolveLoginAuthEmail } from "@/lib/staff-login-id";
 // 로그아웃 때 이 기기의 앱 푸시 토큰을 지운다(e2) — 다음 사람이 이 휴대폰에 로그인하기 전까지 옛 계정 알림이 오지 않게
 import { forgetNativePushOnThisDevice } from "@/lib/push/nativePushDevice";
 
@@ -46,20 +46,19 @@ export async function login(formData: FormData) {
     return { error: "아이디(또는 이메일)와 비밀번호를 입력해 주세요." };
   }
 
-  let authEmail = identifier;
-  if (loginContext === "staff") {
-    // 직원은 휴대폰 번호만 넣어도 된다 — 초대 가입 로그인 메일이 «번호@staff.stiz.kr» 라서(b3). 이메일은 그대로.
-    authEmail = staffLoginEmail(identifier);
-  } else if (!identifier.includes("@")) {
+  // 학부모식 아이디(새로 오는 선생님·기사님 포함)를 먼저 찾는다 — 직원 로그인 칸에서도(2026-11-18 5단계).
+  // 예전엔 직원 칸이면 입력을 «번호@staff.stiz.kr»로만 바꿔서, 학부모와 같은 가입으로 들어온 새 직원의 아이디가 실패했다.
+  let usernameEmail: string | null = null;
+  if (!identifier.includes("@")) {
     const rows = await prisma.$queryRawUnsafe<Array<{ email: string }>>(
       `SELECT email FROM "User" WHERE LOWER(username) = LOWER($1) AND role = 'PARENT' LIMIT 1`,
       identifier,
     );
-    // 학부모 아이디가 아니고 휴대폰 번호 모양이면 선생님·기사님 계정(«번호@staff.stiz.kr»)으로 본다.
-    // 로그인 화면은 하나 — 로그인한 뒤 역할에 맞는 화면으로 간다(원장 2026-11-13). 학부모 아이디가 먼저라 학부모 로그인은 그대로.
-    const staffEmail = staffLoginEmail(identifier);
-    authEmail = rows[0]?.email || (staffEmail !== identifier ? staffEmail : `${identifier.toLowerCase()}@member.stiz.kr`);
+    usernameEmail = rows[0]?.email || null;
   }
+  // 학부모 아이디가 아니고 휴대폰 번호 모양이면 기존 선생님·기사님 계정(«번호@staff.stiz.kr»)으로 본다(b3).
+  // 로그인 화면은 하나 — 로그인한 뒤 역할에 맞는 화면으로 간다(원장 2026-11-13). 판정은 resolveLoginAuthEmail 한 곳.
+  const authEmail = resolveLoginAuthEmail({ identifier, loginContext, usernameEmail });
 
   const { data, error } = await supabase.auth.signInWithPassword({
     email: authEmail,

@@ -157,7 +157,9 @@ export async function saveRegularDispatchRoute(input: {
   if (driverIds.length > 0) {
     // 클라이언트가 임의 사용자 ID를 넣어도 기사 계정만 배차에 저장되도록 서버에서 다시 검증한다.
     const drivers = await prisma.$queryRawUnsafe<{ id: string }[]>(
-      `SELECT id FROM "User" WHERE id = ANY($1::text[]) AND role='DRIVER'`,
+      // 2026-11-18 5단계: 승인된 기사 추가 역할(새 기사님 = 학부모와 같은 가입)도 기사로 본다 — 기사 배정 권한과 같은 조건
+      `SELECT u.id FROM "User" u WHERE u.id = ANY($1::text[]) AND u."withdrawnAt" IS NULL
+          AND (u.role='DRIVER' OR EXISTS (SELECT 1 FROM "UserRoleGrant" g WHERE g."userId"=u.id AND g.role='DRIVER' AND g.status='ACTIVE'))`,
       driverIds,
     );
     if (drivers.length !== driverIds.length) throw new Error("담당 기사 계정을 다시 선택해 주세요.");

@@ -14,6 +14,9 @@ import { PARENT_PRIVACY_VERSION, PARENT_TERMS_VERSION, PARENT_CONSENT_REQUIRED_M
 import { PARENT_PASSWORD_MIN, PARENT_WEAK_PASSWORD_MESSAGE, isWeakPasswordRejection } from "@/lib/parent-password-rules";
 // 본인인증 실명·시각 규칙은 한 곳(2026-11-18) — 문자 인증(SMS)은 실명을 적지 않는다
 import { cleanVerifiedName, recordIdentityVerification, signupRowIdentity } from "@/lib/identity/verified-identity";
+// 원장이 번호에 미리 붙여 둔 선생님·기사님 역할 — 가입·연결이 끝나는 거래 안에서 적용(2026-11-18 5단계)
+import { applyRolePresetsForUser, type RolePresetOutcome } from "@/lib/staff/rolePreset";
+import { notifyRolePresetOutcomes } from "@/lib/staff/rolePresetNotify";
 // 아이디 규칙·로그인 메일 매핑은 기존 학부모 계정 활성화와 같은 모듈 한 곳(2026-11-13 f7)
 import {
   PARENT_USERNAME_PATTERN,
@@ -136,8 +139,10 @@ export async function resolveVerifiedSignupPhone(input: {
   authenticatedOAuthUser?: { id: string; email?: string | null; provider?: string | null } | null;
 }): Promise<VerifiedSignupPhoneResult> {
   if (!/^[A-Za-z0-9_-]{40,200}$/.test(input.proof)) return { error: "휴대폰 인증이 만료되었습니다." };
+  // 빈 계정에 간편로그인을 바로 붙인 경우(LINKED) 미리 붙인 역할 적용 결과 — 알림은 거래 뒤에 보낸다
+  let linkedPreset: { userId: string; outcomes: RolePresetOutcome[] } | null = null;
   try {
-    return await prisma.$transaction(async (tx): Promise<VerifiedSignupPhoneResult> => {
+    const result = await prisma.$transaction(async (tx): Promise<VerifiedSignupPhoneResult> => {
       const row = await find(input.token, tx, true);
       if (!row || row.status !== "VERIFIED" || row.expiresAt <= new Date()) throw new SignupHandoffError("휴대폰 인증을 먼저 완료해 주세요.");
       if (!row.proofHash || !row.proofExpiresAt || row.proofExpiresAt <= new Date()
@@ -184,6 +189,8 @@ export async function resolveVerifiedSignupPhone(input: {
           // 본인인증으로 들어왔으면 실명·시각을 같은 거래에서 적는다(문자 인증이면 identity=null → 적지 않음)
           const identity = signupRowIdentity(row);
           if (identity) await recordIdentityVerification(tx, { userId: ownership.parentId, ...identity });
+          // 원장이 이 번호에 미리 붙여 둔 역할 — 연결과 같은 거래에서 적용(본인인증+이름 일치면 바로, 아니면 원장 확인)
+          linkedPreset = { userId: ownership.parentId, outcomes: await applyRolePresetsForUser(tx, { userId: ownership.parentId, verifiedName: identity?.verifiedName ?? null }) };
           await markConsumed(oauth!.id);
           return { kind: "LINKED_EXISTING", redirectPath: resolveRedirectForRole("PARENT", input.redirectPath) };
         }
@@ -197,8 +204,12 @@ export async function resolveVerifiedSignupPhone(input: {
       );
       // 가입 증표는 여기서 다 썼다 — 같은 증표로 신규 가입·재활성화를 다시 시도할 수 없게 닫는다.
       await markConsumed(null);
+      // 미리 붙인 역할은 활성화가 «끝나는» 거래(consumeParentAccountClaim)에서 적용한다 — 여기서는 아직 로그인이 없다
       return { kind: "ACTIVATE_EXISTING", activationUrl: claim.activationUrl, claimToken: claim.token, claimProof: claim.proof };
     });
+    const applied = linkedPreset as { userId: string; outcomes: RolePresetOutcome[] } | null;
+    if (applied && applied.outcomes.length > 0) await notifyRolePresetOutcomes(applied.userId, applied.outcomes);
+    return result;
   } catch (error) {
     // 직접 정해 둔 안내만 그대로 보여 주고, DB·내부 오류 원문은 화면에 내보내지 않는다.
     if (error instanceof SignupHandoffError || error instanceof SelfClaimUserError) return { error: error.message };
@@ -489,6 +500,7 @@ export async function completeParentSignup(input: {
     } else {
       authUserId = input.authenticatedOAuthUser!.id;
     }
+    let presetOutcomes: RolePresetOutcome[] = [];
     await prisma.$transaction(async (tx) => {
       await rejectExisting(tx, row!.username!, row!.phone);
       const email = row!.signupMethod === "PASSWORD" ? parentUsernameAuthEmail(row!.username!) : (row!.email || input.authenticatedOAuthUser?.email || parentUsernameAuthEmail(row!.username!));
@@ -505,10 +517,15 @@ export async function completeParentSignup(input: {
           tx,
         );
       }
+      // 원장이 이 번호에 미리 붙여 둔 선생님·기사님 역할(ROLE_PRESET)을 같은 거래에서 적용한다(2026-11-18 5단계).
+      // 본인인증 + 초대 이름 일치면 바로 열리고, 문자 인증·이름 다름이면 원장 신청함으로 간다(rolePreset.ts 한 곳).
+      presetOutcomes = await applyRolePresetsForUser(tx, { userId: authUserId!, verifiedName: identity?.verifiedName ?? null });
       const consumed = await tx.$executeRawUnsafe(`UPDATE "ParentSignupVerification" SET status='CONSUMED',"consumedAt"=NOW(),"authUserId"=$2,"proofHash"=NULL,"proofExpiresAt"=NULL WHERE id=$1 AND status='PROCESSING' AND "processingAttemptId"=$3`, row!.id, authUserId, attemptId);
       if (consumed !== 1) throw new Error("회원가입 처리 상태가 변경되었습니다.");
     });
-    return { ok: true, username: row.username };
+    // 알림은 거래가 끝난 뒤(실패해도 가입은 그대로)
+    if (presetOutcomes.length > 0) await notifyRolePresetOutcomes(authUserId!, presetOutcomes);
+    return { ok: true, username: row.username, staffRoles: presetOutcomes.filter((outcome) => outcome.status !== "ALREADY").map((outcome) => ({ role: outcome.role, status: outcome.status })) };
   } catch (error) {
     if (createdAuth && authUserId) await createAdminClient().auth.admin.deleteUser(authUserId).catch(() => undefined);
     if (row) await prisma.$executeRawUnsafe(`UPDATE "ParentSignupVerification" SET status='VERIFIED',"processingAt"=NULL,"processingAttemptId"=NULL,"lastError"=$2 WHERE id=$1 AND status='PROCESSING' AND "processingAttemptId"=$3`, row.id, error instanceof Error ? error.message.slice(0, 1000) : "SIGNUP_FAILED", attemptId).catch(() => undefined);

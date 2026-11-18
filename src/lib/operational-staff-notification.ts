@@ -16,25 +16,29 @@ export type OperationalRecipientSummary = {
 type Recipient = { id: string; role: string };
 type DriverContext = { studentId: string; serviceDate: string; direction?: "PICKUP" | "DROPOFF" | "BOTH" };
 
+// 선생님 역할 조건(2026-11-18 5단계) — 주 역할 선생님 또는 승인된 선생님 추가 역할. 새 선생님은 학부모와 같은 가입 + 추가 역할로
+// 일하므로 주 역할만 보면 담당 반 알림에서 빠진다(아래 기사 조건 DRIVER_CONDITION 과 같은 모양).
+const INSTRUCTOR_CONDITION = `(u.role='INSTRUCTOR' OR EXISTS (SELECT 1 FROM "UserRoleGrant" g WHERE g."userId"=u.id AND g.role='INSTRUCTOR' AND g.status='ACTIVE'))`;
+
 async function resolveRecipients(input: { classIds: string[]; includeCoach: boolean }) {
   return prisma.$queryRawUnsafe<Recipient[]>(
     `WITH recipients AS (
        SELECT u.id, u.role::text AS role FROM "User" u WHERE u.role IN ('ADMIN','VICE_ADMIN')
        UNION
        SELECT u.id, u.role::text AS role FROM "Class" c
-         JOIN "User" u ON u.id=c."instructorId" AND u.role='INSTRUCTOR'
+         JOIN "User" u ON u.id=c."instructorId" AND ${INSTRUCTOR_CONDITION}
         WHERE $1::boolean AND c.id=ANY($2::text[])
        UNION
        SELECT u.id, u.role::text AS role FROM "Class" c
          JOIN "ScheduleSlot" ss ON ss."slotKey"=c."slotKey"
          JOIN "Coach" co ON co.id=ss."coachId"
-         JOIN "User" u ON u.id=co."userId" AND u.role='INSTRUCTOR'
+         JOIN "User" u ON u.id=co."userId" AND ${INSTRUCTOR_CONDITION}
         WHERE $1::boolean AND c.id=ANY($2::text[])
        UNION
        SELECT u.id, u.role::text AS role FROM "Class" c
          JOIN "ClassSlotOverride" o ON o."slotKey"=c."slotKey"
          JOIN "Coach" co ON co.id=o."coachId"
-         JOIN "User" u ON u.id=co."userId" AND u.role='INSTRUCTOR'
+         JOIN "User" u ON u.id=co."userId" AND ${INSTRUCTOR_CONDITION}
         WHERE $1::boolean AND c.id=ANY($2::text[])
      ) SELECT DISTINCT id, role FROM recipients`,
     input.includeCoach,

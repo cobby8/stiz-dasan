@@ -62,6 +62,8 @@ import {
     staffLoginKind,
 } from "@/lib/staff/staffAccountLink";
 import { maskedPhoneLast4 } from "@/lib/staff/staffRoster";
+// 새 선생님·기사님 «역할 미리 붙여 두기»(2026-11-18 5단계)
+import { ROLE_PRESET_PURPOSE, ROLE_PRESET_VALID_DAYS, roleInviteSmsBody } from "@/lib/staff/rolePreset";
 import {
     createNotificationRecord,
     notifyAdmins,
@@ -7293,16 +7295,22 @@ export async function inviteStaff(data: {
         ? `같은 번호의 이전 직원 기록(${reinvite.previousName})이 있어요. 연결하지 않고 새로 초대했습니다.`
         : undefined;
 
+    // 2026-11-18 원장 결정 «가입·본인인증 통일» 5단계: 새 사람(대상 기록 없음)은 «이 번호에 역할을 미리 붙여 두기»(ROLE_PRESET, 30일).
+    // 본인이 학부모와 같은 가입 화면(아이디 또는 간편로그인 + 본인인증)에서 가입하면, 가입이 끝나는 거래에서 이 역할이 붙는다
+    // (src/lib/staff/rolePreset.ts — 본인인증 이름 일치면 바로, 아니면 원장 신청함). 새 직원은 휴대폰 번호(@staff) 로그인이 아니다.
+    // 재입사(옛 직원 기록에 붙는 초대, targetUserId 있음)는 예전 그대로 SIGNUP 7일 — acceptInvitation 이 그 기록을 다시 연다.
+    const rolePreset = !retiredTargetUserId;
+
     try {
-        // 초대 레코드 생성 — 만료: 7일 후
+        // 초대 레코드 생성 — 미리 붙이기 30일 / 재입사 7일
         const rows = await prisma.$queryRawUnsafe<any[]>(
-            `INSERT INTO "StaffInvitation" (id, token, name, phone, role, status, "expiresAt", "targetUserId", "createdBy", "createdAt", "updatedAt")
+            `INSERT INTO "StaffInvitation" (id, token, name, phone, role, status, "expiresAt", purpose, "targetUserId", "createdBy", "createdAt", "updatedAt")
              VALUES (
                (gen_random_uuid())::text,
                (gen_random_uuid())::text,
                $1, $2, $3::"Role", 'PENDING',
-               NOW() + INTERVAL '7 days',
-               $5, $4, NOW(), NOW()
+               NOW() + make_interval(days => $6::int),
+               $7, $5, $4, NOW(), NOW()
              )
              RETURNING id, token`,
             cleanName,
@@ -7310,6 +7318,8 @@ export async function inviteStaff(data: {
             staffRole,
             user.id,
             retiredTargetUserId,
+            rolePreset ? ROLE_PRESET_VALID_DAYS : 7,
+            rolePreset ? ROLE_PRESET_PURPOSE : "SIGNUP",
         );
 
         const invitationId = rows[0]?.id;
@@ -7327,7 +7337,9 @@ export async function inviteStaff(data: {
                 recipientRole: "ADMIN",
                 trigger: "SECURITY_STAFF_INVITATION",
                 source: "SECURITY",
-                body: `[STIZ 농구교실] ${cleanName}님, ${staffRoleLabel} 초대가 도착했습니다.\n아래 링크에서 가입을 완료해주세요:\n${inviteUrl}`,
+                body: rolePreset
+                    ? roleInviteSmsBody({ name: cleanName, roleLabel: staffRoleLabel, inviteUrl })
+                    : `[STIZ 농구교실] ${cleanName}님, ${staffRoleLabel} 초대가 도착했습니다.\n아래 링크에서 가입을 완료해주세요:\n${inviteUrl}`,
             })
             : { ok: false, reason: SMS_SITE_URL_MISSING };
 
@@ -7350,6 +7362,8 @@ export async function inviteStaff(data: {
                 ? undefined
                 : baseUrl ? SMS_SEND_FAILED : SMS_SITE_URL_MISSING,
             previousRecordNotice,
+            // 화면 안내용 — 미리 붙이기(가입 화면에서 가입·30일)인지, 재입사 초대(개인 가입 링크·7일)인지
+            rolePreset,
         };
     } catch (e) {
         console.error("[inviteStaff] failed:", e);
@@ -7575,14 +7589,18 @@ export async function resendInvitation(invitationId: string) {
         }
         const expiresAt = new Date(inv.expiresAt ?? inv.expiresat);
 
-        // 만료되었으면 7일 연장 — 원장·부원장 로그인 연결 초대는 24시간만(2026-11-12 안전장치)
+        // 만료되었으면 7일 연장 — 원장·부원장 로그인 연결 초대는 24시간만(2026-11-12 안전장치),
+        // 미리 붙이기(ROLE_PRESET)는 처음과 같은 30일(2026-11-18)
         if (expiresAt < new Date()) {
             await prisma.$executeRawUnsafe(
                 `UPDATE "StaffInvitation"
-                 SET "expiresAt" = NOW() + CASE WHEN role IN ('ADMIN'::"Role", 'VICE_ADMIN'::"Role") THEN INTERVAL '1 day' ELSE INTERVAL '7 days' END,
+                 SET "expiresAt" = NOW() + CASE WHEN role IN ('ADMIN'::"Role", 'VICE_ADMIN'::"Role") THEN INTERVAL '1 day'
+                                                WHEN purpose = 'ROLE_PRESET' THEN make_interval(days => $2::int)
+                                                ELSE INTERVAL '7 days' END,
                      "updatedAt" = NOW()
                  WHERE id = $1`,
                 invitationId,
+                ROLE_PRESET_VALID_DAYS,
             );
         }
 
@@ -7598,7 +7616,10 @@ export async function resendInvitation(invitationId: string) {
                 recipientRole: "ADMIN",
                 trigger: "SECURITY_STAFF_INVITATION",
                 source: "SECURITY",
-                body: inv.purpose === "PASSWORD_RESET"
+                body: inv.purpose === ROLE_PRESET_PURPOSE
+                    // 미리 붙이기 — 처음 보낸 문자와 같은 안내(가입 화면으로)
+                    ? roleInviteSmsBody({ name: inv.name, roleLabel: inv.role === "DRIVER" ? "셔틀 기사" : "코치/강사", inviteUrl, resend: true })
+                    : inv.purpose === "PASSWORD_RESET"
                     ? `[STIZ 농구교실] ${inv.name}님, 비밀번호 재설정 링크를 다시 보냅니다.
 아래 링크에서 문자 인증 후 새 비밀번호를 정해 주세요:
 ${inviteUrl}`
@@ -7828,8 +7849,8 @@ export async function retireStaffMember(userId: string) {
     try {
         outcome = await prisma.$transaction(async (tx) => {
             // 대상 줄을 잠그고 시작 — 같은 사람에게 역할 변경·퇴사가 동시에 들어와도 한 번에 하나만
-            const rows = await tx.$queryRawUnsafe<Array<{ id: string; name: string; email: string | null; authUserId: string | null; role: string }>>(
-                `SELECT id, name, email, "authUserId", role::text AS role
+            const rows = await tx.$queryRawUnsafe<Array<{ id: string; name: string; email: string | null; authUserId: string | null; role: string; phone: string | null }>>(
+                `SELECT id, name, email, "authUserId", role::text AS role, phone
                    FROM "User" WHERE id = $1 AND "withdrawnAt" IS NULL FOR UPDATE`,
                 targetId,
             );
@@ -7867,11 +7888,22 @@ export async function retireStaffMember(userId: string) {
             );
             // 4) 이 사람을 향한 대기·처리 중 초대(앱 계정 전환·비밀번호 재설정) 취소 — 링크로 다시 들어오지 못하게.
             //    처리 중(PROCESSING)도 취소하면 가입 거래가 마지막 확인에서 실패해 전부 되돌린다.
-            const invites = await tx.$executeRawUnsafe(
+            const targetedInvites = await tx.$executeRawUnsafe(
                 `UPDATE "StaffInvitation" SET status = 'CANCELLED', "updatedAt" = NOW()
                   WHERE "targetUserId" = $1 AND status IN ('PENDING', 'PROCESSING')`,
                 targetId,
             );
+            // 4-2) 이 사람 번호에 미리 붙여 둔 역할(ROLE_PRESET, 2026-11-18)도 취소 — 대상 기록 없이 번호로만 붙으므로
+            //      남겨 두면 다음 계정 연결 때 역할이 다시 붙는다. 번호가 비었으면 건드리지 않는다.
+            const targetDigits = String(target.phone ?? "").replace(/\D/g, "");
+            const presetInvites = /^01\d{8,9}$/.test(targetDigits)
+                ? await tx.$executeRawUnsafe(
+                    `UPDATE "StaffInvitation" SET status = 'CANCELLED', "updatedAt" = NOW()
+                      WHERE purpose = 'ROLE_PRESET' AND phone = $1 AND status = 'PENDING'`,
+                    targetDigits,
+                )
+                : 0;
+            const invites = targetedInvites + presetInvites;
             // 자기 자녀가 있으면(학부모 화면을 계속 써야 하면) 로그인은 막지 않는다
             const children = await tx.$queryRawUnsafe<Array<{ one: number }>>(
                 `SELECT 1 AS one FROM "Student" s WHERE s."parentId" = $1 AND ${notMergedStudent("s")} LIMIT 1`,
@@ -7949,6 +7981,83 @@ export async function retireStaffMember(userId: string) {
         revokedRoles: outcome.revokedRoles,
         loginBlocked,
     };
+}
+
+/**
+ * changeStaffGrantRole — 추가 역할(UserRoleGrant)로 일하는 직원의 역할 바꾸기 (requireOwner: 원장만, 2026-11-18 5단계)
+ *
+ * 새 선생님·기사님은 이제 학부모식 계정(주 역할 학부모) + 승인된 추가 역할로 일한다. 주 역할 직원은 [역할 변경](updateUserRole)이
+ * 있지만 이 사람들은 화면에서 «보기 전용»이라 선생님 ↔ 기사님을 바꿀 길이 없었다.
+ * 한 거래 안에서: 계정 잠금 → 지금 열린 추가 역할 중 «바꿀 역할이 아닌 것» 회수 → 바꿀 역할을 연다(원장 지정 ADMIN)
+ * → 선생님 역할이 남지 않으면 코치 프로필 연결 해제(updateUserRole 과 같은 규칙) → 감사 기록.
+ * 퇴사(모든 추가 역할 회수)는 기존 retireStaffMember 가 학부모 계정도 받으므로 그대로 쓴다.
+ */
+export async function changeStaffGrantRole(userId: string, newRole: "INSTRUCTOR" | "DRIVER") {
+    const owner = await requireOwner();
+    const targetId = String(userId ?? "").trim();
+    if (newRole !== "INSTRUCTOR" && newRole !== "DRIVER") return { ok: false as const, error: "바꿀 수 없는 역할입니다." };
+    if (!targetId) return { ok: false as const, error: "대상 직원을 찾을 수 없습니다. 목록을 새로고침해 주세요." };
+    if (targetId === owner.appUserId) return { ok: false as const, error: "자기 자신의 역할은 변경할 수 없습니다." };
+    try {
+        const result = await prisma.$transaction(async (tx) => {
+            // 대상 줄을 먼저 잠근다 — 퇴사 처리·역할 변경과 같은 순서(직원 기록 먼저)
+            const rows = await tx.$queryRawUnsafe<Array<{ id: string; name: string }>>(
+                `SELECT id, name FROM "User" WHERE id = $1 AND role = 'PARENT' AND "withdrawnAt" IS NULL FOR UPDATE`,
+                targetId,
+            );
+            const target = rows[0];
+            if (!target) throw new Error("추가 역할로 일하는 직원이 아닙니다. 목록을 새로고침해 주세요.");
+            const active = await tx.$queryRawUnsafe<Array<{ role: string }>>(
+                `SELECT role FROM "UserRoleGrant" WHERE "userId" = $1 AND status = 'ACTIVE' FOR UPDATE`,
+                targetId,
+            );
+            if (active.length === 0) throw new Error("열린 추가 역할이 없습니다. 목록을 새로고침해 주세요.");
+            const before = active.map((row) => row.role).sort();
+            if (before.length === 1 && before[0] === newRole) throw new Error("이미 그 역할입니다.");
+            // 1) 바꿀 역할이 아닌 열린 역할 회수
+            await tx.$executeRawUnsafe(
+                `UPDATE "UserRoleGrant"
+                    SET status = 'REVOKED', "decidedAt" = NOW(), "decidedBy" = $3, note = '원장 역할 변경', "updatedAt" = NOW()
+                  WHERE "userId" = $1 AND status = 'ACTIVE' AND role <> $2`,
+                targetId,
+                newRole,
+                owner.appUserId,
+            );
+            // 2) 바꿀 역할 열기(신청 중이던 건이 있으면 그대로 승인)
+            await tx.$executeRawUnsafe(
+                `INSERT INTO "UserRoleGrant" ("userId", role, status, source, "decidedAt", "decidedBy", note)
+                 VALUES ($1, $2, 'ACTIVE', 'ADMIN', NOW(), $3, '원장 역할 변경')
+                 ON CONFLICT ("userId", role) WHERE status IN ('PENDING', 'ACTIVE')
+                 DO UPDATE SET status = 'ACTIVE', "decidedAt" = NOW(), "decidedBy" = EXCLUDED."decidedBy",
+                               note = '원장 역할 변경', "updatedAt" = NOW()`,
+                targetId,
+                newRole,
+                owner.appUserId,
+            );
+            // 3) 기사님으로 바뀌면 코치 프로필 연결을 푼다(선생님 역할이 없으면 코치 일을 하지 않는다 — updateUserRole 과 같은 규칙)
+            const coaches = newRole === "INSTRUCTOR"
+                ? []
+                : await tx.$queryRawUnsafe<Array<{ name: string }>>(
+                    `UPDATE "Coach" SET "userId" = NULL, "updatedAt" = NOW() WHERE "userId" = $1 RETURNING name`,
+                    targetId,
+                );
+            // 4) 감사 기록
+            await tx.$executeRawUnsafe(
+                `INSERT INTO "OperationsAuditLog" (id, action, "actorType", "actorUserId", "detailsJson")
+                 VALUES (gen_random_uuid()::text, 'STAFF_GRANT_ROLE_CHANGED', 'ADMIN', $1, $2::jsonb)`,
+                owner.appUserId,
+                JSON.stringify({ targetUserId: targetId, targetName: target.name, before, after: newRole, coachNames: coaches.map((coach) => coach.name) }),
+            );
+            return { name: target.name };
+        });
+        revalidateStaffAdminCaches();
+        revalidatePath("/admin/staff");
+        revalidatePath("/admin/role-requests");
+        return { ok: true as const, name: result.name };
+    } catch (e) {
+        console.error("[changeStaffGrantRole] failed:", e instanceof Error ? e.message : String(e));
+        return { ok: false as const, error: (e as Error).message || "역할 변경에 실패했습니다." };
+    }
 }
 
 /**

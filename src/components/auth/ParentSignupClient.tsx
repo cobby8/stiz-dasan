@@ -127,8 +127,12 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
   // 가입할 때 고르는 역할(원장 결정 2026-10-25). 학부모는 바로 열리고, 선생님·기사님은
   // 가입을 마친 뒤 «역할 추가 신청» 화면에서 신청 → 원장 확인 후 열린다.
   // 고르기만 해서 직원 화면이 열리면 아무나 학생 개인정보를 보게 되므로 여기서는 신청 화면으로 안내만 한다.
-  const [wantsParent, setWantsParent] = useState(true);
-  const [staffRoles, setStaffRoles] = useState<Array<"INSTRUCTOR" | "DRIVER">>([]);
+  // 원장 초대 안내 화면(/invite/{토큰} — 역할 미리 붙이기)에서 오면 staffRole 로 그 역할을 미리 골라 둔다(2026-11-18 5단계).
+  // 고르는 것만 미리 해 줄 뿐 — 역할이 열리는 것은 서버가 가입 거래에서 번호·본인인증 이름으로 판정한다.
+  const presetStaffRole = searchParams.get("staffRole");
+  const invitedStaffRole = presetStaffRole === "INSTRUCTOR" || presetStaffRole === "DRIVER" ? presetStaffRole : null;
+  const [wantsParent, setWantsParent] = useState(!invitedStaffRole);
+  const [staffRoles, setStaffRoles] = useState<Array<"INSTRUCTOR" | "DRIVER">>(invitedStaffRole ? [invitedStaffRole] : []);
   // 직원 역할을 골랐고 따로 가려던 곳이 없으면, 가입 후 신청 화면으로 이어 간다.
   // 이 값은 간편가입(구글·Apple)으로 다른 사이트에 다녀와도 next 로 그대로 돌아온다.
   const next = staffRoles.length > 0 && requestedNext === "/mypage"
@@ -375,6 +379,9 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
           {staffRoles.length > 0 && (
             <p className="rounded-xl bg-[var(--color-academy-warning-soft)] px-3 py-2 text-xs leading-5 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
               선생님·기사님 화면은 학생 정보를 보게 되어 <b>원장님 확인 후</b> 열립니다. 가입을 마치면 신청 화면으로 이어집니다.
+              {/* 2026-11-18 5단계: 원장이 이 번호에 역할을 미리 붙여 두었으면(초대 문자) 본인인증 이름이 같을 때 가입 즉시 열린다 */}
+              {" "}원장님이 이 번호로 미리 초대해 두셨다면, 본인인증 이름이 초대 이름과 같을 때 가입을 마치는 즉시 열려요.
+              로그인은 휴대폰 번호가 아니라 여기서 정한 아이디나 간편로그인으로 해요.
             </p>
           )}
           <button type="button" onClick={() => setStep("phone")} disabled={noRoleChosen} className="flex min-h-12 w-full items-center justify-center rounded-xl bg-[var(--color-public-accent)] px-4 font-bold text-white hover:bg-[var(--color-public-strong)] disabled:opacity-40 dark:bg-brand-neon-lime dark:text-brand-navy-900">

@@ -206,11 +206,28 @@ test("b3 직원 로그인: 숫자(하이픈 허용)만 넣으면 «번호@staff.
 
 test("b3 로그인 화면 직원 모드: 번호 입력(이메일 형식 검사 없음)·안내 문구", async () => {
   const login = await read("src/app/login/page.tsx");
-  assert.match(login, /isStaffMode \? "휴대폰 번호 또는 이메일"/);
+  assert.match(login, /isStaffMode \? "아이디·휴대폰 번호 또는 이메일"/);
   assert.match(login, /placeholder=\{isStaffMode \? "01012345678"/);
   assert.doesNotMatch(login, /type=\{isStaffMode \? "email" : "text"\}/);
   const auth = await read("src/app/actions/auth.ts");
-  assert.match(auth, /authEmail = staffLoginEmail\(identifier\)/);
+  // 2026-11-18 5단계: 번호 변환은 resolveLoginAuthEmail 안에서(학부모식 아이디를 먼저 찾은 뒤)
+  assert.match(auth, /resolveLoginAuthEmail\(\{ identifier, loginContext, usernameEmail \}\)/);
+});
+
+test("2026-11-18 직원 로그인 칸: 새 직원 아이디와 기존 직원 휴대폰 번호를 모두 받는다", () => {
+  const resolve = staffId.resolveLoginAuthEmail;
+  // 새 선생님(학부모와 같은 가입) — 아이디를 찾았으면 그 로그인 메일
+  assert.equal(resolve({ identifier: "coachkim", loginContext: "staff", usernameEmail: "coachkim@member.stiz.kr" }), "coachkim@member.stiz.kr");
+  // 기존 선생님 — 아이디가 없고 번호 모양이면 번호@staff.stiz.kr
+  assert.equal(resolve({ identifier: "010-1234-5678", loginContext: "staff", usernameEmail: null }), "01012345678@staff.stiz.kr");
+  // 이메일은 그대로(원장·부원장)
+  assert.equal(resolve({ identifier: "admin@stiz.kr", loginContext: "staff", usernameEmail: null }), "admin@stiz.kr");
+  // 직원 칸에서 아이디도 번호도 아니면 그대로(로그인 실패로 끝난다 — 엉뚱한 member 메일을 만들지 않는다)
+  assert.equal(resolve({ identifier: "coach01", loginContext: "staff", usernameEmail: null }), "coach01");
+  // 일반 칸은 예전과 같다: 아이디 → 번호 → 아이디@member.stiz.kr
+  assert.equal(resolve({ identifier: "kimmom", usernameEmail: "kimmom@member.stiz.kr" }), "kimmom@member.stiz.kr");
+  assert.equal(resolve({ identifier: "01012345678", usernameEmail: null }), "01012345678@staff.stiz.kr");
+  assert.equal(resolve({ identifier: "KimMom", usernameEmail: null }), "kimmom@member.stiz.kr");
 });
 
 // ── 검수 반영(2026-11-13 2차) ───────────────────────────────────────────────

@@ -31,8 +31,11 @@ export type RosterInvitation = {
     role: string;
     status: string;
     expiresAt: string;
-    /** SIGNUP = 새 직원 가입 · PASSWORD_RESET = 이미 가입된 직원의 비밀번호 재설정(계정이 이미 있어 코치와 짝짓지 않는다) */
-    purpose?: "SIGNUP" | "PASSWORD_RESET";
+    /**
+     * SIGNUP = 새 직원 가입(이제 재입사·직접 추가 전환만) · PASSWORD_RESET = 이미 가입된 직원의 비밀번호 재설정(계정이 이미 있어 코치와 짝짓지 않는다)
+     * · ROLE_PRESET = 새 선생님·기사님 번호에 역할 미리 붙이기(2026-11-18) — 가입하면 같은 규칙으로 코치가 붙으므로 짝짓기 대상이다
+     */
+    purpose?: "SIGNUP" | "PASSWORD_RESET" | "ROLE_PRESET";
     /** 이미 있는 직원 기록에 붙는 초대(직접 추가 전환·재설정) — 코치와 새로 짝짓지 않는다 */
     targetUserId?: string | null;
 };

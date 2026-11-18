@@ -22,6 +22,8 @@ export const INVITE_LOGIN_LINK_ROLES = ["ADMIN", "VICE_ADMIN"] as const;
  * (대상의 지금 역할 = 초대 역할인지는 가입 처리가 DB 에서 다시 본다: SIGNUP=targetedSignupAllowed · 재설정=role = $2)
  */
 export function invitationRoleAccepted(input: { role: string; targetUserId?: string | null; purpose?: string | null }): boolean {
+  // 2026-11-18: «역할 미리 붙이기»(ROLE_PRESET)는 이 링크로 직원 전용 계정을 만들지 않는다 — 학부모와 같은 가입 화면에서 적용된다
+  if (input.purpose === "ROLE_PRESET") return false;
   if ((INVITE_STAFF_ROLES as readonly string[]).includes(input.role)) return true;
   return (INVITE_LOGIN_LINK_ROLES as readonly string[]).includes(input.role)
     && Boolean(input.targetUserId)

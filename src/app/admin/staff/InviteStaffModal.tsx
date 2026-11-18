@@ -18,7 +18,8 @@ function formatPhone(raw: string): string {
 //   기존 계정에 부여 — 이 번호의 학부모 계정이 이미 있어 그 계정에 역할을 붙였다(링크 없음).
 type InvitationResult =
     // previousRecordNotice: 같은 번호의 이전 직원 기록이 있지만 이름이 달라 연결하지 않았다는 안내(2026-11-12)
-    | { grantedExisting: false; accountName: null; inviteUrl: string; smsSent: boolean; smsError?: string; previousRecordNotice?: string }
+    // rolePreset: 새 사람 — 번호에 역할을 미리 붙여 두고 안내 링크(가입 화면으로 안내, 30일)를 보냈다(2026-11-18 5단계)
+    | { grantedExisting: false; accountName: null; inviteUrl: string; smsSent: boolean; smsError?: string; previousRecordNotice?: string; rolePreset?: boolean }
     | { grantedExisting: true; accountName: string; inviteUrl: null; smsSent: false; smsError?: string };
 
 function absoluteInviteUrl(inviteUrl: string): string {
@@ -144,12 +145,19 @@ export default function InviteStaffModal({
                 ) : result ? (
                     <div className="space-y-4 p-6">
                         <div className={`rounded-xl border p-4 ${result.smsSent ? "border-[var(--color-academy-success)] bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]" : "border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]"}`}>
-                            <p className="font-semibold">{resetMode ? "비밀번호 재설정 링크가 만들어졌습니다." : "초대 링크가 만들어졌습니다."}</p>
+                            <p className="font-semibold">{resetMode ? "비밀번호 재설정 링크가 만들어졌습니다." : result.rolePreset ? `이 번호에 ${form.role === "DRIVER" ? "기사님" : "선생님"} 역할을 미리 붙여 두었습니다.` : "초대 링크가 만들어졌습니다."}</p>
                             <p className="mt-1 text-sm">
                                 {result.smsSent
                                     ? `${resetMode ? "재설정" : "가입"} 안내 문자를 발송했습니다. 아래 링크를 카카오톡으로도 전달할 수 있습니다.`
                                     : `문자는 발송되지 않았습니다. ${resetMode ? "재설정 링크" : "초대"}는 정상적으로 만들어졌으니 아래 링크를 복사해 전달해 주세요.`}
                             </p>
+                            {/* 미리 붙이기 — 본인이 무엇을 하면 열리는지(원장이 전화로 설명할 때도 같은 말) */}
+                            {result.rolePreset && !resetMode && (
+                                <p className="mt-2 text-sm">
+                                    본인이 학부모와 같은 가입 화면에서 아이디 또는 간편로그인 + 본인인증으로 가입하면 바로 열립니다(본인인증 이름이 «{form.name.trim()}»과 같을 때).
+                                    문자 인증으로 가입하거나 이름이 다르면 신청함에서 확인 후 열어 주세요.
+                                </p>
+                            )}
                             {!result.smsSent && result.smsError && <p className="mt-2 text-xs opacity-80">발송 사유: {result.smsError}</p>}
                         </div>
                         {result.previousRecordNotice && (
@@ -163,7 +171,7 @@ export default function InviteStaffModal({
                             <div className="break-all rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] p-3 text-sm text-[var(--color-academy-muted)]">
                                 {absoluteInviteUrl(result.inviteUrl)}
                             </div>
-                            <p className="mt-2 text-xs text-[var(--color-academy-muted)]">{resetMode ? "이 링크는 본인만 사용해야 하며 24시간 동안 유효합니다. 등록된 휴대폰 문자 인증 후 새 비밀번호를 정합니다." : "이 링크는 해당 선생님만 사용해야 하며 7일 동안 유효합니다."}</p>
+                            <p className="mt-2 text-xs text-[var(--color-academy-muted)]">{resetMode ? "이 링크는 본인만 사용해야 하며 24시간 동안 유효합니다. 등록된 휴대폰 문자 인증 후 새 비밀번호를 정합니다." : result.rolePreset ? "이 링크는 가입 화면으로 안내하는 링크이며 30일 동안 유효합니다. 로그인은 휴대폰 번호가 아니라 본인이 정한 아이디나 간편로그인으로 합니다." : "이 링크는 해당 선생님만 사용해야 하며 7일 동안 유효합니다."}</p>
                         </div>
 
                         {copyMessage && <p role="status" aria-live="polite" className="text-sm font-medium text-[var(--color-academy-muted)]">{copyMessage}</p>}
@@ -183,7 +191,9 @@ export default function InviteStaffModal({
                 ) : (
                     <form onSubmit={handleSubmit} className="space-y-4 p-6">
                         <div className="rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] px-4 py-3 text-xs text-[var(--color-academy-muted)]">
-                            선생님 또는 기사 전용 개인 가입 링크를 만들고 입력한 전화번호로 안내 문자를 보냅니다.
+                            {/* 2026-11-18 5단계: 새 사람은 번호에 역할을 미리 붙여 두고, 본인이 학부모와 같은 가입 화면에서 가입한다 */}
+                            이 번호에 선생님 또는 기사 역할을 미리 붙여 두고 입력한 전화번호로 안내 문자를 보냅니다.
+                            본인이 학부모와 같은 가입 화면에서 가입(본인인증)하면 역할이 열립니다. 이 번호의 학부모 계정이 이미 있으면 그 계정에 바로 붙입니다.
                         </div>
                         <div>
                             <label className="mb-1 block text-sm font-medium text-[var(--color-academy-muted)]">이름 *</label>

@@ -230,8 +230,9 @@ function LoginContent() {
                 htmlFor="email"
                 className="block text-sm font-medium text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)] mb-1"
               >
-                {/* 화면 하나로 모두 로그인 — 선생님·기사님은 휴대폰 번호를 넣으면 된다(서버가 직원 계정으로 찾는다) */}
-                {isStaffMode ? "휴대폰 번호 또는 이메일" : "로그인 아이디 (선생님·기사님은 휴대폰 번호, 관리자는 이메일)"}
+                {/* 화면 하나로 모두 로그인 — 예전에 초대로 가입한 선생님·기사님은 휴대폰 번호(서버가 직원 계정으로 찾는다).
+                    2026-11-18 5단계부터 새 선생님·기사님은 학부모와 같은 아이디·간편로그인이다 */}
+                {isStaffMode ? "아이디·휴대폰 번호 또는 이메일" : "로그인 아이디 (기존 선생님·기사님은 휴대폰 번호, 관리자는 이메일)"}
               </label>
               <input
                 id="email"

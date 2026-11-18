@@ -270,7 +270,8 @@ test("가입 거래: 대상이 지금도 같은 원장·부원장·로그인 없
 
 test("다시 보내기: 만료된 원장·부원장 링크는 24시간만 연장, 문자는 원장이 누를 때만", () => {
     const body = fnBody(admin, "resendInvitation");
-    assert.match(body, /CASE WHEN role IN \('ADMIN'::"Role", 'VICE_ADMIN'::"Role"\) THEN INTERVAL '1 day' ELSE INTERVAL '7 days' END/);
+    // 2026-11-18 5단계: 미리 붙이기(ROLE_PRESET)는 30일 갈래가 사이에 들어갔다 — 원장·부원장 24시간·나머지 7일은 그대로
+    assert.match(body, /CASE WHEN role IN \('ADMIN'::"Role", 'VICE_ADMIN'::"Role"\) THEN INTERVAL '1 day'\s*WHEN purpose = 'ROLE_PRESET' THEN make_interval\(days => \$2::int\)\s*ELSE INTERVAL '7 days' END/);
     assert.match(body, /관리자 로그인 연결 링크입니다\(24시간 유효\)/);
 });
 

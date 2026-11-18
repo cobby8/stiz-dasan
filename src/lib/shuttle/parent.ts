@@ -467,9 +467,12 @@ async function rosterOverviewForStudents(students: { id: string; name: string }[
 // 학부모에게 제공하는 셔틀 기사님 연락처. 공용 DRIVER 계정의 이름·전화만 노출한다(민감정보 최소화).
 export async function getShuttleDriverContact(): Promise<{ name: string; phone: string } | null> {
   const rows = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT name, phone FROM "User"
-      WHERE role = 'DRIVER' AND phone IS NOT NULL AND btrim(phone) <> ''
-      ORDER BY "updatedAt" DESC NULLS LAST LIMIT 1`,
+    // 2026-11-18 5단계: 새 기사님은 학부모와 같은 가입 + 승인된 기사 추가 역할로 일한다 — 주 역할 기사가 없어져도 연락처가 사라지지 않게
+    // 추가 역할 기사도 후보에 넣되, 주 역할 기사(공용 기사 계정)를 먼저 고른다(지금 보이는 연락처는 그대로).
+    `SELECT u.name, u.phone FROM "User" u
+      WHERE u."withdrawnAt" IS NULL AND u.phone IS NOT NULL AND btrim(u.phone) <> ''
+        AND (u.role = 'DRIVER' OR EXISTS (SELECT 1 FROM "UserRoleGrant" g WHERE g."userId" = u.id AND g.role = 'DRIVER' AND g.status = 'ACTIVE'))
+      ORDER BY CASE WHEN u.role = 'DRIVER' THEN 0 ELSE 1 END, u."updatedAt" DESC NULLS LAST LIMIT 1`,
   );
   const r = rows[0];
   if (!r?.phone) return null;

@@ -106,7 +106,9 @@ test("기존 계정 연결 라우트: 직원 기록 연결·가입 이어가기�
   assert.match(route, /claimStaffRecordByIdentity\(\{[^}]*verifiedName, verifiedAt: identityVerifiedAt \}\)/);
   assert.match(route, /issueIdentityVerifiedSignup\(\{[^}]*verifiedName, verifiedAt: identityVerifiedAt \}\)/);
   // 기존 계정 연결: 그 계정(target.userId)에, 로그인이 끝난 뒤
-  const record = route.indexOf("await recordIdentityVerification(prisma, { userId: target.userId, verifiedName, verifiedAt: identityVerifiedAt })");
+  // 2026-11-18 5단계: 미리 붙인 역할 적용과 같은 거래(tx)에서 적는다
+  const record = route.indexOf("await recordIdentityVerification(tx, { userId: target.userId, verifiedName, verifiedAt: identityVerifiedAt })");
+  assert.ok(record > 0, "기존 계정 연결 갈래에서 실명을 적는다");
   assert.ok(record > route.indexOf("signedIn.data.user?.id !== target.authUserId"), "기존 계정 로그인 확인 뒤에 적는다");
 });
 

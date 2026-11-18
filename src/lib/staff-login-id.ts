@@ -15,3 +15,25 @@ export function staffLoginEmail(identifier: string): string {
   if (!/^\d{10,11}$/.test(digits)) return value;
   return `${digits}@${STAFF_LOGIN_EMAIL_DOMAIN}`;
 }
+
+/** 학부모 아이디 로그인 메일 도메인(아이디@member.stiz.kr) — parent-username 과 같은 값 */
+const MEMBER_LOGIN_EMAIL_DOMAIN = "member.stiz.kr";
+
+/**
+ * 로그인 칸 입력 → Supabase 로그인 메일 (2026-11-18 «가입·본인인증 통일» 5단계).
+ * 새로 오는 선생님·기사님은 학부모와 같은 아이디·간편로그인 계정이라, 직원 로그인 칸(loginContext "staff")에서도
+ * 학부모식 아이디를 «먼저» 찾고(usernameEmail), 없으면 지금처럼 휴대폰 번호 → «번호@staff.stiz.kr»로 바꾼다.
+ * 그래서 두 방식(새 직원 아이디 · 기존 직원 휴대폰 번호)이 모두 들어온다.
+ *  - 이메일(@ 포함): 그대로
+ *  - 학부모식 아이디가 있음(부르는 쪽이 DB 에서 찾은 로그인 메일): 그 메일
+ *  - 휴대폰 번호 모양: 번호@staff.stiz.kr
+ *  - 그 밖: 직원 칸이면 입력 그대로(로그인 실패로 끝난다), 일반 칸이면 아이디@member.stiz.kr
+ */
+export function resolveLoginAuthEmail(input: { identifier: string; loginContext?: unknown; usernameEmail?: string | null }): string {
+  const identifier = input.identifier.trim();
+  if (identifier.includes("@")) return identifier;
+  if (input.usernameEmail) return input.usernameEmail;
+  const staffEmail = staffLoginEmail(identifier);
+  if (staffEmail !== identifier) return staffEmail;
+  return input.loginContext === "staff" ? identifier : `${identifier.toLowerCase()}@${MEMBER_LOGIN_EMAIL_DOMAIN}`;
+}
