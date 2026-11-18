@@ -202,7 +202,8 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
   // 재검수 C-1: 연결 빠진 이름과 같은 이름의 학생 행은 «확인 필요»(셔틀비 0원 자동 초안 방지), 어떤 행과도 안 맞는 이름은 보기에 표시해 자동 초안·일괄 발행을 멈춘다.
   // 이름 비교는 띄어쓰기 무시. 동명이인이면 그 이름의 행 모두가 «확인 필요»가 된다.
   const unlinkedShuttleKeys = new Set(unlinkedShuttleNames.map(shuttleNameKey));
-  const unknownShuttleNames = unlinkedShuttleNames.filter(name => !enrollments.some(e => shuttleNameKey(e.studentName) === shuttleNameKey(name)));
+  // 특강 전용 반 수강은 청구 행이 없으므로(regularEnrollments) 이름 대조도 정규 수강만 본다 — 아니면 «모르는 이름» 경고가 사라진다.
+  const unknownShuttleNames = unlinkedShuttleNames.filter(name => !regularEnrollments.some(e => shuttleNameKey(e.studentName) === shuttleNameKey(name)));
   const calendar = await calendarInput;
   const eventValues = calendar?.events??events.map(e => ({ title: e.title, date: new Date(e.date).toISOString(), ...(e.endDate ? { endDate: new Date(e.endDate).toISOString() } : {}) }));
   // 같은 달·같은 요일의 수업일은 한 번만 계산한다(2026-11-14 속도 개선 — 예전엔 반 500여 개마다 연간 일정 전체를 다시 훑었다).

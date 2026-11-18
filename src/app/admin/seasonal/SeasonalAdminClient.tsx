@@ -2205,7 +2205,7 @@ function ApplicationDrawer({
         <Info label="예상 금액">{totalAmount.toLocaleString()}원</Info>
         {/* 어떻게 알게 되셨나요 — 이름은 한 곳(referralSourceLabel)에서. 고르지 않은 신청은 «선택 안 함» */}
         <Info label="알게 된 경로">{referralSourceLabel(application.referralSource) || "선택 안 함"}</Info>
-        {application.address &&<div className="sm:col-span-2"><Info label="주소">{application.address}</Info></div>}
+        {application.address && <div className="sm:col-span-2"><Info label="주소">{application.address}</Info></div>}
       </section>
 
       {/* 연락처가 없으면 눌러도 아무 일이 없는 빈 링크가 되므로, 번호가 있을 때만 버튼을 보여준다 */}

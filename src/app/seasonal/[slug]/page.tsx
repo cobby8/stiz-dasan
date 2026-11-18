@@ -17,7 +17,9 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const { slug } = await params;
   const season = await getPublishedSeason(slug).catch(() => null);
   const seo = seasonDetailSeo(season);
-  return buildPublicMetadata({ ...seo, path: `/seasonal/${encodeURIComponent(slug)}` });
+  const metadata = buildPublicMetadata({ ...seo, path: `/seasonal/${encodeURIComponent(slug)}` });
+  // 없는 주소·비공개 시즌은 검색에 올리지 않는다
+  return season ? metadata : { ...metadata, robots: { index: false, follow: true } };
 }
 
 export default async function SeasonalDetailPage({ params }: { params: Promise<{ slug: string }> }) {
