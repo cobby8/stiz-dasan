@@ -92,7 +92,7 @@ export function createFlowStore<S extends BaseFlowState>(config: { status: Kakao
     /** 새 흐름을 연다(초안·다른 흐름은 닫는다). state 가 null 이면 닫기만 한다. 접수 초안 생성과 같은 잠금 키. */
     async open(identityId: string, sourceText: string, state: S | null): Promise<string | null> {
       return prisma.$transaction(async (tx) => {
-        await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, identityId);
+        await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))::text`, identityId);
         await tx.$executeRawUnsafe(
           `UPDATE "KakaoParentIntake" SET status='CANCELED',"updatedAt"=now()
             WHERE "identityId"=$1 AND status IN (${KAKAO_OPEN_FLOW_CLOSE_SQL})`,
