@@ -16,8 +16,6 @@ const {
   buildKakaoExternalUrl,
   getInAppBrowserLabel,
   getInAppEscapeSteps,
-  getAndroidInstallSteps,
-  getAndroidInstallHint,
 } = await import(`data:text/javascript;base64,${Buffer.from(transpiled).toString("base64")}`);
 
 const helpSource = await readFile("src/components/pwa/InstallHelp.tsx", "utf8");
@@ -132,40 +130,7 @@ test("삼성 인터넷 UA는 Safari·Chrome 토큰이 있어도 iOS로 오판하
   assert.notEqual(env.deviceState, "ios-browser");
 });
 
-test("삼성 인터넷 안내는 실제 메뉴 이름(현재 페이지 추가)을 그대로 쓴다", () => {
-  const samsung = getAndroidInstallSteps("samsung");
-  assert.equal(samsung.length, 3);
-  const samsungText = samsung.map((step) => step.label).join(" / ");
-  // 어머님이 "앱 설치"를 찾다가 포기한 사고 재발 방지 — 삼성 메뉴 이름 그대로여야 한다.
-  assert.match(samsungText, /우측 하단/);
-  assert.match(samsungText, /현재 페이지 추가/);
-  assert.match(samsungText, /홈 화면/);
-  assert.match(getAndroidInstallHint("samsung"), /현재 페이지 추가/);
-
-  const other = getAndroidInstallSteps("other");
-  assert.equal(other.length, 3);
-  const otherText = other.map((step) => step.label).join(" / ");
-  assert.match(otherText, /우측 위/);
-  assert.match(otherText, /앱 설치|홈 화면에 추가/);
-  // 크롬은 버전마다 메뉴 이름이 다르다(최신 "설치 및 바로가기 만들기" / 예전 "앱 설치").
-  // 한쪽만 적으면 실기기에서 그 항목을 못 찾고 막힌다 — 두 이름이 모두 있어야 한다.
-  assert.match(otherText, /설치 및 바로가기 만들기/);
-  assert.match(otherText, /앱 설치/);
-  assert.match(getAndroidInstallHint("other"), /설치 및 바로가기 만들기/);
-  assert.match(getAndroidInstallHint("other"), /앱 설치/);
-  // 크롬 안내에 삼성 전용 메뉴 이름이 새어 나오면 안 된다.
-  assert.doesNotMatch(otherText, /현재 페이지 추가/);
-
-  // 한 손으로 보는 화면이라 단계 문구는 짧게 유지한다.
-  for (const step of [...samsung, ...other]) {
-    assert.ok(step.label.length <= 24, `너무 긴 안내: ${step.label}`);
-    assert.ok(step.icon.length > 0, "Material Symbols 아이콘 이름이 필요합니다.");
-  }
-});
-
-test("안드로이드 안내는 공용 컴포넌트가 메뉴 이름을 들고 있다", () => {
-  assert.match(helpSource, /getAndroidInstallSteps/);
-});
+// (2026-11-18 안드로이드 수동 설치 단계 검사 삭제 — 그 안내를 그리던 옛 설치 화면을 지웠다)
 
 test("데스크톱 브라우저는 other이고 인앱으로 오탐하지 않는다", () => {
   for (const userAgent of [UA.desktopChrome, UA.whaleDesktop, UA.macSafari]) {
@@ -219,14 +184,6 @@ test("인앱 브라우저별 이름과 탈출 단계 안내가 있다", () => {
 });
 
 /* 화면 연결 검사는 지웠다 — 옛 «홈 화면 바로가기» 설치 화면 두 개를 2026-11-18 원장 승인으로 지웠다 */
-
-test("공유 버튼 그림은 인라인 SVG이고 색상은 토큰을 쓴다", () => {
-  assert.match(helpSource, /<svg/);
-  assert.doesNotMatch(helpSource, /<img/);
-  assert.match(helpSource, /var\(--brand-accent\)/);
-  // iOS 버전에 따라 툴바가 위에 있을 수 있으므로 두 경우를 다 커버하는 문구를 쓴다.
-  assert.match(helpSource, /아래쪽\(또는 위쪽\)/);
-});
 
 test("주소 복사 결과는 성공·실패 모두 사용자에게 알린다", () => {
   assert.match(helpSource, /navigator\.clipboard\.writeText/);

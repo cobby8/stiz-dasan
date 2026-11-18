@@ -531,12 +531,15 @@ export function flattenTossOrders(orders, options = {}) {
 
 // ───────────────────── 사이트(DB) 행 정규화 ─────────────────────
 
-/** 지점 분류: 2호점(대사 대상) / 미상(대사에 포함하되 표시) / 타지점(제외) */
+/**
+ * 지점 분류: 지점 적힘(IN) / 지점 미상(UNKNOWN — 대사에 포함하되 품질 경고로 표시).
+ * 2026-11-18 원장 결정: 이 사이트는 다산2호점만 운영하고 다른 지점 원생의 카드·POS 결제가 없어
+ * «다른 지점 → 대사 제외» 판정(OTHER)을 없앴다. 모든 원생이 대사 대상이다.
+ */
 export function classifyBranch(branch) {
   if (branch == null) return "UNKNOWN";
   const value = String(branch).trim();
-  if (value === "") return "UNKNOWN";
-  return value.startsWith("2호점") ? "IN" : "OTHER";
+  return value === "" ? "UNKNOWN" : "IN";
 }
 
 /**
@@ -593,26 +596,21 @@ const CANCEL_STATUSES = new Set(["CANCELED", "CANCELLED", "REFUNDED"]);
 /** 사이트 청구서 중 "아직 돈을 못 받은" 상태 */
 const UNPAID_STATUSES = new Set(["PENDING", "OVERDUE", "UNPAID"]);
 
-/** 사이트 행을 월/상태/지점 기준으로 나눈다. */
+/** 사이트 행을 월/상태 기준으로 나눈다. */
 export function partitionSiteRows(rows, month) {
   const paid = [];
   const canceled = [];
   const otherStatus = [];
   const paidBuffer = [];
   const canceledBuffer = [];
-  const otherBranch = [];
 
   for (const row of rows) {
-    if (row.branchClass === "OTHER") {
-      if (isInMonth(row.kstDate, month)) otherBranch.push(row);
-      continue;
-    }
     const inMonth = isInMonth(row.kstDate, month);
     if (row.status === "PAID") (inMonth ? paid : paidBuffer).push(row);
     else if (CANCEL_STATUSES.has(row.status)) (inMonth ? canceled : canceledBuffer).push(row);
     else if (inMonth) otherStatus.push(row);
   }
-  return { paid, canceled, otherStatus, paidBuffer, canceledBuffer, otherBranch };
+  return { paid, canceled, otherStatus, paidBuffer, canceledBuffer };
 }
 
 /**
@@ -1106,8 +1104,7 @@ export function buildReconciliation({ month, siteRows, tossPayments, students = 
   const main = matchSets(site.paid, toss.approved, {
     siteBuffer: site.paidBuffer,
     tossBuffer: toss.approvedBuffer,
-    // 다른 지점 원생의 청구서는 이름이 같아도 쓰지 않는다.
-    invoiceRows: Array.isArray(invoiceRows) ? invoiceRows.filter((r) => r.branchClass !== "OTHER") : undefined,
+    invoiceRows: Array.isArray(invoiceRows) ? invoiceRows : undefined,
     invoiceMonths: invoiceMonths ?? [],
   });
   const cancel = matchSets(site.canceled, toss.cancelled, {
@@ -1363,7 +1360,7 @@ export function renderMarkdown(result, meta = {}) {
   for (const row of result.unknownMemoNamePayments) {
     L.push(`- ${describeRow(row)}`);
     if ((row.unknownMemoNames ?? []).length > 0) {
-      L.push(`  - 명단에 없는 이름: **${row.unknownMemoNames.join(", ")}** (퇴원·타지점·오타·가족 명의 여부 확인 필요)`);
+      L.push(`  - 명단에 없는 이름: **${row.unknownMemoNames.join(", ")}** (퇴원·오타·가족 명의 여부 확인 필요)`);
     }
     if ((row.memoUnparsed ?? []).length > 0) {
       L.push(`  - 이름으로 읽히지 않은 메모 조각: ${row.memoUnparsed.join(" / ")}`);
@@ -1376,12 +1373,6 @@ export function renderMarkdown(result, meta = {}) {
   L.push("");
   if (noMemo.length === 0) L.push("- 없음");
   noMemo.forEach((row) => L.push(`- ${describeRow(row)}`));
-  L.push("");
-
-  const other = result.site.otherBranch;
-  L.push("## 지점 제외 건수");
-  L.push("");
-  L.push(`- 다른 지점 원생의 결제 ${other.length}건 (합 ${formatWon(sumAmount(other))}) 은 대사에서 제외했습니다.`);
   L.push("");
 
   L.push("## 데이터 품질 경고");
@@ -1455,7 +1446,7 @@ function csvRowFor(entry, categoryPrefix = "") {
       row.kstDateTime,
       row.amount,
       row.studentName,
-      row.branchClass === "IN" ? "2호점" : row.branchClass === "UNKNOWN" ? "지점 미상" : "타지점",
+      row.branchClass === "UNKNOWN" ? "지점 미상" : "2호점",
       row.id,
       row.providerOrderId,
       row.providerPaymentKey,
@@ -1499,7 +1490,6 @@ export function renderCsv(result) {
   result.toss.nonCard.forEach((row) => push({ row, category: "INFO_NON_CARD", reason: `카드 외 결제(${row.sourceType})` }, ""));
   result.toss.otherState.forEach((row) => push({ row, category: "INFO_TOSS_STATE", reason: `상태 ${row.state}` }, ""));
   result.site.otherStatus.forEach((row) => push({ row, category: "INFO_SITE_STATUS", reason: `상태 ${row.status}` }, ""));
-  result.site.otherBranch.forEach((row) => push({ row, category: "INFO_OTHER_BRANCH", reason: "다른 지점 — 대사 제외" }, ""));
   return `﻿${lines.join("\r\n")}\r\n`;
 }
 

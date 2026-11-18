@@ -95,14 +95,8 @@ test("인텐트가 막히는 기기를 위해 메뉴 안내와 주소 복사는 
   assert.match(helpSource, /buildKakaoExternalUrl/);
 });
 
-/* ---------------- 삼성 인터넷 권유 ---------------- */
-
-test("삼성 인터넷에는 크롬 권유를 붙이되 3단계 안내는 그대로 유지한다", () => {
-  assert.match(helpSource, /androidBrowser === "samsung"/);
-  assert.match(helpSource, /안전하지 않은 앱/);
-  assert.match(helpSource, /경고 없이 설치/);
-  // 기존 수동 3단계 안내는 계속 그린다(크롬이 없는 분도 있다).
-  assert.match(helpSource, /getAndroidInstallSteps/);
+// 2026-11-18 삼성 인터넷 권유·안드로이드 3단계 안내는 옛 설치 화면과 함께 지웠다 — 금지 문구 단언만 남긴다.
+test("설치 도움 안내는 보안 경고를 무시하라고 가르치지 않는다", () => {
   // 🚫 보안 경고를 무시하라고 가르치면 진짜 악성 앱도 그렇게 설치하게 된다.
   assert.doesNotMatch(helpSource, /무시하고/);
   assert.doesNotMatch(helpSource, /무시한 뒤|그냥 설치/);
@@ -111,7 +105,7 @@ test("삼성 인터넷에는 크롬 권유를 붙이되 3단계 안내는 그대
 test("새 UI도 하드코딩 색상 없이 토큰·다크모드 클래스를 쓴다", () => {
   const chromeButtonBlock = helpSource.slice(
     helpSource.indexOf("export function OpenInChromeButton"),
-    helpSource.indexOf("type AndroidInstallStepsProps"),
+    helpSource.indexOf("type CopyAddressButtonProps"),
   );
   assert.ok(chromeButtonBlock.length > 0);
   assert.match(chromeButtonBlock, /var\(--brand-accent\)/);

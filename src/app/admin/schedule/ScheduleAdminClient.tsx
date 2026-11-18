@@ -481,9 +481,10 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
             {/* 페이지 제목은 공용 머리말 부품(모양 한 가지). 좁은 화면에서는 오른쪽 묶음이 다음 줄로 넘어간다 */}
             <AdminPageHeader
                 title="수업시간표 관리"
-                // 사이트 시간표(ScheduleSlot)를 못 읽었을 때만 안내한다(구글시트 대체 경로는 2026-11-18 삭제)
+                // 사이트 시간표(ScheduleSlot)가 없을 때 안내한다 — 못 읽었을 때와 0행(비어 있음)일 때 둘 다 null 로 와서
+                // 두 경우 모두 맞는 문구를 쓴다(구글시트 대체 경로는 2026-11-18 삭제)
                 description={!isDbScheduleSource
-                    ? "사이트 시간표를 불러오지 못해 직접 추가한 수업만 보여줍니다. 잠시 후 다시 열어 주세요."
+                    ? "사이트 시간표가 비어 있거나 불러오지 못해 직접 추가한 수업만 보여줍니다. 비어 있지 않다면 잠시 후 다시 열어 주세요."
                     : undefined}
                 actions={
                     <>

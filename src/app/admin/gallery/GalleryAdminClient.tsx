@@ -275,7 +275,12 @@ export default function GalleryAdminClient({
           setDraftMessage(result.error);
           return;
         }
-        setDraftMessage("홈페이지 갤러리에 게시했습니다.");
+        // 초안이 «게시 완료»로 닫혔을 때만 게시했다고 말한다(그 사이 반려 등으로 상태가 바뀌면 사실대로 알린다)
+        setDraftMessage(
+          result.draft?.status === "PUBLISHED"
+            ? "홈페이지 갤러리에 게시했습니다."
+            : "갤러리 게시를 마치지 못했습니다. 초안 상태가 바뀌었을 수 있으니 목록에서 확인해 주세요.",
+        );
         await loadGallery();
       } catch (error) {
         setDraftMessage(adminErrorText(error, "게시 중 오류가 발생했습니다."));

@@ -46,9 +46,9 @@ export async function recordOperationsSheetManualCheck(commandId: string) {
     if (!command) throw new Error("변경 기록을 찾을 수 없습니다.");
     if (command.status === "SYNCED") return { changed: false };
     // 복귀(RESUME)는 관리자 직접 변경에서만 생기고 시트 자동 반영을 지원하지 않아, 수동 확인이 유일한 길이다.
-    if (!['PAUSE', 'WITHDRAW', 'RESUME'].includes(command.kind)) throw new Error("휴원·퇴원·복귀 변경만 시트 수동 확인을 할 수 있습니다.");
-    if (!command.parentConfirmed || !command.effectiveDate) throw new Error("확정된 적용일이 없는 기존 요청은 시트 수동 확인을 할 수 없습니다.");
-    if (command.effectiveDate > kstTodayYmd()) throw new Error(`적용일(${command.effectiveDate}) 이전에는 시트 수동 확인을 할 수 없습니다.`);
+    if (!['PAUSE', 'WITHDRAW', 'RESUME'].includes(command.kind)) throw new Error("휴원·퇴원·복귀 변경만 보류를 해제할 수 있습니다.");
+    if (!command.parentConfirmed || !command.effectiveDate) throw new Error("확정된 적용일이 없는 기존 요청은 보류를 해제할 수 없습니다.");
+    if (command.effectiveDate > kstTodayYmd()) throw new Error(`적용일(${command.effectiveDate}) 이전에는 보류를 해제할 수 없습니다.`);
 
     const attempts = await tx.$queryRawUnsafe<Array<{ target: string; status: string; error: string | null }>>(
       `SELECT target, status, error
@@ -57,7 +57,7 @@ export async function recordOperationsSheetManualCheck(commandId: string) {
     const website = attempts.find((item) => item.target === "WEBSITE");
     const sheet = attempts.find((item) => item.target === "SHEET");
     // 사이트가 먼저 반영된 자동 적용 건만 대상이다. 사이트 반영 충돌 등 다른 이유의 보류는 여기서 풀지 않는다.
-    if (website?.status !== "SUCCEEDED") throw new Error("사이트 반영이 끝난 건만 시트 수동 확인을 할 수 있습니다.");
+    if (website?.status !== "SUCCEEDED") throw new Error("사이트 반영이 끝난 건만 보류를 해제할 수 있습니다.");
     if (!sheet) throw new Error("시트 반영 기록을 찾을 수 없습니다.");
     // 보류가 아니면 풀 것이 없다.
     if (command.status !== "HELD") return { changed: false };

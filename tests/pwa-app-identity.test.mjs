@@ -22,8 +22,8 @@ const nextConfig = await readFile("next.config.ts", "utf8");
 const middleware = await readFile("src/lib/supabase/middleware.ts", "utf8");
 const myPageLayout = await readFile("src/app/mypage/layout.tsx", "utf8");
 const INSTALL_SCREENS = [
-  { label: "학부모", path: "src/app/parent-app/ParentAppInstallClient.tsx", home: "/mypage" },
-  { label: "선생님", path: "src/app/teacher-app/StaffAppInstallClient.tsx", home: "/staff" },
+  { label: "학부모", path: "src/app/parent-app/ParentAppInstallClient.tsx" },
+  { label: "선생님", path: "src/app/teacher-app/StaffAppInstallClient.tsx" },
 ];
 
 test("네 앱의 id 가 서로 겹치지 않는다", () => {

@@ -334,17 +334,23 @@ test("카드가 아닌 토스 결제는 카드 대사에서 빠지고 참고 목
   assert.equal(result.main.tossResults[0].category, CATEGORY.POS_ONLY);
 });
 
-test("다른 지점 원생은 대사에서 빠지고 건수만 보고된다 / 지점 미상은 포함하되 표시", () => {
+// 2026-11-18 원장 결정: 다산2호점만 운영 — «다른 지점 → 대사 제외» 거르기를 없앴다. 지점이 무엇이든 대사에 들어간다.
+test("지점과 무관하게 모두 대사에 들어간다 / 지점 미상은 포함하되 품질 경고로 표시", () => {
   const siteRows = [
     siteRow({ date: "2026-09-09", amount: 100000, branch: "1호점 : 본점" }),
     siteRow({ date: "2026-09-09", amount: 100000, branch: null, name: "김철수" }),
   ];
   const result = buildReconciliation({ month: "2026-09", siteRows, tossPayments: [] });
-  assert.equal(result.site.otherBranch.length, 1);
-  assert.equal(result.main.siteResults.length, 1);
+  assert.equal(result.site.otherBranch, undefined);
+  assert.equal(result.main.siteResults.length, 2);
   assert.equal(result.quality.unknownBranch.length, 1);
   assert.equal(classifyBranch("2호점 : 행정복지센터"), "IN");
+  assert.equal(classifyBranch("1호점 : 본점"), "IN");
   assert.equal(classifyBranch(""), "UNKNOWN");
+  assert.equal(classifyBranch(null), "UNKNOWN");
+  const csv = renderCsv(result);
+  assert.ok(!csv.includes("INFO_OTHER_BRANCH"));
+  assert.ok(!csv.includes("타지점"));
 });
 
 test("이번 달 밖(±3일 버퍼) 건은 후보로만 보이고 분류를 받지 않는다", () => {
@@ -402,9 +408,11 @@ test("리포트는 한국어 섹션과 원화 표기를 포함하고 CSV 는 엑
     noWriteProof: "동일",
     assumedCount: 0,
   });
-  for (const heading of ["토스POS에만 있음", "사이트에만 있음", "확인 필요", "정상 매칭", "취소 건", "지점 제외 건수", "데이터 품질 경고"]) {
+  for (const heading of ["토스POS에만 있음", "사이트에만 있음", "확인 필요", "정상 매칭", "취소 건", "데이터 품질 경고"]) {
     assert.ok(md.includes(heading), `리포트에 '${heading}' 섹션이 있어야 합니다`);
   }
+  // 2026-11-18 다른 지점 거르기 삭제 — 보고서에 «지점 제외 건수» 절이 없어야 한다
+  assert.ok(!md.includes("지점 제외 건수"));
   assert.ok(md.includes("₩100,000"));
   assert.ok(md.includes("UTC(Z) 표기"));
   const csv = renderCsv(result);
@@ -487,6 +495,35 @@ test("이름 해석: 정확히 일치 / 성 생략(1명) / 성 생략(여러 명
   assert.equal(many.status, "AMBIGUOUS");
   assert.equal(many.students.length, 3);
   assert.equal(resolveStudentName("박상원", ROSTER).status, "NONE");
+});
+
+// 2026-11-18: 결제·청구서 대사는 지점과 무관하게 모두 넣지만, 메모 «이름 대조 명단»은 2호점(또는 지점 미기재)만 쓴다.
+// 폐점 지점(1호점·평내호평점) 옛 원생 중 지금 2호점 원생과 이름이 같은 사람이 있어(운영 실측 2명) 넓히면 «모호 → 보류»가 된다.
+test("폐점 지점 동명이인이 있어도 2호점 원생 메모는 하나로 정해진다(이름 대조 명단 지점 거르기)", async () => {
+  const { isDasan2Branch } = await import("../src/lib/pos/auto-match.mjs");
+  const { readFile } = await import("node:fs/promises");
+  const raw = [
+    { id: "d2", name: "이도윤", branch: "2호점 : 행정복지센터(다산아트홀) 앞", classes: "월요일 3교시" },
+    { id: "old1", name: "이도윤", branch: "1호점 : 본점", classes: "" },
+    { id: "old2", name: "최현", branch: "평내호평점", classes: "" },
+    { id: "d2b", name: "최현", branch: null, classes: "화요일 4교시" },
+    { id: "d2c", name: "박하늘", branch: "", classes: "수요일 5교시" },
+  ];
+  const roster = raw.filter((s) => isDasan2Branch(s.branch));
+  assert.deepEqual(roster.map((s) => s.id), ["d2", "d2b", "d2c"]); // 빈 값·null·«2호점…»은 넣고 폐점 지점은 뺀다
+  const rows = attachStudentResolution(
+    tossRows([tossOrder({ date: "2026-09-05", amount: 110000, memo: "이도윤 9월\n최현 9월" })]),
+    roster,
+  );
+  assert.deepEqual(rows[0].resolvedStudents.map((s) => s.id).sort(), ["d2", "d2b"]);
+  // 거르지 않으면 같은 이름이 둘이라 모호해진다(회귀 확인용 대조)
+  assert.equal(resolveStudentName("이도윤", raw).status, "AMBIGUOUS");
+  assert.equal(resolveStudentName("이도윤", roster).status, "EXACT");
+  // 자동 대사(웹)와 CLI 둘 다 같은 기준으로 명단을 거른다
+  for (const file of ["src/lib/pos/reconcileService.ts", "scripts/tossplace-reconcile.mjs"]) {
+    const source = await readFile(file, "utf8");
+    assert.match(source, /\.filter\(\(s\) => isDasan2Branch\(s\.branch\)\)/, file);
+  }
 });
 
 test("메모 이름 + 금액이 맞으면 날짜가 달라도 정상 매칭된다", () => {

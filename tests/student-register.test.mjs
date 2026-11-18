@@ -441,7 +441,7 @@ test("[규칙] 지점은 다산2호점 하나 — 반 장소로 알아내고 모
   assert.equal(rules.branchFromClassLocations([null, "체육관", "호평"]), null);
   assert.deepEqual(rules.REGISTER_BRANCH_OPTIONS.map((o) => o.label), ["다산2호점"]);
   assert.equal(rules.DEFAULT_BRANCH_VALUE, "2호점 : 행정복지센터(다산아트홀) 앞");
-  // POS 대사(classifyBranch)는 «2호점»으로 시작해야 다산2호점으로 본다
+  // POS 자동 매칭(isDasan2Branch)은 «2호점»으로 시작해야 다산2호점으로 본다
   assert.ok(rules.REGISTER_BRANCH_OPTIONS[0].value.startsWith("2호점"));
   assert.equal(rules.REGISTER_BRANCH_OPTIONS.some((o) => o.value.startsWith("1호점")), false);
   assert.equal(rules.branchLabel("2호점 : 행정복지센터(다산아트홀) 앞"), "다산2호점");

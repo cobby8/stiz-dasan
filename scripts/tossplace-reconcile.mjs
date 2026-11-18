@@ -22,7 +22,6 @@ import pg from "pg";
 import {
   billingMonthsToLoad,
   buildReconciliation,
-  classifyBranch,
   flattenTossOrders,
   formatKstDateTime,
   formatWon,
@@ -32,8 +31,9 @@ import {
   redactSecrets,
   renderCsv,
   renderMarkdown,
-  sumAmount,
 } from "../src/lib/pos/tossplace-match.mjs";
+// 이름 대조 명단 지점 판정 — 자동 매칭과 같은 기준(빈 값·«2호점…» = 넣음)
+import { isDasan2Branch } from "../src/lib/pos/auto-match.mjs";
 // 토스 조회 클라이언트는 웹앱(자동 대사)과 **같은 한 벌**을 쓴다. 사본을 만들면 한쪽만 고쳐진다.
 // node 가 .ts 의 타입을 걷어내고 그대로 실행한다(node 22.18+ / 25.x).
 import { fetchTossOrders } from "../src/lib/pos/tossplaceClient.ts";
@@ -275,10 +275,11 @@ async function main() {
     );
   }
 
-  // 메모 이름 대조는 2호점(및 지점 미상) 원생만 대상으로 한다 — 다른 지점 동명이인이 섞이면 오히려 흐려진다.
+  // 메모 이름 대조 명단 = 2호점(또는 지점 미기재) 원생만 — 폐점 지점 옛 원생 동명이인이 섞이면 이름 대조가
+  // «모호 → 보류»로 바뀐다(운영 실측 2명). 결제·청구서 대사는 지점과 무관하게 모두 넣는다.
   const students = db.students
-    .filter((s) => classifyBranch(s.branch) !== "OTHER")
-    .map((s) => ({ id: String(s.id), name: String(s.name ?? ""), branch: s.branch ?? "", classes: String(s.classes ?? "") }));
+    .filter((s) => isDasan2Branch(s.branch))
+    .map((s) => ({ id: String(s.id), name: String(s.name ?? ""), classes: String(s.classes ?? "") }));
 
   const toSiteRow = (row) =>
     normalizeSiteRow({
@@ -348,7 +349,6 @@ async function main() {
       `POS로 받았는데 사이트는 미납 ${tossCount("POS_PAID_SITE_UNPAID")}건 · ` +
       `사이트에 그 달 청구서 없음 ${tossCount("POS_ONLY_NO_SITE_INVOICE")}건`,
   );
-  console.log(`다른 지점 제외 ${result.site.otherBranch.length}건 (${formatWon(sumAmount(result.site.otherBranch))})`);
   console.log(`쓰기 없음 증빙: ${noWriteProof}`);
 }
 

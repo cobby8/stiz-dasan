@@ -26,7 +26,6 @@ import {
     MATCHED_CATEGORIES,
     billingMonthsToLoad,
     buildReconciliation,
-    classifyBranch,
     flattenTossOrders,
     formatKstDateTime,
     isValidMonth,
@@ -35,6 +34,8 @@ import {
     redactSecrets,
     renderMarkdown,
 } from "./tossplace-match.mjs";
+// 이름 대조 명단 지점 판정 — 자동 매칭과 같은 기준(빈 값·«2호점…» = 넣음)
+import { isDasan2Branch } from "./auto-match.mjs";
 
 export const MERCHANT_LABEL = "스티즈농구교실 다산2호점";
 
@@ -264,13 +265,13 @@ export async function runPosReconcile(options: {
             ...invoiceMonths.flatMap((m) => [m.year, m.monthNo]),
         );
 
-        // 메모 이름 대조는 2호점(및 지점 미상) 원생만 본다 — 다른 지점 동명이인이 섞이면 오히려 흐려진다.
+        // 메모 이름 대조 명단 = 2호점(또는 지점 미기재) 원생만 — 폐점 지점(1호점·평내호평점) 옛 원생 동명이인이
+        // 섞이면 이름 대조가 «모호 → 보류»로 바뀌기 때문이다(운영 실측 2명). 결제·청구서 대사는 지점과 무관하게 모두 넣는다.
         const students = rosterRaw
-            .filter((s) => classifyBranch(s.branch) !== "OTHER")
+            .filter((s) => isDasan2Branch(s.branch))
             .map((s) => ({
                 id: String(s.id),
                 name: String(s.name ?? ""),
-                branch: s.branch ?? "",
                 classes: String(s.classes ?? ""),
             }));
 

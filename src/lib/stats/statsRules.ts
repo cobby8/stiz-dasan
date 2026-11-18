@@ -120,19 +120,10 @@ export function normalizeGender(value: string | null | undefined): GenderLabel {
 
 // ── 지점 ────────────────────────────────────────────────────────────────
 
-/**
- * 지점 열쇠 — 2026-11-14 원장 결정: 이 사이트는 다산2호점만 관리한다(평내호평점은 앞으로 없다).
- * 통계 화면의 지점 고르기는 없앴다. 열쇠는 옛 주소(?branch=)와 내부 계산이 깨지지 않게 두 개만 남긴다.
- */
-export const STATS_BRANCHES = [
-    { key: "all", label: "전체" },
-    { key: "dasan2", label: "다산2호점" },
-] as const;
-export type StatsBranchKey = (typeof STATS_BRANCHES)[number]["key"];
-
-export function isStatsBranchKey(value: unknown): value is StatsBranchKey {
-    return STATS_BRANCHES.some((b) => b.key === value);
-}
+// 2026-11-14 원장 결정: 이 사이트는 다산2호점만 관리한다 — 통계 지점 고르기를 없앴고,
+// 2026-11-18 테스트에서만 쓰이던 지점 열쇠 목록(STATS_BRANCHES·isStatsBranchKey)도 지웠다.
+/** 통계 지점 열쇠 — 다산2호점 하나(옛 기록의 다른 지점은 branchGroup 이 "other" 로 돌려준다) */
+export type StatsBranchKey = "dasan2";
 
 /**
  * 지점 화면 이름(branchLabel 결과, 비면 "") → 묶음 이름·열쇠.

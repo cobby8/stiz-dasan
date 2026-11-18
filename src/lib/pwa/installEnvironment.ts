@@ -195,44 +195,7 @@ export function shouldOfferChromeIntent(platform: InstallPlatform): boolean {
   return platform === "android";
 }
 
-/** 안드로이드 수동 설치 단계 한 칸 (아이콘 + 짧은 라벨 — iOS 3단계 안내와 같은 모양) */
-export type AndroidInstallStep = { icon: string; label: string };
-
-/**
- * 설치 프롬프트가 안 뜰 때 보여줄 브라우저별 수동 설치 단계.
- * 문구는 **실제 메뉴에 적힌 그대로** 쓴다. 비슷한 말로 바꾸면 학부모가 그 항목을 못 찾는다.
- */
-export function getAndroidInstallSteps(browser: AndroidBrowserKind): AndroidInstallStep[] {
-  if (browser === "samsung") {
-    // 삼성 인터넷은 메뉴가 우측 "하단"에 있고, 항목 이름도 "현재 페이지 추가"다.
-    return [
-      { icon: "menu", label: "우측 하단 ≡ 누르기" },
-      { icon: "add_to_home_screen", label: "‘현재 페이지 추가’ 선택" },
-      { icon: "add", label: "‘홈 화면’ 선택 후 추가" },
-    ];
-  }
-  // 크롬 등 나머지 안드로이드 브라우저 — 메뉴가 우측 "위"에 있다.
-  // ⚠️ 크롬은 버전마다 메뉴 이름이 다르다. 최신은 "설치 및 바로가기 만들기", 예전은 "앱 설치".
-  //    UA로 버전을 가르면 경계가 불확실해 오히려 틀린 안내가 나가므로, 두 이름을 나란히 보여준다.
-  return [
-    { icon: "more_vert", label: "우측 위 ⋮ 누르기" },
-    { icon: "add_to_home_screen", label: "‘설치 및 바로가기 만들기’·‘앱 설치’" },
-    { icon: "add", label: "‘설치’ 또는 ‘추가’ 누르기" },
-  ];
-}
-
-/** 카드 상단에 한 줄로 보여줄 요약 안내 (단계 목록과 같은 메뉴 이름을 쓴다) */
-export function getAndroidInstallHint(browser: AndroidBrowserKind): string {
-  return browser === "samsung"
-    ? "우측 하단 ≡ 메뉴에서 ‘현재 페이지 추가’를 선택하세요."
-    // 크롬 버전에 따라 이름이 달라서 두 이름을 함께 적는다.
-    : "브라우저 메뉴에서 ‘설치 및 바로가기 만들기’ 또는 ‘앱 설치’를 선택하세요.";
-}
-
-/** 안내문에 쓰는 브라우저 이름 */
-export function getAndroidBrowserLabel(browser: AndroidBrowserKind): string {
-  return browser === "samsung" ? "삼성 인터넷" : "브라우저";
-}
+// (2026-11-18 안드로이드 수동 설치 단계·요약 안내·브라우저 이름 함수 삭제 — 옛 설치 화면만 썼다)
 
 /** 스킴이 없는 인앱 브라우저용 — 메뉴로 빠져나가는 짧은 단계 안내 */
 export function getInAppEscapeSteps(kind: InAppBrowserKind, platform: InstallPlatform): string[] {

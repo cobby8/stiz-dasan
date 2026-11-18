@@ -72,12 +72,9 @@ test("지점 묶음 — 비어 있으면 다산2호점, 옛 기록의 지점(다
   assert.deepEqual(r.branchGroup(null), { key: "dasan2", label: "다산2호점" });
   assert.deepEqual(r.branchGroup("다산1호점"), { key: "other", label: "다산1호점" });
   assert.deepEqual(r.branchGroup("평내호평점"), { key: "other", label: "평내호평점" });
-  assert.equal(r.isStatsBranchKey("dasan2"), true);
-  assert.equal(r.isStatsBranchKey("other"), false);
-  // 고를 수 있는 지점은 없다 — 평내호평·미지정 열쇠가 다시 생기면 실패
-  assert.deepEqual(r.STATS_BRANCHES.map((b) => b.key), ["all", "dasan2"]);
-  assert.equal(r.isStatsBranchKey("pyeongnae"), false);
-  assert.equal(r.isStatsBranchKey("none"), false);
+  // 2026-11-18 지점 열쇠 목록(STATS_BRANCHES·isStatsBranchKey)은 쓰는 곳이 없어 지웠다 — 다시 생기지 않게 확인
+  assert.equal(r.STATS_BRANCHES, undefined);
+  assert.equal(r.isStatsBranchKey, undefined);
 });
 
 test("유니폼 상태 9종 → 보유/진행 중/없음/확인 필요/해당없음", () => {

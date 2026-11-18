@@ -28,7 +28,7 @@ test("부르는 곳 없던 운영 요청 생성·목록·승인·홈페이지 �
 
 // 2026-11-18: 시트 반영·랠리즈 확인은 지웠다. 남은 «보류 해제»가 KST 적용일 이전 실행을 막는다.
 test("보류 해제는 KST 적용일 이전 실행을 막는다", () => {
-  assert.match(action, /적용일\(\$\{command\.effectiveDate\}\) 이전에는 시트 수동 확인을 할 수 없습니다/);
+  assert.match(action, /적용일\(\$\{command\.effectiveDate\}\) 이전에는 보류를 해제할 수 없습니다/);
   assert.match(action, /timeZone: "Asia\/Seoul"/);
 });
 

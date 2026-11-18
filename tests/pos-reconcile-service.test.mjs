@@ -70,7 +70,9 @@ async function loadServiceWithStubs({ tossOrders = [], siteRows = [], roster = [
         .split('"@/lib/prisma"').join(`"${prismaStub}"`)
         .split('"@/lib/datetime/kst"').join(`"${kstUrl}"`)
         .split('"./tossplaceClient"').join(`"${clientStub}"`)
-        .split('"./tossplace-match.mjs"').join(`"${matchUrl}"`);
+        .split('"./tossplace-match.mjs"').join(`"${matchUrl}"`)
+        // 이름 대조 명단의 지점 판정(isDasan2Branch)은 자동 매칭 모듈을 그대로 쓴다(2026-11-18)
+        .split('"./auto-match.mjs"').join(`"${pathToFileURL(path.resolve("src/lib/pos/auto-match.mjs")).href}"`);
 
     return import(toDataUrl(out));
 }

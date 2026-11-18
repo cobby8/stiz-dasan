@@ -26,7 +26,8 @@ const nextConfig: NextConfig = {
     // 예전에는 학부모·선생님이 따로 «홈 화면 바로가기»를 만드는 안내 화면이 있었다(/parent-app·/teacher-app).
     // 이미 문자·메신저로 나간 옛 주소가 있어 주소는 살려 두고 전부 /install 로 넘긴다.
     // permanent 가 아닌 이유: 되돌릴 수 있게(영구 이동은 브라우저가 기억해 되돌려도 안 먹는다).
-    // 옛 화면 파일(src/app/parent-app·teacher-app)은 지우지 않았다 — 되돌리려면 이 묶음을 빼고 rewrites 를 되살린다.
+    // 옛 설치 화면(ParentAppInstallClient·StaffAppInstallClient)은 2026-11-18 지웠다 — src/app/parent-app·teacher-app 의 page.tsx 는
+    // /install 로 넘기는 일만 한다(이 규칙이 빠져도 옛 화면이 다시 뜨지 않게). 되살리려면 git 기록에서 꺼낸다.
     // redirects 는 미들웨어보다 먼저 적용돼, 로그인하지 않은 사람도 /staff/install·/mypage/install 에서 바로 넘어간다.
     return [
       { source: "/app", destination: "/install", permanent: false },
