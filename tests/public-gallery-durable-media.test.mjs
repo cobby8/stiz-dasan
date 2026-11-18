@@ -14,7 +14,8 @@ test("홈 갤러리는 만료 가능한 인스타 CDN 원본을 썸네일 후보
   assert.match(galleryMedia, /fbcdn\.net/);
   assert.match(landingPage, /isDurableGalleryMediaUrl\(item\.url\)/);
   assert.match(landingPage, /parseGalleryMediaJSON\(post\.mediaJSON\)/);
-  assert.match(landingPage, /<img\s+src=\{url\}/);
+  // 2026-11-18: 소식 사진도 보이는 크기에 맞춰 줄여 받는다(원본 주소 url 을 그대로 넘긴다)
+  assert.match(landingPage, /<img\s+\{\.\.\.optimizedImageProps\(url, /);
   assert.doesNotMatch(landingPage, /from "next\/image"/);
 });
 
@@ -24,9 +25,11 @@ test("안정 이미지 후보를 충분히 확보한 뒤 8개만 표시한다", 
   assert.match(landingPage, /\.slice\(0, 8\)/);
 });
 
-test("공개 갤러리와 인스타 동기화도 같은 안정 URL 기준을 사용한다", () => {
+// 2026-11-18 옛 코드 정리 B: 인스타 → 갤러리 자동 가져오기(syncInstagramGalleryPostsToDb)는 지웠다.
+// instagramGallerySync.ts 에는 게시 기능이 쓰는 컬럼 보장 함수만 남는다.
+test("공개 갤러리도 같은 안정 URL 기준을 사용하고, 인스타 자동 가져오기는 지워져 있다", () => {
   assert.match(publicGallery, /parseGalleryMediaJSON\(post\.mediaJSON\)/);
   assert.match(publicGallery, /isDurableGalleryMediaUrl\(item\.url\)/);
-  assert.match(instagramSync, /parseGalleryMediaJSON\(mediaJSON\)/);
-  assert.match(instagramSync, /isDurableGalleryMediaUrl\(item\.url\)/);
+  assert.doesNotMatch(instagramSync, /syncInstagramGalleryPostsToDb/);
+  assert.match(instagramSync, /export async function ensureGalleryPostInstagramColumns/);
 });

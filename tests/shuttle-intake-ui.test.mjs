@@ -27,7 +27,7 @@ function harness(mode, items = [item()]) {
  };
  const exported = {};
  const code = ts.transpileModule(readFileSync(FILE, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
- vm.runInNewContext(code, { exports: exported, require(name) { if (name === "react") return react; if (name === "react/jsx-runtime") return jsx; if (name === "next/link") return { default: props => jsx.jsx("a", props) }; throw new Error(`Unexpected import: ${name}`); }, AbortController, Error, fetch: async (url, options = {}) => {
+ vm.runInNewContext(code, { exports: exported, require(name) { if (name === "react") return react; if (name === "react/jsx-runtime") return jsx; if (name === "next/link") return { default: props => jsx.jsx("a", props) }; /* 2026-11-17 «운행 관리» = ScopeBackLink — 이 검사에서는 고정 주소 링크로 그린다 */ if (name === "@/components/navigation/ScopeBackLink") return { default: ({ fallbackHref, ...props }) => jsx.jsx("a", { href: fallbackHref, ...props }) }; throw new Error(`Unexpected import: ${name}`); }, AbortController, Error, fetch: async (url, options = {}) => {
   requests.push({ url, options, body: options.body ? JSON.parse(options.body) : null });
   if (options.method === "POST" && postHandler) return postHandler(url, options);
   if (!options.method && getHandler) return getHandler(url, options);

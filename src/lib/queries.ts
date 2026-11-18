@@ -2144,7 +2144,7 @@ export async function getStudentActivity(studentId: string) {
             prisma.$queryRawUnsafe<any[]>(
                 `SELECT e.id, e."classId", e.status, e."startsOn", e."createdAt",
                         c.name AS class_name, c."dayOfWeek", c."startTime", c."endTime",
-                        p.name AS program_name
+                        p.name AS program_name, ${resumeFromSql("e")} AS "resumeFrom"
                  FROM "Enrollment" e
                  LEFT JOIN "Class" c ON e."classId" = c.id
                  LEFT JOIN "Program" p ON c."programId" = p.id
@@ -2297,6 +2297,8 @@ export async function getStudentActivity(studentId: string) {
                 displayStatus: enrollmentDisplayStatus(e.status, e.startsOn ?? e.startson, todayKst()),
                 // 개시일이 미래인지 — «11-13 개시» 안내 문구용(상태는 ACTIVE 그대로)
                 startsLater: enrollmentStartsLater(e.startsOn ?? e.startson, todayKst()),
+                // 휴원 중인 반에 예약된 복귀일("YYYY-MM-DD") — 없으면 null(2026-11-17 관리자 복귀 예약)
+                resumeFrom: e.resumeFrom ?? e.resumefrom ?? null,
                 createdAt: e.createdAt ?? e.createdat,
                 className: e.class_name,
                 dayOfWeek: e.dayOfWeek ?? e.dayofweek,

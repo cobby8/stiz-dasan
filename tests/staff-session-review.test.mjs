@@ -165,7 +165,9 @@ function makeWorld(options = {}) {
     if (/^SELECT status FROM "Attendance"/.test(sql)) return world.attendance ? [{ status: world.attendance }] : [];
     if (/^SELECT status FROM "MakeupCredit"/.test(sql)) { world.calls.push(["creditLookup", args[1]]); return world.credits; }
     if (/^INSERT INTO "Attendance"/.test(sql)) { world.calls.push(["saveAttendance", args[2]]); world.attendance = args[2]; world.attendanceInsert = { sql, args }; return [{ id: "a1" }]; }
-    if (/FROM "RegularAbsence" ra\s+WHERE ra\."studentId" = \$1 AND ra\."classId" = \$2 AND ra\.date = \$3::date\s+AND ra\.status <> 'CANCELLED' AND ra\.reason = 'ILLNESS_INJURY'/.test(sql)) {
+    if (/FROM "RegularAbsence" ra\s+WHERE ra\."studentId" = \$1 AND ra\."classId" = \$2 AND ra\.date = \$3::date\s+AND ra\.status <> 'CANCELLED' AND ra\.reason = ANY\(\$4::text\[\]\)/.test(sql)) {
+      // 이월 검토 사유(질병·부상 · 직계 경조사) 둘 다 막는다
+      assert.deepEqual([...args[3]].sort(), ["FAMILY_EVENT", "ILLNESS_INJURY"]);
       world.calls.push(["illnessLookup"]);
       return world.illness ? [{ id: "ra1" }] : [];
     }
@@ -225,6 +227,7 @@ function makeWorld(options = {}) {
     // 응답 뒤에 도는 일(학부모 알림)을 모아 두고, 테스트가 직접 돌린다
     "next/server": { after: (job) => { world.afterJobs.push(job); } },
     "@/lib/prisma": { prisma },
+    "@/lib/regular/carryReasonRules": load("src/lib/regular/carryReasonRules.ts"),
     "@/lib/makeup/credit-service": {
       syncCreditForRegularSession: async (input) => { world.calls.push(["syncRegularCredit", input.status, input.studentId]); return { action: "revoked" }; },
       revokeMakeupCreditInTx: async () => ({ revoked: 1 }),
@@ -565,8 +568,8 @@ test("완료한 수업 본문(다시 보기): 타이머·수업 종료·시작 �
   assert.match(done, /\{!embedded && \(\s*<section aria-label="완료한 수업"/);
   assert.match(done, /완료한 수업 · \{kstLabel\(session\.sessionYmd\)\} \{session\.startTime\}~\{session\.endTime\}/);
   assert.match(done, /\{published \? "학부모에게 보냄" : "아직 안 보냄"\}/);
-  // 수업 주소에서는 지난 수업 목록으로 돌아가는 링크
-  assert.match(done, /\{!embedded && \(\s*<Link href="\/staff\/sessions" className="inline-flex min-h-11[^"]*">← 지난 수업<\/Link>/);
+  // 수업 주소에서는 돌아가는 링크 — 방금 있던 화면으로(특강 «기록 보기»에서 왔으면 특강), 기록이 없으면 지난 수업 목록(2026-11-17 ScopeBackLink)
+  assert.match(done, /\{!embedded && \(\s*<ScopeBackLink fallbackHref="\/staff\/sessions" className="inline-flex min-h-11[^"]*">← 뒤로<\/ScopeBackLink>/);
   // 기간이 지나면 읽기 전용 + 한 줄, 안 보낸 수업만 «학부모에게 보내기»
   assert.match(done, /\{!editable && <p role="status"[^>]*>\{STAFF_EDIT_EXPIRED_MESSAGE\}<\/p>\}/);
   assert.match(done, /\{editable && !published && \(\s*<button[^>]*onClick=\{\(\) => void publishToParents\(\)\}[^>]*>/);

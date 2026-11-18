@@ -101,6 +101,7 @@ function makeWorld(options = {}) {
     "next/cache": { revalidatePath() {} },
     "next/server": { after() {} },
     "@/lib/prisma": { prisma },
+    "@/lib/regular/carryReasonRules": load("src/lib/regular/carryReasonRules.ts"),
     "@/lib/makeup/credit-service": {
       syncCreditForRegularSession: async (input) => { world.calls.push(["syncRegularCredit", input.status, input.studentId]); return { action: "revoked" }; },
       // 트랜잭션판 회수 — 넘겨받은 db 가 트랜잭션 안의 것인지도 본다

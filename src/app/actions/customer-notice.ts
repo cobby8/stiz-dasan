@@ -398,6 +398,8 @@ export type ParentSignupGuidePreview = {
   message: string;
   messageType: "SMS" | "LMS";
   resend: boolean;
+  /** 가입하지 않은 분께만(가입함 번호 제외) */
+  unsignedOnly: boolean;
   expiresAt: string;
 };
 
@@ -409,7 +411,7 @@ export type ParentSignupGuideSendResult = {
 };
 
 /** 재원·휴원생의 대표 보호자(성인은 본인) → 받는 사람 목록을 서버에서 직접 계산한다(화면은 번호 목록을 보내지 않는다) */
-async function resolveSignupGuide(resend: boolean) {
+async function resolveSignupGuide(resend: boolean, unsignedOnly = false) {
   // 2026-11-16 원장 결정표 «전체 다 보내. 성인도 포함해»:
   //   수강이 ACTIVE 또는 PAUSED 인 학생(병합 제외 · 퇴원만 남은 학생은 빠짐)의 대표 보호자. 탈퇴한 계정은 뺀다.
   //   학생 1명당 1줄 — 수강 중인 반이 하나라도 있으면 ACTIVE, 휴원만 남았으면 PAUSED.
@@ -472,7 +474,7 @@ async function resolveSignupGuide(resend: boolean) {
     }
   }
 
-  const selected = selectParentSignupGuideRecipients(candidates, { alreadySentPhones, resend });
+  const selected = selectParentSignupGuideRecipients(candidates, { alreadySentPhones, resend, unsignedOnly });
   // 학부모용(원장 승인본) + 성인 수강생 본인용 — 사람마다 구분에 맞는 문구가 간다
   const body = buildParentSignupGuideMessage();
   const adultBody = buildAdultSignupGuideMessage();
@@ -483,6 +485,8 @@ async function resolveSignupGuide(resend: boolean) {
     kind: "PARENT_SIGNUP_GUIDE" as const,
     targetRef: "active-or-paused-guardians-and-adults-signed-in-or-not",
     resend,
+    // 미리보기와 보내기의 범위가 같아야 한다(가입함 번호 포함 여부) — 다르면 아래 비교에서 멈춘다
+    unsignedOnly,
     recipientCount: selected.recipients.length,
     // 받는 번호 묶음의 지문(번호+구분) — 미리보기 뒤에 한 명이라도, 또는 누구의 문구가 바뀌면 보내기를 멈춘다
     recipientSetHash: hashMessageBody(selected.recipients.map((item) => `${hashMessageRecipientPhone(item.phone)}:${item.group}:${item.signedIn ? "IN" : "NEW"}`).join(",")),
@@ -493,15 +497,18 @@ async function resolveSignupGuide(resend: boolean) {
 }
 
 /** 1) 미리보기만 만든다. 이 단계에서는 절대 보내지 않는다. */
-export async function prepareParentSignupGuide(input: { resend?: boolean }): Promise<ParentSignupGuidePreview | CustomerNoticeFailure> {
+export async function prepareParentSignupGuide(input: { resend?: boolean; unsignedOnly?: boolean }): Promise<ParentSignupGuidePreview | CustomerNoticeFailure> {
   const admin = await requireAdmin();
   try {
     const resend = input?.resend === true;
-    const guide = await resolveSignupGuide(resend);
+    const unsignedOnly = input?.unsignedOnly === true;
+    const guide = await resolveSignupGuide(resend, unsignedOnly);
     if (guide.recipients.length === 0) {
       throw new NoticeProblem(guide.alreadySentCount > 0
         ? `보낼 학부모가 없습니다. 이미 안내를 받은 ${guide.alreadySentCount}명은 «다시 보내기»를 골라야 포함됩니다.`
-        : "보낼 사람이 없습니다. (재원·휴원생 보호자와 성인 수강생의 휴대폰 번호가 없어요)");
+        : unsignedOnly
+          ? "가입하지 않은 분이 없습니다. (휴대폰 번호가 있는 보호자·성인 수강생은 모두 가입했어요)"
+          : "보낼 사람이 없습니다. (재원·휴원생 보호자와 성인 수강생의 휴대폰 번호가 없어요)");
     }
     if (guide.recipients.length > BULK_MANUAL_MESSAGE_RECIPIENT_LIMIT) {
       throw new NoticeProblem(`한 번에 ${BULK_MANUAL_MESSAGE_RECIPIENT_LIMIT}명까지만 보낼 수 있습니다.`);
@@ -530,6 +537,7 @@ export async function prepareParentSignupGuide(input: { resend?: boolean }): Pro
       message: guide.body,
       messageType: getSmsMessageType(guide.body),
       resend,
+      unsignedOnly,
       expiresAt: rows[0].expiresAt,
     };
   } catch (error) {
@@ -542,6 +550,7 @@ export async function prepareParentSignupGuide(input: { resend?: boolean }): Pro
 export async function sendParentSignupGuide(input: {
   approvalId: string;
   resend: boolean;
+  unsignedOnly?: boolean;
   approved: boolean;
 }): Promise<ParentSignupGuideSendResult> {
   const admin = await requireAdmin();
@@ -563,7 +572,7 @@ export async function sendParentSignupGuide(input: {
     const approved = approvals[0]?.detailsJson;
     if (!approved) throw new NoticeProblem("미리보기 시간이 지났습니다. 미리보기를 다시 열어 주세요.");
     // 보내기 직전에 받는 사람·문구를 다시 계산한다 — 그새 누가 가입했거나 번호가 바뀌면 멈춘다.
-    guide = await resolveSignupGuide(input.resend === true);
+    guide = await resolveSignupGuide(input.resend === true, input.unsignedOnly === true);
     const binding = guide.binding;
     const same = (Object.keys(binding) as Array<keyof typeof binding>).every((key) => (approved[key] ?? null) === (binding[key] ?? null));
     if (!same) throw new NoticeProblem("받는 사람이나 문구가 미리보기 때와 달라졌습니다. 미리보기를 다시 열어 주세요.");

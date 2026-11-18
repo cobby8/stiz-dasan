@@ -4,8 +4,9 @@ import { adminErrorText, paymentMethodLabel } from "@/components/admin/adminDisp
 
 import { useCallback, useEffect, useState, useTransition, type FormEvent } from "react";
 import Link from "next/link";
+import ScopeBackLink from "@/components/navigation/ScopeBackLink";
 import { normalizeUniformNumber, uniformNumberLabel, UNIFORM_NUMBER_MAX_LENGTH } from "@/lib/students/uniform-number";
-import { updateEnrollmentStatus, updateStudentMemo, updateStudent, updateStudentUniform, updatePaymentStatus, enrollStudent } from "@/app/actions/admin";
+import { cancelScheduledResume, updateEnrollmentStatus, updateStudentMemo, updateStudent, updateStudentUniform, updatePaymentStatus, enrollStudent } from "@/app/actions/admin";
 import { todayKst, toKstYmd } from "@/lib/datetime/kst";
 // 청구/수납 탭 — 청구서 발행·수정·삭제 창과, 서버와 같은 «수정 가능» 판정(2026-11-09)
 import { CancelInvoiceModal, EditInvoiceModal, IssueInvoiceModal, type CancelablePayment, type EditablePayment } from "./StudentBillingModals";
@@ -191,7 +192,7 @@ type StudentActivityData = {
         parent: { name: string | null; phone: string | null; email: string | null };
     };
     enrollments: {
-        id: string; classId: string; status: string; displayStatus?: string; startsOn?: string | null; startsLater?: boolean; createdAt: Date | string;
+        id: string; classId: string; status: string; displayStatus?: string; startsOn?: string | null; startsLater?: boolean; resumeFrom?: string | null; createdAt: Date | string;
         className: string; dayOfWeek: string; startTime: string; endTime: string; programName: string;
     }[];
     attendances: { id: string; status: string; date: Date | string; className: string }[];
@@ -786,9 +787,10 @@ export default function StudentDetailClient({
                     다시 불러오기
                 </button>
                 <div className="mt-4">
-                    <Link href="/admin/students" prefetch={false} className="text-sm font-medium text-[var(--color-academy-muted)] hover:text-[var(--color-academy-ink)]">
-                        원생 목록으로 돌아가기
-                    </Link>
+                    {/* 방금 있던 화면으로(통계·반 상세 등에서 왔으면 그리로). 기록이 없으면 원생 목록 */}
+                    <ScopeBackLink fallbackHref="/admin/students" prefetch={false} className="text-sm font-medium text-[var(--color-academy-muted)] hover:text-[var(--color-academy-ink)]">
+                        이전 화면으로 돌아가기
+                    </ScopeBackLink>
                 </div>
             </div>
         );
@@ -923,6 +925,22 @@ export default function StudentDetailClient({
         setStatusOpenRequests(null);
     }
 
+    // 예약해 둔 복귀 취소 — 휴원은 그대로 두고 예약만 지운다
+    async function cancelResumeBooking(enrollmentId: string) {
+        if (statusUpdatingId) return;
+        setStatusUpdatingId(enrollmentId);
+        try {
+            const result = await cancelScheduledResume(enrollmentId);
+            if (result.ok) await loadData();
+            setStatusFeedback({ type: result.ok ? "success" : "error", message: result.message });
+            window.setTimeout(() => setStatusFeedback(null), 4000);
+        } catch (cancelError) {
+            setStatusFeedback({ type: "error", message: getErrorMessage(cancelError, "복귀 예약을 취소하지 못했습니다.") });
+        } finally {
+            setStatusUpdatingId(null);
+        }
+    }
+
     async function submitEnrollmentStatusChange(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
         await runEnrollmentStatusChange();
@@ -933,7 +951,9 @@ export default function StudentDetailClient({
         if (!statusChange || statusUpdatingId) return;
         // 날짜·사유 칸은 상태(statusChange)와 묶여 있어 그 값을 그대로 쓴다
         const { enrollmentId, nextStatus, effectiveFrom, reason } = statusChange;
-        if (effectiveFrom > todayKst()) {
+        // 휴원 → 수강 중(복귀)만 앞날을 받는다 — 그날 자동으로 수강 중으로 바뀌는 «복귀 예약»
+        const resumeBooking = statusChange.currentStatus === "PAUSED" && nextStatus === "ACTIVE";
+        if (effectiveFrom > todayKst() && !resumeBooking) {
             setStatusFormError("미래 효력일은 예약 변경으로 신청해 주세요.");
             return;
         }
@@ -942,6 +962,11 @@ export default function StudentDetailClient({
 
         try {
             const result = await updateEnrollmentStatus(enrollmentId, nextStatus, { effectiveFrom, reason, closeOpenRequests });
+            if (!result.ok && result.requests.length === 0) {
+                // 걸린 신청이 없는 거절(날짜가 너무 멀다·휴원이 아니다) — 확인 상자가 아니라 그 문구만 보여 준다
+                setStatusFormError(result.message);
+                return;
+            }
             if (!result.ok) {
                 // 아무것도 바뀌지 않았다 — 창 안에 확인 상자를 띄운다
                 setStatusOpenRequests({ code: result.code, message: result.message, requests: result.requests });
@@ -950,8 +975,8 @@ export default function StudentDetailClient({
             await loadData();
             setStatusChange(null);
             setStatusOpenRequests(null);
-            setStatusFeedback({ type: "success", message: "수강 상태를 변경했습니다." });
-            window.setTimeout(() => setStatusFeedback(null), 2500);
+            setStatusFeedback({ type: "success", message: result.scheduledFrom ? `${result.scheduledFrom}부터 복귀로 예약했습니다. 그날 자동으로 수강 중으로 바뀝니다.` : "수강 상태를 변경했습니다." });
+            window.setTimeout(() => setStatusFeedback(null), result.scheduledFrom ? 6000 : 2500);
             // 함께 정리한 것·남은 미납 청구가 있으면 닫을 때까지 보여 준다
             setCleanupNotice(hasCleanupNotice(result.cleanup) ? result.cleanup : null);
         } catch (statusError) {
@@ -1102,6 +1127,8 @@ export default function StudentDetailClient({
                         {DAY_LABELS[enrollment.dayOfWeek] || enrollment.dayOfWeek} {enrollment.startTime}~{enrollment.endTime} · {enrollment.programName}
                         {/* 개시일은 안내만(상태는 수강 중 그대로) — 첫 수업 전이면 «개시 예정»으로 */}
                         {enrollment.startsOn && ` · ${enrollment.startsOn} ${enrollment.startsLater ? "개시 예정" : "개시"}`}
+                        {/* 예약된 복귀일 — 휴원 중이지만 이 날 자동으로 수강 중이 된다 */}
+                        {enrollment.status === "PAUSED" && enrollment.resumeFrom && ` · ${enrollment.resumeFrom} 복귀 예정`}
                     </p>
                 </div>
                 {/* 우측: 상태 세그먼트. 퇴원도 이력을 보존하는 상태 변경으로 처리한다. */}
@@ -1138,6 +1165,10 @@ export default function StudentDetailClient({
                             disabled: Boolean(statusUpdatingId) || enrollment.status !== "ACTIVE",
                             onSelect: () => setMoveSource({ enrollmentId: enrollment.id, classId: enrollment.classId, className: enrollment.className, dayOfWeek: enrollment.dayOfWeek, startsOn: enrollment.startsOn ?? null, createdAt: enrollment.createdAt }),
                         },
+                        // 예약해 둔 복귀가 있을 때만 — 휴원은 그대로 두고 예약만 지운다(날짜만 바꾸려면 «수강중»을 다시 눌러 새 날짜를 고른다)
+                        ...(enrollment.status === "PAUSED" && enrollment.resumeFrom
+                            ? [{ key: "cancel-resume", label: "복귀 예약 취소", icon: "event_busy", disabled: Boolean(statusUpdatingId), onSelect: () => void cancelResumeBooking(enrollment.id) }]
+                            : []),
                         { key: "delete", label: "삭제(잘못 등록)", icon: "delete", tone: "danger", disabled: Boolean(statusUpdatingId), onSelect: () => deleteEnrollmentRow(enrollment) },
                     ]}
                 />
@@ -1243,9 +1274,10 @@ export default function StudentDetailClient({
             {/* 2차 정리(2026-11-09 원장): 머리 = 이름·상태 + 한 줄 사실 + [전화][기본 정보][사진 사용 동의].
                 «N개 반» 칩은 아래 «수강 반» 카드 제목과 겹쳐 뺐고, 생년월일·등록일·재원 상세는 «기본 정보» 창으로 옮겼다. */}
             <div className="academy-hero flex flex-wrap items-center gap-3 p-4 md:p-5">
-                <Link href="/admin/students" prefetch={false} aria-label="원생 목록으로" className="academy-button-secondary academy-button-sm shrink-0 whitespace-nowrap">
-                    ← 목록
-                </Link>
+                {/* 들어오는 길이 7곳(통계 명단·반 상세·월 장부·신청 승인 창·셔틀·알림·원생 목록) — 방금 있던 화면으로 돌아가고, 기록이 없을 때만 원생 목록(2026-11-17) */}
+                <ScopeBackLink fallbackHref="/admin/students" prefetch={false} ariaLabel="이전 화면으로" className="academy-button-secondary academy-button-sm shrink-0 whitespace-nowrap">
+                    ← 뒤로
+                </ScopeBackLink>
                 {/* 아이 사진 64px(학부모가 올린 프로필 사진, 없으면 이름 첫 글자) — 옆 제목에 이름이 있어 장식용(2026-11-14) */}
                 <ProfileAvatar decorative name={student.name} size={64} src={profilePhotoUrl({ kind: "student", id: student.id }, student.photoVersion ?? null, true)} />
                 <div className="min-w-0 basis-52 flex-1">
@@ -2279,17 +2311,24 @@ export default function StudentDetailClient({
                             {statusChange.className} · {getClassEnrollmentStatusInfo(statusChange.currentStatus).label} → {getClassEnrollmentStatusInfo(statusChange.nextStatus).label}
                         </p>
                         <label className="block text-sm font-medium text-[var(--color-academy-muted)]">
-                            효력일
+                            {statusChange.currentStatus === "PAUSED" && statusChange.nextStatus === "ACTIVE" ? "복귀 시작일" : "효력일"}
                             <input
                                 type="date"
                                 name="effectiveFrom"
                                 required
-                                max={todayKst()}
+                                max={statusChange.currentStatus === "PAUSED" && statusChange.nextStatus === "ACTIVE" ? undefined : todayKst()}
                                 value={statusChange.effectiveFrom}
                                 onChange={(event) => setStatusChange((current) => current && ({ ...current, effectiveFrom: event.target.value }))}
                                 data-admin-modal-initial-focus="true"
                                 className="academy-input mt-1"
                             />
+                            {statusChange.currentStatus === "PAUSED" && statusChange.nextStatus === "ACTIVE" && (
+                                <span className="mt-1 block text-xs font-normal text-[var(--color-academy-muted)]">
+                                    {statusChange.effectiveFrom > todayKst()
+                                        ? "그날까지는 휴원으로 두고, 그날 자동으로 수강 중으로 바뀝니다."
+                                        : "오늘 이후 날짜를 고르면 그날부터 복귀로 예약됩니다(3개월 이내)."}
+                                </span>
+                            )}
                         </label>
                         <label className="block text-sm font-medium text-[var(--color-academy-muted)]">
                             변경 사유 (선택)

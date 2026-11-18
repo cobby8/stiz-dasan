@@ -3,23 +3,6 @@ type GalleryMediaItem = {
   type: "image" | "video";
 };
 
-type InstagramChildMedia = {
-  media_type?: string;
-  media_url?: string;
-};
-
-export type InstagramRemoteMedia = {
-  id: string;
-  caption?: string;
-  media_type?: string;
-  media_url?: string;
-  permalink?: string;
-  timestamp?: string;
-  children?: {
-    data?: InstagramChildMedia[];
-  };
-};
-
 type InstagramApiError = {
   error?: {
     message?: string;
@@ -179,11 +162,6 @@ async function waitForMediaContainersReady({
   };
 }
 
-function mediaTypeForInstagram(mediaType?: string): "image" | "video" {
-  const normalized = mediaType?.toUpperCase() || "";
-  return normalized.includes("VIDEO") || normalized.includes("REEL") ? "video" : "image";
-}
-
 function toAbsoluteMediaUrl(url: string) {
   if (/^https?:\/\//i.test(url)) return url;
   const siteUrl = getPublicSiteUrl();
@@ -284,91 +262,6 @@ export function getInstagramRuntimeStatus(businessAccountId?: string | null) {
   return {
     hasAccessToken: Boolean(accessToken),
     hasBusinessAccountId: Boolean(resolvedBusinessAccountId),
-  };
-}
-
-export function toGalleryMediaJSON(media: InstagramRemoteMedia) {
-  const items: GalleryMediaItem[] = [];
-
-  if (media.media_type === "CAROUSEL_ALBUM") {
-    for (const child of media.children?.data || []) {
-      if (child.media_url) {
-        items.push({
-          url: child.media_url,
-          type: mediaTypeForInstagram(child.media_type),
-        });
-      }
-    }
-  } else if (media.media_url) {
-    items.push({
-      url: media.media_url,
-      type: mediaTypeForInstagram(media.media_type),
-    });
-  }
-
-  return JSON.stringify(items);
-}
-
-export async function fetchRecentInstagramMedia({
-  businessAccountId,
-  limit = 25,
-}: {
-  businessAccountId?: string | null;
-  limit?: number;
-}) {
-  const accessToken = getAccessToken();
-  const resolvedBusinessAccountId = getBusinessAccountId(businessAccountId);
-  if (!accessToken || !resolvedBusinessAccountId) {
-    return {
-      ok: false as const,
-      reason: "Instagram access token and business account ID are required.",
-      media: [] as InstagramRemoteMedia[],
-    };
-  }
-
-  const params = new URLSearchParams({
-    fields: "id,caption,media_type,media_url,permalink,timestamp,children{media_type,media_url}",
-    limit: String(limit),
-    access_token: accessToken,
-  });
-
-  let res: Response;
-  try {
-    res = await fetch(`${graphBaseUrl(accessToken)}/${resolvedBusinessAccountId}/media?${params.toString()}`, {
-      cache: "no-store",
-    });
-  } catch (error) {
-    console.error("[instagram] media fetch failed:", error);
-    return {
-      ok: false as const,
-      reason: "Instagram API에 연결하지 못했습니다.",
-      media: [] as InstagramRemoteMedia[],
-    };
-  }
-
-  let body: InstagramApiError & { data?: InstagramRemoteMedia[] };
-  try {
-    body = (await res.json()) as InstagramApiError & { data?: InstagramRemoteMedia[] };
-  } catch (error) {
-    console.error("[instagram] media response parse failed:", error);
-    return {
-      ok: false as const,
-      reason: "Instagram API 응답을 읽지 못했습니다.",
-      media: [] as InstagramRemoteMedia[],
-    };
-  }
-
-  if (!res.ok) {
-    return {
-      ok: false as const,
-      reason: apiErrorMessage(body, "인스타그램 게시물을 가져오지 못했습니다."),
-      media: [] as InstagramRemoteMedia[],
-    };
-  }
-
-  return {
-    ok: true as const,
-    media: body.data || [],
   };
 }
 

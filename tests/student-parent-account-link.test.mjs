@@ -156,22 +156,11 @@ test("[연결부] 주 보호자 Guardian 은 isPrimary=true 로 입력값 그대
   assert.deepEqual(tx.calls[0].values, ["student-1", "엄마", "김엄마", "01012345678"]);
 });
 
-test("createStudent·convertTrialToStudent 는 이메일 매칭·계정 덮어쓰기 없이 공용 모듈을 쓴다", () => {
-  for (const name of ["createStudent", "convertTrialToStudent"]) {
-    const body = fnBlock(admin, name);
-    assert.doesNotMatch(body, /WHERE email = \$1/, `${name}: 이메일로 계정을 찾으면 안 된다`);
-    assert.doesNotMatch(body, /UPDATE "User"/, `${name}: 기존 계정을 덮어쓰면 안 된다`);
-    assert.doesNotMatch(body, /parent_\$\{Date\.now\(\)\}/, `${name}: 시각 기반 합성 이메일 금지(같은 사람이 여러 계정이 된다)`);
-    assert.match(body, /validatePrimaryGuardian\(/);
-    assert.match(body, /insertAdminStudentWithGuardian\(/);
-    assert.match(body, /prisma\.\$transaction\(/, `${name}: 계정·학생·보호자를 한 트랜잭션으로`);
-    assert.match(body, /ParentAccountLinkError/);
-  }
-  const helper = admin.slice(admin.indexOf("async function insertAdminStudentWithGuardian("), admin.indexOf("export async function updateStudentMemo"));
-  assert.match(helper, /linkParentAccountForNewStudent\(tx, guardian\)/);
-  assert.match(helper, /insertPrimaryGuardian\(tx, studentId, guardian\)/);
-  // 체험 전환은 학생 생성과 TrialLead 전환이 같은 트랜잭션
-  assert.match(fnBlock(admin, "convertTrialToStudent"), /await tx\.\$executeRawUnsafe\(\s*`UPDATE "TrialLead"/);
+// 2026-11-18 옛 코드 정리 C: 부르는 곳이 없던 옛 단건 등록(createStudent)·체험 전환(convertTrialToStudent)과
+// 둘만 쓰던 insertAdminStudentWithGuardian 을 지웠다. 새 등록은 registerStudent(3단계 창)만 쓴다.
+test("부르는 곳 없던 createStudent·convertTrialToStudent·insertAdminStudentWithGuardian 은 없어졌다", () => {
+  assert.doesNotMatch(admin, /export async function (createStudent|convertTrialToStudent)\b/);
+  assert.doesNotMatch(admin, /async function insertAdminStudentWithGuardian\b/);
 });
 
 test("updateStudent 는 이메일을 쓰지 않고, 빈 계정일 때만 학부모 이름·번호를 고친다", () => {

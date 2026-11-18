@@ -19,6 +19,7 @@ import { convertIllnessToMakeupInTx, illnessReviewReady, type ConvertOutcome } f
 import { ILLNESS_REASON, carryApprovalBlocker, evidenceAnchorYmdSql, evidenceDeadlineYmd, evidenceScopeSql, illnessUnpaidReducedSql, type CarryBillState } from "@/lib/regular/illnessCarryRules";
 import { previewUnpaidReduce, reduceUnpaidForIllnessAbsenceInTx } from "@/lib/regular/illness-unpaid-reduce";
 import { APPROVAL_CHANGED_MESSAGE, approvalExpectationMismatch, type ApprovalExpectation, type UnpaidReduceView } from "@/lib/regular/illnessUnpaidReduceRules";
+import { CARRY_NOT_ELIGIBLE_MESSAGE, carryEligibilityForReason, isCarryReviewReason } from "@/lib/regular/carryReasonRules";
 
 type AbsenceRow = { id: string; studentId: string; classId: string; date: string; reason: string; status: string };
 
@@ -45,6 +46,9 @@ async function hasUnpaidTuitionBill(tx: WorkbenchTx, absence: AbsenceRow, month:
 async function readApprovalMode(tx: WorkbenchTx, absence: AbsenceRow, month: string, calendar?: WorkbenchCalendarSnapshot): Promise<{ mode: "CARRY" | "REDUCE"; carryReady: boolean }> {
   const carry = await previewCarryEvidence(tx, { absence, originMonth: month, calendar });
   if (carry.ok) return { mode: "CARRY", carryReady: true };
+  // «미납 청구에서 빼기»는 질병·부상 결석 전용 결정이다(2026-11-16). 경조사는 «미납 달은 이월 근거 불가» 그대로 —
+  // CARRY 로 두면 아래 기존 이월 규칙이 «납부된 뒤에 이월할 수 있습니다»로 거절한다.
+  if (absence.reason !== ILLNESS_REASON) return { mode: "CARRY", carryReady: false };
   if (carry.reason === CARRY_UNPAID_MESSAGE) return { mode: "REDUCE", carryReady: false };
   return { mode: carry.noEvidence && (await hasUnpaidTuitionBill(tx, absence, month)) ? "REDUCE" : "CARRY", carryReady: false };
 }
@@ -78,7 +82,9 @@ export async function approveIllnessCarry(
     const rows = await tx.$queryRawUnsafe<AbsenceRow[]>(`${ABSENCE_SELECT} FOR UPDATE`, absenceId);
     const absence = rows.find((row) => row.id === absenceId) ?? null;
     if (!absence || absence.status === "CANCELLED") throw new WorkbenchError("결석을 찾을 수 없거나 취소된 결석입니다.", 404);
-    if (absence.reason !== ILLNESS_REASON) throw new WorkbenchError("질병·부상 결석만 이월 승인할 수 있습니다.", 409);
+    // 이월 검토 대상(질병·부상·직계 가족 경조사)만 — 사유에 맞는 인정 분류로 기존 이월 규칙에 넘긴다(2026-11-17)
+    const eligibility = carryEligibilityForReason(absence.reason);
+    if (!eligibility) throw new WorkbenchError(CARRY_NOT_ELIGIBLE_MESSAGE, 409);
     // 아직 오지 않은 결석일은 승인하지 않는다(기존 규칙과 같은 기준 — 화면도 버튼을 꺼 둔다)
     if (absence.date > todayKst()) throw new WorkbenchError("결석일이 지난 뒤에 승인할 수 있습니다.", 409);
 
@@ -114,8 +120,8 @@ export async function approveIllnessCarry(
       { $transaction: (work: (inner: WorkbenchTx) => Promise<any>) => work(tx) } as WorkbenchDb,
       {
         action: "RESOLVE_ABSENCE", month: viewMonth, sourceVersion: view.sourceVersion, requestId: `illness-${randomUUID()}`,
-        absenceId, resolution: "CARRY", evidenceConfirmed: true, eligibility: "ILLNESS_INJURY",
-        reason: "신청함에서 질병·부상 증빙 확인 후 이월 승인", cancelReservation: input.cancelReservation === true, originMonth: month,
+        absenceId, resolution: "CARRY", evidenceConfirmed: true, eligibility,
+        reason: eligibility === "DIRECT_FAMILY_EVENT" ? "신청함에서 직계 가족 경조사 확인 후 이월 승인" : "신청함에서 질병·부상 증빙 확인 후 이월 승인", cancelReservation: input.cancelReservation === true, originMonth: month,
       },
       actorId, enabled, calendar,
     );
@@ -181,7 +187,7 @@ export type IllnessCarryDetail = {
 export async function readIllnessCarryDetail(tx: WorkbenchTx, absenceId: string, enabled: boolean, calendar?: WorkbenchCalendarSnapshot | null): Promise<IllnessCarryDetail | null> {
   const rows = await tx.$queryRawUnsafe<AbsenceRow[]>(ABSENCE_SELECT, absenceId);
   const absence = rows.find((row) => row.id === absenceId) ?? null;
-  if (!absence || absence.status === "CANCELLED" || absence.reason !== ILLNESS_REASON) return null;
+  if (!absence || absence.status === "CANCELLED" || !isCarryReviewReason(absence.reason)) return null;
 
   const ready = await illnessReviewReady(tx);
   const reviews = ready
@@ -238,7 +244,8 @@ export async function readIllnessCarryDetail(tx: WorkbenchTx, absenceId: string,
     }
     // 미납인 달(2026-11-16 원장 결정): «납부한 뒤에»로 막지 않는다 — 승인하면 그 미납 청구에서 1회 값을 뺀다.
     // 실행과 같은 규칙으로 읽기만 해서 «얼마를 빼고 얼마가 남는지»를 미리 보인다. 뺄 수 없으면 그 사유를 버튼 위에 보인다.
-    if (bill === "UNPAID" && calendar !== null) {
+    // 경조사는 이 길이 없다(질병·부상 전용 결정) — bill «UNPAID» 그대로 «납부한 뒤에 승인» 안내가 보인다
+    if (bill === "UNPAID" && calendar !== null && absence.reason === ILLNESS_REASON) {
       const unpaidPreview = await previewUnpaidReduce(tx, { absence, originMonth: month, calendar }).catch((error: unknown) => {
         console.error("[illness-carry-admin] 미납 감액 미리보기 실패:", error instanceof Error ? error.name : "");
         return null;
@@ -266,7 +273,8 @@ export async function readIllnessCarryDetail(tx: WorkbenchTx, absenceId: string,
             AND pa.reason = $2 AND pa.status <> 'CANCELLED' AND pa.date <= $3::date
             AND COALESCE(pr.status, 'PENDING') = 'PENDING'
           ORDER BY pa.date`,
-        absenceId, ILLNESS_REASON, todayKst())
+        // 같은 사유의 결석만 묶는다(질병·부상 기간이면 질병·부상, 경조사 기간이면 경조사)
+        absenceId, absence.reason, todayKst())
     : [];
   const anchors = await tx.$queryRawUnsafe<Array<{ anchorYmd: string }>>(
     `SELECT ${evidenceAnchorYmdSql("ra")} AS "anchorYmd" FROM "RegularAbsence" ra WHERE ra.id = $1`, absenceId,
@@ -295,7 +303,8 @@ export async function readIllnessCarryDetail(tx: WorkbenchTx, absenceId: string,
     evidenceNote: status === "PENDING" ? evidenceNote : null,
     periodPeerIds: status === "PENDING" ? peers.map((peer) => peer.id) : [],
     // 화면이 «○월 ○일까지»로 보여 준다 — 학부모 화면·자동 전환과 같은 함수(여러 날 결석은 기간의 마지막 결석일 기준)
-    evidenceDeadlineYmd: review?.status === "PENDING" && review.source !== "STAFF" && review.requestedYmd
+    // 사진 기한·자동 전환은 질병·부상만이라, 경조사(2026-11-17)는 기한을 내지 않는다
+    evidenceDeadlineYmd: review?.status === "PENDING" && review.source !== "STAFF" && review.requestedYmd && absence.reason === ILLNESS_REASON
       ? evidenceDeadlineYmd(review.requestedYmd, anchors[0]?.anchorYmd ?? absence.date)
       : null,
   };

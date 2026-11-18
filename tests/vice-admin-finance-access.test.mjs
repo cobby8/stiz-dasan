@@ -133,7 +133,9 @@ test("학생 상세: 부원장에게는 청구 목록이 비고, 월별 낸 돈�
 
 test("월 일괄 발행·미리보기·일괄 문자·발송 진행은 원장 전용(requireFinanceOwner)", () => {
     const admin = read("src/app/actions/admin.ts");
-    for (const name of ["previewMonthlyInvoices", "generateMonthlyInvoices", "sendInvoiceLinksForMonth", "sendUnpaidReminders", "getBillingNoticeProgress"]) {
+    // 옛 월 일괄 발행(previewMonthlyInvoices·generateMonthlyInvoices)은 2026-11-18 옛 코드 정리 C 로 지웠다(부르는 곳 없음)
+    assert.doesNotMatch(admin, /export async function (previewMonthlyInvoices|generateMonthlyInvoices)\b/);
+    for (const name of ["sendInvoiceLinksForMonth", "sendUnpaidReminders", "getBillingNoticeProgress"]) {
         assert.match(fnBody(admin, name).slice(0, 400), /await requireFinanceOwner\(\)/, name);
     }
     // 청구서 발행은 부원장도(미납 강제) — 중복 안내 금액은 가린다
@@ -223,7 +225,9 @@ test("수납 관리 화면: 부원장에게 현장 결제(1건·묶음)는 보�
 
 test("휴원·수강 변경: 승인·거절은 부원장도(정산은 미룸), 정산·환불·차액 청구·금액 미리보기는 원장만", () => {
     const src = read("src/app/actions/enrollment-changes.ts");
-    for (const name of ["getPauseTuitionPreview", "settlePauseTuition", "retryPauseTuitionRefund", "markPauseTuitionLineDone", "markPauseCarryHandled", "issueEnrollmentChangeInvoice"]) {
+    // getPauseTuitionPreview 는 2026-11-18 옛 코드 정리 C 로 지웠다(부르는 곳 없음)
+    assert.doesNotMatch(src, /export async function getPauseTuitionPreview\b/);
+    for (const name of ["settlePauseTuition", "retryPauseTuitionRefund", "markPauseTuitionLineDone", "markPauseCarryHandled", "issueEnrollmentChangeInvoice"]) {
         assert.match(fnBody(src, name).slice(0, 400), /await requireOwner\(\)/, name);
     }
     const decide = fnBody(src, "decideEnrollmentChange");

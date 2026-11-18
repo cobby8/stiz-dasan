@@ -228,7 +228,7 @@ async function activeFlow(identityId: string, parentUserId: string): Promise<Flo
  */
 async function openFlow(identityId: string, sourceText: string, state: FlowState | null): Promise<string | null> {
   return prisma.$transaction(async (tx) => {
-    await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, identityId);
+    await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))::text`, identityId);
     await tx.$executeRawUnsafe(
       `UPDATE "KakaoParentIntake" SET status='CANCELED',"updatedAt"=now()
         WHERE "identityId"=$1 AND status IN (${KAKAO_OPEN_FLOW_CLOSE_SQL})`,

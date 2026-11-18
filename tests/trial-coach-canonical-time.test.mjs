@@ -48,7 +48,7 @@ test("서버 resolver는 override→활성 schedule→custom→Class 순서와 �
 });
 
 test("명시한 유효 확정 시각은 canonical 검증 뒤 덮어쓰지 않는다", () => {
-  const update = adminAction.slice(adminAction.indexOf("export async function updateTrialLead"), adminAction.indexOf("export async function deleteTrialLead"));
+  const update = adminAction.slice(adminAction.indexOf("export async function updateTrialLead"), adminAction.indexOf("// (2026-11-09) 체험 완료 문자 재시도 액션"));
   assert.match(update, /const hasExplicitScheduledTime/);
   assert.match(update, /const nextScheduledDate = hasExplicitScheduledTime \? explicitScheduledDate : canonical\.scheduledDate/);
 });

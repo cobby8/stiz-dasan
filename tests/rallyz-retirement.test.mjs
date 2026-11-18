@@ -6,7 +6,7 @@
 // 4) «랠리즈 반영 확인» 서버 액션은 남아 있지만 은퇴 상태에서는 아무것도 바꾸지 않는다
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import {
   RALLYZ_RETIRED_REFERENCE, RALLYZ_RETIRED_MESSAGE, isRallyzSyncRetired, isRallyzTargetDone,
   isExternalTargetDone, externalSyncPendingSql, websiteDoneLedgerStatus,
@@ -131,13 +131,14 @@ test('«SKIPPED 인정» 판정이 곳마다 같다: 배지·완료 판정·확�
   assert.deepEqual(syncCheckBadge('SKIPPED', 'SKIPPED'), { label: '반영 완료', needsCheck: false });
 });
 
-test('공용 SQL 조각을 쓰는 곳 3곳 — 옛 «랠리즈는 SUCCEEDED 만» 조건이 남아 있지 않다', () => {
+test('공용 SQL 조각을 쓰는 곳 2곳 — 옛 «랠리즈는 SUCCEEDED 만» 조건이 남아 있지 않다', () => {
   const admin = read('src/lib/enrollment/admin-change-request.ts');
   const inbox = read('src/lib/requests/admin-inbox.ts');
   const ops = read('src/app/actions/operations-sync.ts');
   assert.match(admin, /AND \$\{externalSyncPendingSql\("a"\)\}\)`;/);
   assert.match(inbox, /'syncPending', EXISTS \([\s\S]*?AND \$\{externalSyncPendingSql\("a"\)\}/);
-  assert.match(ops, /AND \$\{externalSyncPendingSql\("pending"\)\}/);
+  // 2026-11-18 옛 코드 정리 C: 이 조각을 쓰던 홈페이지 반영 액션(applyOperationsWebsite)은 부르는 곳이 없어 지웠다
+  assert.doesNotMatch(ops, /export async function applyOperationsWebsite\b/);
   for (const [name, text] of [['admin-change-request', admin], ['admin-inbox', inbox], ['operations-sync', ops]]) {
     assert.doesNotMatch(text, /target\s*=\s*'RALLYZ' AND \w+\.status <> 'SUCCEEDED'/, name);
   }
@@ -145,11 +146,8 @@ test('공용 SQL 조각을 쓰는 곳 3곳 — 옛 «랠리즈는 SUCCEEDED 만�
   const finalize = read('src/lib/enrollment/finalize-change-sync.ts');
   assert.match(finalize, /OR \(a\.target='RALLYZ' AND a\.status='SKIPPED'\)/);
   assert.doesNotMatch(finalize, /a\.target='WEBSITE' AND a\.status='SKIPPED'/);
-  // 대기열 요약(읽기 전용 워커): 랠리즈 칸을 후보에서 빼고, 홈페이지 선행 조건도 공용 판정
-  const worker = read('src/lib/operationsSyncWorker.ts');
-  assert.match(worker, /AND \(\$3::boolean = false OR a\.target <> 'RALLYZ'\)/);
-  assert.match(worker, /const rallyzDone = options\.rallyzRetired \|\| isRallyzTargetDone\(row\.rallyzStatus\);/);
-  assert.match(worker, /const rallyzRetired = isRallyzSyncRetired\(process\.env\);/);
+  // 대기열 요약(읽기 전용 워커)은 2026-11-18 옛 코드 정리 B 로 파일째 지웠다.
+  assert.equal(existsSync('src/lib/operationsSyncWorker.ts'), false);
 });
 
 const EVENT = {

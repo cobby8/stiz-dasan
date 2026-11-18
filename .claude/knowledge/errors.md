@@ -164,3 +164,9 @@
 - **발견자**: developer
 - **내용**: `academy-theme.css` 의 `.academy-app .academy-input { width:100% }` 는 레이어 밖 CSS 라 Tailwind 유틸리티(@layer)보다 우선한다. 그래서 `className="academy-input w-32 shrink-0"` 의 w-32 가 무시되고 선택 상자가 줄 전체를 차지 → 옆 `flex-1` 이름이 최소 폭(한글 한 글자)으로 접혔다(설정 «자주 쓰는 결제 방법», 원장 아이폰). **해결**: 입력칸은 폭을 정한 감싸개(`<span class="min-w-0 max-w-40 flex-1">`) 안에 넣고, 이름은 `shrink-0 whitespace-nowrap`. 같은 이유로 `academy-input` 에 `w-*` 를 직접 주지 말 것(`min-w-*`·`flex-1` 은 괜찮다). 가드 `tests/parent-settings-fix-1114.test.mjs`.
 - **참조횟수**: 0
+
+### [2026-11-17] 청구 준비 계열 파일에 `@/` import 를 새로 넣으면 테스트가 «불러오기 실패»로 통째로 죽는다
+- **분류**: error
+- **발견자**: developer
+- **내용**: `tests/billing-workbench.test.mjs`·`tests/illness-unpaid-reduce.test.mjs` 는 `workbench-absence.ts`·`illness-carry-tx.ts`·`illness-carry-admin.ts` 를 «글자 바꾸기(.replace('from "@/…"', data URL))»로 하나씩 끼워 실행한다. 목록에 없는 import 가 생기면 `ERR_UNSUPPORTED_RESOLVE_REQUEST` 로 파일 전체가 «pass 0 fail 1». 대처: 새 규칙은 **import 0 순수 파일**(예: `lib/regular/carryReasonRules.ts`)로 만들고 두 테스트의 바꾸기 목록에 한 줄씩 더한다(import 가 있는 파일을 끌어오면 그 파일의 import 도 줄줄이 바꿔야 한다). 또 이 계열 테스트의 가짜 DB 는 SQL **글자 모양**(`x.reason = 'ILLNESS_INJURY'`, `JOIN … \s+WHERE` 사이 SQL 주석 금지 등)으로 조회를 알아보므로, 조건을 바꾸면 가짜 쪽 정규식도 같이 고친다.
+- **참조횟수**: 0

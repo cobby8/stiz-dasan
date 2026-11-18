@@ -1,9 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 const client = readFileSync("src/app/admin/shuttle/regular/RegularShuttleClient.tsx", "utf8");
-const routeSection = readFileSync("src/components/shuttle/RegularRouteSection.tsx", "utf8");
 const noticeRoute = readFileSync("src/app/api/admin/shuttle/regular-notice/route.ts", "utf8");
 const geocodePanel = readFileSync("src/components/shuttle/RegularStopGeocodePanel.tsx", "utf8");
 const dispatchPage = readFileSync("src/app/admin/shuttle/regular-dispatch/page.tsx", "utf8");
@@ -22,15 +21,9 @@ test("정규 셔틀 월 선택은 한국시간과 가장 가까운 이전 월을
   assert.match(noticeRoute, /compareMonth >= serviceMonth/);
 });
 
-test("모바일에서도 정차 순서를 위아래 버튼으로 바꿀 수 있다", () => {
-  assert.match(routeSection, /aria-label=\{`\$\{g\.label\} 위로 이동`\}/);
-  assert.match(routeSection, /reorder\(i, i - 1\)/);
-  assert.match(routeSection, /aria-label=\{`\$\{g\.label\} 아래로 이동`\}/);
-  assert.match(routeSection, /reorder\(i, i \+ 1\)/);
-});
-
-test("정차 순서 저장은 현재 선택한 운영 월을 함께 보내 다른 월 수정을 막는다", () => {
-  assert.match(routeSection, /body: JSON\.stringify\(\{ serviceMonth, updates \}\)/);
+// 2026-11-18 옛 코드 정리: 옛 정규 배차 부품(RegularRouteSection)은 화면에서 빠진 뒤 쓰이지 않아 지웠다.
+test("옛 정규 배차 부품은 지워져 있다", () => {
+  assert.ok(!existsSync("src/components/shuttle/RegularRouteSection.tsx"));
 });
 
 // 2026-10-02 셔틀 명단 화면 교체: 시트 가져오기·배차 지도·월 비교/문자 미리보기 UI 를 명단 화면에서 뺐다.

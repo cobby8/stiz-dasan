@@ -506,7 +506,7 @@ async function createIntakeReply(
   const child = selectChild(children, text);
   const intakeId = randomUUID();
   const created = await prisma.$transaction(async (tx) => {
-    await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, identity.id);
+    await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))::text`, identity.id);
     if (providerRequestId) {
       const existing = await tx.$queryRawUnsafe<Array<IntakeRow & { studentName: string | null }>>(
         `SELECT r.id,r.kind,r."sourceText",r."studentId",r.status,s.name AS "studentName"

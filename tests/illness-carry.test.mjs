@@ -101,7 +101,8 @@ function fakeDb(init = {}) {
       assert.match(sql, /ra\.date = \$3::date/, "결석일은 date 칼럼 그대로 비교(시간대 변환 없음)");
       return db.absences.filter((a) => a.studentId === v[0] && a.classId === v[1] && a.date === v[2])
         .filter((a) => !/ra\.status <> 'CANCELLED'/.test(sql) || a.status !== "CANCELLED")
-        .filter((a) => !/ra\.reason = \$4/.test(sql) || a.reason === v[3])
+        // 2026-11-17: 보강권 보류 판정은 이월 검토 대상 사유 목록(질병·부상·경조사)을 배열로 받는다
+        .filter((a) => /ra\.reason = ANY\(\$4::text\[\]\)/.test(sql) ? v[3].includes(a.reason) : (!/ra\.reason = \$4/.test(sql) || a.reason === v[3]))
         .filter((a) => !/COALESCE\(r\.status, ''\) NOT IN \('MAKEUP', 'CLOSED'\)/.test(sql) || !["MAKEUP", "CLOSED"].includes(db.reviews.find((r) => r.absenceId === a.id)?.status))
         .map(() => ({ found: 1 }));
     }
@@ -829,8 +830,6 @@ test("출결 저장 경로: 정규 결석은 발급 전에 보류 여부를 보�
   assert.ok(clearReasonAt > 0 && clearDeleteAt > clearReasonAt && clearRevokeAt > clearDeleteAt, "clearStaffAttendance: 사유 정리 → 출결 삭제 → 보강권 회수 순서");
   assert.equal(staffClear.split("await revokeMakeupCreditInTx(").length - 1, 1, "clearStaffAttendance: 보강권 회수는 한 곳");
   assert.equal(staffSource.split("revokeMakeupCreditInTx(").length - 1, 1, "선생님 쪽에서 보강권을 직접 회수하는 곳은 출결 취소 하나뿐");
-  // 랠리즈 출결 동기화도 같은 함수를 쓴다(분기가 따로 필요 없다)
-  assert.match(read("src/app/actions/rallyz-attendance-sync.ts"), /await syncCreditForRegularSession\(target\)/);
 });
 
 test("출석부 «질병·부상 표시»: 표시하는 순간 먼저 나가 있던 미사용 보강권을 거둔다(예약·사용분은 그대로)", async () => {
@@ -1068,7 +1067,8 @@ test("신청함: «질병·부상 결석» 종류 — 결석일 전은 진행 �
   const adapter = inbox.slice(inbox.indexOf('kind: "ILLNESS_CARRY"'), inbox.indexOf('kind: "ILLNESS_PERIOD"'));
   // 기본 조건은 상수 한 곳(ILLNESS_CARRY_WHERE) — 기간 정산 칸이 없는 DB 는 이 식 그대로 읽는다
   const baseWhere = inbox.slice(inbox.indexOf("const ILLNESS_CARRY_WHERE = `"), inbox.indexOf("const ILLNESS_PERIOD_EMPTY"));
-  assert.match(baseWhere, /x\.reason = 'ILLNESS_INJURY' AND x\.status <> 'CANCELLED'/);
+  // 2026-11-17: 직계 가족 경조사도 이월 검토 대상(약관) — 같은 목록에 뜬다
+  assert.match(baseWhere, /x\.reason IN \('ILLNESS_INJURY', 'FAMILY_EVENT'\) AND x\.status <> 'CANCELLED'/);
   // 2026-11-15: 부상·질병 «기간 결석»에 묶인 결석은 뺀다(기간 1건이 ILLNESS_PERIOD 한 줄로 뜬다). 하루짜리·다른 사유 기간의 결석은 그대로 남는다
   assert.match(adapter, /where: `\$\{ILLNESS_CARRY_WHERE\} AND NOT \$\{boundToIllnessPeriodSql\("x"\)\}`/);
   assert.match(adapter, /beforePeriodCarry: \{ where: ILLNESS_CARRY_WHERE \}/, "칸이 없는 DB 는 기간 결석을 빼지 않는다");
@@ -1103,7 +1103,9 @@ test("신청함: «질병·부상 결석» 종류 — 결석일 전은 진행 �
 test("이월 승인은 기존 CARRY 규칙을 그대로 부른다 — 계산·표를 둘로 만들지 않는다", () => {
   const admin = read("src/lib/regular/illness-carry-admin.ts");
   assert.match(admin, /await resolveWorkbenchAbsence\(/);
-  assert.match(admin, /resolution: "CARRY", evidenceConfirmed: true, eligibility: "ILLNESS_INJURY"/);
+  // 인정 분류는 결석 사유에서 정한다(질병·부상 ↔ ILLNESS_INJURY, 경조사 ↔ DIRECT_FAMILY_EVENT — 2026-11-17)
+  assert.match(admin, /const eligibility = carryEligibilityForReason\(absence\.reason\);/);
+  assert.match(admin, /resolution: "CARRY", evidenceConfirmed: true, eligibility,/);
   assert.doesNotMatch(admin, /INSERT INTO "BillingCarryCredit"|INSERT INTO "BillingAbsenceResolution"|numerator|denominator/, "적립·금액 계산을 여기서 다시 하지 않는다");
   assert.match(admin, /isolationLevel: "Serializable"/);
   // 청구 준비 화면과 같은 스위치
@@ -1117,7 +1119,8 @@ test("이월 승인은 기존 CARRY 규칙을 그대로 부른다 — 계산·�
 test("카카오 결석·FAQ: 사진은 앱에서 올리라고 안내하고, FAQ 는 «증빙 사진 → 다음 달 수강료에서 차감»으로 말한다", async () => {
   const kakao = read("src/lib/kakao-absence-flow.ts");
   assert.match(kakao, /reason: state\.reason, source: "KAKAO" \}\)/);
-  assert.match(kakao, /carryPending \? ILLNESS_KAKAO_NOTICE :/);
+  // 경조사(2026-11-17)는 사진 기한이 없어 안내 문구가 따로다
+  assert.match(kakao, /carryPending \? \(state\.reason === "FAMILY_EVENT" \? FAMILY_EVENT_KAKAO_NOTICE : ILLNESS_KAKAO_NOTICE\) :/);
   assert.match(kakao, /export const ILLNESS_KAKAO_NOTICE = "[^"]*앱 「결석 알리기」에서 결석일부터 7일 안에 증빙 사진[^"]*다음 달 수강료에서 빼 드려요[^"]*보강권 1장으로 바뀌어요\."/);
   assert.match(read("src/lib/kakao-parent-intake-routing.ts"), /source: "KAKAO",/);
   const faq = read("src/app/faq/FaqClient.tsx");

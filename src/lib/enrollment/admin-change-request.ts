@@ -187,20 +187,6 @@ export async function getEnrollmentChangeRequests(status = "PENDING", requestIds
   }));
 }
 
-/**
- * 휴원 1건의 수강료 처리 미리보기(다른 화면 — 예: 신청함 상세 칸 — 이 승인 전에 금액·지문을 받을 때).
- * 휴원이 아니면 null. 결과의 previewKey 를 decideEnrollmentChange({ settlement: { mode, expectedPreviewKey } }) 에 그대로 넘긴다.
- */
-export async function getPauseSettlementPreview(requestId: string): Promise<AdminSettlementPreview | null> {
-  const preview = await previewPauseSettlement(prisma, requestId, await loadClassDatesFor());
-  if (!preview) return null;
-  const { plan, ...rest } = preview;
-  return {
-    ...rest, paidTotal: plan.paidTotal, unpaidTotal: plan.unpaidTotal, problems: plan.problems,
-    channels: [...new Set(plan.lines.filter((l) => l.paid).map((l) => l.channel))],
-  };
-}
-
 /** 휴원 수강료 처리 기능 시작일(KST) — 이보다 먼저 승인된 휴원에는 «수강료 처리» 미리보기·버튼을 띄우지 않는다 */
 const PAUSE_SETTLEMENT_SINCE = "2026-11-10";
 
@@ -580,6 +566,13 @@ export async function applyDueEnrollmentChangesWithSummary(): Promise<DueEnrollm
       if (!parentConfirmed && await childConnectionsAvailable()) {
         const linked = await tx.$queryRawUnsafe<{ id: string }[]>(`SELECT s.id FROM "Student" s WHERE s.id=$1 AND ${await childAccessSql("s", "$2")} AND s."mergedIntoStudentId" IS NULL`, row.studentId, row.requestedByUserId);
         parentConfirmed = linked.length === 1;
+      }
+      // 관리자가 학생 상세에서 직접 예약한 복귀(2026-11-17)는 신청자 = 승인자 = 원장·부원장이다 — 보호자 확인 대상이 아니다.
+      // 종류(RESUME)·신청자=승인자·그 사람의 역할을 모두 DB 에서 다시 본다(학부모가 낸 신청은 여기 해당하지 않는다).
+      if (!parentConfirmed && row.kind === "RESUME" && row.requestedByUserId && row.requestedByUserId === row.decidedByUserId) {
+        const adminRows = await tx.$queryRawUnsafe<{ id: string }[]>(
+          `SELECT id FROM "User" WHERE id = $1 AND role::text IN ('ADMIN','VICE_ADMIN')`, row.requestedByUserId);
+        parentConfirmed = adminRows.length === 1;
       }
       let classChangeProblem: string | null = null;
       if (row.kind === "CLASS_CHANGE" && enrollment) {

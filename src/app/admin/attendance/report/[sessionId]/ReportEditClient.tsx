@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
+import ScopeBackLink from "@/components/navigation/ScopeBackLink";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 // 편집 본문(주제·내용·사진·학생 코멘트·저장·발행)은 수업 피드 패널과 같은 공용 부품을 쓴다(2026-11-14)
 import SessionReportEditor, {
@@ -158,13 +158,14 @@ function ReportEditForm({
             {/* 헤더: 뒤로가기 + 제목 */}
             <div className="mb-6 min-w-0">
                 {/* 뒤로가기는 글자 버튼 — 리포트 목록은 수업 피드로 합쳐졌다(2026-11-14) */}
-                <Link
-                    href="/admin/attendance/feed"
+                {/* 반 상세에서 들어왔으면 반 상세로(방금 있던 화면). 기록이 없을 때만 수업 피드(2026-11-17) */}
+                <ScopeBackLink
+                    fallbackHref="/admin/attendance/feed"
                     prefetch={false}
                     className="academy-button-text academy-button-sm -ml-2"
                 >
                     ← 수업 피드
-                </Link>
+                </ScopeBackLink>
                 <AdminPageHeader
                     className="mt-1"
                     title="수업 리포트 편집"

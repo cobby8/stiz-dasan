@@ -49,8 +49,19 @@ const ALLOWED = [
   ["/driverish/tok", ""],
   ["/programs", "?test_event_code=TEST123"],
   ["/schedule", ""],
-  ["/mypage", ""],
+  ["/signup/parent", ""],
+  ["/apply/enroll", ""],
 ];
+
+test("로그인 뒤 화면·앱·로그인 화면에는 픽셀을 싣지 않는다(2026-11-18 속도 조치) — 공개·신청·가입 화면은 그대로", () => {
+  for (const p of ["/admin", "/admin/students/abc", "/staff", "/staff/sessions", "/mypage", "/mypage/payments", "/login", "/auth/continue", "/store-app", "/install", "/driver"]) {
+    assert.equal(exclusion.isTrackingBlockedPath(p), true, p);
+  }
+  // 이름만 비슷한 공개 경로는 막지 않는다
+  for (const p of ["/", "/apply/trial", "/apply/enroll", "/signup/parent", "/programs", "/administrator-guide", "/staffing"]) {
+    assert.equal(exclusion.isTrackingBlockedPath(p), false, p);
+  }
+});
 
 test("토큰 주소(경로·쿼리)는 추적 금지, 일반 주소는 그대로", () => {
   for (const [p, q] of BLOCKED) assert.equal(exclusion.isTrackingBlockedLocation(p, q), true, `${p}${q}`);

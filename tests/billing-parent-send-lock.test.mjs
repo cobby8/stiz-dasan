@@ -30,7 +30,7 @@ function sliceFn(name, nextMarker) {
   return adminAction.slice(start, end);
 }
 const sendLinks = sliceFn("sendInvoiceLinksForMonth", "export async function sendUnpaidReminders");
-const sendReminders = sliceFn("sendUnpaidReminders", "export async function bulkUpdatePaymentStatus");
+const sendReminders = sliceFn("sendUnpaidReminders", "export async function getBillingNoticeProgress");
 
 test("잠금 판정: BILLING_PARENT_SEND_ENABLED 가 정확히 \"1\" 일 때만 발송 허용", () => {
   assert.equal(isBillingParentSendEnabled({}), false);

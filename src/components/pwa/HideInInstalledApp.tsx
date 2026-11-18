@@ -7,7 +7,6 @@ import { useInstalledApp } from "./useInstalledApp";
  *
  * 공개 홈페이지로 나가는 "길잡이"(전체보기·홈으로 같은 것)에 쓴다.
  * 내용 자체를 감추는 데는 쓰지 말 것 — 그건 기능을 없애는 것이다.
- * 내용을 남기고 이동만 막으려면 AppSafeLink 를 쓴다.
  */
 export default function HideInInstalledApp({ children }: { children: React.ReactNode }) {
   const installed = useInstalledApp();

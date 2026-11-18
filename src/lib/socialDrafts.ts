@@ -345,7 +345,7 @@ export async function rejectSocialPostDraftRecord(id: string) {
     const preliminary = preliminaryRows[0] ? mapDraft(preliminaryRows[0]) : null;
     if (!preliminary) return { draft: null, removedGalleryPostId: null };
     for (const studentId of [...new Set(preliminary.subjectStudentIds)].sort()) {
-      await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, studentId);
+      await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1,0))::text`, studentId);
     }
     const lockedRows = await tx.$queryRawUnsafe<any[]>(`SELECT * FROM "SocialPostDraft" WHERE id=$1 FOR UPDATE`, id);
     const lockedDraft = lockedRows[0] ? mapDraft(lockedRows[0]) : null;

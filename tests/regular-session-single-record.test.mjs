@@ -134,7 +134,6 @@ test("잠금 → 입양 → 찾기/만들기 순서(동시 요청이 섞이지 �
 // ── 입력 경로가 모두 같은 함수를 쓰는지(한쪽만 고치는 사고 방지) ──
 const admin = readFileSync("src/app/actions/admin.ts", "utf8");
 const staff = readFileSync("src/app/actions/staff-sessions.ts", "utf8");
-const rallyz = readFileSync("src/app/actions/rallyz-attendance-sync.ts", "utf8");
 
 function body(source, name) {
   const start = source.indexOf(`export async function ${name}(`);
@@ -143,9 +142,8 @@ function body(source, name) {
   return source.slice(start, next === -1 ? undefined : next);
 }
 
-test("관리자 출결 저장(정규)·랠리즈는 findOrCreateRegularSession 으로 기록을 찾는다", () => {
+test("관리자 출결 저장(정규)은 findOrCreateRegularSession 으로 기록을 찾는다", () => {
   assert.match(body(admin, "saveAttendance"), /findOrCreateRegularSession\(tx, \{ classId, dateYmd: date \}\)/);
-  assert.match(body(rallyz, "applyRallyzAttendanceSync"), /findOrCreateRegularSession\(tx,/);
 });
 
 test("관리자 쪽에 «키 없는» 정규 기록을 만드는 INSERT 가 남아 있지 않다", () => {

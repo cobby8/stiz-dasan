@@ -9,7 +9,7 @@ const adminActions = await readFile(
 
 const updateTrialLead = adminActions.slice(
   adminActions.indexOf("export async function updateTrialLead"),
-  adminActions.indexOf("export async function deleteTrialLead"),
+  adminActions.indexOf("// (2026-11-09) 체험 완료 문자 재시도 액션"),
 );
 
 test("체험 일정 확정 전 서버가 유효한 날짜와 수업 반을 검증한다", () => {

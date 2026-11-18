@@ -239,8 +239,12 @@ test("결석 행 note 와 알림 재조정 제외 조건이 같은 머리말을 
 
 test("마이그레이션 CHECK 제약 = 코드 사유·상태 집합", () => {
   const sql = readFileSync("prisma/migrations/20261109180000_add_regular_absence_period/migration.sql", "utf8");
-  const reasons = /reason IN \(([^)]+)\)/.exec(sql)[1].split(",").map((s) => s.trim().replace(/'/g, ""));
+  // 사유 제약은 2026-11-17 경조사 추가 마이그레이션이 다시 만든다 — 그 파일의 «마지막» CHECK(되돌림 주석 아래 실제 문장)가 지금 제약이다
+  const reasonSql = readFileSync("prisma/migrations/20261117210000_absence_reason_family_event/migration.sql", "utf8");
+  const reasonChecks = [...reasonSql.matchAll(/reason IN \(([^)]+)\)/g)];
+  const reasons = reasonChecks[reasonChecks.length - 1][1].split(",").map((s) => s.trim().replace(/'/g, ""));
   assert.deepEqual([...reasons].sort(), [...rules.VALID_REASONS].sort());
+  assert.ok(reasons.includes("FAMILY_EVENT"));
   assert.deepEqual([...plan.PERIOD_REASONS].sort(), [...rules.VALID_REASONS].sort());
   const statuses = /status IN \(([^)]+)\)/.exec(sql)[1].split(",").map((s) => s.trim().replace(/'/g, ""));
   assert.deepEqual(statuses, [...plan.PERIOD_STATUSES]);
@@ -260,7 +264,8 @@ test("크론: vercel.json 하루 1회 + CRON_SECRET 확인", () => {
   // 크론용 연장은 화면에서 부를 수 있는 "use server" 액션으로 노출하지 않는다
   const action = readFileSync("src/app/actions/absence-period-admin.ts", "utf8");
   assert.doesNotMatch(action, /export async function extendOpenAbsencePeriods/);
-  assert.match(action, /export async function extendAbsencePeriodsNow\(\) \{\s*await requireAdmin\(\);/);
+  // 2026-11-18 옛 코드 정리 C: 화면에서 부르는 곳이 없던 수동 연장 액션(extendAbsencePeriodsNow)도 지웠다 — 연장은 크론만
+  assert.doesNotMatch(action, /export async function extendAbsencePeriodsNow\b/);
 });
 
 test("검수 반영: 반마다 기간 시작일부터 다시 보고, 이미 이 기간이 다룬 날은 건너뛴다(기간 도중 새 반 채움)", () => {

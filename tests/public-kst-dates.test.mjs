@@ -29,6 +29,8 @@ function loadPage(file, overrides = {}) {
     if (id === "@/lib/enrollment/shuttle-place-name") return shuttlePlaceName;
     if (id === "next/link") return { default: ({ children, ...props }) => React.createElement("a", props, children) };
     if (id === "next/navigation") return { notFound: () => { throw new Error("not found"); } };
+    // 홈 사진 주소 줄이기(2026-11-18) — 이 테스트는 날짜만 보므로 주소를 그대로 돌려준다
+    if (id === "@/lib/ui/optimizedImage") return { optimizedImageProps: (url) => ({ src: url }) };
     if (id === "@/lib/sanitize") return { sanitizeHtml: (value) => value };
     if (id === "@/lib/publicMetadata") return { buildPublicMetadata: (value) => value };
     // 공지 상세가 generateMetadata 용으로 불러온다(메타 자체는 tests/notice-metadata.test.mjs 가 검증)

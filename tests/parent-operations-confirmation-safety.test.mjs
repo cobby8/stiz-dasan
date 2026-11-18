@@ -28,7 +28,8 @@ test("학부모 제출 경로는 시트·랠리즈·홈페이지 외부 반영 �
     .replace("isRallyzSyncRetired(process.env)", "");
   assert.notEqual(withoutRetirementSwitch, action);
   assert.doesNotMatch(withoutRetirementSwitch, /googleapis|sheets\.spreadsheets|rallyz/i);
-  assert.match(operations, /if \(!requests\[0\] \|\| !\['APPROVED', 'PARTIAL', 'PENDING'\]\.includes\(requests\[0\]\.status\)\)/);
+  // 2026-11-18 옛 코드 정리 C: 홈페이지 반영 액션(applyOperationsWebsite)은 부르는 곳이 없어 지웠다
+  assert.doesNotMatch(operations, /export async function applyOperationsWebsite\b/);
 });
 
 test("UNKNOWN은 서버 저장 시 자동 실행하지 않고 HELD 처리한다", () => {

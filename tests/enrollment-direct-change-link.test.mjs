@@ -34,7 +34,7 @@ test("이력 id 를 안 주면 기존 이벤트 모양 그대로다(다른 호�
 
 test("updateEnrollmentStatus 는 이력 INSERT 의 id 를 돌려받아 원장 이벤트에 넘긴다", () => {
   const source = read("src/app/actions/admin.ts");
-  const fn = source.slice(source.indexOf("export async function updateEnrollmentStatus"), source.indexOf("export async function deleteEnrollment"));
+  const fn = source.slice(source.indexOf("export async function updateEnrollmentStatus"), source.indexOf("// ── 출결 관리"));
   const insert = fn.indexOf('INSERT INTO "EnrollmentChangeRequest"');
   const returning = fn.indexOf("RETURNING id", insert);
   const link = fn.indexOf("enrollmentChangeRequestId: history?.id");

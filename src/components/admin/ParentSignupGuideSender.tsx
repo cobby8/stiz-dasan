@@ -21,6 +21,8 @@ import { formatKstDate } from "@/lib/datetime/kst";
 export default function ParentSignupGuideSender() {
   // «다시 보내기» — 켜야만 이미 안내를 받은 번호도 넣는다(기본 꺼짐)
   const [resend, setResend] = useState(false);
+  // «가입하지 않은 분께만» — 켜면 이미 가입한 분(로그인 안내 대상)은 뺀다(2026-11-18 원장 지시)
+  const [unsignedOnly, setUnsignedOnly] = useState(false);
   const [preview, setPreview] = useState<ParentSignupGuidePreview | null>(null);
   const [message, setMessage] = useState<{ tone: "ok" | "warn"; text: string } | null>(null);
   const [pending, startTransition] = useTransition();
@@ -31,7 +33,7 @@ export default function ParentSignupGuideSender() {
     setPreview(null);
     startTransition(async () => {
       try {
-        const result = await prepareParentSignupGuide({ resend });
+        const result = await prepareParentSignupGuide({ resend, unsignedOnly });
         if (!result.ok) return setMessage({ tone: "warn", text: result.message });
         setPreview(result);
       } catch {
@@ -45,7 +47,7 @@ export default function ParentSignupGuideSender() {
     const ok = await confirm({
       title: `${preview.recipientCount}명에게 가입 안내 보내기`,
       description: `미리보기 문구 그대로 ${preview.recipientCount}명에게 문자를 보냅니다.
-(${breakdownText(preview)})${preview.resend ? "\n이미 받은 분께도 다시 보냅니다." : ""}\n보낸 뒤에는 취소할 수 없어요.`,
+(${breakdownText(preview)})${preview.unsignedOnly ? "\n가입하지 않은 분께만 보냅니다." : ""}${preview.resend ? "\n이미 받은 분께도 다시 보냅니다." : ""}\n보낸 뒤에는 취소할 수 없어요.`,
       confirmLabel: `${preview.recipientCount}명에게 보내기`,
       tone: "primary",
     });
@@ -54,7 +56,7 @@ export default function ParentSignupGuideSender() {
     startTransition(async () => {
       try {
         // 미리보기를 만들 때의 «다시 보내기» 값을 그대로 쓴다(그 사이 체크를 바꿔도 다른 대상이 나가지 않게)
-        const result = await sendParentSignupGuide({ approvalId: target.approvalId, resend: target.resend, approved: true });
+        const result = await sendParentSignupGuide({ approvalId: target.approvalId, resend: target.resend, unsignedOnly: target.unsignedOnly, approved: true });
         setMessage({ tone: result.ok ? "ok" : "warn", text: result.message });
       } catch {
         setMessage({ tone: "warn", text: "보낸 결과를 확인하지 못했습니다. «발송 이력» 탭을 먼저 확인하고, 다시 보내지 마세요." });
@@ -80,6 +82,17 @@ export default function ParentSignupGuideSender() {
           className="h-5 w-5 accent-[var(--color-academy-primary)]"
         />
         이미 받은 분께도 다시 보내기
+      </label>
+
+      {/* 가입하지 않은 분께만 — 이미 가입한 분께 가는 앱 설치 안내를 뺀다 */}
+      <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-[var(--color-academy-ink)]">
+        <input
+          type="checkbox"
+          checked={unsignedOnly}
+          onChange={(event) => { setUnsignedOnly(event.target.checked); setPreview(null); }}
+          className="h-5 w-5 accent-[var(--color-academy-primary)]"
+        />
+        가입하지 않은 분께만 보내기
       </label>
 
       {!preview && (

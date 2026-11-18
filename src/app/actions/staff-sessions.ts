@@ -8,6 +8,7 @@ import { makeSourceKey } from "@/lib/makeup/credit-rules";
 import { applyMakeupAttendanceInTx, findMakeupBookings, makeupOnClassDateSql } from "@/lib/makeup/makeup-attendance";
 import { requireStaffClassAccess, requireStaffSeasonalSessionAccess, requireStaffSessionAccess } from "@/lib/staff-class-access";
 import { todayKst } from "@/lib/datetime/kst";
+import { CARRY_REVIEW_REASONS } from "@/lib/regular/carryReasonRules";
 import { canEditFeedLine, feedLineWindowMessage, normalizeFeedLine, sessionKstDateSql, staffSessionEditWindowSql, TODAY_KST_SQL } from "@/lib/feed/rules";
 import {
   STAFF_EDIT_EXPIRED_MESSAGE,
@@ -132,9 +133,10 @@ async function hasLiveIllnessAbsence(studentId: string, classId: string, dateYmd
   const rows = await prisma.$queryRawUnsafe<{ id: string }[]>(
     `SELECT ra.id FROM "RegularAbsence" ra
       WHERE ra."studentId" = $1 AND ra."classId" = $2 AND ra.date = $3::date
-        AND ra.status <> 'CANCELLED' AND ra.reason = 'ILLNESS_INJURY'
+        AND ra.status <> 'CANCELLED' AND ra.reason = ANY($4::text[])
       LIMIT 1`,
-    studentId, classId, dateYmd,
+    // 이월 검토 사유(질병·부상 · 직계 경조사) 모두 — 경조사도 정정으로 보강권이 새어 나가지 않게
+    studentId, classId, dateYmd, [...CARRY_REVIEW_REASONS],
   );
   return Boolean(rows[0]);
 }

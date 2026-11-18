@@ -8,7 +8,6 @@ import test from "node:test";
 
 const creditService = readFileSync("src/lib/makeup/credit-service.ts", "utf8");
 const adminActions = readFileSync("src/app/actions/admin.ts", "utf8");
-const rallyzSync = readFileSync("src/app/actions/rallyz-attendance-sync.ts", "utf8");
 
 /** 함수 본문(다음 export 직전까지)을 잘라 낸다. */
 function functionBody(source, name) {
@@ -44,11 +43,6 @@ test("관리자 출석 저장(방학특강)은 좌석을 찾아 보강권을 try
   assert.match(helper, /e\.status = 'SCHEDULED'/);
   assert.match(helper, /if \(!seats\[0\]\) return;/);
   assert.match(helper, /syncCreditForSeasonalSeat\(\{ enrollmentDateId: seats\[0\]\.id, studentId, status \}\)/);
-});
-
-test("랠리즈 출결 적용도 트랜잭션 뒤에 보강권을 try/catch 안에서 맞춘다", () => {
-  const body = functionBody(rallyzSync, "applyRallyzAttendanceSync");
-  assert.match(body, /try \{\s*await syncCreditForRegularSession\(target\);\s*\} catch/);
 });
 
 // ── 발급 시작일(앞으로만) 판정 ──

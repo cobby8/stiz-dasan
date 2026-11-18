@@ -2,8 +2,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { getMonthlyClassDates } from "@/lib/enrollment/monthlyClassDates";
 import { monthlyBillingDueDate } from "@/lib/billing-due-date";
 import { notMergedStudent } from "@/lib/studentVisibility";
+import { resumeFromSql } from "@/lib/enrollment/resumeWindow";
 import { validateMonthlyRegisterDraft } from "./monthly-register";
-import { WorkbenchError, carryPool, allocateCarry, filterWorkbenchDates, illnessMissedDatesOf, validateWorkbenchCommand, validateWorkbenchMonth, workbenchTotal, illnessReducedSumSql, shortMonthProration, attendedOnlyProration, STANDARD_MONTHLY_SESSIONS,
+import { WorkbenchError, carryPool, allocateCarry, filterWorkbenchDates, illnessMissedDatesOf, validateWorkbenchCommand, validateWorkbenchMonth, workbenchTotal, illnessReducedSumSql, shortMonthProration, attendedOnlyProration, STANDARD_MONTHLY_SESSIONS, WORKBENCH_GENERIC_REVIEW_REASON, WORKBENCH_SOURCE_CHANGED_REASON, AUTO_DRAFT_ACTOR, SHUTTLE_UNLINKED_REASON, shuttleNameKey,
   type WorkbenchAmounts, type WorkbenchView, type WorkbenchRow, type WorkbenchOperation, type WorkbenchCalendarSnapshot } from "./workbench";
 // 주N회 요금·셔틀비·형제할인 «제안값» 규칙은 순수 모듈 한 곳에서만 정한다.
 import { planWeeklyTuition, planShuttleFee, siblingDiscountStudents, siblingDiscountAmount, REGULAR_SIBLING_DISCOUNT_PERCENT, fixedTuitionCovers, fixedTuitionShortLabel, type ShuttlePlan, type FixedTuition } from "./workbench-pricing";
@@ -15,12 +16,14 @@ export type WorkbenchTx = {
   $executeRawUnsafe(sql: string, ...values: unknown[]): Promise<number>;
 };
 export type WorkbenchDb = { $transaction<T>(work: (tx: WorkbenchTx) => Promise<T>, options?: { isolationLevel: "Serializable" | "RepeatableRead"; timeout?: number }): Promise<T> };
-type Enrollment = { studentId: string; studentName: string; classId: string; className: string; status: string; startsOn?: Date | string | null; price: number; dayOfWeek: string; createdAt: Date | string; updatedAt: Date | string;
+type Enrollment = { studentId: string; studentName: string; classId: string; className: string; status: string; startsOn?: Date | string | null; resumeFrom?: string | null; price: number; dayOfWeek: string; createdAt: Date | string; updatedAt: Date | string;
   // 주N회 요금·셔틀비·형제할인 제안에 쓰는 칸(조회에 없을 수도 있어 선택값)
   programId?: string | null; programName?: string | null; priceWeek1?: number | null; priceWeek2?: number | null; priceWeek3?: number | null; priceDaily?: number | null;
   runsShuttle?: boolean | null; shuttleFeeOverride?: number | null; slotKey?: string | null; parentId?: string | null; birthDate?: string | null };
 type Register = { studentId: string; month: string; status: string; payload: unknown; version: number };
 type Stored = { id: string; month: string; studentId: string; classId: string; version: number; status: "DRAFT" | "CONFIRMED" | "ISSUED" | "ZERO"; payload: WorkbenchAmounts; reason: string; sourceVersion: string; paymentId: string | null; periodStart?:string|null;periodEnd?:string|null;scheduledDates?:string[];calculationBasis?:Record<string,unknown>;
+  /** 마지막으로 저장한 사람(User.id 또는 자동 초안 AUTO_DRAFT_ACTOR) — 자동 초안 표시에만 쓴다 */
+  actorUserId?: string | null;
   /** 마지막으로 저장·발행한 시각 — 부상 결석 정산 «전»에 저장된 초안인지 가릴 때만 쓴다 */
   updatedAt?: Date | string | null };
 type Absence = { id: string; studentId: string; studentName: string; classId: string; date: string; reason: string; status: string; makeupStatus: string | null; resolution: string | null };
@@ -66,11 +69,31 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
   const [year, monthNumber] = month.split("-").map(Number);
   const tables = await existingTables(tx);
   const has = (table: (typeof READ_TABLES)[number]) => tables.has(table);
-  const enrollments = take(await tx.$queryRawUnsafe<Enrollment[]>(`SELECT e."studentId", s.name AS "studentName", e."classId", c.name AS "className", e.status, e."startsOn"::text AS "startsOn",
+  // 복귀 예약(휴원 중 + 승인된 앞날 복귀 신청)은 청구에서 «복귀일부터 다니는 반»으로 본다(2026-11-17).
+  //   수강은 복귀일까지 PAUSED 라 그대로 두면 다음 달 초안에서 빠진다. 상태는 ACTIVE 로, 개시일은 복귀일로 늦춘다
+  //   → 복귀일이 이번 달 뒤면 기존 «미래 기간» 규칙으로 제외, 달 가운데면 기존 «개시일 이후» 기간 조정·검토 사유가 그대로 붙는다.
+  const resumeBooked = resumeFromSql("e");
+  // 이미 적용된 달 가운데 복귀(2026-11-17 원장 «2번 먼저»): 복귀 크론은 Enrollment.startsOn 을 바꾸지 않는다(피드·기록 등 40여 곳이 쓰는 값).
+  //   그래서 청구 조회에서만 «이 달 안 복귀일»로 개시일을 늦춘다. 단 아래일 때만 —
+  //   ① 복귀일이 이 달 1일 «뒤»(1일 복귀는 한 달 전액이 맞다) ② 지금 다니는 중(ACTIVE)
+  //   ③ 같은 달 2일 이후에 휴원이 시작되지 않았다(그러면 달 앞쪽은 다녔다 — 휴원 몫은 휴원 정산이 맡는다. 1일 휴원은 앞쪽을 안 다녔으니 늦춘다)
+  //   ④ 그 달 수강료 청구가 아직 없다(이미 낸·발행된 청구는 손대지 않고, 휴원 정산이 이미 줄인 청구와 두 번 깎이지 않게).
+  //   이 달 밖의 복귀는 보지 않는다 — 지난 복귀 기록 때문에 저장해 둔 초안 지문이 바뀌지 않게.
+  const monthStart = `'${month}-01'::date`;
+  const resumeApplied = `(SELECT to_char(MAX(ra."effectiveFrom"), 'YYYY-MM-DD') FROM "EnrollmentChangeRequest" ra WHERE e.status = 'ACTIVE' AND ra."enrollmentId" = e.id AND ra.kind = 'RESUME' AND ra.status = 'APPLIED'`
+    + ` AND ra."effectiveFrom" > ${monthStart} AND ra."effectiveFrom" < (${monthStart} + interval '1 month')`
+    + ` AND NOT EXISTS (SELECT 1 FROM "EnrollmentChangeRequest" pz WHERE pz."enrollmentId" = e.id AND pz.kind = 'PAUSE' AND pz.status = 'APPLIED' AND pz."effectiveFrom" > ${monthStart} AND pz."effectiveFrom" < ra."effectiveFrom")`
+    + ` AND NOT EXISTS (SELECT 1 FROM "Payment" py WHERE py."studentId" = e."studentId" AND (py."classId" = e."classId" OR py."classId" IS NULL) AND py.year = ${year} AND py.month = ${monthNumber} AND py.status NOT IN ('CANCELED','CANCELLED') AND py.type <> 'UNIFORM'))`;
+  const resumeFrom = `COALESCE(${resumeBooked}, ${resumeApplied})`;
+  const enrollments = take(await tx.$queryRawUnsafe<Enrollment[]>(`SELECT e."studentId", s.name AS "studentName", e."classId", c.name AS "className",
+    CASE WHEN ${resumeBooked} IS NOT NULL THEN 'ACTIVE' ELSE e.status END AS status,
+    GREATEST(e."startsOn", (${resumeFrom})::date)::text AS "startsOn", ${resumeFrom} AS "resumeFrom",
     p.price, p.id AS "programId", p.name AS "programName", p."priceWeek1", p."priceWeek2", p."priceWeek3", p."priceDaily", p."runsShuttle", p."shuttleFeeOverride", c."slotKey",
     to_char(s."birthDate",'YYYY-MM-DD') AS "birthDate", c."dayOfWeek", s."parentId", c."updatedAt" AS "classUpdatedAt", p."updatedAt" AS "programUpdatedAt", e."createdAt", e."updatedAt" FROM "Enrollment" e JOIN "Student" s ON s.id=e."studentId"
     JOIN "Class" c ON c.id=e."classId" JOIN "Program" p ON p.id=c."programId"
     WHERE ${notMergedStudent("s")} ORDER BY e."studentId",e."classId" LIMIT ${limit}`));
+  // 복귀(예약·적용)가 없는 행은 칸을 지운다 — 원본 지문(sourceVersion)이 예전과 같아야 이미 저장한 초안이 낡은 것으로 바뀌지 않는다.
+  for (const e of enrollments) if (e.resumeFrom == null) delete e.resumeFrom;
   const payments = take(await tx.$queryRawUnsafe<Array<{ id: string; studentId: string; classId: string | null; status: string; amount: number; type: string; updatedAt: Date | string }>>(`SELECT id,"studentId","classId",status,amount,type,"updatedAt" FROM "Payment" WHERE year=$1 AND month=$2 ORDER BY id LIMIT ${limit}`, year, monthNumber));
   const invoices = take(await tx.$queryRawUnsafe<Array<{ id: string; paymentId: string; status: string; amount: number; updatedAt: Date | string }>>(`SELECT i.id,i."paymentId",i.status,i.amount,i."updatedAt" FROM "PaymentInvoice" i JOIN "Payment" p ON p.id=i."paymentId" WHERE p.year=$1 AND p.month=$2 ORDER BY i.id LIMIT ${limit}`, year, monthNumber));
   const registerReady = has("MonthlyEnrollmentRegister");
@@ -172,6 +195,10 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
   for (const row of fixedTuitionRows) if (fixedTuitionCovers(row, month) && !fixedTuitionByStudent.has(row.studentId)) fixedTuitionByStudent.set(row.studentId, { amount: Number(row.amount), memo: row.memo ?? null });
   const shuttleRiders = new Set(shuttleStops.map(r=>r.studentId).filter((v):v is string=>Boolean(v)));
   const unlinkedShuttleNames = [...new Set(shuttleStops.filter(r=>!r.studentId).map(r=>r.studentName))];
+  // 재검수 C-1: 연결 빠진 이름과 같은 이름의 학생 행은 «확인 필요»(셔틀비 0원 자동 초안 방지), 어떤 행과도 안 맞는 이름은 보기에 표시해 자동 초안·일괄 발행을 멈춘다.
+  // 이름 비교는 띄어쓰기 무시. 동명이인이면 그 이름의 행 모두가 «확인 필요»가 된다.
+  const unlinkedShuttleKeys = new Set(unlinkedShuttleNames.map(shuttleNameKey));
+  const unknownShuttleNames = unlinkedShuttleNames.filter(name => !enrollments.some(e => shuttleNameKey(e.studentName) === shuttleNameKey(name)));
   const calendar = await calendarInput;
   const eventValues = calendar?.events??events.map(e => ({ title: e.title, date: new Date(e.date).toISOString(), ...(e.endDate ? { endDate: new Date(e.endDate).toISOString() } : {}) }));
   // 같은 달·같은 요일의 수업일은 한 번만 계산한다(2026-11-14 속도 개선 — 예전엔 반 500여 개마다 연간 일정 전체를 다시 훑었다).
@@ -245,7 +272,8 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
     const allScheduledDates = classDates(month, e.dayOfWeek);
     const classReg = reg?.classes.find(c => c.classId === e.classId);
     const startsOn = typeof e.startsOn === "string" ? e.startsOn : null;
-    const futurePeriod=Boolean(startsOn && allScheduledDates.length && startsOn > allScheduledDates.at(-1)!);
+    // 수업일이 0회인 달(정규반이 쉬는 달)도 개시일·복귀일이 다음 달 이후면 제외 — 형제할인·주N회 집계에 섞이지 않게(검수 R-1)
+    const futurePeriod=Boolean(startsOn && (allScheduledDates.length ? startsOn > allScheduledDates.at(-1)! : startsOn > `${month}-31`));
     const excluded = e.status !== "ACTIVE" || Boolean(classReg && classReg.status !== "ACTIVE") || futurePeriod;
     return { register, reg, allScheduledDates, classReg, startsOn, futurePeriod, excluded };
   };
@@ -337,7 +365,7 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
         amounts.discountAmount = siblingDiscountAmount(amounts.baseAmount);
         basis.push(`형제할인 ${REGULAR_SIBLING_DISCOUNT_PERCENT}% 제안 → ${amounts.discountAmount.toLocaleString("ko-KR")}원(셔틀비 제외)`);
       }
-      reviewReasons.push("할인·셔틀 및 수강 기간을 검토해 주세요.");
+      reviewReasons.push(WORKBENCH_GENERIC_REVIEW_REASON);
       if (isShortMonth && !tuition?.fixedFee) {
         amounts.prorationAmount = shortMonthProration(amounts.baseAmount, monthSessions, amounts.discountAmount);
         basis.push(`월 ${STANDARD_MONTHLY_SESSIONS}회 기준 중 ${STANDARD_MONTHLY_SESSIONS - monthSessions}회 적은 달 → ${amounts.prorationAmount.toLocaleString("ko-KR")}원 차감`);
@@ -362,6 +390,11 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
     // 고정 수강료를 자동 적용하지 않았거나 일부만 적용한 학생 — 원장이 직접 확인하도록 검토 사유(근거에도 남긴다)
     const fixedNote = excluded ? undefined : fixedNotes.get(e.studentId);
     if (fixedNote) { reviewReasons.push(fixedNote); basis.push(`확인: ${fixedNote}`); }
+    // 셔틀 명단에 이 학생 이름이 «학생 연결 없이» 있다 — 셔틀비가 0원으로 빠졌을 수 있다(재검수 C-1)
+    const shuttleUnlinked = !excluded && unlinkedShuttleKeys.has(shuttleNameKey(e.studentName));
+    if (shuttleUnlinked) { reviewReasons.push(SHUTTLE_UNLINKED_REASON); basis.push(`확인: ${SHUTTLE_UNLINKED_REASON}`); }
+    // 복귀 예약 반의 첫 청구는 원장이 한 번 본다 — 휴원 중 복사된 셔틀 명단에 빠져 셔틀비가 0원일 수 있다(일괄 발행 대상에서 뺀다)
+    if (e.resumeFrom) { basis.push(`휴원 복귀 ${e.resumeFrom}`); if (!excluded) reviewReasons.push(`휴원 복귀(${e.resumeFrom}) — 복귀 첫 청구예요. 셔틀 탑승 여부와 금액을 확인해 주세요.`); }
     if (startsOn) basis.push(`수강 개시일 ${startsOn}`);
     if (startsOn && !excluded && scheduledDates.length < allScheduledDates.length) reviewReasons.push("개시일 이후 실제 수업 횟수에 맞는 기간 조정 금액을 확인해 주세요.");
     if (startsOn && !guideOverridesSaved && saved?.scheduledDates?.some(day => day < startsOn)) blockingReasons.push("저장된 청구 기간에 수강 개시일 전 수업이 포함되어 있습니다. 기간과 금액을 다시 검토해 주세요.");
@@ -484,9 +517,10 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
     if(seasonalCredits.some(c=>c.studentId===e.studentId)) blockingReasons.push("기존 특강 이월액은 원결석·사용액 대조 후 옮겨야 합니다. 중복 차감을 막기 위해 보류합니다.");
     if(pool(e.studentId).unresolved) blockingReasons.push("기존 이월 사용분에 원적립 연결이 없어 정산 확인이 필요합니다.");
     if (existing.length) reviewReasons.push("이미 청구·납부된 내역이 있어 새 발행에서 제외합니다.");
-    if (saved && saved.sourceVersion !== sourceVersion && !["ISSUED", "ZERO"].includes(saved.status)) reviewReasons.push("검토 후 원본이 변경되었습니다. 다시 저장·확정해 주세요.");
+    if (saved && saved.sourceVersion !== sourceVersion && !["ISSUED", "ZERO"].includes(saved.status)) reviewReasons.push(WORKBENCH_SOURCE_CHANGED_REASON);
     if (saved && saved.sourceVersion === sourceVersion) {
-      const structural = reviewReasons.filter(r => r.startsWith("이미") || r.startsWith("확정 월"));
+      // 자동 초안(사람이 아직 안 본 초안)에는 셔틀 연결 빠짐 사유를 남긴다 — 걸러지면 승인 대기로 그냥 넘어간다(재검수 C-1)
+      const structural = reviewReasons.filter(r => r.startsWith("이미") || r.startsWith("확정 월") || (r === SHUTTLE_UNLINKED_REASON && saved.actorUserId === AUTO_DRAFT_ACTOR));
       reviewReasons.splice(0, reviewReasons.length, ...structural);
       basis.push(`관리자 검토: ${saved.reason}`);
     }
@@ -501,9 +535,15 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
       // 달 가운데가 빠진 행에만 붙인다 — 저장할 때 수업일 사본에서 이 날들을 빼고, 근거에 따로 적어 둔다
       ...(guideMissedDates.length ? { guideMissedDates } : {}),
       // 학생별 고정 수강료가 적용된 행에만 붙인다 — 화면이 «고정 15만»처럼 근거를 보인다(확정 장부·제외 행은 고정 금액을 쓰지 않으므로 없음)
-      ...(fixedLabel ? { fixedTuitionLabel: fixedLabel } : {}) };
+      ...(fixedLabel ? { fixedTuitionLabel: fixedLabel } : {}),
+      // 청구일 cron 이 저장한 초안이고 사람이 아직 다시 저장하지 않았으면 «자동 초안(원장 확인 전)»으로 구분한다(2026-11-17)
+      ...(saved?.status === "DRAFT" && saved.actorUserId === AUTO_DRAFT_ACTOR ? { autoDraft: true as const } : {}) };
   });
   return { month, sourceVersion, storageReady, writesEnabled: writesEnabled && storageReady, rows,carrySettlementReady:true,calendarSource,
+    // 그 달 셔틀 명단이 하나도 없으면(아래 안내와 같은 조건) 표시 — 자동 초안·한꺼번에 발행을 막는다(검수 B-1, 2026-11-17). 있으면 칸이 없다
+    ...(!shuttleStops.length ? { shuttleRosterMissing: true as const } : {}),
+    // 누군지 모르는 연결 빠진 이름 — 자동 초안·한꺼번에 발행을 멈춘다(재검수 C-1). 없으면 칸이 없다
+    ...(unknownShuttleNames.length ? { shuttleUnlinkedNames: unknownShuttleNames } : {}),
     notices:[...seasonalCredits.length?[`기존 특강 이월 ${seasonalCredits.length}건은 별도 대조·이관이 필요합니다. 자동 중복 적립하지 않습니다.`]:[],
       // 셔틀비 제안의 근거가 되는 명단 상태를 알린다(명단이 없거나 학생 연결이 빠지면 셔틀비가 0원으로 시작한다).
       ...!shuttleStops.length?[`${month} 셔틀 명단이 없어 셔틀비를 자동 제안하지 않았습니다.`]:[],

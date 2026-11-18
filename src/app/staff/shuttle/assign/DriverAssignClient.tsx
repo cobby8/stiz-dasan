@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import ScopeBackLink from "@/components/navigation/ScopeBackLink";
 import { useCallback, useEffect, useRef, useState } from "react";
 // 타입만 가져온다(서버 모듈 코드는 화면에 실리지 않는다).
 import type { DriverAssignBoard } from "@/lib/shuttle/driverAssign";
@@ -126,9 +126,10 @@ export default function DriverAssignClient({ month }: { month: string }) {
           </section>
         ))}
         <p className="text-center text-xs text-[var(--color-academy-muted)]">이미 운행표에 있는 학생은 여기 나오지 않아요.</p>
-        <Link href="/staff/shuttle" className="academy-button-text w-full">
+        {/* 방금 있던 셔틀 화면으로 한 칸 뒤로(쌓지 않는다 — 쌓으면 셔틀 화면에서 뒤로가 다시 이 화면). 기록이 없으면 셔틀 화면 */}
+        <ScopeBackLink fallbackHref="/staff/shuttle" className="academy-button-text w-full">
           운행 관리로
-        </Link>
+        </ScopeBackLink>
       </div>
     </main>
   );

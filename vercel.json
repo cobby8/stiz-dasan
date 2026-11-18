@@ -78,6 +78,10 @@
       "schedule": "20 15 * * *"
     },
     {
+      "path": "/api/cron/billing-draft",
+      "schedule": "25 15 * * *"
+    },
+    {
       "path": "/api/cron/makeup-credits",
       "schedule": "30 15 * * *"
     },

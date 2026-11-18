@@ -52,7 +52,6 @@ const SCREENS = [
   "src/components/staff/ClassPeopleSheet.tsx",
   "src/components/staff/SessionPhotoUploader.tsx",
   "src/components/staff/VoiceToTextButton.tsx",
-  "src/components/shuttle/RegularRouteSection.tsx",
   "src/components/shuttle/RegularStopGeocodePanel.tsx",
   "src/components/shuttle/ShuttleGeoEditor.tsx",
   "src/components/shuttle/UnifiedDriverClient.tsx",
