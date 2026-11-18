@@ -12,7 +12,7 @@ import { seoulDateTimeToIso } from "./seasonalDateTime";
 import { kstLabel } from "@/lib/datetime/kst";
 import { askConfirm, showNotice } from "@/components/ui/feedback";
 // 기간 선택·날짜별 선택(2026-11-18) — 표시 문구·가격 계산은 공용 부품(서버와 같은 함수)
-import { describeApplicationSelection, isDateModeApplication, isLateJoinApplication, kstDateTimeParts, parseKstDateTime, shortDateLabel, weekdaysFromDates } from "@/lib/seasonal/admin-period-rules";
+import { describeApplicationSelection, isDateModeApplication, isLateJoinApplication, isTuitionReduced, kstDateTimeParts, parseKstDateTime, shortDateLabel, weekdaysFromDates } from "@/lib/seasonal/admin-period-rules";
 import { resolvePeriodPrice } from "@/lib/seasonal/period-pricing";
 import { toKstYmd } from "@/lib/datetime/kst";
 
@@ -2184,7 +2184,7 @@ function ApplicationDrawer({
         <button type="button" onClick={onClose} aria-label="닫기" data-admin-modal-initial-focus className="academy-button-text academy-button-sm shrink-0">닫기</button>
       </header>
 
-      <ApplicationReviewSummary application={application} seasonStartsAt={applicationSeason?.startsAt} onResolveReview={onResolveReview} resolving={resolvingReview} />
+      <ApplicationReviewSummary application={application} seasonStartsAt={applicationSeason?.startsAt} tuitionReduced={applicationHasReducedTuition(application, offeringOptions)} onResolveReview={onResolveReview} resolving={resolvingReview} />
 
       <section className="mt-6 grid gap-3 rounded-lg bg-[var(--color-academy-soft)] p-4 text-sm tabular-nums sm:grid-cols-2">
         <Info label="학부모">{application.parentName}{application.parentRelation ? ` · ${application.parentRelation}` : ""}</Info>
@@ -2282,7 +2282,7 @@ function ApplicationDrawer({
   </AdminModal>;
 }
 
-function ApplicationReviewSummary({ application, seasonStartsAt, onResolveReview, resolving }: { application: Application; seasonStartsAt?: string | null; onResolveReview: (applicationId: string, reviewNote: string) => Promise<void>; resolving: boolean }) {
+function ApplicationReviewSummary({ application, seasonStartsAt, tuitionReduced, onResolveReview, resolving }: { application: Application; seasonStartsAt?: string | null; tuitionReduced: boolean; onResolveReview: (applicationId: string, reviewNote: string) => Promise<void>; resolving: boolean }) {
   const importedLabel = application.imported ? `가져온 신청${application.importSource ? ` · ${application.importSource}` : ""}` : "홈페이지 신청";
   const weekdays = application.selectedWeekdays?.length ? application.selectedWeekdays.map(weekdayLabel).join(" · ") : "요일 미확인";
   const needsReview = application.reviewReasons ?? [];
@@ -2292,8 +2292,8 @@ function ApplicationReviewSummary({ application, seasonStartsAt, onResolveReview
       <span className="inline-flex min-h-6 items-center rounded bg-[var(--color-academy-neutral-soft)] px-2 text-xs text-[var(--color-academy-neutral)]">{applicantTypeLabel(application.applicantType)} 회원</span>
       <span className="inline-flex min-h-6 items-center rounded bg-[var(--color-academy-soft)] px-2 text-xs text-[var(--color-academy-muted)]">{importedLabel}</span>
       <span className={badge(application.paymentStatus)}>{paymentReviewLabel(application.paymentStatus)}</span>
-      {/* 중간 합류(기간 시작 뒤 날짜로 접수) — 수강료는 남은 회차만큼으로 접수됐다. 재배정 가격은 관리자 재량 */}
-      {isLateJoinApplication(application, seasonStartsAt) && <span className="inline-flex min-h-6 items-center rounded bg-[var(--color-academy-info-soft)] px-2 text-xs text-[var(--color-academy-info)]">중간 합류 · 남은 회차만큼 수강료</span>}
+      {/* 중간 합류(기간 시작 뒤 날짜로 접수). «남은 회차만큼 수강료»는 저장된 수강료가 정상보다 실제로 줄었을 때만 붙인다(검수 L-3) */}
+      {isLateJoinApplication(application, seasonStartsAt) && <span className="inline-flex min-h-6 items-center rounded bg-[var(--color-academy-info-soft)] px-2 text-xs text-[var(--color-academy-info)]">{tuitionReduced ? "중간 합류 · 남은 회차만큼 수강료" : "중간 합류"}</span>}
     </div>
     <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
       {/* 날짜 선택 신청은 고른 날짜 전체를, 기간을 고른 신청은 기간을 함께 보인다(2026-11-18) */}
@@ -2312,6 +2312,24 @@ function ApplicationReviewSummary({ application, seasonStartsAt, onResolveReview
 /** 신청서의 회원 구분을 가격 계산 값으로(모르면 undefined = 기본가). */
 function pricingApplicantType(value?: string | null): "NEW" | "EXISTING" | undefined {
   return value === "NEW" || value === "EXISTING" ? value : undefined;
+}
+
+/**
+ * 이 신청서의 반 중 하나라도 저장된 수강료가 정상 수강료(기간 가격, 없으면 반 가격)보다 줄었는가(검수 L-3).
+ * 정상 수강료는 재배정 화면의 자동 금액과 같은 규칙으로 구한다. 반·기간을 못 찾으면 줄지 않은 것으로 본다.
+ */
+function applicationHasReducedTuition(application: Application, offerings: SeasonalClass[]): boolean {
+  const applicantType = pricingApplicantType(application.applicantType);
+  const appRange = periodRangeKey(application.periodStartDate, application.periodEndDate);
+  return application.items.some((item) => {
+    const offering = offerings.find((candidate) => candidate.id === item.classId);
+    if (!offering) return false;
+    // 저장된 기간 행(id)을 먼저, 없으면 신청서의 기간 범위로 찾는다
+    const period = (offering.periods ?? []).find((row) => row.id === item.offeringPeriodId)
+      ?? (appRange ? (offering.periods ?? []).find((row) => periodRangeKey(row.startDate, row.endDate) === appRange) : undefined);
+    const normal = period ? resolvePeriodPrice(period, applicantType) : assignmentPriceFor(application, offering);
+    return isTuitionReduced(item.tuitionPriceSnapshot, normal);
+  });
 }
 
 /** 기간 범위 키 — 같은 범위면 반이 달라도 같은 기간으로 본다(서버도 범위로 맞춘다). */

@@ -84,6 +84,15 @@ function offeringScopeWhere(offering: Pick<AssignmentOffering, "id" | "seasonId"
     : { id: offering.id };
 }
 
+/**
+ * 공개 신청이 «같은 운영 묶음»으로 보는 반 조회 조건 = 같은 시즌·같은 연결 반 + 모집 중(OPEN) 반만.
+ * 관리자 재배정의 남은 회차 계산도 이 조건 하나를 쓴다(검수 L-1 — 두 곳 회차 범위가 갈라지면 금액이 달라진다).
+ * 결과가 비면 두 곳 모두 그 반 하나(대상 반)로 대체한다.
+ */
+export function openScopeOfferingWhere(offering: Pick<AssignmentOffering, "id" | "seasonId" | "linkedClassId">) {
+  return { ...offeringScopeWhere(offering), status: "OPEN" as const };
+}
+
 type AssignmentRequest = Pick<SeasonalApplicationInput, "selectionMode" | "selectedDates" | "periodStartDate" | "periodEndDate" | "weeklyFrequency">;
 
 async function resolvePublicOfferingAssignment(
@@ -97,7 +106,7 @@ async function resolvePublicOfferingAssignment(
   deadline: { seasonClosed: boolean },
 ) {
   const candidates = await tx.specialProgramOffering.findMany({
-    where: { ...offeringScopeWhere(target), status: "OPEN" },
+    where: openScopeOfferingWhere(target),
     include: ASSIGNMENT_INCLUDE,
     orderBy: [{ displayOrder: "asc" }, { createdAt: "asc" }],
   });

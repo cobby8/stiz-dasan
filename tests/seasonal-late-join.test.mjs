@@ -189,11 +189,18 @@ test("신청 화면: 마감이면 «요일로 고르기» 비활성·안내, 필
 const routeSource = readFileSync("src/app/api/admin/seasonal/route.ts", "utf8");
 
 test("관리자 재배정: 날짜 모드는 «접수일» 기준 남은 회차 비율 — 같은 함수(requiredDateCount·proratedPrice), 셔틀비도 같은 비율", () => {
-  assert.match(routeSource, /import \{ requiredDateCount, ymdKoreanLabel \} from "@\/lib\/seasonal\/application-plan"/);
+  assert.match(routeSource, /import \{ inferWeeklyFrequency, requiredDateCount, ymdKoreanLabel \} from "@\/lib\/seasonal\/application-plan"/);
   assert.match(routeSource, /const remainingCount = requiredDateCount\(sessions, frequency, period, params\.appliedOnYmd\);/);
   assert.match(routeSource, /const fullCount = requiredDateCount\(sessions, frequency, period\);/);
   // 요일 모드(dateCount null)·기준일 없음은 비율을 쓰지 않는다
-  assert.match(routeSource, /if \(dateCount === null \|\| !params\.appliedOnYmd \|\| frequency === null\) return null;/);
+  assert.match(routeSource, /if \(dateCount === null \|\| !params\.appliedOnYmd\) return null;/);
+  // 주N회: 반 이름 → 없으면 고른 날짜 수로 추정 → 그래도 없으면 정상 금액(검수 M-1)
+  assert.match(routeSource, /const frequency = seasonalOfferingFrequency\(offering\) \?\? inferWeeklyFrequency\(sessions, dateCount, period, params\.appliedOnYmd\);\s*if \(frequency === null\) return null;/);
+  // 회차 범위 = 공개 신청과 같은 조건 함수(OPEN 반), 비면 그 반 하나(검수 L-1)
+  assert.match(routeSource, /where: openScopeOfferingWhere\(offering\)/);
+  assert.match(routeSource, /: await tx\.specialProgramSessionDate\.findMany\(\{ where: \{ offeringId: offering\.id \}/);
+  assert.match(serviceSource, /where: openScopeOfferingWhere\(target\)/);
+  assert.match(serviceSource, /return \{ \.\.\.offeringScopeWhere\(offering\), status: "OPEN" as const \};/);
   // 재배정·새 항목 둘 다 신청서 접수일(KST)을 넘긴다 — 오늘(todayKst)이 아니다
   assert.match(routeSource, /appliedOnYmd: toKstYmd\(before\.application\.createdAt\)/);
   assert.match(routeSource, /appliedOnYmd: toKstYmd\(application\.createdAt\)/);
@@ -212,6 +219,36 @@ test("관리자 재배정 금액: 1/22 접수 신청을 2/1 에 고쳐도 90,000
   assert.equal(pricing.proratedPrice(240000, plan.requiredDateCount(firstSeason, 2, fourWeeks, lateNight), full), 120000);
   // 시작 전(12/20) 접수 → 비율 1 → 정상 금액
   assert.equal(pricing.proratedPrice(240000, plan.requiredDateCount(firstSeason, 2, fourWeeks, kst.toKstYmd("2026-12-20T03:00:00.000Z")), full), 240000);
+});
+
+test("관리자 재배정: 반 이름에 주N회가 없으면 고른 날짜 수로 가장 작은 N 을 찾는다(검수 M-1)", () => {
+  // 시작 전 접수 8개 → 주1회 4 · 주2회 8 → 2
+  assert.equal(plan.inferWeeklyFrequency(firstSeason, 8, fourWeeks, "2026-12-30"), 2);
+  // 1/22 접수 3개 → 주1회 2 · 주2회 3 → 2 (접수일 기준 남은 회차로 센다)
+  assert.equal(plan.inferWeeklyFrequency(firstSeason, 3, fourWeeks, "2027-01-22"), 2);
+  // 1/22 접수 3개 금액 = 240,000 × 3/8 = 90,000 (이름에 주2회가 있을 때와 같은 금액)
+  const n = plan.inferWeeklyFrequency(firstSeason, 3, fourWeeks, "2027-01-22");
+  assert.equal(pricing.proratedPrice(240000, plan.requiredDateCount(firstSeason, n, fourWeeks, "2027-01-22"), plan.requiredDateCount(firstSeason, n, fourWeeks)), 90000);
+  // 20개 → 주5회(주6·7회도 20이지만 가장 작은 N)
+  assert.equal(plan.inferWeeklyFrequency(firstSeason, 20, fourWeeks, "2026-12-30"), 5);
+  // 어느 N 으로도 안 맞는 개수(7)·0·잘못된 값 → null(호출부는 정상 금액)
+  assert.equal(plan.inferWeeklyFrequency(firstSeason, 7, fourWeeks, "2026-12-30"), null);
+  assert.equal(plan.inferWeeklyFrequency(firstSeason, 0, fourWeeks, "2026-12-30"), null);
+  assert.equal(plan.inferWeeklyFrequency(firstSeason, 2.5, fourWeeks, "2026-12-30"), null);
+  // 기간 없음 + 기준일 없음 = 시즌 전체 주2회 8회
+  assert.equal(plan.inferWeeklyFrequency(firstSeason, 8), 2);
+});
+
+test("관리자 표시: 저장 수강료가 정상보다 줄었을 때만 «남은 회차만큼 수강료»(검수 L-3)", () => {
+  assert.equal(adminRules.isTuitionReduced(90000, 240000), true);
+  assert.equal(adminRules.isTuitionReduced(240000, 240000), false); // 날짜만 시작 뒤인 정상가 신청
+  assert.equal(adminRules.isTuitionReduced(300000, 240000), false);
+  assert.equal(adminRules.isTuitionReduced(null, 240000), false);
+  assert.equal(adminRules.isTuitionReduced(90000, 0), false); // 정상가를 모름
+  assert.equal(adminRules.isTuitionReduced(90000, undefined), false);
+  const clientSource = readFileSync("src/app/admin/seasonal/SeasonalAdminClient.tsx", "utf8");
+  assert.match(clientSource, /\{tuitionReduced \? "중간 합류 · 남은 회차만큼 수강료" : "중간 합류"\}/);
+  assert.match(clientSource, /return isTuitionReduced\(item\.tuitionPriceSnapshot, normal\);/);
 });
 
 test("관리자: 기간 시작 뒤 날짜 모드 접수만 «중간 합류»", () => {

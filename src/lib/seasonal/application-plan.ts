@@ -159,6 +159,26 @@ export function requiredDateCount(
 }
 
 /**
+ * 반 이름에 «주N회»가 없을 때 고른 날짜 수로 주N회를 거꾸로 찾는다(관리자 재배정 금액용 · 검수 M-1).
+ * 규칙: N = 1~7 중 requiredDateCount(회차, N, 기간, 기준일) === 고른 날짜 수 가 되는 «가장 작은» N.
+ *   requiredDateCount 는 N 이 커질수록 줄지 않으므로(주마다 min(N, 그 주 회차 수)) 가장 작은 N 이 공개 신청에서
+ *   학부모가 골랐을 주N회와 같은 필요 횟수를 준다(필요 횟수가 같으면 금액 비율도 같다).
+ * 못 찾으면 null — 호출부는 지금처럼 비율 없이 정상 금액을 쓴다.
+ */
+export function inferWeeklyFrequency(
+  sessionDates: ReadonlyArray<{ startsAt: Date | string }>,
+  selectedCount: number,
+  period?: { startDate: string; endDate: string } | null,
+  appliedOnYmd?: string | null,
+): number | null {
+  if (!Number.isInteger(selectedCount) || selectedCount <= 0) return null;
+  for (let frequency = 1; frequency <= 7; frequency += 1) {
+    if (requiredDateCount(sessionDates, frequency, period, appliedOnYmd) === selectedCount) return frequency;
+  }
+  return null;
+}
+
+/**
  * 중간 합류(마감 뒤 날짜 모드)를 아직 받을 수 있는가(2026-11-18 원장 결정).
  * 규칙: 그 기간(없으면 시즌 전체)의 «마지막 회차 날짜 전날 23:59(KST)»까지 받는다
  *   = 오늘(KST)보다 «뒤»의 회차 날짜가 하나라도 있으면 true. 마지막 회차 당일은 이미 수업 날이라 받지 않는다.

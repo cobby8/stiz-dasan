@@ -283,6 +283,17 @@ export function isLateJoinApplication(
   return Boolean(startYmd && createdYmd) && createdYmd > startYmd;
 }
 
+/**
+ * 저장된 수강료가 정상 수강료보다 실제로 줄었는가(검수 L-3 — «남은 회차만큼 수강료» 문구를 붙일지).
+ * 날짜만 기간 시작 뒤이고 수강료는 정상가로 저장된 신청(예: 관리자 재배정에서 비율을 못 구한 경우)에
+ *   «남은 회차만큼»이라고 잘못 쓰지 않게 한다. 정상 수강료를 모르면(0·없음) false.
+ */
+export function isTuitionReduced(savedTuition: number | null | undefined, normalTuition: number | null | undefined): boolean {
+  if (typeof savedTuition !== "number" || typeof normalTuition !== "number") return false;
+  if (!Number.isFinite(savedTuition) || !Number.isFinite(normalTuition) || normalTuition <= 0) return false;
+  return savedTuition < normalTuition;
+}
+
 // ── 목록 표시 문구 ─────────────────────────────────────────────
 
 const WEEKDAY_LABEL: Record<string, string> = { MON: "월", TUE: "화", WED: "수", THU: "목", FRI: "금", SAT: "토", SUN: "일" };

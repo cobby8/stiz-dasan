@@ -18,7 +18,7 @@ import { syncSeasonSiblingDiscounts } from "@/lib/seasonal/sibling-discount-sync
 import { seasonalAttendsSql } from "@/lib/seasonal/attendance-rule";
 import { applicationUsesPeriodOrDate, proratedPrice, resolvePeriodPrice, usesPeriodOrDateFeatures } from "@/lib/seasonal/period-pricing";
 // 재원 판정 SQL 은 공개 신청과 같은 함수 하나(승인 화면 «재원 확인 필요» 경고 · 2026-11-18)
-import { hasMatchingExistingStudent } from "@/lib/seasonal/service";
+import { hasMatchingExistingStudent, openScopeOfferingWhere } from "@/lib/seasonal/service";
 import {
   assertDatesAreSessionDates,
   hasSamePeriodRange,
@@ -29,7 +29,7 @@ import {
   planPeriodCopy,
   weekdaysFromDates,
 } from "@/lib/seasonal/admin-period-rules";
-import { requiredDateCount, ymdKoreanLabel } from "@/lib/seasonal/application-plan";
+import { inferWeeklyFrequency, requiredDateCount, ymdKoreanLabel } from "@/lib/seasonal/application-plan";
 import { findFullDates } from "@/lib/seasonal/date-capacity";
 import { toKstYmd } from "@/lib/datetime/kst";
 import {
@@ -612,16 +612,21 @@ async function resolveSpecialProgramAssignment(
 
   // 날짜 모드의 남은 회차 비율(공개 신청 service.ts 와 같은 함수 requiredDateCount·proratedPrice).
   //   남은 필요 횟수는 «접수일» 기준, 분모는 시작 전 기준 전체 필요 횟수. 요일 모드·시작 전 접수는 비율 1 → 정상 금액.
-  //   주N회는 고른 반 이름의 «주N회»(공개 신청과 같은 반 고르기 규칙). 못 읽으면 비율을 쓰지 않는다(정상 금액).
+  //   주N회는 고른 반 이름의 «주N회»(공개 신청과 같은 반 고르기 규칙). 이름에 없으면 고른 날짜 수로 추정(inferWeeklyFrequency),
+  //   그래도 못 찾으면 비율을 쓰지 않는다(정상 금액).
   async function dateModeProration(period: { startDate: string; endDate: string } | null) {
-    const frequency = seasonalOfferingFrequency(offering);
-    if (dateCount === null || !params.appliedOnYmd || frequency === null) return null;
-    const sessions = await tx.specialProgramSessionDate.findMany({
-      where: offering.linkedClassId
-        ? { offering: { seasonId: offering.seasonId, linkedClassId: offering.linkedClassId } }
-        : { offeringId: offering.id },
-      select: { startsAt: true },
+    if (dateCount === null || !params.appliedOnYmd) return null;
+    // 회차 범위 = 공개 신청과 같은 조건(같은 묶음의 OPEN 반, 검수 L-1). 비면 공개 신청처럼 그 반 하나로 대체 —
+    //   이미 닫힌 반에 배정된 신청을 고쳐도 회차가 0이 되지 않는다.
+    const scopeOfferings = await tx.specialProgramOffering.findMany({
+      where: openScopeOfferingWhere(offering),
+      select: { sessionDates: { select: { startsAt: true } } },
     });
+    const sessions = scopeOfferings.length
+      ? scopeOfferings.flatMap((item) => item.sessionDates)
+      : await tx.specialProgramSessionDate.findMany({ where: { offeringId: offering.id }, select: { startsAt: true } });
+    const frequency = seasonalOfferingFrequency(offering) ?? inferWeeklyFrequency(sessions, dateCount, period, params.appliedOnYmd);
+    if (frequency === null) return null;
     const fullCount = requiredDateCount(sessions, frequency, period);
     const remainingCount = requiredDateCount(sessions, frequency, period, params.appliedOnYmd);
     return fullCount > 0 && remainingCount < fullCount ? { remainingCount, fullCount } : null;

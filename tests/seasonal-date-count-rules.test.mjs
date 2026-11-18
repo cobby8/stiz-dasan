@@ -153,7 +153,7 @@ test("서버: 기간 마감은 그 기간 행 시각으로 409 PERIOD_CLOSED(요
 
 test("재원 재확인: 공개 신청과 같은 SQL 함수로 판정하고, 승인 화면에 경고만(가격 자동 변경 없음)", () => {
   assert.match(serviceSource, /export async function hasMatchingExistingStudent\(input: ExistingStudentProbe\)/);
-  assert.match(routeSource, /import \{ hasMatchingExistingStudent \} from "@\/lib\/seasonal\/service"/);
+  assert.match(routeSource, /import \{ hasMatchingExistingStudent, openScopeOfferingWhere \} from "@\/lib\/seasonal\/service"/);
   assert.match(routeSource, /existingCheck: existingNotActiveIds\.has\(String\(application\.id\)\) \? "NOT_ACTIVE" as const : null/);
   // 재원가(EXISTING)로 접수된 신청만, 청구 연결 전 진행 중 항목이 있을 때만 묻는다
   assert.match(routeSource, /application\.applicantType === "EXISTING"/);
