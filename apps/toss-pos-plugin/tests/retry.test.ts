@@ -92,3 +92,7 @@ test("달 범위 글자", () => {
   assert.equal(monthRangeText(["2026년 12월 수강료", "2027년 1월 수강료"]), "2026년 12월~2027년 1월");
   assert.equal(monthRangeText(["수강료"]), "");
 });
+
+test("checkout_open 도 재시도 대상(완료 신호 뒤 자동으로 연다)", () => {
+  assert.equal(isNotReady("checkout_open"), true);
+});

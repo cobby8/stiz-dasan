@@ -37,7 +37,7 @@ export const API_PATHS = {
   chargeUnpaid: (paymentId: string) => `/api/pos-plugin/unpaid/${encodeURIComponent(paymentId)}/charge`,
   /** 같은 학생 미납 여러 건 «전체 결제» — 본문 { paymentIds }. 응답은 chargeUnpaid 와 같다(2026-11-17) */
   chargeUnpaidBundle: "/api/pos-plugin/unpaid/bundle",
-  /** 새 요청을 바로 못 열었다는 참고 보고 { reason: busy|draft_not_empty } — 상태는 안 바뀐다(2026-11-17) */
+  /** 새 요청을 바로 못 열었다는 참고 보고 { reason: busy|draft_not_empty|checkout_open } — 상태는 안 바뀐다(2026-11-17) */
   notReady: (id: string) => `/api/pos-plugin/charge-requests/${encodeURIComponent(id)}/not-ready`,
   /** «결제 취소할 일» 가져가기(REQUESTED → SENT). 응답으로 취소할 토스 주문·결제 ID(서버 DB 값)를 받는다 */
   cancelClaim: (id: string) => `/api/pos-plugin/charge-requests/${encodeURIComponent(id)}/cancel/claim`,

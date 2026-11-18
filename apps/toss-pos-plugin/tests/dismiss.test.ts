@@ -65,14 +65,15 @@ test("미결제 주문을 목록에서 찾고 취소 상태를 재조회, 재시
   assert.deepEqual(h.log, ["order.cancel:order-1"]);
 });
 
-test("저장된 주문이 없으면 요청 번호와 금액이 일치하는 임시 주문만 비움", async () => {
+test("저장된 주문이 없고 결제창이 열렸을 수 있으면 임시 주문을 비우지 않고 현장 확인으로 남김(2026-11-18 흰 화면)", async () => {
   const draft = { lineItems: [line], price: { orderPriceValue: recent.amount } };
   const input = { job, now, recent, stoppedBeforeCheckout: false };
   const h = harness(draft, []);
   assert.deepEqual(await dismissUnpaidOrder({ ...input, sdk: h.sdk }), {
-    outcome: "NEEDS_LOCAL_CANCEL", reason: "POS_DRAFT_CLEARED_CHECK_SCREEN",
+    outcome: "NEEDS_LOCAL_CANCEL", reason: "POS_CHECKOUT_OPEN_CLOSE_SCREEN",
   });
-  assert.deepEqual(h.log, ["draft.clear"]);
+  // 결제창 밑 장바구니를 비우면 다음 요청이 «비었다»고 보고 결제창을 겹쳐 연다 — 지우지 않는다
+  assert.deepEqual(h.log, []);
   const changed = harness({ ...draft, price: { orderPriceValue: 1 } }, []);
   assert.deepEqual(await dismissUnpaidOrder({ ...input, sdk: changed.sdk }), {
     outcome: "NEEDS_LOCAL_CANCEL", reason: "POS_ORDER_NOT_IDENTIFIED",

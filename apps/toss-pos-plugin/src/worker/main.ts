@@ -143,6 +143,10 @@ function buttonToast(req: ChargeRequest): void {
 function reportNotReady(req: ChargeRequest, reason: NotReadyReason): void {
   if (!retryQueue.shouldReport(req.id, reason)) return;
   void api.notReady(req.id, reason).catch(() => undefined);
+  // 직전 결제창이 열려 있을 수 있음 — 겹쳐 열지 않고 사람에게 확인을 맡긴다(2026-11-18 흰 화면). 요청마다 한 번만
+  if (reason === "checkout_open") {
+    posPluginSdk.toast.warn({ message: `${req.shortCode} 직전 결제창이 열려 있으면 먼저 닫은 뒤 [결제하기]를 눌러 주세요.` });
+  }
 }
 
 /** 바빠서 못 연 요청을 재시도 대기열에 넣고, 사유를 알리고, [결제하기] 토스트도 남긴다 */

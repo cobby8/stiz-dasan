@@ -76,18 +76,12 @@ export async function dismissUnpaidOrder(input: {
 
   if (!targetId) {
     // 결제 수단 선택 화면에서도 POS가 아직 저장되지 않은 임시 주문을 유지할 수 있다.
-    // 현재 주문을 다시 확인해 번호와 합계가 모두 일치할 때만 비운다.
+    // ⚠️ 2026-11-18 운영(S-945156 → S-491122): 결제창이 열린 채 그 밑의 임시 주문을 비우면, 장바구니가 «비어 보여»
+    //    다음 요청이 결제창 위에 또 결제를 열었고 POS 화면이 하얗게 멈췄다. 결제창이 열렸을 수 있는 임시 주문은
+    //    지우지 않는다 — 현장에서 결제창을 닫고 비우게 알린다(다음 요청은 «다른 주문이 담겨 있음»으로 기다린다).
     if (!sdk.order.getOrders || firstDraft.id || !ownsDraft(firstDraft)
       || firstDraft.price?.orderPriceValue !== recent.amount) return local("POS_ORDER_NOT_IDENTIFIED");
-    const current = await sdk.draftOrder.get();
-    if (current.id || !ownsDraft(current) || current.price?.orderPriceValue !== recent.amount) {
-      return local("POS_DRAFT_CHANGED");
-    }
-    await sdk.draftOrder.clear();
-    const after = await sdk.draftOrder.get();
-    return local(after.lineItems.some((line) => belongsTo(line, marker))
-      ? "POS_DRAFT_STILL_PRESENT"
-      : "POS_DRAFT_CLEARED_CHECK_SCREEN");
+    return local("POS_CHECKOUT_OPEN_CLOSE_SCREEN");
   }
   const order = await sdk.order.getOrder(targetId);
   if (order.id !== targetId || !ownsOrder(order)) return local("POS_ORDER_NOT_IDENTIFIED");

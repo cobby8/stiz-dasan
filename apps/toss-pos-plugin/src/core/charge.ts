@@ -22,6 +22,7 @@ export type StartResult =
   | "started"
   | "unconfirmed" // POS 응답만으로 결제창 상태를 확인할 수 없음
   | "busy" // 이미 다른 결제를 준비 중(중복 클릭)
+  | "checkout_open" // 자동 경로: 이 POS 가 직전에 연 결제창이 아직 열려 있을 수 있음(결제 완료 신호 전)
   | "draft_not_empty" // 결제 화면에 다른 상품이 담겨 있어 덮어쓰지 않음
   | "claim_failed" // 서버 선점 실패(이미 가져감·만료·네트워크)
   | "dismissed" // 사이트 취소를 받아 결제창을 열기 전에 중단
@@ -47,6 +48,12 @@ export type StartOptions = {
 /** 담은 뒤 주문을 다시 읽는 횟수와 간격 — POS 가 합계를 재계산할 틈(최대 약 0.6초) */
 export const DRAFT_RECHECK_TRIES = 3;
 export const DRAFT_RECHECK_GAP_MS = 300;
+
+/**
+ * 결제창을 연 뒤 «결제 완료 신호» 없이 이만큼 지나면 결제창 열림 표시를 잊는다(요청 만료 30분과 같게).
+ * 그동안 자동 시작은 하지 않고 [결제하기] 토스트로만 — 사람이 결제창이 닫힌 걸 보고 누른다(2026-11-18 흰 화면).
+ */
+export const CHECKOUT_GUARD_MS = 30 * 60_000;
 
 /** startPayment 오류 뒤 서버 납부 상태를 묻는 횟수와 간격 — 토스 웹훅 도착(보통 1~2초)을 기다린다(최대 약 6초) */
 export const SERVER_STATE_TRIES = 4;
@@ -83,6 +90,11 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
   const reported = new Set<string>();
   // 결제 완료 신호를 받은 요청 번호(startPayment 가 결제 뒤 오류를 내도 «실패»로 안내하지 않으려고)
   const paidCodes = new Set<string>();
+  // 이 POS 에서 마지막으로 결제창을 연 요청(번호·시각). 결제 완료 신호가 오면 지운다.
+  // 2026-11-18 S-945156 → S-491122: 결제창이 열린 채(사이트 취소로 밑의 장바구니만 비워짐) 새 요청이 와서
+  // «장바구니가 비었다»고 보고 결제창을 겹쳐 열었고 POS 화면이 하얗게 멈췄다. 장바구니만으로는 결제창이 열렸는지 알 수 없다.
+  let checkoutOpen: { shortCode: string; at: number } | null = null;
+  const checkoutMaybeOpen = () => checkoutOpen !== null && now() - checkoutOpen.at < CHECKOUT_GUARD_MS;
 
   async function isDraftEmpty(): Promise<boolean> {
     const d = await sdk.draftOrder.get();
@@ -162,6 +174,12 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
       if (!silent) sdk.toast.warn({ message: "결제를 준비하고 있어요. 잠시만 기다려 주세요." });
       return "busy";
     }
+    // 자동 경로는 직전 결제창이 닫혔는지 모르면 열지 않는다(워커가 [결제하기] 토스트로 남기고, 완료 신호가 오면 다시 연다).
+    // 사람이 누른 경로는 화면을 보고 누른 것이라 그대로 연다.
+    if (checkoutMaybeOpen()) {
+      if (silent) return "checkout_open";
+      checkoutOpen = null;
+    }
     busy = true;
     preparing = true;
     let claimed: ChargeRequest | null = null;
@@ -235,6 +253,8 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
       // 7) 결제 화면으로 전환 — 카드 꽂기·서명은 사람이 한다
       // ⚠️ 결제 신호(payment.on("paid"))는 워커에만 걸려 있어, 탭 화면에서 시작한 결제는 paidCodes 가 비어
       //    아래 판정이 장바구니 확인(left_draft → 확인 안내)으로만 간다. 안전한 쪽이라 그대로 둔다.
+      // 결과와 상관없이 «결제창이 열렸을 수 있음»으로 둔다(오류여도 POS 가 결제창을 띄웠을 수 있다)
+      checkoutOpen = { shortCode: claimed.shortCode, at: now() };
       try {
         await sdk.draftOrder.startPayment();
       } catch {
@@ -317,6 +337,8 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
   /** 결제/취소 신호 → 우리 주문이면 서버에 참고 보고 */
   async function handlePaymentEvent(event: "paid" | "cancel", paymentId: string, orderId: string): Promise<"ignored" | "reported" | "unknown" | "failed"> {
     const dedupeKey = `${event}:${paymentId}`;
+    // 결제가 끝났다 = POS 가 결제창을 닫고 처음 화면으로 돌아갔다(우리 주문이 아니어도) — 자동 시작을 다시 허락한다
+    if (event === "paid") checkoutOpen = null;
     if (reported.has(dedupeKey)) return "ignored";
     // 우리 주문인지: 주문의 항목 메모에 STIZ:S-xxxx 가 있는지로 판단(다른 매출은 건드리지 않는다)
     const order = await sdk.order.getOrder(orderId);
@@ -359,7 +381,7 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
     return "reported";
   }
 
-  return { startCharge, startChargeForUnpaid, startChargeForUnpaidBundle, handlePaymentEvent, noteDismissal, dismissUnpaid, isBusy: () => busy || dismissBusy };
+  return { startCharge, startChargeForUnpaid, startChargeForUnpaidBundle, handlePaymentEvent, noteDismissal, dismissUnpaid, isBusy: () => busy || dismissBusy, checkoutMaybeOpen };
 }
 
 function errText(e: unknown): string {
