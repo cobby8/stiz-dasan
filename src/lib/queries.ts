@@ -3299,6 +3299,21 @@ export const getTrialLeads = cache(async (statusOrOptions?: string | AdminListQu
                 );
         }
 
+        // 학부모 온라인 취소의 환불 계좌(2026-11-18) — 관리자 목록 전용. 표가 아직 없거나 읽기 실패면 환불 정보 없이 목록을 그대로 보여 준다.
+        const refundByLead = new Map<string, any>();
+        try {
+            const leadIds = rows.map((r: any) => r.id).filter(Boolean);
+            if (leadIds.length > 0) {
+                const refundRows = await prisma.$queryRawUnsafe<any[]>(
+                    `SELECT "trialLeadId", status, amount, "refundBank", "refundAccount", "refundHolder", "adminSmsStatus", "createdAt", "completedAt", "completedByName"
+                       FROM "TrialRefundRequest" WHERE "trialLeadId" = ANY($1::text[])`,
+                    leadIds,
+                );
+                for (const refund of refundRows) refundByLead.set(refund.trialLeadId, refund);
+            }
+        } catch (error) {
+            console.warn("[getTrialLeads] refund requests unavailable:", (error as Error).message);
+        }
         return rows.map((r: any) => ({
             id: r.id,
             childName: r.childName ?? r.childname,
@@ -3355,6 +3370,17 @@ export const getTrialLeads = cache(async (statusOrOptions?: string | AdminListQu
             smsDeliveryPending: Number(r.sms_pending ?? 0),
             smsDeliveryLatestAt: r.sms_latest_at ?? null,
             smsDeliveryError: r.sms_error ?? null,
+            refundRequest: refundByLead.has(r.id) ? {
+                status: String(refundByLead.get(r.id).status),
+                amount: Number(refundByLead.get(r.id).amount ?? 0),
+                bank: String(refundByLead.get(r.id).refundBank ?? ""),
+                account: String(refundByLead.get(r.id).refundAccount ?? ""),
+                holder: String(refundByLead.get(r.id).refundHolder ?? ""),
+                adminSmsStatus: refundByLead.get(r.id).adminSmsStatus ?? null,
+                createdAt: refundByLead.get(r.id).createdAt ?? null,
+                completedAt: refundByLead.get(r.id).completedAt ?? null,
+                completedByName: refundByLead.get(r.id).completedByName ?? null,
+            } : null,
         }));
     } catch (e) {
         console.error("[getTrialLeads] failed:", e);

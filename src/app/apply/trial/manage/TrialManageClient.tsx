@@ -12,6 +12,7 @@ import {
 import { publicErrorText } from "@/components/ui/public-error-text";
 import { isKstYmd, todayKst } from "@/lib/datetime/kst";
 import { SEAT_LEVEL_LABEL, SEAT_LEVEL_TEXT_CLASS } from "@/lib/seats/seatLevel";
+import { TRIAL_REFUND_BANKS, checkTrialRefundAccount } from "@/lib/trial-self-service/rules";
 import { trialDayForDate, trialScheduleError, trialScheduleForDate, trialSlotPeriod, type TrialScheduleSelection } from "../trialScheduleSelection";
 
 interface Props {
@@ -19,7 +20,8 @@ interface Props {
     contactPhone: string;
 }
 
-type Mode = { kind: "idle" } | { kind: "change"; id: string; selection: TrialScheduleSelection } | { kind: "cancel"; id: string; reason: string };
+type CancelMode = { kind: "cancel"; id: string; reason: string; refundBank: string; refundAccount: string; refundHolder: string };
+type Mode = { kind: "idle" } | { kind: "change"; id: string; selection: TrialScheduleSelection } | CancelMode;
 
 const FALLBACK_ERROR = "처리하지 못했어요. 잠시 후 다시 시도해 주세요.";
 const INPUT_CLASS = "w-full rounded-xl border border-[var(--color-public-line)] px-4 py-3 text-[var(--color-public-ink)] outline-none transition-colors focus:border-[var(--color-public-accent)] focus:ring-2 focus:ring-[var(--color-public-accent)] dark:bg-[var(--color-public-tint)] dark:text-white";
@@ -92,12 +94,20 @@ export default function TrialManageClient({ availableSlots, contactPhone }: Prop
         });
     };
 
-    const submitCancel = () => {
+    const submitCancel = (item: MyTrialApplication) => {
         if (mode.kind !== "cancel") return;
         setError("");
+        // 체험비를 낸 신청은 환불 계좌 3칸을 서버와 같은 기준으로 먼저 확인한다
+        const refund = item.refundRequired ? checkTrialRefundAccount(mode) : null;
+        if (refund && !refund.ok) { setError(refund.message); return; }
         startTransition(async () => {
             try {
-                const result = await cancelMyTrialApplication({ id: mode.id, ...credentials, reason: mode.reason });
+                const result = await cancelMyTrialApplication({
+                    id: mode.id,
+                    ...credentials,
+                    reason: mode.reason,
+                    ...(refund?.ok ? { refundBank: refund.refundBank, refundAccount: refund.refundAccount, refundHolder: refund.refundHolder } : {}),
+                });
                 if (!result.ok) { setError(result.message); return; }
                 setItems((prev) => prev?.filter((item) => item.id !== mode.id) ?? null);
                 setMode({ kind: "idle" });
@@ -166,8 +176,30 @@ export default function TrialManageClient({ availableSlots, contactPhone }: Prop
                             <p className="text-sm font-semibold text-[var(--color-academy-danger)]">이 체험 신청을 취소할까요? 취소한 뒤에는 다시 신청해야 해요.</p>
                             <label htmlFor={`trial-cancel-reason-${item.id}`} className="block text-sm text-[var(--color-public-muted)]">취소 사유(선택)</label>
                             <input id={`trial-cancel-reason-${item.id}`} value={mode.reason} maxLength={200} onChange={(event) => setMode({ ...mode, reason: event.target.value })} placeholder="예: 일정이 맞지 않아요" className={INPUT_CLASS} />
+                            {item.refundRequired && (
+                                // 체험비를 낸 신청 — 환불 받을 계좌(학원 관리자만 봅니다)
+                                <div className="space-y-3 rounded-xl bg-white p-3 dark:bg-[var(--color-public-paper)]">
+                                    <p className="text-sm font-semibold text-[var(--color-public-ink)] dark:text-white">체험수업비를 돌려받을 계좌를 적어 주세요.</p>
+                                    <p className="text-xs text-[var(--color-public-muted)]">계좌 정보는 환불에만 쓰이고 학원 관리자만 볼 수 있어요.</p>
+                                    <div>
+                                        <label htmlFor={`trial-refund-bank-${item.id}`} className="mb-1 block text-sm text-[var(--color-public-muted)]">은행</label>
+                                        <select id={`trial-refund-bank-${item.id}`} value={mode.refundBank} onChange={(event) => setMode({ ...mode, refundBank: event.target.value })} className={INPUT_CLASS}>
+                                            <option value="">은행 선택</option>
+                                            {TRIAL_REFUND_BANKS.map((bank) => <option key={bank} value={bank}>{bank}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label htmlFor={`trial-refund-account-${item.id}`} className="mb-1 block text-sm text-[var(--color-public-muted)]">계좌번호(숫자만)</label>
+                                        <input id={`trial-refund-account-${item.id}`} inputMode="numeric" autoComplete="off" maxLength={20} value={mode.refundAccount} onChange={(event) => setMode({ ...mode, refundAccount: event.target.value.replace(/[^0-9-]/g, "") })} placeholder="계좌번호" className={INPUT_CLASS} />
+                                    </div>
+                                    <div>
+                                        <label htmlFor={`trial-refund-holder-${item.id}`} className="mb-1 block text-sm text-[var(--color-public-muted)]">예금주</label>
+                                        <input id={`trial-refund-holder-${item.id}`} autoComplete="off" maxLength={20} value={mode.refundHolder} onChange={(event) => setMode({ ...mode, refundHolder: event.target.value })} placeholder="예금주 이름" className={INPUT_CLASS} />
+                                    </div>
+                                </div>
+                            )}
                             <div className="flex flex-wrap gap-2">
-                                <button type="button" disabled={isPending} onClick={submitCancel} className="inline-flex min-h-11 items-center justify-center rounded-xl bg-[var(--color-academy-danger-fill)] px-5 text-sm font-bold text-white hover:bg-[var(--color-academy-danger-fill-hover)] disabled:opacity-50">
+                                <button type="button" disabled={isPending} onClick={() => submitCancel(item)} className="inline-flex min-h-11 items-center justify-center rounded-xl bg-[var(--color-academy-danger-fill)] px-5 text-sm font-bold text-white hover:bg-[var(--color-academy-danger-fill-hover)] disabled:opacity-50">
                                     {isPending ? "취소하는 중..." : "신청 취소하기"}
                                 </button>
                                 <button type="button" disabled={isPending} onClick={() => setMode({ kind: "idle" })} className={SECONDARY_BUTTON}>돌아가기</button>
@@ -177,7 +209,7 @@ export default function TrialManageClient({ availableSlots, contactPhone }: Prop
                         <div className="mt-4 space-y-2">
                             <div className="flex flex-wrap gap-2">
                                 <button type="button" disabled={!item.canChange || isPending} onClick={() => startChange(item)} className={PRIMARY_BUTTON}>일정 변경</button>
-                                <button type="button" disabled={!item.canCancel || isPending} onClick={() => { setError(""); setNotice(""); setMode({ kind: "cancel", id: item.id, reason: "" }); }} className={SECONDARY_BUTTON}>신청 취소</button>
+                                <button type="button" disabled={!item.canCancel || isPending} onClick={() => { setError(""); setNotice(""); setMode({ kind: "cancel", id: item.id, reason: "", refundBank: "", refundAccount: "", refundHolder: "" }); }} className={SECONDARY_BUTTON}>신청 취소</button>
                             </div>
                             {(item.changeBlockedMessage || item.cancelBlockedMessage) && (
                                 <p className="text-xs text-[var(--color-public-muted)]">{item.changeBlockedMessage ?? item.cancelBlockedMessage}</p>

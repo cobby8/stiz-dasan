@@ -8,7 +8,8 @@
  * - 무차별 조회 방지: 접속 주소별·(이름+번호)별 시도 횟수 제한(원문은 저장하지 않고 해시만).
  * - 변경·취소는 신청 행을 잠근 뒤 DB 값으로 다시 판단하고, 관리자 이력(ApplicationContactLog)과
  *   관리자 알림(벨·웹푸시 — 기존 체험 신청 알림과 같은 notifyAdmins, 문자 틀 없음)을 남긴다.
- * - 학부모에게 문자를 보내지 않는다.
+ * - 학부모에게 문자를 보내지 않는다. 체험비를 낸 신청의 취소는 환불 계좌를 받고(관리자 전용 표 TrialRefundRequest)
+ *   원장 계정 번호로 환불 알림 문자(계좌번호 제외)를 보낸다.
  */
 
 import { createHash } from "node:crypto";
@@ -20,13 +21,22 @@ import { toKstYmd } from "@/lib/datetime/kst";
 import { ensureTrialLeadTable } from "@/app/actions/admin";
 import { getAvailableTrialSlots } from "@/app/actions/public";
 import { ensureApplicationContactLogInfrastructure } from "@/lib/application-contact-logs";
-import { notifyAdmins } from "@/lib/notification";
+import { notifyAdmins, sendTrackedSms } from "@/lib/notification";
+import { PUBLIC_SITE_URL } from "@/lib/publicMetadata";
+import { getTrialFeeSettings } from "@/lib/trial-fee/trialFeeSettings";
 import { takePublicRateLimit } from "@/lib/seasonal/public-rate-limit";
 import { trialScheduleError, trialSlotPeriod } from "@/app/apply/trial/trialScheduleSelection";
 import {
     TRIAL_SELF_SERVICE_ACTIVE_STATUSES,
     TRIAL_SELF_SERVICE_BLOCK_MESSAGE,
+    checkTrialRefundAccount,
+    formatWon,
+    maskRefundAccount,
     normalizeTrialLookupInput,
+    resolveTrialRefundNotifyUserIds,
+    TRIAL_REFUND_ADMIN_TRIGGER,
+    trialRefundAdminSmsBody,
+    trialSelfServiceNeedsRefund,
     sameTrialSchedule,
     trialScheduleText,
     trialSelfCancelNote,
@@ -52,6 +62,8 @@ export type MyTrialApplication = {
     canCancel: boolean;
     changeBlockedMessage: string | null;
     cancelBlockedMessage: string | null;
+    /** 체험비를 낸 신청 — 취소하려면 환불 계좌를 적어야 한다 */
+    refundRequired: boolean;
 };
 
 export type TrialLookupResult = { ok: true; items: MyTrialApplication[] } | { ok: false; message: string };
@@ -134,6 +146,7 @@ function toPublicItem(row: LeadRow, nowMs = Date.now()): MyTrialApplication {
         canCancel: !cancelBlock,
         changeBlockedMessage: changeBlock ? TRIAL_SELF_SERVICE_BLOCK_MESSAGE[changeBlock] : null,
         cancelBlockedMessage: cancelBlock ? TRIAL_SELF_SERVICE_BLOCK_MESSAGE[cancelBlock] : null,
+        refundRequired: trialSelfServiceNeedsRefund(lead),
     };
 }
 
@@ -292,12 +305,62 @@ export async function changeMyTrialApplication(input: {
     }
 }
 
-/** 체험 신청 취소 */
+/** 돌려줄 체험비 — 완료된 결제 행 금액, 없으면(계좌 입금 확인) 지금 체험비 설정값 */
+async function refundAmountFor(tx: Pick<typeof prisma, "$queryRawUnsafe">, trialLeadId: string): Promise<number> {
+    const paid = await tx.$queryRawUnsafe<Array<{ amount: number }>>(
+        `SELECT amount FROM "TrialFeePayment" WHERE "trialLeadId" = $1 AND status = 'DONE' ORDER BY "createdAt" DESC LIMIT 1`,
+        trialLeadId,
+    );
+    if (paid[0]) return Number(paid[0].amount);
+    return (await getTrialFeeSettings()).amount;
+}
+
+/** 원장 환불 알림 — /admin/sms «체험 취소 환불 요청 (관리자)» 규칙. 계좌번호는 문자에 넣지 않는다. */
+async function sendRefundAlertToOwner(input: { refundId: string; childName: string; scheduleText: string; amount: number }) {
+    let outcome: "SENT" | "FAILED" | "OFF" = "OFF";
+    try {
+        const ids = resolveTrialRefundNotifyUserIds(process.env.TRIAL_REFUND_NOTIFY_USER_IDS);
+        // 관리자 역할 계정만(설정값이 잘못돼 학부모 번호로 새는 일 방지). 번호는 계정 설정(User.phone)에 저장된 값.
+        const owners = await prisma.$queryRawUnsafe<Array<{ id: string; phone: string | null }>>(
+            `SELECT id, phone FROM "User" WHERE id = ANY($1::text[]) AND role IN ('ADMIN','VICE_ADMIN')`,
+            ids,
+        );
+        const body = trialRefundAdminSmsBody({ ...input, adminUrl: `${PUBLIC_SITE_URL}/admin/trial` });
+        const results: boolean[] = [];
+        for (const owner of owners) {
+            if (!owner.phone) continue;
+            const sent = await sendTrackedSms({
+                eventType: "TRIAL_REFUND_REQUEST",
+                eventId: input.refundId, // 장부 중복 키 — 같은 환불 요청으로 두 번 보내지 않는다
+                trigger: TRIAL_REFUND_ADMIN_TRIGGER,
+                recipientRole: "ADMIN",
+                recipientUserId: owner.id,
+                recipientPhone: owner.phone,
+                body,
+            });
+            results.push(Boolean(sent?.ok));
+        }
+        if (results.length > 0) outcome = results.some(Boolean) ? "SENT" : "FAILED";
+    } catch (error) {
+        outcome = "FAILED";
+        console.error("[trial-self-service] refund alert failed:", (error as Error).message);
+    }
+    await prisma.$executeRawUnsafe(
+        `UPDATE "TrialRefundRequest" SET "adminSmsStatus" = $1, "updatedAt" = NOW() WHERE id = $2`,
+        outcome,
+        input.refundId,
+    ).catch(() => undefined);
+}
+
+/** 체험 신청 취소 — 체험비를 낸 신청은 환불 계좌를 함께 받는다 */
 export async function cancelMyTrialApplication(input: {
     id?: string;
     childName?: string;
     parentPhone?: string;
     reason?: string;
+    refundBank?: string;
+    refundAccount?: string;
+    refundHolder?: string;
 }): Promise<TrialMutationResult> {
     const key = normalizeTrialLookupInput(input ?? {});
     const id = typeof input?.id === "string" ? input.id.trim() : "";
@@ -316,10 +379,32 @@ export async function cancelMyTrialApplication(input: {
             );
             const row = rows[0];
             if (!row) throw new SelfServiceRejection(NOT_FOUND);
-            const block = trialSelfServiceCancelBlock(leadOf(row));
+            const lead = leadOf(row);
+            const block = trialSelfServiceCancelBlock(lead);
             if (block) throw new SelfServiceRejection(TRIAL_SELF_SERVICE_BLOCK_MESSAGE[block]);
 
-            const note = trialSelfCancelNote(input.reason);
+            // 체험비를 낸 신청은 환불 계좌가 있어야 취소된다(DB 값으로 다시 판단 — 화면 값을 믿지 않는다)
+            let refund: { id: string; bank: string; account: string; amount: number } | null = null;
+            if (trialSelfServiceNeedsRefund(lead)) {
+                const checked = checkTrialRefundAccount(input);
+                if (!checked.ok) throw new SelfServiceRejection(checked.message);
+                const amount = await refundAmountFor(tx, id);
+                const inserted = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+                    `INSERT INTO "TrialRefundRequest" (id, "trialLeadId", amount, "refundBank", "refundAccount", "refundHolder", status, "createdAt", "updatedAt")
+                     VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, 'PENDING', NOW(), NOW())
+                     ON CONFLICT ("trialLeadId") DO NOTHING
+                     RETURNING id`,
+                    id,
+                    amount,
+                    checked.refundBank,
+                    checked.refundAccount,
+                    checked.refundHolder,
+                );
+                if (!inserted[0]) throw new SelfServiceRejection("이미 환불 요청이 접수된 신청이에요. 학원으로 연락해 주세요.");
+                refund = { id: inserted[0].id, bank: checked.refundBank, account: checked.refundAccount, amount };
+            }
+
+            const note = trialSelfCancelNote(input.reason, refund);
             await tx.$executeRawUnsafe(
                 `UPDATE "TrialLead" SET status = 'CANCELLED', "lostReason" = $1, "updatedAt" = NOW() WHERE id = $2`,
                 note,
@@ -335,20 +420,34 @@ export async function cancelMyTrialApplication(input: {
                 childName: String(pick(row, "childName") ?? key.childName),
                 scheduleText: trialScheduleText(scheduleOf(row)),
                 wasScheduled: pick(row, "status") === "SCHEDULED",
-                note,
+                reasonText: trialSelfCancelNote(input.reason).replace(/^학부모 온라인 취소:? ?/, ""),
+                refund,
             };
         });
 
         revalidateAdminTrialPages();
+        const refund = result.refund;
         notifyAdminsLater(
-            result.wasScheduled ? "확정된 체험 취소(학부모)" : "체험 신청 취소(학부모)",
-            `${result.childName} — ${result.scheduleText}${result.note !== "학부모 온라인 취소" ? ` · ${result.note.replace(/^학부모 온라인 취소: /, "")}` : ""}`,
+            refund ? "체험 취소 · 환불 요청(학부모)" : result.wasScheduled ? "확정된 체험 취소(학부모)" : "체험 신청 취소(학부모)",
+            // 벨 알림에도 계좌번호는 넣지 않는다
+            `${result.childName} — ${result.scheduleText}${refund ? ` · 환불 ${formatWon(refund.amount)}` : ""}${result.reasonText ? ` · ${result.reasonText}` : ""}`,
             id,
         );
-        return { ok: true, item: null, message: "체험 신청을 취소했어요. 다음에 다시 신청해 주세요." };
+        if (refund) {
+            after(() => sendRefundAlertToOwner({ refundId: refund.id, childName: result.childName, scheduleText: result.scheduleText, amount: refund.amount }));
+        }
+        return {
+            ok: true,
+            item: null,
+            message: refund
+                ? `체험 신청을 취소했어요. 환불 계좌(${refund.bank} ${maskRefundAccount(refund.account)})로 체험비 ${formatWon(refund.amount)}을 돌려드릴게요.`
+                : "체험 신청을 취소했어요. 다음에 다시 신청해 주세요.",
+        };
     } catch (error) {
         if (error instanceof SelfServiceRejection) return { ok: false, message: error.message };
-        console.error("[trial-self-service] cancel failed:", error);
+        // 원문 오류는 남기지 않는다 — DB 제약 오류의 상세(DETAIL)에 환불 계좌가 그대로 실릴 수 있다
+        const code = (error as { code?: string })?.code ?? (error as Error)?.name ?? "unknown";
+        console.error("[trial-self-service] cancel failed:", code);
         return { ok: false, message: SAVE_FAILED };
     }
 }

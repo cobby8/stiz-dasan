@@ -3,7 +3,12 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   TRIAL_SELF_SERVICE_BLOCK_MESSAGE,
+  checkTrialRefundAccount,
+  maskRefundAccount,
   normalizeTrialLookupInput,
+  resolveTrialRefundNotifyUserIds,
+  trialRefundAdminSmsBody,
+  trialSelfServiceNeedsRefund,
   sameTrialSchedule,
   trialScheduleText,
   trialSelfCancelNote,
@@ -58,15 +63,61 @@ test("체험이 끝났거나 등록 단계로 넘어간 신청은 막는다", ()
   }
 });
 
-test("체험비를 냈거나 입금 대기면 일정 변경만 되고 취소는 학원 문의", () => {
+test("체험비를 낸 신청은 취소할 때 환불 계좌를 받고, 입금 대기·이중 결제는 학원 문의", () => {
   const base = { status: "NEW", scheduledDate: null };
   assert.equal(trialSelfServiceChangeBlock({ ...base, trialFeeConfirmed: true }, NOW), null);
-  assert.equal(trialSelfServiceCancelBlock({ ...base, trialFeeConfirmed: true }, NOW), "PAID");
-  assert.equal(trialSelfServiceCancelBlock({ ...base, trialFeePaymentStatus: "PAID" }, NOW), "PAID");
-  assert.equal(trialSelfServiceCancelBlock({ ...base, trialFeePaymentStatus: "NEEDS_REFUND" }, NOW), "PAID");
+  assert.equal(trialSelfServiceCancelBlock({ ...base, trialFeeConfirmed: true }, NOW), null);
+  assert.equal(trialSelfServiceNeedsRefund({ ...base, trialFeeConfirmed: true }), true);
+  assert.equal(trialSelfServiceCancelBlock({ ...base, trialFeePaymentStatus: "PAID" }, NOW), null);
+  assert.equal(trialSelfServiceNeedsRefund({ ...base, trialFeePaymentStatus: "PAID" }), true);
+  assert.equal(trialSelfServiceNeedsRefund(base), false);
+  assert.equal(trialSelfServiceNeedsRefund({ ...base, trialFeePaymentStatus: "REFUNDED" }), false);
+  assert.equal(trialSelfServiceCancelBlock({ ...base, trialFeePaymentStatus: "NEEDS_REFUND" }, NOW), "REFUND_REVIEW");
   assert.equal(trialSelfServiceCancelBlock({ ...base, trialFeePaymentStatus: "WAITING_FOR_DEPOSIT" }, NOW), "DEPOSIT_WAITING");
   assert.equal(trialSelfServiceCancelBlock({ ...base, trialFeePaymentStatus: "REFUNDED" }, NOW), null);
   for (const message of Object.values(TRIAL_SELF_SERVICE_BLOCK_MESSAGE)) assert.match(message, /학원/);
+});
+
+test("환불 계좌 검사·가리기·원장 문자 본문(계좌번호 없음)", () => {
+  assert.deepEqual(checkTrialRefundAccount({ refundBank: "카카오뱅크", refundAccount: "3333-01-2345678", refundHolder: "  홍  길동 " }),
+    { ok: true, refundBank: "카카오뱅크", refundAccount: "3333012345678", refundHolder: "홍 길동" });
+  assert.equal(checkTrialRefundAccount({ refundBank: "없는은행", refundAccount: "3333012345678", refundHolder: "홍길동" }).ok, false);
+  assert.equal(checkTrialRefundAccount({ refundBank: "카카오뱅크", refundAccount: "12345", refundHolder: "홍길동" }).ok, false);
+  assert.equal(checkTrialRefundAccount({ refundBank: "카카오뱅크", refundAccount: "3333012345678", refundHolder: "  " }).ok, false);
+  assert.equal(maskRefundAccount("3333012345678"), "****5678");
+  assert.equal(maskRefundAccount(""), "****");
+  const body = trialRefundAdminSmsBody({ childName: "김한결", scheduleText: "11월 20일(목) 4교시", amount: 10000, adminUrl: "https://www.stiz-dasan.kr/admin/trial" });
+  assert.match(body, /김한결 · 11월 20일\(목\) 4교시/);
+  assert.match(body, /환불 10,000원/);
+  assert.match(body, /\/admin\/trial$/);
+  assert.doesNotMatch(body, /\d{6,}/);
+  const note = trialSelfCancelNote("일정", { bank: "카카오뱅크", account: "3333012345678", amount: 10000 });
+  assert.equal(note, "학부모 온라인 취소: 일정 · 환불 계좌 접수(카카오뱅크 ****5678, 10,000원)");
+  assert.deepEqual(resolveTrialRefundNotifyUserIds(""), ["6e66c3a4-9046-4a60-a56c-fc48d43e775d"]);
+  assert.deepEqual(resolveTrialRefundNotifyUserIds("bad, 2a66e1a5-e36d-4db3-885c-de3475f5d8b2"), ["2a66e1a5-e36d-4db3-885c-de3475f5d8b2"]);
+});
+
+test("환불 요청: 서버가 DB 값으로 환불 필요를 판단하고, 계좌는 관리자 전용 표에만 둔다", () => {
+  assert.match(actions, /if \(trialSelfServiceNeedsRefund\(lead\)\) \{\s*const checked = checkTrialRefundAccount\(input\);/);
+  assert.match(actions, /INSERT INTO "TrialRefundRequest"/);
+  assert.match(actions, /ON CONFLICT \("trialLeadId"\) DO NOTHING/);
+  // 원장 문자는 장부 경로·규칙 트리거·관리자 계정만
+  assert.match(actions, /sendTrackedSms\(\{[\s\S]*trigger: TRIAL_REFUND_ADMIN_TRIGGER[\s\S]*recipientRole: "ADMIN"/);
+  assert.match(actions, /role IN \('ADMIN','VICE_ADMIN'\)/);
+  // 취소 실패 로그에 원문 오류(계좌가 실릴 수 있음)를 남기지 않는다
+  assert.match(actions, /console\.error\("\[trial-self-service\] cancel failed:", code\)/);
+  const migration = read("prisma/migrations/20261118120000_trial_refund_request/migration.sql");
+  assert.match(migration, /ENABLE ROW LEVEL SECURITY/);
+  assert.match(migration, /REVOKE ALL ON "TrialRefundRequest" FROM %I/);
+  assert.match(migration, /CHECK \("refundAccount" ~ '\^\[0-9\]\{10,16\}\$'\)/);
+  assert.match(migration, /'TRIAL_REFUND_REQUEST_ADMIN'/);
+  const adminAction = read("src/app/actions/trial-refund-admin.ts");
+  assert.match(adminAction, /const admin = await requireAdmin\(\);/);
+  assert.match(adminAction, /WHERE "trialLeadId" = \$1 AND status = 'PENDING'/);
+  const crm = read("src/app/admin/trial/TrialCrmClient.tsx");
+  assert.match(crm, /환불 송금 완료/);
+  assert.match(crm, /"환불 계좌"/);
+  assert.match(manageClient, /item\.refundRequired && \(/);
 });
 
 test("일정 문구와 관리자 이력 문장", () => {
@@ -93,7 +144,7 @@ test("서버 액션: 이름+숫자 번호로만 찾고 진행 중 신청만, 원
   // 변경·취소는 행을 잠그고 DB 값으로 다시 판단한다
   assert.equal((actions.match(/FOR UPDATE/g) ?? []).length, 2);
   assert.match(actions, /trialSelfServiceChangeBlock\(leadOf\(row\)\)/);
-  assert.match(actions, /trialSelfServiceCancelBlock\(leadOf\(row\)\)/);
+  assert.match(actions, /const lead = leadOf\(row\);\s*const block = trialSelfServiceCancelBlock\(lead\);/);
   // 새 일정도 공개 신청서와 같은 기준(시간표·마감·요일)으로 검증
   assert.match(actions, /trialScheduleError\(/);
 });
@@ -123,7 +174,7 @@ test("변경·취소는 관리자 이력과 관리자 알림을 남기고 학부
   assert.match(actions, /status = 'CANCELLED', "lostReason" = \$1/);
   assert.match(actions, /status = CASE WHEN status = 'SCHEDULED' THEN 'CONTACTED' ELSE status END/);
   assert.match(actions, /notifyAdmins\("TRIAL_APPLICATION", title, message, "\/admin\/trial", \{ notifyCoaches: false, eventId \}\)/);
-  assert.doesNotMatch(actions, /adminTrigger|sendParentSms|sendSms/);
+  assert.doesNotMatch(actions, /adminTrigger|sendParentSms|sendSms\(/);
   assert.match(actions, /revalidatePath\("\/admin\/trial"\)/);
 });
 
