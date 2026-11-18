@@ -28,9 +28,6 @@ import type { RunHoliday } from "@/lib/shuttle/regularRunDayRules";
 // ★ 기사님 연세·운전 중 한 손 조작을 고려해 라이트 모드 고정 + 큰 글자·큰 버튼(dark: 미사용).
 // ⚠️ 탑승 체크는 행이 들고 있는 종류(kind)대로 **기존 API·기존 파라미터** 그대로 저장한다.
 
-// PWA 설치 이벤트 타입 (브라우저 전용, 표준 미포함)
-interface BeforeInstallPromptEvent extends Event { prompt(): Promise<void> }
-
 // SELF = 자차(부모 차) 등·하원. 셔틀엔 안 탔지만 결석(안 옴)과는 구분한다.
 type Status = "BOARDED" | "NOSHOW" | "SELF";
 /** 순서 편집 중에만 쓰는 정렬 덮어쓰기(원본 rows 는 건드리지 않는다). */
@@ -132,25 +129,6 @@ export default function UnifiedDriverClient({
       window.removeEventListener("focus", refreshIfNewDay);
     };
   }, [today, runState, editing, router]);
-
-  // PWA 설치 배너
-  const deferredPromptRef = useRef<BeforeInstallPromptEvent | null>(null);
-  const [showInstallBanner, setShowInstallBanner] = useState(false);
-  useEffect(() => {
-    if (accountRun) return;
-    const handler = (e: Event) => {
-      e.preventDefault();
-      deferredPromptRef.current = e as BeforeInstallPromptEvent;
-      setShowInstallBanner(true);
-    };
-    window.addEventListener("beforeinstallprompt", handler);
-    return () => window.removeEventListener("beforeinstallprompt", handler);
-  }, [accountRun]);
-  async function installPwa() {
-    if (!deferredPromptRef.current) return;
-    await deferredPromptRef.current.prompt();
-    setShowInstallBanner(false);
-  }
 
   // 화면에 그릴 순서 = 서버가 준 시각순 + (편집했다면) 바뀐 정렬키.
   const ordered = useMemo(() => {
@@ -535,16 +513,6 @@ export default function UnifiedDriverClient({
             <button type="button" autoFocus onClick={() => setConfirmEnd(false)} className="academy-button-secondary">계속 운행</button>
             <button type="button" disabled={transmission === "stopping"} onClick={() => { setConfirmEnd(false); void handleRunEnd(); }} className="academy-button-danger-solid">운행 종료</button>
           </div>
-        </div>
-      )}
-
-      {/* PWA 설치 배너 */}
-      {showInstallBanner && (
-        <div className="mb-2 flex items-center gap-2 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] px-2">
-          <p className="min-w-0 flex-1 text-sm font-medium text-[var(--color-academy-ink)]">홈 화면에서 빠르게 열기</p>
-          <button type="button" onClick={installPwa}
-            className="min-h-11 min-w-11 text-sm font-medium text-[var(--color-academy-primary)]">설치</button>
-          <button type="button" onClick={() => setShowInstallBanner(false)} aria-label="설치 안내 닫기" className="min-h-11 min-w-11 shrink-0 text-sm font-medium text-[var(--color-academy-muted)]">닫기</button>
         </div>
       )}
 

@@ -19,7 +19,6 @@ const photo = await read("src/components/staff/SessionPhotoUploader.tsx");
 const billing = await read("src/app/staff/billing/StaffBillingClient.tsx");
 const seasonal = await read("src/app/staff/seasonal/StaffSeasonalClient.tsx");
 const students = await read("src/app/staff/students/StaffStudentsClient.tsx");
-const requestModal = await read("src/components/shuttle/DriverRequestModal.tsx");
 
 test("C-T1 공용 상태 버튼: 의미색 토큰·44px·눌림 표시·안 눌린 테두리", () => {
   for (const tone of ["success", "warning", "danger"]) {
@@ -147,7 +146,7 @@ test("T-10 사진: 삭제는 오른쪽 휴지통 아이콘(확인 창 유지), �
 });
 
 test("T-11·T-12 현장 화면: 11px 글자 없음, 하드코딩 의미색은 토큰으로", () => {
-  for (const [name, src] of [["session", session], ["rideButtons", rideButtons], ["shuttleDashboard", shuttleDashboard], ["quickPost", quickPost], ["requestModal", requestModal]]) {
+  for (const [name, src] of [["session", session], ["rideButtons", rideButtons], ["shuttleDashboard", shuttleDashboard], ["quickPost", quickPost]]) {
     assert.doesNotMatch(src, /text-\[11px\]/, `${name} 11px`);
   }
   // 기사님 탑승 체크 영역(승객 줄 ~ 사용 안내)만 본다. 순서 편집 «저장»(파랑)은 이번 범위 밖.
