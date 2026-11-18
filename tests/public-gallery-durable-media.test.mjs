@@ -25,9 +25,11 @@ test("안정 이미지 후보를 충분히 확보한 뒤 8개만 표시한다", 
   assert.match(landingPage, /\.slice\(0, 8\)/);
 });
 
-test("공개 갤러리와 인스타 동기화도 같은 안정 URL 기준을 사용한다", () => {
+// 2026-11-18 옛 코드 정리 B: 인스타 → 갤러리 자동 가져오기(syncInstagramGalleryPostsToDb)는 지웠다.
+// instagramGallerySync.ts 에는 게시 기능이 쓰는 컬럼 보장 함수만 남는다.
+test("공개 갤러리도 같은 안정 URL 기준을 사용하고, 인스타 자동 가져오기는 지워져 있다", () => {
   assert.match(publicGallery, /parseGalleryMediaJSON\(post\.mediaJSON\)/);
   assert.match(publicGallery, /isDurableGalleryMediaUrl\(item\.url\)/);
-  assert.match(instagramSync, /parseGalleryMediaJSON\(mediaJSON\)/);
-  assert.match(instagramSync, /isDurableGalleryMediaUrl\(item\.url\)/);
+  assert.doesNotMatch(instagramSync, /syncInstagramGalleryPostsToDb/);
+  assert.match(instagramSync, /export async function ensureGalleryPostInstagramColumns/);
 });

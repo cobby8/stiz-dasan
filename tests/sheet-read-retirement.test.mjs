@@ -52,13 +52,12 @@ test('관리자 시스템 도구: 은퇴면 「시트 동기화」가 없고, �
   assert.match(read('src/app/admin/AdminShellClient.tsx'), /<LazyBackupButtons sheetRetired=\{sheetRetired\} \/>/);
 });
 
-test('죽은 크론 /api/cron/sync-schedule: 지우지 않고, 은퇴면 시트를 읽기 전에 410 을 돌려준다', () => {
-  const src = read('src/app/api/cron/sync-schedule/route.ts');
-  const guard = src.indexOf('if (isSheetSyncRetired(process.env))');
-  assert.ok(guard > 0);
-  assert.ok(guard < src.indexOf('await syncSheetSlots()'), '410 판정이 시트 읽기보다 먼저');
-  assert.ok(src.indexOf('Unauthorized') < guard, '인증 검사는 그대로 먼저');
-  assert.match(src, /status: 410/);
+// 2026-11-18 옛 코드 정리 B: vercel cron 에 없고 410 만 돌려주던 죽은 크론은 지웠다.
+// 관리자 수동 동기화(/api/admin/sync-schedule)와 공유 로직(syncSheetSlots)은 남긴다.
+test('죽은 크론 /api/cron/sync-schedule 은 지워져 있고, 관리자 수동 동기화는 남아 있다', () => {
+  assert.equal(existsSync('src/app/api/cron/sync-schedule/route.ts'), false);
+  assert.ok(existsSync('src/app/api/admin/sync-schedule/route.ts'));
+  assert.ok(existsSync('src/lib/syncSheetSlots.ts'));
 });
 
 // ── 2. 재무 「시트 원장 기준 수납 점검」 ───────────────────────────────
@@ -82,11 +81,13 @@ test('학생 관리: 시트 점검 도구는 화면에서 없앴고(2026-10-29),
   }
 });
 
-test('과거 시트 이력 표시는 유지: 학생 목록 월 상태·학생 상세 월별 이력·이관 요약 조회가 살아 있다', () => {
+// 2026-11-18 옛 코드 정리 B: 부르는 곳이 없던 «이관 요약 조회»(adminReadPayloads)는 지웠다.
+// 학생 상세 월별 이력은 queries.ts 가 같은 표를 직접 읽으므로 그대로 살아 있다.
+test('과거 시트 이력 표시는 유지: 학생 목록 월 상태·학생 상세 월별 이력이 살아 있다', () => {
   const queries = read('src/lib/queries.ts');
   assert.match(queries, /function buildStudentMonthlyHistory\(/);
   assert.match(queries, /monthlyHistory: buildStudentMonthlyHistory\(monthlyHistoryRows\)/);
-  assert.match(read('src/lib/adminReadPayloads.ts'), /FROM "StudentSheetImportBatch" b/);
+  assert.match(queries, /FROM "StudentSheetImportBatch" b/);
 });
 
 // ── 4. 학생 가져오기 화면 ──────────────────────────────────────────────

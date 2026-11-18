@@ -5,7 +5,7 @@
 // 4) 화면: 은퇴 시 시트 버튼·문구 숨김, 랠리즈 잠금 해제
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   isSheetSyncRetired, isSheetTargetDone, initialSyncAttempt, SHEET_RETIRED_REFERENCE,
@@ -181,9 +181,8 @@ test('순서 강제·확인 필요 판정: 바깥 장부(SHEET·RALLYZ)만 SKIPP
   // 확인 필요 목록·건수
   const admin = read('src/lib/enrollment/admin-change-request.ts');
   assert.match(admin, /AND \$\{externalSyncPendingSql\("a"\)\}\)`;/);
-  // 대기열 요약(읽기 전용 워커)
-  const worker = read('src/lib/operationsSyncWorker.ts');
-  assert.equal((worker.match(/isSheetTargetDone\(row\.sheetStatus\)/g) || []).length, 2);
+  // 대기열 요약(읽기 전용 워커)은 2026-11-18 옛 코드 정리 B 로 파일째 지웠다.
+  assert.equal(existsSync('src/lib/operationsSyncWorker.ts'), false);
 });
 
 test('시트 쓰기 코드는 되돌림용으로 남아 있다', () => {

@@ -100,6 +100,7 @@ test('수강생 이관 도구는 화면·API·전용 lib 까지 삭제(원장 �
     'src/app/api/admin/import-students/relink/route.ts', 'src/app/api/admin/import-students/current-roster/route.ts',
     'src/lib/importStudents.ts', 'src/lib/studentSheetMatching.ts', 'src/lib/enrollmentReconcilePolicy.ts', 'src/lib/googleSheetsCsv.ts',
   ]) assert.ok(!existsSync(gone), `${gone} 남아 있음`);
-  // 가져온 자료(StudentSheetImportBatch·장부)를 보여 주는 학생 상세 월별 이력은 그대로
-  assert.match(readFileSync('src/lib/adminReadPayloads.ts', 'utf8'), /FROM "StudentSheetImportBatch" b/);
+  // 가져온 자료(StudentSheetImportBatch·장부)를 보여 주는 학생 상세 월별 이력은 그대로(queries.ts).
+  // (adminReadPayloads 의 이관 요약 조회는 부르는 곳이 없어 2026-11-18 옛 코드 정리 B 로 지웠다)
+  assert.match(readFileSync('src/lib/queries.ts', 'utf8'), /FROM "StudentSheetImportBatch" b/);
 });

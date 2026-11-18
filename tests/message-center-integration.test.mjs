@@ -22,13 +22,12 @@ test("인증·보안 자동 발송 규칙은 API와 DB 양쪽에서 변경을 �
     const dispatcher = read("src/lib/message-dispatch.ts");
     const signup = read("src/lib/parent-signup-verification.ts");
     const claim = read("src/lib/parent-account-claim.ts");
-    const staff = read("src/app/api/admin/verify-phone/route.ts");
+    // 직원 전화 인증 API(/api/admin/verify-phone)는 2026-11-18 옛 코드 정리 B 로 지웠다.
     assert.match(dispatcher, /sendAuthenticationSms/);
     assert.match(dispatcher, /audience: "AUTH"/);
     assert.match(dispatcher, /requestedChannel: "SMS"/);
     assert.match(signup, /sendAuthenticationSms/);
     assert.match(claim, /sendAuthenticationSms/);
-    assert.match(staff, /sendAuthenticationSms/);
 });
 
 test("자동 문자는 규칙의 채널을 읽고 통합 발송기로 보내며 실제 결과를 장부에 확정한다", () => {

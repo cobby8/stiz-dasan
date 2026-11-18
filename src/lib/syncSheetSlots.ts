@@ -1,9 +1,9 @@
 /**
  * Google Sheets → SheetSlotCache DB 동기화 공유 로직
  *
- * 두 곳에서 호출됨:
- *  - GET  /api/cron/sync-schedule  (Vercel Cron, CRON_SECRET 인증)
+ * 호출하는 곳:
  *  - POST /api/admin/sync-schedule (관리자 수동 동기화)
+ *  (예전 /api/cron/sync-schedule 은 410 만 돌려주던 빈 경로라 2026-11-18 지웠다)
  */
 
 import { prisma } from "@/lib/prisma";
