@@ -179,6 +179,8 @@ import { normalizedTrialPreferencePatch } from "@/lib/trial-schedule-display";
 import { confirmTrialFeeWithAudit, type TrialFeeConfirmationResult } from "@/lib/trial-fee-confirmation";
 import { recordApplicationContactAtomically } from "@/lib/application-contact-transaction";
 import { sessionDateForKorea } from "@/lib/seasonal/session-bridge";
+// 방학특강 «이 신청서가 이 회차에 나오는가» SQL 조각(2026-11-18 기간·날짜 선택 공용 규칙)
+import { seasonalAttendsSql } from "@/lib/seasonal/attendance-rule";
 import { absencePlanMessage, applyAttendanceAbsenceReasonInTx } from "@/lib/regular/attendance-absence-reason";
 import { syncCreditForRegularSession, syncCreditForSeasonalSeat } from "@/lib/makeup/credit-service";
 import { findOrCreateRegularSession } from "@/lib/regular/regularSession";
@@ -1720,13 +1722,8 @@ async function getAdminSeasonalRosterStudentIds(sessionDateId: string) {
             AND item."conversionStatus" IN ('COMPLETED', 'INVOICE_RETRY_REQUIRED')
            JOIN "SpecialProgramApplication" app ON app.id = item."applicationId"
             AND app."convertedStudentId" IS NOT NULL
-            AND (
-              COALESCE(cardinality(app."selectedWeekdays"), 0) = 0
-              OR CASE EXTRACT(ISODOW FROM sd."startsAt" AT TIME ZONE 'Asia/Seoul')::int
-                WHEN 1 THEN 'MON' WHEN 2 THEN 'TUE' WHEN 3 THEN 'WED' WHEN 4 THEN 'THU'
-                WHEN 5 THEN 'FRI' WHEN 6 THEN 'SAT' ELSE 'SUN'
-              END = ANY(app."selectedWeekdays")
-            )
+            -- 이 회차에 나오는 신청서만(고른 날짜 > 기간 > 요일 — 공용 규칙 조각, 2026-11-18)
+            AND ${seasonalAttendsSql("app", "sd")}
           WHERE anchor_sd.id = $1`,
         sessionDateId,
     );

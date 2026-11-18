@@ -138,6 +138,8 @@ function makeWorld(options = {}) {
     "@/lib/staff-session-queries": { trialOnClassDateSql: () => "true" },
     "@/lib/staff-notifications": { deliverParentNotification: async () => { world.calls.push(["notify"]); return {}; }, getClassParentRecipients: async () => [], getStudentParentRecipients: async () => [] },
     "@/lib/studentVisibility": { notMergedStudent: () => "true" },
+    // 2026-11-18 방학특강 회차 소속 판정 SQL 조각(기간·날짜 선택 공용 규칙) — 이 테스트와는 무관한 의존
+    "@/lib/seasonal/attendance-rule": { seasonalAttendsSql: () => "true" },
     // 2026-11-15 병합: staff-sessions.ts 가 출석부 프로필 사진 버전 조회(loadStaffRosterPhotoVersions)를 위해 이 모듈을 쓴다 — 이 테스트와는 무관한 의존
     "@/lib/profilePhoto/rules": { profilePhotoVersion: () => null },
     "@/lib/regular/regularSession": { adoptRegularSessionKey: async () => {}, regularSessionKey: () => "key" },

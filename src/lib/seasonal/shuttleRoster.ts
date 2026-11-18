@@ -292,6 +292,12 @@ const CONFIRMED_COLUMNS = `
  * 확정 시점 원본 값의 지문(md5). 4단계 "변동 감지"가 이 값을 다시 계산해 비교한다.
  * 기사님이 물리적으로 찾아가는 값(주소·좌표)과 사람 정보, 그리고 상태값을 모두 포함한다.
  * ⚠️ 여기 목록을 바꾸면 기존 확정본의 지문과 어긋나 전원이 '변동됨'으로 뜬다. 함부로 고치지 말 것.
+ *
+ * 2026-11-18 기간·날짜 선택 값을 «맨 끝»에 덧붙였다(고른 날짜·기간 시작·기간 종료).
+ *   기존 신청서는 selectedDates = 빈 배열, 기간 = NULL 이다. 빈 배열은 NULLIF 로 NULL 이 되고,
+ *   concat_ws 는 NULL 을 구분자째 건너뛰므로 기존 신청서의 지문 문자열은 한 글자도 바뀌지 않는다
+ *   (짝 테스트: tests/seasonal-shuttle-fingerprint-period.test.mjs).
+ *   ⚠️ 새 값은 반드시 «기본값일 때 NULL» 이 되게 넣을 것 — '' 나 '{}' 가 들어가면 구분자 '|' 가 붙어 전원이 '변동됨'이 된다.
  */
 const SOURCE_FINGERPRINT_SQL = `md5(concat_ws('|',
               a."childName", a."childGrade", a."childGender", a."childPhone", a."parentName", a."parentPhone",
@@ -301,7 +307,8 @@ const SOURCE_FINGERPRINT_SQL = `md5(concat_ws('|',
               r."dropoffLocation", r."dropoffAddress", r."dropoffRoadAddress",
               r."dropoffLatitude"::text, r."dropoffLongitude"::text,
               COALESCE(r."dropoffSameAsPickup", false)::text,
-              r.status, a.status, it.status, o.status))`;
+              r.status, a.status, it.status, o.status,
+              NULLIF(array_to_string(a."selectedDates", ','), ''), a."periodStartDate", a."periodEndDate"))`;
 
 // 명단 기본 정렬: 탑승자 먼저 → 수업 시작 시각 → 이름.
 // 기존 통합 명단 화면의 ORDER BY와 글자 하나까지 같은 기준이다(순서가 바뀌면 그것도 회귀다).

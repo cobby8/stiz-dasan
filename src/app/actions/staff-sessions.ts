@@ -42,6 +42,8 @@ import { deliverParentNotification, getClassParentRecipients, getStudentParentRe
 import { attendanceNoticeNeeded, attendanceNoticePayload } from "@/lib/attendance/attendanceNoticeRules";
 import type { ParentRecipient } from "@/lib/staff-notifications";
 import { notMergedStudent } from "@/lib/studentVisibility";
+// 방학특강 «이 신청서가 이 회차에 나오는가» SQL 조각(2026-11-18 기간·날짜 선택 공용 규칙)
+import { seasonalAttendsSql } from "@/lib/seasonal/attendance-rule";
 import { adoptRegularSessionKey, regularSessionKey } from "@/lib/regular/regularSession";
 // 랠리즈 피드 이관 수업은 발행해도 학부모 알림 없음(관리자 발행 경로와 같은 판정)
 import { isImportedSessionForNotice } from "@/lib/feed/importedSession";
@@ -211,13 +213,8 @@ async function isSessionRosterStudent(classId: string, sessionDateId: string | n
      WHERE i."offeringId" = o.id AND app."convertedStudentId" = $2
        AND i.status = 'APPROVED'
        AND i."conversionStatus" IN ('COMPLETED', 'INVOICE_RETRY_REQUIRED')
-       AND (
-         COALESCE(cardinality(app."selectedWeekdays"), 0) = 0
-         OR CASE EXTRACT(ISODOW FROM sd."startsAt" AT TIME ZONE 'Asia/Seoul')::int
-           WHEN 1 THEN 'MON' WHEN 2 THEN 'TUE' WHEN 3 THEN 'WED' WHEN 4 THEN 'THU'
-           WHEN 5 THEN 'FRI' WHEN 6 THEN 'SAT' ELSE 'SUN'
-         END = ANY(app."selectedWeekdays")
-       )
+       -- 이 회차에 나오는 신청서인가(고른 날짜 > 기간 > 요일 — 공용 규칙 조각)
+       AND ${seasonalAttendsSql("app", "sd")}
      LIMIT 1`,
     sessionDateId, studentId,
   );
@@ -397,13 +394,8 @@ async function getSessionParentRecipients(session: { classId: string; sessionDat
        AND i.status = 'APPROVED'
        AND i."conversionStatus" IN ('COMPLETED', 'INVOICE_RETRY_REQUIRED')
      JOIN "SpecialProgramApplication" app ON app.id = i."applicationId"
-       AND (
-         COALESCE(cardinality(app."selectedWeekdays"), 0) = 0
-         OR CASE EXTRACT(ISODOW FROM sd."startsAt" AT TIME ZONE 'Asia/Seoul')::int
-           WHEN 1 THEN 'MON' WHEN 2 THEN 'TUE' WHEN 3 THEN 'WED' WHEN 4 THEN 'THU'
-           WHEN 5 THEN 'FRI' WHEN 6 THEN 'SAT' ELSE 'SUN'
-         END = ANY(app."selectedWeekdays")
-       )
+       -- 이 회차에 나오는 학생의 학부모만(고른 날짜 > 기간 > 요일 — 공용 규칙 조각)
+       AND ${seasonalAttendsSql("app", "sd")}
      JOIN "Student" st ON st.id = app."convertedStudentId" AND ${notMergedStudent("st")}
      WHERE anchor_sd.id = $1 AND ($2::text[] IS NULL OR st.id = ANY($2::text[])) AND st."parentId" IS NOT NULL`,
     session.sessionDateId, studentIds?.length ? studentIds : null,
