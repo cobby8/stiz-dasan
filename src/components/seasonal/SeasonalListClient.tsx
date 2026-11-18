@@ -7,11 +7,14 @@ import { SEAT_LEVEL_LABEL, SEAT_LEVEL_TEXT_CLASS } from "@/lib/seats/seatLevel";
 import { extractPrograms, formatSeasonalPeriod, formatWon, programClasses, seasonalDisplayState, type SeasonalListResponse, type SeasonalProgram } from "./types";
 
 // basePath = 상세 화면 주소 머리. 공개 화면은 "/seasonal"(기본), 학부모 앱 안은 "/mypage/seasonal/apply"(앱 범위 밖으로 나가지 않게 — 2026-11-14 c9)
-export default function SeasonalListClient({ basePath = "/seasonal" }: { basePath?: string } = {}) {
-  const [programs, setPrograms] = useState<SeasonalProgram[]>([]);
-  const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+// initialData = 서버가 미리 읽어 넘긴 목록(/api/seasonal 과 같은 모양). 있으면 그대로 그리고 다시 묻지 않는다
+// (2026-11-19 속도 2회차 — 휴대폰이 스크립트 실행 뒤 목록을 따로 받느라 첫 화면 카드가 약 5초 늦게 떴다).
+export default function SeasonalListClient({ basePath = "/seasonal", initialData }: { basePath?: string; initialData?: SeasonalListResponse } = {}) {
+  const [programs, setPrograms] = useState<SeasonalProgram[]>(() => (initialData ? extractPrograms(initialData) : []));
+  const [state, setState] = useState<"loading" | "ready" | "error">(initialData ? "ready" : "loading");
 
   useEffect(() => {
+    if (initialData) return;
     const controller = new AbortController();
     fetch("/api/seasonal", { signal: controller.signal })
       .then(async (response) => {

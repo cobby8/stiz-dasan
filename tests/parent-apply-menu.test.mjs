@@ -204,7 +204,8 @@ test("④ 미리 채움: 보호자 이름·연락처 · 아이는 한 명일 때
 // ── ⑤ 공개 화면 ──────────────────────────────────────────────────────────────
 
 test("⑤ 공개 화면은 그대로: /seasonal·/rental 은 속성을 넘기지 않고(기본값), 대관 안내는 같은 부품", () => {
-  assert.match(read("src/app/seasonal/page.tsx"), /<SeasonalListClient \/>/);
+  // basePath 는 넘기지 않는다(기본 /seasonal). 서버가 미리 읽은 목록(initialData)은 2026-11-19 속도 2회차부터 넘긴다
+  assert.match(read("src/app/seasonal/page.tsx"), /<SeasonalListClient(?![^>]*basePath)[^>]*\/>/);
   assert.match(read("src/app/seasonal/[slug]/page.tsx"), /<SeasonalDetailClient slug=\{slug\} \/>/);
   assert.match(read("src/app/seasonal/[slug]/apply/page.tsx"), /<SeasonalApplyClient slug=\{slug\} \/>/);
   const rental = read("src/app/rental/page.tsx");
