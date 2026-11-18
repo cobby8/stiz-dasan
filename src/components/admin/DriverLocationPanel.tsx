@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useBackToClose } from "@/components/common/useBackToClose";
 import type { DriverLocationRow } from "@/app/api/admin/driver-locations/route";
 
 // 관리자 — 실시간 차량 위치 패널. 30초마다 자동 갱신.
@@ -30,6 +31,8 @@ export default function DriverLocationPanel({ onClose, endpoint = "/api/admin/dr
   const [error, setError] = useState(false);
   const [clock, setClock] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // «뒤로» = 이 창만 닫기(2026-11-18). 이 창은 그려진 동안 = 열림
+  useBackToClose(true, onClose);
 
   const load = useCallback(async () => {
     try {

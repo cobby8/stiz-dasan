@@ -238,7 +238,7 @@ export default function PosChargeRequestModal({
 
     return (
         <>
-        <AdminModal titleId="pos-charge-title" onClose={() => { if (!busy) onClose(); }} closeOnBackdrop={false} panelClassName="max-w-md">
+        <AdminModal titleId="pos-charge-title" onClose={() => { if (!busy) onClose(); }} busy={busy} closeOnBackdrop={false} panelClassName="max-w-md">
             <div className="w-full p-5">
                 <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">

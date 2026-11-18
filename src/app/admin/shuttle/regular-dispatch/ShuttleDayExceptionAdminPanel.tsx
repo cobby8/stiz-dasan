@@ -195,7 +195,7 @@ export default function ShuttleDayExceptionAdminPanel({ initial }: { initial: Ad
 
       {/* 입력 창 — 학생 → 날짜 → 방향 → 변경 → 메모 → 저장. 떠 있는 동안 목록 창은 그리지 않는다(닫히면 목록 창이 결과 안내와 함께 다시 뜬다) */}
       {formOpen && (
-        <AdminModal titleId="shuttle-day-exception-form-title" onClose={() => { if (!pending) setFormOpen(false); }} panelClassName="max-w-lg p-5" closeOnBackdrop={false}>
+        <AdminModal titleId="shuttle-day-exception-form-title" onClose={() => { if (!pending) setFormOpen(false); }} busy={pending} panelClassName="max-w-lg p-5" closeOnBackdrop={false}>
           <h3 id="shuttle-day-exception-form-title" className="academy-section-title">셔틀 당일 변경 입력</h3>
           <p className="mt-1 break-keep text-sm text-[var(--color-academy-muted)]">
             수업은 오지만 셔틀만 바꿀 때 씁니다. 마감 시간이 지난 변경도 여기서는 저장됩니다(지난 날짜는 제외).

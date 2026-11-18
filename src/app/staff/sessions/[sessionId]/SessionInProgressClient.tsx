@@ -42,6 +42,9 @@ import { userErrorMessage } from "@/components/staff/userErrorMessage";
 import { bulkReportedNotice, splitBulkPresent, staffReloginHref } from "@/lib/staff-session-rules";
 import { askConfirm, showNotice } from "@/components/ui/feedback";
 import { markNextScopeNavigationAsReplace } from "@/lib/navigation/inAppHistory";
+// 2026-11-18 뒤로 가기: 창은 «뒤로»로 창만 닫히고, 수업 가드는 창 칸이 빠지는 것을 «나가기»로 보지 않는다
+import { useBackToClose } from "@/components/common/useBackToClose";
+import { isLessonGuardBase, leaveLessonScreen, unwindToLessonGuardBase, waitOverlayEntriesGone } from "@/app/staff/lessonBackGuard";
 
 /** 서버 기능이 «로그인이 풀렸다»고 돌려줬는가(b5) — 던지지 않고 { ok:false, needsLogin:true } 로 온다. */
 function isLoginFailure(result: object): boolean {
@@ -262,6 +265,14 @@ function LiveSessionWorkspace({
     setPrefillSource(filled);
   }
   useStaffDialog(showEndConfirm, endDialogRef, closeEndDialog, !pending);
+  // 휴대폰 «뒤로» = 종료 확인 창만 닫힌다. 종료 처리 중(pending)에는 뒤로를 눌러도 닫히지 않는다
+  useBackToClose(showEndConfirm, closeEndDialog, { blocked: pending });
+  // 수업 주소: 종료·시작 취소가 끝난 뒤 나갈 곳. 값이 생기면 아래 «나가기» effect 가 가드 칸을 걷고 이동한다
+  const [exitTo, setExitTo] = useState<string | null>(null);
+  const exiting = exitTo !== null;
+  const exitStartedRef = useRef(false);
+  // 뒤로 가기 가드를 끄는 손잡이(가드 effect 가 채운다) — 나갈 때 가드가 «나가기 확인»을 또 묻지 않게
+  const releaseBackGuardRef = useRef<(() => void) | null>(null);
 
   // 수강료 조회가 늦거나 실패해도 출석 버튼과 수업 저장은 계속 사용할 수 있습니다.
   // 선생님 화면(showFees=false)은 수강료를 아예 부르지 않는다(f3).
@@ -386,9 +397,11 @@ function LiveSessionWorkspace({
   }, [embedded, persistMemo]);
 
   useEffect(() => {
-    // 뒤로 가기 확인은 수업 주소 전용이다 — 홈에 끼운 칸은 주소가 바뀌지 않아 이력을 건드리지 않는다
+    // 뒤로 가기 확인은 수업 주소 전용이다 — 홈에 끼운 칸은 홈(StaffHomeClient)이 같은 규칙의 가드를 따로 건다
     if (embedded) return;
     const guardKey = `staff-session-${session.id}`;
+    // 종료·시작 취소로 나가는 중이면 가드 칸을 다시 넣지 않는다
+    if (exitStartedRef.current) return;
     const currentState = typeof history.state === "object" && history.state ? history.state : {};
     const alreadyGuarded = currentState.staffSessionGuard === guardKey;
     const hasPreviousEntry = alreadyGuarded ? currentState.staffSessionHadPrevious === true : history.length > 1;
@@ -403,6 +416,9 @@ function LiveSessionWorkspace({
 
     const handlePopState = async () => {
       if (allowNavigation) return;
+      // 창(시트·확인 창)이 넣은 칸이 빠진 뒤로는 «수업 나가기»가 아니다 — 가드 아래 칸(바닥)에 닿았을 때만 묻는다.
+      // 가드 칸의 표시는 출결 저장 뒤 지워질 수 있어, «바닥 표시만 있는 칸인가»로 본다(lessonBackGuard 머리 주석)
+      if (!isLessonGuardBase(history.state, guardKey)) return;
 
       // 먼저 동일 주소의 보호 이력을 복원해 iOS 스와이프 중에도 수업 화면을 유지합니다.
       history.pushState(sentinelState, "", window.location.href);
@@ -433,20 +449,47 @@ function LiveSessionWorkspace({
           return;
         }
 
+        // 닫히는 중인 창의 칸이 아직 맨 위면 빠질 때까지 잠깐 기다린다(«두 칸 뒤로»와 겹치지 않게)
+        await waitOverlayEntriesGone(window);
+        if (allowNavigation) return;
         allowNavigation = true;
         window.removeEventListener("popstate", handlePopState);
-        // 감지 직후 복구한 sentinel과 원래 세션 이력 두 칸을 함께 건너뜁니다.
-        if (hasPreviousEntry) history.go(-2);
-        else window.location.assign("/staff");
+        // 감지 직후 복구한 sentinel과 원래 세션 이력 두 칸을 함께 건너뜁니다(leaveLessonScreen).
+        // «앞 화면이 있는가»는 history.length 로 판단하지 않는다(앞으로 칸까지 세어 틀린다 — 2026-11-18 검수 L-1).
+        // 실제로 나가 보고, 앞 화면이 없으면 예전처럼 선생님 홈으로 간다.
+        if (!(await leaveLessonScreen(window))) window.location.assign("/staff");
       })();
     };
 
     window.addEventListener("popstate", handlePopState);
-    return () => {
+    const releaseGuard = () => {
       allowNavigation = true;
       window.removeEventListener("popstate", handlePopState);
     };
+    releaseBackGuardRef.current = releaseGuard;
+    return () => {
+      releaseGuard();
+      if (releaseBackGuardRef.current === releaseGuard) releaseBackGuardRef.current = null;
+    };
   }, [embedded, persistMemo, session.id]);
+
+  // 수업 주소: 종료·시작 취소 뒤 나가기(2026-11-18 원장 승인 «끝낸 뒤 뒤로 = 수업에 들어오기 전 화면»).
+  // 예전엔 가드 칸 위에서 화면을 바꿔 끼워(replace) 그 아래 «수업 화면에 들어온 칸»이 기록에 남았다 → 뒤로를 누르면 끝낸 수업이 다시 열렸다.
+  // 이제 가드 칸(1)과 열려 있던 종료 확인 창 칸(있으면 1)을 먼저 걷어 «들어온 칸»까지 내려간 뒤 바꿔 끼운다.
+  // 처리(pending)가 끝난 뒤에 한다 — 처리 중에는 종료 확인 창이 «뒤로»를 막고 있어 칸이 걷히지 않는다.
+  useEffect(() => {
+    if (!exitTo || pending || exitStartedRef.current) return;
+    exitStartedRef.current = true;
+    releaseBackGuardRef.current?.();
+    const steps = showEndConfirm ? 2 : 1;
+    void (async () => {
+      await unwindToLessonGuardBase(window, `staff-session-${session.id}`, steps);
+      // 우리 이동 기록에도 «지금 칸을 바꿔 끼운 이동»이라고 알린다 — 안 그러면 수업 주소를 바로 열어 끝냈을 때 홈에 «←» 가 생겨 끝난 수업으로 돌아간다
+      markNextScopeNavigationAsReplace("/staff");
+      router.replace(exitTo);
+      router.refresh();
+    })();
+  }, [exitTo, pending, router, session.id, showEndConfirm]);
 
   useEffect(() => {
     if (memo === lastSavedMemoRef.current) return;
@@ -709,7 +752,7 @@ function LiveSessionWorkspace({
   // 실수/테스트로 시작한 수업을 '시작 전' 상태로 되돌린다.
   // 세션 상태만 되돌리고 출결 기록은 그대로 유지된다(서버에서 보장).
   async function cancelStart() {
-    if (pending || voiceBusy || memoStatus === "saving") return;
+    if (pending || exiting || voiceBusy || memoStatus === "saving") return;
     // 되돌리기는 위험/비가역 성격이므로 반드시 한 번 확인받는다.
     if (!(await askConfirm("수업 시작을 취소하고 '시작 전' 상태로 되돌릴까요? (기록한 출결은 그대로 유지됩니다)"))) return;
     setMessage("");
@@ -731,10 +774,8 @@ function LiveSessionWorkspace({
         if (embedded) { onCancelled?.(); return; }
         // 세션이 더 이상 IN_PROGRESS가 아니므로 진행 화면을 벗어난다.
         // 진행 페이지도 status가 바뀌면 /staff로 리다이렉트하므로 그 흐름과 일관되게 이동한다.
-        // 우리 이동 기록에도 «지금 칸을 바꿔 끼운 이동»이라고 알린다 — 안 그러면 수업 주소를 바로 열어 끝냈을 때 홈에 «←» 가 생겨 끝난 수업으로 돌아간다
-        markNextScopeNavigationAsReplace("/staff");
-        router.replace(session.sessionDateId ? "/staff/seasonal" : "/staff");
-        router.refresh();
+        // 이동은 위 «나가기» effect 가 한다(가드 칸을 걷은 뒤 router.replace)
+        setExitTo(session.sessionDateId ? "/staff/seasonal" : "/staff");
       } catch {
         setMessage("수업 시작 취소 처리 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.");
       }
@@ -742,7 +783,7 @@ function LiveSessionWorkspace({
   }
 
   function finishSession() {
-    if (pending || voiceBusy || memoStatus === "saving") return;
+    if (pending || exiting || voiceBusy || memoStatus === "saving") return;
     setFinishError("");
     startTransition(async () => {
       try {
@@ -767,10 +808,8 @@ function LiveSessionWorkspace({
         // 이미 종료된 수업도 성공으로 보고 교사용 홈으로 안전하게 복귀합니다.
         // 학부모 알림은 서버가 응답 뒤에 끝까지 보낸다(after) — 화면은 기다리지 않는다.
         // 도착지는 «시작 취소»와 같게 — 특강에서 시작한 수업은 특강 화면으로 돌아간다(2026-11-17 뒤로 가기 조사)
-        // 우리 이동 기록에도 «지금 칸을 바꿔 끼운 이동»이라고 알린다 — 안 그러면 수업 주소를 바로 열어 끝냈을 때 홈에 «←» 가 생겨 끝난 수업으로 돌아간다
-        markNextScopeNavigationAsReplace("/staff");
-        router.replace(session.sessionDateId ? "/staff/seasonal" : "/staff");
-        router.refresh();
+        // 이동은 위 «나가기» effect 가 한다(가드 칸·종료 확인 창 칸을 걷은 뒤 router.replace)
+        setExitTo(session.sessionDateId ? "/staff/seasonal" : "/staff");
       } catch {
         setFinishError("수업 종료 처리 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.");
       }
@@ -1184,11 +1223,11 @@ function LiveSessionWorkspace({
             )}
             {finishError && <p role="alert" aria-live="assertive" className="mt-3 rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm text-[var(--color-academy-danger)]">{finishError}</p>}
             <div className="mt-5 grid grid-cols-2 gap-2">
-              <button type="button" disabled={pending} data-dialog-initial-focus onClick={() => setShowEndConfirm(false)} className="academy-button-secondary">돌아가기</button>
+              <button type="button" disabled={pending || exiting} data-dialog-initial-focus onClick={() => setShowEndConfirm(false)} className="academy-button-secondary">돌아가기</button>
               {counts.UNCHECKED > 0 ? (
                 <button type="button" disabled={pending} onClick={() => { setShowEndConfirm(false); scrollToRoster(); }} className="academy-button-primary">명단으로 가기</button>
               ) : (
-                <button type="button" disabled={pending || voiceBusy || memoStatus === "saving" || !online} aria-busy={pending || memoStatus === "saving"} onClick={finishSession} className="academy-button-danger-solid">{pending ? "종료 처리 중…" : memoStatus === "saving" ? "메모 저장 중…" : "종료 확인"}</button>
+                <button type="button" disabled={pending || exiting || voiceBusy || memoStatus === "saving" || !online} aria-busy={pending || exiting || memoStatus === "saving"} onClick={finishSession} className="academy-button-danger-solid">{pending || exiting ? "종료 처리 중…" : memoStatus === "saving" ? "메모 저장 중…" : "종료 확인"}</button>
               )}
             </div>
           </div>

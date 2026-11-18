@@ -197,12 +197,76 @@ export function driverRunPathFor(storeApp: boolean, userAgent: string | null | u
 export const DRIVER_SHUTTLE_PATH = "/staff/shuttle";
 
 /**
+ * 기사님 첫 화면(/staff/driver)에 «운행 시작»을 눌러 왔다는 표시 — 셔틀 명단의 «운행 시작» 버튼만 붙인다(2026-11-18 원장 결정 F).
+ * 표시 없이 온 경우(로그인 직후·앱을 다시 엶·/staff 에서 넘겨짐)는 운행 화면이 아니라 셔틀 명단으로 간다 —
+ * 운행 화면에는 아래 메뉴·이름 메뉴가 없어, 첫 화면이 그곳이면 다른 화면으로 갈 길이 없었다.
+ */
+export const DRIVER_START_PARAM = "start";
+export const DRIVER_START_HREF = `${DRIVER_ENTRY_PATH}?${DRIVER_START_PARAM}=1`;
+
+/**
+ * 기사님 첫 화면이 넘길 주소. 아이폰 스토어 앱 안내는 부르는 쪽이 먼저 가른다(shouldShowIosDriverNotice).
+ *  - «운행 시작»을 눌러 왔으면: 운행 화면(안드로이드 스토어 앱은 위치 공유가 켜지는 앱 길, 그 밖은 운행표)
+ *  - 그 밖(로그인 직후 등): 셔틀 명단 — 거기서 «운행 시작»을 눌러 운행 화면에 들어간다
+ */
+export function driverEntryTarget(startRun: boolean, storeApp: boolean, userAgent: string | null | undefined): string {
+  return startRun ? driverRunPathFor(storeApp, userAgent) : DRIVER_SHUTTLE_PATH;
+}
+
+/**
+ * 위치 기록이 이 시간(초) 안에 갱신됐으면 «운행 중»으로 본다 — 관리자·선생님의 «차량 현재 위치»가 쓰는 10분과 같다.
+ */
+export const DRIVER_RUN_ACTIVE_WINDOW_SECONDS = 600;
+
+/**
+ * 오늘 운행이 «진행 중»인가(순수 함수, 2026-11-18 F 보완).
+ * 근거 = 고정 운행 링크의 위치 기록(DriverLocation) 한 줄: 위치 공유가 켜져 있고(sharing) 최근에 갱신됐을 때만.
+ * 왜: 운행 중에 앱이 다시 켜지면 첫 화면이 명단이라, «운행 시작»을 다시 누르지 않고 체크만 하면 위치가 끊긴 채 달린다.
+ *     진행 중이면 기사님 첫 화면이 예전처럼 운행 화면으로 바로 넘긴다. 줄이 없거나 값이 이상하면 «아님»(명단으로).
+ * 경과 시간은 DB 시계(now() - updatedAt)로 잰 값을 받는다 — 서버·기기 시계를 쓰지 않는다.
+ */
+export function isDriverRunInProgress(
+  row: { sharing?: unknown; secondsAgo?: unknown } | null | undefined,
+  windowSeconds = DRIVER_RUN_ACTIVE_WINDOW_SECONDS,
+): boolean {
+  if (!row || row.sharing !== true) return false;
+  const seconds = typeof row.secondsAgo === "bigint" ? Number(row.secondsAgo) : row.secondsAgo;
+  return typeof seconds === "number" && Number.isFinite(seconds) && seconds >= 0 && seconds <= windowSeconds;
+}
+
+/** «아직 운행 링크가 없습니다» 안내를 한 번 보이라는 탭 안 표시(sessionStorage) — 값은 남긴 시각(ms) */
+export const SHUTTLE_NO_RUN_FLAG_KEY = "stiz:shuttle-no-run-notice:v1";
+/** 그 표시가 살아 있는 시간 — 되돌아가는 한 번의 이동에만 쓰이게 짧게 */
+export const SHUTTLE_NO_RUN_FLAG_TTL_MS = 10_000;
+
+/** 표시가 아직 유효한가(순수 함수) */
+export function isNoRunFlagFresh(raw: string | null | undefined, now: number, ttl = SHUTTLE_NO_RUN_FLAG_TTL_MS): boolean {
+  if (!raw) return false;
+  const at = Number(raw);
+  return Number.isFinite(at) && now >= at && now - at <= ttl;
+}
+
+/**
+ * 안내 표시를 달고 온 칸(?notice=no-run)을 «한 칸 뒤로» 접어도 되나(순수 함수, 2026-11-18).
+ * «운행 시작»을 누르면 [명단] → [기사님 첫 화면 → 운행 링크 없음 → 명단?notice] 로 명단 칸이 둘이 되어 뒤로가 한 번 헛돈다.
+ * 브라우저가 «바로 앞 칸이 같은 명단 화면»이라고 알려 줄 때만 접는다 — 모르면 접지 않는다(엉뚱한 곳으로 back 하지 않게).
+ */
+export function canCollapseNoRunEntry(previousPath: string | null | undefined): boolean {
+  return previousPath === DRIVER_SHUTTLE_PATH;
+}
+
+/** 셔틀 명단 위에 «아직 운행 링크가 없습니다» 안내를 보이라는 쿼리(2026-11-18 원장 결정 G) */
+export const SHUTTLE_NOTICE_PARAM = "notice";
+export const SHUTTLE_NOTICE_NO_RUN = "no-run";
+
+/**
  * 앱 길(/staff/run/open)에서 오늘 운행 열쇠가 없을 때 갈 주소(2026-11-17 뒤로 가기 조사 native #7).
  * 왜: 안드로이드 스토어 앱은 /staff/run 을 막고 «준비 중» 창만 띄운다 — 거기로 넘기면 화면이 «운행 화면을 여는 중…»에서 멈춘다.
  * 스토어 앱이면 앱이 여는 셔틀 화면으로, 브라우저는 «아직 운행 링크가 없습니다» 안내가 있는 운행표로 보낸다.
+ * 2026-11-18: 셔틀 화면으로 보낼 때 안내 표시(?notice=no-run)를 싣는다 — 예전엔 아무 말 없이 명단만 보여 «운행 시작»이 안 먹은 것처럼 보였다.
  */
 export function driverRunMissingKeyPath(storeApp: boolean): string {
-  return storeApp ? DRIVER_SHUTTLE_PATH : DRIVER_RUN_PATH;
+  return storeApp ? `${DRIVER_SHUTTLE_PATH}?${SHUTTLE_NOTICE_PARAM}=${SHUTTLE_NOTICE_NO_RUN}` : DRIVER_RUN_PATH;
 }
 
 // ── f1. 체험수업 아이(출시 전 수정 2026-11-13 원장 지시) ─────────────────

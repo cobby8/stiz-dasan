@@ -23,7 +23,10 @@ import { prepareStaffNavigation, setStaffLiveLessonOpen } from "./staffNavigatio
 import type { StaffSessionDetail, StaffSessionStudent, StaffTodayClass } from "@/lib/staff-session-queries";
 import { isStaleDateKey, STALE_DATE_MESSAGE, staffPreviewDates, staffReloginHref } from "@/lib/staff-session-rules";
 import { kstDow, kstLabel } from "@/lib/datetime/kst";
-import { askConfirm } from "@/components/ui/feedback";
+import { askConfirm, showNotice } from "@/components/ui/feedback";
+// 2026-11-18 뒤로 가기: 창은 «뒤로»로 창만 닫히고, 수업 진행 중에는 홈에서도 «저장하고 나갈까요»를 묻는다
+import { useBackToClose } from "@/components/common/useBackToClose";
+import { createHomeLessonGuard, HOME_LESSON_GUARD_KEY, waitForPop, waitUntilLessonGuardBase, type HomeLessonGuard } from "./lessonBackGuard";
 
 function isSeasonalLesson(lesson: StaffTodayClass) {
   return lesson.kind === "SEASONAL";
@@ -243,6 +246,35 @@ export default function StaffHomeClient({
     setStaffLiveLessonOpen(true);
     return () => setStaffLiveLessonOpen(false);
   }, [liveLessonOpen]);
+  // 수업 진행 중 «뒤로» 가드(2026-11-18 원장 승인) — 수업 주소(/staff/sessions/[id])의 가드와 같은 규칙·같은 문구.
+  // 진행 중 수업 칸이 펼쳐져 있을 때만 기록 칸을 넣는다. 수업이 없거나 줄을 접으면 넣지 않아 홈의 평소 뒤로 동작은 그대로다.
+  // 기기 뒤로 → 확인 창 → 저장(prepareStaffNavigation — 아래 탭·메뉴와 같은 저장) 성공 뒤에만 나간다. 그만·저장 실패면 머문다.
+  const lessonGuardRef = useRef<HomeLessonGuard | null>(null);
+  // 홈의 창(수업 시작·수업 공지·청구 확인)이 열려 있는가 / 방금 닫혔는가 — 닫히는 창의 기록 칸이 빠진 «뒤»에 가드 칸을 넣는다.
+  // («수업 시작» 창은 닫히면서 수업 줄이 «수업 중»으로 바뀐다. 창 칸이 빠지기 전에 가드 칸을 넣으면 그 되돌리기가 가드 칸을 빼 버린다)
+  const homeWindowOpen = Boolean(startTarget || noticeTarget || billingTarget);
+  const homeWindowRef = useRef({ open: false, closedAt: -Infinity });
+  useEffect(() => {
+    if (!liveLessonOpen) return;
+    const guard = (lessonGuardRef.current ??= createHomeLessonGuard(window, {
+      confirmLeave: () => askConfirm("수업이 진행 중입니다. 수업 기록을 저장하고 이전 화면으로 이동할까요?"),
+      save: () => prepareStaffNavigation(),
+      onSaveFailed: (message) => {
+        setError(message || "수업 기록을 저장하지 못했습니다. 잠시 후 다시 눌러 주세요.");
+        void showNotice(message || "수업 기록을 저장하지 못해 현재 화면을 유지합니다.");
+      },
+      onNoPrevious: () => void showNotice("수업 기록을 저장했습니다. 뒤로를 한 번 더 누르면 나갑니다."),
+    }));
+    const recent = homeWindowRef.current;
+    guard.enable({ afterWindowClose: recent.open || performance.now() - recent.closedAt < 400 });
+    return () => guard.disable();
+  }, [liveLessonOpen]);
+  // 위 effect 보다 «뒤»에 둔다 — 가드 effect 가 «직전 화면에서 창이 열려 있었는가»를 읽은 다음에 갱신한다
+  useEffect(() => {
+    const recent = homeWindowRef.current;
+    if (recent.open && !homeWindowOpen) recent.closedAt = performance.now();
+    recent.open = homeWindowOpen;
+  }, [homeWindowOpen]);
   // 끝난 수업의 본문은 줄을 접으면 버린다 — 다시 펼칠 때 서버에서 새로 읽어, 접기 전에 저장한 수업 내용·사진·영상이
   // 처음 읽은 옛 값으로 되돌아가 보이지 않게 한다(옛 값 위에 저장하면 학부모에게 보이는 글이 덮인다). 진행 중 수업은 그대로 둔다.
   useEffect(() => {
@@ -263,6 +295,18 @@ export default function StaffHomeClient({
     setExpandedKey(lesson.scheduleKey);
   }
 
+  // 수업 종료·시작 취소 뒤의 새로 불러오기 — 수업 가드 칸과 종료 확인 창 칸이 다 빠진 «뒤»에 한다(2026-11-18).
+  // 칸이 빠질 때마다(popstate) Next 가 «뒤로 이동»으로 처리하며 진행 중이던 새로 불러오기를 버린다 → 먼저 부르면 화면이 옛 값으로 남는다.
+  // 칸은 여기서 직접 걷지 않는다 — 줄이 «완료»·«시작 전»으로 바뀌면 종료 확인 창이 사라지며 자기 칸을 되돌리고, 위 가드 effect 가 가드 칸을 되돌린다.
+  // (여기서 먼저 뒤로를 보내면, 아직 «처리 중»이라 뒤로를 막고 있는 종료 확인 창이 자기 칸을 다시 넣어 칸 하나가 남는다)
+  // 이렇게 끝나면 기록에 수업 중 칸이 하나도 남지 않아, 뒤로 = 수업에 들어오기 전 화면이다.
+  function refreshAfterLessonEnds() {
+    void (async () => {
+      if (lessonGuardRef.current?.isLive()) await waitUntilLessonGuardBase(window, HOME_LESSON_GUARD_KEY, 3);
+      router.refresh();
+    })();
+  }
+
   // 수업 종료 — 이동하지 않고 그 줄이 «완료»로 바뀐다(완료한 수업 목록으로 내려간다)
   function handleFinished(lesson: StaffTodayClass, content: string | null) {
     patchLesson(lesson.scheduleKey, { sessionStatus: "COMPLETED", content });
@@ -270,7 +314,7 @@ export default function StaffHomeClient({
     setLiveStatus(null);
     setExpandedKey(null);
     setFlash(`${lesson.name} 수업을 종료했습니다.`);
-    router.refresh();
+    refreshAfterLessonEnds();
   }
 
   // 수업 시작 취소 — 그 줄이 «시작 전» 모양으로 돌아간다(기록한 출결·사진·메모는 그대로)
@@ -279,7 +323,7 @@ export default function StaffHomeClient({
     dropSessionData(lesson.sessionId);
     setLiveStatus(null);
     setFlash(`${lesson.name} 수업 시작을 취소했습니다.`);
-    router.refresh();
+    refreshAfterLessonEnds();
   }
 
   function startLesson() {
@@ -316,7 +360,8 @@ export default function StaffHomeClient({
         // 날짜가 바뀐 화면이면 오늘 화면으로 새로 불러온다(b2).
         if (result.code === "STALE_DATE") {
           setStartTarget(null);
-          router.refresh();
+          // «수업 시작» 창이 넣은 기록 칸이 빠진 뒤에 새로 불러온다(먼저 부르면 그 되돌리기가 새로 불러오기를 버린다)
+          void waitForPop(window, () => {}).then(() => router.refresh());
         }
         return;
       }
@@ -367,8 +412,30 @@ export default function StaffHomeClient({
       setError(ready.message || "수업 기록을 저장하지 못했습니다. 잠시 후 다시 눌러 주세요.");
       return;
     }
+    // 수업 진행 중이면 넣어 둔 가드 칸을 먼저 걷는다 — 안 걷으면 가드 칸만 바뀌어 끼워져 오늘 화면 칸이 기록에 남는다
+    await lessonGuardRef.current?.release();
     // replace: 날짜는 같은 화면의 보기 설정이라 기록에 쌓지 않는다 — 날짜를 옮긴 수만큼 뒤로를 눌러야 하던 문제(2026-11-17)
     startDateMove(() => router.replace(target === todayKey ? "/staff" : `/staff?date=${target}`));
+  }
+
+  // «지난 수업» 링크 — 수업 진행 중이면 쓰던 기록을 저장하고 가드 칸을 걷은 뒤 이동한다(아래 탭과 같은 약속).
+  // 가드 칸 위에서 그대로 이동하면 그 칸이 기록에 남아, 돌아왔을 때 뒤로가 한 번 헛돈다. 수업이 없으면 평소 링크 그대로.
+  function openPastLessons(event: React.MouseEvent<HTMLAnchorElement>) {
+    if (!liveLessonOpen) return;
+    // 새 탭·새 창으로 여는 누름은 지금 화면을 떠나지 않으므로 그대로 둔다
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+    event.preventDefault();
+    void leaveToPastLessons();
+  }
+  async function leaveToPastLessons() {
+    setError(null);
+    const ready = await prepareStaffNavigation();
+    if (!ready.ok) {
+      setError(ready.message || "수업 기록을 저장하지 못했습니다. 잠시 후 다시 눌러 주세요.");
+      return;
+    }
+    await lessonGuardRef.current?.release();
+    router.push("/staff/sessions");
   }
 
   function openPrimaryAction(lesson: StaffTodayClass) {
@@ -631,7 +698,7 @@ export default function StaffHomeClient({
       )}
 
       {/* 지난 수업(최근 14일) — 완료한 수업을 다시 열어 보고 고친다(2026-11-14 원장 지시) */}
-      <Link href="/staff/sessions" className="flex min-h-12 items-center justify-between gap-3 rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-4 text-sm font-medium text-[var(--color-academy-ink)]">
+      <Link href="/staff/sessions" onClick={openPastLessons} className="flex min-h-12 items-center justify-between gap-3 rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-4 text-sm font-medium text-[var(--color-academy-ink)]">
         <span>지난 수업</span>
         <span className="text-xs font-normal text-[var(--color-academy-muted)]">최근 14일 ›</span>
       </Link>
@@ -643,7 +710,7 @@ export default function StaffHomeClient({
       {showFees && billingTarget && <ClassBillingSheet key={`${billingTarget.lesson.id}:${billingTarget.student?.id || "all"}`} open classId={billingTarget.lesson.id} className={billingTarget.lesson.name} student={billingTarget.student} onClose={() => setBillingTarget(null)} />}
 
       {noticeTarget && (
-        <Modal title="수업 공지 작성" subtitle={`${noticeTarget.name} 학부모에게만 발송합니다.`} onClose={() => setNoticeTarget(null)} labelledBy="notice-title">
+        <Modal title="수업 공지 작성" subtitle={`${noticeTarget.name} 학부모에게만 발송합니다.`} onClose={() => setNoticeTarget(null)} labelledBy="notice-title" busy={pending}>
           <input disabled={noticeSaved || noticeUncertain || pending} value={noticeTitle} onChange={(event) => setNoticeTitle(event.target.value)} placeholder="공지 제목" className="academy-input mt-4" />
           <textarea disabled={noticeSaved || noticeUncertain || pending} value={noticeContent} onChange={(event) => setNoticeContent(event.target.value)} rows={6} placeholder="공지 내용을 입력해 주세요." className="academy-input mt-3 leading-6" />
           {!noticeSaved && !noticeUncertain && !pending && <VoiceToTextButton onText={(text) => setNoticeContent((current) => current ? `${current}\n${text}` : text)} />}
@@ -657,7 +724,7 @@ export default function StaffHomeClient({
       )}
 
       {startTarget && (
-        <Modal title="수업을 시작하시겠습니까?" subtitle={startTarget.name} onClose={() => setStartTarget(null)} labelledBy="start-title">
+        <Modal title="수업을 시작하시겠습니까?" subtitle={startTarget.name} onClose={() => setStartTarget(null)} labelledBy="start-title" busy={pending}>
           <div className="mt-4 rounded-xl bg-[var(--color-academy-soft)] p-4 text-sm">
             <p className="font-semibold tabular-nums">{startTarget.startTime}–{startTarget.endTime}</p>
             <p className="mt-1 text-[var(--color-academy-muted)]">학생 {startTarget.studentCount}명 · {startTarget.location || "장소 미정"}</p>
@@ -788,7 +855,8 @@ function ClassRow({ lesson, startLocked, expanded, preview = false, onOpen, onSt
   </li>;
 }
 
-function Modal({ title, subtitle, onClose, labelledBy, children }: { title: string; subtitle: string; onClose: () => void; labelledBy: string; children: React.ReactNode }) {
+// busy: 저장·발송·시작 처리 중 — 그동안은 휴대폰 «뒤로»를 눌러도 창이 닫히지 않는다(2026-11-18)
+function Modal({ title, subtitle, onClose, labelledBy, busy = false, children }: { title: string; subtitle: string; onClose: () => void; labelledBy: string; busy?: boolean; children: React.ReactNode }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   useEffect(() => {
@@ -796,6 +864,8 @@ function Modal({ title, subtitle, onClose, labelledBy, children }: { title: stri
   }, [onClose]);
   const closeDialog = useCallback(() => onCloseRef.current(), []);
   useStaffDialog(true, dialogRef, closeDialog);
+  // 휴대폰 «뒤로» = 이 창만 닫는다(화면째 나가지 않는다). 이 창은 열려 있는 동안에만 그려진다
+  useBackToClose(true, closeDialog, { blocked: busy });
   return <div className="fixed inset-0 z-50 flex items-end bg-black/50 p-4 sm:items-center sm:justify-center" role="dialog" aria-modal="true" aria-labelledby={labelledBy}><div ref={dialogRef} className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"><div className="flex items-start justify-between gap-3"><div><h2 id={labelledBy} className="text-xl font-bold">{title}</h2><p className="mt-1 text-sm text-[var(--color-academy-muted)]">{subtitle}</p></div><button type="button" aria-label="닫기" data-dialog-initial-focus onClick={onClose} className="academy-button-text academy-button-sm shrink-0">닫기</button></div>{children}</div></div>;
 }
 

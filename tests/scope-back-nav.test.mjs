@@ -635,3 +635,207 @@ test("홈에서 새로 시작한 뒤 기기 뒤로로 «잊은 칸»에 돌아�
   // 링크로(뒤로 아님) 새 화면에 가면 평소대로 쌓인다
   assert.deepEqual(hist.recordScopeNavigation("/admin", "/admin/classes", normal, doc3), ["/admin", "/admin/students", "/admin/classes"]);
 });
+
+/** 관리자 업무 링크 테스트의 기준 시각(ms) — 실제 시계에 기대지 않게 넣어 준다 */
+const E_T0 = 1_700_000_000_000;
+
+// ── 10. 관리자 업무 링크(«수업 진행»·«빠른 업로드») → 선생님 화면의 «←» = 관리자 화면(2026-11-18 원장 결정 E) ──
+
+/** 가짜 브라우저 — scopeHistoryDecision 이 읽는 것만 */
+function withWindow(storage, fn, { historyLength = 3 } = {}) {
+  globalThis.window = { sessionStorage: storage, history: { length: historyLength } };
+  try { return fn(); } finally { delete globalThis.window; }
+}
+/** 머리줄 «←» 가 할 일(AppBackButton 과 같은 조합 — 판정은 scopeHistoryDecision) */
+function headerBackLive(storage, pathname, { home = "/staff", historyLength } = {}) {
+  return withWindow(storage, () => resolveBackAction({
+    hasHistory: hist.scopeHistoryDecision(pathname) === true, pathname, fallbackHref: home, scopeHref: "/staff", isInstalledApp: false,
+  }), { historyLength });
+}
+
+test("E — 순수 판단: 관리자 링크로 들어온 «첫 화면 한 칸»일 때만 표시가 남는다", () => {
+  const base = { pending: false, origin: null, prev: [], next: ["/staff"], leftScope: false, freshDocument: false };
+  // 방금 링크를 눌렀다 → 지금 화면이 첫 화면
+  assert.equal(hist.nextFromAdminOrigin({ ...base, pending: true }), "/staff");
+  assert.equal(hist.nextFromAdminOrigin({ ...base, pending: true, next: ["/staff/quick-post?tab=a"] }), "/staff/quick-post");
+  // 링크를 누르지 않았다(화면 전환 메뉴 등) → 표시 없음
+  assert.equal(hist.nextFromAdminOrigin(base), null);
+  // 같은 첫 화면에 그대로(자동 새로고침·쿼리만 바뀜) → 이어 간다
+  assert.equal(hist.nextFromAdminOrigin({ ...base, origin: "/staff", prev: ["/staff"], next: ["/staff"] }), "/staff");
+  assert.equal(hist.nextFromAdminOrigin({ ...base, origin: "/staff", prev: ["/staff"], next: ["/staff?date=2026-11-20"] }), "/staff");
+  // 선생님 화면 안에서 더 이동 → 평소 규칙(표시 지움)
+  assert.equal(hist.nextFromAdminOrigin({ ...base, origin: "/staff", prev: ["/staff"], next: ["/staff", "/staff/students"] }), null);
+  // 다른 화면 한 칸이 됐다(로고로 홈·바꿔 끼우기) → 지움
+  assert.equal(hist.nextFromAdminOrigin({ ...base, origin: "/staff/quick-post", prev: ["/staff/quick-post"], next: ["/staff"] }), null);
+  // 떠났다 돌아왔거나 딴 길로 문서를 새로 불러왔다 → 지움
+  assert.equal(hist.nextFromAdminOrigin({ ...base, origin: "/staff", prev: ["/staff"], leftScope: true }), null);
+  assert.equal(hist.nextFromAdminOrigin({ ...base, origin: "/staff", prev: ["/staff"], freshDocument: true }), null);
+  // 앞 기록이 그 화면 한 칸이 아니었다 → 지움
+  assert.equal(hist.nextFromAdminOrigin({ ...base, origin: "/staff", prev: ["/staff", "/staff/students"], next: ["/staff"] }), null);
+
+  assert.equal(hist.isFromAdminFirstScreen(["/staff"], "/staff", "/staff"), true);
+  assert.equal(hist.isFromAdminFirstScreen(["/staff?date=2026-11-20"], "/staff", "/staff"), true);
+  assert.equal(hist.isFromAdminFirstScreen(["/staff"], "/staff", null), false);
+  assert.equal(hist.isFromAdminFirstScreen(["/staff", "/staff/students"], "/staff/students", "/staff"), false);
+  assert.equal(hist.isFromAdminFirstScreen(["/staff/annual"], "/staff/annual", "/staff"), false);
+});
+
+test("E — «수업 진행»으로 선생님 홈에 오면 «←» 가 관리자 화면으로 back 한다(자동 새로고침 뒤에도), 더 이동하면 평소 규칙", () => {
+  const store = freshTab();
+  const adminDoc = env(ORIGIN + "/login", "/admin");
+  hist.recordScopeNavigation("/admin", "/admin", store, adminDoc, E_T0 + 500);
+  // 대시보드 «수업 진행» 클릭 → 화면 안 이동으로 /staff
+  hist.markEnteringStaffFromAdmin(store, E_T0);
+  hist.markLeftScope("/admin", store);
+  assert.deepEqual(hist.recordScopeNavigation("/staff", "/staff", store, adminDoc, E_T0 + 500), ["/staff"]);
+  assert.equal(hist.readFromAdminOrigin(store), "/staff");
+  assert.deepEqual(headerBackLive(store, "/staff"), { type: "back" }, "선생님 홈이지만 돌아갈 관리자 화면이 있다");
+  // StaffDocumentReload — 같은 주소를 다시 받아 온다(문서가 새로 올라와 메모리는 비고 저장소만 남는다)
+  reloadDocument();
+  assert.deepEqual(hist.recordScopeNavigation("/staff", "/staff", store, env(ORIGIN + "/login", "/staff", { navigationType: "reload" }), E_T0 + 500), ["/staff"]);
+  assert.deepEqual(headerBackLive(store, "/staff"), { type: "back" });
+  // 새 탭으로 복사된 경우(브라우저 기록 1칸)는 back 하지 않는다
+  assert.deepEqual(headerBackLive(store, "/staff", { historyLength: 1 }), { type: "none" });
+  // 날짜만 바꿈(같은 화면) → 그대로
+  hist.recordScopeNavigation("/staff", "/staff?date=2026-11-20", store, null, E_T0 + 500);
+  assert.deepEqual(headerBackLive(store, "/staff"), { type: "back" });
+  // 선생님 화면 안에서 더 이동 → 평소 규칙: 학생 화면의 «←» = 방금 있던 홈, 홈에 돌아오면 버튼 없음
+  hist.recordScopeNavigation("/staff", "/staff/students", store, null, E_T0 + 500);
+  assert.equal(hist.readFromAdminOrigin(store), null);
+  assert.deepEqual(headerBackLive(store, "/staff/students"), { type: "back" });
+  hist.recordScopeNavigation("/staff", "/staff", store, null, E_T0 + 500);
+  assert.deepEqual(headerBackLive(store, "/staff"), { type: "none" });
+});
+
+test("E — «빠른 업로드»: 첫 화면(/staff/quick-post)의 «←» 는 선생님 홈으로 바꿔 끼우지 않고 관리자로 back", () => {
+  const store = freshTab();
+  const adminDoc = env(ORIGIN + "/admin", "/admin/gallery");
+  hist.recordScopeNavigation("/admin", "/admin/gallery", store, adminDoc, E_T0 + 500);
+  hist.markEnteringStaffFromAdmin(store, E_T0);
+  assert.deepEqual(hist.recordScopeNavigation("/staff", "/staff/quick-post", store, adminDoc, E_T0 + 500), ["/staff/quick-post"]);
+  assert.deepEqual(headerBackLive(store, "/staff/quick-post"), { type: "back" });
+  // 표시 없이 같은 화면을 바로 연 경우(예전 동작 그대로) → 선생님 홈으로
+  const direct = freshTab();
+  hist.recordScopeNavigation("/staff", "/staff/quick-post", direct, env("", "/staff/quick-post"), E_T0 + 500);
+  assert.deepEqual(headerBackLive(direct, "/staff/quick-post"), { type: "push", href: "/staff" });
+});
+
+test("E — 이름 메뉴의 «화면 전환»으로 넘어온 경우는 그대로 선생님 홈(버튼 없음)이고, 쓰고 남은 표시가 따라오지 않는다", () => {
+  const store = freshTab();
+  const adminDoc = env(ORIGIN + "/login", "/admin");
+  hist.recordScopeNavigation("/admin", "/admin", store, adminDoc, E_T0 + 500);
+  // 표시 없이 넘어옴(화면 전환)
+  hist.markLeftScope("/admin", store);
+  hist.recordScopeNavigation("/staff", "/staff", store, adminDoc, E_T0 + 500);
+  assert.equal(hist.readFromAdminOrigin(store), null);
+  assert.deepEqual(headerBackLive(store, "/staff"), { type: "none" });
+
+  // «수업 진행»으로 다녀온 뒤(관리자로 돌아옴) 화면 전환으로 다시 가면 → 버튼 없음
+  const again = freshTab();
+  hist.recordScopeNavigation("/admin", "/admin", again, adminDoc, E_T0 + 500);
+  hist.markEnteringStaffFromAdmin(again, E_T0);
+  hist.recordScopeNavigation("/staff", "/staff", again, adminDoc, E_T0 + 500);
+  assert.deepEqual(headerBackLive(again, "/staff"), { type: "back" });
+  reloadDocument(); // «←»(history.back) → 관리자 문서를 다시 불러온다
+  hist.recordScopeNavigation("/admin", "/admin", again, env(ORIGIN + "/staff", "/admin", { navigationType: "back_forward" }), E_T0 + 500);
+  assert.equal(hist.readFromAdminOrigin(again), null, "관리자 화면에 돌아오면 표시를 지운다");
+  hist.recordScopeNavigation("/staff", "/staff", again, env(ORIGIN + "/staff", "/admin", { navigationType: "back_forward" }), E_T0 + 500);
+  assert.deepEqual(headerBackLive(again, "/staff"), { type: "none" });
+
+  // 링크를 눌렀지만 선생님 화면에 가지 않고 관리자 화면을 계속 썼다 → «들어가는 중» 표시도 지워진다
+  const stale = freshTab();
+  hist.recordScopeNavigation("/admin", "/admin", stale, adminDoc, E_T0 + 500);
+  hist.markEnteringStaffFromAdmin(stale, E_T0);
+  hist.recordScopeNavigation("/admin", "/admin/students", stale, adminDoc, E_T0 + 500);
+  hist.recordScopeNavigation("/staff", "/staff", stale, adminDoc, E_T0 + 500);
+  assert.deepEqual(headerBackLive(stale, "/staff"), { type: "none" });
+});
+
+test("E — 표시가 남은 채 딴 길로 선생님 화면 문서를 새로 불러오면(주소 입력·로그인 거침) 무효다", () => {
+  const store = freshTab();
+  const adminDoc = env(ORIGIN + "/login", "/admin");
+  hist.recordScopeNavigation("/admin", "/admin", store, adminDoc, E_T0 + 500);
+  hist.markEnteringStaffFromAdmin(store, E_T0);
+  hist.recordScopeNavigation("/staff", "/staff", store, adminDoc, E_T0 + 500);
+  // 공개 홈·로그인을 거쳐 통째로 /staff 를 다시 엶(관리자 기록 없이) — 브라우저의 바로 앞 칸은 관리자 화면이 아니다
+  reloadDocument();
+  hist.recordScopeNavigation("/staff", "/staff", store, env(ORIGIN + "/login", "/staff", { navigationType: "navigate" }), E_T0 + 500);
+  assert.equal(hist.readFromAdminOrigin(store), null);
+  assert.deepEqual(headerBackLive(store, "/staff"), { type: "none" });
+  // 범위를 떠났다 돌아온 경우(내 계정 등)도 무효
+  const left = freshTab();
+  hist.markEnteringStaffFromAdmin(left, E_T0);
+  hist.recordScopeNavigation("/staff", "/staff", left, adminDoc, E_T0 + 500);
+  hist.markLeftScope("/staff", left);
+  hist.recordScopeNavigation("/staff", "/staff", left, adminDoc, E_T0 + 500);
+  assert.deepEqual(headerBackLive(left, "/staff"), { type: "none" });
+});
+
+test("E — 표시는 관리자의 두 업무 링크만 남긴다(주소에 쿼리를 붙이지 않고, 새 탭 클릭은 제외)", async () => {
+  assert.equal(hist.STAFF_FROM_ADMIN_PENDING_KEY, "stiz:staff-nav-from-admin-pending:v1");
+  assert.equal(hist.STAFF_FROM_ADMIN_ORIGIN_KEY, "stiz:staff-nav-from-admin:v1");
+  const guard = /if \(event\.button === 0 && !event\.metaKey && !event\.ctrlKey && !event\.shiftKey && !event\.altKey\) markEnteringStaffFromAdmin\(\);/;
+  const dashboard = await read("src/app/admin/AdminDashboardClient.tsx");
+  assert.match(dashboard, /<Link href="\/staff" prefetch=\{false\} className="academy-button-primary" onClick=\{[\s\S]{0,400}\}>수업 진행<\/Link>/);
+  assert.match(dashboard, guard);
+  const gallery = await read("src/app/admin/gallery/GalleryAdminClient.tsx");
+  assert.match(gallery, /<Link href="\/staff\/quick-post" prefetch=\{false\} className="academy-button-secondary" onClick=\{/);
+  assert.match(gallery, guard);
+  // 화면 전환 메뉴는 표시를 남기지 않는다
+  assert.doesNotMatch(await read("src/components/AccountViewSwitcher.tsx"), /markEnteringStaffFromAdmin/);
+  // 머리줄 «←»·ScopeBackLink 는 같은 판정(scopeHistoryDecision) 하나를 본다 — 표시 판단이 그 안에 있다
+  const lib = await read("src/lib/navigation/inAppHistory.ts");
+  assert.match(lib, /const fromAdmin = decision === false && scope === "\/staff" && isFromAdminFirstScreen\(stack, pathname, readFromAdminOrigin\(\)\);/);
+});
+
+// ── 11. N-4 — «들어가는 중» 표시는 수 초만 유효하다(2026-11-18 검수) ──
+
+test("N-4 — 순수 판단: 표시 시각이 유효 시간(10초) 안일 때만", () => {
+  assert.equal(hist.STAFF_FROM_ADMIN_PENDING_TTL_MS, 10_000);
+  assert.equal(hist.isFromAdminPendingFresh(E_T0, E_T0), true);
+  assert.equal(hist.isFromAdminPendingFresh(E_T0, E_T0 + 10_000), true);
+  assert.equal(hist.isFromAdminPendingFresh(E_T0, E_T0 + 10_001), false);
+  assert.equal(hist.isFromAdminPendingFresh(E_T0, E_T0 - 1), false, "미래 시각(시계가 뒤로 감)은 믿지 않는다");
+  assert.equal(hist.isFromAdminPendingFresh(null, E_T0), false);
+  assert.equal(hist.isFromAdminPendingFresh(NaN, E_T0), false);
+});
+
+test("N-4 반례 1 — «수업 진행»을 눌렀지만 이동이 안 된 뒤, 공개 홈·로그인을 거쳐 /staff 를 새로 열면 «←» 가 없다(범위 밖으로 back 하지 않는다)", () => {
+  const store = freshTab();
+  const adminDoc = env(ORIGIN + "/login", "/admin");
+  hist.recordScopeNavigation("/admin", "/admin", store, adminDoc, E_T0);
+  hist.markEnteringStaffFromAdmin(store, E_T0); // 눌렀지만 이동이 안 됐다(네트워크 끊김 등)
+  // 한참 뒤, 관리자 기록 없이 공개 홈 → 로그인 → /staff 문서를 새로 불러옴
+  reloadDocument();
+  const stack = hist.recordScopeNavigation("/staff", "/staff", store, env(ORIGIN + "/login", "/staff", { navigationType: "navigate" }), E_T0 + 60_000);
+  assert.deepEqual(stack, ["/staff"]);
+  assert.equal(hist.readFromAdminOrigin(store), null);
+  assert.deepEqual(headerBackLive(store, "/staff"), { type: "none" });
+  // 표시는 그 기록에서 지워졌다 — 바로 다음 이동이 다시 쓰지 못한다
+  assert.equal(store.getItem(hist.STAFF_FROM_ADMIN_PENDING_KEY), "");
+});
+
+test("N-4 반례 2 — 표시가 남은 채 한참 뒤 이름 메뉴의 «화면 전환»으로 선생님 화면에 가도 «←» 가 뜨지 않는다", () => {
+  // 관리자 화면을 떠나지 않은 채(관리자 기록이 새로 쌓이지 않아 표시가 남는다) 시간이 흐른 뒤 화면 전환
+  const store = freshTab();
+  const adminDoc = env(ORIGIN + "/login", "/admin");
+  hist.recordScopeNavigation("/admin", "/admin", store, adminDoc, E_T0);
+  hist.markEnteringStaffFromAdmin(store, E_T0);
+  hist.markLeftScope("/admin", store);
+  hist.recordScopeNavigation("/staff", "/staff", store, adminDoc, E_T0 + 10_001);
+  assert.equal(hist.readFromAdminOrigin(store), null);
+  assert.deepEqual(headerBackLive(store, "/staff"), { type: "none" });
+
+  // 유효 시간 안에 도착한 정상 흐름은 그대로 back
+  const ok = freshTab();
+  hist.recordScopeNavigation("/admin", "/admin", ok, adminDoc, E_T0);
+  hist.markEnteringStaffFromAdmin(ok, E_T0);
+  hist.recordScopeNavigation("/staff", "/staff", ok, adminDoc, E_T0 + 9_000);
+  assert.deepEqual(headerBackLive(ok, "/staff"), { type: "back" });
+  // 저장소가 막혀도(메모리 표시) 같은 규칙
+  hist.resetPageLoadStateForTest();
+  const blocked = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); } };
+  hist.markEnteringStaffFromAdmin(blocked, E_T0);
+  hist.recordScopeNavigation("/staff", "/staff", blocked, adminDoc, E_T0 + 20_000);
+  assert.equal(hist.readFromAdminOrigin(blocked), null);
+});

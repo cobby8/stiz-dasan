@@ -2,6 +2,7 @@
 
 import UiIcon from "@/components/common/UiIcon";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useBackToClose } from "@/components/common/useBackToClose";
 // 타입만 가져온다(서버 모듈 코드는 화면에 실리지 않는다).
 import type { DriverAssignBoard } from "@/lib/shuttle/driverAssign";
 import type { ShuttleIntakeDashboard, ShuttleIntakeItem } from "@/lib/enrollment/shuttle-review-types";
@@ -103,6 +104,8 @@ export default function NewStudentDispatchPanel({ month, selectedWeekday, onAssi
   // 월이 바뀌면 부모가 key 로 이 패널을 새로 그린다(모달·안내 초기화). 여기선 읽기만 한다.
   useEffect(() => { void load(); void loadIntake(); }, [load, loadIntake]);
 
+  // 배정 창이 열린 채 «뒤로» = 창만 닫기(2026-11-18). 다음 칸으로 넘어가도(target 만 바뀜) 기록 칸은 하나다.
+  useBackToClose(Boolean(target), () => setTarget(null));
   // 모달은 Esc 로도 닫는다.
   useEffect(() => {
     if (!target) return;

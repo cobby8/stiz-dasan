@@ -205,6 +205,66 @@ export function nextScopeHistory(stack: readonly string[], entry: string, max = 
   return next.length > max ? next.slice(next.length - max) : next;
 }
 
+// ── 관리자 → 선생님 화면 «업무 링크»(2026-11-18 원장 결정 E) ─────────────────────
+//
+// 관리자 화면의 «수업 진행»·«빠른 업로드»는 화면 전환이 아니라 «잠깐 다녀오는 일»이다.
+// 그 링크로 들어온 선생님 화면의 «첫 화면»에서는 «←» 가 선생님 홈이 아니라 방금 있던 관리자 화면으로 돌아간다.
+//  - 링크를 누를 때 «들어가는 중» 표시(pending)를 남긴다 → 선생님 범위의 다음 기록이 한 번 꺼내 쓴다
+//  - 그 기록이 [첫 화면] 한 칸이면 «관리자에서 온 첫 화면»(origin = 그 경로)으로 적어 둔다
+//  - 선생님 화면 안에서 더 이동하거나·범위를 떠났다 오거나·문서를 딴 길로 새로 불러오면 지운다(평소 규칙으로)
+//  - 관리자 화면에 돌아오면(관리자 범위 기록) 둘 다 지운다 — 이름 메뉴의 «화면 전환»은 표시를 남기지 않으므로 그대로 선생님 홈
+// 주소에는 아무것도 붙이지 않는다(sessionStorage — 탭마다 따로).
+
+/** 관리자 업무 링크를 눌러 선생님 화면으로 «들어가는 중» 표시 */
+export const STAFF_FROM_ADMIN_PENDING_KEY = "stiz:staff-nav-from-admin-pending:v1";
+/** «관리자에서 온 첫 화면»의 경로 — 이 화면에 머무는 동안만 남는다 */
+export const STAFF_FROM_ADMIN_ORIGIN_KEY = "stiz:staff-nav-from-admin:v1";
+/**
+ * «들어가는 중» 표시가 살아 있는 시간(2026-11-18 검수 N-4) — 링크를 누른 뒤 이 시간 안에 선생님 화면에 도착해야 쓴다.
+ * 왜: 눌렀는데 이동이 안 된 채 표시만 남으면, 나중에 다른 길(공개 홈·로그인·화면 전환 메뉴)로 선생님 화면에 왔을 때
+ * «←» 가 back 으로 엉뚱한 곳(범위 밖)에 나간다.
+ */
+export const STAFF_FROM_ADMIN_PENDING_TTL_MS = 10_000;
+
+/** 표시에 적힌 시각이 지금 기준으로 아직 유효한가(순수 함수). 시각이 없거나·미래거나·오래됐으면 무효 */
+export function isFromAdminPendingFresh(markedAt: number | null, now: number, ttl = STAFF_FROM_ADMIN_PENDING_TTL_MS): boolean {
+  return markedAt !== null && Number.isFinite(markedAt) && now >= markedAt && now - markedAt <= ttl;
+}
+
+/**
+ * 선생님 범위에 기록이 한 번 쌓인 뒤, «관리자에서 온 첫 화면» 표시를 어떻게 둘지(순수 함수).
+ * 돌려주는 값 = 남길 경로, null = 지운다.
+ */
+export function nextFromAdminOrigin(input: {
+  /** 방금 관리자 업무 링크를 눌렀나(한 번 꺼낸 값) */
+  pending: boolean;
+  /** 지금까지 적혀 있던 첫 화면 경로 */
+  origin: string | null;
+  /** 이번 기록 전·후의 선생님 범위 기록 */
+  prev: readonly string[];
+  next: readonly string[];
+  /** 범위를 떠났다 돌아온 기록인가 */
+  leftScope: boolean;
+  /** 문서를 «새로고침·뒤로»가 아닌 길로 새로 불러왔거나, 범위 밖에서 불러온 문서의 첫 기록인가 */
+  freshDocument: boolean;
+}): string | null {
+  // 첫 화면 한 칸일 때만 뜻이 있다 — 선생님 화면 안에서 더 이동했으면 평소 규칙
+  if (input.next.length !== 1) return null;
+  const here = pathOf(input.next[0]);
+  if (input.pending) return here; // 방금 관리자 링크로 들어왔다
+  if (!input.origin || input.origin !== here) return null;
+  // 떠났다 왔거나 딴 길로 새로 불러왔으면 브라우저의 «바로 앞 칸»이 관리자 화면이라는 보장이 없다
+  if (input.leftScope || input.freshDocument) return null;
+  // 같은 첫 화면에 그대로 있는 기록(자동 새로고침·날짜 쿼리만 바뀜)만 이어 간다
+  if (input.prev.length !== 1 || pathOf(input.prev[0]) !== here) return null;
+  return input.origin;
+}
+
+/** 지금 화면이 «관리자에서 온 첫 화면»인가(순수 함수) — 기록이 그 화면 한 칸이고 표시가 같은 경로일 때만 */
+export function isFromAdminFirstScreen(stack: readonly string[], pathname: string, origin: string | null): boolean {
+  return origin !== null && origin === pathname && stack.length === 1 && pathOf(stack[0]) === pathname;
+}
+
 // ── 브라우저 쪽(저장·구독) — 서버에서는 아무 일도 하지 않는다 ──────────────────────
 
 type StorageLike = Pick<Storage, "getItem" | "setItem">;
@@ -219,6 +279,62 @@ function sessionStore(): StorageLike | null {
 
 let version = 0;
 const listeners = new Set<() => void>();
+
+// 저장소가 막힌 브라우저용 메모리 값(문서를 새로 불러오면 사라진다)
+let fromAdminPendingMemory: number | null = null; // 표시를 남긴 시각(ms)
+let fromAdminOriginMemory: string | null = null;
+
+/**
+ * 관리자 화면의 «수업 진행»·«빠른 업로드» 링크를 누를 때 부른다(새 탭으로 여는 클릭에서는 부르지 않는다).
+ * 선생님 범위의 다음 기록 한 번에만, 그것도 누른 뒤 수 초 안에 도착했을 때만 쓰인다(STAFF_FROM_ADMIN_PENDING_TTL_MS).
+ * now 는 테스트가 시각을 넣을 수 있게 받는다.
+ */
+export function markEnteringStaffFromAdmin(storage: StorageLike | null = sessionStore(), now = Date.now()) {
+  fromAdminPendingMemory = now;
+  try {
+    storage?.setItem(STAFF_FROM_ADMIN_PENDING_KEY, String(now));
+  } catch {
+    // 저장이 막히면 메모리 표시로만(문서를 새로 불러오면 사라져 평소 규칙 = 선생님 홈)
+  }
+}
+
+/** 표시를 한 번 꺼낸다(꺼내면 지운다). 남긴 지 오래된 표시는 없는 것으로 본다 */
+function takeFromAdminPending(storage: StorageLike | null, now: number): boolean {
+  let markedAt = fromAdminPendingMemory;
+  fromAdminPendingMemory = null;
+  try {
+    const raw = storage?.getItem(STAFF_FROM_ADMIN_PENDING_KEY);
+    if (raw) {
+      const stored = Number(raw);
+      if (Number.isFinite(stored)) markedAt = markedAt === null ? stored : Math.max(markedAt, stored);
+      storage?.setItem(STAFF_FROM_ADMIN_PENDING_KEY, "");
+    }
+  } catch {
+    // 메모리 표시로만 판단
+  }
+  return isFromAdminPendingFresh(markedAt, now);
+}
+
+/** «관리자에서 온 첫 화면» 경로 읽기 — 선생님 범위 경로가 아니면 없는 것으로 */
+export function readFromAdminOrigin(storage: StorageLike | null = sessionStore()): string | null {
+  if (!storage) return fromAdminOriginMemory;
+  try {
+    const value = storage.getItem(STAFF_FROM_ADMIN_ORIGIN_KEY);
+    return value && isScopePath(value, "/staff") ? value : null;
+  } catch {
+    return fromAdminOriginMemory;
+  }
+}
+
+function writeFromAdminOrigin(value: string | null, storage: StorageLike | null) {
+  if (readFromAdminOrigin(storage) === value && fromAdminOriginMemory === value) return; // 바뀐 것이 없으면 쓰지 않는다
+  fromAdminOriginMemory = value;
+  try {
+    storage?.setItem(STAFF_FROM_ADMIN_ORIGIN_KEY, value ?? "");
+  } catch {
+    // 메모리 값으로만
+  }
+}
 
 /** 그 범위의 기록 읽기 */
 export function readScopeHistory(scope: HistoryScope, storage: StorageLike | null = sessionStore()): string[] {
@@ -376,6 +492,8 @@ export function resetPageLoadStateForTest() {
     state.popAt = 0;
     state.memoryStack = [];
   }
+  fromAdminPendingMemory = null;
+  fromAdminOriginMemory = null;
 }
 
 /**
@@ -489,12 +607,16 @@ export function recordScopeNavigation(
   entry: string,
   storage: StorageLike | null = sessionStore(),
   env: PageLoadEnv | null = currentEnv(),
+  /** 지금 시각(ms) — 관리자 업무 링크 표시의 유효 시간 판단용. 테스트가 넣을 수 있게 받는다 */
+  now: number = Date.now(),
 ): string[] {
   const state = SCOPE_STATES[scope];
   const prev = readScopeHistory(scope, storage);
   const leftScope = takeLeftFlag(state, storage);
   // «뒤로» 표시는 어느 갈래로 가든 이번 기록에서 한 번 꺼낸다 — 다른 갈래에서 남으면 다음 링크 이동을 «뒤로»로 읽는다(2026-11-17 검수)
   const viaPop = takePopFlag(state);
+  // «문서의 첫 기록인가»는 아래 기록 함수가 꺼내 쓰기 전에 받아 둔다(관리자 업무 링크 판단용)
+  const firstOfPage = state.firstRecordOfPage;
   const next = state.strict
     ? nextStaffOrAdminRecord(scope, state, prev, entry, storage, env, leftScope, viaPop)
     : nextParentRecord(state, prev, entry, storage, env, leftScope, viaPop);
@@ -503,6 +625,21 @@ export function recordScopeNavigation(
     storage?.setItem(state.historyKey, JSON.stringify(next));
   } catch {
     // 저장 공간이 가득 찼거나 막힘 — 메모리 기록으로 계속
+  }
+  // 관리자 업무 링크(«수업 진행»·«빠른 업로드») 표시 — 구독자에게 알리기 전에 정리해야 «←» 가 바로 맞게 그려진다
+  if (scope === "/admin") {
+    // 관리자 화면에 있다 = 선생님 화면에 다녀왔거나 가지 않았다 → 남은 표시는 모두 무효
+    takeFromAdminPending(storage, now);
+    writeFromAdminOrigin(null, storage);
+  } else if (scope === "/staff") {
+    const freshDocument = firstOfPage && env != null && (
+      (env.documentPath != null && !isScopePath(env.documentPath, scope)) ||
+      (env.navigationType != null && env.navigationType !== "reload" && env.navigationType !== "back_forward")
+    );
+    writeFromAdminOrigin(
+      nextFromAdminOrigin({ pending: takeFromAdminPending(storage, now), origin: readFromAdminOrigin(storage), prev, next, leftScope, freshDocument }),
+      storage,
+    );
   }
   version += 1;
   listeners.forEach((listener) => listener());
@@ -538,8 +675,11 @@ export function scopeHistoryDecision(pathname: string): boolean | null {
   if (typeof window === "undefined") return null;
   const scope = scopeOfPath(pathname);
   if (!scope) return null;
-  const decision = hasInAppHistory(readScopeHistory(scope), pathname);
-  if (decision !== true) return decision;
+  const stack = readScopeHistory(scope);
+  const decision = hasInAppHistory(stack, pathname);
+  // 관리자 업무 링크로 들어온 선생님 첫 화면은 범위 기록이 한 칸이어도 «돌아갈 곳 있음» — 브라우저의 바로 앞 칸이 방금 있던 관리자 화면이다(2026-11-18)
+  const fromAdmin = decision === false && scope === "/staff" && isFromAdminFirstScreen(stack, pathname, readFromAdminOrigin());
+  if (decision !== true && !fromAdmin) return decision;
   try {
     return window.history.length > 1;
   } catch {

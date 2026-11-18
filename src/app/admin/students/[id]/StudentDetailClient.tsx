@@ -2285,7 +2285,7 @@ export default function StudentDetailClient({
                 <AdminModal
                     titleId="enrollment-status-change-title"
                     panelClassName="max-w-md p-6"
-                    onClose={() => { if (!statusUpdatingId) setStatusChange(null); }}
+                    onClose={() => { if (!statusUpdatingId) setStatusChange(null); }} busy={Boolean(statusUpdatingId)}
                     closeOnBackdrop={!statusUpdatingId}
                 >
                     <form onSubmit={(event) => void submitEnrollmentStatusChange(event)} className="space-y-4">

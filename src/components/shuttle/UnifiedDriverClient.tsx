@@ -4,6 +4,7 @@ import UiIcon from "@/components/common/UiIcon";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { useBackToClose } from "@/components/common/useBackToClose";
 import AcademyTheme from "@/components/academy/AcademyTheme";
 // 운행표 카드 목록 부품 — 관리자 운행표와 같은 카드 틀을 쓴다(이 화면은 mode="driver").
 import RunBoard from "@/components/shuttle/run/RunBoard";
@@ -88,6 +89,8 @@ export default function UnifiedDriverClient({
   // 게슈탈트 T-01: «운행 종료»는 운전 중 잘못 누르면 위치 공유가 바로 끊긴다 → 화면 안 확인 단계를 둔다.
   // (앱 웹뷰의 window.confirm 은 다른 창이 떠 있으면 iOS 에서 조용히 «취소»가 되므로 페이지 안 확인 UI 를 쓴다)
   const [confirmEnd, setConfirmEnd] = useState(false);
+  // 확인 칸이 열린 채 «뒤로» = 확인 칸만 닫기(운행표를 떠나지 않는다 — 2026-11-18)
+  useBackToClose(confirmEnd && runState === "running", () => setConfirmEnd(false));
 
   // 순서 편집 — 기사님이 실제 운행 현장에서 카드 순서와 시간을 조정해 바로 저장한다.
   // 탑승 체크 키(rowId)는 유지하고 명단·확정 배차의 순서와 시각을 함께 저장한다.

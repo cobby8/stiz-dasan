@@ -11,11 +11,13 @@ import UnifiedDriverClient from "@/components/shuttle/UnifiedDriverClient";
 import StaffShuttleDashboardClient from "./StaffShuttleDashboardClient";
 import { staffShuttleAccess, stripRiderPrivate } from "@/lib/shuttle/teacherShuttleView";
 import StaffVehicleLocation from "./StaffVehicleLocation";
+import NoRunNotice from "./NoRunNotice";
+import { DRIVER_START_HREF, SHUTTLE_NOTICE_NO_RUN } from "@/lib/staff-session-rules";
 
 export const dynamic = "force-dynamic";
 
 export default async function StaffShuttlePage({ searchParams }: {
-  searchParams: Promise<{ date?: string; focus?: string; view?: string; mode?: string }>;
+  searchParams: Promise<{ date?: string; focus?: string; view?: string; mode?: string; notice?: string }>;
 }) {
   const staff = await requireStaff();
   // 2026-11-16 원장 지시: 일반 선생님도 들어온다(보기 + 선생님 운행). 관리자·기사님은 예전과 같은 확인을 거친다.
@@ -67,13 +69,17 @@ export default async function StaffShuttlePage({ searchParams }: {
 
   return (
     <>
+      {/* «운행 시작»을 눌렀는데 오늘 운행 링크가 아직 없어 되돌아온 경우의 한 줄 안내(2026-11-18 원장 결정 G).
+          늘 놓아 둔다 — 주소 표시(?notice=no-run)로 온 칸은 한 칸 뒤(이 명단)로 접히고, 돌아온 명단이 탭 안 표시를 읽어 안내를 보인다 */}
+      <NoRunNotice fromQuery={params.notice === SHUTTLE_NOTICE_NO_RUN} />
       {driveMode ? (
         <div className="mx-auto max-w-lg space-y-2 px-4 pt-3">
           {/* 이 운행표(계정용)에는 위치 전송이 없다. 위치를 보내려면 운행 화면에서 «운행 시작»을 누른다(2026-11-13 b7).
-              기사님 첫 화면(/staff/driver)을 거쳐 간다 — 안드로이드 앱은 위치 공유가 켜지는 운행 링크 화면으로, 브라우저는 /staff/run 으로(2026-11-16). */}
+              기사님 첫 화면(/staff/driver)을 거쳐 간다 — 안드로이드 앱은 위치 공유가 켜지는 운행 링크 화면으로, 브라우저는 /staff/run 으로(2026-11-16).
+              ?start=1 = «운행 시작을 눌러 왔다» 표시. 표시 없이 그 화면에 오면(로그인 직후 등) 이 명단으로 돌아온다(2026-11-18 원장 결정 F). */}
           {/* 위치 전송은 기사님 운행 화면의 기능이라 일반 선생님에게는 두지 않는다(탑승 체크만) */}
           {!teacherOnly && (
-            <Link href="/staff/driver" className="academy-button-primary min-h-12! w-full text-base!">
+            <Link href={DRIVER_START_HREF} className="academy-button-primary min-h-12! w-full text-base!">
               운행 시작 (위치 전송)
             </Link>
           )}

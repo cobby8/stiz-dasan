@@ -1,9 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useRouter } from "next/navigation";
 import AdminModal from "@/components/admin/AdminModal";
-import { useBackToClose } from "@/components/common/useBackToClose";
 
 interface ListDetailPanelProps {
     children: ReactNode;
@@ -13,10 +11,13 @@ interface ListDetailPanelProps {
     panelClassName?: string;
     closeOnBackdrop?: boolean;
     /**
-     * 휴대폰 «뒤로» = 이 패널 닫기(2026-11-17, 학부모 화면). 켜면 열려 있는 동안 기록 한 칸을 넣어
-     * 뒤로 가기가 화면째 나가지 않고 패널만 닫는다(규칙: overlayHistory). 끈 곳(관리자 화면)은 예전 그대로.
+     * 휴대폰·브라우저 «뒤로» = 이 패널만 닫기. 열려 있는 동안 기록 한 칸을 넣어 뒤로 가기가 화면째 나가지 않는다
+     * (규칙: overlayHistory). 2026-11-18 원장 결정 ①부터 기본 켜짐(관리자·선생님 화면 포함) — 기록 칸 관리는 AdminModal 이 한다.
+     * 기록 칸을 스스로 관리하는 시트(청구 시트)만 false 로 끈다.
      */
     backToClose?: boolean;
+    /** 저장·처리 중 — 그동안은 «뒤로»를 눌러도 패널이 닫히지 않는다 */
+    busy?: boolean;
 }
 
 /**
@@ -32,11 +33,10 @@ export default function ListDetailPanel({
     titleId,
     panelClassName = "",
     closeOnBackdrop = true,
-    backToClose = false,
+    backToClose = true,
+    busy = false,
 }: ListDetailPanelProps) {
-    // 이 패널은 열려 있는 동안에만 그려진다 — 그려진 동안 = 열림
-    const { captureLinks } = useBackToClose(backToClose, onClose);
-    const router = useRouter();
+    // «뒤로 = 닫기»·패널 안 링크 처리(칸을 먼저 되돌린 뒤 이동)는 AdminModal 한 곳에서 한다 — 두 벌 만들지 않는다
     return (
         <AdminModal
             onClose={onClose}
@@ -44,12 +44,10 @@ export default function ListDetailPanel({
             layout="side"
             panelClassName={panelClassName}
             closeOnBackdrop={closeOnBackdrop}
+            backToClose={backToClose}
+            busy={busy}
         >
-            {/* 패널 안 링크는 넣어 둔 기록 칸을 먼저 되돌린 뒤 이동(backToClose 일 때만 — 아니면 captureLinks 는 아무 일 안 함).
-                안 하면 새 화면 뒤에 같은 주소 칸이 남아 뒤로가 한 번 헛돈다(2026-11-17 검수) */}
-            <div className="contents" onClickCapture={captureLinks((to) => router.push(to))}>
-                {children}
-            </div>
+            {children}
         </AdminModal>
     );
 }

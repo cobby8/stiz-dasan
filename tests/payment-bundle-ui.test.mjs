@@ -39,14 +39,15 @@ const vaNotice = { __esModule: true, default: ({ account }) => React.createEleme
 const monthBills = load("src/lib/payments/monthBills.ts", {
   "@/lib/parent/childRecordRules": load("src/lib/parent/childRecordRules.ts", { "@/lib/datetime/kst": kst }),
 });
-const adminModal = load("src/components/admin/AdminModal.tsx");
+// 2026-11-18: «뒤로 = 닫기» 훅은 AdminModal 한 곳에서 건다 — 이 렌더 시험에선 빈 대역
+const adminModal = load("src/components/admin/AdminModal.tsx", { "next/navigation": { useRouter: () => ({ push() {} }) }, "@/components/common/useBackToClose": { useBackToClose() { return { leaveTo: (h, go) => go(h), captureLinks: () => () => {}, closeThen: (next) => next() }; } } });
 const billingMocks = {
   "@/lib/payments/monthBills": monthBills,
   "@/components/parent/billing/MonthBillCard": load("src/components/parent/billing/MonthBillCard.tsx", { "@/lib/ui/statusTones": statusTones, "@/lib/payments/monthBills": monthBills }),
   "@/components/parent/billing/BillDetailSheet": load("src/components/parent/billing/BillDetailSheet.tsx", {
     "@/lib/ui/statusTones": statusTones,
     "@/lib/payments/monthBills": monthBills,
-    "@/components/admin/list/ListDetailPanel": load("src/components/admin/list/ListDetailPanel.tsx", { "@/components/admin/AdminModal": adminModal, "next/navigation": { useRouter: () => ({ push() {} }) }, "@/components/common/useBackToClose": { useBackToClose() { return { leaveTo: (h, go) => go(h), captureLinks: () => () => {} }; } } }),
+    "@/components/admin/list/ListDetailPanel": load("src/components/admin/list/ListDetailPanel.tsx", { "@/components/admin/AdminModal": adminModal }),
     "./sheetHistory": load("src/components/parent/billing/sheetHistory.ts"),
   }),
 };

@@ -5,12 +5,15 @@ import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { replaceListQuery } from "@/lib/navigation/listQuery";
 import { saveAttendance } from "@/app/actions/admin";
-import { kstLabel, todayKst } from "@/lib/datetime/kst";
-import { mondayOf } from "@/lib/attendance/weekBoard";
+import { isKstYmd, kstLabel, todayKst } from "@/lib/datetime/kst";
+import { mondayOf, WEEK_MAX_YMD, WEEK_MIN_YMD } from "@/lib/attendance/weekBoard";
 import { findLessonForTarget, type AttendanceOpenTarget } from "@/lib/attendance/lessonQuery";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
+import { useBackToClose } from "@/components/common/useBackToClose";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
 import ListViewToggle, { useRememberedListView } from "@/components/admin/list/ListViewToggle";
 import WeekBoard, { type LessonRef } from "./WeekBoard";
@@ -132,24 +135,43 @@ function AttendanceErrorState({ onRetry }: { onRetry: () => void }) {
     );
 }
 
+const ATTENDANCE_PATH = "/admin/attendance";
+
+/**
+ * 주소에 적어 둔 «보던 날짜»(?day=)·«보던 주»(?week=) 읽기(2026-11-18) — 실제 달력 날짜이고 볼 수 있는 기간(2020~2030) 안일 때만.
+ * 대시보드가 보내는 ?date=&lesson=(그 수업을 바로 여는 주소)과는 다른 이름이다 — 그 값은 서버가 읽어 화면을 새로 시작하는 데 쓰므로 건드리지 않는다.
+ */
+function readKeptYmd(raw: string | null): string | null {
+    return raw !== null && isKstYmd(raw) && raw >= WEEK_MIN_YMD && raw <= WEEK_MAX_YMD ? raw : null;
+}
+
 export default function AttendanceClient({ classes: initialClasses, initialOpen = null }: {
     classes?: ClassItem[];
     /** 주소(?date=&lesson=)로 지정한 날짜·수업 — 대시보드 «오늘 수업» 줄에서 올 때. 없으면 예전처럼 오늘·선택 없음 */
     initialOpen?: AttendanceOpenTarget | null;
 }) {
-    const hasInitialClasses = initialClasses !== undefined;
+    // 보던 날짜·주(2026-11-18): 상세·수업 피드에 다녀와 «뒤로»로 돌아오면 주소의 ?day=·?week= 에서 다시 읽는다.
+    // 서버가 넘긴 수업 목록은 «기본 날짜»(주소의 ?date= 또는 오늘) 것이라, 보던 날짜가 다르면 그 목록은 쓰지 않고 새로 받는다
+    const keptQuery = useSearchParams();
+    const [baseDate] = useState(() => initialOpen?.date ?? todayKst());
+    const [keptDay] = useState(() => readKeptYmd(keptQuery.get("day")));
+    const [keptWeek] = useState(() => readKeptYmd(keptQuery.get("week")));
+    const startDate = keptDay ?? baseDate;
+    const serverListFits = initialClasses !== undefined && startDate === baseDate;
+    const hasInitialClasses = serverListFits;
     // 주소가 가리킨 수업을 서버가 넘긴 그날 목록에서 찾는다(없으면 "" = 그 날짜만 연다). 아래 상태들의 처음 값으로만 쓴다
     const [initialLessonKey] = useState(() => {
+        if (!serverListFits) return ""; // 다른 날짜를 보던 중이었다 — 그 수업은 그날 목록에 없다
         const found = findLessonForTarget(initialClasses ?? [], initialOpen?.lesson ?? null);
         return found ? lessonKeyOf(found) : "";
     });
-    const [classes, setClasses] = useState<ClassItem[]>(initialClasses ?? []);
+    const [classes, setClasses] = useState<ClassItem[]>(serverListFits ? initialClasses ?? [] : []);
     const [classesLoading, setClassesLoading] = useState(!hasInitialClasses);
     const [classesError, setClassesError] = useState(false);
     // 주간 보드 카드를 눌러 여는 것(openFromBoard)과 같은 상태(selectedClass·date)를 쓴다 — 주소로 왔으면 처음부터 그 수업
     const [selectedClass, setSelectedClass] = useState(initialLessonKey);
     // 한국 날짜 기준 "오늘" — UTC 로 구하면 KST 00~09시에 어제가 기본값이 된다(결석일·보강권 날짜가 하루 어긋남)
-    const [date, setDate] = useState(() => initialOpen?.date ?? todayKst());
+    const [date, setDate] = useState(startDate);
     const [students, setStudents] = useState<StudentRecord[]>([]);
     // 주소로 수업을 열고 들어오면 명단을 받기 전 «원생이 없습니다»가 잠깐 깜빡이지 않게 처음부터 불러오는 중
     const [loading, setLoading] = useState(initialLessonKey !== "");
@@ -162,7 +184,15 @@ export default function AttendanceClient({ classes: initialClasses, initialOpen 
     // viewReady: 저장된 보기값을 읽은 뒤에만 주간 보드를 그린다(«날짜별» 사용자가 주간 API 를 헛부르지 않게)
     const [viewMode, changeViewMode, viewReady] = useRememberedListView(ATTENDANCE_VIEW_STORAGE_KEY, ATTENDANCE_VIEW_VALUES, "week");
     // 보던 주(월요일) — 보기를 «날짜별»로 바꿨다 돌아와도 같은 주가 보이게 여기서 들고 있는다
-    const [weekStart, setWeekStart] = useState(() => mondayOf(initialOpen?.date ?? todayKst()));
+    const [weekStart, setWeekStart] = useState(() => (keptWeek ? mondayOf(keptWeek) : mondayOf(startDate)));
+
+    // 보던 날짜·주를 지금 칸의 주소에 적어 둔다 — 기본값(처음 날짜·그 날짜가 든 주)은 적지 않는다. 기록을 쌓지 않고 서버도 다시 부르지 않는다
+    useEffect(() => {
+        replaceListQuery({
+            day: date === baseDate ? null : readKeptYmd(date),
+            week: weekStart === mondayOf(date) ? null : readKeptYmd(weekStart),
+        }, ATTENDANCE_PATH);
+    }, [date, weekStart, baseDate]);
     // 패널에서 저장하면 주간 보드의 그 카드만 다시 불러오게 보내는 신호
     const [boardRefresh, setBoardRefresh] = useState<(LessonRef & { n: number }) | null>(null);
 
@@ -343,6 +373,11 @@ export default function AttendanceClient({ classes: initialClasses, initialOpen 
         setLoading(false);
     }
 
+    // 출결 패널이 열린 채 «뒤로» = 패널 닫기 요청(2026-11-18 검수 N-3). 고친 출결이 있으면 «뒤로»를 막고(칸을 다시 넣고)
+    // 닫기 확인을 띄운다 — «그만»을 골라도 기록 칸이 남아, 다음 «뒤로»가 화면을 떠나 입력이 사라지지 않는다.
+    // 기록 칸을 여기서 직접 들므로 아래 패널의 것은 끈다(backToClose={false} — 두 번 넣지 않게)
+    useBackToClose(Boolean(selectedLesson), () => void closeLesson(), { blocked: dirty || saving, onBlockedBack: () => { if (!saving) void closeLesson(); } }); // 저장 중엔 묻지도 닫지도 않는다
+
     // 수업 목록: 시작 시간 → 반 이름 순(정규·특강을 한 목록에 시간표처럼)
     const sortedLessons = useMemo(
         () => [...classes].sort((a, b) => a.startTime.localeCompare(b.startTime) || a.name.localeCompare(b.name, "ko")),
@@ -486,6 +521,7 @@ export default function AttendanceClient({ classes: initialClasses, initialOpen 
                 불러오기·전체 출석·저장 흐름은 예전 화면 아래 영역과 같다. 저장 안 한 변경이 있으면 바깥 클릭으로 닫히지 않는다 */}
             {selectedLesson && (
                 <ListDetailPanel
+                    backToClose={false}
                     onClose={closeLesson}
                     titleId="attendance-lesson-panel-title"
                     closeOnBackdrop={!dirty}

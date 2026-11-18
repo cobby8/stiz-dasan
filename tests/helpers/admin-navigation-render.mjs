@@ -23,7 +23,9 @@ export function loadAdminModule(file, pathname = '/admin') {
   new Function('require', 'module', 'exports', code)((id) => {
     if (REAL_MODULES[id]) return loadAdminModule(REAL_MODULES[id], pathname);
     if (id === 'next/link') return { default: Link };
-    if (id === 'next/navigation') return { usePathname: () => pathname };
+    if (id === 'next/navigation') return { usePathname: () => pathname, useRouter: () => ({ push() {} }) };
+    // 휴대폰 메뉴 «뒤로 = 닫기» 훅(2026-11-18) — 메뉴 렌더 시험에선 빈 대역(규칙은 overlay-back-close.test.mjs 가 본다)
+    if (id === '@/components/common/useBackToClose') return { useBackToClose: () => ({ captureLinks: () => undefined }) };
     if (id === 'next/image' || id.startsWith('@/components/')) return { default: ({ children }) => children ?? null };
     if (id === 'next/dynamic') return { default: () => () => null };
     if (id === '@/app/actions/auth') return { logout: '/logout' };

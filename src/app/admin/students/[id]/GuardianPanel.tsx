@@ -323,7 +323,7 @@ export default function GuardianPanel({
 
             {/* 추가·수정 입력 창 */}
             {editingId && (editingId === "new" || editingGuardian) && (
-                <AdminModal titleId="guardian-form-title" panelClassName="max-w-md" onClose={() => { if (!isPending) closeForm(); }} closeOnBackdrop={!isPending}>
+                <AdminModal titleId="guardian-form-title" panelClassName="max-w-md" onClose={() => { if (!isPending) closeForm(); }} busy={isPending} closeOnBackdrop={!isPending}>
                     <div className="flex items-center justify-between gap-2 border-b border-[var(--color-academy-line)] px-5 py-3">
                         <h2 id="guardian-form-title" className="text-base font-bold text-[var(--color-academy-ink)]">
                             {editingId === "new" ? "보호자 추가" : `보호자 수정 — ${editingGuardian?.relation ?? ""}`}

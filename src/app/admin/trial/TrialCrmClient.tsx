@@ -1415,7 +1415,7 @@ function EnrollGuideConfirmModal({
     onConfirmNoSms?: () => void;
 }) {
     return (
-        <AdminModal onClose={busy ? () => undefined : onClose} titleId="trial-enroll-guide-confirm-title" panelClassName="max-w-md">
+        <AdminModal onClose={busy ? () => undefined : onClose} busy={busy} titleId="trial-enroll-guide-confirm-title" panelClassName="max-w-md">
             <div className="p-6">
                 {/* 장식 아이콘 원을 빼고 글자로만(2026-11-13 UI 통일) */}
                 <div className="flex items-start gap-3">
@@ -1686,7 +1686,7 @@ function TrialContactModal({
     }
 
     return (
-        <AdminModal onClose={onClose} titleId="trial-contact-modal-title" panelClassName="max-w-md" closeOnBackdrop={!busy}>
+        <AdminModal onClose={onClose} titleId="trial-contact-modal-title" panelClassName="max-w-md" closeOnBackdrop={!busy} busy={busy}>
             <form
                 onSubmit={handleSubmit}
                 className="w-full p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]"

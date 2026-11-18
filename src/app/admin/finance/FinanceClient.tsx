@@ -5,6 +5,7 @@ import { toKstYmd } from "@/lib/datetime/kst";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { formatYearMonth, parseYearMonth, pickListValue, readListText, replaceListQuery } from "@/lib/navigation/listQuery";
 import AdminModal from "@/components/admin/AdminModal";
 import { statusToneClass } from "@/components/admin/StatusBadge";
 import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
@@ -285,6 +286,9 @@ const FINANCE_VIEW_OPTIONS = [
 const NO_CLASS_GROUP_LABEL = "반 없음";
 // 상태 칩·상태별 묶음 순서. 값은 필터 모달 «납부 상태» select 의 값과 같다(칩·select 가 한 상태를 공유)
 const PAYMENT_STATUS_ORDER = ["PENDING", "OVERDUE", "PAID", "REFUNDED", "CANCELED"] as const;
+// 주소(?status=)에서 받아들이는 납부 상태 값 — 상태 칩 5종 + 필터의 «미납·연체»(UNPAID). 그 밖의 값은 무시한다(2026-11-18)
+const PAYMENT_STATUS_QUERY_VALUES: readonly string[] = [...PAYMENT_STATUS_ORDER, "UNPAID"];
+const FINANCE_PATH = "/admin/finance";
 
 /**
  * 날짜 표시(납부일·납부기한·발송일) — **KST 달력 날짜**로.
@@ -425,13 +429,28 @@ export default function FinanceClient({
     const now = new Date();
     const fallbackYear = now.getFullYear();
     const fallbackMonth = now.getMonth() + 1;
-    const hasInitialData = Boolean(initialPayments && initialSummary);
-    const [paymentSearch, setPaymentSearch] = useState("");
-    const [paymentStatusFilter, setPaymentStatusFilter] = useState("");
-    const [paymentClassFilter, setPaymentClassFilter] = useState("");
-    const [payments, setPayments] = useState(initialPayments ?? []);
-    const [year, setYear] = useState(initialYear ?? fallbackYear);
-    const [month, setMonth] = useState(initialMonth ?? fallbackMonth);
+    // 보던 달·검색어·필터(2026-11-18): 상세·청구 준비에 다녀와 «뒤로»로 돌아오면 주소(?month=·q·status·class)에서 다시 읽는다.
+    // 서버가 넘긴 목록은 «이번 달» 것이라, 보던 달이 다르면 그 목록은 쓰지 않고 그 달을 새로 받는다
+    const [keptMonth] = useState(() => parseYearMonth(searchParams.get("month")));
+    const startYear = keptMonth?.year ?? initialYear ?? fallbackYear;
+    const startMonth = keptMonth?.month ?? initialMonth ?? fallbackMonth;
+    const hasInitialData = Boolean(initialPayments && initialSummary) && (keptMonth === null || (keptMonth.year === initialYear && keptMonth.month === initialMonth));
+    const [paymentSearch, setPaymentSearch] = useState(() => readListText(searchParams.get("q")));
+    const [paymentStatusFilter, setPaymentStatusFilter] = useState<string>(() => pickListValue(searchParams.get("status"), PAYMENT_STATUS_QUERY_VALUES, ""));
+    const [paymentClassFilter, setPaymentClassFilter] = useState(() => readListText(searchParams.get("class")));
+    const [payments, setPayments] = useState(hasInitialData ? initialPayments ?? [] : []);
+    const [year, setYear] = useState(startYear);
+    const [month, setMonth] = useState(startMonth);
+
+    // 보던 상태를 지금 칸의 주소에 적어 둔다 — 처음 받은 달(이번 달)·빈 필터는 적지 않는다. 기록을 쌓지 않고 서버도 다시 부르지 않는다
+    useEffect(() => {
+        replaceListQuery({
+            month: year === initialYear && month === initialMonth ? null : formatYearMonth(year, month),
+            q: paymentSearch,
+            status: paymentStatusFilter,
+            class: paymentClassFilter,
+        }, FINANCE_PATH);
+    }, [year, month, initialYear, initialMonth, paymentSearch, paymentStatusFilter, paymentClassFilter]);
     const [loading, setLoading] = useState(!hasInitialData);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [paymentProvider, setPaymentProvider] = useState<PaymentProviderStatus>(
@@ -459,7 +478,7 @@ export default function FinanceClient({
     );
     const [showForm, setShowForm] = useState(false);
     const [busy, setBusy] = useState(false);
-    const [summary, setSummary] = useState(initialSummary ?? EMPTY_SUMMARY);
+    const [summary, setSummary] = useState(hasInitialData ? initialSummary ?? EMPTY_SUMMARY : EMPTY_SUMMARY);
     const [students, setStudents] = useState<Student[]>([]);
     const [studentsLoaded, setStudentsLoaded] = useState(false);
     const [studentsLoading, setStudentsLoading] = useState(false);
@@ -568,8 +587,9 @@ export default function FinanceClient({
 
     useEffect(() => {
         if (hasInitialData) return;
-        void loadMonth(initialYear ?? fallbackYear, initialMonth ?? fallbackMonth);
-    }, [fallbackMonth, fallbackYear, hasInitialData, initialMonth, initialYear, loadMonth]);
+        // 보던 달이 주소에 있으면 그 달을, 없으면 예전처럼 처음 달을 받는다
+        void loadMonth(startYear, startMonth);
+    }, [hasInitialData, startYear, startMonth, loadMonth]);
 
     // 청구서 안내·미납 안내 진행 상황(예약 N·발송 N·실패 N) — 발송은 매분 서버가 묶음으로 처리한다(2026-11-13).
     // 발송 잠금이면 부르지 않는다. 아직 나가는 중(예약 > 0)이면 20초마다 다시 읽고, 다 끝나면 멈춘다.
@@ -2066,7 +2086,7 @@ export default function FinanceClient({
                 <AdminModal
                     titleId="manual-payment-preview-title"
                     panelClassName="max-w-md p-6"
-                    onClose={() => { if (!busy) setCreatePreviewOpen(false); }}
+                    onClose={() => { if (!busy) setCreatePreviewOpen(false); }} busy={busy}
                     closeOnBackdrop={!busy}
                 >
                     <div className="space-y-4 text-sm text-[var(--color-academy-muted)]">
@@ -2090,7 +2110,7 @@ export default function FinanceClient({
                 <AdminModal
                     titleId="cancel-unpaid-title"
                     panelClassName="max-w-md p-6"
-                    onClose={() => { if (!busy) setCancelTarget(null); }}
+                    onClose={() => { if (!busy) setCancelTarget(null); }} busy={busy}
                     closeOnBackdrop={!busy}
                 >
                     <div className="space-y-4">

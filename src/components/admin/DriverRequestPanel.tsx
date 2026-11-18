@@ -2,6 +2,7 @@
 import { adminMessageText } from "@/components/admin/adminDisplayText";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useBackToClose } from "@/components/common/useBackToClose";
 import type { DriverRequestRow } from "@/app/api/admin/driver-requests/route";
 import { REQUEST_TONE, statusBadgeClass } from "@/lib/ui/statusTones";
 
@@ -31,6 +32,8 @@ export default function DriverRequestPanel({ onClose }: { onClose: () => void })
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [err, setErr] = useState("");
+  // «뒤로» = 이 창만 닫기. 승인·거절 처리 중에는 닫히지 않는다(2026-11-18)
+  useBackToClose(true, onClose, { blocked: Object.values(busy).some(Boolean) });
 
   const load = useCallback(async () => {
     try {

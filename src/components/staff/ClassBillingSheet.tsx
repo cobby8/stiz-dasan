@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { loadStaffAttendanceBilling, loadStaffClassBilling, requestStaffPaymentConfirmation, type SerializedStaffClassBillingItem } from "@/app/actions/staff-billing";
 import { useStaffDialog } from "./useStaffDialog";
+import { useBackToClose } from "@/components/common/useBackToClose";
 import type { StaffMonthlyFeeSummary } from "@/lib/staff-monthly-fee-types";
 import { StaffMonthlyFeeSummaryCard } from "./StaffMonthlyFeeSummary";
 import { userErrorMessage } from "@/components/staff/userErrorMessage";
@@ -36,6 +37,8 @@ export function ClassBillingSheet({ open, classId, className, student, attendanc
   const [referenceTime] = useState(() => Date.now());
   // 하위 납부 확인 창이 열리면 스크롤 잠금은 유지하고 키보드 제어만 넘깁니다.
   useStaffDialog(open, sheetRef, onClose, !requestTarget, !requestTarget);
+  // 휴대폰 «뒤로» = 이 시트만 닫는다. 위에 «납부 확인 요청» 창이 떠 있으면 그 창이 먼저 닫힌다(겹친 창은 위부터)
+  useBackToClose(open, onClose);
 
   useEffect(() => {
     if (!open) return;
@@ -76,6 +79,8 @@ function PaymentRequestDialog({ item, onClose, onCompleted }: { item: Serialized
   const dialogRef = useRef<HTMLDivElement>(null);
   const [method, setMethod] = useState("BANK_TRANSFER"); const [note, setNote] = useState(""); const [message, setMessage] = useState(""); const [pending, startTransition] = useTransition();
   useStaffDialog(true, dialogRef, onClose, !pending);
+  // 휴대폰 «뒤로» = 이 창만 닫는다. 요청을 보내는 중(pending)에는 뒤로를 눌러도 닫히지 않는다
+  useBackToClose(true, onClose, { blocked: pending });
   function submit() { startTransition(async () => { try { const result = await requestStaffPaymentConfirmation({ paymentId: item.id, method, receivedAt: new Date().toISOString(), note }); if (result.ok) onCompleted(result.message); else setMessage(result.message); } catch { setMessage("네트워크 연결을 확인한 뒤 다시 요청해 주세요."); } }); }
   return <div className="fixed inset-0 z-[80] flex items-end bg-black/60 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:items-center sm:justify-center" role="dialog" aria-modal="true" aria-labelledby="payment-request-title"><div ref={dialogRef} className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto overscroll-contain rounded-2xl bg-white p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-xl"><p className="text-xs text-[var(--color-academy-muted)]">납부 정보 확인</p><h3 id="payment-request-title" className="mt-1 text-xl font-bold">납부 확인 요청</h3><div className="mt-3 rounded-xl bg-[var(--color-academy-soft)] p-3"><p className="font-semibold">{item.studentName}</p><p className="text-sm text-[var(--color-academy-muted)]">{item.title}</p><p className="mt-1 text-lg font-bold tabular-nums">{item.amount == null ? "—" : `${item.amount.toLocaleString("ko-KR")}원`}</p></div><label className="mt-4 block text-sm font-medium">납부 방법<select data-dialog-initial-focus value={method} onChange={(event) => setMethod(event.target.value)} className="academy-input mt-2"><option value="BANK_TRANSFER">계좌이체</option><option value="CASH">현금</option></select></label><label className="mt-3 block text-sm font-medium">인계 메모 <span className="font-normal text-[var(--color-academy-faint)]">(선택)</span><textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={500} rows={3} className="academy-input mt-2" /></label>{message && <p role="alert" className="mt-3 rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm text-[var(--color-academy-danger)]">{message}</p>}<div className="mt-4 grid grid-cols-2 gap-2"><button type="button" disabled={pending} onClick={onClose} className="academy-button-secondary">취소</button><button type="button" disabled={pending} onClick={submit} className="academy-button-primary">{pending ? "요청 중…" : "내용 확인 · 요청"}</button></div></div></div>;
 }

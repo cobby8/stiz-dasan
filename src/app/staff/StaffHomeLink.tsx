@@ -5,6 +5,8 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { prepareStaffNavigation } from "./staffNavigation";
+// 2026-11-18 뒤로 가기: 확인 창은 휴대폰 «뒤로»로 창만 닫힌다
+import { useBackToClose } from "@/components/common/useBackToClose";
 
 export default function StaffHomeLink({ isDriver = false }: { isDriver?: boolean }) {
   const pathname = usePathname();
@@ -60,6 +62,9 @@ export default function StaffHomeLink({ isDriver = false }: { isDriver?: boolean
     window.requestAnimationFrame(() => triggerRef.current?.focus());
   };
 
+  // 휴대폰 «뒤로» = 이 확인 창만 닫는다. «저장 확인 중»(saving)에는 뒤로를 눌러도 닫히지 않는다
+  const { leaveTo } = useBackToClose(open, close, { blocked: saving });
+
   const goHome = async () => {
     if (saving) return;
     setSaving(true);
@@ -70,7 +75,8 @@ export default function StaffHomeLink({ isDriver = false }: { isDriver?: boolean
       setError(result.message || "수업 기록을 저장하지 못해 이동을 중단했습니다.");
       return;
     }
-    window.location.assign(homeHref);
+    // 확인 창이 넣은 기록 칸을 먼저 되돌린 뒤 이동한다 — 안 그러면 그 칸이 홈 뒤에 남아 뒤로가 한 번 헛돈다
+    leaveTo(homeHref, () => window.location.assign(homeHref));
   };
 
   return (

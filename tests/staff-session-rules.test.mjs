@@ -130,7 +130,8 @@ test("b7 기사님 첫 화면 — 아이폰 스토어 앱이면 안내, 아니�
   assert.match(driverEntryPage, /if \(shuttleScope\(staff\.roles\) === "NONE"\) redirect\("\/staff"\)/);
   assert.match(driverEntry, /shouldShowIosDriverNotice\(isStoreApp\(\), navigator\.userAgent\)/);
   // 2026-11-16: 안드로이드 스토어 앱은 위치 공유가 켜지는 앱 길(페이지 통째 이동), 그 밖은 기존 운행표
-  assert.match(driverEntry, /driverRunPathFor\(isStoreApp\(\), navigator\.userAgent\)/);
+  // 2026-11-18(원장 결정 F): «운행 시작»을 눌러 온 경우에만 운행 화면으로, 그 밖(로그인 직후 등)은 셔틀 명단으로 — 판단은 규칙 모듈 한 곳
+  assert.match(driverEntry, /driverEntryTarget\(startRun, isStoreApp\(\), navigator\.userAgent\)/);
   assert.match(driverEntry, /if \(target === DRIVER_APP_RUN_PATH\) window\.location\.replace\(target\);\s*else router\.replace\(target\);/);
   assert.match(driverEntry, /아이폰 앱의 운행 기능은 다음 업데이트에 열립니다/);
   assert.match(driverEntry, /문자로 받은 운행 링크를 이용해 주세요/);

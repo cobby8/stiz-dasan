@@ -119,6 +119,9 @@ test("관리자 원생 목록 «활성» 필터·반별 인원은 개시일 미�
     "@/components/admin/list/ListViewToggle": { __esModule: true, default: () => null, useRememberedListView: () => ["class", () => {}] },
     // 2026-11-15 아이콘 예외(화살표·종·톱니): 공용 아이콘 부품은 실제 코드를 그대로 쓴다
     "@/components/common/UiIcon": load("src/components/common/UiIcon.tsx", {}),
+    // 2026-11-18 보던 검색어·필터를 주소에 싣는다 — 이 검사에선 쿼리 없는 주소(= 기본값 «활성»)로 둔다. 읽기 함수는 실제 코드
+    "next/navigation": { useSearchParams: () => new URLSearchParams("") },
+    "@/lib/navigation/listQuery": load("src/lib/navigation/listQuery.ts", {}),
   }).default;
   const html = renderToStaticMarkup(React.createElement(Client, { students: [{
     id: "student-a", name: "합성 예정 학생", birthDate: "2016-01-01", createdAt: "2026-11-03", parentId: "parent-a", parent: {}, enrollments: [enrollment],

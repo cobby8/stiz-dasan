@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { loadStaffClassPeople } from "@/app/actions/staff-class-people";
 import type { StaffClassPerson } from "@/lib/staff-class-people";
 import { useStaffDialog } from "./useStaffDialog";
+import { useBackToClose } from "@/components/common/useBackToClose";
 // 2026-11-15: 펼침 표시는 글자 기호 대신 공용 화살표 아이콘
 import UiIcon from "@/components/common/UiIcon";
 import { userErrorMessage } from "@/components/staff/userErrorMessage";
@@ -20,6 +21,10 @@ export function ClassPeopleSheet({ open, classId, sessionId, sessionDateId, clas
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   useStaffDialog(open, sheetRef, onClose);
+  // 휴대폰 «뒤로» = 이 시트만 닫는다(화면째 나가지 않는다)
+  const { closeThen } = useBackToClose(open, onClose);
+  // «청구 확인»은 이 시트를 닫고 청구 시트를 연다 — 이 시트가 넣은 기록 칸을 먼저 되돌린 «뒤»에 넘긴다(두 창의 칸이 엇갈리지 않게)
+  const openBilling = onOpenBilling ? (target: { id: string; name: string }) => closeThen(() => onOpenBilling(target)) : undefined;
 
   useEffect(() => {
     if (!open) return;
@@ -50,7 +55,7 @@ export function ClassPeopleSheet({ open, classId, sessionId, sessionDateId, clas
       </header>
       <div className="max-h-[calc(92dvh-10.5rem)] overflow-y-auto overscroll-contain px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4">
         {loading && people.length === 0 && <SheetMessage text="학생 정보를 불러오는 중입니다." />}{error && <SheetMessage text={error} />}{!loading && !error && visible.length === 0 && <SheetMessage text="표시할 학생이 없습니다." />}
-        <div className="space-y-3">{visible.map((person) => <PersonCard key={person.id} person={person} onOpenBilling={onOpenBilling} />)}</div>
+        <div className="space-y-3">{visible.map((person) => <PersonCard key={person.id} person={person} onOpenBilling={openBilling} />)}</div>
       </div>
     </section>
   </div>;

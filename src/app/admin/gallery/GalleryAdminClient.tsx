@@ -4,6 +4,7 @@ import { adminErrorText } from "@/components/admin/adminDisplayText";
 import { useCallback, useEffect, useState, useTransition } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { markEnteringStaffFromAdmin } from "@/lib/navigation/inAppHistory";
 import { deleteGalleryPost } from "@/app/actions/admin";
 import {
   publishSocialPostDraft,
@@ -350,7 +351,10 @@ export default function GalleryAdminClient({
         title="사진/영상 갤러리"
         actions={<>
           {/* 2026-11-13 메뉴 «사진 빠른 업로드»를 없애고 이 버튼으로 들어간다(주소 /staff/quick-post 그대로) */}
-          <Link href="/staff/quick-post" prefetch={false} className="academy-button-secondary">
+          <Link href="/staff/quick-post" prefetch={false} className="academy-button-secondary" onClick={(event) => {
+                        // 관리자에서 잠깐 다녀오는 길 — 선생님 화면의 «←» 가 이 화면으로 돌아오게 표시한다(새 탭으로 여는 클릭은 제외, 2026-11-18)
+                        if (event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) markEnteringStaffFromAdmin();
+                    }}>
             빠른 업로드
           </Link>
           <button

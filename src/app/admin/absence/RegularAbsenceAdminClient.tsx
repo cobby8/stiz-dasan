@@ -470,7 +470,7 @@ export default function RegularAbsenceAdminClient({
 
       {/* 보강 지정 창 — 예전 카드 안에 펼쳐지던 입력칸(반 + 날짜)과 같은 값·같은 저장(submitMakeup) */}
       {makeupOpenId && (
-        <AdminModal titleId="absence-makeup-form-title" onClose={() => { if (busyId !== makeupOpenId) setMakeupOpenId(""); }} closeOnBackdrop={false} panelClassName="max-w-md p-5">
+        <AdminModal titleId="absence-makeup-form-title" onClose={() => { if (busyId !== makeupOpenId) setMakeupOpenId(""); }} busy={busyId === makeupOpenId} closeOnBackdrop={false} panelClassName="max-w-md p-5">
           <div className="mb-3 flex items-center gap-2">
             <h3 id="absence-makeup-form-title" className="min-w-0 break-keep text-lg font-bold text-[var(--color-academy-ink)]">
               보강 지정{makeupTarget ? ` — ${makeupTarget.studentName} ${makeupTarget.dateLabel} 결석` : ""}

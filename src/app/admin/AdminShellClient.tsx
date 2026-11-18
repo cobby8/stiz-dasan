@@ -4,12 +4,13 @@ import UiIcon from "@/components/common/UiIcon";
 import Image from "next/image";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { usePathname } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { Suspense, useEffect, useState, type MouseEvent } from "react";
 import { logout } from "@/app/actions/auth";
 import AcademyTheme from "@/components/academy/AcademyTheme";
 import AppBackButton from "@/components/AppBackButton";
 import AccountViewSwitcher from "@/components/AccountViewSwitcher";
+import { useBackToClose } from "@/components/common/useBackToClose";
 import ScopeHistoryTracker from "@/components/navigation/ScopeHistoryTracker";
 import SectionTabs from "@/components/admin/SectionTabs";
 import type { AccountViewOption } from "@/lib/account-views";
@@ -105,6 +106,22 @@ export default function AdminShellClient({
     const userEmail = initialUserEmail;
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [systemToolsOpen, setSystemToolsOpen] = useState(false);
+    // 휴대폰 메뉴(옆 서랍)가 열린 채 «뒤로» = 메뉴만 닫기(2026-11-18). 메뉴 안 링크는 넣어 둔 기록 칸을 먼저 되돌린 뒤 이동한다
+    // (PC 에서는 서랍이 열리지 않아 captureLinks 가 아무 일도 하지 않는다)
+    const router = useRouter();
+    const { captureLinks } = useBackToClose(mobileMenuOpen, () => setMobileMenuOpen(false));
+    const leaveMenu = captureLinks((to) => router.push(to));
+    // 서랍 전체(메뉴·화면 전환·내 계정·아래 링크)의 내부 링크에 건다(2026-11-18 검수 N-5).
+    // «화면 전환» 링크는 원래 누를 때 «고른 화면»을 기억하는데(AccountViewSwitcher) 막힌 클릭이면 건너뛰므로, 여기서 대신 적는다.
+    // (이 화면은 AccountViewSwitcher 에 onNavigate 를 넘기지 않아 이동이 두 번 일어나지 않는다)
+    const onDrawerClickCapture = (event: MouseEvent<HTMLElement>) => {
+        leaveMenu(event);
+        if (!event.defaultPrevented) return; // 서랍이 닫혀 있거나(PC) 가로채지 않은 클릭 — 예전 그대로
+        const anchor = (event.target as HTMLElement | null)?.closest?.("a[href]");
+        if (!anchor?.closest('nav[aria-label="이용 화면 전환"]')) return;
+        const view = accountViews.find((item) => item.href === anchor.getAttribute("href"));
+        if (view) void import("@/lib/auth/last-view").then((mod) => mod.rememberLastView(view.key));
+    };
     // 지금 화면이 속한 탭 묶음(없으면 null → 탭 줄 없음)
     const activeSection = findAdminSection(pathname);
     useEffect(() => {
@@ -134,6 +151,7 @@ export default function AdminShellClient({
 
             {/* Sidebar */}
             <aside
+                onClickCapture={onDrawerClickCapture}
                 className={`${
                     mobileMenuOpen
                         ? "fixed inset-y-0 left-0 z-40 flex h-dvh w-72 max-w-[85vw]"

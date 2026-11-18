@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { useBackToClose } from "@/components/common/useBackToClose";
 
 const FOCUSABLE_SELECTOR = [
     "button:not([disabled])",
@@ -11,6 +13,12 @@ const FOCUSABLE_SELECTOR = [
     "[tabindex]:not([tabindex='-1'])",
 ].join(",");
 
+/** 창 안 부품이 «창을 닫은 뒤 이어서 할 일»을 맡길 때 쓴다(기록 칸을 먼저 되돌리고 실행). 창 밖이면 바로 실행 */
+const AdminModalCloseThenContext = createContext<(next: () => void) => void>((next) => next());
+export function useAdminModalCloseThen() {
+    return useContext(AdminModalCloseThenContext);
+}
+
 interface AdminModalProps {
     children: ReactNode;
     onClose: () => void;
@@ -19,6 +27,13 @@ interface AdminModalProps {
     closeOnBackdrop?: boolean;
     /** "center"(기본) = 가운데 모달 · "side" = 데스크톱 오른쪽 패널 / 모바일 아래 시트 (목록 상세용) */
     layout?: "center" | "side";
+    /**
+     * 휴대폰·브라우저 «뒤로» = 이 창만 닫기(2026-11-18 원장 결정 ① — 규칙: overlayHistory). 기본 켜짐.
+     * 기록 칸을 스스로 관리하는 창(청구 시트 sheetHistory, 닫으며 결과를 돌려주는 확인 창)만 false 로 끈다 — 두 번 넣지 않게.
+     */
+    backToClose?: boolean;
+    /** 저장·처리 중 — 그동안은 «뒤로»를 눌러도 창이 닫히지 않는다(2026-11-18 원장 결정 ②) */
+    busy?: boolean;
 }
 
 /** 관리자 모달의 키보드 포커스와 모바일 스크롤을 일관되게 관리합니다. */
@@ -29,7 +44,12 @@ export default function AdminModal({
     panelClassName = "max-w-lg",
     closeOnBackdrop = true,
     layout = "center",
+    backToClose = true,
+    busy = false,
 }: AdminModalProps) {
+    // 이 창은 열려 있는 동안에만 그려진다 — 그려진 동안 = 열림
+    const { captureLinks, closeThen } = useBackToClose(backToClose, onClose, { blocked: busy });
+    const router = useRouter();
     const panelRef = useRef<HTMLDivElement>(null);
     const previousFocusRef = useRef<HTMLElement | null>(null);
     const onCloseRef = useRef(onClose);
@@ -107,8 +127,11 @@ export default function AdminModal({
                     ? `flex max-h-[85dvh] w-full flex-col overflow-y-auto overscroll-contain rounded-t-2xl bg-white pb-[env(safe-area-inset-bottom)] shadow-2xl outline-none md:h-dvh md:max-h-none md:w-[420px] md:rounded-none md:rounded-l-2xl md:pb-0 ${panelClassName}`
                     : `flex max-h-[calc(100dvh-1.5rem)] w-full flex-col overflow-y-auto overscroll-contain rounded-2xl bg-white shadow-2xl outline-none sm:max-h-[calc(100dvh-2rem)] ${panelClassName}`}
                 onMouseDown={(event) => event.stopPropagation()}
+                // 창 안 같은 사이트 링크는 넣어 둔 기록 칸을 먼저 되돌린 뒤 이동한다(안 하면 뒤로가 한 번 헛돈다).
+                // backToClose 를 끈 창에서는 captureLinks 가 아무 일도 하지 않는다
+                onClickCapture={captureLinks((to) => router.push(to))}
             >
-                {children}
+                <AdminModalCloseThenContext.Provider value={closeThen}>{children}</AdminModalCloseThenContext.Provider>
             </div>
         </div>
     );
