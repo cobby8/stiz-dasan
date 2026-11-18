@@ -16,6 +16,7 @@ test("이용약관 사본에 수업 사진·동영상 조항이 있다 — 피�
   assert.match(terms, /"수업 사진·동영상"/);
   assert.match(terms, /수업 중에는 강사가 수업 모습을 사진·동영상으로 촬영/);
   assert.match(terms, /해당 수업의 피드\(학부모님이 보시는 수업 소식\)에 올라갑니다/);
+  assert.match(terms, /수업 사진과 영상 일부는 학원 SNS 운영에 사용될 수 있습니다\./);
   assert.match(terms, /광고에 사용할 때에는[^\n]*전화로 따로 동의를 받습니다/);
   assert.match(terms, /수업 피드는 그 반 수강생의 보호자만 보실 수 있습니다/);
   assert.match(terms, /2026년 11월 18일 개정: "수업 사진·동영상" 조항을 추가하였습니다\./);
