@@ -14,18 +14,45 @@ import { getSettings } from "./shuttle-optimize";
 import { syncSeasonSiblingDiscounts } from "./sibling-discount-sync";
 // 공개 응답의 남은 자리는 3단계(여유/임박/마감)로만(재원생 수 비공개 · 2026-11-13 f9)
 import { seatLevel } from "@/lib/seats/seatLevel";
+// 기간 선택·날짜별 선택(2026-11-18) — 출석 규칙·가격·판단은 공용 부품 한 곳에서만
+import { todayKst, toKstYmd } from "@/lib/datetime/kst";
+import { countOccupancyByDate, type SeasonalAttendanceRule } from "./attendance-rule";
+import { dateSelectTuition, resolvePeriodPrice, resolvePeriodShuttleFee } from "./period-pricing";
+import {
+  activePeriods,
+  assertPeriodHasWeekdays,
+  assertSelectableDates,
+  datesFullMessage,
+  fullDateKeysFromOccupancy,
+  itemTitleSnapshot,
+  pickOfferingPeriod,
+  weekdaysFromDates,
+} from "./application-plan";
+import { findFullDates } from "./date-capacity";
 
 const OCCUPYING_ITEM_STATUSES = ["PENDING", "APPROVED"];
 const ACTIVE_APPLICATION_ITEM_STATUSES = ["PENDING", "APPROVED", "WAITLISTED"];
 type PublicOfferingRow = Prisma.SpecialProgramOfferingGetPayload<{
-  include: { sessionDates: true; _count: { select: { applicationItems: true } } };
+  include: { sessionDates: true; periods: true; _count: { select: { applicationItems: true } } };
 }>;
 type PublicSeasonRow = Prisma.SpecialProgramSeasonGetPayload<{
-  include: { offerings: { include: { sessionDates: true; _count: { select: { applicationItems: true } } } } };
+  include: { offerings: { include: { sessionDates: true; periods: true; _count: { select: { applicationItems: true } } } } };
 }>;
 type AssignmentOffering = Prisma.SpecialProgramOfferingGetPayload<{
-  include: { sessionDates: { select: { startsAt: true } } };
+  include: { sessionDates: { select: { id: true; startsAt: true } }; periods: true };
 }>;
+type OfferingPeriodRow = AssignmentOffering["periods"][number];
+type AssignmentSeason = {
+  dateSelectEnabled: boolean;
+  perSessionNewPrice: number | null;
+  perSessionExistingPrice: number | null;
+  minSessionCount: number;
+};
+// 신청 배정 조회에 함께 싣는 «회차·기간» 포함 설정(잠금 뒤 조회·범위 후보 조회가 같은 모양이어야 한다)
+const ASSIGNMENT_INCLUDE = {
+  sessionDates: { select: { id: true, startsAt: true } },
+  periods: true,
+} as const;
 
 function publicStatus(season: { status: string; applicationOpensAt: Date; applicationClosesAt: Date; endsAt: Date }) {
   const now = new Date();
@@ -47,17 +74,42 @@ function offeringScopeWhere(offering: Pick<AssignmentOffering, "id" | "seasonId"
     : { id: offering.id };
 }
 
+type AssignmentRequest = Pick<SeasonalApplicationInput, "selectionMode" | "selectedDates" | "periodStartDate" | "periodEndDate">;
+
 async function resolvePublicOfferingAssignment(
   tx: Prisma.TransactionClient,
   target: AssignmentOffering,
   selectedWeekdays: SeasonalWeekday[],
   applicantType: "NEW" | "EXISTING",
+  season: AssignmentSeason,
+  request: AssignmentRequest,
 ) {
   const candidates = await tx.specialProgramOffering.findMany({
     where: { ...offeringScopeWhere(target), status: "OPEN" },
-    include: { sessionDates: { select: { startsAt: true } } },
+    include: ASSIGNMENT_INCLUDE,
     orderBy: [{ displayOrder: "asc" }, { createdAt: "asc" }],
   });
+  const scopeOfferings = candidates.length ? candidates : [target];
+  // 새 기능(기간 상품표·날짜별 신청)을 쓰는 범위면 정원을 «날짜별»로 센다. 아니면 기존 요일별 판정 그대로.
+  const usesDateCapacity = season.dateSelectEnabled || scopeOfferings.some((offering) => offering.periods.length > 0);
+
+  // 날짜 모드: 사용자가 고른 반 그대로(주N회 매칭 안 함) · 수강료 = 고른 회수 × 회당 단가
+  if (request.selectionMode === "DATE") {
+    if (!season.dateSelectEnabled) {
+      throw new SeasonalError("이 특강은 날짜별 신청을 받지 않습니다.", 400, "DATE_SELECT_DISABLED");
+    }
+    const { unitPrice, tuition } = dateSelectTuition(request.selectedDates.length, season, applicantType);
+    return {
+      offering: target,
+      scopeOfferings,
+      priceSnapshot: tuition,
+      period: null as OfferingPeriodRow | null,
+      unitPrice: unitPrice as number | null,
+      sessionCount: request.selectedDates.length as number | null,
+      usesDateCapacity,
+    };
+  }
+
   const frequencyCandidates = candidates.filter((candidate) => seasonalOfferingFrequency(candidate) !== null);
   const offering = frequencyCandidates.length
     ? frequencyCandidates.find((candidate) => seasonalOfferingFrequency(candidate) === selectedWeekdays.length)
@@ -69,10 +121,19 @@ async function resolvePublicOfferingAssignment(
       "OFFERING_FREQUENCY_NOT_CONFIGURED",
     );
   }
+  // 요일 모드: 그 반에 기간 상품이 있으면 고른 기간의 가격(1개뿐이면 자동 적용, 없으면 409/400)
+  const period = pickOfferingPeriod(offering.periods, {
+    startDate: request.periodStartDate,
+    endDate: request.periodEndDate,
+  });
   return {
     offering,
-    scopeOfferings: candidates.length ? candidates : [target],
-    priceSnapshot: resolveOfferingPrice(offering, applicantType),
+    scopeOfferings,
+    priceSnapshot: period ? resolvePeriodPrice(period, applicantType) : resolveOfferingPrice(offering, applicantType),
+    period,
+    unitPrice: null as number | null,
+    sessionCount: null as number | null,
+    usesDateCapacity,
   };
 }
 
@@ -100,7 +161,47 @@ async function isOperationalOfferingFull(
   return false;
 }
 
-function publicOffering(offering: PublicOfferingRow) {
+/**
+ * 공개 화면용 «회차 날짜별 마감 여부» — 특강 반 id → 정원이 찬 KST 날짜 집합.
+ * 같은 연결 반(주2회·주3회가 한 교실)을 한 범위로 묶어 날짜별로 센다(신청 저장의 날짜별 정원과 같은 규칙).
+ * 숫자는 밖으로 내보내지 않는다 — 참/거짓만(재원생 수 비공개).
+ */
+async function fullDatesByOffering(seasons: PublicSeasonRow[]): Promise<Map<string, Set<string>>> {
+  const result = new Map<string, Set<string>>();
+  // 새 기능(기간 상품표·날짜별 신청)을 쓰는 시즌만 센다 — 기존 시즌 화면은 날짜별 마감을 쓰지 않아 조회를 아낀다.
+  const usesDates = (season: PublicSeasonRow) => season.dateSelectEnabled || (season.offerings || []).some((offering) => offering.periods.length > 0);
+  const offerings = seasons.filter(usesDates).flatMap((season) => (season.offerings || []).map((offering) => ({ season, offering })));
+  if (offerings.length === 0) return result;
+  const items = await prisma.specialProgramApplicationItem.findMany({
+    where: { offeringId: { in: offerings.map(({ offering }) => offering.id) }, status: { in: OCCUPYING_ITEM_STATUSES } },
+    select: {
+      offeringId: true,
+      applicationId: true,
+      application: { select: { selectionMode: true, selectedWeekdays: true, selectedDates: true, periodStartDate: true, periodEndDate: true } },
+    },
+  });
+  // 범위 열쇠 = 시즌 + (연결 반 또는 그 반 자신)
+  const scopeKey = (seasonId: string, offering: PublicOfferingRow) => `${seasonId}|${offering.linkedClassId || offering.id}`;
+  const scopes = new Map<string, PublicOfferingRow[]>();
+  for (const { season, offering } of offerings) {
+    const key = scopeKey(season.id, offering);
+    scopes.set(key, [...(scopes.get(key) ?? []), offering]);
+  }
+  for (const scopeOfferings of scopes.values()) {
+    const ids = new Set(scopeOfferings.map((offering) => offering.id));
+    const rules = new Map<string, SeasonalAttendanceRule>();
+    for (const item of items) {
+      if (ids.has(item.offeringId) && !rules.has(item.applicationId)) rules.set(item.applicationId, item.application);
+    }
+    const occupancy = countOccupancyByDate([...rules.values()], scopeOfferings.flatMap((offering) => offering.sessionDates));
+    for (const offering of scopeOfferings) {
+      result.set(offering.id, new Set(fullDateKeysFromOccupancy(occupancy, offering.capacity)));
+    }
+  }
+  return result;
+}
+
+function publicOffering(offering: PublicOfferingRow, fullDates: ReadonlySet<string> = new Set()) {
   const orderedSessionDates = [...(offering.sessionDates || [])].sort(
     (a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime(),
   );
@@ -126,7 +227,11 @@ function publicOffering(offering: PublicOfferingRow) {
     sessionDates: orderedSessionDates.map((session) => {
       const sessionStartsAt = new Date(session.startsAt);
       const sessionEndsAt = new Date(session.endsAt);
+      // 날짜별 신청 화면이 쓰는 KST 날짜 열쇠와 그날 마감 여부(숫자 없이 참/거짓만)
+      const dateKey = toKstYmd(sessionStartsAt);
       return {
+        dateKey,
+        full: fullDates.has(dateKey),
         startsAt: sessionStartsAt.toISOString(),
         endsAt: sessionEndsAt.toISOString(),
         dateLabel: new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric" }).format(sessionStartsAt),
@@ -147,11 +252,22 @@ function publicOffering(offering: PublicOfferingRow) {
     shuttleAvailable: offering.shuttleAvailable,
     shuttleFee: offering.shuttleFee,
     waitlistEnabled: capacity !== null,
+    // 기간 상품표(켜진 것만, 표시 순서대로) — 비어 있으면 화면은 예전과 똑같다
+    periods: activePeriods(offering.periods).map((period) => ({
+      label: period.label,
+      startDate: period.startDate,
+      endDate: period.endDate,
+      price: period.price,
+      newApplicantPrice: period.newApplicantPrice,
+      existingApplicantPrice: period.existingApplicantPrice,
+      shuttleFee: period.shuttleFee,
+      displayOrder: period.displayOrder,
+    })),
   };
 }
 
-function publicSeason(season: PublicSeasonRow) {
-  const classes = (season.offerings || []).map(publicOffering);
+function publicSeason(season: PublicSeasonRow, fullByOffering: ReadonlyMap<string, ReadonlySet<string>> = new Map()) {
+  const classes = (season.offerings || []).map((offering) => publicOffering(offering, fullByOffering.get(offering.id)));
   return {
     id: season.id,
     slug: season.slug,
@@ -164,6 +280,13 @@ function publicSeason(season: PublicSeasonRow) {
     operationEnd: season.endsAt.toISOString(),
     location: classes.find((item: { location?: string }) => item.location)?.location,
     refundPolicy: season.cancellationPolicy || undefined,
+    // 날짜별 신청 설정 — enabled=false 면 화면은 «요일로 고르기»만(예전과 같음)
+    dateSelect: {
+      enabled: season.dateSelectEnabled,
+      perSessionNewPrice: season.perSessionNewPrice,
+      perSessionExistingPrice: season.perSessionExistingPrice,
+      minSessionCount: season.minSessionCount,
+    },
     classes,
   };
 }
@@ -179,12 +302,14 @@ export async function listPublishedSeasons() {
         orderBy: [{ displayOrder: "asc" }, { createdAt: "asc" }],
         include: {
           sessionDates: { orderBy: { startsAt: "asc" } },
+          periods: true,
           _count: { select: { applicationItems: { where: { status: { in: OCCUPYING_ITEM_STATUSES } } } } },
         },
       },
     },
   });
-  return seasons.map(publicSeason);
+  const fullByOffering = await fullDatesByOffering(seasons);
+  return seasons.map((season) => publicSeason(season, fullByOffering));
 }
 
 export async function getPublishedSeason(slug: string) {
@@ -196,6 +321,7 @@ export async function getPublishedSeason(slug: string) {
         orderBy: [{ displayOrder: "asc" }, { createdAt: "asc" }],
         include: {
           sessionDates: { orderBy: { startsAt: "asc" } },
+          periods: true,
           _count: { select: { applicationItems: { where: { status: { in: OCCUPYING_ITEM_STATUSES } } } } },
         },
       },
@@ -203,9 +329,9 @@ export async function getPublishedSeason(slug: string) {
   });
   if (!season) throw new SeasonalError("모집 중인 방학특강을 찾을 수 없습니다.", 404, "SEASON_NOT_FOUND");
   // 무료 탑승 거점(탑승/하차 지점)을 함께 내려 부모 신청 폼에서 "거점 탑승"을 고를 수 있게 한다.
-  const settings = await getSettings();
+  const [settings, fullByOffering] = await Promise.all([getSettings(), fullDatesByOffering([season])]);
   const toHub = (g: { lat: number; lng: number; name: string } | null) => g ? { name: g.name, lat: g.lat, lng: g.lng } : null;
-  return { ...publicSeason(season), shuttleHub: { pickup: toHub(settings.hub), dropoff: toHub(settings.hubDropoff) } };
+  return { ...publicSeason(season, fullByOffering), shuttleHub: { pickup: toHub(settings.hub), dropoff: toHub(settings.hubDropoff) } };
 }
 
 async function existingApplication(seasonId: string, idempotencyKey: string) {
@@ -429,18 +555,37 @@ export async function submitSeasonalApplication(slug: string, input: SeasonalApp
       await tx.$queryRaw`SELECT id FROM "SpecialProgramOffering" WHERE id IN (${Prisma.join(ids)}) ORDER BY id FOR UPDATE`;
       const offerings = await tx.specialProgramOffering.findMany({
         where: { id: { in: ids }, seasonId: season.id },
-        include: { sessionDates: { select: { startsAt: true } } },
+        include: ASSIGNMENT_INCLUDE,
       });
       if (offerings.length !== ids.length || offerings.some((offering) => offering.status !== "OPEN")) {
         throw new SeasonalError("마감되었거나 존재하지 않는 특강이 포함되어 있습니다.", 409, "OFFERING_UNAVAILABLE");
       }
       const offeringById = new Map(offerings.map((offering) => [offering.id, offering]));
+      const isDateMode = input.selectionMode === "DATE";
+      // 안전장치: 날짜 모드도 요일을 «고른 날짜들의 요일»로 채운다.
+      // 비워 두면 요일만 보는 옛 조회(셔틀·출석 일부)가 «요일 없음 = 매일 출석»으로 읽는다.
+      const effectiveWeekdays = isDateMode ? weekdaysFromDates(input.selectedDates) : input.selectedWeekdays;
       const assignments: Array<Awaited<ReturnType<typeof resolvePublicOfferingAssignment>>> = [];
       for (const requested of input.items) {
         const offering = offeringById.get(requested.offeringId);
         if (!offering) throw new SeasonalError("신청한 특강 정보를 확인해 주세요.", 400, "OFFERING_ASSIGNMENT_MISSING");
-        assignments.push(await resolvePublicOfferingAssignment(tx, offering, input.selectedWeekdays, applicantDecision.pricingType));
+        assignments.push(await resolvePublicOfferingAssignment(tx, offering, effectiveWeekdays, applicantDecision.pricingType, season, input));
       }
+      // 신청서에는 기간을 하나만 적을 수 있다 — 항목마다 다른 기간이 나오거나(자동 적용 포함)
+      // 기간 있는 반·없는 반이 섞이면 출석 범위와 수강료가 어긋나므로 받지 않는다.
+      const periodRanges = new Set(assignments.map((assignment) => assignment.period ? `${assignment.period.startDate}|${assignment.period.endDate}` : ""));
+      if (periodRanges.size > 1) {
+        throw new SeasonalError("선택한 기간·요일 수에 맞는 수강료가 아직 설정되지 않았습니다.", 409, "PERIOD_PRICE_NOT_CONFIGURED");
+      }
+      const appliedPeriod = assignments[0]?.period ?? null;
+      // 이 신청서가 어느 회차에 나오는가 — 정원 판정·저장이 같은 규칙을 쓴다(attendance-rule.ts)
+      const attendanceRule: SeasonalAttendanceRule = {
+        selectionMode: input.selectionMode,
+        selectedWeekdays: effectiveWeekdays,
+        selectedDates: isDateMode ? input.selectedDates : [],
+        periodStartDate: appliedPeriod?.startDate ?? null,
+        periodEndDate: appliedPeriod?.endDate ?? null,
+      };
       const scopedOfferingIds = Array.from(new Set(assignments.flatMap((assignment) => assignment.scopeOfferings.map((offering) => offering.id))));
       if (scopedOfferingIds.length > ids.length) {
         await tx.$queryRaw`SELECT id FROM "SpecialProgramOffering" WHERE id IN (${Prisma.join(scopedOfferingIds)}) ORDER BY id FOR UPDATE`;
@@ -451,9 +596,20 @@ export async function submitSeasonalApplication(slug: string, input: SeasonalApp
       const availableWeekdays = new Set(assignments.flatMap((assignment) =>
         assignment.scopeOfferings.flatMap((offering) => offering.sessionDates.map((session) => weekdayInSeoul(session.startsAt))),
       ));
-      const invalidWeekdays = input.selectedWeekdays.filter((weekday) => !availableWeekdays.has(weekday));
+      // 날짜 모드는 아래 «실제 회차 날짜인가» 검사가 더 정확한 안내를 하므로 요일 검사는 요일 모드만
+      const invalidWeekdays = isDateMode ? [] : effectiveWeekdays.filter((weekday) => !availableWeekdays.has(weekday));
       if (invalidWeekdays.length > 0) {
         throw new SeasonalError("선택한 요일과 실제 특강 일정이 일치하지 않습니다.", 409, "WEEKDAY_NOT_OFFERED");
+      }
+      for (const assignment of assignments) {
+        const scopeSessionDates = assignment.scopeOfferings.flatMap((offering) => offering.sessionDates);
+        if (isDateMode) {
+          // 날짜 모드: 고른 날짜가 그 반 범위의 실제 회차이고 오늘(KST) 이전이 아닌지
+          assertSelectableDates(input.selectedDates, scopeSessionDates, todayKst());
+        } else if (assignment.period) {
+          // 요일 + 기간: 그 기간 안에 고른 요일 회차가 있는지
+          assertPeriodHasWeekdays(scopeSessionDates, effectiveWeekdays, assignment.period);
+        }
       }
 
       const waitlistMax = await tx.specialProgramApplicationItem.groupBy({
@@ -466,17 +622,31 @@ export async function submitSeasonalApplication(slug: string, input: SeasonalApp
       for (let index = 0; index < input.items.length; index += 1) {
         const assignment = assignments[index];
         if (!assignment) throw new SeasonalError("신청할 특강 반 정보를 확인해 주세요.", 400, "OFFERING_ASSIGNMENT_MISSING");
-        const full = await isOperationalOfferingFull(
-          tx,
-          assignment.offering,
-          assignment.scopeOfferings.map((offering) => offering.id),
-          input.selectedWeekdays,
-        );
-        const shuttleFeeSnapshot = resolveShuttleFee(
-          assignment.offering,
-          hasSeasonalShuttleSelection(input.items[index]?.shuttle),
-          isFreeHubShuttle(input.items[index]?.shuttle),
-        );
+        const scopeOfferingIds = assignment.scopeOfferings.map((offering) => offering.id);
+        let full: boolean;
+        if (assignment.usesDateCapacity) {
+          // 새 기능을 쓰는 범위: 이번 신청이 차지할 날짜마다 정원을 본다(관리자 승인과 같은 함수)
+          const fullDates = await findFullDates(tx, {
+            scopeOfferingIds,
+            capacity: assignment.offering.capacity,
+            sessionDates: assignment.scopeOfferings.flatMap((offering) => offering.sessionDates),
+            rule: attendanceRule,
+          });
+          // 날짜 모드는 대기 없이 «그 날짜를 빼고 다시» 안내 — 저장하지 않는다
+          if (isDateMode && fullDates.length > 0) {
+            throw new SeasonalError(datesFullMessage(fullDates), 409, "DATES_FULL", { fullDates });
+          }
+          full = fullDates.length > 0;
+        } else {
+          // 기존 시즌: 예전 요일별 판정 그대로
+          full = await isOperationalOfferingFull(tx, assignment.offering, scopeOfferingIds, effectiveWeekdays);
+        }
+        const shuttleRequested = hasSeasonalShuttleSelection(input.items[index]?.shuttle);
+        const freeHub = isFreeHubShuttle(input.items[index]?.shuttle);
+        // 기간 상품이면 기간 셔틀비(없으면 반 셔틀비), 그 밖(날짜 모드 포함)은 반 셔틀비
+        const shuttleFeeSnapshot = assignment.period
+          ? resolvePeriodShuttleFee(assignment.period, assignment.offering, shuttleRequested, freeHub)
+          : resolveShuttleFee(assignment.offering, shuttleRequested, freeHub);
         itemPlans.push({
           requested: input.items[index],
           offering: assignment.offering,
@@ -484,7 +654,14 @@ export async function submitSeasonalApplication(slug: string, input: SeasonalApp
           tuitionPriceSnapshot: assignment.priceSnapshot,
           shuttleFeeSnapshot,
           priceSnapshot: assignment.priceSnapshot + shuttleFeeSnapshot,
-          titleSnapshot: assignment.offering.title,
+          titleSnapshot: itemTitleSnapshot(assignment.offering.title, {
+            mode: input.selectionMode,
+            dateCount: input.selectedDates.length,
+            periodLabel: assignment.period?.label,
+          }),
+          offeringPeriodId: assignment.period?.id ?? null,
+          sessionCountSnapshot: assignment.sessionCount,
+          unitPriceSnapshot: assignment.unitPrice,
           status: full ? "WAITLISTED" : "PENDING",
           waitlistOrder: full ? (maxOrders.get(assignment.offering.id) || 0) + 1 : null,
         });
@@ -497,7 +674,13 @@ export async function submitSeasonalApplication(slug: string, input: SeasonalApp
           seasonId: season.id,
           idempotencyKey: input.idempotencyKey,
           applicantType: applicantDecision.serverType,
-          selectedWeekdays: input.selectedWeekdays,
+          selectedWeekdays: effectiveWeekdays,
+          // 기간 선택·날짜별 선택(2026-11-18) — 기간 이름은 서버가 기간 행에서 가져온다
+          selectionMode: input.selectionMode,
+          selectedDates: attendanceRule.selectedDates ? [...attendanceRule.selectedDates] : [],
+          periodLabel: appliedPeriod?.label ?? null,
+          periodStartDate: appliedPeriod?.startDate ?? null,
+          periodEndDate: appliedPeriod?.endDate ?? null,
           requiresReview: applicantDecision.requiresReview,
           reviewReasons: applicantDecision.reviewReasons,
           childName: input.child.name,
@@ -521,7 +704,10 @@ export async function submitSeasonalApplication(slug: string, input: SeasonalApp
               priceSnapshot: plan.priceSnapshot,
               tuitionPriceSnapshot: plan.tuitionPriceSnapshot,
               shuttleFeeSnapshot: plan.shuttleFeeSnapshot,
-              titleSnapshot: plan.offering.title,
+              titleSnapshot: plan.titleSnapshot,
+              offeringPeriodId: plan.offeringPeriodId,
+              sessionCountSnapshot: plan.sessionCountSnapshot,
+              unitPriceSnapshot: plan.unitPriceSnapshot,
               status: plan.status,
               applicantFingerprint: fingerprint,
               waitlistOrder: plan.waitlistOrder,

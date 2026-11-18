@@ -1,4 +1,8 @@
-export const SHUTTLE_LOCATION_SOURCES = ["MAP_PIN", "SEARCH", "CURRENT_LOCATION"] as const;
+// 날짜 형식 검사는 공용 KST 모듈 한 곳만 쓴다(.ts 확장자 = Node 타입 제거 테스트가 바로 읽기 위함).
+// @ts-expect-error -- Node 타입 제거 기반 단위 테스트는 런타임 확장자를 요구한다.
+import { isKstYmd } from "../datetime/kst.ts";
+
+export const SHUTTLE_LOCATION_SOURCES =["MAP_PIN", "SEARCH", "CURRENT_LOCATION"] as const;
 export const SHUTTLE_LOCATION_CONSENT_VERSION = "2026-07-21";
 export type ShuttleLocationSource = (typeof SHUTTLE_LOCATION_SOURCES)[number];
 
@@ -12,10 +16,23 @@ export type SeasonalShuttleLocationInput = {
   accuracyMeters?: number;
 };
 
+/** 신청서 선택 방식 — 요일로 고르기(기본·기존) / 날짜 하나씩 고르기(2026-11-18). attendance-rule.ts SELECTION_MODES 와 같은 값. */
+export type SeasonalSelectionMode = "WEEKDAY" | "DATE";
+
+/** 날짜별 선택에서 한 번에 고를 수 있는 최대 날짜 수(방학 전체 회차보다 넉넉하게). */
+export const MAX_SELECTED_DATES = 60;
+
 export type SeasonalApplicationInput = {
   idempotencyKey: string;
   applicantType?: "NEW" | "EXISTING";
   selectedWeekdays: SeasonalWeekday[];
+  /** 선택 방식 — 보내지 않으면 WEEKDAY(옛 화면·옛 앱 호환). */
+  selectionMode: SeasonalSelectionMode;
+  /** 날짜별 선택일 때 고른 날짜(KST 'YYYY-MM-DD', 중복 없이 오름차순). 요일 모드면 빈 배열. */
+  selectedDates: string[];
+  /** 요일 모드에서 고른 수강 기간(시작·종료 둘 다 있거나 둘 다 없음). */
+  periodStartDate?: string;
+  periodEndDate?: string;
   child: {
     name: string;
     birthDate: string;
@@ -68,16 +85,50 @@ export function normalizeSeasonalWeekdays(values: unknown): SeasonalWeekday[] {
 export class SeasonalError extends Error {
   readonly status: number;
   readonly code: string;
+  /** 화면이 쓸 추가 정보(예: DATES_FULL 의 { fullDates }). 기존 호출은 넘기지 않아도 된다. */
+  readonly details?: unknown;
 
   constructor(
     message: string,
     status = 400,
     code = "INVALID_REQUEST",
+    details?: unknown,
   ) {
     super(message);
     this.status = status;
     this.code = code;
+    if (details !== undefined) this.details = details;
   }
+}
+
+/**
+ * 고른 날짜 목록 정리 — 형식(실재하는 KST 달력 날짜) 검사, 중복 제거, 오름차순 정렬, 최대 60개.
+ * 보내지 않았으면(undefined/null) 빈 배열. 배열이 아니거나 잘못된 날짜가 하나라도 있으면 400.
+ */
+export function normalizeSelectedDates(values: unknown): string[] {
+  if (values === undefined || values === null) return [];
+  if (!Array.isArray(values)) throw new SeasonalError("선택한 날짜를 확인해 주세요.", 400, "INVALID_SELECTED_DATES");
+  const cleaned = values.map((value) => (typeof value === "string" ? value.trim() : ""));
+  if (cleaned.some((value) => !isKstYmd(value))) {
+    throw new SeasonalError("선택한 날짜를 확인해 주세요.", 400, "INVALID_SELECTED_DATES");
+  }
+  // 'YYYY-MM-DD' 는 글자 정렬이 곧 날짜 정렬이다.
+  const unique = Array.from(new Set(cleaned)).sort();
+  if (unique.length > MAX_SELECTED_DATES) {
+    throw new SeasonalError(`날짜는 한 번에 최대 ${MAX_SELECTED_DATES}개까지 고를 수 있습니다.`, 400, "TOO_MANY_SELECTED_DATES");
+  }
+  return unique;
+}
+
+/** 수강 기간(시작·종료) 검사 — 둘 다 없거나, 둘 다 올바른 날짜이고 종료 ≥ 시작. */
+function parsePeriodRange(startValue: unknown, endValue: unknown): { periodStartDate?: string; periodEndDate?: string } {
+  const start = typeof startValue === "string" ? startValue.trim() : startValue ?? "";
+  const end = typeof endValue === "string" ? endValue.trim() : endValue ?? "";
+  if (start === "" && end === "") return {};
+  if (!isKstYmd(start) || !isKstYmd(end) || String(end) < String(start)) {
+    throw new SeasonalError("수강 기간을 확인해 주세요.", 400, "INVALID_PERIOD");
+  }
+  return { periodStartDate: String(start), periodEndDate: String(end) };
 }
 
 export function cleanText(value: unknown, maxLength = 500): string | undefined {
@@ -150,6 +201,14 @@ export function parseApplicationInput(value: unknown): SeasonalApplicationInput 
     throw new SeasonalError("신청자 구분을 확인해 주세요.");
   }
   const selectedWeekdays = normalizeSeasonalWeekdays(body?.selectedWeekdays);
+  // 선택 방식 — 안 보내면 요일 모드(옛 화면 호환). 그 밖의 값은 거절.
+  const rawMode = body?.selectionMode;
+  if (rawMode !== undefined && rawMode !== null && rawMode !== "WEEKDAY" && rawMode !== "DATE") {
+    throw new SeasonalError("신청 방식을 확인해 주세요.", 400, "INVALID_SELECTION_MODE");
+  }
+  const selectionMode: SeasonalSelectionMode = rawMode === "DATE" ? "DATE" : "WEEKDAY";
+  const selectedDates = normalizeSelectedDates(body?.selectedDates);
+  const period = parsePeriodRange(body?.periodStartDate, body?.periodEndDate);
 
   if (!key) throw new SeasonalError("중복 제출 방지 키가 필요합니다.");
   if (!childName || !birth || Number.isNaN(birth.getTime())) throw new SeasonalError("학생 이름과 생년월일을 확인해 주세요.");
@@ -157,7 +216,12 @@ export function parseApplicationInput(value: unknown): SeasonalApplicationInput 
   if (!body?.agreedTerms || !body?.agreedPrivacy) throw new SeasonalError("약관과 개인정보 처리에 동의해 주세요.");
   if (!Array.isArray(body.items) || body.items.length === 0) throw new SeasonalError("특강을 한 개 이상 선택해 주세요.");
   if (body.items.length > 20) throw new SeasonalError("특강은 한 번에 최대 20개까지 신청할 수 있습니다.", 413, "TOO_MANY_ITEMS");
-  if (selectedWeekdays.length === 0) throw new SeasonalError("수강할 요일을 한 개 이상 선택해 주세요.", 400, "WEEKDAY_REQUIRED");
+  if (selectionMode === "DATE") {
+    // 날짜 모드: 고른 날짜가 출석 기준이다 — 요일은 서버가 날짜에서 다시 채운다(요일 필수 검사 생략).
+    if (selectedDates.length === 0) throw new SeasonalError("수업 날짜를 한 개 이상 골라 주세요.", 400, "DATE_REQUIRED");
+  } else {
+    if (selectedWeekdays.length === 0) throw new SeasonalError("수강할 요일을 한 개 이상 선택해 주세요.", 400, "WEEKDAY_REQUIRED");
+  }
 
   const seen = new Set<string>();
   const items = body.items.map((item) => {
@@ -212,6 +276,11 @@ export function parseApplicationInput(value: unknown): SeasonalApplicationInput 
     idempotencyKey: key,
     applicantType,
     selectedWeekdays,
+    selectionMode,
+    // 요일 모드에서 날짜가 같이 와도 버린다 — 날짜가 남으면 출석 규칙(날짜 우선)이 뒤바뀐다.
+    selectedDates: selectionMode === "DATE" ? selectedDates : [],
+    // 날짜 모드에서는 기간을 쓰지 않는다(날짜가 곧 기간).
+    ...(selectionMode === "WEEKDAY" ? period : {}),
     child: {
       name: childName,
       birthDate: birth.toISOString(),

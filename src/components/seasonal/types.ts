@@ -1,8 +1,14 @@
 // 상대 경로(.ts) — 테스트가 이 파일을 node 로 바로 불러와 «@/» 별칭을 못 푼다(admin-delivery-status.ts 와 같은 방식)
 // @ts-expect-error Node 의 타입 제거 테스트(tests/seasonal-public-display)에서도 같은 파일을 읽어서 확장자를 붙인다.
 import { seatLevel as toSeatLevel, type SeatLevel } from "../../lib/seats/seatLevel.ts";
+// @ts-expect-error 같은 이유(Node 타입 제거 테스트가 이 파일을 바로 읽는다) — 날짜는 공용 KST 모듈만 쓴다.
+import { toKstYmd } from "../../lib/datetime/kst.ts";
 
 export type SeasonalSessionDate = {
+  /** 회차의 KST 날짜 'YYYY-MM-DD' — 날짜별 신청의 열쇠(서버가 안 보내면 startsAt 으로 만든다) */
+  dateKey: string;
+  /** 그날 정원이 찼는가(숫자 없이 참/거짓만). 서버가 안 보내면 false */
+  full: boolean;
   startsAt: string;
   endsAt: string;
   dateLabel: string;
@@ -35,6 +41,29 @@ export type SeasonalClass = {
   waitlistEnabled?: boolean;
   sessionDates: SeasonalSessionDate[];
   weekdays: Array<"MON" | "TUE" | "WED" | "THU" | "FRI" | "SAT" | "SUN">;
+  /** 기간 상품표(켜진 것만·표시 순서). 비어 있으면 기간 없이 예전처럼 신청한다 */
+  periods: SeasonalOfferingPeriod[];
+};
+
+/** 반별 기간 상품 한 줄(2026-11-18) — 예: «4주» 1/4~1/29 */
+export type SeasonalOfferingPeriod = {
+  label: string;
+  startDate: string;
+  endDate: string;
+  price: number;
+  newApplicantPrice: number | null;
+  existingApplicantPrice: number | null;
+  shuttleFee: number | null;
+  /** 표시 순서(작을수록 앞) — 여러 반의 기간을 묶어 보여 줄 때 순서를 지킨다 */
+  displayOrder: number;
+};
+
+/** 시즌의 날짜별 신청 설정(2026-11-18). enabled=false 면 «요일로 고르기»만 보인다 */
+export type SeasonalDateSelect = {
+  enabled: boolean;
+  perSessionNewPrice: number | null;
+  perSessionExistingPrice: number | null;
+  minSessionCount: number;
 };
 
 export type SeasonalProgram = {
@@ -54,6 +83,7 @@ export type SeasonalProgram = {
   classes: SeasonalClass[];
   offerings?: SeasonalClass[];
   shuttleHub?: ShuttleHubInfo;
+  dateSelect?: SeasonalDateSelect;
 };
 
 export type ShuttleHubPoint = { name: string; lat: number; lng: number };
@@ -183,7 +213,41 @@ export function normalizeProgram(value: unknown, now = Date.now()): SeasonalProg
     location: stringOrUndefined(row.location), shuttleNotice: stringOrUndefined(row.shuttleNotice),
     refundPolicy: stringOrUndefined(row.cancellationPolicy ?? row.refundPolicy), classes: offerings, offerings,
     shuttleHub: normalizeHub(row.shuttleHub),
+    dateSelect: normalizeDateSelect(row.dateSelect),
   };
+}
+
+// 날짜별 신청 설정 — 없거나 모양이 이상하면 «꺼짐»(예전 화면 그대로)
+function normalizeDateSelect(value: unknown): SeasonalDateSelect | undefined {
+  const d = value as Record<string, unknown> | null | undefined;
+  if (!d || typeof d !== "object") return undefined;
+  const min = nullableNumber(d.minSessionCount);
+  return {
+    enabled: d.enabled === true,
+    perSessionNewPrice: nullableNumber(d.perSessionNewPrice),
+    perSessionExistingPrice: nullableNumber(d.perSessionExistingPrice),
+    minSessionCount: min !== null && min >= 1 ? Math.floor(min) : 1,
+  };
+}
+
+// 기간 상품표 — 날짜 형식이 맞는 줄만 남긴다(잘못된 줄 하나로 화면이 깨지지 않게)
+function normalizePeriods(value: unknown): SeasonalOfferingPeriod[] {
+  if (!Array.isArray(value)) return [];
+  return (value as ApiRecord[]).flatMap((row, index) => {
+    const startDate = String(row?.startDate ?? ""), endDate = String(row?.endDate ?? "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) return [];
+    return [{
+      label: String(row.label ?? ""),
+      startDate,
+      endDate,
+      price: Number(row.price ?? 0),
+      newApplicantPrice: nullableNumber(row.newApplicantPrice),
+      existingApplicantPrice: nullableNumber(row.existingApplicantPrice),
+      shuttleFee: nullableNumber(row.shuttleFee),
+      // 서버가 안 보내면 받은 순서를 그대로 쓴다
+      displayOrder: nullableNumber(row.displayOrder) ?? index,
+    }];
+  });
 }
 
 function normalizeHub(value: unknown): SeasonalProgram["shuttleHub"] {
@@ -247,6 +311,9 @@ function normalizeOffering(row: ApiRecord): SeasonalClass {
       const sessionEnds = new Date(String(date.endsAt));
       if (Number.isNaN(sessionStarts.getTime()) || Number.isNaN(sessionEnds.getTime())) return [];
       return [{
+        // KST 날짜 열쇠 — 서버 값이 형식에 맞으면 그대로, 아니면 시작 시각에서 만든다(공용 KST 모듈)
+        dateKey: typeof date.dateKey === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date.dateKey) ? date.dateKey : toKstYmd(sessionStarts),
+        full: date.full === true,
         startsAt: sessionStarts.toISOString(),
         endsAt: sessionEnds.toISOString(),
         dateLabel: String(date.dateLabel ?? new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric" }).format(sessionStarts)),
@@ -257,6 +324,7 @@ function normalizeOffering(row: ApiRecord): SeasonalClass {
       }];
     }),
     weekdays,
+    periods: normalizePeriods(row.periods),
   };
 }
 
