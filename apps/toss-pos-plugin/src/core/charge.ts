@@ -242,7 +242,7 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
         return "dismissed";
       }
       if (!allowed.ok) {
-        await dismissUnpaidOrder({ sdk, job: claimed, now: now(), stoppedBeforeCheckout: true });
+        await dismissUnpaidOrder({ sdk, job: claimed, now: now(), stoppedBeforeCheckout: true, wait: sleep });
         await reportStartFailed(claimed, `start_check_${allowed.kind}`);
         notice("사이트에서 이 결제 요청을 다시 확인해 주세요.", true);
         return "claim_failed";
@@ -312,7 +312,7 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
       if (!result) {
         try {
           const recent = parseRecent(await sdk.storage.get(RECENT_KEY)).find((item) => item.id === job.id && item.shortCode === job.shortCode);
-          result = await dismissUnpaidOrder({ sdk, job, recent, now: now(), stoppedBeforeCheckout: stoppedBeforeCheckout.has(job.id) });
+          result = await dismissUnpaidOrder({ sdk, job, recent, now: now(), stoppedBeforeCheckout: stoppedBeforeCheckout.has(job.id), wait: sleep });
         } catch {
           result = { outcome: "FAILED", reason: "POS_DISMISS_SDK_ERROR" };
         }
@@ -324,7 +324,10 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
       dismissRequested.delete(job.id);
       stoppedBeforeCheckout.delete(job.id);
       if (!acknowledged.ok) return;
-      if (result.outcome === "DONE") {
+      if (result.outcome === "DONE" && result.reason === "POS_CHECKOUT_LEFT_DRAFT_CLEARED") {
+        // 결제 화면에서 우리 탭으로 옮기고 장바구니를 비웠다(2026-11-18) — 직원은 주문 화면으로 돌아가기만 하면 된다
+        sdk.toast.success({ message: `${job.shortCode} 결제 요청이 취소돼 결제 화면을 닫았어요. 주문 화면으로 돌아가 주세요.` });
+      } else if (result.outcome === "DONE") {
         sdk.toast.success({ message: `${job.shortCode} 미결제 요청이 취소됐어요. 결제 화면이 남아 있으면 화면을 닫아 주세요.` });
       } else {
         sdk.toast.warn({ message: `${job.shortCode} 사이트에서 요청을 취소했어요. 이 POS에서 해당 결제 화면과 주문 상태를 확인해 주세요.` });

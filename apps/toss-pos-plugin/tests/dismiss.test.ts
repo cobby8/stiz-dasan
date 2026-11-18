@@ -81,6 +81,39 @@ test("저장된 주문이 없고 결제창이 열렸을 수 있으면 임시 주
   assert.deepEqual(changed.log, []);
 });
 
+test("결제 화면에 남은 임시 주문: 우리 탭으로 이동해 결제 화면을 벗어난 «뒤에»만 비우고 완료(2026-11-18 S-621853)", async () => {
+  const draft = { lineItems: [line], price: { orderPriceValue: recent.amount } };
+  const h = harness(draft, []);
+  const waits: number[] = [];
+  h.sdk.navigation = { navigate: (page, pkg) => { h.log.push(`navigate:${page}:${pkg}`); } };
+  const result = await dismissUnpaidOrder({ sdk: h.sdk, job, now, recent, stoppedBeforeCheckout: false, wait: async (ms) => { waits.push(ms); } });
+  assert.deepEqual(result, { outcome: "DONE", reason: "POS_CHECKOUT_LEFT_DRAFT_CLEARED" });
+  assert.deepEqual(h.log, ["navigate:plugin-setting-tab:stiz-pos-charge-tab", "draft.clear"], "이동이 비우기보다 먼저");
+  assert.equal(waits.length, 1);
+});
+
+test("이동이 오류면 장바구니를 건드리지 않고 현장 확인으로 남김", async () => {
+  const draft = { lineItems: [line], price: { orderPriceValue: recent.amount } };
+  const h = harness(draft, []);
+  h.sdk.navigation = { navigate: () => { throw new Error("unsupported"); } };
+  assert.deepEqual(await dismissUnpaidOrder({ sdk: h.sdk, job, now, recent, stoppedBeforeCheckout: false, wait: async () => undefined }), {
+    outcome: "NEEDS_LOCAL_CANCEL", reason: "POS_CHECKOUT_OPEN_CLOSE_SCREEN",
+  });
+  assert.deepEqual(h.log, []);
+});
+
+test("저장된 주문을 취소한 뒤에도 결제 화면에서 먼저 벗어난다(결제창을 열기 전 취소면 이동 안 함)", async () => {
+  const h = harness({ id: exact.id, lineItems: [line] }, [exact]);
+  h.sdk.navigation = { navigate: (page) => { h.log.push(`navigate:${page}`); } };
+  const opts = { sdk: h.sdk, job, now, recent, wait: async () => undefined };
+  assert.deepEqual(await dismissUnpaidOrder({ ...opts, stoppedBeforeCheckout: false }), { outcome: "DONE", reason: "POS_ORDER_CANCELLED" });
+  assert.deepEqual(h.log, ["order.cancel:order-1", "navigate:plugin-setting-tab", "draft.clear"]);
+  const early = harness({ lineItems: [line] }, []);
+  early.sdk.navigation = { navigate: () => { early.log.push("navigate"); } };
+  await dismissUnpaidOrder({ sdk: early.sdk, job, now, stoppedBeforeCheckout: true, wait: async () => undefined });
+  assert.ok(!early.log.includes("navigate"));
+});
+
 test("카드 승인·중복 주문·다른 주문 섞임·주문 식별 불가: POS 확인 요청으로 남기고 아무것도 지우지 않음", async () => {
   for (const orders of [
     [{ ...exact, paymentState: "PAID", payments: [{ id: "p" }], paymentPrice: { paymentPaidValue: 1 } }],
