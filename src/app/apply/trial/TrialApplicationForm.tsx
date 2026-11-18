@@ -317,6 +317,11 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
                     <a href={`tel:${contactPhone.replace(/-/g, "")}`} className="font-semibold text-[var(--color-public-accent)] dark:text-brand-neon-lime">{contactPhone}</a>
                     로 전화해주세요.
                 </p>
+                <p className="mb-6 text-sm text-[var(--color-public-muted)]">
+                    일정을 바꾸거나 취소하려면{" "}
+                    <Link href="/apply/trial/manage" className="font-semibold text-[var(--color-public-accent)] underline underline-offset-2 dark:text-brand-neon-lime">신청 확인·변경·취소</Link>
+                    에서 아이 이름과 휴대폰 번호로 불러오세요.
+                </p>
                 {paymentToken ? (
                     // 온라인 결제: 이 신청에 묶인 결제 링크로 바로 결제 → 결제 확인 = 체험 확정
                     <div className="mb-6 space-y-3 text-left">

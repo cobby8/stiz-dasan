@@ -8,6 +8,8 @@
 import { commencementYmd, requireCommencement } from "@/lib/enrollment/commencement";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
+import { hashSensitiveRateLimitKey, takePublicRateLimit } from "@/lib/seasonal/public-rate-limit";
 import { ensureTrialLeadTable } from "@/app/actions/admin";
 import { decideTrialLeadForNewApplication } from "@/lib/enrollment/trialLeadLinkService";
 import { isKstYmd, todayKst } from "@/lib/datetime/kst";
@@ -198,6 +200,12 @@ function activeTrialDuplicateWhereClause() {
     return `status IN ('NEW', 'CONTACTED', 'SCHEDULED')`;
 }
 
+async function allowExistingTrialLookup(): Promise<boolean> {
+    const h = await headers();
+    const ip = (h.get("x-forwarded-for") ?? "").split(",")[0]?.trim() || h.get("x-real-ip")?.trim() || "unknown";
+    return takePublicRateLimit(`trial-existing:${hashSensitiveRateLimitKey(ip)}`, { limit: 30, windowMs: 15 * 60 * 1000 }).allowed;
+}
+
 export interface ExistingTrialApplicationForEdit {
     id: string;
     trialDate: string | null;
@@ -221,6 +229,9 @@ export async function findExistingTrialApplicationForEdit(input: {
     const childName = input.childName?.trim();
     const phoneDigits = input.parentPhone?.replace(/\D/g, "") || "";
     if (!childName || phoneDigits.length < 10 || phoneDigits.length > 11) return null;
+    // 이름+번호로 남의 신청 정보를 훑어보지 못하게 접속 주소별 시도 수를 제한한다.
+    // 넘으면 «불러올 신청 없음»처럼 처리 — 제출은 서버가 이름+번호로 다시 찾아 덮어쓰므로 중복 접수는 생기지 않는다.
+    if (!(await allowExistingTrialLookup())) return null;
 
     await ensureTrialLeadTable();
     const rows = await prisma.$queryRawUnsafe<any[]>(
