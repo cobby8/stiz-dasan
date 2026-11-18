@@ -19,7 +19,8 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { isFreshVerification } from "@/lib/account/social-link";
 import { isUsablePhoneKey, parentPhoneDigits } from "@/lib/enrollment/parentIdentity";
 import { cleanVerifiedName, identityVerifiedAtOf } from "./verified-identity";
-import type { PortoneLookupResult } from "./portone";
+import { isOwnIdentityVerification, type PortoneLookupResult } from "./portone";
+import { SMS_FALLBACK_HINT } from "./sms-fallback-label";
 
 /** 무엇을 하려고 시작한 본인인증인가 — 목적이 다르면 표식도 달라 서로 섞어 쓸 수 없다. DB CHECK 와 같은 목록. */
 export const ANON_IDENTITY_PURPOSES = ["SIGNUP", "RESET"] as const;
@@ -30,7 +31,8 @@ export const ANON_IDENTITY_TTL_SECONDS = 10 * 60;
 /** 같은 IP 한도 — 학원·아파트 공용 와이파이를 생각해 넉넉히, 그래도 건당 비용이라 문자 인증(시간당 100)보다 낮게 */
 export const ANON_IDENTITY_IP_HOURLY_LIMIT = 30;
 export const ANON_IDENTITY_IP_DAILY_LIMIT = 100;
-/** 전체 하루 한도 — 비정상 폭주 때 비용이 끝없이 늘지 않게 */
+/** 전체 하루 한도 — 비정상 폭주 때 비용이 끝없이 늘지 않게. «소진된 줄»(실제로 인증을 마친 건)으로 센다(검수 권장) —
+ *  시작 요청만 되풀이해 한도를 채워 다른 사람을 막는 일을 막는다. IP 한도는 시작 기준 그대로. */
 export const ANON_IDENTITY_GLOBAL_DAILY_LIMIT = 1500;
 
 /** 쿠키는 /api/auth 아래(가입·찾기 확인 API)에서만 보낸다 */
@@ -79,8 +81,8 @@ type Db = {
 
 export type AnonIdentityFailure = { ok: false; status: number; error: string };
 
-export const ANON_IDENTITY_TOO_MANY_MESSAGE = "본인인증 요청이 너무 많아요. 잠시 후 다시 시도하거나 «문자 인증으로 하기»를 이용해 주세요.";
-export const ANON_IDENTITY_BUSY_MESSAGE = "지금 본인인증 요청이 많아요. 잠시 후 다시 시도하거나 «문자 인증으로 하기»를 이용해 주세요.";
+export const ANON_IDENTITY_TOO_MANY_MESSAGE = `본인인증 요청이 너무 많아요. 잠시 후 다시 시도하거나 ${SMS_FALLBACK_HINT}`;
+export const ANON_IDENTITY_BUSY_MESSAGE = `지금 본인인증 요청이 많아요. 잠시 후 다시 시도하거나 ${SMS_FALLBACK_HINT}`;
 export const ANON_IDENTITY_MISMATCH_MESSAGE = "본인인증 정보를 확인하지 못했어요. 처음부터 다시 시도해 주세요.";
 export const ANON_IDENTITY_USED_MESSAGE = "이미 사용했거나 시간이 지난 본인인증이에요. 처음부터 다시 인증해 주세요.";
 
@@ -102,7 +104,7 @@ export async function startAnonIdentity(
     `SELECT
        (SELECT COUNT(*) FROM "IdentityVerificationStart" WHERE "requestHash" = $1 AND "createdAt" > NOW() - INTERVAL '1 hour')::int AS hourly,
        (SELECT COUNT(*) FROM "IdentityVerificationStart" WHERE "requestHash" = $1 AND "createdAt" > NOW() - INTERVAL '1 day')::int AS daily,
-       (SELECT COUNT(*) FROM "IdentityVerificationStart" WHERE "createdAt" > NOW() - INTERVAL '1 day')::int AS "globalDaily"`,
+       (SELECT COUNT(*) FROM "IdentityVerificationStart" WHERE "consumedAt" > NOW() - INTERVAL '1 day')::int AS "globalDaily"`,
     requestHash,
   );
   const row = quota[0];
@@ -146,6 +148,10 @@ export async function confirmAnonIdentity(
   const lookup = await input.lookup(input.identityVerificationId).catch(() => null);
   if (!lookup || !lookup.ok) return { ok: false, status: 502, error: "본인인증 결과를 확인하지 못했어요. 잠시 후 다시 시도해 주세요." };
   const verification = lookup.data;
+  // 우리가 물은 그 건 + 우리 본인인증 채널 결과만(포트원 스토어를 MyBDR 과 공유 — 보안 검수 HIGH-1)
+  if (!isOwnIdentityVerification(verification, input.identityVerificationId)) {
+    return { ok: false, status: 400, error: "본인인증 정보를 확인하지 못했어요. 처음부터 다시 시도해 주세요." };
+  }
   const verifiedAtText = verification.verifiedAt ?? verification.statusChangedAt;
   if (verification.status !== "VERIFIED" || !isFreshVerification(verifiedAtText, input.now)) {
     return { ok: false, status: 400, error: "본인인증이 완료되지 않았거나 시간이 지났어요. 다시 인증해 주세요." };

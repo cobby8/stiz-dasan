@@ -7,6 +7,10 @@
  */
 
 export type PortOneIdentityVerification = {
+  /** 건 번호 — 우리가 물은 번호와 같아야 한다 */
+  id?: string;
+  /** 인증에 쓰인 채널 — 포트원 스토어를 MyBDR 과 함께 쓰므로 «우리 채널» 결과만 받는다 */
+  channel?: { key?: string };
   status: string; // "VERIFIED" | "FAILED" | "READY" ...
   verifiedAt?: string;
   /** verifiedAt 이 없을 때의 대체 시각(상태가 바뀐 시각 = 인증 완료 시각). */
@@ -20,6 +24,20 @@ export type PortOneIdentityVerification = {
 };
 
 export type PortoneConfig = { apiSecret: string; storeId: string };
+
+/**
+ * 재조회 결과가 «우리가 물은 그 건 + 우리 본인인증 채널»인가(2026-11-18 보안 검수 HIGH-1).
+ * 포트원 스토어를 MyBDR 과 공유하므로, 다른 채널(다른 서비스)에서 끝난 인증 결과를 받아 주면 안 된다.
+ * 자녀 연결(child-links)·연락처 바꾸기(phone-change)와 같은 확인이다. 채널 키가 비어 있으면 거절한다.
+ */
+export function isOwnIdentityVerification(
+  verification: Pick<PortOneIdentityVerification, "id" | "channel">,
+  identityVerificationId: string,
+  channelKey: string | undefined = process.env.NEXT_PUBLIC_PORTONE_IDENTITY_CHANNEL_KEY,
+): boolean {
+  return Boolean(identityVerificationId) && verification.id === identityVerificationId
+    && Boolean(channelKey) && Boolean(verification.channel?.key) && verification.channel?.key === channelKey;
+}
 
 export function getPortoneConfig(): PortoneConfig | null {
   const apiSecret = process.env.PORTONE_V2_API_SECRET;

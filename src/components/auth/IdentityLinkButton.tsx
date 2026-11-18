@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getStizIdentityBypass } from "@/lib/identity/brand";
+import { SMS_FALLBACK_HINT } from "@/lib/identity/sms-fallback-label";
 
 /**
  * 「본인인증으로 기존 계정에 연결」 — 간편로그인 후 「이미 가입된 번호」로 막힌 학부모용(2026-10-26).
@@ -70,6 +71,8 @@ export type IdentitySignupHandoff = {
   existingParent?: "LINKED" | "ACTIVATE";
   activationUrl?: string;
   redirectPath?: string;
+  /** 인증된 본인 번호(숫자만) — «전화번호를 비밀번호로» 경고 비교용(2026-11-18 검수 A-2) */
+  verifiedPhone?: string;
 };
 
 // 기본 주소 = 간편가입(로그인된 간편로그인 사용자) 본인인증. 로그인 전 본인인증(아이디 가입·활성화·찾기)은
@@ -82,6 +85,7 @@ export default function IdentityLinkButton({
   onResult,
   onFailure,
   beforeStart,
+  afterPopup,
   next,
   startUrl = DEFAULT_START_URL,
   verifyUrl = DEFAULT_VERIFY_URL,
@@ -95,6 +99,8 @@ export default function IdentityLinkButton({
   onFailure?: (data: Record<string, unknown>) => void;
   /** 인증창을 열기 직전 — 모바일은 인증창에서 «리디렉션»으로 돌아오며 화면 상태가 사라지므로, 부르는 화면이 여기서 저장한다 */
   beforeStart?: () => void;
+  /** PC 팝업 결과를 받은 직후(성공·취소 모두) — 리디렉션 대비로 저장한 상태를 지울 때(검수 A-3) */
+  afterPopup?: () => void;
   next?: string;
   startUrl?: string;
   verifyUrl?: string;
@@ -131,7 +137,22 @@ export default function IdentityLinkButton({
     if (handledRef.current) return;
     const params = new URLSearchParams(window.location.search);
     const returnedId = params.get("identityVerificationId");
-    if (!returnedId) return;
+    if (!returnedId) {
+      // 취소로 돌아오면 주소에 code 만 붙을 수 있다 — 이 탭에서 시작한 인증이 있을 때만 «취소» 안내(검수 A-3)
+      if (!params.get("code")) return;
+      let started = "";
+      try {
+        started = window.sessionStorage.getItem(PENDING_KEY) || "";
+        if (started) window.sessionStorage.removeItem(PENDING_KEY);
+      } catch {
+        // 저장소가 막힌 환경 — 이 탭의 인증인지 알 수 없어 건드리지 않는다
+      }
+      if (!started) return;
+      handledRef.current = true;
+      window.history.replaceState(null, "", urlWithoutRedirectParams());
+      setError("본인인증이 취소됐어요. 다시 시도할 수 있어요.");
+      return;
+    }
     handledRef.current = true;
     let pending = "";
     try {
@@ -158,7 +179,8 @@ export default function IdentityLinkButton({
     const storeId = process.env.NEXT_PUBLIC_PORTONE_STORE_ID;
     const channelKey = process.env.NEXT_PUBLIC_PORTONE_IDENTITY_CHANNEL_KEY;
     if (!storeId || !channelKey) {
-      setError("본인인증 설정이 아직 끝나지 않았습니다. 학원에 문의해 주세요.");
+      // 본인인증이 꺼진 환경 — 같은 화면의 문자 인증 샛길로 안내(검수 A-1)
+      setError(`본인인증 설정이 아직 끝나지 않았어요. ${SMS_FALLBACK_HINT}`);
       return;
     }
     setBusy(true);
@@ -193,6 +215,12 @@ export default function IdentityLinkButton({
         window.sessionStorage.removeItem(PENDING_KEY);
       } catch {
         // 무시
+      }
+      // 팝업으로 끝났으니 리디렉션 대비로 저장한 화면 상태는 필요 없다
+      try {
+        afterPopup?.();
+      } catch {
+        // 저장소가 막힌 환경
       }
       if (result?.code) {
         setError("본인인증이 취소되었어요.");

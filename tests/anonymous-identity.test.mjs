@@ -35,7 +35,7 @@ function fakeLedger({ now = () => NOW, preset = [] } = {}) {
         return [{
           hourly: all.filter((r) => r.requestHash === requestHash && within(r, 3600_000)).length,
           daily: all.filter((r) => r.requestHash === requestHash && within(r, 86400_000)).length,
-          globalDaily: all.filter((r) => within(r, 86400_000)).length,
+          globalDaily: all.filter((r) => r.consumedAt && now() - r.consumedAt < 86400_000).length,
         }];
       }
       return [];
@@ -60,9 +60,12 @@ function fakeLedger({ now = () => NOW, preset = [] } = {}) {
   };
 }
 
-const verified = (overrides = {}) => async () => ({
+process.env.NEXT_PUBLIC_PORTONE_IDENTITY_CHANNEL_KEY = "channel-key-stiz";
+const verified = (overrides = {}) => async (id) => ({
   ok: true,
   data: {
+    id,
+    channel: { key: "channel-key-stiz" },
     status: "VERIFIED",
     verifiedAt: new Date(NOW - 60_000).toISOString(),
     verifiedCustomer: { name: "김 수빈", phoneNumber: "010-1234-5678" },
@@ -130,7 +133,10 @@ test("시작: 같은 IP 시간당·하루 한도, 전체 하루 한도를 넘으
   assert.equal(dailyBlocked.status, 429, "목적이 달라도 같은 IP 하루 한도는 함께 센다");
 
   // 전체 하루 한도
-  const globalDb = fakeLedger({ preset: Array.from({ length: anon.ANON_IDENTITY_GLOBAL_DAILY_LIMIT }, (_, i) => ({ id: `g${i}`, purpose: "SIGNUP", requestHash: `ip${i}`, createdAt: NOW - 1000, consumedAt: null })) });
+  // 전체 하루 한도는 «소진된 줄»(실제로 인증을 마친 건)으로 센다 — 시작만 되풀이한 줄로는 다른 사람을 막지 못한다
+  const startedOnly = fakeLedger({ preset: Array.from({ length: anon.ANON_IDENTITY_GLOBAL_DAILY_LIMIT }, (_, i) => ({ id: `s${i}`, purpose: "SIGNUP", requestHash: `ip${i}`, createdAt: NOW - 1000, consumedAt: null })) });
+  assert.equal((await anon.startAnonIdentity(startedOnly, { purpose: "SIGNUP", requestKey: "9.9.9.9" })).ok, true, "시작만 한 줄은 전체 한도에 안 센다");
+  const globalDb = fakeLedger({ preset: Array.from({ length: anon.ANON_IDENTITY_GLOBAL_DAILY_LIMIT }, (_, i) => ({ id: `g${i}`, purpose: "SIGNUP", requestHash: `ip${i}`, createdAt: NOW - 1000, consumedAt: NOW - 500 })) });
   const busy = await anon.startAnonIdentity(globalDb, { purpose: "SIGNUP", requestKey: "9.9.9.9" });
   assert.deepEqual([busy.status, busy.error], [429, anon.ANON_IDENTITY_BUSY_MESSAGE]);
 });
@@ -194,6 +200,65 @@ test("확인: 만료 — 장부 줄이 10분을 넘었거나 포트원 인증이
   const stale = await anon.confirmAnonIdentity(db2, { purpose: "SIGNUP", ...fresh, now: NOW, lookup: verified({ verifiedAt: new Date(NOW - 11 * 60_000).toISOString() }) });
   assert.deepEqual([stale.ok, stale.status], [false, 400], "포트원 인증이 10분보다 오래됨");
   assert.equal(db2.rows.get(fresh.identityVerificationId).consumedAt, null, "거절하면 소진하지 않는다");
+});
+
+test("확인(보안 HIGH-1): 다른 채널 키·다른 건 번호의 포트원 결과는 거절하고 소진하지 않는다(스토어를 MyBDR 과 공유)", async () => {
+  for (const tamper of [
+    (data) => ({ ...data, channel: { key: "channel-key-mybdr" } }),
+    (data) => ({ ...data, channel: undefined }),
+    (data) => ({ ...data, id: "stizanon_other" }),
+    (data) => ({ ...data, id: undefined }),
+  ]) {
+    const db = fakeLedger();
+    const s = await started(db);
+    const lookup = async (id) => { const r = await verified()(id); return { ...r, data: tamper(r.data) }; };
+    const result = await anon.confirmAnonIdentity(db, { purpose: "SIGNUP", ...s, lookup, now: NOW });
+    assert.deepEqual([result.ok, result.status], [false, 400]);
+    assert.equal(db.rows.get(s.identityVerificationId).consumedAt, null);
+  }
+  // 우리 채널 키가 설정돼 있지 않으면 받지 않는다
+  const portone = await loadTsModule("src/lib/identity/portone.ts");
+  assert.equal(portone.isOwnIdentityVerification({ id: "x", channel: { key: "k" } }, "x", "k"), true);
+  assert.equal(portone.isOwnIdentityVerification({ id: "x", channel: { key: "k" } }, "x", ""), false);
+  assert.equal(portone.isOwnIdentityVerification({ id: "x", channel: { key: "k" } }, "x", undefined), false);
+  assert.equal(portone.isOwnIdentityVerification({ id: "x", channel: { key: "k" } }, "y", "k"), false);
+  // 간편가입 본인인증 확인도 같은 확인을 포트원 결과를 쓰기 전에 한다
+  const link = read("src/app/api/auth/parent-link/verify/route.ts");
+  const ownAt = link.indexOf("isOwnIdentityVerification(verification, identityVerificationId)");
+  assert.ok(ownAt > 0 && ownAt < link.indexOf('verification.status !== "VERIFIED"') && ownAt < link.indexOf("await issueIdentityVerifiedSignup("));
+});
+
+test("문구(검수 A-1): 문자 인증 안내는 화면 링크 글과 같은 글을 가리킨다", async () => {
+  const label = await loadTsModule("src/lib/identity/sms-fallback-label.ts");
+  for (const message of [anon.ANON_IDENTITY_TOO_MANY_MESSAGE, anon.ANON_IDENTITY_BUSY_MESSAGE, resetRules.IDENTITY_RESET_MULTIPLE_MESSAGE, resetRules.IDENTITY_RESET_NAME_MISMATCH_MESSAGE]) {
+    assert.ok(message.includes(label.SMS_FALLBACK_LINK_LABEL), message);
+  }
+  for (const file of ["src/components/auth/ParentSignupClient.tsx", "src/components/auth/ParentPasswordResetClient.tsx"]) {
+    assert.match(read(file), /\{SMS_FALLBACK_LINK_LABEL\}/, file);
+  }
+  const button = read("src/components/auth/IdentityLinkButton.tsx");
+  assert.doesNotMatch(button, /본인인증 설정이 아직 끝나지 않았습니다\. 학원에 문의/);
+  assert.match(button, /본인인증 설정이 아직 끝나지 않았어요\. \$\{SMS_FALLBACK_HINT\}/);
+  assert.match(read("src/lib/identity/anonymous-identity-server.ts"), /const NOT_READY = `본인인증 설정이 아직 끝나지 않았어요\. \$\{SMS_FALLBACK_HINT\}`/);
+});
+
+test("검수 A-2·A-3·A-5: 비교용 본인 번호, 팝업 뒤 저장 상태 지우기, 취소 복귀 안내, 찾기 링크 위치", () => {
+  assert.match(read("src/app/api/auth/parent-signup/identity/verify/route.ts"), /verifiedPhone: confirmed\.phone/);
+  assert.match(read("src/app/api/auth/parent-password-reset/identity/verify/route.ts"), /verifiedPhone: confirmed\.phone/);
+  const client = read("src/components/auth/ParentSignupClient.tsx");
+  assert.match(client, /if \(data\.verifiedPhone\) setPhone\(/);
+  assert.match(read("src/components/auth/ParentPasswordResetClient.tsx"), /setPhone\(data\.verifiedPhone/);
+  assert.match(client, /afterPopup=\{clearIdentityState\}/);
+  assert.match(client, /window\.sessionStorage\.removeItem\(SIGNUP_IDENTITY_STATE_KEY\)/);
+  const button = read("src/components/auth/IdentityLinkButton.tsx");
+  const popupAt = button.indexOf("afterPopup?.()");
+  assert.ok(popupAt > button.indexOf("sdk.requestIdentityVerification(") && popupAt < button.indexOf("await confirm(result?.identityVerificationId"));
+  assert.match(button, /본인인증이 취소됐어요\. 다시 시도할 수 있어요\./);
+  // 찾기 링크: 본인인증 버튼 바로 아래(샛길 버튼보다 위)
+  const buttonAt = client.indexOf("afterPopup={clearIdentityState}");
+  const block = client.slice(buttonAt, client.indexOf("{SMS_FALLBACK_LINK_LABEL}"));
+  assert.ok(buttonAt > 0 && block.length > 0);
+  assert.match(block, /\{registeredPhone && \(\n\s*<Link href="\/login\/forgot"/);
 });
 
 test("확인: 포트원 조회 실패(502)·미완료·번호/이름 이상은 소진하지 않고 거절", async () => {
@@ -264,7 +329,7 @@ test("가입·활성화 화면: 본인인증이 먼저, 문자 인증은 샛길 
   const client = read("src/components/auth/ParentSignupClient.tsx");
   assert.match(client, /startUrl: "\/api\/auth\/parent-signup\/identity\/start", verifyUrl: "\/api\/auth\/parent-signup\/identity\/verify"/);
   assert.match(client, /\{\.\.\.\(socialSignup \? \{\} : ANON_IDENTITY_URLS\)\}/);
-  assert.match(client, /본인 명의 휴대폰이 아니면 문자 인증으로 하기/);
+  assert.match(client, /{SMS_FALLBACK_LINK_LABEL}/);
   // 이미 가입된 번호 → 표식(registeredPhone)으로 «아이디·비밀번호 찾기»
   assert.match(client, /onFailure=\{\(data\) => setRegisteredPhone\(Boolean\(data\.registeredPhone\)\)\}/);
   assert.match(client, /registeredPhone && \(\n\s*<Link href="\/login\/forgot"/);
@@ -278,7 +343,7 @@ test("찾기 화면: 본인인증 버튼이 먼저(찾기 주소), 문자 인증
   assert.match(client, /onResult=\{continueFromIdentity\}/);
   assert.match(client, /step === "phone" && !smsFallback/);
   assert.match(client, /step === "phone" && smsFallback/);
-  assert.match(client, /본인 명의 휴대폰이 아니면 문자 인증으로 하기/);
+  assert.match(client, /{SMS_FALLBACK_LINK_LABEL}/);
   const fn = client.slice(client.indexOf("function continueFromIdentity"), client.indexOf("function restart"));
   assert.match(fn, /setStep\("accounts"\)/);
 });
@@ -339,7 +404,8 @@ async function loadReset(db) {
   const transpile = (file) => ts.transpileModule(fs.readFileSync(file, "utf8"), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText.replace(/import\s+["']server-only["'];?/g, "");
   const verifiedIdentity = url(transpile("src/lib/identity/verified-identity.ts"));
   const socialLink = url(transpile("src/lib/account/social-link.ts").split('"@/lib/identity/verified-identity"').join(`"${verifiedIdentity}"`));
-  const rules = url(transpile("src/lib/identity/identity-reset-rules.ts").split('"@/lib/account/social-link"').join(`"${socialLink}"`).split('"./verified-identity"').join(`"${verifiedIdentity}"`));
+  const smsLabel = url(transpile("src/lib/identity/sms-fallback-label.ts"));
+  const rules = url(transpile("src/lib/identity/identity-reset-rules.ts").split('"@/lib/account/social-link"').join(`"${socialLink}"`).split('"./verified-identity"').join(`"${verifiedIdentity}"`).split('"./sms-fallback-label"').join(`"${smsLabel}"`));
   const prismaStub = url(`
     const db = () => globalThis.__resetDb;
     const client = {

@@ -14,6 +14,7 @@ import ParentConsentChecks, { type ParentPolicyTextsProp } from "@/components/au
 import { PARENT_PASSWORD_MIN, parentPasswordWarning } from "@/lib/parent-password-rules";
 // 모바일 본인인증 «리디렉션 복귀» 때 고른 역할·단계·next 를 되살린다(2026-11-18 4단계)
 import { SIGNUP_IDENTITY_STATE_KEY, parseSignupIdentityState, serializeSignupIdentityState } from "@/lib/auth/signup-identity-resume";
+import { SMS_FALLBACK_LINK_LABEL } from "@/lib/identity/sms-fallback-label";
 
 // 로그인 전 본인인증 주소(아이디 가입·기존 계정 활성화). 간편가입은 IdentityLinkButton 기본 주소(parent-link)를 쓴다.
 const ANON_IDENTITY_URLS = { startUrl: "/api/auth/parent-signup/identity/start", verifyUrl: "/api/auth/parent-signup/identity/verify" } as const;
@@ -147,6 +148,11 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
     );
   }
 
+  // PC 팝업으로 결과를 받았으면 리디렉션 대비로 저장한 상태는 지운다(검수 A-3)
+  function clearIdentityState() {
+    window.sessionStorage.removeItem(SIGNUP_IDENTITY_STATE_KEY);
+  }
+
   // 리디렉션 복귀(주소에 identityVerificationId): 저장해 둔 단계·역할·next·수강신청서 표를 되살린다.
   // 단계가 «phone» 이 되면 그 안의 본인인증 버튼이 주소의 결과를 받아 확인을 이어 간다(버튼 쪽이 이 탭에서 시작한 건만 처리).
   useEffect(() => {
@@ -205,6 +211,8 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
     setChallengeToken(data.challengeToken);
     setProof(data.proof);
     setVerifiedName(data.verifiedName || "");
+    // 인증된 본인 번호 — «전화번호를 비밀번호로» 경고가 본인인증 경로에서도 뜨게(검수 A-2)
+    if (data.verifiedPhone) setPhone(data.verifiedPhone.replace(/[^0-9]/g, ""));
     if (existingMode) setNotice("학원에 등록된 보호자 정보를 찾지 못해 새 계정 만들기로 이어 갑니다. 이미 다니고 있다면 학원에 알려 둔 번호인지 확인해 주세요.");
     setStep("account");
   }
@@ -333,7 +341,8 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
       )}
       {/* 문자 인증 샛길에서 «이미 가입된 번호»로 막힌 경우에만 여기서 본인인증 버튼을 다시 보여 준다 */}
       {socialSignup && smsFallback && phoneRegistered && <IdentityLinkButton onSignup={continueFromIdentity} next={next} />}
-      {registeredPhone && (
+      {/* 문자 인증 샛길에서 이미 가입된 번호 — 본인인증 쪽은 버튼 바로 아래에 같은 링크를 둔다(검수 A-5) */}
+      {registeredPhone && smsFallback && (
         <Link href="/login/forgot" className="flex min-h-12 w-full items-center justify-center rounded-xl border border-[var(--color-public-accent)] px-4 text-sm font-medium text-[var(--color-public-accent)]">
           아이디·비밀번호 찾기
         </Link>
@@ -422,13 +431,20 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
             // 이미 가입된 번호면 화면이 문구가 아니라 표식으로 «아이디·비밀번호 찾기»를 띄운다
             onFailure={(data) => setRegisteredPhone(Boolean(data.registeredPhone))}
             beforeStart={saveIdentityState}
+            afterPopup={clearIdentityState}
             next={next}
             {...(socialSignup ? {} : ANON_IDENTITY_URLS)}
             label="본인인증하고 계속"
             hint="PASS·카카오·토스 등으로 인증합니다. 휴대폰 번호는 인증 화면에서 한 번만 입력해요."
           />
+          {/* 이미 가입된 번호 — 본인인증 버튼 바로 아래에(검수 A-5) */}
+          {registeredPhone && (
+            <Link href="/login/forgot" className="flex min-h-12 w-full items-center justify-center rounded-xl border border-[var(--color-public-accent)] px-4 text-sm font-medium text-[var(--color-public-accent)]">
+              아이디·비밀번호 찾기
+            </Link>
+          )}
           <button type="button" onClick={() => { setSmsFallback(true); setError(null); setRegisteredPhone(false); }} className="min-h-11 w-full text-sm text-[var(--color-public-muted)] underline">
-            본인 명의 휴대폰이 아니면 문자 인증으로 하기
+            {SMS_FALLBACK_LINK_LABEL}
           </button>
         </div>
       )}

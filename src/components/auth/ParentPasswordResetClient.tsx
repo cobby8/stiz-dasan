@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { PARENT_PASSWORD_MIN, parentPasswordWarning } from "@/lib/parent-password-rules";
 import IdentityLinkButton from "@/components/auth/IdentityLinkButton";
+import { SMS_FALLBACK_LINK_LABEL } from "@/lib/identity/sms-fallback-label";
 
 // 2026-11-18 4단계 B: 본인인증(명의 확인)이 기본, 문자 인증은 샛길. 본인인증은 명의 번호·실명으로 그 사람의 계정을 찾는다 —
 // 계정이 여러 개거나 이름이 다르면 서버가 막고(selectIdentityResetAccount) 문자 인증 샛길을 안내한다.
@@ -130,6 +131,8 @@ export default function ParentPasswordResetClient() {
       return;
     }
     setError(null);
+    // 인증된 본인 번호 — «전화번호를 비밀번호로» 경고 비교용(검수 A-2)
+    if (typeof data.verifiedPhone === "string") setPhone(data.verifiedPhone.replace(/[^0-9]/g, ""));
     setChallengeToken(data.challengeToken);
     setProof(data.proof);
     setAccounts(list);
@@ -163,7 +166,7 @@ export default function ParentPasswordResetClient() {
             hint="PASS·카카오·토스 등으로 인증합니다. 휴대폰 번호는 인증 화면에서 한 번만 입력해요."
           />
           <button type="button" onClick={() => { setSmsFallback(true); setError(null); }} className="min-h-11 w-full text-sm text-[var(--color-public-muted)] underline">
-            본인 명의 휴대폰이 아니면 문자 인증으로 하기
+            {SMS_FALLBACK_LINK_LABEL}
           </button>
           <p className="text-xs leading-5 text-[var(--color-public-muted)]">선생님·기사님 계정은 원장님께 비밀번호 재설정 링크를 요청해 주세요.</p>
         </div>

@@ -77,7 +77,7 @@ export default function PhoneChangeButton({
   messageClassName?: string;
   /** 계정 이름이 본인인증 이름 모양인가(서버가 아는 경우). false 면 인증 전에 미리 알린다 */
   nameOk?: boolean;
-  /** 설정 화면 안인가 — 이름 칸이 바로 위에 있으므로 «이름 고치러 가기» 링크 대신 글만 */
+  /** 설정 화면 안인가 — 이름 칸이 바로 위에 있으므로 «닉네임 고치러 가기» 링크 대신 글만 */
   onSettingsPage?: boolean;
 }) {
   const router = useRouter();
@@ -164,15 +164,15 @@ export default function PhoneChangeButton({
       {/* 인증 전에 미리 — 계정 이름이 실명 모양이 아니면 인증해도 거절된다 */}
       {!nameLooksOk && !error && !notice && (
         <p className={`${messageClassName} basis-full text-[var(--color-academy-muted)]`}>
-          계정 이름이 본인인증 이름과 같아야 해요.{" "}
-          {onSettingsPage ? "위 «이름»을 먼저 바꿔 주세요." : <Link href="/mypage/settings" className="inline-flex min-h-11 items-center underline">이름 고치러 가기</Link>}
+          계정 닉네임이 본인인증 이름과 같아야 해요.{" "}
+          {onSettingsPage ? "위 «닉네임»을 먼저 바꿔 주세요." : <Link href="/mypage/settings" className="inline-flex min-h-11 items-center underline">닉네임 고치러 가기</Link>}
         </p>
       )}
       {error && (
         <p role="alert" className={`${messageClassName} basis-full text-[var(--color-academy-danger)]`}>
           {error}
           {/* 이름 불일치 — 고칠 곳으로 바로 */}
-          {errorCode === PHONE_NAME_MISMATCH_CODES.nickname && !onSettingsPage && <>{" "}<Link href="/mypage/settings" className="inline-flex min-h-11 items-center underline">이름 고치러 가기</Link></>}
+          {errorCode === PHONE_NAME_MISMATCH_CODES.nickname && !onSettingsPage && <>{" "}<Link href="/mypage/settings" className="inline-flex min-h-11 items-center underline">닉네임 고치러 가기</Link></>}
         </p>
       )}
       {notice && <p role="status" className={`${messageClassName} basis-full text-[var(--color-academy-success)]`}>{notice}</p>}

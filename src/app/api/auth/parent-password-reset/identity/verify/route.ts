@@ -14,5 +14,5 @@ export async function POST(request: Request) {
   if (!confirmed.ok) return NextResponse.json({ error: confirmed.error }, { status: confirmed.status });
   const result = await issueIdentityVerifiedPasswordReset({ phone: confirmed.phone, verifiedName: confirmed.verifiedName });
   if ("error" in result) return clearAnonIdentityCookie(NextResponse.json({ error: result.error }, { status: 409 }), "RESET");
-  return clearAnonIdentityCookie(NextResponse.json({ ok: true, reset: true, challengeToken: result.token, proof: result.proof, accounts: result.accounts }), "RESET");
+  return clearAnonIdentityCookie(NextResponse.json({ ok: true, reset: true, challengeToken: result.token, proof: result.proof, accounts: result.accounts, verifiedPhone: confirmed.phone }), "RESET");
 }

@@ -434,9 +434,10 @@ test("⑥ 연락처 판정: 이름 다름·중복 번호 거절, 같은 번호�
   const route = read("src/app/api/account/phone-change/route.ts");
   assert.match(route, /\.\.\.\(error\.code \? \{ code: error\.code \} : \{\}\)/, "API 가 코드를 실어 보낸다");
   assert.match(read("src/lib/account/phone-change.ts"), /accountHasVerifiedName: Boolean\(me\[0\]\.identityVerifiedName\?\.trim\(\)\)/);
-  assert.equal((button.match(/href="\/mypage\/settings"[^>]*>이름 고치러 가기<\/Link>/g) ?? []).length, 2, "미리 안내·오류 옆 두 곳");
+  assert.equal((button.match(/href="\/mypage\/settings"[^>]*>닉네임 고치러 가기<\/Link>/g) ?? []).length, 2, "미리 안내·오류 옆 두 곳");
   assert.match(button, /\{!nameLooksOk && !error && !notice && \(/);
-  assert.match(button, /계정 이름이 본인인증 이름과 같아야 해요\./);
+  assert.match(button, /계정 닉네임이 본인인증 이름과 같아야 해요\./);
+  assert.match(button, /위 «닉네임»을 먼저 바꿔 주세요\./);
 });
 
 /** confirmPhoneChange 를 가짜 포트원·가짜 DB 로 실행한다 */

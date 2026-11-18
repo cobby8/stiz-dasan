@@ -14,13 +14,14 @@ import {
   type AnonIdentityFailure,
   type AnonIdentityPurpose,
 } from "./anonymous-identity";
+import { SMS_FALLBACK_HINT } from "./sms-fallback-label";
 
 /**
  * 로그인 전 본인인증 시작·확인의 «연결부» — 가입(/api/auth/parent-signup/identity/*)과
  * 아이디·비밀번호 찾기(/api/auth/parent-password-reset/identity/*)가 같이 쓴다. 판정은 anonymous-identity.ts 한 곳.
  */
 
-const NOT_READY = "본인인증 설정이 아직 끝나지 않았습니다. «문자 인증으로 하기»를 이용해 주세요.";
+const NOT_READY = `본인인증 설정이 아직 끝나지 않았어요. ${SMS_FALLBACK_HINT}`;
 
 function cookieOptions(maxAge: number) {
   return { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax" as const, path: ANON_IDENTITY_COOKIE_PATH, maxAge };
@@ -38,7 +39,7 @@ export async function anonIdentityStartResponse(request: Request, purpose: AnonI
   } catch (error) {
     // 장부 표가 아직 없을 때(마이그레이션 전) 등 — 원문은 화면에 내보내지 않는다
     console.error("[anon-identity start] failed:", error instanceof Error ? error.message.slice(0, 200) : "UNKNOWN");
-    return NextResponse.json({ error: "본인인증을 시작하지 못했어요. 잠시 후 다시 시도하거나 «문자 인증으로 하기»를 이용해 주세요." }, { status: 503 });
+    return NextResponse.json({ error: `본인인증을 시작하지 못했어요. 잠시 후 다시 시도하거나 ${SMS_FALLBACK_HINT}` }, { status: 503 });
   }
 }
 

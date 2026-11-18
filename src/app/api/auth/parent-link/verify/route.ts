@@ -10,7 +10,7 @@ import {
   type StaffClaimCandidate,
 } from "@/lib/account/social-link";
 import { isUsablePhoneKey, parentPhoneDigits } from "@/lib/enrollment/parentIdentity";
-import { fetchPortoneIdentityVerification, getPortoneConfig } from "@/lib/identity/portone";
+import { fetchPortoneIdentityVerification, getPortoneConfig, isOwnIdentityVerification } from "@/lib/identity/portone";
 import { PARENT_OAUTH_LABELS, parseParentOAuthProvider } from "@/lib/parent-oauth";
 import { parentClaimProofCookieName } from "@/lib/parent-account-claim";
 import { issueIdentityVerifiedSignup, oauthProviderMethod, resolveVerifiedSignupPhone } from "@/lib/parent-signup-verification";
@@ -49,6 +49,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "본인인증 결과를 확인하지 못했어요. 잠시 후 다시 시도해 주세요." }, { status: 502 });
   }
   const verification = lookup.data;
+  // 우리가 물은 그 건 + 우리 본인인증 채널 결과만(포트원 스토어를 MyBDR 과 공유 — 보안 검수 HIGH-1)
+  if (!isOwnIdentityVerification(verification, identityVerificationId)) {
+    console.error("[parent-link verify] rejected: id/channel mismatch");
+    return NextResponse.json({ error: "본인인증 정보를 확인하지 못했어요. 다시 시도해 주세요." }, { status: 400 });
+  }
   const verifiedAt = verification.verifiedAt ?? verification.statusChangedAt;
   if (verification.status !== "VERIFIED" || !isFreshVerification(verifiedAt)) {
     // 응답 모양이 바뀌면 기능 전체가 조용히 막히므로 원인을 남긴다(개인정보는 남기지 않는다).

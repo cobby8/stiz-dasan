@@ -11,11 +11,12 @@
 
 import { normalizePersonName } from "@/lib/account/social-link";
 import { identityComparableName } from "./verified-identity";
+import { SMS_FALLBACK_HINT } from "./sms-fallback-label";
 
 export const IDENTITY_RESET_MULTIPLE_MESSAGE =
-  "이 번호로 가입된 계정이 여러 개라 본인인증으로는 고르지 않았어요. 아래 «문자 인증으로 하기»로 찾거나 학원에 문의해 주세요.";
+  `이 번호로 가입된 계정이 여러 개라 본인인증으로는 고르지 않았어요. 문자 인증으로 찾으려면 ${SMS_FALLBACK_HINT} 그래도 안 되면 학원에 문의해 주세요.`;
 export const IDENTITY_RESET_NAME_MISMATCH_MESSAGE =
-  "본인인증 이름과 계정 이름이 달라 본인인증으로는 찾지 않았어요. 아래 «문자 인증으로 하기»로 찾거나 학원에 문의해 주세요.";
+  `본인인증 이름과 계정 이름이 달라 본인인증으로는 찾지 않았어요. 문자 인증으로 찾으려면 ${SMS_FALLBACK_HINT} 그래도 안 되면 학원에 문의해 주세요.`;
 
 export type IdentityResetPick<T> =
   | { kind: "OK"; account: T }

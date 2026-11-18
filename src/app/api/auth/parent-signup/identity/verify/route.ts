@@ -37,7 +37,7 @@ export async function POST(request: Request) {
   });
   if ("error" in handoff && !("kind" in handoff)) return clearAnonIdentityCookie(NextResponse.json({ error: handoff.error }, { status: 400 }), "SIGNUP");
   if (!("kind" in handoff) || handoff.kind === "NEW_SIGNUP") {
-    return clearAnonIdentityCookie(NextResponse.json({ ok: true, signup: true, challengeToken: issued.token, proof: issued.proof, verifiedName: confirmed.verifiedName }), "SIGNUP");
+    return clearAnonIdentityCookie(NextResponse.json({ ok: true, signup: true, challengeToken: issued.token, proof: issued.proof, verifiedName: confirmed.verifiedName, verifiedPhone: confirmed.phone }), "SIGNUP");
   }
   if (handoff.kind === "REGISTERED" || handoff.kind === "CONTACT_ACADEMY") {
     return clearAnonIdentityCookie(NextResponse.json({
