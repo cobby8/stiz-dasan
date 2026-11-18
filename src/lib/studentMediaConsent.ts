@@ -104,7 +104,7 @@ export async function withSocialDraftMediaConsentLock<T>(
 ) {
   return prisma.$transaction(async (tx) => {
     for (const studentId of [...new Set(draft.subjectStudentIds)].sort()) {
-      await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, studentId);
+      await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))::text`, studentId);
     }
     const result = await checkSocialDraftMediaConsent(draft, scope, tx);
     if (!result.ok) {
@@ -125,7 +125,7 @@ export async function withSocialDraftPublicationReservation<T>(
     if (!preliminaryRows[0]) throw new Error("게시할 초안을 찾지 못했습니다.");
     const preliminary = mapDraft(preliminaryRows[0]);
     for (const studentId of [...new Set(preliminary.subjectStudentIds)].sort()) {
-      await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, studentId);
+      await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))::text`, studentId);
     }
     const rows = await tx.$queryRawUnsafe<Array<Record<string, unknown>>>(`SELECT * FROM "SocialPostDraft" WHERE id=$1 FOR UPDATE`, draftId);
     if (!rows[0] || typeof rows[0].status !== "string" || !["READY", "FAILED", "PUBLISHING"].includes(rows[0].status)) throw new Error("게시할 수 있는 초안이 아닙니다.");
@@ -151,7 +151,7 @@ export async function withSocialDraftPublicationReservation<T>(
 
   return prisma.$transaction(async (tx) => {
     for (const studentId of reserved.snapshot.subjectStudentIds) {
-      await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, studentId);
+      await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))::text`, studentId);
     }
     const rows = await tx.$queryRawUnsafe<Array<{ publishReservationId: string | null; publicationSubjectHash: string | null }>>(
       `SELECT "publishReservationId", "publicationSubjectHash" FROM "SocialPostDraft" WHERE id=$1`, draftId,

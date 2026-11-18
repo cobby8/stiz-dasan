@@ -377,7 +377,7 @@ async function confirmRegular(flow: FlowRow<ShuttleState>, today: string): Promi
   // 같은 학생에게 원장님이 아직 처리하지 않은 정규 셔틀 접수가 있으면 새로 만들지 않는다(중복 접수 방지).
   // 학생 단위 잠금 안에서 «확인 → 접수»를 한 번에 해서, 두 보호자가 동시에 눌러도 한 건만 생긴다.
   const outcome = await prisma.$transaction(async (tx) => {
-    await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, `kakao-regular-shuttle:${studentId}`);
+    await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))::text`, `kakao-regular-shuttle:${studentId}`);
     const pending = await tx.$queryRawUnsafe<Array<{ id: string }>>(
       `SELECT id FROM "KakaoParentIntake"
         WHERE "studentId"=$1 AND id<>$2 AND kind IN ('SHUTTLE_START_STOP','SHUTTLE_CHANGE')
