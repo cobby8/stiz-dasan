@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 // @ts-expect-error -- Node's type-stripping runner needs the runtime extension.
-import { dateSelectTuition, distinctPeriods, offeringWeeklyFrequency, resolvePeriodPrice, resolvePeriodShuttleFee } from "./period-pricing.ts";
+import * as pricing from "./period-pricing.ts";
+// @ts-expect-error -- Node's type-stripping runner needs the runtime extension.
+import { kstAt } from "../datetime/kst.ts";
+
+const { distinctPeriods, isPeriodClosed, offeringWeeklyFrequency, periodClosedError, resolvePeriodPrice, resolvePeriodShuttleFee, weeklyFrequencyLabel } = pricing;
 
 // 4주 주2회 기간 상품(신규 240,000 · 재원 200,000), 셔틀비는 반 값을 따른다(NULL)
 const fourWeeks = {
@@ -27,31 +31,40 @@ test("기간 셔틀비: NULL 이면 반 셔틀비, 기간 값이 있으면 그 �
   assert.equal(resolvePeriodShuttleFee({ shuttleFee: 30000 }, { shuttleAvailable: false, shuttleFee: 40000 }, true), 0);
 });
 
-test("날짜 선택: 5회 재원 25,000 → 125,000 · 4회 신규 30,000 → 120,000", () => {
-  const season = { perSessionNewPrice: 30000, perSessionExistingPrice: 25000, minSessionCount: 4 };
-  assert.deepEqual(dateSelectTuition(5, season, "EXISTING"), { unitPrice: 25000, tuition: 125000 });
-  assert.deepEqual(dateSelectTuition(4, season, "NEW"), { unitPrice: 30000, tuition: 120000 });
-  // 판정 전은 재원가가 아니라 신규 단가
-  assert.deepEqual(dateSelectTuition(4, season), { unitPrice: 30000, tuition: 120000 });
-  // 재원 단가가 없으면 신규 단가
-  assert.deepEqual(dateSelectTuition(4, { ...season, perSessionExistingPrice: null }, "EXISTING"), { unitPrice: 30000, tuition: 120000 });
+test("회당 단가 계산(dateSelectTuition)은 없앴다 — 날짜로 골라도 기간 가격 규칙 하나", () => {
+  assert.equal(typeof (pricing as Record<string, unknown>).dateSelectTuition, "undefined");
 });
 
-test("날짜 선택: 최소 4회에 3회는 거절", () => {
-  const season = { perSessionNewPrice: 30000, perSessionExistingPrice: 25000, minSessionCount: 4 };
-  assert.throws(() => dateSelectTuition(3, season, "NEW"), (error: { code?: string; status?: number }) => {
-    assert.equal(error.code, "DATE_SELECT_MIN_COUNT");
-    assert.equal(error.status, 400);
-    return true;
-  });
-  // 0회도 거절(최소 횟수 미설정이어도 1회 이상)
-  assert.throws(() => dateSelectTuition(0, { perSessionNewPrice: 30000 }), { code: "DATE_SELECT_MIN_COUNT" });
+test("기간 마감: 1/1(금) 18:00 KST 마감 — 17:59:59 는 받고 18:00:00 부터 닫힌다", () => {
+  // 18:00 KST = 09:00 UTC. 9시간 함정 없이 kstAt 으로 만든다.
+  const closesAt = new Date(kstAt("2027-01-01", "18:00"));
+  assert.equal(closesAt.toISOString(), "2027-01-01T09:00:00.000Z");
+  const period = { applicationClosesAt: closesAt };
+  assert.equal(isPeriodClosed(period, kstAt("2027-01-01", "17:59") + 59_000), false);
+  assert.equal(isPeriodClosed(period, kstAt("2027-01-01", "18:00")), true);
+  assert.equal(isPeriodClosed(period, kstAt("2027-01-02")), true);
+  // 문자열(ISO)도 같게
+  assert.equal(isPeriodClosed({ applicationClosesAt: "2027-01-01T09:00:00.000Z" }, kstAt("2027-01-01", "18:00") - 1), false);
+  // 마감 시각이 없으면 시즌 마감을 따른다 → 여기서는 열림
+  assert.equal(isPeriodClosed({ applicationClosesAt: null }, kstAt("2030-01-01")), false);
+  assert.equal(isPeriodClosed({}, kstAt("2030-01-01")), false);
+  const error = periodClosedError("4주");
+  assert.equal(error.code, "PERIOD_CLOSED");
+  assert.equal(error.status, 409);
 });
 
-test("날짜 선택: 단가 미설정은 거절", () => {
-  assert.throws(() => dateSelectTuition(4, { minSessionCount: 1 }, "NEW"), { code: "DATE_SELECT_PRICE_NOT_CONFIGURED" });
-  // 신규 단가가 없으면 판정 전 신청도 거절(재원가로 받지 않는다)
-  assert.throws(() => dateSelectTuition(4, { perSessionExistingPrice: 25000 }), { code: "DATE_SELECT_PRICE_NOT_CONFIGURED" });
+test("distinctPeriods: 같은 범위의 마감 시각은 가장 이른 값", () => {
+  const list = distinctPeriods([
+    { periods: [{ ...fourWeeks, applicationClosesAt: "2027-01-01T09:00:00.000Z" }] },
+    { periods: [{ ...fourWeeks, applicationClosesAt: new Date("2026-12-31T09:00:00.000Z") }, { ...fourWeeks, label: "3주", startDate: "2027-01-11", displayOrder: 1 }] },
+  ]);
+  assert.equal(list[0].applicationClosesAt, "2026-12-31T09:00:00.000Z");
+  assert.equal(list[1].applicationClosesAt, null);
+});
+
+test("주N회 이름: 5회는 «매일(주5회)»", () => {
+  assert.equal(weeklyFrequencyLabel(2), "주2회");
+  assert.equal(weeklyFrequencyLabel(5), "매일(주5회)");
 });
 
 test("distinctPeriods: 반이 달라도 같은 범위는 하나로, 꺼진 기간은 빼고 순서대로", () => {

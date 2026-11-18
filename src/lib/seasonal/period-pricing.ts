@@ -22,17 +22,36 @@ export type OfferingPeriodLike = {
   shuttleFee?: number | null;
   displayOrder?: number | null;
   isActive?: boolean | null;
+  /** 이 기간의 신청 마감 시각(2026-11-18). NULL 이면 시즌 마감을 따른다. */
+  applicationClosesAt?: Date | string | null;
 };
 
 /** 셔틀비 판정에 필요한 반 정보. */
 export type PeriodShuttleOffering = { shuttleAvailable: boolean; shuttleFee?: number | null };
 
-/** 날짜별 선택 단가에 필요한 시즌 정보. */
-export type DateSelectSeason = {
-  perSessionNewPrice?: number | null;
-  perSessionExistingPrice?: number | null;
-  minSessionCount?: number | null;
-};
+/**
+ * 기간별 신청 마감 판정(2026-11-18 원장 «1차 마감은 모두 시작 전주 금요일 6시»).
+ * 마감 시각이 없으면(NULL) 시즌 마감을 따른다 → 여기서는 false.
+ * 경계: 마감 시각 «그 순간부터» 닫힌다(17:59:59 는 받고 18:00:00 은 거절).
+ */
+export function isPeriodClosed(
+  period: { applicationClosesAt?: Date | string | null },
+  nowMs: number = Date.now(),
+): boolean {
+  if (!period.applicationClosesAt) return false;
+  const closesMs = new Date(period.applicationClosesAt).getTime();
+  return Number.isFinite(closesMs) && nowMs >= closesMs;
+}
+
+/** 고른 기간의 신청이 마감됐을 때의 안내(409 PERIOD_CLOSED). */
+export function periodClosedError(label?: string | null): SeasonalError {
+  return new SeasonalError(`${label?.trim() ? `«${label.trim()}» 기간은` : "고른 기간은"} 신청이 마감되었습니다. 다른 기간을 골라 주세요.`, 409, "PERIOD_CLOSED");
+}
+
+/** 주N회 고르기 칸의 이름 — 5회는 «매일(주5회)», 그 밖은 «주N회». */
+export function weeklyFrequencyLabel(frequency: number): string {
+  return frequency === 5 ? "매일(주5회)" : `주${frequency}회`;
+}
 
 /** 기간 수강료 — planning.ts resolveOfferingPrice 와 같은 규칙(신규/재원 값이 있으면 그 값, 없으면 기본가). */
 export function resolvePeriodPrice(period: OfferingPeriodLike, applicantType?: ApplicantType): number {
@@ -61,29 +80,8 @@ export function resolvePeriodShuttleFee(
   return Math.max(0, fee);
 }
 
-/**
- * 날짜별 선택 수강료 = 고른 회수 × 회당 단가.
- * - 재원(EXISTING): 재원 단가, 없으면 신규 단가
- * - 신규(NEW)·판정 전(undefined): 신규 단가(재원가로 깎아 주지 않는다)
- * - 최소 횟수 미달 → DATE_SELECT_MIN_COUNT, 단가 미설정 → DATE_SELECT_PRICE_NOT_CONFIGURED
- */
-export function dateSelectTuition(
-  count: number,
-  season: DateSelectSeason,
-  applicantType?: ApplicantType,
-): { unitPrice: number; tuition: number } {
-  const newPrice = season.perSessionNewPrice ?? null;
-  const existingPrice = season.perSessionExistingPrice ?? null;
-  const unitPrice = applicantType === "EXISTING" ? (existingPrice ?? newPrice) : newPrice;
-  if (unitPrice === null || !Number.isInteger(unitPrice) || unitPrice < 0) {
-    throw new SeasonalError("날짜별 신청 단가가 아직 정해지지 않았습니다.", 400, "DATE_SELECT_PRICE_NOT_CONFIGURED");
-  }
-  const minCount = Math.max(1, season.minSessionCount ?? 1);
-  if (!Number.isInteger(count) || count < minCount) {
-    throw new SeasonalError(`날짜는 ${minCount}회 이상 골라 주세요.`, 400, "DATE_SELECT_MIN_COUNT");
-  }
-  return { unitPrice, tuition: unitPrice * count };
-}
+// 날짜별 선택 수강료(회당 단가 × 횟수, dateSelectTuition)는 2026-11-18 원장 결정으로 없앴다.
+// 날짜로 골라도 «그 주N회 반의 기간 가격»(요일 모드와 같은 resolvePeriodPrice / 반 가격)을 받는다 — 같은 규칙 두 벌 금지.
 
 /**
  * 켜진(isActive=true) 기간 행 수 — 꺼진 행(isActive=false)은 «없는 것»으로 본다.
@@ -144,11 +142,19 @@ export function periodMixedOfferingsError(): SeasonalError {
 }
 
 /** 시즌 전체에서 고를 수 있는 기간 목록 한 줄. */
-export type DistinctPeriod = { label: string; startDate: string; endDate: string; displayOrder: number };
+export type DistinctPeriod = {
+  label: string;
+  startDate: string;
+  endDate: string;
+  displayOrder: number;
+  /** 이 범위의 가장 이른 신청 마감 시각(ISO). 없으면 null = 시즌 마감을 따른다. */
+  applicationClosesAt: string | null;
+};
 
 /**
  * 여러 반의 기간 상품을 (시작일, 종료일)로 묶어 «학부모가 고르는 기간» 목록을 만든다.
  * 꺼진 기간(isActive=false)은 뺀다. 같은 범위면 표시 순서가 가장 앞선 줄의 이름을 쓴다.
+ * 마감 시각은 같은 범위 중 «가장 이른» 값(안전한 쪽 — 서버는 실제 반의 기간 행으로 다시 판정한다).
  * 정렬: displayOrder → label.
  */
 export function distinctPeriods(
@@ -159,15 +165,21 @@ export function distinctPeriods(
     for (const period of offering.periods ?? []) {
       if (period.isActive === false) continue;
       const key = `${period.startDate}|${period.endDate}`;
+      const closesAt = period.applicationClosesAt ? new Date(period.applicationClosesAt) : null;
+      const closesIso = closesAt && Number.isFinite(closesAt.getTime()) ? closesAt.toISOString() : null;
       const candidate: DistinctPeriod = {
         label: period.label,
         startDate: period.startDate,
         endDate: period.endDate,
         displayOrder: period.displayOrder ?? 0,
+        applicationClosesAt: closesIso,
       };
       const prev = byRange.get(key);
       // 같은 범위가 여러 반에 있으면 순서가 앞선(같으면 이름이 앞선) 것을 대표로
-      if (!prev || comparePeriods(candidate, prev) < 0) byRange.set(key, candidate);
+      const chosen = !prev || comparePeriods(candidate, prev) < 0 ? candidate : prev;
+      // 마감 시각은 둘 중 이른 것(ISO 문자열은 글자 비교가 곧 시각 비교)
+      const closes = [prev?.applicationClosesAt, closesIso].filter((value): value is string => Boolean(value)).sort()[0] ?? null;
+      byRange.set(key, { ...chosen, applicationClosesAt: closes });
     }
   }
   return [...byRange.values()].sort(comparePeriods);

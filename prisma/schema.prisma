@@ -2396,6 +2396,8 @@ model SpecialProgramOfferingPeriod {
   shuttleFee             Int?
   displayOrder           Int                    @default(0)
   isActive               Boolean                @default(true)
+  // 이 기간의 신청 마감 시각(2026-11-18 · 예: 4주 = 1/1(금) 18:00 KST). NULL 이면 시즌 마감을 따른다.
+  applicationClosesAt    DateTime?              @db.Timestamptz(6)
   createdAt              DateTime               @default(now()) @db.Timestamptz(6)
   updatedAt              DateTime               @default(now()) @updatedAt @db.Timestamptz(6)
   offering               SpecialProgramOffering @relation(fields: [offeringId], references: [id], onDelete: Cascade, onUpdate: NoAction)

@@ -12,8 +12,8 @@ import { seoulDateTimeToIso } from "./seasonalDateTime";
 import { kstLabel } from "@/lib/datetime/kst";
 import { askConfirm, showNotice } from "@/components/ui/feedback";
 // 기간 선택·날짜별 선택(2026-11-18) — 표시 문구·가격 계산은 공용 부품(서버와 같은 함수)
-import { describeApplicationSelection, isDateModeApplication, shortDateLabel, weekdaysFromDates } from "@/lib/seasonal/admin-period-rules";
-import { dateSelectTuition, resolvePeriodPrice } from "@/lib/seasonal/period-pricing";
+import { describeApplicationSelection, isDateModeApplication, kstDateTimeParts, parseKstDateTime, shortDateLabel, weekdaysFromDates } from "@/lib/seasonal/admin-period-rules";
+import { resolvePeriodPrice } from "@/lib/seasonal/period-pricing";
 import { toKstYmd } from "@/lib/datetime/kst";
 
 type SeasonStatus = "DRAFT" | "PUBLISHED" | "CLOSED" | "ARCHIVED";
@@ -32,6 +32,8 @@ type OfferingPeriod = {
   shuttleFee?: number | null;
   displayOrder?: number;
   isActive?: boolean;
+  /** 이 기간의 신청 마감 시각(ISO, 2026-11-18). 비어 있으면 시즌 마감을 따른다. */
+  applicationClosesAt?: string | null;
 };
 
 type SeasonalClass = {
@@ -210,6 +212,8 @@ type Application = {
   importSource?: string | null;
   imported?: boolean;
   reviewReasons?: string[];
+  /** 재원 재확인(2026-11-18) — "NOT_ACTIVE" = 재원가로 접수됐는데 지금 정규반 수강 중이 아님(서버가 판정) */
+  existingCheck?: "NOT_ACTIVE" | null;
   notificationSummary?: NotificationSummary | null;
   items: ApplicationItem[];
 };
@@ -2293,6 +2297,8 @@ function ApplicationReviewSummary({ application, onResolveReview, resolving }: {
       {application.periodLabel && <Info label="수강 기간">{application.periodLabel}{application.periodStartDate ? ` (${application.periodStartDate} ~ ${application.periodEndDate ?? ""})` : ""}</Info>}
       <Info label="원본 가져오기">{application.imported ? "완료" : "해당 없음"}</Info>
     </dl>
+    {/* 재원 재확인(2026-11-18 원장) — 재원가로 접수됐는데 지금 정규반 ACTIVE 가 아님. 가격은 자동으로 안 바꾼다(재배정으로 처리) */}
+    {application.existingCheck === "NOT_ACTIVE" && <div role="status" className="mt-4 rounded-xl border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] p-3 text-[var(--color-academy-warning)]"><p className="text-sm font-semibold">재원 확인 필요: 지금 정규반 수강 중이 아님</p><p className="mt-1 text-xs">재원생 수강료로 접수됐지만 지금은 정규반 수강(재원) 기록이 없습니다. 휴원하고 특강만 듣는 경우 신규 수강료가 맞습니다. 확인 뒤 필요하면 아래 수업 정보에서 다시 배정해 주세요.</p></div>}
     {needsReview.length > 0 && <div className="mt-4 rounded-xl border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] p-3 text-[var(--color-academy-warning)]"><p className="text-sm font-semibold">확인 필요</p><ul className="mt-2 list-disc space-y-1 pl-5 text-xs">{needsReview.map((reason) => <li key={reason}>{reason}</li>)}</ul><label className="mt-3 block text-xs font-medium">검토 메모 (필수)<textarea value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} rows={2} placeholder="확인한 내용과 처리 근거를 입력하세요" className="mt-1 w-full rounded-lg border border-[var(--color-academy-warning)] bg-white p-2 font-normal text-[var(--color-academy-ink)]" /></label><div className="mt-2 flex justify-end"><button type="button" disabled={resolving || !reviewNote.trim()} onClick={() => void onResolveReview(application.id, reviewNote.trim())} className="academy-button-secondary academy-button-sm">{resolving ? "처리 중…" : "검토 완료"}</button></div></div>}
   </section>;
 }
@@ -2309,7 +2315,6 @@ function periodRangeKey(startDate?: string | null, endDate?: string | null) {
 
 function ApplicationAssignmentEditor({
   application,
-  season,
   item,
   offerings,
   saving,
@@ -2317,6 +2322,7 @@ function ApplicationAssignmentEditor({
   onSaveAssignment,
 }: {
   application: Application;
+  /** 예전 회당 단가 계산용(2026-11-18 없앰) — 부르는 쪽 모양을 바꾸지 않으려고 남겨 둔다 */
   season?: Season;
   item?: ApplicationItem;
   offerings: SeasonalClass[];
@@ -2334,7 +2340,7 @@ function ApplicationAssignmentEditor({
   const [periodKey, setPeriodKey] = useState(() => periodRangeKey(application.periodStartDate, application.periodEndDate));
   const selectedOffering = useMemo(() => offerings.find((offering) => offering.id === offeringId), [offeringId, offerings]);
   const pricingOffering = useMemo(
-    // 날짜 모드는 회수로 반을 바꾸지 않는다(서버도 고른 반 그대로 «회수 × 단가»)
+    // 날짜 모드는 고른 주N회 반 그대로(서버도 같다). 금액은 그 반의 기간 가격(없으면 반 가격) — 회당 단가는 없앴다(2026-11-18)
     () => dateMode ? selectedOffering : matchingOfferingForWeekdays(offerings, selectedOffering, selectedWeekdays),
     [dateMode, offerings, selectedOffering, selectedWeekdays],
   );
@@ -2353,18 +2359,8 @@ function ApplicationAssignmentEditor({
   );
   const chosenPeriod = periodKey ? (pricingOffering?.periods ?? []).find((period) => periodRangeKey(period.startDate, period.endDate) === periodKey) : undefined;
   const applicantType = pricingApplicantType(application.applicantType);
-  // 자동 금액 — 날짜 모드: 회수 × 회당 단가 / 기간: 기간 수강료 / 그 외: 지금처럼 반 수강료
-  const dateTuition = useMemo(() => {
-    if (!dateMode) return null;
-    try {
-      return dateSelectTuition(selectedDates.length, season ?? {}, applicantType);
-    } catch (caught) {
-      return { unitPrice: 0, tuition: 0, problem: (caught as Error).message };
-    }
-  }, [applicantType, dateMode, season, selectedDates.length]);
-  const autoPrice = dateMode
-    ? dateTuition?.tuition ?? 0
-    : chosenPeriod ? resolvePeriodPrice(chosenPeriod, applicantType) : assignmentPriceFor(application, pricingOffering);
+  // 자동 금액 — 기간이 있으면 기간 수강료, 없으면 지금처럼 반 수강료(날짜 모드도 같은 규칙 · 2026-11-18)
+  const autoPrice = chosenPeriod ? resolvePeriodPrice(chosenPeriod, applicantType) : assignmentPriceFor(application, pricingOffering);
   const [price, setPrice] = useState(() => String(item?.amount ?? assignmentPriceFor(application, selectedOffering)));
   const [localError, setLocalError] = useState("");
   const lastOfferingIdRef = useRef(initialOfferingId);
@@ -2435,15 +2431,11 @@ function ApplicationAssignmentEditor({
         setLocalError("학생이 나올 날짜를 골라 주세요.");
         return;
       }
-      if (dateTuition && "problem" in dateTuition) {
-        setLocalError(dateTuition.problem);
-        return;
-      }
     } else if (selectedWeekdays.length === 0) {
       setLocalError("학생이 참여할 요일을 선택해 주세요.");
       return;
     }
-    if (!dateMode && periodKey && !chosenPeriod) {
+    if (periodKey && !chosenPeriod) {
       setLocalError("고른 반에 그 기간 수강료가 없습니다. 반의 «기간별 수강료»를 먼저 넣어 주세요.");
       return;
     }
@@ -2458,8 +2450,8 @@ function ApplicationAssignmentEditor({
       // 날짜 모드는 요일을 날짜에서 채운다(서버도 같은 규칙으로 다시 채운다)
       selectedWeekdays: dateMode ? weekdaysFromDates(selectedDates) : selectedWeekdays,
       ...(dateMode ? { selectedDates } : {}),
-      // 기간이 있는 반일 때만 기간을 보낸다(없으면 서버가 지금 값 유지 = 예전과 같음)
-      ...(!dateMode && hasPeriods ? { periodId: chosenPeriod?.id ?? null } : {}),
+      // 기간이 있는 반일 때만 기간을 보낸다(없으면 서버가 지금 값 유지 = 예전과 같음). 날짜 모드도 기간을 쓴다.
+      ...(hasPeriods ? { periodId: chosenPeriod?.id ?? null } : {}),
       priceSnapshot,
     });
   };
@@ -2486,7 +2478,7 @@ function ApplicationAssignmentEditor({
       </label>
     </div>
     {/* 기간 선택 칸 — 기간별 수강료가 있는 반에서만 보인다 */}
-    {!dateMode && hasPeriods && (
+    {hasPeriods && (
       <label className="mt-2 block text-xs font-medium text-[var(--color-academy-muted)]">
         수강 기간
         <select value={periodKey} disabled={saving || locked} onChange={(event) => setPeriodKey(event.target.value)} className="mt-1 min-h-11 w-full rounded-md border border-[var(--color-academy-line-input)] bg-white px-3 text-sm text-[var(--color-academy-ink)] disabled:opacity-60">
@@ -2497,7 +2489,7 @@ function ApplicationAssignmentEditor({
       </label>
     )}
     {!locked && (dateMode
-      ? <p className="mt-2 text-xs tabular-nums text-[var(--color-academy-muted)]">저장 시 {applicantTypeLabel(application.applicantType)} · {dateTuition && !("problem" in dateTuition) ? `${selectedDates.length}회 × ${dateTuition.unitPrice.toLocaleString()}원 기준` : dateTuition && "problem" in dateTuition ? dateTuition.problem : "-"}으로 청구 금액을 다시 계산합니다.</p>
+      ? <p className="mt-2 text-xs tabular-nums text-[var(--color-academy-muted)]">저장 시 {applicantTypeLabel(application.applicantType)} · {chosenPeriod ? `${chosenPeriod.label} 기간 수강료` : "고른 반 수강료"} 기준으로 청구 금액을 다시 계산합니다(날짜 {selectedDates.length}회).</p>
       : chosenPeriod
         ? <p className="mt-2 text-xs text-[var(--color-academy-muted)]">저장 시 {applicantTypeLabel(application.applicantType)} · {chosenPeriod.label} 기간 수강료 기준으로 청구 금액을 다시 계산합니다.</p>
         : <p className="mt-2 text-xs text-[var(--color-academy-muted)]">저장 시 {applicantTypeLabel(application.applicantType)} · 주 {selectedWeekdays.length || "-"}회 기준으로 청구 금액을 다시 계산합니다.</p>)}
@@ -2957,10 +2949,32 @@ function missingAttendancePreparation(linkedClassId?: string | null, instructorI
 }
 
 function SeasonForm({ initial, onClose, onSubmit }: { initial?: Season | null; onClose: () => void; onSubmit: (payload: Record<string, unknown>) => Promise<void> }) {
+  // 모집 시작·마감 = «날짜 + 시각»(KST, 2026-11-18). 기본 시작 00:00 · 마감 18:00.
+  //   예전엔 날짜만 보내 서버가 UTC 자정(= KST 오전 9시)으로 저장해 «마감일 오전 9시에 닫히는» 함정이 있었다.
+  //   기존 시즌은 저장된 시각을 KST 로 그대로 보여 주고, 날짜·시각을 안 바꾸면 그 칸을 보내지 않아 값이 그대로다.
+  const opensInit = kstDateTimeParts(initial?.enrollmentStartsAt, "00:00");
+  const closesInit = kstDateTimeParts(initial?.enrollmentEndsAt, "18:00");
   // 날짜별 선택(2026-11-18): 체크 칸은 꺼져 있으면 FormData 에 아예 안 실리므로 «꺼짐(false)»으로 바꿔 보낸다.
-  //   단가·최소 횟수는 글자 그대로 보내고 서버가 검사한다(비우면 단가 없음·최소 1회).
-  const submitWithDateSelect = (payload: Record<string, unknown>) => onSubmit({ ...payload, dateSelectEnabled: payload.dateSelectEnabled === "on" });
-  return <FormModal title="새 방학특강 시즌" onClose={onClose} onSubmit={submitWithDateSelect} extra={<SeasonDateSelectFields initial={initial} />} fields={[{name:"title",label:"시즌명",placeholder:"예: 2026 여름방학 특강",required:true,defaultValue:initial?.name},{name:"slug",label:"홈페이지 주소",placeholder:"예: 2026-summer",required:true,defaultValue:initial?.slug},{name:"applicationOpensAt",label:"모집 시작일",type:"date",required:true,defaultValue:dateInputValue(initial?.enrollmentStartsAt)},{name:"applicationClosesAt",label:"모집 종료일",type:"date",required:true,defaultValue:dateInputValue(initial?.enrollmentEndsAt)},{name:"startsAt",label:"수업 시작일",type:"date",required:true,defaultValue:dateInputValue(initial?.startsAt)},{name:"endsAt",label:"수업 종료일",type:"date",required:true,defaultValue:dateInputValue(initial?.endsAt)}]} />;
+  const submitSeason = (payload: Record<string, unknown>) => {
+    const { applicationOpensAtDate, applicationOpensAtTime, applicationClosesAtDate, applicationClosesAtTime, ...rest } = payload;
+    const out: Record<string, unknown> = { ...rest, dateSelectEnabled: payload.dateSelectEnabled === "on" };
+    // 바뀐 칸만(새 시즌은 둘 다) KST 로 해석한 절대 시각(ISO)으로 보낸다 — kst.ts kstAt 을 거친다
+    const opensChanged = !initial || applicationOpensAtDate !== opensInit.date || applicationOpensAtTime !== opensInit.time;
+    const closesChanged = !initial || applicationClosesAtDate !== closesInit.date || applicationClosesAtTime !== closesInit.time;
+    if (opensChanged) out.applicationOpensAt = parseKstDateTime(applicationOpensAtDate, applicationOpensAtTime, "00:00", "모집 시작")?.toISOString();
+    if (closesChanged) out.applicationClosesAt = parseKstDateTime(applicationClosesAtDate, applicationClosesAtTime, "18:00", "모집 마감")?.toISOString();
+    return onSubmit(out);
+  };
+  return <FormModal title="새 방학특강 시즌" onClose={onClose} onSubmit={submitSeason} extra={<SeasonDateSelectFields initial={initial} />} fields={[
+    {name:"title",label:"시즌명",placeholder:"예: 2026 여름방학 특강",required:true,defaultValue:initial?.name},
+    {name:"slug",label:"홈페이지 주소",placeholder:"예: 2026-summer",required:true,defaultValue:initial?.slug},
+    {name:"applicationOpensAtDate",label:"모집 시작일",type:"date",required:true,defaultValue:opensInit.date},
+    {name:"applicationOpensAtTime",label:"모집 시작 시각",type:"time",required:true,defaultValue:opensInit.time},
+    {name:"applicationClosesAtDate",label:"모집 마감일",type:"date",required:true,defaultValue:closesInit.date},
+    {name:"applicationClosesAtTime",label:"모집 마감 시각",type:"time",required:true,defaultValue:closesInit.time},
+    {name:"startsAt",label:"수업 시작일",type:"date",required:true,defaultValue:dateInputValue(initial?.startsAt)},
+    {name:"endsAt",label:"수업 종료일",type:"date",required:true,defaultValue:dateInputValue(initial?.endsAt)},
+  ]} />;
 }
 
 /** 반 편집 «기간별 수강료» 한 줄 입력값(숫자 칸은 입력 그대로 글자로 들고 있다가 저장할 때 서버가 검사). */
@@ -2975,6 +2989,9 @@ type PeriodDraft = {
   existingApplicantPrice: string;
   shuttleFee: string;
   isActive: boolean;
+  /** 신청 마감(KST) 날짜·시각 — 날짜를 비우면 시즌 마감을 따른다(2026-11-18) */
+  closesDate: string;
+  closesTime: string;
   dirty: boolean;
 };
 
@@ -2984,7 +3001,11 @@ function periodDraftFrom(period: OfferingPeriod): PeriodDraft {
   return {
     key: period.id, id: period.id, label: period.label, startDate: period.startDate, endDate: period.endDate,
     price: String(period.price), newApplicantPrice: text(period.newApplicantPrice), existingApplicantPrice: text(period.existingApplicantPrice),
-    shuttleFee: text(period.shuttleFee), isActive: period.isActive !== false, dirty: false,
+    shuttleFee: text(period.shuttleFee), isActive: period.isActive !== false,
+    // 저장된 마감 시각을 KST 날짜·시각 칸으로(없으면 빈 날짜 + 기본 18:00)
+    closesDate: kstDateTimeParts(period.applicationClosesAt, "18:00").date,
+    closesTime: kstDateTimeParts(period.applicationClosesAt, "18:00").time,
+    dirty: false,
   };
 }
 
@@ -2997,6 +3018,8 @@ async function savePeriodDrafts(offeringId: string, rows: PeriodDraft[]): Promis
       label: row.label, startDate: row.startDate, endDate: row.endDate, price: row.price,
       newApplicantPrice: row.newApplicantPrice, existingApplicantPrice: row.existingApplicantPrice,
       shuttleFee: row.shuttleFee, isActive: row.isActive, displayOrder: index,
+      // «YYYY-MM-DDTHH:MM»(KST) — 서버가 kstAt 으로 절대 시각으로 바꾼다. 날짜를 비우면 "" = 시즌 마감
+      applicationClosesAt: row.closesDate ? `${row.closesDate}T${row.closesTime || "18:00"}` : "",
     };
     const response = await fetch("/api/admin/seasonal", {
       method: row.id ? "PATCH" : "POST",
@@ -3077,11 +3100,11 @@ function OfferingPeriodsSection({ offeringId, defaultPrice, rows, setRows, disab
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div>
         <h3 className="academy-section-title">기간별 수강료</h3>
-        <p className="text-xs text-[var(--color-academy-muted)]">기간을 하나도 넣지 않으면 지금처럼 반 수강료 하나로 신청받습니다.</p>
+        <p className="text-xs text-[var(--color-academy-muted)]">기간을 하나도 넣지 않으면 지금처럼 반 수강료 하나로 신청받습니다. 기간마다 신청 마감 시각을 따로 둘 수 있습니다.</p>
       </div>
       {offeringId && <div className="flex flex-wrap gap-2">
         <button type="button" disabled={disabled || busy} onClick={() => void copyToSiblings()} className="academy-button-secondary academy-button-sm">같은 수업의 다른 반에 기간 복사</button>
-        <button type="button" disabled={disabled || busy} onClick={() => { setMessage(null); setRows((current) => [...current, { key: `new-${++periodDraftSeq}`, label: "", startDate: "", endDate: "", price: defaultPrice === null || defaultPrice === undefined ? "" : String(defaultPrice), newApplicantPrice: "", existingApplicantPrice: "", shuttleFee: "", isActive: true, dirty: true }]); }} className="academy-button-secondary academy-button-sm">기간 추가</button>
+        <button type="button" disabled={disabled || busy} onClick={() => { setMessage(null); setRows((current) => [...current, { key: `new-${++periodDraftSeq}`, label: "", startDate: "", endDate: "", price: defaultPrice === null || defaultPrice === undefined ? "" : String(defaultPrice), newApplicantPrice: "", existingApplicantPrice: "", shuttleFee: "", isActive: true, closesDate: "", closesTime: "18:00", dirty: true }]); }} className="academy-button-secondary academy-button-sm">기간 추가</button>
       </div>}
     </div>
     {!offeringId
@@ -3099,6 +3122,12 @@ function OfferingPeriodsSection({ offeringId, defaultPrice, rows, setRows, disab
             <label className="text-xs font-medium">셔틀비<input type="number" min={0} inputMode="numeric" value={row.shuttleFee} placeholder="반 셔틀비" onChange={(event) => update(row.key, { shuttleFee: event.target.value })} className={`${inputClass} text-right tabular-nums`} /></label>
             <label className="flex min-h-11 items-center gap-2 text-xs font-medium"><input type="checkbox" checked={row.isActive} onChange={(event) => update(row.key, { isActive: event.target.checked })} className="size-5" />사용</label>
             <button type="button" disabled={disabled || busy} onClick={() => void remove(row)} className="academy-button-danger academy-button-sm">삭제</button>
+            {/* 신청 마감(2026-11-18 원장 «시작 전주 금요일 6시») — 넓은 화면에서는 다음 줄로 넘어간다 */}
+            <div className="flex flex-wrap items-end gap-2 sm:col-span-4">
+              <label className="text-xs font-medium">신청 마감일<input type="date" value={row.closesDate} onChange={(event) => update(row.key, { closesDate: event.target.value })} className={inputClass} /></label>
+              <label className="text-xs font-medium">마감 시각<input type="time" value={row.closesTime} onChange={(event) => update(row.key, { closesTime: event.target.value })} className={inputClass} /></label>
+              <p className="pb-3 text-xs text-[var(--color-academy-muted)]">비우면 시즌 모집 마감을 따릅니다.</p>
+            </div>
           </div>
         ))}
         {rows.length === 0 && <p className="text-xs text-[var(--color-academy-muted)]">넣은 기간이 없습니다.</p>}
@@ -3248,17 +3277,14 @@ function FormModal({ title, helper, fields, extra, onClose, onSubmit }: { title:
   return <AdminModal onClose={() => { if (!pending) onClose(); }} titleId={titleId}><form onSubmit={submit} className="w-full p-6"><header className="flex items-center justify-between"><h2 id={titleId} className="text-xl font-bold">{title}</h2><button type="button" onClick={onClose} disabled={pending} aria-label="닫기" className="academy-button-text academy-button-sm shrink-0">닫기</button></header>{helper && <p className="mt-3 rounded-xl bg-[var(--color-academy-warning-soft)] p-3 text-xs text-[var(--color-academy-warning)]">{helper}</p>}{error && <p role="alert" className="mt-4 rounded-lg bg-[var(--color-academy-danger-soft)] p-3 text-sm text-[var(--color-academy-danger)]">{error}</p>}<div className="mt-5 grid gap-4 sm:grid-cols-2">{fields.map((field, index) => <label key={field.name} className="text-sm font-medium text-[var(--color-academy-muted)]">{field.label}{field.required && <span className="text-[var(--color-academy-danger)]"> *</span>}<input name={field.name} type={field.type || "text"} required={field.required} placeholder={field.placeholder} defaultValue={field.defaultValue ?? ""} min={field.type === "number" ? 0 : undefined} data-admin-modal-initial-focus={index === 0 ? "true" : undefined} className="academy-input mt-1" /></label>)}</div>{extra}<footer className="mt-6 flex flex-wrap justify-end gap-2"><button type="button" onClick={onClose} disabled={pending} className="academy-button-secondary">취소</button><button disabled={pending} className="academy-button-primary">{pending ? "저장 중…" : "저장"}</button></footer></form></AdminModal>;
 }
 
-/** 시즌 편집 «날짜별 선택» — 켜기 체크 칸 · 회당 신규 단가 · 회당 재원 단가 · 최소 횟수(2026-11-18). */
+/**
+ * 시즌 편집 «날짜별 선택» — 켜기 체크 칸 하나(2026-11-18 원장 결정).
+ * 날짜로 골라도 «주N회 반의 기간 가격»을 받으므로 회당 단가·최소 횟수 칸은 숨겼다(DB 칸은 남아 있다).
+ */
 function SeasonDateSelectFields({ initial }: { initial?: Season | null }) {
-  const [enabled, setEnabled] = useState(Boolean(initial?.dateSelectEnabled));
   return <section className="mt-5 border-t border-[var(--color-academy-line)] pt-4">
-    <label className="flex min-h-11 items-center gap-3 text-sm font-medium text-[var(--color-academy-ink)]"><input name="dateSelectEnabled" type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} className="size-5" />날짜별 선택 받기</label>
-    <p className="text-xs text-[var(--color-academy-muted)]">켜면 학부모가 날짜를 하나씩 골라 «고른 횟수 × 회당 단가»로 신청합니다.</p>
-    <div className="mt-3 grid gap-4 sm:grid-cols-3">
-      <ClassInput name="perSessionNewPrice" label="회당 신규 단가" type="number" required={enabled} defaultValue={initial?.perSessionNewPrice ?? null} />
-      <ClassInput name="perSessionExistingPrice" label="회당 재원 단가" type="number" placeholder="비우면 신규 단가" defaultValue={initial?.perSessionExistingPrice ?? null} />
-      <ClassInput name="minSessionCount" label="최소 횟수" type="number" placeholder="비우면 1회" defaultValue={initial?.minSessionCount ?? 1} />
-    </div>
+    <label className="flex min-h-11 items-center gap-3 text-sm font-medium text-[var(--color-academy-ink)]"><input name="dateSelectEnabled" type="checkbox" defaultChecked={Boolean(initial?.dateSelectEnabled)} className="size-5" />날짜별 선택 받기</label>
+    <p className="text-xs text-[var(--color-academy-muted)]">켜면 학부모가 «수강 기간 → 주N회 → 날짜» 순서로 고릅니다. 주N회 총 횟수(예: 4주 주2회 = 8회)를 날짜로 모두 채워야 신청되고, 수강료는 요일로 고를 때와 같습니다.</p>
   </section>;
 }
 

@@ -153,6 +153,7 @@ test("날짜 모드는 요일 없이도 통과하고, 날짜는 중복 제거·�
     ...validApplication(),
     selectedWeekdays: [],
     selectionMode: "DATE",
+    weeklyFrequency: 2,
     selectedDates: ["2027-01-06", "2027-01-04", " 2027-01-06 "],
   });
   assert.equal(parsed.selectionMode, "DATE");
@@ -194,7 +195,7 @@ test("날짜는 60개까지 — 61개(중복 제거 후)면 거절, 중복으로
     (error) => error instanceof SeasonalError && error.code === "TOO_MANY_SELECTED_DATES",
   );
   const sixty = days(60);
-  const parsed = parseApplicationInput({ ...validApplication(), selectionMode: "DATE", selectedDates: [...sixty, ...sixty] });
+  const parsed = parseApplicationInput({ ...validApplication(), selectionMode: "DATE", weeklyFrequency: 5, selectedDates: [...sixty, ...sixty] });
   assert.equal(parsed.selectedDates.length, 60);
 });
 
@@ -225,15 +226,33 @@ test("수강 기간은 시작·종료가 둘 다 있거나 둘 다 없어야 하
   }
 });
 
-test("요일 모드에 날짜가 섞여 와도 버리고, 날짜 모드에 기간이 와도 버린다(출석 규칙이 뒤바뀌지 않게)", () => {
-  const weekday = parseApplicationInput({ ...validApplication(), selectedDates: ["2027-01-04"] });
+test("요일 모드에 날짜가 섞여 와도 버린다(출석 규칙이 뒤바뀌지 않게)", () => {
+  const weekday = parseApplicationInput({ ...validApplication(), selectedDates: ["2027-01-04"], weeklyFrequency: 3 });
   assert.deepEqual(weekday.selectedDates, []);
+  // 요일 모드는 요일 수가 곧 N — 주N회 값은 싣지 않는다
+  assert.equal(weekday.weeklyFrequency, undefined);
+});
+
+test("날짜 모드도 기간을 받는다(2026-11-18 «기간 → 주N회 → 날짜»)", () => {
   const date = parseApplicationInput({
-    ...validApplication(), selectionMode: "DATE", selectedDates: ["2027-01-04"],
+    ...validApplication(), selectionMode: "DATE", selectedDates: ["2027-01-04"], weeklyFrequency: 2,
     periodStartDate: "2027-01-04", periodEndDate: "2027-01-29",
   });
-  assert.equal(date.periodStartDate, undefined);
-  assert.equal(date.periodEndDate, undefined);
+  assert.equal(date.periodStartDate, "2027-01-04");
+  assert.equal(date.periodEndDate, "2027-01-29");
+  assert.equal(date.weeklyFrequency, 2);
+});
+
+test("날짜 모드는 주N회(1~7)가 필수", () => {
+  for (const weeklyFrequency of [undefined, 0, 8, 2.5, "x"]) {
+    assert.throws(
+      () => parseApplicationInput({ ...validApplication(), selectionMode: "DATE", selectedDates: ["2027-01-04"], weeklyFrequency }),
+      (error) => error instanceof SeasonalError && error.code === "FREQUENCY_REQUIRED",
+      `거절해야 함: ${String(weeklyFrequency)}`,
+    );
+  }
+  // 숫자 모양 문자열("3")은 받는다
+  assert.equal(parseApplicationInput({ ...validApplication(), selectionMode: "DATE", selectedDates: ["2027-01-04"], weeklyFrequency: "3" }).weeklyFrequency, 3);
 });
 
 test("SeasonalError 의 details 는 선택 — 기존 호출(3개 인자)은 그대로", () => {

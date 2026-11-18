@@ -30,9 +30,14 @@ export type SeasonalApplicationInput = {
   selectionMode: SeasonalSelectionMode;
   /** 날짜별 선택일 때 고른 날짜(KST 'YYYY-MM-DD', 중복 없이 오름차순). 요일 모드면 빈 배열. */
   selectedDates: string[];
-  /** 요일 모드에서 고른 수강 기간(시작·종료 둘 다 있거나 둘 다 없음). */
+  /** 고른 수강 기간(시작·종료 둘 다 있거나 둘 다 없음). 요일 모드·날짜 모드 모두 쓴다(2026-11-18). */
   periodStartDate?: string;
   periodEndDate?: string;
+  /**
+   * 날짜 모드에서 고른 «주N회»(2026-11-18 원장 결정). 요일 모드는 고른 요일 수가 곧 N 이라 보내지 않는다.
+   * 서버는 이 N 으로 주N회 반·가격을 고르고, «N × 회차가 있는 주 수»만큼 날짜를 골랐는지 본다.
+   */
+  weeklyFrequency?: number;
   child: {
     name: string;
     birthDate: string;
@@ -223,6 +228,11 @@ export function parseApplicationInput(value: unknown): SeasonalApplicationInput 
     if (body.items.length > 1) {
       throw new SeasonalError("날짜로 고를 때는 수업을 하나만 신청할 수 있습니다.", 400, "DATE_SELECT_SINGLE_OFFERING");
     }
+    // 주N회를 골라야 «몇 회를 채워야 하는지»가 정해진다(1~7회).
+    const frequency = Number(body?.weeklyFrequency);
+    if (!Number.isInteger(frequency) || frequency < 1 || frequency > 7) {
+      throw new SeasonalError("주 몇 회 수업인지 먼저 골라 주세요.", 400, "FREQUENCY_REQUIRED");
+    }
   } else {
     if (selectedWeekdays.length === 0) throw new SeasonalError("수강할 요일을 한 개 이상 선택해 주세요.", 400, "WEEKDAY_REQUIRED");
   }
@@ -283,8 +293,10 @@ export function parseApplicationInput(value: unknown): SeasonalApplicationInput 
     selectionMode,
     // 요일 모드에서 날짜가 같이 와도 버린다 — 날짜가 남으면 출석 규칙(날짜 우선)이 뒤바뀐다.
     selectedDates: selectionMode === "DATE" ? selectedDates : [],
-    // 날짜 모드에서는 기간을 쓰지 않는다(날짜가 곧 기간).
-    ...(selectionMode === "WEEKDAY" ? period : {}),
+    // 기간은 두 모드 모두 쓴다(2026-11-18 — 날짜 모드도 «기간 → 주N회 → 날짜» 순서로 고른다).
+    ...period,
+    // 주N회는 날짜 모드에서만 싣는다(요일 모드는 요일 수가 곧 N).
+    ...(selectionMode === "DATE" ? { weeklyFrequency: Number(body?.weeklyFrequency) } : {}),
     child: {
       name: childName,
       birthDate: birth.toISOString(),

@@ -15,12 +15,13 @@ import { syncSeasonSiblingDiscounts } from "./sibling-discount-sync";
 // 공개 응답의 남은 자리는 3단계(여유/임박/마감)로만(재원생 수 비공개 · 2026-11-13 f9)
 import { seatLevel } from "@/lib/seats/seatLevel";
 // 기간 선택·날짜별 선택(2026-11-18) — 출석 규칙·가격·판단은 공용 부품 한 곳에서만
-import { todayKst, toKstYmd } from "@/lib/datetime/kst";
+import { kstHm, kstLabel, todayKst, toKstYmd } from "@/lib/datetime/kst";
 import { countOccupancyByDate, type SeasonalAttendanceRule } from "./attendance-rule";
 import {
   countActivePeriods,
-  dateSelectTuition,
   hasPeriodMix,
+  isPeriodClosed,
+  periodClosedError,
   periodMixedOfferingsError,
   resolvePeriodPrice,
   resolvePeriodShuttleFee,
@@ -28,12 +29,14 @@ import {
 } from "./period-pricing";
 import {
   activePeriods,
+  assertDateCount,
+  assertDatesInPeriod,
   assertPeriodHasWeekdays,
   assertSelectableDates,
-  datesFullMessage,
   fullDateKeysFromOccupancy,
   itemTitleSnapshot,
   pickOfferingPeriod,
+  requiredDateCount,
   weekdaysFromDates,
 } from "./application-plan";
 import { findFullDates } from "./date-capacity";
@@ -49,12 +52,8 @@ type PublicSeasonRow = Prisma.SpecialProgramSeasonGetPayload<{
 type AssignmentOffering = Prisma.SpecialProgramOfferingGetPayload<{
   include: { sessionDates: { select: { id: true; startsAt: true } }; periods: true };
 }>;
-type OfferingPeriodRow = AssignmentOffering["periods"][number];
 type AssignmentSeason = {
   dateSelectEnabled: boolean;
-  perSessionNewPrice: number | null;
-  perSessionExistingPrice: number | null;
-  minSessionCount: number;
 };
 // 신청 배정 조회에 함께 싣는 «회차·기간» 포함 설정(잠금 뒤 조회·범위 후보 조회가 같은 모양이어야 한다)
 const ASSIGNMENT_INCLUDE = {
@@ -82,7 +81,7 @@ function offeringScopeWhere(offering: Pick<AssignmentOffering, "id" | "seasonId"
     : { id: offering.id };
 }
 
-type AssignmentRequest = Pick<SeasonalApplicationInput, "selectionMode" | "selectedDates" | "periodStartDate" | "periodEndDate">;
+type AssignmentRequest = Pick<SeasonalApplicationInput, "selectionMode" | "selectedDates" | "periodStartDate" | "periodEndDate" | "weeklyFrequency">;
 
 async function resolvePublicOfferingAssignment(
   tx: Prisma.TransactionClient,
@@ -105,46 +104,48 @@ async function resolvePublicOfferingAssignment(
     activePeriodCount: scopeOfferings.reduce((sum, offering) => sum + countActivePeriods(offering.periods), 0),
   });
 
-  // 날짜 모드: 사용자가 고른 반 그대로(주N회 매칭 안 함) · 수강료 = 고른 회수 × 회당 단가
-  if (request.selectionMode === "DATE") {
-    if (!season.dateSelectEnabled) {
-      throw new SeasonalError("이 특강은 날짜별 신청을 받지 않습니다.", 400, "DATE_SELECT_DISABLED");
-    }
-    const { unitPrice, tuition } = dateSelectTuition(request.selectedDates.length, season, applicantType);
-    return {
-      offering: target,
-      scopeOfferings,
-      priceSnapshot: tuition,
-      period: null as OfferingPeriodRow | null,
-      unitPrice: unitPrice as number | null,
-      sessionCount: request.selectedDates.length as number | null,
-      usesDateCapacity,
-    };
+  // 날짜 모드(2026-11-18 원장 결정): «기간 → 주N회 → 날짜». 주N회는 화면에서 고른 값,
+  //   요일 모드는 고른 요일 수가 곧 N. 반·가격 고르기는 두 모드가 아래 같은 코드를 쓴다(같은 규칙 두 벌 금지).
+  const isDateMode = request.selectionMode === "DATE";
+  if (isDateMode && !season.dateSelectEnabled) {
+    throw new SeasonalError("이 특강은 날짜별 신청을 받지 않습니다.", 400, "DATE_SELECT_DISABLED");
   }
+  const frequency = isDateMode ? Number(request.weeklyFrequency) : selectedWeekdays.length;
 
   const frequencyCandidates = candidates.filter((candidate) => seasonalOfferingFrequency(candidate) !== null);
   const offering = frequencyCandidates.length
-    ? frequencyCandidates.find((candidate) => seasonalOfferingFrequency(candidate) === selectedWeekdays.length)
+    ? frequencyCandidates.find((candidate) => seasonalOfferingFrequency(candidate) === frequency)
     : target;
   if (!offering) {
     throw new SeasonalError(
-      `선택한 ${selectedWeekdays.length}개 요일에 맞는 수강료가 설정되지 않았습니다.`,
+      isDateMode ? `주${frequency}회 수강료가 설정되지 않았습니다.` : `선택한 ${selectedWeekdays.length}개 요일에 맞는 수강료가 설정되지 않았습니다.`,
       409,
       "OFFERING_FREQUENCY_NOT_CONFIGURED",
     );
   }
-  // 요일 모드: 그 반에 기간 상품이 있으면 고른 기간의 가격(1개뿐이면 자동 적용, 없으면 409/400)
+  // 그 반에 기간 상품이 있으면 고른 기간의 가격(1개뿐이면 자동 적용, 없으면 409/400)
   const period = pickOfferingPeriod(offering.periods, {
     startDate: request.periodStartDate,
     endDate: request.periodEndDate,
   });
+  // 기간별 신청 마감(예: 4주 1/1(금) 18:00) — 마감 시각 그 순간부터 받지 않는다. 비어 있으면 시즌 마감만.
+  if (period && isPeriodClosed(period)) throw periodClosedError(period.label);
+
+  if (isDateMode) {
+    // 날짜 모드 검사 — 기간 밖 날짜 409, 필요 횟수(N × 회차가 있는 주 수)와 다르면 400
+    assertDatesInPeriod(request.selectedDates, period);
+    const required = requiredDateCount(scopeOfferings.flatMap((item) => item.sessionDates), frequency, period);
+    assertDateCount(request.selectedDates.length, required, frequency, period?.label);
+  }
   return {
     offering,
     scopeOfferings,
+    // 수강료는 두 모드가 같다 — 기간 가격(없으면 반 가격). 회당 단가는 쓰지 않는다.
     priceSnapshot: period ? resolvePeriodPrice(period, applicantType) : resolveOfferingPrice(offering, applicantType),
     period,
     unitPrice: null as number | null,
-    sessionCount: null as number | null,
+    // 날짜 모드는 고른 횟수를 남긴다(목록·제목 «날짜 선택 8회»)
+    sessionCount: isDateMode ? request.selectedDates.length as number | null : null,
     usesDateCapacity,
   };
 }
@@ -278,6 +279,10 @@ function publicOffering(offering: PublicOfferingRow, fullDates: ReadonlySet<stri
       existingApplicantPrice: period.existingApplicantPrice,
       shuttleFee: period.shuttleFee,
       displayOrder: period.displayOrder,
+      // 기간별 신청 마감(2026-11-18) — 시각(ISO)·지금 마감됐는지·표시 문구 «1/1(금) 18:00». 비어 있으면 시즌 마감을 따른다.
+      applicationClosesAt: period.applicationClosesAt ? period.applicationClosesAt.toISOString() : null,
+      closed: isPeriodClosed(period),
+      closesLabel: period.applicationClosesAt ? `${kstLabel(period.applicationClosesAt)} ${kstHm(period.applicationClosesAt)}` : null,
     })),
   };
 }
@@ -388,9 +393,17 @@ function duplicateApplicationError() {
   );
 }
 
+/** 재원 판정에 필요한 값만(공개 신청 입력·관리자 화면의 신청서 둘 다 이 모양으로 넘긴다). */
+export type ExistingStudentProbe = {
+  child: { name: string; birthDate: string };
+  parent: { phone: string };
+};
+
 // 기존회원 할인은 "지금 학원에 다니는 원생"에게만 적용한다.
 // 이름 + 생년월일 + 학부모 연락처가 모두 맞고, 그 위에 현재 유효한 수강 등록까지 있어야 EXISTING으로 본다.
-async function hasMatchingExistingStudent(input: SeasonalApplicationInput) {
+// 공개 신청(가격 정하기)과 관리자 승인 화면(«재원 확인 필요» 경고, 2026-11-18)이 이 함수 하나를 쓴다.
+//   정규반을 휴원하고 특강만 들으면 ACTIVE 가 없어 여기서 false — 신규 수강료(원장 11-18 고지 내용과 같다).
+export async function hasMatchingExistingStudent(input: ExistingStudentProbe) {
   const birthDate = new Date(input.child.birthDate);
   const rows = await prisma.$queryRaw<{ exists: boolean }[]>`
     SELECT EXISTS (
@@ -655,10 +668,8 @@ export async function submitSeasonalApplication(slug: string, input: SeasonalApp
             sessionDates: assignment.scopeOfferings.flatMap((offering) => offering.sessionDates),
             rule: attendanceRule,
           });
-          // 날짜 모드는 대기 없이 «그 날짜를 빼고 다시» 안내 — 저장하지 않는다
-          if (isDateMode && fullDates.length > 0) {
-            throw new SeasonalError(datesFullMessage(fullDates), 409, "DATES_FULL", { fullDates });
-          }
+          // 찬 날짜가 하나라도 있으면 요일 모드와 똑같이 «대기»로 접수한다(2026-11-18 원장 «정원 마감 시 대기로 받아줘»).
+          //   예전엔 날짜 모드만 409 DATES_FULL 로 돌려보냈다.
           full = fullDates.length > 0;
         } else {
           // 기존 시즌: 예전 요일별 판정 그대로
@@ -666,7 +677,7 @@ export async function submitSeasonalApplication(slug: string, input: SeasonalApp
         }
         const shuttleRequested = hasSeasonalShuttleSelection(input.items[index]?.shuttle);
         const freeHub = isFreeHubShuttle(input.items[index]?.shuttle);
-        // 기간 상품이면 기간 셔틀비(없으면 반 셔틀비), 그 밖(날짜 모드 포함)은 반 셔틀비
+        // 기간 상품이면 기간 셔틀비(없으면 반 셔틀비), 기간이 없으면 반 셔틀비 — 날짜 모드도 같다
         const shuttleFeeSnapshot = assignment.period
           ? resolvePeriodShuttleFee(assignment.period, assignment.offering, shuttleRequested, freeHub)
           : resolveShuttleFee(assignment.offering, shuttleRequested, freeHub);

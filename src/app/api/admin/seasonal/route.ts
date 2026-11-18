@@ -16,7 +16,9 @@ import { resolveOfferingPrice, resolveShuttleFee, type ApplicantType } from "@/l
 import { syncSeasonSiblingDiscounts } from "@/lib/seasonal/sibling-discount-sync";
 // 기간 선택·날짜별 선택(2026-11-18) — 출석 규칙·가격 계산은 공용 부품만 쓴다(여기서 다시 만들지 않는다)
 import { seasonalAttendsSql } from "@/lib/seasonal/attendance-rule";
-import { applicationUsesPeriodOrDate, dateSelectTuition, resolvePeriodPrice, usesPeriodOrDateFeatures } from "@/lib/seasonal/period-pricing";
+import { applicationUsesPeriodOrDate, resolvePeriodPrice, usesPeriodOrDateFeatures } from "@/lib/seasonal/period-pricing";
+// 재원 판정 SQL 은 공개 신청과 같은 함수 하나(승인 화면 «재원 확인 필요» 경고 · 2026-11-18)
+import { hasMatchingExistingStudent } from "@/lib/seasonal/service";
 import {
   assertDatesAreSessionDates,
   hasSamePeriodRange,
@@ -574,7 +576,7 @@ async function resolveSpecialProgramAssignment(
     selectedWeekdays: string[];
     applicationSeasonId: string;
     applicantType?: string | null;
-    /** 날짜 모드면 고른 날짜(이미 검사된 값). 있으면 «회수 × 회당 단가». */
+    /** 날짜 모드면 고른 날짜(이미 검사된 값). 있으면 고른 반 그대로·고른 횟수를 남긴다. */
     selectedDates?: string[] | null;
     /** 고를 기간 범위(이름은 반의 기간 행에서 다시 읽는다). null/undefined = 기간 없음. */
     periodRange?: { startDate: string; endDate: string } | null;
@@ -585,34 +587,25 @@ async function resolveSpecialProgramAssignment(
     throw new SeasonalError("같은 시즌의 특강 반을 선택해 주세요.", 400, "OFFERING_NOT_FOUND");
   }
   const applicantType = seasonalApplicantType(params.applicantType);
+  // 날짜 모드(2026-11-18 원장 결정): 관리자가 고른 주N회 반 그대로, 금액은 요일 모드와 같은 «기간 가격(없으면 반 가격)».
+  //   회당 단가 계산은 없앴다. 고른 횟수는 sessionCount 로 남긴다.
+  const dateCount = params.selectedDates && params.selectedDates.length > 0 ? params.selectedDates.length : null;
 
-  // 1) 날짜 모드 — 반은 고른 반 그대로, 금액 = 고른 날짜 수 × 시즌 회당 단가(공용 dateSelectTuition)
-  if (params.selectedDates && params.selectedDates.length > 0) {
-    const season = await tx.specialProgramSeason.findUnique({
-      where: { id: target.seasonId },
-      select: { perSessionNewPrice: true, perSessionExistingPrice: true, minSessionCount: true },
+  let offering = target;
+  if (dateCount === null) {
+    // 요일 모드 — 고른 요일 수로 같은 운영 묶음의 주N회 반을 찾는다(지금 동작 그대로)
+    const selectedCount = params.selectedWeekdays.length;
+    const scopeWhere = target.linkedClassId
+      ? { seasonId: target.seasonId, linkedClassId: target.linkedClassId }
+      : { id: target.id };
+    const candidates = await tx.specialProgramOffering.findMany({
+      where: scopeWhere,
+      orderBy: [{ displayOrder: "asc" }, { createdAt: "asc" }],
     });
-    const { unitPrice, tuition } = dateSelectTuition(params.selectedDates.length, season ?? {}, applicantType);
-    return {
-      offering: target,
-      priceSnapshot: tuition,
-      period: null as AssignmentPeriod | null,
-      sessionCount: params.selectedDates.length,
-      unitPrice,
-    };
+    offering = candidates.find((candidate) => seasonalOfferingFrequency(candidate) === selectedCount) ?? target;
   }
 
-  const selectedCount = params.selectedWeekdays.length;
-  const scopeWhere = target.linkedClassId
-    ? { seasonId: target.seasonId, linkedClassId: target.linkedClassId }
-    : { id: target.id };
-  const candidates = await tx.specialProgramOffering.findMany({
-    where: scopeWhere,
-    orderBy: [{ displayOrder: "asc" }, { createdAt: "asc" }],
-  });
-  const offering = candidates.find((candidate) => seasonalOfferingFrequency(candidate) === selectedCount) ?? target;
-
-  // 2) 기간 — 주N회로 고른 «그 반»의 같은 범위 기간 행 값으로 받는다(공용 resolvePeriodPrice)
+  // 기간 — 고른 «그 반»의 같은 범위 기간 행 값으로 받는다(공용 resolvePeriodPrice)
   if (params.periodRange) {
     const period = await tx.specialProgramOfferingPeriod.findFirst({
       where: { offeringId: offering.id, startDate: params.periodRange.startDate, endDate: params.periodRange.endDate },
@@ -624,18 +617,18 @@ async function resolveSpecialProgramAssignment(
       offering,
       priceSnapshot: resolvePeriodPrice(period, applicantType),
       period: { id: period.id, label: period.label, startDate: period.startDate, endDate: period.endDate, shuttleFee: period.shuttleFee } as AssignmentPeriod | null,
-      sessionCount: null as number | null,
+      sessionCount: dateCount as number | null,
       unitPrice: null as number | null,
     };
   }
 
-  // 3) 기존 — 반 수강료 하나
+  // 기존 — 반 수강료 하나
   return {
     offering,
     // 할인 전 수강료(기존회원가 반영까지). 형제할인은 저장 뒤 syncSeasonSiblingDiscounts가 따로 얹는다.
     priceSnapshot: resolveOfferingPrice(offering, seasonalApplicantType(params.applicantType)),
     period: null as AssignmentPeriod | null,
-    sessionCount: null as number | null,
+    sessionCount: dateCount as number | null,
     unitPrice: null as number | null,
   };
 }
@@ -688,23 +681,21 @@ async function resolveAssignmentSelection(
   const selectedDates = params.selectedDates ?? null;
   const selectedWeekdays = selectedDates ? weekdaysFromDates(selectedDates) : params.selectedWeekdays;
 
-  // 기간 범위 정하기(날짜 모드는 기간을 쓰지 않는다)
+  // 기간 범위 정하기 — 날짜 모드도 기간을 쓴다(2026-11-18 «기간 → 주N회 → 날짜», 가격 = 기간 가격)
   let periodRange: { startDate: string; endDate: string } | null = null;
-  if (!selectedDates) {
-    if (params.periodId === undefined) {
-      if (params.application.periodStartDate && params.application.periodEndDate) {
-        periodRange = { startDate: params.application.periodStartDate, endDate: params.application.periodEndDate };
-      }
-    } else if (params.periodId) {
-      const period = await tx.specialProgramOfferingPeriod.findUnique({
-        where: { id: params.periodId },
-        select: { startDate: true, endDate: true, offering: { select: { seasonId: true } } },
-      });
-      if (!period || period.offering.seasonId !== params.application.seasonId) {
-        throw new SeasonalError("고른 기간을 찾을 수 없습니다.", 400, "PERIOD_NOT_FOUND");
-      }
-      periodRange = { startDate: period.startDate, endDate: period.endDate };
+  if (params.periodId === undefined) {
+    if (params.application.periodStartDate && params.application.periodEndDate) {
+      periodRange = { startDate: params.application.periodStartDate, endDate: params.application.periodEndDate };
     }
+  } else if (params.periodId) {
+    const period = await tx.specialProgramOfferingPeriod.findUnique({
+      where: { id: params.periodId },
+      select: { startDate: true, endDate: true, offering: { select: { seasonId: true } } },
+    });
+    if (!period || period.offering.seasonId !== params.application.seasonId) {
+      throw new SeasonalError("고른 기간을 찾을 수 없습니다.", 400, "PERIOD_NOT_FOUND");
+    }
+    periodRange = { startDate: period.startDate, endDate: period.endDate };
   }
   return { selectedDates, selectedWeekdays, periodRange };
 }
@@ -1216,6 +1207,37 @@ function respondError(error: unknown) {
   return NextResponse.json({ error: "방학특강 관리 작업에 실패했습니다." }, { status: 500 });
 }
 
+/** 재원 재확인 대상 — 재원가(EXISTING)로 접수됐고, 아직 승인·수강·청구 연결 전(청구서 없는 진행 중 항목)이 있는 신청. */
+const EXISTING_RECHECK_ITEM_STATUSES = new Set(["PENDING", "WAITLISTED", "APPROVED"]);
+
+/**
+ * 재원가로 접수된 신청 중 «지금은 정규반 ACTIVE 가 아닌» 신청 id 모음(목록 한 쪽 = 최대 100건).
+ * 판정은 공개 신청의 hasMatchingExistingStudent(이름·생년월일·연락처 + 정규반 ACTIVE) 그대로.
+ * 조회가 실패하면 경고를 띄우지 않는다(보조 장치 — 목록 자체는 보여야 한다).
+ */
+async function findExistingNoLongerActive(applications: AdminApplicationRow[]): Promise<Set<string>> {
+  const targets = applications.filter((application) => application.applicantType === "EXISTING"
+    && application.items.some((item) => EXISTING_RECHECK_ITEM_STATUSES.has(String(item.status)) && !item.paymentId));
+  const result = new Set<string>();
+  // DB 연결 한도가 작아(5) 3건씩 나눠 묻는다
+  for (let index = 0; index < targets.length; index += 3) {
+    await Promise.all(targets.slice(index, index + 3).map(async (application) => {
+      const birth = application.childBirthDate instanceof Date ? application.childBirthDate : new Date(String(application.childBirthDate ?? ""));
+      if (Number.isNaN(birth.getTime())) return;
+      try {
+        const active = await hasMatchingExistingStudent({
+          child: { name: String(application.childName ?? ""), birthDate: birth.toISOString() },
+          parent: { phone: String(application.parentPhone ?? "").replace(/[^0-9]/g, "") },
+        });
+        if (!active) result.add(String(application.id));
+      } catch (error) {
+        console.error("[seasonal] 재원 재확인 실패", error);
+      }
+    }));
+  }
+  return result;
+}
+
 export async function GET(request: NextRequest) {
   try {
     await admin();
@@ -1304,8 +1326,12 @@ export async function GET(request: NextRequest) {
       : [];
     const deliverySummaries = latestDeliverySummaries(deliveryRows);
     const statusTriggers = Object.values(ITEM_NOTIFICATION_TRIGGER).filter((trigger): trigger is SeasonalSmsTrigger => Boolean(trigger));
+    // 재원 재확인(2026-11-18 원장) — 재원가로 접수됐는데 «지금» 정규반 ACTIVE 가 아니면(휴원·퇴원) 승인 화면에 경고.
+    //   가격은 자동으로 바꾸지 않는다(관리자가 재배정으로 처리). 판정은 공개 신청과 같은 SQL 함수 하나.
+    const existingNotActiveIds = await findExistingNoLongerActive(applicationRows as AdminApplicationRow[]);
     const applications = (applicationRows as AdminApplicationRow[]).map((application) => ({
       ...application,
+      existingCheck: existingNotActiveIds.has(String(application.id)) ? "NOT_ACTIVE" as const : null,
       notificationSummary: newestNotification([
         deliverySummaries.get(deliveryEventId(String(application.id), null, SEASONAL_SMS_TRIGGERS.received)),
         ...statusTriggers.map((trigger) => deliverySummaries.get(deliveryEventId(String(application.id), null, trigger))),

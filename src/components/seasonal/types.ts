@@ -56,6 +56,12 @@ export type SeasonalOfferingPeriod = {
   shuttleFee: number | null;
   /** 표시 순서(작을수록 앞) — 여러 반의 기간을 묶어 보여 줄 때 순서를 지킨다 */
   displayOrder: number;
+  /** 이 기간의 신청 마감 시각(ISO, 2026-11-18). null = 시즌 마감을 따른다 */
+  applicationClosesAt: string | null;
+  /** 서버가 응답 시점에 본 마감 여부(화면은 시각으로 한 번 더 본다) */
+  closed: boolean;
+  /** 마감 표시 «1/1(금) 18:00» */
+  closesLabel: string | null;
 };
 
 /** 시즌의 날짜별 신청 설정(2026-11-18). enabled=false 면 «요일로 고르기»만 보인다 */
@@ -246,6 +252,10 @@ function normalizePeriods(value: unknown): SeasonalOfferingPeriod[] {
       shuttleFee: nullableNumber(row.shuttleFee),
       // 서버가 안 보내면 받은 순서를 그대로 쓴다
       displayOrder: nullableNumber(row.displayOrder) ?? index,
+      // 기간별 신청 마감 — 없거나 모양이 이상하면 «시즌 마감을 따름»
+      applicationClosesAt: typeof row.applicationClosesAt === "string" && row.applicationClosesAt ? row.applicationClosesAt : null,
+      closed: row.closed === true,
+      closesLabel: typeof row.closesLabel === "string" && row.closesLabel ? row.closesLabel : null,
     }];
   });
 }

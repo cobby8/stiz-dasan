@@ -7,7 +7,7 @@
  * ⚠️ prisma import 금지. 날짜·요일은 kst.ts 만 쓴다(getDay·toISOString 금지).
  */
 // @ts-expect-error -- Node 타입 제거 기반 단위 테스트는 런타임 확장자를 요구한다.
-import { kstDow, toKstYmd } from "../datetime/kst.ts";
+import { kstDow, kstWeekMonday, toKstYmd } from "../datetime/kst.ts";
 // @ts-expect-error -- Node 타입 제거 기반 단위 테스트는 런타임 확장자를 요구한다.
 import { pickSessionDatesForApplication, type SeasonalAttendanceRule } from "./attendance-rule.ts";
 // @ts-expect-error -- Node 타입 제거 기반 단위 테스트는 런타임 확장자를 요구한다.
@@ -49,7 +49,8 @@ export function itemTitleSnapshot(
   offeringTitle: string,
   plan: { mode: "WEEKDAY" | "DATE"; dateCount?: number; periodLabel?: string | null },
 ): string {
-  if (plan.mode === "DATE") return `${stripWeeklyFrequency(offeringTitle)} 날짜 선택 ${plan.dateCount ?? 0}회`;
+  // 날짜 모드도 기간을 고를 수 있다(2026-11-18) — 기간이 있으면 «(4주)»를 붙인다
+  if (plan.mode === "DATE") return `${stripWeeklyFrequency(offeringTitle)} 날짜 선택 ${plan.dateCount ?? 0}회${plan.periodLabel ? ` (${plan.periodLabel})` : ""}`;
   if (plan.periodLabel) return `${offeringTitle} (${plan.periodLabel})`;
   return offeringTitle;
 }
@@ -116,6 +117,75 @@ export function assertSelectableDates(
   if (selectedDates.some((ymd) => ymd < todayYmd)) {
     throw new SeasonalError("이미 지난 날짜는 신청할 수 없습니다.", 400, "DATE_IN_PAST");
   }
+}
+
+/**
+ * 날짜 모드의 «채워야 할 횟수»(2026-11-18 원장 결정 — 주N회 총 횟수를 날짜로 채우기).
+ *
+ * 규칙: 기간(없으면 시즌 전체) 안의 실제 회차 날짜를 KST ISO 주(월요일 시작)로 묶고,
+ *       회차가 있는 주마다 min(N, 그 주 회차 날짜 수)를 더한다.
+ *   - 주마다 N회 이상 수업이 있으면 = N × (회차가 있는 주의 수). 예: 4주 주2회 = 8회.
+ *   - 회차가 없는 주(설 연휴 주)는 세지 않는다. 예: 2차 2/1~2/5 + 2/15~2/26 주2회 = 3주 × 2 = 6회.
+ *   - 한 주 수업이 N회보다 적으면(공휴일) 그 주는 있는 만큼만 센다 → 주5회는 «기간 전 회차».
+ * 같은 날 회차가 둘이어도 날짜 하나로 센다(학생은 날짜를 고른다).
+ * 화면(남은 횟수 안내)과 서버(DATE_COUNT_MISMATCH)가 이 함수 하나를 쓴다.
+ */
+export function requiredDateCount(
+  sessionDates: ReadonlyArray<{ startsAt: Date | string }>,
+  weeklyFrequency: number,
+  period?: { startDate: string; endDate: string } | null,
+): number {
+  if (!Number.isInteger(weeklyFrequency) || weeklyFrequency <= 0) return 0;
+  // 주(월요일) → 그 주의 회차 날짜 집합
+  const byWeek = new Map<string, Set<string>>();
+  for (const ymd of sessionDateKeys(sessionDates)) {
+    if (period && (ymd < period.startDate || ymd > period.endDate)) continue;
+    const monday = kstWeekMonday(ymd);
+    if (!monday) continue;
+    const week = byWeek.get(monday) ?? new Set<string>();
+    week.add(ymd);
+    byWeek.set(monday, week);
+  }
+  let total = 0;
+  for (const week of byWeek.values()) total += Math.min(weeklyFrequency, week.size);
+  return total;
+}
+
+/** «주2회 4주»·«주3회»처럼 안내 문구에 쓰는 이름. 기간 이름이 없으면 주N회만. */
+function frequencyPeriodText(weeklyFrequency: number, periodLabel?: string | null): string {
+  return [`주${weeklyFrequency}회`, periodLabel?.trim() || null].filter(Boolean).join(" ");
+}
+
+/**
+ * 날짜 개수 검사 — 정확히 필요 횟수만큼 골라야 한다(모자라도 넘쳐도 안 된다).
+ * 400 DATE_COUNT_MISMATCH «주2회 4주는 8회를 모두 골라 주세요. 지금 5회»
+ */
+export function assertDateCount(selectedCount: number, required: number, weeklyFrequency: number, periodLabel?: string | null): void {
+  if (required <= 0) {
+    throw new SeasonalError("고를 수 있는 수업 날짜가 없습니다. 학원에 문의해 주세요.", 409, "DATE_NOT_OFFERED");
+  }
+  if (selectedCount !== required) {
+    throw new SeasonalError(
+      `${frequencyPeriodText(weeklyFrequency, periodLabel)}는 ${required}회를 모두 골라 주세요. 지금 ${selectedCount}회`,
+      400,
+      "DATE_COUNT_MISMATCH",
+      { required, selected: selectedCount },
+    );
+  }
+}
+
+/** 날짜 모드 + 기간 — 고른 날짜가 모두 그 기간 안인가. 밖이면 409 DATE_OUTSIDE_PERIOD. */
+export function assertDatesInPeriod(selectedDates: readonly string[], period: { startDate: string; endDate: string } | null | undefined): void {
+  if (!period) return;
+  if (selectedDates.some((ymd) => ymd < period.startDate || ymd > period.endDate)) {
+    throw new SeasonalError("고른 수강 기간 밖의 날짜가 있습니다. 기간 안의 날짜만 골라 주세요.", 409, "DATE_OUTSIDE_PERIOD");
+  }
+}
+
+/** 화면 안내 — «8회 중 5회 선택 · 3회 더 골라 주세요» / 다 채우면 «8회 모두 선택». */
+export function dateCountProgressText(selectedCount: number, required: number): string {
+  if (selectedCount >= required) return `${required}회 모두 선택`;
+  return `${required}회 중 ${selectedCount}회 선택 · ${required - selectedCount}회 더 골라 주세요`;
 }
 
 /**

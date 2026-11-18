@@ -8,7 +8,7 @@
  * ⚠️ prisma import 금지(클라이언트에서도 쓴다). 날짜·요일은 kst.ts 만 쓴다(getDay·toISOString 금지).
  */
 // @ts-expect-error -- Node 타입 제거 기반 단위 테스트는 런타임 확장자를 요구한다.
-import { isKstYmd, kstDow } from "../datetime/kst.ts";
+import { isKstYmd, kstAt, kstDow, kstHm, toKstYmd } from "../datetime/kst.ts";
 // @ts-expect-error -- Node 타입 제거 기반 단위 테스트는 런타임 확장자를 요구한다.
 import { SeasonalError } from "./contracts.ts";
 // @ts-expect-error -- Node 타입 제거 기반 단위 테스트는 런타임 확장자를 요구한다.
@@ -29,7 +29,45 @@ export type OfferingPeriodValues = {
   shuttleFee: number | null;
   displayOrder: number;
   isActive: boolean;
+  /** 이 기간의 신청 마감 시각(2026-11-18). NULL = 시즌 마감을 따른다. */
+  applicationClosesAt: Date | null;
 };
+
+// ── KST «날짜 + 시각» 입력 ──────────────────────────────────────
+
+/**
+ * 관리자 입력 «YYYY-MM-DD» + «HH:MM»(KST) → 절대 시각. 비어 있으면 null.
+ * 왜: 날짜만 `new Date("2027-01-01")` 로 만들면 UTC 자정 = KST 오전 9시가 되어 «마감일 오전 9시에 닫히는» 함정이 생긴다.
+ *     반드시 kst.ts kstAt 으로 KST 시각을 해석한다(9시간 함정 금지).
+ * 시각을 비우면 fallbackTime(예: 마감 "18:00").
+ */
+export function parseKstDateTime(ymd: unknown, hm: unknown, fallbackTime: string, label: string): Date | null {
+  const date = typeof ymd === "string" ? ymd.trim() : "";
+  if (!date) return null;
+  const time = typeof hm === "string" && hm.trim() ? hm.trim() : fallbackTime;
+  if (!isKstYmd(date) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
+    throw new SeasonalError(`${label}의 날짜·시각을 확인해 주세요.`, 400, "INVALID_DATETIME");
+  }
+  return new Date(kstAt(date, time));
+}
+
+/**
+ * «YYYY-MM-DDTHH:MM»(KST, 날짜·시각 한 줄) 입력 → 절대 시각. 비어 있으면 null.
+ * 기간 행의 «신청 마감» 칸이 이 모양으로 보낸다.
+ */
+export function parseKstDateTimeText(value: unknown, label: string): Date | null {
+  if (isBlank(value)) return null;
+  const match = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})$/.exec(String(value).trim());
+  if (!match) throw new SeasonalError(`${label}의 날짜·시각을 확인해 주세요.`, 400, "INVALID_DATETIME");
+  return parseKstDateTime(match[1], match[2], "18:00", label);
+}
+
+/** 저장된 시각 → 입력칸 값 {date: "YYYY-MM-DD", time: "HH:MM"}(KST). 없으면 빈 날짜 + fallbackTime. */
+export function kstDateTimeParts(value: Date | string | null | undefined, fallbackTime: string): { date: string; time: string } {
+  if (!value) return { date: "", time: fallbackTime };
+  const date = toKstYmd(value);
+  return date ? { date, time: kstHm(value) } : { date: "", time: fallbackTime };
+}
 
 // ── 작은 검사 도구 ─────────────────────────────────────────────
 
@@ -94,7 +132,11 @@ export function parseOfferingPeriodInput(
     displayOrder = Number.isInteger(parsed) ? parsed : 0;
   }
   const isActive = has("isActive") ? data.isActive !== false && data.isActive !== "false" : before?.isActive ?? true;
-  return { label, ...range, price, newApplicantPrice, existingApplicantPrice, shuttleFee, displayOrder, isActive };
+  // 신청 마감(«YYYY-MM-DDTHH:MM» KST) — 안 보내면 지금 값 유지, 빈 값이면 지움(= 시즌 마감)
+  const applicationClosesAt = has("applicationClosesAt")
+    ? parseKstDateTimeText(data.applicationClosesAt, "신청 마감")
+    : before?.applicationClosesAt ?? null;
+  return { label, ...range, price, newApplicantPrice, existingApplicantPrice, shuttleFee, displayOrder, isActive, applicationClosesAt };
 }
 
 /** 같은 반에 같은 범위(시작~종료)가 이미 있는가 — 범위가 «겹치는» 것은 허용(4주 / 앞 3주처럼 나눠 판다). */
@@ -109,7 +151,8 @@ export function hasSamePeriodRange(
 
 // ── 같은 수업의 다른 반에 기간 복사 ───────────────────────────────
 
-export type PeriodCopySource = Pick<OfferingPeriodValues, "label" | "startDate" | "endDate" | "displayOrder" | "isActive">;
+export type PeriodCopySource = Pick<OfferingPeriodValues, "label" | "startDate" | "endDate" | "displayOrder" | "isActive">
+  & { applicationClosesAt?: Date | null };
 export type PeriodCopyTarget = {
   id: string;
   title?: string | null;
@@ -125,7 +168,7 @@ export type PeriodCopyPlan = {
 
 /**
  * 복사 규칙:
- *   - 이름·시작일·종료일·표시 순서·사용 여부만 복사한다.
+ *   - 이름·시작일·종료일·표시 순서·사용 여부·신청 마감 시각만 복사한다.
  *   - 값은 원본 반 값을 쓰지 않는다(주1회 반 값이 주3회 반에 들어가면 안 된다).
  *     대신 «복사받는 반의 지금 반 수강료(기본·신규·재원)»를 기본값으로 넣는다 → 관리자가 줄마다 고친다.
  *   - 셔틀비는 비워 둔다(NULL = 그 반의 셔틀비를 따른다).
@@ -151,6 +194,8 @@ export function planPeriodCopy(sources: readonly PeriodCopySource[], targets: re
         shuttleFee: null,
         displayOrder: source.displayOrder,
         isActive: source.isActive,
+        // 같은 기간이면 마감도 같다(예: 4주 = 1/1(금) 18:00) — 날짜처럼 그대로 복사
+        applicationClosesAt: source.applicationClosesAt ?? null,
       });
       taken.push({ startDate: source.startDate, endDate: source.endDate });
     }
@@ -168,12 +213,14 @@ export type DateSelectSettings = {
 };
 
 /**
- * 시즌 저장 시 날짜별 선택 4칸 검사. 보낸 칸만 돌려준다(시즌 수정 PATCH 와 같은 «부분 수정» 방식).
- * 최종 상태(before + 보낸 칸)에서 «켬»인데 회당 신규 단가가 비었으면 400.
+ * 시즌 저장 시 날짜별 선택 칸 검사. 보낸 칸만 돌려준다(시즌 수정 PATCH 와 같은 «부분 수정» 방식).
+ * 2026-11-18 원장 결정 — 날짜로 골라도 «주N회 반의 기간 가격»을 받으므로 회당 단가·최소 횟수는 더 쓰지 않는다.
+ *   켜기만 하면 된다(단가 없이 켜도 400 아님). 단가·최소 횟수 칸은 DB 에 남아 있고, 옛 화면이 보내면 검사만 해서 저장한다.
  */
 export function parseDateSelectSettings(
   data: Record<string, unknown>,
-  before?: Partial<DateSelectSettings> | null,
+  // 예전 «켜려면 단가 필요» 검사용 인자 — 호출 모양을 바꾸지 않으려고 남겨 둔다
+  _before?: Partial<DateSelectSettings> | null,
 ): Partial<DateSelectSettings> {
   const out: Partial<DateSelectSettings> = {};
   if (data.dateSelectEnabled !== undefined) out.dateSelectEnabled = data.dateSelectEnabled === true || data.dateSelectEnabled === "true" || data.dateSelectEnabled === "on";
@@ -182,11 +229,6 @@ export function parseDateSelectSettings(
   if (data.minSessionCount !== undefined) {
     // 비우면 기본값 1(스키마 기본값과 같다)
     out.minSessionCount = isBlank(data.minSessionCount) ? 1 : nonNegativeInt(data.minSessionCount, "최소 횟수");
-  }
-  const enabled = out.dateSelectEnabled ?? before?.dateSelectEnabled ?? false;
-  const newPrice = out.perSessionNewPrice !== undefined ? out.perSessionNewPrice : before?.perSessionNewPrice ?? null;
-  if (enabled && newPrice === null) {
-    throw new SeasonalError("날짜별 선택을 켜려면 회당 신규 단가를 입력해 주세요.", 400, "DATE_SELECT_PRICE_REQUIRED");
   }
   return out;
 }

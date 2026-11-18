@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 // @ts-expect-error -- Node's type-stripping runner needs the runtime extension.
-import { assertDatesAreSessionDates, describeApplicationSelection, hasSamePeriodRange, isDateModeApplication, parseAdminSelectedDates, parseDateSelectSettings, parseOfferingPeriodInput, planPeriodCopy, shortDateLabel, weekdaysFromDates } from "./admin-period-rules.ts";
+import { assertDatesAreSessionDates, describeApplicationSelection, hasSamePeriodRange, isDateModeApplication, kstDateTimeParts, parseAdminSelectedDates, parseDateSelectSettings, parseKstDateTime, parseOfferingPeriodInput, planPeriodCopy, shortDateLabel, weekdaysFromDates } from "./admin-period-rules.ts";
 
 // 관리자 «기간별 수강료 · 날짜별 선택» 판단 규칙(2026-11-18)
 
@@ -11,6 +11,7 @@ test("기간 추가: 이름·날짜·기본 수강료 필수, 비운 신규/재�
   assert.deepEqual(period, {
     label: "4주", startDate: "2027-01-04", endDate: "2027-01-29", price: 240000,
     newApplicantPrice: null, existingApplicantPrice: null, shuttleFee: null, displayOrder: 0, isActive: true,
+    applicationClosesAt: null,
   });
 });
 
@@ -61,32 +62,71 @@ test("다른 반에 복사: 날짜·이름만 복사, 값은 받는 반의 반 �
   assert.deepEqual(plan.creates[0], {
     offeringId: "twice", label: "4주", startDate: "2027-01-04", endDate: "2027-01-29",
     price: 300000, newApplicantPrice: 300000, existingApplicantPrice: 260000, shuttleFee: null, displayOrder: 0, isActive: true,
+    applicationClosesAt: null,
   });
   assert.equal(plan.creates[1].isActive, false); // 사용 여부도 복사
   assert.deepEqual(plan.creates[2], {
     offeringId: "thrice", label: "앞 3주", startDate: "2027-01-04", endDate: "2027-01-22",
     price: 400000, newApplicantPrice: null, existingApplicantPrice: null, shuttleFee: null, displayOrder: 1, isActive: false,
+    applicationClosesAt: null,
   });
   assert.deepEqual(plan.skipped, [{ offeringId: "thrice", label: "4주", reason: "SAME_RANGE_EXISTS" }]);
 });
 
-test("시즌 날짜별 선택: 켜면 회당 신규 단가 필수, 보낸 칸만 돌려준다", () => {
+test("시즌 날짜별 선택: 켜기만 하면 된다(회당 단가 없이도) — 보낸 칸만 돌려준다", () => {
   assert.deepEqual(parseDateSelectSettings({}), {});
-  assert.throws(() => parseDateSelectSettings({ dateSelectEnabled: true }), { code: "DATE_SELECT_PRICE_REQUIRED" });
-  assert.throws(() => parseDateSelectSettings({ dateSelectEnabled: true, perSessionNewPrice: "" }), { code: "DATE_SELECT_PRICE_REQUIRED" });
+  // 2026-11-18 원장 결정: 날짜로 골라도 기간 가격을 받으므로 단가 없이 켜도 된다
+  assert.deepEqual(parseDateSelectSettings({ dateSelectEnabled: true }), { dateSelectEnabled: true });
+  assert.deepEqual(parseDateSelectSettings({ dateSelectEnabled: "on" }, { perSessionNewPrice: null }), { dateSelectEnabled: true });
+  // 옛 화면이 단가 칸을 보내면 검사만 해서 저장한다(DB 칸은 남아 있다)
   assert.deepEqual(
     parseDateSelectSettings({ dateSelectEnabled: true, perSessionNewPrice: "30000", perSessionExistingPrice: "", minSessionCount: "4" }),
     { dateSelectEnabled: true, perSessionNewPrice: 30000, perSessionExistingPrice: null, minSessionCount: 4 },
   );
-  // 이미 단가가 있는 시즌은 켜기만 보내도 된다
-  assert.deepEqual(parseDateSelectSettings({ dateSelectEnabled: true }, { perSessionNewPrice: 25000 }), { dateSelectEnabled: true });
-  // 켠 시즌에서 단가만 지우면 거절
-  assert.throws(() => parseDateSelectSettings({ perSessionNewPrice: "" }, { dateSelectEnabled: true, perSessionNewPrice: 25000 }), { code: "DATE_SELECT_PRICE_REQUIRED" });
-  // 꺼 둔 시즌은 단가가 비어도 된다
   assert.deepEqual(parseDateSelectSettings({ dateSelectEnabled: false, perSessionNewPrice: "" }), { dateSelectEnabled: false, perSessionNewPrice: null });
   assert.throws(() => parseDateSelectSettings({ perSessionNewPrice: -1 }), { code: "INVALID_PERIOD_PRICE" });
   assert.throws(() => parseDateSelectSettings({ minSessionCount: 2.5 }), { code: "INVALID_PERIOD_PRICE" });
   assert.deepEqual(parseDateSelectSettings({ minSessionCount: "" }), { minSessionCount: 1 });
+});
+
+test("기간 신청 마감: «YYYY-MM-DDTHH:MM»(KST) → 절대 시각, 비우면 NULL(시즌 마감), 안 보내면 그대로", () => {
+  const base = { label: "4주", startDate: "2027-01-04", endDate: "2027-01-29", price: 240000 };
+  // 1/1(금) 18:00 KST = 09:00 UTC (날짜만 new Date 로 만들면 09:00 KST 가 되는 함정을 피한다)
+  const withDeadline = parseOfferingPeriodInput({ ...base, applicationClosesAt: "2027-01-01T18:00" });
+  assert.equal(withDeadline.applicationClosesAt?.toISOString(), "2027-01-01T09:00:00.000Z");
+  // 3주 = 1/8(금) 18:00
+  assert.equal(parseOfferingPeriodInput({ ...base, startDate: "2027-01-11", applicationClosesAt: "2027-01-08 18:00" }).applicationClosesAt?.toISOString(), "2027-01-08T09:00:00.000Z");
+  // 자정 경계: 00:00 KST = 전날 15:00 UTC
+  assert.equal(parseOfferingPeriodInput({ ...base, applicationClosesAt: "2027-01-01T00:00" }).applicationClosesAt?.toISOString(), "2026-12-31T15:00:00.000Z");
+  assert.equal(parseOfferingPeriodInput({ ...base, applicationClosesAt: "" }).applicationClosesAt, null);
+  // 수정: 안 보내면 지금 값 유지, 빈 값이면 지움
+  assert.equal(parseOfferingPeriodInput({ price: 1 }, withDeadline).applicationClosesAt?.toISOString(), "2027-01-01T09:00:00.000Z");
+  assert.equal(parseOfferingPeriodInput({ applicationClosesAt: "" }, withDeadline).applicationClosesAt, null);
+  for (const bad of ["2027-01-01", "2027-02-30T18:00", "2027-01-01T25:00", "내일"]) {
+    assert.throws(() => parseOfferingPeriodInput({ ...base, applicationClosesAt: bad }), { code: "INVALID_DATETIME" }, bad);
+  }
+});
+
+test("KST 날짜+시각 입력 — 시즌 모집 시작/마감 칸(기본 시작 00:00 · 마감 18:00)", () => {
+  assert.equal(parseKstDateTime("2027-01-01", "18:00", "18:00", "마감")?.toISOString(), "2027-01-01T09:00:00.000Z");
+  // 시각을 비우면 기본값
+  assert.equal(parseKstDateTime("2027-01-01", "", "18:00", "마감")?.toISOString(), "2027-01-01T09:00:00.000Z");
+  assert.equal(parseKstDateTime("2026-12-01", undefined, "00:00", "시작")?.toISOString(), "2026-11-30T15:00:00.000Z");
+  assert.equal(parseKstDateTime("", "18:00", "18:00", "마감"), null);
+  assert.throws(() => parseKstDateTime("2027-13-01", "18:00", "18:00", "마감"), { code: "INVALID_DATETIME" });
+  // 저장값 → 입력칸(KST). 옛 시즌처럼 UTC 자정으로 저장된 값은 «09:00»으로 정직하게 보인다
+  assert.deepEqual(kstDateTimeParts("2027-01-01T09:00:00.000Z", "18:00"), { date: "2027-01-01", time: "18:00" });
+  assert.deepEqual(kstDateTimeParts("2026-12-31T00:00:00.000Z", "18:00"), { date: "2026-12-31", time: "09:00" });
+  assert.deepEqual(kstDateTimeParts("2026-12-31T15:00:00.000Z", "18:00"), { date: "2027-01-01", time: "00:00" });
+  assert.deepEqual(kstDateTimeParts(null, "18:00"), { date: "", time: "18:00" });
+});
+
+test("다른 반에 복사: 신청 마감 시각도 그대로 복사", () => {
+  const closes = new Date("2027-01-01T09:00:00.000Z");
+  const plan = planPeriodCopy([{ label: "4주", startDate: "2027-01-04", endDate: "2027-01-29", displayOrder: 0, isActive: true, applicationClosesAt: closes }], [
+    { id: "thrice", price: 400000, periods: [] },
+  ]);
+  assert.equal(plan.creates[0].applicationClosesAt, closes);
 });
 
 test("날짜 모드 배정: 날짜 검사·정렬·요일 채우기(KST 달력 그대로, 연말 경계)", () => {

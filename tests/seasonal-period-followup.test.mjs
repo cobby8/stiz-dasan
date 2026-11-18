@@ -160,7 +160,7 @@ test("L-2 날짜 모드에서 수업 2개면 400 DATE_SELECT_SINGLE_OFFERING", (
 });
 
 test("L-2 날짜 모드 한 반은 통과, 요일 모드 여러 반은 그대로 통과", () => {
-  const single = contracts.parseApplicationInput(application({ selectionMode: "DATE", selectedDates: ["2027-01-04"] }));
+  const single = contracts.parseApplicationInput(application({ selectionMode: "DATE", selectedDates: ["2027-01-04"], weeklyFrequency: 2 }));
   assert.equal(single.items.length, 1);
   const weekdayMany = contracts.parseApplicationInput(application({ items: [{ offeringId: "o1" }, { offeringId: "o2" }] }));
   assert.equal(weekdayMany.items.length, 2);
@@ -169,6 +169,7 @@ test("L-2 날짜 모드 한 반은 통과, 요일 모드 여러 반은 그대로
 
 test("L-2 신청 화면은 날짜 모드에서 수업이 둘 이상이면 안내하고 제출을 막는다", () => {
   assert.match(applyClientSource, /const dateModeTooMany = isDateMode && selectedOfferings\.length > 1/);
-  assert.match(applyClientSource, /selectedDates\.length >= minSessionCount && !dateModeTooMany/);
+  // 2026-11-18 원장 결정 후: 최소 횟수 대신 «필요 횟수를 정확히» 채워야 제출된다
+  assert.match(applyClientSource, /weeklyFrequency !== null && dateCountOk && !dateModeTooMany/);
   assert.match(applyClientSource, /날짜로 고를 때는 수업을 하나만 신청할 수 있습니다\./);
 });
