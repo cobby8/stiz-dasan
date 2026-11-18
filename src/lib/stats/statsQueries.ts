@@ -19,7 +19,7 @@ import { prisma } from "@/lib/prisma";
 import { addMonthsYm, todayKst } from "@/lib/datetime/kst";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import { currentEnrollmentSql } from "@/lib/enrollment/commencement";
-import { branchFromClassLocation, branchFromClassLocations, branchLabel } from "@/lib/students/student-register-rules";
+import { branchFromClassLocations, branchLabel } from "@/lib/students/student-register-rules";
 import { getClassCapacityInfo, getCoachWorkload } from "@/lib/queries";
 import { loadOtherRevenueMonthly } from "@/lib/billing/other-revenue";
 import { normalizeReferral } from "./sourceLabels";
@@ -186,16 +186,6 @@ export async function loadStudentStatRows(todayYmd = todayKst()): Promise<Studen
     });
 }
 
-/** 지점 필터 — «전체»면 그대로 */
-function inBranch(rows: StudentStatRow[], branch: StatsBranchKey) {
-    return branch === "all" ? rows : rows.filter((r) => r.branchKey === branch);
-}
-
-/** 지점 필터를 SQL 에 넘길 원생 id 목록 — «전체»면 null(조건을 걸지 않는다) */
-function branchIds(rows: StudentStatRow[], branch: StatsBranchKey): string[] | null {
-    return branch === "all" ? null : rows.filter((r) => r.branchKey === branch).map((r) => r.id);
-}
-
 /** 신규(첫 수강 달)·퇴원(마지막 퇴원 달) 월별 — 원생 단위로 센다(수강 줄 단위 아님) */
 export function buildFlowSeries(rows: StudentStatRow[], months: string[]): MonthFlow[] {
     return months.map((ym) => ({
@@ -210,14 +200,8 @@ export function buildFlowSeries(rows: StudentStatRow[], months: string[]): Month
 
 type AttendanceMonthRaw = { ym: string; total: number; ok: number; present: number; late: number; absent: number; excused: number };
 
-/** 월별 출결 집계(수업 날짜 KST 기준). ids 가 있으면 그 원생만 */
-export async function loadAttendanceMonthly(fromYm: string, ids: string[] | null): Promise<AttendanceMonthRaw[]> {
-    const params: unknown[] = [`${fromYm}-01`];
-    let idFilter = "";
-    if (ids) {
-        params.push(ids);
-        idFilter = `AND a."studentId" = ANY($2::text[])`;
-    }
+/** 월별 출결 집계(수업 날짜 KST 기준) — 전체 원생(다산2호점 한 곳뿐이라 지점 조건 없음) */
+export async function loadAttendanceMonthly(fromYm: string): Promise<AttendanceMonthRaw[]> {
     const rows = await prisma.$queryRawUnsafe<AttendanceMonthRaw[]>(
         `SELECT TO_CHAR(${kstNaive("se.date")}, 'YYYY-MM') AS ym,
                 COUNT(*) FILTER (WHERE a.status IN ${ATT_ALL})::int AS total,
@@ -228,9 +212,9 @@ export async function loadAttendanceMonthly(fromYm: string, ids: string[] | null
                 COUNT(*) FILTER (WHERE a.status = 'EXCUSED')::int AS excused
          FROM "Attendance" a
          JOIN "Session" se ON se.id = a."sessionId"
-         WHERE ${kstNaive("se.date")} >= $1::timestamp ${idFilter}
+         WHERE ${kstNaive("se.date")} >= $1::timestamp
          GROUP BY 1`,
-        ...params,
+        `${fromYm}-01`,
     );
     return rows.map((r) => ({ ym: r.ym, total: num(r.total), ok: num(r.ok), present: num(r.present), late: num(r.late), absent: num(r.absent), excused: num(r.excused) }));
 }
@@ -252,13 +236,7 @@ type BillingMonthRaw = {
 };
 
 /** 그 달 수강료 청구(Payment.year/month, type MONTHLY, 취소·환불 제외) 집계 */
-export async function loadBillingMonthly(ym: string, ids: string[] | null) {
-    const params: unknown[] = [Number(ym.slice(0, 4)), Number(ym.slice(5, 7))];
-    let idFilter = "";
-    if (ids) {
-        params.push(ids);
-        idFilter = `AND p."studentId" = ANY($3::text[])`;
-    }
+export async function loadBillingMonthly(ym: string) {
     const rows = await prisma.$queryRawUnsafe<BillingMonthRaw[]>(
         `SELECT COUNT(*) FILTER (WHERE p.status IN ${BILL_LIVE})::int AS billed_count,
                 COALESCE(SUM(p.amount) FILTER (WHERE p.status IN ${BILL_LIVE}), 0)::bigint AS billed_amount,
@@ -267,8 +245,9 @@ export async function loadBillingMonthly(ym: string, ids: string[] | null) {
                 COUNT(*) FILTER (WHERE p.status IN ${BILL_UNPAID})::int AS unpaid_count,
                 COALESCE(SUM(p.amount) FILTER (WHERE p.status IN ${BILL_UNPAID}), 0)::bigint AS unpaid_amount
          FROM "Payment" p
-         WHERE p.type = 'MONTHLY' AND p.year = $1 AND p.month = $2 ${idFilter}`,
-        ...params,
+         WHERE p.type = 'MONTHLY' AND p.year = $1 AND p.month = $2`,
+        Number(ym.slice(0, 4)),
+        Number(ym.slice(5, 7)),
     );
     const r = rows[0];
     return {
@@ -282,41 +261,29 @@ export async function loadBillingMonthly(ym: string, ids: string[] | null) {
 }
 
 /** 월별 매출 = 그 달(입금일 KST)에 수납 완료된 금액, 모든 종류(옛 대시보드 «매출»과 같은 뜻) */
-async function loadRevenueMonthly(fromYm: string, ids: string[] | null) {
-    const params: unknown[] = [`${fromYm}-01`];
-    let idFilter = "";
-    if (ids) {
-        params.push(ids);
-        idFilter = `AND p."studentId" = ANY($2::text[])`;
-    }
+async function loadRevenueMonthly(fromYm: string) {
     const rows = await prisma.$queryRawUnsafe<{ ym: string; amount: number | string; count: number }[]>(
         `SELECT TO_CHAR(${kstNaive(`p."paidDate"`)}, 'YYYY-MM') AS ym,
                 COALESCE(SUM(p.amount), 0)::bigint AS amount, COUNT(*)::int AS count
          FROM "Payment" p
          WHERE p.status = 'PAID' AND p."paidDate" IS NOT NULL
-           AND ${kstNaive(`p."paidDate"`)} >= $1::timestamp ${idFilter}
+           AND ${kstNaive(`p."paidDate"`)} >= $1::timestamp
          GROUP BY 1`,
-        ...params,
+        `${fromYm}-01`,
     );
     return new Map(rows.map((r) => [r.ym, { amount: num(r.amount), count: num(r.count) }]));
 }
 
 /** 누적 미납(이번 달까지 청구분) 합계와 상위 원생 — 미래 달 청구는 아직 미납이 아니라 뺀다 */
-async function loadUnpaidOverview(currentYm: string, ids: string[] | null) {
+async function loadUnpaidOverview(currentYm: string) {
     const ymNumber = Number(currentYm.replace("-", ""));
-    const params: unknown[] = [ymNumber];
-    let idFilter = "";
-    if (ids) {
-        params.push(ids);
-        idFilter = `AND p."studentId" = ANY($2::text[])`;
-    }
     const base = `FROM "Payment" p
          WHERE p.status IN ${BILL_UNPAID}
-           AND COALESCE(p.year * 100 + p.month, TO_CHAR(${kstNaive(`p."dueDate"`)}, 'YYYYMM')::int) <= $1 ${idFilter}`;
+           AND COALESCE(p.year * 100 + p.month, TO_CHAR(${kstNaive(`p."dueDate"`)}, 'YYYYMM')::int) <= $1`;
     const [totals, top] = await Promise.all([
         prisma.$queryRawUnsafe<{ count: number; amount: number | string }[]>(
             `SELECT COUNT(*)::int AS count, COALESCE(SUM(p.amount), 0)::bigint AS amount ${base}`,
-            ...params,
+            ymNumber,
         ),
         // 청구(돈)는 병합된 원생 것도 숨기지 않는다(studentVisibility 규칙) — 이름만 붙인다
         prisma.$queryRawUnsafe<{ student_id: string; name: string | null; count: number; amount: number | string }[]>(
@@ -325,7 +292,7 @@ async function loadUnpaidOverview(currentYm: string, ids: string[] | null) {
              GROUP BY p."studentId", s.name
              ORDER BY amount DESC, s.name ASC
              LIMIT 10`,
-            ...params,
+            ymNumber,
         ),
     ]);
     return {
@@ -577,11 +544,12 @@ export async function loadDashboardSummary(): Promise<DashboardSummary> {
 }
 
 // ── 통계 탭 ────────────────────────────────────────────────────────────
+// 지점 조건은 없다 — 이 사이트는 다산2호점 한 곳뿐이라 늘 전체 원생을 센다.
 
-async function loadStudentsTab(branch: StatsBranchKey, period: string): Promise<StatsStudentsTab> {
+async function loadStudentsTab(period: string): Promise<StatsStudentsTab> {
     const today = todayKst();
     const currentYm = today.slice(0, 7);
-    const all = inBranch(await loadStudentStatRows(today), branch);
+    const all = await loadStudentStatRows(today);
     const active = all.filter((s) => s.isActive);
     const flow = buildFlowSeries(all, lastMonths(currentYm, periodMonths(period)));
     const firstYms = all.map((s) => s.firstYm).filter((v): v is string => Boolean(v)).sort();
@@ -622,15 +590,14 @@ async function loadStudentsTab(branch: StatsBranchKey, period: string): Promise<
     };
 }
 
-async function loadFunnelTab(branch: StatsBranchKey, period: string): Promise<StatsFunnelTab> {
+async function loadFunnelTab(period: string): Promise<StatsFunnelTab> {
     const range: ApplySourceRange = period === "all" ? "ALL" : period === "month" ? "THIS_MONTH" : "30D";
     const [students, funnel, sources] = await Promise.all([
         loadStudentStatRows(),
         loadFunnelCounts(funnelStartIso(range)),
         loadApplySourceStats(range),
     ]);
-    // 체험 문의·신청서에는 지점이 없다 → 지점 필터는 «재원생 가입경로»에만 건다
-    const active = inBranch(students, branch).filter((s) => s.isActive);
+    const active = students.filter((s) => s.isActive);
     return {
         tab: "funnel",
         inquiries: num(funnel?.inquiries),
@@ -654,15 +621,12 @@ async function loadFunnelTab(branch: StatsBranchKey, period: string): Promise<St
     };
 }
 
-async function loadAttendanceTab(branch: StatsBranchKey, period: string): Promise<StatsAttendanceTab> {
+async function loadAttendanceTab(period: string): Promise<StatsAttendanceTab> {
     const currentYm = todayKst().slice(0, 7);
     const months = lastMonths(currentYm, periodMonths(period));
-    const students = await loadStudentStatRows();
-    const ids = branchIds(students, branch);
-    const [att, capacity, locations, coaches, scaleRows] = await Promise.all([
-        loadAttendanceMonthly(months[0], ids),
+    const [att, capacity, coaches, scaleRows] = await Promise.all([
+        loadAttendanceMonthly(months[0]),
         getClassCapacityInfo(),
-        prisma.$queryRawUnsafe<{ id: string; location: string | null }[]>(`SELECT id, location FROM "Class"`),
         getCoachWorkload(),
         prisma.$queryRawUnsafe<{ programs: number; classes: number; coaches: number }[]>(
             `SELECT (SELECT COUNT(*)::int FROM "Program" WHERE "deletedAt" IS NULL) AS programs,
@@ -674,10 +638,8 @@ async function loadAttendanceTab(branch: StatsBranchKey, period: string): Promis
     const thisMonth = att.find((r) => r.ym === currentYm);
     const thisRate = series[series.length - 1]?.rate ?? null;
     const prevRate = series[series.length - 2]?.rate ?? null;
-    // 반 지점 = 반 장소에서(원생 지점과 같은 규칙). 반 정원·인원은 기존 getClassCapacityInfo 그대로
-    const locationById = new Map(locations.map((l) => [l.id, l.location]));
+    // 반 정원·인원은 기존 getClassCapacityInfo 그대로(전체 반)
     const classes = capacity
-        .filter((c) => branch === "all" || branchGroup(branchLabel(branchFromClassLocation(locationById.get(c.id)))).key === branch)
         .map((c) => ({ id: c.id, name: c.name, dayOfWeek: c.dayOfWeek, startTime: c.startTime, capacity: c.capacity, enrolled: c.enrolled, waiting: c.waiting }));
 
     return {
@@ -698,15 +660,14 @@ async function loadAttendanceTab(branch: StatsBranchKey, period: string): Promis
     };
 }
 
-async function loadBillingTab(branch: StatsBranchKey, period: string): Promise<StatsBillingTab> {
+async function loadBillingTab(period: string): Promise<StatsBillingTab> {
     const currentYm = todayKst().slice(0, 7);
     const months = lastMonths(currentYm, periodMonths(period));
-    const ids = branch === "all" ? null : branchIds(await loadStudentStatRows(), branch);
     const [bill, revenueMap, unpaid, otherMap] = await Promise.all([
-        loadBillingMonthly(currentYm, ids),
-        loadRevenueMonthly(months[0], ids),
-        loadUnpaidOverview(currentYm, ids),
-        // 기타 매출(2026-11-17) — 학생에 붙은 돈이 아니라 지점 필터 없이 전체. 표가 없으면 빈 Map(0원)
+        loadBillingMonthly(currentYm),
+        loadRevenueMonthly(months[0]),
+        loadUnpaidOverview(currentYm),
+        // 기타 매출(2026-11-17) — 학생에 붙은 돈이 아니라 전체. 표가 없으면 빈 Map(0원)
         loadOtherRevenueMonthly(prisma, months[0]),
     ]);
     const revenue = revenueMap.get(currentYm)?.amount ?? 0;
@@ -729,20 +690,13 @@ async function loadBillingTab(branch: StatsBranchKey, period: string): Promise<S
     };
 }
 
-async function loadUniformTab(branch: StatsBranchKey): Promise<StatsUniformTab> {
-    const students = inBranch(await loadStudentStatRows(), branch);
+async function loadUniformTab(): Promise<StatsUniformTab> {
+    const students = await loadStudentStatRows();
     const active = students.filter((s) => s.isActive);
     const names = [...new Set(active.map((s) => s.name.trim()).filter(Boolean))];
-    const grantParams: unknown[] = [];
-    let grantFilter = "";
-    if (branch !== "all") {
-        grantParams.push(students.map((s) => s.id));
-        grantFilter = `WHERE g."studentId" = ANY($1::text[])`;
-    }
     const [grants, sizes] = await Promise.all([
         prisma.$queryRawUnsafe<{ status: string; count: number }[]>(
-            `SELECT g.status, COUNT(*)::int AS count FROM "UniformFreeGrant" g ${grantFilter} GROUP BY 1`,
-            ...grantParams,
+            `SELECT g.status, COUNT(*)::int AS count FROM "UniformFreeGrant" g GROUP BY 1`,
         ),
         // 사이즈는 원생 칸에 없다 → 주문서 품목의 «학생 이름»이 재원생 이름과 같은 것만(주문 기준)
         prisma.$queryRawUnsafe<{ top: string | null; bottom: string | null; qty: number; student: string }[]>(
@@ -807,19 +761,19 @@ function sizeOrder(label: string): number {
 }
 
 /** 통계 탭 하나만 읽는다(탭을 바꾸면 그 탭만 서버가 읽는다) */
-export async function loadStatsTab(tab: StatsTabKey, branch: StatsBranchKey, period: string): Promise<StatsTabPayload> {
+export async function loadStatsTab(tab: StatsTabKey, period: string): Promise<StatsTabPayload> {
     switch (tab) {
         case "funnel":
-            return loadFunnelTab(branch, period);
+            return loadFunnelTab(period);
         case "attendance":
-            return loadAttendanceTab(branch, period);
+            return loadAttendanceTab(period);
         case "billing":
-            return loadBillingTab(branch, period);
+            return loadBillingTab(period);
         case "uniform":
-            return loadUniformTab(branch);
+            return loadUniformTab();
         case "students":
         default:
-            return loadStudentsTab(branch, period);
+            return loadStudentsTab(period);
     }
 }
 

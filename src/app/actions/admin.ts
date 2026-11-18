@@ -1954,7 +1954,7 @@ export async function createPayment(data: {
         const invoice = created.invoice;
         result = { ok: true, invoiceId: invoice.id };
 
-        // 학부모 청구 안내는 랠리즈 전담(B안) — 사이트 발송 잠금이 풀린 경우에만 알린다.
+        // 학부모 청구 안내는 사이트 발송 스위치(BILLING_PARENT_SEND_ENABLED=1)가 켜진 경우에만 알린다.
         if (data.notifyParent && isBillingParentSendEnabled()) {
             const amountStr = data.amount.toLocaleString("ko-KR");
             await notifyParentsOfStudents(
@@ -3685,7 +3685,7 @@ const INVOICE_NOTICE_LABEL = "수강료 청구서 안내";
 export async function sendInvoiceLinksForMonth(year: number, month: number, forceResend?: boolean) {
     // 부원장 차단(2026-11-14 원장 결정): 월 일괄 발행·미리보기·일괄 문자·발송 진행은 원장만 — 학원 전체 청구 규모가 보인다
     const admin = await requireFinanceOwner();
-    // 학부모 청구 안내는 랠리즈 전담 — 잠금이면 DB 를 건드리기 전에 바로 돌려보낸다.
+    // 학부모 청구 안내 발송 스위치가 꺼져 있으면(잠금) DB 를 건드리기 전에 바로 돌려보낸다.
     // (throw 대신 결과로 돌려줘야 운영 빌드에서도 안내 문구가 가려지지 않는다)
     if (!isBillingParentSendEnabled()) {
         return { sent: 0, ok: false, locked: true, message: BILLING_PARENT_SEND_LOCKED_MESSAGE };
@@ -3937,7 +3937,7 @@ export async function previewInvoiceNoticeCounts(year: number, month: number) {
 export async function sendUnpaidReminders() {
     // 부원장 차단(2026-11-14 원장 결정): 월 일괄 발행·미리보기·일괄 문자·발송 진행은 원장만 — 학원 전체 청구 규모가 보인다
     const admin = await requireFinanceOwner();
-    // 학부모 청구 안내는 랠리즈 전담 — 잠금이면 미납 상태 갱신·발송 전에 바로 돌려보낸다.
+    // 학부모 청구 안내 발송 스위치가 꺼져 있으면(잠금) 미납 상태 갱신·발송 전에 바로 돌려보낸다.
     // (throw 대신 결과로 돌려줘야 운영 빌드에서도 안내 문구가 가려지지 않는다)
     if (!isBillingParentSendEnabled()) {
         return { sent: 0, failed: 0, smsSent: 0, errors: [] as string[], ok: false, locked: true, message: BILLING_PARENT_SEND_LOCKED_MESSAGE };
@@ -3958,7 +3958,7 @@ export async function sendUnpaidReminders() {
         //  - PENDING(기한 전·미리 만든 다음 달 청구)은 «미납»이 아니므로 보내지 않는다. 바로 위 markOverduePayments 가
         //    한국 날짜로 기한이 지난 PENDING 을 OVERDUE 로 바꿔 두었다(검수 H2 · 2026-11-13)
         //  - 예약 중·결과 확인 필요(UNCERTAIN)·최근 3일 안에 나간 안내에 들어 있는 결제도 빼서 두 번 나가지 않게
-        //  - 랠리즈 청구서의 장부용 사본은 랠리즈가 이미 안내하므로 뺀다
+        //  - 옛 랠리즈 청구서의 장부용 사본은 그때 랠리즈가 안내한 건이라 뺀다(랠리즈는 종료)
         const unpaid = await prisma.$queryRawUnsafe<Array<UnpaidNoticeRow & { parentHasAccount: boolean | null; invoiceParentId: string | null }>>(
             `SELECT p.id AS "paymentId", i.id AS "invoiceId", p."studentId", s.name AS "studentName",
                     s."parentId", u.phone, p.amount,

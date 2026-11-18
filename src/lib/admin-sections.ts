@@ -16,8 +16,6 @@ export type AdminSectionTab = {
   href: string;
   /** 탭 이름 */
   label: string;
-  /** Material Symbols 아이콘 이름 */
-  icon: string;
   /** 원장(ADMIN) 전용 탭 — 부원장에게는 탭 줄에서 뺀다(2026-11-14 부원장 금액 가림). 화면 자체는 서버에서 막는다 */
   ownerOnly?: boolean;
 };
@@ -34,53 +32,53 @@ export const ADMIN_SECTIONS = {
   attendance: {
     label: "수업·출결",
     tabs: [
-      { href: "/admin/attendance", label: "출결", icon: "fact_check" },
-      { href: "/admin/absence", label: "정규 결석 신고", icon: "event_busy" },
-      { href: "/admin/makeup", label: "보강", icon: "event_repeat" },
-      { href: "/admin/attendance/feed", label: "수업 피드", icon: "photo_library" },
+      { href: "/admin/attendance", label: "출결" },
+      { href: "/admin/absence", label: "정규 결석 신고" },
+      { href: "/admin/makeup", label: "보강" },
+      { href: "/admin/attendance/feed", label: "수업 피드" },
     ],
   },
   // 사이드바 «청구·수납» — 옛 «돈·수납» 묶음을 없애고 이 탭 줄로 모았다
   finance: {
     label: "청구·수납",
     tabs: [
-      { href: "/admin/finance", label: "청구·수납", icon: "payments" },
-      { href: "/admin/payment-requests", label: "입금 확인·영수증", icon: "receipt_long" },
-      { href: "/admin/payment-confirmations", label: "현장 수납 승인", icon: "account_balance_wallet" },
+      { href: "/admin/finance", label: "청구·수납" },
+      { href: "/admin/payment-requests", label: "입금 확인·영수증" },
+      { href: "/admin/payment-confirmations", label: "현장 수납 승인" },
       // POS 대사 = 하루 결제 합계를 맞추는 화면이라 원장 전용(부원장 탭 줄에서 숨김)
-      { href: "/admin/pos-reconcile", label: "POS 결제 대사", icon: "calculate", ownerOnly: true },
+      { href: "/admin/pos-reconcile", label: "POS 결제 대사", ownerOnly: true },
       // 기타 매출(2026-11-17) = 학생 청구가 아닌 수입을 원장이 적는 화면 — 금액이라 원장 전용
-      { href: "/admin/other-revenue", label: "기타 매출", icon: "savings", ownerOnly: true },
+      { href: "/admin/other-revenue", label: "기타 매출", ownerOnly: true },
     ],
   },
   // 사이드바 «홈페이지 관리» — 학원 소개(/admin/settings)가 첫 탭. 사진 공개 회수는 갤러리 바로 뒤에 둔다
   homepage: {
     label: "홈페이지 관리",
     tabs: [
-      { href: "/admin/settings", label: "학원 소개", icon: "school" },
-      { href: "/admin/coaches", label: "코치/강사진", icon: "person" },
-      { href: "/admin/programs", label: "프로그램", icon: "assignment" },
-      { href: "/admin/gallery", label: "갤러리", icon: "photo_library" },
-      { href: "/admin/media-revocations", label: "사진 공개 회수", icon: "hide_image" },
-      { href: "/admin/faq", label: "FAQ", icon: "help" },
-      { href: "/admin/testimonials", label: "학부모 후기", icon: "star" },
+      { href: "/admin/settings", label: "학원 소개" },
+      { href: "/admin/coaches", label: "코치/강사진" },
+      { href: "/admin/programs", label: "프로그램" },
+      { href: "/admin/gallery", label: "갤러리" },
+      { href: "/admin/media-revocations", label: "사진 공개 회수" },
+      { href: "/admin/faq", label: "FAQ" },
+      { href: "/admin/testimonials", label: "학부모 후기" },
     ],
   },
   // 사이드바 «문자·알림»
   messaging: {
     label: "문자·알림",
     tabs: [
-      { href: "/admin/sms", label: "문자/템플릿", icon: "chat" },
-      { href: "/admin/notification-deliveries", label: "담당자 전달 장부", icon: "notifications" },
-      { href: "/admin/kakao-policy", label: "카카오 정책 답변", icon: "menu_book" },
+      { href: "/admin/sms", label: "문자/템플릿" },
+      { href: "/admin/notification-deliveries", label: "담당자 전달 장부" },
+      { href: "/admin/kakao-policy", label: "카카오 정책 답변" },
     ],
   },
   // 사이드바 «약관·방침»
   policy: {
     label: "약관·방침",
     tabs: [
-      { href: "/admin/terms", label: "이용약관", icon: "description" },
-      { href: "/admin/privacy", label: "개인정보처리방침", icon: "lock" },
+      { href: "/admin/terms", label: "이용약관" },
+      { href: "/admin/privacy", label: "개인정보처리방침" },
     ],
   },
 } as const satisfies Record<string, AdminSection>;

@@ -46,7 +46,7 @@ import { prisma } from "@/lib/prisma";
 import { readPendingSocialPostDrafts } from "@/lib/socialDrafts";
 import { requireAdmin } from "@/lib/auth-guard";
 import { funnelStartIso, loadApplySourceStats, loadDashboardSummary, loadStatsTab, type ApplySourceRange } from "@/lib/stats/statsQueries";
-import type { StatsBranchKey, StatsTabKey } from "@/lib/stats/statsRules";
+import type { StatsTabKey } from "@/lib/stats/statsRules";
 
 /**
  * 관리자 읽기 함수의 문지기(d3, 2026-11-13).
@@ -793,12 +793,13 @@ export const getCachedAdminMakeupPayload = adminOnly(unstable_cache(
 
 /**
  * 통계 탭 하나(2026-11-13 개편) — 탭을 바꾸면 그 탭만 읽는다. 재원생 명단이 있어 관리자 전용.
- * 캐시 열쇠에 탭·지점·기간을 넣어 서로 섞이지 않게 한다(공개 쿼리 캐시와도 이름이 겹치지 않게 admin- 접두사).
+ * 캐시 열쇠에 탭·기간을 넣어 서로 섞이지 않게 한다(공개 쿼리 캐시와도 이름이 겹치지 않게 admin- 접두사).
+ * (지점 조건은 없다 — 이 사이트는 다산2호점 한 곳뿐)
  */
-export function getCachedAdminStatsTab(tab: StatsTabKey, branch: StatsBranchKey, period: string) {
+export function getCachedAdminStatsTab(tab: StatsTabKey, period: string) {
     return adminOnly(unstable_cache(
-        () => loadStatsTab(tab, branch, period),
-        ["admin-stats-tab-v1", tab, branch, period, todayKst().slice(0, 7)],
+        () => loadStatsTab(tab, period),
+        ["admin-stats-tab-v2", tab, period, todayKst().slice(0, 7)],
         { revalidate: 60, tags: ["admin-stats"] },
     ))();
 }

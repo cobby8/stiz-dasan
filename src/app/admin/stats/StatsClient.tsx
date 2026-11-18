@@ -2,7 +2,7 @@
 
 // 통계 화면 — 2026-11-13 대시보드·통계 개편(원장 결정표 6칸 «추천대로» 승인)
 // 구성: 머리 한 줄(제목 «통계» + «필터(n)» 버튼) → 탭 5개(원생|유입·전환|수업·출결|수납|유니폼) → 그 탭 내용.
-//   - 탭·지점·기간은 주소(?tab=&branch=&period=)에 있다. 바꾸면 주소가 바뀌고 서버가 그 탭만 다시 읽는다.
+//   - 탭·기간은 주소(?tab=&period=)에 있다(이 사이트는 다산2호점 한 곳뿐이라 지점 조건은 없다). 바꾸면 주소가 바뀌고 서버가 그 탭만 다시 읽는다.
 //   - 히어로 없음, 필터는 버튼 하나 + 창(모바일은 아래 시트) — 전역 «컴팩트 UI 규칙».
 //   - 숫자는 명/건/정수%, 분모 0 → «–», 금액 1만원 이상 «42.5만원», 칸 아래에 «무엇을 세었는지» 한 줄.
 import { useMemo, useState, useTransition, type MouseEvent } from "react";
@@ -22,7 +22,6 @@ import {
     formatPoint,
     formatRate,
     rate,
-    type StatsBranchKey,
     type StatsTabKey,
 } from "@/lib/stats/statsRules";
 import { sourceLabel } from "@/lib/stats/sourceLabels";
@@ -35,10 +34,9 @@ import type {
     StatsUniformTab,
 } from "@/lib/stats/statsTypes";
 
-/** 주소 만들기 — 기본값(전체 지점·탭 첫 기간)은 주소에서 뺀다 */
-function statsHref(tab: StatsTabKey, branch: StatsBranchKey, period: string) {
+/** 주소 만들기 — 기본값(탭 첫 기간)은 주소에서 뺀다 */
+function statsHref(tab: StatsTabKey, period: string) {
     const params = new URLSearchParams({ tab });
-    if (branch !== "all") params.set("branch", branch);
     const defaultPeriod = STATS_PERIODS[tab][0]?.key ?? "";
     if (period && period !== defaultPeriod) params.set("period", period);
     return `/admin/stats?${params.toString()}`;
@@ -46,12 +44,10 @@ function statsHref(tab: StatsTabKey, branch: StatsBranchKey, period: string) {
 
 export default function StatsClient({
     tab,
-    branch,
     period,
     data,
 }: {
     tab: StatsTabKey;
-    branch: StatsBranchKey;
     period: string;
     data: StatsTabPayload | null;
 }) {
@@ -88,8 +84,8 @@ export default function StatsClient({
             <nav aria-label="통계 탭" className="flex gap-2 overflow-x-auto">
                 {STATS_TABS.map((t) => {
                     const on = t.key === tab;
-                    // 탭을 바꾸면 기간은 그 탭의 기본값으로(탭마다 기간의 뜻이 다르다), 지점은 유지
-                    const href = statsHref(t.key, branch, "");
+                    // 탭을 바꾸면 기간은 그 탭의 기본값으로(탭마다 기간의 뜻이 다르다)
+                    const href = statsHref(t.key, "");
                     return (
                         <Link
                             key={t.key}
@@ -111,7 +107,7 @@ export default function StatsClient({
                     <span className="text-sm text-[var(--color-academy-muted)]">기간</span>
                     {periods.map((p) => {
                         const on = p.key === (period || defaultPeriod);
-                        const href = statsHref(tab, branch, p.key === defaultPeriod ? "" : p.key);
+                        const href = statsHref(tab, p.key === defaultPeriod ? "" : p.key);
                         return (
                             <a key={p.key} href={href} aria-current={on ? "true" : undefined} onClick={(e) => go(href, e, "replace")} className={`academy-choice is-tab${on ? " is-selected" : ""}`}>
                                 {p.label}
@@ -125,14 +121,14 @@ export default function StatsClient({
                 {!data ? (
                     <div role="alert" className="academy-panel p-6 text-center text-sm font-medium text-[var(--color-academy-danger)]">
                         통계를 불러오지 못했습니다.
-                        <button type="button" onClick={() => go(statsHref(tab, branch, period))} className="academy-button-secondary ml-3">다시 시도</button>
+                        <button type="button" onClick={() => go(statsHref(tab, period))} className="academy-button-secondary ml-3">다시 시도</button>
                     </div>
                 ) : data.tab === "students" ? (
                     <StudentsView d={data} />
                 ) : data.tab === "funnel" ? (
-                    <FunnelView d={data} branchFiltered={branch !== "all"} />
+                    <FunnelView d={data} />
                 ) : data.tab === "attendance" ? (
-                    <AttendanceView d={data} branchFiltered={branch !== "all"} />
+                    <AttendanceView d={data} />
                 ) : data.tab === "billing" ? (
                     <BillingView d={data} />
                 ) : (
@@ -288,7 +284,7 @@ const TRIAL_STATUS_CELLS: { key: keyof StatsFunnelTab["trialStatus"]; label: str
     { key: "LOST", label: "이탈" },
 ];
 
-function FunnelView({ d, branchFiltered }: { d: StatsFunnelTab; branchFiltered: boolean }) {
+function FunnelView({ d }: { d: StatsFunnelTab }) {
     const maxTotal = d.sources.reduce((max, row) => Math.max(max, row.total), 0);
     return (
         <div className="space-y-2">
@@ -357,7 +353,7 @@ function FunnelView({ d, branchFiltered }: { d: StatsFunnelTab; branchFiltered: 
                     </table>
                 </div>
             </StatPanel>
-            <StatPanel title="재원생 가입경로" note={`재원생 ${d.referralTotal}명 · 원생 칸 «가입경로» 기준(옛 시트 문장은 같은 이름으로 모음)${branchFiltered ? " · 지점 필터 적용" : ""}`}>
+            <StatPanel title="재원생 가입경로" note={`재원생 ${d.referralTotal}명 · 원생 칸 «가입경로» 기준(옛 시트 문장은 같은 이름으로 모음)`}>
                 <HBarList rows={d.referral} />
             </StatPanel>
         </div>
@@ -368,7 +364,7 @@ function FunnelView({ d, branchFiltered }: { d: StatsFunnelTab; branchFiltered: 
 
 const DAY_KO: Record<string, string> = { Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금", Sat: "토", Sun: "일" };
 
-function AttendanceView({ d, branchFiltered }: { d: StatsAttendanceTab; branchFiltered: boolean }) {
+function AttendanceView({ d }: { d: StatsAttendanceTab }) {
     // 꽉 찬 반이 먼저 보이게 채움 비율이 높은 순
     const classes = useMemo(
         () => [...d.classes].sort((a, b) => (b.capacity > 0 ? b.enrolled / b.capacity : 0) - (a.capacity > 0 ? a.enrolled / a.capacity : 0) || a.name.localeCompare(b.name, "ko")),
@@ -384,7 +380,7 @@ function AttendanceView({ d, branchFiltered }: { d: StatsAttendanceTab; branchFi
                 <KpiCell label="대기자" value={`${d.waiting}명`} sub="반 대기 명단" />
             </div>
             <div className="grid items-start gap-2 lg:grid-cols-2">
-                <StatPanel title="출석률 추이" note={`출석률 = (출석 + 지각) ÷ 출결 기록 전체(결석·사유결석 포함) · 수업 날짜(KST) 기준${branchFiltered ? " · 지점 필터 = 원생 지점" : ""}`}>
+                <StatPanel title="출석률 추이" note={`출석률 = (출석 + 지각) ÷ 출결 기록 전체(결석·사유결석 포함) · 수업 날짜(KST) 기준`}>
                     <LineChart data={trend} unit="%" color={CHART_COLORS.success} height={180} />
                 </StatPanel>
                 <StatPanel title="운영 규모" note="프로그램은 삭제한 것 제외">

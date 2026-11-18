@@ -3,7 +3,7 @@
  * 화면(클라이언트)이 서버 전용 쿼리 파일(prisma)을 끌어오지 않도록 모양만 따로 둔다.
  * ⚠️ 재원생 수·명단이 들어 있다 → 관리자 전용 payload 에서만 쓴다(공개 쿼리·캐시 키와 섞지 않는다).
  */
-import type { StatsBranchKey, StatsTabKey } from "./statsRules";
+import type { StatsTabKey } from "./statsRules";
 
 export type LabelCount = { label: string; count: number };
 export type MonthFlow = { ym: string; label: string; newCount: number; leftCount: number };
@@ -127,7 +127,6 @@ export type StatsTabPayload = StatsStudentsTab | StatsFunnelTab | StatsAttendanc
 
 export type StatsPageData = {
     tab: StatsTabKey;
-    branch: StatsBranchKey;
     period: string;
     data: StatsTabPayload | null;
 };

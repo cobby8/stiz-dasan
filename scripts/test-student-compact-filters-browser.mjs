@@ -32,7 +32,7 @@ const css = (await postcss([tailwind()]).process(globals.replace('@import "tailw
 const harness = await startStatusBrowserHarness({ css, mocks: {
   '@/qa/before': ts.transpileModule(before.replaceAll('./ExcelUploadModal', '@/qa/ExcelUploadModal'), { compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } }).outputText,
   '@/qa/ExcelUploadModal': `export default function Excel(){return null}`,
-  '@/app/actions/admin': `export async function createStudent(){throw Error('쓰기 차단')}export async function updateStudent(){throw Error('쓰기 차단')}export async function deleteStudent(){throw Error('쓰기 차단')}export async function enrollStudent(){throw Error('쓰기 차단')}`,
+  '@/app/actions/admin': `export async function updateStudent(){throw Error('쓰기 차단')}export async function deleteStudent(){throw Error('쓰기 차단')}export async function enrollStudent(){throw Error('쓰기 차단')}`,
 }, entry: `import React from'react';import{createRoot}from'react-dom/client';import Before from'@/qa/before';import After from'@/app/admin/students/StudentManagementClient';const Component=location.search.includes('before')?Before:After;createRoot(document.getElementById('root')).render(React.createElement('main',{className:'academy-app',style:{padding:16}},React.createElement(Component,{students:${JSON.stringify(fixture)},classes:${JSON.stringify(classes)},sheetImportSummary:null,sheetRetired:true})));` });
 const browser = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true });
 const checks = []; const check = (name, passed, detail) => { checks.push({ name, passed, detail }); assert.ok(passed, name + ' ' + JSON.stringify(detail)); };

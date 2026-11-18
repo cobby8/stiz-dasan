@@ -611,7 +611,9 @@ test("[지점] 새 원생의 지점은 항상 다산2호점 — 등록 서버 �
   const sql = await readFile("prisma/migrations/20261114010000_student_branch_default_dasan2/migration.sql", "utf8");
   assert.ok(sql.includes(`SET DEFAULT '${value}'`));
   // 통계 화면은 지점을 고르지 않는다(옛 주소의 ?branch= 도 무시)
+  // 2026-11-18 옛 코드 정리 D: 늘 "all" 이던 지점 인자를 걷어 냈다 → 주소에서 branch 를 읽지도, 조회에 넘기지도 않는다
   const page = await readFile("src/app/admin/stats/page.tsx", "utf8");
-  assert.match(page, /const branch = "all" as const;/);
+  assert.doesNotMatch(page, /params\.branch/);
+  assert.match(page, /getCachedAdminStatsTab\(tab, period\)/);
   assert.doesNotMatch(await readFile("src/app/admin/stats/StatsClient.tsx", "utf8"), /지점별 재원생|지점별 보유율|평내/);
 });
