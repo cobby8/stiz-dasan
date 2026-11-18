@@ -20,22 +20,26 @@ type DriverContext = { studentId: string; serviceDate: string; direction?: "PICK
 // 일하므로 주 역할만 보면 담당 반 알림에서 빠진다(아래 기사 조건 DRIVER_CONDITION 과 같은 모양).
 const INSTRUCTOR_CONDITION = `(u.role='INSTRUCTOR' OR EXISTS (SELECT 1 FROM "UserRoleGrant" g WHERE g."userId"=u.id AND g.role='INSTRUCTOR' AND g.status='ACTIVE'))`;
 
+// 담당 코치 갈래의 역할 값 — 추가 역할 선생님(주 역할 학부모)도 «선생님»으로 센다(검수 R-1). 그래야 결과 집계가
+// 실제로 알림을 받은 선생님을 NOT_FOUND 로 잘못 세지 않는다. 기사 갈래는 이미 role "DRIVER" 로 고정해 돌려준다.
+const COACH_ROLE_SQL = `CASE WHEN u.role='PARENT' THEN 'INSTRUCTOR' ELSE u.role::text END`;
+
 async function resolveRecipients(input: { classIds: string[]; includeCoach: boolean }) {
   return prisma.$queryRawUnsafe<Recipient[]>(
     `WITH recipients AS (
        SELECT u.id, u.role::text AS role FROM "User" u WHERE u.role IN ('ADMIN','VICE_ADMIN')
        UNION
-       SELECT u.id, u.role::text AS role FROM "Class" c
+       SELECT u.id, ${COACH_ROLE_SQL} AS role FROM "Class" c
          JOIN "User" u ON u.id=c."instructorId" AND ${INSTRUCTOR_CONDITION}
         WHERE $1::boolean AND c.id=ANY($2::text[])
        UNION
-       SELECT u.id, u.role::text AS role FROM "Class" c
+       SELECT u.id, ${COACH_ROLE_SQL} AS role FROM "Class" c
          JOIN "ScheduleSlot" ss ON ss."slotKey"=c."slotKey"
          JOIN "Coach" co ON co.id=ss."coachId"
          JOIN "User" u ON u.id=co."userId" AND ${INSTRUCTOR_CONDITION}
         WHERE $1::boolean AND c.id=ANY($2::text[])
        UNION
-       SELECT u.id, u.role::text AS role FROM "Class" c
+       SELECT u.id, ${COACH_ROLE_SQL} AS role FROM "Class" c
          JOIN "ClassSlotOverride" o ON o."slotKey"=c."slotKey"
          JOIN "Coach" co ON co.id=o."coachId"
          JOIN "User" u ON u.id=co."userId" AND ${INSTRUCTOR_CONDITION}

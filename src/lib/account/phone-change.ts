@@ -8,6 +8,8 @@ import { childConnectionsAvailable } from "./child-access";
 import { identityName, identityPhone, isSerializationConflict } from "./child-link-policy";
 import { phoneChangeOutcome, PHONE_CHANGE_ID_PREFIX } from "./phone-change-rules";
 import { identityComparableName, recordIdentityVerification } from "@/lib/identity/verified-identity";
+import { applyRolePresetsForUser, type RolePresetOutcome } from "@/lib/staff/rolePreset";
+import { notifyRolePresetOutcomes } from "@/lib/staff/rolePresetNotify";
 
 /**
  * 보호자 «연락처 바꾸기» (2026-11-14 원장 결정 b6).
@@ -96,8 +98,10 @@ export async function confirmPhoneChange(actor: ChildActor, sessionHash: string,
     throw new ChildConnectionError("본인인증 정보를 확인하지 못했습니다. 다시 인증해 주세요.");
   }
 
+  // 원장이 이 번호에 미리 붙여 둔 선생님·기사님 역할(ROLE_PRESET) 적용 결과 — 알림은 거래가 끝난 뒤(검수 R-3)
+  let presetOutcomes: RolePresetOutcome[] = [];
   try {
-    return await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       // 같은 번호로 동시에 바꾸는 두 계정을 줄 세운다
       await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, `phone-change:${phone}`);
       const consumed = await tx.$executeRawUnsafe(
@@ -140,6 +144,9 @@ export async function confirmPhoneChange(actor: ChildActor, sessionHash: string,
       );
       // 본인인증 실명·시각도 같은 거래에서 적는다(2026-11-18) — 비교용으로 다듬은 name 이 아니라 포트원이 준 원래 이름
       await recordIdentityVerification(tx, { userId: actor.id, verifiedName: v.verifiedCustomer?.name, verifiedAt: new Date(at) });
+      // 2026-11-18 5단계(검수 R-3): 이미 계정이 있는 사람이 «내 정보»에서 본인인증(연락처 확인)하면, 원장이 이 번호에
+      // 미리 붙여 둔 역할을 같은 거래에서 적용한다(본인인증 이름이 초대 이름과 같으면 바로, 아니면 원장 신청함).
+      presetOutcomes = await applyRolePresetsForUser(tx, { userId: actor.id, verifiedName: v.verifiedCustomer?.name ?? null });
       if (!outcome.changed) return { ok: true as const, changed: false, notify: null };
       // 이력(감사 기록) — 번호 원문은 남기지 않는다(끝 4자리만). 같은 트랜잭션이라 변경과 함께 남거나 함께 되돌아간다
       await tx.$executeRawUnsafe(
@@ -175,6 +182,8 @@ export async function confirmPhoneChange(actor: ChildActor, sessionHash: string,
       );
       return { ok: true as const, changed: true, notify: { accountName: String(me[0].name ?? "").trim() || "보호자", newLast4: phone.slice(-4), studentId: kid[0]?.id ?? null } };
     }, { isolationLevel: "Serializable" });
+    if (presetOutcomes.length > 0) await notifyRolePresetOutcomes(actor.id, presetOutcomes);
+    return result;
   } catch (error) {
     if (isSerializationConflict(error)) throw new ChildConnectionError("잠시 후 다시 시도해 주세요.", 409);
     throw error;

@@ -441,8 +441,10 @@ test("⑥ 연락처 판정: 이름 다름·중복 번호 거절, 같은 번호�
 });
 
 /** confirmPhoneChange 를 가짜 포트원·가짜 DB 로 실행한다 */
-function phoneWorld({ available = true, challenge = true, portone = {}, me = { name: "김 엄마", phone: "010-1111-2222" }, taken = false } = {}) {
+function phoneWorld({ available = true, challenge = true, portone = {}, me = { name: "김 엄마", phone: "010-1111-2222" }, taken = false, presetOutcomes = [] } = {}) {
   const calls = [];
+  // 미리 붙인 역할 적용(2026-11-18 검수 R-3) — 부른 인자·순서만 기록한다(판정 자체는 tests/staff-role-preset.test.mjs)
+  const preset = { applied: [], notified: [] };
   let fetched = 0;
   const createdAt = new Date(Date.now() - 30_000);
   const db = {
@@ -476,11 +478,34 @@ function phoneWorld({ available = true, challenge = true, portone = {}, me = { n
     },
     "./child-links": { ChildConnectionError, childConnectionsConfigured: () => available },
     "./child-access": { childAccessSql: async () => "", childConnectionsAvailable: async () => available },
+    "@/lib/staff/rolePreset": { applyRolePresetsForUser: async (tx, input) => { calls.push({ sql: "APPLY_ROLE_PRESET", v: [input] }); preset.applied.push({ tx, input }); return presetOutcomes; } },
+    "@/lib/staff/rolePresetNotify": { notifyRolePresetOutcomes: async (userId, outcomes) => { calls.push({ sql: "NOTIFY_ROLE_PRESET", v: [userId] }); preset.notified.push({ userId, outcomes }); } },
   });
   const userUpdates = () => calls.filter((c) => /^UPDATE "User" SET phone/.test(c.sql));
-  return { mod, calls, id, userUpdates, fetched: () => fetched };
+  return { mod, calls, id, userUpdates, fetched: () => fetched, preset, db };
 }
 const actor = { id: "mom", authUserId: "auth-mom" };
+
+test("검수 R-3: «내 정보» 본인인증(연락처 확인)도 같은 거래에서 미리 붙인 역할을 적용하고, 알림은 거래 뒤", async () => {
+  const outcome = { invitationId: "inv", role: "INSTRUCTOR", status: "ACTIVE", reason: "IDENTITY_MATCH", invitationName: "김엄마" };
+  const w = phoneWorld({ me: { name: "김엄마", phone: "010-3333-4444" }, presetOutcomes: [outcome] });
+  assert.equal((await w.mod.confirmPhoneChange(actor, "hash", w.id)).ok, true);
+  // 이 계정·포트원이 준 원래 실명으로, 그 거래(db) 안에서
+  assert.equal(w.preset.applied.length, 1);
+  assert.equal(w.preset.applied[0].tx, w.db);
+  assert.deepEqual(w.preset.applied[0].input, { userId: "mom", verifiedName: "김엄마" });
+  // 실명 기록 뒤 → 적용 → 알림(거래 뒤)
+  const order = w.calls.map((call) => call.sql);
+  const record = order.findIndex((sql) => /"identityVerifiedName" = \$2/.test(sql));
+  assert.ok(record >= 0 && order.indexOf("APPLY_ROLE_PRESET") > record);
+  assert.ok(order.indexOf("NOTIFY_ROLE_PRESET") > order.indexOf("APPLY_ROLE_PRESET"));
+  assert.deepEqual(w.preset.notified, [{ userId: "mom", outcomes: [outcome] }]);
+  // 붙일 것이 없으면 알림도 없다
+  const none = phoneWorld({ me: { name: "김엄마", phone: "010-3333-4444" } });
+  await none.mod.confirmPhoneChange(actor, "hash", none.id);
+  assert.equal(none.preset.applied.length, 1);
+  assert.equal(none.preset.notified.length, 0);
+});
 
 test("⑥ 본인인증을 통과한 번호로만 바뀐다 — 인증 건 없음·미인증·다른 채널이면 번호를 건드리지 않는다", async () => {
   // 이 기기에서 시작한 인증 건이 없다(만료·다른 계정·이미 씀) → 포트원을 묻지도 않는다

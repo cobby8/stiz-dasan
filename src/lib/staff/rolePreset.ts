@@ -39,6 +39,13 @@ export function roleInviteSmsBody(input: { name: string; roleLabel: string; invi
     + `아래 링크에서 안내에 따라 학부모와 같은 가입 화면으로 가입해 주세요(본인인증, ${ROLE_PRESET_VALID_DAYS}일 안):\n${input.inviteUrl}`;
 }
 
+/**
+ * 이미 계정이 있는 분 안내(검수 R-3) — 가입 화면은 «이미 가입된 번호»로 막히므로, 로그인한 뒤 «내 정보»에서 본인인증(연락처 확인)을
+ * 하면 같은 거래에서 역할이 붙는다(phone-change.ts). 원장 초대 결과·초대 안내 화면이 같은 문구를 쓴다.
+ */
+export const ROLE_PRESET_EXISTING_ACCOUNT_NOTICE =
+  "이 번호로 이미 가입한 계정이 있으면, 그분이 로그인한 뒤 «내 정보»에서 본인인증(연락처 확인)을 하면 역할이 붙어요.";
+
 /** DB 값 → 화면·코드가 쓰는 목적. 모르는 값·빈 값은 예전 기본값(SIGNUP). */
 export function normalizeStaffInvitationPurpose(value: unknown): StaffInvitationPurpose {
   return (STAFF_INVITATION_PURPOSES as readonly string[]).includes(String(value)) ? (value as StaffInvitationPurpose) : "SIGNUP";
@@ -72,6 +79,24 @@ export const ROLE_PRESET_NOTES: Record<RolePresetReason, string> = {
   NAME_MISMATCH: "원장 초대(미리 붙인 역할) · 본인인증 이름이 초대 이름과 다름 — 확인 필요",
   MULTIPLE_ACCOUNTS: "원장 초대(미리 붙인 역할) · 같은 번호 계정이 여럿 — 확인 필요",
 };
+
+/**
+ * 원장 확인(PENDING) 알림에 붙일 «왜 확인이 필요한가» 한 마디 — 가입한 사람이 초대한 그 사람인지 원장이 판단하게(2026-11-18 검수 권장 1).
+ * 실명·번호는 넣지 않는다(알림은 벨·푸시로 나간다).
+ */
+export const ROLE_PRESET_REVIEW_REASONS: Record<Exclude<RolePresetReason, "IDENTITY_MATCH">, string> = {
+  NOT_IDENTITY: "문자 인증으로 가입해 명의자 확인이 안 됐어요",
+  NAME_MISMATCH: "본인인증 이름이 초대할 때 적은 이름과 달라요",
+  MULTIPLE_ACCOUNTS: "같은 번호를 쓰는 계정이 여럿이에요",
+};
+
+/** [순수] 원장 확인 알림 본문 — 초대 이름(원장이 적은 이름)·역할·확인 이유만 */
+export function rolePresetReviewMessage(input: { invitationName: string; roleLabel: string; reason: RolePresetReason | "ALREADY" }): string {
+  const why = input.reason in ROLE_PRESET_REVIEW_REASONS
+    ? ROLE_PRESET_REVIEW_REASONS[input.reason as keyof typeof ROLE_PRESET_REVIEW_REASONS]
+    : "확인이 필요해요";
+  return `초대 번호(${input.invitationName}님)로 가입한 계정이 있어요. 확인 이유: ${why}. 신청함에서 초대한 분이 맞는지 확인한 뒤 ${input.roleLabel} 역할을 승인해 주세요.`;
+}
 
 type Db = {
   $queryRawUnsafe<T = unknown>(query: string, ...values: unknown[]): PromiseLike<T>;

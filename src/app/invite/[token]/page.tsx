@@ -8,6 +8,7 @@
 
 import { getInvitationByToken } from "@/lib/queries";
 import InviteAcceptForm from "./InviteAcceptForm";
+import { ROLE_PRESET_EXISTING_ACCOUNT_NOTICE } from "@/lib/staff/rolePreset";
 
 // 초대 페이지는 항상 최신 데이터가 필요 (캐시 안 함)
 export const dynamic = "force-dynamic";
@@ -110,7 +111,7 @@ export default async function InvitePage({
                     <ol className="mt-4 list-decimal space-y-1.5 pl-5 text-sm leading-6 text-[var(--color-academy-ink)]">
                         <li>아래 «가입하러 가기»를 눌러 학부모와 같은 가입 화면으로 가요.</li>
                         <li>아이디 또는 카카오·구글·Apple 간편로그인으로 가입하고, 본인인증을 해 주세요.</li>
-                        <li>본인인증 이름이 «{invitation.name}»과 같으면 가입을 마치는 즉시 {roleLabel} 화면이 열려요.
+                        <li>본인인증 이름이 초대할 때 적은 이름(«{invitation.name}»)과 같으면 가입을 마치는 즉시 {roleLabel} 화면이 열려요.
                             문자 인증으로 가입하거나 이름이 다르면 원장님 확인 후 열려요.</li>
                     </ol>
                     <p className="mt-3 text-xs leading-5 text-[var(--color-academy-muted)]">
@@ -120,6 +121,8 @@ export default async function InvitePage({
                     <a href={signupHref} className="academy-button-primary mt-5 w-full">
                         가입하러 가기
                     </a>
+                    {/* 이미 계정이 있는 분 — 가입 화면은 «이미 가입된 번호»로 막힌다. 로그인 뒤 내 정보 본인인증에서 역할이 붙는다(검수 R-3) */}
+                    <p className="mt-4 text-xs leading-5 text-[var(--color-academy-muted)]">{ROLE_PRESET_EXISTING_ACCOUNT_NOTICE}</p>
                     <a href="/login" className="academy-button-text mt-2 w-full">
                         이미 가입했어요 · 로그인
                     </a>

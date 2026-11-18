@@ -1,7 +1,7 @@
 import "server-only";
 import { createNotificationRecord, notifyAdmins } from "@/lib/notification";
 import { ROLE_LABELS } from "@/lib/account/roles";
-import type { RolePresetOutcome } from "@/lib/staff/rolePreset";
+import { rolePresetReviewMessage, type RolePresetOutcome } from "@/lib/staff/rolePreset";
 
 /**
  * 미리 붙인 역할(ROLE_PRESET) 적용 뒤 알림 — 가입 거래가 «끝난 뒤» 부른다(2026-11-18 5단계).
@@ -33,7 +33,8 @@ export async function notifyRolePresetOutcomes(userId: string, outcomes: RolePre
         await notifyAdmins(
           "ROLE_REQUEST",
           "새 직원 역할 확인",
-          `${outcome.invitationName}님 초대 번호로 가입했습니다. ${label} 역할은 확인 후 승인해 주세요.`,
+          // 확인 이유(문자 인증·이름 다름·계정 여럿)를 같이 — 실명·번호는 넣지 않는다
+          rolePresetReviewMessage({ invitationName: outcome.invitationName, roleLabel: label, reason: outcome.reason }),
           "/admin/inbox?tab=OTHER&kind=ROLE_GRANT",
           { notifyCoaches: false, eventId: `role-preset:${outcome.invitationId}` },
         );

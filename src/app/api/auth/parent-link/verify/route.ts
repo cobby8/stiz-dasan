@@ -189,11 +189,19 @@ export async function POST(request: Request) {
   // 연결 흐름을 막지 않는다 — 다음 본인인증 때 다시 적힌다. 오류 기록에 실명은 넣지 않는다.
   // 2026-11-18 5단계: 원장이 이 번호에 미리 붙여 둔 선생님·기사님 역할(ROLE_PRESET)도 «같은 거래»에서 적용한다
   // (본인인증 + 초대 이름 일치면 바로, 아니면 원장 신청함). 둘 중 하나가 실패하면 함께 되돌아간다.
+  // 어느 단계에서 실패했는지 로그로 가른다(검수 6) — 실명 기록 실패 / 미리 붙인 역할 적용 실패
+  let presetStep: "identity-record" | "role-preset" = "identity-record";
   const presetOutcomes = await prisma.$transaction(async (tx) => {
     await recordIdentityVerification(tx, { userId: target.userId, verifiedName, verifiedAt: identityVerifiedAt });
+    presetStep = "role-preset";
     return applyRolePresetsForUser(tx, { userId: target.userId, verifiedName });
   }).catch((error) => {
-    console.error("[parent-link verify] identity record failed:", error instanceof Error ? error.message.slice(0, 200) : "UNKNOWN");
+    console.error(
+      presetStep === "role-preset"
+        ? "[parent-link verify] role preset apply failed (identity record rolled back):"
+        : "[parent-link verify] identity record failed:",
+      error instanceof Error ? error.message.slice(0, 200) : "UNKNOWN",
+    );
     return [];
   });
   if (presetOutcomes.length > 0) await notifyRolePresetOutcomes(target.userId, presetOutcomes);

@@ -1225,7 +1225,7 @@ export default function StaffClient({
                                 <dt className="self-start font-medium text-[var(--color-academy-muted)]">가입 방법</dt>
                                 <dd className="text-xs leading-5 text-[var(--color-academy-ink)]">
                                     본인이 학부모와 같은 가입 화면에서 아이디 또는 간편로그인 + 본인인증으로 가입하면 이 번호에 역할이 붙어요.
-                                    본인인증 이름이 «{detailInvite.name}»과 같으면 바로 열리고, 다르거나 문자 인증으로 가입하면 신청함에서 확인 후 열려요.
+                                    본인인증 이름이 초대할 때 적은 이름(«{detailInvite.name}»)과 같으면 바로 열리고, 다르거나 문자 인증으로 가입하면 신청함에서 확인 후 열려요.
                                 </dd>
                             </>
                         )}

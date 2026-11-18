@@ -29,6 +29,10 @@ test("운영 알림은 원장·부원장과 실제 연결된 담당 코치 및 �
   assert.match(notificationSource, /"UserRoleGrant" g WHERE g\."userId"=u\.id AND g\.role='INSTRUCTOR' AND g\.status='ACTIVE'/);
   assert.equal((notificationSource.match(/AND \$\{INSTRUCTOR_CONDITION\}/g) ?? []).length, 3);
   assert.doesNotMatch(notificationSource, /JOIN "User" u ON [^\n]*AND u\.role='INSTRUCTOR'\n/);
+  // 검수 R-1: 코치 갈래의 역할 값은 추가 역할 선생님(주 역할 학부모)도 INSTRUCTOR — 결과 집계에서 NOT_FOUND 로 세지 않게
+  assert.match(notificationSource, /const COACH_ROLE_SQL = `CASE WHEN u\.role='PARENT' THEN 'INSTRUCTOR' ELSE u\.role::text END`;/);
+  assert.equal((notificationSource.match(/SELECT u\.id, \$\{COACH_ROLE_SQL\} AS role FROM "Class" c/g) ?? []).length, 3);
+  assert.match(notificationSource, /roles\.has\("INSTRUCTOR"\) \? "NOTIFIED" : "NOT_FOUND"/);
   assert.match(notificationSource, /u\.role::text='DRIVER'/);
   assert.match(notificationSource, /"UserRoleGrant" g WHERE g\."userId"=u\.id AND g\.role='DRIVER' AND g\.status='ACTIVE'/);
   assert.match(notificationSource, /u\."withdrawnAt" IS NULL/);

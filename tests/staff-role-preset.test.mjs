@@ -67,6 +67,51 @@ test("안내 문자: 이름·역할·링크·30일, 다시 보낼 때 표시", (
   assert.match(preset.roleInviteSmsBody({ name: "a", roleLabel: "b", inviteUrl: "u", resend: true }), /\(다시 보냄\)/);
 });
 
+test("검수 1: 원장 확인 알림에 확인 이유(문자 인증·이름 다름·계정 여럿)를 싣고, 실명·번호는 넣지 않는다", async () => {
+  const reasons = { NOT_IDENTITY: /문자 인증으로 가입해 명의자 확인이 안 됐어요/, NAME_MISMATCH: /본인인증 이름이 초대할 때 적은 이름과 달라요/, MULTIPLE_ACCOUNTS: /같은 번호를 쓰는 계정이 여럿이에요/ };
+  for (const [reason, pattern] of Object.entries(reasons)) {
+    const message = preset.rolePresetReviewMessage({ invitationName: "홍길동", roleLabel: "선생님", reason });
+    assert.match(message, pattern, reason);
+    assert.match(message, /초대 번호\(홍길동님\)/);
+    assert.match(message, /선생님 역할을 승인해 주세요/);
+    assert.doesNotMatch(message, /\d{3,}/, "번호 없음");
+  }
+  // 알림 모듈이 이 문구를 쓰고, 본인인증 실명(verifiedName)은 받지도 않는다
+  const notify = read("src/lib/staff/rolePresetNotify.ts");
+  assert.match(notify, /rolePresetReviewMessage\(\{ invitationName: outcome\.invitationName, roleLabel: label, reason: outcome\.reason \}\)/);
+  assert.doesNotMatch(notify, /verifiedName|phone/);
+});
+
+test("검수 R-2: 이름 뒤에 조사를 바로 붙이지 않는다(«…»과)", () => {
+  for (const file of ["src/app/admin/staff/InviteStaffModal.tsx", "src/app/admin/staff/StaffClient.tsx", "src/app/invite/[token]/page.tsx"]) {
+    const src = read(file);
+    assert.doesNotMatch(src, /\}»과/, file);
+    assert.match(src, /초대할 때 적은 이름\(«\{[^}]+\}»\)과/, file);
+  }
+});
+
+test("검수 R-3(b)·R-4: 인증 전 학부모 계정 안내 · 옛 직원 기록 notice 는 초대 거절", () => {
+  const body = fnBodyOf(read("src/app/actions/admin.ts"), "inviteStaff");
+  assert.match(body, /"phoneVerifiedAt" IS NULL AND "withdrawnAt" IS NULL/);
+  assert.match(body, /const existingAccountNotice = unverifiedParentCount > 0 \? ROLE_PRESET_EXISTING_ACCOUNT_NOTICE : undefined;/);
+  assert.match(body, /existingAccountNotice,/);
+  // notice 는 ROLE_PRESET 을 만들기 전에 거절
+  assert.ok(body.indexOf(`if (reinvite.kind === "notice")`) < body.indexOf(`INSERT INTO "StaffInvitation"`));
+  assert.match(preset.ROLE_PRESET_EXISTING_ACCOUNT_NOTICE, /로그인한 뒤 «내 정보»에서 본인인증\(연락처 확인\)/);
+  assert.match(read("src/app/invite/[token]/page.tsx"), /\{ROLE_PRESET_EXISTING_ACCOUNT_NOTICE\}/);
+  assert.match(read("src/app/admin/staff/InviteStaffModal.tsx"), /\{result\.existingAccountNotice\}/);
+  // 기존 계정 연결 라우트 로그는 실패 단계를 가른다(검수 6)
+  const route = read("src/app/api/auth/parent-link/verify/route.ts");
+  assert.match(route, /role preset apply failed/);
+  assert.match(route, /identity record failed/);
+});
+
+function fnBodyOf(src, name) {
+  const start = src.indexOf(`export async function ${name}(`);
+  const next = src.indexOf("\nexport async function ", start + 10);
+  return src.slice(start, next < 0 ? undefined : next);
+}
+
 // ── 적용(가짜 db 로 실제 실행) ──────────────────────────────────────────
 function fakeDb({ user = { id: "u1", phone: "010-1234-5678", role: "PARENT" }, invitations = [], accountCount = 1, linkedCoach = false } = {}) {
   const calls = [];
@@ -193,7 +238,7 @@ test("빈 계정 간편로그인 연결(LINKED)·활성화 완료·기존 계정
   assert.ok(consume.indexOf("presetOutcomes = await applyRolePresetsForUser(tx, {") < consume.indexOf(`UPDATE "ParentAccountClaim" SET status = 'CONSUMED'`));
   assert.match(consume, /verifiedName: claim!\.verifiedName && claim!\.identityVerifiedAt \? claim!\.verifiedName : null/);
   const route = read("src/app/api/auth/parent-link/verify/route.ts");
-  assert.match(route, /prisma\.\$transaction\(async \(tx\) => \{\s*await recordIdentityVerification\(tx, \{ userId: target\.userId, verifiedName, verifiedAt: identityVerifiedAt \}\);\s*return applyRolePresetsForUser\(tx, \{ userId: target\.userId, verifiedName \}\);/);
+  assert.match(route, /prisma\.\$transaction\(async \(tx\) => \{\s*await recordIdentityVerification\(tx, \{ userId: target\.userId, verifiedName, verifiedAt: identityVerifiedAt \}\);\s*presetStep = "role-preset";\s*return applyRolePresetsForUser\(tx, \{ userId: target\.userId, verifiedName \}\);/);
 });
 
 // ── 원장 초대·초대 화면·퇴사 ────────────────────────────────────────────

@@ -17,9 +17,10 @@ function formatPhone(raw: string): string {
 //   링크 발송 — 새 직원 계정을 만들 사람에게 개인 가입 링크를 보냈다.
 //   기존 계정에 부여 — 이 번호의 학부모 계정이 이미 있어 그 계정에 역할을 붙였다(링크 없음).
 type InvitationResult =
-    // previousRecordNotice: 같은 번호의 이전 직원 기록이 있지만 이름이 달라 연결하지 않았다는 안내(2026-11-12)
+    // existingAccountNotice: 이 번호에 휴대폰 인증 전 학부모 계정이 있어 «로그인 뒤 내 정보에서 본인인증» 안내(2026-11-18 검수 R-3)
+    // (예전 «이전 직원 기록 — 연결하지 않고 새로 초대» 안내는 R-4 로 초대 거절이 되어 없어졌다)
     // rolePreset: 새 사람 — 번호에 역할을 미리 붙여 두고 안내 링크(가입 화면으로 안내, 30일)를 보냈다(2026-11-18 5단계)
-    | { grantedExisting: false; accountName: null; inviteUrl: string; smsSent: boolean; smsError?: string; previousRecordNotice?: string; rolePreset?: boolean }
+    | { grantedExisting: false; accountName: null; inviteUrl: string; smsSent: boolean; smsError?: string; existingAccountNotice?: string; rolePreset?: boolean }
     | { grantedExisting: true; accountName: string; inviteUrl: null; smsSent: false; smsError?: string };
 
 function absoluteInviteUrl(inviteUrl: string): string {
@@ -154,15 +155,15 @@ export default function InviteStaffModal({
                             {/* 미리 붙이기 — 본인이 무엇을 하면 열리는지(원장이 전화로 설명할 때도 같은 말) */}
                             {result.rolePreset && !resetMode && (
                                 <p className="mt-2 text-sm">
-                                    본인이 학부모와 같은 가입 화면에서 아이디 또는 간편로그인 + 본인인증으로 가입하면 바로 열립니다(본인인증 이름이 «{form.name.trim()}»과 같을 때).
+                                    본인이 학부모와 같은 가입 화면에서 아이디 또는 간편로그인 + 본인인증으로 가입하면 바로 열립니다(본인인증 이름이 초대할 때 적은 이름(«{form.name.trim()}»)과 같을 때).
                                     문자 인증으로 가입하거나 이름이 다르면 신청함에서 확인 후 열어 주세요.
                                 </p>
                             )}
                             {!result.smsSent && result.smsError && <p className="mt-2 text-xs opacity-80">발송 사유: {result.smsError}</p>}
                         </div>
-                        {result.previousRecordNotice && (
+                        {result.existingAccountNotice && (
                             <p role="status" className="rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm font-medium text-[var(--color-academy-warning)]">
-                                {result.previousRecordNotice}
+                                {result.existingAccountNotice}
                             </p>
                         )}
 

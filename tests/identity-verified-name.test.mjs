@@ -140,7 +140,9 @@ test("활성화·직원 기록 연결·연락처 바꾸기도 같은 거래에�
   // 감사 기록 JSON 에 실명을 싣지 않는다
   assert.doesNotMatch(staffTx.slice(staffTx.indexOf("OperationsAuditLog")), /verifiedName/);
   const phone = read("src/lib/account/phone-change.ts");
-  const phoneTx = phone.slice(phone.indexOf("return await prisma.$transaction("));
+  // (2026-11-18 검수 R-3: 거래 결과를 받아 미리 붙인 역할 알림을 보낸 뒤 돌려주도록 바뀌었다)
+  const phoneTx = phone.slice(phone.indexOf("const result = await prisma.$transaction("));
+  assert.ok(phone.includes("const result = await prisma.$transaction("));
   assert.match(phoneTx, /await recordIdentityVerification\(tx, \{ userId: actor\.id, verifiedName: v\.verifiedCustomer\?\.name, verifiedAt: new Date\(at\) \}\);/);
 });
 

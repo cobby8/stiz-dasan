@@ -63,7 +63,7 @@ import {
 } from "@/lib/staff/staffAccountLink";
 import { maskedPhoneLast4 } from "@/lib/staff/staffRoster";
 // 새 선생님·기사님 «역할 미리 붙여 두기»(2026-11-18 5단계)
-import { ROLE_PRESET_PURPOSE, ROLE_PRESET_VALID_DAYS, roleInviteSmsBody } from "@/lib/staff/rolePreset";
+import { ROLE_PRESET_EXISTING_ACCOUNT_NOTICE, ROLE_PRESET_PURPOSE, ROLE_PRESET_VALID_DAYS, roleInviteSmsBody } from "@/lib/staff/rolePreset";
 import {
     createNotificationRecord,
     notifyAdmins,
@@ -7290,16 +7290,32 @@ export async function inviteStaff(data: {
             `같은 번호의 이전 직원 기록(${reinvite.previousName})이 있어요. 같은 사람이면 이름을 «${reinvite.previousName}»(으)로 맞춰 다시 초대해 주세요. 다른 사람이면 개발 담당에게 확인해 주세요.`,
         );
     }
+    // 2026-11-18 검수 R-4: 예전에는 «연결하지 않고 새로 초대»했지만, 새 사람 초대는 이제 가입 화면으로 가는 ROLE_PRESET 이라
+    // 그 번호를 쓰는 옛 직원 기록 때문에 가입 시작이 «이미 가입된 번호»로 막힌다 — 받을 수 없는 초대를 만들지 않고 거절한다.
+    if (reinvite.kind === "notice") {
+        return inviteStaffRejected(
+            `같은 번호의 이전 직원 기록(${reinvite.previousName})이 남아 있어 이 번호로는 새 가입이 막혀요. 개발 담당에게 옛 기록 정리를 요청해 주세요.`,
+        );
+    }
     const retiredTargetUserId = reinvite.kind === "attach" ? reinvite.userId : null;
-    const previousRecordNotice = reinvite.kind === "notice"
-        ? `같은 번호의 이전 직원 기록(${reinvite.previousName})이 있어요. 연결하지 않고 새로 초대했습니다.`
-        : undefined;
 
     // 2026-11-18 원장 결정 «가입·본인인증 통일» 5단계: 새 사람(대상 기록 없음)은 «이 번호에 역할을 미리 붙여 두기»(ROLE_PRESET, 30일).
     // 본인이 학부모와 같은 가입 화면(아이디 또는 간편로그인 + 본인인증)에서 가입하면, 가입이 끝나는 거래에서 이 역할이 붙는다
     // (src/lib/staff/rolePreset.ts — 본인인증 이름 일치면 바로, 아니면 원장 신청함). 새 직원은 휴대폰 번호(@staff) 로그인이 아니다.
     // 재입사(옛 직원 기록에 붙는 초대, targetUserId 있음)는 예전 그대로 SIGNUP 7일 — acceptInvitation 이 그 기록을 다시 연다.
     const rolePreset = !retiredTargetUserId;
+    // 검수 R-3(b): 이 번호의 학부모 계정이 이미 있는데 휴대폰 인증을 안 했으면(①에서 바로 붙이지 못함) 가입 화면은
+    // «이미 가입된 번호»로 막힌다. 그분이 로그인한 뒤 «내 정보»에서 본인인증(연락처 확인)을 하면 같은 거래에서 역할이 붙는다
+    // (phone-change.ts) — 원장이 그렇게 안내하도록 결과에 한 줄을 싣는다. 계정 이름·번호는 싣지 않는다.
+    const unverifiedParentCount = rolePreset && isUsablePhoneKey(inviteDigits)
+        ? Number((await prisma.$queryRawUnsafe<Array<{ count: number }>>(
+            `SELECT COUNT(*)::int AS count FROM "User"
+              WHERE regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = $1 AND role = 'PARENT'
+                AND "phoneVerifiedAt" IS NULL AND "withdrawnAt" IS NULL`,
+            inviteDigits,
+        ))[0]?.count ?? 0)
+        : 0;
+    const existingAccountNotice = unverifiedParentCount > 0 ? ROLE_PRESET_EXISTING_ACCOUNT_NOTICE : undefined;
 
     try {
         // 초대 레코드 생성 — 미리 붙이기 30일 / 재입사 7일
@@ -7361,7 +7377,7 @@ export async function inviteStaff(data: {
             smsError: smsResult.ok
                 ? undefined
                 : baseUrl ? SMS_SEND_FAILED : SMS_SITE_URL_MISSING,
-            previousRecordNotice,
+            existingAccountNotice,
             // 화면 안내용 — 미리 붙이기(가입 화면에서 가입·30일)인지, 재입사 초대(개인 가입 링크·7일)인지
             rolePreset,
         };

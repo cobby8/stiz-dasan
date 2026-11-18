@@ -247,9 +247,10 @@ test("[권장4] 퇴사자 재초대 자동 연결은 이름까지 같을 때만 
   assert.equal(decideRetiredReinvite([staffLogin, noLogin], "홍길동").kind, "notice");
   const body = fnBody(admin, "inviteStaff");
   assert.match(body, /const reinvite = decideRetiredReinvite\(retiredRecords, cleanName\)/);
-  assert.match(body, /같은 번호의 이전 직원 기록\(\$\{reinvite\.previousName\}\)이 있어요/);
-  assert.match(body, /previousRecordNotice,/);
-  assert.match(await read("src/app/admin/staff/InviteStaffModal.tsx"), /\{result\.previousRecordNotice\}/);
+  // 2026-11-18 검수 R-4: «연결하지 않고 새로 초대» 대신 거절 — 새 사람 초대(ROLE_PRESET)는 그 번호의 옛 기록 때문에 가입이 막힌다
+  assert.match(body, /if \(reinvite\.kind === "notice"\) \{\s*return inviteStaffRejected\(/);
+  assert.match(body, /같은 번호의 이전 직원 기록\(\$\{reinvite\.previousName\}\)이 남아 있어 이 번호로는 새 가입이 막혀요\. 개발 담당에게 옛 기록 정리를 요청해 주세요\./);
+  assert.doesNotMatch(body, /연결하지 않고 새로 초대했습니다/);
 });
 
 test("[재검수 HIGH] 강등 → 복구 → 옛 링크 가입해도 역할이 오르지 않는다", async () => {
