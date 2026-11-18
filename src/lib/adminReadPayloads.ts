@@ -5,7 +5,6 @@ import { getInstagramRuntimeStatus } from "@/lib/instagram";
 import { getPaymentProviderPublicStatus } from "@/lib/payment-ledger";
 import { getScheduleSlotAdminData } from "@/lib/scheduleSlotPayload";
 import { notMergedStudent } from "@/lib/studentVisibility";
-import { currentEnrollmentSql } from "@/lib/enrollment/commencement";
 import {
     getAcademySettings,
     getAttendanceClassOptions,
@@ -47,7 +46,7 @@ import { prisma } from "@/lib/prisma";
 import { readPendingSocialPostDrafts } from "@/lib/socialDrafts";
 import { requireAdmin } from "@/lib/auth-guard";
 import { funnelStartIso, loadApplySourceStats, loadDashboardSummary, loadStatsTab, type ApplySourceRange } from "@/lib/stats/statsQueries";
-import type { StatsBranchKey, StatsTabKey } from "@/lib/stats/statsRules";
+import type { StatsTabKey } from "@/lib/stats/statsRules";
 
 /**
  * 관리자 읽기 함수의 문지기(d3, 2026-11-13).
@@ -423,230 +422,6 @@ export function getCachedAdminStudentsPayload(limit?: number) {
     ))();
 }
 
-export const getCachedAdminStudentImportSummaryPayload = adminOnly(unstable_cache(
-    async () => {
-        const sheetImportSummary = await getStudentSheetImportSummary();
-
-        return { sheetImportSummary };
-    },
-    ["admin-students-import-summary-v1"],
-    { revalidate: 60, tags: ["admin-student-imports"] },
-));
-
-async function getStudentSheetImportSummary() {
-    try {
-        const [rows, scheduleMismatchRows, studentStatusRows] = await Promise.all([
-            prisma.$queryRawUnsafe<{
-            id: string;
-            status: string;
-            totalRows: number;
-            registrationRows: number;
-            vehicleRows: number;
-            changeRows: number;
-            teamRows: number;
-            errorRows: number;
-            message: string | null;
-            createdAt: Date;
-            completedAt: Date | null;
-            uniqueStudents: number;
-            linkedRegistrations: number;
-        }[]>(
-                `SELECT b.id, b.status, b."totalRows", b."registrationRows",
-                        b."vehicleRows", b."changeRows", b."teamRows", b."errorRows",
-                        b.message, b."createdAt", b."completedAt",
-                        COALESCE(COUNT(DISTINCT r."studentKey") FILTER (WHERE r."studentKey" IS NOT NULL), 0)::int AS "uniqueStudents",
-                        COALESCE(COUNT(*) FILTER (WHERE r."studentId" IS NOT NULL), 0)::int AS "linkedRegistrations"
-                 FROM "StudentSheetImportBatch" b
-                 LEFT JOIN "StudentRegistrationLedger" r ON r."batchId" = b.id
-                 GROUP BY b.id
-                 ORDER BY b."createdAt" DESC
-                 LIMIT 1`
-            ),
-            prisma.$queryRawUnsafe<{
-                slotKey: string;
-                sheetCount: number;
-                dbCount: number;
-                diff: number;
-                totalMismatchCount: number;
-            }[]>(
-                `WITH latest AS (
-                    SELECT id
-                    FROM "StudentSheetImportBatch"
-                    WHERE status = 'COMPLETED'
-                    ORDER BY "createdAt" DESC
-                    LIMIT 1
-                ),
-                ledger AS (
-                    SELECT
-                        r.*,
-                        (
-                            string_to_array(
-                                trim(both ',' from regexp_replace(COALESCE(r."registrationMonth", ''), '[^0-9]+', ',', 'g')),
-                                ','
-                            )
-                        )[2]::int AS "monthNumber"
-                    FROM "StudentRegistrationLedger" r
-                    JOIN latest ON latest.id = r."batchId"
-                ),
-                selected_month AS (
-                    SELECT l."monthNumber"
-                    FROM ledger l
-                    WHERE l."monthNumber" IS NOT NULL
-                    GROUP BY l."monthNumber"
-                    ORDER BY l."monthNumber" DESC
-                    LIMIT 1
-                ),
-                target AS (
-                    SELECT l.*
-                    FROM ledger l
-                    JOIN selected_month sm ON sm."monthNumber" = l."monthNumber"
-                    WHERE l.status = 'ACTIVE'
-                ),
-                sheet_slots AS (
-                    SELECT
-                        slot_key AS "slotKey",
-                        COUNT(DISTINCT COALESCE(r."studentId", r."studentKey", r."studentName" || ':' || COALESCE(r."parentPhone", r."rowNumber"::text)))::int AS "sheetCount"
-                    FROM target r
-                    CROSS JOIN LATERAL jsonb_array_elements_text(
-                        COALESCE(NULLIF(r."selectedSlotKeysJSON", ''), '[]')::jsonb
-                    ) AS slot_key
-                    GROUP BY slot_key
-                ),
-                db_slots AS (
-                    SELECT
-                        c."slotKey" AS "slotKey",
-                        COUNT(DISTINCT e."studentId")::int AS "dbCount"
-                    FROM "Enrollment" e
-                    JOIN "Class" c ON c.id = e."classId"
-                    WHERE e.status = 'ACTIVE'
-                      AND c."slotKey" IS NOT NULL
-                    GROUP BY c."slotKey"
-                ),
-                mismatches AS (
-                    SELECT
-                        COALESCE(sheet_slots."slotKey", db_slots."slotKey") AS "slotKey",
-                        COALESCE(sheet_slots."sheetCount", 0)::int AS "sheetCount",
-                        COALESCE(db_slots."dbCount", 0)::int AS "dbCount",
-                        (COALESCE(db_slots."dbCount", 0) - COALESCE(sheet_slots."sheetCount", 0))::int AS diff
-                    FROM sheet_slots
-                    FULL OUTER JOIN db_slots ON db_slots."slotKey" = sheet_slots."slotKey"
-                    WHERE COALESCE(sheet_slots."sheetCount", 0) <> COALESCE(db_slots."dbCount", 0)
-                )
-                SELECT
-                    "slotKey",
-                    "sheetCount",
-                    "dbCount",
-                    diff,
-                    COUNT(*) OVER ()::int AS "totalMismatchCount"
-                FROM mismatches
-                ORDER BY ABS(diff) DESC, "slotKey" ASC
-                LIMIT 8`
-            ),
-            prisma.$queryRawUnsafe<{
-                total: number;
-                active: number;
-                paused: number;
-                withdrawn: number;
-                noEnrollment: number;
-            }[]>(
-                `WITH latest AS (
-                    SELECT id
-                    FROM "StudentSheetImportBatch"
-                    WHERE status = 'COMPLETED'
-                    ORDER BY "createdAt" DESC
-                    LIMIT 1
-                ),
-                ledger AS (
-                    SELECT
-                        r.*,
-                        (
-                            string_to_array(
-                                trim(both ',' from regexp_replace(COALESCE(r."registrationMonth", ''), '[^0-9]+', ',', 'g')),
-                                ','
-                            )
-                        )[2]::int AS "monthNumber"
-                    FROM "StudentRegistrationLedger" r
-                    JOIN latest ON latest.id = r."batchId"
-                    WHERE r."studentId" IS NOT NULL
-                ),
-                selected_month AS (
-                    SELECT l."monthNumber"
-                    FROM ledger l
-                    WHERE l."monthNumber" IS NOT NULL
-                    GROUP BY l."monthNumber"
-                    ORDER BY l."monthNumber" DESC
-                    LIMIT 1
-                ),
-                student_month_status AS (
-                    SELECT
-                        l."studentId",
-                        l."monthNumber",
-                        CASE
-                            WHEN BOOL_OR(l.status = 'WITHDRAWN') THEN 'WITHDRAWN'
-                            WHEN BOOL_OR(l.status = 'ACTIVE') THEN 'ACTIVE'
-                            WHEN BOOL_OR(l.status = 'PAUSED') THEN 'PAUSED'
-                            ELSE 'WITHDRAWN'
-                        END AS status
-                    FROM ledger l
-                    JOIN selected_month sm ON l."monthNumber" <= sm."monthNumber"
-                    GROUP BY l."studentId", l."monthNumber"
-                ),
-                current_student_status AS (
-                    SELECT DISTINCT ON (sms."studentId")
-                        sms."studentId",
-                        sms.status
-                    FROM student_month_status sms
-                    ORDER BY sms."studentId", sms."monthNumber" DESC
-                ),
-                student_status AS (
-                    SELECT
-                        s.id,
-                        /* 원생 목록 current_status(queries.ts)와 같은 규칙: ACTIVE 수강이 있으면 개시일과 무관하게 활성 */
-                        CASE WHEN EXISTS (SELECT 1 FROM "Enrollment" due WHERE due."studentId"=s.id AND ${currentEnrollmentSql("due")}) THEN 'ACTIVE'
-                      ELSE css.status END
-                        AS status
-                    FROM "Student" s
-                    LEFT JOIN current_student_status css ON css."studentId" = s.id
-                    WHERE ${notMergedStudent("s")}
-                )
-                SELECT
-                    COUNT(*)::int AS total,
-                    COUNT(*) FILTER (WHERE status = 'ACTIVE')::int AS active,
-                    COUNT(*) FILTER (WHERE status = 'PAUSED')::int AS paused,
-                    COUNT(*) FILTER (WHERE status = 'WITHDRAWN')::int AS withdrawn,
-                    COUNT(*) FILTER (WHERE status IS NULL OR status NOT IN ('ACTIVE', 'PAUSED', 'WITHDRAWN'))::int AS "noEnrollment"
-                FROM student_status`
-            ),
-        ]);
-
-        const latest = rows[0];
-        if (!latest) return null;
-
-        return {
-            ...latest,
-            createdAt: latest.createdAt.toISOString(),
-            completedAt: latest.completedAt?.toISOString() ?? null,
-            studentStatusCounts: studentStatusRows[0] ?? {
-                total: 0,
-                active: 0,
-                paused: 0,
-                withdrawn: 0,
-                noEnrollment: 0,
-            },
-            scheduleMismatchCount: scheduleMismatchRows[0]?.totalMismatchCount ?? 0,
-            topScheduleMismatches: scheduleMismatchRows.map((row) => ({
-                slotKey: row.slotKey,
-                sheetCount: row.sheetCount,
-                dbCount: row.dbCount,
-                diff: row.diff,
-            })),
-        };
-    } catch (error) {
-        console.error("[admin-students] import summary failed:", error);
-        return null;
-    }
-}
-
 export const getCachedAdminDashboardPrimaryPayload = adminOnly(unstable_cache(
     loadDashboardPrimaryPayload,
     ["admin-dashboard-primary-v2"],
@@ -1018,12 +793,13 @@ export const getCachedAdminMakeupPayload = adminOnly(unstable_cache(
 
 /**
  * 통계 탭 하나(2026-11-13 개편) — 탭을 바꾸면 그 탭만 읽는다. 재원생 명단이 있어 관리자 전용.
- * 캐시 열쇠에 탭·지점·기간을 넣어 서로 섞이지 않게 한다(공개 쿼리 캐시와도 이름이 겹치지 않게 admin- 접두사).
+ * 캐시 열쇠에 탭·기간을 넣어 서로 섞이지 않게 한다(공개 쿼리 캐시와도 이름이 겹치지 않게 admin- 접두사).
+ * (지점 조건은 없다 — 이 사이트는 다산2호점 한 곳뿐)
  */
-export function getCachedAdminStatsTab(tab: StatsTabKey, branch: StatsBranchKey, period: string) {
+export function getCachedAdminStatsTab(tab: StatsTabKey, period: string) {
     return adminOnly(unstable_cache(
-        () => loadStatsTab(tab, branch, period),
-        ["admin-stats-tab-v1", tab, branch, period, todayKst().slice(0, 7)],
+        () => loadStatsTab(tab, period),
+        ["admin-stats-tab-v2", tab, period, todayKst().slice(0, 7)],
         { revalidate: 60, tags: ["admin-stats"] },
     ))();
 }

@@ -34,8 +34,9 @@ test("상태·인원·재원생 판정 SQL 은 개시일로 «예정»을 만들
   const rental = read("src/lib/rental/gym-rental-service.ts");
   for (const [name, src] of [["queries", queries], ["adminReadPayloads", payloads]]) {
     assert.doesNotMatch(src, /THEN 'SCHEDULED'/, `${name}: 개시일로 SCHEDULED 를 만들지 않는다`);
-    assert.match(src, /currentEnrollmentSql\("due"\)/, `${name}: 공용 판정 사용`);
   }
+  // adminReadPayloads 에서 공용 판정을 쓰던 «이관 요약 조회»는 2026-11-18 옛 코드 정리 B 로 지웠다 — queries 만 확인한다.
+  assert.match(queries, /currentEnrollmentSql\("due"\)/, "queries: 공용 판정 사용");
   const member = rental.slice(rental.indexOf("export async function listRentalMemberStudents"), rental.indexOf("export const RENTAL_MEMBER_LOGIN_MESSAGE"));
   assert.match(member, /currentEnrollmentSql\("e"\)/);
   assert.doesNotMatch(member, /startsOn/, "재원생 무료 대관은 개시일 전에도 대상");

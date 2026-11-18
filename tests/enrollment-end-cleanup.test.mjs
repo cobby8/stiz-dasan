@@ -203,7 +203,7 @@ test("신청 정리(가짜 DB): 열린 건만 조건부로 닫고, 실제로 닫
 // ── 연결부 소스 확인 ──
 test("서버 동작: 같은 트랜잭션·잠금 순서(전역 → 신청 → 수강)·수강 종료만 반 정리", () => {
   const admin = read("src/app/actions/admin.ts");
-  const fn = admin.slice(admin.indexOf("export async function updateEnrollmentStatus"), admin.indexOf("export async function deleteEnrollment"));
+  const fn = admin.slice(admin.indexOf("export async function updateEnrollmentStatus"), admin.indexOf("// ── 출결 관리"));
   const lock = fn.indexOf("await lockCompensation(tx)");
   const reqs = fn.indexOf("readOpenChangeRequestsForUpdate(tx, enrollmentId)");
   const enr = fn.indexOf("FOR UPDATE OF e");

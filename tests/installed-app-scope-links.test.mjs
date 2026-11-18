@@ -15,7 +15,6 @@ const staffLayout = await readFile("src/app/staff/layout.tsx", "utf8");
 const quickPost = await readFile("src/app/staff/quick-post/QuickPostClient.tsx", "utf8");
 const driverClient = await readFile("src/components/shuttle/UnifiedDriverClient.tsx", "utf8");
 const hideComponent = await readFile("src/components/pwa/HideInInstalledApp.tsx", "utf8");
-const safeLink = await readFile("src/components/pwa/AppSafeLink.tsx", "utf8");
 
 test("학부모 앱의 로고는 공개 홈페이지가 아니라 앱 홈으로 간다", () => {
   // 로고를 무심코 누르는 일이 잦다. 여기서 새면 학부모가 앱으로 못 돌아온다.
@@ -73,7 +72,7 @@ test("기사님 앱은 웹 화면을 벗어나는 링크가 없다", () => {
 
 test("설치 여부 판별은 한 곳에서만 한다", () => {
   // 같은 판별을 여러 벌 두면 한 곳만 고쳐져 조용히 어긋난다.
-  for (const source of [hideComponent, safeLink]) {
+  for (const source of [hideComponent]) {
     assert.match(source, /useInstalledApp/);
     assert.doesNotMatch(source, /display-mode: standalone/);
   }

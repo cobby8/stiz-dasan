@@ -254,7 +254,7 @@ export function planWeeklyTuition(enrollments: readonly TuitionEnrollment[], fix
 
 /** 프로그램 화면 «자동 계산» 표와 같은 값(ProgramFormPanel.tsx SHUTTLE 표). 주 수업 횟수 → 월 셔틀비. */
 export const AUTO_SHUTTLE_FEE_BY_WEEKLY_COUNT: readonly number[] = [0, 10_000, 15_000, 20_000];
-/** 일8 대표팀은 다른 요일 셔틀을 타도 월 셔틀비 전체 면제(studentBilling.ts FULL_SHUTTLE_FEE_EXEMPT_SLOT_KEYS 와 같은 값). */
+/** 일8 대표팀은 다른 요일 셔틀을 타도 월 셔틀비 전체 면제(옛 시트 가져오기 시절부터 쓰던 값 그대로). */
 export const FULL_SHUTTLE_FEE_EXEMPT_SLOT_KEYS: ReadonlySet<string> = new Set(["Sun-8"]);
 
 /**
@@ -292,7 +292,7 @@ export type ShuttleStopUse = { direction: string; stopName: string };
  *   - 원장(2026-11-09): «1호점 앞 버스정류장에서 타는 학생은 무료거점에서 타는 거라 셔틀비 안 받아».
  *   - 코덱스 지식 `.Codex/knowledge/conventions.md` [2026-09-02] «정규 무료셔틀은 시트 구분값으로 청구에서 제외»:
  *     `1호점 앞 버스정류장` 승차 학생은 정규 셔틀 명단에는 포함하지만 셔틀비를 받지 않는다.
- *   - 옛 시트 가져오기(src/lib/studentBilling.ts hasFullShuttleFeeExemption): `셔틀비 구분=무료셔틀` 이면 학생 월 셔틀비 전체 0.
+ *   - 옛 시트 가져오기(지금은 없음): `셔틀비 구분=무료셔틀` 이면 학생 월 셔틀비 전체 0.
  *   - 하원 하차 지점: 무료 거점의 하차는 길 건너 버스정류장(AcademySettings.shuttleHubDropoffName «새봄중 앞 버스정류장»,
  *     migration 20260728000000_add_shuttle_hub_dropoff). 정규 명단에서는 «새봄중학교 앞 버스정류장» 하차로 적힌다.
  *     단, 이 정류장은 일반 승차 학생도 내리는 곳이라(12월 명단: 이도경·이윤건) «거점 승차가 있는 학생»에게만 무료로 본다.

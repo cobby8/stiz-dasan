@@ -142,7 +142,7 @@ test("학부모 홈은 개시일 미래인 ACTIVE 반을 수강 중으로 세고
     "@/lib/ui/statusTones": statusTones,
     "@/components/account/ChildConnectionNotice": nullComponent, "next/link": link,
     "@/components/pwa/HideInInstalledApp": { __esModule: true, default: ({ children }) => children },
-    "@/components/pwa/AppSafeLink": link, "@/app/actions/admin": {},
+    "@/app/actions/admin": {},
     "@/lib/mypage/summary": summary, "@/lib/datetime/kst": { formatKstDate: (value) => String(value) },
     "@/components/parent/VirtualAccountNotice": nullComponent,
     // 최신 수업 피드 카드(2026-11-14) — 이 검사와 무관해 비워 둔다

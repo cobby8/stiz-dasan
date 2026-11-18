@@ -8,7 +8,6 @@ import { getSavedDispatchRoute } from "./dispatchRoute";
 import { firstDateOfSameWeekday } from "./weekday";
 // 정차 병합의 단일 기준(같은 장소 판정). 자동 제안·증분 배차·화면 배정이 모두 이걸 쓴다.
 import { findSamePlaceIndex } from "./stopMerge";
-import { planIncrementalInsert, type IncrTarget } from "./dispatchIncrement";
 import { mergeTmapRoute, type RunRouteFields } from "./tmapRouteMerge";
 // 구간 실제시간 → 방향별 stop ETA 누적(순수 함수). 테스트가 prisma 없이 검증하도록 분리했다.
 import { segmentMinutes, nodeTimesFromSegments } from "./shuttle-eta";
@@ -450,89 +449,4 @@ export async function computeDispatch(opts: { direction: DispatchDirection; date
     riders: plan.riders, // ShuttleRosterRider 는 DispatchRiderInput 계약을 이미 만족한다(place.source 포함).
     localOnly,
   });
-}
-
-/**
- * 증분 재배차(Phase 2b) — 저장된 노선의 기존 정차 순서를 **그대로 두고**, 신규·복귀·위치변경 학생만
- * cheapest-insertion으로 가장 적합한 위치에 끼워넣은 뒤, 변경된 차량만 순서 고정으로 T맵 시간을 다시 계산한다.
- * ★ 전체 재최적화(suggestDispatch/computeDispatch) 금지 — 기존 정차 상호 순서를 절대 재배열하지 않는다.
- *
- * 저장본이 없으면 전체 자동배차(computeDispatch)로 폴백한다(끼워넣을 기준 노선이 없으므로).
- */
-export async function incrementalDispatch(opts: { direction: DispatchDirection; date?: string | null }): Promise<DispatchSuggestion> {
-  await requireAdmin();
-  const direction = opts.direction === "DROPOFF" ? "DROPOFF" : "PICKUP";
-
-  // 1) 기준정보(+날짜 확정)를 T맵 없이 얻는다. 저장본이 있으면 base.vehicles는 쓰지 않는다.
-  const base = await computeDispatch({ direction, date: opts.date ?? null, localOnly: true });
-  const date = base.date;
-  if (!date) return base;
-
-  // 2) 저장된 노선(reconcile=제거 반영)과 added/locationChanged를 얻는다. 없으면 전체 재최적화로 폴백.
-  const saved = await getSavedDispatchRoute(date, direction);
-  if (!saved || !Array.isArray(saved.vehicles) || saved.vehicles.length === 0) {
-    return computeDispatch({ direction, date, localOnly: false });
-  }
-
-  // 3) 삽입 대상 = added(신규·복귀) + locationChanged(위치변경). 그날 유효 명단에서 학생 정보를 되짚는다.
-  const plan = await getConfirmedShuttleRosterForDate(date, direction);
-  const riderById = new Map(plan.riders.map((r) => [r.shuttleRequestId, r]));
-  const targetIds = [
-    ...(saved.added ?? []).map((a) => a.requestId),
-    ...(saved.locationChanged ?? []).map((c) => c.requestId),
-  ];
-  const targets: IncrTarget[] = [];
-  for (const id of targetIds) {
-    const r = riderById.get(id);
-    if (!r) continue; // 명단에서 사라졌으면(방어) 건너뛴다.
-    const student: StopStudent = {
-      name: r.studentName, grade: r.childGrade, parentPhone: r.parentPhone, childPhone: r.childPhone,
-      rosterId: r.rosterId, requestId: r.shuttleRequestId, pickupLabel: r.placeLabel, applicationId: r.applicationId ?? null,
-    };
-    const isHub = isFreeHubLabel(r.placeLabel);
-    targets.push({
-      requestId: r.shuttleRequestId,
-      student: student as unknown as Record<string, unknown>,
-      name: r.studentName,
-      lat: isHub ? null : (r.place.latitude ?? null),
-      lng: isHub ? null : (r.place.longitude ?? null),
-      label: r.placeLabel,
-      approx: !pinnedSrc(r.place.source),
-      isHub,
-    });
-  }
-
-  // 4) 순수 로직으로 삽입(기존 순서 보존). start/end는 방향에 맞춘 차고지/학원 기준.
-  const { academy, depot } = base;
-  const startPt = direction === "PICKUP" ? (depot ?? academy) : academy;
-  const endPt = direction === "PICKUP" ? academy : (depot ?? academy);
-  const result = planIncrementalInsert(
-    saved.vehicles,
-    targets,
-    { start: { lat: startPt.lat, lng: startPt.lng }, end: { lat: endPt.lat, lng: endPt.lng } },
-  );
-
-  // 5) 삽입/제거로 정차 기하가 바뀐 차량만 순서 고정으로 T맵 재계산(path·시간·eta 갱신). 나머지는 그대로.
-  const vehicles = result.vehicles as Run[];
-  const classStart = saved.classStart ?? base.classStart;
-  const classEnd = saved.classEnd ?? base.classEnd;
-  const csMin = hhmmToMin(classStart), ceMin = hhmmToMin(classEnd);
-  // 다시 계산할 차량도 동시에 2대까지(위 전체 배차와 같은 규칙, 2026-11-14 속도 개선)
-  await forEachLimit(result.reroute.map((vi) => vehicles[vi]).filter((v): v is Run => Boolean(v)), PLAN_RUN_CONCURRENCY, async (v) => {
-    await planRun(v, direction, academy, depot, csMin, ceMin, false, /* keepOrder */ true);
-    v.over = v.passengers > v.capacity;
-  });
-
-  const totalStudents = vehicles.reduce((acc, v) => acc + (v.passengers ?? 0), 0);
-  return {
-    ...base,
-    classStart, classEnd,
-    vehicles,
-    unassigned: result.unassigned,
-    totalRiders: totalStudents,
-    routingProvider: vehicles.some((v) => v.provider === "TMAP") ? "TMAP" : "LOCAL",
-    // 삽입을 반영했으므로 배너의 변동 목록은 비운다(이번 재배차로 처리됨).
-    added: [],
-    locationChanged: [],
-  };
 }

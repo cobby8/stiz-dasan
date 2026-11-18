@@ -36,7 +36,7 @@ export default function SectionTabs({
                         href={tab.href}
                         prefetch={false}
                         aria-current={on ? "page" : undefined}
-                        // 2026-11-13 UI 통일: 아이콘 없이 글자만(tab.icon 은 받기만 한다). 지금 보는 탭 = 보조 색(하늘색) 바탕 + 테두리 + 조금 굵게
+                        // 2026-11-13 UI 통일: 아이콘 없이 글자만(탭 정의에 아이콘 값도 없다). 지금 보는 탭 = 보조 색(하늘색) 바탕 + 테두리 + 조금 굵게
                         className={`flex min-h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl px-3 text-sm transition-colors ${on
                             ? "bg-[var(--color-academy-secondary-soft)] font-semibold text-[var(--color-academy-secondary-ink)] ring-1 ring-inset ring-[var(--color-academy-secondary-strong)]"
                             : "font-medium text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)]"

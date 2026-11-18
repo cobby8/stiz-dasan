@@ -215,7 +215,7 @@ export async function fetchSheetSchedule(sheetUrl: string): Promise<SheetClassSl
     }
 }
 
-/** 동기화 전용: 캐시 없이 항상 최신 데이터를 가져옴 (cron/sync-schedule에서 사용) */
+/** 동기화 전용: 캐시 없이 항상 최신 데이터를 가져옴 (syncSheetSlots → /api/admin/sync-schedule 에서 사용) */
 export async function fetchSheetScheduleNoCache(sheetUrl: string): Promise<SheetClassSlot[]> {
     const csvUrl = extractCsvUrl(sheetUrl);
     if (!csvUrl) return [];

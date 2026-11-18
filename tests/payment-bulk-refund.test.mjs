@@ -329,7 +329,9 @@ test("계약: ⚡ 한 건 «환불»도 같은 runRefund → refundSelectedPayme
 
 test("계약: 서버 상태 변경 함수는 REFUNDED 를 받지 않는다(돈은 그대로 장부만 환불되는 옛 길 차단)", () => {
     const adminSrc = readFileSync(new URL("../src/app/actions/admin.ts", import.meta.url), "utf8");
-    for (const header of ["export async function updatePaymentStatus(", "export async function bulkUpdatePaymentStatus("]) {
+    // 일괄 상태 변경(bulkUpdatePaymentStatus)은 2026-11-18 옛 코드 정리 C 로 지웠다(부르는 곳 없음)
+    assert.doesNotMatch(adminSrc, /export async function bulkUpdatePaymentStatus\b/);
+    for (const header of ["export async function updatePaymentStatus("]) {
         const start = adminSrc.indexOf(header);
         const body = adminSrc.slice(start, adminSrc.indexOf("try {", start));
         assert.match(body, /=== "REFUNDED"\) throw new Error\(DIRECT_REFUND_BLOCKED_MESSAGE\)/, header);

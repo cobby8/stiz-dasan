@@ -81,5 +81,6 @@ test("수납 상태 변경과 삭제는 수퍼관리자에게만 열린다", () 
   assert.match(adminActions, /export async function updatePaymentStatus[\s\S]*?await requireFinanceOwner\(\)/);
   assert.match(adminActions, /export async function recordBankTransferPayment[\s\S]*?const admin = await requireFinanceOwner\(\)/);
   assert.match(adminActions, /export async function deletePayment[\s\S]*?await requireFinanceOwner\(\)/);
-  assert.match(adminActions, /export async function bulkUpdatePaymentStatus[\s\S]*?await requireFinanceOwner\(\)/);
+  // 일괄 상태 변경(bulkUpdatePaymentStatus)은 2026-11-18 옛 코드 정리 C 로 지웠다(부르는 곳 없음)
+  assert.doesNotMatch(adminActions, /export async function bulkUpdatePaymentStatus\b/);
 });

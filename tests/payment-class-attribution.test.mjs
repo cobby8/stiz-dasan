@@ -20,10 +20,8 @@ test("new invoices copy only the payment's explicit class", () => {
 
 test("manual and monthly creation require unambiguous active enrollment attribution", () => {
   assert.match(actions, /"studentId" = \$1 AND "classId" = \$2 AND status = 'ACTIVE'/);
-  assert.match(actions, /CASE WHEN tp\."totalClassCount" > 1 THEN 'REVIEW'/);
-  const monthlyCreation = actions.slice(actions.indexOf("export async function generateMonthlyInvoices"), actions.indexOf("// ── 미납 알림 일괄 발송"));
-  assert.match(monthlyCreation, /WHERE action = 'CREATE'/);
-  assert.match(monthlyCreation, /ensureInvoicesForMonth\(year, month, insertedRows\.map\(\(row\) => row\.id\), tx\)/);
+  // 옛 월 일괄 생성(generateMonthlyInvoices·previewMonthlyInvoices)은 2026-11-18 옛 코드 정리 C 로 지웠다(부르는 곳 없음)
+  assert.doesNotMatch(actions, /export async function (generateMonthlyInvoices|previewMonthlyInvoices)\b/);
   assert.match(actions, /INSERT INTO "Payment" \([\s\S]*?"classId"/);
 });
 

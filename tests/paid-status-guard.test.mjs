@@ -2,7 +2,7 @@
 //
 // 원장 지시: «납부완료를 대기·취소로 바꾸는 건 잘못된 동작». 실제 결제된 돈은 그대로인데 장부만 바뀌는 구멍.
 //  ① 순수 규칙(paidStatusGuard.ts) — 실제 결제=잠금 · 수기=대기로만 · 모르는 경로=잠금
-//  ② 서버 updatePaymentStatus·bulkUpdatePaymentStatus 를 가짜 prisma 로 «실제 실행» — DB 값으로 판정, 조건부 UPDATE, 감사 기록
+//  ② 서버 updatePaymentStatus 를 가짜 prisma 로 «실제 실행» — DB 값으로 판정, 조건부 UPDATE, 감사 기록
 //  ③ 화면 PaidStatusNotice 렌더 — 잠금 안내·되돌리기 확인 문구, 학생 상세 연결
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -70,10 +70,6 @@ const guardSource = actions.slice(
     actions.indexOf("class PaymentStatusGuardError"),
     actions.indexOf("/**\n * 계좌이체 납부 기록"),
 );
-const bulkSource = actions.slice(
-    actions.indexOf("export async function bulkUpdatePaymentStatus"),
-    actions.indexOf("// Phase 2: 일일 수업 리포트"),
-);
 const deletePaymentSource = actions.slice(
     actions.indexOf("// 현장 결제(POS)로 받은 청구는 삭제하면"),
     actions.indexOf("/**\n * 미납 청구 수정"),
@@ -83,7 +79,8 @@ const deleteStudentSource = actions.slice(
     actions.indexOf("// ── 수강 등록 관리"),
 );
 assert.ok(guardSource.includes("export async function updatePaymentStatus"), "updatePaymentStatus 를 잘라 왔어야 한다");
-assert.ok(bulkSource.length > 100, "bulkUpdatePaymentStatus 를 잘라 왔어야 한다");
+// 일괄 상태 변경(bulkUpdatePaymentStatus)은 2026-11-18 옛 코드 정리 C 로 지웠다(부르는 곳 없음 — 수납 목록도 안 썼다)
+assert.doesNotMatch(actions, /export async function bulkUpdatePaymentStatus\b/);
 assert.ok(deletePaymentSource.includes("export async function deletePayment"), "deletePayment 를 잘라 왔어야 한다");
 assert.ok(deleteStudentSource.includes('DELETE FROM "Payment" WHERE "studentId"'), "deleteStudent 를 잘라 왔어야 한다");
 
@@ -181,7 +178,7 @@ function loadActions(initialRows, { raceTo = null, raceIds = null, posBlocked = 
             throw new Error("대역 없는 의존: " + name);
         },
     };
-    const compiled = ts.transpile(`${guardSource}\n${bulkSource}\n${deletePaymentSource}\n${deleteStudentSource}`, { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 });
+    const compiled = ts.transpile(`${guardSource}\n${deletePaymentSource}\n${deleteStudentSource}`, { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 });
     const loaded = { exports: {} };
     new Function("module", "exports", ...Object.keys(deps), compiled)(loaded, loaded.exports, ...Object.values(deps));
     return { ...loaded.exports, get db() { return db; }, calls };
@@ -268,37 +265,6 @@ test("서버: PAID·REFUNDED 로 직접 바꾸기는 예전처럼 첫 줄에서 
     await assert.rejects(f.updatePaymentStatus("p1", "PAID"), /납부 처리/);
     await assert.rejects(f.updatePaymentStatus("p1", "REFUNDED"), /환불은 수납 관리/);
     assert.equal(f.calls.updates.length, 0);
-});
-
-test("서버(일괄): 납부완료가 하나라도 섞이면 아무것도 바꾸지 않는다 — 실제 결제는 수납 관리 안내, 수기도 일괄 되돌리기 없음", async () => {
-    const real = loadActions([{ id: "a", status: "PENDING" }, { id: "b", status: "PAID", paidProvider: "TOSS_POS" }]);
-    await assert.rejects(real.bulkUpdatePaymentStatus(["a", "b"], "CANCELED"), /결제 취소·환불은 수납 관리에서 해 주세요/);
-    assert.equal(real.calls.updates.length, 0);
-    assert.equal(real.db.get("a").status, "PENDING");
-
-    const manualCancel = loadActions([{ id: "a", status: "PENDING" }, { id: "b", status: "PAID", paidProvider: "MANUAL" }]);
-    await assert.rejects(manualCancel.bulkUpdatePaymentStatus(["a", "b"], "CANCELED"), /«대기로 되돌리기»만/);
-    assert.equal(manualCancel.calls.updates.length, 0);
-
-    const manualRevert = loadActions([{ id: "b", status: "PAID", paidProvider: "MANUAL" }]);
-    await assert.rejects(manualRevert.bulkUpdatePaymentStatus(["b"], "PENDING"), /학생 상세에서 한 건씩/);
-    assert.equal(manualRevert.db.get("b").status, "PAID");
-});
-
-test("서버(일괄): 미납만이면 예전처럼 바꾸고, 판정 뒤 납부완료가 된 건은 덮지 않고 알린다", async () => {
-    const f = loadActions([{ id: "a", status: "PENDING" }, { id: "b", status: "OVERDUE" }]);
-    await f.bulkUpdatePaymentStatus(["a", "b"], "CANCELED");
-    assert.equal(f.db.get("a").status, "CANCELED");
-    assert.equal(f.db.get("b").status, "CANCELED");
-    assert.equal(f.calls.audits[0].action, "PAYMENT_BULK_STATUS_UPDATE");
-
-    const race = loadActions([{ id: "a", status: "PENDING" }], { raceTo: "PAID" });
-    await assert.rejects(race.bulkUpdatePaymentStatus(["a"], "CANCELED"), /상태가 바뀌어/);
-    assert.equal(race.db.get("a").status, "PAID");
-
-    const missing = loadActions([{ id: "a", status: "PENDING" }]);
-    await assert.rejects(missing.bulkUpdatePaymentStatus(["a", "ghost"], "CANCELED"), /찾을 수 없습니다/);
-    assert.equal(missing.calls.updates.length, 0);
 });
 
 // ───────────────────────────── ③ 화면 ─────────────────────────────
@@ -437,22 +403,6 @@ test("서버 트랜잭션: 단건 변경·되돌리기는 Payment·청구서를 
     assert.equal(race.calls.rollbacks, 1);
     assert.equal(race.calls.invoiceUpdates.length, 0, "롤백되면 청구서 UPDATE 도 반영되지 않는다");
     assert.equal(race.calls.audits.length, 0);
-});
-
-test("서버 트랜잭션(일괄): 일부만 바뀌면(건수 불일치) 전체 롤백 — 먼저 바뀐 청구도 원래대로, 청구서·감사 기록 없음", async () => {
-    // b 만 판정 직후 납부완료가 됨 → Payment UPDATE 1건 ≠ 2건 → 전체 롤백
-    const f = loadActions([{ id: "a", status: "PENDING" }, { id: "b", status: "OVERDUE" }], { raceTo: "PAID", raceIds: ["b"] });
-    await assert.rejects(f.bulkUpdatePaymentStatus(["a", "b"], "CANCELED"), /상태가 바뀌어/);
-    assert.equal(f.calls.rollbacks, 1);
-    assert.equal(f.db.get("a").status, "PENDING", "a 도 되돌아간다");
-    assert.equal(f.db.get("b").status, "PAID");
-    assert.equal(f.calls.invoiceUpdates.length, 0);
-    assert.equal(f.calls.audits.length, 0);
-
-    const ok = loadActions([{ id: "a", status: "PENDING" }, { id: "b", status: "OVERDUE" }]);
-    await ok.bulkUpdatePaymentStatus(["a", "b"], "CANCELED");
-    assert.equal(ok.calls.transactions, 1);
-    assert.equal(ok.calls.invoiceUpdates.length, 1);
 });
 
 test("서버(영구 삭제): 실제 결제 납부완료·완료 거래·교사 수납 확인 청구는 거절하고 하나도 지우지 않는다", async () => {

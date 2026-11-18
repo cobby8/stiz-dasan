@@ -65,22 +65,21 @@ test("같은 수강 이벤트를 다른 신청에 귀속하면 기존 중복 방
 test("등록·상태변경은 같은 트랜잭션에서 원장을 만들고 하드삭제는 자동 동기화하지 않는다", () => {
   const source = fs.readFileSync(new URL("../src/app/actions/admin.ts", import.meta.url), "utf8");
   const enroll = source.slice(source.indexOf("export async function enrollStudent"), source.indexOf("export async function updateEnrollmentStatus"));
-  const status = source.slice(source.indexOf("export async function updateEnrollmentStatus"), source.indexOf("export async function deleteEnrollment"));
-  const hardDelete = source.slice(source.indexOf("export async function deleteEnrollment"), source.indexOf("// ── 출결 관리"));
+  const status = source.slice(source.indexOf("export async function updateEnrollmentStatus"), source.indexOf("// ── 출결 관리"));
 
   for (const action of [enroll, status]) {
     assert.match(action, /prisma\.\$transaction/);
     assert.match(action, /enqueueWebsiteOperationsEventInTransaction\(tx, event\)/);
   }
-  assert.doesNotMatch(hardDelete, /enqueueWebsiteOperationsEvent/);
-  assert.doesNotMatch(hardDelete, /DELETE FROM "Enrollment"/);
-  assert.match(hardDelete, /updateEnrollmentStatus\(enrollmentId, "WITHDRAWN"\)/);
+  // 2026-11-18 옛 코드 정리 C: 부르는 곳이 없던 deleteEnrollment(퇴원 처리로 우회하던 껍데기)를 지웠다
+  assert.doesNotMatch(source, /export async function deleteEnrollment\b/);
+  assert.doesNotMatch(status, /DELETE FROM "Enrollment"/);
 });
 
 test("동일 상태는 UPDATE·UPSERT보다 먼저 반환해 updatedAt도 보존한다", () => {
   const source = fs.readFileSync(new URL("../src/app/actions/admin.ts", import.meta.url), "utf8");
   const enroll = source.slice(source.indexOf("export async function enrollStudent"), source.indexOf("export async function updateEnrollmentStatus"));
-  const status = source.slice(source.indexOf("export async function updateEnrollmentStatus"), source.indexOf("export async function deleteEnrollment"));
+  const status = source.slice(source.indexOf("export async function updateEnrollmentStatus"), source.indexOf("// ── 출결 관리"));
 
   const activeNoOp = enroll.indexOf('existingEnrollment?.status === "ACTIVE"');
   const enrollmentUpsert = enroll.indexOf('INSERT INTO "Enrollment"');

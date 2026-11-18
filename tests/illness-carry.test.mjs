@@ -830,8 +830,6 @@ test("출결 저장 경로: 정규 결석은 발급 전에 보류 여부를 보�
   assert.ok(clearReasonAt > 0 && clearDeleteAt > clearReasonAt && clearRevokeAt > clearDeleteAt, "clearStaffAttendance: 사유 정리 → 출결 삭제 → 보강권 회수 순서");
   assert.equal(staffClear.split("await revokeMakeupCreditInTx(").length - 1, 1, "clearStaffAttendance: 보강권 회수는 한 곳");
   assert.equal(staffSource.split("revokeMakeupCreditInTx(").length - 1, 1, "선생님 쪽에서 보강권을 직접 회수하는 곳은 출결 취소 하나뿐");
-  // 랠리즈 출결 동기화도 같은 함수를 쓴다(분기가 따로 필요 없다)
-  assert.match(read("src/app/actions/rallyz-attendance-sync.ts"), /await syncCreditForRegularSession\(target\)/);
 });
 
 test("출석부 «질병·부상 표시»: 표시하는 순간 먼저 나가 있던 미사용 보강권을 거둔다(예약·사용분은 그대로)", async () => {

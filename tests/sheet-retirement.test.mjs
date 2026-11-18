@@ -5,7 +5,7 @@
 // 4) 화면: 은퇴 시 시트 버튼·문구 숨김, 랠리즈 잠금 해제
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   isSheetSyncRetired, isSheetTargetDone, initialSyncAttempt, SHEET_RETIRED_REFERENCE,
@@ -163,8 +163,8 @@ test('SHEET 시도를 만드는 곳은 전부 initialSyncAttempt(은퇴 분기)�
 // (세부 대조는 tests/rallyz-retirement.test.mjs).
 test('순서 강제·확인 필요 판정: 바깥 장부(SHEET·RALLYZ)만 SKIPPED 를 끝난 것으로 본다', () => {
   const ops = read('src/app/actions/operations-sync.ts');
-  // 홈페이지 반영 전 선행 조건
-  assert.match(ops, /AND \$\{externalSyncPendingSql\("pending"\)\}/);
+  // 홈페이지 반영 액션(applyOperationsWebsite)은 2026-11-18 옛 코드 정리 C 로 지웠다(부르는 곳 없음)
+  assert.doesNotMatch(ops, /export async function applyOperationsWebsite\b/);
   // 랠리즈 확인 전 선행 조건
   const rallyz = ops.slice(ops.indexOf('export async function recordOperationsExternalCheck'), ops.indexOf('export async function applyOperationsSheet'));
   assert.match(rallyz, /!isSheetTargetDone\(sheet\[0\]\.status\)/);
@@ -181,9 +181,8 @@ test('순서 강제·확인 필요 판정: 바깥 장부(SHEET·RALLYZ)만 SKIPP
   // 확인 필요 목록·건수
   const admin = read('src/lib/enrollment/admin-change-request.ts');
   assert.match(admin, /AND \$\{externalSyncPendingSql\("a"\)\}\)`;/);
-  // 대기열 요약(읽기 전용 워커)
-  const worker = read('src/lib/operationsSyncWorker.ts');
-  assert.equal((worker.match(/isSheetTargetDone\(row\.sheetStatus\)/g) || []).length, 2);
+  // 대기열 요약(읽기 전용 워커)은 2026-11-18 옛 코드 정리 B 로 파일째 지웠다.
+  assert.equal(existsSync('src/lib/operationsSyncWorker.ts'), false);
 });
 
 test('시트 쓰기 코드는 되돌림용으로 남아 있다', () => {

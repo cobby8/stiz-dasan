@@ -44,10 +44,7 @@ import {
     canAdminEditParentAccount,
     insertPrimaryGuardian,
     linkParentAccountForNewStudent,
-    ParentAccountLinkError,
     validatePrimaryGuardian,
-    type ParentLinkDb,
-    type PrimaryGuardian,
 } from "@/lib/students/parentAccountLink";
 import { autoLinkApplicationsForTrialLead, getTrialLinkSuggestions, linkTrialLeadToApplication } from "@/lib/enrollment/trialLeadLinkService";
 import type { TrialLinkSuggestion } from "@/lib/enrollment/trialLeadMatch";
@@ -136,7 +133,6 @@ import {
     validateBankTransferInput,
     type SkipReason,
 } from "@/lib/payments/bankTransferRecord";
-import { monthlyBillingDueDate } from "@/lib/billing-due-date";
 // 학생 상세 «청구/수납» 발행·수정 규칙(청구 월·중복·수정 가능 여부·작업대 차단) — 화면과 같은 순수 판정
 import {
     DONE_TRANSACTION_BLOCK_MESSAGE,
@@ -171,7 +167,6 @@ import {
     type ApplicationContactAction,
     type ApplicationContactTargetType,
 } from "@/lib/application-contact-logs";
-import { PUBLIC_SITE_URL } from "@/lib/publicMetadata";
 import { formatTrialScheduleLabel, formatTrialSmsDateTime, hasExplicitTrialTime, isLegacyTrialDatePlaceholder } from "@/lib/trial-sms-time";
 import { seoulDateInputValue } from "@/lib/trial-schedule-time";
 import { resolveCanonicalTrialSchedule } from "@/lib/trial-schedule-server";
@@ -230,7 +225,6 @@ async function recordApplicationHistoryLog(input: {
 // ── AcademySettings 누락 컬럼 자동 추가 (idempotent) ──────────────────────────
 // $executeRawUnsafe 사용: simple query protocol → PgBouncer transaction mode 호환
 // $executeRaw 태그드 템플릿은 prepared statement(extended protocol)를 사용해 PgBouncer가 차단
-let _columnsEnsured = false;
 const BOOLEAN_SETTINGS_COLUMNS = new Set([
     "instagramAutoPublishEnabled",
     "useBuiltInTrialForm",
@@ -330,67 +324,6 @@ function revalidateWaitlistAdminCaches() {
 function revalidateMakeupAdminCaches() {
     revalidateTag("admin-makeup", { expire: 0 });
     revalidateTag("admin-classes", { expire: 0 });
-}
-
-// ⚠️ 현재 이 함수를 호출하는 곳은 없다(전수 검색 확인).
-//    실제 컬럼 생성은 rawUpsertAcademySettings의 fallback이 담당한다.
-//    따라서 여기 목록만 고쳐도 실 DB에는 아무 영향이 없다 — 반드시 아래
-//    BOOLEAN/NUMERIC 목록과 ALLOWED_SETTINGS_COLUMNS를 함께 맞춰야 한다.
-export async function ensureAcademySettingsColumns() {
-    if (_columnsEnsured) return;
-    const columns: [string, string][] = [
-        ["googleSheetsScheduleUrl", "TEXT"],
-        ["googleCalendarIcsUrl", "TEXT"],
-        ["termsOfService", "TEXT"],
-        ["trialTitle", "TEXT DEFAULT '체험수업 안내'"],
-        ["trialContent", "TEXT"],
-        ["trialFormUrl", "TEXT"],
-        ["enrollTitle", "TEXT DEFAULT '수강신청 안내'"],
-        ["enrollContent", "TEXT"],
-        ["enrollFormUrl", "TEXT"],
-        ["youtubeUrl", "TEXT"],
-        ["philosophyText", "TEXT"],
-        ["facilitiesText", "TEXT"],
-        ["facilitiesImagesJSON", "TEXT"],
-        ["galleryImagesJSON", "TEXT"],
-        ["operatingHours", "TEXT"],
-        ["privacyPolicy", "TEXT"],
-        ["footerDescription", "TEXT"],
-        ["footerCopyright", "TEXT"],
-        ["instagramUrl", "TEXT"],
-        ["instagramBusinessAccountId", "TEXT"],
-        ["instagramAutoPublishEnabled", "BOOLEAN DEFAULT false"],
-        ["kakaoChannelUrl", "TEXT"],
-        ["uniformFormUrl", "TEXT"],
-        ["useBuiltInTrialForm", "BOOLEAN DEFAULT false"],  // 자체 폼 ON/OFF (false=구글폼)
-        ["useBuiltInEnrollForm", "BOOLEAN DEFAULT false"], // 자체 폼 ON/OFF (false=구글폼)
-        // 셔틀 노선의 출발지·도착지로 쓰는 학원 위치. 좌표도 TEXT인 이유는
-        // 아래 rawUpsertAcademySettings의 컬럼 자동 추가 fallback이 TEXT로 만들기 때문이다.
-        // (타입이 갈리면 환경마다 컬럼 타입이 달라진다. 검증은 shuttle/academyLocation.ts가 한다.)
-        ["academyPlaceName", "TEXT"],
-        ["academyAddress", "TEXT"],
-        ["academyLatitude", "TEXT"],
-        ["academyLongitude", "TEXT"],
-        // 차고지·무료 탑승 거점 좌표는 마이그레이션이 DOUBLE PRECISION으로 만든다.
-        // 여기서 TEXT로 만들면 타입이 갈리므로 반드시 동일 타입으로 맞춘다.
-        ["shuttleDepotAddress", "TEXT"],
-        ["shuttleDepotLatitude", "DOUBLE PRECISION"],
-        ["shuttleDepotLongitude", "DOUBLE PRECISION"],
-        ["shuttleHubName", "TEXT"],
-        ["shuttleHubAddress", "TEXT"],
-        ["shuttleHubLatitude", "DOUBLE PRECISION"],
-        ["shuttleHubLongitude", "DOUBLE PRECISION"],
-    ];
-    for (const [col, type] of columns) {
-        try {
-            await prisma.$executeRawUnsafe(
-                `ALTER TABLE "AcademySettings" ADD COLUMN IF NOT EXISTS "${col}" ${type}`
-            );
-        } catch (e) {
-            console.warn(`[DDL] column "${col}" ensure failed:`, (e as Error).message);
-        }
-    }
-    _columnsEnsured = true;
 }
 
 // ── Prisma 모델 클라이언트 없이 raw SQL 로 upsert (RETURNING 우회) ──────────────
@@ -885,36 +818,6 @@ export async function deleteCoach(id: string) {
     }
 }
 
-export async function moveCoach(id: string, direction: "up" | "down") {
-    await requireAdmin();
-    // $queryRawUnsafe + $executeRawUnsafe: PgBouncer transaction mode 호환
-    try {
-        const coaches = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT id, "order" FROM "Coach" ORDER BY "order" ASC`
-        );
-        const idx = coaches.findIndex((c: any) => c.id === id);
-        if (idx === -1) return;
-        const swapIdx = direction === "up" ? idx - 1 : idx + 1;
-        if (swapIdx < 0 || swapIdx >= coaches.length) return;
-        const a = coaches[idx];
-        const b = coaches[swapIdx];
-        // 두 코치의 order 값을 서로 교환
-        await prisma.$executeRawUnsafe(
-            `UPDATE "Coach" SET "order" = $1 WHERE id = $2`, b.order, a.id
-        );
-        await prisma.$executeRawUnsafe(
-            `UPDATE "Coach" SET "order" = $1 WHERE id = $2`, a.order, b.id
-        );
-        revalidatePath("/admin/coaches");
-        revalidatePath("/about");
-        revalidatePath("/schedule");
-        revalidateCoachAdminCaches();
-    } catch (e) {
-        console.error("Failed to move coach:", e);
-        throw new Error("순서 변경 실패");
-    }
-}
-
 export async function reorderCoaches(ids: string[]) {
     await requireAdmin();
     // 파라미터 바인딩으로 SQL 인젝션 방지 + PgBouncer 호환
@@ -1078,89 +981,6 @@ export async function deleteAnnualEvent(id: string) {
 }
 
 // ── 원생 관리 CRUD ────────────────────────────────────────────────────────────
-export async function createStudent(data: {
-    name: string;
-    birthDate: string;
-    gender?: string | null;
-    parentName: string;
-    parentPhone?: string | null;
-    // 주 보호자 관계(엄마·아빠 등) — Guardian.relation 으로 저장. 이메일은 받지 않는다(매칭에 쓰지 않음)
-    parentRelation?: string | null;
-    // 새 필드: 엑셀 업로드 일괄 등록에서도 사용
-    phone?: string | null;       // 학생 휴대폰번호
-    school?: string | null;      // 학교명
-    grade?: string | null;       // 학년
-    address?: string | null;     // 주소
-    enrollDate?: string | null;  // 입회일자
-    memo?: string | null;        // 메모
-}): Promise<AdminStudentCreateResult> {
-    await requireAdmin();
-    const name = String(data.name ?? "").trim();
-    if (!name || !data.birthDate) return { ok: false, error: "학생 이름과 생년월일을 입력해 주세요." };
-    // 주 보호자(관계·이름·휴대폰) 필수 — 휴대폰이 학부모 계정을 찾는 열쇠다
-    const guardian = validatePrimaryGuardian({ relation: data.parentRelation, name: data.parentName, phone: data.parentPhone });
-    if (!guardian.ok) return { ok: false, error: guardian.error };
-
-    let result: AdminStudentCreateResult;
-    try {
-        // 계정 확정·학생·주 보호자를 한 트랜잭션으로 — 중간에 실패하면 빈 계정도 남지 않는다
-        const created = await prisma.$transaction(
-            (tx) => insertAdminStudentWithGuardian(tx, { ...data, name }, guardian.value),
-            { timeout: 15_000 },
-        );
-        result = { ok: true, ...created };
-    } catch (e) {
-        if (e instanceof ParentAccountLinkError) return { ok: false, error: e.message };
-        console.error("Failed to create student:", e);
-        throw new Error("원생 등록 실패");
-    }
-    revalidatePath("/admin/students");
-    revalidatePath("/admin");
-    revalidateStudentAdminCaches();
-    return result;
-}
-
-/** 관리자 직접 등록(목록 «원생 등록»·체험 «정규 전환»)의 결과. 안내가 필요한 실패는 throw 대신 ok:false 로 돌려준다
- *  (운영 빌드는 서버 액션이 던진 오류 문구를 화면에 그대로 보내지 않는다). */
-export type AdminStudentCreateResult =
-    | { ok: true; studentId: string; parentAccountCreated: boolean; staffAccount: boolean }
-    | { ok: false; error: string };
-
-/**
- * [트랜잭션 안에서] 학부모 계정 확정 → Student INSERT → 주 보호자 Guardian INSERT.
- * 계정 연결 규칙은 parentAccountLink 한 곳에 있다(이메일 매칭·기존 계정 덮어쓰기 없음).
- */
-async function insertAdminStudentWithGuardian(
-    tx: ParentLinkDb,
-    student: {
-        name: string; birthDate: string; gender?: string | null;
-        phone?: string | null; school?: string | null; grade?: string | null;
-        address?: string | null; enrollDate?: string | null; memo?: string | null;
-    },
-    guardian: PrimaryGuardian,
-) {
-    const link = await linkParentAccountForNewStudent(tx, guardian);
-    const rows = await tx.$queryRawUnsafe<{ id: string }[]>(
-        `INSERT INTO "Student" (id, name, "birthDate", gender, "parentId", phone, school, grade, address, "enrollDate", memo, "createdAt", "updatedAt")
-         VALUES (gen_random_uuid()::text, $1, $2::timestamp, $3, $4, $5, $6, $7, $8, $9::timestamp, $10, NOW(), NOW())
-         RETURNING id`,
-        student.name,
-        student.birthDate,
-        student.gender || null,
-        link.parentId,
-        student.phone || null,
-        student.school || null,
-        student.grade || null,
-        student.address || null,
-        student.enrollDate || null,
-        student.memo || null,
-    );
-    const studentId = rows[0].id;
-    // 입력한 보호자 정보는 계정이 아니라 Guardian(주 보호자)에 남긴다 — 알림·본인인증 자녀 연결이 이 기록을 쓴다
-    await insertPrimaryGuardian(tx, studentId, guardian);
-    return { studentId, parentAccountCreated: link.created, staffAccount: link.staffAccount };
-}
-
 export async function updateStudentMemo(id: string, memo: string) {
     await requireAdmin();
     try {
@@ -1670,11 +1490,6 @@ export async function cancelScheduledResume(enrollmentId: string): Promise<{ ok:
     return { ok: result.ok, message: result.message };
 }
 
-export async function deleteEnrollment(enrollmentId: string) {
-    // 수강 이력은 시트·랠리즈 대조의 근거이므로 삭제하지 않고 퇴원 상태로 보존합니다.
-    return updateEnrollmentStatus(enrollmentId, "WITHDRAWN");
-}
-
 // ── 출결 관리 ──────────────────────────────────────────────────────────────────
 type AdminSeasonalAttendanceContext = {
     sessionDateId: string;
@@ -2139,7 +1954,7 @@ export async function createPayment(data: {
         const invoice = created.invoice;
         result = { ok: true, invoiceId: invoice.id };
 
-        // 학부모 청구 안내는 랠리즈 전담(B안) — 사이트 발송 잠금이 풀린 경우에만 알린다.
+        // 학부모 청구 안내는 사이트 발송 스위치(BILLING_PARENT_SEND_ENABLED=1)가 켜진 경우에만 알린다.
         if (data.notifyParent && isBillingParentSendEnabled()) {
             const amountStr = data.amount.toLocaleString("ko-KR");
             await notifyParentsOfStudents(
@@ -3807,328 +3622,6 @@ export async function deleteBillingTemplate(id: string) {
     revalidateTag("admin-finance-billing", { expire: 0 });
 }
 
-type MonthlyInvoicePreviewSample = {
-    studentId: string;
-    studentName: string;
-    className: string | null;
-    classCount: number;
-    classNames: string[];
-    parentName: string | null;
-    parentPhone: string | null;
-    parentEmail: string | null;
-    templateName: string;
-    type: string;
-    amount: number;
-    /** @deprecated 템플릿에 저장된 옛 설정값(매월 N일). 납부기한 계산에는 더 이상 쓰지 않는다. */
-    dueDay: number;
-    /** 실제 적용될 납부기한(YYYY-MM-DD) — 약관 기준 전월 말일 */
-    dueDate: string;
-    existingPaymentId: string | null;
-    existingStatus: string | null;
-    existingAmount: number | null;
-    existingInvoiceNo: string | null;
-    existingInvoiceStatus: string | null;
-    existingSentAt: string | null;
-    issueReason: string | null;
-    action: "CREATE" | "SKIP" | "REVIEW";
-};
-
-type MonthlyInvoicePreview = {
-    year: number;
-    month: number;
-    activeTemplateCount: number;
-    targetStudentCount: number;
-    createCount: number;
-    skipCount: number;
-    reviewCount: number;
-    createAmount: number;
-    skipAmount: number;
-    samples: MonthlyInvoicePreviewSample[];
-    items: MonthlyInvoicePreviewSample[];
-};
-
-const MONTHLY_INVOICE_TARGETS_SQL = `
-    WITH templates AS (
-        SELECT id, name, amount, type, description, "dueDay", "programId"
-        FROM "BillingTemplate"
-        -- 0원 청구서는 원장과 학부모 알림 모두 만들지 않는다.
-        WHERE "isActive" = true
-          AND amount > 0
-    ),
-    active_enrollments AS (
-        SELECT DISTINCT
-            s.id AS "studentId",
-            s.name AS "studentName",
-            u.name AS "parentName",
-            u.phone AS "parentPhone",
-            u.email AS "parentEmail",
-            c.id AS "classId",
-            c.name AS "className",
-            c."programId"
-        FROM "Student" s
-        JOIN "User" u ON u.id = s."parentId"
-        JOIN "Enrollment" e ON e."studentId" = s.id
-        JOIN "Class" c ON c.id = e."classId"
-        -- 흡수된 중복 학생에게 새 청구가 또 만들어지면 같은 아이에게 두 번 청구된다.
-        WHERE e.status = 'ACTIVE' AND ${notMergedStudent("s")}
-    ),
-    student_class_totals AS (
-        -- 프로그램별 템플릿으로 나누기 전에 학생의 전체 활성 반을 확인한다.
-        SELECT "studentId", COUNT(DISTINCT "classId")::int AS "totalClassCount",
-               ARRAY_AGG(DISTINCT "className" ORDER BY "className") AS "classNames"
-        FROM active_enrollments
-        GROUP BY "studentId"
-    ),
-    target_pairs AS (
-        SELECT
-            t.id AS "templateId",
-            t.name AS "templateName",
-            t.amount,
-            COALESCE(t.type, 'MONTHLY') AS type,
-            COALESCE(t.description, t.name) AS description,
-            LEAST(GREATEST(COALESCE(t."dueDay", 10), 1), 28) AS "dueDay",
-            a."studentId",
-            a."studentName",
-            a."parentName",
-            a."parentPhone",
-            a."parentEmail",
-            MIN(a."classId") AS "classId",
-            MIN(a."className") AS "className",
-            sc."classNames",
-            sc."totalClassCount" AS "classCount",
-            sc."totalClassCount"
-        FROM templates t
-        JOIN active_enrollments a
-          ON t."programId" IS NULL OR t."programId" = a."programId"
-        JOIN student_class_totals sc ON sc."studentId" = a."studentId"
-        GROUP BY
-            t.id, t.name, t.amount, t.type, t.description, t."dueDay",
-            a."studentId", a."studentName", a."parentName", a."parentPhone", a."parentEmail",
-            sc."classNames", sc."totalClassCount"
-    ),
-    actions AS (
-        SELECT
-            tp.*,
-            p.id AS "existingPaymentId",
-            p.status AS "existingStatus",
-            p.amount::int AS "existingAmount",
-            i."invoiceNo" AS "existingInvoiceNo",
-            i.status AS "existingInvoiceStatus",
-            TO_CHAR(i."sentAt", 'YYYY-MM-DD') AS "existingSentAt",
-            CASE
-                WHEN tp."totalClassCount" > 1 THEN '여러 반 수강: 반별 수강료·할인·기존 납부를 확인해야 하므로 발행에서 제외합니다.'
-                WHEN NULLIF(tp."parentEmail", '') IS NULL THEN '학부모 이메일 확인 필요'
-                WHEN NULLIF(tp."parentPhone", '') IS NULL THEN '학부모 연락처 확인 권장'
-                WHEN p.id IS NOT NULL THEN '이미 같은 유형의 청구가 있어 유지'
-                ELSE NULL
-            END AS "issueReason",
-            CASE WHEN tp."totalClassCount" > 1 THEN 'REVIEW'
-                 WHEN p.id IS NULL THEN 'CREATE' ELSE 'SKIP' END AS action
-        FROM target_pairs tp
-        LEFT JOIN "Payment" p
-          ON p."studentId" = tp."studentId"
-         AND p.year = $1
-         AND p.month = $2
-         AND p.type = tp.type
-         -- 다반 확인필요 행은 납부 건수만큼 복제되지 않도록 기존 납부와 합치지 않는다.
-         AND tp."totalClassCount" = 1
-        LEFT JOIN "PaymentInvoice" i ON i."paymentId" = p.id
-    )
-`;
-
-export async function previewMonthlyInvoices(year: number, month: number): Promise<MonthlyInvoicePreview> {
-    // 부원장 차단(2026-11-14 원장 결정): 월 일괄 발행·미리보기·일괄 문자·발송 진행은 원장만 — 학원 전체 청구 규모가 보인다
-    await requireFinanceOwner();
-    await ensurePaymentColumns();
-    await ensureBillingTemplateTable();
-
-    try {
-        const [summaryRows, items] = await Promise.all([
-            prisma.$queryRawUnsafe<{
-                activeTemplateCount: number;
-                targetStudentCount: number;
-                createCount: number;
-                skipCount: number;
-                reviewCount: number;
-                createAmount: number;
-                skipAmount: number;
-            }[]>(
-                `
-                ${MONTHLY_INVOICE_TARGETS_SQL}
-                SELECT
-                    (SELECT COUNT(*)::int FROM templates) AS "activeTemplateCount",
-                    (SELECT COUNT(DISTINCT "studentId")::int FROM target_pairs) AS "targetStudentCount",
-                    COUNT(CASE WHEN action = 'CREATE' THEN 1 END)::int AS "createCount",
-                    COUNT(CASE WHEN action = 'SKIP' THEN 1 END)::int AS "skipCount",
-                    COUNT(CASE WHEN action = 'REVIEW' THEN 1 END)::int AS "reviewCount",
-                    COALESCE(SUM(CASE WHEN action = 'CREATE' THEN amount ELSE 0 END), 0)::int AS "createAmount",
-                    COALESCE(SUM(CASE WHEN action = 'SKIP' THEN amount ELSE 0 END), 0)::int AS "skipAmount"
-                FROM actions
-                `,
-                year,
-                month,
-            ),
-            prisma.$queryRawUnsafe<MonthlyInvoicePreviewSample[]>(
-                `
-                ${MONTHLY_INVOICE_TARGETS_SQL}
-                SELECT
-                    "studentId",
-                    "studentName",
-                    "className",
-                    "classCount",
-                    "classNames",
-                    "parentName",
-                    "parentPhone",
-                    "parentEmail",
-                    "templateName",
-                    type,
-                    amount::int AS amount,
-                    "dueDay"::int AS "dueDay",
-                    "existingPaymentId",
-                    "existingStatus",
-                    "existingAmount",
-                    "existingInvoiceNo",
-                    "existingInvoiceStatus",
-                    "existingSentAt",
-                    "issueReason",
-                    action
-                FROM actions
-                ORDER BY
-                    CASE action WHEN 'REVIEW' THEN 0 WHEN 'CREATE' THEN 1 ELSE 2 END,
-                    "studentName",
-                    "templateName"
-                `,
-                year,
-                month,
-            ),
-        ]);
-
-        const summary = summaryRows[0] ?? {
-            activeTemplateCount: 0,
-            targetStudentCount: 0,
-            createCount: 0,
-            skipCount: 0,
-            reviewCount: 0,
-            createAmount: 0,
-            skipAmount: 0,
-        };
-
-        return {
-            year,
-            month,
-            activeTemplateCount: Number(summary.activeTemplateCount ?? 0),
-            targetStudentCount: Number(summary.targetStudentCount ?? 0),
-            createCount: Number(summary.createCount ?? 0),
-            skipCount: Number(summary.skipCount ?? 0),
-            reviewCount: Number(summary.reviewCount ?? 0),
-            createAmount: Number(summary.createAmount ?? 0),
-            skipAmount: Number(summary.skipAmount ?? 0),
-            samples: items.slice(0, 20).map((sample) => ({
-                ...sample,
-                amount: Number(sample.amount ?? 0),
-                dueDay: Number(sample.dueDay ?? 10),
-                dueDate: monthlyBillingDueDate(year, month), // 화면에는 실제 적용될 기한을 보여준다
-                existingAmount: sample.existingAmount == null ? null : Number(sample.existingAmount),
-                action: sample.action,
-            })),
-            items: items.map((sample) => ({
-                ...sample,
-                amount: Number(sample.amount ?? 0),
-                dueDay: Number(sample.dueDay ?? 10),
-                dueDate: monthlyBillingDueDate(year, month),
-                existingAmount: sample.existingAmount == null ? null : Number(sample.existingAmount),
-                action: sample.action,
-            })),
-        };
-    } catch (e) {
-        console.error("Failed to preview monthly invoices:", e);
-        throw new Error("월별 청구 대상 미리보기 실패");
-    }
-}
-
-// ── 월별 청구서 자동 생성 ────────────────────────────────────────────────────────
-// 활성 템플릿 기준으로 ACTIVE 수강생에게 청구서를 생성한다.
-// 중복 방지: 같은 학생+같은 year+month+type 조합이 이미 있으면 건너뜀
-export async function generateMonthlyInvoices(year: number, month: number, excludeStudentIds?: string[]) {
-    // 부원장 차단(2026-11-14 원장 결정): 월 일괄 발행·미리보기·일괄 문자·발송 진행은 원장만 — 학원 전체 청구 규모가 보인다
-    await requireFinanceOwner();
-    await ensurePaymentColumns();
-    await ensureBillingTemplateTable();
-
-    try {
-        const preview = await previewMonthlyInvoices(year, month);
-        if (preview.activeTemplateCount === 0) {
-            return { created: 0, skipped: 0, message: "활성 청구 템플릿이 없습니다." };
-        }
-
-        const excluded = excludeStudentIds && excludeStudentIds.length > 0 ? excludeStudentIds : null;
-        const excludeClause = excluded
-            ? `AND "studentId" NOT IN (${excluded.map((_, i) => `$${i + 4}`).join(",")})`
-            : "";
-
-        // 구조 보강은 거래 밖에서 마치고, 납부와 청구서는 함께 성공하거나 함께 취소한다.
-        await ensurePaymentInfrastructure();
-        const { insertedRows, invoiceResult } = await prisma.$transaction(async (tx) => {
-            // 새 청구가 설치되면 구형 고정액 생성으로 이월·0원 정산을 우회하지 못하게 한다.
-            await tx.$executeRawUnsafe("SELECT pg_advisory_xact_lock(hashtext('STIZ_BILLING_WORKBENCH'))");
-            const installed = await tx.$queryRawUnsafe<Array<{ found: string | null }>>(`SELECT to_regclass('public."BillingWorkbenchDraft"')::text AS found`);
-            if (installed[0]?.found) throw new Error("이번 달 청구 준비에서 금액을 확인해 발행해 주세요.");
-            // 이 월청구 경로의 같은 연월 실행만 순서대로 처리한다(다른 수납 경로의 전체 잠금은 아님).
-            await tx.$executeRawUnsafe(
-                `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
-                `monthly-invoice:${year}:${month}`,
-            );
-            const insertedRows = await tx.$queryRawUnsafe<{ id: string }[]>(
-                `
-                ${MONTHLY_INVOICE_TARGETS_SQL}
-                INSERT INTO "Payment" (
-                    id, "studentId", "classId", amount, status, "dueDate", type, description,
-                    month, year, "autoGenerated", "createdAt", "updatedAt"
-                )
-                SELECT
-                    gen_random_uuid()::text,
-                    "studentId",
-                    "classId",
-                    amount,
-                    'PENDING',
-                    $3::timestamp,
-                    type,
-                    description,
-                    $2,
-                    $1,
-                    true,
-                    NOW(),
-                    NOW()
-                FROM actions
-                WHERE action = 'CREATE'
-                ${excludeClause}
-                RETURNING id
-                `,
-                year,
-                month,
-                monthlyBillingDueDate(year, month),
-                ...(excluded ?? []),
-            );
-
-            // 이번 승인으로 새로 생성된 납부만 발행하고, 같은 달의 보류·기존 기록은 건드리지 않는다.
-            const invoiceResult = await ensureInvoicesForMonth(year, month, insertedRows.map((row) => row.id), tx);
-            return { insertedRows, invoiceResult };
-        });
-
-        revalidateFinanceCaches();
-
-        return {
-            created: insertedRows.length,
-            skipped: preview.skipCount,
-            invoices: invoiceResult.invoiceCount,
-            message: `${insertedRows.length}건 생성, ${preview.skipCount}건 기존 청구서 유지`,
-        };
-    } catch (e) {
-        console.error("Failed to generate monthly invoices:", e);
-        throw new Error("월별 청구서 생성 실패");
-    }
-}
-
 // ── 미납 알림 일괄 발송 ──────────────────────────────────────────────────────────
 // PENDING/OVERDUE 상태인 결제 건의 학부모에게 알림을 보낸다.
 // 이미 알림이 발송된 건(notifiedAt != null)은 건너뜀 (강제 재발송 옵션 있음)
@@ -4192,7 +3685,7 @@ const INVOICE_NOTICE_LABEL = "수강료 청구서 안내";
 export async function sendInvoiceLinksForMonth(year: number, month: number, forceResend?: boolean) {
     // 부원장 차단(2026-11-14 원장 결정): 월 일괄 발행·미리보기·일괄 문자·발송 진행은 원장만 — 학원 전체 청구 규모가 보인다
     const admin = await requireFinanceOwner();
-    // 학부모 청구 안내는 랠리즈 전담 — 잠금이면 DB 를 건드리기 전에 바로 돌려보낸다.
+    // 학부모 청구 안내 발송 스위치가 꺼져 있으면(잠금) DB 를 건드리기 전에 바로 돌려보낸다.
     // (throw 대신 결과로 돌려줘야 운영 빌드에서도 안내 문구가 가려지지 않는다)
     if (!isBillingParentSendEnabled()) {
         return { sent: 0, ok: false, locked: true, message: BILLING_PARENT_SEND_LOCKED_MESSAGE };
@@ -4444,7 +3937,7 @@ export async function previewInvoiceNoticeCounts(year: number, month: number) {
 export async function sendUnpaidReminders() {
     // 부원장 차단(2026-11-14 원장 결정): 월 일괄 발행·미리보기·일괄 문자·발송 진행은 원장만 — 학원 전체 청구 규모가 보인다
     const admin = await requireFinanceOwner();
-    // 학부모 청구 안내는 랠리즈 전담 — 잠금이면 미납 상태 갱신·발송 전에 바로 돌려보낸다.
+    // 학부모 청구 안내 발송 스위치가 꺼져 있으면(잠금) 미납 상태 갱신·발송 전에 바로 돌려보낸다.
     // (throw 대신 결과로 돌려줘야 운영 빌드에서도 안내 문구가 가려지지 않는다)
     if (!isBillingParentSendEnabled()) {
         return { sent: 0, failed: 0, smsSent: 0, errors: [] as string[], ok: false, locked: true, message: BILLING_PARENT_SEND_LOCKED_MESSAGE };
@@ -4465,7 +3958,7 @@ export async function sendUnpaidReminders() {
         //  - PENDING(기한 전·미리 만든 다음 달 청구)은 «미납»이 아니므로 보내지 않는다. 바로 위 markOverduePayments 가
         //    한국 날짜로 기한이 지난 PENDING 을 OVERDUE 로 바꿔 두었다(검수 H2 · 2026-11-13)
         //  - 예약 중·결과 확인 필요(UNCERTAIN)·최근 3일 안에 나간 안내에 들어 있는 결제도 빼서 두 번 나가지 않게
-        //  - 랠리즈 청구서의 장부용 사본은 랠리즈가 이미 안내하므로 뺀다
+        //  - 옛 랠리즈 청구서의 장부용 사본은 그때 랠리즈가 안내한 건이라 뺀다(랠리즈는 종료)
         const unpaid = await prisma.$queryRawUnsafe<Array<UnpaidNoticeRow & { parentHasAccount: boolean | null; invoiceParentId: string | null }>>(
             `SELECT p.id AS "paymentId", i.id AS "invoiceId", p."studentId", s.name AS "studentName",
                     s."parentId", u.phone, p.amount,
@@ -4591,70 +4084,6 @@ export async function getBillingNoticeProgress(year: number, month: number) {
         console.error("[billing-notice] 진행 상황 조회 실패:", error);
         return { ok: false as const, message: "발송 진행 상황을 불러오지 못했습니다." };
     }
-}
-
-// ── 일괄 수납 상태 변경 ──────────────────────────────────────────────────────────
-// 선택한 결제 건들의 상태를 한번에 변경 (체크박스 일괄 처리용)
-export async function bulkUpdatePaymentStatus(ids: string[], newStatus: string) {
-    await requireFinanceOwner();
-    // 일괄 납부완료도 방법·근거 없이는 만들지 않는다 — recordBankTransferPayment 를 쓴다
-    if (newStatus === "PAID") throw new Error(DIRECT_PAID_BLOCKED_MESSAGE);
-    if (newStatus === "REFUNDED") throw new Error(DIRECT_REFUND_BLOCKED_MESSAGE);
-    if (ids.length === 0) return;
-
-    try {
-        await ensurePaymentInfrastructure();
-        // 납부완료가 섞여 있으면 학생 상세와 같은 규칙으로 판정(DB 에서 다시 읽음 · 2026-11-10).
-        // 하나라도 막히면 아무것도 바꾸지 않는다(전부 아니면 전무). 수기 납부완료를 «대기로» 일괄 정정하는 것은
-        // 화면에 없는 길이라(수납 목록은 이 함수를 부르지 않는다) 여기서도 열지 않는다 — 한 건씩 확인받는 학생 상세에서만.
-        const uniqueIds = Array.from(new Set(ids));
-        const rows = await prisma.$queryRawUnsafe<PaymentStatusGuardRow[]>(PAYMENT_STATUS_GUARD_SELECT, uniqueIds);
-        if (rows.length !== uniqueIds.length) throw new PaymentStatusGuardError("수납 기록을 찾을 수 없습니다. 다시 조회해 주세요.");
-        for (const row of rows) {
-            const decision = judgePaymentStatusChange(row, newStatus);
-            if (!decision.ok) throw new PaymentStatusGuardError(decision.message);
-            if (decision.kind === "REVERT_PAID") {
-                throw new PaymentStatusGuardError("납부완료를 대기로 되돌리는 것은 학생 상세에서 한 건씩 해 주세요.");
-            }
-        }
-
-        const placeholders = ids.map((_, i) => `$${i + 2}`).join(",");
-        const invoiceStatus = newStatus === "OVERDUE"
-            ? "OVERDUE"
-            : ["REFUNDED", "CANCELED"].includes(newStatus)
-                ? "CANCELED"
-                : "ISSUED";
-        // Payment·청구서를 한 트랜잭션으로 — 건수가 맞지 않으면(그 사이 납부완료가 된 청구) 전체를 되돌린다
-        await prisma.$transaction(async (tx) => {
-            // 조건부 UPDATE — 판정 뒤 그 사이 납부완료가 된 청구는 덮지 않는다
-            const updated = await tx.$executeRawUnsafe(
-                `UPDATE "Payment" SET status = $1, "paidDate" = NULL, "updatedAt" = NOW() WHERE id IN (${placeholders}) AND status <> 'PAID'`,
-                newStatus,
-                ...ids,
-            );
-            if (Number(updated) !== uniqueIds.length) {
-                // 일부만 바뀌었다 — 던져서 트랜잭션 전체를 롤백(하나도 바뀌지 않음)
-                throw new PaymentStatusGuardError(PAYMENT_STATUS_RACE_MESSAGE);
-            }
-            await tx.$executeRawUnsafe(
-                `UPDATE "PaymentInvoice" SET status = $1, "updatedAt" = NOW() WHERE "paymentId" IN (${placeholders})`,
-                invoiceStatus,
-                ...ids,
-            );
-        });
-        await recordPaymentAudit({
-            actorType: "ADMIN",
-            action: "PAYMENT_BULK_STATUS_UPDATE",
-            message: `Payment bulk status changed to ${newStatus}`,
-            metadata: { paymentIds: ids },
-        });
-    } catch (e) {
-        // 규칙 거절은 안내 문구 그대로
-        if (e instanceof PaymentStatusGuardError) throw new Error(e.message);
-        console.error("Failed to bulk update payment status:", e);
-        throw new Error("일괄 상태 변경 실패");
-    }
-    revalidateFinanceCaches();
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -5273,91 +4702,6 @@ export async function updateTrialLead(
 }
 
 // (2026-11-09) 체험 완료 문자 재시도 액션 resendTrialAttendedSms 는 문자 자체를 없애며 함께 지웠다.
-
-/**
- * 체험 리드 삭제
- */
-export async function deleteTrialLead(id: string) {
-    await requireAdmin();
-    await ensureTrialLeadTable();
-
-    try {
-        await prisma.$executeRawUnsafe(
-            `DELETE FROM "TrialLead" WHERE id = $1`, id
-        );
-    } catch (e) {
-        console.error("Failed to delete trial lead:", e);
-        throw new Error("체험 리드 삭제 실패");
-    }
-    revalidatePath("/admin/trial");
-    revalidatePath("/admin/apply");
-    revalidateTrialAdminCaches();
-}
-
-/**
- * 체험 → 정규 등록 전환
- * 1. Student 생성 (+ 학부모 User 생성/조회)
- * 2. TrialLead status='CONVERTED', convertedDate=NOW(), convertedStudentId=새 Student ID
- */
-export async function convertTrialToStudent(
-    leadId: string,
-    studentData: {
-        name: string;
-        birthDate: string;
-        gender?: string | null;
-        parentName: string;
-        parentPhone?: string | null;
-        // 주 보호자 관계 — 체험 전환 창엔 칸이 없어 비우면 «보호자»로 저장
-        parentRelation?: string | null;
-        // 예전 화면 호환용으로 받기만 하고 쓰지 않는다(이메일로 계정을 찾지 않는다)
-        parentEmail?: string | null;
-        memo?: string | null;
-    }
-): Promise<AdminStudentCreateResult> {
-    await requireAdmin();
-    await ensureTrialLeadTable();
-
-    const name = String(studentData.name ?? "").trim();
-    if (!name || !studentData.birthDate) return { ok: false, error: "아이 이름과 생년월일을 입력해 주세요." };
-    // 학부모 계정은 목록 «원생 등록»과 같은 규칙(parentAccountLink) — 주 보호자 휴대폰 필수
-    const guardian = validatePrimaryGuardian({
-        relation: studentData.parentRelation?.trim() || "보호자",
-        name: studentData.parentName,
-        phone: studentData.parentPhone,
-    });
-    if (!guardian.ok) return { ok: false, error: guardian.error };
-
-    let result: AdminStudentCreateResult;
-    try {
-        result = await prisma.$transaction(async (tx) => {
-            // 1. 학부모 계정 확정 + Student + 주 보호자 Guardian
-            const created = await insertAdminStudentWithGuardian(
-                tx,
-                { name, birthDate: studentData.birthDate, gender: studentData.gender, memo: studentData.memo },
-                guardian.value,
-            );
-            // 2. TrialLead 전환 처리 (상태 + 전환일 + 연결 Student ID) — 같은 트랜잭션이라 학생만 생기고 전환이 빠지는 일이 없다
-            await tx.$executeRawUnsafe(
-                `UPDATE "TrialLead"
-                 SET status = 'CONVERTED', "convertedDate" = NOW(), "convertedStudentId" = $1, "updatedAt" = NOW()
-                 WHERE id = $2`,
-                created.studentId, leadId,
-            );
-            return { ok: true as const, ...created };
-        }, { timeout: 15_000 });
-    } catch (e) {
-        if (e instanceof ParentAccountLinkError) return { ok: false, error: e.message };
-        console.error("Failed to convert trial to student:", e);
-        throw new Error("정규 등록 전환 실패");
-    }
-    revalidatePath("/admin/trial");
-    revalidatePath("/admin/apply");
-    revalidatePath("/admin/students");
-    revalidatePath("/admin");
-    revalidateTrialAdminCaches();
-    revalidateStudentAdminCaches();
-    return result;
-}
 
 // ── 대기자(Waitlist) 관리 ─────────────────────────────────────────────────────
 
@@ -6581,35 +5925,6 @@ export async function recordApplicationContact(input: {
     }
 
     return { ok: true };
-}
-
-/**
- * 수강 안내 링크 생성 — 체험 리드의 trialLeadId를 포함한 수강 신청 URL 반환
- * 관리자가 체험 완료된 학부모에게 보낼 링크를 복사하는 용도
- */
-function buildEnrollLink(trialLeadId: string): string {
-    const baseUrl = (
-        process.env.NEXT_PUBLIC_SITE_URL?.trim()
-        || process.env.NEXT_PUBLIC_BASE_URL?.trim()
-        || PUBLIC_SITE_URL
-    ).replace(/\/+$/, "");
-
-    return `${baseUrl}/apply/enroll?trialId=${trialLeadId}`;
-}
-
-export async function generateEnrollLink(trialLeadId: string): Promise<string> {
-    await requireAdmin();
-
-    // trialLeadId 존재 확인
-    const leads = await prisma.$queryRawUnsafe<any[]>(
-        `SELECT id FROM "TrialLead" WHERE id = $1 LIMIT 1`,
-        trialLeadId
-    );
-    if (leads.length === 0) throw new Error("체험 리드를 찾을 수 없습니다.");
-
-    // 프로토콜+호스트를 환경변수 또는 기본값에서 가져옴
-    // 환경변수에서 베이스 URL 결정: 직접 설정 > Vercel 자동 > 로컬 개발
-    return buildEnrollLink(trialLeadId);
 }
 
 // ── SMS 수동 발송 (관리자 전용) ──────────────────────────────────────────────
