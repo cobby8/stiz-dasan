@@ -434,7 +434,8 @@ function phoneWorld({ available = true, challenge = true, portone = {}, me = { n
     async $queryRawUnsafe(sql, ...v) {
       calls.push({ sql, v });
       if (/^UPDATE "ChildIdentityChallenge" SET "verifyAttempts"/.test(sql)) return challenge ? [{ id: v[0], createdAt }] : [];
-      if (/^SELECT name, phone FROM "User"/.test(sql)) return [me];
+      // 2026-11-18 검수 N-1: 본인인증 실명도 함께 읽는다(이름 비교 기준 = 실명 → 닉네임)
+      if (/^SELECT name, "identityVerifiedName", phone FROM "User"/.test(sql)) return [me];
       if (/^SELECT id FROM "User"/.test(sql)) return taken ? [{ id: "other" }] : [];
       if (/^SELECT s\.id FROM "Student" s WHERE s\."parentId"=\$1/.test(sql)) return [{ id: "kid" }];
       throw new Error(`예상하지 못한 조회: ${sql}`);
@@ -496,6 +497,13 @@ test("⑥ 이름 다름·중복 번호는 거절, 통과하면 인증된 번호�
   const mismatch = phoneWorld({ me: { name: "민준맘", phone: "010-1111-2222" } });
   await assert.rejects(mismatch.mod.confirmPhoneChange(actor, "hash", mismatch.id), /이름/);
   assert.equal(mismatch.userUpdates().length, 0);
+  // 검수 N-1: 닉네임을 «민준맘»으로 바꿨어도 본인인증 실명이 같으면 통과한다 — 실명이 다른 명의자는 그대로 막힌다
+  const nickname = phoneWorld({ me: { name: "민준맘", identityVerifiedName: "김엄마", phone: "010-1111-2222" } });
+  assert.equal((await nickname.mod.confirmPhoneChange(actor, "hash", nickname.id)).ok, true);
+  assert.equal(nickname.userUpdates().length, 1);
+  const otherOwner = phoneWorld({ me: { name: "김엄마", identityVerifiedName: "김아빠", phone: "010-1111-2222" } });
+  await assert.rejects(otherOwner.mod.confirmPhoneChange(actor, "hash", otherOwner.id), /이름/, "실명이 있으면 닉네임이 같아도 실명으로 비교한다");
+  assert.equal(otherOwner.userUpdates().length, 0);
   const taken = phoneWorld({ taken: true });
   await assert.rejects(taken.mod.confirmPhoneChange(actor, "hash", taken.id), /다른 계정/);
   assert.equal(taken.userUpdates().length, 0);

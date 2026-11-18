@@ -9,7 +9,7 @@ import { resolveRedirectForRole } from "@/lib/auth-routes";
 import { isSyntheticParentEmail } from "@/lib/parent-synthetic-email";
 import { PARENT_CONSENT_REQUIRED_MESSAGE, PARENT_PRIVACY_VERSION, PARENT_TERMS_VERSION, hasAllParentConsents, type ParentConsents } from "@/lib/parent-consent";
 import { PARENT_PASSWORD_MIN, PARENT_WEAK_PASSWORD_MESSAGE, isWeakPasswordRejection } from "@/lib/parent-password-rules";
-import { recordIdentityVerification } from "@/lib/identity/verified-identity";
+import { cleanVerifiedName, recordIdentityVerification } from "@/lib/identity/verified-identity";
 // 아이디 규칙·로그인 메일 매핑 — 신규 가입과 같은 모듈(2026-11-13 f7 가입 방식 통일)
 import {
   PARENT_USERNAME_PATTERN,
@@ -44,6 +44,9 @@ type ClaimRow = {
   processingAt: Date | null;
   processingAttemptId: string | null;
   authUserId: string | null;
+  // 2026-11-18: 본인인증으로 만든 증표면 실명·인증 시각(문자 인증 증표는 null) — 활성화 완료 때 User 로 옮긴다
+  verifiedName?: string | null;
+  identityVerifiedAt?: Date | null;
 };
 
 function secret() {
@@ -284,23 +287,26 @@ export async function issueVerifiedSelfParentClaim(
   if (Number(duplicates[0]?.count) !== 1) throw new SelfClaimUserError("같은 연락처의 보호자 계정이 여러 개여서 관리자 확인이 필요합니다.");
 
   await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, parent.id);
-  // 본인인증(통신사 명의)으로 이 번호의 주인이 확인됐다 — 활성화 링크와 같은 거래에서 실명·시각을 적는다.
-  // 활성화를 끝까지 하지 않아도 «이 번호 명의자의 실명»이라는 사실은 그대로라 미리 적어도 된다.
-  if (input.identity) await recordIdentityVerification(tx, { userId: parent.id, ...input.identity });
+  // 본인인증으로 들어왔으면 실명·시각을 «증표에만» 실어 둔다(검수 N-2). User 에는 활성화를 끝까지 마칠 때(consume) 적는다 —
+  // 중단하면 그 계정에 남지 않는다(학원 기록 보호자와 명의자가 다른 집에서 남의 실명이 남지 않게).
+  const identityName = input.identity ? cleanVerifiedName(input.identity.verifiedName) : null;
+  const identityAt = identityName ? input.identity!.verifiedAt : null;
   const rawToken = randomBytes(32).toString("base64url");
   const hash = tokenHash(rawToken);
   const proof = randomBytes(32).toString("base64url");
   await tx.$executeRawUnsafe(
     `INSERT INTO "ParentAccountClaim" (
        id, "parentId", "applicationId", "invoiceId", "tokenHash", "phoneHash", status,
-       "expiresAt", "verifiedAt", "proofHash", "proofExpiresAt", "redirectPath", "createdAt", "updatedAt"
+       "expiresAt", "verifiedAt", "proofHash", "proofExpiresAt", "redirectPath", "verifiedName", "identityVerifiedAt", "createdAt", "updatedAt"
      ) VALUES (gen_random_uuid()::text, $1, NULL, NULL, $2, $3, 'VERIFIED',
-               NOW() + INTERVAL '${SELF_CLAIM_TTL_MINUTES} minutes', NOW(), $4, NOW() + INTERVAL '10 minutes', $5, NOW(), NOW())`,
+               NOW() + INTERVAL '${SELF_CLAIM_TTL_MINUTES} minutes', NOW(), $4, NOW() + INTERVAL '10 minutes', $5, $6, $7, NOW(), NOW())`,
     parent.id,
     hash,
     keyedHash(`phone:${verifiedPhone}`),
     keyedHash(`proof:${hash}:${proof}`),
     safeRedirect(input.redirectPath),
+    identityName,
+    identityAt,
   );
   return { token: rawToken, proof, activationUrl: activationUrl(rawToken) };
 }
@@ -455,7 +461,7 @@ export async function consumeParentAccountClaim(
       const rows = await tx.$queryRawUnsafe<ClaimRow[]>(
         `SELECT c.id, c."parentId", u.phone, u.email, c.status, c."expiresAt", c."otpHash",
                 c."otpExpiresAt", c."otpAttempts", c."lockedAt", c."verifiedAt", c."proofHash", c."proofExpiresAt",
-                c."redirectPath", c."processingAt", c."processingAttemptId"
+                c."redirectPath", c."processingAt", c."processingAttemptId", c."verifiedName", c."identityVerifiedAt"
            FROM "ParentAccountClaim" c JOIN "User" u ON u.id = c."parentId"
           WHERE c."tokenHash" = $1 FOR UPDATE`,
         hash,
@@ -560,9 +566,14 @@ export async function consumeParentAccountClaim(
         username,
       );
       if (updated !== 1) throw new Error("보호자 계정 정보가 변경되어 관리자 확인이 필요합니다.");
+      // 본인인증 증표였으면 활성화가 «완료되는 이 거래»에서 실명·시각을 적는다(문자 인증 증표는 verifiedName 이 null → 적지 않음)
+      if (claim!.verifiedName && claim!.identityVerifiedAt) {
+        await recordIdentityVerification(tx, { userId: claim!.parentId, verifiedName: claim!.verifiedName, verifiedAt: new Date(claim!.identityVerifiedAt) });
+      }
+      // 증표의 실명은 User 로 옮겼으니 비운다
       const consumed = await tx.$executeRawUnsafe(
         `UPDATE "ParentAccountClaim" SET status = 'CONSUMED', "consumedAt" = NOW(), "authUserId" = $1,
-                "proofHash" = NULL, "proofExpiresAt" = NULL, "lastError" = NULL, "updatedAt" = NOW()
+                "proofHash" = NULL, "proofExpiresAt" = NULL, "lastError" = NULL, "verifiedName" = NULL, "updatedAt" = NOW()
           WHERE id = $2 AND status = 'PROCESSING' AND "processingAttemptId" = $3`,
         authUserId,
         claim!.id,

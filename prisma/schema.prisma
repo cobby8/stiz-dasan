@@ -170,6 +170,9 @@ model ParentAccountClaim {
   privacyAgreedAt     DateTime? @db.Timestamptz(6)
   privacyVersion      String?
   ageConfirmedAt      DateTime? @db.Timestamptz(6)
+  // 2026-11-18: 본인인증으로 만든 활성화 증표의 실명·인증 시각 — 활성화 «완료» 때 User 로 옮기고 비운다(만료되면 정리). migration 20261118220000
+  verifiedName        String?
+  identityVerifiedAt  DateTime? @db.Timestamptz(6)
   createdAt           DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt           DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 

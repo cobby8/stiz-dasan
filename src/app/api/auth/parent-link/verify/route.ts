@@ -65,7 +65,8 @@ export async function POST(request: Request) {
     // authUserId: 초대로 가입한 직원은 authUserId 없이 User.id 가 로그인 id 다(옛 방식) — 그 경우 id 를 로그인 id 로 본다.
     //   그래야 그런 직원도 본인인증으로 «기존 계정에 간편로그인 연결»(selectLinkTarget)이 되고, «로그인 없는 기록»으로 잘못 보지 않는다.
     // noLogin: 로그인이 아예 없는 직원 기록(원장이 직접 추가 — 이메일이 @staff.local 자리표시).
-    `SELECT u.id, u.role::text AS role, u.name, u."phoneVerifiedAt",
+    // identityVerifiedName: 이름 비교는 «실명이 있으면 실명, 없으면 닉네임»(selectLinkTarget·selectStaffRecordToClaim — 검수 N-1)
+    `SELECT u.id, u.role::text AS role, u.name, u."identityVerifiedName", u."phoneVerifiedAt",
             CASE WHEN u."authUserId" IS NOT NULL THEN u."authUserId"
                  WHEN u.role::text <> 'PARENT' AND lower(COALESCE(u.email, '')) NOT LIKE '%@staff.local' THEN u.id
                  ELSE NULL END AS "authUserId",

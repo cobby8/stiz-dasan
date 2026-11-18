@@ -6,6 +6,8 @@ import { ChildConnectionError, childIdentityHash, type ChildActor } from "@/lib/
 import { confirmPhoneChange, phoneChangeAvailable, startPhoneChange } from "@/lib/account/phone-change";
 import { looksLikeLegalName } from "@/lib/account/phone-change-rules";
 import { notifyAdmins } from "@/lib/notification";
+import { prisma } from "@/lib/prisma";
+import { identityComparableName } from "@/lib/identity/verified-identity";
 
 // 보호자 «연락처 바꾸기» API (2026-11-14 원장 결정 b6) — 자녀 연결 API(/api/account/child-links)와 같은 틀.
 //  POST {action:"start"}                       → 1회용 인증 건 번호 + 이 기기 쿠키
@@ -34,7 +36,13 @@ export async function GET() {
   try {
     const current = await actor();
     // nameOk=false 면 화면이 인증 «전에» «본인인증 이름과 같아야 해요»를 미리 알린다(예: «민준맘»)
-    return response({ enabled: await phoneChangeAvailable(), nameOk: looksLikeLegalName(current.name) });
+    // 본인인증 실명이 있으면 그것으로 본다 — 닉네임은 자유롭게 바꿀 수 있다(검수 N-1). 실명 원문은 응답에 싣지 않는다
+    const rows = await prisma.$queryRawUnsafe<{ identityVerifiedName: string | null }[]>(
+      `SELECT "identityVerifiedName" FROM "User" WHERE id = $1 LIMIT 1`,
+      current.id,
+    );
+    const compare = identityComparableName({ identityVerifiedName: rows[0]?.identityVerifiedName, name: current.name });
+    return response({ enabled: await phoneChangeAvailable(), nameOk: looksLikeLegalName(compare) });
   } catch (error) { return failure(error); }
 }
 

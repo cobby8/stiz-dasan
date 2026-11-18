@@ -16,6 +16,9 @@ globalThis.__identityPayerFake = { async $queryRawUnsafe(sql) { return /AS ready
 const fakePrisma = `data:text/javascript;base64,${Buffer.from("export const prisma = new Proxy({}, { get: (_t, key) => globalThis.__identityPayerFake[key] });").toString("base64")}`;
 const payer = await loadTsModule("src/lib/payments/payerAccess.ts", { overrides: { "@/lib/prisma": fakePrisma } });
 const { CLEARED_USER_COLUMNS } = await loadTsModule("src/lib/account/withdrawal.ts");
+const socialLink = await loadTsModule("src/lib/account/social-link.ts");
+const phoneRules = await loadTsModule("src/lib/account/phone-change-rules.ts");
+const { identityName } = await loadTsModule("src/lib/account/child-link-policy.ts");
 const read = (file) => fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n");
 
 // ── 순수 규칙(실제로 실행) ─────────────────────────────────────────────────
@@ -124,7 +127,11 @@ test("가입 인증 모듈: 본인인증 요청은 'IDENTITY'+실명으로, 가�
 
 test("활성화·직원 기록 연결·연락처 바꾸기도 같은 거래에서 같은 함수로 적는다", () => {
   const claim = read("src/lib/parent-account-claim.ts");
-  assert.match(claim, /if \(input\.identity\) await recordIdentityVerification\(tx, \{ userId: parent\.id, \.\.\.input\.identity \}\);/);
+  // 검수 N-2: 발급(issueVerifiedSelfParentClaim)은 증표에만 싣고, User 에는 소비(consume) 거래에서 적는다
+  const issue = claim.slice(claim.indexOf("export async function issueVerifiedSelfParentClaim"), claim.indexOf("export async function sendParentClaimOtp"));
+  assert.doesNotMatch(issue, /recordIdentityVerification\(/);
+  const consume = claim.slice(claim.indexOf("export async function consumeParentAccountClaim"));
+  assert.match(consume, /await recordIdentityVerification\(tx, \{ userId: claim!\.parentId, verifiedName: claim!\.verifiedName, verifiedAt: new Date\(claim!\.identityVerifiedAt\) \}\);/);
   const staff = read("src/lib/staff/staffSelfClaim.ts");
   const staffTx = staff.slice(staff.indexOf("prisma.$transaction("), staff.indexOf("if (!claimed) return"));
   assert.match(staffTx, /await recordIdentityVerification\(tx, \{ userId: row\.id, verifiedName: input\.verifiedName, verifiedAt: input\.verifiedAt \}\);/);
@@ -212,4 +219,57 @@ test("학부모 가입·설정 화면의 보호자 이름 칸은 «닉네임»(�
   const update = action.slice(action.indexOf("export async function updateMyName"), action.indexOf("export async function changeMyPassword"));
   assert.match(update, /UPDATE "User" SET name = \$1/);
   assert.doesNotMatch(update, /identityVerified/);
+});
+
+// ── 검수 N-1: 이름 비교 기준 = 실명이 있으면 실명, 없으면 닉네임 ─────────────────────────
+test("N-1 비교 기준 이름: 실명 → 닉네임", () => {
+  assert.equal(vi.identityComparableName({ identityVerifiedName: "홍길동", name: "민준맘" }), "홍길동");
+  assert.equal(vi.identityComparableName({ identityVerifiedName: null, name: "홍길동" }), "홍길동");
+  assert.equal(vi.identityComparableName({ identityVerifiedName: " ", name: "홍길동" }), "홍길동");
+  assert.equal(vi.identityComparableName({}), "");
+});
+
+test("N-1 새 기기 연결(selectLinkTarget): 닉네임을 바꾼 학부모도 실명으로 연결되고, 다른 사람 이름은 그대로 막힌다", () => {
+  const parent = { id: "p1", role: "PARENT", name: "민준맘", identityVerifiedName: "홍길동", authUserId: "auth-p1", phoneVerifiedAt: "2026-11-01" };
+  assert.deepEqual(socialLink.selectLinkTarget([parent], "홍길동"), { kind: "OK", userId: "p1", authUserId: "auth-p1" });
+  assert.deepEqual(socialLink.selectLinkTarget([parent], "홍 길동"), { kind: "OK", userId: "p1", authUserId: "auth-p1" }, "공백 차이는 같은 이름");
+  assert.deepEqual(socialLink.selectLinkTarget([parent], "김철수"), { kind: "NAME_MISMATCH" }, "다른 명의자는 막는다");
+  assert.deepEqual(socialLink.selectLinkTarget([parent], "민준맘"), { kind: "NAME_MISMATCH" }, "실명이 있으면 닉네임으로는 통과하지 않는다");
+  // 실명이 아직 없는 계정은 예전처럼 계정 이름(닉네임)으로 비교
+  const legacy = { ...parent, name: "홍길동", identityVerifiedName: null };
+  assert.equal(socialLink.selectLinkTarget([legacy], "홍길동").kind, "OK");
+  assert.equal(socialLink.selectLinkTarget([legacy], "김철수").kind, "NAME_MISMATCH");
+  // 직원이 쓰는 번호 갈래도 같은 기준
+  const staff = { id: "s1", role: "INSTRUCTOR", name: "홍쌤", identityVerifiedName: "홍길동", authUserId: "auth-s1", phoneVerifiedAt: null };
+  assert.deepEqual(socialLink.selectLinkTarget([staff], "홍길동"), { kind: "OK", userId: "s1", authUserId: "auth-s1" });
+  assert.deepEqual(socialLink.selectLinkTarget([staff], "김철수"), { kind: "STAFF" });
+});
+
+test("N-1 로그인 없는 직원 기록 붙이기(selectStaffRecordToClaim)도 같은 기준", () => {
+  const record = { id: "r1", role: "INSTRUCTOR", name: "권쌤", identityVerifiedName: "권혜미", authUserId: null, phoneVerifiedAt: null, noLogin: true, withdrawn: false };
+  assert.deepEqual(socialLink.selectStaffRecordToClaim([record], "권혜미"), { userId: "r1" });
+  assert.equal(socialLink.selectStaffRecordToClaim([record], "김철수"), null);
+  assert.deepEqual(socialLink.selectStaffRecordToClaim([{ ...record, name: "권혜미", identityVerifiedName: null }], "권혜미"), { userId: "r1" });
+});
+
+test("N-1 연락처 바꾸기: 닉네임을 바꾼 학부모도 실명으로 통과하고, 다른 명의자는 막힌다", () => {
+  const me = { name: "민준맘", identityVerifiedName: "홍길동" };
+  const base = { currentPhone: "01011112222", verifiedPhone: "01033334444", takenByOther: false };
+  const accountName = identityName(vi.identityComparableName(me));
+  assert.deepEqual(phoneRules.phoneChangeOutcome({ ...base, accountName, verifiedName: identityName("홍길동") }), { ok: true, changed: true });
+  assert.equal(phoneRules.phoneChangeOutcome({ ...base, accountName, verifiedName: identityName("김철수") }).ok, false);
+  // 연결부가 이 기준을 쓰는지(실명을 함께 읽는지)
+  const phone = read("src/lib/account/phone-change.ts");
+  assert.match(phone, /SELECT name, "identityVerifiedName", phone FROM "User" WHERE id=\$1 AND "withdrawnAt" IS NULL FOR UPDATE/);
+  assert.match(phone, /accountName: identityName\(identityComparableName\(me\[0\]\)\),/);
+  // 인증 «전» 미리 안내(nameOk)도 실명 기준 — 닉네임이 «민준맘»이어도 실명이 있으면 경고하지 않는다
+  assert.equal(phoneRules.looksLikeLegalName(vi.identityComparableName(me)), true);
+  assert.match(read("src/app/api/account/phone-change/route.ts"), /looksLikeLegalName\(compare\)/);
+  assert.match(read("src/app/mypage/settings/page.tsx"), /looksLikeLegalName\(identityComparableName\(\{ identityVerifiedName: me\?\.identityVerifiedName/);
+});
+
+test("N-1 연결 라우트 조회가 실명 칸을 함께 읽고, 비교 함수는 닉네임(name)을 직접 비교하지 않는다", () => {
+  assert.match(read("src/app/api/auth/parent-link/verify/route.ts"), /SELECT u\.id, u\.role::text AS role, u\.name, u\."identityVerifiedName", u\."phoneVerifiedAt",/);
+  const src = read("src/lib/account/social-link.ts");
+  assert.doesNotMatch(src, /normalizePersonName\(row\.name\)/);
 });

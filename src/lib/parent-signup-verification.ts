@@ -221,6 +221,30 @@ async function rejectExisting(tx: Prisma.TransactionClient, username: string, ph
   if (rows[0]?.phoneTaken) throw new Error(REGISTERED_PHONE_MESSAGE);
 }
 
+/**
+ * 가입 요청 개인정보 정리(7일) — 가입 시작 두 길(문자 인증 startParentSignup · 본인인증 issueIdentityVerifiedSignup)이
+ * 같은 거래 안에서 부른다(검수 N-3: 예전엔 문자 가입 시작 때만 돌아, 본인인증만 쓰면 실명이 오래 남을 수 있었다).
+ *  - 끝나지 않은 요청은 7일 뒤 지운다
+ *  - 끝난(CONSUMED) 요청은 감사용 줄만 남기고 개인정보(번호·이메일·본인인증 실명 등)를 비운다
+ *  - 만료된 활성화 증표(ParentAccountClaim)에 실어 둔 본인인증 실명·시각도 비운다(활성화를 끝내지 않은 경우)
+ */
+async function purgeStaleSignupPersonalData(tx: Prisma.TransactionClient) {
+  await tx.$executeRawUnsafe(
+    `DELETE FROM "ParentSignupVerification"
+      WHERE status <> 'CONSUMED' AND "createdAt" < NOW() - INTERVAL '7 days'`,
+  );
+  await tx.$executeRawUnsafe(
+    `UPDATE "ParentSignupVerification"
+        SET username=NULL, name=NULL, phone='', email=NULL, "pendingAuthUserId"=NULL, "verifiedName"=NULL,
+            "phoneHash"=repeat('0',64), "lastError"=NULL, "updatedAt"=NOW()
+      WHERE status='CONSUMED' AND "createdAt" < NOW() - INTERVAL '7 days' AND phone <> ''`,
+  );
+  await tx.$executeRawUnsafe(
+    `UPDATE "ParentAccountClaim" SET "verifiedName"=NULL, "identityVerifiedAt"=NULL, "updatedAt"=NOW()
+      WHERE "verifiedName" IS NOT NULL AND "expiresAt" < NOW()`,
+  );
+}
+
 export async function startParentSignup(input: {
   phone: string; signupMethod?: ParentSignupMethod;
   email?: string | null; pendingAuthUserId?: string | null;
@@ -233,16 +257,7 @@ export async function startParentSignup(input: {
   const phoneHash = keyed(`phone:${phone}`);
   try {
     await prisma.$transaction(async (tx) => {
-      await tx.$executeRawUnsafe(
-        `DELETE FROM "ParentSignupVerification"
-          WHERE status <> 'CONSUMED' AND "createdAt" < NOW() - INTERVAL '7 days'`,
-      );
-      await tx.$executeRawUnsafe(
-        `UPDATE "ParentSignupVerification"
-            SET username=NULL, name=NULL, phone='', email=NULL, "pendingAuthUserId"=NULL, "verifiedName"=NULL,
-                "phoneHash"=repeat('0',64), "lastError"=NULL, "updatedAt"=NOW()
-          WHERE status='CONSUMED' AND "createdAt" < NOW() - INTERVAL '7 days' AND phone <> ''`,
-      );
+      await purgeStaleSignupPersonalData(tx);
       await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, `signup:${phoneHash}`);
       // 로그인 수단이 있는 번호만 지금처럼 거절한다. 학원이 가져오기로 만든 빈 계정의 번호는
       // 신규 번호와 똑같이 문자를 보낸다 — 문자 인증 전에는 "빈 계정이 있다"는 사실을 응답 문구나
@@ -350,6 +365,8 @@ export async function issueIdentityVerifiedSignup(input: {
   const phoneHash = keyed(`phone:${phone}`);
   try {
     await prisma.$transaction(async (tx) => {
+      // 7일 정리 — 문자 가입 시작과 같은 함수(검수 N-3)
+      await purgeStaleSignupPersonalData(tx);
       await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))::text`, `signup:${phoneHash}`);
       const ownership = await classifyPhoneOwnership(tx, phone);
       if (ownership.kind === "REGISTERED") throw new Error(REGISTERED_PHONE_MESSAGE);

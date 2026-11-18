@@ -86,6 +86,16 @@ export function payerDisplayNameSql(alias: string): string {
   return `COALESCE(NULLIF(btrim(${alias}."identityVerifiedName"), ''), ${alias}.name)`;
 }
 
+/**
+ * 본인인증 이름과 «비교할» 계정 이름 — 실명이 있으면 실명, 없으면 닉네임(User.name). (검수 N-1)
+ * 닉네임은 본인이 마음대로 바꿀 수 있으므로, 실명이 적힌 계정은 실명으로 비교해야 닉네임을 바꾼 사람이
+ * 새 기기 연결·연락처 바꾸기에서 막히지 않는다. 이름이 달라 막는 장치(다른 사람 계정 연결 차단)는 그대로 — 기준 값만 바뀐다.
+ * 정규화(공백·대소문자)는 부르는 쪽 비교 함수가 한다.
+ */
+export function identityComparableName(row: { identityVerifiedName?: string | null; name?: string | null }): string {
+  return payerDisplayName(row) ?? "";
+}
+
 /** [순수] 위 SQL 과 같은 규칙 — 실명 → 닉네임 순서. 둘 다 없으면 null. */
 export function payerDisplayName(row: { identityVerifiedName?: string | null; name?: string | null }): string | null {
   const verified = typeof row.identityVerifiedName === "string" ? row.identityVerifiedName.trim() : "";

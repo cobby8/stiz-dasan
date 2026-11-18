@@ -1,4 +1,6 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+// 이름 비교 기준 = 본인인증 실명이 있으면 실명, 없으면 닉네임(2026-11-18 검수 N-1)
+import { identityComparableName } from "@/lib/identity/verified-identity";
 
 /**
  * 간편로그인 → 본인인증(KG이니시스 통합인증) → 기존 학부모 계정 연결(원장 결정 2026-10-26).
@@ -13,6 +15,8 @@ export type LinkCandidate = {
   id: string;
   role: string;
   name: string | null;
+  /** 본인인증 실명(2026-11-18) — 있으면 이름 비교는 닉네임(name)이 아니라 이것으로 한다 */
+  identityVerifiedName?: string | null;
   authUserId: string | null;
   phoneVerifiedAt: Date | string | null;
   /** 승인된 추가 역할(선생님·기사님, UserRoleGrant ACTIVE)이 있는지 — 주 역할이 학부모여도 직원 화면이 열린다. */
@@ -41,7 +45,7 @@ export function selectStaffRecordToClaim(rows: StaffClaimCandidate[], verifiedNa
   // authUserId 만으로는 «로그인 없음»을 알 수 없다 — 초대로 가입한 직원은 authUserId 없이 로그인이 있다(noLogin 이 가른다).
   if (row.role === "PARENT" || row.authUserId || row.noLogin !== true || row.withdrawn) return null;
   const name = normalizePersonName(verifiedName);
-  if (!name || name !== normalizePersonName(row.name)) return null;
+  if (!name || name !== normalizePersonName(identityComparableName(row))) return null;
   return { userId: row.id };
 }
 
@@ -71,7 +75,7 @@ export function selectLinkTarget(rows: LinkCandidate[], verifiedName: string): L
     // 직원 계정은 초대 가입 때 문자 인증을 거쳤지만 phoneVerifiedAt 을 적지 않았다(가드도 직원은 면제한다). 그래서 «휴대폰 인증을
     // 마친» 조건을 직원에게 그대로 걸면 초대로 가입한 직원은 전부 막힌다(2026-11-17) — 이름 일치 + 로그인 수단이 있으면 후보로 보고,
     // 후보가 여럿일 때만 휴대폰 인증을 마친 쪽으로 좁힌다. 그래도 하나로 정해지지 않으면 막는다.
-    const named = rows.filter((row) => verified && normalizePersonName(row.name) === verified && row.authUserId);
+    const named = rows.filter((row) => verified && normalizePersonName(identityComparableName(row)) === verified && row.authUserId);
     const eligible = named.length > 1 ? named.filter((row) => row.phoneVerifiedAt) : named;
     const only = eligible.length === 1 ? eligible[0] : null;
     if (!only?.authUserId) return { kind: "STAFF" };
@@ -80,7 +84,7 @@ export function selectLinkTarget(rows: LinkCandidate[], verifiedName: string): L
   if (rows.length > 1) return { kind: "MULTIPLE" };
   const [row] = rows;
   const name = normalizePersonName(verifiedName);
-  if (!name || name !== normalizePersonName(row.name)) return { kind: "NAME_MISMATCH" };
+  if (!name || name !== normalizePersonName(identityComparableName(row))) return { kind: "NAME_MISMATCH" };
   if (!row.authUserId || !row.phoneVerifiedAt) return { kind: "NOT_READY" };
   return { kind: "OK", userId: row.id, authUserId: row.authUserId };
 }

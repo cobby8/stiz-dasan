@@ -110,7 +110,7 @@ test("빈 보호자 계정 1개 → 문자 인증이 끝난 활성화 링크를 
   assert.ok(insert, "활성화 레코드를 만들어야 한다");
   assert.match(insert.sql, /'VERIFIED'/);
   assert.equal(insert.args[0], "p1");
-  assert.equal(insert.args.at(-1), "/mypage/kakao-connect?token=abc", "카카오 연결 화면으로 돌아오는 경로를 유지한다");
+  assert.equal(insert.args.at(-3), "/mypage/kakao-connect?token=abc", "카카오 연결 화면으로 돌아오는 경로를 유지한다");
   assert.ok(writes().some((c) => /UPDATE "ParentSignupVerification" SET status='CONSUMED'/.test(c.sql)));
   assert.ok(!writes().some((c) => /UPDATE "User"/.test(c.sql)), "비밀번호 활성화는 여기서 User 를 바꾸지 않는다");
 });
@@ -141,7 +141,7 @@ test("허용되지 않은 redirect 는 학부모 기본 화면으로 바뀐다",
   const mod = await load({ verification: verifiedRow(), users: [synthetic("p1")] });
   await mod.resolveVerifiedSignupPhone({ token: TOKEN, proof: PROOF, redirectPath: "https://evil.example/x" });
   const insert = writes().find((c) => /INSERT INTO "ParentAccountClaim"/.test(c.sql));
-  assert.equal(insert.args.at(-1), "/mypage");
+  assert.equal(insert.args.at(-3), "/mypage");
 });
 
 test("증표가 틀리면 아무것도 쓰지 않는다(문자 인증 없이는 계정이 넘어가지 않는다)", async () => {
@@ -269,12 +269,19 @@ test("본인인증 가입 요청 + 간편가입 세션 → 빈 계정 연결과 
   assert.match(write.sql, /"withdrawnAt" IS NULL/);
 });
 
-test("본인인증 가입 요청 → 빈 계정 활성화 링크를 만들 때 그 계정에 실명·시각을 적는다", async () => {
+test("본인인증 가입 요청 → 활성화 링크 «발급» 때는 User 에 적지 않고 증표에만 실명·시각을 싣는다(검수 N-2)", async () => {
   const row = verifiedRow({ verificationMethod: "IDENTITY", verifiedName: "김엄마", verifiedAt: VERIFIED_AT });
   const mod = await load({ verification: row, users: [synthetic("p1")] });
   const result = await mod.resolveVerifiedSignupPhone({ token: TOKEN, proof: PROOF });
   assert.equal(result.kind, "ACTIVATE_EXISTING");
-  assert.deepEqual(identityWrites().map((c) => c.args), [["p1", "김엄마", VERIFIED_AT]]);
+  assert.deepEqual(identityWrites(), [], "활성화를 끝내기 전에는 그 계정에 실명이 남지 않는다");
+  const insert = writes().find((c) => /INSERT INTO "ParentAccountClaim"/.test(c.sql));
+  assert.match(insert.sql, /"verifiedName", "identityVerifiedAt"/);
+  assert.deepEqual(insert.args.slice(-2), ["김엄마", VERIFIED_AT]);
+  // 문자 인증이면 증표에도 싣지 않는다
+  const sms = await load({ verification: verifiedRow({ verificationMethod: "SMS", verifiedName: "김엄마", verifiedAt: VERIFIED_AT }), users: [synthetic("p1")] });
+  await sms.resolveVerifiedSignupPhone({ token: TOKEN, proof: PROOF });
+  assert.deepEqual(writes().find((c) => /INSERT INTO "ParentAccountClaim"/.test(c.sql)).args.slice(-2), [null, null]);
 });
 
 test("문자 인증(SMS) 가입 요청은 이름이 적혀 있어도 실명을 User 에 적지 않는다(연결·활성화 둘 다)", async () => {
@@ -299,4 +306,28 @@ test("문자 인증 가입 시작은 방식 'SMS' 로 남기고, 7일 뒤 정리
   assert.match(insert.sql, /'PENDING','SMS'/);
   const cleanup = writes().find((c) => /WHERE status='CONSUMED' AND "createdAt" < NOW\(\) - INTERVAL '7 days'/.test(c.sql));
   assert.match(cleanup.sql, /"verifiedName"=NULL/);
+});
+
+test("검수 N-3: 본인인증 가입 요청 발급도 문자 가입 시작과 같은 7일 정리를 같은 거래에서 돌린다", async () => {
+  const cleanup = (list) => ({
+    remove: list.find((c) => /DELETE FROM "ParentSignupVerification"\s+WHERE status <> 'CONSUMED' AND "createdAt" < NOW\(\) - INTERVAL '7 days'/.test(c.sql)),
+    blank: list.find((c) => /WHERE status='CONSUMED' AND "createdAt" < NOW\(\) - INTERVAL '7 days'/.test(c.sql) && /"verifiedName"=NULL/.test(c.sql)),
+    claims: list.find((c) => /UPDATE "ParentAccountClaim" SET "verifiedName"=NULL, "identityVerifiedAt"=NULL/.test(c.sql) && /"expiresAt" < NOW\(\)/.test(c.sql)),
+  });
+  const viaIdentity = await load({ verification: null, users: [] });
+  const issued = await viaIdentity.issueIdentityVerifiedSignup({ phone: PHONE, signupMethod: "KAKAO", pendingAuthUserId: "oauth-1", verifiedName: "김엄마", verifiedAt: VERIFIED_AT });
+  assert.ok(issued.ok, JSON.stringify(issued));
+  const a = cleanup(writes());
+  assert.ok(a.remove && a.blank && a.claims, "본인인증 발급 거래에 정리 3줄이 모두 있다");
+  // 정리가 새 줄 INSERT 보다 먼저
+  const list = writes();
+  assert.ok(list.indexOf(a.blank) < list.findIndex((c) => /INSERT INTO "ParentSignupVerification"/.test(c.sql)));
+
+  const viaSms = await load({ verification: null, users: [] });
+  assert.ok((await viaSms.startParentSignup({ phone: PHONE })).ok);
+  const b = cleanup(writes());
+  assert.ok(b.remove && b.blank && b.claims, "문자 가입 시작도 같은 정리");
+  // 두 길이 «같은 SQL»(함수 하나)을 쓴다
+  assert.equal(a.blank.sql, b.blank.sql);
+  assert.equal(a.claims.sql, b.claims.sql);
 });

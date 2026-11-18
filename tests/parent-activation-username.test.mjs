@@ -190,3 +190,48 @@ test("f7 공용 아이디 모듈 자체 — 정규화·매핑·규칙", async ()
   assert.equal(U.isValidParentUsername("Kim_Mom1"), true, "대문자는 소문자로 바꿔 판정");
   for (const bad of ["", "kim", "1kim", "kim-mom", "kim@mom.com", "a".repeat(21)]) assert.equal(U.isValidParentUsername(bad), false, bad);
 });
+
+// ── 2026-11-18 검수 N-2: 본인인증 실명은 활성화 «완료» 때 적는다 ─────────────────────────
+// 증표(ParentAccountClaim)에 실어 둔 실명·시각을 소비 거래 안에서 User 로 옮기고 증표에서는 비운다.
+// 중단(비밀번호·아이디 거절·Supabase 실패)하면 그 계정에 실명이 남지 않는다.
+const identityWrite = (state) => state.calls.filter((c) => c.kind === "execute" && /"identityVerifiedName" = \$2/.test(c.sql));
+const IDENTITY_AT = new Date("2026-11-18T05:00:00.000Z");
+
+test("N-2 본인인증 증표로 활성화를 끝까지 마치면 그 거래에서 실명·시각을 적고 증표의 실명을 비운다", async () => {
+  const state = { claim: { ...claimRow(), verifiedName: "홍길동", identityVerifiedAt: IDENTITY_AT } };
+  const mod = await load(state);
+  const result = await mod.consumeParentAccountClaim(TOKEN, PROOF, "kimmom", "abcd1234!", ALL_CONSENTS);
+  assert.equal(result.ok, true, JSON.stringify(result));
+  const writes = identityWrite(state);
+  assert.equal(writes.length, 1);
+  assert.deepEqual(writes[0].args, ["parent-1", "홍길동", IDENTITY_AT]);
+  // 순서: User 연결(UPDATE "User" SET email) 뒤, 증표 CONSUMED 앞 — 같은 거래
+  const order = state.calls.map((c) => c.sql);
+  const linkAt = order.findIndex((sql) => /UPDATE "User" SET email = \$1/.test(sql));
+  const recordAt = order.findIndex((sql) => /"identityVerifiedName" = \$2/.test(sql));
+  const consumeAt = order.findIndex((sql) => /SET status = 'CONSUMED'/.test(sql));
+  assert.ok(linkAt < recordAt && recordAt < consumeAt);
+  assert.match(order[consumeAt], /"verifiedName" = NULL/);
+});
+
+test("N-2 문자 인증 증표(실명 없음)는 활성화해도 실명을 적지 않는다", async () => {
+  const state = { claim: claimRow() };
+  const mod = await load(state);
+  assert.equal((await mod.consumeParentAccountClaim(TOKEN, PROOF, "kimmom", "abcd1234!", ALL_CONSENTS)).ok, true);
+  assert.deepEqual(identityWrite(state), []);
+});
+
+test("N-2 활성화가 중단되면(아이디 중복·Supabase 거절·짧은 비밀번호) 그 계정에 실명을 적지 않는다", async () => {
+  const claim = () => ({ ...claimRow(), verifiedName: "홍길동", identityVerifiedAt: IDENTITY_AT });
+  for (const [label, extra, password] of [
+    ["아이디 중복", { usernameTaken: true }, "abcd1234!"],
+    ["Supabase 이미 있음", { authAlready: true }, "abcd1234!"],
+    ["짧은 비밀번호", {}, "abc123!"],
+  ]) {
+    const state = { claim: claim(), ...extra };
+    const mod = await load(state);
+    const result = await mod.consumeParentAccountClaim(TOKEN, PROOF, "kimmom", password, ALL_CONSENTS);
+    assert.ok(result.error, label);
+    assert.deepEqual(identityWrite(state), [], label);
+  }
+});

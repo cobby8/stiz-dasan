@@ -7,7 +7,7 @@ import { ChildConnectionError, childConnectionsConfigured, type ChildActor } fro
 import { childConnectionsAvailable } from "./child-access";
 import { identityName, identityPhone, isSerializationConflict } from "./child-link-policy";
 import { phoneChangeOutcome, PHONE_CHANGE_ID_PREFIX } from "./phone-change-rules";
-import { recordIdentityVerification } from "@/lib/identity/verified-identity";
+import { identityComparableName, recordIdentityVerification } from "@/lib/identity/verified-identity";
 
 /**
  * 보호자 «연락처 바꾸기» (2026-11-14 원장 결정 b6).
@@ -110,8 +110,9 @@ export async function confirmPhoneChange(actor: ChildActor, sessionHash: string,
         phone.slice(-4),
       );
       if (consumed !== 1) throw new ChildConnectionError("이미 사용했거나 만료된 본인인증입니다.", 409);
-      const me = await tx.$queryRawUnsafe<{ name: string | null; phone: string | null }[]>(
-        `SELECT name, phone FROM "User" WHERE id=$1 AND "withdrawnAt" IS NULL FOR UPDATE`,
+      // 본인인증 실명도 읽는다 — 이름 비교 기준은 «실명이 있으면 실명, 없으면 닉네임»(검수 N-1)
+      const me = await tx.$queryRawUnsafe<{ name: string | null; identityVerifiedName: string | null; phone: string | null }[]>(
+        `SELECT name, "identityVerifiedName", phone FROM "User" WHERE id=$1 AND "withdrawnAt" IS NULL FOR UPDATE`,
         actor.id,
       );
       if (!me[0]) throw new ChildConnectionError("학원 계정으로 로그인해 주세요.", 401);
@@ -123,7 +124,7 @@ export async function confirmPhoneChange(actor: ChildActor, sessionHash: string,
       );
       const oldPhone = identityPhone(me[0].phone);
       const outcome = phoneChangeOutcome({
-        accountName: identityName(me[0].name),
+        accountName: identityName(identityComparableName(me[0])),
         verifiedName: name,
         currentPhone: oldPhone,
         verifiedPhone: phone,

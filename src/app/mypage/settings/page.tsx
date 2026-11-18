@@ -23,6 +23,7 @@ import ProfilePhotoEditor from "@/components/parent/ProfilePhotoEditor";
 import PhoneChangeButton from "@/components/account/PhoneChangeButton";
 import { phoneChangeAvailable } from "@/lib/account/phone-change";
 import { looksLikeLegalName } from "@/lib/account/phone-change-rules";
+import { identityComparableName } from "@/lib/identity/verified-identity";
 // 학원 대표 번호(설정값) — 문의 폼도 쓸 수 없는 계정에게 «전화»라는 길을 남긴다
 import { getUsableAcademyPhone } from "@/lib/academyPhone";
 import { academyTel } from "@/lib/academyPhoneRules";
@@ -68,9 +69,10 @@ export default async function ParentSettingsPage() {
     const supabase = await createClient();
     // 모든 조회의 대상 = 서버가 확인한 로그인 사용자(parent.appUserId) — 화면 값으로 남의 정보를 열 수 없다
     const [userRows, authResult, childRows, pushPrefs, cookieStore, preferredMethod, headerStore, canChangePhone] = await Promise.all([
-        prisma.$queryRawUnsafe<{ name: string; phone: string | null; username: string | null; role: string }[]>(
+        prisma.$queryRawUnsafe<{ name: string; identityVerifiedName: string | null; phone: string | null; username: string | null; role: string }[]>(
             // 보호자 본인 사진은 학부모 화면에서 더 쓰지 않는다(2026-11-16 원장 «학부모 사진은 필요 없어») — 저장된 값은 그대로 둔다
-            `SELECT name, phone, username, role::text AS role FROM "User" u WHERE id = $1 LIMIT 1`,
+            // identityVerifiedName: 연락처 바꾸기 «이름 미리 안내»는 실명이 있으면 실명으로 본다(닉네임은 자유, 검수 N-1)
+            `SELECT name, "identityVerifiedName", phone, username, role::text AS role FROM "User" u WHERE id = $1 LIMIT 1`,
             parent.appUserId,
         ),
         supabase.auth.getUser(),
@@ -158,7 +160,7 @@ export default async function ParentSettingsPage() {
                             <Link href="/mypage/children" className="inline-flex min-h-11 items-center text-xs text-[var(--color-academy-muted)] underline">자녀를 연결하면 변경을 요청할 수 있어요</Link>
                         )}
                     </span>
-                    <PhoneChangeButton enabled={canChangePhone} nameOk={looksLikeLegalName(me?.name ?? parent.appUserName)} onSettingsPage label="바꾸기" className="academy-button-secondary shrink-0" />
+                    <PhoneChangeButton enabled={canChangePhone} nameOk={looksLikeLegalName(identityComparableName({ identityVerifiedName: me?.identityVerifiedName, name: me?.name ?? parent.appUserName }))} onSettingsPage label="바꾸기" className="academy-button-secondary shrink-0" />
                 </li>
                 {me?.username && (
                     <li className={ROW}>
