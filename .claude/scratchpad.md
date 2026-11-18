@@ -50,6 +50,7 @@
 ## 작업 로그 (최근 10건)
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-18 | reviewer(HEAD 9914a937 가입 안내 «가입하지 않은 분께만»): binding 에 unsignedOnly 포함·보내기 때 같은 값 재계산 → 화면이 값을 바꾸면 대조에서 멈춤 OK · 기본 꺼짐 = pool=all 로 예전과 동일 · node --test 31-0 · 권장: 미가입 0명일 때 «번호가 없어요» 문구 부정확 | 통과 |
 | 2026-11-18 | 옛 코드 정리 B(developer): 들어오는 길 없는 API·cron 12개 + operationsSyncWorker.ts 삭제, import-summary 조회·incrementalDispatch·인스타 자동 가져오기 함수 삭제, 테스트 13개 «지워져 있음»으로 수정. tsc 0·npm test fail 0 | 구현 완료(미커밋·검수 전) |
 | 11-18 | reviewer 검수(19978963 옛 코드 정리 A): 지운 24개 파일·submitUniformOrder 를 import 하는 곳 0(src·apps·scripts·vercel.json·package.json) · 뺀 패키지 10개 직접 사용 0, RichTextEditor 는 StarterKit 내장 Underline·Link 사용 · 잠금에서 빠진 clsx·lodash·immer 등 코드 사용 0, 루트 tslib 유지(supabase 의존 안전), oxide-wasm32-wasi 는 dev+optional+inBundle 이라 빌드 영향 없음 · 테스트는 지운 파일 단언만 뺌 · 권장: 낡은 주석(report/page.tsx:7·HideInInstalledApp.tsx:10·workbench-pricing.ts:257,295·uniform-options.ts:3)·scheduled-enrollment-ui.test.mjs:145 AppSafeLink 가짜 모듈 | 통과 |
 | 11-17 | reviewer 재검수(D-1~D-5): D-1 네 신호를 readEndedBillItems SQL 이 계산 → 승인도 잠근 뒤 같은 함수로 재계산 → CHECK 면 sameProposal 거짓 → 409(유한빈 재현 테스트) · D-4 열쇠=«대상:종료일:종류», 무시는 전체 열쇠·승인은 바탕 열쇠로 거름, 승인 요청은 key 끝 종류=kind 확인 → 멱등 충돌 없음 · D-3 숨김은 그 청구 id 의 이월 적립만(다른 결제 청구 영향 없음) · D-5 취소·변경 감사에 이전 Payment/Invoice 상태 · D-2 사유별 문구 · tsc 0 · node --test 222-0 · 참고: (c) 같은 반 재수강 신호는 Enrollment (학생,반) 유일이라 WITHDRAWN 행과 동시에 ACTIVE 불가 → 늘 거짓(해 없음) · (d)는 새 반 청구 발행 전이면 정상 반 이동 취소도 확인 필요로(보수적, 허용) | 통과 |

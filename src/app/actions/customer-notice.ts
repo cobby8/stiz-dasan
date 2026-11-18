@@ -506,7 +506,9 @@ export async function prepareParentSignupGuide(input: { resend?: boolean; unsign
     if (guide.recipients.length === 0) {
       throw new NoticeProblem(guide.alreadySentCount > 0
         ? `보낼 학부모가 없습니다. 이미 안내를 받은 ${guide.alreadySentCount}명은 «다시 보내기»를 골라야 포함됩니다.`
-        : "보낼 사람이 없습니다. (재원·휴원생 보호자와 성인 수강생의 휴대폰 번호가 없어요)");
+        : unsignedOnly
+          ? "가입하지 않은 분이 없습니다. (휴대폰 번호가 있는 보호자·성인 수강생은 모두 가입했어요)"
+          : "보낼 사람이 없습니다. (재원·휴원생 보호자와 성인 수강생의 휴대폰 번호가 없어요)");
     }
     if (guide.recipients.length > BULK_MANUAL_MESSAGE_RECIPIENT_LIMIT) {
       throw new NoticeProblem(`한 번에 ${BULK_MANUAL_MESSAGE_RECIPIENT_LIMIT}명까지만 보낼 수 있습니다.`);
