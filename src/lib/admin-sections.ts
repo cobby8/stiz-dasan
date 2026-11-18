@@ -36,6 +36,9 @@ export const ADMIN_SECTIONS = {
       { href: "/admin/absence", label: "정규 결석 신고" },
       { href: "/admin/makeup", label: "보강" },
       { href: "/admin/attendance/feed", label: "수업 피드" },
+      // 2026-11-18 원장 «쓴다» — 메뉴에 들어가는 길이 없던 화면 2개를 이 탭 줄에 넣었다(주소 그대로)
+      { href: "/admin/feedback", label: "학습 피드백" },
+      { href: "/admin/annual", label: "연간일정" },
     ],
   },
   // 사이드바 «청구·수납» — 옛 «돈·수납» 묶음을 없애고 이 탭 줄로 모았다
@@ -49,6 +52,8 @@ export const ADMIN_SECTIONS = {
       { href: "/admin/pos-reconcile", label: "POS 결제 대사", ownerOnly: true },
       // 기타 매출(2026-11-17) = 학생 청구가 아닌 수입을 원장이 적는 화면 — 금액이라 원장 전용
       { href: "/admin/other-revenue", label: "기타 매출", ownerOnly: true },
+      // 2026-11-18 원장 «쓴다» — 들어가는 길이 없던 청구 템플릿 화면. 금액 설정이라 원장 전용 탭
+      { href: "/admin/finance/billing", label: "청구 템플릿", ownerOnly: true },
     ],
   },
   // 사이드바 «홈페이지 관리» — 학원 소개(/admin/settings)가 첫 탭. 사진 공개 회수는 갤러리 바로 뒤에 둔다
