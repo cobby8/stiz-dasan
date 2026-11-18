@@ -58,7 +58,8 @@ export default function SeasonalListClient({ basePath = "/seasonal" }: { basePat
                 <div><p className="text-xs text-[var(--color-public-muted)]">수강료</p><p className="font-semibold tabular-nums text-[var(--color-public-ink)] dark:text-white">{Number.isFinite(minPrice) ? `${formatWon(minPrice)}부터` : "안내 예정"}</p></div>
                 {display.showSeats && offerings.length > 0 && <div className="text-right"><p className="text-xs text-[var(--color-public-muted)]">모집 현황</p><p className={`font-medium ${hasOpenCapacity || hasUnknownSeats ? SEAT_LEVEL_TEXT_CLASS.AVAILABLE : SEAT_LEVEL_TEXT_CLASS[bestLevel]}`}>{hasOpenCapacity || hasUnknownSeats ? "학원 문의" : bestLevel !== "FULL" ? SEAT_LEVEL_LABEL[bestLevel] : offerings.some((item) => item.waitlistEnabled) ? "대기 가능" : "마감"}</p></div>}
               </div>
-              {!display.canApply && <p className="text-sm text-[var(--color-public-muted)]">{display.message}</p>}
+              {/* 신청 불가 안내 + 중간 합류(모집 마감 뒤 남은 날짜로 신청) 안내 */}
+              {(!display.canApply || display.lateJoin) && <p className="text-sm text-[var(--color-public-muted)]">{display.message}</p>}
               <Link href={`${basePath}/${program.slug}`} className="public-btn-primary w-full">{display.actionLabel}</Link>
             </div>
           </article>

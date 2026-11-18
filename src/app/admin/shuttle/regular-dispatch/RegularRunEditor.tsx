@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { useRouter } from "next/navigation";
 import AcademyTheme from "@/components/academy/AcademyTheme";
 import DriverLocationPanel from "@/components/admin/DriverLocationPanel";
-import DriverRequestPanel from "@/components/admin/DriverRequestPanel";
 import { adminErrorText } from "@/components/admin/adminDisplayText";
 // 기사님 화면과 같은 카드 틀(RunBoard) + 같은 순수 조립 함수(buildRegularRunRows) — 관리자 화면 = 기사님 화면.
 import RunBoard from "@/components/shuttle/run/RunBoard";
@@ -65,7 +64,7 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
   riderBlocks?: Record<string, string>;
   /** 그 달 휴무일(연간일정) — 요일 탭 아래 «이 달 휴무» 한 줄. */
   monthHolidays?: { ymd: string; weekday: number; title: string }[];
-  /** 머리줄 «기사 요청» 버튼 바로 뒤에 그릴 것 — 지금은 «당일 변경» 버튼+창(ShuttleDayExceptionAdminPanel). */
+  /** 머리줄 «실시간 위치» 버튼 바로 뒤에 그릴 것 — 지금은 «당일 변경» 버튼+창(ShuttleDayExceptionAdminPanel). */
   headerExtra?: ReactNode;
 }) {
   const router = useRouter();
@@ -298,17 +297,8 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
   });
   function afterSaved(text: string) { setDialog(null); setError(null); setMessage(text); router.refresh(); }
 
-  // 기사님 위치·요청(옛 배차 화면에서 그대로 옮김).
+  // 기사님 위치(옛 배차 화면에서 그대로 옮김). 요청 수신함은 2026-11-18 원장 지시로 없앴다.
   const [showLocations, setShowLocations] = useState(false);
-  const [showRequests, setShowRequests] = useState(false);
-  const [pendingRequests, setPendingRequests] = useState(0);
-  const loadPendingRequests = useCallback(() => {
-    fetch("/api/admin/driver-requests", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d: { requests?: { status: string }[] } | null) => { if (d?.requests) setPendingRequests(d.requests.filter((r) => r.status === "PENDING").length); })
-      .catch(() => null);
-  }, []);
-  useEffect(() => { loadPendingRequests(); }, [loadPendingRequests]);
 
   // 등원·하원 수업시간이 다른 학생(명단 자료 점검 — 자동으로 고치지 않는다).
   const mismatches = useMemo(() => {
@@ -503,15 +493,10 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
         <button type="button" onClick={() => setShowLocations(true)} className="academy-button-secondary">
           실시간 위치
         </button>
-        <button type="button" onClick={() => setShowRequests(true)} className="academy-button-secondary relative">
-          기사 요청
-          {pendingRequests > 0 && <span className="absolute -right-1.5 -top-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-[var(--color-academy-danger)] px-1 text-xs font-semibold tabular-nums text-[var(--color-academy-on-primary)]">{pendingRequests}</span>}
-        </button>
         {headerExtra}
         {/* 편집은 묶음 머리마다 작은 연필로 들어간다(2026-11-10) — 화면 위 [수정] 버튼은 없앴다. */}
       </div>
       {showLocations && <DriverLocationPanel onClose={() => setShowLocations(false)} />}
-      {showRequests && <DriverRequestPanel onClose={() => { setShowRequests(false); loadPendingRequests(); }} />}
 
       {/* 요일 탭(학생 수) */}
       <div role="tablist" aria-label="요일" className="mt-2 flex flex-wrap gap-1">

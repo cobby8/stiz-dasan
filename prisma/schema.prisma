@@ -2031,6 +2031,25 @@ model TrialLead {
 
 /// 체험비 토스 주문 1건 = 1행 (마이그레이션 20261110150000 의 사본). 체험 신청자는 원생이 아니라 PaymentTransaction 을 못 써서 따로 둔다.
 /// 부분 유일 인덱스(신청당 DONE 1건 · WAITING_FOR_DEPOSIT 1건)·CHECK 는 SQL 에만 있다.
+/// 체험 신청 학부모 온라인 취소 — 체험비를 이미 낸 신청의 환불 계좌(2026-11-18). 관리자 화면에서만 읽는다(RLS·공개 키 차단).
+/// trialLeadId 는 DB 외래키(ON DELETE CASCADE) — TrialLead 쪽 관계 필드는 두지 않는다.
+model TrialRefundRequest {
+  id              String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  trialLeadId     String    @unique(map: "TrialRefundRequest_trialLeadId_key")
+  amount          Int
+  refundBank      String
+  refundAccount   String // 숫자만 10~16자리(DB CHECK)
+  refundHolder    String
+  status          String    @default("PENDING") // PENDING(환불 대기) | DONE(환불 완료)
+  adminSmsStatus  String? // 원장 알림 문자 결과 SENT | FAILED | OFF
+  completedAt     DateTime? @db.Timestamptz(6)
+  completedByName String?
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([status, createdAt(sort: Desc)], map: "TrialRefundRequest_status_createdAt_idx")
+}
+
 model TrialFeePayment {
   id               String     @id @default(dbgenerated("(gen_random_uuid())::text"))
   trialLeadId      String? // 신청을 지우면 NULL(돈 기록은 남김 — ON DELETE SET NULL)
@@ -2335,6 +2354,11 @@ model SpecialProgramSeason {
   status              String                      @default("DRAFT")
   termsText           String?
   cancellationPolicy  String?
+  // 날짜별 선택(2026-11-18) — 켜면 학부모가 날짜를 하나씩 골라 회당 단가로 신청
+  dateSelectEnabled       Boolean                     @default(false)
+  perSessionNewPrice      Int?
+  perSessionExistingPrice Int?
+  minSessionCount         Int                         @default(1)
   createdAt           DateTime                    @default(now()) @db.Timestamptz(6)
   updatedAt           DateTime                    @default(now()) @updatedAt @db.Timestamptz(6)
   offerings           SpecialProgramOffering[]
@@ -2371,9 +2395,33 @@ model SpecialProgramOffering {
   sessionDates           SpecialProgramSessionDate[]
   applicationItems       SpecialProgramApplicationItem[]
   auditLogs              SpecialProgramAuditLog[]
+  periods                SpecialProgramOfferingPeriod[] // 기간 상품표(2026-11-18)
 
   @@unique([seasonId, code])
   @@index([seasonId, status, displayOrder])
+}
+
+// 반별 기간 상품표(2026-11-18) — «이 반의 이 기간(KST 'YYYY-MM-DD' 시작~종료)을 이 값에».
+// shuttleFee 가 NULL 이면 반의 셔틀비를 쓴다. 서버 전용(RLS 켬·anon/authenticated 권한 없음).
+model SpecialProgramOfferingPeriod {
+  id                     String                 @id @default(dbgenerated("(gen_random_uuid())::text"))
+  offeringId             String
+  label                  String
+  startDate              String
+  endDate                String
+  price                  Int
+  newApplicantPrice      Int?
+  existingApplicantPrice Int?
+  shuttleFee             Int?
+  displayOrder           Int                    @default(0)
+  isActive               Boolean                @default(true)
+  // 이 기간의 신청 마감 시각(2026-11-18 · 예: 4주 = 1/1(금) 18:00 KST). NULL 이면 시즌 마감을 따른다.
+  applicationClosesAt    DateTime?              @db.Timestamptz(6)
+  createdAt              DateTime               @default(now()) @db.Timestamptz(6)
+  updatedAt              DateTime               @default(now()) @updatedAt @db.Timestamptz(6)
+  offering               SpecialProgramOffering @relation(fields: [offeringId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([offeringId, startDate, endDate], map: "SpecialProgramOfferingPeriod_offering_range_key")
 }
 
 model SpecialProgramSessionDate {
@@ -2398,6 +2446,12 @@ model SpecialProgramApplication {
   idempotencyKey     String
   applicantType      String?
   selectedWeekdays   String[]                        @default([])
+  // 기간·날짜 선택(2026-11-18) — 'WEEKDAY'(요일) | 'DATE'(날짜). 날짜는 KST 'YYYY-MM-DD'
+  selectionMode      String                          @default("WEEKDAY")
+  selectedDates      String[]                        @default([])
+  periodLabel        String?
+  periodStartDate    String?
+  periodEndDate      String?
   importSource       String?
   sourceRowRef       String?
   requiresReview     Boolean                         @default(false)
@@ -2444,6 +2498,10 @@ model SpecialProgramApplicationItem {
   siblingDiscountSnapshot Int                           @default(0)
   discountReasonSnapshot  String?
   shuttleFeeSnapshot      Int                           @default(0)
+  // 기간·날짜 선택(2026-11-18) — 고른 기간 id(FK 없음)·회수·회당 단가, 신청 당시 값 고정
+  offeringPeriodId        String?
+  sessionCountSnapshot    Int?
+  unitPriceSnapshot       Int?
   titleSnapshot           String
   status                  String                        @default("PENDING")
   applicantFingerprint    String?

@@ -54,7 +54,7 @@ test("셔틀 화면: 보기 ↔ 선생님 운행 전환은 replace, 다른 화�
   assert.match(page, /<Link href=\{`\/staff\/shuttle\?mode=drive\$\{dateQuery \? `&\$\{dateQuery\}` : ""\}`\} replace className=/);
   assert.match(page, /<Link href=\{`\/staff\/shuttle\$\{dateQuery \? `\?\$\{dateQuery\}` : ""\}`\} replace className="[^"]*">보기로 돌아가기<\/Link>/);
   // 별도 확정 노선(편집 화면)·정규 운행표·검토·배정·운행 시작은 «다른 화면»이라 뒤로로 돌아올 수 있어야 한다
-  for (const href of ['"?view=routes"', '"/staff/shuttle"', '"/staff/shuttle/intake"', '"/staff/shuttle/assign"', '"/staff/driver"']) {
+  for (const href of ['"?view=routes"', '"/staff/shuttle"', '"/staff/shuttle/intake"', '"/staff/shuttle/assign"', '{DRIVER_START_HREF}']) {
     assert.ok(page.includes(`<Link href=${href} className=`), `${href} 링크는 replace 없이 그대로여야 한다`);
   }
 });
@@ -65,7 +65,8 @@ test("선생님 홈 날짜·청구 조회 달은 replace, 사진 올리기 «이
   assert.doesNotMatch(home, /router\.push\(target === todayKey/);
 
   const billing = read("src/app/staff/billing/StaffBillingClient.tsx");
-  assert.match(billing, /if \(draftMonth !== month\) router\.replace\(draftMonth === currentMonth \? "\/staff\/billing" : `\/staff\/billing\?month=\$\{draftMonth\}`\);/);
+  // 2026-11-18: 조회 창이 넣은 기록 칸을 먼저 되돌린 뒤(leaveTo) 바꿔 끼운다 — 여전히 replace
+  assert.match(billing, /if \(draftMonth !== month\) lookupBack\.leaveTo\(draftMonth === currentMonth \? "\/staff\/billing" : `\/staff\/billing\?month=\$\{draftMonth\}`, \(to\) => router\.replace\(to\)\);/);
   assert.doesNotMatch(billing, /router\.push\(/);
 
   const quickPost = read("src/app/staff/quick-post/QuickPostClient.tsx");
@@ -75,7 +76,9 @@ test("선생님 홈 날짜·청구 조회 달은 replace, 사진 올리기 «이
 
 test("수업 종료 뒤 도착지는 시작 취소와 같다(특강에서 시작했으면 특강 화면)", () => {
   const session = read("src/app/staff/sessions/[sessionId]/SessionInProgressClient.tsx");
-  const moves = [...session.matchAll(/router\.replace\(session\.sessionDateId \? "\/staff\/seasonal" : "\/staff"\);/g)];
+  // 2026-11-18: 두 곳 모두 «나갈 곳»만 적고(setExitTo), 가드 칸을 걷은 뒤 한 곳에서 바꿔 끼운다(router.replace(exitTo))
+  const moves = [...session.matchAll(/setExitTo\(session\.sessionDateId \? "\/staff\/seasonal" : "\/staff"\);/g)];
   assert.equal(moves.length, 2, "시작 취소·수업 종료 두 곳");
+  assert.match(session, /router\.replace\(exitTo\);/);
   assert.doesNotMatch(session, /router\.replace\("\/staff"\);/);
 });

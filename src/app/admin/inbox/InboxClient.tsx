@@ -15,6 +15,7 @@ import UiIcon from "@/components/common/UiIcon";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { replaceUrlSyncingNext } from "@/lib/navigation/listQuery";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import AdminModal from "@/components/admin/AdminModal";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
@@ -328,9 +329,10 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
     if (params.get("tab") === tab) return;
     params.set("tab", tab);
     // 주소만 고친다(history.replaceState) — router.replace 는 서버가 신청함을 한 번 더 읽게 해 들어올 때마다 조회가 2배였다.
-    // 이후 router.refresh() 는 바뀐 주소(탭 포함)로 읽으므로 목적은 그대로다.
+    // 주소는 공용 함수로 바꾼다 — history.state 를 그대로 넘기면 Next 가 주소 변화를 모르고 지나가,
+    // 이후 router.refresh() 가 탭 없는 옛 주소로 읽고 주소도 옛것으로 되돌렸다(2026-11-18 검수 N-2). 이제 바뀐 주소(탭 포함)로 읽는다.
     try {
-      window.history.replaceState(window.history.state, "", `${pathname}?${params}`);
+      replaceUrlSyncingNext(`${pathname}?${params}`);
     } catch {
       // 주소를 못 고쳐도 화면은 그대로다(탭이 저절로 넘어가는 옛 동작으로 돌아갈 뿐)
     }

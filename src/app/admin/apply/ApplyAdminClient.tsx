@@ -1270,7 +1270,7 @@ function ApplicationContactModal({
     }
 
     return (
-        <AdminModal onClose={onClose} titleId="application-contact-modal-title" panelClassName="max-w-md" closeOnBackdrop={!busy}>
+        <AdminModal onClose={onClose} titleId="application-contact-modal-title" panelClassName="max-w-md" closeOnBackdrop={!busy} busy={busy}>
             <form
                 onSubmit={handleSubmit}
                 className="w-full p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]"

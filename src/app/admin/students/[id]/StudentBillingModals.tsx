@@ -133,7 +133,7 @@ export function IssueInvoiceModal({
     }
 
     return (
-        <AdminModal titleId="issue-invoice-title" panelClassName="max-w-md p-5" onClose={() => { if (!busy) onClose(); }} closeOnBackdrop={!busy}>
+        <AdminModal titleId="issue-invoice-title" panelClassName="max-w-md p-5" onClose={() => { if (!busy) onClose(); }} busy={busy} closeOnBackdrop={!busy}>
             <form onSubmit={(e) => void submit(e)} className="space-y-3">
                 <div>
                     <h2 id="issue-invoice-title" className="text-lg font-bold text-[var(--color-academy-ink)]">청구서 발행</h2>
@@ -263,7 +263,7 @@ export function EditInvoiceModal({
     }
 
     return (
-        <AdminModal titleId="edit-invoice-title" panelClassName="max-w-md p-5" onClose={() => { if (!busy) onClose(); }} closeOnBackdrop={!busy}>
+        <AdminModal titleId="edit-invoice-title" panelClassName="max-w-md p-5" onClose={() => { if (!busy) onClose(); }} busy={busy} closeOnBackdrop={!busy}>
             <form onSubmit={(e) => void submit(e)} className="space-y-3">
                 <div>
                     <h2 id="edit-invoice-title" className="text-lg font-bold text-[var(--color-academy-ink)]">청구서 수정</h2>
@@ -331,7 +331,7 @@ export function CancelInvoiceModal({
     }
 
     return (
-        <AdminModal titleId="cancel-invoice-title" panelClassName="max-w-md p-5" onClose={() => { if (!busy) onClose(); }} closeOnBackdrop={!busy}>
+        <AdminModal titleId="cancel-invoice-title" panelClassName="max-w-md p-5" onClose={() => { if (!busy) onClose(); }} busy={busy} closeOnBackdrop={!busy}>
             <div className="space-y-3">
                 <h2 id="cancel-invoice-title" className="text-lg font-bold text-[var(--color-academy-ink)]">청구서 삭제</h2>
                 <p className="text-sm text-[var(--color-academy-muted)]">{studentName} · {payment.periodLabel} · {payment.classLabel}</p>

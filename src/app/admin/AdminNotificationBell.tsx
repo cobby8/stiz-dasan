@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import UiIcon from "@/components/common/UiIcon";
+import { isTouchDevice, useBackToClose } from "@/components/common/useBackToClose";
 // 알림 이동 주소 검사 — 학부모 종과 같은 함수(내부 경로만 통과, 바깥 주소·이상한 꼴은 null)
 import { safeInternalHref } from "@/lib/mypage/parentNav";
 
@@ -39,6 +40,9 @@ export default function AdminNotificationBell() {
     const dropdownRef = useRef<HTMLDivElement>(null);
     const lastLoadedAtRef = useRef(0);
     const router = useRouter();
+    // 휴대폰 «뒤로» = 알림 목록만 닫기(2026-11-18). 손가락 기기에서만 건다 — 이유는 isTouchDevice 주석
+    const [backClose, setBackClose] = useState(false);
+    const { leaveTo } = useBackToClose(open && backClose, () => setOpen(false));
 
     const fetchNotifications = useCallback(async () => {
         try {
@@ -67,6 +71,7 @@ export default function AdminNotificationBell() {
 
     function handleToggle() {
         if (!open && Date.now() - lastLoadedAtRef.current > NOTIFICATION_CACHE_MS) void fetchNotifications();
+        if (!open) setBackClose(isTouchDevice());
         setOpen((current) => !current);
     }
 
@@ -89,7 +94,8 @@ export default function AdminNotificationBell() {
         // 알림에 적힌 주소를 그대로 믿지 않는다 — 사이트 안 주소일 때만 이동(바깥 주소면 읽음 처리만 하고 머문다)
         const href = safeInternalHref(item.linkUrl);
         if (href) {
-            router.push(href);
+            // 넣어 둔 기록 칸을 먼저 되돌린 뒤 이동(«뒤로 = 닫기»를 안 건 기기에서는 바로 이동)
+            leaveTo(href, (to) => router.push(to));
         }
 
         setOpen(false);

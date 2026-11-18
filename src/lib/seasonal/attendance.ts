@@ -1,5 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { weekdayInSeoul } from "@/lib/seasonal/planning";
+// «새 기능 시즌인가» 판정은 공용 함수 하나로(공개 신청·관리자 승인·보강과 같은 기준)
+import { usesPeriodOrDateFeatures } from "@/lib/seasonal/period-pricing";
+
+/** raw 쿼리의 불리언(드라이버에 따라 true 또는 "true")을 JS 불리언으로. */
+function sqlBool(value: unknown): boolean {
+  return value === true || value === "true" || value === "t";
+}
 
 // 방학특강 출석 라이브러리 — 모든 쿼리는 PgBouncer 트랜잭션 모드 호환을 위해 $queryRawUnsafe 사용.
 // 출석은 학생(Student) 전환 여부와 무관하게 SpecialProgramEnrollmentDate 행에 직접 기록한다.
@@ -23,6 +30,12 @@ function weekdayKeys(value: unknown): string[] {
 function weekdayLabel(keys: string[]): string | null {
   if (keys.length === 0) return null;
   return keys.map((k) => WEEKDAY_KO_BY_KEY[k]).join("·");
+}
+
+// DB 의 selectedDates(TEXT[])를 깨끗한 날짜 문자열 배열로(null·빈 값 방어). 기존 신청서는 빈 배열.
+function cleanDateList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((v) => String(v ?? "").trim()).filter((v) => v.length > 0);
 }
 
 function seoulParts(value: Date | string) {
@@ -72,6 +85,13 @@ export type SeasonalCourtOccupancy = {
   capacity: number | null;      // 운영 정원(= 한 요일에 코트에 들어올 수 있는 최대 인원)
   offeringCount: number;        // 이 코트를 함께 쓰는 반(형제 반) 개수. 1이면 단독 반.
   byWeekday: Record<string, number>;
+  /**
+   * 2026-11-18 «기간이 섞인 시즌» 표시.
+   * true = 이 코트 그룹에 기간 상품이 있거나, 시즌이 날짜별 선택을 켰거나, 기간·날짜를 고른 신청서가 있다.
+   * 이때 byWeekday 는 «그 요일에 올 수 있는 최대 인원»이다(앞 3주만 오는 학생도 전 기간 그 요일에 센다).
+   * 화면은 이 값이 true 면 «기간이 섞인 시즌은 최대 인원 기준» 안내를 띄운다. 계산 자체는 예전과 같다.
+   */
+  hasMixedPeriods: boolean;
 };
 
 // ── 요일별 "코트 점유 인원" 집계 ────────────────────────────────────────────────
@@ -85,7 +105,10 @@ export type SeasonalCourtOccupancy = {
 //   · 요일: 학생이 고른 selectedWeekdays에 그 요일이 있으면 점유(요일 미선택 = 전 요일 등원으로 간주)
 // 날짜마다 쿼리를 도는 N+1을 피하려고 7요일을 한 번에 GROUP BY로 집계한다. (SELECT 전용 · DB 변경 없음)
 export async function getCourtOccupancyByWeekday(offeringId: string): Promise<SeasonalCourtOccupancy | null> {
-  const rows = await prisma.$queryRawUnsafe<Array<{ weekday: string; occupied: unknown; offeringCount: unknown; capacity: unknown }>>(
+  const rows = await prisma.$queryRawUnsafe<Array<{
+    weekday: string; occupied: unknown; offeringCount: unknown; capacity: unknown;
+    dateSelectEnabled: unknown; activePeriodCount: unknown; appsUsePeriodOrDate: unknown;
+  }>>(
     `WITH target AS (
         SELECT id, "seasonId", "linkedClassId", capacity
           FROM "SpecialProgramOffering"
@@ -99,18 +122,44 @@ export async function getCourtOccupancyByWeekday(offeringId: string): Promise<Se
                  ELSE o."seasonId" = t."seasonId" AND o."linkedClassId" = t."linkedClassId"
                END
       ), seat AS (
-        SELECT item.id AS item_id, app."selectedWeekdays" AS weekdays
+        SELECT item.id AS item_id, app."selectedWeekdays" AS weekdays,
+               app."selectedDates" AS dates,
+               app."periodStartDate" AS period_start, app."periodEndDate" AS period_end
           FROM "SpecialProgramApplicationItem" item
           JOIN scope ON scope.id = item."offeringId"
           JOIN "SpecialProgramApplication" app ON app.id = item."applicationId"
          WHERE item.status = 'APPROVED'
+      ), mixed AS (
+        -- 기간이 섞인 시즌인가 — SQL 은 재료 세 가지만 센다(시즌 날짜 선택 켜짐 · 그룹의 «켜진» 기간 행 수 ·
+        -- 기간/날짜를 고른 승인 신청서). 판정은 아래 JS 의 공용 usesPeriodOrDateFeatures 가 한다(다른 경로와 같은 기준).
+        -- 요일 집계(아래 GROUP BY)는 그대로 두고, 화면 안내용 표시만 함께 내려준다.
+        SELECT
+          EXISTS (
+            SELECT 1 FROM "SpecialProgramSeason" season
+              JOIN target t ON t."seasonId" = season.id
+             WHERE season."dateSelectEnabled" = true
+          ) AS date_select,
+          (
+            SELECT COUNT(*) FROM "SpecialProgramOfferingPeriod" p
+              JOIN scope ON scope.id = p."offeringId"
+             WHERE p."isActive" = true
+          ) AS active_periods,
+          EXISTS (
+            SELECT 1 FROM seat
+             WHERE COALESCE(cardinality(seat.dates), 0) > 0
+                OR seat.period_start IS NOT NULL
+                OR seat.period_end IS NOT NULL
+          ) AS apps_use
       ), wd(day_key) AS (
         VALUES ('MON'),('TUE'),('WED'),('THU'),('FRI'),('SAT'),('SUN')
       )
       SELECT wd.day_key AS weekday,
              COUNT(DISTINCT seat.item_id) AS occupied,
              (SELECT COUNT(*) FROM scope) AS "offeringCount",
-             (SELECT capacity FROM target) AS capacity
+             (SELECT capacity FROM target) AS capacity,
+             (SELECT date_select FROM mixed) AS "dateSelectEnabled",
+             (SELECT active_periods FROM mixed) AS "activePeriodCount",
+             (SELECT apps_use FROM mixed) AS "appsUsePeriodOrDate"
         FROM wd
         LEFT JOIN seat
           ON (COALESCE(cardinality(seat.weekdays), 0) = 0 OR wd.day_key = ANY(seat.weekdays))
@@ -126,6 +175,12 @@ export async function getCourtOccupancyByWeekday(offeringId: string): Promise<Se
     capacity: capacityRaw == null ? null : Number(capacityRaw),
     offeringCount: num(rows[0]?.offeringCount),
     byWeekday,
+    // 기간이 섞인 시즌이면 byWeekday 는 «최대 인원» — 화면 안내용(계산은 그대로)
+    hasMixedPeriods: usesPeriodOrDateFeatures({
+      dateSelectEnabled: sqlBool(rows[0]?.dateSelectEnabled),
+      activePeriodCount: num(rows[0]?.activePeriodCount),
+      applicationsUsePeriodOrDate: sqlBool(rows[0]?.appsUsePeriodOrDate),
+    }),
   };
 }
 
@@ -293,6 +348,7 @@ export async function getDateRoster(sessionDateId: string) {
              e."sessionDateId",
              it.id AS "itemId", a."childName", a."childGrade", a."childSchool", a."parentName", a."parentPhone",
              a."selectedWeekdays",
+             a."selectedDates", a."periodLabel",
              o2.title AS "rowOfferingTitle",
              (sd2.id = $1) AS "isThisOffering",
              mk."absentSessionDateId", absd."startsAt" AS "originStartsAt"
@@ -340,6 +396,8 @@ export async function getDateRoster(sessionDateId: string) {
     courtOccupancy,
     rows: rows.map((r) => {
       const selectedWeekdays = weekdayKeys(r.selectedWeekdays);
+      // 날짜별 선택 신청서는 요일 대신 «날짜 선택 N회»로 보여 준다(2026-11-18).
+      const selectedDates = cleanDateList(r.selectedDates);
       return {
         enrollmentDateId: r.enrollmentDateId, kind: r.kind, enrollmentStatus: r.status,
         attendanceStatus: r.attendanceStatus ?? null, arrivedAt: r.arrivedAt ?? null, attendanceNote: r.attendanceNote ?? null,
@@ -349,7 +407,10 @@ export async function getDateRoster(sessionDateId: string) {
         offeringTitle: r.rowOfferingTitle ?? null, // 학생이 속한 반 이름 (코트 합산 명단에서 반 구분용)
         isThisOffering: r.isThisOffering === true, // 열려있는 회차와 같은 반인지 (선택된 반 강조용)
         selectedWeekdays, // 학생이 신청한 요일 키 목록 (예: ["MON","WED"])
-        selectedWeekdayLabel: weekdayLabel(selectedWeekdays), // 화면용 라벨 (예: "월·수")
+        // 화면용 라벨 (예: "월·수", 날짜 선택이면 "날짜 선택 3회")
+        selectedWeekdayLabel: selectedDates.length > 0 ? `날짜 선택 ${selectedDates.length}회` : weekdayLabel(selectedWeekdays),
+        selectedDates, // 날짜별 선택일 때 고른 날짜(KST 'YYYY-MM-DD'), 아니면 빈 배열
+        periodLabel: typeof r.periodLabel === "string" && r.periodLabel.trim() ? r.periodLabel.trim() : null, // 고른 기간 이름(없으면 null)
         originAbsence: r.absentSessionDateId ? seoulParts(r.originStartsAt).dateLabel : null,
       };
     }),

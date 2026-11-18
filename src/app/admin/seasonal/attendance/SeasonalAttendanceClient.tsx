@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useBackToClose } from "@/components/common/useBackToClose";
 
 // 현황판을 주간 달력으로 배치하는 계산은 순수 모듈로 분리해 테스트로 잠가 뒀다.
 import { buildAttendanceCalendar, calendarCellDateLabel } from "@/lib/seasonal/attendanceCalendar";
@@ -28,6 +29,8 @@ type RosterRow = {
   childGrade: string | null; childSchool: string | null; parentName: string; parentPhone: string; originAbsence: string | null;
   // 학생이 신청한 요일 (예: ["MON","WED"] / "월·수") — 날짜별 명단 인원 차이를 설명하기 위한 정보
   selectedWeekdays?: string[]; selectedWeekdayLabel?: string | null;
+  // 날짜별 선택(2026-11-18) 학생이 고른 날짜(KST 'YYYY-MM-DD') — 요일 선택 학생은 빈 배열
+  selectedDates?: string[];
   // 코트 합산 명단: 이 좌석이 속한 반 이름 + 현재 열린 반과 같은지 여부(강조용)
   offeringTitle?: string | null; isThisOffering?: boolean; sessionDateId?: string;
 };
@@ -69,6 +72,8 @@ export default function SeasonalAttendanceClient({ initial }: { initial: { seaso
   const offering = useMemo(() => initial.offerings.find((o) => o.id === offeringId) ?? null, [initial.offerings, offeringId]);
 
   const [board, setBoard] = useState<BoardDate[]>([]);
+  // 기간·날짜 선택이 섞인 시즌이면 요일별 코트 인원은 «최대 인원» 기준이다(담당 B 의 hasMixedPeriods 플래그)
+  const [hasMixedPeriods, setHasMixedPeriods] = useState(false);
   const [selDate, setSelDate] = useState<string>("");
   const [roster, setRoster] = useState<RosterRow[]>([]);
   const [rosterMeta, setRosterMeta] = useState<any>(null);
@@ -87,13 +92,14 @@ export default function SeasonalAttendanceClient({ initial }: { initial: { seaso
       const data = await getJSON(`/api/admin/seasonal/attendance?view=board&offeringId=${oid}`);
       const dates: BoardDate[] = data.dates || [];
       setBoard(dates);
+      setHasMixedPeriods(data.courtOccupancy?.hasMixedPeriods === true);
       setSelDate((cur) => {
         // 보던 날짜가 목록에 그대로 있으면 유지한다.
         if (opts?.keepSelection && cur && dates.some((d) => d.sessionDateId === cur)) return cur;
         const live = dates.find((d) => d.state === "LIVE");
         return live?.sessionDateId || dates[0]?.sessionDateId || "";
       });
-    } catch (e) { setErr((e as Error).message); setBoard([]); } finally { setBusy(false); }
+    } catch (e) { setErr((e as Error).message); setBoard([]); setHasMixedPeriods(false); } finally { setBusy(false); }
   }, []);
 
   const loadRoster = useCallback(async (sid: string) => {
@@ -273,6 +279,8 @@ export default function SeasonalAttendanceClient({ initial }: { initial: { seaso
           {/* 두 숫자가 서로 다른 기준임을 분명히 알린다 — 13명 > 정원 12 같은 모순으로 보이지 않도록.
               (3문단이던 설명을 한 줄로 압축. 정원과 비교되는 값은 '이 반'이 아니라 '코트 전체'라는 점은 반드시 남긴다.) */}
           <p className="mt-2 px-1 text-xs text-[var(--color-academy-muted)]">※ <b>이 반</b> = 그 날짜 이 반 인원(정규+보강생) · <b>코트 전체</b> = 같은 시간·코트를 쓰는 반을 모두 합친 인원/정원(초과 시 빨강). 학생마다 신청 요일이 달라 날짜별 인원이 다를 수 있습니다.</p>
+          {/* 앞 3주만·날짜 하나씩 고른 학생이 섞이면 «코트 전체»는 그 요일에 올 수 있는 최대 인원이다 */}
+          {hasMixedPeriods && <p className="mt-1 px-1 text-xs text-[var(--color-academy-warning)]">기간이 섞인 시즌은 최대 인원 기준입니다.</p>}
 
           {rosterMeta && (
             <div className="mt-4 overflow-hidden rounded-2xl border border-[var(--color-academy-line)] bg-white">
@@ -319,10 +327,11 @@ export default function SeasonalAttendanceClient({ initial }: { initial: { seaso
                             </div>
                           )}
                           {/* 학생이 신청한 요일 뱃지 — 왜 이 학생이 특정 날짜에만 보이는지 알 수 있게 한다 */}
-                          {r.selectedWeekdayLabel && (
+                          {/* 날짜 선택 학생은 «날짜 선택 N회»(서버 문구가 없어도 고른 날짜 수로 만든다) */}
+                          {(r.selectedWeekdayLabel || (r.selectedDates?.length ?? 0) > 0) && (
                             <div className="mt-0.5">
-                              <span className="rounded bg-[var(--color-academy-soft)] px-1.5 py-0.5 text-xs font-normal text-[var(--color-academy-muted)]">
-                                신청 {r.selectedWeekdayLabel}
+                              <span title={r.selectedDates?.length ? `고른 날짜: ${r.selectedDates.join(", ")}` : undefined} className="rounded bg-[var(--color-academy-soft)] px-1.5 py-0.5 text-xs font-normal text-[var(--color-academy-muted)]">
+                                신청 {r.selectedDates?.length ? `날짜 선택 ${r.selectedDates.length}회` : r.selectedWeekdayLabel}
                               </span>
                             </div>
                           )}
@@ -432,6 +441,8 @@ function MakeupTab({ makeups, onDecide }: { makeups: any; onDecide: (id: string,
 
 function MakeupModal({ modal, onClose, onSeasonal, onRegular }: { modal: any; onClose: () => void; onSeasonal: (id: string) => void; onRegular: (c: any) => void }) {
   const a = modal.absence;
+  // «뒤로» = 이 창만 닫기(2026-11-18). 이 창은 그려진 동안 = 열림
+  useBackToClose(true, onClose);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div className="max-h-[88vh] w-full max-w-lg overflow-auto rounded-2xl bg-white" onClick={(e) => e.stopPropagation()}>

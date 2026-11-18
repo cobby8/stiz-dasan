@@ -13,6 +13,7 @@ import { trialFeeStatusLabel } from "@/lib/trial-fee-confirmation";
 // 체험비 온라인 결제(2026-11-10) — 목록 짧은 표시·환불 버튼 조건은 순수 규칙 한 곳에서
 import { canRefundTrialFeeOnline, trialFeeListChip } from "@/lib/trial-fee/trialFeeRules";
 import { refundTrialFee } from "@/app/actions/trial-fee";
+import { markTrialRefundDone } from "@/app/actions/trial-refund-admin";
 import { trialClassShortLabel, trialClassTimeRange, trialConfirmedClassShortLabel, trialPreferredSlotKeyCandidates } from "@/lib/trial-schedule-display";
 import { seoulDateInputValue, seoulTimeInputValue } from "@/lib/trial-schedule-time";
 import { statusBadgeClass } from "@/lib/ui/statusTones";
@@ -89,6 +90,18 @@ export interface TrialLead {
     smsDeliveryPending: number;
     smsDeliveryLatestAt: string | null;
     smsDeliveryError: string | null;
+    // 학부모 온라인 취소의 환불 계좌(2026-11-18) — 관리자 화면에서만 계좌 전체를 본다
+    refundRequest?: {
+        status: string; // PENDING(환불 대기) | DONE(환불 완료)
+        amount: number;
+        bank: string;
+        account: string;
+        holder: string;
+        adminSmsStatus: string | null;
+        createdAt: string | null;
+        completedAt: string | null;
+        completedByName: string | null;
+    } | null;
 }
 
 interface TrialStats {
@@ -882,6 +895,25 @@ export default function TrialCrmClient({
         }
     }
 
+    // 학부모가 온라인 취소하며 남긴 계좌로 원장이 직접 송금한 뒤 «환불 완료»로 표시한다(토스 결제 취소와 별개)
+    async function handleMarkRefundDone(lead: TrialLead) {
+        const refund = lead.refundRequest;
+        if (!refund || refund.status !== "PENDING" || trialFeeBusyId) return;
+        if (!(await askConfirm(`"${lead.childName}" 체험비 ${refund.amount.toLocaleString("ko-KR")}원을
+${refund.bank} ${refund.account} (${refund.holder}) 로 보냈나요?
+«확인»을 누르면 환불 완료로 표시합니다.`))) return;
+        setTrialFeeBusyId(lead.id);
+        try {
+            const result = await markTrialRefundDone(lead.id);
+            showFeedback(result.ok ? "success" : "error", result.message);
+            if (result.ok) await loadTrialData();
+        } catch (error) {
+            showFeedback("error", adminErrorText(error, "환불 완료 표시 중 문제가 생겼습니다."));
+        } finally {
+            setTrialFeeBusyId(null);
+        }
+    }
+
     async function handleSendManualSms(lead: TrialLead, message: string) {
         if (manualSmsBusy) return;
         setManualSmsBusy(true);
@@ -988,6 +1020,9 @@ export default function TrialCrmClient({
                 ? { key: "fee-done", label: "입금 완료", icon: "paid", disabled: true, onSelect: () => undefined }
                 : { key: "fee", label: trialFeeBusyId === lead.id ? "확인 중…" : "입금 확인", icon: trialFeeBusyId === lead.id ? "progress_activity" : "paid", disabled: Boolean(trialFeeBusyId), onSelect: () => handleConfirmTrialFee(lead) });
             actions.push({ key: "attended", label: "체험 완료", icon: "check_circle", tone: "primary", disabled: busy, onSelect: () => handleStatusChange(lead, "ATTENDED") });
+        }
+        if (lead.refundRequest?.status === "PENDING") {
+            actions.push({ key: "refund-done", label: trialFeeBusyId === lead.id ? "처리 중…" : "환불 송금 완료", icon: "currency_exchange", tone: "primary", disabled: Boolean(trialFeeBusyId), onSelect: () => handleMarkRefundDone(lead) });
         }
         if (canRefundTrialFeeOnline(lead.trialFeePaymentStatus)) {
             actions.push({ key: "fee-refund", label: trialFeeBusyId === lead.id ? "환불 중…" : "체험비 환불", icon: "currency_exchange", tone: "danger", disabled: Boolean(trialFeeBusyId), onSelect: () => handleRefundTrialFee(lead) });
@@ -1114,6 +1149,9 @@ export default function TrialCrmClient({
                             <span className={`ml-1 text-xs font-medium ${feeChip.needsAction ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-muted)]"}`} title={`체험비: ${trialFeeStatusLabel(lead)}`}>
                                 {feeChip.label}
                             </span>
+                        )}
+                        {lead.refundRequest?.status === "PENDING" && (
+                            <span className="ml-1 text-xs font-medium text-[var(--color-academy-danger)]" title="학부모가 온라인 취소하며 환불 계좌를 남겼습니다">환불 대기</span>
                         )}
                         {/* 선생님이 출석부에서 찍은 체험 출결(출석·지각·결석) — 작은 배지 하나, 행 높이는 그대로 */}
                         {staffMark && (
@@ -1415,7 +1453,7 @@ function EnrollGuideConfirmModal({
     onConfirmNoSms?: () => void;
 }) {
     return (
-        <AdminModal onClose={busy ? () => undefined : onClose} titleId="trial-enroll-guide-confirm-title" panelClassName="max-w-md">
+        <AdminModal onClose={busy ? () => undefined : onClose} busy={busy} titleId="trial-enroll-guide-confirm-title" panelClassName="max-w-md">
             <div className="p-6">
                 {/* 장식 아이콘 원을 빼고 글자로만(2026-11-13 UI 통일) */}
                 <div className="flex items-start gap-3">
@@ -1523,6 +1561,10 @@ function TrialLeadDetailModal({
         ["농구 경험", lead.basketballExp || "미입력"],
         // 학부모 동의(trialFeeNoticeAgreedAt)만으로는 「입금 완료」가 되지 않는다
         ["체험비", trialFeeStatusLabel(lead)],
+        ...(lead.refundRequest ? [[
+            "환불 계좌",
+            `${lead.refundRequest.status === "PENDING" ? "환불 대기" : `환불 완료${lead.refundRequest.completedByName ? `(${lead.refundRequest.completedByName})` : ""}`} · ${lead.refundRequest.amount.toLocaleString("ko-KR")}원 · ${lead.refundRequest.bank} ${lead.refundRequest.account} · ${lead.refundRequest.holder}`,
+        ]] : []),
         ["최근 연락", lead.latestContactAction ? `${CONTACT_ACTION_LABELS[lead.latestContactAction] ?? lead.latestContactAction}${lead.latestContactAt ? ` · ${formatContactDateTime(lead.latestContactAt)}` : ""}` : "기록 없음"],
     ];
 
@@ -1686,7 +1728,7 @@ function TrialContactModal({
     }
 
     return (
-        <AdminModal onClose={onClose} titleId="trial-contact-modal-title" panelClassName="max-w-md" closeOnBackdrop={!busy}>
+        <AdminModal onClose={onClose} titleId="trial-contact-modal-title" panelClassName="max-w-md" closeOnBackdrop={!busy} busy={busy}>
             <form
                 onSubmit={handleSubmit}
                 className="w-full p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]"

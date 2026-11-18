@@ -267,7 +267,7 @@ export default function ProgramsAdminClient({
             {showAddModal && (
                 <AdminModal
                     titleId="add-program-title"
-                    onClose={() => { if (!formPending) setShowAddModal(false); }}
+                    onClose={() => { if (!formPending) setShowAddModal(false); }} busy={formPending}
                     closeOnBackdrop={!formPending}
                     panelClassName="max-w-2xl"
                 >

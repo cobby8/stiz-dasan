@@ -21,6 +21,8 @@ export type { MediaConsentCheck, MediaConsentScope } from "@/lib/studentMediaCon
  * 대신: 공개 게시는 지금도 사람 손을 거친다 — 갤러리 = 관리자 승인(requireAdmin),
  *       인스타그램 = 원장 승인(requireOwner), 대기열도 원장이 승인한 건(PUBLISHING)만 처리한다.
  *       원장이 사진을 보고 올릴지 직접 판단한다.
+ * 2026-11-18 원장 결정: 사진 동의는 학부모에게 따로 받지 않는다 — 이용약관 «수업 사진·동영상» 조항으로 대신한다.
+ *       광고(홍보물·SNS·블로그)에 쓸 때만 학원이 보호자에게 «전화로» 사전 동의를 받는다. 사이트에 동의 절차를 만들지 않는다.
  * 되돌리기: true 로 바꾸면 아래 기존 검사(최신 동의·철회·소속 확인)가 그대로 다시 돈다. 동의 기록 표는 지우지 않았다.
  */
 export const PUBLIC_POST_CONSENT_GATE_ENABLED = false;

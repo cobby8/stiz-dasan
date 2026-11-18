@@ -89,7 +89,8 @@ export default function BillDetailSheet<T extends BillItemBase>({
   const showNames = byStudent.size > 1;
 
   return (
-    <ListDetailPanel onClose={requestClose} titleId={titleId}>
+    // 기록 칸은 위 sheetHistory 가 관리한다 — 패널의 «뒤로 = 닫기»는 꺼서 칸을 두 번 넣지 않는다
+    <ListDetailPanel backToClose={false} onClose={requestClose} titleId={titleId}>
       {/* 머리: 청구월 · 합계 · 할인 · 미납 — 닫기는 글자 버튼(아이콘 없음) */}
       <div className="sticky top-0 z-10 flex items-start gap-2 border-b border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-4 py-2">
         <div className="min-w-0 flex-1">

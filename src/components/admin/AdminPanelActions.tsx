@@ -1,5 +1,6 @@
 "use client";
 
+import { useAdminModalCloseThen } from "@/components/admin/AdminModal";
 import { splitQuickActions, type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
 
 type AdminPanelActionsProps = {
@@ -24,6 +25,8 @@ function buttonClass(tone: AdminQuickAction["tone"]) {
  */
 export default function AdminPanelActions({ actions, onBeforeSelect, className = "mt-5" }: AdminPanelActionsProps) {
     const { safe, danger } = splitQuickActions(actions);
+    // 이 버튼 줄이 들어 있는 창(상세 패널)의 «닫은 뒤 이어서 하기» — 창 밖에서 쓰이면 그냥 바로 실행한다
+    const closeThen = useAdminModalCloseThen();
     if (actions.length === 0) return null;
 
     function renderButton(action: AdminQuickAction) {
@@ -34,8 +37,16 @@ export default function AdminPanelActions({ actions, onBeforeSelect, className =
                 disabled={action.disabled}
                 onClick={() => {
                     if (action.disabled) return;
-                    onBeforeSelect?.();
-                    void action.onSelect();
+                    if (!onBeforeSelect) {
+                        // 패널을 닫지 않는 버튼 — 예전 그대로
+                        void action.onSelect();
+                        return;
+                    }
+                    // 패널을 닫으며 시작하는 작업: 패널이 넣어 둔 기록 칸을 먼저 되돌린 뒤 작업을 시작한다
+                    // (작업이 다른 화면으로 가도 그 되돌리기가 새 화면을 되돌리지 않게)
+                    // 순서는 예전 그대로(닫기 → 작업). 닫힘은 다음 그리기에 반영되므로 이 시점엔 패널의 기록 칸이 아직 살아 있다
+                    onBeforeSelect();
+                    closeThen(() => void action.onSelect());
                 }}
                 className={buttonClass(action.tone)}
             >

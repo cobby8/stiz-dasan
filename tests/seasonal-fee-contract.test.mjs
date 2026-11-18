@@ -20,6 +20,8 @@ test("admin offering writes validate a non-negative configurable shuttle fee", (
 test("admin reassignment preserves a valid shuttle request and recomputes the final snapshot", () => {
   assert.match(adminRoute, /include:\s*\{\s*application:\s*true,\s*offering:\s*true,\s*shuttleRequest:\s*true\s*\}/);
   // 셔틀비 계산은 공개 신청과 같은 resolveShuttleFee로 통일했다(중복 구현 제거).
-  assert.match(adminRoute, /const shuttleFeeSnapshot = resolveShuttleFee\(offering,\s*Boolean\(before\.shuttleRequest\)\)/);
+  //   (2026-11-18 날짜 모드 중간 합류: 그 값에 공개 신청과 같은 남은 회차 비율 proratedPrice 를 얹는다)
+  assert.match(adminRoute, /const normalShuttleFee = resolveShuttleFee\(offering,\s*Boolean\(before\.shuttleRequest\)\)/);
+  assert.match(adminRoute, /const shuttleFeeSnapshot = assignment\.proration\s*\?\s*proratedPrice\(normalShuttleFee,[^)]*\)\s*:\s*normalShuttleFee;/);
   assert.match(adminRoute, /priceSnapshot:\s*assignment\.priceSnapshot \+ shuttleFeeSnapshot/);
 });

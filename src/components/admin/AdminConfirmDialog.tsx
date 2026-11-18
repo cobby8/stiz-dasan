@@ -59,6 +59,8 @@ export default function AdminConfirmDialog({
             titleId={titleId}
             // 처리 중에는 Esc 로도 닫히지 않게 — 결과를 못 보고 창이 사라지면 두 번 누르게 된다
             onClose={() => { if (!pending) onCancel(); }}
+            // 처리 중에는 «뒤로»로도 닫히지 않게(기록 칸을 다시 넣어 창을 그대로 둔다)
+            busy={pending}
             closeOnBackdrop={false}
             panelClassName="max-w-md p-5"
         >

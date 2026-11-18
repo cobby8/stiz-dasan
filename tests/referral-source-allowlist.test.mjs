@@ -324,6 +324,8 @@ function loadPublicActions(prisma, mutate = null) {
     "@/lib/seasonal/contracts": { SHUTTLE_LOCATION_CONSENT_VERSION: "test" },
     "@/lib/enrollment/shuttle-place-name": { shuttlePlaceNameError: () => null },
     "@/lib/seats/seatLevel": { seatLevelFromCounts: () => "OPEN" },
+    // 기존 신청 불러오기 시도 제한(2026-11-18) — 저장 함수는 쓰지 않는다
+    "@/lib/seasonal/public-rate-limit": { takePublicRateLimit: () => ({ allowed: true }), hashSensitiveRateLimitKey: (value) => value },
     "next/cache": { revalidatePath() {}, revalidateTag() {} },
   }, mutate);
   return { actions, sent };

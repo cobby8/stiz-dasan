@@ -96,5 +96,7 @@ test("출결 화면이 해석 결과를 실제로 쓴다(연결 확인)", () => 
   assert.ok(client.includes("findLessonForTarget(initialClasses ?? [], initialOpen?.lesson ?? null)"), "그날 목록에서 수업을 찾는다");
   assert.ok(client.includes("useState(initialLessonKey)"), "찾은 수업으로 패널을 연다");
   assert.ok(client.includes("useState(() => initialOpen?.date ?? todayKst())"), "날짜는 주소 값 → 없으면 오늘");
-  assert.ok(client.includes("mondayOf(initialOpen?.date ?? todayKst())"), "주간 보드도 그 날짜가 든 주");
+  // 2026-11-18: 보던 날짜(?day=)·주(?week=)가 주소에 있으면 그것이 먼저, 없으면 예전처럼 그 날짜·그 날짜가 든 주
+  assert.ok(client.includes("const startDate = keptDay ?? baseDate;"), "보던 날짜가 없으면 주소 값 → 오늘");
+  assert.ok(client.includes("keptWeek ? mondayOf(keptWeek) : mondayOf(startDate)"), "주간 보드도 그 날짜가 든 주");
 });

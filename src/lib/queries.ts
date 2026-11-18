@@ -27,6 +27,8 @@ import { classCoachNameSql, feedParticipantSql, feedVisibleSessionSql } from "@/
 import { activeMakeupSql, computeRemainingSeats } from "@/lib/makeup/capacity";
 import type { SheetClassSlot } from "@/lib/googleSheetsSchedule";
 import { absenceReportOf, type AbsenceReportState } from "@/lib/regular/attendance-absence-reason";
+// 방학특강 «이 신청서가 이 회차에 나오는가» SQL 조각(2026-11-18 기간·날짜 선택 공용 규칙)
+import { seasonalAttendsSql } from "@/lib/seasonal/attendance-rule";
 
 // 값을 불리언으로 안전 변환 (TEXT 컬럼에서 'false' 문자열이 올 수 있음)
 const toBool = (v: any, fallback: boolean): boolean => {
@@ -327,13 +329,8 @@ export const getAttendanceClassOptions = cache(async (date?: string | null): Pro
                  LEFT JOIN "SpecialProgramApplication" app
                    ON app.id = item."applicationId"
                   AND app."convertedStudentId" IS NOT NULL
-                  AND (
-                    COALESCE(cardinality(app."selectedWeekdays"), 0) = 0
-                    OR CASE EXTRACT(ISODOW FROM sd."startsAt" AT TIME ZONE 'Asia/Seoul')::int
-                      WHEN 1 THEN 'MON' WHEN 2 THEN 'TUE' WHEN 3 THEN 'WED' WHEN 4 THEN 'THU'
-                      WHEN 5 THEN 'FRI' WHEN 6 THEN 'SAT' ELSE 'SUN'
-                    END = ANY(app."selectedWeekdays")
-                  )
+                  -- 그날 나오는 신청서만 센다(고른 날짜 > 기간 > 요일 — 공용 규칙 조각)
+                  AND ${seasonalAttendsSql("app", "sd")}
                 WHERE (sd."startsAt" AT TIME ZONE 'Asia/Seoul')::date = $1::date
                   AND o."linkedClassId" IS NOT NULL
                   AND o.status <> 'CANCELLED'
@@ -803,13 +800,8 @@ export const getAttendanceByDateAndClass = cache(async (date: string, classId: s
                     AND item."conversionStatus" IN ('COMPLETED', 'INVOICE_RETRY_REQUIRED')
                    JOIN "SpecialProgramApplication" app ON app.id = item."applicationId"
                     AND app."convertedStudentId" IS NOT NULL
-                    AND (
-                      COALESCE(cardinality(app."selectedWeekdays"), 0) = 0
-                      OR CASE EXTRACT(ISODOW FROM sd."startsAt" AT TIME ZONE 'Asia/Seoul')::int
-                        WHEN 1 THEN 'MON' WHEN 2 THEN 'TUE' WHEN 3 THEN 'WED' WHEN 4 THEN 'THU'
-                        WHEN 5 THEN 'FRI' WHEN 6 THEN 'SAT' ELSE 'SUN'
-                      END = ANY(app."selectedWeekdays")
-                    )
+                    -- 이 회차에 나오는 신청서만(고른 날짜 > 기간 > 요일 — 공용 규칙 조각)
+                    AND ${seasonalAttendsSql("app", "sd")}
                    JOIN "Student" st ON st.id = app."convertedStudentId"
                         AND ${notMergedStudent("st")}
                   WHERE anchor_sd.id = $1
@@ -3299,6 +3291,21 @@ export const getTrialLeads = cache(async (statusOrOptions?: string | AdminListQu
                 );
         }
 
+        // 학부모 온라인 취소의 환불 계좌(2026-11-18) — 관리자 목록 전용. 표가 아직 없거나 읽기 실패면 환불 정보 없이 목록을 그대로 보여 준다.
+        const refundByLead = new Map<string, any>();
+        try {
+            const leadIds = rows.map((r: any) => r.id).filter(Boolean);
+            if (leadIds.length > 0) {
+                const refundRows = await prisma.$queryRawUnsafe<any[]>(
+                    `SELECT "trialLeadId", status, amount, "refundBank", "refundAccount", "refundHolder", "adminSmsStatus", "createdAt", "completedAt", "completedByName"
+                       FROM "TrialRefundRequest" WHERE "trialLeadId" = ANY($1::text[])`,
+                    leadIds,
+                );
+                for (const refund of refundRows) refundByLead.set(refund.trialLeadId, refund);
+            }
+        } catch (error) {
+            console.warn("[getTrialLeads] refund requests unavailable:", (error as Error).message);
+        }
         return rows.map((r: any) => ({
             id: r.id,
             childName: r.childName ?? r.childname,
@@ -3355,6 +3362,17 @@ export const getTrialLeads = cache(async (statusOrOptions?: string | AdminListQu
             smsDeliveryPending: Number(r.sms_pending ?? 0),
             smsDeliveryLatestAt: r.sms_latest_at ?? null,
             smsDeliveryError: r.sms_error ?? null,
+            refundRequest: refundByLead.has(r.id) ? {
+                status: String(refundByLead.get(r.id).status),
+                amount: Number(refundByLead.get(r.id).amount ?? 0),
+                bank: String(refundByLead.get(r.id).refundBank ?? ""),
+                account: String(refundByLead.get(r.id).refundAccount ?? ""),
+                holder: String(refundByLead.get(r.id).refundHolder ?? ""),
+                adminSmsStatus: refundByLead.get(r.id).adminSmsStatus ?? null,
+                createdAt: refundByLead.get(r.id).createdAt ?? null,
+                completedAt: refundByLead.get(r.id).completedAt ?? null,
+                completedByName: refundByLead.get(r.id).completedByName ?? null,
+            } : null,
         }));
     } catch (e) {
         console.error("[getTrialLeads] failed:", e);

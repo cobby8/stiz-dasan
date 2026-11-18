@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useStoreApp } from "@/hooks/useStoreApp";
+import { useBackToClose } from "@/components/common/useBackToClose";
 
 // 학부모 필수 동의 3개(이용약관·개인정보·만 14세) + 약관 «보기» 창 — 신규 가입과 기존 계정 활성화가 같이 쓴다(2026-11-13 a3·a5).
 //
@@ -99,6 +100,8 @@ function PolicySheet({
   const t = TONE[tone];
   const closeRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  // «뒤로» = 이 창만 닫기 — 가입·신청서에 적던 값이 사라지지 않게(2026-11-18). 이 창은 그려진 동안 = 열림
+  useBackToClose(true, onClose);
   // 스토어 앱에서는 «전체 페이지로 보기»(새 탭)를 숨긴다 — 앱 밖 브라우저로 나가 돌아오기 어렵다
   const storeApp = useStoreApp();
 

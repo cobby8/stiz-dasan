@@ -6,6 +6,8 @@ import { adminErrorText } from "@/components/admin/adminDisplayText";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { pickListValue, readListText, replaceListQuery } from "@/lib/navigation/listQuery";
 import {
     updateStudent,
     deleteStudent,
@@ -310,6 +312,10 @@ const STUDENT_STATUS_CHIPS = [
 ] as const;
 // 상태 기본값 — 처음 열 때·필터 초기화·켜진 칩을 다시 누를 때 모두 이 값으로 돌아간다
 const DEFAULT_STATUS_FILTER = "ACTIVE";
+// 주소에 싣는 수강 상태 값(2026-11-18) — 화면 값 ""(전체)은 주소에서 "ALL" 로 적는다(쿼리 없음 = 기본값 «활성»과 구분)
+const STATUS_QUERY_ALL = "ALL";
+const STATUS_QUERY_VALUES = [...STUDENT_STATUS_CHIPS.map((chip) => chip.value), STATUS_QUERY_ALL] as const;
+const STUDENTS_PATH = "/admin/students";
 // 수정 폼 입력칸 공통 모양 = 테마 공용 입력칸(academy-input: 44px·입력선 테두리). 새 등록은 StudentRegisterModal(3단계 창)이 맡는다
 const STUDENT_FORM_INPUT_CLASS = "academy-input min-w-0";
 
@@ -407,7 +413,10 @@ export default function StudentManagementClient({
     const [showRegister, setShowRegister] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
-    const [search, setSearch] = useState("");
+    // 검색어·필터의 처음 값은 주소에서 읽는다(2026-11-18) — 상세에 다녀와 «뒤로»로 돌아오면 보던 목록 그대로.
+    // 바뀔 때마다 아래 효과가 지금 칸의 주소에 적어 둔다(기록은 쌓지 않는다)
+    const listQuery = useSearchParams();
+    const [search, setSearch] = useState(() => readListText(listQuery.get("q")));
     const [enrollModal, setEnrollModal] = useState<string | null>(null);
     // ⚡ «기간 결석 등록»(2026-11-15) — 그 원생의 등록 창을 바로 연다
     const [absencePeriodFor, setAbsencePeriodFor] = useState<string | null>(null);
@@ -415,9 +424,9 @@ export default function StudentManagementClient({
     const [showExcelUpload, setShowExcelUpload] = useState(false);
 
     // 필터 상태: 반/학년/학교/수강상태
-    const [filterClass, setFilterClass] = useState("");
-    const [filterGrade, setFilterGrade] = useState("");
-    const [filterSchool, setFilterSchool] = useState("");
+    const [filterClass, setFilterClass] = useState(() => readListText(listQuery.get("class")));
+    const [filterGrade, setFilterGrade] = useState(() => readListText(listQuery.get("grade")));
+    const [filterSchool, setFilterSchool] = useState(() => readListText(listQuery.get("school")));
 
     // 보기 방식: "list"(기존 표) / "class"(반별 묶음). 마지막 선택을 브라우저에 기억한다.
     // 공용 훅이 처음엔 "list"로 그린 뒤(hydration) 저장된 값을 읽어 바꾸고, 바꿀 때마다 저장한다.
@@ -490,7 +499,10 @@ export default function StudentManagementClient({
         return () => window.clearTimeout(timer);
     }, [allStudentsLoaded, autoLoadRequested, backgroundLoading, initialPartial, requestFullStudentLoad]);
     // 기본 필터를 "활성"으로 설정 — 대부분 수강 중인 학생을 먼저 봄
-    const [filterStatus, setFilterStatus] = useState<string>(DEFAULT_STATUS_FILTER);
+    const [filterStatus, setFilterStatus] = useState<string>(() => {
+        const fromUrl = pickListValue(listQuery.get("status"), STATUS_QUERY_VALUES, DEFAULT_STATUS_FILTER);
+        return fromUrl === STATUS_QUERY_ALL ? "" : fromUrl;
+    });
     const [visibleLimit, setVisibleLimit] = useState(STUDENT_PAGE_SIZE);
 
     // 필터 선택지: 학생 데이터에서 고유값 추출 (useMemo로 캐싱)
@@ -705,6 +717,17 @@ export default function StudentManagementClient({
 
     useEffect(() => {
         setVisibleLimit(STUDENT_PAGE_SIZE);
+    }, [search, filterClass, filterGrade, filterSchool, filterStatus]);
+
+    // 보던 목록 상태를 지금 칸의 주소에 적어 둔다(2026-11-18) — 기본값은 적지 않는다. 서버를 다시 부르지 않고 기록도 쌓지 않는다
+    useEffect(() => {
+        replaceListQuery({
+            q: search,
+            class: filterClass,
+            grade: filterGrade,
+            school: filterSchool,
+            status: filterStatus === DEFAULT_STATUS_FILTER ? null : filterStatus === "" ? STATUS_QUERY_ALL : filterStatus,
+        }, STUDENTS_PATH);
     }, [search, filterClass, filterGrade, filterSchool, filterStatus]);
 
     const visibleStudents = useMemo(

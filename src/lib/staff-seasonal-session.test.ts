@@ -32,8 +32,26 @@ test("방학특강 출석 명단은 신청 요일과 실제 회차 요일을 맞
   // 명단(querySource)은 좌석 기준이라 요일을 다시 거르지 않는다 — 좌석이 생길 때 요일을 맞춘다.
   assert.match(enrollmentDatesSource, /selectedWeekdays/);
   assert.match(enrollmentDatesSource, /NO_MATCHED_DATES/);
-  assert.match(actionSource, /selectedWeekdays/);
-  assert.match(actionSource, /EXTRACT\(ISODOW FROM sd\."startsAt" AT TIME ZONE 'Asia\/Seoul'\)::int/);
+  // 2026-11-18: 요일·기간·고른 날짜 판정은 공용 규칙(attendance-rule.ts) 한 곳에서만 한다.
+  // 좌석 생성은 JS 판정, 회차 소속·학부모 알림 수신자는 같은 규칙의 SQL 조각을 쓴다.
+  assert.match(enrollmentDatesSource, /pickSessionDatesForApplication\(/);
+  assert.match(enrollmentDatesSource, /app\."selectedDates" AS "selectedDates"/);
+  assert.match(actionSource, /import \{ seasonalAttendsSql \} from "@\/lib\/seasonal\/attendance-rule"/);
+  const fragmentUses = actionSource.match(/\$\{seasonalAttendsSql\("app", "sd"\)\}/g) ?? [];
+  assert.equal(fragmentUses.length, 2, "회차 소속 확인 1곳 + 학부모 알림 수신자 1곳");
+  // 요일 CASE 식을 파일마다 다시 쓰면 기간·날짜 규칙이 빠진다 — 손으로 쓴 ISODOW 가 남아 있으면 안 된다.
+  assert.doesNotMatch(actionSource, /EXTRACT\(ISODOW/);
+});
+
+test("공용 SQL 조각은 서울시간 요일과 고른 날짜·기간을 함께 본다", async () => {
+  // @ts-expect-error -- Node 타입 제거 기반 단위 테스트는 런타임 확장자를 요구한다.
+  const { seasonalAttendsSql } = await import("./seasonal/attendance-rule.ts");
+  const sql: string = seasonalAttendsSql("app", "sd");
+  assert.match(sql, /EXTRACT\(ISODOW FROM sd\."startsAt" AT TIME ZONE 'Asia\/Seoul'\)::int/);
+  assert.match(sql, /app\."selectedWeekdays"/);
+  assert.match(sql, /app\."selectedDates"/);
+  assert.match(sql, /app\."periodStartDate"/);
+  assert.match(sql, /app\."periodEndDate"/);
 });
 
 test("정규 수업과 같은 날짜의 방학특강 세션은 서로 분리한다", () => {

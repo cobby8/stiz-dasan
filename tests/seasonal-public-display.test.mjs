@@ -9,6 +9,11 @@ import ts from "typescript";
 import * as seasonalTypes from "../src/components/seasonal/types.ts";
 import * as publicErrorText from "../src/components/ui/public-error-text.ts";
 import * as seatLevelModule from "../src/lib/seats/seatLevel.ts";
+// 신청 화면이 쓰는 기간·날짜 공용 부품(2026-11-18) — 순수 모듈이라 그대로 꽂는다
+import * as periodPricingModule from "../src/lib/seasonal/period-pricing.ts";
+import * as attendanceRuleModule from "../src/lib/seasonal/attendance-rule.ts";
+import * as applicationPlanModule from "../src/lib/seasonal/application-plan.ts";
+import * as kstModule from "../src/lib/datetime/kst.ts";
 import { extractPrograms, formatSeasonalDate, formatSeasonalPeriod, normalizeProgram, seasonalApplicationStatusLabel, seasonalDisplayState, statusLabel } from "../src/components/seasonal/types.ts";
 
 const at = (value) => new Date(value).getTime();
@@ -44,6 +49,10 @@ function renderPublicPage(name, program) {
     if (id === "@/components/ui/public-error-text") return publicErrorText;
     if (id === "@/lib/seats/seatLevel") return seatLevelModule;
     if (id === "@/lib/seasonal/contracts") return { SHUTTLE_LOCATION_CONSENT_VERSION: "fixture" };
+    if (id === "@/lib/seasonal/period-pricing") return periodPricingModule;
+    if (id === "@/lib/seasonal/attendance-rule") return attendanceRuleModule;
+    if (id === "@/lib/seasonal/application-plan") return applicationPlanModule;
+    if (id === "@/lib/datetime/kst") return kstModule;
     // 하단 고정 바 감싸개(플로팅 버튼 위치용)는 모양만 같은 div 로 바꿔 렌더한다.
     if (id === "@/components/public-floating") return {
       PublicBottomBar: ({ className, children }) => React.createElement("div", { className }, children),

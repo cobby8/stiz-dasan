@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { markEnteringStaffFromAdmin } from "@/lib/navigation/inAppHistory";
 import { INBOX_TABS } from "@/lib/requests/catalog";
 import type { InboxCounts } from "@/lib/requests/admin-inbox";
 import type { DashboardSummary } from "@/lib/stats/statsTypes";
@@ -226,7 +227,10 @@ export default function AdminDashboardClient({
                 </div>
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <Link href="/admin/students" prefetch={false} className="academy-button-secondary">원생 찾기</Link>
-                    <Link href="/staff" prefetch={false} className="academy-button-primary">수업 진행</Link>
+                    <Link href="/staff" prefetch={false} className="academy-button-primary" onClick={(event) => {
+                        // 관리자에서 잠깐 다녀오는 길 — 선생님 화면의 «←» 가 이 화면으로 돌아오게 표시한다(새 탭으로 여는 클릭은 제외, 2026-11-18)
+                        if (event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) markEnteringStaffFromAdmin();
+                    }}>수업 진행</Link>
                 </div>
             </header>
 

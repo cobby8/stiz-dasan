@@ -58,8 +58,11 @@ test("파일 검사: 형식 화이트리스트·크기 상한·친절한 안내"
   assert.equal(r.checkSessionVideoFile({ mimeType: "image/jpeg", fileName: "a.mp4", sizeBytes: 10, maxBytes: max }).ok, false);
   const big = r.checkSessionVideoFile({ mimeType: "video/webm", sizeBytes: max + 1, maxBytes: max });
   assert.equal(big.ok, false);
-  assert.match(big.message, /30초 이내/);
-  assert.match(r.uploadHintMessage(max), /30초 이내로 짧게\(최대 50MB\)/);
+  // 2026-11-18 원장 지시: 영상은 2분까지(예전 30초). 넘으면 화질을 낮추라는 안내도 함께
+  assert.match(big.message, /2분 이내/);
+  assert.match(big.message, /화질을 낮춰/);
+  assert.match(r.uploadHintMessage(max), /2분 이내로\(최대 50MB\)/);
+  assert.match(r.uploadHintMessage(250 * 1024 * 1024), /최대 250MB/);
   assert.match(r.uploadHintMessage(max), /수업 뒤 7일 안에 올릴 수 있어요/);
   assert.match(big.message, /50MB/);
   assert.equal(r.checkSessionVideoFile({ mimeType: "video/mp4", sizeBytes: 0, maxBytes: max }).ok, false);

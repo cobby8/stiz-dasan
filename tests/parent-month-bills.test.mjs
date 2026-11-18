@@ -231,7 +231,8 @@ test("③ 같은 부품: 청구 탭·아이 기록이 월 카드·세부 시트�
   assert.match(sheet, /attachSheetHistory\(window,/, "기록 칸 관리는 sheetHistory 한 곳");
   assert.match(sheet, /controller\.detach\(\)/, "사라질 때 남은 칸 정리");
   assert.match(sheet, /onClickCapture=\{onClickCapture\}/, "시트 안 링크는 칸을 되돌린 뒤 이동");
-  assert.match(sheet, /<ListDetailPanel onClose=\{requestClose\}/, "Esc·바깥 누르기도 같은 닫기");
+  // 2026-11-18: 패널이 기본으로 «뒤로 = 닫기»를 걸게 돼, 기록 칸을 직접 드는 이 시트는 패널 것을 끈다(두 번 넣지 않게)
+  assert.match(sheet, /<ListDetailPanel backToClose=\{false\} onClose=\{requestClose\}/, "Esc·바깥 누르기도 같은 닫기");
   assert.doesNotMatch(sheet, /history\.state\?\.billSheet/, "router.refresh 가 지우는 표시에 기대지 않는다");
   assert.doesNotMatch(sheet, /academy-success/, "할인 금액은 상태색(완료 초록)을 쓰지 않는다");
   for (const file of ["src/components/parent/billing/BillDetailSheet.tsx", "src/components/parent/billing/MonthBillCard.tsx"]) {

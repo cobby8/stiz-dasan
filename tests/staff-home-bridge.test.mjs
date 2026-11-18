@@ -66,7 +66,16 @@ test("선생님 홈에서 수업 진행 중일 때도 메뉴 이동은 저장 �
   // 메뉴: 홈의 «수업 중» 표시를 듣고(서버에서는 false), 그 판단으로 이동을 보류한다
   assert.match(menuSource, /useSyncExternalStore\(subscribeStaffLiveLesson, isStaffLiveLessonOpen, \(\) => false\)/);
   assert.match(menuSource, /const needsLeaveConfirm = shouldConfirmStaffLeave\(pathname, liveLessonOpen\);/);
-  assert.match(menuSource, /if \(!needsLeaveConfirm\) \{\s*setIsOpen\(false\);\s*return;\s*\}\s*event\.preventDefault\(\);/);
+  // 2026-11-18: 확인이 필요 없으면 메뉴를 닫고 확인 창 없이 바로 이동한다(메뉴가 넣은 기록 칸을 먼저 되돌린 뒤 — leaveTo).
+  // 확인이 필요하면 이동을 보류하고(메뉴 칸이 빠진 뒤) 확인 창을 연다.
+  const request = /const requestPublicNavigation = [\s\S]*?\n  \};/.exec(menuSource)[0];
+  const direct = /if \(!needsLeaveConfirm\) \{([\s\S]*?)\n    \}\n/.exec(request)[1];
+  assert.match(direct, /setIsOpen\(false\);/);
+  assert.match(direct, /menuBack\.leaveTo\(href, /);
+  assert.match(direct, /return;\s*$/);
+  assert.doesNotMatch(direct, /setPendingHref/, "수업이 없으면 확인 창을 열지 않는다");
+  const held = request.slice(request.indexOf(direct) + direct.length);
+  assert.match(held, /event\.preventDefault\(\);\s*setIsOpen\(false\);[\s\S]*menuBack\.closeThen\(\(\) => \{\s*setPendingHref\(href\);/);
 });
 
 test("확인 창을 거친 화면 전환도 «마지막 화면»으로 기억한다 — 저장이 끝나 이동이 확정될 때만", async () => {
@@ -82,7 +91,10 @@ test("확인 창을 거친 화면 전환도 «마지막 화면»으로 기억한
   assert.match(menuSource, /requestPublicNavigation\(event, "\/install"\)\}/);
   // 기억은 저장 성공 뒤·이동 직전에만: 저장 실패(return)보다 뒤, assign 바로 앞
   const leave = /const leaveSession = async \(\) => \{([\s\S]*?)\n  \};/.exec(menuSource)[1];
-  assert.match(leave, /if \(pendingViewKey\) rememberLastView\(pendingViewKey\);\s*window\.location\.assign\(pendingHref\);/);
+  // 2026-11-18: 이동은 확인 창이 넣은 기록 칸을 되돌린 뒤(leaveTo) window.location.assign — 기억은 여전히 그 바로 앞
+  assert.match(leave, /if \(pendingViewKey\) rememberLastView\(pendingViewKey\);\s*(?:\/\/[^\n]*\s*)*confirmBack\.leaveTo\(pendingHref, \(to\) => void releaseActiveLessonGuard\(\)\.then\(\(\) => window\.location\.assign\(to\)\)\);/);
+  // 확인 없이 바로 가는 화면 전환도 같은 키로 기억한다(링크 기본 동작을 막으므로 메뉴가 직접 적는다)
+  assert.match(menuSource, /const directKey = parseLastViewKey\(viewKey\);\s*if \(directKey\) rememberLastView\(directKey\);/);
   // 화면이 떠나지 않았을 때(스토어 앱으로 넘어감 등) 확인 창이 굳지 않게 잠금을 푼다
   assert.match(leave, /window\.setTimeout\(\(\) => setLeaving\(false\), 4000\);\s*$/);
   assert.ok(leave.indexOf("if (!result.ok)") < leave.indexOf("rememberLastView"), "저장 실패면 기억하지 않는다");
@@ -108,8 +120,8 @@ test("시스템 뒤로가기도 수업 기록 저장 성공 뒤에만 허용한�
   assert.match(sessionSource, /askConfirm\("수업이 진행 중입니다/);
   assert.match(sessionSource, /voiceBusyRef\.current/);
   assert.match(sessionSource, /await persistMemo\(memoRef\.current\)/);
-  assert.match(sessionSource, /history\.go\(-2\)/);
-  assert.match(sessionSource, /else window\.location\.assign\("\/staff"\)/);
+  // 2026-11-18 검수 L-1: «두 칸 뒤로»는 공용 함수(leaveLessonScreen)가 하고, 앞 화면이 없을 때만 선생님 홈으로 간다
+  assert.match(sessionSource, /if \(!\(await leaveLessonScreen\(window\)\)\) window\.location\.assign\("\/staff"\);/);
   assert.match(sessionSource, /removeEventListener\("popstate"/);
 });
 

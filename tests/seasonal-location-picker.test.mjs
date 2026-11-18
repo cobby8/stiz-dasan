@@ -24,7 +24,9 @@ test("선택한 특강 일정의 요일을 기존 필수 신청 계약에 포함
   assert.match(apply, /const \[selectedWeekdayKeys, setSelectedWeekdayKeys\]/);
   assert.match(apply, /function toggleWeekday/);
   assert.match(apply, /const selectedWeekdays = selectedWeekdayKeys\.filter/);
-  assert.match(apply, /matchingOfferingForWeekdays/);
+  // 2026-11-18: 날짜 모드도 «주N회»로 반을 고르게 되어 matchingOfferingForWeekdays → matchingOfferingForCount(요일 모드는 요일 수)
+  assert.match(apply, /matchingOfferingForCount\(offerings, item, frequencyCount\)/);
+  assert.match(apply, /const frequencyCount = isDateMode \? \(weeklyFrequency \?\? 0\) : selectedWeekdays\.length/);
   assert.match(apply, /selectedWeekdays,/);
 });
 

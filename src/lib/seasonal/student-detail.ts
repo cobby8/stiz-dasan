@@ -7,7 +7,16 @@ export type StudentDetail = {
   applicationId: string;
   child: { name: string; grade: string | null; gender: string | null; school: string | null; birthDate: string | null; phone: string | null };
   parent: { name: string | null; relation: string | null; phone: string | null };
-  application: { status: string | null; applicantType: string | null; weekdayLabel: string | null; createdAt: string | null };
+  application: {
+    status: string | null; applicantType: string | null;
+    /** 화면 한 줄 라벨 — 요일("월·수"), 기간이면 "월·수 · 앞 3주", 날짜 선택이면 "날짜 선택 3회 (12/22·12/24·12/29)" */
+    weekdayLabel: string | null;
+    createdAt: string | null;
+    /** 날짜별 선택일 때 고른 날짜(KST 'YYYY-MM-DD'), 아니면 빈 배열(2026-11-18) */
+    selectedDates: string[];
+    /** 고른 기간 이름(없으면 null, 2026-11-18) */
+    periodLabel: string | null;
+  };
   classes: { title: string; classStart: string | null; classEnd: string | null; status: string | null }[];
   shuttle: {
     ride: boolean;
@@ -21,6 +30,35 @@ const WD_KO: Record<string, string> = { MON: "월", TUE: "화", WED: "수", THU:
 function weekdayLabel(arr: unknown): string | null {
   if (!Array.isArray(arr) || arr.length === 0) return null;
   return arr.map((k) => WD_KO[String(k)] ?? "").filter(Boolean).join("·") || null;
+}
+// 고른 날짜 목록 정리(null·빈 값 방어). 기존 신청서는 빈 배열.
+function cleanDates(arr: unknown): string[] {
+  if (!Array.isArray(arr)) return [];
+  return arr.map((v) => String(v ?? "").trim()).filter((v) => v.length > 0);
+}
+// 'YYYY-MM-DD' → 'M/D' (문자열만 자른다 — Date 를 거치지 않아 시간대 영향이 없다)
+function shortMonthDay(value: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  return m ? `${Number(m[2])}/${Number(m[3])}` : value;
+}
+/**
+ * 신청 방식 라벨(2026-11-18).
+ *   날짜 선택 → "날짜 선택 N회 (12/22·12/24)"
+ *   기간      → "월·수 · 앞 3주" (요일이 없으면 기간 이름만)
+ *   그 외     → 예전 요일 라벨 그대로
+ */
+export function applicationScheduleLabel(app: {
+  selectedWeekdays?: unknown; selectedDates?: unknown; periodLabel?: unknown;
+}): string | null {
+  const dates = cleanDates(app.selectedDates);
+  if (dates.length > 0) {
+    const sorted = [...dates].sort();
+    return `날짜 선택 ${dates.length}회 (${sorted.map(shortMonthDay).join("·")})`;
+  }
+  const weekdays = weekdayLabel(app.selectedWeekdays);
+  const period = typeof app.periodLabel === "string" && app.periodLabel.trim() ? app.periodLabel.trim() : null;
+  if (period) return weekdays ? `${weekdays} · ${period}` : period;
+  return weekdays;
 }
 function pinned(s: unknown) { return s === "MAP_PIN" || s === "CURRENT_LOCATION"; }
 function ymd(v: unknown): string | null {
@@ -70,8 +108,11 @@ export async function getSeasonalStudentDetail(applicationId: string): Promise<S
     application: {
       status: a.status ?? null,
       applicantType: a.applicantType ?? null,
-      weekdayLabel: weekdayLabel(a.selectedWeekdays),
+      // 요일 / 기간 / 날짜 선택을 한 줄 라벨로(기존 신청서는 예전 요일 라벨과 같다)
+      weekdayLabel: applicationScheduleLabel(a),
       createdAt: a.createdAt ? String(a.createdAt).slice(0, 10) : null,
+      selectedDates: [...cleanDates(a.selectedDates)].sort(),
+      periodLabel: typeof a.periodLabel === "string" && a.periodLabel.trim() ? a.periodLabel.trim() : null,
     },
     classes: items.map((it) => ({ title: it.offeringTitle ?? "-", classStart: it.classStart ?? null, classEnd: it.classEnd ?? null, status: it.status ?? null })),
     shuttle: s ? {

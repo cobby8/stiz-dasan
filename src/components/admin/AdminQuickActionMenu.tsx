@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isTouchDevice, useBackToClose } from "@/components/common/useBackToClose";
 
 export type AdminQuickAction = {
     key: string;
@@ -69,6 +70,9 @@ export default function AdminQuickActionMenu({
 }: AdminQuickActionMenuProps) {
     const [open, setOpen] = useState(false);
     const [position, setPosition] = useState<MenuPosition | null>(null);
+    // 휴대폰 «뒤로» = 메뉴만 닫기(2026-11-18). 손가락 기기에서만 건다 — 이유는 isTouchDevice 주석
+    const [backClose, setBackClose] = useState(false);
+    const { closeThen } = useBackToClose(open && backClose, () => setOpen(false));
     const buttonRef = useRef<HTMLButtonElement>(null);
     const menuRef = useRef<HTMLDivElement>(null);
     const { safe, danger } = splitQuickActions(actions);
@@ -152,8 +156,10 @@ export default function AdminQuickActionMenu({
                 disabled={action.disabled}
                 onClick={() => {
                     if (action.disabled) return;
+                    // 넣어 둔 기록 칸을 먼저 되돌린 뒤 작업을 시작한다 — 작업이 다른 화면으로 가거나 창을 열어도 기록이 꼬이지 않게
+                    // («뒤로 = 닫기»를 안 건 기기에서는 예전처럼 바로 실행된다)
                     setOpen(false);
-                    void action.onSelect();
+                    closeThen(() => void action.onSelect());
                 }}
                 className={getActionClass(action.tone)}
             >
@@ -176,7 +182,10 @@ export default function AdminQuickActionMenu({
                 title={label}
                 aria-expanded={open}
                 onClick={() => {
-                    if (!open) placeMenu();
+                    if (!open) {
+                        placeMenu();
+                        setBackClose(isTouchDevice());
+                    }
                     setOpen((current) => !current);
                 }}
                 className="relative inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)] transition before:absolute before:-inset-1 before:content-[''] hover:bg-[var(--color-academy-soft)] aria-expanded:border-[var(--color-academy-secondary-strong)] aria-expanded:bg-[var(--color-academy-secondary-soft)]"

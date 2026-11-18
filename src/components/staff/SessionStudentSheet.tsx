@@ -5,6 +5,7 @@ import { ContactLink } from "@/components/staff/ClassPeopleSheet";
 import { StatusPill, type StatusTone } from "@/components/staff/StatusChoiceButton";
 import { monthlyFeeLabel } from "@/components/staff/StaffMonthlyFeeSummary";
 import { useStaffDialog } from "@/components/staff/useStaffDialog";
+import { useBackToClose } from "@/components/common/useBackToClose";
 import { REASON_LABEL as ABSENCE_REASON_LABEL } from "@/lib/regular/regularAbsenceRules";
 import type { StaffClassPerson } from "@/lib/staff-class-people";
 import type { StaffMonthlyFeeSummary } from "@/lib/staff-monthly-fee-types";
@@ -54,6 +55,8 @@ export function SessionStudentSheet({
 }) {
   const sheetRef = useRef<HTMLElement>(null);
   useStaffDialog(true, sheetRef, onClose);
+  // 휴대폰 «뒤로» = 이 시트만 닫는다(이 시트는 열려 있는 동안에만 그려진다)
+  useBackToClose(true, onClose);
 
   const guardian = person?.guardians.find((item) => item.isPrimary) ?? person?.guardians[0];
   const schoolLine = [person?.school, person?.grade ?? student.grade].filter(Boolean).join(" · ");

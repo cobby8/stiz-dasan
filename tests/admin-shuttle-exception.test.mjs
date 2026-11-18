@@ -402,19 +402,20 @@ test("화면: 정규 배차 화면에 패널이 걸려 있고, 입력은 버튼 
 });
 
 // 2026-11-17 원장 지시 — 운행표 위의 칸을 없애고 «기사 요청» 옆 버튼 하나 + 창으로
-test("화면: 운행표 위에 칸을 따로 그리지 않고, «당일 변경» 버튼이 «기사 요청» 바로 뒤에 온다", () => {
+test("화면: 운행표 위에 칸을 따로 그리지 않고, «당일 변경» 버튼이 머리줄 «실시간 위치» 바로 뒤에 온다", () => {
   const page = read("src/app/admin/shuttle/regular-dispatch/page.tsx");
   // 패널 태그는 한 번만, 그것도 RegularRunEditor 의 prop 안에서만 — 탭과 운행표 사이에 따로 놓이지 않는다
   assert.equal(page.match(/<ShuttleDayExceptionAdminPanel\b/g).length, 1);
   assert.match(page, /<ShuttleSectionTabs \/>\s*<RegularRunEditor\b/, "탭 바로 아래가 운행표");
   const editor = read("src/app/admin/shuttle/regular-dispatch/RegularRunEditor.tsx");
-  // «기사 요청» 버튼이 닫히고 바로 다음이 headerExtra, 그리는 곳은 한 군데
-  assert.match(editor, /기사 요청\s*\{pendingRequests > 0 && <span [^\n]*<\/span>\}\s*<\/button>\s*\{headerExtra\}/);
+  // «실시간 위치» 버튼이 닫히고 바로 다음이 headerExtra, 그리는 곳은 한 군데(«기사 요청» 버튼은 2026-11-18 없앴다)
+  assert.match(editor, /실시간 위치\s*<\/button>\s*\{headerExtra\}/);
+  assert.ok(!editor.includes("기사 요청") && !editor.includes("driver-requests"), "«기사 요청» 버튼·수신함은 없앴다");
   assert.equal(editor.match(/\{headerExtra\}/g).length, 1);
   assert.match(editor, /headerExtra\?: ReactNode;/);
 });
 
-test("화면: «당일 변경» 버튼 — 기사 요청과 같은 모양, 건수 배지는 위험색이 아닌 안내색, 건수는 글자로도 읽힌다", () => {
+test("화면: «당일 변경» 버튼 — 머리줄 버튼과 같은 모양, 건수 배지는 위험색이 아닌 안내색, 건수는 글자로도 읽힌다", () => {
   const ui = read("src/app/admin/shuttle/regular-dispatch/ShuttleDayExceptionAdminPanel.tsx");
   const button = ui.match(/<button type="button" onClick=\{openList\}[\s\S]*?<\/button>/);
   assert.ok(button, "«당일 변경» 버튼이 있다");

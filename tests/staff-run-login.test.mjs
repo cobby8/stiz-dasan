@@ -107,14 +107,18 @@ test("운행표로 가는 길이 두 곳에 있다", () => {
   assert.doesNotMatch(shuttlePage, /findRollingDriverRunToken/);
   // 2026-11-13 b7: 이 운행표(계정용)엔 위치 전송이 없다 → 맨 위에 «운행 시작(위치 전송)» 진입 버튼으로 /staff/run 을 연다.
   // 2026-11-16: 기사님 첫 화면을 거쳐 간다(안드로이드 앱은 위치 공유 되는 운행 링크 화면, 브라우저는 /staff/run).
-  assert.match(shuttlePage, /href="\/staff\/driver"[\s\S]*?운행 시작 \(위치 전송\)/);
+  // 2026-11-18(원장 결정 F): 버튼은 «운행 시작을 눌러 왔다» 표시(?start=1)를 달고 간다 — 표시 없이 온 첫 화면은 셔틀 명단으로 돌아온다.
+  assert.match(shuttlePage, /href=\{DRIVER_START_HREF\}[\s\S]*?운행 시작 \(위치 전송\)/);
+  assert.equal(sessionRules.DRIVER_START_HREF, "/staff/driver?start=1");
   // 기사님 앱 첫 화면(링크를 기억 못 한 경우) — 로그인 후 운행표로 돌아오게.
   assert.match(driverHome, /redirect: "\/staff\/shuttle"/);
 });
 
 // 2026-11-17 뒤로 가기 조사(native #7): 열쇠가 없을 때 /staff/run 으로 넘기면 안드로이드 앱이 그 주소를 막아 «여는 중…»에서 멈춘다
 test("앱 길에서 오늘 운행 열쇠가 없으면: 스토어 앱은 셔틀 화면, 브라우저는 안내가 있는 운행표", () => {
-  assert.equal(sessionRules.driverRunMissingKeyPath(true), "/staff/shuttle");
+  // 2026-11-18(원장 결정 G): 셔틀 화면으로 보낼 때 «아직 운행 링크가 없습니다» 안내 표시를 싣는다
+  assert.equal(sessionRules.driverRunMissingKeyPath(true), "/staff/shuttle?notice=no-run");
+  assert.equal(sessionRules.driverRunMissingKeyPath(true).split("?")[0], sessionRules.DRIVER_SHUTTLE_PATH);
   assert.equal(sessionRules.driverRunMissingKeyPath(false), "/staff/run");
   // 앱으로 보내는 주소는 앱이 막는 주소(/staff/run 정확히)가 아니어야 한다
   assert.notEqual(sessionRules.driverRunMissingKeyPath(true), sessionRules.DRIVER_RUN_PATH);

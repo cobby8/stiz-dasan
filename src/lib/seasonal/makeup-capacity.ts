@@ -2,6 +2,9 @@ import { prisma } from "@/lib/prisma";
 import { SEASONAL_WEEKDAYS, type SeasonalWeekday } from "@/lib/seasonal/contracts";
 import { normalizeWeekdayKeys } from "@/lib/seasonal/enrollment-dates";
 import { weekdayInSeoul } from "@/lib/seasonal/planning";
+// 2026-11-18 기간·날짜 선택 — 새 기능 시즌은 «요일»이 아니라 «그 날짜»에 나오는 사람 수로 센다.
+import { attendsSessionDate } from "@/lib/seasonal/attendance-rule";
+import { applicationUsesPeriodOrDate, usesPeriodOrDateFeatures } from "@/lib/seasonal/period-pricing";
 
 /**
  * 방학특강 보강 정원 판정 라이브러리.
@@ -38,6 +41,52 @@ export function countGroupOccupancyByWeekday(items: GroupSeatItem[]): Record<Sea
     for (const day of days) counts[day] += 1;
   }
   return counts;
+}
+
+/** 날짜 기준 계산에 필요한 신청서 값(기존 칸 + 2026-11-18 기간·날짜 칸). */
+export type GroupSeatItemWithDates = GroupSeatItem & {
+  selectionMode?: string | null;
+  selectedDates?: string[] | null;
+  periodStartDate?: string | null;
+  periodEndDate?: string | null;
+};
+
+/**
+ * [순수 함수] 새 기능 시즌인가 — 이 그룹에 기간 상품이 있거나, 시즌이 날짜 선택을 켰거나,
+ * 좌석 중 하나라도 고른 날짜·기간이 들어 있으면 «날짜 기준»으로 센다.
+ * 셋 다 아니면 예전 요일 계산을 그대로 쓴다(기존 시즌 결과 불변).
+ * 판정 자체는 공용 usesPeriodOrDateFeatures(공개 신청·관리자 승인·출석부와 같은 함수)에 맡긴다.
+ * hasPeriods 는 «켜진(isActive=true) 기간 행이 있는가»여야 한다(아래 조회가 그렇게 센다).
+ */
+export function usesDateBasedOccupancy(params: {
+  dateSelectEnabled: boolean;
+  hasPeriods: boolean;
+  items: readonly GroupSeatItemWithDates[];
+}): boolean {
+  return usesPeriodOrDateFeatures({
+    dateSelectEnabled: params.dateSelectEnabled,
+    activePeriodCount: params.hasPeriods ? 1 : 0,
+    applicationsUsePeriodOrDate: params.items.some((item) => applicationUsesPeriodOrDate(item)),
+  });
+}
+
+/**
+ * [순수 함수] 한 회차(시작 시각)에 실제로 나오는 정규 좌석 수.
+ * - 같은 항목이 두 번 들어와도 1명(countGroupOccupancyByWeekday 와 같은 중복 제거).
+ * - 판정은 공용 규칙(고른 날짜 > 기간 > 요일)을 그대로 쓴다.
+ */
+export function countGroupOccupancyForSession(
+  items: readonly GroupSeatItemWithDates[],
+  startsAt: Date | string,
+): number {
+  const seen = new Set<string>();
+  let count = 0;
+  for (const item of items) {
+    if (!item?.id || seen.has(item.id)) continue;
+    seen.add(item.id);
+    if (attendsSessionDate(item, startsAt)) count += 1;
+  }
+  return count;
 }
 
 export type SeasonalMakeupRoom = {
@@ -101,11 +150,15 @@ export async function loadSeasonalMakeupRooms(
   if (uniqueIds.length === 0) return result;
 
   // 1) 기준 반의 그룹 스코프(같은 시즌 + 같은 linkedClass) 와 정원을 읽는다.
+  // 시즌의 날짜 선택 켜짐 여부도 함께 읽는다(새 기능 시즌 판정용).
   const offeringRows = await prisma.$queryRawUnsafe<Array<{
     id: string; seasonId: string; linkedClassId: string | null; capacity: number | null;
+    dateSelectEnabled: boolean | null;
   }>>(
-    `SELECT o.id, o."seasonId", o."linkedClassId", o.capacity
+    `SELECT o.id, o."seasonId", o."linkedClassId", o.capacity,
+            season."dateSelectEnabled" AS "dateSelectEnabled"
        FROM "SpecialProgramOffering" o
+       JOIN "SpecialProgramSeason" season ON season.id = o."seasonId"
       WHERE o.id = $1
       LIMIT 1`,
     offeringId,
@@ -122,8 +175,13 @@ export async function loadSeasonalMakeupRooms(
   const groupParams: string[] = offering.linkedClassId
     ? [offering.seasonId, offering.linkedClassId]
     : [offering.id];
-  const seatRows = await prisma.$queryRawUnsafe<Array<{ id: string; selectedWeekdays: string[] | null }>>(
-    `SELECT item.id, app."selectedWeekdays" AS "selectedWeekdays"
+  // 기간·날짜 칸도 함께 읽는다(기존 신청서는 빈 배열·NULL).
+  const seatRows = await prisma.$queryRawUnsafe<GroupSeatItemWithDates[]>(
+    `SELECT item.id, app."selectedWeekdays" AS "selectedWeekdays",
+            app."selectionMode" AS "selectionMode",
+            app."selectedDates" AS "selectedDates",
+            app."periodStartDate" AS "periodStartDate",
+            app."periodEndDate" AS "periodEndDate"
        FROM "SpecialProgramApplicationItem" item
        JOIN "SpecialProgramOffering" candidate ON candidate.id = item."offeringId"
        JOIN "SpecialProgramApplication" app ON app.id = item."applicationId"
@@ -132,6 +190,22 @@ export async function loadSeasonalMakeupRooms(
     ...groupParams,
   );
   const occupancyByWeekday = countGroupOccupancyByWeekday(seatRows);
+
+  // 2-1) 그룹 안에 기간 상품(활성)이 있는지 — 있으면 «기간이 섞인 시즌»이라 날짜 기준으로 센다.
+  const periodRows = await prisma.$queryRawUnsafe<Array<{ found: number }>>(
+    `SELECT 1 AS found
+       FROM "SpecialProgramOfferingPeriod" p
+       JOIN "SpecialProgramOffering" candidate ON candidate.id = p."offeringId"
+      WHERE p."isActive" = true
+        AND ${groupScopeSql}
+      LIMIT 1`,
+    ...groupParams,
+  );
+  const dateBased = usesDateBasedOccupancy({
+    dateSelectEnabled: offering.dateSelectEnabled === true,
+    hasPeriods: periodRows.length > 0,
+    items: seatRows,
+  });
 
   // 3) 대상 회차 날짜의 요일을 구한다(서울시간 기준).
   const sessionRows = await prisma.$queryRawUnsafe<Array<{ id: string; startsAt: Date | string }>>(
@@ -159,7 +233,10 @@ export async function loadSeasonalMakeupRooms(
     const startsAt = session.startsAt instanceof Date ? session.startsAt : new Date(session.startsAt);
     if (Number.isNaN(startsAt.getTime())) continue;
     const weekday = weekdayInSeoul(startsAt);
-    const regularOccupied = occupancyByWeekday[weekday] ?? 0;
+    // 새 기능 시즌 = 그 날짜에 실제로 나오는 인원, 기존 시즌 = 예전 요일 계산 그대로.
+    const regularOccupied = dateBased
+      ? countGroupOccupancyForSession(seatRows, startsAt)
+      : (occupancyByWeekday[weekday] ?? 0);
     const makeupOccupied = makeupCountById.get(session.id) ?? 0;
     const decision = decideMakeupRoom({ capacity, regularOccupied, makeupOccupied });
     result.set(session.id, {

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type MouseEvent } from "react";
 import { prepareStaffNavigation } from "./staffNavigation";
+import { releaseActiveLessonGuard } from "./lessonBackGuard";
 import { isStoreApp } from "@/lib/storeApp";
 import { DRIVER_ENTRY_PATH, shouldShowIosDriverNotice } from "@/lib/staff-session-rules";
 
@@ -46,6 +47,8 @@ export default function StaffBottomNav({ canTeach, canShuttle, shuttleViewOnly =
       setBlocked(result.message || "수업 기록을 저장하지 못해 이동을 멈췄습니다.");
       return;
     }
+    // 수업 진행 중이면 홈이 넣어 둔 «뒤로» 가드 칸을 먼저 걷는다(2026-11-18) — 안 걷으면 그 칸이 새 화면 뒤에 남아 뒤로가 한 번 헛돈다
+    await releaseActiveLessonGuard();
     router.push(href);
   }
 

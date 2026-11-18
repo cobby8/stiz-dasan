@@ -178,7 +178,7 @@ export default function OtherRevenueClient({
             )}
 
             {form && (
-                <AdminModal titleId="other-revenue-form-title" onClose={close} closeOnBackdrop={!pending}>
+                <AdminModal titleId="other-revenue-form-title" onClose={close} closeOnBackdrop={!pending} busy={pending}>
                     <div className="space-y-3 p-4">
                         <h2 id="other-revenue-form-title" className="academy-section-title">{form.id ? "기타 매출 고치기" : "기타 매출 추가"}</h2>
 

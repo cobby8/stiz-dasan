@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getAcademySettings } from "@/lib/queries";
 import { getAvailableTrialSlots } from "@/app/actions/public";
 import PublicPageLayout from "@/components/PublicPageLayout";
@@ -44,6 +45,11 @@ export default async function TrialApplyPage({ searchParams }: { searchParams: P
 
             <section className="public-content-section bg-[var(--color-public-tint)] py-8 dark:bg-[var(--color-public-paper)] md:py-12">
                 <div className="mx-auto max-w-2xl px-4">
+                    {/* 이미 신청한 학부모가 아이 이름+휴대폰으로 신청을 불러와 일정 변경·취소하는 곳 */}
+                    <p className="mb-4 text-right text-sm text-[var(--color-public-muted)]">
+                        이미 신청하셨나요?{" "}
+                        <Link href="/apply/trial/manage" className="font-semibold text-[var(--color-public-accent)] underline underline-offset-2 dark:text-brand-neon-lime">신청 확인·변경·취소</Link>
+                    </p>
                     <TrialApplicationForm availableSlots={slots} contactPhone={phone} initialSource={initialSource} trialFee={trialFee} initialSchedule={initialSchedule} />
                 </div>
             </section>
