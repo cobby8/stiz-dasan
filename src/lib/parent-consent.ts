@@ -2,7 +2,8 @@
 // 약관 본문을 크게 바꾸면 여기 날짜를 올린다(기록된 버전으로 «어느 약관에 동의했는지»를 가린다).
 // 2026-11-18: «수업 사진·동영상» 조항 추가(원장 결정 — 사진 동의를 따로 받지 않고 약관으로 대신, 광고 사용만 전화 사전 동의)
 export const PARENT_TERMS_VERSION = "2026-11-18";
-export const PARENT_PRIVACY_VERSION = "2026-07-23";
+// 2026-11-18: 본인인증 실명·일시 수집, 직원 회원, 처리 위탁 조항 추가(원장 «지금» 적용) — 새로 가입하는 분부터 이 판으로 기록
+export const PARENT_PRIVACY_VERSION = "2026-11-18";
 
 export type ParentConsents = { terms: boolean; privacy: boolean; age: boolean };
 
