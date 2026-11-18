@@ -20,7 +20,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { loadEnv, parseArgs, readJson, writeJson, workDir, newBatchId, connectDb, loadSnapshot, loadClassMap, ymdArg, monthRange } from "./common.mjs";
-import { readFeedExport, planPostImport, photoUrl1000, storedPhoto, buildGroupSql, PRIVATE_PHOTO_BUCKET, IMPORT_SOURCE } from "./lib.mjs";
+import {
+  readFeedExport, planPostImport, photoUrl1000, storedPhoto, buildGroupSql, summarizeClassMatches, checkPhotoContentType,
+  PRIVATE_PHOTO_BUCKET, IMPORT_SOURCE, RALLYZ_REFERER,
+} from "./lib.mjs";
 
 loadEnv();
 const args = parseArgs();
@@ -48,6 +51,15 @@ const plan = planPostImport({
   },
 });
 
+// ── 반 매칭 요약(기간과 무관하게 피드 전체) — «괄호 떼고 맞춤»·«못 맞춤»은 사람이 확인 ──
+const classRows = summarizeClassMatches(feed.posts, snapshot.classes, loadClassMap(args), args.inst || undefined);
+const REASON_KO = { exact: "이름 같음", suffix: "괄호 떼고 맞춤(확인)", manual: "매핑 파일" };
+console.log(`반 매칭: 랠리즈 반 ${classRows.length}개 중 맞음 ${classRows.filter((r) => r.classId).length} · 못 맞춤 ${classRows.filter((r) => !r.classId).length}`);
+for (const r of classRows) {
+  if (r.reason === "exact") continue; // 이름이 같은 반은 줄이 길어지니 생략
+  console.log(`  ${r.rallyzName} → ${r.siteName ?? "(없음)"} [${REASON_KO[r.reason] ?? r.reason}] 글 ${r.posts} · 사진 ${r.photos} · 영상 ${r.videos} · ${r.from}~${r.to}`);
+}
+
 // ── 계획 보고(최신 수업이 위 — 사이트 피드와 같은 순서) ──
 const photoTotal = plan.groups.reduce((n, g) => n + g.posts.reduce((m, p) => m + p.photos.length, 0), 0);
 console.log(`피드 파일: 원본 ${feed.rawCount}건 · 글 ${feed.posts.length}개(모양이 이상한 ${feed.invalid}건 제외)`);
@@ -57,8 +69,12 @@ for (const g of plan.groups) {
   const photos = g.posts.reduce((m, p) => m + p.photos.length, 0);
   const warn = g.viewers === 0 ? "  ⚠️ 볼 수 있는 학생 0명(출결·수강 기록 없음 — 발행해도 아무도 못 봄)" : "";
   const shifted = g.shifted.length ? `  (글 쓴 날에서 수업일로 당김 ${g.shifted.length})` : "";
-  console.log(`  ${g.ymd} ${g.className}: 글 ${g.posts.length} · 사진 ${photos} · ${g.existing ? `기존 기록(${g.existing.status}${g.existing.hasContent ? "·내용 있음" : ""})` : "새 기록"} · 볼 학생 ${g.viewers}${shifted}${warn}`);
+  const offDay = g.offDay ? "  ⚠️ 반 요일이 아닌 날(미리 올린 글·보강·요일 변경?) — 확인" : "";
+  console.log(`  ${g.ymd} ${g.className}: 글 ${g.posts.length} · 사진 ${photos} · ${g.existing ? `기존 기록(${g.existing.status}${g.existing.hasContent ? "·내용 있음" : ""})` : "새 기록"} · 볼 학생 ${g.viewers}${shifted}${warn}${offDay}`);
 }
+const offDayCount = plan.groups.filter((g) => g.offDay).length;
+const zeroCount = plan.groups.filter((g) => g.viewers === 0).length;
+console.log(`요약: 볼 학생 0명 수업 ${zeroCount}개 · 반 요일이 아닌 날 ${offDayCount}개`);
 if (plan.skipped.length) {
   const file = path.join(dir, "skipped.json");
   writeJson(file, plan.skipped);
@@ -94,8 +110,11 @@ async function uploadPhoto(srcUrl, ref) {
   if (done) return done;
   const photoId = randomUUID();
   const entry = storedPhoto({ ...ref, photoId });
-  const res = await fetch(photoUrl1000(srcUrl), { headers: { Referer: "https://rallyz.co.kr/" } });
+  // Referer 없으면 403. .heic 원본도 축소본 주소로 받으면 jpeg 로 온다 — content-type 으로 확인
+  const res = await fetch(photoUrl1000(srcUrl), { headers: { Referer: RALLYZ_REFERER } });
   if (!res.ok) throw new Error(`사진 내려받기 실패 ${res.status}: ${srcUrl}`);
+  const typeCheck = checkPhotoContentType(res.headers.get("content-type"));
+  if (!typeCheck.ok) throw new Error(`사진 형식 이상 ${typeCheck.reason}: ${srcUrl}`);
   const input = Buffer.from(await res.arrayBuffer());
   const encoded = await sharp(input, { limitInputPixels: 40_000_000 }).rotate()
     .resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true })

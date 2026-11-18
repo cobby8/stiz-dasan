@@ -29,9 +29,14 @@
    - 오류 007 = 헤더가 두 벌. 새로고침 후 다시 2번부터(스니펫은 한 벌만 보낸다).
 5. 영상용: 피드에서 영상 하나를 재생 → 콘솔에 `rzHlsTemplate()` → 나온 한 줄(`…/feed_vod_bc/{id}_AVC_HD.mp4/index.m3u8`)을 복사해 둔다.
    주소 속 «경로 토큰»이 시간이 지나면 바뀔 수 있다 — 영상 내려받기가 403 이면 이 단계만 다시.
-6. 파일을 프로젝트 `.tmp/rallyz-feed-import/` 에 둔다(깃에 안 올라간다).
+6. 파일을 프로젝트 `.tmp/rallyz-feed-import/` 에 둔다(깃에 안 올라간다). 5번 한 줄은 같은 폴더 `hls-template.txt` 로 저장하면 `import-videos.mjs` 가 알아서 읽는다.
 
-> 기대 건수(2026 다산2호점): 글 748 · 사진 475 · 영상 2,339. 계획 출력의 숫자가 크게 다르면 멈추고 PM 에게.
+> 기대 건수(2026 다산2호점): 글 748 · 사진 475 · 영상 2,339 · 반 34개. 계획 출력의 숫자가 크게 다르면 멈추고 PM 에게.
+
+**실제 파일 모양(2026-11-17 확인)** — `{ source, exportedAt, count, items: [{ id(uuid), regDt("2026-11-16 13:16:10" KST), content, classInfo:{ classNm:"1. 월요일 4교시", instNm, classId }, media:[{ kind:"photo"|"video", src }], writer }] }`
+- 사진 `src` 는 `…/board/202611/<n>.jpg` — `?type=w&w=1000` + **Referer `https://rallyz.co.kr/`** 로만 열린다(없으면 403). heic 원본도 이 축소본 주소면 jpeg 로 온다.
+- 영상 `src`(`…/board/feed_vod_bc/<id>_AVC_HD.mp4/index.m3u8`)는 **404** — 영상 id 만 뽑아 `hls-template.txt` 의 `{id}` 에 넣는다(Referer 같음).
+- 반 이름은 앞에 요일 순번(«1. »·«1-6. »)이 붙는다 — 떼고 비교한다. 괄호는 «괄호 안의 말까지 같은 반» 먼저(«목요일 8교시(슈팅클래스)» → 사이트 «목요일 8교시(슈팅클래스»), 없으면 괄호를 떼고(«화요일 8교시(성인반)» → «화요일 8교시», 계획 출력에 «괄호 떼고 맞춤(확인)»). 사이트 지난 반의 «[종료]»도 떼고 비교한다.
 
 ## 2. 마이그레이션(PM — 한 번만)
 
@@ -45,18 +50,20 @@ node scripts/rallyz-feed-import/import-posts.mjs --feed .tmp/rallyz-feed-import/
 
 - 수업마다 «글·사진 수 · 기존/새 기록 · 볼 학생 수»가 **최신 수업부터** 나온다.
 - `⚠️ 볼 학생 0명` = 그 수업에 출결 기록도, 그날 활성 수강도 없음 → 발행해도 아무 학부모도 못 본다(사이트 공개 규칙 그대로). 출결을 사이트로 옮기기 전(1~8월)일수록 많을 수 있다.
-- 반 이름이 안 맞는 글은 `.tmp/rallyz-feed-import/skipped.json`. 매핑 파일로 해결: `--class-map map.json` (`{ "랠리즈 반 이름": "사이트 반 이름 또는 id" }`).
+- 맨 위에 «반 매칭» 요약(이름이 똑같은 반은 생략) — «괄호 떼고 맞춤(확인)»·«못 맞춤»을 사람이 본다. 맨 아래 «요약: 볼 학생 0명 · 반 요일이 아닌 날».
+- `⚠️ 반 요일이 아닌 날` = 3일 거슬러도 반 요일을 못 찾은 글(금요일에 미리 올린 토요일반 글·보강·반 요일 변경). 새 기록이면 그 날짜로 수업이 생기니 확인.
+- 반 이름이 안 맞는 글은 `.tmp/rallyz-feed-import/skipped.json`. 매핑 파일로 해결: `--class-map map.json` (`{ "랠리즈 반 이름(순번 포함 원래 이름)": "사이트 반 이름 또는 id" }`). 초안: `.tmp/rallyz-feed-import/class-map.draft.json`.
 - 스냅숏(사이트 상태)은 원장 PC 의 `.env.local` DB 로 **읽기 전용** 조회한다. DB 비밀값이 없는 곳에서는 PM 이 `scripts/rallyz-feed-import/snapshot.sql` 을 MCP `execute_sql` 로 돌려 결과를 파일로 저장하고 `--snapshot 파일` 을 붙인다.
 
 ## 4. 표본 시험(한 반 · 한 달 — 운영)
 
 ```bash
 # ① 계획
-node scripts/rallyz-feed-import/import-posts.mjs --feed <피드.json> --month 2026-11 --class "월4"
+node scripts/rallyz-feed-import/import-posts.mjs --feed <피드.json> --month 2026-11 --class "토요일 3교시"
 # ② 사진 올리고 SQL 파일 만들기(DB 는 아직 안 바뀜)
-node scripts/rallyz-feed-import/import-posts.mjs --feed <피드.json> --month 2026-11 --class "월4" --batch rz-sample-1 --emit-sql .tmp/rallyz-feed-import/sample.sql
+node scripts/rallyz-feed-import/import-posts.mjs --feed <피드.json> --month 2026-11 --class "토요일 3교시" --batch rz-sample-1 --emit-sql .tmp/rallyz-feed-import/sample.sql
 # ③ PM: sample.sql 을 MCP execute_sql 로 적용(또는 원장 PC 에서 같은 명령에 --apply)
-# ④ 확인: 관리자 «수업 피드» → 반 «월4» · 보낸 상태 «안 보냄» → 글·사진 모양
+# ④ 확인: 관리자 «수업 피드» → 반 «토요일 3교시» · 보낸 상태 «안 보냄» → 글·사진 모양
 # ⑤ 학부모 모양까지 보려면: node scripts/rallyz-feed-import/publish.mjs --batch rz-sample-1   (SQL 파일 → MCP 적용)
 #    그 반 학부모 계정으로 /mypage/reports/feed — 날짜 순서(최신 위) 확인
 # ⑥ 되돌리기: node scripts/rallyz-feed-import/rollback.mjs --batch rz-sample-1   (SQL 파일 → MCP 적용)
