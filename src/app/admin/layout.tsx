@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth-guard";
-import { classifyAdminLayoutAuthFailure } from "@/lib/adminLayoutAuth";
+import { classifyAdminLayoutAuthFailure, forbiddenAdminDestination } from "@/lib/adminLayoutAuth";
+import { resolveContinueDestination } from "@/lib/auth/continue-destination";
 import AdminShellClient from "./AdminShellClient";
 import { isSheetSyncRetired } from "@/lib/operations-sync/sheetRetirement";
 import { getAccountViewAccess } from "@/lib/account-view-access";
@@ -19,11 +20,20 @@ export default async function AdminLayout({
     try {
         adminUser = await requireAdmin();
     } catch (error) {
-        if (classifyAdminLayoutAuthFailure(error) === "LOGIN_REQUIRED") {
+        const failure = classifyAdminLayoutAuthFailure(error);
+        if (failure === "LOGIN_REQUIRED") {
             redirect("/login?redirect=/admin");
         }
+        if (failure === "FORBIDDEN") {
+            // 관리자 권한이 없는 계정(학부모·선생님 등)은 오류 화면 대신 그 계정이 쓰는 화면으로 보낸다(2026-11-18).
+            // 목적지는 로그인 뒤와 같은 함수가 정한다. 다시 관리자 화면이 나오면 반복되므로 보내지 않는다.
+            const destination = forbiddenAdminDestination(
+                await resolveContinueDestination({ bounced: true }).catch(() => null),
+            );
+            if (destination) redirect(destination);
+        }
 
-        // 권한 부족 또는 DB·인증 서비스 장애는 로그인 문제로 숨기지 않습니다.
+        // DB·인증 서비스 장애는 로그인 문제로 숨기지 않습니다.
         // 이 오류는 Next.js 오류 처리 계층에서 복구 방법과 함께 보여줍니다.
         throw error;
     }

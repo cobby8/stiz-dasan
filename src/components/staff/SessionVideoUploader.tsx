@@ -55,7 +55,7 @@ function putWithProgress(url: string, file: File, mimeType: string, onProgress: 
       if (event.lengthComputable) onProgress(Math.min(99, Math.round((event.loaded / event.total) * 100)));
     };
     xhr.onload = () => { watch.stop(); return (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(xhr.status === 413
-      ? "영상이 너무 큽니다. 30초 이내로 짧게 찍어 주세요."
+      ? "영상이 너무 큽니다. 2분 이내로 찍거나 카메라 화질을 낮춰(4K 대신 1080p) 찍어 주세요."
       : "영상 업로드에 실패했습니다. 네트워크를 확인한 뒤 다시 시도해 주세요."))); };
     xhr.onerror = () => { watch.stop(); reject(new Error("영상 업로드에 실패했습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.")); };
     xhr.onabort = () => { watch.stop(); reject(new Error(stalled ? UPLOAD_STALLED_MESSAGE : "영상 업로드가 취소되었습니다.")); };
