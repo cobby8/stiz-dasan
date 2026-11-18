@@ -23,12 +23,15 @@ type SeasonalGroupTotalRow = {
   confirmedTotal: number | string | null;
   heldTotal: number | string | null;
   waitlistedTotal: number | string | null;
+  dateSelectedTotal: number | string | null;
 };
 
 type OperationalStats = {
   confirmedTotal: number;
   heldTotal: number;
   waitlistedTotal: number;
+  /** 날짜별 선택으로 신청한(승인 대기·승인) 항목 수 — 요일 집계엔 고른 날짜의 요일로 함께 잡힌다(2026-11-18). */
+  dateSelectedTotal: number;
   weekdays: Record<string, { confirmed: number; held: number; waitlisted: number }>;
 };
 
@@ -82,6 +85,8 @@ export async function getSeasonalAdminOverview(seasonId?: string) {
               orderBy: { startsAt: "asc" },
               include: { session: { select: { coachId: true } } },
             },
+            // 반별 «기간별 수강료»(2026-11-18) — 관리자 반 편집·배정 화면이 쓴다
+            periods: { orderBy: [{ displayOrder: "asc" }, { startDate: "asc" }, { endDate: "asc" }] },
             _count: { select: { applicationItems: true } },
           },
         },
@@ -112,7 +117,11 @@ export async function getSeasonalAdminOverview(seasonId?: string) {
                   COALESCE(offering."linkedClassId", offering.id) AS "groupKey",
                   COUNT(DISTINCT item.id) FILTER (WHERE item.status = 'APPROVED')::int AS "confirmedTotal",
                   COUNT(DISTINCT item.id) FILTER (WHERE item.status IN ('PENDING','APPROVED'))::int AS "heldTotal",
-                  COUNT(DISTINCT item.id) FILTER (WHERE item.status = 'WAITLISTED')::int AS "waitlistedTotal"
+                  COUNT(DISTINCT item.id) FILTER (WHERE item.status = 'WAITLISTED')::int AS "waitlistedTotal",
+                  -- 날짜별 선택 신청(고른 날짜가 있는 신청서) 중 자리를 차지한 항목 수
+                  COUNT(DISTINCT item.id) FILTER (
+                    WHERE item.status IN ('PENDING','APPROVED') AND COALESCE(cardinality(app."selectedDates"), 0) > 0
+                  )::int AS "dateSelectedTotal"
              FROM "SpecialProgramApplicationItem" item
              JOIN "SpecialProgramApplication" app ON app.id = item."applicationId"
              JOIN "SpecialProgramOffering" offering ON offering.id = item."offeringId"
@@ -128,12 +137,13 @@ export async function getSeasonalAdminOverview(seasonId?: string) {
       confirmedTotal: Number(row.confirmedTotal ?? 0),
       heldTotal: Number(row.heldTotal ?? 0),
       waitlistedTotal: Number(row.waitlistedTotal ?? 0),
+      dateSelectedTotal: Number(row.dateSelectedTotal ?? 0),
       weekdays: {},
     });
   }
   for (const row of countRows) {
     const mapKey = `${row.seasonId}:${row.groupKey}`;
-    const current = statsByGroup.get(mapKey) ?? { confirmedTotal: 0, heldTotal: 0, waitlistedTotal: 0, weekdays: {} };
+    const current = statsByGroup.get(mapKey) ?? { confirmedTotal: 0, heldTotal: 0, waitlistedTotal: 0, dateSelectedTotal: 0, weekdays: {} };
     const confirmed = Number(row.confirmed ?? 0);
     const held = Number(row.held ?? 0);
     const waitlisted = Number(row.waitlisted ?? 0);
@@ -148,6 +158,7 @@ export async function getSeasonalAdminOverview(seasonId?: string) {
         confirmedTotal: 0,
         heldTotal: 0,
         waitlistedTotal: 0,
+        dateSelectedTotal: 0,
         weekdays: {},
       },
     })),
