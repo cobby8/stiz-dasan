@@ -28,7 +28,7 @@ import {
 //
 // 2026-11-17 원장 지시 「칸을 너무 많이 차지한다 — 기사 요청 옆에 버튼 하나로」:
 //   이 부품은 이제 «당일 변경» 버튼 하나 + 누르면 뜨는 목록 창을 스스로 그린다.
-//   운행표 머리줄(RegularRunEditor 의 headerExtra 자리 — «기사 요청» 버튼 바로 뒤)에 놓인다.
+//   운행표 머리줄(RegularRunEditor 의 headerExtra 자리 — «실시간 위치» 버튼 바로 뒤 — «기사 요청» 버튼은 2026-11-18 없앴다)에 놓인다.
 //   창은 한 번에 하나만 띄운다: 입력 창·취소 확인 창이 떠 있는 동안에는 목록 창을 그리지 않고(listOpen 은 그대로),
 //   그 창이 닫히면 목록 창이 다시 뜬다. AdminModal 은 창마다 Esc·스크롤 잠금·포커스를 따로 관리해서, 겹쳐 띄우면
 //   Esc 한 번에 둘 다 닫히거나 «브라우저 뒤로» 때 스크롤 잠금이 남을 수 있다 — 겹치지 않으면 그런 일이 없다.
@@ -131,7 +131,7 @@ export default function ShuttleDayExceptionAdminPanel({ initial }: { initial: Ad
 
   return (
     <>
-      {/* 머리줄 버튼 — «기사 요청»과 같은 모양. 배지는 위험색(빨강)이 아니라 안내색: «처리할 일»이 아니라 «들어온 알림»이다.
+      {/* 머리줄 버튼 — «실시간 위치»와 같은 모양. 배지는 위험색(빨강)이 아니라 안내색: «처리할 일»이 아니라 «들어온 알림»이다.
           색만으로 뜻을 전하지 않게 aria-label 에 건수를 글자로 넣는다. 0건이면 배지 없음. */}
       <button type="button" onClick={openList} aria-label={`당일 변경 ${count}건`} className="academy-button-secondary relative">
         당일 변경

@@ -387,7 +387,6 @@ test("관리자·공용 창이 «뒤로 = 닫기»를 쓴다(2026-11-18)", async
   assert.match(await read("src/components/shuttle/assign/NewStudentDispatchPanel.tsx"), /useBackToClose\(Boolean\(target\), \(\) => setTarget\(null\)\)/);
   assert.match(await read("src/components/seasonal/StudentDetailModal.tsx"), /useBackToClose\(true, onClose, \{ blocked: savingPin \}\)/);
   assert.match(await read("src/components/admin/DriverLocationPanel.tsx"), /useBackToClose\(true, onClose\)/);
-  assert.match(await read("src/components/admin/DriverRequestPanel.tsx"), /useBackToClose\(true, onClose, \{ blocked: /);
   assert.match(await read("src/app/admin/seasonal/attendance/SeasonalAttendanceClient.tsx"), /useBackToClose\(true, onClose\)/);
   assert.match(await read("src/components/shuttle/UnifiedDriverClient.tsx"), /useBackToClose\(confirmEnd && runState === "running", \(\) => setConfirmEnd\(false\)\)/);
   assert.match(await read("src/components/auth/ParentConsentChecks.tsx"), /useBackToClose\(true, onClose\)/);
