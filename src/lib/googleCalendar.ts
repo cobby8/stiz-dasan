@@ -13,6 +13,15 @@ export interface GoogleCalendarEvent {
 }
 export type GoogleCalendarReadOptions = { strict?: boolean; fresh?: boolean };
 
+/**
+ * 받아온 구글 달력 일정을 보관하는 시간 = 1시간(2026-11-18 원장 결정 · 속도 개선, 전에는 5분).
+ * 왜: 구글에 실제로 물어보면 한 번에 0.45초쯤 걸리는데, 5분 보관은 방문이 드문 시간에 금방 만료돼
+ *     학부모 홈을 여는 5번 중 1번이 그 시간을 기다렸다(운영 11-16~18: 보관본 0.005초 vs 실제 호출 p75 0.49초).
+ * 바뀌는 점: 구글 달력에서 일정을 고치면 학부모·선생님·관리자 화면에 최대 1시간 뒤에 반영된다.
+ * 청구 계산은 영향 없다 — fresh 옵션으로 보관본을 쓰지 않고 매번 새로 받는다.
+ */
+export const CALENDAR_CACHE_SECONDS = 3600;
+
 // isRecurring: Google Calendar 반복 이벤트 여부 (recurringEventId 또는 recurrenceid 존재 시 true)
 // 텍스트 키워드 기반 분류가 우선이고, 키워드 매칭이 안 되면 반복 여부로 "정기행사" 판별
 function inferCategory(summary: string, description?: string, isRecurring = false): string {
@@ -65,7 +74,7 @@ async function fetchViaCalendarAPI(
         `?key=${apiKey}&singleEvents=true&maxResults=2500` +
         `&timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}`;
 
-    const res = await fetch(url, options.fresh ? { cache: "no-store" } : { next: { revalidate: 300 } });
+    const res = await fetch(url, options.fresh ? { cache: "no-store" } : { next: { revalidate: CALENDAR_CACHE_SECONDS } });
     if (!res.ok) {
         const body = await res.text();
         throw new Error(`Google Calendar API ${res.status}: ${body.slice(0, 200)}`);
@@ -121,7 +130,7 @@ async function fetchViaCalendarAPI(
 
 /** ICS 파싱 방식 (fallback) */
 async function fetchViaICS(icsUrl: string, options: GoogleCalendarReadOptions = {}): Promise<GoogleCalendarEvent[]> {
-    const res = await fetch(icsUrl, options.fresh ? { cache: "no-store" } : { next: { revalidate: 300 } });
+    const res = await fetch(icsUrl, options.fresh ? { cache: "no-store" } : { next: { revalidate: CALENDAR_CACHE_SECONDS } });
     if (!res.ok) throw new Error(`ICS fetch failed: ${res.status}`);
     const icsText = await res.text();
     if (options.strict && (!icsText.includes("BEGIN:VCALENDAR") || !icsText.includes("END:VCALENDAR"))) throw new Error("공식 일정 형식이 올바르지 않습니다.");
@@ -189,7 +198,7 @@ const notRental = (events: GoogleCalendarEvent[]) => events.filter((event) => !R
 export async function fetchGoogleCalendarEvents(icsUrl: string, options: GoogleCalendarReadOptions = {}): Promise<GoogleCalendarEvent[]> {
     const apiKey = process.env.GOOGLE_CALENDAR_API_KEY;
 
-    // API 키가 있으면 Google Calendar API v3 사용 (실시간, 캐시 없음)
+    // API 키가 있으면 Google Calendar API v3 사용 (보관 시간은 CALENDAR_CACHE_SECONDS, fresh 면 보관본을 쓰지 않는다)
     if (apiKey) {
         const calendarId = extractCalendarId(icsUrl);
         if (calendarId) {
