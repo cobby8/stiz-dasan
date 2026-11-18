@@ -78,7 +78,7 @@ import {
     updateCalendarEvent,
     deleteCalendarEvent,
 } from "@/lib/googleCalendarWrite";
-import { publishGalleryPostToInstagram } from "@/lib/instagram";
+import { ensureGalleryPostInstagramColumns } from "@/lib/instagramGallerySync";
 import { ACADEMY_SETTINGS_CACHE_TAG, getAcademySettings, getMakeupSlotAvailability } from "@/lib/queries";
 import {
     activeMakeupSql,
@@ -226,7 +226,6 @@ async function recordApplicationHistoryLog(input: {
 // $executeRawUnsafe 사용: simple query protocol → PgBouncer transaction mode 호환
 // $executeRaw 태그드 템플릿은 prepared statement(extended protocol)를 사용해 PgBouncer가 차단
 const BOOLEAN_SETTINGS_COLUMNS = new Set([
-    "instagramAutoPublishEnabled",
     "useBuiltInTrialForm",
     "useBuiltInEnrollForm",
 ]);
@@ -335,7 +334,8 @@ const ALLOWED_SETTINGS_COLUMNS = [
     'siteBodyFont', 'siteHeadingFont',
     'trialTitle', 'trialContent', 'trialFormUrl',
     'enrollTitle', 'enrollContent', 'enrollFormUrl',
-    'youtubeUrl', 'instagramUrl', 'instagramBusinessAccountId', 'instagramAutoPublishEnabled', 'kakaoChannelUrl',
+    // 2026-11-18: 인스타 자동 게시 설정 2개(instagramBusinessAccountId·instagramAutoPublishEnabled)는 저장하지 않는다(컬럼은 DB 에 남김).
+    'youtubeUrl', 'instagramUrl', 'kakaoChannelUrl',
     'philosophyText',
     'facilitiesText',
     'facilitiesImagesJSON',
@@ -660,8 +660,6 @@ export async function updateAcademySettings(data: {
     enrollFormUrl?: string;
     youtubeUrl?: string;
     instagramUrl?: string;
-    instagramBusinessAccountId?: string;
-    instagramAutoPublishEnabled?: boolean;
     kakaoChannelUrl?: string;
     philosophyText?: string;
     facilitiesText?: string;
@@ -2481,34 +2479,6 @@ export async function updateUnpaidPayment(input: {
     return { ok: true as const };
 }
 
-let _galleryInstagramColumnsEnsured = false;
-async function ensureGalleryPostInstagramColumns() {
-    if (_galleryInstagramColumnsEnsured) return;
-    const columns: [string, string][] = [
-        ["source", "TEXT DEFAULT 'WEBSITE'"],
-        ["externalId", "TEXT"],
-        ["externalUrl", "TEXT"],
-        ["instagramMediaId", "TEXT"],
-        ["instagramPermalink", "TEXT"],
-        ["instagramPublishedAt", "TIMESTAMPTZ"],
-        ["instagramPublishError", "TEXT"],
-    ];
-    for (const [col, type] of columns) {
-        try {
-            await prisma.$executeRawUnsafe(
-                `ALTER TABLE "GalleryPost" ADD COLUMN IF NOT EXISTS "${col}" ${type}`
-            );
-        } catch (e) {
-            console.warn(`[DDL] GalleryPost column "${col}" ensure failed:`, (e as Error).message);
-        }
-    }
-    _galleryInstagramColumnsEnsured = true;
-}
-
-function galleryInstagramCaption(title?: string | null, caption?: string | null) {
-    return [title?.trim(), caption?.trim()].filter(Boolean).join("\n\n");
-}
-
 // ── 갤러리 관리 ──────────────────────────────────────────────────────────────
 export async function createGalleryPost(data: {
     classId?: string | null;
@@ -2518,46 +2488,19 @@ export async function createGalleryPost(data: {
     isPublic?: boolean;
 }) {
     await requireAdmin();
-    let postId: string | null = null;
     try {
+        // 갤러리 컬럼 보장은 공용 함수(instagramGallerySync.ts) 하나만 쓴다.
+        // 2026-11-18: 저장 뒤 인스타 자동 게시는 지웠다(결정표 insta-auto-publish «안 쓴다»).
         await ensureGalleryPostInstagramColumns();
-        const rows = await prisma.$queryRawUnsafe<any[]>(
+        await prisma.$executeRawUnsafe(
             `INSERT INTO "GalleryPost" (id, "classId", title, caption, "mediaJSON", "isPublic", "createdAt", "updatedAt")
-             VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, NOW(), NOW())
-             RETURNING id`,
+             VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, NOW(), NOW())`,
             data.classId || null,
             data.title || null,
             data.caption || null,
             data.mediaJSON,
             data.isPublic !== false,
         );
-        postId = rows[0]?.id ?? null;
-
-        if (postId && data.isPublic !== false) {
-            const settings = await getAcademySettings() as any;
-            if (settings.instagramAutoPublishEnabled) {
-                const result = await publishGalleryPostToInstagram({
-                    businessAccountId: settings.instagramBusinessAccountId,
-                    caption: galleryInstagramCaption(data.title, data.caption),
-                    mediaJSON: data.mediaJSON,
-                });
-                if (result.attempted) {
-                    await prisma.$executeRawUnsafe(
-                        `UPDATE "GalleryPost"
-                         SET "instagramMediaId" = $1,
-                             "instagramPermalink" = $2,
-                             "instagramPublishedAt" = $3,
-                             "instagramPublishError" = $4
-                         WHERE id = $5`,
-                        result.ok ? result.instagramMediaId ?? null : null,
-                        result.ok ? result.permalink ?? null : null,
-                        result.ok ? new Date() : null,
-                        result.ok ? null : result.error ?? null,
-                        postId,
-                    );
-                }
-            }
-        }
     } catch (e) {
         console.error("Failed to create gallery post:", e);
         throw new Error("갤러리 게시물 생성 실패");

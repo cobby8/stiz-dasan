@@ -156,7 +156,7 @@ test("바깥 링크 적용 위치 — data-outside-link(또는 영역 표시)가
     "src/app/mypage/news/[id]/page.tsx",
     "src/app/notices/[id]/page.tsx",
     "src/app/annual/EventDetailPanel.tsx",
-    "src/app/staff/quick-post/QuickPostClient.tsx",
+    // 2026-11-18: 빠른 업로드의 «인스타그램 게시물 보기» 바깥 링크는 인스타 게시를 지우며 함께 빠졌다.
     "src/app/shop/product/[productNo]/ShopProductFrame.tsx",
   ];
   for (const file of marked) assert.match(read(file), /data-outside-link\b/, file);

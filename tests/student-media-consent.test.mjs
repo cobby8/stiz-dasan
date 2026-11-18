@@ -63,7 +63,7 @@ test("학부모 사진 보기는 동의를 보지 않고 «참여한 아이의 �
   assert.match(feed, /feedParticipantSql\("st", "se"\)/);
 });
 
-test("공개 게시 동의 검사는 꺼졌지만(되돌릴 스위치 유지) 갤러리=관리자·인스타=원장 수동 승인은 그대로", () => {
+test("공개 게시 동의 검사는 꺼졌지만(되돌릴 스위치 유지) 갤러리=관리자 수동 승인은 그대로", () => {
   const consent = readSrc("src/lib/studentMediaConsent.ts");
   assert.match(consent, /export const PUBLIC_POST_CONSENT_GATE_ENABLED = false;/);
   assert.match(consent, /if \(!PUBLIC_POST_CONSENT_GATE_ENABLED\) \{/);
@@ -71,10 +71,8 @@ test("공개 게시 동의 검사는 꺼졌지만(되돌릴 스위치 유지) �
   assert.match(consent, /FROM "StudentMediaConsent" c/);
   const actions = readSrc("src/app/actions/social-posts.ts");
   assert.match(actions, /export async function publishSocialPostDraftToGallery\(id: string\) \{\s*const staff = await requireAdmin\(\);/);
-  assert.match(actions, /export async function publishSocialPostDraftToInstagram\(id: string\) \{[\s\S]*?const owner = await requireOwner\(\);/);
-  // 대기열은 원장이 승인해 PUBLISHING 이 된 초안만 처리한다
-  // 2026-11-14 사진·인스타 점검: 대기열 SQL 은 socialPublishQueueRules.ts 로 모였고, 원장이 켠 초안(다음 시도 시각 있음)만 집는다
-  assert.match(readSrc("src/lib/socialPublishQueueRules.ts"), /WHERE status = 'PUBLISHING'\s+AND "instagramNextRetryAt" IS NOT NULL/);
+  // 2026-11-18 결정표 insta-auto-publish «안 쓴다»: 인스타 게시 액션(원장 승인)과 재시도 대기열은 지웠다.
+  assert.doesNotMatch(actions, /publishSocialPostDraftToInstagram|requireOwner/);
   // 동의 검사가 꺼져 있으면 «학생 미지정» 사전 차단·안내도 같이 꺼진다(스위치 하나를 따른다)
   assert.match(actions, /if \(!PUBLIC_POST_CONSENT_GATE_ENABLED\) return false;/);
   assert.match(readSrc("src/app/staff/quick-post/QuickPostClient.tsx"), /\{consentGateEnabled && \(/);

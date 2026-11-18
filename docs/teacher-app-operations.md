@@ -6,7 +6,6 @@
 
 - Production 확인: `RELEASE_ENV_SCOPE=production` 또는 Vercel의 `VERCEL_ENV=production` 환경에서 실행
 - Preview 확인: `RELEASE_ENV_SCOPE=preview` 또는 Vercel의 `VERCEL_ENV=preview` 환경에서 실행
-- Instagram 게시를 운영할 때는 `RELEASE_REQUIRE_INSTAGRAM=true`도 지정
 - 로컬 코드 검사만 필요하면 `npm run release:code-check`를 사용합니다. 이 명령은 배포 환경 확인을 대신하지 않습니다.
 
 필수 변수:
@@ -17,7 +16,6 @@
 - 음성 메모: `GEMINI_API_KEY`
 - 교사 초대/문자 발송: `INVITE_OTP_SECRET`, `SMS_PROVIDER`, 그리고 선택한 문자 공급자 환경변수
 - 결제: `NEXT_PUBLIC_TOSS_PAYMENTS_CLIENT_KEY` 또는 `TOSS_PAYMENTS_CLIENT_KEY`, `TOSS_PAYMENTS_SECRET_KEY`
-- Instagram 사용 시: `INSTAGRAM_ACCESS_TOKEN` 또는 `META_ACCESS_TOKEN`, `INSTAGRAM_BUSINESS_ACCOUNT_ID`
 
 Vercel에서는 같은 이름의 값이라도 Production과 Preview 범위가 별도입니다. 두 범위를 각각 확인하고, Production의 `NEXT_PUBLIC_SITE_URL`은 실제 서비스의 HTTPS 주소여야 합니다.
 

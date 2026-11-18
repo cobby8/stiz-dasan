@@ -133,13 +133,7 @@ function checkEnvironment() {
 
   requireSmsEnvironment(missing);
   requirePaymentEnvironment(missing);
-
-  if (process.env.RELEASE_REQUIRE_INSTAGRAM === "true") {
-    if (!isPresent("INSTAGRAM_ACCESS_TOKEN") && !isPresent("META_ACCESS_TOKEN")) {
-      missing.push("INSTAGRAM_ACCESS_TOKEN (또는 META_ACCESS_TOKEN)");
-    }
-    requireAll(["INSTAGRAM_BUSINESS_ACCOUNT_ID"]);
-  }
+  // 2026-11-18: 인스타 게시를 지워 RELEASE_REQUIRE_INSTAGRAM 점검도 뺐다(결정표 insta-auto-publish «안 쓴다»).
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim() || "";
   if (siteUrl && (scope === "production") && (!siteUrl.startsWith("https://") || /localhost/i.test(siteUrl))) {

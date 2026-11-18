@@ -1,7 +1,6 @@
 import { getRetiredLoginBlockFailureCount, getStaffClassAssignments, getStaffInviteLastSends, getStaffRoleGrantUsers } from "@/lib/staff/staffPanelData";
 import { unstable_cache } from "next/cache";
 import { kstDow, todayKst } from "@/lib/datetime/kst";
-import { getInstagramRuntimeStatus } from "@/lib/instagram";
 import { getPaymentProviderPublicStatus } from "@/lib/payment-ledger";
 import { getScheduleSlotAdminData } from "@/lib/scheduleSlotPayload";
 import { notMergedStudent } from "@/lib/studentVisibility";
@@ -148,12 +147,6 @@ type RecentStudentRow = {
     createdAt?: Date | string | null;
     createdat?: Date | string | null;
     parent_name?: string | null;
-};
-
-type GallerySettingsPayload = {
-    instagramUrl?: string | null;
-    instagramBusinessAccountId?: string | null;
-    instagramAutoPublishEnabled?: boolean | null;
 };
 
 function getMonthLabels(date = new Date()) {
@@ -564,25 +557,17 @@ export function getCachedAdminGalleryPayload(options?: AdminListPayloadOptions) 
 
     return adminOnly(unstable_cache(
         async () => {
-            const [posts, classes, settings, socialDrafts, total] = await Promise.all([
+            // 2026-11-18: 인스타 연결 상태(instagramStatus)는 인스타 게시를 지우며 함께 뺐다.
+            const [posts, classes, socialDrafts, total] = await Promise.all([
                 getGalleryPosts({ limit, offset }),
                 getClasses(),
-                getAcademySettings(),
                 readPendingSocialPostDrafts(30),
                 getAdminGalleryPostCount(),
             ]);
-            const settingsData = settings as GallerySettingsPayload | null;
-            const instagramStatus = {
-                profileUrl: settingsData?.instagramUrl ?? "",
-                businessAccountId: settingsData?.instagramBusinessAccountId ?? "",
-                autoPublishEnabled: settingsData?.instagramAutoPublishEnabled === true,
-                ...getInstagramRuntimeStatus(settingsData?.instagramBusinessAccountId),
-            };
 
             return {
                 posts,
                 classes,
-                instagramStatus,
                 socialDrafts,
                 pagination: buildListPagination({
                     limit,

@@ -5,12 +5,6 @@ import type { SocialMediaItem } from "@/lib/socialCaptionAI";
 import { normalizeSubjectStudentIds } from "@/lib/studentMediaConsentPolicy";
 import { createHash } from "node:crypto";
 import { collectPublishedMediaCopyPaths, PUBLIC_GALLERY_BUCKET } from "@/lib/sessionPhotoStorage";
-import {
-  ARM_INSTAGRAM_QUEUE_SQL,
-  CLAIM_INSTAGRAM_ATTEMPT_SQL,
-  MARK_GALLERY_PUBLISHING_SQL,
-  QUEUED_INSTAGRAM_DRAFTS_SQL,
-} from "./socialPublishQueueRules";
 
 export { normalizeSubjectStudentIds } from "@/lib/studentMediaConsentPolicy";
 
@@ -273,16 +267,6 @@ export async function getSocialPostDraftById(id: string) {
   return rows[0] ? mapDraft(rows[0]) : null;
 }
 
-export async function getQueuedSocialPostDrafts(limit = 1) {
-  await ensureSocialPostDraftTable();
-
-  // 2026-11-14 사진·인스타 점검: 대기열이 켜진(원장이 인스타 게시를 누른) 초안만 집는다.
-  // 예전에는 COALESCE(다음 시도 시각, 수정 시각)이라 꺼진 초안도 5분마다 집어 «건너뜀»만 반복했다.
-  const rows = await prisma.$queryRawUnsafe<any[]>(QUEUED_INSTAGRAM_DRAFTS_SQL, limit);
-
-  return rows.map(mapDraft);
-}
-
 export async function updateSocialPostDraftRecord(
   id: string,
   data: {
@@ -392,37 +376,26 @@ export async function rejectSocialPostDraftRecord(id: string) {
   return result;
 }
 
-export async function markSocialPostDraftPublished(
-  id: string,
-  data: {
-    galleryPostId: string;
-    instagramMediaId?: string | null;
-    instagramPermalink?: string | null;
-  },
-) {
-  await ensureSocialPostDraftTable();
-
-  const rows = await prisma.$queryRawUnsafe<any[]>(
-    `UPDATE "SocialPostDraft"
+/**
+ * 갤러리 게시가 끝난 초안을 «게시 완료(PUBLISHED)»로 닫는다.
+ *
+ * 2026-11-18 결정표 insta-auto-publish «안 쓴다»: 인스타 게시를 지웠으므로 갤러리가 마지막 단계다.
+ * 예전에는 인스타 성공 때만 PUBLISHED 가 됐다 — 그대로 두면 초안이 «게시 처리 중»에 영원히 남는다.
+ * - 게시할 수 있는 상태(READY·FAILED·PUBLISHING)일 때만 바꾼다. 그 사이 반려된 초안을 되살리지 않는다.
+ * - 옛 인스타 대기열 칸은 비워 둔다(다음 시도 시각·오류). 컬럼 자체는 DB 에 남긴다.
+ */
+export const MARK_GALLERY_PUBLISHED_SQL = `UPDATE "SocialPostDraft"
      SET status = 'PUBLISHED',
          "galleryPostId" = $1,
-         "instagramMediaId" = $2,
-         "instagramPermalink" = $3,
          "instagramPublishError" = NULL,
-         "publishedAt" = NOW(),
+         "instagramNextRetryAt" = NULL,
+         "publishedAt" = COALESCE("publishedAt", NOW()),
          "updatedAt" = NOW()
-     WHERE id = $4
-     RETURNING *`,
-    data.galleryPostId,
-    data.instagramMediaId || null,
-    data.instagramPermalink || null,
-    id,
-  );
+     WHERE id = $2
+       AND status IN ('READY', 'FAILED', 'PUBLISHING')
+     RETURNING *`;
 
-  return mapDraft(rows[0]);
-}
-
-export async function markSocialPostDraftPublishing(
+export async function markSocialPostDraftGalleryPublished(
   id: string,
   data: {
     galleryPostId: string;
@@ -430,86 +403,11 @@ export async function markSocialPostDraftPublishing(
 ) {
   await ensureSocialPostDraftTable();
 
-  // 2026-11-14 검수 필수 1: 게시할 수 있는 상태일 때만 바꾸고, 여기서는 대기열을 켜지 않는다.
-  const rows = await prisma.$queryRawUnsafe<any[]>(MARK_GALLERY_PUBLISHING_SQL, data.galleryPostId, id);
+  const rows = await prisma.$queryRawUnsafe<any[]>(MARK_GALLERY_PUBLISHED_SQL, data.galleryPostId, id);
   if (rows[0]) return mapDraft(rows[0]);
 
   // 바뀐 행이 없다 = 그 사이에 다른 처리가 게시를 끝냈거나(PUBLISHED) 반려했다. 되돌리지 않고 지금 상태를 돌려준다.
   const current = await getSocialPostDraftById(id);
   if (!current) throw new Error("게시할 초안을 찾지 못했습니다.");
   return current;
-}
-
-/**
- * 원장이 인스타 게시를 눌렀을 때만 부른다 — 꺼져 있던 인스타 대기열을 켠다.
- * 2026-11-14 사진·인스타 점검: 이 단계가 없어 초안이 «게시 처리 중»에 멈췄다(규칙은 socialPublishQueueRules.ts).
- * 이미 켜져 있으면(다른 처리가 시도를 잡았으면) 아무것도 바꾸지 않고 null 을 돌려준다.
- */
-export async function armSocialPostDraftInstagramQueue(id: string) {
-  await ensureSocialPostDraftTable();
-
-  const rows = await prisma.$queryRawUnsafe<any[]>(ARM_INSTAGRAM_QUEUE_SQL, id);
-  return rows[0] ? mapDraft(rows[0]) : null;
-}
-
-export async function markSocialPostDraftPublishAttempt(id: string) {
-  await ensureSocialPostDraftTable();
-
-  const rows = await prisma.$queryRawUnsafe<any[]>(CLAIM_INSTAGRAM_ATTEMPT_SQL, id);
-
-  return rows[0] ? mapDraft(rows[0]) : null;
-}
-
-export async function markSocialPostDraftRetryScheduled(
-  id: string,
-  data: {
-    galleryPostId: string;
-    error: string;
-    nextRetryAt: Date;
-  },
-) {
-  await ensureSocialPostDraftTable();
-
-  const rows = await prisma.$queryRawUnsafe<any[]>(
-    `UPDATE "SocialPostDraft"
-     SET status = 'PUBLISHING',
-         "galleryPostId" = $1,
-         "instagramPublishError" = $2,
-         "instagramNextRetryAt" = $3,
-         "updatedAt" = NOW()
-     WHERE id = $4
-     RETURNING *`,
-    data.galleryPostId,
-    data.error,
-    data.nextRetryAt,
-    id,
-  );
-
-  return mapDraft(rows[0]);
-}
-
-export async function markSocialPostDraftFailed(
-  id: string,
-  data: {
-    galleryPostId: string;
-    error: string;
-  },
-) {
-  await ensureSocialPostDraftTable();
-
-  const rows = await prisma.$queryRawUnsafe<any[]>(
-    `UPDATE "SocialPostDraft"
-     SET status = 'FAILED',
-         "galleryPostId" = $1,
-         "instagramPublishError" = $2,
-         "instagramNextRetryAt" = NULL,
-         "updatedAt" = NOW()
-     WHERE id = $3
-     RETURNING *`,
-    data.galleryPostId,
-    data.error,
-    id,
-  );
-
-  return mapDraft(rows[0]);
 }

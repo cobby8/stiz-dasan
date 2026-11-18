@@ -108,8 +108,6 @@ async function fetchAcademySettings() {
                 enrollFormUrl: r.enrollFormUrl ?? r.enrollformurl ?? null,
                 youtubeUrl: r.youtubeUrl ?? r.youtubeurl ?? null,
                 instagramUrl: r.instagramUrl ?? r.instagramurl ?? null,
-                instagramBusinessAccountId: r.instagramBusinessAccountId ?? r.instagrambusinessaccountid ?? null,
-                instagramAutoPublishEnabled: toBool(r.instagramAutoPublishEnabled ?? r.instagramautopublishenabled, false),
                 kakaoChannelUrl: r.kakaoChannelUrl ?? r.kakaochannelurl ?? null,
                 philosophyText: r.philosophyText ?? r.philosophytext ?? null,
                 facilitiesText: r.facilitiesText ?? r.facilitiestext ?? null,
@@ -143,8 +141,6 @@ async function fetchAcademySettings() {
         footerDescription: null,
         footerCopyright: null,
         instagramUrl: null,
-        instagramBusinessAccountId: null,
-        instagramAutoPublishEnabled: false,
         kakaoChannelUrl: null,
         address: "다산신도시 체육관",
     } as any;

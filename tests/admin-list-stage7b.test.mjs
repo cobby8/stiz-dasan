@@ -27,17 +27,18 @@ test("공지: 한 줄 표(작성일 오른쪽·KST 달력), 말줄임 없음, �
   assert.doesNotMatch(notices, /toLocaleDateString/);
 });
 
-test("공지: 행 클릭 = 상세 패널, 행 키보드 가드, 관리 칸 전파 차단, 수정·삭제·소셜 발행 함수 그대로", () => {
+test("공지: 행 클릭 = 상세 패널, 행 키보드 가드, 관리 칸 전파 차단, 수정·삭제 함수 그대로(소셜 발행은 11-18 삭제)", () => {
   assert.match(notices, /<ListDetailPanel onClose=\{\(\) => setDetailNoticeId\(null\)\} titleId="notice-detail-panel-title"/);
   assert.match(notices, /function handleRowKeyDown[\s\S]*?if \(event\.target !== event\.currentTarget\) return;/);
   assert.match(notices, /admin-cell-center px-2 py-1\.5" onClick=\{\(event\) => event\.stopPropagation\(\)\}/);
   assert.match(notices, /onClick=\{\(\) => startEdit\(n\)\}/);
   assert.match(notices, /onClick=\{\(\) => handleDelete\(n\.id\)\}/);
-  assert.match(notices, /onClick=\{\(\) => setSocialNotice\(n\)\}/);
+  // 2026-11-18: «소셜 발행»(인스타 피드·스토리)은 결정표 insta-auto-publish «안 쓴다»로 지웠다.
+  assert.doesNotMatch(notices, /setSocialNotice|NoticeSocialModal|>\s*소셜 발행\s*</);
   // 삭제 확인창 문구·서버 액션 그대로
   assert.match(notices, /askConfirm\("이 공지사항을 삭제하시겠습니까\?"\)/);
   assert.match(notices, /await deleteNotice\(id\)/);
-  // 패널에서도 수정·삭제·소셜 발행 가능
+  // 패널에서도 수정·삭제 가능
   assert.match(notices, /setDetailNoticeId\(null\); startEdit\(d\);/);
   assert.match(notices, /onClick=\{\(\) => handleDelete\(d\.id\)\}/);
   // 관리 버튼 터치 44px — 2026-11-13 UI 통일: 아이콘 버튼(min-h-11 min-w-11) → 글자 버튼(academy-button-sm: PC 36px · 터치 화면 44px)

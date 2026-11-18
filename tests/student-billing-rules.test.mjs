@@ -26,7 +26,8 @@ const createSource = actions.slice(
 );
 const updateSource = actions.slice(
   actions.indexOf("export async function updateUnpaidPayment"),
-  actions.indexOf("let _galleryInstagramColumnsEnsured"),
+  // 2026-11-18: 바로 뒤에 있던 갤러리 컬럼 보장 로컬 사본을 지워, 다음 구역 머리줄을 끝 표지로 쓴다.
+  actions.indexOf("// ── 갤러리 관리"),
 );
 
 // ── ① 청구 월 결정 ───────────────────────────────────────────────────────────

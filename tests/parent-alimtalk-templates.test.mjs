@@ -93,7 +93,7 @@ test("머리말 규칙: 수동 문자는 학부모만 [스티즈농구교실]·�
   assert.equal(reg.withParentPrefix("[스티즈농구교실] 공지"), "[스티즈농구교실] 공지");
   assert.equal(reg.withParentPrefix("농구교실 등원 셔틀 안내\n\n박윤우 학부모님"), "[스티즈농구교실] 등원 셔틀 안내\n\n박윤우 학부모님");
   assert.equal(reg.withParentPrefix("등원 셔틀 안내\n본문"), "[스티즈농구교실] 등원 셔틀 안내\n본문");
-  assert.match(read("src/app/api/cron/scheduled-messages/route.ts"), /const body = withParentPrefix\(item\.body\);/);
+  // 2026-11-18: 이 함수를 부르던 예약 문자 크론은 지웠다(예약을 넣는 길이 없음). 함수 동작 단언은 위에 그대로 둔다.
 });
 
 test("DB 문자 틀 표기({{x}})로 바꿔 같은 값을 넣으면 알림톡 본문과 같은 글자다", () => {

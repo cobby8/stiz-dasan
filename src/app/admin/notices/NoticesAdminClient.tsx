@@ -21,10 +21,6 @@ const RichTextEditor = dynamic(() => import("@/components/RichTextEditor"), {
     ),
 });
 
-const NoticeSocialModal = dynamic(() => import("./NoticeSocialModal"), {
-    loading: () => null,
-});
-
 // 리치 에디터가 비어있으면 getHTML()이 "<p></p>"를 반환하므로, 태그를 걷어내 실제 내용 유무를 판단한다.
 // 이미지/표/영상만 있는 공지(텍스트 0)도 유효하므로, 그런 미디어 태그가 있으면 "내용 있음"으로 본다.
 function isEmptyContent(html: string): boolean {
@@ -146,7 +142,6 @@ export default function NoticesAdminClient({
     const [uploading, setUploading] = useState(false);
     // 본문(리치 에디터) 이미지 업로드 진행 상태 — 하단 첨부용 uploading과 별개로 추적한다.
     const [editorUploading, setEditorUploading] = useState(false);
-    const [socialNotice, setSocialNotice] = useState<NoticeData | null>(null);
     // 행 클릭 상세 패널 대상(id 로 들고 있어 삭제·새로고침 뒤 사라진 공지는 패널도 자동으로 닫힌다)
     const [detailNoticeId, setDetailNoticeId] = useState<string | null>(null);
 
@@ -439,8 +434,6 @@ export default function NoticesAdminClient({
                 </AdminModal>
             )}
 
-            {socialNotice && <NoticeSocialModal notice={socialNotice} onClose={() => setSocialNotice(null)} />}
-
             {/* 공지 목록 — 한 줄 행(고정 | 제목 | 대상 | 첨부 | 작성일 | 관리). 본문 미리보기·대상 반·첨부는 행을 누르면 상세 패널 */}
             {notices.length === 0 ? (
                 <div className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-4 text-center text-sm text-[var(--color-academy-muted)]">
@@ -489,14 +482,10 @@ export default function NoticesAdminClient({
                                                 </td>
                                                 <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{atts.length > 0 ? `${atts.length}개` : "-"}</td>
                                                 <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-muted)]">{toKstYmd(n.createdAt)}</td>
-                                                {/* 관리: 소셜 발행·수정·삭제(행 클릭=상세 패널과 겹치지 않게 전파 차단). 함수·확인창은 기존 그대로 */}
+                                                {/* 관리: 수정·삭제(행 클릭=상세 패널과 겹치지 않게 전파 차단). 함수·확인창은 기존 그대로.
+                                                    2026-11-18: «소셜 발행»(인스타 피드·스토리)은 결정표 insta-auto-publish «안 쓴다»로 지웠다. */}
                                                 <td className="admin-cell-center px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
                                                     <div className="inline-flex gap-1">
-                                                        <button type="button" onClick={() => setSocialNotice(n)}
-                                                            className="academy-button-tonal academy-button-sm"
-                                                            title="소셜 발행" aria-label={`${n.title} 소셜 발행`}>
-                                                            소셜 발행
-                                                        </button>
                                                         <button type="button" onClick={() => startEdit(n)}
                                                             className="academy-button-tonal academy-button-sm"
                                                             title="수정" aria-label={`${n.title} 수정`}>
@@ -580,10 +569,6 @@ export default function NoticesAdminClient({
                             <button type="button" onClick={() => { setDetailNoticeId(null); startEdit(d); }}
                                 className="academy-button-secondary">
                                 수정
-                            </button>
-                            <button type="button" onClick={() => { setDetailNoticeId(null); setSocialNotice(d); }}
-                                className="academy-button-secondary">
-                                소셜 발행
                             </button>
                             <button type="button" onClick={() => handleDelete(d.id)}
                                 className="academy-button-danger ml-auto">

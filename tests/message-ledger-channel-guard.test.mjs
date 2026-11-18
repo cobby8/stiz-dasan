@@ -16,7 +16,7 @@ import { readFileSync } from "node:fs";
 
 const ledger = readFileSync(new URL("../src/lib/message-ledger.ts", import.meta.url), "utf8");
 const adminActions = readFileSync(new URL("../src/app/actions/admin.ts", import.meta.url), "utf8");
-const cron = readFileSync(new URL("../src/app/api/cron/scheduled-messages/route.ts", import.meta.url), "utf8");
+// 2026-11-18: 예약 문자 크론(/api/cron/scheduled-messages)은 예약을 넣는 길이 없어 지웠다 — 그 크론만 보던 단언도 뺐다.
 
 test("① 장부는 허용 채널 목록으로 값을 거른다", () => {
   assert.match(ledger, /ALLOWED_DELIVERY_CHANNELS/);
@@ -65,25 +65,7 @@ test("② 수동 발송: 장부 기록이 실패해도 발송 성공은 성공�
   assert.match(block, /다시 보내지 마세요/, "원장이 재발송하지 않도록 문구로 알려야 한다");
 });
 
-test("② 예약 발송: 발송 판정을 장부 기록보다 **먼저** 확정한다", () => {
-  const sendIdx = cron.indexOf("await sendSmsDetailed");
-  const markIdx = cron.indexOf("await markSent(item.id)");
-  const finalizeIdx = cron.indexOf("await finalizeMessageDelivery");
-  assert.ok(sendIdx > 0 && markIdx > 0 && finalizeIdx > 0);
-  assert.ok(markIdx < finalizeIdx,
-    "markSent 가 finalizeMessageDelivery 보다 뒤에 있으면, 장부 실패 시 재시도로 중복 발송된다");
-});
-
-test("② 예약 발송: 장부 기록 실패는 따로 잡아 재시도를 유발하지 않는다", () => {
-  const finalizeIdx = cron.indexOf("await finalizeMessageDelivery");
-  const block = cron.slice(finalizeIdx - 300, finalizeIdx + 900);
-  assert.match(block, /try \{/);
-  assert.match(block, /catch \(ledgerError\)/);
-  assert.match(block, /장부 기록 실패\(발송은 완료됨\)/);
-});
-
 test("예외를 로그 없이 삼키지 않는다(원인 추적 가능)", () => {
   // 08:00 발송이 왜 실패했는지 로그만으로는 끝내 알 수 없었던 원인.
-  assert.match(cron, /console\.error\(`\[cron\/scheduled-messages\] 처리 실패/);
   assert.match(adminActions, /console\.error\("\[manual-sms\] 장부 기록 실패/);
 });

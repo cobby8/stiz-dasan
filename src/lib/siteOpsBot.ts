@@ -28,12 +28,6 @@ export type SiteOpsBotResult = {
 
 const MANUAL_STATUSES = new Set<SiteOpsCheckStatus>(["warning", "critical"]);
 
-function toBool(value: unknown) {
-  if (typeof value === "boolean") return value;
-  if (typeof value === "string") return value === "true" || value === "1";
-  return Boolean(value);
-}
-
 function countFrom(rows: Array<{ count: number }>) {
   return Number(rows[0]?.count ?? 0);
 }
@@ -258,65 +252,6 @@ async function checkBackup(checks: SiteOpsCheck[]) {
   }
 }
 
-async function checkInstagram(checks: SiteOpsCheck[], settings: any) {
-  const autoPublish = toBool(settings?.instagramAutoPublishEnabled ?? settings?.instagramautopublishenabled);
-  const accountId = settings?.instagramBusinessAccountId ?? settings?.instagrambusinessaccountid ?? process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID;
-  const accessToken = process.env.INSTAGRAM_ACCESS_TOKEN?.trim() || process.env.META_ACCESS_TOKEN?.trim();
-  const publicUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim() || process.env.NEXT_PUBLIC_BASE_URL?.trim() || process.env.VERCEL_URL?.trim();
-
-  if (!autoPublish) {
-    checks.push({
-      id: "instagram-config",
-      label: "인스타그램 자동 게시",
-      status: "ok",
-      message: "자동 게시가 꺼져 있어 필수 설정 점검을 건너뜁니다.",
-      actionHref: "/admin/settings",
-      actionLabel: "설정 보기",
-    });
-  } else {
-    const missing = [
-      !accountId ? "계정 ID" : null,
-      !accessToken ? "Access Token" : null,
-      !publicUrl ? "공개 사이트 URL" : null,
-    ].filter(Boolean);
-
-    checks.push({
-      id: "instagram-config",
-      label: "인스타그램 자동 게시",
-      status: missing.length === 0 ? "ok" : "critical",
-      message: missing.length === 0
-        ? "인스타그램 자동 게시 설정이 준비되어 있습니다."
-        : `인스타그램 자동 게시에 필요한 ${missing.join(", ")} 설정이 없습니다.`,
-      actionHref: "/admin/settings",
-      actionLabel: "설정 확인",
-    });
-  }
-
-  const failedDrafts = await countRows(
-    `SELECT COUNT(*)::int AS count FROM "SocialPostDraft" WHERE status = 'FAILED'`,
-  ).catch(() => 0);
-  const stuckDrafts = await countRows(
-    `SELECT COUNT(*)::int AS count
-     FROM "SocialPostDraft"
-     WHERE status = 'PUBLISHING'
-       -- 2026-11-14: 대기열이 켜진 것만 센다. 홈페이지만 올리고 원장의 인스타 게시를 기다리는 초안
-       -- ("instagramNextRetryAt" IS NULL)은 멈춘 것이 아니라 사람을 기다리는 중이다.
-       AND "instagramNextRetryAt" IS NOT NULL
-       AND "instagramNextRetryAt" < NOW() - INTERVAL '2 hours'`,
-  ).catch(() => 0);
-
-  checks.push({
-    id: "instagram-drafts",
-    label: "인스타 게시 대기열",
-    status: failedDrafts > 0 || stuckDrafts > 0 ? "warning" : "ok",
-    message: failedDrafts > 0 || stuckDrafts > 0
-      ? `실패 ${failedDrafts}건, 오래 대기 중 ${stuckDrafts}건이 있습니다.`
-      : "실패하거나 오래 멈춘 인스타 게시 초안이 없습니다.",
-    actionHref: "/admin/gallery",
-    actionLabel: "갤러리 확인",
-  });
-}
-
 async function notifyManualActions(checks: SiteOpsCheck[]) {
   const manual = checks.filter((check) => MANUAL_STATUSES.has(check.status));
   if (manual.length === 0) return false;
@@ -416,7 +351,7 @@ export async function runSiteOpsBot(_requestedBy?: AdminAuthUser | "cron"): Prom
     checkPublicContent(checks),
     checkSchedule(checks, settings),
     checkBackup(checks),
-    checkInstagram(checks, settings),
+    // 2026-11-18: 인스타 자동 게시 점검(checkInstagram)은 인스타 게시를 지우며 함께 뺐다.
   ]);
 
   const fixedCount = checks.filter((check) => check.status === "fixed").length;

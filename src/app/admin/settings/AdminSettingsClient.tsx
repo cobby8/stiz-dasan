@@ -244,7 +244,6 @@ export default function AdminSettingsClient({
             formData.forEach((value, key) => {
                 if (typeof value === "string") data[key] = value;
             });
-            data.instagramAutoPublishEnabled = formData.get("instagramAutoPublishEnabled") === "true";
             data.introductionText = introText;
             data.philosophyText = philosophyText;
             data.facilitiesText = facilitiesText;
@@ -612,17 +611,6 @@ export default function AdminSettingsClient({
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">인스타그램 비즈니스 계정 번호</label>
-                                    <input
-                                        name="instagramBusinessAccountId"
-                                        type="text"
-                                        defaultValue={settings?.instagramBusinessAccountId || ""}
-                                        placeholder="예: 1784..."
-                                        className="academy-input font-mono"
-                                    />
-                                    <p className="text-xs text-[var(--color-academy-faint)] mt-1.5">인스타그램 게시물 가져오기와 자동 업로드에 사용됩니다.</p>
-                                </div>
-                                <div>
                                     <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">네이버 플레이스 URL</label>
                                     <input
                                         name="naverPlaceUrl"
@@ -643,19 +631,6 @@ export default function AdminSettingsClient({
                                     />
                                 </div>
                             </div>
-                            <label className="flex items-start gap-3 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] p-3 text-sm">
-                                <input
-                                    type="checkbox"
-                                    name="instagramAutoPublishEnabled"
-                                    value="true"
-                                    defaultChecked={settings?.instagramAutoPublishEnabled === true}
-                                    className="mt-1 rounded border-[var(--color-academy-line-input)]"
-                                />
-                                <span>
-                                    <span className="block font-medium text-[var(--color-academy-muted)]">갤러리 새 게시물 인스타그램 자동 업로드</span>
-                                    <span className="block text-xs text-[var(--color-academy-faint)] mt-1">켜면 관리자 갤러리에 새 공개 게시물을 만들 때 사진을 인스타그램에도 발행합니다(여러 장이면 최대 10장을 한 게시물로 묶어 올립니다).</span>
-                                </span>
-                            </label>
                         </div>
                     </section>
 

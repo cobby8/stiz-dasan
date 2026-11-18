@@ -30,15 +30,7 @@
       "schedule": "0 15 * * *"
     },
     {
-      "path": "/api/cron/social-posts",
-      "schedule": "*/5 * * * *"
-    },
-    {
       "path": "/api/cron/push-outbox",
-      "schedule": "* * * * *"
-    },
-    {
-      "path": "/api/cron/scheduled-messages",
       "schedule": "* * * * *"
     },
     {

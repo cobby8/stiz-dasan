@@ -14,8 +14,6 @@ import InstagramFeedPreview from "@/components/instagram/InstagramFeedPreview";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { toKstYmd } from "@/lib/datetime/kst";
 import type { SocialPostDraft } from "@/lib/socialDrafts";
-import { isInstagramApprovalPending } from "@/lib/socialPublishQueueRules";
-import { instagramConnectionBadge, instagramErrorGuide } from "@/lib/socialPostMessages";
 import { askConfirm, showNotice } from "@/components/ui/feedback";
 
 const GalleryPostFormModal = dynamic(() => import("./GalleryPostFormModal"), {
@@ -36,17 +34,9 @@ type GalleryPost = {
   className: string | null;
 };
 type ClassInfo = { id: string; name: string; program?: { name: string } | null };
-type InstagramStatus = {
-  profileUrl: string;
-  businessAccountId: string;
-  autoPublishEnabled: boolean;
-  hasAccessToken: boolean;
-  hasBusinessAccountId: boolean;
-};
 type GalleryPayload = {
   posts: GalleryPost[];
   classes: ClassInfo[];
-  instagramStatus: InstagramStatus;
   socialDrafts: SocialPostDraft[];
   pagination: GalleryPagination;
 };
@@ -63,14 +53,6 @@ type GalleryPagination = {
   nextOffset: number | null;
   partial: boolean;
 };
-
-function normalizeInstagramProfileUrl(url: string) {
-  const trimmed = url.trim();
-  if (!trimmed) return "";
-  if (trimmed.startsWith("@")) return `https://www.instagram.com/${trimmed.slice(1)}`;
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  return `https://${trimmed}`;
-}
 
 function parseMedia(mediaJSON: string): MediaItem[] {
   try {
@@ -149,13 +131,11 @@ function GalleryErrorState({ onRetry }: { onRetry: () => void }) {
 export default function GalleryAdminClient({
   posts: initialPosts,
   classes: initialClasses,
-  instagramStatus: initialInstagramStatus,
   socialDrafts: initialSocialDrafts,
   pagination: initialPagination,
 }: {
   posts?: GalleryPost[];
   classes?: ClassInfo[];
-  instagramStatus?: InstagramStatus;
   socialDrafts?: SocialPostDraft[];
   pagination?: GalleryPagination;
 }) {
@@ -163,7 +143,6 @@ export default function GalleryAdminClient({
   const hasInitialData = initialPosts !== undefined && initialClasses !== undefined;
   const [posts, setPosts] = useState<GalleryPost[]>(initialPosts ?? []);
   const [classes, setClasses] = useState<ClassInfo[]>(initialClasses ?? []);
-  const [instagramStatus, setInstagramStatus] = useState<InstagramStatus | undefined>(initialInstagramStatus);
   const [drafts, setDrafts] = useState<SocialPostDraft[]>(initialSocialDrafts ?? []);
   const [pagination, setPagination] = useState<GalleryPagination | undefined>(initialPagination);
   const [loading, setLoading] = useState(!hasInitialData);
@@ -184,7 +163,6 @@ export default function GalleryAdminClient({
       const data = (await response.json()) as GalleryPayload;
       setPosts(data.posts);
       setClasses(data.classes);
-      setInstagramStatus(data.instagramStatus);
       setDrafts(data.socialDrafts);
       setPagination(data.pagination);
     } catch (error) {
@@ -199,10 +177,6 @@ export default function GalleryAdminClient({
     if (!hasInitialData) void loadGallery();
   }, [hasInitialData, loadGallery]);
 
-  const instagramReady = Boolean(instagramStatus?.hasAccessToken && instagramStatus.hasBusinessAccountId);
-  // 2026-11-14 사진·인스타 점검: 서버는 연결 정보가 «있는지»만 안다. 연결됐다고 단정하지 않는다.
-  const instagramBadge = instagramConnectionBadge(instagramReady);
-  const instagramProfileUrl = normalizeInstagramProfileUrl(instagramStatus?.profileUrl || "");
   const hasMorePosts = Boolean(pagination?.hasMore);
 
   async function loadMorePosts() {
@@ -289,27 +263,19 @@ export default function GalleryAdminClient({
   }
 
   async function handleDraftPublish(draft: SocialPostDraft) {
-    if (!(await askConfirm("이 초안을 홈페이지 갤러리와 인스타그램에 바로 게시할까요?"))) return;
+    // 2026-11-18 결정표 insta-auto-publish «안 쓴다»: 게시 = 홈페이지 갤러리만.
+    if (!(await askConfirm("이 초안을 홈페이지 갤러리에 바로 게시할까요?"))) return;
     setDraftMessage(null);
     runDraftAction(draft.id, "publish", async () => {
       try {
         const result = await publishSocialPostDraft(draft.id);
         patchDraft(draft.id, result.draft);
-        // 2026-11-14 사진·인스타 점검: 결과를 실제 상태대로 말한다(예전에는 건너뛰어도 «게시 완료»였다).
         if ("blocked" in result && result.blocked === true) {
           // 학생이 지정되지 않은 사진 — 게시되지 않았다. 서버가 준 «다음에 할 일» 안내를 보여 준다.
           setDraftMessage(result.error);
           return;
         }
-        if ("instagramOwnerOnly" in result && result.instagramOwnerOnly === true) {
-          setDraftMessage("홈페이지 갤러리에 게시했습니다. 인스타그램 게시는 원장님 계정에서만 할 수 있습니다.");
-        } else if (result.draft.status === "PUBLISHED") {
-          setDraftMessage("홈페이지 갤러리와 인스타그램 게시가 완료됐습니다.");
-        } else if (result.draft.status === "FAILED") {
-          setDraftMessage("홈페이지 갤러리는 게시됐고, 인스타그램 게시는 실패했습니다. 아래 사유를 확인해 주세요.");
-        } else {
-          setDraftMessage("홈페이지 갤러리는 게시됐고, 인스타그램은 재시도 대기 중입니다.");
-        }
+        setDraftMessage("홈페이지 갤러리에 게시했습니다.");
         await loadGallery();
       } catch (error) {
         setDraftMessage(adminErrorText(error, "게시 중 오류가 발생했습니다."));
@@ -386,49 +352,12 @@ export default function GalleryAdminClient({
         </div>
       )}
 
-      {instagramStatus && (
-        <section className="rounded-lg border border-[var(--color-academy-line)] bg-white p-4">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="academy-section-title">인스타그램 연결</h2>
-                <span
-                  className={`rounded-full px-2 py-0.5 text-xs ${
-                    instagramReady ? "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]" : "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]"
-                  }`}
-                >
-                  {instagramBadge.label}
-                </span>
-                {instagramStatus.autoPublishEnabled && (
-                  <span className="rounded-full bg-[var(--color-academy-soft)] px-2 py-0.5 text-xs text-[var(--color-academy-muted)]">
-                    즉시 업로드 켜짐
-                  </span>
-                )}
-              </div>
-              <p className="mt-1 text-xs text-[var(--color-academy-muted)]">{instagramBadge.hint}</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {instagramProfileUrl && (
-                <a
-                  href={instagramProfileUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="academy-button-tonal academy-button-sm"
-                >
-                  프로필 열기
-                </a>
-              )}
-            </div>
-          </div>
-        </section>
-      )}
-
       <section className="rounded-lg border border-[var(--color-academy-line)] bg-white p-4">
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
             <h2 className="academy-section-title">선생님 업로드 대기</h2>
             <p className="text-sm text-[var(--color-academy-muted)]">
-              문구를 직접 수정한 뒤 게시하면 홈페이지 갤러리와 인스타그램에 함께 반영됩니다.
+              문구를 직접 수정한 뒤 게시하면 홈페이지 갤러리에 반영됩니다.
             </p>
           </div>
           <span className="w-fit rounded-full bg-[var(--color-academy-soft)] px-3 py-1 text-xs tabular-nums text-[var(--color-academy-muted)]">
@@ -450,16 +379,13 @@ export default function GalleryAdminClient({
           <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
             {drafts.map((draft) => {
               const media = parseMedia(draft.mediaJSON).filter((item) => item.type === "image");
-              // 홈페이지에는 올라갔고 인스타는 아직 누르지 않은 초안 — 저절로 풀리지 않으므로 «처리 중»으로 잠그지 않는다.
-              const instagramPending = isInstagramApprovalPending(draft);
-              // 인스타 게시가 실제로 진행 중(재시도 대기 포함)일 때만 잠근다.
-              const hasPublishingStatus = draft.status === "PUBLISHING" && !instagramPending;
-              // 인스타 오류 원문(영어)을 한국어 안내로 — 원문은 작은 글씨로 덧붙인다.
-              const publishErrorGuide = instagramErrorGuide(draft.instagramPublishError);
+              // 2026-11-18: 인스타 단계가 없어져 «게시 처리 중»은 저절로 풀리지 않는다(갤러리 단계가 중간에 실패한 경우 등).
+              // 잠그지 않고 «다시 게시»로 마무리하게 둔다. 문구 저장은 서버가 이 상태를 받지 않으므로 잠근다.
+              const unfinishedPublish = draft.status === "PUBLISHING";
               const isDraftBusy = draftBusy?.id === draft.id;
               const isPublishingDraft = isDraftBusy && draftBusy?.action === "publish";
               const isRejectingDraft = isDraftBusy && draftBusy?.action === "reject";
-              const isEditLocked = isDraftBusy || hasPublishingStatus;
+              const isEditLocked = isDraftBusy || unfinishedPublish;
               return (
                 <div key={draft.id} className="grid gap-4 rounded-lg border border-[var(--color-academy-line)] p-3 md:grid-cols-[minmax(220px,320px)_1fr]">
                   <InstagramFeedPreview
@@ -485,14 +411,9 @@ export default function GalleryAdminClient({
                             재시도 필요
                           </span>
                         )}
-                        {hasPublishingStatus && (
-                          <span className="rounded-full bg-[var(--color-academy-soft)] px-2 py-0.5 text-xs text-[var(--color-academy-muted)]">
-                            게시 처리 중
-                          </span>
-                        )}
-                        {instagramPending && (
+                        {unfinishedPublish && (
                           <span className="rounded-full bg-[var(--color-academy-warning-soft)] px-2 py-0.5 text-xs text-[var(--color-academy-warning)]">
-                            홈페이지 게시됨 · 인스타 미게시
+                            게시 마무리 필요
                           </span>
                         )}
                       </div>
@@ -503,16 +424,6 @@ export default function GalleryAdminClient({
                         placeholder="게시물 제목"
                       />
                       {draft.memo && <p className="text-xs leading-5 text-[var(--color-academy-muted)]">메모: {draft.memo}</p>}
-                      {publishErrorGuide && (
-                        <div className="rounded-lg bg-[var(--color-academy-danger-soft)] p-2 text-xs leading-5 text-[var(--color-academy-danger)]">
-                          <p>{publishErrorGuide.message}</p>
-                          {publishErrorGuide.detail && (
-                            <p className="mt-1 break-words text-xs text-[var(--color-academy-muted)]">
-                              원문: {publishErrorGuide.detail}
-                            </p>
-                          )}
-                        </div>
-                      )}
                     </div>
                     <div className="grid grid-cols-3 gap-2">
                       <button
@@ -526,10 +437,10 @@ export default function GalleryAdminClient({
                       <button
                         type="button"
                         onClick={() => handleDraftPublish(draft)}
-                        disabled={isEditLocked}
+                        disabled={isDraftBusy}
                         className="academy-button-primary"
                       >
-                        {isPublishingDraft || hasPublishingStatus ? "처리 중" : instagramPending ? "인스타 게시" : draft.status === "FAILED" ? "다시 게시" : "게시"}
+                        {isPublishingDraft ? "처리 중" : draft.status === "FAILED" || unfinishedPublish ? "다시 게시" : "게시"}
                       </button>
                       <button
                         type="button"

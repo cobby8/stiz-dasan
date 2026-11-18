@@ -1,16 +1,13 @@
 "use server";
 
 import { revalidatePath, revalidateTag } from "next/cache";
-import { requireAdmin, requireOwner, requireStaff } from "@/lib/auth-guard";
+import { requireAdmin, requireStaff } from "@/lib/auth-guard";
 import { generateSocialCaptionDraft } from "@/lib/socialCaptionAI";
-import {
-  publishSocialDraftToInstagramNow,
-  upsertGalleryPostFromSocialDraft,
-} from "@/lib/socialPostPublishing";
+import { upsertGalleryPostFromSocialDraft } from "@/lib/socialPostPublishing";
 import {
   createSocialPostDraftRecord,
   getSocialPostDraftById,
-  markSocialPostDraftPublishing,
+  markSocialPostDraftGalleryPublished,
   parseSocialDraftMedia,
   rejectSocialPostDraftRecord,
   safeSocialDraftMediaJSON,
@@ -61,7 +58,7 @@ export async function createSocialPostDraft(data: {
   const mediaItems = parseSocialDraftMedia(mediaJSON).filter((item) => item.type === "image");
 
   if (mediaItems.length === 0) {
-    throw new Error("사진을 최소 1장 이상 올려주세요. 현재 자동 인스타 업로드는 사진만 지원합니다.");
+    throw new Error("사진을 최소 1장 이상 올려주세요. 현재 홈페이지 갤러리 게시는 사진만 지원합니다.");
   }
 
   const aiDraft = await generateSocialCaptionDraft({
@@ -130,7 +127,7 @@ export async function rejectSocialPostDraft(id: string) {
 /**
  * 학생이 지정되지 않은 초안인가 — 동의 검사(studentMediaConsent)가 «학생 미지정»으로 막는 것과 같은 조건.
  * 여기서는 규칙을 바꾸지 않는다. 같은 조건을 먼저 보고 알아듣기 쉬운 안내로 바꿀 뿐이며,
- * 이 함수를 지나쳐도 갤러리·인스타 단계의 동의 검사가 그대로 다시 막는다.
+ * 이 함수를 지나쳐도 갤러리 단계의 동의 검사가 그대로 다시 막는다.
  */
 function isSubjectUnassignedDraft(draft: Pick<SocialPostDraft, "sessionId" | "classId" | "subjectStudentIds">) {
   // 공개 게시 동의 검사가 꺼져 있으면(원장 결정 2026-11-14 — 관리자·원장이 사진을 보고 직접 승인) 학생 미지정으로 막지 않는다.
@@ -161,11 +158,12 @@ export async function publishSocialPostDraftToGallery(id: string) {
 
   const mediaItems = parseSocialDraftMedia(currentDraft!.mediaJSON).filter((item) => item.type === "image");
   if (mediaItems.length === 0) {
-    throw new Error("인스타그램 자동 게시에는 사진이 최소 1장 필요합니다.");
+    throw new Error("홈페이지 갤러리 게시에는 사진이 최소 1장 필요합니다.");
   }
 
   const galleryPostId = await upsertGalleryPostFromSocialDraft(currentDraft!);
-  const draft = await markSocialPostDraftPublishing(id, { galleryPostId });
+  // 2026-11-18: 인스타 단계가 없어졌으므로 갤러리가 끝나면 초안을 «게시 완료»로 닫는다.
+  const draft = await markSocialPostDraftGalleryPublished(id, { galleryPostId });
 
   console.info("[media-consent] gallery-approved", {
     draftId: id,
@@ -179,48 +177,16 @@ export async function publishSocialPostDraftToGallery(id: string) {
   return { ok: true, draft, galleryPostId, consent };
 }
 
-export async function publishSocialPostDraftToInstagram(id: string) {
-  // 외부 SNS 게시 권한은 현재 역할 체계에서 최고 관리자(원장)에게만 부여합니다.
-  const owner = await requireOwner();
-
-  const currentDraft = await getSocialPostDraftById(id);
-  if (currentDraft?.status === "PUBLISHED") {
-    return { ok: true, draft: currentDraft };
-  }
-
-  if (!currentDraft || !canPublishDraftStatus(currentDraft.status)) {
-    throw new Error("게시할 수 있는 초안을 찾지 못했습니다.");
-  }
-  const consent = await assertSocialDraftMediaConsent(currentDraft, "INSTAGRAM");
-
-  const mediaItems = parseSocialDraftMedia(currentDraft!.mediaJSON).filter((item) => item.type === "image");
-  if (mediaItems.length === 0) {
-    throw new Error("인스타그램 자동 게시에는 사진이 최소 1장 필요합니다.");
-  }
-
-  // ownerApproved: 원장 확인(requireOwner)을 통과한 이 경로에서만 인스타 대기열을 켠다.
-  const result = await publishSocialDraftToInstagramNow(id, { queueMode: true, ownerApproved: true });
-  console.info("[media-consent] instagram-approved", {
-    draftId: id,
-    approvedByAuthUserId: owner.id,
-    scope: consent.scope,
-    studentCount: consent.studentCount,
-  });
-  revalidateSocialPostPaths();
-  return { ...result, consent };
-}
-
 /**
- * 화면의 «게시» 버튼이 부르는 한 묶음: 홈페이지 갤러리 → 인스타그램.
+ * 화면의 «게시» 버튼이 부르는 것: 홈페이지 갤러리에 올리고 초안을 «게시 완료»로 닫는다.
  *
- * 2026-11-14 사진·인스타 점검:
- * - 학생이 지정되지 않은 초안(빠른 업로드)은 공개 동의를 확인할 수 없어 게시할 수 없다. 규칙은 그대로 두고,
- *   오류를 던지는 대신 «다음에 할 일»이 담긴 안내를 값으로 돌려준다(던진 오류 문구는 운영 화면에서 가려질 수 있다).
- * - 부원장은 갤러리까지만 된다. 예전에는 갤러리가 올라간 뒤 인스타 단계에서 권한 오류가 나 «게시 실패»로만 보였다.
- *   서버 권한(인스타 = 원장)은 그대로이고, 결과에 그 사실을 담아 화면이 정확히 말하게 한다.
+ * 2026-11-18 결정표 insta-auto-publish «안 쓴다»: 인스타그램 게시는 지웠다(갤러리만).
+ * 2026-11-14 사진 점검: 학생이 지정되지 않은 초안(빠른 업로드)은 공개 동의를 확인할 수 없어 게시할 수 없다.
+ *   규칙은 그대로 두고, 오류를 던지는 대신 «다음에 할 일»이 담긴 안내를 값으로 돌려준다
+ *   (던진 오류 문구는 운영 화면에서 가려질 수 있다).
  */
 export async function publishSocialPostDraft(id: string) {
-  const staff = await requireAdmin();
+  await requireAdmin();
 
   const currentDraft = await getSocialPostDraftById(id);
   if (currentDraft && canPublishDraftStatus(currentDraft.status) && isSubjectUnassignedDraft(currentDraft)) {
@@ -233,8 +199,5 @@ export async function publishSocialPostDraft(id: string) {
   }
 
   const gallery = await publishSocialPostDraftToGallery(id);
-  if (staff.appUserRole !== "ADMIN") {
-    return { ok: false as const, draft: gallery.draft, instagramOwnerOnly: true as const };
-  }
-  return publishSocialPostDraftToInstagram(id);
+  return { ok: true as const, draft: gallery.draft, galleryPostId: gallery.galleryPostId };
 }

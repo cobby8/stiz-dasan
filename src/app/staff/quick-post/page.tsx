@@ -4,7 +4,7 @@ import { requireStaff } from "@/lib/auth-guard";
 import QuickPostClient from "./QuickPostClient";
 
 export const dynamic = "force-dynamic";
-// 2026-11-14 검수: 이 화면의 «게시» 서버 액션이 인스타를 부른다. 실행 시간 제한을 명시한다(vercel.json 기본값과 같은 60초).
+// 이 화면의 «게시» 서버 액션은 사진을 공개 저장소로 복사한다. 실행 시간 제한을 명시한다(vercel.json 기본값과 같은 60초).
 export const maxDuration = 60;
 
 export default async function StaffQuickPostPage() {
@@ -34,11 +34,11 @@ export default async function StaffQuickPostPage() {
           name: staff.appUserName,
           role: staff.appUserRole,
         }}
-        // 2026-11-14 사진·인스타 점검: 게시 권한을 서버에서 계산해 내려 준다(서버 액션의 검사와 같은 기준).
-        // 갤러리 = 관리자(원장·부원장) · 인스타 = 원장. 관리자 권한은 추가 역할로 줄 수 없어 주 역할만 본다.
+        // 게시 권한을 서버에서 계산해 내려 준다(서버 액션의 검사와 같은 기준).
+        // 갤러리 = 관리자(원장·부원장). 관리자 권한은 추가 역할로 줄 수 없어 주 역할만 본다.
+        // 2026-11-18: 인스타 게시는 지웠다(결정표 insta-auto-publish «안 쓴다») — «게시» = 홈페이지 갤러리만.
         permissions={{
           canPublishGallery: staff.appUserRole === "ADMIN" || staff.appUserRole === "VICE_ADMIN",
-          canPublishInstagram: staff.appUserRole === "ADMIN",
         }}
         // 공개 게시 동의 검사가 켜져 있을 때만 «학생 미지정 사진은 게시할 수 없다»는 안내를 보인다(지금은 꺼짐)
         consentGateEnabled={PUBLIC_POST_CONSENT_GATE_ENABLED}

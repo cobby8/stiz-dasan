@@ -26,15 +26,12 @@ test("DB 미디어 참조를 먼저 제거하고 공개 사본은 durable 삭제
 
 test("게시 대상 snapshot과 provider 결과를 durable attempt에 기록한다", () => {
   assert.match(publishing, /withSocialDraftPublicationReservation/);
-  assert.match(publishing, /state='AMBIGUOUS'/);
-  assert.match(publishing, /"providerMediaId"/);
+  // 갤러리 게시도 시도 기록에 결과(갤러리 게시물 id)를 남긴다
+  assert.match(publishing, /state='PUBLISHED', "providerMediaId"=\$2/);
   assert.match(migration, /CREATE TABLE IF NOT EXISTS "SocialPublishAttempt"/);
-});
-
-test("불명확한 Instagram 게시물은 자동 재시도하지 않는다", () => {
-  assert.match(publishing, /state='AMBIGUOUS'/);
-  assert.match(publishing, /자동 재발행을 중단/);
-  assert.match(publishing, /"instagramNextRetryAt"=NULL/);
+  // 2026-11-18: 인스타 게시(«결과 불명확» 자동 재발행 중단 포함)는 결정표 insta-auto-publish «안 쓴다»로 지웠다.
+  // 응답 없이 멈춘 시도를 «불명확»으로 돌리는 회수 작업은 철회 대기열에 그대로 남는다.
+  assert.match(queue, /SET state='AMBIGUOUS'[\s\S]{0,160}WHERE state='PUBLISHING' AND "updatedAt" < NOW\(\)-INTERVAL '5 minutes'/);
 });
 
 test("저장소 삭제 worker는 lease 만료 PROCESSING을 회수한다", () => {

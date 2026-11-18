@@ -15,7 +15,6 @@ import InstagramFeedPreview, {
 import { uploadImagesWithProgress } from "@/lib/clientImageUpload";
 import type { SocialPostDraft } from "@/lib/socialDrafts";
 import { userErrorMessage } from "@/components/staff/userErrorMessage";
-import { isInstagramApprovalPending } from "@/lib/socialPublishQueueRules";
 import { QUICK_UPLOAD_CONSENT_NOTICE } from "@/lib/socialPostMessages";
 import { askConfirm } from "@/components/ui/feedback";
 
@@ -31,16 +30,13 @@ const ROLE_LABELS: Record<string, string> = {
 const MAX_UPLOAD_COUNT = 10;
 type UploadProgress = { done: number; total: number };
 
-// 2026-11-14 사진·인스타 점검: 게시 권한은 서버(page.tsx)가 계산해 내려 준다. 화면이 역할로 추측하지 않는다.
-// 서버 액션의 권한 검사(갤러리 = 관리자, 인스타 = 원장)는 그대로이고, 이 값은 «화면이 무엇을 말할지»만 정한다.
+// 게시 권한은 서버(page.tsx)가 계산해 내려 준다. 화면이 역할로 추측하지 않는다.
+// 서버 액션의 권한 검사(갤러리 = 관리자)는 그대로이고, 이 값은 «화면이 무엇을 말할지»만 정한다.
+// 2026-11-18 결정표 insta-auto-publish «안 쓴다»: 게시 = 홈페이지 갤러리만(인스타 게시 권한 값은 뺐다).
 export type QuickPostPermissions = {
   /** 홈페이지 갤러리에 게시할 수 있다(원장·부원장). */
   canPublishGallery: boolean;
-  /** 인스타그램에 게시할 수 있다(원장만). */
-  canPublishInstagram: boolean;
 };
-
-const INSTAGRAM_OWNER_ONLY_TEXT = "인스타그램 게시는 원장님 계정에서만 할 수 있습니다.";
 
 export default function QuickPostClient({
   currentUser,
@@ -67,17 +63,14 @@ export default function QuickPostClient({
   const [isPending, startTransition] = useTransition();
   const busy = isPending || isWorking;
   const canApprove = permissions.canPublishGallery;
-  const canPublishInstagram = permissions.canPublishInstagram;
   // 문구가 AI 초안인지, AI 연결이 안 돼 넣은 기본 문구인지(서버가 알려 준다)
   const [captionSource, setCaptionSource] = useState<"AI" | "FALLBACK" | null>(null);
   const roleLabel = ROLE_LABELS[currentUser.role];
   const isPublished = draft?.status === "PUBLISHED";
-  const hasInstagramIssue = draft?.status === "FAILED";
-  // 홈페이지에는 올라갔고 인스타는 아직 누르지 않은 상태 — 저절로 풀리지 않으므로 버튼을 잠그지 않는다.
-  const instagramApprovalPending = draft ? isInstagramApprovalPending(draft) : false;
-  // 인스타 게시가 실제로 진행 중(재시도 대기 포함)일 때만 «게시 중»으로 잠근다.
-  const hasPublishingStatus = draft?.status === "PUBLISHING" && !instagramApprovalPending;
-  const needsInstagramRetry = hasInstagramIssue || hasPublishingStatus || instagramApprovalPending;
+  // 게시를 눌렀지만 끝나지 않은 초안(실패·중간에 멈춤) — 잠그지 않고 «다시 게시»로 마무리한다.
+  const needsRepublish = draft?.status === "FAILED" || draft?.status === "PUBLISHING";
+  // 문구 저장 잠금 — 게시가 끝났거나, «게시 처리 중»(서버가 저장을 받지 않는 상태)이면 저장할 수 없다.
+  const saveLocked = busy || isPublished || draft?.status === "PUBLISHING";
 
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
@@ -176,23 +169,24 @@ export default function QuickPostClient({
   function handlePublish() {
     if (!draft) return;
 
-    const publishingText = canPublishInstagram
-      ? "홈페이지 갤러리와 인스타그램에 바로 게시하는 중입니다."
-      : "홈페이지 갤러리에 게시하는 중입니다.";
+    const publishingText = "홈페이지 갤러리에 게시하는 중입니다.";
     setError(null);
     setMessage(publishingText);
     setProgressText("수정 내용을 저장하는 중입니다.");
     setIsWorking(true);
     startTransition(async () => {
       try {
-        const saved = await saveSocialPostDraft(draft.id, {
-          title: draft.title,
-          caption,
-          hashtags,
-          lessonType,
-          memo,
-          isPublic: draft.isPublic,
-        });
+        // «게시 처리 중»에 멈춘 초안은 서버가 문구 저장을 받지 않는다 — 저장을 건너뛰고 바로 다시 게시한다.
+        const saved = draft.status === "PUBLISHING"
+          ? { draft }
+          : await saveSocialPostDraft(draft.id, {
+              title: draft.title,
+              caption,
+              hashtags,
+              lessonType,
+              memo,
+              isPublic: draft.isPublic,
+            });
         setProgressText(publishingText);
         const result = await publishSocialPostDraft(saved.draft.id);
         setDraft(result.draft);
@@ -200,14 +194,8 @@ export default function QuickPostClient({
           // 학생이 지정되지 않은 사진 — 게시되지 않았다. 서버가 준 «다음에 할 일» 안내를 그대로 보여 준다.
           setMessage(null);
           setError(result.error);
-        } else if ("instagramOwnerOnly" in result && result.instagramOwnerOnly === true) {
-          setMessage(`홈페이지 갤러리에 게시했습니다. ${INSTAGRAM_OWNER_ONLY_TEXT}`);
-        } else if (result.draft.status === "PUBLISHED") {
-          setMessage("홈페이지 갤러리와 인스타그램 게시가 완료됐습니다.");
-        } else if (result.draft.status === "FAILED") {
-          setMessage("홈페이지 갤러리는 게시됐고, 인스타그램 게시는 실패했습니다. 관리자 갤러리에서 사유를 확인해 주세요.");
         } else {
-          setMessage("홈페이지 갤러리는 게시됐고, 인스타그램은 재시도 대기 중입니다.");
+          setMessage("홈페이지 갤러리에 게시했습니다.");
         }
         setProgressText(null);
         setIsWorking(false);
@@ -235,11 +223,9 @@ export default function QuickPostClient({
   // 게슈탈트 T-05: 되돌리기 어려운 «바로 게시»(외부 공개)와 «새로 작성»(작성 내용 버림)은 한 번 더 묻는다.
   // 선생님 앱의 다른 확인(학부모 공지 발송 등)과 같은 화면 안 확인창(askConfirm) — 앱 웹뷰에서도 막히지 않고 뜬다.
   async function confirmPublish() {
-    const question = needsInstagramRetry
-      ? instagramApprovalPending ? "인스타그램에 게시할까요?" : "인스타그램에 다시 게시할까요?"
-      : canPublishInstagram
-        ? "홈페이지 갤러리와 인스타그램에 바로 게시할까요? 게시하면 바로 공개됩니다."
-        : "홈페이지 갤러리에 게시할까요? 게시하면 바로 공개됩니다.";
+    const question = needsRepublish
+      ? "홈페이지 갤러리에 다시 게시할까요?"
+      : "홈페이지 갤러리에 게시할까요? 게시하면 바로 공개됩니다.";
     if (!(await askConfirm(question))) {
       // 앱 웹뷰는 다른 창이 떠 있으면 확인 창이 조용히 «취소»로 끝난다 — 반응 없음으로 보이지 않게 알린다
       setMessage("게시를 취소했습니다. 게시하려면 게시 버튼을 다시 눌러 주세요.");
@@ -360,21 +346,17 @@ export default function QuickPostClient({
               <div className="text-sm font-semibold">
                 {isPublished
                   ? "게시 완료"
-                  : needsInstagramRetry
-                    ? "홈페이지 게시 완료"
+                  : needsRepublish
+                    ? "게시 마무리 필요"
                     : captionSource === "FALLBACK"
                       ? "기본 문구입니다(AI 연결 안 됨)"
                       : "AI 초안 준비 완료"}
               </div>
               <p className="mt-2 text-xs leading-5 text-[var(--color-academy-success)]">
                 {isPublished
-                  ? "홈페이지 갤러리와 인스타그램 게시가 완료됐습니다."
-                  : hasPublishingStatus
-                    ? "홈페이지 갤러리는 완료됐습니다. 인스타그램은 지금 게시 중이거나 재시도 대기 중입니다."
-                  : instagramApprovalPending
-                    ? `홈페이지 갤러리는 완료됐습니다. 인스타그램에는 아직 올라가지 않았습니다.${canPublishInstagram ? "" : ` ${INSTAGRAM_OWNER_ONLY_TEXT}`}`
-                  : hasInstagramIssue
-                    ? "사진은 홈페이지 갤러리에 올라갔고, 인스타그램 게시만 다시 시도하거나 관리자 설정을 확인하면 됩니다."
+                  ? "홈페이지 갤러리 게시가 완료됐습니다."
+                  : needsRepublish
+                    ? "홈페이지 갤러리 게시가 끝나지 않았습니다. 다시 게시해 주세요."
                     : canApprove
                       ? "문구를 확인하고 필요한 부분을 수정해 주세요."
                       : "문구를 확인하고 필요한 부분을 고쳐 저장해 주세요. 원장님 확인을 거쳐야 게시됩니다."}
@@ -398,16 +380,6 @@ export default function QuickPostClient({
                     홈페이지 갤러리 보기
                   </Link>
                   </HideInInstalledApp>
-                  {draft?.instagramPermalink && (
-                    <a
-                      href={draft.instagramPermalink} data-outside-link
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="academy-button-secondary w-full"
-                    >
-                      인스타그램 게시물 보기
-                    </a>
-                  )}
                 </div>
               )}
             </div>
@@ -421,44 +393,27 @@ export default function QuickPostClient({
               onHashtagsChange={setHashtags}
             />
 
-            {/* 게슈탈트 T-05: 꽉 찬 버튼은 «바로 게시» 하나(주인공), «수정 저장»은 보조.
+            {/* 게슈탈트 T-05: 꽉 찬 버튼은 «게시» 하나(주인공), «수정 저장»은 보조.
                 «새로 작성»은 작성 내용을 버리는 동작이라 아래로 떼어 작은 글자 버튼으로 둔다.
-                2026-11-14 사진·인스타 점검: 게시 권한이 없는 계정(선생님)에는 게시 버튼을 보이지 않고
-                저장(검토 대기)만 둔다. 갤러리만 되는 계정(부원장)은 인스타 게시를 비활성 + 이유 한 줄. */}
+                2026-11-14: 게시 권한이 없는 계정(선생님)에는 게시 버튼을 보이지 않고 저장(검토 대기)만 둔다. */}
             <div className="grid grid-cols-1 gap-2">
               <button
                 type="button"
                 onClick={handleSave}
-                disabled={busy || isPublished}
+                disabled={saveLocked}
                 className="academy-button-secondary min-h-12!"
               >
                 {canApprove ? "수정 저장" : "저장(검토 대기)"}
               </button>
-              {canApprove && !isPublished && (canPublishInstagram || !needsInstagramRetry) && (
+              {canApprove && !isPublished && (
                 <button
                   type="button"
                   onClick={confirmPublish}
-                  disabled={busy || hasPublishingStatus}
+                  disabled={busy}
                   className="academy-button-primary min-h-12!"
                 >
-                  {hasPublishingStatus
-                    ? "인스타그램 게시 중"
-                    : instagramApprovalPending
-                      ? "인스타그램 게시"
-                      : needsInstagramRetry
-                        ? "인스타그램 다시 게시"
-                        : canPublishInstagram
-                          ? "바로 게시"
-                          : "홈페이지 갤러리에 게시"}
+                  {needsRepublish ? "다시 게시" : "홈페이지 갤러리에 게시"}
                 </button>
-              )}
-              {canApprove && !canPublishInstagram && !isPublished && (
-                <div>
-                  <button type="button" disabled className="academy-button-secondary min-h-12! w-full">
-                    인스타그램 게시
-                  </button>
-                  <p className="mt-1 text-xs leading-5 text-[var(--color-academy-muted)]">{INSTAGRAM_OWNER_ONLY_TEXT}</p>
-                </div>
               )}
               {!canApprove && (
                 <p className="text-xs leading-5 text-[var(--color-academy-muted)]">
@@ -477,12 +432,6 @@ export default function QuickPostClient({
               </button>
             </div>
           </section>
-        )}
-
-        {hasPublishingStatus && !busy && (
-          <div role="status" className="rounded-lg border border-[var(--color-academy-info)] bg-[var(--color-academy-info-soft)] p-4 text-sm font-medium text-[var(--color-academy-info)]">
-            <p>인스타그램 게시를 처리 중입니다.</p>
-          </div>
         )}
 
         {busy && (
