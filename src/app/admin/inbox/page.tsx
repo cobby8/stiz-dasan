@@ -97,6 +97,8 @@ export default async function AdminInboxPage({ searchParams }: { searchParams?: 
       counts={counts}
       data={data}
       canDecideStaffRoles={admin.appUserRole === "ADMIN"}
+      // 탭이 주소에 없어 위에서 «건수 있는 첫 탭»을 골랐는지 — 화면이 그 탭을 주소에 박아 둔다(마지막 건 처리 뒤 다른 탭으로 넘어가지 않게)
+      tabInUrl={explicitTab !== null}
       // 랠리즈 은퇴(2026-11-14 원장 결정) — 기본 은퇴, STIZ_RALLYZ_SYNC_RETIRED 가 "0" 일 때만 옛 «랠리즈 반영 확인» 화면
       rallyzRetired={isRallyzSyncRetired(process.env)}
       // «?kind=종류&open=id» — 그 줄 상세를 열어 둔다. 값은 목록에 있는 줄과 «같은지»만 비교하므로 길이만 본다

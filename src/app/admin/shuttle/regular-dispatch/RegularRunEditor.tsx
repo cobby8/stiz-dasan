@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import AcademyTheme from "@/components/academy/AcademyTheme";
 import DriverLocationPanel from "@/components/admin/DriverLocationPanel";
@@ -48,7 +48,7 @@ const DOW_ORDER = [1, 2, 3, 4, 5, 6, 0];
 const NO_BLOCKS: Record<string, string> = {};
 const NO_HOLIDAYS: { ymd: string; weekday: number; title: string }[] = [];
 
-export default function RegularRunEditor({ stops, serviceMonth, months, currentMonth, initialWeekday, initialStudentId, initialStopId, academy = null, riderBlocks = NO_BLOCKS, monthHolidays = NO_HOLIDAYS }: {
+export default function RegularRunEditor({ stops, serviceMonth, months, currentMonth, initialWeekday, initialStudentId, initialStopId, academy = null, riderBlocks = NO_BLOCKS, monthHolidays = NO_HOLIDAYS, headerExtra }: {
   /** 그 달 셔틀 명단 전체(서버가 읽어 준다 — 저장 뒤 router.refresh 로 다시 받는다). */
   stops: RegularShuttleStop[];
   serviceMonth: string;
@@ -65,6 +65,8 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
   riderBlocks?: Record<string, string>;
   /** 그 달 휴무일(연간일정) — 요일 탭 아래 «이 달 휴무» 한 줄. */
   monthHolidays?: { ymd: string; weekday: number; title: string }[];
+  /** 머리줄 «기사 요청» 버튼 바로 뒤에 그릴 것 — 지금은 «당일 변경» 버튼+창(ShuttleDayExceptionAdminPanel). */
+  headerExtra?: ReactNode;
 }) {
   const router = useRouter();
   const laterMonths = useMemo(() => months.filter((m) => m > serviceMonth).sort(), [months, serviceMonth]);
@@ -488,7 +490,8 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
       {/* 한 줄 머리: 제목 · 월 · 기사님 위치·요청(컴팩트 — 히어로 없음) */}
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="academy-section-title mr-auto">정규 셔틀 운행표</h3>
-        <select value={serviceMonth} aria-label="운행 월" onChange={async (e) => { const nextMonth = e.target.value; if (!(await confirmLeave())) return; cancelEditing(); router.push(`/admin/shuttle/regular-dispatch?month=${encodeURIComponent(nextMonth)}`); }}
+        {/* 월 바꾸기는 같은 화면의 보기 설정이라 기록에 쌓지 않는다(replace) — 뒤로 한 번에 앞 화면으로 */}
+        <select value={serviceMonth} aria-label="운행 월" onChange={async (e) => { const nextMonth = e.target.value; if (!(await confirmLeave())) return; cancelEditing(); router.replace(`/admin/shuttle/regular-dispatch?month=${encodeURIComponent(nextMonth)}`); }}
           className="min-h-11 rounded-lg border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 text-sm">
           {months.map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
@@ -504,6 +507,7 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
           기사 요청
           {pendingRequests > 0 && <span className="absolute -right-1.5 -top-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-[var(--color-academy-danger)] px-1 text-xs font-semibold tabular-nums text-[var(--color-academy-on-primary)]">{pendingRequests}</span>}
         </button>
+        {headerExtra}
         {/* 편집은 묶음 머리마다 작은 연필로 들어간다(2026-11-10) — 화면 위 [수정] 버튼은 없앴다. */}
       </div>
       {showLocations && <DriverLocationPanel onClose={() => setShowLocations(false)} />}
@@ -540,7 +544,8 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
               <li key={stop.id}>
                 <button type="button" className="inline-flex min-h-10 max-w-full flex-wrap items-center gap-x-2 rounded-full border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-1 text-left text-xs text-[var(--color-academy-ink)] hover:border-[var(--color-academy-warning)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-academy-warning)]" onClick={async () => {
                   if (!(await confirmLeave())) return;
-                  router.push(`/admin/shuttle/regular-dispatch?${new URLSearchParams({ month: serviceMonth, studentId: stop.studentId ?? "", stopId: stop.id! })}`);
+                  // 같은 화면에서 그 정류장으로 초점만 옮기는 것이라 기록에 쌓지 않는다(replace)
+                  router.replace(`/admin/shuttle/regular-dispatch?${new URLSearchParams({ month: serviceMonth, studentId: stop.studentId ?? "", stopId: stop.id! })}`);
                 }}>
                   <span className="font-semibold">{stop.studentName}</span>
                   <span>{WEEKDAY_LABELS[stop.weekday]}요일 {stop.direction === "BOARD" ? "등원" : "하원"}</span>

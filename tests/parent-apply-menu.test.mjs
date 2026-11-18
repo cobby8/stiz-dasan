@@ -152,13 +152,13 @@ test("③ 신청 부품 안의 이동 주소는 넘겨받은 값만 쓴다(앱 �
   assert.match(detail, /href=\{basePath\}/);
   assert.match(detail, /href=\{`\$\{basePath\}\/\$\{slug\}\/apply`\}/);
   assert.equal((form.match(/href=\{`\$\{basePath\}\/\$\{slug\}`\}/g) ?? []).length, 4);
-  assert.match(form, /<Link href=\{homeHref\} className="public-btn-primary">홈으로<\/Link>/);
+  assert.match(form, /<ReplaceLink href=\{homeHref\} className="public-btn-primary">홈으로<\/ReplaceLink>/); // 2026-11-17 완료 뒤 이동은 바꿔 끼우기
   assert.match(form, /homeHref = "\/"/);
   assert.match(form, /<DoneView slug=\{slug\} basePath=\{basePath\} homeHref=\{homeHref\} /);
   // 접수 API 는 공개 화면과 같은 주소(신청 로직 한 벌)
   assert.match(form, /fetch\(`\/api\/seasonal\/\$\{encodeURIComponent\(slug\)\}\/applications`/);
   assert.match(rental, /RentalClient\(\{ homeHref = "\/", memberMode = false, initialMember = null \}/);
-  assert.match(rental, /<Link href=\{homeHref\} className="public-btn-text mt-2">홈으로<\/Link>/);
+  assert.match(rental, /<ReplaceLink href=\{homeHref\} className="public-btn-text mt-2">홈으로<\/ReplaceLink>/);
   assert.doesNotMatch(rental, /href="\/"/);
 });
 

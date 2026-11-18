@@ -8,6 +8,7 @@ import { customerMessage } from "@/components/parent/customerMessage";
 // 남은 자리는 숫자 대신 3단계(여유/임박/마감)로(재원생 수 비공개 · 2026-11-13 f9)
 import { SEAT_LEVEL_LABEL, SEAT_LEVEL_TEXT_CLASS } from "@/lib/seats/seatLevel";
 import { REQUEST_TONE, TONE_BADGE_CLASS, toneFor } from "@/lib/ui/statusTones";
+import AcademyContactButtons, { asksAcademy, type AcademyContact } from "@/components/parent/AcademyContactButtons";
 
 const STATUS_LABEL: Record<string, string> = { REQUESTED: "승인 대기", SCHEDULED: "보강 확정", ATTENDED: "보강 완료", NO_SHOW: "미출석" };
 
@@ -23,7 +24,8 @@ const ABSENCE_REASONS: { value: string; label: string; hint: string }[] = [
 // 세 목록(보강 필요한 결석·예정 회차·보강 신청 현황)이 같은 «한 목록 + 행 구분선» 틀을 쓴다
 const LIST_CLASS = "divide-y divide-[var(--color-academy-line)] overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-white";
 
-export default function SeasonalMakeupClient({ initial }: { initial: any }) {
+// contact = 학원 전화·카카오 채널(설정값) — 학원이 확정한 결석·못 바꾸는 오류 옆 «전화·문의» 버튼용. 없으면 문의 폼 링크만 보인다
+export default function SeasonalMakeupClient({ initial, contact = null }: { initial: any; contact?: AcademyContact | null }) {
   const [ctx, setCtx] = useState<any>(initial);
   const [open, setOpen] = useState<string>("");
   const [err, setErr] = useState("");
@@ -123,6 +125,8 @@ export default function SeasonalMakeupClient({ initial }: { initial: any }) {
 
       {msg && <div className="mb-3 rounded-lg bg-[var(--color-academy-success-soft)] px-3 py-2 text-sm text-[var(--color-academy-success)]">{msg}</div>}
       {err && <div className="mb-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm text-[var(--color-academy-danger)]">{err}</div>}
+      {/* 오류 글이 학원 문의를 권하면(출결이 이미 확정된 회차 등) 바로 아래에 전화·문의 버튼(2026-11-17 g3) */}
+      {asksAcademy(err) && <AcademyContactButtons contact={contact} className="mb-3 flex flex-wrap items-center gap-2" />}
 
       {/* 예정 회차를 불러오는 중·못 불러옴 — 각각 맞는 표시(실패는 다시 시도 버튼) */}
       {seatsState === "loading" && <p role="status" className="mb-3 text-sm text-[var(--color-academy-muted)]">예정 회차를 불러오는 중이에요</p>}
@@ -211,14 +215,17 @@ export default function SeasonalMakeupClient({ initial }: { initial: any }) {
                       <p className="mt-0.5 flex flex-wrap items-center gap-1.5">
                         <span className={`rounded px-2 py-0.5 text-xs ${TONE_BADGE_CLASS.warning}`}>결석 알림</span>
                         {s.reasonLabel && <span className="text-xs text-[var(--color-academy-muted)]">{s.reasonLabel}</span>}
-                        {s.locked && <span className="text-xs text-[var(--color-academy-faint)]">학원 확정 — 변경은 문의</span>}
+                        {s.locked && <span className="text-xs text-[var(--color-academy-faint)]">학원 확정</span>}
                       </p>
                     )}
                   </div>
                   <span className="shrink-0 text-right text-xs tabular-nums text-[var(--color-academy-muted)]">{s.dateLabel}</span>
                   {/* 동작 — 기존과 같은 조건·같은 함수 */}
                   {s.reported ? (
-                    !s.locked && (
+                    s.locked ? (
+                      // 학원이 확정한 결석 — 여기서 못 바꾼다(서버도 막는다). 글만 두지 않고 바로 전화·문의(2026-11-17 g3)
+                      <AcademyContactButtons contact={contact} className="flex basis-full flex-wrap items-center justify-end gap-2" />
+                    ) : (
                       // 신고 취소 = 그 자리 확인(C-M1) 후 기존 cancelAbsence(s.enrollmentDateId) 그대로
                       <InlineConfirm label="알림 취소" question="이 결석 알림을 취소할까요?" confirmLabel="취소하기"
                         onConfirm={() => cancelAbsence(s.enrollmentDateId)} pending={busy} openClassName="basis-full" />

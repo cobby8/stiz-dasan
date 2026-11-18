@@ -4,6 +4,7 @@ import ProcessSteps from "@/components/landing/ProcessSteps";
 import TestimonialCarousel from "@/components/landing/TestimonialCarousel";
 import CTABanner from "@/components/landing/CTABanner";
 import HomeHeroSlider from "@/components/landing/HomeHeroSlider";
+import { optimizedImageProps } from "@/lib/ui/optimizedImage";
 import HomeStatsBand, { type HomeStats } from "@/components/landing/HomeStatsBand";
 import HomeProgramTiles, { type HomeProgramTile } from "@/components/landing/HomeProgramTiles";
 import HomeVideo from "@/components/landing/HomeVideo";
@@ -93,7 +94,7 @@ export default function LandingPageClient({ initialSettings, testimonials, galle
       })()}
       {displayImages.length > 0 && <SectionLayout compactHeading title="학원 활동 사진" bgColor="section" className="public-content-section">
         <div className="public-home-gallery">{displayImages.map((url, i) => <Link key={url} href="/gallery" aria-label={`학원 활동 사진 ${i + 1} · 갤러리 보기`}>
-          <img src={url} alt={`학원 활동 사진 ${i + 1}`} loading="lazy" decoding="async" />
+          <img {...optimizedImageProps(url, "(max-width: 767px) 50vw, 25vw", 828)} alt={`학원 활동 사진 ${i + 1}`} loading="lazy" decoding="async" />
         </Link>)}</div>
         <div className="public-home-gallery__more"><Link href="/gallery">더 많은 사진 보기 <span aria-hidden="true">→</span></Link></div>
       </SectionLayout>}

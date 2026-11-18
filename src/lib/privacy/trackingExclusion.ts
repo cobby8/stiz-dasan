@@ -27,6 +27,22 @@ export const TOKEN_PATH_PREFIXES = [
     "/mypage/kakao-connect", // 카카오 채널 연결(앱 범위) ?token=
 ] as const;
 
+/**
+ * 광고와 무관한 화면 — 로그인 뒤 화면과 앱·로그인 화면(2026-11-18 속도 조치).
+ * 픽셀 스크립트는 약 200KB 라 사이트 자체 스크립트와 맞먹는다. 광고 성과(방문·체험·수강 신청)는 공개 화면에서만 재므로
+ * 재원생·직원이 매일 여는 화면에는 싣지 않는다. 가입(/signup)·신청(/apply)·공개 화면은 그대로 추적한다.
+ */
+export const APP_PATH_PREFIXES = [
+    "/admin", // 관리자
+    "/staff", // 선생님·기사님
+    "/mypage", // 학부모
+    "/login", // 로그인(앱이 켜지면 처음 보는 화면)
+    "/auth", // 로그인 처리·이어 가기
+    "/store-app", // 스토어 앱 시작 화면
+    "/install", // 앱 설치 안내
+    "/driver", // 기사님 운행표(토큰 없는 진입 포함)
+] as const;
+
 /** 주소 «쿼리»에 열쇠가 들어가는 이름 — 어느 경로든 이 이름이 있으면 추적하지 않는다 */
 // enrollmentHandoff·handoff = 수강 신청 → 계정 연결 인계 열쇠(2026-11-10 재검수 추가)
 export const TOKEN_QUERY_KEYS = ["token", "t", "access", "enrollmentHandoff", "handoff"] as const;
@@ -35,7 +51,7 @@ export const TOKEN_QUERY_KEYS = ["token", "t", "access", "enrollmentHandoff", "h
 export function isTrackingBlockedPath(pathname: string | null | undefined): boolean {
     const path = String(pathname ?? "");
     // "/driver/" 와 "/driver" 는 같은 뜻 — 그 경로 자체 또는 그 아래만(«/driverish» 같은 다른 경로는 아님)
-    return TOKEN_PATH_PREFIXES.some((prefix) => {
+    return [...TOKEN_PATH_PREFIXES, ...APP_PATH_PREFIXES].some((prefix) => {
         const base = prefix.replace(/\/$/, "");
         return path === base || path.startsWith(`${base}/`);
     });

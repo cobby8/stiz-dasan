@@ -263,7 +263,7 @@ test("학부모 화면: «복귀했어요» → 복귀일 → 예정 금액(서�
   assert.match(panel, /period\.carry === "APPROVED" \|\| askPeriod\.carry === "RETURNED"|askPeriod\.carry === "APPROVED" \|\| askPeriod\.carry === "RETURNED"/);
   assert.match(panel, /<span>이월 예정<\/span>/);
   assert.match(panel, /\{Number\(row\.month\.slice\(5, 7\)\)\}월 \{row\.className\} · \{row\.missed\}회 빠짐/);
-  assert.match(panel, /예정 금액이에요\. 학원이 확정하면 알려 드리고, 다음 수강료에서 빼 드려요\./);
+  assert.match(panel, /학원이 확정하면 알려 드리고 다음 수강료에서 빼 드려요/);
   // 근거를 정할 수 없으면 금액 대신 상태를 그대로
   assert.match(panel, /if \(view\.pendingCheck\) \{\s+return <p[^>]*>이월 금액은 \{PERIOD_SETTLE_PARENT_PENDING_CHECK\}<\/p>;/);
   // 학원 등록 기간: «복귀했어요»는 있고 «알림 취소»는 없다 / 복귀 미정이면 달력 위쪽 제한 없음

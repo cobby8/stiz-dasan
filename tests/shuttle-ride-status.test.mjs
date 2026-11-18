@@ -36,7 +36,8 @@ test("driver shuttle page can check passengers and update summary immediately", 
   assert.match(staffPageSource, /StaffShuttleDashboardClient/);
   assert.match(staffDashboardClientSource, /ShuttleRideStatusButtons/);
   assert.match(staffDashboardClientSource, /RideStatusPill/);
-  assert.match(staffDashboardClientSource, /셔틀 기사 앱/);
+  // 2026-11-17: 같은 앱 안의 화면이라 «셔틀 기사 앱» → «기사님 화면»
+  assert.match(staffDashboardClientSource, /기사님 화면/);
   assert.match(staffDashboardClientSource, /체크 대기/);
   assert.match(staffDashboardClientSource, /체크 완료/);
   assert.match(staffDashboardClientSource, /summarizeRideStatuses/);

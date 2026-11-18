@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import Link from "next/link";
+import ScopeBackLink from "@/components/navigation/ScopeBackLink";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import ProfileAvatar from "@/components/common/ProfileAvatar";
 import { profilePhotoUrl } from "@/lib/profilePhoto/rules";
@@ -218,9 +219,9 @@ export default function ClassDetailClient({
             {/* ── 상단 헤더: 뒤로가기 + 반 정보 ── */}
             <div className="min-w-0">
                 {/* 뒤로가기는 글자 버튼, 제목은 공용 머리말 부품(모양 한 가지) */}
-                <Link href="/admin/classes" prefetch={false} className="academy-button-text academy-button-sm -ml-2">
-                    ← 반 목록으로
-                </Link>
+                <ScopeBackLink fallbackHref="/admin/classes" prefetch={false} className="academy-button-text academy-button-sm -ml-2">
+                    ← 뒤로
+                </ScopeBackLink>
                 <AdminPageHeader
                     className="mt-1"
                     title={classData.name}

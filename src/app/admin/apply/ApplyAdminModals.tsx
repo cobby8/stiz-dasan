@@ -19,6 +19,8 @@ import AdminModal from "@/components/admin/AdminModal";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import { REQUEST_TONE, statusBadgeClass } from "@/lib/ui/statusTones";
 import { askConfirm } from "@/components/ui/feedback";
+// 유입 경로의 한글 이름·선택지는 한 곳에서 온다(2026-11-17) — 이 파일에 이름을 따로 적지 않는다
+import { REFERRAL_SOURCE_LABELS, REFERRAL_SOURCE_VALUES, referralSourceLabel } from "@/lib/enrollment/referralSources";
 
 interface EnrollApplication {
     id: string;
@@ -109,21 +111,6 @@ const CONTACT_ACTION_LABELS: Record<string, string> = {
     UPDATED: "내용 수정",
     SCHEDULED: "일정 변경",
     CANCELLED: "취소 처리",
-};
-
-const SOURCE_LABELS: Record<string, string> = {
-    REFERRAL: "지인소개",
-    PASSBY: "지나가다 발견",
-    NAVER_SEARCH: "네이버 키워드 검색",
-    NAVER_BLOG: "네이버 블로그",
-    PORTAL_OTHER: "기타 포털검색",
-    INSTAGRAM: "인스타그램",
-    SOOMGO: "숨고",
-    EXISTING_STUDENT: "기존 수강생",
-    OTHER: "기타",
-    WEBSITE: "홈페이지",
-    NAVER: "네이버",
-    FLYER: "전단지",
 };
 
 const DAY_LABELS: Record<string, string> = {
@@ -851,8 +838,9 @@ function EditApplicationModal({
                             <FormField label="유입 경로">
                                 <select value={form.referralSource} onChange={(e) => setForm({ ...form, referralSource: e.target.value })} className={MODAL_INPUT_CLASS}>
                                     <option value="">선택 안 함</option>
-                                    {Object.entries(SOURCE_LABELS).map(([value, label]) => (
-                                        <option key={value} value={value}>{label}</option>
+                                    {/* 허용 값 16개 전부 — 순서는 허용 목록 순서(공개 신청서 순서 → 관리자 전용 값) */}
+                                    {REFERRAL_SOURCE_VALUES.map((value) => (
+                                        <option key={value} value={value}>{REFERRAL_SOURCE_LABELS[value]}</option>
                                     ))}
                                 </select>
                             </FormField>
@@ -1254,7 +1242,7 @@ function DetailModal({
                             <InfoRow label="탑승지" value={app.shuttlePickup} />
                             <InfoRow label="하차지" value={app.shuttleDropoff} />
                             <InfoRow label="셔틀 희망 시간" value={app.shuttleTime} />
-                            <InfoRow label="유입경로" value={app.referralSource ? (SOURCE_LABELS[app.referralSource] || app.referralSource) : null} />
+                            <InfoRow label="유입경로" value={app.referralSource ? referralSourceLabel(app.referralSource) : null} />
                             <InfoRow label="확정 안내 확인" value={app.applicationNoticeConfirmed} />
                             <InfoRow label="셔틀 주의 확인" value={app.shuttleNoticeConfirmed} />
                         </div>

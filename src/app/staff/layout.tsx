@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { requireStaff } from "@/lib/auth-guard";
 import StaffBottomNav from "./StaffBottomNav";
 import StaffProfileMenu from "./StaffProfileMenu";
 import StaffHomeLink from "./StaffHomeLink";
 import StaffDocumentReload from "./StaffDocumentReload";
 import AppBackButton from "@/components/AppBackButton";
+import ScopeHistoryTracker from "@/components/navigation/ScopeHistoryTracker";
 import AcademyTheme from "@/components/academy/AcademyTheme";
 import { getAccountViewAccess } from "@/lib/account-view-access";
 import { staffShuttleAccess } from "@/lib/shuttle/teacherShuttleView";
@@ -13,7 +14,7 @@ import { StaffPushBanner, StaffPushToggle } from "@/components/push/StaffPushCon
 
 export const metadata: Metadata = {
   title: "스티즈 선생님",
-  description: "수업, 출결, 학생 연락과 일정을 관리하는 스티즈 선생님 앱",
+  description: "수업, 출결, 학생 연락과 일정을 관리하는 스티즈 선생님 화면",
   manifest: "/manifest-staff.json",
   appleWebApp: {
     capable: true,
@@ -43,9 +44,14 @@ export default async function StaffLayout({ children }: { children: ReactNode })
       <header className="academy-staff-header sticky top-0 z-40 border-b px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <div className="mx-auto flex min-h-11 max-w-lg items-center justify-between gap-2">
           <div className="flex shrink-0 items-center gap-2">
-            {/* 설치된 선생님 앱에서는 /staff 밖으로 나가지 않는다.
-                (fallbackHref 가 현재 경로와 같을 때 홈페이지로 튀던 함정도 여기서 막힌다) */}
-            <AppBackButton fallbackHref="/staff" scopeHref="/staff" />
+            {/* 선생님 화면의 «←» 는 /staff 밖으로 나가지 않는다(설치 앱·스토어 앱·브라우저 모두, 2026-11-17).
+                방금 있던 선생님 화면으로 돌아가고, 기록이 없으면 하위 화면은 홈으로, 홈에서는 버튼 자리만 남는다.
+                기사님 전용 계정의 홈은 셔틀 화면이다 — /staff 는 이 계정을 운행 화면으로 넘겨 «←» 가 제자리로 돌아오거나 로그인으로 나갔다 */}
+            {isDriverOnly ? (
+              <AppBackButton fallbackHref="/staff/shuttle" scopeHref="/staff" />
+            ) : (
+              <AppBackButton fallbackHref="/staff" scopeHref="/staff" />
+            )}
             <StaffHomeLink isDriver={isDriverOnly} />
           </div>
           <div className="flex min-w-0 items-center gap-1">
@@ -59,6 +65,11 @@ export default async function StaffLayout({ children }: { children: ReactNode })
       {staff.roles.driver && <StaffPushBanner />}
       {/* 다른 화면에서 넘어왔으면 한 번 새로 불러온다(마이크 허용 머리글은 처음 불러온 문서에만 붙는다). 그리는 것 없음 */}
       <StaffDocumentReload />
+      {/* 선생님·기사님 화면 안 이동 기록(탭마다) — 머리줄 «←» 가 방금 있던 화면으로 돌아가게. 보이지 않는 부품
+          (쿼리 읽기 부품이라 Suspense 로 감싼다 — 감싸지 않으면 화면 전체가 클라이언트 렌더로 밀린다) */}
+      <Suspense fallback={null}>
+        <ScopeHistoryTracker scope="/staff" />
+      </Suspense>
       {children}
       <StaffBottomNav canTeach={staff.roles.teacher} canShuttle={canShuttle} shuttleViewOnly={shuttleAccess.teacherOnly} />
     </AcademyTheme>

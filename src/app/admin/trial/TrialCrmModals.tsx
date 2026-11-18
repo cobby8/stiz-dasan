@@ -16,6 +16,8 @@ import {
 import type { ClassInfo, TrialLead } from "./TrialCrmClient";
 import { trialFeeStatusLabel } from "@/lib/trial-fee-confirmation";
 import { trialClassTimeRange, trialPreferredSlotKeyCandidates } from "@/lib/trial-schedule-display";
+// 유입 경로 선택지(값·한글 이름)는 한 곳에서 온다(2026-11-17) — 이 파일에 <option> 을 손으로 적지 않는다
+import { REFERRAL_SOURCE_LABELS, REFERRAL_SOURCE_VALUES } from "@/lib/enrollment/referralSources";
 
 interface TrialCrmModalsProps {
     addOpen: boolean;
@@ -451,20 +453,10 @@ function TrialEditModal({
                         </FormField>
                         <FormField label="유입 경로">
                             <select value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })} className={MODAL_INPUT_CLASS}>
-                                <option value="WEBSITE">홈페이지</option>
-                                <option value="NAVER">네이버</option>
-                                <option value="NAVER_SEARCH">네이버 키워드 검색</option>
-                                <option value="NAVER_AD">네이버 검색광고</option>
-                                <option value="PORTAL_OTHER">네이버 외 포털검색</option>
-                                <option value="NAVER_BLOG">스티즈 네이버블로그</option>
-                                <option value="INSTAGRAM">인스타그램</option>
-                                <option value="YOUTUBE">유튜브</option>
-                                <option value="REFERRAL">지인소개</option>
-                                <option value="FLYER">전단지</option>
-                                <option value="PASSBY">지나가다 발견</option>
-                                <option value="SOOMGO">숨고</option>
-                                <option value="DANGGEUN">당근마켓</option>
-                                <option value="OTHER">기타</option>
+                                {/* 허용 값 16개 전부 — 이름·순서는 한 곳(referralSources.ts)에서 온다 */}
+                                {REFERRAL_SOURCE_VALUES.map((value) => (
+                                    <option key={value} value={value}>{REFERRAL_SOURCE_LABELS[value]}</option>
+                                ))}
                             </select>
                         </FormField>
                         <FormField label="희망 체험일">
@@ -807,19 +799,10 @@ function AddLeadModal({
                             onChange={(e) => setForm({ ...form, source: e.target.value })}
                             className="academy-input"
                         >
-                            <option value="WEBSITE">홈페이지</option>
-                            <option value="NAVER">네이버</option>
-                            <option value="NAVER_SEARCH">네이버 키워드 검색</option>
-                            <option value="NAVER_AD">네이버 검색광고</option>
-                            <option value="PORTAL_OTHER">네이버 외 포털검색</option>
-                            <option value="NAVER_BLOG">스티즈 네이버블로그</option>
-                            <option value="INSTAGRAM">인스타그램</option>
-                            <option value="YOUTUBE">유튜브</option>
-                            <option value="PASSBY">지나가다 발견</option>
-                            <option value="REFERRAL">지인소개</option>
-                            <option value="SOOMGO">숨고</option>
-                            <option value="DANGGEUN">당근마켓</option>
-                            <option value="OTHER">기타</option>
+                            {/* 허용 값 16개 전부 — 이름·순서는 한 곳(referralSources.ts)에서 온다. 처음 고른 값은 그대로 «홈페이지»(WEBSITE) */}
+                            {REFERRAL_SOURCE_VALUES.map((value) => (
+                                <option key={value} value={value}>{REFERRAL_SOURCE_LABELS[value]}</option>
+                            ))}
                         </select>
                     </div>
                     <div>

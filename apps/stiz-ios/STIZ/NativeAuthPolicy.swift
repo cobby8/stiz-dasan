@@ -8,6 +8,8 @@ enum NativeAuthPolicy {
     static let releaseCallbackScheme = "kr.co.upturnlabs.stizdasan"
     /// 서버가 브라우저 로그인 실패 때 돌려주는 이유(src/lib/native-auth/service.ts 와 같게)
     static let failures: Set<String> = ["no_account", "cancelled", "failed"]
+    /// 앱이 간편로그인을 그만둔 이유(1.0.6) — /auth/native/cancel 에 한 단어로 싣는다. 서버 NATIVE_CANCEL_REASONS·Android CANCEL_REASONS 와 같게.
+    static let cancelReasons: Set<String> = ["user_cancel", "page_left", "timeout", "start_failed", "browser_failed", "returned_empty", "return_failed", "app_closed"]
     static func callbackScheme(debug: Bool) -> String { debug ? developmentCallbackScheme : releaseCallbackScheme }
     static var callbackScheme: String {
         #if DEBUG
@@ -81,7 +83,7 @@ enum NativeAuthPolicy {
         switch reason {
         case "no_account": return "이 간편로그인으로 가입된 학원 계정이 없습니다. 아이디·비밀번호로 로그인하거나 회원가입을 해 주세요."
         case "cancelled": return "간편로그인을 취소했습니다."
-        default: return "로그인이 취소되었거나 완료되지 않았습니다. 다시 시도해 주세요."
+        default: return "로그인을 마치지 못했습니다. 가입을 마치셨다면 앱에서 다시 로그인해 주세요."
         }
     }
 }

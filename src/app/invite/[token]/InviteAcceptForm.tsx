@@ -368,12 +368,16 @@ export default function InviteAcceptForm({
                         </div>
                     </div>
 
-                    <a
-                        href={showInstall ? "/staff/install" : isStaffRole ? "/login?mode=staff" : "/login"}
-                        className="academy-button-primary w-full"
-                    >
-                        {showInstall ? "스태프 앱 설치하기" : "로그인하러 가기"}
+                    {/* 2026-11-17 전수 점검: 예전에는 «스태프 앱 설치하기»(홈 화면 바로가기식 옛 선생님 앱)로 보냈다. 지금은 스토어 앱 하나라
+                        로그인이 먼저다. 앱이 없는 분께만 스토어 설치 주소를 작게 알려 준다(비밀번호만 바꾼 분은 로그인만). */}
+                    <a href="/login" className="academy-button-primary w-full">
+                        로그인하러 가기
                     </a>
+                    {showInstall && !isReset && (
+                        <a href="/install" className="academy-button-text mt-2 w-full">
+                            스티즈농구교실 앱 설치하기
+                        </a>
+                    )}
                 </div>
             )}
         </div>

@@ -804,7 +804,7 @@ test("⑧ 수정 시트: 바로 반영 칸·예시 글·변경 신청·확인 �
   assert.match(family, /대표 보호자만 바꿀 수 있어요/);
   // 바깥을 눌러서는 닫히지 않고, 고친 채 닫으려 하면 한 번 묻는다
   const sheetSource = read("src/app/mypage/record/ChildInfoEditSheet.tsx");
-  assert.match(sheetSource, /<ListDetailPanel onClose=\{requestClose\} titleId="child-info-edit-title" closeOnBackdrop=\{false\}>/);
+  assert.match(sheetSource, /<ListDetailPanel backToClose onClose=\{requestClose\} titleId="child-info-edit-title" closeOnBackdrop=\{false\}>/);
   assert.match(sheetSource, /if \(dirty && !confirmClose\) \{ setConfirmClose\(true\); return; \}/);
   assert.match(sheetSource, /저장 안 하고 닫기/);
 });

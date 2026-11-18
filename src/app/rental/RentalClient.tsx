@@ -11,6 +11,7 @@
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import Link from "next/link";
+import ReplaceLink from "@/components/common/ReplaceLink";
 import { publicErrorText } from "@/components/ui/public-error-text";
 import { addDaysKst, kstDow, todayKst } from "@/lib/datetime/kst";
 import {
@@ -353,7 +354,7 @@ export default function RentalClient({ homeHref = "/", memberMode = false, initi
           <li>· 실내운동화를 꼭 챙겨 오세요.</li>
           <li>· 건물 주차가 어려워요. 인근 주민센터 주차장을 이용해 주세요.</li>
         </ul>
-        <Link href={homeHref} className="public-btn-text mt-2">홈으로</Link>
+        <ReplaceLink href={homeHref} className="public-btn-text mt-2">홈으로</ReplaceLink>{/* 접수 뒤 이동은 replace — «←» 가 빈 신청서로 돌아오지 않게(2026-11-17) */}
       </div>
     );
   }

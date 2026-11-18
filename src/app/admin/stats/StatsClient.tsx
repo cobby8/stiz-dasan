@@ -65,10 +65,11 @@ export default function StatsClient({
     const periodName = STATS_PERIODS[tab].find((p) => p.key === period)?.label ?? "";
 
     // 탭·필터를 바꿀 때 «불러오는 중»을 보이려고 router.push 를 transition 안에서 부른다(가운데 클릭은 그대로 새 탭)
-    function go(href: string, event?: MouseEvent) {
+    // 큰 탭은 push(뒤로 = 앞 탭), 기간 칩은 replace — 같은 화면의 보기 설정이라 기록에 쌓지 않는다(뒤로 한 번에 앞 화면으로)
+    function go(href: string, event?: MouseEvent, mode: "push" | "replace" = "push") {
         if (event && (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0)) return;
         event?.preventDefault();
-        startTransition(() => router.push(href));
+        startTransition(() => (mode === "replace" ? router.replace(href) : router.push(href)));
     }
 
     return (
@@ -112,7 +113,7 @@ export default function StatsClient({
                         const on = p.key === (period || defaultPeriod);
                         const href = statsHref(tab, branch, p.key === defaultPeriod ? "" : p.key);
                         return (
-                            <a key={p.key} href={href} aria-current={on ? "true" : undefined} onClick={(e) => go(href, e)} className={`academy-choice is-tab${on ? " is-selected" : ""}`}>
+                            <a key={p.key} href={href} aria-current={on ? "true" : undefined} onClick={(e) => go(href, e, "replace")} className={`academy-choice is-tab${on ? " is-selected" : ""}`}>
                                 {p.label}
                             </a>
                         );
@@ -450,6 +451,11 @@ function BillingView({ d }: { d: StatsBillingTab }) {
                 />
                 <KpiCell label="전월 매출" value={formatKRW(d.prevRevenue)} />
             </div>
+            {/* 기타 매출(학생 청구가 아닌 수입) — 위 매출 숫자와 섞지 않고 한 줄로 따로 보인다. 옛 캐시엔 값이 없을 수 있어 0 으로 */}
+            <p className="flex flex-wrap items-center gap-x-2 px-1 text-sm text-[var(--color-academy-muted)]">
+                <span>{monthName} 기타 매출 <span className="font-semibold tabular-nums text-[var(--color-academy-ink)]">{formatKRW(d.otherRevenue ?? 0)}</span>{(d.otherRevenueCount ?? 0) > 0 ? ` · ${d.otherRevenueCount}건` : ""} (수강료 매출과 별도)</span>
+                <Link href="/admin/other-revenue" prefetch={false} className="inline-flex min-h-11 items-center font-medium text-[var(--color-academy-primary)]">기타 매출 열기 →</Link>
+            </p>
             <div className="grid items-start gap-2 lg:grid-cols-2">
                 <StatPanel title={`${monthName} 수강료 수납`} note="수강료 청구 기준(청구 달 = 이번 달) · 취소·환불 제외 · 미납 = 대기·연체">
                     <div className="flex flex-wrap items-center gap-4">

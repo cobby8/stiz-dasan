@@ -42,6 +42,7 @@ import {
   type ParentPeriodRange,
 } from "@/lib/regular/parentAbsencePeriodRules";
 import { REASON_LABEL, isAbsenceChangeOpen, isValidReason } from "@/lib/regular/regularAbsenceRules";
+import { FAMILY_EVENT_REASON } from "@/lib/regular/carryReasonRules";
 import { loadParentArrivalScreen } from "@/lib/regular/parent-arrival-notice";
 
 const kstNow = () => { const ms = Date.now(); return { ymd: todayKst(ms), hm: kstHm(ms) }; };
@@ -163,6 +164,8 @@ async function notifyStaffOfPeriod(input: {
       // 기간 정산 칸이 아직 없는 DB 는 예전처럼 날짜별 목록으로(그때는 기간 한 줄이 비어 있다)
       linkUrl: input.kind === "REPORTED" && input.reason === ILLNESS_REASON
         ? (await periodCarryColumnsReady(prisma).catch(() => false)) ? ILLNESS_PERIOD_INBOX_HREF : ILLNESS_INBOX_HREF
+        // 경조사 여러 날(2026-11-17)은 기간 한 줄이 아니라 날짜별 «이월 검토» 줄로 뜬다
+        : input.kind === "REPORTED" && input.reason === FAMILY_EVENT_REASON ? ILLNESS_INBOX_HREF
         : "/admin/absence",
       staffLinkUrl: "/staff",
       classIds: Array.from(new Set(input.items.map((item) => item.classId))),

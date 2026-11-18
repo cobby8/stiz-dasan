@@ -45,8 +45,14 @@ final class NativeAuthController {
         final long started = SystemClock.elapsedRealtime();
         final String page;
         volatile String flow;
+        // 맞춤 탭을 띄웠는지 / 그 뒤 앱이 가려졌는지(1.0.6) — 복귀 주소 없이 앱으로 돌아온 경우를 가린다
+        boolean browserOpened;
+        boolean leftApp;
         Attempt(String page) { this.page = page; }
     }
+    /** 복귀 주소 없이 앱으로 돌아온 뒤 기다리는 시간 — 복귀 주소(onNewIntent)가 조금 늦게 도착해도 먼저 처리되게 */
+    private static final long RETURN_GRACE_MS = 1500;
+    private static boolean trustedWebPage(String url) { return !NativeAuthPolicy.cancelsAttempt(BuildConfig.STIZ_ORIGIN, url); }
     NativeAuthController(Activity activity, WebView web) { this.activity = activity; this.web = web; }
     // 격리 시험 앱(sandbox)·기사님 전용 앱에서는 쓰지 않는다. 운영 허용 여부는 서버 스위치가 최종 판단한다.
     static boolean enabled() { return !BuildConfig.STIZ_SANDBOX && BuildConfig.STIZ_UNIFIED_APP && BuildConfig.STIZ_NATIVE_AUTH; }
@@ -62,10 +68,10 @@ final class NativeAuthController {
         pending = attempt;
         dialog = new AlertDialog.Builder(activity).setTitle("간편로그인")
             .setMessage("브라우저에서 인증을 마치면 앱으로 돌아옵니다. 다른 계정으로 바꾸려면 먼저 로그아웃해 주세요.")
-            .setNegativeButton("취소", (value, which) -> cancel())
-            .setOnCancelListener(value -> cancel()).create();
+            .setNegativeButton("취소", (value, which) -> cancel("user_cancel"))
+            .setOnCancelListener(value -> cancel("user_cancel")).create();
         dialog.show();
-        timeout = () -> { if (pending == attempt) { cancel(); message("로그인 시간이 만료되었습니다. 다시 시도해 주세요."); } };
+        timeout = () -> { if (pending == attempt) { cancel("timeout"); message("로그인 시간이 만료되었습니다. 가입을 마치셨다면 다시 로그인해 주세요."); } };
         main.postDelayed(timeout, NativeAuthPolicy.LIFETIME_MS);
         network.execute(() -> {
             try {
@@ -77,12 +83,16 @@ final class NativeAuthController {
                 if (!NativeAuthPolicy.token(flow) || !NativeAuthPolicy.browserUrl(BuildConfig.STIZ_ORIGIN, browser, flow)) throw new java.io.IOException("Invalid start response");
                 attempt.flow = flow;
                 main.post(() -> {
-                    if (pending != attempt || destroyed || !attempt.page.equals(web.getUrl())) { abort(attempt); return; }
+                    // 그새 취소됐거나 앱이 닫히는 중이면 서버 요청만 거둔다(취소한 쪽이 이미 안내했다)
+                    if (pending != attempt || destroyed) { abort(attempt, "app_closed"); return; }
+                    // 1.0.6: 같은 사이트 안에서 화면이 바뀐 것(다시 불러오기 등)은 그대로 진행한다. 사이트 밖이면 취소.
+                    if (!trustedWebPage(web.getUrl())) { cancel("page_left"); return; }
                     // 웹뷰가 아니라 시스템 브라우저(크롬 맞춤 탭)에서 연다 — 구글은 웹뷰 로그인을 막는다.
-                    if (!NativeAuthBrowser.open(activity, Uri.parse(browser))) { cancel(); message("로그인에 사용할 브라우저를 열지 못했습니다."); }
+                    if (NativeAuthBrowser.open(activity, Uri.parse(browser))) attempt.browserOpened = true;
+                    else { cancel("browser_failed"); message("로그인에 사용할 브라우저를 열지 못했습니다."); }
                 });
             } catch (Exception failure) {
-                main.post(() -> { if (pending == attempt) { cancel(); message("앱 간편로그인을 시작하지 못했습니다. 아이디·비밀번호로 로그인하거나 잠시 뒤 다시 시도해 주세요."); } });
+                main.post(() -> { if (pending == attempt) { cancel("start_failed"); message("앱 간편로그인을 시작하지 못했습니다. 아이디·비밀번호로 로그인하거나 잠시 뒤 다시 시도해 주세요."); } });
             }
         });
         return true;
@@ -97,11 +107,12 @@ final class NativeAuthController {
         if (code == null) {
             // 서버가 «실패 이유»만 실어 돌려보낸 경우(학원 계정 없음·취소 등) — 이유에 맞는 안내를 띄운다
             String failure = NativeAuthPolicy.returnFailure(uri.toString(), scheme(), attempt.flow, attempt.state, elapsed);
-            cancel();
+            cancel("return_failed");
             message(failureMessage(failure));
             return true;
         }
-        if (!attempt.page.equals(web.getUrl())) { cancel(); message("로그인 요청을 확인하지 못했습니다. 다시 시작해 주세요."); return true; }
+        // 1.0.6: 로그인 버튼을 누른 «그 주소»가 아니어도 우리 사이트 화면이면 이어서 로그인한다(code·PKCE 검증은 위에서 끝남).
+        if (!trustedWebPage(web.getUrl())) { cancel("page_left"); message("로그인 요청을 확인하지 못했습니다. 다시 시작해 주세요."); return true; }
         pending = null;
         stopTimer();
         dismiss();
@@ -122,9 +133,10 @@ final class NativeAuthController {
         consumeUntil = 0;
         return true;
     }
-    void navigation(String url) { if (pending != null && !pending.page.equals(url)) cancel(); }
+    // 1.0.6: 같은 사이트 안의 주소 변화·다시 불러오기로는 취소하지 않는다(NativeAuthPolicy.cancelsAttempt 설명).
+    void navigation(String url) { if (pending != null && !pending.page.equals(url) && !trustedWebPage(url)) cancel("page_left"); }
     void documentStarted(String url) {
-        if (pending != null) cancel();
+        if (pending != null && !trustedWebPage(url)) cancel("page_left");
         if (consumePage != null && AppNavigationPolicy.sameOrigin(BuildConfig.STIZ_ORIGIN, url)) consumeNavigationStarted = true;
     }
     void documentFinished(String url) {
@@ -146,11 +158,23 @@ final class NativeAuthController {
         consumeUntil = 0; consumePage = null; consumeNavigationStarted = false;
         if (consumeTimeout != null) { main.removeCallbacks(consumeTimeout); consumeTimeout = null; }
     }
-    void cancel() { Attempt attempt = pending; pending = null; stopTimer(); dismiss(); if (attempt != null) abort(attempt); }
-    void destroy() { destroyed = true; clearConsume(); cancel(); main.removeCallbacksAndMessages(null); network.shutdown(); }
-    private void abort(Attempt attempt) {
+    void cancel(String reason) { Attempt attempt = pending; pending = null; stopTimer(); dismiss(); if (attempt != null) abort(attempt, reason); }
+    void destroy() { destroyed = true; clearConsume(); cancel("app_closed"); main.removeCallbacksAndMessages(null); network.shutdown(); }
+    /** 앱이 가려질 때(맞춤 탭이 뜨면 여기로 온다) — 맞춤 탭을 띄운 뒤라면 «앱을 떠났다»고 적어 둔다 */
+    void paused() { if (pending != null && pending.browserOpened) pending.leftApp = true; }
+    /**
+     * 앱으로 돌아왔을 때(1.0.6). 맞춤 탭을 닫고 돌아왔는데 복귀 주소가 없으면(간편가입하러 간 경우 포함)
+     * «간편로그인 … 취소» 창이 5분 동안 남지 않게 조용히 정리한다. 복귀 주소는 onNewIntent 로 먼저 오므로 잠깐 기다린 뒤 본다.
+     */
+    void resumed() {
+        Attempt attempt = pending;
+        if (attempt == null || !attempt.leftApp) return;
+        main.postDelayed(() -> { if (pending == attempt && !destroyed) cancel("returned_empty"); }, RETURN_GRACE_MS);
+    }
+    private void abort(Attempt attempt, String reason) {
         if (attempt.flow == null || network.isShutdown()) return;
-        network.execute(() -> { try { post("/auth/native/cancel", new JSONObject().put("flowId", attempt.flow).put("state", attempt.state).put("codeVerifier", attempt.verifier)); } catch (Exception ignored) { } });
+        String known = java.util.Arrays.asList(NativeAuthPolicy.CANCEL_REASONS).contains(reason) ? reason : "app_closed";
+        network.execute(() -> { try { post("/auth/native/cancel", new JSONObject().put("flowId", attempt.flow).put("state", attempt.state).put("codeVerifier", attempt.verifier).put("reason", known)); } catch (Exception ignored) { } });
     }
     /** 실패 이유별 안내(이유를 모르면 일반 안내) */
     static String failureMessage(String failure) {

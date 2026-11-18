@@ -63,7 +63,11 @@ test("공개 신청·로그인·특강·챗봇은 오류 원문 대신 publicErr
     assert.doesNotMatch(source, /set(Error|Message|Err)\([^)]*\b\w+\??\.message\b/, file);
   }
   // 로그인 주소창 ?error= 값도 거른다
-  assert.match(read("src/app/login/page.tsx"), /publicErrorText\(searchParams\.get\("error"\)/);
+  // 2026-11-18: 쿼리는 화면이 뜬 뒤에 읽는다(서버가 보내는 화면에 로그인 폼이 들어가게) — 값은 여전히 publicErrorText 를 거친다
+  assert.match(read("src/app/login/page.tsx"), /const queryError = searchParams\.get\("error"\);\s*if \(queryError\) setError\(publicErrorText\(queryError, /);
+  // 로그인 화면은 next/navigation 의 useSearchParams 를 쓰지 않는다 — 쓰면 서버가 보내는 화면이 비고(스크립트 실행 뒤에야 폼이 나온다) 휴대폰에서 약 4초 빈 화면이 된다
+  assert.doesNotMatch(read("src/app/login/page.tsx"), /useSearchParams/);
+  assert.match(read("src/app/login/page.tsx"), /const searchParams = useMountedSearchParams\(\);/);
   // 챗봇은 서버 data.error 를 그대로 말풍선에 넣지 않는다
   assert.doesNotMatch(read("src/components/chat/ChatPanel.tsx"), /data\.error \|\|/);
 });

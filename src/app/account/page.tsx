@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { requireOwnAccount } from "@/lib/account/own-account";
 import { getAccountViewAccess } from "@/lib/account-view-access";
 import OwnAccountFrame from "@/components/account/OwnAccountFrame";
+import ParentBackLink from "@/components/parent/ParentBackLink";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "내 계정 | 스티즈 농구교실" };
@@ -21,7 +22,14 @@ export default async function AccountPage() {
   return (
     <OwnAccountFrame views={views}>
       <section className="mx-auto max-w-2xl px-4 py-6 text-[var(--color-academy-ink)]">
-        <h1 className="academy-heading">내 계정</h1>
+        {/* 이 화면은 어느 역할 틀에도 속하지 않아 «←» 가 없었다(2026-11-17 원장 지시).
+            들어온 화면(선생님 마이페이지·학부모 설정 등)이 같은 사이트의 바로 앞 칸이면 한 칸 뒤로,
+            아니면(주소로 바로 열었거나 로그인 직후) 그 사람의 역할 홈으로(/auth/continue 가 역할에 맞는 화면으로 보낸다).
+            ParentBackLink 는 학부모 화면 밖에서는 브라우저가 알려 주는 «바로 앞 같은 사이트 화면»으로 판단한다(자녀 연결·탈퇴 화면과 같은 부품) */}
+        <div className="flex items-center gap-2">
+          <ParentBackLink fallbackHref="/auth/continue" ariaLabel="이전 화면으로" className="academy-back-link" />
+          <h1 className="academy-heading">내 계정</h1>
+        </div>
         <p className="mt-2 text-sm text-[var(--color-academy-muted)]">
           {account.appUserName} · {roleNames[account.appUserRole] || "회원"}
         </p>

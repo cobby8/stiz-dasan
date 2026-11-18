@@ -88,13 +88,14 @@ export default function PaymentRequestsClient({
       />
 
       {/* 상태 필터 — 서버가 상태별로 읽어 주므로(다른 상태 건수는 모름) 건수 칩 대신 예전 버튼을 유지 */}
+      {/* 같은 화면의 보기 설정이라 기록에 쌓지 않는다(replace) — 뒤로 한 번에 이 화면을 나가게 */}
       <div className="flex flex-wrap gap-1.5">
         {FILTERS.map((item) => (
           <button
             key={item.value}
             type="button"
             aria-pressed={status === item.value}
-            onClick={() => { setDetailId(null); router.push(`/admin/payment-requests?status=${item.value}`); }}
+            onClick={() => { setDetailId(null); router.replace(`/admin/payment-requests?status=${item.value}`); }}
             // «지금 보는 상태»를 가리키는 탭 칩 — 보조 색(하늘색), ✓ 없음
             className={`academy-choice is-tab ${status === item.value ? "is-selected" : ""}`}
           >

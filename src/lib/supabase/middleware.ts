@@ -70,9 +70,7 @@ export async function updateSession(request: NextRequest) {
     const requestedPath = `${pathname}${request.nextUrl.search}`;
     url.pathname = pathname.startsWith("/staff") ? "/staff/login" : "/login";
     url.search = "";
-    if (isAdminPath) {
-      url.searchParams.set("mode", "staff");
-    }
+    // (2026-11-17) 관리자 화면도 같은 로그인 화면으로 — 예전에는 mode=staff 를 붙여 직원 전용 화면을 띄웠다.
     url.searchParams.set("redirect", requestedPath);
     return redirectWithSession(url);
   }

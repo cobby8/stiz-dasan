@@ -1192,7 +1192,7 @@ test("결석 API: 마감 오류를 학부모 말로 돌려준다(코드도 함�
   const route = read("src/app/api/mypage/regular-absence/route.ts");
   assert.match(route, /ABSENCE_CHANGE_CLOSED: ABSENCE_CHANGE_CLOSED_MESSAGE/);
   // 2026-11-15 마감 통일·날짜 바꾸기: 결석·셔틀·보강 세 화면 공통 문구로 바꿨다(예전: «수업 1시간 전이 지나 …»)
-  assert.equal(rules.ABSENCE_CHANGE_CLOSED_MESSAGE, "마감 시간이 지나 여기서 바꿀 수 없습니다. 학원으로 연락해 주세요.");
+  assert.equal(rules.ABSENCE_CHANGE_CLOSED_MESSAGE, "마감이 지나 여기서는 바꿀 수 없어요. 학원으로 연락해 주세요.");
 });
 
 test("서버: 신고·취소 양쪽이 같은 마감 함수를 쓴다 — 화면 숨김만으로 끝내지 않는다", () => {

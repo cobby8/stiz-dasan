@@ -260,7 +260,8 @@ export default function QuickPostClient({
       return;
     }
 
-    window.location.href = "/";
+    // 돌아갈 기록이 없으면 선생님 홈으로 — 공개 홈(/)으로 나가지 않는다(같은 줄 «홈» 버튼과 같은 곳, 2026-11-17)
+    window.location.href = "/staff";
   }
 
   return (

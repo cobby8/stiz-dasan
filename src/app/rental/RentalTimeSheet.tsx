@@ -9,6 +9,7 @@
  * ⚠️ 막힘 규칙을 여기서 새로 만들지 않는다. 서버가 준 buildRentalDay 결과(starts[].available / maxMinutes)만 읽는다
  *    — 서버 검증도 같은 함수라 «화면에선 되는데 신청하면 거절» 이 생기지 않는다.
  */
+import { useBackToClose } from "@/components/common/useBackToClose";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePublicOverlayOpen } from "@/components/public-floating";
 import {
@@ -52,6 +53,8 @@ type Props = {
 };
 
 export default function RentalTimeSheet({ open, day, dateLabel, initialStart, initialDuration, priceOf, onClose, onConfirm }: Props) {
+  // 휴대폰 «뒤로» = 시트 닫기(2026-11-17) — 예전엔 대관 화면째 나가 고르던 날짜·입력이 사라졌다
+  useBackToClose(open, onClose);
   const hours = useMemo(() => availableRentalHours(day), [day]);
   const byMinute = useMemo(() => new Map<number, RentalStartOption>(day.starts.map((s) => [s.minute, s])), [day]);
 

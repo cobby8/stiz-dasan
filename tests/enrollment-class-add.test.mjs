@@ -12,6 +12,8 @@ import test from "node:test";
 import ts from "typescript";
 import { loadTsModule } from "./_ts-module.mjs";
 import * as seatLevelModule from "../src/lib/seats/seatLevel.ts";
+// 학원 연락 버튼 묶음(2026-11-17 g3) — 이 테스트는 화면의 다른 흐름을 보므로 빈 부품으로 끼운다(부품 자체는 parent-contact-buttons.test.mjs 가 본다)
+const academyContactStub = { __esModule: true, default: function AcademyContactButtons() { return null; }, asksAcademy: (text) => /학원(으로|에) (문의|연락)/.test(String(text ?? "")) };
 
 const read = (p) => readFileSync(p, "utf8");
 const nodeRequire = createRequire(import.meta.url);
@@ -501,7 +503,7 @@ function screen() {
     "@/lib/enrollment/changeRequestRules": load("src/lib/enrollment/changeRequestRules.ts"),
     "@/lib/enrollment/parentChangeStatus": load("src/lib/enrollment/parentChangeStatus.ts"),
     "@/lib/seats/seatLevel": seatLevelModule,
-    "@/components/parent/InlineConfirm": { __esModule: true, default: function InlineConfirm() { return null; } },
+    "@/components/parent/AcademyContactButtons": academyContactStub, "@/components/parent/InlineConfirm": { __esModule: true, default: function InlineConfirm() { return null; } },
     "@/lib/mypage/requestPreset": { presetIndex: () => 0 },
     "@/components/parent/customerMessage": { customerMessage: (raw, fallback) => (typeof raw === "string" && raw) || fallback },
   }).default;

@@ -64,19 +64,25 @@ test("① 상태 → 루트 클래스: ready 와 fallback 은 함께 붙지 않�
   assert.deepEqual([...root], [READY]);
 });
 
-test("② UiIcon: 아이콘 글자와 대체 글자를 함께 그리고, 전부 aria-hidden 안에 둔다", () => {
+test("② UiIcon: 아이콘 글꼴 없이 SVG 그림으로 그리고(2026-11-18 속도 조치), 전부 aria-hidden 안에 둔다", () => {
   const expected = { expand_more: "▾", expand_less: "▴", notifications: "알림", notifications_off: "알림 끔", settings: "설정", call: "전화" };
-  assert.deepEqual(icon.UI_ICON_FALLBACK_TEXT, expected, "대체 글자는 허용 6종 전부에 있다");
-  for (const [name, text] of Object.entries(expected)) {
+  assert.deepEqual(icon.UI_ICON_FALLBACK_TEXT, expected, "아이콘의 뜻을 적은 글자 표는 허용 6종 전부에 있다");
+  const seen = new Set();
+  for (const name of Object.keys(expected)) {
     const html = renderToStaticMarkup(React.createElement(icon.default, { name }));
-    assert.equal(html, `<span aria-hidden="true" class="ui-icon inline-flex shrink-0 items-center justify-center leading-none"><span class="material-symbols-outlined text-xl">${name}</span><span class="ui-icon-fallback">${text}</span></span>`);
-    // 44px 버튼(size-11)에 들어가는 길이: 12px 글자 기준 한글 3자 + 띄어쓰기까지(약 40px)
-    assert.ok([...text.replaceAll(" ", "")].length <= 3, `${name}: 대체 글자 «${text}» 가 44px 버튼에 넘친다`);
+    const m = html.match(/^<span aria-hidden="true" class="ui-icon inline-flex shrink-0 items-center justify-center leading-none"><svg data-icon="([a-z_]+)" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" focusable="false"><path d="([^"]+)"><\/path><\/svg><\/span>$/);
+    assert.ok(m, `${name}: SVG 한 장으로 그린다`);
+    assert.equal(m[1], name);
+    assert.ok(m[2].length > 20, `${name}: 그림 길이 비어 있지 않다`);
+    assert.ok(!seen.has(m[2]), `${name}: 다른 아이콘과 같은 그림이 아니다`);
+    seen.add(m[2]);
+    // 아이콘 글꼴 클래스를 쓰지 않는다 — 이 클래스가 화면에 있으면 글꼴(약 317KB)을 받기 시작한다(DeferredFontStyles)
+    assert.doesNotMatch(html, /material-symbols-outlined/);
   }
-  // 크기·회전 클래스: 회전은 바깥 칸에 — 대체 글자 ▾ 도 같이 돌아 뜻이 맞는다
+  // 크기·회전 클래스: 회전은 바깥 칸에
   const big = renderToStaticMarkup(React.createElement(icon.default, { name: "settings", size: 24, className: "group-open:rotate-180" }));
-  assert.match(big, /^<span aria-hidden="true" class="ui-icon [^"]*group-open:rotate-180"><span class="material-symbols-outlined text-2xl">settings<\/span>/);
-  assert.equal((big.match(/aria-hidden/g) || []).length, 1, "바깥 칸 하나가 통째로 숨김 — 대체 글자가 화면 낭독에 두 번 읽히지 않는다");
+  assert.match(big, /^<span aria-hidden="true" class="ui-icon [^"]*group-open:rotate-180"><svg data-icon="settings" viewBox="0 0 24 24" width="24" height="24"/);
+  assert.equal((big.match(/aria-hidden/g) || []).length, 1, "바깥 칸 하나가 통째로 숨김");
 });
 
 test("③ CSS: 평소엔 대체 글자 숨김, fallback 클래스일 때만 아이콘을 치우고 12px 한 줄 글자를 보인다", () => {

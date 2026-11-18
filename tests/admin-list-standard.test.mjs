@@ -430,7 +430,8 @@ test("카카오 접수함: 큰 카드 → 한 줄 행(접수일·시각 오른�
   // 결정은 같은 함수·인자(버전 확인 포함), 서버 필터 주소 이동 그대로
   assert.match(kakaoClient, /decideKakaoParentIntake\(\{ intakeId:id, expectedRevision:editRevisions\[id\] \?\? row\.revision, decision, note:notes\[id\]/);
   for (const decision of ['"NEEDS_DETAILS"', '"CONSULTATION"', '"REJECT"', '"TRANSFER"', '"CLOSE_CONSULTATION"']) assert.ok(kakaoClient.includes(decision), `결정 ${decision}`);
-  assert.match(kakaoClient, /router\.push\(`\/admin\/kakao-requests\?status=\$\{value\}`\)/);
+  // 상태 필터는 기록에 쌓지 않는다(replace) — 뒤로 한 번에 화면을 나가게
+  assert.match(kakaoClient, /router\.replace\(`\/admin\/kakao-requests\?status=\$\{value\}`\)/);
   // 재확인 안내는 «준비»만 패널에서(패널을 닫고 기존 미리보기), SMS 발송은 미리보기의 확인창 뒤에만
   assert.match(kakaoClient, /onClick=\{\(\) => \{ if \(!inlineId\) setOpenId\(""\); prepareNotice\(rowId\); \}\}/);
   assert.match(kakaoClient, /askConfirm\(`SMS 문자 1건/);

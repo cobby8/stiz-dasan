@@ -1,7 +1,7 @@
 import { deliverOperationalNotification, type OperationalNotificationDeliveryResult } from "@/lib/operational-notification-delivery";
 import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/prisma";
-import { buildDriverLookupContext, selectRosterDriverIds } from "@/lib/operational-driver-resolution";
+import { buildDriverLookupContext, operationalLinkForRole, selectRosterDriverIds } from "@/lib/operational-driver-resolution";
 
 export type OperationalRecipientSummary = {
   admin: "NOTIFIED" | "NOT_FOUND";
@@ -113,9 +113,8 @@ export async function notifyOperationalStaff(input: {
       message: driverResolution.needsConfirmation && (recipient.role === "ADMIN" || recipient.role === "VICE_ADMIN")
         ? `${input.message} · 담당 기사 확인 필요`
         : input.message,
-      linkUrl: recipient.role === "ADMIN" || recipient.role === "VICE_ADMIN"
-        ? input.linkUrl
-        : (input.staffLinkUrl ?? input.linkUrl),
+      // 역할별 주소 — 기사님은 선생님 홈(/staff) 대신 셔틀 명단으로(선생님 홈은 기사님을 운행 화면으로 넘긴다, 2026-11-17)
+      linkUrl: operationalLinkForRole(recipient.role, input.linkUrl, input.staffLinkUrl, input.driverContext?.serviceDate),
     }),
   })));
   const deliveries = attempted.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);

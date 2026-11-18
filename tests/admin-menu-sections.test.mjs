@@ -36,7 +36,8 @@ test('«홈페이지 보기»는 메뉴 묶음이 아니라 맨 아래(로그아
 const PARENT = { attendance: '/admin/attendance', finance: '/admin/finance', homepage: '/admin/settings', messaging: '/admin/sms', policy: '/admin/terms' };
 const EXPECTED_TABS = {
   attendance: ['/admin/attendance', '/admin/absence', '/admin/makeup', '/admin/attendance/feed'],
-  finance: ['/admin/finance', '/admin/payment-requests', '/admin/payment-confirmations', '/admin/pos-reconcile'],
+  // 2026-11-17 «기타 매출» 탭 추가(원장 전용)
+  finance: ['/admin/finance', '/admin/payment-requests', '/admin/payment-confirmations', '/admin/pos-reconcile', '/admin/other-revenue'],
   homepage: ['/admin/settings', '/admin/coaches', '/admin/programs', '/admin/gallery', '/admin/media-revocations', '/admin/faq', '/admin/testimonials'],
   messaging: ['/admin/sms', '/admin/notification-deliveries', '/admin/kakao-policy'],
   policy: ['/admin/terms', '/admin/privacy'],

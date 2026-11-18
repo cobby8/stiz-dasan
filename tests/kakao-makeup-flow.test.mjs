@@ -4,7 +4,7 @@ import path from "node:path";
 import test, { mock } from "node:test";
 import ts from "typescript";
 
-// 카카오 「보강 신청·취소」 대화 흐름을 가짜 DB 로 **실제 실행**해 검증한다.
+// 카카오 「보강 예약·취소」 대화 흐름을 가짜 DB 로 **실제 실행**해 검증한다.
 // 보강 규칙(학년·정원 +2·내일부터·만료·취소)은 진짜 parent-makeup.ts / credit-rules.ts 를 그대로 올린다 —
 // 웹(/mypage/makeup)과 같은 함수가 같은 결과를 내는지까지 본다. prisma 와 관리자 알림만 가짜다.
 
@@ -310,9 +310,9 @@ test("후보 수업: 오늘부터 14일 안, 날짜·시간 순, 최대 8개", (
 });
 
 // ── 전체 흐름 ───────────────────────────────────────────────────────────
-test("보강 신청 → 보강권 선택 → 수업 선택 → 확인 → 웹과 같은 함수로 예약 + 원장님 앱 알림", async () => {
+test("보강 예약 → 보강권 선택 → 수업 선택 → 확인 → 웹과 같은 함수로 예약 + 원장님 앱 알림", async () => {
   const db = makeDb();
-  const list = await say("보강 신청");
+  const list = await say("보강 예약");
   assertKakaoFormat(list);
   assert.match(textOf(list), /지유 학생이 쓸 수 있는 보강권 2장이에요/);
   assert.match(textOf(list), new RegExp(`1\\. ${kst.kstLabel(day(-7)).replace(/[()]/g, "\\$&")} 결석 · 원래반 · ${kst.kstLabel(day(50)).replace(/[()]/g, "\\$&")}까지`));
@@ -330,15 +330,15 @@ test("보강 신청 → 보강권 선택 → 수업 선택 → 확인 → 웹과
     `4. ${kst.kstLabel(day(9))} 10:00 주말기본반`,
   ]);
   // 「다른 보강권」은 학생 이름을 붙여 보낸다(자녀가 여럿이어도 같은 학생으로 돌아간다)
-  assert.deepEqual(replies(options), ["보강 수업 1번", "보강 수업 2번", "보강 수업 3번", "보강 수업 4번", "지유 보강 신청", "보강 그만"]);
+  assert.deepEqual(replies(options), ["보강 수업 1번", "보강 수업 2번", "보강 수업 3번", "보강 수업 4번", "지유 보강 예약", "보강 그만"]);
 
   const confirm = await say("보강 수업 2번");
   assertKakaoFormat(confirm);
-  assert.match(textOf(confirm), /이 수업으로 보강 신청할까요\?/);
-  assert.deepEqual(replies(confirm), ["보강 신청 확정", "보강 다른 수업", "보강 그만"]);
+  assert.match(textOf(confirm), /이 수업으로 보강을 예약할까요\?/);
+  assert.deepEqual(replies(confirm), ["보강 예약 확정", "보강 다른 수업", "보강 그만"]);
   assert.equal(db.sessions.length, 0, "확인 전에는 예약하지 않는다");
 
-  const done = await say("보강 신청 확정");
+  const done = await say("보강 예약 확정");
   assertKakaoFormat(done);
   assert.match(textOf(done), new RegExp(`^보강 예약 완료: 지유 학생 ${kst.kstLabel(day(2)).replace(/[()]/g, "\\$&")} 10:00 주말기본반`));
   // 2026-11-15 마감 1시간 전 통일: 예전 문구 «당일 취소는 안 되고, 못 오시면 하루 전까지…»
@@ -355,8 +355,24 @@ test("보강 신청 → 보강권 선택 → 수업 선택 → 확인 → 웹과
   assert.equal(db.alerts[0].linkUrl, "/admin/makeup");
 
   // 같은 확인이 다시 와도(카카오 재전송) 두 번 예약하지 않는다
-  const again = await say("보강 신청 확정");
+  const again = await say("보강 예약 확정");
   assert.match(textOf(again), /진행 중인 선택이 없어요/);
+  assert.equal(db.sessions.length, 1);
+});
+
+test("이름 통일(2026-11-17) 전에 보낸 말풍선의 버튼 문장 「보강 신청」「보강 신청 확정」도 그대로 받는다", async () => {
+  const db = makeDb();
+  // 옛 메뉴 버튼·옛 문장으로 시작해도 같은 보강 대화가 열린다(분류는 «보강» 글자로 한다)
+  assert.match(textOf(await say("보강 신청")), /지유 학생이 쓸 수 있는 보강권 2장이에요/);
+  await say("보강권 1번");
+  const confirm = await say("보강 수업 2번");
+  // 새로 보내는 버튼은 새 문장
+  assert.deepEqual(replies(confirm), ["보강 예약 확정", "보강 다른 수업", "보강 그만"]);
+  // 옛 확정 문장으로 눌러도 예약된다
+  assert.match(textOf(await say("보강 신청 확정")), /^보강 예약 완료/);
+  assert.equal(db.sessions.length, 1);
+  // 끝난 뒤 옛 버튼을 다시 눌러도 엉뚱한 접수로 새지 않고 처음부터 다시 안내한다
+  assert.match(textOf(await say("보강 신청 확정")), /진행 중인 선택이 없어요/);
   assert.equal(db.sessions.length, 1);
 });
 
@@ -366,13 +382,13 @@ test("보강권이 한 장이면 고르지 않고 바로 후보 수업을 보여
   const res = await say("보강 예약");
   assertKakaoFormat(res);
   assert.match(textOf(res), /결석 1회당 1번, 결석일부터 2개월 안에/);
-  assert.match(textOf(res), /앞으로 2주 안에 신청할 수 있는 수업이에요/);
+  assert.match(textOf(res), /앞으로 2주 안에 예약할 수 있는 수업이에요/);
   assert.equal(flowRow(db).structuredJson.step, "OPTION");
 });
 
 test("보강권 0장: 발급 안내 + 원장님 문의(기존 상담 접수로 이어짐)", async () => {
   makeDb({ credits: [] });
-  const res = await say("보강 신청");
+  const res = await say("보강 예약");
   assertKakaoFormat(res);
   assert.match(textOf(res), /사용할 수 있는 보강권이 없어요\. 보강권은 결석 처리 후 발급됩니다/);
   assert.ok(replies(res).includes("원장님께 보강 문의할게요"));
@@ -380,26 +396,26 @@ test("보강권 0장: 발급 안내 + 원장님 문의(기존 상담 접수로 �
   assert.equal(contract.classifyParentUtterance("원장님께 보강 문의할게요"), "HUMAN");
 });
 
-test("자녀가 둘이면 먼저 자녀를 고른다(이름 + 보강 신청)", async () => {
+test("자녀가 둘이면 먼저 자녀를 고른다(이름 + 보강 예약)", async () => {
   makeDb({ students: [{ id: "s1", parentId: "p1", name: "지유", grade: "초5" }, { id: "s2", parentId: "p1", name: "지호", grade: "초5" }] });
   const two = [{ id: "s1", name: "지유" }, { id: "s2", name: "지호" }];
-  const ask = await say("보강 신청", two);
-  assert.match(textOf(ask), /어느 자녀의 보강을 신청할까요/);
-  assert.deepEqual(replies(ask), ["지유 보강 신청", "지호 보강 신청", "보강 그만"]);
-  const list = await say("지유 보강 신청", two);
+  const ask = await say("보강 예약", two);
+  assert.match(textOf(ask), /어느 자녀의 보강을 예약할까요/);
+  assert.deepEqual(replies(ask), ["지유 보강 예약", "지호 보강 예약", "보강 그만"]);
+  const list = await say("지유 보강 예약", two);
   assert.match(textOf(list), /지유 학생이 쓸 수 있는 보강권 2장/);
 });
 
 test("정원 마감 경합: 확인 사이에 자리가 차면 사유를 알리고 남은 후보를 다시 보여 준다", async () => {
   const db = makeDb();
-  await say("보강 신청");
+  await say("보강 예약");
   await say("보강권 1번");
   await say("보강 수업 2번"); // 주말기본반: 정원 10 + 2 − 수강 11 = 1자리
   // 다른 가정이 마지막 자리를 먼저 예약
   db.sessions.push({ id: "ms-other", studentId: "s9", makeupClassId: "cB", makeupDate: at(day(2)), status: "BOOKED" });
-  const res = await say("보강 신청 확정");
+  const res = await say("보강 예약 확정");
   assertKakaoFormat(res);
-  assert.match(textOf(res), /^보강 신청을 못 했어요: 방금 정원이 마감됐거나/);
+  assert.match(textOf(res), /^보강 예약을 못 했어요: 방금 정원이 마감됐거나/);
   // 2026-11-14 결석 당일 취소·보강 연결: 보강 예약 수를 «날짜별»로 센다. 마감된 것은 그 날짜뿐이라
   // 같은 반의 다음 주 날짜는 후보에 남는다(예전에는 반 전체로 세어 반이 통째로 빠졌다).
   assert.doesNotMatch(textOf(res), new RegExp(`${kst.kstLabel(day(2)).replace(/[()\/]/g, "\\$&")} 10:00 주말기본반`), "마감된 날짜는 다시 보여 주지 않는다");
@@ -408,29 +424,29 @@ test("정원 마감 경합: 확인 사이에 자리가 차면 사유를 알리�
   assert.equal(db.sessions.length, 1);
   // 다시 고르면 정상 예약
   const done = await say("보강 수업 1번");
-  assert.match(textOf(done), /이 수업으로 보강 신청할까요/);
+  assert.match(textOf(done), /이 수업으로 보강을 예약할까요/);
   assert.match(textOf(await say("네")), /^보강 예약 완료/);
 });
 
 test("보강권 경합: 확인 사이에 같은 보강권이 다른 곳(웹)에서 예약되면 거절한다", async () => {
   const db = makeDb();
-  await say("보강 신청");
+  await say("보강 예약");
   await say("보강권 1번");
   await say("보강 수업 1번");
   db.credits.find((row) => row.id === "mc1").status = "RESERVED";
-  const res = await say("보강 신청 확정");
+  const res = await say("보강 예약 확정");
   assert.match(textOf(res), /이 보강권은 지금 사용할 수 없어요/);
   assert.equal(db.sessions.length, 0);
 });
 
 test("이월로 정산된 결석의 보강권은 카카오에서도 웹과 같이 예약이 거절된다", async () => {
   const db = makeDb();
-  await say("보강 신청");
+  await say("보강 예약");
   await say("보강권 1번");
   await say("보강 수업 1번");
   db.carry = true;
-  const res = await say("보강 신청 확정");
-  assert.match(textOf(res), /^보강 신청을 못 했어요: 이월로 정산한 결석입니다/);
+  const res = await say("보강 예약 확정");
+  assert.match(textOf(res), /^보강 예약을 못 했어요: 이월로 정산한 결석입니다/);
   assert.equal(db.sessions.length, 0);
   assert.equal(db.credits.find((row) => row.id === "mc1").status, "AVAILABLE");
   assert.equal(db.alerts.length, 0);
@@ -438,13 +454,13 @@ test("이월로 정산된 결석의 보강권은 카카오에서도 웹과 같�
 
 test("IDOR: 대화 상태에 다른 가정의 보강권 id 를 넣어도 예약되지 않는다", async () => {
   const db = makeDb();
-  await say("보강 신청");
+  await say("보강 예약");
   await say("보강권 1번");
   await say("보강 수업 1번");
   // 상태를 조작해 남의 보강권을 끼워 넣는다
   const row = flowRow(db);
   row.structuredJson.credit = { ...row.structuredJson.credit, id: "other" };
-  const res = await say("보강 신청 확정");
+  const res = await say("보강 예약 확정");
   assert.match(textOf(res), /이 보강권은 지금 사용할 수 없어요/);
   assert.equal(db.credits.find((item) => item.id === "other").status, "AVAILABLE");
   assert.equal(db.sessions.length, 0);
@@ -452,13 +468,13 @@ test("IDOR: 대화 상태에 다른 가정의 보강권 id 를 넣어도 예약�
 
   // 학부모가 보강권 id 를 직접 보내도 번호가 아니면 아무것도 고르지 않는다
   makeDb();
-  await say("보강 신청");
+  await say("보강 예약");
   const typed = await say("보강권 other");
   assert.match(textOf(typed), /지유 학생이 쓸 수 있는 보강권 2장/, "목록을 다시 보여 줄 뿐");
 
   // 다른 보호자로 다시 연결된 카카오면 이전 대화 상태를 쓰지 않는다
   const db3 = makeDb();
-  await say("보강 신청");
+  await say("보강 예약");
   flowRow(db3).structuredJson.parentUserId = "p9";
   const stale = await say("보강권 1번");
   assert.match(textOf(stale), /진행 중인 선택이 없어요/);
@@ -517,20 +533,20 @@ test("보강 취소: 당일 보강도 수업 시작 1시간 전까지는 취소�
   assert.equal(db.credits.find((row) => row.id === "mc1").status, "AVAILABLE");
 });
 
-test("「취소할게요」는 보강 신청 확인으로 읽지 않는다(그만두기)", async () => {
+test("「취소할게요」는 보강 예약 확인으로 읽지 않는다(그만두기)", async () => {
   const db = makeDb();
-  await say("보강 신청");
+  await say("보강 예약");
   await say("보강권 1번");
   await say("보강 수업 1번");
   const res = await say("취소할게요");
-  assert.match(textOf(res), /보강 신청을 그만했어요/);
+  assert.match(textOf(res), /보강 예약을 그만했어요/);
   assert.equal(db.sessions.length, 0);
 });
 
 test("확인 단계의 긍정 답: 넵·네!·네 신청할게요·좋아요 모두 신청 확정", async () => {
   for (const yes of ["넵", "네!", "네 신청할게요", "좋아요", "예약해주세요", "네~"]) {
     const db = makeDb();
-    await say("보강 신청");
+    await say("보강 예약");
     await say("보강권 1번");
     await say("보강 수업 1번");
     assert.match(textOf(await say(yes)), /^보강 예약 완료/, yes);
@@ -540,17 +556,17 @@ test("확인 단계의 긍정 답: 넵·네!·네 신청할게요·좋아요 모
 
 test("대화 중 짧은 엉뚱한 말은 대화를 닫지 않고 단계를 다시 보여 준다 — 업무 말·메뉴는 기존 흐름", async () => {
   const db = makeDb();
-  await say("보강 신청");
+  await say("보강 예약");
   await say("보강권 1번");
   await say("보강 수업 1번");
   for (const stray of ["ㅇㅋ", "글쎄요", "음..", "잠깐만요"]) {
-    assert.match(textOf(await say(stray)), /지금 단계의 버튼을 눌러 주세요[\s\S]*보강 신청할까요/, stray);
+    assert.match(textOf(await say(stray)), /지금 단계의 버튼을 눌러 주세요[\s\S]*보강을 예약할까요/, stray);
     assert.equal(flowRow(db).status, "MAKEUP_FLOW", `${stray}: 대화는 살아 있다`);
   }
   // 분류되는 업무(입금)·메뉴 버튼(셔틀)은 붙잡지 않는다
   assert.equal(await say("입금했어요"), null);
   assert.equal(flowRow(db).status, "CANCELED");
-  await say("보강 신청");
+  await say("보강 예약");
   assert.equal(await say("셔틀"), null, "메뉴 버튼은 메뉴를 연다");
 
   // 취소 단계도 같은 원칙: 「네 취소할게요」= 확정, 짧은 엉뚱한 말 = 재질문
@@ -567,16 +583,16 @@ test("대화 중 짧은 엉뚱한 말은 대화를 닫지 않고 단계를 다�
 
 test("자녀 이름: 정확히 일치 먼저, 없으면 가장 긴 이름(이준·이준호 형제)", async () => {
   const kids = [{ id: "a", name: "이준" }, { id: "b", name: "이준호" }];
-  assert.equal(flowModule.pickChildByName(kids, "이준 보강 신청").id, "a");
-  assert.equal(flowModule.pickChildByName(kids, "이준호 보강 신청").id, "b");
+  assert.equal(flowModule.pickChildByName(kids, "이준 보강 예약").id, "a");
+  assert.equal(flowModule.pickChildByName(kids, "이준호 보강 예약").id, "b");
   assert.equal(flowModule.pickChildByName(kids, "이준호보강").id, "b", "붙여 써도 가장 긴 이름");
-  assert.equal(flowModule.pickChildByName(kids, "보강 신청"), null);
+  assert.equal(flowModule.pickChildByName(kids, "보강 예약"), null);
   // 실제 흐름에서도 이준호 학생 보강권 목록으로 간다
   makeDb({
     students: [{ id: "s1", parentId: "p1", name: "이준", grade: "초5" }, { id: "s2", parentId: "p1", name: "이준호", grade: "초5" }],
     credits: [{ id: "mcB", studentId: "s2", status: "AVAILABLE", sourceType: "REGULAR", originClassId: "cO", absenceDate: at(day(-2)), expiresAt: at(day(50)), makeupSessionId: null }],
   });
-  const res = await say("이준호 보강 신청", [{ id: "s1", name: "이준" }, { id: "s2", name: "이준호" }]);
+  const res = await say("이준호 보강 예약", [{ id: "s1", name: "이준" }, { id: "s2", name: "이준호" }]);
   assert.match(textOf(res), /이준호 학생 · /);
 });
 
@@ -592,7 +608,7 @@ test("예약 목록은 DB 에서 오늘 KST 자정 이후만 조회한다", asyn
 
 test("30분 만료 · 대화 중 다른 업무 · 짧은 답", async () => {
   const db = makeDb();
-  await say("보강 신청");
+  await say("보강 예약");
   flowRow(db).updatedAt = Date.now() - 31 * 60_000;
   const expired = await say("보강권 1번");
   assert.match(textOf(expired), /진행 중인 선택이 없어요/);
@@ -601,7 +617,7 @@ test("30분 만료 · 대화 중 다른 업무 · 짧은 답", async () => {
   // 확인 단계에서 번호를 치면 단계를 다시 보여 준다(다른 접수로 새지 않음)
   await say("보강권 1번");
   await say("보강 수업 1번");
-  assert.match(textOf(await say("1")), /지금 단계의 버튼을 눌러 주세요[\s\S]*보강 신청할까요/);
+  assert.match(textOf(await say("1")), /지금 단계의 버튼을 눌러 주세요[\s\S]*보강을 예약할까요/);
 
   // 다른 업무를 말하면 보강 대화는 닫고 null(기존 흐름으로)
   assert.equal(await say("오늘 셔틀 안 타요"), null);
@@ -614,18 +630,18 @@ test("30분 만료 · 대화 중 다른 업무 · 짧은 답", async () => {
 test("챗봇 우선순위: 보강은 대화 흐름, 정책 질문·다른 업무는 기존 그대로", async () => {
   const db = makeDb();
   const neverPolicy = async () => assert.fail("보강 업무는 정책 답변으로 가지 않는다");
-  const res = await chatbot.handleLinkedMessage(IDENTITY, "보강 신청", "r1", neverPolicy);
+  const res = await chatbot.handleLinkedMessage(IDENTITY, "보강 예약", "r1", neverPolicy);
   assert.match(textOf(res), /보강권 2장/);
   // 보강 규정 질문도 원래처럼 정책 답변보다 보강 업무가 먼저(예전엔 화면 링크, 이제는 보강권 안내)
   const q = await chatbot.handleLinkedMessage(IDENTITY, "보강은 몇 번까지 되나요?", "r2", neverPolicy);
   assert.match(textOf(q), /보강권 2장/);
 
-  // 결석·보강 메뉴에 「보강 신청」「보강 취소」
+  // 결석·보강 메뉴에 「보강 예약」「보강 취소」
   const menu = await chatbot.handleLinkedMessage(IDENTITY, "결석·보강", "r3");
-  assert.deepEqual(replies(menu), ["정규수업 결석", "결석 취소", "방학특강 결석", "보강 신청", "보강 취소", "조퇴 상담"]);
+  assert.deepEqual(replies(menu), ["정규수업 결석", "결석 취소", "방학특강 결석", "보강 예약", "보강 취소", "조퇴 상담"]);
 
   // 보강 대화 중에 정책 질문 → 보강 대화는 닫히고 정책 연결점이 불린다
-  await chatbot.handleLinkedMessage(IDENTITY, "보강 신청", "r4");
+  await chatbot.handleLinkedMessage(IDENTITY, "보강 예약", "r4");
   let policyCalls = 0;
   await chatbot.handleLinkedMessage(IDENTITY, "환불 규정이 어떻게 되나요?", "r5", async () => { policyCalls += 1; return null; });
   assert.equal(policyCalls, 1);
@@ -638,7 +654,7 @@ test("챗봇 우선순위: 보강은 대화 흐름, 정책 질문·다른 업무
 
   // 보강 대화를 시작하면 작성 중이던 접수 초안은 닫힌다(남은 「네」가 엉뚱한 접수를 확정하지 않게)
   db.intakes.push({ id: "d1", identityId: "i1", studentId: "s1", kind: "CONSULTATION", sourceText: "문의", status: "DRAFT", updatedAt: Date.now() });
-  await chatbot.handleLinkedMessage(IDENTITY, "보강 신청", "r7");
+  await chatbot.handleLinkedMessage(IDENTITY, "보강 예약", "r7");
   assert.equal(db.intakes.find((row) => row.id === "d1").status, "CANCELED");
 });
 
@@ -649,13 +665,13 @@ test("챗봇 우선순위(2026-11-07): 대관은 카드, 당일 셔틀은 셔틀
   assert.equal(rental.template.outputs[0].textCard.title, "체육관 대관 안내");
   assert.match(rental.template.outputs[0].textCard.buttons[0].webLinkUrl, /\/rental$/);
 
-  await chatbot.handleLinkedMessage(IDENTITY, "보강 신청", "q2");
+  await chatbot.handleLinkedMessage(IDENTITY, "보강 예약", "q2");
   const shuttle = await chatbot.handleLinkedMessage(IDENTITY, "내일 셔틀 안 타요", "q3", neverPolicy);
   assert.match(textOf(shuttle), /등원·하원 중 어느 쪽/);
   assert.ok(db.intakes.every((row) => row.status !== "MAKEUP_FLOW"), "보강 대화는 닫힌다");
   assert.equal(db.intakes.filter((row) => row.status === "SHUTTLE_FLOW").length, 1);
-  // 셔틀 대화 중 「보강 신청」이면 셔틀 대화도 닫힌다(동시에 두 흐름이 살아 있지 않다)
-  await chatbot.handleLinkedMessage(IDENTITY, "보강 신청", "q4");
+  // 셔틀 대화 중 「보강 예약」이면 셔틀 대화도 닫힌다(동시에 두 흐름이 살아 있지 않다)
+  await chatbot.handleLinkedMessage(IDENTITY, "보강 예약", "q4");
   assert.equal(db.intakes.filter((row) => row.status === "SHUTTLE_FLOW").length, 0);
 });
 

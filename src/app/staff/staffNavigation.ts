@@ -20,6 +20,21 @@ export function subscribeStaffLiveLesson(onChange: () => void) {
   return () => window.removeEventListener(STAFF_LIVE_LESSON_EVENT, onChange);
 }
 
+/**
+ * 메뉴에서 다른 화면으로 갈 때 «저장 후 이동» 확인을 거쳐야 하는가(순수 판단 — 2026-11-17 화면 이동 전수 조사).
+ *
+ * 왜: 2026-11-15 부터 수업은 선생님 홈(/staff)의 줄 안에서 진행한다. 예전 판정은 수업 주소(/staff/sessions/…)만 봐서
+ * 홈에서 수업 중에 메뉴로 나가면 쓰던 메모를 저장하지 않고 그냥 떠났다.
+ *  - 수업 주소: 늘 확인한다(예전과 같다).
+ *  - 선생님 홈: 진행 중 수업 칸이 펼쳐져 있을 때만(<html> 의 «수업 중» 표시). 수업이 없으면 확인 창 없이 바로 간다.
+ *  - 그 밖의 화면: 표시가 남아 있더라도 확인하지 않는다(저장할 수업 화면이 없다).
+ */
+export function shouldConfirmStaffLeave(pathname: string | null | undefined, liveLessonOpen: boolean): boolean {
+  const path = String(pathname ?? "");
+  if (path.startsWith("/staff/sessions/")) return true;
+  return path === "/staff" && liveLessonOpen;
+}
+
 export type StaffNavigationPreparation = { ok: boolean; message?: string };
 
 export function prepareStaffNavigation() {

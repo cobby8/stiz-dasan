@@ -22,6 +22,6 @@ export default async function AccountChildrenPage() {
       <Link href={backHref} aria-label="내 화면으로"><Image src="/stiz-logo.png" alt="STIZ" width={120} height={52} className="h-10 w-auto object-contain" /></Link>
       <AccountViewSwitcher views={views} />
     </header>
-    <main className="mx-auto max-w-3xl p-4 sm:p-6"><ChildConnectionsClient backHref={backHref} academyPhone={await getUsableAcademyPhone()} /></main>
+    <main className="mx-auto max-w-3xl p-4 sm:p-6"><ChildConnectionsClient backHref="/account" academyPhone={await getUsableAcademyPhone()} /></main>
   </AcademyTheme>;
 }

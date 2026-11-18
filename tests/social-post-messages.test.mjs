@@ -139,7 +139,9 @@ test("AI 문구: 기본 문구로 바뀌면 결과에 담아 화면이 구분해
 test("공지 → 인스타 문구: 방학특강이 박혀 나오지 않고 학원 이름 해시태그만 쓴다", () => {
   assert.doesNotMatch(campaigns.replace(/\/\/.*$/gm, ""), /방학/);
   assert.match(campaigns, /return \["#스티즈농구교실", "#스티즈농구교실다산점"\]\.join\(" "\);/);
-  assert.match(campaigns, /adDescription: "STIZ 농구교실 다산점 안내",/);
+  // 2026-11-17: 광고 소재 문구(adDescription 등)는 기능을 없애며 미리보기에서 뺐다 — 다시 생기지 않게 한다.
+  // (발행 동작은 tests/notice-social-publish.test.mjs 가 실제로 돌려 확인한다)
+  assert.doesNotMatch(campaigns, /adPrimaryText|adHeadline|adDescription/);
 });
 
 test("설정 문구: 자동 업로드는 «첫 번째 이미지»가 아니라 최대 10장 묶음이다", () => {

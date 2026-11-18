@@ -4,6 +4,7 @@ import { getBundleCheckoutCandidates, getPaymentProviderConfig } from "@/lib/pay
 import { academyBankAccount } from "@/lib/payments/academy-bank-account";
 import { tossFailMessage } from "@/lib/payments/tossFailMessage";
 import { readPreferredPaymentMethod } from "@/lib/payments/preferredMethodStore";
+import { getAcademyContact } from "@/lib/academyPhone";
 import BundleCheckoutClient from "./BundleCheckoutClient";
 
 export const dynamic = "force-dynamic";
@@ -38,6 +39,8 @@ export default async function BundleCheckoutPage({
     const config = getPaymentProviderConfig();
     // 지난번 결제 방법(본인 계정만, 못 읽으면 null)
     const preferredMethod = await readPreferredPaymentMethod(parent.appUserId);
+    // 학원 전화·카카오 채널(설정값) — 학원에 물어야 하는 결제 오류 옆 «전화·문의» 버튼용. 못 읽어도 화면은 뜬다
+    const contact = await getAcademyContact();
 
     return (
         <BundleCheckoutClient
@@ -51,6 +54,7 @@ export default async function BundleCheckoutPage({
             failed={failed}
             failMessage={failMessage}
             preferredMethod={preferredMethod}
+            contact={contact}
         />
     );
 }

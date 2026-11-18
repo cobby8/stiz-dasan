@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import ScopeBackLink from "@/components/navigation/ScopeBackLink";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { useState, useTransition } from "react";
 import { recoverStaffInvitation } from "@/app/actions/staff-invite-recovery";
@@ -50,7 +50,7 @@ export default function StaffInviteRecoveryClient({ initialInvitations }: { init
   return (
     <main className="mx-auto max-w-4xl space-y-5 p-6">
       <div>
-        <Link href="/admin/staff" className="text-sm font-medium text-[var(--color-academy-muted)]">← 스태프 관리</Link>
+        <ScopeBackLink fallbackHref="/admin/staff" className="text-sm font-medium text-[var(--color-academy-muted)]">← 스태프 관리</ScopeBackLink>
         <AdminPageHeader title="중단된 초대 복구" className="mt-3" />
         <p className="mt-2 text-sm text-[var(--color-academy-muted)]">원장 계정만 실행할 수 있습니다. 10분 이상 중단된 가입 또는 복구 필요 상태만 초기화됩니다.</p>
       </div>

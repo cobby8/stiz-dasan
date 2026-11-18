@@ -15,6 +15,7 @@
 import UiIcon from "@/components/common/UiIcon";
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import AdminModal from "@/components/admin/AdminModal";
 import { adminErrorText } from "@/components/admin/adminDisplayText";
 import type { MapLocationData } from "@/components/maps/LocationPickerModal";
@@ -116,6 +117,7 @@ export default function StudentRegisterModal({
     /** 중복 의심 학생 «그 학생 열기» — 없으면 상세 화면으로 이동 */
     onOpenStudent?: (studentId: string) => void;
 }) {
+    const router = useRouter();
     const [step, setStep] = useState<1 | 2 | 3>(1);
     const [options, setOptions] = useState<StudentRegisterOptions | null>(null);
     const [optionsError, setOptionsError] = useState<string | null>(null);
@@ -458,7 +460,8 @@ export default function StudentRegisterModal({
                                             </span>
                                             <button
                                                 type="button"
-                                                onClick={() => (onOpenStudent ? onOpenStudent(d.id) : window.location.assign(`/admin/students/${d.id}`))}
+                                                // 화면 안 이동(router.push) — 전체를 새로 불러오면 느리고 앞 화면(신청함 등)으로 돌아올 때 상태가 사라진다
+                                                onClick={() => (onOpenStudent ? onOpenStudent(d.id) : router.push(`/admin/students/${d.id}`))}
                                                 className="academy-button-text"
                                             >
                                                 그 학생 열기

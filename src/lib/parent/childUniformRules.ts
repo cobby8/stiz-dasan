@@ -3,9 +3,12 @@
 // ★ 주문 표(UniformOrder·UniformOrderItem)에는 학생 id·학부모 계정 id 가 없다 — «보호자 전화번호 + 학생 이름»뿐이다.
 //   그래서 «이 아이의 주문»은 아래 두 조건을 «모두» 만족하는 품목만으로 정한다(이름만으로는 절대 찾지 않는다 — 동명이인):
 //     1) 주문의 parentPhoneDigits = 로그인한 학부모 본인 계정 전화번호(숫자만, 열쇠로 쓸 수 있는 번호일 때만)
-//     2) 품목의 학생 이름(띄어쓰기 제거) = 아이 이름(띄어쓰기 제거 + 끝의 영문·숫자 구분 글자 A/B 제거)
+//     2) 품목의 학생 이름(띄어쓰기 제거)이 아래 둘 중 «하나»와 같다(2026-11-17):
+//          · 아이 열쇠 — 아이 이름에서 띄어쓰기를 지우고 끝의 영문·숫자 구분 글자(A/B·숫자)를 뗀 것(«김루빈A» → «김루빈»)
+//          · 아이 전체 이름 — 띄어쓰기만 지운 것(«김루빈A») — 주문서에 구분 글자까지 적은 경우도 맞게
 //   SQL(childUniformQuery)이 같은 조건으로 고르고, 여기서 한 번 더 거른다(이중 확인).
 // ★ 화면으로 내보내는 값은 ChildUniformOrderView 칸뿐 — 전화번호·보호자 이름·메모·본사 연동 값·오류 글은 넣지 않는다.
+//   인쇄 이름(유니폼에 찍는 영문 이름)은 등번호와 함께 보인다(2026-11-17 원장 결정 r3) — 학부모 본인이 주문서에 적은 값이다.
 import { isUsablePhoneKey, parentPhoneDigits } from "@/lib/enrollment/parentIdentity";
 import type { StatusTone } from "@/lib/ui/statusTones";
 
@@ -22,6 +25,21 @@ export function childUniformNameKey(name: unknown): string {
   const compact = orderItemNameKey(name);
   const stripped = compact.replace(/[A-Za-z0-9]+$/, "");
   return stripped.length > 0 ? stripped : compact;
+}
+
+/** 이름 비교에 쓰는 열쇠 묶음 — childNameKey(구분 글자 뗀 것) 또는 childFullNameKey(띄어쓰기만 지운 전체 이름) 중 하나와 같으면 통과 */
+export type ChildUniformNameKeys = { childNameKey: string; childFullNameKey?: string | null };
+
+/**
+ * 품목의 학생 이름이 이 아이의 것인가 — «아이 열쇠» 또는 «띄어쓰기만 지운 아이 전체 이름» 둘 중 하나와 같으면 참.
+ * SQL 의 `regexp_replace(i."studentName", '\s', '', 'g') IN ($2, $3)` 와 같은 기준이다(양쪽을 함께 고친다).
+ * 빈 이름은 언제나 거짓(전화번호만으로는 형제 구분이 안 된다).
+ */
+export function orderItemNameMatches(itemName: unknown, keys: ChildUniformNameKeys): boolean {
+  const name = orderItemNameKey(itemName);
+  if (name.length === 0 || keys.childNameKey.length === 0) return false;
+  const full = keys.childFullNameKey ?? "";
+  return name === keys.childNameKey || (full.length > 0 && name === full);
 }
 
 /** 로그인 학부모 전화번호 → 주문 비교 열쇠. 쓸 수 없는 번호(비었음·자리채움)면 null = 주문을 찾지 않는다 */
@@ -55,6 +73,8 @@ export type ChildUniformOrderRow = {
   orderStatus: unknown;
   stizSyncStatus: unknown;
   hasOrderNumber: unknown;
+  /** 인쇄 이름(사이트 주문의 «이니셜» 칸) — 등번호와 함께 보인다. 옛 조회 결과에는 없을 수 있다 */
+  printName?: unknown;
   /** 확인용 — 화면으로 내보내지 않는다 */
   parentPhoneDigits: unknown;
   /** 확인용 — 화면으로 내보내지 않는다 */
@@ -69,6 +89,8 @@ export type ChildUniformOrderView = {
   design: string | null;
   /** 등번호 — 숫자 글자 그대로("0" 도 번호) */
   backNumber: string | null;
+  /** 인쇄 이름(유니폼에 찍는 영문 이름) — 등번호 옆에 보인다(2026-11-17 r3). 값이 없거나 옛 데이터면 없음 */
+  printName?: string | null;
   topSize: string | null;
   bottomSize: string | null;
   quantity: number;
@@ -87,10 +109,10 @@ const text = (v: unknown): string | null => {
  * SQL 결과 → 화면 줄. 전화번호 열쇠·아이 이름 열쇠와 다시 맞춰 보고(이중 확인) 맞는 것만 남긴다.
  * 열쇠가 하나라도 없으면 빈 목록.
  */
-export function toChildUniformOrders(rows: ChildUniformOrderRow[], keys: { phoneKey: string | null; childNameKey: string }): ChildUniformOrderView[] {
+export function toChildUniformOrders(rows: ChildUniformOrderRow[], keys: { phoneKey: string | null } & ChildUniformNameKeys): ChildUniformOrderView[] {
   if (!keys.phoneKey || !keys.childNameKey) return [];
   return rows
-    .filter((r) => String(r.parentPhoneDigits ?? "") === keys.phoneKey && orderItemNameKey(r.studentName) === keys.childNameKey)
+    .filter((r) => String(r.parentPhoneDigits ?? "") === keys.phoneKey && orderItemNameMatches(r.studentName, keys))
     .map((r) => {
       const status = parentUniformOrderStatus(r);
       const qty = Number(r.quantity ?? 1);
@@ -100,6 +122,7 @@ export function toChildUniformOrders(rows: ChildUniformOrderRow[], keys: { phone
         appliedYmd: ymd && /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? ymd : null,
         design: text(r.design),
         backNumber: text(r.backNumber),
+        printName: text(r.printName),
         topSize: text(r.topSize),
         bottomSize: text(r.bottomSize),
         quantity: Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 1,
@@ -114,8 +137,9 @@ export function toChildUniformOrders(rows: ChildUniformOrderRow[], keys: { phone
 //
 // ★ 쇼핑몰 주문의 «이 아이의 주문» 조건(둘 다):
 //   1) 주문의 구매자 번호 또는 수령인 번호 = 로그인한 학부모 본인 계정 전화번호(열쇠로 쓸 수 있는 번호일 때만)
-//   2) 품목의 학생 이름(띄어쓰기 제거) = 아이 이름 열쇠 — 학생 이름이 빈 품목은 보이지 않는다(전화번호만으로는 형제 구분이 안 된다)
-// ★ 송장번호·전화번호·학생 이름·인쇄 이름은 화면으로 내보내지 않는다.
+//   2) 품목의 학생 이름(띄어쓰기 제거) = 아이 열쇠 또는 띄어쓰기만 지운 아이 전체 이름(orderItemNameMatches)
+//      — 학생 이름이 빈 품목은 보이지 않는다(전화번호만으로는 형제 구분이 안 된다)
+// ★ 송장번호·전화번호·학생 이름은 화면으로 내보내지 않는다. 인쇄 이름은 등번호와 함께 보인다(2026-11-17 원장 결정 r3).
 
 /** 쇼핑몰 품목 상태 → 학부모용 한 단어 + 상태색(완료 초록·주의 노랑·안내 파랑·취소 회색) */
 const SHOP_STATUS: Record<string, { label: string; tone: StatusTone }> = {
@@ -146,6 +170,8 @@ export type ChildShopUniformOrderRow = {
   quantity: unknown;
   itemStatus: unknown;
   canceled: unknown;
+  /** 인쇄 이름 — 등번호와 함께 보인다. 옛 조회 결과에는 없을 수 있다 */
+  printName?: unknown;
   /** 확인용 — 화면으로 내보내지 않는다 */
   buyerPhoneDigits: unknown;
   /** 확인용 — 화면으로 내보내지 않는다 */
@@ -155,14 +181,13 @@ export type ChildShopUniformOrderRow = {
 };
 
 /** 쇼핑몰 SQL 결과 → 화면 줄. 전화번호(구매자·수령인 중 하나)·이름 열쇠를 다시 맞춘다(이중 확인) */
-export function toChildShopUniformOrders(rows: ChildShopUniformOrderRow[], keys: { phoneKey: string | null; childNameKey: string }): ChildUniformOrderView[] {
+export function toChildShopUniformOrders(rows: ChildShopUniformOrderRow[], keys: { phoneKey: string | null } & ChildUniformNameKeys): ChildUniformOrderView[] {
   if (!keys.phoneKey || !keys.childNameKey) return [];
   return rows
     .filter((r) => {
       const phoneMatch = String(r.buyerPhoneDigits ?? "") === keys.phoneKey || String(r.receiverPhoneDigits ?? "") === keys.phoneKey;
-      const name = orderItemNameKey(r.studentName);
-      // 학생 이름이 빈 품목은 형제 구분이 안 되므로 버린다
-      return phoneMatch && name.length > 0 && name === keys.childNameKey;
+      // 학생 이름이 빈 품목은 형제 구분이 안 되므로 버린다(orderItemNameMatches 가 빈 이름을 거짓으로 돌려준다)
+      return phoneMatch && orderItemNameMatches(r.studentName, keys);
     })
     .map((r) => {
       const status = shopUniformOrderStatus(r);
@@ -174,6 +199,7 @@ export function toChildShopUniformOrders(rows: ChildShopUniformOrderRow[], keys:
         appliedYmd: ymd && /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? ymd : null,
         design: text(r.design),
         backNumber: text(r.backNumber),
+        printName: text(r.printName),
         topSize: text(r.topSize),
         bottomSize: text(r.bottomSize),
         quantity: Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 1,
@@ -204,12 +230,22 @@ export function uniformOrderSourceLabel(source: ChildUniformOrderView["source"])
   return null;
 }
 
-/** 주문 한 줄의 내용 글자 — «기본형 · 23번 · 상의 130 · 하의 130 · 1벌» (값이 있는 것만) */
-export function uniformOrderLine(o: Pick<ChildUniformOrderView, "design" | "backNumber" | "topSize" | "bottomSize" | "quantity">): string {
+/** 진행 중이거나 받은 신청 건수 — 머리줄 «N건»에 쓴다(취소·반품까지 세면 실제보다 많아 보인다). 줄 자체는 «취소»·«반품» 배지와 함께 그대로 보인다 */
+export function countActiveUniformOrders(orders: Pick<ChildUniformOrderView, "statusLabel">[]): number {
+  return orders.filter((o) => o.statusLabel !== "취소" && o.statusLabel !== "반품").length;
+}
+
+/**
+ * 주문 한 줄의 내용 글자 — «기본형 · 23번 · LEE JUN · 상의 130 · 하의 130 · 1벌» (값이 있는 것만).
+ * 인쇄 이름은 등번호 바로 뒤(유니폼 등에 함께 찍히는 것끼리 붙인다). 없으면 생략.
+ */
+export function uniformOrderLine(o: Pick<ChildUniformOrderView, "design" | "backNumber" | "topSize" | "bottomSize" | "quantity"> & { printName?: string | null }): string {
+  const printName = (o.printName ?? "").trim();
   return [
     o.design ?? "유니폼",
     // 길이로 본다 — "0" 도 등번호다
     o.backNumber !== null && o.backNumber.length > 0 ? `${o.backNumber}번` : null,
+    printName.length > 0 ? printName : null,
     o.topSize ? `상의 ${o.topSize}` : null,
     o.bottomSize ? `하의 ${o.bottomSize}` : null,
     `${o.quantity}벌`,

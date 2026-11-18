@@ -150,11 +150,11 @@ export function MonthCalendar({
                     // 달 이동 + 이 달 요약을 한 줄로(수업 탭)
                     <div className="flex flex-wrap items-center justify-between gap-x-2 border-b border-[var(--color-academy-line)] pr-3">
                         <nav aria-label="달 이동" className="flex items-center">
-                            <Link href={monthNav.prevHref} scroll={false} aria-label="이전 달" className="inline-flex size-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
+                            <Link href={monthNav.prevHref} replace scroll={false} aria-label="이전 달" className="inline-flex size-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
                                 <span aria-hidden="true" className="text-xl leading-none">‹</span>
                             </Link>
                             <span className="whitespace-nowrap text-sm font-semibold tabular-nums text-[var(--color-academy-ink)]">{monthTitle(view.month)}</span>
-                            <Link href={monthNav.nextHref} scroll={false} aria-label="다음 달" className="inline-flex size-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
+                            <Link href={monthNav.nextHref} replace scroll={false} aria-label="다음 달" className="inline-flex size-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
                                 <span aria-hidden="true" className="text-xl leading-none">›</span>
                             </Link>
                         </nav>
@@ -215,15 +215,15 @@ export default function ScheduleHub({
 
     return (
         <div className="space-y-3">
-            {/* 제목 + 달 이동을 한 줄로(설명 문구 없음) */}
+            {/* 제목 + 달 이동을 한 줄로(설명 문구 없음). 달·자녀 바꾸기는 같은 화면이라 replace — 쌓으면 «←»·기기 뒤로가 이전 달로 간다(2026-11-17) */}
             <div className="flex items-center justify-between gap-2">
                 <h1 className="academy-heading">일정</h1>
                 <nav aria-label="달 이동" className="flex items-center">
-                    <Link href={hrefFor(shiftMonth(view.month, -1))} aria-label="이전 달" className="inline-flex size-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
+                    <Link href={hrefFor(shiftMonth(view.month, -1))} replace aria-label="이전 달" className="inline-flex size-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
                         <span aria-hidden="true" className="text-2xl leading-none">‹</span>
                     </Link>
                     <span className="whitespace-nowrap px-1 text-base font-semibold tabular-nums text-[var(--color-academy-ink)]">{monthTitle(view.month)}</span>
-                    <Link href={hrefFor(shiftMonth(view.month, 1))} aria-label="다음 달" className="inline-flex size-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
+                    <Link href={hrefFor(shiftMonth(view.month, 1))} replace aria-label="다음 달" className="inline-flex size-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
                         <span aria-hidden="true" className="text-2xl leading-none">›</span>
                     </Link>
                 </nav>
@@ -233,7 +233,7 @@ export default function ScheduleHub({
             {childList.length > 1 && (
                 <nav aria-label="자녀 선택" className="flex flex-wrap gap-2">
                     {childList.map((c) => (
-                        <Link key={c.id} href={hrefFor(view.month, c.id)} aria-current={c.id === child?.id ? "page" : undefined} className={`academy-choice${c.id === child?.id ? " is-selected" : ""}`}>
+                        <Link key={c.id} href={hrefFor(view.month, c.id)} replace aria-current={c.id === child?.id ? "page" : undefined} className={`academy-choice${c.id === child?.id ? " is-selected" : ""}`}>
                             {c.name}
                         </Link>
                     ))}

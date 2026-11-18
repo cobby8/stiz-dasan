@@ -72,7 +72,7 @@ function freeze(ymd, hm = "00:00") {
 }
 test.afterEach(() => mock.timers.reset());
 
-const CLOSED = "마감 시간이 지나 여기서 바꿀 수 없습니다. 학원으로 연락해 주세요.";
+const CLOSED = "마감이 지나 여기서는 바꿀 수 없어요. 학원으로 연락해 주세요.";
 const BOOK_CLOSED = /보강은 수업 시작 1시간 전까지 예약할 수 있습니다/;
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -1605,7 +1605,7 @@ test("화면 세 곳: «날짜 바꾸기» 글자 버튼 + 그 자리에서 고�
   assert.match(makeupUi, /await load\(credit\.id, mode\);/);
   assert.match(makeupUi, /rescheduleMakeupAction\(\{ creditId, classId: pick\.classId, dateYmd: pick\.ymd \}\)/);
   assert.match(makeupUi, /c\.booking\.changeOpen === false \? \(/);
-  assert.match(makeupUi, /onClick=\{\(\) => reschedule\(c\.id\)\}[\s\S]{0,160}className="academy-button-primary w-full"[\s\S]{0,60}이 날짜로 바꾸기/);
+  assert.match(makeupUi, /onClick=\{\(\) => reschedule\(c\.id\)\}[\s\S]{0,160}className="academy-button-primary w-full"[\s\S]{0,120}\$\{pickedText\} 예약으로 바꾸기/);
 });
 
 test("경로: 결석·셔틀 API 에 move 분기, 보강은 서버 액션 — 모두 로그인한 보호자 id 를 서버에서 다시 얻는다", () => {

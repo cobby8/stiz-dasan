@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAdminConfirm } from "@/components/admin/AdminConfirmDialog";
 
@@ -49,6 +49,12 @@ export default function YoutubeConnectionClient({
   const { confirm, confirmDialog } = useAdminConfirm();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  // 연결 결과 문구(?connected=·?error=)는 처음 받은 값을 화면 상태로 옮겨 둔 뒤 주소의 쿼리를 지운다.
+  // 왜: 쿼리가 주소에 남으면 새로 고침·즐겨찾기·뒤로 돌아올 때마다 같은 문구가 다시 뜬다. 기록은 안 쌓는다(replace).
+  const [result] = useState(() => (resultMessage ? { text: resultMessage, isError: resultIsError } : null));
+  useEffect(() => {
+    if (resultMessage) router.replace("/admin/youtube", { scroll: false });
+  }, [resultMessage, router]);
   const lockedCount = (summary.PRIVATE_LOCKED ?? 0) + (summary.FAILED ?? 0);
 
   async function post(path: string, done: string) {
@@ -93,14 +99,14 @@ export default function YoutubeConnectionClient({
 
   return (
     <div className="space-y-3">
-      {resultMessage && (
+      {result && (
         <p
           role="status"
-          className={`rounded-xl p-3 text-sm ${resultIsError
+          className={`rounded-xl p-3 text-sm ${result.isError
             ? "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]"
             : "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]"}`}
         >
-          {resultMessage}
+          {result.text}
         </p>
       )}
 

@@ -11,7 +11,7 @@ import { PLAY_STORE_URL, appStoreUrl, resolveAppInstallTarget } from "@/lib/app-
 //   안드로이드 → Play 스토어로 바로 이동
 //   아이폰     → App Store(앱 번호가 채워지면 바로 이동) / 출시 전에는 «곧 출시» + 웹으로 쓰기
 //   PC 등      → 두 스토어 버튼을 보여 준다
-// ⚠️ /app 은 예전부터 «홈 화면 바로가기(/mypage/install)» 짧은 주소라 그대로 두고, 스토어 설치는 새 주소를 쓴다.
+// 2026-11-17: 옛 설치 안내 주소(/app·/mypage/install·/staff/install·/parent-app·/teacher-app)도 전부 이 화면으로 넘어온다(next.config redirects).
 
 // 기기마다 다른 곳으로 보내므로 미리 만들어 두면 안 된다(요청마다 UA 를 본다)
 // 버튼 등급(게슈탈트 «유사성»): 꽉 찬 주 버튼 / 테두리 보조 버튼. 색은 공개 홈페이지 토큰(public-sport.css)
@@ -74,7 +74,7 @@ export default async function AppInstallPage() {
                 아이폰 앱은 곧 출시돼요. 그동안 홈페이지에서 똑같이 쓰실 수 있어요.
               </p>
               <Link href="/mypage" className={PRIMARY_BUTTON}>홈페이지로 쓰기</Link>
-              <Link href="/parent-app" className={SECONDARY_BUTTON}>홈 화면에 바로가기 만들기</Link>
+              {/* «홈 화면에 바로가기 만들기»(/parent-app)는 뺐다 — 그 주소가 이제 이 화면으로 되돌아와 눌러도 제자리다(2026-11-17) */}
             </div>
           ) : (
             // PC 등 기기를 모를 때: 두 스토어를 나란히(아이폰은 출시 전이면 안내만)

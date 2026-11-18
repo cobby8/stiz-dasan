@@ -1057,6 +1057,40 @@ export async function isShuttleRequestConfirmed(shuttleRequestId: string): Promi
 }
 
 /**
+ * 이 셔틀 신청의 확정본 행이 «뺀 상태»로 남아 있고, 다시 «이용»으로 되살려도 되는가.
+ *
+ * 왜 필요한가(R-8③): 신청관리에서 취소하면 확정본 행은 빠지고(removedAt) 원본은 CANCELLED 가 된다.
+ * 그 학생을 신청관리에서 다시 «이용»으로 돌릴 때 `isShuttleRequestConfirmed` 는 살아 있는 행만 보므로
+ * «확정 전»으로 판정돼 원본 신청서만 REQUESTED 로 바뀌었다 → 신청관리엔 «요청»인데 기사님 명단엔 없는 학생.
+ * 그래서 복구 요청일 때는 서버가 뺀 행도 직접 확인한다(클라이언트가 보낸 값으로 갈래를 정하지 않는다 — R-5 와 같은 취지).
+ *
+ * false 를 돌려주는 경우(= 호출부가 예전처럼 원본만 고친다):
+ *   · 확정본 행이 아예 없다(확정 전 시즌·확정 뒤 들어온 신청) — 복구가 확정본 행을 새로 만들면 안 된다.
+ *   · 수강이 취소·거절됐다 — 되살려도 명단 조회가 숨긴다(되돌리기 거부와 같은 판정식).
+ *   · 확정 모드(킬 스위치)가 꺼져 있다 — 원본이 정본이다.
+ */
+export async function hasRevivableRemovedShuttleRosterRow(shuttleRequestId: string): Promise<boolean> {
+  if (!shuttleRequestId) return false;
+  if (!(await confirmedModeEnabled())) return false;
+  try {
+    const rows = await prisma.$queryRawUnsafe<RawRow[]>(
+      `SELECT 1 AS one
+         FROM "SeasonalShuttleRoster" sr
+         LEFT JOIN "SpecialProgramApplicationItem" ai ON ai.id = sr."applicationItemId"
+        WHERE sr."shuttleRequestId" = $1
+          AND sr."removedAt" IS NOT NULL
+          AND NOT ${ROSTER_ENROLLMENT_CANCELLED_SQL}
+        LIMIT 1`,
+      shuttleRequestId,
+    );
+    return rows.length > 0;
+  } catch {
+    // 표가 없는 환경(구버전 DB)에서는 확정본이 없는 것과 같다.
+    return false;
+  }
+}
+
+/**
  * 셔틀 신청 id로 확정본 행을 찾아 지도 핀을 찍는다(T-1).
  *
  * 왜 필요한가: 노선 편성 화면(/admin/shuttle)의 미배정 명단은 게이트웨이(= 확정본)에서 읽는데,

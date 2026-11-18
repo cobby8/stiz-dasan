@@ -4,6 +4,7 @@ import { validateMonthlyRegisterDraft } from "./monthly-register";
 import { WorkbenchError, workbenchTotal, filterWorkbenchDates, billingMonthOfDate, illnessMissedDatesOf, illnessReducedSumSql, type WorkbenchAmounts, type WorkbenchView, type WorkbenchCalendarSnapshot } from "./workbench";
 import { readWorkbench, type WorkbenchDb, type WorkbenchTx } from "./workbench-service";
 import { resolveMonthEvidence, type PaidPaymentEvidence } from "./carryEvidence";
+import { CARRY_NOT_ELIGIBLE_MESSAGE, carryPairProblem } from "@/lib/regular/carryReasonRules";
 
 export type ResolveWorkbenchAbsence = {
   action: "RESOLVE_ABSENCE"; month: string; sourceVersion: string; requestId: string;
@@ -47,8 +48,13 @@ export async function resolveWorkbenchAbsence(db: WorkbenchDb, input: unknown, a
     const credits = await tx.$queryRawUnsafe<Array<{ id: string; status: string }>>(`SELECT id,status FROM "MakeupCredit" WHERE "studentId"=$1 AND "sourceKey"=$2 FOR UPDATE`,absence.studentId,sourceKey);
     const bookings = await tx.$queryRawUnsafe<Array<{ id: string; status: string }>>(`SELECT id,status FROM "MakeupSession" WHERE "studentId"=$1 AND "originalClassId"=$2 AND ("originalDate" AT TIME ZONE 'Asia/Seoul')::date=$3::date FOR UPDATE`,absence.studentId,absence.classId,absence.date);
     if (b.resolution === "CARRY") {
+      // 약관상 이월 대상 사유(질병·부상·직계 가족 경조사)가 아니면 분류·증빙과 상관없이 거절한다(2026-11-17 원장 결정).
+      // 예전에는 «직계가족 경조사» 분류를 고르면 사유가 개인 사정·여행이어도 이월이 통과했다 — 그 구멍을 막는다.
+      const pairProblem = carryPairProblem(b.eligibility, absence.reason);
+      if (pairProblem === CARRY_NOT_ELIGIBLE_MESSAGE) throw new WorkbenchError(CARRY_NOT_ELIGIBLE_MESSAGE,409);
       if (b.evidenceConfirmed !== true || !["ILLNESS_INJURY", "DIRECT_FAMILY_EVENT"].includes(b.eligibility)) throw new WorkbenchError("질병·부상·직계가족 경조사 인정 근거를 확인해 주세요.");
-      if (b.eligibility === "ILLNESS_INJURY" && absence.reason !== "ILLNESS_INJURY") throw new WorkbenchError("결석 사유와 인정 분류를 확인해 주세요.",409);
+      // 사유와 분류가 짝이어야 한다: 질병·부상 ↔ ILLNESS_INJURY, 경조사 ↔ DIRECT_FAMILY_EVENT
+      if (pairProblem) throw new WorkbenchError(pairProblem,409);
       if (credits.some(c => ["USED","NO_SHOW"].includes(c.status)) || bookings.some(c => ["ATTENDED","NO_SHOW"].includes(c.status))) throw new WorkbenchError("이미 보강에 사용된 결석입니다. 자동 이월하지 않고 별도 확인이 필요합니다.",409);
       if ((credits.some(c => c.status === "RESERVED") || bookings.some(c => c.status === "BOOKED")) && b.cancelReservation !== true) throw new WorkbenchError("보강 예약 취소와 좌석 해제를 확인해 주세요.",409);
       const attendance = await tx.$queryRawUnsafe<Array<{status:string}>>(`SELECT t.status FROM "Attendance" t JOIN "Session" se ON se.id=t."sessionId" WHERE t."studentId"=$1 AND se."classId"=$2 AND se.date::date=$3::date FOR SHARE OF t,se`,absence.studentId,absence.classId,absence.date);
@@ -62,9 +68,9 @@ export async function resolveWorkbenchAbsence(db: WorkbenchDb, input: unknown, a
     await tx.$executeRawUnsafe(`INSERT INTO "BillingAbsenceResolution" ("absenceId","studentId",resolution,reason,"evidenceConfirmed",eligibility,"actorUserId") VALUES ($1,$2,$3,$4,$5,$6,$7)`,absence.id,absence.studentId,b.resolution,b.reason.trim(),b.evidenceConfirmed===true,b.eligibility,actorId);
     // 질병·부상 «이월 검토»(2026-11-14 원장 결정 a3) — 신청함의 검토 상태를 «같은 트랜잭션»에서 맞춘다.
     // 이월(CARRY) → 이월 승인, 보강(MAKEUP) → 보강권으로 전환. 신청함 승인도 이 함수를 지나므로 규칙은 여기 한 곳이다.
-    // 검토 표가 아직 없으면(마이그레이션 전) 건너뛴다. 질병·부상 결석만 적는다(경조사 이월은 신청함 대상이 아니다).
+    // 검토 표가 아직 없으면(마이그레이션 전) 건너뛴다. 이월 검토 대상 사유(질병·부상, 2026-11-17부터 직계 가족 경조사도)만 적는다.
     const reviewTable=await tx.$queryRawUnsafe<Array<{found:string|null}>>(`SELECT to_regclass($1)::text AS found`,'public."RegularAbsenceCarryReview"');
-    if(reviewTable[0]?.found) await tx.$executeRawUnsafe(`INSERT INTO "RegularAbsenceCarryReview" ("absenceId",status,source,"decidedAt","decidedBy","decidedByUserId","convertReason") SELECT a.id,$2::text,'STAFF',NOW(),'ADMIN',$3::text,$4::text FROM "RegularAbsence" a WHERE a.id=$1 AND a.reason='ILLNESS_INJURY' ON CONFLICT ("absenceId") DO UPDATE SET status=EXCLUDED.status,"decidedAt"=NOW(),"decidedBy"='ADMIN',"decidedByUserId"=EXCLUDED."decidedByUserId","convertReason"=EXCLUDED."convertReason","updatedAt"=NOW()`,absence.id,b.resolution==="CARRY"?"APPROVED":"MAKEUP",actorId,b.resolution==="CARRY"?null:"REJECTED");
+    if(reviewTable[0]?.found) await tx.$executeRawUnsafe(`INSERT INTO "RegularAbsenceCarryReview" ("absenceId",status,source,"decidedAt","decidedBy","decidedByUserId","convertReason") SELECT a.id,$2::text,'STAFF',NOW(),'ADMIN',$3::text,$4::text FROM "RegularAbsence" a WHERE a.id=$1 AND a.reason IN ('ILLNESS_INJURY','FAMILY_EVENT') ON CONFLICT ("absenceId") DO UPDATE SET status=EXCLUDED.status,"decidedAt"=NOW(),"decidedBy"='ADMIN',"decidedByUserId"=EXCLUDED."decidedByUserId","convertReason"=EXCLUDED."convertReason","updatedAt"=NOW()`,absence.id,b.resolution==="CARRY"?"APPROVED":"MAKEUP",actorId,b.resolution==="CARRY"?null:"REJECTED");
     const operationResult = {requestId:b.requestId,action:b.action,rowIds:[absence.id],paymentIds:[],zeroCount:0};
     await tx.$executeRawUnsafe(`INSERT INTO "BillingWorkbenchOperation" ("requestId",fingerprint,result,"actorUserId") VALUES ($1,$2,$3::jsonb,$4)`,b.requestId,fingerprint,JSON.stringify(operationResult),actorId);
     return {view:await readWorkbench(tx,b.month,enabled,calendar),operationResult};

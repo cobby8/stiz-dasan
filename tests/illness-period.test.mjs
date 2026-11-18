@@ -777,7 +777,8 @@ function loadInbox(state) {
           }))
           .filter((row) => wanted.includes(row.raw));
       }
-      if (/FROM "RegularAbsence" x/.test(sql) && /x\.reason = 'ILLNESS_INJURY'/.test(sql)) {
+      // 2026-11-17: 하루짜리 목록은 직계 가족 경조사도 함께 읽는다(x.reason IN (...)) — 이 가짜 자료는 질병·부상만 있다
+      if (/FROM "RegularAbsence" x/.test(sql) && /x\.reason (= 'ILLNESS_INJURY'|IN \('ILLNESS_INJURY', 'FAMILY_EVENT'\))/.test(sql)) {
         // 하루짜리 목록 — «질병·부상 기간에 묶인 결석 제외» 문구가 있을 때만 뺀다
         const excludePeriod = /AND NOT EXISTS \(SELECT 1 FROM "RegularAbsencePeriod" illness_period\s+WHERE illness_period\.id = x\."periodId" AND \(illness_period\.reason = 'ILLNESS_INJURY' AND \(illness_period\.status <> 'CANCELLED' OR illness_period\."carryState" <> 'NONE'\)\)\)/.test(sql);
         return state.absences.filter(liveIllness)

@@ -8,6 +8,7 @@ import Link from "next/link";
 import { saveAttendance } from "@/app/actions/admin";
 import { kstLabel, todayKst } from "@/lib/datetime/kst";
 import { mondayOf } from "@/lib/attendance/weekBoard";
+import { findLessonForTarget, type AttendanceOpenTarget } from "@/lib/attendance/lessonQuery";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
@@ -131,16 +132,27 @@ function AttendanceErrorState({ onRetry }: { onRetry: () => void }) {
     );
 }
 
-export default function AttendanceClient({ classes: initialClasses }: { classes?: ClassItem[] }) {
+export default function AttendanceClient({ classes: initialClasses, initialOpen = null }: {
+    classes?: ClassItem[];
+    /** 주소(?date=&lesson=)로 지정한 날짜·수업 — 대시보드 «오늘 수업» 줄에서 올 때. 없으면 예전처럼 오늘·선택 없음 */
+    initialOpen?: AttendanceOpenTarget | null;
+}) {
     const hasInitialClasses = initialClasses !== undefined;
+    // 주소가 가리킨 수업을 서버가 넘긴 그날 목록에서 찾는다(없으면 "" = 그 날짜만 연다). 아래 상태들의 처음 값으로만 쓴다
+    const [initialLessonKey] = useState(() => {
+        const found = findLessonForTarget(initialClasses ?? [], initialOpen?.lesson ?? null);
+        return found ? lessonKeyOf(found) : "";
+    });
     const [classes, setClasses] = useState<ClassItem[]>(initialClasses ?? []);
     const [classesLoading, setClassesLoading] = useState(!hasInitialClasses);
     const [classesError, setClassesError] = useState(false);
-    const [selectedClass, setSelectedClass] = useState("");
+    // 주간 보드 카드를 눌러 여는 것(openFromBoard)과 같은 상태(selectedClass·date)를 쓴다 — 주소로 왔으면 처음부터 그 수업
+    const [selectedClass, setSelectedClass] = useState(initialLessonKey);
     // 한국 날짜 기준 "오늘" — UTC 로 구하면 KST 00~09시에 어제가 기본값이 된다(결석일·보강권 날짜가 하루 어긋남)
-    const [date, setDate] = useState(todayKst());
+    const [date, setDate] = useState(() => initialOpen?.date ?? todayKst());
     const [students, setStudents] = useState<StudentRecord[]>([]);
-    const [loading, setLoading] = useState(false);
+    // 주소로 수업을 열고 들어오면 명단을 받기 전 «원생이 없습니다»가 잠깐 깜빡이지 않게 처음부터 불러오는 중
+    const [loading, setLoading] = useState(initialLessonKey !== "");
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
     // 저장하지 않은 출결 변경이 있는지(패널을 실수로 닫아 입력이 사라지지 않게 막는 데만 쓴다)
@@ -150,7 +162,7 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
     // viewReady: 저장된 보기값을 읽은 뒤에만 주간 보드를 그린다(«날짜별» 사용자가 주간 API 를 헛부르지 않게)
     const [viewMode, changeViewMode, viewReady] = useRememberedListView(ATTENDANCE_VIEW_STORAGE_KEY, ATTENDANCE_VIEW_VALUES, "week");
     // 보던 주(월요일) — 보기를 «날짜별»로 바꿨다 돌아와도 같은 주가 보이게 여기서 들고 있는다
-    const [weekStart, setWeekStart] = useState(() => mondayOf(todayKst()));
+    const [weekStart, setWeekStart] = useState(() => mondayOf(initialOpen?.date ?? todayKst()));
     // 패널에서 저장하면 주간 보드의 그 카드만 다시 불러오게 보내는 신호
     const [boardRefresh, setBoardRefresh] = useState<(LessonRef & { n: number }) | null>(null);
 

@@ -75,7 +75,14 @@ test("로그인 두 곳이 같은 묶음을 넘기고, 묶음은 서버가 계�
   assert.match(viewAccess, /effectiveRoles\(\{ primaryRole: account\.role, grants, hasStudents: hasOwnChildren \}\)/);
   assert.match(viewAccess, /WHERE "userId" = \$1 AND status = 'ACTIVE'/);
   // 계정 ID·추가 역할 목록은 화면 전환 응답으로 새지 않는다(views 만 나간다).
-  assert.match(viewAccess, /return \{ role, views: resolveAccountViews\(role, parent\.canUseParentView, parent\.grants\) \};/);
+  // 2026-11-17: 서버 page 전용 참/거짓 hasOwnChildren(«학원에 문의» → «자녀 연결하기» 판단)만 함께 싣는다 — 계정 ID·grants 는 여전히 안 싣는다
+  assert.match(viewAccess, /return \{ role, views: resolveAccountViews\(role, parent\.canUseParentView, parent\.grants\), hasOwnChildren: parent\.hasOwnChildren \};/);
+  const viewReturn = viewAccess.match(/return \{ role, views:[^\n]*/)?.[0] ?? "";
+  assert.doesNotMatch(viewReturn, /appUserId|grants:|roles:/);
+  // 화면 전환 API 는 role·views 만 꺼내 응답한다(새 칸이 응답으로 새지 않게)
+  const roleApi = fs.readFileSync("src/app/api/auth/account-role/route.ts", "utf8");
+  assert.match(roleApi, /const \{ role, views \} = await getAccountViewAccess\(\);/);
+  assert.match(roleApi, /NextResponse\.json\(\s*\{ role, views \}/);
 });
 
 // ── 신청 액션 계약 ───────────────────────────────────────────────────────────

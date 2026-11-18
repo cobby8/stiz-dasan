@@ -289,7 +289,7 @@ test("⑤ 앱 안 공지 상세: 전체 공지·우리 아이 반 공지만 보�
   const Page = load("src/app/mypage/news/[id]/page.tsx", {
     "next/link": link,
     // «← 소식» = 기록 우선 뒤로 링크(2026-11-14) — 진짜 부품을 그린다(기록 없을 때 주소 = 예전 고정 주소)
-    "@/components/parent/ParentBackLink": load("src/components/parent/ParentBackLink.tsx", { "next/link": link, "@/lib/navigation/inAppHistory": load("src/lib/navigation/inAppHistory.ts") }),
+    "@/components/parent/ParentBackLink": load("src/components/parent/ParentBackLink.tsx", { "next/link": link, "@/lib/navigation/inAppHistory": load("src/lib/navigation/inAppHistory.ts"), "@/lib/navigation/publicHistory": load("src/lib/navigation/publicHistory.ts") }),
     "next/navigation": { notFound: () => { throw NOT_FOUND; } },
     "@/lib/auth-guard": { requireVerifiedParent: async () => ({ appUserId: "p1" }) },
     "@/lib/queries": {

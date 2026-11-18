@@ -92,7 +92,7 @@ function ScheduleFilter({ programs, allSlots, phone }: {
         setFilterOpen(true);
     };
     // 모달이 열린 동안 챗봇·입학 가이드 플로팅 버튼 숨김(게슈탈트 C-P3)
-    usePublicOverlayOpen(filterOpen);
+    const { captureLinks } = usePublicOverlayOpen(filterOpen, () => setFilterOpen(false));
     // Esc 로 필터 창 닫기
     useEffect(() => {
         if (!filterOpen) return;
@@ -158,7 +158,8 @@ function ScheduleFilter({ programs, allSlots, phone }: {
 
             {/* 프로그램 필터 모달 — PC 가운데, 모바일 하단 시트. 고른 뒤 «적용»을 눌러야 이동한다. */}
             {filterOpen && (
-                <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true" aria-label="프로그램 필터">
+                // «적용»(전체 이동 <a>)은 창이 넣은 기록 칸을 먼저 되돌린 뒤 이동한다
+                <div onClickCapture={captureLinks((to) => window.location.assign(to))} className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true" aria-label="프로그램 필터">
                     <div className="absolute inset-0 bg-black/50" onClick={() => setFilterOpen(false)} aria-hidden="true" />
                     <div className="relative flex max-h-[85vh] w-full flex-col rounded-t-2xl bg-white shadow-2xl dark:bg-[var(--color-public-tint)] sm:mx-4 sm:max-w-md sm:rounded-2xl">
                         <div className="flex items-center justify-between border-b border-[var(--color-public-line)] px-5 py-1 dark:border-[var(--color-public-line)]">

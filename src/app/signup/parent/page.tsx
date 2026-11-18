@@ -26,7 +26,7 @@ export default async function ParentSignupPage() {
             <ParentSignupClient policies={policies} />
           </Suspense>
         </section>
-        <p className="mt-6 text-center text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">이미 계정이 있나요? <Suspense fallback={<span>로그인</span>}><ParentLoginLink /></Suspense></p>
+        <p className="mt-6 text-center text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]"><Suspense fallback={<span>이미 계정이 있나요? 로그인</span>}><ParentLoginLink /></Suspense></p>
       </div>
     </main>
     </PublicSiteTheme>

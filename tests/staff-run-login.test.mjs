@@ -111,3 +111,16 @@ test("운행표로 가는 길이 두 곳에 있다", () => {
   // 기사님 앱 첫 화면(링크를 기억 못 한 경우) — 로그인 후 운행표로 돌아오게.
   assert.match(driverHome, /redirect: "\/staff\/shuttle"/);
 });
+
+// 2026-11-17 뒤로 가기 조사(native #7): 열쇠가 없을 때 /staff/run 으로 넘기면 안드로이드 앱이 그 주소를 막아 «여는 중…»에서 멈춘다
+test("앱 길에서 오늘 운행 열쇠가 없으면: 스토어 앱은 셔틀 화면, 브라우저는 안내가 있는 운행표", () => {
+  assert.equal(sessionRules.driverRunMissingKeyPath(true), "/staff/shuttle");
+  assert.equal(sessionRules.driverRunMissingKeyPath(false), "/staff/run");
+  // 앱으로 보내는 주소는 앱이 막는 주소(/staff/run 정확히)가 아니어야 한다
+  assert.notEqual(sessionRules.driverRunMissingKeyPath(true), sessionRules.DRIVER_RUN_PATH);
+  // 화면은 요청의 사용자 에이전트 표식으로 스토어 앱을 가른다 — 열쇠 확인 «뒤»에만(권한 순서는 위 테스트가 고정)
+  assert.match(runOpenPage, /if \(!token\) \{[\s\S]*?const storeApp = looksLikeStoreApp\(\{ userAgent: \(await headers\(\)\)\.get\("user-agent"\) \}\);\s*redirect\(driverRunMissingKeyPath\(storeApp\)\);\s*\}/);
+  assert.doesNotMatch(runOpenPage, /redirect\("\/staff\/run"\)/);
+  // 셔틀 화면은 열쇠 없이 열린다(같은 곳으로 다시 튕기지 않는다)
+  assert.doesNotMatch(shuttlePage, /findRollingDriverRunToken/);
+});

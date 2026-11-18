@@ -32,6 +32,33 @@ export function buildDriverLookupContext(serviceDate: string, direction?: "PICKU
   };
 }
 
+/** 선생님 홈 — 기사님만인 계정은 이 주소를 못 열고 운행 화면으로 넘겨진다. */
+const TEACHER_HOME = "/staff";
+/** 기사님이 결석·셔틀 알림을 눌렀을 때 볼 화면(그날 셔틀 명단). */
+export const DRIVER_NOTICE_LINK = "/staff/shuttle";
+
+/**
+ * 받는 사람 역할에 맞는 알림 주소(2026-11-17 뒤로 가기 조사 native #12).
+ * - 원장·부원장: 관리자 주소(linkUrl)
+ * - 선생님: 직원 주소(staffLinkUrl, 없으면 linkUrl)
+ * - 기사님: 직원 주소가 선생님 홈(/staff)이면 셔틀 명단으로 바꾼다 — /staff 는 기사님을 운행 화면으로 넘겨
+ *   알림 내용(누가 결석)과 다른 화면이 열렸다. 호출부가 셔틀 주소(/staff/shuttle?date=…)를 준 경우는 그대로 둔다.
+ */
+export function operationalLinkForRole(
+  role: string,
+  linkUrl: string,
+  staffLinkUrl?: string | null,
+  /** 알림이 가리키는 운행 날짜(YYYY-MM-DD). 있으면 기사님은 «그 날짜» 명단을 연다 — 내일 결석 알림이 오늘 명단을 열지 않게 */
+  serviceDate?: string | null,
+): string {
+  if (role === "ADMIN" || role === "VICE_ADMIN") return linkUrl;
+  const staffLink = staffLinkUrl ?? linkUrl;
+  if (role === "DRIVER" && staffLink === TEACHER_HOME) {
+    return serviceDate && /^\d{4}-\d{2}-\d{2}$/.test(serviceDate) ? `${DRIVER_NOTICE_LINK}?date=${serviceDate}` : DRIVER_NOTICE_LINK;
+  }
+  return staffLink;
+}
+
 /**
  * 조회 결과(그날 명단에 학생이 있을 때만 채워진 현재 기사 id 목록)로 수신자를 정한다.
  * 비어 있으면(명단에 없음·기사 계정 없음) 아무에게도 보내지 않고 원장 알림에 «담당 기사 확인 필요»를 붙인다.

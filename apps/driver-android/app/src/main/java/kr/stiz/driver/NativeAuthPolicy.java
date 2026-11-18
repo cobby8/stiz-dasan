@@ -16,6 +16,19 @@ final class NativeAuthPolicy {
     static final long LIFETIME_MS = 5 * 60 * 1000;
     /** 서버가 브라우저 로그인 실패 때 돌려주는 이유(src/lib/native-auth/service.ts NATIVE_BROWSER_FAILURES 와 같게). */
     static final String[] FAILURES = {"no_account", "cancelled", "failed"};
+    /**
+     * 앱이 진행 중인 간편로그인을 그만둔 이유(1.0.6, 2026-11-17). /auth/native/cancel 에 한 단어로 실어
+     * 서버 기록으로 원인을 볼 수 있게 한다(개인정보 없음). 서버 NATIVE_CANCEL_REASONS 와 같게.
+     */
+    static final String[] CANCEL_REASONS = {"user_cancel", "page_left", "timeout", "start_failed", "browser_failed", "returned_empty", "return_failed", "app_closed"};
+    /**
+     * 웹뷰 화면이 바뀔 때 진행 중인 간편로그인을 취소해야 하나(1.0.6).
+     * 1.0.5 는 같은 사이트 안의 다시 불러오기·주소 이동에도 취소해, 맞춤 탭이 뜨기 전에 요청이 끝나 «로그인을 완료하지 못했습니다»
+     * 맨글자 화면이 떴다(2026-11-17 운영: 카카오 15건 중 8건). 이제 우리 사이트 밖(결제·바깥 화면·빈 화면)으로 나갈 때만 취소한다.
+     * 안전 근거: 로그인 완료는 복귀 시점에 flow·state·5분·앱 메모리의 PKCE 비밀값으로 따로 검증하고,
+     * 교환(consume)은 항상 우리 사이트 주소로만 보낸다 — 화면이 사이트 안에서 바뀌었다고 남이 끼어들 틈이 생기지 않는다.
+     */
+    static boolean cancelsAttempt(String origin, String url) { return url == null || !AppNavigationPolicy.sameOrigin(origin, url); }
     /** 빌드 종류별 복귀 주소 이름 — 출시 빌드는 개발 주소를 받지 않는다. */
     static String callbackScheme(boolean debug) { return debug ? DEVELOPMENT_CALLBACK_SCHEME : RELEASE_CALLBACK_SCHEME; }
     private NativeAuthPolicy() { }

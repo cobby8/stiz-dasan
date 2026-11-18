@@ -218,7 +218,9 @@ test('«?kind=» 주소 — 그 종류의 탭을 열고 그 종류만, «…만 
   assert.match(page, /const kinds = kind \? \[kind\] : kindsOfTab\(tab, sub\);/);
   assert.match(client, /if \(k\) params\.set\("kind", k\);/);
   assert.match(client, /\{kindLabel\(kind\)\}만 보기/);
-  assert.match(client, /onClick=\{\(\) => go\(\{ kind: null, sub: null \}\)\}/);
+  // 한 종류 풀기는 같은 화면의 보기 설정 — 기록에 쌓지 않는다(replace). 큰 탭은 push 그대로
+  assert.match(client, /onClick=\{\(\) => go\(\{ kind: null, sub: null \}, "replace"\)\}/);
+  assert.match(client, /onClick=\{\(\) => go\(\{ tab: entry\.tab \}\)\}/);
 });
 
 test('체험·수강 탭 처리 후 배지·메뉴 숫자 갱신 — onChanged(선택 콜백) → router.refresh, 옛 /admin/apply 는 그대로', () => {

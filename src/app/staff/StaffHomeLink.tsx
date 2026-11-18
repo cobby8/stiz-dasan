@@ -9,6 +9,9 @@ import { prepareStaffNavigation } from "./staffNavigation";
 export default function StaffHomeLink({ isDriver = false }: { isDriver?: boolean }) {
   const pathname = usePathname();
   const inSession = pathname.startsWith("/staff/sessions/");
+  // 기사님 전용 계정의 홈은 셔틀 화면(2026-11-17) — /staff 는 이 계정을 기사님 첫 화면 → 운행 화면으로 넘겨,
+  // 로고를 누르면 홈이 아니라 운행 화면(안드로이드 앱은 직원 틀 밖의 운행 링크)으로 갔다
+  const homeHref = isDriver ? "/staff/shuttle" : "/staff";
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -67,15 +70,15 @@ export default function StaffHomeLink({ isDriver = false }: { isDriver?: boolean
       setError(result.message || "수업 기록을 저장하지 못해 이동을 중단했습니다.");
       return;
     }
-    window.location.assign("/staff");
+    window.location.assign(homeHref);
   };
 
   return (
     <>
-      <Link ref={triggerRef} href="/staff" onClick={(event) => { if (!inSession) return; event.preventDefault(); setOpen(true); }} className="flex min-h-12 shrink-0 items-center gap-2 rounded-xl text-[var(--color-academy-ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-accent)]" aria-label="교사용 홈으로 이동">
+      <Link ref={triggerRef} href={homeHref} onClick={(event) => { if (!inSession) return; event.preventDefault(); setOpen(true); }} className="flex min-h-12 shrink-0 items-center gap-2 rounded-xl text-[var(--color-academy-ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-accent)]" aria-label="교사용 홈으로 이동">
         {/* 실제 공식 로고를 유지해 역할이 바뀌어도 같은 학원 앱임을 알립니다. */}
         <Image src="/stiz-logo.png" alt="스티즈 농구교실" width={92} height={40} className="h-10 w-20 shrink-0 object-contain sm:w-[92px]" />
-        <span className="shrink-0 whitespace-nowrap text-xs font-medium text-[var(--color-academy-muted)]">{isDriver ? "기사님 앱" : "선생님 앱"}</span>
+        <span className="shrink-0 whitespace-nowrap text-xs font-medium text-[var(--color-academy-muted)]">{isDriver ? "기사님 화면" : "선생님 화면"}</span>
       </Link>
       {open && (
         <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50 p-3 sm:items-center" onMouseDown={(event) => !saving && event.target === event.currentTarget && close()}>

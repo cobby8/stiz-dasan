@@ -13,6 +13,15 @@ export type NativeFlow = {
  */
 export type NativeBrowserFailure = "no_account" | "cancelled" | "failed";
 export const NATIVE_BROWSER_FAILURES: readonly NativeBrowserFailure[] = ["no_account", "cancelled", "failed"];
+/**
+ * 앱(1.0.6~)이 간편로그인을 그만둘 때 /auth/native/cancel 에 싣는 이유 한 단어(개인정보 없음, 2026-11-17).
+ * 서버 기록으로 «왜 브라우저 단계 전에 취소됐는지»를 보려고 받는다. Android CANCEL_REASONS·iOS cancelReasons 와 같게(테스트 고정).
+ */
+export const NATIVE_CANCEL_REASONS = ["user_cancel", "page_left", "timeout", "start_failed", "browser_failed", "returned_empty", "return_failed", "app_closed"] as const;
+/** 알 수 없는 값·옛 앱(이유 없음)은 "unknown" — 기록에 받은 글자를 그대로 남기지 않는다 */
+export function nativeCancelReason(value: unknown): string {
+  return typeof value === "string" && (NATIVE_CANCEL_REASONS as readonly string[]).includes(value) ? value : "unknown";
+}
 export type NativeSession = { access_token: string; refresh_token: string; authUserId: string };
 export interface NativeFlowStore {
   purgeExpired?(now: Date): Promise<void>;

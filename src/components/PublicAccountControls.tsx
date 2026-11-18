@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { logout } from "@/app/actions/auth";
-import { defaultPathForRole, type AppRole } from "@/lib/auth-routes";
-import { createClient } from "@/lib/supabase/client";
+import { usePathname } from "next/navigation";
+import { defaultPathForRole, loginHrefFrom, type AppRole } from "@/lib/auth-routes";
 import AccountViewSwitcher from "./AccountViewSwitcher";
 import type { AccountViewOption } from "@/lib/account-views";
 
@@ -100,34 +100,45 @@ function useAccountState(initialRole: AppRole | null = null) {
   }, [refreshAccountRole]);
 
   useEffect(() => {
-    const supabase = createClient();
+    // 로그인 서비스(Supabase) 부품(약 200KB)은 화면이 뜬 뒤에 받는다(2026-11-18 속도 조치) — 로그인·로그아웃을 지켜보는 용도라
+    // 첫 그림에는 필요 없다. 받기 전에 이 부품이 사라지면(다른 화면으로 이동) 구독하지 않는다.
+    let cancelled = false;
+    let unsubscribe: (() => void) | null = null;
+    void import("@/lib/supabase/client").then(({ createClient }) => {
+      if (cancelled) return;
+      const {
+        data: { subscription },
+      } = createClient().auth.onAuthStateChange((event) => {
+        if (event === "SIGNED_OUT") {
+          forgetSharedAccountRole(); // 로그아웃 뒤에는 방금 받은 «로그인됨» 답을 다시 쓰지 않는다
+          setAppRole(null);
+          setAccountViews([]);
+          return;
+        }
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_OUT") {
-        forgetSharedAccountRole(); // 로그아웃 뒤에는 방금 받은 «로그인됨» 답을 다시 쓰지 않는다
-        setAppRole(null);
-        setAccountViews([]);
-        return;
-      }
+        // 로그인 또는 계정 갱신 시 metadata를 쓰지 않고 Server Component를
+        // 새로 고쳐 DB에서 확인한 역할을 다시 전달받는다.
+        if (event === "SIGNED_IN" || event === "USER_UPDATED") {
+          void refreshAccountRole();
+        }
+      });
+      unsubscribe = () => subscription.unsubscribe();
+    }).catch(() => { /* 부품을 못 받으면 지켜보지 않을 뿐 — 역할은 위 refreshAccountRole 이 이미 읽었다 */ });
 
-      // 로그인 또는 계정 갱신 시 metadata를 쓰지 않고 Server Component를
-      // 새로 고쳐 DB에서 확인한 역할을 다시 전달받는다.
-      if (event === "SIGNED_IN" || event === "USER_UPDATED") {
-        void refreshAccountRole();
-      }
-    });
-
-    return () => subscription.unsubscribe();
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
   }, [refreshAccountRole]);
 
-  const accountHref = appRole ? defaultPathForRole(appRole) : "/login";
+  // 로그인 전이면 보던 화면 주소를 넘긴다 — 로그인 뒤 그 화면으로 돌아온다(2026-11-17)
+  const pathname = usePathname();
+  const accountHref = appRole ? defaultPathForRole(appRole) : loginHrefFrom(pathname);
   const accountLabel =
     appRole === "ADMIN" || appRole === "VICE_ADMIN"
       ? "관리자"
       : appRole === "INSTRUCTOR"
-        ? "선생님 앱"
+        ? "선생님 화면"
         : appRole === "PARENT"
           ? "마이페이지"
           : "로그인";
@@ -147,13 +158,13 @@ export function DesktopAccountControls({ initialRole = null }: AccountControlsPr
         <div className="academy-app hidden rounded-xl md:block"><AccountViewSwitcher views={accountViews} /></div>
       ) : <Link
         href={accountHref}
-        aria-label={isStaffPrimary ? "선생님 앱" : undefined}
-        title={isStaffPrimary ? "선생님 앱" : undefined}
+        aria-label={isStaffPrimary ? "선생님 화면" : undefined}
+        title={isStaffPrimary ? "선생님 화면" : undefined}
         className={DESKTOP_ACCOUNT_CLASS}
       >
         {isStaffPrimary ? (
           <>
-            <span>선생님 앱</span>
+            <span>선생님 화면</span>
           </>
         ) : (
           accountLabel
@@ -197,12 +208,12 @@ export function MobileAccountControls({
         href={accountHref}
         onClick={onNavigate}
         className={`flex min-h-11 items-center justify-center rounded-xl border border-[var(--color-public-line)] bg-white text-sm font-bold text-[var(--color-public-strong)] transition-colors hover:bg-[var(--color-public-tint)] dark:border-brand-neon-lime/30 dark:bg-[var(--color-public-paper)] dark:text-brand-neon-lime${accountSpan}`}
-        aria-label={isStaffPrimary ? "선생님 앱" : undefined}
-        title={isStaffPrimary ? "선생님 앱" : undefined}
+        aria-label={isStaffPrimary ? "선생님 화면" : undefined}
+        title={isStaffPrimary ? "선생님 화면" : undefined}
       >
         {isStaffPrimary ? (
           <>
-            <span>선생님 앱</span>
+            <span>선생님 화면</span>
           </>
         ) : (
           accountLabel

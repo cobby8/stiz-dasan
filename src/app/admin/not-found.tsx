@@ -1,4 +1,5 @@
 import Link from "next/link";
+import ScopeBackLink from "@/components/navigation/ScopeBackLink";
 
 export default function AdminNotFound() {
   return (
@@ -8,12 +9,16 @@ export default function AdminNotFound() {
         <p className="mt-3 text-sm leading-6 text-[var(--color-academy-muted)]">
           삭제되었거나 주소가 잘못된 항목입니다. 목록으로 돌아가 다시 선택해 주세요.
         </p>
-        <Link
-          href="/admin"
-          className="academy-button-primary mt-7"
-        >
-          관리자 대시보드로 이동
-        </Link>
+        {/* 안내 문구가 «목록으로 돌아가»인데 대시보드 버튼만 있었다(2026-11-17) —
+            방금 있던 화면(목록)으로 돌아가는 글자 링크를 주 버튼 옆에 둔다. 기록이 없으면 대시보드 */}
+        <div className="mt-7 flex flex-wrap items-center justify-center gap-2">
+          <ScopeBackLink fallbackHref="/admin" className="academy-button-secondary">
+            ← 이전 화면
+          </ScopeBackLink>
+          <Link href="/admin" className="academy-button-primary">
+            관리자 대시보드로 이동
+          </Link>
+        </div>
       </section>
     </main>
   );

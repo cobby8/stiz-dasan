@@ -135,6 +135,10 @@ export async function reduceUnpaidForIllnessAbsenceInTx(tx: WorkbenchTx, input: 
   expected: ApprovalExpectation | null | undefined;
 }, nowMs = Date.now()): Promise<UnpaidReducePlan> {
   const { absence, actorId } = input;
+  // 미납 감액은 «질병·부상» 결석만(약관 — 경조사 등은 납부된 달 이월만). 다른 곳에서 불러도 새지 않게 DB 사유로 다시 확인
+  const reasonRows = await tx.$queryRawUnsafe<Array<{ reason: string | null }>>(
+    `SELECT reason FROM "RegularAbsence" WHERE id=$1`, absence.id);
+  if (reasonRows[0]?.reason !== "ILLNESS_INJURY") throw new WorkbenchError("질병·부상 결석만 미납 청구에서 뺄 수 있습니다.", 409);
   // 승인·정산된 «기간 결석»의 날은 하루씩 처리하지 않는다(기존 이월과 같은 차단 — 기간 정산과 이중 보상 방지)
   const periodColumn = await tx.$queryRawUnsafe<Array<{ n: number }>>(
     `SELECT COUNT(*)::int AS n FROM information_schema.columns WHERE table_schema='public' AND table_name='RegularAbsencePeriod' AND column_name='carryState'`);

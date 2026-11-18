@@ -1,3 +1,4 @@
+import ParentBackLink from "@/components/parent/ParentBackLink";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireVerifiedParent } from "@/lib/auth-guard";
@@ -65,9 +66,8 @@ export default async function PaymentPage({ params }: { params: Promise<{ invoic
 
     return (
         <main className="mx-auto max-w-lg space-y-3 px-4 py-4">
-            <Link href="/mypage" className="academy-button-text">
-                ← 마이페이지
-            </Link>
+            {/* «←» = 방금 있던 화면(청구 목록·홈·알림), 기록이 없으면 청구 목록 — 2026-11-17. 예전 «← 마이페이지» 고정 링크는 목록에서 와도 홈으로 보냈다 */}
+            <ParentBackLink fallbackHref="/mypage/payments" ariaLabel="이전 화면으로" />
 
             {/* 청구 정보 한 덩어리: 항목·상태 / 아이·납기 / 금액(주인공 숫자) / 청구 내용 / 번호·발행일(작게) */}
             <section className="academy-panel p-4">

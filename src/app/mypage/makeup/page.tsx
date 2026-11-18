@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { requireVerifiedParent } from "@/lib/auth-guard";
 import { getMakeupOverviewForParent } from "@/lib/makeup/parent-makeup";
 import { parseRequestPreset } from "@/lib/mypage/requestPreset";
+import { getAcademyContact } from "@/lib/academyPhone";
 import MakeupClient from "./MakeupClient";
 
 export const dynamic = "force-dynamic";
@@ -16,9 +17,13 @@ export default async function MakeupPage({
   // regular-absence 와 동일 — 되돌려보내면 무한 반복이라 목적지를 지운다.
   if (!parent) redirect("/mypage/continue?bounced=1");
 
-  const overview = await getMakeupOverviewForParent(parent.appUserId);
+  // 학원 전화·카카오 채널(설정값) — 마감 뒤 «전화·문의» 버튼용. 못 읽어도 화면은 뜬다(버튼만 숨는다)
+  const [overview, contact] = await Promise.all([
+    getMakeupOverviewForParent(parent.appUserId),
+    getAcademyContact(),
+  ]);
   // Date/BigInt 직렬화 안전화(서버 → 클라이언트)
   const initial = JSON.parse(JSON.stringify(overview));
   const preset = parseRequestPreset(searchParams ? await searchParams : null);
-  return <MakeupClient initial={initial} presetStudentId={preset.studentId} />;
+  return <MakeupClient initial={initial} presetStudentId={preset.studentId} contact={contact} />;
 }

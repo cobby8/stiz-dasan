@@ -14,7 +14,8 @@ test("홈 갤러리는 만료 가능한 인스타 CDN 원본을 썸네일 후보
   assert.match(galleryMedia, /fbcdn\.net/);
   assert.match(landingPage, /isDurableGalleryMediaUrl\(item\.url\)/);
   assert.match(landingPage, /parseGalleryMediaJSON\(post\.mediaJSON\)/);
-  assert.match(landingPage, /<img\s+src=\{url\}/);
+  // 2026-11-18: 소식 사진도 보이는 크기에 맞춰 줄여 받는다(원본 주소 url 을 그대로 넘긴다)
+  assert.match(landingPage, /<img\s+\{\.\.\.optimizedImageProps\(url, /);
   assert.doesNotMatch(landingPage, /from "next\/image"/);
 });
 

@@ -251,7 +251,7 @@ test("배너를 띄우지 않는 화면: 결제·로그인/본인인증·운행 
   const hide = storeApp.shouldHideAppUpdateBanner;
   const hidden = [
     "/pay/abc123", "/payments/inv_1", "/payments/success", "/payments/fail", "/mypage/payments/checkout", "/mypage/payments/checkout/inv_1", "/mypage/payments/done", "/apply/trial/pay", "/apply/trial/pay/abc",
-    "/login", "/auth/continue", "/auth/oauth/kakao", "/auth/callback", "/signup/parent", "/account/activate", "/setup", "/invite/tok", "/teacher-app", "/store-app",
+    "/login", "/auth/continue", "/auth/oauth/kakao", "/auth/callback", "/signup/parent", "/account/activate", "/setup", "/invite/tok", "/teacher-app", "/store-app", "/install",
     "/staff/run", "/staff/run/route-1", "/driver/tok123", "/shuttle/run/tok",
     "/staff/sessions/abc",
   ];

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { NativeAuthError, validFlow } from "@/lib/native-auth/policy";
-import { bindingCookie, clearNativeBrowserCookies, nativeBrowserClient, nativeBrowserError, nativeContext, noStoreHeaders } from "@/lib/native-auth/http";
+import { bindingCookie, clearNativeBrowserCookies, clearNativeExchangeCookies, nativeBrowserClient, nativeBrowserError, nativeContext, noStoreHeaders, setNativeResumeCookie, webSignupSessionClient } from "@/lib/native-auth/http";
 import { requireNativeAccount } from "@/lib/native-auth/store";
 import type { NativeBrowserFailure, NativeFlow } from "@/lib/native-auth/service";
 export const runtime = "nodejs";
@@ -11,6 +11,8 @@ export async function GET(request:NextRequest) {
   let reason:NativeBrowserFailure="failed";
   let row:NativeFlow|null=null;
   let context:ReturnType<typeof nativeContext>|null=null;
+  // 학원 계정이 없을 때 가입 화면으로 넘겨줄 간편로그인 세션(그 밖의 실패에서는 비어 있다)
+  let signup:{access_token:string;refresh_token:string}|null=null;
   try {
     context=nativeContext(request,true);
     const {service}=context;
@@ -30,7 +32,7 @@ export async function GET(request:NextRequest) {
     const verified=await browser.client.auth.getUser(session.access_token);
     if(verified.error||!verified.data.user||verified.data.user.id!==session.user.id)throw new NativeAuthError(403);
     // 간편로그인은 됐지만 학원 계정과 연결 안 됨(처음 쓰는 학부모·탈퇴 등) — 앱이 «아이디·비밀번호/회원가입» 안내를 띄운다
-    if(!await requireNativeAccount(verified.data.user.id)){reason="no_account";throw new NativeAuthError(403);}
+    if(!await requireNativeAccount(verified.data.user.id)){reason="no_account";signup={access_token:session.access_token,refresh_token:session.refresh_token};throw new NativeAuthError(403);}
     const callback=await service.finishBrowser(row,binding!,{access_token:session.access_token,refresh_token:session.refresh_token,authUserId:verified.data.user.id});
     const response=NextResponse.redirect(callback);
     for(const [key,value]of Object.entries(noStoreHeaders))response.headers.set(key,value);
@@ -39,9 +41,29 @@ export async function GET(request:NextRequest) {
   }catch(error){
     // 이 브라우저가 묶인 요청이면 앱으로 돌려보내(코드 없이 이유만) 브라우저 창이 닫히고 앱이 안내하게 한다.
     if(bound&&row&&context&&validFlow(flow)){
+      // 2026-11-17(원장 지시): 학원 계정이 없으면 앱으로 튕기지 않고 그 브라우저에서 바로 가입·연결로 이어 준다.
+      // 방금 확인한 간편로그인을 웹 간편가입 세션으로 옮겨 적고(로그인을 다시 시키지 않는다) /signup/parent?social=1 로 보낸다.
+      // 앱 로그인 요청은 «취소하지 않고» 살려 둔다 — 가입·연결이 끝나면 /auth/native/resume 이 이 요청을 마무리해
+      // 앱으로 돌아가 로그인까지 되게 한다(같은 브라우저 증명 = 바인딩 쿠키, 5분 안).
+      if(reason==="no_account"&&signup){
+        const web=webSignupSessionClient(request);
+        const moved=web?!(await web.client.auth.setSession(signup).catch(()=>({error:true}))).error:false;
+        if(moved&&web){
+          const target=new URL("/signup/parent",context.config.origin);
+          target.searchParams.set("fromApp","1");target.searchParams.set("social","1");
+          target.searchParams.set("provider",row.provider);target.searchParams.set("next","/mypage");
+          const response=NextResponse.redirect(target);
+          for(const [key,value]of Object.entries(noStoreHeaders))response.headers.set(key,value);
+          clearNativeExchangeCookies(request,response,flow);
+          setNativeResumeCookie(response,flow);
+          return web.apply(response);
+        }
+      }
       const back=await context.service.failBrowser(row,reason).catch(()=>null);
       if(back){
-        const response=NextResponse.redirect(back);
+        // 세션을 옮겨 적지 못한 경우(이 브라우저에 이미 다른 웹 로그인이 있음 등): 요청을 취소하고 로그인 안 된 가입 화면으로.
+        const target=reason==="no_account"?new URL("/signup/parent?fromApp=1",context.config.origin).toString():back;
+        const response=NextResponse.redirect(target);
         for(const [key,value]of Object.entries(noStoreHeaders))response.headers.set(key,value);
         return clearNativeBrowserCookies(request,response,flow);
       }

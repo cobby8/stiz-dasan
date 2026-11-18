@@ -20,7 +20,7 @@ export default async function AdminLayout({
         adminUser = await requireAdmin();
     } catch (error) {
         if (classifyAdminLayoutAuthFailure(error) === "LOGIN_REQUIRED") {
-            redirect("/login?mode=staff&redirect=/admin");
+            redirect("/login?redirect=/admin");
         }
 
         // 권한 부족 또는 DB·인증 서비스 장애는 로그인 문제로 숨기지 않습니다.

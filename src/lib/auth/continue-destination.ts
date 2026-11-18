@@ -2,6 +2,7 @@ import { parseAppRole, resolveRedirectForRole } from "@/lib/auth-routes";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 import { getParentViewAccessForAuthUser } from "@/lib/account-view-access";
+import { readLastViewDestination } from "@/lib/auth/last-view-server";
 
 /**
  * 로그인한 사람을 어느 화면으로 보낼지 정한다(2026-11-17 속도 개선으로 /auth/continue 화면에서 옮김).
@@ -17,6 +18,8 @@ export async function resolveContinueDestination(input: {
   context?: string;
   /** 원래 가려던 주소. 보호 화면이 방금 거절한 경우(bounced)에는 부르는 쪽이 비워서 넘긴다 */
   requestedPath?: string;
+  /** 보호 화면이 방금 거절해 되돌아온 경우 — «마지막에 쓰던 화면» 쿠키도 따르지 않는다(반복 방지) */
+  bounced?: boolean;
 }): Promise<string> {
   const supabase = await createClient();
   const {
@@ -52,6 +55,17 @@ export async function resolveContinueDestination(input: {
     if (requestedPath) onboarding.set("next", requestedPath);
     return `/signup/parent?${onboarding.toString()}`;
   }
+
+  // 마지막에 쓰던 화면(2026-11-17 원장 승인): 원래 가려던 화면·로그인 맥락이 없고 방금 거절된 것도 아닐 때만,
+  // 화면 전환에서 고른 화면으로 보낸다. 그 계정이 그 화면을 쓸 수 없으면 null — 아래 기본 판정으로 간다.
+  const lastView = await readLastViewDestination({
+    role,
+    access: parentView,
+    requestedPath,
+    context,
+    bounced: input.bounced,
+  });
+  if (lastView) return lastView;
 
   return resolveRedirectForRole(role, requestedPath, {
     // 브라우저에서 관리자 로그인으로 들어오면 역할 기본 화면(원장이면 /admin).

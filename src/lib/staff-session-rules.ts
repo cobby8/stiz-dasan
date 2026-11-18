@@ -193,6 +193,18 @@ export function driverRunPathFor(storeApp: boolean, userAgent: string | null | u
   return storeApp && /android/i.test(String(userAgent ?? "")) ? DRIVER_APP_RUN_PATH : DRIVER_RUN_PATH;
 }
 
+/** 스토어 앱이 막지 않는 기사님 셔틀 화면(명단·승하차 체크). */
+export const DRIVER_SHUTTLE_PATH = "/staff/shuttle";
+
+/**
+ * 앱 길(/staff/run/open)에서 오늘 운행 열쇠가 없을 때 갈 주소(2026-11-17 뒤로 가기 조사 native #7).
+ * 왜: 안드로이드 스토어 앱은 /staff/run 을 막고 «준비 중» 창만 띄운다 — 거기로 넘기면 화면이 «운행 화면을 여는 중…»에서 멈춘다.
+ * 스토어 앱이면 앱이 여는 셔틀 화면으로, 브라우저는 «아직 운행 링크가 없습니다» 안내가 있는 운행표로 보낸다.
+ */
+export function driverRunMissingKeyPath(storeApp: boolean): string {
+  return storeApp ? DRIVER_SHUTTLE_PATH : DRIVER_RUN_PATH;
+}
+
 // ── f1. 체험수업 아이(출시 전 수정 2026-11-13 원장 지시) ─────────────────
 
 /**

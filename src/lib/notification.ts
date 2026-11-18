@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { sendPushToUser, sendPushToAllParents } from "@/lib/pushNotification";
+import { resolveNotificationPushUrl } from "@/lib/notification-link";
 import { sendSmsDetailed, type SmsSendResult } from "@/lib/sms";
 import { renderSmsTemplate } from "@/lib/smsTemplate";
 import {
@@ -814,7 +815,8 @@ export async function createNotificationRecord(data: {
         sendPushToUser(data.userId, {
             title: data.title,
             body: data.message,
-            url: data.linkUrl || "/admin",
+            // 주소 없는 알림은 받는 사람 역할의 홈으로(예전 기본값 "/admin" 은 학부모·선생님에게도 갔다) — 이유는 notification-link.ts
+            url: resolveNotificationPushUrl(data.linkUrl),
             tag: data.type,
         }).catch(() => {});
     } catch (e) {

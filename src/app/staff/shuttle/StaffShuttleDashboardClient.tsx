@@ -149,7 +149,7 @@ export default function StaffShuttleDashboardClient({
       {/* 큰 배너·상태 카드 5장 대신 제목 1줄 + 요약 1줄(첫 화면에 바로 노선이 보이게) */}
       <header className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-xs text-[var(--color-academy-muted)]">셔틀 기사 앱</p>
+          <p className="text-xs text-[var(--color-academy-muted)]">기사님 화면</p>
           <h1 className="academy-heading">오늘 운행</h1>
         </div>
         <button

@@ -63,7 +63,7 @@ export type ClassDayBoard = {
 
 /**
  * 줄을 누르면 가는 출결 화면 주소(관리자 화면 세션과 공유하는 형식).
- * 출결 화면이 이 쿼리를 아직 읽지 않아도 같은 주소는 그냥 출결 화면을 연다.
+ * 출결 화면이 이 쿼리를 읽어 그 날짜·그 수업을 연다(해석 = src/lib/attendance/lessonQuery.ts — 형식을 바꾸면 그쪽도 같이).
  */
 export function classDayHref(dateYmd: string, key: string): string {
   return `/admin/attendance?date=${dateYmd}&lesson=${key}`;

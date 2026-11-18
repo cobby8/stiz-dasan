@@ -10,6 +10,7 @@ import {
   getAccountWithdrawalStatus,
   requestAccountWithdrawal,
 } from "@/app/actions/parent-account";
+import AcademyContactButtons, { CHILD_CONNECT_ASK, type AcademyContact } from "@/components/parent/AcademyContactButtons";
 
 type Props = {
   initial: {
@@ -22,6 +23,12 @@ type Props = {
   };
   parentName: string;
   backHref?: string;
+  /** 학원 전화·카카오 채널(설정값) — 맨 아래 «전화·문의» 버튼용. 없으면 문의 폼 링크만 */
+  contact?: AcademyContact | null;
+  /** 연결된 자녀가 0명인 계정 — 홈 문의 폼이 없으니 문의 링크를 «자녀 연결하기»로 바꾼다 */
+  noChildren?: boolean;
+  /** 자녀 연결 화면 주소 — 학부모 화면은 /mypage/children, 내 계정(/account) 화면은 /account/children */
+  childConnectHref?: string;
 };
 
 // 지워지는 것과 남는 것을 **화면에 분명히 적는다.**
@@ -40,7 +47,10 @@ const RETAINED = ["자녀의 출결·수업 기록", "수강료 납부·청구 �
 export default function WithdrawClient({
   initial,
   parentName,
-  backHref = "/mypage",
+  backHref = "/mypage/settings", // 탈퇴는 설정 아래 화면 — 기록 없이 들어오면 설정으로(2026-11-17)
+  contact = null,
+  noChildren = false,
+  childConnectHref = CHILD_CONNECT_ASK.askHref,
 }: Props) {
   const router = useRouter();
   const [state, setState] = useState(initial.state);
@@ -250,9 +260,10 @@ export default function WithdrawClient({
 
           {/* 근접성(M-05): 안전한 «돌아가기»를 먼저, 되돌릴 수 없는 삭제는 24px 떨어진 아래 전체 폭 위험색 */}
           <div className="flex flex-col">
-            <Link href={backHref} className="academy-button-secondary self-start">
+            {/* 돌아가기 = 방금 있던 화면(기록 없으면 backHref) — 고정 Link 는 앞으로 쌓여 그 화면의 «←» 가 여기로 되돌아왔다 */}
+            <ParentBackLink fallbackHref={backHref} className="academy-button-secondary self-start">
               돌아가기
-            </Link>
+            </ParentBackLink>
             <button
               type="button"
               onClick={submit}
@@ -267,10 +278,17 @@ export default function WithdrawClient({
             </button>
           </div>
 
-          <p className="mt-4 text-xs leading-relaxed text-[var(--color-academy-faint)]">
-            문의는 학원으로 연락해 주세요. 탈퇴하지 않고 알림만 끄고 싶으시면
-            이용 화면에서 알림 설정을 변경하실 수 있습니다.
-          </p>
+          {/* 글만 두지 않고 바로 갈 수 있게(2026-11-17 g3): 알림 끄기 = 설정으로, 문의 = 전화·문의 버튼 */}
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <span className="basis-full break-keep text-xs text-[var(--color-academy-muted)]">
+              알림만 끄고 싶으면 탈퇴하지 않아도 돼요.
+            </span>
+            <Link href="/mypage/settings" className="academy-button-secondary whitespace-nowrap">
+              알림 설정으로
+            </Link>
+            {/* 자녀가 없으면 홈 문의 폼이 없다 → 문의 링크 대신 자녀 연결로(막다른 곳 방지) */}
+            <AcademyContactButtons contact={contact} {...(noChildren ? { ...CHILD_CONNECT_ASK, askHref: childConnectHref } : {})} />
+          </div>
         </>
       )}
     </div>

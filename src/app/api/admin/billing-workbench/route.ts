@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireOwner } from "@/lib/auth-guard";
 // 부원장 차단(2026-11-14 원장 결정): 원장(ADMIN)만 — requireOwner 가 부원장을 거절한다
 import { prisma } from "@/lib/prisma";
-import { WorkbenchError, validateWorkbenchMonth } from "@/lib/billing/workbench";
+import { WorkbenchError, validateWorkbenchMonth, type WorkbenchCalendarSnapshot, type WorkbenchView } from "@/lib/billing/workbench";
+import { billingDayNotice } from "@/lib/billing/billing-schedule";
+import { APPROVE_AUTO_DRAFTS_ACTION, approveAutoDrafts } from "@/lib/billing/workbench-approve";
 import { mutateWorkbench, readWorkbench } from "@/lib/billing/workbench-service";
 import { resolveWorkbenchAbsence } from "@/lib/billing/workbench-absence";
 import { loadWorkbenchCalendar } from "@/lib/billing/workbench-calendar";
@@ -10,6 +12,9 @@ import { loadWorkbenchCalendar } from "@/lib/billing/workbench-calendar";
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "private, no-store, max-age=0" };
 const enabled = () => process.env.STIZ_BILLING_WORKBENCH_WRITES_ENABLED === "true";
+// 청구 준비 화면 맨 위 안내 첫 줄 = «이 달 청구일: 12/15(화) — 12월 개강 12/1(화) + 14일»(2026-11-17 원장 결정).
+// 안내(notices)는 원본 지문(sourceVersion)에 들어가지 않으므로 여기서 붙여도 저장·확정 판정에 영향이 없다.
+const withBillingDay = (view: WorkbenchView, events: WorkbenchCalendarSnapshot["events"]): WorkbenchView => ({ ...view, notices: [billingDayNotice(events, view.month), ...view.notices] });
 const fail = (e: unknown) => NextResponse.json({ error: e instanceof WorkbenchError ? e.message : "청구 준비를 처리하지 못했습니다. 다시 조회해 주세요.",refreshRequired:e instanceof WorkbenchError?e.refreshRequired:false },{status:e instanceof WorkbenchError ? e.status : 500,headers});
 export async function GET(request: NextRequest) {
   try { await requireOwner(); } catch { return NextResponse.json({error:"원장 권한이 필요합니다."},{status:403,headers}); }
@@ -21,7 +26,7 @@ export async function GET(request: NextRequest) {
     // 달력을 기다리는 동안 거래가 열려 있으므로(캐시가 비어 구글 일정 응답이 느릴 때) 거래 시간제한을 기본 5초보다 넉넉히 둔다.
     calendar.catch(()=>{});
     const view = await prisma.$transaction(async tx => { await tx.$executeRawUnsafe("SET TRANSACTION READ ONLY"); return readWorkbench(tx,month,enabled(),calendar); },{isolationLevel:"RepeatableRead",timeout:15000});
-    return NextResponse.json(view,{headers});
+    return NextResponse.json(withBillingDay(view,(await calendar).events),{headers});
   } catch(e) { return fail(e); }
 }
 async function readBody(request: NextRequest) {
@@ -39,7 +44,11 @@ export async function POST(request: NextRequest) {
     if(request.headers.get("content-type")?.split(";")[0].trim()!=="application/json")throw new WorkbenchError("요청 형식을 확인해 주세요.",415);
     const body=await readBody(request);
     const calendar=await loadWorkbenchCalendar(true);
-    const result=body?.action==="RESOLVE_ABSENCE"?await resolveWorkbenchAbsence(prisma,body,admin.appUserId,enabled(),calendar):await mutateWorkbench(prisma,body,admin.appUserId,enabled(),calendar);
-    return NextResponse.json(result,{headers});
+    // «승인 대기» 자동 초안 한꺼번에 발행(2026-11-17) — 기존 저장→확정→발행 경로를 행 묶음마다 그대로 쓴다. 학부모 발송 없음.
+    const result=body?.action==="RESOLVE_ABSENCE"?await resolveWorkbenchAbsence(prisma,body,admin.appUserId,enabled(),calendar)
+      :body?.action===APPROVE_AUTO_DRAFTS_ACTION?await approveAutoDrafts(prisma,body,admin.appUserId,enabled(),calendar)
+      :await mutateWorkbench(prisma,body,admin.appUserId,enabled(),calendar);
+    // 저장 뒤 화면이 새 결과로 바뀌어도 청구일 한 줄이 사라지지 않게 같은 안내를 붙인다
+    return NextResponse.json({...result,view:withBillingDay(result.view,calendar.events)},{headers});
   }catch(e){return fail(e);}
 }

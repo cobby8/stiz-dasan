@@ -239,8 +239,12 @@ test("결석 행 note 와 알림 재조정 제외 조건이 같은 머리말을 
 
 test("마이그레이션 CHECK 제약 = 코드 사유·상태 집합", () => {
   const sql = readFileSync("prisma/migrations/20261109180000_add_regular_absence_period/migration.sql", "utf8");
-  const reasons = /reason IN \(([^)]+)\)/.exec(sql)[1].split(",").map((s) => s.trim().replace(/'/g, ""));
+  // 사유 제약은 2026-11-17 경조사 추가 마이그레이션이 다시 만든다 — 그 파일의 «마지막» CHECK(되돌림 주석 아래 실제 문장)가 지금 제약이다
+  const reasonSql = readFileSync("prisma/migrations/20261117210000_absence_reason_family_event/migration.sql", "utf8");
+  const reasonChecks = [...reasonSql.matchAll(/reason IN \(([^)]+)\)/g)];
+  const reasons = reasonChecks[reasonChecks.length - 1][1].split(",").map((s) => s.trim().replace(/'/g, ""));
   assert.deepEqual([...reasons].sort(), [...rules.VALID_REASONS].sort());
+  assert.ok(reasons.includes("FAMILY_EVENT"));
   assert.deepEqual([...plan.PERIOD_REASONS].sort(), [...rules.VALID_REASONS].sort());
   const statuses = /status IN \(([^)]+)\)/.exec(sql)[1].split(",").map((s) => s.trim().replace(/'/g, ""));
   assert.deepEqual(statuses, [...plan.PERIOD_STATUSES]);

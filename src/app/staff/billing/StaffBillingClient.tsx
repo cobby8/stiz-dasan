@@ -97,7 +97,8 @@ export default function StaffBillingClient({ bills, month, currentMonth, seesAll
     // 달이 바뀌었을 때만 서버에서 다시 받아 온다(이번 달은 주소를 깨끗하게)
     // 미납은 달과 상관없이 늘 보여서, 달만 바꾸면 «미납» 칩 화면이 그대로다 — 달을 바꾸면 «전체»로 옮겨 그 달 납부·환불까지 보이게(2026-11-14 검수)
     if (draftMonth !== month) setFilter("ALL");
-    if (draftMonth !== month) router.push(draftMonth === currentMonth ? "/staff/billing" : `/staff/billing?month=${draftMonth}`);
+    // replace: 조회 조건(달)은 같은 화면의 보기 설정이라 기록에 쌓지 않는다(2026-11-17 뒤로 가기 조사)
+    if (draftMonth !== month) router.replace(draftMonth === currentMonth ? "/staff/billing" : `/staff/billing?month=${draftMonth}`);
   }
 
   // 납부 확인 요청을 열 수 있는 청구인지(기존 카드의 버튼 조건 그대로)

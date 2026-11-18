@@ -57,7 +57,10 @@ async function readAccountViewAccess() {
   try {
     const user = await requireAuth();
     const [role, parent] = await Promise.all([getPublicAccountRole(), getParentViewAccessForAuthUser(user)]);
-    return { role, views: resolveAccountViews(role, parent.canUseParentView, parent.grants) };
+    // hasOwnChildren: 이미 같은 조회에서 구한 «연결된 자녀가 있나»(2026-11-17) — 서버 page 가 «학원에 문의» 링크를
+    // 자녀 연결 화면으로 바꿀지 정할 때만 쓴다(새 DB 조회 없음 · 레이아웃이 같은 요청에서 이미 불렀다).
+    // 화면(클라이언트)이나 API 응답으로는 넘기지 않는다 — 넘기는 곳은 role·views 만 꺼내 쓴다.
+    return { role, views: resolveAccountViews(role, parent.canUseParentView, parent.grants), hasOwnChildren: parent.hasOwnChildren };
   } catch {
     // 인증이나 DB 확인에 실패하면 전환 메뉴를 숨기고 기존 접근 제한을 유지합니다.
     return { role: null, views: [] };

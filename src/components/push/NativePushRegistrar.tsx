@@ -2,7 +2,6 @@
 
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 import {
     NATIVE_PUSH_ASKED_KEY,
     NATIVE_PUSH_CHANGED_EVENT,
@@ -18,6 +17,10 @@ import {
 /** 지금 이 웹뷰에 로그인한 사람의 Auth id — 저장된 세션만 읽는다(네트워크 없음). 없으면 null */
 async function sessionUserId(): Promise<string | null> {
     try {
+        // 로그인 서비스(Supabase) 부품은 약 200KB 다. 이 부품은 루트 레이아웃에 있어 그대로 import 하면 «모든 화면»이
+        // 처음 뜰 때 그 200KB 를 받는다(2026-11-18 속도 조치). 여기까지 오는 것은 스토어 앱 + 로그인 화면이 아닐 때뿐이라
+        // 그때 가서 받는다 — 일반 브라우저는 아예 받지 않는다.
+        const { createClient } = await import("@/lib/supabase/client");
         const { data } = await createClient().auth.getSession();
         return data.session?.user?.id ?? null;
     } catch {

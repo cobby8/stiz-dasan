@@ -88,15 +88,17 @@ export default async function StaffShuttlePage({ searchParams }: {
           {!isDriver && (
             <div className="flex items-center justify-between gap-2 rounded-xl bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm text-[var(--color-academy-ink)]">
               <span>선생님 운행 중 — 탑승을 직접 체크합니다.</span>
-              <Link href={`/staff/shuttle${dateQuery ? `?${dateQuery}` : ""}`} className="academy-button-text academy-button-sm shrink-0">보기로 돌아가기</Link>
+              {/* replace: 보기 ↔ 운행은 같은 화면의 모드 전환이라 기록에 쌓지 않는다 — 쌓으면 «보기로 돌아가기» 뒤 뒤로를 누를 때 다시 운행 모드가 된다(2026-11-17) */}
+              <Link href={`/staff/shuttle${dateQuery ? `?${dateQuery}` : ""}`} replace className="academy-button-text academy-button-sm shrink-0">보기로 돌아가기</Link>
             </div>
           )}
         </div>
       ) : (
         <div className="mx-auto max-w-lg space-y-2 px-4 pt-3">
           {/* 보기 전용: «운행 시작» 자리에 «선생님 운행» — 선생님이 직접 운행하는 날에만 누른다 */}
+          {/* replace: 모드 전환은 기록에 쌓지 않는다 — 뒤로 한 번에 셔틀 화면에 오기 전 화면으로 간다(2026-11-17) */}
           {canTeacherDrive ? (
-            <Link href={`/staff/shuttle?mode=drive${dateQuery ? `&${dateQuery}` : ""}`} className="academy-button-primary min-h-12! w-full text-base!">
+            <Link href={`/staff/shuttle?mode=drive${dateQuery ? `&${dateQuery}` : ""}`} replace className="academy-button-primary min-h-12! w-full text-base!">
               선생님 운행
             </Link>
           ) : (

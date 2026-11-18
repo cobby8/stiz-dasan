@@ -165,13 +165,26 @@ test("③ 정원 확인 쿼리는 넘겨받은 연결(db)로만 나간다 — �
 });
 
 test("③ 잠금 뒤 재확인에서 가득 차도 원장에게 같은 정원 문구가 전달된다", () => {
+  // 2026-11-17: 운영 빌드는 서버 액션이 던진 오류 문구를 가린다 → 정원 초과·이월 정산 충돌은
+  // 던지지 않고 { ok: false, message } 로 돌려준다(실제 동작은 아래 «실제로 돌린다» 테스트가 지킨다).
   const body = bookMakeupBody();
-  const rethrowAt = body.indexOf("e.message === MAKEUP_CAPACITY_FULL_MESSAGE) throw e;");
+  const txAt = body.indexOf("prisma.$transaction(");
+  const refusalReturn = "if (refusal) return { ok: false, message: refusal };";
+  const preReturnAt = body.indexOf(refusalReturn);
+  const txReturnAt = body.indexOf(refusalReturn, txAt);
   const genericAt = body.indexOf('throw new Error("보강 예약 실패")');
-  assert.ok(rethrowAt > 0, "정원 초과 오류는 그대로 다시 던져야 한다");
-  assert.ok(rethrowAt < genericAt, "«보강 예약 실패»로 바꾸기 전에 다시 던져야 한다");
-  // 이월 정산 충돌 안내도 그대로 유지
-  assert.match(body, /if \(e instanceof CompensationConflict\) throw e;/);
+  assert.ok(preReturnAt > 0 && preReturnAt < txAt, "미리 확인에서 걸린 사유도 결과로 돌려줘야 한다");
+  assert.ok(txReturnAt > txAt, "잠금 뒤 재확인에서 걸린 사유도 결과로 돌려줘야 한다");
+  assert.ok(txReturnAt < genericAt, "«보강 예약 실패»로 바꾸기 전에 사유를 돌려줘야 한다");
+  // 사유 판정: 정원 문구와 이월 정산 충돌 둘뿐 — 그 밖의 오류는 사유로 새지 않는다
+  const helperStart = adminActions.indexOf("function expectedMakeupRefusal");
+  const helper = adminActions.slice(helperStart, adminActions.indexOf("export async function bookMakeupSession"));
+  assert.ok(helperStart > 0);
+  assert.match(helper, /if \(e instanceof CompensationConflict\) return e\.message;/);
+  assert.match(helper, /e\.message === MAKEUP_CAPACITY_FULL_MESSAGE\) return e\.message;/);
+  assert.equal((helper.match(/return /g) ?? []).length, 3, "사유 2가지 + null 뿐이어야 한다");
+  // 예상한 사유를 다시 던지는 코드는 남아 있지 않다(던지면 운영에서 문구가 가려진다)
+  assert.doesNotMatch(body, /CompensationConflict\) throw e;|MAKEUP_CAPACITY_FULL_MESSAGE\) throw e;/);
 });
 
 // ── ③ 실제로 돌린다 — 마지막 한 자리에 동시 예약 두 건 ─────────────────────────
@@ -210,7 +223,11 @@ const nextTurn = () => new Promise((done) => setImmediate(done));
 //  · advisory 잠금: 잠금을 건 트랜잭션이 끝나야(커밋·되돌림) 다음 트랜잭션이 잠금을 얻는다.
 //  · 저장: 트랜잭션 안 INSERT 는 커밋돼야 남에게 보인다. 던지면 버려진다.
 //  · 트랜잭션 밖 «미리 확인»의 보강 수 조회는 두 건이 다 도착한 뒤에 함께 답한다 → 둘 다 «자리 있음»을 본다(경쟁 상황 고정).
-function fakeMakeupDb({ capacity, enrolled }) {
+// 선택 인자(2026-11-17 «사유를 결과로» 테스트용 — 기본값은 예전 동작 그대로):
+//  · preCheckWaitFor: 미리 확인이 몇 건 모이면 함께 답할지(동시 예약 2건 경쟁 = 2, 혼자 예약 = 1)
+//  · carried: true 면 그 결석이 이월로 정산돼 있다(이월 정산 표가 있고 그 결석 줄이 나온다)
+//  · classMissing: true 면 보강 반이 없다 / insertError: 주면 INSERT 가 그 오류로 실패한다(예상 밖 오류)
+function fakeMakeupDb({ capacity, enrolled, preCheckWaitFor = 2, carried = false, classMissing = false, insertError = null }) {
   const state = {
     saved: [],            // 커밋된 보강
     preCheckCounts: [],   // 미리 확인(트랜잭션 밖)이 돌려받은 보강 수
@@ -219,6 +236,7 @@ function fakeMakeupDb({ capacity, enrolled }) {
     lockHolders: 0,
     maxLockHolders: 0,    // 동시에 잠금을 쥔 트랜잭션 수의 최댓값(1 이어야 한 줄)
     waitedForLock: 0,     // 남이 잠금을 쥐고 있어 기다린 트랜잭션 수
+    insertAttempts: 0,    // INSERT 가 DB 로 나간 횟수(커밋 여부와 무관)
   };
   let lockTail = Promise.resolve();
   let lockSeq = 0;
@@ -231,10 +249,10 @@ function fakeMakeupDb({ capacity, enrolled }) {
   const client = (tx) => ({
     $queryRawUnsafe: async (sql, ...params) => {
       await nextTurn();
-      if (/FROM "Class" c/.test(sql)) return [{ capacity, enrolled }];
+      if (/FROM "Class" c/.test(sql)) return classMissing ? [] : [{ capacity, enrolled }];
       if (/FROM "MakeupSession" ms/.test(sql)) {
         if (!tx) {
-          if (++preCheckArrived === 2) openPreCheckGate();
+          if (++preCheckArrived === preCheckWaitFor) openPreCheckGate();
           await preCheckGate;
           const booked = countFor(state.saved, params[0], params[1]);
           state.preCheckCounts.push(booked);
@@ -245,7 +263,8 @@ function fakeMakeupDb({ capacity, enrolled }) {
         state.recheckCounts.push(booked);
         return [{ booked }];
       }
-      if (/to_regclass/.test(sql)) return [{ found: null }]; // 이월 정산 표 없음 → 이월 충돌 검사는 통과
+      if (/to_regclass/.test(sql)) return [{ found: carried ? "BillingAbsenceResolution" : null }]; // 표 없음 → 이월 충돌 검사는 통과
+      if (carried && /JOIN "BillingAbsenceResolution" r/.test(sql)) return [{ id: "absence-carried" }]; // 이월로 정산한 결석
       throw new Error(`가짜 DB 가 모르는 조회: ${sql.slice(0, 80)}`);
     },
     $executeRawUnsafe: async (sql, ...params) => {
@@ -257,6 +276,8 @@ function fakeMakeupDb({ capacity, enrolled }) {
       }
       if (/^\s*INSERT INTO "MakeupSession"/.test(sql)) {
         if (!tx) throw new Error("보강 저장은 트랜잭션 안에서만 한다");
+        state.insertAttempts++;
+        if (insertError) throw insertError;
         tx.pending.push({ studentId: params[0], makeupClassId: params[3], makeupDate: params[4] });
         return 1;
       }
@@ -301,8 +322,10 @@ function fakeMakeupDb({ capacity, enrolled }) {
 const RECHECK_LINE = "await assertMakeupSeatAvailable(data.makeupClassId, data.makeupDate, tx);";
 
 // 남은 자리 1(정원 10·수강 9)인 반에 서로 다른 학생 두 명의 보강을 동시에 넣는다. 날짜는 고정 문자열.
-async function raceTwoBookings(mutate = null) {
-  const { prisma, state } = fakeMakeupDb({ capacity: 10, enrolled: 9 });
+// admin.ts 를 가짜 DB 로 불러 «학생 한 명 예약» 함수를 돌려준다.
+// revalidated = 성공 뒤 캐시 무효화(revalidatePath)가 불린 경로 — 거절됐을 때는 불리지 않아야 한다.
+function loadBooking(prisma, mutate = null) {
+  const revalidated = [];
   // 규칙 모듈은 진짜를 쓴다(잠금·이월 충돌 검사·정원 계산·통합 학생 조건)
   const admin = load("src/app/actions/admin.ts", {
     "@/lib/prisma": { prisma },
@@ -315,7 +338,7 @@ async function raceTwoBookings(mutate = null) {
       requireVerifiedParent: async () => ({}),
       forgetAppUserRoleCache() {},
     },
-    "next/cache": { revalidatePath() {}, revalidateTag() {} },
+    "next/cache": { revalidatePath(path) { revalidated.push(path); }, revalidateTag() {} },
   }, mutate);
   const book = (studentId) => admin.bookMakeupSession({
     studentId,
@@ -324,6 +347,12 @@ async function raceTwoBookings(mutate = null) {
     makeupClassId: "class-makeup",
     makeupDate: "2026-11-20",
   });
+  return { book, revalidated };
+}
+
+async function raceTwoBookings(mutate = null) {
+  const { prisma, state } = fakeMakeupDb({ capacity: 10, enrolled: 9 });
+  const { book } = loadBooking(prisma, mutate);
   const results = await Promise.allSettled([book("student-1"), book("student-2")]);
   return { results, state };
 }
@@ -340,14 +369,19 @@ test("③ 실제로 돌린다 — 남은 자리 1에 동시 예약 2건이면 1�
   // 잠금 뒤 재확인이 본 값: 첫 예약은 0건, 둘째는 앞 예약이 커밋된 뒤라 1건
   assert.deepEqual(state.recheckCounts, [0, 1]);
 
-  // 결과: 성공 1 · 실패 1, 실패는 원장이 보는 정원 문구 그대로
-  const fulfilled = results.filter((r) => r.status === "fulfilled");
-  const rejected = results.filter((r) => r.status === "rejected");
-  assert.equal(fulfilled.length, 1, "한 건만 성공해야 한다");
-  assert.equal(rejected.length, 1, "한 건은 거절돼야 한다");
-  assert.equal(rejected[0].reason.message, MAKEUP_CAPACITY_FULL_MESSAGE);
-  // 저장된 보강은 정확히 1건(정원 10 = 수강 9 + 보강 1)
+  // 결과: 성공 1 · 거절 1, 거절은 원장이 보는 정원 문구 그대로.
+  // 2026-11-17: 거절은 던지지 않고 { ok: false, message } 로 돌아온다(던지면 운영 빌드가 문구를 가린다).
+  assert.deepEqual(results.map((r) => r.status), ["fulfilled", "fulfilled"], "정원 초과는 던져지지 않고 결과로 돌아와야 한다");
+  const values = results.map((r) => r.value);
+  const accepted = values.filter((v) => v?.ok === true);
+  const refused = values.filter((v) => v?.ok === false);
+  assert.equal(accepted.length, 1, "한 건만 성공해야 한다");
+  assert.equal(refused.length, 1, "한 건은 거절돼야 한다");
+  assert.deepEqual(accepted[0], { ok: true });
+  assert.deepEqual(refused[0], { ok: false, message: MAKEUP_CAPACITY_FULL_MESSAGE });
+  // 저장된 보강은 정확히 1건(정원 10 = 수강 9 + 보강 1) — 진 쪽은 INSERT 조차 나가지 않았다
   assert.equal(state.saved.length, 1, "남은 자리 1에 보강이 1건만 저장돼야 한다");
+  assert.equal(state.insertAttempts, 1, "거절된 예약은 INSERT 를 보내지 않는다");
 });
 
 test("③ 대조 — 잠금 뒤 재확인 한 줄을 뺀 사본은 같은 상황에서 2건이 저장된다(위 테스트가 그 줄을 지킨다는 증거)", { timeout: 20000 }, async () => {
@@ -362,7 +396,158 @@ test("③ 대조 — 잠금 뒤 재확인 한 줄을 뺀 사본은 같은 상황
   // 잠금으로 한 줄을 서도, 다시 세지 않으면 둘 다 저장된다 = 정원 초과
   assert.deepEqual(state.events, ["잠금:1", "커밋:1", "잠금:2", "커밋:2"]);
   assert.deepEqual(results.map((r) => r.status), ["fulfilled", "fulfilled"]);
+  assert.deepEqual(results.map((r) => r.value), [{ ok: true }, { ok: true }], "사본에서는 둘 다 «성공»으로 돌아온다");
   assert.equal(state.saved.length, 2, "재확인이 없으면 남은 자리 1에 2건이 저장된다(초과)");
+});
+
+// ── 사유는 결과로, 예상 밖 오류는 던진다(2026-11-17) ─────────────────────────────
+// 왜: 운영 빌드는 서버 액션이 던진 오류 문구를 가린다(화면에는 영어 일반 문구만 간다).
+// 원장이 예상할 수 있는 두 사유(정원 초과·이월로 정산한 결석)는 { ok: false, message } 로 돌려준다.
+
+test("사유 — 이미 가득 찬 반은 «미리 확인»에서 던지지 않고 정원 문구를 결과로 돌려준다(저장·캐시 무효화 없음)", { timeout: 20000 }, async () => {
+  const { prisma, state } = fakeMakeupDb({ capacity: 10, enrolled: 10, preCheckWaitFor: 1 });
+  const { book, revalidated } = loadBooking(prisma);
+  assert.deepEqual(await book("student-1"), { ok: false, message: MAKEUP_CAPACITY_FULL_MESSAGE });
+  assert.deepEqual(state.events, [], "미리 확인에서 걸리면 트랜잭션(잠금)까지 가지 않는다");
+  assert.equal(state.insertAttempts, 0);
+  assert.equal(state.saved.length, 0);
+  assert.deepEqual(revalidated, [], "거절이면 화면 캐시를 건드리지 않는다");
+});
+
+test("사유 — 이월로 정산한 결석은 던지지 않고 그 안내 문구를 결과로 돌려준다(저장 없음)", { timeout: 20000 }, async () => {
+  const { prisma, state } = fakeMakeupDb({ capacity: 10, enrolled: 5, preCheckWaitFor: 1, carried: true });
+  const { book, revalidated } = loadBooking(prisma);
+  const result = await book("student-1");
+  assert.equal(result.ok, false);
+  assert.equal(result.message, "이월로 정산한 결석입니다. 청구·이월 내역을 먼저 확인해 주세요.");
+  assert.deepEqual(state.events, ["잠금:1", "되돌림:1"], "잠금 뒤 검사에서 걸려 트랜잭션이 되돌려진다");
+  assert.equal(state.insertAttempts, 0, "이월 정산 결석이면 INSERT 가 나가지 않는다");
+  assert.equal(state.saved.length, 0);
+  assert.deepEqual(revalidated, []);
+});
+
+test("사유 — 성공하면 { ok: true } 를 돌려주고 보강 화면 캐시를 무효화한다", { timeout: 20000 }, async () => {
+  const { prisma, state } = fakeMakeupDb({ capacity: 10, enrolled: 5, preCheckWaitFor: 1 });
+  const { book, revalidated } = loadBooking(prisma);
+  assert.deepEqual(await book("student-1"), { ok: true });
+  assert.deepEqual(state.events, ["잠금:1", "커밋:1"]);
+  assert.equal(state.saved.length, 1);
+  assert.ok(revalidated.includes("/admin/makeup"));
+});
+
+test("예상 밖 오류 — 저장(INSERT)이 실패하면 지금처럼 «보강 예약 실패»를 던진다(성공·사유로 둔갑하지 않는다)", { timeout: 20000 }, async () => {
+  const { prisma, state } = fakeMakeupDb({
+    capacity: 10, enrolled: 5, preCheckWaitFor: 1, insertError: new Error("connection terminated unexpectedly"),
+  });
+  const { book, revalidated } = loadBooking(prisma);
+  const consoleError = console.error;
+  console.error = () => {}; // 액션이 원문을 console 에 남긴다 — 테스트 출력만 조용히
+  try {
+    await assert.rejects(book("student-1"), (error) => error.message === "보강 예약 실패");
+  } finally {
+    console.error = consoleError;
+  }
+  assert.deepEqual(state.events, ["잠금:1", "되돌림:1"]);
+  assert.equal(state.saved.length, 0);
+  assert.deepEqual(revalidated, []);
+});
+
+test("예상 밖 오류 — 보강 반이 없으면 «미리 확인»이 지금처럼 던진다", { timeout: 20000 }, async () => {
+  const { prisma, state } = fakeMakeupDb({ capacity: 10, enrolled: 5, preCheckWaitFor: 1, classMissing: true });
+  const { book } = loadBooking(prisma);
+  await assert.rejects(book("student-1"), (error) => error.message === "보강 반을 찾을 수 없습니다.");
+  assert.equal(state.insertAttempts, 0);
+});
+
+// 결석 화면의 «보강 지정» 액션(scheduleMakeupForAbsence)을 실제로 돌린다 — bookMakeupSession 만 대역.
+function loadScheduleForAbsence(bookMakeupSession) {
+  const revalidated = [];
+  const booked = [];
+  const prisma = {
+    $queryRawUnsafe: async (sql) => {
+      if (/FROM "RegularAbsence" ra/.test(sql)) return [{ studentId: "student-1", classId: "class-original", date: "2026-11-10" }];
+      if (/FROM "MakeupSession"/.test(sql)) return []; // 이미 지정된 보강 없음
+      throw new Error(`가짜 DB 가 모르는 조회: ${sql.slice(0, 80)}`);
+    },
+  };
+  const actions = load("src/app/actions/regular-absence-admin.ts", {
+    "@/lib/prisma": { prisma },
+    "@/lib/auth-guard": { requireAdmin: async () => ({ appUserId: "admin" }) },
+    "@/app/actions/admin": {
+      bookMakeupSession: async (data) => { booked.push(data); return bookMakeupSession(data); },
+    },
+    "next/cache": { revalidatePath(path) { revalidated.push(path); } },
+  });
+  const schedule = () => actions.scheduleMakeupForAbsence({
+    absenceId: "absence-1", makeupClassId: "class-makeup", makeupDate: "2026-11-20",
+  });
+  return { schedule, revalidated, booked };
+}
+
+test("결석 → 보강 지정 — 예약이 사유로 거절되면 그 문구를 그대로 돌려주고 화면 캐시는 건드리지 않는다", async () => {
+  for (const message of [MAKEUP_CAPACITY_FULL_MESSAGE, "이월로 정산한 결석입니다. 청구·이월 내역을 먼저 확인해 주세요."]) {
+    const { schedule, revalidated, booked } = loadScheduleForAbsence(async () => ({ ok: false, message }));
+    assert.deepEqual(await schedule(), { ok: false, message });
+    assert.equal(booked.length, 1);
+    assert.deepEqual(revalidated, [], "거절인데 성공처럼 새로고침하면 안 된다");
+  }
+});
+
+test("결석 → 보강 지정 — 예약이 성공하면 { ok: true } 와 캐시 무효화, 예약이 던지면 그대로 던진다", async () => {
+  const success = loadScheduleForAbsence(async () => ({ ok: true }));
+  assert.deepEqual(await success.schedule(), { ok: true });
+  assert.deepEqual(success.booked, [{
+    studentId: "student-1", originalClassId: "class-original", originalDate: "2026-11-10",
+    makeupClassId: "class-makeup", makeupDate: "2026-11-20",
+  }]);
+  assert.deepEqual(success.revalidated, ["/admin/absence"]);
+
+  const broken = loadScheduleForAbsence(async () => { throw new Error("보강 예약 실패"); });
+  await assert.rejects(broken.schedule(), (error) => error.message === "보강 예약 실패");
+  assert.deepEqual(broken.revalidated, []);
+});
+
+// 화면 두 곳 — 결과의 문구를 보이고, 거절이면 성공 흐름(닫기·새로고침)으로 가지 않는다.
+function sliceBetween(source, from, to) {
+  const start = source.indexOf(from);
+  const end = source.indexOf(to, start);
+  assert.ok(start > 0 && end > start, `${from} 구간을 찾을 수 있어야 한다`);
+  return source.slice(start, end);
+}
+
+test("보강 화면 — 예약 결과가 거절이면 서버가 준 문구를 보이고 멈춘다(성공 흐름·예상 밖 오류 안내는 그대로)", () => {
+  const fn = sliceBetween(makeupClient, "async function handleBook()", "return (");
+  const callAt = fn.indexOf("const result = await bookMakeupSession({");
+  const refusedAt = fn.indexOf("if (!result.ok) {");
+  const noticeAt = fn.indexOf("showNotice(result.message);");
+  const stopAt = fn.indexOf("return;", noticeAt);
+  const successAt = fn.indexOf("await onSuccess();");
+  assert.ok(callAt > 0, "예약 결과를 받아야 한다(버리면 거절이 성공으로 처리된다)");
+  assert.ok(callAt < refusedAt && refusedAt < noticeAt && noticeAt < stopAt && stopAt < successAt,
+    "결과 확인 → 문구 표시 → 멈춤 → (성공일 때만) onSuccess 순서여야 한다");
+  assert.equal(fn.split("await onSuccess();").length, 2, "성공 처리는 한 곳뿐");
+  // 예상 밖 오류(던져진 것)는 예전처럼 대체 문구, 버튼 잠금은 어느 길이든 풀린다
+  assert.match(fn, /catch \(e: any\) \{\s*showNotice\(adminErrorText\(e, "보강 예약 실패"\)\);\s*\} finally \{\s*setBusy\(false\);/);
+});
+
+test("결석 화면 — 보강 지정 결과가 거절이면 서버가 준 문구를 보이고 창을 닫지 않는다(성공 흐름은 그대로)", () => {
+  const absenceClient = readFileSync(
+    new URL("../src/app/admin/absence/RegularAbsenceAdminClient.tsx", import.meta.url),
+    "utf8",
+  );
+  const fn = sliceBetween(absenceClient, "const submitMakeup = useCallback(", "// 보강 취소.");
+  const callAt = fn.indexOf("const result = await scheduleMakeupForAbsence({ absenceId, makeupClassId, makeupDate });");
+  const refusedAt = fn.indexOf("if (!result.ok) {");
+  const errAt = fn.indexOf("setErr(result.message);");
+  const stopAt = fn.indexOf("return;", errAt);
+  const closeAt = fn.indexOf('setMakeupOpenId((cur) => (cur === absenceId ? "" : cur));');
+  const reloadAt = fn.indexOf("await reload(classId);");
+  assert.ok(callAt > 0, "보강 지정 결과를 받아야 한다(버리면 거절이 성공으로 처리된다)");
+  assert.ok(callAt < refusedAt && refusedAt < errAt && errAt < stopAt && stopAt < closeAt && closeAt < reloadAt,
+    "결과 확인 → 문구 표시 → 멈춤 → (성공일 때만) 창 닫기 → 새로고침 순서여야 한다");
+  assert.match(fn, /\} finally \{\s*setBusyId\(""\);/,"버튼 잠금은 어느 길이든 풀린다");
+  // 그 문구가 보이는 자리: 보강 지정 창 안의 알림 줄
+  assert.match(absenceClient, /\{err && \(\s*<p role="alert"[^>]*>\{err\}<\/p>/);
 });
 
 test("③ 정원 초과 거부 문구는 원장이 다음 행동을 알 수 있어야 한다", () => {

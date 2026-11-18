@@ -571,7 +571,7 @@ export async function sendParentSignupGuide(input: {
 
     // 잠금을 걸고 «이 미리보기로 이미 보냈나 / 30분 안에 같은 안내를 접수했나»를 본다(두 번 눌러도, 두 사람이 눌러도 한 번만).
     const claimed = await prisma.$transaction(async (tx) => {
-      await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, "customer-notice:PARENT_SIGNUP_GUIDE");
+      await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))::text`, "customer-notice:PARENT_SIGNUP_GUIDE");
       const recent = await tx.$queryRawUnsafe<Array<{ reason: string }>>(
         `SELECT CASE WHEN "detailsJson"->>'approvalId' = $1 THEN 'SAME_APPROVAL' ELSE 'WINDOW' END AS reason
            FROM "OperationsAuditLog"

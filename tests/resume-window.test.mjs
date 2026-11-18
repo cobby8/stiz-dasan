@@ -488,7 +488,7 @@ test("셔틀 변경 — 복귀일 전 날짜는 서버가 거절, 복귀일부�
   assert.equal((await shuttle.submitShuttleException("p1", { ...body, studentId: "s1", serviceDate: "2026-11-17" })).ok, true, "다음 날");
   // 2026-11-15 마감 통일·날짜 바꾸기: 예전에는 «다니는 반이 있는 학생은 오늘도 된다»였다(시각·요일 검사 없음).
   // 이제 그 날짜에 수업이 없는 학생은 전날까지만 받는다 — 오늘(토)은 s5(금·수반)·s4(월반) 모두 수업이 없어 마감이다.
-  const CLOSED = { ok: false, message: "마감 시간이 지나 여기서 바꿀 수 없습니다. 학원으로 연락해 주세요." };
+  const CLOSED = { ok: false, message: "마감이 지나 여기서는 바꿀 수 없어요. 학원으로 연락해 주세요." };
   assert.deepEqual(await shuttle.submitShuttleException("p1", { ...body, studentId: "s5", serviceDate: TODAY }), CLOSED);
   assert.deepEqual(await shuttle.submitShuttleException("p1", { ...body, studentId: "s4", serviceDate: TODAY }), CLOSED);
   assert.equal(db.exceptions.length, 2, "마감된 신청은 저장되지 않는다");

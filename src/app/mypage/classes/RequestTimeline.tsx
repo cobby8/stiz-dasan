@@ -112,7 +112,7 @@ export default function RequestTimeline({ rows }: { rows: ParentTimelineView[] }
       )}
 
       {row && (
-        <ListDetailPanel onClose={() => setOpenKey(null)} titleId="request-timeline-detail-title" panelClassName="p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <ListDetailPanel backToClose onClose={() => setOpenKey(null)} titleId="request-timeline-detail-title" panelClassName="p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
           <div className="mb-2 flex items-center gap-2">
             <h3 id="request-timeline-detail-title" className="academy-section-title min-w-0 break-keep">
               {row.studentName} · {row.kindName}

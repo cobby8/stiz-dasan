@@ -136,7 +136,12 @@ export default function RegularAbsenceAdminClient({
       setErr("");
       setBusyId(absenceId);
       try {
-        await scheduleMakeupForAbsence({ absenceId, makeupClassId, makeupDate });
+        const result = await scheduleMakeupForAbsence({ absenceId, makeupClassId, makeupDate });
+        // 정원 초과·이월로 정산한 결석 — 저장되지 않았다. 서버가 돌려준 한글 사유를 보이고 창은 그대로 둔다
+        if (!result.ok) {
+          setErr(result.message);
+          return;
+        }
         // 그사이 다른 결석의 창을 열었다면 그 창은 닫지 않는다
         setMakeupOpenId((cur) => (cur === absenceId ? "" : cur));
         await reload(classId);

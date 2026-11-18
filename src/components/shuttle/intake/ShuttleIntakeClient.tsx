@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import ScopeBackLink from "@/components/navigation/ScopeBackLink";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ShuttleIntakeItem, ShuttleIntakeDashboard } from "@/lib/enrollment/shuttle-review-types";
 
@@ -77,7 +78,10 @@ export default function ShuttleIntakeClient({ mode, initialMonth }: { mode: Mode
   return <main className={`mx-auto w-full min-w-0 px-4 py-4 text-[var(--color-academy-ink)] ${mode === "admin" ? "max-w-6xl" : "max-w-2xl"}`}>
     <header className="flex flex-wrap items-center justify-between gap-3">
       <div><h1 className="text-xl font-bold">{mode === "admin" ? "신규 셔틀 신청" : "새 학생 셔틀 검토"}</h1><p className="mt-1 text-sm text-[var(--color-academy-muted)]">{mode === "admin" ? "기사 의견을 확인한 뒤 명단과 노선을 확정하세요." : "가능한 시각이나 추가 확인할 내용을 학원에 남겨주세요."}</p></div>
-      <Link href={mode === "admin" ? "/admin/shuttle/regular" : "/staff/shuttle"} className={BUTTON}>{mode === "admin" ? "셔틀 명단" : "운행 관리"}</Link>
+      {/* 기사님 화면의 «운행 관리» = 방금 있던 셔틀 화면으로 한 칸 뒤로(쌓으면 셔틀 화면에서 뒤로가 다시 이 화면, 2026-11-17). 관리자용 «셔틀 명단»은 다른 화면으로 가는 버튼이라 그대로 */}
+      {mode === "admin"
+        ? <Link href="/admin/shuttle/regular" className={BUTTON}>셔틀 명단</Link>
+        : <ScopeBackLink fallbackHref="/staff/shuttle" className={BUTTON}>운행 관리</ScopeBackLink>}
     </header>
     <div className="my-4 flex flex-wrap items-end gap-2">
       <label className="w-44 max-w-full text-sm font-medium">적용 월<input aria-label="적용 월" className={`${FIELD} mt-1`} type="month" value={month} disabled={writing} onChange={event => { if (/^\d{4}-(0[1-9]|1[0-2])$/.test(event.target.value)) { setMonth(event.target.value); setNotice(""); } }} /></label>

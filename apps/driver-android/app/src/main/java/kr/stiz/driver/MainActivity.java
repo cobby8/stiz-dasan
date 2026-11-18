@@ -663,8 +663,8 @@ public final class MainActivity extends Activity {
         if (detail == null) return;
         runOnUiThread(() -> { if (web != null && trusted(Uri.parse(web.getUrl() == null ? "" : web.getUrl()))) web.evaluateJavascript("window.dispatchEvent(new CustomEvent('stiz-driver-gps',{detail:" + detail + "}));", null); });
     }
-    @Override protected void onResume() { super.onResume(); visible = true; if (web != null) { web.onResume(); snapshot(); requestPermissionsAndStart(); } }
-    @Override protected void onPause() { visible = false; if (web != null) web.onPause(); super.onPause(); }
+    @Override protected void onResume() { super.onResume(); visible = true; if (nativeAuth != null) nativeAuth.resumed(); if (web != null) { web.onResume(); snapshot(); requestPermissionsAndStart(); } }
+    @Override protected void onPause() { visible = false; if (nativeAuth != null) nativeAuth.paused(); if (web != null) web.onPause(); super.onPause(); }
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         if (fileChooser != null && fileChooser.result(requestCode, resultCode, data)) return;
         super.onActivityResult(requestCode, resultCode, data);

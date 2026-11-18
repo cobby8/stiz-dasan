@@ -79,9 +79,11 @@ export function parseAbsenceReason(text: string): AbsenceReason | null {
   const pick = /^(\d)\s*번?$/.exec(value);
   if (pick) return VALID_REASONS[Number(pick[1]) - 1] ?? null;
   if (/아프|아파|아픈|병원|감기|열이|열나|독감|다쳐|다친|부상|질병|장염|코로나|몸살/.test(value)) return "ILLNESS_INJURY";
+  // 직계 가족 경조사(2026-11-17) — 약관상 이월 대상이라 «개인 사정»과 나눈다. «행사»보다 먼저 본다(«결혼식 행사» 등)
+  if (/경조사|장례|부고|상을\s*당|결혼식|돌잔치/.test(value)) return "FAMILY_EVENT";
   if (/여행|가족\s*여행|놀러/.test(value)) return "FAMILY_TRIP";
   if (/학교|행사|시험|소풍|수련회|체험학습/.test(value)) return "SCHOOL_EVENT";
-  if (/개인|사정|집안|일정|약속|경조사/.test(value)) return "PERSONAL";
+  if (/개인|사정|집안|일정|약속/.test(value)) return "PERSONAL";
   if (/^기타$/.test(value)) return "ETC";
   return null;
 }
@@ -261,6 +263,8 @@ async function startCancel(input: AbsenceFlowInput, child: FlowChild | null, lea
 
 /** 질병·부상 결석 완료 안내 — 카톡으로는 사진을 받을 수 없어 앱으로 이끈다(사유 글은 싣지 않는다) */
 export const ILLNESS_KAKAO_NOTICE = "질병·부상 결석은 앱 「결석 알리기」에서 결석일부터 7일 안에 증빙 사진(진단서·처방전·약 봉투 등)을 올려 주세요. 확인 후 다음 달 수강료에서 빼 드려요. 사진이 없으면 보강권 1장으로 바뀌어요.";
+/** 직계 가족 경조사 결석 완료 안내(2026-11-17) — 사진 기한·자동 전환은 질병만이라, 원이 확인한 뒤 정한다고만 알린다 */
+export const FAMILY_EVENT_KAKAO_NOTICE = "경조사 결석은 원에서 확인한 뒤 다음 달 수강료에서 빼 드려요. 확인 자료(부고·청첩장 등)는 원으로 보내 주세요.";
 
 /** 확정 → 실제 결석 신청(reportRegularAbsence — 웹과 같은 함수) */
 async function confirmReport(flow: FlowRow<AbsenceState>): Promise<Reply> {
@@ -285,7 +289,7 @@ async function confirmReport(flow: FlowRow<AbsenceState>): Promise<Reply> {
   }
   await store.close(flow.id, "APPLIED", { ...state, step: "SAVING" });
   return flowReply(
-    `결석 신청 완료: ${state.studentName} 학생 ${chosen.label} (${REASON_LABEL[state.reason]})\n\n그날 셔틀은 자동으로 빠지고 원장님·코치님께 전달됐어요. ${carryPending ? ILLNESS_KAKAO_NOTICE : creditIssued ? "보강권 1장이 생겼어요 — 「보강 신청」으로 바로 예약할 수 있어요." : "보강은 결석 처리 후 「보강 신청」으로 하실 수 있어요."}`,
+    `결석 알림 완료: ${state.studentName} 학생 ${chosen.label} (${REASON_LABEL[state.reason]})\n\n그날 셔틀은 자동으로 빠지고 원장님·코치님께 전달됐어요. ${carryPending ? (state.reason === "FAMILY_EVENT" ? FAMILY_EVENT_KAKAO_NOTICE : ILLNESS_KAKAO_NOTICE) : creditIssued ? "보강권 1장이 생겼어요 — 「보강 예약」으로 바로 예약할 수 있어요." : "보강은 결석 처리 후 「보강 예약」으로 하실 수 있어요."}`,
     ["결석 취소", "메뉴"],
   );
 }

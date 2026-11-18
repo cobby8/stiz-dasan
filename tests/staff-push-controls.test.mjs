@@ -46,11 +46,11 @@ test("머리줄 토글: 켜짐 = 종 · 꺼짐 = 빗금 친 종(이름은 aria-l
   assert.match(off, /inline-flex size-11/);
   assert.match(off, /title="휴대폰 알림 꺼짐 — 누르면 켜기"/);
   // 글꼴을 못 받으면 보일 대체 글자(«알림 끔»)도 함께 그려 둔다 — 아이콘만 있는 버튼이 빈칸이 되지 않게
-  assert.match(off, /<span aria-hidden="true" class="ui-icon[^"]*"><span class="material-symbols-outlined text-2xl">notifications_off<\/span><span class="ui-icon-fallback">알림 끔<\/span><\/span><\/button>$/, "꺼짐은 모양이 다른 종 — 색만으로 알리지 않는다");
+  assert.match(off, /<span aria-hidden="true" class="ui-icon[^"]*"><svg data-icon="notifications_off"[^>]*width="24"[^>]*><path d="[^"]+"><\/path><\/svg><\/span><\/button>$/, "꺼짐은 모양이 다른 종 — 색만으로 알리지 않는다");
   const on = render("StaffPushToggle", { pushSupported: true, pushEnabled: true });
   assert.match(on, /aria-checked="true" aria-label="휴대폰 알림 켜짐"/);
   assert.match(on, /title="휴대폰 알림 켜짐"/);
-  assert.match(on, /<span aria-hidden="true" class="ui-icon[^"]*"><span class="material-symbols-outlined text-2xl">notifications<\/span><span class="ui-icon-fallback">알림<\/span><\/span><\/button>$/);
+  assert.match(on, /<span aria-hidden="true" class="ui-icon[^"]*"><svg data-icon="notifications"[^>]*width="24"[^>]*><path d="[^"]+"><\/path><\/svg><\/span><\/button>$/);
   assert.equal(render("StaffPushToggle", { pushSupported: false, pushEnabled: false }), "");
   assert.equal(render("StaffPushToggle", { pushSupported: true, pushEnabled: false, checked: false }), "");
 });

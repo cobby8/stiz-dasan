@@ -20,6 +20,7 @@ import { customerMessage } from "@/components/parent/customerMessage";
 import { presetIndex, type RequestPreset } from "@/lib/mypage/requestPreset";
 // 남은 자리는 숫자 대신 3단계(여유/임박)로(재원생 수 비공개 · 2026-11-13 f9)
 import { SEAT_LEVEL_LABEL } from "@/lib/seats/seatLevel";
+import AcademyContactButtons, { CHILD_CONNECT_ASK } from "@/components/parent/AcademyContactButtons";
 
 const DAY_KO: Record<string, string> = {
   Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금", Sat: "토", Sun: "일",
@@ -29,6 +30,9 @@ const DAY_KO: Record<string, string> = {
 // 퇴원의 «자리가 다른 학생에게 넘어갑니다» 경고는 제출 직전 확인창에만 둔다.
 
 type PendingRequest = NonNullable<ChildChangeOption["pending"]>;
+
+// 정원이 찬 반을 골랐을 때의 안내 — 반 변경·반 추가가 같은 글을 쓴다(한 번에 한 종류만 열려 둘이 같이 보이지 않는다)
+const FULL_CLASS_NOTE = "정원이 찬 반도 신청할 수 있어요. 자리가 나면 순서대로 배정돼요";
 
 /**
  * 반 추가(2026-11-14 결정표 c8) — 지금 다니는 반은 그대로 두고 다른 요일·시간 반을 하나 더.
@@ -40,13 +44,17 @@ type FormKind = ChangeKind | typeof CLASS_ADD;
 /** 종류 이름(복귀 포함). 모르는 값이면 «수강 변경». */
 const kindLabel = (kind: string) => REQUEST_KIND_LABEL[kind] ?? "수강 변경";
 
-export default function EnrollmentChangeClient({ initial, classAdd, preset, academyTel = null }: {
+export default function EnrollmentChangeClient({ initial, classAdd, preset, academyTel = null, kakaoChannelUrl = null, noChildren = false }: {
   initial: EnrollmentChangeOptions;
   /** 반 추가 후보(학년 맞는 반)·검토 중인 반 추가 신청. 없으면 «반 추가»를 보이지 않는다(읽기 실패·옛 호출) */
   classAdd?: ClassAddOptions;
   preset?: RequestPreset;
   /** 걸 수 있는 학원 번호(서버가 규칙 함수로 다듬은 값) — 하루 접수 상한 안내 옆 «학원에 전화하기». 없으면 글자만 */
   academyTel?: string | null;
+  /** 카카오 채널 주소(설정값) — 다니는 반이 없을 때의 «카카오 문의» 버튼용. 없으면 그 버튼만 숨는다 */
+  kakaoChannelUrl?: string | null;
+  /** 연결된 자녀가 0명인 계정 — 다니는 반 없음 안내의 문의 링크를 «자녀 연결하기»로(홈 문의 폼이 없어서) */
+  noChildren?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -129,6 +137,8 @@ export default function EnrollmentChangeClient({ initial, classAdd, preset, acad
   const formKinds: FormKind[] = addInfo ? ["CLASS_CHANGE", CLASS_ADD, "PAUSE", "WITHDRAW"] : (Object.keys(CHANGE_KIND_LABEL) as ChangeKind[]);
   // 다른 아이로 바꿨는데 그 아이는 반 추가를 못 하면 기본 종류로 되돌려 본다
   const activeKind: FormKind = kind === CLASS_ADD && !addInfo ? "CLASS_CHANGE" : kind;
+  // 휴원 양식이 지금 화면에 열려 있는가(검토 중 신청·휴원 중인 반이면 양식이 없다) — 맨 아래 수강료 안내를 겹치지 않게 하는 데 쓴다
+  const pauseFormOpen = !shownPending && !paused && activeKind === "PAUSE";
 
   /** 보내고 서버 응답(성공일 때만)을 돌려준다. 실패·불확실이면 null. */
   async function send(body: Record<string, unknown>): Promise<Record<string, any> | null> {
@@ -372,9 +382,12 @@ export default function EnrollmentChangeClient({ initial, classAdd, preset, acad
     return (
       <main className="mx-auto max-w-lg px-4 py-6">
         <h1 className="academy-heading">수강 변경 신청</h1>
-        <p className="mt-3 rounded-2xl bg-white p-5 text-sm text-[var(--color-academy-muted)] shadow-sm">
-          지금 다니고 있는 반이 없습니다. 학원으로 문의해 주세요.
-        </p>
+        {/* 글만 두지 않고 바로 전화·문의 버튼(2026-11-17 g3) — 번호가 없으면 문의 폼 링크 */}
+        <div className="mt-3 rounded-2xl bg-white p-5 text-sm text-[var(--color-academy-muted)] shadow-sm">
+          <p>지금 다니고 있는 반이 없어요.</p>
+          {/* 자녀가 아예 없으면 홈 문의 폼이 없다 → 문의 링크 대신 자녀 연결로 */}
+          <AcademyContactButtons contact={{ phone: academyTel, kakaoChannelUrl }} className="mt-3 flex flex-wrap items-center gap-2" {...(noChildren ? CHILD_CONNECT_ASK : {})} />
+        </div>
         {/* 퇴원한 뒤에도 지난 결과(거절 사유 등)는 볼 수 있게 */}
         <div className="mt-4"><ChangeHistoryList rows={initial.history ?? []} /></div>
       </main>
@@ -579,7 +592,7 @@ export default function EnrollmentChangeClient({ initial, classAdd, preset, acad
                   </select>
                   {addable.find((item) => item.classId === toClassId)?.full && (
                     <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
-                      정원이 찬 반도 신청할 수 있어요. 자리가 나면 순서대로 배정됩니다.
+                      {FULL_CLASS_NOTE}
                     </p>
                   )}
                   <label htmlFor="add-from" className="mt-4 mb-1 block text-xs font-medium text-[var(--color-academy-muted)]">
@@ -620,7 +633,7 @@ export default function EnrollmentChangeClient({ initial, classAdd, preset, acad
                 {/* 만석이어도 신청은 받는다(원장 결정). 마감된 반을 골랐을 때만 기대를 정확히 만든다. */}
                 {selectable.find((item) => item.classId === toClassId)?.full && (
                   <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
-                    정원이 찬 반도 신청할 수 있어요. 자리가 나면 순서대로 배정됩니다.
+                    {FULL_CLASS_NOTE}
                   </p>
                 )}
 
@@ -678,7 +691,7 @@ export default function EnrollmentChangeClient({ initial, classAdd, preset, acad
                   className="academy-input box-border min-w-0 max-w-full appearance-none"
                 />
                 <p className="mt-1 mb-4 text-xs text-[var(--color-academy-muted)]">
-                  이미 낸 수강료는 학원이 승인할 때 빠지는 수업만큼 이월·환불로 안내드립니다.
+                  이미 낸 수강료는 승인할 때 빠지는 수업만큼 이월·환불로 안내드려요
                 </p>
                 <div className="mb-1 flex items-center justify-between gap-2">
                   <label htmlFor="resume-on" className="text-xs font-medium text-[var(--color-academy-muted)]">
@@ -776,9 +789,12 @@ export default function EnrollmentChangeClient({ initial, classAdd, preset, acad
 
       <ChangeHistoryList rows={initial.history ?? []} />
 
-      <p className="text-center text-xs text-[var(--color-academy-faint)]">
-        수강료가 달라지면 학원에서 다시 안내드려요
-      </p>
+      {/* 휴원 양식이 열려 있을 때는 위 «이미 낸 수강료는 … 안내드려요» 한 줄이 같은 약속을 한다 — 두 줄 겹치지 않게 숨긴다 */}
+      {!(pauseFormOpen) && (
+        <p className="text-center text-xs text-[var(--color-academy-faint)]">
+          수강료가 달라지면 학원에서 다시 안내드려요
+        </p>
+      )}
     </main>
   );
 }

@@ -101,6 +101,7 @@ function makeWorld(options = {}) {
     "next/cache": { revalidatePath() {} },
     "next/server": { after() {} },
     "@/lib/prisma": { prisma },
+    "@/lib/regular/carryReasonRules": load("src/lib/regular/carryReasonRules.ts"),
     "@/lib/makeup/credit-service": {
       syncCreditForRegularSession: async (input) => { world.calls.push(["syncRegularCredit", input.status, input.studentId]); return { action: "revoked" }; },
       // 트랜잭션판 회수 — 넘겨받은 db 가 트랜잭션 안의 것인지도 본다
@@ -133,7 +134,7 @@ function makeWorld(options = {}) {
     "@/lib/staff/sessionEditWindow": editWindowRules,
     "@/lib/staff-session-rules": sessionRules,
     // 출석 알림 규칙(순수 모듈)은 진짜를 쓴다 — 관리자 출결 화면과 같은 함수
-    "@/lib/attendance/attendanceNoticeRules": load("src/lib/attendance/attendanceNoticeRules.ts", { "@/lib/staff-session-rules": sessionRules, "@/lib/datetime/kst": kst }),
+    "@/lib/attendance/attendanceNoticeRules": load("src/lib/attendance/attendanceNoticeRules.ts", { "@/lib/staff-session-rules": sessionRules, "@/lib/datetime/kst": kst , "@/lib/regular/absence-parent-notice": load("src/lib/regular/absence-parent-notice.ts", {}) }),
     "@/lib/staff-session-queries": { trialOnClassDateSql: () => "true" },
     "@/lib/staff-notifications": { deliverParentNotification: async () => { world.calls.push(["notify"]); return {}; }, getClassParentRecipients: async () => [], getStudentParentRecipients: async () => [] },
     "@/lib/studentVisibility": { notMergedStudent: () => "true" },

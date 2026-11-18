@@ -55,6 +55,28 @@ test("① 이름 열쇠: 띄어쓰기 제거 · 끝의 A/B·숫자 구분 글자
   assert.equal(rules.orderItemNameKey("김루빈A"), "김루빈A", "주문 쪽은 띄어쓰기만");
 });
 
+test("① 이름 맞추기 두 기준(2026-11-17): 품목 이름 = 아이 열쇠 또는 띄어쓰기만 지운 아이 전체 이름", () => {
+  const keysOf = (childName) => ({ childNameKey: rules.childUniformNameKey(childName), childFullNameKey: rules.orderItemNameKey(childName) });
+  const a = keysOf("김루빈A");
+  assert.equal(rules.orderItemNameMatches("김루빈", a), true, "구분 글자 없이 적은 주문");
+  assert.equal(rules.orderItemNameMatches("김루빈A", a), true, "구분 글자까지 적은 주문");
+  assert.equal(rules.orderItemNameMatches("김 루빈 A", a), true, "띄어쓰기는 무시");
+  assert.equal(rules.orderItemNameMatches("김루빈B", a), false, "다른 구분 글자는 다른 아이");
+  assert.equal(rules.orderItemNameMatches("김루빈2", a), false);
+  assert.equal(rules.orderItemNameMatches("김하빈", a), false);
+  assert.equal(rules.orderItemNameMatches("", a), false);
+  assert.equal(rules.orderItemNameMatches(null, a), false);
+  // 구분 글자가 없는 아이는 두 열쇠가 같은 값 — 예전과 같다
+  const plain = keysOf("김 루빈");
+  assert.deepEqual(plain, { childNameKey: "김루빈", childFullNameKey: "김루빈" });
+  assert.equal(rules.orderItemNameMatches("김루빈", plain), true);
+  assert.equal(rules.orderItemNameMatches("김루빈A", plain), false, "주문서의 구분 글자는 떼지 않는다");
+  // 영문 이름(다 떼면 빈 글자가 되는 이름)
+  const john = keysOf("John");
+  assert.equal(rules.orderItemNameMatches("John", john), true);
+  assert.equal(rules.orderItemNameMatches("Joh", john), false);
+});
+
 test("① 전화번호 열쇠: 숫자만 · 비었음·짧음·자리채움(00000000000)은 null", () => {
   assert.equal(rules.parentOrderPhoneKey("010-1234-5678"), "01012345678");
   assert.equal(rules.parentOrderPhoneKey("01012345678"), "01012345678");
@@ -82,6 +104,9 @@ test("① 번호 한 줄: 값이 있는 것만, \"0\" 도 번호, 둘 다 없으
   assert.equal(rules.uniformProfileLine({}), "번호 없음");
   assert.equal(rules.uniformOrderLine({ design: "기본형", backNumber: "0", topSize: "130", bottomSize: "140", quantity: 2 }), "기본형 · 0번 · 상의 130 · 하의 140 · 2벌");
   assert.equal(rules.uniformOrderLine({ design: null, backNumber: null, topSize: null, bottomSize: null, quantity: 1 }), "유니폼 · 1벌");
+  // 인쇄 이름(2026-11-17 r3) — 등번호 바로 뒤, 없으면 생략
+  assert.equal(rules.uniformOrderLine({ design: "기본형", backNumber: "23", printName: "LEE JUN", topSize: "130", bottomSize: "140", quantity: 1 }), "기본형 · 23번 · LEE JUN · 상의 130 · 하의 140 · 1벌");
+  assert.equal(rules.uniformOrderLine({ design: "기본형", backNumber: "23", printName: null, topSize: null, bottomSize: null, quantity: 1 }), "기본형 · 23번 · 1벌");
 });
 
 // ── ② 매칭(이중 확인) ─────────────────────────────────────────────────────
@@ -131,11 +156,11 @@ function fakeDb({ students, users, orders }) {
       return s && me ? [{ name: s.name, mePhone: me.phone }] : [];
     }
     if (sql.includes(`FROM "UniformOrder" o`)) {
-      const [phone, nameKey] = values;
-      return orders.filter((o) => o.parentPhoneDigits === phone && o.studentName.replace(/\s/g, "") === nameKey);
+      const [phone, nameKey, fullKey] = values;
+      return orders.filter((o) => o.parentPhoneDigits === phone && [nameKey, fullKey].includes(o.studentName.replace(/\s/g, "")));
     }
-    // 쇼핑몰 표(2026-11-16) — 이 파일에서는 «아직 없는 DB»로 둔다(쇼핑몰 매칭은 uniform-shop-orders.test.mjs)
-    if (sql.includes("to_regclass")) return [{ ready: false }];
+    // 쇼핑몰 표(2026-11-16) — 이 파일에서는 «주문 없음»으로 둔다(쇼핑몰 매칭은 uniform-shop-orders.test.mjs)
+    if (sql.includes(`FROM "UniformShopOrder" o`)) return [];
     throw new Error("unexpected sql");
   };
 }
@@ -157,25 +182,32 @@ const world = {
   orders: [
     orderRow({ itemId: "mine", parentPhoneDigits: "01012345678", studentName: "김루빈" }),
     orderRow({ itemId: "theirs", parentPhoneDigits: "01099998888", studentName: "김루빈", design: "남의 주문" }),
+    // 주문서에 구분 글자까지 적은 주문 — «김루빈A» 아이에게만 보인다(«김루빈B» 주문은 안 보인다)
+    orderRow({ itemId: "mine-full", parentPhoneDigits: "01012345678", studentName: "김루빈A", appliedYmd: "2026-10-01", initials: "GENO", printName: "GENO" }),
+    orderRow({ itemId: "mine-b", parentPhoneDigits: "01012345678", studentName: "김루빈B", design: "형제 주문" }),
   ],
 };
 
 test("③ A/B 접미사 아이 → 내 번호로 낸 «김루빈» 주문만, 동명이인 다른 집 주문은 안 보인다", async () => {
   const { run, calls } = loadQuery(fakeDb(world));
   const out = await run("mom", "kidA");
-  assert.deepEqual(out.map((o) => o.id), ["mine"]);
-  assert.equal(calls.length, 3, "권한·사이트 주문·쇼핑몰 표 확인");
-  assert.match(calls[2].sql, /to_regclass/);
+  assert.deepEqual(out.map((o) => o.id), ["mine", "mine-full"]);
+  assert.deepEqual(out.map((o) => o.printName), [null, "GENO"], "사이트 주문의 인쇄 이름 = 이니셜 칸");
+  assert.equal(calls.length, 3, "권한·사이트 주문·쇼핑몰 주문(표 존재 확인 왕복 없음)");
+  assert.ok(calls.every((c) => !c.sql.includes("to_regclass")));
+  assert.match(calls[2].sql, /FROM "UniformShopOrder" o/);
   assert.deepEqual(calls[0].values, ["kidA", "mom"]);
   assert.match(calls[0].sql, /s\.id = \$1 AND s\."parentId" = \$2/, "권한 확인을 같은 SQL 에서");
   assert.match(calls[0].sql, /"mergedIntoStudentId" IS NULL/, "병합 학생 제외");
-  assert.deepEqual(calls[1].values, ["01012345678", "김루빈"], "본인 번호 + 이름 열쇠로만 묶는다");
+  assert.deepEqual(calls[1].values, ["01012345678", "김루빈", "김루빈A"], "본인 번호 + 이름 열쇠 둘(아이 열쇠·전체 이름)로만 묶는다");
   assert.match(calls[1].sql, /o\."parentPhoneDigits" = \$1/);
+  assert.match(calls[1].sql, /regexp_replace\(i\."studentName", '\\s', '', 'g'\) IN \(\$2, \$3\)/);
+  assert.match(calls[1].sql, /i\.initials AS "printName"/);
   assert.match(calls[1].sql, /AT TIME ZONE 'Asia\/Seoul'/);
   assert.doesNotMatch(calls[1].sql, /AT TIME ZONE 'UTC'/, "timestamptz 는 한 번만");
   assert.doesNotMatch(calls[1].sql, /customerMemo|lastError|parentName|stizMessage|o\."parentPhone"[^D]/, "금지 칸 미조회");
   for (const o of out) for (const key of Object.keys(o)) assert.doesNotMatch(key, FORBIDDEN_KEYS);
-  assert.doesNotMatch(JSON.stringify(out), /01012345678|010-1234|남의 주문/);
+  assert.doesNotMatch(JSON.stringify(out), /01012345678|010-1234|남의 주문|형제 주문/);
 });
 
 test("③ 남의 아이 · 병합된 학생 · 전화번호 없음 · 자리채움 번호 → 빈 목록, 주문 표는 읽지 않는다", async () => {
@@ -192,6 +224,12 @@ test("③ 소스 가드: PgBouncer — $queryRawUnsafe 만, 아이 기록 조회
   const record = read("src/lib/parent/childRecordQuery.ts");
   assert.match(record, /section\("uniformOrders", \(\) => loadChildUniformOrders\(db, parentUserId, sid\)\)/);
   assert.match(record, /section\("uniformNumbers"/);
+  // 2026-11-17: 유니폼 조회는 앞의 병렬 묶음 안에서 함께 읽는다(따로 한 번 더 기다리지 않는다)
+  assert.match(record, /const \[payments, attendance, timeline, seasonal, grant, reports, tenure, uniformNumbers, uniformOrders\] = await Promise\.all\(\[/);
+  assert.equal((record.match(/const \[uniformNumbers, uniformOrders\] = await Promise\.all/g) ?? []).length, 0);
+  // 표 존재 확인 왕복을 없앴다 — 실패는 빈 목록 catch 가 맡는다
+  assert.doesNotMatch(src, /to_regclass\(/);
+  assert.match(src, /loadShopRows\(db, phoneKey, childNameKey, childFullNameKey\)\.catch\(/);
 });
 
 // ── ④ 렌더 ─────────────────────────────────────────────────────────────────
@@ -224,6 +262,9 @@ test("④ 아이 정보 «유니폼» 행 + 신청 내역 줄(신청일·내용�
   assert.match(html, /기본형 · 0번 · 상의 130 · 하의 130 · 1벌/);
   assert.match(html, /주문 완료/);
   assert.match(html, /취소/);
+  // 머리줄 건수는 취소된 품목을 빼고 센다(2건 중 1건 취소 → 1건)
+  assert.match(html, />1건</);
+  assert.doesNotMatch(html, />2건</);
   assert.ok(html.indexOf("아이 정보") < html.indexOf("유니폼 신청 내역"));
   const icons = [...html.matchAll(/class="material-symbols-outlined[^"]*">([^<]*)</g)].map((m) => m[1]);
   assert.ok(icons.every((name) => name === "expand_less" || name === "expand_more"), icons.join(","));

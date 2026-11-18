@@ -68,7 +68,7 @@ export default function ParentSignupGuideSender() {
   return (
     <div className="space-y-2">
       <p className="text-xs text-[var(--color-academy-muted)]">
-        재원·휴원생 학부모와 성인 수강생 본인 모두에게 보냅니다. 아직 계정이 없는 분께는 가입 링크를, 이미 가입한 분께는 로그인 안내를 보내요. 같은 번호는 한 번만 보내고, 이미 이 안내를 받은 분은 빠져요.
+        재원·휴원생 학부모와 성인 수강생 본인 모두에게 보냅니다. 아직 계정이 없는 분께는 가입 링크를, 이미 가입한 분께는 앱 설치 안내를 보내요. 같은 번호는 한 번만 보내고, 이미 이 안내를 받은 분은 빠져요.
       </p>
 
       {/* 다시 보내기 — 터치 44px 줄 전체가 눌린다 */}
@@ -172,7 +172,7 @@ function messageBlocks(preview: ParentSignupGuidePreview) {
   const blocks = [
     unsignedParents > 0 ? { label: "미가입 학부모에게 가는 문구(가입 안내)", body: preview.message } : null,
     preview.adultMessage ? { label: "미가입 성인 수강생 본인에게 가는 문구", body: preview.adultMessage } : null,
-    preview.signedInMessage ? { label: "이미 가입한 학부모에게 가는 문구(로그인 안내)", body: preview.signedInMessage } : null,
+    preview.signedInMessage ? { label: "이미 가입한 학부모에게 가는 문구(앱 설치 안내)", body: preview.signedInMessage } : null,
     preview.signedInAdultMessage ? { label: "이미 가입한 성인 수강생 본인에게 가는 문구", body: preview.signedInAdultMessage } : null,
   ];
   return blocks.filter((block): block is { label: string; body: string } => block !== null);
