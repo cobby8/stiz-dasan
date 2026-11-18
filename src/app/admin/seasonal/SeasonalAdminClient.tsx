@@ -12,7 +12,7 @@ import { seoulDateTimeToIso } from "./seasonalDateTime";
 import { kstLabel } from "@/lib/datetime/kst";
 import { askConfirm, showNotice } from "@/components/ui/feedback";
 // 기간 선택·날짜별 선택(2026-11-18) — 표시 문구·가격 계산은 공용 부품(서버와 같은 함수)
-import { describeApplicationSelection, isDateModeApplication, kstDateTimeParts, parseKstDateTime, shortDateLabel, weekdaysFromDates } from "@/lib/seasonal/admin-period-rules";
+import { describeApplicationSelection, isDateModeApplication, isLateJoinApplication, kstDateTimeParts, parseKstDateTime, shortDateLabel, weekdaysFromDates } from "@/lib/seasonal/admin-period-rules";
 import { resolvePeriodPrice } from "@/lib/seasonal/period-pricing";
 import { toKstYmd } from "@/lib/datetime/kst";
 
@@ -1952,7 +1952,11 @@ function ApplicationsView({
                 <td className="px-2 py-1.5">
                   {/* 기간·날짜를 고른 신청은 «요일 선택 · 4주 · 월·수» / «날짜 선택 5회»로, 예전 신청은 지금처럼 주N회 칩 */}
                   {isDateModeApplication(application) || application.periodLabel
-                    ? <span className="inline-flex min-h-6 items-center whitespace-nowrap rounded bg-[var(--color-academy-neutral-soft)] px-2 text-xs text-[var(--color-academy-neutral)]">{describeApplicationSelection(application)}</span>
+                    ? <span className="inline-flex flex-wrap gap-1">
+                      <span className="inline-flex min-h-6 items-center whitespace-nowrap rounded bg-[var(--color-academy-neutral-soft)] px-2 text-xs text-[var(--color-academy-neutral)]">{describeApplicationSelection(application)}</span>
+                      {/* 기간 시작 뒤 날짜로 접수한 신청 = 중간 합류(수강료는 남은 회차만큼으로 접수됨) */}
+                      {isLateJoinApplication(application, seasons.find((season) => season.id === application.seasonId)?.startsAt) && <span className="inline-flex min-h-6 items-center whitespace-nowrap rounded bg-[var(--color-academy-info-soft)] px-2 text-xs text-[var(--color-academy-info)]">중간 합류</span>}
+                    </span>
                     : <span className="inline-flex gap-1">
                     {classInfo.freqs.length ? classInfo.freqs.map((f) => <span key={f} className="inline-flex min-h-6 items-center rounded bg-[var(--color-academy-neutral-soft)] px-2 text-xs text-[var(--color-academy-neutral)]">{f}</span>) : <span className="text-[var(--color-academy-muted)]">-</span>}
                   </span>}
@@ -2180,7 +2184,7 @@ function ApplicationDrawer({
         <button type="button" onClick={onClose} aria-label="닫기" data-admin-modal-initial-focus className="academy-button-text academy-button-sm shrink-0">닫기</button>
       </header>
 
-      <ApplicationReviewSummary application={application} onResolveReview={onResolveReview} resolving={resolvingReview} />
+      <ApplicationReviewSummary application={application} seasonStartsAt={applicationSeason?.startsAt} onResolveReview={onResolveReview} resolving={resolvingReview} />
 
       <section className="mt-6 grid gap-3 rounded-lg bg-[var(--color-academy-soft)] p-4 text-sm tabular-nums sm:grid-cols-2">
         <Info label="학부모">{application.parentName}{application.parentRelation ? ` · ${application.parentRelation}` : ""}</Info>
@@ -2278,7 +2282,7 @@ function ApplicationDrawer({
   </AdminModal>;
 }
 
-function ApplicationReviewSummary({ application, onResolveReview, resolving }: { application: Application; onResolveReview: (applicationId: string, reviewNote: string) => Promise<void>; resolving: boolean }) {
+function ApplicationReviewSummary({ application, seasonStartsAt, onResolveReview, resolving }: { application: Application; seasonStartsAt?: string | null; onResolveReview: (applicationId: string, reviewNote: string) => Promise<void>; resolving: boolean }) {
   const importedLabel = application.imported ? `가져온 신청${application.importSource ? ` · ${application.importSource}` : ""}` : "홈페이지 신청";
   const weekdays = application.selectedWeekdays?.length ? application.selectedWeekdays.map(weekdayLabel).join(" · ") : "요일 미확인";
   const needsReview = application.reviewReasons ?? [];
@@ -2288,6 +2292,8 @@ function ApplicationReviewSummary({ application, onResolveReview, resolving }: {
       <span className="inline-flex min-h-6 items-center rounded bg-[var(--color-academy-neutral-soft)] px-2 text-xs text-[var(--color-academy-neutral)]">{applicantTypeLabel(application.applicantType)} 회원</span>
       <span className="inline-flex min-h-6 items-center rounded bg-[var(--color-academy-soft)] px-2 text-xs text-[var(--color-academy-muted)]">{importedLabel}</span>
       <span className={badge(application.paymentStatus)}>{paymentReviewLabel(application.paymentStatus)}</span>
+      {/* 중간 합류(기간 시작 뒤 날짜로 접수) — 수강료는 남은 회차만큼으로 접수됐다. 재배정 가격은 관리자 재량 */}
+      {isLateJoinApplication(application, seasonStartsAt) && <span className="inline-flex min-h-6 items-center rounded bg-[var(--color-academy-info-soft)] px-2 text-xs text-[var(--color-academy-info)]">중간 합류 · 남은 회차만큼 수강료</span>}
     </div>
     <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
       {/* 날짜 선택 신청은 고른 날짜 전체를, 기간을 고른 신청은 기간을 함께 보인다(2026-11-18) */}

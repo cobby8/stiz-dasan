@@ -50,7 +50,7 @@ export default function SeasonalDetailClient({ slug, basePath = "/seasonal" }: {
       </section>
       <section className="public-content-section public-seasonal-detail bg-[var(--color-public-tint)] px-4 py-8 pb-28 dark:bg-[var(--color-public-paper)]">
         <div className="mx-auto max-w-4xl space-y-6">
-          <div><h2 className="text-xl font-bold">{display.canApply ? "수업을 선택하세요" : "특강 수업 안내"}</h2><p className="mt-1 text-sm text-[var(--color-public-muted)]">{display.canApply ? "신청 화면에서 여러 수업을 함께 선택할 수 있습니다." : display.message}</p></div>
+          <div><h2 className="text-xl font-bold">{display.canApply ? "수업을 선택하세요" : "특강 수업 안내"}</h2><p className="mt-1 text-sm text-[var(--color-public-muted)]">{/* 중간 합류면 «날짜로 고르기·남은 회차만큼» 안내, 그 밖은 예전 문구 */}{display.lateJoin ? display.message : display.canApply ? "신청 화면에서 여러 수업을 함께 선택할 수 있습니다." : display.message}</p></div>
           <div className="grid gap-3 md:grid-cols-2">{offerings.length ? offerings.map((item) => <Offering key={item.id} item={item} showSeats={display.showSeats} />) : <Message text="등록된 수업 일정이 없습니다." />}</div>
           {program.shuttleNotice && <Notice title="셔틀 안내" text={program.shuttleNotice} />}
           {program.refundPolicy && <Notice title="취소·환불 안내" text={program.refundPolicy} />}
@@ -58,7 +58,7 @@ export default function SeasonalDetailClient({ slug, basePath = "/seasonal" }: {
       </section>
       {/* 하단 고정 바 — 높이를 --public-bottom-bar 로 알려 플로팅 버튼이 바 위로 올라간다(게슈탈트 C-P3) */}
       <PublicBottomBar className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--color-public-line)] bg-white/95 p-3 backdrop-blur dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)]/95">
-        <div className="mx-auto flex max-w-4xl gap-2"><ReturnLink href={basePath} className="public-btn-secondary">목록</ReturnLink>{display.canApply ? <Link href={`${basePath}/${slug}/apply`} className="public-btn-primary flex-1">신청하기</Link> : <span role="status" className="flex min-h-11 flex-1 items-center justify-center rounded bg-[var(--color-public-line)] px-5 text-[var(--color-public-muted)]">{display.label}</span>}</div>
+        <div className="mx-auto flex max-w-4xl gap-2"><ReturnLink href={basePath} className="public-btn-secondary">목록</ReturnLink>{display.canApply ? <Link href={`${basePath}/${slug}/apply`} className="public-btn-primary flex-1">{display.lateJoin ? "중간 합류 신청하기" : "신청하기"}</Link> : <span role="status" className="flex min-h-11 flex-1 items-center justify-center rounded bg-[var(--color-public-line)] px-5 text-[var(--color-public-muted)]">{display.label}</span>}</div>
       </PublicBottomBar>
     </>
   );

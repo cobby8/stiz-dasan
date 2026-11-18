@@ -90,6 +90,8 @@ export type SeasonalProgram = {
   offerings?: SeasonalClass[];
   shuttleHub?: ShuttleHubInfo;
   dateSelect?: SeasonalDateSelect;
+  /** 모집은 마감됐지만 «날짜로 고르기»로 남은 수업에 중간 합류할 수 있다(서버 판정, 2026-11-18) */
+  lateJoinOpen?: boolean;
 };
 
 export type ShuttleHubPoint = { name: string; lat: number; lng: number };
@@ -180,17 +182,22 @@ function resolvePublicStatus(row: Record<string, unknown>, now: number): Seasona
 export function seasonalDisplayState(program: SeasonalProgram, now = Date.now()) {
   const status = resolvePublicStatus(program as unknown as Record<string, unknown>, now);
   const offerings = programClasses(program);
-  const periodOpen = status === "OPEN" && program.isAccepting !== false;
+  // 중간 합류(2026-11-18 원장): 모집 마감 뒤라도 서버가 «남은 수업 있음»이라 했고 날짜 선택이 켜졌으면 신청을 살린다.
+  //   날짜 선택이 꺼진 시즌은 서버가 lateJoinOpen=false 를 보내 지금처럼 «모집 마감».
+  const lateJoin = status === "CLOSED" && program.lateJoinOpen === true && program.dateSelect?.enabled === true;
+  const periodOpen = (status === "OPEN" && program.isAccepting !== false) || lateJoin;
   const canApply = periodOpen && offerings.some((item) => item.capacity === null || (item.seatLevel !== null && item.seatLevel !== "FULL") || item.waitlistEnabled === true);
   const unavailableCourses = periodOpen && !canApply;
-  const label = unavailableCourses ? offerings.length ? "전 수업 마감" : "수업 안내 예정" : statusLabel(status);
+  const label = unavailableCourses ? offerings.length ? "전 수업 마감" : "수업 안내 예정" : lateJoin ? "중간 합류 가능" : statusLabel(status);
   const message = unavailableCourses
     ? offerings.length ? "모든 수업이 마감되어 신청할 수 없습니다." : "신청 가능한 수업을 준비하고 있습니다."
+    : lateJoin ? "중간 합류 신청 가능(날짜로 고르기) — 남은 수업 날짜를 골라 신청하고, 수강료는 남은 회차만큼 받습니다."
     : {
     UPCOMING: "아직 신청 기간이 아닙니다.", OPEN: "신청할 수 있습니다.", CLOSED: "신청 접수가 마감되었습니다.",
     ENDED: "운영이 종료된 특강입니다.", CANCELLED: "운영이 취소된 특강입니다.", UNAVAILABLE: "신청 일정은 학원에 문의해 주세요.",
   }[status];
-  return { status, label, canApply, showSeats: canApply, message, actionLabel: canApply ? "자세히 보고 신청하기" : "특강 내용 보기" };
+  const actionLabel = canApply ? lateJoin ? "중간 합류 신청하기" : "자세히 보고 신청하기" : "특강 내용 보기";
+  return { status, label, canApply, showSeats: canApply, message, actionLabel, lateJoin: lateJoin && canApply };
 }
 
 export function seasonalApplicationStatusLabel(status: string) {
@@ -220,6 +227,8 @@ export function normalizeProgram(value: unknown, now = Date.now()): SeasonalProg
     refundPolicy: stringOrUndefined(row.cancellationPolicy ?? row.refundPolicy), classes: offerings, offerings,
     shuttleHub: normalizeHub(row.shuttleHub),
     dateSelect: normalizeDateSelect(row.dateSelect),
+    // 서버가 true 라고 보낸 때만 중간 합류(없거나 이상한 값이면 false = 예전 화면)
+    lateJoinOpen: row.lateJoinOpen === true,
   };
 }
 

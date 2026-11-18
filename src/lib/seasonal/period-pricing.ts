@@ -80,6 +80,21 @@ export function resolvePeriodShuttleFee(
   return Math.max(0, fee);
 }
 
+/**
+ * 남은 회차만큼 받는 금액(2026-11-18 원장 «중간 합류는 남은 회차만큼»).
+ * = 정상 금액 × (남은 필요 횟수 ÷ 시작 전 기준 전체 필요 횟수), **100원 단위 내림**.
+ *   예: 240,000 × 3/8 = 90,000 · 240,000 × 6/8 = 180,000 · 100,000 × 1/3 = 33,333 → 33,300.
+ * 비율이 1 이상(시작 전 신청)이거나 전체 횟수를 모르면(0 이하) 정상 금액 그대로(내림도 안 한다).
+ * 수강료·셔틀비 둘 다 이 함수로 줄인다. 화면 미리보기와 서버 스냅샷이 같은 함수를 쓴다.
+ */
+export function proratedPrice(full: number, remainingCount: number, fullCount: number): number {
+  if (!Number.isFinite(full) || full <= 0) return Math.max(0, Number.isFinite(full) ? full : 0);
+  if (!Number.isFinite(fullCount) || fullCount <= 0 || remainingCount >= fullCount) return full;
+  if (!Number.isFinite(remainingCount) || remainingCount <= 0) return 0;
+  // 정수 곱 → 나눗셈 → 100원 내림(금액은 정수, 소수 오차는 floor 가 아래로만 깎는다)
+  return Math.floor((full * remainingCount) / (fullCount * 100)) * 100;
+}
+
 // 날짜별 선택 수강료(회당 단가 × 횟수, dateSelectTuition)는 2026-11-18 원장 결정으로 없앴다.
 // 날짜로 골라도 «그 주N회 반의 기간 가격»(요일 모드와 같은 resolvePeriodPrice / 반 가격)을 받는다 — 같은 규칙 두 벌 금지.
 

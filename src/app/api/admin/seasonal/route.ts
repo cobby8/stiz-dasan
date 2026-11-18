@@ -16,7 +16,7 @@ import { resolveOfferingPrice, resolveShuttleFee, type ApplicantType } from "@/l
 import { syncSeasonSiblingDiscounts } from "@/lib/seasonal/sibling-discount-sync";
 // 기간 선택·날짜별 선택(2026-11-18) — 출석 규칙·가격 계산은 공용 부품만 쓴다(여기서 다시 만들지 않는다)
 import { seasonalAttendsSql } from "@/lib/seasonal/attendance-rule";
-import { applicationUsesPeriodOrDate, resolvePeriodPrice, usesPeriodOrDateFeatures } from "@/lib/seasonal/period-pricing";
+import { applicationUsesPeriodOrDate, proratedPrice, resolvePeriodPrice, usesPeriodOrDateFeatures } from "@/lib/seasonal/period-pricing";
 // 재원 판정 SQL 은 공개 신청과 같은 함수 하나(승인 화면 «재원 확인 필요» 경고 · 2026-11-18)
 import { hasMatchingExistingStudent } from "@/lib/seasonal/service";
 import {
@@ -29,7 +29,7 @@ import {
   planPeriodCopy,
   weekdaysFromDates,
 } from "@/lib/seasonal/admin-period-rules";
-import { ymdKoreanLabel } from "@/lib/seasonal/application-plan";
+import { requiredDateCount, ymdKoreanLabel } from "@/lib/seasonal/application-plan";
 import { findFullDates } from "@/lib/seasonal/date-capacity";
 import { toKstYmd } from "@/lib/datetime/kst";
 import {
@@ -580,6 +580,11 @@ async function resolveSpecialProgramAssignment(
     selectedDates?: string[] | null;
     /** 고를 기간 범위(이름은 반의 기간 행에서 다시 읽는다). null/undefined = 기간 없음. */
     periodRange?: { startDate: string; endDate: string } | null;
+    /**
+     * 날짜 모드 금액의 기준일 = 그 신청서의 접수일(KST 'YYYY-MM-DD'). 2026-11-18 원장 «중간 합류는 남은 회차만큼».
+     * «오늘»이 아니라 접수일로 세야 관리자가 나중에 고쳐도 금액이 날마다 줄지 않는다. 비우면 비율 계산 안 함.
+     */
+    appliedOnYmd?: string | null;
   },
 ) {
   const target = await tx.specialProgramOffering.findUnique({ where: { id: params.offeringId } });
@@ -605,6 +610,23 @@ async function resolveSpecialProgramAssignment(
     offering = candidates.find((candidate) => seasonalOfferingFrequency(candidate) === selectedCount) ?? target;
   }
 
+  // 날짜 모드의 남은 회차 비율(공개 신청 service.ts 와 같은 함수 requiredDateCount·proratedPrice).
+  //   남은 필요 횟수는 «접수일» 기준, 분모는 시작 전 기준 전체 필요 횟수. 요일 모드·시작 전 접수는 비율 1 → 정상 금액.
+  //   주N회는 고른 반 이름의 «주N회»(공개 신청과 같은 반 고르기 규칙). 못 읽으면 비율을 쓰지 않는다(정상 금액).
+  async function dateModeProration(period: { startDate: string; endDate: string } | null) {
+    const frequency = seasonalOfferingFrequency(offering);
+    if (dateCount === null || !params.appliedOnYmd || frequency === null) return null;
+    const sessions = await tx.specialProgramSessionDate.findMany({
+      where: offering.linkedClassId
+        ? { offering: { seasonId: offering.seasonId, linkedClassId: offering.linkedClassId } }
+        : { offeringId: offering.id },
+      select: { startsAt: true },
+    });
+    const fullCount = requiredDateCount(sessions, frequency, period);
+    const remainingCount = requiredDateCount(sessions, frequency, period, params.appliedOnYmd);
+    return fullCount > 0 && remainingCount < fullCount ? { remainingCount, fullCount } : null;
+  }
+
   // 기간 — 고른 «그 반»의 같은 범위 기간 행 값으로 받는다(공용 resolvePeriodPrice)
   if (params.periodRange) {
     const period = await tx.specialProgramOfferingPeriod.findFirst({
@@ -613,9 +635,12 @@ async function resolveSpecialProgramAssignment(
     if (!period) {
       throw new SeasonalError(`${offering.title} 반에 그 기간(${params.periodRange.startDate}~${params.periodRange.endDate}) 수강료가 없습니다. 반의 «기간별 수강료»를 먼저 넣어 주세요.`, 400, "PERIOD_NOT_FOUND");
     }
+    const normalPrice = resolvePeriodPrice(period, applicantType);
+    const proration = await dateModeProration(period);
     return {
       offering,
-      priceSnapshot: resolvePeriodPrice(period, applicantType),
+      priceSnapshot: proration ? proratedPrice(normalPrice, proration.remainingCount, proration.fullCount) : normalPrice,
+      proration,
       period: { id: period.id, label: period.label, startDate: period.startDate, endDate: period.endDate, shuttleFee: period.shuttleFee } as AssignmentPeriod | null,
       sessionCount: dateCount as number | null,
       unitPrice: null as number | null,
@@ -623,10 +648,13 @@ async function resolveSpecialProgramAssignment(
   }
 
   // 기존 — 반 수강료 하나
+  // 할인 전 수강료(기존회원가 반영까지). 형제할인은 저장 뒤 syncSeasonSiblingDiscounts가 따로 얹는다.
+  const normalPrice = resolveOfferingPrice(offering, seasonalApplicantType(params.applicantType));
+  const proration = await dateModeProration(null);
   return {
     offering,
-    // 할인 전 수강료(기존회원가 반영까지). 형제할인은 저장 뒤 syncSeasonSiblingDiscounts가 따로 얹는다.
-    priceSnapshot: resolveOfferingPrice(offering, seasonalApplicantType(params.applicantType)),
+    priceSnapshot: proration ? proratedPrice(normalPrice, proration.remainingCount, proration.fullCount) : normalPrice,
+    proration,
     period: null as AssignmentPeriod | null,
     sessionCount: dateCount as number | null,
     unitPrice: null as number | null,
@@ -1026,6 +1054,8 @@ async function saveSpecialProgramItemAssignment(
     applicantType: before.application.applicantType,
     selectedDates: selection.selectedDates,
     periodRange: selection.periodRange,
+    // 날짜 모드 금액은 «접수일» 기준 남은 회차 비율(오늘 기준이면 고칠 때마다 금액이 줄어든다)
+    appliedOnYmd: toKstYmd(before.application.createdAt),
   });
   // 기간을 고른 신청은 «반 셔틀비» 자리에 기간 셔틀비(비어 있으면 반 셔틀비)를 넣는다 —
   // 공용 resolvePeriodShuttleFee 와 같은 결과이고, 기간 없는 반은 반 그대로(지금 동작 보존)
@@ -1054,7 +1084,11 @@ async function saveSpecialProgramItemAssignment(
     waitlistOrder = (last._max.waitlistOrder || 0) + 1;
   }
   // 셔틀비는 공개 신청과 같은 resolveShuttleFee(기간을 고른 신청은 위 offering 에 기간 셔틀비가 들어 있다)
-  const shuttleFeeSnapshot = resolveShuttleFee(offering, Boolean(before.shuttleRequest));
+  const normalShuttleFee = resolveShuttleFee(offering, Boolean(before.shuttleRequest));
+  // 날짜 모드 중간 합류면 셔틀비도 수강료와 같은 비율·100원 내림(공개 신청과 같다)
+  const shuttleFeeSnapshot = assignment.proration
+    ? proratedPrice(normalShuttleFee, assignment.proration.remainingCount, assignment.proration.fullCount)
+    : normalShuttleFee;
   await tx.specialProgramApplicationItem.update({
     where: { id: before.id },
     data: {
@@ -1126,6 +1160,8 @@ async function createSpecialProgramApplicationItem(
     applicantType: application.applicantType,
     selectedDates: selection.selectedDates,
     periodRange: selection.periodRange,
+    // 새 항목도 같은 규칙 — 날짜 모드는 접수일 기준 남은 회차 비율(셔틀비는 이 경로에서 0 그대로)
+    appliedOnYmd: toKstYmd(application.createdAt),
   });
   const offering = assignment.offering;
   const stored = assignmentStorageFields(selection, assignment);

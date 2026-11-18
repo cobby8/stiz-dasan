@@ -123,7 +123,9 @@ test("서버: 날짜 모드도 주N회 반·기간 가격(요일 모드와 같�
   assert.equal(pricing.dateSelectTuition, undefined);
   // 두 모드 공통: N = 날짜 모드는 weeklyFrequency, 요일 모드는 요일 수
   assert.match(serviceSource, /const frequency = isDateMode \? Number\(request\.weeklyFrequency\) : selectedWeekdays\.length/);
-  assert.match(serviceSource, /priceSnapshot: period \? resolvePeriodPrice\(period, applicantType\) : resolveOfferingPrice\(offering, applicantType\)/);
+  // 정상 수강료는 두 모드가 같은 식, 날짜 모드만 남은 회차 비율(2026-11-18 중간 합류)
+  assert.match(serviceSource, /const normalPrice = period \? resolvePeriodPrice\(period, applicantType\) : resolveOfferingPrice\(offering, applicantType\)/);
+  assert.match(serviceSource, /priceSnapshot: proration \? proratedPrice\(normalPrice, proration\.remainingCount, proration\.fullCount\) : normalPrice/);
   assert.match(serviceSource, /assertDateCount\(request\.selectedDates\.length, required, frequency, period\?\.label\)/);
   assert.match(serviceSource, /unitPrice: null as number \| null/);
 });
@@ -140,8 +142,9 @@ test("서버: 날짜 모드도 정원이 차면 대기(WAITLISTED)로 접수 —
   assert.match(applyClientSource, /정원이 차서 대기로 접수되었습니다/);
 });
 
-test("서버: 기간 마감은 그 기간 행 시각으로 409 PERIOD_CLOSED", () => {
-  assert.match(serviceSource, /if \(period && isPeriodClosed\(period\)\) throw periodClosedError\(period\.label\)/);
+test("서버: 기간 마감은 그 기간 행 시각으로 409 PERIOD_CLOSED(요일 모드 — 날짜 모드는 중간 합류로 따로 판정)", () => {
+  assert.match(serviceSource, /const periodClosed = Boolean\(period && isPeriodClosed\(period\)\)/);
+  assert.match(serviceSource, /if \(period && periodClosed && !isDateMode\) throw periodClosedError\(period\.label\)/);
   // 18:00 KST 경계(17:59:59 허용 · 18:00:00 거절)
   const closesAt = new Date(kst.kstAt("2027-01-08", "18:00"));
   assert.equal(pricing.isPeriodClosed({ applicationClosesAt: closesAt }, kst.kstAt("2027-01-08", "17:59") + 59_999), false);

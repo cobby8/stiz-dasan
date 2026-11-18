@@ -23,6 +23,7 @@ import {
   isPeriodClosed,
   periodClosedError,
   periodMixedOfferingsError,
+  proratedPrice,
   resolvePeriodPrice,
   resolvePeriodShuttleFee,
   usesPeriodOrDateFeatures,
@@ -34,7 +35,9 @@ import {
   assertPeriodHasWeekdays,
   assertSelectableDates,
   fullDateKeysFromOccupancy,
+  hasLateJoinDates,
   itemTitleSnapshot,
+  periodEndedError,
   pickOfferingPeriod,
   requiredDateCount,
   weekdaysFromDates,
@@ -90,6 +93,8 @@ async function resolvePublicOfferingAssignment(
   applicantType: "NEW" | "EXISTING",
   season: AssignmentSeason,
   request: AssignmentRequest,
+  // 시즌 모집 마감이 지났는가 — 날짜 모드는 이때 «중간 합류»로만 받는다
+  deadline: { seasonClosed: boolean },
 ) {
   const candidates = await tx.specialProgramOffering.findMany({
     where: { ...offeringScopeWhere(target), status: "OPEN" },
@@ -128,20 +133,37 @@ async function resolvePublicOfferingAssignment(
     startDate: request.periodStartDate,
     endDate: request.periodEndDate,
   });
-  // 기간별 신청 마감(예: 4주 1/1(금) 18:00) — 마감 시각 그 순간부터 받지 않는다. 비어 있으면 시즌 마감만.
-  if (period && isPeriodClosed(period)) throw periodClosedError(period.label);
+  // 기간별 신청 마감(예: 4주 1/1(금) 18:00) — 마감 시각 그 순간부터 요일 모드(기간 전체 신청)는 받지 않는다.
+  //   날짜 모드는 마감 뒤에도 «남은 회차로 중간 합류»를 받는다(2026-11-18 원장) — 아래 날짜 모드 검사에서 판정.
+  const periodClosed = Boolean(period && isPeriodClosed(period));
+  if (period && periodClosed && !isDateMode) throw periodClosedError(period.label);
 
+  // 수강료는 두 모드가 같은 «정상 수강료» — 기간 가격(없으면 반 가격). 회당 단가는 쓰지 않는다.
+  const normalPrice = period ? resolvePeriodPrice(period, applicantType) : resolveOfferingPrice(offering, applicantType);
+  // 날짜 모드의 남은 회차 비율(셔틀비도 같은 비율). 요일 모드·시작 전 신청은 null/비율 1 = 정상 금액 그대로.
+  let proration: { remainingCount: number; fullCount: number } | null = null;
   if (isDateMode) {
-    // 날짜 모드 검사 — 기간 밖 날짜 409, 필요 횟수(N × 회차가 있는 주 수)와 다르면 400
+    const scopeSessionDates = scopeOfferings.flatMap((item) => item.sessionDates);
+    const todayYmd = todayKst();
+    // 마감(기간 또는 시즌)이 지났으면 중간 합류 — 마지막 회차 전날까지만(남은 날이 없으면 409 PERIOD_ENDED)
+    if ((periodClosed || deadline.seasonClosed) && !hasLateJoinDates(scopeSessionDates, todayYmd, period)) {
+      throw periodEndedError();
+    }
+    // 날짜 모드 검사 — 기간 밖 날짜 409, 필요 횟수(오늘부터 남은 회차 기준)와 다르면 400
     assertDatesInPeriod(request.selectedDates, period);
-    const required = requiredDateCount(scopeOfferings.flatMap((item) => item.sessionDates), frequency, period);
+    const fullCount = requiredDateCount(scopeSessionDates, frequency, period);
+    const required = requiredDateCount(scopeSessionDates, frequency, period, todayYmd);
+    // 회차는 있는데 남은 게 없다 = 이미 끝난 기간(회차 자체가 없으면 아래 assertDateCount 가 DATE_NOT_OFFERED)
+    if (fullCount > 0 && required === 0) throw periodEndedError();
     assertDateCount(request.selectedDates.length, required, frequency, period?.label);
+    proration = { remainingCount: required, fullCount };
   }
   return {
     offering,
     scopeOfferings,
-    // 수강료는 두 모드가 같다 — 기간 가격(없으면 반 가격). 회당 단가는 쓰지 않는다.
-    priceSnapshot: period ? resolvePeriodPrice(period, applicantType) : resolveOfferingPrice(offering, applicantType),
+    // 날짜 모드 = 정상 수강료 × 남은 회차 비율(100원 내림), 요일 모드 = 정상 수강료
+    priceSnapshot: proration ? proratedPrice(normalPrice, proration.remainingCount, proration.fullCount) : normalPrice,
+    proration,
     period,
     unitPrice: null as number | null,
     // 날짜 모드는 고른 횟수를 남긴다(목록·제목 «날짜 선택 8회»)
@@ -289,12 +311,19 @@ function publicOffering(offering: PublicOfferingRow, fullDates: ReadonlySet<stri
 
 function publicSeason(season: PublicSeasonRow, fullByOffering: ReadonlyMap<string, ReadonlySet<string>> = new Map()) {
   const classes = (season.offerings || []).map((offering) => publicOffering(offering, fullByOffering.get(offering.id)));
+  const status = publicStatus(season);
   return {
     id: season.id,
     slug: season.slug,
     title: season.title,
     summary: season.description || undefined,
-    status: publicStatus(season),
+    // 기존 값(OPEN/CLOSED/ENDED/UPCOMING)은 그대로 — 중간 합류는 아래 lateJoinOpen 으로 따로 알린다
+    status,
+    // 중간 합류 가능(2026-11-18 원장): 모집은 마감됐지만 날짜 선택이 켜져 있고 남은 수업 날(내일 이후)이 있으면 true.
+    //   신청 서버와 같은 함수(hasLateJoinDates)로 판정한다. 날짜 선택이 꺼진 시즌은 언제나 false(지금처럼 마감).
+    lateJoinOpen: status === "CLOSED"
+      && season.dateSelectEnabled
+      && hasLateJoinDates((season.offerings || []).flatMap((offering) => offering.sessionDates || []), todayKst()),
     applicationStart: season.applicationOpensAt.toISOString(),
     applicationEnd: season.applicationClosesAt.toISOString(),
     operationStart: season.startsAt.toISOString(),
@@ -567,7 +596,11 @@ export async function submitSeasonalApplication(slug: string, input: SeasonalApp
   const season = await prisma.specialProgramSeason.findUnique({ where: { slug } });
   if (!season || season.status !== "PUBLISHED") throw new SeasonalError("신청할 수 없는 방학특강입니다.", 404, "SEASON_NOT_FOUND");
   const now = new Date();
-  if (now < season.applicationOpensAt || now > season.applicationClosesAt) {
+  // 시즌 모집 마감 뒤에는 «날짜로 고르기 중간 합류»만 받는다(2026-11-18 원장). 모집 시작 전·운영 종료 뒤는 기존처럼 거절.
+  //   남은 회차가 있는지는 반·기간을 고른 뒤 resolvePublicOfferingAssignment 에서 본다(없으면 409 PERIOD_ENDED).
+  const seasonClosed = now > season.applicationClosesAt;
+  const lateJoinAllowed = input.selectionMode === "DATE" && season.dateSelectEnabled && now <= season.endsAt;
+  if (now < season.applicationOpensAt || (seasonClosed && !lateJoinAllowed)) {
     throw new SeasonalError("현재는 신청 기간이 아닙니다.", 409, "APPLICATION_CLOSED");
   }
 
@@ -605,7 +638,7 @@ export async function submitSeasonalApplication(slug: string, input: SeasonalApp
       for (const requested of input.items) {
         const offering = offeringById.get(requested.offeringId);
         if (!offering) throw new SeasonalError("신청한 특강 정보를 확인해 주세요.", 400, "OFFERING_ASSIGNMENT_MISSING");
-        assignments.push(await resolvePublicOfferingAssignment(tx, offering, effectiveWeekdays, applicantDecision.pricingType, season, input));
+        assignments.push(await resolvePublicOfferingAssignment(tx, offering, effectiveWeekdays, applicantDecision.pricingType, season, input, { seasonClosed }));
       }
       // 신청서에는 기간을 하나만 적을 수 있다 — 항목마다 다른 기간이 나오거나(자동 적용 포함)
       // 기간 있는 반·없는 반이 섞이면 출석 범위와 수강료가 어긋나므로 받지 않는다.
@@ -678,9 +711,13 @@ export async function submitSeasonalApplication(slug: string, input: SeasonalApp
         const shuttleRequested = hasSeasonalShuttleSelection(input.items[index]?.shuttle);
         const freeHub = isFreeHubShuttle(input.items[index]?.shuttle);
         // 기간 상품이면 기간 셔틀비(없으면 반 셔틀비), 기간이 없으면 반 셔틀비 — 날짜 모드도 같다
-        const shuttleFeeSnapshot = assignment.period
+        const normalShuttleFee = assignment.period
           ? resolvePeriodShuttleFee(assignment.period, assignment.offering, shuttleRequested, freeHub)
           : resolveShuttleFee(assignment.offering, shuttleRequested, freeHub);
+        // 날짜 모드 중간 합류면 셔틀비도 수강료와 같은 남은 회차 비율·100원 내림(비율 1 이면 그대로)
+        const shuttleFeeSnapshot = assignment.proration
+          ? proratedPrice(normalShuttleFee, assignment.proration.remainingCount, assignment.proration.fullCount)
+          : normalShuttleFee;
         itemPlans.push({
           requested: input.items[index],
           offering: assignment.offering,

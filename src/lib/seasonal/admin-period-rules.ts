@@ -267,6 +267,22 @@ export function isDateModeApplication(app: { selectionMode?: string | null; sele
   return app.selectionMode === "DATE" || (Array.isArray(app.selectedDates) && app.selectedDates.length > 0);
 }
 
+/**
+ * «중간 합류» 신청인가(2026-11-18 원장 — 이미 시작한 기간에 남은 회차로 날짜 선택 신청).
+ * 기준: 날짜 모드 신청이고, 접수일(KST)이 기간 시작일(기간이 없으면 시즌 시작일)보다 «뒤».
+ *   시작 당일 접수는 남은 회차 = 전체라 수강료가 그대로여서 중간 합류로 보지 않는다.
+ * 관리자 목록·상세에 «중간 합류» 표시만 한다(가격·출석에는 영향 없음).
+ */
+export function isLateJoinApplication(
+  app: { selectionMode?: string | null; selectedDates?: readonly string[] | null; createdAt?: string | Date | null; periodStartDate?: string | null },
+  seasonStartsAt?: string | Date | null,
+): boolean {
+  if (!isDateModeApplication(app) || !app.createdAt) return false;
+  const startYmd = app.periodStartDate || (seasonStartsAt ? toKstYmd(seasonStartsAt) : "");
+  const createdYmd = toKstYmd(app.createdAt);
+  return Boolean(startYmd && createdYmd) && createdYmd > startYmd;
+}
+
 // ── 목록 표시 문구 ─────────────────────────────────────────────
 
 const WEEKDAY_LABEL: Record<string, string> = { MON: "월", TUE: "화", WED: "수", THU: "목", FRI: "금", SAT: "토", SUN: "일" };

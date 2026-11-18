@@ -11,9 +11,9 @@ import { PublicBottomBar, usePublicOverlayOpen } from "@/components/public-float
 import { SEAT_LEVEL_LABEL } from "@/lib/seats/seatLevel";
 import { formatSeasonalPeriod, formatWon, normalizeProgram, programClasses, seasonalApplicationStatusLabel, seasonalDisplayState, type SeasonalClass, type SeasonalOfferingPeriod, type SeasonalProgram } from "./types";
 // 기간 선택·날짜별 선택(2026-11-18) — 가격·출석 규칙·날짜 표기는 서버와 같은 공용 부품을 쓴다(화면 금액 = 청구 금액)
-import { distinctPeriods, isPeriodClosed, resolvePeriodPrice, resolvePeriodShuttleFee, weeklyFrequencyLabel, type DistinctPeriod } from "@/lib/seasonal/period-pricing";
+import { distinctPeriods, isPeriodClosed, proratedPrice, resolvePeriodPrice, resolvePeriodShuttleFee, weeklyFrequencyLabel, type DistinctPeriod } from "@/lib/seasonal/period-pricing";
 import { pickSessionDatesForApplication } from "@/lib/seasonal/attendance-rule";
-import { dateCountProgressText, requiredDateCount, ymdKoreanLabel } from "@/lib/seasonal/application-plan";
+import { dateCountProgressText, hasLateJoinDates, requiredDateCount, ymdKoreanLabel } from "@/lib/seasonal/application-plan";
 import { kstHm, kstLabel, todayKst } from "@/lib/datetime/kst";
 
 type LoadState = "loading" | "ready" | "error";
@@ -259,11 +259,13 @@ export default function SeasonalApplyClient({ slug, basePath = "/seasonal", home
   // ── 날짜별 신청(시즌 설정이 켜졌을 때만) ──
   const dateSelect = program?.dateSelect;
   const dateSelectOn = dateSelect?.enabled === true;
-  const isDateMode = dateSelectOn && selectionMode === "DATE";
   const baseOffering = selectedOfferings[0];
   // 같은 운영 반(주2회·주3회가 한 교실)의 반들 — 기간 목록·날짜 목록은 이 범위에서 모은다(서버와 같은 범위)
   const scopeOfferings = baseOffering ? offerings.filter((item) => operationalClassKey(item) === operationalClassKey(baseOffering)) : [];
+  const scopeSessions = scopeOfferings.flatMap((item) => item.sessionDates);
   const todayYmd = todayKst();
+  // 시즌 모집이 마감됐지만 중간 합류(날짜로 고르기)는 열린 상태(서버 lateJoinOpen · 2026-11-18 원장)
+  const seasonLateJoin = program ? seasonalDisplayState(program).lateJoin : false;
 
   // ── 수강 기간(요일·날짜 두 모드 공통 · 2026-11-18 «기간 → 주N회 → 날짜») ──
   const periodChoices = distinctPeriods(scopeOfferings);
@@ -274,7 +276,13 @@ export default function SeasonalApplyClient({ slug, basePath = "/seasonal", home
     : periodChoices.find((period) => periodKey(period) === selectedPeriodKey) ?? null;
   // 기간별 신청 마감(예: 4주 1/1(금) 18:00) — 시각이 지나면 고를 수 없다(서버 PERIOD_CLOSED 와 같은 규칙)
   const appliedPeriodClosed = appliedPeriod ? isPeriodClosed(appliedPeriod) : false;
-  const periodReady = (!needsPeriodChoice || appliedPeriod !== null) && !appliedPeriodClosed;
+  // 요일 모드(기간 전체 신청) 마감 = 시즌 모집 마감 또는 고른 기간 마감. 이때 날짜 선택이 켜져 있으면 «날짜로 고르기»만 남는다.
+  const weekdayModeClosed = dateSelectOn && (seasonLateJoin || appliedPeriodClosed);
+  const isDateMode = dateSelectOn && (selectionMode === "DATE" || weekdayModeClosed);
+  // 마감 뒤 중간 합류는 마지막 회차 전날까지(내일 이후 수업이 남았을 때) — 서버 hasLateJoinDates 와 같은 함수
+  const deadlinePassed = seasonLateJoin || appliedPeriodClosed;
+  const lateJoinDatesLeft = hasLateJoinDates(scopeSessions, todayYmd, appliedPeriod);
+  const periodReady = (!needsPeriodChoice || appliedPeriod !== null) && (!deadlinePassed || (isDateMode && lateJoinDatesLeft));
 
   // ── 주N회(날짜 모드) — 고를 수 있는 값은 같은 운영 반의 «주N회» 반들 ──
   const frequencyOptions = (() => {
@@ -310,9 +318,17 @@ export default function SeasonalApplyClient({ slug, basePath = "/seasonal", home
     ? selectedDateKeys.filter((key) => dateOptions.some((option) => option.dateKey === key)).sort()
     : [];
   // 채워야 할 횟수 = 주N회 × 회차가 있는 주 수(서버 requiredDateCount 와 같은 함수 — 화면·서버 숫자가 같다)
+  //   오늘(KST, 오늘 포함)부터 남은 회차만 센다 — 서버도 같은 todayKst() 로 같은 함수를 부른다(2026-11-18 중간 합류)
   const requiredDates = isDateMode && weeklyFrequency !== null
-    ? requiredDateCount(scopeOfferings.flatMap((item) => item.sessionDates), weeklyFrequency, appliedPeriod)
+    ? requiredDateCount(scopeSessions, weeklyFrequency, appliedPeriod, todayYmd)
     : 0;
+  // 시작 전 기준 전체 필요 횟수 — 남은 회차 비율(수강료·셔틀비)의 분모
+  const fullDateCount = isDateMode && weeklyFrequency !== null
+    ? requiredDateCount(scopeSessions, weeklyFrequency, appliedPeriod)
+    : 0;
+  // 남은 회차가 전체보다 적으면(기간 중간 합류) 수강료·셔틀비를 비율로 줄인다(100원 내림, 서버 proratedPrice 와 같은 함수)
+  const prorated = isDateMode && fullDateCount > 0 && requiredDates < fullDateCount;
+  const prorate = (amount: number) => (isDateMode && fullDateCount > 0 ? proratedPrice(amount, requiredDates, fullDateCount) : amount);
   const dateCountOk = requiredDates > 0 && selectedDates.length === requiredDates;
   // 고른 날짜 중 정원이 찬 날 — 있으면 대기로 접수된다
   const selectedFullDates = selectedDates.filter((key) => dateOptions.find((option) => option.dateKey === key)?.full);
@@ -323,16 +339,19 @@ export default function SeasonalApplyClient({ slug, basePath = "/seasonal", home
     const target = offering ?? item;
     const { period, ok: periodOk } = offeringPeriodFor(target, appliedPeriod);
     // 수강료는 두 모드가 같다 — 기간 가격(없으면 반의 회원별 가격). 회당 단가는 없앴다(2026-11-18).
-    const tuition = period ? resolvePeriodPrice(period, applicantType || undefined) : applicantPrice(target, applicantType);
-    return { base: item, offering, period, periodOk, tuition };
+    const normalTuition = period ? resolvePeriodPrice(period, applicantType || undefined) : applicantPrice(target, applicantType);
+    // 날짜 모드 = 정상 수강료 × 남은 회차 비율(시작 전이면 그대로)
+    const tuition = prorate(normalTuition);
+    return { base: item, offering, period, periodOk, tuition, normalTuition };
   });
   const hasPricingMatch = selectedOfferings.length > 0 && selectionPlans.every((plan) => Boolean(plan.offering) && plan.periodOk);
   // 기간 상품이면 기간 셔틀비(없으면 반 셔틀비) — 서버 resolvePeriodShuttleFee 와 같은 규칙
   function planShuttleFee(plan: (typeof selectionPlans)[number]) {
     const item = plan.offering ?? plan.base;
     const draft = shuttle[plan.base.id];
-    if (!plan.period || !hasShuttle(draft) || !hasShuttleLocation(draft)) return shuttleFeeForDraft(item, draft);
-    return resolvePeriodShuttleFee(plan.period, item, true, draft?.useFreeHub === true);
+    if (!plan.period || !hasShuttle(draft) || !hasShuttleLocation(draft)) return prorate(shuttleFeeForDraft(item, draft));
+    // 셔틀비도 수강료와 같은 남은 회차 비율(서버와 같다)
+    return prorate(resolvePeriodShuttleFee(plan.period, item, true, draft?.useFreeHub === true));
   }
   const tuitionTotal = selectionPlans.reduce((sum, plan) => sum + plan.tuition, 0);
   const shuttleTotal = selectionPlans.reduce((sum, plan) => sum + planShuttleFee(plan), 0);
@@ -362,7 +381,8 @@ export default function SeasonalApplyClient({ slug, basePath = "/seasonal", home
     selectedIds.length === 0 ? "신청할 수업" : "",
     // 두 모드 공통 — 기간
     selectedIds.length > 0 && needsPeriodChoice && !appliedPeriod ? "수강 기간" : "",
-    appliedPeriodClosed ? "신청 마감되지 않은 기간" : "",
+    // 마감 뒤: 날짜 모드에 남은 날이 있으면 중간 합류로 진행, 아니면 다른 기간을 골라야 한다
+    deadlinePassed && !(isDateMode && lateJoinDatesLeft) ? (isDateMode ? "남은 수업이 있는 기간" : "신청 마감되지 않은 기간") : "",
     // 날짜 모드
     dateModeTooMany ? "날짜로 고를 때는 수업 하나만" : "",
     isDateMode && selectedIds.length > 0 && weeklyFrequency === null ? "주 몇 회" : "",
@@ -710,21 +730,30 @@ export default function SeasonalApplyClient({ slug, basePath = "/seasonal", home
           {selectedOfferings.length > 0 && dateSelectOn && (
             <div role="group" aria-label="고르는 방식" className="grid grid-cols-2 gap-2">
               {([["WEEKDAY", "요일로 고르기"], ["DATE", "날짜로 고르기"]] as const).map(([mode, label]) => {
-                const active = selectionMode === mode;
+                // 요일 모드가 마감되면(시즌·기간 마감) 날짜 모드가 강제로 켜진다 — 버튼 표시도 실제 모드를 따른다
+                const active = (isDateMode ? "DATE" : "WEEKDAY") === mode;
+                const disabled = mode === "WEEKDAY" && weekdayModeClosed;
                 return (
                   <button
                     key={mode}
                     type="button"
                     aria-pressed={active}
+                    disabled={disabled}
                     onClick={() => setSelectionMode(mode)}
                     // 고른 방식 = 보조 색(하늘색) 칩 — 요일 칩과 같은 모양
-                    className={`min-h-11 rounded border text-sm font-medium transition ${active ? "border-[var(--color-public-secondary-strong)] bg-[var(--color-public-secondary-soft)] text-[var(--color-public-secondary-ink)]" : "border-[var(--color-public-muted)] text-[var(--color-public-ink)]"}`}
+                    className={`min-h-11 rounded border text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${active ? "border-[var(--color-public-secondary-strong)] bg-[var(--color-public-secondary-soft)] text-[var(--color-public-secondary-ink)]" : "border-[var(--color-public-muted)] text-[var(--color-public-ink)]"}`}
                   >
                     {label}
                   </button>
                 );
               })}
             </div>
+          )}
+          {/* 요일 신청 마감 안내 — 남은 날짜로 중간 합류만 받는다(2026-11-18 원장) */}
+          {selectedOfferings.length > 0 && weekdayModeClosed && lateJoinDatesLeft && (
+            <p role="status" className="rounded-xl bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm text-[var(--color-academy-warning)]">
+              요일 신청은 마감되었습니다. 남은 날짜로 중간 합류할 수 있습니다.
+            </p>
           )}
           {/* 수강 기간 — 두 모드 공통. 기간이 2개 이상이면 고르고, 1개면 자동 적용(마감됐으면 안내) */}
           {selectedOfferings.length > 0 && needsPeriodChoice && (
@@ -736,17 +765,23 @@ export default function SeasonalApplyClient({ slug, basePath = "/seasonal", home
                   const checked = appliedPeriod !== null && periodKey(appliedPeriod) === periodKey(period);
                   // 기간별 신청 마감 — 지나면 «신청 마감» 글자와 함께 고를 수 없다
                   const closed = isPeriodClosed(period);
+                  // 단, 날짜 선택이 켜져 있고 남은 수업 날이 있으면 «중간 합류»로 고를 수 있다
+                  //   (시즌 모집이 마감된 때도 같다 — 남은 날이 없는 기간은 고를 수 없다)
+                  const periodDeadline = closed || seasonLateJoin;
+                  const lateJoinable = periodDeadline && dateSelectOn && hasLateJoinDates(scopeSessions, todayYmd, period);
                   return (
                     <button
                       key={periodKey(period)}
                       type="button"
                       aria-pressed={checked}
-                      disabled={closed}
+                      disabled={periodDeadline && !lateJoinable}
                       onClick={() => { setSelectedPeriodKey(periodKey(period)); setDateLimitNotice(""); }}
                       className={`min-h-11 rounded border px-3 py-1.5 text-left text-sm font-medium tabular-nums transition disabled:cursor-not-allowed disabled:opacity-60 ${checked ? "border-[var(--color-public-secondary-strong)] bg-[var(--color-public-secondary-soft)] text-[var(--color-public-secondary-ink)]" : "border-[var(--color-public-muted)] text-[var(--color-public-ink)]"}`}
                     >
                       <span className="block">{periodOptionLabel(period)}</span>
-                      {closed
+                      {lateJoinable
+                        ? <span className="block text-xs font-medium text-[var(--color-academy-warning)]">요일 신청 마감 · 남은 날짜로 중간 합류</span>
+                        : periodDeadline
                         ? <span className="block text-xs font-medium text-[var(--color-academy-danger)]">신청 마감</span>
                         : period.applicationClosesAt && <span className="block text-xs font-normal text-[var(--color-public-muted)]">{kstLabel(period.applicationClosesAt)} {kstHm(period.applicationClosesAt)} 신청 마감</span>}
                     </button>
@@ -756,7 +791,8 @@ export default function SeasonalApplyClient({ slug, basePath = "/seasonal", home
             </fieldset>
           )}
           {/* 기간이 하나뿐인데 그 기간 신청이 마감된 경우 */}
-          {selectedOfferings.length > 0 && !needsPeriodChoice && appliedPeriodClosed && (
+          {/* (날짜 선택이 켜져 있고 남은 날이 있으면 위 «중간 합류» 안내로 대신한다) */}
+          {selectedOfferings.length > 0 && !needsPeriodChoice && appliedPeriodClosed && !(dateSelectOn && lateJoinDatesLeft) && (
             <p role="alert" className="rounded-xl bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm text-[var(--color-academy-warning)]">
               {appliedPeriod?.label} 기간은 신청이 마감되었습니다.
             </p>
@@ -803,6 +839,12 @@ export default function SeasonalApplyClient({ slug, basePath = "/seasonal", home
                 <p className="mt-3 text-sm text-[var(--color-public-muted)]">지금 고를 수 있는 수업 날짜가 없습니다.</p>
               ) : (
                 <>
+                  {/* 중간 합류 안내 — 남은 회차에서 고르고, 수강료는 남은 회차만큼(정상 → 실제). 시작 전 신청이면 안 보인다 */}
+                  {prorated && selectionPlans[0] && (
+                    <p className="mt-3 rounded-xl bg-[var(--color-public-secondary-soft)] px-3 py-2 text-sm tabular-nums text-[var(--color-public-secondary-ink)]">
+                      오늘부터 남은 수업 {dateOptions.length}회 중에서 고릅니다 · 수강료는 남은 회차만큼(정상 {formatWon(selectionPlans[0].normalTuition)} → {formatWon(selectionPlans[0].tuition)})
+                    </p>
+                  )}
                   {/* 몇 회 중 몇 회 — 이 화면의 진행 안내 */}
                   <p role="status" className={`mt-3 text-sm font-medium tabular-nums ${dateCountOk ? "text-[var(--color-academy-success)]" : "text-[var(--color-public-ink)]"}`}>
                     {dateCountProgressText(selectedDates.length, requiredDates)}

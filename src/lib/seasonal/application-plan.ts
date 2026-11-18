@@ -129,17 +129,24 @@ export function assertSelectableDates(
  *   - 한 주 수업이 N회보다 적으면(공휴일) 그 주는 있는 만큼만 센다 → 주5회는 «기간 전 회차».
  * 같은 날 회차가 둘이어도 날짜 하나로 센다(학생은 날짜를 고른다).
  * 화면(남은 횟수 안내)과 서버(DATE_COUNT_MISMATCH)가 이 함수 하나를 쓴다.
+ *
+ * todayYmd(2026-11-18 원장 «중간 합류는 남은 회차만큼»): 주면 오늘(KST, 오늘 포함) 이후 회차만 센다.
+ *   이미 지난 날짜는 고를 수 없으니(DATE_IN_PAST) 필요 횟수에서도 뺀다. 주마다 min(N, 그 주 «남은» 회차 수).
+ *   기간 시작 전이면 지난 회차가 없어 결과가 예전과 같다. 비우면(undefined) 전체 = «시작 전 기준 전체 필요 횟수».
  */
 export function requiredDateCount(
   sessionDates: ReadonlyArray<{ startsAt: Date | string }>,
   weeklyFrequency: number,
   period?: { startDate: string; endDate: string } | null,
+  todayYmd?: string | null,
 ): number {
   if (!Number.isInteger(weeklyFrequency) || weeklyFrequency <= 0) return 0;
   // 주(월요일) → 그 주의 회차 날짜 집합
   const byWeek = new Map<string, Set<string>>();
   for (const ymd of sessionDateKeys(sessionDates)) {
     if (period && (ymd < period.startDate || ymd > period.endDate)) continue;
+    // 오늘보다 앞선 회차는 지난 수업 — 남은 회차만 센다(오늘은 포함)
+    if (todayYmd && ymd < todayYmd) continue;
     const monday = kstWeekMonday(ymd);
     if (!monday) continue;
     const week = byWeek.get(monday) ?? new Set<string>();
@@ -149,6 +156,30 @@ export function requiredDateCount(
   let total = 0;
   for (const week of byWeek.values()) total += Math.min(weeklyFrequency, week.size);
   return total;
+}
+
+/**
+ * 중간 합류(마감 뒤 날짜 모드)를 아직 받을 수 있는가(2026-11-18 원장 결정).
+ * 규칙: 그 기간(없으면 시즌 전체)의 «마지막 회차 날짜 전날 23:59(KST)»까지 받는다
+ *   = 오늘(KST)보다 «뒤»의 회차 날짜가 하나라도 있으면 true. 마지막 회차 당일은 이미 수업 날이라 받지 않는다.
+ * 마감 전(요일 모드도 열린 때)에는 이 함수로 막지 않는다 — 마감 뒤에만 쓴다.
+ * 화면(마감된 기간·시즌에서 «날짜로 고르기» 살리기)과 서버(409 PERIOD_ENDED)가 이 함수 하나를 쓴다.
+ */
+export function hasLateJoinDates(
+  sessionDates: ReadonlyArray<{ startsAt: Date | string }>,
+  todayYmd: string,
+  period?: { startDate: string; endDate: string } | null,
+): boolean {
+  for (const ymd of sessionDateKeys(sessionDates)) {
+    if (period && (ymd < period.startDate || ymd > period.endDate)) continue;
+    if (ymd > todayYmd) return true;
+  }
+  return false;
+}
+
+/** 남은 수업이 없어 중간 합류도 받을 수 없을 때(409 PERIOD_ENDED). */
+export function periodEndedError(): SeasonalError {
+  return new SeasonalError("이 기간은 남은 수업이 없습니다.", 409, "PERIOD_ENDED");
 }
 
 /** «주2회 4주»·«주3회»처럼 안내 문구에 쓰는 이름. 기간 이름이 없으면 주N회만. */
