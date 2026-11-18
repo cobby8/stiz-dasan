@@ -22,6 +22,7 @@ import {
 import { SEED_KEEP_DAYS, buildSeedSnapshot, saveSeedSnapshot, type SeedSaveResult, type SeedSnapshot } from "@/lib/backup/seedSnapshot";
 import { addDaysKst, todayKst } from "@/lib/datetime/kst";
 import { withCronAlert } from "@/lib/cron/withCronAlert";
+import { runSignupPersonalDataPurge } from "@/lib/parent-signup-verification";
 
 export const dynamic = "force-dynamic";
 // 업무 자료 전체(수만 줄)를 읽고 압축한다 — 60초로는 빠듯해 300초(Pro 상한). vercel.json 에도 같은 값.
@@ -43,6 +44,11 @@ async function handleGet(req: NextRequest) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
     }
+
+    // 가입 요청 개인정보 7일 정리(본인인증 실명 포함)를 매일 한 번 돌린다(2026-11-18 4단계 D).
+    // 가입 시작 때만 돌면 며칠 가입이 없을 때 정리가 멈춘다. 예외를 던지지 않는다 — 실패해도 백업은 그대로 진행.
+    const signupPurged = await runSignupPersonalDataPurge();
+    if (!signupPurged) console.error("[cron/backup] signup personal data purge failed (backup continues)");
 
     let stage = "COLLECT";
     let savedFilename: string | null = null;

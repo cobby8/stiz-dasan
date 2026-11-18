@@ -245,6 +245,20 @@ async function purgeStaleSignupPersonalData(tx: Prisma.TransactionClient) {
   );
 }
 
+/**
+ * 7일 정리를 매일 한 번 따로 돌린다(2026-11-18 4단계 D) — 매일 백업 cron 이 부른다.
+ * 가입 시작이 며칠 없으면 정리도 멈춰 실명이 7일보다 오래 남을 수 있었다. 예외를 던지지 않는다(백업을 막지 않게).
+ */
+export async function runSignupPersonalDataPurge(): Promise<boolean> {
+  try {
+    await prisma.$transaction(async (tx) => { await purgeStaleSignupPersonalData(tx); });
+    return true;
+  } catch (error) {
+    console.error("[signup purge] failed:", error instanceof Error ? error.message.slice(0, 200) : "UNKNOWN");
+    return false;
+  }
+}
+
 export async function startParentSignup(input: {
   phone: string; signupMethod?: ParentSignupMethod;
   email?: string | null; pendingAuthUserId?: string | null;
@@ -345,18 +359,26 @@ export async function sendParentSignupOtp(token: string, requestKey = "unknown")
 /**
  * 본인인증(통신사 명의 확인)을 통과한 번호로 «문자 인증을 마친 것과 같은» 가입 요청을 만든다(2026-11-17 원장 지시
  * «본인인증 하나로 통일»). 문자는 보내지 않는다 — 본인인증이 «이 번호의 명의자»까지 확인했으므로 문자 인증보다 강하다.
- * 부르는 쪽(parent-link/verify)이 포트원 재조회(VERIFIED·10분 안·이 간편로그인 사용자의 건 번호)를 끝낸 뒤에만 부른다.
+ * 부르는 쪽이 포트원 재조회(VERIFIED·10분 안)와 건 번호 표식 대조를 끝낸 뒤에만 부른다:
+ *  - 간편가입: parent-link/verify (이 간편로그인 사용자의 건 번호)
+ *  - 아이디 가입·기존 계정 활성화: parent-signup/identity/verify (이 브라우저 nonce 쿠키의 건 번호, 1회 소진 — 2026-11-18 4단계)
  * 로그인 수단이 있는 번호(REGISTERED)는 여기로 오지 않는다 — 그쪽은 기존 계정 연결(selectLinkTarget)이 맡는다.
  */
 export async function issueIdentityVerifiedSignup(input: {
-  phone: string; signupMethod: Exclude<ParentSignupMethod, "PASSWORD">;
-  email?: string | null; pendingAuthUserId: string;
+  /** PASSWORD = 아이디 가입·기존 계정 활성화(로그인 전 본인인증, 2026-11-18 4단계) / 그 밖 = 간편가입 */
+  phone: string; signupMethod: ParentSignupMethod;
+  /** 간편가입이면 필수(그 간편로그인 사용자), 아이디 가입이면 없다 */
+  email?: string | null; pendingAuthUserId?: string | null;
   /** 본인인증 실명·인증 시각(2026-11-18) — 계정이 만들어지거나 연결될 때 User 로 옮긴다 */
   verifiedName: string; verifiedAt: Date;
 }): Promise<{ ok: true; token: string; proof: string } | { error: string }> {
   const phone = normalizeParentPhone(input.phone);
   if (!/^01[016789]\d{7,8}$/.test(phone)) return { error: "본인인증 휴대폰 번호를 확인하지 못했어요. 학원에 문의해 주세요." };
-  if (!input.pendingAuthUserId) return { error: "간편가입 계정을 먼저 확인해 주세요." };
+  if (!PARENT_SIGNUP_METHODS.includes(input.signupMethod)) return { error: "가입 방법을 확인해 주세요." };
+  // 간편가입은 «인증을 시작한 그 간편로그인 사용자»가 있어야 한다. 아이디 가입은 로그인 전이라 없다(문자 가입과 같다)
+  if (input.signupMethod !== "PASSWORD" && !input.pendingAuthUserId) return { error: "간편가입 계정을 먼저 확인해 주세요." };
+  const pendingAuthUserId = input.signupMethod === "PASSWORD" ? null : input.pendingAuthUserId!;
+  const email = input.signupMethod === "PASSWORD" ? null : input.email?.trim().toLowerCase() || null;
   // 실명이 비어 오면 본인인증 결과가 온전하지 않은 것 — 이름 없는 «본인인증 통과» 줄을 만들지 않는다(이름은 문구에 넣지 않는다)
   const verifiedName = cleanVerifiedName(input.verifiedName);
   if (!verifiedName) return { error: "본인인증 이름을 확인하지 못했어요. 다시 인증해 주세요." };
@@ -381,7 +403,7 @@ export async function issueIdentityVerifiedSignup(input: {
           "verificationMethod", "verifiedName", "verifiedAt", "proofHash", "proofExpiresAt", "expiresAt", "createdAt", "updatedAt")
          VALUES ($1,$2,NULL,NULL,$3,$4,$5,$6,$7,'VERIFIED','IDENTITY',$9,$10,$8,NOW()+INTERVAL '10 minutes',NOW()+INTERVAL '30 minutes',NOW(),NOW())`,
         randomUUID(), hash(token), phone, phoneHash, input.signupMethod,
-        input.email?.trim().toLowerCase() || null, input.pendingAuthUserId, keyed(`proof:${hash(token)}:${proof}`),
+        email, pendingAuthUserId, keyed(`proof:${hash(token)}:${proof}`),
         verifiedName, input.verifiedAt,
       );
     });

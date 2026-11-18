@@ -87,6 +87,8 @@ function fixture(options = {}) {
     '@/lib/backup/seedSnapshot': seedSnapshot, // 순수 모듈이라 실제 것을 쓴다
     '@/lib/datetime/kst': kst,
     '@/lib/supabase/admin': { createAdminClient: () => ({ storage }) },
+    // 가입 개인정보 7일 정리(2026-11-18 4단계 D) — 진짜 함수처럼 예외를 던지지 않고 성공 여부만 돌려준다
+    '@/lib/parent-signup-verification': { async runSignupPersonalDataPurge() { calls.purge = (calls.purge ?? 0) + 1; return !options.purgeFails; } },
   };
   const exports = {};
   vm.compileFunction(compiled, ['require', 'exports', 'process', 'console'])(id => {
@@ -110,7 +112,26 @@ test('인증 실패와 비밀값 미설정은 DB 및 Storage 호출 전에 거�
     assert.equal((await f.run(Boolean(options.noSecret))).status, 401);
     assert.equal(f.calls.query, 0);
     assert.equal(f.calls.bucket, 0);
+    assert.equal(f.calls.purge ?? 0, 0, '인증 전에는 가입 개인정보 정리도 돌리지 않는다');
   }
+});
+
+test('매일 백업 실행에서 가입 개인정보 7일 정리를 한 번 부른다(2026-11-18 4단계 D)', async () => {
+  const f = fixture();
+  const { status, body } = await f.run();
+  assert.equal(status, 200);
+  assert.equal(body.success, true);
+  assert.equal(f.calls.purge, 1);
+});
+
+test('가입 개인정보 정리가 실패해도 백업은 그대로 저장한다', async () => {
+  const f = fixture({ purgeFails: true });
+  const { status, body } = await f.run();
+  assert.equal(status, 200);
+  assert.equal(body.success, true);
+  assert.equal(f.calls.purge, 1);
+  assert.equal(f.calls.upload.length, 1, '설정 백업은 저장된다');
+  assert.ok(f.calls.logs.some((args) => String(args[0]).includes('purge failed')), '실패는 로그로 남긴다');
 });
 
 for (const table of ['AcademySettings', 'Program', 'Coach', 'ClassSlotOverride', 'CustomClassSlot', 'Route', 'Stop']) {

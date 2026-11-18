@@ -8,6 +8,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { normalizeParentPhone } from "@/lib/parent-signup-verification";
 import { oauthProviderMethod } from "@/lib/parent-signup-verification";
 import { SIGNUP_OTP_IP_DAILY_LIMIT, SIGNUP_OTP_IP_HOURLY_LIMIT } from "@/lib/parent-signup-verification";
+// 본인인증으로 찾을 때의 계정 고르기(하나 + 이름 일치) — 순수 규칙 한 곳
+import { selectIdentityResetAccount } from "@/lib/identity/identity-reset-rules";
 import {
   PARENT_WEAK_PASSWORD_MESSAGE,
   SOCIAL_PASSWORD_CONTACT_MESSAGE,
@@ -99,8 +101,9 @@ async function findRow(token: string, tx: Prisma.TransactionClient | typeof pris
 /** 이 번호를 쓰는, 로그인 수단이 있는 학부모 계정(탈퇴 제외). 직원 역할은 고르지 않는다. */
 async function parentAccountsForPhone(tx: Prisma.TransactionClient | typeof prisma, phone: string) {
   // phoneVerifiedAt·hasStaffGrant 는 간편로그인 전용 계정의 비밀번호 만들기 허용 판정용(socialPasswordCreationAllowed)
-  return tx.$queryRawUnsafe<Array<{ id: string; username: string | null; email: string; authUserId: string; phoneVerifiedAt: Date | null; hasStaffGrant: boolean }>>(
-    `SELECT id, username, email, "authUserId", "phoneVerifiedAt",
+  // name·identityVerifiedName 은 본인인증으로 찾을 때의 이름 비교용(identityComparableName — 실명이 있으면 실명)
+  return tx.$queryRawUnsafe<Array<{ id: string; username: string | null; email: string; authUserId: string; phoneVerifiedAt: Date | null; hasStaffGrant: boolean; name: string | null; identityVerifiedName: string | null }>>(
+    `SELECT id, username, email, "authUserId", "phoneVerifiedAt", name, "identityVerifiedName",
             EXISTS(SELECT 1 FROM "UserRoleGrant" g
                     WHERE g."userId" = "User".id AND g.status = 'ACTIVE' AND g.role::text IN ('INSTRUCTOR','DRIVER')) AS "hasStaffGrant"
        FROM "User"
@@ -255,6 +258,47 @@ export async function verifyParentPasswordResetOtp(token: string, codeInput: str
     return { ok: true, proof: verified.proof, accounts };
   } catch (error) {
     return failure(error, "인증을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+  }
+}
+
+/**
+ * 본인인증(통신사 명의 확인)을 통과한 번호로 «문자 인증을 마친 것과 같은» 찾기 요청을 만든다(2026-11-18 4단계 B).
+ * 부르는 쪽(parent-password-reset/identity/verify)이 nonce 표식 대조·포트원 재조회·장부 1회 소진을 끝낸 뒤에만 부른다.
+ * 돌려주는 모양은 문자 인증 확인(verifyParentPasswordResetOtp)과 같다 — 화면이 같은 «가입된 계정» 단계를 쓴다.
+ */
+export async function issueIdentityVerifiedPasswordReset(input: { phone: string; verifiedName: string }): Promise<Result<{ token: string; proof: string; accounts: ParentResetAccount[] }>> {
+  const phone = normalizeParentPhone(input.phone || "");
+  if (!/^01[016789]\d{7,8}$/.test(phone)) return { error: "본인인증 휴대폰 번호를 확인하지 못했어요. 학원에 문의해 주세요." };
+  try {
+    // 계정 하나 + 이름 일치일 때만(selectIdentityResetAccount) — 여럿·이름 다름은 문자 인증 샛길·학원 문의로
+    const picked = selectIdentityResetAccount(await parentAccountsForPhone(prisma, phone), input.verifiedName);
+    if (picked.kind === "NONE") return { error: NO_PARENT_ACCOUNT_MESSAGE };
+    if (picked.kind !== "OK") return { error: picked.error };
+    const token = randomBytes(32).toString("base64url");
+    const proof = randomBytes(32).toString("base64url");
+    const phoneHash = keyed(`phone:${phone}`);
+    await prisma.$transaction(async (tx) => {
+      // 7일 지난 요청 정리 — 문자 인증 시작과 같은 규칙
+      await tx.$executeRawUnsafe(`DELETE FROM "ParentPasswordReset" WHERE "createdAt" < NOW() - INTERVAL '7 days'`);
+      await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, `parent-reset:${phoneHash}`);
+      await tx.$executeRawUnsafe(
+        `UPDATE "ParentPasswordReset" SET status='CANCELLED', "proofHash"=NULL, "updatedAt"=NOW()
+          WHERE "phoneHash"=$1 AND status IN ('PENDING','VERIFIED')`,
+        phoneHash,
+      );
+      // 문자를 보내지 않으므로 바로 VERIFIED + 10분 증표(완료 단계는 문자 인증과 같은 검사를 다시 한다)
+      await tx.$executeRawUnsafe(
+        `INSERT INTO "ParentPasswordReset"
+           (id, "tokenHash", phone, "phoneHash", status, "expiresAt", "verifiedAt", "proofHash", "proofExpiresAt", "createdAt", "updatedAt")
+         VALUES ($1,$2,$3,$4,'VERIFIED',NOW()+INTERVAL '30 minutes',NOW(),$5,NOW()+INTERVAL '10 minutes',NOW(),NOW())`,
+        randomUUID(), hash(token), phone, phoneHash, keyed(`proof:${hash(token)}:${proof}`),
+      );
+    });
+    const accounts = await describeAccounts([picked.account]);
+    if (accounts.length === 0) return { error: NO_PARENT_ACCOUNT_MESSAGE };
+    return { ok: true, token, proof, accounts };
+  } catch (error) {
+    return failure(error, "본인인증으로 계정을 찾지 못했어요. 잠시 후 다시 시도해 주세요.");
   }
 }
 

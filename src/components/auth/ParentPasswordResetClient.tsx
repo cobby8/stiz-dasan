@@ -3,6 +3,11 @@
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { PARENT_PASSWORD_MIN, parentPasswordWarning } from "@/lib/parent-password-rules";
+import IdentityLinkButton from "@/components/auth/IdentityLinkButton";
+
+// 2026-11-18 4단계 B: 본인인증(명의 확인)이 기본, 문자 인증은 샛길. 본인인증은 명의 번호·실명으로 그 사람의 계정을 찾는다 —
+// 계정이 여러 개거나 이름이 다르면 서버가 막고(selectIdentityResetAccount) 문자 인증 샛길을 안내한다.
+const RESET_IDENTITY_URLS = { startUrl: "/api/auth/parent-password-reset/identity/start", verifyUrl: "/api/auth/parent-password-reset/identity/verify" } as const;
 
 // 학부모 아이디·비밀번호 찾기(2026-11-13) — 가입한 휴대폰 문자 인증 → 아이디 확인 → 새 비밀번호.
 // 학부모 아이디는 받을 수 없는 메일 주소(아이디@member.stiz.kr)로 만들어져 메일 재설정이 닿지 않는다.
@@ -40,6 +45,8 @@ export default function ParentPasswordResetClient() {
   const [loginId, setLoginId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 본인 명의 휴대폰이 아닌 분만 문자 인증 샛길
+  const [smsFallback, setSmsFallback] = useState(false);
 
   const [passwordDraft, setPasswordDraft] = useState("");
   // 경고는 입력칸을 벗어날 때·제출할 때 보인다
@@ -115,6 +122,21 @@ export default function ParentPasswordResetClient() {
     }
   }
 
+  /** 본인인증으로 찾았을 때 — 문자 인증 확인과 같은 «가입된 계정» 단계로 */
+  function continueFromIdentity(data: Record<string, unknown>) {
+    const list = Array.isArray(data.accounts) ? (data.accounts as Account[]) : [];
+    if (typeof data.challengeToken !== "string" || typeof data.proof !== "string" || list.length === 0) {
+      setError("본인인증 결과를 확인하지 못했어요. 다시 시도해 주세요.");
+      return;
+    }
+    setError(null);
+    setChallengeToken(data.challengeToken);
+    setProof(data.proof);
+    setAccounts(list);
+    setSelectedId(list.find((account) => account.kind === "PASSWORD")?.id || list.find((account) => account.canSetPassword)?.id || "");
+    setStep("accounts");
+  }
+
   function restart() {
     setStep("phone");
     setChallengeToken("");
@@ -128,7 +150,26 @@ export default function ParentPasswordResetClient() {
     <div className="space-y-6">
       {error && <p role="alert" className="rounded-xl border border-[var(--color-academy-danger-line)] bg-[var(--color-academy-danger-soft)] p-3 text-sm text-[var(--color-academy-danger)]">{error}</p>}
 
-      {step === "phone" && (
+      {step === "phone" && !smsFallback && (
+        <div className="space-y-4">
+          <div>
+            <h1 className="text-xl font-bold">아이디·비밀번호 찾기</h1>
+            <p className="mt-1 text-sm text-[var(--color-public-muted)]">가입한 휴대폰 명의로 본인인증하면 아이디를 알려 드리고 비밀번호를 새로 정할 수 있어요.</p>
+          </div>
+          <IdentityLinkButton
+            {...RESET_IDENTITY_URLS}
+            onResult={continueFromIdentity}
+            label="본인인증으로 찾기"
+            hint="PASS·카카오·토스 등으로 인증합니다. 휴대폰 번호는 인증 화면에서 한 번만 입력해요."
+          />
+          <button type="button" onClick={() => { setSmsFallback(true); setError(null); }} className="min-h-11 w-full text-sm text-[var(--color-public-muted)] underline">
+            본인 명의 휴대폰이 아니면 문자 인증으로 하기
+          </button>
+          <p className="text-xs leading-5 text-[var(--color-public-muted)]">선생님·기사님 계정은 원장님께 비밀번호 재설정 링크를 요청해 주세요.</p>
+        </div>
+      )}
+
+      {step === "phone" && smsFallback && (
         <form onSubmit={sendCode} className="space-y-4">
           <div>
             <h1 className="text-xl font-bold">아이디·비밀번호 찾기</h1>
@@ -136,6 +177,7 @@ export default function ParentPasswordResetClient() {
           </div>
           <label className="block text-sm font-semibold">휴대폰 번호<input className={`${inputClass} mt-2`} type="tel" value={phone} onChange={(event) => setPhone(event.target.value.replace(/[^0-9]/g, ""))} inputMode="numeric" autoComplete="tel" placeholder="01012345678" minLength={10} maxLength={11} required /></label>
           <button disabled={loading} className="min-h-12 w-full rounded-xl bg-[var(--color-public-accent)] font-bold text-white hover:bg-[var(--color-public-strong)] disabled:opacity-50">{loading ? "보내는 중..." : "인증번호 받기"}</button>
+          <button type="button" onClick={() => { setSmsFallback(false); setError(null); }} className="min-h-11 w-full text-sm text-[var(--color-public-muted)] underline">본인인증으로 돌아가기</button>
           <p className="text-xs leading-5 text-[var(--color-public-muted)]">선생님·기사님 계정은 원장님께 비밀번호 재설정 링크를 요청해 주세요.</p>
         </form>
       )}

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import IdentityLinkButton, { type IdentitySignupHandoff } from "@/components/auth/IdentityLinkButton";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { parentAuthEntryHref } from "@/lib/auth-entry-navigation";
 import AppleLogo from "@/components/auth/AppleLogo";
@@ -12,6 +12,11 @@ import { safeInternalRedirect } from "@/lib/parent-oauth";
 import { useStoreApp, STORE_APP_PASSWORD_LOGIN_NOTICE } from "@/hooks/useStoreApp";
 import ParentConsentChecks, { type ParentPolicyTextsProp } from "@/components/auth/ParentConsentChecks";
 import { PARENT_PASSWORD_MIN, parentPasswordWarning } from "@/lib/parent-password-rules";
+// 모바일 본인인증 «리디렉션 복귀» 때 고른 역할·단계·next 를 되살린다(2026-11-18 4단계)
+import { SIGNUP_IDENTITY_STATE_KEY, parseSignupIdentityState, serializeSignupIdentityState } from "@/lib/auth/signup-identity-resume";
+
+// 로그인 전 본인인증 주소(아이디 가입·기존 계정 활성화). 간편가입은 IdentityLinkButton 기본 주소(parent-link)를 쓴다.
+const ANON_IDENTITY_URLS = { startUrl: "/api/auth/parent-signup/identity/start", verifyUrl: "/api/auth/parent-signup/identity/verify" } as const;
 
 // existing: 문자 인증 결과 학원에 이미 등록된 보호자(빈 계정)로 확인된 단계
 type Step = "method" | "phone" | "account" | "existing" | "done";
@@ -82,8 +87,11 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
   const fromApp = searchParams.get("fromApp") === "1";
   // 카카오 연결 화면 등에서 "기존 학부모 계정 활성화"로 들어온 경우. 가입 방법 고르기를 건너뛰고 휴대폰 인증부터 한다.
   const existingMode = !socialSignup && searchParams.get("existing") === "1";
-  const enrollmentHandoff = searchParams.get("enrollmentHandoff") || "";
-  const requestedNext = searchParams.get("next") || "/mypage";
+  // 리디렉션 복귀 때 되살린 값 — 주소에 값이 있으면 주소가 먼저다
+  const [restoredNext, setRestoredNext] = useState("");
+  const [restoredHandoff, setRestoredHandoff] = useState("");
+  const enrollmentHandoff = searchParams.get("enrollmentHandoff") || restoredHandoff;
+  const requestedNext = searchParams.get("next") || restoredNext || "/mypage";
   const initialName = searchParams.get("name") || "";
   const initialPhone = (searchParams.get("phone") || "").replace(/[^0-9]/g, "");
   const [step, setStep] = useState<Step>(socialSignup || existingMode ? "phone" : "method");
@@ -131,6 +139,41 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
     setStaffRoles((current) => (current.includes(role) ? current.filter((value) => value !== role) : [...current, role]));
   }
 
+  // 인증창을 열기 직전 — 모바일은 인증창에서 «리디렉션»으로 이 화면에 다시 들어오며 상태가 모두 사라진다
+  function saveIdentityState() {
+    window.sessionStorage.setItem(
+      SIGNUP_IDENTITY_STATE_KEY,
+      serializeSignupIdentityState({ wantsParent, staffRoles, next: requestedNext, enrollmentHandoff }, Date.now()),
+    );
+  }
+
+  // 리디렉션 복귀(주소에 identityVerificationId): 저장해 둔 단계·역할·next·수강신청서 표를 되살린다.
+  // 단계가 «phone» 이 되면 그 안의 본인인증 버튼이 주소의 결과를 받아 확인을 이어 간다(버튼 쪽이 이 탭에서 시작한 건만 처리).
+  useEffect(() => {
+    // 인증 취소로 돌아오면 주소에 code 만 붙을 수 있다 — 그때는 저장값이 있을 때만 되살린다(다른 code 와 섞이지 않게)
+    const returned = searchParams.has("identityVerificationId");
+    if (!returned && !searchParams.has("code")) return;
+    let raw: string | null = null;
+    try {
+      raw = window.sessionStorage.getItem(SIGNUP_IDENTITY_STATE_KEY);
+      window.sessionStorage.removeItem(SIGNUP_IDENTITY_STATE_KEY);
+    } catch {
+      // 저장소가 막힌 환경 — 아래에서 주소만으로 판단한다
+    }
+    const saved = parseSignupIdentityState(raw, Date.now());
+    if (!returned && !saved) return;
+    if (saved) {
+      setWantsParent(saved.wantsParent);
+      setStaffRoles(saved.staffRoles);
+      setRestoredNext(saved.next);
+      setRestoredHandoff(saved.enrollmentHandoff);
+    }
+    // 저장값이 없어도 인증 결과를 받을 버튼은 있어야 한다(역할은 기본값 학부모)
+    setStep("phone");
+    // 처음 한 번만 — 주소의 인증 결과는 버튼이 읽고 지운다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   /**
    * 가입이 끝났을 때. 앱에서 넘어온 간편가입이면 이 창에 머무르지 않고 앱으로 돌아가 로그인까지 끝낸다
    * (/auth/native/resume 이 살려 둔 앱 로그인 요청을 마무리한다. 시간이 지났으면 그 화면이 «앱에서 다시 로그인» 안내를 띄운다).
@@ -144,6 +187,7 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
   /** 본인인증 결과가 «가입 이어가기»일 때 — 문자 인증을 통과했을 때와 같은 다음 단계로 간다. */
   function continueFromIdentity(data: IdentitySignupHandoff) {
     setError(null);
+    setRegisteredPhone(false);
     if (data.existingParent === "LINKED") {
       if (fromApp) { finishSignup(); return; }
       window.location.assign(data.redirectPath || "/mypage");
@@ -161,6 +205,7 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
     setChallengeToken(data.challengeToken);
     setProof(data.proof);
     setVerifiedName(data.verifiedName || "");
+    if (existingMode) setNotice("학원에 등록된 보호자 정보를 찾지 못해 새 계정 만들기로 이어 갑니다. 이미 다니고 있다면 학원에 알려 둔 번호인지 확인해 주세요.");
     setStep("account");
   }
 
@@ -354,27 +399,41 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
         </>
       )}
 
-      {/* 간편가입: 본인인증 하나로 확인한다(2026-11-17 원장 지시). 번호를 따로 묻지 않는다 — 본인인증이 번호·이름을 한 번에 확인한다.
-          기존 계정이 있으면 그 계정에 연결, 학원에 등록된 보호자면 자녀가 연결된 계정으로, 처음이면 새 계정으로 서버가 갈라 준다. */}
-      {step === "phone" && !challengeToken && socialSignup && !smsFallback && (
+      {/* 본인인증이 기본(간편가입 2026-11-17, 아이디 가입·기존 계정 활성화 2026-11-18 4단계). 번호를 따로 묻지 않는다 — 본인인증이 번호·이름을 한 번에 확인한다.
+          기존 계정이 있으면 안내(간편가입은 그 계정에 연결), 학원에 등록된 보호자면 활성화로, 처음이면 새 계정으로 서버가 갈라 준다.
+          본인 명의 휴대폰이 아닌 분만 문자 인증 샛길을 연다. */}
+      {step === "phone" && !challengeToken && !smsFallback && (
         <div className="space-y-4">
           <div>
-            <h2 className="text-xl font-bold">본인 확인</h2>
-            <p className="mt-1 text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">본인 명의 휴대폰으로 한 번만 인증하면 됩니다. 이미 학원에 다니는 학부모님은 기존 정보가 그대로 연결돼요.</p>
+            <h2 className="text-xl font-bold">{existingMode ? "기존 학부모 계정 활성화" : "본인 확인"}</h2>
+            <p className="mt-1 text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
+              {existingMode
+                ? "학원에 알려 주신 보호자 휴대폰의 명의로 본인인증하면, 등록된 계정을 바로 쓸 수 있게 이어 드려요."
+                : "본인 명의 휴대폰으로 한 번만 인증하면 됩니다. 이미 학원에 다니는 학부모님은 기존 정보가 그대로 연결돼요."}
+            </p>
           </div>
+          {initialPhone && !socialSignup && (
+            <p className="rounded-xl bg-[var(--color-public-tint)] px-3 py-2 text-xs leading-5 text-[var(--color-public-ink)]">
+              수강신청서에 적은 보호자 번호의 명의로 인증해야 신청서가 계정에 연결됩니다.
+            </p>
+          )}
           <IdentityLinkButton
             onSignup={continueFromIdentity}
+            // 이미 가입된 번호면 화면이 문구가 아니라 표식으로 «아이디·비밀번호 찾기»를 띄운다
+            onFailure={(data) => setRegisteredPhone(Boolean(data.registeredPhone))}
+            beforeStart={saveIdentityState}
             next={next}
+            {...(socialSignup ? {} : ANON_IDENTITY_URLS)}
             label="본인인증하고 계속"
             hint="PASS·카카오·토스 등으로 인증합니다. 휴대폰 번호는 인증 화면에서 한 번만 입력해요."
           />
-          <button type="button" onClick={() => { setSmsFallback(true); setError(null); }} className="min-h-11 w-full text-sm text-[var(--color-public-muted)] underline">
+          <button type="button" onClick={() => { setSmsFallback(true); setError(null); setRegisteredPhone(false); }} className="min-h-11 w-full text-sm text-[var(--color-public-muted)] underline">
             본인 명의 휴대폰이 아니면 문자 인증으로 하기
           </button>
         </div>
       )}
 
-      {step === "phone" && !challengeToken && (!socialSignup || smsFallback) && (
+      {step === "phone" && !challengeToken && smsFallback && (
         <form onSubmit={startPhoneVerification} className="space-y-4">
           {existingMode ? (
             <div><h2 className="text-xl font-bold">기존 학부모 계정 활성화</h2><p className="mt-1 text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">학원에 알려 주신 보호자 휴대폰 번호를 입력해 주세요. 문자 인증이 끝나면 등록된 계정을 바로 쓸 수 있게 이어 드려요.</p></div>
@@ -390,6 +449,9 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
             </p>
           )}
           <button disabled={loading} className="min-h-12 w-full rounded-xl bg-brand-orange-500 font-bold text-white disabled:opacity-50">{loading ? "보내는 중..." : "인증번호 받기"}</button>
+          <button type="button" onClick={() => { setSmsFallback(false); setError(null); setRegisteredPhone(false); }} className="min-h-11 w-full text-sm text-[var(--color-public-muted)] underline">
+            본인인증으로 돌아가기
+          </button>
         </form>
       )}
 
@@ -424,7 +486,7 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
       {step === "existing" && (
         <div className="space-y-4 py-2 text-center">
           <h2 className="text-xl font-bold">이미 학원에 등록된 보호자입니다</h2>
-          <p className="text-sm leading-6 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">문자 인증이 끝났어요. 로그인에 쓸 아이디와 비밀번호만 정하면 바로 쓸 수 있어요. 자녀 정보는 학원에 등록된 그대로 연결됩니다.</p>
+          <p className="text-sm leading-6 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">인증이 끝났어요. 로그인에 쓸 아이디와 비밀번호만 정하면 바로 쓸 수 있어요. 자녀 정보는 학원에 등록된 그대로 연결됩니다.</p>
           <button type="button" onClick={() => window.location.assign(activationUrl)} className="min-h-12 w-full rounded-xl bg-brand-orange-500 font-bold text-white">
             비밀번호 정하러 가기
           </button>

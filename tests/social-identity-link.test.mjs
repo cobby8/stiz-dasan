@@ -117,7 +117,12 @@ test("앱 계정이 이미 있는 로그인은 이 길을 쓸 수 없다(다른 
 });
 
 test("화면: 건 번호는 서버에서 받고, 이니시스 필수값을 넣고, 돌아온 주소의 문구는 싣지 않는다", () => {
-  const startAt = button.indexOf('postJson("/api/auth/parent-link/start")');
+  // 기본 주소는 간편가입(parent-link) — 로그인 전 본인인증(2026-11-18)은 부르는 화면이 주소만 바꿔 넘긴다
+  assert.match(button, /const DEFAULT_START_URL = "\/api\/auth\/parent-link\/start";/);
+  assert.match(button, /const DEFAULT_VERIFY_URL = "\/api\/auth\/parent-link\/verify";/);
+  assert.match(button, /startUrl = DEFAULT_START_URL,/);
+  assert.match(button, /verifyUrl = DEFAULT_VERIFY_URL,/);
+  const startAt = button.indexOf("postJson(startUrl)");
   const requestAt = button.indexOf("sdk.requestIdentityVerification(");
   assert.ok(startAt > 0 && requestAt > startAt);
   assert.match(button, /bypass: getStizIdentityBypass\(\)/);

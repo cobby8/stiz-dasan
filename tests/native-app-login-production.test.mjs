@@ -293,10 +293,12 @@ test("연결 시작 표식: 계정·제공자·2분에 묶이고 위조·만료�
 
 test("본인인증 하나로 통일(2026-11-17): 간편가입 화면·본인인증 확인 경로의 약속", () => {
   const client = fs.readFileSync("src/components/auth/ParentSignupClient.tsx", "utf8");
-  // 간편가입 첫 화면은 본인인증 버튼 하나 — 번호를 따로 묻는 문자 인증은 «샛길»을 눌렀을 때만
-  assert.match(client, /step === "phone" && !challengeToken && socialSignup && !smsFallback/);
+  // 첫 화면은 본인인증 버튼 하나 — 번호를 따로 묻는 문자 인증은 «샛길»을 눌렀을 때만
+  // (2026-11-18 4단계: 간편가입뿐 아니라 아이디 가입·기존 계정 활성화도 같은 화면 — 간편가입만 기본 주소(parent-link)를 쓴다)
+  assert.match(client, /step === "phone" && !challengeToken && !smsFallback/);
   assert.match(client, /label="본인인증하고 계속"/);
-  assert.match(client, /step === "phone" && !challengeToken && \(!socialSignup \|\| smsFallback\)/);
+  assert.match(client, /\{\.\.\.\(socialSignup \? \{\} : ANON_IDENTITY_URLS\)\}/);
+  assert.match(client, /step === "phone" && !challengeToken && smsFallback/);
   const verify = fs.readFileSync("src/app/api/auth/parent-link/verify/route.ts", "utf8");
   // 포트원 재조회(VERIFIED·신선도)와 건 번호 확인이 가입 요청 발급보다 먼저다
   const checkedAt = verify.indexOf('verification.status !== "VERIFIED" || !isFreshVerification(verifiedAt)');

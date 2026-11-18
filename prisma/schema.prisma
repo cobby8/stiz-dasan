@@ -2620,6 +2620,18 @@ model ParentPasswordResetOtpSend {
   @@index([requestHash, createdAt])
 }
 
+// 로그인 전 본인인증 시작 장부(2026-11-18) — IP 한도·1회 소진·10분 만료. purpose CHECK('SIGNUP','RESET'). migration 20261118230000
+model IdentityVerificationStart {
+  id          String    @id
+  purpose     String
+  requestHash String
+  createdAt   DateTime  @default(now()) @db.Timestamptz(6)
+  consumedAt  DateTime? @db.Timestamptz(6)
+
+  @@index([requestHash, createdAt])
+  @@index([createdAt])
+}
+
 model SpecialProgramShuttleRequest {
   id                     String                        @id @default(dbgenerated("(gen_random_uuid())::text"))
   applicationId          String

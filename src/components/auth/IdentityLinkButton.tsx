@@ -41,6 +41,15 @@ function urlWithoutRedirectParams(): string {
   return url.toString();
 }
 
+/** 실패 응답의 추가 표식(registeredPhone 등)을 부르는 화면이 알 수 있게 담아 던진다 */
+class IdentityRequestError extends Error {
+  data: Record<string, unknown>;
+  constructor(message: string, data: Record<string, unknown>) {
+    super(message);
+    this.data = data;
+  }
+}
+
 async function postJson(url: string, body?: unknown) {
   const response = await fetch(url, {
     method: "POST",
@@ -49,7 +58,7 @@ async function postJson(url: string, body?: unknown) {
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(typeof data?.error === "string" ? data.error : "본인인증 연결에 실패했어요. 다시 시도해 주세요.");
+  if (!response.ok) throw new IdentityRequestError(typeof data?.error === "string" ? data.error : "본인인증 연결에 실패했어요. 다시 시도해 주세요.", (data ?? {}) as Record<string, unknown>);
   return data as Record<string, unknown>;
 }
 
@@ -63,9 +72,32 @@ export type IdentitySignupHandoff = {
   redirectPath?: string;
 };
 
-export default function IdentityLinkButton({ onSignup, next, label = "본인인증으로 기존 계정에 연결", hint = "휴대폰 명의자 본인인증(PASS·카카오·토스 등)을 하면, 같은 번호·같은 이름의 학부모 계정에 바로 연결됩니다." }: {
+// 기본 주소 = 간편가입(로그인된 간편로그인 사용자) 본인인증. 로그인 전 본인인증(아이디 가입·활성화·찾기)은
+// 부르는 화면이 startUrl·verifyUrl 을 넘긴다(2026-11-18 4단계). 기본값을 그대로 두면 기존 사용처 동작은 같다.
+const DEFAULT_START_URL = "/api/auth/parent-link/start";
+const DEFAULT_VERIFY_URL = "/api/auth/parent-link/verify";
+
+export default function IdentityLinkButton({
+  onSignup,
+  onResult,
+  onFailure,
+  beforeStart,
+  next,
+  startUrl = DEFAULT_START_URL,
+  verifyUrl = DEFAULT_VERIFY_URL,
+  label = "본인인증으로 기존 계정에 연결",
+  hint = "휴대폰 명의자 본인인증(PASS·카카오·토스 등)을 하면, 같은 번호·같은 이름의 학부모 계정에 바로 연결됩니다.",
+}: {
   onSignup?: (data: IdentitySignupHandoff) => void;
+  /** 주면 확인 응답 전체를 이 함수가 받는다(찾기 화면처럼 «가입 이어가기»가 아닌 곳). onSignup·이동보다 먼저 */
+  onResult?: (data: Record<string, unknown>) => void;
+  /** 확인이 실패했을 때 응답 표식(registeredPhone 등)을 받는다 — 문구는 이 버튼이 그대로 보여 준다 */
+  onFailure?: (data: Record<string, unknown>) => void;
+  /** 인증창을 열기 직전 — 모바일은 인증창에서 «리디렉션»으로 돌아오며 화면 상태가 사라지므로, 부르는 화면이 여기서 저장한다 */
+  beforeStart?: () => void;
   next?: string;
+  startUrl?: string;
+  verifyUrl?: string;
   label?: string;
   hint?: string;
 } = {}) {
@@ -74,7 +106,11 @@ export default function IdentityLinkButton({ onSignup, next, label = "본인인�
   const handledRef = useRef(false);
 
   const confirm = useCallback(async (identityVerificationId: string) => {
-    const data = await postJson("/api/auth/parent-link/verify", { identityVerificationId, next });
+    const data = await postJson(verifyUrl, { identityVerificationId, next });
+    if (onResult) {
+      onResult(data);
+      return;
+    }
     // 로그인 수단이 있는 계정이 없는 번호(처음 오신 분·학원이 등록해 둔 보호자) → 가입 화면이 이어 간다(문자 인증 없이).
     if (data.signup === true && onSignup) {
       onSignup(data as IdentitySignupHandoff);
@@ -82,7 +118,13 @@ export default function IdentityLinkButton({ onSignup, next, label = "본인인�
     }
     // 기존 계정으로 로그인됐다 — 같은 간편로그인을 그 계정에 붙이러 간다(확인창이 한 번 더 뜬다).
     window.location.href = typeof data.next === "string" ? data.next : "/mypage/login-methods";
-  }, [next, onSignup]);
+  }, [next, onSignup, onResult, verifyUrl]);
+
+  // 실패 문구는 이 버튼이 보이고, 표식은 부르는 화면에 넘긴다
+  const fail = useCallback((reason: unknown) => {
+    setError(reason instanceof Error ? reason.message : "본인인증 연결에 실패했어요.");
+    if (reason instanceof IdentityRequestError) onFailure?.(reason.data);
+  }, [onFailure]);
 
   // 모바일: 인증창에서 돌아오면 주소에 결과가 붙어 있다.
   useEffect(() => {
@@ -106,9 +148,9 @@ export default function IdentityLinkButton({ onSignup, next, label = "본인인�
     }
     setBusy(true);
     confirm(returnedId)
-      .catch((reason) => setError(reason instanceof Error ? reason.message : "본인인증 연결에 실패했어요."))
+      .catch(fail)
       .finally(() => setBusy(false));
-  }, [confirm]);
+  }, [confirm, fail]);
 
   async function start() {
     if (busy) return;
@@ -121,8 +163,8 @@ export default function IdentityLinkButton({ onSignup, next, label = "본인인�
     }
     setBusy(true);
     try {
-      // 건 번호는 서버가 만든다(이 간편로그인 사용자 표식이 들어간다).
-      const { identityVerificationId } = await postJson("/api/auth/parent-link/start");
+      // 건 번호는 서버가 만든다(간편가입 = 이 간편로그인 사용자 표식, 로그인 전 = 이 브라우저 nonce 쿠키 표식).
+      const { identityVerificationId } = await postJson(startUrl);
       if (typeof identityVerificationId !== "string") throw new Error("본인인증을 시작하지 못했어요.");
       const sdk = await loadSdk().catch(() => {
         throw new Error("본인인증 모듈을 불러오지 못했어요. 새로고침 후 다시 시도해 주세요.");
@@ -131,6 +173,12 @@ export default function IdentityLinkButton({ onSignup, next, label = "본인인�
         window.sessionStorage.setItem(PENDING_KEY, identityVerificationId);
       } catch {
         // PC 팝업 흐름은 영향 없음
+      }
+      // 모바일 리디렉션 대비 — 화면 상태 저장(실패해도 인증은 진행)
+      try {
+        beforeStart?.();
+      } catch {
+        // 저장소가 막힌 환경
       }
       const result = await sdk.requestIdentityVerification({
         storeId,
@@ -152,7 +200,7 @@ export default function IdentityLinkButton({ onSignup, next, label = "본인인�
       }
       await confirm(result?.identityVerificationId ?? identityVerificationId);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "본인인증 연결에 실패했어요.");
+      fail(reason);
     } finally {
       setBusy(false);
     }

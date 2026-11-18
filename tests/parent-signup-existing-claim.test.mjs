@@ -48,6 +48,7 @@ async function load(db) {
     async function execute(sql, ...args) {
       calls().push({ kind: "execute", sql, args });
       if (db().failClaimInsert && /INSERT INTO "ParentAccountClaim"/.test(sql)) throw new Error('duplicate key value violates unique constraint "ParentAccountClaim_tokenHash_key"');
+      if (db().failPurge && /DELETE FROM "ParentSignupVerification"/.test(sql)) throw new Error("purge failed");
       return 1;
     }
     const client = { $queryRawUnsafe: query, $executeRawUnsafe: execute };
@@ -330,4 +331,55 @@ test("검수 N-3: 본인인증 가입 요청 발급도 문자 가입 시작과 �
   // 두 길이 «같은 SQL»(함수 하나)을 쓴다
   assert.equal(a.blank.sql, b.blank.sql);
   assert.equal(a.claims.sql, b.claims.sql);
+});
+
+test("4단계 A: 아이디 가입(PASSWORD)도 본인인증 가입 요청을 만든다 — 간편로그인 사용자·이메일 없이, 실명·시각은 싣는다", async () => {
+  const mod = await load({ verification: null, users: [] });
+  const issued = await mod.issueIdentityVerifiedSignup({ phone: "010-1234-5678", signupMethod: "PASSWORD", verifiedName: " 김 엄마 ", verifiedAt: VERIFIED_AT });
+  assert.ok(issued.ok, JSON.stringify(issued));
+  const insert = writes().find((c) => /INSERT INTO "ParentSignupVerification"/.test(c.sql));
+  assert.match(insert.sql, /'VERIFIED','IDENTITY'/);
+  // 인자: id, tokenHash, phone, phoneHash, signupMethod, email, pendingAuthUserId, proofHash, verifiedName, verifiedAt
+  assert.equal(insert.args[2], PHONE);
+  assert.equal(insert.args[4], "PASSWORD");
+  assert.equal(insert.args[5], null, "아이디 가입은 이메일을 싣지 않는다");
+  assert.equal(insert.args[6], null, "아이디 가입은 간편로그인 사용자가 없다");
+  assert.deepEqual(insert.args.slice(-2), ["김 엄마", VERIFIED_AT]);
+  // 증표는 그 토큰으로만 열린다(문자 인증 증표와 같은 규칙)
+  assert.equal(insert.args[7], keyed(`proof:${sha(issued.token)}:${issued.proof}`));
+  // 간편가입은 지금처럼 간편로그인 사용자가 있어야 한다
+  const social = await load({ verification: null, users: [] });
+  assert.match((await social.issueIdentityVerifiedSignup({ phone: PHONE, signupMethod: "KAKAO", verifiedName: "김엄마", verifiedAt: VERIFIED_AT })).error, /간편가입 계정/);
+  assert.ok(!writes().some((c) => /INSERT INTO "ParentSignupVerification"/.test(c.sql)));
+  // 모르는 방법은 거절
+  const odd = await load({ verification: null, users: [] });
+  assert.ok("error" in await odd.issueIdentityVerifiedSignup({ phone: PHONE, signupMethod: "EMAIL", verifiedName: "김엄마", verifiedAt: VERIFIED_AT }));
+});
+
+test("4단계 A·B: 본인인증 아이디 가입 → 처음 번호면 계정 정보로, 학원이 등록한 빈 계정 1개면 활성화(실명은 증표에만), 로그인 계정이 있는 번호면 거절", async () => {
+  const fresh = await load({ verification: verifiedRow({ verificationMethod: "IDENTITY", verifiedName: "김엄마", verifiedAt: VERIFIED_AT }), users: [] });
+  assert.equal((await fresh.resolveVerifiedSignupPhone({ token: TOKEN, proof: PROOF, authenticatedOAuthUser: null })).kind, "NEW_SIGNUP");
+  const claim = await load({ verification: verifiedRow({ verificationMethod: "IDENTITY", verifiedName: "김엄마", verifiedAt: VERIFIED_AT }), users: [synthetic("p1")] });
+  const activation = await claim.resolveVerifiedSignupPhone({ token: TOKEN, proof: PROOF, authenticatedOAuthUser: null });
+  assert.equal(activation.kind, "ACTIVATE_EXISTING");
+  assert.deepEqual(identityWrites(), [], "활성화를 끝내기 전에는 User 에 실명을 적지 않는다");
+  assert.deepEqual(writes().find((c) => /INSERT INTO "ParentAccountClaim"/.test(c.sql)).args.slice(-2), ["김엄마", VERIFIED_AT]);
+  // 로그인 수단이 있는 번호: 발급 단계에서 거절(가입 요청을 만들지 않는다) — 화면은 «아이디·비밀번호 찾기»
+  const registered = await load({ verification: null, users: [{ id: "u1", role: "PARENT", email: "mom@member.stiz.kr", authUserId: "auth-1", phone: PHONE }] });
+  const refused = await registered.issueIdentityVerifiedSignup({ phone: PHONE, signupMethod: "PASSWORD", verifiedName: "김엄마", verifiedAt: VERIFIED_AT });
+  assert.match(refused.error, /이미 가입된 휴대폰 번호/);
+  assert.ok(!writes().some((c) => /INSERT INTO "ParentSignupVerification"/.test(c.sql)));
+});
+
+test("4단계 D: 매일 정리(runSignupPersonalDataPurge)는 가입 시작과 같은 정리 SQL 을 돌리고, 실패해도 예외를 던지지 않는다", async () => {
+  const mod = await load({ verification: null, users: [] });
+  assert.equal(await mod.runSignupPersonalDataPurge(), true);
+  const list = writes();
+  assert.ok(list.some((c) => /DELETE FROM "ParentSignupVerification"/.test(c.sql)));
+  assert.ok(list.some((c) => /"verifiedName"=NULL/.test(c.sql)));
+  assert.ok(list.some((c) => /UPDATE "ParentAccountClaim" SET "verifiedName"=NULL/.test(c.sql)));
+  const broken = await load({ verification: null, users: [], failPurge: true });
+  globalThis.__signupDb.failPurge = true;
+  const originalError = console.error; console.error = () => {};
+  try { assert.equal(await broken.runSignupPersonalDataPurge(), false); } finally { console.error = originalError; }
 });
