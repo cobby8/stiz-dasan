@@ -41,7 +41,7 @@ export default function ManualSmsModal({
     }
 
     return (
-        <AdminModal onClose={busy ? () => undefined : onClose} titleId="manual-sms-modal-title" panelClassName="max-w-md" closeOnBackdrop={!busy}>
+        <AdminModal onClose={busy ? () => undefined : onClose} busy={busy} titleId="manual-sms-modal-title" panelClassName="max-w-md" closeOnBackdrop={!busy}>
             <form onSubmit={handleSubmit} className="w-full p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
                 <h2 id="manual-sms-modal-title" className="text-lg font-bold text-[var(--color-academy-ink)]">
                     {title}

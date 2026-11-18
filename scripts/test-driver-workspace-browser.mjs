@@ -23,7 +23,7 @@ const origin = new URL(harness.url).origin, cases = [];
 async function check(name, exercise, options = {}) {
   const context = await browser.newContext({ viewport: { width: 390, height: 900 } });
   const requests = [], errors = [], regular = {}, seasonal = { PICKUP: {}, DROPOFF: {} }; let failedReads = options.failReads ?? 0;
-  await context.addInitScript(value => { window.__testProps = value; window.__gpsStarts = 0; window.__gpsStops = 0; window.__installPrompts = 0; }, { ...props, ...options.props });
+  await context.addInitScript(value => { window.__testProps = value; window.__gpsStarts = 0; window.__gpsStops = 0; }, { ...props, ...options.props });
   await context.route('**/*', async route => {
     const req = route.request(), url = new URL(req.url());
     if (url.origin !== origin) { errors.push('외부 요청 차단'); return route.abort(); }
@@ -113,11 +113,6 @@ try {
     await page.getByRole('button', { name: /위치 공유 상세 보기/ }).click();
     await page.getByText(/서버 공유 중단은 확인 필요/).waitFor();
     assert.equal(await page.evaluate(() => window.__gpsStarts), 1); assert.equal(await page.evaluate(() => window.__gpsStops), 1);
-  });
-  await check('설치 안내는 명시적으로 누를 때만 설치 창을 요청한다', async page => {
-    await page.evaluate(() => { const e = new Event('beforeinstallprompt', { cancelable: true }); e.prompt = async () => { window.__installPrompts++; }; window.dispatchEvent(e); });
-    const install = page.getByRole('button', { name: '설치', exact: true }); await install.waitFor(); assert.equal(await page.evaluate(() => window.__installPrompts), 0);
-    await install.click(); await install.waitFor({ state: 'hidden' }); assert.equal(await page.evaluate(() => window.__installPrompts), 1);
   });
 } finally { await browser.close(); await harness.close(); }
 await mkdir('.tmp/driver-ux-qa', { recursive: true });

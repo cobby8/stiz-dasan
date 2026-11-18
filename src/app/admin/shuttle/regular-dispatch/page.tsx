@@ -88,7 +88,7 @@ export default async function RegularDispatchPage({ searchParams }: { searchPara
         academy={academy}
         riderBlocks={marks.labelByRowId}
         monthHolidays={marks.holidays}
-        // 운행표 위에 칸을 따로 두지 않는다(2026-11-17 원장 지시) — 머리줄 «기사 요청» 뒤의 «당일 변경» 버튼 하나 + 창
+        // 운행표 위에 칸을 따로 두지 않는다(2026-11-17 원장 지시) — 머리줄 «실시간 위치» 뒤의 «당일 변경» 버튼 하나 + 창
         headerExtra={<ShuttleDayExceptionAdminPanel initial={JSON.parse(JSON.stringify(dayExceptions))} />}
       />
       <RegularStopGeocodePanel

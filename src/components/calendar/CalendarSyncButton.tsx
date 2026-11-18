@@ -88,12 +88,13 @@ export default function CalendarSyncButton({ theme, className = "" }: { theme: T
 
     const [open, setOpen] = useState(false);
     // 창이 열려 있는 동안 공개 사이트의 떠 있는 버튼(상담·둘러보기)을 숨긴다 — 창의 아래쪽 버튼을 덮지 않게(검수 2026-11-16)
-    usePublicOverlayOpen(open, () => setOpen(false)); // 휴대폰 «뒤로» = 창 닫기
     // 고를 수 있는 항목(서버가 역할로 정해 준다). null = 아직 불러오는 중
     const [options, setOptions] = useState<CalendarSyncOption[] | null>(null);
     const [linkCount, setLinkCount] = useState(0);
     const [picked, setPicked] = useState<Set<string>>(new Set(["academy"]));
     const [busy, setBusy] = useState(false);
+    // 휴대폰 «뒤로» = 창 닫기. 연동 주소를 만들거나 끊는 중(busy)에는 닫히지 않는다(2026-11-18)
+    usePublicOverlayOpen(open, () => setOpen(false), { blocked: busy });
     const [link, setLink] = useState<LinkOk | null>(null);
     const [message, setMessage] = useState("");
     // 복사 상태: "done" = 복사됨, "show" = 복사가 막혀 주소를 글자로 보여 줌

@@ -50,6 +50,8 @@ const { SessionStudentSheet } = load("src/components/staff/SessionStudentSheet.t
   "@/components/staff/StatusChoiceButton": load("src/components/staff/StatusChoiceButton.tsx", { "@/lib/ui/statusTones": statusTones }),
   "@/components/staff/StaffMonthlyFeeSummary": { monthlyFeeLabel: (month) => `${month} 수강료` },
   "@/components/staff/useStaffDialog": { useStaffDialog: () => {} },
+  // 2026-11-18: 시트가 «뒤로 = 닫기» 훅을 쓴다(브라우저 기록을 다루므로 여기서는 대역)
+  "@/components/common/useBackToClose": { useBackToClose: () => ({ leaveTo: () => {}, captureLinks: () => () => {}, closeThen: (next) => next() }) },
   "@/lib/regular/regularAbsenceRules": { REASON_LABEL: { ILLNESS_INJURY: "질병·부상" } },
   "@/lib/ui/statusTones": statusTones,
 });

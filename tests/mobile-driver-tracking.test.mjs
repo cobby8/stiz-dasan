@@ -55,7 +55,8 @@ test('관리자 실제 렌더 함수는 조회 실패 중에도 시각이 경과
     useCallback(fn) { return fn; }, useEffect(fn) { effects.push(fn); },
   };
   const jsx = (type, props) => ({ type, props });
-  const panel = load('src/components/admin/DriverLocationPanel.tsx', { react, 'react/jsx-runtime': { jsx, jsxs: jsx } }, {}, {
+  // «뒤로 = 닫기» 훅(2026-11-18)은 이 렌더 시험과 무관해 빈 대역으로 끼운다(규칙은 overlay-back-close.test.mjs 가 본다)
+  const panel = load('src/components/admin/DriverLocationPanel.tsx', { react, 'react/jsx-runtime': { jsx, jsxs: jsx }, '@/components/common/useBackToClose': { useBackToClose() { return {}; } } }, {}, {
     Date: Clock, setInterval(fn, ms) { timers.push({ fn, ms }); return timers.length; }, clearInterval() {},
     async fetch() { return { ok: !fail, async json() { return { locations: [{ token: 'fixture', label: '검증 차량', sharing: true, secondsAgo: 10, latitude: 37, longitude: 127, accuracy: 8 }] }; } }; },
   }).default;

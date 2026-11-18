@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useBackToClose } from "@/components/common/useBackToClose";
 
 // 현황판을 주간 달력으로 배치하는 계산은 순수 모듈로 분리해 테스트로 잠가 뒀다.
 import { buildAttendanceCalendar, calendarCellDateLabel } from "@/lib/seasonal/attendanceCalendar";
@@ -440,6 +441,8 @@ function MakeupTab({ makeups, onDecide }: { makeups: any; onDecide: (id: string,
 
 function MakeupModal({ modal, onClose, onSeasonal, onRegular }: { modal: any; onClose: () => void; onSeasonal: (id: string) => void; onRegular: (c: any) => void }) {
   const a = modal.absence;
+  // «뒤로» = 이 창만 닫기(2026-11-18). 이 창은 그려진 동안 = 열림
+  useBackToClose(true, onClose);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div className="max-h-[88vh] w-full max-w-lg overflow-auto rounded-2xl bg-white" onClick={(e) => e.stopPropagation()}>

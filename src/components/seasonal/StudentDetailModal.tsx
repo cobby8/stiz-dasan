@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { StudentDetail } from "@/lib/seasonal/student-detail";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
 import { askConfirm } from "@/components/ui/feedback";
+import { useBackToClose } from "@/components/common/useBackToClose";
 
 // 방학특강 수강생 상세 — 여러 화면에서 공통으로 쓰는 모달.
 // applicationId만 주면 서버에서 학생·보호자·수강 수업·셔틀 정보를 불러와 정리해 보여준다.
@@ -48,6 +49,8 @@ export default function StudentDetailModal({ applicationId, onClose, save, onCha
   const [err, setErr] = useState<string | null>(null);
   const [pinEdit, setPinEdit] = useState<"pickup" | "dropoff" | null>(null);
   const [savingPin, setSavingPin] = useState(false);
+  // «뒤로» = 이 창만 닫기. 위치·셔틀 이용 저장 중에는 닫히지 않는다(2026-11-18). 이 창은 그려진 동안 = 열림
+  useBackToClose(true, onClose, { blocked: savingPin });
 
   const load = useCallback(() => {
     let alive = true;

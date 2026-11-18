@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { logoutStaff } from "@/app/actions/auth";
 import { isStaffLiveLessonOpen, prepareStaffNavigation, shouldConfirmStaffLeave, subscribeStaffLiveLesson } from "./staffNavigation";
@@ -9,6 +9,9 @@ import AccountViewSwitcher from "@/components/AccountViewSwitcher";
 import type { AccountViewOption } from "@/lib/account-views";
 import { useStoreAppLacks } from "@/components/storeApp/useStoreAppLacks";
 import { parseLastViewKey, rememberLastView, type LastViewKey } from "@/lib/auth/last-view";
+// 2026-11-18 뒤로 가기: 메뉴·확인 창은 휴대폰 «뒤로»로 창만 닫힌다
+import { useBackToClose } from "@/components/common/useBackToClose";
+import { releaseActiveLessonGuard } from "./lessonBackGuard";
 
 // 공개 홈페이지 링크(홈·공지·프로그램·시간표·갤러리)는 두지 않는다.
 // 선생님 앱은 manifest scope 가 /staff 라, 홈페이지로 나가면 설치된 앱을 벗어나
@@ -18,6 +21,7 @@ const focusableSelector = 'a[href], button:not([disabled]), [tabindex]:not([tabi
 
 export default function StaffProfileMenu({ staffName, staffRole, accountViews = [] }: { staffName: string; staffRole: "ADMIN" | "VICE_ADMIN" | "INSTRUCTOR" | "DRIVER"; accountViews?: AccountViewOption[] }) {
   const pathname = usePathname();
+  const router = useRouter();
   // 수업 주소(/staff/sessions/…) — «수업 종료 후 로그아웃» 잠금은 예전처럼 이 주소에서만 건다.
   const isSessionInProgress = pathname.startsWith("/staff/sessions/");
   // 2026-11-17: 수업은 선생님 홈(/staff)의 줄 안에서도 진행한다(11-15~). 홈이 <html> 에 다는 «수업 중» 표시를 같이 봐서
@@ -88,6 +92,11 @@ export default function StaffProfileMenu({ staffName, staffRole, accountViews = 
     window.requestAnimationFrame(() => triggerRef.current?.focus());
   };
 
+  // 휴대폰 «뒤로» = 열린 창만 닫는다(화면째 나가지 않는다). 메뉴와 확인 창은 동시에 뜨지 않는다.
+  // 확인 창은 «저장 확인 중»(leaving)에는 뒤로를 눌러도 닫히지 않는다.
+  const menuBack = useBackToClose(isOpen, closeAndRestoreFocus);
+  const confirmBack = useBackToClose(pendingHref !== null, closeAndRestoreFocus, { blocked: leaving });
+
   const leaveSession = async () => {
     if (!pendingHref || leaving) return;
     setLeaving(true);
@@ -102,7 +111,8 @@ export default function StaffProfileMenu({ staffName, staffRole, accountViews = 
     // 확인 없이 바로 이동할 때는 AccountViewSwitcher 가 같은 키로 적는데, 확인 창을 거치면 그쪽은
     // «아직 고른 것이 아니라» 적지 않는다 — 그래서 저장이 끝나 이동이 확정된 이 자리에서 적는다.
     if (pendingViewKey) rememberLastView(pendingViewKey);
-    window.location.assign(pendingHref);
+    // 확인 창이 넣은 기록 칸(그리고 선생님 홈이면 수업 가드 칸)을 먼저 되돌린 뒤 이동한다 — 안 그러면 그 칸이 새 화면 뒤에 남아 뒤로가 헛돈다
+    confirmBack.leaveTo(pendingHref, (to) => void releaseActiveLessonGuard().then(() => window.location.assign(to)));
     // 화면이 실제로 떠나지 않는 경우가 있다(설치 안내가 스토어 앱으로 넘어가 이 탭은 그대로 남을 때 등).
     // 그대로 두면 «저장 확인 중…»으로 굳어 두 버튼·Esc·바깥 누르기가 모두 막힌다 — 잠시 뒤에도 남아 있으면 잠금만 푼다.
     window.setTimeout(() => setLeaving(false), 4000);
@@ -120,14 +130,27 @@ export default function StaffProfileMenu({ staffName, staffRole, accountViews = 
   // viewKey: 화면 전환 목록의 항목이면 그 화면 키(admin·teacher·driver·parent). 마이페이지·설치 안내처럼 화면 전환이 아닌 이동은 넘기지 않는다.
   // 목록 밖 키(가족 연결·내 계정)는 parseLastViewKey 가 null 로 걸러 기억하지 않는다.
   const requestPublicNavigation = (event: React.MouseEvent<HTMLAnchorElement>, href: string, viewKey?: string) => {
+    // 새 탭·새 창으로 여는 누름은 지금 화면을 떠나지 않는다 — 메뉴만 닫고 그대로 둔다
+    const newTab = event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0;
     if (!needsLeaveConfirm) {
       setIsOpen(false);
+      if (newTab) return;
+      // 메뉴가 넣은 기록 칸을 먼저 되돌린 뒤 이동한다(2026-11-18) — 링크가 먼저 이동하면 그 칸이 새 화면 뒤에 남는다.
+      // 링크 기본 동작을 막았으므로 «마지막 화면» 기억(화면 전환 항목)도 여기서 한다.
+      event.preventDefault();
+      const directKey = parseLastViewKey(viewKey);
+      if (directKey) rememberLastView(directKey);
+      // /install 은 기기를 보고 스토어(바깥 주소)로 넘기는 보통 링크 — 통째 이동. 나머지는 화면 안 이동(Link 와 같다)
+      menuBack.leaveTo(href, (to) => (to === "/install" ? window.location.assign(to) : router.push(to)));
       return;
     }
     event.preventDefault();
     setIsOpen(false);
-    setPendingHref(href);
-    setPendingViewKey(parseLastViewKey(viewKey));
+    // 메뉴의 기록 칸이 빠진 «뒤»에 확인 창을 연다(두 창의 칸이 엇갈리지 않게)
+    menuBack.closeThen(() => {
+      setPendingHref(href);
+      setPendingViewKey(parseLastViewKey(viewKey));
+    });
   };
 
   return (

@@ -331,7 +331,7 @@ export function CreatePeriodModal({
             titleId="absence-period-create-title"
             layout="side"
             panelClassName="p-5"
-            onClose={() => { if (!saving) onClose(); }}
+            onClose={() => { if (!saving) onClose(); }} busy={saving}
             closeOnBackdrop={!saving}
         >
             <div className="space-y-3">
@@ -424,7 +424,7 @@ function ReturnModal({
         <AdminModal
             titleId="absence-period-return-title"
             panelClassName="max-w-sm p-5"
-            onClose={() => { if (!saving) onClose(); }}
+            onClose={() => { if (!saving) onClose(); }} busy={saving}
             closeOnBackdrop={!saving}
         >
             <div className="space-y-3">

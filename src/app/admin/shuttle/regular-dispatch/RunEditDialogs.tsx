@@ -165,7 +165,7 @@ export function StudentShuttleDialog({ stops, rowId, serviceMonth, laterMonths, 
   return (
     <>
       {!picker && (
-        <AdminModal titleId="run-student-title" onClose={() => { if (!busy) onClose(); }} panelClassName="max-w-2xl p-4" closeOnBackdrop={false}>
+        <AdminModal titleId="run-student-title" onClose={() => { if (!busy) onClose(); }} busy={busy} panelClassName="max-w-2xl p-4" closeOnBackdrop={false}>
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <h3 id="run-student-title" className="academy-section-title">{name} · 셔틀 정보 ({Number(serviceMonth.slice(5))}월)</h3>
             {studentId && <Link href={`/admin/students/${encodeURIComponent(studentId)}`} className="inline-flex min-h-11 items-center text-sm font-medium text-[var(--color-academy-primary)] underline">학생 상세</Link>}
@@ -270,7 +270,7 @@ export function RemoveRiderDialog({ stops, rowId, serviceMonth, laterMonths, def
   }
 
   return (
-    <AdminModal titleId="run-remove-title" onClose={() => { if (!busy) onClose(); }} panelClassName="max-w-md p-5" closeOnBackdrop={false}>
+    <AdminModal titleId="run-remove-title" onClose={() => { if (!busy) onClose(); }} busy={busy} panelClassName="max-w-md p-5" closeOnBackdrop={false}>
       <h3 id="run-remove-title" className="academy-section-title">{me.studentName} 학생을 셔틀 명단에서 뺄까요?</h3>
       <p className="mt-1 text-sm text-[var(--color-academy-muted)]">퇴원·셔틀 중단일 때 써요. 하루만 안 타는 건 결석·«오늘만 변경»으로 해 주세요.</p>
       <fieldset className="mt-3">
@@ -341,7 +341,7 @@ export function StopEditDialog({ stops, rowIds, serviceMonth, laterMonths, defau
   return (
     <>
       {!picker && (
-        <AdminModal titleId="run-stop-title" onClose={() => { if (!busy) onClose(); }} panelClassName="max-w-md p-5" closeOnBackdrop={false}>
+        <AdminModal titleId="run-stop-title" onClose={() => { if (!busy) onClose(); }} busy={busy} panelClassName="max-w-md p-5" closeOnBackdrop={false}>
           <h3 id="run-stop-title" className="academy-section-title">정류장 수정 · {first.stopName}</h3>
           <p className="mt-1 text-sm text-[var(--color-academy-muted)]">{rows.map((r) => r.studentName).join(", ")} · {WEEKDAY_LABELS[first.weekday]} {DIR_KO[first.direction as "BOARD" | "ALIGHT"]}</p>
           <div className="mt-3 flex gap-2">

@@ -60,7 +60,8 @@ test("C-A2 공용 패널 버튼 줄: ⚡ 와 같은 분리 규칙, 위험은 오
   assert.match(panelActions, /tone === "danger"\) return "academy-button-danger"/);
   assert.match(panelActions, /tone === "primary"\) return "academy-button-primary"/);
   assert.match(panelActions, /ml-auto flex flex-wrap gap-2/);
-  assert.match(panelActions, /onBeforeSelect\?\.\(\);\s*void action\.onSelect\(\);/);
+  // 2026-11-18 «뒤로 = 닫기»: 순서는 그대로(닫기 → 작업), 작업은 패널의 기록 칸을 되돌린 뒤 시작한다(closeThen)
+  assert.match(panelActions, /onBeforeSelect\(\);\s*closeThen\(\(\) => void action\.onSelect\(\)\);/);
 });
 
 // A-07: window.confirm 삭제 확인 → 공용 확인 창. 확인을 거친 뒤에만 같은 handleDelete(같은 인자)

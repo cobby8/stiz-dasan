@@ -16,6 +16,7 @@ import UiIcon from "@/components/common/UiIcon";
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
+import { useBackToClose } from "@/components/common/useBackToClose";
 import AdminModal from "@/components/admin/AdminModal";
 import { adminErrorText } from "@/components/admin/adminDisplayText";
 import type { MapLocationData } from "@/components/maps/LocationPickerModal";
@@ -154,6 +155,9 @@ export default function StudentRegisterModal({
 
     // 저장
     const [saving, setSaving] = useState(false);
+    // «뒤로» = 이 창만 닫기 · 등록 중에는 닫히지 않는다(2026-11-18). 창 안 버튼이 router.push 로 떠나는 곳이 있어
+    // 기록 칸을 이 파일에서 직접 든다(leaveTo) — 그래서 아래 AdminModal 의 것은 끈다(backToClose={false})
+    const { leaveTo } = useBackToClose(true, onClose, { blocked: saving });
     const [error, setError] = useState<string | null>(null);
     const [capacityWarning, setCapacityWarning] = useState<OverCapacityClass[] | null>(null);
 
@@ -310,7 +314,7 @@ export default function StudentRegisterModal({
     const account = preview?.account;
 
     return (
-        <AdminModal onClose={onClose} titleId="student-register-title" panelClassName="max-w-2xl" closeOnBackdrop={false}>
+        <AdminModal backToClose={false} onClose={onClose} titleId="student-register-title" panelClassName="max-w-2xl" closeOnBackdrop={false}>
             {/* 머리: 제목 + 단계(누르면 앞 단계로 돌아간다) */}
             <div className="sticky top-0 z-10 border-b border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-4 pt-3">
                 <div className="flex items-center gap-2">
@@ -461,7 +465,7 @@ export default function StudentRegisterModal({
                                             <button
                                                 type="button"
                                                 // 화면 안 이동(router.push) — 전체를 새로 불러오면 느리고 앞 화면(신청함 등)으로 돌아올 때 상태가 사라진다
-                                                onClick={() => (onOpenStudent ? onOpenStudent(d.id) : router.push(`/admin/students/${d.id}`))}
+                                                onClick={() => (onOpenStudent ? onOpenStudent(d.id) : leaveTo(`/admin/students/${d.id}`, (to) => router.push(to)))}
                                                 className="academy-button-text"
                                             >
                                                 그 학생 열기

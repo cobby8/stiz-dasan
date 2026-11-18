@@ -257,7 +257,7 @@ export default function RoleRequestsClient({
 
       {/* 승인·회수 확인 창 — 예전 행 안의 «승인 확정 / 회수 확정 / 그만» 과 같은 동작 */}
       {confirmTarget && (
-        <AdminModal titleId="role-request-confirm-title" onClose={() => { if (!pendingAction) setConfirming(null); }} closeOnBackdrop={false} panelClassName="max-w-md p-5">
+        <AdminModal titleId="role-request-confirm-title" onClose={() => { if (!pendingAction) setConfirming(null); }} busy={Boolean(pendingAction)} closeOnBackdrop={false} panelClassName="max-w-md p-5">
           <h3 id="role-request-confirm-title" className="break-keep text-lg font-bold text-[var(--color-academy-ink)]">
             {confirmTarget.name} {ROLE_LABEL[confirmTarget.role]} 역할 {confirmPending ? "승인" : "회수"}
           </h3>

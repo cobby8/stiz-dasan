@@ -200,7 +200,8 @@ test("종료 잠금·확인 창·이동 전 저장은 그대로, 홈에서는 �
   assert.match(home, /async function toggleLesson[\s\S]{0,500}const ready = await prepareStaffNavigation\(\);\s*if \(!ready\.ok\) \{/);
   const nav = read("src/app/staff/StaffBottomNav.tsx");
   assert.match(nav, /if \(pathname !== "\/staff" \|\| href === "\/staff"\) return;/);
-  assert.match(nav, /const result = await prepareStaffNavigation\(\);\s*if \(!result\.ok\) \{[\s\S]{0,160}return;\s*\}\s*router\.push\(href\);/);
+  // 2026-11-18: 저장 성공 뒤, 홈이 넣어 둔 «수업 중 뒤로» 가드 칸을 걷고 이동한다(저장 → 칸 걷기 → 이동 순서)
+  assert.match(nav, /const result = await prepareStaffNavigation\(\);\s*if \(!result\.ok\) \{[\s\S]{0,160}return;\s*\}\s*(?:\/\/[^\n]*\s*)*await releaseActiveLessonGuard\(\);\s*router\.push\(href\);/);
   // 진행 중 수업 칸은 줄을 접어도 버리지 않고 숨기기만 한다
   assert.match(home, /if \(!expanded && !\(live && data\?\.state === "ready"\)\) return null;/);
   assert.match(home, /<div id=\{lessonBodyId\(lesson\)\} hidden=\{!expanded\}/);

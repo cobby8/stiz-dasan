@@ -153,7 +153,7 @@ test("화면: «조회» 버튼 하나 + 모달(달 이동·반·이름·초기�
   assert.match(client, /onClick=\{applyLookup\} className="academy-button-primary">적용<\/button>/);
   // 달은 주소 이동(서버 재조회), 반·이름은 받은 목록을 화면에서 거른다
   // 조회 조건은 같은 화면의 보기 설정이라 기록에 쌓지 않는다(replace, 2026-11-17 뒤로 가기 조사)
-  assert.match(client, /if \(draftMonth !== month\) router\.replace\(draftMonth === currentMonth \? "\/staff\/billing" : `\/staff\/billing\?month=\$\{draftMonth\}`\)/);
+  assert.match(client, /if \(draftMonth !== month\) lookupBack\.leaveTo\(draftMonth === currentMonth \? "\/staff\/billing" : `\/staff\/billing\?month=\$\{draftMonth\}`, \(to\) => router\.replace\(to\)\)/);
   assert.match(client, /const scoped = bills\.filter\(\(bill\) => matchesBillingLookup\(bill, lookup\)\)/);
   assert.match(client, /const visible = scoped\.filter\(\(bill\) => matchesFilter\(bill, filter\)\)/);
   // 지금 보는 달·범위 안내·행의 반 이름

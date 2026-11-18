@@ -17,7 +17,9 @@ function compileModule(file) {
   new Function('require', 'module', 'exports', code)((id) => {
     if (id === 'next/link') return { default: Link };
     if (id === 'next/image') return { default: () => null };
-    if (id === 'next/navigation') return { usePathname: () => pathname };
+    if (id === 'next/navigation') return { usePathname: () => pathname, useRouter: () => ({ push() {} }) };
+    // 휴대폰 메뉴 «뒤로 = 닫기» 훅(2026-11-18) — 이 렌더 시험에선 빈 대역(규칙은 overlay-back-close.test.mjs 가 본다)
+    if (id === '@/components/common/useBackToClose') return { useBackToClose: () => ({ captureLinks: () => undefined }) };
     if (id === 'next/dynamic') return { default: () => () => null };
     if (id === '@/app/actions/auth') return { logout: '/logout' };
     if (id === '@/components/academy/AcademyTheme') return { default: ({ children }) => children };
@@ -26,6 +28,8 @@ function compileModule(file) {
     if (id === '@/components/admin/SectionTabs') return compileModule('src/components/admin/SectionTabs.tsx');
     if (id === '@/components/AccountViewSwitcher') return { default: () => React.createElement('span', null, '화면 전환') };
     if (id.startsWith('@/components/')) return { default: () => null };
+    // «수업 진행» 링크가 누를 때만 부르는 표시 함수(2026-11-18) — 이 렌더 시험에선 빈 함수
+    if (id === '@/lib/navigation/inAppHistory') return { markEnteringStaffFromAdmin: () => {} };
     // 대시보드 «처리할 신청» 종류 칩 이름(신청함 catalog) — 이 렌더 시험에선 종류 코드 그대로
     if (id === '@/lib/requests/catalog') return { kindLabel: (kind) => kind };
     return require(id);

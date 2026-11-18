@@ -28,8 +28,9 @@ export const GUIDE_FLOATING_STYLE = { "--public-floating-offset": "76px" } as CS
  * onBack 을 넘기면 휴대폰 «뒤로» = 이 창 닫기(2026-11-17 — 예전엔 창이 열린 채 뒤로를 누르면 화면째 나갔다).
  * 창 안에 같은 사이트 링크가 있으면 돌려준 captureLinks 를 창 감싼 요소의 onClickCapture 에 단다(useBackToClose 참고).
  */
-export function usePublicOverlayOpen(open: boolean, onBack?: () => void) {
-  const { captureLinks } = useBackToClose(open && Boolean(onBack), () => onBack?.());
+export function usePublicOverlayOpen(open: boolean, onBack?: () => void, options?: { blocked?: boolean }) {
+  // options.blocked = 저장·처리 중 — 그동안은 «뒤로»를 눌러도 창이 닫히지 않는다(2026-11-18)
+  const { captureLinks } = useBackToClose(open && Boolean(onBack), () => onBack?.(), options);
   useEffect(() => {
     if (!open) return;
     const body = document.body;

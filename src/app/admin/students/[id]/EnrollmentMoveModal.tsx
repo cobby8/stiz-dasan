@@ -104,7 +104,7 @@ export default function EnrollmentMoveModal({
         <AdminModal
             titleId="enrollment-move-title"
             panelClassName="max-w-lg p-5"
-            onClose={() => { if (!saving) onClose(); }}
+            onClose={() => { if (!saving) onClose(); }} busy={saving}
             closeOnBackdrop={!saving}
         >
             <div className="space-y-3">

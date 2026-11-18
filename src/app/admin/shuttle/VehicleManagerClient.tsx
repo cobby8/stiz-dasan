@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
 import AdminPanelActions from "@/components/admin/AdminPanelActions";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
+import { useBackToClose } from "@/components/common/useBackToClose";
 
 // 셔틀 차량 관리 — 자동 배차가 쓰는 차량(ShuttleVehicle)을 등록·수정·활성/비활성한다.
 // (옛 '노선 만들기'는 자동 배차 화면으로 대체되어, 이 화면은 차량 관리만 담당한다.)
@@ -16,6 +17,8 @@ export default function VehicleManagerClient({ initialVehicles }: { initialVehic
   const [vehicles, setVehicles] = useState<Vehicle[]>(initialVehicles ?? []);
   const [modal, setModal] = useState<"new" | Vehicle | null>(null);
   const [pending, setPending] = useState(false);
+  // 등록·수정 창이 열린 채 «뒤로» = 창만 닫기. 저장 중에는 닫히지 않는다(2026-11-18)
+  useBackToClose(Boolean(modal), () => setModal(null), { blocked: pending });
   const [err, setErr] = useState("");
   const [notice, setNotice] = useState("");
   // 행 클릭 상세 패널(차량 id). 다시 불러와도 최신 값으로 보이게 id 로 찾는다.

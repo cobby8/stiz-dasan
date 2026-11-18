@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import { requestStaffPaymentConfirmation } from "@/app/actions/staff-billing";
 import { billingMonthLabel, countBillingLookup, matchesBillingLookup, shiftBillingMonth } from "@/lib/staff-billing-lookup";
 import { useStaffDialog } from "@/components/staff/useStaffDialog";
+// 2026-11-18 뒤로 가기: 창은 휴대폰 «뒤로»로 창만 닫힌다(상세 패널은 ListDetailPanel 이 스스로 한다)
+import { useBackToClose } from "@/components/common/useBackToClose";
+import { useAdminModalCloseThen } from "@/components/admin/AdminModal";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
 import { formatKstDate } from "@/lib/datetime/kst";
@@ -33,6 +36,15 @@ type StaffBillingClientProps = {
   seesAllClasses: boolean;
 };
 
+/**
+ * 상세 패널 안의 «납부 확인 요청» — 패널을 닫고 요청 창을 연다.
+ * 패널이 넣은 기록 칸을 먼저 되돌린 «뒤»에 넘긴다(useAdminModalCloseThen) — 두 창의 칸이 엇갈리지 않게.
+ */
+function DetailRequestButton({ onRequest }: { onRequest: () => void }) {
+  const closeThen = useAdminModalCloseThen();
+  return <button type="button" onClick={() => closeThen(onRequest)} className="academy-button-primary min-h-12! w-full">납부 확인 요청</button>;
+}
+
 export default function StaffBillingClient({ bills, month, currentMonth, seesAllClasses }: StaffBillingClientProps) {
   const router = useRouter();
   const [filter, setFilter] = useState<BillFilter>("OPEN");
@@ -47,6 +59,8 @@ export default function StaffBillingClient({ bills, month, currentMonth, seesAll
   const lookupRef = useRef<HTMLDivElement>(null);
   const closeLookup = useCallback(() => setLookupOpen(false), []);
   useStaffDialog(lookupOpen, lookupRef, closeLookup);
+  // 휴대폰 «뒤로» = 조회 창만 닫는다
+  const lookupBack = useBackToClose(lookupOpen, closeLookup);
   // 행을 누르면 여는 상세 시트(금액 불일치·납부 기한·막힌 사유는 여기서 전부)
   const [detailId, setDetailId] = useState<string | null>(null);
   const [target, setTarget] = useState<StaffBillingListItem | null>(null);
@@ -57,6 +71,8 @@ export default function StaffBillingClient({ bills, month, currentMonth, seesAll
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeDialog = useCallback(() => setTarget(null), []);
   useStaffDialog(Boolean(target), dialogRef, closeDialog, !pending);
+  // 휴대폰 «뒤로» = 납부 확인 요청 창만 닫는다. 요청을 보내는 중(pending)에는 뒤로를 눌러도 닫히지 않는다
+  const requestBack = useBackToClose(Boolean(target), closeDialog, { blocked: pending });
   // 받은 목록에 나온 반(이름순). 2개 이상일 때만 반 고르기를 보인다
   const classOptions = [...new Map(bills.map((bill) => [bill.classId, bill.className])).entries()]
     .map(([id, label]) => ({ id, label }))
@@ -98,7 +114,8 @@ export default function StaffBillingClient({ bills, month, currentMonth, seesAll
     // 미납은 달과 상관없이 늘 보여서, 달만 바꾸면 «미납» 칩 화면이 그대로다 — 달을 바꾸면 «전체»로 옮겨 그 달 납부·환불까지 보이게(2026-11-14 검수)
     if (draftMonth !== month) setFilter("ALL");
     // replace: 조회 조건(달)은 같은 화면의 보기 설정이라 기록에 쌓지 않는다(2026-11-17 뒤로 가기 조사)
-    if (draftMonth !== month) router.replace(draftMonth === currentMonth ? "/staff/billing" : `/staff/billing?month=${draftMonth}`);
+    // 조회 창이 넣은 기록 칸을 먼저 되돌린 뒤 바꿔 끼운다(칸이 남은 채 바꾸면 «뒤로»가 옛 달 화면으로 한 번 돌아간다)
+    if (draftMonth !== month) lookupBack.leaveTo(draftMonth === currentMonth ? "/staff/billing" : `/staff/billing?month=${draftMonth}`, (to) => router.replace(to));
   }
 
   // 납부 확인 요청을 열 수 있는 청구인지(기존 카드의 버튼 조건 그대로)
@@ -134,8 +151,11 @@ export default function StaffBillingClient({ bills, month, currentMonth, seesAll
         });
         setMessage(result.message);
         if (result.ok) {
-          setTarget(null);
-          window.location.reload();
+          // 창이 넣은 기록 칸을 먼저 되돌린 뒤 새로 불러온다 — 되돌리기와 새로 불러오기가 겹치면 목록이 옛 값으로 남을 수 있다
+          requestBack.closeThen(() => {
+            setTarget(null);
+            window.location.reload();
+          });
         }
       } catch {
         setMessage("요청을 보내지 못했습니다. 네트워크 연결을 확인하고 다시 시도해 주세요.");
@@ -221,7 +241,7 @@ export default function StaffBillingClient({ bills, month, currentMonth, seesAll
           <div className="space-y-2 px-4 pb-4">
             {detail.amountMismatch && detail.invoiceAmount != null && <p className="text-xs font-medium tabular-nums text-[var(--color-academy-warning)]">청구서에는 {detail.invoiceAmount.toLocaleString("ko-KR")}원으로 되어 있습니다.</p>}
             {/* 문제가 있는 청구도 목록에서는 보여 주고, 수납 확인 버튼만 사유와 함께 막습니다. */}
-            {detail.confirmationStatus === "PENDING" ? <p className="rounded-xl bg-[var(--color-academy-warning-soft)] p-3 text-sm font-medium text-[var(--color-academy-warning)]">관리자 확인 대기 중</p> : OPEN_STATUSES.includes(detail.status) && (detail.confirmable ? <button type="button" onClick={() => openRequest(detail)} className="academy-button-primary min-h-12! w-full">납부 확인 요청</button> : <p className="rounded-xl bg-[var(--color-academy-warning-soft)] p-3 text-sm font-medium text-[var(--color-academy-warning)]">{detail.blockReason}</p>)}
+            {detail.confirmationStatus === "PENDING" ? <p className="rounded-xl bg-[var(--color-academy-warning-soft)] p-3 text-sm font-medium text-[var(--color-academy-warning)]">관리자 확인 대기 중</p> : OPEN_STATUSES.includes(detail.status) && (detail.confirmable ? <DetailRequestButton onRequest={() => openRequest(detail)} /> : <p className="rounded-xl bg-[var(--color-academy-warning-soft)] p-3 text-sm font-medium text-[var(--color-academy-warning)]">{detail.blockReason}</p>)}
           </div>
         </ListDetailPanel>
       )}

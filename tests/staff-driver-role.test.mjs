@@ -115,7 +115,8 @@ test("일반 선생님 셔틀 탭: 보기에는 연락처·건강 정보가 내�
   assert.match(page, /const \{ canOpen, teacherOnly \} = staffShuttleAccess\(staff\.roles\);\s*if \(!canOpen\) redirect\("\/staff"\);/);
   assert.match(page, /rows=\{teacherOnly && !driveMode \? stripRiderPrivate\(buildUnifiedRun\(\{ regular: classes \}\)\) : buildUnifiedRun\(\{ regular: classes \}\)\}/);
   assert.match(page, /if \(params\.view === "routes" && !teacherOnly\)/);
-  assert.match(page, /\{!teacherOnly && \(\s*<Link href="\/staff\/driver"/);
+  // 2026-11-18: «운행 시작» 버튼은 표시(?start=1)를 달고 기사님 첫 화면으로 간다(DRIVER_START_HREF)
+  assert.match(page, /\{!teacherOnly && \(\s*<Link href=\{DRIVER_START_HREF\}/);
   // 기사님 첫 화면·운행·배정·검토 화면은 여전히 관리자·기사님만
   for (const file of ["src/app/staff/driver/page.tsx", "src/app/staff/run/page.tsx", "src/app/staff/shuttle/intake/page.tsx", "src/app/staff/shuttle/assign/page.tsx"]) {
     assert.match(await readFile(file, "utf8"), /if \(shuttleScope\(staff\.roles\) === "NONE"\) redirect\("\/staff"\)/, file);

@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { usePathname } from "next/navigation";
 import AdminModal from "@/components/admin/AdminModal";
+import { useBackToClose } from "@/components/common/useBackToClose";
 
 /**
  * 화면 안 알림·확인창 — 브라우저 기본 alert()/confirm()/prompt() 대신 쓴다. (2026-11-16)
@@ -105,12 +106,18 @@ function closeNotice(id: number) {
 /** 확인창 — AdminModal(포커스 가두기·Esc)을 그대로 쓴다. 왼쪽 «그만» · 오른쪽 끝 확정 버튼 */
 function ConfirmDialog({ item }: { item: ConfirmItem }) {
     const titleId = useId();
-    const settle = (ok: boolean) => {
+    // «뒤로» = 그만(false). 버튼으로 닫을 때는 넣어 둔 기록 칸을 먼저 되돌린 «뒤»에 결과를 돌려준다(closeThen) —
+    // 부른 쪽이 «확인» 직후 다른 화면으로 가도(router.push) 그 되돌리기가 새 화면을 되돌리지 않게.
+    const { closeThen } = useBackToClose(true, () => {
         closeDialog(item.id);
-        item.resolve(ok);
+        item.resolve(false);
+    });
+    const settle = (ok: boolean) => {
+        closeThen(() => item.resolve(ok));
+        closeDialog(item.id);
     };
     return (
-        <AdminModal titleId={titleId} onClose={() => settle(false)} closeOnBackdrop={false} panelClassName="max-w-md p-5">
+        <AdminModal titleId={titleId} backToClose={false} onClose={() => settle(false)} closeOnBackdrop={false} panelClassName="max-w-md p-5">
             <p id={titleId} className="whitespace-pre-line break-keep text-base text-[var(--color-academy-ink)]">{item.message}</p>
             <div className="mt-5 flex items-center gap-3">
                 <button type="button" onClick={() => settle(false)} className="academy-button-text min-h-11 rounded-lg px-4">그만</button>
