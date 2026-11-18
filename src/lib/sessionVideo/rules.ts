@@ -135,14 +135,21 @@ export function bytesToMb(bytes: number): number {
   return Math.floor(bytes / (1024 * 1024));
 }
 
-/** 크기 초과 안내 — 휴대폰 1080p 영상은 1분에 60MB 를 넘기 쉬워 «30초»로 안내한다(검수 2026-11-14) */
+/**
+ * 영상 길이 안내(2026-11-18 원장 지시 «2분까지»). 예전엔 30초였다.
+ * 실제로 올라온 영상(11-14~18, 7건)이 초당 약 1.6MB 라 2분 ≈ 200MB — 버킷 상한(250MB)을 여기에 맞춰 올렸다.
+ * 4K·고화질로 찍으면 2분이 상한을 넘을 수 있어, 넘으면 크기 초과 안내가 «화질을 낮춰» 달라고 함께 말한다.
+ */
+export const SESSION_VIDEO_GUIDE_DURATION = "2분";
+
+/** 크기 초과 안내 */
 export function oversizeMessage(maxBytes: number): string {
-  return `영상이 너무 큽니다(최대 ${bytesToMb(maxBytes)}MB). 30초 이내로 짧게 찍어 주세요.`;
+  return `영상이 너무 큽니다(최대 ${bytesToMb(maxBytes)}MB). ${SESSION_VIDEO_GUIDE_DURATION} 이내로 찍거나 카메라 화질을 낮춰(4K 대신 1080p) 찍어 주세요.`;
 }
 
 /** 업로드 칸 안내 한 줄 */
 export function uploadHintMessage(maxBytes: number): string {
-  return `30초 이내로 짧게(최대 ${bytesToMb(maxBytes)}MB) 찍어 주세요. 수업 뒤 ${STAFF_SESSION_EDIT_DAYS}일 안에 올릴 수 있어요.`;
+  return `${SESSION_VIDEO_GUIDE_DURATION} 이내로(최대 ${bytesToMb(maxBytes)}MB) 찍어 주세요. 수업 뒤 ${STAFF_SESSION_EDIT_DAYS}일 안에 올릴 수 있어요.`;
 }
 
 export type VideoFileCheck = { ok: true; mimeType: SessionVideoMimeType } | { ok: false; message: string };
