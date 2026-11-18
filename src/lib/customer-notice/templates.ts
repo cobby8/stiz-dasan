@@ -315,7 +315,8 @@ function groupOf(rows: SignupGuideCandidate[]): SignupGuideGroup {
  */
 export function selectParentSignupGuideRecipients(
   candidates: SignupGuideCandidate[],
-  options: { alreadySentPhones: ReadonlySet<string>; resend: boolean },
+  // unsignedOnly(2026-11-18 원장 «앱 설치 안 한 학부모에게만 한 번 더»): 이미 가입한 번호(로그인 안내 대상)는 뺀다
+  options: { alreadySentPhones: ReadonlySet<string>; resend: boolean; unsignedOnly?: boolean },
 ) {
   // 계정 있는 보호자의 번호부터 모은다(규칙 2 — 이 번호는 «가입함»)
   const accountPhones = new Set<string>();
@@ -355,9 +356,11 @@ export function selectParentSignupGuideRecipients(
     });
   }
   all.sort((a, b) => (a.phone < b.phone ? -1 : a.phone > b.phone ? 1 : 0));
-  const alreadySentCount = all.filter((item) => options.alreadySentPhones.has(item.phone)).length;
+  // 규칙 5 — «가입하지 않은 분께만»이면 가입함 번호를 처음부터 뺀다(이미 받은 수 세기도 그 범위 안에서)
+  const pool = options.unsignedOnly ? all.filter((item) => !item.signedIn) : all;
+  const alreadySentCount = pool.filter((item) => options.alreadySentPhones.has(item.phone)).length;
   // 규칙 4 — «다시 보내기»를 고르지 않았으면 이미 받은 번호는 뺀다
-  const recipients = options.resend ? all : all.filter((item) => !options.alreadySentPhones.has(item.phone));
+  const recipients = options.resend ? pool : pool.filter((item) => !options.alreadySentPhones.has(item.phone));
   // 미리보기에 보일 구성(받는 번호 기준, 겹치지 않게) — 미가입 재원·휴원·성인 + 가입함
   const unsigned = recipients.filter((item) => !item.signedIn);
   const breakdown = {

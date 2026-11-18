@@ -62,6 +62,32 @@ test("받는 사람: 이미 받은 번호는 기본 제외, «다시 보내기»
   assert.deepEqual(again.recipients.map((r) => r.phone), ["01011112222", "01033334444"]);
 });
 
+test("받는 사람: «가입하지 않은 분께만»이면 가입함 번호를 빼고, 다시 보내기와 함께 쓸 수 있다(2026-11-18)", () => {
+  const candidates = [
+    row("p1", "A", "010-1111-2222"),
+    row("p2", "B", "010-3333-4444", true), // 가입함 → 빠짐
+    row("p3", "C", "010-5555-6666"),
+  ];
+  const sent = new Set(["01011112222", "01033334444"]);
+  const onlyNew = T.selectParentSignupGuideRecipients(candidates, { alreadySentPhones: sent, resend: false, unsignedOnly: true });
+  assert.deepEqual(onlyNew.recipients.map((r) => r.phone), ["01055556666"]);
+  assert.equal(onlyNew.alreadySentCount, 1); // 가입함 번호는 «이미 받음» 수에서도 빠진다
+  assert.equal(onlyNew.breakdown.signedIn, 0);
+  const again = T.selectParentSignupGuideRecipients(candidates, { alreadySentPhones: sent, resend: true, unsignedOnly: true });
+  assert.deepEqual(again.recipients.map((r) => r.phone), ["01011112222", "01055556666"]);
+  assert.ok(again.recipients.every((r) => !r.signedIn));
+  // 끄면 예전과 같다(가입함 포함)
+  const all = T.selectParentSignupGuideRecipients(candidates, { alreadySentPhones: sent, resend: true });
+  assert.equal(all.recipients.length, 3);
+});
+
+test("서버: «가입하지 않은 분께만» 값이 미리보기 지문에 들어가고 보내기 때 같은 값으로 다시 계산한다", () => {
+  assert.match(action, /resolveSignupGuide\(resend, unsignedOnly\)/);
+  assert.match(action, /resolveSignupGuide\(input\.resend === true, input\.unsignedOnly === true\)/);
+  assert.match(action, /\n\s+unsignedOnly,\n\s+recipientCount:/); // binding 에 들어감
+  assert.match(sender, /unsignedOnly: target\.unsignedOnly/);
+});
+
 test("받는 사람: 입력 순서가 달라도 결과 순서는 같다(미리보기·보내기 대조용)", () => {
   const a = [row("p1", "A", "010-9999-0000"), row("p2", "B", "010-1111-0000")];
   const r1 = T.selectParentSignupGuideRecipients(a, { alreadySentPhones: none, resend: false }).recipients.map((r) => r.phone);
@@ -147,8 +173,8 @@ test("서버: 받는 사람은 서버가 재원생·대표 학부모·탈퇴 제
   assert.match(resolve, /"NotificationDelivery"/);
   assert.match(resolve, /status NOT IN \('FAILED', 'SKIPPED'\)/);
   // 화면 입력 타입에 번호 목록이 없다
-  assert.match(action, /sendParentSignupGuide\(input: \{\s*approvalId: string;\s*resend: boolean;\s*approved: boolean;\s*\}\)/);
-  assert.match(action, /prepareParentSignupGuide\(input: \{ resend\?: boolean \}\)/);
+  assert.match(action, /sendParentSignupGuide\(input: \{\s*approvalId: string;\s*resend: boolean;\s*unsignedOnly\?: boolean;\s*approved: boolean;\s*\}\)/);
+  assert.match(action, /prepareParentSignupGuide\(input: \{ resend\?: boolean; unsignedOnly\?: boolean \}\)/);
   // 미리보기는 처음 몇 명만, 가린 형태로
   const preview = action.slice(action.indexOf("export async function prepareParentSignupGuide"), action.indexOf("export async function sendParentSignupGuide"));
   assert.match(preview, /slice\(0, PARENT_SIGNUP_PREVIEW_SAMPLE\)\.map\(describeSignupGuideRecipient\)/);
