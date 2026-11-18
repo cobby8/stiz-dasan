@@ -15,6 +15,8 @@ import type { MapLocationData } from "@/components/maps/LocationPickerModal";
 import { SHUTTLE_LOCATION_CONSENT_VERSION } from "@/lib/seasonal/contracts";
 import { requireCommencement } from "@/lib/enrollment/commencement";
 import { sanitizeLoadedPlaceName, shuttlePlaceNameError } from "@/lib/enrollment/shuttle-place-name";
+// 셔틀을 타면 아이 휴대폰 번호 필수(2026-11-18 원장 메모) — 서버와 같은 판정
+import { shuttleChildPhoneError } from "@/lib/enrollment/shuttle-child-phone";
 
 const EnrollApplicationLaterSteps = dynamic(() => import("./EnrollApplicationLaterSteps"), {
     loading: () => (
@@ -160,6 +162,8 @@ export default function EnrollApplicationForm({ availableSlots, contactPhone, tr
             if (!form.shuttleTime) { setError("셔틀 희망 시간을 입력해주세요."); return false; }
             if (!form.shuttleLocationConsent) { setError("셔틀 위치정보 수집·이용에 동의해주세요."); return false; }
             if (!form.shuttleNoticeConfirmed) { setError("셔틀 주의사항을 확인해주세요."); return false; }
+            const childPhoneError = shuttleChildPhoneError(true, form.childPhone);
+            if (childPhoneError) { setError(childPhoneError); return false; }
         }
         return true;
     };
@@ -397,7 +401,8 @@ export default function EnrollApplicationForm({ availableSlots, contactPhone, tr
                         <h2 className="flex items-center gap-2 text-lg font-bold text-[var(--color-public-ink)] dark:text-white">
                             아이 정보
                         </h2>
-                        <Field label="아이 이름" required value={form.childName} onChange={(value) => update("childName", value)} placeholder="아이 이름" />
+                        {/* 학생 이름은 실명(2026-11-18 원장 메모) — 안내만, 검사 로직은 두지 않는다 */}
+                        <Field label="아이 이름(실명)" required value={form.childName} onChange={(value) => update("childName", value)} placeholder="아이 실명" helper="출석부·보험·결제에 쓰여요. 별명 말고 실명으로 적어 주세요." />
                         <Field label="생년월일" required type="date" value={form.childBirthDate} onChange={(value) => update("childBirthDate", value)} placeholder="연도-월-일" />
                         <div>
                             <label className="mb-2 block text-sm font-medium text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
@@ -421,7 +426,7 @@ export default function EnrollApplicationForm({ availableSlots, contactPhone, tr
                             </select>
                         </div>
                         <Field label="학교명" required value={form.childSchool} onChange={(value) => update("childSchool", value)} placeholder="도농초등학교" />
-                        <Field label="학생 전화번호" required type="tel" value={form.childPhone} onChange={(value) => update("childPhone", formatPhone(value))} placeholder="학생 또는 보호자 연락처" />
+                        <Field label="학생 전화번호" required type="tel" value={form.childPhone} onChange={(value) => update("childPhone", formatPhone(value))} placeholder="학생 또는 보호자 연락처" helper="셔틀을 이용하면 아이 휴대폰 번호를 적어 주세요(기사님 연락용)." />
                     </div>
                 )}
 

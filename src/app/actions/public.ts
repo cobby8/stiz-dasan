@@ -22,6 +22,7 @@ import {
 } from "@/lib/enrollment-account-handoff";
 import { SHUTTLE_LOCATION_CONSENT_VERSION } from "@/lib/seasonal/contracts";
 import { shuttlePlaceNameError } from "@/lib/enrollment/shuttle-place-name";
+import { shuttleChildPhoneError } from "@/lib/enrollment/shuttle-child-phone";
 // 공개 화면 잔여 인원 3단계(여유/임박/마감) — 숫자는 공개 응답에 싣지 않는다
 import { seatLevelFromCounts, type SeatLevel } from "@/lib/seats/seatLevel";
 // 유입 경로 허용 값 한 곳 — 목록 밖 값은 거절하지 않고 «기타»로 저장한다(통계 오염 방지)
@@ -864,6 +865,9 @@ export async function submitEnrollApplication(data: EnrollApplicationInput) {
     if (data.shuttleNeeded && !data.shuttleNoticeConfirmed) {
         throw new Error("셔틀 주의사항을 확인해주세요.");
     }
+    // 셔틀을 타면 아이 휴대폰 번호가 휴대폰 모양이어야 한다(2026-11-18 원장 메모 — 화면과 같은 판정)
+    const shuttleChildPhone = shuttleChildPhoneError(data.shuttleNeeded, data.childPhone);
+    if (shuttleChildPhone) throw new Error(shuttleChildPhone);
     if (!data.agreedTerms || !data.agreedPrivacy) {
         throw new Error("이용약관과 개인정보 수집/이용에 모두 동의해주세요.");
     }

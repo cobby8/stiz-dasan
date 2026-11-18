@@ -357,8 +357,9 @@ export default function StudentRegisterModal({
                         {/* 학생 — PC 3열 · 모바일 2열 */}
                         <div className="grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-3">
                             <label className="col-span-2 block min-w-0 sm:col-span-1">
-                                <span className={LABEL}>학생 이름 *</span>
-                                <input value={name} onChange={(e) => setName(e.target.value)} placeholder="홍길동" className={INPUT} data-admin-modal-initial-focus />
+                                {/* 학생 이름은 실명(2026-11-18 원장 메모) — 안내만 */}
+                                <span className={LABEL}>학생 이름(실명) *</span>
+                                <input value={name} onChange={(e) => setName(e.target.value)} placeholder="실명 (예: 홍길동)" className={INPUT} data-admin-modal-initial-focus />
                             </label>
                             <label className="block min-w-0">
                                 <span className={LABEL}>생년월일 *</span>

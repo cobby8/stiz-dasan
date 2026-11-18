@@ -323,6 +323,8 @@ function loadPublicActions(prisma, mutate = null) {
     "@/lib/enrollment-account-handoff": { issueEnrollmentAccountHandoff: async () => null },
     "@/lib/seasonal/contracts": { SHUTTLE_LOCATION_CONSENT_VERSION: "test" },
     "@/lib/enrollment/shuttle-place-name": { shuttlePlaceNameError: () => null },
+    // 셔틀 → 아이 휴대폰 필수(2026-11-18) — 진짜 규칙을 쓴다(아래 테스트가 서버 검증을 실행으로 본다)
+    "@/lib/enrollment/shuttle-child-phone": load("src/lib/enrollment/shuttle-child-phone.ts"),
     "@/lib/seats/seatLevel": { seatLevelFromCounts: () => "OPEN" },
     // 기존 신청 불러오기 시도 제한(2026-11-18) — 저장 함수는 쓰지 않는다
     "@/lib/seasonal/public-rate-limit": { takePublicRateLimit: () => ({ allowed: true }), hashSensitiveRateLimitKey: (value) => value },
@@ -408,6 +410,30 @@ test("«필수» 검사와 문구는 그대로 — 빈 값은 저장 전에 거�
     await assert.rejects(loadPublicActions(enroll.prisma).actions.submitEnrollApplication(enrollInput(empty)), { message: "가입경로를 선택해주세요." });
     assert.equal(enroll.writes.length, 0);
   }
+});
+
+test("셔틀을 타면 아이 휴대폰 번호가 휴대폰 모양이어야 한다 — 서버가 저장 전에 거절(2026-11-18 원장 메모)", async () => {
+  const { SHUTTLE_CHILD_PHONE_MESSAGE } = load("src/lib/enrollment/shuttle-child-phone.ts");
+  const shuttle = (childPhone) => ({
+    ...enrollInput("SNS"), childPhone, shuttleNeeded: true, shuttlePickup: "정문", shuttleTime: "16:30", shuttleDropoff: "후문",
+    shuttlePickupLocationData: { address: "남양주시 다산동 1", latitude: 37.6, longitude: 127.1, source: "MAP_PIN" },
+    shuttleDropoffLocationData: { address: "남양주시 다산동 2", latitude: 37.61, longitude: 127.11, source: "MAP_PIN" },
+    shuttleLocationConsent: true, shuttleLocationConsentVersion: "test", shuttleNoticeConfirmed: true,
+  });
+  // 집 전화·잘린 번호·공백 → 거절, 저장 0건
+  for (const bad of ["031-123-4567", "010-123", "   "]) {
+    const db = fakeDb({ existing: false });
+    await assert.rejects(loadPublicActions(db.prisma).actions.submitEnrollApplication(shuttle(bad)), { message: bad.trim() ? SHUTTLE_CHILD_PHONE_MESSAGE : "학생 전화번호를 입력해주세요." }, bad);
+    assert.equal(db.writes.length, 0, bad);
+  }
+  // 휴대폰 번호면 통과(저장까지 간다)
+  const ok = fakeDb({ existing: false });
+  await loadPublicActions(ok.prisma).actions.submitEnrollApplication(shuttle("010-9876-5432"));
+  assert.equal(ok.writes.filter((write) => write.table === "EnrollmentApplication").length, 1);
+  // 셔틀을 안 타면 지금처럼 어떤 번호든(보호자 번호·집 전화) 막지 않는다
+  const noShuttle = fakeDb({ existing: false });
+  await loadPublicActions(noShuttle.prisma).actions.submitEnrollApplication({ ...enrollInput("SNS"), childPhone: "031-123-4567" });
+  assert.equal(noShuttle.writes.filter((write) => write.table === "EnrollmentApplication").length, 1);
 });
 
 test("공백만 보낸 값은 «필수» 검사를 지나가지만 공백 그대로 저장되지 않는다 — 기존 기본값(체험 WEBSITE·수강 빈 값)", async () => {
