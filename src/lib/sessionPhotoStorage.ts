@@ -11,7 +11,28 @@ export {
 } from "@/lib/sessionPhotoEntries";
 export type { StoredSessionPhoto, SessionPhotoEntry } from "@/lib/sessionPhotoEntries";
 
-export async function ensurePrivateSessionPhotoBucket() {
+// 보관함(버킷) 확인은 서버가 켜져 있는 동안 한 번만(2026-11-18 속도 개선).
+// 왜: 사진 한 장 올릴 때마다 저장소에 «만들기 시도 + 설정 맞추기» 두 번을 물어, 깨어 있는 서버에서도 올리기가 1초를 넘었다.
+// 실패한 확인은 기억하지 않는다(다음 올리기가 다시 확인). 올리기가 실패하면 부르는 쪽이 forget 을 불러 다음에 다시 확인하게 한다.
+let bucketEnsured: Promise<void> | null = null;
+
+export function ensurePrivateSessionPhotoBucket(): Promise<void> {
+  if (bucketEnsured) return bucketEnsured;
+  const mine: Promise<void> = configurePrivateSessionPhotoBucket().catch((error) => {
+    // 내 확인이 실패했을 때만 지운다 — 그 사이 새로 시작된 다른 확인의 기억은 건드리지 않는다
+    if (bucketEnsured === mine) bucketEnsured = null;
+    throw error;
+  });
+  bucketEnsured = mine;
+  return mine;
+}
+
+/** 보관함 확인 기억을 지운다 — 올리기가 실패했을 때(보관함이 없어졌을 수 있다) 다음 올리기가 다시 확인하도록 */
+export function forgetPrivateSessionPhotoBucketCheck() {
+  bucketEnsured = null;
+}
+
+async function configurePrivateSessionPhotoBucket() {
   const supabase = createAdminClient();
   const { error } = await supabase.storage.createBucket(PRIVATE_SESSION_PHOTO_BUCKET, {
     public: false,

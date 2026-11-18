@@ -9,6 +9,7 @@ import { ensureSocialPostDraftTable } from "@/lib/socialDrafts";
 import { canManageSessionMedia, photoWindowMessage, sessionKstDateSql, TODAY_KST_SQL } from "@/lib/feed/rules";
 import {
   ensurePrivateSessionPhotoBucket,
+  forgetPrivateSessionPhotoBucketCheck,
   parseSessionPhotoEntries,
   PRIVATE_SESSION_PHOTO_BUCKET,
   type StoredSessionPhoto,
@@ -93,25 +94,33 @@ export async function POST(req: Request, context: { params: Promise<{ sessionId:
     if (file.size > MAX_BYTES) return NextResponse.json({ error: "압축된 사진은 1MB 이하여야 합니다." }, { status: 400 });
 
     // API 직접 호출도 GPS/기기 EXIF를 남기지 못하도록 서버에서 다시 인코딩합니다.
-    const encoded = await sharp(Buffer.from(await file.arrayBuffer()), { limitInputPixels: 40_000_000 })
-      .rotate()
-      .resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true })
-      .jpeg({ quality: 82, mozjpeg: true })
-      .toBuffer();
+    // 압축과 보관함 확인은 서로 기다릴 이유가 없어 함께 보낸다(2026-11-18 속도 개선). 보관함 확인은 서버당 한 번만 실제로 묻는다.
+    // (서버 첫 올리기에서 보관함 확인이 실패하면, 압축 결과가 1MB 를 넘는 사진이어도 400 대신 500 이 나간다 — 어차피 올릴 수 없는 경우)
+    const [encoded] = await Promise.all([
+      sharp(Buffer.from(await file.arrayBuffer()), { limitInputPixels: 40_000_000 })
+        .rotate()
+        .resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true })
+        .jpeg({ quality: 82, mozjpeg: true })
+        .toBuffer(),
+      ensurePrivateSessionPhotoBucket(),
+    ]);
     if (encoded.byteLength > MAX_BYTES) return NextResponse.json({ error: "사진 압축 결과가 1MB를 초과했습니다." }, { status: 400 });
     const ext = "jpg";
     const photoId = randomUUID();
     const storagePath = `staff-sessions/${session.classId}/${sessionId}/${photoId}.${ext}`;
     const supabase = createAdminClient();
     const bucket = PRIVATE_SESSION_PHOTO_BUCKET;
-    await ensurePrivateSessionPhotoBucket();
     // 파일 생성보다 먼저 cleanup 예약을 영구 기록합니다.
     await reserveSessionPhotoCleanup({ photoId, storageBucket: bucket, storagePath });
     const { error: uploadError } = await supabase.storage.from(bucket).upload(
       storagePath, encoded,
       { contentType: "image/jpeg", cacheControl: "31536000", upsert: false },
     );
-    if (uploadError) throw new Error("사진 저장소 업로드에 실패했습니다.");
+    if (uploadError) {
+      // 보관함이 없어졌거나 설정이 바뀌었을 수 있다 — 다음 올리기가 보관함을 다시 확인하게 한다
+      forgetPrivateSessionPhotoBucketCheck();
+      throw new Error("사진 저장소 업로드에 실패했습니다.");
+    }
     const url = `/api/staff/sessions/${sessionId}/photos/${photoId}`;
     const storedPhoto: StoredSessionPhoto = {
       id: photoId,

@@ -87,16 +87,24 @@ export function nativeBrowserClient(request:NextRequest,flowId:string) {
  * 앱 간편로그인으로 방금 확인한 간편로그인 세션을 «이 브라우저의 웹 로그인»으로 옮겨 적어,
  * 가입 화면(/signup/parent?social=1)이 카카오·구글 로그인을 다시 시키지 않고 휴대폰 인증부터 이어 가게 한다.
  * 웹 간편가입(/auth/callback)이 끝난 직후와 같은 상태다 — 학원 계정과 연결되기 전이라 이 세션만으로는 아무 화면도 열리지 않는다.
- * 이 브라우저에 이미 웹 로그인이 있으면 덮어쓰지 않는다(null) — 다른 계정으로 로그인해 둔 것을 바꿔치기하지 않게.
+ * 이 브라우저에 이미 웹 로그인이 있어도 방금 확인한 간편로그인으로 «바꿔 적는다»(2026-11-18 원장 지시).
+ * 예전에는 덮어쓰지 않고 로그인 안 된 가입 화면으로 보냈는데, 그러면 «카카오로 계속»을 한 번 더 눌러야 했고
+ * 앱 로그인 요청도 취소돼 가입 뒤 앱으로 돌아오지 못했다(가입하다 말고 다시 시도한 학부모·브라우저에 로그인해 둔 사람).
+ * 바꿔 적는 사람은 방금 «이 브라우저에서» 간편로그인을 통과한 본인이다(바인딩 쿠키로 같은 브라우저임을 확인한 뒤에만 온다).
+ * 옛 로그인 쿠키 조각(sb-…-auth-token·.0·.1…) 가운데 새로 적지 않는 것은 지운다 — 남으면 옛 로그인이 다시 읽힌다.
  */
 export function webSignupSessionClient(request:NextRequest) {
-  if(request.cookies.getAll().some(cookie=>/^sb-.+-auth-token(\.\d+)?$/.test(cookie.name)))return null;
+  const stale=request.cookies.getAll().map(cookie=>cookie.name).filter(name=>/^sb-.+-auth-token(\.\d+)?$/.test(name));
   const pending:{name:string;value:string;options:Record<string,unknown>}[]=[];
   const client=createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!,process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,{
     // 기본 쿠키 이름·경로(웹 로그인과 같은 자리). 요청 쿠키는 읽지 않는다 — 새 세션만 적는다.
     cookies:{getAll:()=>[],setAll:items=>{for(const item of items)pending.push(item);}},
   });
-  return {client,apply(response:NextResponse){for(const item of pending)response.cookies.set(item.name,item.value,{...item.options,secure:true,sameSite:"lax",path:"/"});return response;}};
+  return {client,apply(response:NextResponse){
+    for(const name of stale)if(!pending.some(item=>item.name===name))response.cookies.set(name,"",{maxAge:0,path:"/",secure:true,sameSite:"lax"});
+    for(const item of pending)response.cookies.set(item.name,item.value,{...item.options,secure:true,sameSite:"lax",path:"/"});
+    return response;
+  }};
 }
 export function clearNativeBrowserCookies(request:NextRequest,response:NextResponse,flowId:string) {
   const prefix=`stiz-native-oauth-${flowId}`;
