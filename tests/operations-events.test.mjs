@@ -109,21 +109,32 @@ test("미지원 복귀·셔틀·연락처·청구 이벤트는 명시적으로 H
   }
 });
 
-// 2026-11-14 랠리즈 은퇴: 랠리즈 칸도 은퇴 분기를 거친다(은퇴 시 SKIPPED → 원장은 처음부터 SYNCED, 스위치 "0" 이면 PENDING).
-test("원장은 홈페이지 완료, 시트·랠리즈는 은퇴 분기를 거치며 청구·알림을 보류한다", () => {
+// 2026-11-18 결정표(rallyz-switch·sheet-switch «완전히 지운다»): 되돌리기 스위치가 없어져 시트·랠리즈 칸은 늘 SKIPPED,
+// 원장은 처음부터 SYNCED 다(보류 건만 HELD).
+test("원장은 홈페이지 완료, 시트·랠리즈는 처음부터 건너뜀이고 청구·알림을 보류한다", () => {
   const source = fs.readFileSync(new URL("../src/lib/operations-events/index.ts", import.meta.url), "utf8");
   assert.match(source, /'HELD','HELD'/);
   assert.match(source, /target === "WEBSITE"/);
-  // 2026-10-06 시트 은퇴: 홈페이지 외 칸은 initialSyncAttempt 가 정한다(시트=은퇴 시 SKIPPED, 랠리즈=PENDING).
+  // 홈페이지 외 칸은 initialSyncAttempt 가 정한다(시트·랠리즈 = SKIPPED)
   assert.match(source, /websiteDone \? "SUCCEEDED" : initial\.status/);
-  assert.match(source, /initialSyncAttempt\(target, sheetRetired, rallyzRetired\)/);
-  assert.match(source, /const rallyzRetired = isRallyzSyncRetired\(process\.env\);/);
-  // 둘 다 은퇴일 때만 «어댑터 없음» 보류를 끄고, 남은 확인이 없으면 처음부터 SYNCED
-  assert.match(source, /\{ externalLedgersRetired: sheetRetired && rallyzRetired \}/);
+  assert.match(source, /initialSyncAttempt\(target\)/);
+  assert.doesNotMatch(source, /isSheetSyncRetired|isRallyzSyncRetired|process\.env/);
+  // 사이트 내부 경로는 «어댑터 없음» 보류를 끄고, 남은 확인이 없으면 처음부터 SYNCED
+  assert.match(source, /\{ externalLedgersRetired: true \}/);
   assert.match(source, /holdReason \? "HELD" : openStatus,/);
   assert.match(source, /holdReason \? "HELD" : openStatus === "SYNCED" \? "SYNCED" : "APPROVED"/);
   assert.match(source, /ON CONFLICT \("idempotencyKey"\) DO NOTHING/);
   assert.match(source, /DELETE FROM "OperationsRequest" WHERE id=\$1/);
+});
+
+// 운영 동작 유지(2026-11-18 결정): 바깥 주소 /api/operations-events 는 옵션 없이 보류 판정을 불러
+// CLASS_ADD·RESUME 를 «어댑터 없음»으로 보류하는 지금 동작을 그대로 둔다. 칸은 initialSyncAttempt(target) 로 만든다.
+test("외부 주소 /api/operations-events 는 보류 판정을 옵션 없이 부르고 스위치를 읽지 않는다", () => {
+  const route = fs.readFileSync(new URL("../src/app/api/operations-events/route.ts", import.meta.url), "utf8");
+  assert.match(route, /operationsEventPayloadHoldReason\(event\)/);
+  assert.doesNotMatch(route, /externalLedgersRetired/);
+  assert.match(route, /initialSyncAttempt\(target\)/);
+  assert.doesNotMatch(route, /isSheetSyncRetired|isRallyzSyncRetired/);
 });
 
 test("안정적인 식별값이나 정확한 적용일이 없으면 원장에 넣지 않는다", () => {

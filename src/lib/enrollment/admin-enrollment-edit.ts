@@ -164,7 +164,7 @@ export const DELETED_ENROLLMENT_CLOSE_REASON = "취소: 잘못 등록한 수강�
 
 /**
  * «삭제로 닫힌 명령이 아님» SQL 조건(alias = OperationsCommand 별칭).
- * 2026-11-14 랠리즈 은퇴 뒤로는 랠리즈 칸 SKIPPED 도 «끝남»으로 인정한다(rallyzRetirement).
+ * 2026-11-14 랠리즈 은퇴 뒤로는 랠리즈 칸 SKIPPED 도 «끝남»으로 인정한다(externalLedgerRetirement).
  * 그래도 이 조건은 남긴다 — 삭제로 닫은 명령을 사유로 골라 «연결된 최신 원장»·«확인 필요»에서 빼는 일은 그대로 필요하다.
  */
 export function notClosedByDeletedEnrollmentSql(alias: string): string {

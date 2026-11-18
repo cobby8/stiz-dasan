@@ -70,13 +70,6 @@ interface ScheduleAdminModalsProps {
     pending: boolean;
     customPending: boolean;
     deletingCustomId: string | null;
-    showSheetModal: boolean;
-    sheetUrlInput: string;
-    sheetSaving: boolean;
-    sheetSaved: boolean;
-    sheetError: string | null;
-    sheetSyncing: boolean;
-    sheetSyncMessage: string | null;
     isAddingCustom: boolean;
     onCloseSheetSlot: () => void;
     onUpdateSlot: (slotKey: string, patch: Partial<SlotState>) => void;
@@ -87,11 +80,6 @@ interface ScheduleAdminModalsProps {
     onCancelDeleteCustom: () => void;
     onConfirmDeleteCustom: (id: string) => void;
     onSaveCustomEdit: (id: string) => void;
-    onCloseSheetUrl: () => void;
-    onSheetUrlChange: (value: string) => void;
-    onSaveSheetUrl: () => void;
-    onSyncSheet: () => void;
-    onClearSheetUrl: () => void;
     onCloseAddCustom: () => void;
     onNewCustomFormChange: (form: CustomSlotForm) => void;
     onSaveNewCustom: () => void;
@@ -133,13 +121,6 @@ export default function ScheduleAdminModals({
     pending,
     customPending,
     deletingCustomId,
-    showSheetModal,
-    sheetUrlInput,
-    sheetSaving,
-    sheetSaved,
-    sheetError,
-    sheetSyncing,
-    sheetSyncMessage,
     isAddingCustom,
     onCloseSheetSlot,
     onUpdateSlot,
@@ -150,11 +131,6 @@ export default function ScheduleAdminModals({
     onCancelDeleteCustom,
     onConfirmDeleteCustom,
     onSaveCustomEdit,
-    onCloseSheetUrl,
-    onSheetUrlChange,
-    onSaveSheetUrl,
-    onSyncSheet,
-    onClearSheetUrl,
     onCloseAddCustom,
     onNewCustomFormChange,
     onSaveNewCustom,
@@ -373,75 +349,6 @@ export default function ScheduleAdminModals({
                                 >
                                     {customPending ? "저장 중..." : "저장"}
                                 </button>
-                            </div>
-                        </div>
-                </AdminModal>
-            )}
-
-            {showSheetModal && (
-                <AdminModal onClose={onCloseSheetUrl} titleId="sheet-url-title" panelClassName="max-w-xl">
-                    <span id="sheet-url-title" className="sr-only">구글 시트 연동 관리</span>
-                        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-academy-line)]">
-                            <span className="academy-section-title">구글시트 연동관리</span>
-                            <button type="button" aria-label="닫기" onClick={onCloseSheetUrl} className="academy-button-text academy-button-sm shrink-0">닫기</button>
-                        </div>
-                        <div className="p-6 space-y-4">
-                            <div className="bg-[var(--color-academy-success-soft)] border border-[var(--color-academy-line)] rounded-lg p-3 text-xs text-[var(--color-academy-success)]">
-                                <p className="font-semibold mb-1">URL 확인 방법</p>
-                                <p>구글시트 열기 → 주소창 URL 복사</p>
-                                <p className="mt-1 font-mono bg-[var(--color-academy-success-soft)] px-2 py-1 rounded">spreadsheets/d/.../edit?gid=... 형태 그대로</p>
-                                <p className="mt-1 font-semibold">시트가 &quot;링크가 있는 모든 사용자 - 뷰어&quot; 공개 설정이어야 합니다.</p>
-                            </div>
-                            <div className="bg-[var(--color-academy-soft)] border border-[var(--color-academy-line)] rounded-lg p-3 text-xs text-[var(--color-academy-ink)]">
-                                <p className="font-semibold mb-1">운영 방식</p>
-                                <p>저장된 시간표를 표시합니다. 구글시트 변경 내용은 “지금 동기화”를 눌러 가져오세요.</p>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1.5">구글시트 URL</label>
-                                <input
-                                    type="url"
-                                    value={sheetUrlInput}
-                                    onChange={(event) => onSheetUrlChange(event.target.value)}
-                                    placeholder="https://docs.google.com/spreadsheets/d/.../edit?gid=..."
-                                    className="academy-input font-mono"
-                                />
-                            </div>
-                            {sheetError && (
-                                <p role="alert" className="text-sm text-[var(--color-academy-danger)] font-medium">
-                                    {sheetError}
-                                </p>
-                            )}
-                            {sheetSyncMessage && (
-                                <p className="text-sm text-[var(--color-academy-success)] font-medium">
-                                    {sheetSyncMessage}
-                                </p>
-                            )}
-                            <div className="flex flex-wrap gap-2 pt-1">
-                                {/* 이 창의 주 버튼은 «저장» 하나 — «지금 동기화»는 보조 버튼 */}
-                                <button
-                                    type="button"
-                                    onClick={onSaveSheetUrl}
-                                    disabled={sheetSaving || sheetSyncing}
-                                    className="academy-button-primary"
-                                >
-                                    {sheetSaving ? "저장 중..." : sheetSaved ? "저장됨" : "저장"}
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={onSyncSheet}
-                                    disabled={sheetSaving || sheetSyncing || !sheetUrlInput.trim()}
-                                    className="academy-button-secondary"
-                                >
-                                    {sheetSyncing ? "동기화 중..." : "지금 동기화"}
-                                </button>
-                                <button type="button" onClick={onCloseSheetUrl} className="academy-button-text">
-                                    취소
-                                </button>
-                                {sheetUrlInput && (
-                                    <button type="button" onClick={onClearSheetUrl} className="academy-button-danger academy-button-sm ml-auto">
-                                        URL 초기화
-                                    </button>
-                                )}
                             </div>
                         </div>
                 </AdminModal>

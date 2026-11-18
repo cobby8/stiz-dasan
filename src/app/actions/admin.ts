@@ -330,7 +330,8 @@ const ALLOWED_SETTINGS_COLUMNS = [
     'introductionTitle', 'introductionText', 'shuttleInfoText',
     'contactPhone', 'address', 'operatingHours', 'privacyPolicy', 'termsOfService', 'pageDesignJSON',
     'footerDescription', 'footerCopyright',
-    'googleCalendarIcsUrl', 'googleSheetsScheduleUrl', 'classDays',
+    // 2026-11-18: 구글시트 시간표 주소(googleSheetsScheduleUrl)는 저장하지 않는다(시트 연동 삭제 · 컬럼은 DB 에 남김).
+    'googleCalendarIcsUrl', 'classDays',
     'siteBodyFont', 'siteHeadingFont',
     'trialTitle', 'trialContent', 'trialFormUrl',
     'enrollTitle', 'enrollContent', 'enrollFormUrl',
@@ -644,7 +645,6 @@ export async function updateAcademySettings(data: {
     introductionTitle?: string;
     introductionText?: string;
     googleCalendarIcsUrl?: string;
-    googleSheetsScheduleUrl?: string;
     classDays?: string;
     siteBodyFont?: string;
     siteHeadingFont?: string;
@@ -678,7 +678,6 @@ export async function updateAcademySettings(data: {
     await requireAdmin();
     // 빈 URL 필드는 기존 DB 값을 덮어쓰지 않음
     const payload = { ...data };
-    if (payload.googleSheetsScheduleUrl === "") delete payload.googleSheetsScheduleUrl;
     if (payload.googleCalendarIcsUrl === "") delete payload.googleCalendarIcsUrl;
 
     // 학원 좌표 검증: 틀린 좌표를 저장하면 셔틀 T맵 경로가 통째로 엉뚱한 곳으로 간다.
@@ -3416,7 +3415,7 @@ async function insertGuardians(
 // ── (삭제됨 2026-10-06) 시간표 슬롯 → Class 동기화 ─────────────────────────────
 // syncScheduleToClasses / getClassSyncPreview 는 화면·API 어디서도 부르지 않아 지웠다(Phase 2 시트 종료).
 // 시간표 원본은 사이트 DB(ScheduleSlot)이고 반(Class)은 관리자 화면에서 직접 관리한다.
-// 옛 일회성 실행본은 scripts/sync-classes.mjs 에 그대로 남아 있다(독립 스크립트).
+// 옛 일회성 실행본 scripts/sync-classes.mjs 도 2026-11-18 지웠다.
 
 // ══════════════════════════════════════════════════════════════════════════════
 // 📌 Phase 1: 수납 고도화 — 청구 템플릿 CRUD + 자동 청구서 + 미납 알림

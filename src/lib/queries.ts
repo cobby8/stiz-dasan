@@ -25,7 +25,6 @@ import { todayKst, kstDow, addMonthsYm } from "@/lib/datetime/kst";
 import { classCoachNameSql, feedParticipantSql, feedVisibleSessionSql } from "@/lib/feed/rules";
 // 보강 잔여석 계산은 화면·조회·저장 검증이 같은 식을 쓰도록 공용 모듈로 분리해 둔다.
 import { activeMakeupSql, computeRemainingSeats } from "@/lib/makeup/capacity";
-import type { SheetClassSlot } from "@/lib/googleSheetsSchedule";
 import { absenceReportOf, type AbsenceReportState } from "@/lib/regular/attendance-absence-reason";
 
 // 값을 불리언으로 안전 변환 (TEXT 컬럼에서 'false' 문자열이 올 수 있음)
@@ -2331,20 +2330,6 @@ export async function getStudentShuttleLocations(studentId: string): Promise<Stu
         return [];
     }
 }
-
-/** Google Sheets 동기화 캐시 조회 (SheetSlotCache 테이블 싱글턴 row) */
-export const getSheetSlotCache = cache(async (): Promise<SheetClassSlot[] | null> => {
-    try {
-        const rows = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT "slotsJson" FROM "SheetSlotCache" WHERE id = 'singleton' LIMIT 1`
-        );
-        if (!rows[0]) return null;
-        const json = rows[0].slotsJson ?? rows[0].slotsjson ?? "[]";
-        return JSON.parse(json) as SheetClassSlot[];
-    } catch {
-        return null;
-    }
-});
 
 // ── 알림 조회 ─────────────────────────────────────────────────────────────────
 // userId 기준으로 알림 목록 조회 (최신순, 최대 50개)

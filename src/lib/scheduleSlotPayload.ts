@@ -2,7 +2,9 @@ import type { SheetClassSlot } from "@/lib/googleSheetsSchedule";
 import { DAY_KEY_TO_LABEL } from "@/lib/googleSheetsSchedule";
 import { prisma } from "@/lib/prisma";
 
-export type SchedulePayloadSource = "SCHEDULE_SLOT" | "SHEET_CACHE";
+// SCHEDULE_SLOT = 사이트 DB 시간표, EMPTY = DB 시간표를 못 읽어 수업 칸 없이(직접 추가한 수업·칸 설정만) 보여 준다.
+// (옛 SHEET_CACHE — 구글시트 사본으로 넘어가던 대체 경로 — 는 2026-11-18 삭제)
+export type SchedulePayloadSource = "SCHEDULE_SLOT" | "EMPTY";
 
 type CoachPayload = {
     id: string;

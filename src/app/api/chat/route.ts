@@ -460,8 +460,8 @@ const getCachedFaq = unstable_cache(
   { revalidate: 300 } // 5분 캐시
 );
 
-// 반별 학년 범위 — SheetSlotCache(구글시트 기반 슬롯)와 CustomClassSlot의
-// 학년 범위를 통합하여 학부모 학년 질문에 정확한 반 추천을 하기 위함
+// 반별 학년 범위 — DB 시간표(ScheduleSlot)를 먼저 쓰고, 못 읽으면 CustomClassSlot 의 학년 범위만 쓴다
+// (구글시트 사본 SheetSlotCache 대체 경로는 2026-11-18 삭제). 학부모 학년 질문에 정확한 반 추천을 하기 위함
 const getCachedSlotGrades = unstable_cache(
   async () => {
     try {
@@ -514,31 +514,13 @@ const getCachedSlotGrades = unstable_cache(
     }
 
     try {
-      // 1) Google Sheets 기반 슬롯: SheetSlotCache JSON에서 학년 범위 추출
-      const sheetRows = await prisma.$queryRawUnsafe<any[]>(
-        `SELECT "slotsJson" FROM "SheetSlotCache" WHERE id = 'singleton' LIMIT 1`
-      );
+      // DB 시간표를 못 읽었으면 수업 칸 학년 범위는 비워 둔다(구글시트 사본은 더 쓰지 않는다)
       const sheetSlots: Array<{
         dayLabel: string; startTime: string; endTime: string;
         gradeRange: string; enrolled: number; capacity?: number; label?: string;
       }> = [];
-      if (sheetRows[0]) {
-        const json = sheetRows[0].slotsJson ?? sheetRows[0].slotsjson ?? "[]";
-        const parsed = JSON.parse(json) as any[];
-        for (const s of parsed) {
-          if (s.gradeRange) {
-            sheetSlots.push({
-              dayLabel: s.dayLabel ?? "",
-              startTime: s.startTime ?? "",
-              endTime: s.endTime ?? "",
-              gradeRange: s.gradeRange,
-              enrolled: Number(s.enrolled ?? 0),
-            });
-          }
-        }
-      }
 
-      // 2) CustomClassSlot: DB에 직접 저장된 학년 범위
+      // CustomClassSlot: DB에 직접 저장된 학년 범위
       const customRows = await prisma.$queryRawUnsafe<any[]>(
         `SELECT ccs."dayKey", ccs."startTime", ccs."endTime", ccs.label,
                 ccs."gradeRange", ccs.enrolled, ccs.capacity

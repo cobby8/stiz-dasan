@@ -2,33 +2,22 @@
 // 순수 함수를 실제로 불러 실행해, 스위치 해석·칸별 완료 판정·배지·생성 상태가 표대로인지 못박는다.
 // 핵심 원칙: 바깥 장부(SHEET·RALLYZ)만 SKIPPED 를 «끝남»으로 인정한다. WEBSITE 는 SUCCEEDED + verifiedAt 이 있어야만 끝.
 // (2026-11-14 랠리즈 은퇴: RALLYZ 도 SKIPPED 를 끝으로 본다 — 그전에는 SHEET 만이었다.)
+// (2026-11-18 결정표 sheet-switch «완전히 지운다»: 되돌리기 스위치를 지워 스위치 경계 검사는 뺐다. 판정 표는 그대로.)
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  isSheetSyncRetired, isSheetTargetDone, initialSyncAttempt, SHEET_RETIRED_REFERENCE,
-} from '../src/lib/operations-sync/sheetRetirement.ts';
+  isExternalTargetDone, initialSyncAttempt, SHEET_RETIRED_REFERENCE, RALLYZ_RETIRED_REFERENCE,
+} from '../src/lib/operations-sync/externalLedgerRetirement.ts';
 import { hasVerifiedSyncTargets } from '../src/lib/enrollment/finalize-change-sync.ts';
 import { syncCheckBadge } from '../src/lib/enrollment/changeRequestRules.ts';
 
 const AT = '2026-10-06T01:00:00Z';
 const row = (target, status, verifiedAt = null) => ({ target, status, verifiedAt });
 
-test('스위치 경계: undefined·"" ·"1"·"false" = 은퇴, "0"·" 0\\n" = 옛 방식', () => {
-  const cases = [
-    [undefined, true], ['', true], ['1', true], ['false', true],
-    ['0', false], [' 0\n', false],
-  ];
-  for (const [value, expected] of cases) {
-    assert.equal(isSheetSyncRetired({ STIZ_SHEET_SYNC_RETIRED: value }), expected, JSON.stringify(value));
-  }
-  // 키 자체가 없는 환경(대시보드에 아예 안 넣음)도 은퇴
-  assert.equal(isSheetSyncRetired({}), true);
-});
-
-test('isSheetTargetDone: SUCCEEDED·SKIPPED 만 끝남', () => {
-  assert.equal(isSheetTargetDone('SKIPPED'), true);
-  assert.equal(isSheetTargetDone('SUCCEEDED'), true);
-  for (const s of ['FAILED', 'PENDING', 'skipped', null, undefined, '']) assert.equal(isSheetTargetDone(s), false, String(s));
+test('isExternalTargetDone: SUCCEEDED·SKIPPED 만 끝남', () => {
+  assert.equal(isExternalTargetDone('SKIPPED'), true);
+  assert.equal(isExternalTargetDone('SUCCEEDED'), true);
+  for (const s of ['FAILED', 'PENDING', 'skipped', null, undefined, '']) assert.equal(isExternalTargetDone(s), false, String(s));
 });
 
 test('완료 판정 표: SHEET SKIPPED + RALLYZ PENDING → 미완료 / 배지 "랠리즈 확인 필요"', () => {
@@ -83,15 +72,8 @@ test('완료 판정: 칸 개수·중복이 어긋나면 미완료(SHEET SKIPPED 
   assert.equal(hasVerifiedSyncTargets([row('SHEET', 'SKIPPED'), row('SHEET', 'SKIPPED'), row('WEBSITE', 'SUCCEEDED', AT)]), false);
 });
 
-test('생성 상태: 스위치 "0" 이면 SHEET 도 PENDING, 은퇴면 SHEET 만 SKIPPED+표식', () => {
-  const legacy = isSheetSyncRetired({ STIZ_SHEET_SYNC_RETIRED: '0' });
-  assert.equal(legacy, false);
-  for (const target of ['SHEET', 'RALLYZ', 'WEBSITE']) {
-    assert.deepEqual(initialSyncAttempt(target, legacy), { status: 'PENDING', externalReference: null }, target);
-  }
-  const retired = isSheetSyncRetired({});
-  assert.deepEqual(initialSyncAttempt('SHEET', retired), { status: 'SKIPPED', externalReference: SHEET_RETIRED_REFERENCE });
-  for (const target of ['RALLYZ', 'WEBSITE']) {
-    assert.deepEqual(initialSyncAttempt(target, retired), { status: 'PENDING', externalReference: null }, target);
-  }
+test('생성 상태: SHEET·RALLYZ 는 언제나 SKIPPED+표식, WEBSITE 는 PENDING', () => {
+  assert.deepEqual(initialSyncAttempt('SHEET'), { status: 'SKIPPED', externalReference: SHEET_RETIRED_REFERENCE });
+  assert.deepEqual(initialSyncAttempt('RALLYZ'), { status: 'SKIPPED', externalReference: RALLYZ_RETIRED_REFERENCE });
+  assert.deepEqual(initialSyncAttempt('WEBSITE'), { status: 'PENDING', externalReference: null });
 });

@@ -20,12 +20,12 @@ test('due PAUSE/WITHDRAW are applied to website with guarded update; others stay
   assert.match(due, /if \(changed !== 1\) throw/);
   // 신청은 관리자 즉시 변경과 같은 의미(APPLIED + appliedAt), 역시 조건부
   assert.match(due, /SET status = 'APPLIED', "appliedAt" = now\(\)[\s\S]*WHERE id = \$1 AND status = 'APPROVED' AND "appliedAt" IS NULL/);
-  // 운영 원장: 홈페이지만 완료, 랠리즈는 확인 필요. 시트는 은퇴(2026-10-06~) 시 SKIPPED, 스위치 "0" 이면 PENDING.
+  // 운영 원장: 홈페이지만 완료. 시트·랠리즈는 은퇴해 처음부터 SKIPPED(되돌리기 스위치는 2026-11-18 삭제).
   assert.match(due, /websiteDone \? "SUCCEEDED" : initial\.status/);
-  assert.match(due, /initialSyncAttempt\("SHEET", isSheetSyncRetired\(process\.env\)\)/);
-  // 2026-11-14 랠리즈 은퇴: 랠리즈 칸도 은퇴 분기(은퇴 시 SKIPPED)를 거치고, 시트·랠리즈가 둘 다 건너뜀이면
-  // 요청·명령을 처음부터 SYNCED 로 만든다. 스위치 "0"(옛 방식)이면 예전처럼 요청 APPROVED · 명령 PENDING.
-  assert.match(due, /initialSyncAttempt\("RALLYZ", false, isRallyzSyncRetired\(process\.env\)\)/);
+  assert.match(due, /initialSyncAttempt\("SHEET"\)/);
+  // 시트·랠리즈가 둘 다 건너뜀이라 요청·명령을 처음부터 SYNCED 로 만든다.
+  assert.match(due, /initialSyncAttempt\("RALLYZ"\)/);
+  assert.doesNotMatch(due, /isSheetSyncRetired|isRallyzSyncRetired/);
   assert.match(due, /websiteDoneLedgerStatus\(\[sheetInitial\.status, rallyzInitial\.status\]\)/);
   assert.match(due, /ledgerStatus === "SYNCED" \? "SYNCED" : "APPROVED"/);
   assert.match(due, /'HIGH',\$11,NULL,/);

@@ -2,8 +2,7 @@ import type { Prisma } from "@prisma/client";
 
 import { prisma } from "../prisma";
 import { SYNC_TARGETS } from "../operationsSync";
-import { initialSyncAttempt, isSheetSyncRetired } from "../operations-sync/sheetRetirement";
-import { isRallyzSyncRetired, websiteDoneLedgerStatus } from "../operations-sync/rallyzRetirement";
+import { initialSyncAttempt, websiteDoneLedgerStatus } from "../operations-sync/externalLedgerRetirement";
 import { assertOperationsEventPayloadMatch, prepareWebsiteOperationsEvent, type WebsiteOperationsEvent } from "./policy";
 
 export type { WebsiteOperationsEvent } from "./policy";
@@ -17,27 +16,21 @@ export type EnqueuedOperationsEvent = {
 
 /**
  * 사이트에서 이미 확정된 학생·수강 변경을 3중 동기화 원장에 적재합니다.
- * 홈페이지는 완료로 시작합니다. 시트·랠리즈는 은퇴(기본) 상태면 건너뜀(SKIPPED)이라 원장이 처음부터 끝난 상태(SYNCED)이고,
- * 스위치를 "0" 으로 되돌린 칸만 대기(PENDING)로 시작합니다.
+ * 홈페이지는 완료로 시작합니다. 시트·랠리즈는 은퇴해 처음부터 건너뜀(SKIPPED)이라 원장이 끝난 상태(SYNCED)로 시작합니다.
  */
 export async function enqueueWebsiteOperationsEventInTransaction(
   tx: Prisma.TransactionClient,
   input: WebsiteOperationsEvent,
 ): Promise<EnqueuedOperationsEvent> {
-  // 시트·랠리즈 은퇴(기본) 상태면 그 칸은 처음부터 SKIPPED — 넣을 바깥 장부가 없다.
-  const sheetRetired = isSheetSyncRetired(process.env);
-  const rallyzRetired = isRallyzSyncRetired(process.env);
   const { holdReason, idempotencyKey, payloadFingerprint, sourceText, targetMonth } = prepareWebsiteOperationsEvent(
     input,
-    // 둘 다 은퇴면 «시트·랠리즈 어댑터 없음» 보류(CLASS_ADD·RESUME 등)를 만들지 않는다.
-    { externalLedgersRetired: sheetRetired && rallyzRetired },
+    // 시트·랠리즈는 은퇴했으므로 «시트·랠리즈 어댑터 없음» 보류(CLASS_ADD·RESUME 등)를 만들지 않는다(사이트 내부 경로만).
+    { externalLedgersRetired: true },
   );
   const requestId = crypto.randomUUID();
   const commandId = crypto.randomUUID();
-  const initialBy = (target: string) => initialSyncAttempt(target, sheetRetired, rallyzRetired);
-  // 홈페이지는 이미 반영됐다. 시트·랠리즈 칸까지 처음부터 건너뜀이면 남은 확인이 없어 원장을 끝난 상태(SYNCED)로 만든다.
-  // (2026-11-14 랠리즈 은퇴 — 옛 방식에서는 PENDING 으로 남아 사람이 랠리즈 확인을 눌러야 했다.)
-  const openStatus = websiteDoneLedgerStatus([initialBy("SHEET").status, initialBy("RALLYZ").status]);
+  // 홈페이지는 이미 반영됐고 시트·랠리즈 칸은 처음부터 건너뜀이라 남은 확인이 없다 → 원장을 끝난 상태(SYNCED)로 만든다.
+  const openStatus = websiteDoneLedgerStatus([initialSyncAttempt("SHEET").status, initialSyncAttempt("RALLYZ").status]);
 
   await tx.$executeRawUnsafe(
     `INSERT INTO "OperationsRequest"
@@ -96,7 +89,7 @@ export async function enqueueWebsiteOperationsEventInTransaction(
 
   for (const target of SYNC_TARGETS) {
     const websiteDone = target === "WEBSITE";
-    const initial = initialBy(target);
+    const initial = initialSyncAttempt(target);
     await tx.$executeRawUnsafe(
       `INSERT INTO "OperationsSyncAttempt"
         (id,"commandId",target,status,attempts,"verifiedAt","externalReference")

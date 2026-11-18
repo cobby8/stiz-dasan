@@ -1,42 +1,22 @@
-// 구글 시트 원장 은퇴(Phase 2 시트 종료, 2026-10-06 원장 승인) 안전장치.
-// 1) 스위치: 기본 = 은퇴, STIZ_SHEET_SYNC_RETIRED 가 "0" 일 때만 옛 3칸 방식
+// 구글 시트 원장 은퇴(Phase 2 시트 종료, 2026-10-06 원장 승인 → 2026-11-18 결정표 sheet-switch «완전히 지운다») 안전장치.
+// 1) 되돌리기 스위치(STIZ_SHEET_SYNC_RETIRED)·시트 쓰기 코드·시트 반영/직접 수정 버튼은 지웠다
 // 2) 완료 판정 두 벌(TS hasVerifiedSyncTargets · SQL VERIFIED_SYNC_TARGET_SQL)이 같은 결과인지 «실행해서» 대조
 // 3) SHEET 시도를 만드는 곳은 전부 initialSyncAttempt 를 거친다(새 생성처가 생겨도 이 테스트가 잡는다)
-// 4) 화면: 은퇴 시 시트 버튼·문구 숨김, 랠리즈 잠금 해제
+// 4) 남은 «보류 해제»(시트 SKIPPED + 복귀 어댑터 보류)가 끝까지 간다
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import {
-  isSheetSyncRetired, isSheetTargetDone, initialSyncAttempt, SHEET_RETIRED_REFERENCE,
-} from '../src/lib/operations-sync/sheetRetirement.ts';
+import { isExternalTargetDone, initialSyncAttempt, SHEET_RETIRED_REFERENCE } from '../src/lib/operations-sync/externalLedgerRetirement.ts';
 import { hasVerifiedSyncTargets, finalizeEnrollmentChangeSync, VERIFIED_SYNC_TARGET_SQL } from '../src/lib/enrollment/finalize-change-sync.ts';
 import { syncCheckBadge } from '../src/lib/enrollment/changeRequestRules.ts';
 import { registrationReadiness } from '../src/lib/enrollment/registration-readiness.ts';
 
 const read = (path) => readFileSync(path, 'utf8');
 
-test('스위치: 기본값은 은퇴, 정확히 "0" 일 때만 옛 방식', () => {
-  for (const value of [undefined, '', '1', 'true', 'false', 'no', '00']) {
-    assert.equal(isSheetSyncRetired({ STIZ_SHEET_SYNC_RETIRED: value }), true, String(value));
-  }
-  assert.equal(isSheetSyncRetired({}), true);
-  // 대시보드에 붙여 넣다 섞인 공백·줄바꿈은 무시한다
-  for (const value of ['0', ' 0', '0\n', '\t0 ']) assert.equal(isSheetSyncRetired({ STIZ_SHEET_SYNC_RETIRED: value }), false, JSON.stringify(value));
-});
-
-test('생성 상태: 은퇴면 SHEET 만 SKIPPED+표식, 스위치 "0" 이면 옛 동작(전부 PENDING)', () => {
-  assert.deepEqual(initialSyncAttempt('SHEET', true), { status: 'SKIPPED', externalReference: SHEET_RETIRED_REFERENCE });
+test('생성 상태: SHEET 는 언제나 SKIPPED+표식', () => {
+  assert.deepEqual(initialSyncAttempt('SHEET'), { status: 'SKIPPED', externalReference: SHEET_RETIRED_REFERENCE });
   assert.equal(SHEET_RETIRED_REFERENCE, 'SHEET_RETIRED');
-  for (const target of ['RALLYZ', 'WEBSITE']) assert.deepEqual(initialSyncAttempt(target, true), { status: 'PENDING', externalReference: null });
-  const legacy = isSheetSyncRetired({ STIZ_SHEET_SYNC_RETIRED: '0' });
-  for (const target of ['SHEET', 'RALLYZ', 'WEBSITE']) assert.deepEqual(initialSyncAttempt(target, legacy), { status: 'PENDING', externalReference: null });
-});
-
-test('isSheetTargetDone: SUCCEEDED·SKIPPED 만 끝난 것', () => {
-  assert.equal(isSheetTargetDone('SUCCEEDED'), true);
-  assert.equal(isSheetTargetDone('SKIPPED'), true);
-  for (const value of ['PENDING', 'FAILED', null, undefined, '']) assert.equal(isSheetTargetDone(value), false);
 });
 
 /**
@@ -78,7 +58,6 @@ test('완료 판정 TS·SQL 일치: SUCCEEDED/SKIPPED/PENDING/FAILED × 재조�
     if (ts) trueCount += 1;
   }
   assert.equal(compared, 512);
-  // 2026-11-14 랠리즈 은퇴: 랠리즈 칸도 SKIPPED 를 끝난 것으로 본다.
   // 끝난 SHEET(SUCCEEDED+재조회 1 · SKIPPED 2) × 끝난 RALLYZ(SUCCEEDED+재조회 1 · SKIPPED 2) × 끝난 WEBSITE 1 = 9
   assert.equal(trueCount, 9);
 });
@@ -86,15 +65,13 @@ test('완료 판정 TS·SQL 일치: SUCCEEDED/SKIPPED/PENDING/FAILED × 재조�
 test('완료 판정 핵심 사례(의도 고정)', () => {
   const at = '2026-10-06T01:00:00Z';
   const row = (target, status, verifiedAt = at) => ({ target, status, verifiedAt });
-  // 시트 은퇴: SHEET SKIPPED(재조회 없음) + 랠리즈·홈페이지 확인 = 완료
-  assert.equal(hasVerifiedSyncTargets([row('SHEET', 'SKIPPED', null), row('RALLYZ', 'SUCCEEDED'), row('WEBSITE', 'SUCCEEDED')]), true);
-  // 옛 방식 그대로: 3칸 SUCCEEDED = 완료
-  assert.equal(hasVerifiedSyncTargets([row('SHEET', 'SUCCEEDED'), row('RALLYZ', 'SUCCEEDED'), row('WEBSITE', 'SUCCEEDED')]), true);
-  // 2026-11-14 랠리즈 은퇴: 랠리즈 칸도 건너뜀(SKIPPED)이면 끝난 것 → 시트·랠리즈 둘 다 건너뜀 + 홈페이지 확인 = 완료
+  // 새 원장: 시트·랠리즈 건너뜀 + 홈페이지 확인 = 완료
   assert.equal(hasVerifiedSyncTargets([row('SHEET', 'SKIPPED', null), row('RALLYZ', 'SKIPPED', null), row('WEBSITE', 'SUCCEEDED')]), true);
+  // 옛 원장: 3칸 SUCCEEDED = 완료
+  assert.equal(hasVerifiedSyncTargets([row('SHEET', 'SUCCEEDED'), row('RALLYZ', 'SUCCEEDED'), row('WEBSITE', 'SUCCEEDED')]), true);
   // 홈페이지(사이트 반영)는 실제 일이라 SKIPPED 를 끝으로 보지 않는다(약해지지 않음)
   assert.equal(hasVerifiedSyncTargets([row('SHEET', 'SKIPPED', null), row('RALLYZ', 'SUCCEEDED'), row('WEBSITE', 'SKIPPED')]), false);
-  // 기존 대기 건(시트 PENDING/FAILED)은 코드가 자동으로 완료시키지 않는다
+  // 옛 대기 건(시트 PENDING/FAILED)은 코드가 자동으로 완료시키지 않는다
   for (const status of ['PENDING', 'FAILED']) {
     assert.equal(hasVerifiedSyncTargets([row('SHEET', status, null), row('RALLYZ', 'SUCCEEDED'), row('WEBSITE', 'SUCCEEDED')]), false);
   }
@@ -109,17 +86,16 @@ test('finalize SQL 은 공용 조건 문자열을 그대로 쓴다(두 벌이 �
   assert.doesNotMatch(query, /a\.status='SUCCEEDED' AND a\."verifiedAt" IS NOT NULL\s+AND a\."processingToken"/);
 });
 
-test('배지: SKIPPED 시트는 확인 완료 → "랠리즈 확인 필요" / "반영 완료"', () => {
-  assert.deepEqual(syncCheckBadge('SKIPPED', 'PENDING'), { label: '사이트 반영됨 · 랠리즈 확인 필요', needsCheck: true });
-  assert.deepEqual(syncCheckBadge('SKIPPED', 'FAILED'), { label: '사이트 반영됨 · 랠리즈 확인 필요', needsCheck: true });
+test('배지: SKIPPED 시트는 확인 완료, 배지의 시트 완료 규칙 = 공용 isExternalTargetDone', () => {
+  assert.deepEqual(syncCheckBadge('SKIPPED', 'SKIPPED'), { label: '반영 완료', needsCheck: false });
   assert.deepEqual(syncCheckBadge('SKIPPED', 'SUCCEEDED'), { label: '반영 완료', needsCheck: false });
   // 옛 상태는 그대로
   assert.deepEqual(syncCheckBadge('PENDING', 'PENDING'), { label: '사이트 반영됨 · 시트·랠리즈 확인 필요', needsCheck: true });
   assert.deepEqual(syncCheckBadge('FAILED', 'SUCCEEDED'), { label: '사이트 반영됨 · 시트 확인 필요', needsCheck: true });
-  // 배지의 시트 완료 규칙 = 공용 isSheetTargetDone (배지 파일은 import 없이 적혀 있어 여기서 대조한다)
+  // 배지 파일은 import 없이 적혀 있어 여기서 대조한다
   for (const sheet of ['SUCCEEDED', 'SKIPPED', 'PENDING', 'FAILED']) {
     const badge = syncCheckBadge(sheet, 'SUCCEEDED');
-    assert.equal(!badge.needsCheck, isSheetTargetDone(sheet), sheet);
+    assert.equal(!badge.needsCheck, isExternalTargetDone(sheet), sheet);
   }
 });
 
@@ -132,12 +108,12 @@ function sourceFiles(dir = 'src') {
   });
 }
 
-test('SHEET 시도를 만드는 곳은 전부 initialSyncAttempt(은퇴 분기)를 거친다', () => {
+test('SHEET 시도를 만드는 곳은 전부 initialSyncAttempt 를 거친다', () => {
   const creators = sourceFiles().filter((path) => {
     const text = read(path);
     return /INSERT INTO "OperationsSyncAttempt"/.test(text) || /syncAttempts:\s*\{\s*create:/.test(text);
   }).map((path) => path.replaceAll('\\', '/')).sort();
-  // 알려진 생성처 5개 파일(6곳). 새로 생기면 여기에 추가하고 분기를 넣어야 한다.
+  // 알려진 생성처 5개 파일(6곳). 새로 생기면 여기에 추가하고 initialSyncAttempt 를 거치게 해야 한다.
   assert.deepEqual(creators, [
     'src/app/actions/kakao-parent-intake-admin.ts',
     'src/app/actions/parent-operations-request.ts',
@@ -148,8 +124,8 @@ test('SHEET 시도를 만드는 곳은 전부 initialSyncAttempt(은퇴 분기)�
   for (const path of creators) {
     const text = read(path);
     assert.match(text, /initialSyncAttempt\(/, path);
-    assert.match(text, /isSheetSyncRetired\(process\.env\)/, path);
-    // 하드코딩된 'PENDING' 시도 INSERT 가 남아 있으면 은퇴 분기를 우회한다
+    assert.doesNotMatch(text, /isSheetSyncRetired|STIZ_SHEET_SYNC_RETIRED/, path);
+    // 하드코딩된 'PENDING' 시도 INSERT 가 남아 있으면 은퇴 규칙을 우회한다
     assert.doesNotMatch(text, /INSERT INTO "OperationsSyncAttempt" \(id,"commandId",target,status\) VALUES \(\$1,\$2,\$3,'PENDING'\)/, path);
     assert.doesNotMatch(text, /map\(target => \(\{ target, status: "PENDING" \}\)\)/, path);
   }
@@ -159,91 +135,54 @@ test('SHEET 시도를 만드는 곳은 전부 initialSyncAttempt(은퇴 분기)�
   assert.match(due, /sheet: sheetInitial\.status/);
 });
 
-// 2026-11-14 랠리즈 은퇴: 바깥 장부(SHEET·RALLYZ)는 둘 다 SKIPPED 를 끝난 것으로 본다. 조건은 공용 externalSyncPendingSql 하나
-// (세부 대조는 tests/rallyz-retirement.test.mjs).
-test('순서 강제·확인 필요 판정: 바깥 장부(SHEET·RALLYZ)만 SKIPPED 를 끝난 것으로 본다', () => {
+test('확인 필요 판정·재집계: 바깥 장부(SHEET·RALLYZ)만 SKIPPED 를 끝난 것으로 본다', () => {
   const ops = read('src/app/actions/operations-sync.ts');
-  // 홈페이지 반영 액션(applyOperationsWebsite)은 2026-11-18 옛 코드 정리 C 로 지웠다(부르는 곳 없음)
-  assert.doesNotMatch(ops, /export async function applyOperationsWebsite\b/);
-  // 랠리즈 확인 전 선행 조건
-  const rallyz = ops.slice(ops.indexOf('export async function recordOperationsExternalCheck'), ops.indexOf('export async function applyOperationsSheet'));
-  assert.match(rallyz, /!isSheetTargetDone\(sheet\[0\]\.status\)/);
-  // 시트 반영: SKIPPED 칸은 시트를 건드리지 않는다
-  const sheetApply = ops.slice(ops.indexOf('export async function applyOperationsSheet'), ops.indexOf('export async function recordOperationsSheetManualCheck'));
-  assert.ok(sheetApply.indexOf('isSheetTargetDone(row.attemptStatus)') < sheetApply.indexOf('applySheetEnrollmentStatus({'));
-  // 수동 확인: SKIPPED 칸은 손대지 않는다. 보류가 아니면 할 일 없음
-  // (2-D 검수 수정: 복귀 어댑터 보류만 풀어 준다 — 아래 '서버: SKIPPED 칸은…' 테스트)
-  const manual = ops.slice(ops.indexOf('export async function recordOperationsSheetManualCheck'), ops.indexOf('async function refreshOperationsStatuses'));
-  assert.match(manual, /if \(sheet\.status === "SKIPPED"\) \{\s*if \(command\.status !== "HELD"\) return \{ changed: false \};/);
-  assert.ok(manual.indexOf('sheet.status === "SKIPPED"') < manual.indexOf('UPDATE "OperationsSyncAttempt"'));
   // SYNCED 판정은 공용 판정 함수
   assert.match(ops.slice(ops.indexOf('async function refreshOperationsStatuses')), /hasVerifiedSyncTargets\(attempts\)/);
-  // 확인 필요 목록·건수
   const admin = read('src/lib/enrollment/admin-change-request.ts');
   assert.match(admin, /AND \$\{externalSyncPendingSql\("a"\)\}\)`;/);
-  // 대기열 요약(읽기 전용 워커)은 2026-11-18 옛 코드 정리 B 로 파일째 지웠다.
   assert.equal(existsSync('src/lib/operationsSyncWorker.ts'), false);
 });
 
-test('시트 쓰기 코드는 되돌림용으로 남아 있다', () => {
-  assert.match(read('src/lib/googleSheetsOperations.ts'), /export async function applySheetEnrollmentStatus/);
-  assert.match(read('src/app/actions/operations-sync.ts'), /import \{ applySheetEnrollmentStatus \} from "@\/lib\/googleSheetsOperations"/);
+test('시트 쓰기·읽기 코드와 시트 반영 버튼은 지워졌다', () => {
+  for (const path of [
+    'src/lib/googleSheetsOperations.ts', 'src/lib/googleSheetsOperations.test.ts', 'src/lib/syncSheetSlots.ts',
+    'src/app/api/admin/sync-schedule', 'src/app/api/admin/finance/sheet-reconcile', 'scripts/sync-classes.mjs',
+    'src/lib/operations-sync/sheetRetirement.ts',
+  ]) assert.equal(existsSync(path), false, path);
+  const ops = read('src/app/actions/operations-sync.ts');
+  assert.doesNotMatch(ops, /applySheetEnrollmentStatus|applyOperationsSheet|googleSheetsOperations/);
+  const client = read('src/app/admin/enrollment-changes/EnrollmentChangesClient.tsx');
+  assert.doesNotMatch(client, /시트에 반영|시트 직접 수정 완료|applySheet|confirmSheetManually|sheetRetired/);
+  // 클라이언트 번들에서 process.env 를 읽지 않는다
+  assert.doesNotMatch(client, /process\.env/);
 });
 
-test('등록 준비: 은퇴면 시트 항목을 만들지 않고, 옛 방식이면 그대로', () => {
+test('등록 준비: 시트 항목을 만들지 않고, 과거 시트 기록은 «건너뜀»으로 보인다', () => {
   const base = { applicationId: 'app-1', studentId: 'student-1', assignedClassIds: ['class-1'], activeClassIds: ['class-1'], shuttleNeeded: false, commands: [], invoiceCandidates: 0 };
-  assert.ok(!registrationReadiness({ ...base, sheetRetired: true }).checks.some(check => check.key === 'SHEET'));
-  assert.ok(registrationReadiness({ ...base, sheetRetired: true }).checks.some(check => check.key === 'RALLYZ'));
-  assert.ok(registrationReadiness({ ...base, sheetRetired: false }).checks.some(check => check.key === 'SHEET'));
-  assert.ok(registrationReadiness(base).checks.some(check => check.key === 'SHEET'));
+  assert.ok(!registrationReadiness(base).checks.some(check => check.key === 'SHEET'));
   const command = { id: 'c', studentId: 'student-1', kind: 'CLASS_ADD', status: 'PENDING', createdAt: new Date('2026-10-06T00:00:00Z'),
     afterJson: {}, syncAttempts: [{ target: 'SHEET', status: 'SKIPPED', verifiedAt: null }] };
-  const [sheet] = registrationReadiness({ ...base, commands: [command], sheetRetired: true }).evidence[0].targets;
+  const [sheet] = registrationReadiness({ ...base, commands: [command] }).evidence[0].targets;
   assert.equal(sheet.attempts[0].issue, '시트 운영 종료로 건너뜀');
-  assert.match(read('src/app/admin/registration-readiness/page.tsx'), /sheetRetired: isSheetSyncRetired\(process\.env\)/);
+  assert.doesNotMatch(read('src/app/admin/registration-readiness/page.tsx'), /sheetRetired|isSheetSyncRetired/);
 });
 
-test('화면: 서버가 은퇴 여부를 넘기고, 은퇴 시 시트 문구·버튼을 숨기고 랠리즈 잠금을 푼다', () => {
-  assert.match(read('src/app/admin/enrollment-changes/page.tsx'), /sheetRetired=\{isSheetSyncRetired\(process\.env\)\}/);
-  const client = read('src/app/admin/enrollment-changes/EnrollmentChangesClient.tsx');
-  // 안내 문구(은퇴 시) — 원장 승인 문구 그대로
-  assert.ok(client.includes("적용일이 된 휴원·퇴원은 사이트에 자동 반영됩니다. 랠리즈에 직접 반영한 뒤 '랠리즈 반영 확인'을 눌러 주세요."));
-  assert.match(client, /const externalLabel = sheetRetired \? "랠리즈" : "시트·랠리즈";/);
-  assert.match(client, /사이트에만 반영되고 \{externalLabel\} 확인이 남은 건이/);
-  // 클라이언트 번들에서 process.env 를 읽지 않는다(서버가 넘긴 값만 쓴다)
-  assert.doesNotMatch(client, /process\.env/);
-  // SKIPPED 칸: 「시트에 반영」·「시트 직접 수정 완료」 숨김
-  assert.match(client, /const sheetSkipped = row\.sheetStatus === "SKIPPED";/);
-  assert.match(client, /\{row\.kind !== "RESUME" && !sheetSkipped && \(/);
-  assert.match(client, /\{!sheetSkipped && \(row\.sheetStatus !== "SUCCEEDED" \|\| row\.syncCommandStatus === "HELD"\) && \(/);
-  // 랠리즈 버튼 잠금 = 시트가 끝났는지(SUCCEEDED 또는 SKIPPED)
-  assert.match(client, /disabled=\{pending \|\| !sheetDone \|\| row\.rallyzStatus === "SUCCEEDED" \|\| row\.syncCommandStatus === "HELD"\}/);
-  assert.match(client, /const sheetDone = isSheetTargetDone\(row\.sheetStatus\);/);
-  // 기존 PENDING/FAILED 시트 칸은 「시트 직접 수정 완료」로 끝낼 수 있다(버튼·확인창 유지)
-  assert.match(client, />\s*시트 직접 수정 완료\s*</);
-  assert.match(client, /confirmEnrollmentChangeSheetManually\(row\.syncCommandId!\)/);
-});
-
-// ── 2-D 검수 필수 수정(2026-10-06): 은퇴 모드의 관리자 직접 복귀(RESUME) 건이 끝까지 가야 한다 ──
-// 흐름: 직접 복귀 → 정책 HELD(복귀 어댑터) → 칸 WEBSITE SUCCEEDED · SHEET SKIPPED · RALLYZ PENDING
-//      → 「보류 해제 후 랠리즈 확인 진행」(SHEET 는 그대로, 보류만 해제) → 「랠리즈 반영 확인」 → SYNCED
+// ── 2-D 검수 필수 수정(2026-10-06) → 2026-11-18: 관리자 직접 복귀(RESUME) 건이 끝까지 가야 한다 ──
+// 흐름: 직접 복귀 → 정책 HELD(복귀 어댑터) → 칸 WEBSITE SUCCEEDED · SHEET SKIPPED · RALLYZ SKIPPED
+//      → 「보류 해제」(SHEET 는 그대로, 보류만 해제) → 재집계에서 바로 SYNCED
 const { sheetHoldReleaseDecision, sheetHoldDisplayReason, RESUME_ADAPTER_HOLD_REASON } = await import('../src/lib/enrollment/sheetManualCheckRules.ts');
 
-test('복귀 건 끝까지: SKIPPED+HELD → 보류 해제 → 랠리즈 확인 → 완료 판정', () => {
+test('복귀 건 끝까지: SKIPPED+HELD → 보류 해제 → 완료 판정', () => {
   const at = '2026-10-06T01:00:00Z';
   const held = { kind: 'RESUME', studentId: 'student-1', enrollmentChangeRequestId: 'change-1',
     holdReason: RESUME_ADAPTER_HOLD_REASON, sheetStatus: 'SKIPPED', sheetError: null };
   // ① 보류 해제 판정: 복귀 어댑터 사유는 SKIPPED 여도 풀린다
   assert.deepEqual(sheetHoldReleaseDecision(held), { ok: true });
-  // ② 해제 전: 랠리즈 미확인이라 완료 아님
-  const before = [{ target: 'SHEET', status: 'SKIPPED', verifiedAt: null }, { target: 'RALLYZ', status: 'PENDING', verifiedAt: null }, { target: 'WEBSITE', status: 'SUCCEEDED', verifiedAt: at }];
-  assert.equal(hasVerifiedSyncTargets(before), false);
-  assert.equal(syncCheckBadge('SKIPPED', 'PENDING').needsCheck, true);
-  // ③ 랠리즈 확인(시트 선행 조건은 SKIPPED 로 통과) 후: SHEET 는 여전히 SKIPPED 인 채로 완료
-  assert.equal(isSheetTargetDone('SKIPPED'), true);
-  const after = [before[0], { target: 'RALLYZ', status: 'SUCCEEDED', verifiedAt: at }, before[2]];
-  assert.equal(hasVerifiedSyncTargets(after), true);
-  assert.deepEqual(syncCheckBadge('SKIPPED', 'SUCCEEDED'), { label: '반영 완료', needsCheck: false });
+  // ② 칸은 이미 끝난 상태 — 보류만 풀리면 재집계(hasVerifiedSyncTargets)가 완료로 본다
+  const rows = [{ target: 'SHEET', status: 'SKIPPED', verifiedAt: null }, { target: 'RALLYZ', status: 'SKIPPED', verifiedAt: null }, { target: 'WEBSITE', status: 'SUCCEEDED', verifiedAt: at }];
+  assert.equal(hasVerifiedSyncTargets(rows), true);
+  assert.deepEqual(syncCheckBadge('SKIPPED', 'SKIPPED'), { label: '반영 완료', needsCheck: false });
   // 화면 문구는 영문 저장 문구 대신 한국어
   assert.equal(sheetHoldDisplayReason('RESUME', RESUME_ADAPTER_HOLD_REASON), '복귀는 시트 자동 반영을 지원하지 않습니다');
 });
@@ -266,34 +205,29 @@ test('정책 보류는 시트가 SKIPPED 여도 풀리지 않는다', () => {
 test('서버: SKIPPED 칸은 건드리지 않고, 판정 통과 시 보류만 풀고 감사기록을 남긴다', () => {
   const ops = read('src/app/actions/operations-sync.ts');
   const manual = ops.slice(ops.indexOf('export async function recordOperationsSheetManualCheck'), ops.indexOf('async function refreshOperationsStatuses'));
-  const skipped = manual.slice(manual.indexOf('if (sheet.status === "SKIPPED") {'), manual.indexOf('if (sheet.status === "SUCCEEDED" && command.status !== "HELD")'));
-  assert.ok(skipped.length > 0, 'SKIPPED 분기');
-  assert.match(skipped, /if \(command\.status !== "HELD"\) return \{ changed: false \};/);
+  assert.match(manual, /if \(command\.status !== "HELD"\) return \{ changed: false \};/);
+  assert.match(manual, /if \(sheet\.status !== "SKIPPED"\) throw/);
   // 판정 → 해제 → 감사 순서
-  const decideAt = skipped.indexOf('sheetHoldReleaseDecision(');
-  const releaseAt = skipped.indexOf(`UPDATE "OperationsCommand" SET status='PENDING', "holdReason"=NULL`);
-  const auditAt = skipped.indexOf("'COMMAND_HOLD_RELEASED'");
+  const decideAt = manual.indexOf('sheetHoldReleaseDecision(');
+  const releaseAt = manual.indexOf(`UPDATE "OperationsCommand" SET status='PENDING', "holdReason"=NULL`);
+  const auditAt = manual.indexOf("'COMMAND_HOLD_RELEASED'");
   assert.ok(decideAt > 0 && decideAt < releaseAt && releaseAt < auditAt);
-  assert.match(skipped, /if \(!decision\.ok\) throw new Error\(decision\.reason\)/);
-  assert.match(skipped, /WHERE id=\$1 AND status='HELD'/);
-  assert.match(skipped, /note: "시트 은퇴 상태에서 보류 해제"/);
-  assert.match(skipped, /admin\.appUserId/);
-  assert.match(skipped, /previousHoldReason: command\.holdReason/);
-  // SHEET 칸은 이 분기에서 바꾸지 않는다
-  assert.doesNotMatch(skipped, /UPDATE "OperationsSyncAttempt"/);
+  assert.match(manual, /if \(!decision\.ok\) throw new Error\(decision\.reason\)/);
+  assert.match(manual, /WHERE id=\$1 AND status='HELD'/);
+  assert.match(manual, /note: "시트 은퇴 상태에서 보류 해제"/);
+  assert.match(manual, /admin\.appUserId/);
+  assert.match(manual, /previousHoldReason: command\.holdReason/);
+  // SHEET 칸은 바꾸지 않는다
+  assert.doesNotMatch(manual, /UPDATE "OperationsSyncAttempt"/);
   // 함수 끝에서 재집계
   assert.match(manual, /await refreshOperationsStatuses\(commandId\)/);
-  // 랠리즈 확인: SKIPPED 시트 통과, HELD 는 여전히 막음
-  const rallyz = ops.slice(ops.indexOf('export async function recordOperationsExternalCheck'), ops.indexOf('export async function applyOperationsSheet'));
-  assert.match(rallyz, /!isSheetTargetDone\(sheet\[0\]\.status\)/);
-  assert.match(rallyz, /commandStatus === "HELD"/);
 });
 
-test('화면: 은퇴+복귀 어댑터 보류에만 「보류 해제 후 랠리즈 확인 진행」, 문구는 한국어', () => {
+test('화면: 복귀 어댑터 보류에만 «보류 해제», 문구는 한국어', () => {
   const client = read('src/app/admin/enrollment-changes/EnrollmentChangesClient.tsx');
   assert.match(client, /const retiredResumeHold = sheetSkipped && row\.syncCommandStatus === "HELD"\s*&& row\.kind === "RESUME" && row\.syncHoldReason\?\.trim\(\) === RESUME_ADAPTER_HOLD_REASON;/);
-  assert.match(client, /\{retiredResumeHold && \(\s*<button[\s\S]*?onClick=\{\(\) => releaseRetiredResumeHold\(row\)\}[\s\S]*?보류 해제 후 랠리즈 확인 진행/);
-  const fn = client.slice(client.indexOf('function releaseRetiredResumeHold'), client.indexOf('function confirmRallyz'));
+  assert.match(client, /\{retiredResumeHold && \(\s*<button[\s\S]*?onClick=\{\(\) => releaseRetiredResumeHold\(row\)\}[\s\S]*?보류 해제/);
+  const fn = client.slice(client.indexOf('function releaseRetiredResumeHold'), client.indexOf('function runSyncAction'));
   assert.match(fn, /askConfirm\(/);
   assert.match(fn, /releaseEnrollmentChangeHoldSheetRetired\(row\.syncCommandId!\)/);
   // SKIPPED+HELD 문구도 sheetHoldDisplayReason 경유(영문 원문 노출 금지)

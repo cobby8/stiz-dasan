@@ -2,7 +2,7 @@
  * 이관 수업 판정(2026-11-16 원장 결정 — 랠리즈 2026 수업 피드 이관, «학부모 알림 금지»).
  *
  * 랠리즈에서 옮긴 글·사진·영상이 들어간 수업은 Session."importSource" = 'RALLYZ_FEED' 로 표시된다
- * (scripts/rallyz-feed-import 가 표시, 마이그레이션 20261116500000_rallyz_feed_import).
+ * (옛 scripts/rallyz-feed-import 가 표시 — 스크립트는 2026-11-18 삭제, 마이그레이션 20261116500000_rallyz_feed_import).
  * 이런 수업은 몇 달 전 수업이라, 관리자·선생님이 «발행»을 눌러도 «수업 리포트가 발행되었습니다» 알림을
  * 보내지 않는다. 발행 경로가 둘(관리자 publishSessionReport · 선생님 publishStaffSessionReport)이라
  * 둘 다 이 파일 하나를 쓴다 — 한쪽만 막으면 다른 쪽에서 알림이 샌다.

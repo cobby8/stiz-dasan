@@ -6,8 +6,7 @@ import { CHANGE_KIND_LABEL, CLASS_ADD_KIND, REQUEST_KIND_LABEL, type ChangeKind 
 import { computeClassChangeProration, describeProration, type ProrationResult } from "@/lib/enrollment/proration";
 import { getMonthlyClassDates, loadAnnualPlanEvents } from "@/lib/enrollment/monthlyClassDates";
 import { DEFAULT_HOLD_REASON, planDueEnrollmentChange } from "@/lib/enrollment/due-change-plan";
-import { initialSyncAttempt, isSheetSyncRetired } from "@/lib/operations-sync/sheetRetirement";
-import { externalSyncPendingSql, isRallyzSyncRetired, websiteDoneLedgerStatus } from "@/lib/operations-sync/rallyzRetirement";
+import { externalSyncPendingSql, initialSyncAttempt, websiteDoneLedgerStatus } from "@/lib/operations-sync/externalLedgerRetirement";
 import { notClosedByDeletedEnrollmentSql } from "@/lib/enrollment/admin-enrollment-edit";
 import { notifyParentOfEnrollmentChange } from "@/lib/enrollment/change-decision-notify";
 import {
@@ -632,8 +631,8 @@ export async function applyDueEnrollmentChangesWithSummary(): Promise<DueEnrollm
           afterJson: { enrollmentChangeRequestId: row.id, fromClassId: row.fromClassId,
             toClassId: row.toClassId, parentConfirmed, effectiveDate: row.effectiveDate },
           billingStatus: "HELD", notificationStatus: "HELD",
-          // 시트·랠리즈 은퇴(기본) 상태면 그 칸은 처음부터 SKIPPED(+표식). 홈페이지는 PENDING(사이트 반영이 남았다).
-          syncAttempts: { create: ["SHEET", "RALLYZ", "WEBSITE"].map(target => ({ target, ...initialSyncAttempt(target, isSheetSyncRetired(process.env), isRallyzSyncRetired(process.env)) })) },
+          // 시트·랠리즈는 은퇴해 그 칸은 처음부터 SKIPPED(+표식). 홈페이지는 PENDING(사이트 반영이 남았다).
+          syncAttempts: { create: ["SHEET", "RALLYZ", "WEBSITE"].map(target => ({ target, ...initialSyncAttempt(target) })) },
         }},
         auditLogs: { create: { action: "ENROLLMENT_CHANGE_SYNC_HELD", actorType: "ADMIN", actorUserId: actor,
           detailsJson: { enrollmentChangeRequestId: row.id, reason } } },
@@ -692,11 +691,9 @@ type RawTx = {
 /**
  * 자동 적용한 휴원·퇴원을 운영 원장에 남긴다.
  * 홈페이지 = 이미 완료(SUCCEEDED),
- * 시트 = 은퇴 상태(기본)면 건너뜀(SKIPPED·SHEET_RETIRED), 스위치를 "0" 으로 되돌리면 확인 필요(PENDING).
- * 랠리즈 = 은퇴 상태(기본, 2026-11-14)면 건너뜀(SKIPPED·RALLYZ_RETIRED), 스위치를 "0" 으로 되돌리면 확인 필요(PENDING).
- * 둘 다 건너뜀이면 남은 확인이 없으므로 요청·명령을 처음부터 끝난 상태(SYNCED)로 만든다.
- * 하나라도 PENDING(옛 방식)이면 요청 APPROVED · 명령 PENDING 이라 기존 서버 액션(applyOperationsSheet → recordOperationsExternalCheck)이 그대로 동작하고,
- * 관리자는 「수강 변경 신청」 화면의 "확인 필요" 탭에서 행마다 시트 반영·랠리즈 반영 확인 버튼으로 이어간다.
+ * 시트 = 건너뜀(SKIPPED·SHEET_RETIRED), 랠리즈 = 건너뜀(SKIPPED·RALLYZ_RETIRED) — 둘 다 은퇴했다.
+ * 남은 확인이 없으므로 요청·명령을 처음부터 끝난 상태(SYNCED)로 만든다.
+ * (되돌리기 스위치와 시트 반영·랠리즈 확인 버튼은 2026-11-18 결정표로 지웠다.)
  * (옛 운영 동기화 화면 /admin/operations-sync 는 폐기돼 /admin 으로 돌려보낸다.)
  * (공용 enqueueWebsiteOperationsEventInTransaction 은 키가 해시라 `enrollment-change:<id>` 를 유지할 수 없어 쓰지 않는다.)
  */
@@ -715,12 +712,12 @@ async function insertAutoAppliedLedger(tx: RawTx, input: {
   const commandId = crypto.randomUUID();
   const month = String(row.effectiveDate).slice(0, 7);
   const sourceText = `수강 변경 신청 ${row.id}`;
-  // 시트·랠리즈 은퇴(기본) 상태면 그 칸은 처음부터 SKIPPED(+표식) → 남는 확인이 없다.
-  const sheetInitial = initialSyncAttempt("SHEET", isSheetSyncRetired(process.env));
-  const rallyzInitial = initialSyncAttempt("RALLYZ", false, isRallyzSyncRetired(process.env));
-  // 두 칸이 모두 건너뜀이면 원장은 처음부터 끝난 상태(SYNCED). 옛 방식(스위치 "0")이면 PENDING 으로 남아 사람이 확인한다.
+  // 시트·랠리즈는 은퇴해 그 칸은 처음부터 SKIPPED(+표식) → 남는 확인이 없다.
+  const sheetInitial = initialSyncAttempt("SHEET");
+  const rallyzInitial = initialSyncAttempt("RALLYZ");
+  // 두 칸이 모두 건너뜀이라 원장은 처음부터 끝난 상태(SYNCED)다.
   const ledgerStatus = websiteDoneLedgerStatus([sheetInitial.status, rallyzInitial.status]);
-  // 시트 반영(applyOperationsSheet)이 읽는 키: fromClassId · effectiveDate · parentConfirmed
+  // 원장에 남기는 키: fromClassId · effectiveDate · parentConfirmed
   const base = { enrollmentChangeRequestId: row.id, fromClassId: row.fromClassId, toClassId: row.toClassId,
     parentConfirmed: true, effectiveDate: row.effectiveDate };
   await tx.$executeRawUnsafe(
@@ -744,7 +741,7 @@ async function insertAutoAppliedLedger(tx: RawTx, input: {
   );
   for (const target of ["SHEET", "RALLYZ", "WEBSITE"]) {
     const websiteDone = target === "WEBSITE";
-    const initial = target === "SHEET" ? sheetInitial : target === "RALLYZ" ? rallyzInitial : initialSyncAttempt(target, false);
+    const initial = target === "SHEET" ? sheetInitial : target === "RALLYZ" ? rallyzInitial : initialSyncAttempt(target);
     await tx.$executeRawUnsafe(
       `INSERT INTO "OperationsSyncAttempt" (id,"commandId",target,status,attempts,"verifiedAt","externalReference")
        VALUES ($1,$2,$3,$4,$5,$6,$7)`,

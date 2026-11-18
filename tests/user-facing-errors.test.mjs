@@ -92,31 +92,5 @@ test("알려진 인증 공급자 코드만 번역하고 알 수 없는 원문은
   assert.equal(errors.userFacingError(new Error("Staff permission is required."), fallback), "선생님 권한이 필요합니다.");
 });
 
-function financeFixture(failure) {
-  const calls = [];
-  const route = load("src/app/api/admin/finance/sheet-reconcile/route.ts", {
-    "@/lib/user-facing-error": errors,
-    "next/server": { NextResponse: { json: (body, options) => ({ body, status: options?.status ?? 200 }) } },
-    "@/lib/auth-guard": { requireAdmin: async () => undefined, requireOwner: async () => undefined },
-    "@/lib/prisma": { prisma: { $queryRawUnsafe: async (...args) => { calls.push(args); throw failure; } } },
-  });
-  return { route, calls };
-}
-
-test("실제 수납 점검 조회: DB 원문은 숨기고 응답 구조·상태 유지", async () => {
-  const { route, calls } = financeFixture(new Error('한국어 DB 오류 SELECT private FROM "User"'));
-  const result = await route.GET({ nextUrl: new URL("https://fixture.invalid/?year=2026&month=10") });
-  assert.equal(result.status, 500);
-  assert.deepEqual(result.body, { error: "시트 기준 수납 점검에 실패했습니다." });
-  assert.equal(calls.length, 3); // 원래 조회의 병렬 읽기 세 건을 유지한다.
-});
-
-test("실제 수납 점검 입력 오류는 상세 안내를 보존하고 DB에 접근하지 않는다", async () => {
-  const { route, calls } = financeFixture(new Error("Unexpected database access"));
-  const result = await route.GET({ nextUrl: new URL("https://fixture.invalid/?year=2026&month=13") });
-  assert.equal(result.status, 500);
-  assert.deepEqual(result.body, { error: "유효한 월을 입력해 주세요." });
-  assert.equal(calls.length, 0);
-});
-
+// (시트 기준 수납 점검 API 시험은 2026-11-18 시트 점검(sheet-reconcile) 삭제와 함께 뺐다)
 // (자료 가져오기 이력 API 시험은 2026-11-13 수강생 이관 도구 삭제와 함께 뺐다)

@@ -1,4 +1,4 @@
-import { getAcademySettings, getClassSlotOverrides, getCustomClassSlots, getPrograms, getSheetSlotCache } from "@/lib/queries";
+import { getAcademySettings, getClassSlotOverrides, getCustomClassSlots, getPrograms } from "@/lib/queries";
 import { buildMergedSlots, toPublicScheduleSlots } from "@/lib/mergeSlots";
 import { getScheduleSlotAdminData } from "@/lib/scheduleSlotPayload";
 import PublicPageLayout from "@/components/PublicPageLayout";
@@ -25,20 +25,21 @@ export default async function SchedulePage() {
 
     const phone = (settings as any).contactPhone || "010-0000-0000";
 
+    // DB 시간표(ScheduleSlot)를 못 읽으면 수업 칸 없이 칸 설정·직접 추가한 수업만 쓴다
+    // (구글시트 사본 대체 경로는 2026-11-18 삭제).
     const scheduleData = dbScheduleData ?? await (async () => {
-        const [cachedSlots, overridesList, customSlotsList] = await Promise.all([
-            getSheetSlotCache(),
+        const [overridesList, customSlotsList] = await Promise.all([
             getClassSlotOverrides(),
             getCustomClassSlots(),
         ]);
         return {
-            slots: cachedSlots ?? [],
+            slots: [],
             overrides: overridesList,
             customSlots: customSlotsList,
         };
     })();
 
-    // 공통 함수로 시트 슬롯 + 오버라이드 + 커스텀 슬롯 병합
+    // 공통 함수로 수업 칸 + 오버라이드 + 커스텀 슬롯 병합
     const allSlots = buildMergedSlots(scheduleData.slots, scheduleData.overrides, scheduleData.customSlots);
 
     return (

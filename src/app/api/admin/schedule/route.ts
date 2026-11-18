@@ -1,22 +1,15 @@
 import { createAdminTiming, requireTimedAdmin, timedJson } from "@/lib/adminTiming";
 import {
-    getAcademySettings,
     getClassSlotOverrides,
     getCoaches,
     getCustomClassSlots,
     getPrograms,
-    getSheetSlotCache,
 } from "@/lib/queries";
 import { getScheduleSlotAdminData } from "@/lib/scheduleSlotPayload";
 
 const SCHEDULE_CACHE_HEADERS = {
     "Cache-Control": "private, max-age=30, stale-while-revalidate=120",
 };
-
-type AdminScheduleSettings = {
-    googleSheetsScheduleUrl?: string | null;
-    googlesheetsscheduleurl?: string | null;
-} | null;
 
 export async function GET() {
     const timing = createAdminTiming("admin-schedule");
@@ -35,23 +28,18 @@ export async function GET() {
         ]));
 
         let scheduleData = dbScheduleData;
-        let sheetUrl: string | null = null;
         if (!scheduleData) {
-            const settings = await timing.measure(
-                "legacy-settings",
-                () => getAcademySettings() as Promise<AdminScheduleSettings>,
-            );
-            sheetUrl = settings?.googleSheetsScheduleUrl ?? settings?.googlesheetsscheduleurl ?? null;
-            const [overrides, customSlots, legacySlots] = await timing.measure("legacy-fallback-data", () => Promise.all([
+            // DB 시간표(ScheduleSlot)를 못 읽으면 수업 칸 없이 칸 설정·직접 추가한 수업만 돌려준다
+            // (구글시트 사본 대체 경로는 2026-11-18 삭제).
+            const [overrides, customSlots] = await timing.measure("fallback-data", () => Promise.all([
                 getClassSlotOverrides(),
                 getCustomClassSlots(),
-                sheetUrl ? getSheetSlotCache().then((cachedSlots) => cachedSlots ?? []) : Promise.resolve([]),
             ]));
             scheduleData = {
-                slots: legacySlots,
+                slots: [],
                 overrides,
                 customSlots,
-                scheduleSource: "SHEET_CACHE" as const,
+                scheduleSource: "EMPTY" as const,
             };
         }
 
@@ -62,8 +50,6 @@ export async function GET() {
                 overrides: scheduleData.overrides,
                 coaches,
                 customSlots: scheduleData.customSlots,
-                hasSheetUrl: Boolean(sheetUrl) || Boolean(dbScheduleData),
-                sheetUrl: sheetUrl ?? null,
                 programs,
                 scheduleSource: scheduleData.scheduleSource,
             },

@@ -81,7 +81,6 @@ export default function AdminShellClient({
     children,
     initialUserName,
     initialUserEmail,
-    sheetRetired = false,
     accountViews = [],
     inboxCount = null,
     canSeeStats = true,
@@ -90,8 +89,6 @@ export default function AdminShellClient({
     children: React.ReactNode;
     initialUserName: string;
     initialUserEmail: string;
-    // 구글 시트 원장 은퇴 여부 — 백업 버튼 묶음의 「시트 동기화」 표시 여부로만 쓴다
-    sheetRetired?: boolean;
     accountViews?: AccountViewOption[];
     /** 신청함 «처리 필요» 건수(getInboxCounts) — 읽지 못했으면 null(배지만 숨긴다) */
     inboxCount?: number | null;
@@ -182,7 +179,7 @@ export default function AdminShellClient({
                                     <button type="button" aria-controls="admin-system-tools" aria-expanded={systemToolsOpen} onClick={() => setSystemToolsOpen((current) => !current)} className="flex min-h-11 w-full items-center gap-3 rounded-lg px-4 py-2 text-left text-sm text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
                                         <span className="flex-1">시스템 도구</span><UiIcon name={systemToolsOpen ? "expand_less" : "expand_more"} />
                                     </button>
-                                    {systemToolsOpen && <div id="admin-system-tools"><LazyBackupButtons sheetRetired={sheetRetired} /></div>}
+                                    {systemToolsOpen && <div id="admin-system-tools"><LazyBackupButtons /></div>}
                                 </>}
                             </div>
                         </details>

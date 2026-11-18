@@ -16,7 +16,7 @@ import { prisma } from "@/lib/prisma";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import { isKstYmd } from "@/lib/datetime/kst";
 import { notClosedByDeletedEnrollmentSql } from "@/lib/enrollment/admin-enrollment-edit";
-import { externalSyncPendingSql } from "@/lib/operations-sync/rallyzRetirement";
+import { externalSyncPendingSql } from "@/lib/operations-sync/externalLedgerRetirement";
 import { settlementTablesReady } from "@/lib/enrollment/pause-settlement";
 import { groupEnrollmentChangeInboxSql, PAUSE_GROUP_KEY_SQL } from "@/lib/requests/inbox-enrollment-change-group";
 import {

@@ -153,12 +153,11 @@ test("POS 대사 «지금 대조»는 원장 전용", () => {
     assert.match(fnBody(read("src/app/actions/pos-reconcile.ts"), "runPosReconcileNow"), /await requireOwner\(\)/);
 });
 
-test("청구 준비·월 장부·월 대장·시트 대조 API 는 requireOwner 로만 연다", () => {
+test("청구 준비·월 장부·월 대장 API 는 requireOwner 로만 연다(시트 대조 API 는 2026-11-18 삭제)", () => {
     for (const file of [
         "src/app/api/admin/billing-workbench/route.ts",
         "src/app/api/admin/finance/monthly-ledger/route.ts",
         "src/app/api/admin/finance/monthly-register/route.ts",
-        "src/app/api/admin/finance/sheet-reconcile/route.ts",
     ]) {
         const src = read(file);
         assert.match(src, /requireOwner\(\)/, file);
@@ -206,7 +205,7 @@ test("현장 결제: 카운터 동작은 원장·부원장, 결제 취소(환불
     assert.match(fnBody(service, "cancelChargeRequestByAdmin"), /status IN \('PENDING', 'SENT'\)\s*AND "paidAt" IS NULL AND "tossPaymentId" IS NULL/);
 });
 
-test("수납 관리 화면: 부원장에게 현장 결제(1건·묶음)는 보이고, 요약·청구 준비·시트 점검·일괄 문자·환불은 원장만", () => {
+test("수납 관리 화면: 부원장에게 현장 결제(1건·묶음)는 보이고, 요약·청구 준비·일괄 문자·환불은 원장만", () => {
     const src = read("src/app/admin/finance/FinanceClient.tsx");
     assert.match(src, /const canUsePosCharge = currentAdminRole === "ADMIN" \|\| currentAdminRole === "VICE_ADMIN";/);
     assert.match(src, /canUsePosCharge && \["MONTHLY", "SHUTTLE", "OTHER"\]\.includes\(p\.type\)[\s\S]{0,200}key: "pos-charge"/);

@@ -62,7 +62,7 @@ test("휴원 상세와 기존 수강 변경 화면은 같은 처리 컴포넌트
   assert.match(client, /<EnrollmentChangeInboxDetail[\s\S]*?requestIds=\{open\.members\?\.map/);
   assert.match(detail, /<EnrollmentChangesClient[\s\S]*?inline/);
   assert.match(changes, /disabled=\{pending \|\| row\.settlementReadFailed/);
-  for (const name of ["decideEnrollmentChange", "settlePauseTuition", "retryPauseTuitionRefund", "markPauseTuitionLineDone", "markPauseCarryHandled", "confirmEnrollmentChangeRallyz"]) {
+  for (const name of ["decideEnrollmentChange", "settlePauseTuition", "retryPauseTuitionRefund", "markPauseTuitionLineDone", "markPauseCarryHandled", "releaseEnrollmentChangeHoldSheetRetired"]) {
     assert.ok(changes.includes(name), name);
   }
   const actions = read("src/app/actions/enrollment-changes.ts");

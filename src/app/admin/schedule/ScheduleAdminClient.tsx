@@ -113,8 +113,6 @@ interface SchedulePayload {
     overrides: Override[];
     coaches: Coach[];
     customSlots: CustomSlot[];
-    hasSheetUrl: boolean;
-    sheetUrl: string | null;
     programs: Program[];
     scheduleSource?: SchedulePayloadSource;
 }
@@ -124,12 +122,8 @@ interface ScheduleAdminClientProps {
     overrides?: Override[];
     coaches?: Coach[];
     customSlots?: CustomSlot[];
-    hasSheetUrl?: boolean;
-    sheetUrl?: string | null;
     programs?: Program[];
     scheduleSource?: SchedulePayloadSource;
-    // 구글 시트 원장 은퇴 여부(서버가 isSheetSyncRetired 로 판정해 넘김). true 면 시트 연동·동기화 버튼을 숨긴다.
-    sheetRetired?: boolean;
 }
 
 function defaultCustomSlotForm(): CustomSlotForm {
@@ -233,19 +227,14 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
         overrides: initialOverrides = [],
         coaches: initialCoaches = [],
         customSlots: initialCustomSlots = [],
-        hasSheetUrl: initialHasSheetUrl = false,
-        sheetUrl: initialSheetUrl = null,
         programs: initialPrograms = [],
-        scheduleSource: initialScheduleSource = "SHEET_CACHE",
-        sheetRetired = false,
+        scheduleSource: initialScheduleSource = "EMPTY",
     } = props;
     const hasInitialData = Boolean(
         props.slots ||
         props.overrides ||
         props.coaches ||
         props.customSlots ||
-        props.hasSheetUrl !== undefined ||
-        props.sheetUrl !== undefined ||
         props.programs ||
         props.scheduleSource,
     );
@@ -253,76 +242,11 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
     const [stateMap, setStateMap] = useState<Record<string, SlotState>>(() => buildInitialState(initialOverrides));
     const [coaches, setCoaches] = useState<Coach[]>(initialCoaches);
     const [customSlots, setCustomSlots] = useState<CustomSlot[]>(initialCustomSlots);
-    const [hasSheetUrl, setHasSheetUrl] = useState(initialHasSheetUrl);
-    const [sheetUrl, setSheetUrl] = useState<string | null>(initialSheetUrl);
     const [programs, setPrograms] = useState<Program[]>(initialPrograms);
     const [scheduleSource, setScheduleSource] = useState<SchedulePayloadSource>(initialScheduleSource);
     const [loading, setLoading] = useState(!hasInitialData);
     const [loadError, setLoadError] = useState(false);
     const [pending, startTransition] = useTransition();
-
-    // Google Sheets modal state
-    const [showSheetModal, setShowSheetModal] = useState(false);
-    const [sheetUrlInput, setSheetUrlInput] = useState(sheetUrl || "");
-    const [sheetSaving, setSheetSaving] = useState(false);
-    const [sheetSaved, setSheetSaved] = useState(false);
-    const [sheetError, setSheetError] = useState<string | null>(null);
-    const [sheetSyncing, setSheetSyncing] = useState(false);
-    const [sheetSyncMessage, setSheetSyncMessage] = useState<string | null>(null);
-
-    async function handleSaveSheetUrl() {
-        setSheetSaving(true);
-        setSheetError(null);
-        setSheetSyncMessage(null);
-        try {
-            await updateAcademySettings({ googleSheetsScheduleUrl: sheetUrlInput });
-            setSheetUrl(sheetUrlInput || null);
-            setHasSheetUrl(Boolean(sheetUrlInput));
-            setSheetSaved(true);
-            setTimeout(() => {
-                setShowSheetModal(false);
-                setSheetSaved(false);
-                void loadScheduleData();
-            }, 800);
-        } catch (e: any) {
-            setSheetError(adminErrorText(e, "저장 실패"));
-        } finally {
-            setSheetSaving(false);
-        }
-    }
-
-    async function handleSyncSheet() {
-        setSheetSyncing(true);
-        setSheetError(null);
-        setSheetSyncMessage(null);
-
-        try {
-            if (sheetUrlInput !== (sheetUrl || "")) {
-                await updateAcademySettings({ googleSheetsScheduleUrl: sheetUrlInput });
-                setSheetUrl(sheetUrlInput || null);
-                setHasSheetUrl(Boolean(sheetUrlInput));
-            }
-
-            const response = await fetch("/api/admin/sync-schedule", { method: "POST" });
-            const result = (await response.json()) as { synced?: number; error?: string };
-            if (!response.ok) {
-                throw new Error(result.error || "동기화 실패");
-            }
-
-            setSheetSyncMessage(`${result.synced ?? 0}개 수업을 시간표에 반영했습니다.`);
-            await loadScheduleData();
-        } catch (error: any) {
-            setSheetError(adminErrorText(error, "동기화 실패"));
-        } finally {
-            setSheetSyncing(false);
-        }
-    }
-
-    function handleSheetUrlChange(value: string) {
-        setSheetUrlInput(value);
-        setSheetError(null);
-        setSheetSyncMessage(null);
-    }
 
     // Custom slot state
     const [isAddingCustom, setIsAddingCustom] = useState(false);
@@ -332,10 +256,10 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
     const [customPending, startCustomTransition] = useTransition();
     const [deletingCustomId, setDeletingCustomId] = useState<string | null>(null);
 
-    // 시트 슬롯 편집 모달 state — 클릭한 슬롯의 slotKey를 저장
+    // 수업 칸 편집 모달 state — 클릭한 슬롯의 slotKey를 저장
     const [editingSlotKey, setEditingSlotKey] = useState<string | null>(null);
 
-    const hasAnyData = slots.length > 0 || customSlots.length > 0 || coaches.length > 0 || programs.length > 0 || hasSheetUrl;
+    const hasAnyData = slots.length > 0 || customSlots.length > 0 || coaches.length > 0 || programs.length > 0 || scheduleSource === "SCHEDULE_SLOT";
 
     const loadScheduleData = useCallback(async () => {
         setLoading(true);
@@ -352,10 +276,8 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
             setStateMap(buildInitialState(data.overrides));
             setCoaches(data.coaches);
             setCustomSlots(data.customSlots);
-            setHasSheetUrl(data.hasSheetUrl);
-            setSheetUrl(data.sheetUrl);
             setPrograms(data.programs);
-            setScheduleSource(data.scheduleSource ?? "SHEET_CACHE");
+            setScheduleSource(data.scheduleSource ?? "EMPTY");
         } catch (error) {
             console.error("Failed to load schedule data:", error);
             setLoadError(true);
@@ -543,7 +465,7 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
     // 현재 편집 모달이 열린 시트 슬롯 객체 찾기
     const editingSheetSlot = editingSlotKey ? slots.find((s) => s.slotKey === editingSlotKey) : null;
     const editingCustomSlot = editingCustomId ? customSlots.find((c) => c.id === editingCustomId) ?? null : null;
-    const hasOpenModal = Boolean(editingSheetSlot || editingCustomSlot || showSheetModal || isAddingCustom);
+    const hasOpenModal = Boolean(editingSheetSlot || editingCustomSlot || isAddingCustom);
 
     if (loading && !hasAnyData) {
         return <ScheduleLoadingFallback />;
@@ -559,9 +481,9 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
             {/* 페이지 제목은 공용 머리말 부품(모양 한 가지). 좁은 화면에서는 오른쪽 묶음이 다음 줄로 넘어간다 */}
             <AdminPageHeader
                 title="수업시간표 관리"
-                // 구글시트에서 불러오는 경우에만 데이터 출처를 안내한다
+                // 사이트 시간표(ScheduleSlot)를 못 읽었을 때만 안내한다(구글시트 대체 경로는 2026-11-18 삭제)
                 description={!isDbScheduleSource
-                    ? "학년·인원은 구글시트에서 마지막으로 가져온 내용을 보여줍니다. 카드를 클릭하면 편집할 수 있습니다."
+                    ? "사이트 시간표를 불러오지 못해 직접 추가한 수업만 보여줍니다. 잠시 후 다시 열어 주세요."
                     : undefined}
                 actions={
                     <>
@@ -592,19 +514,8 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
                             표 보기
                         </button>
                     </div>
-                    {/* 시트 원장 은퇴면 「구글시트 연동」 버튼(→ 지금 동기화 모달)을 숨긴다. 원본은 사이트 DB 시간표. */}
-                    {!sheetRetired && (
-                    <button
-                        onClick={() => { setSheetUrlInput(sheetUrl || ""); setShowSheetModal(true); }}
-                        type="button"
-                        className="academy-button-secondary"
-                    >
-                        {/* 연결 여부는 아이콘·색 대신 글자로 말한다(연동됨 / 연동 설정) */}
-                        {isDbScheduleSource ? "사이트 시간표" : `구글시트 연동${hasSheetUrl ? "됨" : " 설정"}`}
-                    </button>
-                    )}
-                    {/* 은퇴 상태에서도 지금 원본이 무엇인지는 보이게 — 누를 수 없는 표시 배지(버튼처럼 보이지 않게 상태 배지 모양) */}
-                    {sheetRetired && isDbScheduleSource && (
+                    {/* 지금 원본이 무엇인지 보이게 — 누를 수 없는 표시 배지(버튼처럼 보이지 않게 상태 배지 모양) */}
+                    {isDbScheduleSource && (
                         <span className="inline-flex items-center rounded bg-[var(--color-academy-success-soft)] px-2 py-1 text-xs text-[var(--color-academy-success)]">
                             사이트 시간표
                         </span>
@@ -618,30 +529,6 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
                 <div className="space-y-4">
                     {/* 표 미리보기 = 공개 시간표와 같은 모양(여유/임박/마감) — 숫자 편집은 편집 모드에서 그대로 */}
                     <ScheduleTableView slots={toPublicScheduleSlots(mergedSlotsForTable)} />
-                </div>
-            )}
-
-            {/* 시트 URL 미설정 안내 — 시트 원장 은퇴면 띄우지 않는다 */}
-            {adminViewMode === "edit" && !sheetRetired && !hasSheetUrl && !isDbScheduleSource && (
-                <div className="bg-[var(--color-academy-warning-soft)] border border-[var(--color-academy-line)] rounded-xl p-5 text-sm text-[var(--color-academy-warning)]">
-                    <p className="font-semibold mb-1">구글시트 URL이 설정되지 않았습니다.</p>
-                    <p>
-                        <button
-                            type="button"
-                            onClick={() => setShowSheetModal(true)}
-                            className="underline font-medium hover:text-[var(--color-academy-warning)]"
-                        >
-                            구글시트 연동 설정
-                        </button>
-                        을 눌러 URL을 먼저 입력해 주세요.
-                    </p>
-                </div>
-            )}
-
-            {adminViewMode === "edit" && !sheetRetired && hasSheetUrl && slots.length === 0 && (
-                <div className="bg-[var(--color-academy-soft)] border border-[var(--color-academy-line)] rounded-xl p-10 text-center text-[var(--color-academy-muted)]">
-                    <p className="text-lg font-medium mb-1">시트에서 수업 데이터를 찾을 수 없습니다.</p>
-                    <p className="text-sm">시트가 공개 설정인지, 주소와 탭이 올바른지 확인해 주세요.</p>
                 </div>
             )}
 
@@ -831,13 +718,6 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
                     pending={pending}
                     customPending={customPending}
                     deletingCustomId={deletingCustomId}
-                    showSheetModal={showSheetModal}
-                    sheetUrlInput={sheetUrlInput}
-                    sheetSaving={sheetSaving}
-                    sheetSaved={sheetSaved}
-                    sheetError={sheetError}
-                    sheetSyncing={sheetSyncing}
-                    sheetSyncMessage={sheetSyncMessage}
                     isAddingCustom={isAddingCustom}
                     onCloseSheetSlot={() => setEditingSlotKey(null)}
                     onUpdateSlot={update}
@@ -848,11 +728,6 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
                     onCancelDeleteCustom={() => setDeletingCustomId(null)}
                     onConfirmDeleteCustom={handleDeleteCustom}
                     onSaveCustomEdit={handleUpdateCustom}
-                    onCloseSheetUrl={() => setShowSheetModal(false)}
-                    onSheetUrlChange={handleSheetUrlChange}
-                    onSaveSheetUrl={handleSaveSheetUrl}
-                    onSyncSheet={handleSyncSheet}
-                    onClearSheetUrl={() => setSheetUrlInput("")}
                     onCloseAddCustom={() => setIsAddingCustom(false)}
                     onNewCustomFormChange={setNewCustomForm}
                     onSaveNewCustom={handleAddCustom}

@@ -171,40 +171,6 @@ type FinancePayload = {
 
 type AdminFinanceRole = "ADMIN" | "VICE_ADMIN";
 
-type PaymentReconcilePreview = {
-    batch: {
-        id: string;
-        createdAt: string;
-        completedAt: string | null;
-        spreadsheetTitle: string | null;
-    } | null;
-    year: number;
-    month: number;
-    summary: {
-        create: number;
-        update: number;
-        unchanged: number;
-        review: number;
-        createAmount: number;
-        updateAmount: number;
-        reviewAmount: number;
-    };
-    samples: {
-        studentId: string;
-        studentName: string;
-        rowCount: number;
-        paymentMethods: string[] | null;
-        targetStatus: string | null;
-        targetAmount: number | null;
-        targetMethod: string | null;
-        existingStatus: string | null;
-        existingAmount: number | null;
-        existingMethod: string | null;
-        reviewReason: string | null;
-        action: "CREATE" | "UPDATE" | "UNCHANGED" | "REVIEW";
-    }[];
-};
-
 const EMPTY_SUMMARY: Summary = {
     totalCount: 0,
     totalAmount: 0,
@@ -264,13 +230,6 @@ function methodText(method: string | null | undefined, provider: string | null |
     // EASY_PAY·ETC·«CARD+CASH» 같은 POS 전용 값은 경로가 비어 있어도 POS 표시로 읽는다
     return METHOD_LABELS[method] ?? pos ?? method;
 }
-
-const SHEET_RECONCILE_ACTION_LABELS: Record<string, string> = {
-    CREATE: "생성",
-    UPDATE: "수정",
-    REVIEW: "확인 필요",
-    UNCHANGED: "동일",
-};
 
 // 수납 목록 보기 방식(반별 | 상태별 | 목록) — 이 화면은 위에 이미 월 선택이 있어서 «상태별» 묶음을 둔다
 // 2026-11-14 원장 요청: «반별» 보기 추가 + 기본값. 저장 키를 v2 로 바꿔 예전에 «목록»을 골라 둔 기기도 한 번은 반별로 연다.
@@ -403,7 +362,6 @@ export default function FinanceClient({
     initialPaymentProvider,
     currentAdminRole,
     billingParentSendEnabled = false,
-    sheetRetired = false,
 }: {
     initialPayments?: Payment[];
     initialYear?: number;
@@ -413,8 +371,6 @@ export default function FinanceClient({
     currentAdminRole: AdminFinanceRole;
     // 학부모 청구 안내 사이트 발송 허용 여부(기본 잠금 — 발송 스위치 BILLING_PARENT_SEND_ENABLED 를 켜야 열린다)
     billingParentSendEnabled?: boolean;
-    // 구글 시트 원장 은퇴 여부 — true 면 「시트 원장 기준 수납 점검」 버튼·패널을 숨긴다(API 는 그대로 둠)
-    sheetRetired?: boolean;
 }) {
     // 삭제 확인 = 공용 확인 창(브라우저 기본 confirm 대신) — 대상 이름·위험색 확정
     const { confirm: askConfirm, confirmDialog } = useAdminConfirm();
@@ -464,10 +420,6 @@ export default function FinanceClient({
     const [studentsLoaded, setStudentsLoaded] = useState(false);
     const [studentsLoading, setStudentsLoading] = useState(false);
     const [studentsError, setStudentsError] = useState<string | null>(null);
-    const [sheetPreview, setSheetPreview] = useState<PaymentReconcilePreview | null>(null);
-    const [sheetPreviewLoading, setSheetPreviewLoading] = useState(false);
-    const [sheetApplying, setSheetApplying] = useState(false);
-    const [sheetError, setSheetError] = useState<string | null>(null);
     const [financeNotice, setFinanceNotice] = useState<string | null>(null);
     // 청구 안내 발송 진행 상황(서버 대기열) — null 이면 표시 안 함
     const [noticeProgress, setNoticeProgress] = useState<{ invoice: NoticeProgressView; unpaid: NoticeProgressView } | null>(null);
@@ -543,8 +495,6 @@ export default function FinanceClient({
         setMonth(m);
         setLoading(true);
         setLoadError(null);
-        setSheetPreview(null);
-        setSheetError(null);
         setFinanceNotice(null);
         setSelectedIds(new Set()); // 선택 초기화
         try {
@@ -803,65 +753,6 @@ export default function FinanceClient({
         } catch {
             window.open(absoluteHref, "_blank", "noopener,noreferrer");
             setFinanceNotice("브라우저가 복사를 막아 청구서를 새 창으로 열었습니다.");
-        }
-    }
-
-    async function loadSheetPreview() {
-        setSheetPreviewLoading(true);
-        setSheetError(null);
-
-        try {
-            const response = await fetch(`/api/admin/finance/sheet-reconcile?year=${year}&month=${month}`, {
-                cache: "no-store",
-            });
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || "시트 기준 점검에 실패했습니다.");
-            }
-
-            setSheetPreview(data as PaymentReconcilePreview);
-        } catch (err: unknown) {
-            setSheetError(getErrorMessage(err, "시트 기준 점검에 실패했습니다."));
-            setSheetPreview(null);
-        } finally {
-            setSheetPreviewLoading(false);
-        }
-    }
-
-    async function applySheetPreview() {
-        if (!sheetPreview) return;
-
-        const createCount = sheetPreview.summary.create;
-        const updateCount = sheetPreview.summary.update;
-        const reviewCount = sheetPreview.summary.review;
-        const confirmMessage =
-            `${year}년 ${month}월 시트 원장을 기준으로 수납 기록을 반영할까요?\n` +
-            `생성 ${createCount}건, 수정 ${updateCount}건이 적용됩니다.\n` +
-            `확인 필요 ${reviewCount}건은 자동 변경하지 않습니다.`;
-
-        if (!(await askScreenConfirm(confirmMessage))) return;
-
-        setSheetApplying(true);
-        setSheetError(null);
-
-        try {
-            const response = await fetch(`/api/admin/finance/sheet-reconcile?year=${year}&month=${month}`, {
-                method: "POST",
-                cache: "no-store",
-            });
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || "시트 기준 적용에 실패했습니다.");
-            }
-
-            await loadMonth(year, month);
-            setSheetPreview((data.after ?? null) as PaymentReconcilePreview | null);
-        } catch (err: unknown) {
-            setSheetError(getErrorMessage(err, "시트 기준 적용에 실패했습니다."));
-        } finally {
-            setSheetApplying(false);
         }
     }
 
@@ -1237,9 +1128,6 @@ export default function FinanceClient({
     const payRate = summary.totalAmount != null && summary.totalAmount > 0
         ? Math.round(((summary.paidAmount ?? 0) / summary.totalAmount) * 100)
         : 0;
-    const sheetApplyCount = sheetPreview
-        ? sheetPreview.summary.create + sheetPreview.summary.update
-        : 0;
     const invoiceGeneratedCount = payments.filter((payment) => Boolean(payment.invoiceId)).length;
     const invoiceOpenCount = payments.filter((payment) => ["PENDING", "OVERDUE"].includes(payment.status)).length;
     const invoiceUnsentCount = payments.filter((payment) =>
@@ -1398,18 +1286,6 @@ export default function FinanceClient({
                         ? <span role="alert" className="text-xs font-semibold text-[var(--color-academy-danger)]">운영 서버에 테스트 결제 키가 들어 있어 온라인 결제를 막았습니다 — 실거래(live) 키로 바꿔 주세요</span>
                         : !paymentProvider.providerReady && <span className="text-xs text-[var(--color-academy-muted)]">온라인 결제 준비 중</span>}
                     <div className="ml-auto flex flex-wrap items-center gap-2">
-                        {/* 시트 원장 은퇴(2026-10~) 면 대조할 시트 자료가 없으므로 「시트 점검」 버튼을 숨긴다 */}
-                        {/* 시트 점검도 원장 전용(서버 sheet-reconcile 가 막는다) */}
-                        {!sheetRetired && canManageCriticalFinance && (
-                        <button
-                            type="button"
-                            onClick={loadSheetPreview}
-                            disabled={busy || sheetPreviewLoading || sheetApplying}
-                            className="academy-button-secondary academy-button-sm"
-                        >
-                            {sheetPreviewLoading ? "점검 중" : "시트 점검"}
-                        </button>
-                        )}
                         <details className="relative text-xs font-medium"><summary className="academy-button-text academy-button-sm cursor-pointer">기타 청구 작업</summary><div className="absolute right-0 z-20 rounded-xl border border-[var(--color-academy-line)] bg-white p-3 shadow-lg">
                             청구 작업
                             <AdminQuickActionMenu
@@ -1483,102 +1359,6 @@ export default function FinanceClient({
                     )}
                 </details>
             </section>
-
-            {/* 시트 원장 기준 수납 점검 패널 — 시트 원장 은퇴면 숨김 */}
-            {!sheetRetired && (sheetError || sheetPreview) && (
-                <div className="mb-6 rounded-xl border border-[var(--color-academy-line)] bg-white p-4 shadow-sm">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                            <h2 className="academy-section-title">시트 원장 기준 수납 점검</h2>
-                            {sheetPreview?.batch ? (
-                                <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
-                                    마지막 가져오기: {toDateStr(sheetPreview.batch.completedAt ?? sheetPreview.batch.createdAt)}
-                                    {sheetPreview.batch.spreadsheetTitle ? ` · ${sheetPreview.batch.spreadsheetTitle}` : ""}
-                                </p>
-                            ) : (
-                                <p className="mt-1 text-xs text-[var(--color-academy-muted)]">가져오기 기록 없음</p>
-                            )}
-                        </div>
-
-                        {sheetPreview && (
-                            <button
-                                type="button"
-                                onClick={applySheetPreview}
-                                disabled={sheetApplying || sheetApplyCount === 0}
-                                className="academy-button-primary"
-                            >
-                                {sheetApplying ? "적용 중..." : sheetApplyCount === 0 ? "적용할 변경 없음" : "변경 적용"}
-                            </button>
-                        )}
-                    </div>
-
-                    {sheetError && (
-                        <p className="mt-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-medium text-[var(--color-academy-danger)]">
-                            {sheetError}
-                        </p>
-                    )}
-
-                    {sheetPreview && (
-                        <>
-                            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                                <div className="rounded-lg bg-[var(--color-academy-success-soft)] p-3">
-                                    <p className="text-xs font-medium text-[var(--color-academy-success)]">생성</p>
-                                    <p className="mt-1 text-xl font-semibold tabular-nums text-[var(--color-academy-success)]">{sheetPreview.summary.create}건</p>
-                                    <p className="text-xs text-[var(--color-academy-success)]">{formatAmount(sheetPreview.summary.createAmount)}</p>
-                                </div>
-                                <div className="rounded-lg bg-[var(--color-academy-soft)] p-3">
-                                    <p className="text-xs font-medium text-[var(--color-academy-muted)]">수정</p>
-                                    <p className="mt-1 text-xl font-semibold tabular-nums text-[var(--color-academy-ink)]">{sheetPreview.summary.update}건</p>
-                                    <p className="text-xs text-[var(--color-academy-muted)]">{formatAmount(sheetPreview.summary.updateAmount)}</p>
-                                </div>
-                                <div className="rounded-lg bg-[var(--color-academy-warning-soft)] p-3">
-                                    <p className="text-xs font-medium text-[var(--color-academy-warning)]">확인 필요</p>
-                                    <p className="mt-1 text-xl font-semibold tabular-nums text-[var(--color-academy-warning)]">{sheetPreview.summary.review}건</p>
-                                    <p className="text-xs text-[var(--color-academy-warning)]">자동 변경 제외</p>
-                                </div>
-                                <div className="rounded-lg bg-[var(--color-academy-soft)] p-3">
-                                    <p className="text-xs font-medium text-[var(--color-academy-muted)]">동일</p>
-                                    <p className="mt-1 text-xl font-semibold tabular-nums text-[var(--color-academy-ink)]">{sheetPreview.summary.unchanged}건</p>
-                                    <p className="text-xs text-[var(--color-academy-muted)]">변경 없음</p>
-                                </div>
-                            </div>
-
-                            <p className="mt-3 text-xs text-[var(--color-academy-muted)]">
-                                휴원, 퇴원, 추가수강, 이월처럼 자동 판단이 위험한 건은 확인 필요로 남깁니다.
-                            </p>
-
-                            {sheetPreview.samples.length > 0 && (
-                                <div className="mt-3 overflow-hidden rounded-lg border border-[var(--color-academy-line)]">
-                                    {sheetPreview.samples.map((sample) => (
-                                        <div key={`${sample.action}-${sample.studentId}`} className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--color-academy-line)] px-3 py-2 text-sm last:border-b-0">
-                                            <div>
-                                                <span className="font-medium text-[var(--color-academy-ink)]">{sample.studentName}</span>
-                                                <span className="ml-2 text-xs text-[var(--color-academy-muted)]">
-                                                    {sample.paymentMethods?.join(", ") || "-"} · {sample.rowCount}행
-                                                </span>
-                                                {sample.reviewReason && (
-                                                    <p className="mt-0.5 text-xs text-[var(--color-academy-warning)]">{sample.reviewReason}</p>
-                                                )}
-                                            </div>
-                                            <div className="text-right">
-                                                <span className="rounded-full bg-[var(--color-academy-soft)] px-2 py-1 text-xs text-[var(--color-academy-muted)]">
-                                                    {SHEET_RECONCILE_ACTION_LABELS[sample.action] ?? sample.action}
-                                                </span>
-                                                {sample.targetAmount != null && (
-                                                    <p className="mt-1 text-xs tabular-nums text-[var(--color-academy-muted)]">
-                                                        {sample.existingAmount != null ? `${formatAmount(sample.existingAmount)} → ` : ""}
-                                                        {formatAmount(sample.targetAmount)}
-                                                    </p>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </>
-                    )}
-                </div>
-            )}
 
             {/* 월 요약(합계·수납률)은 원장 전용 — 부원장은 서버가 null 로 보내고 줄 자체를 숨긴다 */}
             {canManageCriticalFinance && (

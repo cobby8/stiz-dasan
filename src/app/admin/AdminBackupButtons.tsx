@@ -9,8 +9,8 @@ const ROW_IDLE = "text-[var(--color-academy-muted)] hover:bg-[var(--color-academ
 // 복원은 지금 설정을 덮어쓰는 위험 작업 — 글자를 위험색으로 구분한다(확인 창은 그대로)
 const ROW_DANGER = "text-[var(--color-academy-danger)] hover:bg-[var(--color-academy-danger-soft)]";
 
-// sheetRetired: 구글 시트 원장 은퇴(2026-10~) 면 「시트 동기화」 버튼을 숨긴다(설정 백업·복원 버튼은 그대로).
-export default function AdminBackupButtons({ sheetRetired = false }: { sheetRetired?: boolean } = {}) {
+// 구글 시트 «시트 동기화» 버튼은 2026-11-18 지웠다(시트 원장 은퇴) — 설정 백업·복원 버튼만 남는다.
+export default function AdminBackupButtons() {
     const [busy, setBusy] = useState(false);
     const [msg, setMsg] = useState<string | null>(null);
     const [ok, setOk] = useState(true);
@@ -145,37 +145,8 @@ export default function AdminBackupButtons({ sheetRetired = false }: { sheetReti
         }
     }
 
-    async function handleSyncSchedule() {
-        setBusy(true);
-        setMsg(null);
-
-        try {
-            const res = await fetch("/api/admin/sync-schedule", { method: "POST" });
-            const data = await res.json();
-            data.success
-                ? show(`시트 동기화 완료 (수업 ${data.synced}개)`, true)
-                : show(adminMessageText(data.error, "시트에서 시간표를 가져오지 못했습니다."), false);
-        } catch {
-            show("시트에서 시간표를 가져오지 못했습니다.", false);
-        } finally {
-            setBusy(false);
-        }
-    }
-
     return (
         <div className="space-y-1 px-4 py-2">
-            {!sheetRetired && (
-            <button
-                type="button"
-                onClick={handleSyncSchedule}
-                disabled={busy}
-                className={`flex w-full min-h-11 items-center gap-3 rounded-lg px-4 py-2 text-sm text-left transition-colors ${
-                    busy ? "opacity-50" : ROW_IDLE
-                }`}
-            >
-                <span>시트 동기화</span>
-            </button>
-            )}
             <a
                 href="/api/admin/backup"
                 className={`flex w-full min-h-11 items-center gap-3 rounded-lg px-4 py-2 text-sm transition-colors ${ROW_IDLE}`}

@@ -13,7 +13,7 @@ export const VERIFIED_SYNC_TARGET_SQL =
 
 /**
  * 한 칸이 끝났는가(TS 판정). SKIPPED 는 바깥 장부(SHEET·RALLYZ) 칸에서만 인정한다.
- * (이 파일은 테스트가 단독으로 불러오므로 import 없이 적는다 — 공용 isSheetTargetDone·isRallyzTargetDone 과 같은 규칙.)
+ * (이 파일은 테스트가 단독으로 불러오므로 import 없이 적는다 — 공용 isExternalTargetDone(externalLedgerRetirement) 과 같은 규칙.)
  */
 function isAttemptDone(attempt: Attempt): boolean {
   if ((attempt.target === "SHEET" || attempt.target === "RALLYZ") && attempt.status === "SKIPPED") return true;

@@ -39,15 +39,18 @@ test('신청 반 원장 출처가 모두 연결돼도 시작일 미확정이면 
   assert.equal(evidence.classId, 'class-1');
   assert.equal(evidence.enrollmentId, 'enroll-1');
   assert.deepEqual(evidence.reasons, ['확정 수강 시작일 근거 없음']);
-  assert.match(result.checks[1].detail, /승인 처리일과 신청 개월은 시작일 근거로 사용하지 않습니다/);
+  // 2026-11-18: 시트·랠리즈는 은퇴해 «등록·재조회»·«보호자 초대» 확인 항목을 만들지 않는다
+  assert.ok(!result.checks.some(row => ['SHEET', 'RALLYZ', 'rallyz-invite'].includes(row.key)));
 });
 
-test('시트 성공과 Rallyz 실패는 타깃별로 그대로 남긴다', () => {
-  const [sheet, rallyz] = registrationReadiness({ ...base, commands: [command] }).evidence[0].targets;
-  assert.equal(sheet.attempts[0].status, 'SUCCEEDED');
-  assert.equal(sheet.attempts[0].issue, null);
-  assert.equal(rallyz.attempts[0].status, 'FAILED');
-  assert.match(rallyz.attempts[0].issue, /성공 상태 아님/);
+test('과거 시트 재조회 기록만 남기고 랠리즈 칸은 보여 주지 않는다(2026-11-18)', () => {
+  const targets = registrationReadiness({ ...base, commands: [command] }).evidence[0].targets;
+  assert.deepEqual(targets.map(row => row.target), ['SHEET']);
+  assert.equal(targets[0].attempts[0].status, 'SUCCEEDED');
+  assert.equal(targets[0].attempts[0].issue, null);
+  // 은퇴로 건너뛴 시트 칸은 실패가 아니라 «확인 대상 아님»
+  const skipped = registrationReadiness({ ...base, commands: [{ ...command, syncAttempts: [{ target: 'SHEET', status: 'SKIPPED', verifiedAt: null }] }] });
+  assert.equal(skipped.evidence[0].targets[0].attempts[0].issue, '시트 운영 종료로 건너뜀');
 });
 
 test('신청 학생 반 출처의 불일치를 숨기지 않는다', () => {
@@ -71,7 +74,6 @@ test('재조회 시각 누락·무효·생성전·미래를 경고한다', () =>
     const result = registrationReadiness({ ...base, commands: [{ ...command,
       syncAttempts: [{ target: 'SHEET', status: 'SUCCEEDED', verifiedAt }] }] });
     assert.match(result.evidence[0].targets[0].attempts[0].issue, reason);
-    assert.equal(result.checks[1].status, 'CHECK_REQUIRED');
   }
 });
 
@@ -80,7 +82,7 @@ test('중복 타깃 기록은 모두 표시하고 최신 성공 하나로 덮지
     syncAttempts: [command.syncAttempts[0], { target: 'SHEET', status: 'FAILED', verifiedAt: null }] }] });
   assert.equal(result.evidence[0].targets[0].duplicate, true);
   assert.equal(result.evidence[0].targets[0].attempts.length, 2);
-  assert.equal(result.evidence[0].targets[1].attempts.length, 0);
+  assert.equal(result.evidence[0].targets.length, 1);
 });
 
 test('원장 없는 기존수강이나 출처 없는 옛 원장은 완료로 만들지 않는다', () => {
@@ -95,29 +97,27 @@ test('원장 없는 기존수강이나 출처 없는 옛 원장은 완료로 만
 });
 
 const dated = { ...base, requestedStartOn: '2026-09-09', enrollmentStarts: [{ classId: 'class-1', startsOn: '2026-09-09' }] };
-test('신청·현재 수강·연결 원장의 개시일 일치 뒤에도 외부 타깃 결과를 따로 판단한다', () => {
+// 2026-11-18: 바깥 장부 확인 항목이 없어져 «외부 재조회 성공»으로 완료를 승격하는 판정도 없다. 근거(이유) 대조만 남는다.
+test('신청·현재 수강·연결 원장의 개시일이 일치하면 근거 이유가 비고, 그래도 완료는 아니다', () => {
   const result = registrationReadiness({ ...dated, commands: [command] });
   assert.deepEqual(result.evidence[0].reasons, []);
-  assert.equal(result.checks.find(row => row.key === 'SHEET').status, 'VERIFIED');
-  assert.equal(result.checks.find(row => row.key === 'RALLYZ').status, 'CHECK_REQUIRED');
+  assert.ok(!result.checks.some(row => row.key === 'SHEET' || row.key === 'RALLYZ'));
   assert.equal(result.complete, false);
 });
 test('신청일만 존재하거나 세 개시일 중 하나가 없거나 다르면 완료 증거가 아니다', () => {
   for (const patch of [{ requestedStartOn: null }, { enrollmentStarts: [] }, { enrollmentStarts: [{ classId: 'class-1', startsOn: null }] }, { enrollmentStarts: [{ classId: 'class-1', startsOn: '2026-09-10' }] }, { requestedStartOn: '2026-02-31' }]) {
     const result = registrationReadiness({ ...dated, ...patch, commands: [command] });
     assert.ok(result.evidence[0].reasons.includes('확정 수강 시작일 근거 없음'));
-    assert.equal(result.checks.find(row => row.key === 'SHEET').status, 'CHECK_REQUIRED');
+    assert.equal(result.complete, false);
   }
   assert.ok(registrationReadiness({ ...dated, commands: [{ ...command, afterJson: { ...command.afterJson, effectiveDate: '2026-09-10' } }] }).evidence[0].reasons.length > 0);
 });
-test('여러 배정 반은 각 반의 개시일과 연결된 외부 성공이 모두 필요하다', () => {
-  const input = { ...dated, assignedClassIds: ['class-1','class-2'], activeClassIds: ['class-1','class-2'], enrollmentStarts: [...dated.enrollmentStarts, { classId: 'class-2', startsOn: '2026-09-09' }], commands: [command] };
-  assert.equal(registrationReadiness(input).checks.find(row => row.key === 'SHEET').status, 'CHECK_REQUIRED');
-  input.commands.push({ ...command, id: 'command-2', afterJson: { ...command.afterJson, classId: 'class-2', enrollmentId: 'enroll-2' } });
-  assert.equal(registrationReadiness(input).checks.find(row => row.key === 'SHEET').status, 'VERIFIED');
-});
-test('개시일이 일치해도 외부 재조회 시각 오류·중복·취소 원장을 성공으로 승격하지 않는다', () => {
-  for (const patch of [{ status: 'CANCELLED' }, { syncAttempts: [{ target: 'SHEET', status: 'SUCCEEDED', verifiedAt: new Date('2026-09-10T00:00:00Z') }] }, { syncAttempts: [command.syncAttempts[0], command.syncAttempts[0]] }]) {
-    assert.equal(registrationReadiness({ ...dated, commands: [{ ...command, ...patch }] }).checks.find(row => row.key === 'SHEET').status, 'CHECK_REQUIRED');
-  }
+test('개시일이 일치해도 재조회 시각 오류·중복·취소 원장은 그대로 경고한다', () => {
+  const cancelled = registrationReadiness({ ...dated, commands: [{ ...command, status: 'CANCELLED' }] });
+  assert.ok(cancelled.evidence[0].reasons.includes('유효한 등록 처리 상태 확인 필요'));
+  const future = registrationReadiness({ ...dated, commands: [{ ...command, syncAttempts: [{ target: 'SHEET', status: 'SUCCEEDED', verifiedAt: new Date('2026-09-10T00:00:00Z') }] }] });
+  assert.match(future.evidence[0].targets[0].attempts[0].issue, /미래/);
+  const duplicate = registrationReadiness({ ...dated, commands: [{ ...command, syncAttempts: [command.syncAttempts[0], command.syncAttempts[0]] }] });
+  assert.equal(duplicate.evidence[0].targets[0].duplicate, true);
+  for (const result of [cancelled, future, duplicate]) assert.equal(result.complete, false);
 });

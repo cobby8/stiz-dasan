@@ -259,10 +259,12 @@ test("fetchWithRetry — 응답이 안 오면 시간 제한으로 끊고 다시 
   assert.ok(Date.now() - started < 2_000);
 });
 
-test("구글 시트 요청은 fetchWithRetry 를 쓴다(맨 fetch 금지)", async () => {
+// 2026-11-18 결정표(sheet-switch «완전히 지운다»): 구글 시트 CSV 요청(fetchSheetSchedule 3종)을 지웠다 — 이 파일은 타입·상수만 남는다.
+test("시간표 공용 모듈(옛 구글 시트 모듈)은 바깥 요청을 하지 않는다", async () => {
   const sheet = await read("src/lib/googleSheetsSchedule.ts");
-  assert.equal((sheet.match(/await fetchWithRetry\(/g) || []).length, 3);
-  assert.doesNotMatch(sheet, /await fetch\(/);
+  assert.doesNotMatch(sheet, /fetchWithRetry|await fetch\(|^import /m);
+  assert.match(sheet, /export const GRADE_ORDER/);
+  assert.match(sheet, /export const DAY_KEY_TO_LABEL/);
 });
 
 // ── B-2. 보조 조회 기본값 ─────────────────────────────────────────────────────

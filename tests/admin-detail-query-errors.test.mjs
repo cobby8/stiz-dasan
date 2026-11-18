@@ -13,7 +13,7 @@ function functionSection(startMarker, endMarker) {
 }
 
 const cases = [
-  ["getStudentActivity", "export async function getStudentActivity", "/** Google Sheets"],
+  ["getStudentActivity", "export async function getStudentActivity", "// ── 알림 조회"],
   ["getClassWithStudents", "export const getClassWithStudents", "/** 반의 수업 기록"],
   ["getSessionReport", "export const getSessionReport", "export async function getStudentReports"],
 ];

@@ -26,9 +26,10 @@ test("부르는 곳 없던 운영 요청 생성·목록·승인·홈페이지 �
   assert.doesNotMatch(action, /export async function (createOperationsRequest|getOperationsRequests|approveOperationsRequest|applyOperationsWebsite)\b/);
 });
 
-test("Sheet·Rallyz 는 KST 적용일 이전 실행을 막는다", () => {
-  assert.match(action, /적용일\(\$\{row\.effectiveDate\}\) 이전에는 시트에 반영할 수 없습니다/);
-  assert.match(action, /적용일\(\$\{sheet\[0\]\.effectiveDate\}\) 이전에는 랠리즈 반영을 확인할 수 없습니다/);
+// 2026-11-18: 시트 반영·랠리즈 확인은 지웠다. 남은 «보류 해제»가 KST 적용일 이전 실행을 막는다.
+test("보류 해제는 KST 적용일 이전 실행을 막는다", () => {
+  assert.match(action, /적용일\(\$\{command\.effectiveDate\}\) 이전에는 시트 수동 확인을 할 수 없습니다/);
+  assert.match(action, /timeZone: "Asia\/Seoul"/);
 });
 
 test("잘못된 parentConfirmed 문자열도 boolean cast 예외 없이 false로 처리한다", () => {
@@ -43,7 +44,8 @@ test("폐기된 관리자 화면은 메뉴에서 제거하고 기존 URL은 관�
   assert.doesNotMatch(retiredPage, /OperationsSyncClient/);
 });
 
-test("시트 공통 상태 충돌은 명령을 명확히 HELD로 전환한다", () => {
-  assert.match(action, /rawMessage\.startsWith\("SHEET_SHARED_STATUS_CONFLICT:"\)/);
-  assert.match(action, /UPDATE "OperationsCommand" SET status='HELD'/);
+// 2026-11-18: 시트 자동 반영을 지워 «시트 공통 상태 충돌 → HELD» 경로도 없어졌다.
+test("시트 공통 상태 충돌 처리(시트 자동 반영)는 지워졌다", () => {
+  assert.doesNotMatch(action, /SHEET_SHARED_STATUS_CONFLICT/);
+  assert.doesNotMatch(action, /UPDATE "OperationsCommand" SET status='HELD'/);
 });

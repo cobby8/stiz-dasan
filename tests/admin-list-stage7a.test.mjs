@@ -118,7 +118,8 @@ test("수강 변경 신청: 카드 → 한 줄 표, 확인 단계·일할 계산
   assert.match(source, /onClick=\{\(\) => decide\(row\.id, false\)\}/);
   // 패널 안: 예전 버튼·함수 호출이 빠지지 않았다
   const panel = source.slice(source.indexOf("<ListDetailPanel"));
-  for (const call of ["applySheet(row)", "confirmRallyz(row)", "confirmSheetManually(row)", "releaseRetiredResumeHold(row)", "issueInvoice(row.id)", "decide(row.id, true)", "decide(row.id, false)"]) {
+  // 2026-11-18: 시트 반영·랠리즈 확인·시트 직접 수정 버튼은 지웠다(결정표 rallyz-switch·sheet-switch) — 남은 버튼만 본다
+  for (const call of ["releaseRetiredResumeHold(row)", "issueInvoice(row.id)", "decide(row.id, true)", "decide(row.id, false)"]) {
     assert.ok(panel.includes(call), `패널에 ${call} 가 남아야 합니다`);
   }
   assert.match(panel, /학부모에게 전할 말 \(거절 시 함께 전달됩니다\)/);

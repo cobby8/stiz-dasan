@@ -21,10 +21,6 @@ export type RegistrationEvidence = {
     syncAttempts: Array<{ target: string; status: string; verifiedAt: Date | null }> }>;
   invoiceCandidates: number;
   now?: number;
-  /** 시트 원장 은퇴(2026-10~) 여부. true 면 "시트 등록·재조회" 항목을 만들지 않는다(확인할 시트가 없다). 없으면 옛 동작. */
-  sheetRetired?: boolean;
-  /** 랠리즈 확인 은퇴(2026-11-14~) 여부. true 면 "Rallyz 등록·재조회"·"Rallyz 보호자 초대" 항목을 만들지 않는다. 없으면 옛 동작. */
-  rallyzRetired?: boolean;
 };
 
 function object(value: unknown): Record<string, unknown> {
@@ -74,15 +70,14 @@ export function registrationReadiness(input: RegistrationEvidence) {
     if (source !== "WEBSITE" || command.kind !== "CLASS_ADD") reasons.push("사이트 신규 등록 증거가 아님");
     if (["CANCELED", "CANCELLED", "REJECTED", "FAILED", "HELD"].includes(command.status)) reasons.push("유효한 등록 처리 상태 확인 필요");
     if (siteReady && startsMatch && startDate(after.effectiveDate) === requestedStart && reasons.length === 1) reasons.shift();
-    const targets = ["SHEET", "RALLYZ"].map(target => {
+    // 과거 시트 재조회 기록만 보여 준다(랠리즈 칸은 2026-11-18 화면에서 지웠다 — 은퇴로 늘 건너뜀).
+    const targets = ["SHEET"].map(target => {
       const attempts = command.syncAttempts.filter(attempt => attempt.target === target);
       return { target, attempts: attempts.map(attempt => {
         const verifiedAt = instant(attempt.verifiedAt);
         let issue: string | null = null;
         // 시트 은퇴로 건너뛴 칸은 실패가 아니라 "확인 대상 아님"이다.
-        if (target === "SHEET" && attempt.status === "SKIPPED") issue = "시트 운영 종료로 건너뜀";
-        // 2026-11-14 랠리즈 은퇴: 랠리즈 칸도 같다.
-        else if (target === "RALLYZ" && attempt.status === "SKIPPED") issue = "랠리즈 사용 종료로 건너뜀";
+        if (attempt.status === "SKIPPED") issue = "시트 운영 종료로 건너뜀";
         else if (attempt.status !== "SUCCEEDED") issue = "재조회 성공 상태 아님";
         else if (!verifiedAt) issue = "유효한 재조회 시각 없음";
         else if (!createdAt) issue = "명령 생성 시각 확인 필요";
@@ -96,28 +91,13 @@ export function registrationReadiness(input: RegistrationEvidence) {
       effectiveMonth: command.effectiveMonth ?? null, eventDate: text(after.effectiveDate), createdAt,
       reasons, targets };
   });
-  // 은퇴한 바깥 장부(시트·랠리즈)는 확인 항목을 만들지 않는다 — 확인할 곳이 없다.
-  const externalTargets = (["SHEET", "RALLYZ"] as const).filter(target => !(target === "SHEET" ? input.sheetRetired : input.rallyzRetired));
-  for (const target of externalTargets) {
-    const linked = evidence.filter(row => row.reasons.every(reason => reason === "확정 수강 시작일 근거 없음")).length;
-    const verifiedClasses = input.assignedClassIds.filter(classId => {
-      const matches = evidence.filter(row => row.classId === classId && row.reasons.length === 0);
-      if (matches.length !== 1) return false;
-      const check = matches[0].targets.find(row => row.target === target);
-      return Boolean(check && !check.duplicate && check.attempts.length === 1 && check.attempts[0].issue === null);
-    });
-    const verified = siteReady && startsMatch && verifiedClasses.length === input.assignedClassIds.length;
-    checks.push({ key: target, label: target === "SHEET" ? "시트 등록·재조회" : "Rallyz 등록·재조회", status: verified ? "VERIFIED" : "CHECK_REQUIRED", detail: verified ? `신청·모든 배정 반·원장의 개시일 일치 및 ${verifiedClasses.length}개 반의 외부 재조회 성공을 확인했습니다.` : `신청·학생·배정 반 출처가 연결된 원장 ${linked}건 / 후보 ${evidence.length}건. 개시일과 모든 배정 반의 외부 재조회 근거 확인 필요. 승인 처리일과 신청 개월은 시작일 근거로 사용하지 않습니다.` });
-  }
+  // 바깥 장부(시트·랠리즈)는 둘 다 은퇴해 확인 항목을 만들지 않는다 — 확인할 곳이 없다.
   for (const [key, label, detail] of [
     ["invoice", "최초 청구서", `유효 청구 후보 ${input.invoiceCandidates}건. 최초 적용기간·반·일할계산·금액 대조 필요`],
     ["invoice-notification", "최초 청구 안내", "정확한 청구서와 연결된 발송 결과 확인 필요"],
-    ["rallyz-invite", "Rallyz 보호자 초대·연결", "사이트 보호자 연결만으로 Rallyz 연결을 완료 처리하지 않음"],
     ["uniform", "유니폼·제품 안내", "홈페이지 /shop 안내 전달 및 유니폼 신청 여부 확인 필요"],
     ["teacher", "담당 선생님·연간일정 안내", "최종 배정 반의 담당자 및 연간일정 안내 전달 확인 필요"],
   ]) {
-    // 랠리즈 은퇴 뒤에는 랠리즈 보호자 초대도 할 일이 아니다.
-    if (key === "rallyz-invite" && input.rallyzRetired) continue;
     checks.push({ key, label, detail, status: "CHECK_REQUIRED" });
   }
   if (input.shuttleNeeded) checks.push({ key: "shuttle", label: "셔틀 배차·기사님 안내", detail: input.shuttleProgress ? `${input.shuttleProgress.label} · ${input.shuttleProgress.detail}` : "승하차 장소·확정 시간·배정 기사 안내 전달 확인 필요", status: input.shuttleProgress?.status === "COMPLETE" ? "VERIFIED" : "CHECK_REQUIRED" });

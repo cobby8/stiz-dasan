@@ -7,32 +7,21 @@ const infrastructure = readFileSync("src/lib/operationsSyncInfrastructure.ts", "
 const migration = readFileSync("prisma/migrations/20260827223000_add_operations_sync_processing_lease/migration.sql", "utf8");
 const schema = readFileSync("prisma/schema.prisma", "utf8");
 
-test("외부 반영은 만료 가능한 임대 토큰으로 동시 실행을 막는다", () => {
-  assert.match(action, /a\.status IN \('PENDING','FAILED'\)/);
-  assert.match(action, /"processingStartedAt" < now\(\) - interval '10 minutes'/);
-  assert.match(action, /SET "processingToken"=\$3, "processingStartedAt"=now\(\)/);
-  assert.match(action, /같은 반영 작업이 이미 진행 중입니다/);
+// 2026-11-18 결정표(rallyz-switch·sheet-switch «완전히 지운다»): 시트 자동 반영(임대 토큰 claim/finish)·랠리즈 확인을 지웠다.
+// 남는 것은 «보류 해제»와 상태 집계(refreshOperationsStatuses)뿐이다.
+test("시트 자동 반영·랠리즈 확인과 그 임대 토큰 함수는 지워졌다", () => {
+  for (const name of ["claimSyncAttempt", "finishSyncAttempt", "applyOperationsSheet", "recordOperationsExternalCheck", "applySheetEnrollmentStatus", "googleSheetsOperations"]) {
+    assert.ok(!action.includes(name), `${name} 는 지워져 있어야 합니다`);
+  }
+  // 바깥 장부 칸에 다시 쓰는 SQL 이 없다(보류 해제는 명령 행만 바꾼다)
+  assert.doesNotMatch(action, /UPDATE "OperationsSyncAttempt"/);
+  assert.doesNotMatch(action, /"processingToken"=\$3/);
 });
 
-test("성공 대상은 재호출하지 않고 실패 대상만 재시도한다", () => {
-  assert.match(action, /if \(current\[0\]\?\.status === "SUCCEEDED"\) return \{ token: null, skipped: true/);
-  assert.match(action, /a\.status IN \('PENDING','FAILED'\)/);
-  assert.match(action, /previousStatus === "FAILED" \? "SYNC_TARGET_RETRIED"/);
-  // 2026-11-14 랠리즈 은퇴: 랠리즈 확인은 대기·실패 칸만 바꾼다(건너뜀 SKIPPED 로 닫힌 칸을 다시 열지 않는다).
-  const rallyzCheck = action.slice(action.indexOf("export async function recordOperationsExternalCheck"), action.indexOf("export async function applyOperationsSheet"));
-  assert.match(rallyzCheck, /a\.target=\$2 AND a\.status IN \('PENDING','FAILED'\)/);
-  assert.doesNotMatch(rallyzCheck, /a\.status <> 'SUCCEEDED'/);
-});
-
-test("성공·실패·재시도·상태 변경을 감사로그에 남긴다", () => {
-  for (const event of [
-    "SYNC_TARGET_STARTED",
-    "SYNC_TARGET_RETRIED",
-    "SYNC_TARGET_SUCCEEDED",
-    "SYNC_TARGET_FAILED",
-    "COMMAND_STATUS_CHANGED",
-    "REQUEST_STATUS_CHANGED",
-  ]) assert.match(action, new RegExp(event));
+test("상태 변경을 감사로그에 남긴다", () => {
+  for (const event of ["COMMAND_HOLD_RELEASED", "COMMAND_STATUS_CHANGED", "REQUEST_STATUS_CHANGED"]) {
+    assert.match(action, new RegExp(event));
+  }
 });
 
 // 2026-11-18 옛 코드 정리 C: 부르는 곳이 없던 승인(approveOperationsRequest)·홈페이지 반영(applyOperationsWebsite)을 지웠다
@@ -58,13 +47,9 @@ test("raw SQL 운영 원장 모델을 Prisma 스키마에도 유지한다", () =
   assert.match(schema, /model OperationsSyncAttempt[\s\S]*@@unique\(\[commandId, target\]\)/);
 });
 
-test("외부 완료 CAS와 감사로그는 분리되어 감사 장애가 성공 상태를 롤백하지 않는다", () => {
-  const finishStart = action.indexOf("async function finishSyncAttempt");
+test("감사로그 장애는 best-effort 로 관측만 한다", () => {
   const auditStart = action.indexOf("async function recordOperationsAuditBestEffort");
-  const finishBody = action.slice(finishStart, auditStart);
-  assert.match(finishBody, /const rows = await prisma\.\$queryRawUnsafe/);
-  assert.doesNotMatch(finishBody, /prisma\.\$transaction/);
-  assert.match(finishBody, /await recordOperationsAuditBestEffort/);
+  assert.ok(auditStart > 0);
   assert.match(action.slice(auditStart), /console\.error\("\[operations-sync\] 감사로그 저장 실패"/);
 });
 
@@ -79,11 +64,9 @@ test("상태 집계도 먼저 커밋하고 감사로그는 best-effort로 분리
   assert.match(refreshBody, /requestChange:/);
 });
 
-test("성공 skip은 외부 재호출 없이 집계 상태를 자가 복구한다", () => {
-  // 2026-10-06 시트 은퇴: 성공(SUCCEEDED)뿐 아니라 건너뜀(SKIPPED)도 시트를 다시 부르지 않고 집계만 복구한다.
-  assert.match(action, /if \(isSheetTargetDone\(row\.attemptStatus\)\) \{\s*await refreshOperationsStatuses\(commandId\)/);
-  assert.match(action, /if \(!changed\) \{\s*await refreshOperationsStatuses\(commandId\)/);
-  assert.match(action, /claim\.skipped \|\| !claim\.token\) \{\s*await refreshOperationsStatuses\(commandId\)/);
+test("보류 해제는 끝난 뒤 집계 상태를 다시 맞춘다", () => {
+  const manual = action.slice(action.indexOf("export async function recordOperationsSheetManualCheck"), action.indexOf("async function refreshOperationsStatuses"));
+  assert.match(manual, /await refreshOperationsStatuses\(commandId\)/);
 });
 
 test("운영 원장의 모든 FK와 삭제 동작을 Prisma 관계에도 반영한다", () => {

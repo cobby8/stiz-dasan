@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { SYNC_TARGETS } from "@/lib/operationsSync";
-import { initialSyncAttempt, isSheetSyncRetired } from "@/lib/operations-sync/sheetRetirement";
-import { isRallyzSyncRetired } from "@/lib/operations-sync/rallyzRetirement";
+import { initialSyncAttempt } from "@/lib/operations-sync/externalLedgerRetirement";
 import {
   assertOperationsEventPayloadMatch,
   normalizeOperationsEventPayload,
@@ -140,8 +139,8 @@ export async function POST(request: NextRequest) {
       return { duplicate: true as const, conflict, command: duplicate[0] };
     }
     for (const target of SYNC_TARGETS) {
-      // 시트·랠리즈 은퇴(기본) 상태면 그 칸은 처음부터 SKIPPED — 넣을 바깥 장부가 없다(랠리즈: 2026-11-14).
-      const initial = initialSyncAttempt(target, isSheetSyncRetired(process.env), isRallyzSyncRetired(process.env));
+      // 시트·랠리즈는 은퇴해 그 칸은 처음부터 SKIPPED — 넣을 바깥 장부가 없다.
+      const initial = initialSyncAttempt(target);
       await tx.$executeRawUnsafe(
         `INSERT INTO "OperationsSyncAttempt" (id,"commandId",target,status,"externalReference") VALUES ($1,$2,$3,$4,$5)`,
         crypto.randomUUID(), commandId, target, initial.status, initial.externalReference,

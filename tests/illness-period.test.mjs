@@ -807,7 +807,7 @@ function loadInbox(state) {
     "@/lib/studentVisibility": { notMergedStudent: (alias) => `${alias}."mergedIntoStudentId" IS NULL` },
     "@/lib/datetime/kst": kst,
     "@/lib/enrollment/admin-enrollment-edit": { notClosedByDeletedEnrollmentSql: () => "true" },
-    "@/lib/operations-sync/rallyzRetirement": { externalSyncPendingSql: () => "false" },
+    "@/lib/operations-sync/externalLedgerRetirement": { externalSyncPendingSql: () => "false" },
     "@/lib/enrollment/pause-settlement": { settlementTablesReady: async () => false },
     "@/lib/requests/inbox-enrollment-change-group": { groupEnrollmentChangeInboxSql: (rows) => rows, PAUSE_GROUP_KEY_SQL: "NULL" },
     "@/lib/requests/catalog": catalog,

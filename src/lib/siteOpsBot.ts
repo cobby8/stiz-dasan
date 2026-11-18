@@ -125,45 +125,26 @@ async function checkPublicContent(checks: SiteOpsCheck[]) {
   });
 }
 
-async function checkSchedule(checks: SiteOpsCheck[], settings: any) {
-  const [classCount, scheduleSlotCount, customSlotCount, sheetRows] = await Promise.all([
+async function checkSchedule(checks: SiteOpsCheck[]) {
+  const [classCount, scheduleSlotCount, customSlotCount] = await Promise.all([
     countRows(`SELECT COUNT(*)::int AS count FROM "Class"`),
     countRows(`SELECT COUNT(*)::int AS count FROM "ScheduleSlot" WHERE "isHidden" = false`).catch(() => 0),
     countRows(`SELECT COUNT(*)::int AS count FROM "CustomClassSlot" WHERE "isHidden" = false`),
-    prisma.$queryRawUnsafe<any[]>(
-      `SELECT "slotsJson", "syncedAt" FROM "SheetSlotCache" WHERE id = 'singleton' LIMIT 1`,
-    ).catch(() => []),
   ]);
 
-  const sheetUrl = settings?.googleSheetsScheduleUrl ?? settings?.googlesheetsscheduleurl ?? null;
-  const sheetRow = sheetRows[0];
-  const syncedAt = sheetRow?.syncedAt ?? sheetRow?.syncedat ? new Date(sheetRow.syncedAt ?? sheetRow.syncedat) : null;
-  let sheetSlotCount = 0;
-
-  try {
-    const parsed = JSON.parse(sheetRow?.slotsJson ?? sheetRow?.slotsjson ?? "[]");
-    sheetSlotCount = Array.isArray(parsed) ? parsed.length : 0;
-  } catch {
-    sheetSlotCount = 0;
-  }
-
-  const hasScheduleData = scheduleSlotCount > 0 || classCount > 0 || customSlotCount > 0 || sheetSlotCount > 0;
-  const staleSheet = Boolean(scheduleSlotCount === 0 && sheetUrl && isOlderThan(syncedAt, 14));
+  // 구글시트 사본(SheetSlotCache)·동기화 경과 점검은 2026-11-18 시트 연동을 지우며 뺐다 — DB 시간표만 본다.
+  const hasScheduleData = scheduleSlotCount > 0 || classCount > 0 || customSlotCount > 0;
   const readyMessage = scheduleSlotCount > 0
     ? `DB 시간표 ${scheduleSlotCount}개가 준비되어 있습니다. 연결 반 ${classCount}개`
-    : `시간표 데이터가 준비되어 있습니다. 반 ${classCount}개, 동기화 슬롯 ${sheetSlotCount}개`;
+    : `시간표 데이터가 준비되어 있습니다. 반 ${classCount}개`;
 
   checks.push({
     id: "schedule-data",
     label: "수업시간표",
-    status: hasScheduleData && !staleSheet ? "ok" : "warning",
-    message: hasScheduleData
-      ? staleSheet
-        ? "구글시트 시간표 동기화가 14일 이상 오래됐습니다."
-        : readyMessage
-      : "공개 시간표에 보여줄 수업 데이터가 없습니다.",
+    status: hasScheduleData ? "ok" : "warning",
+    message: hasScheduleData ? readyMessage : "공개 시간표에 보여줄 수업 데이터가 없습니다.",
     actionHref: "/admin/schedule",
-    actionLabel: staleSheet ? "동기화하기" : "시간표 관리",
+    actionLabel: "시간표 관리",
   });
 }
 
@@ -349,7 +330,7 @@ export async function runSiteOpsBot(_requestedBy?: AdminAuthUser | "cron"): Prom
 
   await Promise.all([
     checkPublicContent(checks),
-    checkSchedule(checks, settings),
+    checkSchedule(checks),
     checkBackup(checks),
     // 2026-11-18: 인스타 자동 게시 점검(checkInstagram)은 인스타 게시를 지우며 함께 뺐다.
   ]);

@@ -136,27 +136,29 @@ test("목록이 연결 원장의 시트·랠리즈 상태를 읽고 '확인 필�
   assert.match(page, /params\?\.status === "NEEDS_CHECK"/);
   assert.match(page, /countEnrollmentChangesNeedingCheck\(\)/);
   assert.match(client, /\{ value: "NEEDS_CHECK", label: "확인 필요" \}/);
-  assert.match(client, /syncCheckBadge\(row\.sheetStatus, row\.rallyzStatus\)/);
+  // 랠리즈는 은퇴해 랠리즈 칸을 끝난 칸으로 넘겨 배지를 만든다(보류는 따로 «보류 확인 필요»)
+  assert.match(client, /syncCheckBadge\(row\.sheetStatus, row\.rallyzStatus \? "SUCCEEDED" : row\.rallyzStatus\)/);
 });
 
-test("확인 버튼은 기존 서버 액션을 쓰고, 누르기 전 확인창을 띄운다", () => {
+test("확인 버튼은 «보류 해제» 래퍼만 쓰고, 누르기 전 확인창을 띄운다(시트 반영·랠리즈 확인은 2026-11-18 삭제)", () => {
   // 2026-10-06 변경: 클라이언트는 운영 동기화 함수를 직접 부르지 않고 결과 객체 래퍼만 부른다
   // (throw 메시지가 운영 빌드에서 가려지기 때문). 래퍼 안에서 기존 서버 액션을 그대로 호출한다.
   assert.doesNotMatch(client, /from "@\/app\/actions\/operations-sync"/);
-  assert.match(client, /confirmEnrollmentChangeRallyz\(row\.syncCommandId!\)/);
-  assert.match(client, /applyEnrollmentChangeSheet\(row\.syncCommandId!\)/);
-  assert.match(decideAction, /recordOperationsExternalCheck\(commandId, "RALLYZ", true\)/);
-  assert.match(decideAction, /applyOperationsSheet\(commandId\)/);
-  assert.match(client, />\s*랠리즈 반영 확인\s*</);
-  // 두 버튼 함수 모두 confirm 을 먼저 통과해야 한다
-  const sheetFn = client.slice(client.indexOf("function applySheet"), client.indexOf("function confirmRallyz"));
-  const rallyzFn = client.slice(client.indexOf("function confirmRallyz"), client.indexOf("function runSyncAction"));
-  assert.match(sheetFn, /askConfirm\(/);
-  assert.match(rallyzFn, /askConfirm\(/);
+  assert.match(client, /releaseEnrollmentChangeHoldSheetRetired\(row\.syncCommandId!\)/);
+  assert.match(decideAction, /recordOperationsSheetManualCheck\(commandId\)/);
+  // 지운 버튼·서버 액션이 돌아오지 않는다
+  for (const name of ["confirmEnrollmentChangeRallyz", "applyEnrollmentChangeSheet", "confirmEnrollmentChangeSheetManually", "recordOperationsExternalCheck", "applyOperationsSheet"]) {
+    assert.ok(!client.includes(name) && !decideAction.includes(name), `${name} 는 지워져 있어야 합니다`);
+  }
+  assert.doesNotMatch(client, />\s*랠리즈 반영 확인\s*</);
+  // 보류 해제 함수는 confirm 을 먼저 통과해야 한다
+  const releaseFn = client.slice(client.indexOf("function releaseRetiredResumeHold"), client.indexOf("function runSyncAction"));
+  assert.match(releaseFn, /askConfirm\(/);
 });
 
-test("안내문이 실제 동작(사이트 자동 · 랠리즈·시트 수동 확인)과 같다", () => {
-  assert.match(client, /적용일이 된 휴원·퇴원은 사이트에 자동 반영됩니다\(적용일이 이미 지난 건은 승인 즉시\)\. 랠리즈·시트는 직접 반영한 뒤 '랠리즈 반영 확인'을 눌러 주세요\./);
+test("안내문이 실제 동작(사이트 자동 · 바깥 장부 확인 없음)과 같다", () => {
+  assert.match(client, /적용일이 된 휴원·퇴원은 사이트에 자동 반영됩니다\(적용일이 이미 지난 건은 승인 즉시\)\. 반 변경은 적용일에 자동으로 바뀌지 않습니다\./);
+  assert.doesNotMatch(client, /랠리즈 반영 확인/);
   assert.doesNotMatch(client, /세 시스템 확인 전에는 반이 바뀌거나 적용 완료로 표시되지 않습니다/);
   assert.match(client, /승인하면 적용일\(\{row\.effectiveFrom\}\)에 사이트에 자동 반영됩니다/);
   // 폐기된 운영 동기화 화면으로 안내하지 않는다
