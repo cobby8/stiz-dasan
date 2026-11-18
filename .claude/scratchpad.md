@@ -50,6 +50,7 @@
 ## 작업 로그 (최근 10건)
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-18 | developer(본인인증 실명·시각 저장, claude/native-noaccount-signup): 새 칸 User.identityVerifiedAt/Name·가입요청 verifiedName/verificationMethod(CHECK SMS·IDENTITY) 마이그레이션 20261118220000(**운영 적용 전**) · 규칙 한 곳 lib/identity/verified-identity.ts · 저장 길 6곳(연결 라우트 3갈래·가입 완료·활성화·직원 기록·연락처 바꾸기), SMS 는 안 적음 · 탈퇴 비움·7일 정리 · 결제창 이름 실명→닉네임 · 가입/설정 «닉네임» 라벨 · tsc 0 · 전체 fail 0 | 구현 완료(검수 전) |
 | 11-18 | reviewer(HEAD 9914a937 가입 안내 «가입하지 않은 분께만»): binding 에 unsignedOnly 포함·보내기 때 같은 값 재계산 → 화면이 값을 바꾸면 대조에서 멈춤 OK · 기본 꺼짐 = pool=all 로 예전과 동일 · node --test 31-0 · 권장: 미가입 0명일 때 «번호가 없어요» 문구 부정확 | 통과 |
 | 2026-11-18 | 옛 코드 정리 B(developer): 들어오는 길 없는 API·cron 12개 + operationsSyncWorker.ts 삭제, import-summary 조회·incrementalDispatch·인스타 자동 가져오기 함수 삭제, 테스트 13개 «지워져 있음»으로 수정. tsc 0·npm test fail 0 | 구현 완료(미커밋·검수 전) |
 | 11-18 | reviewer 검수(19978963 옛 코드 정리 A): 지운 24개 파일·submitUniformOrder 를 import 하는 곳 0(src·apps·scripts·vercel.json·package.json) · 뺀 패키지 10개 직접 사용 0, RichTextEditor 는 StarterKit 내장 Underline·Link 사용 · 잠금에서 빠진 clsx·lodash·immer 등 코드 사용 0, 루트 tslib 유지(supabase 의존 안전), oxide-wasm32-wasi 는 dev+optional+inBundle 이라 빌드 영향 없음 · 테스트는 지운 파일 단언만 뺌 · 권장: 낡은 주석(report/page.tsx:7·HideInInstalledApp.tsx:10·workbench-pricing.ts:257,295·uniform-options.ts:3)·scheduled-enrollment-ui.test.mjs:145 AppSafeLink 가짜 모듈 | 통과 |

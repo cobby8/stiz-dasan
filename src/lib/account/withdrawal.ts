@@ -95,7 +95,8 @@ export function anonymizedEmail(userId: string): string {
 export const ANONYMIZED_NAME = "탈퇴한 회원";
 
 /** 탈퇴 처리로 비워지는 User 컬럼 — 로그인 수단과 연락처. 서버 액션과 테스트가 같은 목록을 본다. */
-export const CLEARED_USER_COLUMNS = ["phone", "phoneVerifiedAt", "authUserId", "username"] as const;
+// 본인인증 실명·시각(2026-11-18)도 개인정보라 함께 비운다(처리방침 «탈퇴 시 파기»).
+export const CLEARED_USER_COLUMNS = ["phone", "phoneVerifiedAt", "authUserId", "username", "identityVerifiedName", "identityVerifiedAt"] as const;
 
 /** 탈퇴해도 남는 것 — 학원 장부이자 법령(전자상거래법 5년) 보관 대상. 지우면 안 된다. */
 export const RETAINED_TABLES = [

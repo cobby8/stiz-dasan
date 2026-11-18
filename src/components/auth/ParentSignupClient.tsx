@@ -405,7 +405,11 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
       {step === "account" && (
         <form onSubmit={completeSignup} className="space-y-4">
           <div><h2 className="text-xl font-bold">계정 정보</h2><p className="mt-1 text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">로그인에 사용할 정보만 입력하면 끝입니다.</p></div>
-          <label className="block text-sm font-semibold">이름<input name="name" defaultValue={verifiedName || initialName} className={`${inputClass} mt-2`} autoComplete="name" required /></label>
+          {/* 2026-11-18 원장 결정: 이 칸은 «닉네임»(화면에 보이는 이름·나중에 고칠 수 있음). 본인인증 실명은 서버가 따로 보관해 결제창 이름에 쓴다 */}
+          <div>
+            <label className="block text-sm font-semibold">닉네임<input name="name" defaultValue={verifiedName || initialName} className={`${inputClass} mt-2`} autoComplete="nickname" required /></label>
+            <p className="mt-1 text-xs text-[var(--color-public-muted)]">학원 앱에서 보이는 이름이에요. 본인인증 실명은 따로 보관돼요.</p>
+          </div>
           <label className="block text-sm font-semibold">로그인 아이디<input name="username" className={`${inputClass} mt-2`} autoComplete="username" minLength={4} maxLength={20} pattern="[A-Za-z][A-Za-z0-9_]{3,19}" placeholder="영문으로 시작, 영문·숫자·밑줄" required /></label>
           {!socialSignup && <label className="block text-sm font-semibold">비밀번호<input name="password" type="password" value={passwordDraft} onChange={(event) => { setPasswordDraft(event.target.value); setPasswordChecked(false); }} onBlur={() => setPasswordChecked(true)} className={`${inputClass} mt-2`} autoComplete="new-password" minLength={8} placeholder="8자 이상, 숫자·영문 섞어서" required /></label>}
           {/* 옅은 바탕 + 진한 글자 — 다크 모드에서도 대비가 유지된다 */}

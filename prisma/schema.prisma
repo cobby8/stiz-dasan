@@ -29,6 +29,10 @@ model User {
   // 프로필 사진(2026-11-15) — 비공개 버킷 profile-private 안의 «경로»만 저장한다(주소 아님). migration 20261115010000
   photoPath                   String?
   photoUpdatedAt              DateTime?                     @db.Timestamptz(3)
+  // 본인인증 실명·시각(2026-11-18) — name 은 닉네임, 결제창 이름은 이 실명을 먼저 쓴다. CI·생년월일은 저장 안 함.
+  // 문자 인증만 한 계정은 null. 탈퇴 시 비운다(CLEARED_USER_COLUMNS). migration 20261118220000
+  identityVerifiedAt          DateTime?                     @db.Timestamptz(6)
+  identityVerifiedName        String?
   createdAt                   DateTime                      @default(now())
   updatedAt                   DateTime                      @updatedAt
   classes                     Class[]
@@ -2554,6 +2558,9 @@ model ParentSignupVerification {
   privacyVersion      String?
   ageConfirmedAt      DateTime? @db.Timestamptz(6)
   lastError           String?
+  // 2026-11-18: 통과한 인증 방식(SMS/IDENTITY — DB CHECK)과 본인인증 실명(7일 뒤 정리). migration 20261118220000
+  verifiedName        String?
+  verificationMethod  String?
   createdAt           DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt           DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 

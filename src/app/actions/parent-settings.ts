@@ -17,12 +17,12 @@ import { normalizePreferredPaymentMethod } from "@/lib/payments/preferredMethod"
 
 type Result = { ok: true } | { ok: false; error: string };
 
-/** 내 이름 바꾸기 — 로그인한 본인 줄만 */
+/** 내 닉네임(User.name) 바꾸기 — 로그인한 본인 줄만. 본인인증 실명(identityVerifiedName)은 건드리지 않는다 */
 export async function updateMyName(name: string): Promise<Result> {
     const parent = await requireVerifiedParent().catch(() => null);
     if (!parent) return { ok: false, error: "다시 로그인해 주세요." };
     const clean = cleanDisplayName(name);
-    if (!clean) return { ok: false, error: "이름은 1~30자로 입력해 주세요." };
+    if (!clean) return { ok: false, error: "닉네임은 1~30자로 입력해 주세요." };
     try {
         await prisma.$executeRawUnsafe(
             `UPDATE "User" SET name = $1, "updatedAt" = NOW() WHERE id = $2 AND "withdrawnAt" IS NULL`,

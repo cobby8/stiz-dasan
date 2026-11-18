@@ -75,6 +75,8 @@ import { postMessage } from "@/lib/slack/client";
 import { rememberPaymentMethodFromToss } from "@/lib/payments/preferredMethodStore";
 // 결제 권한 판정 한 곳(주 보호자 + 승인된 가족 연결) — 결제 시작·승인 직전·묶음 후보가 같이 쓴다(2026-11-13 f8)
 import { payerAccessSql, resolveLinkedPayer } from "@/lib/payments/payerAccess";
+// 결제창 이름 = 본인인증 실명 → 닉네임 순서(2026-11-18 원장 결정). 체험비·비회원 가상계좌 이름 규칙은 따로다.
+import { payerDisplayNameSql } from "@/lib/identity/verified-identity";
 // 비회원 결제 링크(/pay/<토큰>, 2026-11-14) — 토스 고객 키(회원 키와 섞이지 않게 청구서 기반)
 import { guestCustomerKey } from "@/lib/payments/guestPayToken";
 import {
@@ -1107,7 +1109,7 @@ async function loadParentInvoiceRow(invoiceId: string): Promise<ParentInvoiceRow
             p."receiptUrl",
             s.name AS "studentName",
             s."parentId" AS "studentParentId",
-            u.name AS "parentName",
+            ${payerDisplayNameSql("u")} AS "parentName",
             u.email AS "parentEmail",
             u.phone AS "parentPhone",
             tx.id AS "transactionId",
@@ -3231,8 +3233,9 @@ export async function createBundleCheckoutSession(input: {
         items.map((item) => item.paymentId),
     );
 
+    // 묶음 결제창 이름도 단건과 같은 규칙(실명 → 닉네임)
     const users = await prisma.$queryRawUnsafe<Array<{ name: string | null; email: string; phone: string | null }>>(
-        `SELECT name, email, phone FROM "User" WHERE id = $1 LIMIT 1`,
+        `SELECT ${payerDisplayNameSql("u")} AS name, u.email, u.phone FROM "User" u WHERE u.id = $1 LIMIT 1`,
         input.parentUserId,
     );
     const user = users[0];

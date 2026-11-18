@@ -9,6 +9,7 @@ import { resolveRedirectForRole } from "@/lib/auth-routes";
 import { isSyntheticParentEmail } from "@/lib/parent-synthetic-email";
 import { PARENT_CONSENT_REQUIRED_MESSAGE, PARENT_PRIVACY_VERSION, PARENT_TERMS_VERSION, hasAllParentConsents, type ParentConsents } from "@/lib/parent-consent";
 import { PARENT_PASSWORD_MIN, PARENT_WEAK_PASSWORD_MESSAGE, isWeakPasswordRejection } from "@/lib/parent-password-rules";
+import { recordIdentityVerification } from "@/lib/identity/verified-identity";
 // 아이디 규칙·로그인 메일 매핑 — 신규 가입과 같은 모듈(2026-11-13 f7 가입 방식 통일)
 import {
   PARENT_USERNAME_PATTERN,
@@ -259,7 +260,11 @@ export class SelfClaimUserError extends Error {}
  *   "이미 로그인 계정과 연결된 보호자" 검사에서 막힌다).
  */
 export async function issueVerifiedSelfParentClaim(
-  input: { parentId: string; verifiedPhone: string; redirectPath?: string | null },
+  input: {
+    parentId: string; verifiedPhone: string; redirectPath?: string | null;
+    /** 본인인증으로 들어온 경우의 실명·시각(2026-11-18). 문자 인증이면 null — 실명을 적지 않는다 */
+    identity?: { verifiedName: string; verifiedAt: Date } | null;
+  },
   tx: Prisma.TransactionClient,
 ) {
   const verifiedPhone = normalizePhone(input.verifiedPhone);
@@ -279,6 +284,9 @@ export async function issueVerifiedSelfParentClaim(
   if (Number(duplicates[0]?.count) !== 1) throw new SelfClaimUserError("같은 연락처의 보호자 계정이 여러 개여서 관리자 확인이 필요합니다.");
 
   await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, parent.id);
+  // 본인인증(통신사 명의)으로 이 번호의 주인이 확인됐다 — 활성화 링크와 같은 거래에서 실명·시각을 적는다.
+  // 활성화를 끝까지 하지 않아도 «이 번호 명의자의 실명»이라는 사실은 그대로라 미리 적어도 된다.
+  if (input.identity) await recordIdentityVerification(tx, { userId: parent.id, ...input.identity });
   const rawToken = randomBytes(32).toString("base64url");
   const hash = tokenHash(rawToken);
   const proof = randomBytes(32).toString("base64url");

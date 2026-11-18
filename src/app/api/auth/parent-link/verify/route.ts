@@ -18,6 +18,7 @@ import { LINK_START_COOKIE, LINK_START_COOKIE_MAX_AGE, LINK_HINT_COOKIE, linkSta
 import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { claimStaffRecordByIdentity } from "@/lib/staff/staffSelfClaim";
+import { identityVerifiedAtOf, recordIdentityVerification } from "@/lib/identity/verified-identity";
 import { currentSocialOnlyUser } from "../shared";
 
 /**
@@ -77,6 +78,8 @@ export async function POST(request: Request) {
     phone,
   );
   const verifiedName = (verification.verifiedCustomer?.name ?? "").trim();
+  // 2026-11-18 원장 결정: 본인인증 실명·시각을 계정에 적는다(아래 세 갈래 — 직원 기록 연결·가입 이어가기·기존 계정 연결).
+  const identityVerifiedAt = identityVerifiedAtOf(verification);
 
   // 2026-11-17 원장 지시 «알아서 다 처리할 수 있게»: 원장이 적어 둔 직원 기록(이름·번호·역할)에 아직 로그인이 없으면,
   // 본인이 간편로그인 + 본인인증으로 직접 붙인다 — 원장이 «로그인 연결 초대»를 따로 보내지 않아도 된다.
@@ -85,7 +88,7 @@ export async function POST(request: Request) {
   if (staffRecord) {
     // 붙이기·감사 기록·다른 원장 알림은 한 곳(claimStaffRecordByIdentity)에서 한다 — 조건을 UPDATE 에 다시 적어
     // 그 사이 바뀐 기록·이미 로그인이 있는 기록(초대 가입)·겹치는 이메일은 0줄이 되어 멈춘다.
-    const claim = await claimStaffRecordByIdentity({ userId: staffRecord.userId, authUserId: current.user.id, email: current.user.email });
+    const claim = await claimStaffRecordByIdentity({ userId: staffRecord.userId, authUserId: current.user.id, email: current.user.email, verifiedName, verifiedAt: identityVerifiedAt });
     if (!claim.ok) {
       return NextResponse.json({
         error: claim.reason === "NO_EMAIL"
@@ -110,7 +113,8 @@ export async function POST(request: Request) {
   if (target.kind === "NONE" || target.kind === "NOT_READY" || emptyParentsOnly) {
     const method = oauthProviderMethod(current.provider);
     if (!method) return NextResponse.json({ error: "간편로그인으로 들어온 경우에만 쓸 수 있습니다." }, { status: 400 });
-    const issued = await issueIdentityVerifiedSignup({ phone, signupMethod: method, email: current.user.email, pendingAuthUserId: current.user.id });
+    // 실명·시각은 가입 요청에 실어 두었다가 계정이 만들어지거나 연결될 때 User 로 옮긴다(signupRowIdentity)
+    const issued = await issueIdentityVerifiedSignup({ phone, signupMethod: method, email: current.user.email, pendingAuthUserId: current.user.id, verifiedName, verifiedAt: identityVerifiedAt });
     if ("error" in issued) return NextResponse.json({ error: issued.error }, { status: 400 });
     const handoff = await resolveVerifiedSignupPhone({
       token: issued.token,
@@ -172,6 +176,11 @@ export async function POST(request: Request) {
     await current.supabase.auth.signOut().catch(() => undefined);
     return NextResponse.json({ error: "기존 계정으로 로그인하지 못했어요. 아이디로 로그인한 뒤 마이페이지에서 연결해 주세요." }, { status: 500 });
   }
+
+  // 본인인증 실명·시각을 그 기존 계정에 적는다(이름 일치는 selectLinkTarget 이 이미 확인). 실패해도 로그인은 이미 끝났으므로
+  // 연결 흐름을 막지 않는다 — 다음 본인인증 때 다시 적힌다. 오류 기록에 실명은 넣지 않는다.
+  await recordIdentityVerification(prisma, { userId: target.userId, verifiedName, verifiedAt: identityVerifiedAt })
+    .catch((error) => console.error("[parent-link verify] identity record failed:", error instanceof Error ? error.message.slice(0, 200) : "UNKNOWN"));
 
   // 본인인증으로 기존 계정에 들어온 사실 자체를 알린다(다음 연결 단계에서 취소해도).
   await notifyAccountSecurityEvent({ authUserId: target.authUserId, eventType: "IDENTITY_LOGIN", body: identityLoginNoticeBody() });

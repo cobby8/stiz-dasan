@@ -388,3 +388,9 @@ approveIllnessCarry 가 서버에서 갈래를 정한다(이월 근거 있음 �
 - **발견자**: developer
 - **내용**: `src/lib/navigation/inAppHistory.ts` 가 범위(`/mypage`·`/staff`·`/admin`)마다 저장 키·메모리 기록·첫 기록·떠남·바꿔 끼우기·pop 표시를 따로 둔다. 학부모 함수(recordInAppNavigation 등)는 /mypage 로 부르는 포장이고 규칙은 nextParentRecord 그대로. 선생님·관리자는 nextStaffOrAdminRecord: 문서를 범위 밖에서 불러왔으면 새로 시작 · 문서 첫 기록에서도 떠남 표시 확인 · 새로고침은 navigation type 으로 확인 · 같은 경로가 기록에 있으면 거기까지 잘라냄(nextScopeHistory) · 거쳐 가는 화면(SCOPE_PASS_THROUGH_PATHS)은 기록 안 함. 기록 부품 = `components/navigation/ScopeHistoryTracker`(staff layout·AdminShellClient 에 Suspense 로 한 번), 화면 안 뒤로 = `ScopeBackLink`(기록 있으면 history.back, 없으면 fallbackHref 로 replace). 머리줄 AppBackButton 은 scopeHref 가 /staff·/admin 이면 설치 여부와 무관하게 범위를 지킨다(backAction ALWAYS_SCOPED, 역할 홈 = 범위 안 fallbackHref — 기사님 전용은 /staff/shuttle). ⚠️ 새 «← 목록» 링크는 고정 Link 가 아니라 ScopeBackLink 로. 화면을 CJS·vm 대역으로 그리는 테스트(scheduled-enrollment-ui·shuttle-intake-ui)는 이 부품의 대역을 넣어야 한다. backAction.ts 는 import 없이 유지(테스트가 data URL 로 실행). 테스트 `tests/scope-back-nav.test.mjs`.
 - **참조횟수**: 0
+
+### [2026-11-18] 본인인증 실명·시각 = User.identityVerifiedName/At, 규칙은 lib/identity/verified-identity.ts 한 곳
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: User.name 은 «닉네임», 결제창 이름은 `payerDisplayNameSql("u")`(실명 → 닉네임). 실명은 `recordIdentityVerification(tx,…)` 로만 적고, 가입 요청 줄은 `signupRowIdentity`(IDENTITY 일 때만 값, SMS 는 null)로 옮긴다. 본인인증을 거치는 새 길을 만들면 이 함수를 부르고 tests/identity-verified-name.test.mjs 에 계약을 추가한다. 탈퇴 비움은 CLEARED_USER_COLUMNS. 가짜 prisma 로 parent-signup-verification·parent-account-claim 을 올리는 테스트는 `@/lib/identity/verified-identity` 도 바꿔 끼워야 한다.
+- **참조횟수**: 0

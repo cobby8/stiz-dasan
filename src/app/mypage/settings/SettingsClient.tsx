@@ -45,7 +45,8 @@ function Message({ text, tone }: { text: string; tone: "ok" | "error" }) {
 // 보호자 «내 사진» 칸(MyPhotoRow, 2026-11-15)은 뺐다 — 2026-11-16 원장 «학부모가 자기 사진 올리는 건 필요가 없어».
 // 아이 사진은 설정 맨 위 «우리 아이» 줄·홈 히어로·아이 기록 «아이 정보»에서 올린다. 저장된 사진·서버 API 는 그대로 둔다.
 
-// ── 내 정보: 이름(고치기) ──────────────────────────────────────────────────
+// ── 내 정보: 닉네임(고치기) ────────────────────────────────────────────────
+// 2026-11-18 원장 결정: User.name 은 «닉네임». 본인인증 실명은 따로 보관해 결제창 이름에 쓴다(여기서 바꿀 수 없다).
 export function NameRow({ name }: { name: string }) {
     const [editing, setEditing] = useState(false);
     const [value, setValue] = useState(name);
@@ -66,11 +67,11 @@ export function NameRow({ name }: { name: string }) {
     return (
         <li>
             <div className={ROW}>
-                <span className="w-16 shrink-0 font-medium text-[var(--color-academy-ink)]">이름</span>
+                <span className="w-16 shrink-0 font-medium text-[var(--color-academy-ink)]">닉네임</span>
                 {editing ? (
                     <>
                         <input
-                            aria-label="이름"
+                            aria-label="닉네임"
                             value={value}
                             maxLength={30}
                             onChange={(e) => setValue(e.target.value)}
@@ -90,6 +91,8 @@ export function NameRow({ name }: { name: string }) {
                     </>
                 )}
             </div>
+            {/* 실명이 바뀌는 칸으로 오해하지 않게 한 줄 안내 */}
+            <p className="px-1 pb-2 text-xs text-[var(--color-academy-muted)]">본인인증 실명은 따로 보관돼요.</p>
             <Message {...msg} />
         </li>
     );

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createNotificationRecord } from "@/lib/notification";
 import { linkMatchingCoachProfileToUser } from "@/lib/staff-coach-link";
 import { DIRECT_ADDED_EMAIL_SUFFIX } from "@/lib/staff/staffAccountLink";
+import { recordIdentityVerification } from "@/lib/identity/verified-identity";
 
 /**
  * 로그인 없는 직원 기록에 본인이 직접 로그인을 붙인다(2026-11-17 원장 지시 «알아서 다 처리할 수 있게»).
@@ -22,7 +23,11 @@ export type StaffSelfClaimResult =
   | { ok: true; name: string; role: string }
   | { ok: false; reason: "NO_EMAIL" | "CHANGED" };
 
-export async function claimStaffRecordByIdentity(input: { userId: string; authUserId: string; email: string | null | undefined }): Promise<StaffSelfClaimResult> {
+export async function claimStaffRecordByIdentity(input: {
+  userId: string; authUserId: string; email: string | null | undefined;
+  /** 본인인증 실명·시각(2026-11-18) — 연결과 같은 거래에서 그 직원 기록에 적는다 */
+  verifiedName: string; verifiedAt: Date;
+}): Promise<StaffSelfClaimResult> {
   const email = (input.email || "").trim().toLowerCase();
   if (!email) return { ok: false, reason: "NO_EMAIL" };
   const claimed = await prisma.$transaction(async (tx) => {
@@ -38,6 +43,8 @@ export async function claimStaffRecordByIdentity(input: { userId: string; authUs
     );
     const row = rows[0];
     if (!row) return null;
+    // 본인인증 실명·시각 — 감사 기록(아래)에는 실명을 넣지 않는다
+    await recordIdentityVerification(tx, { userId: row.id, verifiedName: input.verifiedName, verifiedAt: input.verifiedAt });
     // 같은 이름·번호의 코치 프로필이 있고 아직 연결이 없으면 연결한다(초대 가입과 같은 규칙)
     const linked = await tx.$queryRawUnsafe<Array<{ id: string }>>(`SELECT id FROM "Coach" WHERE "userId" = $1 LIMIT 1`, row.id);
     if (linked.length === 0) await linkMatchingCoachProfileToUser(tx, { userId: row.id, name: row.name, phone: row.phone || "", role: row.role });

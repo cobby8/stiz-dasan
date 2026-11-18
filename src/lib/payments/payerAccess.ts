@@ -16,10 +16,14 @@
  * ■ 이 파일은 prisma·next 를 import 하지 않는다 — db 를 인자로 받아 `node --test` 에서 가짜 db 로 실행 검증한다.
  */
 import { childAccessSql } from "@/lib/account/child-access";
+import { payerDisplayNameSql } from "@/lib/identity/verified-identity";
 
 type Reader = { $queryRawUnsafe<T = unknown>(sql: string, ...values: unknown[]): Promise<T> };
 
-/** 결제하는 사람(앱 계정) — 토스 결제창 고객 정보·영수증 수신·«지난번 결제 방법» 기억에 쓴다 */
+/**
+ * 결제하는 사람(앱 계정) — 토스 결제창 고객 정보·영수증 수신·«지난번 결제 방법» 기억에 쓴다.
+ * name = 결제창 이름: 본인인증 실명이 있으면 실명, 없으면 닉네임(User.name) — 2026-11-18 원장 결정(payerDisplayNameSql).
+ */
 export type PayerAccount = { id: string; name: string | null; email: string | null; phone: string | null };
 
 /** 조회 한 줄 = 계정 1개 × (연결된 학생 1명 또는 null) */
@@ -71,7 +75,7 @@ export async function resolveLinkedPayer(
     const ids = [...new Set(studentIds.filter((id) => typeof id === "string" && id.length > 0))];
     if (!authUserId || ids.length === 0) return null;
     const rows = await db.$queryRawUnsafe<PayerLinkRow[]>(
-        `SELECT u.id, u.name, u.email, u.phone, s.id AS "studentId"
+        `SELECT u.id, ${payerDisplayNameSql("u")} AS name, u.email, u.phone, s.id AS "studentId"
            FROM "User" u
            LEFT JOIN "Student" s ON s.id = ANY($2::text[]) AND ${await payerAccessSql("s", 'u."id"')}
           WHERE (u."authUserId" = $1 OR (u."authUserId" IS NULL AND u.id = $1))

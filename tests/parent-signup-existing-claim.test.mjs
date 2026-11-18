@@ -68,7 +68,10 @@ async function load(db) {
     .split('"@/lib/staff/inviteAuthFailure"').join(`"${inviteAuthFailure}"`));
   // 아이디 규칙(순수 모듈, 2026-11-13 f7) — 가입·활성화가 같이 쓴다
   const username = toDataUrl(await transpile("src/lib/parent-username.ts"));
+  // 본인인증 실명·시각 규칙(순수 모듈, 2026-11-18) — 원본 그대로 엮는다
+  const verifiedIdentity = toDataUrl(await transpile("src/lib/identity/verified-identity.ts"));
   const swap = (code) => code
+    .split('"@/lib/identity/verified-identity"').join(`"${verifiedIdentity}"`)
     .split('"@/lib/parent-username"').join(`"${username}"`)
     .split('"@/lib/user-facing-error"').join(`"${publicErrors}"`)
     .split('"@/lib/parent-synthetic-email"').join(`"${syntheticEmail}"`)
@@ -246,4 +249,54 @@ test("화면·API 계약: 인증 통과 뒤에만 안내하고, 활성화 증표
   assert.match(ui, /이미 학원에 등록된 보호자입니다/);
   assert.match(ui, /searchParams\.get\("existing"\) === "1"/);
   assert.match(page, /status === "VERIFIED" && hasProofCookie/);
+});
+
+// ── 2026-11-18 본인인증 실명·시각 저장 (원장 결정 «가입·본인인증 통일») ─────────────────
+// 본인인증(IDENTITY)으로 통과한 가입 요청만 실명·시각을 User 에 옮긴다. 문자 인증(SMS)은 번호만 확인하므로 적지 않는다.
+const identityWrites = () => writes().filter((c) => /"identityVerifiedName" = \$2/.test(c.sql));
+const VERIFIED_AT = new Date("2026-11-18T05:00:00.000Z");
+
+test("본인인증 가입 요청 + 간편가입 세션 → 빈 계정 연결과 같은 거래에서 실명·시각을 적는다", async () => {
+  const row = verifiedRow({ signupMethod: "KAKAO", pendingAuthUserId: "oauth-1", verificationMethod: "IDENTITY", verifiedName: " 김 엄마 ", verifiedAt: VERIFIED_AT });
+  const mod = await load({ verification: row, users: [synthetic("p1")] });
+  const linked = await mod.resolveVerifiedSignupPhone({
+    token: TOKEN, proof: PROOF, authenticatedOAuthUser: { id: "oauth-1", email: "mom@example.com", provider: "kakao" },
+  });
+  assert.equal(linked.kind, "LINKED_EXISTING");
+  const [write] = identityWrites();
+  assert.ok(write, "실명을 적어야 한다");
+  assert.deepEqual(write.args, ["p1", "김 엄마", VERIFIED_AT]);
+  assert.match(write.sql, /"withdrawnAt" IS NULL/);
+});
+
+test("본인인증 가입 요청 → 빈 계정 활성화 링크를 만들 때 그 계정에 실명·시각을 적는다", async () => {
+  const row = verifiedRow({ verificationMethod: "IDENTITY", verifiedName: "김엄마", verifiedAt: VERIFIED_AT });
+  const mod = await load({ verification: row, users: [synthetic("p1")] });
+  const result = await mod.resolveVerifiedSignupPhone({ token: TOKEN, proof: PROOF });
+  assert.equal(result.kind, "ACTIVATE_EXISTING");
+  assert.deepEqual(identityWrites().map((c) => c.args), [["p1", "김엄마", VERIFIED_AT]]);
+});
+
+test("문자 인증(SMS) 가입 요청은 이름이 적혀 있어도 실명을 User 에 적지 않는다(연결·활성화 둘 다)", async () => {
+  const sms = { verificationMethod: "SMS", verifiedName: "누군가", verifiedAt: VERIFIED_AT };
+  const link = await load({ verification: verifiedRow({ signupMethod: "KAKAO", pendingAuthUserId: "oauth-1", ...sms }), users: [synthetic("p1")] });
+  assert.equal((await link.resolveVerifiedSignupPhone({ token: TOKEN, proof: PROOF, authenticatedOAuthUser: { id: "oauth-1", email: "a@b.c", provider: "kakao" } })).kind, "LINKED_EXISTING");
+  assert.deepEqual(identityWrites(), []);
+  const activate = await load({ verification: verifiedRow(sms), users: [synthetic("p1")] });
+  assert.equal((await activate.resolveVerifiedSignupPhone({ token: TOKEN, proof: PROOF })).kind, "ACTIVATE_EXISTING");
+  assert.deepEqual(identityWrites(), []);
+  // 예전 줄(방식 칸 없음)도 같다
+  const legacy = await load({ verification: verifiedRow(), users: [synthetic("p1")] });
+  await legacy.resolveVerifiedSignupPhone({ token: TOKEN, proof: PROOF });
+  assert.deepEqual(identityWrites(), []);
+});
+
+test("문자 인증 가입 시작은 방식 'SMS' 로 남기고, 7일 뒤 정리에서 실명 칸도 비운다", async () => {
+  const mod = await load({ verification: null, users: [] });
+  assert.ok((await mod.startParentSignup({ phone: PHONE })).ok);
+  const insert = writes().find((c) => /INSERT INTO "ParentSignupVerification"/.test(c.sql));
+  assert.match(insert.sql, /"verificationMethod"/);
+  assert.match(insert.sql, /'PENDING','SMS'/);
+  const cleanup = writes().find((c) => /WHERE status='CONSUMED' AND "createdAt" < NOW\(\) - INTERVAL '7 days'/.test(c.sql));
+  assert.match(cleanup.sql, /"verifiedName"=NULL/);
 });

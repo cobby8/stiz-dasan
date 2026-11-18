@@ -160,7 +160,8 @@ test("로그인 없는 직원 기록에는 본인이 본인인증으로 직접 �
   const at = verify.indexOf("const staffRecord = selectStaffRecordToClaim(rows, verifiedName);");
   assert.ok(at > verify.indexOf('verification.status !== "VERIFIED" || !isFreshVerification(verifiedAt)'), "본인인증 확인이 먼저");
   const block = verify.slice(at, verify.indexOf("const target = selectLinkTarget(rows, verifiedName);"));
-  assert.match(block, /await claimStaffRecordByIdentity\(\{ userId: staffRecord\.userId, authUserId: current\.user\.id, email: current\.user\.email \}\)/);
+  // 2026-11-18: 본인인증 실명·시각도 함께 넘겨 같은 거래에서 적는다
+  assert.match(block, /await claimStaffRecordByIdentity\(\{ userId: staffRecord\.userId, authUserId: current\.user\.id, email: current\.user\.email, verifiedName, verifiedAt: identityVerifiedAt \}\)/);
   assert.match(block, /if \(!claim\.ok\) \{/);
   assert.match(block, /notifyAccountSecurityEvent\(/);
   // 조회: 옛 초대 가입 직원은 id 를 로그인 id 로 보고, «로그인 없음»은 @staff.local 자리표시일 때만

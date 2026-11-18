@@ -12,6 +12,8 @@ import { isSyntheticParentEmail } from "@/lib/parent-synthetic-email";
 import { resolveRedirectForRole } from "@/lib/auth-routes";
 import { PARENT_PRIVACY_VERSION, PARENT_TERMS_VERSION, PARENT_CONSENT_REQUIRED_MESSAGE, hasAllParentConsents } from "@/lib/parent-consent";
 import { PARENT_PASSWORD_MIN, PARENT_WEAK_PASSWORD_MESSAGE, isWeakPasswordRejection } from "@/lib/parent-password-rules";
+// 본인인증 실명·시각 규칙은 한 곳(2026-11-18) — 문자 인증(SMS)은 실명을 적지 않는다
+import { cleanVerifiedName, recordIdentityVerification, signupRowIdentity } from "@/lib/identity/verified-identity";
 // 아이디 규칙·로그인 메일 매핑은 기존 학부모 계정 활성화와 같은 모듈 한 곳(2026-11-13 f7)
 import {
   PARENT_USERNAME_PATTERN,
@@ -42,6 +44,8 @@ type Row = {
   signupMethod: ParentSignupMethod; email: string | null; pendingAuthUserId: string | null;
   status: string; expiresAt: Date; otpHash: string | null; otpExpiresAt: Date | null;
   otpAttempts: number; lockedAt: Date | null; proofHash: string | null; proofExpiresAt: Date | null;
+  // 2026-11-18: 통과한 인증 방식(SMS/IDENTITY)·본인인증 실명·통과 시각 — User 로 옮길 때 signupRowIdentity 가 고른다
+  verificationMethod: string | null; verifiedName: string | null; verifiedAt: Date | null;
 };
 
 function secret() {
@@ -62,7 +66,8 @@ async function find(token: string, tx: Prisma.TransactionClient | typeof prisma,
   if (!/^[A-Za-z0-9_-]{40,200}$/.test(token)) return null;
   const rows = await tx.$queryRawUnsafe<Row[]>(
     `SELECT id, username, name, phone, "phoneHash", "signupMethod", email, "pendingAuthUserId", status,
-      "expiresAt", "otpHash", "otpExpiresAt", "otpAttempts", "lockedAt", "proofHash", "proofExpiresAt"
+      "expiresAt", "otpHash", "otpExpiresAt", "otpAttempts", "lockedAt", "proofHash", "proofExpiresAt",
+      "verificationMethod", "verifiedName", "verifiedAt"
      FROM "ParentSignupVerification" WHERE "tokenHash" = $1${lock ? " FOR UPDATE" : ""}`,
     hash(token),
   );
@@ -176,6 +181,9 @@ export async function resolveVerifiedSignupPhone(input: {
             oauth!.id, oauth!.email || "", ownership.parentId, ownership.email,
           );
           if (updated !== 1) throw new SignupHandoffError("보호자 계정 정보가 바뀌었습니다. 처음부터 다시 시도해 주세요.");
+          // 본인인증으로 들어왔으면 실명·시각을 같은 거래에서 적는다(문자 인증이면 identity=null → 적지 않음)
+          const identity = signupRowIdentity(row);
+          if (identity) await recordIdentityVerification(tx, { userId: ownership.parentId, ...identity });
           await markConsumed(oauth!.id);
           return { kind: "LINKED_EXISTING", redirectPath: resolveRedirectForRole("PARENT", input.redirectPath) };
         }
@@ -183,7 +191,8 @@ export async function resolveVerifiedSignupPhone(input: {
 
       // 비밀번호 활성화: 문자 인증은 방금 끝났으므로 VERIFIED 상태의 활성화 링크를 만든다.
       const claim = await issueVerifiedSelfParentClaim(
-        { parentId: ownership.parentId, verifiedPhone: row.phone, redirectPath: input.redirectPath },
+        // 본인인증으로 들어왔으면 활성화 대상 계정에 실명·시각을 함께 적는다(문자 인증이면 null)
+        { parentId: ownership.parentId, verifiedPhone: row.phone, redirectPath: input.redirectPath, identity: signupRowIdentity(row) },
         tx,
       );
       // 가입 증표는 여기서 다 썼다 — 같은 증표로 신규 가입·재활성화를 다시 시도할 수 없게 닫는다.
@@ -230,7 +239,7 @@ export async function startParentSignup(input: {
       );
       await tx.$executeRawUnsafe(
         `UPDATE "ParentSignupVerification"
-            SET username=NULL, name=NULL, phone='', email=NULL, "pendingAuthUserId"=NULL,
+            SET username=NULL, name=NULL, phone='', email=NULL, "pendingAuthUserId"=NULL, "verifiedName"=NULL,
                 "phoneHash"=repeat('0',64), "lastError"=NULL, "updatedAt"=NOW()
           WHERE status='CONSUMED' AND "createdAt" < NOW() - INTERVAL '7 days' AND phone <> ''`,
       );
@@ -251,8 +260,8 @@ export async function startParentSignup(input: {
       );
       await tx.$executeRawUnsafe(
         `INSERT INTO "ParentSignupVerification"
-         (id, "tokenHash", username, name, phone, "phoneHash", "signupMethod", email, "pendingAuthUserId", status, "expiresAt", "createdAt", "updatedAt")
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'PENDING',NOW()+INTERVAL '30 minutes',NOW(),NOW())`,
+         (id, "tokenHash", username, name, phone, "phoneHash", "signupMethod", email, "pendingAuthUserId", status, "verificationMethod", "expiresAt", "createdAt", "updatedAt")
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'PENDING','SMS',NOW()+INTERVAL '30 minutes',NOW(),NOW())`,
         randomUUID(), hash(token), null, null, phone, phoneHash, method,
         input.email?.trim().toLowerCase() || null, input.pendingAuthUserId ?? null,
       );
@@ -327,10 +336,15 @@ export async function sendParentSignupOtp(token: string, requestKey = "unknown")
 export async function issueIdentityVerifiedSignup(input: {
   phone: string; signupMethod: Exclude<ParentSignupMethod, "PASSWORD">;
   email?: string | null; pendingAuthUserId: string;
+  /** 본인인증 실명·인증 시각(2026-11-18) — 계정이 만들어지거나 연결될 때 User 로 옮긴다 */
+  verifiedName: string; verifiedAt: Date;
 }): Promise<{ ok: true; token: string; proof: string } | { error: string }> {
   const phone = normalizeParentPhone(input.phone);
   if (!/^01[016789]\d{7,8}$/.test(phone)) return { error: "본인인증 휴대폰 번호를 확인하지 못했어요. 학원에 문의해 주세요." };
   if (!input.pendingAuthUserId) return { error: "간편가입 계정을 먼저 확인해 주세요." };
+  // 실명이 비어 오면 본인인증 결과가 온전하지 않은 것 — 이름 없는 «본인인증 통과» 줄을 만들지 않는다(이름은 문구에 넣지 않는다)
+  const verifiedName = cleanVerifiedName(input.verifiedName);
+  if (!verifiedName) return { error: "본인인증 이름을 확인하지 못했어요. 다시 인증해 주세요." };
   const token = randomBytes(32).toString("base64url");
   const proof = randomBytes(32).toString("base64url");
   const phoneHash = keyed(`phone:${phone}`);
@@ -347,10 +361,11 @@ export async function issueIdentityVerifiedSignup(input: {
       await tx.$executeRawUnsafe(
         `INSERT INTO "ParentSignupVerification"
          (id, "tokenHash", username, name, phone, "phoneHash", "signupMethod", email, "pendingAuthUserId", status,
-          "verifiedAt", "proofHash", "proofExpiresAt", "expiresAt", "createdAt", "updatedAt")
-         VALUES ($1,$2,NULL,NULL,$3,$4,$5,$6,$7,'VERIFIED',NOW(),$8,NOW()+INTERVAL '10 minutes',NOW()+INTERVAL '30 minutes',NOW(),NOW())`,
+          "verificationMethod", "verifiedName", "verifiedAt", "proofHash", "proofExpiresAt", "expiresAt", "createdAt", "updatedAt")
+         VALUES ($1,$2,NULL,NULL,$3,$4,$5,$6,$7,'VERIFIED','IDENTITY',$9,$10,$8,NOW()+INTERVAL '10 minutes',NOW()+INTERVAL '30 minutes',NOW(),NOW())`,
         randomUUID(), hash(token), phone, phoneHash, input.signupMethod,
         input.email?.trim().toLowerCase() || null, input.pendingAuthUserId, keyed(`proof:${hash(token)}:${proof}`),
+        verifiedName, input.verifiedAt,
       );
     });
     return { ok: true, token, proof };
@@ -389,7 +404,7 @@ export async function completeParentSignup(input: {
   const username = normalizeParentUsername(input.username);
   const name = input.name.trim();
   if (!PARENT_USERNAME_PATTERN.test(username)) return { error: PARENT_USERNAME_RULE_MESSAGE };
-  if (name.length < 2 || name.length > 40) return { error: "이름은 2~40자로 입력해 주세요." };
+  if (name.length < 2 || name.length > 40) return { error: "닉네임은 2~40자로 입력해 주세요." };
   if (!hasAllParentConsents(input.consents)) return { error: PARENT_CONSENT_REQUIRED_MESSAGE };
   const attemptId = randomUUID(); let row: Row | null = null; let authUserId: string | null = null; let createdAuth = false;
   try {
@@ -438,9 +453,12 @@ export async function completeParentSignup(input: {
     await prisma.$transaction(async (tx) => {
       await rejectExisting(tx, row!.username!, row!.phone);
       const email = row!.signupMethod === "PASSWORD" ? parentUsernameAuthEmail(row!.username!) : (row!.email || input.authenticatedOAuthUser?.email || parentUsernameAuthEmail(row!.username!));
+      // 본인인증으로 통과한 가입이면 실명·시각을 함께 넣는다. 문자 인증(SMS)이면 둘 다 NULL(signupRowIdentity 가 null)
+      const identity = signupRowIdentity(row!);
       await tx.$executeRawUnsafe(
-        `INSERT INTO "User" (id,email,username,name,phone,"phoneVerifiedAt","authUserId",role,"createdAt","updatedAt") VALUES ($1,$2,$3,$4,$5,NOW(),$1,'PARENT'::"Role",NOW(),NOW())`,
+        `INSERT INTO "User" (id,email,username,name,phone,"phoneVerifiedAt","authUserId",role,"identityVerifiedName","identityVerifiedAt","createdAt","updatedAt") VALUES ($1,$2,$3,$4,$5,NOW(),$1,'PARENT'::"Role",$6,$7,NOW(),NOW())`,
         authUserId, email, row!.username!, row!.name!, row!.phone,
+        identity?.verifiedName ?? null, identity?.verifiedAt ?? null,
       );
       if (input.enrollmentHandoff) {
         await linkEnrollmentAccount(

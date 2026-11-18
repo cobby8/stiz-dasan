@@ -86,6 +86,7 @@ async function load(state) {
     "@/lib/parent-consent": toDataUrl(await transpile("src/lib/parent-consent.ts")),
     "@/lib/parent-password-rules": passwordRules,
     "@/lib/parent-username": toDataUrl(await transpile("src/lib/parent-username.ts")),
+    "@/lib/identity/verified-identity": toDataUrl(await transpile("src/lib/identity/verified-identity.ts")),
   };
   let code = await transpile("src/lib/parent-account-claim.ts");
   for (const [from, to] of Object.entries(map)) code = code.split(`"${from}"`).join(`"${to}"`);

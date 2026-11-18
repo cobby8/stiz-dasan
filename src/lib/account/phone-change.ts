@@ -7,6 +7,7 @@ import { ChildConnectionError, childConnectionsConfigured, type ChildActor } fro
 import { childConnectionsAvailable } from "./child-access";
 import { identityName, identityPhone, isSerializationConflict } from "./child-link-policy";
 import { phoneChangeOutcome, PHONE_CHANGE_ID_PREFIX } from "./phone-change-rules";
+import { recordIdentityVerification } from "@/lib/identity/verified-identity";
 
 /**
  * 보호자 «연락처 바꾸기» (2026-11-14 원장 결정 b6).
@@ -134,6 +135,8 @@ export async function confirmPhoneChange(actor: ChildActor, sessionHash: string,
         phone,
         actor.id,
       );
+      // 본인인증 실명·시각도 같은 거래에서 적는다(2026-11-18) — 비교용으로 다듬은 name 이 아니라 포트원이 준 원래 이름
+      await recordIdentityVerification(tx, { userId: actor.id, verifiedName: v.verifiedCustomer?.name, verifiedAt: new Date(at) });
       if (!outcome.changed) return { ok: true as const, changed: false, notify: null };
       // 이력(감사 기록) — 번호 원문은 남기지 않는다(끝 4자리만). 같은 트랜잭션이라 변경과 함께 남거나 함께 되돌아간다
       await tx.$executeRawUnsafe(
