@@ -344,5 +344,6 @@ test("계약: 화면 — 막대 버튼 모드는 규칙 함수, 환불은 그 �
     assert.match(financeSrc, /bulkRefundingRef\.current\) return/);
     assert.match(financeSrc, /refundSelectedPayments\(ids\)/);
     assert.match(financeSrc, /selection\.mode === "MIXED"/);
-    assert.match(financeSrc, /await loadMonth\(year, month\)/);
+    // 새로 고침은 지금 보는 범위(이 달 또는 «전체», 2026-11-18)
+    assert.match(financeSrc, /await reloadCurrent\(\)/);
 });

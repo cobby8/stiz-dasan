@@ -2,7 +2,7 @@
 import { adminErrorText } from "@/components/admin/adminDisplayText";
 import { toKstYmd } from "@/lib/datetime/kst";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import AdminModal from "@/components/admin/AdminModal";
@@ -508,6 +508,13 @@ export default function FinanceClient({
     const [viewMode, changeViewMode] = useRememberedListView(FINANCE_VIEW_STORAGE_KEY, FINANCE_VIEW_VALUES, "class");
     // 행을 눌러 연 상세 패널의 청구 id(재조회 뒤에도 최신 값을 보이게 id 로 들고 있다)
     const [detailPaymentId, setDetailPaymentId] = useState<string | null>(null);
+    // «전체» 기간 보기(2026-11-18) — 켜면 달과 상관없이 남은 미납·연체, allQuery(학생 이름)가 있으면 그 학생 전체 청구도
+    const [allPeriod, setAllPeriod] = useState(false);
+    const [allQuery, setAllQuery] = useState("");
+    const [allLimited, setAllLimited] = useState(false);
+    // 학생 이름 검색으로 «전체»가 저절로 켜졌나(검색을 지우면 보던 달로 돌아간다). 직접 누른 «전체»는 그대로 둔다
+    const autoAllRef = useRef(false);
+    const allRequestRef = useRef(0);
 
     const loadStudents = useCallback(async () => {
         if (studentsLoaded || studentsLoading) return;
@@ -597,6 +604,84 @@ export default function FinanceClient({
     }, [fallbackMonth, fallbackYear, hasInitialData, initialMonth, initialYear, loadMonth]);
 
     /**
+     * «전체» 기간(2026-11-18 원장: 월별로만 보여 한 학생의 전체 청구·미납을 볼 수 없다).
+     * 달과 상관없이 남은 미납·연체 전부 + 검색어(학생 이름)가 있으면 그 학생의 모든 상태 청구.
+     * year·month 는 그대로 둔다 — «이전·다음»이나 «전체»를 다시 누르면 보던 달로 돌아간다.
+     */
+    const loadAll = useCallback(async (query: string) => {
+        setAllPeriod(true);
+        setAllQuery(query);
+        setLoading(true);
+        setLoadError(null);
+        setSheetPreview(null);
+        setSheetError(null);
+        setFinanceNotice(null);
+        setSelectedIds(new Set());
+        // 검색어를 빨리 바꿔 응답 순서가 뒤바뀌어도 마지막 요청의 결과만 쓴다
+        const ticket = ++allRequestRef.current;
+        try {
+            const res = await fetch(`/api/admin/finance?scope=all&q=${encodeURIComponent(query)}`, { cache: "no-store" });
+            if (!res.ok) throw new Error("Failed to load all-period finance data.");
+            const data = (await res.json()) as FinancePayload & { limited?: boolean };
+            if (ticket !== allRequestRef.current) return;
+            setPayments(data.payments);
+            setOutstanding(data.outstanding ?? {});
+            setSummary(data.summary);
+            setPaymentProvider(data.paymentProvider);
+            setAllLimited(Boolean(data.limited));
+        } catch (err) {
+            console.error("수납 전체 기간 조회 실패:", err);
+            setLoadError("failed");
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    /** 월 보기로 돌아간다(«전체» 끄기) */
+    const leaveAllPeriod = useCallback((y: number, m: number) => {
+        autoAllRef.current = false;
+        allRequestRef.current += 1; // 아직 오는 중인 «전체» 응답은 버린다
+        setAllPeriod(false);
+        setAllQuery("");
+        setAllLimited(false);
+        void loadMonth(y, m);
+    }, [loadMonth]);
+
+    /** 지금 보는 범위(이 달 또는 «전체»)를 다시 읽는다 — 납부·취소·발송 뒤 새로 고침 */
+    function reloadCurrent() {
+        return allPeriod ? loadAll(allQuery) : loadMonth(year, month);
+    }
+
+    /**
+     * 학생 이름으로 검색하면 «전체» 기간으로 바꿔 그 학생의 모든 달 청구를 읽는다(원장 승인 2번).
+     * 반·내용 검색은 지금 범위 그대로(학생 이름에 걸릴 때만). 검색을 지우면 자동으로 바꾼 경우에만 보던 달로 돌아간다.
+     */
+    useEffect(() => {
+        const needle = paymentSearch.trim();
+        const timer = window.setTimeout(() => {
+            if (needle.length >= 2) {
+                if (!studentsLoaded) {
+                    void loadStudents();
+                    return;
+                }
+                const lower = needle.toLocaleLowerCase();
+                const isStudentName = students.some((s) => s.name.toLocaleLowerCase().includes(lower));
+                if (isStudentName) {
+                    if (!allPeriod) autoAllRef.current = true;
+                    if (!allPeriod || allQuery !== needle) void loadAll(needle);
+                    return;
+                }
+            }
+            if (!allPeriod || !allQuery) return;
+            // 학생 이름 검색이 끝났다: 검색으로 저절로 켠 «전체»면 보던 달로, 직접 켠 «전체»면 남은 미납·연체로
+            if (autoAllRef.current) leaveAllPeriod(year, month);
+            else void loadAll("");
+        }, 350);
+        return () => window.clearTimeout(timer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- 검색어·학생 목록이 바뀔 때만 판단한다
+    }, [paymentSearch, studentsLoaded, students]);
+
+    /**
      * 이 학생(과 같은 보호자 형제)의 «모든 달» 미납을 불러와 «납부 처리» 창을 «현장 결제» 화면으로 연다(2026-11-17 원장:
      * 월별로만 보여 밀린 달을 세 번 나눠 결제한 불편). 한 학생이면 버튼 하나로 전부(최대 10건 — 넘으면 창이 나눠 보인다),
      * 형제가 있으면 학생마다 버튼(POS 결제 한 번 = 학생 한 명).
@@ -658,16 +743,32 @@ export default function FinanceClient({
         return () => window.clearInterval(timer);
     }, [noticeStillQueued, loadNoticeProgress, year, month]);
 
+    // «전체» 보기 중 «이전·다음»은 보던 달로 돌아간 뒤 한 달 옮긴다(월 보기로 복귀)
     function prevMonth() {
         const m = month === 1 ? 12 : month - 1;
         const y = month === 1 ? year - 1 : year;
-        loadMonth(y, m);
+        if (allPeriod) leaveAllPeriod(y, m);
+        else loadMonth(y, m);
     }
 
     function nextMonth() {
         const m = month === 12 ? 1 : month + 1;
         const y = month === 12 ? year + 1 : year;
-        loadMonth(y, m);
+        if (allPeriod) leaveAllPeriod(y, m);
+        else loadMonth(y, m);
+    }
+
+    /** «전체» 단추 — 켜면 달과 상관없는 미납·연체(검색어가 학생 이름이면 그 학생 전체), 끄면 보던 달 */
+    function toggleAllPeriod() {
+        if (allPeriod) {
+            leaveAllPeriod(year, month);
+            return;
+        }
+        autoAllRef.current = false;
+        const needle = paymentSearch.trim();
+        const lower = needle.toLocaleLowerCase();
+        const isStudentName = needle.length >= 2 && students.some((s) => s.name.toLocaleLowerCase().includes(lower));
+        void loadAll(isStudentName ? needle : "");
     }
 
     // 수납 기록 수동 생성
@@ -717,7 +818,7 @@ export default function FinanceClient({
             setPaymentType("OTHER");
             setDescription("");
             setNotifyParent(false);
-            await loadMonth(year, month);
+            await reloadCurrent();
         } catch (err: unknown) {
             showNotice(getErrorMessage(err, "생성 실패"));
         } finally {
@@ -754,7 +855,7 @@ export default function FinanceClient({
                 `${period} ${classLabel}: ${cancelReason.trim()}`,
             );
             setCancelTarget(null);
-            await loadMonth(year, month);
+            await reloadCurrent();
         } catch (err: unknown) {
             setCancelError(getErrorMessage(err, "청구서 삭제 실패"));
         } finally {
@@ -772,7 +873,7 @@ export default function FinanceClient({
         setBusy(true);
         try {
             await updatePaymentStatus(id, newStatus);
-            await loadMonth(year, month);
+            await reloadCurrent();
         } catch (err: unknown) {
             showNotice(getErrorMessage(err, "상태 변경 실패"));
         } finally {
@@ -790,7 +891,7 @@ export default function FinanceClient({
         setBusy(true);
         try {
             await deletePayment(id);
-            await loadMonth(year, month);
+            await reloadCurrent();
         } catch (err: unknown) {
             showNotice(getErrorMessage(err, "삭제 실패"));
         } finally {
@@ -804,7 +905,7 @@ export default function FinanceClient({
         setBusy(true);
         try {
             const result = await sendUnpaidReminders();
-            await loadMonth(year, month);
+            await reloadCurrent();
             setFinanceNotice(result.message);
             // 발송은 서버가 매분 묶음으로 — 진행 상황 줄을 바로 갱신(나가는 중이면 20초마다 다시 읽는다)
             await loadNoticeProgress(year, month);
@@ -819,7 +920,7 @@ export default function FinanceClient({
         setBusy(true);
         try {
             const result = await refreshPaymentLedger(year, month);
-            await loadMonth(year, month);
+            await reloadCurrent();
             setFinanceNotice(result.message);
         } catch (err: unknown) {
             showNotice(getErrorMessage(err, "청구서 정리 실패"));
@@ -842,7 +943,7 @@ export default function FinanceClient({
         setBusy(true);
         try {
             const result = await sendInvoiceLinksForMonth(year, month);
-            await loadMonth(year, month);
+            await reloadCurrent();
             setFinanceNotice(result.message);
             await loadNoticeProgress(year, month);
         } catch (err: unknown) {
@@ -919,7 +1020,7 @@ export default function FinanceClient({
                 throw new Error(data.error || "시트 기준 적용에 실패했습니다.");
             }
 
-            await loadMonth(year, month);
+            await reloadCurrent();
             setSheetPreview((data.after ?? null) as PaymentReconcilePreview | null);
         } catch (err: unknown) {
             setSheetError(getErrorMessage(err, "시트 기준 적용에 실패했습니다."));
@@ -966,7 +1067,7 @@ export default function FinanceClient({
             setBulkRefundNotice({ tone: failures.length > 0 ? "danger" : "success", lines: [result.summary, ...failures] });
             // 처리한 청구만 선택에서 뺀다(⚡ 한 건 환불이 다른 선택을 지우지 않게)
             setSelectedIds((prev) => new Set(Array.from(prev).filter((id) => !ids.includes(id))));
-            await loadMonth(year, month);
+            await reloadCurrent();
         } catch (err: unknown) {
             setBulkRefundNotice({ tone: "danger", lines: [getErrorMessage(err, "선택 항목 환불 실패")] });
         } finally {
@@ -1041,6 +1142,42 @@ export default function FinanceClient({
                 totalAmount: items.reduce((sum, payment) => sum + (payment.amount ?? 0), 0),
             };
         });
+    // 학생 이름 검색 + «전체»(2026-11-18 원장 승인 2번): 학생 → 달(최근 달부터) 묶음, 학생·달마다 미납 합계.
+    // 서버가 학생 이름 → 최근 달 순으로 주므로 처음 나온 순서를 지킨다. 미납 합계는 부원장도 본다(미납 금액은 가리지 않음)
+    const studentMonthGroups = (() => {
+        if (!allPeriod || !allQuery) return [];
+        const byStudent = new Map<string, { studentId: string; studentName: string; months: Map<string, { key: string; label: string; items: Payment[] }> }>();
+        for (const payment of visiblePayments) {
+            const student = byStudent.get(payment.studentId) ?? { studentId: payment.studentId, studentName: payment.studentName, months: new Map() };
+            const key = payment.year && payment.month ? `${payment.year}-${String(payment.month).padStart(2, "0")}` : "";
+            const label = payment.year && payment.month ? `${payment.year}년 ${payment.month}월` : "청구 월 없음";
+            const group = student.months.get(key) ?? { key, label, items: [] };
+            group.items.push(payment);
+            student.months.set(key, group);
+            byStudent.set(payment.studentId, student);
+        }
+        const isUnpaid = (p: Payment) => p.status === "PENDING" || p.status === "OVERDUE";
+        const unpaidSum = (items: Payment[]) => items.filter(isUnpaid).reduce((sum, p) => sum + (p.amount ?? 0), 0);
+        return Array.from(byStudent.values()).map((student) => {
+            const months = Array.from(student.months.values()).map((group) => ({
+                ...group,
+                unpaidCount: group.items.filter(isUnpaid).length,
+                unpaidAmount: unpaidSum(group.items),
+            }));
+            const all = months.flatMap((group) => group.items);
+            return {
+                studentId: student.studentId,
+                studentName: student.studentName,
+                months,
+                totalCount: all.length,
+                unpaidCount: all.filter(isUnpaid).length,
+                unpaidAmount: unpaidSum(all),
+                posChargeableCount: all.filter(isPosChargeable).length,
+            };
+        });
+    })();
+    const showStudentMonthView = studentMonthGroups.length > 0;
+
     // 상세 패널에 보일 청구(삭제·재조회로 사라지면 null → 패널이 닫힌다)
     const detailPayment = detailPaymentId ? payments.find((payment) => payment.id === detailPaymentId) ?? null : null;
 
@@ -1355,7 +1492,7 @@ export default function FinanceClient({
     }
 
     if (loadError && !hasAnyData) {
-        return <FinanceErrorState onRetry={() => void loadMonth(year, month)} />;
+        return <FinanceErrorState onRetry={() => void reloadCurrent()} />;
     }
 
     return (
@@ -1364,7 +1501,7 @@ export default function FinanceClient({
                 <VirtualAccountCloseDialog
                     target={{ id: vaCloseTarget.id, studentName: vaCloseTarget.studentName, amount: vaCloseTarget.amount ?? 0 }}
                     onClose={() => setVaCloseTarget(null)}
-                    onClosed={() => void loadMonth(year, month)}
+                    onClosed={() => void reloadCurrent()}
                 />
             )}
             {posChargeTargets && posChargeTargets.length > 0 && (
@@ -1398,7 +1535,7 @@ export default function FinanceClient({
                             setPendingFamily(null);
                         }
                     }}
-                    onPaid={() => void loadMonth(year, month)}
+                    onPaid={() => void reloadCurrent()}
                 />
             )}
             {posCancelTarget && (
@@ -1411,7 +1548,7 @@ export default function FinanceClient({
                             || `${posCancelTarget.year ?? year}년 ${posCancelTarget.month ?? month}월 ${posCancelTarget.type === "SHUTTLE" ? "셔틀비" : "수강료"}`,
                     }}
                     onClose={() => setPosCancelTarget(null)}
-                    onRefunded={() => void loadMonth(year, month)}
+                    onRefunded={() => void reloadCurrent()}
                 />
             )}
             {recordTargets && (
@@ -1437,7 +1574,7 @@ export default function FinanceClient({
                         setRecordTargets(null);
                         setSelectedIds(new Set());
                         setFinanceNotice(message);
-                        void loadMonth(year, month);
+                        void reloadCurrent();
                     }}
                 />
             )}
@@ -1446,11 +1583,18 @@ export default function FinanceClient({
             <AdminPageHeader
                 className="mb-3"
                 title="수납/결제 관리"
-                description={<span className="tabular-nums">{year}년 {month}월 수납 현황</span>}
+                description={<span className="tabular-nums">{allPeriod ? (allQuery ? `전체 기간 · «${allQuery}» 학생 전체 청구와 남은 미납·연체` : "전체 기간 · 남은 미납·연체") : `${year}년 ${month}월 수납 현황`}</span>}
             />
 
-            {/* 이 달 목록 학생 중 다른 달에도 미납이 있는 학생 — 월별로만 보다 일부만 결제하는 일을 막는다(2026-11-17) */}
-            {(() => {
+            {/* «전체» 기간에서 읽을 수 있는 최대 줄 수를 넘었을 때 */}
+            {allPeriod && allLimited && (
+                <p role="status" className="mb-4 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-warning-soft)] px-4 py-3 text-sm text-[var(--color-academy-warning)]">
+                    청구가 많아 앞부분만 보여요. 학생 이름으로 검색해 좁혀 주세요.
+                </p>
+            )}
+
+            {/* 이 달 목록 학생 중 다른 달에도 미납이 있는 학생 — 월별로만 보다 일부만 결제하는 일을 막는다(2026-11-17). «전체» 보기에선 이미 모든 달이라 숨긴다 */}
+            {!allPeriod && (() => {
                 const here = new Map<string, number>();
                 for (const x of payments) {
                     if (["PENDING", "OVERDUE"].includes(x.status) && (x.amount ?? 0) > 0) here.set(x.studentId, (here.get(x.studentId) ?? 0) + 1);
@@ -1511,7 +1655,9 @@ export default function FinanceClient({
                     <div className="ml-auto flex flex-wrap items-center gap-2">
                         {/* 시트 원장 은퇴(2026-10~) 면 대조할 시트 자료가 없으므로 「시트 점검」 버튼을 숨긴다 */}
                         {/* 시트 점검도 원장 전용(서버 sheet-reconcile 가 막는다) */}
-                        {!sheetRetired && canManageCriticalFinance && (
+                        {/* «전체» 기간엔 달 단위 작업(시트 점검·링크 발송·미납 알림·상태 새로고침)을 숨긴다 — 어느 달에 할지 헷갈리지 않게 */}
+                        {allPeriod && <span className="text-xs text-[var(--color-academy-muted)]">달별 청구 작업은 월 보기에서 해요</span>}
+                        {!allPeriod && !sheetRetired && canManageCriticalFinance && (
                         <button
                             type="button"
                             onClick={loadSheetPreview}
@@ -1521,7 +1667,7 @@ export default function FinanceClient({
                             {sheetPreviewLoading ? "점검 중" : "시트 점검"}
                         </button>
                         )}
-                        <details className="relative text-xs font-medium"><summary className="academy-button-text academy-button-sm cursor-pointer">기타 청구 작업</summary><div className="absolute right-0 z-20 rounded-xl border border-[var(--color-academy-line)] bg-white p-3 shadow-lg">
+                        {!allPeriod && <details className="relative text-xs font-medium"><summary className="academy-button-text academy-button-sm cursor-pointer">기타 청구 작업</summary><div className="absolute right-0 z-20 rounded-xl border border-[var(--color-academy-line)] bg-white p-3 shadow-lg">
                             청구 작업
                             <AdminQuickActionMenu
                                 label="청구 빠른 작업"
@@ -1556,7 +1702,7 @@ export default function FinanceClient({
                             {!parentSendLocked && canManageCriticalFinance && (
                                 <p className="mt-2 max-w-[220px] text-xs font-normal leading-snug text-[var(--color-academy-muted)]">{BILLING_QUIET_HINT}</p>
                             )}
-                        </div></details>
+                        </div></details>}
                         {/* 잠금 안내: 학부모 청구 안내(링크·미납 알림) 발송이 잠겨 있다 */}
                         {parentSendLocked && (
                             <span className="text-xs text-[var(--color-academy-muted)]">
@@ -1709,6 +1855,8 @@ export default function FinanceClient({
                         <span className="block h-full rounded-full bg-[var(--color-academy-secondary-strong)] transition-all" style={{ width: `${payRate}%` }} />
                     </span>
                 </span>
+                {/* «전체» 기간이면 요약도 그 범위(남은 미납·연체 + 검색한 학생 전체 청구)를 센다 */}
+                {allPeriod && <span className="text-[var(--color-academy-muted)]">전체 기간 기준</span>}
             </section>
             )}
 
@@ -1909,7 +2057,19 @@ export default function FinanceClient({
                         >
                             이전
                         </button>
-                        <span className="min-w-20 text-center tabular-nums">{year}.{String(month).padStart(2, "0")}</span>
+                        {allPeriod ? (
+                            // «전체» 중엔 달 글자를 흐리게 — 누르면 보던 달로 돌아간다
+                            <button
+                                type="button"
+                                onClick={() => leaveAllPeriod(year, month)}
+                                className="min-w-20 rounded-full px-1 text-center tabular-nums text-[var(--color-academy-faint)] hover:text-[var(--color-academy-ink)]"
+                                aria-label={`${year}년 ${month}월 보기로 돌아가기`}
+                            >
+                                {year}.{String(month).padStart(2, "0")}
+                            </button>
+                        ) : (
+                            <span className="min-w-20 text-center tabular-nums">{year}.{String(month).padStart(2, "0")}</span>
+                        )}
                         <button
                             type="button"
                             onClick={nextMonth}
@@ -1917,6 +2077,15 @@ export default function FinanceClient({
                             aria-label="다음 달"
                         >
                             다음
+                        </button>
+                        {/* «전체» 기간(2026-11-18) — 달과 상관없이 남은 미납·연체. 다시 누르면 보던 달 */}
+                        <button
+                            type="button"
+                            onClick={toggleAllPeriod}
+                            aria-pressed={allPeriod}
+                            className={`inline-flex h-11 min-w-11 items-center justify-center rounded-full px-3 text-sm font-semibold ${allPeriod ? "bg-[var(--color-academy-ink)] text-white" : "text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)]"}`}
+                        >
+                            전체
                         </button>
                     </div>
                 </div>
@@ -2012,7 +2181,7 @@ export default function FinanceClient({
             {/* 수납 목록 테이블 */}
             {visiblePayments.length === 0 ? (
                 <div className="bg-white rounded-xl border border-[var(--color-academy-line)] p-12 text-center text-[var(--color-academy-faint)]">
-                    {payments.length ? "검색 조건에 맞는 수납 기록이 없습니다." : `${year}년 ${month}월 수납 기록이 없습니다.`}
+                    {payments.length ? "검색 조건에 맞는 수납 기록이 없습니다." : allPeriod ? "남은 미납·연체가 없습니다." : `${year}년 ${month}월 수납 기록이 없습니다.`}
                 </div>
             ) : (
                 <div className="bg-white rounded-xl border border-[var(--color-academy-line)] overflow-hidden shadow-sm">
@@ -2043,7 +2212,49 @@ export default function FinanceClient({
                                     <th className="admin-cell-center px-2 py-2">관리</th>
                                 </tr>
                             </thead>
-                            {viewMode === "class" ? (
+                            {showStudentMonthView ? (
+                                // 학생 이름 검색(«전체»): 학생 머리줄 «이름 · N건 · 미납 M건 합계 [미납 전체 결제]» → 달 머리줄 «2026년 10월 · 미납 합계» → 청구
+                                studentMonthGroups.map((student) => (
+                                    <tbody key={student.studentId} className="divide-y divide-[var(--color-academy-line)]">
+                                        <tr>
+                                            <th colSpan={paymentColumnCount} scope="rowgroup" className="bg-[var(--color-academy-surface)] px-2 py-2 text-left text-sm font-semibold text-[var(--color-academy-ink)]">
+                                                <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                                    <span>{student.studentName}</span>
+                                                    <span className="text-xs font-medium text-[var(--color-academy-muted)]">전체 <span className="tabular-nums">{student.totalCount}</span>건</span>
+                                                    {student.unpaidCount > 0 ? (
+                                                        <span className="text-xs tabular-nums text-[var(--color-academy-danger)]">미납 {student.unpaidCount}건 · 합계 {formatAmount(student.unpaidAmount)}</span>
+                                                    ) : (
+                                                        <span className="text-xs font-medium text-[var(--color-academy-success)]">미납 없음</span>
+                                                    )}
+                                                    {/* 미납 전체 결제 = 이미 만든 «이 학생 미납 전체 현장 결제» 흐름 그대로(모든 달·형제 미납을 서버에서 다시 읽는다) */}
+                                                    {canUsePosCharge && student.posChargeableCount > 0 && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => void openAllUnpaid(student.studentId)}
+                                                            disabled={loadingUnpaidFor === student.studentId}
+                                                            className="academy-button-primary academy-button-sm ml-auto"
+                                                        >
+                                                            {loadingUnpaidFor === student.studentId ? "불러오는 중…" : "미납 전체 결제"}
+                                                        </button>
+                                                    )}
+                                                </span>
+                                            </th>
+                                        </tr>
+                                        {student.months.map((group) => (
+                                            <Fragment key={group.key || "no-month"}>
+                                                <tr>
+                                                    <th colSpan={paymentColumnCount} scope="rowgroup" className="bg-[var(--color-academy-soft)] px-2 py-1.5 text-left text-xs font-semibold text-[var(--color-academy-ink)]">
+                                                        {group.label}
+                                                        {" · "}<span className="tabular-nums">{group.items.length}</span>건
+                                                        {group.unpaidCount > 0 && <> · <span className="tabular-nums text-[var(--color-academy-danger)]">미납 {group.unpaidCount}건 {formatAmount(group.unpaidAmount)}</span></>}
+                                                    </th>
+                                                </tr>
+                                                {group.items.map(renderPaymentRow)}
+                                            </Fragment>
+                                        ))}
+                                    </tbody>
+                                ))
+                            ) : viewMode === "class" ? (
                                 // 반별 보기: 머리줄 «월수 3부 · 12건 · 미납 3건 (· 합계 — 원장만)» 아래 그 반 청구들
                                 classGroups.map((group) => (
                                     <tbody key={group.key || "no-class"} className="divide-y divide-[var(--color-academy-line)]">

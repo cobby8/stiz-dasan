@@ -585,7 +585,7 @@ test("관리자 창: 요청 PAID 인데 청구서가 아직 미납(원장부 기
 test("수납 목록 다시 읽기는 브라우저 캐시를 쓰지 않는다(응답 Cache-Control max-age=30 때문에 납부 직후 옛 목록이 보였다)", async () => {
   const fin = await readFile(FINANCE, "utf8");
   assert.match(fin, /fetch\(`\/api\/admin\/finance\?year=\$\{y\}&month=\$\{m\}`, \{ cache: "no-store" \}\)/);
-  assert.match(fin, /onPaid=\{\(\) => void loadMonth\(year, month\)\}/);
+  assert.match(fin, /onPaid=\{\(\) => void reloadCurrent\(\)\}/);
 });
 
 // ───────────────────── 7-1b. 웹훅 매칭: 방식 무관 · 분할 결제 ─────────────────────
@@ -1365,7 +1365,7 @@ test("관리자 «결제 취소» 창·메뉴: 위험 작업 확인 문구, 3초
   const finance = await readFile(FINANCE, "utf8");
   assert.match(finance, /canManageCriticalFinance && p\.status === "PAID" && p\.paidProvider === "TOSS_POS"/);
   assert.match(finance, /key: "pos-cancel"/);
-  assert.match(finance, /onRefunded=\{\(\) => void loadMonth\(year, month\)\}/);
+  assert.match(finance, /onRefunded=\{\(\) => void reloadCurrent\(\)\}/);
   const actions = await readFile(ACTIONS, "utf8");
   for (const name of ["loadPosChargeCancel", "requestPosChargeCancel"]) {
     const body = actions.slice(actions.indexOf(`export async function ${name}`));

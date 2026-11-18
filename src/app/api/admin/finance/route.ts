@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { getCachedAdminFinancePayload } from "@/lib/adminReadPayloads";
+import { getAdminFinanceAllPeriodPayload, getCachedAdminFinancePayload } from "@/lib/adminReadPayloads";
 import { createAdminTiming, requireTimedAdmin, timedJson } from "@/lib/adminTiming";
 import { maskFinancePayloadForRole } from "@/lib/payments/financeRoleMask";
 
@@ -19,6 +19,21 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = request.nextUrl;
+
+    // «전체» 기간(2026-11-18): 달과 상관없이 남은 미납·연체 + 검색한 학생의 전체 청구. 캐시 없이 지금 값
+    if (searchParams.get("scope") === "all") {
+        try {
+            const data = maskFinancePayloadForRole(
+                await timing.measure("data", () => getAdminFinanceAllPeriodPayload(searchParams.get("q") ?? "")),
+                role,
+            );
+            return timedJson(timing, data, { headers: FINANCE_CACHE_HEADERS });
+        } catch (error) {
+            console.error("[api/admin/finance] all-period failed:", error);
+            return timedJson(timing, { error: "Failed to load payments" }, { status: 500 });
+        }
+    }
+
     const year = parseInt(searchParams.get("year") || "");
     const month = parseInt(searchParams.get("month") || "");
 

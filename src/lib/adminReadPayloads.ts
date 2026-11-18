@@ -30,6 +30,9 @@ import {
     getMakeupSessions,
     getPayments,
     getStudentOutstanding,
+    getAllPeriodPayments,
+    summarizePaymentRows,
+    ALL_PERIOD_PAYMENT_LIMIT,
     getPaymentSummary,
     getNotices,
     getPrograms,
@@ -627,6 +630,21 @@ export function getCachedAdminFinancePayload(year: number, month: number) {
         { revalidate: 30, tags: ["admin-finance", "admin-stats"] },
     ))();
 }
+
+/**
+ * 수납 «전체» 기간 응답(2026-11-18) — 월 응답과 같은 모양. 검색어(학생 이름)가 있으면 그 학생의 모든 상태 청구도 담는다.
+ * 캐시 없음: 검색어마다 달라지고, 납부 직후 바로 다시 읽는 화면이다.
+ */
+export const getAdminFinanceAllPeriodPayload = adminOnly(async (search?: string) => {
+    const [payments, outstanding] = await Promise.all([getAllPeriodPayments(search), getStudentOutstanding()]);
+    return {
+        payments,
+        summary: summarizePaymentRows(payments),
+        outstanding,
+        paymentProvider: getPaymentProviderPublicStatus(),
+        limited: payments.length >= ALL_PERIOD_PAYMENT_LIMIT,
+    };
+});
 
 export function getCachedAdminNoticesPagePayload(options?: AdminListPayloadOptions) {
     const { limit, offset } = normalizeAdminListPayloadOptions({

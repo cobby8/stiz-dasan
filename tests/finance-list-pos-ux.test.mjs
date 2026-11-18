@@ -89,3 +89,51 @@ test("학생 전체 미납 API(2026-11-17): 관리자만, 미납·연체만, 형
   assert.ok(payloads.includes("return { payments, summary, outstanding, paymentProvider: getPaymentProviderPublicStatus() };"));
   assert.ok(finance.includes("밀린 미납 {all}건"));
 });
+
+test("수납 «전체» 기간(2026-11-18): 기간 선택에 «전체», 달과 상관없는 미납·연체를 같은 API(scope=all)로 읽는다", () => {
+  const route = readFileSync(new URL("../src/app/api/admin/finance/route.ts", import.meta.url), "utf8");
+  assert.ok(route.includes(`searchParams.get("scope") === "all"`));
+  assert.ok(route.includes("getAdminFinanceAllPeriodPayload"));
+  // 역할 가림은 월 응답과 같은 함수
+  assert.match(route, /maskFinancePayloadForRole\(\s*await timing\.measure\("data", \(\) => getAdminFinanceAllPeriodPayload/);
+  // 서버: 미납·연체 전부 + 검색한 학생의 모든 상태, LIKE 특수문자는 글자 그대로
+  assert.ok(queries.includes("export async function getAllPeriodPayments"));
+  assert.ok(queries.includes(`const unpaid = \`p.status IN ('PENDING', 'OVERDUE')\`;`));
+  assert.ok(queries.includes("s.name ILIKE $1 ESCAPE"));
+  assert.ok(queries.includes("LIMIT ${ALL_PERIOD_PAYMENT_LIMIT}"));
+  // 화면: «전체» 단추(이전·다음 옆), 다시 누르거나 이전·다음이면 보던 달로
+  assert.ok(finance.includes("onClick={toggleAllPeriod}"));
+  assert.ok(finance.includes("aria-pressed={allPeriod}"));
+  assert.ok(finance.includes("`/api/admin/finance?scope=all&q=${encodeURIComponent(query)}`"));
+  assert.ok(finance.includes("if (allPeriod) leaveAllPeriod(y, m);"));
+  // 납부·취소 뒤 새로 고침은 지금 범위 그대로(월 보기 고정 호출이 남지 않게)
+  assert.ok(finance.includes("return allPeriod ? loadAll(allQuery) : loadMonth(year, month);"));
+  assert.equal((finance.match(/loadMonth\(year, month\)/g) ?? []).length, 1, "새로 고침은 reloadCurrent 로");
+  // 달 단위 작업은 «전체»에서 숨긴다
+  assert.ok(finance.includes("{!allPeriod && <details className=\"relative text-xs font-medium\">"));
+});
+
+test("수납 «전체»: 학생 이름 검색이면 저절로 «전체»로 바꾸고, 학생 → 달 묶음·미납 합계·«미납 전체 결제»(기존 흐름 재사용)", () => {
+  assert.ok(finance.includes("const isStudentName = students.some((s) => s.name.toLocaleLowerCase().includes(lower));"));
+  assert.ok(finance.includes("if (!allPeriod) autoAllRef.current = true;"));
+  // 검색을 지우면: 저절로 켠 경우만 보던 달로
+  assert.ok(finance.includes("if (autoAllRef.current) leaveAllPeriod(year, month);"));
+  assert.ok(finance.includes("const showStudentMonthView = studentMonthGroups.length > 0;"));
+  assert.ok(finance.includes("미납 {student.unpaidCount}건 · 합계 {formatAmount(student.unpaidAmount)}"));
+  assert.ok(finance.includes("onClick={() => void openAllUnpaid(student.studentId)}"));
+  assert.ok(finance.includes("canUsePosCharge && student.posChargeableCount > 0"));
+  // 늦게 온 «전체» 응답은 버린다
+  assert.ok(finance.includes("if (ticket !== allRequestRef.current) return;"));
+});
+
+test("수납 «전체» 요약: 읽은 줄로 세고(납부·미납 갈래), 월 요약과 같은 모양", async () => {
+  const m = await import("../src/lib/queries.ts").catch(() => null);
+  if (!m?.summarizePaymentRows) {
+    assert.ok(queries.includes("export function summarizePaymentRows"));
+    return;
+  }
+  assert.deepEqual(
+    m.summarizePaymentRows([{ status: "PAID", amount: 100 }, { status: "PENDING", amount: 50 }, { status: "OVERDUE", amount: 30 }, { status: "CANCELED", amount: 7 }]),
+    { totalCount: 4, totalAmount: 187, paidAmount: 100, unpaidAmount: 80, paidCount: 1, unpaidCount: 2 },
+  );
+});
