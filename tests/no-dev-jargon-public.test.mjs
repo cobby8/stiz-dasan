@@ -49,7 +49,7 @@ test("공개 신청·로그인·특강·챗봇은 오류 원문 대신 publicErr
     "src/app/apply/enroll/EnrollApplicationForm.tsx",
     "src/app/apply/trial/TrialApplicationForm.tsx",
     "src/app/login/page.tsx",
-    "src/app/setup/page.tsx",
+    // src/app/setup(첫 관리자 만들기)은 2026-11-18 원장 승인으로 지웠다 — 맨 아래 테스트가 지워져 있는지 본다
     "src/components/seasonal/SeasonalApplyClient.tsx",
     "src/components/seasonal/StudentDetailModal.tsx",
     "src/components/seasonal/RouteSection.tsx",
@@ -91,7 +91,7 @@ test("404 숫자와 영문 장식 라벨이 공개 화면에 없다", () => {
 const SCOPE = [
   "src/app/page.tsx", "src/app/LandingPageClient.tsx", "src/app/about", "src/app/schedule", "src/app/annual",
   "src/app/gallery", "src/app/notices", "src/app/faq", "src/app/apply", "src/app/seasonal", "src/app/shop",
-  "src/app/simulator", "src/app/login", "src/app/signup", "src/app/setup", "src/app/terms", "src/app/privacy",
+  "src/app/simulator", "src/app/login", "src/app/signup", "src/app/terms", "src/app/privacy",
   "src/app/error.tsx", "src/app/not-found.tsx", "src/app/parent-app", "src/app/teacher-app", "src/app/store-app",
   "src/components/landing", "src/components/chat", "src/components/guide-tour", "src/components/seasonal",
 ];
@@ -114,4 +114,11 @@ test("공개 화면 JSX 글자에 영어 상태값·개발 용어·SectionLayout
     assert.doesNotMatch(source, devSentence, file);
     assert.doesNotMatch(source, /<SectionLayout[^>]*\blabel="[A-Z][A-Z ]+"/, file);
   }
+});
+
+// 2026-11-18 원장 승인: 공개 «첫 관리자 만들기» 화면(/setup)과 그 화면만 쓰던 확인 주소는 지웠다
+test("첫 관리자 만들기 화면과 확인 주소는 지워져 있다", async () => {
+  const { existsSync } = await import("node:fs");
+  assert.equal(existsSync("src/app/setup"), false);
+  assert.equal(existsSync("src/app/api/auth/check-setup"), false);
 });

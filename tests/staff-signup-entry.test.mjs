@@ -5,7 +5,8 @@ import test from "node:test";
 const adminActionSource = await readFile("src/app/actions/admin.ts", "utf8");
 const inviteModalSource = await readFile("src/app/admin/staff/InviteStaffModal.tsx", "utf8");
 const staffClientSource = await readFile("src/app/admin/staff/StaffClient.tsx", "utf8");
-const installSource = await readFile("src/app/teacher-app/StaffAppInstallClient.tsx", "utf8");
+// 옛 선생님 설치 화면(StaffAppInstallClient)은 2026-11-18 지웠다 — /teacher-app 은 /install 로 넘기기만 한다
+const teacherAppPage = await readFile("src/app/teacher-app/page.tsx", "utf8");
 const loginSource = await readFile("src/app/login/page.tsx", "utf8");
 const smsSource = await readFile("src/lib/sms.ts", "utf8");
 
@@ -36,7 +37,6 @@ test("admin can invite instructors and shuttle drivers through personal links", 
 });
 
 test("public install and login screens guide staff to personal invitation signup", () => {
-  assert.match(installSource, /개인 초대 링크/);
+  assert.match(teacherAppPage, /redirect\("\/install"\);/);
   assert.match(loginSource, /선생님 계정을 새로 만들 수 없습니다/);
-  assert.doesNotMatch(installSource, /초대.*전화번호.*조회/);
 });

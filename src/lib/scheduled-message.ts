@@ -16,56 +16,9 @@ export type ScheduledItem = {
   createdBy: string | null;
 };
 
-export type NewScheduledItem = {
-  recipient: string; body: string; label?: string | null; requestId: string;
-};
-
-/** 예약을 건다. 같은 batchKey가 이미 있으면 먼저 지우고 새로 만든다(중복 예약 방지). */
-export async function scheduleMessages(input: {
-  batchKey: string; sendAt: Date; purpose: string; createdBy?: string | null;
-  items: NewScheduledItem[];
-}): Promise<{ scheduled: number }> {
-  const { batchKey, sendAt, purpose, createdBy, items } = input;
-  if (!items.length) return { scheduled: 0 };
-
-  // 아직 안 나간 같은 묶음은 치운다. 이미 나간(SENT) 행은 이력이므로 건드리지 않는다.
-  await prisma.$executeRawUnsafe(
-    `DELETE FROM "ScheduledMessage" WHERE "batchKey" = $1 AND "status" = 'PENDING'`,
-    batchKey,
-  );
-
-  for (const it of items) {
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO "ScheduledMessage"
-         ("batchKey","sendAt","recipient","body","label","status","requestId","purpose","createdBy")
-       VALUES ($1, $2::timestamptz, $3, $4, $5, 'PENDING', $6, $7, $8)`,
-      batchKey, sendAt.toISOString(), it.recipient, it.body, it.label ?? null,
-      it.requestId, purpose, createdBy ?? null,
-    );
-  }
-  return { scheduled: items.length };
-}
-
-/** 아직 안 나간 예약 목록(화면 표시용). 본문까지 그대로 돌려준다. */
-export async function listPending(batchKey?: string): Promise<ScheduledItem[]> {
-  const rows = batchKey
-    ? await prisma.$queryRawUnsafe<ScheduledItem[]>(
-        `SELECT * FROM "ScheduledMessage" WHERE "batchKey" = $1 AND "status" = 'PENDING' ORDER BY "label"`,
-        batchKey)
-    : await prisma.$queryRawUnsafe<ScheduledItem[]>(
-        `SELECT * FROM "ScheduledMessage" WHERE "status" = 'PENDING' ORDER BY "sendAt", "label"`);
-  return rows;
-}
-
-/** 예약 취소(아직 안 나간 것만). */
-export async function cancelScheduled(batchKey: string): Promise<{ cancelled: number }> {
-  const n = await prisma.$executeRawUnsafe(
-    `UPDATE "ScheduledMessage" SET "status" = 'CANCELLED', "updatedAt" = now()
-      WHERE "batchKey" = $1 AND "status" = 'PENDING'`,
-    batchKey,
-  );
-  return { cancelled: Number(n) };
-}
+// (2026-11-18) 예약을 거는 함수(scheduleMessages·listPending·cancelScheduled)는 지웠다 — 유일하게 쓰던
+// 방학특강 셔틀 안내 «예약 발송» 서버 기능(화면 버튼 없음)을 원장 승인으로 없앴다. 이미 걸려 있던 예약은
+// 아래 크론용 함수(claimDue·markSent·markFailed)가 그대로 내보낸다.
 
 /**
  * 발송할 때가 된 행을 **선점**한다(PENDING → SENDING).

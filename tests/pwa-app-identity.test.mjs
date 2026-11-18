@@ -88,13 +88,11 @@ test("학부모 화면은 공용 manifest 가 아니라 자기 manifest 를 쓴�
   assert.match(myPageLayout, /manifest:\s*"\/manifest-parent\.json"/);
 });
 
-for (const { label, path, home } of INSTALL_SCREENS) {
-  test(`${label} 설치 화면은 설치가 끝나면 앱으로 들어가는 길을 준다`, async () => {
-    const source = await readFile(path, "utf8");
-    // 설치된 앱 창에는 주소창도 뒤로가기도 없다. 나갈 길이 없으면 사용자가 갇힌다.
-    assert.match(source, new RegExp(`isInstalled && \\([\\s\\S]{0,400}href="${home}"`));
-    // 설치 전에는 여전히 '설치' 하나뿐이어야 한다(웹으로 새면 설치를 건너뛴다).
-    assert.doesNotMatch(source, new RegExp(`showInstallButton[\\s\\S]{0,400}href="${home}"`));
+// 2026-11-18 원장 승인: 옛 «홈 화면 바로가기» 설치 화면 두 개는 지웠다 — 주소는 /install 로 넘긴다
+for (const { label, path } of INSTALL_SCREENS) {
+  test(`${label} 옛 설치 화면은 지워져 있다`, async () => {
+    const { existsSync } = await import("node:fs");
+    assert.equal(existsSync(path), false, path);
   });
 }
 

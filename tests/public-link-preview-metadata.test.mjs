@@ -25,8 +25,19 @@ const publicPages = [
   ["src/app/simulator/page.tsx", 'path: "/simulator"'],
   ["src/app/privacy/page.tsx", 'path: "/privacy"'],
   ["src/app/terms/page.tsx", 'path: "/terms"'],
-  ["src/app/teacher-app/page.tsx", 'path: "/teacher-app"'],
+  // /teacher-app 은 2026-11-18 화면을 지우고 /install 로 넘기기만 한다 — 아래 테스트가 본다
 ];
+
+test("옛 설치 안내·사용 설명 주소는 화면 없이 /install 로 넘긴다", async () => {
+  for (const file of [
+    "src/app/parent-app/page.tsx", "src/app/teacher-app/page.tsx",
+    "src/app/driver-guide/page.tsx", "src/app/teacher-guide/page.tsx",
+  ]) {
+    const source = await readFile(file, "utf8");
+    assert.match(source, /(permanentRedirect|redirect)\("\/install"\);/, file);
+    assert.doesNotMatch(source, /buildPublicMetadata|<[A-Z]/, `${file} 는 화면을 그리지 않는다`);
+  }
+});
 
 test("public metadata uses the production domain and a large preview image", () => {
   assert.match(publicMetadataSource, /PUBLIC_SITE_URL = "https:\/\/www\.stiz-dasan\.kr"/);

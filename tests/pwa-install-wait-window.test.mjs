@@ -13,9 +13,6 @@ const { INSTALL_PROMPT_WAIT_MS, resolveInstallScreenView, shouldWaitForInstallPr
   `data:text/javascript;base64,${Buffer.from(transpiled).toString("base64")}`
 );
 
-const parentInstallSource = await readFile("src/app/parent-app/ParentAppInstallClient.tsx", "utf8");
-const staffInstallSource = await readFile("src/app/teacher-app/StaffAppInstallClient.tsx", "utf8");
-
 /** 기본값 위에 필요한 것만 덮어써서 읽기 쉽게 만든다. */
 const view = (overrides) =>
   resolveInstallScreenView({
@@ -113,30 +110,4 @@ test("이미 설치된 상태면 대기하지 않고 바로 완료 표시로 간
   assert.equal(result.showInAppEscape, false);
 });
 
-/* ---------------- 화면 연결 ---------------- */
-
-for (const [label, source] of [
-  ["학부모 앱", parentInstallSource],
-  ["선생님 앱", staffInstallSource],
-]) {
-  test(`${label} 설치 화면은 공용 대기 모듈을 쓰고 판단을 중복하지 않는다`, () => {
-    assert.match(source, /from "@\/lib\/pwa\/installReadiness"/);
-    assert.match(source, /resolveInstallScreenView\(/);
-    // 대기 시간을 화면이 직접 들고 있으면 한쪽만 고쳐지는 사고가 난다.
-    assert.match(source, /INSTALL_PROMPT_WAIT_MS/);
-    assert.doesNotMatch(source, /setTimeout\([^)]*,\s*\d{3,}\s*\)/);
-  });
-
-  test(`${label} 설치 화면은 대기 표시를 렌더하고 타이머를 정리한다`, () => {
-    assert.match(source, /view\.showWaitingNotice/);
-    assert.match(source, /설치 방법을 확인하고 있어요/);
-    // 언마운트 후 setState 가 남으면 경고가 뜬다. 타이머는 반드시 해제한다.
-    assert.match(source, /clearTimeout\(waitTimer\)/);
-  });
-
-  test(`${label} 설치 화면은 대기 창에서 프롬프트를 자동 호출하지 않는다`, () => {
-    // user activation 밖에서 prompt() 를 부르면 차단되고 그 이벤트가 무효화된다.
-    assert.doesNotMatch(source, /setTimeout\([\s\S]{0,200}\.prompt\(\)/);
-    assert.doesNotMatch(source, /useEffect\([\s\S]{0,600}installPrompt\.prompt\(\)/);
-  });
-}
+/* 화면 연결 검사는 지웠다 — 옛 «홈 화면 바로가기» 설치 화면 두 개(ParentAppInstallClient·StaffAppInstallClient)를 2026-11-18 원장 승인으로 지웠다 */

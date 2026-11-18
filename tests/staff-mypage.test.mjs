@@ -189,9 +189,9 @@ test("조회: 담당 반은 «본인이 코치로 연결된 반» · 이번 달 
   assert.match(query, /access\.coachId,\s+range\.startYmd,\s+range\.nextStartYmd,/);
 });
 
-test("사용 설명: «청구(메뉴 안)» 줄이 없고 «내 계정» 대신 «마이페이지»", () => {
+// 2026-11-18 원장 승인: 선생님 사용 설명(/teacher-guide) 화면은 지우고 /install 로 영구 이동만 남겼다
+test("사용 설명 주소는 화면 없이 /install 로 넘긴다", () => {
   const guide = read("src/app/teacher-guide/page.tsx");
-  assert.doesNotMatch(guide, /청구\(메뉴 안\)|내 계정/);
-  assert.match(guide, /화면 바꾸기\(학부모 화면 등\)·마이페이지·로그아웃을 해요/);
-  assert.match(guide, /"마이페이지: 내 정보, 내 담당 반, 이번 달 수업 숫자/);
+  assert.match(guide, /permanentRedirect\("\/install"\);/);
+  assert.doesNotMatch(guide, /마이페이지|로그아웃/);
 });

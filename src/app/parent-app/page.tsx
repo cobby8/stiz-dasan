@@ -1,26 +1,7 @@
-import type { Metadata } from "next";
-import ParentAppInstallClient from "./ParentAppInstallClient";
-import PublicSiteTheme from "@/components/PublicSiteTheme";
-import { buildPublicMetadata } from "@/lib/publicMetadata";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  ...buildPublicMetadata({
-    title: "스티즈 학부모 앱 설치",
-    description: "출결·셔틀 시각 확인, 결석 알리기, 청구 확인을 하는 스티즈 학부모 앱을 홈 화면에 설치하세요.",
-    path: "/parent-app",
-  }),
-  // 학부모용은 시작 주소가 /mypage인 별도 manifest를 쓴다(교사용 manifest와 분리).
-  manifest: "/manifest-parent.json",
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "black-translucent",
-    title: "스티즈 학부모",
-  },
-  icons: {
-    apple: [{ url: "/icon-v2-192.png", sizes: "192x192", type: "image/png" }],
-  },
-};
-
+// 2026-11-18 원장 승인: 옛 «홈 화면 바로가기» 학부모 설치 안내 화면은 지우고 주소만 살려 /install 로 넘긴다.
+// (next.config redirects 가 먼저 넘기지만, 그 규칙이 빠져도 옛 화면이 다시 뜨지 않게 여기서도 넘긴다)
 export default function ParentAppInstallPage() {
-  return <PublicSiteTheme><ParentAppInstallClient /></PublicSiteTheme>;
+  redirect("/install");
 }

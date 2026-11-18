@@ -20,8 +20,6 @@ const {
   getAndroidInstallHint,
 } = await import(`data:text/javascript;base64,${Buffer.from(transpiled).toString("base64")}`);
 
-const parentInstallSource = await readFile("src/app/parent-app/ParentAppInstallClient.tsx", "utf8");
-const staffInstallSource = await readFile("src/app/teacher-app/StaffAppInstallClient.tsx", "utf8");
 const helpSource = await readFile("src/components/pwa/InstallHelp.tsx", "utf8");
 
 /* ---------------- 실제 User-Agent 문자열 ---------------- */
@@ -165,13 +163,7 @@ test("삼성 인터넷 안내는 실제 메뉴 이름(현재 페이지 추가)�
   }
 });
 
-test("두 설치 화면은 안드로이드 안내를 공용 컴포넌트로 쓴다", () => {
-  for (const source of [parentInstallSource, staffInstallSource]) {
-    assert.match(source, /AndroidInstallSteps/);
-    assert.match(source, /androidBrowser=\{androidBrowser\}/);
-    // 화면이 메뉴 이름을 직접 들고 있으면 한쪽만 고쳐지는 사고가 난다.
-    assert.doesNotMatch(source, /현재 페이지 추가/);
-  }
+test("안드로이드 안내는 공용 컴포넌트가 메뉴 이름을 들고 있다", () => {
   assert.match(helpSource, /getAndroidInstallSteps/);
 });
 
@@ -226,34 +218,7 @@ test("인앱 브라우저별 이름과 탈출 단계 안내가 있다", () => {
   }
 });
 
-/* ---------------- 화면 연결 ---------------- */
-
-for (const [label, source] of [
-  ["학부모 앱", parentInstallSource],
-  ["선생님 앱", staffInstallSource],
-]) {
-  test(`${label} 설치 화면은 공용 판별 모듈을 쓰고 UA 로직을 중복하지 않는다`, () => {
-    assert.match(source, /from "@\/lib\/pwa\/installEnvironment"/);
-    assert.match(source, /detectInstallEnvironment\(/);
-    // 화면이 UA 정규식을 다시 들고 있으면 한쪽만 고쳐지는 사고가 난다.
-    assert.doesNotMatch(source, /iphone\|ipad\|ipod/i);
-    assert.doesNotMatch(source, /crios\|fxios/i);
-  });
-
-  test(`${label} 설치 화면은 인앱 브라우저 탈출 안내를 보여준다`, () => {
-    assert.match(source, /InAppBrowserEscapeCard/);
-    assert.match(source, /inAppBrowser=\{inAppBrowser\}/);
-    // 인앱에서는 홈 화면 추가가 불가능하므로 일반 설치 안내로 헷갈리게 하지 않는다.
-    assert.match(source, /deviceState !== "checking" && !inAppBrowser/);
-  });
-
-  test(`${label} 설치 화면은 공유 버튼 위치 그림과 주소 복사 버튼을 제공한다`, () => {
-    assert.match(source, /SafariShareIllustration/);
-    assert.match(source, /CopyAddressButton/);
-    // 아이폰 크롬 등 설치가 막힌 브라우저에도 복사 경로를 남긴다.
-    assert.match(source, /deviceState === "ios-browser"[\s\S]{0,200}CopyAddressButton/);
-  });
-}
+/* 화면 연결 검사는 지웠다 — 옛 «홈 화면 바로가기» 설치 화면 두 개를 2026-11-18 원장 승인으로 지웠다 */
 
 test("공유 버튼 그림은 인라인 SVG이고 색상은 토큰을 쓴다", () => {
   assert.match(helpSource, /<svg/);
