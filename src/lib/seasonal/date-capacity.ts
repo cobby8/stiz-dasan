@@ -6,6 +6,7 @@
  *   «그날 나오는 신청서 수»를 세고, 이번 신청이 차지할 날짜 중 정원 이상인 날을 찾는다.
  *
  * 공개 신청(service.ts)과 관리자 승인 경로가 **같은 함수**를 쓴다 — 한쪽만 고치면 정원이 어긋난다.
+ * 단 «무슨 상태를 세는가»는 경로마다 다르다: 공개 신청 = PENDING+APPROVED(기본값), 관리자 승인 = APPROVED(statuses 로 넘김).
  * 출석 판정은 attendance-rule.ts 한 곳 규칙(countOccupancyByDate)을 그대로 쓴다.
  */
 import type { Prisma } from "@prisma/client";
@@ -29,6 +30,11 @@ export type FindFullDatesArgs = {
    * (대기 → 승인은 대기 항목이 정원을 차지하지 않으므로 넣을 필요 없다.)
    */
   excludeApplicationIds?: string[];
+  /**
+   * 정원을 차지한다고 볼 항목 상태. 안 넘기면 PENDING+APPROVED(공개 신청 — 대기 접수 판단용).
+   * 관리자 승인 경로는 기존처럼 APPROVED 만 넘긴다(승인 대기 신청이 많아도 승인할 수 있어야 한다 · 검수 M-1).
+   */
+  statuses?: readonly string[];
 };
 
 /**
@@ -37,17 +43,19 @@ export type FindFullDatesArgs = {
  */
 export async function findFullDates(
   tx: Prisma.TransactionClient,
-  { scopeOfferingIds, capacity, sessionDates, rule, excludeApplicationIds = [] }: FindFullDatesArgs,
+  { scopeOfferingIds, capacity, sessionDates, rule, excludeApplicationIds = [], statuses }: FindFullDatesArgs,
 ): Promise<string[]> {
   if (capacity === null || capacity === undefined || scopeOfferingIds.length === 0) return [];
   const wanted = occupiedDateKeys(sessionDates, rule);
   if (wanted.length === 0) return [];
+  // 빈 배열·미지정이면 기본(PENDING+APPROVED) — 공개 신청 동작은 그대로
+  const countedStatuses = statuses && statuses.length > 0 ? [...statuses] : [...DATE_CAPACITY_OCCUPYING_STATUSES];
 
   // 같은 범위에서 정원을 차지 중인 항목의 신청서 규칙을 모은다.
   const items = await tx.specialProgramApplicationItem.findMany({
     where: {
       offeringId: { in: scopeOfferingIds },
-      status: { in: [...DATE_CAPACITY_OCCUPYING_STATUSES] },
+      status: { in: countedStatuses },
       ...(excludeApplicationIds.length ? { applicationId: { notIn: excludeApplicationIds } } : {}),
     },
     select: {

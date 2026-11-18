@@ -1,5 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { weekdayInSeoul } from "@/lib/seasonal/planning";
+// «새 기능 시즌인가» 판정은 공용 함수 하나로(공개 신청·관리자 승인·보강과 같은 기준)
+import { usesPeriodOrDateFeatures } from "@/lib/seasonal/period-pricing";
+
+/** raw 쿼리의 불리언(드라이버에 따라 true 또는 "true")을 JS 불리언으로. */
+function sqlBool(value: unknown): boolean {
+  return value === true || value === "true" || value === "t";
+}
 
 // 방학특강 출석 라이브러리 — 모든 쿼리는 PgBouncer 트랜잭션 모드 호환을 위해 $queryRawUnsafe 사용.
 // 출석은 학생(Student) 전환 여부와 무관하게 SpecialProgramEnrollmentDate 행에 직접 기록한다.
@@ -99,7 +106,8 @@ export type SeasonalCourtOccupancy = {
 // 날짜마다 쿼리를 도는 N+1을 피하려고 7요일을 한 번에 GROUP BY로 집계한다. (SELECT 전용 · DB 변경 없음)
 export async function getCourtOccupancyByWeekday(offeringId: string): Promise<SeasonalCourtOccupancy | null> {
   const rows = await prisma.$queryRawUnsafe<Array<{
-    weekday: string; occupied: unknown; offeringCount: unknown; capacity: unknown; hasMixedPeriods: unknown;
+    weekday: string; occupied: unknown; offeringCount: unknown; capacity: unknown;
+    dateSelectEnabled: unknown; activePeriodCount: unknown; appsUsePeriodOrDate: unknown;
   }>>(
     `WITH target AS (
         SELECT id, "seasonId", "linkedClassId", capacity
@@ -122,26 +130,26 @@ export async function getCourtOccupancyByWeekday(offeringId: string): Promise<Se
           JOIN "SpecialProgramApplication" app ON app.id = item."applicationId"
          WHERE item.status = 'APPROVED'
       ), mixed AS (
-        -- 기간이 섞인 시즌인가(시즌 날짜 선택 켜짐 · 그룹에 활성 기간 상품 · 기간/날짜를 고른 승인 신청서)
+        -- 기간이 섞인 시즌인가 — SQL 은 재료 세 가지만 센다(시즌 날짜 선택 켜짐 · 그룹의 «켜진» 기간 행 수 ·
+        -- 기간/날짜를 고른 승인 신청서). 판정은 아래 JS 의 공용 usesPeriodOrDateFeatures 가 한다(다른 경로와 같은 기준).
         -- 요일 집계(아래 GROUP BY)는 그대로 두고, 화면 안내용 표시만 함께 내려준다.
-        SELECT (
+        SELECT
           EXISTS (
             SELECT 1 FROM "SpecialProgramSeason" season
               JOIN target t ON t."seasonId" = season.id
              WHERE season."dateSelectEnabled" = true
-          )
-          OR EXISTS (
-            SELECT 1 FROM "SpecialProgramOfferingPeriod" p
+          ) AS date_select,
+          (
+            SELECT COUNT(*) FROM "SpecialProgramOfferingPeriod" p
               JOIN scope ON scope.id = p."offeringId"
              WHERE p."isActive" = true
-          )
-          OR EXISTS (
+          ) AS active_periods,
+          EXISTS (
             SELECT 1 FROM seat
              WHERE COALESCE(cardinality(seat.dates), 0) > 0
                 OR seat.period_start IS NOT NULL
                 OR seat.period_end IS NOT NULL
-          )
-        ) AS flag
+          ) AS apps_use
       ), wd(day_key) AS (
         VALUES ('MON'),('TUE'),('WED'),('THU'),('FRI'),('SAT'),('SUN')
       )
@@ -149,7 +157,9 @@ export async function getCourtOccupancyByWeekday(offeringId: string): Promise<Se
              COUNT(DISTINCT seat.item_id) AS occupied,
              (SELECT COUNT(*) FROM scope) AS "offeringCount",
              (SELECT capacity FROM target) AS capacity,
-             (SELECT flag FROM mixed) AS "hasMixedPeriods"
+             (SELECT date_select FROM mixed) AS "dateSelectEnabled",
+             (SELECT active_periods FROM mixed) AS "activePeriodCount",
+             (SELECT apps_use FROM mixed) AS "appsUsePeriodOrDate"
         FROM wd
         LEFT JOIN seat
           ON (COALESCE(cardinality(seat.weekdays), 0) = 0 OR wd.day_key = ANY(seat.weekdays))
@@ -166,7 +176,11 @@ export async function getCourtOccupancyByWeekday(offeringId: string): Promise<Se
     offeringCount: num(rows[0]?.offeringCount),
     byWeekday,
     // 기간이 섞인 시즌이면 byWeekday 는 «최대 인원» — 화면 안내용(계산은 그대로)
-    hasMixedPeriods: rows[0]?.hasMixedPeriods === true || rows[0]?.hasMixedPeriods === "true",
+    hasMixedPeriods: usesPeriodOrDateFeatures({
+      dateSelectEnabled: sqlBool(rows[0]?.dateSelectEnabled),
+      activePeriodCount: num(rows[0]?.activePeriodCount),
+      applicationsUsePeriodOrDate: sqlBool(rows[0]?.appsUsePeriodOrDate),
+    }),
   };
 }
 

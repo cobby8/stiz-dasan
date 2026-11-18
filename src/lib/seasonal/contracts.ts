@@ -219,6 +219,10 @@ export function parseApplicationInput(value: unknown): SeasonalApplicationInput 
   if (selectionMode === "DATE") {
     // 날짜 모드: 고른 날짜가 출석 기준이다 — 요일은 서버가 날짜에서 다시 채운다(요일 필수 검사 생략).
     if (selectedDates.length === 0) throw new SeasonalError("수업 날짜를 한 개 이상 골라 주세요.", 400, "DATE_REQUIRED");
+    // 고른 날짜는 신청서에 한 벌만 저장된다 — 반이 둘이면 어느 반 날짜인지 갈리므로 한 반만 받는다(검수 L-2).
+    if (body.items.length > 1) {
+      throw new SeasonalError("날짜로 고를 때는 수업을 하나만 신청할 수 있습니다.", 400, "DATE_SELECT_SINGLE_OFFERING");
+    }
   } else {
     if (selectedWeekdays.length === 0) throw new SeasonalError("수강할 요일을 한 개 이상 선택해 주세요.", 400, "WEEKDAY_REQUIRED");
   }

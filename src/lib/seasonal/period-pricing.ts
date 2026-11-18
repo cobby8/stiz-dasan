@@ -85,6 +85,64 @@ export function dateSelectTuition(
   return { unitPrice, tuition: unitPrice * count };
 }
 
+/**
+ * 켜진(isActive=true) 기간 행 수 — 꺼진 행(isActive=false)은 «없는 것»으로 본다.
+ * isActive 가 비어 있으면(옛 데이터·화면 값) 켜진 것으로 센다(DB 기본값 true 와 같다).
+ */
+export function countActivePeriods(periods: ReadonlyArray<Pick<OfferingPeriodLike, "isActive">> | null | undefined): number {
+  return (periods ?? []).filter((period) => period.isActive !== false).length;
+}
+
+/** 신청서 하나가 기간·날짜를 골랐는가(고른 날짜가 있거나 기간 시작/끝이 적혀 있으면 true). */
+export function applicationUsesPeriodOrDate(rule: {
+  selectionMode?: string | null;
+  selectedDates?: readonly string[] | null;
+  periodStartDate?: string | null;
+  periodEndDate?: string | null;
+} | null | undefined): boolean {
+  if (!rule) return false;
+  return rule.selectionMode === "DATE"
+    || (Array.isArray(rule.selectedDates) && rule.selectedDates.length > 0)
+    || Boolean(rule.periodStartDate)
+    || Boolean(rule.periodEndDate);
+}
+
+/**
+ * «새 기능(기간 선택·날짜별 선택) 시즌인가» — 공개 신청·관리자 승인·보강 정원·출석부가 **이 함수 하나**로 판정한다.
+ * (2026-11-18 검수 M-2: 네 곳의 기준이 서로 달라 같은 반을 다른 잣대로 셌다.)
+ *
+ * 기준: 시즌의 날짜별 선택이 켜졌거나 · 같은 운영 범위에 켜진 기간 행이 하나라도 있거나 ·
+ *       (알 수 있는 곳에서는) 기간/날짜를 고른 신청서가 있으면 true.
+ * 기존 시즌(켜진 기간 행 0개·날짜 선택 꺼짐·기간/날짜 고른 신청 없음)은 언제나 false → 예전 요일 계산 그대로.
+ */
+export function usesPeriodOrDateFeatures(params: {
+  dateSelectEnabled?: boolean | null;
+  /** 같은 운영 범위의 «켜진(isActive=true)» 기간 행 수. 꺼진 행은 세지 않는다. */
+  activePeriodCount: number;
+  applicationsUsePeriodOrDate?: boolean;
+}): boolean {
+  return params.dateSelectEnabled === true
+    || params.activePeriodCount > 0
+    || params.applicationsUsePeriodOrDate === true;
+}
+
+/**
+ * 한 신청서에 담긴 반들의 «기간 표시»가 서로 다른가.
+ * 값 = 항목별 기간 키(예: "2027-01-04|2027-01-29"), 기간 없는 반은 null/"".
+ * 반이 하나뿐이면 언제나 false(섞일 수 없다).
+ */
+export function hasPeriodMix(keys: ReadonlyArray<string | null | undefined>): boolean {
+  return new Set(keys.map((key) => key ?? "")).size > 1;
+}
+
+/**
+ * 기간 있는 반·없는 반이 섞였거나 항목마다 기간이 다를 때의 안내(검수 L-1).
+ * «가격이 없다»(PERIOD_PRICE_NOT_CONFIGURED)와 구분해 학부모가 무엇을 바꿔야 할지 알게 한다.
+ */
+export function periodMixedOfferingsError(): SeasonalError {
+  return new SeasonalError("같은 수강 기간으로 신청할 수 있는 수업만 함께 골라 주세요.", 409, "PERIOD_MIXED_OFFERINGS");
+}
+
 /** 시즌 전체에서 고를 수 있는 기간 목록 한 줄. */
 export type DistinctPeriod = { label: string; startDate: string; endDate: string; displayOrder: number };
 

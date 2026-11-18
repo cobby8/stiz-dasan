@@ -312,8 +312,10 @@ export default function SeasonalApplyClient({ slug, basePath = "/seasonal", home
   const tuitionTotal = selectionPlans.reduce((sum, plan) => sum + plan.tuition, 0);
   const shuttleTotal = selectionPlans.reduce((sum, plan) => sum + planShuttleFee(plan), 0);
   // 날짜·요일 선택이 끝났는가(모드별)
+  // 날짜로 고를 때는 수업 하나만 — 서버(DATE_SELECT_SINGLE_OFFERING)와 같은 규칙. 요일 모드는 그대로 여러 개 가능.
+  const dateModeTooMany = isDateMode && selectedOfferings.length > 1;
   const scheduleReady = isDateMode
-    ? selectedDates.length >= minSessionCount
+    ? selectedDates.length >= minSessionCount && !dateModeTooMany
     : selectedWeekdays.length > 0 && (!needsPeriodChoice || appliedPeriod !== null);
   const totalPrice = tuitionTotal + shuttleTotal;
   const hasMapSelection = selectionPlans.some(({ base, offering }) => (
@@ -331,6 +333,7 @@ export default function SeasonalApplyClient({ slug, basePath = "/seasonal", home
   const incompleteItems = [
     selectedIds.length === 0 ? "신청할 수업" : "",
     // 날짜 모드
+    dateModeTooMany ? "날짜로 고를 때는 수업 하나만" : "",
     isDateMode && selectedIds.length > 0 && selectedDates.length === 0 ? "수업 날짜" : "",
     isDateMode && selectedDates.length > 0 && selectedDates.length < minSessionCount ? `수업 날짜 ${minSessionCount}회 이상` : "",
     isDateMode && selectedIds.length > 0 && perSessionPrice === null ? "날짜별 수강료" : "",
@@ -717,6 +720,12 @@ export default function SeasonalApplyClient({ slug, basePath = "/seasonal", home
             <fieldset className="rounded-2xl border border-[var(--color-public-line)] bg-white p-4 shadow-sm dark:bg-[var(--color-public-tint)]">
               <legend className="px-1 text-sm font-semibold text-[var(--color-public-ink)]">수업 날짜 *</legend>
               <p className="mt-1 text-xs text-[var(--color-public-muted)]">원하는 수업 날짜만 골라 신청합니다. 최소 {minSessionCount}회부터 가능합니다.</p>
+              {/* 수업을 둘 이상 골랐으면 제출 전에 바로 알려 준다(제출 버튼도 막힌다) */}
+              {dateModeTooMany && (
+                <p role="alert" className="mt-2 text-sm font-medium text-[var(--color-academy-warning)]">
+                  날짜로 고를 때는 수업을 하나만 신청할 수 있습니다. 위에서 수업을 하나만 남겨 주세요.
+                </p>
+              )}
               {dateOptions.length === 0 ? (
                 <p className="mt-3 text-sm text-[var(--color-public-muted)]">지금 고를 수 있는 수업 날짜가 없습니다.</p>
               ) : (

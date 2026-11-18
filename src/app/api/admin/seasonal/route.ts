@@ -16,7 +16,7 @@ import { resolveOfferingPrice, resolveShuttleFee, type ApplicantType } from "@/l
 import { syncSeasonSiblingDiscounts } from "@/lib/seasonal/sibling-discount-sync";
 // 기간 선택·날짜별 선택(2026-11-18) — 출석 규칙·가격 계산은 공용 부품만 쓴다(여기서 다시 만들지 않는다)
 import { seasonalAttendsSql } from "@/lib/seasonal/attendance-rule";
-import { dateSelectTuition, resolvePeriodPrice } from "@/lib/seasonal/period-pricing";
+import { applicationUsesPeriodOrDate, dateSelectTuition, resolvePeriodPrice, usesPeriodOrDateFeatures } from "@/lib/seasonal/period-pricing";
 import {
   assertDatesAreSessionDates,
   hasSamePeriodRange,
@@ -724,7 +724,7 @@ async function ensureSpecialProgramOperationalCapacity(
     selectedWeekdays?: string[] | null;
     rule?: CapacityRuleInput | null;
     excludeItemId?: string;
-    /** 날짜별 정원(findFullDates)에서 세지 않을 «그 신청서 자신» — 승인 대기 항목도 정원을 차지하므로 꼭 넣는다. */
+    /** 날짜별 정원(findFullDates)에서 세지 않을 «그 신청서 자신» — 이미 승인된 자기 항목을 두 번 세지 않게 꼭 넣는다. */
     excludeApplicationId?: string;
     statuses?: string[];
   },
@@ -745,18 +745,24 @@ async function ensureSpecialProgramOperationalCapacity(
   }
 
   // 기간·날짜 기능을 쓰는 시즌이면 «날짜별 정원»(담당 A 의 공용 findFullDates — 공개 신청과 같은 함수)으로 본다.
-  //   쓰는 시즌 = 이 신청서가 기간/날짜를 골랐거나, 시즌의 날짜별 선택이 켜졌거나, 같은 묶음 반에 기간 행이 있다.
+  //   쓰는 시즌 판정은 공용 usesPeriodOrDateFeatures 하나로 한다(공개 신청·보강·출석부와 같은 기준 — 켜진 기간 행만 센다).
   //   그 밖의 시즌은 아래 기존 «요일별 정원» 검사를 그대로 쓴다(지금 동작 보존).
   if (target.capacity !== null && scopedOfferingIds.length > 0) {
     const rule = params.rule ?? {};
-    const ruleUsesDates = isDateModeApplication(rule) || Boolean(rule.periodStartDate || rule.periodEndDate);
-    const [season, periodCount] = ruleUsesDates
+    // 날짜 모드(isDateModeApplication 과 같은 조건) 또는 기간을 적은 신청서
+    const ruleUsesDates = applicationUsesPeriodOrDate(rule);
+    const [season, activePeriodCount] = ruleUsesDates
       ? [null, 0]
       : await Promise.all([
           tx.specialProgramSeason.findUnique({ where: { id: target.seasonId }, select: { dateSelectEnabled: true } }),
-          tx.specialProgramOfferingPeriod.count({ where: { offeringId: { in: scopedOfferingIds } } }),
+          // 꺼진 기간 행(isActive=false)은 세지 않는다 — 공개 신청 화면에 안 보이는 기간이다
+          tx.specialProgramOfferingPeriod.count({ where: { offeringId: { in: scopedOfferingIds }, isActive: true } }),
         ]);
-    if (ruleUsesDates || season?.dateSelectEnabled || periodCount > 0) {
+    if (usesPeriodOrDateFeatures({
+      dateSelectEnabled: season?.dateSelectEnabled,
+      activePeriodCount,
+      applicationsUsePeriodOrDate: ruleUsesDates,
+    })) {
       const sessionDates = await tx.specialProgramSessionDate.findMany({
         where: { offeringId: { in: scopedOfferingIds } },
         select: { id: true, startsAt: true },
@@ -773,6 +779,8 @@ async function ensureSpecialProgramOperationalCapacity(
           periodEndDate: rule.periodEndDate ?? null,
         },
         excludeApplicationIds: params.excludeApplicationId ? [params.excludeApplicationId] : [],
+        // 관리자 승인은 기존 요일 검사와 같은 상태만 센다(기본 APPROVED) — 승인 대기 신청은 정원을 막지 않는다
+        statuses: params.statuses?.length ? params.statuses : APPROVED_SEAT_STATUSES,
       });
       if (fullDates.length > 0) {
         const shown = fullDates.slice(0, 5).map(ymdKoreanLabel).join(", ");

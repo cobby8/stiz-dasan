@@ -17,7 +17,15 @@ import { seatLevel } from "@/lib/seats/seatLevel";
 // 기간 선택·날짜별 선택(2026-11-18) — 출석 규칙·가격·판단은 공용 부품 한 곳에서만
 import { todayKst, toKstYmd } from "@/lib/datetime/kst";
 import { countOccupancyByDate, type SeasonalAttendanceRule } from "./attendance-rule";
-import { dateSelectTuition, resolvePeriodPrice, resolvePeriodShuttleFee } from "./period-pricing";
+import {
+  countActivePeriods,
+  dateSelectTuition,
+  hasPeriodMix,
+  periodMixedOfferingsError,
+  resolvePeriodPrice,
+  resolvePeriodShuttleFee,
+  usesPeriodOrDateFeatures,
+} from "./period-pricing";
 import {
   activePeriods,
   assertPeriodHasWeekdays,
@@ -91,7 +99,11 @@ async function resolvePublicOfferingAssignment(
   });
   const scopeOfferings = candidates.length ? candidates : [target];
   // 새 기능(기간 상품표·날짜별 신청)을 쓰는 범위면 정원을 «날짜별»로 센다. 아니면 기존 요일별 판정 그대로.
-  const usesDateCapacity = season.dateSelectEnabled || scopeOfferings.some((offering) => offering.periods.length > 0);
+  // 판정은 공용 함수 하나(관리자 승인·보강·출석부와 같은 기준) — 꺼진 기간 행(isActive=false)은 세지 않는다.
+  const usesDateCapacity = usesPeriodOrDateFeatures({
+    dateSelectEnabled: season.dateSelectEnabled,
+    activePeriodCount: scopeOfferings.reduce((sum, offering) => sum + countActivePeriods(offering.periods), 0),
+  });
 
   // 날짜 모드: 사용자가 고른 반 그대로(주N회 매칭 안 함) · 수강료 = 고른 회수 × 회당 단가
   if (request.selectionMode === "DATE") {
@@ -169,7 +181,11 @@ async function isOperationalOfferingFull(
 async function fullDatesByOffering(seasons: PublicSeasonRow[]): Promise<Map<string, Set<string>>> {
   const result = new Map<string, Set<string>>();
   // 새 기능(기간 상품표·날짜별 신청)을 쓰는 시즌만 센다 — 기존 시즌 화면은 날짜별 마감을 쓰지 않아 조회를 아낀다.
-  const usesDates = (season: PublicSeasonRow) => season.dateSelectEnabled || (season.offerings || []).some((offering) => offering.periods.length > 0);
+  //   판정은 신청 접수와 같은 공용 함수(꺼진 기간 행은 세지 않는다).
+  const usesDates = (season: PublicSeasonRow) => usesPeriodOrDateFeatures({
+    dateSelectEnabled: season.dateSelectEnabled,
+    activePeriodCount: (season.offerings || []).reduce((sum, offering) => sum + countActivePeriods(offering.periods), 0),
+  });
   const offerings = seasons.filter(usesDates).flatMap((season) => (season.offerings || []).map((offering) => ({ season, offering })));
   if (offerings.length === 0) return result;
   const items = await prisma.specialProgramApplicationItem.findMany({
@@ -565,6 +581,13 @@ export async function submitSeasonalApplication(slug: string, input: SeasonalApp
       // 안전장치: 날짜 모드도 요일을 «고른 날짜들의 요일»로 채운다.
       // 비워 두면 요일만 보는 옛 조회(셔틀·출석 일부)가 «요일 없음 = 매일 출석»으로 읽는다.
       const effectiveWeekdays = isDateMode ? weekdaysFromDates(input.selectedDates) : input.selectedWeekdays;
+      // 기간 있는 반과 없는 반을 한 신청서에 함께 고르면 «가격 없음»이 아니라 «섞임»으로 안내한다(검수 L-1).
+      // 기간 행이 하나도 없는 기존 시즌은 모든 반이 «없음»이라 여기 걸리지 않는다.
+      if (!isDateMode && hasPeriodMix(input.items.map((item) => (
+        countActivePeriods(offeringById.get(item.offeringId)?.periods) > 0 ? "HAS_PERIOD" : null
+      )))) {
+        throw periodMixedOfferingsError();
+      }
       const assignments: Array<Awaited<ReturnType<typeof resolvePublicOfferingAssignment>>> = [];
       for (const requested of input.items) {
         const offering = offeringById.get(requested.offeringId);
@@ -573,9 +596,9 @@ export async function submitSeasonalApplication(slug: string, input: SeasonalApp
       }
       // 신청서에는 기간을 하나만 적을 수 있다 — 항목마다 다른 기간이 나오거나(자동 적용 포함)
       // 기간 있는 반·없는 반이 섞이면 출석 범위와 수강료가 어긋나므로 받지 않는다.
-      const periodRanges = new Set(assignments.map((assignment) => assignment.period ? `${assignment.period.startDate}|${assignment.period.endDate}` : ""));
-      if (periodRanges.size > 1) {
-        throw new SeasonalError("선택한 기간·요일 수에 맞는 수강료가 아직 설정되지 않았습니다.", 409, "PERIOD_PRICE_NOT_CONFIGURED");
+      // 이 경우는 가격이 없는 게 아니라 «섞인 것»이므로 전용 안내(PERIOD_MIXED_OFFERINGS)를 쓴다.
+      if (hasPeriodMix(assignments.map((assignment) => assignment.period ? `${assignment.period.startDate}|${assignment.period.endDate}` : null))) {
+        throw periodMixedOfferingsError();
       }
       const appliedPeriod = assignments[0]?.period ?? null;
       // 이 신청서가 어느 회차에 나오는가 — 정원 판정·저장이 같은 규칙을 쓴다(attendance-rule.ts)

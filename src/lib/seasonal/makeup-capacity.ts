@@ -4,6 +4,7 @@ import { normalizeWeekdayKeys } from "@/lib/seasonal/enrollment-dates";
 import { weekdayInSeoul } from "@/lib/seasonal/planning";
 // 2026-11-18 기간·날짜 선택 — 새 기능 시즌은 «요일»이 아니라 «그 날짜»에 나오는 사람 수로 센다.
 import { attendsSessionDate } from "@/lib/seasonal/attendance-rule";
+import { applicationUsesPeriodOrDate, usesPeriodOrDateFeatures } from "@/lib/seasonal/period-pricing";
 
 /**
  * 방학특강 보강 정원 판정 라이브러리.
@@ -54,18 +55,19 @@ export type GroupSeatItemWithDates = GroupSeatItem & {
  * [순수 함수] 새 기능 시즌인가 — 이 그룹에 기간 상품이 있거나, 시즌이 날짜 선택을 켰거나,
  * 좌석 중 하나라도 고른 날짜·기간이 들어 있으면 «날짜 기준»으로 센다.
  * 셋 다 아니면 예전 요일 계산을 그대로 쓴다(기존 시즌 결과 불변).
+ * 판정 자체는 공용 usesPeriodOrDateFeatures(공개 신청·관리자 승인·출석부와 같은 함수)에 맡긴다.
+ * hasPeriods 는 «켜진(isActive=true) 기간 행이 있는가»여야 한다(아래 조회가 그렇게 센다).
  */
 export function usesDateBasedOccupancy(params: {
   dateSelectEnabled: boolean;
   hasPeriods: boolean;
   items: readonly GroupSeatItemWithDates[];
 }): boolean {
-  if (params.dateSelectEnabled || params.hasPeriods) return true;
-  return params.items.some((item) =>
-    (Array.isArray(item.selectedDates) && item.selectedDates.length > 0)
-    || Boolean(item.periodStartDate)
-    || Boolean(item.periodEndDate),
-  );
+  return usesPeriodOrDateFeatures({
+    dateSelectEnabled: params.dateSelectEnabled,
+    activePeriodCount: params.hasPeriods ? 1 : 0,
+    applicationsUsePeriodOrDate: params.items.some((item) => applicationUsesPeriodOrDate(item)),
+  });
 }
 
 /**
