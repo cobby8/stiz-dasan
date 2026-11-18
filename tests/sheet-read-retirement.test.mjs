@@ -99,12 +99,11 @@ test('수강생 이관 화면은 삭제됐다', () => {
 
 // ── 5. 쓰지 않는 코드 삭제 ─────────────────────────────────────────────
 test('호출처 0 이던 시트 함수 3개는 지워져 있다', () => {
-  assert.doesNotMatch(read('src/lib/uniformOrders.ts'), /readUniformOrderSheet\s*\(|from "googleapis"/);
+  // 2026-11-18: 남겨 둔 파서까지 부르는 곳이 없어 uniformOrders.ts 파일째 지웠다.
+  assert.ok(!existsSync('src/lib/uniformOrders.ts'));
   const admin = read('src/app/actions/admin.ts');
   assert.doesNotMatch(admin, /export async function syncScheduleToClasses\b/);
   assert.doesNotMatch(admin, /export async function getClassSyncPreview\b/);
-  // 파서는 남긴다(분류 규칙 테스트 uniform-orders.test.mjs 가 사용)
-  assert.match(read('src/lib/uniformOrders.ts'), /export function parseUniformOrderRows\(/);
 });
 
 // ── 6. 서버 getDay() 정리 ──────────────────────────────────────────────

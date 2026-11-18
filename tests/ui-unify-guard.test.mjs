@@ -58,8 +58,6 @@ const RAW_ICON_FILES = new Map([
   [UI_ICON_FILE, "허용 아이콘 6종을 그리는 공용 부품"],
   ["src/components/admin/AdminQuickActionMenu.tsx", "관리자 «빠른작업» ⚡ — 원장 지정 예외"],
   ["src/components/DeferredFontStyles.tsx", "아이콘을 그리지 않는다 — 화면에 아이콘이 있는지 찾아 글꼴을 불러오는 코드(선택자 문자열)"],
-  ["src/components/builder/nodes/DynamicWidgets.tsx", "홈페이지 편집기 부품 — 지금 쓰지 않는 코드(되살릴 때 글자로 바꾼다)"],
-  ["src/components/builder/nodes/ImageNode.tsx", "홈페이지 편집기 부품 — 지금 쓰지 않는 코드(되살릴 때 글자로 바꾼다)"],
 ]);
 // 폴더째 허용: 인스타그램 게시물 «미리보기 모형» — 인스타 화면을 흉내 낸 그림이라 그쪽 아이콘(하트·댓글 등)을 그대로 둔다
 const RAW_ICON_DIRS = ["src/components/instagram/"];

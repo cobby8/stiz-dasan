@@ -48,7 +48,6 @@ test("공개 신청·로그인·특강·챗봇은 오류 원문 대신 publicErr
   const files = [
     "src/app/apply/enroll/EnrollApplicationForm.tsx",
     "src/app/apply/trial/TrialApplicationForm.tsx",
-    "src/app/apply/uniform/UniformApplicationForm.tsx",
     "src/app/login/page.tsx",
     "src/app/setup/page.tsx",
     "src/components/seasonal/SeasonalApplyClient.tsx",
