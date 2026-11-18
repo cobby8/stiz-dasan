@@ -7,6 +7,7 @@ import ReplaceLink from "@/components/common/ReplaceLink";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
 import { SHUTTLE_LOCATION_CONSENT_VERSION } from "@/lib/seasonal/contracts";
+import { REFERRAL_SOURCE_LABELS, type ReferralSourceValue } from "@/lib/enrollment/referralSources";
 import { PublicBottomBar, usePublicOverlayOpen } from "@/components/public-floating";
 import { SEAT_LEVEL_LABEL } from "@/lib/seats/seatLevel";
 import { formatSeasonalPeriod, formatWon, normalizeProgram, programClasses, seasonalApplicationStatusLabel, seasonalDisplayState, type SeasonalClass, type SeasonalOfferingPeriod, type SeasonalProgram } from "./types";
@@ -59,9 +60,19 @@ type FormState = {
   parentRelation: string;
   address: string;
   memo: string;
+  /** 어떻게 알게 되셨나요(선택) — "" = 고르지 않음 */
+  referralSource: string;
   agreedTerms: boolean;
   agreedPrivacy: boolean;
 };
+
+/**
+ * «어떻게 알게 되셨나요» 선택지(2026-11-18) — 공개 수강 신청서와 같은 값 + «기타».
+ * 이름은 한 곳(REFERRAL_SOURCE_LABELS)에서 가져온다 — 값은 모두 허용 목록(referralSources.ts) 안의 코드다.
+ */
+const SEASONAL_REFERRAL_VALUES: readonly ReferralSourceValue[] = [
+  "NAVER_SEARCH", "PORTAL_OTHER", "NAVER_BLOG", "YOUTUBE", "INSTAGRAM", "REFERRAL", "PASSBY", "SMS_PROMOTION", "SOOMGO", "DANGGEUN", "OTHER",
+];
 
 type ShuttleDraft = {
   enabled: boolean;
@@ -150,6 +161,7 @@ const EMPTY_FORM: FormState = {
   parentRelation: "보호자",
   address: "",
   memo: "",
+  referralSource: "",
   agreedTerms: false,
   agreedPrivacy: false,
 };
@@ -547,6 +559,8 @@ export default function SeasonalApplyClient({ slug, basePath = "/seasonal", home
           },
           address: form.address,
           memo: form.memo,
+          // 고르지 않았으면 보내지 않는다(서버 저장 NULL)
+          ...(form.referralSource ? { referralSource: form.referralSource } : {}),
           agreedTerms: form.agreedTerms,
           agreedPrivacy: form.agreedPrivacy,
           // 날짜 모드면 요일은 서버가 고른 날짜에서 다시 채운다
@@ -956,6 +970,18 @@ export default function SeasonalApplyClient({ slug, basePath = "/seasonal", home
               <TextInput label="보호자 연락처 *" value={form.parentPhone} onChange={(value) => update("parentPhone", value)} inputMode="tel" required />
               <TextInput label="보호자 관계" value={form.parentRelation} onChange={(value) => update("parentRelation", value)} />
               <TextInput label="주소" value={form.address} onChange={(value) => update("address", value)} />
+              {/* 어떻게 알게 되셨나요 — 필수 아님(2026-11-18). 특강 홍보가 어디서 효과가 있는지 세는 데 쓴다 */}
+              <label className="block text-sm font-medium text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
+                어떻게 알게 되셨나요
+                <select
+                  value={form.referralSource}
+                  onChange={(event) => update("referralSource", event.target.value)}
+                  className="mt-1 min-h-11 w-full rounded-xl border border-[var(--color-public-line)] bg-white p-3 text-sm text-[var(--color-public-ink)] focus:ring-2 focus:ring-[var(--color-public-accent)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-white dark:focus:ring-brand-neon-lime"
+                >
+                  <option value="">선택 안 함</option>
+                  {SEASONAL_REFERRAL_VALUES.map((value) => <option key={value} value={value}>{REFERRAL_SOURCE_LABELS[value]}</option>)}
+                </select>
+              </label>
             </div>
             <label className="block text-sm font-medium text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
               요청 사항

@@ -41,6 +41,9 @@ test("실제 홈 서버 페이지는 주소가 준비되지 않아도 첫 HTML�
   const Home = compile("../src/app/page.tsx", Object.fromEntries([
     ["@/lib/queries", queries], ["@/lib/payments/tossReview", { hasSellablePrice: () => true }],["@/components/PublicSiteTheme", { default: Theme }],
     ["@/lib/publicMetadata", { buildPublicMetadata: () => ({}) }],
+    // 방학특강 안내 띠(2026-11-18) — 공개 시즌 없음 → 띠 없음
+    ["@/lib/seasonal/service", { listPublishedSeasons: async () => [] }],
+    ["@/lib/seasonal/public-seo", { pickHomeSeasonBanner: () => null }],
     ...["@/components/PublicHeader", "@/components/PublicFooter", "./LandingPageClient",
       "@/components/chat/ChatBotButton", "@/components/guide-tour/GuideTourLazyTrigger"].map((name) => [name, { default: empty }]),
   ]));

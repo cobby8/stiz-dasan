@@ -18,6 +18,9 @@ import ChatBotButton from "@/components/chat/ChatBotButton";
 import GuideTourLazyTrigger from "@/components/guide-tour/GuideTourLazyTrigger";
 import PublicSiteTheme from "@/components/PublicSiteTheme";
 import { buildPublicMetadata } from "@/lib/publicMetadata";
+// 방학특강 안내 띠(2026-11-18) — 공개 시즌 조회는 /seasonal 과 같은 함수를 쓴다
+import { listPublishedSeasons } from "@/lib/seasonal/service";
+import { pickHomeSeasonBanner, type HomeSeasonBanner } from "@/lib/seasonal/public-seo";
 
 export const revalidate = 60;
 
@@ -35,16 +38,24 @@ export default async function Home() {
   let notices: any[] = [];
   let programs: any[] = [];
   let stats: Awaited<ReturnType<typeof getHomeStats>> = null;
+  let seasonBanner: HomeSeasonBanner | null = null;
   try {
     // 학원 설정 + 공개 후기 + 갤러리 + 공지를 병렬로 조회 (성능 최적화)
-    [settings, testimonials, galleryPosts, notices, programs, stats] = await Promise.all([
+    // 방학특강 조회는 실패해도 홈 나머지가 비지 않게 따로 받아 빈 목록으로 바꾼다(띠만 안 보임)
+    let seasons: Awaited<ReturnType<typeof listPublishedSeasons>> = [];
+    [settings, testimonials, galleryPosts, notices, programs, stats, seasons] = await Promise.all([
       getAcademySettings(),
       getPublicTestimonials(),
       getGalleryPosts({ limit: 24, publicOnly: true }),
       getNotices({ limit: 4, publicOnly: true }),
       getPrograms(),
       getHomeStats(),
+      listPublishedSeasons().catch((error) => {
+        console.error("Failed to load seasonal banner for landing page:", error);
+        return [];
+      }),
     ]);
+    seasonBanner = pickHomeSeasonBanner(seasons);
   } catch (e) {
     console.error("Failed to load data for landing page:", e);
   }
@@ -107,6 +118,7 @@ export default async function Home() {
           programTiles={programTiles}
           homeStats={homeStats}
           naverPlaceUrl={naverPlaceUrl}
+          seasonBanner={seasonBanner}
         />
       </main>
 

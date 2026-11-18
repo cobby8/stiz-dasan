@@ -774,6 +774,8 @@ export async function submitSeasonalApplication(slug: string, input: SeasonalApp
           parentRelation: input.parent.relation,
           address: input.address,
           memo: input.memo,
+          // 어떻게 알게 되셨나요(2026-11-18) — 고르지 않으면 NULL. 값은 contracts 가 허용 목록으로 걸렀다
+          referralSource: input.referralSource ?? null,
           agreedTerms: input.agreedTerms,
           agreedPrivacy: input.agreedPrivacy,
           status,

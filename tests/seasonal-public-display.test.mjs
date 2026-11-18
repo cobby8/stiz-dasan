@@ -14,6 +14,8 @@ import * as periodPricingModule from "../src/lib/seasonal/period-pricing.ts";
 import * as attendanceRuleModule from "../src/lib/seasonal/attendance-rule.ts";
 import * as applicationPlanModule from "../src/lib/seasonal/application-plan.ts";
 import * as kstModule from "../src/lib/datetime/kst.ts";
+// 신청서 «어떻게 알게 되셨나요» 선택지 이름(2026-11-18) — import 0 순수 모듈
+import * as referralSourcesModule from "../src/lib/enrollment/referralSources.ts";
 import { extractPrograms, formatSeasonalDate, formatSeasonalPeriod, normalizeProgram, seasonalApplicationStatusLabel, seasonalDisplayState, statusLabel } from "../src/components/seasonal/types.ts";
 
 const at = (value) => new Date(value).getTime();
@@ -53,6 +55,7 @@ function renderPublicPage(name, program) {
     if (id === "@/lib/seasonal/attendance-rule") return attendanceRuleModule;
     if (id === "@/lib/seasonal/application-plan") return applicationPlanModule;
     if (id === "@/lib/datetime/kst") return kstModule;
+    if (id === "@/lib/enrollment/referralSources") return referralSourcesModule;
     // 하단 고정 바 감싸개(플로팅 버튼 위치용)는 모양만 같은 div 로 바꿔 렌더한다.
     if (id === "@/components/public-floating") return {
       PublicBottomBar: ({ className, children }) => React.createElement("div", { className }, children),

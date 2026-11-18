@@ -94,6 +94,10 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
     WHERE ${notMergedStudent("s")} ORDER BY e."studentId",e."classId" LIMIT ${limit}`));
   // 복귀(예약·적용)가 없는 행은 칸을 지운다 — 원본 지문(sourceVersion)이 예전과 같아야 이미 저장한 초안이 낡은 것으로 바뀌지 않는다.
   for (const e of enrollments) if (e.resumeFrom == null) delete e.resumeFrom;
+  // 특강 전용 반(Class.dayOfWeek='Seasonal') 수강은 정규 월 청구가 아니다(2026-11-18 원장 승인).
+  //   특강만 듣는 아이가 청구 행·형제할인 판정(«청구 대상 반이 있는 자녀 2명 이상»)에 섞이지 않게, 청구 행 계산은 이 목록만 쓴다.
+  //   조회 결과(enrollments)는 그대로 둔다 — 원본 지문(sourceVersion)이 예전과 같아야 이미 저장한 초안이 «원본 변경»으로 바뀌지 않는다.
+  const regularEnrollments = enrollments.filter(e => e.dayOfWeek !== "Seasonal");
   const payments = take(await tx.$queryRawUnsafe<Array<{ id: string; studentId: string; classId: string | null; status: string; amount: number; type: string; updatedAt: Date | string }>>(`SELECT id,"studentId","classId",status,amount,type,"updatedAt" FROM "Payment" WHERE year=$1 AND month=$2 ORDER BY id LIMIT ${limit}`, year, monthNumber));
   const invoices = take(await tx.$queryRawUnsafe<Array<{ id: string; paymentId: string; status: string; amount: number; updatedAt: Date | string }>>(`SELECT i.id,i."paymentId",i.status,i.amount,i."updatedAt" FROM "PaymentInvoice" i JOIN "Payment" p ON p.id=i."paymentId" WHERE p.year=$1 AND p.month=$2 ORDER BY i.id LIMIT ${limit}`, year, monthNumber));
   const registerReady = has("MonthlyEnrollmentRegister");
@@ -198,7 +202,8 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
   // 재검수 C-1: 연결 빠진 이름과 같은 이름의 학생 행은 «확인 필요»(셔틀비 0원 자동 초안 방지), 어떤 행과도 안 맞는 이름은 보기에 표시해 자동 초안·일괄 발행을 멈춘다.
   // 이름 비교는 띄어쓰기 무시. 동명이인이면 그 이름의 행 모두가 «확인 필요»가 된다.
   const unlinkedShuttleKeys = new Set(unlinkedShuttleNames.map(shuttleNameKey));
-  const unknownShuttleNames = unlinkedShuttleNames.filter(name => !enrollments.some(e => shuttleNameKey(e.studentName) === shuttleNameKey(name)));
+  // 특강 전용 반 수강은 청구 행이 없으므로(regularEnrollments) 이름 대조도 정규 수강만 본다 — 아니면 «모르는 이름» 경고가 사라진다.
+  const unknownShuttleNames = unlinkedShuttleNames.filter(name => !regularEnrollments.some(e => shuttleNameKey(e.studentName) === shuttleNameKey(name)));
   const calendar = await calendarInput;
   const eventValues = calendar?.events??events.map(e => ({ title: e.title, date: new Date(e.date).toISOString(), ...(e.endDate ? { endDate: new Date(e.endDate).toISOString() } : {}) }));
   // 같은 달·같은 요일의 수업일은 한 번만 계산한다(2026-11-14 속도 개선 — 예전엔 반 500여 개마다 연간 일정 전체를 다시 훑었다).
@@ -277,8 +282,8 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
     const excluded = e.status !== "ACTIVE" || Boolean(classReg && classReg.status !== "ACTIVE") || futurePeriod;
     return { register, reg, allScheduledDates, classReg, startsOn, futurePeriod, excluded };
   };
-  const scopes = new Map<string, ReturnType<typeof scopeOf>>(enrollments.map(e => [`${e.studentId}:${e.classId}`, scopeOf(e)]));
-  const billable = enrollments.filter(e => !scopes.get(`${e.studentId}:${e.classId}`)!.excluded);
+  const scopes = new Map<string, ReturnType<typeof scopeOf>>(regularEnrollments.map(e => [`${e.studentId}:${e.classId}`, scopeOf(e)]));
+  const billable = regularEnrollments.filter(e => !scopes.get(`${e.studentId}:${e.classId}`)!.excluded);
   // (0) 학생별 고정 수강료를 «이번 달 자동 적용해도 안전한가»로 거른다(검수 반영 2026-11-16 — 두 번 청구 방지).
   //   - 그 학생의 청구 대상 반 중 하나라도 확정 월 장부(classReg)가 있으면 적용하지 않는다 — 장부 반 금액 + 고정 금액이 겹칠 수 있다.
   //   - 고정 금액은 «발행 가능한 첫 행»(이미 발행·0원 정산·기존 청구·발행 보류가 아닌 행)에 붙인다. 그런 행이 없으면 적용하지 않는다.
@@ -316,7 +321,7 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
     shuttleStops.filter(r => r.studentId === studentId).map(r => ({ direction: r.direction, stopName: r.stopName }))));
   // (3) 형제할인: 같은 학부모의 «이번 달 청구 대상 반이 있는» 자녀가 2명 이상이면 대상.
   const siblingStudents = siblingDiscountStudents(billable.map(e => ({ studentId: e.studentId, parentId: e.parentId ?? null, birthDate: e.birthDate ?? null, name: e.studentName })));
-  const rows: WorkbenchRow[] = enrollments.map(e => {
+  const rows: WorkbenchRow[] = regularEnrollments.map(e => {
     const id = `${e.studentId}:${e.classId}`, saved = drafts.find(d => d.id === id);
     const { register, reg, allScheduledDates, classReg, startsOn, futurePeriod, excluded } = scopes.get(id)!;
     const basis: string[] = [], reviewReasons: string[] = [], blockingReasons: string[] = [];
