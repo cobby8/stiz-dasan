@@ -11,13 +11,15 @@
  * 두 환경변수 중 하나라도 없으면 모든 함수가 조용히 건너뛴다 (DB만 저장).
  */
 
-import { google } from "googleapis";
 import { parseGoogleServiceAccount } from "@/lib/googleServiceAccount";
+
+// googleapis 는 실제로 캘린더에 쓸 때만 불러온다(2026-11-19 속도 3회차 — 이유는 googleapisLoader.ts).
+import { loadGoogleapis } from "@/lib/googleapisLoader";
 
 // ── 인증 헬퍼 ───────────────────────────────────────────────────────────────
 
 /** Service Account 인증 객체를 생성하여 반환 (환경변수 없으면 null) */
-function getCalendarClient() {
+async function getCalendarClient() {
     const keyJson = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
     const calendarId = process.env.GOOGLE_CALENDAR_ID;
 
@@ -28,6 +30,7 @@ function getCalendarClient() {
 
     try {
         const credentials = parseGoogleServiceAccount(keyJson);
+        const google = await loadGoogleapis();
 
         // Service Account JWT 인증 — 캘린더 쓰기 권한 스코프
         const auth = new google.auth.JWT({
@@ -39,7 +42,7 @@ function getCalendarClient() {
         const calendar = google.calendar({ version: "v3", auth });
         return { calendar, calendarId };
     } catch (e) {
-        console.error("[googleCalendarWrite] Service Account 인증 실패:", e);
+        console.error("[googleCalendarWrite] Service Account 인증 또는 googleapis 불러오기 실패:", e);
         return null;
     }
 }
@@ -77,7 +80,7 @@ export async function createCalendarEvent(event: {
     endDate?: string | null;
     description?: string | null;
 }): Promise<string | null> {
-    const client = getCalendarClient();
+    const client = await getCalendarClient();
     if (!client) {
         // 환경변수 미설정 — 구글 동기화 건너뛰기 (정상 동작)
         console.warn("[googleCalendarWrite] 환경변수 미설정, 구글 동기화 건너뜀");
@@ -117,7 +120,7 @@ export async function upsertTimedCalendarEvent(
     eventId: string | null,
     event: { title: string; startIso: string; endIso: string; description?: string | null },
 ): Promise<string | null> {
-    const client = getCalendarClient();
+    const client = await getCalendarClient();
     if (!client) return null;
     const requestBody = {
         summary: event.title,
@@ -149,7 +152,7 @@ export async function upsertTimedCalendarEvent(
 
 /** 일정 삭제 — 지워졌거나 이미 없으면(404/410) true, 실패하면 false(다시 지울 수 있게 ID 를 남기는 쪽에서 쓴다) */
 export async function deleteCalendarEventChecked(googleEventId: string): Promise<boolean> {
-    const client = getCalendarClient();
+    const client = await getCalendarClient();
     if (!client) return false;
     try {
         await client.calendar.events.delete({ calendarId: client.calendarId, eventId: googleEventId });
@@ -175,7 +178,7 @@ export async function updateCalendarEvent(
         description?: string | null;
     },
 ): Promise<void> {
-    const client = getCalendarClient();
+    const client = await getCalendarClient();
     if (!client) return;
 
     try {
@@ -204,7 +207,7 @@ export async function updateCalendarEvent(
 export async function deleteCalendarEvent(
     googleEventId: string,
 ): Promise<void> {
-    const client = getCalendarClient();
+    const client = await getCalendarClient();
     if (!client) return;
 
     try {

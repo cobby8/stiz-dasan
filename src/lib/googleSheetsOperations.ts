@@ -1,6 +1,7 @@
-import { google } from "googleapis";
 // @ts-expect-error -- Node 타입 제거 기반 단위 테스트는 런타임 확장자를 요구한다.
 import { parseGoogleServiceAccount } from "./googleServiceAccount.ts";
+// @ts-expect-error -- 위와 같은 이유(런타임 확장자)
+import { loadGoogleapis } from "./googleapisLoader.ts";
 // @ts-expect-error -- Node 타입 제거 기반 단위 테스트는 런타임 확장자를 요구한다.
 import { toKstYmd } from "./datetime/kst.ts";
 
@@ -79,10 +80,13 @@ export function findSheetEnrollmentRows(rows: unknown[][], input: Pick<SheetIden
   return matches;
 }
 
-function sheetsClient() {
+// googleapis 는 실제로 시트를 고칠 때만 불러온다(2026-11-19 속도 3회차 — 맨 위 import 가 11MB 묶음을
+// 수강 신청·학부모 화면까지 끌고 들어가 서버가 그 화면을 처음 열 때마다 CPU 0.7~0.9초를 썼다).
+async function sheetsClient() {
   const raw = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
   if (!raw) throw new Error("GOOGLE_SERVICE_ACCOUNT_KEY가 없어 구글 시트 자동 반영을 사용할 수 없습니다.");
   const credentials = parseGoogleServiceAccount(raw);
+  const google = await loadGoogleapis();
   const auth = new google.auth.JWT({
     email: credentials.client_email,
     key: credentials.private_key,
@@ -92,7 +96,7 @@ function sheetsClient() {
 }
 
 export async function applySheetEnrollmentStatus(input: SheetIdentity) {
-  const sheets = sheetsClient();
+  const sheets = await sheetsClient();
   const spreadsheetId = process.env.STIZ_STUDENT_SPREADSHEET_ID || DEFAULT_SPREADSHEET_ID;
   const [registration, logs] = await Promise.all([
     sheets.spreadsheets.values.get({ spreadsheetId, range: `'${REGISTRATION_SHEET}'!A1:AL3000` }),
