@@ -11,7 +11,8 @@ export const AUTO_RETRY_GAP_MS = 2_500;
 /** 처음 못 연 뒤 이만큼 지나면 자동 재시도를 그만둔다(그 뒤는 [결제하기] 토스트·STIZ 탭으로) */
 export const AUTO_RETRY_WINDOW_MS = 120_000;
 
-export type NotReadyReason = "busy" | "draft_not_empty";
+/** checkout_open = 이 POS 가 직전에 연 결제창이 아직 열려 있을 수 있음(결제 완료 신호 전, 2026-11-18 흰 화면) */
+export type NotReadyReason = "busy" | "draft_not_empty" | "checkout_open";
 
 type Entry = { req: ChargeRequest; until: number; reported: Set<NotReadyReason> };
 
@@ -62,5 +63,5 @@ export type AutoRetryQueue = ReturnType<typeof createAutoRetryQueue>;
 
 /** 시작 결과가 «POS 가 아직 안 비었음»이라 다시 시도할 만한지 */
 export function isNotReady(result: string): result is NotReadyReason {
-  return result === "busy" || result === "draft_not_empty";
+  return result === "busy" || result === "draft_not_empty" || result === "checkout_open";
 }

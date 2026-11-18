@@ -2031,3 +2031,15 @@ test("POS 탭 «전체 결제»: 빈 목록은 막고, 묶음 규칙은 관리�
   const fn = src.slice(src.indexOf("export async function createAndClaimBundleForPlugin"), src.indexOf("export type PluginUnpaidItem"));
   assert.match(fn, /createRow\(\{ paymentIds: ids, via: "PLUGIN"/);
 });
+
+test("2026-11-18 POS 흰 화면: «결제창 열림(checkout_open)» 사유를 받고, 화면이 결제창 닫기·[결제하기]를 안내", async () => {
+  const svc = await readFile("src/lib/pos/chargeRequestService.ts", "utf8");
+  assert.ok(svc.includes(`export const POS_NOT_READY_REASONS = ["busy", "draft_not_empty", "checkout_open"] as const;`));
+  const modal = await readFile("src/app/admin/finance/PosChargeRequestModal.tsx", "utf8");
+  assert.ok(modal.includes(`request.pluginReportMessage === "NOT_READY:checkout_open"`));
+  assert.ok(modal.includes(`request?.dismissReportMessage === "POS_CHECKOUT_OPEN_CLOSE_SCREEN"`));
+  // 플러그인: 결제창이 열렸을 수 있으면 사이트 취소에서 장바구니를 비우지 않는다
+  const dismiss = await readFile("apps/toss-pos-plugin/src/core/dismiss.ts", "utf8");
+  assert.ok(dismiss.includes(`return local("POS_CHECKOUT_OPEN_CLOSE_SCREEN");`));
+  assert.ok(!dismiss.includes(`"POS_DRAFT_CLEARED_CHECK_SCREEN"`));
+});

@@ -28,14 +28,39 @@ function hasPayment(order: OrderLike): boolean {
   return order.paymentPrice?.paymentPaidValue !== 0 || !Array.isArray(order.payments) || order.payments.length > 0;
 }
 
+/**
+ * 결제 화면에서 벗어날 때 갈 우리 탭(개발자센터 «STIZ 현장 결제 탭» ID). ⚠️ 문서 예시는 'my-plugin' 뿐이라
+ * packageName 이 앱 ID 인지 실기기에서 확인한다(2026-11-18). 틀리면 POS 가 이동하지 않을 뿐 — 그래도 결제창 위에
+ * 새 결제를 겹쳐 열지는 않는다(charge.ts checkoutOpen).
+ */
+export const TAB_PACKAGE_NAME = "stiz-pos-charge-tab";
+/** 이동을 부른 뒤 POS 가 화면을 바꿀 틈 */
+export const LEAVE_CHECKOUT_WAIT_MS = 800;
+
 export async function dismissUnpaidOrder(input: {
   sdk: PosSdkLike;
   job: DismissJob;
   recent?: { at: number; amount: number };
   stoppedBeforeCheckout: boolean;
   now: number;
+  wait?: (ms: number) => Promise<void>;
 }): Promise<DismissReport> {
   const { sdk, job, recent, stoppedBeforeCheckout, now } = input;
+  const wait = input.wait ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  /**
+   * 결제수단 선택 화면에서 벗어난다 — 장바구니만 비우면 화면이 «2개 260,000원» 그대로 남았다(2026-11-18 S-621853).
+   * draftOrder 에는 결제 화면을 닫는 기능이 없어 우리 탭으로 이동한다. 이동 기능이 없거나 오류면 false(장바구니를 건드리지 않는다).
+   */
+  async function leaveCheckout(): Promise<boolean> {
+    if (!sdk.navigation) return false;
+    try {
+      sdk.navigation.navigate("plugin-setting-tab", TAB_PACKAGE_NAME);
+    } catch {
+      return false;
+    }
+    await wait(LEAVE_CHECKOUT_WAIT_MS);
+    return true;
+  }
   const marker = formatMemo(job.shortCode);
   const local = (reason: string): DismissReport => ({ outcome: "NEEDS_LOCAL_CANCEL", reason });
   const ownsDraft = (draft: DraftOrderLike) => allBelongTo(draft.lineItems, marker);
@@ -76,18 +101,22 @@ export async function dismissUnpaidOrder(input: {
 
   if (!targetId) {
     // 결제 수단 선택 화면에서도 POS가 아직 저장되지 않은 임시 주문을 유지할 수 있다.
-    // 현재 주문을 다시 확인해 번호와 합계가 모두 일치할 때만 비운다.
+    // ⚠️ 2026-11-18 운영(S-945156 → S-491122): 결제창이 열린 채 그 밑의 임시 주문을 비우면, 장바구니가 «비어 보여»
+    //    다음 요청이 결제창 위에 또 결제를 열었고 POS 화면이 하얗게 멈췄다. 결제창이 열렸을 수 있는 임시 주문은
+    //    결제창 위에서는 지우지 않는다 — 먼저 우리 탭으로 이동해 결제 화면에서 벗어난 뒤에만 비운다.
+    //    이동할 수 없으면 현장에서 결제창을 닫고 비우게 알린다(다음 요청은 «다른 주문이 담겨 있음»으로 기다린다).
     if (!sdk.order.getOrders || firstDraft.id || !ownsDraft(firstDraft)
       || firstDraft.price?.orderPriceValue !== recent.amount) return local("POS_ORDER_NOT_IDENTIFIED");
+    if (!(await leaveCheckout())) return local("POS_CHECKOUT_OPEN_CLOSE_SCREEN");
     const current = await sdk.draftOrder.get();
     if (current.id || !ownsDraft(current) || current.price?.orderPriceValue !== recent.amount) {
       return local("POS_DRAFT_CHANGED");
     }
     await sdk.draftOrder.clear();
     const after = await sdk.draftOrder.get();
-    return local(after.lineItems.some((line) => belongsTo(line, marker))
-      ? "POS_DRAFT_STILL_PRESENT"
-      : "POS_DRAFT_CLEARED_CHECK_SCREEN");
+    return after.lineItems.some((line) => belongsTo(line, marker))
+      ? local("POS_DRAFT_STILL_PRESENT")
+      : { outcome: "DONE", reason: "POS_CHECKOUT_LEFT_DRAFT_CLEARED" };
   }
   const order = await sdk.order.getOrder(targetId);
   if (order.id !== targetId || !ownsOrder(order)) return local("POS_ORDER_NOT_IDENTIFIED");
@@ -100,6 +129,8 @@ export async function dismissUnpaidOrder(input: {
     if (canceled.id !== targetId || canceled.orderState !== "CANCELLED" || hasPayment(canceled)) return local("POS_ORDER_CANCEL_UNVERIFIED");
   }
 
+  // 취소한 주문의 결제 화면이 남지 않게 먼저 벗어난다(못 벗어나도 주문은 이미 취소됨 — 비우기는 예전처럼)
+  if (!stoppedBeforeCheckout) await leaveCheckout();
   const currentDraft = await sdk.draftOrder.get();
   if (ownsDraft(currentDraft) && (!currentDraft.id || currentDraft.id === targetId)) await sdk.draftOrder.clear();
   const after = await sdk.draftOrder.get();

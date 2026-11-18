@@ -972,7 +972,7 @@ export async function reportChargeRequestFromPlugin(input: {
 }
 
 /** POS 가 새 요청을 바로 못 연 이유(플러그인 → 서버). 관리자 «현장 결제» 창 안내에만 쓴다 */
-export const POS_NOT_READY_REASONS = ["busy", "draft_not_empty"] as const;
+export const POS_NOT_READY_REASONS = ["busy", "draft_not_empty", "checkout_open"] as const;
 export type PosNotReadyReason = (typeof POS_NOT_READY_REASONS)[number];
 /** pluginReportMessage 에 남기는 앞글자 — 보고 종류(pluginReportedEvent) 목록은 DB CHECK 라 늘리지 않고 메시지 칸만 쓴다 */
 export const POS_NOT_READY_PREFIX = "NOT_READY:";

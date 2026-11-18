@@ -111,7 +111,7 @@ zip 구조(문서 기준):
 | `GET /api/pos-plugin/unpaid?q=이름` | `{ ok, items: [{paymentId, studentLabel, className, title, amount, studentKey, hasOpenRequest, …}] }` — 최대 60건, 학생별로 붙여서(학생 안은 오래된 달부터). 탭이 `studentKey` 로 묶어 «전체 결제»를 보인다 | — |
 | `POST /api/pos-plugin/unpaid/{paymentId}/charge` | `{ ok, request }` (생성+선점) | 409 `NOT_CLAIMABLE`/`NOT_ELIGIBLE`/`CHANGED` |
 | `POST /api/pos-plugin/unpaid/bundle` 본문 `{paymentIds:[…]}` | `{ ok, request }` (같은 학생 여러 건 묶음 생성+선점, 최대 10건·500만원 — 2026-11-17) | 409 `NOT_ELIGIBLE`/`ALREADY_OPEN` |
-| `POST /api/pos-plugin/charge-requests/{id}/not-ready` 본문 `{reason:'busy'|'draft_not_empty'}` | `{ ok, recorded }` — 새 요청을 바로 못 열었다는 참고 보고(상태 안 바뀜). 워커는 POS 가 비면 최대 2분간 2.5초마다 다시 연다(2026-11-17) | 400 |
+| `POST /api/pos-plugin/charge-requests/{id}/not-ready` 본문 `{reason:'busy'|'draft_not_empty'|'checkout_open'}` | `{ ok, recorded }` — 새 요청을 바로 못 열었다는 참고 보고(상태 안 바뀜). 워커는 POS 가 비면 최대 2분간 2.5초마다 다시 연다(2026-11-17). checkout_open = 이 POS 가 연 결제창이 결제 완료 신호 전이라 겹쳐 열지 않음 — 완료 신호가 오면 자동, 아니면 [결제하기](2026-11-18 흰 화면) | 400 |
 
 요청 = `{ id, shortCode:"S-482193"(4~6자리 허용), studentLabel:"홍*동"(가린 이름), itemName:"2026년 11월 수강료(홍*동)", amount, taxFreeAmount, memo, expiresAt, status, items:[…] }`
 

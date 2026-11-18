@@ -286,6 +286,8 @@ export default function PosChargeRequestModal({
                             <p role="status" className="mt-3 text-sm font-semibold text-[var(--color-academy-warning)]">
                                 {request.pluginReportMessage === "NOT_READY:draft_not_empty"
                                     ? "POS 결제 화면에 다른 주문이 담겨 있어요. 그 주문을 끝내거나 비우면 자동으로 열려요."
+                                    : request.pluginReportMessage === "NOT_READY:checkout_open"
+                                    ? "POS에 직전 결제창이 열려 있을 수 있어요. 그 결제창을 닫은 뒤 POS 알림의 [결제하기]를 눌러 주세요."
                                     : "POS가 직전 결제를 마무리하는 중이에요. 끝나면 자동으로 열려요."}
                             </p>
                         )}
@@ -324,7 +326,9 @@ export default function PosChargeRequestModal({
                             <p role="status" className="text-sm font-semibold text-[var(--color-academy-ink)]">POS 취소 확인을 기다리는 중입니다. 오래 걸리면 POS가 켜져 있고 STIZ가 연결돼 있는지 확인해 주세요.</p>
                         ) : needsPosCheck ? (
                             <p role="alert" className="text-sm font-semibold text-[var(--color-academy-danger)]">
-                                {request?.dismissReportMessage === "POS_DRAFT_CLEARED_CHECK_SCREEN"
+                                {request?.dismissReportMessage === "POS_CHECKOUT_OPEN_CLOSE_SCREEN"
+                                    ? "POS에 이 결제창이 열려 있을 수 있어요. 현장에서 결제창을 닫고 담긴 항목을 비워 주세요. 비우기 전까지 다음 현장 결제는 기다려요."
+                                    : request?.dismissReportMessage === "POS_DRAFT_CLEARED_CHECK_SCREEN"
                                     ? "POS에서 임시 주문을 비웠습니다. 결제창이 닫혔는지 현장에서 확인해 주세요."
                                     : "POS에서 주문과 결제창이 닫혔는지 확인해 주세요. 카드 승인 내역도 확인해 주세요."}
                             </p>

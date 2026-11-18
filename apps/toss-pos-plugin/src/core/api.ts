@@ -176,7 +176,7 @@ export function createServerApi(deps: ApiDeps) {
     chargeUnpaidBundle: (paymentIds: string[]): Promise<ApiResult<ChargeRequest>> =>
       call("POST", API_PATHS.chargeUnpaidBundle, { paymentIds }, parseClaimResponse),
     /** 새 요청을 바로 못 열었다는 참고 보고 — 실패해도 흐름에 영향 없음 */
-    notReady: (id: string, reason: "busy" | "draft_not_empty"): Promise<ApiResult<boolean>> =>
+    notReady: (id: string, reason: "busy" | "draft_not_empty" | "checkout_open"): Promise<ApiResult<boolean>> =>
       call("POST", API_PATHS.notReady(id), { reason }, () => true),
     /** «결제 취소할 일» 가져가기 — 취소할 주문·결제 ID 는 서버 값만 쓴다 */
     cancelClaim: (id: string): Promise<ApiResult<CancelClaim>> => call("POST", API_PATHS.cancelClaim(id), {}, parseCancelClaim),

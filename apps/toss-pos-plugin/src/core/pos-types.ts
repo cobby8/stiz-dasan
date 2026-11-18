@@ -97,6 +97,12 @@ export type PosSdkLike = {
     error(p: { message: string; button?: { text: string; onClick: () => void } }): void;
   };
   alert: { open(p: { message: string }): void };
+  /**
+   * POS 화면 이동(SDK 0.0.29+ navigation.navigate, 반환값 없음). 결제수단 선택 화면을 닫는 공식 기능은 없어서
+   * 사이트 취소 때 «우리 탭으로 이동»해 결제 화면에서 벗어나는 데만 쓴다(2026-11-18). 없는 환경이면 undefined.
+   * 근거 https://docs.tossplace.com/reference/plugin-sdk/pos/navigation.html
+   */
+  navigation?: { navigate(page: "plugin-setting-tab", packageName: string): void };
   storage: { get(key: string): Promise<string | undefined>; set(key: string, value: string): Promise<void> };
 };
 

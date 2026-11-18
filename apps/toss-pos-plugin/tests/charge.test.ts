@@ -545,3 +545,48 @@ test("자동 시작(silent): 화면을 막는 alert 를 띄우지 않는다 — 
     assert.ok(!log.some((l) => l.startsWith("toast.warn:결제를 준비하고")), "자동 경로 busy 는 안내를 겹치지 않는다");
   }
 });
+
+// ── 2026-11-18 흰 화면(S-945156 → S-491122): 결제창이 열린 채 새 요청이 와도 겹쳐 열지 않는다 ──
+const REQ2: ChargeRequest = { ...REQ, id: "req-2", shortCode: "S-4822" };
+
+test("결제창을 연 뒤(완료 신호 전) 새 요청 자동 시작은 서버 선점·장바구니 조작 없이 checkout_open", async () => {
+  const { sdk, log } = fakeSdk();
+  const { api, calls } = fakeApi();
+  api.claim = async (id: string) => { calls.push(`claim:${id}`); return { ok: true, data: id === REQ2.id ? REQ2 : REQ }; };
+  const flow = createChargeFlow({ sdk, api, now: () => NOW, sleep: sleep0 });
+  assert.equal(await flow.startCharge(REQ, { silent: true }), "started");
+  assert.equal(flow.checkoutMaybeOpen(), true);
+  // 사이트 취소 등으로 장바구니가 비어 보여도(결제창은 열려 있을 수 있음) 자동으로 열지 않는다
+  await sdk.draftOrder.clear();
+  const before = log.length;
+  assert.equal(await flow.startCharge(REQ2, { silent: true }), "checkout_open");
+  assert.deepEqual(log.slice(before), [], "SDK 호출 없음");
+  assert.ok(!calls.includes(`claim:${REQ2.id}`), "선점하지 않음 — 요청은 대기(PENDING) 그대로");
+});
+
+test("결제 완료 신호가 오면 다시 자동 시작, 사람이 누른 [결제하기]는 바로 연다", async () => {
+  const { sdk, log } = fakeSdk({ orders: { o1: { id: "o1", lineItems: [{ memo: `STIZ:${REQ.shortCode}` }] } } });
+  const { api } = fakeApi();
+  api.claim = async (id: string) => ({ ok: true, data: id === REQ2.id ? REQ2 : REQ });
+  const flow = createChargeFlow({ sdk, api, now: () => NOW, sleep: sleep0 });
+  assert.equal(await flow.startCharge(REQ, { silent: true }), "started");
+  await sdk.draftOrder.clear();
+  await flow.handlePaymentEvent("paid", "pay-1", "o1");
+  assert.equal(flow.checkoutMaybeOpen(), false);
+  assert.equal(await flow.startCharge(REQ2, { silent: true }), "started");
+  // 사람이 누른 경로: 열림 표시가 있어도 연다
+  await sdk.draftOrder.clear();
+  const startsBefore = log.filter((x) => x === "draft.startPayment").length;
+  assert.equal(await flow.startCharge(REQ, {}), "started");
+  assert.equal(log.filter((x) => x === "draft.startPayment").length, startsBefore + 1);
+});
+
+test("결제창 열림 표시는 30분 뒤 잊는다(요청 만료와 같게)", async () => {
+  const { sdk } = fakeSdk();
+  const { api } = fakeApi();
+  let t = NOW;
+  const flow = createChargeFlow({ sdk, api, now: () => t, sleep: sleep0 });
+  assert.equal(await flow.startCharge(REQ, { silent: true }), "started");
+  t = NOW + 30 * 60_000 + 1;
+  assert.equal(flow.checkoutMaybeOpen(), false);
+});
