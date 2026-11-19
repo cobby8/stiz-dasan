@@ -177,14 +177,14 @@ test("헤더: /apply/trial/pay 아래는 no-referrer·noindex 한 벌만(일반 
 });
 
 /** 인라인 픽셀 스크립트를 가짜 브라우저에서 실제로 실행 — 쿼리 토큰이면 아무것도 안 하고, 아니면 autoConfig 끔 → init 순서 */
-function runInlinePixel(search) {
+function runInlinePixel(search, pathname = "/apply/enroll") {
   capturedScript = null;
   const { default: MetaPixel } = loadPixel("/apply/enroll");
   renderToStaticMarkup(React.createElement(MetaPixel));
   assert.ok(typeof capturedScript === "string" && capturedScript.includes("fbq('init'"));
   const inserted = [];
   const sandbox = {
-    location: { search },
+    location: { search, pathname },
     URLSearchParams,
     document: {
       createElement: () => ({}),
@@ -215,6 +215,84 @@ test("[재검수] 일반 주소: autoConfig=false 가 init 보다 먼저, 푸시
     const initAt = calls.findIndex((c) => c[0] === "init");
     assert.ok(setAt >= 0 && initAt > setAt, JSON.stringify(calls));
     assert.equal(calls[setAt][3], calls[initAt][1], "같은 픽셀 id 에 autoConfig 를 끈다");
+  }
+});
+
+test("[속도 6회차] 픽셀은 화면이 다 뜬 뒤(lazyOnload) 싣고, 그 사이 추적 안 하는 경로로 옮겨 갔으면 아무것도 안 한다", () => {
+  const src = readFileSync("src/components/MetaPixel.tsx", "utf8");
+  assert.match(src, /<Script id="meta-pixel" strategy="lazyOnload">/);
+  assert.doesNotMatch(src, /strategy="afterInteractive"/);
+  // 경로 목록도 trackingExclusion 상수 그대로(한 곳 기준)
+  assert.match(src, /const BLOCKED_PATH_PREFIXES_JSON = JSON\.stringify\(\[\.\.\.TOKEN_PATH_PREFIXES, \.\.\.APP_PATH_PREFIXES\]\);/);
+  for (const pathname of ["/driver/abc", "/driver", "/pay/xyz", "/mypage", "/admin/students", "/e/CODE", "/invite/tok"]) {
+    assert.equal(exclusion.isTrackingBlockedPath(pathname), true, pathname);
+    const { fbq, inserted } = runInlinePixel("", pathname);
+    assert.equal(fbq, undefined, pathname);
+    assert.equal(inserted.length, 0, `${pathname} fbevents.js 를 싣지 않는다`);
+  }
+  // 비슷하지만 다른 경로·공개 화면은 그대로 싣는다(isTrackingBlockedPath 와 같은 판정)
+  for (const pathname of ["/", "/driverish", "/apply/enroll", "/schedule", "/apply/trial"]) {
+    assert.equal(exclusion.isTrackingBlockedPath(pathname), false, pathname);
+    const { fbq, inserted } = runInlinePixel("", pathname);
+    assert.ok(fbq, pathname);
+    assert.equal(inserted.length, 1, pathname);
+  }
+});
+
+test("[속도 6회차] 픽셀이 늦게 붙어도 첫 PageView 를 기다린다(재시도 10번, 매번 주소 재판정)", () => {
+  const { trackMetaEvent } = loadPixel("/");
+  const original = globalThis.window;
+  const calls = [];
+  const timers = [];
+  try {
+    globalThis.window = { location: { pathname: "/", search: "" }, setTimeout: (fn, ms) => timers.push([fn, ms]) };
+    trackMetaEvent("PageView");
+    // fbq 가 없을 때 9번까지는 계속 기다린다
+    for (let n = 0; n < 9; n += 1) {
+      assert.equal(timers.length, 1, `재시도 ${n + 1}`);
+      const [fn] = timers.shift();
+      fn();
+    }
+    // 10번째 재시도에서 픽셀이 붙었다 → 보낸다
+    assert.equal(timers.length, 1);
+    globalThis.window.fbq = (...args) => calls.push(args);
+    timers.shift()[0]();
+    assert.deepEqual(calls, [["track", "PageView", {}]]);
+
+    // 기다리는 사이 열쇠 주소로 옮겨 갔으면 보내지 않고 재시도도 멈춘다
+    calls.length = 0;
+    delete globalThis.window.fbq;
+    trackMetaEvent("PageView");
+    globalThis.window.location = { pathname: "/driver/abc", search: "" };
+    globalThis.window.fbq = (...args) => calls.push(args);
+    timers.shift()[0]();
+    assert.deepEqual(calls, []);
+    assert.equal(timers.length, 0);
+
+    // 10번 기다려도 안 붙으면 멈춘다(11번째 타이머 없음)
+    globalThis.window = { location: { pathname: "/", search: "" }, setTimeout: (fn, ms) => timers.push([fn, ms]) };
+    trackMetaEvent("PageView");
+    for (let n = 0; n < 10; n += 1) timers.shift()[0]();
+    assert.equal(timers.length, 0);
+    assert.deepEqual(calls, []);
+
+    // 픽셀이 붙기 전에 공개 화면 A → B 로 옮기면: A 몫은 그만두고 B 몫만 한 번 나간다
+    trackMetaEvent("PageView"); // A = "/"
+    globalThis.window.location = { pathname: "/programs", search: "" };
+    trackMetaEvent("PageView"); // B
+    globalThis.window.fbq = (...args) => calls.push(args);
+    while (timers.length) timers.shift()[0]();
+    assert.deepEqual(calls, [["track", "PageView", {}]]);
+    // Lead 같은 신청 이벤트는 화면이 바뀌어도(공개 화면이면) 그대로 보낸다
+    calls.length = 0;
+    delete globalThis.window.fbq;
+    trackMetaEvent("Lead", { content_name: "x" });
+    globalThis.window.location = { pathname: "/apply/trial", search: "" };
+    globalThis.window.fbq = (...args) => calls.push(args);
+    timers.shift()[0]();
+    assert.deepEqual(calls, [["track", "Lead", { content_name: "x" }]]);
+  } finally {
+    globalThis.window = original;
   }
 });
 
