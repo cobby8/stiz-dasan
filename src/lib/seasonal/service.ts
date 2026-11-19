@@ -242,19 +242,26 @@ async function seatStateByOffering(seasons: PublicSeasonRow[]): Promise<{
   if (visible.length === 0) return { fullDates, peak };
   // 묶음 인원은 서버와 같은 범위(openScopeOfferingWhere = 같은 시즌·같은 연결 반·OPEN)에서 센다 —
   //   공개 목록에 안 보이는 OPEN 반(정원 미확정)의 신청도 같은 교실 인원이라 함께 센다.
-  const items = await prisma.specialProgramApplicationItem.findMany({
-    where: {
-      status: { in: OCCUPYING_ITEM_STATUSES },
-      offering: { seasonId: { in: seasons.map((season) => season.id) }, status: "OPEN" },
-    },
-    select: {
-      id: true,
-      offeringId: true,
-      applicationId: true,
-      offering: { select: { seasonId: true, linkedClassId: true } },
-      application: { select: { selectionMode: true, selectedWeekdays: true, selectedDates: true, periodStartDate: true, periodEndDate: true } },
-    },
-  });
+  // 이 조회가 실패해도 특강 화면 전체가 깨지지 않게, 빈 결과로 돌려 예전 계산(_count)으로 넘긴다
+  let items;
+  try {
+    items = await prisma.specialProgramApplicationItem.findMany({
+      where: {
+        status: { in: OCCUPYING_ITEM_STATUSES },
+        offering: { seasonId: { in: seasons.map((season) => season.id) }, status: "OPEN" },
+      },
+      select: {
+        id: true,
+        offeringId: true,
+        applicationId: true,
+        offering: { select: { seasonId: true, linkedClassId: true } },
+        application: { select: { selectionMode: true, selectedWeekdays: true, selectedDates: true, periodStartDate: true, periodEndDate: true } },
+      },
+    });
+  } catch (error) {
+    console.error("[seatStateByOffering] 묶음 인원 조회 실패 — 반별 신청 수로 대신 표시", error);
+    return { fullDates, peak };
+  }
   // 범위 열쇠 = 시즌 + (연결 반 또는 그 반 자신)
   const scopeKey = (seasonId: string, offering: { id: string; linkedClassId: string | null }) => `${seasonId}|${offering.linkedClassId || offering.id}`;
   const scopes = new Map<string, { dateMode: boolean; offerings: PublicOfferingRow[] }>();
@@ -277,7 +284,8 @@ async function seatStateByOffering(seasons: PublicSeasonRow[]): Promise<{
     // 날짜별 정원은 오늘 이후 날짜만(지난 날의 마감은 신청에 영향 없음), 요일별 정원은 모든 날짜(요일별 인원이 날짜와 무관)
     const scopePeak = peakOccupancy(occupancy, scope.dateMode ? todayYmd : undefined);
     for (const offering of scope.offerings) {
-      peak.set(offering.id, scopePeak);
+      // 회차 날짜가 하나도 없으면 묶음 인원을 셀 수 없으니(0 이 «여유»로 보이지 않게) 예전 계산으로 넘긴다
+      if (occupancy.size > 0) peak.set(offering.id, scopePeak);
       // 회차별 «마감» 표시는 예전처럼 날짜별 정원 시즌에만
       if (scope.dateMode) fullDates.set(offering.id, new Set(fullDateKeysFromOccupancy(occupancy, offering.capacity)));
     }
