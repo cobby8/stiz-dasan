@@ -2740,7 +2740,8 @@ export const getHomeStats = cache(async () => {
                     count(DISTINCT c."dayOfWeek")::int AS "activeDays"
              FROM "Enrollment" e
              JOIN "Class" c ON c.id = e."classId"
-             WHERE e.status = 'ACTIVE'`
+             -- 방학특강 전용 반('Seasonal')은 요일이 아니라서 반·요일 수에서 뺀다(특강 기간에 «6요일»로 늘지 않게)
+             WHERE e.status = 'ACTIVE' AND c."dayOfWeek" NOT IN ('Seasonal', 'Archived')`
         );
         const r = rows[0] ?? {};
         return {
