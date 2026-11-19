@@ -1161,3 +1161,6 @@ html[data-app-update-banner] .academy-app > header.academy-staff-header {
     }
   }
 }
+
+/* 공개 시간표: 주소에 ?program= 이 있으면 서버가 미리 그린 «전체» 표를 감춘다(걸러진 표가 그려질 때까지) — 2026-11-19 속도 5회차 */
+html[data-schedule-filtered] .schedule-ssr-fallback { visibility: hidden; }

@@ -60,13 +60,16 @@ function trialApplyHref(slot: Pick<PublicScheduleSlot, "dayKey" | "slotKey">): s
     return `/apply/trial?day=${encodeURIComponent(slot.dayKey)}&slot=${encodeURIComponent(period)}`;
 }
 
-function ScheduleFilter({ programs, allSlots, phone }: {
-    programs: Program[];
-    allSlots: PublicScheduleSlot[];
-    phone: string;
-}) {
+type ScheduleProps = { programs: Program[]; allSlots: PublicScheduleSlot[]; phone: string };
+
+// 주소의 ?program= 을 읽어 걸러진 시간표를 그린다(브라우저에서만 값이 정해진다)
+function ScheduleFilterFromUrl(props: ScheduleProps) {
     const searchParams = useSearchParams();
     const filterProgramId = searchParams.get("program") ?? undefined;
+    return <ScheduleFilter {...props} filterProgramId={filterProgramId} />;
+}
+
+function ScheduleFilter({ programs, allSlots, phone, filterProgramId }: ScheduleProps & { filterProgramId: string | undefined }) {
     // 카드 보기 / 표 보기 전환 상태 ("card" 기본)
     const [viewMode, setViewMode] = useState<"card" | "table">("card");
 
@@ -287,14 +290,22 @@ function ScheduleFilter({ programs, allSlots, phone }: {
     );
 }
 
-export default function ScheduleClient(props: { programs: Program[]; allSlots: PublicScheduleSlot[]; phone: string }) {
+// 기다리는 동안(서버가 미리 그리는 화면 포함)에는 «필터 없는 전체 시간표»를 그대로 보여 준다(2026-11-19 속도 5회차).
+// 예전엔 기다림 안내 글자 한 줄만 HTML 에 들어가, 휴대폰이 스크립트를 다 받은 뒤에야 표가 그려졌다.
+// 주소에 ?program= 이 있으면 브라우저 준비 뒤 걸러진 표로 바뀐다(예전과 같은 결과).
+// 단, 주소에 ?program= 이 있으면(프로그램 화면 «시간표 보기»·필터 «적용») 전체 표를 잠깐 보여 주면 «필터가 안 먹었다»로 보인다 →
+// 그때만 미리 그린 전체 표를 감춘다(HTML 을 읽는 순간 도는 한 줄 스크립트 + globals.css 의 .schedule-ssr-fallback 규칙).
+const HIDE_FALLBACK_WHEN_FILTERED = `if(/[?&]program=/.test(location.search))document.documentElement.setAttribute("data-schedule-filtered","")`;
+
+export default function ScheduleClient(props: ScheduleProps) {
     return (
         <Suspense fallback={
-            <div className="py-20 text-center text-[var(--color-public-muted)]">
-                <p>시간표 불러오는 중...</p>
+            <div className="schedule-ssr-fallback">
+                <script dangerouslySetInnerHTML={{ __html: HIDE_FALLBACK_WHEN_FILTERED }} />
+                <ScheduleFilter {...props} filterProgramId={undefined} />
             </div>
         }>
-            <ScheduleFilter {...props} />
+            <ScheduleFilterFromUrl {...props} />
         </Suspense>
     );
 }
