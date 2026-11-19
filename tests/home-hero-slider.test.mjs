@@ -20,16 +20,29 @@ new Function("require", "exports", code)(requireWithAlias, exports);
 const Slider = exports.default;
 const render = (slides) => renderToStaticMarkup(React.createElement(Slider, { slides }, React.createElement("h1", { id: "public-home-title" }, "제목")));
 
-test("첫 화면 슬라이드: 첫 사진만 서버 화면에 보이고 우선 불러오며, 나머지는 늦게 불러온다", () => {
+test("첫 화면 슬라이드: 서버 화면에는 첫 사진만 넣고 우선 불러온다(둘째 장부터는 페이지가 다 뜬 뒤 한 장씩)", () => {
     const html = render([
         { url: "https://x/1.jpg", alt: "첫 사진" },
         { url: "https://x/2.jpg", alt: "둘째" },
         { url: "https://x/3.jpg", alt: "셋째" },
     ]);
     assert.match(html, /class="public-home-hero public-home-hero--large"/);
-    assert.equal((html.match(/<img /g) || []).length, 3);
+    // 2026-11-19 속도 7회차: 겹친 사진은 lazy 가 안 들어 첫 화면에 2·3번째 장까지 받았다 → 첫 장만
+    assert.equal((html.match(/<img /g) || []).length, 1);
+    assert.doesNotMatch(html, /x\/2\.jpg|x\/3\.jpg/);
     assert.match(html, /<img src="https:\/\/x\/1\.jpg" alt="첫 사진"[^>]*fetchPriority="high"[^>]*loading="eager"[^>]*class="public-home-hero__image is-active"/);
-    assert.match(html, /<img src="https:\/\/x\/2\.jpg" alt=""[^>]*aria-hidden="true"[^>]*loading="lazy"/);
+    // 다음 장은 load 뒤에 하나(고른 장 + 그다음 장), 넣은 장은 계속 둔다
+    const src = readFileSync("src/components/landing/HomeHeroSlider.tsx", "utf8");
+    assert.match(src, /window\.addEventListener\("load", onLoad, \{ once: true \}\)/);
+    assert.match(src, /const want = \[index, \.\.\.\(pageLoaded \? \[\(index \+ 1\) % count\] : \[\]\)\];/);
+    assert.match(src, /slides\.map\(\(slide, i\) => !mounted\.has\(i\) \? null :/);
+    // 건너뛴 장은 다 받은 뒤에야 보인다(빈 화면 방지) — 보이는 장(shown)은 ready 일 때만 index 로 바뀐다
+    assert.match(src, /if \(ready\.has\(index\)\) setShown\(index\);/);
+    assert.match(src, /className=\{`public-home-hero__image\$\{i === shown \? " is-active" : ""\}`\}/);
+    assert.match(src, /onError=\{i === 0 \? undefined : \(\) => markReady\(i\)\}/);
+    // 둘째 장부터는 여전히 낮은 우선순위, lazy 는 쓰지 않는다(넣는 시점을 코드가 정한다)
+    assert.match(src, /fetchPriority=\{i === 0 \? "high" : "low"\}/);
+    assert.doesNotMatch(src, /loading=\{i === 0 \? "eager" : "lazy"\}/);
     // 넘김 버튼 3개, 첫 번째가 현재
     assert.equal((html.match(/번째 사진 보기/g) || []).length, 3);
     assert.match(html, /aria-label="1번째 사진 보기" aria-current="true"/);
