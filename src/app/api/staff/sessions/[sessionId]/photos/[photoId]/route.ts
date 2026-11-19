@@ -44,17 +44,30 @@ export async function GET(_request: Request, context: { params: Promise<{ sessio
     );
     const session = rows[0];
     if (!session) return NextResponse.json({ error: "수업 기록을 찾을 수 없습니다." }, { status: 404 });
+    // 2026-11-19 속도 9회차: 권한 확인(선생님 → 안 되면 보호자, 로그인 확인 포함)과 «사진 원장(DB)에서 이 사진 찾기»는
+    // 서로의 결과가 필요 없다 — 같이 출발시키고, 찾은 결과는 권한 확인이 통과한 뒤에만 쓴다.
+    // ⚠️ 저장소 파일 내려받기는 권한 확인 «뒤»에만 한다 — 권한 없는 요청은 파일을 읽지 않는다(IDOR 테스트가 지킨다).
+    // 응답(상태 코드·문구)은 예전 순서 그대로: 권한 실패 → 403, 그다음 사진 없음 404 · 경로 이상 400 · 내려받기 실패 404.
+    const photoP = (async () => {
+      const drafts = await prisma.$queryRawUnsafe<Array<{ mediaJSON: string }>>(
+        `SELECT "mediaJSON" FROM "SocialPostDraft" WHERE "sessionId" = $1 ORDER BY "createdAt" DESC`,
+        sessionId,
+      );
+      const matchedDraft = drafts.find((draft) => parseStoredSessionPhotos(draft.mediaJSON).some((item) => item.id === photoId));
+      const photo = matchedDraft && parseStoredSessionPhotos(matchedDraft.mediaJSON).find((item) => item.id === photoId);
+      if (!photo) return { kind: "missing" as const };
+      if (!isValidPrivateSessionPhotoRef(photo as unknown as Record<string, unknown>, { classId: session.classId, sessionId })) {
+        return { kind: "badPath" as const };
+      }
+      return { kind: "ok" as const, photo };
+    })();
+    // 권한 확인이 먼저 실패하면 아무도 기다리지 않는다 — 그때 실패가 «처리 안 된 오류»로 새지 않게
+    photoP.catch(() => {});
     await requirePhotoViewer(sessionId, session.classId, session.date);
-    const drafts = await prisma.$queryRawUnsafe<Array<{ mediaJSON: string }>>(
-      `SELECT "mediaJSON" FROM "SocialPostDraft" WHERE "sessionId" = $1 ORDER BY "createdAt" DESC`,
-      sessionId,
-    );
-    const matchedDraft = drafts.find((draft) => parseStoredSessionPhotos(draft.mediaJSON).some((item) => item.id === photoId));
-    const photo = matchedDraft && parseStoredSessionPhotos(matchedDraft.mediaJSON).find((item) => item.id === photoId);
-    if (!photo) return NextResponse.json({ error: "사진을 찾을 수 없습니다." }, { status: 404 });
-    if (!isValidPrivateSessionPhotoRef(photo as unknown as Record<string, unknown>, { classId: session.classId, sessionId })) {
-      return NextResponse.json({ error: "사진 경로가 올바르지 않습니다." }, { status: 400 });
-    }
+    const found = await photoP;
+    if (found.kind === "missing") return NextResponse.json({ error: "사진을 찾을 수 없습니다." }, { status: 404 });
+    if (found.kind === "badPath") return NextResponse.json({ error: "사진 경로가 올바르지 않습니다." }, { status: 400 });
+    const { photo } = found;
 
     const { data, error } = await createAdminClient().storage.from(photo.storageBucket).download(photo.storagePath);
     if (error || !data) return NextResponse.json({ error: "사진을 불러오지 못했습니다." }, { status: 404 });
