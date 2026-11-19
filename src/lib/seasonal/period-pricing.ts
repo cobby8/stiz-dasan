@@ -7,7 +7,22 @@
  */
 // @ts-expect-error -- Node 타입 제거 기반 단위 테스트는 런타임 확장자를 요구한다.
 import { SeasonalError } from "./contracts.ts";
+// @ts-expect-error -- Node 타입 제거 기반 단위 테스트는 런타임 확장자를 요구한다.
+import { kstHm, kstLabel } from "../datetime/kst.ts";
 import type { ApplicantType } from "./planning";
+
+/**
+ * 신청자 구분의 화면 이름(2026-11-19 원장 «기존·신규는 헷갈리니 재원생·신입생으로»).
+ *   재원생(EXISTING) = 지금 정규반 수업을 들으면서 방학특강도 듣는 학생
+ *   신입생(NEW)      = 그 밖의 학생(정규반 휴원 중 포함)
+ * 코드 값(EXISTING/NEW)은 그대로 두고 «보이는 글자»만 이 한 곳에서 정한다.
+ */
+export const APPLICANT_TYPE_LABEL: Record<ApplicantType, string> = { EXISTING: "재원생", NEW: "신입생" };
+
+/** 신청자 구분 값 → «재원생»/«신입생». 모르는 값이면 fallback(기본 빈 글자). */
+export function applicantTypeLabel(value: string | null | undefined, fallback = ""): string {
+  return value === "EXISTING" || value === "NEW" ? APPLICANT_TYPE_LABEL[value] : fallback;
+}
 
 /** 반별 기간 상품 한 줄(SpecialProgramOfferingPeriod 행과 같은 모양). */
 export type OfferingPeriodLike = {
@@ -53,7 +68,7 @@ export function weeklyFrequencyLabel(frequency: number): string {
   return frequency === 5 ? "매일(주5회)" : `주${frequency}회`;
 }
 
-/** 기간 수강료 — planning.ts resolveOfferingPrice 와 같은 규칙(신규/재원 값이 있으면 그 값, 없으면 기본가). */
+/** 기간 수강료 — planning.ts resolveOfferingPrice 와 같은 규칙(신입생/재원생 값이 있으면 그 값, 없으면 기본가). */
 export function resolvePeriodPrice(period: OfferingPeriodLike, applicantType?: ApplicantType): number {
   if (applicantType === "NEW" && period.newApplicantPrice !== null && period.newApplicantPrice !== undefined) {
     return period.newApplicantPrice;
@@ -213,4 +228,28 @@ export function offeringWeeklyFrequency(offering: { title?: string | null; code?
   const matched = `${offering.title ?? ""} ${offering.code ?? ""}`.match(/주\s*(\d+)\s*회|-(\d)(?:\D|$)/i);
   const value = matched ? Number(matched[1] ?? matched[2]) : NaN;
   return Number.isInteger(value) && value > 0 ? value : null;
+}
+
+/**
+ * 기간 한 줄 요약(2026-11-19 원장 «4주와 3주의 재원생가·신입생가가 제대로 세팅된 건지 안 보여»).
+ *   예: «4주 · 신입생 240,000원 · 재원생 200,000원 · 셔틀 10,000원 · 마감 1/1(금) 18:00»
+ * 칸을 비워 «기본»을 쓰는 경우에도 실제로 적용되는 금액(resolvePeriodPrice)을 보여 준다 — 신청 화면이 받는 값과 같다.
+ * 셔틀: 반이 셔틀 불가면 뺀다. 기간 셔틀비가 비면 반 셔틀비. 마감: 비면 «마감 = 시즌 모집 마감».
+ */
+export function periodPriceSummary(
+  period: OfferingPeriodLike,
+  offering?: { shuttleAvailable?: boolean | null; shuttleFee?: number | null } | null,
+): string {
+  const won = (value: number) => `${value.toLocaleString("ko-KR")}원`;
+  const parts = [
+    period.label?.trim() || `${period.startDate}~${period.endDate}`,
+    `신입생 ${won(resolvePeriodPrice(period, "NEW"))}`,
+    `재원생 ${won(resolvePeriodPrice(period, "EXISTING"))}`,
+  ];
+  if (offering?.shuttleAvailable) parts.push(`셔틀 ${won(Math.max(0, period.shuttleFee ?? offering.shuttleFee ?? 0))}`);
+  // 마감 시각은 KST 로 읽는다(서버·휴대폰 시간대가 달라도 같은 글자)
+  const closes = period.applicationClosesAt ? new Date(period.applicationClosesAt) : null;
+  const closesText = closes && Number.isFinite(closes.getTime()) ? `${kstLabel(closes)} ${kstHm(closes)}` : "";
+  parts.push(closesText ? `마감 ${closesText}` : "마감 = 시즌 모집 마감");
+  return parts.join(" · ");
 }

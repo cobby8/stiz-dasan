@@ -123,8 +123,8 @@ export function parseOfferingPeriodInput(
     has("endDate") || !before ? data.endDate : before.endDate,
   );
   const price = has("price") || !before ? nonNegativeInt(data.price, "기본 수강료") : before.price;
-  const newApplicantPrice = has("newApplicantPrice") ? optionalNonNegativeInt(data.newApplicantPrice, "신규 수강료") : before?.newApplicantPrice ?? null;
-  const existingApplicantPrice = has("existingApplicantPrice") ? optionalNonNegativeInt(data.existingApplicantPrice, "재원 수강료") : before?.existingApplicantPrice ?? null;
+  const newApplicantPrice = has("newApplicantPrice") ? optionalNonNegativeInt(data.newApplicantPrice, "신입생 수강료") : before?.newApplicantPrice ?? null;
+  const existingApplicantPrice = has("existingApplicantPrice") ? optionalNonNegativeInt(data.existingApplicantPrice, "재원생 수강료") : before?.existingApplicantPrice ?? null;
   const shuttleFee = has("shuttleFee") ? optionalNonNegativeInt(data.shuttleFee, "셔틀비") : before?.shuttleFee ?? null;
   let displayOrder = before?.displayOrder ?? 0;
   if (has("displayOrder")) {
@@ -170,7 +170,7 @@ export type PeriodCopyPlan = {
  * 복사 규칙:
  *   - 이름·시작일·종료일·표시 순서·사용 여부·신청 마감 시각만 복사한다.
  *   - 값은 원본 반 값을 쓰지 않는다(주1회 반 값이 주3회 반에 들어가면 안 된다).
- *     대신 «복사받는 반의 지금 반 수강료(기본·신규·재원)»를 기본값으로 넣는다 → 관리자가 줄마다 고친다.
+ *     대신 «복사받는 반의 지금 반 수강료(기본·신입생·재원생)»를 기본값으로 넣는다 → 관리자가 줄마다 고친다.
  *   - 셔틀비는 비워 둔다(NULL = 그 반의 셔틀비를 따른다).
  *   - 받는 반에 같은 범위가 이미 있으면 건너뛴다(덮어쓰지 않는다).
  */
@@ -224,8 +224,8 @@ export function parseDateSelectSettings(
 ): Partial<DateSelectSettings> {
   const out: Partial<DateSelectSettings> = {};
   if (data.dateSelectEnabled !== undefined) out.dateSelectEnabled = data.dateSelectEnabled === true || data.dateSelectEnabled === "true" || data.dateSelectEnabled === "on";
-  if (data.perSessionNewPrice !== undefined) out.perSessionNewPrice = optionalNonNegativeInt(data.perSessionNewPrice, "회당 신규 단가");
-  if (data.perSessionExistingPrice !== undefined) out.perSessionExistingPrice = optionalNonNegativeInt(data.perSessionExistingPrice, "회당 재원 단가");
+  if (data.perSessionNewPrice !== undefined) out.perSessionNewPrice = optionalNonNegativeInt(data.perSessionNewPrice, "회당 신입생 단가");
+  if (data.perSessionExistingPrice !== undefined) out.perSessionExistingPrice = optionalNonNegativeInt(data.perSessionExistingPrice, "회당 재원생 단가");
   if (data.minSessionCount !== undefined) {
     // 비우면 기본값 1(스키마 기본값과 같다)
     out.minSessionCount = isBlank(data.minSessionCount) ? 1 : nonNegativeInt(data.minSessionCount, "최소 횟수");

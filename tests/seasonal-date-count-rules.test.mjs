@@ -157,13 +157,16 @@ test("재원 재확인: 공개 신청과 같은 SQL 함수로 판정하고, 승�
   assert.match(routeSource, /existingCheck: existingNotActiveIds\.has\(String\(application\.id\)\) \? "NOT_ACTIVE" as const : null/);
   // 재원가(EXISTING)로 접수된 신청만, 청구 연결 전 진행 중 항목이 있을 때만 묻는다
   assert.match(routeSource, /application\.applicantType === "EXISTING"/);
-  assert.match(adminClientSource, /재원 확인 필요: 지금 정규반 수강 중이 아님/);
+  assert.match(adminClientSource, /재원생 확인 필요: 지금 정규반 수강 중이 아님/);
   // 경고 칸이 가격을 건드리지 않는다(재배정으로 처리)
   const block = adminClientSource.slice(adminClientSource.indexOf('application.existingCheck === "NOT_ACTIVE"'), adminClientSource.indexOf("{needsReview.length > 0"));
   assert.doesNotMatch(block, /setPrice|priceSnapshot/);
 });
 
-test("재원생 할인 고지 문구가 신청 화면 두 곳(회원 구분·금액 미리보기)에 보인다", () => {
-  assert.match(applyClientSource, /재원생 할인은 특강 기간에 정규반을 함께 다니는 학생만 받습니다\. 정규반을 휴원하고 특강만 들으면 신규 수강료가 적용됩니다\./);
-  assert.equal(applyClientSource.split("{EXISTING_DISCOUNT_NOTICE}").length - 1, 2);
+test("재원생 수강료 고지: 금액 미리보기 한 곳 + 구분 선택지 옆에 재원생·신입생 기준(2026-11-19 정리)", () => {
+  assert.match(applyClientSource, /재원생 수강료는 특강 기간에 정규반을 함께 다니는 학생만 받습니다\. 정규반을 휴원하고 특강만 들으면 신입생 수강료가 적용됩니다\./);
+  // 예전 두 곳 → 한 곳(회원 구분 칸은 선택지 설명으로 대신)
+  assert.equal(applyClientSource.split("{EXISTING_DISCOUNT_NOTICE}").length - 1, 1);
+  assert.match(applyClientSource, /hint: "지금 정규반 수업을 들으면서 방학특강도 듣는 학생"/);
+  assert.match(applyClientSource, /hint: "그 밖의 학생\(정규반 휴원 중 포함\)"/);
 });

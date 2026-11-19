@@ -33,6 +33,8 @@ const FREQ_TIERS = [
 ];
 
 type Program = {
+    /** 방학특강 전용 프로그램(getPrograms 가 계산) — 공개 목록에서 뺀다 */
+    seasonalOnly?: boolean;
     id: string;
     name: string;
     targetAge: string | null;
@@ -87,7 +89,8 @@ export default async function ProgramsPage() {
     ]);
     // 0원 프로그램 숨김 — 가격 칸이 모두 0/빈 값이면 공개 화면에서 뺀다(0원 상품은 내놓지 않는다).
     // getPrograms 자체는 관리자 화면 등도 쓰므로 여기서만 거른다.
-    const programs = allPrograms.filter((program) => hasSellablePrice(program));
+    // 방학특강 전용 프로그램도 뺀다(2026-11-19 원장 — 특강은 /seasonal 에서 따로 안내)
+    const programs = allPrograms.filter((program) => hasSellablePrice(program) && !program.seasonalOnly);
     const phone = settings.contactPhone || "010-0000-0000";
     return (
         <PublicPageLayout>

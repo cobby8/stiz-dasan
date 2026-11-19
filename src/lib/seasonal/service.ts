@@ -34,6 +34,7 @@ import {
   assertDatesInPeriod,
   assertPeriodHasWeekdays,
   assertSelectableDates,
+  firstSelectableYmd,
   fullDateKeysFromOccupancy,
   hasLateJoinDates,
   itemTitleSnapshot,
@@ -151,17 +152,20 @@ async function resolvePublicOfferingAssignment(
   const normalPrice = period ? resolvePeriodPrice(period, applicantType) : resolveOfferingPrice(offering, applicantType);
   // 날짜 모드의 남은 회차 비율(셔틀비도 같은 비율). 요일 모드·시작 전 신청은 null/비율 1 = 정상 금액 그대로.
   let proration: { remainingCount: number; fullCount: number } | null = null;
+  const todayYmd = todayKst();
+  // 마감(기간 또는 시즌)이 지났으면 중간 합류 — 고를 수 있는 첫 날 = 내일(2026-11-19 원장), 마감 전은 오늘 그대로
+  const lateJoin = periodClosed || deadline.seasonClosed;
+  const selectableFromYmd = firstSelectableYmd(todayYmd, lateJoin);
   if (isDateMode) {
     const scopeSessionDates = scopeOfferings.flatMap((item) => item.sessionDates);
-    const todayYmd = todayKst();
-    // 마감(기간 또는 시즌)이 지났으면 중간 합류 — 마지막 회차 전날까지만(남은 날이 없으면 409 PERIOD_ENDED)
-    if ((periodClosed || deadline.seasonClosed) && !hasLateJoinDates(scopeSessionDates, todayYmd, period)) {
+    // 중간 합류는 마지막 회차 전날까지만(남은 날이 없으면 409 PERIOD_ENDED)
+    if (lateJoin && !hasLateJoinDates(scopeSessionDates, todayYmd, period)) {
       throw periodEndedError();
     }
-    // 날짜 모드 검사 — 기간 밖 날짜 409, 필요 횟수(오늘부터 남은 회차 기준)와 다르면 400
+    // 날짜 모드 검사 — 기간 밖 날짜 409, 필요 횟수(고를 수 있는 첫 날부터 남은 회차 기준)와 다르면 400
     assertDatesInPeriod(request.selectedDates, period);
     const fullCount = requiredDateCount(scopeSessionDates, frequency, period);
-    const required = requiredDateCount(scopeSessionDates, frequency, period, todayYmd);
+    const required = requiredDateCount(scopeSessionDates, frequency, period, selectableFromYmd);
     // 회차는 있는데 남은 게 없다 = 이미 끝난 기간(회차 자체가 없으면 아래 assertDateCount 가 DATE_NOT_OFFERED)
     if (fullCount > 0 && required === 0) throw periodEndedError();
     assertDateCount(request.selectedDates.length, required, frequency, period?.label);
@@ -178,6 +182,8 @@ async function resolvePublicOfferingAssignment(
     // 날짜 모드는 고른 횟수를 남긴다(목록·제목 «날짜 선택 8회»)
     sessionCount: isDateMode ? request.selectedDates.length as number | null : null,
     usesDateCapacity,
+    // 날짜 검사(assertSelectableDates)가 쓰는 «고를 수 있는 첫 날» — 중간 합류면 내일
+    selectableFromYmd,
   };
 }
 
@@ -683,7 +689,8 @@ export async function submitSeasonalApplication(slug: string, input: SeasonalApp
         const scopeSessionDates = assignment.scopeOfferings.flatMap((offering) => offering.sessionDates);
         if (isDateMode) {
           // 날짜 모드: 고른 날짜가 그 반 범위의 실제 회차이고 오늘(KST) 이전이 아닌지
-          assertSelectableDates(input.selectedDates, scopeSessionDates, todayKst());
+          // 마감 뒤 중간 합류면 오늘 날짜도 안 된다(내일 수업부터 · 2026-11-19 원장)
+          assertSelectableDates(input.selectedDates, scopeSessionDates, todayKst(), assignment.selectableFromYmd);
         } else if (assignment.period) {
           // 요일 + 기간: 그 기간 안에 고른 요일 회차가 있는지
           assertPeriodHasWeekdays(scopeSessionDates, effectiveWeekdays, assignment.period);

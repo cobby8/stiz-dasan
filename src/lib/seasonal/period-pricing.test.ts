@@ -14,7 +14,7 @@ const fourWeeks = {
   price: 240000, newApplicantPrice: 240000, existingApplicantPrice: 200000, shuttleFee: null,
 };
 
-test("기간 수강료: 4주 주2회 신규 240,000 / 재원 200,000, 판정 전은 기본가", () => {
+test("기간 수강료: 4주 주2회 신입생 240,000 / 재원생 200,000, 판정 전은 기본가", () => {
   assert.equal(resolvePeriodPrice(fourWeeks, "NEW"), 240000);
   assert.equal(resolvePeriodPrice(fourWeeks, "EXISTING"), 200000);
   assert.equal(resolvePeriodPrice(fourWeeks), 240000);

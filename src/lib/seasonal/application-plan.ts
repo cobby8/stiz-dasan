@@ -7,12 +7,14 @@
  * ⚠️ prisma import 금지. 날짜·요일은 kst.ts 만 쓴다(getDay·toISOString 금지).
  */
 // @ts-expect-error -- Node 타입 제거 기반 단위 테스트는 런타임 확장자를 요구한다.
-import { kstDow, kstWeekMonday, toKstYmd } from "../datetime/kst.ts";
+import { addDaysKst, kstDow, kstWeekMonday, toKstYmd } from "../datetime/kst.ts";
 // @ts-expect-error -- Node 타입 제거 기반 단위 테스트는 런타임 확장자를 요구한다.
 import { pickSessionDatesForApplication, type SeasonalAttendanceRule } from "./attendance-rule.ts";
 // @ts-expect-error -- Node 타입 제거 기반 단위 테스트는 런타임 확장자를 요구한다.
 import { SeasonalError, type SeasonalWeekday } from "./contracts.ts";
 import type { OfferingPeriodLike } from "./period-pricing";
+// @ts-expect-error -- Node 타입 제거 기반 단위 테스트는 런타임 확장자를 요구한다.
+import { isPeriodClosed } from "./period-pricing.ts";
 
 // kstDow 결과(0=일 … 6=토)를 요일 키로
 const WEEKDAY_BY_DOW: readonly SeasonalWeekday[] = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
@@ -102,13 +104,44 @@ export function sessionDateKeys(sessionDates: ReadonlyArray<{ startsAt: Date | s
 }
 
 /**
+ * 날짜 모드에서 고를 수 있는 첫 날짜(2026-11-19 원장 결정 «마감 뒤 중간 합류는 내일 수업부터»).
+ *   - 마감 뒤 중간 합류(lateJoin=true) → 기준일 «다음 날». 오늘 수업은 이미 시작됐거나 준비가 안 돼 받지 않는다.
+ *   - 마감 전 정상 신청(lateJoin=false) → 기준일 그대로(오늘 포함 — 예전 동작 그대로).
+ * 기준일 = 공개 신청은 오늘(KST), 관리자 재배정은 그 신청서의 접수일.
+ * 화면(날짜 목록·필요 횟수)·서버(필요 횟수·날짜 검사)·관리자 재배정 금액이 이 함수 하나를 쓴다.
+ */
+export function firstSelectableYmd(baseYmd: string, lateJoin: boolean): string {
+  if (!lateJoin) return baseYmd;
+  return addDaysKst(baseYmd, 1) || baseYmd; // 날짜를 못 읽으면 기준일 그대로(더 막지 않는다)
+}
+
+/**
+ * 접수 시각 기준으로 «마감 뒤 중간 합류»였는가 — 공개 신청 service.ts 와 같은 규칙.
+ *   기간 마감: 마감 시각 «그 순간부터»(isPeriodClosed) · 시즌 모집 마감: 마감 시각이 «지난 뒤»(now > closesAt).
+ * 관리자 재배정이 접수일 기준 남은 회차를 셀 때 쓴다.
+ */
+export function wasLateJoinAt(
+  appliedAtMs: number,
+  seasonClosesAt: Date | string | null | undefined,
+  period?: { applicationClosesAt?: Date | string | null } | null,
+): boolean {
+  if (!Number.isFinite(appliedAtMs)) return false;
+  if (period && isPeriodClosed(period, appliedAtMs)) return true;
+  if (!seasonClosesAt) return false;
+  const seasonMs = new Date(seasonClosesAt).getTime();
+  return Number.isFinite(seasonMs) && appliedAtMs > seasonMs;
+}
+
+/**
  * 날짜 모드 검사 — 고른 날짜가 모두 그 반 범위의 실제 회차 날짜이고, 오늘(KST) 이전이 아닌가.
  *   실제 회차가 아닌 날짜 → 409 DATE_NOT_OFFERED, 지난 날짜 → 400 DATE_IN_PAST
+ *   firstYmd(중간 합류면 내일)보다 앞선 날짜 → 400 DATE_BEFORE_LATE_JOIN(«내일 수업부터»)
  */
 export function assertSelectableDates(
   selectedDates: readonly string[],
   scopeSessionDates: ReadonlyArray<{ startsAt: Date | string }>,
   todayYmd: string,
+  firstYmd: string = todayYmd,
 ): void {
   const offered = sessionDateKeys(scopeSessionDates);
   if (selectedDates.some((ymd) => !offered.has(ymd))) {
@@ -116,6 +149,10 @@ export function assertSelectableDates(
   }
   if (selectedDates.some((ymd) => ymd < todayYmd)) {
     throw new SeasonalError("이미 지난 날짜는 신청할 수 없습니다.", 400, "DATE_IN_PAST");
+  }
+  // 마감 뒤 중간 합류는 오늘 수업을 고를 수 없다(내일 수업부터)
+  if (selectedDates.some((ymd) => ymd < firstYmd)) {
+    throw new SeasonalError("마감 뒤 중간 합류는 내일 수업부터 고를 수 있습니다. 오늘 날짜를 빼고 다시 골라 주세요.", 400, "DATE_BEFORE_LATE_JOIN");
   }
 }
 
@@ -130,7 +167,8 @@ export function assertSelectableDates(
  * 같은 날 회차가 둘이어도 날짜 하나로 센다(학생은 날짜를 고른다).
  * 화면(남은 횟수 안내)과 서버(DATE_COUNT_MISMATCH)가 이 함수 하나를 쓴다.
  *
- * todayYmd(2026-11-18 원장 «중간 합류는 남은 회차만큼»): 주면 오늘(KST, 오늘 포함) 이후 회차만 센다.
+ * todayYmd(2026-11-18 원장 «중간 합류는 남은 회차만큼»): 주면 그 날짜(포함) 이후 회차만 센다.
+ *   마감 뒤 중간 합류는 호출부가 firstSelectableYmd(오늘, true) = «내일»을 넘긴다(2026-11-19 원장 «내일 수업부터»).
  *   이미 지난 날짜는 고를 수 없으니(DATE_IN_PAST) 필요 횟수에서도 뺀다. 주마다 min(N, 그 주 «남은» 회차 수).
  *   기간 시작 전이면 지난 회차가 없어 결과가 예전과 같다. 비우면(undefined) 전체 = «시작 전 기준 전체 필요 횟수».
  */

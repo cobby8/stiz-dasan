@@ -6,7 +6,7 @@ import { assertDatesAreSessionDates, describeApplicationSelection, hasSamePeriod
 
 // 관리자 «기간별 수강료 · 날짜별 선택» 판단 규칙(2026-11-18)
 
-test("기간 추가: 이름·날짜·기본 수강료 필수, 비운 신규/재원/셔틀비는 NULL", () => {
+test("기간 추가: 이름·날짜·기본 수강료 필수, 비운 신입생/재원생/셔틀비는 NULL", () => {
   const period = parseOfferingPeriodInput({ label: " 4주 ", startDate: "2027-01-04", endDate: "2027-01-29", price: "240000", newApplicantPrice: "", shuttleFee: null });
   assert.deepEqual(period, {
     label: "4주", startDate: "2027-01-04", endDate: "2027-01-29", price: 240000,

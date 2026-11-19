@@ -12,9 +12,9 @@ import { PublicBottomBar, usePublicOverlayOpen } from "@/components/public-float
 import { SEAT_LEVEL_LABEL } from "@/lib/seats/seatLevel";
 import { formatSeasonalPeriod, formatWon, normalizeProgram, programClasses, seasonalApplicationStatusLabel, seasonalDisplayState, type SeasonalClass, type SeasonalOfferingPeriod, type SeasonalProgram } from "./types";
 // 기간 선택·날짜별 선택(2026-11-18) — 가격·출석 규칙·날짜 표기는 서버와 같은 공용 부품을 쓴다(화면 금액 = 청구 금액)
-import { distinctPeriods, isPeriodClosed, proratedPrice, resolvePeriodPrice, resolvePeriodShuttleFee, weeklyFrequencyLabel, type DistinctPeriod } from "@/lib/seasonal/period-pricing";
+import { APPLICANT_TYPE_LABEL, distinctPeriods, isPeriodClosed, proratedPrice, resolvePeriodPrice, resolvePeriodShuttleFee, weeklyFrequencyLabel, type DistinctPeriod } from "@/lib/seasonal/period-pricing";
 import { pickSessionDatesForApplication } from "@/lib/seasonal/attendance-rule";
-import { dateCountProgressText, hasLateJoinDates, requiredDateCount, ymdKoreanLabel } from "@/lib/seasonal/application-plan";
+import { dateCountProgressText, firstSelectableYmd, hasLateJoinDates, requiredDateCount, ymdKoreanLabel } from "@/lib/seasonal/application-plan";
 import { kstHm, kstLabel, todayKst } from "@/lib/datetime/kst";
 
 type LoadState = "loading" | "ready" | "error";
@@ -132,8 +132,13 @@ function matchingOfferingForCount(
   return frequencyCandidates.find((item) => seasonalOfferingFrequency(item) === count) ?? null;
 }
 
-// 재원생 할인 고지(2026-11-18 원장 «휴원하고 특강만 들으면 할인 적용이 안 되는 부분 명확하게 고지») — 두 곳에 같은 문구
-const EXISTING_DISCOUNT_NOTICE = "재원생 할인은 특강 기간에 정규반을 함께 다니는 학생만 받습니다. 정규반을 휴원하고 특강만 들으면 신규 수강료가 적용됩니다.";
+// 재원생 수강료 고지(2026-11-18 원장 «휴원하고 특강만 들으면 할인 적용이 안 되는 부분 명확하게 고지») — 금액 미리보기 아래
+const EXISTING_DISCOUNT_NOTICE = "재원생 수강료는 특강 기간에 정규반을 함께 다니는 학생만 받습니다. 정규반을 휴원하고 특강만 들으면 신입생 수강료가 적용됩니다.";
+// 재원생·신입생 기준(2026-11-19 원장 «정규 수업 들으면서 방학특강 듣는 학생임을 신청 시 명확하게») — 선택지 바로 옆에 보인다
+const APPLICANT_TYPE_CHOICES = [
+  { value: "EXISTING", label: APPLICANT_TYPE_LABEL.EXISTING, hint: "지금 정규반 수업을 들으면서 방학특강도 듣는 학생" },
+  { value: "NEW", label: APPLICANT_TYPE_LABEL.NEW, hint: "그 밖의 학생(정규반 휴원 중 포함)" },
+] as const;
 
 type SubmitResult = {
   applicationId?: string;
@@ -294,6 +299,8 @@ export default function SeasonalApplyClient({ slug, basePath = "/seasonal", home
   // 마감 뒤 중간 합류는 마지막 회차 전날까지(내일 이후 수업이 남았을 때) — 서버 hasLateJoinDates 와 같은 함수
   const deadlinePassed = seasonLateJoin || appliedPeriodClosed;
   const lateJoinDatesLeft = hasLateJoinDates(scopeSessions, todayYmd, appliedPeriod);
+  // 날짜로 고를 수 있는 첫 날 — 마감 뒤 중간 합류면 내일, 마감 전이면 오늘(서버 firstSelectableYmd 와 같은 함수 · 2026-11-19 원장)
+  const selectableFromYmd = firstSelectableYmd(todayYmd, deadlinePassed);
   const periodReady = (!needsPeriodChoice || appliedPeriod !== null) && (!deadlinePassed || (isDateMode && lateJoinDatesLeft));
 
   // ── 주N회(날짜 모드) — 고를 수 있는 값은 같은 운영 반의 «주N회» 반들 ──
@@ -307,14 +314,14 @@ export default function SeasonalApplyClient({ slug, basePath = "/seasonal", home
   // 반·가격을 고르는 N — 요일 모드는 고른 요일 수, 날짜 모드는 고른 주N회
   const frequencyCount = isDateMode ? (weeklyFrequency ?? 0) : selectedWeekdays.length;
 
-  // 고를 수 있는 날짜 — 오늘 이전·고른 기간 밖은 숨기고, 같은 날짜는 한 줄로(고른 반의 회차를 먼저 쓴다).
+  // 고를 수 있는 날짜 — 첫 날(중간 합류면 내일) 이전·고른 기간 밖은 숨기고, 같은 날짜는 한 줄로(고른 반의 회차를 먼저 쓴다).
   //   정원이 찬 날짜도 «마감»으로 보이되 고를 수 있다 → 그 신청은 대기로 접수된다(2026-11-18 원장).
   const dateOptions = (() => {
     const byKey = new Map<string, { dateKey: string; label: string; full: boolean }>();
     const ordered = baseOffering ? [baseOffering, ...scopeOfferings.filter((item) => item.id !== baseOffering.id)] : [];
     for (const item of ordered) {
       for (const session of item.sessionDates) {
-        if (!session.dateKey || session.dateKey < todayYmd || byKey.has(session.dateKey)) continue;
+        if (!session.dateKey || session.dateKey < selectableFromYmd || byKey.has(session.dateKey)) continue;
         if (appliedPeriod && (session.dateKey < appliedPeriod.startDate || session.dateKey > appliedPeriod.endDate)) continue;
         byKey.set(session.dateKey, {
           dateKey: session.dateKey,
@@ -330,9 +337,9 @@ export default function SeasonalApplyClient({ slug, basePath = "/seasonal", home
     ? selectedDateKeys.filter((key) => dateOptions.some((option) => option.dateKey === key)).sort()
     : [];
   // 채워야 할 횟수 = 주N회 × 회차가 있는 주 수(서버 requiredDateCount 와 같은 함수 — 화면·서버 숫자가 같다)
-  //   오늘(KST, 오늘 포함)부터 남은 회차만 센다 — 서버도 같은 todayKst() 로 같은 함수를 부른다(2026-11-18 중간 합류)
+  //   고를 수 있는 첫 날(마감 전 = 오늘 포함, 중간 합류 = 내일)부터 남은 회차만 센다 — 서버도 같은 함수(2026-11-19)
   const requiredDates = isDateMode && weeklyFrequency !== null
-    ? requiredDateCount(scopeSessions, weeklyFrequency, appliedPeriod, todayYmd)
+    ? requiredDateCount(scopeSessions, weeklyFrequency, appliedPeriod, selectableFromYmd)
     : 0;
   // 시작 전 기준 전체 필요 횟수 — 남은 회차 비율(수강료·셔틀비)의 분모
   const fullDateCount = isDateMode && weeklyFrequency !== null
@@ -402,7 +409,7 @@ export default function SeasonalApplyClient({ slug, basePath = "/seasonal", home
     // 요일 모드
     !isDateMode && selectedIds.length > 0 && selectedWeekdays.length === 0 ? "참여 요일" : "",
     selectedIds.length > 0 && frequencyPicked && periodReady && !hasPricingMatch ? (isDateMode ? "주N회 수강료" : "요일 수에 맞는 수강료") : "",
-    !applicantType ? "회원 구분" : "",
+    !applicantType ? "재원생·신입생 구분" : "",
     !form.childName || !form.childBirthDate ? "학생 필수 정보" : "",
     !form.parentName || !form.parentPhone ? "보호자 필수 정보" : "",
     incompleteShuttlePlans.length > 0 ? "셔틀 탑승 또는 하차 위치" : "",
@@ -856,7 +863,8 @@ export default function SeasonalApplyClient({ slug, basePath = "/seasonal", home
                   {/* 중간 합류 안내 — 남은 회차에서 고르고, 수강료는 남은 회차만큼(정상 → 실제). 시작 전 신청이면 안 보인다 */}
                   {prorated && selectionPlans[0] && (
                     <p className="mt-3 rounded-xl bg-[var(--color-public-secondary-soft)] px-3 py-2 text-sm tabular-nums text-[var(--color-public-secondary-ink)]">
-                      오늘부터 남은 수업 {dateOptions.length}회 중에서 고릅니다 · 수강료는 남은 회차만큼(정상 {formatWon(selectionPlans[0].normalTuition)} → {formatWon(selectionPlans[0].tuition)})
+                      {/* 마감 뒤 중간 합류는 내일 수업부터(2026-11-19 원장) */}
+                      {deadlinePassed ? "내일" : "오늘"}부터 남은 수업 {dateOptions.length}회 중에서 고릅니다 · 수강료는 남은 회차만큼(정상 {formatWon(selectionPlans[0].normalTuition)} → {formatWon(selectionPlans[0].tuition)})
                     </p>
                   )}
                   {/* 몇 회 중 몇 회 — 이 화면의 진행 안내 */}
@@ -933,19 +941,11 @@ export default function SeasonalApplyClient({ slug, basePath = "/seasonal", home
           <div className="space-y-4 rounded-2xl border border-[var(--color-public-line)] bg-white p-5 shadow-sm dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-tint)]">
             <h2 className="text-xl font-bold text-[var(--color-public-ink)] dark:text-white">신청 정보</h2>
             <fieldset>
-              <legend className="text-sm font-semibold text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">회원 구분 *</legend>
-              <p className="mt-1 text-xs text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">현재 학원에 등록된 학생인지 선택해 주세요. 회원별 수강료 확인에 사용됩니다.</p>
-              {/* 재원생 할인 고지(2026-11-18 원장) — 휴원하고 특강만 들으면 신규 수강료 */}
-              <p className="mt-1 text-xs font-medium text-[var(--color-academy-warning)]">{EXISTING_DISCOUNT_NOTICE}</p>
+              <legend className="text-sm font-semibold text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">재원생·신입생 구분 *</legend>
+              {/* 기준은 선택지 안에 바로 보인다(예전 안내 두 줄 «등록된 학생인지»·«재원생 할인 고지»는 이 설명으로 합쳤다) */}
               <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                {([[
-                  "EXISTING",
-                  "기존 회원",
-                ], [
-                  "NEW",
-                  "신규 회원",
-                ]] as const).map(([value, label]) => (
-                  <label key={value} className="flex min-h-11 cursor-pointer items-center gap-2 rounded border border-[var(--color-public-muted)] px-3 text-sm text-[var(--color-public-ink)] dark:border-[var(--color-public-line)] dark:text-[var(--color-public-ink)]">
+                {APPLICANT_TYPE_CHOICES.map(({ value, label, hint }) => (
+                  <label key={value} className="flex min-h-11 cursor-pointer items-start gap-2 rounded border border-[var(--color-public-muted)] px-3 py-2 text-sm text-[var(--color-public-ink)] dark:border-[var(--color-public-line)] dark:text-[var(--color-public-ink)]">
                     <input
                       type="radio"
                       name="applicantType"
@@ -953,8 +953,12 @@ export default function SeasonalApplyClient({ slug, basePath = "/seasonal", home
                       checked={applicantType === value}
                       onChange={() => setApplicantType(value)}
                       required
+                      className="mt-1"
                     />
-                    {label}
+                    <span>
+                      <span className="block font-medium">{label}</span>
+                      <span className="block text-xs text-[var(--color-public-muted)]">{hint}</span>
+                    </span>
                   </label>
                 ))}
               </div>
@@ -1050,6 +1054,7 @@ export default function SeasonalApplyClient({ slug, basePath = "/seasonal", home
               <p className="mt-2 text-xs text-[var(--color-academy-success)] dark:text-emerald-300">
                 형제·자매가 함께 신청하면 수강료 10%가 자동 할인됩니다. (셔틀비 제외 · 접수 후 금액에 반영)
               </p>
+              {/* 재원생 수강료 고지(2026-11-18 원장) — 금액 바로 아래 한 곳만(회원 구분 칸은 선택지 설명으로 대신) */}
               <p className="mt-1 text-xs text-[var(--color-academy-warning)]">{EXISTING_DISCOUNT_NOTICE}</p>
             </div>
             <CheckBox label="방학특강 운영 안내와 환불 규정을 확인했습니다." checked={form.agreedTerms} onChange={(checked) => update("agreedTerms", checked)} />
