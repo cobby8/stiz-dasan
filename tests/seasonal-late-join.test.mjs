@@ -127,11 +127,15 @@ test("서버: 마감 뒤 날짜 모드만 허용, 요일 모드는 그대로 거
   // 기간 마감: 요일 모드만 PERIOD_CLOSED
   assert.match(serviceSource, /if \(period && periodClosed && !isDateMode\) throw periodClosedError\(period\.label\)/);
   // 마감 뒤 날짜 모드: 남은 날(내일 이후)이 없으면 PERIOD_ENDED
-  assert.match(serviceSource, /if \(\(periodClosed \|\| deadline\.seasonClosed\) && !hasLateJoinDates\(scopeSessionDates, todayYmd, period\)\)/);
+  assert.match(serviceSource, /const lateJoin = periodClosed \|\| deadline\.seasonClosed;/);
+  assert.match(serviceSource, /if \(lateJoin && !hasLateJoinDates\(scopeSessionDates, todayYmd, period\)\)/);
   // 남은 회차 0(회차는 있었음) → PERIOD_ENDED
   assert.match(serviceSource, /if \(fullCount > 0 && required === 0\) throw periodEndedError\(\);/);
-  // 필요 횟수는 오늘 기준, 비율의 분모는 시작 전 기준
-  assert.match(serviceSource, /const required = requiredDateCount\(scopeSessionDates, frequency, period, todayYmd\);/);
+  // 필요 횟수는 «고를 수 있는 첫 날»(마감 전 오늘 · 중간 합류 내일) 기준, 비율의 분모는 시작 전 기준
+  assert.match(serviceSource, /const selectableFromYmd = firstSelectableYmd\(todayYmd, lateJoin\);/);
+  assert.match(serviceSource, /const required = requiredDateCount\(scopeSessionDates, frequency, period, selectableFromYmd\);/);
+  // 날짜 검사도 같은 첫 날로(중간 합류면 오늘 날짜 거절)
+  assert.match(serviceSource, /assertSelectableDates\(input\.selectedDates, scopeSessionDates, todayKst\(\), assignment\.selectableFromYmd\)/);
   assert.match(serviceSource, /const fullCount = requiredDateCount\(scopeSessionDates, frequency, period\);/);
 });
 
@@ -181,21 +185,26 @@ test("화면: 날짜 선택이 꺼진 시즌·lateJoinOpen 없음은 지금처�
 test("신청 화면: 마감이면 «요일로 고르기» 비활성·안내, 필요 횟수·비율은 서버와 같은 함수", () => {
   assert.match(applyClientSource, /요일 신청은 마감되었습니다\. 남은 날짜로 중간 합류할 수 있습니다\./);
   assert.match(applyClientSource, /const disabled = mode === "WEEKDAY" && weekdayModeClosed;/);
-  assert.match(applyClientSource, /requiredDateCount\(scopeSessions, weeklyFrequency, appliedPeriod, todayYmd\)/);
+  assert.match(applyClientSource, /const selectableFromYmd = firstSelectableYmd\(todayYmd, deadlinePassed\);/);
+  assert.match(applyClientSource, /requiredDateCount\(scopeSessions, weeklyFrequency, appliedPeriod, selectableFromYmd\)/);
+  assert.match(applyClientSource, /session\.dateKey < selectableFromYmd/);
   assert.match(applyClientSource, /proratedPrice\(amount, requiredDates, fullDateCount\)/);
-  assert.match(applyClientSource, /오늘부터 남은 수업 \{dateOptions\.length\}회 중에서 고릅니다 · 수강료는 남은 회차만큼\(정상/);
+  assert.match(applyClientSource, /\{deadlinePassed \? "내일" : "오늘"\}부터 남은 수업 \{dateOptions\.length\}회 중에서 고릅니다 · 수강료는 남은 회차만큼\(정상/);
 });
 
 const routeSource = readFileSync("src/app/api/admin/seasonal/route.ts", "utf8");
 
 test("관리자 재배정: 날짜 모드는 «접수일» 기준 남은 회차 비율 — 같은 함수(requiredDateCount·proratedPrice), 셔틀비도 같은 비율", () => {
-  assert.match(routeSource, /import \{ inferWeeklyFrequency, requiredDateCount, ymdKoreanLabel \} from "@\/lib\/seasonal\/application-plan"/);
-  assert.match(routeSource, /const remainingCount = requiredDateCount\(sessions, frequency, period, params\.appliedOnYmd\);/);
+  assert.match(routeSource, /import \{ firstSelectableYmd, inferWeeklyFrequency, requiredDateCount, wasLateJoinAt, ymdKoreanLabel \} from "@\/lib\/seasonal\/application-plan"/);
+  // 접수 때 마감 뒤였으면 접수일 다음 날부터(2026-11-19 원장 «내일 수업부터»)
+  assert.match(routeSource, /lateJoinAtApply = wasLateJoinAt\(params\.appliedAt\.getTime\(\), season\?\.applicationClosesAt, period\);/);
+  assert.match(routeSource, /const fromYmd = firstSelectableYmd\(params\.appliedOnYmd, lateJoinAtApply\);/);
+  assert.match(routeSource, /const remainingCount = requiredDateCount\(sessions, frequency, period, fromYmd\);/);
   assert.match(routeSource, /const fullCount = requiredDateCount\(sessions, frequency, period\);/);
   // 요일 모드(dateCount null)·기준일 없음은 비율을 쓰지 않는다
   assert.match(routeSource, /if \(dateCount === null \|\| !params\.appliedOnYmd\) return null;/);
   // 주N회: 반 이름 → 없으면 고른 날짜 수로 추정 → 그래도 없으면 정상 금액(검수 M-1)
-  assert.match(routeSource, /const frequency = seasonalOfferingFrequency\(offering\) \?\? inferWeeklyFrequency\(sessions, dateCount, period, params\.appliedOnYmd\);\s*if \(frequency === null\) return null;/);
+  assert.match(routeSource, /const frequency = seasonalOfferingFrequency\(offering\) \?\? inferWeeklyFrequency\(sessions, dateCount, period, fromYmd\);\s*if \(frequency === null\) return null;/);
   // 회차 범위 = 공개 신청과 같은 조건 함수(OPEN 반), 비면 그 반 하나(검수 L-1)
   assert.match(routeSource, /where: openScopeOfferingWhere\(offering\)/);
   assert.match(routeSource, /: await tx\.specialProgramSessionDate\.findMany\(\{ where: \{ offeringId: offering\.id \}/);
@@ -203,7 +212,8 @@ test("관리자 재배정: 날짜 모드는 «접수일» 기준 남은 회차 �
   assert.match(serviceSource, /return \{ \.\.\.offeringScopeWhere\(offering\), status: "OPEN" as const \};/);
   // 재배정·새 항목 둘 다 신청서 접수일(KST)을 넘긴다 — 오늘(todayKst)이 아니다
   assert.match(routeSource, /appliedOnYmd: toKstYmd\(before\.application\.createdAt\)/);
-  assert.match(routeSource, /appliedOnYmd: toKstYmd\(application\.createdAt\)/);
+  assert.match(routeSource, /appliedOnYmd: toKstYmd\(application\.createdAt\),\s*appliedAt: application\.createdAt,/);
+  assert.match(routeSource, /appliedOnYmd: toKstYmd\(before\.application\.createdAt\),\s*appliedAt: before\.application\.createdAt,/);
   assert.match(routeSource, /proratedPrice\(normalShuttleFee, assignment\.proration\.remainingCount, assignment\.proration\.fullCount\)/);
 });
 
@@ -264,4 +274,48 @@ test("관리자: 기간 시작 뒤 날짜 모드 접수만 «중간 합류»", (
   assert.equal(adminRules.isLateJoinApplication({ selectionMode: "WEEKDAY", selectedDates: [], periodStartDate: "2027-01-04", createdAt: "2027-01-21T00:00:00.000Z" }), false);
   // 기간이 없으면 시즌 시작일 기준
   assert.equal(adminRules.isLateJoinApplication({ selectionMode: "DATE", selectedDates: ["2027-01-22"], createdAt: "2027-01-21T00:00:00.000Z" }, "2027-01-03T15:00:00.000Z"), true);
+});
+
+// 2026-11-19 원장 결정 — 마감 뒤 중간 합류의 남은 회차는 «내일 수업부터» 센다. 마감 전 정상 신청은 오늘 포함 그대로.
+test("고를 수 있는 첫 날: 중간 합류 = 내일, 마감 전 = 오늘 · 월말·연말·윤년 경계", () => {
+  assert.equal(plan.firstSelectableYmd("2027-01-13", true), "2027-01-14");
+  assert.equal(plan.firstSelectableYmd("2027-01-13", false), "2027-01-13");
+  assert.equal(plan.firstSelectableYmd("2027-01-31", true), "2027-02-01");
+  assert.equal(plan.firstSelectableYmd("2026-12-31", true), "2027-01-01");
+  assert.equal(plan.firstSelectableYmd("2028-02-28", true), "2028-02-29"); // 윤년
+});
+
+test("중간 합류 필요 횟수: 1/13(수) 신청 = 내일(1/14)부터 6회 그대로, 1/15(금) 신청 = 1/18부터 4회", () => {
+  // 1/13 신청: 1/14·15 남음 → min(2,2)=2 + 2 + 2 = 6
+  assert.equal(plan.requiredDateCount(firstSeason, 2, fourWeeks, plan.firstSelectableYmd("2027-01-13", true)), 6);
+  // 1/15(금) 신청: 마감 전(오늘 포함)이면 1 + 4 = 5, 중간 합류(내일부터)면 그 주 남은 수업 없음 → 4
+  assert.equal(plan.requiredDateCount(firstSeason, 2, fourWeeks, plan.firstSelectableYmd("2027-01-15", false)), 5);
+  assert.equal(plan.requiredDateCount(firstSeason, 2, fourWeeks, plan.firstSelectableYmd("2027-01-15", true)), 4);
+  // 1/28 신청 → 1/29 하나 · 1/29 당일은 0(hasLateJoinDates 가 이미 막는다)
+  assert.equal(plan.requiredDateCount(firstSeason, 2, fourWeeks, plan.firstSelectableYmd("2027-01-28", true)), 1);
+  assert.equal(plan.requiredDateCount(firstSeason, 2, fourWeeks, plan.firstSelectableYmd("2027-01-29", true)), 0);
+  // 금액: 1/15 중간 합류 240,000 × 4/8 = 120,000
+  assert.equal(pricing.proratedPrice(240000, plan.requiredDateCount(firstSeason, 2, fourWeeks, plan.firstSelectableYmd("2027-01-15", true)), 8), 120000);
+});
+
+test("날짜 검사: 중간 합류면 오늘 날짜는 400 DATE_BEFORE_LATE_JOIN, 내일은 통과, 마감 전은 오늘도 통과", () => {
+  assert.doesNotThrow(() => plan.assertSelectableDates(["2027-01-15"], firstSeason, "2027-01-15")); // 마감 전(기본값 = 오늘)
+  assert.doesNotThrow(() => plan.assertSelectableDates(["2027-01-18"], firstSeason, "2027-01-15", "2027-01-16"));
+  assert.throws(
+    () => plan.assertSelectableDates(["2027-01-15", "2027-01-18"], firstSeason, "2027-01-15", "2027-01-16"),
+    (error) => error.status === 400 && error.code === "DATE_BEFORE_LATE_JOIN" && /내일 수업부터/.test(error.message),
+  );
+  // 지난 날짜는 예전 그대로 DATE_IN_PAST 가 먼저
+  assert.throws(() => plan.assertSelectableDates(["2027-01-14"], firstSeason, "2027-01-15", "2027-01-16"), (error) => error.code === "DATE_IN_PAST");
+});
+
+test("접수 시각 기준 중간 합류 판정: 기간 마감은 그 순간부터, 시즌 마감은 지난 뒤", () => {
+  const seasonCloses = "2027-01-01T09:00:00.000Z"; // KST 1/1 18:00
+  const period = { applicationClosesAt: "2027-01-08T09:00:00.000Z" }; // 3주 마감 KST 1/8 18:00
+  assert.equal(plan.wasLateJoinAt(Date.parse("2027-01-08T08:59:59.000Z"), null, period), false);
+  assert.equal(plan.wasLateJoinAt(Date.parse("2027-01-08T09:00:00.000Z"), null, period), true);
+  assert.equal(plan.wasLateJoinAt(Date.parse("2027-01-01T09:00:00.000Z"), seasonCloses, null), false); // 시즌은 «지난 뒤»
+  assert.equal(plan.wasLateJoinAt(Date.parse("2027-01-01T09:00:01.000Z"), seasonCloses, null), true);
+  assert.equal(plan.wasLateJoinAt(Date.parse("2026-12-20T00:00:00.000Z"), seasonCloses, { applicationClosesAt: null }), false);
+  assert.equal(plan.wasLateJoinAt(Number.NaN, seasonCloses, period), false);
 });

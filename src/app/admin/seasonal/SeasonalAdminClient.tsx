@@ -14,7 +14,7 @@ import { kstLabel } from "@/lib/datetime/kst";
 import { askConfirm, showNotice } from "@/components/ui/feedback";
 // 기간 선택·날짜별 선택(2026-11-18) — 표시 문구·가격 계산은 공용 부품(서버와 같은 함수)
 import { describeApplicationSelection, isDateModeApplication, isLateJoinApplication, isTuitionReduced, kstDateTimeParts, parseKstDateTime, shortDateLabel, weekdaysFromDates } from "@/lib/seasonal/admin-period-rules";
-import { resolvePeriodPrice } from "@/lib/seasonal/period-pricing";
+import { APPLICANT_TYPE_LABEL, applicantTypeLabel as applicantTypeName, periodPriceSummary, resolvePeriodPrice } from "@/lib/seasonal/period-pricing";
 import { referralSourceLabel } from "@/lib/enrollment/referralSources";
 import { toKstYmd } from "@/lib/datetime/kst";
 
@@ -699,10 +699,9 @@ function maskRosterPhone(value: string) {
   return maskPhoneNumber(value) || "미입력";
 }
 
+// 신청자 구분 이름은 공용 표(재원생/신입생 · 2026-11-19 원장)에서만 가져온다
 function applicantTypeLabel(value?: string | null) {
-  if (value === "NEW") return "신규";
-  if (value === "EXISTING") return "기존";
-  return value || "구분 미확인";
+  return applicantTypeName(value, value || "구분 미확인");
 }
 
 // 수업 반 이름("초등 고학년 주 2회")을 [반 이름, 횟수]로 나눈다. 방학특강은 횟수(주N회)별로 반이 나뉜다.
@@ -1675,15 +1674,15 @@ function SeasonsView({
                                 {group.baseClass.shuttleAvailable && <span className="text-xs text-[var(--color-academy-muted)]">셔틀 +{(rule.shuttleFee ?? 0).toLocaleString()}원</span>}
                               </div>
                               <div className="mt-1 flex items-center justify-between gap-3 text-xs">
-                                <span className="text-[var(--color-academy-muted)]">기존 {(rule.existingPrice ?? rule.price).toLocaleString()}원</span>
-                                <span className="text-[var(--color-academy-ink)]">신규 {(rule.newPrice ?? rule.price).toLocaleString()}원</span>
+                                <span className="text-[var(--color-academy-ink)]">신입생 {(rule.newPrice ?? rule.price).toLocaleString()}원</span>
+                                <span className="text-[var(--color-academy-muted)]">재원생 {(rule.existingPrice ?? rule.price).toLocaleString()}원</span>
                               </div>
-                              {/* 기간별 수강료가 있으면 한 줄씩(사용 안 함은 뺀다) */}
+                              {/* 기간별 수강료가 있으면 한 줄씩(사용 안 함은 뺀다) — 신입생·재원생·셔틀·마감을 라벨과 함께(2026-11-19 원장 «제대로 세팅됐는지 보이게») */}
                               {(group.offerings.find((offering) => offering.id === rule.key)?.periods ?? []).filter((period) => period.isActive !== false).map((period) => (
-                                <div key={period.id} className="mt-1 flex items-center justify-between gap-3 text-xs text-[var(--color-academy-muted)]">
-                                  <span className="min-w-0 truncate">{period.label} · {period.startDate.slice(5).replace("-", "/")}~{period.endDate.slice(5).replace("-", "/")}</span>
-                                  <span className="shrink-0 text-[var(--color-academy-ink)]">{resolvePeriodPrice(period, "NEW").toLocaleString()}원</span>
-                                </div>
+                                <p key={period.id} data-period-summary className="mt-1 break-keep text-xs text-[var(--color-academy-ink)]">
+                                  {periodPriceSummary(period, { shuttleAvailable: group.baseClass.shuttleAvailable, shuttleFee: rule.shuttleFee })}
+                                  <span className="text-[var(--color-academy-muted)]"> ({period.startDate.slice(5).replace("-", "/")}~{period.endDate.slice(5).replace("-", "/")})</span>
+                                </p>
                               ))}
                             </div>
                           ))}
@@ -1781,12 +1780,12 @@ function ApplicationsView({
   const [exFreq, setExFreq] = useState<Set<string>>(new Set());
   const [exPay, setExPay] = useState<Set<string>>(new Set());
   const [exShuttle, setExShuttle] = useState<Set<string>>(new Set());
-  const typeOptions = ["기존", "신규"];
+  const typeOptions = [APPLICANT_TYPE_LABEL.EXISTING, APPLICANT_TYPE_LABEL.NEW];
   const payOptions = ["청구전", "미납", "결제완료"];
   const shuttleOptions = ["이용", "미이용"];
   const baseOptions = useMemo(() => [...new Set(applications.flatMap((a) => applicationClassInfo(a.items).bases))].sort((x, y) => x.localeCompare(y, "ko")), [applications]);
   const freqOptions = useMemo(() => [...new Set(applications.flatMap((a) => applicationClassInfo(a.items).freqs))].sort((x, y) => x.localeCompare(y, "ko")), [applications]);
-  const typeToLabel = (t?: string | null) => (t === "NEW" ? "신규" : t === "EXISTING" ? "기존" : "");
+  const typeToLabel = (t?: string | null) => applicantTypeName(t);
   const toggleEx = (setter: Dispatch<SetStateAction<Set<string>>>) => (v: string) => setter((prev) => { const n = new Set(prev); if (n.has(v)) n.delete(v); else n.add(v); return n; });
   const displayApplications = useMemo(() => {
     const filtered = applications.filter((a) => {
@@ -1945,7 +1944,7 @@ function ApplicationsView({
                 </td>
                 <td className="hidden px-2 py-1.5 text-[var(--color-academy-muted)] lg:table-cell">{[application.childGrade, application.childSchool].filter(Boolean).join(" ") || "-"}</td>
                 <td className="px-2 py-1.5">
-                  <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs ${application.applicantType === "NEW" ? "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]" : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"}`}>{application.applicantType === "NEW" ? "신규" : application.applicantType === "EXISTING" ? "기존" : "-"}</span>
+                  <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs ${application.applicantType === "NEW" ? "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]" : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"}`}>{applicantTypeName(application.applicantType, "-")}</span>
                 </td>
                 {/* 수업: 1개면 이름, 여러 개면 «첫 수업 외 N» — 전체는 상세 서랍 */}
                 <td className="px-2 py-1.5 text-[var(--color-academy-ink)]">
@@ -2316,7 +2315,7 @@ function ApplicationReviewSummary({ application, seasonStartsAt, tuitionReduced,
       <Info label="원본 가져오기">{application.imported ? "완료" : "해당 없음"}</Info>
     </dl>
     {/* 재원 재확인(2026-11-18 원장) — 재원가로 접수됐는데 지금 정규반 ACTIVE 가 아님. 가격은 자동으로 안 바꾼다(재배정으로 처리) */}
-    {application.existingCheck === "NOT_ACTIVE" && <div role="status" className="mt-4 rounded-xl border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] p-3 text-[var(--color-academy-warning)]"><p className="text-sm font-semibold">재원 확인 필요: 지금 정규반 수강 중이 아님</p><p className="mt-1 text-xs">재원생 수강료로 접수됐지만 지금은 정규반 수강(재원) 기록이 없습니다. 휴원하고 특강만 듣는 경우 신규 수강료가 맞습니다. 확인 뒤 필요하면 아래 수업 정보에서 다시 배정해 주세요.</p></div>}
+    {application.existingCheck === "NOT_ACTIVE" && <div role="status" className="mt-4 rounded-xl border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] p-3 text-[var(--color-academy-warning)]"><p className="text-sm font-semibold">재원생 확인 필요: 지금 정규반 수강 중이 아님</p><p className="mt-1 text-xs">재원생 수강료로 접수됐지만 지금은 정규반 수강 기록이 없습니다. 휴원하고 특강만 듣는 경우 신입생 수강료가 맞습니다. 확인 뒤 필요하면 아래 수업 정보에서 다시 배정해 주세요.</p></div>}
     {needsReview.length > 0 && <div className="mt-4 rounded-xl border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] p-3 text-[var(--color-academy-warning)]"><p className="text-sm font-semibold">확인 필요</p><ul className="mt-2 list-disc space-y-1 pl-5 text-xs">{needsReview.map((reason) => <li key={reason}>{reason}</li>)}</ul><label className="mt-3 block text-xs font-medium">검토 메모 (필수)<textarea value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} rows={2} placeholder="확인한 내용과 처리 근거를 입력하세요" className="mt-1 w-full rounded-lg border border-[var(--color-academy-warning)] bg-white p-2 font-normal text-[var(--color-academy-ink)]" /></label><div className="mt-2 flex justify-end"><button type="button" disabled={resolving || !reviewNote.trim()} onClick={() => void onResolveReview(application.id, reviewNote.trim())} className="academy-button-secondary academy-button-sm">{resolving ? "처리 중…" : "검토 완료"}</button></div></div>}
   </section>;
 }
@@ -3045,6 +3044,22 @@ function periodDraftFrom(period: OfferingPeriod): PeriodDraft {
   };
 }
 
+/** 입력 중인 기간 줄(글자 칸) → 요약 함수(periodPriceSummary)가 읽는 모양. 빈 칸 = null(기본 수강료로 계산). */
+function periodFromDraft(row: PeriodDraft) {
+  const num = (value: string) => (value.trim() === "" || !Number.isFinite(Number(value)) ? null : Number(value));
+  // 마감 칸(KST 날짜·시각) → 절대 시각. 날짜를 비우면 시즌 마감, 입력 중이라 잘못된 값이면 요약에서만 비운다
+  let closesAt: Date | null = null;
+  try { closesAt = parseKstDateTime(row.closesDate, row.closesTime, "18:00", "신청 마감"); } catch { closesAt = null; }
+  return {
+    label: row.label, startDate: row.startDate, endDate: row.endDate,
+    price: num(row.price) ?? 0,
+    newApplicantPrice: num(row.newApplicantPrice),
+    existingApplicantPrice: num(row.existingApplicantPrice),
+    shuttleFee: num(row.shuttleFee),
+    applicationClosesAt: closesAt,
+  };
+}
+
 /** 새로 넣었거나 바꾼 기간 줄만 저장한다(새 줄 = 추가, 기존 줄 = 수정). 표시 순서는 화면 순서. */
 async function savePeriodDrafts(offeringId: string, rows: PeriodDraft[]): Promise<PeriodDraft[]> {
   const saved: PeriodDraft[] = [];
@@ -3073,13 +3088,16 @@ async function savePeriodDrafts(offeringId: string, rows: PeriodDraft[]): Promis
 }
 
 /**
- * 반 편집 아래 «기간별 수강료»(2026-11-18) — 한 줄 = 기간 이름 · 시작일 · 종료일 · 기본/신규/재원 수강료 · 셔틀비 · 사용 · 삭제.
+ * 반 편집 아래 «기간별 수강료»(2026-11-18) — 한 줄 = 기간 이름 · 시작일 · 종료일 · 기본/신입생/재원생 수강료 · 셔틀비 · 사용 · 삭제.
+ * 줄마다 아래에 «실제 적용 값» 요약(빈 칸 = 기본 수강료로 계산)을 보여 준다(2026-11-19 원장 «제대로 세팅됐는지 안 보여»).
  * 입력값은 반 «저장»을 누를 때 함께 저장된다. 삭제·다른 반 복사는 누르는 즉시 처리(삭제는 위험 작업 확인).
  * 입력칸에 name 을 달지 않는다 — 반 저장 FormData 에 섞이지 않게.
  */
-function OfferingPeriodsSection({ offeringId, defaultPrice, rows, setRows, disabled, onChanged }: {
+function OfferingPeriodsSection({ offeringId, defaultPrice, shuttle, rows, setRows, disabled, onChanged }: {
   offeringId?: string;
   defaultPrice?: number | null;
+  /** 반의 셔틀 설정 — 요약 줄의 셔틀비(기간 셔틀비가 비면 반 셔틀비) */
+  shuttle?: { shuttleAvailable?: boolean | null; shuttleFee?: number | null };
   rows: PeriodDraft[];
   setRows: Dispatch<SetStateAction<PeriodDraft[]>>;
   disabled: boolean;
@@ -3153,8 +3171,8 @@ function OfferingPeriodsSection({ offeringId, defaultPrice, rows, setRows, disab
             <label className="text-xs font-medium">시작일<input type="date" value={row.startDate} onChange={(event) => update(row.key, { startDate: event.target.value })} className={inputClass} /></label>
             <label className="text-xs font-medium">종료일<input type="date" value={row.endDate} onChange={(event) => update(row.key, { endDate: event.target.value })} className={inputClass} /></label>
             <label className="text-xs font-medium">기본 수강료<input type="number" min={0} inputMode="numeric" value={row.price} onChange={(event) => update(row.key, { price: event.target.value })} className={`${inputClass} text-right tabular-nums`} /></label>
-            <label className="text-xs font-medium">신규 수강료<input type="number" min={0} inputMode="numeric" value={row.newApplicantPrice} placeholder="기본" onChange={(event) => update(row.key, { newApplicantPrice: event.target.value })} className={`${inputClass} text-right tabular-nums`} /></label>
-            <label className="text-xs font-medium">재원 수강료<input type="number" min={0} inputMode="numeric" value={row.existingApplicantPrice} placeholder="기본" onChange={(event) => update(row.key, { existingApplicantPrice: event.target.value })} className={`${inputClass} text-right tabular-nums`} /></label>
+            <label className="text-xs font-medium">신입생 수강료<input type="number" min={0} inputMode="numeric" value={row.newApplicantPrice} placeholder="비우면 기본" onChange={(event) => update(row.key, { newApplicantPrice: event.target.value })} className={`${inputClass} text-right tabular-nums`} /></label>
+            <label className="text-xs font-medium">재원생 수강료<input type="number" min={0} inputMode="numeric" value={row.existingApplicantPrice} placeholder="비우면 기본" onChange={(event) => update(row.key, { existingApplicantPrice: event.target.value })} className={`${inputClass} text-right tabular-nums`} /></label>
             <label className="text-xs font-medium">셔틀비<input type="number" min={0} inputMode="numeric" value={row.shuttleFee} placeholder="반 셔틀비" onChange={(event) => update(row.key, { shuttleFee: event.target.value })} className={`${inputClass} text-right tabular-nums`} /></label>
             <label className="flex min-h-11 items-center gap-2 text-xs font-medium"><input type="checkbox" checked={row.isActive} onChange={(event) => update(row.key, { isActive: event.target.checked })} className="size-5" />사용</label>
             <button type="button" disabled={disabled || busy} onClick={() => void remove(row)} className="academy-button-danger academy-button-sm">삭제</button>
@@ -3164,6 +3182,8 @@ function OfferingPeriodsSection({ offeringId, defaultPrice, rows, setRows, disab
               <label className="text-xs font-medium">마감 시각<input type="time" value={row.closesTime} onChange={(event) => update(row.key, { closesTime: event.target.value })} className={inputClass} /></label>
               <p className="pb-3 text-xs text-[var(--color-academy-muted)]">비우면 시즌 모집 마감을 따릅니다.</p>
             </div>
+            {/* 실제 적용 값 요약 — 빈 칸은 기본 수강료로 계산해 보여 준다(신청 화면이 받는 값과 같은 함수) */}
+            <p data-period-summary className="break-keep text-xs text-[var(--color-academy-ink)] sm:col-span-full">적용: {periodPriceSummary(periodFromDraft(row), shuttle)}</p>
           </div>
         ))}
         {rows.length === 0 && <p className="text-xs text-[var(--color-academy-muted)]">넣은 기간이 없습니다.</p>}
@@ -3273,8 +3293,8 @@ function ClassForm({ seasonId, initial, coaches, onClose, onSubmit, onPeriodsCha
       <ClassInput name="location" label="기본 수업 장소" defaultValue={initial?.location} placeholder="예: 다산2호점" />
       <ClassInput name="capacity" label="정원 (미확정 가능)" type="number" defaultValue={initial?.capacity} />
       <ClassInput name="price" label="기본 수강료" type="number" required defaultValue={initial?.price} />
-      <ClassInput name="newApplicantPrice" label="신규 회원 수강료" type="number" defaultValue={initial?.newApplicantPrice} />
-      <ClassInput name="existingApplicantPrice" label="기존 회원 수강료" type="number" defaultValue={initial?.existingApplicantPrice} />
+      <ClassInput name="newApplicantPrice" label="신입생 수강료" type="number" defaultValue={initial?.newApplicantPrice} />
+      <ClassInput name="existingApplicantPrice" label="재원생 수강료" type="number" defaultValue={initial?.existingApplicantPrice} />
       <ClassInput name="shuttleFee" label="셔틀비" type="number" defaultValue={initial?.shuttleFee ?? 0} />
       <label className="text-sm font-medium text-[var(--color-academy-muted)]">담당 선생님
         <select name="instructorId" value={selectedInstructorId} onChange={(event) => {
@@ -3296,7 +3316,7 @@ function ClassForm({ seasonId, initial, coaches, onClose, onSubmit, onPeriodsCha
     <section className="mt-6 border-t border-[var(--color-academy-line)] pt-5"><div className="flex items-center justify-between"><div><h3 className="academy-section-title">전체 수업 일정</h3><p className="text-xs text-[var(--color-academy-muted)]">학생에게 안내할 모든 회차를 입력하세요.</p></div><button type="button" onClick={() => setSessionDates((rows) => [...rows, { startsAt: "", endsAt: "", location: initial?.location ?? "", note: "" }])} className="academy-button-secondary academy-button-sm shrink-0">회차 추가</button></div>
       <div className="mt-3 space-y-3">{sessionDates.map((row, index) => <div key={index} className="grid gap-3 rounded-xl bg-[var(--color-academy-soft)] p-3 sm:grid-cols-2"><label className="text-xs font-medium">{index + 1}회 시작<input required type="datetime-local" value={row.startsAt} onChange={(event) => setSessionDates((rows) => rows.map((item, rowIndex) => rowIndex === index ? { ...item, startsAt: event.target.value } : item))} className={inputClass} /></label><label className="text-xs font-medium">{index + 1}회 종료<input required type="datetime-local" value={row.endsAt} onChange={(event) => setSessionDates((rows) => rows.map((item, rowIndex) => rowIndex === index ? { ...item, endsAt: event.target.value } : item))} className={inputClass} /></label><label className="text-xs font-medium">장소<input value={row.location} onChange={(event) => setSessionDates((rows) => rows.map((item, rowIndex) => rowIndex === index ? { ...item, location: event.target.value } : item))} className={inputClass} /></label><div className="flex items-end gap-2"><label className="min-w-0 flex-1 text-xs font-medium">메모<input value={row.note} onChange={(event) => setSessionDates((rows) => rows.map((item, rowIndex) => rowIndex === index ? { ...item, note: event.target.value } : item))} className={inputClass} /></label>{sessionDates.length > 1 && <button type="button" aria-label={`${index + 1}회 삭제`} onClick={() => setSessionDates((rows) => rows.filter((_, rowIndex) => rowIndex !== index))} className="academy-button-danger shrink-0">삭제</button>}</div></div>)}</div>
     </section>
-    <OfferingPeriodsSection offeringId={initial?.id} defaultPrice={initial?.price} rows={periodRows} setRows={setPeriodRows} disabled={pending} onChanged={onPeriodsChanged} />
+    <OfferingPeriodsSection offeringId={initial?.id} defaultPrice={initial?.price} shuttle={{ shuttleAvailable: initial?.shuttleAvailable, shuttleFee: initial?.shuttleFee }} rows={periodRows} setRows={setPeriodRows} disabled={pending} onChanged={onPeriodsChanged} />
     <footer className="mt-6 flex flex-wrap justify-end gap-2"><button type="button" onClick={onClose} disabled={pending} className="academy-button-secondary">취소</button><button disabled={pending} className="academy-button-primary">{pending ? "저장 중…" : "저장"}</button></footer>
   </form></AdminModal>;
 }

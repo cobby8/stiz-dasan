@@ -167,15 +167,22 @@ export const getPrograms = cache(async () => {
         const rows = await prisma.$queryRawUnsafe<any[]>(
             // deletedAt IS NULL: 소프트 삭제된 프로그램은 관리자 목록·공개 카탈로그에서 제외.
             //   (이력 화면은 별도로 id 조인해 이름을 조회하므로 삭제돼도 이름은 계속 보인다)
-            `SELECT id, name, "targetAge", frequency, "weeklyFrequency", description,
-                    price, "order", days, "priceWeek1", "priceWeek2", "priceWeek3",
-                    "priceDaily", "shuttleFeeOverride", "imageUrl", "runsShuttle", "createdAt", "updatedAt"
-             FROM "Program"
-             WHERE "deletedAt" IS NULL
-             ORDER BY "order" ASC, "createdAt" DESC`
+            // seasonalOnly(2026-11-19 원장 «특강 프로그램은 공개 프로그램 목록에서 빼기»):
+            //   연결된 반에 방학특강 반(dayOfWeek='Seasonal')이 있고, 숨김(Archived)을 뺀 나머지가 모두 특강 반이면 true.
+            //   특강 반은 dayOfWeek='Seasonal' 로 저장된다(정규 수강 신청·학생 등록도 같은 표식으로 거른다). 공개 화면만 이 값으로 거르고,
+            //   관리자·운영 화면은 getPrograms 를 그대로 써서 계속 보인다.
+            `SELECT p.id, p.name, p."targetAge", p.frequency, p."weeklyFrequency", p.description,
+                    p.price, p."order", p.days, p."priceWeek1", p."priceWeek2", p."priceWeek3",
+                    p."priceDaily", p."shuttleFeeOverride", p."imageUrl", p."runsShuttle", p."createdAt", p."updatedAt",
+                    (EXISTS (SELECT 1 FROM "Class" c WHERE c."programId" = p.id AND c."dayOfWeek" = 'Seasonal')
+                     AND NOT EXISTS (SELECT 1 FROM "Class" c WHERE c."programId" = p.id AND c."dayOfWeek" NOT IN ('Seasonal', 'Archived'))) AS "seasonalOnly"
+             FROM "Program" p
+             WHERE p."deletedAt" IS NULL
+             ORDER BY p."order" ASC, p."createdAt" DESC`
         );
         return rows.map((r: any) => ({
             ...r,
+            seasonalOnly: r.seasonalOnly === true, // 방학특강 전용 프로그램(공개 목록에서 뺀다)
             price: Number(r.price ?? 0),
             order: Number(r.order ?? 0),
             priceWeek1: r.priceWeek1 != null ? Number(r.priceWeek1) : null,
@@ -2733,7 +2740,8 @@ export const getHomeStats = cache(async () => {
                     count(DISTINCT c."dayOfWeek")::int AS "activeDays"
              FROM "Enrollment" e
              JOIN "Class" c ON c.id = e."classId"
-             WHERE e.status = 'ACTIVE'`
+             -- 방학특강 전용 반('Seasonal')은 요일이 아니라서 반·요일 수에서 뺀다(특강 기간에 «6요일»로 늘지 않게)
+             WHERE e.status = 'ACTIVE' AND c."dayOfWeek" NOT IN ('Seasonal', 'Archived')`
         );
         const r = rows[0] ?? {};
         return {

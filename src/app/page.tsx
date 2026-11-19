@@ -60,13 +60,13 @@ export default async function Home() {
     console.error("Failed to load data for landing page:", e);
   }
 
-  // 홈 프로그램 타일: /programs 와 같은 기준(0원 숨김)에 사진이 있는 것만
+  // 홈 프로그램 타일: /programs 와 같은 기준(0원 숨김 · 방학특강 전용 숨김)에 사진이 있는 것만
   const programTiles = programs
-    .filter((p) => p.imageUrl && hasSellablePrice(p))
+    .filter((p) => p.imageUrl && hasSellablePrice(p) && !p.seasonalOnly)
     .map((p) => ({ id: p.id, name: p.name, targetAge: p.targetAge ?? null, imageUrl: p.imageUrl }));
 
-  // 숫자 띠: 프로그램 수는 /programs 와 같은 기준(0원 숨김)으로 센다
-  const homeStats = stats ? { ...stats, programs: programs.filter((p) => hasSellablePrice(p)).length } : null;
+  // 숫자 띠: 프로그램 수는 /programs 와 같은 기준(0원 숨김 · 방학특강 전용 숨김)으로 센다
+  const homeStats = stats ? { ...stats, programs: programs.filter((p) => hasSellablePrice(p) && !p.seasonalOnly).length } : null;
 
   // 헤더/푸터에 전달할 데이터 추출
   const phone = settings?.contactPhone || "010-0000-0000";

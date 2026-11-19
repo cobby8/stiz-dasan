@@ -3,6 +3,7 @@
 import { publicErrorText } from "@/components/ui/public-error-text";
 import { useCallback, useEffect, useState } from "react";
 import type { StudentDetail } from "@/lib/seasonal/student-detail";
+import { applicantTypeLabel } from "@/lib/seasonal/period-pricing";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
 import { askConfirm } from "@/components/ui/feedback";
 import { useBackToClose } from "@/components/common/useBackToClose";
@@ -175,7 +176,7 @@ export default function StudentDetailModal({ applicationId, onClose, save, onCha
                     ))}
                   </ul>
                 )}
-                {detail.application.applicantType && <p className="mt-2 text-xs text-[var(--color-academy-faint)]">신청자 구분: {detail.application.applicantType === "EXISTING" ? "기존 회원" : detail.application.applicantType === "NEW" ? "신규 회원" : detail.application.applicantType}</p>}
+                {detail.application.applicantType && <p className="mt-2 text-xs text-[var(--color-academy-faint)]">신청자 구분: {applicantTypeLabel(detail.application.applicantType, detail.application.applicantType)}</p>}
               </section>
 
               <section className="rounded-2xl border border-[var(--color-academy-line)] p-4">

@@ -29,7 +29,7 @@ import {
   planPeriodCopy,
   weekdaysFromDates,
 } from "@/lib/seasonal/admin-period-rules";
-import { inferWeeklyFrequency, requiredDateCount, ymdKoreanLabel } from "@/lib/seasonal/application-plan";
+import { firstSelectableYmd, inferWeeklyFrequency, requiredDateCount, wasLateJoinAt, ymdKoreanLabel } from "@/lib/seasonal/application-plan";
 import { findFullDates } from "@/lib/seasonal/date-capacity";
 import { toKstYmd } from "@/lib/datetime/kst";
 import {
@@ -585,6 +585,8 @@ async function resolveSpecialProgramAssignment(
      * «오늘»이 아니라 접수일로 세야 관리자가 나중에 고쳐도 금액이 날마다 줄지 않는다. 비우면 비율 계산 안 함.
      */
     appliedOnYmd?: string | null;
+    /** 그 신청서의 접수 시각 — 마감 뒤 중간 합류였으면 남은 회차를 «접수일 다음 날»부터 센다(2026-11-19 원장). */
+    appliedAt?: Date | null;
   },
 ) {
   const target = await tx.specialProgramOffering.findUnique({ where: { id: params.offeringId } });
@@ -614,8 +616,15 @@ async function resolveSpecialProgramAssignment(
   //   남은 필요 횟수는 «접수일» 기준, 분모는 시작 전 기준 전체 필요 횟수. 요일 모드·시작 전 접수는 비율 1 → 정상 금액.
   //   주N회는 고른 반 이름의 «주N회»(공개 신청과 같은 반 고르기 규칙). 이름에 없으면 고른 날짜 수로 추정(inferWeeklyFrequency),
   //   그래도 못 찾으면 비율을 쓰지 않는다(정상 금액).
-  async function dateModeProration(period: { startDate: string; endDate: string } | null) {
+  async function dateModeProration(period: { startDate: string; endDate: string; applicationClosesAt?: Date | null } | null) {
     if (dateCount === null || !params.appliedOnYmd) return null;
+    // 접수 때 이미 마감 뒤(중간 합류)였으면 접수일 다음 날부터 센다 — 공개 신청과 같은 규칙(firstSelectableYmd)
+    let lateJoinAtApply = false;
+    if (params.appliedAt) {
+      const season = await tx.specialProgramSeason.findUnique({ where: { id: offering.seasonId }, select: { applicationClosesAt: true } });
+      lateJoinAtApply = wasLateJoinAt(params.appliedAt.getTime(), season?.applicationClosesAt, period);
+    }
+    const fromYmd = firstSelectableYmd(params.appliedOnYmd, lateJoinAtApply);
     // 회차 범위 = 공개 신청과 같은 조건(같은 묶음의 OPEN 반, 검수 L-1). 비면 공개 신청처럼 그 반 하나로 대체 —
     //   이미 닫힌 반에 배정된 신청을 고쳐도 회차가 0이 되지 않는다.
     const scopeOfferings = await tx.specialProgramOffering.findMany({
@@ -625,10 +634,10 @@ async function resolveSpecialProgramAssignment(
     const sessions = scopeOfferings.length
       ? scopeOfferings.flatMap((item) => item.sessionDates)
       : await tx.specialProgramSessionDate.findMany({ where: { offeringId: offering.id }, select: { startsAt: true } });
-    const frequency = seasonalOfferingFrequency(offering) ?? inferWeeklyFrequency(sessions, dateCount, period, params.appliedOnYmd);
+    const frequency = seasonalOfferingFrequency(offering) ?? inferWeeklyFrequency(sessions, dateCount, period, fromYmd);
     if (frequency === null) return null;
     const fullCount = requiredDateCount(sessions, frequency, period);
-    const remainingCount = requiredDateCount(sessions, frequency, period, params.appliedOnYmd);
+    const remainingCount = requiredDateCount(sessions, frequency, period, fromYmd);
     return fullCount > 0 && remainingCount < fullCount ? { remainingCount, fullCount } : null;
   }
 
@@ -1061,6 +1070,7 @@ async function saveSpecialProgramItemAssignment(
     periodRange: selection.periodRange,
     // 날짜 모드 금액은 «접수일» 기준 남은 회차 비율(오늘 기준이면 고칠 때마다 금액이 줄어든다)
     appliedOnYmd: toKstYmd(before.application.createdAt),
+    appliedAt: before.application.createdAt,
   });
   // 기간을 고른 신청은 «반 셔틀비» 자리에 기간 셔틀비(비어 있으면 반 셔틀비)를 넣는다 —
   // 공용 resolvePeriodShuttleFee 와 같은 결과이고, 기간 없는 반은 반 그대로(지금 동작 보존)
@@ -1167,6 +1177,7 @@ async function createSpecialProgramApplicationItem(
     periodRange: selection.periodRange,
     // 새 항목도 같은 규칙 — 날짜 모드는 접수일 기준 남은 회차 비율(셔틀비는 이 경로에서 0 그대로)
     appliedOnYmd: toKstYmd(application.createdAt),
+    appliedAt: application.createdAt,
   });
   const offering = assignment.offering;
   const stored = assignmentStorageFields(selection, assignment);
@@ -1447,7 +1458,7 @@ export async function POST(request: NextRequest) {
       if (status === "OPEN" && capacity === null) throw new SeasonalError("정원이 정해지지 않은 반은 공개할 수 없습니다.", 409, "CAPACITY_REQUIRED");
       if (status === "OPEN" && sessionDates.length === 0) throw new SeasonalError("모집 중인 반은 수업 일정을 한 개 이상 등록해야 합니다.", 409, "SESSION_DATE_REQUIRED");
       const offering = await prisma.$transaction(async (tx) => {
-        const created = await tx.specialProgramOffering.create({ data: { seasonId, code, title, description: cleanText(data.description, 5000), targetGrades: cleanText(data.targetGrades, 200), instructorId, instructorName: cleanText(data.instructorName, 100), location: cleanText(data.location, 150), capacity, price, newApplicantPrice: optionalNonNegativeInt(data.newApplicantPrice, "신규 회원 가격"), existingApplicantPrice: optionalNonNegativeInt(data.existingApplicantPrice, "기존 회원 가격"), shuttleAvailable: Boolean(data.shuttleAvailable), shuttleFee: nonNegativeInt(data.shuttleFee ?? 0, "셔틀비"), status, displayOrder: Number.isInteger(data.displayOrder) ? data.displayOrder : 0, linkedProgramId: cleanText(data.linkedProgramId, 100), linkedClassId } });
+        const created = await tx.specialProgramOffering.create({ data: { seasonId, code, title, description: cleanText(data.description, 5000), targetGrades: cleanText(data.targetGrades, 200), instructorId, instructorName: cleanText(data.instructorName, 100), location: cleanText(data.location, 150), capacity, price, newApplicantPrice: optionalNonNegativeInt(data.newApplicantPrice, "신입생 수강료"), existingApplicantPrice: optionalNonNegativeInt(data.existingApplicantPrice, "재원생 수강료"), shuttleAvailable: Boolean(data.shuttleAvailable), shuttleFee: nonNegativeInt(data.shuttleFee ?? 0, "셔틀비"), status, displayOrder: Number.isInteger(data.displayOrder) ? data.displayOrder : 0, linkedProgramId: cleanText(data.linkedProgramId, 100), linkedClassId } });
         await syncOfferingSessionDates(tx, { offeringId: created.id, linkedClassId, instructorId, dates: sessionDates });
         return tx.specialProgramOffering.findUniqueOrThrow({ where: { id: created.id }, include: { sessionDates: { orderBy: { startsAt: "asc" } } } });
       });
@@ -1786,8 +1797,8 @@ export async function PATCH(request: NextRequest) {
       for (const key of ["title", "description", "targetGrades", "instructorId", "instructorName", "location", "linkedProgramId", "linkedClassId"] as const) if (data[key] !== undefined) update[key] = cleanText(data[key], key === "description" ? 5000 : 200) || null;
       if (data.capacity !== undefined) update.capacity = optionalNonNegativeInt(data.capacity, "정원");
       if (data.price !== undefined) update.price = nonNegativeInt(data.price, "가격");
-      if (data.newApplicantPrice !== undefined) update.newApplicantPrice = optionalNonNegativeInt(data.newApplicantPrice, "신규 회원 가격");
-      if (data.existingApplicantPrice !== undefined) update.existingApplicantPrice = optionalNonNegativeInt(data.existingApplicantPrice, "기존 회원 가격");
+      if (data.newApplicantPrice !== undefined) update.newApplicantPrice = optionalNonNegativeInt(data.newApplicantPrice, "신입생 수강료");
+      if (data.existingApplicantPrice !== undefined) update.existingApplicantPrice = optionalNonNegativeInt(data.existingApplicantPrice, "재원생 수강료");
       if (data.shuttleFee !== undefined) update.shuttleFee = nonNegativeInt(data.shuttleFee, "셔틀비");
       if (data.status !== undefined) { if (!OFFERING_STATUSES.has(data.status)) throw new SeasonalError("특강 상태가 올바르지 않습니다."); update.status = data.status; }
       const nextStatus = (update.status as string | undefined) ?? before.status;
