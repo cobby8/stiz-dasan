@@ -1,4 +1,5 @@
-import { getNoticeById, getAcademySettings } from "@/lib/queries";
+// 오류를 숨기지 않는 조회 — DB 오류가 «없는 공지(404)»로 저장되지 않게(저장 화면, 속도 10회차)
+import { getNoticeByIdOrThrow, getAcademySettings } from "@/lib/queries";
 import PublicPageLayout from "@/components/PublicPageLayout";
 import AnimateOnScroll from "@/components/ui/AnimateOnScroll";
 import Badge from "@/components/ui/Badge";
@@ -14,11 +15,18 @@ import type { Metadata } from "next";
 
 export const revalidate = 60;
 
+// 2026-11-19 속도 10회차: 미리 만들 공지는 없다([]) — 그래도 이 함수가 있어야 Next 가 이 화면을 «처음 열릴 때 그려 저장(ISR)»으로 다룬다.
+// 없으면 revalidate=60 이 있어도 매번 서버에서 새로 그렸다(빌드 표 ƒ, 운영 응답 x-vercel-cache 가 계속 MISS).
+// 사람마다 다른 내용이 없는 공개 화면이고, 공지 수정·삭제는 admin.ts 가 이 주소를 바로 갱신한다(revalidatePath(`/notices/${id}`)).
+export async function generateStaticParams() {
+    return [];
+}
+
 // 공지마다 제목·요약·canonical(/notices/[id])을 따로 단다 — 홈 메타를 물려받아 검색에서 중복 처리되던 문제.
-// getNoticeById 는 react cache 로 감싸져 있어 본문 렌더와 같은 요청에서 DB 를 두 번 읽지 않는다.
+// getNoticeByIdOrThrow 는 react cache 로 감싸져 있어 본문 렌더와 같은 요청에서 DB 를 두 번 읽지 않는다.
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
     const { id } = await params;
-    return buildNoticeMetadata(await getNoticeById(id));
+    return buildNoticeMetadata(await getNoticeByIdOrThrow(id));
 }
 
 export default async function NoticeDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -26,7 +34,7 @@ export default async function NoticeDetailPage({ params }: { params: Promise<{ i
 
     // DB에서 공지사항 상세와 학원 설정을 병렬로 가져온다
     const [notice, settings] = await Promise.all([
-        getNoticeById(id),
+        getNoticeByIdOrThrow(id),
         getAcademySettings() as Promise<any>,
     ]);
 
