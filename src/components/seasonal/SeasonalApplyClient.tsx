@@ -274,10 +274,6 @@ export default function SeasonalApplyClient({ slug, basePath = "/seasonal", home
   // 반 카드 = 교시 하나(같은 운영 반의 주2회·주3회·매일 반 묶음 · 2026-11-19 원장). 카드를 고르면 그 묶음의 첫 반이 기준 반이 된다
   const groups = useMemo(() => program ? programClassGroups(program) : [], [program]);
   const selectedOfferings = offerings.filter((item) => selectedIds.includes(item.id));
-  // 요일 순서(월→일)로 정렬 — «매일» 자동 선택이 화면 순서와 같게
-  const availableWeekdays = WEEKDAY_OPTIONS.map((option) => option.value)
-    .filter((weekday) => selectedOfferings.some((item) => offeringWeekdays(item).includes(weekday)));
-  const pickedWeekdays = selectedWeekdayKeys.filter((weekday) => availableWeekdays.includes(weekday));
 
   // ── 날짜별 신청(시즌 설정이 켜졌을 때만) ──
   const dateSelect = program?.dateSelect;
@@ -285,6 +281,12 @@ export default function SeasonalApplyClient({ slug, basePath = "/seasonal", home
   const baseOffering = selectedOfferings[0];
   // 같은 운영 반(주2회·주3회가 한 교실)의 반들 — 기간 목록·날짜 목록은 이 범위에서 모은다(서버와 같은 범위)
   const scopeOfferings = baseOffering ? offerings.filter((item) => operationalClassKey(item) === operationalClassKey(baseOffering)) : [];
+  // 고를 수 있는 요일 = 묶음 전체(주2회·주3회·매일 반) 회차 요일의 합집합(서버가 반을 고르는 범위와 같다 · 2026-11-19 검수).
+  //   요일 순서(월→일)로 정렬 — «매일» 자동 선택이 화면 순서와 같게
+  const weekdaySourceOfferings = scopeOfferings.length ? scopeOfferings : selectedOfferings;
+  const availableWeekdays = WEEKDAY_OPTIONS.map((option) => option.value)
+    .filter((weekday) => weekdaySourceOfferings.some((item) => offeringWeekdays(item).includes(weekday)));
+  const pickedWeekdays = selectedWeekdayKeys.filter((weekday) => availableWeekdays.includes(weekday));
   const scopeSessions = scopeOfferings.flatMap((item) => item.sessionDates);
   const todayYmd = todayKst();
   // 시즌 모집이 마감됐지만 중간 합류(날짜로 고르기)는 열린 상태(서버 lateJoinOpen · 2026-11-18 원장)
@@ -319,7 +321,9 @@ export default function SeasonalApplyClient({ slug, basePath = "/seasonal", home
     // 반 이름·코드에 횟수가 없으면(날짜 모드만) 이 반 요일 수까지(1~요일 수)
     : Array.from({ length: Math.max(availableWeekdays.length, 1) }, (_, index) => index + 1);
   const asksFrequency = isDateMode || usesFrequencyChoice;
-  const weeklyFrequency = asksFrequency && selectedFrequency !== null && frequencyOptions.includes(selectedFrequency) ? selectedFrequency : null;
+  // 요일로 고를 때 고를 수 있는 요일보다 많은 횟수는 고를 수 없다(예: 요일이 4개뿐인 반의 주5회 — 2026-11-19 검수)
+  const frequencyTooMany = (frequency: number) => !isDateMode && usesFrequencyChoice && availableWeekdays.length > 0 && frequency > availableWeekdays.length;
+  const weeklyFrequency = asksFrequency && selectedFrequency !== null && frequencyOptions.includes(selectedFrequency) && !frequencyTooMany(selectedFrequency) ? selectedFrequency : null;
   // 매일반: 고른 횟수가 이 교시 요일 수 이상이면(주5회 = 월~금) 요일을 모두 자동으로 고른다
   const autoAllWeekdays = !isDateMode && usesFrequencyChoice && weeklyFrequency !== null && availableWeekdays.length > 0 && weeklyFrequency >= availableWeekdays.length;
   const selectedWeekdays = autoAllWeekdays ? availableWeekdays : pickedWeekdays;
@@ -695,7 +699,9 @@ export default function SeasonalApplyClient({ slug, basePath = "/seasonal", home
               const cardPriceText = priceReady && plan
                 ? formatWon(plan.period ? plan.tuition : applicantPrice(priceItem, applicantType))
                 : group.priceRows.length > 1
-                  ? `${formatWon(Math.min(...group.priceRows.flatMap((row) => [row.newPrice, row.existingPrice])))}부터`
+                  // 재원생·신입생을 골랐으면 그 구분 금액 중 최저가, 안 골랐으면 두 구분 모두에서 최저가(2026-11-19 검수)
+                  ? `${formatWon(Math.min(...group.priceRows.flatMap((row) => applicantType === "NEW" ? [row.newPrice]
+                    : applicantType === "EXISTING" ? [row.existingPrice] : [row.newPrice, row.existingPrice])))}부터`
                   : formatWon(applicantPrice(item, applicantType));
               const cardShuttleFee = plan?.period ? (plan.period.shuttleFee ?? priceItem.shuttleFee ?? 0) : (priceItem.shuttleFee ?? 0);
               return (
@@ -868,19 +874,28 @@ export default function SeasonalApplyClient({ slug, basePath = "/seasonal", home
               <div className="mt-3 grid grid-cols-3 gap-2">
                 {frequencyOptions.map((frequency) => {
                   const checked = weeklyFrequency === frequency;
+                  // 요일 수보다 많은 횟수는 누를 수 없다(아래 안내 문구로 이유를 보인다)
+                  const blocked = frequencyTooMany(frequency);
                   return (
                     <button
                       key={frequency}
                       type="button"
                       aria-pressed={checked}
+                      disabled={blocked}
                       onClick={() => chooseFrequency(frequency)}
-                      className={`min-h-11 rounded border px-3 text-sm font-medium transition ${checked ? "border-[var(--color-public-secondary-strong)] bg-[var(--color-public-secondary-soft)] text-[var(--color-public-secondary-ink)]" : "border-[var(--color-public-muted)] text-[var(--color-public-ink)]"}`}
+                      className={`min-h-11 rounded border px-3 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${checked ? "border-[var(--color-public-secondary-strong)] bg-[var(--color-public-secondary-soft)] text-[var(--color-public-secondary-ink)]" : "border-[var(--color-public-muted)] text-[var(--color-public-ink)]"}`}
                     >
                       {weeklyFrequencyLabel(frequency)}
                     </button>
                   );
                 })}
               </div>
+              {/* 고를 수 없는 횟수가 있으면 이유를 글로 알린다(색·흐림만으로 전하지 않는다) */}
+              {frequencyOptions.filter(frequencyTooMany).map((frequency) => (
+                <p key={frequency} className="mt-2 text-xs font-medium text-[var(--color-academy-warning)]">
+                  이 반은 요일이 {availableWeekdays.length}개뿐이라 주{frequency}회를 고를 수 없습니다.
+                </p>
+              ))}
             </fieldset>
           )}
           {/* 날짜로 고르기 — 필요 횟수만큼 날짜를 체크(한 주에 몰아도 된다) */}

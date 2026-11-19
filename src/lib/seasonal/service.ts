@@ -39,6 +39,7 @@ import {
   firstSelectableYmd,
   fullDateKeysFromOccupancy,
   hasLateJoinDates,
+  peakOccupancy,
   itemTitleSnapshot,
   periodEndedError,
   pickOfferingPeriod,
@@ -215,57 +216,85 @@ async function isOperationalOfferingFull(
 }
 
 /**
- * 공개 화면용 «회차 날짜별 마감 여부» — 특강 반 id → 정원이 찬 KST 날짜 집합.
- * 같은 연결 반(주2회·주3회가 한 교실)을 한 범위로 묶어 날짜별로 센다(신청 저장의 날짜별 정원과 같은 규칙).
- * 숫자는 밖으로 내보내지 않는다 — 참/거짓만(재원생 수 비공개).
+ * 공개 화면용 «남은 자리» 계산 — 같은 운영 묶음(같은 시즌·같은 연결 반·OPEN) 전체 인원으로 센다(2026-11-19 검수).
+ *   fullDates = 특강 반 id → 정원이 찬 KST 날짜 집합(날짜별 정원 시즌만 — 예전과 같다)
+ *   peak      = 특강 반 id → 묶음에서 «가장 찬 날짜»의 인원(남은 자리 3단계 계산용)
+ *
+ * 왜 묶음 전체인가: 신청 서버의 대기 판정(날짜별 정원 = findFullDates, 요일별 정원 = isOperationalOfferingFull)은
+ *   주2회·주3회·매일 반을 한 교실로 합쳐 «인원 ≥ 정원»이면 대기로 받는다. 화면이 반 하나 신청 수만 세면
+ *   «여유»로 보였는데 대기로 접수되는 일이 생긴다. 그래서 같은 인원표(countOccupancyByDate)로 센다.
+ *   - 날짜별 정원 시즌: 신청서 단위로 센다(findFullDates 와 같다) · 오늘 이후 날짜만 본다
+ *   - 요일별 정원 시즌: 신청 항목 단위로 센다(isOperationalOfferingFull 의 COUNT(DISTINCT item.id)와 같다)
+ * 숫자는 밖으로 내보내지 않는다 — 단계(여유/임박/마감)와 참/거짓만(재원생 수 비공개).
  */
-async function fullDatesByOffering(seasons: PublicSeasonRow[]): Promise<Map<string, Set<string>>> {
-  const result = new Map<string, Set<string>>();
-  // 새 기능(기간 상품표·날짜별 신청)을 쓰는 시즌만 센다 — 기존 시즌 화면은 날짜별 마감을 쓰지 않아 조회를 아낀다.
-  //   판정은 신청 접수와 같은 공용 함수(꺼진 기간 행은 세지 않는다).
+async function seatStateByOffering(seasons: PublicSeasonRow[]): Promise<{
+  fullDates: Map<string, Set<string>>;
+  peak: Map<string, number>;
+}> {
+  const fullDates = new Map<string, Set<string>>();
+  const peak = new Map<string, number>();
+  // 판정은 신청 접수와 같은 공용 함수(꺼진 기간 행은 세지 않는다)
   const usesDates = (season: PublicSeasonRow) => usesPeriodOrDateFeatures({
     dateSelectEnabled: season.dateSelectEnabled,
     activePeriodCount: (season.offerings || []).reduce((sum, offering) => sum + countActivePeriods(offering.periods), 0),
   });
-  const offerings = seasons.filter(usesDates).flatMap((season) => (season.offerings || []).map((offering) => ({ season, offering })));
-  if (offerings.length === 0) return result;
+  const visible = seasons.flatMap((season) => (season.offerings || []).map((offering) => ({ season, offering })));
+  if (visible.length === 0) return { fullDates, peak };
+  // 묶음 인원은 서버와 같은 범위(openScopeOfferingWhere = 같은 시즌·같은 연결 반·OPEN)에서 센다 —
+  //   공개 목록에 안 보이는 OPEN 반(정원 미확정)의 신청도 같은 교실 인원이라 함께 센다.
   const items = await prisma.specialProgramApplicationItem.findMany({
-    where: { offeringId: { in: offerings.map(({ offering }) => offering.id) }, status: { in: OCCUPYING_ITEM_STATUSES } },
+    where: {
+      status: { in: OCCUPYING_ITEM_STATUSES },
+      offering: { seasonId: { in: seasons.map((season) => season.id) }, status: "OPEN" },
+    },
     select: {
+      id: true,
       offeringId: true,
       applicationId: true,
+      offering: { select: { seasonId: true, linkedClassId: true } },
       application: { select: { selectionMode: true, selectedWeekdays: true, selectedDates: true, periodStartDate: true, periodEndDate: true } },
     },
   });
   // 범위 열쇠 = 시즌 + (연결 반 또는 그 반 자신)
-  const scopeKey = (seasonId: string, offering: PublicOfferingRow) => `${seasonId}|${offering.linkedClassId || offering.id}`;
-  const scopes = new Map<string, PublicOfferingRow[]>();
-  for (const { season, offering } of offerings) {
+  const scopeKey = (seasonId: string, offering: { id: string; linkedClassId: string | null }) => `${seasonId}|${offering.linkedClassId || offering.id}`;
+  const scopes = new Map<string, { dateMode: boolean; offerings: PublicOfferingRow[] }>();
+  for (const { season, offering } of visible) {
     const key = scopeKey(season.id, offering);
-    scopes.set(key, [...(scopes.get(key) ?? []), offering]);
+    const scope = scopes.get(key) ?? { dateMode: usesDates(season), offerings: [] };
+    scope.offerings.push(offering);
+    scopes.set(key, scope);
   }
-  for (const scopeOfferings of scopes.values()) {
-    const ids = new Set(scopeOfferings.map((offering) => offering.id));
+  const todayYmd = todayKst();
+  for (const [key, scope] of scopes) {
     const rules = new Map<string, SeasonalAttendanceRule>();
     for (const item of items) {
-      if (ids.has(item.offeringId) && !rules.has(item.applicationId)) rules.set(item.applicationId, item.application);
+      if (scopeKey(item.offering.seasonId, { id: item.offeringId, linkedClassId: item.offering.linkedClassId }) !== key) continue;
+      // 날짜별 정원 = 신청서 단위(한 학생 한 번), 요일별 정원 = 항목 단위(서버 SQL 과 같다)
+      const ruleKey = scope.dateMode ? item.applicationId : item.id;
+      if (!rules.has(ruleKey)) rules.set(ruleKey, item.application);
     }
-    const occupancy = countOccupancyByDate([...rules.values()], scopeOfferings.flatMap((offering) => offering.sessionDates));
-    for (const offering of scopeOfferings) {
-      result.set(offering.id, new Set(fullDateKeysFromOccupancy(occupancy, offering.capacity)));
+    const occupancy = countOccupancyByDate([...rules.values()], scope.offerings.flatMap((offering) => offering.sessionDates));
+    // 날짜별 정원은 오늘 이후 날짜만(지난 날의 마감은 신청에 영향 없음), 요일별 정원은 모든 날짜(요일별 인원이 날짜와 무관)
+    const scopePeak = peakOccupancy(occupancy, scope.dateMode ? todayYmd : undefined);
+    for (const offering of scope.offerings) {
+      peak.set(offering.id, scopePeak);
+      // 회차별 «마감» 표시는 예전처럼 날짜별 정원 시즌에만
+      if (scope.dateMode) fullDates.set(offering.id, new Set(fullDateKeysFromOccupancy(occupancy, offering.capacity)));
     }
   }
-  return result;
+  return { fullDates, peak };
 }
 
-function publicOffering(offering: PublicOfferingRow, fullDates: ReadonlySet<string> = new Set()) {
+// scopePeak = 같은 운영 묶음에서 가장 찬 날짜의 인원(seatStateByOffering). 없으면 예전처럼 이 반 신청 수.
+function publicOffering(offering: PublicOfferingRow, fullDates: ReadonlySet<string> = new Set(), scopePeak?: number) {
   const orderedSessionDates = [...(offering.sessionDates || [])].sort(
     (a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime(),
   );
   const first = orderedSessionDates[0];
   const startsAt = first?.startsAt ? new Date(first.startsAt) : null;
   const endsAt = first?.endsAt ? new Date(first.endsAt) : null;
-  const enrolled = offering._count?.applicationItems || 0;
+  // 남은 자리는 묶음 전체 인원 기준(서버 대기 판정과 같은 기준 · 2026-11-19) — 숫자는 아래 단계로만 쓴다
+  const enrolled = scopePeak ?? (offering._count?.applicationItems || 0);
   const capacity = offering.capacity;
   // 신청 인원·남은 자리 숫자는 공개 응답에 싣지 않는다 — 3단계만(정원 미확정이면 null = 학원 문의)
   const level = capacity === null ? null : seatLevel(capacity - enrolled);
@@ -327,8 +356,10 @@ function publicOffering(offering: PublicOfferingRow, fullDates: ReadonlySet<stri
   };
 }
 
-function publicSeason(season: PublicSeasonRow, fullByOffering: ReadonlyMap<string, ReadonlySet<string>> = new Map()) {
-  const classes = (season.offerings || []).map((offering) => publicOffering(offering, fullByOffering.get(offering.id)));
+type SeatState = Awaited<ReturnType<typeof seatStateByOffering>>;
+
+function publicSeason(season: PublicSeasonRow, seats: SeatState = { fullDates: new Map(), peak: new Map() }) {
+  const classes = (season.offerings || []).map((offering) => publicOffering(offering, seats.fullDates.get(offering.id), seats.peak.get(offering.id)));
   const status = publicStatus(season);
   return {
     id: season.id,
@@ -376,8 +407,8 @@ export async function listPublishedSeasons() {
       },
     },
   });
-  const fullByOffering = await fullDatesByOffering(seasons);
-  return seasons.map((season) => publicSeason(season, fullByOffering));
+  const seats = await seatStateByOffering(seasons);
+  return seasons.map((season) => publicSeason(season, seats));
 }
 
 export async function getPublishedSeason(slug: string) {
@@ -397,9 +428,9 @@ export async function getPublishedSeason(slug: string) {
   });
   if (!season) throw new SeasonalError("모집 중인 방학특강을 찾을 수 없습니다.", 404, "SEASON_NOT_FOUND");
   // 무료 탑승 거점(탑승/하차 지점)을 함께 내려 부모 신청 폼에서 "거점 탑승"을 고를 수 있게 한다.
-  const [settings, fullByOffering] = await Promise.all([getSettings(), fullDatesByOffering([season])]);
+  const [settings, seats] = await Promise.all([getSettings(), seatStateByOffering([season])]);
   const toHub = (g: { lat: number; lng: number; name: string } | null) => g ? { name: g.name, lat: g.lat, lng: g.lng } : null;
-  return { ...publicSeason(season, fullByOffering), shuttleHub: { pickup: toHub(settings.hub), dropoff: toHub(settings.hubDropoff) } };
+  return { ...publicSeason(season, seats), shuttleHub: { pickup: toHub(settings.hub), dropoff: toHub(settings.hubDropoff) } };
 }
 
 async function existingApplication(seasonId: string, idempotencyKey: string) {

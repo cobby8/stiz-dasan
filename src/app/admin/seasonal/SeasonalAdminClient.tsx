@@ -727,8 +727,11 @@ function parseClassParts(name: string): { base: string; freq: string | null } {
 function classDisplayName(name: string): string {
   const { base, freq } = parseClassParts(name);
   if (!freq) return name;
+  // 횟수 표기는 공용 이름표 하나(주5회 = «매일(주5회)» · 2026-11-19 검수). 이름에 이미 «매일»이 있으면 «주5회»만 붙여 겹치지 않게
+  const count = Number(freq.replace(/\D/g, ""));
+  const freqLabel = /매일/.test(base) ? freq : weeklyFrequencyLabel(count);
   const tail = base.match(/^(.*?)(\s+\(.+\))$/);
-  return tail ? `${tail[1]} · ${freq}${tail[2]}` : `${base} · ${freq}`;
+  return tail ? `${tail[1]} · ${freqLabel}${tail[2]}` : `${base} · ${freqLabel}`;
 }
 // 한 신청의 반 이름·횟수 목록(중복 제거). 신청이 여러 반이면 각각 표시/필터에 쓴다.
 function applicationClassInfo(items: { className: string }[]): { bases: string[]; freqs: string[] } {

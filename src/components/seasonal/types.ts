@@ -229,7 +229,11 @@ export type SeasonalClassGroup = OfferingFrequencyGroup<SeasonalClass> & {
   sessionDates: SeasonalSessionDate[];
 };
 
-/** 묶음의 남은 자리 — 정원 없는 반만 있으면 «학원 문의», 하나라도 모르면 null(학원 문의), 아니면 가장 빡빡한 단계 */
+/**
+ * 묶음의 남은 자리 — 정원 없는 반만 있으면 «학원 문의», 하나라도 모르면 null(학원 문의), 아니면 가장 빡빡한 단계.
+ *   2026-11-19 검수: 서버가 반마다 «묶음 전체 인원(가장 찬 요일·날짜)» 기준 단계를 내려 준다(service.ts seatStateByOffering).
+ *   그래서 여기서는 그 값을 그대로 모을 뿐이다(정원이 반마다 다르면 가장 빡빡한 쪽).
+ */
 function groupSeat(items: readonly SeasonalClass[]): SeasonalClassGroup["seat"] {
   const limited = items.filter((item) => item.capacity !== null);
   if (limited.length === 0) return { capacity: null, seatLevel: null, waitlistEnabled: items.some((item) => item.waitlistEnabled === true) };

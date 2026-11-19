@@ -336,3 +336,18 @@ export function fullDateKeysFromOccupancy(
   const keys = onlyDates ? [...new Set(onlyDates)] : [...occupancy.keys()];
   return keys.filter((ymd) => (occupancy.get(ymd) ?? 0) >= capacity).sort();
 }
+
+/**
+ * 공개 화면 «남은 자리» 3단계용 — 같은 운영 반(묶음) 인원표에서 «가장 찬 날짜»의 인원(2026-11-19 검수).
+ *   서버 대기 판정(정원 ≤ 그날 인원 → 대기)과 같은 인원표(countOccupancyByDate)를 쓰므로,
+ *   이 값으로 단계를 정하면 «여유인데 대기»가 생기지 않는다. 숫자는 화면에 내보내지 않는다(단계만).
+ *   fromYmd 를 주면 그날 이후 날짜만 본다(날짜별 정원 시즌 — 지나간 날의 마감은 신청에 영향이 없다).
+ */
+export function peakOccupancy(occupancy: ReadonlyMap<string, number>, fromYmd?: string): number {
+  let peak = 0;
+  for (const [ymd, count] of occupancy) {
+    if (fromYmd && ymd < fromYmd) continue;
+    if (count > peak) peak = count;
+  }
+  return peak;
+}
