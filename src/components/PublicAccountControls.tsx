@@ -172,7 +172,7 @@ export function DesktopAccountControls({ initialRole = null }: AccountControlsPr
       </Link>}
 
       {canAccessAdmin && (
-        <Link href="/staff/quick-post" aria-label="사진 올리기" title="사진 올리기" className={HEADER_ICON_ACTION_CLASS}>
+        <Link href="/staff/quick-post" prefetch={false} aria-label="사진 올리기" title="사진 올리기" className={HEADER_ICON_ACTION_CLASS}>
           사진 올리기
         </Link>
       )}
@@ -222,7 +222,7 @@ export function MobileAccountControls({
 
       {canAccessAdmin ? (
         <Link
-          href="/staff/quick-post"
+          href="/staff/quick-post" prefetch={false}
           onClick={onNavigate}
           aria-label="사진 올리기"
           title="사진 올리기"
@@ -232,7 +232,7 @@ export function MobileAccountControls({
         </Link>
       ) : isLoggedIn ? null : (
         <Link
-          href="/staff/quick-post"
+          href="/staff/quick-post" prefetch={false}
           onClick={onNavigate}
           aria-label="사진 올리기"
           title="사진 올리기"

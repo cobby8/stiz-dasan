@@ -115,7 +115,7 @@ function MobileAccountFallback() {
         로그인
       </Link>
       <Link
-        href="/staff/quick-post"
+        href="/staff/quick-post" prefetch={false}
         aria-label="사진 올리기"
         title="사진 올리기"
         className={MOBILE_ACCOUNT_FALLBACK_ACTION_CLASS}
